@@ -930,6 +930,7 @@ int main(int argc, char **argv)
 		obs_data_set_string(bs, "live_source", "Framed Capture");
 		obs_data_set_bool(bs, "live_replace", true);
 		obs_data_set_int(bs, "live_fit", 0);
+		obs_data_set_string(bs, "image", base_image);
 		obs_data_set_double(bs, "blur", 0);
 		obs_data_set_double(bs, "glow", 0);
 		obs_data_set_double(bs, "speed_x", 0);
@@ -954,6 +955,48 @@ int main(int argc, char **argv)
 		      "a live capture with an Auto Frame fills the background with its picture, not its frame "
 		      "(edge %d, %d, %d)",
 		      edge[0], edge[1], edge[2]);
+
+		// A capture showing nothing is no capture: the usual picture comes back.
+		auto game_colour = [&](long long colour) {
+			obs_data_t *d = obs_data_create();
+			obs_data_set_int(d, "color", colour);
+			obs_source_update(game, d);
+			obs_data_release(d);
+		};
+		auto shows_capture_red = [&](int wait_ms) {
+			std::vector<uint8_t> shot;
+			for (int waited = 0; waited <= wait_ms; waited += 150) {
+				sleep_ms(150);
+				shot = render(back, bw, bh);
+			}
+			const uint8_t *p = &shot[(size_t(bh / 2) * bw + bw / 2) * 4];
+			return p[0] > 90 && p[0] > p[2] + 40 && p[0] > p[1] + 40;
+		};
+		auto brightness = [&] {
+			const std::vector<uint8_t> shot = render(back, bw, bh);
+			double sum = 0;
+			for (size_t k = 0; k < shot.size(); k += 4)
+				sum += shot[k] + shot[k + 1] + shot[k + 2];
+			return sum / (double)(shot.size() / 4) / 3.0;
+		};
+		game_colour(0x00000000); // nothing drawn
+		const bool red_when_clear = shows_capture_red(900);
+		const double clear_brightness = brightness();
+		CHECK(!red_when_clear && clear_brightness > 12.0,
+		      "a capture with nothing in it gives way to the usual picture (brightness %.0f)",
+		      clear_brightness);
+		game_colour(0xFF2030E0);
+		CHECK(shows_capture_red(900), "and takes over again the moment it shows something");
+		game_colour(0xFF000000); // a black screen
+		CHECK(brightness() < 6.0 || shows_capture_red(300) == false,
+		      "a black screen is still the capture at first");
+		const bool red_when_black = shows_capture_red(3200);
+		const double black_brightness = brightness();
+		CHECK(!red_when_black && black_brightness > 12.0,
+		      "a capture that stays black gives way to the usual picture (brightness %.0f)", black_brightness);
+		game_colour(0xFF2030E0);
+		CHECK(shows_capture_red(900), "and comes straight back when the game shows a picture");
+
 		obs_source_dec_showing(back);
 		obs_source_release(back);
 		obs_source_filter_remove(game, frame);

@@ -204,6 +204,16 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Background ignores an empty capture (0.1.0-beta32)
+
+The owner: with *Live capture replaces the picture* on and Game Capture capturing nothing, the
+background was black; "if the live capture is completely black, the start image must be shown".
+An auto-framed capture always has the frame's size, so it never looked absent.
+`AmbientBackground::live_shows_something` reads back a 64x64 copy of the live picture every 0.5 s:
+all transparent is empty at once, all black is empty after 2 s (so a game's cut to black does not flash
+the start image), anything visible ends it immediately. The 2 s is a constant, `kBlackFor`; the owner
+has not been asked whether they want it adjustable.
+
 ## Shadow, Glow & Outline (0.1.0-beta31)
 
 Asked for by the owner on 2026-11-12: a stroke/border, a shadow or border "made of the object itself"
