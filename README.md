@@ -23,6 +23,8 @@ from hotkeys, or from the Stream Deck OBS Studio plugin's *Filter* and *Source* 
   optionally tinted by whatever capture is live.
 - **Shadow & Backdrop** (filter): drop shadow, a panel behind the source, and rounded corners, with no
   wrapper scene.
+- **Auto Frame** (filter): gives a game or emulator capture a fixed frame and fits any resolution inside
+  it, so one scene serves every picture shape.
 - **Ramp Zoom** (filter): zooms smoothly into a point of a source and back out.
 - **Place Item** (scene filter): sends an item to one of nine screen positions or a saved spot, and can
   bring a linked item along.
@@ -134,6 +136,23 @@ round the corners.
 
 The source grows by exactly the room the shadow and panel need. Room added on the left or top shifts
 the picture by that amount inside the item; a hard shadow pointing down and right adds none.
+
+### Auto Frame
+
+Add **Auto Frame (StageKit)** as the first filter on a game, window or capture-card source. Set the
+frame's width and height once. From then on the source always has that size, and whatever the game or
+emulator outputs is fitted inside it, gliding to its new fit when the resolution changes.
+
+| Setting | What it does |
+| --- | --- |
+| Fit the picture | Whole picture visible, whole-number scale (crisp pixel art), fill the frame, or stretch |
+| Picture shape | As captured, or shown as 4:3, 16:9, 8:7, 3:2, 10:9, 16:10, 5:4, 1:1 or a custom shape |
+| Sit it | Where the picture sits in the frame when the shapes differ |
+| Sharp pixels | Turns smoothing off |
+| Glide time | How long the picture takes to settle after a resolution change |
+
+Because the source's size no longer changes, one scene can replace a scene per picture shape and the
+automation that switched between them. Put Shadow & Backdrop after it and the shadow follows the picture.
 
 ### Ramp Zoom
 

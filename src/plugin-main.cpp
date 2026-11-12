@@ -24,6 +24,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "api/vendor-api.hpp"
 #include "blur/ramp-blur.hpp"
 #include "dock/stagekit-dock.hpp"
+#include "frame/auto-frame.hpp"
 #include "placement/place-item.hpp"
 #include "placement/scene-tools.hpp"
 #include "shadow/shadow-backdrop.hpp"
@@ -84,6 +85,7 @@ bool obs_module_load(void)
 	stagekit::register_shadow_backdrop();
 	stagekit::register_place_item();
 	stagekit::register_ramp_zoom();
+	stagekit::register_auto_frame();
 	stagekit::register_show_hide();
 	stagekit::register_match_item();
 	stagekit::register_layout();
