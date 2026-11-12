@@ -309,10 +309,10 @@ Open it from *Docks → StageKit*. It works on the current scene (the preview sc
   those filters, or give it a hotkey.
 - *Save its current spot as a key* does the same for wherever the item is now: drag it where you want
   it in the preview first.
-- **Start image**: the thumbnail shows what the moving background uses. Turn the mouse wheel on it to
-  zoom the background in, drag it to choose the part shown, double-click to reset. This is one setting
-  for the whole collection. *Use another picture for the background…* gives the background a picture
-  of its own; *Background settings…* opens the Ambient Background's other settings.
+- **Start image**: a thumbnail of the picture. Turn the mouse wheel on it for a closer look, drag to
+  move around, double-click to reset; this changes only the thumbnail, never your scene. The start
+  image is also the moving background's picture. *Use another picture for the background…* gives the
+  background a picture of its own; *Background settings…* opens the Ambient Background's settings.
 - *Bring to front*, *Forward one*, *Back one* and *Send to back* change which items cover which.
 - *Add to this item* puts a Ramp Blur, Shadow & Backdrop, Ramp Zoom or Show/Hide Animation on the item
   and opens its filter window. Ramp Blur and Ramp Zoom are added switched off.

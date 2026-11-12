@@ -229,8 +229,12 @@ as a filter on the camera.
 
 So: `dock-canvas.*` is deleted; the dock follows `obs_sceneitem_selected`; its keys are Send To filters
 on the item's source; the thumbnail's wheel and drag set a collection-wide `AmbientView` (zoom, focus
-point, optional picture of the background's own), saved under `stagekit.ambient_*`. My reading of "zoom
-in on the thumbnail" as "frame the background" is an interpretation the owner has not confirmed.
+point, optional picture of the background's own), saved under `stagekit.ambient_*`.
+
+That reading of "zoom in on the thumbnail" was wrong. The owner: "zooming into the start image isn't
+supposed to zoom into it in the actual scene viewport, just in the dock." From 0.1.0-beta23 the wheel
+and drag change only the dock's thumbnail; `AmbientView` keeps only the optional picture, and its zoom
+and focus are pinned to neutral so a value saved by beta20 or beta21 has no effect.
 
 ## Scene collection rebuild
 

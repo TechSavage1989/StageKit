@@ -162,9 +162,9 @@ void set_ambient_view(const AmbientView &view)
 	{
 		std::lock_guard lock(g_mutex);
 		g_view = view;
-		g_view.zoom = std::clamp(view.zoom, 1.0, 8.0);
-		g_view.focus_x = std::clamp(view.focus_x, 0.0, 1.0);
-		g_view.focus_y = std::clamp(view.focus_y, 0.0, 1.0);
+		// Only the picture is a setting; the framing stays neutral.
+		g_view.zoom = 1.0;
+		g_view.focus_x = g_view.focus_y = 0.5;
 	}
 	g_revision++;
 }
