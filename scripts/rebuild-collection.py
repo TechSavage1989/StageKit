@@ -88,7 +88,7 @@ def carry(name):
 
 
 def item_json(name, pos, scale=(1.0, 1.0), bounds_type=0, bounds=(0.0, 0.0), bounds_align=0, crop=(0, 0, 0, 0),
-              visible=True, locked=False, item_id=1):
+              visible=True, locked=False, item_id=1, show=None, hide=None):
     return {
         "name": name, "source_uuid": new_sources[name]["uuid"], "visible": visible, "locked": locked, "rot": 0.0,
         "pos": {"x": float(pos[0]), "y": float(pos[1])}, "scale": {"x": float(scale[0]), "y": float(scale[1])},
@@ -96,7 +96,9 @@ def item_json(name, pos, scale=(1.0, 1.0), bounds_type=0, bounds=(0.0, 0.0), bou
         "bounds": {"x": float(bounds[0]), "y": float(bounds[1])}, "crop_left": crop[0], "crop_top": crop[2],
         "crop_right": crop[1], "crop_bottom": crop[3], "id": item_id, "group_item_backup": False,
         "scale_filter": "disable", "blend_method": "default", "blend_type": "normal",
-        "show_transition": {"duration": 0}, "hide_transition": {"duration": 0}, "private_settings": {},
+        # The fade an item had when shown or hidden is kept.
+        "show_transition": copy.deepcopy(show) if show else {"duration": 0},
+        "hide_transition": copy.deepcopy(hide) if hide else {"duration": 0}, "private_settings": {},
     }
 
 
@@ -239,7 +241,7 @@ def flatten(scene_name, t, shadow, out, depth=0):
                  "scale": (it["scale"]["x"] * t.sx, it["scale"]["y"] * t.sy),
                  "bounds_type": it.get("bounds_type", 0), "bounds_align": it.get("bounds_align", 0),
                  "bounds": (it["bounds"]["x"] * t.sx, it["bounds"]["y"] * t.sy), "crop": crop,
-                 "shadow": own_shadow}
+                 "shadow": own_shadow, "show": it.get("show_transition"), "hide": it.get("hide_transition")}
         grew = view_for_crop_scene(name) if kind == "scene" and crop_filters else None
         if grew:
             entry["scale"] = (entry["scale"][0] * grew[0], entry["scale"][1] * grew[1])
@@ -381,7 +383,7 @@ def build_scene(name):
         if e["shadow"]:
             shadowed.add(e["name"])
         items.append(item_json(e["name"], e["pos"], e["scale"], e["bounds_type"], e["bounds"], e["bounds_align"],
-                               e["crop"], e["visible"], e["locked"]))
+                               e["crop"], e["visible"], e["locked"], show=e.get("show"), hide=e.get("hide")))
     filters = scene_filters(name, [i["name"] for i in items])
     new_sources[name] = scene_json(name, items, filters=filters)
     report.append(f"  {len(items)} items placed directly in the scene")
