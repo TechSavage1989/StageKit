@@ -24,6 +24,7 @@ namespace {
 std::mutex g_mutex;
 std::string g_path;
 std::atomic<uint64_t> g_revision{1};
+std::atomic<uint64_t> g_choice{0};
 
 // Shows the start image at its own size. Choosing a file in this source's
 // settings sets the start image everywhere.
@@ -45,7 +46,7 @@ public:
 		// Only a deliberate change counts: an empty or unchanged field must
 		// not overwrite an image chosen elsewhere.
 		if (!chosen.empty() && chosen != last_chosen_)
-			set_start_image_path(chosen);
+			choose_start_image(chosen);
 		last_chosen_ = chosen;
 	}
 
@@ -131,6 +132,18 @@ void set_start_image_path(const std::string &path)
 	g_revision++;
 }
 
+void choose_start_image(const std::string &path)
+{
+	set_start_image_path(path);
+	if (!path.empty())
+		g_choice++;
+}
+
+uint64_t start_image_choice()
+{
+	return g_choice.load();
+}
+
 uint64_t start_image_revision()
 {
 	return g_revision.load();
@@ -197,7 +210,7 @@ void register_start_image()
 		obs_get_proc_handler(), "void stagekit_set_start_image(in string path)",
 		[](void *, calldata_t *cd) {
 			const char *path = calldata_string(cd, "path");
-			set_start_image_path(path ? path : "");
+			choose_start_image(path ? path : "");
 		},
 		nullptr);
 }

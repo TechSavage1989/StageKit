@@ -138,8 +138,9 @@ Choose the start image once, in the StageKit dock under *Start image*. The dock 
 of it. It is saved with the scene collection.
 
 - Add **Start Image (StageKit)** as a source wherever the picture itself should be shown.
-- In an Ambient Background, set *Background from* to *The start image* so the moving background uses the
-  same picture.
+- Every Ambient Background uses it as its picture automatically. A background you had pointed at an
+  image of its own switches over when you choose a start image; to keep one on its own picture, set its
+  *Background from* back to *An image* afterwards.
 
 Changing the start image updates both at once.
 
@@ -165,9 +166,14 @@ The settings are in five numbered groups:
 | --- | --- |
 | 1. Frame size | Width and height, or pick a scene and an item and press *Use that item's size* |
 | 2. Picture | Fit (whole picture, whole-number scale, fill, stretch), picture shape, where it sits, sharp pixels |
-| 3. Black bars | Trim automatically, trim a set amount, or leave them. Automatic trims only when the picture left is a standard game shape, so a game with a black background is not mistaken for bars |
+| 3. Black bars | Trim automatically, trim a set amount, or leave them. Automatic trims only when the picture left is a standard game shape, so a game with a black background is not mistaken for bars. *Hold a shape for* sets how long a different shape must be clearly on screen before the picture changes to it |
 | 4. Picture shape for each program | Shapes used at once when that program is captured (see below) |
 | 5. Movement | How long the picture takes to settle after a resolution change |
+
+**A shape, once found, is held.** When a window goes full-screen, or the resolution changes, the
+picture keeps the shape it had: there is no moment of showing the bars and trimming them again. A menu
+or pop-up drawn over the bars does not resize it. It changes only when another real picture shape has
+been clearly on screen for the hold time, or when a different program is captured.
 
 **Picture shape for each program.** Common emulators are known already: Snes9x, bsnes, mGBA,
 VisualBoyAdvance, Project64, DuckStation, ePSXe, Kega Fusion, BlastEm, Flycast, Redream, PPSSPP, BGB,

@@ -94,9 +94,13 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   every 0.4 s, one direction at a time; keep that cost in mind before adding more readbacks.
 - **Black bars and black game backgrounds look identical.** Auto Frame's automatic trim only trims more
   when the remaining picture is exactly a known console shape (`is_picture_shape`). Do not loosen that
-  to a brightness-only rule: the owner hit it with Snes9x (Aladdin's title screen) and the picture
-  resized repeatedly. The owner wants no manual steps when switching games; program rules and Picture
+  to a brightness-only rule, and do not drop the held shape (`held_ratio_`) on a resolution change: the
+  owner wants no resize when a window goes full-screen at the same shape. Background: the owner hit
+  it with Snes9x (Aladdin's title screen) and the picture resized repeatedly. The owner wants no manual steps when switching games; program rules and Picture
   Shape keys are the fallbacks.
+- **Long control labels push every control to the right** in OBS's filter window, which the owner
+  rejected. Keep a label under about 26 characters and put the rest in a tooltip
+  (`obs_property_set_long_description`).
 - **Trigger filters** (Send To, Place Item, Layout) switch themselves off after running and ignore the enabled
   state restored at load (`ready_`), so they do not fire when OBS starts.
 - **Auto Capture's Windows code is only compiled by CI and never run by the tests.** The tests feed it

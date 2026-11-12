@@ -191,6 +191,7 @@ private:
 	bool base_image_loaded_ = false;
 	std::string base_image_path_;
 	uint64_t start_revision_ = 0;
+	uint64_t start_choice_ = start_image_choice();
 	gs_image_file4_t overlay_image_ = {};
 	bool overlay_image_loaded_ = false;
 
@@ -351,7 +352,9 @@ void AmbientBackground::update(obs_data_t *settings)
 		settings_ = s;
 	}
 	// The picture is this source's own file, or the shared start image.
-	const std::string wanted = s.base_type == BaseType::StartImage ? start_image_path() : s.image;
+	// With no start image chosen yet, its own file stands in.
+	const std::string start = start_image_path();
+	const std::string wanted = s.base_type == BaseType::StartImage && !start.empty() ? start : s.image;
 	start_revision_ = start_image_revision();
 	if (wanted != base_image_path_ || (!wanted.empty() && !base_image_loaded_)) {
 		base_image_path_ = wanted;
@@ -433,6 +436,18 @@ void AmbientBackground::tick(float seconds)
 {
 	time_ += seconds;
 
+	// A start image picked by the owner becomes this background's picture
+	// without a visit to these settings.
+	if (start_image_choice() != start_choice_) {
+		start_choice_ = start_image_choice();
+		obs_data_t *settings = obs_source_get_settings(source_);
+		if (static_cast<BaseType>(obs_data_get_int(settings, "base_type")) == BaseType::Image) {
+			obs_data_set_int(settings, "base_type", (int)BaseType::StartImage);
+			obs_source_update(source_, settings);
+		}
+		obs_data_release(settings);
+	}
+
 	// Pick up a new start image as soon as one is chosen.
 	if (start_image_revision() != start_revision_) {
 		start_revision_ = start_image_revision();
@@ -442,7 +457,7 @@ void AmbientBackground::tick(float seconds)
 			uses_it = settings_.base_type == BaseType::StartImage;
 		}
 		const std::string path = start_image_path();
-		if (uses_it && path != base_image_path_) {
+		if (uses_it && !path.empty() && path != base_image_path_) {
 			base_image_path_ = path;
 			load_image(base_image_, base_image_loaded_, path);
 		}
@@ -832,7 +847,7 @@ obs_properties_t *get_properties(void *)
 
 void get_defaults(obs_data_t *settings)
 {
-	obs_data_set_default_int(settings, "base_type", (int)BaseType::Image);
+	obs_data_set_default_int(settings, "base_type", (int)BaseType::StartImage);
 	obs_data_set_default_int(settings, "live_mode", (int)LiveMode::None);
 	obs_data_set_default_double(settings, "live_opacity", 70.0);
 	obs_data_set_default_double(settings, "speed_x", 30.0);
