@@ -204,6 +204,30 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Bring-along flip and the shift after a move (0.1.0-beta40)
+
+The owner: a Send To that brings the Amuse widget along with the camera did not flip the widget below
+the camera at the top of the screen, and "when it's done moving, either the item or the bring along
+shifts a few pixels".
+
+- The generator wrote the camera's seven Send To filters with `flip_linked` false. It now writes true.
+  The owner's imported filters still have it off; the release notes tell them to tick it.
+- `PlaceItem::plan` judges the flip with `measure_item` (visible pixels) instead of the follower's box.
+- The shift: not reproduced. Two plausible causes were removed. The dock's snap-on-release watcher
+  counted any movement of a selected item as a drag (now only while a mouse button is down;
+  `stagekit_test_mouse_down` stands in for the mouse in tests), and `tick` applied the final step
+  twice. If the owner still sees it, ask whether *Snap on release* is ticked and whether the camera
+  has a shadow with *Sizes as they look on screen*.
+
+### Crash reports (same release)
+
+The owner said OBS "is crashing sometimes when working with the new filters". No crash report has
+been received (three requests are open: the draft 4 import, the copy-to-group crash, and this). Gaps
+closed on suspicion only: `items_showing` and `showing_holders` now return references, Fit Item holds
+its item for the tick, and Ramp Blur's `led_` has a mutex. Still unverified and worth suspecting if
+crashes continue: `PreviewMenu` adding to OBS's menu in its Show event, and `measure_item` rendering a
+source from the UI thread or from inside a tick.
+
 ## Rebuild draft 5: one game capture with Fit Item
 
 The owner asked for the collection regenerated with Fit Item set up. `scripts/rebuild-collection.py`

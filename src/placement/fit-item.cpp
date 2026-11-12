@@ -72,7 +72,19 @@ public:
 			std::lock_guard lock(mutex_);
 			s = settings_;
 		}
-		obs_sceneitem_t *item = find_item(parent_, s.item);
+		// Held for the length of this tick: OBS's window may remove the item
+		// at any moment from its own thread.
+		struct Held {
+			obs_sceneitem_t *item;
+			~Held()
+			{
+				if (item)
+					obs_sceneitem_release(item);
+			}
+		} held{find_item(parent_, s.item)};
+		obs_sceneitem_t *item = held.item;
+		if (item)
+			obs_sceneitem_addref(item);
 		obs_source_t *shown = item ? obs_sceneitem_get_source(item) : nullptr;
 		const double sw = shown ? obs_source_get_width(shown) : 0.0,
 			     sh = shown ? obs_source_get_height(shown) : 0.0;

@@ -142,6 +142,7 @@ private:
 	void lead_others(bool active);
 	// Captures switched on because they were live when this went on.
 	std::vector<obs_weak_source_t *> led_;
+	std::mutex led_mutex_; // the switch can be flipped from any thread
 	void on_enabled_changed(bool enabled);
 
 	static void hotkey_cb(void *data, obs_hotkey_id id, obs_hotkey_t *hotkey, bool pressed);
@@ -425,6 +426,7 @@ void RampBlur::lead_others(bool active)
 {
 	if (t_leading)
 		return;
+	std::lock_guard led_lock(led_mutex_);
 	obs_source_t *parent = obs_filter_get_parent(source_);
 	obs_data_t *settings = obs_source_get_settings(source_);
 	const std::vector<std::string> names = also_names(settings);

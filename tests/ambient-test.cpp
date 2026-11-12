@@ -3089,15 +3089,73 @@ int main(int argc, char **argv)
 					QCoreApplication::processEvents();
 					sleep_ms(50);
 				}
+				auto mouse = [](bool down) {
+					calldata_t cd = {};
+					calldata_set_bool(&cd, "down", down);
+					proc_handler_call(obs_get_proc_handler(), "stagekit_test_mouse_down", &cd);
+					calldata_free(&cd);
+				};
+				auto settle_snap = [&] {
+					for (int i = 0; i < 8; i++) {
+						QCoreApplication::processEvents();
+						sleep_ms(50);
+					}
+				};
+				// Moved without the mouse, as a Send To key moves it: left alone.
 				place(ibadge, 116, 250);
-				for (int i = 0; i < 12; i++) {
-					QCoreApplication::processEvents();
-					sleep_ms(50);
-				}
+				settle_snap();
+				CHECK(std::fabs(pos_of(ibadge).x - 116) < 0.6,
+				      "an item moved by a key or a filter is not snapped afterwards (x %.0f)",
+				      pos_of(ibadge).x);
+				// Dragged with the mouse and let go: snapped.
+				place(ibadge, 300, 250);
+				settle_snap();
+				mouse(true);
+				place(ibadge, 116, 250);
+				settle_snap();
+				mouse(false);
+				settle_snap();
 				bp = pos_of(ibadge);
 				CHECK(std::fabs(bp.x - 110) < 1.6,
-				      "'snap when I let go' settles a moved item by itself (x %.0f)", bp.x);
+				      "'snap when I let go' settles an item dragged with the mouse (x %.0f)", bp.x);
 				tick_box("arrangeLiveSnap", false);
+
+				// Bringing an item along: whether it has to flip is judged by what
+				// is drawn in it, not by the empty room in its box.
+				{
+					auto send = [&](double margin) {
+						place(ia, 300, 200); // 100x50
+						place(ibadge, 250,
+						      120); // drawn part 100x40 at 300, 150: 10 px above the block
+						obs_data_t *d = obs_data_create();
+						obs_data_set_string(d, "item", "Block A");
+						obs_data_set_string(d, "linked", "Padded Badge");
+						obs_data_set_int(d, "destination", 2); // top right
+						obs_data_set_double(d, "margin", margin);
+						obs_data_set_int(d, "duration_ms", 0);
+						obs_source_t *f = obs_source_create("stagekit_place_item", "Flip Test",
+										    d, nullptr);
+						obs_data_release(d);
+						obs_source_filter_add(as_source, f);
+						sleep_ms(150);
+						calldata_t cd = {};
+						proc_handler_call(obs_source_get_proc_handler(f), "trigger", &cd);
+						calldata_free(&cd);
+						sleep_ms(300);
+						obs_source_filter_remove(as_source, f);
+						obs_source_release(f);
+					};
+					send(60); // the block lands at y 60: the drawn badge fits above it at y 10
+					CHECK(std::fabs(pos_of(ia).y - 60) < 0.6 &&
+						      std::fabs(pos_of(ibadge).y + 20) < 1.6,
+					      "an item brought along stays on its side while what is drawn still fits (y %.0f)",
+					      pos_of(ibadge).y);
+					send(30); // at y 30 the drawn badge would be cut off above: it goes below
+					CHECK(std::fabs(pos_of(ia).y - 30) < 0.6 &&
+						      std::fabs(pos_of(ibadge).y - 60) < 1.6,
+					      "and flips to the other side when it would be cut off (y %.0f)",
+					      pos_of(ibadge).y);
+				}
 
 				// A group counts as one item: a block and a group line up with each other.
 				{

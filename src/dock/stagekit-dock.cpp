@@ -128,6 +128,9 @@ private:
 	QPointF last_;
 };
 
+// For the tests, which have no mouse: stands in for a button being held.
+bool g_test_mouse_down = false;
+
 // Adds a StageKit menu to the menu OBS opens on a right-click in its preview,
 // so lining up and snapping are at hand where the items are being moved. OBS
 // has no hook for that menu: this watches for it opening instead.
@@ -862,9 +865,11 @@ private:
 					std::equal(now.begin(), now.end(), watched_.begin(),
 						   [](const auto &a, const auto &b) { return a.first == b.first; });
 		const bool moved = same_items && now != watched_;
-		if (moved)
+		const bool button_up = !g_test_mouse_down && QGuiApplication::mouseButtons() == Qt::NoButton;
+		// Only a drag with the mouse counts. Items moved by a key, a filter or
+		// a Stream Deck button are where they were sent and must stay there.
+		if (moved && !button_up)
 			dragging_ = true;
-		const bool button_up = QGuiApplication::mouseButtons() == Qt::NoButton;
 		if (dragging_ && !moved && button_up) {
 			dragging_ = false;
 			const std::string before = transform_snapshot(scene);
@@ -1151,6 +1156,9 @@ void register_dock()
 	proc_handler_add(
 		obs_get_proc_handler(), "void stagekit_replay_arrange(in bool redo)",
 		[](void *, calldata_t *cd) { replay_last_arrange(calldata_bool(cd, "redo")); }, nullptr);
+	proc_handler_add(
+		obs_get_proc_handler(), "void stagekit_test_mouse_down(in bool down)",
+		[](void *, calldata_t *cd) { g_test_mouse_down = calldata_bool(cd, "down"); }, nullptr);
 	proc_handler_add(
 		obs_get_proc_handler(), "void stagekit_install_preview_menu()",
 		[](void *, calldata_t *) {

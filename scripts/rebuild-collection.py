@@ -393,7 +393,7 @@ def camera_spots():
     for name, (x, y) in spots.items():
         cam["filters"].append(make_filter("stagekit_send_to", f"Camera {name}", {
             "destination": 9, "saved_x": x, "saved_y": y, "restore_size": False, "where": 1,
-            "linked": "Amuse Square Camera", "flip_linked": False, "duration_ms": 500}, enabled=False))
+            "linked": "Amuse Square Camera", "flip_linked": True, "duration_ms": 500}, enabled=False))
     report.append(f"  Square Camera: {len(spots)} Send To filters (one per old camera position), "
                   "bringing 'Amuse Square Camera' along")
 
