@@ -649,6 +649,94 @@ int main(int argc, char **argv)
 		CHECK(std::fabs(p.x) < 0.6 && std::fabs(p.y + p.h - 600) < 0.6,
 		      "alignment sits it bottom-left (%.0f,%.0f)", p.x, p.y);
 
+		// "Use that item's size": the frame is copied from an item already laid out.
+		{
+			obs_scene_t *layout_scene = obs_scene_create("Old 4:3 Scene");
+			obs_source_t *old_src = obs_source_create("color_source", "Old Capture", nullptr, nullptr);
+			sized(old_src, 400, 300);
+			sleep_ms(80);
+			obs_sceneitem_t *old_item = obs_scene_add(layout_scene, old_src);
+			vec2 half;
+			vec2_set(&half, 0.5f, 0.5f);
+			obs_sceneitem_set_scale(old_item, &half); // shown at 200x150
+			obs_data_set_string(fs, "copy_scene", "Old 4:3 Scene");
+			obs_data_set_string(fs, "copy_item", "Old Capture");
+			obs_source_update(frame, fs);
+			sleep_ms(80);
+			obs_properties_t *props = obs_source_properties(frame);
+			obs_property_t *button = obs_properties_get(props, "copy_frame");
+			CHECK(button && obs_property_button_clicked(button, frame),
+			      "the filter has a 'use that item's size' button");
+			obs_properties_destroy(props);
+			sleep_ms(120);
+			CHECK(obs_source_get_width(game) == 200 && obs_source_get_height(game) == 150,
+			      "pressing it sets the frame to the size that item takes up (%ux%u)",
+			      obs_source_get_width(game), obs_source_get_height(game));
+			obs_source_release(old_src);
+			obs_scene_release(layout_scene);
+		}
+
+		// Black bars: a full-screen emulator shows a 4:3 picture inside 16:9.
+		if (argc >= 11) {
+			obs_data_t *bd = obs_data_create();
+			obs_data_set_string(bd, "file", argv[9]);
+			obs_source_t *barred = obs_source_create("image_source", "Full-screen Emulator", bd, nullptr);
+			obs_data_t *bf = obs_data_create();
+			obs_data_set_int(bf, "frame_width", 800);
+			obs_data_set_int(bf, "frame_height", 600);
+			obs_data_set_int(bf, "glide_ms", 100);
+			obs_data_set_double(bf, "trim_wait", 1.0);
+			obs_source_t *trimmer = obs_source_create("stagekit_auto_frame", "Auto Frame", bf, nullptr);
+			obs_source_filter_add(barred, trimmer);
+			auto look = [&](int ms) {
+				for (int i = 0; i < ms / 50; i++) {
+					render(barred, 800, 600); // bars are looked for while the source is drawn
+					sleep_ms(50);
+				}
+				calldata_t cd = {};
+				proc_handler_call(obs_source_get_proc_handler(trimmer), "get_trim", &cd);
+				const double tx = calldata_float(&cd, "x");
+				proc_handler_call(obs_source_get_proc_handler(trimmer), "get_picture", &cd);
+				Pic pic{calldata_float(&cd, "x"), calldata_float(&cd, "y"),
+					calldata_float(&cd, "width"), calldata_float(&cd, "height")};
+				calldata_free(&cd);
+				return std::make_pair(tx, pic);
+			};
+			auto [t0, p0] = look(300);
+			CHECK(t0 == 0.0 && is(p0, 0, 75, 800, 450), "bars are not trimmed straight away (trim %.0f)",
+			      t0);
+			auto [t1, p1] = look(3500);
+			CHECK(std::fabs(t1 - 80) <= 1.0 && is(p1, 0, 0, 800, 600),
+			      "after the wait, 80 px bars are trimmed and the 4:3 picture fills the frame (trim %.0f, %.0fx%.0f)",
+			      t1, p1.w, p1.h);
+
+			// A black screen teaches nothing: the trim is kept.
+			obs_data_set_string(bd, "file", argv[10]);
+			obs_source_update(barred, bd);
+			auto [t2, p2] = look(2500);
+			CHECK(std::fabs(t2 - 80) <= 1.0, "a fully black moment keeps the trim (trim %.0f)", t2);
+
+			// The picture now fills the whole capture: the trim is released quickly.
+			obs_data_set_string(bd, "file", live_image);
+			obs_source_update(barred, bd);
+			auto [t3, p3] = look(2500);
+			CHECK(t3 == 0.0 && is(p3, 0, 75, 800, 450),
+			      "when the picture grows into the bars the trim is released (trim %.0f)", t3);
+
+			obs_data_set_int(bf, "trim", 2);
+			obs_data_set_double(bf, "trim_x", 80);
+			obs_source_update(trimmer, bf);
+			auto [t4, p4] = look(600);
+			CHECK(std::fabs(t4 - 80) <= 0.5 && is(p4, 0, 0, 800, 600),
+			      "a set trim amount works too (trim %.0f)", t4);
+
+			obs_data_release(bd);
+			obs_data_release(bf);
+			obs_source_filter_remove(barred, trimmer);
+			obs_source_release(trimmer);
+			obs_source_release(barred);
+		}
+
 		obs_data_release(fs);
 		obs_source_filter_remove(game, frame);
 		obs_source_release(frame);
