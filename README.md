@@ -13,8 +13,9 @@ the StageKit Stream Deck plugin, or obs-websocket.
 
 ## Ramp Blur
 
-Add **Ramp Blur (StageKit)** as a filter on any source or scene. It stays
-enabled. While the blur is off it is skipped entirely and costs nothing.
+Add **Ramp Blur (StageKit)** as a filter on any source or scene. The filter's own on/off switch is the
+blur: turning it on ramps the blur in, turning it off ramps it out and then switches the filter off, so
+it costs nothing while off.
 
 ![Every blur type at three strengths](docs/images/blur-types-game.png)
 
@@ -25,13 +26,17 @@ enabled. While the blur is off it is skipped entirely and costs nothing.
 | Ramp style | *Grow blur strength* (sharp → blurred) or *Fade blurred image in* (cross-fade) |
 | Ramp in / out time | Separate durations, 0–5000 ms. 0 = instant |
 | Easing | Linear, Sine, Quad, Cubic, Quart, Quint, Expo, Circular, Back, Elastic, Bounce × in / out / in-and-out |
-| When OBS starts | Not blurred, blurred, or remember the last state |
+| Include in 'Blur All' | Whether the global Blur All hotkeys affect this filter |
 
 Triggering it:
 
+- **Stream Deck, with Elgato's OBS Studio plugin**: add a *Filter* key and pick the source and the Ramp
+  Blur filter. The key ramps the blur and its light follows the state. No extra plugin is needed.
+- **The eye icon** next to the filter in OBS does the same.
 - **Hotkeys**: *Settings → Hotkeys*, under the source: `StageKit: Blur Toggle / On / Off (<filter name>)`.
-  Renaming the filter keeps your bindings.
-- **Stream Deck today**: point a Stream Deck *Hotkey* key at those hotkeys (e.g. F13–F24).
+  Renaming the filter keeps your bindings. A Stream Deck *Hotkey* key can press these (e.g. F13–F24).
+- **Blur All**: `StageKit: Blur All Toggle / On / Off` in the top section of *Settings → Hotkeys* drives
+  every Ramp Blur at once (a privacy key).
 - **obs-websocket**: `CallVendorRequest` with vendor `StageKit` (see below).
 - **Scripts**: the filter has `blur_on`, `blur_off`, `blur_toggle` and `get_state` procs.
 
@@ -62,6 +67,7 @@ used. `durationMs` optionally overrides the ramp time for that one call.
 | `ListBlurFilters` | – | `filters: [{sourceName, filterName, active, level, blurType}]` |
 | `BlurOn` / `BlurOff` / `BlurToggle` | `sourceName`, `filterName?`, `durationMs?` | the filter's new state |
 | `SetBlur` | `sourceName`, `filterName?`, `active`, `durationMs?` | the filter's new state |
+| `BlurAll` | `mode?`: `on`, `off` or `toggle` (default) | `active` |
 
 Every response has `success` and, on failure, `error`. A `BlurChanged` vendor event
 (`sourceName`, `filterName`, `active`) is emitted whenever a blur turns on or off, so a Stream Deck key

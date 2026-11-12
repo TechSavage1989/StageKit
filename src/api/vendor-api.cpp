@@ -33,7 +33,8 @@ namespace {
 
 std::atomic<obs_websocket_vendor> g_vendor{nullptr};
 
-const char *const kRequests[] = {"GetVersion", "ListBlurFilters", "BlurOn", "BlurOff", "BlurToggle", "SetBlur"};
+const char *const kRequests[] = {"GetVersion", "ListBlurFilters", "BlurOn", "BlurOff",
+				 "BlurToggle", "SetBlur",         "BlurAll"};
 
 void fail(obs_data_t *response, const char *message)
 {
@@ -169,6 +170,24 @@ void req_set_blur(obs_data_t *request, obs_data_t *response, void *)
 	with_blur(request, response, [&](RampBlur *b) { ramp_blur_set_active(b, active, duration_from(request)); });
 }
 
+// "mode": "on", "off" or "toggle" (default). Affects every Ramp Blur with
+// "Include in Blur All" ticked.
+void req_blur_all(obs_data_t *request, obs_data_t *response, void *)
+{
+	const char *mode = obs_data_get_string(request, "mode");
+	BlurAllMode m = BlurAllMode::Toggle;
+	if (strcmp(mode, "on") == 0)
+		m = BlurAllMode::On;
+	else if (strcmp(mode, "off") == 0)
+		m = BlurAllMode::Off;
+	else if (*mode && strcmp(mode, "toggle") != 0) {
+		fail(response, "mode must be on, off or toggle");
+		return;
+	}
+	obs_data_set_bool(response, "active", ramp_blur_set_all(m));
+	obs_data_set_bool(response, "success", true);
+}
+
 } // namespace
 
 void vendor_api_register()
@@ -190,6 +209,7 @@ void vendor_api_register()
 		{"GetVersion", req_get_version}, {"ListBlurFilters", req_list_blur_filters},
 		{"BlurOn", req_blur_on},         {"BlurOff", req_blur_off},
 		{"BlurToggle", req_blur_toggle}, {"SetBlur", req_set_blur},
+		{"BlurAll", req_blur_all},
 	};
 	for (const auto &r : requests) {
 		if (!obs_websocket_vendor_register_request(vendor, r.name, r.fn, nullptr))

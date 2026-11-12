@@ -26,6 +26,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <mutex>
 #include <set>
@@ -49,12 +50,6 @@ enum class RampStyle : int {
 	Fade = 1, // full-strength blur cross-fades over the original
 };
 
-enum class StartState : int {
-	Off = 0,
-	On = 1,
-	Remember = 2,
-};
-
 constexpr int kMaxKawaseLevels = 8;
 constexpr double kMaxStrength = 250.0;
 
@@ -69,7 +64,7 @@ struct Settings {
 	double ramp_out_s = 0.4;
 	EaseCurve curve = EaseCurve::Cubic;
 	EaseMode mode = EaseMode::InOut;
-	StartState start = StartState::Off;
+	bool include_in_all = true;
 };
 
 std::mutex g_registry_mutex;
@@ -113,6 +108,11 @@ public:
 		std::lock_guard lock(mutex_);
 		return settings_.type;
 	}
+	bool include_in_all() const
+	{
+		std::lock_guard lock(mutex_);
+		return settings_.include_in_all;
+	}
 	obs_source_t *source() const { return source_; }
 
 private:
@@ -132,10 +132,13 @@ private:
 
 	void register_hotkeys(obs_source_t *parent);
 	void unregister_hotkeys();
-	void remember_state(bool active);
+	bool begin_ramp(bool active, double duration_ms);
+	void set_enabled_quietly(bool enabled);
+	void on_enabled_changed(bool enabled);
 
 	static void hotkey_cb(void *data, obs_hotkey_id id, obs_hotkey_t *hotkey, bool pressed);
 	static void rename_cb(void *data, calldata_t *cd);
+	static void enable_cb(void *data, calldata_t *cd);
 
 	obs_source_t *source_;
 	mutable std::mutex mutex_;
@@ -143,6 +146,10 @@ private:
 	bool target_active_ = false;
 	double level_ = 0.0;
 	Tween tween_;
+	// The filter's own on/off switch (eye icon, Stream Deck "Filter" key,
+	// obs-websocket SetSourceFilterEnabled) is the blur's on/off state.
+	bool initialized_ = false;
+	std::atomic<bool> reconnect_enable_signal_{false};
 
 	obs_source_t *parent_ = nullptr;
 	obs_hotkey_id hk_on_ = OBS_INVALID_HOTKEY_ID;
@@ -211,15 +218,10 @@ RampBlur::RampBlur(obs_data_t *settings, obs_source_t *source) : source_(source)
 
 	update(settings);
 
-	// Start state is applied once, when the filter is created or loaded.
-	const auto start = static_cast<StartState>(obs_data_get_int(settings, "start_state"));
-	const bool start_on = start == StartState::On ||
-			      (start == StartState::Remember && obs_data_get_bool(settings, "active"));
-	target_active_ = start_on;
-	level_ = start_on ? 1.0 : 0.0;
-	tween_.start(level_, level_, 0.0, EaseCurve::Linear, EaseMode::InOut);
-
+	// The starting level is taken from the filter's enabled state on the
+	// first tick (OBS restores that state just after creating the filter).
 	signal_handler_connect(obs_source_get_signal_handler(source_), "rename", rename_cb, this);
+	signal_handler_connect(obs_source_get_signal_handler(source_), "enable", enable_cb, this);
 
 	proc_handler_t *ph = obs_source_get_proc_handler(source_);
 	proc_handler_add(
@@ -255,6 +257,7 @@ RampBlur::~RampBlur()
 		g_registry.erase(this);
 	}
 	signal_handler_disconnect(obs_source_get_signal_handler(source_), "rename", rename_cb, this);
+	signal_handler_disconnect(obs_source_get_signal_handler(source_), "enable", enable_cb, this);
 	unregister_hotkeys();
 
 	obs_enter_graphics();
@@ -281,7 +284,7 @@ void RampBlur::update(obs_data_t *settings)
 	s.ramp_out_s = std::max<long long>(0, obs_data_get_int(settings, "ramp_out_ms")) / 1000.0;
 	s.curve = static_cast<EaseCurve>(obs_data_get_int(settings, "ease_curve"));
 	s.mode = static_cast<EaseMode>(obs_data_get_int(settings, "ease_mode"));
-	s.start = static_cast<StartState>(obs_data_get_int(settings, "start_state"));
+	s.include_in_all = obs_data_get_bool(settings, "include_in_all");
 
 	std::lock_guard lock(mutex_);
 	settings_ = s;
@@ -289,44 +292,126 @@ void RampBlur::update(obs_data_t *settings)
 
 // ---------------------------------------------------------------- control
 
-void RampBlur::set_active(bool active, double duration_ms)
+namespace {
+// Set while this thread is changing a filter's enabled state itself, so the
+// resulting "enable" signal is not mistaken for the user flipping the switch.
+thread_local bool t_changing_enabled = false;
+} // namespace
+
+// Starts the ramp. Returns true if the on/off target changed.
+bool RampBlur::begin_ramp(bool active, double duration_ms)
 {
-	bool changed;
-	{
-		std::lock_guard lock(mutex_);
-		changed = active != target_active_;
-		target_active_ = active;
-		const double target = active ? 1.0 : 0.0;
-		const double full = duration_ms >= 0.0 ? duration_ms / 1000.0
-						       : (active ? settings_.ramp_in_s : settings_.ramp_out_s);
-		// Reversing part-way through a ramp only takes the remaining distance,
-		// so the speed stays consistent.
-		const double distance = std::clamp(std::fabs(target - level_), 0.0, 1.0);
-		tween_.start(level_, target, full * distance, settings_.curve, settings_.mode);
-		if (tween_.duration <= 0.0)
-			level_ = target;
+	std::lock_guard lock(mutex_);
+	if (!initialized_) {
+		initialized_ = true;
+		level_ = obs_source_enabled(source_) ? 1.0 : 0.0;
+		target_active_ = level_ > 0.0;
 	}
-	if (changed) {
-		remember_state(active);
-		vendor_emit_blur_changed(source_, active);
-	}
+	const bool changed = active != target_active_;
+	target_active_ = active;
+	const double target = active ? 1.0 : 0.0;
+	const double full = duration_ms >= 0.0 ? duration_ms / 1000.0
+					       : (active ? settings_.ramp_in_s : settings_.ramp_out_s);
+	// Reversing part-way through a ramp only takes the remaining distance,
+	// so the speed stays consistent.
+	const double distance = std::clamp(std::fabs(target - level_), 0.0, 1.0);
+	tween_.start(level_, target, full * distance, settings_.curve, settings_.mode);
+	if (tween_.duration <= 0.0)
+		level_ = target;
+	return changed;
 }
 
-void RampBlur::remember_state(bool active)
+void RampBlur::set_enabled_quietly(bool enabled)
 {
-	obs_data_t *settings = obs_source_get_settings(source_);
-	if (!settings)
+	if (obs_source_enabled(source_) == enabled)
 		return;
-	if (static_cast<StartState>(obs_data_get_int(settings, "start_state")) == StartState::Remember)
-		obs_data_set_bool(settings, "active", active);
-	obs_data_release(settings);
+	t_changing_enabled = true;
+	obs_source_set_enabled(source_, enabled);
+	t_changing_enabled = false;
+}
+
+// Hotkeys, obs-websocket vendor requests and scripts come through here.
+void RampBlur::set_active(bool active, double duration_ms)
+{
+	const bool changed = begin_ramp(active, duration_ms);
+	// Ramping in needs the filter enabled right away. Ramping out keeps it
+	// enabled until the ramp finishes; tick() then switches it off.
+	if (active)
+		set_enabled_quietly(true);
+	if (changed)
+		vendor_emit_blur_changed(source_, active);
+}
+
+void RampBlur::enable_cb(void *data, calldata_t *cd)
+{
+	if (!t_changing_enabled)
+		static_cast<RampBlur *>(data)->on_enabled_changed(calldata_bool(cd, "enabled"));
+}
+
+// The user (or a Stream Deck "Filter" key, or obs-websocket) flipped the
+// filter's switch.
+void RampBlur::on_enabled_changed(bool enabled)
+{
+	bool closing;
+	double level;
+	{
+		std::lock_guard lock(mutex_);
+		if (!initialized_)
+			return; // first tick picks the state up
+		closing = !target_active_ && level_ > 0.0;
+		level = level_;
+	}
+
+	if (enabled) {
+		if (begin_ramp(true, -1.0))
+			vendor_emit_blur_changed(source_, true);
+		return;
+	}
+
+	if (closing) {
+		// Switched "off" again while already ramping out: the key was
+		// pressed a second time, so bring the blur back.
+		if (begin_ramp(true, -1.0))
+			vendor_emit_blur_changed(source_, true);
+		set_enabled_quietly(true);
+		return;
+	}
+
+	const bool changed = begin_ramp(false, -1.0);
+	// A disabled filter is not drawn at all, so stay enabled while the blur
+	// ramps out; tick() switches the filter off when it reaches zero.
+	if (level > 0.0 && this->level() > 0.0)
+		set_enabled_quietly(true);
+	if (changed)
+		vendor_emit_blur_changed(source_, false);
 }
 
 void RampBlur::tick(float seconds)
 {
-	std::lock_guard lock(mutex_);
-	// Back/Elastic curves overshoot; a negative blur makes no sense.
-	level_ = std::max(0.0, tween_.advance(seconds));
+	// Keep our "enable" handler last in the list so tools that mirror the
+	// filter state (obs-websocket, Stream Deck) see our correction after
+	// the change that caused it. They connect when the filter is added.
+	if (reconnect_enable_signal_.exchange(false)) {
+		signal_handler_t *sh = obs_source_get_signal_handler(source_);
+		signal_handler_disconnect(sh, "enable", enable_cb, this);
+		signal_handler_connect(sh, "enable", enable_cb, this);
+	}
+
+	bool finished_off;
+	{
+		std::lock_guard lock(mutex_);
+		if (!initialized_) {
+			initialized_ = true;
+			level_ = obs_source_enabled(source_) ? 1.0 : 0.0;
+			target_active_ = level_ > 0.0;
+			tween_.start(level_, level_, 0.0, EaseCurve::Linear, EaseMode::InOut);
+		}
+		// Back/Elastic curves overshoot; a negative blur makes no sense.
+		level_ = std::max(0.0, tween_.advance(seconds));
+		finished_off = !target_active_ && !tween_.running() && level_ <= 0.0;
+	}
+	if (finished_off)
+		set_enabled_quietly(false);
 }
 
 // ---------------------------------------------------------------- hotkeys
@@ -375,6 +460,7 @@ void RampBlur::unregister_hotkeys()
 void RampBlur::attach(obs_source_t *parent)
 {
 	register_hotkeys(parent);
+	reconnect_enable_signal_ = true;
 }
 
 void RampBlur::detach()
@@ -693,11 +779,7 @@ obs_properties_t *get_properties(void *data)
 	add_easing_properties(ramp, "");
 	obs_properties_add_group(props, "ramp_group", obs_module_text("RampBlur.RampGroup"), OBS_GROUP_NORMAL, ramp);
 
-	obs_property_t *start = obs_properties_add_list(props, "start_state", obs_module_text("RampBlur.StartState"),
-							OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
-	obs_property_list_add_int(start, obs_module_text("RampBlur.StartState.Off"), (int)StartState::Off);
-	obs_property_list_add_int(start, obs_module_text("RampBlur.StartState.On"), (int)StartState::On);
-	obs_property_list_add_int(start, obs_module_text("RampBlur.StartState.Remember"), (int)StartState::Remember);
+	obs_properties_add_bool(props, "include_in_all", obs_module_text("RampBlur.IncludeInAll"));
 
 	obs_properties_add_button2(
 		props, "btn_toggle", obs_module_text("RampBlur.Button.Toggle"),
@@ -740,8 +822,7 @@ void get_defaults(obs_data_t *settings)
 	obs_data_set_default_int(settings, "ramp_out_ms", 400);
 	obs_data_set_default_int(settings, "ease_curve", (int)EaseCurve::Cubic);
 	obs_data_set_default_int(settings, "ease_mode", (int)EaseMode::InOut);
-	obs_data_set_default_int(settings, "start_state", (int)StartState::Off);
-	obs_data_set_default_bool(settings, "active", false);
+	obs_data_set_default_bool(settings, "include_in_all", true);
 }
 
 } // namespace
@@ -820,6 +901,23 @@ void ramp_blur_toggle(RampBlur *blur)
 {
 	if (blur)
 		blur->set_active(!blur->active(), -1.0);
+}
+
+bool ramp_blur_set_all(BlurAllMode mode)
+{
+	bool any_active = false;
+	if (mode == BlurAllMode::Toggle) {
+		for_each_ramp_blur([&](RampBlur *blur, obs_source_t *filter) {
+			if (blur->include_in_all() && obs_filter_get_parent(filter) && blur->active())
+				any_active = true;
+		});
+	}
+	const bool active = mode == BlurAllMode::On || (mode == BlurAllMode::Toggle && !any_active);
+	for_each_ramp_blur([&](RampBlur *blur, obs_source_t *filter) {
+		if (blur->include_in_all() && obs_filter_get_parent(filter))
+			blur->set_active(active, -1.0);
+	});
+	return active;
 }
 
 bool ramp_blur_is_active(RampBlur *blur)

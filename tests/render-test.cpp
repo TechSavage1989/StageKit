@@ -309,8 +309,34 @@ int main(int argc, char **argv)
 		obs_data_release(fs);
 		obs_source_filter_add(img, filter);
 
+		// The filter's own on/off switch is the blur state. This is what the
+		// eye icon and the Stream Deck OBS plugin's Filter key flip.
 		bool active = true;
-		CHECK(get_level(filter, &active) == 0.0 && !active, "starts off (start_state default)");
+		sleep_ms(60);
+		CHECK(get_level(filter, &active) == 1.0 && active, "a newly added (enabled) filter starts blurred");
+		obs_source_set_enabled(filter, false);
+		sleep_ms(100);
+		double during = get_level(filter, &active);
+		CHECK(!active && during > 0.3 && during < 0.9 && obs_source_enabled(filter),
+		      "switching the filter off ramps out instead of cutting (level %.2f, still drawn)", during);
+		sleep_ms(350);
+		CHECK(get_level(filter) == 0.0 && !obs_source_enabled(filter),
+		      "after the ramp-out the filter really is off");
+		obs_source_set_enabled(filter, true);
+		sleep_ms(300);
+		during = get_level(filter, &active);
+		CHECK(active && during > 0.3 && during < 0.7, "switching the filter on ramps in (level %.2f)", during);
+		sleep_ms(400);
+		obs_source_set_enabled(filter, false);
+		sleep_ms(100);
+		obs_source_set_enabled(filter, false); // second press while ramping out
+		sleep_ms(450);
+		CHECK(get_level(filter, &active) == 1.0 && active && obs_source_enabled(filter),
+		      "pressing again during the ramp-out brings the blur back");
+		obs_source_set_enabled(filter, false);
+		sleep_ms(450);
+		CHECK(get_level(filter, &active) == 0.0 && !active, "off again");
+
 		const std::vector<uint8_t> off_px = render(img, w, h);
 		CHECK(mean_abs_diff(off_px, original) < 0.01, "off = pass-through (diff %.4f)",
 		      mean_abs_diff(off_px, original));
@@ -329,11 +355,13 @@ int main(int argc, char **argv)
 		CHECK(!active && std::fabs(right_after - mid) < 0.05,
 		      "reversing mid-ramp continues from current level (%.3f -> %.3f)", mid, right_after);
 		sleep_ms(400);
-		CHECK(get_level(filter) == 0.0, "ramp-out finished within its remaining time");
+		CHECK(get_level(filter) == 0.0 && !obs_source_enabled(filter),
+		      "ramp-out finished within its remaining time and switched the filter off");
 
 		call_proc(filter, "blur_on", &cd);
 		sleep_ms(750);
-		CHECK(get_level(filter) == 1.0, "full ramp-in reaches 1.0");
+		CHECK(get_level(filter) == 1.0 && obs_source_enabled(filter),
+		      "full ramp-in reaches 1.0 and the filter shows as on");
 		calldata_free(&cd);
 	}
 

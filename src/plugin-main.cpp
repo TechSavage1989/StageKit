@@ -17,6 +17,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 */
 
 #include <obs-module.h>
+#include <obs-frontend-api.h>
 #include <plugin-support.h>
 
 #include "api/vendor-api.hpp"
@@ -24,6 +25,46 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 OBS_DECLARE_MODULE()
 OBS_MODULE_USE_DEFAULT_LOCALE(PLUGIN_NAME, "en-US")
+
+namespace {
+
+// Global "Blur All" hotkeys (Settings → Hotkeys, top section). Their key
+// bindings are stored with the scene collection.
+struct GlobalHotkey {
+	const char *name;
+	const char *text;
+	stagekit::BlurAllMode mode;
+	obs_hotkey_id id = OBS_INVALID_HOTKEY_ID;
+};
+
+GlobalHotkey g_hotkeys[] = {
+	{"stagekit.blur_all.toggle", "Hotkey.BlurAllToggle", stagekit::BlurAllMode::Toggle},
+	{"stagekit.blur_all.on", "Hotkey.BlurAllOn", stagekit::BlurAllMode::On},
+	{"stagekit.blur_all.off", "Hotkey.BlurAllOff", stagekit::BlurAllMode::Off},
+};
+
+void blur_all_hotkey(void *data, obs_hotkey_id, obs_hotkey_t *, bool pressed)
+{
+	if (pressed)
+		stagekit::ramp_blur_set_all(static_cast<GlobalHotkey *>(data)->mode);
+}
+
+void frontend_save_load(obs_data_t *save_data, bool saving, void *)
+{
+	for (GlobalHotkey &hk : g_hotkeys) {
+		if (saving) {
+			obs_data_array_t *bindings = obs_hotkey_save(hk.id);
+			obs_data_set_array(save_data, hk.name, bindings);
+			obs_data_array_release(bindings);
+		} else {
+			obs_data_array_t *bindings = obs_data_get_array(save_data, hk.name);
+			obs_hotkey_load(hk.id, bindings);
+			obs_data_array_release(bindings);
+		}
+	}
+}
+
+} // namespace
 
 MODULE_EXPORT const char *obs_module_description(void)
 {
@@ -33,6 +74,9 @@ MODULE_EXPORT const char *obs_module_description(void)
 bool obs_module_load(void)
 {
 	stagekit::register_ramp_blur();
+	for (GlobalHotkey &hk : g_hotkeys)
+		hk.id = obs_hotkey_register_frontend(hk.name, obs_module_text(hk.text), blur_all_hotkey, &hk);
+	obs_frontend_add_save_callback(frontend_save_load, nullptr);
 	obs_log(LOG_INFO, "plugin loaded successfully (version %s)", PLUGIN_VERSION);
 	return true;
 }
@@ -46,6 +90,9 @@ void obs_module_post_load(void)
 
 void obs_module_unload(void)
 {
+	obs_frontend_remove_save_callback(frontend_save_load, nullptr);
+	for (GlobalHotkey &hk : g_hotkeys)
+		obs_hotkey_unregister(hk.id);
 	stagekit::vendor_api_unregister();
 	obs_log(LOG_INFO, "plugin unloaded");
 }

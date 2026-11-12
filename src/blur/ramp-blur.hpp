@@ -34,6 +34,12 @@ void for_each_ramp_blur(const std::function<void(RampBlur *, obs_source_t *filte
 // duration_ms < 0 uses the filter's configured ramp time.
 void ramp_blur_set_active(RampBlur *blur, bool active, double duration_ms = -1.0);
 void ramp_blur_toggle(RampBlur *blur);
+
+// "Blur All": drives every Ramp Blur that has "Include in Blur All" ticked.
+// Toggle turns everything off if any is on, otherwise everything on.
+// Returns the resulting state.
+enum class BlurAllMode { Off, On, Toggle };
+bool ramp_blur_set_all(BlurAllMode mode);
 bool ramp_blur_is_active(RampBlur *blur);
 double ramp_blur_level(RampBlur *blur);
 const char *ramp_blur_type_name(RampBlur *blur);
