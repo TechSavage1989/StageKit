@@ -204,6 +204,17 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Rebuild draft 5: one game capture with Fit Item
+
+The owner asked for the collection regenerated with Fit Item set up. `scripts/rebuild-collection.py`
+now makes a single game source, *Game Capture Framed* (Auto Frame as *Just the picture*, with the
+shadow and the switched-off Ramp Blur), and gives every game scene a *Fit the game* Fit Item filter:
+the whole screen with a 90 px margin where the old capture covered the canvas, and the old game box
+(1754x1268 at 30, 86) with no margin elsewhere. The 2560x1440 "Game Capture" source is gone.
+Draft 5 is generated from the owner's original export, so nothing they changed by hand in OBS after
+importing draft 4b is in it; they were told. It loads in `tests/collection-loadcheck.cpp`. Show/hide
+fades are still left out.
+
 ## One capture for every scene: Fit Item (0.1.0-beta39)
 
 The owner wants the same "Game Capture Framed" in the full-screen Game-Capture-Scene and in the
