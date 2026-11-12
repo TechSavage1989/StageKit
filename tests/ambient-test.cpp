@@ -654,6 +654,7 @@ int main(int argc, char **argv)
 			obs_data_set_double(sd, "softness", 0);
 			obs_data_set_double(sd, "offset_x", 0);
 			obs_data_set_double(sd, "offset_y", 0);
+			obs_data_set_bool(sd, "screen_px", false); // this part measures in the source's own pixels
 			obs_source_t *shade = obs_source_create("stagekit_shadow_backdrop", "Shadow", sd, nullptr);
 			obs_source_filter_add(card, shade);
 			sleep_ms(150);
@@ -760,6 +761,59 @@ int main(int argc, char **argv)
 			obs_data_release(vd);
 			obs_source_release(view);
 			obs_source_release(camera);
+		}
+
+		// A 20 px shadow must look 20 px whatever size the item is drawn at.
+		{
+			auto make = [](const char *name) {
+				obs_data_t *d = obs_data_create();
+				obs_data_set_int(d, "width", 400);
+				obs_data_set_int(d, "height", 200);
+				obs_source_t *src = obs_source_create("color_source", name, d, nullptr);
+				obs_data_release(d);
+				return src;
+			};
+			obs_source_t *small = make("Shown Half Size");
+			obs_source_t *big = make("Shown Double Size");
+			obs_scene_t *sc = obs_scene_create("Shadow Size Scene");
+			vec2 v;
+			obs_sceneitem_t *small_item = obs_scene_add(sc, small);
+			vec2_set(&v, 0.5f, 0.5f);
+			obs_sceneitem_set_scale(small_item, &v);
+			obs_sceneitem_t *big_item = obs_scene_add(sc, big);
+			vec2_set(&v, 2.0f, 2.0f);
+			obs_sceneitem_set_scale(big_item, &v);
+			obs_source_t *before = obs_get_output_source(0);
+			obs_set_output_source(0, obs_scene_get_source(sc));
+			obs_data_t *sd = obs_data_create();
+			obs_data_set_double(sd, "softness", 0);
+			obs_data_set_double(sd, "offset_x", 20);
+			obs_data_set_double(sd, "offset_y", 20);
+			obs_source_t *shade_small =
+				obs_source_create("stagekit_shadow_backdrop", "Shadow", sd, nullptr);
+			obs_source_t *shade_big = obs_source_create("stagekit_shadow_backdrop", "Shadow", sd, nullptr);
+			obs_source_filter_add(small, shade_small);
+			obs_source_filter_add(big, shade_big);
+			sleep_ms(700);
+			// On screen: (source width - 400) x the item's scale.
+			const double small_on_screen = (obs_source_get_width(small) - 400.0) * 0.5;
+			const double big_on_screen = (obs_source_get_width(big) - 400.0) * 2.0;
+			CHECK(std::fabs(small_on_screen - 20) <= 1.0 && std::fabs(big_on_screen - 20) <= 1.0,
+			      "a 20 px shadow is 20 px on screen at half size and at double size (%.0f and %.0f)",
+			      small_on_screen, big_on_screen);
+			vec2 sp;
+			obs_sceneitem_get_scale(small_item, &sp);
+			CHECK(std::fabs(sp.x - 0.5) < 0.001, "and the item keeps its size");
+			obs_set_output_source(0, before);
+			obs_source_release(before);
+			obs_source_filter_remove(small, shade_small);
+			obs_source_filter_remove(big, shade_big);
+			obs_source_release(shade_small);
+			obs_source_release(shade_big);
+			obs_data_release(sd);
+			obs_scene_release(sc);
+			obs_source_release(small);
+			obs_source_release(big);
 		}
 
 		printf("\n[show/hide animation]\n");

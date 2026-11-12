@@ -50,6 +50,9 @@ struct Settings {
 	double backdrop_pad = 12.0;
 	double radius = 0.0;
 	bool hide_source = false;
+	// Sizes are meant as they look on screen: an item drawn at half size
+	// gets twice the numbers, so 20 px of shadow is 20 px in the picture.
+	bool screen_px = true;
 };
 
 struct Padding {
@@ -217,6 +220,57 @@ std::vector<obs_sceneitem_t *> items_showing(obs_source_t *wanted)
 	return out;
 }
 
+// How big the source is drawn in the scene on screen (1 = its own size),
+// looking through groups and nested scenes; failing that, in any scene.
+struct ShownScale {
+	obs_source_t *wanted;
+	double sx, sy; // scale gathered on the way down
+	double *out_x, *out_y;
+	bool *found;
+	int depth;
+};
+
+void item_draw_scale(obs_sceneitem_t *item, double &sx, double &sy)
+{
+	vec2 scale, bounds;
+	obs_sceneitem_get_scale(item, &scale);
+	obs_sceneitem_get_bounds(item, &bounds);
+	sx = scale.x;
+	sy = scale.y;
+	const obs_bounds_type type = obs_sceneitem_get_bounds_type(item);
+	obs_source_t *source = obs_sceneitem_get_source(item);
+	obs_sceneitem_crop crop;
+	obs_sceneitem_get_crop(item, &crop);
+	const double w = (double)obs_source_get_width(source) - crop.left - crop.right;
+	const double h = (double)obs_source_get_height(source) - crop.top - crop.bottom;
+	if (type != OBS_BOUNDS_NONE && bounds.x > 0.0f && bounds.y > 0.0f && w > 0.0 && h > 0.0)
+		bounds_scale(type, bounds.x, bounds.y, w, h, sx, sy);
+}
+
+bool find_shown_scale(obs_scene_t *, obs_sceneitem_t *item, void *param)
+{
+	auto *f = static_cast<ShownScale *>(param);
+	if (*f->found || !obs_sceneitem_visible(item))
+		return true;
+	double sx = 1.0, sy = 1.0;
+	item_draw_scale(item, sx, sy);
+	obs_source_t *source = obs_sceneitem_get_source(item);
+	if (source == f->wanted) {
+		*f->out_x = std::fabs(f->sx * sx);
+		*f->out_y = std::fabs(f->sy * sy);
+		*f->found = true;
+		return true;
+	}
+	if (f->depth >= 8)
+		return true;
+	ShownScale inner{f->wanted, f->sx * sx, f->sy * sy, f->out_x, f->out_y, f->found, f->depth + 1};
+	if (obs_sceneitem_is_group(item))
+		obs_sceneitem_group_enum_items(item, find_shown_scale, &inner);
+	else if (obs_scene_t *nested = obs_scene_from_source(source))
+		obs_scene_enum_items(nested, find_shown_scale, &inner);
+	return true;
+}
+
 class ShadowBackdrop {
 public:
 	ShadowBackdrop(obs_data_t *settings, obs_source_t *source);
@@ -243,6 +297,9 @@ private:
 	Padding adjusted_;
 	bool adjusted_loaded_ = false;
 	bool keep_place_ = true;
+	// How big the source is drawn on screen, for sizes given in screen pixels.
+	double shown_sx_ = 1.0, shown_sy_ = 1.0;
+	int scale_countdown_ = 0;
 
 	gs_effect_t *effect_ = nullptr;
 	gs_eparam_t *p_image_ = nullptr;
@@ -326,6 +383,7 @@ void ShadowBackdrop::update(obs_data_t *settings)
 	s.backdrop_pad = std::clamp(obs_data_get_double(settings, "backdrop_pad"), 0.0, 500.0);
 	s.radius = std::clamp(obs_data_get_double(settings, "radius"), 0.0, 2000.0);
 	s.hide_source = obs_data_get_bool(settings, "hide_source");
+	s.screen_px = obs_data_get_bool(settings, "screen_px");
 
 	std::lock_guard lock(mutex_);
 	settings_ = s;
@@ -390,6 +448,31 @@ void ShadowBackdrop::tick()
 		keep = keep_place_;
 	}
 	// A filter that is switched off, or told not to, takes no room.
+	// Now and then, see how big the source is drawn where it is on screen.
+	if (--scale_countdown_ <= 0) {
+		scale_countdown_ = 20;
+		double sx = 0.0, sy = 0.0;
+		bool found = false;
+		ShownScale look{parent, 1.0, 1.0, &sx, &sy, &found, 0};
+		if (obs_source_t *scene = scene_on_screen()) {
+			if (obs_scene_t *s = obs_scene_from_source(scene))
+				obs_scene_enum_items(s, find_shown_scale, &look);
+			obs_source_release(scene);
+		}
+		if (!found) {
+			obs_enum_scenes(
+				[](void *param, obs_source_t *scene) {
+					if (obs_scene_t *s = obs_scene_from_source(scene))
+						obs_scene_enum_items(s, find_shown_scale, param);
+					return !*static_cast<ShownScale *>(param)->found;
+				},
+				&look);
+		}
+		std::lock_guard lock(mutex_);
+		// Guard against a source drawn almost invisibly small.
+		shown_sx_ = found ? std::max(0.05, sx) : 1.0;
+		shown_sy_ = found ? std::max(0.05, sy) : 1.0;
+	}
 	const bool active = keep && effect_ && obs_source_enabled(source_);
 	settle_items(parent, active ? padding_for(settings()) : Padding());
 }
@@ -401,10 +484,20 @@ void ShadowBackdrop::leave(obs_source_t *parent)
 		settle_items(parent, Padding());
 }
 
+// The settings in the source's own pixels, which is what is drawn.
 Settings ShadowBackdrop::settings()
 {
 	std::lock_guard lock(mutex_);
-	return settings_;
+	Settings s = settings_;
+	if (s.screen_px && shown_sx_ > 0.0 && shown_sy_ > 0.0) {
+		const double both = std::sqrt(shown_sx_ * shown_sy_);
+		s.offset_x /= shown_sx_;
+		s.offset_y /= shown_sy_;
+		s.softness = std::min(200.0, s.softness / both);
+		s.backdrop_pad /= both;
+		s.radius /= both;
+	}
+	return s;
 }
 
 uint32_t ShadowBackdrop::width()
@@ -587,6 +680,8 @@ obs_properties_t *get_properties(void *)
 	slider(props, "backdrop_pad", "Shadow.BackdropPad", 0.0, 200.0, " px");
 
 	slider(props, "radius", "Shadow.Radius", 0.0, 500.0, " px");
+	obs_property_t *screen = obs_properties_add_bool(props, "screen_px", obs_module_text("Shadow.ScreenPx"));
+	obs_property_set_long_description(screen, obs_module_text("Shadow.ScreenPx.Tip"));
 	obs_property_t *keep = obs_properties_add_bool(props, "keep_place", obs_module_text("Shadow.Keep"));
 	obs_property_set_long_description(keep, obs_module_text("Shadow.Keep.Tip"));
 
@@ -611,6 +706,7 @@ void get_defaults(obs_data_t *settings)
 	obs_data_set_default_double(settings, "backdrop_pad", 12.0);
 	obs_data_set_default_double(settings, "radius", 0.0);
 	obs_data_set_default_bool(settings, "keep_place", true);
+	obs_data_set_default_bool(settings, "screen_px", true);
 }
 
 } // namespace
