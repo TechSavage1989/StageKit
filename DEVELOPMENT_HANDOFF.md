@@ -204,6 +204,13 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Hexagon blur (0.1.0-beta44)
+
+Asked for by the owner. `BlurType::Hexagon = 6` (appended), technique `Hexagon` in
+`data/effects/stagekit-blur.effect`: the hexagon cell maths from the Ambient Background's mosaic,
+anchored on the image centre and averaged over four taps like `Pixelate`. Reported to obs-websocket
+as `hexagon`. **Not verified on Direct3D.**
+
 ## One list control everywhere (0.1.0-beta43)
 
 The owner: "make any list that apps or sources or scenes or items of any kind get added to ... have a

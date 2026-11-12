@@ -46,6 +46,7 @@ enum class BlurType : int {
 	Pixelate = 3,
 	Zoom = 4,
 	Motion = 5,
+	Hexagon = 6,
 };
 
 enum class RampStyle : int {
@@ -783,6 +784,11 @@ RampBlur::Blurred RampBlur::run_blur(const Settings &s, gs_texture_t *input, uin
 		pass(tr_a_, input, w, h, "Pixelate");
 		return {gs_texrender_get_texture(tr_a_)};
 
+	case BlurType::Hexagon:
+		gs_effect_set_float(p_strength_, (float)(1.0 + strength));
+		pass(tr_a_, input, w, h, "Hexagon");
+		return {gs_texrender_get_texture(tr_a_)};
+
 	case BlurType::Zoom: {
 		// Strength 250 pulls samples 60% of the way to the centre.
 		const double amount = strength / kMaxStrength * 0.6;
@@ -913,6 +919,7 @@ obs_properties_t *get_properties(void *data)
 	obs_property_list_add_int(type, obs_module_text("RampBlur.Type.Kawase"), (int)BlurType::Kawase);
 	obs_property_list_add_int(type, obs_module_text("RampBlur.Type.Box"), (int)BlurType::Box);
 	obs_property_list_add_int(type, obs_module_text("RampBlur.Type.Pixelate"), (int)BlurType::Pixelate);
+	obs_property_list_add_int(type, obs_module_text("RampBlur.Type.Hexagon"), (int)BlurType::Hexagon);
 	obs_property_list_add_int(type, obs_module_text("RampBlur.Type.Zoom"), (int)BlurType::Zoom);
 	obs_property_list_add_int(type, obs_module_text("RampBlur.Type.Motion"), (int)BlurType::Motion);
 	obs_property_set_modified_callback(type, type_modified);
@@ -1120,6 +1127,8 @@ const char *ramp_blur_type_name(RampBlur *blur)
 		return "kawase";
 	case BlurType::Pixelate:
 		return "pixelate";
+	case BlurType::Hexagon:
+		return "hexagon";
 	case BlurType::Zoom:
 		return "zoom";
 	case BlurType::Motion:

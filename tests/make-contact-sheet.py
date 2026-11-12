@@ -21,7 +21,7 @@ def load(path):
                     d.rectangle([x, y, x + 15, y + 15], fill=(150, 150, 150, 255))
     return Image.alpha_composite(base, img).convert("RGB")
 
-rows = [["original"], ["gaussian"], ["kawase"], ["box"], ["pixelate"], ["zoom"], ["motion"]]
+rows = [["original"], ["gaussian"], ["kawase"], ["box"], ["pixelate"], ["hexagon"], ["zoom"], ["motion"]]
 grid = []
 for (prefix,) in rows:
     files = sorted(glob.glob(os.path.join(frames_dir, f"{prefix}*.rgba")))

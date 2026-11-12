@@ -225,7 +225,8 @@ int main(int argc, char **argv)
 		{"kawase", 2, 30, 0},  {"kawase", 2, 90, 0},   {"box", 1, 8, 0},       {"box", 1, 30, 0},
 		{"box", 1, 90, 0},     {"pixelate", 3, 8, 0},  {"pixelate", 3, 30, 0}, {"pixelate", 3, 90, 0},
 		{"zoom", 4, 30, 0},    {"zoom", 4, 90, 0},     {"zoom", 4, 200, 0},    {"motion", 5, 15, 0},
-		{"motion", 5, 40, 30}, {"motion", 5, 90, 90},
+		{"motion", 5, 40, 30}, {"motion", 5, 90, 90},  {"hexagon", 6, 8, 0},   {"hexagon", 6, 30, 0},
+		{"hexagon", 6, 90, 0},
 	};
 	obs_source_t *filter = nullptr;
 	for (const Case &c : cases) {
