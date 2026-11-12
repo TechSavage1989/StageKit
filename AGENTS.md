@@ -122,6 +122,9 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
 - **Arrange options are global** (`arrange_options()`), saved with the scene collection. The dock's
   controls only show and set them. Add a new tool to `ArrangeAction` and `kInfo` and it appears in the
   dock, the menu and the hotkeys at once.
+- **Edits made by a person go into OBS's undo list** (`add_transform_undo` in
+  `src/dock/arrange-tools.*`): the arrange tools, snap on release, the dock's Send to buttons. Moves
+  fired by filters and Stream Deck keys do not; they are part of the show.
 - **Dock keys are Send To filters on the item's source**, not Place Item filters on the scene. The
   owner presses them from Stream Deck Filter keys on the camera.
 - **Shadow sizes are in screen pixels by default.** The owner's old shadows sat on full-canvas scenes,

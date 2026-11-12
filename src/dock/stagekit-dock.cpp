@@ -814,8 +814,13 @@ private:
 		const bool button_up = QGuiApplication::mouseButtons() == Qt::NoButton;
 		if (dragging_ && !moved && button_up) {
 			dragging_ = false;
+			const std::string before = transform_snapshot(scene);
+			bool snapped = false;
 			for (obs_sceneitem_t *item : items)
-				snap_item(scene, item, options.within, options.how);
+				snapped = snap_item(scene, item, options.within, options.how) || snapped;
+			if (snapped)
+				add_transform_undo(obs_module_text("Hotkey.Arrange.SnapNow"), before,
+						   transform_snapshot(scene));
 			now.clear();
 			for (obs_sceneitem_t *item : items) {
 				vec2 pos;
@@ -930,6 +935,19 @@ private:
 		obs_data_set_string(settings, "in_scene", in_scene.c_str());
 		obs_source_t *filter = ensure_filter(source, kSendToId, kDockMoveFilter, settings);
 		obs_data_release(settings);
+		// One step for OBS's Undo, added when the item has finished gliding.
+		if (filter) {
+			obs_source_t *scene = current_scene();
+			const std::string scene_name = scene ? obs_source_get_name(scene) : "";
+			const std::string before = transform_snapshot(scene);
+			obs_source_release(scene);
+			QTimer::singleShot(duration_->value() + 250, this, [before, scene_name] {
+				obs_source_t *moved_in = obs_get_source_by_name(scene_name.c_str());
+				add_transform_undo(obs_module_text("Dock.SendUndo"), before,
+						   transform_snapshot(moved_in));
+				obs_source_release(moved_in);
+			});
+		}
 		if (filter) {
 			calldata_t cd = {};
 			proc_handler_call(obs_source_get_proc_handler(filter), "trigger", &cd);
@@ -1076,6 +1094,9 @@ void register_dock()
 			calldata_set_ptr(cd, "widget", static_cast<QWidget *>(new BackgroundDock()));
 		},
 		nullptr);
+	proc_handler_add(
+		obs_get_proc_handler(), "void stagekit_replay_arrange(in bool redo)",
+		[](void *, calldata_t *cd) { replay_last_arrange(calldata_bool(cd, "redo")); }, nullptr);
 	proc_handler_add(
 		obs_get_proc_handler(), "void stagekit_install_preview_menu()",
 		[](void *, calldata_t *) {

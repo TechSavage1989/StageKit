@@ -2623,6 +2623,36 @@ int main(int argc, char **argv)
 				vec2_set(&sa, 1.0f, 1.0f);
 				obs_sceneitem_set_scale(ia, &sa);
 
+				// Each tool is one step for OBS's Undo and Redo.
+				{
+					auto replay = [](bool redo) {
+						calldata_t cd = {};
+						calldata_set_bool(&cd, "redo", redo);
+						proc_handler_call(obs_get_proc_handler(), "stagekit_replay_arrange",
+								  &cd);
+						calldata_free(&cd);
+					};
+					vec2 was;
+					obs_sceneitem_get_scale(ia, &was);
+					const vec2 where = pos_of(ia);
+					click("arrange_same_width");
+					vec2 changed;
+					obs_sceneitem_get_scale(ia, &changed);
+					replay(false);
+					vec2 undone;
+					obs_sceneitem_get_scale(ia, &undone);
+					CHECK(std::fabs(changed.x - 0.4) < 0.005 &&
+						      std::fabs(undone.x - was.x) < 0.005 &&
+						      std::fabs(pos_of(ia).x - where.x) < 0.6,
+					      "undo puts an item back as it was (scale %.2f -> %.2f -> %.2f)", was.x,
+					      changed.x, undone.x);
+					replay(true);
+					obs_sceneitem_get_scale(ia, &changed);
+					CHECK(std::fabs(changed.x - 0.4) < 0.005,
+					      "and redo applies the tool again (scale %.2f)", changed.x);
+					replay(false);
+				}
+
 				// Without 'keep shape', only the direction asked for changes.
 				tick_box("arrangeKeepShape", false);
 				click("arrange_same_width");
