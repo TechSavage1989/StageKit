@@ -45,8 +45,11 @@ int align_items(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items
 // Spaces three or more items so the gaps between them are equal.
 int distribute_items(obs_source_t *scene, std::vector<obs_sceneitem_t *> items, bool across, const Measure &how);
 
-// Makes the other items as wide, or as tall, as the first one looks.
-int match_size(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items, bool width, const Measure &how);
+// Makes the other items as wide and/or as tall as the top-most one looks.
+// keep_shape scales both directions alike; without it only the directions
+// asked for change, which stretches the picture.
+int match_size(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items, bool width, bool height,
+	       bool keep_shape, const Measure &how);
 
 // Moves an item the last few pixels so an edge or centre meets the screen's
 // or another item's. Returns true when it moved.

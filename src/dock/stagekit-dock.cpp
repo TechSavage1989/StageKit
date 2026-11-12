@@ -29,6 +29,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/start-image.hpp"
 #include "../placement/place-item.hpp"
 #include "arrange.hpp"
+#include "arrange-tools.hpp"
 #include "../placement/scene-tools.hpp"
 
 #include <obs-module.h>
@@ -47,6 +48,10 @@ the Free Software Foundation; either version 2 of the License, or
 #include <QInputDialog>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMenu>
+#include <QApplication>
+#include <QContextMenuEvent>
+#include <QElapsedTimer>
 #include <QWheelEvent>
 #include <QMouseEvent>
 #include <QPixmap>
@@ -114,82 +119,81 @@ private:
 	QPointF last_;
 };
 
-class Dock : public QWidget {
+// Adds a StageKit menu to the menu OBS opens on a right-click in its preview,
+// so lining up and snapping are at hand where the items are being moved. OBS
+// has no hook for that menu: this watches for it opening instead.
+class PreviewMenu : public QObject {
 public:
-	// fixed_scene: a scene name to control instead of OBS's current scene
-	// (used by the tests, where there is no OBS window).
-	explicit Dock(const std::string &fixed_scene = {}, QWidget *parent = nullptr)
-		: QWidget(parent),
-		  fixed_scene_(fixed_scene)
+	using QObject::QObject;
+
+	bool eventFilter(QObject *object, QEvent *event) override
+	{
+		if (event->type() == QEvent::ContextMenu) {
+			if (object->objectName() == QLatin1String("preview"))
+				asked_.start();
+		} else if (event->type() == QEvent::Show && asked_.isValid() && asked_.elapsed() < 1500) {
+			if (auto *menu = qobject_cast<QMenu *>(object)) {
+				asked_.invalidate();
+				extend(menu);
+			}
+		}
+		return false;
+	}
+
+	static void extend(QMenu *menu)
+	{
+		menu->addSeparator();
+		QMenu *sub = menu->addMenu(tr_text("Arrange.Menu"));
+		sub->setObjectName("stagekitArrangeMenu");
+		for (int a = 0; a < (int)ArrangeAction::Count; a++) {
+			const auto action = static_cast<ArrangeAction>(a);
+			if (action == ArrangeAction::SpaceAcross || action == ArrangeAction::SameWidth ||
+			    action == ArrangeAction::Top)
+				sub->addSeparator();
+			// The hotkey names read "StageKit: Align left"; the menu is already StageKit's.
+			QAction *entry =
+				sub->addAction(tr_text(arrange_info(action).hotkey).section(QStringLiteral(": "), 1));
+			entry->setObjectName(QString("menu_") + arrange_info(action).name);
+			// Run once the menu has closed.
+			QObject::connect(entry, &QAction::triggered, qApp, [action] {
+				QTimer::singleShot(0, qApp, [action] { run_arrange_on_selection(action); });
+			});
+		}
+		sub->addSeparator();
+		const ArrangeOptions o = arrange_options();
+		auto option = [&](const char *name, const char *text, bool on, void (*set)(ArrangeOptions &, bool)) {
+			QAction *entry = sub->addAction(tr_text(text));
+			entry->setObjectName(name);
+			entry->setCheckable(true);
+			entry->setChecked(on);
+			QObject::connect(entry, &QAction::toggled, qApp, [set](bool checked) {
+				ArrangeOptions changed = arrange_options();
+				set(changed, checked);
+				set_arrange_options(changed);
+			});
+		};
+		option("menuEachOther", "Arrange.Menu.EachOther", o.against == Against::Selection,
+		       [](ArrangeOptions &c, bool on) { c.against = on ? Against::Selection : Against::Screen; });
+		option("menuVisible", "Arrange.Visible", o.how.visible_pixels,
+		       [](ArrangeOptions &c, bool on) { c.how.visible_pixels = on; });
+		option("menuNoShadow", "Arrange.NoShadow", o.how.leave_out_shadows,
+		       [](ArrangeOptions &c, bool on) { c.how.leave_out_shadows = on; });
+		option("menuKeepShape", "Arrange.KeepShape", o.keep_shape,
+		       [](ArrangeOptions &c, bool on) { c.keep_shape = on; });
+		option("menuLiveSnap", "Arrange.LiveSnap", o.live_snap,
+		       [](ArrangeOptions &c, bool on) { c.live_snap = on; });
+	}
+
+private:
+	QElapsedTimer asked_;
+};
+
+// The start image and the moving background, in a dock of their own.
+class BackgroundDock : public QWidget {
+public:
+	explicit BackgroundDock(QWidget *parent = nullptr) : QWidget(parent)
 	{
 		auto *layout = new QVBoxLayout(this);
-
-		auto *form = new QFormLayout();
-		// Any scene can be worked on, not only the one on screen, so items
-		// that live in a nested scene are reachable.
-		scene_ = new QComboBox(this);
-		scene_->setObjectName("scene");
-		QObject::connect(scene_, &QComboBox::currentIndexChanged, this, [this](int) { refresh(); });
-		form->addRow(tr_text("Dock.SceneRow"), scene_);
-		item_ = new QComboBox(this);
-		item_->setObjectName("item");
-		linked_ = new QComboBox(this);
-		linked_->setObjectName("linked");
-		form->addRow(tr_text("Dock.Item"), item_);
-		form->addRow(tr_text("Place.Linked"), linked_);
-		layout->addLayout(form);
-
-		auto *move_box = new QGroupBox(tr_text("Dock.MoveBox"), this);
-		auto *move_layout = new QVBoxLayout(move_box);
-		auto *grid = new QGridLayout();
-		for (int i = 0; i < 9; i++) {
-			auto *button = new QPushButton(QString::fromUtf8(kArrows[i]), move_box);
-			button->setObjectName(QString("grid%1").arg(i));
-			button->setToolTip(tr_text(kDestinationText[i]));
-			button->setMinimumHeight(34);
-			QObject::connect(button, &QPushButton::clicked, this, [this, i] { move_now(i); });
-			grid->addWidget(button, i / 3, i % 3);
-		}
-		move_layout->addLayout(grid);
-
-		auto *options = new QFormLayout();
-		margin_ = new QSpinBox(move_box);
-		margin_->setObjectName("margin");
-		margin_->setRange(0, 400);
-		margin_->setValue(30);
-		margin_->setSuffix(" px");
-		duration_ = new QSpinBox(move_box);
-		duration_->setObjectName("duration");
-		duration_->setRange(0, 5000);
-		duration_->setSingleStep(50);
-		duration_->setValue(500);
-		duration_->setSuffix(" ms");
-		options->addRow(tr_text("Place.Margin"), margin_);
-		options->addRow(tr_text("Place.Duration"), duration_);
-		move_layout->addLayout(options);
-		layout->addWidget(move_box);
-
-		auto *keys_box = new QGroupBox(tr_text("Dock.KeysBox"), this);
-		auto *keys_layout = new QVBoxLayout(keys_box);
-		auto *make_keys = new QPushButton(tr_text("Dock.MakeKeys"), keys_box);
-		make_keys->setObjectName("makeKeys");
-		QObject::connect(make_keys, &QPushButton::clicked, this, [this] { make_all_keys(); });
-		auto *save_spot = new QPushButton(tr_text("Dock.SaveSpot"), keys_box);
-		save_spot->setObjectName("saveSpot");
-		QObject::connect(save_spot, &QPushButton::clicked, this, [this] {
-			bool ok = false;
-			const QString name = QInputDialog::getText(this, tr_text("Dock.SaveSpot"),
-								   tr_text("Dock.SaveSpotPrompt"), QLineEdit::Normal,
-								   QString(), &ok);
-			if (ok && !name.trimmed().isEmpty())
-				save_spot_as(name.trimmed());
-		});
-		// Explanations live in tooltips: the dock itself stays short.
-		keys_box->setToolTip(tr_text("Dock.KeysHint"));
-		keys_layout->addWidget(make_keys);
-		keys_layout->addWidget(save_spot);
-		layout->addWidget(keys_box);
-
 		// The start image: chosen here, shown by the Start Image source and
 		// used by any Ambient Background set to follow it.
 		auto *start_box = new QGroupBox(tr_text("Dock.StartBox"), this);
@@ -272,6 +276,208 @@ public:
 		start_layout->addWidget(background_same_);
 		start_layout->addWidget(background_settings);
 		layout->addWidget(start_box);
+		status_ = new QLabel(this);
+		status_->setObjectName("backgroundStatus");
+		status_->setWordWrap(true);
+		layout->addWidget(status_);
+		layout->addStretch(1);
+
+		auto *timer = new QTimer(this);
+		QObject::connect(timer, &QTimer::timeout, this, [this] { refresh(); });
+		timer->start(400);
+		refresh();
+	}
+
+	void refresh()
+	{
+		const QString start = QString::fromUtf8(start_image_path().c_str());
+		const QString shown = QString::fromUtf8(ambient_picture_path().c_str());
+		const bool own = shown != start;
+		QString name = shown.isEmpty() ? tr_text("Dock.StartNone") : QFileInfo(shown).fileName();
+		if (name.size() > 40)
+			name = name.left(22) + QStringLiteral("…") + name.right(16);
+		start_label_->setText(own ? tr_text("Dock.BackgroundIs").arg(name) : name);
+		start_label_->setToolTip(shown);
+		background_same_->setVisible(own);
+		// A picture that could not be read yet (a drive still waking up) is
+		// tried again a little later.
+		const bool again = retry_in_ > 0 && --retry_in_ == 0;
+		if (shown != thumb_path_ || again) {
+			const bool same_picture = shown == thumb_path_;
+			// Read the picture already shrunk, so a large image costs little.
+			thumb_path_ = shown;
+			if (!same_picture) {
+				tries_ = 0;
+				thumb_zoom_ = 1.0;
+				thumb_x_ = thumb_y_ = 0.5;
+			}
+			thumb_full_ = load_picture(shown);
+			retry_in_ = thumb_full_.isNull() && !shown.isEmpty() && ++tries_ < 6 ? 5 : 0;
+			start_thumb_->setToolTip(tr_text("Dock.ThumbHint") + QStringLiteral("\n") + shown);
+			show_thumb();
+		}
+	}
+
+private:
+	void say(const QString &text) { status_->setText(text); }
+
+	// Reads a picture already shrunk, so a large image costs little. Qt in
+	// OBS reads only a few formats; the rest go through OBS's own loader.
+	static QPixmap load_picture(const QString &path)
+	{
+		if (path.isEmpty())
+			return QPixmap();
+		QImageReader reader(path);
+		reader.setAutoTransform(true);
+		const QSize size = reader.size();
+		if (size.isValid())
+			reader.setScaledSize(size.scaled(1280, 720, Qt::KeepAspectRatio));
+		QPixmap picture = QPixmap::fromImageReader(&reader);
+		if (!picture.isNull())
+			return picture;
+		gs_color_format format = GS_UNKNOWN;
+		uint32_t cx = 0, cy = 0;
+		uint8_t *data = gs_create_texture_file_data(path.toUtf8().constData(), &format, &cx, &cy);
+		if (data && cx && cy && (format == GS_RGBA || format == GS_BGRA || format == GS_BGRX)) {
+			const QImage::Format as = format == GS_RGBA   ? QImage::Format_RGBA8888
+						  : format == GS_BGRA ? QImage::Format_ARGB32
+								      : QImage::Format_RGB32;
+			const QImage image(data, (int)cx, (int)cy, (int)cx * 4, as);
+			picture = QPixmap::fromImage(
+				image.scaled(1280, 720, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+		}
+		bfree(data);
+		if (picture.isNull())
+			obs_log(LOG_WARNING, "dock: could not read the picture '%s' (%s)", path.toUtf8().constData(),
+				reader.errorString().toUtf8().constData());
+		return picture;
+	}
+
+	// Draws the picture small, at the zoom and place chosen with the wheel
+	// and by dragging. Zoomed right out, the whole picture is shown.
+	void show_thumb()
+	{
+		QPixmap picture;
+		if (!thumb_full_.isNull()) {
+			const double pw = thumb_full_.width(), ph = thumb_full_.height();
+			const double w = pw / thumb_zoom_, h = ph / thumb_zoom_;
+			const double x = std::clamp(thumb_x_ * pw - w / 2.0, 0.0, pw - w);
+			const double y = std::clamp(thumb_y_ * ph - h / 2.0, 0.0, ph - h);
+			picture = thumb_full_.copy(QRectF(x, y, w, h).toRect())
+					  .scaledToHeight(kThumbHeight, Qt::SmoothTransformation);
+		}
+		start_thumb_->setPixmap(picture);
+		start_thumb_->setVisible(!picture.isNull());
+	}
+
+	// Opens the settings of the collection's moving background.
+	void open_background_settings()
+	{
+		obs_source_t *found = nullptr;
+		obs_enum_sources(
+			[](void *param, obs_source_t *source) {
+				auto **out = static_cast<obs_source_t **>(param);
+				const char *id = obs_source_get_unversioned_id(source);
+				if (!*out && id && strcmp(id, "stagekit_ambient_background") == 0)
+					*out = obs_source_get_ref(source);
+				return true;
+			},
+			&found);
+		if (!found) {
+			say(tr_text("Dock.BackgroundNone"));
+			return;
+		}
+		if (obs_frontend_get_main_window())
+			obs_frontend_open_source_properties(found);
+		obs_source_release(found);
+	}
+
+	static constexpr int kThumbHeight = 120;
+	QLabel *start_label_ = nullptr;
+	Thumb *start_thumb_ = nullptr;
+	QPixmap thumb_full_;
+	double thumb_zoom_ = 1.0, thumb_x_ = 0.5, thumb_y_ = 0.5; // the thumbnail's own view
+	QPushButton *background_same_ = nullptr;
+	QString thumb_path_ = QStringLiteral("\x01"); // nothing loaded yet
+	int retry_in_ = 0, tries_ = 0;
+	QLabel *status_ = nullptr;
+};
+
+class Dock : public QWidget {
+public:
+	// fixed_scene: a scene name to control instead of OBS's current scene
+	// (used by the tests, where there is no OBS window).
+	explicit Dock(const std::string &fixed_scene = {}, QWidget *parent = nullptr)
+		: QWidget(parent),
+		  fixed_scene_(fixed_scene)
+	{
+		auto *layout = new QVBoxLayout(this);
+
+		auto *form = new QFormLayout();
+		// Any scene can be worked on, not only the one on screen, so items
+		// that live in a nested scene are reachable.
+		scene_ = new QComboBox(this);
+		scene_->setObjectName("scene");
+		QObject::connect(scene_, &QComboBox::currentIndexChanged, this, [this](int) { refresh(); });
+		form->addRow(tr_text("Dock.SceneRow"), scene_);
+		item_ = new QComboBox(this);
+		item_->setObjectName("item");
+		linked_ = new QComboBox(this);
+		linked_->setObjectName("linked");
+		form->addRow(tr_text("Dock.Item"), item_);
+		form->addRow(tr_text("Place.Linked"), linked_);
+		layout->addLayout(form);
+
+		auto *move_box = new QGroupBox(tr_text("Dock.MoveBox"), this);
+		auto *move_layout = new QVBoxLayout(move_box);
+		auto *grid = new QGridLayout();
+		for (int i = 0; i < 9; i++) {
+			auto *button = new QPushButton(QString::fromUtf8(kArrows[i]), move_box);
+			button->setObjectName(QString("grid%1").arg(i));
+			button->setToolTip(tr_text(kDestinationText[i]));
+			button->setMinimumHeight(34);
+			QObject::connect(button, &QPushButton::clicked, this, [this, i] { move_now(i); });
+			grid->addWidget(button, i / 3, i % 3);
+		}
+		move_layout->addLayout(grid);
+
+		auto *options = new QFormLayout();
+		margin_ = new QSpinBox(move_box);
+		margin_->setObjectName("margin");
+		margin_->setRange(0, 400);
+		margin_->setValue(30);
+		margin_->setSuffix(" px");
+		duration_ = new QSpinBox(move_box);
+		duration_->setObjectName("duration");
+		duration_->setRange(0, 5000);
+		duration_->setSingleStep(50);
+		duration_->setValue(500);
+		duration_->setSuffix(" ms");
+		options->addRow(tr_text("Place.Margin"), margin_);
+		options->addRow(tr_text("Place.Duration"), duration_);
+		move_layout->addLayout(options);
+		layout->addWidget(move_box);
+
+		auto *keys_box = new QGroupBox(tr_text("Dock.KeysBox"), this);
+		auto *keys_layout = new QVBoxLayout(keys_box);
+		auto *make_keys = new QPushButton(tr_text("Dock.MakeKeys"), keys_box);
+		make_keys->setObjectName("makeKeys");
+		QObject::connect(make_keys, &QPushButton::clicked, this, [this] { make_all_keys(); });
+		auto *save_spot = new QPushButton(tr_text("Dock.SaveSpot"), keys_box);
+		save_spot->setObjectName("saveSpot");
+		QObject::connect(save_spot, &QPushButton::clicked, this, [this] {
+			bool ok = false;
+			const QString name = QInputDialog::getText(this, tr_text("Dock.SaveSpot"),
+								   tr_text("Dock.SaveSpotPrompt"), QLineEdit::Normal,
+								   QString(), &ok);
+			if (ok && !name.trimmed().isEmpty())
+				save_spot_as(name.trimmed());
+		});
+		// Explanations live in tooltips: the dock itself stays short.
+		keys_box->setToolTip(tr_text("Dock.KeysHint"));
+		keys_layout->addWidget(make_keys);
+		keys_layout->addWidget(save_spot);
+		layout->addWidget(keys_box);
 
 		auto *add_box = new QGroupBox(tr_text("Dock.AddBox"), this);
 		auto *add_layout = new QGridLayout(add_box);
@@ -301,6 +507,12 @@ public:
 		// Lining up, spacing and snapping whatever is selected in OBS.
 		auto *arrange_box = new QGroupBox(tr_text("Arrange.Box"), this);
 		auto *arrange_layout = new QVBoxLayout(arrange_box);
+		// Says what the buttons below will move, so nothing is a surprise.
+		arrange_target_ = new QLabel(arrange_box);
+		arrange_target_->setObjectName("arrangeTarget");
+		arrange_target_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
+		arrange_target_->setMinimumWidth(0);
+		arrange_layout->addWidget(arrange_target_);
 		auto *against_row = new QFormLayout();
 		against_ = new QComboBox(arrange_box);
 		against_->setObjectName("arrangeAgainst");
@@ -309,71 +521,29 @@ public:
 		against_row->addRow(tr_text("Arrange.Against"), against_);
 		arrange_layout->addLayout(against_row);
 		auto *arrange_grid = new QGridLayout();
-		struct {
-			const char *object_name, *text;
-			Edge edge;
-		} edges[] = {
-			{"alignLeft", "Arrange.Left", Edge::Left},
-			{"alignCenter", "Arrange.Center", Edge::Center},
-			{"alignRight", "Arrange.Right", Edge::Right},
-			{"alignTop", "Arrange.Top", Edge::Top},
-			{"alignMiddle", "Arrange.Middle", Edge::Middle},
-			{"alignBottom", "Arrange.Bottom", Edge::Bottom},
-		};
-		int edge_index = 0;
-		for (const auto &e : edges) {
-			auto *button = new QPushButton(tr_text(e.text), arrange_box);
-			button->setObjectName(e.object_name);
-			const Edge edge = e.edge;
-			QObject::connect(button, &QPushButton::clicked, this, [this, edge] {
-				obs_source_t *scene = current_scene();
-				const int moved = align_items(scene, arrange_items(scene), edge,
-							      static_cast<Against>(against_->currentData().toInt()),
-							      measure());
-				obs_source_release(scene);
-				say(tr_text("Arrange.Done").arg(moved));
-			});
-			arrange_grid->addWidget(button, edge_index / 3, edge_index % 3);
-			edge_index++;
-		}
-		auto add_arrange = [&](const char *object_name, const char *text, int row, int column, int span,
-				       std::function<int(obs_source_t *)> action) {
-			auto *button = new QPushButton(tr_text(text), arrange_box);
-			button->setObjectName(object_name);
+		for (int a = 0; a < (int)ArrangeAction::Count; a++) {
+			const auto action = static_cast<ArrangeAction>(a);
+			const ArrangeInfo &info = arrange_info(action);
+			auto *button = new QPushButton(tr_text(info.text), arrange_box);
+			button->setObjectName(QString("arrange_") + info.name);
+			button->setToolTip(tr_text((std::string(info.text) + ".Tip").c_str()));
 			QObject::connect(button, &QPushButton::clicked, this, [this, action] {
 				obs_source_t *scene = current_scene();
-				const int changed = scene ? action(scene) : 0;
+				const ArrangeOutcome out = run_arrange(action, scene, arrange_items(scene));
 				obs_source_release(scene);
-				say(tr_text("Arrange.Done").arg(changed));
+				say(arrange_message(out));
 			});
-			arrange_grid->addWidget(button, row, column, 1, span);
-		};
-		add_arrange("spaceAcross", "Arrange.SpaceAcross", 2, 0, 1, [this](obs_source_t *scene) {
-			return distribute_items(scene, arrange_items(scene), true, measure());
-		});
-		add_arrange("spaceDown", "Arrange.SpaceDown", 2, 1, 1, [this](obs_source_t *scene) {
-			return distribute_items(scene, arrange_items(scene), false, measure());
-		});
-		add_arrange("snapNow", "Arrange.SnapNow", 2, 2, 1, [this](obs_source_t *scene) {
-			int snapped = 0;
-			for (obs_sceneitem_t *item : arrange_items(scene))
-				snapped += snap_item(scene, item, snap_within_->value(), measure()) ? 1 : 0;
-			return snapped;
-		});
-		add_arrange("sameWidth", "Arrange.SameWidth", 3, 0, 1, [this](obs_source_t *scene) {
-			return match_size(scene, arrange_items(scene), true, measure());
-		});
-		add_arrange("sameHeight", "Arrange.SameHeight", 3, 1, 1, [this](obs_source_t *scene) {
-			return match_size(scene, arrange_items(scene), false, measure());
-		});
+			arrange_grid->addWidget(button, a / 3, a % 3);
+		}
 		arrange_layout->addLayout(arrange_grid);
 		visible_ = new QCheckBox(tr_text("Arrange.Visible"), arrange_box);
 		visible_->setObjectName("arrangeVisible");
-		visible_->setChecked(true);
 		visible_->setToolTip(tr_text("Arrange.Visible.Tip"));
 		no_shadow_ = new QCheckBox(tr_text("Arrange.NoShadow"), arrange_box);
 		no_shadow_->setObjectName("arrangeNoShadow");
-		no_shadow_->setChecked(true);
+		keep_shape_ = new QCheckBox(tr_text("Arrange.KeepShape"), arrange_box);
+		keep_shape_->setObjectName("arrangeKeepShape");
+		keep_shape_->setToolTip(tr_text("Arrange.KeepShape.Tip"));
 		live_snap_ = new QCheckBox(tr_text("Arrange.LiveSnap"), arrange_box);
 		live_snap_->setObjectName("arrangeLiveSnap");
 		live_snap_->setToolTip(tr_text("Arrange.LiveSnap.Tip"));
@@ -381,14 +551,20 @@ public:
 		snap_within_ = new QSpinBox(arrange_box);
 		snap_within_->setObjectName("snapWithin");
 		snap_within_->setRange(1, 200);
-		snap_within_->setValue(20);
 		snap_within_->setSuffix(" px");
 		within_row->addRow(tr_text("Arrange.Within"), snap_within_);
 		arrange_layout->addWidget(visible_);
 		arrange_layout->addWidget(no_shadow_);
+		arrange_layout->addWidget(keep_shape_);
 		arrange_layout->addWidget(live_snap_);
 		arrange_layout->addLayout(within_row);
-		arrange_box->setToolTip(tr_text("Arrange.Hint"));
+		// The options are shared with the hotkeys and the right-click menu.
+		show_arrange_options();
+		for (QCheckBox *box : {visible_, no_shadow_, keep_shape_, live_snap_})
+			QObject::connect(box, &QCheckBox::toggled, this, [this](bool) { store_arrange_options(); });
+		QObject::connect(against_, &QComboBox::currentIndexChanged, this,
+				 [this](int) { store_arrange_options(); });
+		QObject::connect(snap_within_, &QSpinBox::valueChanged, this, [this](int) { store_arrange_options(); });
 		layout->addWidget(arrange_box);
 
 		// Snapping on letting go: watch the selected items a few times a second.
@@ -434,33 +610,10 @@ public:
 
 	void refresh()
 	{
-		const QString start = QString::fromUtf8(start_image_path().c_str());
-		const QString shown = QString::fromUtf8(ambient_picture_path().c_str());
-		const bool own = shown != start;
-		QString name = shown.isEmpty() ? tr_text("Dock.StartNone") : QFileInfo(shown).fileName();
-		if (name.size() > 40)
-			name = name.left(22) + QStringLiteral("…") + name.right(16);
-		start_label_->setText(own ? tr_text("Dock.BackgroundIs").arg(name) : name);
-		start_label_->setToolTip(shown);
-		background_same_->setVisible(own);
-		if (shown != thumb_path_) {
-			// Read the picture already shrunk, so a large image costs little.
-			thumb_path_ = shown;
-			thumb_zoom_ = 1.0;
-			thumb_x_ = thumb_y_ = 0.5;
-			thumb_full_ = QPixmap();
-			if (!shown.isEmpty()) {
-				QImageReader reader(shown);
-				reader.setAutoTransform(true);
-				const QSize size = reader.size();
-				if (size.isValid())
-					reader.setScaledSize(size.scaled(1280, 720, Qt::KeepAspectRatio));
-				thumb_full_ = QPixmap::fromImageReader(&reader);
-			}
-			start_thumb_->setToolTip(tr_text("Dock.ThumbHint") + QStringLiteral("\n") + shown);
-			show_thumb();
-		}
 		follow_selection();
+		show_arrange_target();
+		if (shown_options_ != arrange_options_revision())
+			show_arrange_options();
 
 		// Scene list: "the scene on screen" first, then every scene by name.
 		QStringList scenes;
@@ -541,7 +694,65 @@ private:
 
 	void say(const QString &text) { status_->setText(text); }
 
-	Measure measure() const { return {visible_->isChecked(), no_shadow_->isChecked()}; }
+	// Names what the Arrange buttons will act on.
+	void show_arrange_target()
+	{
+		obs_source_t *scene = current_scene();
+		const std::vector<obs_sceneitem_t *> items = scene ? arrange_items(scene)
+								   : std::vector<obs_sceneitem_t *>();
+		QString text = tr_text("Arrange.SelectFirst");
+		if (!items.empty()) {
+			QString name = QString::fromUtf8(obs_source_get_name(obs_sceneitem_get_source(items.back())));
+			if (name.size() > 24)
+				name = name.left(23) + QStringLiteral("…");
+			text = items.size() == 1 ? tr_text("Arrange.Target").arg(name)
+						 : tr_text("Arrange.TargetMore").arg(name).arg(items.size() - 1);
+		}
+		obs_source_release(scene);
+		if (text != arrange_target_->text())
+			arrange_target_->setText(text);
+	}
+
+	Measure measure() const { return arrange_options().how; }
+
+	QString arrange_message(const ArrangeOutcome &out) const
+	{
+		if (out.had == 0)
+			return tr_text("Arrange.SelectFirst");
+		if (out.had < out.needs)
+			return tr_text(out.needs >= 3 ? "Arrange.NeedThree" : "Arrange.NeedTwo");
+		return tr_text("Arrange.Done").arg(out.changed);
+	}
+
+	// Puts the shared options into the dock's controls.
+	void show_arrange_options()
+	{
+		const ArrangeOptions o = arrange_options();
+		shown_options_ = arrange_options_revision();
+		storing_ = true;
+		against_->setCurrentIndex(std::max(0, against_->findData((int)o.against)));
+		visible_->setChecked(o.how.visible_pixels);
+		no_shadow_->setChecked(o.how.leave_out_shadows);
+		keep_shape_->setChecked(o.keep_shape);
+		live_snap_->setChecked(o.live_snap);
+		snap_within_->setValue(o.within);
+		storing_ = false;
+	}
+
+	void store_arrange_options()
+	{
+		if (storing_)
+			return;
+		ArrangeOptions o;
+		o.against = static_cast<Against>(against_->currentData().toInt());
+		o.how.visible_pixels = visible_->isChecked();
+		o.how.leave_out_shadows = no_shadow_->isChecked();
+		o.keep_shape = keep_shape_->isChecked();
+		o.live_snap = live_snap_->isChecked();
+		o.within = snap_within_->value();
+		set_arrange_options(o);
+		shown_options_ = arrange_options_revision();
+	}
 
 	// What the arrange buttons act on: the items selected in OBS, or failing
 	// that the one chosen in the dock's list.
@@ -559,7 +770,8 @@ private:
 	// button is up again, move it the last few pixels onto the nearest line.
 	void watch_for_drop()
 	{
-		if (!live_snap_->isChecked()) {
+		const ArrangeOptions options = arrange_options();
+		if (!options.live_snap) {
 			watched_.clear();
 			return;
 		}
@@ -581,7 +793,7 @@ private:
 		if (dragging_ && !moved && button_up) {
 			dragging_ = false;
 			for (obs_sceneitem_t *item : items)
-				snap_item(scene, item, snap_within_->value(), measure());
+				snap_item(scene, item, options.within, options.how);
 			now.clear();
 			for (obs_sceneitem_t *item : items) {
 				vec2 pos;
@@ -593,23 +805,6 @@ private:
 			dragging_ = false;
 		watched_ = now;
 		obs_source_release(scene);
-	}
-
-	// Draws the picture small, at the zoom and place chosen with the wheel
-	// and by dragging. Zoomed right out, the whole picture is shown.
-	void show_thumb()
-	{
-		QPixmap picture;
-		if (!thumb_full_.isNull()) {
-			const double pw = thumb_full_.width(), ph = thumb_full_.height();
-			const double w = pw / thumb_zoom_, h = ph / thumb_zoom_;
-			const double x = std::clamp(thumb_x_ * pw - w / 2.0, 0.0, pw - w);
-			const double y = std::clamp(thumb_y_ * ph - h / 2.0, 0.0, ph - h);
-			picture = thumb_full_.copy(QRectF(x, y, w, h).toRect())
-					  .scaledToHeight(kThumbHeight, Qt::SmoothTransformation);
-		}
-		start_thumb_->setPixmap(picture);
-		start_thumb_->setVisible(!picture.isNull());
 	}
 
 	// The dock works on whatever is selected in OBS's own preview. Choosing
@@ -642,28 +837,6 @@ private:
 		const int index = item_->findText(selected);
 		if (index >= 0)
 			item_->setCurrentIndex(index);
-	}
-
-	// Opens the settings of the collection's moving background.
-	void open_background_settings()
-	{
-		obs_source_t *found = nullptr;
-		obs_enum_sources(
-			[](void *param, obs_source_t *source) {
-				auto **out = static_cast<obs_source_t **>(param);
-				const char *id = obs_source_get_unversioned_id(source);
-				if (!*out && id && strcmp(id, "stagekit_ambient_background") == 0)
-					*out = obs_source_get_ref(source);
-				return true;
-			},
-			&found);
-		if (!found) {
-			say(tr_text("Dock.BackgroundNone"));
-			return;
-		}
-		if (obs_frontend_get_main_window())
-			obs_frontend_open_source_properties(found);
-		obs_source_release(found);
 	}
 
 	// The source the selected item shows, in the scene being worked on.
@@ -841,21 +1014,18 @@ private:
 	}
 
 	std::string fixed_scene_;
-	static constexpr int kThumbHeight = 120;
-	QLabel *start_label_ = nullptr;
-	Thumb *start_thumb_ = nullptr;
-	QPixmap thumb_full_;
-	double thumb_zoom_ = 1.0, thumb_x_ = 0.5, thumb_y_ = 0.5; // the thumbnail's own view
-	QPushButton *background_same_ = nullptr;
 	QString followed_;
 	QComboBox *against_ = nullptr;
+	QLabel *arrange_target_ = nullptr;
 	QCheckBox *visible_ = nullptr;
 	QCheckBox *no_shadow_ = nullptr;
+	QCheckBox *keep_shape_ = nullptr;
+	uint64_t shown_options_ = 0;
+	bool storing_ = false;
 	QCheckBox *live_snap_ = nullptr;
 	QSpinBox *snap_within_ = nullptr;
 	std::vector<std::pair<int64_t, std::pair<float, float>>> watched_;
 	bool dragging_ = false;
-	QString thumb_path_ = QStringLiteral("\x01"); // nothing loaded yet
 	QStringList names_;
 	QStringList scenes_;
 	QComboBox *scene_ = nullptr;
@@ -879,6 +1049,22 @@ void register_dock()
 		},
 		nullptr);
 	proc_handler_add(
+		obs_get_proc_handler(), "void stagekit_create_background_dock(out ptr widget)",
+		[](void *, calldata_t *cd) {
+			calldata_set_ptr(cd, "widget", static_cast<QWidget *>(new BackgroundDock()));
+		},
+		nullptr);
+	proc_handler_add(
+		obs_get_proc_handler(), "void stagekit_install_preview_menu()",
+		[](void *, calldata_t *) {
+			static PreviewMenu *menu = nullptr;
+			if (!menu && qApp) {
+				menu = new PreviewMenu(qApp);
+				qApp->installEventFilter(menu);
+			}
+		},
+		nullptr);
+	proc_handler_add(
 		obs_get_proc_handler(), "void stagekit_dock_save_spot(in ptr widget, in string name)",
 		[](void *, calldata_t *cd) {
 			auto *dock = static_cast<Dock *>(static_cast<QWidget *>(calldata_ptr(cd, "widget")));
@@ -890,17 +1076,26 @@ void register_dock()
 	// No main window means no OBS front end (the tests): nothing to dock into.
 	if (!obs_frontend_get_main_window())
 		return;
-	// The dock has more in it than fits most screens: it scrolls instead of
-	// forcing its window to be tall.
-	auto *scroll = new QScrollArea();
-	scroll->setWidgetResizable(true);
-	scroll->setFrameShape(QFrame::NoFrame);
-	scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-	scroll->setWidget(new Dock());
-	if (!obs_frontend_add_dock_by_id("stagekit-dock", obs_module_text("Dock.Title"), scroll)) {
-		obs_log(LOG_WARNING, "could not add the StageKit dock");
-		delete scroll;
+	// Each dock can hold more than fits a small screen: it scrolls instead
+	// of forcing its window to be tall.
+	auto add = [](const char *id, const char *title, QWidget *content) {
+		auto *scroll = new QScrollArea();
+		scroll->setWidgetResizable(true);
+		scroll->setFrameShape(QFrame::NoFrame);
+		scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+		scroll->setWidget(content);
+		if (!obs_frontend_add_dock_by_id(id, obs_module_text(title), scroll)) {
+			obs_log(LOG_WARNING, "could not add the dock '%s'", id);
+			delete scroll;
+		}
+	};
+	{
+		calldata_t cd = {};
+		proc_handler_call(obs_get_proc_handler(), "stagekit_install_preview_menu", &cd);
+		calldata_free(&cd);
 	}
+	add("stagekit-dock", "Dock.Title", new Dock());
+	add("stagekit-background-dock", "Dock.BackgroundTitle", new BackgroundDock());
 }
 
 } // namespace stagekit
