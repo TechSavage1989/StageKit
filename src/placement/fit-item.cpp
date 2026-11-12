@@ -120,27 +120,34 @@ public:
 		const double margin = fills ? 0.0 : std::min({s.margin, bw / 2.0 - 1.0, bh / 2.0 - 1.0});
 		const double aw = bw - 2.0 * margin, ah = bh - 2.0 * margin;
 		const double k = std::min(aw / pw, ah / ph);
-		// The item's corner, so that the picture sits centred. The item's own
-		// crop is already taken off what it draws.
+		// The fit itself is left to OBS's bounding box, which is worked out
+		// afresh for every frame drawn: a window being resized stays fitted
+		// without lagging a frame behind. The box is what the item draws at
+		// this scale (the picture and any shadow room round it), placed so
+		// the picture sits centred.
+		const double drawn_w = sw - crop.left - crop.right, drawn_h = sh - crop.top - crop.bottom;
+		const double want_w = drawn_w * k, want_h = drawn_h * k;
 		const double x = bx + (bw - pw * k) / 2.0 - (left - crop.left) * k;
 		const double y = by + (bh - ph * k) / 2.0 - (top - crop.top) * k;
 
-		vec2 pos, scale;
+		vec2 pos, bounds;
 		obs_sceneitem_get_pos(item, &pos);
-		obs_sceneitem_get_scale(item, &scale);
-		const bool placed = obs_sceneitem_get_bounds_type(item) == OBS_BOUNDS_NONE &&
+		obs_sceneitem_get_bounds(item, &bounds);
+		const bool placed = obs_sceneitem_get_bounds_type(item) == OBS_BOUNDS_SCALE_INNER &&
 				    obs_sceneitem_get_alignment(item) == (OBS_ALIGN_LEFT | OBS_ALIGN_TOP) &&
+				    obs_sceneitem_get_bounds_alignment(item) == OBS_ALIGN_CENTER &&
 				    std::fabs(pos.x - x) < 0.05 && std::fabs(pos.y - y) < 0.05 &&
-				    std::fabs(scale.x - k) < 0.0002 && std::fabs(scale.y - k) < 0.0002 &&
+				    std::fabs(bounds.x - want_w) < 0.05 && std::fabs(bounds.y - want_h) < 0.05 &&
 				    obs_sceneitem_get_rot(item) == 0.0f;
 		if (placed)
 			return;
 		obs_sceneitem_defer_update_begin(item);
-		obs_sceneitem_set_bounds_type(item, OBS_BOUNDS_NONE);
 		obs_sceneitem_set_alignment(item, OBS_ALIGN_LEFT | OBS_ALIGN_TOP);
 		obs_sceneitem_set_rot(item, 0.0f);
-		vec2_set(&scale, (float)k, (float)k);
-		obs_sceneitem_set_scale(item, &scale);
+		obs_sceneitem_set_bounds_type(item, OBS_BOUNDS_SCALE_INNER);
+		obs_sceneitem_set_bounds_alignment(item, OBS_ALIGN_CENTER);
+		vec2_set(&bounds, (float)want_w, (float)want_h);
+		obs_sceneitem_set_bounds(item, &bounds);
 		vec2_set(&pos, (float)x, (float)y);
 		obs_sceneitem_set_pos(item, &pos);
 		obs_sceneitem_defer_update_end(item);

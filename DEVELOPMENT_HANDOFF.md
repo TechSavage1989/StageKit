@@ -204,6 +204,28 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Steady capture (0.1.0-beta41)
+
+The owner, with Auto Frame as *Just the picture* and Fit Item: going between a window and full-screen
+"causes it to adjust and move and flicker"; windowed games are sometimes slow to be detected; and
+window captures should resize smoothly in real time as their old scenes did.
+
+- Auto Frame's picture mode now outputs `frame_height` tall and `height x ratio` wide, not the
+  capture's own pixels, so only a change of shape changes the source's size.
+- Fit Item sets the item's bounds (SCALE_INNER, centred) to what is drawn at the fitted scale, and
+  OBS does the fitting per frame. Before, it set the scale one tick after the source changed size.
+- Auto Capture: `known_games_` (saved as `known_games`) remembers programs once seen to be games; the
+  scan runs every 0.5 s.
+- **Games crashing** (owner's report, no details yet). `loaded_engines` used
+  `CreateToolhelp32Snapshot(TH32CS_SNAPMODULE)` on the foreground process every scan; for another
+  process that call injects a thread. It now uses `EnumProcessModulesEx` and caches per process id
+  (six looks at most, 2.5 s apart). **Windows-only code, compiled by CI and never run by the tests.**
+  If crashes continue, the next suspect is OBS's own Game Capture hook being re-aimed.
+- **Stale shape**: after Snes9x (8:7) the owner's Switch emulator stayed cropped. The held shape is
+  dropped when the executable changes; that evidently did not happen here, reason unknown. Added:
+  `kNewSession`, the held shape is also dropped when the capture was gone more than 4 s. Untested.
+- The owner confirmed on Windows that the preview's right-click *StageKit* menu works.
+
 ## Bring-along flip and the shift after a move (0.1.0-beta40)
 
 The owner: a Send To that brings the Amuse widget along with the camera did not flip the widget below
