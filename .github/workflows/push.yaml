@@ -131,3 +131,99 @@ jobs:
             ${{ github.workspace }}/*.deb
             ${{ github.workspace }}/*.ddeb
             ${{ github.workspace }}/*.tar.xz
+
+  # Publishes a release without anyone pushing a tag by hand: when the newest
+  # notes file in docs/releases/ (named <version>.md) has no tag yet, the
+  # build from this push to main is released under that version, using the
+  # repository's own token.
+  pending-release:
+    name: Find Unpublished Release 🔎
+    if: github.ref_type == 'branch' && github.ref_name == 'main'
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.find.outputs.version }}
+      prerelease: ${{ steps.find.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: docs/releases
+      - name: Find Unpublished Release 🔎
+        id: find
+        run: |
+          : Find Unpublished Release 🔎
+          shopt -s extglob nullglob
+          newest="$(for f in docs/releases/*.md; do basename "${f}" .md; done | sort -V | tail -n 1)"
+          case "${newest}" in
+            +([0-9]).+([0-9]).+([0-9]) ) prerelease=false ;;
+            +([0-9]).+([0-9]).+([0-9])-@(beta|rc)*([0-9]) ) prerelease=true ;;
+            *) echo "No release notes named after a version; nothing to publish."; exit 0 ;;
+          esac
+          if [[ -n "$(git ls-remote --tags origin "refs/tags/${newest}")" ]]; then
+            echo "${newest} is already tagged; nothing to publish."
+            exit 0
+          fi
+          echo "Will publish ${newest} (prerelease: ${prerelease})."
+          echo "version=${newest}" >> $GITHUB_OUTPUT
+          echo "prerelease=${prerelease}" >> $GITHUB_OUTPUT
+
+  publish-release:
+    name: Publish Release 🚀
+    needs: [build-project, pending-release]
+    if: needs.pending-release.outputs.version != ''
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check Out Release Notes 📝
+        uses: actions/checkout@v4
+        with:
+          path: repo-source
+          sparse-checkout: docs/releases
+
+      - name: Download Build Artifacts 📥
+        uses: actions/download-artifact@v4
+
+      - name: Collect Files and Checksums 🪪
+        run: |
+          : Collect Files and Checksums 🪪
+          shopt -s extglob nullglob
+          commit_hash="${GITHUB_SHA:0:9}"
+          mkdir upload
+          for variant_data in 'windows-x64;zip|exe' 'macos-universal;tar.xz|pkg' \
+                              'ubuntu-24.04-x86_64;tar.xz|deb|ddeb' 'sources;tar.xz'; do
+            IFS=';' read -r variant suffix <<< "${variant_data}"
+            for candidate in *-${variant}-${commit_hash}/@(*|*-dbgsym).@(${suffix}); do
+              mv "${candidate}" upload/
+            done
+          done
+          files=(upload/*)
+          if (( ${#files[@]} == 0 )); then
+            echo "::error::No packaged files were produced by the build."
+            exit 1
+          fi
+
+          version="${{ needs.pending-release.outputs.version }}"
+          tail -n +2 "repo-source/docs/releases/${version}.md" > notes.md
+          { echo ""; echo "### Checksums (SHA-256)"; } >> notes.md
+          for file in "${files[@]}"; do
+            echo "    ${file##*/}: $(sha256sum "${file}" | cut -d " " -f 1)" >> notes.md
+          done
+          cat notes.md
+
+      - name: Publish Release 🚀
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.pending-release.outputs.version }}
+          PRERELEASE: ${{ needs.pending-release.outputs.prerelease }}
+        run: |
+          : Publish Release 🚀
+          flags=()
+          if [[ "${PRERELEASE}" == "true" ]]; then flags+=(--prerelease); fi
+          gh release create "${VERSION}" upload/* \
+            --repo "${GITHUB_REPOSITORY}" \
+            --target "${GITHUB_SHA}" \
+            --title "${{ needs.build-project.outputs.pluginName }} ${VERSION}" \
+            --notes-file notes.md "${flags[@]}"

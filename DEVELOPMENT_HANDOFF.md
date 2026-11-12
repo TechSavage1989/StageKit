@@ -6,7 +6,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 
 | | |
 | --- | --- |
-| Version | 0.1.0 (in `buildspec.json`). First pre-release is to be tagged `0.1.0-beta1` on `main` by the owner |
+| Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
 | Working branch | None open. Start new work on a `feat/`, `fix/`, `docs/` or `chore/` branch |
@@ -82,16 +82,23 @@ writes no files of its own.
 
 ## Releasing
 
-1. Add `docs/releases/<version>.md` and merge it.
-2. Create the tag on `main`. **An AI coding session cannot do this**: pushing tags and creating or
-   editing releases are refused for these sessions. The owner creates it on GitHub: *Releases → Draft a
-   new release → Choose a tag*, type the version (for example `0.1.0-beta1`), target `main`, tick *Set
-   as a pre-release* for `-beta` / `-rc` versions, and publish.
-3. The tag starts `.github/workflows/push.yaml`, which builds every platform, then attaches the files to
-   the release for that tag, with the notes from `docs/releases/` and SHA-256 checksums as its text. The
-   template sets the release back to **draft** at that point, so open it and press *Publish* again.
+Releases publish themselves; nobody pushes a tag by hand.
 
-Tags must look like `1.2.3`, `1.2.3-beta1` or `1.2.3-rc1`; anything else builds but creates no release.
+1. On a branch, add `docs/releases/<version>.md` (for example `0.2.0.md` or `0.2.0-beta1.md`). Bump
+   `version` in `buildspec.json` when the base version changes. Merge the pull request.
+2. On that push to `main`, `.github/workflows/push.yaml` builds every platform. Its *Find Unpublished
+   Release* job takes the newest notes file by version; if no tag of that name exists, *Publish Release*
+   creates the tag on that commit and a release with the built files, the notes and SHA-256 checksums.
+   Names ending in `-beta` or `-rc` (with an optional number) are published as pre-releases.
+3. Check the release page: files present, checksums listed, pre-release flag correct.
+
+An existing tag is never reused or overwritten; to publish again, add a new notes file with a new
+version. AI coding sessions cannot push tags or create releases themselves (the platform refuses both),
+which is why the repository's own workflow does it. Pushing a version tag by hand still works and goes
+through the template's older *Create Release* job, which leaves a draft.
+
+Files released from `main` are built in the `RelWithDebInfo` configuration (optimised, with debug
+information), which is what the template uses for pushes to `main`.
 
 ## Branches
 
@@ -106,5 +113,5 @@ Tags must look like `1.2.3`, `1.2.3-beta1` or `1.2.3-rc1`; anything else builds 
   marking the pull request ready, merging, tagging or releasing, so none of those were done. This entry
   is history, not standing permission.
 - 2026-11-12: Owner approved merging into `main` and publishing a release. Pull request #1 was marked
-  ready and merged after all checks passed. Tagging and publishing could not be done from the session
-  (refused by the platform), so they were handed to the owner. History, not standing permission.
+  ready and merged after all checks passed. Tagging and publishing are refused for sessions by the platform,
+  so an automatic release job was added to the push workflow and the release was published by it. History, not standing permission.
