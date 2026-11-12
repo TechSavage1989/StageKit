@@ -6,16 +6,16 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 
 | | |
 | --- | --- |
-| Version | 0.1.0 (in `buildspec.json`). Nothing has been released or tagged |
+| Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
-| Default branch | `main`, which holds only the initial commit |
-| Working branch | `ramp-blur`, open as draft pull request #1 against `main` |
-| Releases / update feed | None. The plugin has no updater |
+| Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
+| Working branch | None open. Start new work on a `feat/`, `fix/`, `docs/` or `chore/` branch |
+| Releases / update feed | GitHub releases on this repository. The plugin has no updater |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
 ## What is built
 
-All on the `ramp-blur` branch, each with headless tests on Linux:
+All on `main`, each with headless tests on Linux:
 
 - Ramp Blur filter, with Blur All hotkeys and obs-websocket vendor requests
 - Ambient Background source
@@ -80,11 +80,31 @@ writes no files of its own.
 - **`ramp-blur` predates the branch-naming rule** (`feat/`, `fix/`, ...). It is kept because pull
   request #1 is open on it. Use the prefixes for new branches.
 
+## Releasing
+
+Releases publish themselves; nobody pushes a tag by hand.
+
+1. On a branch, add `docs/releases/<version>.md` (for example `0.2.0.md` or `0.2.0-beta1.md`). Bump
+   `version` in `buildspec.json` when the base version changes. Merge the pull request.
+2. On that push to `main`, `.github/workflows/push.yaml` builds every platform. Its *Find Unpublished
+   Release* job takes the newest notes file by version; if no tag of that name exists, *Publish Release*
+   creates the tag on that commit and a release with the built files, the notes and SHA-256 checksums.
+   Names ending in `-beta` or `-rc` (with an optional number) are published as pre-releases.
+3. Check the release page: files present, checksums listed, pre-release flag correct.
+
+An existing tag is never reused or overwritten; to publish again, add a new notes file with a new
+version. AI coding sessions cannot push tags or create releases themselves (the platform refuses both),
+which is why the repository's own workflow does it. Pushing a version tag by hand still works and goes
+through the template's older *Create Release* job, which leaves a draft.
+
+Files released from `main` are built in the `RelWithDebInfo` configuration (optimised, with debug
+information), which is what the template uses for pushes to `main`.
+
 ## Branches
 
-- `ramp-blur`: open pull request #1; unique work, keep.
-- The branch-cleanup workflow takes effect once it reaches `main`. A dry run of its rules against the
-  live repository on 2026-11-12 found 0 branches to delete and 1 kept (`ramp-blur`, open pull request).
+- No unmerged branches. `ramp-blur` was merged and removed by the branch-cleanup workflow on its first
+  run (1 deleted, 0 kept). That run reported failure because of a printing bug with an empty list, fixed
+  in the following pull request.
 
 ## Task history
 
@@ -92,3 +112,6 @@ writes no files of its own.
   it. Source was pushed to `ramp-blur` and draft pull request #1 was opened. No approval was given for
   marking the pull request ready, merging, tagging or releasing, so none of those were done. This entry
   is history, not standing permission.
+- 2026-11-12: Owner approved merging into `main` and publishing a release. Pull request #1 was marked
+  ready and merged after all checks passed. Tagging and publishing are refused for sessions by the platform,
+  so an automatic release job was added to the push workflow and the release was published by it. History, not standing permission.

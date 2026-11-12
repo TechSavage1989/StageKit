@@ -111,6 +111,9 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
 - `.github/workflows/repo-checks.yaml` runs `scripts/check-root.sh`.
 - Merging, marking a pull request ready, tagging and releasing each need the owner's explicit approval
   for that task.
+- AI coding sessions cannot push tags or create, edit or publish releases here; the platform refuses
+  them. Releases are published by `.github/workflows/push.yaml` when a new `docs/releases/<version>.md`
+  reaches `main` (steps in the handoff). Never ask the owner to create tags by hand.
 
 ## Talking to the owner
 

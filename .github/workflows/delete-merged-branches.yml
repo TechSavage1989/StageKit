@@ -86,7 +86,7 @@ jobs:
           {
             echo "## Branch cleanup"
             echo "### Deleted (${#deleted[@]})"
-            for b in "${deleted[@]:-}"; do [ -n "$b" ] && echo "- $b"; done
+            for b in "${deleted[@]:-}"; do if [ -n "$b" ]; then echo "- $b"; fi; done
             echo "### Kept (${#kept[@]})"
-            for b in "${kept[@]:-}"; do [ -n "$b" ] && echo "- $b"; done
+            for b in "${kept[@]:-}"; do if [ -n "$b" ]; then echo "- $b"; fi; done
           } | tee -a "$GITHUB_STEP_SUMMARY"
