@@ -234,6 +234,32 @@ int main(int argc, char **argv)
 	      mean_abs_diff(with_live, textured));
 	CHECK(obs_source_showing(live), "the live source is kept showing while used");
 
+	// How the capture is laid over the screen, and using it as the whole background.
+	{
+		auto fitted = shot("6b_live_fit_small", [](obs_data_t *d) {
+			obs_data_set_int(d, "live_fit", 1);
+			obs_data_set_double(d, "live_zoom", 50);
+		});
+		CHECK(mean_abs_diff(fitted, with_live) > 1.0 && mean_abs_diff(fitted, textured) > 0.3,
+		      "the live capture can be fitted and zoomed, with the picture showing around it (diff %.2f)",
+		      mean_abs_diff(fitted, with_live));
+		auto replaced = shot("6c_live_replaces", [](obs_data_t *d) {
+			obs_data_set_int(d, "live_fit", 0);
+			obs_data_set_double(d, "live_zoom", 100);
+			obs_data_set_bool(d, "live_replace", true);
+		});
+		CHECK(mean_abs_diff(replaced, with_live) > 1.0, "the live capture can replace the picture (diff %.2f)",
+		      mean_abs_diff(replaced, with_live));
+		auto gone = shot("6d_live_gone",
+				 [](obs_data_t *d) { obs_data_set_string(d, "live_source", "No Such Source"); });
+		CHECK(mean_abs_diff(gone, textured) < 0.5, "and with no capture the picture is back (diff %.2f)",
+		      mean_abs_diff(gone, textured));
+		shot("6_live_capture", [](obs_data_t *d) {
+			obs_data_set_string(d, "live_source", "Live Capture");
+			obs_data_set_bool(d, "live_replace", false);
+		});
+	}
+
 	auto square = shot("7_square_mosaic", [](obs_data_t *d) { obs_data_set_int(d, "pixel_style", 1); });
 	CHECK(mean_abs_diff(square, with_live) > 0.2, "square mosaic differs from hex");
 

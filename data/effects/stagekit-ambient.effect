@@ -12,6 +12,7 @@ uniform texture2d overlay;
 uniform float2 uv_scale;     // Layer: cover-fit scale around the centre
 uniform float2 uv_offset;    // Layer: scroll offset in uv
 uniform float wrap_mirror;   // Layer: 1 = mirror at the edges, 0 = repeat
+uniform float clip_edges;    // Layer: 1 = draw nothing outside the picture, 0 = wrap
 uniform float opacity;       // Layer
 uniform float saturation;    // Layer: 0 = grey, 1 = unchanged, 2 = vivid
 uniform float gain;          // Layer: glow, 1 = unchanged
@@ -67,7 +68,9 @@ float4 PSLayer(VertData v_in) : TARGET
 	// Lifts shadows and midtones while white stays white, so strong glow
 	// brightens without clipping to flat colour.
 	rgb = saturate(rgb * gain / (float3(1.0, 1.0, 1.0) + rgb * (gain - 1.0)));
-	float a = c.a * opacity;
+	// A layer fitted inside the screen leaves the rest to what is under it.
+	float inside = step(0.0, uv.x) * step(uv.x, 1.0) * step(0.0, uv.y) * step(uv.y, 1.0);
+	float a = c.a * opacity * lerp(1.0, inside, clip_edges);
 	return float4(rgb * a, a);
 }
 
