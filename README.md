@@ -55,6 +55,24 @@ To replace it:
 2. Bind your existing keys (e.g. F19 / F21) to `StageKit: Blur On` / `Blur Off` for that source.
 3. Delete the old Composite Blur and Move filters.
 
+## Ambient Background
+
+Add **Ambient Background (StageKit)** as a source (it fills the canvas). One source produces a soft,
+slowly drifting backdrop, replacing a stack of source clones, nested scenes and blur / scroll / colour /
+shader filters.
+
+![Ambient Background stages](docs/images/ambient-background.png)
+
+| Group | Settings |
+| --- | --- |
+| Picture | An image file, or any existing source or scene. Optionally blend in a live capture: a specific source, or *Automatic*, which uses the largest visible capture (game, window, display or capture card) in the current scene |
+| Motion | Drift speed right/left and down/up, zoom, and seamless mirroring at the edges |
+| Look | Blur, mosaic (hexagons or squares) and its size, saturation, glow, brightness, vignette |
+| Texture overlay | An image multiplied or screened over the result, optionally in black and white |
+
+The picture is built at half resolution before the final pass, since it is blurred anyway. Put the
+source in one shared scene and nest that scene wherever you need the background.
+
 ## obs-websocket API
 
 All requests go through `CallVendorRequest` with `vendorName: "StageKit"`. Blur requests take

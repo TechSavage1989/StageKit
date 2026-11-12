@@ -1,0 +1,150 @@
+// StageKit Ambient Background
+//
+// Layer     draws the base image or the live capture so it covers the
+//           canvas, scrolled and wrapped, with saturation and glow applied.
+// PixelSquare / PixelHex  mosaic the (already blurred) picture.
+// Final     lays a texture over the result and adds vignette / brightness.
+
+uniform float4x4 ViewProj;
+uniform texture2d image;
+uniform texture2d overlay;
+
+uniform float2 uv_scale;     // Layer: cover-fit scale around the centre
+uniform float2 uv_offset;    // Layer: scroll offset in uv
+uniform float wrap_mirror;   // Layer: 1 = mirror at the edges, 0 = repeat
+uniform float opacity;       // Layer
+uniform float saturation;    // Layer: 0 = grey, 1 = unchanged, 2 = vivid
+uniform float gain;          // Layer: glow, 1 = unchanged
+
+uniform float2 size;         // Pixel*: picture size in pixels
+uniform float cell;          // Pixel*: cell size in pixels
+
+uniform float2 overlay_scale;   // Final: cover-fit scale for the overlay texture
+uniform float overlay_strength; // Final: 0..1
+uniform float overlay_mode;     // Final: 0 = multiply, 1 = screen
+uniform float overlay_gray;     // Final: 1 = use the texture's brightness only
+uniform float brightness;       // Final: 1 = unchanged
+uniform float vignette;         // Final: 0..1
+
+sampler_state linearClamp {
+	Filter   = Linear;
+	AddressU = Clamp;
+	AddressV = Clamp;
+};
+
+struct VertData {
+	float4 pos : POSITION;
+	float2 uv  : TEXCOORD0;
+};
+
+VertData VSDefault(VertData v_in)
+{
+	VertData vert_out;
+	vert_out.pos = mul(float4(v_in.pos.xyz, 1.0), ViewProj);
+	vert_out.uv  = v_in.uv;
+	return vert_out;
+}
+
+float luma(float3 c)
+{
+	return dot(c, float3(0.2126, 0.7152, 0.0722));
+}
+
+float2 wrap_uv(float2 uv)
+{
+	float2 m = frac(uv * 0.5) * 2.0;
+	float2 mirrored = float2(1.0, 1.0) - abs(m - float2(1.0, 1.0));
+	return lerp(frac(uv), mirrored, wrap_mirror);
+}
+
+// Output is premultiplied; draw with blend ONE / INVSRCALPHA.
+float4 PSLayer(VertData v_in) : TARGET
+{
+	float2 uv = (v_in.uv - float2(0.5, 0.5)) * uv_scale + float2(0.5, 0.5) + uv_offset;
+	float4 c = image.Sample(linearClamp, wrap_uv(uv));
+	float l = luma(c.rgb);
+	float3 rgb = lerp(float3(l, l, l), c.rgb, saturation);
+	// Lifts shadows and midtones while white stays white, so strong glow
+	// brightens without clipping to flat colour.
+	rgb = saturate(rgb * gain / (float3(1.0, 1.0, 1.0) + rgb * (gain - 1.0)));
+	float a = c.a * opacity;
+	return float4(rgb * a, a);
+}
+
+float4 PSPixelSquare(VertData v_in) : TARGET
+{
+	float2 p = v_in.uv * size - size * 0.5;
+	float2 center = (floor(p / cell) + float2(0.5, 0.5)) * cell + size * 0.5;
+	return image.Sample(linearClamp, center / size);
+}
+
+float4 PSPixelHex(VertData v_in) : TARGET
+{
+	// Two offset rectangular grids; the nearer cell centre wins, which
+	// carves the plane into hexagons.
+	float2 s = float2(1.7320508, 1.0) * cell;
+	float2 h = s * 0.5;
+	float2 p = v_in.uv * size + s * 64.0;
+	float2 a = p - s * floor(p / s) - h;
+	float2 q = p - h;
+	float2 b = q - s * floor(q / s) - h;
+	float2 d = dot(a, a) < dot(b, b) ? a : b;
+	float2 center = p - d - s * 64.0;
+	return image.Sample(linearClamp, center / size);
+}
+
+float4 PSFinal(VertData v_in) : TARGET
+{
+	float3 rgb = image.Sample(linearClamp, v_in.uv).rgb;
+
+	float2 ouv = (v_in.uv - float2(0.5, 0.5)) * overlay_scale + float2(0.5, 0.5);
+	float4 o = overlay.Sample(linearClamp, ouv);
+	float ol = luma(o.rgb);
+	float3 orgb = lerp(o.rgb, float3(ol, ol, ol), overlay_gray);
+	float3 multiplied = rgb * orgb;
+	float3 screened = float3(1.0, 1.0, 1.0) - (float3(1.0, 1.0, 1.0) - rgb) * (float3(1.0, 1.0, 1.0) - orgb);
+	float3 blended = lerp(multiplied, screened, overlay_mode);
+	rgb = lerp(rgb, blended, overlay_strength * o.a);
+
+	float2 v = v_in.uv - float2(0.5, 0.5);
+	float edge = saturate(dot(v, v) * 2.0);
+	rgb *= 1.0 - vignette * edge * edge * 1.5;
+
+	return float4(saturate(rgb * brightness), 1.0);
+}
+
+technique Layer
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSLayer(v_in);
+	}
+}
+
+technique PixelSquare
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSPixelSquare(v_in);
+	}
+}
+
+technique PixelHex
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSPixelHex(v_in);
+	}
+}
+
+technique Final
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSFinal(v_in);
+	}
+}

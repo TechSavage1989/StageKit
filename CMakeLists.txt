@@ -41,6 +41,8 @@ target_sources(
     src/plugin-main.cpp
     src/common/easing.cpp
     src/common/easing.hpp
+    src/ambient/ambient-background.cpp
+    src/ambient/ambient-background.hpp
     src/blur/ramp-blur.cpp
     src/blur/ramp-blur.hpp
     src/api/vendor-api.cpp

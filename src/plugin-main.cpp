@@ -20,6 +20,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <obs-frontend-api.h>
 #include <plugin-support.h>
 
+#include "ambient/ambient-background.hpp"
 #include "api/vendor-api.hpp"
 #include "blur/ramp-blur.hpp"
 
@@ -74,6 +75,7 @@ MODULE_EXPORT const char *obs_module_description(void)
 bool obs_module_load(void)
 {
 	stagekit::register_ramp_blur();
+	stagekit::register_ambient_background();
 	for (GlobalHotkey &hk : g_hotkeys)
 		hk.id = obs_hotkey_register_frontend(hk.name, obs_module_text(hk.text), blur_all_hotkey, &hk);
 	obs_frontend_add_save_callback(frontend_save_load, nullptr);
