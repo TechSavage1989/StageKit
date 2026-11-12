@@ -213,6 +213,11 @@ drawn*, which trims to the non-transparent part and follows it (one small readba
 that mode). The rebuild uses it for cropped web widgets, pinned by their bottom-left corner at the
 place the old crop put them.
 
+The owner then said they did not want a cropped widget at all: "i just need the component amuse scene
+placed where the old cropped main was on all the scenes relevant". The generator's `SWAP_WIDGET` now
+puts the Amuse Component widget, whole, where the cropped Amuse Main sat, centred on the middle of the
+old strip (draft 4). *Whatever is drawn* stays in the plugin but the rebuild no longer uses it.
+
 ## Arrange tools (0.1.0-beta24)
 
 The owner asked for "intuitive transform and object editing tools" for alignment and snapping,

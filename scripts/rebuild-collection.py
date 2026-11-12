@@ -37,6 +37,9 @@ GAME_CAPTURES = {"Game Capture", "Windowed Game Capture"}
 # Everything under these was the hand-built blurred background.
 BACKGROUND_SCENES = ("Live Background", "Start Background Scene", "Background Scene", "Tablet Background Scene")
 SKIP_LEAVES = {"Purple"}
+# The owner's choice: where the cropped "Amuse Main" widget sat (start, intermission, break and ending
+# scenes), show the "Amuse Component" widget instead, whole and uncropped, in the same place.
+SWAP_WIDGET = {"Amuse Main": "Amuse Component"}
 
 report = []
 new_sources = {}  # name -> source json (leaf sources, wrappers, groups, scenes)
@@ -260,6 +263,20 @@ def flatten(scene_name, t, shadow, out, depth=0):
             keep_container(name)
         elif name in GAME_CAPTURES:
             entry["game"] = True
+        elif name in SWAP_WIDGET and kind == "browser_source":
+            # Both widgets draw their card in the middle of their page, so the
+            # new page is centred on the middle of the strip the old crop kept.
+            new_name = SWAP_WIDGET[name]
+            carry(new_name)
+            ow, oh = leaf_size(name)
+            nw, nh = leaf_size(new_name)
+            sx, sy = entry["scale"]
+            centre_x = entry["pos"][0] + (ow - crop[0] - crop[1]) * sx / 2.0
+            centre_y = entry["pos"][1] + (oh - crop[2] - crop[3]) * sy / 2.0
+            entry["name"] = new_name
+            entry["pos"] = (centre_x - nw * sx / 2.0, centre_y - nh * sy / 2.0)
+            entry["crop"] = (0, 0, 0, 0)
+            report.append(f"  '{new_name}' shown whole where the cropped '{name}' was")
         elif own_shadow and any(crop) and kind == "browser_source":
             # A web widget cropped by hand: the crop numbers go stale when the
             # widget's layout changes (the owner found the album art cut off).
