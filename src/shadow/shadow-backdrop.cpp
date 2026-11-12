@@ -181,7 +181,9 @@ void keep_picture_in_place(obs_sceneitem_t *item, double inner_w, double inner_h
 	obs_sceneitem_set_pos(item, &pos);
 }
 
-// Every scene item, in every scene and group, that shows a source.
+// Every scene item, in every scene and group, that shows a source. Each is
+// held with a reference, for the caller to release: the items are used after
+// the scenes are let go of, when OBS's window could be deleting one.
 std::vector<obs_sceneitem_t *> items_showing(obs_source_t *wanted)
 {
 	struct Find {
@@ -192,8 +194,10 @@ std::vector<obs_sceneitem_t *> items_showing(obs_source_t *wanted)
 	Find find{wanted, &out};
 	static const auto visit = [](obs_scene_t *, obs_sceneitem_t *item, void *param) {
 		auto *f = static_cast<Find *>(param);
-		if (obs_sceneitem_get_source(item) == f->wanted)
+		if (obs_sceneitem_get_source(item) == f->wanted) {
+			obs_sceneitem_addref(item);
 			f->out->push_back(item);
+		}
 		return true;
 	};
 	obs_enum_scenes(
@@ -277,7 +281,7 @@ std::vector<obs_source_t *> scenes_holding(obs_source_t *wanted)
 }
 
 // The scenes holding the source that are showing now: the scene on screen
-// and the visible scenes nested in it. Not references.
+// and the visible scenes nested in it. Each is a new reference.
 struct Showing {
 	obs_source_t *wanted;
 	std::vector<obs_source_t *> *holders;
@@ -290,7 +294,7 @@ void showing_holders(obs_source_t *scene_source, Showing &look)
 		return;
 	if (holds_directly(scene, look.wanted) &&
 	    std::find(look.holders->begin(), look.holders->end(), scene_source) == look.holders->end())
-		look.holders->push_back(scene_source);
+		look.holders->push_back(obs_source_get_ref(scene_source));
 	obs_scene_enum_items(
 		scene,
 		[](obs_scene_t *, obs_sceneitem_t *item, void *param) {
@@ -497,8 +501,10 @@ void ShadowBackdrop::settle_items(obs_source_t *parent, const Padding &wanted)
 	const uint32_t h = target ? obs_source_get_base_height(target) : 0;
 	if (!w || !h)
 		return; // nothing to measure against yet; try again next frame
-	for (obs_sceneitem_t *item : items_showing(parent))
+	for (obs_sceneitem_t *item : items_showing(parent)) {
 		keep_picture_in_place(item, w, h, before, wanted);
+		obs_sceneitem_release(item);
+	}
 	{
 		std::lock_guard lock(mutex_);
 		adjusted_ = wanted;
@@ -551,8 +557,10 @@ void ShadowBackdrop::tick()
 			showing_holders(on_screen, look);
 			obs_data_t *settings = obs_source_get_settings(source_);
 			off = !holders.empty();
-			for (obs_source_t *scene : holders)
-				off = off && obs_data_get_bool(settings, off_key(scene).c_str());
+			for (obs_source_t *scene : holders) {
+				off = off && scene && obs_data_get_bool(settings, off_key(scene).c_str());
+				obs_source_release(scene);
+			}
 			obs_data_release(settings);
 			obs_source_release(on_screen);
 		}

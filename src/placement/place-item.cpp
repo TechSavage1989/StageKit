@@ -27,6 +27,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include "../common/easing.hpp"
 #include "../common/scene-util.hpp"
+#include "../dock/arrange.hpp"
 
 #include <obs-module.h>
 #include <obs-frontend-api.h>
@@ -405,14 +406,21 @@ void PlaceItem::plan(const Settings &s, obs_source_t *scene, obs_sceneitem_t *it
 		double tx = target.x + dx;
 		double ty = target.y + dy;
 		if (s.flip_linked) {
+			// Judged by what is drawn, not by the item's box: a widget's box
+			// is often far bigger than the widget, and that empty room should
+			// neither force a flip nor hide the need for one.
+			const Box seen = measure_item(scene, linked, Measure{true, true});
+			const double vx = seen.x - fbox.x, vy = seen.y - fbox.y; // the drawn part inside its box
 			auto off_screen = [](double pos, double size, double limit) {
 				return std::max(0.0, -pos) + std::max(0.0, pos + size - limit);
 			};
-			const double mirrored_x = target.x + target.w - (dx + fbox.w);
-			const double mirrored_y = target.y + target.h - (dy + fbox.h);
-			if (off_screen(mirrored_x, fbox.w, canvas_w) < off_screen(tx, fbox.w, canvas_w))
+			// Mirrored: the drawn part sits as far past the leader's other
+			// side as it sat past this one.
+			const double mirrored_x = target.x + target.w - (dx + vx + seen.w) - vx;
+			const double mirrored_y = target.y + target.h - (dy + vy + seen.h) - vy;
+			if (off_screen(mirrored_x + vx, seen.w, canvas_w) < off_screen(tx + vx, seen.w, canvas_w))
 				tx = mirrored_x;
-			if (off_screen(mirrored_y, fbox.h, canvas_h) < off_screen(ty, fbox.h, canvas_h))
+			if (off_screen(mirrored_y + vy, seen.h, canvas_h) < off_screen(ty + vy, seen.h, canvas_h))
 				ty = mirrored_y;
 		}
 		follower_.from_x = fbox.x;
@@ -452,11 +460,10 @@ void PlaceItem::tick(float seconds)
 	const double t = ease(curve_, mode_, duration_ > 0.0 ? elapsed_ / duration_ : 1.0);
 	for (const Move &move : moves_)
 		apply_move(move, t);
-	if (elapsed_ >= duration_) {
-		for (const Move &move : moves_)
-			apply_move(move, 1.0);
+	// The last step already lands exactly on the spot; a second nudge here
+	// could act on a box OBS had not refreshed yet and overshoot.
+	if (elapsed_ >= duration_)
 		finish();
-	}
 }
 
 // Stores the item's current position and size as the saved spot.
