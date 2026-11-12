@@ -204,6 +204,13 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Thumbnail fits the dock (0.1.0-beta34)
+
+The owner: "stagekit background in dock should scale to fit the dock size". `Thumb` reports width
+changes; `show_thumb` scales the picture to the label's width and sets the label's height to match,
+capped so the buttons stay visible in a short dock (`kBelowThumb`). Their screenshot also confirmed
+the AVIF thumbnail fix from beta27 on Windows.
+
 ## Outline made from the picture, redone (0.1.0-beta33)
 
 The owner ran beta31 on Windows (so the Outline and Compose shaders compile on Direct3D) and showed a

@@ -2817,9 +2817,32 @@ int main(int argc, char **argv)
 					sleep_ms(50);
 				}
 				auto *thumb = dock->findChild<QLabel *>("startThumb");
+				dock->grab();
+				QCoreApplication::processEvents();
 				const QPixmap shown = thumb ? thumb->pixmap() : QPixmap();
-				CHECK(!shown.isNull() && shown.height() == 120,
-				      "the dock shows a small picture of the start image");
+				CHECK(!shown.isNull() && thumb && std::abs(shown.width() - thumb->width()) <= 2,
+				      "the dock shows a picture of the start image as wide as the dock allows (%d of %d)",
+				      shown.width(), thumb ? thumb->width() : 0);
+				{
+					const int before_w = shown.width();
+					dock->resize(520, 700);
+					dock->grab(); // lays the hidden dock out, as showing it would
+					for (int i = 0; i < 6; i++) {
+						QCoreApplication::processEvents();
+						sleep_ms(30);
+					}
+					const QPixmap wider = thumb ? thumb->pixmap() : QPixmap();
+					CHECK(wider.width() > before_w + 100 &&
+						      std::abs(wider.width() - thumb->width()) <= 2,
+					      "and it grows when the dock is made wider (%d -> %d)", before_w,
+					      wider.width());
+					dock->resize(340, 320);
+					dock->grab();
+					for (int i = 0; i < 6; i++) {
+						QCoreApplication::processEvents();
+						sleep_ms(30);
+					}
+				}
 				CHECK(dock->minimumSizeHint().width() <= narrow,
 				      "a long start image file name does not widen the dock (%d, was %d)",
 				      dock->minimumSizeHint().width(), narrow);
