@@ -1,171 +1,214 @@
-# StageKit for OBS Studio
+<h1 align="center">StageKit</h1>
 
-Quality-of-life tools for OBS that replace long chains of Move filters with
-single, easy-to-use features. Every feature can be triggered by an OBS hotkey,
-the StageKit Stream Deck plugin, or obs-websocket.
+<p align="center">Quality-of-life tools for OBS Studio: ramping blur, backgrounds, shadows and easy positioning, without chains of filters and nested scenes.</p>
 
-| Feature | Status |
-| --- | --- |
-| **Ramp Blur**: one filter that smoothly blurs a source in and out, six blur types | Working (v0.1) |
-| **Placements**: send items to preset or saved spots, drag on a mini map, animated moves | Planned |
-| **Shared layout slots**: one position shared by items across scenes, each with its own text/media | Planned |
-| **Stream Deck plugin**: keys and dials that show live state | Planned |
+<p align="center">
+  <a href="#download">Download</a> |
+  <a href="#getting-started">Get started</a> |
+  <a href="#features">Features</a> |
+  <a href="#screenshots">Screenshots</a> |
+  <a href="#updates-and-settings">Updates</a> |
+  <a href="#development">Development</a>
+</p>
 
-## Ramp Blur
+## Features
 
-Add **Ramp Blur (StageKit)** as a filter on any source or scene. The filter's own on/off switch is the
-blur: turning it on ramps the blur in, turning it off ramps it out and then switches the filter off, so
-it costs nothing while off.
+StageKit is for streamers who build their scenes by hand. Each tool replaces a setup that normally
+takes several filters, source clones or wrapper scenes. Everything can be triggered from OBS itself,
+from hotkeys, or from the Stream Deck OBS Studio plugin's *Filter* and *Source* keys.
 
-![Every blur type at three strengths](docs/images/blur-types-game.png)
+- **Ramp Blur** (filter): blurs a source in and out smoothly. Six types: Gaussian, Dual Kawase, Box,
+  Pixelate, Zoom and Motion.
+- **Ambient Background** (source): a soft, drifting backdrop built from an image or another source,
+  optionally tinted by whatever capture is live.
+- **Shadow & Backdrop** (filter): drop shadow, a panel behind the source, and rounded corners, with no
+  wrapper scene.
+- **Ramp Zoom** (filter): zooms smoothly into a point of a source and back out.
+- **Place Item** (scene filter): sends an item to one of nine screen positions or a saved spot, and can
+  bring a linked item along.
+- **Show/Hide Animation** (scene filter): slides or pops an item in and out when it is shown or hidden.
+- **Match Item** (scene filter): keeps an item lined up with an item in another scene, so titles sit in
+  the same place in every scene.
+- **Layout** (scene filter): saves an arrangement of a scene's items and glides back to it.
+
+## Screenshots
+
+These are real frames rendered by the plugin in its automated tests, using made-up sample images.
+
+**Ramp Blur: every blur type at three strengths**
+
+<p align="center"><img src="docs/images/blur-types-game.png" width="900" alt="A sample game frame blurred with each of the six Ramp Blur types at three strengths"></p>
+
+**Ambient Background: from image to finished backdrop**
+
+<p align="center"><img src="docs/images/ambient-background.png" width="900" alt="Eight stages of the Ambient Background: plain image, blur, saturation and glow, hexagon mosaic, texture overlay, live capture blended in, square mosaic, and a background made from another source"></p>
+
+**Shadow & Backdrop**
+
+<p align="center"><img src="docs/images/shadow-backdrop.png" width="900" alt="Title text with a hard shadow, a soft shadow, a rounded dark panel, and a picture with rounded corners and a soft shadow"></p>
+
+## Download
+
+No release has been published yet. Test builds for Windows, macOS and Linux are attached to each
+build run:
+
+- [Build runs with downloadable artifacts](https://github.com/TechSavage1989/StageKit/actions/workflows/push.yaml)
+- [Releases](https://github.com/TechSavage1989/StageKit/releases) (empty until the first release)
+
+Downloading a build artifact needs a signed-in GitHub account.
+
+## Requirements
+
+- OBS Studio 31 or newer. Builds are compiled against OBS 31.1.1.
+- Windows x64, macOS (Apple silicon and Intel) or Ubuntu 24.04 x86_64.
+- Automated tests run on Linux with OpenGL only. Nothing has been verified in OBS on Windows or macOS
+  yet, including whether the shaders compile under Direct3D.
+- Optional: obs-websocket (bundled with OBS) for remote control.
+
+## Getting started
+
+1. Download the artifact for your system from a build run and unzip it.
+2. Close OBS.
+3. Windows: copy the `stagekit` folder from the zip into `C:\ProgramData\obs-studio\plugins\`. The
+   artifact's exact layout has not been checked on a real machine yet; if the zip looks different,
+   please report what it contains.
+4. Start OBS. *Ramp Blur (StageKit)* and the other tools appear in the filter list of any source, and
+   *Ambient Background (StageKit)* in the list of sources.
+
+## How to use
+
+### Ramp Blur
+
+Add **Ramp Blur (StageKit)** as a filter on a source or scene. The filter's own on/off switch is the
+blur: turning it on ramps the blur in, turning it off ramps it out and then really switches the filter
+off, so it costs nothing while off.
 
 | Setting | What it does |
 | --- | --- |
-| Blur type | Gaussian (smoothest), Dual Kawase (fastest, best for strong blur), Box, Pixelate, Zoom (radial), Motion (directional) |
-| Strength | 0–250. Gaussian, Kawase and Box are calibrated to look alike at the same number |
-| Ramp style | *Grow blur strength* (sharp → blurred) or *Fade blurred image in* (cross-fade) |
-| Ramp in / out time | Separate durations, 0–5000 ms. 0 = instant |
-| Easing | Linear, Sine, Quad, Cubic, Quart, Quint, Expo, Circular, Back, Elastic, Bounce × in / out / in-and-out |
+| Blur type | Gaussian (smoothest), Dual Kawase (fastest, best for strong blur), Box, Pixelate, Zoom, Motion |
+| Strength | 0–250. Gaussian, Kawase and Box look alike at the same number |
+| Ramp style | Grow the blur strength, or cross-fade a fully blurred image in |
+| Ramp in / out time | 0–5000 ms each. 0 is instant |
+| Easing | Eleven curves, eased in, out or both |
 | Include in 'Blur All' | Whether the global Blur All hotkeys affect this filter |
 
-Triggering it:
+Ways to trigger it:
 
-- **Stream Deck, with Elgato's OBS Studio plugin**: add a *Filter* key and pick the source and the Ramp
-  Blur filter. The key ramps the blur and its light follows the state. No extra plugin is needed.
-- **The eye icon** next to the filter in OBS does the same.
-- **Hotkeys**: *Settings → Hotkeys*, under the source: `StageKit: Blur Toggle / On / Off (<filter name>)`.
-  Renaming the filter keeps your bindings. A Stream Deck *Hotkey* key can press these (e.g. F13–F24).
-- **Blur All**: `StageKit: Blur All Toggle / On / Off` in the top section of *Settings → Hotkeys* drives
-  every Ramp Blur at once (a privacy key).
-- **obs-websocket**: `CallVendorRequest` with vendor `StageKit` (see below).
-- **Scripts**: the filter has `blur_on`, `blur_off`, `blur_toggle` and `get_state` procs.
+- The eye icon next to the filter.
+- A Stream Deck OBS Studio plugin *Filter* key pointing at the filter.
+- Hotkeys under the source in *Settings → Hotkeys*: `StageKit: Blur Toggle / On / Off`.
+- `StageKit: Blur All Toggle / On / Off` in the top section of *Settings → Hotkeys*, which drives every
+  Ramp Blur at once.
 
-Turning the blur on or off part-way through a ramp reverses smoothly from the current level. Alpha is
-handled properly: text and cut-out sources blur without dark fringes
-([title example](docs/images/blur-types-title.png)).
+To replace a Composite Blur + Move chain: add one Ramp Blur, pick the type and strength (Composite
+Blur's Pixelate at radius 5 is *Pixelate* at strength 4), point your existing keys at it, then delete
+the old filters.
 
-### Replacing a Move-based blur chain
+### Ambient Background
 
-A typical Move setup uses six filters per source: Composite Blur, *Move Action Blur On*,
-*Move Value Blur Up*, *Move Action Blur Off*, *Move Value Blur Down* and *Move Action Composite Blur Off*.
-To replace it:
-
-1. Add **Ramp Blur (StageKit)** to the source and pick the type and strength. For Composite Blur's
-   Pixelate at radius 5, use *Pixelate* at strength 4.
-2. Bind your existing keys (e.g. F19 / F21) to `StageKit: Blur On` / `Blur Off` for that source.
-3. Delete the old Composite Blur and Move filters.
-
-## Ambient Background
-
-Add **Ambient Background (StageKit)** as a source (it fills the canvas). One source produces a soft,
-slowly drifting backdrop, replacing a stack of source clones, nested scenes and blur / scroll / colour /
-shader filters.
-
-![Ambient Background stages](docs/images/ambient-background.png)
+Add **Ambient Background (StageKit)** as a source. It fills the canvas.
 
 | Group | Settings |
 | --- | --- |
-| Picture | An image file, or any existing source or scene. Optionally blend in a live capture: a specific source, or *Automatic*, which uses the largest visible capture (game, window, display or capture card) in the current scene |
-| Motion | Drift speed right/left and down/up, zoom, and seamless mirroring at the edges |
-| Look | Blur, mosaic (hexagons or squares) and its size, saturation, glow, brightness, vignette |
+| Picture | An image file, or any existing source or scene. Optionally blend in a live capture: a chosen source, or *Automatic*, which uses the largest visible capture in the current scene |
+| Motion | Drift speed in each direction, zoom, and mirroring at the edges so the drift never shows a seam |
+| Look | Blur, hexagon or square mosaic, saturation, glow, brightness, vignette |
 | Texture overlay | An image multiplied or screened over the result, optionally in black and white |
 
-The picture is built at half resolution before the final pass, since it is blurred anyway. Put the
-source in one shared scene and nest that scene wherever you need the background.
+Put it in one shared scene and nest that scene wherever you need the background.
 
-## Shadow & Backdrop
+### Shadow & Backdrop
 
-Add **Shadow & Backdrop (StageKit)** as a filter on any source, group or scene. It replaces the usual
-workaround of wrapping the source in an oversized scene so a shadow has room to draw.
+Add **Shadow & Backdrop (StageKit)** as a filter on a source, group or scene. Set the shadow's colour,
+opacity, offset, softness (0 gives a hard edge) and spread. Optionally add a panel behind the source and
+round the corners.
 
-![Shadow & Backdrop examples](docs/images/shadow-backdrop.png)
+The source grows by exactly the room the shadow and panel need. Room added on the left or top shifts
+the picture by that amount inside the item; a hard shadow pointing down and right adds none.
 
-| Setting | What it does |
-| --- | --- |
-| Drop shadow | Colour, opacity, offset right/left and down/up, softness (0 = hard edge), spread, and *show the shadow only* |
-| Panel behind the source | A filled panel with its own colour, opacity and margin |
-| Rounded corners | Rounds the source (and the panel) |
+### Ramp Zoom
 
-The source grows by exactly the room the shadow and panel need. Room added on the left or top shifts the
-picture by that amount inside the item; a hard shadow pointing down and right adds none.
+Add **Ramp Zoom (StageKit)** as a filter on a source. Turning it on zooms into the point you choose;
+turning it off zooms back out. It has a `StageKit: Zoom Toggle` hotkey under the source.
 
-## Place Item
+### Place Item
 
-Add **Place Item (StageKit)** as a filter on a *scene*, once per destination ("Camera → top right").
-Switching the filter on glides the item there, then the filter switches itself off, ready for next time.
+Add **Place Item (StageKit)** as a filter on a *scene*, once per destination.
 
-| Setting | What it does |
-| --- | --- |
-| Item to move | Any item in the scene |
-| Send it to | One of nine screen positions (corners, edges, centre) with a margin from the edge, or a saved spot |
-| Saved spot | Drag the item where you want it, press *Save the item's current spot*; X and Y stay editable, and the item's size can be restored too |
-| Bring along | A linked item (a frame, a widget) that keeps its place relative to the moved item and flips to the other side when it would leave the screen |
-| Travel time, easing | How the glide looks |
+1. Choose the item to move.
+2. Choose where to send it: one of nine screen positions with a margin from the edge, or a saved spot.
+   For a saved spot, drag the item where you want it and press *Save the item's current spot*.
+3. Optionally choose an item to bring along. It keeps its place relative to the moved item and flips to
+   the other side if it would leave the screen.
 
-Trigger it from the eye icon, a Stream Deck OBS plugin *Filter* key, the *Move it now* button, or its
-hotkey (`StageKit: Move (<filter name>)` under the scene in *Settings → Hotkeys*).
+Switching the filter on moves the item; the filter then switches itself off, ready for the next time.
+Trigger it from the eye icon, a Stream Deck *Filter* key, *Move it now*, or its `StageKit: Move`
+hotkey under the scene.
 
-## Ramp Zoom
+### Show/Hide Animation
 
-Add **Ramp Zoom (StageKit)** as a filter on a source. Turning the filter on zooms smoothly into the
-chosen point; turning it off zooms back out and the filter then costs nothing. Settings: zoom amount,
-the point to zoom in on, zoom-in and zoom-out times, and easing. Trigger it from the eye icon, a Stream
-Deck OBS plugin *Filter* key, or the `StageKit: Zoom Toggle` hotkey under the source.
+Add **Show/Hide Animation (StageKit)** as a filter on a scene and leave it on. Choose the item and
+where it comes in from: the nearest screen edge, a chosen edge, or a pop from its centre. From then on,
+showing or hiding the item animates it, including from a Stream Deck *Source* key.
 
-## obs-websocket API
+### Match Item
 
-All requests go through `CallVendorRequest` with `vendorName: "StageKit"`. Blur requests take
-`sourceName` and an optional `filterName`. Without `filterName`, the first Ramp Blur on the source is
-used. `durationMs` optionally overrides the ramp time for that one call.
+Add **Match Item (StageKit)** as a filter on a scene and leave it on. Choose an item in this scene, and
+the scene and item it should line up with. *Fit inside the same box* scales the item to the other
+item's box, which suits titles of different lengths; *Copy its position and size settings* matches it
+exactly. Moving the original moves every matched item.
+
+### Layout
+
+Add **Layout (StageKit)** as a filter on a scene. Arrange the scene and press *Save where everything is
+now*. Switching the filter on glides every saved item back to that arrangement.
+
+### Remote control
+
+With obs-websocket, send `CallVendorRequest` with `vendorName: "StageKit"`:
 
 | requestType | requestData | Response |
 | --- | --- | --- |
-| `GetVersion` | – | `version`, `features` |
-| `ListBlurFilters` | – | `filters: [{sourceName, filterName, active, level, blurType}]` |
+| `GetVersion` | none | `version`, `features` |
+| `ListBlurFilters` | none | `filters: [{sourceName, filterName, active, level, blurType}]` |
 | `BlurOn` / `BlurOff` / `BlurToggle` | `sourceName`, `filterName?`, `durationMs?` | the filter's new state |
 | `SetBlur` | `sourceName`, `filterName?`, `active`, `durationMs?` | the filter's new state |
-| `BlurAll` | `mode?`: `on`, `off` or `toggle` (default) | `active` |
+| `BlurAll` | `mode?`: `on`, `off` or `toggle` | `active` |
 
-Every response has `success` and, on failure, `error`. A `BlurChanged` vendor event
-(`sourceName`, `filterName`, `active`) is emitted whenever a blur turns on or off, so a Stream Deck key
-can show the current state.
+Every response has `success` and, on failure, `error`. A `BlurChanged` event is sent when a blur turns
+on or off. The other tools are filters, so the standard `SetSourceFilterEnabled` request triggers them.
 
-## Roadmap
+## Updates and settings
 
-**Placements**: moving items without setting up a filter per position.
-- A 3×3 grid of anchor presets (corners, edges, centre) with an adjustable safe margin. These work on any
-  item with no setup.
-- Named custom spots captured from wherever you dragged the item ("Save current spot").
-- Linked items that move together (e.g. a camera and its frame), replacing paired "simultaneous moves".
-- A dock with a mini map of the scene: click a grid cell or drag the item, and nudge with arrow buttons.
-- Animated moves with the same easing options, plus hotkeys and websocket requests per preset.
+StageKit does not check for updates and never downloads anything. To update, close OBS and replace the
+plugin folder with a newer build.
 
-**Shared layout slots**: for titles such as STARTING / BRB / INTERMISSION / ENDING.
-- Define a slot (position, size, alignment) once and assign items in any scene to it.
-- Moving or resizing the slot updates every assigned item. The text and media stay per-scene.
+All settings are stored by OBS in your scene collection, alongside the filters and sources they belong
+to. Replacing the plugin does not change them. Hotkey bindings are stored there too.
 
-**Stream Deck plugin** (TypeScript, Elgato SDK): Blur toggle / on / off keys that light up when blurred,
-Move-to-preset keys, Stream Deck + dials for strength or nudging, and dropdowns filled live from OBS.
+## Troubleshooting
 
-## Building
+- **A StageKit filter or source shows a blank or unchanged picture on Windows.** The shaders have only
+  been tested with OpenGL. Open *Help → Log Files → View Current Log*, search for `stagekit`, and
+  report any line that mentions an effect failing to load.
+- **A filter you switched on turned itself off.** Place Item and Layout do that on purpose after each
+  move.
+- **Items inside a group are missing from a scene filter's item list.** Add the filter to the group
+  itself instead.
 
-Windows and macOS builds are produced by GitHub Actions (`.github/workflows`, from the official
-[obs-plugintemplate](https://github.com/obsproject/obs-plugintemplate)). They target OBS 31+.
+## Development
 
-On Linux:
+Start with [AGENTS.md](AGENTS.md), then [DEVELOPMENT_HANDOFF.md](DEVELOPMENT_HANDOFF.md).
+
+Build and run every test on Linux:
 
 ```bash
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
-cmake --build build
+tests/run-tests.sh
 ```
 
-### Tests
-
-`tests/run-tests.sh` builds the plugin and runs a headless libobs render test under Xvfb. It renders
-every blur type, checks ramp timing and reversal, checks that the strength sweep has no visible jumps,
-checks hotkey registration and rename handling, and drives the blur end-to-end through obs-websocket.
-It needs `libobs-dev`, `qt6-base-dev`, `obs-studio`, `xvfb` and Python Pillow.
+Windows and macOS builds come from GitHub Actions, based on the official
+[obs-plugintemplate](https://github.com/obsproject/obs-plugintemplate).
 
 ## License
 
-GPL-2.0-or-later, like OBS Studio.
+[GPL-2.0](LICENSE), the same license as OBS Studio.

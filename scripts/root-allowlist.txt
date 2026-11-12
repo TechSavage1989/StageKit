@@ -1,0 +1,23 @@
+# Tracked files and folders allowed at the repository root, one per line.
+# scripts/check-root.sh fails when anything else is tracked there.
+# To add an entry: explain why the toolchain needs it at the root in the pull
+# request, add it here and to the folder map in AGENTS.md.
+.clang-format
+.gersemirc
+.github
+.gitignore
+AGENTS.md
+CLAUDE.md
+CMakeLists.txt
+CMakePresets.json
+DEVELOPMENT_HANDOFF.md
+LICENSE
+README.md
+build-aux
+buildspec.json
+cmake
+data
+docs
+scripts
+src
+tests
