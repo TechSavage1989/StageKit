@@ -183,6 +183,12 @@ the capture drops out, so the switch does not blink. A menu
 or pop-up drawn over the bars does not resize it. It changes only when another real picture shape has
 been clearly on screen for the hold time, or when a different program is captured.
 
+**Unusual shapes.** Automatic trimming knows the shapes consoles and handhelds use, including two
+screens stacked or side by side (DS, 3DS), upright and ultra-wide. For a picture in some other shape,
+press *Measure the bars now* on a bright scene (or set the amounts by hand), then *Keep this trim for
+this program*. That saves the shape for the program being captured and goes back to automatic, so the
+program is right from then on, at any window size, and everything else is still worked out by itself.
+
 **Picture shape for each program.** Common emulators start from their usual shape (Snes9x 8:7, mGBA
 3:2, Project64 4:3 and so on), so the picture is right from the first frame. That is only a starting
 point: if the picture clearly shows another shape, that shape is used and held. To fix a program's

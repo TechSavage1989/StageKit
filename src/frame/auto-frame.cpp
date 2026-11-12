@@ -223,7 +223,8 @@ const struct {
 	{"snes9x", "8:7"},  {"bsnes", "64:49"},   {"higan", "64:49"},  {"mgba", "3:2"},      {"visualboy", "3:2"},
 	{"vba-m", "3:2"},   {"project64", "4:3"}, {"mupen64", "4:3"},  {"simple64", "4:3"},  {"duckstation", "4:3"},
 	{"epsxe", "4:3"},   {"fusion", "4:3"},    {"blastem", "4:3"},  {"flycast", "4:3"},   {"redream", "4:3"},
-	{"ppsspp", "16:9"}, {"bgb", "10:9"},      {"sameboy", "10:9"}, {"gambatte", "10:9"},
+	{"ppsspp", "16:9"}, {"bgb", "10:9"},      {"sameboy", "10:9"}, {"gambatte", "10:9"}, {"melonds", "2:3"},
+	{"desmume", "2:3"}, {"citra", "5:6"},     {"lime3ds", "5:6"},  {"azahar", "5:6"},    {"borked3ds", "5:6"},
 };
 
 // "64:49" for a ratio that has a usual name, otherwise the number.
@@ -233,7 +234,7 @@ std::string ratio_name(double ratio)
 		if (std::fabs(parse_ratio(name) - ratio) < 0.002)
 			return name;
 	char text[32];
-	snprintf(text, sizeof(text), "%.3f", ratio);
+	snprintf(text, sizeof(text), "%.4f", ratio);
 	return text;
 }
 
@@ -480,8 +481,33 @@ public:
 	bool remember_shape()
 	{
 		obs_data_t *settings = obs_source_get_settings(source_);
-		std::string program = lower(obs_data_get_string(settings, "rule_program"));
+		const std::string program = obs_data_get_string(settings, "rule_program");
 		const std::string shape = obs_data_get_string(settings, "rule_shape");
+		obs_data_release(settings);
+		return save_shape(program, shape, false);
+	}
+
+	// Stores the picture as it is trimmed right now (found automatically,
+	// measured with the button, or set by hand) as the shape for the
+	// program being captured, and goes back to automatic trimming so that
+	// shape is used for this program and others are still worked out.
+	bool remember_current()
+	{
+		std::string program;
+		double ratio = 0.0;
+		{
+			std::lock_guard lock(mutex_);
+			program = program_;
+			if (crop_goal_.w > 1.0 && crop_goal_.h > 1.0)
+				ratio = crop_goal_.w / crop_goal_.h;
+		}
+		return ratio > 0.0 && save_shape(program, ratio_name(ratio), true);
+	}
+
+	bool save_shape(std::string program, const std::string &shape, bool automatic)
+	{
+		obs_data_t *settings = obs_source_get_settings(source_);
+		program = lower(program);
 		if (program.size() > 4 && program.compare(program.size() - 4, 4, ".exe") == 0)
 			program.resize(program.size() - 4);
 		const bool ok = !program.empty() && parse_ratio(shape) > 0.0;
@@ -495,6 +521,8 @@ public:
 			}
 			text += program + " = " + shape;
 			obs_data_set_string(settings, "rules_text", text.c_str());
+			if (automatic)
+				obs_data_set_int(settings, "trim", (int)Trim::Automatic);
 			obs_source_update(source_, settings);
 		}
 		obs_data_release(settings);
@@ -914,8 +942,15 @@ private:
 	static bool is_picture_shape(double pic_w, double pic_h)
 	{
 		// 64:49 is SNES/NES pixels (8:7 each) shown on a 4:3 screen.
-		static const double shapes[] = {16.0 / 9.0, 16.0 / 10.0, 3.0 / 2.0,  4.0 / 3.0,   64.0 / 49.0,
-						5.0 / 4.0,  8.0 / 7.0,   10.0 / 9.0, 16.0 / 15.0, 1.0};
+		static const double shapes[] = {16.0 / 9.0, 16.0 / 10.0, 3.0 / 2.0, 4.0 / 3.0, 64.0 / 49.0, 5.0 / 4.0,
+						8.0 / 7.0, 10.0 / 9.0, 16.0 / 15.0, 1.0,
+						// Two-screen handhelds: DS screens stacked, side by side; 3DS
+						// top screen, both stacked, both side by side.
+						2.0 / 3.0, 8.0 / 3.0, 5.0 / 3.0, 5.0 / 6.0, 3.0 / 1.0,
+						// Other handhelds: PSP, Lynx, WonderSwan, Neo Geo Pocket, Virtual Boy.
+						30.0 / 17.0, 80.0 / 51.0, 14.0 / 9.0, 20.0 / 19.0, 12.0 / 7.0,
+						// Upright and ultra-wide screens.
+						3.0 / 4.0, 9.0 / 16.0, 2.0 / 1.0, 21.0 / 9.0, 64.0 / 27.0, 32.0 / 9.0};
 		if (pic_w < 16.0 || pic_h < 16.0)
 			return false;
 		const double tolerance = std::max(4.0, pic_h * 0.004);
@@ -1126,6 +1161,13 @@ obs_properties_t *get_properties(void *data)
 			return false;
 		},
 		data);
+	obs_property_t *keep = obs_properties_add_button2(
+		props, "trim_keep", obs_module_text("Frame.TrimKeep"),
+		[](obs_properties_t *, obs_property_t *, void *d) {
+			return d && static_cast<AutoFrame *>(d)->remember_current();
+		},
+		data);
+	obs_property_set_long_description(keep, obs_module_text("Frame.TrimKeep.Tip"));
 	obs_property_t *wait =
 		obs_properties_add_float_slider(props, "trim_wait", obs_module_text("Frame.TrimWait"), 0.0, 60.0, 0.5);
 	obs_property_float_set_suffix(wait, " s");

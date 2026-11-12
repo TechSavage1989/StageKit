@@ -1335,6 +1335,70 @@ int main(int argc, char **argv)
 
 			obs_data_release(bd);
 			obs_data_release(bf);
+			// A two-screen handheld: two 4:3 screens stacked make a tall 2:3
+			// picture, which must be trimmed like any other real shape. An
+			// odd shape that is not known can be measured and kept for its program.
+			{
+				auto paint2 = [&](const char *name, int iw, int ih, int bar) {
+					QImage image(iw, ih, QImage::Format_RGB32);
+					image.fill(QColor(0, 0, 0));
+					for (int y = 0; y < ih; y++)
+						for (int x = bar; x < iw - bar; x++)
+							image.setPixel(x, y, qRgb(200, 120 + y % 100, 40 + x % 150));
+					const std::string path = out + "/" + name;
+					image.save(QString::fromStdString(path));
+					return path;
+				};
+				obs_data_t *reset = obs_source_get_settings(barred);
+				obs_data_set_string(reset, "window", "");
+				obs_data_release(reset);
+				obs_data_set_int(bf, "trim", 1);
+				obs_data_set_string(bf, "rules_text", "");
+				obs_data_set_bool(bf, "known_programs", false);
+				obs_source_update(trimmer, bf);
+				obs_data_set_string(bd, "file",
+						    paint2("ds-stacked.png", 1280, 720, 400).c_str()); // 480x720
+				obs_source_update(barred, bd);
+				auto [d0, dp0] = look(3500);
+				CHECK(std::fabs(d0 - 400) <= 1.0,
+				      "two stacked handheld screens (2:3) are trimmed (trim %.0f)", d0);
+
+				// 1280x720 with 290 px bars leaves 700x720: not a shape anyone uses.
+				obs_data_set_string(bd, "file", paint2("odd-shape.png", 1280, 720, 290).c_str());
+				obs_source_update(barred, bd);
+				obs_data_t *cap = obs_source_get_settings(barred);
+				obs_data_set_string(cap, "window", "Odd Emulator:OddWnd:oddemu.exe");
+				obs_data_release(cap);
+				auto [d1, dp1] = look(4500);
+				CHECK(std::fabs(d1 - 290) > 5.0,
+				      "an unknown shape is not trimmed to by guesswork (trim %.0f)", d1);
+				calldata_t mcd = {};
+				proc_handler_call(obs_source_get_proc_handler(trimmer), "measure_now", &mcd);
+				calldata_free(&mcd);
+				auto [d2, dp2] = look(800);
+				obs_properties_t *props = obs_source_properties(trimmer);
+				obs_property_button_clicked(obs_properties_get(props, "trim_keep"), trimmer);
+				obs_properties_destroy(props);
+				auto [d3, dp3] = look(1500);
+				obs_data_t *kept = obs_source_get_settings(trimmer);
+				const std::string saved = obs_data_get_string(kept, "rules_text");
+				CHECK(std::fabs(d2 - 290) <= 1.0 && std::fabs(d3 - 290) <= 1.0 &&
+					      obs_data_get_int(kept, "trim") == 1 && saved.find("oddemu = 0.97") == 0,
+				      "measuring it and pressing 'keep' saves it for that program, back on automatic (trim %.0f; %s)",
+				      d3, saved.c_str());
+				obs_data_set_string(bf, "rules_text", saved.c_str());
+				obs_data_release(kept);
+				// The same program at another size: its saved shape applies at once.
+				obs_data_set_string(bd, "file", paint2("odd-shape-small.png", 640, 360, 145).c_str());
+				obs_source_update(barred, bd);
+				auto [d4, dp4] = look(1200);
+				CHECK(std::fabs(d4 - 145) <= 1.5,
+				      "and it is used straight away the next time, at any size (trim %.0f)", d4);
+				obs_data_t *cap2 = obs_source_get_settings(barred);
+				obs_data_set_string(cap2, "window", "");
+				obs_data_release(cap2);
+			}
+
 			// A shape found once is held. An emulator window (4:3, no bars)
 			// goes full-screen (the same 4:3 picture, now with bars): the
 			// picture must keep its shape with no moment of showing the bars.
