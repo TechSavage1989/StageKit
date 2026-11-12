@@ -204,6 +204,27 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Outline made from the picture, redone (0.1.0-beta33)
+
+The owner ran beta31 on Windows (so the Outline and Compose shaders compile on Direct3D) and showed a
+47 px picture outline that looked "stacked or multiplied multiple times", and asked for blur options.
+The colour came from averaging the 48 dilation samples, which are shifted copies. Now an `Extend` pass
+draws the source carried on past its edges over the whole padded area (`outline_edge`: 0 stretch,
+1 mirror), `KawaseBlur` softens it by `outline_blur`, and the Outline pass shows it through the line.
+The dilation mask is 24 directions by 4 rings. **The Extend pass is not verified on Direct3D.**
+
+### Copied filters (same release)
+
+The owner copied the filter from a source to a group: the group moved and OBS crashed. The move is
+explained and fixed: copied settings include `adjusted_*`, so the copy believed its new parent's items
+were already shifted. The filter now stores `adjusted_for` (the parent's UUID) and clears the record
+on its first tick when the parent differs. A side effect: a source made with OBS's *Paste (Duplicate)*
+gets its copied items shifted by the room once. **The crash was not reproduced** on Linux (test
+`[shadow copied to a group]`); ask for the crash report.
+
+Effect values last for one draw: the `Extend` pass first ran without `out_size`, `src_size` and `pad`
+re-set and libobs logged "set to invalid size 0". Set every value a technique reads before each draw.
+
 ## Background ignores an empty capture (0.1.0-beta32)
 
 The owner: with *Live capture replaces the picture* on and Game Capture capturing nothing, the

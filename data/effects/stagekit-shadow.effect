@@ -10,6 +10,7 @@
 uniform float4x4 ViewProj;
 uniform texture2d image;
 uniform texture2d shadow;
+uniform texture2d extended;      // the picture carried on past its edges, for an outline made from it
 
 uniform float2 out_size;        // padded picture size in pixels
 uniform float2 src_size;        // source size in pixels
@@ -29,6 +30,7 @@ uniform float shadow_boost;     // extra colour and brightness for a picture-col
 uniform float outline_width;    // pixels
 uniform float4 outline_color;   // straight alpha; a = opacity
 uniform float outline_picture;  // 1 = the line takes the picture's own colours
+uniform float extend_mirror;    // 1 = past its edge the picture is mirrored, 0 = its edge is stretched
 
 sampler_state linearClamp {
 	Filter   = Linear;
@@ -83,26 +85,35 @@ float3 picture_color(float3 c, float boost)
 	return saturate(lerp(float3(gray, gray, gray), c, 1.0 + boost) * (1.0 + boost * 0.5));
 }
 
+// The picture carried on past its own edges to fill the whole padded area:
+// either mirrored at each edge or with its edge pixels stretched outwards.
+float4 PSExtend(VertData v_in) : TARGET
+{
+	float2 suv = (v_in.uv * out_size - pad) / src_size;
+	float2 mirrored = 1.0 - abs(1.0 - abs(suv));
+	float2 at = saturate(lerp(suv, mirrored, extend_mirror));
+	float4 c = image.Sample(linearClamp, at);
+	return float4(c.rgb * c.a, c.a);
+}
+
 float4 PSOutline(VertData v_in) : TARGET
 {
 	float4 card = image.Sample(linearClamp, v_in.uv);
 	// How close the card is: the most solid thing within the line's width.
-	// Along the way, gather the colours found there for a line that takes
-	// the picture's own colours.
 	float reach = card.a;
-	float4 near_sum = card;
 	float2 step_uv = float2(outline_width, outline_width) / out_size;
-	for (int i = 0; i < 16; i++) {
-		float angle = float(i) * 0.39269908;
+	for (int i = 0; i < 24; i++) {
+		float angle = float(i) * 0.26179939;
 		float2 dir = float2(cos(angle), sin(angle)) * step_uv;
-		float4 a = image.SampleLevel(linearClamp, v_in.uv + dir, 0);
-		float4 b = image.SampleLevel(linearClamp, v_in.uv + dir * 0.66, 0);
-		float4 c = image.SampleLevel(linearClamp, v_in.uv + dir * 0.33, 0);
-		reach = max(reach, max(a.a, max(b.a, c.a)));
-		near_sum += a + b + c;
+		float a = image.SampleLevel(linearClamp, v_in.uv + dir, 0).a;
+		float b = image.SampleLevel(linearClamp, v_in.uv + dir * 0.75, 0).a;
+		float c = image.SampleLevel(linearClamp, v_in.uv + dir * 0.5, 0).a;
+		float d = image.SampleLevel(linearClamp, v_in.uv + dir * 0.25, 0).a;
+		reach = max(reach, max(max(a, b), max(c, d)));
 	}
-	float3 line_rgb = lerp(outline_color.rgb, picture_color(near_sum.rgb / max(near_sum.a, 0.00001), 0.0), outline_picture);
-	float la = reach * outline_color.a;
+	float4 own = extended.Sample(linearClamp, v_in.uv);
+	float3 line_rgb = lerp(outline_color.rgb, own.rgb, outline_picture);
+	float la = reach * outline_color.a * lerp(1.0, own.a, outline_picture);
 	float3 rgb = card.rgb + line_rgb * la * (1.0 - card.a);
 	float a_out = card.a + la * (1.0 - card.a);
 	return float4(rgb, a_out);
@@ -129,6 +140,15 @@ technique Card
 	{
 		vertex_shader = VSDefault(v_in);
 		pixel_shader  = PSCard(v_in);
+	}
+}
+
+technique Extend
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSExtend(v_in);
 	}
 }
 
