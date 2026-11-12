@@ -167,7 +167,7 @@ public:
 				this, tr_text("Dock.StartChoose"), current,
 				"Images (*.bmp *.tga *.png *.jpeg *.jpg *.jxr *.gif *.psd *.webp *.avif);;All files (*.*)");
 			if (!file.isEmpty()) {
-				set_start_image_path(file.toUtf8().constData());
+				choose_start_image(file.toUtf8().constData());
 				refresh();
 			}
 		});

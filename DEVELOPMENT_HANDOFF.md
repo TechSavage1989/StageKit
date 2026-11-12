@@ -64,6 +64,12 @@ the old array settings are still read. Auto Frame also has a built-in table of e
 (`kKnownPrograms`); the owner's saved shapes win. The status lines are read when the filter window
 opens. Keep labels short enough to fit OBS's narrow filter window.
 
+0.1.0-beta12, from the owner's reports on Windows: Auto Frame holds a found shape across resolution
+changes and only gives it up for another real shape that has held for the *Hold a shape for* time
+(`trim_wait`); labels were shortened in every tool because long ones pushed the controls right; and a
+chosen start image becomes every Ambient Background's picture without a setting (the owner: "that's
+what I wanted"). None of it has been run on Windows.
+
 Reported problems still open: the owner wants to drag items and zoom points on a picture in the dock
 and zoom with the mouse wheel; a Match Item item "dropping behind others" has not been reproduced.
 Addressed in 0.1.0-beta4, awaiting the owner's check on Windows: the dock reaching nested scenes and

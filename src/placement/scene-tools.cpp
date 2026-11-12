@@ -743,8 +743,10 @@ obs_properties_t *layout_properties(void *data)
 		props, "save", obs_module_text("Layout.Save"),
 		[](obs_properties_t *, obs_property_t *, void *d) { return static_cast<Layout *>(d)->save_current(); },
 		data);
-	obs_properties_add_editable_list(props, "only_items", obs_module_text("Layout.OnlyItems"),
-					 OBS_EDITABLE_LIST_TYPE_STRINGS, nullptr, nullptr);
+	obs_property_set_long_description(
+		obs_properties_add_editable_list(props, "only_items", obs_module_text("Layout.OnlyItems"),
+						 OBS_EDITABLE_LIST_TYPE_STRINGS, nullptr, nullptr),
+		obs_module_text("Layout.OnlyItems.Tip"));
 	obs_property_t *count =
 		obs_properties_add_int(props, "saved_count", obs_module_text("Layout.SavedCount"), 0, 100000, 1);
 	obs_property_set_enabled(count, false);

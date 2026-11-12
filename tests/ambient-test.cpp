@@ -427,6 +427,28 @@ int main(int argc, char **argv)
 		      mean_abs_diff(follows_b, shown_b));
 		obs_source_release(start);
 		shot("start_reset", [](obs_data_t *d) { obs_data_set_int(d, "base_type", 0); });
+
+		// A background showing a picture of its own switches to the start
+		// image when one is chosen: nothing to set on the background.
+		set_start(base_image);
+		sleep_ms(250);
+		{
+			obs_data_t *now = obs_source_get_settings(bg);
+			CHECK(obs_data_get_int(now, "base_type") == 2,
+			      "choosing a start image makes it the background automatically (background from: %d)",
+			      (int)obs_data_get_int(now, "base_type"));
+			obs_data_release(now);
+			obs_data_t *fresh = obs_data_create();
+			obs_source_t *fresh_bg =
+				obs_source_create("stagekit_ambient_background", "New Background", fresh, nullptr);
+			obs_data_t *fresh_now = obs_source_get_settings(fresh_bg);
+			CHECK(obs_data_get_int(fresh_now, "base_type") == 2,
+			      "a new background uses the start image from the start");
+			obs_data_release(fresh_now);
+			obs_data_release(fresh);
+			obs_source_release(fresh_bg);
+		}
+		shot("start_reset", [](obs_data_t *d) { obs_data_set_int(d, "base_type", 0); });
 	}
 
 	printf("\n[motion]\n");
@@ -908,7 +930,7 @@ int main(int argc, char **argv)
 			// The picture now fills the whole capture: the trim is released quickly.
 			obs_data_set_string(bd, "file", live_image);
 			obs_source_update(barred, bd);
-			auto [t3, p3] = look(2500);
+			auto [t3, p3] = look(3500);
 			CHECK(t3 == 0.0 && is(p3, 0, 75, 800, 450),
 			      "when the picture grows into the bars the trim is released (trim %.0f)", t3);
 
@@ -1045,6 +1067,69 @@ int main(int argc, char **argv)
 
 			obs_data_release(bd);
 			obs_data_release(bf);
+			// A shape found once is held. An emulator window (4:3, no bars)
+			// goes full-screen (the same 4:3 picture, now with bars): the
+			// picture must keep its shape with no moment of showing the bars.
+			{
+				auto paint = [&](const char *name, int iw, int ih, int bar, bool menu) {
+					QImage image(iw, ih, QImage::Format_RGB32);
+					image.fill(QColor(0, 0, 0));
+					for (int y = 0; y < ih; y++)
+						for (int x = bar; x < iw - bar; x++)
+							image.setPixel(x, y, qRgb(60 + x % 150, 90 + y % 120, 200));
+					if (menu) // a menu bar across the whole window, over the bars
+						for (int y = 0; y < 24; y++)
+							for (int x = 0; x < iw; x++)
+								image.setPixel(x, y, qRgb(230, 230, 230));
+					const std::string path = out + "/" + name;
+					image.save(QString::fromStdString(path));
+					return path;
+				};
+				const std::string windowed = paint("hold-windowed.png", 400, 300, 0, false);
+				const std::string full = paint("hold-full.png", 1280, 720, 160, false);
+				const std::string full_menu = paint("hold-full-menu.png", 1280, 720, 160, true);
+				const std::string wide = paint("hold-wide.png", 1280, 720, 0, false);
+
+				obs_data_set_int(bf, "trim", 1);
+				obs_data_set_string(bf, "rules_text", "");
+				obs_data_set_bool(bf, "known_programs", false);
+				obs_source_update(trimmer, bf);
+				obs_data_set_string(bd, "file", windowed.c_str());
+				obs_source_update(barred, bd);
+				auto [h0, q0] = look(1500);
+				CHECK(h0 == 0.0 && is(q0, 0, 0, 800, 600),
+				      "a 4:3 window fills the 4:3 frame (trim %.0f)", h0);
+
+				obs_data_set_string(bd, "file", full.c_str());
+				obs_source_update(barred, bd);
+				bool flickered = false;
+				for (int i = 0; i < 8; i++) {
+					auto [ht, qt] = look(100);
+					if (!is(qt, 0, 0, 800, 600))
+						flickered = true;
+				}
+				auto [h1, q1] = look(100);
+				CHECK(!flickered && std::fabs(h1 - 160) <= 1.0,
+				      "going full-screen keeps the picture's shape with no resize in between (trim %.0f)",
+				      h1);
+
+				obs_data_set_string(bd, "file", full_menu.c_str());
+				obs_source_update(barred, bd);
+				auto [h2, q2] = look(700);
+				CHECK(std::fabs(h2 - 160) <= 1.0,
+				      "a menu drawn over the bars does not resize it (trim %.0f)", h2);
+				obs_data_set_string(bd, "file", full.c_str());
+				obs_source_update(barred, bd);
+				look(600);
+
+				obs_data_set_string(bd, "file", wide.c_str());
+				obs_source_update(barred, bd);
+				auto [h3, q3] = look(3500);
+				CHECK(h3 == 0.0,
+				      "a picture that clearly and steadily fills another real shape is followed (trim %.0f)",
+				      h3);
+			}
+
 			obs_source_filter_remove(barred, trimmer);
 			obs_source_release(trimmer);
 			obs_source_release(barred);

@@ -383,6 +383,8 @@ public:
 					}
 				}
 			}
+			if (executable != program_)
+				held_ratio_ = 0.0; // another program: nothing is known about its picture
 			program_ = executable;
 		}
 		std::lock_guard lock(mutex_);
@@ -530,10 +532,26 @@ public:
 			pending_time_ = 0.0;
 
 			if (w != last_w_ || h != last_h_) {
-				// A new resolution: forget the bars found at the old one.
+				// A new resolution (a window going full-screen, say). The
+				// picture's shape was already established, so keep showing
+				// that shape: work out the bars it implies at the new size,
+				// then check them straight away instead of starting over.
 				last_w_ = w;
 				last_h_ = h;
 				bars_[0] = bars_[1] = Bars();
+				if (s.trim == Trim::Automatic && held_ratio_ > 0.0) {
+					if ((double)w / (double)h > held_ratio_)
+						bars_[0].applied = std::round((w - h * held_ratio_) / 2.0);
+					else
+						bars_[1].applied = std::round((h - w / held_ratio_) / 2.0);
+					for (Bars &bars : bars_)
+						if (bars.applied <= 2.0)
+							bars.applied = 0.0;
+					quick_looks_ = kQuickLooks;
+					// Check the carried-over bars first, on this very frame.
+					probe_timer_ = 0.0;
+					probe_axis_ = bars_[1].applied > 0.0 ? 1 : 0;
+				}
 			}
 			// How much to take off each side.
 			double trim_x = 0.0, trim_y = 0.0;
@@ -558,7 +576,8 @@ public:
 				probe_timer_ -= dt;
 				if (probe_timer_ <= 0.0) {
 					// While measuring on request, look every frame to finish at once.
-					probe_timer_ = measure_once_[0] || measure_once_[1] ? 0.0 : kProbeInterval;
+					const bool hurry = measure_once_[0] || measure_once_[1] || quick_looks_ > 0;
+					probe_timer_ = hurry ? 0.0 : kProbeInterval;
 					probe_now = true;
 				}
 			}
@@ -569,6 +588,12 @@ public:
 			trim_x = std::clamp(trim_x, 0.0, w * 0.45);
 			trim_y = std::clamp(trim_y, 0.0, h * 0.45);
 			const Rect crop_goal{trim_x, trim_y, w - 2.0 * trim_x, h - 2.0 * trim_y};
+			// The shape now on show is the one to hold on to, when it is a
+			// real picture shape and was found by looking.
+			if (s.trim == Trim::Automatic && !shape_known && is_picture_shape(crop_goal.w, crop_goal.h))
+				held_ratio_ = crop_goal.w / crop_goal.h;
+			else if (s.trim != Trim::Automatic)
+				held_ratio_ = 0.0;
 			const Rect goal =
 				target_rect(s, (uint32_t)std::lround(crop_goal.w), (uint32_t)std::lround(crop_goal.h));
 
@@ -787,21 +812,40 @@ private:
 				measured_ready_ = true;
 		}
 
+		// Right after a resolution change the looks come every frame and are
+		// acted on at once, so a carried-over shape that does not suit the
+		// new picture is corrected within a few frames.
+		const bool quick = quick_looks_ > 0;
+		if (quick)
+			quick_looks_--;
+		const bool settled = quick || bars.stable_for >= wait_s;
+
 		const bool less_bar = seen < bars.applied - 2.0;
 		const bool more_bar = seen > bars.applied + 2.0;
-		if (less_bar && bars.agree >= 2) {
-			// The picture reaches further out than thought: bars are never lit.
-			bars.applied = seen;
-		} else if (more_bar && bars.stable_for >= wait_s) {
+		if (!less_bar && !more_bar)
+			return;
+		// What the picture would be with this many pixels of bar.
+		const double other = bars_[1 - axis].applied;
+		const double pic_w = w - 2.0 * (axis == 0 ? seen : other);
+		const double pic_h = h - 2.0 * (axis == 1 ? seen : other);
+		const bool real_shape = is_picture_shape(pic_w, pic_h);
+		if (less_bar) {
+			// Something is lit where bars were thought to be. Once a shape
+			// has been established it is only given up for another real
+			// picture shape that has held steady: a menu or a pop-up over
+			// the bars must not resize the picture. Before any shape is
+			// established, bars are simply never lit.
+			const bool holding = held_ratio_ > 0.0;
+			if (!holding     ? bars.agree >= 2
+			    : real_shape ? settled
+					 : bars.stable_for >= std::max(6.0, wait_s * 2.0))
+				bars.applied = seen;
+		} else if (settled && real_shape) {
 			// A game with a black background looks just like bars. Real bars
 			// leave a picture in one of the shapes consoles and emulators
 			// output; a dark scene leaves an arbitrary one. Only trim more
 			// when what would be left is exactly such a shape.
-			const double other = bars_[1 - axis].applied;
-			const double pic_w = w - 2.0 * (axis == 0 ? seen : other);
-			const double pic_h = h - 2.0 * (axis == 1 ? seen : other);
-			if (is_picture_shape(pic_w, pic_h))
-				bars.applied = seen;
+			bars.applied = seen;
 		}
 	}
 
@@ -830,6 +874,10 @@ private:
 	uint32_t last_w_ = 0, last_h_ = 0;
 	Bars bars_[2];
 	double probe_timer_ = 0.0;
+	// The picture shape found by looking, kept across resolution changes.
+	double held_ratio_ = 0.0;
+	static constexpr int kQuickLooks = 8;
+	int quick_looks_ = 0;
 	bool measure_once_[2] = {false, false};
 	double measured_[2] = {0.0, 0.0};
 	double identity_timer_ = 0.0;
@@ -1011,8 +1059,9 @@ obs_properties_t *get_properties(void *data)
 		},
 		data);
 	obs_property_t *wait =
-		obs_properties_add_float_slider(props, "trim_wait", obs_module_text("Frame.TrimWait"), 0.0, 15.0, 0.5);
+		obs_properties_add_float_slider(props, "trim_wait", obs_module_text("Frame.TrimWait"), 0.0, 60.0, 0.5);
 	obs_property_float_set_suffix(wait, " s");
+	obs_property_set_long_description(wait, obs_module_text("Frame.TrimWait.Tip"));
 	obs_property_t *tx =
 		obs_properties_add_float(props, "trim_x", obs_module_text("Frame.TrimX"), 0.0, 8000.0, 1.0);
 	obs_property_float_set_suffix(tx, " px");
