@@ -35,7 +35,7 @@ for an update notice inside OBS. This exception is recorded in the handoff.
 | `data/effects/` | Shaders in OBS `.effect` format |
 | `data/locale/en-US.ini` | Every user-visible string |
 | `tests/` | Headless libobs tests, test-image generators, `run-tests.sh` |
-| `scripts/` | Repository checks (`check-root.sh`, `root-allowlist.txt`) |
+| `scripts/` | Repository checks (`check-root.sh`, `root-allowlist.txt`); `rebuild-collection.py` writes a StageKit collection from an old one and `upgrade-collection.py` brings a StageKit collection up to date. Both read one file and write another; the owner's collections are private and never committed |
 | `docs/images/` | README imagery, produced by the tests |
 | `cmake/`, `build-aux/`, `.github/` | From the official obs-plugintemplate; change only when needed |
 
@@ -142,6 +142,10 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   alpha, so it follows the shape); when first added it moves itself above an existing shadow once and
   records that in its `placed` setting. After an Auto Frame it shapes the rectangle from Auto Frame's
   `get_picture`.
+- **Fit Item gives OBS the space, not the size.** Its bounding box is the space the picture may take
+  (plus a shadow's room at the fitted scale), with scale-to-inner-bounds and centre alignment, so OBS
+  fits the picture every frame and a window being resized never lags. Do not go back to setting the
+  item's scale or a box of the picture's exact size: both are one tick late.
 - **Trigger filters** (Send To, Place Item, Layout) switch themselves off after running and ignore the enabled
   state restored at load (`ready_`), so they do not fire when OBS starts.
 - **Auto Capture's Windows code is only compiled by CI and never run by the tests.** The tests feed it

@@ -204,6 +204,30 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Fit Item in real time; the owner's current collection (0.1.0-beta45)
+
+The owner wants window captures to behave like the game capture in their window scenes and, as in
+their old collection, to "resize smoothly in realtime and grow to fit the space I set". They then sent
+their current collection (a StageKit rebuild they have since edited in OBS).
+
+- **Fit Item**: the bounds are now the available space grown by the shadow room at the fitted scale
+  (`aw + (l+r)k`, `ah + (t+b)k`) and the position is the space's corner less `l*k`, `t*k`. With
+  scale-to-inner-bounds and centre alignment, OBS then lands the picture in the space on every frame;
+  the box only changes when the picture crosses between "fills" and "floats" or the room changes.
+  beta41 set a box of the picture's exact size, which was right one tick late. The tests now render
+  the scene and look for the picture, instead of reading the item's numbers.
+- **`scripts/upgrade-collection.py`** brings an existing StageKit collection up to date without
+  rebuilding it: Fit Item for window captures that sit in a centred scale-inner box (whole screen with
+  the collection's own margin, or the box they had), Auto Frame's picture height to the canvas, and
+  `flip_linked` on for filters that bring an item along. Everything else in the file is left alone;
+  a diff of the owner's file showed exactly those changes and nothing else.
+- What the owner's file showed: Fit Item already on the three game scenes, none on the two window
+  scenes; the seven generated *Camera ...* Send To filters with `flip_linked` false while the nine
+  dock-made keys flip; and **Snap on release switched on**, which is what shifted items after a Send To
+  move before beta40. The upgraded copy was sent to them as "StageKit current + window fit".
+- Judgment call, told to the owner: the full-screen window scene got the game scene's 90 px margin.
+  Their old collection fitted windows edge to edge there; margin 0 gives that back.
+
 ## Hexagon blur (0.1.0-beta44)
 
 Asked for by the owner. `BlurType::Hexagon = 6` (appended), technique `Hexagon` in

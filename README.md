@@ -294,6 +294,11 @@ game capture can then sit in a full-screen scene (a widescreen game fills it, an
 middle) and in a scene with a camera and chat beside it (fitted to that scene's game box), with nothing
 to change when you switch games. A shadow on the source is allowed for.
 
+It works on any source. For a **Window Capture**, add Fit Item to the scene and choose the window
+capture: the window fills the space when it has the space's shape and floats centred otherwise, and it
+stays fitted while you drag the window to a new size, because the fitting itself is done by OBS on
+every frame. Use one Fit Item filter for each item to be fitted.
+
 Fit Item takes over the item's position and bounding box and removes its rotation. Switch the
 filter off to move the item by hand.
 
