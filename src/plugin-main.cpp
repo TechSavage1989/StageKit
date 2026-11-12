@@ -28,6 +28,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "common/start-image.hpp"
 #include "dock/stagekit-dock.hpp"
 #include "frame/auto-frame.hpp"
+#include "placement/fit-item.hpp"
 #include "placement/place-item.hpp"
 #include "placement/scene-tools.hpp"
 #include "placement/visibility-link.hpp"
@@ -107,6 +108,7 @@ bool obs_module_load(void)
 	stagekit::register_show_hide();
 	stagekit::register_visibility_link();
 	stagekit::register_match_item();
+	stagekit::register_fit_item();
 	stagekit::register_layout();
 	for (GlobalHotkey &hk : g_hotkeys)
 		hk.id = obs_hotkey_register_frontend(hk.name, obs_module_text(hk.text), blur_all_hotkey, &hk);

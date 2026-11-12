@@ -29,6 +29,8 @@ from hotkeys, or from the Stream Deck OBS Studio plugin's *Filter* and *Source* 
   its edges and outlines it. A shadow added after it takes the same shape.
 - **Auto Frame** (filter): gives a game or emulator capture a fixed frame and fits any resolution inside
   it, so one scene serves every picture shape.
+- **Fit Item** (scene filter): one capture for every shape. A picture with the screen's shape fills it;
+  an emulator's squarer picture floats centred inside a margin.
 - **Auto Capture** (filter): one Game Capture finds whatever game is running, windowed or full-screen,
   with no list of games to keep. Windows only.
 - **Program Trigger** (filter): while a program is open, shows chosen items and switches chosen filters
@@ -273,6 +275,23 @@ set to *Automatic* hands control back.
 
 Because the source's size no longer changes, one scene can replace a scene per picture shape and the
 automation that switched between them. Put Shadow, Glow & Outline after it and the shadow follows the picture.
+
+### Fit Item
+
+Add **Fit Item (StageKit)** as a filter on a *scene*. It places one item of that scene for you.
+
+- **Item**: the item to place, usually your game capture.
+- **Fit it in**: *The whole screen*, or *A box I set* (left, top, width, height in canvas pixels).
+- **Margin for other shapes**: a picture with the box's shape fills the box. Any other shape is kept
+  this far from the box's edges and centred.
+
+Use it with Auto Frame's *Frame → Just the picture*, so the source is only the trimmed picture. One
+game capture can then sit in a full-screen scene (a widescreen game fills it, an emulator floats in the
+middle) and in a scene with a camera and chat beside it (fitted to that scene's game box), with nothing
+to change when you switch games. A shadow on the source is allowed for.
+
+Fit Item takes over the item's position and size and removes its bounding box and rotation. Switch the
+filter off to move the item by hand.
 
 ### Auto Capture
 

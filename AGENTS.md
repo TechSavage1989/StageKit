@@ -25,7 +25,7 @@ for an update notice inside OBS. This exception is recorded in the handoff.
 | `src/zoom/` | Ramp Zoom filter |
 | `src/shape/` | Corners & Edges filter (rounds, cuts, notches or scoops corners; trims, softens and outlines edges; never changes the source's size) |
 | `src/view/` | Cropped View source (part of another source as a source, so filters follow the crop) |
-| `src/placement/` | Scene filters: Place Item, Show/Hide Animation, Visibility Link, Match Item, Layout; and Send To, Place Item's code as a filter on the source it moves |
+| `src/placement/` | Scene filters: Place Item, Show/Hide Animation, Visibility Link, Match Item, Layout, Fit Item (keeps one item fitted in a box, filling it or floating centred by shape); and Send To, Place Item's code as a filter on the source it moves |
 | `src/dock/` | Two docks (Qt widgets, no `Q_OBJECT`): StageKit follows the item selected in OBS and drives Send To filters on that item's source; StageKit Background holds the start image thumbnail. `arrange-tools.*` is the one set of line-up actions and options behind the dock, the hotkeys and the preview's right-click menu |
 | `src/common/` | Shared helpers: easing and `Tween`, `SwitchRamp`, `KawaseBlur`, scene utilities, and the start image (global path + Start Image source) |
 | `src/frame/` | Auto Frame filter and the Picture Shape key filter |

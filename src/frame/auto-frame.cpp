@@ -69,6 +69,8 @@ enum class Trim : int {
 };
 
 struct Settings {
+	// The frame is the picture itself: no fixed size, no room around it.
+	bool follow = false;
 	uint32_t frame_w = 1920;
 	uint32_t frame_h = 1080;
 	FitMode fit = FitMode::Fit;
@@ -323,6 +325,7 @@ public:
 	void update(obs_data_t *settings)
 	{
 		Settings s;
+		s.follow = obs_data_get_int(settings, "frame_mode") == 1;
 		s.frame_w = (uint32_t)std::clamp<long long>(obs_data_get_int(settings, "frame_width"), 2, 16384);
 		s.frame_h = (uint32_t)std::clamp<long long>(obs_data_get_int(settings, "frame_height"), 2, 16384);
 		s.fit = static_cast<FitMode>(obs_data_get_int(settings, "fit"));
@@ -541,12 +544,12 @@ public:
 	uint32_t width()
 	{
 		std::lock_guard lock(mutex_);
-		return settings_.frame_w;
+		return settings_.follow && out_w_ ? out_w_ : settings_.frame_w;
 	}
 	uint32_t height()
 	{
 		std::lock_guard lock(mutex_);
-		return settings_.frame_h;
+		return settings_.follow && out_h_ ? out_h_ : settings_.frame_h;
 	}
 
 	void render()
@@ -652,6 +655,16 @@ public:
 				held_ratio_ = crop_goal.w / crop_goal.h;
 			else if (s.trim != Trim::Automatic)
 				held_ratio_ = 0.0;
+			if (s.follow) {
+				// The frame takes the picture's own size and shape, so each
+				// scene can place it as it likes.
+				const double ratio = shape_ratio(s, (uint32_t)std::lround(crop_goal.w),
+								 (uint32_t)std::lround(crop_goal.h));
+				s.frame_h = (uint32_t)std::clamp(std::lround(crop_goal.h), 2L, 16384L);
+				s.frame_w = (uint32_t)std::clamp(std::lround(crop_goal.h * ratio), 2L, 16384L);
+				out_w_ = s.frame_w;
+				out_h_ = s.frame_h;
+			}
 			const Rect goal =
 				target_rect(s, (uint32_t)std::lround(crop_goal.w), (uint32_t)std::lround(crop_goal.h));
 
@@ -697,6 +710,8 @@ public:
 			}
 			rect = current_;
 			crop = crop_current_;
+			if (s.follow)
+				rect = Rect{0.0, 0.0, (double)s.frame_w, (double)s.frame_h};
 		}
 
 		if (publish_measured) {
@@ -966,6 +981,7 @@ private:
 	bool have_rect_ = false;
 	Rect current_, from_, goal_;
 	Rect crop_current_, crop_from_, crop_goal_;
+	uint32_t out_w_ = 0, out_h_ = 0; // the frame's size when it follows the picture
 	uint32_t last_w_ = 0, last_h_ = 0;
 	Bars bars_[2];
 	double probe_timer_ = 0.0;
@@ -1082,6 +1098,11 @@ obs_properties_t *get_properties(void *data)
 
 	// 1. The frame.
 	obs_properties_t *props = obs_properties_create();
+	obs_property_t *mode = obs_properties_add_list(props, "frame_mode", obs_module_text("Frame.Mode"),
+						       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+	obs_property_list_add_int(mode, obs_module_text("Frame.Mode.Fixed"), 0);
+	obs_property_list_add_int(mode, obs_module_text("Frame.Mode.Picture"), 1);
+	obs_property_set_long_description(mode, obs_module_text("Frame.Mode.Tip"));
 	obs_properties_add_int(props, "frame_width", obs_module_text("Frame.Width"), 2, 16384, 1);
 	obs_properties_add_int(props, "frame_height", obs_module_text("Frame.Height"), 2, 16384, 1);
 
@@ -1246,6 +1267,7 @@ void get_defaults(obs_data_t *settings)
 {
 	obs_video_info ovi;
 	const bool have = obs_get_video_info(&ovi);
+	obs_data_set_default_int(settings, "frame_mode", 0);
 	obs_data_set_default_int(settings, "frame_width", have ? ovi.base_width : 1920);
 	obs_data_set_default_int(settings, "frame_height", have ? ovi.base_height : 1080);
 	obs_data_set_default_int(settings, "fit", (int)FitMode::Fit);

@@ -204,6 +204,23 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## One capture for every scene: Fit Item (0.1.0-beta39)
+
+The owner wants the same "Game Capture Framed" in the full-screen Game-Capture-Scene and in the
+component scene: a normal game fills the full-screen scene, an emulator's legacy shape floats centred
+with a margin (they showed a hand-placed example, about 88% of the canvas height with a shadow). Their
+original collection had no such thing to copy: its full-screen scene simply showed the capture at
+2560x1440 with its bars.
+
+- Auto Frame `frame_mode` 1, *Just the picture*: the frame takes the trimmed picture's size
+  (`out_w_`, `out_h_`), nothing is fitted or glided.
+- `src/placement/fit-item.*`, a scene filter: fits the picture (source minus `shadow_room`, minus the
+  item's crop) in the whole scene or a custom box; same shape within 1% fills, otherwise it is centred
+  inside the margin. It owns the item's transform: no bounds, top-left alignment, no rotation.
+- `shadow_room` moved from `src/dock/arrange.cpp` to `src/shadow/shadow-backdrop.*`.
+- The rebuilt collection has not been regenerated with this; the release notes give the owner the
+  three steps instead.
+
 ## Shadow left off in chosen scenes (0.1.0-beta38)
 
 Asked for by the owner on 2026-11-12: exclude the effect in selected scenes when the source is in

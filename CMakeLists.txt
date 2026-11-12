@@ -68,6 +68,8 @@ target_sources(
     src/dock/stagekit-dock.hpp
     src/placement/scene-tools.cpp
     src/placement/scene-tools.hpp
+    src/placement/fit-item.cpp
+    src/placement/fit-item.hpp
     src/placement/visibility-link.cpp
     src/placement/visibility-link.hpp
     src/frame/auto-frame.cpp
