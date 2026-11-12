@@ -204,6 +204,13 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Installer folder page (0.1.0-beta22)
+
+The owner asked for the installer to "show and allow customizing the install directory". The folder
+page is now always shown (`DisableDirPage=no`), with wording that OBS only loads plugins from its own
+plugins folder. The script cannot be compiled or run on Linux: CI building the installer is the only
+check, and nobody has seen the new page yet.
+
 ## Shadow sizes (0.1.0-beta21)
 
 The owner imported rebuild draft 2 with beta19 and it loaded (Cropped Views included). First report:
