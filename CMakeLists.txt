@@ -45,6 +45,8 @@ target_sources(
     src/ambient/ambient-background.hpp
     src/common/kawase-blur.cpp
     src/common/kawase-blur.hpp
+    src/placement/place-item.cpp
+    src/placement/place-item.hpp
     src/shadow/shadow-backdrop.cpp
     src/shadow/shadow-backdrop.hpp
     src/blur/ramp-blur.cpp

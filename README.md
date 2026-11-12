@@ -89,6 +89,22 @@ workaround of wrapping the source in an oversized scene so a shadow has room to 
 The source grows by exactly the room the shadow and panel need. Room added on the left or top shifts the
 picture by that amount inside the item; a hard shadow pointing down and right adds none.
 
+## Place Item
+
+Add **Place Item (StageKit)** as a filter on a *scene*, once per destination ("Camera → top right").
+Switching the filter on glides the item there, then the filter switches itself off, ready for next time.
+
+| Setting | What it does |
+| --- | --- |
+| Item to move | Any item in the scene |
+| Send it to | One of nine screen positions (corners, edges, centre) with a margin from the edge, or a saved spot |
+| Saved spot | Drag the item where you want it, press *Save the item's current spot*; X and Y stay editable, and the item's size can be restored too |
+| Bring along | A linked item (a frame, a widget) that keeps its place relative to the moved item and flips to the other side when it would leave the screen |
+| Travel time, easing | How the glide looks |
+
+Trigger it from the eye icon, a Stream Deck OBS plugin *Filter* key, the *Move it now* button, or its
+hotkey (`StageKit: Move (<filter name>)` under the scene in *Settings → Hotkeys*).
+
 ## obs-websocket API
 
 All requests go through `CallVendorRequest` with `vendorName: "StageKit"`. Blur requests take

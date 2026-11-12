@@ -355,6 +355,103 @@ int main(int argc, char **argv)
 		obs_source_release(title);
 	}
 
+	// ------------------------------------------------------------ place item
+	{
+		printf("\n[place item]\n");
+		// A 640x360 scene with a 160x90 "camera" and a 100x40 "widget" under it.
+		obs_scene_t *scene = obs_scene_create("Test Scene");
+		obs_source_t *scene_source = obs_scene_get_source(scene);
+		auto make_color = [](const char *name, int cw, int ch) {
+			obs_data_t *d = obs_data_create();
+			obs_data_set_int(d, "width", cw);
+			obs_data_set_int(d, "height", ch);
+			obs_source_t *src = obs_source_create("color_source", name, d, nullptr);
+			obs_data_release(d);
+			return src;
+		};
+		obs_source_t *cam = make_color("Camera", 160, 90);
+		obs_source_t *widget = make_color("Widget", 100, 40);
+		obs_sceneitem_t *cam_item = obs_scene_add(scene, cam);
+		obs_sceneitem_t *widget_item = obs_scene_add(scene, widget);
+		vec2 p;
+		vec2_set(&p, 30.0f, 30.0f);
+		obs_sceneitem_set_pos(cam_item, &p);
+		vec2_set(&p, 20.0f, 130.0f); // 10 px left of the camera, 10 px below it
+		obs_sceneitem_set_pos(widget_item, &p);
+
+		auto pos_of = [](obs_sceneitem_t *item) {
+			vec2 v;
+			obs_sceneitem_get_pos(item, &v);
+			return v;
+		};
+		auto make_place = [&](const char *name, int destination, const char *linked) {
+			obs_data_t *d = obs_data_create();
+			obs_data_set_string(d, "item", "Camera");
+			obs_data_set_string(d, "linked", linked);
+			obs_data_set_int(d, "destination", destination);
+			obs_data_set_double(d, "margin", 30);
+			obs_data_set_int(d, "duration_ms", 300);
+			obs_data_set_int(d, "ease_curve", 0);
+			obs_source_t *f = obs_source_create("stagekit_place_item", name, d, nullptr);
+			obs_data_release(d);
+			obs_source_filter_add(scene_source, f);
+			return f;
+		};
+		obs_source_t *to_top_right = make_place("Camera Top Right", 2, "Widget");
+		obs_source_t *to_bottom_right = make_place("Camera Bottom Right", 8, "Widget");
+		sleep_ms(100);
+		CHECK(!obs_source_enabled(to_top_right), "a new Place Item filter rests in the off state");
+
+		// Switch it on, as the eye icon or a Stream Deck Filter key would.
+		obs_source_set_enabled(to_top_right, true);
+		sleep_ms(150);
+		vec2 mid = pos_of(cam_item);
+		CHECK(mid.x > 130 && mid.x < 400 && obs_source_enabled(to_top_right),
+		      "switching it on glides the item (x %.0f part-way)", mid.x);
+		sleep_ms(300);
+		vec2 c = pos_of(cam_item), wpos = pos_of(widget_item);
+		CHECK(std::fabs(c.x - 450) < 0.5 && std::fabs(c.y - 30) < 0.5,
+		      "it lands at the top right with a 30 px margin (%.0f, %.0f)", c.x, c.y);
+		CHECK(std::fabs(wpos.x - 440) < 0.5 && std::fabs(wpos.y - 130) < 0.5,
+		      "the linked item keeps its place below it (%.0f, %.0f)", wpos.x, wpos.y);
+		CHECK(!obs_source_enabled(to_top_right), "the filter switches itself off afterwards");
+
+		// Bottom right: below the camera would be off screen, so the widget flips above.
+		calldata_t cd = {};
+		proc_handler_call(obs_source_get_proc_handler(to_bottom_right), "trigger", &cd);
+		calldata_free(&cd);
+		sleep_ms(500);
+		c = pos_of(cam_item);
+		wpos = pos_of(widget_item);
+		CHECK(std::fabs(c.x - 450) < 0.5 && std::fabs(c.y - 240) < 0.5, "bottom right (%.0f, %.0f)", c.x, c.y);
+		CHECK(std::fabs(wpos.y - 190) < 0.5 && std::fabs(wpos.x - 440) < 0.5,
+		      "the linked item flips above the camera to stay on screen (%.0f, %.0f)", wpos.x, wpos.y);
+
+		// And back to the top: it flips below again.
+		obs_source_set_enabled(to_top_right, true);
+		sleep_ms(500);
+		wpos = pos_of(widget_item);
+		CHECK(std::fabs(wpos.y - 130) < 0.5, "back at the top it returns below (%.0f, %.0f)", wpos.x, wpos.y);
+
+		int hotkeys = 0;
+		obs_enum_hotkeys(
+			[](void *data, obs_hotkey_id, obs_hotkey_t *key) {
+				if (strncmp(obs_hotkey_get_name(key), "stagekit.place.", 15) == 0)
+					(*static_cast<int *>(data))++;
+				return true;
+			},
+			&hotkeys);
+		CHECK(hotkeys == 2, "each destination has a hotkey on the scene (%d)", hotkeys);
+
+		obs_source_filter_remove(scene_source, to_top_right);
+		obs_source_filter_remove(scene_source, to_bottom_right);
+		obs_source_release(to_top_right);
+		obs_source_release(to_bottom_right);
+		obs_source_release(cam);
+		obs_source_release(widget);
+		obs_scene_release(scene);
+	}
+
 	obs_source_dec_showing(bg);
 	obs_data_release(s);
 	obs_source_release(bg);
