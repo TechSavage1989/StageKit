@@ -204,6 +204,12 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Dock wording (0.1.0-beta26)
+
+The owner: "no need for all the informations verbiage in the dock. need to keep the ui clean and
+simple". The three explanatory paragraphs became tooltips and the labels were shortened. Keep the dock
+to controls and short labels; explanations go in tooltips and the README.
+
 ## Cropped View: whatever is drawn (0.1.0-beta25)
 
 The owner's music widget (Amuse Main, a web page) was cropped by hand years ago; the widget's layout

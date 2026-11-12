@@ -40,7 +40,12 @@ int main(int argc, char **argv)
 	ovi.scale_type = OBS_SCALE_BICUBIC;
 	if (obs_reset_video(&ovi) != OBS_VIDEO_SUCCESS)
 		return 1;
-	load_module("/usr/lib/x86_64-linux-gnu/obs-plugins/image-source.so", "/usr/share/obs/obs-plugins/image-source");
+	// Every stock plugin this machine has, so scenes are exercised as fully as they can be here.
+	for (const char *name : {"image-source", "obs-transitions", "obs-filters", "text-freetype2", "obs-ffmpeg"}) {
+		const std::string bin = std::string("/usr/lib/x86_64-linux-gnu/obs-plugins/") + name + ".so";
+		const std::string data = std::string("/usr/share/obs/obs-plugins/") + name;
+		load_module(bin.c_str(), data.c_str());
+	}
 	if (!load_module(argv[1], argv[2]))
 		return 1;
 	obs_post_load_modules();

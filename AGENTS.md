@@ -105,6 +105,8 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
 - **Built-in emulator shapes are a starting guess, never an order.** The owner's Snes9x shows 8:7; the
   first table said 64:49 and cropped the picture. `kKnownPrograms` only seeds the held shape; what is
   seen on screen corrects it. Only a shape the owner saved, or a Picture Shape key, is obeyed blindly.
+- **The dock carries no explanatory paragraphs.** The owner wants it clean: controls and short labels
+  only. Put explanations in tooltips and the README.
 - **The dock has no picture of the scene.** One was built (drag, wheel, zoom cross) and the owner
   rejected it: they select items in OBS's own preview, and the dock must act on that selection. The
   wheel-zoom they asked for belongs to the start image thumbnail and changes only that thumbnail in

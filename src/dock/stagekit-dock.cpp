@@ -184,11 +184,10 @@ public:
 			if (ok && !name.trimmed().isEmpty())
 				save_spot_as(name.trimmed());
 		});
-		auto *keys_hint = new QLabel(tr_text("Dock.KeysHint"), keys_box);
-		keys_hint->setWordWrap(true);
+		// Explanations live in tooltips: the dock itself stays short.
+		keys_box->setToolTip(tr_text("Dock.KeysHint"));
 		keys_layout->addWidget(make_keys);
 		keys_layout->addWidget(save_spot);
-		keys_layout->addWidget(keys_hint);
 		layout->addWidget(keys_box);
 
 		// The start image: chosen here, shown by the Start Image source and
@@ -238,8 +237,6 @@ public:
 				refresh();
 			}
 		});
-		auto *thumb_hint = new QLabel(tr_text("Dock.ThumbHint"), start_box);
-		thumb_hint->setWordWrap(true);
 		// The moving background uses the start image unless it is given a
 		// picture of its own here.
 		auto *other = new QPushButton(tr_text("Dock.BackgroundOther"), start_box);
@@ -270,7 +267,6 @@ public:
 				 [this] { open_background_settings(); });
 		start_layout->addWidget(start_thumb_);
 		start_layout->addWidget(start_label_);
-		start_layout->addWidget(thumb_hint);
 		start_layout->addWidget(choose);
 		start_layout->addWidget(other);
 		start_layout->addWidget(background_same_);
@@ -392,9 +388,7 @@ public:
 		arrange_layout->addWidget(no_shadow_);
 		arrange_layout->addWidget(live_snap_);
 		arrange_layout->addLayout(within_row);
-		auto *arrange_hint = new QLabel(tr_text("Arrange.Hint"), arrange_box);
-		arrange_hint->setWordWrap(true);
-		arrange_layout->addWidget(arrange_hint);
+		arrange_box->setToolTip(tr_text("Arrange.Hint"));
 		layout->addWidget(arrange_box);
 
 		// Snapping on letting go: watch the selected items a few times a second.
@@ -463,7 +457,7 @@ public:
 					reader.setScaledSize(size.scaled(1280, 720, Qt::KeepAspectRatio));
 				thumb_full_ = QPixmap::fromImageReader(&reader);
 			}
-			start_thumb_->setToolTip(shown);
+			start_thumb_->setToolTip(tr_text("Dock.ThumbHint") + QStringLiteral("\n") + shown);
 			show_thumb();
 		}
 		follow_selection();

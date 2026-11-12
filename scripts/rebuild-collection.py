@@ -9,6 +9,7 @@ Usage: python3 -I rebuild.py <original.json> <output.json> <report.txt>
 """
 import copy
 import json
+import os
 import sys
 import uuid
 
@@ -36,6 +37,8 @@ OLD_FILTERS = {
 GAME_CAPTURES = {"Game Capture", "Windowed Game Capture"}
 # Everything under these was the hand-built blurred background.
 BACKGROUND_SCENES = ("Live Background", "Start Background Scene", "Background Scene", "Tablet Background Scene")
+# Set STAGEKIT_REBUILD_FADES=0 to leave the show/hide fades off (used to find what crashed OBS on import).
+KEEP_FADES = os.environ.get("STAGEKIT_REBUILD_FADES", "1") != "0"
 SKIP_LEAVES = {"Purple"}
 # The owner's choice: where the cropped "Amuse Main" widget sat (start, intermission, break and ending
 # scenes), show the "Amuse Component" widget instead, whole and uncropped, in the same place.
@@ -100,8 +103,8 @@ def item_json(name, pos, scale=(1.0, 1.0), bounds_type=0, bounds=(0.0, 0.0), bou
         "crop_right": crop[1], "crop_bottom": crop[3], "id": item_id, "group_item_backup": False,
         "scale_filter": "disable", "blend_method": "default", "blend_type": "normal",
         # The fade an item had when shown or hidden is kept.
-        "show_transition": copy.deepcopy(show) if show else {"duration": 0},
-        "hide_transition": copy.deepcopy(hide) if hide else {"duration": 0}, "private_settings": {},
+        "show_transition": copy.deepcopy(show) if show and KEEP_FADES else {"duration": 0},
+        "hide_transition": copy.deepcopy(hide) if hide and KEEP_FADES else {"duration": 0}, "private_settings": {},
     }
 
 
