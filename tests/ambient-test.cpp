@@ -965,6 +965,96 @@ int main(int argc, char **argv)
 		obs_source_release(card);
 	}
 
+	// ------------------------------------- a shadow left off in some scenes
+	{
+		printf("\n[shadow left off in a scene]\n");
+		obs_data_t *cd = obs_data_create();
+		obs_data_set_int(cd, "width", 200);
+		obs_data_set_int(cd, "height", 100);
+		obs_source_t *card = obs_source_create("color_source", "Two Scene Card", cd, nullptr);
+		obs_data_release(cd);
+		obs_scene_t *one = obs_scene_create("Scene With Shadow");
+		obs_scene_t *two = obs_scene_create("Scene Without Shadow");
+		obs_sceneitem_t *in_one = obs_scene_add(one, card);
+		obs_sceneitem_t *in_two = obs_scene_add(two, card);
+		vec2 v;
+		vec2_set(&v, 100, 60);
+		obs_sceneitem_set_pos(in_one, &v);
+		obs_sceneitem_set_pos(in_two, &v);
+		obs_source_t *before_out = obs_get_output_source(0);
+		obs_set_output_source(0, obs_scene_get_source(one));
+
+		obs_data_t *fs = obs_data_create();
+		obs_data_set_double(fs, "offset_x", -20); // room on the left, so the item has to shift
+		// Recorded as not yet adjusted, as a filter added in OBS is.
+		for (const char *side : {"adjusted_left", "adjusted_top", "adjusted_right", "adjusted_bottom"})
+			obs_data_set_int(fs, side, 0);
+		obs_data_set_double(fs, "offset_y", -20);
+		obs_data_set_double(fs, "softness", 0);
+		obs_data_set_bool(fs, "screen_px", false);
+		obs_source_t *filter = obs_source_create("stagekit_shadow_backdrop", "Shadow", fs, nullptr);
+		obs_source_filter_add(card, filter);
+		auto wait = [&](obs_scene_t *shown) {
+			for (int i = 0; i < 14; i++) {
+				render(obs_scene_get_source(shown), 640, 360);
+				sleep_ms(100);
+			}
+		};
+		wait(one);
+		auto x_of = [](obs_sceneitem_t *item) {
+			vec2 p;
+			obs_sceneitem_get_pos(item, &p);
+			return p.x;
+		};
+		CHECK(obs_source_get_width(card) == 220 && std::fabs(x_of(in_one) - 80) < 0.6,
+		      "the shadow is drawn where it is wanted (%u wide, item at %.0f)", obs_source_get_width(card),
+		      x_of(in_one));
+
+		// The settings list both scenes by name, each with a tick box.
+		{
+			obs_properties_t *props = obs_source_properties(filter);
+			const std::string key_two =
+				std::string("off_in:") + obs_source_get_uuid(obs_scene_get_source(two));
+			const std::string key_one =
+				std::string("off_in:") + obs_source_get_uuid(obs_scene_get_source(one));
+			obs_property_t *box_two = obs_properties_get(props, key_two.c_str());
+			obs_property_t *box_one = obs_properties_get(props, key_one.c_str());
+			CHECK(box_one && box_two && obs_property_get_type(box_two) == OBS_PROPERTY_BOOL &&
+				      std::string(obs_property_description(box_two)) == "Scene Without Shadow",
+			      "the settings offer a tick box for each scene the source is in");
+			obs_properties_destroy(props);
+			obs_data_set_bool(fs, key_two.c_str(), true);
+			obs_source_update(filter, fs);
+		}
+		wait(one);
+		CHECK(obs_source_get_width(card) == 220, "ticking another scene changes nothing in this one");
+
+		obs_set_output_source(0, obs_scene_get_source(two));
+		wait(two);
+		const std::vector<uint8_t> plain =
+			render(card, obs_source_get_width(card), obs_source_get_height(card));
+		CHECK(obs_source_get_width(card) == 200 && obs_source_get_height(card) == 100 && plain[3] == 255,
+		      "in a ticked scene the source shows plain, with no room taken (%ux%u)",
+		      obs_source_get_width(card), obs_source_get_height(card));
+		CHECK(std::fabs(x_of(in_two) - 100) < 0.6, "and its picture is where it was put (item at %.0f)",
+		      x_of(in_two));
+
+		obs_set_output_source(0, obs_scene_get_source(one));
+		wait(one);
+		CHECK(obs_source_get_width(card) == 220 && std::fabs(x_of(in_one) - 80) < 0.6,
+		      "back in the other scene the shadow returns (%u wide, item at %.0f)", obs_source_get_width(card),
+		      x_of(in_one));
+
+		obs_set_output_source(0, before_out);
+		obs_source_release(before_out);
+		obs_data_release(fs);
+		obs_source_filter_remove(card, filter);
+		obs_source_release(filter);
+		obs_scene_release(one);
+		obs_scene_release(two);
+		obs_source_release(card);
+	}
+
 	// ------------------------------------------ one blur switch for several
 	{
 		printf("\n[blur these too]\n");

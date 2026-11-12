@@ -204,6 +204,21 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Shadow left off in chosen scenes (0.1.0-beta38)
+
+Asked for by the owner on 2026-11-12: exclude the effect in selected scenes when the source is in
+several, chosen from the existing scenes in a clear list rather than a one-line entry.
+
+- The properties add one tick box per scene that holds the source (`scenes_holding`), keyed
+  `off_in:<scene uuid>`.
+- A filter cannot know which scene is drawing it. Every 20 ticks it finds the scenes holding the
+  source that are showing (`showing_holders`: the scene on screen and visible nested scenes); when
+  all of them are ticked it sets `off_here_`, `settings()` then reports nothing to draw, the render is
+  skipped and `settle_items` gives the room back.
+- Consequences to remember: Preview in Studio Mode follows the Program scene; the change lags a scene
+  switch by up to 20 ticks, so a cut shows a frame or two of the old state. The owner has not seen
+  this yet.
+
 ## Ramp Blur leads other sources (0.1.0-beta37)
 
 Asked for by the owner on 2026-11-12: choose inside the filter which sources it applies to, so one

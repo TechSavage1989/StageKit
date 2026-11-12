@@ -31,6 +31,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <cmath>
 #include <memory>
 #include <mutex>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -214,8 +215,100 @@ std::vector<obs_sceneitem_t *> items_showing(obs_source_t *wanted)
 	return out;
 }
 
+// --- Scenes it is left off in ----------------------------------------------
+//
+// One source can sit in several scenes and want its shadow in only some. A
+// filter cannot tell which scene is drawing it, so the rule goes by the scene
+// on screen: when every scene there that holds the source is ticked, the
+// filter stands down and gives its room back.
+
+std::string off_key(obs_source_t *scene)
+{
+	const char *uuid = obs_source_get_uuid(scene);
+	return std::string("off_in:") + (uuid ? uuid : "");
+}
+
+bool holds_directly(obs_scene_t *scene, obs_source_t *wanted)
+{
+	struct Find {
+		obs_source_t *wanted;
+		bool found;
+	} find{wanted, false};
+	static const auto visit = [](obs_scene_t *, obs_sceneitem_t *item, void *param) {
+		auto *f = static_cast<Find *>(param);
+		if (obs_sceneitem_get_source(item) == f->wanted)
+			f->found = true;
+		else if (obs_sceneitem_is_group(item))
+			obs_sceneitem_group_enum_items(
+				item,
+				[](obs_scene_t *, obs_sceneitem_t *inner, void *p) {
+					auto *g = static_cast<Find *>(p);
+					if (obs_sceneitem_get_source(inner) == g->wanted)
+						g->found = true;
+					return !g->found;
+				},
+				param);
+		return !f->found;
+	};
+	obs_scene_enum_items(scene, visit, &find);
+	return find.found;
+}
+
+// Every scene that holds the source itself, by name order. Each is a new reference.
+std::vector<obs_source_t *> scenes_holding(obs_source_t *wanted)
+{
+	struct Gather {
+		obs_source_t *wanted;
+		std::vector<obs_source_t *> out;
+	} gather{wanted, {}};
+	obs_enum_scenes(
+		[](void *param, obs_source_t *scene_source) {
+			auto *g = static_cast<Gather *>(param);
+			obs_scene_t *scene = obs_scene_from_source(scene_source);
+			if (scene && !obs_source_is_group(scene_source) && holds_directly(scene, g->wanted))
+				g->out.push_back(obs_source_get_ref(scene_source));
+			return true;
+		},
+		&gather);
+	std::sort(gather.out.begin(), gather.out.end(), [](obs_source_t *a, obs_source_t *b) {
+		return strcmp(obs_source_get_name(a), obs_source_get_name(b)) < 0;
+	});
+	return gather.out;
+}
+
+// The scenes holding the source that are showing now: the scene on screen
+// and the visible scenes nested in it. Not references.
+struct Showing {
+	obs_source_t *wanted;
+	std::vector<obs_source_t *> *holders;
+	int depth;
+};
+void showing_holders(obs_source_t *scene_source, Showing &look)
+{
+	obs_scene_t *scene = obs_scene_from_source(scene_source);
+	if (!scene || look.depth > 8)
+		return;
+	if (holds_directly(scene, look.wanted) &&
+	    std::find(look.holders->begin(), look.holders->end(), scene_source) == look.holders->end())
+		look.holders->push_back(scene_source);
+	obs_scene_enum_items(
+		scene,
+		[](obs_scene_t *, obs_sceneitem_t *item, void *param) {
+			auto *l = static_cast<Showing *>(param);
+			obs_source_t *source = obs_sceneitem_get_source(item);
+			if (obs_sceneitem_visible(item) && source && obs_scene_from_source(source) &&
+			    !obs_source_is_group(source)) {
+				Showing deeper{l->wanted, l->holders, l->depth + 1};
+				showing_holders(source, deeper);
+			}
+			return true;
+		},
+		&look);
+}
+
 class ShadowBackdrop {
 public:
+	obs_source_t *filter() const { return source_; }
 	ShadowBackdrop(obs_data_t *settings, obs_source_t *source);
 	~ShadowBackdrop();
 
@@ -243,6 +336,8 @@ private:
 	bool keep_place_ = true;
 	// How big the source is drawn on screen, for sizes given in screen pixels.
 	double shown_sx_ = 1.0, shown_sy_ = 1.0;
+	// Standing down because of the scene on screen.
+	bool off_here_ = false;
 	int scale_countdown_ = 0;
 
 	gs_effect_t *effect_ = nullptr;
@@ -448,6 +543,23 @@ void ShadowBackdrop::tick()
 	// Now and then, see how big the source is drawn where it is on screen.
 	if (--scale_countdown_ <= 0) {
 		scale_countdown_ = 20;
+		// And whether the scene on screen is one it is left off in.
+		bool off = false;
+		if (obs_source_t *on_screen = scene_on_screen()) {
+			std::vector<obs_source_t *> holders;
+			Showing look{parent, &holders, 0};
+			showing_holders(on_screen, look);
+			obs_data_t *settings = obs_source_get_settings(source_);
+			off = !holders.empty();
+			for (obs_source_t *scene : holders)
+				off = off && obs_data_get_bool(settings, off_key(scene).c_str());
+			obs_data_release(settings);
+			obs_source_release(on_screen);
+		}
+		{
+			std::lock_guard lock(mutex_);
+			off_here_ = off;
+		}
 		double sx = 0.0, sy = 0.0;
 		const bool found = shown_scale(parent, sx, sy);
 		std::lock_guard lock(mutex_);
@@ -471,6 +583,11 @@ Settings ShadowBackdrop::settings()
 {
 	std::lock_guard lock(mutex_);
 	Settings s = settings_;
+	if (off_here_) {
+		// Nothing drawn and no room taken.
+		s.shadow = s.outline = s.backdrop = false;
+		s.radius = 0.0;
+	}
 	if (s.screen_px && shown_sx_ > 0.0 && shown_sy_ > 0.0) {
 		const double both = std::sqrt(shown_sx_ * shown_sy_);
 		s.offset_x /= shown_sx_;
@@ -529,7 +646,12 @@ void ShadowBackdrop::render()
 	obs_source_t *parent = obs_filter_get_parent(source_);
 	const uint32_t w = target ? obs_source_get_base_width(target) : 0;
 	const uint32_t h = target ? obs_source_get_base_height(target) : 0;
-	if (!effect_ || !parent || !w || !h) {
+	bool off_here;
+	{
+		std::lock_guard lock(mutex_);
+		off_here = off_here_;
+	}
+	if (!effect_ || !parent || !w || !h || off_here) {
 		obs_source_skip_video_filter(source_);
 		return;
 	}
@@ -677,7 +799,7 @@ obs_property_t *slider(obs_properties_t *props, const char *name, const char *te
 	return p;
 }
 
-obs_properties_t *get_properties(void *)
+obs_properties_t *get_properties(void *data)
 {
 	obs_properties_t *props = obs_properties_create();
 	auto made_from = [](obs_properties_t *group, const char *name) {
@@ -729,6 +851,24 @@ obs_properties_t *get_properties(void *)
 	obs_properties_add_group(props, "backdrop", obs_module_text("Shadow.Backdrop"), OBS_GROUP_CHECKABLE, backdrop);
 
 	slider(props, "radius", "Shadow.Radius", 0.0, 500.0, " px");
+
+	// A tick box for each scene the source is in.
+	if (data) {
+		obs_source_t *parent = obs_filter_get_parent(static_cast<ShadowBackdrop *>(data)->filter());
+		const std::vector<obs_source_t *> scenes = parent ? scenes_holding(parent)
+								  : std::vector<obs_source_t *>();
+		if (!scenes.empty()) {
+			obs_properties_t *off = obs_properties_create();
+			for (obs_source_t *scene : scenes) {
+				obs_property_t *box = obs_properties_add_bool(off, off_key(scene).c_str(),
+									      obs_source_get_name(scene));
+				obs_property_set_long_description(box, obs_module_text("Shadow.OffIn.Tip"));
+				obs_source_release(scene);
+			}
+			obs_properties_add_group(props, "off_in_group", obs_module_text("Shadow.OffIn"),
+						 OBS_GROUP_NORMAL, off);
+		}
+	}
 	obs_property_t *screen = obs_properties_add_bool(props, "screen_px", obs_module_text("Shadow.ScreenPx"));
 	obs_property_set_long_description(screen, obs_module_text("Shadow.ScreenPx.Tip"));
 	obs_property_t *keep = obs_properties_add_bool(props, "keep_place", obs_module_text("Shadow.Keep"));
