@@ -204,6 +204,14 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Arrange tools (0.1.0-beta24)
+
+The owner asked for "intuitive transform and object editing tools" for alignment and snapping,
+including "based on visible pixels, and not just the bounding box". The dock gained a box that lines
+up, spaces out, matches sizes and snaps the items selected in OBS, measured by the drawn picture by
+default. Not done: snapping while an item is being resized by its handles, rotation-aware edges, and
+guides drawn in the preview (a plugin cannot draw into OBS's preview).
+
 ## Installer folder page (0.1.0-beta22)
 
 The owner asked for the installer to "show and allow customizing the install directory". The folder

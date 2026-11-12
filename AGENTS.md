@@ -109,6 +109,10 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   rejected it: they select items in OBS's own preview, and the dock must act on that selection. The
   wheel-zoom they asked for belongs to the start image thumbnail and changes only that thumbnail in
   the dock: never an item, never the background in the scene.
+- **The arrange tools measure what is drawn, not the box** (`src/dock/arrange.*`). They draw the
+  item's source small and read it back to find the non-transparent part. That happens once per button
+  press or drop, never per frame; keep it that way. OBS's own drag-snapping cannot be hooked, so "snap
+  when I let go" watches the selected items and corrects after the mouse button is up.
 - **Dock keys are Send To filters on the item's source**, not Place Item filters on the scene. The
   owner presses them from Stream Deck Filter keys on the camera.
 - **Shadow sizes are in screen pixels by default.** The owner's old shadows sat on full-canvas scenes,
