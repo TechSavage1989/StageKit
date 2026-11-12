@@ -907,6 +907,29 @@ void get_defaults(obs_data_t *settings)
 
 } // namespace
 
+void shadow_room(obs_source_t *source, double room[4])
+{
+	room[0] = room[1] = room[2] = room[3] = 0.0;
+	struct Find {
+		double *room;
+	} find{room};
+	obs_source_enum_filters(
+		source,
+		[](obs_source_t *, obs_source_t *filter, void *param) {
+			const char *id = obs_source_get_unversioned_id(filter);
+			if (!id || strcmp(id, kShadowBackdropId) != 0 || !obs_source_enabled(filter))
+				return;
+			auto *f = static_cast<Find *>(param);
+			obs_data_t *settings = obs_source_get_settings(filter);
+			f->room[0] += (double)obs_data_get_int(settings, "adjusted_left");
+			f->room[1] += (double)obs_data_get_int(settings, "adjusted_top");
+			f->room[2] += (double)obs_data_get_int(settings, "adjusted_right");
+			f->room[3] += (double)obs_data_get_int(settings, "adjusted_bottom");
+			obs_data_release(settings);
+		},
+		&find);
+}
+
 void register_shadow_backdrop()
 {
 	obs_source_info info = {};

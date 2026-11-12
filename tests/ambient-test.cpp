@@ -965,6 +965,114 @@ int main(int argc, char **argv)
 		obs_source_release(card);
 	}
 
+	// ------------------------------------------- one capture, placed by scene
+	{
+		printf("\n[fit item]\n");
+		auto sized = [](obs_source_t *src, int cw, int ch) {
+			obs_data_t *d = obs_data_create();
+			obs_data_set_int(d, "width", cw);
+			obs_data_set_int(d, "height", ch);
+			obs_source_update(src, d);
+			obs_data_release(d);
+		};
+		obs_source_t *game = obs_source_create("color_source", "Fit Game", nullptr, nullptr);
+		sized(game, 400, 300);                                   // an emulator's squarer picture
+		obs_scene_t *full = obs_scene_create("Fit Full Screen"); // 640x360
+		obs_sceneitem_t *item = obs_scene_add(full, game);
+		obs_data_t *fs = obs_data_create();
+		obs_data_set_string(fs, "item", "Fit Game");
+		obs_data_set_double(fs, "margin", 30);
+		obs_source_t *fit = obs_source_create("stagekit_fit_item", "Fit", fs, nullptr);
+		obs_source_filter_add(obs_scene_get_source(full), fit);
+		obs_source_t *before_out = obs_get_output_source(0);
+		obs_set_output_source(0, obs_scene_get_source(full));
+		auto where = [&] {
+			sleep_ms(400);
+			vec2 p, sc;
+			obs_sceneitem_get_pos(item, &p);
+			obs_sceneitem_get_scale(item, &sc);
+			struct {
+				double x, y, k;
+			} out{p.x, p.y, sc.x};
+			return out;
+		};
+		auto at = where();
+		CHECK(std::fabs(at.x - 120) < 0.6 && std::fabs(at.y - 30) < 0.6 && std::fabs(at.k - 1.0) < 0.002,
+		      "a squarer picture floats centred inside the margin (%.0f, %.0f at %.2fx)", at.x, at.y, at.k);
+
+		sized(game, 1280, 720); // a widescreen game
+		at = where();
+		CHECK(std::fabs(at.x) < 0.6 && std::fabs(at.y) < 0.6 && std::fabs(at.k - 0.5) < 0.002,
+		      "a picture with the screen's shape fills the screen (%.0f, %.0f at %.2fx)", at.x, at.y, at.k);
+
+		// With a shadow, it is the picture that is centred, not picture plus shadow.
+		sized(game, 400, 300);
+		obs_data_t *ss = obs_data_create();
+		obs_data_set_double(ss, "offset_x", -20);
+		obs_data_set_double(ss, "offset_y", -20);
+		obs_data_set_double(ss, "softness", 0);
+		obs_data_set_bool(ss, "screen_px", false);
+		for (const char *side : {"adjusted_left", "adjusted_top", "adjusted_right", "adjusted_bottom"})
+			obs_data_set_int(ss, side, 0);
+		obs_source_t *shadow = obs_source_create("stagekit_shadow_backdrop", "Shadow", ss, nullptr);
+		obs_data_release(ss);
+		obs_source_filter_add(game, shadow);
+		sleep_ms(600);
+		at = where();
+		CHECK(obs_source_get_width(game) == 420 && std::fabs(at.x - 100) < 0.6 && std::fabs(at.y - 10) < 0.6 &&
+			      std::fabs(at.k - 1.0) < 0.002,
+		      "with a shadow on it, the picture itself stays centred (item at %.0f, %.0f)", at.x, at.y);
+		obs_source_filter_remove(game, shadow);
+		obs_source_release(shadow);
+		sleep_ms(300);
+
+		// A box of its own, as in a scene with a camera and chat beside the game.
+		obs_data_set_int(fs, "box", 1);
+		obs_data_set_double(fs, "box_x", 20);
+		obs_data_set_double(fs, "box_y", 40);
+		obs_data_set_double(fs, "box_width", 400);
+		obs_data_set_double(fs, "box_height", 300);
+		obs_source_update(fit, fs);
+		sized(game, 800, 600);
+		at = where();
+		CHECK(std::fabs(at.x - 20) < 0.6 && std::fabs(at.y - 40) < 0.6 && std::fabs(at.k - 0.5) < 0.002,
+		      "it can fit a box of its own instead of the whole screen (%.0f, %.0f at %.2fx)", at.x, at.y,
+		      at.k);
+
+		// Auto Frame as just the picture: the source is the trimmed picture.
+		obs_data_t *as = obs_data_create();
+		obs_data_set_int(as, "frame_mode", 1);
+		obs_data_set_int(as, "frame_width", 1920);
+		obs_data_set_int(as, "frame_height", 1080);
+		obs_data_set_int(as, "trim", 2);
+		obs_data_set_double(as, "trim_x", 100);
+		obs_data_set_double(as, "trim_y", 0);
+		obs_source_t *frame = obs_source_create("stagekit_auto_frame", "Auto Frame", as, nullptr);
+		obs_data_release(as);
+		obs_source_filter_add(game, frame);
+		for (int i = 0; i < 6; i++) {
+			render(obs_scene_get_source(full), 640, 360);
+			sleep_ms(100);
+		}
+		CHECK(obs_source_get_width(game) == 600 && obs_source_get_height(game) == 600,
+		      "Auto Frame as 'just the picture' makes the source the trimmed picture (%ux%u)",
+		      obs_source_get_width(game), obs_source_get_height(game));
+		at = where();
+		// 600x600 inside the 400x300 box less its 30 px margin: 240x240, centred.
+		CHECK(std::fabs(at.k - 0.4) < 0.002 && std::fabs(at.x - 100) < 0.6 && std::fabs(at.y - 70) < 0.6,
+		      "and Fit Item places that picture (%.0f, %.0f at %.2fx)", at.x, at.y, at.k);
+
+		obs_set_output_source(0, before_out);
+		obs_source_release(before_out);
+		obs_data_release(fs);
+		obs_source_filter_remove(game, frame);
+		obs_source_release(frame);
+		obs_source_filter_remove(obs_scene_get_source(full), fit);
+		obs_source_release(fit);
+		obs_scene_release(full);
+		obs_source_release(game);
+	}
+
 	// ------------------------------------- a shadow left off in some scenes
 	{
 		printf("\n[shadow left off in a scene]\n");

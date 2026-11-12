@@ -10,10 +10,16 @@ the Free Software Foundation; either version 2 of the License, or
 
 #pragma once
 
+#include <obs.h>
+
 namespace stagekit {
 
 inline constexpr const char *kShadowBackdropId = "stagekit_shadow_backdrop";
 
 void register_shadow_backdrop();
+
+// The room the shadow filters on a source take on each side, in the source's
+// pixels: left, top, right, bottom.
+void shadow_room(obs_source_t *source, double room[4]);
 
 } // namespace stagekit
