@@ -173,7 +173,9 @@ its heading:
   - *Opacity*, *Softness* (0 gives a hard edge), *Strength*, and for a drop shadow how far right/left
     and down/up it falls.
   - *Hide the picture* leaves only the shadow or glow.
-- **Outline**: a line round the picture, any width. *Made from* a colour or the picture itself. The
+- **Outline**: a line round the picture, any width. *Made from* a colour or the picture itself. Made
+  from the picture, *Past the edge* chooses between stretching the picture's edge outwards and
+  mirroring the picture, and *Outline blur* softens it. The
   line follows the picture's real shape, including text and rounded or cut corners. A shadow is cast
   by the picture and its outline together.
 - **Panel behind the source**: a coloured panel with a margin.

@@ -903,7 +903,141 @@ int main(int argc, char **argv)
 		write_frame(glow_out + "/6_a_game_glowing_in_its_own_colours.rgba", render(live, lw, lh), lw, lh);
 		obs_source_filter_remove(live, live_glow);
 		obs_source_release(live_glow);
+
+		// An outline made from a real picture: one clean continuation of it,
+		// stretched or mirrored, sharp or blurred.
+		{
+			obs_data_t *ad = obs_data_create();
+			obs_data_set_string(ad, "file", base_image);
+			obs_source_t *art = obs_source_create("image_source", "Outline Art", ad, nullptr);
+			obs_data_release(ad);
+			sleep_ms(300);
+			obs_data_t *os = obs_data_create();
+			obs_data_set_bool(os, "shadow", false);
+			obs_data_set_bool(os, "outline", true);
+			obs_data_set_double(os, "outline_width", 40);
+			obs_data_set_int(os, "outline_fill", 1);
+			obs_data_set_double(os, "outline_blur", 0);
+			obs_source_t *edge = obs_source_create("stagekit_shadow_backdrop", "Outline", os, nullptr);
+			obs_source_filter_add(art, edge);
+			auto shot = [&](const char *name) {
+				obs_source_update(edge, os);
+				sleep_ms(150);
+				const uint32_t ew = obs_source_get_width(art), eh = obs_source_get_height(art);
+				std::vector<uint8_t> px = render(art, ew, eh);
+				write_frame(glow_out + "/" + name + ".rgba", px, ew, eh);
+				return px;
+			};
+			const auto stretched = shot("7_outline_edge_stretched");
+			const uint32_t ew = obs_source_get_width(art), eh = obs_source_get_height(art);
+			// Stretched: along the left band every pixel of a row has the colour of the
+			// picture's first column on that row.
+			int same = 0, rows = 0;
+			for (uint32_t y = 60; y + 60 < eh; y += 7) {
+				const uint8_t *outer = &stretched[(size_t(y) * ew + 6) * 4];
+				const uint8_t *inner =
+					&stretched[(size_t(y) * ew + 41) * 4]; // the picture's first column
+				rows++;
+				same += std::abs(int(outer[0]) - int(inner[0])) <= 6 &&
+							std::abs(int(outer[1]) - int(inner[1])) <= 6 &&
+							std::abs(int(outer[2]) - int(inner[2])) <= 6 && outer[3] == 255
+						? 1
+						: 0;
+			}
+			CHECK(rows > 5 && same == rows,
+			      "made from the picture, the outline is the picture's edge carried outwards, not copies "
+			      "of it (%d of %d rows)",
+			      same, rows);
+			obs_data_set_int(os, "outline_edge", 1);
+			const auto mirrored = shot("8_outline_mirrored");
+			CHECK(mean_abs_diff(mirrored, stretched) > 0.2,
+			      "or the picture mirrored at each edge (diff %.2f)", mean_abs_diff(mirrored, stretched));
+			obs_data_set_double(os, "outline_blur", 40);
+			const auto blurred = shot("9_outline_mirrored_and_blurred");
+			CHECK(mean_abs_diff(blurred, mirrored) > 0.2, "and it can be blurred (diff %.2f)",
+			      mean_abs_diff(blurred, mirrored));
+			obs_data_release(os);
+			obs_source_filter_remove(art, edge);
+			obs_source_release(edge);
+			obs_source_release(art);
+		}
 		obs_source_release(card);
+	}
+
+	// --------------------------------------- a shadow copied onto a group
+	{
+		printf("\n[shadow copied to a group]\n");
+		auto solid = [](const char *name, int cw, int ch) {
+			obs_data_t *d = obs_data_create();
+			obs_data_set_int(d, "width", cw);
+			obs_data_set_int(d, "height", ch);
+			obs_source_t *src = obs_source_create("color_source", name, d, nullptr);
+			obs_data_release(d);
+			return src;
+		};
+		obs_scene_t *sc = obs_scene_create("Copy Scene");
+		obs_source_t *first = solid("Copy From", 200, 100);
+		obs_source_t *in_a = solid("In Group A", 120, 80);
+		obs_source_t *in_b = solid("In Group B", 60, 60);
+		obs_sceneitem_t *first_item = obs_scene_add(sc, first);
+		obs_sceneitem_t *group = obs_scene_add_group(sc, "Copy Group");
+		obs_sceneitem_t *ia = obs_scene_add(sc, in_a);
+		obs_sceneitem_t *ib = obs_scene_add(sc, in_b);
+		vec2 v;
+		vec2_set(&v, 300, 200);
+		obs_sceneitem_set_pos(ia, &v);
+		vec2_set(&v, 430, 210);
+		obs_sceneitem_set_pos(ib, &v);
+		obs_sceneitem_group_add_item(group, ia);
+		obs_sceneitem_group_add_item(group, ib);
+		vec2_set(&v, 20, 20);
+		obs_sceneitem_set_pos(first_item, &v);
+		obs_source_t *before_out = obs_get_output_source(0);
+		obs_set_output_source(0, obs_scene_get_source(sc));
+		sleep_ms(300);
+
+		obs_data_t *fs = obs_data_create();
+		obs_data_set_double(fs, "softness", 30);
+		obs_data_set_bool(fs, "outline", true);
+		obs_data_set_double(fs, "outline_width", 20);
+		obs_data_set_int(fs, "outline_fill", 1);
+		obs_source_t *filter = obs_source_create("stagekit_shadow_backdrop", "Shadow", fs, nullptr);
+		obs_data_release(fs);
+		obs_source_filter_add(first, filter);
+		sleep_ms(400); // the first item is adjusted for the shadow's room
+
+		vec2 group_before;
+		obs_sceneitem_get_pos(group, &group_before);
+		struct {
+			double x;
+		} picture_before{group_before.x};
+		obs_source_t *group_source = obs_sceneitem_get_source(group);
+		const uint32_t gw = obs_source_get_width(group_source), gh = obs_source_get_height(group_source);
+		obs_source_copy_filters(group_source, first);
+		for (int i = 0; i < 12; i++) {
+			sleep_ms(100);
+			render(obs_scene_get_source(sc), 640, 360);
+		}
+		vec2 group_after;
+		obs_sceneitem_get_pos(group, &group_after);
+		const uint32_t gw2 = obs_source_get_width(group_source), gh2 = obs_source_get_height(group_source);
+		// The group grew by the shadow's room; its picture must be where it was,
+		// so the item moved up and left by exactly the room on those sides.
+		const double room_x = (gw2 - gw) / 2.0;
+		CHECK(gw2 > gw && gh2 > gh, "the copied filter takes its room around the group (%ux%u -> %ux%u)", gw,
+		      gh, gw2, gh2);
+		CHECK(std::fabs((group_before.x - group_after.x) - room_x) < 12.0 &&
+			      std::fabs(group_before.x - group_after.x) < 80.0,
+		      "and the group's picture stays where it was (item moved %.0f, %.0f; room %.0f; box was %.0f)",
+		      group_before.x - group_after.x, group_before.y - group_after.y, room_x, picture_before.x);
+
+		obs_set_output_source(0, before_out);
+		obs_source_release(before_out);
+		obs_source_filter_remove(first, filter);
+		obs_source_release(filter);
+		obs_scene_release(sc);
+		for (obs_source_t *src : {first, in_a, in_b})
+			obs_source_release(src);
 	}
 
 	// ------------------------------- background from an auto-framed capture

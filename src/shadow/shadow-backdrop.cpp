@@ -31,6 +31,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <cmath>
 #include <memory>
 #include <mutex>
+#include <string>
 #include <vector>
 
 namespace stagekit {
@@ -40,6 +41,8 @@ namespace {
 // Saved in settings: append only.
 enum class ShadowType { Drop = 0, Glow = 1 }; // to one side, or all round
 enum class Fill { Color = 0, Picture = 1 };   // a chosen colour, or the picture's own colours
+
+enum class Edge { Stretch = 0, Mirror = 1 }; // how the picture carries on past its edge
 
 struct Settings {
 	bool shadow = true;
@@ -63,6 +66,8 @@ struct Settings {
 	uint32_t outline_color = 0xFFFFFFFF;
 	double outline_opacity = 1.0;
 	Fill outline_fill = Fill::Color;
+	Edge outline_edge = Edge::Stretch;
+	double outline_blur = 20.0;
 	// Sizes are meant as they look on screen: an item drawn at half size
 	// gets twice the numbers, so 20 px of shadow is 20 px in the picture.
 	bool screen_px = true;
@@ -234,6 +239,7 @@ private:
 	// Saved with the filter, so loading a collection adjusts nothing twice.
 	Padding adjusted_;
 	bool adjusted_loaded_ = false;
+	bool owner_checked_ = false;
 	bool keep_place_ = true;
 	// How big the source is drawn on screen, for sizes given in screen pixels.
 	double shown_sx_ = 1.0, shown_sy_ = 1.0;
@@ -252,6 +258,9 @@ private:
 	gs_eparam_t *p_outline_color_ = nullptr;
 	gs_eparam_t *p_outline_picture_ = nullptr;
 	gs_texrender_t *tr_body_ = nullptr;
+	gs_texrender_t *tr_extended_ = nullptr;
+	gs_eparam_t *p_extended_ = nullptr;
+	gs_eparam_t *p_extend_mirror_ = nullptr;
 	gs_eparam_t *p_backdrop_on_ = nullptr;
 	gs_eparam_t *p_backdrop_pad_ = nullptr;
 	gs_eparam_t *p_backdrop_color_ = nullptr;
@@ -294,12 +303,15 @@ ShadowBackdrop::ShadowBackdrop(obs_data_t *settings, obs_source_t *source) : sou
 		p_outline_width_ = gs_effect_get_param_by_name(effect_, "outline_width");
 		p_outline_color_ = gs_effect_get_param_by_name(effect_, "outline_color");
 		p_outline_picture_ = gs_effect_get_param_by_name(effect_, "outline_picture");
+		p_extended_ = gs_effect_get_param_by_name(effect_, "extended");
+		p_extend_mirror_ = gs_effect_get_param_by_name(effect_, "extend_mirror");
 	}
 	blur_ = std::make_unique<KawaseBlur>();
 	tr_input_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 	tr_card_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 	tr_final_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 	tr_body_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
+	tr_extended_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 	obs_leave_graphics();
 	bfree(path);
 
@@ -315,6 +327,7 @@ ShadowBackdrop::~ShadowBackdrop()
 	gs_texrender_destroy(tr_card_);
 	gs_texrender_destroy(tr_final_);
 	gs_texrender_destroy(tr_body_);
+	gs_texrender_destroy(tr_extended_);
 	obs_leave_graphics();
 }
 
@@ -342,6 +355,8 @@ void ShadowBackdrop::update(obs_data_t *settings)
 	s.outline_color = (uint32_t)obs_data_get_int(settings, "outline_color");
 	s.outline_opacity = std::clamp(obs_data_get_double(settings, "outline_opacity") / 100.0, 0.0, 1.0);
 	s.outline_fill = obs_data_get_int(settings, "outline_fill") == 1 ? Fill::Picture : Fill::Color;
+	s.outline_edge = obs_data_get_int(settings, "outline_edge") == 1 ? Edge::Mirror : Edge::Stretch;
+	s.outline_blur = std::clamp(obs_data_get_double(settings, "outline_blur"), 0.0, 200.0);
 	// A glow sits evenly all round.
 	if (s.shadow_type == ShadowType::Glow)
 		s.offset_x = s.offset_y = 0.0;
@@ -411,6 +426,24 @@ void ShadowBackdrop::tick()
 		std::lock_guard lock(mutex_);
 		keep = keep_place_;
 	}
+	// The room recorded as already given belongs to the source it was given
+	// on. A filter copied or pasted onto something else arrives with the
+	// other source's record: there, nothing has been adjusted yet.
+	if (!owner_checked_) {
+		owner_checked_ = true;
+		const char *uuid = obs_source_get_uuid(parent);
+		obs_data_t *settings = obs_source_get_settings(source_);
+		const std::string recorded = obs_data_get_string(settings, "adjusted_for");
+		if (uuid && !recorded.empty() && recorded != uuid) {
+			std::lock_guard lock(mutex_);
+			adjusted_ = Padding();
+			for (const char *side : {"adjusted_left", "adjusted_top", "adjusted_right", "adjusted_bottom"})
+				obs_data_set_int(settings, side, 0);
+		}
+		if (uuid)
+			obs_data_set_string(settings, "adjusted_for", uuid);
+		obs_data_release(settings);
+	}
 	// A filter that is switched off, or told not to, takes no room.
 	// Now and then, see how big the source is drawn where it is on screen.
 	if (--scale_countdown_ <= 0) {
@@ -445,6 +478,7 @@ Settings ShadowBackdrop::settings()
 		s.softness = std::min(200.0, s.softness / both);
 		s.backdrop_pad /= both;
 		s.outline_width = std::min(200.0, s.outline_width / both);
+		s.outline_blur = std::min(200.0, s.outline_blur / both);
 		s.radius /= both;
 	}
 	return s;
@@ -550,10 +584,24 @@ void ShadowBackdrop::render()
 
 	// 2. A line around it, in a colour or in the picture's own colours.
 	if (card && s.outline) {
+		// Made from the picture: the picture itself carried on past its
+		// edges, softened as asked, shows through the line.
+		gs_texture_t *extended = card;
+		if (s.outline_fill == Fill::Picture) {
+			gs_effect_set_float(p_extend_mirror_, s.outline_edge == Edge::Mirror ? 1.0f : 0.0f);
+			// An effect's values last for one draw: give the sizes again.
+			gs_effect_set_vec2(p_out_size_, &out_size);
+			gs_effect_set_vec2(p_src_size_, &src_size);
+			gs_effect_set_vec2(p_pad_, &pad);
+			draw(tr_extended_, input, "Extend");
+			if (gs_texture_t *whole = gs_texrender_get_texture(tr_extended_))
+				extended = blur_->blur(whole, ow, oh, s.outline_blur);
+		}
 		vec4 outline_color;
 		vec4_from_rgba(&outline_color, s.outline_color);
 		outline_color.w = (float)s.outline_opacity;
 		gs_effect_set_vec2(p_out_size_, &out_size);
+		gs_effect_set_texture(p_extended_, extended);
 		gs_effect_set_float(p_outline_width_, (float)s.outline_width);
 		gs_effect_set_vec4(p_outline_color_, &outline_color);
 		gs_effect_set_float(p_outline_picture_, s.outline_fill == Fill::Picture ? 1.0f : 0.0f);
@@ -616,6 +664,8 @@ bool visibility_modified(obs_properties_t *props, obs_property_t *, obs_data_t *
 	obs_property_set_visible(obs_properties_get(props, "shadow_color"), !shadow_picture);
 	obs_property_set_visible(obs_properties_get(props, "shadow_boost"), shadow_picture);
 	obs_property_set_visible(obs_properties_get(props, "outline_color"), !outline_picture);
+	obs_property_set_visible(obs_properties_get(props, "outline_edge"), outline_picture);
+	obs_property_set_visible(obs_properties_get(props, "outline_blur"), outline_picture);
 	return true;
 }
 
@@ -662,6 +712,13 @@ obs_properties_t *get_properties(void *)
 	slider(outline, "outline_width", "Shadow.OutlineWidth", 0.0, 100.0, " px");
 	made_from(outline, "outline_fill");
 	obs_properties_add_color(outline, "outline_color", obs_module_text("Shadow.OutlineColor"));
+	obs_property_t *edge = obs_properties_add_list(outline, "outline_edge", obs_module_text("Shadow.OutlineEdge"),
+						       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+	obs_property_list_add_int(edge, obs_module_text("Shadow.OutlineEdge.Stretch"), (int)Edge::Stretch);
+	obs_property_list_add_int(edge, obs_module_text("Shadow.OutlineEdge.Mirror"), (int)Edge::Mirror);
+	obs_property_set_long_description(edge, obs_module_text("Shadow.OutlineEdge.Tip"));
+	obs_property_t *line_blur = slider(outline, "outline_blur", "Shadow.OutlineBlur", 0.0, 200.0, " px");
+	obs_property_set_long_description(line_blur, obs_module_text("Shadow.OutlineBlur.Tip"));
 	slider(outline, "outline_opacity", "Shadow.OutlineOpacity", 0.0, 100.0, "%");
 	obs_properties_add_group(props, "outline", obs_module_text("Shadow.Outline"), OBS_GROUP_CHECKABLE, outline);
 
@@ -695,6 +752,8 @@ void get_defaults(obs_data_t *settings)
 	obs_data_set_default_bool(settings, "outline", false);
 	obs_data_set_default_double(settings, "outline_width", 6.0);
 	obs_data_set_default_int(settings, "outline_fill", (int)Fill::Color);
+	obs_data_set_default_int(settings, "outline_edge", (int)Edge::Stretch);
+	obs_data_set_default_double(settings, "outline_blur", 20.0);
 	obs_data_set_default_int(settings, "outline_color", 0xFFFFFFFF);
 	obs_data_set_default_double(settings, "outline_opacity", 100.0);
 	obs_data_set_default_bool(settings, "backdrop", false);
