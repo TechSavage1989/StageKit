@@ -49,6 +49,9 @@ target_sources(
     src/common/switch-ramp.hpp
     src/zoom/ramp-zoom.cpp
     src/zoom/ramp-zoom.hpp
+    src/common/scene-util.hpp
+    src/placement/scene-tools.cpp
+    src/placement/scene-tools.hpp
     src/placement/place-item.cpp
     src/placement/place-item.hpp
     src/shadow/shadow-backdrop.cpp

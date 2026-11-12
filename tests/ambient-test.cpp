@@ -355,6 +355,150 @@ int main(int argc, char **argv)
 		obs_source_release(title);
 	}
 
+	// ------------------------------------------- show/hide, match item, layout
+	{
+		auto color = [](const char *name, int cw, int ch) {
+			obs_data_t *d = obs_data_create();
+			obs_data_set_int(d, "width", cw);
+			obs_data_set_int(d, "height", ch);
+			obs_source_t *src = obs_source_create("color_source", name, d, nullptr);
+			obs_data_release(d);
+			return src;
+		};
+		auto at = [](obs_sceneitem_t *item, float x, float y) {
+			vec2 p;
+			vec2_set(&p, x, y);
+			obs_sceneitem_set_pos(item, &p);
+		};
+		auto pos = [](obs_sceneitem_t *item) {
+			vec2 p;
+			obs_sceneitem_get_pos(item, &p);
+			return p;
+		};
+		auto add_filter = [](obs_scene_t *scene, const char *id, const char *name, obs_data_t *d) {
+			obs_source_t *f = obs_source_create(id, name, d, nullptr);
+			obs_data_release(d);
+			obs_source_filter_add(obs_scene_get_source(scene), f);
+			return f;
+		};
+
+		printf("\n[show/hide animation]\n");
+		obs_scene_t *scene = obs_scene_create("Show Scene");
+		obs_source_t *lower_src = color("Lower Third", 200, 50);
+		obs_sceneitem_t *lower = obs_scene_add(scene, lower_src);
+		at(lower, 30, 280); // nearest edge is the bottom, 80 px away
+		obs_data_t *d = obs_data_create();
+		obs_data_set_string(d, "item", "Lower Third");
+		obs_data_set_int(d, "in_ms", 300);
+		obs_data_set_int(d, "out_ms", 300);
+		obs_data_set_int(d, "ease_curve", 0);
+		obs_source_t *show_hide = add_filter(scene, "stagekit_show_hide", "Animate", d);
+		sleep_ms(60);
+
+		obs_sceneitem_set_visible(lower, false);
+		sleep_ms(120);
+		vec2 p = pos(lower);
+		CHECK(obs_sceneitem_visible(lower) && p.y > 285 && p.y < 360 && std::fabs(p.x - 30) < 0.5,
+		      "hiding slides it towards the nearest edge instead of cutting (y %.0f)", p.y);
+		sleep_ms(350);
+		p = pos(lower);
+		CHECK(!obs_sceneitem_visible(lower) && std::fabs(p.y - 280) < 0.5,
+		      "then it is hidden, resting at its normal place (y %.0f)", p.y);
+
+		obs_sceneitem_set_visible(lower, true);
+		p = pos(lower);
+		CHECK(std::fabs(p.y - 360) < 0.5, "showing starts it just off screen on the same frame (y %.0f)", p.y);
+		sleep_ms(450);
+		p = pos(lower);
+		CHECK(obs_sceneitem_visible(lower) && std::fabs(p.y - 280) < 0.5, "and it slides home (y %.0f)", p.y);
+
+		obs_data_t *pop = obs_data_create();
+		obs_data_set_int(pop, "style", 5);
+		obs_source_update(show_hide, pop);
+		obs_data_release(pop);
+		sleep_ms(60);
+		obs_sceneitem_set_visible(lower, false);
+		sleep_ms(150);
+		vec2 sc;
+		obs_sceneitem_get_scale(lower, &sc);
+		CHECK(sc.x > 0.1f && sc.x < 0.9f, "pop style shrinks it towards its centre (scale %.2f)", sc.x);
+		sleep_ms(300);
+		obs_sceneitem_get_scale(lower, &sc);
+		p = pos(lower);
+		CHECK(!obs_sceneitem_visible(lower) && std::fabs(sc.x - 1.0f) < 0.001f && std::fabs(p.x - 30) < 0.5,
+		      "and its size and place are restored once hidden");
+		obs_source_filter_remove(obs_scene_get_source(scene), show_hide);
+		obs_source_release(show_hide);
+
+		printf("\n[match item]\n");
+		obs_scene_t *master_scene = obs_scene_create("Start Scene");
+		obs_source_t *title_a = color("Starting Title", 300, 60);
+		obs_sceneitem_t *master_item = obs_scene_add(master_scene, title_a);
+		at(master_item, 40, 200);
+		obs_source_t *title_b = color("Break Title", 600, 60); // twice as long
+		obs_sceneitem_t *follower = obs_scene_add(scene, title_b);
+		at(follower, 5, 5);
+		d = obs_data_create();
+		obs_data_set_string(d, "item", "Break Title");
+		obs_data_set_string(d, "master_scene", "Start Scene");
+		obs_data_set_string(d, "master_item", "Starting Title");
+		obs_source_t *match = add_filter(scene, "stagekit_match_item", "Match", d);
+		sleep_ms(100);
+		vec2 b;
+		obs_sceneitem_get_bounds(follower, &b);
+		p = pos(follower);
+		CHECK(std::fabs(p.x - 40) < 0.5 && std::fabs(p.y - 200) < 0.5 && std::fabs(b.x - 300) < 0.5 &&
+			      std::fabs(b.y - 60) < 0.5 &&
+			      obs_sceneitem_get_bounds_type(follower) == OBS_BOUNDS_SCALE_INNER,
+		      "a longer title is fitted inside the same box (at %.0f,%.0f, box %.0fx%.0f)", p.x, p.y, b.x, b.y);
+		at(master_item, 100, 150);
+		sleep_ms(100);
+		p = pos(follower);
+		CHECK(std::fabs(p.x - 100) < 0.5 && std::fabs(p.y - 150) < 0.5,
+		      "moving the original moves the matched item too (%.0f, %.0f)", p.x, p.y);
+		obs_source_set_enabled(match, false);
+		at(master_item, 300, 300);
+		sleep_ms(100);
+		p = pos(follower);
+		CHECK(std::fabs(p.x - 100) < 0.5, "switching the filter off stops the matching");
+		obs_source_filter_remove(obs_scene_get_source(scene), match);
+		obs_source_release(match);
+
+		printf("\n[layout]\n");
+		at(lower, 30, 280);
+		at(follower, 100, 150);
+		d = obs_data_create();
+		obs_data_set_int(d, "duration_ms", 300);
+		obs_data_set_int(d, "ease_curve", 0);
+		obs_source_t *layout = add_filter(scene, "stagekit_layout", "Default Layout", d);
+		sleep_ms(60);
+		calldata_t cd = {};
+		proc_handler_call(obs_source_get_proc_handler(layout), "save", &cd);
+		sleep_ms(60);
+		at(lower, 400, 20);
+		at(follower, 0, 0);
+		obs_source_set_enabled(layout, true);
+		sleep_ms(150);
+		p = pos(lower);
+		CHECK(p.x > 60 && p.x < 380, "switching it on glides items back (x %.0f part-way)", p.x);
+		sleep_ms(300);
+		p = pos(lower);
+		vec2 q = pos(follower);
+		CHECK(std::fabs(p.x - 30) < 0.5 && std::fabs(p.y - 280) < 0.5 && std::fabs(q.x - 100) < 0.5 &&
+			      std::fabs(q.y - 150) < 0.5,
+		      "every item returns to the saved arrangement");
+		CHECK(!obs_source_enabled(layout), "the filter switches itself off afterwards");
+		calldata_free(&cd);
+		obs_source_filter_remove(obs_scene_get_source(scene), layout);
+		obs_source_release(layout);
+
+		obs_source_release(lower_src);
+		obs_source_release(title_a);
+		obs_source_release(title_b);
+		obs_scene_release(master_scene);
+		obs_scene_release(scene);
+	}
+
 	// ------------------------------------------------------------- ramp zoom
 	{
 		printf("\n[ramp zoom]\n");

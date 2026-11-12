@@ -24,6 +24,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "api/vendor-api.hpp"
 #include "blur/ramp-blur.hpp"
 #include "placement/place-item.hpp"
+#include "placement/scene-tools.hpp"
 #include "shadow/shadow-backdrop.hpp"
 #include "zoom/ramp-zoom.hpp"
 
@@ -82,6 +83,9 @@ bool obs_module_load(void)
 	stagekit::register_shadow_backdrop();
 	stagekit::register_place_item();
 	stagekit::register_ramp_zoom();
+	stagekit::register_show_hide();
+	stagekit::register_match_item();
+	stagekit::register_layout();
 	for (GlobalHotkey &hk : g_hotkeys)
 		hk.id = obs_hotkey_register_frontend(hk.name, obs_module_text(hk.text), blur_all_hotkey, &hk);
 	obs_frontend_add_save_callback(frontend_save_load, nullptr);
