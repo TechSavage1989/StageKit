@@ -184,11 +184,15 @@ About once a second it looks at the window in front. If that window is a game, t
 it, windowed or full-screen. It stays on that game when you switch to another program, and moves on
 when the game closes or another game comes to the front. There is nothing to set up per game.
 
-- **Never capture**: programs it must leave alone. Type part of the program's file name, for example
-  `blender`. OBS, browsers, Discord, Steam's own windows and similar are already left alone.
-- **Always capture** (optional): for a game it does not pick up by itself.
-- **Capture**: *Any game, found automatically* or *Only the programs on the 'always' list*.
-- With nothing to capture, the Game Capture goes back to *Capture any fullscreen application*.
+The filter's controls show what it is capturing now.
+
+- **Not a game? Never capture this program**: one press when it picks up the wrong thing.
+- **Pick from the programs that are open**: choose a program and press *Always capture it* (for a game
+  it misses) or *Never capture it*. There are no file names to type.
+- **Your lists**: the two lists those buttons fill in, as plain text you can edit (`blender, vlc`). OBS,
+  browsers, Discord, Steam's own windows and similar are already left alone.
+- **Find games**: *Automatically*, or *Only from 'Always capture'*.
+- With no game open, the Game Capture goes back to *Capture any fullscreen application*.
 
 A game is recognised by what the program has loaded: a graphics engine together with controller
 support, or a graphics engine in a window that fills its screen. The filter changes the Game Capture's
