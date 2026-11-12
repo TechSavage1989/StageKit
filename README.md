@@ -50,13 +50,12 @@ These are real frames rendered by the plugin in its automated tests, using made-
 
 ## Download
 
-No release has been published yet. Test builds for Windows, macOS and Linux are attached to each
-build run:
+StageKit is in pre-release. Builds for Windows, macOS and Linux are on the releases page:
 
-- [Build runs with downloadable artifacts](https://github.com/TechSavage1989/StageKit/actions/workflows/push.yaml)
-- [Releases](https://github.com/TechSavage1989/StageKit/releases) (empty until the first release)
+- [All releases, including pre-releases](https://github.com/TechSavage1989/StageKit/releases)
 
-Downloading a build artifact needs a signed-in GitHub account.
+On Windows, pick the `windows-x64` zip. There is no stable release yet, so the "latest release" shortcut
+does not point anywhere. Release notes are kept in [docs/releases](docs/releases).
 
 ## Requirements
 
@@ -68,11 +67,11 @@ Downloading a build artifact needs a signed-in GitHub account.
 
 ## Getting started
 
-1. Download the artifact for your system from a build run and unzip it.
+1. Download the file for your system from the releases page and unzip it.
 2. Close OBS.
-3. Windows: copy the `stagekit` folder from the zip into `C:\ProgramData\obs-studio\plugins\`. The
-   artifact's exact layout has not been checked on a real machine yet; if the zip looks different,
-   please report what it contains.
+3. Windows: copy the `stagekit` folder from the zip into `C:\ProgramData\obs-studio\plugins\`. This
+   has not been checked on a real machine yet; if the zip looks different, please report what it
+   contains.
 4. Start OBS. *Ramp Blur (StageKit)* and the other tools appear in the filter list of any source, and
    *Ambient Background (StageKit)* in the list of sources.
 
