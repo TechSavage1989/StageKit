@@ -810,6 +810,61 @@ int main(int argc, char **argv)
 		obs_source_release(card);
 	}
 
+	// ------------------------------- background from an auto-framed capture
+	{
+		printf("\n[background from a framed capture]\n");
+		obs_data_t *gd = obs_data_create();
+		obs_data_set_int(gd, "width", 400);
+		obs_data_set_int(gd, "height", 300);
+		obs_data_set_int(gd, "color", 0xFF2030E0); // red
+		obs_source_t *game = obs_source_create("color_source", "Framed Capture", gd, nullptr);
+		obs_data_release(gd);
+		obs_data_t *fs = obs_data_create();
+		obs_data_set_int(fs, "frame_width", 800);
+		obs_data_set_int(fs, "frame_height", 300);
+		obs_data_set_int(fs, "glide_ms", 0);
+		obs_source_t *frame = obs_source_create("stagekit_auto_frame", "Auto Frame", fs, nullptr);
+		obs_data_release(fs);
+		obs_source_filter_add(game, frame);
+		sleep_ms(200);
+		render(game, 800, 300);
+
+		obs_data_t *bs = obs_data_create();
+		obs_data_set_int(bs, "live_mode", 2);
+		obs_data_set_string(bs, "live_source", "Framed Capture");
+		obs_data_set_bool(bs, "live_replace", true);
+		obs_data_set_int(bs, "live_fit", 0);
+		obs_data_set_double(bs, "blur", 0);
+		obs_data_set_double(bs, "glow", 0);
+		obs_data_set_double(bs, "speed_x", 0);
+		obs_data_set_double(bs, "speed_y", 0);
+		obs_source_t *back = obs_source_create("stagekit_ambient_background", "Framed Background", bs, nullptr);
+		obs_data_release(bs);
+		obs_source_inc_showing(back);
+		sleep_ms(700); // it takes the canvas size and finds its capture on its first ticks
+		const uint32_t bw = obs_source_get_width(back), bh = obs_source_get_height(back);
+		render(back, bw, bh);
+		sleep_ms(300);
+		const std::vector<uint8_t> px = render(back, bw, bh);
+		// Filling the screen with the whole 800x300 frame would leave its empty
+		// sides showing as black at the left and right.
+		int red_edges = 0;
+		for (uint32_t x : {bw / 50, bw - 1 - bw / 50}) {
+			const uint8_t *p = &px[(size_t(bh / 2) * bw + x) * 4];
+			red_edges += p[0] > 90 && p[0] > p[2] + 40 ? 1 : 0;
+		}
+		const uint8_t *edge = &px[(size_t(bh / 2) * bw + bw / 50) * 4];
+		CHECK(red_edges == 2,
+		      "a live capture with an Auto Frame fills the background with its picture, not its frame "
+		      "(edge %d, %d, %d)",
+		      edge[0], edge[1], edge[2]);
+		obs_source_dec_showing(back);
+		obs_source_release(back);
+		obs_source_filter_remove(game, frame);
+		obs_source_release(frame);
+		obs_source_release(game);
+	}
+
 	// ------------------------------------------- show/hide, match item, layout
 	{
 		auto color = [](const char *name, int cw, int ch) {

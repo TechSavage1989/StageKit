@@ -204,6 +204,13 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Background live capture follows Auto Frame (0.1.0-beta30)
+
+The owner saw black bars in Ambient Background's live capture whatever the fit setting. The background
+drew the capture's whole output, and an auto-framed capture is a frame with empty sides.
+`auto_frame_picture()` (`src/frame/auto-frame.*`) gives the picture's rectangle, allowing for a
+shadow's room after the frame; `render_child(..., picture_only)` renders just that rectangle.
+
 ## Corners & Edges (0.1.0-beta29)
 
 Asked for by the owner on 2026-11-12: "a filter that can round, chamfer, or otherwise modify objects

@@ -1410,6 +1410,48 @@ obs_properties_t *picture_shape_properties(void *)
 
 } // namespace
 
+bool auto_frame_picture(obs_source_t *source, double &x, double &y, double &width, double &height)
+{
+	struct Find {
+		obs_source_t *frame = nullptr;
+		double left = 0.0, top = 0.0; // room added by shadows after the frame
+	} find;
+	obs_source_enum_filters(
+		source,
+		[](obs_source_t *, obs_source_t *filter, void *param) {
+			auto *f = static_cast<Find *>(param);
+			const char *id = obs_source_get_unversioned_id(filter);
+			if (!id || !obs_source_enabled(filter))
+				return;
+			if (strcmp(id, kAutoFrameId) == 0) {
+				f->frame = filter;
+				f->left = f->top = 0.0;
+			} else if (f->frame && strcmp(id, "stagekit_shadow_backdrop") == 0) {
+				obs_data_t *settings = obs_source_get_settings(filter);
+				f->left += (double)obs_data_get_int(settings, "adjusted_left");
+				f->top += (double)obs_data_get_int(settings, "adjusted_top");
+				obs_data_release(settings);
+			}
+		},
+		&find);
+	if (!find.frame)
+		return false;
+	calldata_t cd = {};
+	bool found = false;
+	if (proc_handler_call(obs_source_get_proc_handler(find.frame), "get_picture", &cd)) {
+		const double pw = calldata_float(&cd, "width"), ph = calldata_float(&cd, "height");
+		if (pw >= 1.0 && ph >= 1.0) {
+			x = calldata_float(&cd, "x") + find.left;
+			y = calldata_float(&cd, "y") + find.top;
+			width = pw;
+			height = ph;
+			found = true;
+		}
+	}
+	calldata_free(&cd);
+	return found;
+}
+
 void register_auto_frame()
 {
 	obs_source_info info = {};
