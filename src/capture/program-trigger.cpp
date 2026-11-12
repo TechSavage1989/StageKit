@@ -22,6 +22,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "program-trigger.hpp"
 
 #include "auto-capture.hpp"
+#include "../common/pick-list.hpp"
 #include "../common/scene-util.hpp"
 
 #include <obs-module.h>
@@ -282,50 +283,41 @@ obs_properties_t *get_properties(void *data)
 	obs_properties_add_group(props, "watch_group", obs_module_text("Trigger.WatchGroup"), OBS_GROUP_NORMAL, watch);
 
 	// 2. What it switches.
-	obs_properties_t *act = obs_properties_create();
 	if (scene_of(parent)) {
-		obs_property_t *pick = obs_properties_add_list(act, "pick_item", obs_module_text("Trigger.PickItem"),
-							       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
-		obs_property_list_add_string(pick, obs_module_text("Link.Pick.None"), "");
-		add_scene_items_to_list(parent, pick);
-		obs_properties_add_button2(
-			act, "add_item", obs_module_text("Trigger.AddItem"),
-			[](obs_properties_t *, obs_property_t *, void *d) {
-				return d && static_cast<ProgramTrigger *>(d)->add_picked("pick_item", "items");
-			},
-			data);
-		obs_properties_add_editable_list(act, "items", obs_module_text("Trigger.Items"),
-						 OBS_EDITABLE_LIST_TYPE_STRINGS, nullptr, nullptr);
+		PickList items;
+		items.setting = "items";
+		items.title = "Trigger.Items";
+		items.add = "List.AddItem";
+		items.choices = [parent](std::vector<std::string> &names) {
+			scene_item_names(parent, names);
+		};
+		pick_list_add(props, self->source(), items);
 	}
-	obs_property_t *pick_filter = obs_properties_add_list(act, "pick_filter", obs_module_text("Trigger.PickFilter"),
-							      OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
-	obs_property_list_add_string(pick_filter, obs_module_text("Trigger.PickFilter.None"), "");
-	if (parent) {
+	PickList filters;
+	filters.setting = "filters";
+	filters.title = "Trigger.Filters";
+	filters.add = "List.AddFilter";
+	obs_source_t *own = self->source();
+	filters.choices = [parent, own](std::vector<std::string> &names) {
+		if (!parent)
+			return;
 		struct Fill {
-			obs_property_t *list;
+			std::vector<std::string> *names;
 			obs_source_t *self;
-		} fill{pick_filter, self->source()};
+		} fill{&names, own};
 		obs_source_enum_filters(
 			parent,
 			[](obs_source_t *, obs_source_t *filter, void *param) {
 				auto *f = static_cast<Fill *>(param);
 				const char *name = obs_source_get_name(filter);
 				if (filter != f->self && name && *name)
-					obs_property_list_add_string(f->list, name, name);
+					f->names->push_back(name);
 			},
 			&fill);
-	}
-	obs_properties_add_button2(
-		act, "add_filter", obs_module_text("Trigger.AddFilter"),
-		[](obs_properties_t *, obs_property_t *, void *d) {
-			return d && static_cast<ProgramTrigger *>(d)->add_picked("pick_filter", "filters");
-		},
-		data);
-	obs_properties_add_editable_list(act, "filters", obs_module_text("Trigger.Filters"),
-					 OBS_EDITABLE_LIST_TYPE_STRINGS, nullptr, nullptr);
-	obs_property_t *opposite = obs_properties_add_bool(act, "opposite", obs_module_text("Trigger.Opposite"));
+	};
+	pick_list_add(props, own, filters);
+	obs_property_t *opposite = obs_properties_add_bool(props, "opposite", obs_module_text("Trigger.Opposite"));
 	obs_property_set_long_description(opposite, obs_module_text("Trigger.Opposite.Tip"));
-	obs_properties_add_group(props, "act_group", obs_module_text("Trigger.ActGroup"), OBS_GROUP_NORMAL, act);
 
 	obs_property_t *help = obs_properties_add_text(props, "help", obs_module_text("Trigger.Help"), OBS_TEXT_INFO);
 	obs_property_text_set_info_word_wrap(help, true);

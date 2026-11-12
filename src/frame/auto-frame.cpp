@@ -21,6 +21,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include "../capture/auto-capture.hpp"
 #include "../common/easing.hpp"
+#include "../common/pick-list.hpp"
 #include "../common/scene-util.hpp"
 
 #include <obs-module.h>
@@ -1195,8 +1196,12 @@ obs_properties_t *get_properties(void *data)
 		data);
 	obs_property_t *keep = obs_properties_add_button2(
 		props, "trim_keep", obs_module_text("Frame.TrimKeep"),
-		[](obs_properties_t *, obs_property_t *, void *d) {
-			return d && static_cast<AutoFrame *>(d)->remember_current();
+		[](obs_properties_t *p, obs_property_t *, void *d) {
+			auto *frame = static_cast<AutoFrame *>(d);
+			const bool saved_one = frame && frame->remember_current();
+			if (frame)
+				pick_list_refresh(p, frame->source(), "rules_text", true);
+			return saved_one;
 		},
 		data);
 	obs_property_set_long_description(keep, obs_module_text("Frame.TrimKeep.Tip"));
@@ -1250,15 +1255,22 @@ obs_properties_t *get_properties(void *data)
 		obs_property_list_add_string(rule_shape, name, name);
 	obs_properties_add_button2(
 		props, "rule_add", obs_module_text("Frame.RuleAdd"),
-		[](obs_properties_t *, obs_property_t *, void *d) {
-			return d && static_cast<AutoFrame *>(d)->remember_shape();
+		[](obs_properties_t *p, obs_property_t *, void *d) {
+			auto *frame = static_cast<AutoFrame *>(d);
+			const bool saved_one = frame && frame->remember_shape();
+			if (frame)
+				pick_list_refresh(p, frame->source(), "rules_text", true);
+			return saved_one;
 		},
 		data);
-	obs_property_t *saved =
-		obs_properties_add_text(props, "rules_text", obs_module_text("Frame.Rules"), OBS_TEXT_DEFAULT);
-	obs_property_set_long_description(saved, obs_module_text("Frame.Rules.Tip"));
 	obs_properties_add_group(top, "programs_group", obs_module_text("Frame.ProgramsGroup"), OBS_GROUP_NORMAL,
 				 props);
+	// What has been saved, one row each, each with its own remove button.
+	PickList saved;
+	saved.setting = "rules_text";
+	saved.as_text = true;
+	saved.title = "Frame.Rules";
+	pick_list_add(top, self ? self->source() : nullptr, saved);
 
 	// 5. Movement.
 	props = obs_properties_create();

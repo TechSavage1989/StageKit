@@ -107,6 +107,10 @@ Neither route has been checked on a real Windows machine yet; please report anyt
 
 ## How to use
 
+**Lists.** Wherever a StageKit filter keeps a list (sources to blur, scenes to leave a shadow off in,
+programs to capture, items to link), it works the same way: choose from the box to add, and press the
+✕ on a row to remove that entry.
+
 ### Ramp Blur
 
 Add **Ramp Blur (StageKit)** as a filter on a source or scene. The filter's own on/off switch is the
@@ -132,11 +136,11 @@ Ways to trigger it:
 - `StageKit: Blur All Toggle / On / Off` in the top section of *Settings → Hotkeys*, which drives every
   Ramp Blur at once.
 
-**One key for several sources.** Under *Blur these too*, choose a source and press *Add it to the
-list*, once for each source. From then on, switching this one filter on or off, from a single Stream
+**One key for several sources.** Under *Blur these too*, choose a source in the *Add a source* box,
+once for each source; each becomes a row. From then on, switching this one filter on or off, from a single Stream
 Deck *Filter* key, blurs and clears every source in the list. A listed source with no Ramp Blur of its
 own is given one with the same settings (*Ramp Blur (follows another)*); one that already has a Ramp
-Blur keeps its own settings. Remove a source by selecting it in the list and pressing the minus button.
+Blur keeps its own settings. Remove a source with the ✕ on its row.
 
 To replace a Composite Blur + Move chain: add one Ramp Blur, pick the type and strength (Composite
 Blur's Pixelate at radius 5 is *Pixelate* at strength 4), point your existing keys at it, then delete
@@ -192,9 +196,9 @@ its heading:
 
 *Rounded corners* rounds the picture and the panel.
 
-**Leave it off in these scenes** lists every scene the source is in, each with a tick box. Tick a scene
-and the filter draws nothing while that scene is on screen; the source shows plain there and keeps its
-place. It goes by the scene on screen (Program in Studio Mode).
+**Leave it off in these scenes**: choose scenes from your collection; each becomes a row with its own
+✕ to remove it. While a listed scene is on screen the filter draws nothing; the source shows plain
+there and keeps its place. It goes by the scene on screen (Program in Studio Mode).
 
 Sizes are as they look on screen: with *Sizes as they look on screen* ticked (the default), 20 px of
 shadow is 20 px in the finished picture however much the item is scaled, so a small camera and a large

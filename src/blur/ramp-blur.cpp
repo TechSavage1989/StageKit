@@ -18,6 +18,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include "../api/vendor-api.hpp"
 #include "../common/easing.hpp"
+#include "../common/pick-list.hpp"
 #include "../common/scene-util.hpp"
 
 #include <obs-module.h>
@@ -944,12 +945,13 @@ obs_properties_t *get_properties(void *data)
 	obs_properties_add_group(props, "ramp_group", obs_module_text("RampBlur.RampGroup"), OBS_GROUP_NORMAL, ramp);
 
 	// One switch for several sources.
-	obs_properties_t *also = obs_properties_create();
-	obs_property_t *pick = obs_properties_add_list(also, "also_pick", obs_module_text("RampBlur.AlsoPick"),
-						       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
-	obs_property_list_add_string(pick, obs_module_text("RampBlur.AlsoPick.None"), "");
-	{
-		std::vector<std::string> names;
+	obs_source_t *own_filter = data ? static_cast<RampBlur *>(data)->source() : nullptr;
+	PickList also;
+	also.setting = "also";
+	also.title = "RampBlur.AlsoGroup";
+	also.add = "RampBlur.AlsoPick";
+	also.tip = "RampBlur.Also.Tip";
+	also.choices = [own_filter](std::vector<std::string> &names) {
 		auto gather = [](void *param, obs_source_t *source) {
 			const char *name = obs_source_get_name(source);
 			if (name && *name && (obs_source_get_output_flags(source) & OBS_SOURCE_VIDEO))
@@ -958,49 +960,15 @@ obs_properties_t *get_properties(void *data)
 		};
 		obs_enum_sources(gather, &names);
 		obs_enum_scenes(gather, &names);
-		obs_source_t *parent = data ? obs_filter_get_parent(static_cast<RampBlur *>(data)->source()) : nullptr;
-		const std::string own = parent && obs_source_get_name(parent) ? obs_source_get_name(parent) : "";
-		std::sort(names.begin(), names.end());
-		names.erase(std::unique(names.begin(), names.end()), names.end());
-		for (const std::string &name : names) {
-			if (name != own)
-				obs_property_list_add_string(pick, name.c_str(), name.c_str());
-		}
-	}
-	obs_properties_add_button2(
-		also, "also_add", obs_module_text("RampBlur.AlsoAdd"),
-		[](obs_properties_t *, obs_property_t *, void *d) {
-			if (!d)
-				return false;
-			obs_source_t *filter = static_cast<RampBlur *>(d)->source();
-			obs_data_t *settings = obs_source_get_settings(filter);
-			const std::string picked = obs_data_get_string(settings, "also_pick");
-			const std::vector<std::string> names = also_names(settings);
-			const bool add = !picked.empty() &&
-					 std::find(names.begin(), names.end(), picked) == names.end();
-			if (add) {
-				obs_data_array_t *list = obs_data_get_array(settings, "also");
-				if (!list) {
-					list = obs_data_array_create();
-					obs_data_set_array(settings, "also", list);
-				}
-				obs_data_t *entry = obs_data_create();
-				obs_data_set_string(entry, "value", picked.c_str());
-				obs_data_array_push_back(list, entry);
-				obs_data_release(entry);
-				obs_data_array_release(list);
-				obs_source_update(filter, settings);
-			}
-			obs_data_release(settings);
-			return add;
-		},
-		data);
-	obs_property_t *list = obs_properties_add_editable_list(also, "also", obs_module_text("RampBlur.Also"),
-								OBS_EDITABLE_LIST_TYPE_STRINGS, nullptr, nullptr);
-	obs_property_set_long_description(list, obs_module_text("RampBlur.Also.Tip"));
-	obs_property_t *live = obs_properties_add_bool(also, "also_captures", obs_module_text("RampBlur.AlsoCaptures"));
+		obs_source_t *parent = own_filter ? obs_filter_get_parent(own_filter) : nullptr;
+		const char *own = parent ? obs_source_get_name(parent) : nullptr;
+		if (own)
+			names.erase(std::remove(names.begin(), names.end(), std::string(own)), names.end());
+	};
+	pick_list_add(props, own_filter, also);
+	obs_property_t *live =
+		obs_properties_add_bool(props, "also_captures", obs_module_text("RampBlur.AlsoCaptures"));
 	obs_property_set_long_description(live, obs_module_text("RampBlur.AlsoCaptures.Tip"));
-	obs_properties_add_group(props, "also_group", obs_module_text("RampBlur.AlsoGroup"), OBS_GROUP_NORMAL, also);
 
 	obs_properties_t *keys = obs_properties_create();
 	obs_property_t *in_all =

@@ -100,6 +100,9 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   owner wants no resize when a window goes full-screen at the same shape. Background: the owner hit
   it with Snes9x (Aladdin's title screen) and the picture resized repeatedly. The owner wants no manual steps when switching games; program rules and Picture
   Shape keys are the fallbacks.
+- **Every list the user builds is a `PickList`** (`src/common/pick-list.*`): choose to add, one row per
+  entry, each with its own remove button. The owner asked for one consistent control; do not add OBS's
+  editable list or a comma-separated text box for a new list.
 - **Long control labels push every control to the right** in OBS's filter window, which the owner
   rejected. Keep a label under about 26 characters and put the rest in a tooltip
   (`obs_property_set_long_description`).

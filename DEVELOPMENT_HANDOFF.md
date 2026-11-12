@@ -204,6 +204,24 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## One list control everywhere (0.1.0-beta43)
+
+The owner: "make any list that apps or sources or scenes or items of any kind get added to ... have a
+vertical building list with individual controls for deletion", consistent everywhere; and the
+shadow's scene list must be a selection from the user's scenes, "not hard coded scenes. this app will
+not only be used by me" (it never was hard-coded, but a row of tick boxes read that way).
+
+- `src/common/pick-list.*`: `pick_list_add` builds a group with a choose-to-add box and one button
+  row per entry (label "x  name"); `pick_list_read`/`_write` handle both storage forms (array of
+  `{value}` and comma-separated text), so no saved setting changed shape.
+- Property names carry the list: `<setting>|a...` or `<setting>|t...` plus `list`, `pick`, `row|<n>`,
+  `none`. The callbacks have only the owner source as context and read the rest from the name.
+- Rows are rebuilt inside the callbacks by editing the live `obs_properties_t` and returning true.
+  **Not seen in OBS's properties window**; if rows do not refresh there, that is the place to look.
+- Shadow: `off_scenes` (scene names) replaces the `off_in:<uuid>` tick boxes; `update` migrates them.
+  Rule: off when the scene on screen is listed, or every showing scene that holds the source is.
+- Use it for every new list. Do not add another editable list or comma text box.
+
 ## Background capture kept ready (0.1.0-beta42)
 
 The owner: switching from a scene without the live background to one with it has "a slight loading

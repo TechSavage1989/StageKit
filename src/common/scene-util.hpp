@@ -19,6 +19,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <algorithm>
 #include <cstring>
 #include <string>
+#include <vector>
 
 namespace stagekit {
 
@@ -156,6 +157,29 @@ inline bool is_capture_source(obs_source_t *source)
 		if (strcmp(id, capture) == 0)
 			return true;
 	return false;
+}
+
+// The names of the items in a scene, including the items inside its groups.
+inline void scene_item_names(obs_source_t *scene_source, std::vector<std::string> &names)
+{
+	obs_scene_t *scene = scene_of(scene_source);
+	if (!scene)
+		return;
+	static const auto add = [](obs_scene_t *, obs_sceneitem_t *item, void *param) {
+		const char *name = obs_source_get_name(obs_sceneitem_get_source(item));
+		if (name && *name)
+			static_cast<std::vector<std::string> *>(param)->push_back(name);
+		return true;
+	};
+	obs_scene_enum_items(
+		scene,
+		[](obs_scene_t *s, obs_sceneitem_t *item, void *param) {
+			add(s, item, param);
+			if (obs_sceneitem_is_group(item))
+				obs_sceneitem_group_enum_items(item, add, param);
+			return true;
+		},
+		&names);
 }
 
 // The scene the audience is looking at. The caller releases it.

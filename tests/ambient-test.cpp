@@ -102,6 +102,31 @@ static void write_frame(const std::string &path, const std::vector<uint8_t> &px,
 	fclose(f);
 }
 
+// Adds an entry to one of the plugin's lists the way a person does: by
+// choosing it in the list's box. `list` is the setting's name plus "|a" for a
+// list kept as an array or "|t" for one kept as text.
+static bool pick_into_list(obs_source_t *owner, obs_properties_t *props, const std::string &list, const char *choice)
+{
+	obs_property_t *box = obs_properties_get(props, (list + "pick").c_str());
+	if (!box)
+		return false;
+	obs_data_t *settings = obs_source_get_settings(owner);
+	obs_data_set_string(settings, (list + "pick").c_str(), choice);
+	obs_property_modified(box, settings);
+	obs_source_update(owner, settings);
+	obs_data_release(settings);
+	return true;
+}
+
+// How many rows a list shows, each with its own remove button.
+static int list_rows(obs_properties_t *props, const std::string &list)
+{
+	int rows = 0;
+	while (obs_properties_get(props, (list + "row|" + std::to_string(rows)).c_str()))
+		rows++;
+	return rows;
+}
+
 static double mean_abs_diff(const std::vector<uint8_t> &a, const std::vector<uint8_t> &b)
 {
 	double sum = 0;
@@ -398,10 +423,10 @@ int main(int argc, char **argv)
 			std::string status = obs_property_description(obs_properties_get(props, "status"));
 			CHECK(status.find("blender.exe") != std::string::npos,
 			      "the controls say what is being captured (%s)", status.c_str());
-			obs_property_t *pick = obs_properties_get(props, "pick");
-			CHECK(obs_property_list_item_count(pick) == 3,
+			obs_property_t *pick = obs_properties_get(props, "always|tpick");
+			CHECK(pick && obs_property_list_item_count(pick) == 3,
 			      "open programs can be picked from a list, without OBS itself (%d entries)",
-			      (int)obs_property_list_item_count(pick));
+			      pick ? (int)obs_property_list_item_count(pick) : -1);
 
 			obs_property_button_clicked(obs_properties_get(props, "never_now"), easy);
 			sleep_ms(300);
@@ -409,13 +434,21 @@ int main(int argc, char **argv)
 			CHECK(std::string(obs_data_get_string(es, "never")) == "blender.exe",
 			      "one press adds the wrong program to 'Never capture' (%s)",
 			      obs_data_get_string(es, "never"));
-			obs_data_set_string(es, "pick", "OddGame.exe");
 			obs_data_release(es);
-			obs_property_button_clicked(obs_properties_get(props, "always_pick"), easy);
-			obs_properties_destroy(props);
+			CHECK(list_rows(props, "never|t") == 1, "and it shows as a row of its own in that list");
+			pick_into_list(easy, props, "always|t", "OddGame.exe");
+			CHECK(list_rows(props, "always|t") == 1, "choosing a program adds it as a row");
+			sleep_ms(200);
 			got = see2(open);
 			CHECK(got.find("OddGame.exe") != std::string::npos,
 			      "a picked program is always captured, and the excluded one is dropped (%s)", got.c_str());
+			// Each row's own button takes it off again.
+			obs_property_button_clicked(obs_properties_get(props, "never|trow|0"), easy);
+			es = obs_source_get_settings(easy);
+			CHECK(std::string(obs_data_get_string(es, "never")).empty() && list_rows(props, "never|t") == 0,
+			      "a row's own button removes that entry (%s)", obs_data_get_string(es, "never"));
+			obs_data_release(es);
+			obs_properties_destroy(props);
 
 			obs_source_filter_remove(capture2, easy);
 			obs_source_release(easy);
@@ -1153,24 +1186,22 @@ int main(int argc, char **argv)
 		      "the shadow is drawn where it is wanted (%u wide, item at %.0f)", obs_source_get_width(card),
 		      x_of(in_one));
 
-		// The settings list both scenes by name, each with a tick box.
+		// The scenes it is left off in are chosen from the collection's scenes.
 		{
 			obs_properties_t *props = obs_source_properties(filter);
-			const std::string key_two =
-				std::string("off_in:") + obs_source_get_uuid(obs_scene_get_source(two));
-			const std::string key_one =
-				std::string("off_in:") + obs_source_get_uuid(obs_scene_get_source(one));
-			obs_property_t *box_two = obs_properties_get(props, key_two.c_str());
-			obs_property_t *box_one = obs_properties_get(props, key_one.c_str());
-			CHECK(box_one && box_two && obs_property_get_type(box_two) == OBS_PROPERTY_BOOL &&
-				      std::string(obs_property_description(box_two)) == "Scene Without Shadow",
-			      "the settings offer a tick box for each scene the source is in");
+			obs_property_t *box = obs_properties_get(props, "off_scenes|apick");
+			bool offered = false;
+			for (size_t n = 0; box && n < obs_property_list_item_count(box); n++)
+				offered = offered ||
+					  std::string(obs_property_list_item_string(box, n)) == "Scene Without Shadow";
+			CHECK(offered, "the settings offer the collection's scenes to choose from");
+			pick_into_list(filter, props, "off_scenes|a", "Scene Without Shadow");
+			CHECK(list_rows(props, "off_scenes|a") == 1,
+			      "a chosen scene becomes a row with its own remove button");
 			obs_properties_destroy(props);
-			obs_data_set_bool(fs, key_two.c_str(), true);
-			obs_source_update(filter, fs);
 		}
 		wait(one);
-		CHECK(obs_source_get_width(card) == 220, "ticking another scene changes nothing in this one");
+		CHECK(obs_source_get_width(card) == 220, "choosing another scene changes nothing in this one");
 
 		obs_set_output_source(0, obs_scene_get_source(two));
 		wait(two);
@@ -1785,14 +1816,12 @@ int main(int argc, char **argv)
 			sleep_ms(80);
 			// Fill the list the way a person would: pick an item, press the button.
 			obs_properties_t *lp = obs_source_properties(link);
-			for (const char *name : vnames) {
-				obs_data_t *now = obs_source_get_settings(link);
-				obs_data_set_string(now, "pick", name);
-				obs_data_release(now);
-				obs_property_button_clicked(obs_properties_get(lp, "add"), link);
-			}
-			CHECK(obs_property_list_item_count(obs_properties_get(lp, "pick")) == 4,
+			CHECK(obs_property_list_item_count(obs_properties_get(lp, "items|apick")) == 4,
 			      "the scene's items can be picked from a list");
+			for (const char *name : vnames)
+				pick_into_list(link, lp, "items|a", name);
+			CHECK(list_rows(lp, "items|a") == 3, "each one chosen becomes a row (%d)",
+			      list_rows(lp, "items|a"));
 			obs_properties_destroy(lp);
 			sleep_ms(120);
 			auto shown = [&] {
@@ -1857,15 +1886,11 @@ int main(int argc, char **argv)
 			obs_source_filter_add(tsrc, trigger);
 			sleep_ms(80);
 			obs_properties_t *tp = obs_source_properties(trigger);
-			obs_data_t *now = obs_source_get_settings(trigger);
-			obs_data_set_string(now, "pick_item", "ZBrush Capture");
-			obs_data_set_string(now, "pick_filter", "Extra Shadow");
-			obs_data_release(now);
-			obs_property_button_clicked(obs_properties_get(tp, "add_item"), trigger);
-			obs_property_button_clicked(obs_properties_get(tp, "add_filter"), trigger);
-			CHECK(obs_property_list_item_count(obs_properties_get(tp, "pick_item")) == 3 &&
-				      obs_property_list_item_count(obs_properties_get(tp, "pick_filter")) == 2,
+			CHECK(obs_property_list_item_count(obs_properties_get(tp, "items|apick")) == 3 &&
+				      obs_property_list_item_count(obs_properties_get(tp, "filters|apick")) == 2,
 			      "items and filters are picked from lists");
+			pick_into_list(trigger, tp, "items|a", "ZBrush Capture");
+			pick_into_list(trigger, tp, "filters|a", "Extra Shadow");
 			obs_properties_destroy(tp);
 
 			auto see = [&](const char *windows) {
@@ -1895,7 +1920,7 @@ int main(int argc, char **argv)
 			      "when the program closes, both are put back");
 
 			// By window title, and only while it is in front.
-			now = obs_source_get_settings(trigger);
+			obs_data_t *now = obs_source_get_settings(trigger);
 			obs_data_set_string(now, "program", "");
 			obs_data_set_string(now, "title", "GBA1");
 			obs_data_set_int(now, "when", 1);
