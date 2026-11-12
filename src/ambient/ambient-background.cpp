@@ -23,6 +23,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "ambient-background.hpp"
 
 #include "../common/start-image.hpp"
+#include "../frame/auto-frame.hpp"
 
 #include <obs-module.h>
 #include <obs-frontend-api.h>
@@ -173,7 +174,7 @@ private:
 	void set_child(obs_weak_source_t *&slot, obs_source_t *source);
 	obs_source_t *child(obs_weak_source_t *slot);
 	void resolve_children();
-	gs_texture_t *render_child(obs_source_t *child, gs_texrender_t *target);
+	gs_texture_t *render_child(obs_source_t *child, gs_texrender_t *target, bool picture_only = false);
 	void draw_layer(gs_texture_t *tex, uint32_t w, uint32_t h, double scroll_x, double scroll_y, double zoom,
 			double opacity, const Settings &s, LiveFit fit = LiveFit::Fill, bool clip = false,
 			double focus_x = 0.5, double focus_y = 0.5);
@@ -505,20 +506,28 @@ void AmbientBackground::enum_children(obs_source_enum_proc_t cb, void *param)
 
 // ---------------------------------------------------------------- rendering
 
-gs_texture_t *AmbientBackground::render_child(obs_source_t *child, gs_texrender_t *target)
+gs_texture_t *AmbientBackground::render_child(obs_source_t *child, gs_texrender_t *target, bool picture_only)
 {
 	const uint32_t w = obs_source_get_width(child);
 	const uint32_t h = obs_source_get_height(child);
 	if (!w || !h)
 		return nullptr;
 
+	// A capture with an Auto Frame is a frame with the game picture somewhere
+	// inside it. Only the picture is wanted: the empty frame around it would
+	// show as black bars.
+	double px = 0.0, py = 0.0, pw = w, ph = h;
+	if (picture_only)
+		auto_frame_picture(child, px, py, pw, ph);
+	const uint32_t tw = std::max(1u, (uint32_t)std::lround(pw)), th = std::max(1u, (uint32_t)std::lround(ph));
+
 	gs_texrender_reset(target);
-	if (!gs_texrender_begin(target, w, h))
+	if (!gs_texrender_begin(target, tw, th))
 		return nullptr;
 	vec4 clear;
 	vec4_zero(&clear);
 	gs_clear(GS_CLEAR_COLOR, &clear, 0.0f, 0);
-	gs_ortho(0.0f, (float)w, 0.0f, (float)h, -100.0f, 100.0f);
+	gs_ortho((float)px, (float)(px + pw), (float)py, (float)(py + ph), -100.0f, 100.0f);
 	gs_blend_state_push();
 	gs_blend_function(GS_BLEND_ONE, GS_BLEND_INVSRCALPHA);
 	obs_source_video_render(child);
@@ -670,7 +679,7 @@ void AmbientBackground::render()
 	} else if (base_image_loaded_) {
 		base = base_image_.image3.image2.image.texture;
 	}
-	gs_texture_t *live = live_source ? render_child(live_source, tr_live_) : nullptr;
+	gs_texture_t *live = live_source ? render_child(live_source, tr_live_, true) : nullptr;
 
 	gs_texrender_reset(tr_scene_);
 	if (gs_texrender_begin(tr_scene_, iw, ih)) {
