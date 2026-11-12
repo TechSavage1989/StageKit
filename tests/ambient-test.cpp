@@ -745,6 +745,52 @@ int main(int argc, char **argv)
 			vp = render(view, 150, 150);
 			CHECK((int)vp[(size_t(75) * 150 + 10) * 4 + 2] > 150, "what is left is the right-hand part");
 
+			// "Whatever is drawn": the see-through room around the content is
+			// trimmed off without any numbers, and the view follows the content.
+			{
+				auto card = [&](const char *name, int x0, int x1, int y0, int y1) {
+					QImage page(800, 600, QImage::Format_ARGB32);
+					page.fill(Qt::transparent);
+					for (int y = y0; y < y1; y++)
+						for (int x = x0; x < x1; x++)
+							page.setPixel(x, y, qRgba(40, 40, 40, 255));
+					const std::string path = out + "/" + name;
+					page.save(QString::fromStdString(path));
+					return path;
+				};
+				obs_data_t *wd = obs_data_create();
+				obs_data_set_string(wd, "file", card("widget-small.png", 100, 500, 250, 350).c_str());
+				obs_source_t *widget = obs_source_create("image_source", "View Widget", wd, nullptr);
+				obs_data_t *ad = obs_data_create();
+				obs_data_set_string(ad, "source", "View Widget");
+				obs_data_set_int(ad, "crop_to", 6);
+				obs_source_t *fitted =
+					obs_source_create("stagekit_cropped_view", "Fitted Widget", ad, nullptr);
+				auto settle = [&](int ms) {
+					for (int i = 0; i < ms / 100; i++) {
+						render(fitted, 800, 600);
+						sleep_ms(100);
+					}
+				};
+				settle(2600);
+				const int fw = (int)obs_source_get_width(fitted),
+					  fh = (int)obs_source_get_height(fitted);
+				CHECK(std::abs(fw - 400) <= 6 && std::abs(fh - 100) <= 6,
+				      "'whatever is drawn' trims the empty room off a widget (%dx%d of 800x600)", fw,
+				      fh);
+				// The widget's content gets wider: the view follows.
+				obs_data_set_string(wd, "file", card("widget-wide.png", 20, 700, 250, 350).c_str());
+				obs_source_update(widget, wd);
+				settle(2600);
+				CHECK(std::abs((int)obs_source_get_width(fitted) - 680) <= 6,
+				      "and follows when the content changes size (%u wide)",
+				      obs_source_get_width(fitted));
+				obs_data_release(ad);
+				obs_data_release(wd);
+				obs_source_release(fitted);
+				obs_source_release(widget);
+			}
+
 			// A shadow on the view follows the crop: the view grows by the shadow's room.
 			obs_data_t *sd = obs_data_create();
 			obs_data_set_double(sd, "softness", 0);

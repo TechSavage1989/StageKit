@@ -88,11 +88,11 @@ def carry(name):
 
 
 def item_json(name, pos, scale=(1.0, 1.0), bounds_type=0, bounds=(0.0, 0.0), bounds_align=0, crop=(0, 0, 0, 0),
-              visible=True, locked=False, item_id=1, show=None, hide=None):
+              visible=True, locked=False, item_id=1, show=None, hide=None, align=5):
     return {
         "name": name, "source_uuid": new_sources[name]["uuid"], "visible": visible, "locked": locked, "rot": 0.0,
         "pos": {"x": float(pos[0]), "y": float(pos[1])}, "scale": {"x": float(scale[0]), "y": float(scale[1])},
-        "align": 5, "bounds_type": bounds_type, "bounds_align": bounds_align, "bounds_crop": False,
+        "align": align, "bounds_type": bounds_type, "bounds_align": bounds_align, "bounds_crop": False,
         "bounds": {"x": float(bounds[0]), "y": float(bounds[1])}, "crop_left": crop[0], "crop_top": crop[2],
         "crop_right": crop[1], "crop_bottom": crop[3], "id": item_id, "group_item_backup": False,
         "scale_filter": "disable", "blend_method": "default", "blend_type": "normal",
@@ -189,6 +189,16 @@ def view_for_crop(name, crop):
     return vname
 
 
+def fitted_view(name):
+    """A Cropped View that trims to whatever the source draws."""
+    vname = f"{name} Fitted"
+    if vname not in new_sources:
+        make_view(vname, name, {"crop_to": 6})
+        report.append(f"  '{vname}': a Cropped View of {name} that trims to whatever it draws, "
+                      "pinned by its bottom-left corner")
+    return vname
+
+
 def view_for_crop_scene(scene_name):
     """An old one-item scene with a Crop filter (Square Camera) becomes a Cropped View.
 
@@ -250,6 +260,16 @@ def flatten(scene_name, t, shadow, out, depth=0):
             keep_container(name)
         elif name in GAME_CAPTURES:
             entry["game"] = True
+        elif own_shadow and any(crop) and kind == "browser_source":
+            # A web widget cropped by hand: the crop numbers go stale when the
+            # widget's layout changes (the owner found the album art cut off).
+            # The view trims to whatever the widget draws instead, and the item
+            # is pinned by its bottom-left corner so it grows up and to the right.
+            entry["name"] = fitted_view(name)
+            w, h = leaf_size(name)
+            entry["pos"] = (entry["pos"][0], entry["pos"][1] + (h - crop[2] - crop[3]) * entry["scale"][1])
+            entry["align"] = 9  # left + bottom
+            entry["crop"] = (0, 0, 0, 0)
         elif own_shadow and any(crop):
             entry["name"] = view_for_crop(name, crop)
             entry["crop"] = (0, 0, 0, 0)
@@ -383,7 +403,8 @@ def build_scene(name):
         if e["shadow"]:
             shadowed.add(e["name"])
         items.append(item_json(e["name"], e["pos"], e["scale"], e["bounds_type"], e["bounds"], e["bounds_align"],
-                               e["crop"], e["visible"], e["locked"], show=e.get("show"), hide=e.get("hide")))
+                               e["crop"], e["visible"], e["locked"], show=e.get("show"), hide=e.get("hide"),
+                               align=e.get("align", 5)))
     filters = scene_filters(name, [i["name"] for i in items])
     new_sources[name] = scene_json(name, items, filters=filters)
     report.append(f"  {len(items)} items placed directly in the scene")

@@ -204,6 +204,15 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Cropped View: whatever is drawn (0.1.0-beta25)
+
+The owner's music widget (Amuse Main, a web page) was cropped by hand years ago; the widget's layout
+has since changed and the crop cut the album art off. They did not know how it had been configured and
+asked for the new collection to "emulate that with the new tools". Cropped View gained *Whatever is
+drawn*, which trims to the non-transparent part and follows it (one small readback a second, only in
+that mode). The rebuild uses it for cropped web widgets, pinned by their bottom-left corner at the
+place the old crop put them.
+
 ## Arrange tools (0.1.0-beta24)
 
 The owner asked for "intuitive transform and object editing tools" for alignment and snapping,

@@ -252,7 +252,12 @@ then. A minimised window does not count as open. The top line says whether it se
 ### Cropped View
 
 Add **Cropped View (StageKit)** as a source. Choose the source to show, then crop it to a square, to
-4:3, 16:9, 3:4 or 9:16 from the middle, or by set amounts off each side.
+4:3, 16:9, 3:4 or 9:16 from the middle, by set amounts off each side, or to *Whatever is drawn*.
+
+*Whatever is drawn* needs no numbers: it trims off the empty, see-through room around the content and
+follows the content when it changes size. It suits web widgets, whose page is much bigger than the card
+they draw. It looks about once a second, grows at once and shrinks only when the smaller picture has
+settled.
 
 Use it when one camera is wanted in more than one shape. OBS applies an item's crop after the source's
 filters, so a shadow on the camera is cut off by the crop; a Cropped View is the cropped picture as a
