@@ -1,6 +1,6 @@
 # StageKit: read this first
 
-StageKit is a plugin for OBS Studio (C++17, libobs, Qt 6 available but not yet used). It adds filters
+StageKit is a plugin for OBS Studio (C++17, libobs, Qt 6 for the dock). It adds filters
 and one source that replace hand-built chains of Move filters, source clones and nested scenes.
 
 Read `DEVELOPMENT_HANDOFF.md` next for the current state, then `docs/REPOSITORY_STANDARDS.md` for the
@@ -24,6 +24,7 @@ for an update notice inside OBS. This exception is recorded in the handoff.
 | `src/shadow/` | Shadow & Backdrop filter |
 | `src/zoom/` | Ramp Zoom filter |
 | `src/placement/` | Scene filters: Place Item, Show/Hide Animation, Match Item, Layout |
+| `src/dock/` | The StageKit dock (Qt widget, no `Q_OBJECT`; it drives Place Item filters) |
 | `src/common/` | Shared helpers: easing and `Tween`, `SwitchRamp`, `KawaseBlur`, scene utilities |
 | `src/api/` | obs-websocket vendor requests (`StageKit` vendor) |
 | `src/third-party/` | Vendored `obs-websocket-api.h`, kept byte-for-byte (excluded from clang-format) |

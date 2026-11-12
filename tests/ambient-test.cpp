@@ -10,6 +10,11 @@
 
 #include <dlfcn.h>
 
+#include <QApplication>
+#include <QComboBox>
+#include <QPushButton>
+#include <QWidget>
+
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -120,6 +125,8 @@ int main(int argc, char **argv)
 	const char *texture_image = argv[4];
 	const char *live_image = argv[5];
 	const std::string out = argv[6];
+
+	QApplication app(argc, argv); // the dock is a Qt widget
 
 	void *x11 = dlopen("libX11.so.6", RTLD_NOW);
 	auto xopen = x11 ? (void *(*)(const char *))dlsym(x11, "XOpenDisplay") : nullptr;
@@ -632,6 +639,70 @@ int main(int argc, char **argv)
 			},
 			&hotkeys);
 		CHECK(hotkeys == 2, "each destination has a hotkey on the scene (%d)", hotkeys);
+
+		// The dock, driven the way a person would: pick, click, look.
+		printf("\n[dock]\n");
+		calldata_t dock_cd = {};
+		calldata_set_string(&dock_cd, "scene", "Test Scene");
+		proc_handler_call(obs_get_proc_handler(), "stagekit_create_dock", &dock_cd);
+		auto *dock = static_cast<QWidget *>(calldata_ptr(&dock_cd, "widget"));
+		calldata_free(&dock_cd);
+		CHECK(dock != nullptr, "the dock can be built for a scene");
+		if (dock) {
+			dock->resize(340, 640);
+			auto click = [&](const char *name) {
+				auto *button = dock->findChild<QPushButton *>(name);
+				if (button)
+					button->click();
+				return button != nullptr;
+			};
+			// Items are listed top-most first, as in OBS; pick the camera.
+			if (auto *items = dock->findChild<QComboBox *>("item"))
+				items->setCurrentText("Camera");
+			CHECK(click("grid6"), "it has a button per screen position");
+			sleep_ms(900);
+			c = pos_of(cam_item);
+			CHECK(std::fabs(c.x - 30) < 0.5 && std::fabs(c.y - 240) < 0.5,
+			      "clicking bottom-left sends the selected item there (%.0f, %.0f)", c.x, c.y);
+
+			click("makeKeys");
+			calldata_t spot_cd = {};
+			calldata_set_ptr(&spot_cd, "widget", dock);
+			calldata_set_string(&spot_cd, "name", "Corner");
+			proc_handler_call(obs_get_proc_handler(), "stagekit_dock_save_spot", &spot_cd);
+			calldata_free(&spot_cd);
+			int filters = 0;
+			obs_source_enum_filters(
+				scene_source,
+				[](obs_source_t *, obs_source_t *, void *param) { (*static_cast<int *>(param))++; },
+				&filters);
+			// 2 made by this test + the dock's own mover + 9 positions + 1 saved spot
+			CHECK(filters == 13,
+			      "one click makes a key for each of the nine positions, plus the saved spot (%d filters)",
+			      filters);
+			obs_source_t *key = obs_source_get_filter_by_name(scene_source, "Widget → Top right");
+			CHECK(key == nullptr, "keys are named after the selected item");
+			obs_source_release(key);
+			key = obs_source_get_filter_by_name(scene_source, "Camera → Top right");
+			CHECK(key != nullptr, "for example \"Camera → Top right\"");
+			if (key) {
+				sleep_ms(100);
+				obs_source_set_enabled(key, true);
+				sleep_ms(800);
+				c = pos_of(cam_item);
+				CHECK(std::fabs(c.x - 450) < 0.5 && std::fabs(c.y - 30) < 0.5,
+				      "and switching that key on moves the camera (%.0f, %.0f)", c.x, c.y);
+			}
+			obs_source_release(key);
+
+			click("addShadow");
+			obs_source_t *shadow = obs_source_get_filter_by_name(cam, "Shadow & Backdrop");
+			CHECK(shadow != nullptr, "\"Add to this item\" puts the effect on the item's source");
+			obs_source_release(shadow);
+
+			dock->grab().save(QString::fromStdString(out + "/../stagekit-dock.png"));
+			delete dock;
+		}
 
 		obs_source_filter_remove(scene_source, to_top_right);
 		obs_source_filter_remove(scene_source, to_bottom_right);

@@ -352,7 +352,9 @@ int main(int argc, char **argv)
 		mid = get_level(filter);
 		call_proc(filter, "blur_toggle", &cd);
 		double right_after = get_level(filter, &active);
-		CHECK(!active && std::fabs(right_after - mid) < 0.05,
+		// A frame may tick between the two readings: one frame of the 300 ms
+		// ramp-out is 0.056, so allow two. A real jump would be far larger.
+		CHECK(!active && std::fabs(right_after - mid) < 0.12,
 		      "reversing mid-ramp continues from current level (%.3f -> %.3f)", mid, right_after);
 		sleep_ms(400);
 		CHECK(get_level(filter) == 0.0 && !obs_source_enabled(filter),

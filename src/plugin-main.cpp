@@ -23,6 +23,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "ambient/ambient-background.hpp"
 #include "api/vendor-api.hpp"
 #include "blur/ramp-blur.hpp"
+#include "dock/stagekit-dock.hpp"
 #include "placement/place-item.hpp"
 #include "placement/scene-tools.hpp"
 #include "shadow/shadow-backdrop.hpp"
@@ -98,6 +99,7 @@ void obs_module_post_load(void)
 	// obs-websocket registers its API during its own load, so vendors
 	// must be registered after every module has loaded.
 	stagekit::vendor_api_register();
+	stagekit::register_dock();
 }
 
 void obs_module_unload(void)

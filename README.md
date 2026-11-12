@@ -30,6 +30,7 @@ from hotkeys, or from the Stream Deck OBS Studio plugin's *Filter* and *Source* 
 - **Match Item** (scene filter): keeps an item lined up with an item in another scene, so titles sit in
   the same place in every scene.
 - **Layout** (scene filter): saves an arrangement of a scene's items and glides back to it.
+- **StageKit dock**: click an item into place, and make Stream Deck keys for its positions in one click.
 
 ## Screenshots
 
@@ -144,6 +145,19 @@ Add **Place Item (StageKit)** as a filter on a *scene*, once per destination.
 Switching the filter on moves the item; the filter then switches itself off, ready for the next time.
 Trigger it from the eye icon, a Stream Deck *Filter* key, *Move it now*, or its `StageKit: Move`
 hotkey under the scene.
+
+### The StageKit dock
+
+Open it from *Docks → StageKit*. It works on the current scene (the preview scene in Studio Mode).
+
+<p align="center"><img src="docs/images/stagekit-dock.png" width="340" alt="The StageKit dock: an item picker, a three-by-three grid of position buttons, margin and travel time, buttons that make Stream Deck keys, and buttons that add an effect to the item"></p>
+
+- Pick an item and click one of the nine positions. It glides there.
+- *Make keys for all nine positions* adds a Place Item filter for each one to the scene, named like
+  "Camera → Top right". Point a Stream Deck *Filter* key at one, or give it a hotkey.
+- *Save its current spot as a key* does the same for wherever the item is now.
+- *Add to this item* puts a Ramp Blur, Shadow & Backdrop, Ramp Zoom or Show/Hide Animation on the item
+  and opens its filter window. Ramp Blur and Ramp Zoom are added switched off.
 
 ### Show/Hide Animation
 

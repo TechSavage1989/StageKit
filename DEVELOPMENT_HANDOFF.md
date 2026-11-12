@@ -22,6 +22,7 @@ All on the `ramp-blur` branch, each with headless tests on Linux:
 - Shadow & Backdrop filter
 - Ramp Zoom filter
 - Place Item, Show/Hide Animation, Match Item and Layout scene filters
+- StageKit dock (Qt): position grid, one-click keys, saved spots, add-an-effect buttons
 
 ## Not verified
 
@@ -30,13 +31,15 @@ All on the `ramp-blur` branch, each with headless tests on Linux:
   the real test.
 - The Windows artifact's folder layout has not been opened and checked.
 - Ambient Background's *Automatic* live capture needs the OBS front end and is not covered by tests.
+- The dock is tested by building the widget and clicking its buttons without an OBS window. It has not
+  been seen docked inside OBS, in OBS's theme, or following scene changes.
 - No test uses a real Stream Deck. Filter and Source keys are simulated by flipping the filter's enabled
   state and the item's visibility.
 - The README has not been viewed rendered on GitHub.
 
 ## Known limitations
 
-- Place Item needs one filter per destination. A dock panel that creates a set in one click is planned.
+- Place Item needs one filter per destination; the dock creates the nine grid ones in one click.
 - Scene filters do not list items inside groups.
 - Linked visibility (hiding a linked item with its leader) is not built.
 - Ramp Zoom has no follow-the-mouse mode.
@@ -47,9 +50,9 @@ All on the `ramp-blur` branch, each with headless tests on Linux:
 
 ## Still to do
 
-1. Dock panel (Qt): send the selected item to a grid position, create Place Item filters in one click.
-2. A Stream Deck plugin with live key state and dial support. The owner asked for this last.
-3. Fold the two duplicated helpers above into the shared ones.
+1. A Stream Deck plugin with live key state and dial support. The owner asked for this last.
+2. Fold the two duplicated helpers above into the shared ones.
+3. A mini map in the dock for dragging items (OBS's own preview already allows dragging).
 
 ## Commands
 
