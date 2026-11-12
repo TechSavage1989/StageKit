@@ -204,6 +204,17 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Corners & Edges (0.1.0-beta29)
+
+Asked for by the owner on 2026-11-12: "a filter that can round, chamfer, or otherwise modify objects
+corners and edges and it should work with the drop shadow and other tools without breaking them".
+
+- `src/shape/corners.*`, `data/effects/stagekit-corners.effect` (one pass, signed-distance shapes).
+- Size never changes. Sizes are screen pixels by default (`shown_scale`).
+- Shadow & Backdrop keeps its own *radius* setting; with both, put the shape here and leave the
+  shadow's radius at 0.
+- **Not verified on Direct3D.** The shader uses only `lerp`, `step`, `saturate`, `length`, no loops.
+
 ## Groups in the arrange tools (0.1.0-beta28)
 
 The owner selected the camera and "Chat Box Group" with *Each other* and *Left*; the camera went to

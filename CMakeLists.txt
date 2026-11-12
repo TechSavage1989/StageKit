@@ -74,6 +74,8 @@ target_sources(
     src/frame/auto-frame.hpp
     src/placement/place-item.cpp
     src/placement/place-item.hpp
+    src/shape/corners.cpp
+    src/shape/corners.hpp
     src/shadow/shadow-backdrop.cpp
     src/shadow/shadow-backdrop.hpp
     src/blur/ramp-blur.cpp

@@ -605,6 +605,211 @@ int main(int argc, char **argv)
 		obs_source_release(title);
 	}
 
+	// ------------------------------------------------------ corners & edges
+	{
+		printf("\n[corners & edges]\n");
+		const std::string corners_out = out + "/../corners";
+		auto solid = [](const char *name, int cw, int ch) {
+			obs_data_t *d = obs_data_create();
+			obs_data_set_int(d, "width", cw);
+			obs_data_set_int(d, "height", ch);
+			obs_data_set_int(d, "color", 0xFF3070E0);
+			obs_source_t *src = obs_source_create("color_source", name, d, nullptr);
+			obs_data_release(d);
+			return src;
+		};
+		obs_source_t *card = solid("Corner Card", 400, 240);
+		const uint32_t cw = 400, ch = 240;
+		obs_data_t *cs = obs_data_create();
+		obs_data_set_double(cs, "size", 60);
+		obs_source_t *corners = obs_source_create("stagekit_corners", "Corners", cs, nullptr);
+		obs_source_filter_add(card, corners);
+		auto alpha = [](const std::vector<uint8_t> &px, uint32_t w, uint32_t x, uint32_t y) {
+			return (int)px[(size_t(y) * w + x) * 4 + 3];
+		};
+		auto look = [&](const char *name) {
+			obs_source_update(corners, cs);
+			sleep_ms(120);
+			const uint32_t fw = obs_source_get_width(card), fh = obs_source_get_height(card);
+			std::vector<uint8_t> px = render(card, fw, fh);
+			if (name)
+				write_frame(corners_out + "/" + name + ".rgba", px, fw, fh);
+			return px;
+		};
+
+		auto round = look("1_rounded");
+		CHECK(obs_source_get_width(card) == cw && obs_source_get_height(card) == ch,
+		      "the source keeps its size (%ux%u)", obs_source_get_width(card), obs_source_get_height(card));
+		CHECK(alpha(round, cw, 0, 0) == 0 && alpha(round, cw, cw - 1, ch - 1) == 0 &&
+			      alpha(round, cw, cw / 2, ch / 2) == 255 && alpha(round, cw, 20, 20) == 255,
+		      "rounded: the corners are clear, the rest is solid");
+		const uint8_t *mid = &round[(size_t(ch / 2) * cw + cw / 2) * 4];
+		CHECK(std::abs(int(mid[0]) - 0xE0) <= 2 && std::abs(int(mid[1]) - 0x70) <= 2 &&
+			      std::abs(int(mid[2]) - 0x30) <= 2,
+		      "the picture's colour is untouched (%d, %d, %d)", mid[0], mid[1], mid[2]);
+
+		obs_data_set_int(cs, "style", 1);
+		auto cut = look("2_cut_off");
+		CHECK(alpha(cut, cw, 20, 20) == 0 && alpha(cut, cw, 40, 40) == 255 && alpha(cut, cw, 55, 1) == 0 &&
+			      alpha(cut, cw, 64, 1) == 255,
+		      "cut off: a straight cut across each corner");
+
+		obs_data_set_int(cs, "style", 2);
+		auto notch = look("3_notched");
+		CHECK(alpha(notch, cw, 50, 50) == 0 && alpha(notch, cw, 70, 50) == 255 &&
+			      alpha(notch, cw, 50, 70) == 255,
+		      "notched: a square taken out of each corner");
+
+		obs_data_set_int(cs, "style", 3);
+		auto scoop = look("4_scooped");
+		CHECK(alpha(scoop, cw, 30, 30) == 0 && alpha(scoop, cw, 50, 50) == 255 && alpha(scoop, cw, 57, 2) == 0,
+		      "scooped: a curve bitten into each corner");
+
+		obs_data_set_int(cs, "style", 0);
+		obs_data_set_bool(cs, "top_right", false);
+		obs_data_set_bool(cs, "bottom_left", false);
+		auto some = look("5_two_corners_only");
+		CHECK(alpha(some, cw, 0, 0) == 0 && alpha(some, cw, cw - 1, 0) == 255 &&
+			      alpha(some, cw, 0, ch - 1) == 255 && alpha(some, cw, cw - 1, ch - 1) == 0,
+		      "corners can be chosen one by one");
+		obs_data_set_bool(cs, "top_right", true);
+		obs_data_set_bool(cs, "bottom_left", true);
+
+		obs_data_set_double(cs, "inset", 30);
+		auto trimmed = look(nullptr);
+		CHECK(obs_source_get_width(card) == cw && alpha(trimmed, cw, cw / 2, 10) == 0 &&
+			      alpha(trimmed, cw, 10, ch / 2) == 0 && alpha(trimmed, cw, cw / 2, 40) == 255,
+		      "trimming the edges clears them and still keeps the size");
+		obs_data_set_double(cs, "inset", 0);
+
+		obs_data_set_double(cs, "soft", 40);
+		auto soft = look("6_soft_edge");
+		const int near_edge = alpha(soft, cw, cw / 2, 4), further = alpha(soft, cw, cw / 2, 20);
+		CHECK(near_edge < further && further < 255 && alpha(soft, cw, cw / 2, ch / 2) == 255,
+		      "a soft edge fades towards the outside (%d, %d)", near_edge, further);
+		obs_data_set_double(cs, "soft", 0);
+
+		obs_data_set_double(cs, "border", 10);
+		obs_data_set_int(cs, "border_color", 0xFF00FFFF); // yellow
+		auto lined = look("7_outline");
+		const uint8_t *on_line = &lined[(size_t(4) * cw + cw / 2) * 4];
+		const uint8_t *inside = &lined[(size_t(30) * cw + cw / 2) * 4];
+		CHECK(on_line[0] > 240 && on_line[1] > 240 && on_line[2] < 15 && on_line[3] == 255 && inside[0] > 200 &&
+			      inside[2] < 80,
+		      "an outline follows the shape (%d, %d, %d)", on_line[0], on_line[1], on_line[2]);
+		obs_data_set_double(cs, "border", 0);
+		look(nullptr);
+
+		// A Shadow & Backdrop after it casts the new shape's shadow.
+		obs_data_t *ss = obs_data_create();
+		obs_data_set_double(ss, "offset_x", 20);
+		obs_data_set_double(ss, "offset_y", 20);
+		obs_data_set_double(ss, "softness", 0);
+		obs_data_set_double(ss, "shadow_opacity", 100);
+		obs_data_set_bool(ss, "screen_px", false);
+		obs_source_t *shadow = obs_source_create("stagekit_shadow_backdrop", "Shadow", ss, nullptr);
+		obs_source_filter_add(card, shadow);
+		sleep_ms(200);
+		{
+			const uint32_t fw = obs_source_get_width(card), fh = obs_source_get_height(card);
+			const std::vector<uint8_t> px = render(card, fw, fh);
+			write_frame(corners_out + "/8_with_a_shadow.rgba", px, fw, fh);
+			CHECK(fw == cw + 20 && fh == ch + 20,
+			      "with a shadow after it, the shadow adds its own room (%ux%u)", fw, fh);
+			CHECK(alpha(px, fw, 0, 0) == 0 && alpha(px, fw, fw - 1, fh - 1) == 0 &&
+				      alpha(px, fw, fw - 1, fh / 2) == 255 && alpha(px, fw, cw / 2, ch / 2) == 255,
+			      "and the shadow has the same rounded corners as the picture");
+		}
+
+		// Added after a shadow, it goes above the shadow by itself, once.
+		obs_source_t *second = solid("Corner Card 2", 400, 240);
+		obs_source_t *shadow2 = obs_source_create("stagekit_shadow_backdrop", "Shadow", ss, nullptr);
+		obs_source_filter_add(second, shadow2);
+		obs_data_t *fresh = obs_data_create(); // its own settings: a filter keeps the object it is given
+		obs_data_set_double(fresh, "size", 60);
+		obs_source_t *corners2 = obs_source_create("stagekit_corners", "Corners", fresh, nullptr);
+		obs_data_release(fresh);
+		obs_source_filter_add(second, corners2);
+		sleep_ms(300);
+		{
+			const uint32_t fw = obs_source_get_width(second), fh = obs_source_get_height(second);
+			const std::vector<uint8_t> px = render(second, fw, fh);
+			CHECK(fw == cw + 20 && alpha(px, fw, fw - 1, fh - 1) == 0 &&
+				      alpha(px, fw, fw - 1, fh / 2) == 255 && alpha(px, fw, 398, 20) == 0,
+			      "added after a shadow, it moves above it so the shadow is not cut off");
+			obs_source_filter_set_order(second, corners2, OBS_ORDER_MOVE_BOTTOM);
+			sleep_ms(300);
+			const std::vector<uint8_t> moved = render(second, fw, fh);
+			CHECK(alpha(moved, fw, 398, 20) == 255, "but the order stays yours to change afterwards");
+		}
+		obs_source_filter_remove(second, corners2);
+		obs_source_filter_remove(second, shadow2);
+		obs_source_release(corners2);
+		obs_source_release(shadow2);
+		obs_source_release(second);
+		obs_source_filter_remove(card, shadow);
+		obs_source_release(shadow);
+		obs_data_release(ss);
+		sleep_ms(120);
+
+		// Sizes are as seen on screen: at half size in the scene, a 60 px
+		// corner takes 120 of the source's own pixels.
+		{
+			obs_scene_t *sc = obs_scene_create("Corner Scene");
+			obs_sceneitem_t *item = obs_scene_add(sc, card);
+			vec2 half;
+			vec2_set(&half, 0.5f, 0.5f);
+			obs_sceneitem_set_scale(item, &half);
+			obs_source_t *before = obs_get_output_source(0);
+			obs_set_output_source(0, obs_scene_get_source(sc));
+			sleep_ms(1200);
+			auto shown = look(nullptr);
+			CHECK(alpha(shown, cw, 30, 30) == 0 && alpha(shown, cw, 100, 100) == 255,
+			      "sizes follow how big the item is on screen");
+			obs_data_set_bool(cs, "screen_px", false);
+			auto own = look(nullptr);
+			CHECK(alpha(own, cw, 30, 30) == 255, "or the source's own pixels when that is switched off");
+			obs_data_set_bool(cs, "screen_px", true);
+			obs_set_output_source(0, before);
+			obs_source_release(before);
+			obs_sceneitem_remove(item);
+			obs_scene_release(sc);
+		}
+		obs_source_filter_remove(card, corners);
+		obs_source_release(corners);
+
+		// After an Auto Frame, it shapes the game picture, not the frame around it.
+		{
+			obs_source_t *game = solid("Corner Game", 400, 300);
+			obs_data_t *fs = obs_data_create();
+			obs_data_set_int(fs, "frame_width", 800);
+			obs_data_set_int(fs, "frame_height", 300);
+			obs_data_set_int(fs, "glide_ms", 0);
+			obs_source_t *frame = obs_source_create("stagekit_auto_frame", "Auto Frame", fs, nullptr);
+			obs_data_release(fs);
+			obs_source_filter_add(game, frame);
+			obs_data_set_double(cs, "size", 40);
+			obs_source_t *shape = obs_source_create("stagekit_corners", "Corners", cs, nullptr);
+			obs_source_filter_add(game, shape);
+			sleep_ms(300);
+			render(game, 800, 300);
+			sleep_ms(300);
+			const std::vector<uint8_t> px = render(game, 800, 300);
+			write_frame(corners_out + "/9_inside_an_auto_frame.rgba", px, 800, 300);
+			CHECK(obs_source_get_width(game) == 800 && alpha(px, 800, 202, 2) == 0 &&
+				      alpha(px, 800, 597, 297) == 0 && alpha(px, 800, 400, 150) == 255 &&
+				      alpha(px, 800, 240, 2) == 255,
+			      "after an Auto Frame, the corners are the game picture's, not the frame's");
+			obs_source_filter_remove(game, shape);
+			obs_source_filter_remove(game, frame);
+			obs_source_release(shape);
+			obs_source_release(frame);
+			obs_source_release(game);
+		}
+		obs_data_release(cs);
+		obs_source_release(card);
+	}
+
 	// ------------------------------------------- show/hide, match item, layout
 	{
 		auto color = [](const char *name, int cw, int ch) {

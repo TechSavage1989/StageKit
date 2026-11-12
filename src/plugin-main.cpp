@@ -33,6 +33,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "placement/visibility-link.hpp"
 #include "dock/arrange-tools.hpp"
 #include "shadow/shadow-backdrop.hpp"
+#include "shape/corners.hpp"
 #include "view/cropped-view.hpp"
 #include "zoom/ramp-zoom.hpp"
 
@@ -96,6 +97,7 @@ bool obs_module_load(void)
 	stagekit::register_start_image();
 	stagekit::register_ambient_background();
 	stagekit::register_shadow_backdrop();
+	stagekit::register_corners();
 	stagekit::register_place_item();
 	stagekit::register_ramp_zoom();
 	stagekit::register_cropped_view();
