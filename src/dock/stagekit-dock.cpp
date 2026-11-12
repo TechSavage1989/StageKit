@@ -70,11 +70,13 @@ public:
 	{
 		auto *layout = new QVBoxLayout(this);
 
-		scene_label_ = new QLabel(this);
-		scene_label_->setObjectName("sceneLabel");
-		layout->addWidget(scene_label_);
-
 		auto *form = new QFormLayout();
+		// Any scene can be worked on, not only the one on screen, so items
+		// that live in a nested scene are reachable.
+		scene_ = new QComboBox(this);
+		scene_->setObjectName("scene");
+		QObject::connect(scene_, &QComboBox::currentIndexChanged, this, [this](int) { refresh(); });
+		form->addRow(tr_text("Dock.SceneRow"), scene_);
 		item_ = new QComboBox(this);
 		item_->setObjectName("item");
 		linked_ = new QComboBox(this);
@@ -160,6 +162,28 @@ public:
 		}
 		layout->addWidget(add_box);
 
+		auto *order_box = new QGroupBox(tr_text("Dock.OrderBox"), this);
+		auto *order_layout = new QGridLayout(order_box);
+		struct {
+			const char *object_name, *text;
+			obs_order_movement movement;
+		} orders[] = {
+			{"orderTop", "Dock.OrderTop", OBS_ORDER_MOVE_TOP},
+			{"orderUp", "Dock.OrderUp", OBS_ORDER_MOVE_UP},
+			{"orderDown", "Dock.OrderDown", OBS_ORDER_MOVE_DOWN},
+			{"orderBottom", "Dock.OrderBottom", OBS_ORDER_MOVE_BOTTOM},
+		};
+		int order_index = 0;
+		for (const auto &order : orders) {
+			auto *button = new QPushButton(tr_text(order.text), order_box);
+			button->setObjectName(order.object_name);
+			const obs_order_movement movement = order.movement;
+			QObject::connect(button, &QPushButton::clicked, this, [this, movement] { reorder(movement); });
+			order_layout->addWidget(button, order_index / 2, order_index % 2);
+			order_index++;
+		}
+		layout->addWidget(order_box);
+
 		status_ = new QLabel(this);
 		status_->setObjectName("status");
 		status_->setWordWrap(true);
@@ -176,20 +200,44 @@ public:
 
 	void refresh()
 	{
-		obs_source_t *scene = current_scene();
-		const char *name = scene ? obs_source_get_name(scene) : nullptr;
-		scene_label_->setText(name ? tr_text("Dock.Scene").arg(QString::fromUtf8(name))
-					   : tr_text("Dock.NoScene"));
+		// Scene list: "the scene on screen" first, then every scene by name.
+		QStringList scenes;
+		obs_enum_scenes(
+			[](void *param, obs_source_t *source) {
+				const char *scene_name = obs_source_get_name(source);
+				if (scene_name && *scene_name && !obs_source_is_group(source))
+					static_cast<QStringList *>(param)->append(QString::fromUtf8(scene_name));
+				return true;
+			},
+			&scenes);
+		if (scenes != scenes_) {
+			scenes_ = scenes;
+			const QString chosen = scene_->currentData().toString();
+			scene_->blockSignals(true);
+			scene_->clear();
+			scene_->addItem(tr_text("Dock.SceneOnScreen"), QString());
+			for (const QString &n : scenes)
+				scene_->addItem(n, n);
+			scene_->setCurrentIndex(std::max(0, scene_->findData(chosen)));
+			scene_->blockSignals(false);
+		}
 
+		obs_source_t *scene = current_scene();
+		// Top-most first, as in OBS's own list; items inside groups follow their group.
 		QStringList names;
 		if (obs_scene_t *s = scene_of(scene)) {
+			static const auto add = [](obs_scene_t *, obs_sceneitem_t *item, void *param) {
+				const char *item_name = obs_source_get_name(obs_sceneitem_get_source(item));
+				if (item_name && *item_name)
+					static_cast<QStringList *>(param)->prepend(QString::fromUtf8(item_name));
+				return true;
+			};
 			obs_scene_enum_items(
 				s,
-				[](obs_scene_t *, obs_sceneitem_t *item, void *param) {
-					const char *item_name = obs_source_get_name(obs_sceneitem_get_source(item));
-					if (item_name && *item_name)
-						static_cast<QStringList *>(param)->prepend(
-							QString::fromUtf8(item_name));
+				[](obs_scene_t *sc, obs_sceneitem_t *item, void *param) {
+					if (obs_sceneitem_is_group(item))
+						obs_sceneitem_group_enum_items(item, add, param);
+					add(sc, item, param);
 					return true;
 				},
 				&names);
@@ -219,6 +267,9 @@ private:
 	// Returns a new reference, or nullptr.
 	obs_source_t *current_scene() const
 	{
+		const QString chosen = scene_ ? scene_->currentData().toString() : QString();
+		if (!chosen.isEmpty())
+			return obs_get_source_by_name(chosen.toUtf8().constData());
 		if (!fixed_scene_.empty())
 			return obs_get_source_by_name(fixed_scene_.c_str());
 		if (obs_frontend_preview_program_mode_active())
@@ -227,6 +278,24 @@ private:
 	}
 
 	void say(const QString &text) { status_->setText(text); }
+
+	// Moves the selected item in front of or behind the others.
+	void reorder(obs_order_movement movement)
+	{
+		obs_source_t *scene = current_scene();
+		obs_sceneitem_t *item = find_item(scene, item_->currentText().toUtf8().constData());
+		if (!item) {
+			say(tr_text("Dock.PickItem"));
+		} else {
+			obs_sceneitem_set_order(item, movement);
+			names_.clear(); // the list order changed
+			const QString keep = item_->currentText();
+			refresh();
+			item_->setCurrentText(keep);
+			say(tr_text("Dock.Reordered").arg(keep));
+		}
+		obs_source_release(scene);
+	}
 
 	obs_data_t *place_settings(int destination) const
 	{
@@ -375,7 +444,8 @@ private:
 
 	std::string fixed_scene_;
 	QStringList names_;
-	QLabel *scene_label_ = nullptr;
+	QStringList scenes_;
+	QComboBox *scene_ = nullptr;
 	QComboBox *item_ = nullptr;
 	QComboBox *linked_ = nullptr;
 	QSpinBox *margin_ = nullptr;

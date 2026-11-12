@@ -463,6 +463,31 @@ int main(int argc, char **argv)
 		p = pos(follower);
 		CHECK(std::fabs(p.x - 100) < 0.5 && std::fabs(p.y - 150) < 0.5,
 		      "moving the original moves the matched item too (%.0f, %.0f)", p.x, p.y);
+		// A matched item that lives inside a group still lands on the same
+		// place on screen.
+		{
+			obs_source_t *grouped_src = color("Grouped Title", 450, 60);
+			obs_sceneitem_t *title_group = obs_scene_add_group(scene, "Title Group");
+			obs_sceneitem_t *grouped = obs_scene_add(scene, grouped_src);
+			obs_sceneitem_group_add_item(title_group, grouped);
+			at(title_group, 60, 40);
+			obs_data_t *gd = obs_data_create();
+			obs_data_set_string(gd, "item", "Grouped Title");
+			obs_data_set_string(gd, "master_scene", "Start Scene");
+			obs_data_set_string(gd, "master_item", "Starting Title");
+			obs_source_t *gmatch = add_filter(scene, "stagekit_match_item", "Match Grouped", gd);
+			sleep_ms(150);
+			vec2 gp = pos(title_group), ip = pos(grouped), gb;
+			obs_sceneitem_get_bounds(grouped, &gb);
+			CHECK(std::fabs(gp.x + ip.x - 100) < 0.6 && std::fabs(gp.y + ip.y - 150) < 0.6 &&
+				      std::fabs(gb.x - 300) < 0.6,
+			      "a matched item inside a group lands on the same spot on screen (%.0f, %.0f, box %.0f wide)",
+			      gp.x + ip.x, gp.y + ip.y, gb.x);
+			obs_source_filter_remove(obs_scene_get_source(scene), gmatch);
+			obs_source_release(gmatch);
+			obs_source_release(grouped_src);
+		}
+
 		obs_source_set_enabled(match, false);
 		at(master_item, 300, 300);
 		sleep_ms(100);
@@ -495,6 +520,33 @@ int main(int argc, char **argv)
 			      std::fabs(q.y - 150) < 0.5,
 		      "every item returns to the saved arrangement");
 		CHECK(!obs_source_enabled(layout), "the filter switches itself off afterwards");
+
+		// A layout limited to chosen items leaves everything else alone.
+		{
+			obs_data_t *ld = obs_data_create();
+			obs_data_array_t *only = obs_data_array_create();
+			obs_data_t *entry = obs_data_create();
+			obs_data_set_string(entry, "value", "Lower Third");
+			obs_data_array_push_back(only, entry);
+			obs_data_release(entry);
+			obs_data_set_array(ld, "only_items", only);
+			obs_data_array_release(only);
+			obs_data_set_int(ld, "duration_ms", 100);
+			obs_source_t *partial = add_filter(scene, "stagekit_layout", "Lower Third Home", ld);
+			sleep_ms(80);
+			proc_handler_call(obs_source_get_proc_handler(partial), "save", &cd);
+			sleep_ms(80);
+			at(lower, 300, 100);
+			at(follower, 7, 9);
+			obs_source_set_enabled(partial, true);
+			sleep_ms(400);
+			p = pos(lower);
+			q = pos(follower);
+			CHECK(std::fabs(p.x - 30) < 0.5 && std::fabs(q.x - 7) < 0.5 && std::fabs(q.y - 9) < 0.5,
+			      "a layout limited to chosen items moves only those (%.0f / %.0f,%.0f)", p.x, q.x, q.y);
+			obs_source_filter_remove(obs_scene_get_source(scene), partial);
+			obs_source_release(partial);
+		}
 		calldata_free(&cd);
 		obs_source_filter_remove(obs_scene_get_source(scene), layout);
 		obs_source_release(layout);
@@ -737,6 +789,34 @@ int main(int argc, char **argv)
 			&hotkeys);
 		CHECK(hotkeys == 2, "each destination has a hotkey on the scene (%d)", hotkeys);
 
+		// An item inside a group is positioned relative to the group; sending
+		// it to a screen position must still land it there on screen.
+		obs_source_t *badge = make_color("Badge", 50, 50);
+		obs_sceneitem_t *group = obs_scene_add_group(scene, "Overlay Group");
+		obs_sceneitem_t *badge_item = obs_scene_add(scene, badge);
+		obs_sceneitem_group_add_item(group, badge_item);
+		vec2_set(&p, 200.0f, 120.0f);
+		obs_sceneitem_set_pos(group, &p);
+		{
+			obs_data_t *d = obs_data_create();
+			obs_data_set_string(d, "item", "Badge");
+			obs_data_set_int(d, "destination", 0); // top left
+			obs_data_set_double(d, "margin", 30);
+			obs_data_set_int(d, "duration_ms", 200);
+			obs_source_t *f = obs_source_create("stagekit_place_item", "Badge Top Left", d, nullptr);
+			obs_data_release(d);
+			obs_source_filter_add(scene_source, f);
+			sleep_ms(100);
+			obs_source_set_enabled(f, true);
+			sleep_ms(500);
+			vec2 gp = pos_of(group), bp = pos_of(badge_item);
+			CHECK(std::fabs(gp.x + bp.x - 30) < 0.6 && std::fabs(gp.y + bp.y - 30) < 0.6,
+			      "an item inside a group lands at the right place on screen (%.0f, %.0f)", gp.x + bp.x,
+			      gp.y + bp.y);
+			obs_source_filter_remove(scene_source, f);
+			obs_source_release(f);
+		}
+
 		// The dock, driven the way a person would: pick, click, look.
 		printf("\n[dock]\n");
 		calldata_t dock_cd = {};
@@ -792,6 +872,40 @@ int main(int argc, char **argv)
 			}
 			obs_source_release(key);
 
+			// Order buttons: the camera was added first, so it starts at the back.
+			const int before = obs_sceneitem_get_order_position(cam_item);
+			click("orderTop");
+			const int front = obs_sceneitem_get_order_position(cam_item);
+			click("orderBottom");
+			CHECK(front > before && obs_sceneitem_get_order_position(cam_item) == 0,
+			      "bring to front and send to back change the stacking order (%d -> %d -> %d)", before,
+			      front, obs_sceneitem_get_order_position(cam_item));
+
+			// The scene picker reaches scenes that are not on screen.
+			if (auto *scenes = dock->findChild<QComboBox *>("scene")) {
+				obs_scene_t *other = obs_scene_create("Nested Camera Scene");
+				obs_source_t *nested_cam = make_color("Nested Cam", 80, 60);
+				obs_sceneitem_t *nested_item = obs_scene_add(other, nested_cam);
+				sleep_ms(1200); // the dock refreshes its lists once a second
+				QCoreApplication::processEvents();
+				scenes->setCurrentIndex(scenes->findData(QString("Nested Camera Scene")));
+				auto *items = dock->findChild<QComboBox *>("item");
+				CHECK(items && items->findText("Nested Cam") >= 0,
+				      "the scene picker lists another scene's items");
+				if (items)
+					items->setCurrentText("Nested Cam");
+				click("grid8");
+				sleep_ms(900);
+				vec2 np = pos_of(nested_item);
+				CHECK(std::fabs(np.x - 530) < 0.6 && std::fabs(np.y - 270) < 0.6,
+				      "and moves an item in that scene (%.0f, %.0f)", np.x, np.y);
+				scenes->setCurrentIndex(0);
+				if (items)
+					items->setCurrentText("Camera");
+				obs_source_release(nested_cam);
+				obs_scene_release(other);
+			}
+
 			click("addShadow");
 			obs_source_t *shadow = obs_source_get_filter_by_name(cam, "Shadow & Backdrop");
 			CHECK(shadow != nullptr, "\"Add to this item\" puts the effect on the item's source");
@@ -807,6 +921,7 @@ int main(int argc, char **argv)
 		obs_source_release(to_bottom_right);
 		obs_source_release(cam);
 		obs_source_release(widget);
+		obs_source_release(badge);
 		obs_scene_release(scene);
 	}
 

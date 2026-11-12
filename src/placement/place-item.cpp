@@ -22,6 +22,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "place-item.hpp"
 
 #include "../common/easing.hpp"
+#include "../common/scene-util.hpp"
 
 #include <obs-module.h>
 #include <graphics/matrix4.h>
@@ -68,32 +69,13 @@ struct Settings {
 	bool flip_linked = true;
 };
 
-struct Box {
-	double x = 0, y = 0, w = 0, h = 0;
-};
-
-// The item's bounding box on the scene canvas, whatever its alignment,
-// crop, bounds or rotation.
-Box item_box(obs_sceneitem_t *item)
-{
-	matrix4 transform;
-	obs_sceneitem_get_box_transform(item, &transform);
-	double min_x = 1e18, min_y = 1e18, max_x = -1e18, max_y = -1e18;
-	for (int i = 0; i < 4; i++) {
-		vec3 corner, out;
-		vec3_set(&corner, (i & 1) ? 1.0f : 0.0f, (i & 2) ? 1.0f : 0.0f, 0.0f);
-		vec3_transform(&out, &corner, &transform);
-		min_x = std::min(min_x, (double)out.x);
-		min_y = std::min(min_y, (double)out.y);
-		max_x = std::max(max_x, (double)out.x);
-		max_y = std::max(max_y, (double)out.y);
-	}
-	return {min_x, min_y, max_x - min_x, max_y - min_y};
-}
-
+// One item gliding from one place to another. Places are the top-left of
+// the item's box in scene coordinates, so the same maths serves items in a
+// scene and items inside a group.
 struct Move {
 	obs_sceneitem_t *item = nullptr; // strong reference while moving
-	vec2 from_pos, to_pos;
+	obs_source_t *scene = nullptr;
+	double from_x = 0, from_y = 0, to_x = 0, to_y = 0;
 	vec2 from_scale, to_scale;
 	bool scale = false;
 };
@@ -109,16 +91,24 @@ void apply_move(const Move &move, double t)
 {
 	if (!move.item)
 		return;
-	vec2 pos;
-	pos.x = (float)(move.from_pos.x + (move.to_pos.x - move.from_pos.x) * t);
-	pos.y = (float)(move.from_pos.y + (move.to_pos.y - move.from_pos.y) * t);
-	obs_sceneitem_set_pos(move.item, &pos);
 	if (move.scale) {
 		vec2 scale;
 		scale.x = (float)(move.from_scale.x + (move.to_scale.x - move.from_scale.x) * t);
 		scale.y = (float)(move.from_scale.y + (move.to_scale.y - move.from_scale.y) * t);
 		obs_sceneitem_set_scale(move.item, &scale);
 	}
+	// Nudge the item from where its box is now to where it should be. Working
+	// from the current box keeps this right even when OBS re-fits a group
+	// around its moving contents, which shifts the group's own origin.
+	const double want_x = move.from_x + (move.to_x - move.from_x) * t;
+	const double want_y = move.from_y + (move.to_y - move.from_y) * t;
+	const Box now = scene_box(move.scene, move.item);
+	const Space space = item_space(move.scene, move.item);
+	vec2 pos;
+	obs_sceneitem_get_pos(move.item, &pos);
+	pos.x += (float)((want_x - now.x) / space.sx);
+	pos.y += (float)((want_y - now.y) / space.sy);
+	obs_sceneitem_set_pos(move.item, &pos);
 }
 
 class PlaceItem {
@@ -236,10 +226,7 @@ void PlaceItem::start()
 	release_move(follower_);
 	moving_ = false;
 
-	obs_scene_t *scene = parent_ ? obs_scene_from_source(parent_) : nullptr;
-	if (!scene)
-		scene = parent_ ? obs_group_from_source(parent_) : nullptr;
-	obs_sceneitem_t *item = scene && !s.item.empty() ? obs_scene_find_source(scene, s.item.c_str()) : nullptr;
+	obs_sceneitem_t *item = find_item(parent_, s.item);
 	if (!item) {
 		obs_log(LOG_WARNING, "Place Item '%s': item '%s' is not in this scene", obs_source_get_name(source_),
 			s.item.c_str());
@@ -252,23 +239,30 @@ void PlaceItem::start()
 	// Leader.
 	obs_sceneitem_addref(item);
 	leader_.item = item;
-	obs_sceneitem_get_pos(item, &leader_.from_pos);
+	leader_.scene = parent_;
 	obs_sceneitem_get_scale(item, &leader_.from_scale);
 	leader_.to_scale = leader_.from_scale;
 	leader_.scale = false;
-	const Box box = item_box(item);
+	refresh_item(item);
+	// All placement maths is done in the scene's coordinates.
+	const Box box = scene_box(parent_, item);
 	Box target = box;
 
 	if (s.destination == Destination::Saved) {
-		vec2_set(&leader_.to_pos, (float)s.saved_x, (float)s.saved_y);
+		// A saved spot is the item's own position (and size). Put it there
+		// for a moment to measure the box, then put it back.
+		vec2 was_pos, saved_pos;
+		obs_sceneitem_get_pos(item, &was_pos);
+		vec2_set(&saved_pos, (float)s.saved_x, (float)s.saved_y);
 		if (s.restore_size && s.saved_scale_x > 0.0 && s.saved_scale_y > 0.0) {
 			vec2_set(&leader_.to_scale, (float)s.saved_scale_x, (float)s.saved_scale_y);
 			leader_.scale = true;
+			obs_sceneitem_set_scale(item, &leader_.to_scale);
 		}
-		// Measure the box at the destination, then put the item back.
-		apply_move(leader_, 1.0);
-		target = item_box(item);
-		apply_move(leader_, 0.0);
+		obs_sceneitem_set_pos(item, &saved_pos);
+		target = scene_box(parent_, item);
+		obs_sceneitem_set_pos(item, &was_pos);
+		obs_sceneitem_set_scale(item, &leader_.from_scale);
 	} else {
 		const int column = static_cast<int>(s.destination) % 3;
 		const int row = static_cast<int>(s.destination) / 3;
@@ -276,20 +270,22 @@ void PlaceItem::start()
 			   : column == 1 ? (canvas_w - box.w) / 2.0
 					 : canvas_w - s.margin - box.w;
 		target.y = row == 0 ? s.margin : row == 1 ? (canvas_h - box.h) / 2.0 : canvas_h - s.margin - box.h;
-		leader_.to_pos.x = leader_.from_pos.x + (float)(target.x - box.x);
-		leader_.to_pos.y = leader_.from_pos.y + (float)(target.y - box.y);
 	}
+	leader_.from_x = box.x;
+	leader_.from_y = box.y;
+	leader_.to_x = target.x;
+	leader_.to_y = target.y;
 
 	// Linked item: keeps its place relative to the leader, mirrored to the
 	// other side if that is the only way to stay on screen.
-	obs_sceneitem_t *linked =
-		!s.linked.empty() && s.linked != s.item ? obs_scene_find_source(scene, s.linked.c_str()) : nullptr;
+	obs_sceneitem_t *linked = !s.linked.empty() && s.linked != s.item ? find_item(parent_, s.linked) : nullptr;
 	if (linked) {
 		obs_sceneitem_addref(linked);
 		follower_.item = linked;
 		follower_.scale = false;
-		obs_sceneitem_get_pos(linked, &follower_.from_pos);
-		const Box fbox = item_box(linked);
+		follower_.scene = parent_;
+		refresh_item(linked);
+		const Box fbox = scene_box(parent_, linked);
 		const double dx = fbox.x - box.x;
 		const double dy = fbox.y - box.y;
 		double tx = target.x + dx;
@@ -305,8 +301,10 @@ void PlaceItem::start()
 			if (off_screen(mirrored_y, fbox.h, canvas_h) < off_screen(ty, fbox.h, canvas_h))
 				ty = mirrored_y;
 		}
-		follower_.to_pos.x = follower_.from_pos.x + (float)(tx - fbox.x);
-		follower_.to_pos.y = follower_.from_pos.y + (float)(ty - fbox.y);
+		follower_.from_x = fbox.x;
+		follower_.from_y = fbox.y;
+		follower_.to_x = tx;
+		follower_.to_y = ty;
 	}
 
 	elapsed_ = 0.0;
@@ -359,10 +357,7 @@ bool PlaceItem::capture_current()
 {
 	obs_data_t *settings = obs_source_get_settings(source_);
 	const std::string name = obs_data_get_string(settings, "item");
-	obs_scene_t *scene = parent_ ? obs_scene_from_source(parent_) : nullptr;
-	if (!scene)
-		scene = parent_ ? obs_group_from_source(parent_) : nullptr;
-	obs_sceneitem_t *item = scene && !name.empty() ? obs_scene_find_source(scene, name.c_str()) : nullptr;
+	obs_sceneitem_t *item = find_item(parent_, name);
 	if (item) {
 		vec2 pos, scale;
 		obs_sceneitem_get_pos(item, &pos);
@@ -455,26 +450,8 @@ obs_properties_t *get_properties(void *data)
 							 OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
 	obs_property_list_add_string(linked, obs_module_text("Place.Linked.None"), "");
 	obs_source_t *parent = self ? self->parent() : nullptr;
-	obs_scene_t *scene = parent ? obs_scene_from_source(parent) : nullptr;
-	if (!scene)
-		scene = parent ? obs_group_from_source(parent) : nullptr;
-	if (scene) {
-		struct Lists {
-			obs_property_t *item, *linked;
-		} lists = {item, linked};
-		obs_scene_enum_items(
-			scene,
-			[](obs_scene_t *, obs_sceneitem_t *scene_item, void *param) {
-				auto *l = static_cast<Lists *>(param);
-				const char *name = obs_source_get_name(obs_sceneitem_get_source(scene_item));
-				if (name && *name) {
-					obs_property_list_add_string(l->item, name, name);
-					obs_property_list_add_string(l->linked, name, name);
-				}
-				return true;
-			},
-			&lists);
-	}
+	add_scene_items_to_list(parent, item);
+	add_scene_items_to_list(parent, linked);
 	obs_property_set_modified_callback(linked, destination_modified);
 
 	obs_property_t *dest = obs_properties_add_list(props, "destination", obs_module_text("Place.Destination"),

@@ -81,6 +81,11 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   second copy. Ramp Blur still has its own older copy of this logic.
 - **OBS finishes hiding a scene item after its `item_visible` signal returns.** Re-showing inside the
   handler leaves the item undrawn. Show/Hide Animation re-shows on the next tick instead.
+- **A scene item's box is cached and can be a 1x1 placeholder.** An item never moved since it was added
+  keeps that placeholder until its scene is drawn, and `obs_sceneitem_force_update_transform` only acts
+  on items OBS has flagged. Call `refresh_item()` (`src/common/scene-util.hpp`) once before measuring at
+  the start of an operation. Items inside groups use group coordinates: measure with `scene_box()` and
+  convert with `item_space()`.
 - **Trigger filters** (Place Item, Layout) switch themselves off after running and ignore the enabled
   state restored at load (`ready_`), so they do not fire when OBS starts.
 - **Deprecated libobs calls fail CI** (warnings are errors). Avoid `obs_sceneitem_get_info`; use the
