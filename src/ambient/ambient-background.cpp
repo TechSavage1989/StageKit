@@ -22,6 +22,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include "ambient-background.hpp"
 
+#include "../common/scene-util.hpp"
 #include "../common/start-image.hpp"
 #include "../frame/auto-frame.hpp"
 
@@ -52,35 +53,6 @@ enum class OverlayMode : int { Multiply = 0, Screen = 1 };
 
 constexpr int kBlurLevels = 6;
 constexpr double kInternalScale = 0.5;
-
-// Sources that count as "the thing being captured" for automatic mode.
-const char *const kCaptureIds[] = {
-	"game_capture",
-	"window_capture",
-	"monitor_capture",
-	"dshow_input",
-	"xcomposite_input",
-	"xshm_input",
-	"pipewire-desktop-capture-source",
-	"pipewire-window-capture-source",
-	"v4l2_input",
-	"screen_capture",
-	"display_capture",
-	"av_capture_input",
-	"av_capture_input_v2",
-	"macos-avcapture",
-};
-
-bool is_capture(obs_source_t *source)
-{
-	const char *id = obs_source_get_unversioned_id(source);
-	if (!id)
-		return false;
-	for (const char *capture : kCaptureIds)
-		if (strcmp(id, capture) == 0)
-			return true;
-	return false;
-}
 
 struct Settings {
 	BaseType base_type = BaseType::Image;
@@ -146,7 +118,7 @@ bool search_item(obs_scene_t *, obs_sceneitem_t *item, void *param)
 		return true;
 	}
 
-	if (is_capture(source)) {
+	if (is_capture_source(source)) {
 		const double area = (double)obs_source_get_width(source) * obs_source_get_height(source) * scale;
 		if (area > search->best_area) {
 			search->best_area = area;

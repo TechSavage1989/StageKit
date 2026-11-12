@@ -204,6 +204,20 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Ramp Blur leads other sources (0.1.0-beta37)
+
+Asked for by the owner on 2026-11-12: choose inside the filter which sources it applies to, so one
+Stream Deck key blurs them all, with an option to pick up live game and window captures.
+
+- Settings `also` (editable list of source names, filled by `also_pick` + `also_add`) and
+  `also_captures`. `RampBlur::lead_others` runs wherever the blur's on/off state changes (`announce`)
+  and calls `set_active` on the first Ramp Blur of each target, creating one from this filter's
+  settings (named *Ramp Blur (follows another)*) when a target has none.
+- Captures are found at switch-on in `scene_on_screen()`; weak references are kept so they are cleared
+  at switch-off even if they have left the screen. **Not tested**: no capture source exists headless.
+- `is_capture_source` moved to `src/common/scene-util.hpp`; Ambient Background uses it.
+- Properties are four groups; `btn_on` and `btn_off` were removed.
+
 ## Align to the first or last selected; selection list (0.1.0-beta36)
 
 Asked for by the owner on 2026-11-12. `Against` gains `First` and `Last` (saved values 2 and 3).

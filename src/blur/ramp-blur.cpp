@@ -18,6 +18,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include "../api/vendor-api.hpp"
 #include "../common/easing.hpp"
+#include "../common/scene-util.hpp"
 
 #include <obs-module.h>
 #include <graphics/vec2.h>
@@ -31,6 +32,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <mutex>
 #include <set>
 #include <string>
+#include <vector>
 
 namespace stagekit {
 
@@ -134,6 +136,12 @@ private:
 	void unregister_hotkeys();
 	bool begin_ramp(bool active, double duration_ms);
 	void set_enabled_quietly(bool enabled);
+	// Tells the world the blur went on or off, and takes the other sources
+	// this filter was told to blur along with it.
+	void announce(bool active);
+	void lead_others(bool active);
+	// Captures switched on because they were live when this went on.
+	std::vector<obs_weak_source_t *> led_;
 	void on_enabled_changed(bool enabled);
 
 	static void hotkey_cb(void *data, obs_hotkey_id id, obs_hotkey_t *hotkey, bool pressed);
@@ -252,6 +260,8 @@ RampBlur::RampBlur(obs_data_t *settings, obs_source_t *source) : source_(source)
 
 RampBlur::~RampBlur()
 {
+	for (obs_weak_source_t *weak : led_)
+		obs_weak_source_release(weak);
 	{
 		std::lock_guard lock(g_registry_mutex);
 		g_registry.erase(this);
@@ -339,7 +349,157 @@ void RampBlur::set_active(bool active, double duration_ms)
 	if (active)
 		set_enabled_quietly(true);
 	if (changed)
-		vendor_emit_blur_changed(source_, active);
+		announce(active);
+}
+
+void RampBlur::announce(bool active)
+{
+	vendor_emit_blur_changed(source_, active);
+	lead_others(active);
+}
+
+namespace {
+// Set while one filter is switching the others, so they do not lead in turn.
+thread_local bool t_leading = false;
+
+// The names in a filter's "Blur these too" list.
+std::vector<std::string> also_names(obs_data_t *settings)
+{
+	std::vector<std::string> names;
+	obs_data_array_t *list = obs_data_get_array(settings, "also");
+	for (size_t i = 0; i < obs_data_array_count(list); i++) {
+		obs_data_t *entry = obs_data_array_item(list, i);
+		const std::string name = obs_data_get_string(entry, "value");
+		if (!name.empty() && std::find(names.begin(), names.end(), name) == names.end())
+			names.push_back(name);
+		obs_data_release(entry);
+	}
+	obs_data_array_release(list);
+	return names;
+}
+
+// Every live capture showing in a scene, looking inside groups and nested scenes.
+struct LiveSearch {
+	std::vector<obs_source_t *> *found;
+	int depth;
+};
+bool find_live(obs_scene_t *, obs_sceneitem_t *item, void *param)
+{
+	auto *search = static_cast<LiveSearch *>(param);
+	obs_source_t *source = obs_sceneitem_get_source(item);
+	if (!source || !obs_sceneitem_visible(item))
+		return true;
+	if (obs_scene_t *inner = scene_of(source)) {
+		if (search->depth < 8) {
+			LiveSearch deeper{search->found, search->depth + 1};
+			obs_scene_enum_items(inner, find_live, &deeper);
+		}
+	} else if (is_capture_source(source) && obs_source_get_width(source) > 0 &&
+		   std::find(search->found->begin(), search->found->end(), source) == search->found->end()) {
+		search->found->push_back(source);
+	}
+	return true;
+}
+
+// The first Ramp Blur on a source. Not a new reference.
+obs_source_t *ramp_blur_on(obs_source_t *source)
+{
+	obs_source_t *found = nullptr;
+	obs_source_enum_filters(
+		source,
+		[](obs_source_t *, obs_source_t *filter, void *param) {
+			auto **out = static_cast<obs_source_t **>(param);
+			const char *id = obs_source_get_unversioned_id(filter);
+			if (!*out && id && strcmp(id, kRampBlurId) == 0)
+				*out = filter;
+		},
+		&found);
+	return found;
+}
+} // namespace
+
+// One switch for several sources: the sources listed in this filter, and any
+// live capture on screen if asked, are blurred and cleared with it. A source
+// without a Ramp Blur of its own is given one like this one.
+void RampBlur::lead_others(bool active)
+{
+	if (t_leading)
+		return;
+	obs_source_t *parent = obs_filter_get_parent(source_);
+	obs_data_t *settings = obs_source_get_settings(source_);
+	const std::vector<std::string> names = also_names(settings);
+	const bool captures = obs_data_get_bool(settings, "also_captures");
+	if (names.empty() && !captures && led_.empty()) {
+		obs_data_release(settings);
+		return;
+	}
+
+	std::vector<obs_source_t *> targets; // each a reference
+	auto add = [&](obs_source_t *source) {
+		if (source && source != parent && std::find(targets.begin(), targets.end(), source) == targets.end())
+			targets.push_back(obs_source_get_ref(source));
+	};
+	for (const std::string &name : names) {
+		obs_source_t *source = obs_get_source_by_name(name.c_str());
+		add(source);
+		obs_source_release(source);
+	}
+	if (captures && active) {
+		std::vector<obs_source_t *> live;
+		if (obs_source_t *scene = scene_on_screen()) {
+			LiveSearch search{&live, 0};
+			if (obs_scene_t *s = scene_of(scene))
+				obs_scene_enum_items(s, find_live, &search);
+			obs_source_release(scene);
+		}
+		for (obs_source_t *source : live) {
+			if (source == parent)
+				continue;
+			add(source);
+			led_.push_back(obs_source_get_weak_source(source));
+		}
+	}
+	if (!active) {
+		// Whatever was live when it went on is cleared with it, even if it
+		// has left the screen since.
+		for (obs_weak_source_t *weak : led_) {
+			obs_source_t *source = obs_weak_source_get_source(weak);
+			add(source);
+			obs_source_release(source);
+			obs_weak_source_release(weak);
+		}
+		led_.clear();
+	}
+
+	t_leading = true;
+	for (obs_source_t *target : targets) {
+		obs_source_t *filter = ramp_blur_on(target);
+		if (!filter && active) {
+			// A copy of this one, without a list of its own.
+			obs_data_t *copy = obs_data_create();
+			obs_data_apply(copy, settings);
+			for (const char *own : {"also", "also_pick", "also_captures"})
+				obs_data_erase(copy, own);
+			obs_source_t *made =
+				obs_source_create(kRampBlurId, obs_module_text("RampBlur.LedName"), copy, nullptr);
+			obs_data_release(copy);
+			if (made) {
+				t_changing_enabled = true;
+				obs_source_set_enabled(made, false); // so it ramps in rather than appearing
+				t_changing_enabled = false;
+				obs_source_filter_add(target, made);
+				filter = ramp_blur_on(target);
+				obs_source_release(made);
+			}
+		}
+		if (filter) {
+			if (auto *blur = static_cast<RampBlur *>(obs_obj_get_data(filter)))
+				blur->set_active(active, -1.0);
+		}
+		obs_source_release(target);
+	}
+	t_leading = false;
+	obs_data_release(settings);
 }
 
 void RampBlur::enable_cb(void *data, calldata_t *cd)
@@ -364,7 +524,7 @@ void RampBlur::on_enabled_changed(bool enabled)
 
 	if (enabled) {
 		if (begin_ramp(true, -1.0))
-			vendor_emit_blur_changed(source_, true);
+			announce(true);
 		return;
 	}
 
@@ -372,7 +532,7 @@ void RampBlur::on_enabled_changed(bool enabled)
 		// Switched "off" again while already ramping out: the key was
 		// pressed a second time, so bring the blur back.
 		if (begin_ramp(true, -1.0))
-			vendor_emit_blur_changed(source_, true);
+			announce(true);
 		set_enabled_quietly(true);
 		return;
 	}
@@ -383,7 +543,7 @@ void RampBlur::on_enabled_changed(bool enabled)
 	if (level > 0.0 && this->level() > 0.0)
 		set_enabled_quietly(true);
 	if (changed)
-		vendor_emit_blur_changed(source_, false);
+		announce(false);
 }
 
 void RampBlur::tick(float seconds)
@@ -742,8 +902,9 @@ bool type_modified(obs_properties_t *props, obs_property_t *, obs_data_t *settin
 obs_properties_t *get_properties(void *data)
 {
 	obs_properties_t *props = obs_properties_create();
+	obs_properties_t *look = obs_properties_create();
 
-	obs_property_t *type = obs_properties_add_list(props, "blur_type", obs_module_text("RampBlur.Type"),
+	obs_property_t *type = obs_properties_add_list(look, "blur_type", obs_module_text("RampBlur.Type"),
 						       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(type, obs_module_text("RampBlur.Type.Gaussian"), (int)BlurType::Gaussian);
 	obs_property_list_add_int(type, obs_module_text("RampBlur.Type.Kawase"), (int)BlurType::Kawase);
@@ -753,17 +914,18 @@ obs_properties_t *get_properties(void *data)
 	obs_property_list_add_int(type, obs_module_text("RampBlur.Type.Motion"), (int)BlurType::Motion);
 	obs_property_set_modified_callback(type, type_modified);
 
-	obs_properties_add_float_slider(props, "strength", obs_module_text("RampBlur.Strength"), 0.0, kMaxStrength,
-					0.5);
+	obs_properties_add_float_slider(look, "strength", obs_module_text("RampBlur.Strength"), 0.0, kMaxStrength, 0.5);
 	obs_property_t *angle =
-		obs_properties_add_float_slider(props, "angle", obs_module_text("RampBlur.Angle"), -180.0, 180.0, 1.0);
+		obs_properties_add_float_slider(look, "angle", obs_module_text("RampBlur.Angle"), -180.0, 180.0, 1.0);
 	obs_property_float_set_suffix(angle, "°");
-	obs_property_t *cx = obs_properties_add_float_slider(props, "center_x", obs_module_text("RampBlur.CenterX"),
-							     0.0, 100.0, 0.5);
+	obs_property_t *cx =
+		obs_properties_add_float_slider(look, "center_x", obs_module_text("RampBlur.CenterX"), 0.0, 100.0, 0.5);
 	obs_property_float_set_suffix(cx, "%");
-	obs_property_t *cy = obs_properties_add_float_slider(props, "center_y", obs_module_text("RampBlur.CenterY"),
-							     0.0, 100.0, 0.5);
+	obs_property_t *cy =
+		obs_properties_add_float_slider(look, "center_y", obs_module_text("RampBlur.CenterY"), 0.0, 100.0, 0.5);
 	obs_property_float_set_suffix(cy, "%");
+
+	obs_properties_add_group(props, "look_group", obs_module_text("RampBlur.LookGroup"), OBS_GROUP_NORMAL, look);
 
 	obs_properties_t *ramp = obs_properties_create();
 	obs_property_t *style = obs_properties_add_list(ramp, "ramp_style", obs_module_text("RampBlur.Style"),
@@ -779,33 +941,78 @@ obs_properties_t *get_properties(void *data)
 	add_easing_properties(ramp, "");
 	obs_properties_add_group(props, "ramp_group", obs_module_text("RampBlur.RampGroup"), OBS_GROUP_NORMAL, ramp);
 
-	obs_properties_add_bool(props, "include_in_all", obs_module_text("RampBlur.IncludeInAll"));
-
+	// One switch for several sources.
+	obs_properties_t *also = obs_properties_create();
+	obs_property_t *pick = obs_properties_add_list(also, "also_pick", obs_module_text("RampBlur.AlsoPick"),
+						       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
+	obs_property_list_add_string(pick, obs_module_text("RampBlur.AlsoPick.None"), "");
+	{
+		std::vector<std::string> names;
+		auto gather = [](void *param, obs_source_t *source) {
+			const char *name = obs_source_get_name(source);
+			if (name && *name && (obs_source_get_output_flags(source) & OBS_SOURCE_VIDEO))
+				static_cast<std::vector<std::string> *>(param)->push_back(name);
+			return true;
+		};
+		obs_enum_sources(gather, &names);
+		obs_enum_scenes(gather, &names);
+		obs_source_t *parent = data ? obs_filter_get_parent(static_cast<RampBlur *>(data)->source()) : nullptr;
+		const std::string own = parent && obs_source_get_name(parent) ? obs_source_get_name(parent) : "";
+		std::sort(names.begin(), names.end());
+		names.erase(std::unique(names.begin(), names.end()), names.end());
+		for (const std::string &name : names) {
+			if (name != own)
+				obs_property_list_add_string(pick, name.c_str(), name.c_str());
+		}
+	}
 	obs_properties_add_button2(
-		props, "btn_toggle", obs_module_text("RampBlur.Button.Toggle"),
+		also, "also_add", obs_module_text("RampBlur.AlsoAdd"),
+		[](obs_properties_t *, obs_property_t *, void *d) {
+			if (!d)
+				return false;
+			obs_source_t *filter = static_cast<RampBlur *>(d)->source();
+			obs_data_t *settings = obs_source_get_settings(filter);
+			const std::string picked = obs_data_get_string(settings, "also_pick");
+			const std::vector<std::string> names = also_names(settings);
+			const bool add = !picked.empty() &&
+					 std::find(names.begin(), names.end(), picked) == names.end();
+			if (add) {
+				obs_data_array_t *list = obs_data_get_array(settings, "also");
+				if (!list) {
+					list = obs_data_array_create();
+					obs_data_set_array(settings, "also", list);
+				}
+				obs_data_t *entry = obs_data_create();
+				obs_data_set_string(entry, "value", picked.c_str());
+				obs_data_array_push_back(list, entry);
+				obs_data_release(entry);
+				obs_data_array_release(list);
+				obs_source_update(filter, settings);
+			}
+			obs_data_release(settings);
+			return add;
+		},
+		data);
+	obs_property_t *list = obs_properties_add_editable_list(also, "also", obs_module_text("RampBlur.Also"),
+								OBS_EDITABLE_LIST_TYPE_STRINGS, nullptr, nullptr);
+	obs_property_set_long_description(list, obs_module_text("RampBlur.Also.Tip"));
+	obs_property_t *live = obs_properties_add_bool(also, "also_captures", obs_module_text("RampBlur.AlsoCaptures"));
+	obs_property_set_long_description(live, obs_module_text("RampBlur.AlsoCaptures.Tip"));
+	obs_properties_add_group(props, "also_group", obs_module_text("RampBlur.AlsoGroup"), OBS_GROUP_NORMAL, also);
+
+	obs_properties_t *keys = obs_properties_create();
+	obs_property_t *in_all =
+		obs_properties_add_bool(keys, "include_in_all", obs_module_text("RampBlur.IncludeInAll"));
+	obs_property_set_long_description(in_all, obs_module_text("RampBlur.Help"));
+	obs_properties_add_button2(
+		keys, "btn_toggle", obs_module_text("RampBlur.Button.Toggle"),
 		[](obs_properties_t *, obs_property_t *, void *d) {
 			auto *self = static_cast<RampBlur *>(d);
 			self->set_active(!self->active(), -1.0);
 			return false;
 		},
 		data);
-	obs_properties_add_button2(
-		props, "btn_on", obs_module_text("RampBlur.Button.On"),
-		[](obs_properties_t *, obs_property_t *, void *d) {
-			static_cast<RampBlur *>(d)->set_active(true, -1.0);
-			return false;
-		},
-		data);
-	obs_properties_add_button2(
-		props, "btn_off", obs_module_text("RampBlur.Button.Off"),
-		[](obs_properties_t *, obs_property_t *, void *d) {
-			static_cast<RampBlur *>(d)->set_active(false, -1.0);
-			return false;
-		},
-		data);
-
-	obs_property_t *help = obs_properties_add_text(props, "help", obs_module_text("RampBlur.Help"), OBS_TEXT_INFO);
-	obs_property_text_set_info_word_wrap(help, true);
+	obs_properties_add_group(props, "keys_group", obs_module_text("RampBlur.KeysGroup"), OBS_GROUP_NORMAL, keys);
 
 	return props;
 }
