@@ -203,3 +203,35 @@ information), which is what the template uses for pushes to `main`.
 - 2026-11-12: Owner said "yes merge and publish each one without asking" for the test releases of
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
+
+## Scene collection rebuild
+
+The owner asked for their collection to be rebuilt on StageKit (129 scenes, 187 sources, 242 filters).
+It is generated, not hand-edited, so it can be regenerated as the tools change:
+
+```bash
+python3 -I scripts/rebuild-collection.py <original.json> <rebuilt.json> <report.txt>
+```
+
+- The original export is the owner's private file. It is not in this repository and must not be
+  committed; ask the owner for it. The script never writes to it.
+- Each production scene is flattened: nested "Overlay" and "Parts" scenes, source clones and Move
+  chains go, and the real sources are placed directly in the scene with StageKit filters. Hidden
+  per-shape variants are dropped in favour of one game capture with Auto Capture and Auto Frame. The
+  hand-built blurred backgrounds become one Ambient Background source.
+- A source that was cropped and shadowed keeps a small wrapper scene (crop first, then shadow), because
+  an item's crop is applied after its filters.
+- First draft (2026-11-12): 57 sources, 19 scenes, 66 filters. The owner has not imported it yet.
+- `tests/collection-loadcheck.cpp` loads a collection in headless libobs with StageKit and shows each
+  scene once. It is not part of `run-tests.sh`. Build and run it by hand:
+
+```bash
+g++ -std=c++17 tests/collection-loadcheck.cpp -o /tmp/loadcheck $(pkg-config --cflags --libs libobs) -ldl
+```
+
+```bash
+xvfb-run -a /tmp/loadcheck build-tests/stagekit.so data <rebuilt.json> "<scene to print>"
+```
+
+  On Linux the capture, browser and text sources are missing plugins, so it proves the file loads and
+  the StageKit filters are created, not that the picture is right.
