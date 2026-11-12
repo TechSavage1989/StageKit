@@ -11,7 +11,11 @@
 #include <dlfcn.h>
 
 #include <QApplication>
+#include <QColor>
 #include <QComboBox>
+#include <QImage>
+#include <QLabel>
+#include <QPixmap>
 #include <QPushButton>
 #include <QWidget>
 
@@ -1338,6 +1342,33 @@ int main(int argc, char **argv)
 			obs_source_t *shadow = obs_source_get_filter_by_name(cam, "Shadow & Backdrop");
 			CHECK(shadow != nullptr, "\"Add to this item\" puts the effect on the item's source");
 			obs_source_release(shadow);
+
+			// A start image with a very long file name: the dock must stay
+			// as narrow as before, and show a small picture of it.
+			{
+				const int narrow = dock->minimumSizeHint().width();
+				const std::string long_name =
+					out + "/a_very_long_start_image_file_name_that_goes_on_and_on_and_on_and_on_"
+					      "and_on_and_on_and_on_and_on_and_on_and_on_and_on_1360x766.png";
+				QImage picture(320, 180, QImage::Format_RGB32);
+				picture.fill(QColor(200, 60, 30));
+				picture.save(QString::fromStdString(long_name));
+				calldata_t cd = {};
+				calldata_set_string(&cd, "path", long_name.c_str());
+				proc_handler_call(obs_get_proc_handler(), "stagekit_set_start_image", &cd);
+				calldata_free(&cd);
+				for (int i = 0; i < 30; i++) {
+					QCoreApplication::processEvents();
+					sleep_ms(50);
+				}
+				auto *thumb = dock->findChild<QLabel *>("startThumb");
+				const QPixmap shown = thumb ? thumb->pixmap() : QPixmap();
+				CHECK(!shown.isNull() && shown.height() == 120,
+				      "the dock shows a small picture of the start image");
+				CHECK(dock->minimumSizeHint().width() <= narrow,
+				      "a long start image file name does not widen the dock (%d, was %d)",
+				      dock->minimumSizeHint().width(), narrow);
+			}
 
 			dock->grab().save(QString::fromStdString(out + "/../stagekit-dock.png"));
 			delete dock;
