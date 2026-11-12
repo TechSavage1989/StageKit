@@ -240,6 +240,48 @@ int main(int argc, char **argv)
 	CHECK(mean_rgb(from_source) > 5 && opaque(from_source), "another source can be the background");
 	CHECK(obs_source_showing(live), "the base source is kept showing");
 
+	// ------------------------------------------------------------ start image
+	{
+		printf("\n[start image]\n");
+		auto set_start = [](const char *path) {
+			calldata_t cd = {};
+			calldata_set_string(&cd, "path", path);
+			proc_handler_call(obs_get_proc_handler(), "stagekit_set_start_image", &cd);
+			calldata_free(&cd);
+		};
+		obs_source_t *start = obs_source_create("stagekit_start_image", "Start Image", nullptr, nullptr);
+		CHECK(start != nullptr, "the Start Image source can be created");
+		set_start(base_image);
+		sleep_ms(150);
+		CHECK(obs_source_get_width(start) == w && obs_source_get_height(start) == h,
+		      "choosing a start image makes the source show it (%ux%u)", obs_source_get_width(start),
+		      obs_source_get_height(start));
+		const std::vector<uint8_t> shown = render(start, w, h);
+		CHECK(mean_rgb(shown) > 20 && opaque(shown), "and it draws the picture");
+
+		// The same image feeds a background set to follow it.
+		shot("start_follow", [](obs_data_t *d) {
+			obs_data_set_int(d, "base_type", 2);
+			obs_data_set_double(d, "blur", 0);
+			obs_data_set_double(d, "saturation", 100);
+			obs_data_set_double(d, "glow", 0);
+			obs_data_set_double(d, "zoom", 100);
+			obs_data_set_double(d, "speed_x", 0);
+			obs_data_set_double(d, "speed_y", 0);
+		});
+		const std::vector<uint8_t> follows_a = render(bg, w, h);
+		set_start(live_image);
+		sleep_ms(250);
+		const std::vector<uint8_t> follows_b = render(bg, w, h);
+		const std::vector<uint8_t> shown_b = render(start, w, h);
+		CHECK(mean_abs_diff(follows_a, follows_b) > 5.0 && mean_abs_diff(shown, shown_b) > 5.0,
+		      "changing the start image changes both the source and the background, with no other step");
+		CHECK(mean_abs_diff(follows_b, shown_b) < 12.0, "and both show the same picture (diff %.1f)",
+		      mean_abs_diff(follows_b, shown_b));
+		obs_source_release(start);
+		shot("start_reset", [](obs_data_t *d) { obs_data_set_int(d, "base_type", 0); });
+	}
+
 	printf("\n[motion]\n");
 	shot("still", [](obs_data_t *d) {
 		obs_data_set_int(d, "base_type", 0);

@@ -21,6 +21,7 @@ from hotkeys, or from the Stream Deck OBS Studio plugin's *Filter* and *Source* 
   Pixelate, Zoom and Motion.
 - **Ambient Background** (source): a soft, drifting backdrop built from an image or another source,
   optionally tinted by whatever capture is live.
+- **Start image**: one picture, chosen once, shown on the start scene and used by the background.
 - **Shadow & Backdrop** (filter): drop shadow, a panel behind the source, and rounded corners, with no
   wrapper scene.
 - **Auto Frame** (filter): gives a game or emulator capture a fixed frame and fits any resolution inside
@@ -121,12 +122,23 @@ Add **Ambient Background (StageKit)** as a source. It fills the canvas.
 
 | Group | Settings |
 | --- | --- |
-| Picture | An image file, or any existing source or scene. Optionally blend in a live capture: a chosen source, or *Automatic*, which uses the largest visible capture in the current scene |
+| Picture | The start image, an image file, or any existing source or scene. Optionally blend in a live capture: a chosen source, or *Automatic*, which uses the largest visible capture in the current scene |
 | Motion | Drift speed in each direction, zoom, and mirroring at the edges so the drift never shows a seam |
 | Look | Blur, hexagon or square mosaic, saturation, glow, brightness, vignette |
 | Texture overlay | An image multiplied or screened over the result, optionally in black and white |
 
 Put it in one shared scene and nest that scene wherever you need the background.
+
+### Start image
+
+Choose the start image once, in the StageKit dock under *Start image*. It is saved with the scene
+collection.
+
+- Add **Start Image (StageKit)** as a source wherever the picture itself should be shown.
+- In an Ambient Background, set *Background from* to *The start image* so the moving background uses the
+  same picture.
+
+Changing the start image updates both at once.
 
 ### Shadow & Backdrop
 

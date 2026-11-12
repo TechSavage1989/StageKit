@@ -23,6 +23,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "ambient/ambient-background.hpp"
 #include "api/vendor-api.hpp"
 #include "blur/ramp-blur.hpp"
+#include "common/start-image.hpp"
 #include "dock/stagekit-dock.hpp"
 #include "frame/auto-frame.hpp"
 #include "placement/place-item.hpp"
@@ -58,6 +59,11 @@ void blur_all_hotkey(void *data, obs_hotkey_id, obs_hotkey_t *, bool pressed)
 
 void frontend_save_load(obs_data_t *save_data, bool saving, void *)
 {
+	if (saving)
+		stagekit::start_image_save(save_data);
+	else
+		stagekit::start_image_load(save_data);
+
 	for (GlobalHotkey &hk : g_hotkeys) {
 		if (saving) {
 			obs_data_array_t *bindings = obs_hotkey_save(hk.id);
@@ -81,6 +87,7 @@ MODULE_EXPORT const char *obs_module_description(void)
 bool obs_module_load(void)
 {
 	stagekit::register_ramp_blur();
+	stagekit::register_start_image();
 	stagekit::register_ambient_background();
 	stagekit::register_shadow_backdrop();
 	stagekit::register_place_item();

@@ -25,7 +25,8 @@ for an update notice inside OBS. This exception is recorded in the handoff.
 | `src/zoom/` | Ramp Zoom filter |
 | `src/placement/` | Scene filters: Place Item, Show/Hide Animation, Match Item, Layout |
 | `src/dock/` | The StageKit dock (Qt widget, no `Q_OBJECT`; it drives Place Item filters) |
-| `src/common/` | Shared helpers: easing and `Tween`, `SwitchRamp`, `KawaseBlur`, scene utilities |
+| `src/common/` | Shared helpers: easing and `Tween`, `SwitchRamp`, `KawaseBlur`, scene utilities, and the start image (global path + Start Image source) |
+| `src/frame/` | Auto Frame filter and the Picture Shape key filter |
 | `src/api/` | obs-websocket vendor requests (`StageKit` vendor) |
 | `src/third-party/` | Vendored `obs-websocket-api.h`, kept byte-for-byte (excluded from clang-format) |
 | `data/effects/` | Shaders in OBS `.effect` format |

@@ -41,8 +41,9 @@ in the filter's own controls where possible, not only in the dock.
 Windows) and adds program rules and the Picture Shape key. Whether Game Capture and Window Capture
 answer the `get_hooked` call that program rules use is unverified on Windows.
 
-Asked for and not built yet: a start image set from one place in the plugin, which is shown on the start
-scene and also feeds the Ambient Background.
+0.1.0-beta7 adds the start image the owner asked for: chosen once in the dock, shown by the Start Image
+source and followed by Ambient Background. It is stored in the scene collection's save data under
+`stagekit.start_image`. Not yet tried on Windows.
 
 Reported problems still open: the owner wants to drag items and zoom points on a picture in the dock
 and zoom with the mouse wheel; a Match Item item "dropping behind others" has not been reproduced.
