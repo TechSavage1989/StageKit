@@ -1982,8 +1982,8 @@ int main(int argc, char **argv)
 				      "a long start image file name does not widen the dock (%d, was %d)",
 				      dock->minimumSizeHint().width(), narrow);
 
-				// The wheel on the thumbnail zooms the moving background for the
-				// whole collection; dragging chooses the part shown.
+				// The wheel and dragging on the thumbnail are for a closer look
+				// at it in the dock. The scene must not change.
 				auto background_look = [&] {
 					obs_data_t *bs = obs_data_create();
 					obs_data_set_int(bs, "base_type", 2);
@@ -2002,8 +2002,12 @@ int main(int argc, char **argv)
 					proc_handler_call(obs_get_proc_handler(), "stagekit_set_start_image", &pic);
 					calldata_free(&pic);
 				}
-				sleep_ms(300);
-				const std::vector<uint8_t> wide = background_look();
+				for (int i = 0; i < 12; i++) {
+					QCoreApplication::processEvents();
+					sleep_ms(50);
+				}
+				const std::vector<uint8_t> scene_before = background_look();
+				const QImage thumb_before = thumb ? thumb->pixmap().toImage() : QImage();
 				if (thumb) {
 					const QPointF middle(thumb->width() / 2.0, thumb->height() / 2.0);
 					QWheelEvent zoom_in(middle, thumb->mapToGlobal(middle), QPoint(),
@@ -2011,10 +2015,9 @@ int main(int argc, char **argv)
 							    Qt::NoScrollPhase, false);
 					QCoreApplication::sendEvent(thumb, &zoom_in);
 				}
-				const std::vector<uint8_t> zoomed = background_look();
-				CHECK(mean_abs_diff(wide, zoomed) > 2.0,
-				      "turning the wheel on the thumbnail zooms the moving background (diff %.1f)",
-				      mean_abs_diff(wide, zoomed));
+				const QImage thumb_zoomed = thumb ? thumb->pixmap().toImage() : QImage();
+				CHECK(!thumb_before.isNull() && thumb_zoomed != thumb_before,
+				      "turning the wheel on the thumbnail zooms the thumbnail");
 				if (thumb) {
 					auto drag = [&](QEvent::Type type, QPointF where) {
 						QMouseEvent event(type, where, thumb->mapToGlobal(where),
@@ -2024,17 +2027,12 @@ int main(int argc, char **argv)
 					drag(QEvent::MouseButtonPress, QPointF(100, 60));
 					drag(QEvent::MouseMove, QPointF(40, 60));
 				}
-				const std::vector<uint8_t> panned = background_look();
-				CHECK(mean_abs_diff(zoomed, panned) > 1.0,
-				      "dragging the thumbnail chooses the part of the picture shown (diff %.1f)",
-				      mean_abs_diff(zoomed, panned));
-				calldata_t reset = {};
-				calldata_set_string(&reset, "image", "");
-				calldata_set_float(&reset, "zoom", 1.0);
-				calldata_set_float(&reset, "focus_x", 0.5);
-				calldata_set_float(&reset, "focus_y", 0.5);
-				proc_handler_call(obs_get_proc_handler(), "stagekit_set_ambient_view", &reset);
-				calldata_free(&reset);
+				CHECK(thumb && thumb->pixmap().toImage() != thumb_zoomed,
+				      "and dragging moves around it");
+				const std::vector<uint8_t> scene_after = background_look();
+				CHECK(mean_abs_diff(scene_before, scene_after) < 0.01,
+				      "the scene itself is not zoomed or moved (diff %.3f)",
+				      mean_abs_diff(scene_before, scene_after));
 			}
 
 			dock->resize(340, dock->sizeHint().height());

@@ -107,8 +107,8 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   seen on screen corrects it. Only a shape the owner saved, or a Picture Shape key, is obeyed blindly.
 - **The dock has no picture of the scene.** One was built (drag, wheel, zoom cross) and the owner
   rejected it: they select items in OBS's own preview, and the dock must act on that selection. The
-  wheel-zoom they asked for belongs to the start image thumbnail and sets the background's framing
-  (`AmbientView` in `src/common/start-image.*`), not an item's size.
+  wheel-zoom they asked for belongs to the start image thumbnail and changes only that thumbnail in
+  the dock: never an item, never the background in the scene.
 - **Dock keys are Send To filters on the item's source**, not Place Item filters on the scene. The
   owner presses them from Stream Deck Filter keys on the camera.
 - **Shadow sizes are in screen pixels by default.** The owner's old shadows sat on full-canvas scenes,

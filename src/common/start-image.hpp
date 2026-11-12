@@ -32,13 +32,14 @@ uint64_t start_image_choice();
 // Goes up every time the path changes, so users of it can tell cheaply.
 uint64_t start_image_revision();
 
-// How the moving background frames its picture, set once for the whole
-// collection: an optional picture of its own (empty means "the start
-// image"), how far it is zoomed in, and the point it zooms in on.
+// The moving background's picture, set once for the whole collection: empty
+// means "the start image". The zoom and focus are kept at their neutral
+// values: the owner wanted zooming in the dock's thumbnail only, not in the
+// scene (0.1.0-beta20 and beta21 applied them to the background).
 struct AmbientView {
 	std::string image;
-	double zoom = 1.0;                   // 1 = whole picture, up to 8
-	double focus_x = 0.5, focus_y = 0.5; // 0..1 across and down the picture
+	double zoom = 1.0;
+	double focus_x = 0.5, focus_y = 0.5;
 };
 AmbientView ambient_view();
 // Counts as a change of the start image for everything that follows it.

@@ -16,8 +16,8 @@ the Free Software Foundation; either version 2 of the License, or
 //   - save the item's current spot as a key
 //   - add a StageKit effect to the item without hunting through menus
 //   - it follows the item selected in OBS's own preview
-//   - the start image, with a thumbnail: turn the wheel on it to zoom the
-//     moving background in, drag it to choose the part shown
+//   - the start image, with a thumbnail: turn the wheel on it for a closer
+//     look and drag to move around (the thumbnail only, never the scene)
 //
 // Moves are carried out by Send To filters on the item's own source, so the
 // dock and the keys always behave the same way, and a key is a filter on the
@@ -202,25 +202,21 @@ public:
 		start_thumb_ = new Thumb(start_box);
 		start_thumb_->setObjectName("startThumb");
 		start_thumb_->setCursor(Qt::OpenHandCursor);
+		// Zooming and dragging only change this small picture, for a closer
+		// look at it. The scene itself is not touched.
 		start_thumb_->on_wheel = [this](double steps) {
-			AmbientView view = ambient_view();
-			view.zoom *= std::pow(1.1, steps);
-			set_ambient_view(view);
+			thumb_zoom_ = std::clamp(thumb_zoom_ * std::pow(1.1, steps), 1.0, 8.0);
 			show_thumb();
 		};
 		start_thumb_->on_drag = [this](double dx, double dy) {
 			// Dragging the picture right shows more of its left.
-			AmbientView view = ambient_view();
-			view.focus_x -= dx / view.zoom;
-			view.focus_y -= dy / view.zoom;
-			set_ambient_view(view);
+			thumb_x_ = std::clamp(thumb_x_ - dx / thumb_zoom_, 0.0, 1.0);
+			thumb_y_ = std::clamp(thumb_y_ - dy / thumb_zoom_, 0.0, 1.0);
 			show_thumb();
 		};
 		start_thumb_->on_reset = [this] {
-			AmbientView view = ambient_view();
-			view.zoom = 1.0;
-			view.focus_x = view.focus_y = 0.5;
-			set_ambient_view(view);
+			thumb_zoom_ = 1.0;
+			thumb_x_ = thumb_y_ = 0.5;
 			show_thumb();
 		};
 		start_thumb_->setAlignment(Qt::AlignCenter);
@@ -352,6 +348,8 @@ public:
 		if (shown != thumb_path_) {
 			// Read the picture already shrunk, so a large image costs little.
 			thumb_path_ = shown;
+			thumb_zoom_ = 1.0;
+			thumb_x_ = thumb_y_ = 0.5;
 			thumb_full_ = QPixmap();
 			if (!shown.isEmpty()) {
 				QImageReader reader(shown);
@@ -445,24 +443,16 @@ private:
 
 	void say(const QString &text) { status_->setText(text); }
 
-	// Draws the part of the picture the moving background uses, 16:9, at
-	// the zoom and point chosen with the wheel and by dragging.
+	// Draws the picture small, at the zoom and place chosen with the wheel
+	// and by dragging. Zoomed right out, the whole picture is shown.
 	void show_thumb()
 	{
 		QPixmap picture;
 		if (!thumb_full_.isNull()) {
-			const AmbientView view = ambient_view();
 			const double pw = thumb_full_.width(), ph = thumb_full_.height();
-			// The whole-screen piece of the picture, then zoomed.
-			double w = pw, h = pw * 9.0 / 16.0;
-			if (h > ph) {
-				h = ph;
-				w = ph * 16.0 / 9.0;
-			}
-			w /= view.zoom;
-			h /= view.zoom;
-			const double x = std::clamp(view.focus_x * pw - w / 2.0, 0.0, pw - w);
-			const double y = std::clamp(view.focus_y * ph - h / 2.0, 0.0, ph - h);
+			const double w = pw / thumb_zoom_, h = ph / thumb_zoom_;
+			const double x = std::clamp(thumb_x_ * pw - w / 2.0, 0.0, pw - w);
+			const double y = std::clamp(thumb_y_ * ph - h / 2.0, 0.0, ph - h);
 			picture = thumb_full_.copy(QRectF(x, y, w, h).toRect())
 					  .scaledToHeight(kThumbHeight, Qt::SmoothTransformation);
 		}
@@ -703,6 +693,7 @@ private:
 	QLabel *start_label_ = nullptr;
 	Thumb *start_thumb_ = nullptr;
 	QPixmap thumb_full_;
+	double thumb_zoom_ = 1.0, thumb_x_ = 0.5, thumb_y_ = 0.5; // the thumbnail's own view
 	QPushButton *background_same_ = nullptr;
 	QString followed_;
 	QString thumb_path_ = QStringLiteral("\x01"); // nothing loaded yet
