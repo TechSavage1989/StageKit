@@ -603,6 +603,74 @@ int main(int argc, char **argv)
 			return f;
 		};
 
+		// Changing the shadow must not move or resize the picture in a scene.
+		{
+			obs_data_t *cd2 = obs_data_create();
+			obs_data_set_int(cd2, "width", 100);
+			obs_data_set_int(cd2, "height", 60);
+			obs_source_t *card = obs_source_create("color_source", "Shadow Card", cd2, nullptr);
+			obs_data_release(cd2);
+			obs_scene_t *sc = obs_scene_create("Shadow Scene");
+			obs_sceneitem_t *plain = obs_scene_add(sc, card);
+			obs_sceneitem_t *boxed = obs_scene_add(sc, card);
+			vec2 v;
+			vec2_set(&v, 100.0f, 50.0f);
+			obs_sceneitem_set_pos(plain, &v);
+			vec2_set(&v, 2.0f, 2.0f);
+			obs_sceneitem_set_scale(plain, &v);
+			vec2_set(&v, 10.0f, 10.0f);
+			obs_sceneitem_set_pos(boxed, &v);
+			obs_sceneitem_set_bounds_type(boxed, OBS_BOUNDS_SCALE_INNER);
+			vec2_set(&v, 300.0f, 200.0f);
+			obs_sceneitem_set_bounds(boxed, &v);
+
+			obs_data_t *sd = obs_data_create();
+			obs_data_set_double(sd, "softness", 0);
+			obs_data_set_double(sd, "offset_x", 0);
+			obs_data_set_double(sd, "offset_y", 0);
+			obs_source_t *shade = obs_source_create("stagekit_shadow_backdrop", "Shadow", sd, nullptr);
+			obs_source_filter_add(card, shade);
+			sleep_ms(150);
+			obs_data_set_double(sd, "softness", 20); // 32 px of room on every side...
+			obs_data_set_double(sd, "offset_x", 10); // ...and 10 more to the right and below
+			obs_data_set_double(sd, "offset_y", 10);
+			obs_source_update(shade, sd);
+			sleep_ms(200);
+			CHECK(obs_source_get_width(card) == 174 && obs_source_get_height(card) == 134,
+			      "a soft shadow takes room around the source (%ux%u)", obs_source_get_width(card),
+			      obs_source_get_height(card));
+			vec2 pp, ps, bp, bb;
+			obs_sceneitem_get_pos(plain, &pp);
+			obs_sceneitem_get_scale(plain, &ps);
+			obs_sceneitem_get_pos(boxed, &bp);
+			obs_sceneitem_get_bounds(boxed, &bb);
+			CHECK(std::fabs(pp.x - 36) < 0.6 && std::fabs(pp.y + 14) < 0.6 && std::fabs(ps.x - 2) < 0.001,
+			      "but the picture stays where it was, at the same size (item now at %.0f, %.0f)", pp.x,
+			      pp.y);
+			// In a 300x200 box the 100x60 picture was drawn 3x at (10, 20). It must still be.
+			const double drawn = std::min(bb.x / 174.0, bb.y / 134.0);
+			const double pic_x = bp.x + (bb.x - 174 * drawn) / 2.0 + 32 * drawn;
+			const double pic_y = bp.y + (bb.y - 134 * drawn) / 2.0 + 32 * drawn;
+			CHECK(std::fabs(drawn - 3.0) < 0.01 && std::fabs(pic_x - 10) < 0.6 &&
+				      std::fabs(pic_y - 20) < 0.6,
+			      "also inside a bounding box: same size and place (%.2fx at %.0f, %.0f)", drawn, pic_x,
+			      pic_y);
+
+			obs_source_filter_remove(card, shade);
+			sleep_ms(100);
+			obs_sceneitem_get_pos(plain, &pp);
+			obs_sceneitem_get_pos(boxed, &bp);
+			obs_sceneitem_get_bounds(boxed, &bb);
+			CHECK(std::fabs(pp.x - 100) < 0.6 && std::fabs(pp.y - 50) < 0.6 && std::fabs(bp.x - 10) < 0.6 &&
+				      std::fabs(bb.x - 300) < 0.6 && std::fabs(bb.y - 200) < 0.6,
+			      "removing the shadow puts everything back (%.0f, %.0f; box %.0fx%.0f)", pp.x, pp.y, bb.x,
+			      bb.y);
+			obs_data_release(sd);
+			obs_source_release(shade);
+			obs_scene_release(sc);
+			obs_source_release(card);
+		}
+
 		printf("\n[show/hide animation]\n");
 		obs_scene_t *scene = obs_scene_create("Show Scene");
 		obs_source_t *lower_src = color("Lower Third", 200, 50);

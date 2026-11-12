@@ -150,8 +150,10 @@ Add **Shadow & Backdrop (StageKit)** as a filter on a source, group or scene. Se
 opacity, offset, softness (0 gives a hard edge) and spread. Optionally add a panel behind the source and
 round the corners.
 
-The source grows by exactly the room the shadow and panel need. Room added on the left or top shifts
-the picture by that amount inside the item; a hard shadow pointing down and right adds none.
+The shadow needs room around the source, so the source itself gets bigger. With *Keep the picture
+where it is* ticked (the default), the source's items in every scene are adjusted by exactly that room:
+the picture keeps its size and place whatever the softness, offset or panel margin, including inside a
+bounding box. Switching the filter off or removing it puts the items back.
 
 ### Auto Frame
 
