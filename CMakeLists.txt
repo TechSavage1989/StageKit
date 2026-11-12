@@ -45,6 +45,10 @@ target_sources(
     src/ambient/ambient-background.hpp
     src/common/kawase-blur.cpp
     src/common/kawase-blur.hpp
+    src/common/switch-ramp.cpp
+    src/common/switch-ramp.hpp
+    src/zoom/ramp-zoom.cpp
+    src/zoom/ramp-zoom.hpp
     src/placement/place-item.cpp
     src/placement/place-item.hpp
     src/shadow/shadow-backdrop.cpp

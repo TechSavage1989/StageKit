@@ -105,6 +105,13 @@ Switching the filter on glides the item there, then the filter switches itself o
 Trigger it from the eye icon, a Stream Deck OBS plugin *Filter* key, the *Move it now* button, or its
 hotkey (`StageKit: Move (<filter name>)` under the scene in *Settings → Hotkeys*).
 
+## Ramp Zoom
+
+Add **Ramp Zoom (StageKit)** as a filter on a source. Turning the filter on zooms smoothly into the
+chosen point; turning it off zooms back out and the filter then costs nothing. Settings: zoom amount,
+the point to zoom in on, zoom-in and zoom-out times, and easing. Trigger it from the eye icon, a Stream
+Deck OBS plugin *Filter* key, or the `StageKit: Zoom Toggle` hotkey under the source.
+
 ## obs-websocket API
 
 All requests go through `CallVendorRequest` with `vendorName: "StageKit"`. Blur requests take

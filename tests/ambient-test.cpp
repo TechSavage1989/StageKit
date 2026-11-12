@@ -355,6 +355,52 @@ int main(int argc, char **argv)
 		obs_source_release(title);
 	}
 
+	// ------------------------------------------------------------- ramp zoom
+	{
+		printf("\n[ramp zoom]\n");
+		const uint32_t lw = obs_source_get_width(live), lh = obs_source_get_height(live);
+		const std::vector<uint8_t> plain_live = render(live, lw, lh);
+		obs_data_t *zs = obs_data_create();
+		obs_data_set_double(zs, "zoom", 200);
+		obs_data_set_int(zs, "ramp_in_ms", 300);
+		obs_data_set_int(zs, "ramp_out_ms", 300);
+		obs_data_set_int(zs, "ease_curve", 0);
+		obs_source_t *zoom = obs_source_create("stagekit_ramp_zoom", "Zoom", zs, nullptr);
+		obs_data_release(zs);
+		obs_source_filter_add(live, zoom);
+		sleep_ms(100);
+
+		// Enabled filter = fully zoomed: each output pixel shows the source
+		// pixel half as far from the centre.
+		const std::vector<uint8_t> zoomed = render(live, lw, lh);
+		int match = 0, total = 0;
+		for (uint32_t y = 4; y < lh - 4; y += 3) {
+			for (uint32_t x = 4; x < lw - 4; x += 3) {
+				const uint8_t *z = &zoomed[(size_t(y) * lw + x) * 4];
+				const uint8_t *o = &plain_live[(size_t(lh / 4 + y / 2) * lw + (lw / 4 + x / 2)) * 4];
+				total++;
+				if (std::abs(z[0] - o[0]) < 24 && std::abs(z[1] - o[1]) < 24 &&
+				    std::abs(z[2] - o[2]) < 24)
+					match++;
+			}
+		}
+		CHECK(match > total * 0.93, "200%% zoom shows the centre half of the picture (%d of %d samples)", match,
+		      total);
+		CHECK(obs_source_get_width(live) == lw, "the source keeps its size");
+
+		obs_source_set_enabled(zoom, false);
+		sleep_ms(150);
+		const std::vector<uint8_t> half = render(live, lw, lh);
+		CHECK(obs_source_enabled(zoom) && mean_abs_diff(half, zoomed) > 1.0 &&
+			      mean_abs_diff(half, plain_live) > 1.0,
+		      "switching it off zooms out gradually");
+		sleep_ms(300);
+		CHECK(!obs_source_enabled(zoom) && mean_abs_diff(render(live, lw, lh), plain_live) < 0.01,
+		      "fully zoomed out is the untouched picture, and the filter is off");
+		obs_source_filter_remove(live, zoom);
+		obs_source_release(zoom);
+	}
+
 	// ------------------------------------------------------------ place item
 	{
 		printf("\n[place item]\n");
