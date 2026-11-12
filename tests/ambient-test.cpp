@@ -12,6 +12,7 @@
 #include <dlfcn.h>
 
 #include <QApplication>
+#include <QCheckBox>
 #include <QColor>
 #include <QComboBox>
 #include <QImage>
@@ -1934,6 +1935,150 @@ int main(int argc, char **argv)
 			obs_source_t *shadow = obs_source_get_filter_by_name(cam, "Shadow & Backdrop");
 			CHECK(shadow != nullptr, "\"Add to this item\" puts the effect on the item's source");
 			obs_source_release(shadow);
+
+			// Arrange: line up, space out, match sizes and snap, by what is visible.
+			printf("\n[arrange]\n");
+			{
+				// A 200x100 picture whose drawn part is only the middle 100x40:
+				// 50 px of nothing left and right, 30 px above and below.
+				QImage padded(200, 100, QImage::Format_ARGB32);
+				padded.fill(Qt::transparent);
+				for (int y = 30; y < 70; y++)
+					for (int x = 50; x < 150; x++)
+						padded.setPixel(x, y, qRgba(240, 200, 40, 255));
+				const std::string padded_path = out + "/arrange-padded.png";
+				padded.save(QString::fromStdString(padded_path));
+				obs_data_t *pd = obs_data_create();
+				obs_data_set_string(pd, "file", padded_path.c_str());
+				obs_source_t *badge_src =
+					obs_source_create("image_source", "Padded Badge", pd, nullptr);
+				obs_data_release(pd);
+				obs_scene_t *as = obs_scene_create("Arrange Scene"); // 640x360
+				obs_source_t *as_source = obs_scene_get_source(as);
+				obs_source_t *block_a = make_color("Block A", 100, 50);
+				obs_source_t *block_b = make_color("Block B", 60, 80);
+				obs_source_t *block_c = make_color("Block C", 40, 40);
+				obs_sceneitem_t *ia = obs_scene_add(as, block_a);
+				obs_sceneitem_t *ib = obs_scene_add(as, block_b);
+				obs_sceneitem_t *ic = obs_scene_add(as, block_c);
+				obs_sceneitem_t *ibadge = obs_scene_add(as, badge_src);
+				auto place = [](obs_sceneitem_t *item, float x, float y) {
+					vec2 v;
+					vec2_set(&v, x, y);
+					obs_sceneitem_set_pos(item, &v);
+				};
+				place(ia, 20, 20);
+				place(ib, 200, 150);
+				place(ic, 500, 40);
+				place(ibadge, 300, 200);
+				sleep_ms(500); // the image loads
+				auto *scenes = dock->findChild<QComboBox *>("scene");
+				for (int i = 0; i < 30 && scenes && scenes->findData("Arrange Scene") < 0; i++) {
+					QCoreApplication::processEvents();
+					sleep_ms(50);
+				}
+				if (scenes)
+					scenes->setCurrentIndex(std::max(0, scenes->findData("Arrange Scene")));
+				auto select_only = [&](std::initializer_list<obs_sceneitem_t *> chosen) {
+					for (obs_sceneitem_t *item : {ia, ib, ic, ibadge})
+						obs_sceneitem_select(item, false);
+					for (obs_sceneitem_t *item : chosen)
+						obs_sceneitem_select(item, true);
+				};
+				auto tick_box = [&](const char *name, bool on) {
+					if (auto *box = dock->findChild<QCheckBox *>(name))
+						box->setChecked(on);
+				};
+				auto against = [&](int index) {
+					if (auto *combo = dock->findChild<QComboBox *>("arrangeAgainst"))
+						combo->setCurrentIndex(index);
+				};
+
+				// By the box: the badge's 200 px box goes to the screen's right edge.
+				tick_box("arrangeVisible", false);
+				against(0);
+				select_only({ibadge});
+				CHECK(click("alignRight"), "the dock has line-up buttons");
+				vec2 bp = pos_of(ibadge);
+				CHECK(std::fabs(bp.x - 440) < 0.6,
+				      "by its box, an item's box meets the screen's edge (x %.0f)", bp.x);
+
+				// By what is visible: the drawn 100 px meets the edge; the empty 50 px hangs off.
+				tick_box("arrangeVisible", true);
+				click("alignRight");
+				bp = pos_of(ibadge);
+				CHECK(std::fabs(bp.x - 490) < 1.6,
+				      "by what is visible, the drawn picture meets the edge instead (x %.0f)", bp.x);
+				click("alignTop");
+				bp = pos_of(ibadge);
+				CHECK(std::fabs(bp.y + 30) < 1.6, "the same up and down (y %.0f)", bp.y);
+
+				// Each other: three blocks share the left edge of the left-most.
+				against(1);
+				select_only({ia, ib, ic});
+				click("alignLeft");
+				CHECK(std::fabs(pos_of(ia).x - 20) < 0.6 && std::fabs(pos_of(ib).x - 20) < 0.6 &&
+					      std::fabs(pos_of(ic).x - 20) < 0.6,
+				      "'each other' lines several items up on the same edge (%.0f, %.0f, %.0f)",
+				      pos_of(ia).x, pos_of(ib).x, pos_of(ic).x);
+
+				// Space out: A (100 wide) at 0, C (40) ending at 600, B (60) between: equal 200 px gaps.
+				place(ia, 0, 10);
+				place(ib, 130, 10);
+				place(ic, 560, 10);
+				click("spaceAcross");
+				CHECK(std::fabs(pos_of(ib).x - 300) < 0.6 && std::fabs(pos_of(ia).x) < 0.6 &&
+					      std::fabs(pos_of(ic).x - 560) < 0.6,
+				      "spacing out makes the gaps equal and leaves the outer two alone (middle at %.0f)",
+				      pos_of(ib).x);
+
+				// Same width: the others become as wide as the top-most selected (C, 40 px).
+				select_only({ia, ic});
+				click("sameWidth");
+				vec2 sa;
+				obs_sceneitem_get_scale(ia, &sa);
+				CHECK(std::fabs(sa.x - 0.4) < 0.005 && std::fabs(sa.y - 0.4) < 0.005,
+				      "'same width' resizes to match, keeping the shape (scale %.2f)", sa.x);
+				vec2_set(&sa, 1.0f, 1.0f);
+				obs_sceneitem_set_scale(ia, &sa);
+
+				// Snap: the badge's drawn left edge is 8 px short of block B's right edge.
+				place(ib, 100, 150);     // B covers x 100..160
+				place(ibadge, 118, 250); // drawn part starts at 168
+				select_only({ibadge});
+				click("snapNow");
+				bp = pos_of(ibadge);
+				CHECK(std::fabs(bp.x - 110) < 1.6,
+				      "snapping moves the last few pixels so visible edges meet (x %.0f)", bp.x);
+				place(ibadge, 300, 250); // nothing within reach
+				click("snapNow");
+				CHECK(std::fabs(pos_of(ibadge).x - 300) < 3.1,
+				      "and leaves an item alone when nothing is near");
+
+				// Snap when letting go: move it, leave it, and it settles by itself.
+				tick_box("arrangeLiveSnap", true);
+				for (int i = 0; i < 6; i++) {
+					QCoreApplication::processEvents();
+					sleep_ms(50);
+				}
+				place(ibadge, 116, 250);
+				for (int i = 0; i < 12; i++) {
+					QCoreApplication::processEvents();
+					sleep_ms(50);
+				}
+				bp = pos_of(ibadge);
+				CHECK(std::fabs(bp.x - 110) < 1.6,
+				      "'snap when I let go' settles a moved item by itself (x %.0f)", bp.x);
+				tick_box("arrangeLiveSnap", false);
+
+				select_only({});
+				if (scenes)
+					scenes->setCurrentIndex(std::max(0, scenes->findData("Test Scene")));
+				obs_scene_release(as);
+				for (obs_source_t *source : {block_a, block_b, block_c, badge_src})
+					obs_source_release(source);
+				static_cast<void>(as_source);
+			}
 
 			// The dock works on whatever is selected in OBS's own preview.
 			{

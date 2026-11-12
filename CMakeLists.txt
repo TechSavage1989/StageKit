@@ -58,6 +58,8 @@ target_sources(
     src/common/scene-util.hpp
     src/common/start-image.cpp
     src/common/start-image.hpp
+    src/dock/arrange.cpp
+    src/dock/arrange.hpp
     src/dock/stagekit-dock.cpp
     src/dock/stagekit-dock.hpp
     src/placement/scene-tools.cpp

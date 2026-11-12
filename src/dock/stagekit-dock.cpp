@@ -28,6 +28,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/scene-util.hpp"
 #include "../common/start-image.hpp"
 #include "../placement/place-item.hpp"
+#include "arrange.hpp"
 #include "../placement/scene-tools.hpp"
 
 #include <obs-module.h>
@@ -35,6 +36,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <plugin-support.h>
 
 #include <QCheckBox>
+#include <QGuiApplication>
 #include <QComboBox>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -60,6 +62,8 @@ the Free Software Foundation; either version 2 of the License, or
 #include <cstring>
 #include <functional>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace stagekit {
 
@@ -298,6 +302,106 @@ public:
 		}
 		layout->addWidget(add_box);
 
+		// Lining up, spacing and snapping whatever is selected in OBS.
+		auto *arrange_box = new QGroupBox(tr_text("Arrange.Box"), this);
+		auto *arrange_layout = new QVBoxLayout(arrange_box);
+		auto *against_row = new QFormLayout();
+		against_ = new QComboBox(arrange_box);
+		against_->setObjectName("arrangeAgainst");
+		against_->addItem(tr_text("Arrange.Against.Screen"), (int)Against::Screen);
+		against_->addItem(tr_text("Arrange.Against.Selection"), (int)Against::Selection);
+		against_row->addRow(tr_text("Arrange.Against"), against_);
+		arrange_layout->addLayout(against_row);
+		auto *arrange_grid = new QGridLayout();
+		struct {
+			const char *object_name, *text;
+			Edge edge;
+		} edges[] = {
+			{"alignLeft", "Arrange.Left", Edge::Left},
+			{"alignCenter", "Arrange.Center", Edge::Center},
+			{"alignRight", "Arrange.Right", Edge::Right},
+			{"alignTop", "Arrange.Top", Edge::Top},
+			{"alignMiddle", "Arrange.Middle", Edge::Middle},
+			{"alignBottom", "Arrange.Bottom", Edge::Bottom},
+		};
+		int edge_index = 0;
+		for (const auto &e : edges) {
+			auto *button = new QPushButton(tr_text(e.text), arrange_box);
+			button->setObjectName(e.object_name);
+			const Edge edge = e.edge;
+			QObject::connect(button, &QPushButton::clicked, this, [this, edge] {
+				obs_source_t *scene = current_scene();
+				const int moved = align_items(scene, arrange_items(scene), edge,
+							      static_cast<Against>(against_->currentData().toInt()),
+							      measure());
+				obs_source_release(scene);
+				say(tr_text("Arrange.Done").arg(moved));
+			});
+			arrange_grid->addWidget(button, edge_index / 3, edge_index % 3);
+			edge_index++;
+		}
+		auto add_arrange = [&](const char *object_name, const char *text, int row, int column, int span,
+				       std::function<int(obs_source_t *)> action) {
+			auto *button = new QPushButton(tr_text(text), arrange_box);
+			button->setObjectName(object_name);
+			QObject::connect(button, &QPushButton::clicked, this, [this, action] {
+				obs_source_t *scene = current_scene();
+				const int changed = scene ? action(scene) : 0;
+				obs_source_release(scene);
+				say(tr_text("Arrange.Done").arg(changed));
+			});
+			arrange_grid->addWidget(button, row, column, 1, span);
+		};
+		add_arrange("spaceAcross", "Arrange.SpaceAcross", 2, 0, 1, [this](obs_source_t *scene) {
+			return distribute_items(scene, arrange_items(scene), true, measure());
+		});
+		add_arrange("spaceDown", "Arrange.SpaceDown", 2, 1, 1, [this](obs_source_t *scene) {
+			return distribute_items(scene, arrange_items(scene), false, measure());
+		});
+		add_arrange("snapNow", "Arrange.SnapNow", 2, 2, 1, [this](obs_source_t *scene) {
+			int snapped = 0;
+			for (obs_sceneitem_t *item : arrange_items(scene))
+				snapped += snap_item(scene, item, snap_within_->value(), measure()) ? 1 : 0;
+			return snapped;
+		});
+		add_arrange("sameWidth", "Arrange.SameWidth", 3, 0, 1, [this](obs_source_t *scene) {
+			return match_size(scene, arrange_items(scene), true, measure());
+		});
+		add_arrange("sameHeight", "Arrange.SameHeight", 3, 1, 1, [this](obs_source_t *scene) {
+			return match_size(scene, arrange_items(scene), false, measure());
+		});
+		arrange_layout->addLayout(arrange_grid);
+		visible_ = new QCheckBox(tr_text("Arrange.Visible"), arrange_box);
+		visible_->setObjectName("arrangeVisible");
+		visible_->setChecked(true);
+		visible_->setToolTip(tr_text("Arrange.Visible.Tip"));
+		no_shadow_ = new QCheckBox(tr_text("Arrange.NoShadow"), arrange_box);
+		no_shadow_->setObjectName("arrangeNoShadow");
+		no_shadow_->setChecked(true);
+		live_snap_ = new QCheckBox(tr_text("Arrange.LiveSnap"), arrange_box);
+		live_snap_->setObjectName("arrangeLiveSnap");
+		live_snap_->setToolTip(tr_text("Arrange.LiveSnap.Tip"));
+		auto *within_row = new QFormLayout();
+		snap_within_ = new QSpinBox(arrange_box);
+		snap_within_->setObjectName("snapWithin");
+		snap_within_->setRange(1, 200);
+		snap_within_->setValue(20);
+		snap_within_->setSuffix(" px");
+		within_row->addRow(tr_text("Arrange.Within"), snap_within_);
+		arrange_layout->addWidget(visible_);
+		arrange_layout->addWidget(no_shadow_);
+		arrange_layout->addWidget(live_snap_);
+		arrange_layout->addLayout(within_row);
+		auto *arrange_hint = new QLabel(tr_text("Arrange.Hint"), arrange_box);
+		arrange_hint->setWordWrap(true);
+		arrange_layout->addWidget(arrange_hint);
+		layout->addWidget(arrange_box);
+
+		// Snapping on letting go: watch the selected items a few times a second.
+		auto *snap_timer = new QTimer(this);
+		QObject::connect(snap_timer, &QTimer::timeout, this, [this] { watch_for_drop(); });
+		snap_timer->start(120);
+
 		auto *order_box = new QGroupBox(tr_text("Dock.OrderBox"), this);
 		auto *order_layout = new QGridLayout(order_box);
 		struct {
@@ -442,6 +546,60 @@ private:
 	}
 
 	void say(const QString &text) { status_->setText(text); }
+
+	Measure measure() const { return {visible_->isChecked(), no_shadow_->isChecked()}; }
+
+	// What the arrange buttons act on: the items selected in OBS, or failing
+	// that the one chosen in the dock's list.
+	std::vector<obs_sceneitem_t *> arrange_items(obs_source_t *scene) const
+	{
+		std::vector<obs_sceneitem_t *> items = selected_items(scene);
+		if (items.empty()) {
+			if (obs_sceneitem_t *item = find_item(scene, item_->currentText().toUtf8().constData()))
+				items.push_back(item);
+		}
+		return items;
+	}
+
+	// "Snap when I let go": once a selected item has been moved and the mouse
+	// button is up again, move it the last few pixels onto the nearest line.
+	void watch_for_drop()
+	{
+		if (!live_snap_->isChecked()) {
+			watched_.clear();
+			return;
+		}
+		obs_source_t *scene = current_scene();
+		const std::vector<obs_sceneitem_t *> items = selected_items(scene);
+		std::vector<std::pair<int64_t, std::pair<float, float>>> now;
+		for (obs_sceneitem_t *item : items) {
+			vec2 pos;
+			obs_sceneitem_get_pos(item, &pos);
+			now.push_back({obs_sceneitem_get_id(item), {pos.x, pos.y}});
+		}
+		const bool same_items = now.size() == watched_.size() &&
+					std::equal(now.begin(), now.end(), watched_.begin(),
+						   [](const auto &a, const auto &b) { return a.first == b.first; });
+		const bool moved = same_items && now != watched_;
+		if (moved)
+			dragging_ = true;
+		const bool button_up = QGuiApplication::mouseButtons() == Qt::NoButton;
+		if (dragging_ && !moved && button_up) {
+			dragging_ = false;
+			for (obs_sceneitem_t *item : items)
+				snap_item(scene, item, snap_within_->value(), measure());
+			now.clear();
+			for (obs_sceneitem_t *item : items) {
+				vec2 pos;
+				obs_sceneitem_get_pos(item, &pos);
+				now.push_back({obs_sceneitem_get_id(item), {pos.x, pos.y}});
+			}
+		}
+		if (!same_items)
+			dragging_ = false;
+		watched_ = now;
+		obs_source_release(scene);
+	}
 
 	// Draws the picture small, at the zoom and place chosen with the wheel
 	// and by dragging. Zoomed right out, the whole picture is shown.
@@ -696,6 +854,13 @@ private:
 	double thumb_zoom_ = 1.0, thumb_x_ = 0.5, thumb_y_ = 0.5; // the thumbnail's own view
 	QPushButton *background_same_ = nullptr;
 	QString followed_;
+	QComboBox *against_ = nullptr;
+	QCheckBox *visible_ = nullptr;
+	QCheckBox *no_shadow_ = nullptr;
+	QCheckBox *live_snap_ = nullptr;
+	QSpinBox *snap_within_ = nullptr;
+	std::vector<std::pair<int64_t, std::pair<float, float>>> watched_;
+	bool dragging_ = false;
 	QString thumb_path_ = QStringLiteral("\x01"); // nothing loaded yet
 	QStringList names_;
 	QStringList scenes_;

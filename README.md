@@ -299,7 +299,7 @@ hotkey under the scene.
 
 Open it from *Docks → StageKit*. It works on the current scene (the preview scene in Studio Mode).
 
-<p align="center"><img src="docs/images/stagekit-dock.png" width="340" alt="The StageKit dock: scene and item pickers, a three-by-three grid of position buttons, margin and travel time, buttons that make Stream Deck keys, the start image with a thumbnail, and buttons that add an effect to the item"></p>
+<p align="center"><img src="docs/images/stagekit-dock.png" width="340" alt="The StageKit dock: scene and item pickers, a three-by-three grid of position buttons, margin and travel time, buttons that make Stream Deck keys, the start image with a thumbnail, buttons that add an effect to the item, and buttons that line up, space out and snap the selected items"></p>
 
 - **Select an item in OBS's own preview** and the dock works on it. The *Item* list follows your
   selection; you can also choose from the list.
@@ -313,6 +313,17 @@ Open it from *Docks → StageKit*. It works on the current scene (the preview sc
   move around, double-click to reset; this changes only the thumbnail, never your scene. The start
   image is also the moving background's picture. *Use another picture for the background…* gives the
   background a picture of its own; *Background settings…* opens the Ambient Background's settings.
+- **Line up, space out, snap** works on the items selected in OBS's preview (Ctrl-click for several):
+  - *Left*, *Centre*, *Right*, *Top*, *Middle*, *Bottom* line them up with the screen or with each
+    other.
+  - *Space out ↔* and *Space out ↕* make the gaps between three or more items equal.
+  - *Same width* and *Same height* resize the others to match the top-most selected item, keeping
+    their shape.
+  - *Snap now* moves each item the last few pixels so an edge or centre meets the screen's or another
+    item's. *Snap when I let go of an item* does that by itself after you drag one in the preview.
+  - *Go by what is visible* (on by default) measures the picture actually drawn in each item and ignores
+    the empty, see-through room around it, where OBS only knows the item's box. *Leave shadows out* keeps
+    a Shadow & Backdrop's shadow from counting as picture.
 - *Bring to front*, *Forward one*, *Back one* and *Send to back* change which items cover which.
 - *Add to this item* puts a Ramp Blur, Shadow & Backdrop, Ramp Zoom or Show/Hide Animation on the item
   and opens its filter window. Ramp Blur and Ramp Zoom are added switched off.
