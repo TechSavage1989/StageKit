@@ -106,6 +106,10 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   seen on screen corrects it. Only a shape the owner saved, or a Picture Shape key, is obeyed blindly.
 - **The dock's scene picture reads the scene back about four times a second** while it is visible and
   *Show the live picture* is ticked. Keep it small (480 px wide) and off when hidden.
+- **Shadow & Backdrop moves scene items on purpose.** The shadow's room makes the source bigger; the
+  filter shifts each item showing the source (and grows its bounding box) by that room so the picture
+  stays put, and remembers what it applied in `adjusted_*` settings. Anything else that changes the
+  room around a source must go through `keep_picture_in_place`, not around it.
 - **Trigger filters** (Send To, Place Item, Layout) switch themselves off after running and ignore the enabled
   state restored at load (`ready_`), so they do not fire when OBS starts.
 - **Auto Capture's Windows code is only compiled by CI and never run by the tests.** The tests feed it

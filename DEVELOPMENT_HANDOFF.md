@@ -77,6 +77,10 @@ last good frame for 0.2 s after a resolution change (1 s if the capture drops ou
 still saw a split-second flicker when switching between a window and full-screen. Whether that hold is
 long enough for Game Capture's re-hook on Windows is unknown.
 
+0.1.0-beta14: Shadow & Backdrop keeps the picture's size and place when its settings change (owner's
+report: raising the softness shrank and moved the picture inside its bounding box). A shadow filter
+saved by an earlier version is assumed to be laid out already and is left alone on first load.
+
 Reported problems still open: a Match Item item "dropping behind others" has not been reproduced.
 Addressed in 0.1.0-beta4, awaiting the owner's check on Windows: the dock reaching nested scenes and
 groups, Match Item inside groups, order buttons, Layout for chosen items.

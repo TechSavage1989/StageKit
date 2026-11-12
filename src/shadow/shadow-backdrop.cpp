@@ -19,6 +19,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "shadow-backdrop.hpp"
 
 #include "../common/kawase-blur.hpp"
+#include "../common/scene-util.hpp"
 
 #include <obs-module.h>
 #include <graphics/vec2.h>
@@ -29,6 +30,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <cmath>
 #include <memory>
 #include <mutex>
+#include <vector>
 
 namespace stagekit {
 
@@ -70,12 +72,159 @@ Padding padding_for(const Settings &s)
 	return p;
 }
 
+// --- Keeping the picture where it is ---------------------------------------
+//
+// The shadow needs room around the source, so the source gets bigger and the
+// picture sits further in. Left alone, that moves or shrinks the picture in
+// every scene whenever the softness or offset changes. Instead, each scene
+// item showing the source is adjusted by exactly the room added, so the
+// picture itself stays the size and in the place it was.
+
+// One direction (across or down) of a scene item.
+struct ItemAxis {
+	double pos = 0, anchor = 0;             // position, and where on the item it refers to (0, 0.5 or 1)
+	double scale = 1;                       // used when the item has no bounding box
+	double bounds = 0, bounds_anchor = 0.5; // the bounding box, and where the source sits in it
+};
+
+// How big a bounding box draws a source of the given size.
+void bounds_scale(obs_bounds_type type, double bx, double by, double w, double h, double &sx, double &sy)
+{
+	const double rx = bx / w, ry = by / h;
+	switch (type) {
+	case OBS_BOUNDS_STRETCH:
+		sx = rx;
+		sy = ry;
+		return;
+	case OBS_BOUNDS_SCALE_OUTER:
+		sx = sy = std::max(rx, ry);
+		return;
+	case OBS_BOUNDS_SCALE_TO_WIDTH:
+		sx = sy = rx;
+		return;
+	case OBS_BOUNDS_SCALE_TO_HEIGHT:
+		sx = sy = ry;
+		return;
+	case OBS_BOUNDS_MAX_ONLY:
+		sx = sy = std::min(1.0, std::min(rx, ry));
+		return;
+	default:
+		sx = sy = std::min(rx, ry);
+	}
+}
+
+double anchor_of(uint32_t alignment, uint32_t low, uint32_t high)
+{
+	return (alignment & low) ? 0.0 : (alignment & high) ? 1.0 : 0.5;
+}
+
+// Adjusts one scene item for the room around the source changing from
+// `before` to `after`. inner_w and inner_h are the source without any room.
+void keep_picture_in_place(obs_sceneitem_t *item, double inner_w, double inner_h, const Padding &before,
+			   const Padding &after)
+{
+	obs_sceneitem_crop crop;
+	obs_sceneitem_get_crop(item, &crop);
+	const double w0 = std::max(1.0, inner_w + before.left + before.right - crop.left - crop.right);
+	const double h0 = std::max(1.0, inner_h + before.top + before.bottom - crop.top - crop.bottom);
+	const double w1 = std::max(1.0, inner_w + after.left + after.right - crop.left - crop.right);
+	const double h1 = std::max(1.0, inner_h + after.top + after.bottom - crop.top - crop.bottom);
+
+	vec2 pos, scale, bounds;
+	obs_sceneitem_get_pos(item, &pos);
+	obs_sceneitem_get_scale(item, &scale);
+	obs_sceneitem_get_bounds(item, &bounds);
+	const obs_bounds_type type = obs_sceneitem_get_bounds_type(item);
+	const uint32_t align = obs_sceneitem_get_alignment(item);
+	const uint32_t bounds_align = obs_sceneitem_get_bounds_alignment(item);
+	const bool boxed = type != OBS_BOUNDS_NONE && bounds.x > 0.0f && bounds.y > 0.0f;
+
+	ItemAxis x{pos.x, anchor_of(align, OBS_ALIGN_LEFT, OBS_ALIGN_RIGHT), scale.x, bounds.x,
+		   anchor_of(bounds_align, OBS_ALIGN_LEFT, OBS_ALIGN_RIGHT)};
+	ItemAxis y{pos.y, anchor_of(align, OBS_ALIGN_TOP, OBS_ALIGN_BOTTOM), scale.y, bounds.y,
+		   anchor_of(bounds_align, OBS_ALIGN_TOP, OBS_ALIGN_BOTTOM)};
+
+	// Where the picture's corner is now, measured from the item's position
+	// along the item's own (unrotated) directions, and its scale.
+	double sx0 = x.scale, sy0 = y.scale;
+	if (boxed)
+		bounds_scale(type, x.bounds, y.bounds, w0, h0, sx0, sy0);
+	auto corner = [boxed](const ItemAxis &a, double size, double s, double room) {
+		const double outer = boxed ? -a.anchor * a.bounds + a.bounds_anchor * (a.bounds - size * s)
+					   : -a.anchor * size * s;
+		return outer + room * s;
+	};
+	const double pic_x = corner(x, w0, sx0, (double)before.left - crop.left);
+	const double pic_y = corner(y, h0, sy0, (double)before.top - crop.top);
+
+	// Grow (or shrink) the bounding box by the room added, at the scale the
+	// picture has, so that scale does not change.
+	double sx1 = sx0, sy1 = sy0;
+	if (boxed) {
+		x.bounds += (w1 - w0) * sx0;
+		y.bounds += (h1 - h0) * sy0;
+		bounds_scale(type, x.bounds, y.bounds, w1, h1, sx1, sy1);
+		vec2_set(&bounds, (float)x.bounds, (float)y.bounds);
+		obs_sceneitem_set_bounds(item, &bounds);
+	}
+	const double new_x = corner(x, w1, sx1, (double)after.left - crop.left);
+	const double new_y = corner(y, h1, sy1, (double)after.top - crop.top);
+
+	// Shift the item by however far the picture's corner would have moved.
+	double dx = pic_x - new_x, dy = pic_y - new_y;
+	const double turn = obs_sceneitem_get_rot(item) * 3.14159265358979323846 / 180.0;
+	if (turn != 0.0) {
+		const double rx = dx * std::cos(turn) - dy * std::sin(turn);
+		dy = dx * std::sin(turn) + dy * std::cos(turn);
+		dx = rx;
+	}
+	pos.x += (float)dx;
+	pos.y += (float)dy;
+	obs_sceneitem_set_pos(item, &pos);
+}
+
+// Every scene item, in every scene and group, that shows a source.
+std::vector<obs_sceneitem_t *> items_showing(obs_source_t *wanted)
+{
+	struct Find {
+		obs_source_t *wanted;
+		std::vector<obs_sceneitem_t *> *out;
+	};
+	std::vector<obs_sceneitem_t *> out;
+	Find find{wanted, &out};
+	static const auto visit = [](obs_scene_t *, obs_sceneitem_t *item, void *param) {
+		auto *f = static_cast<Find *>(param);
+		if (obs_sceneitem_get_source(item) == f->wanted)
+			f->out->push_back(item);
+		return true;
+	};
+	obs_enum_scenes(
+		[](void *param, obs_source_t *scene_source) {
+			if (obs_scene_t *scene = obs_scene_from_source(scene_source)) {
+				obs_scene_enum_items(
+					scene,
+					[](obs_scene_t *s, obs_sceneitem_t *item, void *p) {
+						visit(s, item, p);
+						if (obs_sceneitem_is_group(item))
+							obs_sceneitem_group_enum_items(item, visit, p);
+						return true;
+					},
+					param);
+			}
+			return true;
+		},
+		&find);
+	return out;
+}
+
 class ShadowBackdrop {
 public:
 	ShadowBackdrop(obs_data_t *settings, obs_source_t *source);
 	~ShadowBackdrop();
 
 	void update(obs_data_t *settings);
+	void tick();
+	void leave(obs_source_t *parent);
 	void render();
 	uint32_t width();
 	uint32_t height();
@@ -84,9 +233,16 @@ private:
 	Settings settings();
 	bool capture_input(uint32_t w, uint32_t h);
 
+	void settle_items(obs_source_t *parent, const Padding &wanted);
+
 	obs_source_t *source_;
 	std::mutex mutex_;
 	Settings settings_;
+	// The room around the source that scene items have been adjusted for.
+	// Saved with the filter, so loading a collection adjusts nothing twice.
+	Padding adjusted_;
+	bool adjusted_loaded_ = false;
+	bool keep_place_ = true;
 
 	gs_effect_t *effect_ = nullptr;
 	gs_eparam_t *p_image_ = nullptr;
@@ -173,6 +329,76 @@ void ShadowBackdrop::update(obs_data_t *settings)
 
 	std::lock_guard lock(mutex_);
 	settings_ = s;
+	keep_place_ = obs_data_get_bool(settings, "keep_place");
+	if (!adjusted_loaded_) {
+		adjusted_loaded_ = true;
+		// A shadow set up before this was kept track of: its scene items
+		// were already arranged around the room it takes, so leave them.
+		obs_data_item_t *first = obs_data_first(settings);
+		const bool set_up_before = first != nullptr && !obs_data_has_user_value(settings, "adjusted_left");
+		obs_data_item_release(&first);
+		if (set_up_before && keep_place_) {
+			adjusted_ = padding_for(s);
+			return;
+		}
+		adjusted_.left = (uint32_t)obs_data_get_int(settings, "adjusted_left");
+		adjusted_.top = (uint32_t)obs_data_get_int(settings, "adjusted_top");
+		adjusted_.right = (uint32_t)obs_data_get_int(settings, "adjusted_right");
+		adjusted_.bottom = (uint32_t)obs_data_get_int(settings, "adjusted_bottom");
+	}
+}
+
+// Brings every scene item showing the source in line with the room the
+// shadow takes now.
+void ShadowBackdrop::settle_items(obs_source_t *parent, const Padding &wanted)
+{
+	Padding before;
+	{
+		std::lock_guard lock(mutex_);
+		before = adjusted_;
+	}
+	if (before.left == wanted.left && before.top == wanted.top && before.right == wanted.right &&
+	    before.bottom == wanted.bottom)
+		return;
+	obs_source_t *target = obs_filter_get_target(source_);
+	const uint32_t w = target ? obs_source_get_base_width(target) : 0;
+	const uint32_t h = target ? obs_source_get_base_height(target) : 0;
+	if (!w || !h)
+		return; // nothing to measure against yet; try again next frame
+	for (obs_sceneitem_t *item : items_showing(parent))
+		keep_picture_in_place(item, w, h, before, wanted);
+	{
+		std::lock_guard lock(mutex_);
+		adjusted_ = wanted;
+	}
+	obs_data_t *settings = obs_source_get_settings(source_);
+	obs_data_set_int(settings, "adjusted_left", wanted.left);
+	obs_data_set_int(settings, "adjusted_top", wanted.top);
+	obs_data_set_int(settings, "adjusted_right", wanted.right);
+	obs_data_set_int(settings, "adjusted_bottom", wanted.bottom);
+	obs_data_release(settings);
+}
+
+void ShadowBackdrop::tick()
+{
+	obs_source_t *parent = obs_filter_get_parent(source_);
+	if (!parent)
+		return;
+	bool keep;
+	{
+		std::lock_guard lock(mutex_);
+		keep = keep_place_;
+	}
+	// A filter that is switched off, or told not to, takes no room.
+	const bool active = keep && effect_ && obs_source_enabled(source_);
+	settle_items(parent, active ? padding_for(settings()) : Padding());
+}
+
+// The filter is being taken off its source: give the room back.
+void ShadowBackdrop::leave(obs_source_t *parent)
+{
+	if (parent)
+		settle_items(parent, Padding());
 }
 
 Settings ShadowBackdrop::settings()
@@ -361,6 +587,8 @@ obs_properties_t *get_properties(void *)
 	slider(props, "backdrop_pad", "Shadow.BackdropPad", 0.0, 200.0, " px");
 
 	slider(props, "radius", "Shadow.Radius", 0.0, 500.0, " px");
+	obs_property_t *keep = obs_properties_add_bool(props, "keep_place", obs_module_text("Shadow.Keep"));
+	obs_property_set_long_description(keep, obs_module_text("Shadow.Keep.Tip"));
 
 	obs_property_t *help = obs_properties_add_text(props, "help", obs_module_text("Shadow.Help"), OBS_TEXT_INFO);
 	obs_property_text_set_info_word_wrap(help, true);
@@ -382,6 +610,7 @@ void get_defaults(obs_data_t *settings)
 	obs_data_set_default_double(settings, "backdrop_opacity", 100.0);
 	obs_data_set_default_double(settings, "backdrop_pad", 12.0);
 	obs_data_set_default_double(settings, "radius", 0.0);
+	obs_data_set_default_bool(settings, "keep_place", true);
 }
 
 } // namespace
@@ -414,6 +643,12 @@ void register_shadow_backdrop()
 	};
 	info.video_render = [](void *data, gs_effect_t *) {
 		static_cast<ShadowBackdrop *>(data)->render();
+	};
+	info.video_tick = [](void *data, float) {
+		static_cast<ShadowBackdrop *>(data)->tick();
+	};
+	info.filter_remove = [](void *data, obs_source_t *parent) {
+		static_cast<ShadowBackdrop *>(data)->leave(parent);
 	};
 	obs_register_source(&info);
 }
