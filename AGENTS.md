@@ -3,9 +3,9 @@
 StageKit is a plugin for OBS Studio (C++17, libobs, Qt 6 for the dock). It adds filters
 and one source that replace hand-built chains of Move filters, source clones and nested scenes.
 
-Read `DEVELOPMENT_HANDOFF.md` next for the current state, then `docs/REPOSITORY_STANDARDS.md` for the
-shared organisation standard. That standards file is not in the repository yet: the owner has to supply
-the canonical copy (see the handoff). Do not write one from memory.
+Read `DEVELOPMENT_HANDOFF.md` next for the current state, then
+[docs/REPOSITORY_STANDARDS.md](docs/REPOSITORY_STANDARDS.md), the shared standard that is identical in
+every TechSavage1989 app repository. Change that file only to change the standard everywhere.
 
 ## What StageKit is not
 
