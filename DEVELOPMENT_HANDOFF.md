@@ -37,6 +37,14 @@ Auto Frame (0.1.0-beta5) trims black bars and copies its size from an existing i
 the owner; neither has been tried on Windows or with a real emulator. The owner wants settings to live
 in the filter's own controls where possible, not only in the dock.
 
+0.1.0-beta6 fixes the automatic trim chasing black game backgrounds (owner's report, Snes9x on
+Windows) and adds program rules and the Picture Shape key. Whether Game Capture and Window Capture
+answer the `get_hooked` call that program rules use is unverified on Windows.
+
+0.1.0-beta7 adds the start image the owner asked for: chosen once in the dock, shown by the Start Image
+source and followed by Ambient Background. It is stored in the scene collection's save data under
+`stagekit.start_image`. Not yet tried on Windows.
+
 Reported problems still open: the owner wants to drag items and zoom points on a picture in the dock
 and zoom with the mouse wheel; a Match Item item "dropping behind others" has not been reproduced.
 Addressed in 0.1.0-beta4, awaiting the owner's check on Windows: the dock reaching nested scenes and

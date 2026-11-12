@@ -22,6 +22,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "stagekit-dock.hpp"
 
 #include "../common/scene-util.hpp"
+#include "../common/start-image.hpp"
 #include "../placement/place-item.hpp"
 #include "../placement/scene-tools.hpp"
 
@@ -30,6 +31,8 @@ the Free Software Foundation; either version 2 of the License, or
 #include <plugin-support.h>
 
 #include <QComboBox>
+#include <QFileDialog>
+#include <QFileInfo>
 #include <QFormLayout>
 #include <QGridLayout>
 #include <QGroupBox>
@@ -137,6 +140,29 @@ public:
 		keys_layout->addWidget(keys_hint);
 		layout->addWidget(keys_box);
 
+		// The start image: chosen here, shown by the Start Image source and
+		// used by any Ambient Background set to follow it.
+		auto *start_box = new QGroupBox(tr_text("Dock.StartBox"), this);
+		auto *start_layout = new QVBoxLayout(start_box);
+		start_label_ = new QLabel(start_box);
+		start_label_->setObjectName("startImage");
+		start_label_->setWordWrap(true);
+		auto *choose = new QPushButton(tr_text("Dock.StartChoose"), start_box);
+		choose->setObjectName("chooseStartImage");
+		QObject::connect(choose, &QPushButton::clicked, this, [this] {
+			const QString current = QString::fromUtf8(start_image_path().c_str());
+			const QString file = QFileDialog::getOpenFileName(
+				this, tr_text("Dock.StartChoose"), current,
+				"Images (*.bmp *.tga *.png *.jpeg *.jpg *.jxr *.gif *.psd *.webp *.avif);;All files (*.*)");
+			if (!file.isEmpty()) {
+				set_start_image_path(file.toUtf8().constData());
+				refresh();
+			}
+		});
+		start_layout->addWidget(start_label_);
+		start_layout->addWidget(choose);
+		layout->addWidget(start_box);
+
 		auto *add_box = new QGroupBox(tr_text("Dock.AddBox"), this);
 		auto *add_layout = new QGridLayout(add_box);
 		struct {
@@ -200,6 +226,10 @@ public:
 
 	void refresh()
 	{
+		const QString start = QString::fromUtf8(start_image_path().c_str());
+		start_label_->setText(start.isEmpty() ? tr_text("Dock.StartNone") : QFileInfo(start).fileName());
+		start_label_->setToolTip(start);
+
 		// Scene list: "the scene on screen" first, then every scene by name.
 		QStringList scenes;
 		obs_enum_scenes(
@@ -443,6 +473,7 @@ private:
 	}
 
 	std::string fixed_scene_;
+	QLabel *start_label_ = nullptr;
 	QStringList names_;
 	QStringList scenes_;
 	QComboBox *scene_ = nullptr;

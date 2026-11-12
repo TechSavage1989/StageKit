@@ -240,6 +240,48 @@ int main(int argc, char **argv)
 	CHECK(mean_rgb(from_source) > 5 && opaque(from_source), "another source can be the background");
 	CHECK(obs_source_showing(live), "the base source is kept showing");
 
+	// ------------------------------------------------------------ start image
+	{
+		printf("\n[start image]\n");
+		auto set_start = [](const char *path) {
+			calldata_t cd = {};
+			calldata_set_string(&cd, "path", path);
+			proc_handler_call(obs_get_proc_handler(), "stagekit_set_start_image", &cd);
+			calldata_free(&cd);
+		};
+		obs_source_t *start = obs_source_create("stagekit_start_image", "Start Image", nullptr, nullptr);
+		CHECK(start != nullptr, "the Start Image source can be created");
+		set_start(base_image);
+		sleep_ms(150);
+		CHECK(obs_source_get_width(start) == w && obs_source_get_height(start) == h,
+		      "choosing a start image makes the source show it (%ux%u)", obs_source_get_width(start),
+		      obs_source_get_height(start));
+		const std::vector<uint8_t> shown = render(start, w, h);
+		CHECK(mean_rgb(shown) > 20 && opaque(shown), "and it draws the picture");
+
+		// The same image feeds a background set to follow it.
+		shot("start_follow", [](obs_data_t *d) {
+			obs_data_set_int(d, "base_type", 2);
+			obs_data_set_double(d, "blur", 0);
+			obs_data_set_double(d, "saturation", 100);
+			obs_data_set_double(d, "glow", 0);
+			obs_data_set_double(d, "zoom", 100);
+			obs_data_set_double(d, "speed_x", 0);
+			obs_data_set_double(d, "speed_y", 0);
+		});
+		const std::vector<uint8_t> follows_a = render(bg, w, h);
+		set_start(live_image);
+		sleep_ms(250);
+		const std::vector<uint8_t> follows_b = render(bg, w, h);
+		const std::vector<uint8_t> shown_b = render(start, w, h);
+		CHECK(mean_abs_diff(follows_a, follows_b) > 5.0 && mean_abs_diff(shown, shown_b) > 5.0,
+		      "changing the start image changes both the source and the background, with no other step");
+		CHECK(mean_abs_diff(follows_b, shown_b) < 12.0, "and both show the same picture (diff %.1f)",
+		      mean_abs_diff(follows_b, shown_b));
+		obs_source_release(start);
+		shot("start_reset", [](obs_data_t *d) { obs_data_set_int(d, "base_type", 0); });
+	}
+
 	printf("\n[motion]\n");
 	shot("still", [](obs_data_t *d) {
 		obs_data_set_int(d, "base_type", 0);
@@ -723,8 +765,87 @@ int main(int argc, char **argv)
 			CHECK(t3 == 0.0 && is(p3, 0, 75, 800, 450),
 			      "when the picture grows into the bars the trim is released (trim %.0f)", t3);
 
+			// A game with a black background (the reported Aladdin title
+			// screen): artwork on black is not bars and must not be trimmed.
+			if (argc >= 12) {
+				obs_data_set_string(bd, "file", argv[11]);
+				obs_source_update(barred, bd);
+				auto [t5, p5] = look(4000);
+				CHECK(t5 == 0.0 && is(p5, 0, 75, 800, 450),
+				      "artwork on a black background is not mistaken for bars (trim %.0f after 4 s)",
+				      t5);
+
+				// ...unless asked: "trim to what is on screen now" measures once and fixes it.
+				calldata_t mcd = {};
+				proc_handler_call(obs_source_get_proc_handler(trimmer), "measure_now", &mcd);
+				calldata_free(&mcd);
+				auto [t6, p6] = look(800);
+				obs_data_t *now = obs_source_get_settings(trimmer);
+				CHECK(std::fabs(t6 - 145) <= 1.0 && obs_data_get_int(now, "trim") == 2 &&
+					      std::fabs(obs_data_get_double(now, "trim_y") - 55) <= 1.0,
+				      "the 'trim to what is on screen now' button measures once and fixes the amounts (%.0f, %.0f)",
+				      obs_data_get_double(now, "trim_x"), obs_data_get_double(now, "trim_y"));
+				obs_data_release(now);
+				obs_data_set_int(bf, "trim", 1);
+				obs_data_set_string(bd, "file", live_image);
+				obs_source_update(barred, bd);
+			}
+
+			// Hands-off control of the shape: a key, and a rule per program.
+			if (argc >= 12) {
+				obs_data_set_int(bf, "trim", 1);
+				obs_source_update(trimmer, bf);
+				obs_data_set_string(bd, "file", argv[11]); // the dark game again
+				obs_source_update(barred, bd);
+
+				obs_data_t *kd = obs_data_create();
+				obs_data_set_string(kd, "shape", "4:3");
+				obs_source_t *key =
+					obs_source_create("stagekit_picture_shape", "Shape 4:3", kd, nullptr);
+				obs_source_filter_add(barred, key);
+				look(200);
+				obs_source_set_enabled(key, true); // what a Stream Deck Filter key does
+				auto [t7, p7] = look(600);
+				CHECK(std::fabs(t7 - 80) <= 1.0 && is(p7, 0, 0, 800, 600) && !obs_source_enabled(key),
+				      "a Picture Shape key sets 4:3 at once, even on a dark game, then switches itself off (trim %.0f)",
+				      t7);
+				obs_data_set_string(kd, "shape", "0");
+				obs_source_update(key, kd);
+				look(150);
+				obs_source_set_enabled(key, true);
+				auto [t8, p8] = look(600);
+				CHECK(t8 == 0.0, "a key set to Automatic hands control back (trim %.0f)", t8);
+				obs_source_filter_remove(barred, key);
+				obs_source_release(key);
+				obs_data_release(kd);
+
+				// The capture reports which program it shows; a rule names its shape.
+				obs_data_t *capture_settings = obs_source_get_settings(barred);
+				obs_data_set_string(capture_settings, "window",
+						    "Aladdin - Snes9x 1.60:Snes9x:snes9x-x64.exe");
+				obs_data_release(capture_settings);
+				obs_data_array_t *rules = obs_data_array_create();
+				obs_data_t *rule = obs_data_create();
+				obs_data_set_string(rule, "value", "Snes9x = 4:3");
+				obs_data_array_push_back(rules, rule);
+				obs_data_release(rule);
+				obs_data_set_array(bf, "rules", rules);
+				obs_source_update(trimmer, bf);
+				auto [t9, p9] = look(1800);
+				CHECK(std::fabs(t9 - 80) <= 1.0 && is(p9, 0, 0, 800, 600),
+				      "a rule for the captured program sets its shape with no key press (trim %.0f)",
+				      t9);
+				obs_data_array_release(rules);
+				rules = obs_data_array_create();
+				obs_data_set_array(bf, "rules", rules);
+				obs_data_array_release(rules);
+				obs_source_update(trimmer, bf);
+				look(1300);
+			}
+
 			obs_data_set_int(bf, "trim", 2);
 			obs_data_set_double(bf, "trim_x", 80);
+			obs_data_set_double(bf, "trim_y", 0); // the measuring step above stored its own amounts
 			obs_source_update(trimmer, bf);
 			auto [t4, p4] = look(600);
 			CHECK(std::fabs(t4 - 80) <= 0.5 && is(p4, 0, 0, 800, 600),

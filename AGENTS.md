@@ -25,7 +25,8 @@ for an update notice inside OBS. This exception is recorded in the handoff.
 | `src/zoom/` | Ramp Zoom filter |
 | `src/placement/` | Scene filters: Place Item, Show/Hide Animation, Match Item, Layout |
 | `src/dock/` | The StageKit dock (Qt widget, no `Q_OBJECT`; it drives Place Item filters) |
-| `src/common/` | Shared helpers: easing and `Tween`, `SwitchRamp`, `KawaseBlur`, scene utilities |
+| `src/common/` | Shared helpers: easing and `Tween`, `SwitchRamp`, `KawaseBlur`, scene utilities, and the start image (global path + Start Image source) |
+| `src/frame/` | Auto Frame filter and the Picture Shape key filter |
 | `src/api/` | obs-websocket vendor requests (`StageKit` vendor) |
 | `src/third-party/` | Vendored `obs-websocket-api.h`, kept byte-for-byte (excluded from clang-format) |
 | `data/effects/` | Shaders in OBS `.effect` format |
@@ -90,6 +91,11 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   by crop (320 px a side for 4:3, 343 for SNES, 150 for GBA) inside one shared 1754.5x1268.5 box at
   30.5, 85.5. Auto Frame's automatic trim exists for this. It reads back a thin copy of the capture
   every 0.4 s, one direction at a time; keep that cost in mind before adding more readbacks.
+- **Black bars and black game backgrounds look identical.** Auto Frame's automatic trim only trims more
+  when the remaining picture is exactly a known console shape (`is_picture_shape`). Do not loosen that
+  to a brightness-only rule: the owner hit it with Snes9x (Aladdin's title screen) and the picture
+  resized repeatedly. The owner wants no manual steps when switching games; program rules and Picture
+  Shape keys are the fallbacks.
 - **Trigger filters** (Place Item, Layout) switch themselves off after running and ignore the enabled
   state restored at load (`ready_`), so they do not fire when OBS starts.
 - **Deprecated libobs calls fail CI** (warnings are errors). Avoid `obs_sceneitem_get_info`; use the

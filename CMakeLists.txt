@@ -50,6 +50,8 @@ target_sources(
     src/zoom/ramp-zoom.cpp
     src/zoom/ramp-zoom.hpp
     src/common/scene-util.hpp
+    src/common/start-image.cpp
+    src/common/start-image.hpp
     src/dock/stagekit-dock.cpp
     src/dock/stagekit-dock.hpp
     src/placement/scene-tools.cpp

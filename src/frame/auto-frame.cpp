@@ -27,8 +27,14 @@ the Free Software Foundation; either version 2 of the License, or
 #include <plugin-support.h>
 
 #include <algorithm>
+#include <atomic>
+#include <cctype>
 #include <cmath>
+#include <cstring>
 #include <mutex>
+#include <string>
+#include <utility>
+#include <vector>
 
 namespace stagekit {
 
@@ -75,6 +81,11 @@ struct Settings {
 	double trim_x = 0.0; // manual: pixels off the left and off the right
 	double trim_y = 0.0; // manual: pixels off the top and off the bottom
 	double trim_wait_s = 3.0;
+	// Automatic trimming can be told the picture's shape instead of looking
+	// for it: by a Picture Shape key (force_ratio), or by a rule naming the
+	// program being captured (rules: text found in the program -> shape).
+	double force_ratio = 0.0;
+	std::vector<std::pair<std::string, double>> rules;
 	double glide_s = 0.35;
 	EaseCurve curve = EaseCurve::Cubic;
 	EaseMode mode = EaseMode::InOut;
@@ -160,6 +171,43 @@ bool same(const Rect &a, const Rect &b)
 	       std::fabs(a.h - b.h) < 0.01;
 }
 
+std::string lower(std::string text)
+{
+	std::transform(text.begin(), text.end(), text.begin(), [](unsigned char c) { return (char)std::tolower(c); });
+	return text;
+}
+
+// "4:3", "64:49" or "1.306" -> a width / height ratio, or 0.
+double parse_ratio(const std::string &text)
+{
+	try {
+		const size_t colon = text.find(':');
+		if (colon == std::string::npos)
+			return std::max(0.0, std::stod(text));
+		const double a = std::stod(text.substr(0, colon)), b = std::stod(text.substr(colon + 1));
+		return a > 0.0 && b > 0.0 ? a / b : 0.0;
+	} catch (...) {
+		return 0.0;
+	}
+}
+
+// A rule is written "snes9x = 4:3": text to look for in the captured
+// program's name or window title, then the shape of its picture.
+bool parse_rule(const std::string &line, std::string &program, double &ratio)
+{
+	const size_t equals = line.rfind('=');
+	if (equals == std::string::npos)
+		return false;
+	auto trimmed = [](std::string t) {
+		const char *space = " \t";
+		const size_t a = t.find_first_not_of(space), b = t.find_last_not_of(space);
+		return a == std::string::npos ? std::string() : t.substr(a, b - a + 1);
+	};
+	program = lower(trimmed(line.substr(0, equals)));
+	ratio = parse_ratio(trimmed(line.substr(equals + 1)));
+	return !program.empty() && ratio > 0.0;
+}
+
 class AutoFrame {
 public:
 	AutoFrame(obs_data_t *settings, obs_source_t *source) : source_(source)
@@ -190,6 +238,15 @@ public:
 				calldata_set_float(cd, "height", self->current_.h);
 			},
 			this);
+		proc_handler_add(
+			obs_source_get_proc_handler(source_), "void set_picture_shape(in float ratio)",
+			[](void *data, calldata_t *cd) {
+				static_cast<AutoFrame *>(data)->set_forced_ratio(calldata_float(cd, "ratio"));
+			},
+			this);
+		proc_handler_add(
+			obs_source_get_proc_handler(source_), "void measure_now()",
+			[](void *data, calldata_t *) { static_cast<AutoFrame *>(data)->measure_now(); }, this);
 		proc_handler_add(
 			obs_source_get_proc_handler(source_), "void get_trim(out float x, out float y)",
 			[](void *data, calldata_t *cd) {
@@ -229,6 +286,17 @@ public:
 		s.trim_x = std::max(0.0, obs_data_get_double(settings, "trim_x"));
 		s.trim_y = std::max(0.0, obs_data_get_double(settings, "trim_y"));
 		s.trim_wait_s = std::max(0.0, obs_data_get_double(settings, "trim_wait"));
+		s.force_ratio = std::max(0.0, obs_data_get_double(settings, "force_ratio"));
+		obs_data_array_t *rules = obs_data_get_array(settings, "rules");
+		for (size_t i = 0; i < obs_data_array_count(rules); i++) {
+			obs_data_t *entry = obs_data_array_item(rules, i);
+			std::string program;
+			double ratio = 0.0;
+			if (parse_rule(obs_data_get_string(entry, "value"), program, ratio))
+				s.rules.emplace_back(program, ratio);
+			obs_data_release(entry);
+		}
+		obs_data_array_release(rules);
 		s.glide_s = std::max<long long>(0, obs_data_get_int(settings, "glide_ms")) / 1000.0;
 		s.curve = static_cast<EaseCurve>(obs_data_get_int(settings, "ease_curve"));
 		s.mode = static_cast<EaseMode>(obs_data_get_int(settings, "ease_mode"));
@@ -238,11 +306,71 @@ public:
 
 	void tick(float seconds)
 	{
+		// Once a second, see which program is being captured and whether a
+		// rule gives its picture shape.
+		identity_timer_ -= seconds;
+		double rule_ratio = -1.0;
+		if (identity_timer_ <= 0.0) {
+			identity_timer_ = 1.0;
+			const std::string program = captured_program();
+			std::lock_guard lock(mutex_);
+			rule_ratio = 0.0;
+			for (const auto &[text, ratio] : settings_.rules) {
+				if (!program.empty() && program.find(text) != std::string::npos) {
+					rule_ratio = ratio;
+					break;
+				}
+			}
+		}
 		std::lock_guard lock(mutex_);
 		pending_time_ += seconds;
+		if (rule_ratio >= 0.0)
+			rule_ratio_ = rule_ratio;
+	}
+
+	// The shape a Picture Shape key asked for; 0 goes back to automatic.
+	void set_forced_ratio(double ratio)
+	{
+		obs_data_t *settings = obs_source_get_settings(source_);
+		obs_data_set_double(settings, "force_ratio", std::max(0.0, ratio));
+		obs_source_update(source_, settings);
+		obs_data_release(settings);
 	}
 
 	obs_source_t *source() const { return source_; }
+
+	// Lower-case text describing the program a capture source is showing:
+	// what a game or window capture reports it is attached to, plus its
+	// "window" setting (title:class:executable).
+	std::string captured_program()
+	{
+		obs_source_t *parent = obs_filter_get_parent(source_);
+		if (!parent)
+			return {};
+		std::string text;
+		calldata_t cd = {};
+		if (proc_handler_call(obs_source_get_proc_handler(parent), "get_hooked", &cd)) {
+			for (const char *key : {"executable", "title"}) {
+				const char *value = nullptr;
+				if (calldata_get_string(&cd, key, &value) && value)
+					text += std::string(value) + " ";
+			}
+		}
+		calldata_free(&cd);
+		obs_data_t *settings = obs_source_get_settings(parent);
+		text += obs_data_get_string(settings, "window");
+		obs_data_release(settings);
+		return lower(text);
+	}
+
+	// Asks for the bars to be measured from the picture as it is right now
+	// and stored as a fixed trim.
+	void measure_now()
+	{
+		std::lock_guard lock(mutex_);
+		measure_once_[0] = measure_once_[1] = true;
+		measured_ready_ = false;
+	}
 
 	uint32_t width()
 	{
@@ -266,7 +394,8 @@ public:
 		Settings s;
 		Rect rect, crop;
 		double dt;
-		bool probe_now = false;
+		bool probe_now = false, publish_measured = false;
+		double measured_x = 0.0, measured_y = 0.0;
 		{
 			std::lock_guard lock(mutex_);
 			s = settings_;
@@ -287,12 +416,29 @@ public:
 			} else if (s.trim == Trim::Automatic) {
 				trim_x = bars_[0].applied;
 				trim_y = bars_[1].applied;
+			}
+			// A known shape beats looking: centre that shape in the capture.
+			const double known = s.force_ratio > 0.0 ? s.force_ratio : rule_ratio_;
+			const bool shape_known = s.trim == Trim::Automatic && known > 0.0;
+			if (shape_known) {
+				trim_x = trim_y = 0.0;
+				if ((double)w / (double)h > known)
+					trim_x = (w - h * known) / 2.0;
+				else
+					trim_y = (h - w / known) / 2.0;
+			}
+			if ((s.trim == Trim::Automatic && !shape_known) || measure_once_[0] || measure_once_[1]) {
 				probe_timer_ -= dt;
 				if (probe_timer_ <= 0.0) {
-					probe_timer_ = kProbeInterval;
+					// While measuring on request, look every frame to finish at once.
+					probe_timer_ = measure_once_[0] || measure_once_[1] ? 0.0 : kProbeInterval;
 					probe_now = true;
 				}
 			}
+			publish_measured = measured_ready_;
+			measured_ready_ = false;
+			measured_x = measured_[0];
+			measured_y = measured_[1];
 			trim_x = std::clamp(trim_x, 0.0, w * 0.45);
 			trim_y = std::clamp(trim_y, 0.0, h * 0.45);
 			const Rect crop_goal{trim_x, trim_y, w - 2.0 * trim_x, h - 2.0 * trim_y};
@@ -328,6 +474,16 @@ public:
 			}
 			rect = current_;
 			crop = crop_current_;
+		}
+
+		if (publish_measured) {
+			// Store what was measured as a fixed trim, where the user can see and edit it.
+			obs_data_t *settings = obs_source_get_settings(source_);
+			obs_data_set_int(settings, "trim", (int)Trim::Manual);
+			obs_data_set_double(settings, "trim_x", measured_x);
+			obs_data_set_double(settings, "trim_y", measured_y);
+			obs_source_update(source_, settings);
+			obs_data_release(settings);
 		}
 
 		// 1. The capture as it is.
@@ -496,10 +652,46 @@ private:
 			bars.agree = 1;
 			bars.stable_for = 0.0;
 		}
+		// "Trim to what is on screen now": take this look as it is.
+		if (measure_once_[axis]) {
+			measure_once_[axis] = false;
+			measured_[axis] = seen;
+			if (!measure_once_[0] && !measure_once_[1])
+				measured_ready_ = true;
+		}
+
 		const bool less_bar = seen < bars.applied - 2.0;
 		const bool more_bar = seen > bars.applied + 2.0;
-		if ((less_bar && bars.agree >= 2) || (more_bar && bars.stable_for >= wait_s))
+		if (less_bar && bars.agree >= 2) {
+			// The picture reaches further out than thought: bars are never lit.
 			bars.applied = seen;
+		} else if (more_bar && bars.stable_for >= wait_s) {
+			// A game with a black background looks just like bars. Real bars
+			// leave a picture in one of the shapes consoles and emulators
+			// output; a dark scene leaves an arbitrary one. Only trim more
+			// when what would be left is exactly such a shape.
+			const double other = bars_[1 - axis].applied;
+			const double pic_w = w - 2.0 * (axis == 0 ? seen : other);
+			const double pic_h = h - 2.0 * (axis == 1 ? seen : other);
+			if (is_picture_shape(pic_w, pic_h))
+				bars.applied = seen;
+		}
+	}
+
+	// Whether a picture size is one of the shapes games and emulators output,
+	// to within a few pixels.
+	static bool is_picture_shape(double pic_w, double pic_h)
+	{
+		// 64:49 is SNES/NES pixels (8:7 each) shown on a 4:3 screen.
+		static const double shapes[] = {16.0 / 9.0, 16.0 / 10.0, 3.0 / 2.0,  4.0 / 3.0,   64.0 / 49.0,
+						5.0 / 4.0,  8.0 / 7.0,   10.0 / 9.0, 16.0 / 15.0, 1.0};
+		if (pic_w < 16.0 || pic_h < 16.0)
+			return false;
+		const double tolerance = std::max(4.0, pic_h * 0.004);
+		for (double shape : shapes)
+			if (std::fabs(pic_w - pic_h * shape) <= tolerance)
+				return true;
+		return false;
 	}
 
 	obs_source_t *source_;
@@ -511,6 +703,11 @@ private:
 	uint32_t last_w_ = 0, last_h_ = 0;
 	Bars bars_[2];
 	double probe_timer_ = 0.0;
+	bool measure_once_[2] = {false, false};
+	double measured_[2] = {0.0, 0.0};
+	double identity_timer_ = 0.0;
+	double rule_ratio_ = 0.0;
+	bool measured_ready_ = false;
 	int probe_axis_ = 0;
 	gs_texrender_t *tr_probe_ = nullptr;
 	gs_stagesurf_t *stage_[2] = {nullptr, nullptr};
@@ -527,6 +724,7 @@ bool shape_modified(obs_properties_t *props, obs_property_t *, obs_data_t *setti
 	obs_property_set_visible(obs_properties_get(props, "custom_h"), custom);
 	const auto trim = static_cast<Trim>(obs_data_get_int(settings, "trim"));
 	obs_property_set_visible(obs_properties_get(props, "trim_wait"), trim == Trim::Automatic);
+	obs_property_set_visible(obs_properties_get(props, "rules"), trim == Trim::Automatic);
 	obs_property_set_visible(obs_properties_get(props, "trim_x"), trim == Trim::Manual);
 	obs_property_set_visible(obs_properties_get(props, "trim_y"), trim == Trim::Manual);
 	return true;
@@ -631,6 +829,16 @@ obs_properties_t *get_properties(void *data)
 	obs_property_list_add_int(trim, obs_module_text("Frame.Trim.Manual"), (int)Trim::Manual);
 	obs_property_list_add_int(trim, obs_module_text("Frame.Trim.Off"), (int)Trim::Off);
 	obs_property_set_modified_callback(trim, shape_modified);
+	obs_properties_add_button2(
+		props, "trim_now", obs_module_text("Frame.TrimNow"),
+		[](obs_properties_t *, obs_property_t *, void *d) {
+			if (d)
+				static_cast<AutoFrame *>(d)->measure_now();
+			return false;
+		},
+		data);
+	obs_properties_add_editable_list(props, "rules", obs_module_text("Frame.Rules"), OBS_EDITABLE_LIST_TYPE_STRINGS,
+					 nullptr, nullptr);
 	obs_property_t *wait =
 		obs_properties_add_float_slider(props, "trim_wait", obs_module_text("Frame.TrimWait"), 0.0, 15.0, 0.5);
 	obs_property_float_set_suffix(wait, " s");
@@ -669,9 +877,151 @@ void get_defaults(obs_data_t *settings)
 	obs_data_set_default_double(settings, "trim_wait", 3.0);
 	obs_data_set_default_double(settings, "trim_x", 0.0);
 	obs_data_set_default_double(settings, "trim_y", 0.0);
+	obs_data_set_default_double(settings, "force_ratio", 0.0);
 	obs_data_set_default_int(settings, "glide_ms", 350);
 	obs_data_set_default_int(settings, "ease_curve", (int)EaseCurve::Cubic);
 	obs_data_set_default_int(settings, "ease_mode", (int)EaseMode::InOut);
+}
+
+// ============================================================ Picture Shape
+// A key for Auto Frame: switching this filter on tells the Auto Frame on the
+// same source which shape the picture has (or to go back to working it out),
+// then it switches itself off again. Point a Stream Deck Filter key at it.
+
+thread_local bool t_shape_self_change = false;
+
+class PictureShape {
+public:
+	PictureShape(obs_data_t *settings, obs_source_t *source) : source_(source)
+	{
+		update(settings);
+		signal_handler_connect(obs_source_get_signal_handler(source_), "enable", enable_cb, this);
+		proc_handler_add(
+			obs_source_get_proc_handler(source_), "void trigger()",
+			[](void *data, calldata_t *) { static_cast<PictureShape *>(data)->pending_ = true; }, this);
+	}
+
+	~PictureShape()
+	{
+		signal_handler_disconnect(obs_source_get_signal_handler(source_), "enable", enable_cb, this);
+		detach();
+	}
+
+	void update(obs_data_t *settings)
+	{
+		std::lock_guard lock(mutex_);
+		const std::string shape = obs_data_get_string(settings, "shape");
+		ratio_ = shape == "custom" ? parse_ratio(obs_data_get_string(settings, "custom")) : parse_ratio(shape);
+	}
+
+	void tick()
+	{
+		if (!ready_) {
+			quiet_enable(false); // a key saved in the "on" state must not fire at start-up
+			ready_ = true;
+			return;
+		}
+		if (!pending_.exchange(false))
+			return;
+		double ratio;
+		{
+			std::lock_guard lock(mutex_);
+			ratio = ratio_;
+		}
+		if (parent_) {
+			obs_source_enum_filters(
+				parent_,
+				[](obs_source_t *, obs_source_t *filter, void *param) {
+					const char *id = obs_source_get_unversioned_id(filter);
+					if (id && strcmp(id, kAutoFrameId) == 0) {
+						calldata_t cd = {};
+						calldata_set_float(&cd, "ratio", *static_cast<double *>(param));
+						proc_handler_call(obs_source_get_proc_handler(filter),
+								  "set_picture_shape", &cd);
+						calldata_free(&cd);
+					}
+				},
+				&ratio);
+		}
+		quiet_enable(false);
+	}
+
+	void attach(obs_source_t *parent)
+	{
+		detach();
+		parent_ = parent;
+		const std::string name = obs_source_get_name(source_) ? obs_source_get_name(source_) : "";
+		std::string text = obs_module_text("Hotkey.PictureShape");
+		const size_t at = text.find("%1");
+		if (at != std::string::npos)
+			text.replace(at, 2, name);
+		hotkey_ = obs_hotkey_register_source(
+			parent, ("stagekit.shape." + name).c_str(), text.c_str(),
+			[](void *data, obs_hotkey_id, obs_hotkey_t *, bool pressed) {
+				if (pressed)
+					static_cast<PictureShape *>(data)->pending_ = true;
+			},
+			this);
+	}
+
+	void detach()
+	{
+		if (hotkey_ != OBS_INVALID_HOTKEY_ID)
+			obs_hotkey_unregister(hotkey_);
+		hotkey_ = OBS_INVALID_HOTKEY_ID;
+		parent_ = nullptr;
+	}
+
+	obs_source_t *source() const { return source_; }
+
+private:
+	void quiet_enable(bool enabled)
+	{
+		if (obs_source_enabled(source_) == enabled)
+			return;
+		t_shape_self_change = true;
+		obs_source_set_enabled(source_, enabled);
+		t_shape_self_change = false;
+	}
+
+	static void enable_cb(void *data, calldata_t *cd)
+	{
+		auto *self = static_cast<PictureShape *>(data);
+		if (!t_shape_self_change && self->ready_ && calldata_bool(cd, "enabled"))
+			self->pending_ = true;
+	}
+
+	obs_source_t *source_;
+	obs_source_t *parent_ = nullptr;
+	std::mutex mutex_;
+	double ratio_ = 0.0;
+	std::atomic<bool> pending_{false};
+	std::atomic<bool> ready_{false};
+	obs_hotkey_id hotkey_ = OBS_INVALID_HOTKEY_ID;
+};
+
+obs_properties_t *picture_shape_properties(void *)
+{
+	obs_properties_t *props = obs_properties_create();
+	obs_property_t *shape = obs_properties_add_list(props, "shape", obs_module_text("Shape.Shape"),
+							OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
+	obs_property_list_add_string(shape, obs_module_text("Shape.Automatic"), "0");
+	const char *shapes[][2] = {{"4:3", "4:3"},     {"Shape.Snes", "64:49"}, {"3:2", "3:2"}, {"8:7", "8:7"},
+				   {"10:9", "10:9"},   {"16:15", "16:15"},      {"5:4", "5:4"}, {"1:1", "1:1"},
+				   {"16:10", "16:10"}, {"16:9", "16:9"}};
+	for (const auto &entry : shapes)
+		obs_property_list_add_string(
+			shape, strncmp(entry[0], "Shape.", 6) == 0 ? obs_module_text(entry[0]) : entry[0], entry[1]);
+	obs_property_list_add_string(shape, obs_module_text("Frame.Shape.Custom"), "custom");
+	obs_property_set_modified_callback(shape, [](obs_properties_t *p, obs_property_t *, obs_data_t *settings) {
+		obs_property_set_visible(obs_properties_get(p, "custom"),
+					 strcmp(obs_data_get_string(settings, "shape"), "custom") == 0);
+		return true;
+	});
+	obs_properties_add_text(props, "custom", obs_module_text("Shape.Custom"), OBS_TEXT_DEFAULT);
+	obs_property_t *help = obs_properties_add_text(props, "help", obs_module_text("Shape.Help"), OBS_TEXT_INFO);
+	obs_property_text_set_info_word_wrap(help, true);
+	return props;
 }
 
 } // namespace
@@ -709,6 +1059,41 @@ void register_auto_frame()
 		static_cast<AutoFrame *>(data)->render();
 	};
 	obs_register_source(&info);
+
+	obs_source_info shape = {};
+	shape.id = kPictureShapeId;
+	shape.type = OBS_SOURCE_TYPE_FILTER;
+	shape.output_flags = OBS_SOURCE_VIDEO;
+	shape.get_name = [](void *) {
+		return obs_module_text("Shape.Name");
+	};
+	shape.create = [](obs_data_t *settings, obs_source_t *source) -> void * {
+		return new PictureShape(settings, source);
+	};
+	shape.destroy = [](void *data) {
+		delete static_cast<PictureShape *>(data);
+	};
+	shape.update = [](void *data, obs_data_t *settings) {
+		static_cast<PictureShape *>(data)->update(settings);
+	};
+	shape.get_defaults = [](obs_data_t *settings) {
+		obs_data_set_default_string(settings, "shape", "4:3");
+		obs_data_set_default_string(settings, "custom", "4:3");
+	};
+	shape.get_properties = picture_shape_properties;
+	shape.video_tick = [](void *data, float) {
+		static_cast<PictureShape *>(data)->tick();
+	};
+	shape.video_render = [](void *data, gs_effect_t *) {
+		obs_source_skip_video_filter(static_cast<PictureShape *>(data)->source());
+	};
+	shape.filter_add = [](void *data, obs_source_t *parent) {
+		static_cast<PictureShape *>(data)->attach(parent);
+	};
+	shape.filter_remove = [](void *data, obs_source_t *) {
+		static_cast<PictureShape *>(data)->detach();
+	};
+	obs_register_source(&shape);
 }
 
 } // namespace stagekit
