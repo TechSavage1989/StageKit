@@ -204,6 +204,16 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Undo and redo (0.1.0-beta35)
+
+The owner: "transforms in stage kit don't respond to undo or redo". `run_arrange` now takes
+`obs_scene_save_transform_states` before and after and hands both to
+`obs_frontend_add_undo_redo_action`; both callbacks are `obs_scene_load_transform_states`. The dock's
+*Send to* buttons add their step once the glide has ended; *Snap on release* adds one after the drag's.
+Send To / Place Item / Layout filters fired by keys do not add steps, on purpose. The tests replay the
+last step through `stagekit_replay_arrange` because there is no undo list without OBS's window.
+**Not verified in OBS.**
+
 ## Thumbnail fits the dock (0.1.0-beta34)
 
 The owner: "stagekit background in dock should scale to fit the dock size". `Thumb` reports width

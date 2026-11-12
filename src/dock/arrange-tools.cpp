@@ -48,6 +48,15 @@ struct Hotkey {
 };
 Hotkey g_hotkeys[(int)ArrangeAction::Count];
 
+// The last step handed to OBS's undo list, kept so the tests can replay it.
+std::string g_last_before, g_last_after;
+
+void load_transforms(const char *state)
+{
+	if (state && *state)
+		obs_scene_load_transform_states(state);
+}
+
 } // namespace
 
 ArrangeOptions arrange_options()
@@ -76,7 +85,46 @@ const ArrangeInfo &arrange_info(ArrangeAction action)
 	return kInfo[std::clamp((int)action, 0, (int)ArrangeAction::Count - 1)];
 }
 
+std::string transform_snapshot(obs_source_t *scene)
+{
+	obs_scene_t *s = scene_of(scene);
+	if (!s)
+		return {};
+	obs_data_t *states = obs_scene_save_transform_states(s, true);
+	const char *json = states ? obs_data_get_json(states) : nullptr;
+	std::string out = json ? json : "";
+	obs_data_release(states);
+	return out;
+}
+
+void add_transform_undo(const char *name, const std::string &before, const std::string &after)
+{
+	if (before.empty() || after.empty() || before == after)
+		return;
+	g_last_before = before;
+	g_last_after = after;
+	// Without OBS's window (the tests) there is no undo list to add to.
+	if (obs_frontend_get_main_window())
+		obs_frontend_add_undo_redo_action(name, load_transforms, load_transforms, before.c_str(), after.c_str(),
+						  false);
+}
+
+void replay_last_arrange(bool redo)
+{
+	load_transforms((redo ? g_last_after : g_last_before).c_str());
+}
+
 ArrangeOutcome run_arrange(ArrangeAction action, obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items)
+{
+	// One step in OBS's Edit → Undo for whatever this changes.
+	const std::string before = transform_snapshot(scene);
+	const ArrangeOutcome out = run_arrange_now(action, scene, items);
+	if (out.changed > 0)
+		add_transform_undo(obs_module_text(arrange_info(action).hotkey), before, transform_snapshot(scene));
+	return out;
+}
+
+ArrangeOutcome run_arrange_now(ArrangeAction action, obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items)
 {
 	const ArrangeOptions o = arrange_options();
 	ArrangeOutcome out;

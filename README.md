@@ -390,6 +390,8 @@ click several. You can use them from three places, and all three share the same 
   *StageKit: Align left*).
 - The **Arrange** box in the StageKit dock, which also says what it is about to move.
 
+Each use is one step in OBS's *Edit → Undo* and *Redo*.
+
 What they do:
 
 | Tool | What happens |

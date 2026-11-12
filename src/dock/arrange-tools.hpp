@@ -16,6 +16,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 namespace stagekit {
@@ -67,6 +68,16 @@ struct ArrangeOutcome {
 
 // Runs an action on the given items of a scene with the shared options.
 ArrangeOutcome run_arrange(ArrangeAction action, obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items);
+
+// The same without an undo step, for callers that record their own.
+ArrangeOutcome run_arrange_now(ArrangeAction action, obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items);
+
+// Every item's place and size in a scene, as OBS's own undo keeps them.
+std::string transform_snapshot(obs_source_t *scene);
+// Adds a step to OBS's Edit → Undo that goes back to `before` and forward to `after`.
+void add_transform_undo(const char *name, const std::string &before, const std::string &after);
+// For the tests: puts the scene back as before the last step (or forward again).
+void replay_last_arrange(bool redo);
 
 // Runs it on whatever is selected in the scene being edited in OBS.
 ArrangeOutcome run_arrange_on_selection(ArrangeAction action);
