@@ -32,7 +32,8 @@ enum class Against { Screen, Selection };
 // Where an item is on its scene's canvas, by its box or by what shows.
 Box measure_item(obs_source_t *scene, obs_sceneitem_t *item, const Measure &how);
 
-// The items selected in a scene, bottom-most first, items in groups included.
+// The items selected in a scene, bottom-most first. A selected group is one
+// item; in a group that is not selected, its selected items count.
 std::vector<obs_sceneitem_t *> selected_items(obs_source_t *scene);
 
 // Moves an item so the measured picture shifts by (dx, dy) canvas pixels.

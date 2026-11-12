@@ -2189,6 +2189,25 @@ int main(int argc, char **argv)
 				      "'snap when I let go' settles a moved item by itself (x %.0f)", bp.x);
 				tick_box("arrangeLiveSnap", false);
 
+				// A group counts as one item: a block and a group line up with each other.
+				{
+					obs_sceneitem_t *grouped = obs_scene_add_group(as, "Arrange Group");
+					obs_sceneitem_group_add_item(grouped, ic);
+					place(ia, 60, 20);
+					place(grouped, 400, 200);
+					sleep_ms(200);
+					select_only({ia});
+					obs_sceneitem_select(grouped, true);
+					against(1);
+					click("arrange_left");
+					CHECK(std::fabs(pos_of(ia).x - 60) < 0.6 &&
+						      std::fabs(pos_of(grouped).x - 60) < 1.6,
+					      "a selected group lines up with another item, not with the screen (%.0f, %.0f)",
+					      pos_of(ia).x, pos_of(grouped).x);
+					obs_sceneitem_select(grouped, false);
+					against(0);
+				}
+
 				select_only({});
 				if (scenes)
 					scenes->setCurrentIndex(std::max(0, scenes->findData("Test Scene")));
