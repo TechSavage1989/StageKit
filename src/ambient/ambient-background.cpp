@@ -35,6 +35,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <cstring>
 #include <mutex>
@@ -68,6 +69,7 @@ struct Settings {
 	LiveFit live_fit = LiveFit::Fill;
 	double live_zoom = 1.0;
 	bool live_replace = false; // the capture is the whole background while there is one
+	bool live_ready = true;    // keep the capture running in scenes that do not show it
 	double blur = 60.0;
 	PixelStyle pixel_style = PixelStyle::None;
 	double pixel_size = 10.0;
@@ -161,6 +163,8 @@ private:
 	uint32_t height_ = 1080;
 	double time_ = 0.0;
 	double resolve_timer_ = 0.0;
+	// False while the capture is only being kept running, not shown.
+	std::atomic<bool> live_shown_{true};
 	bool rendering_ = false;
 
 	obs_weak_source_t *base_child_ = nullptr;
@@ -328,6 +332,7 @@ void AmbientBackground::update(obs_data_t *settings)
 	s.live_fit = static_cast<LiveFit>(obs_data_get_int(settings, "live_fit"));
 	s.live_zoom = std::clamp(obs_data_get_double(settings, "live_zoom") / 100.0, 0.25, 8.0);
 	s.live_replace = obs_data_get_bool(settings, "live_replace");
+	s.live_ready = obs_data_get_bool(settings, "live_ready");
 	s.blur = std::clamp(obs_data_get_double(settings, "blur"), 0.0, 250.0);
 	s.pixel_style = static_cast<PixelStyle>(obs_data_get_int(settings, "pixel_style"));
 	s.pixel_size = std::clamp(obs_data_get_double(settings, "pixel_size"), 2.0, 200.0);
@@ -408,17 +413,45 @@ void AmbientBackground::resolve_children()
 	obs_source_release(base);
 
 	obs_source_t *live = nullptr;
+	bool shown = true;
 	if (s.live_mode == LiveMode::Source && !s.live_source.empty()) {
 		live = obs_get_source_by_name(s.live_source.c_str());
 	} else if (s.live_mode == LiveMode::Auto) {
-		obs_source_t *scene_source = obs_frontend_get_current_scene();
+		obs_source_t *scene_source = scene_on_screen();
 		if (obs_scene_t *scene = obs_scene_from_source(scene_source)) {
 			CaptureSearch search;
 			obs_scene_enum_items(scene, search_item, &search);
 			live = obs_source_get_ref(search.best);
 		}
 		obs_source_release(scene_source);
+		if (!live && s.live_ready) {
+			// This scene shows no capture. A capture that is let go of stops
+			// and takes a moment to start again, so the one last used (or,
+			// failing that, the largest in any scene) is kept running, out of
+			// sight, ready for the next scene that shows it.
+			shown = false;
+			{
+				std::lock_guard lock(mutex_);
+				live = child(live_child_);
+			}
+			if (live && !is_capture_source(live)) {
+				obs_source_release(live);
+				live = nullptr;
+			}
+			if (!live) {
+				CaptureSearch anywhere;
+				obs_enum_scenes(
+					[](void *param, obs_source_t *any_scene) {
+						if (obs_scene_t *sc = obs_scene_from_source(any_scene))
+							obs_scene_enum_items(sc, search_item, param);
+						return true;
+					},
+					&anywhere);
+				live = obs_source_get_ref(anywhere.best);
+			}
+		}
 	}
+	live_shown_ = shown;
 	if (live == source_) {
 		obs_source_release(live);
 		live = nullptr;
@@ -466,7 +499,8 @@ void AmbientBackground::tick(float seconds)
 
 	resolve_timer_ -= seconds;
 	if (resolve_timer_ <= 0.0) {
-		resolve_timer_ = 0.5;
+		// Often enough that a scene change is followed at once.
+		resolve_timer_ = 0.1;
 		resolve_children();
 	}
 }
@@ -729,7 +763,7 @@ void AmbientBackground::render()
 	} else if (base_image_loaded_) {
 		base = base_image_.image3.image2.image.texture;
 	}
-	gs_texture_t *live = live_source ? render_child(live_source, tr_live_, true) : nullptr;
+	gs_texture_t *live = live_source && live_shown_ ? render_child(live_source, tr_live_, true) : nullptr;
 	// A capture with nothing in it is no capture: the usual picture shows.
 	if (live && !live_shows_something(live))
 		live = nullptr;
@@ -856,7 +890,7 @@ bool visibility_modified(obs_properties_t *props, obs_property_t *, obs_data_t *
 	obs_property_set_visible(obs_properties_get(props, "base_source"), base == BaseType::Source);
 	obs_property_set_visible(obs_properties_get(props, "live_source"), live == LiveMode::Source);
 	obs_property_set_visible(obs_properties_get(props, "live_opacity"), live != LiveMode::None);
-	for (const char *name : {"live_fit", "live_zoom", "live_replace"})
+	for (const char *name : {"live_fit", "live_zoom", "live_replace", "live_ready"})
 		obs_property_set_visible(obs_properties_get(props, name), live != LiveMode::None);
 	obs_property_set_visible(obs_properties_get(props, "pixel_size"), pixel != PixelStyle::None);
 	obs_property_set_visible(obs_properties_get(props, "overlay_mode"), has_overlay);
@@ -913,6 +947,8 @@ obs_properties_t *get_properties(void *)
 	percent_slider(picture, "live_zoom", "Ambient.LiveZoom", 25.0, 400.0);
 	obs_property_t *replace =
 		obs_properties_add_bool(picture, "live_replace", obs_module_text("Ambient.LiveReplace"));
+	obs_property_t *ready = obs_properties_add_bool(picture, "live_ready", obs_module_text("Ambient.LiveReady"));
+	obs_property_set_long_description(ready, obs_module_text("Ambient.LiveReady.Tip"));
 	obs_property_set_long_description(replace, obs_module_text("Ambient.LiveReplace.Tip"));
 	obs_properties_add_group(props, "picture_group", obs_module_text("Ambient.Group.Picture"), OBS_GROUP_NORMAL,
 				 picture);
@@ -973,6 +1009,7 @@ void get_defaults(obs_data_t *settings)
 	obs_data_set_default_int(settings, "live_fit", (int)LiveFit::Fill);
 	obs_data_set_default_double(settings, "live_zoom", 100.0);
 	obs_data_set_default_bool(settings, "live_replace", false);
+	obs_data_set_default_bool(settings, "live_ready", true);
 	obs_data_set_default_double(settings, "speed_x", 30.0);
 	obs_data_set_default_double(settings, "speed_y", 15.0);
 	obs_data_set_default_double(settings, "zoom", 120.0);

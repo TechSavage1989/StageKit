@@ -204,6 +204,15 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Background capture kept ready (0.1.0-beta42)
+
+The owner: switching from a scene without the live background to one with it has "a slight loading
+time for the live background feed to kick in". In Automatic mode the background drops its live child
+when the scene on screen has no capture, OBS deactivates the capture, and a Game Capture then has to
+hook again. `live_ready` (default on) keeps the last capture, or the largest in any scene, as an active
+child with `live_shown_` false so it is not drawn. Children are resolved every 0.1 s, through
+`scene_on_screen()` now. **Untested: no capture source can be created headless.**
+
 ## Steady capture (0.1.0-beta41)
 
 The owner, with Auto Frame as *Just the picture* and Fit Item: going between a window and full-screen
