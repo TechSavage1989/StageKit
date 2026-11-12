@@ -17,8 +17,8 @@ StageKit is for streamers who build their scenes by hand. Each tool replaces a s
 takes several filters, source clones or wrapper scenes. Everything can be triggered from OBS itself,
 from hotkeys, or from the Stream Deck OBS Studio plugin's *Filter* and *Source* keys.
 
-- **Ramp Blur** (filter): blurs a source in and out smoothly. Six types: Gaussian, Dual Kawase, Box,
-  Pixelate, Zoom and Motion.
+- **Ramp Blur** (filter): blurs a source in and out smoothly. Seven types: Gaussian, Dual Kawase, Box,
+  Pixelate, Hexagons, Zoom and Motion.
 - **Ambient Background** (source): a soft, drifting backdrop built from an image or another source,
   optionally tinted by whatever capture is live.
 - **Start image**: one picture, chosen once, shown on the start scene and used by the background.
@@ -119,7 +119,7 @@ off, so it costs nothing while off.
 
 | Setting | What it does |
 | --- | --- |
-| Blur type | Gaussian (smoothest), Dual Kawase (fastest, best for strong blur), Box, Pixelate, Zoom, Motion |
+| Blur type | Gaussian (smoothest), Dual Kawase (fastest, best for strong blur), Box, Pixelate (square blocks), Hexagons (a honeycomb mosaic), Zoom, Motion |
 | Strength | 0–250. Gaussian, Kawase and Box look alike at the same number |
 | Ramp style | Grow the blur strength, or cross-fade a fully blurred image in |
 | Ramp in / out time | 0–5000 ms each. 0 is instant |

@@ -38,6 +38,7 @@ GAME_CAPTURES = {"Game Capture", "Windowed Game Capture"}
 # The one game capture in the rebuilt collection, and how far an emulator's squarer picture keeps from
 # the edges of a full-screen scene (the owner placed one by hand at about this).
 GAME = "Game Capture Framed"
+WINDOW_CAPTURES = {"Window Capture", "Blender", "Zbrush", "Fusion 360"}
 FULL_SCREEN_MARGIN = 90.0
 # Everything under these was the hand-built blurred background.
 BACKGROUND_SCENES = ("Live Background", "Start Background Scene", "Background Scene", "Tablet Background Scene")
@@ -404,7 +405,7 @@ def build_scene(name):
     report.append(f"\n{name}")
     flat = []
     flatten(name, T(), False, flat)
-    items, seen, ambient_done, game_done, fit = [], set(), False, False, None
+    items, seen, ambient_done, game_done, fit, fits = [], set(), False, False, None, []
     for e in flat:
         if e.get("ambient"):
             if not ambient_done:
@@ -433,12 +434,24 @@ def build_scene(name):
         seen.add(e["name"])
         if e["shadow"]:
             shadowed.add(e["name"])
+        if e["name"] in WINDOW_CAPTURES and e["bounds_type"] and e["bounds"][0] > 0:
+            # The same fit as the game: a window with the area's shape fills it, any other floats centred,
+            # and it stays fitted while the window is being resized.
+            whole = e["bounds"][0] >= CANVAS_W * 0.9
+            fits.append({"item": e["name"], "box": 0, "margin": FULL_SCREEN_MARGIN} if whole else
+                        {"item": e["name"], "box": 1, "box_x": float(round(e["pos"][0])),
+                         "box_y": float(round(e["pos"][1])), "box_width": float(int(e["bounds"][0])),
+                         "box_height": float(int(e["bounds"][1])), "margin": 0.0})
         items.append(item_json(e["name"], e["pos"], e["scale"], e["bounds_type"], e["bounds"], e["bounds_align"],
                                e["crop"], e["visible"], e["locked"], show=e.get("show"), hide=e.get("hide"),
                                align=e.get("align", 5)))
     filters = scene_filters(name, [i["name"] for i in items])
     if fit:
         filters.append(make_filter("stagekit_fit_item", "Fit the game", fit))
+    for window_fit in fits:
+        filters.append(make_filter("stagekit_fit_item", f"Fit {window_fit['item']}", window_fit))
+    if fits:
+        report.append(f"  Fit Item on: {', '.join(f['item'] for f in fits)}")
     new_sources[name] = scene_json(name, items, filters=filters)
     report.append(f"  {len(items)} items placed directly in the scene")
 

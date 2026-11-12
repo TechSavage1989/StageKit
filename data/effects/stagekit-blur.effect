@@ -164,6 +164,36 @@ float4 PSPixelate(VertData v_in) : TARGET
 	return resolve(sum, 4.0);
 }
 
+// ----------------------------------------------------------------- Hexagon
+
+// A mosaic of hexagons: each takes the colour of the picture at its centre.
+float4 PSHexagon(VertData v_in) : TARGET
+{
+	float block = max(strength, 1.0);
+	// Two offset rectangular grids; the nearer cell centre wins, which
+	// carves the plane into hexagons. Anchored on the centre of the image.
+	float2 step_size = float2(1.7320508, 1.0) * block;
+	float2 half_step = step_size * 0.5;
+	float2 p = v_in.uv * size - size * 0.5 + step_size * 64.0;
+	float2 a = p - step_size * floor(p / step_size) - half_step;
+	float2 moved = p - half_step;
+	float2 b = moved - step_size * floor(moved / step_size) - half_step;
+	float2 nearest = lerp(b, a, step(dot(a, a), dot(b, b)));
+	float2 cell = p - nearest - step_size * 64.0 + size * 0.5;
+	float2 q = float2(block, block) * 0.2;
+
+	float4 s0 = tap((cell + float2(-q.x, -q.y)) * texel);
+	float4 s1 = tap((cell + float2(q.x, -q.y)) * texel);
+	float4 s2 = tap((cell + float2(-q.x, q.y)) * texel);
+	float4 s3 = tap((cell + float2(q.x, q.y)) * texel);
+
+	float4 sum = float4(s0.rgb * s0.a, s0.a);
+	sum += float4(s1.rgb * s1.a, s1.a);
+	sum += float4(s2.rgb * s2.a, s2.a);
+	sum += float4(s3.rgb * s3.a, s3.a);
+	return resolve(sum, 4.0);
+}
+
 // -------------------------------------------------------------------- Zoom
 
 float4 PSZoom(VertData v_in) : TARGET
@@ -241,6 +271,15 @@ technique Pixelate
 	{
 		vertex_shader = VSDefault(v_in);
 		pixel_shader  = PSPixelate(v_in);
+	}
+}
+
+technique Hexagon
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSHexagon(v_in);
 	}
 }
 
