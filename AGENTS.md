@@ -23,6 +23,7 @@ for an update notice inside OBS. This exception is recorded in the handoff.
 | `src/ambient/` | Ambient Background source |
 | `src/shadow/` | Shadow & Backdrop filter |
 | `src/zoom/` | Ramp Zoom filter |
+| `src/view/` | Cropped View source (part of another source as a source, so filters follow the crop) |
 | `src/placement/` | Scene filters: Place Item, Show/Hide Animation, Visibility Link, Match Item, Layout; and Send To, Place Item's code as a filter on the source it moves |
 | `src/dock/` | The StageKit dock (Qt widgets, no `Q_OBJECT`; it drives Place Item filters) and its scene picture (`dock-canvas.*`: drag, wheel, zoom point) |
 | `src/common/` | Shared helpers: easing and `Tween`, `SwitchRamp`, `KawaseBlur`, scene utilities, and the start image (global path + Start Image source) |

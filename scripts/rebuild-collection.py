@@ -166,18 +166,45 @@ class T:
         return T(self.ox + ox * self.sx, self.oy + oy * self.sy, self.sx * sx, self.sy * sy)
 
 
-def wrapper_for_crop(name, crop):
-    """A small scene holding one cropped source, so a shadow can follow the crop."""
+def make_view(view_name, source_name, settings):
+    """A Cropped View (StageKit): part of a source as a plain source, so no wrapper scene is needed."""
+    carry(source_name)
+    v = copy.deepcopy(by["Start Image"])
+    v.update({"name": view_name, "uuid": uid(), "id": "stagekit_cropped_view",
+              "versioned_id": "stagekit_cropped_view", "filters": [],
+              "settings": dict(settings, source=source_name)})
+    new_sources[view_name] = v
+
+
+def view_for_crop(name, crop):
+    """A source cropped by its scene item and shadowed: the crop moves into a Cropped View."""
     left, right, top, bottom = crop
-    wname = f"{name} (cropped {left}-{right}-{top}-{bottom})"
-    if wname in new_sources:
-        return wname
     w, h = leaf_size(name)
-    carry(name)
-    inner = item_json(name, (-left, -top))
-    new_sources[wname] = scene_json(wname, [inner], custom_size=(w - left - right, h - top - bottom))
-    report.append(f"  wrapper scene '{wname}' ({w - left - right}x{h - top - bottom}): crop first, then shadow")
-    return wname
+    vname = f"{name} Crop {w - left - right}x{h - top - bottom}"
+    if vname not in new_sources:
+        make_view(vname, name, {"crop_to": 0, "left": left, "right": right, "top": top, "bottom": bottom})
+        report.append(f"  '{vname}': a Cropped View of {name} (no wrapper scene)")
+    return vname
+
+
+def view_for_crop_scene(scene_name):
+    """An old one-item scene with a Crop filter (Square Camera) becomes a Cropped View.
+
+    Returns how much bigger the old scene drew the source, so the item keeps its size on screen."""
+    scene = by[scene_name]
+    inner = [it for it in scene["settings"]["items"]
+             if it["name"] not in SKIP_LEAVES and it.get("visible", True) and not it.get("group_item_backup")]
+    crop = next(f["settings"] for f in scene["filters"] if f["id"] == "crop_filter" and f.get("enabled", True))
+    if len(inner) != 1 or not crop.get("relative", True) or inner[0]["pos"]["x"] or inner[0]["pos"]["y"]:
+        return None
+    it = inner[0]
+    sx, sy = it["scale"]["x"], it["scale"]["y"]
+    if scene_name not in new_sources:
+        make_view(scene_name, it["name"], {
+            "crop_to": 0, "left": round(crop.get("left", 0) / sx), "right": round(crop.get("right", 0) / sx),
+            "top": round(crop.get("top", 0) / sy), "bottom": round(crop.get("bottom", 0) / sy)})
+        report.append(f"  '{scene_name}': was a scene with a Crop filter, now a Cropped View of {it['name']}")
+    return sx, sy
 
 
 def flatten(scene_name, t, shadow, out, depth=0):
@@ -213,13 +240,16 @@ def flatten(scene_name, t, shadow, out, depth=0):
                  "bounds_type": it.get("bounds_type", 0), "bounds_align": it.get("bounds_align", 0),
                  "bounds": (it["bounds"]["x"] * t.sx, it["bounds"]["y"] * t.sy), "crop": crop,
                  "shadow": own_shadow}
-        if kind in ("scene", "group"):
-            # Kept as it is: a crop wrapper (Square Camera) or a group of plain sources.
+        grew = view_for_crop_scene(name) if kind == "scene" and crop_filters else None
+        if grew:
+            entry["scale"] = (entry["scale"][0] * grew[0], entry["scale"][1] * grew[1])
+        elif kind in ("scene", "group"):
+            # Kept as it is: a group of plain sources.
             keep_container(name)
         elif name in GAME_CAPTURES:
             entry["game"] = True
         elif own_shadow and any(crop):
-            entry["name"] = wrapper_for_crop(name, crop)
+            entry["name"] = view_for_crop(name, crop)
             entry["crop"] = (0, 0, 0, 0)
         else:
             carry(name)

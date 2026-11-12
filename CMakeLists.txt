@@ -47,6 +47,8 @@ target_sources(
     src/common/kawase-blur.hpp
     src/common/switch-ramp.cpp
     src/common/switch-ramp.hpp
+    src/view/cropped-view.cpp
+    src/view/cropped-view.hpp
     src/zoom/ramp-zoom.cpp
     src/zoom/ramp-zoom.hpp
     src/capture/auto-capture.cpp

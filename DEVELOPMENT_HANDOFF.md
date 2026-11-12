@@ -219,9 +219,11 @@ python3 -I scripts/rebuild-collection.py <original.json> <rebuilt.json> <report.
   chains go, and the real sources are placed directly in the scene with StageKit filters. Hidden
   per-shape variants are dropped in favour of one game capture with Auto Capture and Auto Frame. The
   hand-built blurred backgrounds become one Ambient Background source.
-- A source that was cropped and shadowed keeps a small wrapper scene (crop first, then shadow), because
-  an item's crop is applied after its filters.
-- First draft (2026-11-12): 57 sources, 19 scenes, 66 filters. The owner has not imported it yet.
+- A source that was cropped and shadowed becomes a Cropped View (StageKit) source, because an item's
+  crop is applied after its filters. Draft 1 used small wrapper scenes for this and the owner objected
+  ("square camera is still embedded in another scene"); nothing in the rebuild may nest a scene.
+- Draft 2 (2026-11-12): 57 sources, 15 scenes (only the production scenes), 65 filters. It needs
+  0.1.0-beta19 for the Cropped View source.
 - `tests/collection-loadcheck.cpp` loads a collection in headless libobs with StageKit and shows each
   scene once. It is not part of `run-tests.sh`. Build and run it by hand:
 

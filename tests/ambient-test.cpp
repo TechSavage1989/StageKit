@@ -697,6 +697,71 @@ int main(int argc, char **argv)
 			obs_source_release(card);
 		}
 
+		// Cropped View: part of a source as a source of its own.
+		printf("\n[cropped view]\n");
+		{
+			// A 400x200 picture: red on the left half, blue on the right.
+			QImage halves(400, 200, QImage::Format_RGB32);
+			for (int y = 0; y < 200; y++)
+				for (int x = 0; x < 400; x++)
+					halves.setPixel(x, y, x < 200 ? qRgb(220, 30, 30) : qRgb(30, 30, 220));
+			const std::string halves_path = out + "/view-halves.png";
+			halves.save(QString::fromStdString(halves_path));
+			obs_data_t *hd = obs_data_create();
+			obs_data_set_string(hd, "file", halves_path.c_str());
+			obs_source_t *camera = obs_source_create("image_source", "View Camera", hd, nullptr);
+			obs_data_release(hd);
+
+			obs_data_t *vd = obs_data_create();
+			obs_data_set_string(vd, "source", "View Camera");
+			obs_data_set_int(vd, "crop_to", 1); // a square from the middle
+			obs_source_t *view =
+				obs_source_create("stagekit_cropped_view", "Square Camera View", vd, nullptr);
+			CHECK(view != nullptr, "the Cropped View source can be created");
+			sleep_ms(700);
+			CHECK(obs_source_get_width(view) == 200 && obs_source_get_height(view) == 200,
+			      "'a square' takes the middle of the picture (%ux%u)", obs_source_get_width(view),
+			      obs_source_get_height(view));
+			std::vector<uint8_t> vp = render(view, 200, 200);
+			auto at = [&](int x, int y, int channel) {
+				return (int)vp[(size_t(y) * 200 + x) * 4 + channel];
+			};
+			CHECK(at(50, 100, 0) > 150 && at(50, 100, 2) < 90 && at(150, 100, 2) > 150 &&
+				      at(150, 100, 0) < 90,
+			      "and shows that part: red half, blue half (%d,%d | %d,%d)", at(50, 100, 0),
+			      at(50, 100, 2), at(150, 100, 0), at(150, 100, 2));
+
+			obs_data_set_int(vd, "crop_to", 0);
+			obs_data_set_int(vd, "left", 250);
+			obs_data_set_int(vd, "top", 20);
+			obs_data_set_int(vd, "bottom", 30);
+			obs_source_update(view, vd);
+			sleep_ms(150);
+			CHECK(obs_source_get_width(view) == 150 && obs_source_get_height(view) == 150,
+			      "set amounts crop each side (%ux%u)", obs_source_get_width(view),
+			      obs_source_get_height(view));
+			vp = render(view, 150, 150);
+			CHECK((int)vp[(size_t(75) * 150 + 10) * 4 + 2] > 150, "what is left is the right-hand part");
+
+			// A shadow on the view follows the crop: the view grows by the shadow's room.
+			obs_data_t *sd = obs_data_create();
+			obs_data_set_double(sd, "softness", 0);
+			obs_data_set_double(sd, "offset_x", 20);
+			obs_data_set_double(sd, "offset_y", 20);
+			obs_source_t *shade = obs_source_create("stagekit_shadow_backdrop", "Shadow", sd, nullptr);
+			obs_source_filter_add(view, shade);
+			sleep_ms(150);
+			CHECK(obs_source_get_width(view) == 170 && obs_source_get_height(view) == 170,
+			      "a shadow added to the view sits around the cropped picture (%ux%u)",
+			      obs_source_get_width(view), obs_source_get_height(view));
+			obs_source_filter_remove(view, shade);
+			obs_source_release(shade);
+			obs_data_release(sd);
+			obs_data_release(vd);
+			obs_source_release(view);
+			obs_source_release(camera);
+		}
+
 		printf("\n[show/hide animation]\n");
 		obs_scene_t *scene = obs_scene_create("Show Scene");
 		obs_source_t *lower_src = color("Lower Third", 200, 50);
