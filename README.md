@@ -171,15 +171,18 @@ The settings are in five numbered groups:
 | 5. Movement | How long the picture takes to settle after a resolution change |
 
 **A shape, once found, is held.** When a window goes full-screen, or the resolution changes, the
-picture keeps the shape it had: there is no moment of showing the bars and trimming them again. A menu
+picture keeps the shape it had: there is no moment of showing the bars and trimming them again. The
+last good picture stays up for a fifth of a second while the capture settles, and for up to a second if
+the capture drops out, so the switch does not blink. A menu
 or pop-up drawn over the bars does not resize it. It changes only when another real picture shape has
 been clearly on screen for the hold time, or when a different program is captured.
 
-**Picture shape for each program.** Common emulators are known already: Snes9x, bsnes, mGBA,
-VisualBoyAdvance, Project64, DuckStation, ePSXe, Kega Fusion, BlastEm, Flycast, Redream, PPSSPP, BGB,
-SameBoy and Gambatte. For anything else, or to change one of those, choose the program from the list of
+**Picture shape for each program.** Common emulators start from their usual shape (Snes9x 8:7, mGBA
+3:2, Project64 4:3 and so on), so the picture is right from the first frame. That is only a starting
+point: if the picture clearly shows another shape, that shape is used and held. To fix a program's
+shape yourself, choose the program from the list of
 open programs (or find its file with *…or find it on this computer*), choose its shape and press
-*Remember this shape for this program*. Your own shapes win over the built-in ones. Emulators that play
+*Remember this shape for this program*. A shape you save is always obeyed as it is. Emulators that play
 several consoles, such as RetroArch and Dolphin, are not built in because their shape depends on the game.
 
 To set the shape from a Stream Deck, add **Picture Shape key (StageKit)** next to Auto Frame, once per
@@ -251,10 +254,15 @@ hotkey under the scene.
 
 Open it from *Docks → StageKit*. It works on the current scene (the preview scene in Studio Mode).
 
-<p align="center"><img src="docs/images/stagekit-dock.png" width="340" alt="The StageKit dock: an item picker, a three-by-three grid of position buttons, margin and travel time, buttons that make Stream Deck keys, and buttons that add an effect to the item"></p>
+<p align="center"><img src="docs/images/stagekit-dock.png" width="340" alt="The StageKit dock: an item picker, a small picture of the scene to drag items on, a three-by-three grid of position buttons, margin and travel time, buttons that make Stream Deck keys, and buttons that add an effect to the item"></p>
 
 - Pick a scene: the one on screen, or any other by name, which is how you reach an item that lives in a
   nested scene. Items inside groups are listed too.
+- **The picture of the scene** is for working by hand. Click an item to select it and drag it to move
+  it. Turn the mouse wheel over the picture to make the selected item bigger or smaller. If the item
+  has a Ramp Zoom, a yellow cross marks where it zooms in: drag the cross to move that point, and hold
+  Ctrl while turning the wheel to set how far it zooms. Untick *Show the live picture* to see outlines
+  only, which costs nothing to draw.
 - Pick an item and click one of the nine positions. It glides there.
 - *Make keys for all nine positions* adds a Place Item filter for each one to the scene, named like
   "Camera → Top right". Point a Stream Deck *Filter* key at one, or give it a hotkey.

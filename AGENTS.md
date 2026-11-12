@@ -24,7 +24,7 @@ for an update notice inside OBS. This exception is recorded in the handoff.
 | `src/shadow/` | Shadow & Backdrop filter |
 | `src/zoom/` | Ramp Zoom filter |
 | `src/placement/` | Scene filters: Place Item, Show/Hide Animation, Match Item, Layout; and Send To, Place Item's code as a filter on the source it moves |
-| `src/dock/` | The StageKit dock (Qt widget, no `Q_OBJECT`; it drives Place Item filters) |
+| `src/dock/` | The StageKit dock (Qt widgets, no `Q_OBJECT`; it drives Place Item filters) and its scene picture (`dock-canvas.*`: drag, wheel, zoom point) |
 | `src/common/` | Shared helpers: easing and `Tween`, `SwitchRamp`, `KawaseBlur`, scene utilities, and the start image (global path + Start Image source) |
 | `src/frame/` | Auto Frame filter and the Picture Shape key filter |
 | `src/capture/` | Auto Capture filter (aims a Game Capture at the game in front; Win32 only, compiled but idle elsewhere) |
@@ -101,6 +101,11 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
 - **Long control labels push every control to the right** in OBS's filter window, which the owner
   rejected. Keep a label under about 26 characters and put the rest in a tooltip
   (`obs_property_set_long_description`).
+- **Built-in emulator shapes are a starting guess, never an order.** The owner's Snes9x shows 8:7; the
+  first table said 64:49 and cropped the picture. `kKnownPrograms` only seeds the held shape; what is
+  seen on screen corrects it. Only a shape the owner saved, or a Picture Shape key, is obeyed blindly.
+- **The dock's scene picture reads the scene back about four times a second** while it is visible and
+  *Show the live picture* is ticked. Keep it small (480 px wide) and off when hidden.
 - **Trigger filters** (Send To, Place Item, Layout) switch themselves off after running and ignore the enabled
   state restored at load (`ready_`), so they do not fire when OBS starts.
 - **Auto Capture's Windows code is only compiled by CI and never run by the tests.** The tests feed it
