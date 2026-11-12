@@ -229,6 +229,15 @@ private:
 	gs_texrender_t *tr_base_ = nullptr;
 	gs_texrender_t *tr_live_ = nullptr;
 	gs_texrender_t *tr_scene_ = nullptr;
+
+	// Whether the live capture is showing anything, looked at twice a second
+	// through a small copy of it.
+	bool live_shows_something(gs_texture_t *live);
+	gs_texrender_t *tr_probe_ = nullptr;
+	gs_stagesurf_t *probe_stage_ = nullptr;
+	double probe_at_ = -1.0;    // when it was last looked at
+	double black_since_ = -1.0; // when it was first seen all black
+	bool live_empty_ = false;
 	gs_texrender_t *tr_blur_ = nullptr;
 	gs_texrender_t *tr_pixel_ = nullptr;
 	gs_texrender_t *tr_final_ = nullptr;
@@ -300,6 +309,8 @@ AmbientBackground::~AmbientBackground()
 		gs_image_file4_free(&overlay_image_);
 	gs_effect_destroy(effect_);
 	gs_effect_destroy(blur_effect_);
+	gs_texrender_destroy(tr_probe_);
+	gs_stagesurface_destroy(probe_stage_);
 	for (gs_texrender_t *tr : {tr_base_, tr_live_, tr_scene_, tr_blur_, tr_pixel_, tr_final_})
 		gs_texrender_destroy(tr);
 	for (auto *tr : tr_down_)
@@ -536,6 +547,73 @@ gs_texture_t *AmbientBackground::render_child(obs_source_t *child, gs_texrender_
 	return gs_texrender_get_texture(target);
 }
 
+// Nothing drawn at all counts as empty at once. A picture that is black all
+// over counts after two seconds, so a game's cut to black does not flash the
+// usual picture in; anything visible counts as a picture again immediately.
+bool AmbientBackground::live_shows_something(gs_texture_t *live)
+{
+	constexpr uint32_t kProbe = 64;
+	constexpr double kEvery = 0.5, kBlackFor = 2.0;
+	if (probe_at_ >= 0.0 && time_ >= probe_at_ && time_ - probe_at_ < kEvery)
+		return !live_empty_;
+	probe_at_ = time_;
+
+	if (!tr_probe_)
+		tr_probe_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
+	if (!probe_stage_)
+		probe_stage_ = gs_stagesurface_create(kProbe, kProbe, GS_RGBA);
+	gs_texrender_reset(tr_probe_);
+	if (!tr_probe_ || !probe_stage_ || !gs_texrender_begin(tr_probe_, kProbe, kProbe))
+		return !live_empty_;
+	vec4 clear;
+	vec4_zero(&clear);
+	gs_clear(GS_CLEAR_COLOR, &clear, 0.0f, 0);
+	gs_ortho(0.0f, (float)kProbe, 0.0f, (float)kProbe, -100.0f, 100.0f);
+	gs_blend_state_push();
+	gs_blend_function(GS_BLEND_ONE, GS_BLEND_ZERO);
+	gs_effect_t *def = obs_get_base_effect(OBS_EFFECT_DEFAULT);
+	gs_effect_set_texture(gs_effect_get_param_by_name(def, "image"), live);
+	while (gs_effect_loop(def, "Draw"))
+		gs_draw_sprite(live, 0, kProbe, kProbe);
+	gs_blend_state_pop();
+	gs_texrender_end(tr_probe_);
+
+	bool anything = false, bright = false;
+	gs_stage_texture(probe_stage_, gs_texrender_get_texture(tr_probe_));
+	uint8_t *data = nullptr;
+	uint32_t linesize = 0;
+	if (!gs_stagesurface_map(probe_stage_, &data, &linesize))
+		return !live_empty_;
+	for (uint32_t y = 0; y < kProbe && !bright; y++) {
+		const uint8_t *row = data + (size_t)y * linesize;
+		for (uint32_t x = 0; x < kProbe; x++) {
+			const uint8_t *p = row + x * 4;
+			if (p[3] <= 12)
+				continue;
+			anything = true;
+			if (std::max({p[0], p[1], p[2]}) > 16) {
+				bright = true;
+				break;
+			}
+		}
+	}
+	gs_stagesurface_unmap(probe_stage_);
+
+	if (bright) {
+		black_since_ = -1.0;
+		live_empty_ = false;
+	} else if (!anything) {
+		black_since_ = -1.0;
+		live_empty_ = true;
+	} else {
+		if (black_since_ < 0.0 || time_ < black_since_)
+			black_since_ = time_;
+		if (time_ - black_since_ >= kBlackFor)
+			live_empty_ = true;
+	}
+	return !live_empty_;
+}
+
 // Draws tex so it covers the current render target (out_w x out_h set by the
 // caller's ortho), scrolled by the given number of output pixels.
 void AmbientBackground::draw_layer(gs_texture_t *tex, uint32_t out_w, uint32_t out_h, double scroll_x, double scroll_y,
@@ -680,6 +758,9 @@ void AmbientBackground::render()
 		base = base_image_.image3.image2.image.texture;
 	}
 	gs_texture_t *live = live_source ? render_child(live_source, tr_live_, true) : nullptr;
+	// A capture with nothing in it is no capture: the usual picture shows.
+	if (live && !live_shows_something(live))
+		live = nullptr;
 
 	gs_texrender_reset(tr_scene_);
 	if (gs_texrender_begin(tr_scene_, iw, ih)) {
