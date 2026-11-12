@@ -32,6 +32,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "placement/scene-tools.hpp"
 #include "placement/visibility-link.hpp"
 #include "shadow/shadow-backdrop.hpp"
+#include "view/cropped-view.hpp"
 #include "zoom/ramp-zoom.hpp"
 
 OBS_DECLARE_MODULE()
@@ -95,6 +96,7 @@ bool obs_module_load(void)
 	stagekit::register_shadow_backdrop();
 	stagekit::register_place_item();
 	stagekit::register_ramp_zoom();
+	stagekit::register_cropped_view();
 	stagekit::register_auto_capture();
 	stagekit::register_program_trigger();
 	stagekit::register_auto_frame();

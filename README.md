@@ -30,6 +30,8 @@ from hotkeys, or from the Stream Deck OBS Studio plugin's *Filter* and *Source* 
   with no list of games to keep. Windows only.
 - **Program Trigger** (filter): while a program is open, shows chosen items and switches chosen filters
   on; puts them back when it closes. Windows only.
+- **Cropped View** (source): part of another source, such as your camera cropped square, as a source of
+  its own. Filters on the view follow the crop, so no wrapper scene is needed.
 - **Ramp Zoom** (filter): zooms smoothly into a point of a source and back out.
 - **Send To** (filter): put it on your camera, once per spot. Each one is a Stream Deck key that moves
   the camera to a corner or to a spot you saved.
@@ -240,6 +242,16 @@ any *source* to switch that source's other filters. Windows only.
 While the program is here the items are shown and the filters are on; when it goes they are hidden and
 off. It acts when the program appears or goes, so a change you make by hand in between is kept until
 then. A minimised window does not count as open. The top line says whether it sees the program now.
+
+### Cropped View
+
+Add **Cropped View (StageKit)** as a source. Choose the source to show, then crop it to a square, to
+4:3, 16:9, 3:4 or 9:16 from the middle, or by set amounts off each side.
+
+Use it when one camera is wanted in more than one shape. OBS applies an item's crop after the source's
+filters, so a shadow on the camera is cut off by the crop; a Cropped View is the cropped picture as a
+source, and a Shadow & Backdrop or Ramp Zoom added to the view follows it. Make one view per shape. The
+camera is still captured only once.
 
 ### Ramp Zoom
 
