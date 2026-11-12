@@ -506,6 +506,103 @@ int main(int argc, char **argv)
 		obs_scene_release(scene);
 	}
 
+	// ------------------------------------------------------------ auto frame
+	{
+		printf("\n[auto frame]\n");
+		auto sized = [](obs_source_t *src, int cw, int ch) {
+			obs_data_t *d = obs_data_create();
+			obs_data_set_int(d, "width", cw);
+			obs_data_set_int(d, "height", ch);
+			obs_source_update(src, d);
+			obs_data_release(d);
+		};
+		obs_source_t *game = obs_source_create("color_source", "Emulator", nullptr, nullptr);
+		sized(game, 640, 360); // a 16:9 picture
+		obs_data_t *fs = obs_data_create();
+		obs_data_set_int(fs, "frame_width", 800);
+		obs_data_set_int(fs, "frame_height", 600);
+		obs_data_set_int(fs, "glide_ms", 300);
+		obs_data_set_int(fs, "ease_curve", 0);
+		obs_source_t *frame = obs_source_create("stagekit_auto_frame", "Auto Frame", fs, nullptr);
+		obs_source_filter_add(game, frame);
+
+		struct Pic {
+			double x, y, w, h;
+		};
+		auto picture = [&]() {
+			render(game, obs_source_get_width(game), obs_source_get_height(game));
+			calldata_t cd = {};
+			proc_handler_call(obs_source_get_proc_handler(frame), "get_picture", &cd);
+			Pic p{calldata_float(&cd, "x"), calldata_float(&cd, "y"), calldata_float(&cd, "width"),
+			      calldata_float(&cd, "height")};
+			calldata_free(&cd);
+			return p;
+		};
+		auto is = [](const Pic &p, double x, double y, double pw, double ph) {
+			return std::fabs(p.x - x) < 0.6 && std::fabs(p.y - y) < 0.6 && std::fabs(p.w - pw) < 0.6 &&
+			       std::fabs(p.h - ph) < 0.6;
+		};
+		auto set = [&](const char *key, long long value) {
+			obs_data_set_int(fs, key, value);
+			obs_source_update(frame, fs);
+			sleep_ms(80);
+			picture();
+			sleep_ms(400); // let any glide finish
+		};
+
+		sleep_ms(120);
+		Pic p = picture();
+		CHECK(obs_source_get_width(game) == 800 && obs_source_get_height(game) == 600,
+		      "the source takes the frame's size (%ux%u)", obs_source_get_width(game),
+		      obs_source_get_height(game));
+		CHECK(is(p, 0, 75, 800, 450), "a 16:9 picture is fitted and centred (%.0f,%.0f %.0fx%.0f)", p.x, p.y,
+		      p.w, p.h);
+		const std::vector<uint8_t> px = render(game, 800, 600);
+		CHECK(px[(size_t(10) * 800 + 400) * 4 + 3] == 0 && px[(size_t(300) * 800 + 400) * 4 + 3] == 255,
+		      "bars outside the picture are transparent, the picture is solid");
+
+		// The emulator switches to a 4:3 resolution: same scene, new fit, with a glide.
+		sized(game, 320, 240);
+		sleep_ms(60);
+		picture();
+		sleep_ms(120);
+		p = picture();
+		CHECK(obs_source_get_width(game) == 800 && p.h > 455 && p.h < 595,
+		      "when the resolution changes the frame stays put and the picture glides (height %.0f)", p.h);
+		sleep_ms(350);
+		p = picture();
+		CHECK(is(p, 0, 0, 800, 600), "and settles filling the 4:3 frame (%.0f,%.0f %.0fx%.0f)", p.x, p.y, p.w,
+		      p.h);
+
+		// A 256x224 console picture.
+		sized(game, 256, 224);
+		set("fit", 2); // whole-number scale
+		p = picture();
+		CHECK(is(p, 144, 76, 512, 448), "whole-number scale shows 256x224 at exactly 2x (%.0f,%.0f %.0fx%.0f)",
+		      p.x, p.y, p.w, p.h);
+		set("shape", 1); // show it as 4:3
+		set("fit", 0);
+		p = picture();
+		CHECK(is(p, 0, 0, 800, 600), "a shape override shows it as 4:3 (%.0f,%.0f %.0fx%.0f)", p.x, p.y, p.w,
+		      p.h);
+		set("shape", 0);
+		set("fit", 1); // fill
+		p = picture();
+		CHECK(p.w >= 799.4 && p.h >= 599.4 && (p.w > 801 || p.h > 601),
+		      "fill covers the frame and crops the overflow (%.0fx%.0f)", p.w, p.h);
+		set("fit", 0);
+		set("align_x", 0);
+		set("align_y", 2);
+		p = picture();
+		CHECK(std::fabs(p.x) < 0.6 && std::fabs(p.y + p.h - 600) < 0.6,
+		      "alignment sits it bottom-left (%.0f,%.0f)", p.x, p.y);
+
+		obs_data_release(fs);
+		obs_source_filter_remove(game, frame);
+		obs_source_release(frame);
+		obs_source_release(game);
+	}
+
 	// ------------------------------------------------------------- ramp zoom
 	{
 		printf("\n[ramp zoom]\n");

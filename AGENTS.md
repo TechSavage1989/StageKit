@@ -111,6 +111,10 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
 - `.github/workflows/repo-checks.yaml` runs `scripts/check-root.sh`.
 - Merging, marking a pull request ready, tagging and releasing each need the owner's explicit approval
   for that task.
+- Standing approval, given 2026-11-12, for the scene-collection rebuild only: merge each change once
+  its checks pass and publish it as the next pre-release without asking, then tell the owner it is
+  live. It does not cover a stable (non-beta) release, changes to repository visibility or access, or
+  work unrelated to the rebuild. See the handoff's task history.
 - AI coding sessions cannot push tags or create, edit or publish releases here; the platform refuses
   them. Releases are published by `.github/workflows/push.yaml` when a new `docs/releases/<version>.md`
   reaches `main` (steps in the handoff). Never ask the owner to create tags by hand.

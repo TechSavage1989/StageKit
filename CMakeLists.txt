@@ -54,6 +54,8 @@ target_sources(
     src/dock/stagekit-dock.hpp
     src/placement/scene-tools.cpp
     src/placement/scene-tools.hpp
+    src/frame/auto-frame.cpp
+    src/frame/auto-frame.hpp
     src/placement/place-item.cpp
     src/placement/place-item.hpp
     src/shadow/shadow-backdrop.cpp

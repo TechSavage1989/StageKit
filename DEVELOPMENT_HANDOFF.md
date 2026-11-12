@@ -20,15 +20,28 @@ All on `main`, each with headless tests on Linux:
 - Ramp Blur filter, with Blur All hotkeys and obs-websocket vendor requests
 - Ambient Background source
 - Shadow & Backdrop filter
+- Auto Frame filter (fixed frame, fits any capture resolution inside it)
 - Ramp Zoom filter
 - Place Item, Show/Hide Animation, Match Item and Layout scene filters
 - StageKit dock (Qt): position grid, one-click keys, saved spots, add-an-effect buttons
 
+## Owner's goal
+
+Rebuild the owner's whole OBS scene collection so StageKit tools do what the nested scenes, source
+clones, Move filter chains and Advanced Scene Switcher macros do today. Two reasons: the old setup is
+hard to manage and heavy on resources. Judge each new feature by which scenes or macros it removes, and
+keep idle cost near zero. The owner confirmed on Windows (OBS 32.2.2, 0.1.0-beta2) that Ramp Blur,
+Ambient Background, Shadow & Backdrop, Ramp Zoom, Show/Hide Animation and Layout work.
+
+Reported problems still open: the dock cannot reach items in nested scenes or groups; Match Item sizes
+oddly inside groups and an item was reported as dropping behind others; no bring-to-front / send-to-back
+control; Layout should cover a chosen set of items; the owner wants to drag items and zoom points on a
+picture in the dock and zoom with the mouse wheel.
+
 ## Not verified
 
-- **Nothing has been loaded in OBS on Windows or macOS.** CI compiles there; the shaders are only
-  exercised on OpenGL. Direct3D compiles `.effect` files at load time, so the first run on Windows is
-  the real test.
+- Tools added after 0.1.0-beta2 (Auto Frame so far) have not been run in OBS on Windows. Nothing has
+  been run on macOS.
 - The Windows zip and installer have not been opened or run on a real machine. The installer is built
   by Inno Setup on the CI runner and cannot be built or run on Linux.
 - Ambient Background's *Automatic* live capture needs the OBS front end and is not covered by tests.
@@ -123,3 +136,6 @@ information), which is what the template uses for pushes to `main`.
   so an automatic release job was added to the push workflow and the release was published by it. History, not standing permission.
 - 2026-11-12: `docs/REPOSITORY_STANDARDS.md` was copied byte-for-byte from the owner's other app
   repositories (nine of them held an identical copy).
+- 2026-11-12: Owner said "yes merge and publish each one without asking" for the test releases of
+  the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
+  as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
