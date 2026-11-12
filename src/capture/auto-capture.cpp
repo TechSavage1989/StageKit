@@ -41,6 +41,8 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include "auto-capture.hpp"
 
+#include "../common/pick-list.hpp"
+
 #include <obs-module.h>
 #include <util/platform.h>
 #include <plugin-support.h>
@@ -614,6 +616,8 @@ obs_properties_t *get_properties(void *data)
 		[](obs_properties_t *p, obs_property_t *, void *d) {
 			auto *filter = static_cast<AutoCapture *>(d);
 			filter->add_to("never", filter->current());
+			pick_list_refresh(p, filter->source(), "never", true);
+			pick_list_refresh(p, filter->source(), "always", true);
 			obs_property_set_description(obs_properties_get(p, "status"),
 						     obs_module_text("Capture.Status.None"));
 			obs_property_set_visible(obs_properties_get(p, "never_now"), false);
@@ -628,41 +632,32 @@ obs_properties_t *get_properties(void *data)
 		},
 		data);
 
-	// Choosing from what is open, instead of typing file names.
-	obs_properties_t *choose = obs_properties_create();
-	obs_property_t *pick = obs_properties_add_list(choose, "pick", obs_module_text("Capture.Pick"),
-						       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
-	obs_property_list_add_string(pick, obs_module_text("Capture.Pick.None"), "");
-	if (self) {
-		for (const Window &w : self->open_programs()) {
-			const std::string label = w.executable + "  -  " + w.title;
-			obs_property_list_add_string(pick, label.c_str(), w.executable.c_str());
-		}
-	}
-	auto add_picked = [](const char *list, void *d) {
-		auto *filter = static_cast<AutoCapture *>(d);
-		obs_data_t *settings = obs_source_get_settings(filter->source());
-		const std::string picked = obs_data_get_string(settings, "pick");
-		obs_data_release(settings);
-		filter->add_to(list, picked);
-		return true;
+	// Two lists, each filled by choosing from the programs that are open.
+	obs_source_t *own = self ? self->source() : nullptr;
+	auto open_now = [self](std::vector<std::string> &names) {
+		if (!self)
+			return;
+		for (const Window &w : self->open_programs())
+			names.push_back(w.executable);
 	};
-	static const auto always_picked = add_picked;
-	obs_properties_add_button2(
-		choose, "always_pick", obs_module_text("Capture.AlwaysPick"),
-		[](obs_properties_t *, obs_property_t *, void *d) { return always_picked("always", d); }, data);
-	obs_properties_add_button2(
-		choose, "never_pick", obs_module_text("Capture.NeverPick"),
-		[](obs_properties_t *, obs_property_t *, void *d) { return always_picked("never", d); }, data);
-	obs_properties_add_group(props, "choose", obs_module_text("Capture.Choose"), OBS_GROUP_NORMAL, choose);
+	PickList always;
+	always.setting = "always";
+	always.as_text = true;
+	always.title = "Capture.Always";
+	always.add = "List.AddProgram";
+	always.tip = "Capture.Always.Tip";
+	always.choices = open_now;
+	pick_list_add(props, own, always);
+	PickList never;
+	never.setting = "never";
+	never.as_text = true;
+	never.title = "Capture.Never";
+	never.add = "List.AddProgram";
+	never.tip = "Capture.Never.Tip";
+	never.choices = open_now;
+	pick_list_add(props, own, never);
 
 	obs_properties_t *lists = obs_properties_create();
-	obs_property_t *never =
-		obs_properties_add_text(lists, "never", obs_module_text("Capture.Never"), OBS_TEXT_DEFAULT);
-	obs_property_set_long_description(never, obs_module_text("Capture.Never.Tip"));
-	obs_property_t *always =
-		obs_properties_add_text(lists, "always", obs_module_text("Capture.Always"), OBS_TEXT_DEFAULT);
-	obs_property_set_long_description(always, obs_module_text("Capture.Always.Tip"));
 	obs_property_t *mode = obs_properties_add_list(lists, "mode", obs_module_text("Capture.Mode"),
 						       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(mode, obs_module_text("Capture.Mode.AnyGame"), (int)Mode::AnyGame);

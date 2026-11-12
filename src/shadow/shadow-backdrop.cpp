@@ -19,6 +19,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "shadow-backdrop.hpp"
 
 #include "../common/kawase-blur.hpp"
+#include "../common/pick-list.hpp"
 #include "../common/scene-util.hpp"
 #include "../common/shown-scale.hpp"
 
@@ -226,12 +227,6 @@ std::vector<obs_sceneitem_t *> items_showing(obs_source_t *wanted)
 // on screen: when every scene there that holds the source is ticked, the
 // filter stands down and gives its room back.
 
-std::string off_key(obs_source_t *scene)
-{
-	const char *uuid = obs_source_get_uuid(scene);
-	return std::string("off_in:") + (uuid ? uuid : "");
-}
-
 bool holds_directly(obs_scene_t *scene, obs_source_t *wanted)
 {
 	struct Find {
@@ -256,28 +251,6 @@ bool holds_directly(obs_scene_t *scene, obs_source_t *wanted)
 	};
 	obs_scene_enum_items(scene, visit, &find);
 	return find.found;
-}
-
-// Every scene that holds the source itself, by name order. Each is a new reference.
-std::vector<obs_source_t *> scenes_holding(obs_source_t *wanted)
-{
-	struct Gather {
-		obs_source_t *wanted;
-		std::vector<obs_source_t *> out;
-	} gather{wanted, {}};
-	obs_enum_scenes(
-		[](void *param, obs_source_t *scene_source) {
-			auto *g = static_cast<Gather *>(param);
-			obs_scene_t *scene = obs_scene_from_source(scene_source);
-			if (scene && !obs_source_is_group(scene_source) && holds_directly(scene, g->wanted))
-				g->out.push_back(obs_source_get_ref(scene_source));
-			return true;
-		},
-		&gather);
-	std::sort(gather.out.begin(), gather.out.end(), [](obs_source_t *a, obs_source_t *b) {
-		return strcmp(obs_source_get_name(a), obs_source_get_name(b)) < 0;
-	});
-	return gather.out;
 }
 
 // The scenes holding the source that are showing now: the scene on screen
@@ -432,6 +405,30 @@ ShadowBackdrop::~ShadowBackdrop()
 
 void ShadowBackdrop::update(obs_data_t *settings)
 {
+	// 0.1.0-beta38 kept this list as a tick box per scene, by the scene's id.
+	{
+		std::vector<std::string> old_keys;
+		std::vector<std::string> listed = pick_list_read(settings, "off_scenes", false);
+		for (obs_data_item_t *item = obs_data_first(settings); item; obs_data_item_next(&item)) {
+			const std::string key = obs_data_item_get_name(item);
+			if (key.rfind("off_in:", 0) != 0)
+				continue;
+			old_keys.push_back(key);
+			if (!obs_data_item_get_bool(item))
+				continue;
+			if (obs_source_t *scene = obs_get_source_by_uuid(key.c_str() + 7)) {
+				const std::string name = obs_source_get_name(scene);
+				if (std::find(listed.begin(), listed.end(), name) == listed.end())
+					listed.push_back(name);
+				obs_source_release(scene);
+			}
+		}
+		if (!old_keys.empty()) {
+			for (const std::string &key : old_keys)
+				obs_data_erase(settings, key.c_str());
+			pick_list_write(settings, "off_scenes", false, listed);
+		}
+	}
 	Settings s;
 	s.shadow = obs_data_get_bool(settings, "shadow");
 	s.shadow_color = (uint32_t)obs_data_get_int(settings, "shadow_color");
@@ -556,11 +553,19 @@ void ShadowBackdrop::tick()
 			Showing look{parent, &holders, 0};
 			showing_holders(on_screen, look);
 			obs_data_t *settings = obs_source_get_settings(source_);
+			const std::vector<std::string> listed = pick_list_read(settings, "off_scenes", false);
+			auto is_listed = [&](obs_source_t *scene) {
+				const char *name = scene ? obs_source_get_name(scene) : nullptr;
+				return name && std::find(listed.begin(), listed.end(), name) != listed.end();
+			};
+			// Off when the scene on screen is listed, or when every scene
+			// showing the source there is.
 			off = !holders.empty();
 			for (obs_source_t *scene : holders) {
-				off = off && scene && obs_data_get_bool(settings, off_key(scene).c_str());
+				off = off && is_listed(scene);
 				obs_source_release(scene);
 			}
+			off = off || (!listed.empty() && is_listed(on_screen));
 			obs_data_release(settings);
 			obs_source_release(on_screen);
 		}
@@ -860,22 +865,25 @@ obs_properties_t *get_properties(void *data)
 
 	slider(props, "radius", "Shadow.Radius", 0.0, 500.0, " px");
 
-	// A tick box for each scene the source is in.
-	if (data) {
-		obs_source_t *parent = obs_filter_get_parent(static_cast<ShadowBackdrop *>(data)->filter());
-		const std::vector<obs_source_t *> scenes = parent ? scenes_holding(parent)
-								  : std::vector<obs_source_t *>();
-		if (!scenes.empty()) {
-			obs_properties_t *off = obs_properties_create();
-			for (obs_source_t *scene : scenes) {
-				obs_property_t *box = obs_properties_add_bool(off, off_key(scene).c_str(),
-									      obs_source_get_name(scene));
-				obs_property_set_long_description(box, obs_module_text("Shadow.OffIn.Tip"));
-				obs_source_release(scene);
-			}
-			obs_properties_add_group(props, "off_in_group", obs_module_text("Shadow.OffIn"),
-						 OBS_GROUP_NORMAL, off);
-		}
+	// Scenes it is left off in: chosen from the scenes that exist.
+	{
+		obs_source_t *filter = data ? static_cast<ShadowBackdrop *>(data)->filter() : nullptr;
+		PickList off;
+		off.setting = "off_scenes";
+		off.title = "Shadow.OffIn";
+		off.add = "List.AddScene";
+		off.tip = "Shadow.OffIn.Tip";
+		off.choices = [](std::vector<std::string> &names) {
+			obs_enum_scenes(
+				[](void *param, obs_source_t *scene) {
+					const char *name = obs_source_get_name(scene);
+					if (name && *name && !obs_source_is_group(scene))
+						static_cast<std::vector<std::string> *>(param)->push_back(name);
+					return true;
+				},
+				&names);
+		};
+		pick_list_add(props, filter, off);
 	}
 	obs_property_t *screen = obs_properties_add_bool(props, "screen_px", obs_module_text("Shadow.ScreenPx"));
 	obs_property_set_long_description(screen, obs_module_text("Shadow.ScreenPx.Tip"));

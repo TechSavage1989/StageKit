@@ -13,6 +13,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "scene-tools.hpp"
 
 #include "../common/easing.hpp"
+#include "../common/pick-list.hpp"
 #include "../common/scene-util.hpp"
 
 #include <obs-module.h>
@@ -743,10 +744,18 @@ obs_properties_t *layout_properties(void *data)
 		props, "save", obs_module_text("Layout.Save"),
 		[](obs_properties_t *, obs_property_t *, void *d) { return static_cast<Layout *>(d)->save_current(); },
 		data);
-	obs_property_set_long_description(
-		obs_properties_add_editable_list(props, "only_items", obs_module_text("Layout.OnlyItems"),
-						 OBS_EDITABLE_LIST_TYPE_STRINGS, nullptr, nullptr),
-		obs_module_text("Layout.OnlyItems.Tip"));
+	{
+		obs_source_t *filter = data ? static_cast<Layout *>(data)->source() : nullptr;
+		PickList only;
+		only.setting = "only_items";
+		only.title = "Layout.OnlyItems";
+		only.add = "List.AddItem";
+		only.tip = "Layout.OnlyItems.Tip";
+		only.choices = [filter](std::vector<std::string> &names) {
+			scene_item_names(filter ? obs_filter_get_parent(filter) : nullptr, names);
+		};
+		pick_list_add(props, filter, only);
+	}
 	obs_property_t *count =
 		obs_properties_add_int(props, "saved_count", obs_module_text("Layout.SavedCount"), 0, 100000, 1);
 	obs_property_set_enabled(count, false);

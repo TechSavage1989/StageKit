@@ -22,6 +22,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include "visibility-link.hpp"
 
+#include "../common/pick-list.hpp"
 #include "../common/scene-util.hpp"
 
 #include <obs-module.h>
@@ -177,19 +178,14 @@ obs_properties_t *get_properties(void *data)
 	obs_property_list_add_int(mode, obs_module_text("Link.Mode.OnlyOne"), (int)LinkMode::OnlyOne);
 	obs_property_list_add_int(mode, obs_module_text("Link.Mode.Together"), (int)LinkMode::Together);
 
-	// Choosing from the scene's items, instead of typing their names.
-	obs_property_t *pick = obs_properties_add_list(props, "pick", obs_module_text("Link.Pick"), OBS_COMBO_TYPE_LIST,
-						       OBS_COMBO_FORMAT_STRING);
-	obs_property_list_add_string(pick, obs_module_text("Link.Pick.None"), "");
-	add_scene_items_to_list(self ? self->parent() : nullptr, pick);
-	obs_properties_add_button2(
-		props, "add", obs_module_text("Link.Add"),
-		[](obs_properties_t *, obs_property_t *, void *d) {
-			return d && static_cast<VisibilityLink *>(d)->add_picked();
-		},
-		data);
-	obs_properties_add_editable_list(props, "items", obs_module_text("Link.Items"), OBS_EDITABLE_LIST_TYPE_STRINGS,
-					 nullptr, nullptr);
+	PickList items;
+	items.setting = "items";
+	items.title = "Link.Items";
+	items.add = "List.AddItem";
+	items.choices = [self](std::vector<std::string> &names) {
+		scene_item_names(self ? self->parent() : nullptr, names);
+	};
+	pick_list_add(props, self ? self->source() : nullptr, items);
 
 	obs_property_t *help = obs_properties_add_text(props, "help", obs_module_text("Link.Help"), OBS_TEXT_INFO);
 	obs_property_text_set_info_word_wrap(help, true);
