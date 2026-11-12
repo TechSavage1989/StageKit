@@ -136,3 +136,6 @@ information), which is what the template uses for pushes to `main`.
   so an automatic release job was added to the push workflow and the release was published by it. History, not standing permission.
 - 2026-11-12: `docs/REPOSITORY_STANDARDS.md` was copied byte-for-byte from the owner's other app
   repositories (nine of them held an identical copy).
+- 2026-11-12: Owner said "yes merge and publish each one without asking" for the test releases of
+  the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
+  as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
