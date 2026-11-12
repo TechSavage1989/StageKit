@@ -86,6 +86,10 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   on items OBS has flagged. Call `refresh_item()` (`src/common/scene-util.hpp`) once before measuring at
   the start of an operation. Items inside groups use group coordinates: measure with `scene_box()` and
   convert with `item_space()`.
+- **The owner's emulators run full-screen at 2560x1440 with black bars**; their old scenes differ only
+  by crop (320 px a side for 4:3, 343 for SNES, 150 for GBA) inside one shared 1754.5x1268.5 box at
+  30.5, 85.5. Auto Frame's automatic trim exists for this. It reads back a thin copy of the capture
+  every 0.4 s, one direction at a time; keep that cost in mind before adding more readbacks.
 - **Trigger filters** (Place Item, Layout) switch themselves off after running and ignore the enabled
   state restored at load (`ready_`), so they do not fire when OBS starts.
 - **Deprecated libobs calls fail CI** (warnings are errors). Avoid `obs_sceneitem_get_info`; use the

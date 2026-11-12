@@ -33,6 +33,10 @@ hard to manage and heavy on resources. Judge each new feature by which scenes or
 keep idle cost near zero. The owner confirmed on Windows (OBS 32.2.2, 0.1.0-beta2) that Ramp Blur,
 Ambient Background, Shadow & Backdrop, Ramp Zoom, Show/Hide Animation and Layout work.
 
+Auto Frame (0.1.0-beta5) trims black bars and copies its size from an existing item, both asked for by
+the owner; neither has been tried on Windows or with a real emulator. The owner wants settings to live
+in the filter's own controls where possible, not only in the dock.
+
 Reported problems still open: the owner wants to drag items and zoom points on a picture in the dock
 and zoom with the mouse wheel; a Match Item item "dropping behind others" has not been reproduced.
 Addressed in 0.1.0-beta4, awaiting the owner's check on Windows: the dock reaching nested scenes and

@@ -145,6 +145,8 @@ emulator outputs is fitted inside it, gliding to its new fit when the resolution
 
 | Setting | What it does |
 | --- | --- |
+| Copy the frame size | Pick a scene and an item, press *Use that item's size*: no numbers to type |
+| Black bars | Trim them automatically, trim by a set amount, or leave them. Automatic waits a few seconds before trimming more, so a dark moment does not zoom the picture in |
 | Fit the picture | Whole picture visible, whole-number scale (crisp pixel art), fill the frame, or stretch |
 | Picture shape | As captured, or shown as 4:3, 16:9, 8:7, 3:2, 10:9, 16:10, 5:4, 1:1 or a custom shape |
 | Sit it | Where the picture sits in the frame when the shapes differ |

@@ -59,3 +59,9 @@ for _ in range(60):
         d.line([(x, y), (x, y + length)], fill=(60, 60, 60, 255), width=3)
     d.ellipse([x - 5, y - 5, x + 5, y + 5], outline=(40, 40, 40, 255), width=2)
 tex.save(f"{out}/test-texture.png")
+
+# 5. A 4:3 picture pillarboxed inside a 16:9 frame, as a full-screen emulator shows it.
+bars = Image.new("RGBA", (W, H), (0, 0, 0, 255))
+bars.paste(art.resize((480, 360)), (80, 0))
+bars.save(f"{out}/test-pillarbox.png")
+Image.new("RGBA", (W, H), (0, 0, 0, 255)).save(f"{out}/test-black.png")
