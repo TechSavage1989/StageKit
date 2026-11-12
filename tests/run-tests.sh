@@ -25,7 +25,7 @@ mkdir -p "$out/ambient" "$out/shadow"
 xvfb-run -a -s "-screen 0 1280x720x24" \
   "$root/build-tests/tests/stagekit-ambient-test" "$root/build-tests/stagekit.so" "$root/data" \
   "$out/test-art.png" "$out/test-texture.png" "$out/test-game.png" "$out/ambient" \
-  "$out/test-title.png" "$out/shadow" "$out/test-pillarbox.png" "$out/test-black.png"
+  "$out/test-title.png" "$out/shadow" "$out/test-pillarbox.png" "$out/test-black.png" "$out/test-dark-game.png"
 rm -f "$out/ambient/still.rgba" "$out/ambient/moving.rgba"
 python3 "$root/tests/make-sheet.py" "$out/ambient" "$out/ambient-background.png" 4
 python3 "$root/tests/make-sheet.py" "$out/shadow" "$out/shadow-backdrop.png" 2 light

@@ -13,6 +13,7 @@ the Free Software Foundation; either version 2 of the License, or
 namespace stagekit {
 
 inline constexpr const char *kAutoFrameId = "stagekit_auto_frame";
+inline constexpr const char *kPictureShapeId = "stagekit_picture_shape";
 
 void register_auto_frame();
 

@@ -723,8 +723,87 @@ int main(int argc, char **argv)
 			CHECK(t3 == 0.0 && is(p3, 0, 75, 800, 450),
 			      "when the picture grows into the bars the trim is released (trim %.0f)", t3);
 
+			// A game with a black background (the reported Aladdin title
+			// screen): artwork on black is not bars and must not be trimmed.
+			if (argc >= 12) {
+				obs_data_set_string(bd, "file", argv[11]);
+				obs_source_update(barred, bd);
+				auto [t5, p5] = look(4000);
+				CHECK(t5 == 0.0 && is(p5, 0, 75, 800, 450),
+				      "artwork on a black background is not mistaken for bars (trim %.0f after 4 s)",
+				      t5);
+
+				// ...unless asked: "trim to what is on screen now" measures once and fixes it.
+				calldata_t mcd = {};
+				proc_handler_call(obs_source_get_proc_handler(trimmer), "measure_now", &mcd);
+				calldata_free(&mcd);
+				auto [t6, p6] = look(800);
+				obs_data_t *now = obs_source_get_settings(trimmer);
+				CHECK(std::fabs(t6 - 145) <= 1.0 && obs_data_get_int(now, "trim") == 2 &&
+					      std::fabs(obs_data_get_double(now, "trim_y") - 55) <= 1.0,
+				      "the 'trim to what is on screen now' button measures once and fixes the amounts (%.0f, %.0f)",
+				      obs_data_get_double(now, "trim_x"), obs_data_get_double(now, "trim_y"));
+				obs_data_release(now);
+				obs_data_set_int(bf, "trim", 1);
+				obs_data_set_string(bd, "file", live_image);
+				obs_source_update(barred, bd);
+			}
+
+			// Hands-off control of the shape: a key, and a rule per program.
+			if (argc >= 12) {
+				obs_data_set_int(bf, "trim", 1);
+				obs_source_update(trimmer, bf);
+				obs_data_set_string(bd, "file", argv[11]); // the dark game again
+				obs_source_update(barred, bd);
+
+				obs_data_t *kd = obs_data_create();
+				obs_data_set_string(kd, "shape", "4:3");
+				obs_source_t *key =
+					obs_source_create("stagekit_picture_shape", "Shape 4:3", kd, nullptr);
+				obs_source_filter_add(barred, key);
+				look(200);
+				obs_source_set_enabled(key, true); // what a Stream Deck Filter key does
+				auto [t7, p7] = look(600);
+				CHECK(std::fabs(t7 - 80) <= 1.0 && is(p7, 0, 0, 800, 600) && !obs_source_enabled(key),
+				      "a Picture Shape key sets 4:3 at once, even on a dark game, then switches itself off (trim %.0f)",
+				      t7);
+				obs_data_set_string(kd, "shape", "0");
+				obs_source_update(key, kd);
+				look(150);
+				obs_source_set_enabled(key, true);
+				auto [t8, p8] = look(600);
+				CHECK(t8 == 0.0, "a key set to Automatic hands control back (trim %.0f)", t8);
+				obs_source_filter_remove(barred, key);
+				obs_source_release(key);
+				obs_data_release(kd);
+
+				// The capture reports which program it shows; a rule names its shape.
+				obs_data_t *capture_settings = obs_source_get_settings(barred);
+				obs_data_set_string(capture_settings, "window",
+						    "Aladdin - Snes9x 1.60:Snes9x:snes9x-x64.exe");
+				obs_data_release(capture_settings);
+				obs_data_array_t *rules = obs_data_array_create();
+				obs_data_t *rule = obs_data_create();
+				obs_data_set_string(rule, "value", "Snes9x = 4:3");
+				obs_data_array_push_back(rules, rule);
+				obs_data_release(rule);
+				obs_data_set_array(bf, "rules", rules);
+				obs_source_update(trimmer, bf);
+				auto [t9, p9] = look(1800);
+				CHECK(std::fabs(t9 - 80) <= 1.0 && is(p9, 0, 0, 800, 600),
+				      "a rule for the captured program sets its shape with no key press (trim %.0f)",
+				      t9);
+				obs_data_array_release(rules);
+				rules = obs_data_array_create();
+				obs_data_set_array(bf, "rules", rules);
+				obs_data_array_release(rules);
+				obs_source_update(trimmer, bf);
+				look(1300);
+			}
+
 			obs_data_set_int(bf, "trim", 2);
 			obs_data_set_double(bf, "trim_x", 80);
+			obs_data_set_double(bf, "trim_y", 0); // the measuring step above stored its own amounts
 			obs_source_update(trimmer, bf);
 			auto [t4, p4] = look(600);
 			CHECK(std::fabs(t4 - 80) <= 0.5 && is(p4, 0, 0, 800, 600),

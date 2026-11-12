@@ -65,3 +65,9 @@ bars = Image.new("RGBA", (W, H), (0, 0, 0, 255))
 bars.paste(art.resize((480, 360)), (80, 0))
 bars.save(f"{out}/test-pillarbox.png")
 Image.new("RGBA", (W, H), (0, 0, 0, 255)).save(f"{out}/test-black.png")
+
+# 6. A game with a black background: bright artwork that stops well short of the
+#    edges, as on a title screen. This must NOT be taken for bars.
+dark = Image.new("RGBA", (W, H), (0, 0, 0, 255))
+dark.paste(art.resize((350, 250)), (145, 55))
+dark.save(f"{out}/test-dark-game.png")
