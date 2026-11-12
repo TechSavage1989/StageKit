@@ -33,10 +33,10 @@ hard to manage and heavy on resources. Judge each new feature by which scenes or
 keep idle cost near zero. The owner confirmed on Windows (OBS 32.2.2, 0.1.0-beta2) that Ramp Blur,
 Ambient Background, Shadow & Backdrop, Ramp Zoom, Show/Hide Animation and Layout work.
 
-Reported problems still open: the dock cannot reach items in nested scenes or groups; Match Item sizes
-oddly inside groups and an item was reported as dropping behind others; no bring-to-front / send-to-back
-control; Layout should cover a chosen set of items; the owner wants to drag items and zoom points on a
-picture in the dock and zoom with the mouse wheel.
+Reported problems still open: the owner wants to drag items and zoom points on a picture in the dock
+and zoom with the mouse wheel; a Match Item item "dropping behind others" has not been reproduced.
+Addressed in 0.1.0-beta4, awaiting the owner's check on Windows: the dock reaching nested scenes and
+groups, Match Item inside groups, order buttons, Layout for chosen items.
 
 ## Not verified
 
@@ -54,7 +54,6 @@ picture in the dock and zoom with the mouse wheel.
 ## Known limitations
 
 - Place Item needs one filter per destination; the dock creates the nine grid ones in one click.
-- Scene filters do not list items inside groups.
 - Linked visibility (hiding a linked item with its leader) is not built.
 - Ramp Zoom has no follow-the-mouse mode.
 - Ambient Background cuts, rather than cross-fades, when *Automatic* picks a different capture.

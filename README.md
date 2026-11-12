@@ -179,10 +179,13 @@ Open it from *Docks → StageKit*. It works on the current scene (the preview sc
 
 <p align="center"><img src="docs/images/stagekit-dock.png" width="340" alt="The StageKit dock: an item picker, a three-by-three grid of position buttons, margin and travel time, buttons that make Stream Deck keys, and buttons that add an effect to the item"></p>
 
+- Pick a scene: the one on screen, or any other by name, which is how you reach an item that lives in a
+  nested scene. Items inside groups are listed too.
 - Pick an item and click one of the nine positions. It glides there.
 - *Make keys for all nine positions* adds a Place Item filter for each one to the scene, named like
   "Camera → Top right". Point a Stream Deck *Filter* key at one, or give it a hotkey.
 - *Save its current spot as a key* does the same for wherever the item is now.
+- *Bring to front*, *Forward one*, *Back one* and *Send to back* change which items cover which.
 - *Add to this item* puts a Ramp Blur, Shadow & Backdrop, Ramp Zoom or Show/Hide Animation on the item
   and opens its filter window. Ramp Blur and Ramp Zoom are added switched off.
 
@@ -202,7 +205,9 @@ exactly. Moving the original moves every matched item.
 ### Layout
 
 Add **Layout (StageKit)** as a filter on a scene. Arrange the scene and press *Save where everything is
-now*. Switching the filter on glides every saved item back to that arrangement.
+now*. Switching the filter on glides every saved item back to that arrangement. To cover only some
+items, add their names under *Only these items* before saving; several Layout filters can then each
+move a different set.
 
 ### Remote control
 

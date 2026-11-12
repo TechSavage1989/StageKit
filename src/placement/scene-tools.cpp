@@ -158,6 +158,7 @@ private:
 		item_ = item;
 		obs_sceneitem_get_pos(item, &home_pos_);
 		obs_sceneitem_get_scale(item, &home_scale_);
+		refresh_item(item);
 		const Box box = item_box(item);
 		vec2_set(&center_, (float)(box.x + box.w / 2.0), (float)(box.y + box.h / 2.0));
 		const double w = obs_source_get_width(parent_), h = obs_source_get_height(parent_);
@@ -318,7 +319,8 @@ public:
 		obs_source_t *master_source = obs_get_source_by_name(scene_name.c_str());
 		obs_sceneitem_t *master = find_item(master_source, master_name);
 		if (item && master && item != master)
-			mode == MatchMode::FitBox ? fit(item, master, fit_align) : copy(item, master);
+			mode == MatchMode::FitBox ? fit(parent_, item, master_source, master, fit_align)
+						  : copy(item, master);
 		obs_source_release(master_source);
 	}
 
@@ -373,11 +375,21 @@ private:
 
 	// Scales the item to fit inside the box the master occupies, so text of
 	// any length lands in the same place.
-	static void fit(obs_sceneitem_t *item, obs_sceneitem_t *master, int fit_align)
+	static void fit(obs_source_t *scene, obs_sceneitem_t *item, obs_source_t *master_scene, obs_sceneitem_t *master,
+			int fit_align)
 	{
-		const Box box = item_box(master);
+		// Where the master sits on its scene, whether or not it is in a group...
+		Box box = scene_box(master_scene, master);
+		if (box.w < 1.5 && box.h < 1.5) {
+			refresh_item(master); // never measured yet
+			box = scene_box(master_scene, master);
+		}
 		if (box.w < 1.0 || box.h < 1.0)
 			return;
+		// ...expressed in this item's own coordinates, in case it is in a group.
+		const Space space = item_space(scene, item);
+		box = {(box.x - space.ox) / space.sx, (box.y - space.oy) / space.sy, box.w / space.sx,
+		       box.h / space.sy};
 		if (obs_sceneitem_get_alignment(item) != (OBS_ALIGN_LEFT | OBS_ALIGN_TOP))
 			obs_sceneitem_set_alignment(item, OBS_ALIGN_LEFT | OBS_ALIGN_TOP);
 		if (differs(obs_sceneitem_get_rot(item), 0.0f))
@@ -511,31 +523,62 @@ public:
 		mode_ = static_cast<EaseMode>(obs_data_get_int(settings, "ease_mode"));
 	}
 
-	// Stores where every item in the scene currently is.
+	// Stores where the scene's items currently are: all of them, or only the
+	// ones named in "only_items" when that list is not empty. Items inside
+	// groups are included.
 	bool save_current()
 	{
 		obs_scene_t *scene = scene_of(parent_);
 		if (!scene)
 			return false;
-		obs_data_array_t *array = obs_data_array_create();
+
+		struct Capture {
+			obs_data_array_t *array;
+			std::vector<std::string> only;
+		} capture{obs_data_array_create(), {}};
+		{
+			obs_data_t *settings = obs_source_get_settings(source_);
+			obs_data_array_t *only = obs_data_get_array(settings, "only_items");
+			for (size_t i = 0; i < obs_data_array_count(only); i++) {
+				obs_data_t *entry = obs_data_array_item(only, i);
+				const std::string name = obs_data_get_string(entry, "value");
+				if (!name.empty())
+					capture.only.push_back(name);
+				obs_data_release(entry);
+			}
+			obs_data_array_release(only);
+			obs_data_release(settings);
+		}
+
+		static const auto add = [](obs_scene_t *, obs_sceneitem_t *item, void *param) {
+			auto *c = static_cast<Capture *>(param);
+			const std::string name = source_name(obs_sceneitem_get_source(item));
+			if (!c->only.empty() && std::find(c->only.begin(), c->only.end(), name) == c->only.end())
+				return true;
+			vec2 pos, scale;
+			obs_sceneitem_get_pos(item, &pos);
+			obs_sceneitem_get_scale(item, &scale);
+			obs_data_t *entry = obs_data_create();
+			obs_data_set_string(entry, "name", name.c_str());
+			obs_data_set_double(entry, "x", pos.x);
+			obs_data_set_double(entry, "y", pos.y);
+			obs_data_set_double(entry, "sx", scale.x);
+			obs_data_set_double(entry, "sy", scale.y);
+			obs_data_set_double(entry, "rot", obs_sceneitem_get_rot(item));
+			obs_data_array_push_back(c->array, entry);
+			obs_data_release(entry);
+			return true;
+		};
 		obs_scene_enum_items(
 			scene,
-			[](obs_scene_t *, obs_sceneitem_t *item, void *param) {
-				vec2 pos, scale;
-				obs_sceneitem_get_pos(item, &pos);
-				obs_sceneitem_get_scale(item, &scale);
-				obs_data_t *entry = obs_data_create();
-				obs_data_set_string(entry, "name", source_name(obs_sceneitem_get_source(item)).c_str());
-				obs_data_set_double(entry, "x", pos.x);
-				obs_data_set_double(entry, "y", pos.y);
-				obs_data_set_double(entry, "sx", scale.x);
-				obs_data_set_double(entry, "sy", scale.y);
-				obs_data_set_double(entry, "rot", obs_sceneitem_get_rot(item));
-				obs_data_array_push_back(static_cast<obs_data_array_t *>(param), entry);
-				obs_data_release(entry);
+			[](obs_scene_t *sc, obs_sceneitem_t *item, void *param) {
+				add(sc, item, param);
+				if (obs_sceneitem_is_group(item))
+					obs_sceneitem_group_enum_items(item, add, param);
 				return true;
 			},
-			array);
+			&capture);
+		obs_data_array_t *array = capture.array;
 		obs_data_t *settings = obs_source_get_settings(source_);
 		obs_data_set_array(settings, "saved", array);
 		obs_data_set_int(settings, "saved_count", (long long)obs_data_array_count(array));
@@ -700,6 +743,8 @@ obs_properties_t *layout_properties(void *data)
 		props, "save", obs_module_text("Layout.Save"),
 		[](obs_properties_t *, obs_property_t *, void *d) { return static_cast<Layout *>(d)->save_current(); },
 		data);
+	obs_properties_add_editable_list(props, "only_items", obs_module_text("Layout.OnlyItems"),
+					 OBS_EDITABLE_LIST_TYPE_STRINGS, nullptr, nullptr);
 	obs_property_t *count =
 		obs_properties_add_int(props, "saved_count", obs_module_text("Layout.SavedCount"), 0, 100000, 1);
 	obs_property_set_enabled(count, false);
