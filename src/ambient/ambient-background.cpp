@@ -44,6 +44,8 @@ namespace {
 
 enum class BaseType : int { Image = 0, Source = 1, StartImage = 2 };
 enum class LiveMode : int { None = 0, Auto = 1, Source = 2 };
+// How the live capture is laid over the screen.
+enum class LiveFit : int { Fill = 0, Fit = 1, Stretch = 2, Width = 3, Height = 4 };
 enum class PixelStyle : int { None = 0, Square = 1, Hex = 2 };
 enum class OverlayMode : int { Multiply = 0, Screen = 1 };
 
@@ -90,6 +92,9 @@ struct Settings {
 	LiveMode live_mode = LiveMode::None;
 	std::string live_source;
 	double live_opacity = 0.7;
+	LiveFit live_fit = LiveFit::Fill;
+	double live_zoom = 1.0;
+	bool live_replace = false; // the capture is the whole background while there is one
 	double blur = 60.0;
 	PixelStyle pixel_style = PixelStyle::None;
 	double pixel_size = 10.0;
@@ -170,7 +175,7 @@ private:
 	void resolve_children();
 	gs_texture_t *render_child(obs_source_t *child, gs_texrender_t *target);
 	void draw_layer(gs_texture_t *tex, uint32_t w, uint32_t h, double scroll_x, double scroll_y, double zoom,
-			double opacity, const Settings &s);
+			double opacity, const Settings &s, LiveFit fit = LiveFit::Fill, bool clip = false);
 	void pass(gs_effect_t *effect, gs_eparam_t *image, gs_texrender_t *dst, gs_texture_t *src, uint32_t w,
 		  uint32_t h, const char *technique);
 	gs_texture_t *blur(gs_texture_t *input, uint32_t w, uint32_t h, double strength);
@@ -201,6 +206,7 @@ private:
 	gs_eparam_t *p_uv_scale_ = nullptr;
 	gs_eparam_t *p_uv_offset_ = nullptr;
 	gs_eparam_t *p_wrap_mirror_ = nullptr;
+	gs_eparam_t *p_clip_edges_ = nullptr;
 	gs_eparam_t *p_opacity_ = nullptr;
 	gs_eparam_t *p_saturation_ = nullptr;
 	gs_eparam_t *p_gain_ = nullptr;
@@ -251,6 +257,7 @@ AmbientBackground::AmbientBackground(obs_data_t *settings, obs_source_t *source)
 		p_uv_scale_ = gs_effect_get_param_by_name(effect_, "uv_scale");
 		p_uv_offset_ = gs_effect_get_param_by_name(effect_, "uv_offset");
 		p_wrap_mirror_ = gs_effect_get_param_by_name(effect_, "wrap_mirror");
+		p_clip_edges_ = gs_effect_get_param_by_name(effect_, "clip_edges");
 		p_opacity_ = gs_effect_get_param_by_name(effect_, "opacity");
 		p_saturation_ = gs_effect_get_param_by_name(effect_, "saturation");
 		p_gain_ = gs_effect_get_param_by_name(effect_, "gain");
@@ -333,6 +340,9 @@ void AmbientBackground::update(obs_data_t *settings)
 	s.live_mode = static_cast<LiveMode>(obs_data_get_int(settings, "live_mode"));
 	s.live_source = obs_data_get_string(settings, "live_source");
 	s.live_opacity = std::clamp(obs_data_get_double(settings, "live_opacity") / 100.0, 0.0, 1.0);
+	s.live_fit = static_cast<LiveFit>(obs_data_get_int(settings, "live_fit"));
+	s.live_zoom = std::clamp(obs_data_get_double(settings, "live_zoom") / 100.0, 0.25, 8.0);
+	s.live_replace = obs_data_get_bool(settings, "live_replace");
 	s.blur = std::clamp(obs_data_get_double(settings, "blur"), 0.0, 250.0);
 	s.pixel_style = static_cast<PixelStyle>(obs_data_get_int(settings, "pixel_style"));
 	s.pixel_size = std::clamp(obs_data_get_double(settings, "pixel_size"), 2.0, 200.0);
@@ -519,15 +529,31 @@ gs_texture_t *AmbientBackground::render_child(obs_source_t *child, gs_texrender_
 // Draws tex so it covers the current render target (out_w x out_h set by the
 // caller's ortho), scrolled by the given number of output pixels.
 void AmbientBackground::draw_layer(gs_texture_t *tex, uint32_t out_w, uint32_t out_h, double scroll_x, double scroll_y,
-				   double zoom, double opacity, const Settings &s)
+				   double zoom, double opacity, const Settings &s, LiveFit fit, bool clip)
 {
 	const double tex_aspect = (double)gs_texture_get_width(tex) / (double)gs_texture_get_height(tex);
 	const double out_aspect = (double)out_w / (double)out_h;
+	// The part of the texture one screen shows, across and down. Below 1
+	// the texture is cropped; above 1 it is smaller than the screen.
+	const double match_width = tex_aspect / out_aspect;  // down, when the widths match
+	const double match_height = out_aspect / tex_aspect; // across, when the heights match
+	const bool wider = tex_aspect > out_aspect;
 	double fx = 1.0, fy = 1.0;
-	if (tex_aspect > out_aspect)
-		fx = out_aspect / tex_aspect;
-	else
-		fy = tex_aspect / out_aspect;
+	switch (fit) {
+	case LiveFit::Fit:
+		(wider ? fy : fx) = wider ? match_width : match_height;
+		break;
+	case LiveFit::Stretch:
+		break;
+	case LiveFit::Width:
+		fy = match_width;
+		break;
+	case LiveFit::Height:
+		fx = match_height;
+		break;
+	default: // fill
+		(wider ? fx : fy) = wider ? match_height : match_width;
+	}
 	fx /= zoom;
 	fy /= zoom;
 
@@ -543,6 +569,7 @@ void AmbientBackground::draw_layer(gs_texture_t *tex, uint32_t out_w, uint32_t o
 	gs_effect_set_vec2(p_uv_scale_, &scale);
 	gs_effect_set_vec2(p_uv_offset_, &offset);
 	gs_effect_set_float(p_wrap_mirror_, s.mirror ? 1.0f : 0.0f);
+	gs_effect_set_float(p_clip_edges_, clip ? 1.0f : 0.0f);
 	gs_effect_set_float(p_opacity_, (float)opacity);
 	gs_effect_set_float(p_saturation_, (float)s.saturation);
 	gs_effect_set_float(p_gain_, (float)(1.0 + s.glow * 3.0));
@@ -649,11 +676,20 @@ void AmbientBackground::render()
 		gs_ortho(0.0f, (float)iw, 0.0f, (float)ih, -100.0f, 100.0f);
 		gs_blend_state_push();
 		gs_blend_function(GS_BLEND_ONE, GS_BLEND_INVSRCALPHA);
-		if (base)
+		// "Replace": while there is a capture it is the whole background;
+		// the moment there is none, the usual picture is back.
+		const bool replace = live && s.live_replace;
+		if (base && !replace)
 			draw_layer(base, iw, ih, s.speed_x * time_ * kInternalScale, s.speed_y * time_ * kInternalScale,
 				   s.zoom, 1.0, s);
-		if (live)
-			draw_layer(live, iw, ih, 0.0, 0.0, 1.0, base ? s.live_opacity : 1.0, s);
+		if (live) {
+			// Blended over the picture, a capture that does not cover the
+			// screen leaves the picture showing around it. As the whole
+			// background, the edges are filled the usual way instead.
+			const bool whole = replace || !base;
+			draw_layer(live, iw, ih, 0.0, 0.0, s.live_zoom, whole ? 1.0 : s.live_opacity, s, s.live_fit,
+				   !whole);
+		}
 		gs_blend_state_pop();
 		gs_texrender_end(tr_scene_);
 	}
@@ -749,6 +785,8 @@ bool visibility_modified(obs_properties_t *props, obs_property_t *, obs_data_t *
 	obs_property_set_visible(obs_properties_get(props, "base_source"), base == BaseType::Source);
 	obs_property_set_visible(obs_properties_get(props, "live_source"), live == LiveMode::Source);
 	obs_property_set_visible(obs_properties_get(props, "live_opacity"), live != LiveMode::None);
+	for (const char *name : {"live_fit", "live_zoom", "live_replace"})
+		obs_property_set_visible(obs_properties_get(props, name), live != LiveMode::None);
 	obs_property_set_visible(obs_properties_get(props, "pixel_size"), pixel != PixelStyle::None);
 	obs_property_set_visible(obs_properties_get(props, "overlay_mode"), has_overlay);
 	obs_property_set_visible(obs_properties_get(props, "overlay_strength"), has_overlay);
@@ -794,6 +832,17 @@ obs_properties_t *get_properties(void *)
 							      OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
 	fill_source_list(live_source, false);
 	percent_slider(picture, "live_opacity", "Ambient.LiveOpacity", 0.0, 100.0);
+	obs_property_t *live_fit = obs_properties_add_list(picture, "live_fit", obs_module_text("Ambient.LiveFit"),
+							   OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+	obs_property_list_add_int(live_fit, obs_module_text("Ambient.LiveFit.Fill"), (int)LiveFit::Fill);
+	obs_property_list_add_int(live_fit, obs_module_text("Ambient.LiveFit.Fit"), (int)LiveFit::Fit);
+	obs_property_list_add_int(live_fit, obs_module_text("Ambient.LiveFit.Width"), (int)LiveFit::Width);
+	obs_property_list_add_int(live_fit, obs_module_text("Ambient.LiveFit.Height"), (int)LiveFit::Height);
+	obs_property_list_add_int(live_fit, obs_module_text("Ambient.LiveFit.Stretch"), (int)LiveFit::Stretch);
+	percent_slider(picture, "live_zoom", "Ambient.LiveZoom", 25.0, 400.0);
+	obs_property_t *replace =
+		obs_properties_add_bool(picture, "live_replace", obs_module_text("Ambient.LiveReplace"));
+	obs_property_set_long_description(replace, obs_module_text("Ambient.LiveReplace.Tip"));
 	obs_properties_add_group(props, "picture_group", obs_module_text("Ambient.Group.Picture"), OBS_GROUP_NORMAL,
 				 picture);
 
@@ -850,6 +899,9 @@ void get_defaults(obs_data_t *settings)
 	obs_data_set_default_int(settings, "base_type", (int)BaseType::StartImage);
 	obs_data_set_default_int(settings, "live_mode", (int)LiveMode::None);
 	obs_data_set_default_double(settings, "live_opacity", 70.0);
+	obs_data_set_default_int(settings, "live_fit", (int)LiveFit::Fill);
+	obs_data_set_default_double(settings, "live_zoom", 100.0);
+	obs_data_set_default_bool(settings, "live_replace", false);
 	obs_data_set_default_double(settings, "speed_x", 30.0);
 	obs_data_set_default_double(settings, "speed_y", 15.0);
 	obs_data_set_default_double(settings, "zoom", 120.0);

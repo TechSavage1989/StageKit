@@ -81,6 +81,10 @@ long enough for Game Capture's re-hook on Windows is unknown.
 report: raising the softness shrank and moved the picture inside its bounding box). A shadow filter
 saved by an earlier version is assumed to be laid out already and is left alone on first load.
 
+0.1.0-beta15: Ambient Background's live capture gets a fit mode, a zoom and *Live capture replaces the
+picture* (owner's request). "No capture" means the live source has no size or cannot be found; a Game
+Capture that is hooked but showing black still counts as a capture.
+
 Reported problems still open: a Match Item item "dropping behind others" has not been reproduced.
 Addressed in 0.1.0-beta4, awaiting the owner's check on Windows: the dock reaching nested scenes and
 groups, Match Item inside groups, order buttons, Layout for chosen items.
