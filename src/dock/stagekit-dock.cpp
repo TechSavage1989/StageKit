@@ -15,11 +15,15 @@ the Free Software Foundation; either version 2 of the License, or
 //     a Stream Deck Filter key or a hotkey can trigger them
 //   - save the item's current spot as a key
 //   - add a StageKit effect to the item without hunting through menus
+//   - a small picture of the scene: drag an item to move it, turn the wheel
+//     to resize it, drag the cross to set where its Ramp Zoom zooms in
 //
 // Moves are carried out by Place Item filters on the scene, so the dock and
 // the keys always behave the same way.
 
 #include "stagekit-dock.hpp"
+
+#include "dock-canvas.hpp"
 
 #include "../common/scene-util.hpp"
 #include "../common/start-image.hpp"
@@ -30,6 +34,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <obs-frontend-api.h>
 #include <plugin-support.h>
 
+#include <QCheckBox>
 #include <QComboBox>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -42,6 +47,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <QLineEdit>
 #include <QPixmap>
 #include <QPushButton>
+#include <QScrollArea>
 #include <QSpinBox>
 #include <QStringList>
 #include <QTimer>
@@ -89,6 +95,32 @@ public:
 		form->addRow(tr_text("Dock.Item"), item_);
 		form->addRow(tr_text("Place.Linked"), linked_);
 		layout->addLayout(form);
+
+		// A picture of the scene to work on directly.
+		canvas_ = new DockCanvas(this);
+		canvas_->setObjectName("canvas");
+		canvas_->scene = [this] {
+			return current_scene();
+		};
+		canvas_->selected = [this] {
+			return item_->currentText();
+		};
+		canvas_->on_pick = [this](const QString &name) {
+			const int index = item_->findText(name);
+			if (index >= 0)
+				item_->setCurrentIndex(index);
+		};
+		QObject::connect(item_, &QComboBox::currentIndexChanged, canvas_, [this](int) { canvas_->update(); });
+		layout->addWidget(canvas_);
+		auto *live = new QCheckBox(tr_text("Dock.CanvasLive"), this);
+		live->setObjectName("canvasLive");
+		live->setChecked(true);
+		QObject::connect(live, &QCheckBox::toggled, canvas_,
+				 [this](bool on) { canvas_->set_live_picture(on); });
+		layout->addWidget(live);
+		auto *canvas_hint = new QLabel(tr_text("Dock.CanvasHint"), this);
+		canvas_hint->setWordWrap(true);
+		layout->addWidget(canvas_hint);
 
 		auto *move_box = new QGroupBox(tr_text("Dock.MoveBox"), this);
 		auto *move_layout = new QVBoxLayout(move_box);
@@ -510,6 +542,7 @@ private:
 	std::string fixed_scene_;
 	static constexpr int kThumbHeight = 120;
 	QLabel *start_label_ = nullptr;
+	DockCanvas *canvas_ = nullptr;
 	QLabel *start_thumb_ = nullptr;
 	QString thumb_path_ = QStringLiteral("\x01"); // nothing loaded yet
 	QStringList names_;
@@ -546,10 +579,16 @@ void register_dock()
 	// No main window means no OBS front end (the tests): nothing to dock into.
 	if (!obs_frontend_get_main_window())
 		return;
-	auto *dock = new Dock();
-	if (!obs_frontend_add_dock_by_id("stagekit-dock", obs_module_text("Dock.Title"), dock)) {
+	// The dock has more in it than fits most screens: it scrolls instead of
+	// forcing its window to be tall.
+	auto *scroll = new QScrollArea();
+	scroll->setWidgetResizable(true);
+	scroll->setFrameShape(QFrame::NoFrame);
+	scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+	scroll->setWidget(new Dock());
+	if (!obs_frontend_add_dock_by_id("stagekit-dock", obs_module_text("Dock.Title"), scroll)) {
 		obs_log(LOG_WARNING, "could not add the StageKit dock");
-		delete dock;
+		delete scroll;
 	}
 }
 

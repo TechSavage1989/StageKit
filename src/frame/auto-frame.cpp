@@ -210,18 +210,20 @@ bool parse_rule(const std::string &line, std::string &program, double &ratio)
 	return !program.empty() && ratio > 0.0;
 }
 
-// The picture shape common emulators show with their usual settings, so
-// they need no rule. A rule of the owner's for the same program wins.
+// The picture shape common emulators show with their usual settings. It is
+// only where the picture starts when that program appears: what is then
+// seen on screen corrects it, because the shape depends on the emulator's
+// own settings. A shape the owner saved for a program is obeyed as it is.
 // Emulators that play several consoles (RetroArch, Mednafen, Dolphin,
 // PCSX2) are left out on purpose: their shape depends on the game.
 const struct {
 	const char *program;
 	const char *shape;
 } kKnownPrograms[] = {
-	{"snes9x", "64:49"}, {"bsnes", "64:49"},   {"higan", "64:49"},  {"mgba", "3:2"},      {"visualboy", "3:2"},
-	{"vba-m", "3:2"},    {"project64", "4:3"}, {"mupen64", "4:3"},  {"simple64", "4:3"},  {"duckstation", "4:3"},
-	{"epsxe", "4:3"},    {"fusion", "4:3"},    {"blastem", "4:3"},  {"flycast", "4:3"},   {"redream", "4:3"},
-	{"ppsspp", "16:9"},  {"bgb", "10:9"},      {"sameboy", "10:9"}, {"gambatte", "10:9"},
+	{"snes9x", "8:7"},  {"bsnes", "64:49"},   {"higan", "64:49"},  {"mgba", "3:2"},      {"visualboy", "3:2"},
+	{"vba-m", "3:2"},   {"project64", "4:3"}, {"mupen64", "4:3"},  {"simple64", "4:3"},  {"duckstation", "4:3"},
+	{"epsxe", "4:3"},   {"fusion", "4:3"},    {"blastem", "4:3"},  {"flycast", "4:3"},   {"redream", "4:3"},
+	{"ppsspp", "16:9"}, {"bgb", "10:9"},      {"sameboy", "10:9"}, {"gambatte", "10:9"},
 };
 
 // "64:49" for a ratio that has a usual name, otherwise the number.
@@ -366,7 +368,7 @@ public:
 			const std::string executable = captured_executable();
 			std::lock_guard lock(mutex_);
 			rule_ratio = 0.0;
-			rule_built_in_ = false;
+			double usual = 0.0;
 			for (const auto &[text, ratio] : settings_.rules) {
 				if (!program.empty() && program.find(text) != std::string::npos) {
 					rule_ratio = ratio;
@@ -377,14 +379,18 @@ public:
 				const std::string exe = lower(executable);
 				for (const auto &known : kKnownPrograms) {
 					if (exe.find(known.program) != std::string::npos) {
-						rule_ratio = parse_ratio(known.shape);
-						rule_built_in_ = true;
+						usual = parse_ratio(known.shape);
 						break;
 					}
 				}
 			}
-			if (executable != program_)
-				held_ratio_ = 0.0; // another program: nothing is known about its picture
+			if (executable != program_ || usual != usual_ratio_) {
+				// Another program: start from its usual shape if it has
+				// one, otherwise from nothing, and look afresh.
+				held_ratio_ = usual;
+				last_w_ = last_h_ = 0;
+			}
+			usual_ratio_ = usual;
 			program_ = executable;
 		}
 		std::lock_guard lock(mutex_);
@@ -457,13 +463,16 @@ public:
 	}
 
 	// For the controls: what is being captured and which shape applies.
-	void status(std::string &program, double &ratio, bool &built_in, bool &forced)
+	void status(std::string &program, double &ratio, bool &built_in, bool &forced, bool &found)
 	{
 		std::lock_guard lock(mutex_);
 		program = program_;
 		forced = settings_.force_ratio > 0.0;
-		ratio = forced ? settings_.force_ratio : rule_ratio_;
-		built_in = rule_built_in_;
+		ratio = forced ? settings_.force_ratio : rule_ratio_ > 0.0 ? rule_ratio_ : held_ratio_;
+		// "Usual for this program" while the starting guess still stands.
+		built_in = !forced && rule_ratio_ <= 0.0 && usual_ratio_ > 0.0 &&
+			   std::fabs(held_ratio_ - usual_ratio_) < 0.01;
+		found = !forced && rule_ratio_ <= 0.0 && !built_in;
 	}
 
 	// Stores "program = shape" in the saved shapes, replacing an earlier
@@ -517,13 +526,29 @@ public:
 		obs_source_t *target = obs_filter_get_target(source_);
 		const uint32_t w = target ? obs_source_get_base_width(target) : 0;
 		const uint32_t h = target ? obs_source_get_base_height(target) : 0;
-		if (!w || !h || !obs_filter_get_parent(source_))
-			return; // nothing to show yet: the frame stays empty
+		if (!w || !h || !obs_filter_get_parent(source_)) {
+			// The capture has gone for a moment (a game re-attaching as it
+			// switches between a window and full-screen): keep the last
+			// picture up briefly instead of blinking to nothing.
+			uint32_t fw, fh;
+			bool keep;
+			{
+				std::lock_guard lock(mutex_);
+				gone_for_ += pending_time_;
+				pending_time_ = 0.0;
+				keep = have_rect_ && gone_for_ <= kKeepWhenGone;
+				fw = drawn_w_;
+				fh = drawn_h_;
+			}
+			if (keep)
+				draw_frame(fw, fh);
+			return;
+		}
 
 		Settings s;
 		Rect rect, crop;
 		double dt;
-		bool probe_now = false, publish_measured = false;
+		bool probe_now = false, publish_measured = false, frozen = false;
 		double measured_x = 0.0, measured_y = 0.0;
 		{
 			std::lock_guard lock(mutex_);
@@ -531,7 +556,12 @@ public:
 			dt = pending_time_;
 			pending_time_ = 0.0;
 
+			gone_for_ = 0.0;
 			if (w != last_w_ || h != last_h_) {
+				// While the capture settles at its new size the last good
+				// picture stays up, so nothing half-drawn is ever shown.
+				if (have_rect_ && last_w_ && last_h_)
+					settle_ = kSettle;
 				// A new resolution (a window going full-screen, say). The
 				// picture's shape was already established, so keep showing
 				// that shape: work out the bars it implies at the new size,
@@ -603,6 +633,17 @@ public:
 				crop_current_ = crop_from_ = crop_goal_ = crop_goal;
 				have_rect_ = true;
 				elapsed_ = duration_ = 0.0;
+			} else if (settle_ > 0.0) {
+				// Settling after a resolution change. The crop is in the new
+				// capture's pixels, so it is taken as it is; the picture
+				// glides only if it really ends up somewhere else.
+				settle_ -= dt;
+				crop_current_ = crop_from_ = crop_goal_ = crop_goal;
+				from_ = current_;
+				goal_ = goal;
+				elapsed_ = 0.0;
+				duration_ = same(goal, current_) ? 0.0 : s.glide_s;
+				frozen = settle_ > 0.0;
 			} else if (!same(goal, goal_) || !same(crop_goal, crop_goal_)) {
 				from_ = current_;
 				goal_ = goal;
@@ -611,7 +652,9 @@ public:
 				elapsed_ = 0.0;
 				duration_ = s.glide_s;
 			}
-			if (elapsed_ < duration_) {
+			if (frozen) {
+				// Nothing moves while the old picture is held.
+			} else if (elapsed_ < duration_) {
 				elapsed_ = std::min(duration_, elapsed_ + dt);
 				const double t = ease(s.curve, s.mode, elapsed_ / duration_);
 				auto mix = [t](const Rect &a, const Rect &b) {
@@ -667,6 +710,14 @@ public:
 		// crops anything a "fill" fit pushes past the edges.
 		const bool previous_srgb = gs_framebuffer_srgb_enabled();
 		gs_enable_framebuffer_srgb(false);
+		if (frozen && gs_texrender_get_texture(tr_frame_)) {
+			// Held: the frame drawn before the change is shown again.
+			gs_enable_framebuffer_srgb(previous_srgb);
+			draw_frame(drawn_w_, drawn_h_);
+			return;
+		}
+		drawn_w_ = s.frame_w;
+		drawn_h_ = s.frame_h;
 		gs_texrender_reset(tr_frame_);
 		if (gs_texrender_begin(tr_frame_, s.frame_w, s.frame_h)) {
 			gs_clear(GS_CLEAR_COLOR, &clear, 0.0f, 0);
@@ -693,21 +744,30 @@ public:
 		gs_enable_framebuffer_srgb(previous_srgb);
 
 		// 3. The finished frame.
-		if (gs_texture_t *frame = gs_texrender_get_texture(tr_frame_)) {
-			const bool linear = gs_get_linear_srgb();
-			const bool previous = gs_framebuffer_srgb_enabled();
-			gs_enable_framebuffer_srgb(linear);
-			if (linear)
-				gs_effect_set_texture_srgb(image, frame);
-			else
-				gs_effect_set_texture(image, frame);
-			while (gs_effect_loop(effect, "Draw"))
-				gs_draw_sprite(frame, 0, s.frame_w, s.frame_h);
-			gs_enable_framebuffer_srgb(previous);
-		}
+		draw_frame(s.frame_w, s.frame_h);
 	}
 
 private:
+	// Draws the finished frame kept in tr_frame_.
+	void draw_frame(uint32_t frame_w, uint32_t frame_h)
+	{
+		gs_texture_t *frame = gs_texrender_get_texture(tr_frame_);
+		if (!frame || !frame_w || !frame_h)
+			return;
+		gs_effect_t *effect = obs_get_base_effect(OBS_EFFECT_DEFAULT);
+		gs_eparam_t *image = gs_effect_get_param_by_name(effect, "image");
+		const bool linear = gs_get_linear_srgb();
+		const bool previous = gs_framebuffer_srgb_enabled();
+		gs_enable_framebuffer_srgb(linear);
+		if (linear)
+			gs_effect_set_texture_srgb(image, frame);
+		else
+			gs_effect_set_texture(image, frame);
+		while (gs_effect_loop(effect, "Draw"))
+			gs_draw_sprite(frame, 0, frame_w, frame_h);
+		gs_enable_framebuffer_srgb(previous);
+	}
+
 	static constexpr double kProbeInterval = 0.4;
 
 	// What has been seen of the bars along one direction (0: left/right,
@@ -877,12 +937,19 @@ private:
 	// The picture shape found by looking, kept across resolution changes.
 	double held_ratio_ = 0.0;
 	static constexpr int kQuickLooks = 8;
+	// How long the last good picture is held: while the capture settles
+	// at a new size, and when the capture drops out altogether.
+	static constexpr double kSettle = 0.2;
+	static constexpr double kKeepWhenGone = 1.0;
+	double settle_ = 0.0;
+	double gone_for_ = 0.0;
+	uint32_t drawn_w_ = 0, drawn_h_ = 0;
 	int quick_looks_ = 0;
 	bool measure_once_[2] = {false, false};
 	double measured_[2] = {0.0, 0.0};
 	double identity_timer_ = 0.0;
 	double rule_ratio_ = 0.0;
-	bool rule_built_in_ = false;
+	double usual_ratio_ = 0.0; // the built-in shape for the program being captured
 	std::string program_;
 	bool measured_ready_ = false;
 	int probe_axis_ = 0;
@@ -945,9 +1012,9 @@ void show_status(obs_properties_t *props, AutoFrame *self)
 {
 	std::string program;
 	double ratio = 0.0;
-	bool built_in = false, forced = false;
+	bool built_in = false, forced = false, found = false;
 	if (self)
-		self->status(program, ratio, built_in, forced);
+		self->status(program, ratio, built_in, forced, found);
 	auto fill = [](std::string text, const std::string &with) {
 		const size_t at = text.find("%1");
 		if (at != std::string::npos)
@@ -962,6 +1029,7 @@ void show_status(obs_properties_t *props, AutoFrame *self)
 	else
 		text += fill(obs_module_text(forced     ? "Frame.Status.Key"
 					     : built_in ? "Frame.Status.BuiltIn"
+					     : found    ? "Frame.Status.Found"
 							: "Frame.Status.Yours"),
 			     ratio_name(ratio));
 	obs_property_set_description(obs_properties_get(props, "status"), text.c_str());

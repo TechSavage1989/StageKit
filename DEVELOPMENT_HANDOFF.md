@@ -70,8 +70,14 @@ changes and only gives it up for another real shape that has held for the *Hold 
 chosen start image becomes every Ambient Background's picture without a setting (the owner: "that's
 what I wanted"). None of it has been run on Windows.
 
-Reported problems still open: the owner wants to drag items and zoom points on a picture in the dock
-and zoom with the mouse wheel; a Match Item item "dropping behind others" has not been reproduced.
+0.1.0-beta13: the dock's scene picture (drag to move, wheel to resize, drag the Ramp Zoom cross;
+tested by sending mouse events to the widget, never used by hand); Snes9x's built-in shape corrected to
+8:7 after the owner's screenshots, and built-in shapes demoted to a starting guess; and a hold of the
+last good frame for 0.2 s after a resolution change (1 s if the capture drops out), because the owner
+still saw a split-second flicker when switching between a window and full-screen. Whether that hold is
+long enough for Game Capture's re-hook on Windows is unknown.
+
+Reported problems still open: a Match Item item "dropping behind others" has not been reproduced.
 Addressed in 0.1.0-beta4, awaiting the owner's check on Windows: the dock reaching nested scenes and
 groups, Match Item inside groups, order buttons, Layout for chosen items.
 
