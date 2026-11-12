@@ -190,6 +190,10 @@ its heading:
 
 *Rounded corners* rounds the picture and the panel.
 
+**Leave it off in these scenes** lists every scene the source is in, each with a tick box. Tick a scene
+and the filter draws nothing while that scene is on screen; the source shows plain there and keeps its
+place. It goes by the scene on screen (Program in Studio Mode).
+
 Sizes are as they look on screen: with *Sizes as they look on screen* ticked (the default), 20 px of
 shadow is 20 px in the finished picture however much the item is scaled, so a small camera and a large
 panel get the same shadow. Untick it to give sizes in the source's own pixels.
