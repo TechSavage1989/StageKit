@@ -35,6 +35,10 @@ OLD_FILTERS = {
     "scroll_filter",
 }
 GAME_CAPTURES = {"Game Capture", "Windowed Game Capture"}
+# The one game capture in the rebuilt collection, and how far an emulator's squarer picture keeps from
+# the edges of a full-screen scene (the owner placed one by hand at about this).
+GAME = "Game Capture Framed"
+FULL_SCREEN_MARGIN = 90.0
 # Everything under these was the hand-built blurred background.
 BACKGROUND_SCENES = ("Live Background", "Start Background Scene", "Background Scene", "Tablet Background Scene")
 # Show/hide fades are left off: a collection generated with them crashed the owner's OBS on import and the
@@ -341,20 +345,20 @@ def stagekit_sources():
                              "speed_x": 30.0, "speed_y": 15.0, "mirror": True}})
     new_sources["Ambient Background"] = amb
 
-    for name, (fw, fh) in (("Game Capture", (CANVAS_W, CANVAS_H)), ("Game Capture Framed", (1754, 1268))):
-        g = copy.deepcopy(by["Game Capture"])
-        g["name"] = name
-        if name != "Game Capture":
-            g["uuid"] = uid()
-        g["settings"]["capture_mode"] = "any_fullscreen"
-        g["filters"] = [
-            make_filter("stagekit_auto_capture", "Auto Capture", {"mode": 0, "fallback_fullscreen": True}),
-            make_filter("stagekit_auto_frame", "Auto Frame",
-                        {"frame_width": fw, "frame_height": fh, "fit": 0, "trim": 1, "trim_wait": 3.0,
-                         "known_programs": True, "glide_ms": 350}),
-        ]
-        new_sources[name] = g
-    blurred.update(("Game Capture", "Game Capture Framed"))
+    # One game capture for every game scene. Auto Frame makes it just the trimmed picture; a Fit Item
+    # filter on each scene then fills that scene's game area or floats the picture centred in it.
+    g = copy.deepcopy(by["Game Capture"])
+    g["name"] = GAME
+    g["settings"]["capture_mode"] = "any_fullscreen"
+    g["filters"] = [
+        make_filter("stagekit_auto_capture", "Auto Capture", {"mode": 0, "fallback_fullscreen": True}),
+        make_filter("stagekit_auto_frame", "Auto Frame",
+                    {"frame_mode": 1, "frame_width": 1754, "frame_height": 1268, "fit": 0, "trim": 1,
+                     "trim_wait": 3.0, "known_programs": True, "glide_ms": 350}),
+    ]
+    new_sources[GAME] = g
+    blurred.add(GAME)
+    shadowed.add(GAME)
 
 
 def finish_filters():
@@ -362,7 +366,7 @@ def finish_filters():
         s = new_sources[name]
         if any(f["id"] == "stagekit_shadow_backdrop" for f in s.setdefault("filters", [])):
             continue
-        s["filters"].append(make_filter("stagekit_shadow_backdrop", "Shadow & Backdrop", {
+        s["filters"].append(make_filter("stagekit_shadow_backdrop", "Shadow, Glow & Outline", {
             "shadow": True, "shadow_color": 0xFF000000, "shadow_opacity": 100.0, "offset_x": 20.0, "offset_y": 20.0,
             "softness": 0.0, "spread": 0.0, "backdrop": False, "radius": 0.0, "keep_place": True,
             # Nothing has been adjusted for the shadow's room yet: the filter does it on first load.
@@ -400,7 +404,7 @@ def build_scene(name):
     report.append(f"\n{name}")
     flat = []
     flatten(name, T(), False, flat)
-    items, seen, ambient_done, game_done = [], set(), False, False
+    items, seen, ambient_done, game_done, fit = [], set(), False, False, None
     for e in flat:
         if e.get("ambient"):
             if not ambient_done:
@@ -412,11 +416,17 @@ def build_scene(name):
                 continue
             game_done = True
             framed = e["bounds_type"] and e["bounds"][0] < CANVAS_W * 0.9
-            gname = "Game Capture Framed" if framed else "Game Capture"
+            items.append(item_json(GAME, e["pos"] if framed else (0, 0), visible=e["visible"]))
             if framed:
-                shadowed.add(gname)
-            items.append(item_json(gname, e["pos"] if framed else (0, 0), visible=e["visible"]))
-            report.append(f"  one game capture ('{gname}') in place of the per-shape variants")
+                fit = {"item": GAME, "box": 1, "box_x": float(round(e["pos"][0])), "box_y": float(round(e["pos"][1])),
+                       "box_width": float(int(e["bounds"][0])), "box_height": float(int(e["bounds"][1])),
+                       "margin": 0.0}
+                report.append(f"  one game capture ('{GAME}'), fitted by Fit Item to the game box "
+                              f"{fit['box_width']:.0f}x{fit['box_height']:.0f} at {fit['box_x']:.0f}, {fit['box_y']:.0f}")
+            else:
+                fit = {"item": GAME, "box": 0, "margin": FULL_SCREEN_MARGIN}
+                report.append(f"  one game capture ('{GAME}'), fitted by Fit Item to the whole screen: a widescreen "
+                              f"game fills it, other shapes float centred {FULL_SCREEN_MARGIN:.0f} px in")
             continue
         if e["name"] in seen:
             continue
@@ -427,6 +437,8 @@ def build_scene(name):
                                e["crop"], e["visible"], e["locked"], show=e.get("show"), hide=e.get("hide"),
                                align=e.get("align", 5)))
     filters = scene_filters(name, [i["name"] for i in items])
+    if fit:
+        filters.append(make_filter("stagekit_fit_item", "Fit the game", fit))
     new_sources[name] = scene_json(name, items, filters=filters)
     report.append(f"  {len(items)} items placed directly in the scene")
 
@@ -473,7 +485,7 @@ summary = [
     f"Rebuilt:  {len(out['sources'])} sources ({kinds.get('scene', 0)} scenes), "
     f"{sum(len(s.get('filters', [])) for s in out['sources'] + out['groups'])} filters",
     f"Scenes: {', '.join(order)}",
-    f"Shadow & Backdrop on: {', '.join(sorted(shadowed))}",
+    f"Shadow, Glow & Outline on: {', '.join(sorted(shadowed))}",
     f"Ramp Blur on: {', '.join(sorted(n for n in blurred if n in new_sources))}",
 ]
 open(REPORT, "w", encoding="utf-8").write("\n".join(summary) + "\n" + "\n".join(report) + "\n")
