@@ -1,0 +1,406 @@
+"""Rebuilds the owner's OBS scene collection on StageKit tools.
+
+Reads the original collection (never modified) and writes a new one. Each
+production scene is flattened: the nested "Overlay"/"Parts" scenes, source
+clones and Move-filter chains are replaced by the real sources placed directly
+in the scene with StageKit filters on them.
+
+Usage: python3 -I rebuild.py <original.json> <output.json> <report.txt>
+"""
+import copy
+import json
+import sys
+import uuid
+
+SRC, OUT, REPORT = sys.argv[1], sys.argv[2], sys.argv[3]
+old = json.load(open(SRC, encoding="utf-8"))
+by = {s["name"]: s for s in old["sources"]}
+for g in old.get("groups", []):
+    by[g["name"]] = g
+
+CANVAS_W, CANVAS_H = old["resolution"]["x"], old["resolution"]["y"]
+
+PRODUCTION = [
+    "Stream Start", "Game-Capture-Scene", "Game-Component-Capture-Scene", "Console Scene",
+    "Game-Capture-HD60S-Scene", "Game-Component-HD60S-Capture-Scene", "Window-Capture-Scene",
+    "Window-Component-Capture-Scene", "Main Display Scene", "Tablet Scene", "Dolphin-GBA-Scene",
+    "Camera Only", "Intermission", "Be Right Back", "Stream Ending",
+]
+
+# Filters the old setup needed and StageKit replaces.
+OLD_FILTERS = {
+    "move_action_filter", "move_value_filter", "move_source_filter", "move_transition_override_filter",
+    "obs_composite_blur", "filter-blur", "shader_filter", "streamfx-filter-sdf-effects", "filter-dropshadow",
+    "scroll_filter",
+}
+GAME_CAPTURES = {"Game Capture", "Windowed Game Capture"}
+# Everything under these was the hand-built blurred background.
+BACKGROUND_SCENES = ("Live Background", "Start Background Scene", "Background Scene", "Tablet Background Scene")
+SKIP_LEAVES = {"Purple"}
+
+report = []
+new_sources = {}  # name -> source json (leaf sources, wrappers, groups, scenes)
+new_groups = {}
+shadowed = set()  # names of sources that get a Shadow & Backdrop filter
+blurred = set()   # names of sources that get a Ramp Blur filter
+
+
+def uid():
+    return str(uuid.uuid4())
+
+
+def make_filter(filter_id, name, settings, enabled=True):
+    return {
+        "prev_ver": old["sources"][0].get("prev_ver", 0), "name": name, "uuid": uid(), "id": filter_id,
+        "versioned_id": filter_id, "settings": settings, "mixers": 0, "sync": 0, "flags": 0, "volume": 1.0,
+        "balance": 0.5, "enabled": enabled, "muted": False, "push-to-mute": False, "push-to-mute-delay": 0,
+        "push-to-talk": False, "push-to-talk-delay": 0, "hotkeys": {}, "deinterlace_mode": 0,
+        "deinterlace_field_order": 0, "monitoring_type": 0, "private_settings": {},
+    }
+
+
+def has_shadow(source):
+    for f in source.get("filters", []):
+        if f["id"] == "shader_filter" and f.get("enabled", True) and \
+                "drop_shadow" in f.get("settings", {}).get("shader_file_name", ""):
+            return f["settings"]
+    return None
+
+
+def had_blur_chain(source):
+    ids = [f["id"] for f in source.get("filters", [])]
+    return "obs_composite_blur" in ids and "move_value_filter" in ids
+
+
+def carry(name):
+    """A leaf source carried over, with the old helper filters taken off."""
+    if name in new_sources:
+        return new_sources[name]
+    s = copy.deepcopy(by[name])
+    if had_blur_chain(s):
+        blurred.add(name)
+    removed = [f["name"] for f in s.get("filters", []) if f["id"] in OLD_FILTERS]
+    s["filters"] = [f for f in s.get("filters", []) if f["id"] not in OLD_FILTERS]
+    if removed:
+        report.append(f"  {name}: removed {len(removed)} old filter(s)")
+    new_sources[name] = s
+    return s
+
+
+def item_json(name, pos, scale=(1.0, 1.0), bounds_type=0, bounds=(0.0, 0.0), bounds_align=0, crop=(0, 0, 0, 0),
+              visible=True, locked=False, item_id=1):
+    return {
+        "name": name, "source_uuid": new_sources[name]["uuid"], "visible": visible, "locked": locked, "rot": 0.0,
+        "pos": {"x": float(pos[0]), "y": float(pos[1])}, "scale": {"x": float(scale[0]), "y": float(scale[1])},
+        "align": 5, "bounds_type": bounds_type, "bounds_align": bounds_align, "bounds_crop": False,
+        "bounds": {"x": float(bounds[0]), "y": float(bounds[1])}, "crop_left": crop[0], "crop_top": crop[2],
+        "crop_right": crop[1], "crop_bottom": crop[3], "id": item_id, "group_item_backup": False,
+        "scale_filter": "disable", "blend_method": "default", "blend_type": "normal",
+        "show_transition": {"duration": 0}, "hide_transition": {"duration": 0}, "private_settings": {},
+    }
+
+
+def scene_json(name, items, custom_size=None, filters=None):
+    template = copy.deepcopy(by["Camera Only"])
+    for i, it in enumerate(items):
+        it["id"] = i + 1
+    template.update({"name": name, "uuid": uid(), "filters": filters or [],
+                     "hotkeys": {"OBSBasic.SelectScene": []}})
+    template["settings"] = {"custom_size": bool(custom_size), "id_counter": len(items) + 1, "items": items}
+    if custom_size:
+        template["settings"]["cx"], template["settings"]["cy"] = custom_size
+    return template
+
+
+def source_size(name):
+    """Best guess at a source's pixel size, for composing bounds."""
+    s = by.get(name, {})
+    st = s.get("settings", {})
+    if s.get("id") in ("scene",):
+        return (st.get("cx", CANVAS_W), st.get("cy", CANVAS_H)) if st.get("custom_size") else (CANVAS_W, CANVAS_H)
+    if s.get("id") == "group":
+        return st.get("cx", CANVAS_W), st.get("cy", CANVAS_H)
+    return None
+
+
+def leaf_size(name):
+    """The pixel size of a plain source, from its settings."""
+    src = by[name]
+    st = src.get("settings", {})
+    if src["id"] == "browser_source":
+        return int(st.get("width", 800)), int(st.get("height", 600))
+    if src["id"] == "color_source":
+        return int(st.get("width", 1920)), int(st.get("height", 1080))
+    res = st.get("resolution") or st.get("last_resolution")
+    if res:
+        w, h = (int(v) for v in res.split("x"))
+        return w, h
+    report.append(f"  !! size of '{name}' ({src['id']}) is a guess (1920x1080): check its crop wrapper")
+    return 1920, 1080
+
+
+class T:
+    """Where a nested scene's own coordinates land in the scene above it."""
+
+    def __init__(self, ox=0.0, oy=0.0, sx=1.0, sy=1.0):
+        self.ox, self.oy, self.sx, self.sy = ox, oy, sx, sy
+
+    def child(self, it, size):
+        sx, sy = it["scale"]["x"], it["scale"]["y"]
+        ox, oy = it["pos"]["x"], it["pos"]["y"]
+        if it.get("bounds_type", 0) and size:
+            bw, bh = it["bounds"]["x"], it["bounds"]["y"]
+            rx, ry = bw / size[0], bh / size[1]
+            bt = it["bounds_type"]
+            if bt == 1:
+                sx, sy = rx, ry
+            elif bt == 3:
+                sx = sy = max(rx, ry)
+            else:
+                sx = sy = min(rx, ry)
+            al = it.get("bounds_align", 0)
+            fx = 0.0 if al & 1 else 1.0 if al & 2 else 0.5
+            fy = 0.0 if al & 4 else 1.0 if al & 8 else 0.5
+            ox += (bw - size[0] * sx) * fx
+            oy += (bh - size[1] * sy) * fy
+        return T(self.ox + ox * self.sx, self.oy + oy * self.sy, self.sx * sx, self.sy * sy)
+
+
+def wrapper_for_crop(name, crop):
+    """A small scene holding one cropped source, so a shadow can follow the crop."""
+    left, right, top, bottom = crop
+    wname = f"{name} (cropped {left}-{right}-{top}-{bottom})"
+    if wname in new_sources:
+        return wname
+    w, h = leaf_size(name)
+    carry(name)
+    inner = item_json(name, (-left, -top))
+    new_sources[wname] = scene_json(wname, [inner], custom_size=(w - left - right, h - top - bottom))
+    report.append(f"  wrapper scene '{wname}' ({w - left - right}x{h - top - bottom}): crop first, then shadow")
+    return wname
+
+
+def flatten(scene_name, t, shadow, out, depth=0):
+    """Appends (bottom first) the leaves of an old scene to `out`."""
+    scene = by[scene_name]
+    for it in scene["settings"]["items"]:
+        name = it["name"]
+        if it.get("group_item_backup") or name in SKIP_LEAVES:
+            continue
+        child = by.get(name)
+        if not child:
+            continue
+        kind = child["id"]
+        if kind in ("scene", "group") and name.startswith(BACKGROUND_SCENES):
+            out.append({"ambient": True})
+            continue
+        if not it.get("visible", True) and kind in ("scene", "group"):
+            # A hidden variant (another picture shape, another capture type).
+            report.append(f"  dropped hidden variant '{name}'")
+            continue
+        own_shadow = shadow or bool(has_shadow(child))
+        crop_filters = [f for f in child.get("filters", []) if f["id"] == "crop_filter" and f.get("enabled", True)]
+        is_leaf_group = kind == "group" and all(
+            by.get(c["name"], {}).get("id") not in ("scene", "group") for c in child["settings"]["items"])
+        if kind in ("scene", "group") and not crop_filters and not is_leaf_group and depth < 10:
+            flatten(name, t.child(it, source_size(name)), own_shadow, out, depth + 1)
+            continue
+
+        crop = (it.get("crop_left", 0), it.get("crop_right", 0), it.get("crop_top", 0), it.get("crop_bottom", 0))
+        entry = {"name": name, "visible": it.get("visible", True), "locked": it.get("locked", False),
+                 "pos": (t.ox + it["pos"]["x"] * t.sx, t.oy + it["pos"]["y"] * t.sy),
+                 "scale": (it["scale"]["x"] * t.sx, it["scale"]["y"] * t.sy),
+                 "bounds_type": it.get("bounds_type", 0), "bounds_align": it.get("bounds_align", 0),
+                 "bounds": (it["bounds"]["x"] * t.sx, it["bounds"]["y"] * t.sy), "crop": crop,
+                 "shadow": own_shadow}
+        if kind in ("scene", "group"):
+            # Kept as it is: a crop wrapper (Square Camera) or a group of plain sources.
+            keep_container(name)
+        elif name in GAME_CAPTURES:
+            entry["game"] = True
+        elif own_shadow and any(crop):
+            entry["name"] = wrapper_for_crop(name, crop)
+            entry["crop"] = (0, 0, 0, 0)
+        else:
+            carry(name)
+        out.append(entry)
+
+
+def keep_container(name):
+    if name in new_sources:
+        return
+    c = copy.deepcopy(by[name])
+    kept = []
+    for it in c["settings"]["items"]:
+        if it["name"] in SKIP_LEAVES or it.get("group_item_backup"):
+            continue
+        inner = by.get(it["name"], {})
+        if inner.get("id") in ("scene", "group"):
+            keep_container(it["name"])
+        else:
+            carry(it["name"])
+        it["source_uuid"] = new_sources[it["name"]]["uuid"]
+        kept.append(it)
+    c["settings"]["items"] = kept
+    c["settings"].pop("canvas", None)
+    c["filters"] = [f for f in c.get("filters", []) if f["id"] not in OLD_FILTERS]
+    c["hotkeys"] = {"OBSBasic.SelectScene": []} if c["id"] == "scene" else {}
+    new_sources[name] = c
+    if c["id"] == "group":
+        new_groups[name] = c
+
+
+# ---------------------------------------------------------------- new sources
+
+def stagekit_sources():
+    start = by["Start Image"]["settings"].get("file", "")
+    # The start image: one setting for the whole collection.
+    s = copy.deepcopy(by["Start Image"])
+    s.update({"id": "stagekit_start_image", "versioned_id": "stagekit_start_image", "filters": [],
+              "settings": {"file": start}})
+    new_sources["Start Image"] = s
+    old["modules"]["stagekit.start_image"] = start
+
+    amb = copy.deepcopy(by["Start Image"])
+    amb.update({"name": "Ambient Background", "uuid": uid(), "id": "stagekit_ambient_background",
+                "versioned_id": "stagekit_ambient_background", "filters": [],
+                "settings": {"base_type": 2, "live_mode": 1, "live_opacity": 70.0, "live_fit": 0,
+                             "speed_x": 30.0, "speed_y": 15.0, "mirror": True}})
+    new_sources["Ambient Background"] = amb
+
+    for name, (fw, fh) in (("Game Capture", (CANVAS_W, CANVAS_H)), ("Game Capture Framed", (1754, 1268))):
+        g = copy.deepcopy(by["Game Capture"])
+        g["name"] = name
+        if name != "Game Capture":
+            g["uuid"] = uid()
+        g["settings"]["capture_mode"] = "any_fullscreen"
+        g["filters"] = [
+            make_filter("stagekit_auto_capture", "Auto Capture", {"mode": 0, "fallback_fullscreen": True}),
+            make_filter("stagekit_auto_frame", "Auto Frame",
+                        {"frame_width": fw, "frame_height": fh, "fit": 0, "trim": 1, "trim_wait": 3.0,
+                         "known_programs": True, "glide_ms": 350}),
+        ]
+        new_sources[name] = g
+    blurred.update(("Game Capture", "Game Capture Framed"))
+
+
+def finish_filters():
+    for name in sorted(shadowed):
+        s = new_sources[name]
+        if any(f["id"] == "stagekit_shadow_backdrop" for f in s.setdefault("filters", [])):
+            continue
+        s["filters"].append(make_filter("stagekit_shadow_backdrop", "Shadow & Backdrop", {
+            "shadow": True, "shadow_color": 0xFF000000, "shadow_opacity": 100.0, "offset_x": 20.0, "offset_y": 20.0,
+            "softness": 0.0, "spread": 0.0, "backdrop": False, "radius": 0.0, "keep_place": True,
+            # Nothing has been adjusted for the shadow's room yet: the filter does it on first load.
+            "adjusted_left": 0, "adjusted_top": 0, "adjusted_right": 0, "adjusted_bottom": 0}))
+    for name in sorted(blurred):
+        s = new_sources.get(name)
+        if not s:
+            continue
+        # The old chain was a pixelate blur ramped from 1 to 5; off until its key is pressed.
+        s.setdefault("filters", []).append(make_filter(
+            "stagekit_ramp_blur", "Ramp Blur", {"blur_type": 3, "include_in_all": True}, enabled=False))
+
+
+def camera_spots():
+    """The seven Move filters that placed the square camera become Send To filters on it."""
+    cam = new_sources.get("Square Camera")
+    if not cam:
+        return
+    spots = {}
+    for f in by["Square Camera Parts"].get("filters", []):
+        st = f.get("settings", {})
+        if f["id"] == "move_source_filter" and st.get("source") == "Square Camera" and "pos" in st:
+            spots[f["name"]] = (st["pos"]["x"], st["pos"]["y"])
+    for name, (x, y) in spots.items():
+        cam["filters"].append(make_filter("stagekit_send_to", f"Camera {name}", {
+            "destination": 9, "saved_x": x, "saved_y": y, "restore_size": False, "where": 1,
+            "linked": "Amuse Square Camera", "flip_linked": False, "duration_ms": 500}, enabled=False))
+    report.append(f"  Square Camera: {len(spots)} Send To filters (one per old camera position), "
+                  "bringing 'Amuse Square Camera' along")
+
+
+# --------------------------------------------------------------------- scenes
+
+def build_scene(name):
+    report.append(f"\n{name}")
+    flat = []
+    flatten(name, T(), False, flat)
+    items, seen, ambient_done, game_done = [], set(), False, False
+    for e in flat:
+        if e.get("ambient"):
+            if not ambient_done:
+                items.insert(0, item_json("Ambient Background", (0, 0)))
+                ambient_done = True
+            continue
+        if e.get("game"):
+            if game_done:
+                continue
+            game_done = True
+            framed = e["bounds_type"] and e["bounds"][0] < CANVAS_W * 0.9
+            gname = "Game Capture Framed" if framed else "Game Capture"
+            if framed:
+                shadowed.add(gname)
+            items.append(item_json(gname, e["pos"] if framed else (0, 0), visible=e["visible"]))
+            report.append(f"  one game capture ('{gname}') in place of the per-shape variants")
+            continue
+        if e["name"] in seen:
+            continue
+        seen.add(e["name"])
+        if e["shadow"]:
+            shadowed.add(e["name"])
+        items.append(item_json(e["name"], e["pos"], e["scale"], e["bounds_type"], e["bounds"], e["bounds_align"],
+                               e["crop"], e["visible"], e["locked"]))
+    filters = scene_filters(name, [i["name"] for i in items])
+    new_sources[name] = scene_json(name, items, filters=filters)
+    report.append(f"  {len(items)} items placed directly in the scene")
+
+
+def scene_filters(name, item_names):
+    """Visibility Link and Program Triggers for the window-capture scenes."""
+    filters = []
+    captures = [n for n in ("Window Capture", "Blender", "Zbrush", "Fusion 360") if n in item_names]
+    if len(captures) > 1:
+        filters.append(make_filter("stagekit_visibility_link", "One window capture at a time", {
+            "mode": 0, "items": [{"value": n, "selected": False, "hidden": False} for n in captures]}))
+        for item, program in (("Blender", "blender"), ("Zbrush", "zbrush"), ("Fusion 360", "fusion360")):
+            if item in item_names:
+                filters.append(make_filter("stagekit_program_trigger", f"Show {item} while it is open", {
+                    "program": program, "when": 0,
+                    "items": [{"value": item, "selected": False, "hidden": False}]}))
+        report.append("  Visibility Link (one window capture at a time) and a Program Trigger per program")
+    return filters
+
+
+stagekit_sources()
+for scene in PRODUCTION:
+    build_scene(scene)
+camera_spots()
+finish_filters()
+
+order = PRODUCTION + sorted(n for n, s in new_sources.items() if s["id"] == "scene" and n not in PRODUCTION)
+out = copy.deepcopy(old)
+out["name"] = "StageKit Rebuild"
+out["sources"] = [s for n, s in new_sources.items() if s["id"] != "group"]
+out["groups"] = list(new_groups.values())
+out["scene_order"] = [{"name": n} for n in order]
+out["current_scene"] = out["current_program_scene"] = "Stream Start"
+# The old macros point at scenes that no longer exist.
+out["modules"].pop("advanced-scene-switcher", None)
+json.dump(out, open(OUT, "w", encoding="utf-8"), indent=1)
+
+kinds = {}
+for s in out["sources"]:
+    kinds[s["id"]] = kinds.get(s["id"], 0) + 1
+summary = [
+    f"Original: {len(old['sources'])} sources ({sum(1 for s in old['sources'] if s['id'] == 'scene')} scenes), "
+    f"{sum(len(s.get('filters', [])) for s in old['sources'])} filters",
+    f"Rebuilt:  {len(out['sources'])} sources ({kinds.get('scene', 0)} scenes), "
+    f"{sum(len(s.get('filters', [])) for s in out['sources'] + out['groups'])} filters",
+    f"Scenes: {', '.join(order)}",
+    f"Shadow & Backdrop on: {', '.join(sorted(shadowed))}",
+    f"Ramp Blur on: {', '.join(sorted(n for n in blurred if n in new_sources))}",
+]
+open(REPORT, "w", encoding="utf-8").write("\n".join(summary) + "\n" + "\n".join(report) + "\n")
+print("\n".join(summary))
