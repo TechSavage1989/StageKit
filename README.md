@@ -54,7 +54,8 @@ StageKit is in pre-release. Builds for Windows, macOS and Linux are on the relea
 
 - [All releases, including pre-releases](https://github.com/TechSavage1989/StageKit/releases)
 
-On Windows, pick the `windows-x64` zip. There is no stable release yet, so the "latest release" shortcut
+On Windows, pick the file ending in `windows-x64-Installer.exe` (from the second pre-release onward), or
+the `windows-x64` zip to copy the files yourself. There is no stable release yet, so the "latest release" shortcut
 does not point anywhere. Release notes are kept in [docs/releases](docs/releases).
 
 ## Requirements
@@ -67,13 +68,21 @@ does not point anywhere. Release notes are kept in [docs/releases](docs/releases
 
 ## Getting started
 
-1. Download the file for your system from the releases page and unzip it.
-2. Close OBS.
-3. Windows: copy the `stagekit` folder from the zip into `C:\ProgramData\obs-studio\plugins\`. This
-   has not been checked on a real machine yet; if the zip looks different, please report what it
-   contains.
-4. Start OBS. *Ramp Blur (StageKit)* and the other tools appear in the filter list of any source, and
-   *Ambient Background (StageKit)* in the list of sources.
+On Windows, with the installer:
+
+1. Download the file ending in `windows-x64-Installer.exe` from the releases page.
+2. Close OBS, then run the installer. Windows may warn that the publisher is unknown, because the
+   installer is not signed: choose *More info*, then *Run anyway*, if you trust this download.
+3. Start OBS. *Ramp Blur (StageKit)* and the other tools appear in the filter list of any source,
+   *Ambient Background (StageKit)* in the list of sources, and the dock under *Docks → StageKit*.
+
+The installer puts the plugin in `C:\ProgramData\obs-studio\plugins\stagekit` and adds an entry under
+*Apps & features* for removing it. It needs administrator rights for that folder.
+
+Without the installer: unzip the `windows-x64` zip and copy its `stagekit` folder into
+`C:\ProgramData\obs-studio\plugins\` yourself.
+
+Neither route has been checked on a real Windows machine yet; please report anything that looks wrong.
 
 ## How to use
 
@@ -193,8 +202,8 @@ on or off. The other tools are filters, so the standard `SetSourceFilterEnabled`
 
 ## Updates and settings
 
-StageKit does not check for updates and never downloads anything. To update, close OBS and replace the
-plugin folder with a newer build.
+StageKit does not check for updates and never downloads anything. To update, close OBS and run a newer
+installer, or replace the plugin folder with a newer build.
 
 All settings are stored by OBS in your scene collection, alongside the filters and sources they belong
 to. Replacing the plugin does not change them. Hotkey bindings are stored there too.
