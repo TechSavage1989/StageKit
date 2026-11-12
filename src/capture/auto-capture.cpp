@@ -242,7 +242,9 @@ std::string encode_part(const std::string &text)
 	return out;
 }
 
-std::vector<std::string> read_list(obs_data_t *settings, const char *name)
+// A list of program names. 0.1.0-beta8 stored these as arrays; they are
+// still read, and the one-line text is what the controls edit now.
+std::vector<std::string> read_list(obs_data_t *settings, const char *name, const char *text_name)
 {
 	std::vector<std::string> out;
 	obs_data_array_t *list = obs_data_get_array(settings, name);
@@ -254,7 +256,31 @@ std::vector<std::string> read_list(obs_data_t *settings, const char *name)
 		obs_data_release(entry);
 	}
 	obs_data_array_release(list);
+	// The list as typed in one line: "blender, vlc".
+	std::string word;
+	auto flush = [&] {
+		const size_t first = word.find_first_not_of(" \t");
+		const size_t last = word.find_last_not_of(" \t");
+		if (first != std::string::npos)
+			out.push_back(lower(word.substr(first, last - first + 1)));
+		word.clear();
+	};
+	for (const char *c = obs_data_get_string(settings, text_name); *c; c++) {
+		if (*c == ',' || *c == ';' || *c == '\n')
+			flush();
+		else
+			word += *c;
+	}
+	flush();
 	return out;
+}
+
+bool built_in_never(const std::string &executable)
+{
+	for (const char *name : kNeverCapture)
+		if (executable.find(name) != std::string::npos)
+			return true;
+	return false;
 }
 
 bool matches(const std::string &executable, const std::vector<std::string> &list)
@@ -314,8 +340,8 @@ public:
 
 	void update(obs_data_t *settings)
 	{
-		const std::vector<std::string> always = read_list(settings, "programs");
-		const std::vector<std::string> never = read_list(settings, "exclude");
+		const std::vector<std::string> always = read_list(settings, "programs", "always");
+		const std::vector<std::string> never = read_list(settings, "exclude", "never");
 		std::lock_guard lock(mutex_);
 		mode_ = static_cast<Mode>(obs_data_get_int(settings, "mode"));
 		always_ = always;
@@ -350,12 +376,7 @@ public:
 			windows = list_windows();
 
 		auto excluded = [&](const std::string &exe) {
-			if (matches(exe, never))
-				return true;
-			for (const char *name : kNeverCapture)
-				if (exe.find(name) != std::string::npos)
-					return true;
-			return false;
+			return matches(exe, never) || built_in_never(exe);
 		};
 		auto key_of = [](const Window &w) {
 			return w.window_class + ":" + w.executable;
@@ -386,6 +407,10 @@ public:
 		// Emulators put the frame rate in their title, so what counts as
 		// "a different window" is the program and window class only.
 		const std::string key = chosen ? key_of(*chosen) : std::string();
+		{
+			std::lock_guard lock(mutex_);
+			current_ = chosen ? chosen->executable : std::string();
+		}
 		if (aimed_once_ && key == applied_key_)
 			return;
 		aimed_once_ = true;
@@ -425,6 +450,59 @@ public:
 	void detach() { parent_ = nullptr; }
 	obs_source_t *source() const { return source_; }
 
+	// The program being captured now; empty when there is none.
+	std::string current()
+	{
+		std::lock_guard lock(mutex_);
+		return current_;
+	}
+
+	// The programs that are open, for choosing from instead of typing.
+	std::vector<Window> open_programs()
+	{
+		std::vector<Window> windows;
+		bool use_test;
+		{
+			std::lock_guard lock(mutex_);
+			use_test = use_test_windows_;
+			if (use_test)
+				windows = test_windows_;
+		}
+		if (!use_test)
+			windows = list_windows();
+		std::vector<Window> out;
+		for (const Window &w : windows) {
+			const std::string exe = lower(w.executable);
+			const bool seen = std::any_of(out.begin(), out.end(),
+						      [&](const Window &o) { return lower(o.executable) == exe; });
+			if (!seen && !built_in_never(exe))
+				out.push_back(w);
+		}
+		return out;
+	}
+
+	// Adds a program to the "never" or "always" line and takes it off the other.
+	void add_to(const char *list, const std::string &executable)
+	{
+		if (executable.empty())
+			return;
+		const std::string exe = lower(executable);
+		obs_data_t *settings = obs_source_get_settings(source_);
+		for (const char *name : {"never", "always"}) {
+			std::string kept;
+			for (const std::string &entry : read_list(settings, "", name)) {
+				if (entry == exe)
+					continue;
+				kept += (kept.empty() ? "" : ", ") + entry;
+			}
+			if (strcmp(name, list) == 0)
+				kept += (kept.empty() ? "" : ", ") + exe;
+			obs_data_set_string(settings, name, kept.c_str());
+		}
+		obs_source_update(source_, settings);
+		obs_data_release(settings);
+	}
+
 private:
 	obs_source_t *source_;
 	obs_source_t *parent_ = nullptr;
@@ -436,23 +514,91 @@ private:
 	std::vector<Window> test_windows_;
 	bool use_test_windows_ = false;
 	std::string applied_key_;
+	std::string current_;
 	bool aimed_once_ = false;
 };
 
-obs_properties_t *get_properties(void *)
+void show_status(obs_properties_t *props, AutoCapture *self)
 {
+	const std::string current = self ? self->current() : std::string();
+	std::string text = obs_module_text(current.empty() ? "Capture.Status.None" : "Capture.Status.Now");
+	const size_t at = text.find("%1");
+	if (at != std::string::npos)
+		text.replace(at, 2, current);
+	obs_property_set_description(obs_properties_get(props, "status"), text.c_str());
+	obs_property_set_visible(obs_properties_get(props, "never_now"), !current.empty());
+}
+
+obs_properties_t *get_properties(void *data)
+{
+	auto *self = static_cast<AutoCapture *>(data);
 	obs_properties_t *props = obs_properties_create();
-	obs_property_t *mode = obs_properties_add_list(props, "mode", obs_module_text("Capture.Mode"),
+
+	// What it is doing right now, and one press to undo a wrong choice.
+	obs_property_t *status = obs_properties_add_text(props, "status", "", OBS_TEXT_INFO);
+	obs_property_text_set_info_word_wrap(status, true);
+	obs_properties_add_button2(
+		props, "never_now", obs_module_text("Capture.NeverNow"),
+		[](obs_properties_t *p, obs_property_t *, void *d) {
+			auto *filter = static_cast<AutoCapture *>(d);
+			filter->add_to("never", filter->current());
+			obs_property_set_description(obs_properties_get(p, "status"),
+						     obs_module_text("Capture.Status.None"));
+			obs_property_set_visible(obs_properties_get(p, "never_now"), false);
+			return true;
+		},
+		data);
+	obs_properties_add_button2(
+		props, "check", obs_module_text("Capture.Check"),
+		[](obs_properties_t *p, obs_property_t *, void *d) {
+			show_status(p, static_cast<AutoCapture *>(d));
+			return true;
+		},
+		data);
+
+	// Choosing from what is open, instead of typing file names.
+	obs_properties_t *choose = obs_properties_create();
+	obs_property_t *pick = obs_properties_add_list(choose, "pick", obs_module_text("Capture.Pick"),
+						       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
+	obs_property_list_add_string(pick, obs_module_text("Capture.Pick.None"), "");
+	if (self) {
+		for (const Window &w : self->open_programs()) {
+			const std::string label = w.executable + "  -  " + w.title;
+			obs_property_list_add_string(pick, label.c_str(), w.executable.c_str());
+		}
+	}
+	auto add_picked = [](const char *list, void *d) {
+		auto *filter = static_cast<AutoCapture *>(d);
+		obs_data_t *settings = obs_source_get_settings(filter->source());
+		const std::string picked = obs_data_get_string(settings, "pick");
+		obs_data_release(settings);
+		filter->add_to(list, picked);
+		return true;
+	};
+	static const auto always_picked = add_picked;
+	obs_properties_add_button2(
+		choose, "always_pick", obs_module_text("Capture.AlwaysPick"),
+		[](obs_properties_t *, obs_property_t *, void *d) { return always_picked("always", d); }, data);
+	obs_properties_add_button2(
+		choose, "never_pick", obs_module_text("Capture.NeverPick"),
+		[](obs_properties_t *, obs_property_t *, void *d) { return always_picked("never", d); }, data);
+	obs_properties_add_group(props, "choose", obs_module_text("Capture.Choose"), OBS_GROUP_NORMAL, choose);
+
+	obs_properties_t *lists = obs_properties_create();
+	obs_property_t *never =
+		obs_properties_add_text(lists, "never", obs_module_text("Capture.Never"), OBS_TEXT_DEFAULT);
+	obs_property_set_long_description(never, obs_module_text("Capture.Never.Tip"));
+	obs_property_t *always =
+		obs_properties_add_text(lists, "always", obs_module_text("Capture.Always"), OBS_TEXT_DEFAULT);
+	obs_property_set_long_description(always, obs_module_text("Capture.Always.Tip"));
+	obs_property_t *mode = obs_properties_add_list(lists, "mode", obs_module_text("Capture.Mode"),
 						       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(mode, obs_module_text("Capture.Mode.AnyGame"), (int)Mode::AnyGame);
 	obs_property_list_add_int(mode, obs_module_text("Capture.Mode.ListedOnly"), (int)Mode::ListedOnly);
-	obs_properties_add_editable_list(props, "exclude", obs_module_text("Capture.Exclude"),
-					 OBS_EDITABLE_LIST_TYPE_STRINGS, nullptr, nullptr);
-	obs_properties_add_editable_list(props, "programs", obs_module_text("Capture.Programs"),
-					 OBS_EDITABLE_LIST_TYPE_STRINGS, nullptr, nullptr);
-	obs_properties_add_bool(props, "fallback_fullscreen", obs_module_text("Capture.Fallback"));
-	obs_property_t *help = obs_properties_add_text(props, "help", obs_module_text("Capture.Help"), OBS_TEXT_INFO);
-	obs_property_text_set_info_word_wrap(help, true);
+	obs_properties_add_bool(lists, "fallback_fullscreen", obs_module_text("Capture.Fallback"));
+	obs_properties_add_group(props, "lists", obs_module_text("Capture.Lists"), OBS_GROUP_NORMAL, lists);
+
+	show_status(props, self);
 	return props;
 }
 

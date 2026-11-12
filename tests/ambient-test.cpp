@@ -328,6 +328,60 @@ int main(int argc, char **argv)
 		      "in 'only the listed programs' mode an unlisted game is left alone");
 		obs_data_release(ad);
 
+		// The controls: say what is captured, undo a wrong pick in one
+		// press, and choose from open programs instead of typing names.
+		{
+			obs_data_t *fresh = obs_data_create();
+			obs_source_t *easy =
+				obs_source_create("stagekit_auto_capture", "Auto Capture 2", fresh, nullptr);
+			obs_data_release(fresh);
+			obs_source_t *capture2 = obs_source_create("color_source", "Second Capture", nullptr, nullptr);
+			obs_source_filter_add(capture2, easy);
+			auto see2 = [&](const char *windows) {
+				calldata_t cd = {};
+				calldata_set_string(&cd, "windows", windows);
+				proc_handler_call(obs_source_get_proc_handler(easy), "set_test_windows", &cd);
+				calldata_free(&cd);
+				sleep_ms(250);
+				obs_data_t *settings = obs_source_get_settings(capture2);
+				std::string window = obs_data_get_string(settings, "window");
+				obs_data_release(settings);
+				return window;
+			};
+			const char *open = "Render - Blender|GHOST_WindowClass|blender.exe|front|game\n"
+					   "Odd Game|OddWnd|OddGame.exe||\nOBS|Qt|obs64.exe||";
+			std::string got = see2(open);
+			CHECK(got.find("blender.exe") != std::string::npos,
+			      "a 3D program that looks like a game is picked up");
+
+			obs_properties_t *props = obs_source_properties(easy);
+			std::string status = obs_property_description(obs_properties_get(props, "status"));
+			CHECK(status.find("blender.exe") != std::string::npos,
+			      "the controls say what is being captured (%s)", status.c_str());
+			obs_property_t *pick = obs_properties_get(props, "pick");
+			CHECK(obs_property_list_item_count(pick) == 3,
+			      "open programs can be picked from a list, without OBS itself (%d entries)",
+			      (int)obs_property_list_item_count(pick));
+
+			obs_property_button_clicked(obs_properties_get(props, "never_now"), easy);
+			sleep_ms(300);
+			obs_data_t *es = obs_source_get_settings(easy);
+			CHECK(std::string(obs_data_get_string(es, "never")) == "blender.exe",
+			      "one press adds the wrong program to 'Never capture' (%s)",
+			      obs_data_get_string(es, "never"));
+			obs_data_set_string(es, "pick", "OddGame.exe");
+			obs_data_release(es);
+			obs_property_button_clicked(obs_properties_get(props, "always_pick"), easy);
+			obs_properties_destroy(props);
+			got = see2(open);
+			CHECK(got.find("OddGame.exe") != std::string::npos,
+			      "a picked program is always captured, and the excluded one is dropped (%s)", got.c_str());
+
+			obs_source_filter_remove(capture2, easy);
+			obs_source_release(easy);
+			obs_source_release(capture2);
+		}
+
 		obs_source_filter_remove(capture, aimer);
 		obs_source_release(aimer);
 		obs_source_release(capture);
