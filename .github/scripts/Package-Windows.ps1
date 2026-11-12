@@ -67,6 +67,36 @@ function Package {
     }
     Compress-Archive -Force @CompressArgs
     Log-Group
+
+    # Installer (Inno Setup 6, preinstalled on GitHub's Windows runners).
+    $Iscc = @(
+        "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+        "${env:ProgramFiles}\Inno Setup 6\ISCC.exe"
+    ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+
+    if ( ! $Iscc ) {
+        throw 'Inno Setup 6 (ISCC.exe) was not found; cannot build the Windows installer.'
+    }
+    if ( ! ( Test-Path "${ProjectRoot}/release/${Configuration}/${ProductName}/bin/64bit/${ProductName}.dll" ) ) {
+        throw "Built plugin not found under release/${Configuration}/${ProductName}; cannot build the installer."
+    }
+
+    Remove-Item -ErrorAction SilentlyContinue -Path "${ProjectRoot}/release/${ProductName}-*-windows-*-Installer.exe"
+
+    Log-Group "Building installer for ${ProductName}..."
+    $IsccArgs = @(
+        "/DAppVersion=${ProductVersion}"
+        "/DSourceDir=${ProjectRoot}\release\${Configuration}"
+        "/DOutputDir=${ProjectRoot}\release"
+        "/DOutputBase=${OutputName}-Installer"
+        "${ProjectRoot}\cmake\windows\resources\installer-Windows.iss"
+    )
+    Invoke-External $Iscc @IsccArgs
+
+    if ( ! ( Test-Path "${ProjectRoot}/release/${OutputName}-Installer.exe" ) ) {
+        throw 'The installer was not produced.'
+    }
+    Log-Group
 }
 
 Package

@@ -29,7 +29,8 @@ All on `main`, each with headless tests on Linux:
 - **Nothing has been loaded in OBS on Windows or macOS.** CI compiles there; the shaders are only
   exercised on OpenGL. Direct3D compiles `.effect` files at load time, so the first run on Windows is
   the real test.
-- The Windows artifact's folder layout has not been opened and checked.
+- The Windows zip and installer have not been opened or run on a real machine. The installer is built
+  by Inno Setup on the CI runner and cannot be built or run on Linux.
 - Ambient Background's *Automatic* live capture needs the OBS front end and is not covered by tests.
 - The dock is tested by building the widget and clicking its buttons without an OBS window. It has not
   been seen docked inside OBS, in OBS's theme, or following scene changes.
@@ -53,6 +54,14 @@ All on `main`, each with headless tests on Linux:
 1. A Stream Deck plugin with live key state and dial support. The owner asked for this last.
 2. Fold the two duplicated helpers above into the shared ones.
 3. A mini map in the dock for dragging items (OBS's own preview already allows dragging).
+
+## Windows installer
+
+`.github/scripts/Package-Windows.ps1` builds `stagekit-<version>-windows-x64-Installer.exe` with Inno
+Setup 6 from `cmake/windows/resources/installer-Windows.iss`, next to the zip, on every Windows build.
+It installs to `C:\ProgramData\obs-studio\plugins\stagekit`, needs administrator rights, leaves out
+`.pdb` files and is not code-signed. Keep the `AppId` in the script unchanged so upgrades and the
+uninstaller keep working.
 
 ## Commands
 
