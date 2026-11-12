@@ -33,6 +33,8 @@ from hotkeys, or from the Stream Deck OBS Studio plugin's *Filter* and *Source* 
   the camera to a corner or to a spot you saved.
 - **Place Item** (scene filter): the same move, set up on a scene instead of on the source.
 - **Show/Hide Animation** (scene filter): slides or pops an item in and out when it is shown or hidden.
+- **Visibility Link** (scene filter): ties eye icons together. Show only one of a set of items, or show
+  and hide a set together.
 - **Match Item** (scene filter): keeps an item lined up with an item in another scene, so titles sit in
   the same place in every scene.
 - **Layout** (scene filter): saves an arrangement of a scene's items and glides back to it.
@@ -278,6 +280,17 @@ Open it from *Docks → StageKit*. It works on the current scene (the preview sc
 Add **Show/Hide Animation (StageKit)** as a filter on a scene and leave it on. Choose the item and
 where it comes in from: the nearest screen edge, a chosen edge, or a pop from its centre. From then on,
 showing or hiding the item animates it, including from a Stream Deck *Source* key.
+
+### Visibility Link
+
+Add **Visibility Link (StageKit)** as a filter on a *scene*, once per set of items.
+
+1. Choose *Show only one at a time* or *Show and hide together*.
+2. Pick each item from the list and press *Add it to the list*.
+
+With *Show only one at a time*, showing one item hides the others in the set. With *Show and hide
+together*, showing or hiding one does the same to the rest. It follows whatever shows or hides an item:
+the eye icon, a Stream Deck *Source* key, a hotkey. Switch the filter off to pause it.
 
 ### Match Item
 

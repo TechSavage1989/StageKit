@@ -745,6 +745,75 @@ int main(int argc, char **argv)
 		obs_source_filter_remove(obs_scene_get_source(scene), show_hide);
 		obs_source_release(show_hide);
 
+		// Visibility Link: eye icons tied together.
+		printf("\n[visibility link]\n");
+		{
+			obs_scene_t *vs = obs_scene_create("Link Scene");
+			obs_source_t *vsrc = obs_scene_get_source(vs);
+			obs_sceneitem_t *vi[3];
+			obs_source_t *vsources[3];
+			const char *vnames[3] = {"Frame SNES", "Frame GBA", "Frame N64"};
+			for (int i = 0; i < 3; i++) {
+				vsources[i] = obs_source_create("color_source", vnames[i], nullptr, nullptr);
+				vi[i] = obs_scene_add(vs, vsources[i]);
+			}
+			obs_data_t *ld = obs_data_create();
+			obs_source_t *link = obs_source_create("stagekit_visibility_link", "One frame", ld, nullptr);
+			obs_source_filter_add(vsrc, link);
+			sleep_ms(80);
+			// Fill the list the way a person would: pick an item, press the button.
+			obs_properties_t *lp = obs_source_properties(link);
+			for (const char *name : vnames) {
+				obs_data_t *now = obs_source_get_settings(link);
+				obs_data_set_string(now, "pick", name);
+				obs_data_release(now);
+				obs_property_button_clicked(obs_properties_get(lp, "add"), link);
+			}
+			CHECK(obs_property_list_item_count(obs_properties_get(lp, "pick")) == 4,
+			      "the scene's items can be picked from a list");
+			obs_properties_destroy(lp);
+			sleep_ms(120);
+			auto shown = [&] {
+				return std::string(obs_sceneitem_visible(vi[0]) ? "1" : "0") +
+				       (obs_sceneitem_visible(vi[1]) ? "1" : "0") +
+				       (obs_sceneitem_visible(vi[2]) ? "1" : "0");
+			};
+			obs_sceneitem_set_visible(vi[0], false);
+			obs_sceneitem_set_visible(vi[1], false);
+			sleep_ms(120);
+			CHECK(shown() == "001", "hiding items leaves the others alone (%s)", shown().c_str());
+			obs_sceneitem_set_visible(vi[1], true);
+			sleep_ms(150);
+			CHECK(shown() == "010", "showing one item hides the others (%s)", shown().c_str());
+			obs_sceneitem_set_visible(vi[0], true);
+			sleep_ms(150);
+			CHECK(shown() == "100", "and again for another (%s)", shown().c_str());
+
+			obs_data_t *now = obs_source_get_settings(link);
+			obs_data_set_int(now, "mode", 1);
+			obs_source_update(link, now);
+			obs_data_release(now);
+			sleep_ms(100);
+			obs_sceneitem_set_visible(vi[2], true);
+			sleep_ms(150);
+			CHECK(shown() == "111", "'together' shows the rest when one is shown (%s)", shown().c_str());
+			obs_sceneitem_set_visible(vi[1], false);
+			sleep_ms(150);
+			CHECK(shown() == "000", "and hides the rest when one is hidden (%s)", shown().c_str());
+
+			obs_source_set_enabled(link, false);
+			obs_sceneitem_set_visible(vi[0], true);
+			sleep_ms(150);
+			CHECK(shown() == "100", "switched off, the filter leaves items alone (%s)", shown().c_str());
+
+			obs_source_filter_remove(vsrc, link);
+			obs_source_release(link);
+			obs_data_release(ld);
+			for (obs_source_t *source : vsources)
+				obs_source_release(source);
+			obs_scene_release(vs);
+		}
+
 		printf("\n[match item]\n");
 		obs_scene_t *master_scene = obs_scene_create("Start Scene");
 		obs_source_t *title_a = color("Starting Title", 300, 60);

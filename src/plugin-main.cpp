@@ -29,6 +29,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "frame/auto-frame.hpp"
 #include "placement/place-item.hpp"
 #include "placement/scene-tools.hpp"
+#include "placement/visibility-link.hpp"
 #include "shadow/shadow-backdrop.hpp"
 #include "zoom/ramp-zoom.hpp"
 
@@ -96,6 +97,7 @@ bool obs_module_load(void)
 	stagekit::register_auto_capture();
 	stagekit::register_auto_frame();
 	stagekit::register_show_hide();
+	stagekit::register_visibility_link();
 	stagekit::register_match_item();
 	stagekit::register_layout();
 	for (GlobalHotkey &hk : g_hotkeys)
