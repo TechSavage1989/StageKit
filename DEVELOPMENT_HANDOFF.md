@@ -87,12 +87,12 @@ Capture that is hooked but showing black still counts as a capture.
 
 0.1.0-beta16 adds Visibility Link (show only one / show and hide together), which the owner asked for
 to replace the show/hide macros. It only hears changes to items directly in its scene, not inside a
-group. Still proposed, not built: a program trigger ("when this program is captured, switch this filter
-on"). In the owner's 48 macros, program and window conditions mostly chose a scene per picture shape and
-capture type, which Auto Capture and Auto Frame replace. What is left for a trigger: showing the window
-captures for ZBrush, Blender and Fusion 360; the Dolphin GBA link layout (windows "GBA1", "GBA2"); a
-shadow filter switched per program; and hiding the music widget when Spotify is silent (that one also
-needs an audio condition).
+group. 0.1.0-beta17 adds the Program Trigger the owner approved. In the owner's 48 macros, program and window
+conditions mostly chose a scene per picture shape and capture type, which Auto Capture and Auto Frame
+replace. The trigger is for what was left: showing the window captures for ZBrush, Blender and Fusion
+360; the Dolphin GBA link layout (window titles "GBA1", "GBA2"); and a shadow filter switched per
+program. Not covered: hiding the music widget when Spotify is silent, which needs an audio condition.
+The trigger is edge-triggered on purpose, so a manual change survives until the program comes or goes.
 
 Reported problems still open: a Match Item item "dropping behind others" has not been reproduced.
 Addressed in 0.1.0-beta4, awaiting the owner's check on Windows: the dock reaching nested scenes and

@@ -27,7 +27,7 @@ for an update notice inside OBS. This exception is recorded in the handoff.
 | `src/dock/` | The StageKit dock (Qt widgets, no `Q_OBJECT`; it drives Place Item filters) and its scene picture (`dock-canvas.*`: drag, wheel, zoom point) |
 | `src/common/` | Shared helpers: easing and `Tween`, `SwitchRamp`, `KawaseBlur`, scene utilities, and the start image (global path + Start Image source) |
 | `src/frame/` | Auto Frame filter and the Picture Shape key filter |
-| `src/capture/` | Auto Capture filter (aims a Game Capture at the game in front; Win32 only, compiled but idle elsewhere) |
+| `src/capture/` | Auto Capture filter (aims a Game Capture at the game in front) and Program Trigger filter (shows items and switches filters while a program is open). Both use the Win32 window list in `auto-capture.cpp`; compiled but idle elsewhere |
 | `src/api/` | obs-websocket vendor requests (`StageKit` vendor) |
 | `src/third-party/` | Vendored `obs-websocket-api.h`, kept byte-for-byte (excluded from clang-format) |
 | `data/effects/` | Shaders in OBS `.effect` format |

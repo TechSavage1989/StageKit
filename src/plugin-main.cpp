@@ -24,6 +24,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "api/vendor-api.hpp"
 #include "blur/ramp-blur.hpp"
 #include "capture/auto-capture.hpp"
+#include "capture/program-trigger.hpp"
 #include "common/start-image.hpp"
 #include "dock/stagekit-dock.hpp"
 #include "frame/auto-frame.hpp"
@@ -95,6 +96,7 @@ bool obs_module_load(void)
 	stagekit::register_place_item();
 	stagekit::register_ramp_zoom();
 	stagekit::register_auto_capture();
+	stagekit::register_program_trigger();
 	stagekit::register_auto_frame();
 	stagekit::register_show_hide();
 	stagekit::register_visibility_link();

@@ -28,6 +28,8 @@ from hotkeys, or from the Stream Deck OBS Studio plugin's *Filter* and *Source* 
   it, so one scene serves every picture shape.
 - **Auto Capture** (filter): one Game Capture finds whatever game is running, windowed or full-screen,
   with no list of games to keep. Windows only.
+- **Program Trigger** (filter): while a program is open, shows chosen items and switches chosen filters
+  on; puts them back when it closes. Windows only.
 - **Ramp Zoom** (filter): zooms smoothly into a point of a source and back out.
 - **Send To** (filter): put it on your camera, once per spot. Each one is a Stream Deck key that moves
   the camera to a corner or to a spot you saved.
@@ -217,6 +219,21 @@ The filter's controls show what it is capturing now.
 A game is recognised by what the program has loaded: a graphics engine together with controller
 support, or a graphics engine in a window that fills its screen. The filter changes the Game Capture's
 own *Mode* and *Window* settings for you.
+
+### Program Trigger
+
+Add **Program Trigger (StageKit)** as a filter on a *scene* to show and hide that scene's items, or on
+any *source* to switch that source's other filters. Windows only.
+
+1. **While this program**: choose the program from the open ones, or find its file. Optionally give
+   text its window title must contain (for example `GBA1`); with the program left empty, the title alone
+   decides. Choose whether it counts when it has a window open or only when that window is in front.
+2. **Show and switch on**: pick items and filters and add them to the lists. *Do the opposite* hides and
+   switches off while the program is here instead.
+
+While the program is here the items are shown and the filters are on; when it goes they are hidden and
+off. It acts when the program appears or goes, so a change you make by hand in between is kept until
+then. A minimised window does not count as open. The top line says whether it sees the program now.
 
 ### Ramp Zoom
 

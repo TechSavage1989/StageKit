@@ -814,6 +814,89 @@ int main(int argc, char **argv)
 			obs_scene_release(vs);
 		}
 
+		// Program Trigger: items and filters follow a program.
+		printf("\n[program trigger]\n");
+		{
+			obs_scene_t *ts = obs_scene_create("Trigger Scene");
+			obs_source_t *tsrc = obs_scene_get_source(ts);
+			obs_source_t *sculpt = obs_source_create("color_source", "ZBrush Capture", nullptr, nullptr);
+			obs_source_t *other = obs_source_create("color_source", "Something Else", nullptr, nullptr);
+			obs_sceneitem_t *sculpt_item = obs_scene_add(ts, sculpt);
+			obs_sceneitem_t *other_item = obs_scene_add(ts, other);
+			obs_sceneitem_set_visible(sculpt_item, false);
+			obs_source_t *tint =
+				obs_source_create("stagekit_shadow_backdrop", "Extra Shadow", nullptr, nullptr);
+			obs_source_filter_add(tsrc, tint);
+			obs_source_set_enabled(tint, false);
+
+			obs_data_t *td = obs_data_create();
+			obs_data_set_string(td, "program", "ZBrush.exe");
+			obs_source_t *trigger = obs_source_create("stagekit_program_trigger", "ZBrush", td, nullptr);
+			obs_source_filter_add(tsrc, trigger);
+			sleep_ms(80);
+			obs_properties_t *tp = obs_source_properties(trigger);
+			obs_data_t *now = obs_source_get_settings(trigger);
+			obs_data_set_string(now, "pick_item", "ZBrush Capture");
+			obs_data_set_string(now, "pick_filter", "Extra Shadow");
+			obs_data_release(now);
+			obs_property_button_clicked(obs_properties_get(tp, "add_item"), trigger);
+			obs_property_button_clicked(obs_properties_get(tp, "add_filter"), trigger);
+			CHECK(obs_property_list_item_count(obs_properties_get(tp, "pick_item")) == 3 &&
+				      obs_property_list_item_count(obs_properties_get(tp, "pick_filter")) == 2,
+			      "items and filters are picked from lists");
+			obs_properties_destroy(tp);
+
+			auto see = [&](const char *windows) {
+				calldata_t cd = {};
+				calldata_set_string(&cd, "windows", windows);
+				proc_handler_call(obs_source_get_proc_handler(trigger), "set_test_windows", &cd);
+				calldata_free(&cd);
+				sleep_ms(250);
+			};
+			see("Inbox|mail.exe|front");
+			CHECK(!obs_sceneitem_visible(sculpt_item) && !obs_source_enabled(tint),
+			      "without the program, its item is hidden and its filter is off");
+			see("Inbox|mail.exe|front\nZBrush 2026|ZBrush.exe|");
+			CHECK(obs_sceneitem_visible(sculpt_item) && obs_source_enabled(tint),
+			      "when the program opens, the item is shown and the filter switched on");
+			CHECK(obs_sceneitem_visible(other_item), "items not on the list are left alone");
+			// A change made by hand is kept while nothing about the program changes.
+			obs_sceneitem_set_visible(sculpt_item, false);
+			see("ZBrush 2026 - sphere|ZBrush.exe|\nInbox|mail.exe|front");
+			CHECK(!obs_sceneitem_visible(sculpt_item),
+			      "a change made by hand is kept until the program comes or goes");
+			see("Inbox|mail.exe|front");
+			see("ZBrush 2026|ZBrush.exe|front");
+			CHECK(obs_sceneitem_visible(sculpt_item), "and it acts again the next time the program opens");
+			see("Inbox|mail.exe|front");
+			CHECK(!obs_sceneitem_visible(sculpt_item) && !obs_source_enabled(tint),
+			      "when the program closes, both are put back");
+
+			// By window title, and only while it is in front.
+			now = obs_source_get_settings(trigger);
+			obs_data_set_string(now, "program", "");
+			obs_data_set_string(now, "title", "GBA1");
+			obs_data_set_int(now, "when", 1);
+			obs_source_update(trigger, now);
+			obs_data_release(now);
+			sleep_ms(80);
+			see("GBA1 | Volume 100%|Dolphin.exe|\nInbox|mail.exe|front");
+			CHECK(!obs_sceneitem_visible(sculpt_item),
+			      "'in front' ignores a window that is behind another");
+			see("GBA1 - Volume 100%|Dolphin.exe|front");
+			CHECK(obs_sceneitem_visible(sculpt_item),
+			      "a window can be matched by its title, while it is in front");
+
+			obs_source_filter_remove(tsrc, trigger);
+			obs_source_filter_remove(tsrc, tint);
+			obs_source_release(trigger);
+			obs_source_release(tint);
+			obs_data_release(td);
+			obs_source_release(sculpt);
+			obs_source_release(other);
+			obs_scene_release(ts);
+		}
+
 		printf("\n[match item]\n");
 		obs_scene_t *master_scene = obs_scene_create("Start Scene");
 		obs_source_t *title_a = color("Starting Title", 300, 60);

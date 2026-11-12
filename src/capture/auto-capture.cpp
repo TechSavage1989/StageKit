@@ -41,6 +41,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "auto-capture.hpp"
 
 #include <obs-module.h>
+#include <util/platform.h>
 #include <plugin-support.h>
 
 #include <algorithm>
@@ -603,6 +604,22 @@ obs_properties_t *get_properties(void *data)
 }
 
 } // namespace
+
+std::vector<OpenWindow> open_windows()
+{
+	static std::mutex mutex;
+	static std::vector<OpenWindow> cached;
+	static uint64_t looked_at = 0;
+	std::lock_guard lock(mutex);
+	const uint64_t now = os_gettime_ns();
+	if (!looked_at || now - looked_at > 500000000ULL) {
+		looked_at = now;
+		cached.clear();
+		for (const Window &w : list_windows())
+			cached.push_back({w.title, w.executable, w.foreground});
+	}
+	return cached;
+}
 
 std::vector<std::string> open_program_names()
 {

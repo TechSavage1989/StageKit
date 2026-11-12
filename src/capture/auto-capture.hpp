@@ -23,4 +23,13 @@ void register_auto_capture();
 // (OBS, browsers, launchers) left out. Empty on systems other than Windows.
 std::vector<std::string> open_program_names();
 
+// One open (not minimised) window. Empty list on systems other than Windows.
+struct OpenWindow {
+	std::string title, executable;
+	bool foreground = false;
+};
+// Every open window, everyday programs included. Looked up at most twice a
+// second however many callers ask.
+std::vector<OpenWindow> open_windows();
+
 } // namespace stagekit
