@@ -79,6 +79,11 @@ void add_transform_undo(const char *name, const std::string &before, const std::
 // For the tests: puts the scene back as before the last step (or forward again).
 void replay_last_arrange(bool redo);
 
+// The selected items of a scene in the order they were selected. OBS does
+// not keep that order, so this notes it each time it is asked: call it often
+// (the dock does, several times a second).
+std::vector<obs_sceneitem_t *> selection_in_order(obs_source_t *scene);
+
 // Runs it on whatever is selected in the scene being edited in OBS.
 ArrangeOutcome run_arrange_on_selection(ArrangeAction action);
 

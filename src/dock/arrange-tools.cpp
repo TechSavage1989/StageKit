@@ -85,6 +85,30 @@ const ArrangeInfo &arrange_info(ArrangeAction action)
 	return kInfo[std::clamp((int)action, 0, (int)ArrangeAction::Count - 1)];
 }
 
+std::vector<obs_sceneitem_t *> selection_in_order(obs_source_t *scene)
+{
+	// Remembered as bare addresses, only ever compared with live items.
+	static obs_scene_t *remembered_scene = nullptr;
+	static std::vector<obs_sceneitem_t *> order;
+	obs_scene_t *s = scene_of(scene);
+	if (s != remembered_scene) {
+		remembered_scene = s;
+		order.clear();
+	}
+	const std::vector<obs_sceneitem_t *> now = selected_items(scene);
+	std::vector<obs_sceneitem_t *> kept;
+	for (obs_sceneitem_t *item : order) {
+		if (std::find(now.begin(), now.end(), item) != now.end())
+			kept.push_back(item);
+	}
+	for (obs_sceneitem_t *item : now) {
+		if (std::find(kept.begin(), kept.end(), item) == kept.end())
+			kept.push_back(item);
+	}
+	order = kept;
+	return order;
+}
+
 std::string transform_snapshot(obs_source_t *scene)
 {
 	obs_scene_t *s = scene_of(scene);
@@ -131,7 +155,8 @@ ArrangeOutcome run_arrange_now(ArrangeAction action, obs_source_t *scene, const 
 	out.had = items.size();
 	out.needs = arrange_info(action).needs;
 	// Lining up with each other takes at least two.
-	if (action <= ArrangeAction::Bottom && o.against == Against::Selection)
+	const bool to_key = o.against == Against::First || o.against == Against::Last;
+	if (action <= ArrangeAction::Bottom && (o.against == Against::Selection || to_key))
 		out.needs = 2;
 	if (!scene || out.had < out.needs)
 		return out;
@@ -153,14 +178,23 @@ ArrangeOutcome run_arrange_now(ArrangeAction action, obs_source_t *scene, const 
 			out.changed += snap_item(scene, item, o.within, o.how) ? 1 : 0;
 		break;
 	case ArrangeAction::SameWidth:
-		out.changed = match_size(scene, items, true, false, o.keep_shape, o.how);
-		break;
 	case ArrangeAction::SameHeight:
-		out.changed = match_size(scene, items, false, true, o.keep_shape, o.how);
+	case ArrangeAction::SameSize: {
+		// The others take the size of one item, which goes last in the list:
+		// the first or last selected when lining up to one of those, otherwise
+		// the top-most in the Sources list.
+		std::vector<obs_sceneitem_t *> sized = items;
+		if (o.against == Against::First) {
+			std::rotate(sized.begin(), sized.begin() + 1, sized.end());
+		} else if (o.against != Against::Last) {
+			const std::vector<obs_sceneitem_t *> stacked = selected_items(scene);
+			if (stacked.size() == sized.size())
+				sized = stacked;
+		}
+		out.changed = match_size(scene, sized, action != ArrangeAction::SameHeight,
+					 action != ArrangeAction::SameWidth, o.keep_shape, o.how);
 		break;
-	case ArrangeAction::SameSize:
-		out.changed = match_size(scene, items, true, true, o.keep_shape, o.how);
-		break;
+	}
 	default:
 		break;
 	}
@@ -178,7 +212,7 @@ obs_source_t *editing_scene()
 ArrangeOutcome run_arrange_on_selection(ArrangeAction action)
 {
 	obs_source_t *scene = editing_scene();
-	const ArrangeOutcome out = run_arrange(action, scene, selected_items(scene));
+	const ArrangeOutcome out = run_arrange(action, scene, selection_in_order(scene));
 	obs_source_release(scene);
 	return out;
 }
@@ -218,8 +252,8 @@ void arrange_save_load(obs_data_t *save_data, bool saving)
 		obs_data_set_int(save_data, "stagekit.arrange.within", o.within);
 	} else if (obs_data_has_user_value(save_data, "stagekit.arrange.within")) {
 		ArrangeOptions o;
-		o.against = obs_data_get_int(save_data, "stagekit.arrange.against") == 1 ? Against::Selection
-											 : Against::Screen;
+		o.against = static_cast<Against>(
+			std::clamp((int)obs_data_get_int(save_data, "stagekit.arrange.against"), 0, 3));
 		o.how.visible_pixels = obs_data_get_bool(save_data, "stagekit.arrange.visible");
 		o.how.leave_out_shadows = obs_data_get_bool(save_data, "stagekit.arrange.no_shadow");
 		o.keep_shape = obs_data_get_bool(save_data, "stagekit.arrange.keep_shape");

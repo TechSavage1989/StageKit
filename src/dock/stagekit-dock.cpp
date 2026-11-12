@@ -48,6 +48,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <QInputDialog>
 #include <QLabel>
 #include <QLineEdit>
+#include <QListWidget>
 #include <QMenu>
 #include <QApplication>
 #include <QContextMenuEvent>
@@ -180,8 +181,28 @@ public:
 				set_arrange_options(changed);
 			});
 		};
-		option("menuEachOther", "Arrange.Menu.EachOther", o.against == Against::Selection,
-		       [](ArrangeOptions &c, bool on) { c.against = on ? Against::Selection : Against::Screen; });
+		QMenu *to = sub->addMenu(tr_text("Arrange.Against"));
+		struct {
+			const char *name, *text;
+			Against against;
+		} targets[] = {
+			{"menuToScreen", "Arrange.Against.Screen", Against::Screen},
+			{"menuToEachOther", "Arrange.Against.Selection", Against::Selection},
+			{"menuToFirst", "Arrange.Against.First", Against::First},
+			{"menuToLast", "Arrange.Against.Last", Against::Last},
+		};
+		for (const auto &t : targets) {
+			QAction *entry = to->addAction(tr_text(t.text));
+			entry->setObjectName(t.name);
+			entry->setCheckable(true);
+			entry->setChecked(o.against == t.against);
+			const Against against = t.against;
+			QObject::connect(entry, &QAction::triggered, qApp, [against] {
+				ArrangeOptions changed = arrange_options();
+				changed.against = against;
+				set_arrange_options(changed);
+			});
+		}
 		option("menuVisible", "Arrange.Visible", o.how.visible_pixels,
 		       [](ArrangeOptions &c, bool on) { c.how.visible_pixels = on; });
 		option("menuNoShadow", "Arrange.NoShadow", o.how.leave_out_shadows,
@@ -530,16 +551,25 @@ public:
 		auto *arrange_box = new QGroupBox(tr_text("Arrange.Box"), this);
 		auto *arrange_layout = new QVBoxLayout(arrange_box);
 		// Says what the buttons below will move, so nothing is a surprise.
-		arrange_target_ = new QLabel(arrange_box);
-		arrange_target_->setObjectName("arrangeTarget");
-		arrange_target_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
-		arrange_target_->setMinimumWidth(0);
-		arrange_layout->addWidget(arrange_target_);
+		// Every selected item, in the order selected. It only shows: items
+		// are selected in OBS's preview.
+		arrange_list_ = new QListWidget(arrange_box);
+		arrange_list_->setObjectName("arrangeSelected");
+		arrange_list_->setSelectionMode(QAbstractItemView::NoSelection);
+		arrange_list_->setFocusPolicy(Qt::NoFocus);
+		arrange_list_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+		arrange_list_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
+		arrange_list_->setToolTip(tr_text("Arrange.Selected.Tip"));
+		arrange_layout->addWidget(new QLabel(tr_text("Arrange.Selected"), arrange_box));
+		arrange_layout->addWidget(arrange_list_);
 		auto *against_row = new QFormLayout();
 		against_ = new QComboBox(arrange_box);
 		against_->setObjectName("arrangeAgainst");
 		against_->addItem(tr_text("Arrange.Against.Screen"), (int)Against::Screen);
 		against_->addItem(tr_text("Arrange.Against.Selection"), (int)Against::Selection);
+		against_->addItem(tr_text("Arrange.Against.First"), (int)Against::First);
+		against_->addItem(tr_text("Arrange.Against.Last"), (int)Against::Last);
+		against_->setToolTip(tr_text("Arrange.Against.Tip"));
 		against_row->addRow(tr_text("Arrange.Against"), against_);
 		arrange_layout->addLayout(against_row);
 		auto *arrange_grid = new QGridLayout();
@@ -716,23 +746,44 @@ private:
 
 	void say(const QString &text) { status_->setText(text); }
 
-	// Names what the Arrange buttons will act on.
+	// Lists what the Arrange buttons will act on, and marks the item the
+	// others will come to when lining up to the first or last selected.
 	void show_arrange_target()
 	{
 		obs_source_t *scene = current_scene();
 		const std::vector<obs_sceneitem_t *> items = scene ? arrange_items(scene)
 								   : std::vector<obs_sceneitem_t *>();
-		QString text = tr_text("Arrange.SelectFirst");
-		if (!items.empty()) {
-			QString name = QString::fromUtf8(obs_source_get_name(obs_sceneitem_get_source(items.back())));
-			if (name.size() > 24)
-				name = name.left(23) + QStringLiteral("…");
-			text = items.size() == 1 ? tr_text("Arrange.Target").arg(name)
-						 : tr_text("Arrange.TargetMore").arg(name).arg(items.size() - 1);
+		const Against against = arrange_options().against;
+		QStringList rows;
+		int key = -1;
+		if (items.size() > 1 && against == Against::First)
+			key = 0;
+		else if (items.size() > 1 && against == Against::Last)
+			key = (int)items.size() - 1;
+		for (size_t i = 0; i < items.size(); i++) {
+			const QString name = QString::fromUtf8(obs_source_get_name(obs_sceneitem_get_source(items[i])));
+			rows << ((int)i == key ? tr_text("Arrange.KeyItem").arg(name) : name);
 		}
 		obs_source_release(scene);
-		if (text != arrange_target_->text())
-			arrange_target_->setText(text);
+		if (rows.isEmpty())
+			rows << tr_text("Arrange.SelectFirst");
+		if (rows == arrange_rows_)
+			return;
+		arrange_rows_ = rows;
+		arrange_list_->clear();
+		arrange_list_->addItems(rows);
+		if (items.empty())
+			arrange_list_->item(0)->setForeground(
+				arrange_list_->palette().color(QPalette::Disabled, QPalette::Text));
+		if (key >= 0) {
+			QFont bold = arrange_list_->font();
+			bold.setBold(true);
+			arrange_list_->item(key)->setFont(bold);
+		}
+		// Tall enough for up to five; more than that scrolls.
+		const int row = std::max(18, arrange_list_->sizeHintForRow(0));
+		arrange_list_->setFixedHeight(row * std::clamp((int)rows.size(), 1, 5) +
+					      2 * arrange_list_->frameWidth());
 	}
 
 	Measure measure() const { return arrange_options().how; }
@@ -780,7 +831,7 @@ private:
 	// that the one chosen in the dock's list.
 	std::vector<obs_sceneitem_t *> arrange_items(obs_source_t *scene) const
 	{
-		std::vector<obs_sceneitem_t *> items = selected_items(scene);
+		std::vector<obs_sceneitem_t *> items = selection_in_order(scene);
 		if (items.empty()) {
 			if (obs_sceneitem_t *item = find_item(scene, item_->currentText().toUtf8().constData()))
 				items.push_back(item);
@@ -792,6 +843,8 @@ private:
 	// button is up again, move it the last few pixels onto the nearest line.
 	void watch_for_drop()
 	{
+		// Looked at often, so the order items are selected in is noticed.
+		show_arrange_target();
 		const ArrangeOptions options = arrange_options();
 		if (!options.live_snap) {
 			watched_.clear();
@@ -1056,7 +1109,8 @@ private:
 	std::string fixed_scene_;
 	QString followed_;
 	QComboBox *against_ = nullptr;
-	QLabel *arrange_target_ = nullptr;
+	QListWidget *arrange_list_ = nullptr;
+	QStringList arrange_rows_;
 	QCheckBox *visible_ = nullptr;
 	QCheckBox *no_shadow_ = nullptr;
 	QCheckBox *keep_shape_ = nullptr;

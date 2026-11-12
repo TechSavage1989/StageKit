@@ -388,7 +388,8 @@ click several. You can use them from three places, and all three share the same 
 - **Right-click in the preview** and open the *StageKit* menu.
 - **Hotkeys**: *Settings → Hotkeys*, the entries that start with *StageKit:* (for example
   *StageKit: Align left*).
-- The **Arrange** box in the StageKit dock, which also says what it is about to move.
+- The **Arrange** box in the StageKit dock, which also lists every selected item in the order you
+  selected it.
 
 Each use is one step in OBS's *Edit → Undo* and *Redo*.
 
@@ -396,9 +397,9 @@ What they do:
 
 | Tool | What happens |
 | --- | --- |
-| *Left*, *Centre*, *Right*, *Top*, *Middle*, *Bottom* | Lines the items up with that side of the screen. With *Align to: Each other*, lines two or more up with one another instead. |
+| *Left*, *Centre*, *Right*, *Top*, *Middle*, *Bottom* | Lines the items up with that side of the screen. With *Align to: Each other*, lines two or more up with one another instead. With *First selected* or *Last selected*, that item stays put and the others line up with it. |
 | *Space out ↔*, *Space out ↕* | With three or more: the outer two stay put and the rest spread so the gaps are equal. |
-| *Same width*, *Same height*, *Same size* | With two or more: resizes the others to match the top-most one in the Sources list. |
+| *Same width*, *Same height*, *Same size* | With two or more: resizes the others to match the top-most one in the Sources list, or the first or last selected when *Align to* is set to that. |
 | *Snap now* | Moves each item the last few pixels so an edge or its centre meets the screen's or a neighbour's. |
 
 Options:
