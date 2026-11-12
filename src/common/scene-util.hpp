@@ -17,6 +17,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <graphics/vec3.h>
 
 #include <algorithm>
+#include <cstring>
 #include <string>
 
 namespace stagekit {
@@ -126,6 +127,35 @@ inline void add_scene_items_to_list(obs_source_t *scene_source, obs_property_t *
 			return true;
 		},
 		list);
+}
+
+// Whether a source is a capture of something live: a game, a window, a
+// screen or a camera.
+inline bool is_capture_source(obs_source_t *source)
+{
+	static const char *const kCaptureIds[] = {
+		"game_capture",
+		"window_capture",
+		"monitor_capture",
+		"dshow_input",
+		"xcomposite_input",
+		"xshm_input",
+		"pipewire-desktop-capture-source",
+		"pipewire-window-capture-source",
+		"v4l2_input",
+		"screen_capture",
+		"display_capture",
+		"av_capture_input",
+		"av_capture_input_v2",
+		"macos-avcapture",
+	};
+	const char *id = source ? obs_source_get_unversioned_id(source) : nullptr;
+	if (!id)
+		return false;
+	for (const char *capture : kCaptureIds)
+		if (strcmp(id, capture) == 0)
+			return true;
+	return false;
 }
 
 // The scene the audience is looking at. The caller releases it.

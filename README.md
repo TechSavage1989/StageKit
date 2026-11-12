@@ -119,6 +119,8 @@ off, so it costs nothing while off.
 | Ramp in / out time | 0–5000 ms each. 0 is instant |
 | Easing | Eleven curves, eased in, out or both |
 | Include in 'Blur All' | Whether the global Blur All hotkeys affect this filter |
+| Blur these too | Other sources that are blurred and cleared together with this one |
+| And live captures on screen | Also blurs every game, window, screen and camera capture showing in the scene on screen when this filter is switched on |
 
 Ways to trigger it:
 
@@ -127,6 +129,12 @@ Ways to trigger it:
 - Hotkeys under the source in *Settings → Hotkeys*: `StageKit: Blur Toggle / On / Off`.
 - `StageKit: Blur All Toggle / On / Off` in the top section of *Settings → Hotkeys*, which drives every
   Ramp Blur at once.
+
+**One key for several sources.** Under *Blur these too*, choose a source and press *Add it to the
+list*, once for each source. From then on, switching this one filter on or off, from a single Stream
+Deck *Filter* key, blurs and clears every source in the list. A listed source with no Ramp Blur of its
+own is given one with the same settings (*Ramp Blur (follows another)*); one that already has a Ramp
+Blur keeps its own settings. Remove a source by selecting it in the list and pressing the minus button.
 
 To replace a Composite Blur + Move chain: add one Ramp Blur, pick the type and strength (Composite
 Blur's Pixelate at radius 5 is *Pixelate* at strength 4), point your existing keys at it, then delete

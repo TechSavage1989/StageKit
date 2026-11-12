@@ -965,6 +965,93 @@ int main(int argc, char **argv)
 		obs_source_release(card);
 	}
 
+	// ------------------------------------------ one blur switch for several
+	{
+		printf("\n[blur these too]\n");
+		auto solid = [](const char *name) {
+			obs_data_t *d = obs_data_create();
+			obs_data_set_int(d, "width", 120);
+			obs_data_set_int(d, "height", 80);
+			obs_source_t *src = obs_source_create("color_source", name, d, nullptr);
+			obs_data_release(d);
+			return src;
+		};
+		obs_source_t *lead = solid("Blur Lead");
+		obs_source_t *second = solid("Blur Second");
+		obs_source_t *third = solid("Blur Third");
+		// The third already has a blur of its own, switched off.
+		obs_data_t *own = obs_data_create();
+		obs_data_set_int(own, "ramp_in_ms", 0);
+		obs_data_set_int(own, "ramp_out_ms", 0);
+		obs_source_t *third_blur = obs_source_create("stagekit_ramp_blur", "Own Blur", own, nullptr);
+		obs_data_release(own);
+		obs_source_set_enabled(third_blur, false);
+		obs_source_filter_add(third, third_blur);
+
+		obs_data_t *bs = obs_data_create();
+		obs_data_set_int(bs, "ramp_in_ms", 0);
+		obs_data_set_int(bs, "ramp_out_ms", 0);
+		obs_data_array_t *also = obs_data_array_create();
+		for (const char *name : {"Blur Second", "Blur Third"}) {
+			obs_data_t *entry = obs_data_create();
+			obs_data_set_string(entry, "value", name);
+			obs_data_array_push_back(also, entry);
+			obs_data_release(entry);
+		}
+		obs_data_set_array(bs, "also", also);
+		obs_data_array_release(also);
+		obs_source_t *blur = obs_source_create("stagekit_ramp_blur", "Lead Blur", bs, nullptr);
+		obs_data_release(bs);
+		obs_source_set_enabled(blur, false);
+		obs_source_filter_add(lead, blur);
+		for (obs_source_t *src : {lead, second, third})
+			obs_source_inc_showing(src);
+		auto draw_all = [&](int ms) {
+			for (int waited = 0; waited < ms; waited += 100) {
+				for (obs_source_t *src : {lead, second, third})
+					render(src, 120, 80);
+				sleep_ms(100);
+			}
+		};
+		draw_all(300);
+		auto blur_of = [](obs_source_t *src) {
+			obs_source_t *found = nullptr;
+			obs_source_enum_filters(
+				src,
+				[](obs_source_t *, obs_source_t *f, void *param) {
+					auto **out = static_cast<obs_source_t **>(param);
+					if (!*out &&
+					    strcmp(obs_source_get_unversioned_id(f), "stagekit_ramp_blur") == 0)
+						*out = f;
+				},
+				&found);
+			return found;
+		};
+		CHECK(blur_of(second) == nullptr, "a listed source has no blur until it is needed");
+
+		obs_source_set_enabled(blur, true); // as a Stream Deck Filter key does
+		draw_all(400);
+		obs_source_t *made = blur_of(second);
+		CHECK(made && obs_source_enabled(made),
+		      "switching one blur on gives a listed source a blur and switches it on");
+		CHECK(obs_source_enabled(third_blur), "and switches on the blur a listed source already had");
+
+		obs_source_set_enabled(blur, false);
+		draw_all(500);
+		made = blur_of(second);
+		CHECK(made && !obs_source_enabled(made) && !obs_source_enabled(third_blur) && !obs_source_enabled(blur),
+		      "switching it off clears them all");
+
+		for (obs_source_t *src : {lead, second, third})
+			obs_source_dec_showing(src);
+		obs_source_filter_remove(lead, blur);
+		obs_source_filter_remove(third, third_blur);
+		obs_source_release(blur);
+		obs_source_release(third_blur);
+		for (obs_source_t *src : {lead, second, third})
+			obs_source_release(src);
+	}
+
 	// --------------------------------------- a shadow copied onto a group
 	{
 		printf("\n[shadow copied to a group]\n");
