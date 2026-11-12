@@ -73,6 +73,22 @@ shader filters.
 The picture is built at half resolution before the final pass, since it is blurred anyway. Put the
 source in one shared scene and nest that scene wherever you need the background.
 
+## Shadow & Backdrop
+
+Add **Shadow & Backdrop (StageKit)** as a filter on any source, group or scene. It replaces the usual
+workaround of wrapping the source in an oversized scene so a shadow has room to draw.
+
+![Shadow & Backdrop examples](docs/images/shadow-backdrop.png)
+
+| Setting | What it does |
+| --- | --- |
+| Drop shadow | Colour, opacity, offset right/left and down/up, softness (0 = hard edge), spread, and *show the shadow only* |
+| Panel behind the source | A filled panel with its own colour, opacity and margin |
+| Rounded corners | Rounds the source (and the panel) |
+
+The source grows by exactly the room the shadow and panel need. Room added on the left or top shifts the
+picture by that amount inside the item; a hard shadow pointing down and right adds none.
+
 ## obs-websocket API
 
 All requests go through `CallVendorRequest` with `vendorName: "StageKit"`. Blur requests take

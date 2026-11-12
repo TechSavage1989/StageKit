@@ -43,6 +43,10 @@ target_sources(
     src/common/easing.hpp
     src/ambient/ambient-background.cpp
     src/ambient/ambient-background.hpp
+    src/common/kawase-blur.cpp
+    src/common/kawase-blur.hpp
+    src/shadow/shadow-backdrop.cpp
+    src/shadow/shadow-backdrop.hpp
     src/blur/ramp-blur.cpp
     src/blur/ramp-blur.hpp
     src/api/vendor-api.cpp

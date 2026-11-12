@@ -263,6 +263,98 @@ int main(int argc, char **argv)
 	}
 	CHECK(lo > 0.05, "drifts continuously (frame-to-frame change %.2f..%.2f)", lo, hi);
 
+	// ---------------------------------------------------- shadow & backdrop
+	if (argc >= 9) {
+		printf("\n[shadow & backdrop]\n");
+		const std::string shadow_out = argv[8];
+		obs_data_t *ts = obs_data_create();
+		obs_data_set_string(ts, "file", argv[7]);
+		obs_source_t *title = obs_source_create("image_source", "Title", ts, nullptr);
+		obs_data_release(ts);
+		const uint32_t tw = obs_source_get_width(title), th = obs_source_get_height(title);
+		const std::vector<uint8_t> bare = render(title, tw, th);
+
+		obs_data_t *fs = obs_data_create();
+		obs_data_set_double(fs, "offset_x", 20);
+		obs_data_set_double(fs, "offset_y", 20);
+		obs_data_set_double(fs, "softness", 0);
+		obs_data_set_double(fs, "shadow_opacity", 100);
+		obs_source_t *filter = obs_source_create("stagekit_shadow_backdrop", "Shadow", fs, nullptr);
+		obs_source_filter_add(title, filter);
+		sleep_ms(60);
+
+		auto frame = [&](const char *name) {
+			sleep_ms(60);
+			const uint32_t fw = obs_source_get_width(title), fh = obs_source_get_height(title);
+			std::vector<uint8_t> px = render(title, fw, fh);
+			write_frame(shadow_out + "/" + name + ".rgba", px, fw, fh);
+			return px;
+		};
+
+		auto hard = frame("1_hard_20px");
+		CHECK(obs_source_get_width(title) == tw + 20 && obs_source_get_height(title) == th + 20,
+		      "a 20 px hard shadow grows the source by exactly 20 px (%ux%u -> %ux%u)", tw, th,
+		      obs_source_get_width(title), obs_source_get_height(title));
+		// Opaque text pixels are untouched, and a black copy sits 20 px down-right.
+		int text = 0, kept = 0, shadowed = 0;
+		const uint32_t fw = tw + 20;
+		for (uint32_t y = 0; y < th; y++) {
+			for (uint32_t x = 0; x < tw; x++) {
+				const uint8_t *o = &bare[(size_t(y) * tw + x) * 4];
+				if (o[3] != 255)
+					continue;
+				text++;
+				const uint8_t *f = &hard[(size_t(y) * fw + x) * 4];
+				if (std::abs(int(f[0]) - int(o[0])) <= 2 && f[3] == 255)
+					kept++;
+				const uint8_t *sh = &hard[(size_t(y + 20) * fw + x + 20) * 4];
+				if (sh[3] == 255)
+					shadowed++;
+			}
+		}
+		CHECK(text > 1000 && kept == text, "the source itself is unchanged (%d of %d pixels)", kept, text);
+		CHECK(shadowed == text, "a solid shadow sits 20 px down and right (%d of %d pixels)", shadowed, text);
+
+		obs_data_set_double(fs, "softness", 16);
+		obs_data_set_double(fs, "shadow_opacity", 80);
+		obs_source_update(filter, fs);
+		auto soft = frame("2_soft");
+		CHECK(obs_source_get_width(title) > tw + 20, "a soft shadow gets extra room on every side (%u wide)",
+		      obs_source_get_width(title));
+
+		obs_data_set_bool(fs, "backdrop", true);
+		obs_data_set_double(fs, "backdrop_pad", 24);
+		obs_data_set_double(fs, "radius", 18);
+		obs_data_set_double(fs, "offset_x", 10);
+		obs_data_set_double(fs, "offset_y", 14);
+		obs_source_update(filter, fs);
+		auto panel = frame("3_panel_rounded");
+		const uint32_t pw = obs_source_get_width(title), ph = obs_source_get_height(title);
+		const uint8_t *mid = &panel[(size_t(ph / 2) * pw + pw / 2) * 4];
+		const uint8_t *corner = &panel[0];
+		CHECK(mid[3] == 255 && corner[3] < 40, "the panel is solid behind the source and its corner is clear");
+
+		obs_data_release(fs);
+		obs_source_filter_remove(title, filter);
+		obs_source_release(filter);
+
+		// A camera-style opaque picture with rounded corners and a soft shadow.
+		obs_data_t *cs = obs_data_create();
+		obs_data_set_double(cs, "radius", 40);
+		obs_data_set_double(cs, "softness", 24);
+		obs_data_set_double(cs, "offset_x", 0);
+		obs_data_set_double(cs, "offset_y", 12);
+		obs_source_t *cam_filter = obs_source_create("stagekit_shadow_backdrop", "Shadow", cs, nullptr);
+		obs_data_release(cs);
+		obs_source_filter_add(live, cam_filter);
+		sleep_ms(120);
+		const uint32_t cw = obs_source_get_width(live), ch = obs_source_get_height(live);
+		write_frame(shadow_out + "/4_rounded_picture.rgba", render(live, cw, ch), cw, ch);
+		obs_source_filter_remove(live, cam_filter);
+		obs_source_release(cam_filter);
+		obs_source_release(title);
+	}
+
 	obs_source_dec_showing(bg);
 	obs_data_release(s);
 	obs_source_release(bg);
