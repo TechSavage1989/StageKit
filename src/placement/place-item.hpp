@@ -13,7 +13,9 @@ the Free Software Foundation; either version 2 of the License, or
 namespace stagekit {
 
 inline constexpr const char *kPlaceItemId = "stagekit_place_item";
+inline constexpr const char *kSendToId = "stagekit_send_to";
 
+// Registers Place Item (on a scene) and Send To (on the source it moves).
 void register_place_item();
 
 } // namespace stagekit

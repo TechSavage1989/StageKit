@@ -45,6 +45,17 @@ answer the `get_hooked` call that program rules use is unverified on Windows.
 source and followed by Ambient Background. It is stored in the scene collection's save data under
 `stagekit.start_image`. Not yet tried on Windows.
 
+0.1.0-beta6 was never published as its own release: its notes reached `main` moments before
+0.1.0-beta7's, and the release job only publishes the newest notes file. Everything in it is in
+0.1.0-beta7. Wait for a version's tag to exist (check `git/matching-refs/tags/<version>`, not a call
+that prints an error body) before merging the next notes file.
+
+0.1.0-beta8 adds Auto Capture and Send To. Auto Capture: the owner rejected a required program list
+("I want it to detect games regardless of windowed or not regardless of the game") and asked for
+exclusions. Its Win32 code has never run; expect the detection rule to need tuning from the owner's
+reports. Send To: the owner said the point of "send it to" was Stream Deck keys for camera spots, set
+up as a filter on the camera itself, and that they will not use the dock's buttons for it.
+
 Reported problems still open: the owner wants to drag items and zoom points on a picture in the dock
 and zoom with the mouse wheel; a Match Item item "dropping behind others" has not been reproduced.
 Addressed in 0.1.0-beta4, awaiting the owner's check on Windows: the dock reaching nested scenes and

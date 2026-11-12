@@ -49,6 +49,8 @@ target_sources(
     src/common/switch-ramp.hpp
     src/zoom/ramp-zoom.cpp
     src/zoom/ramp-zoom.hpp
+    src/capture/auto-capture.cpp
+    src/capture/auto-capture.hpp
     src/common/scene-util.hpp
     src/common/start-image.cpp
     src/common/start-image.hpp

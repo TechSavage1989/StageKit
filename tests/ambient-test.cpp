@@ -240,6 +240,95 @@ int main(int argc, char **argv)
 	CHECK(mean_rgb(from_source) > 5 && opaque(from_source), "another source can be the background");
 	CHECK(obs_source_showing(live), "the base source is kept showing");
 
+	// ---------------------------------------------------------- auto capture
+	{
+		printf("\n[auto capture]\n");
+		// A stand-in for a Game Capture; the filter only writes its settings.
+		obs_source_t *capture = obs_source_create("color_source", "One Game Capture", nullptr, nullptr);
+		auto list_of = [](std::initializer_list<const char *> names) {
+			obs_data_array_t *array = obs_data_array_create();
+			for (const char *name : names) {
+				obs_data_t *entry = obs_data_create();
+				obs_data_set_string(entry, "value", name);
+				obs_data_array_push_back(array, entry);
+				obs_data_release(entry);
+			}
+			return array;
+		};
+		obs_data_t *ad = obs_data_create();
+		obs_data_array_t *never = list_of({"Blender"});
+		obs_data_set_array(ad, "exclude", never);
+		obs_data_array_release(never);
+		obs_source_t *aimer = obs_source_create("stagekit_auto_capture", "Auto Capture", ad, nullptr);
+		CHECK(aimer != nullptr, "the Auto Capture filter can be created");
+		obs_source_filter_add(capture, aimer);
+
+		// Stand-in windows: "title|class|exe|front|game".
+		auto see = [&](const char *windows) {
+			calldata_t cd = {};
+			calldata_set_string(&cd, "windows", windows);
+			proc_handler_call(obs_source_get_proc_handler(aimer), "set_test_windows", &cd);
+			calldata_free(&cd);
+			sleep_ms(250);
+			obs_data_t *settings = obs_source_get_settings(capture);
+			std::string window = obs_data_get_string(settings, "window");
+			obs_data_release(settings);
+			return window;
+		};
+		const char *mail = "Inbox - Mail|MailWnd|mail.exe|front|";
+		const char *snes = "Aladdin - Snes9x 1.60|Snes9X: WndClass|snes9x-x64.exe|front|game";
+
+		std::string aimed = see(mail);
+		CHECK(aimed.empty(), "an ordinary program in front is not captured");
+		aimed = see(snes);
+		CHECK(aimed == "Aladdin - Snes9x 1.60:Snes9X#3A WndClass:snes9x-x64.exe",
+		      "a game in front is captured with no list to maintain (%s)", aimed.c_str());
+
+		// Emulators change their title every second; that must not re-aim the capture.
+		obs_data_t *mark = obs_source_get_settings(capture);
+		obs_data_set_string(mark, "window", "untouched");
+		obs_data_release(mark);
+		aimed = see("Aladdin - Snes9x 1.60 - 60 fps|Snes9X: WndClass|snes9x-x64.exe|front|game");
+		CHECK(aimed == "untouched", "a changing window title does not re-aim it");
+
+		// Alt-tabbing to something else keeps the game.
+		aimed = see("Aladdin|Snes9X: WndClass|snes9x-x64.exe||\nInbox - Mail|MailWnd|mail.exe|front|");
+		CHECK(aimed == "untouched", "switching to another program keeps the game captured");
+
+		aimed = see(
+			"Aladdin|Snes9X: WndClass|snes9x-x64.exe||\nDolphin 2506a|DolphinWnd|Dolphin.exe|front|game");
+		CHECK(aimed.find("Dolphin.exe") != std::string::npos,
+		      "another game coming to the front takes over (%s)", aimed.c_str());
+
+		aimed = see("Dolphin 2506a|DolphinWnd|Dolphin.exe||\nBlender|GHOST_WindowClass|blender.exe|front|game");
+		CHECK(aimed.find("Dolphin.exe") != std::string::npos,
+		      "a program on the 'never capture' list is ignored even if it looks like a game");
+		aimed = see("Dolphin 2506a|DolphinWnd|Dolphin.exe||\nOBS|Qt|obs64.exe|front|game");
+		CHECK(aimed.find("Dolphin.exe") != std::string::npos,
+		      "OBS itself and other everyday programs are built in to that list");
+
+		// "Always capture" covers a game it would not spot by itself, and
+		// "only the listed programs" turns the guessing off.
+		obs_data_array_t *always = list_of({"oddgame"});
+		obs_data_set_array(ad, "programs", always);
+		obs_data_array_release(always);
+		obs_data_set_int(ad, "mode", 1);
+		obs_source_update(aimer, ad);
+		sleep_ms(80);
+		aimed = see("Odd Game|OddWnd|OddGame.exe|front|\nAladdin|Snes9X: WndClass|snes9x-x64.exe||game");
+		CHECK(aimed.find("OddGame.exe") != std::string::npos, "an 'always capture' program is captured (%s)",
+		      aimed.c_str());
+		aimed = see(
+			"Aladdin - Snes9x 1.60|Snes9X: WndClass|snes9x-x64.exe|front|game\nOdd Game|OddWnd|OddGame.exe||");
+		CHECK(aimed.find("OddGame.exe") != std::string::npos,
+		      "in 'only the listed programs' mode an unlisted game is left alone");
+		obs_data_release(ad);
+
+		obs_source_filter_remove(capture, aimer);
+		obs_source_release(aimer);
+		obs_source_release(capture);
+	}
+
 	// ------------------------------------------------------------ start image
 	{
 		printf("\n[start image]\n");
@@ -1024,6 +1113,82 @@ int main(int argc, char **argv)
 			      gp.y + bp.y);
 			obs_source_filter_remove(scene_source, f);
 			obs_source_release(f);
+		}
+
+		// Send To: the same move as a filter on the camera itself.
+		printf("\n[send to]\n");
+		{
+			obs_source_t *before = obs_get_output_source(0);
+			obs_set_output_source(0, scene_source);
+			// The camera also sits in a second scene, and that scene is not on screen.
+			obs_scene_t *other = obs_scene_create("Other Scene");
+			obs_sceneitem_t *other_cam = obs_scene_add(other, cam);
+			vec2_set(&p, 5.0f, 5.0f);
+			obs_sceneitem_set_pos(other_cam, &p);
+			obs_sceneitem_set_pos(cam_item, &p);
+
+			auto make = [&](const char *name, int destination, int where) {
+				obs_data_t *d = obs_data_create();
+				obs_data_set_int(d, "destination", destination);
+				obs_data_set_double(d, "margin", 30);
+				obs_data_set_int(d, "duration_ms", 150);
+				obs_data_set_int(d, "where", where);
+				obs_source_t *f = obs_source_create("stagekit_send_to", name, d, nullptr);
+				obs_data_release(d);
+				obs_source_filter_add(cam, f);
+				sleep_ms(100);
+				return f;
+			};
+			obs_source_t *corner = make("Camera bottom right", 8, 0);
+			CHECK(corner != nullptr, "the Send To filter can be added to a source");
+			obs_source_set_enabled(corner, true);
+			sleep_ms(450);
+			vec2 at = pos_of(cam_item), elsewhere = pos_of(other_cam);
+			CHECK(std::fabs(at.x - 450) < 0.6 && std::fabs(at.y - 240) < 0.6,
+			      "switching it on moves that source in the scene on screen (%.0f, %.0f)", at.x, at.y);
+			CHECK(!obs_source_enabled(corner),
+			      "and it switches itself off again, ready for the next press");
+			CHECK(std::fabs(elsewhere.x - 5) < 0.6, "other scenes are left alone by default");
+
+			// Save a spot: drag the camera somewhere, press the button, move away, press the key.
+			obs_source_t *spot = make("Camera my spot", 0, 1);
+			vec2_set(&p, 222.0f, 111.0f);
+			obs_sceneitem_set_pos(cam_item, &p);
+			obs_properties_t *props = obs_source_properties(spot);
+			obs_property_button_clicked(obs_properties_get(props, "capture"), spot);
+			obs_properties_destroy(props);
+			sleep_ms(100);
+			obs_source_set_enabled(corner, true);
+			sleep_ms(450);
+			obs_source_set_enabled(spot, true);
+			sleep_ms(450);
+			at = pos_of(cam_item);
+			elsewhere = pos_of(other_cam);
+			CHECK(std::fabs(at.x - 222) < 0.6 && std::fabs(at.y - 111) < 0.6,
+			      "a spot saved from where the source sits is returned to (%.0f, %.0f)", at.x, at.y);
+			CHECK(std::fabs(elsewhere.x - 222) < 0.6 && std::fabs(elsewhere.y - 111) < 0.6,
+			      "'every scene it is in' moves it in the other scenes too (%.0f, %.0f)", elsewhere.x,
+			      elsewhere.y);
+
+			// The camera inside a nested scene that is on screen.
+			obs_scene_t *outer = obs_scene_create("Outer Scene");
+			obs_scene_add(outer, obs_scene_get_source(other));
+			obs_set_output_source(0, obs_scene_get_source(outer));
+			obs_source_set_enabled(corner, true);
+			sleep_ms(450);
+			elsewhere = pos_of(other_cam);
+			const float want_x = (float)obs_source_get_width(obs_scene_get_source(other)) - 30 - 160;
+			CHECK(std::fabs(elsewhere.x - want_x) < 0.6,
+			      "it is found inside a nested scene (%.0f, wanted %.0f)", elsewhere.x, want_x);
+
+			obs_set_output_source(0, before);
+			obs_source_release(before);
+			obs_source_filter_remove(cam, corner);
+			obs_source_filter_remove(cam, spot);
+			obs_source_release(corner);
+			obs_source_release(spot);
+			obs_scene_release(outer);
+			obs_scene_release(other);
 		}
 
 		// The dock, driven the way a person would: pick, click, look.
