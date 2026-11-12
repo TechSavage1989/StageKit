@@ -204,6 +204,21 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Shadow, Glow & Outline (0.1.0-beta31)
+
+Asked for by the owner on 2026-11-12: a stroke/border, a shadow or border "made of the object itself"
+for live captures, more types, and a name that fits; simple and clean.
+
+- Display name is now *Shadow, Glow & Outline (StageKit)*. The id stays `stagekit_shadow_backdrop` and
+  the files stay `src/shadow/shadow-backdrop.*`; every setting key is unchanged.
+- New settings: `shadow_type` (0 drop, 1 glow: offsets ignored), `shadow_fill` and `outline_fill`
+  (0 colour, 1 the picture itself), `shadow_boost`, `outline`, `outline_width`, `outline_color`,
+  `outline_opacity`.
+- Shader: new `Outline` technique (48 samples in a 16-step loop, `SampleLevel`), run between Card and
+  Compose; Compose can colour the shadow from the blurred body. **Not verified on Direct3D.**
+- Controls are three checkable groups whose names are the existing `shadow` and `backdrop` settings
+  plus `outline`.
+
 ## Background live capture follows Auto Frame (0.1.0-beta30)
 
 The owner saw black bars in Ambient Background's live capture whatever the fit setting. The background

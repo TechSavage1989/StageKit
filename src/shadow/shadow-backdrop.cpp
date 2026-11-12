@@ -37,6 +37,10 @@ namespace stagekit {
 
 namespace {
 
+// Saved in settings: append only.
+enum class ShadowType { Drop = 0, Glow = 1 }; // to one side, or all round
+enum class Fill { Color = 0, Picture = 1 };   // a chosen colour, or the picture's own colours
+
 struct Settings {
 	bool shadow = true;
 	uint32_t shadow_color = 0xFF000000;
@@ -51,6 +55,14 @@ struct Settings {
 	double backdrop_pad = 12.0;
 	double radius = 0.0;
 	bool hide_source = false;
+	ShadowType shadow_type = ShadowType::Drop;
+	Fill shadow_fill = Fill::Color;
+	double shadow_boost = 0.3;
+	bool outline = false;
+	double outline_width = 6.0;
+	uint32_t outline_color = 0xFFFFFFFF;
+	double outline_opacity = 1.0;
+	Fill outline_fill = Fill::Color;
 	// Sizes are meant as they look on screen: an item drawn at half size
 	// gets twice the numbers, so 20 px of shadow is 20 px in the picture.
 	bool screen_px = true;
@@ -60,19 +72,21 @@ struct Padding {
 	uint32_t left = 0, top = 0, right = 0, bottom = 0;
 };
 
-// Room needed around the source for the panel and the shadow.
+// Room needed around the source for the panel, the outline and the shadow.
 Padding padding_for(const Settings &s)
 {
 	const double panel = s.backdrop ? s.backdrop_pad : 0.0;
+	const double line = s.outline ? std::ceil(s.outline_width) + 1.0 : 0.0;
 	const double soft = s.shadow && s.softness > 0.0 ? std::ceil(s.softness * 1.5) + 2.0 : 0.0;
 	const double ox = s.shadow ? s.offset_x : 0.0;
 	const double oy = s.shadow ? s.offset_y : 0.0;
 	const double shadow = s.shadow ? 1.0 : 0.0;
+	const double around = panel + line;
 	Padding p;
-	p.left = (uint32_t)std::ceil(panel + shadow * (std::max(0.0, -ox) + soft));
-	p.right = (uint32_t)std::ceil(panel + shadow * (std::max(0.0, ox) + soft));
-	p.top = (uint32_t)std::ceil(panel + shadow * (std::max(0.0, -oy) + soft));
-	p.bottom = (uint32_t)std::ceil(panel + shadow * (std::max(0.0, oy) + soft));
+	p.left = (uint32_t)std::ceil(around + shadow * (std::max(0.0, -ox) + soft));
+	p.right = (uint32_t)std::ceil(around + shadow * (std::max(0.0, ox) + soft));
+	p.top = (uint32_t)std::ceil(around + shadow * (std::max(0.0, -oy) + soft));
+	p.bottom = (uint32_t)std::ceil(around + shadow * (std::max(0.0, oy) + soft));
 	return p;
 }
 
@@ -232,6 +246,12 @@ private:
 	gs_eparam_t *p_src_size_ = nullptr;
 	gs_eparam_t *p_pad_ = nullptr;
 	gs_eparam_t *p_radius_ = nullptr;
+	gs_eparam_t *p_shadow_picture_ = nullptr;
+	gs_eparam_t *p_shadow_boost_ = nullptr;
+	gs_eparam_t *p_outline_width_ = nullptr;
+	gs_eparam_t *p_outline_color_ = nullptr;
+	gs_eparam_t *p_outline_picture_ = nullptr;
+	gs_texrender_t *tr_body_ = nullptr;
 	gs_eparam_t *p_backdrop_on_ = nullptr;
 	gs_eparam_t *p_backdrop_pad_ = nullptr;
 	gs_eparam_t *p_backdrop_color_ = nullptr;
@@ -269,11 +289,17 @@ ShadowBackdrop::ShadowBackdrop(obs_data_t *settings, obs_source_t *source) : sou
 		p_shadow_color_ = gs_effect_get_param_by_name(effect_, "shadow_color");
 		p_shadow_gain_ = gs_effect_get_param_by_name(effect_, "shadow_gain");
 		p_hide_source_ = gs_effect_get_param_by_name(effect_, "hide_source");
+		p_shadow_picture_ = gs_effect_get_param_by_name(effect_, "shadow_picture");
+		p_shadow_boost_ = gs_effect_get_param_by_name(effect_, "shadow_boost");
+		p_outline_width_ = gs_effect_get_param_by_name(effect_, "outline_width");
+		p_outline_color_ = gs_effect_get_param_by_name(effect_, "outline_color");
+		p_outline_picture_ = gs_effect_get_param_by_name(effect_, "outline_picture");
 	}
 	blur_ = std::make_unique<KawaseBlur>();
 	tr_input_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 	tr_card_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 	tr_final_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
+	tr_body_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 	obs_leave_graphics();
 	bfree(path);
 
@@ -288,6 +314,7 @@ ShadowBackdrop::~ShadowBackdrop()
 	gs_texrender_destroy(tr_input_);
 	gs_texrender_destroy(tr_card_);
 	gs_texrender_destroy(tr_final_);
+	gs_texrender_destroy(tr_body_);
 	obs_leave_graphics();
 }
 
@@ -307,6 +334,19 @@ void ShadowBackdrop::update(obs_data_t *settings)
 	s.backdrop_pad = std::clamp(obs_data_get_double(settings, "backdrop_pad"), 0.0, 500.0);
 	s.radius = std::clamp(obs_data_get_double(settings, "radius"), 0.0, 2000.0);
 	s.hide_source = obs_data_get_bool(settings, "hide_source");
+	s.shadow_type = obs_data_get_int(settings, "shadow_type") == 1 ? ShadowType::Glow : ShadowType::Drop;
+	s.shadow_fill = obs_data_get_int(settings, "shadow_fill") == 1 ? Fill::Picture : Fill::Color;
+	s.shadow_boost = std::clamp(obs_data_get_double(settings, "shadow_boost") / 100.0, 0.0, 1.0);
+	s.outline = obs_data_get_bool(settings, "outline");
+	s.outline_width = std::clamp(obs_data_get_double(settings, "outline_width"), 0.0, 200.0);
+	s.outline_color = (uint32_t)obs_data_get_int(settings, "outline_color");
+	s.outline_opacity = std::clamp(obs_data_get_double(settings, "outline_opacity") / 100.0, 0.0, 1.0);
+	s.outline_fill = obs_data_get_int(settings, "outline_fill") == 1 ? Fill::Picture : Fill::Color;
+	// A glow sits evenly all round.
+	if (s.shadow_type == ShadowType::Glow)
+		s.offset_x = s.offset_y = 0.0;
+	if (s.outline_width < 0.5)
+		s.outline = false;
 	s.screen_px = obs_data_get_bool(settings, "screen_px");
 
 	std::lock_guard lock(mutex_);
@@ -404,6 +444,7 @@ Settings ShadowBackdrop::settings()
 		s.offset_y /= shown_sy_;
 		s.softness = std::min(200.0, s.softness / both);
 		s.backdrop_pad /= both;
+		s.outline_width = std::min(200.0, s.outline_width / both);
 		s.radius /= both;
 	}
 	return s;
@@ -507,12 +548,26 @@ void ShadowBackdrop::render()
 	draw(tr_card_, input, "Card");
 	gs_texture_t *card = gs_texrender_get_texture(tr_card_);
 
-	// 2. Its silhouette, softened, becomes the shadow.
+	// 2. A line around it, in a colour or in the picture's own colours.
+	if (card && s.outline) {
+		vec4 outline_color;
+		vec4_from_rgba(&outline_color, s.outline_color);
+		outline_color.w = (float)s.outline_opacity;
+		gs_effect_set_vec2(p_out_size_, &out_size);
+		gs_effect_set_float(p_outline_width_, (float)s.outline_width);
+		gs_effect_set_vec4(p_outline_color_, &outline_color);
+		gs_effect_set_float(p_outline_picture_, s.outline_fill == Fill::Picture ? 1.0f : 0.0f);
+		draw(tr_body_, card, "Outline");
+		if (gs_texture_t *body = gs_texrender_get_texture(tr_body_))
+			card = body;
+	}
+
+	// 3. Its silhouette, softened, becomes the shadow.
 	gs_texture_t *silhouette = card;
 	if (card && s.shadow && s.softness > 0.0)
 		silhouette = blur_->blur(card, ow, oh, s.softness);
 
-	// 3. Shadow underneath the card.
+	// 4. Shadow underneath the card.
 	if (card) {
 		vec2 offset;
 		vec2_set(&offset, (float)s.offset_x, (float)s.offset_y);
@@ -525,6 +580,8 @@ void ShadowBackdrop::render()
 		gs_effect_set_vec4(p_shadow_color_, &shadow_color);
 		gs_effect_set_float(p_shadow_gain_, (float)(1.0 + s.spread * 6.0));
 		gs_effect_set_float(p_hide_source_, s.hide_source ? 1.0f : 0.0f);
+		gs_effect_set_float(p_shadow_picture_, s.shadow_fill == Fill::Picture ? 1.0f : 0.0f);
+		gs_effect_set_float(p_shadow_boost_, (float)s.shadow_boost);
 		draw(tr_final_, card, "Compose");
 	}
 
@@ -550,13 +607,15 @@ void ShadowBackdrop::render()
 
 bool visibility_modified(obs_properties_t *props, obs_property_t *, obs_data_t *settings)
 {
-	const bool shadow = obs_data_get_bool(settings, "shadow");
-	const bool backdrop = obs_data_get_bool(settings, "backdrop");
-	for (const char *name :
-	     {"shadow_color", "shadow_opacity", "offset_x", "offset_y", "softness", "spread", "hide_source"})
-		obs_property_set_visible(obs_properties_get(props, name), shadow);
-	for (const char *name : {"backdrop_color", "backdrop_opacity", "backdrop_pad"})
-		obs_property_set_visible(obs_properties_get(props, name), backdrop);
+	// Only what applies to the choices made is shown.
+	const bool glow = obs_data_get_int(settings, "shadow_type") == 1;
+	const bool shadow_picture = obs_data_get_int(settings, "shadow_fill") == 1;
+	const bool outline_picture = obs_data_get_int(settings, "outline_fill") == 1;
+	obs_property_set_visible(obs_properties_get(props, "offset_x"), !glow);
+	obs_property_set_visible(obs_properties_get(props, "offset_y"), !glow);
+	obs_property_set_visible(obs_properties_get(props, "shadow_color"), !shadow_picture);
+	obs_property_set_visible(obs_properties_get(props, "shadow_boost"), shadow_picture);
+	obs_property_set_visible(obs_properties_get(props, "outline_color"), !outline_picture);
 	return true;
 }
 
@@ -571,31 +630,52 @@ obs_property_t *slider(obs_properties_t *props, const char *name, const char *te
 obs_properties_t *get_properties(void *)
 {
 	obs_properties_t *props = obs_properties_create();
+	auto made_from = [](obs_properties_t *group, const char *name) {
+		obs_property_t *fill = obs_properties_add_list(group, name, obs_module_text("Shadow.Fill"),
+							       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+		obs_property_list_add_int(fill, obs_module_text("Shadow.Fill.Color"), (int)Fill::Color);
+		obs_property_list_add_int(fill, obs_module_text("Shadow.Fill.Picture"), (int)Fill::Picture);
+		obs_property_set_long_description(fill, obs_module_text("Shadow.Fill.Tip"));
+		obs_property_set_modified_callback(fill, visibility_modified);
+	};
 
-	obs_property_t *shadow = obs_properties_add_bool(props, "shadow", obs_module_text("Shadow.Shadow"));
-	obs_property_set_modified_callback(shadow, visibility_modified);
-	obs_properties_add_color(props, "shadow_color", obs_module_text("Shadow.Color"));
-	slider(props, "shadow_opacity", "Shadow.Opacity", 0.0, 100.0, "%");
-	slider(props, "offset_x", "Shadow.OffsetX", -200.0, 200.0, " px");
-	slider(props, "offset_y", "Shadow.OffsetY", -200.0, 200.0, " px");
-	slider(props, "softness", "Shadow.Softness", 0.0, 200.0, " px");
-	slider(props, "spread", "Shadow.Spread", 0.0, 100.0, "%");
-	obs_properties_add_bool(props, "hide_source", obs_module_text("Shadow.HideSource"));
+	// Each part has a tick box of its own in its heading.
+	obs_properties_t *shadow = obs_properties_create();
+	obs_property_t *type = obs_properties_add_list(shadow, "shadow_type", obs_module_text("Shadow.Type"),
+						       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+	obs_property_list_add_int(type, obs_module_text("Shadow.Type.Drop"), (int)ShadowType::Drop);
+	obs_property_list_add_int(type, obs_module_text("Shadow.Type.Glow"), (int)ShadowType::Glow);
+	obs_property_set_modified_callback(type, visibility_modified);
+	made_from(shadow, "shadow_fill");
+	obs_properties_add_color(shadow, "shadow_color", obs_module_text("Shadow.Color"));
+	obs_property_t *boost = slider(shadow, "shadow_boost", "Shadow.Boost", 0.0, 100.0, "%");
+	obs_property_set_long_description(boost, obs_module_text("Shadow.Boost.Tip"));
+	slider(shadow, "shadow_opacity", "Shadow.Opacity", 0.0, 100.0, "%");
+	slider(shadow, "offset_x", "Shadow.OffsetX", -200.0, 200.0, " px");
+	slider(shadow, "offset_y", "Shadow.OffsetY", -200.0, 200.0, " px");
+	slider(shadow, "softness", "Shadow.Softness", 0.0, 200.0, " px");
+	slider(shadow, "spread", "Shadow.Spread", 0.0, 100.0, "%");
+	obs_properties_add_bool(shadow, "hide_source", obs_module_text("Shadow.HideSource"));
+	obs_properties_add_group(props, "shadow", obs_module_text("Shadow.Shadow"), OBS_GROUP_CHECKABLE, shadow);
 
-	obs_property_t *backdrop = obs_properties_add_bool(props, "backdrop", obs_module_text("Shadow.Backdrop"));
-	obs_property_set_modified_callback(backdrop, visibility_modified);
-	obs_properties_add_color(props, "backdrop_color", obs_module_text("Shadow.BackdropColor"));
-	slider(props, "backdrop_opacity", "Shadow.BackdropOpacity", 0.0, 100.0, "%");
-	slider(props, "backdrop_pad", "Shadow.BackdropPad", 0.0, 200.0, " px");
+	obs_properties_t *outline = obs_properties_create();
+	slider(outline, "outline_width", "Shadow.OutlineWidth", 0.0, 100.0, " px");
+	made_from(outline, "outline_fill");
+	obs_properties_add_color(outline, "outline_color", obs_module_text("Shadow.OutlineColor"));
+	slider(outline, "outline_opacity", "Shadow.OutlineOpacity", 0.0, 100.0, "%");
+	obs_properties_add_group(props, "outline", obs_module_text("Shadow.Outline"), OBS_GROUP_CHECKABLE, outline);
+
+	obs_properties_t *backdrop = obs_properties_create();
+	obs_properties_add_color(backdrop, "backdrop_color", obs_module_text("Shadow.BackdropColor"));
+	slider(backdrop, "backdrop_opacity", "Shadow.BackdropOpacity", 0.0, 100.0, "%");
+	slider(backdrop, "backdrop_pad", "Shadow.BackdropPad", 0.0, 200.0, " px");
+	obs_properties_add_group(props, "backdrop", obs_module_text("Shadow.Backdrop"), OBS_GROUP_CHECKABLE, backdrop);
 
 	slider(props, "radius", "Shadow.Radius", 0.0, 500.0, " px");
 	obs_property_t *screen = obs_properties_add_bool(props, "screen_px", obs_module_text("Shadow.ScreenPx"));
 	obs_property_set_long_description(screen, obs_module_text("Shadow.ScreenPx.Tip"));
 	obs_property_t *keep = obs_properties_add_bool(props, "keep_place", obs_module_text("Shadow.Keep"));
 	obs_property_set_long_description(keep, obs_module_text("Shadow.Keep.Tip"));
-
-	obs_property_t *help = obs_properties_add_text(props, "help", obs_module_text("Shadow.Help"), OBS_TEXT_INFO);
-	obs_property_text_set_info_word_wrap(help, true);
 	return props;
 }
 
@@ -609,6 +689,14 @@ void get_defaults(obs_data_t *settings)
 	obs_data_set_default_double(settings, "softness", 20.0);
 	obs_data_set_default_double(settings, "spread", 0.0);
 	obs_data_set_default_bool(settings, "hide_source", false);
+	obs_data_set_default_int(settings, "shadow_type", (int)ShadowType::Drop);
+	obs_data_set_default_int(settings, "shadow_fill", (int)Fill::Color);
+	obs_data_set_default_double(settings, "shadow_boost", 30.0);
+	obs_data_set_default_bool(settings, "outline", false);
+	obs_data_set_default_double(settings, "outline_width", 6.0);
+	obs_data_set_default_int(settings, "outline_fill", (int)Fill::Color);
+	obs_data_set_default_int(settings, "outline_color", 0xFFFFFFFF);
+	obs_data_set_default_double(settings, "outline_opacity", 100.0);
 	obs_data_set_default_bool(settings, "backdrop", false);
 	obs_data_set_default_int(settings, "backdrop_color", 0xFF3A3A3A);
 	obs_data_set_default_double(settings, "backdrop_opacity", 100.0);

@@ -22,7 +22,8 @@ from hotkeys, or from the Stream Deck OBS Studio plugin's *Filter* and *Source* 
 - **Ambient Background** (source): a soft, drifting backdrop built from an image or another source,
   optionally tinted by whatever capture is live.
 - **Start image**: one picture, chosen once, shown on the start scene and used by the background.
-- **Shadow & Backdrop** (filter): drop shadow, a panel behind the source, and rounded corners, with no
+- **Shadow, Glow & Outline** (filter): drop shadow or glow, in a colour or in the picture's own moving
+  colours, an outline, a panel behind the source, and rounded corners, with no
   wrapper scene.
 - **Corners & Edges** (filter): rounds, cuts, notches or scoops a source's corners, trims and softens
   its edges and outlines it. A shadow added after it takes the same shape.
@@ -60,7 +61,7 @@ These are real frames rendered by the plugin in its automated tests, using made-
 
 <p align="center"><img src="docs/images/ambient-background.png" width="900" alt="Eight stages of the Ambient Background: plain image, blur, saturation and glow, hexagon mosaic, texture overlay, live capture blended in, square mosaic, and a background made from another source"></p>
 
-**Shadow & Backdrop**
+**Shadow, Glow & Outline**
 
 <p align="center"><img src="docs/images/shadow-backdrop.png" width="900" alt="Title text with a hard shadow, a soft shadow, a rounded dark panel, and a picture with rounded corners and a soft shadow"></p>
 
@@ -156,11 +157,28 @@ of it. It is saved with the scene collection.
 
 Changing the start image updates both at once.
 
-### Shadow & Backdrop
+### Shadow, Glow & Outline
 
-Add **Shadow & Backdrop (StageKit)** as a filter on a source, group or scene. Set the shadow's colour,
-opacity, offset, softness (0 gives a hard edge) and spread. Optionally add a panel behind the source and
-round the corners.
+Add **Shadow, Glow & Outline (StageKit)** as a filter on a source, group or scene. (It was called
+Shadow & Backdrop; filters you already have keep working.) It has three parts, each with a tick box in
+its heading:
+
+<p align="center"><img src="docs/images/glow-outline.png" width="900" alt="A green card with a red outline, with an outline in its own colour, with an outline and a hard drop shadow, with a dark glow all round, with a green glow in its own colour, and a game picture with a soft glow of its own colours around it"></p>
+
+- **Shadow or glow**
+  - *Type*: *Drop shadow (to one side)* or *Glow (all round)*.
+  - *Made from*: *A colour*, or ***The picture itself***. With the picture itself, a game, camera or
+    video casts a soft, moving copy of its own colours instead of a flat colour. *Colour boost* makes
+    that richer.
+  - *Opacity*, *Softness* (0 gives a hard edge), *Strength*, and for a drop shadow how far right/left
+    and down/up it falls.
+  - *Hide the picture* leaves only the shadow or glow.
+- **Outline**: a line round the picture, any width. *Made from* a colour or the picture itself. The
+  line follows the picture's real shape, including text and rounded or cut corners. A shadow is cast
+  by the picture and its outline together.
+- **Panel behind the source**: a coloured panel with a margin.
+
+*Rounded corners* rounds the picture and the panel.
 
 Sizes are as they look on screen: with *Sizes as they look on screen* ticked (the default), 20 px of
 shadow is 20 px in the finished picture however much the item is scaled, so a small camera and a large
@@ -168,8 +186,8 @@ panel get the same shadow. Untick it to give sizes in the source's own pixels.
 
 The shadow needs room around the source, so the source itself gets bigger. With *Keep the picture
 where it is* ticked (the default), the source's items in every scene are adjusted by exactly that room:
-the picture keeps its size and place whatever the softness, offset or panel margin, including inside a
-bounding box. Switching the filter off or removing it puts the items back.
+the picture keeps its size and place whatever the softness, offset, outline or panel margin, including
+inside a bounding box. Switching the filter off or removing it puts the items back.
 
 ### Corners & Edges
 
@@ -184,14 +202,14 @@ widget.
   towards its edge.
 - **Outline**: a line of any width, colour and opacity that follows the shape.
 - **Sizes as seen on screen** (on by default): a 40 px corner looks the same on a big item and a small
-  one, the same rule Shadow & Backdrop uses.
+  one, the same rule Shadow, Glow & Outline uses.
 
 It works with the other tools:
 
 - The source **keeps its size**, so nothing moves or resizes in any scene, and Send To keys, layouts
   and the line-up tools carry on as before. The line-up tools measure the new shape when *Use visible
   pixels* is on.
-- **Shadow & Backdrop** after it in the filter list casts a shadow of the new shape. If you add
+- **Shadow, Glow & Outline** after it in the filter list casts a shadow of the new shape. If you add
   Corners & Edges to a source that already has a shadow, it places itself above the shadow for you.
 - After an **Auto Frame**, it shapes the game picture inside the frame, and follows it when the picture
   changes shape.
@@ -240,7 +258,7 @@ shape, and point a *Filter* key at it. Switching it on sets the shape and it swi
 set to *Automatic* hands control back.
 
 Because the source's size no longer changes, one scene can replace a scene per picture shape and the
-automation that switched between them. Put Shadow & Backdrop after it and the shadow follows the picture.
+automation that switched between them. Put Shadow, Glow & Outline after it and the shadow follows the picture.
 
 ### Auto Capture
 
@@ -291,7 +309,7 @@ settled.
 
 Use it when one camera is wanted in more than one shape. OBS applies an item's crop after the source's
 filters, so a shadow on the camera is cut off by the crop; a Cropped View is the cropped picture as a
-source, and a Shadow & Backdrop or Ramp Zoom added to the view follows it. Make one view per shape. The
+source, and a Shadow, Glow & Outline or Ramp Zoom added to the view follows it. Make one view per shape. The
 camera is still captured only once.
 
 ### Ramp Zoom
@@ -349,7 +367,7 @@ Studio Mode).
 - *Save this spot as a key* does the same for wherever the item is now: drag it where you want
   it in the preview first.
 - *Bring to front*, *Forward one*, *Back one* and *Send to back* change which items cover which.
-- *Add effect* puts a Ramp Blur, Shadow & Backdrop, Ramp Zoom or Show/Hide Animation on the item
+- *Add effect* puts a Ramp Blur, Shadow, Glow & Outline, Ramp Zoom or Show/Hide Animation on the item
   and opens its filter window. Ramp Blur and Ramp Zoom are added switched off.
 - The *Scene* list reaches a scene that is not on screen.
 
@@ -383,7 +401,7 @@ Options:
 
 - **Use visible pixels** (on by default) measures the picture actually drawn in each item and ignores
   the empty, see-through room around it. Switch it off to go by the item's box, as OBS does.
-- **Ignore shadows** keeps a Shadow & Backdrop's shadow from counting as picture.
+- **Ignore shadows** keeps a Shadow, Glow & Outline's shadow from counting as picture.
 - **Keep shape when resizing** (on by default) grows or shrinks an item evenly. Switch it off and
   *Same width* or *Same height* changes only that direction, which stretches the picture.
 - **Snap on release** snaps an item by itself after you drag it in the preview and let go. *Snap
