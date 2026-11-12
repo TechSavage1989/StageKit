@@ -195,14 +195,16 @@ std::vector<obs_sceneitem_t *> selected_items(obs_source_t *scene)
 	if (!s)
 		return out;
 	static const auto add = [](obs_scene_t *, obs_sceneitem_t *item, void *param) {
-		if (obs_sceneitem_selected(item) && !obs_sceneitem_is_group(item) && obs_sceneitem_visible(item))
+		if (obs_sceneitem_selected(item) && obs_sceneitem_visible(item))
 			static_cast<std::vector<obs_sceneitem_t *> *>(param)->push_back(item);
 		return true;
 	};
 	obs_scene_enum_items(
 		s,
 		[](obs_scene_t *sc, obs_sceneitem_t *item, void *param) {
-			if (obs_sceneitem_is_group(item))
+			// A selected group moves as one thing; otherwise the selected
+			// items inside it count on their own.
+			if (obs_sceneitem_is_group(item) && !obs_sceneitem_selected(item))
 				obs_sceneitem_group_enum_items(item, add, param);
 			add(sc, item, param);
 			return true;

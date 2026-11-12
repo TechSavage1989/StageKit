@@ -204,6 +204,13 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Groups in the arrange tools (0.1.0-beta28)
+
+The owner selected the camera and "Chat Box Group" with *Each other* and *Left*; the camera went to
+the screen's edge. `selected_items` skipped groups, leaving one item, which fell back to the screen.
+A selected group is now one item (its children are not added as well); in a group that is not
+selected, selected children still count.
+
 ## Arrange anywhere, background dock (0.1.0-beta27)
 
 Asked for by the owner on 2026-11-12: they did not understand the Arrange tools, wanted them usable
