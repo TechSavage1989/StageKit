@@ -224,6 +224,12 @@ placed where the old cropped main was on all the scenes relevant". The generator
 puts the Amuse Component widget, whole, where the cropped Amuse Main sat, centred on the middle of the
 old strip (draft 4). *Whatever is drawn* stays in the plugin but the rebuild no longer uses it.
 
+Draft 4 crashed the owner's OBS on import. Draft 4b, identical but without the 31 show/hide fades
+copied from the original items, loaded. So the generator leaves fades off by default. The cause is not
+known: it does not reproduce in the headless load check on Linux even with obs-transitions loaded, and
+no crash report has been seen. Suspects: the copied transition entries themselves, or a StageKit filter
+on a source whose item has a transition. Ask for the crash report before putting fades back.
+
 ## Arrange tools (0.1.0-beta24)
 
 The owner asked for "intuitive transform and object editing tools" for alignment and snapping,

@@ -37,8 +37,9 @@ OLD_FILTERS = {
 GAME_CAPTURES = {"Game Capture", "Windowed Game Capture"}
 # Everything under these was the hand-built blurred background.
 BACKGROUND_SCENES = ("Live Background", "Start Background Scene", "Background Scene", "Tablet Background Scene")
-# Set STAGEKIT_REBUILD_FADES=0 to leave the show/hide fades off (used to find what crashed OBS on import).
-KEEP_FADES = os.environ.get("STAGEKIT_REBUILD_FADES", "1") != "0"
+# Show/hide fades are left off: a collection generated with them crashed the owner's OBS on import and the
+# same collection without them loaded. Why is not known yet. Set STAGEKIT_REBUILD_FADES=1 to put them back.
+KEEP_FADES = os.environ.get("STAGEKIT_REBUILD_FADES", "0") == "1"
 SKIP_LEAVES = {"Purple"}
 # The owner's choice: where the cropped "Amuse Main" widget sat (start, intermission, break and ending
 # scenes), show the "Amuse Component" widget instead, whole and uncropped, in the same place.
