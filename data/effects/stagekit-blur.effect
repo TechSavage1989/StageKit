@@ -1,0 +1,273 @@
+// StageKit Ramp Blur
+//
+// Every blur pass averages colour weighted by alpha, so transparent pixels
+// (around text, logos, cut-out cameras) do not bleed dark fringes into the
+// result. Each pass outputs straight (non-premultiplied) alpha.
+
+uniform float4x4 ViewProj;
+uniform texture2d image;
+uniform texture2d original;
+uniform texture2d image2;   // optional second blur result (kawase octave cross-fade)
+
+uniform float2 texel;       // 1 / input texture size
+uniform float2 size;        // input texture size in pixels
+uniform float2 direction;   // separable passes: axis in uv per pixel
+uniform float radius;       // gaussian / box / motion: reach in pixels
+uniform float samples;      // taps per side (1..64)
+uniform float offset;       // kawase sample offset
+uniform float2 center;      // zoom blur centre in uv
+uniform float strength;     // zoom: fraction of the way to centre; pixelate: block size
+uniform float mix_amount;   // composite: 0 = original, 1 = blurred
+uniform float mix2;         // composite: how much of image2 to use instead of image
+
+sampler_state linearClamp {
+	Filter   = Linear;
+	AddressU = Clamp;
+	AddressV = Clamp;
+};
+
+struct VertData {
+	float4 pos : POSITION;
+	float2 uv  : TEXCOORD0;
+};
+
+VertData VSDefault(VertData v_in)
+{
+	VertData vert_out;
+	vert_out.pos = mul(float4(v_in.pos.xyz, 1.0), ViewProj);
+	vert_out.uv  = v_in.uv;
+	return vert_out;
+}
+
+float4 tap(float2 uv)
+{
+	return image.SampleLevel(linearClamp, uv, 0.0);
+}
+
+// sum.rgb holds colour * alpha * weight, sum.a holds alpha * weight.
+float4 resolve(float4 sum, float wsum)
+{
+	return float4(sum.rgb / max(sum.a, 0.00001), sum.a / max(wsum, 0.00001));
+}
+
+// ---------------------------------------------------------------- Gaussian
+
+float4 PSGaussian(VertData v_in) : TARGET
+{
+	float sigma = max(radius / 2.6, 0.35);
+	float step_px = radius / samples;
+	float denom = 2.0 * sigma * sigma;
+
+	float4 c = tap(v_in.uv);
+	float4 sum = float4(c.rgb * c.a, c.a);
+	float wsum = 1.0;
+
+	for (int i = 1; i <= 64; i++) {
+		if (float(i) > samples)
+			break;
+		float x = float(i) * step_px;
+		float w = exp(-(x * x) / denom);
+		float2 o = direction * x;
+		float4 a = tap(v_in.uv + o);
+		float4 b = tap(v_in.uv - o);
+		sum.rgb += (a.rgb * a.a + b.rgb * b.a) * w;
+		sum.a += (a.a + b.a) * w;
+		wsum += 2.0 * w;
+	}
+	return resolve(sum, wsum);
+}
+
+// --------------------------------------------------------------------- Box
+
+float4 PSBox(VertData v_in) : TARGET
+{
+	float step_px = radius / samples;
+
+	float4 c = tap(v_in.uv);
+	float4 sum = float4(c.rgb * c.a, c.a);
+	float wsum = 1.0;
+
+	for (int i = 1; i <= 64; i++) {
+		if (float(i) > samples)
+			break;
+		float2 o = direction * (float(i) * step_px);
+		float4 a = tap(v_in.uv + o);
+		float4 b = tap(v_in.uv - o);
+		sum.rgb += a.rgb * a.a + b.rgb * b.a;
+		sum.a += a.a + b.a;
+		wsum += 2.0;
+	}
+	return resolve(sum, wsum);
+}
+
+// ------------------------------------------------------------- Dual Kawase
+
+float4 PSKawaseDown(VertData v_in) : TARGET
+{
+	float2 hp = texel * offset;
+	float4 c = tap(v_in.uv);
+	float4 s1 = tap(v_in.uv - hp);
+	float4 s2 = tap(v_in.uv + hp);
+	float4 s3 = tap(v_in.uv + float2(hp.x, -hp.y));
+	float4 s4 = tap(v_in.uv - float2(hp.x, -hp.y));
+
+	float4 sum = float4(c.rgb * c.a, c.a) * 4.0;
+	sum += float4(s1.rgb * s1.a, s1.a);
+	sum += float4(s2.rgb * s2.a, s2.a);
+	sum += float4(s3.rgb * s3.a, s3.a);
+	sum += float4(s4.rgb * s4.a, s4.a);
+	return resolve(sum, 8.0);
+}
+
+float4 PSKawaseUp(VertData v_in) : TARGET
+{
+	float2 hp = texel * 0.5 * offset;
+	float4 s0 = tap(v_in.uv + float2(-hp.x * 2.0, 0.0));
+	float4 s1 = tap(v_in.uv + float2(-hp.x, hp.y));
+	float4 s2 = tap(v_in.uv + float2(0.0, hp.y * 2.0));
+	float4 s3 = tap(v_in.uv + float2(hp.x, hp.y));
+	float4 s4 = tap(v_in.uv + float2(hp.x * 2.0, 0.0));
+	float4 s5 = tap(v_in.uv + float2(hp.x, -hp.y));
+	float4 s6 = tap(v_in.uv + float2(0.0, -hp.y * 2.0));
+	float4 s7 = tap(v_in.uv + float2(-hp.x, -hp.y));
+
+	float4 sum = float4(s0.rgb * s0.a, s0.a);
+	sum += float4(s1.rgb * s1.a, s1.a) * 2.0;
+	sum += float4(s2.rgb * s2.a, s2.a);
+	sum += float4(s3.rgb * s3.a, s3.a) * 2.0;
+	sum += float4(s4.rgb * s4.a, s4.a);
+	sum += float4(s5.rgb * s5.a, s5.a) * 2.0;
+	sum += float4(s6.rgb * s6.a, s6.a);
+	sum += float4(s7.rgb * s7.a, s7.a) * 2.0;
+	return resolve(sum, 12.0);
+}
+
+// ---------------------------------------------------------------- Pixelate
+
+float4 PSPixelate(VertData v_in) : TARGET
+{
+	float block = max(strength, 1.0);
+	// Blocks are anchored on the centre of the image so they stay symmetric.
+	float2 rel = v_in.uv * size - size * 0.5;
+	float2 cell = (floor(rel / block) + 0.5) * block + size * 0.5;
+	float2 q = float2(block, block) * 0.25;
+
+	float4 s0 = tap((cell + float2(-q.x, -q.y)) * texel);
+	float4 s1 = tap((cell + float2(q.x, -q.y)) * texel);
+	float4 s2 = tap((cell + float2(-q.x, q.y)) * texel);
+	float4 s3 = tap((cell + float2(q.x, q.y)) * texel);
+
+	float4 sum = float4(s0.rgb * s0.a, s0.a);
+	sum += float4(s1.rgb * s1.a, s1.a);
+	sum += float4(s2.rgb * s2.a, s2.a);
+	sum += float4(s3.rgb * s3.a, s3.a);
+	return resolve(sum, 4.0);
+}
+
+// -------------------------------------------------------------------- Zoom
+
+float4 PSZoom(VertData v_in) : TARGET
+{
+	float2 to_center = (center - v_in.uv) * strength;
+
+	float4 c = tap(v_in.uv);
+	float4 sum = float4(c.rgb * c.a, c.a);
+	float wsum = 1.0;
+
+	for (int i = 1; i <= 64; i++) {
+		if (float(i) > samples)
+			break;
+		float4 a = tap(v_in.uv + to_center * (float(i) / samples));
+		sum.rgb += a.rgb * a.a;
+		sum.a += a.a;
+		wsum += 1.0;
+	}
+	return resolve(sum, wsum);
+}
+
+// --------------------------------------------------------------- Composite
+// Cross-fades original and blurred images (premultiplied, so edges stay
+// clean) and writes straight alpha for the rest of the OBS pipeline.
+
+float4 PSComposite(VertData v_in) : TARGET
+{
+	float4 o = original.Sample(linearClamp, v_in.uv);
+	float4 b1 = image.Sample(linearClamp, v_in.uv);
+	float4 b2 = image2.Sample(linearClamp, v_in.uv);
+	float4 b = lerp(float4(b1.rgb * b1.a, b1.a), float4(b2.rgb * b2.a, b2.a), mix2);
+	float4 m = lerp(float4(o.rgb * o.a, o.a), b, mix_amount);
+	return float4(m.rgb / max(m.a, 0.00001), m.a);
+}
+
+technique Gaussian
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSGaussian(v_in);
+	}
+}
+
+technique Box
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSBox(v_in);
+	}
+}
+
+technique KawaseDown
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSKawaseDown(v_in);
+	}
+}
+
+technique KawaseUp
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSKawaseUp(v_in);
+	}
+}
+
+technique Pixelate
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSPixelate(v_in);
+	}
+}
+
+technique Zoom
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSZoom(v_in);
+	}
+}
+
+// Motion blur is a single box pass along an arbitrary angle.
+technique Motion
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSBox(v_in);
+	}
+}
+
+technique Composite
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSComposite(v_in);
+	}
+}
