@@ -69,9 +69,6 @@ writes no files of its own.
 
 ## Exceptions to the shared standard
 
-- **`docs/REPOSITORY_STANDARDS.md` is missing.** The owner described the standard in chat but the
-  canonical file, which must be identical across their repositories, was not supplied. It must be added
-  from that source, not rewritten here.
 - **Update checks, the update notice, the download bar and the install dialog do not apply.** StageKit
   is an OBS plugin with no window, executable or updater of its own. Revisit only if the owner asks for
   an update notice inside OBS.
@@ -115,3 +112,5 @@ information), which is what the template uses for pushes to `main`.
 - 2026-11-12: Owner approved merging into `main` and publishing a release. Pull request #1 was marked
   ready and merged after all checks passed. Tagging and publishing are refused for sessions by the platform,
   so an automatic release job was added to the push workflow and the release was published by it. History, not standing permission.
+- 2026-11-12: `docs/REPOSITORY_STANDARDS.md` was copied byte-for-byte from the owner's other app
+  repositories (nine of them held an identical copy).
