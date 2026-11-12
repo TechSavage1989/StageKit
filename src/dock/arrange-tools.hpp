@@ -1,0 +1,81 @@
+/*
+StageKit - quality-of-life tools for OBS Studio
+Copyright (C) 2026 StageKit contributors
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or
+(at your option) any later version.
+*/
+
+#pragma once
+
+#include "arrange.hpp"
+
+#include <obs.h>
+
+#include <cstddef>
+#include <cstdint>
+#include <vector>
+
+namespace stagekit {
+
+// The arrange tools as one set of actions with one set of options, shared by
+// the dock, the hotkeys and the right-click menu in OBS's preview.
+
+struct ArrangeOptions {
+	Against against = Against::Screen;
+	Measure how;
+	bool keep_shape = true; // resizing keeps an item's proportions; off stretches one direction
+	bool live_snap = false; // snap after an item is dragged and let go
+	int within = 20;        // how close counts for snapping, in pixels
+};
+
+ArrangeOptions arrange_options();
+void set_arrange_options(const ArrangeOptions &options);
+// Changes whenever the options do, so anything showing them can follow.
+uint64_t arrange_options_revision();
+
+enum class ArrangeAction {
+	Left,
+	Center,
+	Right,
+	Top,
+	Middle,
+	Bottom,
+	SpaceAcross,
+	SpaceDown,
+	SnapNow,
+	SameWidth,
+	SameHeight,
+	SameSize,
+	Count
+};
+
+struct ArrangeInfo {
+	const char *name;   // for hotkeys and object names
+	const char *text;   // locale key of the short label
+	const char *hotkey; // locale key of the name in Settings → Hotkeys
+	size_t needs;       // how many items it takes
+};
+const ArrangeInfo &arrange_info(ArrangeAction action);
+
+struct ArrangeOutcome {
+	size_t had = 0, needs = 1;
+	int changed = 0;
+};
+
+// Runs an action on the given items of a scene with the shared options.
+ArrangeOutcome run_arrange(ArrangeAction action, obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items);
+
+// Runs it on whatever is selected in the scene being edited in OBS.
+ArrangeOutcome run_arrange_on_selection(ArrangeAction action);
+
+// The scene being edited: the preview in Studio Mode, else the current scene.
+// Returns a new reference, or nullptr.
+obs_source_t *editing_scene();
+
+void register_arrange_hotkeys();
+void arrange_save_load(obs_data_t *save_data, bool saving);
+
+} // namespace stagekit

@@ -43,6 +43,8 @@ from hotkeys, or from the Stream Deck OBS Studio plugin's *Filter* and *Source* 
   the same place in every scene.
 - **Layout** (scene filter): saves an arrangement of a scene's items and glides back to it.
 - **StageKit dock**: click an item into place, and make Stream Deck keys for its positions in one click.
+- **Line up, resize and snap**: from a right-click in the preview, hotkeys or the dock, measured by
+  what is actually drawn in each item.
 
 ## Screenshots
 
@@ -300,11 +302,15 @@ Switching the filter on moves the item; the filter then switches itself off, rea
 Trigger it from the eye icon, a Stream Deck *Filter* key, *Move it now*, or its `StageKit: Move`
 hotkey under the scene.
 
-### The StageKit dock
+### The StageKit docks
 
-Open it from *Docks → StageKit*. It works on the current scene (the preview scene in Studio Mode).
+There are two, under *Docks*: **StageKit** for the item you are working on, and **StageKit Background**
+for the start image and the moving background. Both work on the current scene (the preview scene in
+Studio Mode).
 
-<p align="center"><img src="docs/images/stagekit-dock.png" width="340" alt="The StageKit dock: scene and item pickers, a three-by-three grid of position buttons, margin and travel time, buttons that make Stream Deck keys, the start image with a thumbnail, buttons that add an effect to the item, and buttons that line up, space out and snap the selected items"></p>
+<p align="center"><img src="docs/images/stagekit-dock.png" width="340" alt="The StageKit dock: scene and item pickers, a three-by-three grid of position buttons, margin and travel time, buttons that make Stream Deck keys, buttons that add an effect to the item, and buttons that line up, space out, resize and snap the selected items"> <img src="docs/images/stagekit-background-dock.png" width="340" alt="The StageKit Background dock: a thumbnail of the start image, its file name, and buttons to choose the start image, give the background its own picture and open the background's settings"></p>
+
+**StageKit**
 
 - **Select an item in OBS's own preview** and the dock works on it. The *Item* list follows your
   selection; you can also choose from the list.
@@ -314,25 +320,46 @@ Open it from *Docks → StageKit*. It works on the current scene (the preview sc
   those filters, or give it a hotkey.
 - *Save this spot as a key* does the same for wherever the item is now: drag it where you want
   it in the preview first.
-- **Start image**: a thumbnail of the picture. Turn the mouse wheel on it for a closer look, drag to
-  move around, double-click to reset; this changes only the thumbnail, never your scene. The start
-  image is also the moving background's picture. *Background picture…* gives the
-  background a picture of its own; *Background settings…* opens the Ambient Background's settings.
-- **Arrange** works on the items selected in OBS's preview (Ctrl-click for several):
-  - *Left*, *Centre*, *Right*, *Top*, *Middle*, *Bottom* line them up with the screen or with each
-    other.
-  - *Space out ↔* and *Space out ↕* make the gaps between three or more items equal.
-  - *Same width* and *Same height* resize the others to match the top-most selected item, keeping
-    their shape.
-  - *Snap now* moves each item the last few pixels so an edge or centre meets the screen's or another
-    item's. *Snap on release* does that by itself after you drag one in the preview.
-  - *Use visible pixels* (on by default) measures the picture actually drawn in each item and ignores
-    the empty, see-through room around it, where OBS only knows the item's box. *Ignore shadows* keeps
-    a Shadow & Backdrop's shadow from counting as picture.
 - *Bring to front*, *Forward one*, *Back one* and *Send to back* change which items cover which.
 - *Add effect* puts a Ramp Blur, Shadow & Backdrop, Ramp Zoom or Show/Hide Animation on the item
   and opens its filter window. Ramp Blur and Ramp Zoom are added switched off.
 - The *Scene* list reaches a scene that is not on screen.
+
+**StageKit Background**
+
+- A thumbnail of the start image. Turn the mouse wheel on it for a closer look, drag to move around,
+  double-click to reset; this changes only the thumbnail, never your scene.
+- The start image is also the moving background's picture. *Background picture…* gives the
+  background a picture of its own; *Background settings…* opens the Ambient Background's settings.
+
+### Lining up, resizing and snapping items
+
+These tools move and resize the items **selected in OBS's preview**. Click one item, or hold Ctrl and
+click several. You can use them from three places, and all three share the same options:
+
+- **Right-click in the preview** and open the *StageKit* menu.
+- **Hotkeys**: *Settings → Hotkeys*, the entries that start with *StageKit:* (for example
+  *StageKit: Align left*).
+- The **Arrange** box in the StageKit dock, which also says what it is about to move.
+
+What they do:
+
+| Tool | What happens |
+| --- | --- |
+| *Left*, *Centre*, *Right*, *Top*, *Middle*, *Bottom* | Lines the items up with that side of the screen. With *Align to: Each other*, lines two or more up with one another instead. |
+| *Space out ↔*, *Space out ↕* | With three or more: the outer two stay put and the rest spread so the gaps are equal. |
+| *Same width*, *Same height*, *Same size* | With two or more: resizes the others to match the top-most one in the Sources list. |
+| *Snap now* | Moves each item the last few pixels so an edge or its centre meets the screen's or a neighbour's. |
+
+Options:
+
+- **Use visible pixels** (on by default) measures the picture actually drawn in each item and ignores
+  the empty, see-through room around it. Switch it off to go by the item's box, as OBS does.
+- **Ignore shadows** keeps a Shadow & Backdrop's shadow from counting as picture.
+- **Keep shape when resizing** (on by default) grows or shrinks an item evenly. Switch it off and
+  *Same width* or *Same height* changes only that direction, which stretches the picture.
+- **Snap on release** snaps an item by itself after you drag it in the preview and let go. *Snap
+  within* sets how close counts.
 
 ### Show/Hide Animation
 

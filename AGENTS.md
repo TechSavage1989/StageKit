@@ -25,7 +25,7 @@ for an update notice inside OBS. This exception is recorded in the handoff.
 | `src/zoom/` | Ramp Zoom filter |
 | `src/view/` | Cropped View source (part of another source as a source, so filters follow the crop) |
 | `src/placement/` | Scene filters: Place Item, Show/Hide Animation, Visibility Link, Match Item, Layout; and Send To, Place Item's code as a filter on the source it moves |
-| `src/dock/` | The StageKit dock (Qt widgets, no `Q_OBJECT`). It follows the item selected in OBS, drives Send To filters on that item's source, and holds the start image thumbnail |
+| `src/dock/` | Two docks (Qt widgets, no `Q_OBJECT`): StageKit follows the item selected in OBS and drives Send To filters on that item's source; StageKit Background holds the start image thumbnail. `arrange-tools.*` is the one set of line-up actions and options behind the dock, the hotkeys and the preview's right-click menu |
 | `src/common/` | Shared helpers: easing and `Tween`, `SwitchRamp`, `KawaseBlur`, scene utilities, and the start image (global path + Start Image source) |
 | `src/frame/` | Auto Frame filter and the Picture Shape key filter |
 | `src/capture/` | Auto Capture filter (aims a Game Capture at the game in front) and Program Trigger filter (shows items and switches filters while a program is open). Both use the Win32 window list in `auto-capture.cpp`; compiled but idle elsewhere |
@@ -115,6 +115,12 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   item's source small and read it back to find the non-transparent part. That happens once per button
   press or drop, never per frame; keep it that way. OBS's own drag-snapping cannot be hooked, so "snap
   when I let go" watches the selected items and corrects after the mouse button is up.
+- **The preview's right-click menu is not an OBS API.** `PreviewMenu` in `src/dock/stagekit-dock.cpp`
+  watches for a context-menu event on the widget named `preview` and adds to the next menu that opens.
+  If OBS renames that widget the menu entry silently disappears; the hotkeys and the dock still work.
+- **Arrange options are global** (`arrange_options()`), saved with the scene collection. The dock's
+  controls only show and set them. Add a new tool to `ArrangeAction` and `kInfo` and it appears in the
+  dock, the menu and the hotkeys at once.
 - **Dock keys are Send To filters on the item's source**, not Place Item filters on the scene. The
   owner presses them from Stream Deck Filter keys on the camera.
 - **Shadow sizes are in screen pixels by default.** The owner's old shadows sat on full-canvas scenes,

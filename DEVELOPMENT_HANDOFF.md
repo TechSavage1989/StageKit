@@ -204,6 +204,25 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Arrange anywhere, background dock (0.1.0-beta27)
+
+Asked for by the owner on 2026-11-12: they did not understand the Arrange tools, wanted them usable
+without the dock ("right click inside the viewport"), on several selected items, by visible pixels or
+by box, with resizing that either keeps the shape or stretches; and wanted the start image and
+background in a dock of their own. They also reported the thumbnail missing at start-up.
+
+- `src/dock/arrange-tools.*`: `ArrangeAction`, shared `ArrangeOptions`, `run_arrange`, frontend hotkeys
+  (`stagekit.arrange.*`), saved in the collection's module data.
+- `PreviewMenu`: adds a *StageKit* submenu to OBS's preview context menu by watching for it. **Not
+  verified on Windows**; nothing in OBS's API supports it.
+- `match_size` takes width, height and `keep_shape`. Stretching an item that has a shape-keeping
+  bounding box turns the box into a stretch box of what is drawn now.
+- `BackgroundDock` (id `stagekit-background-dock`). The thumbnail falls back to
+  `gs_create_texture_file_data` when Qt cannot read the file, retries a few times, and logs why it
+  failed. The cause of the owner's missing thumbnail was not reproduced; ask for the OBS log if it
+  still happens (look for "could not read the picture").
+- `bounds_scale`, `item_draw_scale` and the on-screen scale search moved to `src/common/shown-scale.*`.
+
 ## Dock wording (0.1.0-beta26)
 
 The owner: "no need for all the informations verbiage in the dock. need to keep the ui clean and

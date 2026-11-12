@@ -10,6 +10,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include "arrange.hpp"
 
+#include "../common/shown-scale.hpp"
 #include "../shadow/shadow-backdrop.hpp"
 
 #include <graphics/matrix4.h>
@@ -293,31 +294,57 @@ int distribute_items(obs_source_t *scene, std::vector<obs_sceneitem_t *> items, 
 	return moved;
 }
 
-int match_size(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items, bool width, const Measure &how)
+int match_size(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items, bool width, bool height,
+	       bool keep_shape, const Measure &how)
 {
-	if (items.size() < 2)
+	if (items.size() < 2 || (!width && !height))
 		return 0;
 	// The top-most selected item is the one the others follow.
 	const Box model = measure_item(scene, items.back(), how);
-	const double want = width ? model.w : model.h;
 	int changed = 0;
 	for (size_t i = 0; i + 1 < items.size(); i++) {
 		obs_sceneitem_t *item = items[i];
 		const Box before = measure_item(scene, item, how);
-		const double have = width ? before.w : before.h;
-		if (have <= 0.0 || want <= 0.0 || std::fabs(have - want) < 0.01 || obs_sceneitem_locked(item))
+		if (before.w <= 0.0 || before.h <= 0.0 || model.w <= 0.0 || model.h <= 0.0 ||
+		    obs_sceneitem_locked(item))
 			continue;
-		// Keeps its shape: both directions grow by the same amount.
-		const float factor = (float)(want / have);
+		double fx = width ? model.w / before.w : 1.0;
+		double fy = height ? model.h / before.h : 1.0;
+		if (keep_shape) {
+			// Both directions grow by the same amount. Asked to match both,
+			// it fits inside the other's size.
+			const double f = width && height ? std::min(fx, fy) : width ? fx : fy;
+			fx = fy = f;
+		}
+		if (std::fabs(fx - 1.0) < 1e-4 && std::fabs(fy - 1.0) < 1e-4)
+			continue;
 		if (obs_sceneitem_get_bounds_type(item) != OBS_BOUNDS_NONE) {
 			vec2 bounds;
 			obs_sceneitem_get_bounds(item, &bounds);
-			vec2_mulf(&bounds, &bounds, factor);
+			if (fx != fy) {
+				// A box that keeps the picture's shape cannot stretch it: the box
+				// becomes exactly what is drawn now, and stretches from there.
+				obs_source_t *source = obs_sceneitem_get_source(item);
+				obs_sceneitem_crop crop;
+				obs_sceneitem_get_crop(item, &crop);
+				const double w = (double)obs_source_get_width(source) - crop.left - crop.right;
+				const double h = (double)obs_source_get_height(source) - crop.top - crop.bottom;
+				double sx = 1.0, sy = 1.0;
+				item_draw_scale(item, sx, sy);
+				if (w > 0.0 && h > 0.0) {
+					bounds.x = (float)(w * sx);
+					bounds.y = (float)(h * sy);
+					obs_sceneitem_set_bounds_type(item, OBS_BOUNDS_STRETCH);
+				}
+			}
+			bounds.x *= (float)fx;
+			bounds.y *= (float)fy;
 			obs_sceneitem_set_bounds(item, &bounds);
 		} else {
 			vec2 scale;
 			obs_sceneitem_get_scale(item, &scale);
-			vec2_mulf(&scale, &scale, factor);
+			scale.x *= (float)fx;
+			scale.y *= (float)fy;
 			obs_sceneitem_set_scale(item, &scale);
 		}
 		// Its visible top-left corner stays where it was.

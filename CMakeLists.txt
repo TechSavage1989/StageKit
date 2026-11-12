@@ -56,10 +56,14 @@ target_sources(
     src/capture/program-trigger.cpp
     src/capture/program-trigger.hpp
     src/common/scene-util.hpp
+    src/common/shown-scale.cpp
+    src/common/shown-scale.hpp
     src/common/start-image.cpp
     src/common/start-image.hpp
     src/dock/arrange.cpp
     src/dock/arrange.hpp
+    src/dock/arrange-tools.cpp
+    src/dock/arrange-tools.hpp
     src/dock/stagekit-dock.cpp
     src/dock/stagekit-dock.hpp
     src/placement/scene-tools.cpp

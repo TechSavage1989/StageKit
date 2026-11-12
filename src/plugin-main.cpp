@@ -31,6 +31,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "placement/place-item.hpp"
 #include "placement/scene-tools.hpp"
 #include "placement/visibility-link.hpp"
+#include "dock/arrange-tools.hpp"
 #include "shadow/shadow-backdrop.hpp"
 #include "view/cropped-view.hpp"
 #include "zoom/ramp-zoom.hpp"
@@ -67,6 +68,7 @@ void frontend_save_load(obs_data_t *save_data, bool saving, void *)
 		stagekit::start_image_save(save_data);
 	else
 		stagekit::start_image_load(save_data);
+	stagekit::arrange_save_load(save_data, saving);
 
 	for (GlobalHotkey &hk : g_hotkeys) {
 		if (saving) {
@@ -106,6 +108,7 @@ bool obs_module_load(void)
 	stagekit::register_layout();
 	for (GlobalHotkey &hk : g_hotkeys)
 		hk.id = obs_hotkey_register_frontend(hk.name, obs_module_text(hk.text), blur_all_hotkey, &hk);
+	stagekit::register_arrange_hotkeys();
 	obs_frontend_add_save_callback(frontend_save_load, nullptr);
 	obs_log(LOG_INFO, "plugin loaded successfully (version %s)", PLUGIN_VERSION);
 	return true;

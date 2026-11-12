@@ -17,6 +17,8 @@
 #include <QComboBox>
 #include <QImage>
 #include <QLabel>
+#include <QMenu>
+#include <QContextMenuEvent>
 #include <QMouseEvent>
 #include <QWheelEvent>
 #include <QPixmap>
@@ -2044,25 +2046,25 @@ int main(int argc, char **argv)
 				tick_box("arrangeVisible", false);
 				against(0);
 				select_only({ibadge});
-				CHECK(click("alignRight"), "the dock has line-up buttons");
+				CHECK(click("arrange_right"), "the dock has line-up buttons");
 				vec2 bp = pos_of(ibadge);
 				CHECK(std::fabs(bp.x - 440) < 0.6,
 				      "by its box, an item's box meets the screen's edge (x %.0f)", bp.x);
 
 				// By what is visible: the drawn 100 px meets the edge; the empty 50 px hangs off.
 				tick_box("arrangeVisible", true);
-				click("alignRight");
+				click("arrange_right");
 				bp = pos_of(ibadge);
 				CHECK(std::fabs(bp.x - 490) < 1.6,
 				      "by what is visible, the drawn picture meets the edge instead (x %.0f)", bp.x);
-				click("alignTop");
+				click("arrange_top");
 				bp = pos_of(ibadge);
 				CHECK(std::fabs(bp.y + 30) < 1.6, "the same up and down (y %.0f)", bp.y);
 
 				// Each other: three blocks share the left edge of the left-most.
 				against(1);
 				select_only({ia, ib, ic});
-				click("alignLeft");
+				click("arrange_left");
 				CHECK(std::fabs(pos_of(ia).x - 20) < 0.6 && std::fabs(pos_of(ib).x - 20) < 0.6 &&
 					      std::fabs(pos_of(ic).x - 20) < 0.6,
 				      "'each other' lines several items up on the same edge (%.0f, %.0f, %.0f)",
@@ -2072,7 +2074,7 @@ int main(int argc, char **argv)
 				place(ia, 0, 10);
 				place(ib, 130, 10);
 				place(ic, 560, 10);
-				click("spaceAcross");
+				click("arrange_space_across");
 				CHECK(std::fabs(pos_of(ib).x - 300) < 0.6 && std::fabs(pos_of(ia).x) < 0.6 &&
 					      std::fabs(pos_of(ic).x - 560) < 0.6,
 				      "spacing out makes the gaps equal and leaves the outer two alone (middle at %.0f)",
@@ -2080,7 +2082,7 @@ int main(int argc, char **argv)
 
 				// Same width: the others become as wide as the top-most selected (C, 40 px).
 				select_only({ia, ic});
-				click("sameWidth");
+				click("arrange_same_width");
 				vec2 sa;
 				obs_sceneitem_get_scale(ia, &sa);
 				CHECK(std::fabs(sa.x - 0.4) < 0.005 && std::fabs(sa.y - 0.4) < 0.005,
@@ -2088,16 +2090,86 @@ int main(int argc, char **argv)
 				vec2_set(&sa, 1.0f, 1.0f);
 				obs_sceneitem_set_scale(ia, &sa);
 
+				// Without 'keep shape', only the direction asked for changes.
+				tick_box("arrangeKeepShape", false);
+				click("arrange_same_width");
+				obs_sceneitem_get_scale(ia, &sa);
+				CHECK(std::fabs(sa.x - 0.4) < 0.005 && std::fabs(sa.y - 1.0) < 0.005,
+				      "with 'keep shape' off, 'same width' stretches across only (scale %.2f x %.2f)",
+				      sa.x, sa.y);
+				click("arrange_same_size");
+				obs_sceneitem_get_scale(ia, &sa);
+				CHECK(std::fabs(sa.x - 0.4) < 0.005 && std::fabs(sa.y - 0.8) < 0.005,
+				      "'same size' then matches both directions (scale %.2f x %.2f)", sa.x, sa.y);
+				tick_box("arrangeKeepShape", true);
+				vec2_set(&sa, 1.0f, 1.0f);
+				obs_sceneitem_set_scale(ia, &sa);
+				click("arrange_same_size");
+				obs_sceneitem_get_scale(ia, &sa);
+				CHECK(std::fabs(sa.x - 0.4) < 0.005 && std::fabs(sa.y - 0.4) < 0.005,
+				      "with 'keep shape' on, 'same size' fits inside the other evenly (scale %.2f)",
+				      sa.x);
+				vec2_set(&sa, 1.0f, 1.0f);
+				obs_sceneitem_set_scale(ia, &sa);
+
+				// The same tools from a right-click in OBS's preview, without the dock.
+				{
+					calldata_t install = {};
+					proc_handler_call(obs_get_proc_handler(), "stagekit_install_preview_menu",
+							  &install);
+					calldata_free(&install);
+					obs_source_t *was_out = obs_get_output_source(0);
+					obs_set_output_source(0, as_source);
+					QWidget preview;
+					preview.setObjectName("preview");
+					QContextMenuEvent asked(QContextMenuEvent::Mouse, QPoint(5, 5), QPoint(5, 5));
+					QCoreApplication::sendEvent(&preview, &asked);
+					QMenu popup;
+					popup.addAction("Transform");
+					popup.show();
+					QCoreApplication::processEvents();
+					auto *sub = popup.findChild<QMenu *>("stagekitArrangeMenu");
+					CHECK(sub != nullptr, "a right-click in the preview offers a StageKit menu");
+					place(ia, 300, 20);
+					against(0);
+					select_only({ia});
+					if (sub) {
+						if (auto *entry = sub->findChild<QAction *>("menu_left"))
+							entry->trigger();
+						if (auto *entry = sub->findChild<QAction *>("menuKeepShape"))
+							entry->setChecked(false);
+					}
+					for (int i = 0; i < 12; i++) {
+						QCoreApplication::processEvents();
+						sleep_ms(50);
+					}
+					CHECK(std::fabs(pos_of(ia).x) < 0.6,
+					      "its entries act on the selected items (x %.0f)", pos_of(ia).x);
+					auto *keep = dock->findChild<QCheckBox *>("arrangeKeepShape");
+					CHECK(keep && !keep->isChecked(), "and its options are the dock's options");
+					tick_box("arrangeKeepShape", true);
+					popup.hide();
+					QMenu other;
+					other.addAction("Something else");
+					other.show();
+					QCoreApplication::processEvents();
+					CHECK(other.findChild<QMenu *>("stagekitArrangeMenu") == nullptr,
+					      "other menus are left alone");
+					other.hide();
+					obs_set_output_source(0, was_out);
+					obs_source_release(was_out);
+				}
+
 				// Snap: the badge's drawn left edge is 8 px short of block B's right edge.
 				place(ib, 100, 150);     // B covers x 100..160
 				place(ibadge, 118, 250); // drawn part starts at 168
 				select_only({ibadge});
-				click("snapNow");
+				click("arrange_snap_now");
 				bp = pos_of(ibadge);
 				CHECK(std::fabs(bp.x - 110) < 1.6,
 				      "snapping moves the last few pixels so visible edges meet (x %.0f)", bp.x);
 				place(ibadge, 300, 250); // nothing within reach
-				click("snapNow");
+				click("arrange_snap_now");
 				CHECK(std::fabs(pos_of(ibadge).x - 300) < 3.1,
 				      "and leaves an item alone when nothing is near");
 
@@ -2147,9 +2219,36 @@ int main(int argc, char **argv)
 				      "the dock no longer has a picture of the scene");
 			}
 
-			// A start image with a very long file name: the dock must stay
-			// as narrow as before, and show a small picture of it.
+			// The start image and background live in a dock of their own. A very
+			// long file name must not widen it, and it shows a small picture.
 			{
+				// Chosen before the dock exists, as when OBS starts.
+				{
+					calldata_t pre = {};
+					calldata_set_string(&pre, "path", base_image);
+					proc_handler_call(obs_get_proc_handler(), "stagekit_set_start_image", &pre);
+					calldata_free(&pre);
+				}
+				calldata_t bd = {};
+				proc_handler_call(obs_get_proc_handler(), "stagekit_create_background_dock", &bd);
+				auto *background_dock = static_cast<QWidget *>(calldata_ptr(&bd, "widget"));
+				calldata_free(&bd);
+				CHECK(background_dock && dock->findChild<QLabel *>("startThumb") == nullptr,
+				      "the start image and background have a dock of their own");
+				if (!background_dock)
+					background_dock = new QWidget();
+				background_dock->resize(340, 320);
+				for (int i = 0; i < 4; i++) {
+					QCoreApplication::processEvents();
+					sleep_ms(50);
+				}
+				{
+					auto *first = background_dock->findChild<QLabel *>("startThumb");
+					CHECK(first && !first->pixmap().isNull(),
+					      "a start image chosen before the dock opened shows its picture at once");
+				}
+				QWidget *items_dock = dock;
+				dock = background_dock;
 				const int narrow = dock->minimumSizeHint().width();
 				const std::string long_name =
 					out + "/a_very_long_start_image_file_name_that_goes_on_and_on_and_on_and_on_"
@@ -2224,6 +2323,25 @@ int main(int argc, char **argv)
 				CHECK(mean_abs_diff(scene_before, scene_after) < 0.01,
 				      "the scene itself is not zoomed or moved (diff %.3f)",
 				      mean_abs_diff(scene_before, scene_after));
+				dock->resize(340, dock->sizeHint().height());
+				QCoreApplication::processEvents();
+				dock->grab().save(QString::fromStdString(out + "/../stagekit-background-dock.png"));
+				delete dock;
+				dock = items_dock;
+			}
+
+			// The Arrange box names what its buttons will move.
+			{
+				for (int i = 0; i < 12; i++) {
+					QCoreApplication::processEvents();
+					sleep_ms(50);
+				}
+				auto *target = dock->findChild<QLabel *>("arrangeTarget");
+				auto *items = dock->findChild<QComboBox *>("item");
+				CHECK(target && items && !items->currentText().isEmpty() &&
+					      target->text().contains(items->currentText().left(20)),
+				      "the Arrange box names the item it will move (%s)",
+				      target ? target->text().toUtf8().constData() : "");
 			}
 
 			dock->resize(340, dock->sizeHint().height());
