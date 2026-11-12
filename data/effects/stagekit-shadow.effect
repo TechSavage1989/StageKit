@@ -1,0 +1,99 @@
+// StageKit Shadow & Backdrop
+//
+// Card     places the source inside a larger, padded picture, optionally on
+//          a backdrop panel and with rounded corners. Output is premultiplied.
+// Compose  slides a (blurred) copy of the card's alpha underneath as the
+//          shadow and writes straight alpha for the rest of OBS.
+
+uniform float4x4 ViewProj;
+uniform texture2d image;
+uniform texture2d shadow;
+
+uniform float2 out_size;        // padded picture size in pixels
+uniform float2 src_size;        // source size in pixels
+uniform float2 pad;             // left / top padding in pixels
+uniform float radius;           // corner radius in pixels
+uniform float backdrop_on;
+uniform float backdrop_pad;     // how far the panel extends past the source
+uniform float4 backdrop_color;  // straight alpha
+
+uniform float2 shadow_offset;   // pixels
+uniform float4 shadow_color;    // straight alpha; a = opacity
+uniform float shadow_gain;      // > 1 spreads the shadow outwards
+uniform float hide_source;      // 1 = draw the shadow only
+
+sampler_state linearClamp {
+	Filter   = Linear;
+	AddressU = Clamp;
+	AddressV = Clamp;
+};
+
+struct VertData {
+	float4 pos : POSITION;
+	float2 uv  : TEXCOORD0;
+};
+
+VertData VSDefault(VertData v_in)
+{
+	VertData vert_out;
+	vert_out.pos = mul(float4(v_in.pos.xyz, 1.0), ViewProj);
+	vert_out.uv  = v_in.uv;
+	return vert_out;
+}
+
+// Anti-aliased coverage of a rounded rectangle.
+float round_rect(float2 p, float2 center, float2 half_size, float r)
+{
+	float rr = min(r, min(half_size.x, half_size.y));
+	float2 q = abs(p - center) - half_size + float2(rr, rr);
+	float d = length(max(q, float2(0.0, 0.0))) + min(max(q.x, q.y), 0.0) - rr;
+	return saturate(0.5 - d);
+}
+
+float4 PSCard(VertData v_in) : TARGET
+{
+	float2 p = v_in.uv * out_size;
+	float2 center = pad + src_size * 0.5;
+
+	float2 suv = (p - pad) / src_size;
+	float inside = step(0.0, suv.x) * step(suv.x, 1.0) * step(0.0, suv.y) * step(suv.y, 1.0);
+	float4 c = image.Sample(linearClamp, saturate(suv));
+	float ca = c.a * inside * round_rect(p, center, src_size * 0.5, radius);
+
+	float ba = backdrop_on * backdrop_color.a *
+		   round_rect(p, center, src_size * 0.5 + float2(backdrop_pad, backdrop_pad), radius + backdrop_pad);
+
+	float3 rgb = c.rgb * ca + backdrop_color.rgb * ba * (1.0 - ca);
+	float a = ca + ba * (1.0 - ca);
+	return float4(rgb, a);
+}
+
+float4 PSCompose(VertData v_in) : TARGET
+{
+	float4 card = image.Sample(linearClamp, v_in.uv) * (1.0 - hide_source);
+	float2 suv = v_in.uv - shadow_offset / out_size;
+	float inside = step(0.0, suv.x) * step(suv.x, 1.0) * step(0.0, suv.y) * step(suv.y, 1.0);
+	float sa = saturate(shadow.Sample(linearClamp, suv).a * shadow_gain) * shadow_color.a * inside;
+
+	float3 rgb = card.rgb + shadow_color.rgb * sa * (1.0 - card.a);
+	float a = card.a + sa * (1.0 - card.a);
+	return float4(rgb / max(a, 0.00001), a);
+}
+
+technique Card
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSCard(v_in);
+	}
+}
+
+technique Compose
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSCompose(v_in);
+	}
+}
