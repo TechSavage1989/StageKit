@@ -158,16 +158,23 @@ Add **Auto Frame (StageKit)** as the first filter on a game, window or capture-c
 frame's width and height once. From then on the source always has that size, and whatever the game or
 emulator outputs is fitted inside it, gliding to its new fit when the resolution changes.
 
-| Setting | What it does |
+The top line of the controls says which program is being captured and which picture shape applies.
+The settings are in five numbered groups:
+
+| Group | What is in it |
 | --- | --- |
-| Copy the frame size | Pick a scene and an item, press *Use that item's size*: no numbers to type |
-| Black bars | Trim them automatically, trim by a set amount, or leave them. Automatic trims only when the picture left is a standard game shape, so a game with a black background is not mistaken for bars |
-| Programs with a known shape | Lines such as `snes9x = 4:3`: when the captured program matches, that shape is used at once |
-| Fit the picture | Whole picture visible, whole-number scale (crisp pixel art), fill the frame, or stretch |
-| Picture shape | As captured, or shown as 4:3, 16:9, 8:7, 3:2, 10:9, 16:10, 5:4, 1:1 or a custom shape |
-| Sit it | Where the picture sits in the frame when the shapes differ |
-| Sharp pixels | Turns smoothing off |
-| Glide time | How long the picture takes to settle after a resolution change |
+| 1. Frame size | Width and height, or pick a scene and an item and press *Use that item's size* |
+| 2. Picture | Fit (whole picture, whole-number scale, fill, stretch), picture shape, where it sits, sharp pixels |
+| 3. Black bars | Trim automatically, trim a set amount, or leave them. Automatic trims only when the picture left is a standard game shape, so a game with a black background is not mistaken for bars |
+| 4. Picture shape for each program | Shapes used at once when that program is captured (see below) |
+| 5. Movement | How long the picture takes to settle after a resolution change |
+
+**Picture shape for each program.** Common emulators are known already: Snes9x, bsnes, mGBA,
+VisualBoyAdvance, Project64, DuckStation, ePSXe, Kega Fusion, BlastEm, Flycast, Redream, PPSSPP, BGB,
+SameBoy and Gambatte. For anything else, or to change one of those, choose the program from the list of
+open programs (or find its file with *…or find it on this computer*), choose its shape and press
+*Remember this shape for this program*. Your own shapes win over the built-in ones. Emulators that play
+several consoles, such as RetroArch and Dolphin, are not built in because their shape depends on the game.
 
 To set the shape from a Stream Deck, add **Picture Shape key (StageKit)** next to Auto Frame, once per
 shape, and point a *Filter* key at it. Switching it on sets the shape and it switches itself off; a key

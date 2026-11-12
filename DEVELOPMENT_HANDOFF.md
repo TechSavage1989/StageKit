@@ -56,6 +56,14 @@ exclusions. Its Win32 code has never run; expect the detection rule to need tuni
 reports. Send To: the owner said the point of "send it to" was Stream Deck keys for camera spots, set
 up as a filter on the camera itself, and that they will not use the dock's buttons for it.
 
+The owner confirmed on Windows (0.1.0-beta8) that Auto Capture loads and captured Snes9x. They found
+its controls and Auto Frame's unintuitive: long labels cut off and tall list boxes. 0.1.0-beta10 and
+beta11 redo both: a status line, short labels, numbered groups, picking programs from what is open or
+by browsing, and one-line text lists (`rules_text`, `never`, `always`) in place of editable list boxes;
+the old array settings are still read. Auto Frame also has a built-in table of emulator shapes
+(`kKnownPrograms`); the owner's saved shapes win. The status lines are read when the filter window
+opens. Keep labels short enough to fit OBS's narrow filter window.
+
 Reported problems still open: the owner wants to drag items and zoom points on a picture in the dock
 and zoom with the mouse wheel; a Match Item item "dropping behind others" has not been reproduced.
 Addressed in 0.1.0-beta4, awaiting the owner's check on Windows: the dock reaching nested scenes and

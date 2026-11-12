@@ -986,6 +986,51 @@ int main(int argc, char **argv)
 				rules = obs_data_array_create();
 				obs_data_set_array(bf, "rules", rules);
 				obs_data_array_release(rules);
+
+				// The controls say what is captured and which shape applies.
+				{
+					obs_properties_t *props = obs_source_properties(trimmer);
+					const std::string status =
+						obs_property_description(obs_properties_get(props, "status"));
+					CHECK(status.find("snes9x-x64.exe") != std::string::npos &&
+						      status.find("4:3") != std::string::npos,
+					      "the controls name the program and its shape (%s)", status.c_str());
+					obs_properties_destroy(props);
+				}
+
+				// With no rule of the owner's, a common emulator's shape is known.
+				obs_source_update(trimmer, bf);
+				sleep_ms(1300);
+				{
+					obs_properties_t *props = obs_source_properties(trimmer);
+					const std::string status =
+						obs_property_description(obs_properties_get(props, "status"));
+					CHECK(status.find("64:49") != std::string::npos,
+					      "a common emulator's picture shape is known without a rule (%s)",
+					      status.c_str());
+
+					// Choose a program and a shape, press the button: it is saved.
+					obs_data_set_string(bf, "rule_program", "Snes9x-x64.exe");
+					obs_data_set_string(bf, "rule_shape", "4:3");
+					obs_source_update(trimmer, bf);
+					sleep_ms(100);
+					obs_property_button_clicked(obs_properties_get(props, "rule_add"), trimmer);
+					obs_properties_destroy(props);
+					obs_data_t *now = obs_source_get_settings(trimmer);
+					const std::string saved = obs_data_get_string(now, "rules_text");
+					obs_data_set_string(bf, "rules_text", saved.c_str());
+					obs_data_release(now);
+					CHECK(saved == "snes9x-x64 = 4:3", "'Remember this shape' saves it (%s)",
+					      saved.c_str());
+				}
+				auto [t10, p10] = look(1800);
+				CHECK(std::fabs(t10 - 80) <= 1.0 && is(p10, 0, 0, 800, 600),
+				      "and a saved shape wins over the built-in one (trim %.0f)", t10);
+				obs_data_set_string(bf, "rules_text", "");
+				obs_data_set_bool(bf, "known_programs", false);
+				obs_data_t *capture_reset = obs_source_get_settings(barred);
+				obs_data_set_string(capture_reset, "window", "");
+				obs_data_release(capture_reset);
 				obs_source_update(trimmer, bf);
 				look(1300);
 			}
