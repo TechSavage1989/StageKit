@@ -120,15 +120,19 @@ public:
 		const double margin = fills ? 0.0 : std::min({s.margin, bw / 2.0 - 1.0, bh / 2.0 - 1.0});
 		const double aw = bw - 2.0 * margin, ah = bh - 2.0 * margin;
 		const double k = std::min(aw / pw, ah / ph);
-		// The fit itself is left to OBS's bounding box, which is worked out
-		// afresh for every frame drawn: a window being resized stays fitted
-		// without lagging a frame behind. The box is what the item draws at
-		// this scale (the picture and any shadow room round it), placed so
-		// the picture sits centred.
-		const double drawn_w = sw - crop.left - crop.right, drawn_h = sh - crop.top - crop.bottom;
-		const double want_w = drawn_w * k, want_h = drawn_h * k;
-		const double x = bx + (bw - pw * k) / 2.0 - (left - crop.left) * k;
-		const double y = by + (bh - ph * k) / 2.0 - (top - crop.top) * k;
+		// The fit itself is left to OBS's bounding box, which OBS works out
+		// afresh for every frame it draws. The box is the space the picture
+		// may take, grown by whatever the item draws round the picture (a
+		// shadow's room) at this scale, so that OBS's own "scale to inner
+		// bounds" lands the picture exactly in that space, centred. While the
+		// picture only changes size, as a window does while it is dragged
+		// larger, the box stays as it is and OBS keeps the picture fitted on
+		// every frame: nothing here has to catch up a frame later.
+		const double room_l = left - crop.left, room_t = top - crop.top;
+		const double room_r = right - crop.right, room_b = bottom - crop.bottom;
+		const double want_w = aw + (room_l + room_r) * k, want_h = ah + (room_t + room_b) * k;
+		const double x = bx + margin - room_l * k;
+		const double y = by + margin - room_t * k;
 
 		vec2 pos, bounds;
 		obs_sceneitem_get_pos(item, &pos);

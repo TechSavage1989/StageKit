@@ -1026,25 +1026,67 @@ int main(int argc, char **argv)
 		obs_source_filter_add(obs_scene_get_source(full), fit);
 		obs_source_t *before_out = obs_get_output_source(0);
 		obs_set_output_source(0, obs_scene_get_source(full));
-		auto where = [&] {
+		// Where the picture really ends up: the scene is drawn and the light
+		// rectangle (the colour source; a shadow is black) is found in it.
+		struct Seen {
+			int x, y, w, h;
+		};
+		auto picture = [&] {
 			sleep_ms(400);
-			// The fit is the item's bounding box: how big it draws the source.
-			vec2 p, box;
+			const std::vector<uint8_t> px = render(obs_scene_get_source(full), 640, 360);
+			int x0 = 640, y0 = 360, x1 = -1, y1 = -1;
+			for (int y = 0; y < 360; y++) {
+				for (int x = 0; x < 640; x++) {
+					const uint8_t *p = &px[(size_t(y) * 640 + x) * 4];
+					if (p[3] > 128 && p[0] > 100) {
+						x0 = std::min(x0, x);
+						y0 = std::min(y0, y);
+						x1 = std::max(x1, x);
+						y1 = std::max(y1, y);
+					}
+				}
+			}
+			return Seen{x0, y0, x1 - x0 + 1, y1 - y0 + 1};
+		};
+		auto is_at = [](const Seen &s, int x, int y, int w, int h) {
+			return std::abs(s.x - x) <= 2 && std::abs(s.y - y) <= 2 && std::abs(s.w - w) <= 3 &&
+			       std::abs(s.h - h) <= 3;
+		};
+		auto box_of = [&] {
+			vec2 p, b;
 			obs_sceneitem_get_pos(item, &p);
-			obs_sceneitem_get_bounds(item, &box);
+			obs_sceneitem_get_bounds(item, &b);
 			struct {
-				double x, y, k;
-			} out{p.x, p.y, box.x / std::max(1u, obs_source_get_width(game))};
+				double x, y, w, h;
+			} out{p.x, p.y, b.x, b.y};
 			return out;
 		};
-		auto at = where();
-		CHECK(std::fabs(at.x - 120) < 0.6 && std::fabs(at.y - 30) < 0.6 && std::fabs(at.k - 1.0) < 0.002,
-		      "a squarer picture floats centred inside the margin (%.0f, %.0f at %.2fx)", at.x, at.y, at.k);
+		Seen at = picture();
+		CHECK(is_at(at, 120, 30, 400, 300), "a squarer picture floats centred inside the margin (%d, %d %dx%d)",
+		      at.x, at.y, at.w, at.h);
+
+		// A window dragged wider: OBS itself keeps it fitted, frame by frame.
+		// Fit Item's box is the space allowed, so it has nothing to change.
+		{
+			const auto before = box_of();
+			sized(game, 500, 300);
+			at = picture();
+			const auto after = box_of();
+			CHECK(is_at(at, 70, 30, 500, 300),
+			      "a picture that changes size stays fitted and centred (%d, %d %dx%d)", at.x, at.y, at.w,
+			      at.h);
+			CHECK(std::fabs(before.w - 580) < 0.1 && std::fabs(before.h - 300) < 0.1 &&
+				      std::fabs(after.x - before.x) < 0.1 && std::fabs(after.y - before.y) < 0.1 &&
+				      std::fabs(after.w - before.w) < 0.1 && std::fabs(after.h - before.h) < 0.1,
+			      "and the item's box did not have to change for it (%.0fx%.0f at %.0f, %.0f)", after.w,
+			      after.h, after.x, after.y);
+			sized(game, 400, 300);
+		}
 
 		sized(game, 1280, 720); // a widescreen game
-		at = where();
-		CHECK(std::fabs(at.x) < 0.6 && std::fabs(at.y) < 0.6 && std::fabs(at.k - 0.5) < 0.002,
-		      "a picture with the screen's shape fills the screen (%.0f, %.0f at %.2fx)", at.x, at.y, at.k);
+		at = picture();
+		CHECK(is_at(at, 0, 0, 640, 360), "a picture with the screen's shape fills the screen (%d, %d %dx%d)",
+		      at.x, at.y, at.w, at.h);
 
 		// With a shadow, it is the picture that is centred, not picture plus shadow.
 		sized(game, 400, 300);
@@ -1059,10 +1101,9 @@ int main(int argc, char **argv)
 		obs_data_release(ss);
 		obs_source_filter_add(game, shadow);
 		sleep_ms(600);
-		at = where();
-		CHECK(obs_source_get_width(game) == 420 && std::fabs(at.x - 100) < 0.6 && std::fabs(at.y - 10) < 0.6 &&
-			      std::fabs(at.k - 1.0) < 0.002,
-		      "with a shadow on it, the picture itself stays centred (item at %.0f, %.0f)", at.x, at.y);
+		at = picture();
+		CHECK(obs_source_get_width(game) == 420 && is_at(at, 120, 30, 400, 300),
+		      "with a shadow on it, the picture itself stays centred (%d, %d %dx%d)", at.x, at.y, at.w, at.h);
 		obs_source_filter_remove(game, shadow);
 		obs_source_release(shadow);
 		sleep_ms(300);
@@ -1075,10 +1116,9 @@ int main(int argc, char **argv)
 		obs_data_set_double(fs, "box_height", 300);
 		obs_source_update(fit, fs);
 		sized(game, 800, 600);
-		at = where();
-		CHECK(std::fabs(at.x - 20) < 0.6 && std::fabs(at.y - 40) < 0.6 && std::fabs(at.k - 0.5) < 0.002,
-		      "it can fit a box of its own instead of the whole screen (%.0f, %.0f at %.2fx)", at.x, at.y,
-		      at.k);
+		at = picture();
+		CHECK(is_at(at, 20, 40, 400, 300),
+		      "it can fit a box of its own instead of the whole screen (%d, %d %dx%d)", at.x, at.y, at.w, at.h);
 
 		// Auto Frame as just the picture: the source is the trimmed picture.
 		obs_data_t *as = obs_data_create();
@@ -1098,11 +1138,10 @@ int main(int argc, char **argv)
 		CHECK(obs_source_get_width(game) == 1080 && obs_source_get_height(game) == 1080,
 		      "Auto Frame as 'just the picture' makes the source the trimmed picture at the height asked for (%ux%u)",
 		      obs_source_get_width(game), obs_source_get_height(game));
-		at = where();
+		at = picture();
 		// A square picture inside the 400x300 box less its 30 px margin: 240x240, centred.
-		CHECK(std::fabs(at.k - 240.0 / 1080.0) < 0.002 && std::fabs(at.x - 100) < 0.6 &&
-			      std::fabs(at.y - 70) < 0.6,
-		      "and Fit Item places that picture (%.0f, %.0f at %.2fx)", at.x, at.y, at.k);
+		CHECK(is_at(at, 100, 70, 240, 240), "and Fit Item places that picture (%d, %d %dx%d)", at.x, at.y, at.w,
+		      at.h);
 
 		// The game goes from a window to full-screen at the same shape: nothing moves.
 		{
