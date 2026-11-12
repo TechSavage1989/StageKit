@@ -55,6 +55,13 @@ jobs:
             *) echo 'validTag=false' >> $GITHUB_OUTPUT ;;
           esac
 
+      - name: Check Out Release Notes 📝
+        uses: actions/checkout@v4
+        if: fromJSON(steps.check.outputs.validTag)
+        with:
+          path: repo-source
+          sparse-checkout: docs/releases
+
       - name: Download Build Artifacts 📥
         uses: actions/download-artifact@v4
         if: fromJSON(steps.check.outputs.validTag)
@@ -95,7 +102,14 @@ jobs:
           if [[ "${RUNNER_DEBUG}" ]]; then set -x; fi
           shopt -s extglob
 
-          echo "### Checksums" > ${{ github.workspace }}/CHECKSUMS.txt
+          : Release body: the notes from docs/releases, then the checksums
+          notes="${{ github.workspace }}/repo-source/docs/releases/${{ steps.check.outputs.version }}.md"
+          : > ${{ github.workspace }}/CHECKSUMS.txt
+          if [[ -f "${notes}" ]]; then
+            tail -n +2 "${notes}" >> ${{ github.workspace }}/CHECKSUMS.txt
+            echo "" >> ${{ github.workspace }}/CHECKSUMS.txt
+          fi
+          echo "### Checksums" >> ${{ github.workspace }}/CHECKSUMS.txt
           for file in ${{ github.workspace }}/@(*.exe|*.deb|*.ddeb|*.pkg|*.tar.xz|*.zip); do
             echo "    ${file##*/}: $(sha256sum "${file}" | cut -d " " -f 1)" >> ${{ github.workspace }}/CHECKSUMS.txt
           done
