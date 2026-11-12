@@ -17,6 +17,7 @@
 #include <QComboBox>
 #include <QImage>
 #include <QLabel>
+#include <QListWidget>
 #include <QMenu>
 #include <QContextMenuEvent>
 #include <QMouseEvent>
@@ -2603,6 +2604,67 @@ int main(int argc, char **argv)
 				      "'each other' lines several items up on the same edge (%.0f, %.0f, %.0f)",
 				      pos_of(ia).x, pos_of(ib).x, pos_of(ic).x);
 
+				// First or last selected: that one stays put and the others come to it.
+				{
+					auto settle = [&] {
+						for (int i = 0; i < 8; i++) {
+							QCoreApplication::processEvents();
+							sleep_ms(50);
+						}
+					};
+					place(ia, 50, 10);
+					place(ib, 220, 100);
+					place(ic, 400, 200);
+					select_only({ib});
+					settle();
+					obs_sceneitem_select(ic, true);
+					settle();
+					obs_sceneitem_select(ia, true);
+					settle();
+					auto *list = dock->findChild<QListWidget *>("arrangeSelected");
+					CHECK(list && list->count() == 3 && list->item(0)->text() == "Block B" &&
+						      list->item(1)->text() == "Block C" &&
+						      list->item(2)->text() == "Block A",
+					      "the dock lists every selected item, in the order selected (%d rows)",
+					      list ? list->count() : 0);
+					against(3);
+					settle();
+					CHECK(list && list->count() == 3 &&
+						      list->item(2)->text().startsWith("Block A") &&
+						      list->item(2)->text() != "Block A",
+					      "and marks the one the others will line up to (%s)",
+					      list && list->count() == 3 ? list->item(2)->text().toUtf8().constData()
+									 : "");
+					click("arrange_left");
+					CHECK(std::fabs(pos_of(ia).x - 50) < 0.6 &&
+						      std::fabs(pos_of(ib).x - 50) < 0.6 &&
+						      std::fabs(pos_of(ic).x - 50) < 0.6,
+					      "'last selected' brings the others to the last item selected (%.0f, %.0f, %.0f)",
+					      pos_of(ia).x, pos_of(ib).x, pos_of(ic).x);
+					place(ib, 220, 100);
+					place(ic, 400, 200);
+					against(2);
+					click("arrange_left");
+					CHECK(std::fabs(pos_of(ib).x - 220) < 0.6 &&
+						      std::fabs(pos_of(ia).x - 220) < 0.6 &&
+						      std::fabs(pos_of(ic).x - 220) < 0.6,
+					      "'first selected' brings them to the first instead (%.0f, %.0f, %.0f)",
+					      pos_of(ia).x, pos_of(ib).x, pos_of(ic).x);
+					// Sizes copy that item too: B (60 wide) was selected first.
+					click("arrange_same_width");
+					vec2 scale_a;
+					obs_sceneitem_get_scale(ia, &scale_a);
+					CHECK(std::fabs(scale_a.x - 0.6) < 0.005,
+					      "and 'same width' copies that item's width (scale %.2f)", scale_a.x);
+					vec2 one;
+					vec2_set(&one, 1.0f, 1.0f);
+					for (obs_sceneitem_t *item : {ia, ib, ic})
+						obs_sceneitem_set_scale(item, &one);
+					against(1);
+					select_only({ia, ib, ic});
+					settle();
+				}
+
 				// Space out: A (100 wide) at 0, C (40) ending at 600, B (60) between: equal 200 px gaps.
 				place(ia, 0, 10);
 				place(ib, 130, 10);
@@ -2941,12 +3003,12 @@ int main(int argc, char **argv)
 					QCoreApplication::processEvents();
 					sleep_ms(50);
 				}
-				auto *target = dock->findChild<QLabel *>("arrangeTarget");
+				auto *target = dock->findChild<QListWidget *>("arrangeSelected");
 				auto *items = dock->findChild<QComboBox *>("item");
-				CHECK(target && items && !items->currentText().isEmpty() &&
-					      target->text().contains(items->currentText().left(20)),
-				      "the Arrange box names the item it will move (%s)",
-				      target ? target->text().toUtf8().constData() : "");
+				CHECK(target && items && !items->currentText().isEmpty() && target->count() == 1 &&
+					      target->item(0)->text() == items->currentText(),
+				      "the Arrange box lists the item it will move (%s)",
+				      target && target->count() ? target->item(0)->text().toUtf8().constData() : "");
 			}
 
 			dock->resize(340, dock->sizeHint().height());

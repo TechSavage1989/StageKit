@@ -204,6 +204,14 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Align to the first or last selected; selection list (0.1.0-beta36)
+
+Asked for by the owner on 2026-11-12. `Against` gains `First` and `Last` (saved values 2 and 3).
+OBS keeps no selection order, so `selection_in_order()` (`src/dock/arrange-tools.*`) notes it by being
+called often; the dock calls it every 120 ms. Items selected together fall back to Sources-list order.
+The size tools copy the key item with First/Last and the top-most item otherwise. The dock's
+*Selected* list (`arrangeSelected`) replaces the one-line "Moves: ..." label.
+
 ## Undo and redo (0.1.0-beta35)
 
 The owner: "transforms in stage kit don't respond to undo or redo". `run_arrange` now takes

@@ -236,7 +236,10 @@ int align_items(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items
 
 	// What to line up with: the screen, or the outline of all the items.
 	Box target{0, 0, (double)obs_source_get_width(scene), (double)obs_source_get_height(scene)};
-	if (against == Against::Selection && items.size() > 1) {
+	if ((against == Against::First || against == Against::Last) && items.size() > 1) {
+		// The items come in the order they were selected.
+		target = against == Against::First ? boxes.front() : boxes.back();
+	} else if (against == Against::Selection && items.size() > 1) {
 		double x0 = 1e18, y0 = 1e18, x1 = -1e18, y1 = -1e18;
 		for (const Box &b : boxes) {
 			x0 = std::min(x0, b.x);

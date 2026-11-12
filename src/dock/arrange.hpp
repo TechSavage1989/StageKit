@@ -27,7 +27,9 @@ struct Measure {
 };
 
 enum class Edge { Left, Center, Right, Top, Middle, Bottom };
-enum class Against { Screen, Selection };
+// Saved in settings: append only. First and Last are the first and last item
+// selected, which then stays put while the others come to it.
+enum class Against { Screen, Selection, First, Last };
 
 // Where an item is on its scene's canvas, by its box or by what shows.
 Box measure_item(obs_source_t *scene, obs_sceneitem_t *item, const Measure &how);
