@@ -604,6 +604,18 @@ obs_properties_t *get_properties(void *data)
 
 } // namespace
 
+std::vector<std::string> open_program_names()
+{
+	std::vector<std::string> names;
+	for (const Window &w : list_windows()) {
+		if (built_in_never(lower(w.executable)))
+			continue;
+		if (std::find(names.begin(), names.end(), w.executable) == names.end())
+			names.push_back(w.executable);
+	}
+	return names;
+}
+
 void register_auto_capture()
 {
 	obs_source_info info = {};

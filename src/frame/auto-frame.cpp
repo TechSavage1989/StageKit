@@ -19,6 +19,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include "auto-frame.hpp"
 
+#include "../capture/auto-capture.hpp"
 #include "../common/easing.hpp"
 #include "../common/scene-util.hpp"
 
@@ -86,6 +87,7 @@ struct Settings {
 	// program being captured (rules: text found in the program -> shape).
 	double force_ratio = 0.0;
 	std::vector<std::pair<std::string, double>> rules;
+	bool known_programs = true; // use the built-in shapes for common emulators
 	double glide_s = 0.35;
 	EaseCurve curve = EaseCurve::Cubic;
 	EaseMode mode = EaseMode::InOut;
@@ -208,6 +210,51 @@ bool parse_rule(const std::string &line, std::string &program, double &ratio)
 	return !program.empty() && ratio > 0.0;
 }
 
+// The picture shape common emulators show with their usual settings, so
+// they need no rule. A rule of the owner's for the same program wins.
+// Emulators that play several consoles (RetroArch, Mednafen, Dolphin,
+// PCSX2) are left out on purpose: their shape depends on the game.
+const struct {
+	const char *program;
+	const char *shape;
+} kKnownPrograms[] = {
+	{"snes9x", "64:49"}, {"bsnes", "64:49"},   {"higan", "64:49"},  {"mgba", "3:2"},      {"visualboy", "3:2"},
+	{"vba-m", "3:2"},    {"project64", "4:3"}, {"mupen64", "4:3"},  {"simple64", "4:3"},  {"duckstation", "4:3"},
+	{"epsxe", "4:3"},    {"fusion", "4:3"},    {"blastem", "4:3"},  {"flycast", "4:3"},   {"redream", "4:3"},
+	{"ppsspp", "16:9"},  {"bgb", "10:9"},      {"sameboy", "10:9"}, {"gambatte", "10:9"},
+};
+
+// "64:49" for a ratio that has a usual name, otherwise the number.
+std::string ratio_name(double ratio)
+{
+	for (const char *name : {"16:9", "16:10", "3:2", "4:3", "64:49", "5:4", "8:7", "10:9", "16:15", "1:1"})
+		if (std::fabs(parse_ratio(name) - ratio) < 0.002)
+			return name;
+	char text[32];
+	snprintf(text, sizeof(text), "%.3f", ratio);
+	return text;
+}
+
+// Rules as one line of text: "snes9x = 4:3, mgba = 3:2".
+void parse_rules_text(const std::string &text, std::vector<std::pair<std::string, double>> &out)
+{
+	std::string line;
+	auto flush = [&] {
+		std::string program;
+		double ratio = 0.0;
+		if (parse_rule(line, program, ratio))
+			out.emplace_back(program, ratio);
+		line.clear();
+	};
+	for (char c : text) {
+		if (c == ',' || c == ';' || c == '\n')
+			flush();
+		else
+			line += c;
+	}
+	flush();
+}
+
 class AutoFrame {
 public:
 	AutoFrame(obs_data_t *settings, obs_source_t *source) : source_(source)
@@ -287,6 +334,9 @@ public:
 		s.trim_y = std::max(0.0, obs_data_get_double(settings, "trim_y"));
 		s.trim_wait_s = std::max(0.0, obs_data_get_double(settings, "trim_wait"));
 		s.force_ratio = std::max(0.0, obs_data_get_double(settings, "force_ratio"));
+		s.known_programs = obs_data_get_bool(settings, "known_programs");
+		parse_rules_text(obs_data_get_string(settings, "rules_text"), s.rules);
+		// 0.1.0-beta6 to beta9 kept the rules in a list box.
 		obs_data_array_t *rules = obs_data_get_array(settings, "rules");
 		for (size_t i = 0; i < obs_data_array_count(rules); i++) {
 			obs_data_t *entry = obs_data_array_item(rules, i);
@@ -313,14 +363,27 @@ public:
 		if (identity_timer_ <= 0.0) {
 			identity_timer_ = 1.0;
 			const std::string program = captured_program();
+			const std::string executable = captured_executable();
 			std::lock_guard lock(mutex_);
 			rule_ratio = 0.0;
+			rule_built_in_ = false;
 			for (const auto &[text, ratio] : settings_.rules) {
 				if (!program.empty() && program.find(text) != std::string::npos) {
 					rule_ratio = ratio;
 					break;
 				}
 			}
+			if (rule_ratio <= 0.0 && settings_.known_programs && !executable.empty()) {
+				const std::string exe = lower(executable);
+				for (const auto &known : kKnownPrograms) {
+					if (exe.find(known.program) != std::string::npos) {
+						rule_ratio = parse_ratio(known.shape);
+						rule_built_in_ = true;
+						break;
+					}
+				}
+			}
+			program_ = executable;
 		}
 		std::lock_guard lock(mutex_);
 		pending_time_ += seconds;
@@ -361,6 +424,70 @@ public:
 		text += obs_data_get_string(settings, "window");
 		obs_data_release(settings);
 		return lower(text);
+	}
+
+	// The file name of the program being captured ("snes9x-x64.exe"), or
+	// empty when the source is not capturing a program.
+	std::string captured_executable()
+	{
+		obs_source_t *parent = obs_filter_get_parent(source_);
+		if (!parent)
+			return {};
+		std::string executable;
+		calldata_t cd = {};
+		if (proc_handler_call(obs_source_get_proc_handler(parent), "get_hooked", &cd)) {
+			const char *value = nullptr;
+			if (calldata_get_string(&cd, "executable", &value) && value)
+				executable = value;
+		}
+		calldata_free(&cd);
+		if (executable.empty()) {
+			// The "window" setting is title:class:executable, with ':' in
+			// a part written "#3A".
+			obs_data_t *settings = obs_source_get_settings(parent);
+			const std::string window = obs_data_get_string(settings, "window");
+			obs_data_release(settings);
+			const size_t colon = window.rfind(':');
+			if (colon != std::string::npos)
+				executable = window.substr(colon + 1);
+		}
+		return executable;
+	}
+
+	// For the controls: what is being captured and which shape applies.
+	void status(std::string &program, double &ratio, bool &built_in, bool &forced)
+	{
+		std::lock_guard lock(mutex_);
+		program = program_;
+		forced = settings_.force_ratio > 0.0;
+		ratio = forced ? settings_.force_ratio : rule_ratio_;
+		built_in = rule_built_in_;
+	}
+
+	// Stores "program = shape" in the saved shapes, replacing an earlier
+	// entry for the same program.
+	bool remember_shape()
+	{
+		obs_data_t *settings = obs_source_get_settings(source_);
+		std::string program = lower(obs_data_get_string(settings, "rule_program"));
+		const std::string shape = obs_data_get_string(settings, "rule_shape");
+		if (program.size() > 4 && program.compare(program.size() - 4, 4, ".exe") == 0)
+			program.resize(program.size() - 4);
+		const bool ok = !program.empty() && parse_ratio(shape) > 0.0;
+		if (ok) {
+			std::vector<std::pair<std::string, double>> rules;
+			parse_rules_text(obs_data_get_string(settings, "rules_text"), rules);
+			std::string text;
+			for (const auto &[name, ratio] : rules) {
+				if (name != program)
+					text += name + " = " + ratio_name(ratio) + ", ";
+			}
+			text += program + " = " + shape;
+			obs_data_set_string(settings, "rules_text", text.c_str());
+			obs_source_update(source_, settings);
+		}
+		obs_data_release(settings);
+		return ok;
 	}
 
 	// Asks for the bars to be measured from the picture as it is right now
@@ -707,6 +834,8 @@ private:
 	double measured_[2] = {0.0, 0.0};
 	double identity_timer_ = 0.0;
 	double rule_ratio_ = 0.0;
+	bool rule_built_in_ = false;
+	std::string program_;
 	bool measured_ready_ = false;
 	int probe_axis_ = 0;
 	gs_texrender_t *tr_probe_ = nullptr;
@@ -724,7 +853,7 @@ bool shape_modified(obs_properties_t *props, obs_property_t *, obs_data_t *setti
 	obs_property_set_visible(obs_properties_get(props, "custom_h"), custom);
 	const auto trim = static_cast<Trim>(obs_data_get_int(settings, "trim"));
 	obs_property_set_visible(obs_properties_get(props, "trim_wait"), trim == Trim::Automatic);
-	obs_property_set_visible(obs_properties_get(props, "rules"), trim == Trim::Automatic);
+	obs_property_set_visible(obs_properties_get(props, "programs_group"), trim == Trim::Automatic);
 	obs_property_set_visible(obs_properties_get(props, "trim_x"), trim == Trim::Manual);
 	obs_property_set_visible(obs_properties_get(props, "trim_y"), trim == Trim::Manual);
 	return true;
@@ -764,8 +893,43 @@ bool copy_frame_clicked(obs_properties_t *, obs_property_t *, void *data)
 	return changed;
 }
 
+void show_status(obs_properties_t *props, AutoFrame *self)
+{
+	std::string program;
+	double ratio = 0.0;
+	bool built_in = false, forced = false;
+	if (self)
+		self->status(program, ratio, built_in, forced);
+	auto fill = [](std::string text, const std::string &with) {
+		const size_t at = text.find("%1");
+		if (at != std::string::npos)
+			text.replace(at, 2, with);
+		return text;
+	};
+	std::string text = program.empty() ? obs_module_text("Frame.Status.NoProgram")
+					   : fill(obs_module_text("Frame.Status.Program"), program);
+	text += " ";
+	if (ratio <= 0.0)
+		text += obs_module_text("Frame.Status.Auto");
+	else
+		text += fill(obs_module_text(forced     ? "Frame.Status.Key"
+					     : built_in ? "Frame.Status.BuiltIn"
+							: "Frame.Status.Yours"),
+			     ratio_name(ratio));
+	obs_property_set_description(obs_properties_get(props, "status"), text.c_str());
+}
+
 obs_properties_t *get_properties(void *data)
 {
+	auto *self = static_cast<AutoFrame *>(data);
+	obs_properties_t *top = obs_properties_create();
+
+	// What it sees right now.
+	obs_property_t *status = obs_properties_add_text(top, "status", "", OBS_TEXT_INFO);
+	obs_property_text_set_info_word_wrap(status, true);
+	show_status(top, self);
+
+	// 1. The frame.
 	obs_properties_t *props = obs_properties_create();
 	obs_properties_add_int(props, "frame_width", obs_module_text("Frame.Width"), 2, 16384, 1);
 	obs_properties_add_int(props, "frame_height", obs_module_text("Frame.Height"), 2, 16384, 1);
@@ -789,6 +953,10 @@ obs_properties_t *get_properties(void *data)
 	obs_properties_add_button2(copy, "copy_frame", obs_module_text("Frame.CopyButton"), copy_frame_clicked,
 				   data ? static_cast<AutoFrame *>(data)->source() : nullptr);
 	obs_properties_add_group(props, "copy_group", obs_module_text("Frame.CopyGroup"), OBS_GROUP_NORMAL, copy);
+	obs_properties_add_group(top, "size_group", obs_module_text("Frame.SizeGroup"), OBS_GROUP_NORMAL, props);
+
+	// 2. How the picture sits in it.
+	props = obs_properties_create();
 
 	obs_property_t *fit = obs_properties_add_list(props, "fit", obs_module_text("Frame.Fit"), OBS_COMBO_TYPE_LIST,
 						      OBS_COMBO_FORMAT_INT);
@@ -822,6 +990,11 @@ obs_properties_t *get_properties(void *data)
 	obs_property_list_add_int(ay, obs_module_text("Frame.Top"), 0);
 	obs_property_list_add_int(ay, obs_module_text("Frame.Center"), 1);
 	obs_property_list_add_int(ay, obs_module_text("Frame.Bottom"), 2);
+	obs_properties_add_bool(props, "sharp", obs_module_text("Frame.Sharp"));
+	obs_properties_add_group(top, "picture_group", obs_module_text("Frame.PictureGroup"), OBS_GROUP_NORMAL, props);
+
+	// 3. Black bars.
+	props = obs_properties_create();
 
 	obs_property_t *trim = obs_properties_add_list(props, "trim", obs_module_text("Frame.Trim"),
 						       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
@@ -837,8 +1010,6 @@ obs_properties_t *get_properties(void *data)
 			return false;
 		},
 		data);
-	obs_properties_add_editable_list(props, "rules", obs_module_text("Frame.Rules"), OBS_EDITABLE_LIST_TYPE_STRINGS,
-					 nullptr, nullptr);
 	obs_property_t *wait =
 		obs_properties_add_float_slider(props, "trim_wait", obs_module_text("Frame.TrimWait"), 0.0, 15.0, 0.5);
 	obs_property_float_set_suffix(wait, " s");
@@ -849,15 +1020,67 @@ obs_properties_t *get_properties(void *data)
 		obs_properties_add_float(props, "trim_y", obs_module_text("Frame.TrimY"), 0.0, 8000.0, 1.0);
 	obs_property_float_set_suffix(ty, " px");
 
-	obs_properties_add_bool(props, "sharp", obs_module_text("Frame.Sharp"));
+	obs_properties_add_group(top, "bars_group", obs_module_text("Frame.BarsGroup"), OBS_GROUP_NORMAL, props);
+
+	// 4. Shapes for programs: built in for common emulators, and the
+	// owner's own, chosen from what is open or found on the computer.
+	props = obs_properties_create();
+	obs_properties_add_bool(props, "known_programs", obs_module_text("Frame.Known"));
+	obs_property_t *program = obs_properties_add_list(props, "rule_program", obs_module_text("Frame.RuleProgram"),
+							  OBS_COMBO_TYPE_EDITABLE, OBS_COMBO_FORMAT_STRING);
+	if (self) {
+		std::vector<std::string> names;
+		const std::string captured = self->captured_executable();
+		if (!captured.empty())
+			names.push_back(captured);
+		for (const std::string &name : open_program_names())
+			if (std::find(names.begin(), names.end(), name) == names.end())
+				names.push_back(name);
+		for (const std::string &name : names)
+			obs_property_list_add_string(program, name.c_str(), name.c_str());
+	}
+	obs_property_t *browse = obs_properties_add_path(props, "rule_browse", obs_module_text("Frame.RuleBrowse"),
+							 OBS_PATH_FILE, "Programs (*.exe);;All files (*.*)", nullptr);
+	obs_property_set_modified_callback(browse, [](obs_properties_t *, obs_property_t *, obs_data_t *settings) {
+		// Choosing a file fills in the program box above.
+		std::string path = obs_data_get_string(settings, "rule_browse");
+		if (path.empty())
+			return false;
+		const size_t slash = path.find_last_of("/\\");
+		if (slash != std::string::npos)
+			path = path.substr(slash + 1);
+		obs_data_set_string(settings, "rule_program", path.c_str());
+		obs_data_set_string(settings, "rule_browse", "");
+		return true;
+	});
+	obs_property_t *rule_shape = obs_properties_add_list(props, "rule_shape", obs_module_text("Frame.RuleShape"),
+							     OBS_COMBO_TYPE_EDITABLE, OBS_COMBO_FORMAT_STRING);
+	for (const char *name : {"4:3", "64:49", "8:7", "3:2", "10:9", "16:9", "16:10", "5:4", "1:1"})
+		obs_property_list_add_string(rule_shape, name, name);
+	obs_properties_add_button2(
+		props, "rule_add", obs_module_text("Frame.RuleAdd"),
+		[](obs_properties_t *, obs_property_t *, void *d) {
+			return d && static_cast<AutoFrame *>(d)->remember_shape();
+		},
+		data);
+	obs_property_t *saved =
+		obs_properties_add_text(props, "rules_text", obs_module_text("Frame.Rules"), OBS_TEXT_DEFAULT);
+	obs_property_set_long_description(saved, obs_module_text("Frame.Rules.Tip"));
+	obs_properties_add_group(top, "programs_group", obs_module_text("Frame.ProgramsGroup"), OBS_GROUP_NORMAL,
+				 props);
+
+	// 5. Movement.
+	props = obs_properties_create();
 	obs_property_t *glide =
 		obs_properties_add_int_slider(props, "glide_ms", obs_module_text("Frame.Glide"), 0, 5000, 50);
 	obs_property_int_set_suffix(glide, " ms");
 	add_easing_properties(props, "");
 
-	obs_property_t *help = obs_properties_add_text(props, "help", obs_module_text("Frame.Help"), OBS_TEXT_INFO);
+	obs_properties_add_group(top, "motion_group", obs_module_text("Frame.MotionGroup"), OBS_GROUP_NORMAL, props);
+
+	obs_property_t *help = obs_properties_add_text(top, "help", obs_module_text("Frame.Help"), OBS_TEXT_INFO);
 	obs_property_text_set_info_word_wrap(help, true);
-	return props;
+	return top;
 }
 
 void get_defaults(obs_data_t *settings)
@@ -878,6 +1101,8 @@ void get_defaults(obs_data_t *settings)
 	obs_data_set_default_double(settings, "trim_x", 0.0);
 	obs_data_set_default_double(settings, "trim_y", 0.0);
 	obs_data_set_default_double(settings, "force_ratio", 0.0);
+	obs_data_set_default_bool(settings, "known_programs", true);
+	obs_data_set_default_string(settings, "rule_shape", "4:3");
 	obs_data_set_default_int(settings, "glide_ms", 350);
 	obs_data_set_default_int(settings, "ease_curve", (int)EaseCurve::Cubic);
 	obs_data_set_default_int(settings, "ease_mode", (int)EaseMode::InOut);
