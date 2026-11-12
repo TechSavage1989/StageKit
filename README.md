@@ -67,7 +67,9 @@ StageKit is in pre-release. Builds for Windows, macOS and Linux are on the relea
 - [All releases, including pre-releases](https://github.com/TechSavage1989/StageKit/releases)
 
 On Windows, pick the file ending in `windows-x64-Installer.exe` (from the second pre-release onward), or
-the `windows-x64` zip to copy the files yourself. There is no stable release yet, so the "latest release" shortcut
+the `windows-x64` zip to copy the files yourself. The installer shows the folder it will install to
+(`C:\ProgramData\obs-studio\plugins\stagekit`) and lets you change it; OBS only loads plugins from its
+own plugins folder, so change it only if your OBS uses a different one, such as a portable copy. There is no stable release yet, so the "latest release" shortcut
 does not point anywhere. Release notes are kept in [docs/releases](docs/releases).
 
 ## Requirements
