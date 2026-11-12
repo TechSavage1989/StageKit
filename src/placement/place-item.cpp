@@ -136,22 +136,6 @@ void collect_in(obs_source_t *scene_source, obs_source_t *wanted, std::vector<Ta
 	obs_scene_enum_items(scene, collect_item, &c);
 }
 
-// The scene the audience is looking at. The caller releases it.
-obs_source_t *scene_on_screen()
-{
-	obs_source_t *scene = obs_frontend_get_current_scene();
-	if (scene)
-		return scene;
-	// Without the OBS window (the tests): whatever is on the main output.
-	obs_source_t *output = obs_get_output_source(0);
-	if (output && obs_source_get_type(output) == OBS_SOURCE_TYPE_TRANSITION) {
-		obs_source_t *active = obs_transition_get_active_source(output);
-		obs_source_release(output);
-		output = active;
-	}
-	return output;
-}
-
 // Everywhere a source sits: in the scene on screen (looking inside nested
 // scenes and groups), or in every scene.
 std::vector<Target> places_of(obs_source_t *wanted, bool every_scene)

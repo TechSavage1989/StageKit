@@ -156,6 +156,10 @@ Add **Shadow & Backdrop (StageKit)** as a filter on a source, group or scene. Se
 opacity, offset, softness (0 gives a hard edge) and spread. Optionally add a panel behind the source and
 round the corners.
 
+Sizes are as they look on screen: with *Sizes as they look on screen* ticked (the default), 20 px of
+shadow is 20 px in the finished picture however much the item is scaled, so a small camera and a large
+panel get the same shadow. Untick it to give sizes in the source's own pixels.
+
 The shadow needs room around the source, so the source itself gets bigger. With *Keep the picture
 where it is* ticked (the default), the source's items in every scene are adjusted by exactly that room:
 the picture keeps its size and place whatever the softness, offset or panel margin, including inside a

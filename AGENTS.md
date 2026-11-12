@@ -111,6 +111,9 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   (`AmbientView` in `src/common/start-image.*`), not an item's size.
 - **Dock keys are Send To filters on the item's source**, not Place Item filters on the scene. The
   owner presses them from Stream Deck Filter keys on the camera.
+- **Shadow sizes are in screen pixels by default.** The owner's old shadows sat on full-canvas scenes,
+  so 20 px was 20 px everywhere; a filter on a scaled item is not. The filter divides its sizes by how
+  big the item is drawn in the scene on screen (`find_shown_scale`).
 - **Shadow & Backdrop moves scene items on purpose.** The shadow's room makes the source bigger; the
   filter shifts each item showing the source (and grows its bounding box) by that room so the picture
   stays put, and remembers what it applied in `adjusted_*` settings. Anything else that changes the

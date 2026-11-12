@@ -204,6 +204,13 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Shadow sizes (0.1.0-beta21)
+
+The owner imported rebuild draft 2 with beta19 and it loaded (Cropped Views included). First report:
+a 20 px shadow looked much smaller on the camera than on the chat box. Cause: shadow sizes were in the
+source's pixels, and the camera view is drawn at about 0.48 while the chat box is drawn at 1.29.
+Shadow & Backdrop now sizes by the scale the item has in the scene on screen.
+
 ## Dock rework (0.1.0-beta20)
 
 The owner said the dock's live scene picture was not what they meant. What they asked for, in their

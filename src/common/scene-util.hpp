@@ -11,6 +11,7 @@ the Free Software Foundation; either version 2 of the License, or
 #pragma once
 
 #include <obs.h>
+#include <obs-frontend-api.h>
 #include <graphics/matrix4.h>
 #include <graphics/vec2.h>
 #include <graphics/vec3.h>
@@ -125,6 +126,22 @@ inline void add_scene_items_to_list(obs_source_t *scene_source, obs_property_t *
 			return true;
 		},
 		list);
+}
+
+// The scene the audience is looking at. The caller releases it.
+inline obs_source_t *scene_on_screen()
+{
+	obs_source_t *scene = obs_frontend_get_current_scene();
+	if (scene)
+		return scene;
+	// Without the OBS window (the tests): whatever is on the main output.
+	obs_source_t *output = obs_get_output_source(0);
+	if (output && obs_source_get_type(output) == OBS_SOURCE_TYPE_TRANSITION) {
+		obs_source_t *active = obs_transition_get_active_source(output);
+		obs_source_release(output);
+		output = active;
+	}
+	return output;
 }
 
 } // namespace stagekit
