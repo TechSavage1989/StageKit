@@ -36,9 +36,11 @@ the Free Software Foundation; either version 2 of the License, or
 #include <QFormLayout>
 #include <QGridLayout>
 #include <QGroupBox>
+#include <QImageReader>
 #include <QInputDialog>
 #include <QLabel>
 #include <QLineEdit>
+#include <QPixmap>
 #include <QPushButton>
 #include <QSpinBox>
 #include <QStringList>
@@ -146,7 +148,17 @@ public:
 		auto *start_layout = new QVBoxLayout(start_box);
 		start_label_ = new QLabel(start_box);
 		start_label_->setObjectName("startImage");
-		start_label_->setWordWrap(true);
+		// A long file name must not set the dock's width: the label takes
+		// whatever room there is and the name is shortened to fit.
+		start_label_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
+		start_label_->setMinimumWidth(0);
+		start_label_->setFixedHeight(start_label_->fontMetrics().height() + 6);
+		start_label_->setAlignment(Qt::AlignCenter);
+		start_thumb_ = new QLabel(start_box);
+		start_thumb_->setObjectName("startThumb");
+		start_thumb_->setAlignment(Qt::AlignCenter);
+		start_thumb_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
+		start_thumb_->setFixedHeight(kThumbHeight);
 		auto *choose = new QPushButton(tr_text("Dock.StartChoose"), start_box);
 		choose->setObjectName("chooseStartImage");
 		QObject::connect(choose, &QPushButton::clicked, this, [this] {
@@ -159,6 +171,7 @@ public:
 				refresh();
 			}
 		});
+		start_layout->addWidget(start_thumb_);
 		start_layout->addWidget(start_label_);
 		start_layout->addWidget(choose);
 		layout->addWidget(start_box);
@@ -227,8 +240,30 @@ public:
 	void refresh()
 	{
 		const QString start = QString::fromUtf8(start_image_path().c_str());
-		start_label_->setText(start.isEmpty() ? tr_text("Dock.StartNone") : QFileInfo(start).fileName());
+		QString name = start.isEmpty() ? tr_text("Dock.StartNone") : QFileInfo(start).fileName();
+		if (name.size() > 40)
+			name = name.left(22) + QStringLiteral("…") + name.right(16);
+		start_label_->setText(name);
 		start_label_->setToolTip(start);
+		if (start != thumb_path_) {
+			// Read the picture already shrunk, so a large image costs little.
+			thumb_path_ = start;
+			QPixmap picture;
+			if (!start.isEmpty()) {
+				QImageReader reader(start);
+				reader.setAutoTransform(true);
+				const QSize size = reader.size();
+				if (size.isValid())
+					reader.setScaledSize(
+						size.scaled(kThumbHeight * 3, kThumbHeight, Qt::KeepAspectRatio));
+				picture = QPixmap::fromImageReader(&reader);
+				if (!picture.isNull() && picture.height() > kThumbHeight)
+					picture = picture.scaledToHeight(kThumbHeight, Qt::SmoothTransformation);
+			}
+			start_thumb_->setPixmap(picture);
+			start_thumb_->setVisible(!picture.isNull());
+			start_thumb_->setToolTip(start);
+		}
 
 		// Scene list: "the scene on screen" first, then every scene by name.
 		QStringList scenes;
@@ -473,7 +508,10 @@ private:
 	}
 
 	std::string fixed_scene_;
+	static constexpr int kThumbHeight = 120;
 	QLabel *start_label_ = nullptr;
+	QLabel *start_thumb_ = nullptr;
+	QString thumb_path_ = QStringLiteral("\x01"); // nothing loaded yet
 	QStringList names_;
 	QStringList scenes_;
 	QComboBox *scene_ = nullptr;

@@ -134,8 +134,8 @@ Put it in one shared scene and nest that scene wherever you need the background.
 
 ### Start image
 
-Choose the start image once, in the StageKit dock under *Start image*. It is saved with the scene
-collection.
+Choose the start image once, in the StageKit dock under *Start image*. The dock shows a small picture
+of it. It is saved with the scene collection.
 
 - Add **Start Image (StageKit)** as a source wherever the picture itself should be shown.
 - In an Ambient Background, set *Background from* to *The start image* so the moving background uses the
