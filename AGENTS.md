@@ -21,7 +21,7 @@ for an update notice inside OBS. This exception is recorded in the handoff.
 | `src/plugin-main.cpp` | Module entry: registers every filter and source, global hotkeys, the obs-websocket vendor |
 | `src/blur/` | Ramp Blur filter (owns its own multi-type blur pipeline) |
 | `src/ambient/` | Ambient Background source |
-| `src/shadow/` | Shadow & Backdrop filter |
+| `src/shadow/` | Shadow, Glow & Outline filter (id `stagekit_shadow_backdrop`, its first name): shadow or glow in a colour or the picture's own colours, outline, panel, rounded corners |
 | `src/zoom/` | Ramp Zoom filter |
 | `src/shape/` | Corners & Edges filter (rounds, cuts, notches or scoops corners; trims, softens and outlines edges; never changes the source's size) |
 | `src/view/` | Cropped View source (part of another source as a source, so filters follow the crop) |
@@ -127,12 +127,12 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
 - **Shadow sizes are in screen pixels by default.** The owner's old shadows sat on full-canvas scenes,
   so 20 px was 20 px everywhere; a filter on a scaled item is not. The filter divides its sizes by how
   big the item is drawn in the scene on screen (`find_shown_scale`).
-- **Shadow & Backdrop moves scene items on purpose.** The shadow's room makes the source bigger; the
+- **Shadow, Glow & Outline moves scene items on purpose.** The shadow's room makes the source bigger; the
   filter shifts each item showing the source (and grows its bounding box) by that room so the picture
   stays put, and remembers what it applied in `adjusted_*` settings. Anything else that changes the
   room around a source must go through `keep_picture_in_place`, not around it.
 - **Corners & Edges must never change a source's size.** Everything that makes it safe beside the
-  other tools rests on that. It belongs before Shadow & Backdrop in the filter list (the shadow reads
+  other tools rests on that. It belongs before Shadow, Glow & Outline in the filter list (the shadow reads
   alpha, so it follows the shape); when first added it moves itself above an existing shadow once and
   records that in its `placed` setting. After an Auto Frame it shapes the rectangle from Auto Frame's
   `get_picture`.

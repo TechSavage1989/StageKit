@@ -810,6 +810,102 @@ int main(int argc, char **argv)
 		obs_source_release(card);
 	}
 
+	// ------------------------------------------------- glow and outline
+	{
+		printf("\n[shadow, glow & outline]\n");
+		const std::string glow_out = out + "/../glow";
+		obs_data_t *gd = obs_data_create();
+		obs_data_set_int(gd, "width", 200);
+		obs_data_set_int(gd, "height", 120);
+		obs_data_set_int(gd, "color", 0xFF30C040); // green
+		obs_source_t *card = obs_source_create("color_source", "Glow Card", gd, nullptr);
+		obs_data_release(gd);
+		obs_data_t *fs = obs_data_create();
+		obs_data_set_bool(fs, "shadow", false);
+		obs_data_set_bool(fs, "outline", true);
+		obs_data_set_double(fs, "outline_width", 10);
+		obs_data_set_int(fs, "outline_color", 0xFF0000FF); // red
+		obs_source_t *filter = obs_source_create("stagekit_shadow_backdrop", "Glow", fs, nullptr);
+		obs_source_filter_add(card, filter);
+		uint32_t fw = 0, fh = 0;
+		auto look = [&](const char *name) {
+			obs_source_update(filter, fs);
+			sleep_ms(150);
+			fw = obs_source_get_width(card);
+			fh = obs_source_get_height(card);
+			std::vector<uint8_t> px = render(card, fw, fh);
+			write_frame(glow_out + "/" + name + ".rgba", px, fw, fh);
+			return px;
+		};
+		auto at = [&](const std::vector<uint8_t> &px, uint32_t x, uint32_t y) {
+			return &px[(size_t(y) * fw + x) * 4];
+		};
+
+		auto lined = look("1_outline");
+		CHECK(fw == 222 && fh == 142, "a 10 px outline adds its own room all round (%ux%u)", fw, fh);
+		const uint8_t *band = at(lined, 5, fh / 2), *inside = at(lined, fw / 2, fh / 2),
+			      *corner = at(lined, 0, 0);
+		CHECK(band[0] > 240 && band[1] < 15 && band[3] == 255 && inside[1] > 180 && inside[0] < 80 &&
+			      corner[3] == 0,
+		      "the outline is drawn round the picture in its colour (%d, %d, %d)", band[0], band[1], band[2]);
+
+		obs_data_set_int(fs, "outline_fill", 1);
+		auto own_line = look("2_outline_from_the_picture");
+		band = at(own_line, 5, fh / 2);
+		CHECK(band[1] > 150 && band[0] < 100 && band[3] == 255,
+		      "'the picture itself' gives the outline the picture's colours (%d, %d, %d)", band[0], band[1],
+		      band[2]);
+		obs_data_set_int(fs, "outline_fill", 0);
+
+		obs_data_set_bool(fs, "shadow", true);
+		obs_data_set_double(fs, "offset_x", 20);
+		obs_data_set_double(fs, "offset_y", 20);
+		obs_data_set_double(fs, "softness", 0);
+		obs_data_set_double(fs, "shadow_opacity", 100);
+		auto both = look("3_outline_and_shadow");
+		const uint8_t *cast = at(both, fw - 3, fh / 2);
+		CHECK(fw == 242 && fh == 162 && cast[3] == 255 && cast[0] < 15 && cast[1] < 15,
+		      "a shadow is cast by the picture and its outline together (%ux%u)", fw, fh);
+
+		obs_data_set_bool(fs, "outline", false);
+		obs_data_set_int(fs, "shadow_type", 1);
+		obs_data_set_double(fs, "softness", 20);
+		obs_data_set_double(fs, "spread", 40);
+		auto glow = look("4_glow");
+		const int left = at(glow, 28, fh / 2)[3], right = at(glow, fw - 29, fh / 2)[3];
+		CHECK(fw == 264 && left > 20 && std::abs(left - right) <= 3,
+		      "a glow sits evenly all round, whatever the offsets say (%u wide; %d, %d)", fw, left, right);
+
+		obs_data_set_int(fs, "shadow_fill", 1);
+		auto own_glow = look("5_glow_from_the_picture");
+		const uint8_t *halo = at(own_glow, 28, fh / 2);
+		CHECK(halo[3] > 20 && halo[1] > halo[0] + 60 && halo[1] > halo[2] + 60,
+		      "'the picture itself' gives the glow the picture's colours (%d, %d, %d, alpha %d)", halo[0],
+		      halo[1], halo[2], halo[3]);
+
+		obs_data_release(fs);
+		obs_source_filter_remove(card, filter);
+		obs_source_release(filter);
+
+		// On moving video: the glow is a soft copy of what is playing.
+		obs_data_t *ls = obs_data_create();
+		obs_data_set_int(ls, "shadow_type", 1);
+		obs_data_set_int(ls, "shadow_fill", 1);
+		obs_data_set_double(ls, "softness", 60);
+		obs_data_set_double(ls, "spread", 60);
+		obs_data_set_double(ls, "shadow_opacity", 100);
+		obs_data_set_double(ls, "radius", 30);
+		obs_source_t *live_glow = obs_source_create("stagekit_shadow_backdrop", "Glow", ls, nullptr);
+		obs_data_release(ls);
+		obs_source_filter_add(live, live_glow);
+		sleep_ms(200);
+		const uint32_t lw = obs_source_get_width(live), lh = obs_source_get_height(live);
+		write_frame(glow_out + "/6_a_game_glowing_in_its_own_colours.rgba", render(live, lw, lh), lw, lh);
+		obs_source_filter_remove(live, live_glow);
+		obs_source_release(live_glow);
+		obs_source_release(card);
+	}
+
 	// ------------------------------- background from an auto-framed capture
 	{
 		printf("\n[background from a framed capture]\n");
@@ -2240,7 +2336,7 @@ int main(int argc, char **argv)
 			}
 
 			click("addShadow");
-			obs_source_t *shadow = obs_source_get_filter_by_name(cam, "Shadow & Backdrop");
+			obs_source_t *shadow = obs_source_get_filter_by_name(cam, "Shadow, Glow & Outline");
 			CHECK(shadow != nullptr, "\"Add to this item\" puts the effect on the item's source");
 			obs_source_release(shadow);
 
