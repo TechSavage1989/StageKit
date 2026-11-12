@@ -54,6 +54,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <QElapsedTimer>
 #include <QWheelEvent>
 #include <QMouseEvent>
+#include <QResizeEvent>
 #include <QPixmap>
 #include <QPushButton>
 #include <QScrollArea>
@@ -93,8 +94,15 @@ public:
 	std::function<void(double steps)> on_wheel;
 	std::function<void(double dx, double dy)> on_drag; // in fractions of the thumbnail
 	std::function<void()> on_reset;
+	std::function<void()> on_resize;
 
 protected:
+	void resizeEvent(QResizeEvent *event) override
+	{
+		QLabel::resizeEvent(event);
+		if (on_resize && event->size().width() != event->oldSize().width())
+			on_resize();
+	}
 	void wheelEvent(QWheelEvent *event) override
 	{
 		if (on_wheel)
@@ -229,6 +237,10 @@ public:
 		start_thumb_->setAlignment(Qt::AlignCenter);
 		start_thumb_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
 		start_thumb_->setFixedHeight(kThumbHeight);
+		// The picture is as wide as the dock allows.
+		start_thumb_->on_resize = [this] {
+			show_thumb();
+		};
 		auto *choose = new QPushButton(tr_text("Dock.StartChoose"), start_box);
 		choose->setObjectName("chooseStartImage");
 		QObject::connect(choose, &QPushButton::clicked, this, [this] {
@@ -363,8 +375,16 @@ private:
 			const double w = pw / thumb_zoom_, h = ph / thumb_zoom_;
 			const double x = std::clamp(thumb_x_ * pw - w / 2.0, 0.0, pw - w);
 			const double y = std::clamp(thumb_y_ * ph - h / 2.0, 0.0, ph - h);
+			// As wide as the dock, but never so tall that the buttons below
+			// are pushed out of a short dock.
+			const int room_w = start_thumb_->width() > 40 ? start_thumb_->width() : 320;
+			const QWidget *around = parentWidget();
+			const int room_h = std::max(kThumbHeight, (around ? around->height() : 100000) - kBelowThumb);
+			const QSize fit = QSizeF(w, h).scaled(room_w, room_h, Qt::KeepAspectRatio).toSize();
 			picture = thumb_full_.copy(QRectF(x, y, w, h).toRect())
-					  .scaledToHeight(kThumbHeight, Qt::SmoothTransformation);
+					  .scaled(fit, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+			if (start_thumb_->height() != fit.height())
+				start_thumb_->setFixedHeight(std::max(1, fit.height()));
 		}
 		start_thumb_->setPixmap(picture);
 		start_thumb_->setVisible(!picture.isNull());
@@ -393,6 +413,7 @@ private:
 	}
 
 	static constexpr int kThumbHeight = 120;
+	static constexpr int kBelowThumb = 200; // the label and buttons under the picture
 	QLabel *start_label_ = nullptr;
 	Thumb *start_thumb_ = nullptr;
 	QPixmap thumb_full_;

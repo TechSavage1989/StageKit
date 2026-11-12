@@ -375,7 +375,7 @@ Studio Mode).
 
 **StageKit Background**
 
-- A thumbnail of the start image. Turn the mouse wheel on it for a closer look, drag to move around,
+- A picture of the start image, as wide as the dock. Turn the mouse wheel on it for a closer look, drag to move around,
   double-click to reset; this changes only the thumbnail, never your scene.
 - The start image is also the moving background's picture. *Background picture…* gives the
   background a picture of its own; *Background settings…* opens the Ambient Background's settings.
