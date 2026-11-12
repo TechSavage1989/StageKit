@@ -23,10 +23,11 @@ for an update notice inside OBS. This exception is recorded in the handoff.
 | `src/ambient/` | Ambient Background source |
 | `src/shadow/` | Shadow & Backdrop filter |
 | `src/zoom/` | Ramp Zoom filter |
-| `src/placement/` | Scene filters: Place Item, Show/Hide Animation, Match Item, Layout |
+| `src/placement/` | Scene filters: Place Item, Show/Hide Animation, Match Item, Layout; and Send To, Place Item's code as a filter on the source it moves |
 | `src/dock/` | The StageKit dock (Qt widget, no `Q_OBJECT`; it drives Place Item filters) |
 | `src/common/` | Shared helpers: easing and `Tween`, `SwitchRamp`, `KawaseBlur`, scene utilities, and the start image (global path + Start Image source) |
 | `src/frame/` | Auto Frame filter and the Picture Shape key filter |
+| `src/capture/` | Auto Capture filter (aims a Game Capture at the game in front; Win32 only, compiled but idle elsewhere) |
 | `src/api/` | obs-websocket vendor requests (`StageKit` vendor) |
 | `src/third-party/` | Vendored `obs-websocket-api.h`, kept byte-for-byte (excluded from clang-format) |
 | `data/effects/` | Shaders in OBS `.effect` format |
@@ -96,8 +97,14 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   to a brightness-only rule: the owner hit it with Snes9x (Aladdin's title screen) and the picture
   resized repeatedly. The owner wants no manual steps when switching games; program rules and Picture
   Shape keys are the fallbacks.
-- **Trigger filters** (Place Item, Layout) switch themselves off after running and ignore the enabled
+- **Trigger filters** (Send To, Place Item, Layout) switch themselves off after running and ignore the enabled
   state restored at load (`ready_`), so they do not fire when OBS starts.
+- **Auto Capture's Windows code is only compiled by CI and never run by the tests.** The tests feed it
+  stand-in windows through its `set_test_windows` call. The owner wants no list of games to maintain:
+  detection is by loaded modules (graphics engine plus controller support, or full-screen), with a
+  *Never capture* list for mistakes. Do not make a program list the default again.
+- **The owner triggers camera moves from Stream Deck Filter keys on the camera source**, not from the
+  dock's buttons. Send To exists for that; keep its controls complete without the dock.
 - **Deprecated libobs calls fail CI** (warnings are errors). Avoid `obs_sceneitem_get_info`; use the
   individual position, scale, rotation and bounds calls.
 - **`.gitignore` is an allowlist.** A new top-level file or folder is ignored until it is added there

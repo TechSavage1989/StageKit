@@ -26,9 +26,12 @@ from hotkeys, or from the Stream Deck OBS Studio plugin's *Filter* and *Source* 
   wrapper scene.
 - **Auto Frame** (filter): gives a game or emulator capture a fixed frame and fits any resolution inside
   it, so one scene serves every picture shape.
+- **Auto Capture** (filter): one Game Capture finds whatever game is running, windowed or full-screen,
+  with no list of games to keep. Windows only.
 - **Ramp Zoom** (filter): zooms smoothly into a point of a source and back out.
-- **Place Item** (scene filter): sends an item to one of nine screen positions or a saved spot, and can
-  bring a linked item along.
+- **Send To** (filter): put it on your camera, once per spot. Each one is a Stream Deck key that moves
+  the camera to a corner or to a spot you saved.
+- **Place Item** (scene filter): the same move, set up on a scene instead of on the source.
 - **Show/Hide Animation** (scene filter): slides or pops an item in and out when it is shown or hidden.
 - **Match Item** (scene filter): keeps an item lined up with an item in another scene, so titles sit in
   the same place in every scene.
@@ -173,14 +176,49 @@ set to *Automatic* hands control back.
 Because the source's size no longer changes, one scene can replace a scene per picture shape and the
 automation that switched between them. Put Shadow & Backdrop after it and the shadow follows the picture.
 
+### Auto Capture
+
+Add **Auto Capture (StageKit)** as a filter on one *Game Capture* source. Windows only.
+
+About once a second it looks at the window in front. If that window is a game, the capture is aimed at
+it, windowed or full-screen. It stays on that game when you switch to another program, and moves on
+when the game closes or another game comes to the front. There is nothing to set up per game.
+
+- **Never capture**: programs it must leave alone. Type part of the program's file name, for example
+  `blender`. OBS, browsers, Discord, Steam's own windows and similar are already left alone.
+- **Always capture** (optional): for a game it does not pick up by itself.
+- **Capture**: *Any game, found automatically* or *Only the programs on the 'always' list*.
+- With nothing to capture, the Game Capture goes back to *Capture any fullscreen application*.
+
+A game is recognised by what the program has loaded: a graphics engine together with controller
+support, or a graphics engine in a window that fills its screen. The filter changes the Game Capture's
+own *Mode* and *Window* settings for you.
+
 ### Ramp Zoom
 
 Add **Ramp Zoom (StageKit)** as a filter on a source. Turning it on zooms into the point you choose;
 turning it off zooms back out. It has a `StageKit: Zoom Toggle` hotkey under the source.
 
+### Send To
+
+Add **Send To (StageKit)** as a filter on the source you want to move, such as your camera. Add one per
+spot and name each after its spot ("Camera top right").
+
+1. Choose where to send it: one of nine screen positions with a margin from the edge, or a saved spot.
+   For a saved spot, drag the camera where you want it in the preview and press *Save the item's
+   current spot*. Its size is saved too if you tick *Also restore the item's size*.
+2. Choose whether it moves in the scene on screen or in every scene it is in. It is found inside nested
+   scenes and groups.
+3. Optionally choose an item to bring along.
+
+On a Stream Deck, add the OBS Studio plugin's *Filter* key, pick the camera as the source and one of
+these filters. Pressing the key moves the camera; the filter switches itself off again, ready for the
+next press. Each filter also has a `StageKit: Move` hotkey under the source.
+
 ### Place Item
 
-Add **Place Item (StageKit)** as a filter on a *scene*, once per destination.
+Place Item does the same job from the scene's side. Add **Place Item (StageKit)** as a filter on a
+*scene*, once per destination.
 
 1. Choose the item to move.
 2. Choose where to send it: one of nine screen positions with a margin from the edge, or a saved spot.
@@ -256,8 +294,12 @@ to. Replacing the plugin does not change them. Hotkey bindings are stored there 
 - **A StageKit filter or source shows a blank or unchanged picture on Windows.** The shaders have only
   been tested with OpenGL. Open *Help → Log Files → View Current Log*, search for `stagekit`, and
   report any line that mentions an effect failing to load.
-- **A filter you switched on turned itself off.** Place Item and Layout do that on purpose after each
-  move.
+- **A filter you switched on turned itself off.** Send To, Place Item and Layout do that on purpose
+  after each move.
+- **Auto Capture picked up a program that is not a game.** Add part of its file name to *Never
+  capture*.
+- **Auto Capture does not pick up a game.** Add part of its file name to *Always capture*. The OBS log
+  has a line starting `Auto Capture:` each time it changes what it follows.
 - **Items inside a group are missing from a scene filter's item list.** Add the filter to the group
   itself instead.
 

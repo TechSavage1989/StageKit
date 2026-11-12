@@ -18,6 +18,10 @@ the Free Software Foundation; either version 2 of the License, or
 // coordinates to type) or a saved spot captured from wherever the item
 // currently is. A linked item (a frame, a widget) can travel with it and
 // flips to the other side when it would otherwise leave the screen.
+//
+// Send To is the same thing as a filter on the source itself ("put this on
+// the camera"): it moves that source wherever it is, in the scene on screen
+// or in every scene, so there is no scene or item to choose.
 
 #include "place-item.hpp"
 
@@ -25,6 +29,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/scene-util.hpp"
 
 #include <obs-module.h>
+#include <obs-frontend-api.h>
 #include <graphics/matrix4.h>
 #include <graphics/vec2.h>
 #include <graphics/vec3.h>
@@ -35,6 +40,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <cmath>
 #include <mutex>
 #include <string>
+#include <vector>
 
 namespace stagekit {
 
@@ -67,6 +73,7 @@ struct Settings {
 	EaseMode mode = EaseMode::InOut;
 	std::string linked;
 	bool flip_linked = true;
+	bool every_scene = false; // Send To only
 };
 
 // One item gliding from one place to another. Places are the top-left of
@@ -74,7 +81,7 @@ struct Settings {
 // scene and items inside a group.
 struct Move {
 	obs_sceneitem_t *item = nullptr; // strong reference while moving
-	obs_source_t *scene = nullptr;
+	obs_source_t *scene = nullptr;   // strong reference while moving
 	double from_x = 0, from_y = 0, to_x = 0, to_y = 0;
 	vec2 from_scale, to_scale;
 	bool scale = false;
@@ -84,7 +91,89 @@ void release_move(Move &move)
 {
 	if (move.item)
 		obs_sceneitem_release(move.item);
+	if (move.scene)
+		obs_source_release(move.scene);
 	move.item = nullptr;
+	move.scene = nullptr;
+}
+
+// One place a source sits: the scene (or nested scene) and its item there.
+struct Target {
+	obs_source_t *scene;
+	obs_sceneitem_t *item;
+};
+
+struct Collect {
+	obs_source_t *scene;
+	obs_source_t *wanted;
+	std::vector<Target> *out;
+	bool nested;
+	int depth;
+};
+
+void collect_in(obs_source_t *scene_source, obs_source_t *wanted, std::vector<Target> &out, bool nested, int depth);
+
+bool collect_item(obs_scene_t *, obs_sceneitem_t *item, void *param)
+{
+	auto *c = static_cast<Collect *>(param);
+	obs_source_t *source = obs_sceneitem_get_source(item);
+	if (source == c->wanted)
+		c->out->push_back({c->scene, item});
+	else if (obs_sceneitem_is_group(item))
+		obs_sceneitem_group_enum_items(item, collect_item, param);
+	else if (c->nested && c->depth < 8 && obs_source_is_scene(source))
+		collect_in(source, c->wanted, *c->out, true, c->depth + 1);
+	return true;
+}
+
+void collect_in(obs_source_t *scene_source, obs_source_t *wanted, std::vector<Target> &out, bool nested, int depth)
+{
+	obs_scene_t *scene = scene_of(scene_source);
+	if (!scene)
+		return;
+	Collect c{scene_source, wanted, &out, nested, depth};
+	obs_scene_enum_items(scene, collect_item, &c);
+}
+
+// The scene the audience is looking at. The caller releases it.
+obs_source_t *scene_on_screen()
+{
+	obs_source_t *scene = obs_frontend_get_current_scene();
+	if (scene)
+		return scene;
+	// Without the OBS window (the tests): whatever is on the main output.
+	obs_source_t *output = obs_get_output_source(0);
+	if (output && obs_source_get_type(output) == OBS_SOURCE_TYPE_TRANSITION) {
+		obs_source_t *active = obs_transition_get_active_source(output);
+		obs_source_release(output);
+		output = active;
+	}
+	return output;
+}
+
+// Everywhere a source sits: in the scene on screen (looking inside nested
+// scenes and groups), or in every scene.
+std::vector<Target> places_of(obs_source_t *wanted, bool every_scene)
+{
+	std::vector<Target> out;
+	if (every_scene) {
+		struct All {
+			obs_source_t *wanted;
+			std::vector<Target> *out;
+		} all{wanted, &out};
+		obs_enum_scenes(
+			[](void *param, obs_source_t *scene) {
+				auto *a = static_cast<All *>(param);
+				collect_in(scene, a->wanted, *a->out, false, 0);
+				return true;
+			},
+			&all);
+	} else {
+		obs_source_t *scene = scene_on_screen();
+		collect_in(scene, wanted, out, true, 0);
+		obs_source_release(scene);
+	}
+	return out;
 }
 
 void apply_move(const Move &move, double t)
@@ -113,7 +202,7 @@ void apply_move(const Move &move, double t)
 
 class PlaceItem {
 public:
-	PlaceItem(obs_data_t *settings, obs_source_t *source);
+	PlaceItem(obs_data_t *settings, obs_source_t *source, bool on_source);
 	~PlaceItem();
 
 	void update(obs_data_t *settings);
@@ -124,9 +213,11 @@ public:
 	bool capture_current();
 	obs_source_t *parent() const { return parent_; }
 	obs_source_t *source() const { return source_; }
+	bool on_source() const { return on_source_; }
 
 private:
 	void start();
+	void plan(const Settings &s, obs_source_t *scene, obs_sceneitem_t *item);
 	void finish();
 	void register_hotkey();
 	void unregister_hotkey();
@@ -137,6 +228,7 @@ private:
 
 	obs_source_t *source_;
 	obs_source_t *parent_ = nullptr;
+	const bool on_source_; // a Send To filter on the source it moves
 	std::mutex mutex_;
 	Settings settings_;
 	std::atomic<bool> pending_{false};
@@ -147,15 +239,16 @@ private:
 	double duration_ = 0.0;
 	EaseCurve curve_ = EaseCurve::Cubic;
 	EaseMode mode_ = EaseMode::InOut;
-	Move leader_;
-	Move follower_;
+	std::vector<Move> moves_;
 
 	obs_hotkey_id hotkey_ = OBS_INVALID_HOTKEY_ID;
 };
 
 thread_local bool t_changing_enabled = false;
 
-PlaceItem::PlaceItem(obs_data_t *settings, obs_source_t *source) : source_(source)
+PlaceItem::PlaceItem(obs_data_t *settings, obs_source_t *source, bool on_source)
+	: source_(source),
+	  on_source_(on_source)
 {
 	update(settings);
 	signal_handler_t *sh = obs_source_get_signal_handler(source_);
@@ -172,8 +265,8 @@ PlaceItem::~PlaceItem()
 	signal_handler_disconnect(sh, "enable", enable_cb, this);
 	signal_handler_disconnect(sh, "rename", rename_cb, this);
 	unregister_hotkey();
-	release_move(leader_);
-	release_move(follower_);
+	for (Move &move : moves_)
+		release_move(move);
 }
 
 void PlaceItem::update(obs_data_t *settings)
@@ -192,6 +285,7 @@ void PlaceItem::update(obs_data_t *settings)
 	s.mode = static_cast<EaseMode>(obs_data_get_int(settings, "ease_mode"));
 	s.linked = obs_data_get_string(settings, "linked");
 	s.flip_linked = obs_data_get_bool(settings, "flip_linked");
+	s.every_scene = obs_data_get_int(settings, "where") == 1;
 
 	std::lock_guard lock(mutex_);
 	settings_ = s;
@@ -222,30 +316,57 @@ void PlaceItem::start()
 		std::lock_guard lock(mutex_);
 		s = settings_;
 	}
-	release_move(leader_);
-	release_move(follower_);
+	for (Move &move : moves_)
+		release_move(move);
+	moves_.clear();
 	moving_ = false;
 
-	obs_sceneitem_t *item = find_item(parent_, s.item);
-	if (!item) {
-		obs_log(LOG_WARNING, "Place Item '%s': item '%s' is not in this scene", obs_source_get_name(source_),
-			s.item.c_str());
+	if (on_source_) {
+		for (const Target &target : places_of(parent_, s.every_scene))
+			plan(s, target.scene, target.item);
+	} else if (obs_sceneitem_t *item = find_item(parent_, s.item)) {
+		plan(s, parent_, item);
+	}
+	if (moves_.empty()) {
+		if (on_source_)
+			obs_log(LOG_WARNING, "Send To '%s': '%s' is not in the scene on screen",
+				obs_source_get_name(source_), obs_source_get_name(parent_));
+		else
+			obs_log(LOG_WARNING, "Place Item '%s': item '%s' is not in this scene",
+				obs_source_get_name(source_), s.item.c_str());
 		finish();
 		return;
 	}
-	const double canvas_w = obs_source_get_width(parent_);
-	const double canvas_h = obs_source_get_height(parent_);
+
+	elapsed_ = 0.0;
+	duration_ = s.duration_s;
+	curve_ = s.curve;
+	mode_ = s.mode;
+	moving_ = true;
+	if (duration_ <= 0.0) {
+		for (const Move &move : moves_)
+			apply_move(move, 1.0);
+		finish();
+	}
+}
+
+// Works out where one item (and whatever travels with it) should end up.
+void PlaceItem::plan(const Settings &s, obs_source_t *scene, obs_sceneitem_t *item)
+{
+	Move leader_, follower_;
+	const double canvas_w = obs_source_get_width(scene);
+	const double canvas_h = obs_source_get_height(scene);
 
 	// Leader.
 	obs_sceneitem_addref(item);
 	leader_.item = item;
-	leader_.scene = parent_;
+	leader_.scene = obs_source_get_ref(scene);
 	obs_sceneitem_get_scale(item, &leader_.from_scale);
 	leader_.to_scale = leader_.from_scale;
 	leader_.scale = false;
 	refresh_item(item);
 	// All placement maths is done in the scene's coordinates.
-	const Box box = scene_box(parent_, item);
+	const Box box = scene_box(scene, item);
 	Box target = box;
 
 	if (s.destination == Destination::Saved) {
@@ -260,7 +381,7 @@ void PlaceItem::start()
 			obs_sceneitem_set_scale(item, &leader_.to_scale);
 		}
 		obs_sceneitem_set_pos(item, &saved_pos);
-		target = scene_box(parent_, item);
+		target = scene_box(scene, item);
 		obs_sceneitem_set_pos(item, &was_pos);
 		obs_sceneitem_set_scale(item, &leader_.from_scale);
 	} else {
@@ -278,14 +399,14 @@ void PlaceItem::start()
 
 	// Linked item: keeps its place relative to the leader, mirrored to the
 	// other side if that is the only way to stay on screen.
-	obs_sceneitem_t *linked = !s.linked.empty() && s.linked != s.item ? find_item(parent_, s.linked) : nullptr;
+	obs_sceneitem_t *linked = !s.linked.empty() && s.linked != s.item ? find_item(scene, s.linked) : nullptr;
 	if (linked) {
 		obs_sceneitem_addref(linked);
 		follower_.item = linked;
 		follower_.scale = false;
-		follower_.scene = parent_;
+		follower_.scene = obs_source_get_ref(scene);
 		refresh_item(linked);
-		const Box fbox = scene_box(parent_, linked);
+		const Box fbox = scene_box(scene, linked);
 		const double dx = fbox.x - box.x;
 		const double dy = fbox.y - box.y;
 		double tx = target.x + dx;
@@ -306,24 +427,17 @@ void PlaceItem::start()
 		follower_.to_x = tx;
 		follower_.to_y = ty;
 	}
-
-	elapsed_ = 0.0;
-	duration_ = s.duration_s;
-	curve_ = s.curve;
-	mode_ = s.mode;
-	moving_ = true;
-	if (duration_ <= 0.0) {
-		apply_move(leader_, 1.0);
-		apply_move(follower_, 1.0);
-		finish();
-	}
+	moves_.push_back(leader_);
+	if (follower_.item)
+		moves_.push_back(follower_);
 }
 
 void PlaceItem::finish()
 {
 	moving_ = false;
-	release_move(leader_);
-	release_move(follower_);
+	for (Move &move : moves_)
+		release_move(move);
+	moves_.clear();
 	// Off again, so the same key or switch can trigger the next move.
 	set_enabled_quietly(false);
 }
@@ -343,11 +457,11 @@ void PlaceItem::tick(float seconds)
 
 	elapsed_ = std::min(duration_, elapsed_ + seconds);
 	const double t = ease(curve_, mode_, duration_ > 0.0 ? elapsed_ / duration_ : 1.0);
-	apply_move(leader_, t);
-	apply_move(follower_, t);
+	for (const Move &move : moves_)
+		apply_move(move, t);
 	if (elapsed_ >= duration_) {
-		apply_move(leader_, 1.0);
-		apply_move(follower_, 1.0);
+		for (const Move &move : moves_)
+			apply_move(move, 1.0);
 		finish();
 	}
 }
@@ -356,8 +470,17 @@ void PlaceItem::tick(float seconds)
 bool PlaceItem::capture_current()
 {
 	obs_data_t *settings = obs_source_get_settings(source_);
-	const std::string name = obs_data_get_string(settings, "item");
-	obs_sceneitem_t *item = find_item(parent_, name);
+	obs_sceneitem_t *item = nullptr;
+	if (on_source_) {
+		// Where it is in the scene on screen; failing that, anywhere.
+		std::vector<Target> places = places_of(parent_, false);
+		if (places.empty())
+			places = places_of(parent_, true);
+		if (!places.empty())
+			item = places.front().item;
+	} else {
+		item = find_item(parent_, obs_data_get_string(settings, "item"));
+	}
 	if (item) {
 		vec2 pos, scale;
 		obs_sceneitem_get_pos(item, &pos);
@@ -444,16 +567,13 @@ obs_properties_t *get_properties(void *data)
 	auto *self = static_cast<PlaceItem *>(data);
 	obs_properties_t *props = obs_properties_create();
 
-	obs_property_t *item = obs_properties_add_list(props, "item", obs_module_text("Place.Item"),
-						       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
-	obs_property_t *linked = obs_properties_add_list(props, "linked", obs_module_text("Place.Linked"),
-							 OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
-	obs_property_list_add_string(linked, obs_module_text("Place.Linked.None"), "");
+	const bool on_source = self && self->on_source();
 	obs_source_t *parent = self ? self->parent() : nullptr;
-	add_scene_items_to_list(parent, item);
-	add_scene_items_to_list(parent, linked);
-	obs_property_set_modified_callback(linked, destination_modified);
-
+	if (!on_source) {
+		obs_property_t *item = obs_properties_add_list(props, "item", obs_module_text("Place.Item"),
+							       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
+		add_scene_items_to_list(parent, item);
+	}
 	obs_property_t *dest = obs_properties_add_list(props, "destination", obs_module_text("Place.Destination"),
 						       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	const char *names[] = {"Place.TopLeft",     "Place.TopCenter",   "Place.TopRight",   "Place.MiddleLeft",
@@ -476,6 +596,24 @@ obs_properties_t *get_properties(void *data)
 		},
 		data);
 
+	if (on_source) {
+		obs_property_t *where = obs_properties_add_list(props, "where", obs_module_text("SendTo.Where"),
+								OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+		obs_property_list_add_int(where, obs_module_text("SendTo.Where.OnScreen"), 0);
+		obs_property_list_add_int(where, obs_module_text("SendTo.Where.Every"), 1);
+	}
+
+	obs_property_t *linked = obs_properties_add_list(props, "linked", obs_module_text("Place.Linked"),
+							 OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
+	obs_property_list_add_string(linked, obs_module_text("Place.Linked.None"), "");
+	if (on_source) {
+		// Offer what shares a scene with this source right now.
+		for (const Target &target : places_of(parent, false))
+			add_scene_items_to_list(target.scene, linked);
+	} else {
+		add_scene_items_to_list(parent, linked);
+	}
+	obs_property_set_modified_callback(linked, destination_modified);
 	obs_properties_add_bool(props, "flip_linked", obs_module_text("Place.FlipLinked"));
 
 	obs_property_t *duration =
@@ -491,7 +629,8 @@ obs_properties_t *get_properties(void *data)
 		},
 		data);
 
-	obs_property_t *help = obs_properties_add_text(props, "help", obs_module_text("Place.Help"), OBS_TEXT_INFO);
+	obs_property_t *help = obs_properties_add_text(
+		props, "help", obs_module_text(on_source ? "SendTo.Help" : "Place.Help"), OBS_TEXT_INFO);
 	obs_property_text_set_info_word_wrap(help, true);
 	return props;
 }
@@ -507,6 +646,7 @@ void get_defaults(obs_data_t *settings)
 	obs_data_set_default_int(settings, "ease_curve", (int)EaseCurve::Cubic);
 	obs_data_set_default_int(settings, "ease_mode", (int)EaseMode::InOut);
 	obs_data_set_default_bool(settings, "flip_linked", true);
+	obs_data_set_default_int(settings, "where", 0);
 }
 
 } // namespace
@@ -514,15 +654,8 @@ void get_defaults(obs_data_t *settings)
 void register_place_item()
 {
 	obs_source_info info = {};
-	info.id = kPlaceItemId;
 	info.type = OBS_SOURCE_TYPE_FILTER;
 	info.output_flags = OBS_SOURCE_VIDEO;
-	info.get_name = [](void *) {
-		return obs_module_text("Place.Name");
-	};
-	info.create = [](obs_data_t *settings, obs_source_t *source) -> void * {
-		return new PlaceItem(settings, source);
-	};
 	info.destroy = [](void *data) {
 		delete static_cast<PlaceItem *>(data);
 	};
@@ -543,6 +676,25 @@ void register_place_item()
 	};
 	info.filter_remove = [](void *data, obs_source_t *) {
 		static_cast<PlaceItem *>(data)->detach();
+	};
+
+	// On a scene: moves an item chosen from that scene.
+	info.id = kPlaceItemId;
+	info.get_name = [](void *) {
+		return obs_module_text("Place.Name");
+	};
+	info.create = [](obs_data_t *settings, obs_source_t *source) -> void * {
+		return new PlaceItem(settings, source, false);
+	};
+	obs_register_source(&info);
+
+	// On a source: moves that source.
+	info.id = kSendToId;
+	info.get_name = [](void *) {
+		return obs_module_text("SendTo.Name");
+	};
+	info.create = [](obs_data_t *settings, obs_source_t *source) -> void * {
+		return new PlaceItem(settings, source, true);
 	};
 	obs_register_source(&info);
 }
