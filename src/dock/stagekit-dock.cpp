@@ -487,6 +487,7 @@ public:
 		} effects[] = {
 			{"addBlur", "Dock.AddBlur", "stagekit_ramp_blur", false},
 			{"addShadow", "Dock.AddShadow", "stagekit_shadow_backdrop", false},
+			{"addCorners", "Dock.AddCorners", "stagekit_corners", false},
 			{"addZoom", "Dock.AddZoom", "stagekit_ramp_zoom", false},
 			{"addShowHide", "Dock.AddShowHide", kShowHideId, true},
 		};

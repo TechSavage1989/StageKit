@@ -1,0 +1,83 @@
+// StageKit Corners & Edges
+//
+// Cuts a source's picture to a shape: rounded, cut, notched or scooped
+// corners, optionally trimmed in from the edges, feathered and outlined.
+// The picture's size never changes. Output is straight alpha.
+
+uniform float4x4 ViewProj;
+uniform texture2d image;
+
+uniform float2 size;          // the whole picture, in shape pixels
+uniform float4 rect;          // the part to shape: x, y, width, height in shape pixels
+uniform float4 radii;         // corner sizes: top-left, top-right, bottom-right, bottom-left
+uniform float style;          // 0 round, 1 cut, 2 notch, 3 scoop
+uniform float soft;           // feather, in shape pixels
+uniform float border;         // outline width, in shape pixels
+uniform float4 border_color;  // straight alpha
+
+sampler_state linearClamp {
+	Filter   = Linear;
+	AddressU = Clamp;
+	AddressV = Clamp;
+};
+
+struct VertData {
+	float4 pos : POSITION;
+	float2 uv  : TEXCOORD0;
+};
+
+VertData VSDefault(VertData v_in)
+{
+	VertData vert_out;
+	vert_out.pos = mul(float4(v_in.pos.xyz, 1.0), ViewProj);
+	vert_out.uv  = v_in.uv;
+	return vert_out;
+}
+
+// Signed distance to the shape's edge: negative inside.
+float shape_distance(float2 p)
+{
+	float2 half_size = rect.zw * 0.5;
+	float2 v = p - (rect.xy + half_size);
+	float top = lerp(radii.x, radii.y, step(0.0, v.x));
+	float bottom = lerp(radii.w, radii.z, step(0.0, v.x));
+	float r = min(lerp(top, bottom, step(0.0, v.y)), min(half_size.x, half_size.y));
+	float2 q = abs(v) - half_size;
+	float box = max(q.x, q.y);
+
+	float2 qr = q + float2(r, r);
+	float rounded = length(max(qr, float2(0.0, 0.0))) + min(max(qr.x, qr.y), 0.0) - r;
+	float cut = max(box, (q.x + q.y + r) * 0.70710678);
+	float notch = max(box, min(qr.x, qr.y));
+	float scoop = max(box, r - length(q));
+
+	float d = rounded;
+	d = lerp(d, cut, step(0.5, style));
+	d = lerp(d, notch, step(1.5, style));
+	d = lerp(d, scoop, step(2.5, style));
+	return d;
+}
+
+float4 PSShape(VertData v_in) : TARGET
+{
+	float4 c = image.Sample(linearClamp, v_in.uv);
+	float d = shape_distance(v_in.uv * size);
+
+	float feather = lerp(1.0, saturate(-d / max(soft, 0.0001)), step(0.0001, soft));
+	float cover = saturate(0.5 - d) * feather;
+	float line_cover = step(0.0001, border) * saturate(d + border + 0.5) * border_color.a * cover;
+
+	float a0 = c.a * cover;
+	float a = line_cover + a0 * (1.0 - line_cover);
+	float3 rgb = (border_color.rgb * line_cover + c.rgb * a0 * (1.0 - line_cover)) / max(a, 0.00001);
+	return float4(rgb, a);
+}
+
+technique Shape
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSShape(v_in);
+	}
+}

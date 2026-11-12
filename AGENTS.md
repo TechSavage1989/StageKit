@@ -23,6 +23,7 @@ for an update notice inside OBS. This exception is recorded in the handoff.
 | `src/ambient/` | Ambient Background source |
 | `src/shadow/` | Shadow & Backdrop filter |
 | `src/zoom/` | Ramp Zoom filter |
+| `src/shape/` | Corners & Edges filter (rounds, cuts, notches or scoops corners; trims, softens and outlines edges; never changes the source's size) |
 | `src/view/` | Cropped View source (part of another source as a source, so filters follow the crop) |
 | `src/placement/` | Scene filters: Place Item, Show/Hide Animation, Visibility Link, Match Item, Layout; and Send To, Place Item's code as a filter on the source it moves |
 | `src/dock/` | Two docks (Qt widgets, no `Q_OBJECT`): StageKit follows the item selected in OBS and drives Send To filters on that item's source; StageKit Background holds the start image thumbnail. `arrange-tools.*` is the one set of line-up actions and options behind the dock, the hotkeys and the preview's right-click menu |
@@ -130,6 +131,11 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   filter shifts each item showing the source (and grows its bounding box) by that room so the picture
   stays put, and remembers what it applied in `adjusted_*` settings. Anything else that changes the
   room around a source must go through `keep_picture_in_place`, not around it.
+- **Corners & Edges must never change a source's size.** Everything that makes it safe beside the
+  other tools rests on that. It belongs before Shadow & Backdrop in the filter list (the shadow reads
+  alpha, so it follows the shape); when first added it moves itself above an existing shadow once and
+  records that in its `placed` setting. After an Auto Frame it shapes the rectangle from Auto Frame's
+  `get_picture`.
 - **Trigger filters** (Send To, Place Item, Layout) switch themselves off after running and ignore the enabled
   state restored at load (`ready_`), so they do not fire when OBS starts.
 - **Auto Capture's Windows code is only compiled by CI and never run by the tests.** The tests feed it

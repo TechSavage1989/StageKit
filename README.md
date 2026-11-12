@@ -24,6 +24,8 @@ from hotkeys, or from the Stream Deck OBS Studio plugin's *Filter* and *Source* 
 - **Start image**: one picture, chosen once, shown on the start scene and used by the background.
 - **Shadow & Backdrop** (filter): drop shadow, a panel behind the source, and rounded corners, with no
   wrapper scene.
+- **Corners & Edges** (filter): rounds, cuts, notches or scoops a source's corners, trims and softens
+  its edges and outlines it. A shadow added after it takes the same shape.
 - **Auto Frame** (filter): gives a game or emulator capture a fixed frame and fits any resolution inside
   it, so one scene serves every picture shape.
 - **Auto Capture** (filter): one Game Capture finds whatever game is running, windowed or full-screen,
@@ -168,6 +170,32 @@ The shadow needs room around the source, so the source itself gets bigger. With 
 where it is* ticked (the default), the source's items in every scene are adjusted by exactly that room:
 the picture keeps its size and place whatever the softness, offset or panel margin, including inside a
 bounding box. Switching the filter off or removing it puts the items back.
+
+### Corners & Edges
+
+Add **Corners & Edges (StageKit)** as a filter on a source: a camera, a capture, an image, a browser
+widget.
+
+<p align="center"><img src="docs/images/corners-edges.png" width="900" alt="A blue card shown nine ways: rounded corners, cut-off corners, notched corners, scooped corners, only two corners rounded, a soft faded edge, a yellow outline, rounded with a drop shadow that has the same rounded shape, and a game picture with rounded corners inside a wider frame"></p>
+
+- **Corner style**: *Rounded*, *Cut off (chamfer)*, *Notched (square cut)* or *Scooped (curved in)*.
+- **Corner size**, and **Which corners** it applies to, each one on or off.
+- **Trim edges** cuts the same amount off all four sides. **Soften edge** fades the picture out
+  towards its edge.
+- **Outline**: a line of any width, colour and opacity that follows the shape.
+- **Sizes as seen on screen** (on by default): a 40 px corner looks the same on a big item and a small
+  one, the same rule Shadow & Backdrop uses.
+
+It works with the other tools:
+
+- The source **keeps its size**, so nothing moves or resizes in any scene, and Send To keys, layouts
+  and the line-up tools carry on as before. The line-up tools measure the new shape when *Use visible
+  pixels* is on.
+- **Shadow & Backdrop** after it in the filter list casts a shadow of the new shape. If you add
+  Corners & Edges to a source that already has a shadow, it places itself above the shadow for you.
+- After an **Auto Frame**, it shapes the game picture inside the frame, and follows it when the picture
+  changes shape.
+- Ramp Blur and Ramp Zoom can go before it (the blur or zoom stays inside the shape) or after it.
 
 ### Auto Frame
 
