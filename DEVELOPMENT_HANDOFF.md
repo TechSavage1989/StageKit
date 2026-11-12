@@ -94,6 +94,11 @@ replace. The trigger is for what was left: showing the window captures for ZBrus
 program. Not covered: hiding the music widget when Spotify is silent, which needs an audio condition.
 The trigger is edge-triggered on purpose, so a manual change survives until the program comes or goes.
 
+0.1.0-beta18, from the owner's reports: automatic trim did nothing for DS emulators because 2:3 was
+not in `is_picture_shape`; the list now has two-screen, other handheld, upright and ultra-wide shapes.
+*Keep this trim for this program* saves the current crop's shape as a rule for the captured program
+and returns to automatic. The shape gate itself was not loosened.
+
 Reported problems still open: a Match Item item "dropping behind others" has not been reproduced.
 Addressed in 0.1.0-beta4, awaiting the owner's check on Windows: the dock reaching nested scenes and
 groups, Match Item inside groups, order buttons, Layout for chosen items.
