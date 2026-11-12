@@ -344,6 +344,13 @@ int main(int argc, char **argv)
 		CHECK(aimed.find("Dolphin.exe") != std::string::npos,
 		      "OBS itself and other everyday programs are built in to that list");
 
+		// A game seen once is remembered: next time it is picked up straight
+		// away, in a window and behind another program, without being looked into.
+		see("Inbox - Mail|MailWnd|mail.exe|front|");
+		aimed = see("Aladdin|Snes9X: WndClass|snes9x-x64.exe||\nInbox - Mail|MailWnd|mail.exe|front|");
+		CHECK(aimed.find("snes9x-x64.exe") != std::string::npos,
+		      "a game seen before is picked up again at once, even behind another window (%s)", aimed.c_str());
+
 		// "Always capture" covers a game it would not spot by itself, and
 		// "only the listed programs" turns the guessing off.
 		obs_data_array_t *always = list_of({"oddgame"});
@@ -988,12 +995,13 @@ int main(int argc, char **argv)
 		obs_set_output_source(0, obs_scene_get_source(full));
 		auto where = [&] {
 			sleep_ms(400);
-			vec2 p, sc;
+			// The fit is the item's bounding box: how big it draws the source.
+			vec2 p, box;
 			obs_sceneitem_get_pos(item, &p);
-			obs_sceneitem_get_scale(item, &sc);
+			obs_sceneitem_get_bounds(item, &box);
 			struct {
 				double x, y, k;
-			} out{p.x, p.y, sc.x};
+			} out{p.x, p.y, box.x / std::max(1u, obs_source_get_width(game))};
 			return out;
 		};
 		auto at = where();
@@ -1054,13 +1062,40 @@ int main(int argc, char **argv)
 			render(obs_scene_get_source(full), 640, 360);
 			sleep_ms(100);
 		}
-		CHECK(obs_source_get_width(game) == 600 && obs_source_get_height(game) == 600,
-		      "Auto Frame as 'just the picture' makes the source the trimmed picture (%ux%u)",
+		CHECK(obs_source_get_width(game) == 1080 && obs_source_get_height(game) == 1080,
+		      "Auto Frame as 'just the picture' makes the source the trimmed picture at the height asked for (%ux%u)",
 		      obs_source_get_width(game), obs_source_get_height(game));
 		at = where();
-		// 600x600 inside the 400x300 box less its 30 px margin: 240x240, centred.
-		CHECK(std::fabs(at.k - 0.4) < 0.002 && std::fabs(at.x - 100) < 0.6 && std::fabs(at.y - 70) < 0.6,
+		// A square picture inside the 400x300 box less its 30 px margin: 240x240, centred.
+		CHECK(std::fabs(at.k - 240.0 / 1080.0) < 0.002 && std::fabs(at.x - 100) < 0.6 &&
+			      std::fabs(at.y - 70) < 0.6,
 		      "and Fit Item places that picture (%.0f, %.0f at %.2fx)", at.x, at.y, at.k);
+
+		// The game goes from a window to full-screen at the same shape: nothing moves.
+		{
+			vec2 pos_before, box_before;
+			obs_sceneitem_get_pos(item, &pos_before);
+			obs_sceneitem_get_bounds(item, &box_before);
+			sized(game, 1600, 1200); // twice the pixels, same 4:3 and the same trim share is not kept:
+			obs_data_t *bigger = obs_data_create();
+			obs_data_set_double(bigger, "trim_x", 200);
+			obs_source_update(frame, bigger);
+			obs_data_release(bigger);
+			bool steady = true;
+			for (int i = 0; i < 12; i++) {
+				render(obs_scene_get_source(full), 640, 360);
+				sleep_ms(60);
+				vec2 pos_now, box_now;
+				obs_sceneitem_get_pos(item, &pos_now);
+				obs_sceneitem_get_bounds(item, &box_now);
+				steady = steady && obs_source_get_width(game) == 1080 &&
+					 obs_source_get_height(game) == 1080 &&
+					 std::fabs(pos_now.x - pos_before.x) < 0.1 &&
+					 std::fabs(box_now.x - box_before.x) < 0.1;
+			}
+			CHECK(steady,
+			      "a change of resolution at the same shape changes neither the source's size nor its place");
+		}
 
 		obs_set_output_source(0, before_out);
 		obs_source_release(before_out);

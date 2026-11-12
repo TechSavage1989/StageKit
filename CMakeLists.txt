@@ -16,6 +16,10 @@ add_library(${CMAKE_PROJECT_NAME} MODULE)
 
 find_package(libobs REQUIRED)
 target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE OBS::libobs)
+if(WIN32)
+  # Auto Capture reads a program's module list.
+  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE psapi)
+endif()
 
 if(ENABLE_FRONTEND_API)
   find_package(obs-frontend-api REQUIRED)

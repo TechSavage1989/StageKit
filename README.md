@@ -290,7 +290,7 @@ game capture can then sit in a full-screen scene (a widescreen game fills it, an
 middle) and in a scene with a camera and chat beside it (fitted to that scene's game box), with nothing
 to change when you switch games. A shadow on the source is allowed for.
 
-Fit Item takes over the item's position and size and removes its bounding box and rotation. Switch the
+Fit Item takes over the item's position and bounding box and removes its rotation. Switch the
 filter off to move the item by hand.
 
 ### Auto Capture

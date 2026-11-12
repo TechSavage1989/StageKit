@@ -353,7 +353,7 @@ def stagekit_sources():
     g["filters"] = [
         make_filter("stagekit_auto_capture", "Auto Capture", {"mode": 0, "fallback_fullscreen": True}),
         make_filter("stagekit_auto_frame", "Auto Frame",
-                    {"frame_mode": 1, "frame_width": 1754, "frame_height": 1268, "fit": 0, "trim": 1,
+                    {"frame_mode": 1, "frame_width": CANVAS_W, "frame_height": CANVAS_H, "fit": 0, "trim": 1,
                      "trim_wait": 3.0, "known_programs": True, "glide_ms": 350}),
     ]
     new_sources[GAME] = g

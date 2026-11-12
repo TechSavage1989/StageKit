@@ -587,6 +587,14 @@ public:
 			dt = pending_time_;
 			pending_time_ = 0.0;
 
+			if (gone_for_ > kNewSession) {
+				// The capture was away long enough for this to be something
+				// else being captured: a shape held from before does not
+				// carry over. A game switching to full-screen is back sooner.
+				held_ratio_ = usual_ratio_;
+				last_w_ = last_h_ = 0;
+				have_rect_ = false;
+			}
 			gone_for_ = 0.0;
 			if (w != last_w_ || h != last_h_) {
 				// While the capture settles at its new size the last good
@@ -656,12 +664,14 @@ public:
 			else if (s.trim != Trim::Automatic)
 				held_ratio_ = 0.0;
 			if (s.follow) {
-				// The frame takes the picture's own size and shape, so each
-				// scene can place it as it likes.
+				// The frame takes the picture's own shape, so each scene can
+				// place it as it likes.
 				const double ratio = shape_ratio(s, (uint32_t)std::lround(crop_goal.w),
 								 (uint32_t)std::lround(crop_goal.h));
-				s.frame_h = (uint32_t)std::clamp(std::lround(crop_goal.h), 2L, 16384L);
-				s.frame_w = (uint32_t)std::clamp(std::lround(crop_goal.h * ratio), 2L, 16384L);
+				// Always the height asked for, whatever the capture's own
+				// resolution: a game going from a window to full-screen at
+				// the same shape then changes nothing a scene can see.
+				s.frame_w = (uint32_t)std::clamp(std::lround(s.frame_h * ratio), 2L, 16384L);
 				out_w_ = s.frame_w;
 				out_h_ = s.frame_h;
 			}
@@ -992,6 +1002,7 @@ private:
 	// at a new size, and when the capture drops out altogether.
 	static constexpr double kSettle = 0.2;
 	static constexpr double kKeepWhenGone = 1.0;
+	static constexpr double kNewSession = 4.0; // away this long, the next picture starts afresh
 	double settle_ = 0.0;
 	double gone_for_ = 0.0;
 	uint32_t drawn_w_ = 0, drawn_h_ = 0;

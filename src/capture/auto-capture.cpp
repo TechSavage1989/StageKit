@@ -35,7 +35,8 @@ the Free Software Foundation; either version 2 of the License, or
 #define NOMINMAX
 #endif
 #include <windows.h>
-#include <tlhelp32.h>
+#include <psapi.h>
+#include <map>
 #endif
 
 #include "auto-capture.hpp"
@@ -49,6 +50,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <cstring>
 #include <map>
 #include <mutex>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -122,27 +124,71 @@ std::string utf8(const wchar_t *text, int length)
 // Whether a program has a graphics engine and controller support loaded.
 // Returns false when the program cannot be looked into (it runs with more
 // rights than OBS, or is protected by anti-cheat).
-bool loaded_engines(DWORD process_id, bool &graphics, bool &controller)
+// Which engines a program has loaded. This reads the program's module list
+// from outside. It must not use a toolhelp module snapshot: for another
+// process that works by starting a thread inside it, which can upset or crash
+// a game, and this is asked about whatever program is in front.
+bool read_engines(DWORD process_id, bool &graphics, bool &controller)
 {
 	graphics = controller = false;
-	HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, process_id);
-	if (snapshot == INVALID_HANDLE_VALUE)
+	HANDLE process = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, process_id);
+	if (!process)
 		return false;
-	MODULEENTRY32W module;
-	module.dwSize = sizeof(module);
-	if (Module32FirstW(snapshot, &module)) {
-		do {
-			const std::string name = lower(utf8(module.szModule, (int)wcslen(module.szModule)));
+	HMODULE modules[1024];
+	DWORD needed = 0;
+	const BOOL listed = EnumProcessModulesEx(process, modules, sizeof(modules), &needed, LIST_MODULES_ALL);
+	if (listed) {
+		const DWORD listed_count = (DWORD)(needed / sizeof(HMODULE));
+		const DWORD count = listed_count < 1024 ? listed_count : 1024;
+		for (DWORD i = 0; i < count; i++) {
+			wchar_t base[MAX_PATH];
+			const DWORD length = GetModuleBaseNameW(process, modules[i], base, MAX_PATH);
+			if (!length)
+				continue;
+			const std::string name = lower(utf8(base, (int)length));
 			if (name == "d3d9.dll" || name == "d3d10.dll" || name == "d3d11.dll" || name == "d3d12.dll" ||
 			    name == "opengl32.dll" || name == "vulkan-1.dll")
 				graphics = true;
 			if (name.rfind("xinput", 0) == 0 || name == "dinput8.dll" || name == "dinput.dll" ||
 			    name == "sdl2.dll" || name == "sdl3.dll" || name == "gameinput.dll")
 				controller = true;
-		} while (Module32NextW(snapshot, &module));
+		}
 	}
-	CloseHandle(snapshot);
-	return true;
+	CloseHandle(process);
+	return listed != FALSE;
+}
+
+// A program is looked into a handful of times while it starts up (engines
+// load late), then left alone: the answer is remembered for as long as that
+// process lives.
+bool loaded_engines(DWORD process_id, bool &graphics, bool &controller)
+{
+	struct Known {
+		bool readable = false, graphics = false, controller = false;
+		int looks = 0;
+		ULONGLONG last_look = 0;
+	};
+	static std::map<DWORD, Known> known;
+	constexpr int kLooks = 6;
+	constexpr ULONGLONG kApart = 2500; // milliseconds
+	const ULONGLONG now = GetTickCount64();
+	if (known.size() > 256)
+		known.clear();
+	Known &k = known[process_id];
+	const bool settled = k.readable && k.graphics && k.controller;
+	if (!settled && k.looks < kLooks && (k.looks == 0 || now - k.last_look >= kApart)) {
+		k.looks++;
+		k.last_look = now;
+		bool g = false, c = false;
+		if (read_engines(process_id, g, c)) {
+			k.readable = true;
+			k.graphics = k.graphics || g;
+			k.controller = k.controller || c;
+		}
+	}
+	graphics = k.graphics;
+	controller = k.controller;
+	return k.readable;
 }
 
 bool fills_its_screen(HWND window)
@@ -348,6 +394,11 @@ public:
 		always_ = always;
 		never_ = never;
 		fallback_fullscreen_ = obs_data_get_bool(settings, "fallback_fullscreen");
+		if (!known_loaded_) {
+			known_loaded_ = true;
+			for (const std::string &exe : read_list(settings, "known_games_list", "known_games"))
+				known_games_.insert(lower(exe));
+		}
 		timer_ = 0.0;
 	}
 
@@ -364,7 +415,7 @@ public:
 			timer_ -= seconds;
 			if (timer_ > 0.0)
 				return;
-			timer_ = 1.0;
+			timer_ = 0.5;
 			mode = mode_;
 			always = always_;
 			never = never_;
@@ -386,21 +437,38 @@ public:
 		// 1. A game in front wins.  2. Otherwise stay on the game already
 		// being captured while its window exists.  3. Otherwise any program
 		// from the "always capture" list that is open.
-		const Window *in_front = nullptr, *current = nullptr, *listed_open = nullptr;
+		// A program is only looked into while it is in front. Once it has
+		// been seen to be a game it is remembered, so the next time it is
+		// picked up at once, in a window, in front or not.
+		const Window *in_front = nullptr, *current = nullptr, *listed_open = nullptr, *known_open = nullptr;
+		bool learned_something = false;
 		for (const Window &w : windows) {
 			const std::string exe = lower(w.executable);
 			if (excluded(exe) && !matches(exe, always))
 				continue;
 			const bool listed = matches(exe, always);
-			const bool candidate = listed || (mode == Mode::AnyGame && w.looks_like_game);
+			if (mode == Mode::AnyGame && w.looks_like_game && known_games_.insert(exe).second)
+				learned_something = true;
+			const bool known = mode == Mode::AnyGame && known_games_.count(exe) > 0;
+			const bool candidate = listed || known;
 			if (w.foreground && candidate)
 				in_front = &w;
 			if (!applied_key_.empty() && key_of(w) == applied_key_)
 				current = &w;
 			if (listed && !listed_open)
 				listed_open = &w;
+			if (known && !known_open)
+				known_open = &w;
 		}
-		const Window *chosen = in_front ? in_front : current ? current : listed_open;
+		const Window *chosen = in_front ? in_front : current ? current : listed_open ? listed_open : known_open;
+		if (learned_something) {
+			std::string text;
+			for (const std::string &exe : known_games_)
+				text += (text.empty() ? "" : ", ") + exe;
+			obs_data_t *own = obs_source_get_settings(source_);
+			obs_data_set_string(own, "known_games", text.c_str());
+			obs_data_release(own);
+		}
 
 		const char *parent_id = obs_source_get_unversioned_id(parent_);
 		const bool game_capture = parent_id && strcmp(parent_id, "game_capture") == 0;
@@ -515,6 +583,9 @@ private:
 	std::vector<Window> test_windows_;
 	bool use_test_windows_ = false;
 	std::string applied_key_;
+	// Programs seen to be games, by executable name in lower case. Only the tick uses it.
+	std::set<std::string> known_games_;
+	bool known_loaded_ = false;
 	std::string current_;
 	bool aimed_once_ = false;
 };
