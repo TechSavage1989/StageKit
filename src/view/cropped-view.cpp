@@ -40,6 +40,7 @@ enum class CropTo : int {
 	R16x9 = 3,
 	R3x4 = 4,
 	R9x16 = 5,
+	Drawn = 6, // whatever is drawn: the see-through edges are trimmed off, and it follows changes
 };
 
 struct Area {
@@ -61,6 +62,8 @@ public:
 		set_target(nullptr);
 		obs_enter_graphics();
 		gs_texrender_destroy(render_);
+		gs_texrender_destroy(look_render_);
+		gs_stagesurface_destroy(look_stage_);
 		obs_leave_graphics();
 	}
 
@@ -73,6 +76,7 @@ public:
 		right_ = (uint32_t)std::max<long long>(0, obs_data_get_int(settings, "right"));
 		top_ = (uint32_t)std::max<long long>(0, obs_data_get_int(settings, "top"));
 		bottom_ = (uint32_t)std::max<long long>(0, obs_data_get_int(settings, "bottom"));
+		look_timer_ = 0.0;
 		timer_ = 0.0;
 	}
 
@@ -83,6 +87,7 @@ public:
 		std::string name;
 		{
 			std::lock_guard lock(mutex_);
+			look_timer_ -= seconds;
 			timer_ -= seconds;
 			if (timer_ > 0.0)
 				return;
@@ -117,6 +122,16 @@ public:
 		if (!w || !h)
 			return a;
 		std::lock_guard lock(mutex_);
+		if (crop_to_ == CropTo::Drawn) {
+			// Until something has been seen, the whole source.
+			if (!drawn_.w || !drawn_.h)
+				return {0, 0, w, h};
+			a.x = std::min(drawn_.x, w - 1);
+			a.y = std::min(drawn_.y, h - 1);
+			a.w = std::min(drawn_.w, w - a.x);
+			a.h = std::min(drawn_.h, h - a.y);
+			return a;
+		}
 		if (crop_to_ == CropTo::Amounts) {
 			a.x = std::min(left_, w - 1);
 			a.y = std::min(top_, h - 1);
@@ -165,6 +180,8 @@ public:
 			return;
 		}
 		rendering_ = true;
+		if (look_due())
+			look_for_drawn_part(source);
 		gs_texrender_reset(render_);
 		if (gs_texrender_begin(render_, a.w, a.h)) {
 			vec4 clear;
@@ -202,6 +219,90 @@ public:
 	}
 
 private:
+	bool look_due()
+	{
+		std::lock_guard lock(mutex_);
+		if (crop_to_ != CropTo::Drawn || look_timer_ > 0.0)
+			return false;
+		look_timer_ = kLookEvery;
+		return true;
+	}
+
+	// Finds the part of the source with something drawn in it. The source is
+	// drawn small and read back, about once a second and only in this mode.
+	// The view grows to take in new content at once and shrinks only when the
+	// smaller picture has been seen twice, so an animation does not make it
+	// flutter. A source showing nothing keeps the size it had.
+	void look_for_drawn_part(obs_source_t *source)
+	{
+		const uint32_t sw = obs_source_get_width(source), sh = obs_source_get_height(source);
+		if (!sw || !sh)
+			return;
+		const double shrink = std::min(1.0, 320.0 / std::max(sw, sh));
+		const uint32_t w = std::max<uint32_t>(1, (uint32_t)std::lround(sw * shrink));
+		const uint32_t h = std::max<uint32_t>(1, (uint32_t)std::lround(sh * shrink));
+		if (!look_render_)
+			look_render_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
+		if (!look_stage_ || look_w_ != w || look_h_ != h) {
+			gs_stagesurface_destroy(look_stage_);
+			look_stage_ = gs_stagesurface_create(w, h, GS_RGBA);
+			look_w_ = w;
+			look_h_ = h;
+		}
+		gs_texrender_reset(look_render_);
+		if (!gs_texrender_begin(look_render_, w, h))
+			return;
+		vec4 clear;
+		vec4_zero(&clear);
+		gs_clear(GS_CLEAR_COLOR, &clear, 0.0f, 0);
+		gs_ortho(0.0f, (float)sw, 0.0f, (float)sh, -100.0f, 100.0f);
+		gs_blend_state_push();
+		gs_blend_function(GS_BLEND_ONE, GS_BLEND_INVSRCALPHA);
+		obs_source_video_render(source);
+		gs_blend_state_pop();
+		gs_texrender_end(look_render_);
+		gs_stage_texture(look_stage_, gs_texrender_get_texture(look_render_));
+		uint8_t *data = nullptr;
+		uint32_t linesize = 0;
+		if (!gs_stagesurface_map(look_stage_, &data, &linesize))
+			return;
+		uint32_t min_x = w, min_y = h, max_x = 0, max_y = 0;
+		for (uint32_t y = 0; y < h; y++) {
+			const uint8_t *row = data + (size_t)y * linesize;
+			for (uint32_t x = 0; x < w; x++) {
+				if (row[x * 4 + 3] <= 12)
+					continue;
+				min_x = std::min(min_x, x);
+				max_x = std::max(max_x, x);
+				min_y = std::min(min_y, y);
+				max_y = std::max(max_y, y);
+			}
+		}
+		gs_stagesurface_unmap(look_stage_);
+		if (max_x < min_x || max_y < min_y)
+			return; // nothing showing: keep the last size
+
+		// Back to the source's pixels, one small-picture pixel generous.
+		Area seen;
+		seen.x = (uint32_t)std::floor(min_x / shrink);
+		seen.y = (uint32_t)std::floor(min_y / shrink);
+		seen.w = std::min(sw, (uint32_t)std::ceil((max_x + 1) / shrink)) - seen.x;
+		seen.h = std::min(sh, (uint32_t)std::ceil((max_y + 1) / shrink)) - seen.y;
+
+		std::lock_guard lock(mutex_);
+		const bool first = !drawn_.w || !drawn_.h;
+		const uint32_t l = std::min(drawn_.x, seen.x), t = std::min(drawn_.y, seen.y);
+		const uint32_t r = std::max(drawn_.x + drawn_.w, seen.x + seen.w);
+		const uint32_t b = std::max(drawn_.y + drawn_.h, seen.y + seen.h);
+		const bool same_as_last = seen.x == last_seen_.x && seen.y == last_seen_.y && seen.w == last_seen_.w &&
+					  seen.h == last_seen_.h;
+		if (first || same_as_last)
+			drawn_ = seen; // settled: take it as it is, smaller or not
+		else
+			drawn_ = {l, t, r - l, b - t}; // still changing: only ever grow
+		last_seen_ = seen;
+	}
+
 	// Tells OBS which source this one shows, so a camera or capture is
 	// switched on while the view is on screen and released afterwards.
 	void set_target(obs_source_t *source)
@@ -233,6 +334,13 @@ private:
 	obs_weak_source_t *target_ = nullptr;
 	gs_texrender_t *render_ = nullptr;
 	bool rendering_ = false;
+	// "Whatever is drawn": the part found, and what the last look saw.
+	static constexpr double kLookEvery = 1.0;
+	Area drawn_, last_seen_;
+	double look_timer_ = 0.0;
+	gs_texrender_t *look_render_ = nullptr;
+	gs_stagesurf_t *look_stage_ = nullptr;
+	uint32_t look_w_ = 0, look_h_ = 0;
 };
 
 bool crop_to_modified(obs_properties_t *props, obs_property_t *, obs_data_t *settings)
@@ -267,6 +375,7 @@ obs_properties_t *get_properties(void *data)
 	obs_property_t *crop_to = obs_properties_add_list(props, "crop_to", obs_module_text("View.CropTo"),
 							  OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(crop_to, obs_module_text("View.CropTo.Amounts"), (int)CropTo::Amounts);
+	obs_property_list_add_int(crop_to, obs_module_text("View.CropTo.Drawn"), (int)CropTo::Drawn);
 	obs_property_list_add_int(crop_to, obs_module_text("View.CropTo.Square"), (int)CropTo::Square);
 	obs_property_list_add_int(crop_to, "4:3", (int)CropTo::R4x3);
 	obs_property_list_add_int(crop_to, "16:9", (int)CropTo::R16x9);
