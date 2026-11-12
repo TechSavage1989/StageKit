@@ -1801,33 +1801,44 @@ int main(int argc, char **argv)
 			CHECK(std::fabs(c.x - 30) < 0.5 && std::fabs(c.y - 240) < 0.5,
 			      "clicking bottom-left sends the selected item there (%.0f, %.0f)", c.x, c.y);
 
+			auto count_filters = [](obs_source_t *source) {
+				int n = 0;
+				obs_source_enum_filters(
+					source,
+					[](obs_source_t *, obs_source_t *, void *param) {
+						(*static_cast<int *>(param))++;
+					},
+					&n);
+				return n;
+			};
+			const int scene_filters_before = count_filters(scene_source);
+			const int cam_filters_before = count_filters(cam);
 			click("makeKeys");
 			calldata_t spot_cd = {};
 			calldata_set_ptr(&spot_cd, "widget", dock);
 			calldata_set_string(&spot_cd, "name", "Corner");
 			proc_handler_call(obs_get_proc_handler(), "stagekit_dock_save_spot", &spot_cd);
 			calldata_free(&spot_cd);
-			int filters = 0;
-			obs_source_enum_filters(
-				scene_source,
-				[](obs_source_t *, obs_source_t *, void *param) { (*static_cast<int *>(param))++; },
-				&filters);
-			// 2 made by this test + the dock's own mover + 9 positions + 1 saved spot
-			CHECK(filters == 13,
-			      "one click makes a key for each of the nine positions, plus the saved spot (%d filters)",
-			      filters);
-			obs_source_t *key = obs_source_get_filter_by_name(scene_source, "Widget → Top right");
-			CHECK(key == nullptr, "keys are named after the selected item");
-			obs_source_release(key);
-			key = obs_source_get_filter_by_name(scene_source, "Camera → Top right");
-			CHECK(key != nullptr, "for example \"Camera → Top right\"");
+			CHECK(count_filters(cam) - cam_filters_before == 10 &&
+				      count_filters(scene_source) == scene_filters_before,
+			      "one click makes a key per position, plus the saved spot, on the camera itself (%d new, scene %d)",
+			      count_filters(cam) - cam_filters_before,
+			      count_filters(scene_source) - scene_filters_before);
+			obs_source_t *key = obs_source_get_filter_by_name(cam, "Top right");
+			CHECK(key != nullptr && strcmp(obs_source_get_unversioned_id(key), "stagekit_send_to") == 0,
+			      "each key is a Send To filter named after its position");
 			if (key) {
+				// A key acts in the scene on screen, as a Stream Deck press would.
+				obs_source_t *on_screen = obs_get_output_source(0);
+				obs_set_output_source(0, scene_source);
 				sleep_ms(100);
 				obs_source_set_enabled(key, true);
 				sleep_ms(800);
 				c = pos_of(cam_item);
 				CHECK(std::fabs(c.x - 450) < 0.5 && std::fabs(c.y - 30) < 0.5,
 				      "and switching that key on moves the camera (%.0f, %.0f)", c.x, c.y);
+				obs_set_output_source(0, on_screen);
+				obs_source_release(on_screen);
 			}
 			obs_source_release(key);
 
@@ -1870,115 +1881,25 @@ int main(int argc, char **argv)
 			CHECK(shadow != nullptr, "\"Add to this item\" puts the effect on the item's source");
 			obs_source_release(shadow);
 
-			// The picture of the scene: drag to move, wheel to resize, and
-			// the cross that sets where a Ramp Zoom zooms in.
-			if (auto *canvas = dock->findChild<QWidget *>("canvas")) {
+			// The dock works on whatever is selected in OBS's own preview.
+			{
 				if (auto *scenes = dock->findChild<QComboBox *>("scene"))
 					scenes->setCurrentIndex(std::max(0, scenes->findData("Test Scene")));
-				dock->resize(340, 1000);
-				QCoreApplication::processEvents();
-				// The scene is 640x360; the canvas fits it, centred.
-				const double cw = canvas->width(), ch = canvas->height();
-				const double zoom = std::min(cw / 640.0, ch / 360.0);
-				const double ox = (cw - 640.0 * zoom) / 2.0, oy = (ch - 360.0 * zoom) / 2.0;
-				auto at = [&](double sx, double sy) {
-					return QPointF(ox + sx * zoom, oy + sy * zoom);
-				};
-				auto mouse = [&](QEvent::Type type, QPointF where) {
-					QMouseEvent event(type, where, canvas->mapToGlobal(where), Qt::LeftButton,
-							  type == QEvent::MouseButtonRelease ? Qt::NoButton
-											     : Qt::LeftButton,
-							  Qt::NoModifier);
-					QCoreApplication::sendEvent(canvas, &event);
-				};
-				auto wheel = [&](QPointF where, int notches, Qt::KeyboardModifiers mods) {
-					QWheelEvent event(where, canvas->mapToGlobal(where), QPoint(),
-							  QPoint(0, notches * 120), Qt::NoButton, mods,
-							  Qt::NoScrollPhase, false);
-					QCoreApplication::sendEvent(canvas, &event);
-				};
-				auto box_of = [&](obs_sceneitem_t *item) {
-					matrix4 m;
-					obs_sceneitem_force_update_transform(item);
-					obs_sceneitem_get_box_transform(item, &m);
-					return m;
-				};
-
-				vec2 put;
-				vec2_set(&put, 100.0f, 100.0f);
-				obs_sceneitem_set_pos(cam_item, &put);
-				vec2_set(&put, 400.0f, 250.0f);
-				obs_sceneitem_set_pos(widget_item, &put);
-				obs_sceneitem_set_order(cam_item, OBS_ORDER_MOVE_TOP);
-				sleep_ms(80);
-				if (auto *items = dock->findChild<QComboBox *>("item"))
-					items->setCurrentText("Widget");
-
-				// Press 20 px inside the camera's corner and drag 200 right, 100 down.
-				matrix4 m = box_of(cam_item);
-				const double start_x = m.t.x, start_y = m.t.y, start_w = m.x.x;
-				mouse(QEvent::MouseButtonPress, at(start_x + 20, start_y + 20));
-				auto *picked = dock->findChild<QComboBox *>("item");
-				CHECK(picked && picked->currentText() == "Camera",
-				      "clicking an item in the picture selects it");
-				mouse(QEvent::MouseMove, at(start_x + 220, start_y + 120));
-				mouse(QEvent::MouseButtonRelease, at(start_x + 220, start_y + 120));
-				m = box_of(cam_item);
-				CHECK(std::fabs(m.t.x - (start_x + 200)) < 2.5 &&
-					      std::fabs(m.t.y - (start_y + 100)) < 2.5,
-				      "dragging it moves it by the same amount (%.0f, %.0f from %.0f, %.0f)", m.t.x,
-				      m.t.y, start_x, start_y);
-				c = pos_of(cam_item);
-				const vec2 other = pos_of(widget_item);
-				CHECK(std::fabs(other.x - 400) < 0.6, "and nothing else moves");
-
-				// Two notches of the wheel: 1.05 x 1.05 bigger, about its centre.
-				const double was_cx = m.t.x + m.x.x / 2.0, was_cy = m.t.y + m.y.y / 2.0;
-				wheel(at(was_cx, was_cy), 2, Qt::NoModifier);
-				sleep_ms(60);
-				m = box_of(cam_item);
-				const double grown_w = m.x.x, centre_x = m.t.x + m.x.x / 2.0,
-					     centre_y = m.t.y + m.y.y / 2.0;
-				CHECK(std::fabs(grown_w - start_w * 1.1025) < 1.0 &&
-					      std::fabs(centre_x - was_cx) < 2.5 && std::fabs(centre_y - was_cy) < 2.5,
-				      "the mouse wheel resizes it about its centre (width %.1f from %.1f)", grown_w,
-				      start_w);
-				c = pos_of(cam_item);
-
-				// Ramp Zoom: drag the cross, Ctrl + wheel for the amount.
-				obs_source_t *zoomer =
-					obs_source_create("stagekit_ramp_zoom", "Ramp Zoom", nullptr, nullptr);
-				obs_source_filter_add(cam, zoomer);
-				sleep_ms(80);
-				m = box_of(cam_item);
-				const double bx = m.t.x, by = m.t.y, bw = m.x.x, bh = m.y.y;
-				mouse(QEvent::MouseButtonPress, at(bx + bw / 2.0, by + bh / 2.0));
-				mouse(QEvent::MouseMove, at(bx + bw * 0.25, by + bh * 0.8));
-				mouse(QEvent::MouseButtonRelease, at(bx + bw * 0.25, by + bh * 0.8));
-				wheel(at(bx + bw / 2.0, by + bh / 2.0), 3, Qt::ControlModifier);
-				sleep_ms(80);
-				obs_data_t *zs = obs_source_get_settings(zoomer);
-				const vec2 still = pos_of(cam_item);
-				CHECK(std::fabs(obs_data_get_double(zs, "center_x") - 25) < 2.0 &&
-					      std::fabs(obs_data_get_double(zs, "center_y") - 80) < 3.0 &&
-					      std::fabs(still.x - c.x) < 30,
-				      "dragging the cross sets where its Ramp Zoom zooms in (%.0f%%, %.0f%%)",
-				      obs_data_get_double(zs, "center_x"), obs_data_get_double(zs, "center_y"));
-				CHECK(std::fabs(obs_data_get_double(zs, "zoom") - 230) < 0.5,
-				      "Ctrl + wheel sets how far it zooms (%.0f%%)", obs_data_get_double(zs, "zoom"));
-				obs_data_release(zs);
-				obs_source_filter_remove(cam, zoomer);
-				obs_source_release(zoomer);
-
-				// The picture itself.
-				static_cast<void>(canvas->grab());
-				for (int i = 0; i < 8; i++) {
+				auto *items = dock->findChild<QComboBox *>("item");
+				if (items)
+					items->setCurrentText("Camera");
+				obs_sceneitem_select(cam_item, false);
+				obs_sceneitem_select(widget_item, true);
+				for (int i = 0; i < 16; i++) {
 					QCoreApplication::processEvents();
 					sleep_ms(50);
 				}
-				dock->resize(340, 640);
-			} else {
-				CHECK(false, "the dock has a picture of the scene");
+				CHECK(items && items->currentText() == "Widget",
+				      "selecting an item in OBS's preview selects it in the dock (%s)",
+				      items ? items->currentText().toUtf8().constData() : "?");
+				obs_sceneitem_select(widget_item, false);
+				CHECK(dock->findChild<QWidget *>("canvas") == nullptr,
+				      "the dock no longer has a picture of the scene");
 			}
 
 			// A start image with a very long file name: the dock must stay
@@ -2006,6 +1927,60 @@ int main(int argc, char **argv)
 				CHECK(dock->minimumSizeHint().width() <= narrow,
 				      "a long start image file name does not widen the dock (%d, was %d)",
 				      dock->minimumSizeHint().width(), narrow);
+
+				// The wheel on the thumbnail zooms the moving background for the
+				// whole collection; dragging chooses the part shown.
+				auto background_look = [&] {
+					obs_data_t *bs = obs_data_create();
+					obs_data_set_int(bs, "base_type", 2);
+					obs_data_set_double(bs, "blur", 0);
+					obs_data_set_double(bs, "speed_x", 0);
+					obs_data_set_double(bs, "speed_y", 0);
+					obs_data_set_double(bs, "glow", 0);
+					obs_source_update(bg, bs);
+					obs_data_release(bs);
+					sleep_ms(300);
+					return render(bg, w, h);
+				};
+				{
+					calldata_t pic = {};
+					calldata_set_string(&pic, "path", base_image);
+					proc_handler_call(obs_get_proc_handler(), "stagekit_set_start_image", &pic);
+					calldata_free(&pic);
+				}
+				sleep_ms(300);
+				const std::vector<uint8_t> wide = background_look();
+				if (thumb) {
+					const QPointF middle(thumb->width() / 2.0, thumb->height() / 2.0);
+					QWheelEvent zoom_in(middle, thumb->mapToGlobal(middle), QPoint(),
+							    QPoint(0, 5 * 120), Qt::NoButton, Qt::NoModifier,
+							    Qt::NoScrollPhase, false);
+					QCoreApplication::sendEvent(thumb, &zoom_in);
+				}
+				const std::vector<uint8_t> zoomed = background_look();
+				CHECK(mean_abs_diff(wide, zoomed) > 2.0,
+				      "turning the wheel on the thumbnail zooms the moving background (diff %.1f)",
+				      mean_abs_diff(wide, zoomed));
+				if (thumb) {
+					auto drag = [&](QEvent::Type type, QPointF where) {
+						QMouseEvent event(type, where, thumb->mapToGlobal(where),
+								  Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+						QCoreApplication::sendEvent(thumb, &event);
+					};
+					drag(QEvent::MouseButtonPress, QPointF(100, 60));
+					drag(QEvent::MouseMove, QPointF(40, 60));
+				}
+				const std::vector<uint8_t> panned = background_look();
+				CHECK(mean_abs_diff(zoomed, panned) > 1.0,
+				      "dragging the thumbnail chooses the part of the picture shown (diff %.1f)",
+				      mean_abs_diff(zoomed, panned));
+				calldata_t reset = {};
+				calldata_set_string(&reset, "image", "");
+				calldata_set_float(&reset, "zoom", 1.0);
+				calldata_set_float(&reset, "focus_x", 0.5);
+				calldata_set_float(&reset, "focus_y", 0.5);
+				proc_handler_call(obs_get_proc_handler(), "stagekit_set_ambient_view", &reset);
+				calldata_free(&reset);
 			}
 
 			dock->resize(340, dock->sizeHint().height());

@@ -293,22 +293,24 @@ hotkey under the scene.
 
 Open it from *Docks → StageKit*. It works on the current scene (the preview scene in Studio Mode).
 
-<p align="center"><img src="docs/images/stagekit-dock.png" width="340" alt="The StageKit dock: an item picker, a small picture of the scene to drag items on, a three-by-three grid of position buttons, margin and travel time, buttons that make Stream Deck keys, and buttons that add an effect to the item"></p>
+<p align="center"><img src="docs/images/stagekit-dock.png" width="340" alt="The StageKit dock: scene and item pickers, a three-by-three grid of position buttons, margin and travel time, buttons that make Stream Deck keys, the start image with a thumbnail, and buttons that add an effect to the item"></p>
 
-- Pick a scene: the one on screen, or any other by name, which is how you reach an item that lives in a
-  nested scene. Items inside groups are listed too.
-- **The picture of the scene** is for working by hand. Click an item to select it and drag it to move
-  it. Turn the mouse wheel over the picture to make the selected item bigger or smaller. If the item
-  has a Ramp Zoom, a yellow cross marks where it zooms in: drag the cross to move that point, and hold
-  Ctrl while turning the wheel to set how far it zooms. Untick *Show the live picture* to see outlines
-  only, which costs nothing to draw.
-- Pick an item and click one of the nine positions. It glides there.
-- *Make keys for all nine positions* adds a Place Item filter for each one to the scene, named like
-  "Camera → Top right". Point a Stream Deck *Filter* key at one, or give it a hotkey.
-- *Save its current spot as a key* does the same for wherever the item is now.
+- **Select an item in OBS's own preview** and the dock works on it. The *Item* list follows your
+  selection; you can also choose from the list.
+- Click one of the nine positions and the item glides there.
+- *Make keys for all nine positions* adds a Send To filter for each one **to the item's own source**,
+  named after the position ("Top right"). Point a Stream Deck *Filter* key at the camera and one of
+  those filters, or give it a hotkey.
+- *Save its current spot as a key* does the same for wherever the item is now: drag it where you want
+  it in the preview first.
+- **Start image**: the thumbnail shows what the moving background uses. Turn the mouse wheel on it to
+  zoom the background in, drag it to choose the part shown, double-click to reset. This is one setting
+  for the whole collection. *Use another picture for the background…* gives the background a picture
+  of its own; *Background settings…* opens the Ambient Background's other settings.
 - *Bring to front*, *Forward one*, *Back one* and *Send to back* change which items cover which.
 - *Add to this item* puts a Ramp Blur, Shadow & Backdrop, Ramp Zoom or Show/Hide Animation on the item
   and opens its filter window. Ramp Blur and Ramp Zoom are added switched off.
+- The *Scene* list reaches a scene that is not on screen.
 
 ### Show/Hide Animation
 

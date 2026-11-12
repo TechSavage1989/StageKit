@@ -15,15 +15,15 @@ the Free Software Foundation; either version 2 of the License, or
 //     a Stream Deck Filter key or a hotkey can trigger them
 //   - save the item's current spot as a key
 //   - add a StageKit effect to the item without hunting through menus
-//   - a small picture of the scene: drag an item to move it, turn the wheel
-//     to resize it, drag the cross to set where its Ramp Zoom zooms in
+//   - it follows the item selected in OBS's own preview
+//   - the start image, with a thumbnail: turn the wheel on it to zoom the
+//     moving background in, drag it to choose the part shown
 //
-// Moves are carried out by Place Item filters on the scene, so the dock and
-// the keys always behave the same way.
+// Moves are carried out by Send To filters on the item's own source, so the
+// dock and the keys always behave the same way, and a key is a filter on the
+// camera itself (what a Stream Deck Filter key points at).
 
 #include "stagekit-dock.hpp"
-
-#include "dock-canvas.hpp"
 
 #include "../common/scene-util.hpp"
 #include "../common/start-image.hpp"
@@ -45,6 +45,8 @@ the Free Software Foundation; either version 2 of the License, or
 #include <QInputDialog>
 #include <QLabel>
 #include <QLineEdit>
+#include <QWheelEvent>
+#include <QMouseEvent>
 #include <QPixmap>
 #include <QPushButton>
 #include <QScrollArea>
@@ -54,6 +56,9 @@ the Free Software Foundation; either version 2 of the License, or
 #include <QVBoxLayout>
 #include <QWidget>
 
+#include <cmath>
+#include <cstring>
+#include <functional>
 #include <string>
 
 namespace stagekit {
@@ -70,6 +75,40 @@ QString tr_text(const char *key)
 {
 	return QString::fromUtf8(obs_module_text(key));
 }
+
+// The background picture, small. The wheel zooms it and dragging pans it;
+// what it shows is the part the moving background will use.
+class Thumb : public QLabel {
+public:
+	using QLabel::QLabel;
+	std::function<void(double steps)> on_wheel;
+	std::function<void(double dx, double dy)> on_drag; // in fractions of the thumbnail
+	std::function<void()> on_reset;
+
+protected:
+	void wheelEvent(QWheelEvent *event) override
+	{
+		if (on_wheel)
+			on_wheel(event->angleDelta().y() / 120.0);
+		event->accept();
+	}
+	void mousePressEvent(QMouseEvent *event) override { last_ = event->position(); }
+	void mouseMoveEvent(QMouseEvent *event) override
+	{
+		const QPointF now = event->position();
+		if (on_drag && width() > 0 && height() > 0)
+			on_drag((now.x() - last_.x()) / width(), (now.y() - last_.y()) / height());
+		last_ = now;
+	}
+	void mouseDoubleClickEvent(QMouseEvent *) override
+	{
+		if (on_reset)
+			on_reset();
+	}
+
+private:
+	QPointF last_;
+};
 
 class Dock : public QWidget {
 public:
@@ -95,32 +134,6 @@ public:
 		form->addRow(tr_text("Dock.Item"), item_);
 		form->addRow(tr_text("Place.Linked"), linked_);
 		layout->addLayout(form);
-
-		// A picture of the scene to work on directly.
-		canvas_ = new DockCanvas(this);
-		canvas_->setObjectName("canvas");
-		canvas_->scene = [this] {
-			return current_scene();
-		};
-		canvas_->selected = [this] {
-			return item_->currentText();
-		};
-		canvas_->on_pick = [this](const QString &name) {
-			const int index = item_->findText(name);
-			if (index >= 0)
-				item_->setCurrentIndex(index);
-		};
-		QObject::connect(item_, &QComboBox::currentIndexChanged, canvas_, [this](int) { canvas_->update(); });
-		layout->addWidget(canvas_);
-		auto *live = new QCheckBox(tr_text("Dock.CanvasLive"), this);
-		live->setObjectName("canvasLive");
-		live->setChecked(true);
-		QObject::connect(live, &QCheckBox::toggled, canvas_,
-				 [this](bool on) { canvas_->set_live_picture(on); });
-		layout->addWidget(live);
-		auto *canvas_hint = new QLabel(tr_text("Dock.CanvasHint"), this);
-		canvas_hint->setWordWrap(true);
-		layout->addWidget(canvas_hint);
 
 		auto *move_box = new QGroupBox(tr_text("Dock.MoveBox"), this);
 		auto *move_layout = new QVBoxLayout(move_box);
@@ -186,8 +199,30 @@ public:
 		start_label_->setMinimumWidth(0);
 		start_label_->setFixedHeight(start_label_->fontMetrics().height() + 6);
 		start_label_->setAlignment(Qt::AlignCenter);
-		start_thumb_ = new QLabel(start_box);
+		start_thumb_ = new Thumb(start_box);
 		start_thumb_->setObjectName("startThumb");
+		start_thumb_->setCursor(Qt::OpenHandCursor);
+		start_thumb_->on_wheel = [this](double steps) {
+			AmbientView view = ambient_view();
+			view.zoom *= std::pow(1.1, steps);
+			set_ambient_view(view);
+			show_thumb();
+		};
+		start_thumb_->on_drag = [this](double dx, double dy) {
+			// Dragging the picture right shows more of its left.
+			AmbientView view = ambient_view();
+			view.focus_x -= dx / view.zoom;
+			view.focus_y -= dy / view.zoom;
+			set_ambient_view(view);
+			show_thumb();
+		};
+		start_thumb_->on_reset = [this] {
+			AmbientView view = ambient_view();
+			view.zoom = 1.0;
+			view.focus_x = view.focus_y = 0.5;
+			set_ambient_view(view);
+			show_thumb();
+		};
 		start_thumb_->setAlignment(Qt::AlignCenter);
 		start_thumb_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
 		start_thumb_->setFixedHeight(kThumbHeight);
@@ -203,9 +238,43 @@ public:
 				refresh();
 			}
 		});
+		auto *thumb_hint = new QLabel(tr_text("Dock.ThumbHint"), start_box);
+		thumb_hint->setWordWrap(true);
+		// The moving background uses the start image unless it is given a
+		// picture of its own here.
+		auto *other = new QPushButton(tr_text("Dock.BackgroundOther"), start_box);
+		other->setObjectName("backgroundOther");
+		QObject::connect(other, &QPushButton::clicked, this, [this] {
+			const QString file = QFileDialog::getOpenFileName(
+				this, tr_text("Dock.BackgroundOther"),
+				QString::fromUtf8(ambient_picture_path().c_str()),
+				"Images (*.bmp *.tga *.png *.jpeg *.jpg *.jxr *.gif *.psd *.webp *.avif);;All files (*.*)");
+			if (!file.isEmpty()) {
+				AmbientView view = ambient_view();
+				view.image = file.toUtf8().constData();
+				set_ambient_view(view);
+				refresh();
+			}
+		});
+		background_same_ = new QPushButton(tr_text("Dock.BackgroundSame"), start_box);
+		background_same_->setObjectName("backgroundSame");
+		QObject::connect(background_same_, &QPushButton::clicked, this, [this] {
+			AmbientView view = ambient_view();
+			view.image.clear();
+			set_ambient_view(view);
+			refresh();
+		});
+		auto *background_settings = new QPushButton(tr_text("Dock.BackgroundSettings"), start_box);
+		background_settings->setObjectName("backgroundSettings");
+		QObject::connect(background_settings, &QPushButton::clicked, this,
+				 [this] { open_background_settings(); });
 		start_layout->addWidget(start_thumb_);
 		start_layout->addWidget(start_label_);
+		start_layout->addWidget(thumb_hint);
 		start_layout->addWidget(choose);
+		start_layout->addWidget(other);
+		start_layout->addWidget(background_same_);
+		start_layout->addWidget(background_settings);
 		layout->addWidget(start_box);
 
 		auto *add_box = new QGroupBox(tr_text("Dock.AddBox"), this);
@@ -265,37 +334,37 @@ public:
 		// the lists current without hooking every scene signal.
 		auto *timer = new QTimer(this);
 		QObject::connect(timer, &QTimer::timeout, this, [this] { refresh(); });
-		timer->start(1000);
+		timer->start(400);
 		refresh();
 	}
 
 	void refresh()
 	{
 		const QString start = QString::fromUtf8(start_image_path().c_str());
-		QString name = start.isEmpty() ? tr_text("Dock.StartNone") : QFileInfo(start).fileName();
+		const QString shown = QString::fromUtf8(ambient_picture_path().c_str());
+		const bool own = shown != start;
+		QString name = shown.isEmpty() ? tr_text("Dock.StartNone") : QFileInfo(shown).fileName();
 		if (name.size() > 40)
 			name = name.left(22) + QStringLiteral("…") + name.right(16);
-		start_label_->setText(name);
-		start_label_->setToolTip(start);
-		if (start != thumb_path_) {
+		start_label_->setText(own ? tr_text("Dock.BackgroundIs").arg(name) : name);
+		start_label_->setToolTip(shown);
+		background_same_->setVisible(own);
+		if (shown != thumb_path_) {
 			// Read the picture already shrunk, so a large image costs little.
-			thumb_path_ = start;
-			QPixmap picture;
-			if (!start.isEmpty()) {
-				QImageReader reader(start);
+			thumb_path_ = shown;
+			thumb_full_ = QPixmap();
+			if (!shown.isEmpty()) {
+				QImageReader reader(shown);
 				reader.setAutoTransform(true);
 				const QSize size = reader.size();
 				if (size.isValid())
-					reader.setScaledSize(
-						size.scaled(kThumbHeight * 3, kThumbHeight, Qt::KeepAspectRatio));
-				picture = QPixmap::fromImageReader(&reader);
-				if (!picture.isNull() && picture.height() > kThumbHeight)
-					picture = picture.scaledToHeight(kThumbHeight, Qt::SmoothTransformation);
+					reader.setScaledSize(size.scaled(1280, 720, Qt::KeepAspectRatio));
+				thumb_full_ = QPixmap::fromImageReader(&reader);
 			}
-			start_thumb_->setPixmap(picture);
-			start_thumb_->setVisible(!picture.isNull());
-			start_thumb_->setToolTip(start);
+			start_thumb_->setToolTip(shown);
+			show_thumb();
 		}
+		follow_selection();
 
 		// Scene list: "the scene on screen" first, then every scene by name.
 		QStringList scenes;
@@ -376,6 +445,96 @@ private:
 
 	void say(const QString &text) { status_->setText(text); }
 
+	// Draws the part of the picture the moving background uses, 16:9, at
+	// the zoom and point chosen with the wheel and by dragging.
+	void show_thumb()
+	{
+		QPixmap picture;
+		if (!thumb_full_.isNull()) {
+			const AmbientView view = ambient_view();
+			const double pw = thumb_full_.width(), ph = thumb_full_.height();
+			// The whole-screen piece of the picture, then zoomed.
+			double w = pw, h = pw * 9.0 / 16.0;
+			if (h > ph) {
+				h = ph;
+				w = ph * 16.0 / 9.0;
+			}
+			w /= view.zoom;
+			h /= view.zoom;
+			const double x = std::clamp(view.focus_x * pw - w / 2.0, 0.0, pw - w);
+			const double y = std::clamp(view.focus_y * ph - h / 2.0, 0.0, ph - h);
+			picture = thumb_full_.copy(QRectF(x, y, w, h).toRect())
+					  .scaledToHeight(kThumbHeight, Qt::SmoothTransformation);
+		}
+		start_thumb_->setPixmap(picture);
+		start_thumb_->setVisible(!picture.isNull());
+	}
+
+	// The dock works on whatever is selected in OBS's own preview. Choosing
+	// another item in the dock's list holds until the selection changes.
+	void follow_selection()
+	{
+		obs_source_t *scene = current_scene();
+		QString selected;
+		if (obs_scene_t *s = scene_of(scene)) {
+			static const auto pick = [](obs_scene_t *, obs_sceneitem_t *item, void *param) {
+				auto *out = static_cast<QString *>(param);
+				if (out->isEmpty() && obs_sceneitem_selected(item) && !obs_sceneitem_is_group(item))
+					*out = QString::fromUtf8(obs_source_get_name(obs_sceneitem_get_source(item)));
+				return true;
+			};
+			obs_scene_enum_items(
+				s,
+				[](obs_scene_t *sc, obs_sceneitem_t *item, void *param) {
+					if (obs_sceneitem_is_group(item))
+						obs_sceneitem_group_enum_items(item, pick, param);
+					pick(sc, item, param);
+					return true;
+				},
+				&selected);
+		}
+		obs_source_release(scene);
+		if (selected.isEmpty() || selected == followed_)
+			return;
+		followed_ = selected;
+		const int index = item_->findText(selected);
+		if (index >= 0)
+			item_->setCurrentIndex(index);
+	}
+
+	// Opens the settings of the collection's moving background.
+	void open_background_settings()
+	{
+		obs_source_t *found = nullptr;
+		obs_enum_sources(
+			[](void *param, obs_source_t *source) {
+				auto **out = static_cast<obs_source_t **>(param);
+				const char *id = obs_source_get_unversioned_id(source);
+				if (!*out && id && strcmp(id, "stagekit_ambient_background") == 0)
+					*out = obs_source_get_ref(source);
+				return true;
+			},
+			&found);
+		if (!found) {
+			say(tr_text("Dock.BackgroundNone"));
+			return;
+		}
+		if (obs_frontend_get_main_window())
+			obs_frontend_open_source_properties(found);
+		obs_source_release(found);
+	}
+
+	// The source the selected item shows, in the scene being worked on.
+	// Returns a new reference, or nullptr.
+	obs_source_t *item_source() const
+	{
+		obs_source_t *scene = current_scene();
+		obs_sceneitem_t *item = find_item(scene, item_->currentText().toUtf8().constData());
+		obs_source_t *source = item ? obs_source_get_ref(obs_sceneitem_get_source(item)) : nullptr;
+		obs_source_release(scene);
+		return source;
+	}
+
 	// Moves the selected item in front of or behind the others.
 	void reorder(obs_order_movement movement)
 	{
@@ -397,7 +556,7 @@ private:
 	obs_data_t *place_settings(int destination) const
 	{
 		obs_data_t *d = obs_data_create();
-		obs_data_set_string(d, "item", item_->currentText().toUtf8().constData());
+		obs_data_set_int(d, "where", 0); // a key acts in the scene on screen
 		obs_data_set_string(d, "linked", linked_->currentData().toString().toUtf8().constData());
 		obs_data_set_int(d, "destination", destination);
 		obs_data_set_double(d, "margin", margin_->value());
@@ -422,14 +581,17 @@ private:
 
 	void move_now(int destination)
 	{
-		obs_source_t *scene = current_scene();
-		if (!scene || item_->currentText().isEmpty()) {
+		obs_source_t *source = item_source();
+		if (!source) {
 			say(tr_text("Dock.PickItem"));
-			obs_source_release(scene);
 			return;
 		}
 		obs_data_t *settings = place_settings(destination);
-		obs_source_t *filter = ensure_filter(scene, kPlaceItemId, kDockMoveFilter, settings);
+		// The dock may be working on a scene that is not on screen.
+		const QString chosen = scene_->currentData().toString();
+		const std::string in_scene = !chosen.isEmpty() ? chosen.toUtf8().toStdString() : fixed_scene_;
+		obs_data_set_string(settings, "in_scene", in_scene.c_str());
+		obs_source_t *filter = ensure_filter(source, kSendToId, kDockMoveFilter, settings);
 		obs_data_release(settings);
 		if (filter) {
 			calldata_t cd = {};
@@ -438,31 +600,27 @@ private:
 			say(tr_text("Dock.Moved").arg(item_->currentText(), tr_text(kDestinationText[destination])));
 		}
 		obs_source_release(filter);
-		obs_source_release(scene);
+		obs_source_release(source);
 	}
 
-	std::string key_name(const QString &place) const
-	{
-		return (item_->currentText() + " → " + place).toUtf8().constData();
-	}
-
+	// One key per screen position: Send To filters on the item's own source,
+	// named after the position.
 	void make_all_keys()
 	{
-		obs_source_t *scene = current_scene();
-		if (!scene || item_->currentText().isEmpty()) {
+		obs_source_t *source = item_source();
+		if (!source) {
 			say(tr_text("Dock.PickItem"));
-			obs_source_release(scene);
 			return;
 		}
 		for (int i = 0; i < 9; i++) {
 			obs_data_t *settings = place_settings(i);
-			obs_source_t *filter =
-				ensure_filter(scene, kPlaceItemId, key_name(tr_text(kDestinationText[i])), settings);
+			obs_source_t *filter = ensure_filter(
+				source, kSendToId, tr_text(kDestinationText[i]).toUtf8().toStdString(), settings);
 			obs_data_release(settings);
 			obs_source_release(filter);
 		}
 		say(tr_text("Dock.KeysMade").arg(item_->currentText()));
-		obs_source_release(scene);
+		obs_source_release(source);
 	}
 
 public:
@@ -483,7 +641,8 @@ public:
 		obs_data_set_double(settings, "saved_y", pos.y);
 		obs_data_set_double(settings, "saved_scale_x", scale.x);
 		obs_data_set_double(settings, "saved_scale_y", scale.y);
-		obs_source_t *filter = ensure_filter(scene, kPlaceItemId, key_name(name), settings);
+		obs_source_t *filter =
+			ensure_filter(obs_sceneitem_get_source(item), kSendToId, name.toUtf8().toStdString(), settings);
 		obs_data_release(settings);
 		obs_source_release(filter);
 		say(tr_text("Dock.SpotSaved").arg(name));
@@ -542,8 +701,10 @@ private:
 	std::string fixed_scene_;
 	static constexpr int kThumbHeight = 120;
 	QLabel *start_label_ = nullptr;
-	DockCanvas *canvas_ = nullptr;
-	QLabel *start_thumb_ = nullptr;
+	Thumb *start_thumb_ = nullptr;
+	QPixmap thumb_full_;
+	QPushButton *background_same_ = nullptr;
+	QString followed_;
 	QString thumb_path_ = QStringLiteral("\x01"); // nothing loaded yet
 	QStringList names_;
 	QStringList scenes_;

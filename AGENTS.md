@@ -25,7 +25,7 @@ for an update notice inside OBS. This exception is recorded in the handoff.
 | `src/zoom/` | Ramp Zoom filter |
 | `src/view/` | Cropped View source (part of another source as a source, so filters follow the crop) |
 | `src/placement/` | Scene filters: Place Item, Show/Hide Animation, Visibility Link, Match Item, Layout; and Send To, Place Item's code as a filter on the source it moves |
-| `src/dock/` | The StageKit dock (Qt widgets, no `Q_OBJECT`; it drives Place Item filters) and its scene picture (`dock-canvas.*`: drag, wheel, zoom point) |
+| `src/dock/` | The StageKit dock (Qt widgets, no `Q_OBJECT`). It follows the item selected in OBS, drives Send To filters on that item's source, and holds the start image thumbnail |
 | `src/common/` | Shared helpers: easing and `Tween`, `SwitchRamp`, `KawaseBlur`, scene utilities, and the start image (global path + Start Image source) |
 | `src/frame/` | Auto Frame filter and the Picture Shape key filter |
 | `src/capture/` | Auto Capture filter (aims a Game Capture at the game in front) and Program Trigger filter (shows items and switches filters while a program is open). Both use the Win32 window list in `auto-capture.cpp`; compiled but idle elsewhere |
@@ -105,8 +105,12 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
 - **Built-in emulator shapes are a starting guess, never an order.** The owner's Snes9x shows 8:7; the
   first table said 64:49 and cropped the picture. `kKnownPrograms` only seeds the held shape; what is
   seen on screen corrects it. Only a shape the owner saved, or a Picture Shape key, is obeyed blindly.
-- **The dock's scene picture reads the scene back about four times a second** while it is visible and
-  *Show the live picture* is ticked. Keep it small (480 px wide) and off when hidden.
+- **The dock has no picture of the scene.** One was built (drag, wheel, zoom cross) and the owner
+  rejected it: they select items in OBS's own preview, and the dock must act on that selection. The
+  wheel-zoom they asked for belongs to the start image thumbnail and sets the background's framing
+  (`AmbientView` in `src/common/start-image.*`), not an item's size.
+- **Dock keys are Send To filters on the item's source**, not Place Item filters on the scene. The
+  owner presses them from Stream Deck Filter keys on the camera.
 - **Shadow & Backdrop moves scene items on purpose.** The shadow's room makes the source bigger; the
   filter shifts each item showing the source (and grows its bounding box) by that room so the picture
   stays put, and remembers what it applied in `adjusted_*` settings. Anything else that changes the

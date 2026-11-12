@@ -175,7 +175,8 @@ private:
 	void resolve_children();
 	gs_texture_t *render_child(obs_source_t *child, gs_texrender_t *target);
 	void draw_layer(gs_texture_t *tex, uint32_t w, uint32_t h, double scroll_x, double scroll_y, double zoom,
-			double opacity, const Settings &s, LiveFit fit = LiveFit::Fill, bool clip = false);
+			double opacity, const Settings &s, LiveFit fit = LiveFit::Fill, bool clip = false,
+			double focus_x = 0.5, double focus_y = 0.5);
 	void pass(gs_effect_t *effect, gs_eparam_t *image, gs_texrender_t *dst, gs_texture_t *src, uint32_t w,
 		  uint32_t h, const char *technique);
 	gs_texture_t *blur(gs_texture_t *input, uint32_t w, uint32_t h, double strength);
@@ -363,7 +364,7 @@ void AmbientBackground::update(obs_data_t *settings)
 	}
 	// The picture is this source's own file, or the shared start image.
 	// With no start image chosen yet, its own file stands in.
-	const std::string start = start_image_path();
+	const std::string start = ambient_picture_path();
 	const std::string wanted = s.base_type == BaseType::StartImage && !start.empty() ? start : s.image;
 	start_revision_ = start_image_revision();
 	if (wanted != base_image_path_ || (!wanted.empty() && !base_image_loaded_)) {
@@ -466,7 +467,7 @@ void AmbientBackground::tick(float seconds)
 			std::lock_guard lock(mutex_);
 			uses_it = settings_.base_type == BaseType::StartImage;
 		}
-		const std::string path = start_image_path();
+		const std::string path = ambient_picture_path();
 		if (uses_it && !path.empty() && path != base_image_path_) {
 			base_image_path_ = path;
 			load_image(base_image_, base_image_loaded_, path);
@@ -529,7 +530,8 @@ gs_texture_t *AmbientBackground::render_child(obs_source_t *child, gs_texrender_
 // Draws tex so it covers the current render target (out_w x out_h set by the
 // caller's ortho), scrolled by the given number of output pixels.
 void AmbientBackground::draw_layer(gs_texture_t *tex, uint32_t out_w, uint32_t out_h, double scroll_x, double scroll_y,
-				   double zoom, double opacity, const Settings &s, LiveFit fit, bool clip)
+				   double zoom, double opacity, const Settings &s, LiveFit fit, bool clip,
+				   double focus_x, double focus_y)
 {
 	const double tex_aspect = (double)gs_texture_get_width(tex) / (double)gs_texture_get_height(tex);
 	const double out_aspect = (double)out_w / (double)out_h;
@@ -559,8 +561,10 @@ void AmbientBackground::draw_layer(gs_texture_t *tex, uint32_t out_w, uint32_t o
 
 	// Scroll is given in output pixels; one uv unit of the texture spans
 	// out_w / fx output pixels. Mirroring repeats every two units.
-	const double ox = std::fmod(scroll_x * fx / (double)out_w, 2.0);
-	const double oy = std::fmod(scroll_y * fy / (double)out_h, 2.0);
+	// Zoomed in, the picture is centred on the chosen point as far as its
+	// edges allow.
+	const double ox = std::fmod(scroll_x * fx / (double)out_w, 2.0) + (focus_x - 0.5) * std::max(0.0, 1.0 - fx);
+	const double oy = std::fmod(scroll_y * fy / (double)out_h, 2.0) + (focus_y - 0.5) * std::max(0.0, 1.0 - fy);
 
 	vec2 scale, offset;
 	vec2_set(&scale, (float)fx, (float)fy);
@@ -679,9 +683,14 @@ void AmbientBackground::render()
 		// "Replace": while there is a capture it is the whole background;
 		// the moment there is none, the usual picture is back.
 		const bool replace = live && s.live_replace;
-		if (base && !replace)
+		if (base && !replace) {
+			// The collection-wide framing applies to the shared picture only.
+			AmbientView view;
+			if (s.base_type == BaseType::StartImage)
+				view = ambient_view();
 			draw_layer(base, iw, ih, s.speed_x * time_ * kInternalScale, s.speed_y * time_ * kInternalScale,
-				   s.zoom, 1.0, s);
+				   s.zoom * view.zoom, 1.0, s, LiveFit::Fill, false, view.focus_x, view.focus_y);
+		}
 		if (live) {
 			// Blended over the picture, a capture that does not cover the
 			// screen leaves the picture showing around it. As the whole
