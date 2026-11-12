@@ -32,6 +32,20 @@ uint64_t start_image_choice();
 // Goes up every time the path changes, so users of it can tell cheaply.
 uint64_t start_image_revision();
 
+// How the moving background frames its picture, set once for the whole
+// collection: an optional picture of its own (empty means "the start
+// image"), how far it is zoomed in, and the point it zooms in on.
+struct AmbientView {
+	std::string image;
+	double zoom = 1.0;                   // 1 = whole picture, up to 8
+	double focus_x = 0.5, focus_y = 0.5; // 0..1 across and down the picture
+};
+AmbientView ambient_view();
+// Counts as a change of the start image for everything that follows it.
+void set_ambient_view(const AmbientView &view);
+// The picture the background shows: its own if one is set, else the start image.
+std::string ambient_picture_path();
+
 // For the scene collection's save data.
 void start_image_save(obs_data_t *save_data);
 void start_image_load(obs_data_t *save_data);

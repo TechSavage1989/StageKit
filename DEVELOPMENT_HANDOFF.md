@@ -204,6 +204,20 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Dock rework (0.1.0-beta20)
+
+The owner said the dock's live scene picture was not what they meant. What they asked for, in their
+words: a thumbnail for the start image; the start image as the ambient background by default; the
+background "globally configurable on its own if desired"; the zoom "was to zoom in on the thumbnail,
+not zoom a selected item"; and to "select an object in the main scene viewer, and have the stagekit
+options apply to the selected item". The arrow buttons were for placing the camera, which they wanted
+as a filter on the camera.
+
+So: `dock-canvas.*` is deleted; the dock follows `obs_sceneitem_selected`; its keys are Send To filters
+on the item's source; the thumbnail's wheel and drag set a collection-wide `AmbientView` (zoom, focus
+point, optional picture of the background's own), saved under `stagekit.ambient_*`. My reading of "zoom
+in on the thumbnail" as "frame the background" is an interpretation the owner has not confirmed.
+
 ## Scene collection rebuild
 
 The owner asked for their collection to be rebuilt on StageKit (129 scenes, 187 sources, 242 filters).

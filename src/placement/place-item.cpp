@@ -74,6 +74,7 @@ struct Settings {
 	std::string linked;
 	bool flip_linked = true;
 	bool every_scene = false; // Send To only
+	std::string in_scene;     // Send To only: this scene instead (set by the dock)
 };
 
 // One item gliding from one place to another. Places are the top-left of
@@ -286,6 +287,7 @@ void PlaceItem::update(obs_data_t *settings)
 	s.linked = obs_data_get_string(settings, "linked");
 	s.flip_linked = obs_data_get_bool(settings, "flip_linked");
 	s.every_scene = obs_data_get_int(settings, "where") == 1;
+	s.in_scene = obs_data_get_string(settings, "in_scene");
 
 	std::lock_guard lock(mutex_);
 	settings_ = s;
@@ -322,7 +324,14 @@ void PlaceItem::start()
 	moving_ = false;
 
 	if (on_source_) {
-		for (const Target &target : places_of(parent_, s.every_scene))
+		std::vector<Target> targets;
+		if (obs_source_t *named = s.in_scene.empty() ? nullptr : obs_get_source_by_name(s.in_scene.c_str())) {
+			collect_in(named, parent_, targets, true, 0);
+			obs_source_release(named);
+		} else {
+			targets = places_of(parent_, s.every_scene);
+		}
+		for (const Target &target : targets)
 			plan(s, target.scene, target.item);
 	} else if (obs_sceneitem_t *item = find_item(parent_, s.item)) {
 		plan(s, parent_, item);
