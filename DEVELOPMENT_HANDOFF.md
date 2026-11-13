@@ -204,6 +204,28 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Pale pictures in the Filters window (0.1.0-beta61)
+
+The owner: "all the sources with the new filters have a whiteness added to them, compared to the
+actual canvas viewer"; then "turning off the filter makes the whiteness go away. the whiteness occurs
+with multiple different filters. no HDR enabled."
+
+- **Cause, reproduced in the tests**: Shadow, Glow & Outline and Auto Frame (and the Ambient
+  Background source) were not flagged `OBS_SOURCE_SRGB`. OBS then draws them with linear-light
+  handling switched off. On an 8-bit surface that makes no difference, which is why the canvas and
+  the earlier tests were right; on a 16-bit float surface holding linear light, ordinary values land
+  unconverted and look pale. `render_shown` in the tests draws onto such a surface: both filters
+  were off by about 46 levels per channel before the flag and 0 after.
+- **Assumed, not seen**: that the owner's OBS gives its Filters window such a surface. HDR is off;
+  their Windows is a recent preview build, where colour management for standard displays may be on.
+  If beta61 does not cure it, that assumption is wrong and the next thing to ask for is a screenshot
+  of the same source's Filters window with a StageKit filter that already had the flag (Corners &
+  Edges alone).
+- **Agreed, not built yet**: the placeholder. The owner: "you can build a placeholder, though it
+  should be configurable to be enabled or disabled. Start image should be the default for the
+  placeholder. What's 'nothing to show' referring to?" (answered in chat: a capture with no game or
+  window hooked, as opposed to one showing a black picture).
+
 ## Active App: captures switched to by hand (0.1.0-beta60)
 
 The owner: automatic switching between configured apps works, but a window captured by hand (the
@@ -223,14 +245,7 @@ Stream Deck keys or hotkeys."
   (`stagekit.active.next.<filter>`), and straight back (`stagekit.active.back.<filter>`).
 - Tests drive the two actions through procs on the filter (`step_by_hand`, `back_to_apps`); the
   headless tests cannot press a hotkey.
-- **Open, reported the same day**: "all the sources with the new filters have a whiteness added to
-  them, compared to the actual canvas viewer", with a screenshot of the Filters window's preview
-  looking paler than the main preview for a Window Capture with Shadow, Glow & Outline. Not yet
-  explained. Checked so far: every filter's final draw matches libobs's own `render_filter_tex`
-  (follow `gs_get_linear_srgb()`), and libobs forces that flag off for filters without
-  `OBS_SOURCE_SRGB` and converts for HDR displays itself (`source_render`). Next: reproduce in the
-  tests by drawing a filtered source with the state a display uses (linear sRGB on, framebuffer sRGB
-  on), and ask whether the monitor is HDR and whether OBS's own filters look the same there.
+- The whiteness reported the same day is explained and fixed in beta61 (above).
 - **Asked, not built**: a placeholder (the start image or other media) where a capture has nothing
   to show.
 

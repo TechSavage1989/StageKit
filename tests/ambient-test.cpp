@@ -94,15 +94,18 @@ static std::vector<uint8_t> render(obs_source_t *src, uint32_t w, uint32_t h)
 }
 
 // The same, drawn the way OBS draws a source by itself in a window of its
-// own (the Filters and Properties windows, a projector): colours handled in
-// linear light, which the scene's own drawing does not do.
+// own (the Filters and Properties windows, a projector) where Windows gives
+// that window a wide-colour surface: sixteen-bit, holding linear light. A
+// source or filter that is not colour-aware puts ordinary values there and
+// comes out pale. What was drawn is brought back to ordinary values to compare.
 static std::vector<uint8_t> render_shown(obs_source_t *src, uint32_t w, uint32_t h)
 {
 	std::vector<uint8_t> pixels(size_t(w) * h * 4);
 	obs_enter_graphics();
+	gs_texrender_t *wide = gs_texrender_create(GS_RGBA16F, GS_ZS_NONE);
 	gs_texrender_t *tr = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 	gs_stagesurf_t *stage = gs_stagesurface_create(w, h, GS_RGBA);
-	if (gs_texrender_begin(tr, w, h)) {
+	if (gs_texrender_begin_with_color_space(wide, w, h, GS_CS_SRGB_16F)) {
 		vec4 clear;
 		vec4_zero(&clear);
 		gs_clear(GS_CLEAR_COLOR, &clear, 0.0f, 0);
@@ -111,10 +114,28 @@ static std::vector<uint8_t> render_shown(obs_source_t *src, uint32_t w, uint32_t
 		gs_blend_function(GS_BLEND_ONE, GS_BLEND_ZERO);
 		const bool was_linear = gs_set_linear_srgb(true);
 		const bool was_srgb = gs_framebuffer_srgb_enabled();
-		gs_enable_framebuffer_srgb(true);
+		gs_enable_framebuffer_srgb(false);
 		obs_source_video_render(src);
 		gs_enable_framebuffer_srgb(was_srgb);
 		gs_set_linear_srgb(was_linear);
+		gs_blend_state_pop();
+		gs_texrender_end(wide);
+	}
+	if (gs_texrender_begin(tr, w, h)) {
+		vec4 clear;
+		vec4_zero(&clear);
+		gs_clear(GS_CLEAR_COLOR, &clear, 0.0f, 0);
+		gs_ortho(0.0f, (float)w, 0.0f, (float)h, -100.0f, 100.0f);
+		gs_blend_state_push();
+		gs_blend_function(GS_BLEND_ONE, GS_BLEND_ZERO);
+		gs_effect_t *def = obs_get_base_effect(OBS_EFFECT_DEFAULT);
+		gs_texture_t *linear_light = gs_texrender_get_texture(wide);
+		const bool was_srgb = gs_framebuffer_srgb_enabled();
+		gs_enable_framebuffer_srgb(true); // linear light back to ordinary values
+		gs_effect_set_texture(gs_effect_get_param_by_name(def, "image"), linear_light);
+		while (gs_effect_loop(def, "Draw"))
+			gs_draw_sprite(linear_light, 0, w, h);
+		gs_enable_framebuffer_srgb(was_srgb);
 		gs_blend_state_pop();
 		gs_texrender_end(tr);
 	}
@@ -128,6 +149,7 @@ static std::vector<uint8_t> render_shown(obs_source_t *src, uint32_t w, uint32_t
 	}
 	gs_stagesurface_destroy(stage);
 	gs_texrender_destroy(tr);
+	gs_texrender_destroy(wide);
 	obs_leave_graphics();
 	return pixels;
 }

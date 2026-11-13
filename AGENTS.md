@@ -258,6 +258,12 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   and to `scripts/root-allowlist.txt`.
 - Colour is handled as raw (non-linear) values inside multi-pass pipelines; the final draw follows
   `gs_get_linear_srgb()`. Ramp Blur instead blurs in linear light through sRGB views.
+- **Every filter and source that draws is flagged `OBS_SOURCE_SRGB`.** Without it OBS forces
+  `gs_get_linear_srgb()` off for that filter, and where a window has a wide-colour (16-bit float)
+  surface the filter writes ordinary values into linear light: the picture is pale. The owner saw
+  that in the Filters window, on a standard display with HDR off, for Shadow, Glow & Outline and
+  Auto Frame, the two that lacked the flag. The tests draw each filter onto such a surface
+  (`render_shown`); add a new filter to that list.
 
 ## Conventions
 
