@@ -129,11 +129,22 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
 - **The preview's right-click menu is not an OBS API.** `PreviewMenu` in `src/dock/stagekit-dock.cpp`
   watches for a context-menu event on the widget named `preview` and adds to the next menu that opens.
   If OBS renames that widget the menu entry silently disappears; the hotkeys and the dock still work.
-- **Guides over the preview are a window of our own, not OBS's.** `src/dock/preview-guides.*` puts a
-  see-through, click-through tool window exactly over the widget named `preview` and repeats OBS's own
-  sums (`preview_map`: a 10 px edge, then the canvas as large as fits) to find the canvas in it. That
+- **Guides over the preview are windows of our own, not OBS's.** `src/dock/preview-guides.*` puts one
+  thin, opaque, click-through tool window per line exactly where the line belongs over the widget
+  named `preview`, and repeats OBS's own sums (`preview_map`: a 10 px edge, then the canvas as large as
+  fits) to find the canvas in it. One see-through window over the whole preview showed nothing on the
+  owner's Windows machine (beta46 to beta49); the mouse button is also read from Windows itself. That
   only holds for *Scale to Window*. It is off by default and only shown while a line is up. Items are
   measured once when a drag starts, never while it goes on.
+- **The order items are selected in comes from OBS's own `item_select` signals**
+  (`track_selection_order` in `src/dock/arrange-tools.cpp`), on every scene and group. It used to be
+  learned by polling one scene, which forgot it whenever the dock's *Scene* list showed another scene,
+  so "last selected" became the top-most item. The dock's Arrange tools act on the scene being
+  edited (`arrange_scene()`), not on the dock's *Scene* list, unless nothing is selected there.
+- **Ignore shadows measures the picture without its shadow by drawing what the first Shadow, Glow &
+  Outline draws from** (`shadow_free`), not by cutting the shadow's room off the edges: a widget's
+  picture often stops short of its own edges, and then the shadow was counted. Unticked, a shadow
+  sized in screen pixels keeps its size while the item is resized, and `match_size` allows for that.
 - **Arrange options are global** (`arrange_options()`), saved with the scene collection. The dock's
   controls only show and set them. Add a new tool to `ArrangeAction` and `kInfo` and it appears in the
   dock, the menu and the hotkeys at once.

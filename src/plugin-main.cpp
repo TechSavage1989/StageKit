@@ -115,6 +115,7 @@ bool obs_module_load(void)
 	for (GlobalHotkey &hk : g_hotkeys)
 		hk.id = obs_hotkey_register_frontend(hk.name, obs_module_text(hk.text), blur_all_hotkey, &hk);
 	stagekit::register_arrange_hotkeys();
+	stagekit::track_selection_order();
 	obs_frontend_add_save_callback(frontend_save_load, nullptr);
 	obs_log(LOG_INFO, "plugin loaded successfully (version %s)", PLUGIN_VERSION);
 	return true;

@@ -86,10 +86,11 @@ void add_transform_undo(const char *name, const std::string &before, const std::
 // For the tests: puts the scene back as before the last step (or forward again).
 void replay_last_arrange(bool redo);
 
-// The selected items of a scene in the order they were selected. OBS does
-// not keep that order, so this notes it each time it is asked: call it often
-// (the dock does, several times a second).
+// The selected items of a scene in the order they were selected, as OBS
+// reported each selection (see track_selection_order).
 std::vector<obs_sceneitem_t *> selection_in_order(obs_source_t *scene);
+// Starts noting when each item is selected, in every scene and group. Once, at load.
+void track_selection_order();
 
 // The line the last line-up tool put things on, for showing it in the
 // preview. `serial` goes up each time a tool lines something up.

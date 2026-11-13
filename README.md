@@ -489,7 +489,8 @@ click several. You can use them from three places, and all three share the same 
 - **Hotkeys**: *Settings → Hotkeys*, the entries that start with *StageKit:* (for example
   *StageKit: Align left*).
 - The **Arrange** box in the StageKit dock, which also lists every selected item in the order you
-  selected it.
+  selected it. It always works on the scene you are editing in OBS, whatever scene the dock's own
+  *Scene* list shows.
 
 Each use is one step in OBS's *Edit → Undo* and *Redo*.
 
@@ -499,14 +500,17 @@ What they do:
 | --- | --- |
 | *Left*, *Centre*, *Right*, *Top*, *Middle*, *Bottom* | Lines the items up with that side of the screen. With *Align to: Each other*, lines two or more up with one another instead. With *First selected* or *Last selected*, that item stays put and the others line up with it. |
 | *Space out ↔*, *Space out ↕* | With three or more: the outer two stay put and the rest spread so the gaps are equal. |
-| *Same width*, *Same height*, *Same size* | With two or more: resizes the others to match the top-most one in the Sources list, or the first or last selected when *Align to* is set to that. |
+| *Same width*, *Same height*, *Same size* | With two or more: resizes the others to match the first or last selected when *Align to* is set to that, otherwise the top-most one in the Sources list. |
 | *Snap now* | Moves each item the last few pixels so an edge or its centre meets the screen's or a neighbour's. |
 
 Options:
 
 - **Use visible pixels** (on by default) measures the picture actually drawn in each item and ignores
   the empty, see-through room around it. Switch it off to go by the item's box, as OBS does.
-- **Ignore shadows** keeps a Shadow, Glow & Outline's shadow from counting as picture.
+- **Ignore shadows** (on by default) keeps a Shadow, Glow & Outline from counting: pictures are lined
+  up and sized by themselves, and their shadows reach past them. Unticked, each item counts together
+  with its shadow, so with *Same width* the picture and its shadow together come out as wide as the
+  other item and its shadow.
 - **Keep shape when resizing** (on by default) grows or shrinks an item evenly. Switch it off and
   *Same width* or *Same height* changes only that direction, which stretches the picture.
 - **Snap on release** snaps an item by itself after you drag it in the preview and let go. *Snap
@@ -514,7 +518,8 @@ Options:
 - **Guides in the preview** (off by default) draws a line across the preview where an item you are
   dragging lines up with the screen or another item, and where a line-up tool has just put things.
   The lines are on your screen only, never in the stream or a recording. They are placed for a preview
-  set to *Scale to Window*.
+  set to *Scale to Window*. Each line is a thin window of its own laid over the preview; OBS's log
+  says when guides are switched on, when a drag is first seen, and where the first line was put.
 
 ### Show/Hide Animation
 

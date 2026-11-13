@@ -296,6 +296,14 @@ public:
 	uint32_t width();
 	uint32_t height();
 
+	// The room it takes on each side right now, in the source's pixels.
+	Padding padding_now() { return padding_for(settings()); }
+	bool in_screen_pixels()
+	{
+		std::lock_guard lock(mutex_);
+		return settings_.screen_px;
+	}
+
 private:
 	Settings settings();
 	bool capture_input(uint32_t w, uint32_t h);
@@ -922,6 +930,55 @@ void get_defaults(obs_data_t *settings)
 }
 
 } // namespace
+
+bool shadow_free(obs_source_t *source, ShadowFree &out)
+{
+	out = ShadowFree();
+	// Every shadow filter switched on, and which one is applied first: OBS
+	// keeps a source's filters with the one applied first at the end.
+	struct Find {
+		obs_source_t *source;
+		obs_source_t *first = nullptr;
+		int first_index = -1;
+		double left = 0.0, top = 0.0;
+		bool on_screen = false;
+	} find{source};
+	obs_source_enum_filters(
+		source,
+		[](obs_source_t *, obs_source_t *filter, void *param) {
+			const char *id = obs_source_get_unversioned_id(filter);
+			if (!id || strcmp(id, kShadowBackdropId) != 0 || !obs_source_enabled(filter))
+				return;
+			auto *f = static_cast<Find *>(param);
+			auto *shadow = static_cast<ShadowBackdrop *>(obs_obj_get_data(filter));
+			if (shadow) {
+				// Where the room it takes now puts its picture.
+				const Padding p = shadow->padding_now();
+				f->left += p.left;
+				f->top += p.top;
+				f->on_screen = f->on_screen || shadow->in_screen_pixels();
+			}
+			const int index = obs_source_filter_get_index(f->source, filter);
+			if (index > f->first_index) {
+				f->first_index = index;
+				f->first = filter;
+			}
+		},
+		&find);
+	if (!find.first)
+		return false;
+	obs_source_t *under = obs_filter_get_target(find.first);
+	if (!under)
+		return false;
+	out.draw = obs_source_get_ref(under);
+	if (!out.draw)
+		return false;
+	out.bare = under == source;
+	out.left = find.left;
+	out.top = find.top;
+	out.fixed_on_screen = find.on_screen;
+	return true;
+}
 
 void shadow_room(obs_source_t *source, double room[4])
 {

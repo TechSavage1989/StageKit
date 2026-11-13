@@ -590,7 +590,7 @@ public:
 			button->setObjectName(QString("arrange_") + info.name);
 			button->setToolTip(tr_text((std::string(info.text) + ".Tip").c_str()));
 			QObject::connect(button, &QPushButton::clicked, this, [this, action] {
-				obs_source_t *scene = current_scene();
+				obs_source_t *scene = arrange_scene();
 				const ArrangeOutcome out = run_arrange(action, scene, arrange_items(scene));
 				obs_source_release(scene);
 				say(arrange_message(out));
@@ -603,6 +603,7 @@ public:
 		visible_->setToolTip(tr_text("Arrange.Visible.Tip"));
 		no_shadow_ = new QCheckBox(tr_text("Arrange.NoShadow"), arrange_box);
 		no_shadow_->setObjectName("arrangeNoShadow");
+		no_shadow_->setToolTip(tr_text("Arrange.NoShadow.Tip"));
 		keep_shape_ = new QCheckBox(tr_text("Arrange.KeepShape"), arrange_box);
 		keep_shape_->setObjectName("arrangeKeepShape");
 		keep_shape_->setToolTip(tr_text("Arrange.KeepShape.Tip"));
@@ -640,23 +641,24 @@ public:
 
 		auto *order_box = new QGroupBox(tr_text("Dock.OrderBox"), this);
 		auto *order_layout = new QGridLayout(order_box);
+		// Two columns: all the way (front above back) and one step (forward
+		// above back), each pair one above the other.
 		struct {
 			const char *object_name, *text;
 			obs_order_movement movement;
+			int row, column;
 		} orders[] = {
-			{"orderTop", "Dock.OrderTop", OBS_ORDER_MOVE_TOP},
-			{"orderUp", "Dock.OrderUp", OBS_ORDER_MOVE_UP},
-			{"orderDown", "Dock.OrderDown", OBS_ORDER_MOVE_DOWN},
-			{"orderBottom", "Dock.OrderBottom", OBS_ORDER_MOVE_BOTTOM},
+			{"orderTop", "Dock.OrderTop", OBS_ORDER_MOVE_TOP, 0, 0},
+			{"orderBottom", "Dock.OrderBottom", OBS_ORDER_MOVE_BOTTOM, 1, 0},
+			{"orderUp", "Dock.OrderUp", OBS_ORDER_MOVE_UP, 0, 1},
+			{"orderDown", "Dock.OrderDown", OBS_ORDER_MOVE_DOWN, 1, 1},
 		};
-		int order_index = 0;
 		for (const auto &order : orders) {
 			auto *button = new QPushButton(tr_text(order.text), order_box);
 			button->setObjectName(order.object_name);
 			const obs_order_movement movement = order.movement;
 			QObject::connect(button, &QPushButton::clicked, this, [this, movement] { reorder(movement); });
-			order_layout->addWidget(button, order_index / 2, order_index % 2);
-			order_index++;
+			order_layout->addWidget(button, order.row, order.column);
 		}
 		layout->addWidget(order_box);
 
@@ -764,7 +766,7 @@ private:
 	// others will come to when lining up to the first or last selected.
 	void show_arrange_target()
 	{
-		obs_source_t *scene = current_scene();
+		obs_source_t *scene = arrange_scene();
 		const std::vector<obs_sceneitem_t *> items = scene ? arrange_items(scene)
 								   : std::vector<obs_sceneitem_t *>();
 		const Against against = arrange_options().against;
@@ -845,6 +847,19 @@ private:
 		shown_options_ = arrange_options_revision();
 	}
 
+	// Where the arrange tools act: the scene being edited in OBS, where items
+	// are selected in its preview. Only when nothing is selected there do
+	// they fall back to the scene chosen in the dock, for its Item list.
+	// Returns a new reference, or nullptr.
+	obs_source_t *arrange_scene() const
+	{
+		obs_source_t *editing = editing_scene();
+		if (editing && !selected_items(editing).empty())
+			return editing;
+		obs_source_release(editing);
+		return current_scene();
+	}
+
 	// What the arrange buttons act on: the items selected in OBS, or failing
 	// that the one chosen in the dock's list.
 	std::vector<obs_sceneitem_t *> arrange_items(obs_source_t *scene) const
@@ -861,14 +876,13 @@ private:
 	// button is up again, move it the last few pixels onto the nearest line.
 	void watch_for_drop()
 	{
-		// Looked at often, so the order items are selected in is noticed.
 		show_arrange_target();
 		const ArrangeOptions options = arrange_options();
 		if (!options.live_snap) {
 			watched_.clear();
 			return;
 		}
-		obs_source_t *scene = current_scene();
+		obs_source_t *scene = arrange_scene();
 		const std::vector<obs_sceneitem_t *> items = selected_items(scene);
 		std::vector<std::pair<int64_t, std::pair<float, float>>> now;
 		for (obs_sceneitem_t *item : items) {
@@ -880,7 +894,7 @@ private:
 					std::equal(now.begin(), now.end(), watched_.begin(),
 						   [](const auto &a, const auto &b) { return a.first == b.first; });
 		const bool moved = same_items && now != watched_;
-		const bool button_up = !g_test_mouse_down && QGuiApplication::mouseButtons() == Qt::NoButton;
+		const bool button_up = !g_test_mouse_down && !guides_mouse_down();
 		// Only a drag with the mouse counts. Items moved by a key, a filter or
 		// a Stream Deck button are where they were sent and must stay there.
 		if (moved && !button_up)
@@ -997,12 +1011,19 @@ private:
 
 	void move_now(int destination)
 	{
+		obs_data_t *settings = place_settings(destination);
+		send_with(settings, tr_text(kDestinationText[destination]));
+		obs_data_release(settings);
+	}
+
+	// Sends the chosen item with these Send To settings, as one step for Undo.
+	void send_with(obs_data_t *settings, const QString &where)
+	{
 		obs_source_t *source = item_source();
 		if (!source) {
 			say(tr_text("Dock.PickItem"));
 			return;
 		}
-		obs_data_t *settings = place_settings(destination);
 		// Everywhere, or only in the scene the dock is working on, which may
 		// not be the one on screen.
 		const bool everywhere = every_scene_->isChecked();
@@ -1012,7 +1033,6 @@ private:
 								 : fixed_scene_;
 		obs_data_set_string(settings, "in_scene", in_scene.c_str());
 		obs_source_t *filter = ensure_filter(source, kSendToId, kDockMoveFilter, settings);
-		obs_data_release(settings);
 		// One step for OBS's Undo, added when the item has finished gliding.
 		if (filter) {
 			obs_source_t *scene = current_scene();
@@ -1031,7 +1051,7 @@ private:
 			calldata_t cd = {};
 			proc_handler_call(obs_source_get_proc_handler(filter), "trigger", &cd);
 			calldata_free(&cd);
-			say(tr_text("Dock.Moved").arg(item_->currentText(), tr_text(kDestinationText[destination])));
+			say(tr_text("Dock.Moved").arg(item_->currentText(), where));
 		}
 		obs_source_release(filter);
 		obs_source_release(source);
@@ -1176,6 +1196,16 @@ void register_dock()
 			calldata_set_ptr(cd, "widget", static_cast<QWidget *>(new BackgroundDock()));
 		},
 		nullptr);
+	// For the tests: what a hotkey or the preview's menu does, by the tool's name.
+	proc_handler_add(
+		obs_get_proc_handler(), "void stagekit_run_arrange(in string action)",
+		[](void *, calldata_t *cd) {
+			const char *name = calldata_string(cd, "action");
+			for (int a = 0; name && a < (int)ArrangeAction::Count; a++)
+				if (strcmp(arrange_info(static_cast<ArrangeAction>(a)).name, name) == 0)
+					run_arrange_on_selection(static_cast<ArrangeAction>(a));
+		},
+		nullptr);
 	proc_handler_add(
 		obs_get_proc_handler(), "void stagekit_replay_arrange(in bool redo)",
 		[](void *, calldata_t *cd) { replay_last_arrange(calldata_bool(cd, "redo")); }, nullptr);
@@ -1192,7 +1222,8 @@ void register_dock()
 		obs_get_proc_handler(), "void stagekit_install_preview_guides(in ptr preview, out ptr overlay)",
 		[](void *, calldata_t *cd) {
 			auto *preview = static_cast<QWidget *>(calldata_ptr(cd, "preview"));
-			calldata_set_ptr(cd, "overlay", install_preview_guides(nullptr, preview));
+			calldata_set_ptr(cd, "overlay",
+					 static_cast<QObject *>(install_preview_guides(nullptr, preview)));
 		},
 		nullptr);
 	proc_handler_add(

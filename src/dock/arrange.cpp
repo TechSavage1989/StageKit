@@ -34,10 +34,12 @@ struct Drawn {
 	bool any = false;
 };
 
-Drawn drawn_part(obs_source_t *source)
+// `bare`: the source drawn without any of its filters.
+Drawn drawn_part(obs_source_t *source, bool bare = false)
 {
 	Drawn out;
-	const uint32_t sw = obs_source_get_width(source), sh = obs_source_get_height(source);
+	const uint32_t sw = bare ? obs_source_get_base_width(source) : obs_source_get_width(source);
+	const uint32_t sh = bare ? obs_source_get_base_height(source) : obs_source_get_height(source);
 	if (!sw || !sh)
 		return out;
 	// Edges are found to within a source pixel up to 1024 wide; beyond that
@@ -57,7 +59,10 @@ Drawn drawn_part(obs_source_t *source)
 		gs_ortho(0.0f, (float)sw, 0.0f, (float)sh, -100.0f, 100.0f);
 		gs_blend_state_push();
 		gs_blend_function(GS_BLEND_ONE, GS_BLEND_INVSRCALPHA);
-		obs_source_video_render(source);
+		if (bare)
+			obs_source_default_render(source);
+		else
+			obs_source_video_render(source);
 		gs_blend_state_pop();
 		gs_texrender_end(render);
 		gs_stage_texture(stage, gs_texrender_get_texture(render));
@@ -124,18 +129,40 @@ Box measure_item(obs_source_t *scene, obs_sceneitem_t *item, const Measure &how)
 	if (!how.visible_pixels)
 		return whole;
 	obs_source_t *source = obs_sceneitem_get_source(item);
-	Drawn part = drawn_part(source);
+	Drawn part;
+	bool measured = false;
+	ShadowFree free;
+	if (how.leave_out_shadows && shadow_free(source, free)) {
+		// The picture as it is before its shadow, glow or outline is added,
+		// then put where the shadow filter puts it. A source that plays
+		// video frames cannot be drawn without its filters, so for one of
+		// those the shadow's room is cut off the edges instead (below).
+		const bool can_draw = !free.bare || !(obs_source_get_output_flags(free.draw) & OBS_SOURCE_ASYNC);
+		if (can_draw) {
+			part = drawn_part(free.draw, free.bare);
+			measured = true;
+			if (part.any) {
+				part.x += free.left;
+				part.y += free.top;
+			}
+		}
+		obs_source_release(free.draw);
+	}
+	if (!measured) {
+		part = drawn_part(source);
+		if (part.any && how.leave_out_shadows) {
+			double room[4];
+			shadow_room(source, room);
+			const double sw = obs_source_get_width(source), sh = obs_source_get_height(source);
+			const double x0 = std::max(part.x, room[0]), y0 = std::max(part.y, room[1]);
+			const double x1 = std::min(part.x + part.w, sw - room[2]);
+			const double y1 = std::min(part.y + part.h, sh - room[3]);
+			if (x1 > x0 && y1 > y0)
+				part = {x0, y0, x1 - x0, y1 - y0, true};
+		}
+	}
 	if (!part.any)
 		return whole;
-	if (how.leave_out_shadows) {
-		double room[4];
-		shadow_room(source, room);
-		const double sw = obs_source_get_width(source), sh = obs_source_get_height(source);
-		const double x0 = std::max(part.x, room[0]), y0 = std::max(part.y, room[1]);
-		const double x1 = std::min(part.x + part.w, sw - room[2]), y1 = std::min(part.y + part.h, sh - room[3]);
-		if (x1 > x0 && y1 > y0)
-			part = {x0, y0, x1 - x0, y1 - y0, true};
-	}
 	// From the source's pixels to the canvas: the item's own drawing
 	// transform (which already allows for its crop), then its group's.
 	obs_sceneitem_crop crop;
@@ -281,8 +308,10 @@ int match_size(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items,
 {
 	if (items.size() < 2 || (!width && !height))
 		return 0;
-	// The top-most selected item is the one the others follow.
+	// The last item in the list is the one the others follow.
 	const Box model = measure_item(scene, items.back(), how);
+	Measure picture_only = how;
+	picture_only.leave_out_shadows = true;
 	int changed = 0;
 	for (size_t i = 0; i + 1 < items.size(); i++) {
 		obs_sceneitem_t *item = items[i];
@@ -292,6 +321,22 @@ int match_size(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items,
 			continue;
 		double fx = width ? model.w / before.w : 1.0;
 		double fy = height ? model.h / before.h : 1.0;
+		// When shadows count, the item's own shadow is part of the size to
+		// reach. A shadow sized in screen pixels stays that size whatever
+		// the item's size, so only the picture grows or shrinks to make up
+		// the difference.
+		ShadowFree free;
+		if (how.visible_pixels && !how.leave_out_shadows && shadow_free(obs_sceneitem_get_source(item), free)) {
+			obs_source_release(free.draw);
+			if (free.fixed_on_screen) {
+				const Box picture = measure_item(scene, item, picture_only);
+				const double room_w = before.w - picture.w, room_h = before.h - picture.h;
+				if (width && picture.w > 0.0 && model.w > room_w)
+					fx = (model.w - room_w) / picture.w;
+				if (height && picture.h > 0.0 && model.h > room_h)
+					fy = (model.h - room_h) / picture.h;
+			}
+		}
 		if (keep_shape) {
 			// Both directions grow by the same amount. Asked to match both,
 			// it fits inside the other's size.

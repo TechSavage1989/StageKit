@@ -13,6 +13,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <obs-module.h>
 #include <obs-frontend-api.h>
 
+#include <map>
 #include <algorithm>
 #include <atomic>
 #include <mutex>
@@ -92,28 +93,70 @@ const ArrangeInfo &arrange_info(ArrangeAction action)
 	return kInfo[std::clamp((int)action, 0, (int)ArrangeAction::Count - 1)];
 }
 
+namespace {
+
+// When each selected item was selected, from OBS's own "item_select"
+// signals. Kept as bare addresses, only ever compared with live items.
+std::mutex g_select_mutex;
+std::map<obs_sceneitem_t *, uint64_t> g_selected_at;
+uint64_t g_selections = 0;
+
+void on_item_select(void *, calldata_t *cd)
+{
+	auto *item = static_cast<obs_sceneitem_t *>(calldata_ptr(cd, "item"));
+	std::lock_guard lock(g_select_mutex);
+	g_selected_at[item] = ++g_selections;
+}
+
+void on_item_deselect(void *, calldata_t *cd)
+{
+	auto *item = static_cast<obs_sceneitem_t *>(calldata_ptr(cd, "item"));
+	std::lock_guard lock(g_select_mutex);
+	g_selected_at.erase(item);
+}
+
+void watch_selection_in(obs_source_t *source)
+{
+	if (!source || (!obs_source_is_scene(source) && !obs_source_is_group(source)))
+		return;
+	signal_handler_t *sh = obs_source_get_signal_handler(source);
+	// Never twice for the same scene.
+	signal_handler_disconnect(sh, "item_select", on_item_select, nullptr);
+	signal_handler_disconnect(sh, "item_deselect", on_item_deselect, nullptr);
+	signal_handler_connect(sh, "item_select", on_item_select, nullptr);
+	signal_handler_connect(sh, "item_deselect", on_item_deselect, nullptr);
+}
+
+} // namespace
+
+void track_selection_order()
+{
+	signal_handler_connect(
+		obs_get_signal_handler(), "source_create",
+		[](void *, calldata_t *cd) {
+			watch_selection_in(static_cast<obs_source_t *>(calldata_ptr(cd, "source")));
+		},
+		nullptr);
+	obs_enum_scenes(
+		[](void *, obs_source_t *scene) {
+			watch_selection_in(scene);
+			return true;
+		},
+		nullptr);
+}
+
 std::vector<obs_sceneitem_t *> selection_in_order(obs_source_t *scene)
 {
-	// Remembered as bare addresses, only ever compared with live items.
-	static obs_scene_t *remembered_scene = nullptr;
-	static std::vector<obs_sceneitem_t *> order;
-	obs_scene_t *s = scene_of(scene);
-	if (s != remembered_scene) {
-		remembered_scene = s;
-		order.clear();
-	}
-	const std::vector<obs_sceneitem_t *> now = selected_items(scene);
-	std::vector<obs_sceneitem_t *> kept;
-	for (obs_sceneitem_t *item : order) {
-		if (std::find(now.begin(), now.end(), item) != now.end())
-			kept.push_back(item);
-	}
-	for (obs_sceneitem_t *item : now) {
-		if (std::find(kept.begin(), kept.end(), item) == kept.end())
-			kept.push_back(item);
-	}
-	order = kept;
-	return order;
+	std::vector<obs_sceneitem_t *> items = selected_items(scene);
+	// Items selected before this was watching come first, in list order.
+	std::lock_guard lock(g_select_mutex);
+	auto when = [](obs_sceneitem_t *item) {
+		const auto found = g_selected_at.find(item);
+		return found == g_selected_at.end() ? 0 : found->second;
+	};
+	std::stable_sort(items.begin(), items.end(),
+			 [&](obs_sceneitem_t *a, obs_sceneitem_t *b) { return when(a) < when(b); });
+	return items;
 }
 
 std::string transform_snapshot(obs_source_t *scene)
