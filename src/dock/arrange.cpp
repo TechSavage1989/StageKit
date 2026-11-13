@@ -201,7 +201,7 @@ void shift_item(obs_source_t *scene, obs_sceneitem_t *item, double dx, double dy
 }
 
 int align_items(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items, Edge edge, Against against,
-		const Measure &how)
+		const Measure &how, double *line)
 {
 	if (items.empty())
 		return 0;
@@ -225,6 +225,8 @@ int align_items(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items
 		target = {x0, y0, x1 - x0, y1 - y0};
 	}
 	const double want = edge_of(target, edge);
+	if (line)
+		*line = want;
 	int moved = 0;
 	for (size_t i = 0; i < items.size(); i++) {
 		const double delta = want - edge_of(boxes[i], edge);
@@ -335,33 +337,31 @@ int match_size(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items,
 	return changed;
 }
 
-bool snap_item(obs_source_t *scene, obs_sceneitem_t *item, double within, const Measure &how)
+SnapLines snap_lines(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &leave_out, const Measure &how)
 {
-	if (obs_sceneitem_locked(item))
-		return false;
-	const Box me = measure_item(scene, item, how);
 	// Lines worth meeting: the screen's edges and centre, and every other
 	// visible item's edges and centre.
-	std::vector<double> xs{0.0, obs_source_get_width(scene) / 2.0, (double)obs_source_get_width(scene)};
-	std::vector<double> ys{0.0, obs_source_get_height(scene) / 2.0, (double)obs_source_get_height(scene)};
+	SnapLines lines;
+	lines.xs = {0.0, obs_source_get_width(scene) / 2.0, (double)obs_source_get_width(scene)};
+	lines.ys = {0.0, obs_source_get_height(scene) / 2.0, (double)obs_source_get_height(scene)};
 	struct Others {
 		obs_source_t *scene;
-		obs_sceneitem_t *self;
+		const std::vector<obs_sceneitem_t *> *leave_out;
 		const Measure *how;
-		std::vector<double> *xs, *ys;
-	} others{scene, item, &how, &xs, &ys};
+		SnapLines *lines;
+	} others{scene, &leave_out, &how, &lines};
 	static const auto add = [](obs_scene_t *, obs_sceneitem_t *other, void *param) {
 		auto *o = static_cast<Others *>(param);
-		if (other == o->self || !obs_sceneitem_visible(other) || obs_sceneitem_is_group(other))
+		if (std::find(o->leave_out->begin(), o->leave_out->end(), other) != o->leave_out->end() ||
+		    !obs_sceneitem_visible(other) || obs_sceneitem_is_group(other))
 			return true;
 		const Box b = measure_item(o->scene, other, *o->how);
-		// Something filling the screen (a background) adds nothing new.
 		if (b.w <= 0.0 || b.h <= 0.0)
 			return true;
 		for (double x : {b.x, b.x + b.w / 2.0, b.x + b.w})
-			o->xs->push_back(x);
+			o->lines->xs.push_back(x);
 		for (double y : {b.y, b.y + b.h / 2.0, b.y + b.h})
-			o->ys->push_back(y);
+			o->lines->ys.push_back(y);
 		return true;
 	};
 	if (obs_scene_t *s = scene_of(scene)) {
@@ -375,24 +375,46 @@ bool snap_item(obs_source_t *scene, obs_sceneitem_t *item, double within, const 
 			},
 			&others);
 	}
-	auto nearest = [within](const std::vector<double> &mine, const std::vector<double> &lines) {
-		double best = 0.0, best_gap = within + 1.0;
+	return lines;
+}
+
+Meeting meet_lines(const Box &box, const SnapLines &lines, double within)
+{
+	// The nearest line to any of the box's three: start, centre and end.
+	auto nearest = [within](std::initializer_list<double> mine, const std::vector<double> &all, double &line,
+				double &gap_out) {
+		double best_gap = within + 1.0;
 		for (double m : mine) {
-			for (double line : lines) {
-				const double gap = std::fabs(line - m);
+			for (double candidate : all) {
+				const double gap = std::fabs(candidate - m);
 				if (gap < best_gap) {
 					best_gap = gap;
-					best = line - m;
+					line = candidate;
+					gap_out = candidate - m;
 				}
 			}
 		}
-		return best_gap <= within ? best : 0.0;
+		return best_gap <= within;
 	};
-	const double dx = nearest({me.x, me.x + me.w / 2.0, me.x + me.w}, xs);
-	const double dy = nearest({me.y, me.y + me.h / 2.0, me.y + me.h}, ys);
-	if (std::fabs(dx) < 0.01 && std::fabs(dy) < 0.01)
+	Meeting m;
+	m.across = nearest({box.x, box.x + box.w / 2.0, box.x + box.w}, lines.xs, m.line_x, m.dx);
+	m.down = nearest({box.y, box.y + box.h / 2.0, box.y + box.h}, lines.ys, m.line_y, m.dy);
+	if (!m.across)
+		m.dx = 0.0;
+	if (!m.down)
+		m.dy = 0.0;
+	return m;
+}
+
+bool snap_item(obs_source_t *scene, obs_sceneitem_t *item, double within, const Measure &how)
+{
+	if (obs_sceneitem_locked(item))
 		return false;
-	shift_item(scene, item, dx, dy);
+	const Box me = measure_item(scene, item, how);
+	const Meeting m = meet_lines(me, snap_lines(scene, {item}, how), within);
+	if (std::fabs(m.dx) < 0.01 && std::fabs(m.dy) < 0.01)
+		return false;
+	shift_item(scene, item, m.dx, m.dy);
 	return true;
 }
 

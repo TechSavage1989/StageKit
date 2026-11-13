@@ -25,6 +25,7 @@ namespace {
 std::mutex g_mutex;
 ArrangeOptions g_options;
 std::atomic<uint64_t> g_revision{1};
+ArrangeGuide g_guide;
 
 const ArrangeInfo kInfo[(int)ArrangeAction::Count] = {
 	{"left", "Arrange.Left", "Hotkey.Arrange.Left", 1},
@@ -73,6 +74,12 @@ void set_arrange_options(const ArrangeOptions &options)
 		g_options.within = std::clamp(g_options.within, 1, 200);
 	}
 	g_revision++;
+}
+
+ArrangeGuide last_arrange_guide()
+{
+	std::lock_guard lock(g_mutex);
+	return g_guide;
 }
 
 uint64_t arrange_options_revision()
@@ -166,9 +173,14 @@ ArrangeOutcome run_arrange_now(ArrangeAction action, obs_source_t *scene, const 
 	case ArrangeAction::Right:
 	case ArrangeAction::Top:
 	case ArrangeAction::Middle:
-	case ArrangeAction::Bottom:
-		out.changed = align_items(scene, items, static_cast<Edge>((int)action), o.against, o.how);
-		break;
+	case ArrangeAction::Bottom: {
+		double line = 0.0;
+		out.changed = align_items(scene, items, static_cast<Edge>((int)action), o.against, o.how, &line);
+		std::lock_guard lock(g_mutex);
+		g_guide.serial++;
+		g_guide.vertical = action <= ArrangeAction::Right;
+		g_guide.at = line;
+	} break;
 	case ArrangeAction::SpaceAcross:
 	case ArrangeAction::SpaceDown:
 		out.changed = distribute_items(scene, items, action == ArrangeAction::SpaceAcross, o.how);
@@ -249,6 +261,7 @@ void arrange_save_load(obs_data_t *save_data, bool saving)
 		obs_data_set_bool(save_data, "stagekit.arrange.no_shadow", o.how.leave_out_shadows);
 		obs_data_set_bool(save_data, "stagekit.arrange.keep_shape", o.keep_shape);
 		obs_data_set_bool(save_data, "stagekit.arrange.live_snap", o.live_snap);
+		obs_data_set_bool(save_data, "stagekit.arrange.guides", o.guides);
 		obs_data_set_int(save_data, "stagekit.arrange.within", o.within);
 	} else if (obs_data_has_user_value(save_data, "stagekit.arrange.within")) {
 		ArrangeOptions o;
@@ -258,6 +271,7 @@ void arrange_save_load(obs_data_t *save_data, bool saving)
 		o.how.leave_out_shadows = obs_data_get_bool(save_data, "stagekit.arrange.no_shadow");
 		o.keep_shape = obs_data_get_bool(save_data, "stagekit.arrange.keep_shape");
 		o.live_snap = obs_data_get_bool(save_data, "stagekit.arrange.live_snap");
+		o.guides = obs_data_get_bool(save_data, "stagekit.arrange.guides");
 		o.within = (int)obs_data_get_int(save_data, "stagekit.arrange.within");
 		set_arrange_options(o);
 	}

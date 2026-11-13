@@ -70,6 +70,8 @@ target_sources(
     src/dock/arrange.hpp
     src/dock/arrange-tools.cpp
     src/dock/arrange-tools.hpp
+    src/dock/preview-guides.cpp
+    src/dock/preview-guides.hpp
     src/dock/stagekit-dock.cpp
     src/dock/stagekit-dock.hpp
     src/placement/scene-tools.cpp

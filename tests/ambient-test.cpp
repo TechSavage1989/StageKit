@@ -3219,6 +3219,99 @@ int main(int argc, char **argv)
 				      "'snap when I let go' settles an item dragged with the mouse (x %.0f)", bp.x);
 				tick_box("arrangeLiveSnap", false);
 
+				// Guide lines over the preview. OBS's preview is stood in for by a
+				// plain widget; the lines live in a see-through window over it.
+				{
+					auto mapped = [](double ww, double wh, double ratio, double &scale, double &x,
+							 double &y) {
+						calldata_t cd = {};
+						calldata_set_float(&cd, "width", ww);
+						calldata_set_float(&cd, "height", wh);
+						calldata_set_float(&cd, "ratio", ratio);
+						calldata_set_float(&cd, "canvas_width", 2560);
+						calldata_set_float(&cd, "canvas_height", 1440);
+						proc_handler_call(obs_get_proc_handler(), "stagekit_preview_map", &cd);
+						scale = calldata_float(&cd, "scale");
+						x = calldata_float(&cd, "x");
+						y = calldata_float(&cd, "y");
+						calldata_free(&cd);
+					};
+					double ms = 0, mx = 0, my = 0;
+					mapped(1000, 600, 1.0, ms, mx, my);
+					const bool tall_ok = std::fabs(ms - 980.0 / 2560.0) < 1e-4 &&
+							     std::fabs(mx - 10) < 0.01 && std::fabs(my - 25) < 0.01;
+					mapped(2000, 600, 1.0, ms, mx, my);
+					CHECK(tall_ok && std::fabs(ms - 580.0 / 1440.0) < 1e-4 &&
+						      std::fabs(mx - 485) < 0.01 && std::fabs(my - 10) < 0.01,
+					      "the canvas is found inside the preview as OBS places it (%.4f at %.1f, %.1f)",
+					      ms, mx, my);
+
+					obs_source_t *was_out = obs_get_output_source(0);
+					obs_set_output_source(0, as_source);
+					QWidget stand_in;
+					stand_in.resize(600, 400);
+					stand_in.show();
+					calldata_t gd = {};
+					calldata_set_ptr(&gd, "preview", &stand_in);
+					proc_handler_call(obs_get_proc_handler(), "stagekit_install_preview_guides",
+							  &gd);
+					auto *overlay = static_cast<QWidget *>(calldata_ptr(&gd, "overlay"));
+					calldata_free(&gd);
+					auto lines = [&] {
+						return overlay ? overlay->property("guideLines").toString()
+							       : QString("none");
+					};
+					against(0);
+					select_only({ia});
+					settle_snap();
+					click("arrange_right");
+					settle_snap();
+					CHECK(overlay && !overlay->isVisible(),
+					      "guides stay out of the way until they are switched on");
+					tick_box("arrangeGuides", true);
+					click("arrange_left");
+					for (int i = 0; i < 6; i++) {
+						QCoreApplication::processEvents();
+						sleep_ms(40);
+					}
+					CHECK(overlay && overlay->isVisible() && lines() == "x:0" &&
+						      overlay->geometry() == QRect(stand_in.mapToGlobal(QPoint(0, 0)),
+										   stand_in.size()),
+					      "a line-up tool shows the line it used, over the preview (%s)",
+					      lines().toUtf8().constData());
+					for (int i = 0; i < 28; i++) {
+						QCoreApplication::processEvents();
+						sleep_ms(40);
+					}
+					CHECK(overlay && !overlay->isVisible(), "and the line goes away by itself");
+
+					// Dragging: the block's centre comes within reach of the screen's centre line.
+					place(ib, 20, 300);
+					place(ic, 600, 320);
+					place(ibadge, 430, 250);
+					place(ia, 100, 20);
+					settle_snap();
+					mouse(true);
+					place(ia, 180, 20);
+					settle_snap();
+					place(ia, 266, 20); // 100 wide: its centre is at 316, the screen's at 320
+					settle_snap();
+					CHECK(overlay && overlay->isVisible() && lines().contains("x:320"),
+					      "while an item is dragged, the line it is about to meet is shown (%s)",
+					      lines().toUtf8().constData());
+					mouse(false);
+					settle_snap();
+					for (int i = 0; i < 4; i++) {
+						QCoreApplication::processEvents();
+						sleep_ms(40);
+					}
+					CHECK(overlay && !overlay->isVisible(), "and it goes when the mouse is let go");
+					tick_box("arrangeGuides", false);
+					delete overlay;
+					obs_set_output_source(0, was_out);
+					obs_source_release(was_out);
+				}
+
 				// Bringing an item along: whether it has to flip is judged by what
 				// is drawn in it, not by the empty room in its box.
 				{

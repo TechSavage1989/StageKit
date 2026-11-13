@@ -30,6 +30,7 @@ struct ArrangeOptions {
 	bool keep_shape = true; // resizing keeps an item's proportions; off stretches one direction
 	bool live_snap = false; // snap after an item is dragged and let go
 	int within = 20;        // how close counts for snapping, in pixels
+	bool guides = false;    // draw guide lines over OBS's preview
 };
 
 ArrangeOptions arrange_options();
@@ -83,6 +84,15 @@ void replay_last_arrange(bool redo);
 // not keep that order, so this notes it each time it is asked: call it often
 // (the dock does, several times a second).
 std::vector<obs_sceneitem_t *> selection_in_order(obs_source_t *scene);
+
+// The line the last line-up tool put things on, for showing it in the
+// preview. `serial` goes up each time a tool lines something up.
+struct ArrangeGuide {
+	uint64_t serial = 0;
+	bool vertical = false; // an x across the canvas; otherwise a y
+	double at = 0.0;
+};
+ArrangeGuide last_arrange_guide();
 
 // Runs it on whatever is selected in the scene being edited in OBS.
 ArrangeOutcome run_arrange_on_selection(ArrangeAction action);

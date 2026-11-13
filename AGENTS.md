@@ -122,6 +122,11 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
 - **The preview's right-click menu is not an OBS API.** `PreviewMenu` in `src/dock/stagekit-dock.cpp`
   watches for a context-menu event on the widget named `preview` and adds to the next menu that opens.
   If OBS renames that widget the menu entry silently disappears; the hotkeys and the dock still work.
+- **Guides over the preview are a window of our own, not OBS's.** `src/dock/preview-guides.*` puts a
+  see-through, click-through tool window exactly over the widget named `preview` and repeats OBS's own
+  sums (`preview_map`: a 10 px edge, then the canvas as large as fits) to find the canvas in it. That
+  only holds for *Scale to Window*. It is off by default and only shown while a line is up. Items are
+  measured once when a drag starts, never while it goes on.
 - **Arrange options are global** (`arrange_options()`), saved with the scene collection. The dock's
   controls only show and set them. Add a new tool to `ArrangeAction` and `kInfo` and it appears in the
   dock, the menu and the hotkeys at once.

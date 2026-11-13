@@ -42,8 +42,10 @@ std::vector<obs_sceneitem_t *> selected_items(obs_source_t *scene);
 void shift_item(obs_source_t *scene, obs_sceneitem_t *item, double dx, double dy);
 
 // Lines items up on one edge or centre line. Returns how many moved.
+// `line`, if given, receives where they were lined up: an x for left, centre
+// and right, a y for top, middle and bottom.
 int align_items(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items, Edge edge, Against against,
-		const Measure &how);
+		const Measure &how, double *line = nullptr);
 
 // Spaces three or more items so the gaps between them are equal.
 int distribute_items(obs_source_t *scene, std::vector<obs_sceneitem_t *> items, bool across, const Measure &how);
@@ -57,5 +59,23 @@ int match_size(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items,
 // Moves an item the last few pixels so an edge or centre meets the screen's
 // or another item's. Returns true when it moved.
 bool snap_item(obs_source_t *scene, obs_sceneitem_t *item, double within, const Measure &how);
+
+// The lines an item can meet: the screen's edges and centre, and the edges
+// and centres of the other visible items. Gathering them measures every item
+// once, so it is done when a drag starts or a button is pressed, never while
+// something is moving.
+struct SnapLines {
+	std::vector<double> xs, ys;
+};
+SnapLines snap_lines(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &leave_out, const Measure &how);
+
+// The nearest of those lines that a box has an edge or its centre within
+// reach of, across and down: which line, and how far the box is from it.
+struct Meeting {
+	bool across = false, down = false;
+	double line_x = 0, line_y = 0;
+	double dx = 0, dy = 0;
+};
+Meeting meet_lines(const Box &box, const SnapLines &lines, double within);
 
 } // namespace stagekit

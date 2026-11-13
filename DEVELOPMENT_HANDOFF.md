@@ -204,6 +204,25 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Guides in the preview (0.1.0-beta46)
+
+The owner: "I'd like visual indicators in the viewer for alignment if possible". They also confirmed
+that the preview's right-click *StageKit* menu works on Windows, which is the same kind of unsupported
+hook.
+
+- `src/dock/preview-guides.*`: `GuideOverlay`, a frameless `Qt::Tool` window (translucent, transparent
+  for input, never focused) parented to OBS's main window and laid over the `preview` widget. A 33 ms
+  timer shows the line a line-up tool just used (`last_arrange_guide`, 0.9 s) and, while the left
+  button is down and the selected items are moving, the nearest line each is within reach of.
+- `snap_item` is now `snap_lines` (gather once) plus `meet_lines` (pure), shared with the overlay.
+  `align_items` reports the line it used.
+- Option `guides` in `ArrangeOptions` (`stagekit.arrange.guides`), default **off**: nothing is created
+  on screen unless the owner ticks it.
+- **Unverified in OBS**: whether `preview_map` matches where OBS 32 really draws the canvas (it is
+  written from memory of `OBSBasic::ResizePreview`: `PREVIEW_EDGE_SIZE` 10 and `GetScaleAndCenterPos`),
+  whether a layered tool window composites over the preview's Direct3D surface, and high-DPI screens.
+  The tests cover the sums, the overlay's geometry over a stand-in widget, and when lines appear and go.
+
 ## Fit Item in real time; the owner's current collection (0.1.0-beta45)
 
 The owner wants window captures to behave like the game capture in their window scenes and, as in
