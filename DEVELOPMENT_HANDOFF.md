@@ -204,6 +204,45 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Active App: the capture of the app in use (0.1.0-beta48)
+
+The owner, about the two window scenes: after Blender, ZBrush or Fusion closes "the original app
+capture never comes back and stays hidden"; with several open "the capture follows" the active window
+in their old setup, and that "should be configurable"; switching should "transition like fade or other
+transitions that are configurable"; and, spelled out: listed apps are followed while active, a window
+selected for capture or captured before is switched to, and a listed app that is no longer in front
+stays captured until another listed app is.
+
+What the old collection did (read from it and from the Advanced Scene Switcher export): one macro per
+program with a *process has focus* condition, showing that program's item and hiding the others, and a
+250 ms fade as each item's own show and hide transition (350/300 on the plain capture). Nothing brought
+the plain capture back. The rebuild had replaced this with a "one at a time" Visibility Link plus three
+"while it is open" Program Triggers, which neither followed the focus nor came back, and had no fades.
+
+- `src/capture/active-app.*`, id `stagekit_active_app`, a scene filter. Settings: `items` (PickList),
+  `follow` (default on), `transition` (an OBS transition id, `none` for a cut, `keep` to leave the
+  items alone; default `fade_transition`), `transition_ms` (250), `ready` (default on).
+- Each item's program is the executable in its source's `window` setting. No program names are typed.
+- It acts on events. Of these, a later one wins: an app that opened (when following, only if it is
+  the one in front); a capture re-aimed by hand; the app clicked into (when following). If none of
+  those happened and the shown app has closed, it goes back: the most recently shown that is open,
+  else the first open in list order, else the first item. Otherwise nothing changes, including when
+  a program not on the list is in front.
+- Transitions are OBS's item transitions, set with `obs_sceneitem_set_transition`; OBS starts them
+  itself inside `obs_sceneitem_set_visible`, so the two items cross-fade. Confirmed by the tests.
+- `ready`: `obs_source_inc_showing` on the sources of listed items whose app is open, only while the
+  parent scene is showing; balanced in `keep_ready`, released on detach, disable and destroy.
+- `open_windows()` is now cached for 0.2 s (was 0.5 s) so following feels immediate.
+- `scripts/upgrade-collection.py` replaces the Visibility Link and its Program Triggers with one
+  Active App in such scenes; `scripts/rebuild-collection.py` writes Active App from the start.
+- The owner's current collection, upgraded: `StageKit current + app switch.json` (not committed).
+- **Not verified:** all of it in OBS on Windows. In particular whether a Window Capture that is kept
+  showing really keeps capturing while its item is hidden, and how quickly a hidden capture has a
+  picture when it is not kept ready. An earlier draft of the rebuild that carried item fades crashed
+  OBS on import (cause never found); these are made by OBS's own calls at run time, not written by hand.
+- A test artefact worth knowing: in a scene that is never drawn, an item hidden with a hide transition
+  keeps its source active, so the kept-ready test uses a scene of its own with cuts.
+
 ## Shape seen before it is held; Send To in every scene (0.1.0-beta47)
 
 The owner, with screenshots: a widescreen game in a window (1796x1147 surface, 16:9 picture inside

@@ -198,6 +198,10 @@ int main(int argc, char **argv)
 			 "/usr/share/obs/obs-plugins/image-source") ||
 	    !load_module(argv[1], argv[2]))
 		return 1;
+	// OBS's own transitions, for the tests that fade one item into another.
+	// They are left out where the module is not installed.
+	load_module("/usr/lib/x86_64-linux-gnu/obs-plugins/obs-transitions.so",
+		    "/usr/share/obs/obs-plugins/obs-transitions");
 	obs_post_load_modules();
 
 	obs_data_t *ls = obs_data_create();
@@ -1982,6 +1986,213 @@ int main(int argc, char **argv)
 			obs_source_release(sculpt);
 			obs_source_release(other);
 			obs_scene_release(ts);
+		}
+
+		// Active App: one of several captures shows, the one whose app is in use.
+		printf("\n[active app]\n");
+		{
+			obs_scene_t *as = obs_scene_create("App Scene");
+			obs_source_t *asrc = obs_scene_get_source(as);
+			// Stand-ins for window captures: a colour each, aimed at a program.
+			auto capture = [](const char *name, const char *window, long long abgr) {
+				obs_data_t *d = obs_data_create();
+				obs_data_set_int(d, "color", abgr);
+				obs_data_set_int(d, "width", 200);
+				obs_data_set_int(d, "height", 100);
+				obs_data_set_string(d, "window", window);
+				obs_source_t *made = obs_source_create("color_source", name, d, nullptr);
+				obs_data_release(d);
+				return made;
+			};
+			obs_source_t *any = capture("Any Window", "Docs:Browser:browser.exe", 0xFF0000FFLL); // red
+			obs_source_t *sculpt =
+				capture("Sculpt", "Sculpt 2026:SculptWnd:ZSculpt.exe", 0xFF00FF00LL); // green
+			obs_source_t *model =
+				capture("Model", "Model#3A scene:ModelWnd:modeller.exe", 0xFFFF0000LL); // blue
+			obs_source_t *second = obs_source_create("color_source", "Second Camera", nullptr, nullptr);
+			obs_sceneitem_t *any_item = obs_scene_add(as, any);
+			obs_sceneitem_t *sculpt_item = obs_scene_add(as, sculpt);
+			obs_sceneitem_t *model_item = obs_scene_add(as, model);
+			obs_sceneitem_t *second_item = obs_scene_add(as, second);
+			vec2 aside;
+			vec2_set(&aside, 300.0f, 0.0f);
+			obs_sceneitem_set_pos(second_item, &aside);
+
+			obs_data_t *ad = obs_data_create();
+			obs_data_set_int(ad, "transition_ms", 600);
+			obs_source_t *app = obs_source_create("stagekit_active_app", "Active App", ad, nullptr);
+			obs_source_filter_add(asrc, app);
+			sleep_ms(80);
+			obs_properties_t *ap = obs_source_properties(app);
+			pick_into_list(app, ap, "items|a", "Any Window");
+			pick_into_list(app, ap, "items|a", "Sculpt");
+			pick_into_list(app, ap, "items|a", "Model");
+			obs_properties_destroy(ap);
+			ap = obs_source_properties(app);
+			CHECK(list_rows(ap, "items|a") == 3,
+			      "the captures to switch between are picked from the scene's items");
+			obs_properties_destroy(ap);
+
+			auto see = [&](const char *windows) {
+				calldata_t cd = {};
+				calldata_set_string(&cd, "windows", windows);
+				proc_handler_call(obs_source_get_proc_handler(app), "set_test_windows", &cd);
+				calldata_free(&cd);
+				sleep_ms(450);
+			};
+			auto only = [&](obs_sceneitem_t *item) {
+				return obs_sceneitem_visible(any_item) == (item == any_item) &&
+				       obs_sceneitem_visible(sculpt_item) == (item == sculpt_item) &&
+				       obs_sceneitem_visible(model_item) == (item == model_item);
+			};
+			see("Notes|notes.exe|front\nDocs|browser.exe|");
+			CHECK(only(any_item), "one capture shows at a time: to begin with, the one whose app is open");
+			see("Notes|notes.exe|\nDocs|browser.exe|\nModel: scene|modeller.exe|front");
+			CHECK(only(model_item),
+			      "an app that opens is shown, and the capture that was showing is hidden");
+			see("Notes|notes.exe|\nDocs|browser.exe|\nModel: scene|modeller.exe|\nSculpt 2026|zsculpt.exe|front");
+			CHECK(only(sculpt_item), "a second app opening takes over");
+			see("Notes|notes.exe|\nDocs|browser.exe|\nModel: scene|modeller.exe|front\nSculpt 2026|zsculpt.exe|");
+			CHECK(only(model_item), "with both open, clicking into the other one shows it");
+			see("Notes|notes.exe|front\nDocs|browser.exe|\nModel: scene|modeller.exe|\nSculpt 2026|zsculpt.exe|");
+			CHECK(only(model_item), "clicking into a program that is not listed changes nothing");
+			see("Notes|notes.exe|\nDocs|browser.exe|\nModel: scene|modeller.exe|\nSculpt 2026|zsculpt.exe|front");
+			see("Notes|notes.exe|front\nDocs|browser.exe|\nModel: scene|modeller.exe|\nSculpt 2026|zsculpt.exe|");
+			CHECK(only(sculpt_item),
+			      "and the last app used stays captured while something else is in front");
+			see("Notes|notes.exe|front\nDocs|browser.exe|\nModel: scene|modeller.exe|");
+			CHECK(only(model_item),
+			      "when the app that is showing closes, the one used before it comes back");
+			see("Notes|notes.exe|front\nDocs|browser.exe|");
+			CHECK(only(any_item), "and when that closes too, the capture that was there before them");
+			see("Notes|notes.exe|front");
+			CHECK(only(any_item), "with none of the apps open, the first in the list stays on show");
+			CHECK(obs_sceneitem_visible(second_item), "items not on the list are left alone");
+
+			// A change made by hand is kept until something happens.
+			obs_sceneitem_set_visible(model_item, true);
+			obs_sceneitem_set_visible(any_item, false);
+			see("Notes|notes.exe|front");
+			CHECK(only(model_item),
+			      "a capture shown by hand stays until an app opens, closes or is clicked into");
+			// The plain capture is aimed at another window by hand.
+			obs_data_t *aimed = obs_source_get_settings(any);
+			obs_data_set_string(aimed, "window", "Sketch:PaintWnd:paint.exe");
+			obs_data_release(aimed);
+			see("Notes|notes.exe|front");
+			CHECK(only(any_item), "a capture aimed at another window is shown");
+
+			// The change is a fade, as OBS does it for an item.
+			if (obs_source_get_display_name("fade_transition")) {
+				obs_source_t *show = obs_sceneitem_get_transition(model_item, true);
+				obs_source_t *hide = obs_sceneitem_get_transition(model_item, false);
+				CHECK(show && hide &&
+					      strcmp(obs_source_get_unversioned_id(show), "fade_transition") == 0 &&
+					      obs_sceneitem_get_transition_duration(model_item, true) == 600 &&
+					      obs_sceneitem_get_transition_duration(model_item, false) == 600,
+				      "each listed item is given the chosen transition for showing and hiding");
+				const uint32_t aw = obs_source_get_width(asrc), ah = obs_source_get_height(asrc);
+				calldata_t cd = {};
+				calldata_set_string(&cd, "windows",
+						    "Notes|notes.exe|\nModel: scene|modeller.exe|front");
+				proc_handler_call(obs_source_get_proc_handler(app), "set_test_windows", &cd);
+				calldata_free(&cd);
+				int most_red = 0, most_blue = 0;
+				bool mixed = false;
+				for (int i = 0; i < 12; i++) {
+					sleep_ms(60);
+					const std::vector<uint8_t> px = render(asrc, aw, ah);
+					const uint8_t *at_item = &px[(size_t(50) * aw + 50) * 4];
+					most_red = std::max<int>(most_red, at_item[0]);
+					most_blue = std::max<int>(most_blue, at_item[2]);
+					if (at_item[0] > 25 && at_item[2] > 25)
+						mixed = true;
+				}
+				sleep_ms(500);
+				const std::vector<uint8_t> after = render(asrc, aw, ah);
+				const uint8_t *settled = &after[(size_t(50) * aw + 50) * 4];
+				CHECK(mixed && settled[0] < 12 && settled[2] > 240,
+				      "one capture fades into the next (red and blue together part-way; then %d, %d)",
+				      settled[0], settled[2]);
+			}
+
+			// Captures of the other open apps keep running while the scene is on
+			// show. A scene of its own, changing with a cut, so nothing else
+			// has a hold on the sources.
+			{
+				obs_scene_t *rs = obs_scene_create("Ready Scene");
+				obs_source_t *rsrc = obs_scene_get_source(rs);
+				obs_source_t *one = capture("Ready One", "One:OneWnd:one.exe", 0xFF0000FFLL);
+				obs_source_t *two = capture("Ready Two", "Two:TwoWnd:two.exe", 0xFF00FF00LL);
+				obs_scene_add(rs, one);
+				obs_sceneitem_t *two_item = obs_scene_add(rs, two);
+				obs_sceneitem_set_visible(two_item, false);
+				obs_data_t *rd = obs_data_create();
+				obs_data_set_string(rd, "transition", "none");
+				obs_data_array_t *listed = obs_data_array_create();
+				for (const char *name : {"Ready One", "Ready Two"}) {
+					obs_data_t *entry = obs_data_create();
+					obs_data_set_string(entry, "value", name);
+					obs_data_array_push_back(listed, entry);
+					obs_data_release(entry);
+				}
+				obs_data_set_array(rd, "items", listed);
+				obs_data_array_release(listed);
+				obs_source_t *rapp =
+					obs_source_create("stagekit_active_app", "Active App", rd, nullptr);
+				obs_source_filter_add(rsrc, rapp);
+				auto look = [&](const char *windows) {
+					calldata_t cd = {};
+					calldata_set_string(&cd, "windows", windows);
+					proc_handler_call(obs_source_get_proc_handler(rapp), "set_test_windows", &cd);
+					calldata_free(&cd);
+					sleep_ms(450);
+				};
+				look("One|one.exe|front\nTwo|two.exe|");
+				const bool idle = !obs_source_showing(two); // the scene is not on show
+				obs_source_inc_showing(rsrc);
+				look("One|one.exe|front\nTwo|two.exe|");
+				const bool ready = obs_source_showing(two) && !obs_sceneitem_visible(two_item);
+				look("One|one.exe|front");
+				const bool closed = !obs_source_showing(two); // its app has closed
+				look("One|one.exe|front\nTwo|two.exe|");
+				const bool again = obs_source_showing(two) && !obs_sceneitem_visible(two_item);
+				obs_source_dec_showing(rsrc);
+				look("One|one.exe|front\nTwo|two.exe|");
+				const bool let_go = !obs_source_showing(two);
+				CHECK(idle && ready && closed && again && let_go,
+				      "the capture of another open app is kept running while the scene is showing, and only then (%d %d %d %d %d)",
+				      idle, ready, closed, again, let_go);
+				obs_source_filter_remove(rsrc, rapp);
+				obs_source_release(rapp);
+				obs_data_release(rd);
+				obs_source_release(one);
+				obs_source_release(two);
+				obs_scene_release(rs);
+			}
+
+			// Not following: an app shows when it opens and stays until it closes.
+			obs_data_set_bool(ad, "follow", false);
+			obs_source_update(app, ad);
+			sleep_ms(80);
+			see("Notes|notes.exe|front\nModel: scene|modeller.exe|");
+			see("Notes|notes.exe|\nModel: scene|modeller.exe|\nSculpt 2026|zsculpt.exe|front");
+			const bool took_over = only(sculpt_item);
+			see("Notes|notes.exe|\nModel: scene|modeller.exe|front\nSculpt 2026|zsculpt.exe|");
+			const bool stayed = only(sculpt_item);
+			see("Notes|notes.exe|\nModel: scene|modeller.exe|front");
+			CHECK(took_over && stayed && only(model_item),
+			      "with following off, an app shows when it opens and stays until it closes (%d %d %d)",
+			      took_over, stayed, only(model_item));
+
+			obs_source_filter_remove(asrc, app);
+			obs_source_release(app);
+			obs_data_release(ad);
+			obs_source_release(any);
+			obs_source_release(sculpt);
+			obs_source_release(model);
+			obs_source_release(second);
+			obs_scene_release(as);
 		}
 
 		printf("\n[match item]\n");

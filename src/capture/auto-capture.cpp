@@ -684,7 +684,7 @@ std::vector<OpenWindow> open_windows()
 	static uint64_t looked_at = 0;
 	std::lock_guard lock(mutex);
 	const uint64_t now = os_gettime_ns();
-	if (!looked_at || now - looked_at > 500000000ULL) {
+	if (!looked_at || now - looked_at > 200000000ULL) {
 		looked_at = now;
 		cached.clear();
 		for (const Window &w : list_windows())

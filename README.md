@@ -33,6 +33,9 @@ from hotkeys, or from the Stream Deck OBS Studio plugin's *Filter* and *Source* 
   an emulator's squarer picture floats centred inside a margin.
 - **Auto Capture** (filter): one Game Capture finds whatever game is running, windowed or full-screen,
   with no list of games to keep. Windows only.
+- **Active App** (scene filter): a scene has a capture for each of several apps, and the one you are
+  using is shown, with a fade. The last one stays while something else is in front, and an earlier
+  one comes back when an app closes. Windows only.
 - **Program Trigger** (filter): while a program is open, shows chosen items and switches chosen filters
   on; puts them back when it closes. Windows only.
 - **Cropped View** (source): part of another source, such as your camera cropped square, as a source of
@@ -333,6 +336,35 @@ The filter's controls show what it is capturing now.
 A game is recognised by what the program has loaded: a graphics engine together with controller
 support, or a graphics engine in a window that fills its screen. The filter changes the Game Capture's
 own *Mode* and *Window* settings for you.
+
+### Active App
+
+For a scene that shows whichever app you are working in. Give the scene a Window Capture for each app
+(Blender, ZBrush, a browser, and so on), then add **Active App (StageKit)** as a filter on the *scene*
+and add those captures to its list. Windows only.
+
+Which app a capture belongs to is read from the capture itself, so there is nothing to type. From then
+on one of the listed captures is shown at a time:
+
+- **An app that opens is shown.** So is a capture you aim at another window in its own settings.
+- **Clicking into one of the apps shows it** (*Follow the app in use*, on to begin with). With two of
+  them open, the capture follows you from one to the other.
+- **Clicking into anything else changes nothing.** The last app stays captured while OBS, a chat
+  window or anything not on the list is in front.
+- **When the app that is showing closes, the one you used before it comes back.** When none of them is
+  open, the first capture in the list is shown, so put the one you want as the standby first.
+
+| Setting | What it does |
+| --- | --- |
+| Captures to switch between | The scene's captures, one per app. Choose to add; each row has its own remove button. The first is the standby |
+| Follow the app in use | On: the app you click into is shown. Off: an app is shown when it opens and stays until it closes |
+| Change with | How one capture gives way to the next: a fade (the default), any other transition OBS has, a cut, or whatever is already set on each item. It sets OBS's own show and hide transition on each listed item |
+| Lasting | How long the change takes |
+| Keep the others ready | While the scene is showing, the captures of the other open apps keep running, so the one you switch to has its picture at once |
+
+It acts only when one of those things happens, so a capture you show by hand stays until then. A
+minimised window counts as closed. The top line says what is showing. Switch the filter off to pause it.
+Each capture can have its own [Fit Item](#fit-item), shadow and blur; they follow the capture.
 
 ### Program Trigger
 

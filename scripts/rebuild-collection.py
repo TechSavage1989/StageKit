@@ -457,18 +457,17 @@ def build_scene(name):
 
 
 def scene_filters(name, item_names):
-    """Visibility Link and Program Triggers for the window-capture scenes."""
+    """Active App for the window-capture scenes: the capture of the app in use is the one shown.
+
+    The old collection did this with one macro per program, run while that program had the focus, and
+    a 250 ms fade set on each capture's item. Active App reads each capture's program from the capture
+    itself and fades the same way by default."""
     filters = []
     captures = [n for n in ("Window Capture", "Blender", "Zbrush", "Fusion 360") if n in item_names]
     if len(captures) > 1:
-        filters.append(make_filter("stagekit_visibility_link", "One window capture at a time", {
-            "mode": 0, "items": [{"value": n, "selected": False, "hidden": False} for n in captures]}))
-        for item, program in (("Blender", "blender"), ("Zbrush", "zbrush"), ("Fusion 360", "fusion360")):
-            if item in item_names:
-                filters.append(make_filter("stagekit_program_trigger", f"Show {item} while it is open", {
-                    "program": program, "when": 0,
-                    "items": [{"value": item, "selected": False, "hidden": False}]}))
-        report.append("  Visibility Link (one window capture at a time) and a Program Trigger per program")
+        filters.append(make_filter("stagekit_active_app", "Show the app in use", {
+            "items": [{"value": n, "selected": False, "hidden": False} for n in captures]}))
+        report.append("  Active App: the capture of the app in use is shown, the first in the list otherwise")
     return filters
 
 
