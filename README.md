@@ -593,6 +593,24 @@ Add **Show/Hide Animation (StageKit)** as a filter on a scene and leave it on. C
 where it comes in from: the nearest screen edge, a chosen edge, or a pop from its centre. From then on,
 showing or hiding the item animates it, including from a Stream Deck *Source* key.
 
+### Show in Scenes
+
+One switch that shows or hides sources across scenes, in place of a Stream Deck multi-action with a
+*Source Visibility* step for every scene. Add **Show in Scenes (StageKit)** as a filter on a source,
+then make a Stream Deck *Filter* key for that source and filter. Each press switches the filter on or
+off, and the sources are shown or hidden to match.
+
+| Setting | What it does |
+| --- | --- |
+| Sources to show and hide | Choose to add; each row has its own remove button. Left empty, it acts on the source the filter is on |
+| In | *Every scene they are in*, or *The scenes listed below* |
+| Scenes | The scenes to act in, when you chose to list them |
+| When this is on | *They are shown* (off hides them) or *They are hidden* (off shows them) |
+| Do it now | Shows or hides them to match how the filter is switched now |
+
+It acts when it is switched, not all the time, so something you show or hide by hand stays until the
+next press. Items inside groups are included. OBS's own show and hide transitions on each item apply.
+
 ### Visibility Link
 
 Add **Visibility Link (StageKit)** as a filter on a *scene*, once per set of items.
