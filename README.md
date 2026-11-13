@@ -371,10 +371,22 @@ on one of the listed captures is shown at a time:
 | Setting | What it does |
 | --- | --- |
 | Captures to switch between | The scene's captures, one per app. Choose to add; each row has its own remove button. The first is the standby |
+| Captures you switch to | Other captures in the scene that you show yourself, such as a Window Capture of your browser. Show one and it takes over and stays, whatever app you use; hide it and the captures above follow your apps again. Showing one hides any other on this list |
 | Follow the app in use | On: the app you click into is shown. Off: an app is shown when it opens and stays until it closes |
 | Change with | How one capture gives way to the next: a fade (the default), any other transition OBS has, a cut, or whatever is already set on each item. It sets OBS's own show and hide transition on each listed item |
 | Lasting | How long the change takes |
 | Keep the others ready | While the scene is showing, the captures of the other open apps keep running, so the one you switch to has its picture at once |
+
+**Switching to a window by hand.** Add a Window Capture for the window you want (a browser, say), add
+it to *Captures you switch to*, and hide it. Then:
+
+- **A Stream Deck key** set to show and hide that source in the scene (Elgato's OBS *Source* key)
+  switches to it and back. OBS's own *Show* and *Hide* hotkeys for the item do the same.
+- While it is showing, nothing takes over from it: you can work in Blender or ZBrush and the browser
+  stays on screen. Hide it and the capture of the app you are in comes back.
+- With several on the list, showing one hides the others, so each can have its own key.
+- The filter adds two hotkeys to the scene in *Settings → Hotkeys*, named after the filter: one steps
+  through these captures in turn and then back to the apps, one goes straight back to the apps.
 
 It acts only when one of those things happens, so a capture you show by hand stays until then. A
 minimised window counts as closed. The top line says what is showing. Switch the filter off to pause it.

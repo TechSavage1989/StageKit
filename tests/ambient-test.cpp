@@ -2083,6 +2083,97 @@ int main(int argc, char **argv)
 			see("Notes|notes.exe|front");
 			CHECK(only(any_item), "a capture aimed at another window is shown");
 
+			// Captures switched to by hand: one that is shown stays, whatever
+			// app is used, until it is hidden; then the apps are followed again.
+			{
+				obs_source_t *web = obs_source_create("color_source", "Web Page", nullptr, nullptr);
+				obs_sceneitem_t *web_item = obs_scene_add(as, web);
+				obs_sceneitem_set_visible(web_item, false);
+				obs_sceneitem_set_visible(second_item, false);
+				obs_properties_t *hp = obs_source_properties(app);
+				pick_into_list(app, hp, "by_hand|a", "Second Camera");
+				pick_into_list(app, hp, "by_hand|a", "Web Page");
+				obs_properties_destroy(hp);
+				const char *both =
+					"Notes|notes.exe|\nModel: scene|modeller.exe|front\nSculpt 2026|zsculpt.exe|";
+				const char *other =
+					"Notes|notes.exe|\nModel: scene|modeller.exe|\nSculpt 2026|zsculpt.exe|front";
+				see(both);
+				CHECK(only(model_item) && !obs_sceneitem_visible(web_item),
+				      "captures switched to by hand stay out of the way until one is shown");
+				obs_sceneitem_set_visible(web_item, true);
+				sleep_ms(450);
+				CHECK(only(nullptr) && obs_sceneitem_visible(web_item),
+				      "showing one takes over from the app's capture");
+				see(other);
+				see(both);
+				CHECK(only(nullptr) && obs_sceneitem_visible(web_item),
+				      "and it stays while the listed apps are clicked into");
+				obs_sceneitem_set_visible(second_item, true);
+				sleep_ms(450);
+				CHECK(only(nullptr) && obs_sceneitem_visible(second_item) &&
+					      !obs_sceneitem_visible(web_item),
+				      "showing another one switched to by hand hides the first");
+				see(other);
+				obs_sceneitem_set_visible(second_item, false);
+				sleep_ms(450);
+				CHECK(only(sculpt_item) && !obs_sceneitem_visible(web_item),
+				      "hiding it goes back to the capture of the app in use");
+
+				// The two hotkeys the filter adds to the scene.
+				struct Keys {
+					obs_hotkey_id next = OBS_INVALID_HOTKEY_ID, back = OBS_INVALID_HOTKEY_ID;
+				} keys;
+				obs_enum_hotkeys(
+					[](void *param, obs_hotkey_id id, obs_hotkey_t *key) {
+						auto *k = static_cast<Keys *>(param);
+						const char *name = obs_hotkey_get_name(key);
+						if (name && strcmp(name, "stagekit.active.next.Active App") == 0)
+							k->next = id;
+						if (name && strcmp(name, "stagekit.active.back.Active App") == 0)
+							k->back = id;
+						return true;
+					},
+					&keys);
+				CHECK(keys.next != OBS_INVALID_HOTKEY_ID && keys.back != OBS_INVALID_HOTKEY_ID,
+				      "the scene gets a hotkey to step through them and one to go back to the apps");
+				struct {
+					const char *next = "step_by_hand", *back = "back_to_apps";
+				} act;
+				auto press = [&](const char *what) {
+					calldata_t cd = {};
+					proc_handler_call(obs_source_get_proc_handler(app), what, &cd);
+					calldata_free(&cd);
+					sleep_ms(450);
+				};
+				press(act.next);
+				const bool first_shown = only(nullptr) && obs_sceneitem_visible(second_item);
+				press(act.next);
+				const bool second_shown = only(nullptr) && obs_sceneitem_visible(web_item) &&
+							  !obs_sceneitem_visible(second_item);
+				press(act.next);
+				const bool apps_again = only(sculpt_item) && !obs_sceneitem_visible(web_item);
+				CHECK(first_shown && second_shown && apps_again,
+				      "the step hotkey shows each in turn, then goes back to the apps (%d %d %d)",
+				      first_shown, second_shown, apps_again);
+				press(act.next);
+				press(act.back);
+				CHECK(only(sculpt_item) && !obs_sceneitem_visible(second_item),
+				      "the other hotkey goes straight back to the apps");
+				see("Notes|notes.exe|front");
+				CHECK(only(any_item), "and the apps are followed as before");
+				// The list is emptied again for what follows.
+				obs_data_t *emptied = obs_source_get_settings(app);
+				obs_data_erase(emptied, "by_hand");
+				obs_source_update(app, emptied);
+				obs_data_release(emptied);
+				sleep_ms(300);
+				obs_sceneitem_set_visible(second_item, true);
+				obs_sceneitem_remove(web_item);
+				obs_source_release(web);
+				see("Notes|notes.exe|front");
+			}
+
 			// The change is a fade, as OBS does it for an item.
 			if (obs_source_get_display_name("fade_transition")) {
 				obs_source_t *show = obs_sceneitem_get_transition(model_item, true);

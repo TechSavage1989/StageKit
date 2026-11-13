@@ -220,6 +220,12 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   events (an app opens, closes or is clicked into), never continuously, so a capture shown by hand is
   kept. The change is OBS's own show and hide transition on each item, which the filter sets; do not
   build a second fade.
+- **Active App's captures switched to by hand** (`by_hand`) are how the owner holds a window that is
+  not one of the automatic apps: showing one (any way OBS shows an item: a Stream Deck source key, the
+  item's own hotkeys, the eye) hides the automatic captures and stops the following until it is
+  hidden. No new key type was added on purpose; the two hotkeys on the scene are extras. Before this
+  the owner aimed a capture at the foreground window with a Stream Deck key and lost it as soon as a
+  listed app was clicked into.
 - **Send To moves the source in every scene it is in, by default** (`apply_in`). The owner asked for
   that: the camera sent to a spot is there in every scene. The older `where` setting is not read.
 - **Shadow sizes are in screen pixels by default.** The owner's old shadows sat on full-canvas scenes,
