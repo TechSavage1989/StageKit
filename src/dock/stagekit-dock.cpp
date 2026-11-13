@@ -30,6 +30,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../placement/place-item.hpp"
 #include "arrange.hpp"
 #include "arrange-tools.hpp"
+#include "preview-guides.hpp"
 #include "../placement/scene-tools.hpp"
 
 #include <obs-module.h>
@@ -214,6 +215,7 @@ public:
 		       [](ArrangeOptions &c, bool on) { c.keep_shape = on; });
 		option("menuLiveSnap", "Arrange.LiveSnap", o.live_snap,
 		       [](ArrangeOptions &c, bool on) { c.live_snap = on; });
+		option("menuGuides", "Arrange.Guides", o.guides, [](ArrangeOptions &c, bool on) { c.guides = on; });
 	}
 
 private:
@@ -602,6 +604,9 @@ public:
 		live_snap_ = new QCheckBox(tr_text("Arrange.LiveSnap"), arrange_box);
 		live_snap_->setObjectName("arrangeLiveSnap");
 		live_snap_->setToolTip(tr_text("Arrange.LiveSnap.Tip"));
+		guides_ = new QCheckBox(tr_text("Arrange.Guides"), arrange_box);
+		guides_->setObjectName("arrangeGuides");
+		guides_->setToolTip(tr_text("Arrange.Guides.Tip"));
 		auto *within_row = new QFormLayout();
 		snap_within_ = new QSpinBox(arrange_box);
 		snap_within_->setObjectName("snapWithin");
@@ -612,10 +617,11 @@ public:
 		arrange_layout->addWidget(no_shadow_);
 		arrange_layout->addWidget(keep_shape_);
 		arrange_layout->addWidget(live_snap_);
+		arrange_layout->addWidget(guides_);
 		arrange_layout->addLayout(within_row);
 		// The options are shared with the hotkeys and the right-click menu.
 		show_arrange_options();
-		for (QCheckBox *box : {visible_, no_shadow_, keep_shape_, live_snap_})
+		for (QCheckBox *box : {visible_, no_shadow_, keep_shape_, live_snap_, guides_})
 			QObject::connect(box, &QCheckBox::toggled, this, [this](bool) { store_arrange_options(); });
 		QObject::connect(against_, &QComboBox::currentIndexChanged, this,
 				 [this](int) { store_arrange_options(); });
@@ -811,6 +817,7 @@ private:
 		no_shadow_->setChecked(o.how.leave_out_shadows);
 		keep_shape_->setChecked(o.keep_shape);
 		live_snap_->setChecked(o.live_snap);
+		guides_->setChecked(o.guides);
 		snap_within_->setValue(o.within);
 		storing_ = false;
 	}
@@ -825,6 +832,7 @@ private:
 		o.how.leave_out_shadows = no_shadow_->isChecked();
 		o.keep_shape = keep_shape_->isChecked();
 		o.live_snap = live_snap_->isChecked();
+		o.guides = guides_->isChecked();
 		o.within = snap_within_->value();
 		set_arrange_options(o);
 		shown_options_ = arrange_options_revision();
@@ -1122,6 +1130,7 @@ private:
 	uint64_t shown_options_ = 0;
 	bool storing_ = false;
 	QCheckBox *live_snap_ = nullptr;
+	QCheckBox *guides_ = nullptr;
 	QSpinBox *snap_within_ = nullptr;
 	std::vector<std::pair<int64_t, std::pair<float, float>>> watched_;
 	bool dragging_ = false;
@@ -1158,7 +1167,34 @@ void register_dock()
 		[](void *, calldata_t *cd) { replay_last_arrange(calldata_bool(cd, "redo")); }, nullptr);
 	proc_handler_add(
 		obs_get_proc_handler(), "void stagekit_test_mouse_down(in bool down)",
-		[](void *, calldata_t *cd) { g_test_mouse_down = calldata_bool(cd, "down"); }, nullptr);
+		[](void *, calldata_t *cd) {
+			g_test_mouse_down = calldata_bool(cd, "down");
+			guides_test_mouse(g_test_mouse_down);
+		},
+		nullptr);
+	// For the tests: the guide overlay for a stand-in preview widget, and
+	// where OBS would draw the canvas in a preview of a given size.
+	proc_handler_add(
+		obs_get_proc_handler(), "void stagekit_install_preview_guides(in ptr preview, out ptr overlay)",
+		[](void *, calldata_t *cd) {
+			auto *preview = static_cast<QWidget *>(calldata_ptr(cd, "preview"));
+			calldata_set_ptr(cd, "overlay", install_preview_guides(nullptr, preview));
+		},
+		nullptr);
+	proc_handler_add(
+		obs_get_proc_handler(),
+		"void stagekit_preview_map(in float width, in float height, in float ratio, in float canvas_width, "
+		"in float canvas_height, out float scale, out float x, out float y)",
+		[](void *, calldata_t *cd) {
+			const PreviewMap map = preview_map(calldata_float(cd, "width"), calldata_float(cd, "height"),
+							   calldata_float(cd, "ratio"),
+							   calldata_float(cd, "canvas_width"),
+							   calldata_float(cd, "canvas_height"));
+			calldata_set_float(cd, "scale", map.scale);
+			calldata_set_float(cd, "x", map.x);
+			calldata_set_float(cd, "y", map.y);
+		},
+		nullptr);
 	proc_handler_add(
 		obs_get_proc_handler(), "void stagekit_install_preview_menu()",
 		[](void *, calldata_t *) {
@@ -1199,6 +1235,7 @@ void register_dock()
 		proc_handler_call(obs_get_proc_handler(), "stagekit_install_preview_menu", &cd);
 		calldata_free(&cd);
 	}
+	install_preview_guides(static_cast<QWidget *>(obs_frontend_get_main_window()));
 	add("stagekit-dock", "Dock.Title", new Dock());
 	add("stagekit-background-dock", "Dock.BackgroundTitle", new BackgroundDock());
 }

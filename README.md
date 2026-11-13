@@ -451,6 +451,10 @@ Options:
   *Same width* or *Same height* changes only that direction, which stretches the picture.
 - **Snap on release** snaps an item by itself after you drag it in the preview and let go. *Snap
   within* sets how close counts.
+- **Guides in the preview** (off by default) draws a line across the preview where an item you are
+  dragging lines up with the screen or another item, and where a line-up tool has just put things.
+  The lines are on your screen only, never in the stream or a recording. They are placed for a preview
+  set to *Scale to Window*.
 
 ### Show/Hide Animation
 
