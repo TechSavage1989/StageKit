@@ -1012,7 +1012,10 @@ void register_shadow_backdrop()
 	obs_source_info info = {};
 	info.id = kShadowBackdropId;
 	info.type = OBS_SOURCE_TYPE_FILTER;
-	info.output_flags = OBS_SOURCE_VIDEO;
+	// Colour-aware: OBS then tells the filter when it is drawing in linear
+	// light (a window with a wide-colour surface) and the last draw follows
+	// that. Without it the picture came out pale in the Filters window.
+	info.output_flags = OBS_SOURCE_VIDEO | OBS_SOURCE_SRGB;
 	info.get_name = [](void *) {
 		return obs_module_text("Shadow.Name");
 	};

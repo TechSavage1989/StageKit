@@ -93,6 +93,67 @@ static std::vector<uint8_t> render(obs_source_t *src, uint32_t w, uint32_t h)
 	return pixels;
 }
 
+// The same, drawn the way OBS draws a source by itself in a window of its
+// own (the Filters and Properties windows, a projector) where Windows gives
+// that window a wide-colour surface: sixteen-bit, holding linear light. A
+// source or filter that is not colour-aware puts ordinary values there and
+// comes out pale. What was drawn is brought back to ordinary values to compare.
+static std::vector<uint8_t> render_shown(obs_source_t *src, uint32_t w, uint32_t h)
+{
+	std::vector<uint8_t> pixels(size_t(w) * h * 4);
+	obs_enter_graphics();
+	gs_texrender_t *wide = gs_texrender_create(GS_RGBA16F, GS_ZS_NONE);
+	gs_texrender_t *tr = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
+	gs_stagesurf_t *stage = gs_stagesurface_create(w, h, GS_RGBA);
+	if (gs_texrender_begin_with_color_space(wide, w, h, GS_CS_SRGB_16F)) {
+		vec4 clear;
+		vec4_zero(&clear);
+		gs_clear(GS_CLEAR_COLOR, &clear, 0.0f, 0);
+		gs_ortho(0.0f, (float)w, 0.0f, (float)h, -100.0f, 100.0f);
+		gs_blend_state_push();
+		gs_blend_function(GS_BLEND_ONE, GS_BLEND_ZERO);
+		const bool was_linear = gs_set_linear_srgb(true);
+		const bool was_srgb = gs_framebuffer_srgb_enabled();
+		gs_enable_framebuffer_srgb(false);
+		obs_source_video_render(src);
+		gs_enable_framebuffer_srgb(was_srgb);
+		gs_set_linear_srgb(was_linear);
+		gs_blend_state_pop();
+		gs_texrender_end(wide);
+	}
+	if (gs_texrender_begin(tr, w, h)) {
+		vec4 clear;
+		vec4_zero(&clear);
+		gs_clear(GS_CLEAR_COLOR, &clear, 0.0f, 0);
+		gs_ortho(0.0f, (float)w, 0.0f, (float)h, -100.0f, 100.0f);
+		gs_blend_state_push();
+		gs_blend_function(GS_BLEND_ONE, GS_BLEND_ZERO);
+		gs_effect_t *def = obs_get_base_effect(OBS_EFFECT_DEFAULT);
+		gs_texture_t *linear_light = gs_texrender_get_texture(wide);
+		const bool was_srgb = gs_framebuffer_srgb_enabled();
+		gs_enable_framebuffer_srgb(true); // linear light back to ordinary values
+		gs_effect_set_texture(gs_effect_get_param_by_name(def, "image"), linear_light);
+		while (gs_effect_loop(def, "Draw"))
+			gs_draw_sprite(linear_light, 0, w, h);
+		gs_enable_framebuffer_srgb(was_srgb);
+		gs_blend_state_pop();
+		gs_texrender_end(tr);
+	}
+	gs_stage_texture(stage, gs_texrender_get_texture(tr));
+	uint8_t *data = nullptr;
+	uint32_t linesize = 0;
+	if (gs_stagesurface_map(stage, &data, &linesize)) {
+		for (uint32_t y = 0; y < h; y++)
+			memcpy(&pixels[size_t(y) * w * 4], data + size_t(y) * linesize, size_t(w) * 4);
+		gs_stagesurface_unmap(stage);
+	}
+	gs_stagesurface_destroy(stage);
+	gs_texrender_destroy(tr);
+	gs_texrender_destroy(wide);
+	obs_leave_graphics();
+	return pixels;
+}
+
 static void write_frame(const std::string &path, const std::vector<uint8_t> &px, uint32_t w, uint32_t h)
 {
 	FILE *f = fopen(path.c_str(), "wb");
@@ -562,6 +623,101 @@ int main(int argc, char **argv)
 
 	// ---------------------------------------------------- shadow & backdrop
 	if (argc >= 9) {
+		// The report: sources with StageKit's filters looked paler in the
+		// Filters window than on the canvas. Each filter must leave colours
+		// alone however OBS is drawing: in the scene, or by itself in a
+		// window, where colours are handled in linear light.
+		printf("\n[colours in the Filters window]\n");
+		{
+			obs_data_t *pd = obs_data_create();
+			obs_data_set_string(pd, "file", argv[3]);
+			obs_source_t *picture = obs_source_create("image_source", "Colour Check", pd, nullptr);
+			obs_data_release(pd);
+			sleep_ms(200);
+			// How far the picture's middle differs between the two ways of
+			// drawing, on average, per colour channel.
+			auto differs = [&]() {
+				for (int i = 0; i < 4; i++) {
+					sleep_ms(60);
+					render(picture, obs_source_get_width(picture), obs_source_get_height(picture));
+				}
+				const uint32_t w = obs_source_get_width(picture), h = obs_source_get_height(picture);
+				const std::vector<uint8_t> in_scene = render(picture, w, h);
+				const std::vector<uint8_t> shown = render_shown(picture, w, h);
+				double sum = 0.0;
+				size_t count = 0;
+				for (uint32_t y = h / 3; y < h * 2 / 3; y += 3) {
+					for (uint32_t x = w / 3; x < w * 2 / 3; x += 3) {
+						const size_t at = (size_t(y) * w + x) * 4;
+						for (int c = 0; c < 3; c++)
+							sum += std::abs((int)in_scene[at + c] - (int)shown[at + c]);
+						count += 3;
+					}
+				}
+				return count ? sum / (double)count : 0.0;
+			};
+			const double plain = differs();
+			CHECK(plain < 1.5, "a picture with no filter looks the same either way (off by %.2f)", plain);
+			struct {
+				const char *id, *name;
+			} kinds[] = {{"stagekit_shadow_backdrop", "Shadow, Glow & Outline"},
+				     {"stagekit_corners", "Corners & Edges"},
+				     {"stagekit_ramp_zoom", "Ramp Zoom"},
+				     {"stagekit_ramp_blur", "Ramp Blur"},
+				     {"stagekit_auto_frame", "Auto Frame"}};
+			for (const auto &kind : kinds) {
+				obs_data_t *kd = obs_data_create();
+				obs_data_set_bool(kd, "placed", true);
+				obs_source_t *f = obs_source_create(kind.id, kind.name, kd, nullptr);
+				obs_data_release(kd);
+				if (!f) {
+					CHECK(false, "%s can be created", kind.name);
+					continue;
+				}
+				obs_source_filter_add(picture, f);
+				sleep_ms(300);
+				const double off = differs();
+				CHECK(off < 1.5, "with %s it still looks the same in the Filters window (off by %.2f)",
+				      kind.name, off);
+				obs_source_filter_remove(picture, f);
+				obs_source_release(f);
+				sleep_ms(100);
+			}
+			// A source that draws itself, as a Window Capture does: OBS takes
+			// its picture for a filter by another way than a plain source's.
+			obs_data_t *vd = obs_data_create();
+			obs_data_set_string(vd, "source", "Colour Check");
+			obs_data_set_int(vd, "crop_to", 0);
+			obs_source_t *self_drawn =
+				obs_source_create("stagekit_cropped_view", "Colour View", vd, nullptr);
+			obs_data_release(vd);
+			sleep_ms(700);
+			obs_source_t *whole = picture;
+			picture = self_drawn;
+			const double plain_view = differs();
+			CHECK(plain_view < 1.5, "a source that draws itself looks the same either way (off by %.2f)",
+			      plain_view);
+			for (const auto &kind : kinds) {
+				obs_data_t *kd = obs_data_create();
+				obs_data_set_bool(kd, "placed", true);
+				obs_source_t *f = obs_source_create(kind.id, kind.name, kd, nullptr);
+				obs_data_release(kd);
+				if (!f)
+					continue;
+				obs_source_filter_add(picture, f);
+				sleep_ms(300);
+				const double off = differs();
+				CHECK(off < 1.5, "and with %s on it, the same in the Filters window (off by %.2f)",
+				      kind.name, off);
+				obs_source_filter_remove(picture, f);
+				obs_source_release(f);
+				sleep_ms(100);
+			}
+			picture = whole;
+			obs_source_release(self_drawn);
+			obs_source_release(picture);
+		}
+
 		printf("\n[shadow & backdrop]\n");
 		const std::string shadow_out = argv[8];
 		obs_data_t *ts = obs_data_create();

@@ -1944,7 +1944,9 @@ void register_auto_frame()
 	obs_source_info info = {};
 	info.id = kAutoFrameId;
 	info.type = OBS_SOURCE_TYPE_FILTER;
-	info.output_flags = OBS_SOURCE_VIDEO;
+	// Colour-aware, like every StageKit filter that draws: see the Shadow,
+	// Glow & Outline filter.
+	info.output_flags = OBS_SOURCE_VIDEO | OBS_SOURCE_SRGB;
 	info.get_name = [](void *) {
 		return obs_module_text("Frame.Name");
 	};
