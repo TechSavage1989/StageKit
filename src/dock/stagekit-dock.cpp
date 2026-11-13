@@ -69,6 +69,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <cmath>
 #include <cstring>
 #include <functional>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -82,6 +83,13 @@ const char *const kDestinationText[] = {"Place.TopLeft",    "Place.TopCenter",  
 					"Place.MiddleLeft", "Place.Center",       "Place.MiddleRight",
 					"Place.BottomLeft", "Place.BottomCenter", "Place.BottomRight"};
 const char *const kArrows[] = {"↖", "↑", "↗", "←", "•", "→", "↙", "↓", "↘"};
+// Send To's "a spot on the screen" destination, which the dock's slides use.
+constexpr int kSpotDestination = 10;
+const char *const kSlideTips[] = {"SlideTip.UpLeft",   "SlideTip.Up",     "SlideTip.UpRight",
+				  "SlideTip.Left",     "SlideTip.Centre", "SlideTip.Right",
+				  "SlideTip.DownLeft", "SlideTip.Down",   "SlideTip.DownRight"};
+const char *const kSlideText[] = {"Slide.UpLeft", "Slide.Up",       "Slide.UpRight", "Slide.Left",     "Slide.Centre",
+				  "Slide.Right",  "Slide.DownLeft", "Slide.Down",    "Slide.DownRight"};
 
 QString tr_text(const char *key)
 {
@@ -503,6 +511,16 @@ public:
 		options->addRow(tr_text("Place.Margin"), margin_);
 		options->addRow(tr_text("Place.Duration"), duration_);
 		move_layout->addLayout(options);
+		slide_ = new QCheckBox(tr_text("Dock.Slide"), move_box);
+		slide_->setObjectName("sendSlide");
+		slide_->setToolTip(tr_text("Dock.Slide.Tip"));
+		move_layout->addWidget(slide_);
+		// The arrows say what they will do.
+		QObject::connect(slide_, &QCheckBox::toggled, this, [this, move_box](bool sliding) {
+			for (int i = 0; i < 9; i++)
+				if (auto *button = move_box->findChild<QPushButton *>(QString("grid%1").arg(i)))
+					button->setToolTip(tr_text(sliding ? kSlideTips[i] : kDestinationText[i]));
+		});
 		every_scene_ = new QCheckBox(tr_text("Dock.SendEvery"), move_box);
 		every_scene_->setObjectName("sendEveryScene");
 		every_scene_->setToolTip(tr_text("Dock.SendEvery.Tip"));
@@ -627,7 +645,7 @@ public:
 		arrange_layout->addLayout(within_row);
 		// The options are shared with the hotkeys and the right-click menu.
 		show_arrange_options();
-		for (QCheckBox *box : {visible_, no_shadow_, keep_shape_, live_snap_, guides_, every_scene_})
+		for (QCheckBox *box : {visible_, no_shadow_, keep_shape_, live_snap_, guides_, every_scene_, slide_})
 			QObject::connect(box, &QCheckBox::toggled, this, [this](bool) { store_arrange_options(); });
 		QObject::connect(against_, &QComboBox::currentIndexChanged, this,
 				 [this](int) { store_arrange_options(); });
@@ -826,6 +844,7 @@ private:
 		live_snap_->setChecked(o.live_snap);
 		guides_->setChecked(o.guides);
 		every_scene_->setChecked(o.send_every_scene);
+		slide_->setChecked(o.send_slide);
 		snap_within_->setValue(o.within);
 		storing_ = false;
 	}
@@ -842,6 +861,7 @@ private:
 		o.live_snap = live_snap_->isChecked();
 		o.guides = guides_->isChecked();
 		o.send_every_scene = every_scene_->isChecked();
+		o.send_slide = slide_->isChecked();
 		o.within = snap_within_->value();
 		set_arrange_options(o);
 		shown_options_ = arrange_options_revision();
@@ -1011,47 +1031,118 @@ private:
 
 	void move_now(int destination)
 	{
+		if (slide_->isChecked()) {
+			slide_now(destination);
+			return;
+		}
 		obs_data_t *settings = place_settings(destination);
-		send_with(settings, tr_text(kDestinationText[destination]));
+		send_with(settings,
+			  tr_text("Dock.Moved").arg(item_->currentText(), tr_text(kDestinationText[destination])));
 		obs_data_release(settings);
 	}
 
-	// Sends the chosen item with these Send To settings, as one step for Undo.
-	void send_with(obs_data_t *settings, const QString &where)
+	// Slides the chosen item that way until it comes within the edge
+	// distance of another item or of the screen's edge; the centre button
+	// centres it in the free space around it. Measured by the Arrange
+	// options, so what is visible and whether shadows count apply here too.
+	void slide_now(int direction)
+	{
+		obs_source_t *scene = current_scene();
+		obs_sceneitem_t *item = find_item(scene, item_->currentText().toUtf8().constData());
+		if (!item) {
+			say(tr_text("Dock.PickItem"));
+			obs_source_release(scene);
+			return;
+		}
+		// What travels with it is not in its way.
+		std::vector<obs_sceneitem_t *> along;
+		const std::string linked = linked_->currentData().toString().toUtf8().toStdString();
+		if (obs_sceneitem_t *brought = linked.empty() ? nullptr : find_item(scene, linked))
+			along.push_back(brought);
+		refresh_item(item);
+		const Measure how = arrange_options().how;
+		const std::string scene_name = obs_source_get_name(scene) ? obs_source_get_name(scene) : "";
+		// Pressed again while the item is still on its way: this slide goes
+		// on from where the last one ends, so it passes that edge.
+		const bool on_its_way = slide_item_ == obs_sceneitem_get_id(item) && slide_scene_ == scene_name &&
+					slide_clock_.isValid() && slide_clock_.elapsed() < slide_ms_ + 150;
+		const Box from = on_its_way ? slide_measured_ : measure_item(scene, item, how);
+		const Box box = on_its_way ? slide_box_ : scene_box(scene, item);
+		const Offset by = slide_offset(scene, item, direction % 3 - 1, direction / 3 - 1, margin_->value(), how,
+					       along, &from);
+		if (std::fabs(by.x) < 0.5 && std::fabs(by.y) < 0.5) {
+			say(tr_text("Dock.SlideNoRoom").arg(item_->currentText()));
+			obs_source_release(scene);
+			return;
+		}
+		// Where the item's box starts on the screen once it has moved that
+		// far: the same spot in every scene, whatever group it is in there.
+		slide_item_ = obs_sceneitem_get_id(item);
+		slide_scene_ = scene_name;
+		slide_measured_ = {from.x + by.x, from.y + by.y, from.w, from.h};
+		slide_box_ = {box.x + by.x, box.y + by.y, box.w, box.h};
+		slide_ms_ = duration_->value();
+		slide_clock_.start();
+		obs_data_t *settings = place_settings(kSpotDestination);
+		obs_data_set_double(settings, "spot_x", slide_box_.x);
+		obs_data_set_double(settings, "spot_y", slide_box_.y);
+		obs_source_release(scene);
+		send_with(settings, tr_text("Dock.Slid").arg(item_->currentText(), tr_text(kSlideText[direction])));
+		obs_data_release(settings);
+	}
+
+	// Sends the chosen item with these Send To settings, as one step for
+	// Undo, and says `done` when it is on its way.
+	void send_with(obs_data_t *settings, const QString &done)
 	{
 		obs_source_t *source = item_source();
 		if (!source) {
 			say(tr_text("Dock.PickItem"));
 			return;
 		}
-		// Everywhere, or only in the scene the dock is working on, which may
-		// not be the one on screen.
+		// Everywhere, or only in the scene the dock is working on: by name,
+		// as that may not be the one on screen (the preview in Studio Mode,
+		// or another scene chosen in the dock).
 		const bool everywhere = every_scene_->isChecked();
-		const QString chosen = scene_->currentData().toString();
-		const std::string in_scene = everywhere          ? std::string()
-					     : !chosen.isEmpty() ? chosen.toUtf8().toStdString()
-								 : fixed_scene_;
-		obs_data_set_string(settings, "in_scene", in_scene.c_str());
+		obs_source_t *working = current_scene();
+		const std::string scene_name = working && obs_source_get_name(working) ? obs_source_get_name(working)
+										       : "";
+		obs_data_set_string(settings, "in_scene", everywhere ? "" : scene_name.c_str());
 		obs_source_t *filter = ensure_filter(source, kSendToId, kDockMoveFilter, settings);
 		// One step for OBS's Undo, added when the item has finished gliding.
+		// Presses made while it is still moving make one step together, from
+		// where it was before the first of them.
 		if (filter) {
-			obs_source_t *scene = current_scene();
-			const std::string scene_name = scene ? obs_source_get_name(scene) : "";
-			const std::string before = everywhere ? transform_snapshot_all() : transform_snapshot(scene);
-			obs_source_release(scene);
-			QTimer::singleShot(duration_->value() + 250, this, [before, scene_name, everywhere] {
-				obs_source_t *moved_in = obs_get_source_by_name(scene_name.c_str());
-				add_transform_undo(obs_module_text("Dock.SendUndo"), before,
-						   everywhere ? transform_snapshot_all()
-							      : transform_snapshot(moved_in));
+			const bool chained = undo_chain_ && undo_clock_.isValid() &&
+					     undo_clock_.elapsed() < undo_ms_ + 250 &&
+					     undo_chain_->everywhere == everywhere && undo_chain_->scene == scene_name;
+			if (!chained) {
+				undo_chain_ = std::make_shared<UndoChain>();
+				undo_chain_->before = everywhere ? transform_snapshot_all()
+								 : transform_snapshot(working);
+				undo_chain_->everywhere = everywhere;
+				undo_chain_->scene = scene_name;
+			}
+			undo_clock_.start();
+			undo_ms_ = duration_->value();
+			const std::shared_ptr<UndoChain> chain = undo_chain_;
+			const uint64_t serial = ++chain->latest;
+			QTimer::singleShot(duration_->value() + 250, this, [chain, serial] {
+				if (serial != chain->latest)
+					return; // a later press in the same run adds the step
+				obs_source_t *moved_in = obs_get_source_by_name(chain->scene.c_str());
+				add_transform_undo(obs_module_text("Dock.SendUndo"), chain->before,
+						   chain->everywhere ? transform_snapshot_all()
+								     : transform_snapshot(moved_in));
 				obs_source_release(moved_in);
 			});
 		}
+		obs_source_release(working);
 		if (filter) {
 			calldata_t cd = {};
 			proc_handler_call(obs_source_get_proc_handler(filter), "trigger", &cd);
 			calldata_free(&cd);
-			say(tr_text("Dock.Moved").arg(item_->currentText(), where));
+			say(done);
 		}
 		obs_source_release(filter);
 		obs_source_release(source);
@@ -1165,6 +1256,24 @@ private:
 	QCheckBox *live_snap_ = nullptr;
 	QCheckBox *guides_ = nullptr;
 	QCheckBox *every_scene_ = nullptr;
+	QCheckBox *slide_ = nullptr;
+	// The dock's last slide, while the item may still be on its way there:
+	// what was measured and the item's box, where they end up.
+	int64_t slide_item_ = -1;
+	std::string slide_scene_;
+	Box slide_measured_, slide_box_;
+	QElapsedTimer slide_clock_;
+	int slide_ms_ = 0;
+	// One Undo step for a run of moves made while the item is still moving:
+	// from where things were before the first, to where the last left them.
+	struct UndoChain {
+		std::string before, scene;
+		bool everywhere = false;
+		uint64_t latest = 0;
+	};
+	std::shared_ptr<UndoChain> undo_chain_;
+	QElapsedTimer undo_clock_;
+	int undo_ms_ = 0;
 	QSpinBox *snap_within_ = nullptr;
 	std::vector<std::pair<int64_t, std::pair<float, float>>> watched_;
 	bool dragging_ = false;

@@ -382,6 +382,128 @@ int match_size(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items,
 	return changed;
 }
 
+namespace {
+
+// Every other visible item, measured: what can be in an item's way. Items in
+// a group count on their own; a group left out takes its items with it.
+std::vector<Box> others_in(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &leave_out, const Measure &how)
+{
+	std::vector<Box> out;
+	struct Gather {
+		obs_source_t *scene;
+		const std::vector<obs_sceneitem_t *> *leave_out;
+		const Measure *how;
+		std::vector<Box> *out;
+	} gather{scene, &leave_out, &how, &out};
+	static const auto add = [](obs_scene_t *, obs_sceneitem_t *other, void *param) {
+		auto *g = static_cast<Gather *>(param);
+		if (std::find(g->leave_out->begin(), g->leave_out->end(), other) != g->leave_out->end() ||
+		    !obs_sceneitem_visible(other) || obs_sceneitem_is_group(other))
+			return true;
+		const Box b = measure_item(g->scene, other, *g->how);
+		if (b.w > 0.0 && b.h > 0.0)
+			g->out->push_back(b);
+		return true;
+	};
+	if (obs_scene_t *s = scene_of(scene)) {
+		obs_scene_enum_items(
+			s,
+			[](obs_scene_t *sc, obs_sceneitem_t *other, void *param) {
+				auto *g = static_cast<Gather *>(param);
+				const bool left_out = std::find(g->leave_out->begin(), g->leave_out->end(), other) !=
+						      g->leave_out->end();
+				if (obs_sceneitem_is_group(other) && !left_out && obs_sceneitem_visible(other))
+					obs_sceneitem_group_enum_items(other, add, param);
+				add(sc, other, param);
+				return true;
+			},
+			&gather);
+	}
+	return out;
+}
+
+} // namespace
+
+Offset slide_offset(obs_source_t *scene, obs_sceneitem_t *item, int dx, int dy, double gap, const Measure &how,
+		    const std::vector<obs_sceneitem_t *> &leave_out, const Box *from)
+{
+	Offset out;
+	Box me = from ? *from : measure_item(scene, item, how);
+	if (!scene || me.w <= 0.0 || me.h <= 0.0)
+		return out;
+	std::vector<obs_sceneitem_t *> skip = leave_out;
+	skip.push_back(item);
+	const std::vector<Box> others = others_in(scene, skip, how);
+	const double canvas_w = obs_source_get_width(scene), canvas_h = obs_source_get_height(scene);
+	// Edges this close count as touching, not as overlapping.
+	constexpr double kTouch = 0.5;
+	auto overlap = [](double a0, double a1, double b0, double b1) {
+		return a0 < b1 - kTouch && b0 < a1 - kTouch;
+	};
+	// The move along one direction (across, or up and down) from where `me` is now.
+	auto along = [&](bool across, int dir) {
+		const double pos = across ? me.x : me.y;
+		const double size = across ? me.w : me.h;
+		const double limit = across ? canvas_w : canvas_h;
+		const double start = pos, end = pos + size;
+		if (dir == 0) {
+			// Centred between whatever is nearest on either side, or the screen's edges.
+			double lo = 0.0, hi = limit;
+			for (const Box &o : others) {
+				const bool beside = across ? overlap(o.y, o.y + o.h, me.y, me.y + me.h)
+							   : overlap(o.x, o.x + o.w, me.x, me.x + me.w);
+				if (!beside)
+					continue;
+				const double o0 = across ? o.x : o.y, o1 = across ? o.x + o.w : o.y + o.h;
+				if (o1 <= start + kTouch)
+					lo = std::max(lo, o1);
+				else if (o0 >= end - kTouch)
+					hi = std::min(hi, o0);
+			}
+			return (lo + hi) / 2.0 - size / 2.0 - start;
+		}
+		// The places where the leading edge comes within the gap of an edge:
+		// the screen's, and the near and the far side of anything in the
+		// path. The item goes to the nearest one ahead of it, so the next
+		// press passes through that edge to the one after.
+		const double lead = dir > 0 ? end : start;
+		// The screen's edge is as far as it goes: nothing past it counts.
+		const double screen = dir > 0 ? limit - gap : gap;
+		std::vector<double> stops{screen};
+		for (const Box &o : others) {
+			const bool in_path = across ? overlap(o.y, o.y + o.h, me.y, me.y + me.h)
+						    : overlap(o.x, o.x + o.w, me.x, me.x + me.w);
+			if (!in_path)
+				continue;
+			const double o0 = across ? o.x : o.y, o1 = across ? o.x + o.w : o.y + o.h;
+			stops.push_back(dir > 0 ? o0 - gap : o1 + gap); // just short of it
+			// Inside it, short of its far side: only for something wider than
+			// the gap, or that stop would come before its near side.
+			if (dir > 0 ? o1 - gap > o0 + kTouch : o0 + gap < o1 - kTouch)
+				stops.push_back(dir > 0 ? o1 - gap : o0 + gap);
+		}
+		bool found = false;
+		double next = lead;
+		for (double stop : stops) {
+			const bool on_screen = dir > 0 ? stop <= screen + kTouch : stop >= screen - kTouch;
+			const bool ahead = on_screen && (dir > 0 ? stop > lead + kTouch : stop < lead - kTouch);
+			if (ahead && (!found || (dir > 0 ? stop < next : stop > next))) {
+				next = stop;
+				found = true;
+			}
+		}
+		return found ? next - lead : 0.0;
+	};
+	const bool centre = dx == 0 && dy == 0;
+	if (dx != 0 || centre) {
+		out.x = along(true, dx);
+		me.x += out.x;
+	}
+	if (dy != 0 || centre)
+		out.y = along(false, dy);
+	return out;
+}
+
 SnapLines snap_lines(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &leave_out, const Measure &how)
 {
 	// Lines worth meeting: the screen's edges and centre, and every other

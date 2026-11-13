@@ -204,6 +204,52 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Slide to the next edge (0.1.0-beta51)
+
+The owner: the Send to arrows should also have "a second function where any one of those directions
+moves the object in the chosen direction until it either would collide with the edge of another
+object, or would collide with the edge of the scene, but instead of colliding, respect the edge
+distance setting", "make sure the same settings like use visible pixels and all the others still work
+with it"; then: "must have the object stop at the first edge it meets, but if pressed again can pass
+through the object edge until the next edge it meets". They asked for it with "ultracode"; it was
+written directly and checked by a short review workflow.
+
+- Dock tick box *Slide to the next edge* (`sendSlide`, saved as `stagekit.send.slide` with the
+  arrange options). The arrows' tooltips change with it.
+- `slide_offset(scene, item, dx, dy, gap, how, leave_out)`: the item and every other visible item are
+  measured with the Arrange options (`how`). Along each direction the stops for the leading edge are
+  the screen's edge less `gap`, and for each item overlapping the path (by more than half a pixel
+  across it) its near side less `gap` and its far side less `gap`; the nearest stop more than half a
+  pixel ahead wins, none means no move. Diagonals do across, then down/up from the new place. The
+  centre button centres between the nearest items on either side (or the screen's edges), both ways.
+- Items in groups count on their own; a group in `leave_out` (or hidden) takes its items with it. The
+  dock leaves out the item chosen in *Bring along*.
+- The dock sends the result as a Send To with the new destination `Spot` (10): `spot_x`/`spot_y` are
+  where the item's box starts on the canvas, applied per scene in that scene's coordinates.
+
+**Review** (a workflow of three read-only reviewers and one skeptic per finding; 10 confirmed, 1
+refuted, 2 not verified because of the cap). Fixed, each with a test that fails without the fix:
+- a second press during the glide went back to the same stop: the dock remembers the last slide's end
+  (measured box and item box) for the travel time plus 150 ms and starts from there;
+- stops past the screen's edge (items partly off the canvas, oversized backgrounds) took the item off
+  screen: stops beyond the screen stop are dropped;
+- an obstacle thinner than the edge distance cost a press: its far-side stop is only added when it
+  lies past its near side;
+- *In every scene* applied a group-local saved position in other scenes: now `Destination::Spot`;
+- `places_of(every scene)` also walked groups as scenes (OBS lists them in `obs_enum_scenes`), so a
+  grouped item was moved twice, once as if the group were the screen. This affected the plain arrows
+  and Stream Deck keys with *Every scene it is in* as well. Groups are skipped now;
+- Studio Mode with *In every scene* unticked: the dock measured the preview scene and Send To moved
+  the program scene. `send_with` now names the scene it worked on;
+- presses during a glide made several Undo steps from mid-glide positions: they now make one step
+  (`UndoChain`, grouped by time, so a late timer cannot mix two runs);
+- the diagonal test could not tell "from the new place" from "from the old place"; test comments; the
+  dock screenshot.
+Refuted: that *In every scene* should keep each scene's own arrangement (it is documented as the same
+place everywhere).
+
+**Not verified:** on Windows.
+
 ## Same width, Ignore shadows, guides on Windows (0.1.0-beta50)
 
 The owner, with screenshots of the dock and the preview: "Same width doesn't appear to work. I expect

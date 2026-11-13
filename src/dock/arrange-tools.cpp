@@ -334,6 +334,7 @@ void arrange_save_load(obs_data_t *save_data, bool saving)
 		obs_data_set_bool(save_data, "stagekit.arrange.live_snap", o.live_snap);
 		obs_data_set_bool(save_data, "stagekit.arrange.guides", o.guides);
 		obs_data_set_bool(save_data, "stagekit.send.every_scene", o.send_every_scene);
+		obs_data_set_bool(save_data, "stagekit.send.slide", o.send_slide);
 		obs_data_set_int(save_data, "stagekit.arrange.within", o.within);
 	} else if (obs_data_has_user_value(save_data, "stagekit.arrange.within")) {
 		ArrangeOptions o;
@@ -348,6 +349,7 @@ void arrange_save_load(obs_data_t *save_data, bool saving)
 		// Collections saved before this option existed take its default.
 		if (obs_data_has_user_value(save_data, "stagekit.send.every_scene"))
 			o.send_every_scene = obs_data_get_bool(save_data, "stagekit.send.every_scene");
+		o.send_slide = obs_data_get_bool(save_data, "stagekit.send.slide");
 		set_arrange_options(o);
 	}
 	for (Hotkey &hk : g_hotkeys) {

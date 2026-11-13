@@ -18,6 +18,7 @@
 #include <QImage>
 #include <QPainter>
 #include <QLabel>
+#include <QSpinBox>
 #include <QListWidget>
 #include <QMenu>
 #include <QContextMenuEvent>
@@ -4147,6 +4148,177 @@ int main(int argc, char **argv)
 					      pos_of(ia).x, pos_of(grouped).x);
 					obs_sceneitem_select(grouped, false);
 					against(0);
+				}
+
+				// Slide to the next edge: the Send to arrows move the chosen item
+				// that way until it comes within the edge distance of the next edge.
+				{
+					auto *items_box = dock->findChild<QComboBox *>("item");
+					auto *margin = dock->findChild<QSpinBox *>("margin");
+					auto *travel = dock->findChild<QSpinBox *>("duration");
+					auto *slide = dock->findChild<QCheckBox *>("sendSlide");
+					CHECK(items_box && margin && travel && slide,
+					      "the Send to box has 'Slide to the next edge'");
+					if (items_box && margin && travel && slide) {
+						for (int i = 0; i < 30 && items_box->findText("Block A") < 0; i++) {
+							QCoreApplication::processEvents();
+							sleep_ms(50);
+						}
+						items_box->setCurrentText("Block A");
+						margin->setValue(10);
+						travel->setValue(0);
+						slide->setChecked(true);
+						tick_box("arrangeVisible", true);
+						tick_box("arrangeNoShadow", true);
+						select_only({});
+						// Block C is in a group by now; the group is put out of sight.
+						obs_sceneitem_t *c_group = obs_scene_find_source(as, "Arrange Group");
+						if (c_group)
+							obs_sceneitem_set_visible(c_group, false);
+						place(ia, 20, 20);       // 100x50
+						place(ib, 300, 15);      // 60x80, in A's way across
+						place(ibadge, 300, 250); // drawn part 100x40 at 350, 280
+						auto press = [&](int index) {
+							click(QString("grid%1").arg(index).toUtf8().constData());
+							for (int i = 0; i < 4; i++) {
+								QCoreApplication::processEvents();
+								sleep_ms(40);
+							}
+							return pos_of(ia);
+						};
+						vec2 at1 = press(5); // right: up to B, 10 short
+						vec2 at2 = press(
+							5); // again: through B's near side to 10 short of its far side
+						vec2 at3 = press(5); // again: on to the screen's edge
+						CHECK(std::fabs(at1.x - 190) < 0.6 && std::fabs(at2.x - 250) < 0.6 &&
+							      std::fabs(at3.x - 530) < 0.6 &&
+							      std::fabs(at3.y - 20) < 0.6,
+						      "each press slides to the next edge, keeping the edge distance: short of the item in the way, then through it, then the screen's edge (x %.0f, %.0f, %.0f)",
+						      at1.x, at2.x, at3.x);
+						vec2 stuck = press(5);
+						CHECK(std::fabs(stuck.x - 530) < 0.6,
+						      "with no edge left that way it stays (x %.0f)", stuck.x);
+						vec2 back = press(3); // left: meets B's near side first
+						CHECK(std::fabs(back.x - 370) < 0.6,
+						      "the other way, it meets the near side first (x %.0f)", back.x);
+						place(ia, 380, 20);
+						vec2 down = press(7); // down: the badge's picture is in the way
+						tick_box("arrangeVisible", false);
+						place(ia, 380, 20);
+						vec2 down_box = press(7);
+						tick_box("arrangeVisible", true);
+						CHECK(std::fabs(down.y - 220) < 0.6 &&
+							      std::fabs(down_box.y - 190) < 0.6,
+						      "'Use visible pixels' applies: the badge's picture stops it, or its box when that is off (y %.0f, %.0f)",
+						      down.y, down_box.y);
+						// Up and right from low down: across, the badge's picture stops it;
+						// then up from there, where B is in the way (from where it began,
+						// nothing would be).
+						place(ia, 20, 250);
+						vec2 corner = press(2);
+						CHECK(std::fabs(corner.x - 240) < 0.6 &&
+							      std::fabs(corner.y - 105) < 0.6,
+						      "a diagonal slides across, then up from where that left it (%.0f, %.0f)",
+						      corner.x, corner.y);
+						place(ia, 20, 20);
+						vec2 centred = press(4);
+						CHECK(std::fabs(centred.x - 100) < 0.6 &&
+							      std::fabs(centred.y - 155) < 0.6,
+						      "the centre button centres it in the free space around it (%.0f, %.0f)",
+						      centred.x, centred.y);
+						// Something partly past the screen's edge: the edge is as far as it goes.
+						place(ib, 600, 15); // 600..660 on a 640 wide screen
+						place(ia, 20, 20);
+						vec2 e1 = press(5), e2 = press(5), e3 = press(5);
+						CHECK(std::fabs(e1.x - 490) < 0.6 && std::fabs(e2.x - 530) < 0.6 &&
+							      std::fabs(e3.x - 530) < 0.6,
+						      "nothing past the screen's edge takes it further (x %.0f, %.0f, %.0f)",
+						      e1.x, e2.x, e3.x);
+
+						// Something thinner than the edge distance: the next press passes it.
+						obs_source_t *thin_src = make_color("Thin Divider", 6, 100);
+						obs_sceneitem_t *thin = obs_scene_add(as, thin_src);
+						place(thin, 300, 0);
+						place(ib, 500, 200);
+						margin->setValue(30);
+						place(ia, 20, 20);
+						vec2 t1 = press(5), t2 = press(5);
+						CHECK(std::fabs(t1.x - 170) < 0.6 && std::fabs(t2.x - 510) < 0.6,
+						      "something thinner than the edge distance is passed by the next press (x %.0f, %.0f)",
+						      t1.x, t2.x);
+						obs_sceneitem_remove(thin);
+						obs_source_release(thin_src);
+						margin->setValue(10);
+						place(ib, 300, 15);
+
+						// Pressed again while still gliding: it goes on from where the
+						// first slide ends, and both make one step for Undo.
+						travel->setValue(400);
+						place(ia, 20, 20);
+						for (int i = 0; i < 4; i++) {
+							QCoreApplication::processEvents();
+							sleep_ms(50);
+						}
+						click("grid5");
+						QCoreApplication::processEvents();
+						sleep_ms(120);
+						click("grid5");
+						for (int i = 0; i < 20; i++) {
+							QCoreApplication::processEvents();
+							sleep_ms(50);
+						}
+						const vec2 glided = pos_of(ia);
+						calldata_t undo_cd = {};
+						calldata_set_bool(&undo_cd, "redo", false);
+						proc_handler_call(obs_get_proc_handler(), "stagekit_replay_arrange",
+								  &undo_cd);
+						calldata_free(&undo_cd);
+						sleep_ms(100);
+						const vec2 undone = pos_of(ia);
+						CHECK(std::fabs(glided.x - 250) < 0.6 &&
+							      std::fabs(undone.x - 20) < 0.6 &&
+							      std::fabs(undone.y - 20) < 0.6,
+						      "a second press while it glides passes the edge, and one Undo takes both back (x %.0f, then %.0f)",
+						      glided.x, undone.x);
+						travel->setValue(0);
+
+						// In every scene: the same spot on the screen, also where the
+						// item sits in a group.
+						obs_scene_t *other = obs_scene_create("Slide Elsewhere");
+						obs_sceneitem_t *holder = obs_scene_add_group(other, "Slide Holder");
+						obs_sceneitem_t *copy = obs_scene_add(other, block_a);
+						obs_sceneitem_group_add_item(holder, copy);
+						place(holder, 100, 100);
+						place(copy, 0, 0);
+						for (int i = 0; i < 4; i++) {
+							QCoreApplication::processEvents();
+							sleep_ms(50);
+						}
+						place(ia, 20, 20);
+						press(5);
+						for (int i = 0; i < 4; i++) {
+							QCoreApplication::processEvents();
+							sleep_ms(50);
+						}
+						const vec2 hp = pos_of(holder), cp = pos_of(copy), here = pos_of(ia);
+						CHECK(std::fabs(here.x - 190) < 0.6 &&
+							      std::fabs(hp.x + cp.x - 190) < 1.0 &&
+							      std::fabs(hp.y + cp.y - 20) < 1.0,
+						      "with 'In every scene', it lands on the same spot of the screen in a scene where it is in a group (%.0f, %.0f)",
+						      hp.x + cp.x, hp.y + cp.y);
+						obs_scene_release(other);
+
+						slide->setChecked(false);
+						place(ia, 20, 20);
+						vec2 sent = press(5);
+						CHECK(std::fabs(sent.x - 530) < 0.6 && std::fabs(sent.y - 155) < 0.6,
+						      "unticked, the arrows send it to the screen position again (%.0f, %.0f)",
+						      sent.x, sent.y);
+						margin->setValue(30);
+						travel->setValue(500);
+						if (c_group)
+							obs_sceneitem_set_visible(c_group, true);
+					}
 				}
 
 				select_only({});

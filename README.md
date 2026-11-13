@@ -422,7 +422,9 @@ spot and name each after its spot ("Camera top right").
 
 1. Choose where to send it: one of nine screen positions with a margin from the edge, or a saved spot.
    For a saved spot, drag the camera where you want it in the preview and press *Save the item's
-   current spot*. Its size is saved too if you tick *Also restore the item's size*.
+   current spot*. Its size is saved too if you tick *Also restore the item's size*. *A spot on the
+   screen* puts the item's left and top edges at the numbers you give, in every scene alike; the
+   dock's slides use it.
 2. Choose where it moves (*Move it in*). **Every scene it is in** is the default: the source ends up
    in the same place in each of its scenes, on screen or not. **Only the scene on screen** leaves the
    other scenes as they are. **Only one scene I choose** always moves it in that scene. It is found
@@ -463,6 +465,17 @@ Studio Mode).
 - Click one of the nine positions and the item glides there. With *In every scene* ticked (the
   default) its source is moved in every scene it is in, keys you make do the same, and one Undo takes
   the whole move back. Untick it to change only the scene you are working on.
+- Tick **Slide to the next edge** and the arrows slide the item instead: it moves that way until it
+  comes within the *Edge distance* of the next edge it meets, which is the near side of another item in
+  its path, or the screen's edge. Press again and it goes through that edge: first to the item's far
+  side (inside it, the same distance short of that side), then on to the next item or the screen's
+  edge. Nothing takes it past the screen's edge, and something thinner than the edge distance is
+  passed in one press. Pressing again while it is still gliding carries on from where it is going. The
+  diagonals slide across, then up or down. The centre button centres the item in the free space around
+  it. *Use visible pixels* and *Ignore shadows* in the Arrange box decide what counts as an edge, and
+  an item brought along is never in the way. With *In every scene*, the item lands on the same spot of
+  the screen in each of its scenes. It glides for the *Travel time*; a run of presses made while it is
+  still moving is one step for Undo.
 - *Make 9 position keys* adds a Send To filter for each one **to the item's own source**,
   named after the position ("Top right"). Point a Stream Deck *Filter* key at the camera and one of
   those filters, or give it a hotkey.
