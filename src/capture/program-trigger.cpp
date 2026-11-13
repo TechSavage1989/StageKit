@@ -22,6 +22,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "program-trigger.hpp"
 
 #include "auto-capture.hpp"
+#include "../common/item-transition.hpp"
 #include "../common/pick-list.hpp"
 #include "../common/scene-util.hpp"
 
@@ -111,6 +112,8 @@ public:
 			program_.resize(program_.size() - 4);
 		title_ = lowered(obs_data_get_string(settings, "title"));
 		opposite_ = obs_data_get_bool(settings, "opposite");
+		transition_ = item_transition_kind(settings);
+		transition_ms_ = item_transition_ms(settings);
 		items_ = items;
 		filters_ = filters;
 		known_ = false; // settings changed: apply the answer afresh
@@ -171,8 +174,17 @@ public:
 		const bool on = matched != opposite;
 		for (const std::string &name : items) {
 			obs_sceneitem_t *item = find_item(parent_, name);
-			if (item && obs_sceneitem_visible(item) != on)
+			if (item && obs_sceneitem_visible(item) != on) {
+				std::string transition;
+				uint32_t transition_ms;
+				{
+					std::lock_guard lock(mutex_);
+					transition = transition_;
+					transition_ms = transition_ms_;
+				}
+				set_item_transitions(item, transition, transition_ms);
 				obs_sceneitem_set_visible(item, on);
+			}
 		}
 		for (const std::string &name : filters) {
 			obs_source_t *filter = obs_source_get_filter_by_name(parent_, name.c_str());
@@ -225,6 +237,8 @@ private:
 	obs_source_t *source_;
 	obs_source_t *parent_ = nullptr;
 	std::mutex mutex_;
+	std::string transition_ = kTransitionFade;
+	uint32_t transition_ms_ = 300;
 	When when_ = When::Open;
 	std::string program_, title_;
 	bool opposite_ = false;
@@ -316,6 +330,7 @@ obs_properties_t *get_properties(void *data)
 			&fill);
 	};
 	pick_list_add(props, own, filters);
+	add_item_transition_properties(props);
 	obs_property_t *opposite = obs_properties_add_bool(props, "opposite", obs_module_text("Trigger.Opposite"));
 	obs_property_set_long_description(opposite, obs_module_text("Trigger.Opposite.Tip"));
 
@@ -347,6 +362,7 @@ void register_program_trigger()
 	info.get_defaults = [](obs_data_t *settings) {
 		obs_data_set_default_int(settings, "when", (int)When::Open);
 		obs_data_set_default_bool(settings, "opposite", false);
+		item_transition_defaults(settings);
 	};
 	info.get_properties = get_properties;
 	info.video_tick = [](void *data, float seconds) {

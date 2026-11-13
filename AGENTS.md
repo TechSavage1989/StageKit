@@ -27,7 +27,7 @@ for an update notice inside OBS. This exception is recorded in the handoff.
 | `src/view/` | Cropped View source (part of another source as a source, so filters follow the crop) |
 | `src/placement/` | Scene filters: Place Item, Show/Hide Animation, Visibility Link, Match Item, Layout, Fit Item (keeps one item fitted in a box, filling it or floating centred by shape); Send To, Place Item's code as a filter on the source it moves; and Show in Scenes (`show-in-scenes.*`), a filter on any source that is a switch for showing and hiding sources across scenes |
 | `src/dock/` | Two docks (Qt widgets, no `Q_OBJECT`): StageKit follows the item selected in OBS and drives Send To filters on that item's source; StageKit Background holds the start image thumbnail. `arrange-tools.*` is the one set of line-up actions and options behind the dock, the hotkeys and the preview's right-click menu |
-| `src/common/` | Shared helpers: easing and `Tween`, `SwitchRamp`, `KawaseBlur`, scene utilities, and the start image (global path + Start Image source) |
+| `src/common/` | Shared helpers: easing and `Tween`, `SwitchRamp`, `KawaseBlur`, scene utilities, `item-transition` (the *Change with* control for filters that show and hide items), and the start image (global path + Start Image source) |
 | `src/frame/` | Auto Frame filter and the Picture Shape key filter |
 | `src/capture/` | Auto Capture filter (aims a Game Capture at the game in front), Program Trigger filter (shows items and switches filters while a program is open) and Active App scene filter (shows the one of several captures whose app is in use). All use the Win32 window list in `auto-capture.cpp`; compiled but idle elsewhere. Also Standby Picture (`standby.*`), a filter that shows a picture in a capture's place while it has nothing; it works everywhere |
 | `src/api/` | obs-websocket vendor requests (`StageKit` vendor) |
@@ -248,6 +248,13 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   state, so one Stream Deck Filter key toggles and shows which way it is. It acts on the `enable`
   signal only (never each tick, so a change by hand is kept) and ignores the state restored at load
   (`ready_`). The owner had a multi-action with a Source Visibility step per scene for this.
+- **Anything that changes over time lets the user choose how.** The owner: "Any filter or
+  feature/effect that would do a transition or transform should have those ... be customizable, and
+  not only offer fade. fade should be the default". A filter that shows and hides scene items offers
+  *Change with* and *Lasting* through `src/common/item-transition.*` (any OBS transition, a cut, or
+  keep; default fade, 300 ms): Active App, Show in Scenes, Program Trigger, Visibility Link. A filter
+  that animates its own drawing offers a style list, its timings and `add_easing_properties`. Do not
+  ship a fixed fade or a fixed curve in anything new.
 - **Send To moves the source in every scene it is in, by default** (`apply_in`). The owner asked for
   that: the camera sent to a spot is there in every scene. The older `where` setting is not read.
 - **Shadow sizes are in screen pixels by default.** The owner's old shadows sat on full-canvas scenes,

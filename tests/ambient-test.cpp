@@ -751,6 +751,21 @@ int main(int argc, char **argv)
 			flip(true);
 			CHECK(obs_sceneitem_visible(cam1) && obs_sceneitem_visible(cam2) && obs_sceneitem_visible(cam3),
 			      "switched on, it is shown everywhere again");
+			if (obs_source_get_display_name("fade_transition")) {
+				obs_source_t *show = obs_sceneitem_get_transition(cam1, true);
+				CHECK(show && strcmp(obs_source_get_unversioned_id(show), "fade_transition") == 0 &&
+					      obs_sceneitem_get_transition_duration(cam1, true) == 300,
+				      "the items it shows and hide are given a fade, the choice it comes with");
+				obs_data_t *cut = obs_source_get_settings(sw);
+				obs_data_set_string(cut, "transition", "none");
+				obs_source_update(sw, cut);
+				obs_data_release(cut);
+				sleep_ms(100);
+				flip(false);
+				flip(true);
+				CHECK(obs_sceneitem_get_transition(cam1, true) == nullptr,
+				      "and set to a cut, the items' transitions are taken off");
+			}
 
 			// Only the scenes listed.
 			obs_properties_t *sp = obs_source_properties(sw);
@@ -806,6 +821,7 @@ int main(int argc, char **argv)
 			obs_data_set_int(sd, "picture", 1); // a file
 			obs_data_set_string(sd, "file", argv[3]);
 			obs_data_set_int(sd, "fade_ms", 200);
+			obs_data_set_int(sd, "back_ms", 200);
 			obs_source_t *standby = obs_source_create("stagekit_standby", "Standby Picture", sd, nullptr);
 			CHECK(standby != nullptr, "the Standby Picture filter can be created");
 			obs_source_filter_add(capture, standby);
@@ -880,6 +896,44 @@ int main(int argc, char **argv)
 			obs_data_set_bool(sd, "own_shape", true);
 			obs_source_update(standby, sd);
 			settle(12);
+
+			// Another way of changing: the picture slides away to the left, so
+			// part-way the capture shows at the right and the picture at the left.
+			{
+				obs_data_set_int(sd, "style", 2);
+				obs_data_set_int(sd, "fade_ms", 800);
+				obs_data_set_int(sd, "ease_curve", 0); // linear, so part-way is half-way
+				obs_source_update(standby, sd);
+				settle(8);
+				obs_data_t *again = obs_source_get_settings(capture);
+				obs_data_set_string(again, "file", red_path.c_str());
+				obs_source_update(capture, again);
+				bool seen = false;
+				for (int i = 0; i < 14 && !seen; i++) {
+					sleep_ms(50);
+					const uint32_t sw = obs_source_get_width(capture),
+						       sh = obs_source_get_height(capture);
+					if (!sw || !sh)
+						continue;
+					const std::vector<uint8_t> part = render(capture, sw, sh);
+					const uint8_t *l = &part[(size_t(sh / 2) * sw + sw / 10) * 4];
+					const uint8_t *r = &part[(size_t(sh / 2) * sw + sw * 9 / 10) * 4];
+					const bool left_picture = !(l[0] > 250 && l[1] < 5 && l[2] < 5) && l[3] > 250;
+					const bool right_capture = r[0] > 250 && r[1] < 5 && r[2] < 5;
+					seen = left_picture && right_capture;
+				}
+				CHECK(seen,
+				      "with 'Slide away to the left', the capture is uncovered from the right as the picture leaves");
+				settle(20);
+				obs_data_set_string(again, "file", "");
+				obs_source_update(capture, again);
+				obs_data_release(again);
+				obs_data_set_int(sd, "style", 0);
+				obs_data_set_int(sd, "fade_ms", 200);
+				obs_data_set_int(sd, "ease_curve", 3);
+				obs_source_update(standby, sd);
+				settle(12);
+			}
 
 			// Switched off, the source is as it would be without it.
 			obs_source_set_enabled(standby, false);

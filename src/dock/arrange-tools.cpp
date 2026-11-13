@@ -346,6 +346,8 @@ void arrange_save_load(obs_data_t *save_data, bool saving)
 		obs_data_set_bool(save_data, "stagekit.arrange.guides", o.guides);
 		obs_data_set_bool(save_data, "stagekit.send.every_scene", o.send_every_scene);
 		obs_data_set_bool(save_data, "stagekit.send.slide", o.send_slide);
+		obs_data_set_int(save_data, "stagekit.send.curve", o.send_curve);
+		obs_data_set_int(save_data, "stagekit.send.mode", o.send_mode);
 		obs_data_set_bool(save_data, "stagekit.arrange.limit_resize", o.limit_resize);
 		obs_data_set_int(save_data, "stagekit.arrange.limit_px", o.limit_px);
 		obs_data_array_t *copy_scenes = obs_data_array_create();
@@ -372,6 +374,9 @@ void arrange_save_load(obs_data_t *save_data, bool saving)
 		if (obs_data_has_user_value(save_data, "stagekit.send.every_scene"))
 			o.send_every_scene = obs_data_get_bool(save_data, "stagekit.send.every_scene");
 		o.send_slide = obs_data_get_bool(save_data, "stagekit.send.slide");
+		if (obs_data_has_user_value(save_data, "stagekit.send.curve"))
+			o.send_curve = std::clamp((int)obs_data_get_int(save_data, "stagekit.send.curve"), 0, 10);
+		o.send_mode = std::clamp((int)obs_data_get_int(save_data, "stagekit.send.mode"), 0, 2);
 		o.limit_resize = obs_data_get_bool(save_data, "stagekit.arrange.limit_resize");
 		if (obs_data_has_user_value(save_data, "stagekit.arrange.limit_px"))
 			o.limit_px = (int)obs_data_get_int(save_data, "stagekit.arrange.limit_px");

@@ -23,6 +23,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include "standby.hpp"
 
+#include "../common/easing.hpp"
 #include "../common/start-image.hpp"
 #include "../frame/auto-frame.hpp"
 
@@ -39,6 +40,21 @@ the Free Software Foundation; either version 2 of the License, or
 namespace stagekit {
 
 namespace {
+
+// How the picture gives way to the capture, and comes back. Saved: append only.
+enum class Style : int {
+	Fade = 0,
+	Cut = 1,
+	SlideLeft = 2,
+	SlideRight = 3,
+	SlideUp = 4,
+	SlideDown = 5,
+	WipeLeft = 6,
+	WipeRight = 7,
+	WipeUp = 8,
+	WipeDown = 9,
+	Zoom = 10,
+};
 
 enum class Picture : int {
 	StartImage = 0, // saved: append only
@@ -134,6 +150,11 @@ public:
 		file_ = obs_data_get_string(settings, "file");
 		named_ = obs_data_get_string(settings, "source");
 		fade_s_ = std::clamp<long long>(obs_data_get_int(settings, "fade_ms"), 0, 5000) / 1000.0;
+		back_s_ = std::clamp<long long>(obs_data_get_int(settings, "back_ms"), 0, 5000) / 1000.0;
+		style_ = static_cast<Style>(std::clamp((int)obs_data_get_int(settings, "style"), 0, 10));
+		curve_ = static_cast<EaseCurve>(obs_data_get_int(settings, "ease_curve"));
+		mode_ = static_cast<EaseMode>(obs_data_get_int(settings, "ease_mode"));
+		glide_size_ = obs_data_get_bool(settings, "glide_size");
 		last_w_ = (uint32_t)std::max<long long>(0, obs_data_get_int(settings, "last_width"));
 		last_h_ = (uint32_t)std::max<long long>(0, obs_data_get_int(settings, "last_height"));
 		placed_ = obs_data_get_bool(settings, "placed");
@@ -218,7 +239,11 @@ public:
 			}
 			// It glides from the size it has to the size to be, however that
 			// changes and whatever changes it: a game starting or ending, or
-			// a filter before this one settling on another shape.
+			// a filter before this one settling on another shape. Towards
+			// the capture it takes the first time; back to the picture, the
+			// second.
+			const double over = empty ? back_s_ : fade_s_;
+			const bool cut = style_ == Style::Cut || over <= 0.0;
 			if (cur_w_ <= 0.0 || cur_h_ <= 0.0) {
 				cur_w_ = from_w_ = to_w_ = want_w;
 				cur_h_ = from_h_ = to_h_ = want_h;
@@ -231,16 +256,15 @@ public:
 				glide_ = 0.0;
 			}
 			if (glide_ < 1.0) {
-				glide_ = fade_s > 0.0 ? std::min(1.0, glide_ + seconds / fade_s) : 1.0;
-				// Eased: gentle at both ends.
-				const double t = glide_ * glide_ * (3.0 - 2.0 * glide_);
+				glide_ = cut || !glide_size_ ? 1.0 : std::min(1.0, glide_ + seconds / over);
+				const double t = std::clamp(ease(curve_, mode_, glide_), 0.0, 1.0);
 				cur_w_ = from_w_ + (to_w_ - from_w_) * t;
 				cur_h_ = from_h_ + (to_h_ - from_h_) * t;
 			}
-			// The picture is there at once when there is nothing, and fades
-			// away over the same time when the capture arrives.
-			const double step = fade_s > 0.0 ? seconds / fade_s : 1.0;
-			mix_ = empty ? 1.0 : std::max(0.0, mix_ - step);
+			// How much of the picture shows: all of it with nothing captured,
+			// none with a capture, changing over the same times.
+			const double step = cut ? 1.0 : seconds / over;
+			mix_ = empty ? std::min(1.0, mix_ + step) : std::max(0.0, mix_ - step);
 			empty_ = empty;
 			live_w_ = empty ? 0 : tw;
 			live_h_ = empty ? 0 : th;
@@ -319,7 +343,7 @@ public:
 			if (!render_)
 				render_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 			if (gs_texture_t *texture = covered(render_, w, h, pw, ph, picture))
-				draw(texture, w, h, (float)mix);
+				draw_styled(texture, w, h, mix);
 		}
 	}
 
@@ -378,6 +402,98 @@ private:
 		gs_enable_framebuffer_srgb(was_srgb);
 		gs_set_linear_srgb(was_linear);
 		return drawn ? gs_texrender_get_texture(into) : nullptr;
+	}
+
+	// Draws the picture as far gone as `shown` says (1 all there, 0 gone), in
+	// the style chosen. Whatever leaves stays inside the size: a slide or a
+	// zoom draws only the part of the picture still in view.
+	void draw_styled(gs_texture_t *texture, uint32_t w, uint32_t h, double shown)
+	{
+		Style style;
+		EaseCurve curve;
+		EaseMode mode;
+		{
+			std::lock_guard lock(mutex_);
+			style = style_;
+			curve = curve_;
+			mode = mode_;
+		}
+		const double v = std::clamp(ease(curve, mode, std::clamp(shown, 0.0, 1.0)), 0.0, 1.0);
+		const double fw = w, fh = h;
+		// The part of the picture to draw, where to put it, and how strong.
+		double sx = 0, sy = 0, sw = fw, sh = fh, dx = 0, dy = 0, scale_x = 1.0, scale_y = 1.0, strength = 1.0;
+		switch (style) {
+		case Style::Fade:
+			strength = v;
+			break;
+		case Style::Cut:
+			strength = v > 0.0 ? 1.0 : 0.0;
+			break;
+		case Style::SlideLeft:
+			sx = (1.0 - v) * fw;
+			sw = fw - sx;
+			break;
+		case Style::SlideRight:
+			sw = v * fw;
+			dx = fw - sw;
+			break;
+		case Style::SlideUp:
+			sy = (1.0 - v) * fh;
+			sh = fh - sy;
+			break;
+		case Style::SlideDown:
+			sh = v * fh;
+			dy = fh - sh;
+			break;
+		case Style::WipeLeft: // the capture is uncovered from the right
+			sw = v * fw;
+			break;
+		case Style::WipeRight:
+			sw = v * fw;
+			sx = dx = fw - sw;
+			break;
+		case Style::WipeUp:
+			sh = v * fh;
+			break;
+		case Style::WipeDown:
+			sh = v * fh;
+			sy = dy = fh - sh;
+			break;
+		case Style::Zoom: {
+			// It grows as it fades: the middle of it, stretched to the size.
+			const double grow = 1.0 + (1.0 - v) * 0.4;
+			sw = fw / grow;
+			sh = fh / grow;
+			sx = (fw - sw) / 2.0;
+			sy = (fh - sh) / 2.0;
+			scale_x = scale_y = grow;
+			strength = v;
+			break;
+		}
+		}
+		if (sw < 0.5 || sh < 0.5 || strength <= 0.0)
+			return;
+		gs_eparam_t *image = gs_effect_get_param_by_name(effect_, "image");
+		gs_effect_set_float(gs_effect_get_param_by_name(effect_, "opacity"), (float)strength);
+		const bool linear = gs_get_linear_srgb();
+		const bool was_srgb = gs_framebuffer_srgb_enabled();
+		gs_enable_framebuffer_srgb(linear);
+		if (linear)
+			gs_effect_set_texture_srgb(image, texture);
+		else
+			gs_effect_set_texture(image, texture);
+		gs_blend_state_push();
+		gs_blend_function(GS_BLEND_ONE, GS_BLEND_INVSRCALPHA);
+		gs_matrix_push();
+		gs_matrix_translate3f((float)dx, (float)dy, 0.0f);
+		gs_matrix_scale3f((float)scale_x, (float)scale_y, 1.0f);
+		while (gs_effect_loop(effect_, "Draw"))
+			gs_draw_sprite_subregion(texture, 0, (uint32_t)std::lround(sx), (uint32_t)std::lround(sy),
+						 (uint32_t)std::max(1L, std::lround(sw)),
+						 (uint32_t)std::max(1L, std::lround(sh)));
+		gs_matrix_pop();
+		gs_blend_state_pop();
+		gs_enable_framebuffer_srgb(was_srgb);
 	}
 
 	// Draws a texture over the whole size at a strength from 0 to 1.
@@ -449,7 +565,11 @@ private:
 	std::mutex mutex_;
 	Picture kind_ = Picture::StartImage;
 	std::string file_, named_;
-	double fade_s_ = 0.3;
+	double fade_s_ = 0.8, back_s_ = 0.8;
+	Style style_ = Style::Fade;
+	EaseCurve curve_ = EaseCurve::Cubic;
+	EaseMode mode_ = EaseMode::InOut;
+	bool glide_size_ = true;
 	uint32_t last_w_ = 0, last_h_ = 0;
 	bool placed_ = false;
 	bool changed_ = true;
@@ -515,10 +635,43 @@ obs_properties_t *get_properties(void *data)
 	obs_property_t *own_shape = obs_properties_add_bool(props, "own_shape", obs_module_text("Standby.OwnShape"));
 	obs_property_set_long_description(own_shape, obs_module_text("Standby.OwnShape.Tip"));
 
+	// How the picture gives way to the capture and comes back.
+	obs_property_t *style = obs_properties_add_list(props, "style", obs_module_text("Standby.Style"),
+							OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+	const struct {
+		Style value;
+		const char *text;
+	} styles[] = {{Style::Fade, "Standby.Style.Fade"},
+		      {Style::Cut, "Standby.Style.Cut"},
+		      {Style::SlideLeft, "Standby.Style.SlideLeft"},
+		      {Style::SlideRight, "Standby.Style.SlideRight"},
+		      {Style::SlideUp, "Standby.Style.SlideUp"},
+		      {Style::SlideDown, "Standby.Style.SlideDown"},
+		      {Style::WipeLeft, "Standby.Style.WipeLeft"},
+		      {Style::WipeRight, "Standby.Style.WipeRight"},
+		      {Style::WipeUp, "Standby.Style.WipeUp"},
+		      {Style::WipeDown, "Standby.Style.WipeDown"},
+		      {Style::Zoom, "Standby.Style.Zoom"}};
+	for (const auto &entry : styles)
+		obs_property_list_add_int(style, obs_module_text(entry.text), (int)entry.value);
+	obs_property_set_long_description(style, obs_module_text("Standby.Style.Tip"));
+	obs_property_set_modified_callback(style, [](obs_properties_t *p, obs_property_t *, obs_data_t *settings) {
+		const bool timed = obs_data_get_int(settings, "style") != (int)Style::Cut;
+		for (const char *name : {"fade_ms", "back_ms", "ease_curve", "ease_mode", "glide_size"})
+			obs_property_set_visible(obs_properties_get(p, name), timed);
+		return true;
+	});
 	obs_property_t *fade =
-		obs_properties_add_int_slider(props, "fade_ms", obs_module_text("Standby.Fade"), 0, 3000, 50);
+		obs_properties_add_int_slider(props, "fade_ms", obs_module_text("Standby.Fade"), 0, 5000, 50);
 	obs_property_int_set_suffix(fade, " ms");
 	obs_property_set_long_description(fade, obs_module_text("Standby.Fade.Tip"));
+	obs_property_t *back =
+		obs_properties_add_int_slider(props, "back_ms", obs_module_text("Standby.Back"), 0, 5000, 50);
+	obs_property_int_set_suffix(back, " ms");
+	obs_property_set_long_description(back, obs_module_text("Standby.Back.Tip"));
+	add_easing_properties(props, "");
+	obs_property_t *glide = obs_properties_add_bool(props, "glide_size", obs_module_text("Standby.GlideSize"));
+	obs_property_set_long_description(glide, obs_module_text("Standby.GlideSize.Tip"));
 
 	obs_property_t *help = obs_properties_add_text(props, "help", obs_module_text("Standby.Help"), OBS_TEXT_INFO);
 	obs_property_text_set_info_word_wrap(help, true);
@@ -548,6 +701,11 @@ void register_standby()
 	info.get_defaults = [](obs_data_t *settings) {
 		obs_data_set_default_int(settings, "picture", (int)Picture::StartImage);
 		obs_data_set_default_int(settings, "fade_ms", 800);
+		obs_data_set_default_int(settings, "back_ms", 800);
+		obs_data_set_default_int(settings, "style", (int)Style::Fade);
+		obs_data_set_default_int(settings, "ease_curve", (int)EaseCurve::Cubic);
+		obs_data_set_default_int(settings, "ease_mode", (int)EaseMode::InOut);
+		obs_data_set_default_bool(settings, "glide_size", true);
 		obs_data_set_default_bool(settings, "own_shape", true);
 		obs_data_set_default_bool(settings, "placed", false);
 	};

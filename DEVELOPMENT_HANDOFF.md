@@ -204,6 +204,30 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Transitions you can choose, everywhere (0.1.0-beta66)
+
+The owner: "Any filter or feature/effect that would do a transition or transform should have those
+transforms and transitions be customizable, and not only offer fade. fade should be the default but
+there should be other options as well as timings and such."
+
+- **Audit.** Already had a choice of curve and timings: Ramp Blur, Ramp Zoom, Send To and Place Item,
+  Show/Hide Animation, Layout, Match Item, Auto Frame; Active App already offered any OBS transition.
+- **Added.**
+  - `src/common/item-transition.*`: one *Change with* / *Lasting* pair. Active App now uses it; Show
+    in Scenes, Program Trigger and Visibility Link gained it (default fade, 300 ms). Note that with
+    the default these three now put a fade on the items they show and hide, where before they left
+    the items' own transitions alone; *What is set on each item* restores that.
+  - Standby Picture: *Change with* (fade, cut, slide and wipe in four directions, zoom and fade),
+    separate times to the capture and back, the easing curve and direction, and *Size glides too*.
+    The picture now also animates back in when the capture ends instead of appearing at once.
+  - The dock's Send to: *Motion* (curve and direction), saved with the collection
+    (`ArrangeOptions::send_curve`, `send_mode`) and written into the keys the dock makes.
+- **Still fixed, on purpose or not yet done**: Shadow, Glow & Outline and Corners & Edges switch on
+  and off at once (no ramp); snap on release and the resize limit jump to place; Fit Item has no
+  timing because OBS fits it every frame; Copy transform is instant. Offer these to the owner.
+- Stream Deck icons were also made this session (79 per colour choice, SVG and PNG, six colours),
+  from the owner's scene layouts; they live outside the repository and are not committed.
+
 ## Stop resizing at edges (0.1.0-beta65)
 
 The owner: "I'd like to be able to resize objects the way i usually would, like dragging an edge to

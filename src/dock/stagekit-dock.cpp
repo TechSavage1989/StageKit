@@ -517,6 +517,21 @@ public:
 		duration_->setSuffix(" ms");
 		options->addRow(tr_text("Place.Margin"), margin_);
 		options->addRow(tr_text("Place.Duration"), duration_);
+		// How the move glides: the same curves the filters offer.
+		curve_ = new QComboBox(move_box);
+		curve_->setObjectName("sendCurve");
+		for (const char *name :
+		     {"Easing.Linear", "Easing.Sine", "Easing.Quad", "Easing.Cubic", "Easing.Quart", "Easing.Quint",
+		      "Easing.Expo", "Easing.Circ", "Easing.Back", "Easing.Elastic", "Easing.Bounce"})
+			curve_->addItem(tr_text(name));
+		curve_->setToolTip(tr_text("Dock.Motion.Tip"));
+		ease_mode_ = new QComboBox(move_box);
+		ease_mode_->setObjectName("sendMode");
+		for (const char *name : {"Easing.InOut", "Easing.In", "Easing.Out"})
+			ease_mode_->addItem(tr_text(name));
+		ease_mode_->setToolTip(tr_text("Dock.Motion.Tip"));
+		options->addRow(tr_text("Dock.Motion"), curve_);
+		options->addRow(QString(), ease_mode_);
 		move_layout->addLayout(options);
 		slide_ = new QCheckBox(tr_text("Dock.Slide"), move_box);
 		slide_->setObjectName("sendSlide");
@@ -722,6 +737,9 @@ public:
 				 [this](int) { store_arrange_options(); });
 		QObject::connect(snap_within_, &QSpinBox::valueChanged, this, [this](int) { store_arrange_options(); });
 		QObject::connect(limit_px_, &QSpinBox::valueChanged, this, [this](int) { store_arrange_options(); });
+		for (QComboBox *box : {curve_, ease_mode_})
+			QObject::connect(box, &QComboBox::currentIndexChanged, this,
+					 [this](int) { store_arrange_options(); });
 		layout->addWidget(arrange_box);
 
 		// Snapping on letting go: watch the selected items a few times a second.
@@ -926,6 +944,8 @@ private:
 		guides_->setChecked(o.guides);
 		every_scene_->setChecked(o.send_every_scene);
 		slide_->setChecked(o.send_slide);
+		curve_->setCurrentIndex(std::clamp(o.send_curve, 0, curve_->count() - 1));
+		ease_mode_->setCurrentIndex(std::clamp(o.send_mode, 0, ease_mode_->count() - 1));
 		snap_within_->setValue(o.within);
 		storing_ = false;
 		show_copy_scenes();
@@ -987,6 +1007,8 @@ private:
 		o.guides = guides_->isChecked();
 		o.send_every_scene = every_scene_->isChecked();
 		o.send_slide = slide_->isChecked();
+		o.send_curve = curve_->currentIndex();
+		o.send_mode = ease_mode_->currentIndex();
 		o.within = snap_within_->value();
 		set_arrange_options(o);
 		shown_options_ = arrange_options_revision();
@@ -1152,6 +1174,8 @@ private:
 		obs_data_set_int(d, "destination", destination);
 		obs_data_set_double(d, "margin", margin_->value());
 		obs_data_set_int(d, "duration_ms", duration_->value());
+		obs_data_set_int(d, "ease_curve", curve_->currentIndex());
+		obs_data_set_int(d, "ease_mode", ease_mode_->currentIndex());
 		return d;
 	}
 
@@ -1413,6 +1437,8 @@ private:
 	bool storing_ = false;
 	QCheckBox *live_snap_ = nullptr;
 	QCheckBox *limit_resize_ = nullptr;
+	QComboBox *curve_ = nullptr;
+	QComboBox *ease_mode_ = nullptr;
 	QSpinBox *limit_px_ = nullptr;
 	QCheckBox *guides_ = nullptr;
 	QCheckBox *every_scene_ = nullptr;

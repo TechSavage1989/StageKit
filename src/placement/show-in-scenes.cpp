@@ -22,6 +22,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include "show-in-scenes.hpp"
 
+#include "../common/item-transition.hpp"
 #include "../common/pick-list.hpp"
 
 #include <obs-module.h>
@@ -64,6 +65,8 @@ public:
 		scenes_ = scenes;
 		where_ = static_cast<Where>(std::clamp((int)obs_data_get_int(settings, "where"), 0, 1));
 		on_hides_ = obs_data_get_int(settings, "on_means") == 1;
+		transition_ = item_transition_kind(settings);
+		transition_ms_ = item_transition_ms(settings);
 	}
 
 	// The state OBS restores when it loads a collection is not a press.
@@ -75,8 +78,12 @@ public:
 		std::vector<std::string> sources, scenes;
 		Where where;
 		bool show;
+		std::string transition;
+		uint32_t transition_ms;
 		{
 			std::lock_guard lock(mutex_);
+			transition = transition_;
+			transition_ms = transition_ms_;
 			sources = sources_;
 			scenes = scenes_;
 			where = where_;
@@ -88,13 +95,16 @@ public:
 		struct Work {
 			const std::vector<std::string> *sources, *scenes;
 			bool every, show;
+			const std::string *transition;
+			uint32_t transition_ms;
 			int changed = 0;
-		} work{&sources, &scenes, where == Where::Every, show};
+		} work{&sources, &scenes, where == Where::Every, show, &transition, transition_ms};
 		static const auto each = [](obs_scene_t *, obs_sceneitem_t *item, void *param) {
 			auto *w = static_cast<Work *>(param);
 			const char *name = obs_source_get_name(obs_sceneitem_get_source(item));
 			if (name && std::find(w->sources->begin(), w->sources->end(), name) != w->sources->end() &&
 			    obs_sceneitem_visible(item) != w->show) {
+				set_item_transitions(item, *w->transition, w->transition_ms);
 				obs_sceneitem_set_visible(item, w->show);
 				w->changed++;
 			}
@@ -110,6 +120,7 @@ public:
 						    std::find(w2->sources->begin(), w2->sources->end(), inner_name) !=
 							    w2->sources->end() &&
 						    obs_sceneitem_visible(inner) != w2->show) {
+							set_item_transitions(inner, *w2->transition, w2->transition_ms);
 							obs_sceneitem_set_visible(inner, w2->show);
 							w2->changed++;
 						}
@@ -158,6 +169,8 @@ private:
 	std::vector<std::string> sources_, scenes_;
 	Where where_ = Where::Every;
 	bool on_hides_ = false;
+	std::string transition_ = kTransitionFade;
+	uint32_t transition_ms_ = 300;
 	std::atomic<bool> ready_{false};
 };
 
@@ -236,6 +249,8 @@ obs_properties_t *get_properties(void *data)
 	obs_property_list_add_int(means, obs_module_text("ShowIn.OnMeans.Hidden"), 1);
 	obs_property_set_long_description(means, obs_module_text("ShowIn.OnMeans.Tip"));
 
+	add_item_transition_properties(props);
+
 	obs_properties_add_button2(
 		props, "apply_now", obs_module_text("ShowIn.ApplyNow"),
 		[](obs_properties_t *, obs_property_t *, void *d) {
@@ -274,6 +289,7 @@ void register_show_in_scenes()
 	info.get_defaults = [](obs_data_t *settings) {
 		obs_data_set_default_int(settings, "where", (int)Where::Every);
 		obs_data_set_default_int(settings, "on_means", 0);
+		item_transition_defaults(settings);
 	};
 	info.get_properties = get_properties;
 	info.video_tick = [](void *data, float) {
