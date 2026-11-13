@@ -325,7 +325,9 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   work unrelated to the rebuild. See the handoff's task history.
 - AI coding sessions cannot push tags or create, edit or publish releases here; the platform refuses
   them. Releases are published by `.github/workflows/push.yaml` when a new `docs/releases/<version>.md`
-  reaches `main` (steps in the handoff). Never ask the owner to create tags by hand.
+  reaches `main` (steps in the handoff). The release appears as soon as the Windows files are built
+  and the macOS and Linux files are added after; tell the owner at that first moment. Never ask the
+  owner to create tags by hand.
 
 ## Talking to the owner
 
