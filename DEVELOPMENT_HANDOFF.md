@@ -204,6 +204,52 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## First sight in the dark; shapes remembered (0.1.0-beta49)
+
+The owner, after beta48: "most things are working as expected. Game capture still takes a while to
+start capturing windowed games, and it still tends to take a long time to register the ratio of a
+windowed app, especially one that is more modern. setting up the measurements and saving them in the
+filter manually helps but i wish the automated feature worked better." No log was sent.
+
+**Auto Frame.** beta47 made first sight safe by asking for straight, lit edges on both sides (15% of
+strips). A dark modern game in a window does not give that for a long time. Four changes:
+
+- **What counts as lit** is now relative to the capture's own ends: the darkest level along the two
+  end lines (capped at 16) plus `kLitStep` 4. Bars are flat, nearly always pure black; a night scene is
+  not. It was a fixed 16.
+- **Fitted** (`fitted` in `look_for_bars`): a first sight is also clear when the picture has been seen
+  to reach both ends the other way (`across_full`), to stop the same distance in from both ends this
+  way (`even`), and that leaves a real shape with nothing trimmed the other way. It uses
+  `Bars::outer_lo/hi`, the furthest out the picture has been seen from each end (remembered for
+  `kOuterMemory` 5 s, moved at once by anything seen further out). A few lit pixels per side do.
+  Artwork or a logo on black never reaches the ends. **Only for a direction not yet confirmed**: once
+  confirmed, a change still needs straight edges and the hold time, so cut-scenes do not resize.
+- The ends are robust: the `across / 50` furthest-out strips on each side are left out (one of 90, three
+  of 160), so a pointer or a speck neither blocks nor fakes an edge. Fewer lit strips than that is black.
+- **Eager looks**: after a new size, a look every 0.1 s (0.2 s on black) until both directions are
+  confirmed or `kEagerLooks` 80 are used up (a black look costs a quarter). It was 0.4 s. Each look is
+  still one small readback; the budget is what keeps the cost bounded.
+- A direction with nothing trimmed is confirmed by the picture reaching both ends, no straight edge needed.
+
+**Remembered shapes.** Setting `learned` ("game.exe = 16:9, multi.exe = varies"), written by the filter
+itself. A shape that has stayed confirmed for `kLearnAfter` 15 s (hidden setting `learn_after`, used by
+the tests) is kept for the program; the next time that program appears it is `usual_ratio_`, ahead of
+`kKnownPrograms`, so the trim is in place from the first frame, black or not. It is unconfirmed like
+any starting point. A program later seen with another shape, or filling a window of no shape, becomes
+`varies` and starts from nothing. Under the same option as the built-in shapes (`known_programs`,
+relabelled). *Forget shapes seen before* clears it; its tooltip lists it. Once per appearance of a
+program (`learned_this_time_`).
+
+**Auto Capture** (Windows-only code, compiled by CI, never run here): a windowed program now also
+counts as a game when it has a graphics engine plus a game store library, Unity's player, FMOD, Bink
+or DLSS, or `windows.gaming.input.dll`, or when its window class is a game engine's. The scan is
+every 0.25 s. **Whether detection was the owner's delay is not known.** Their emulators are on the
+*Always capture* list, which needs none of this; for those the wait may be OBS's own hook or the
+emulator's black start. The log now has the times; it has been asked for twice.
+
+**Not verified:** everything on Windows. The tests paint pictures: a dim one, one with a few lit
+specks per side, one whose specks stop at different distances (must not trim).
+
 ## Active App: the capture of the app in use (0.1.0-beta48)
 
 The owner, about the two window scenes: after Blender, ZBrush or Fusion closes "the original app

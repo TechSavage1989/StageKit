@@ -33,6 +33,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <cctype>
 #include <cmath>
 #include <cstring>
+#include <map>
 #include <mutex>
 #include <string>
 #include <utility>
@@ -230,6 +231,27 @@ const struct {
 	{"desmume", "2:3"}, {"citra", "5:6"},     {"lime3ds", "5:6"},  {"azahar", "5:6"},    {"borked3ds", "5:6"},
 };
 
+// The shapes games and emulators output. 64:49 is SNES/NES pixels (8:7 each)
+// shown on a 4:3 screen.
+const double kPictureShapes[] = {16.0 / 9.0, 16.0 / 10.0, 3.0 / 2.0, 4.0 / 3.0, 64.0 / 49.0, 5.0 / 4.0, 8.0 / 7.0,
+				 10.0 / 9.0, 16.0 / 15.0, 1.0,
+				 // Two-screen handhelds: DS screens stacked, side by side; 3DS top
+				 // screen, both stacked, both side by side.
+				 2.0 / 3.0, 8.0 / 3.0, 5.0 / 3.0, 5.0 / 6.0, 3.0 / 1.0,
+				 // Other handhelds: PSP, Lynx, WonderSwan, Neo Geo Pocket, Virtual Boy.
+				 30.0 / 17.0, 80.0 / 51.0, 14.0 / 9.0, 20.0 / 19.0, 12.0 / 7.0,
+				 // Upright and ultra-wide screens.
+				 3.0 / 4.0, 9.0 / 16.0, 2.0 / 1.0, 21.0 / 9.0, 64.0 / 27.0, 32.0 / 9.0};
+
+// The listed shape a measured ratio is, when it is within a pixel or two of one.
+double snap_shape(double ratio)
+{
+	for (double shape : kPictureShapes)
+		if (std::fabs(ratio - shape) <= shape * 0.006)
+			return shape;
+	return ratio;
+}
+
 // "64:49" for a ratio that has a usual name, otherwise the number.
 std::string ratio_name(double ratio)
 {
@@ -238,6 +260,44 @@ std::string ratio_name(double ratio)
 			return name;
 	char text[32];
 	snprintf(text, sizeof(text), "%.4f", ratio);
+	return text;
+}
+
+// What each program's picture was seen to be, kept between sessions as
+// "game.exe = 16:9, multi.exe = varies". A program that has shown more than
+// one shape has nothing to start from and is kept as -1.
+std::map<std::string, double> parse_learned(const std::string &text)
+{
+	std::map<std::string, double> out;
+	size_t start = 0;
+	while (start <= text.size()) {
+		size_t end = text.find(',', start);
+		if (end == std::string::npos)
+			end = text.size();
+		const std::string entry = text.substr(start, end - start);
+		const size_t equals = entry.rfind('=');
+		if (equals != std::string::npos) {
+			auto trimmed = [](std::string t) {
+				const char *space = " \t";
+				const size_t a = t.find_first_not_of(space), b = t.find_last_not_of(space);
+				return a == std::string::npos ? std::string() : t.substr(a, b - a + 1);
+			};
+			const std::string program = lower(trimmed(entry.substr(0, equals)));
+			const std::string shape = trimmed(entry.substr(equals + 1));
+			const double ratio = shape == "varies" ? -1.0 : parse_ratio(shape);
+			if (!program.empty() && ratio != 0.0)
+				out[program] = ratio;
+		}
+		start = end + 1;
+	}
+	return out;
+}
+
+std::string learned_text(const std::map<std::string, double> &learned)
+{
+	std::string text;
+	for (const auto &[program, ratio] : learned)
+		text += (text.empty() ? "" : ", ") + program + " = " + (ratio < 0.0 ? "varies" : ratio_name(ratio));
 	return text;
 }
 
@@ -357,8 +417,15 @@ public:
 		s.glide_s = std::max<long long>(0, obs_data_get_int(settings, "glide_ms")) / 1000.0;
 		s.curve = static_cast<EaseCurve>(obs_data_get_int(settings, "ease_curve"));
 		s.mode = static_cast<EaseMode>(obs_data_get_int(settings, "ease_mode"));
+		const std::map<std::string, double> learned = parse_learned(obs_data_get_string(settings, "learned"));
+		// Not in the controls: how long a shape must hold before it is remembered. The tests shorten it.
+		const double learn_after = obs_data_has_user_value(settings, "learn_after")
+						   ? std::max(0.0, obs_data_get_double(settings, "learn_after"))
+						   : kLearnAfter;
 		std::lock_guard lock(mutex_);
 		settings_ = s;
+		learned_ = learned;
+		learn_after_ = learn_after;
 	}
 
 	void tick(float seconds)
@@ -384,6 +451,7 @@ public:
 			std::lock_guard lock(mutex_);
 			rule_ratio = 0.0;
 			double usual = 0.0;
+			bool seen_before = false;
 			for (const auto &[text, ratio] : settings_.rules) {
 				if (!program.empty() && program.find(text) != std::string::npos) {
 					rule_ratio = ratio;
@@ -392,10 +460,18 @@ public:
 			}
 			if (rule_ratio <= 0.0 && settings_.known_programs && !executable.empty()) {
 				const std::string exe = lower(executable);
-				for (const auto &known : kKnownPrograms) {
-					if (exe.find(known.program) != std::string::npos) {
-						usual = parse_ratio(known.shape);
-						break;
+				// What this program was seen to show the last time counts for
+				// more than the table of common emulators.
+				const auto remembered = learned_.find(exe);
+				if (remembered != learned_.end()) {
+					usual = std::max(0.0, remembered->second);
+					seen_before = usual > 0.0;
+				} else {
+					for (const auto &known : kKnownPrograms) {
+						if (exe.find(known.program) != std::string::npos) {
+							usual = parse_ratio(known.shape);
+							break;
+						}
 					}
 				}
 			}
@@ -405,7 +481,12 @@ public:
 				held_ratio_ = usual;
 				last_w_ = last_h_ = 0;
 			}
+			if (executable != program_) {
+				learned_this_time_ = false;
+				steady_ratio_ = steady_for_ = 0.0;
+			}
 			usual_ratio_ = usual;
+			usual_seen_before_ = seen_before;
 			program_ = executable;
 		}
 		std::lock_guard lock(mutex_);
@@ -478,9 +559,10 @@ public:
 	}
 
 	// For the controls: what is being captured and which shape applies.
-	void status(std::string &program, double &ratio, bool &built_in, bool &forced, bool &found)
+	void status(std::string &program, double &ratio, bool &built_in, bool &forced, bool &found, bool &seen_before)
 	{
 		std::lock_guard lock(mutex_);
+		seen_before = usual_seen_before_;
 		program = program_;
 		forced = settings_.force_ratio > 0.0;
 		ratio = forced ? settings_.force_ratio : rule_ratio_ > 0.0 ? rule_ratio_ : held_ratio_;
@@ -592,6 +674,8 @@ public:
 		double dt;
 		bool probe_now = false, publish_measured = false, frozen = false;
 		double measured_x = 0.0, measured_y = 0.0;
+		std::string learn_program;
+		double learn_shape = 0.0;
 		{
 			std::lock_guard lock(mutex_);
 			s = settings_;
@@ -606,9 +690,13 @@ public:
 				held_ratio_ = usual_ratio_;
 				last_w_ = last_h_ = 0;
 				have_rect_ = false;
+				learned_this_time_ = false;
+				steady_ratio_ = steady_for_ = 0.0;
 			}
 			gone_for_ = 0.0;
 			if (w != last_w_ || h != last_h_) {
+				// A new size is looked at often until the picture's shape is settled.
+				eager_ = kEagerLooks;
 				// For the log: a window being dragged to a new size changes
 				// every frame, so this is said at most once a second.
 				if (s.trim == Trim::Automatic && clock_ - said_size_at_ >= 1.0) {
@@ -667,7 +755,12 @@ public:
 				if (probe_timer_ <= 0.0) {
 					// While measuring on request, look every frame to finish at once.
 					const bool hurry = measure_once_[0] || measure_once_[1] || quick_looks_ > 0;
-					probe_timer_ = hurry ? 0.0 : kProbeInterval;
+					// Until the picture has been seen to fit its trim both
+					// ways, look often: that is when a wrong shape shows.
+					const bool eager = eager_ > 0.0 && !(bars_[0].confirmed && bars_[1].confirmed);
+					probe_timer_ = hurry   ? 0.0
+						       : eager ? (last_look_dark_ ? kEagerDark : kEagerInterval)
+							       : kProbeInterval;
 					probe_now = true;
 				}
 			}
@@ -685,10 +778,31 @@ public:
 			// a widescreen game. A picture seen to fill a window of no
 			// particular shape has no shape to carry to the next size.
 			if (s.trim == Trim::Automatic && !shape_known) {
-				if (bars_[0].confirmed && bars_[1].confirmed)
-					held_ratio_ = is_picture_shape(crop_goal.w, crop_goal.h)
-							      ? crop_goal.w / crop_goal.h
-							      : 0.0;
+				if (bars_[0].confirmed && bars_[1].confirmed) {
+					const bool shaped = is_picture_shape(crop_goal.w, crop_goal.h);
+					held_ratio_ = shaped ? crop_goal.w / crop_goal.h : 0.0;
+					// A shape that has held for a while is remembered for this
+					// program, so the next time it starts out right.
+					const double now_shape = shaped ? snap_shape(held_ratio_) : 0.0;
+					if (now_shape != steady_ratio_) {
+						steady_ratio_ = now_shape;
+						steady_for_ = 0.0;
+					} else {
+						steady_for_ += dt;
+					}
+					if (!learned_this_time_ && steady_for_ >= learn_after_ && s.known_programs &&
+					    !program_.empty()) {
+						// A picture that fills a window of no particular shape
+						// is only worth noting for a program that had a shape
+						// kept: it has more than one.
+						const auto kept = learned_.find(lower(program_));
+						if (now_shape > 0.0 || (kept != learned_.end() && kept->second > 0.0)) {
+							learned_this_time_ = true;
+							learn_program = lower(program_);
+							learn_shape = now_shape > 0.0 ? now_shape : -1.0;
+						}
+					}
+				}
 			} else if (s.trim != Trim::Automatic) {
 				held_ratio_ = 0.0;
 			}
@@ -752,6 +866,9 @@ public:
 			if (s.follow)
 				rect = Rect{0.0, 0.0, (double)s.frame_w, (double)s.frame_h};
 		}
+
+		if (!learn_program.empty())
+			remember_program_shape(learn_program, learn_shape);
 
 		if (publish_measured) {
 			// Store what was measured as a fixed trim, where the user can see and edit it.
@@ -865,6 +982,20 @@ private:
 	// go: a trim that was only a starting point, and one that had been seen.
 	static constexpr double kGiveUp = 1.0;
 	static constexpr double kInsideFor = 4.0;
+	// Bars a program draws are one flat level, nearly always pure black. A
+	// pixel this much above the darkest the capture's own edge shows is taken
+	// as the picture, so a night scene still shows where it ends.
+	static constexpr int kLitStep = 4;
+	// How long the furthest out the picture has reached is remembered without
+	// being seen there again.
+	static constexpr double kOuterMemory = 5.0;
+	// Looking often while a new size is not settled: how many looks, and how
+	// far apart on a lit and on a black picture. A black look costs a quarter.
+	static constexpr double kEagerLooks = 80.0;
+	static constexpr double kEagerInterval = 0.1;
+	static constexpr double kEagerDark = 0.2;
+	// How long a shape must hold before it is remembered for its program.
+	static constexpr double kLearnAfter = 15.0;
 
 	// What has been seen of the bars along one direction (0: left/right,
 	// 1: top/bottom), and how much is currently trimmed.
@@ -884,6 +1015,11 @@ private:
 		double inside_for = 0.0; // seconds the picture has kept showing inside the trim
 		int inside_looks = 0;
 		double last_look = -1.0; // on the look clock
+		// The furthest out the picture has been seen to reach from each end,
+		// as a distance in from that end, and when it was last seen there.
+		// -1 until something lit has been seen.
+		double outer_lo = -1.0, outer_hi = -1.0;
+		double outer_lo_at = 0.0, outer_hi_at = 0.0;
 	};
 
 	// Looks at the capture for black bars. One direction per call, to keep
@@ -897,6 +1033,13 @@ private:
 	// The first clear sight of a picture is acted on at once; after that a
 	// change has to hold for the wait the user set, so letterboxed cut-scenes
 	// and menus do not resize the picture.
+	//
+	// A first sight can also be clear without straight edges, which a dark
+	// scene seldom gives: a picture fitted inside the capture, as games and
+	// emulators draw one, reaches both ends one way and stops the same
+	// distance in from both ends the other way, leaving a real shape. A few
+	// lit pixels at each of the four sides show that; artwork or a logo on
+	// black never reaches the ends.
 	void look_for_bars(gs_texture_t *input, uint32_t w, uint32_t h, gs_effect_t *effect, gs_eparam_t *image,
 			   double wait_s)
 	{
@@ -939,17 +1082,26 @@ private:
 			return;
 
 		// For each strip across the direction being measured: where its lit
-		// part begins and ends. Lit means brighter than near-black.
+		// part begins and ends. Lit means a little brighter than the bars are.
 		const uint32_t lines = axis == 0 ? pw : ph;
 		const uint32_t across = axis == 0 ? ph : pw;
-		auto lit = [&](uint32_t line, uint32_t strip) {
+		auto level = [&](uint32_t line, uint32_t strip) -> int {
 			const uint32_t x = axis == 0 ? line : strip, y = axis == 0 ? strip : line;
 			const uint8_t *px = data + (size_t)y * linesize + (size_t)x * 4;
-			return px[3] > 16 && (px[0] > 16 || px[1] > 16 || px[2] > 16);
+			return px[3] > 16 ? std::max({(int)px[0], (int)px[1], (int)px[2]}) : 0;
+		};
+		// The darkest the capture's own two ends show, which is what bars are.
+		int black = 16;
+		for (uint32_t strip = 0; strip < across; strip++)
+			black = std::min({black, level(0, strip), level(lines - 1, strip)});
+		const int lit_above = black + kLitStep;
+		auto lit = [&](uint32_t line, uint32_t strip) {
+			return level(line, strip) > lit_above;
 		};
 		strip_lo_.assign(across, lines);
 		strip_hi_.assign(across, 0);
-		uint32_t first = lines, last = 0;
+		reach_lo_.clear();
+		reach_hi_.clear();
 		for (uint32_t strip = 0; strip < across; strip++) {
 			uint32_t begin = 0;
 			while (begin < lines && !lit(begin, strip))
@@ -961,10 +1113,21 @@ private:
 				end--;
 			strip_lo_[strip] = begin;
 			strip_hi_[strip] = end;
-			first = std::min(first, begin);
-			last = std::max(last, end);
+			reach_lo_.push_back(begin);
+			reach_hi_.push_back(lines - end);
 		}
 		gs_stagesurface_unmap(stage);
+		// How far in from each end the picture begins, leaving out a strip or
+		// two: a mouse pointer or a speck is not where the picture ends.
+		const size_t skip = across / 50;
+		const bool dark = reach_lo_.size() <= skip;
+		double near_lo = lines, near_hi = lines;
+		if (!dark) {
+			std::nth_element(reach_lo_.begin(), reach_lo_.begin() + (std::ptrdiff_t)skip, reach_lo_.end());
+			std::nth_element(reach_hi_.begin(), reach_hi_.begin() + (std::ptrdiff_t)skip, reach_hi_.end());
+			near_lo = reach_lo_[skip];
+			near_hi = reach_hi_[skip];
+		}
 
 		std::lock_guard lock(mutex_);
 		Bars &bars = bars_[axis];
@@ -975,7 +1138,9 @@ private:
 		bars.last_look = clock_;
 		if (quick_looks_ > 0)
 			quick_looks_--;
-		if (first >= lines) {
+		last_look_dark_ = dark;
+		eager_ -= dark ? 0.25 : 1.0;
+		if (dark) {
 			// Entirely black (a fade, a loading screen): learn nothing from it.
 			bars.candidate = -1.0;
 			bars.agree = 0;
@@ -987,7 +1152,7 @@ private:
 		}
 		// Bars are trimmed evenly, by the smaller side, so a dark edge in the
 		// picture itself is never mistaken for more bar.
-		const double seen = std::min<double>(first, lines - last);
+		const double seen = std::min(near_lo, near_hi);
 		int edge_lo = 0, edge_hi = 0, inside = 0;
 		for (uint32_t strip = 0; strip < across; strip++) {
 			if (!strip_hi_[strip])
@@ -1002,6 +1167,21 @@ private:
 		}
 		const int edge_enough = std::max(2, (int)std::lround(across * kEdgeShare));
 		const int inside_enough = std::max(2, (int)std::lround(across * kInsideShare));
+
+		// The furthest out the picture has been seen from each end. Seeing it
+		// further out moves the mark at once; not seeing it there for a while
+		// lets the mark go.
+		auto reached = [&](double &outer, double &at, double now_at) {
+			if (outer < 0.0 || now_at < outer - kEdge || clock_ - at > kOuterMemory) {
+				outer = now_at;
+				at = clock_;
+			} else if (now_at <= outer + kEdge) {
+				outer = std::min(outer, now_at);
+				at = clock_;
+			}
+		};
+		reached(bars.outer_lo, bars.outer_lo_at, near_lo);
+		reached(bars.outer_hi, bars.outer_hi_at, near_hi);
 
 		if (bars.candidate >= 0.0 && std::fabs(seen - bars.candidate) <= 2.0) {
 			bars.agree++;
@@ -1022,22 +1202,33 @@ private:
 				measured_ready_ = true;
 		}
 
-		const bool edges = bars.edge_lo && bars.edge_hi;
-		if (std::fabs(seen - bars.applied) <= 2.0) {
-			// The picture ends where it is trimmed.
-			bars.inside_for = 0.0;
-			bars.inside_looks = 0;
-			if (edges)
-				bars.confirmed = true;
-			return;
-		}
-
 		// What the picture would be with this many pixels of bar.
 		auto shape_with = [&](double other_trim) {
 			const double pic_w = w - 2.0 * (axis == 0 ? seen : other_trim);
 			const double pic_h = h - 2.0 * (axis == 1 ? seen : other_trim);
 			return is_picture_shape(pic_w, pic_h);
 		};
+		// This way, the picture has been seen to stop the same distance in
+		// from both ends; the other way, to reach both ends.
+		const bool even = std::fabs(bars.outer_lo - seen) <= kEdge && std::fabs(bars.outer_hi - seen) <= kEdge;
+		const bool across_full = other.outer_lo >= 0.0 && other.outer_lo <= kEdge && other.outer_hi >= 0.0 &&
+					 other.outer_hi <= kEdge &&
+					 clock_ - std::min(other.outer_lo_at, other.outer_hi_at) <= kOuterMemory;
+		const bool edges = bars.edge_lo && bars.edge_hi;
+		if (std::fabs(seen - bars.applied) <= 2.0) {
+			// The picture ends where it is trimmed. That is borne out by
+			// straight edges; with nothing trimmed, by the picture reaching
+			// both ends; with something trimmed, by the picture fitting the
+			// capture the way one of a real shape does.
+			bars.inside_for = 0.0;
+			bars.inside_looks = 0;
+			const bool reaches = bars.applied <= 2.0 && even;
+			const bool fits = bars.applied > 2.0 && even && across_full && shape_with(0.0);
+			if (edges || reaches || fits)
+				bars.confirmed = true;
+			return;
+		}
+
 		// A trim across the other direction that was only a starting point
 		// does not get a say when the picture is seen to show inside it and
 		// this direction explains the picture alone: what is seen counts for
@@ -1057,12 +1248,20 @@ private:
 		}
 		const bool shows_in_other = other_strips > 0 &&
 					    other_lit >= std::max(2, (int)std::lround(other_strips * kInsideShare));
-		const bool alone = seen > 2.0 && shows_in_other && shape_with(0.0);
+		// A picture fitted inside the capture: the same distance in from both
+		// ends this way, right to both ends the other way, and a real shape.
+		const bool fitted = !bars.confirmed && seen > 2.0 && even && across_full &&
+				    !(other.confirmed && other.applied > 2.0) && shape_with(0.0);
+		const bool alone = seen > 2.0 && (shows_in_other || fitted) && shape_with(0.0);
 		const bool real_shape = alone || shape_with(other.applied);
-		// Clear: the picture is seen to end at this line on both sides, and
-		// that leaves a real picture shape. Reaching the capture's own edge
-		// needs no shape to be believed: nothing is cut off by trimming nothing.
-		const bool clear = edges && bars.agree >= 2 && (seen <= 2.0 || real_shape);
+		// Clear by its edges: the picture is seen to end at this line on both
+		// sides, and that leaves a real picture shape. Reaching the capture's
+		// own edge needs no shape to be believed: nothing is cut off by
+		// trimming nothing. Clear at first sight: it fits, or it reaches both
+		// ends. Once a direction has been borne out only edges will do.
+		const bool by_edges = edges && (seen <= 2.0 || real_shape);
+		const bool first_sight = !bars.confirmed && (fitted || (seen <= 2.0 && even));
+		const bool clear = bars.agree >= 2 && (by_edges || first_sight);
 
 		// Letting go of a trim never cuts anything off, so a steady candidate
 		// that leaves a real shape will do for where to stop; failing that,
@@ -1106,7 +1305,9 @@ private:
 			// just like bars, so only a clear sight counts.
 			if (clear && seen > 2.0 && (!bars.confirmed || bars.stable_for >= wait_s)) {
 				change = true;
-				why = bars.confirmed ? "bars seen clearly and held" : "bars seen clearly";
+				why = bars.confirmed ? "bars seen clearly and held"
+				      : fitted       ? "the picture fits the capture as that shape does"
+						     : "bars seen clearly";
 			}
 		}
 		if (!change)
@@ -1118,7 +1319,7 @@ private:
 		bars.applied = to;
 		bars.inside_for = 0.0;
 		bars.inside_looks = 0;
-		if (alone && to > 2.0) {
+		if (alone && to > 2.0 && other.applied > 2.0) {
 			obs_log(LOG_INFO,
 				"Auto Frame: %s %s trim %.0f -> 0 px (the other direction explains the picture)",
 				describe_program().c_str(), axis == 0 ? "top/bottom" : "left/right", other.applied);
@@ -1126,6 +1327,57 @@ private:
 		}
 	}
 
+	// Keeps the shape a program has held, for the next time it is captured. A
+	// program that turns out to show a different shape from the one kept has
+	// more than one, and from then on starts from nothing.
+	void remember_program_shape(const std::string &program, double shape)
+	{
+		obs_data_t *settings = obs_source_get_settings(source_);
+		std::map<std::string, double> learned = parse_learned(obs_data_get_string(settings, "learned"));
+		const auto before = learned.find(program);
+		double keep = shape;
+		if (shape <= 0.0 || (before != learned.end() &&
+				     (before->second < 0.0 || std::fabs(before->second - shape) > shape * 0.01)))
+			keep = -1.0;
+		if (before == learned.end() || before->second != keep) {
+			learned[program] = keep;
+			obs_data_set_string(settings, "learned", learned_text(learned).c_str());
+			if (keep > 0.0)
+				obs_log(LOG_INFO, "Auto Frame: %s shows %s; it will start from that next time",
+					program.c_str(), ratio_name(keep).c_str());
+			else
+				obs_log(LOG_INFO,
+					"Auto Frame: %s has shown more than one shape; it will start from nothing",
+					program.c_str());
+		}
+		obs_data_release(settings);
+		std::lock_guard lock(mutex_);
+		learned_ = learned;
+		if (lower(program_) == program) {
+			// So the next look at which program this is finds nothing changed.
+			usual_ratio_ = std::max(0.0, keep);
+			usual_seen_before_ = keep > 0.0;
+		}
+	}
+
+public:
+	// Forgets every shape remembered for a program.
+	void forget_learned()
+	{
+		obs_data_t *settings = obs_source_get_settings(source_);
+		obs_data_set_string(settings, "learned", "");
+		obs_source_update(source_, settings);
+		obs_data_release(settings);
+	}
+
+	// What is remembered, as text for the controls.
+	std::string learned_now()
+	{
+		std::lock_guard lock(mutex_);
+		return learned_text(learned_);
+	}
+
+private:
 	// For the log: the program being captured, or the source's name.
 	std::string describe_program() const
 	{
@@ -1140,20 +1392,10 @@ private:
 	// to within a few pixels.
 	static bool is_picture_shape(double pic_w, double pic_h)
 	{
-		// 64:49 is SNES/NES pixels (8:7 each) shown on a 4:3 screen.
-		static const double shapes[] = {16.0 / 9.0, 16.0 / 10.0, 3.0 / 2.0, 4.0 / 3.0, 64.0 / 49.0, 5.0 / 4.0,
-						8.0 / 7.0, 10.0 / 9.0, 16.0 / 15.0, 1.0,
-						// Two-screen handhelds: DS screens stacked, side by side; 3DS
-						// top screen, both stacked, both side by side.
-						2.0 / 3.0, 8.0 / 3.0, 5.0 / 3.0, 5.0 / 6.0, 3.0 / 1.0,
-						// Other handhelds: PSP, Lynx, WonderSwan, Neo Geo Pocket, Virtual Boy.
-						30.0 / 17.0, 80.0 / 51.0, 14.0 / 9.0, 20.0 / 19.0, 12.0 / 7.0,
-						// Upright and ultra-wide screens.
-						3.0 / 4.0, 9.0 / 16.0, 2.0 / 1.0, 21.0 / 9.0, 64.0 / 27.0, 32.0 / 9.0};
 		if (pic_w < 16.0 || pic_h < 16.0)
 			return false;
 		const double tolerance = std::max(4.0, pic_h * 0.004);
-		for (double shape : shapes)
+		for (double shape : kPictureShapes)
 			if (std::fabs(pic_w - pic_h * shape) <= tolerance)
 				return true;
 		return false;
@@ -1169,7 +1411,16 @@ private:
 	uint32_t last_w_ = 0, last_h_ = 0;
 	Bars bars_[2];
 	std::vector<uint32_t> strip_lo_, strip_hi_; // per strip, from the last look; drawing thread only
-	double clock_ = 0.0;                        // seconds drawn, for timing the looks
+	std::vector<uint32_t> reach_lo_, reach_hi_; // the lit strips' distances in from each end, for sorting
+	double eager_ = 0.0;                        // looks left at the quick pace
+	bool last_look_dark_ = false;
+	// What each program was seen to show (lower-case executable -> shape, -1 for more than one).
+	std::map<std::string, double> learned_;
+	double learn_after_ = kLearnAfter;
+	double steady_ratio_ = 0.0, steady_for_ = 0.0; // the shape now held, and for how long
+	bool learned_this_time_ = false;
+	bool usual_seen_before_ = false; // the shape started from is one this program showed before
+	double clock_ = 0.0;             // seconds drawn, for timing the looks
 	double said_size_at_ = -10.0;
 	double probe_timer_ = 0.0;
 	// The picture shape found by looking, kept across resolution changes.
@@ -1251,9 +1502,9 @@ void show_status(obs_properties_t *props, AutoFrame *self)
 {
 	std::string program;
 	double ratio = 0.0;
-	bool built_in = false, forced = false, found = false;
+	bool built_in = false, forced = false, found = false, seen_before = false;
 	if (self)
-		self->status(program, ratio, built_in, forced, found);
+		self->status(program, ratio, built_in, forced, found, seen_before);
 	auto fill = [](std::string text, const std::string &with) {
 		const size_t at = text.find("%1");
 		if (at != std::string::npos)
@@ -1266,10 +1517,11 @@ void show_status(obs_properties_t *props, AutoFrame *self)
 	if (ratio <= 0.0)
 		text += obs_module_text("Frame.Status.Auto");
 	else
-		text += fill(obs_module_text(forced     ? "Frame.Status.Key"
-					     : built_in ? "Frame.Status.BuiltIn"
-					     : found    ? "Frame.Status.Found"
-							: "Frame.Status.Yours"),
+		text += fill(obs_module_text(forced                    ? "Frame.Status.Key"
+					     : built_in && seen_before ? "Frame.Status.SeenBefore"
+					     : built_in                ? "Frame.Status.BuiltIn"
+					     : found                   ? "Frame.Status.Found"
+								       : "Frame.Status.Yours"),
 			     ratio_name(ratio));
 	obs_property_set_description(obs_properties_get(props, "status"), text.c_str());
 }
@@ -1397,7 +1649,21 @@ obs_properties_t *get_properties(void *data)
 	// 4. Shapes for programs: built in for common emulators, and the
 	// owner's own, chosen from what is open or found on the computer.
 	props = obs_properties_create();
-	obs_properties_add_bool(props, "known_programs", obs_module_text("Frame.Known"));
+	obs_property_t *known = obs_properties_add_bool(props, "known_programs", obs_module_text("Frame.Known"));
+	obs_property_set_long_description(known, obs_module_text("Frame.Known.Tip"));
+	obs_property_t *forget = obs_properties_add_button2(
+		props, "learned_forget", obs_module_text("Frame.Forget"),
+		[](obs_properties_t *, obs_property_t *, void *d) {
+			if (auto *frame = static_cast<AutoFrame *>(d))
+				frame->forget_learned();
+			return false;
+		},
+		data);
+	// The tooltip says what is remembered now.
+	const std::string remembered = self ? self->learned_now() : std::string();
+	const std::string forget_tip = std::string(obs_module_text("Frame.Forget.Tip")) + " " +
+				       (remembered.empty() ? obs_module_text("Frame.Forget.None") : remembered);
+	obs_property_set_long_description(forget, forget_tip.c_str());
 	obs_property_t *program = obs_properties_add_list(props, "rule_program", obs_module_text("Frame.RuleProgram"),
 							  OBS_COMBO_TYPE_EDITABLE, OBS_COMBO_FORMAT_STRING);
 	if (self) {
