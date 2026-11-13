@@ -129,16 +129,16 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
 - **The preview's right-click menu is not an OBS API.** `PreviewMenu` in `src/dock/stagekit-dock.cpp`
   watches for a context-menu event on the widget named `preview` and adds to the next menu that opens.
   If OBS renames that widget the menu entry silently disappears; the hotkeys and the dock still work.
-- **Guides over the preview are windows of our own, not OBS's.** `src/dock/preview-guides.*` puts one
-  thin, opaque, click-through tool window per line exactly where the line belongs over the widget
-  named `preview`, and repeats OBS's own sums (`preview_map`: a 10 px edge, then the canvas as large as
-  fits) to find the canvas in it. One see-through window over the whole preview showed nothing on the
-  owner's Windows machine (beta46 to beta49); the mouse button is also read from Windows itself. That
-  only holds for *Scale to Window*. It is off by default and only shown while a line is up. Items are
-  measured once when a drag starts, never while it goes on. A line window must not be
-  `Qt::WindowTransparentForInput`: on Windows that makes it a layered window, the kind that showed
-  nothing. Switching guides on flashes a frame round the canvas for a moment, so the owner can see
-  at once whether lines show at all.
+- **Guides are child windows inside OBS's preview.** `src/dock/preview-guides.*` puts one thin,
+  opaque native child window (`LineWindow`, `WA_NativeWindow`, parent: the widget named `preview`)
+  per line, and repeats OBS's own sums (`preview_map`: a 10 px edge, then the canvas as large as fits)
+  to find the canvas in it. That only holds for *Scale to Window*. Every design with windows *over*
+  the preview failed on the owner's Windows machine: one see-through window (beta46 to beta49), then
+  one separate tool window per line (beta50 to beta54), which the dock reported as on and the owner
+  never saw. Do not go back to top-level windows. The mouse button is also read from Windows itself.
+  Guides are off by default and lines are only shown while one is up; switching guides on flashes a
+  frame round the canvas. Items are measured once when a drag starts, never while it goes on. The
+  owner had OBS crash while moving items with guides and snap on, and not with both off (beta53).
 - **The order items are selected in comes from OBS's own `item_select` signals**
   (`track_selection_order` in `src/dock/arrange-tools.cpp`), on every scene and group. It used to be
   learned by polling one scene, which forgot it whenever the dock's *Scene* list showed another scene,

@@ -4030,9 +4030,11 @@ int main(int argc, char **argv)
 					// The line windows showing on the screen.
 					auto shown = [] {
 						QList<QRect> out;
-						for (QWidget *w : QApplication::topLevelWidgets())
-							if (w->objectName() == "stagekitGuideLine" && w->isVisible())
-								out.push_back(w->geometry());
+						for (QWidget *w : QApplication::allWidgets())
+							if (w->objectName() == "stagekitGuideLine" && w->isVisible() &&
+							    w->parentWidget())
+								out.push_back(w->geometry().translated(
+									w->parentWidget()->mapToGlobal(QPoint(0, 0))));
 						return out;
 					};
 					against(0);
