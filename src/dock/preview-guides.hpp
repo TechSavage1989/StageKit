@@ -11,6 +11,8 @@ the Free Software Foundation; either version 2 of the License, or
 #pragma once
 
 class QObject;
+#include <QString>
+
 class QWidget;
 
 namespace stagekit {
@@ -39,6 +41,9 @@ QObject *install_preview_guides(QWidget *main_window, QWidget *preview = nullptr
 // 0: guides are off; 1: on, over OBS's preview; 2: on, but the preview was
 // not found.
 int guides_preview_state();
+// What the guides last did, in a few words: which widget they took for the
+// preview and where the lines went. Empty until a line has been placed.
+QString guides_report();
 
 // Whether the left mouse button is held. The tests, which have no mouse, can
 // say that it is.
