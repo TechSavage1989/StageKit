@@ -363,12 +363,22 @@ public:
 
 	void tick(float seconds)
 	{
-		// Once a second, see which program is being captured and whether a
-		// rule gives its picture shape.
+		// A few times a second, see which program is being captured and
+		// whether a rule gives its picture shape. A new size often means
+		// another program, so then it is checked before the next picture is
+		// drawn: a shape held for the last program must not be put on this one.
 		identity_timer_ -= seconds;
+		{
+			obs_source_t *target = obs_filter_get_target(source_);
+			const uint32_t w = target ? obs_source_get_base_width(target) : 0;
+			const uint32_t h = target ? obs_source_get_base_height(target) : 0;
+			std::lock_guard lock(mutex_);
+			if (w && h && last_w_ && (w != last_w_ || h != last_h_))
+				identity_timer_ = 0.0;
+		}
 		double rule_ratio = -1.0;
 		if (identity_timer_ <= 0.0) {
-			identity_timer_ = 1.0;
+			identity_timer_ = 0.25;
 			const std::string program = captured_program();
 			const std::string executable = captured_executable();
 			std::lock_guard lock(mutex_);
@@ -587,6 +597,7 @@ public:
 			s = settings_;
 			dt = pending_time_;
 			pending_time_ = 0.0;
+			clock_ += dt;
 
 			if (gone_for_ > kNewSession) {
 				// The capture was away long enough for this to be something
@@ -598,6 +609,15 @@ public:
 			}
 			gone_for_ = 0.0;
 			if (w != last_w_ || h != last_h_) {
+				// For the log: a window being dragged to a new size changes
+				// every frame, so this is said at most once a second.
+				if (s.trim == Trim::Automatic && clock_ - said_size_at_ >= 1.0) {
+					said_size_at_ = clock_;
+					obs_log(LOG_INFO, "Auto Frame: %s is now %ux%u; %s", describe_program().c_str(),
+						w, h,
+						held_ratio_ > 0.0 ? ("starting from " + ratio_name(held_ratio_)).c_str()
+								  : "no shape to start from");
+				}
 				// While the capture settles at its new size the last good
 				// picture stays up, so nothing half-drawn is ever shown.
 				if (have_rect_ && last_w_ && last_h_)
@@ -658,12 +678,20 @@ public:
 			trim_x = std::clamp(trim_x, 0.0, w * 0.45);
 			trim_y = std::clamp(trim_y, 0.0, h * 0.45);
 			const Rect crop_goal{trim_x, trim_y, w - 2.0 * trim_x, h - 2.0 * trim_y};
-			// The shape now on show is the one to hold on to, when it is a
-			// real picture shape and was found by looking.
-			if (s.trim == Trim::Automatic && !shape_known && is_picture_shape(crop_goal.w, crop_goal.h))
-				held_ratio_ = crop_goal.w / crop_goal.h;
-			else if (s.trim != Trim::Automatic)
+			// The shape now on show is the one to hold on to, once the picture
+			// has been seen to end exactly where it is trimmed. A black screen,
+			// or a size the capture only had for a moment while starting up,
+			// teaches nothing: taking a shape from those put a square crop on
+			// a widescreen game. A picture seen to fill a window of no
+			// particular shape has no shape to carry to the next size.
+			if (s.trim == Trim::Automatic && !shape_known) {
+				if (bars_[0].confirmed && bars_[1].confirmed)
+					held_ratio_ = is_picture_shape(crop_goal.w, crop_goal.h)
+							      ? crop_goal.w / crop_goal.h
+							      : 0.0;
+			} else if (s.trim != Trim::Automatic) {
 				held_ratio_ = 0.0;
+			}
 			if (s.follow) {
 				// The frame takes the picture's own shape, so each scene can
 				// place it as it likes.
@@ -823,21 +851,52 @@ private:
 	}
 
 	static constexpr double kProbeInterval = 0.4;
+	// A line counts as the picture's edge when this share of the strips across
+	// it start being lit there, give or take kEdge pixels. Artwork, a logo or
+	// a dark scene on black ends raggedly and never reaches it; a picture
+	// inside bars does on any frame that is not too dark at its edges.
+	static constexpr double kEdgeShare = 0.15;
+	static constexpr double kEdge = 2.0;
+	// Something lit inside the trimmed part only counts when it shows on this
+	// share of the strips: a mouse pointer, a pop-up or a menu strip over the
+	// bars is not the picture.
+	static constexpr double kInsideShare = 0.3;
+	// How long the picture must keep showing inside a trim before it is let
+	// go: a trim that was only a starting point, and one that had been seen.
+	static constexpr double kGiveUp = 1.0;
+	static constexpr double kInsideFor = 4.0;
 
 	// What has been seen of the bars along one direction (0: left/right,
 	// 1: top/bottom), and how much is currently trimmed.
 	struct Bars {
 		double applied = 0.0;    // pixels trimmed from each side
 		double candidate = -1.0; // what the last look suggested
-		double stable_for = 0.0; // how long the candidate has held
+		double stable_for = 0.0; // seconds the candidate has held
 		int agree = 0;           // looks in a row that agreed
+		// Seen while the candidate held: the picture ending in a straight
+		// line there, on the near side and on the far side.
+		bool edge_lo = false, edge_hi = false;
+		// The picture has been seen to end exactly at the trim on both
+		// sides. Until then the trim is only a starting point (nothing, a
+		// program's usual shape, or a shape carried over from the last size)
+		// and clear evidence is acted on at once.
+		bool confirmed = false;
+		double inside_for = 0.0; // seconds the picture has kept showing inside the trim
+		int inside_looks = 0;
+		double last_look = -1.0; // on the look clock
 	};
 
 	// Looks at the capture for black bars. One direction per call, to keep
 	// the cost down: a thin copy of the picture is read back and scanned.
-	// Bars must stay the same for a while before more is trimmed, so a dark
-	// moment in the game does not zoom the picture in; when the picture
-	// grows into the bars the trim is released quickly.
+	//
+	// Black bars and a black background look the same by brightness, so
+	// brightness alone decides nothing. More is trimmed only when the picture
+	// is seen to end in a straight line, the same distance in from both
+	// sides, leaving exactly a shape consoles and emulators output. Less is
+	// trimmed when the picture, not some small thing, shows inside the trim.
+	// The first clear sight of a picture is acted on at once; after that a
+	// change has to hold for the wait the user set, so letterboxed cut-scenes
+	// and menus do not resize the picture.
 	void look_for_bars(gs_texture_t *input, uint32_t w, uint32_t h, gs_effect_t *effect, gs_eparam_t *image,
 			   double wait_s)
 	{
@@ -879,45 +938,82 @@ private:
 		if (!gs_stagesurface_map(stage, &data, &linesize))
 			return;
 
-		// A line is "bar" when nothing along it is brighter than near-black.
+		// For each strip across the direction being measured: where its lit
+		// part begins and ends. Lit means brighter than near-black.
 		const uint32_t lines = axis == 0 ? pw : ph;
 		const uint32_t across = axis == 0 ? ph : pw;
-		auto is_bar = [&](uint32_t line) {
-			for (uint32_t i = 0; i < across; i++) {
-				const uint32_t x = axis == 0 ? line : i, y = axis == 0 ? i : line;
-				const uint8_t *px = data + (size_t)y * linesize + (size_t)x * 4;
-				if (px[3] > 16 && (px[0] > 16 || px[1] > 16 || px[2] > 16))
-					return false;
-			}
-			return true;
+		auto lit = [&](uint32_t line, uint32_t strip) {
+			const uint32_t x = axis == 0 ? line : strip, y = axis == 0 ? strip : line;
+			const uint8_t *px = data + (size_t)y * linesize + (size_t)x * 4;
+			return px[3] > 16 && (px[0] > 16 || px[1] > 16 || px[2] > 16);
 		};
-		uint32_t first = 0, last = lines;
-		while (first < lines && is_bar(first))
-			first++;
-		while (last > first && is_bar(last - 1))
-			last--;
+		strip_lo_.assign(across, lines);
+		strip_hi_.assign(across, 0);
+		uint32_t first = lines, last = 0;
+		for (uint32_t strip = 0; strip < across; strip++) {
+			uint32_t begin = 0;
+			while (begin < lines && !lit(begin, strip))
+				begin++;
+			if (begin == lines)
+				continue; // nothing lit along this strip
+			uint32_t end = lines;
+			while (end > begin + 1 && !lit(end - 1, strip))
+				end--;
+			strip_lo_[strip] = begin;
+			strip_hi_[strip] = end;
+			first = std::min(first, begin);
+			last = std::max(last, end);
+		}
 		gs_stagesurface_unmap(stage);
 
 		std::lock_guard lock(mutex_);
 		Bars &bars = bars_[axis];
+		Bars &other = bars_[1 - axis];
+		// Time since this direction was last looked at. A long gap (the
+		// source was not being drawn) is not counted as the picture holding.
+		const double since = bars.last_look < 0.0 ? 0.0 : std::clamp(clock_ - bars.last_look, 0.0, 1.0);
+		bars.last_look = clock_;
+		if (quick_looks_ > 0)
+			quick_looks_--;
 		if (first >= lines) {
 			// Entirely black (a fade, a loading screen): learn nothing from it.
 			bars.candidate = -1.0;
 			bars.agree = 0;
 			bars.stable_for = 0.0;
+			bars.edge_lo = bars.edge_hi = false;
+			bars.inside_for = 0.0;
+			bars.inside_looks = 0;
 			return;
 		}
 		// Bars are trimmed evenly, by the smaller side, so a dark edge in the
 		// picture itself is never mistaken for more bar.
 		const double seen = std::min<double>(first, lines - last);
+		int edge_lo = 0, edge_hi = 0, inside = 0;
+		for (uint32_t strip = 0; strip < across; strip++) {
+			if (!strip_hi_[strip])
+				continue;
+			const double lo = strip_lo_[strip], hi = (double)lines - strip_hi_[strip];
+			if (std::fabs(lo - seen) <= kEdge)
+				edge_lo++;
+			if (std::fabs(hi - seen) <= kEdge)
+				edge_hi++;
+			if (bars.applied > 2.0 && (lo < bars.applied - 2.0 || hi < bars.applied - 2.0))
+				inside++;
+		}
+		const int edge_enough = std::max(2, (int)std::lround(across * kEdgeShare));
+		const int inside_enough = std::max(2, (int)std::lround(across * kInsideShare));
+
 		if (bars.candidate >= 0.0 && std::fabs(seen - bars.candidate) <= 2.0) {
 			bars.agree++;
-			bars.stable_for += kProbeInterval * 2.0; // each direction is looked at every other time
+			bars.stable_for += since;
 		} else {
 			bars.candidate = seen;
 			bars.agree = 1;
 			bars.stable_for = 0.0;
+			bars.edge_lo = bars.edge_hi = false;
 		}
+		bars.edge_lo = bars.edge_lo || edge_lo >= edge_enough;
+		bars.edge_hi = bars.edge_hi || edge_hi >= edge_enough;
 		// "Trim to what is on screen now": take this look as it is.
 		if (measure_once_[axis]) {
 			measure_once_[axis] = false;
@@ -926,41 +1022,118 @@ private:
 				measured_ready_ = true;
 		}
 
-		// Right after a resolution change the looks come every frame and are
-		// acted on at once, so a carried-over shape that does not suit the
-		// new picture is corrected within a few frames.
-		const bool quick = quick_looks_ > 0;
-		if (quick)
-			quick_looks_--;
-		const bool settled = quick || bars.stable_for >= wait_s;
-
-		const bool less_bar = seen < bars.applied - 2.0;
-		const bool more_bar = seen > bars.applied + 2.0;
-		if (!less_bar && !more_bar)
+		const bool edges = bars.edge_lo && bars.edge_hi;
+		if (std::fabs(seen - bars.applied) <= 2.0) {
+			// The picture ends where it is trimmed.
+			bars.inside_for = 0.0;
+			bars.inside_looks = 0;
+			if (edges)
+				bars.confirmed = true;
 			return;
-		// What the picture would be with this many pixels of bar.
-		const double other = bars_[1 - axis].applied;
-		const double pic_w = w - 2.0 * (axis == 0 ? seen : other);
-		const double pic_h = h - 2.0 * (axis == 1 ? seen : other);
-		const bool real_shape = is_picture_shape(pic_w, pic_h);
-		if (less_bar) {
-			// Something is lit where bars were thought to be. Once a shape
-			// has been established it is only given up for another real
-			// picture shape that has held steady: a menu or a pop-up over
-			// the bars must not resize the picture. Before any shape is
-			// established, bars are simply never lit.
-			const bool holding = held_ratio_ > 0.0;
-			if (!holding     ? bars.agree >= 2
-			    : real_shape ? settled
-					 : bars.stable_for >= std::max(6.0, wait_s * 2.0))
-				bars.applied = seen;
-		} else if (settled && real_shape) {
-			// A game with a black background looks just like bars. Real bars
-			// leave a picture in one of the shapes consoles and emulators
-			// output; a dark scene leaves an arbitrary one. Only trim more
-			// when what would be left is exactly such a shape.
-			bars.applied = seen;
 		}
+
+		// What the picture would be with this many pixels of bar.
+		auto shape_with = [&](double other_trim) {
+			const double pic_w = w - 2.0 * (axis == 0 ? seen : other_trim);
+			const double pic_h = h - 2.0 * (axis == 1 ? seen : other_trim);
+			return is_picture_shape(pic_w, pic_h);
+		};
+		// A trim across the other direction that was only a starting point
+		// does not get a say when the picture is seen to show inside it and
+		// this direction explains the picture alone: what is seen counts for
+		// more than a guess. The strips of this look that lie in the other
+		// direction's trim tell whether anything shows there.
+		int other_strips = 0, other_lit = 0;
+		if (other.applied > 2.0 && !other.confirmed) {
+			const double extent = axis == 0 ? h : w;
+			for (uint32_t strip = 0; strip < across; strip++) {
+				const double at = (strip + 0.5) * extent / across;
+				if (at < other.applied - 2.0 || at > extent - other.applied + 2.0) {
+					other_strips++;
+					if (strip_hi_[strip])
+						other_lit++;
+				}
+			}
+		}
+		const bool shows_in_other = other_strips > 0 &&
+					    other_lit >= std::max(2, (int)std::lround(other_strips * kInsideShare));
+		const bool alone = seen > 2.0 && shows_in_other && shape_with(0.0);
+		const bool real_shape = alone || shape_with(other.applied);
+		// Clear: the picture is seen to end at this line on both sides, and
+		// that leaves a real picture shape. Reaching the capture's own edge
+		// needs no shape to be believed: nothing is cut off by trimming nothing.
+		const bool clear = edges && bars.agree >= 2 && (seen <= 2.0 || real_shape);
+
+		// Letting go of a trim never cuts anything off, so a steady candidate
+		// that leaves a real shape will do for where to stop; failing that,
+		// nothing is trimmed and the bars are looked for afresh.
+		const double let_go_to = (clear || (real_shape && bars.agree >= 2)) ? seen : 0.0;
+		bool change = false;
+		double to = seen;
+		const char *why = "";
+		if (seen < bars.applied) {
+			// Something is lit inside the trim.
+			if (inside < inside_enough) {
+				bars.inside_for = 0.0;
+				bars.inside_looks = 0;
+				return;
+			}
+			bars.inside_for += since;
+			bars.inside_looks++;
+			if (!bars.confirmed) {
+				if (clear) {
+					change = true;
+					why = "its edges are seen further out than the starting shape";
+				} else if (bars.inside_for >= kGiveUp && bars.inside_looks >= 2) {
+					change = true;
+					to = let_go_to;
+					why = "the picture shows inside a trim that was only a starting point";
+				}
+			} else if (clear && bars.stable_for >= wait_s) {
+				change = true;
+				why = "the picture has grown and held";
+			} else if (bars.inside_for >= std::max(kInsideFor, wait_s)) {
+				change = true;
+				to = let_go_to;
+				why = "the picture keeps showing inside the trim";
+			}
+			if (change && !bars.confirmed)
+				held_ratio_ = 0.0; // the shape started from did not suit this picture
+		} else {
+			bars.inside_for = 0.0;
+			bars.inside_looks = 0;
+			// More bar than is trimmed. A game with a black background looks
+			// just like bars, so only a clear sight counts.
+			if (clear && seen > 2.0 && (!bars.confirmed || bars.stable_for >= wait_s)) {
+				change = true;
+				why = bars.confirmed ? "bars seen clearly and held" : "bars seen clearly";
+			}
+		}
+		if (!change)
+			return;
+		if (to <= 2.0)
+			to = 0.0;
+		obs_log(LOG_INFO, "Auto Frame: %s %s trim %.0f -> %.0f px at %ux%u (%s)", describe_program().c_str(),
+			axis == 0 ? "left/right" : "top/bottom", bars.applied, to, w, h, why);
+		bars.applied = to;
+		bars.inside_for = 0.0;
+		bars.inside_looks = 0;
+		if (alone && to > 2.0) {
+			obs_log(LOG_INFO,
+				"Auto Frame: %s %s trim %.0f -> 0 px (the other direction explains the picture)",
+				describe_program().c_str(), axis == 0 ? "top/bottom" : "left/right", other.applied);
+			other = Bars();
+		}
+	}
+
+	// For the log: the program being captured, or the source's name.
+	std::string describe_program() const
+	{
+		if (!program_.empty())
+			return program_;
+		obs_source_t *parent = obs_filter_get_parent(source_);
+		const char *name = parent ? obs_source_get_name(parent) : nullptr;
+		return name ? std::string("'") + name + "'" : std::string("the capture");
 	}
 
 	// Whether a picture size is one of the shapes games and emulators output,
@@ -995,6 +1168,9 @@ private:
 	uint32_t out_w_ = 0, out_h_ = 0; // the frame's size when it follows the picture
 	uint32_t last_w_ = 0, last_h_ = 0;
 	Bars bars_[2];
+	std::vector<uint32_t> strip_lo_, strip_hi_; // per strip, from the last look; drawing thread only
+	double clock_ = 0.0;                        // seconds drawn, for timing the looks
+	double said_size_at_ = -10.0;
 	double probe_timer_ = 0.0;
 	// The picture shape found by looking, kept across resolution changes.
 	double held_ratio_ = 0.0;

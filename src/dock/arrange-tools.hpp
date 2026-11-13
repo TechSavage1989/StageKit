@@ -31,6 +31,10 @@ struct ArrangeOptions {
 	bool live_snap = false; // snap after an item is dragged and let go
 	int within = 20;        // how close counts for snapping, in pixels
 	bool guides = false;    // draw guide lines over OBS's preview
+	// Not an arrange option, but kept and saved the same way: the dock's
+	// Send to buttons, and the keys it makes, move the item's source in every
+	// scene it is in. Off: only in the scene being worked on.
+	bool send_every_scene = true;
 };
 
 ArrangeOptions arrange_options();
@@ -75,6 +79,8 @@ ArrangeOutcome run_arrange_now(ArrangeAction action, obs_source_t *scene, const 
 
 // Every item's place and size in a scene, as OBS's own undo keeps them.
 std::string transform_snapshot(obs_source_t *scene);
+// The same for every scene at once, for a change that reaches into several.
+std::string transform_snapshot_all();
 // Adds a step to OBS's Edit → Undo that goes back to `before` and forward to `after`.
 void add_transform_undo(const char *name, const std::string &before, const std::string &after);
 // For the tests: puts the scene back as before the last step (or forward again).

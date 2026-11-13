@@ -162,7 +162,9 @@ bool read_engines(DWORD process_id, bool &graphics, bool &controller)
 
 // A program is looked into a handful of times while it starts up (engines
 // load late), then left alone: the answer is remembered for as long as that
-// process lives.
+// process lives. The first looks are a second apart, so a game started in a
+// window is recognised soon after its engines are in; later ones are spaced
+// out for programs that load them late.
 bool loaded_engines(DWORD process_id, bool &graphics, bool &controller)
 {
 	struct Known {
@@ -171,14 +173,14 @@ bool loaded_engines(DWORD process_id, bool &graphics, bool &controller)
 		ULONGLONG last_look = 0;
 	};
 	static std::map<DWORD, Known> known;
-	constexpr int kLooks = 6;
-	constexpr ULONGLONG kApart = 2500; // milliseconds
+	constexpr int kLooks = 12;
 	const ULONGLONG now = GetTickCount64();
 	if (known.size() > 256)
 		known.clear();
 	Known &k = known[process_id];
 	const bool settled = k.readable && k.graphics && k.controller;
-	if (!settled && k.looks < kLooks && (k.looks == 0 || now - k.last_look >= kApart)) {
+	const ULONGLONG apart = k.looks < 5 ? 1000ULL : 3000ULL; // milliseconds
+	if (!settled && k.looks < kLooks && (k.looks == 0 || now - k.last_look >= apart)) {
 		k.looks++;
 		k.last_look = now;
 		bool g = false, c = false;
@@ -449,8 +451,12 @@ public:
 			if (excluded(exe) && !matches(exe, always))
 				continue;
 			const bool listed = matches(exe, always);
-			if (mode == Mode::AnyGame && w.looks_like_game && known_games_.insert(exe).second)
+			if (mode == Mode::AnyGame && w.looks_like_game && known_games_.insert(exe).second) {
 				learned_something = true;
+				// For the log: from here on this program is picked up at once.
+				obs_log(LOG_INFO, "Auto Capture: %s is recognised as a game and remembered",
+					exe.c_str());
+			}
 			const bool known = mode == Mode::AnyGame && known_games_.count(exe) > 0;
 			const bool candidate = listed || known;
 			if (w.foreground && candidate)

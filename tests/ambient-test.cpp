@@ -16,6 +16,7 @@
 #include <QColor>
 #include <QComboBox>
 #include <QImage>
+#include <QPainter>
 #include <QLabel>
 #include <QListWidget>
 #include <QMenu>
@@ -2548,6 +2549,193 @@ int main(int argc, char **argv)
 				      h3);
 			}
 
+			// A widescreen game in a window (the report: it opened cropped to
+			// a square and took a long time to come right). Its picture sits
+			// letterboxed in a window of another shape, the first frames are
+			// black and at another size, and the scene is dark.
+			{
+				auto trims = [&](int ms) {
+					for (int i = 0; i < ms / 50; i++) {
+						render(barred, 800, 600);
+						sleep_ms(50);
+					}
+					calldata_t cd = {};
+					proc_handler_call(obs_source_get_proc_handler(trimmer), "get_trim", &cd);
+					const std::pair<double, double> t{calldata_float(&cd, "x"),
+									  calldata_float(&cd, "y")};
+					calldata_free(&cd);
+					return t;
+				};
+				auto save = [&](QImage &image, const char *name) {
+					const std::string path = out + "/" + name;
+					image.save(QString::fromStdString(path));
+					return path;
+				};
+				auto program = [&](const char *window) {
+					obs_data_t *cap = obs_source_get_settings(barred);
+					obs_data_set_string(cap, "window", window);
+					obs_data_release(cap);
+				};
+				auto show = [&](const std::string &path) {
+					obs_data_set_string(bd, "file", path.c_str());
+					obs_source_update(barred, bd);
+				};
+				// Lit where the test says, dark blue like a night scene.
+				auto night = [](int x, int y) {
+					return qRgb(12 + x % 40, 24, 70 + y % 60);
+				};
+
+				QImage start(100, 100, QImage::Format_RGB32);
+				start.fill(QColor(0, 0, 0));
+				// 896x572 holds a 16:9 picture (896x504) with 34 px above and below.
+				QImage dark(896, 572, QImage::Format_RGB32);
+				dark.fill(QColor(0, 0, 0));
+				for (int y = 34; y < 538; y++)
+					for (int x = 0; x < 540; x++) // the right of the scene is in darkness
+						dark.setPixel(x, y, night(x, y));
+
+				obs_data_set_int(bf, "trim", 1);
+				obs_data_set_string(bf, "rules_text", "");
+				obs_data_set_bool(bf, "known_programs", true);
+				obs_source_update(trimmer, bf);
+				program("Wide Game:WideWnd:widegame.exe");
+				show(save(start, "wide-start.png"));
+				trims(400);
+				show(save(dark, "wide-dark.png"));
+				bool cropped = false;
+				for (int i = 0; i < 6; i++)
+					if (trims(100).first != 0.0)
+						cropped = true;
+				auto [wx, wy] = trims(1900);
+				CHECK(!cropped && wx == 0.0,
+				      "a widescreen game that starts black at another size is never cropped at the sides (trim %.0f)",
+				      wx);
+				CHECK(std::fabs(wy - 34) <= 1.0,
+				      "and its own bars above and below are trimmed within moments, dark scene or not (trim %.0f)",
+				      wy);
+
+				// A shape carried over from before that does not suit what is
+				// now shown: a dark, moving picture with nothing steady about it.
+				auto blobs = [&](const char *name, int ax, int ar, int bx, int br) {
+					QImage image(1280, 720, QImage::Format_RGB32);
+					image.fill(QColor(0, 0, 0));
+					QPainter painter(&image);
+					painter.setPen(Qt::NoPen);
+					painter.setBrush(QColor(20, 40, 110));
+					painter.drawEllipse(QPoint(ax, 300), ar, ar);
+					painter.drawEllipse(QPoint(bx, 400), br, br);
+					painter.drawEllipse(QPoint(640, 360), 90, 60);
+					painter.end();
+					return save(image, name);
+				};
+				QImage window43(400, 300, QImage::Format_RGB32);
+				for (int y = 0; y < 300; y++)
+					for (int x = 0; x < 400; x++)
+						window43.setPixel(x, y, qRgb(60 + x % 150, 90 + y % 120, 200));
+				const std::string moving_a = blobs("wide-moving-a.png", 200, 180, 1000, 150);
+				const std::string moving_b = blobs("wide-moving-b.png", 230, 170, 980, 160);
+				program("Another Game:OtherWnd:othergame.exe");
+				show(save(window43, "wide-43.png"));
+				trims(1500);
+				show(moving_a);
+				const double carried = trims(100).first;
+				for (int i = 0; i < 28; i++) {
+					show(i % 2 ? moving_a : moving_b);
+					trims(100);
+				}
+				const double let_go = trims(100).first;
+				CHECK(std::fabs(carried - 160) <= 1.0 && let_go == 0.0,
+				      "a shape carried over is let go when the picture plainly shows inside it (trim %.0f, then %.0f)",
+				      carried, let_go);
+
+				// A logo on black whose width happens to leave a real picture
+				// shape (960x720 is 4:3): its edges are not straight, so it is not bars.
+				QImage logo(1280, 720, QImage::Format_RGB32);
+				logo.fill(QColor(0, 0, 0));
+				{
+					QPainter painter(&logo);
+					painter.setPen(Qt::NoPen);
+					painter.setBrush(QColor(230, 230, 240));
+					painter.drawEllipse(QPoint(640, 360), 480, 200);
+				}
+				program("Logo Game:LogoWnd:logogame.exe");
+				show(save(logo, "wide-logo.png"));
+				auto [lx, ly] = trims(3000);
+				CHECK(lx == 0.0 && ly == 0.0,
+				      "a logo on black is not bars, even when its width leaves a real shape (trim %.0f, %.0f)",
+				      lx, ly);
+
+				// Bars that have been seen, with a mouse pointer resting on one.
+				auto pillar = [&](const char *name, bool pointer) {
+					QImage image(1280, 720, QImage::Format_RGB32);
+					image.fill(QColor(0, 0, 0));
+					for (int y = 0; y < 720; y++)
+						for (int x = 160; x < 1120; x++)
+							image.setPixel(x, y, qRgb(60 + x % 150, 90 + y % 120, 200));
+					if (pointer)
+						for (int y = 300; y < 322; y++)
+							for (int x = 40; x < 54; x++)
+								image.setPixel(x, y, qRgb(255, 255, 255));
+					return save(image, name);
+				};
+				program("Pointer Game:PointerWnd:pointergame.exe");
+				show(pillar("wide-pillar.png", false));
+				const double before_pointer = trims(2000).first;
+				show(pillar("wide-pillar-pointer.png", true));
+				const double with_pointer = trims(7000).first;
+				CHECK(std::fabs(before_pointer - 160) <= 1.0 && std::fabs(with_pointer - 160) <= 1.0,
+				      "a mouse pointer resting on a bar does not resize the picture (trim %.0f, then %.0f)",
+				      before_pointer, with_pointer);
+
+				// An emulator's usual shape is only where its picture starts.
+				// Here the picture is 16:9 with bars above and below. It is dark
+				// at the sides but for a band along the top, too little to count
+				// as the picture when looking across, yet plainly inside the
+				// guess: the bars that are seen decide, not the guess.
+				QImage centre(960, 620, QImage::Format_RGB32);
+				centre.fill(QColor(0, 0, 0));
+				for (int y = 40; y < 580; y++)
+					for (int x = 320; x < 640; x++)
+						centre.setPixel(x, y, night(x, y));
+				for (int y = 40; y < 170; y++)
+					for (int x = 0; x < 960; x++)
+						centre.setPixel(x, y, night(x, y));
+				program("Game - Snes9x:Snes9x:snes9x-x64.exe");
+				show(save(start, "wide-start.png"));
+				trims(400);
+				show(save(centre, "wide-centre.png"));
+				// The guess is in place for the first few frames at the new size.
+				double guessed = 0.0;
+				for (int i = 0; i < 6; i++)
+					guessed = std::max(guessed, trims(50).first);
+				auto [sx, sy] = trims(2200);
+				CHECK(guessed > 100.0 && sx == 0.0 && std::fabs(sy - 40) <= 1.0,
+				      "bars seen clearly one way overrule a starting guess the other way (sides %.0f then %.0f, above and below %.0f)",
+				      guessed, sx, sy);
+
+				// The same guess when nothing shows inside it stays: a cut-scene
+				// with its own bars above and below, inside an old-shape picture.
+				QImage cinema(1280, 720, QImage::Format_RGB32);
+				cinema.fill(QColor(0, 0, 0));
+				for (int y = 40; y < 680; y++) // 1280x640 would be a real shape (2:1) on its own
+					for (int x = 229; x < 1051; x++) // the 8:7 picture is 822 wide
+						cinema.setPixel(x, y, night(x, y));
+				program("");
+				trims(400);
+				program("Game - Snes9x:Snes9x:snes9x-x64.exe");
+				show(save(start, "wide-start.png"));
+				trims(400);
+				show(save(cinema, "wide-cinema.png"));
+				auto [kx, ky] = trims(2500);
+				CHECK(std::fabs(kx - 229) <= 1.5,
+				      "a guess that nothing shows inside is kept when bars appear the other way (sides %.0f, above and below %.0f)",
+				      kx, ky);
+
+				program("");
+				obs_data_set_bool(bf, "known_programs", false);
+				obs_source_update(trimmer, bf);
+			}
+
 			obs_source_filter_remove(barred, trimmer);
 			obs_source_release(trimmer);
 			obs_source_release(barred);
@@ -2733,19 +2921,26 @@ int main(int argc, char **argv)
 			obs_sceneitem_set_pos(other_cam, &p);
 			obs_sceneitem_set_pos(cam_item, &p);
 
-			auto make = [&](const char *name, int destination, int where) {
+			// apply_in: 0 every scene, 1 the scene on screen, 2 one chosen scene.
+			// -1 is a key from before that choice existed: unset, with the
+			// "where" that older versions wrote.
+			auto make = [&](const char *name, int destination, int apply_in, const char *in = "") {
 				obs_data_t *d = obs_data_create();
 				obs_data_set_int(d, "destination", destination);
 				obs_data_set_double(d, "margin", 30);
 				obs_data_set_int(d, "duration_ms", 150);
-				obs_data_set_int(d, "where", where);
+				if (apply_in >= 0)
+					obs_data_set_int(d, "apply_in", apply_in);
+				else
+					obs_data_set_int(d, "where", 0);
+				obs_data_set_string(d, "apply_scene", in);
 				obs_source_t *f = obs_source_create("stagekit_send_to", name, d, nullptr);
 				obs_data_release(d);
 				obs_source_filter_add(cam, f);
 				sleep_ms(100);
 				return f;
 			};
-			obs_source_t *corner = make("Camera bottom right", 8, 0);
+			obs_source_t *corner = make("Camera bottom right", 8, 1);
 			CHECK(corner != nullptr, "the Send To filter can be added to a source");
 			obs_source_set_enabled(corner, true);
 			sleep_ms(450);
@@ -2754,10 +2949,11 @@ int main(int argc, char **argv)
 			      "switching it on moves that source in the scene on screen (%.0f, %.0f)", at.x, at.y);
 			CHECK(!obs_source_enabled(corner),
 			      "and it switches itself off again, ready for the next press");
-			CHECK(std::fabs(elsewhere.x - 5) < 0.6, "other scenes are left alone by default");
+			CHECK(std::fabs(elsewhere.x - 5) < 0.6,
+			      "set to 'only the scene on screen', other scenes are left alone");
 
 			// Save a spot: drag the camera somewhere, press the button, move away, press the key.
-			obs_source_t *spot = make("Camera my spot", 0, 1);
+			obs_source_t *spot = make("Camera my spot", 0, -1);
 			vec2_set(&p, 222.0f, 111.0f);
 			obs_sceneitem_set_pos(cam_item, &p);
 			obs_properties_t *props = obs_source_properties(spot);
@@ -2773,8 +2969,8 @@ int main(int argc, char **argv)
 			CHECK(std::fabs(at.x - 222) < 0.6 && std::fabs(at.y - 111) < 0.6,
 			      "a spot saved from where the source sits is returned to (%.0f, %.0f)", at.x, at.y);
 			CHECK(std::fabs(elsewhere.x - 222) < 0.6 && std::fabs(elsewhere.y - 111) < 0.6,
-			      "'every scene it is in' moves it in the other scenes too (%.0f, %.0f)", elsewhere.x,
-			      elsewhere.y);
+			      "left as it comes, a key moves the source in every scene it is in, and so does a key made before that was a choice (%.0f, %.0f)",
+			      elsewhere.x, elsewhere.y);
 
 			// The camera inside a nested scene that is on screen.
 			obs_scene_t *outer = obs_scene_create("Outer Scene");
@@ -2790,6 +2986,36 @@ int main(int argc, char **argv)
 			obs_set_output_source(0, before);
 			obs_source_release(before);
 			obs_source_filter_remove(cam, corner);
+			{
+				// One chosen scene: only there, whichever scene is on screen.
+				obs_source_t *shown = obs_get_output_source(0);
+				obs_set_output_source(0, scene_source);
+				obs_source_t *one = make("Camera in the other scene", 2, 2, "Other Scene");
+				const vec2 here_before = pos_of(cam_item);
+				obs_properties_t *props = obs_source_properties(one);
+				obs_property_t *list = obs_properties_get(props, "apply_scene");
+				bool offered = false;
+				for (size_t i = 0; list && i < obs_property_list_item_count(list); i++)
+					if (strcmp(obs_property_list_item_string(list, i), "Other Scene") == 0)
+						offered = true;
+				obs_properties_destroy(props);
+				obs_source_set_enabled(one, true);
+				sleep_ms(450);
+				const vec2 here = pos_of(cam_item);
+				elsewhere = pos_of(other_cam);
+				const float top_right =
+					(float)obs_source_get_width(obs_scene_get_source(other)) - 30 - 160;
+				CHECK(offered && std::fabs(here.x - here_before.x) < 0.6 &&
+					      std::fabs(here.y - here_before.y) < 0.6 &&
+					      std::fabs(elsewhere.x - top_right) < 0.6 &&
+					      std::fabs(elsewhere.y - 30) < 0.6,
+				      "'only one scene I choose' lists the scenes it is in and moves it only there (%.0f, %.0f; here %.0f, %.0f)",
+				      elsewhere.x, elsewhere.y, here.x, here.y);
+				obs_source_filter_remove(cam, one);
+				obs_source_release(one);
+				obs_set_output_source(0, shown);
+				obs_source_release(shown);
+			}
 			obs_source_filter_remove(cam, spot);
 			obs_source_release(corner);
 			obs_source_release(spot);
@@ -2862,6 +3088,69 @@ int main(int argc, char **argv)
 				obs_source_release(on_screen);
 			}
 			obs_source_release(key);
+
+			// "In every scene" is ticked to begin with: the buttons, and the keys
+			// made, reach the camera wherever it is, and one Undo takes it all back.
+			{
+				obs_scene_t *second = obs_scene_create("Second Camera Scene");
+				obs_sceneitem_t *second_cam = obs_scene_add(second, cam);
+				vec2 start;
+				vec2_set(&start, 7.0f, 9.0f);
+				obs_sceneitem_set_pos(second_cam, &start);
+				sleep_ms(100);
+				auto *every = dock->findChild<QCheckBox *>("sendEveryScene");
+				obs_source_t *made = obs_source_get_filter_by_name(cam, "Top right");
+				obs_data_t *made_settings = made ? obs_source_get_settings(made) : nullptr;
+				CHECK(every && every->isChecked() && made_settings &&
+					      obs_data_get_int(made_settings, "apply_in") == 0,
+				      "the dock, and the keys it makes, act in every scene unless told otherwise");
+				obs_data_release(made_settings);
+				obs_source_release(made);
+
+				const vec2 was = pos_of(cam_item);
+				click("grid0");
+				sleep_ms(900);
+				QCoreApplication::processEvents();
+				vec2 here = pos_of(cam_item), there = pos_of(second_cam);
+				CHECK(std::fabs(here.x - 30) < 0.6 && std::fabs(here.y - 30) < 0.6 &&
+					      std::fabs(there.x - 30) < 0.6 && std::fabs(there.y - 30) < 0.6,
+				      "a Send to button moves the item's source in every scene it is in (%.0f, %.0f and %.0f, %.0f)",
+				      here.x, here.y, there.x, there.y);
+				calldata_t undo_cd = {};
+				calldata_set_bool(&undo_cd, "redo", false);
+				proc_handler_call(obs_get_proc_handler(), "stagekit_replay_arrange", &undo_cd);
+				calldata_free(&undo_cd);
+				sleep_ms(100);
+				here = pos_of(cam_item);
+				there = pos_of(second_cam);
+				CHECK(std::fabs(here.x - was.x) < 0.6 && std::fabs(here.y - was.y) < 0.6 &&
+					      std::fabs(there.x - 7) < 0.6 && std::fabs(there.y - 9) < 0.6,
+				      "and one Undo takes it back in all of them (%.0f, %.0f and %.0f, %.0f)", here.x,
+				      here.y, there.x, there.y);
+
+				if (every)
+					every->setChecked(false);
+				click("grid8");
+				sleep_ms(900);
+				QCoreApplication::processEvents();
+				here = pos_of(cam_item);
+				there = pos_of(second_cam);
+				CHECK(std::fabs(here.x - 450) < 0.6 && std::fabs(here.y - 240) < 0.6 &&
+					      std::fabs(there.x - 7) < 0.6 && std::fabs(there.y - 9) < 0.6,
+				      "unticked, only the scene being worked on changes (%.0f, %.0f; the other %.0f, %.0f)",
+				      here.x, here.y, there.x, there.y);
+				click("makeKeys");
+				made = obs_source_get_filter_by_name(cam, "Top right");
+				made_settings = made ? obs_source_get_settings(made) : nullptr;
+				CHECK(made_settings && obs_data_get_int(made_settings, "apply_in") == 1,
+				      "and keys made then act only in the scene on screen");
+				obs_data_release(made_settings);
+				obs_source_release(made);
+				if (every)
+					every->setChecked(true);
+				obs_sceneitem_remove(second_cam);
+				obs_scene_release(second);
+			}
 
 			// Order buttons: the camera was added first, so it starts at the back.
 			const int before = obs_sceneitem_get_order_position(cam_item);

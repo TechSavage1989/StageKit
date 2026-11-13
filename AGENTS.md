@@ -95,9 +95,12 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   30.5, 85.5. Auto Frame's automatic trim exists for this. It reads back a thin copy of the capture
   every 0.4 s, one direction at a time; keep that cost in mind before adding more readbacks.
 - **Black bars and black game backgrounds look identical.** Auto Frame's automatic trim only trims more
-  when the remaining picture is exactly a known console shape (`is_picture_shape`). Do not loosen that
-  to a brightness-only rule, and do not drop the held shape (`held_ratio_`) on a resolution change: the
-  owner wants no resize when a window goes full-screen at the same shape. Background: the owner hit
+  when the picture is seen to end in a straight line, the same distance in from both sides, and what is
+  left is exactly a known console shape (`is_picture_shape`). Do not loosen that to a brightness-only
+  or shape-only rule, and do not drop the held shape (`held_ratio_`) on a resolution change: the
+  owner wants no resize when a window goes full-screen at the same shape. A shape is held only once
+  the picture has been seen to fit it (`Bars::confirmed`); one taken from a black screen put a square
+  crop on a widescreen game. Background: the owner hit
   it with Snes9x (Aladdin's title screen) and the picture resized repeatedly. The owner wants no manual steps when switching games; program rules and Picture
   Shape keys are the fallbacks.
 - **Every list the user builds is a `PickList`** (`src/common/pick-list.*`): choose to add, one row per
@@ -135,6 +138,8 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   fired by filters and Stream Deck keys do not; they are part of the show.
 - **Dock keys are Send To filters on the item's source**, not Place Item filters on the scene. The
   owner presses them from Stream Deck Filter keys on the camera.
+- **Send To moves the source in every scene it is in, by default** (`apply_in`). The owner asked for
+  that: the camera sent to a spot is there in every scene. The older `where` setting is not read.
 - **Shadow sizes are in screen pixels by default.** The owner's old shadows sat on full-canvas scenes,
   so 20 px was 20 px everywhere; a filter on a scaled item is not. The filter divides its sizes by how
   big the item is drawn in the scene on screen (`find_shown_scale`).

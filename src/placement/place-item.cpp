@@ -60,6 +60,13 @@ enum class Destination : int {
 	Saved = 9,
 };
 
+// Which scenes a Send To move happens in. Saved in settings: append only.
+enum class ApplyIn : int {
+	Every = 0,    // every scene the source is in
+	OnScreen = 1, // only the scene on screen
+	Chosen = 2,   // only one scene, chosen by name
+};
+
 struct Settings {
 	std::string item;
 	Destination destination = Destination::TopRight;
@@ -74,8 +81,10 @@ struct Settings {
 	EaseMode mode = EaseMode::InOut;
 	std::string linked;
 	bool flip_linked = true;
-	bool every_scene = false; // Send To only
-	std::string in_scene;     // Send To only: this scene instead (set by the dock)
+	// Send To only: which scenes the move happens in.
+	ApplyIn apply_in = ApplyIn::Every;
+	std::string apply_scene; // the scene, for ApplyIn::Chosen
+	std::string in_scene;    // this scene instead (set by the dock for the scene being worked on)
 };
 
 // One item gliding from one place to another. Places are the top-left of
@@ -271,7 +280,11 @@ void PlaceItem::update(obs_data_t *settings)
 	s.mode = static_cast<EaseMode>(obs_data_get_int(settings, "ease_mode"));
 	s.linked = obs_data_get_string(settings, "linked");
 	s.flip_linked = obs_data_get_bool(settings, "flip_linked");
-	s.every_scene = obs_data_get_int(settings, "where") == 1;
+	// 0.1.0-beta8 to beta46 kept this in "where", where the scene on screen
+	// was the default and what the dock wrote into every key it made. That
+	// setting is no longer read, so those keys take the new default.
+	s.apply_in = static_cast<ApplyIn>(std::clamp<long long>(obs_data_get_int(settings, "apply_in"), 0, 2));
+	s.apply_scene = obs_data_get_string(settings, "apply_scene");
 	s.in_scene = obs_data_get_string(settings, "in_scene");
 
 	std::lock_guard lock(mutex_);
@@ -310,11 +323,14 @@ void PlaceItem::start()
 
 	if (on_source_) {
 		std::vector<Target> targets;
-		if (obs_source_t *named = s.in_scene.empty() ? nullptr : obs_get_source_by_name(s.in_scene.c_str())) {
+		const std::string only = !s.in_scene.empty()             ? s.in_scene
+					 : s.apply_in == ApplyIn::Chosen ? s.apply_scene
+									 : std::string();
+		if (obs_source_t *named = only.empty() ? nullptr : obs_get_source_by_name(only.c_str())) {
 			collect_in(named, parent_, targets, true, 0);
 			obs_source_release(named);
 		} else {
-			targets = places_of(parent_, s.every_scene);
+			targets = places_of(parent_, s.apply_in == ApplyIn::Every);
 		}
 		for (const Target &target : targets)
 			plan(s, target.scene, target.item);
@@ -323,7 +339,7 @@ void PlaceItem::start()
 	}
 	if (moves_.empty()) {
 		if (on_source_)
-			obs_log(LOG_WARNING, "Send To '%s': '%s' is not in the scene on screen",
+			obs_log(LOG_WARNING, "Send To '%s': '%s' is not in a scene this key moves it in",
 				obs_source_get_name(source_), obs_source_get_name(parent_));
 		else
 			obs_log(LOG_WARNING, "Place Item '%s': item '%s' is not in this scene",
@@ -559,6 +575,8 @@ bool destination_modified(obs_properties_t *props, obs_property_t *, obs_data_t 
 	obs_property_set_visible(obs_properties_get(props, "saved_y"), saved);
 	obs_property_set_visible(obs_properties_get(props, "restore_size"), saved);
 	obs_property_set_visible(obs_properties_get(props, "flip_linked"), linked);
+	obs_property_set_visible(obs_properties_get(props, "apply_scene"),
+				 obs_data_get_int(settings, "apply_in") == (int)ApplyIn::Chosen);
 	return true;
 }
 
@@ -597,10 +615,25 @@ obs_properties_t *get_properties(void *data)
 		data);
 
 	if (on_source) {
-		obs_property_t *where = obs_properties_add_list(props, "where", obs_module_text("SendTo.Where"),
+		obs_property_t *where = obs_properties_add_list(props, "apply_in", obs_module_text("SendTo.Where"),
 								OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
-		obs_property_list_add_int(where, obs_module_text("SendTo.Where.OnScreen"), 0);
-		obs_property_list_add_int(where, obs_module_text("SendTo.Where.Every"), 1);
+		obs_property_list_add_int(where, obs_module_text("SendTo.Where.Every"), (int)ApplyIn::Every);
+		obs_property_list_add_int(where, obs_module_text("SendTo.Where.OnScreen"), (int)ApplyIn::OnScreen);
+		obs_property_list_add_int(where, obs_module_text("SendTo.Where.Chosen"), (int)ApplyIn::Chosen);
+		obs_property_set_long_description(where, obs_module_text("SendTo.Where.Tip"));
+		obs_property_set_modified_callback(where, destination_modified);
+		// The scenes this source is in, to choose one from.
+		obs_property_t *scene = obs_properties_add_list(props, "apply_scene",
+								obs_module_text("SendTo.Where.Scene"),
+								OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
+		std::vector<std::string> listed;
+		for (const Target &target : places_of(parent, true)) {
+			const char *name = obs_source_get_name(target.scene);
+			if (!name || std::find(listed.begin(), listed.end(), name) != listed.end())
+				continue;
+			listed.emplace_back(name);
+			obs_property_list_add_string(scene, name, name);
+		}
 	}
 
 	obs_property_t *linked = obs_properties_add_list(props, "linked", obs_module_text("Place.Linked"),
@@ -646,7 +679,7 @@ void get_defaults(obs_data_t *settings)
 	obs_data_set_default_int(settings, "ease_curve", (int)EaseCurve::Cubic);
 	obs_data_set_default_int(settings, "ease_mode", (int)EaseMode::InOut);
 	obs_data_set_default_bool(settings, "flip_linked", true);
-	obs_data_set_default_int(settings, "where", 0);
+	obs_data_set_default_int(settings, "apply_in", (int)ApplyIn::Every);
 }
 
 } // namespace

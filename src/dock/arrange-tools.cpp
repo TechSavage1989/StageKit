@@ -128,6 +128,34 @@ std::string transform_snapshot(obs_source_t *scene)
 	return out;
 }
 
+std::string transform_snapshot_all()
+{
+	// One list holding every scene's entries: OBS loads such a list scene by scene.
+	obs_data_array_t *merged = obs_data_array_create();
+	obs_enum_scenes(
+		[](void *param, obs_source_t *scene) {
+			obs_scene_t *s = scene_of(scene);
+			obs_data_t *states = s ? obs_scene_save_transform_states(s, true) : nullptr;
+			obs_data_array_t *part = states ? obs_data_get_array(states, "scenes_and_groups") : nullptr;
+			for (size_t i = 0; i < obs_data_array_count(part); i++) {
+				obs_data_t *entry = obs_data_array_item(part, i);
+				obs_data_array_push_back(static_cast<obs_data_array_t *>(param), entry);
+				obs_data_release(entry);
+			}
+			obs_data_array_release(part);
+			obs_data_release(states);
+			return true;
+		},
+		merged);
+	obs_data_t *all = obs_data_create();
+	obs_data_set_array(all, "scenes_and_groups", merged);
+	obs_data_array_release(merged);
+	const char *json = obs_data_get_json(all);
+	std::string out = json ? json : "";
+	obs_data_release(all);
+	return out;
+}
+
 void add_transform_undo(const char *name, const std::string &before, const std::string &after)
 {
 	if (before.empty() || after.empty() || before == after)
@@ -262,6 +290,7 @@ void arrange_save_load(obs_data_t *save_data, bool saving)
 		obs_data_set_bool(save_data, "stagekit.arrange.keep_shape", o.keep_shape);
 		obs_data_set_bool(save_data, "stagekit.arrange.live_snap", o.live_snap);
 		obs_data_set_bool(save_data, "stagekit.arrange.guides", o.guides);
+		obs_data_set_bool(save_data, "stagekit.send.every_scene", o.send_every_scene);
 		obs_data_set_int(save_data, "stagekit.arrange.within", o.within);
 	} else if (obs_data_has_user_value(save_data, "stagekit.arrange.within")) {
 		ArrangeOptions o;
@@ -273,6 +302,9 @@ void arrange_save_load(obs_data_t *save_data, bool saving)
 		o.live_snap = obs_data_get_bool(save_data, "stagekit.arrange.live_snap");
 		o.guides = obs_data_get_bool(save_data, "stagekit.arrange.guides");
 		o.within = (int)obs_data_get_int(save_data, "stagekit.arrange.within");
+		// Collections saved before this option existed take its default.
+		if (obs_data_has_user_value(save_data, "stagekit.send.every_scene"))
+			o.send_every_scene = obs_data_get_bool(save_data, "stagekit.send.every_scene");
 		set_arrange_options(o);
 	}
 	for (Hotkey &hk : g_hotkeys) {

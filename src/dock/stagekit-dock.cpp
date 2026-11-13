@@ -503,6 +503,11 @@ public:
 		options->addRow(tr_text("Place.Margin"), margin_);
 		options->addRow(tr_text("Place.Duration"), duration_);
 		move_layout->addLayout(options);
+		every_scene_ = new QCheckBox(tr_text("Dock.SendEvery"), move_box);
+		every_scene_->setObjectName("sendEveryScene");
+		every_scene_->setToolTip(tr_text("Dock.SendEvery.Tip"));
+		every_scene_->setChecked(true);
+		move_layout->addWidget(every_scene_);
 		layout->addWidget(move_box);
 
 		auto *keys_box = new QGroupBox(tr_text("Dock.KeysBox"), this);
@@ -621,7 +626,7 @@ public:
 		arrange_layout->addLayout(within_row);
 		// The options are shared with the hotkeys and the right-click menu.
 		show_arrange_options();
-		for (QCheckBox *box : {visible_, no_shadow_, keep_shape_, live_snap_, guides_})
+		for (QCheckBox *box : {visible_, no_shadow_, keep_shape_, live_snap_, guides_, every_scene_})
 			QObject::connect(box, &QCheckBox::toggled, this, [this](bool) { store_arrange_options(); });
 		QObject::connect(against_, &QComboBox::currentIndexChanged, this,
 				 [this](int) { store_arrange_options(); });
@@ -818,6 +823,7 @@ private:
 		keep_shape_->setChecked(o.keep_shape);
 		live_snap_->setChecked(o.live_snap);
 		guides_->setChecked(o.guides);
+		every_scene_->setChecked(o.send_every_scene);
 		snap_within_->setValue(o.within);
 		storing_ = false;
 	}
@@ -833,6 +839,7 @@ private:
 		o.keep_shape = keep_shape_->isChecked();
 		o.live_snap = live_snap_->isChecked();
 		o.guides = guides_->isChecked();
+		o.send_every_scene = every_scene_->isChecked();
 		o.within = snap_within_->value();
 		set_arrange_options(o);
 		shown_options_ = arrange_options_revision();
@@ -964,7 +971,8 @@ private:
 	obs_data_t *place_settings(int destination) const
 	{
 		obs_data_t *d = obs_data_create();
-		obs_data_set_int(d, "where", 0); // a key acts in the scene on screen
+		// In every scene the source is in, or only in the scene on screen.
+		obs_data_set_int(d, "apply_in", every_scene_->isChecked() ? 0 : 1);
 		obs_data_set_string(d, "linked", linked_->currentData().toString().toUtf8().constData());
 		obs_data_set_int(d, "destination", destination);
 		obs_data_set_double(d, "margin", margin_->value());
@@ -995,9 +1003,13 @@ private:
 			return;
 		}
 		obs_data_t *settings = place_settings(destination);
-		// The dock may be working on a scene that is not on screen.
+		// Everywhere, or only in the scene the dock is working on, which may
+		// not be the one on screen.
+		const bool everywhere = every_scene_->isChecked();
 		const QString chosen = scene_->currentData().toString();
-		const std::string in_scene = !chosen.isEmpty() ? chosen.toUtf8().toStdString() : fixed_scene_;
+		const std::string in_scene = everywhere          ? std::string()
+					     : !chosen.isEmpty() ? chosen.toUtf8().toStdString()
+								 : fixed_scene_;
 		obs_data_set_string(settings, "in_scene", in_scene.c_str());
 		obs_source_t *filter = ensure_filter(source, kSendToId, kDockMoveFilter, settings);
 		obs_data_release(settings);
@@ -1005,12 +1017,13 @@ private:
 		if (filter) {
 			obs_source_t *scene = current_scene();
 			const std::string scene_name = scene ? obs_source_get_name(scene) : "";
-			const std::string before = transform_snapshot(scene);
+			const std::string before = everywhere ? transform_snapshot_all() : transform_snapshot(scene);
 			obs_source_release(scene);
-			QTimer::singleShot(duration_->value() + 250, this, [before, scene_name] {
+			QTimer::singleShot(duration_->value() + 250, this, [before, scene_name, everywhere] {
 				obs_source_t *moved_in = obs_get_source_by_name(scene_name.c_str());
 				add_transform_undo(obs_module_text("Dock.SendUndo"), before,
-						   transform_snapshot(moved_in));
+						   everywhere ? transform_snapshot_all()
+							      : transform_snapshot(moved_in));
 				obs_source_release(moved_in);
 			});
 		}
@@ -1131,6 +1144,7 @@ private:
 	bool storing_ = false;
 	QCheckBox *live_snap_ = nullptr;
 	QCheckBox *guides_ = nullptr;
+	QCheckBox *every_scene_ = nullptr;
 	QSpinBox *snap_within_ = nullptr;
 	std::vector<std::pair<int64_t, std::pair<float, float>>> watched_;
 	bool dragging_ = false;

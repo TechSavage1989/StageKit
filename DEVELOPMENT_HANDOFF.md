@@ -204,6 +204,55 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Shape seen before it is held; Send To in every scene (0.1.0-beta47)
+
+The owner, with screenshots: a widescreen game in a window (1796x1147 surface, 16:9 picture inside
+with bars above and below) "opening as limited ratio. took a long time to eventually register
+correctly"; then "taking a long time to capture windowed games"; then Send To should move the source
+"on every scene it's in" by default, configurable.
+
+**Auto Frame.** Measured from the screenshot: the crop was exactly square (1147x1147) with the
+window's own bars still inside it. Which path put the square there is not known (no log); three were
+open and all are closed:
+
+- `held_ratio_` was set every frame from the current crop, before any picture had been seen: from a
+  black screen, or from a transient first size. It is now set only when both directions are
+  `confirmed` (the picture seen to end exactly at the trim, both sides), and cleared when a confirmed
+  picture fills a size that is no picture shape.
+- More is trimmed only on a **clear** sight: both edges straight (`kEdgeShare` 15% of strips within
+  `kEdge` 2 px), the candidate held for two looks, and the result a picture shape. Shape alone is no
+  longer enough, so a logo whose width leaves 4:3 is left alone. `look_for_bars` now scans every strip
+  (`strip_lo_`, `strip_hi_`) instead of whole lines; same single readback per look.
+- An unconfirmed direction (nothing yet, a program's usual shape, a shape carried to a new size) acts
+  on a clear sight at once and gives up after `kGiveUp` 1 s of the picture showing inside it. A
+  confirmed one waits `trim_wait`, or `kInsideFor` 4 s of the picture showing inside.
+- "Inside" needs `kInsideShare` 30% of strips, so a pointer, pop-up or menu strip is ignored. The old
+  rule released after six seconds of anything steady there.
+- `alone`: when the other direction's trim is unconfirmed and this direction explains the picture as
+  a real shape on its own, this one is applied and the other dropped. In the screenshot's state the
+  bars above and below could never be trimmed because 1147x1011 is no shape.
+- Stability is timed with a clock (`clock_`), not counted per look: quick looks used to count 0.8 s each.
+  Quick looks are now used up by black frames too, so a long loading screen is not read back every frame.
+- The program is checked four times a second, and at once when the size changes.
+- Decisions are written to OBS's log (`Auto Frame: <program> left/right trim a -> b px at WxH (why)`).
+
+**Do not** go back to trimming on shape alone, or to holding a shape that was not seen. Still true from
+before: no brightness-only rule, and the held shape survives a resolution change.
+
+**Windowed games.** The owner's collection already has the Game Capture's hook rate on fastest, and
+Auto Capture picks up a remembered program within half a second, so the likely delay was Auto Frame's
+(a window is where a picture has bars the capture must find). Unproven. `loaded_engines` now looks a
+second apart for the first five looks (twelve at most). If it is still slow, the log has the times.
+
+**Send To.** New setting `apply_in` (`ApplyIn`: 0 every scene, 1 the scene on screen, 2 one chosen
+scene named in `apply_scene`), default every scene. The old `where` (0 on screen, 1 every) is **not
+read any more**: the dock wrote 0 into every key it made, so honouring it would have left the owner's
+nine keys on the old behaviour. `in_scene` still wins when set (the dock's own move filter, for the
+scene being worked on). The dock's tick box is `ArrangeOptions::send_every_scene`
+(`stagekit.send.every_scene`); undo for an every-scene move uses `transform_snapshot_all`.
+
+**Not verified:** all of it on Windows. The Auto Frame tests use painted pictures, not a capture.
+
 ## Guides in the preview (0.1.0-beta46)
 
 The owner: "I'd like visual indicators in the viewer for alignment if possible". They also confirmed
