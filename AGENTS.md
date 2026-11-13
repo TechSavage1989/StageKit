@@ -141,10 +141,20 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   learned by polling one scene, which forgot it whenever the dock's *Scene* list showed another scene,
   so "last selected" became the top-most item. The dock's Arrange tools act on the scene being
   edited (`arrange_scene()`), not on the dock's *Scene* list, unless nothing is selected there.
-- **Ignore shadows measures the picture without its shadow by drawing what the first Shadow, Glow &
-  Outline draws from** (`shadow_free`), not by cutting the shadow's room off the edges: a widget's
-  picture often stops short of its own edges, and then the shadow was counted. Unticked, a shadow
-  sized in screen pixels keeps its size while the item is resized, and `match_size` allows for that.
+- **Ignore shadows & outlines measures the source's own pixels** (`measure_item`): the source drawn
+  with none of its filters (`obs_source_default_render`), placed where the Shadow, Glow & Outline room
+  puts it. The owner asked for that: anything a filter draws (a Corners & Edges border, say) is left
+  out. Only when the filters change the size by more than that room (an Auto Frame) or the source
+  plays video frames does it fall back to what the first shadow draws from (`shadow_free`), then to
+  cutting the room off the edges. Never cut the room off the edges first: a widget's picture often
+  stops short of its own edges. Unticked, a shadow sized in screen pixels keeps its size while the
+  item is resized, and `match_size` allows for that.
+- **A brought-along item flips round the leader's picture** (`plan()` in `src/placement/place-item.cpp`),
+  measured without shadows, not round the leader's box: round the box, the camera's shadow added its
+  width to the gap after a flip (the owner's screenshots, beta51).
+- **Same in every scene** (`copy_to_every_scene` in `src/dock/arrange.*`) copies an item's transform
+  to every copy of its source in the other scenes, converting position, scale and bounds through each
+  copy's group (`item_space`), skipping locked copies and groups listed as scenes.
 - **Arrange options are global** (`arrange_options()`), saved with the scene collection. The dock's
   controls only show and set them. Add a new tool to `ArrangeAction` and `kInfo` and it appears in the
   dock, the menu and the hotkeys at once.

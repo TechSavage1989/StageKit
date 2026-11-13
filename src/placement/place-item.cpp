@@ -446,10 +446,18 @@ void PlaceItem::plan(const Settings &s, obs_source_t *scene, obs_sceneitem_t *it
 			auto off_screen = [](double pos, double size, double limit) {
 				return std::max(0.0, -pos) + std::max(0.0, pos + size - limit);
 			};
-			// Mirrored: the drawn part sits as far past the leader's other
-			// side as it sat past this one.
-			const double mirrored_x = target.x + target.w - (dx + vx + seen.w) - vx;
-			const double mirrored_y = target.y + target.h - (dy + vy + seen.h) - vy;
+			// Mirrored: the drawn part sits as far past the other side of the
+			// leader's own picture as it sat past this one. The leader's
+			// shadow, outline or empty room is no part of that: mirrored
+			// round the leader's box, a shadow along one side added its width
+			// to the gap after a flip.
+			const Box lead = measure_item(scene, item, Measure{true, true});
+			const double kx = box.w > 0.0 ? target.w / box.w : 1.0; // the leader's size where it is going
+			const double ky = box.h > 0.0 ? target.h / box.h : 1.0;
+			const double lead_x = target.x + (lead.x - box.x) * kx, lead_w = lead.w * kx;
+			const double lead_y = target.y + (lead.y - box.y) * ky, lead_h = lead.h * ky;
+			const double mirrored_x = lead_x + lead_w - (seen.x + seen.w - lead.x) - vx;
+			const double mirrored_y = lead_y + lead_h - (seen.y + seen.h - lead.y) - vy;
 			if (off_screen(mirrored_x + vx, seen.w, canvas_w) < off_screen(tx + vx, seen.w, canvas_w))
 				tx = mirrored_x;
 			if (off_screen(mirrored_y + vy, seen.h, canvas_h) < off_screen(ty + vy, seen.h, canvas_h))

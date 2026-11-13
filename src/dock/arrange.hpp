@@ -53,6 +53,13 @@ int distribute_items(obs_source_t *scene, std::vector<obs_sceneitem_t *> items, 
 // Makes the other items as wide and/or as tall as the top-most one looks.
 // keep_shape scales both directions alike; without it only the directions
 // asked for change, which stretches the picture.
+// Like OBS's Copy Transform and Paste Transform, for every scene at once:
+// each item's place, size, rotation, crop and bounding box go to every copy of
+// its source in the other scenes, on the same spot of the screen whether a
+// copy sits in a group or not. Locked copies are left alone. Returns how many
+// copies changed.
+int copy_to_every_scene(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items);
+
 int match_size(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items, bool width, bool height,
 	       bool keep_shape, const Measure &how);
 

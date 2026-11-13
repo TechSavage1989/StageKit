@@ -57,6 +57,7 @@ enum class ArrangeAction {
 	SameWidth,
 	SameHeight,
 	SameSize,
+	SameEverywhere, // the selected items' place, size, rotation and crop for every copy of their sources
 	Count
 };
 
