@@ -748,7 +748,7 @@ int main(int argc, char **argv)
 				return !px.empty() && px[(size_t(y) * w + x) * 4 + 3] > 250;
 			};
 			CHECK(w == 1920 && h == 1080 && solid(w / 2, h / 2) && solid(4, 4) && solid(w - 5, h - 5),
-			      "with nothing captured, the picture stands in and fills the size (%ux%u)", w, h);
+			      "with nothing captured, the picture stands in, whole and in its own shape (%ux%u)", w, h);
 
 			// The capture arrives: a 100x60 red picture.
 			QImage red(100, 60, QImage::Format_ARGB32);
@@ -758,31 +758,51 @@ int main(int argc, char **argv)
 			obs_data_t *cs = obs_source_get_settings(capture);
 			obs_data_set_string(cs, "file", red_path.c_str());
 			obs_source_update(capture, cs);
-			sleep_ms(120);
+			sleep_ms(110);
 			w = obs_source_get_width(capture);
 			h = obs_source_get_height(capture);
 			px = w && h ? render(capture, w, h) : std::vector<uint8_t>();
 			const uint8_t *mid = px.empty() ? nullptr : &px[(size_t(h / 2) * w + w / 2) * 4];
-			const bool part_way = mid && w == 100 && h == 60 && !(mid[0] > 250 && mid[1] < 5 && mid[2] < 5);
+			// Part-way: a size between the two, and a picture that is neither yet.
+			const bool part_way = mid && w > 100 && w < 1920 && h > 60 && h < 1080 &&
+					      !(mid[0] > 250 && mid[1] < 5 && mid[2] < 5);
+			const uint32_t mid_w = w, mid_h = h;
 			settle(12);
+			w = obs_source_get_width(capture);
+			h = obs_source_get_height(capture);
 			px = render(capture, w, h);
 			mid = &px[(size_t(h / 2) * w + w / 2) * 4];
-			CHECK(part_way && mid[0] > 250 && mid[1] < 5 && mid[2] < 5,
-			      "when the capture starts, the picture fades away and the capture shows (%ux%u; then %d, %d, %d)",
-			      w, h, mid[0], mid[1], mid[2]);
+			CHECK(part_way && w == 100 && h == 60 && mid[0] > 250 && mid[1] < 5 && mid[2] < 5,
+			      "when the capture starts, the size glides to the capture's as the picture fades into it (%ux%u part-way; then %ux%u, %d, %d, %d)",
+			      mid_w, mid_h, w, h, mid[0], mid[1], mid[2]);
 
-			// And goes again: the picture comes back at the size the capture had.
+			// And goes again: the picture comes back, gliding to its own shape
+			// (16:9 here) at the height the capture had.
 			obs_data_set_string(cs, "file", "");
 			obs_source_update(capture, cs);
 			obs_data_release(cs);
+			sleep_ms(110);
+			const uint32_t back_w = obs_source_get_width(capture);
 			settle(12);
 			w = obs_source_get_width(capture);
 			h = obs_source_get_height(capture);
 			px = w && h ? render(capture, w, h) : std::vector<uint8_t>();
 			mid = px.empty() ? nullptr : &px[(size_t(h / 2) * w + w / 2) * 4];
-			CHECK(w == 100 && h == 60 && mid && mid[3] > 250 && !(mid[0] > 250 && mid[1] < 5 && mid[2] < 5),
-			      "when the capture goes, the picture is back at the size the capture last had (%ux%u)", w,
-			      h);
+			CHECK(back_w > 100 && back_w < 107 && w == 107 && h == 60 && mid && mid[3] > 250 &&
+				      !(mid[0] > 250 && mid[1] < 5 && mid[2] < 5),
+			      "when the capture goes, the picture is back and glides to its own shape again (%u part-way; then %ux%u)",
+			      back_w, w, h);
+
+			// Asked to fill instead, it takes the size the capture last had.
+			obs_data_set_bool(sd, "own_shape", false);
+			obs_source_update(standby, sd);
+			settle(12);
+			CHECK(obs_source_get_width(capture) == 100 && obs_source_get_height(capture) == 60,
+			      "unticked, the picture fills the size the capture last had (%ux%u)",
+			      obs_source_get_width(capture), obs_source_get_height(capture));
+			obs_data_set_bool(sd, "own_shape", true);
+			obs_source_update(standby, sd);
+			settle(12);
 
 			// Switched off, the source is as it would be without it.
 			obs_source_set_enabled(standby, false);

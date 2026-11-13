@@ -15,10 +15,11 @@ the Free Software Foundation; either version 2 of the License, or
 // attached to it. A capture that is attached and showing a black picture is
 // something, and is left alone.
 //
-// The picture is the start image unless another is chosen. It fills the size
-// the capture had when it last showed something (or the size a filter before
-// this one gives it, such as an Auto Frame's frame), so nothing in the scene
-// moves when the capture arrives; then it fades to the capture.
+// The picture is the start image unless another is chosen. While it waits it
+// keeps its own shape, as tall as the capture last was. When the capture
+// arrives the size glides to the capture's while the picture fades into it;
+// when the capture goes, the size glides back to the picture's shape. Nothing
+// is ever squashed: both are drawn to cover the size of the moment.
 
 #include "standby.hpp"
 
@@ -30,6 +31,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstring>
 #include <mutex>
 #include <string>
@@ -120,6 +122,7 @@ public:
 		let_go();
 		obs_enter_graphics();
 		gs_texrender_destroy(render_);
+		gs_texrender_destroy(render_live_);
 		gs_effect_destroy(effect_);
 		obs_leave_graphics();
 	}
@@ -134,6 +137,7 @@ public:
 		last_w_ = (uint32_t)std::max<long long>(0, obs_data_get_int(settings, "last_width"));
 		last_h_ = (uint32_t)std::max<long long>(0, obs_data_get_int(settings, "last_height"));
 		placed_ = obs_data_get_bool(settings, "placed");
+		own_shape_ = obs_data_get_bool(settings, "own_shape");
 		changed_ = true;
 	}
 
@@ -193,16 +197,58 @@ public:
 			last_w_ = tw;
 			last_h_ = th;
 		}
-		const double want = empty ? 1.0 : 0.0;
-		const double step = fade_s > 0.0 ? seconds / fade_s : 1.0;
+		// The size to be: the capture's while it shows; otherwise the
+		// picture's own shape, as tall as the capture last was, or (asked to
+		// fill) the size the capture last had.
+		const uint32_t pw = picture_ ? obs_source_get_width(picture_) : 0;
+		const uint32_t ph = picture_ ? obs_source_get_height(picture_) : 0;
+		double want_w, want_h;
+		{
+			std::lock_guard lock(mutex_);
+			const double ref_w = last_w_ ? last_w_ : 1920.0, ref_h = last_h_ ? last_h_ : 1080.0;
+			if (!empty && tw && th) {
+				want_w = tw;
+				want_h = th;
+			} else if (own_shape_ && pw && ph) {
+				want_h = ref_h;
+				want_w = ref_h * (double)pw / (double)ph;
+			} else {
+				want_w = ref_w;
+				want_h = ref_h;
+			}
+			// It glides from the size it has to the size to be, however that
+			// changes and whatever changes it: a game starting or ending, or
+			// a filter before this one settling on another shape.
+			if (cur_w_ <= 0.0 || cur_h_ <= 0.0) {
+				cur_w_ = from_w_ = to_w_ = want_w;
+				cur_h_ = from_h_ = to_h_ = want_h;
+				glide_ = 1.0;
+			} else if (std::fabs(want_w - to_w_) > 0.5 || std::fabs(want_h - to_h_) > 0.5) {
+				from_w_ = cur_w_;
+				from_h_ = cur_h_;
+				to_w_ = want_w;
+				to_h_ = want_h;
+				glide_ = 0.0;
+			}
+			if (glide_ < 1.0) {
+				glide_ = fade_s > 0.0 ? std::min(1.0, glide_ + seconds / fade_s) : 1.0;
+				// Eased: gentle at both ends.
+				const double t = glide_ * glide_ * (3.0 - 2.0 * glide_);
+				cur_w_ = from_w_ + (to_w_ - from_w_) * t;
+				cur_h_ = from_h_ + (to_h_ - from_h_) * t;
+			}
+			// The picture is there at once when there is nothing, and fades
+			// away over the same time when the capture arrives.
+			const double step = fade_s > 0.0 ? seconds / fade_s : 1.0;
+			mix_ = empty ? 1.0 : std::max(0.0, mix_ - step);
+			empty_ = empty;
+			live_w_ = empty ? 0 : tw;
+			live_h_ = empty ? 0 : th;
+		}
 		double mix;
 		{
 			std::lock_guard lock(mutex_);
-			// It is there at once when there is nothing; it fades away when
-			// the capture arrives.
-			mix_ = empty ? 1.0 : std::max(want, mix_ - step);
 			mix = mix_;
-			empty_ = empty;
 		}
 		// The picture only runs while it is wanted.
 		const bool wanted = mix > 0.0 && obs_source_showing(parent);
@@ -225,19 +271,22 @@ public:
 	{
 		double mix;
 		bool empty;
+		uint32_t live_w, live_h;
 		{
 			std::lock_guard lock(mutex_);
 			mix = mix_;
 			empty = empty_;
+			live_w = live_w_;
+			live_h = live_h_;
 		}
-		// The capture, when there is one.
-		if (!empty || mix <= 0.0)
-			obs_source_skip_video_filter(source_);
-		obs_source_t *picture = picture_;
 		const uint32_t w = width(), h = height();
-		const uint32_t pw = picture ? obs_source_get_width(picture) : 0;
-		const uint32_t ph = picture ? obs_source_get_height(picture) : 0;
-		if (mix <= 0.0 || !w || !h || !pw || !ph)
+		const bool live = !empty && live_w && live_h;
+		// Settled on the capture: it is drawn as it is.
+		if (live && mix <= 0.0 && w == live_w && h == live_h) {
+			obs_source_skip_video_filter(source_);
+			return;
+		}
+		if (!w || !h)
 			return;
 		if (!effect_) {
 			char *path = obs_module_file("effects/stagekit-fade.effect");
@@ -248,44 +297,96 @@ public:
 					errors ? errors : "file not found");
 			bfree(errors);
 			bfree(path);
-			if (!effect_)
+			if (!effect_) {
+				if (live)
+					obs_source_skip_video_filter(source_);
 				return;
+			}
 		}
-		if (!render_)
-			render_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
-		gs_texrender_reset(render_);
-		// The picture, filling the size: as large as needed to cover it,
-		// centred, with what does not fit cut off.
+		// While the size glides, both the capture and the picture are drawn
+		// to fill the size of the moment: as large as needed to cover it,
+		// centred, what does not fit cut off. Neither is ever squashed.
+		if (live) {
+			if (!render_live_)
+				render_live_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
+			if (gs_texture_t *texture = covered(render_live_, w, h, live_w, live_h, nullptr))
+				draw(texture, w, h, 1.0f);
+		}
+		obs_source_t *picture = picture_;
+		const uint32_t pw = picture ? obs_source_get_width(picture) : 0;
+		const uint32_t ph = picture ? obs_source_get_height(picture) : 0;
+		if (mix > 0.0 && pw && ph) {
+			if (!render_)
+				render_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
+			if (gs_texture_t *texture = covered(render_, w, h, pw, ph, picture))
+				draw(texture, w, h, (float)mix);
+		}
+	}
+
+	bool showing()
+	{
+		std::lock_guard lock(mutex_);
+		return empty_;
+	}
+	obs_source_t *source() const { return source_; }
+
+private:
+	// The size the source has through this filter: the one it is gliding
+	// through, in whole pixels.
+	uint32_t size(bool across)
+	{
+		std::lock_guard lock(mutex_);
+		const double now = across ? cur_w_ : cur_h_;
+		if (now >= 1.0)
+			return (uint32_t)std::lround(now);
+		if (last_w_ && last_h_)
+			return across ? last_w_ : last_h_;
+		return across ? 1920 : 1080;
+	}
+
+	// Draws a source (or, with none given, what comes before this filter)
+	// into `into` at w x h, covering it. Returns the texture.
+	gs_texture_t *covered(gs_texrender_t *into, uint32_t w, uint32_t h, uint32_t sw, uint32_t sh,
+			      obs_source_t *source)
+	{
+		gs_texrender_reset(into);
 		const bool was_linear = gs_set_linear_srgb(false);
 		const bool was_srgb = gs_framebuffer_srgb_enabled();
 		gs_enable_framebuffer_srgb(false);
 		bool drawn = false;
-		if (gs_texrender_begin(render_, w, h)) {
+		if (gs_texrender_begin(into, w, h)) {
 			vec4 clear;
 			vec4_zero(&clear);
 			gs_clear(GS_CLEAR_COLOR, &clear, 0.0f, 0);
 			gs_ortho(0.0f, (float)w, 0.0f, (float)h, -100.0f, 100.0f);
-			const float scale = std::max((float)w / (float)pw, (float)h / (float)ph);
+			const float scale = std::max((float)w / (float)sw, (float)h / (float)sh);
 			gs_blend_state_push();
 			gs_blend_function(GS_BLEND_ONE, GS_BLEND_INVSRCALPHA);
 			gs_matrix_push();
-			gs_matrix_translate3f(((float)w - (float)pw * scale) / 2.0f,
-					      ((float)h - (float)ph * scale) / 2.0f, 0.0f);
+			gs_matrix_translate3f(((float)w - (float)sw * scale) / 2.0f,
+					      ((float)h - (float)sh * scale) / 2.0f, 0.0f);
 			gs_matrix_scale3f(scale, scale, 1.0f);
-			obs_source_video_render(picture);
+			if (source)
+				obs_source_video_render(source);
+			else
+				obs_source_skip_video_filter(source_);
 			gs_matrix_pop();
 			gs_blend_state_pop();
-			gs_texrender_end(render_);
+			gs_texrender_end(into);
 			drawn = true;
 		}
 		gs_enable_framebuffer_srgb(was_srgb);
 		gs_set_linear_srgb(was_linear);
-		gs_texture_t *texture = drawn ? gs_texrender_get_texture(render_) : nullptr;
-		if (!texture)
-			return;
+		return drawn ? gs_texrender_get_texture(into) : nullptr;
+	}
+
+	// Draws a texture over the whole size at a strength from 0 to 1.
+	void draw(gs_texture_t *texture, uint32_t w, uint32_t h, float strength)
+	{
 		gs_eparam_t *image = gs_effect_get_param_by_name(effect_, "image");
-		gs_effect_set_float(gs_effect_get_param_by_name(effect_, "opacity"), (float)mix);
+		gs_effect_set_float(gs_effect_get_param_by_name(effect_, "opacity"), strength);
 		const bool linear = gs_get_linear_srgb();
+		const bool was_srgb = gs_framebuffer_srgb_enabled();
 		gs_enable_framebuffer_srgb(linear);
 		if (linear)
 			gs_effect_set_texture_srgb(image, texture);
@@ -297,28 +398,6 @@ public:
 			gs_draw_sprite(texture, 0, w, h);
 		gs_blend_state_pop();
 		gs_enable_framebuffer_srgb(was_srgb);
-	}
-
-	bool showing()
-	{
-		std::lock_guard lock(mutex_);
-		return empty_;
-	}
-	obs_source_t *source() const { return source_; }
-
-private:
-	// The size the source has through this filter: what comes before it, when
-	// that has a size, and otherwise what the capture last had.
-	uint32_t size(bool across)
-	{
-		const uint32_t bw = before_width(source_), bh = before_height(source_);
-		const uint32_t now = across ? bw : bh, other = across ? bh : bw;
-		if (now && other)
-			return now;
-		std::lock_guard lock(mutex_);
-		if (last_w_ && last_h_)
-			return across ? last_w_ : last_h_;
-		return across ? 1920 : 1080;
 	}
 
 	void let_go()
@@ -374,12 +453,17 @@ private:
 	uint32_t last_w_ = 0, last_h_ = 0;
 	bool placed_ = false;
 	bool changed_ = true;
-	double mix_ = 0.0;   // how much of the picture shows
-	bool empty_ = false; // the capture has nothing to show
+	double mix_ = 0.0;                 // how much of the picture shows
+	bool empty_ = false;               // the capture has nothing to show
+	bool own_shape_ = true;            // while waiting, the picture keeps its own shape
+	uint32_t live_w_ = 0, live_h_ = 0; // the capture's size while it shows
+	// The size, gliding from one to the next.
+	double cur_w_ = 0.0, cur_h_ = 0.0, from_w_ = 0.0, from_h_ = 0.0, to_w_ = 0.0, to_h_ = 0.0, glide_ = 1.0;
 	// Used on the graphics thread only.
 	obs_source_t *picture_ = nullptr;
 	bool holding_ = false;
 	gs_texrender_t *render_ = nullptr;
+	gs_texrender_t *render_live_ = nullptr;
 	gs_effect_t *effect_ = nullptr;
 };
 
@@ -428,8 +512,11 @@ obs_properties_t *get_properties(void *data)
 		},
 		&fill);
 
+	obs_property_t *own_shape = obs_properties_add_bool(props, "own_shape", obs_module_text("Standby.OwnShape"));
+	obs_property_set_long_description(own_shape, obs_module_text("Standby.OwnShape.Tip"));
+
 	obs_property_t *fade =
-		obs_properties_add_int_slider(props, "fade_ms", obs_module_text("Standby.Fade"), 0, 2000, 50);
+		obs_properties_add_int_slider(props, "fade_ms", obs_module_text("Standby.Fade"), 0, 3000, 50);
 	obs_property_int_set_suffix(fade, " ms");
 	obs_property_set_long_description(fade, obs_module_text("Standby.Fade.Tip"));
 
@@ -460,7 +547,8 @@ void register_standby()
 	};
 	info.get_defaults = [](obs_data_t *settings) {
 		obs_data_set_default_int(settings, "picture", (int)Picture::StartImage);
-		obs_data_set_default_int(settings, "fade_ms", 300);
+		obs_data_set_default_int(settings, "fade_ms", 800);
+		obs_data_set_default_bool(settings, "own_shape", true);
 		obs_data_set_default_bool(settings, "placed", false);
 	};
 	info.get_properties = get_properties;

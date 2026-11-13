@@ -204,6 +204,30 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Standby Picture keeps its shape and morphs (0.1.0-beta63)
+
+The owner, on beta62, with a screenshot (the start image cropped to a near-square box in the game's
+place): "when I launched an emulator game, the start image placeholder instantly changed ratio then
+after a while switch directly to the emulator capture without a smooth transition. I'd like the start
+image or whatever placeholder is selected to maintain its ratio, and smoothly morph or transition to
+the ratio of the live capture ... Also ending the game did not revert the placeholder back to its
+original ratio."
+
+- So the filter works on Windows: a Game Capture does report no size when nothing is hooked.
+- While waiting the size is now the picture's own shape at the capture's last height (`own_shape`,
+  default on). The size is the filter's own and always glides (smoothstep over `fade_ms`, now 800 by
+  default and labelled *Change over*) to wherever it should be, so a filter before it changing shape
+  cannot make it jump. During a glide the capture and the picture are each drawn to cover the size
+  of the moment into their own texrender and cross-faded.
+- Not seen on Windows yet. With an Auto Frame before it, the capture's size keeps changing for a
+  while after a game starts (trimming, gliding); each change restarts the glide from where it is.
+  Whether that reads as one smooth morph on the owner's machine is the thing to ask.
+- **Asked, not built yet**: a limit while resizing by hand. "I'd like to be able to resize objects
+  the way i usually would, like dragging an edge ... but I'd like to have a border/edge limiter ...
+  that would prevent the object from being extended or scaled ... to a point that it would collide
+  with another object, or come within the specified pixel range ... it should follow the same
+  visible pixels and other rules."
+
 ## Standby Picture (0.1.0-beta62)
 
 The owner: "is there a possibility of adding a new feature/functionality/filter that allows the start
