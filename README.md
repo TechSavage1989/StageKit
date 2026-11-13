@@ -371,7 +371,10 @@ Game Capture, Window Capture or other live source.
 | Picture | *The start image* (the default: the one set in the StageKit Background dock), *An image or video file*, or *Another source* |
 | File / Source | The file or source to show, for those two choices. A video loops, without sound |
 | Picture keeps its shape | On (the default): the picture is shown whole in its own shape. Off: it fills the size the capture last had, with what does not fit cut off |
-| Change over | How long the change between picture and capture takes, in both directions. 0 is a cut |
+| Change with | How the picture gives way to the capture: a fade (the default), a cut, sliding away or wiping in any of four directions, or a zoom and fade. It comes back the same way in reverse |
+| To the capture / Back to the picture | How long each change takes |
+| Easing curve / Easing direction | The motion the change follows |
+| Size glides too | On (the default): the size glides between the two shapes over the same time. Off: the size changes at once |
 
 When first added it puts itself straight after an Auto Frame if there is one, and otherwise first in
 the list; after that the order is yours.
@@ -427,6 +430,8 @@ any *source* to switch that source's other filters. Windows only.
    decides. Choose whether it counts when it has a window open or only when that window is in front.
 2. **Show and switch on**: pick items and filters and add them to the lists. *Do the opposite* hides and
    switches off while the program is here instead.
+3. **Change with** and **Lasting**: how the items appear and disappear. A fade to begin with; any other
+   transition OBS has, a cut, or whatever is set on each item.
 
 While the program is here the items are shown and the filters are on; when it goes they are hidden and
 off. It acts when the program appears or goes, so a change you make by hand in between is kept until
@@ -517,7 +522,8 @@ Studio Mode).
   diagonals slide across, then up or down. The centre button centres the item in the free space around
   it. *Use visible pixels* and *Ignore shadows* in the Arrange box decide what counts as an edge, and
   an item brought along is never in the way. With *In every scene*, the item lands on the same spot of
-  the screen in each of its scenes. It glides for the *Travel time*; a run of presses made while it is
+  the screen in each of its scenes. It glides for the *Travel time*, following the *Motion* you choose
+  (the curve, and whether it eases at the start, the end or both); a run of presses made while it is
   still moving is one step for Undo.
 - *Make 9 position keys* adds a Send To filter for each one **to the item's own source**,
   named after the position ("Top right"). Point a Stream Deck *Filter* key at the camera and one of
@@ -612,6 +618,7 @@ off, and the sources are shown or hidden to match.
 | In | *Every scene they are in*, or *The scenes listed below* |
 | Scenes | The scenes to act in, when you chose to list them |
 | When this is on | *They are shown* (off hides them) or *They are hidden* (off shows them) |
+| Change with / Lasting | How each item appears and disappears: a fade (the default), any other transition OBS has, a cut, or whatever is already set on the item; and for how long |
 | Do it now | Shows or hides them to match how the filter is switched now |
 
 It acts when it is switched, not all the time, so something you show or hide by hand stays until the
@@ -626,7 +633,9 @@ Add **Visibility Link (StageKit)** as a filter on a *scene*, once per set of ite
 
 With *Show only one at a time*, showing one item hides the others in the set. With *Show and hide
 together*, showing or hiding one does the same to the rest. It follows whatever shows or hides an item:
-the eye icon, a Stream Deck *Source* key, a hotkey. Switch the filter off to pause it.
+the eye icon, a Stream Deck *Source* key, a hotkey. Switch the filter off to pause it. *Change with*
+and *Lasting* choose how the items it shows and hides appear and disappear: a fade to begin with, any
+other transition OBS has, a cut, or whatever is set on each item.
 
 ### Match Item
 

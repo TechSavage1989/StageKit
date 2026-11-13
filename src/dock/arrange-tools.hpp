@@ -41,6 +41,10 @@ struct ArrangeOptions {
 	bool send_every_scene = true;
 	// The Send to arrows slide the item to the next edge instead of sending it to a spot.
 	bool send_slide = false;
+	// How the dock's Send to moves glide: the curve and which end it shapes
+	// (EaseCurve and EaseMode as numbers; cubic, in and out).
+	int send_curve = 3;
+	int send_mode = 0;
 	// Copy transform to chosen scenes: the scenes it copies to, by name.
 	std::vector<std::string> copy_scenes;
 };

@@ -36,6 +36,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "active-app.hpp"
 
 #include "auto-capture.hpp"
+#include "../common/item-transition.hpp"
 #include "../common/pick-list.hpp"
 #include "../common/scene-util.hpp"
 
@@ -55,8 +56,6 @@ namespace stagekit {
 namespace {
 
 // "transition" in the settings: one of these, or the id of an OBS transition.
-const char *const kCut = "none";  // items change at once; their transitions are taken off
-const char *const kKeep = "keep"; // whatever is set on each item is left alone
 
 std::string lowered(std::string text)
 {
@@ -91,35 +90,6 @@ std::string program_of(obs_sceneitem_t *item)
 		}
 	}
 	return lowered(program);
-}
-
-// Gives an item the show and hide transition asked for, if it does not have
-// them already.
-void set_transitions(obs_sceneitem_t *item, const std::string &kind, uint32_t ms)
-{
-	if (kind == kKeep)
-		return;
-	for (bool show : {true, false}) {
-		obs_source_t *now = obs_sceneitem_get_transition(item, show);
-		if (kind == kCut) {
-			if (now)
-				obs_sceneitem_set_transition(item, show, nullptr);
-			continue;
-		}
-		const char *now_id = now ? obs_source_get_unversioned_id(now) : nullptr;
-		if (!now_id || kind != now_id) {
-			const char *of = obs_source_get_name(obs_sceneitem_get_source(item));
-			const std::string name =
-				std::string(of ? of : "") + (show ? " Show Transition" : " Hide Transition");
-			obs_source_t *made = obs_source_create_private(kind.c_str(), name.c_str(), nullptr);
-			if (!made)
-				continue; // that kind of transition is not installed
-			obs_sceneitem_set_transition(item, show, made);
-			obs_source_release(made);
-		}
-		if (obs_sceneitem_get_transition_duration(item, show) != ms)
-			obs_sceneitem_set_transition_duration(item, show, ms);
-	}
 }
 
 class ActiveApp {
@@ -261,7 +231,7 @@ public:
 				if (first_visible < 0)
 					first_visible = (int)i;
 			}
-			set_transitions(slot.item, transition, transition_ms);
+			set_item_transitions(slot.item, transition, transition_ms);
 		}
 		// The other open apps' captures keep running while this scene is on
 		// show, so whichever is switched to has a picture straight away.
@@ -320,7 +290,7 @@ public:
 					continue;
 				hand.push_back(item);
 				hand_shown_as.push_back(name);
-				set_transitions(item, transition, transition_ms);
+				set_item_transitions(item, transition, transition_ms);
 			}
 			int held = -1, newly = -1;
 			for (size_t i = 0; i < hand.size(); i++) {
@@ -622,28 +592,8 @@ obs_properties_t *get_properties(void *data)
 	obs_property_t *follow = obs_properties_add_bool(props, "follow", obs_module_text("Active.Follow"));
 	obs_property_set_long_description(follow, obs_module_text("Active.Follow.Tip"));
 
-	// How the change looks: any transition OBS has, except the ones that need
-	// a file of their own.
-	obs_property_t *transition = obs_properties_add_list(props, "transition", obs_module_text("Active.Transition"),
-							     OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
-	obs_property_list_add_string(transition, obs_module_text("Active.Transition.Cut"), kCut);
-	const char *id = nullptr;
-	for (size_t i = 0; obs_enum_transition_types(i, &id); i++) {
-		if (!id || strcmp(id, "cut_transition") == 0 || strcmp(id, "obs_stinger_transition") == 0)
-			continue;
-		const char *shown_as = obs_source_get_display_name(id);
-		obs_property_list_add_string(transition, shown_as ? shown_as : id, id);
-	}
-	obs_property_list_add_string(transition, obs_module_text("Active.Transition.Keep"), kKeep);
-	obs_property_set_long_description(transition, obs_module_text("Active.Transition.Tip"));
-	obs_property_set_modified_callback(transition, [](obs_properties_t *p, obs_property_t *, obs_data_t *settings) {
-		const std::string kind = obs_data_get_string(settings, "transition");
-		obs_property_set_visible(obs_properties_get(p, "transition_ms"), kind != kCut && kind != kKeep);
-		return true;
-	});
-	obs_property_t *time = obs_properties_add_int_slider(props, "transition_ms",
-							     obs_module_text("Active.TransitionTime"), 50, 2000, 50);
-	obs_property_int_set_suffix(time, " ms");
+	// How the change looks.
+	add_item_transition_properties(props);
 	obs_property_t *ready = obs_properties_add_bool(props, "ready", obs_module_text("Active.Ready"));
 	obs_property_set_long_description(ready, obs_module_text("Active.Ready.Tip"));
 

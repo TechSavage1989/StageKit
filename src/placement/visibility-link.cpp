@@ -22,6 +22,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include "visibility-link.hpp"
 
+#include "../common/item-transition.hpp"
 #include "../common/pick-list.hpp"
 #include "../common/scene-util.hpp"
 
@@ -69,6 +70,8 @@ public:
 		const std::vector<std::string> names = names_in(settings);
 		std::lock_guard lock(mutex_);
 		mode_ = static_cast<LinkMode>(obs_data_get_int(settings, "mode"));
+		transition_ = item_transition_kind(settings);
+		transition_ms_ = item_transition_ms(settings);
 		names_ = names;
 	}
 
@@ -94,11 +97,15 @@ public:
 		std::vector<std::pair<std::string, bool>> changes;
 		LinkMode mode;
 		std::vector<std::string> names;
+		std::string transition;
+		uint32_t transition_ms = 0;
 		{
 			std::lock_guard lock(mutex_);
 			changes.swap(pending_);
 			mode = mode_;
 			names = names_;
+			transition = transition_;
+			transition_ms = transition_ms_;
 		}
 		if (changes.empty() || !parent_ || !obs_source_enabled(source_))
 			return;
@@ -111,8 +118,10 @@ public:
 					continue;
 				obs_sceneitem_t *item = find_item(parent_, name);
 				const bool want = mode == LinkMode::Together ? visible : false;
-				if (item && obs_sceneitem_visible(item) != want)
+				if (item && obs_sceneitem_visible(item) != want) {
+					set_item_transitions(item, transition, transition_ms);
 					obs_sceneitem_set_visible(item, want);
+				}
 			}
 		}
 		applying_ = false;
@@ -163,6 +172,8 @@ private:
 	obs_source_t *source_;
 	obs_source_t *parent_ = nullptr;
 	std::mutex mutex_;
+	std::string transition_ = kTransitionFade;
+	uint32_t transition_ms_ = 300;
 	LinkMode mode_ = LinkMode::OnlyOne;
 	std::vector<std::string> names_;
 	std::vector<std::pair<std::string, bool>> pending_;
@@ -187,6 +198,7 @@ obs_properties_t *get_properties(void *data)
 	};
 	pick_list_add(props, self ? self->source() : nullptr, items);
 
+	add_item_transition_properties(props);
 	obs_property_t *help = obs_properties_add_text(props, "help", obs_module_text("Link.Help"), OBS_TEXT_INFO);
 	obs_property_text_set_info_word_wrap(help, true);
 	return props;
@@ -214,6 +226,7 @@ void register_visibility_link()
 	};
 	info.get_defaults = [](obs_data_t *settings) {
 		obs_data_set_default_int(settings, "mode", (int)LinkMode::OnlyOne);
+		item_transition_defaults(settings);
 	};
 	info.get_properties = get_properties;
 	info.video_tick = [](void *data, float) {

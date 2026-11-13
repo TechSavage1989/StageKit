@@ -45,6 +45,8 @@ target_sources(
     src/plugin-main.cpp
     src/common/easing.cpp
     src/common/easing.hpp
+    src/common/item-transition.cpp
+    src/common/item-transition.hpp
     src/ambient/ambient-background.cpp
     src/ambient/ambient-background.hpp
     src/common/kawase-blur.cpp
