@@ -636,6 +636,17 @@ public:
 		guides_ = new QCheckBox(tr_text("Arrange.Guides"), arrange_box);
 		guides_->setObjectName("arrangeGuides");
 		guides_->setToolTip(tr_text("Arrange.Guides.Tip"));
+		// Says at once whether guides can show: a frame flashes round the
+		// canvas in the preview, or the preview was not found.
+		QObject::connect(guides_, &QCheckBox::toggled, this, [this](bool on) {
+			if (!on || storing_)
+				return;
+			QTimer::singleShot(300, this, [this] {
+				if (guides_->isChecked())
+					say(tr_text(guides_preview_state() == 2 ? "Arrange.Guides.NoPreview"
+										: "Arrange.Guides.On"));
+			});
+		});
 		auto *within_row = new QFormLayout();
 		snap_within_ = new QSpinBox(arrange_box);
 		snap_within_->setObjectName("snapWithin");
@@ -1075,6 +1086,13 @@ private:
 		const Box box = on_its_way ? slide_box_ : scene_box(scene, item);
 		const Offset by = slide_offset(scene, item, direction % 3 - 1, direction / 3 - 1, margin_->value(), how,
 					       along, &from);
+		// For a report that a slide stopped in the wrong place: what was measured.
+		obs_log(LOG_INFO,
+			"Slide: '%s' counts as %.0f x %.0f at %.0f, %.0f (its box is %.0f x %.0f at %.0f, %.0f; "
+			"visible pixels %s, shadows & outlines %s); moving %.0f, %.0f",
+			item_->currentText().toUtf8().constData(), from.w, from.h, from.x, from.y, box.w, box.h, box.x,
+			box.y, how.visible_pixels ? "on" : "off", how.leave_out_shadows ? "ignored" : "counted", by.x,
+			by.y);
 		if (std::fabs(by.x) < 0.5 && std::fabs(by.y) < 0.5) {
 			say(tr_text("Dock.SlideNoRoom").arg(item_->currentText()));
 			obs_source_release(scene);

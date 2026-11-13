@@ -4043,6 +4043,31 @@ int main(int argc, char **argv)
 					CHECK(overlay && shown().isEmpty(),
 					      "guides stay out of the way until they are switched on");
 					tick_box("arrangeGuides", true);
+					// Switching them on flashes a frame round the canvas, so it is
+					// plain at once that lines show over the preview.
+					for (int i = 0; i < 4; i++) {
+						QCoreApplication::processEvents();
+						sleep_ms(40);
+					}
+					{
+						const QPoint at = stand_in.mapToGlobal(QPoint(0, 0));
+						QList<QRect> hello = shown();
+						auto has = [&](const QRect &r) {
+							return hello.contains(r);
+						};
+						CHECK(hello.size() == 4 &&
+							      has(QRect(at.x() + 8, at.y() + 37, 4, 326)) &&
+							      has(QRect(at.x() + 588, at.y() + 37, 4, 326)) &&
+							      has(QRect(at.x() + 10, at.y() + 35, 580, 4)) &&
+							      has(QRect(at.x() + 10, at.y() + 361, 580, 4)),
+						      "switching guides on flashes a frame round the canvas in the preview (%d lines)",
+						      (int)hello.size());
+						for (int i = 0; i < 45 && !shown().isEmpty(); i++) {
+							QCoreApplication::processEvents();
+							sleep_ms(40);
+						}
+						CHECK(shown().isEmpty(), "and the frame goes after a moment");
+					}
 					click("arrange_left");
 					for (int i = 0; i < 6; i++) {
 						QCoreApplication::processEvents();
@@ -4478,6 +4503,111 @@ int main(int argc, char **argv)
 						CHECK(std::fabs(sent.x - 530) < 0.6 && std::fabs(sent.y - 155) < 0.6,
 						      "unticked, the arrows send it to the screen position again (%.0f, %.0f)",
 						      sent.x, sent.y);
+						// The report: a browser widget with a shadow was slid, and sent,
+						// by its box. A source that draws itself (a Cropped View of the
+						// padded badge: 200x100, its picture the middle 100x40) with a
+						// shadow below and right, measured by its own pixels.
+						{
+							obs_data_t *wd = obs_data_create();
+							obs_data_set_string(wd, "source", "Padded Badge");
+							obs_data_set_int(wd, "crop_to", 0);
+							obs_source_t *widget = obs_source_create(
+								"stagekit_cropped_view", "Badge Widget", wd, nullptr);
+							obs_data_release(wd);
+							obs_data_t *sd = obs_data_create();
+							obs_data_set_bool(sd, "shadow", true);
+							obs_data_set_double(sd, "offset_x", 20);
+							obs_data_set_double(sd, "offset_y", 20);
+							obs_data_set_double(sd, "softness", 0);
+							obs_data_set_bool(sd, "screen_px", false);
+							obs_data_set_bool(sd, "keep_place", true);
+							for (const char *side : {"adjusted_left", "adjusted_top",
+										 "adjusted_right", "adjusted_bottom"})
+								obs_data_set_int(sd, side, 0);
+							obs_source_t *widget_shadow = obs_source_create(
+								"stagekit_shadow_backdrop", "Shadow, Glow & Outline",
+								sd, nullptr);
+							obs_data_release(sd);
+							obs_source_filter_add(widget, widget_shadow);
+							obs_sceneitem_t *iw = obs_scene_add(as, widget);
+							obs_sceneitem_set_visible(ibadge, false);
+							place(ia, 500, 300);
+							place(iw, 300, 250);
+							for (int i = 0;
+							     i < 40 && (items_box->findText("Badge Widget") < 0 ||
+									obs_source_get_width(widget) < 200);
+							     i++) {
+								QCoreApplication::processEvents();
+								sleep_ms(50);
+							}
+							sleep_ms(300);
+							items_box->setCurrentText("Badge Widget");
+							margin->setValue(10);
+							travel->setValue(0);
+							auto go = [&](int index) {
+								click(QString("grid%1").arg(index).toUtf8().constData());
+								for (int i = 0; i < 4; i++) {
+									QCoreApplication::processEvents();
+									sleep_ms(40);
+								}
+								return pos_of(iw);
+							};
+							slide->setChecked(true);
+							go(3);
+							const vec2 slid = go(1);
+							CHECK(std::fabs(slid.x + 40) < 1.6 &&
+								      std::fabs(slid.y + 20) < 1.6,
+							      "a source that draws itself, with a shadow, slides until its own picture is the edge distance from the screen's edge (%.0f, %.0f; wanted -40, -20)",
+							      slid.x, slid.y);
+							slide->setChecked(false);
+							const vec2 corner = go(8);
+							CHECK(std::fabs(corner.x - 480) < 1.6 &&
+								      std::fabs(corner.y - 280) < 1.6,
+							      "the Send to buttons keep the edge distance to the picture too, so the shadow reaches past it (%.0f, %.0f; wanted 480, 280)",
+							      corner.x, corner.y);
+							tick_box("arrangeNoShadow", false);
+							const vec2 shadowed = go(8);
+							CHECK(std::fabs(shadowed.x - 460) < 1.6 &&
+								      std::fabs(shadowed.y - 260) < 1.6,
+							      "with shadows counted, the shadow keeps the edge distance (%.0f, %.0f; wanted 460, 260)",
+							      shadowed.x, shadowed.y);
+							tick_box("arrangeVisible", false);
+							const vec2 boxed = go(8);
+							CHECK(std::fabs(boxed.x - 410) < 1.6 &&
+								      std::fabs(boxed.y - 230) < 1.6,
+							      "without 'Use visible pixels', the box does (%.0f, %.0f; wanted 410, 230)",
+							      boxed.x, boxed.y);
+							tick_box("arrangeVisible", true);
+							tick_box("arrangeNoShadow", true);
+
+							// What a filter takes away is not picture either: edges
+							// trimmed 55 px leave the middle of the badge.
+							obs_data_t *cd = obs_data_create();
+							obs_data_set_double(cd, "size", 0.0);
+							obs_data_set_double(cd, "inset", 55.0);
+							obs_data_set_bool(cd, "screen_px", false);
+							obs_data_set_bool(cd, "placed", true);
+							obs_source_t *trim = obs_source_create(
+								"stagekit_corners", "Corners & Edges", cd, nullptr);
+							obs_data_release(cd);
+							obs_source_filter_add(widget, trim);
+							for (int i = 0; i < 6; i++) {
+								QCoreApplication::processEvents();
+								sleep_ms(50);
+							}
+							const vec2 trimmed = go(0);
+							CHECK(std::fabs(trimmed.x + 45) < 1.6 &&
+								      std::fabs(trimmed.y + 45) < 1.6,
+							      "and what a filter trims away does not count as picture (%.0f, %.0f; wanted -45, -45)",
+							      trimmed.x, trimmed.y);
+							obs_sceneitem_remove(iw);
+							obs_source_release(trim);
+							obs_source_release(widget_shadow);
+							obs_source_release(widget);
+							obs_sceneitem_set_visible(ibadge, true);
+							items_box->setCurrentText("Block A");
+						}
+
 						margin->setValue(30);
 						travel->setValue(500);
 						if (c_group)

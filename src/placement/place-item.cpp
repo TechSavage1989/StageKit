@@ -28,6 +28,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/easing.hpp"
 #include "../common/scene-util.hpp"
 #include "../dock/arrange.hpp"
+#include "../dock/arrange-tools.hpp"
 
 #include <obs-module.h>
 #include <obs-frontend-api.h>
@@ -85,6 +86,9 @@ struct Settings {
 	EaseMode mode = EaseMode::InOut;
 	std::string linked;
 	bool flip_linked = true;
+	// A place on the screen is measured the way the Arrange options say
+	// (what is visible, without shadows); off, by the item's whole box.
+	bool as_arranged = true;
 	// Send To only: which scenes the move happens in.
 	ApplyIn apply_in = ApplyIn::Every;
 	std::string apply_scene; // the scene, for ApplyIn::Chosen
@@ -293,6 +297,7 @@ void PlaceItem::update(obs_data_t *settings)
 	s.mode = static_cast<EaseMode>(obs_data_get_int(settings, "ease_mode"));
 	s.linked = obs_data_get_string(settings, "linked");
 	s.flip_linked = obs_data_get_bool(settings, "flip_linked");
+	s.as_arranged = obs_data_get_bool(settings, "as_arranged");
 	// 0.1.0-beta8 to beta46 kept this in "where", where the scene on screen
 	// was the default and what the dock wrote into every key it made. That
 	// setting is no longer read, so those keys take the new default.
@@ -413,10 +418,18 @@ void PlaceItem::plan(const Settings &s, obs_source_t *scene, obs_sceneitem_t *it
 	} else {
 		const int column = static_cast<int>(s.destination) % 3;
 		const int row = static_cast<int>(s.destination) / 3;
-		target.x = column == 0   ? s.margin
-			   : column == 1 ? (canvas_w - box.w) / 2.0
-					 : canvas_w - s.margin - box.w;
-		target.y = row == 0 ? s.margin : row == 1 ? (canvas_h - box.h) / 2.0 : canvas_h - s.margin - box.h;
+		// The edge distance is to what the Arrange options count as the
+		// item: its visible picture, with or without its shadow. The box
+		// goes wherever that puts it.
+		const Box seen = s.as_arranged ? measure_item(scene, item, arrange_options().how) : box;
+		const double seen_x = column == 0   ? s.margin
+				      : column == 1 ? (canvas_w - seen.w) / 2.0
+						    : canvas_w - s.margin - seen.w;
+		const double seen_y = row == 0   ? s.margin
+				      : row == 1 ? (canvas_h - seen.h) / 2.0
+						 : canvas_h - s.margin - seen.h;
+		target.x = seen_x - (seen.x - box.x);
+		target.y = seen_y - (seen.y - box.y);
 	}
 	leader_.from_x = box.x;
 	leader_.from_y = box.y;
@@ -597,6 +610,7 @@ bool destination_modified(obs_properties_t *props, obs_property_t *, obs_data_t 
 	const bool spot = destination == Destination::Spot;
 	const bool linked = *obs_data_get_string(settings, "linked") != 0;
 	obs_property_set_visible(obs_properties_get(props, "margin"), !saved && !spot);
+	obs_property_set_visible(obs_properties_get(props, "as_arranged"), !saved && !spot);
 	obs_property_set_visible(obs_properties_get(props, "spot_x"), spot);
 	obs_property_set_visible(obs_properties_get(props, "spot_y"), spot);
 	obs_property_set_visible(obs_properties_get(props, "saved_x"), saved);
@@ -632,6 +646,9 @@ obs_properties_t *get_properties(void *data)
 	obs_property_t *margin =
 		obs_properties_add_float_slider(props, "margin", obs_module_text("Place.Margin"), 0.0, 400.0, 1.0);
 	obs_property_float_set_suffix(margin, " px");
+	obs_property_t *as_arranged =
+		obs_properties_add_bool(props, "as_arranged", obs_module_text("Place.AsArranged"));
+	obs_property_set_long_description(as_arranged, obs_module_text("Place.AsArranged.Tip"));
 	obs_properties_add_float(props, "saved_x", obs_module_text("Place.SavedX"), -20000.0, 20000.0, 1.0);
 	obs_properties_add_float(props, "saved_y", obs_module_text("Place.SavedY"), -20000.0, 20000.0, 1.0);
 	obs_properties_add_bool(props, "restore_size", obs_module_text("Place.RestoreSize"));
@@ -713,6 +730,7 @@ void get_defaults(obs_data_t *settings)
 	obs_data_set_default_int(settings, "ease_curve", (int)EaseCurve::Cubic);
 	obs_data_set_default_int(settings, "ease_mode", (int)EaseMode::InOut);
 	obs_data_set_default_bool(settings, "flip_linked", true);
+	obs_data_set_default_bool(settings, "as_arranged", true);
 	obs_data_set_default_int(settings, "apply_in", (int)ApplyIn::Every);
 }
 

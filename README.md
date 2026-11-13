@@ -421,6 +421,8 @@ Add **Send To (StageKit)** as a filter on the source you want to move, such as y
 spot and name each after its spot ("Camera top right").
 
 1. Choose where to send it: one of nine screen positions with a margin from the edge, or a saved spot.
+   The margin is kept to the picture you can see, as the dock's Arrange options say; untick *Use the
+   Arrange options* to keep it to the item's box.
    For a saved spot, drag the camera where you want it in the preview and press *Save the item's
    current spot*. Its size is saved too if you tick *Also restore the item's size*. *A spot on the
    screen* puts the item's left and top edges at the numbers you give, in every scene alike; the
@@ -442,6 +444,8 @@ Place Item does the same job from the scene's side. Add **Place Item (StageKit)*
 
 1. Choose the item to move.
 2. Choose where to send it: one of nine screen positions with a margin from the edge, or a saved spot.
+   The margin is kept to the picture you can see, as the dock's Arrange options say; untick *Use the
+   Arrange options* to keep it to the item's box.
    For a saved spot, drag the item where you want it and press *Save the item's current spot*.
 3. Optionally choose an item to bring along. It keeps its place relative to the moved item and flips to
    the other side if it would leave the screen.
@@ -465,6 +469,8 @@ Studio Mode).
 - Click one of the nine positions and the item glides there. With *In every scene* ticked (the
   default) its source is moved in every scene it is in, keys you make do the same, and one Undo takes
   the whole move back. Untick it to change only the scene you are working on.
+  The *Edge distance* is kept to what the Arrange options below count as the item: with *Use visible
+  pixels* the picture you can see, and with *Ignore shadows & outlines* a shadow reaches past it.
 - Tick **Slide to the next edge** and the arrows slide the item instead: it moves that way until it
   comes within the *Edge distance* of the next edge it meets, which is the near side of another item in
   its path, or the screen's edge. Press again and it goes through that edge: first to the item's far
@@ -526,7 +532,8 @@ Options:
   sized and slid by themselves and their shadows reach past them. Unticked, each item counts together
   with everything its filters draw, so with *Same width* the picture and its shadow together come out
   as wide as the other item and its shadow. (When a source's filters change its size in another way,
-  as an Auto Frame does, the picture is measured as it is before its first shadow.)
+  as an Auto Frame does, the picture is measured as it is before its first shadow.) What a filter
+  takes away, such as trimmed edges or a mask, does not count as picture either.
 - **Keep shape when resizing** (on by default) grows or shrinks an item evenly. Switch it off and
   *Same width* or *Same height* changes only that direction, which stretches the picture.
 - **Snap on release** snaps an item by itself after you drag it in the preview and let go. *Snap
@@ -534,8 +541,11 @@ Options:
 - **Guides in the preview** (off by default) draws a line across the preview where an item you are
   dragging lines up with the screen or another item, and where a line-up tool has just put things.
   The lines are on your screen only, never in the stream or a recording. They are placed for a preview
-  set to *Scale to Window*. Each line is a thin window of its own laid over the preview; OBS's log
-  says when guides are switched on, when a drag is first seen, and where the first line was put.
+  set to *Scale to Window*. When you tick the box, a frame flashes round the picture in the preview
+  for a moment to show it is working, and the dock says so; if the dock says it cannot find OBS's
+  preview, the lines cannot be shown. Each line is a thin window of its own laid over the preview;
+  OBS's log says when guides are switched on, when a drag is first seen, and where the first line
+  was put.
 
 ### Show/Hide Animation
 
