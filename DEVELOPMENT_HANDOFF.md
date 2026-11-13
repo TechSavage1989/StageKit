@@ -204,6 +204,30 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Groups; a pixel at the edge; measuring on the drawing thread (0.1.0-beta54)
+
+The owner, on beta53: "seems better, but it may be leaving a pixel at screen edges" (two screenshots:
+the widget at the top-left with edge distance 0, its disc a pixel short of the left edge); "obs keeps
+crashing when moving and editing objects. also, still no guides"; "slide to next edge does not work
+with groups"; "same in every scene also does not work on groups. make sure all the tools work the same
+on groups".
+
+- **So the beta53 slide fix worked on Windows** for the browser widget ("seems better").
+- **The pixel**: not reproduced with their widget. A smoothed edge's outermost row of faint pixels
+  was counted as picture; it is now left out when every pixel in it is under half its inner
+  neighbour. Tested with an image built that way. Whether that was their pixel is not known.
+- **The crash**: no crash report received, cause not known. The measuring drew sources from the
+  window's thread (every item, at each drag start with guides or snap on, and at each button press);
+  beta53 added drawing cameras and captures bare that way. All measuring now runs on OBS's drawing
+  thread (`on_drawing_thread`). If crashes go on, the report is needed; ask whether they stop with
+  *Guides in the preview* and *Snap on release* unticked.
+- **Groups**: the dock's *Item* list never followed a selected group (`follow_selection` skipped
+  groups), so the arrows acted on whatever was shown before; *Same in every scene* skipped groups
+  outright. Both fixed and tested (a group slid; the same group in a second scene).
+- **Guides**: still not seen by the owner on beta53, and they have not said what the dock shows
+  after ticking the box (*Guides on…* or *could not find OBS's preview*), nor sent a log. Nothing
+  changed this time; do not try a fourth design without that answer.
+
 ## Tools follow the Arrange options; guides, third try (0.1.0-beta53)
 
 The owner: "the slide to next edge is not respecting the use visible pixels setting" (three
