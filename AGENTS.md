@@ -100,7 +100,11 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   or shape-only rule, and do not drop the held shape (`held_ratio_`) on a resolution change: the
   owner wants no resize when a window goes full-screen at the same shape. A shape is held only once
   the picture has been seen to fit it (`Bars::confirmed`); one taken from a black screen put a square
-  crop on a widescreen game. Background: the owner hit
+  crop on a widescreen game. A first sight may also be believed without straight edges when the
+  picture *fits the capture* (`fitted`: both ends reached one way, the same distance in from both ends
+  the other way, a real shape): the owner's dark modern games gave no straight edge for a long time.
+  A shape a program has held is remembered (`learned`) and is where that program starts next time; it
+  is a starting point like the built-in ones, never an order. Background: the owner hit
   it with Snes9x (Aladdin's title screen) and the picture resized repeatedly. The owner wants no manual steps when switching games; program rules and Picture
   Shape keys are the fallbacks.
 - **Every list the user builds is a `PickList`** (`src/common/pick-list.*`): choose to add, one row per

@@ -252,13 +252,24 @@ The settings are in five numbered groups:
 | 1. Frame size | Width and height, or pick a scene and an item and press *Use that item's size* |
 | 2. Picture | Fit (whole picture, whole-number scale, fill, stretch), picture shape, where it sits, sharp pixels |
 | 3. Black bars | Trim automatically, trim a set amount, or leave them. Automatic trims only when the picture is seen to end in a straight line, the same distance in from both sides, leaving a standard game shape. Artwork, a logo or a dark scene on black is not mistaken for bars. *Hold a shape for* sets how long a different shape must be clearly on screen before the picture changes to it |
-| 4. Picture shape for each program | Shapes used at once when that program is captured (see below) |
+| 4. Picture shape for each program | *Start from each program's usual shape*, *Forget shapes seen before*, and shapes you save yourself, used at once when that program is captured (see below) |
 | 5. Movement | How long the picture takes to settle after a resolution change |
 
 **The first clear sight of a picture is used at once.** When a game appears, or its window changes
-size, the bars are trimmed within about a second of the picture being seen clearly: a windowed game
-whose picture sits inside its window with bars above and below does not wait for the hold time. A
-black loading screen teaches nothing, and nothing is trimmed on a guess.
+size, the capture is looked at ten times a second until its shape is settled, and the bars are trimmed
+within a fraction of a second of the picture being seen clearly: a windowed game whose picture sits
+inside its window with bars above and below does not wait for the hold time. It does not need a bright
+scene. Bars are flat black and even a night scene is not, and a picture fitted in its window gives
+itself away with a few lit pixels at each side: it reaches both ends one way and stops the same
+distance in from both ends the other way, leaving a real picture shape. A black loading screen teaches
+nothing, and nothing is trimmed on a guess.
+
+**A program's shape is remembered.** Once a program's picture has held one shape for a quarter of a
+minute, that shape is kept for the program, and the next time it is captured the picture starts out in
+it from the first frame, at any window size, even while the screen is still black. What is seen still
+corrects it. A program that turns out to show more than one shape (an emulator for several consoles,
+or a game that simply fills whatever window it is given) starts from nothing instead. The tooltip of
+*Forget shapes seen before* lists what is remembered; the button clears it.
 
 **A shape, once found, is held.** When a window goes full-screen, or the resolution changes, the
 picture keeps the shape it had: there is no moment of showing the bars and trimming them again. The
@@ -278,8 +289,9 @@ press *Measure the bars now* on a bright scene (or set the amounts by hand), the
 this program*. That saves the shape for the program being captured and goes back to automatic, so the
 program is right from then on, at any window size, and everything else is still worked out by itself.
 
-**Picture shape for each program.** Common emulators start from their usual shape (Snes9x 8:7, mGBA
-3:2, Project64 4:3 and so on), so the picture is right from the first frame. That is only a starting
+**Picture shape for each program.** A program seen before starts from the shape it showed then.
+Otherwise common emulators start from their usual shape (Snes9x 8:7, mGBA
+3:2, Project64 4:3 and so on), so the picture is right from the first frame. Either is only a starting
 point: if the picture clearly shows another shape, that shape is used and held. To fix a program's
 shape yourself, choose the program from the list of
 open programs (or find its file with *…or find it on this computer*), choose its shape and press
@@ -319,7 +331,7 @@ filter off to move the item by hand.
 
 Add **Auto Capture (StageKit)** as a filter on one *Game Capture* source. Windows only.
 
-About once a second it looks at the window in front. If that window is a game, the capture is aimed at
+Four times a second it looks at the window in front. If that window is a game, the capture is aimed at
 it, windowed or full-screen. It stays on that game when you switch to another program, and moves on
 when the game closes or another game comes to the front. There is nothing to set up per game.
 
@@ -333,9 +345,11 @@ The filter's controls show what it is capturing now.
 - **Find games**: *Automatically*, or *Only from 'Always capture'*.
 - With no game open, the Game Capture goes back to *Capture any fullscreen application*.
 
-A game is recognised by what the program has loaded: a graphics engine together with controller
-support, or a graphics engine in a window that fills its screen. The filter changes the Game Capture's
-own *Mode* and *Window* settings for you.
+A game is recognised by what the program has loaded: a graphics engine together with something only
+games have (controller support, a game store's library, a game engine's player, game audio or video),
+a game engine's own kind of window, or a window that fills its screen. A program seen to be a game
+once is remembered and picked up at once from then on. The filter changes the Game Capture's own
+*Mode* and *Window* settings for you.
 
 ### Active App
 

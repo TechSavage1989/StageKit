@@ -152,7 +152,17 @@ bool read_engines(DWORD process_id, bool &graphics, bool &controller)
 			    name == "opengl32.dll" || name == "vulkan-1.dll")
 				graphics = true;
 			if (name.rfind("xinput", 0) == 0 || name == "dinput8.dll" || name == "dinput.dll" ||
-			    name == "sdl2.dll" || name == "sdl3.dll" || name == "gameinput.dll")
+			    name == "sdl2.dll" || name == "sdl3.dll" || name == "gameinput.dll" ||
+			    name == "windows.gaming.input.dll")
+				controller = true;
+			// What games ship with and everyday programs do not: a store's
+			// game library, a game engine's player, game audio and video.
+			// It counts the same as controller support.
+			if (name == "steam_api64.dll" || name == "steam_api.dll" ||
+			    name == "gameoverlayrenderer64.dll" || name == "gameoverlayrenderer.dll" ||
+			    name == "unityplayer.dll" || name == "eossdk-win64-shipping.dll" ||
+			    name == "galaxy64.dll" || name == "galaxy.dll" || name == "fmod.dll" ||
+			    name == "fmodstudio.dll" || name == "bink2w64.dll" || name == "nvngx_dlss.dll")
 				controller = true;
 		}
 	}
@@ -193,6 +203,16 @@ bool loaded_engines(DWORD process_id, bool &graphics, bool &controller)
 	graphics = k.graphics;
 	controller = k.controller;
 	return k.readable;
+}
+
+// Window classes that game engines give their windows.
+bool engine_window(const std::string &window_class)
+{
+	for (const char *known :
+	     {"UnityWndClass", "UnrealWindow", "SDL_app", "GLFW30", "Valve001", "YYGameMakerYY", "grcWindow"})
+		if (window_class == known)
+			return true;
+	return false;
 }
 
 bool fills_its_screen(HWND window)
@@ -254,8 +274,8 @@ BOOL CALLBACK collect_window(HWND window, LPARAM param)
 		const bool readable = loaded_engines(process_id, graphics, controller);
 		// A program that cannot be looked into and fills its screen is
 		// most likely a protected game.
-		found.looks_like_game = big_enough && (readable ? graphics && (controller || fills_its_screen(window))
-								: fills_its_screen(window));
+		const bool game_like = controller || engine_window(found.window_class) || fills_its_screen(window);
+		found.looks_like_game = big_enough && (readable ? graphics && game_like : fills_its_screen(window));
 	}
 	windows->push_back(found);
 	return TRUE;
@@ -419,7 +439,7 @@ public:
 			timer_ -= seconds;
 			if (timer_ > 0.0)
 				return;
-			timer_ = 0.5;
+			timer_ = 0.25;
 			mode = mode_;
 			always = always_;
 			never = never_;

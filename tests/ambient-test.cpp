@@ -2392,6 +2392,13 @@ int main(int argc, char **argv)
 		// A 256x224 console picture.
 		sized(game, 256, 224);
 		set("fit", 2); // whole-number scale
+		// The 4:3 shape held from the size before is checked against the new
+		// picture over the next few frames, then the picture glides to its fit.
+		for (int i = 0; i < 3; i++) {
+			sleep_ms(50);
+			picture();
+		}
+		sleep_ms(400);
 		p = picture();
 		CHECK(is(p, 144, 76, 512, 448), "whole-number scale shows 256x224 at exactly 2x (%.0f,%.0f %.0fx%.0f)",
 		      p.x, p.y, p.w, p.h);
@@ -2465,12 +2472,12 @@ int main(int argc, char **argv)
 				calldata_free(&cd);
 				return std::make_pair(tx, pic);
 			};
-			auto [t0, p0] = look(300);
-			CHECK(t0 == 0.0 && is(p0, 0, 75, 800, 450), "bars are not trimmed straight away (trim %.0f)",
-			      t0);
-			auto [t1, p1] = look(3500);
+			auto [t0, p0] = look(100);
+			CHECK(t0 == 0.0 && is(p0, 0, 75, 800, 450),
+			      "bars are not trimmed on the strength of a single look (trim %.0f)", t0);
+			auto [t1, p1] = look(1200);
 			CHECK(std::fabs(t1 - 80) <= 1.0 && is(p1, 0, 0, 800, 600),
-			      "after the wait, 80 px bars are trimmed and the 4:3 picture fills the frame (trim %.0f, %.0fx%.0f)",
+			      "within a second or so, 80 px bars are trimmed and the 4:3 picture fills the frame (trim %.0f, %.0fx%.0f)",
 			      t1, p1.w, p1.h);
 
 			// A black screen teaches nothing: the trim is kept.
@@ -2941,6 +2948,143 @@ int main(int argc, char **argv)
 				CHECK(std::fabs(kx - 229) <= 1.5,
 				      "a guess that nothing shows inside is kept when bars appear the other way (sides %.0f, above and below %.0f)",
 				      kx, ky);
+
+				// A modern game in a window on a dim scene: far darker than plain
+				// brightness could tell from bars, but not the flat black of bars.
+				QImage dim(896, 572, QImage::Format_RGB32);
+				dim.fill(QColor(0, 0, 0));
+				for (int y = 34; y < 538; y++)
+					for (int x = 0; x < 896; x++)
+						dim.setPixel(x, y, qRgb(9, 9, 10 + (x + y) % 3));
+				program("Dim Game:DimWnd:dimgame.exe");
+				show(save(start, "wide-start.png"));
+				trims(400);
+				show(save(dim, "wide-dim.png"));
+				auto [mx, my] = trims(1200);
+				CHECK(mx == 0.0 && std::fabs(my - 34) <= 1.0,
+				      "a dim picture still shows where it ends: its bars are trimmed within a second or so (trim %.0f, %.0f)",
+				      mx, my);
+
+				// A dark scene in a window: only a few lit specks touch each side
+				// of the picture, nowhere near a straight edge. A picture that
+				// reaches both ends one way and stops the same distance in from
+				// both ends the other way, leaving 16:9, is a picture fitted in
+				// its window.
+				auto specks = [&](const char *name, int bottom) {
+					QImage image(896, 572, QImage::Format_RGB32);
+					image.fill(QColor(0, 0, 0));
+					QPainter painter(&image);
+					painter.setPen(Qt::NoPen);
+					painter.setBrush(QColor(120, 140, 200));
+					for (int x : {100, 300, 520, 700, 820})
+						painter.drawRect(x, 34, 12, 6); // along the top of the picture
+					for (int x : {60, 250, 450, 650, 850})
+						painter.drawRect(x, bottom - 6, 12, 6); // along the bottom
+					for (int y : {120, 260, 400})
+						painter.drawRect(0, y, 6, 14); // at the left end
+					for (int y : {150, 300, 480})
+						painter.drawRect(890, y, 6, 14); // at the right end
+					painter.drawEllipse(QPoint(448, 286), 130, 90);
+					painter.end();
+					return save(image, name);
+				};
+				program("Speck Game:SpeckWnd:speckgame.exe");
+				show(save(start, "wide-start.png"));
+				trims(400);
+				show(specks("wide-specks.png", 538));
+				auto [kx2, ky2] = trims(1500);
+				CHECK(kx2 == 0.0 && std::fabs(ky2 - 34) <= 1.0,
+				      "a dark scene with a few lit specks at each side is enough for a picture that fits its window (trim %.0f, %.0f)",
+				      kx2, ky2);
+				program("Uneven Game:UnevenWnd:unevengame.exe");
+				show(save(start, "wide-start.png"));
+				trims(400);
+				show(specks("wide-specks-uneven.png", 506));
+				auto [ux, uy] = trims(2000);
+				CHECK(ux == 0.0 && uy == 0.0,
+				      "but not when it stops at different distances from the two ends (trim %.0f, %.0f)",
+				      ux, uy);
+
+				// A program's shape, once seen and held, is where it starts the
+				// next time: right from the first frame, even on a black screen.
+				QImage bright(896, 572, QImage::Format_RGB32);
+				bright.fill(QColor(0, 0, 0));
+				for (int y = 34; y < 538; y++)
+					for (int x = 0; x < 896; x++)
+						bright.setPixel(x, y, qRgb(60 + x % 150, 90 + y % 120, 200));
+				QImage black_window(1000, 640, QImage::Format_RGB32);
+				black_window.fill(QColor(0, 0, 0));
+				QImage old_shape(1000, 640, QImage::Format_RGB32); // 4:3: 854x640 with 73 px each side
+				old_shape.fill(QColor(0, 0, 0));
+				for (int y = 0; y < 640; y++)
+					for (int x = 73; x < 927; x++)
+						old_shape.setPixel(x, y, qRgb(60 + x % 150, 90 + y % 120, 200));
+				auto remembered = [&] {
+					obs_data_t *now = obs_source_get_settings(trimmer);
+					const std::string text = obs_data_get_string(now, "learned");
+					obs_data_release(now);
+					return text;
+				};
+				obs_data_set_double(bf, "learn_after", 1.0);
+				obs_source_update(trimmer, bf);
+				program("Learner:LearnWnd:Learner.exe");
+				show(save(bright, "wide-bright.png"));
+				trims(2800);
+				const std::string first_time = remembered();
+				program("Something Else:ElseWnd:else.exe");
+				trims(500);
+				program("Learner:LearnWnd:Learner.exe");
+				show(save(black_window, "wide-black-window.png"));
+				const double from_memory = trims(600).second;
+				obs_properties_t *learned_props = obs_source_properties(trimmer);
+				const std::string learned_status =
+					obs_property_description(obs_properties_get(learned_props, "status"));
+				CHECK(first_time == "learner.exe = 16:9" && std::fabs(from_memory - 39) <= 1.0 &&
+					      learned_status.find("before") != std::string::npos,
+				      "a shape that has held is remembered for its program and used from the first frame next time, even on black (%s; trim %.0f; %s)",
+				      first_time.c_str(), from_memory, learned_status.c_str());
+
+				// The same program now shows another shape: what is seen wins,
+				// and a program with more than one shape starts from nothing.
+				show(save(old_shape, "wide-old-shape.png"));
+				auto [ox, oy] = trims(3200);
+				const std::string second_time = remembered();
+				program("Something Else:ElseWnd:else.exe");
+				trims(500);
+				program("Learner:LearnWnd:Learner.exe");
+				show(save(black_window, "wide-black-window.png"));
+				auto [nx, ny] = trims(600);
+				CHECK(std::fabs(ox - 73) <= 1.5 && oy == 0.0 && second_time == "learner.exe = varies" &&
+					      nx == 0.0 && ny == 0.0,
+				      "a remembered shape gives way to what is seen, and a program with more than one shape starts from nothing (trim %.0f, %.0f; %s; then %.0f, %.0f)",
+				      ox, oy, second_time.c_str(), nx, ny);
+				obs_property_button_clicked(obs_properties_get(learned_props, "learned_forget"),
+							    trimmer);
+				obs_properties_destroy(learned_props);
+				sleep_ms(100);
+				CHECK(remembered().empty(),
+				      "'Forget shapes seen before' clears what was remembered (%s)",
+				      remembered().c_str());
+				// A program whose picture simply fills its window has no shape to start from.
+				QImage filling(1000, 650, QImage::Format_RGB32); // not a shape any console uses
+				for (int y = 0; y < 650; y++)
+					for (int x = 0; x < 1000; x++)
+						filling.setPixel(x, y, qRgb(60 + x % 150, 90 + y % 120, 200));
+				program("Filler:FillWnd:Filler.exe");
+				show(save(bright, "wide-bright.png"));
+				trims(2800);
+				const std::string kept_shape = remembered();
+				program("Something Else:ElseWnd:else.exe");
+				trims(500);
+				program("Filler:FillWnd:Filler.exe");
+				show(save(filling, "wide-filling.png"));
+				auto [fx, fy] = trims(3000);
+				CHECK(kept_shape == "filler.exe = 16:9" && fx == 0.0 && fy == 0.0 &&
+					      remembered() == "filler.exe = varies",
+				      "a program that then fills a window of another shape is shown whole and no longer starts from a shape (%s; trim %.0f, %.0f; %s)",
+				      kept_shape.c_str(), fx, fy, remembered().c_str());
+				obs_data_set_string(bf, "learned", "");
+				obs_data_set_double(bf, "learn_after", 15.0);
 
 				program("");
 				obs_data_set_bool(bf, "known_programs", false);
