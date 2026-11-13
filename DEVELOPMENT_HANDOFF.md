@@ -247,8 +247,14 @@ every 0.25 s. **Whether detection was the owner's delay is not known.** Their em
 *Always capture* list, which needs none of this; for those the wait may be OBS's own hook or the
 emulator's black start. The log now has the times; it has been asked for twice.
 
-**Not verified:** everything on Windows. The tests paint pictures: a dim one, one with a few lit
-specks per side, one whose specks stop at different distances (must not trim).
+**Owner, on Windows with beta49 (2026-11-13): "capture speed and ratio seems better."** Before
+that, on beta48: "most things are working as expected". No log was ever sent, so which of the changes
+shortened the capture's start is not known (detection, the hook, or only the shape registering
+sooner), and the remembered shapes have not been reported on separately.
+
+**Not verified in detail:** the tests paint pictures: a dim one, one with a few lit specks per side,
+one whose specks stop at different distances (must not trim). Nobody has reported on a program that
+shows more than one shape.
 
 ## Active App: the capture of the app in use (0.1.0-beta48)
 
