@@ -570,7 +570,9 @@ What they do:
 Options:
 
 - **Use visible pixels** (on by default) measures the picture actually drawn in each item and ignores
-  the empty, see-through room around it. Switch it off to go by the item's box, as OBS does.
+  the empty, see-through room around it. Switch it off to go by the item's box, as OBS does. An item
+  that is drawing nothing at all, such as a widget with nothing to show, is treated as not there: it
+  does not stop a slide or a resize, and nothing snaps to it.
 - **Ignore shadows & outlines** (on by default) measures only each source's own pixels: shadows,
   glows, outlines, borders and anything else its filters draw are left out, so pictures are lined up,
   sized and slid by themselves and their shadows reach past them. Unticked, each item counts together
