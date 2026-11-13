@@ -179,7 +179,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   in the outermost row or column is under half the one inside it, the picture ends one pixel further
   in. Counting it left a line of background along the screen's edge at an edge distance of 0.
 - **Groups are items like any other.** A selected group is the dock's item and is moved, slid and
-  copied by *Same in every scene* as one thing; only when the group itself is not selected do the
+  copied by *Copy transform to all scenes* as one thing; only when the group itself is not selected do the
   tools look at what is selected inside it. Do not skip groups in a new tool.
 - **Every tool that places things measures by the Arrange options.** The owner: "i need the tools to
   respect all the settings". Send To and Place Item's nine screen positions keep their edge distance
@@ -188,9 +188,14 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
 - **A brought-along item flips round the leader's picture** (`plan()` in `src/placement/place-item.cpp`),
   measured without shadows, not round the leader's box: round the box, the camera's shadow added its
   width to the gap after a flip (the owner's screenshots, beta51).
-- **Same in every scene** (`copy_to_every_scene` in `src/dock/arrange.*`) copies an item's transform
+- **Copy transform to all scenes** (first called *Same in every scene*, which the owner found
+  ambiguous; `copy_to_every_scene` in `src/dock/arrange.*`, action `same_everywhere`) copies an item's transform
   to every copy of its source in the other scenes, converting position, scale and bounds through each
   copy's group (`item_space`), skipping locked copies and groups listed as scenes.
+  *Copy transform to chosen scenes* (`same_chosen`) does the same for the scenes named in
+  `ArrangeOptions::copy_scenes` only, a list built in the dock the PickList way (choose to add, a
+  row each with a remove button) and saved with the collection. Name a tool for what it does, verb
+  first; the owner asked for labels that say what happens.
 - **Arrange options are global** (`arrange_options()`), saved with the scene collection. The dock's
   controls only show and set them. Add a new tool to `ArrangeAction` and `kInfo` and it appears in the
   dock, the menu and the hotkeys at once.

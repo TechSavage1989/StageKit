@@ -606,26 +606,61 @@ public:
 		against_row->addRow(tr_text("Arrange.Against"), against_);
 		arrange_layout->addLayout(against_row);
 		auto *arrange_grid = new QGridLayout();
-		for (int a = 0; a < (int)ArrangeAction::Count; a++) {
-			const auto action = static_cast<ArrangeAction>(a);
+		auto arrange_button = [this](ArrangeAction action, QWidget *parent) {
 			const ArrangeInfo &info = arrange_info(action);
-			auto *button = new QPushButton(tr_text(info.text), arrange_box);
+			auto *button = new QPushButton(tr_text(info.text), parent);
 			button->setObjectName(QString("arrange_") + info.name);
 			button->setToolTip(tr_text((std::string(info.text) + ".Tip").c_str()));
 			QObject::connect(button, &QPushButton::clicked, this, [this, action] {
 				obs_source_t *scene = arrange_scene();
 				const ArrangeOutcome out = run_arrange(action, scene, arrange_items(scene));
 				obs_source_release(scene);
-				say(action == ArrangeAction::SameEverywhere && out.had > 0 && out.changed == 0
-					    ? tr_text("Arrange.NoneElsewhere")
-					    : arrange_message(out));
+				const bool copied_nothing = out.had > 0 && out.changed == 0;
+				if (action == ArrangeAction::SameChosen && out.had > 0 &&
+				    arrange_options().copy_scenes.empty())
+					say(tr_text("Arrange.ChooseScenes"));
+				else if (action == ArrangeAction::SameChosen && copied_nothing)
+					say(tr_text("Arrange.NoneChosen"));
+				else if (action == ArrangeAction::SameEverywhere && copied_nothing)
+					say(tr_text("Arrange.NoneElsewhere"));
+				else
+					say(arrange_message(out));
 			});
-			// A last button on a row of its own takes the whole row.
-			const int count = (int)ArrangeAction::Count;
-			const bool alone = a == count - 1 && a % 3 == 0;
-			arrange_grid->addWidget(button, a / 3, a % 3, 1, alone ? 3 : 1);
-		}
+			return button;
+		};
+		// The line-up and size tools, three to a row. The two that copy to
+		// other scenes follow in a box of their own, named for what they do.
+		const int first_copy = (int)ArrangeAction::SameEverywhere;
+		for (int a = 0; a < first_copy; a++)
+			arrange_grid->addWidget(arrange_button(static_cast<ArrangeAction>(a), arrange_box), a / 3,
+						a % 3);
 		arrange_layout->addLayout(arrange_grid);
+		auto *copy_box = new QGroupBox(tr_text("Arrange.CopyBox"), arrange_box);
+		auto *copy_layout = new QVBoxLayout(copy_box);
+		copy_layout->addWidget(arrange_button(ArrangeAction::SameEverywhere, copy_box));
+		copy_layout->addWidget(arrange_button(ArrangeAction::SameChosen, copy_box));
+		// The scenes the second one copies to: choose to add, one row each
+		// with its own remove button, as every list in StageKit.
+		auto *copy_label = new QLabel(tr_text("Arrange.CopyScenes"), copy_box);
+		copy_label->setToolTip(tr_text("Arrange.CopyScenes.Tip"));
+		copy_layout->addWidget(copy_label);
+		copy_rows_ = new QVBoxLayout();
+		copy_rows_->setSpacing(2);
+		copy_layout->addLayout(copy_rows_);
+		copy_add_ = new QComboBox(copy_box);
+		copy_add_->setObjectName("copyScenesAdd");
+		copy_add_->setToolTip(tr_text("Arrange.CopyScenes.Tip"));
+		QObject::connect(copy_add_, QOverload<int>::of(&QComboBox::activated), this, [this](int index) {
+			const QString name = copy_add_->itemData(index).toString();
+			if (name.isEmpty())
+				return;
+			ArrangeOptions o = arrange_options();
+			o.copy_scenes.push_back(name.toUtf8().toStdString());
+			set_arrange_options(o);
+			show_copy_scenes();
+		});
+		copy_layout->addWidget(copy_add_);
+		arrange_layout->addWidget(copy_box);
 		visible_ = new QCheckBox(tr_text("Arrange.Visible"), arrange_box);
 		visible_->setObjectName("arrangeVisible");
 		visible_->setToolTip(tr_text("Arrange.Visible.Tip"));
@@ -742,6 +777,7 @@ public:
 			&scenes);
 		if (scenes != scenes_) {
 			scenes_ = scenes;
+			show_copy_scenes();
 			const QString chosen = scene_->currentData().toString();
 			scene_->blockSignals(true);
 			scene_->clear();
@@ -876,13 +912,55 @@ private:
 		slide_->setChecked(o.send_slide);
 		snap_within_->setValue(o.within);
 		storing_ = false;
+		show_copy_scenes();
+	}
+
+	// The list of scenes to copy to, and the scenes that can still be added.
+	void show_copy_scenes()
+	{
+		const ArrangeOptions o = arrange_options();
+		while (QLayoutItem *row = copy_rows_->takeAt(0)) {
+			if (row->widget())
+				row->widget()->deleteLater();
+			delete row;
+		}
+		for (const std::string &name : o.copy_scenes) {
+			auto *row = new QWidget();
+			auto *row_layout = new QHBoxLayout(row);
+			row_layout->setContentsMargins(0, 0, 0, 0);
+			row_layout->addWidget(new QLabel(QString::fromStdString(name), row), 1);
+			auto *remove = new QPushButton(QStringLiteral("x"), row);
+			remove->setObjectName(QStringLiteral("copyScenesRemove"));
+			remove->setFixedWidth(28);
+			remove->setToolTip(tr_text("Arrange.CopyScenes.Remove"));
+			QObject::connect(remove, &QPushButton::clicked, this, [this, name] {
+				ArrangeOptions changed = arrange_options();
+				changed.copy_scenes.erase(std::remove(changed.copy_scenes.begin(),
+								      changed.copy_scenes.end(), name),
+							  changed.copy_scenes.end());
+				set_arrange_options(changed);
+				show_copy_scenes();
+			});
+			row_layout->addWidget(remove);
+			copy_rows_->addWidget(row);
+		}
+		copy_add_->blockSignals(true);
+		copy_add_->clear();
+		copy_add_->addItem(tr_text("Arrange.CopyScenes.Add"), QString());
+		for (const QString &scene : scenes_)
+			if (std::find(o.copy_scenes.begin(), o.copy_scenes.end(), scene.toUtf8().toStdString()) ==
+			    o.copy_scenes.end())
+				copy_add_->addItem(scene, scene);
+		copy_add_->setCurrentIndex(0);
+		copy_add_->blockSignals(false);
+		shown_options_ = arrange_options_revision();
 	}
 
 	void store_arrange_options()
 	{
 		if (storing_)
 			return;
-		ArrangeOptions o;
+		ArrangeOptions o = arrange_options(); // keeps what has no control here
 		o.against = static_cast<Against>(against_->currentData().toInt());
 		o.how.visible_pixels = visible_->isChecked();
 		o.how.leave_out_shadows = no_shadow_->isChecked();
@@ -1292,6 +1370,8 @@ private:
 	std::string fixed_scene_;
 	QString followed_;
 	QComboBox *against_ = nullptr;
+	QVBoxLayout *copy_rows_ = nullptr;
+	QComboBox *copy_add_ = nullptr;
 	QListWidget *arrange_list_ = nullptr;
 	QStringList arrange_rows_;
 	QCheckBox *visible_ = nullptr;

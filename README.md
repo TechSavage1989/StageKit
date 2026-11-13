@@ -521,7 +521,8 @@ What they do:
 | *Space out ↔*, *Space out ↕* | With three or more: the outer two stay put and the rest spread so the gaps are equal. |
 | *Same width*, *Same height*, *Same size* | With two or more: resizes the others to match the first or last selected when *Align to* is set to that, otherwise the top-most one in the Sources list. |
 | *Snap now* | Moves each item the last few pixels so an edge or its centre meets the screen's or a neighbour's. |
-| *Same in every scene* | Like OBS's *Copy Transform* and *Paste Transform*, for all your scenes at once: every copy of the selected item's source in your other scenes gets the same place, size, rotation and crop. With several items selected, each does it for its own source. A copy inside a group lands on the same spot of the screen. Locked copies are left alone. |
+| *Copy transform to all scenes* | Takes the selected item's position, size, rotation and crop in this scene and gives them to every copy of the same source in all your other scenes: OBS's *Copy Transform* and *Paste Transform* done for every scene at once. Copies inside groups land on the same spot of the screen; locked copies are left alone; one step in *Edit → Undo* |
+| *Copy transform to chosen scenes* | The same, but only to the scenes listed under *Scenes to copy to* in the dock. Choose a scene from *Add a scene...* to put it on the list; press the **x** beside one to take it off. The list is saved with your scene collection |
 
 Options:
 

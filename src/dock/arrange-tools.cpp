@@ -42,6 +42,7 @@ const ArrangeInfo kInfo[(int)ArrangeAction::Count] = {
 	{"same_height", "Arrange.SameHeight", "Hotkey.Arrange.SameHeight", 2},
 	{"same_size", "Arrange.SameSize", "Hotkey.Arrange.SameSize", 2},
 	{"same_everywhere", "Arrange.SameEverywhere", "Hotkey.Arrange.SameEverywhere", 1},
+	{"same_chosen", "Arrange.SameChosen", "Hotkey.Arrange.SameChosen", 1},
 };
 
 struct Hotkey {
@@ -221,7 +222,7 @@ ArrangeOutcome run_arrange(ArrangeAction action, obs_source_t *scene, const std:
 {
 	// One step in OBS's Edit → Undo for whatever this changes, in every
 	// scene when that is where it reaches.
-	const bool everywhere = action == ArrangeAction::SameEverywhere;
+	const bool everywhere = action == ArrangeAction::SameEverywhere || action == ArrangeAction::SameChosen;
 	const std::string before = everywhere ? transform_snapshot_all() : transform_snapshot(scene);
 	const ArrangeOutcome out = run_arrange_now(action, scene, items);
 	if (out.changed > 0)
@@ -285,6 +286,9 @@ ArrangeOutcome run_arrange_now(ArrangeAction action, obs_source_t *scene, const 
 	case ArrangeAction::SameEverywhere:
 		out.changed = copy_to_every_scene(scene, items);
 		break;
+	case ArrangeAction::SameChosen:
+		out.changed = copy_to_every_scene(scene, items, &o.copy_scenes);
+		break;
 	default:
 		break;
 	}
@@ -342,6 +346,15 @@ void arrange_save_load(obs_data_t *save_data, bool saving)
 		obs_data_set_bool(save_data, "stagekit.arrange.guides", o.guides);
 		obs_data_set_bool(save_data, "stagekit.send.every_scene", o.send_every_scene);
 		obs_data_set_bool(save_data, "stagekit.send.slide", o.send_slide);
+		obs_data_array_t *copy_scenes = obs_data_array_create();
+		for (const std::string &name : o.copy_scenes) {
+			obs_data_t *entry = obs_data_create();
+			obs_data_set_string(entry, "name", name.c_str());
+			obs_data_array_push_back(copy_scenes, entry);
+			obs_data_release(entry);
+		}
+		obs_data_set_array(save_data, "stagekit.copy.scenes", copy_scenes);
+		obs_data_array_release(copy_scenes);
 		obs_data_set_int(save_data, "stagekit.arrange.within", o.within);
 	} else if (obs_data_has_user_value(save_data, "stagekit.arrange.within")) {
 		ArrangeOptions o;
@@ -357,6 +370,16 @@ void arrange_save_load(obs_data_t *save_data, bool saving)
 		if (obs_data_has_user_value(save_data, "stagekit.send.every_scene"))
 			o.send_every_scene = obs_data_get_bool(save_data, "stagekit.send.every_scene");
 		o.send_slide = obs_data_get_bool(save_data, "stagekit.send.slide");
+		if (obs_data_array_t *copy_scenes = obs_data_get_array(save_data, "stagekit.copy.scenes")) {
+			for (size_t i = 0; i < obs_data_array_count(copy_scenes); i++) {
+				obs_data_t *entry = obs_data_array_item(copy_scenes, i);
+				const char *name = obs_data_get_string(entry, "name");
+				if (name && *name)
+					o.copy_scenes.push_back(name);
+				obs_data_release(entry);
+			}
+			obs_data_array_release(copy_scenes);
+		}
 		set_arrange_options(o);
 	}
 	for (Hotkey &hk : g_hotkeys) {
