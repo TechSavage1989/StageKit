@@ -74,6 +74,15 @@ std::atomic<bool> g_test_mouse{false};
 std::atomic<int> g_preview_state{0};
 } // namespace
 
+// What the guides last did, in a few words, for the dock to show: which
+// widget they took for OBS's preview and where the lines were put.
+QString g_report;
+
+QString guides_report()
+{
+	return g_report;
+}
+
 int guides_preview_state()
 {
 	return g_preview_state.load();
@@ -312,6 +321,39 @@ private:
 				line->hide();
 			}
 		}
+		{
+			const QPoint at = preview->mapToGlobal(QPoint(0, 0));
+			int made = 0, showing = 0, on_screen = -1;
+			for (const QPointer<LineWindow> &line : lines_shown_) {
+				if (!line)
+					continue;
+				made++;
+				showing += line->isVisible() ? 1 : 0;
+#ifdef _WIN32
+				if (on_screen < 0)
+					on_screen = 0;
+				on_screen += IsWindowVisible((HWND)line->winId()) ? 1 : 0;
+#endif
+			}
+			g_report = QStringLiteral("%1 %2x%3 at %4,%5 x%6 (%7 named); canvas %8x%9 at %10,%11 x%12; "
+						  "lines %13 made, %14 shown, %15 on screen: %16")
+					   .arg(QString::fromLatin1(preview->metaObject()->className()))
+					   .arg(preview->width())
+					   .arg(preview->height())
+					   .arg(at.x())
+					   .arg(at.y())
+					   .arg(preview->devicePixelRatioF(), 0, 'g', 3)
+					   .arg(named_)
+					   .arg((int)canvas_w)
+					   .arg((int)canvas_h)
+					   .arg(left)
+					   .arg(top)
+					   .arg(map.scale, 0, 'g', 3)
+					   .arg(made)
+					   .arg(showing)
+					   .arg(on_screen)
+					   .arg(placed.trimmed());
+		}
 		// Also kept as text, for the tests to read.
 		setProperty("guideLines", text.trimmed());
 		setProperty("lineWindows", placed.trimmed());
@@ -333,8 +375,20 @@ private:
 
 	QWidget *find_preview()
 	{
-		if (!preview_ && main_)
-			preview_ = main_->findChild<QWidget *>(QStringLiteral("preview"));
+		if (!preview_ && main_) {
+			// OBS names four widgets "preview": the main one, and the ones in
+			// the Filters, Properties and Interact windows while those are
+			// open. Only the main one is an OBSBasicPreview.
+			const QList<QWidget *> named = main_->findChildren<QWidget *>(QStringLiteral("preview"));
+			named_ = (int)named.size();
+			for (QWidget *w : named)
+				if (!preview_ &&
+				    QLatin1String(w->metaObject()->className()) == QLatin1String("OBSBasicPreview"))
+					preview_ = w;
+			for (QWidget *w : named)
+				if (!preview_ && w->window() == main_.data())
+					preview_ = w;
+		}
 		return preview_.data();
 	}
 
@@ -342,6 +396,7 @@ private:
 
 	QPointer<QWidget> main_;
 	QPointer<QWidget> preview_;
+	int named_ = 0;
 	std::vector<QPointer<LineWindow>> lines_shown_;
 	uint64_t seen_serial_ = 0;
 	ArrangeGuide flash_;

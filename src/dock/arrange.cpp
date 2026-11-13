@@ -244,13 +244,19 @@ Box measure_item_now(obs_source_t *scene, obs_sceneitem_t *item, const Measure &
 		const double fw = obs_source_get_width(source), fh = obs_source_get_height(source);
 		const bool only_room = std::fabs(fw - (bw + free.left + free.right)) <= 2.0 &&
 				       std::fabs(fh - (bh + free.top + free.bottom)) <= 2.0;
-		if (bw > 0.0 && bh > 0.0 && only_room) {
+		// A source that plays video frames (a camera, a video) is not drawn
+		// on its own here: OBS draws those in step with its frames. Up to
+		// beta52 they were left out; beta53 to beta55 drew them, and the
+		// owner had OBS crash during slides and drags in exactly those
+		// versions. Not proven to be the cause, so they are left out again.
+		const bool async = (obs_source_get_output_flags(source) & OBS_SOURCE_ASYNC) != 0;
+		if (bw > 0.0 && bh > 0.0 && only_room && !async) {
 			part = drawn_part(source, true);
 			measured = part.any;
 		}
 		// Otherwise: the picture as it is before its first shadow, glow or
 		// outline, put where the shadow puts it.
-		if (!measured && shadowed) {
+		if (!measured && shadowed && !(free.bare && async)) {
 			part = drawn_part(free.draw, free.bare);
 			measured = part.any;
 		}

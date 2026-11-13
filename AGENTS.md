@@ -139,6 +139,10 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   Guides are off by default and lines are only shown while one is up; switching guides on flashes a
   frame round the canvas. Items are measured once when a drag starts, never while it goes on. The
   owner had OBS crash while moving items with guides and snap on, and not with both off (beta53).
+  OBS names four widgets `preview` (the main one, and one each in the Filters, Properties and
+  Interact windows); the main one is picked by its class, `OBSBasicPreview`. Child windows inside the
+  preview were not seen either (beta55). While this is unsolved, the dock's message after ticking the
+  box carries a report in square brackets (`guides_report`); remove it once guides are confirmed.
 - **The order items are selected in comes from OBS's own `item_select` signals**
   (`track_selection_order` in `src/dock/arrange-tools.cpp`), on every scene and group. It used to be
   learned by polling one scene, which forgot it whenever the dock's *Scene* list showed another scene,
@@ -149,7 +153,9 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   then only where something is also drawn with the filters on, so what a filter takes away (a mask,
   trimmed edges) does not count. The owner asked for that: anything a filter draws (a Corners & Edges
   border, say) is left out. Draw bare with `render_bare`, never `obs_source_default_render`: that one
-  is only right for plain sources, not for one that draws itself (a browser, a nested scene). When the
+  is only right for plain sources, not for one that draws itself (a browser, a nested scene). A
+  source that plays video frames (`OBS_SOURCE_ASYNC`: a camera, a video) is never drawn bare: the
+  owner had crashes in exactly the versions that did (beta53 to beta55), cause unproven. When the
   filters change the size by more than that room (an Auto Frame) it falls back to what the first
   shadow draws from (`shadow_free`), then to cutting the room off the edges. Never cut the room off
   the edges first: a widget's picture often stops short of its own edges. Unticked, a shadow sized in

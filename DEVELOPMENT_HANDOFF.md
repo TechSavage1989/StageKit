@@ -204,6 +204,29 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Guides report in the dock; cameras not drawn bare (0.1.0-beta56)
+
+The owner, on beta55: "i saw no frame flash. the app did crash after moving an object and click off
+the canvas" (guides ticked, snap unticked); "the slide edge appears good now but it crashed again
+while doing a slide move"; "games don't appear to crash". Earlier the same day: "bring along seem
+more accurate now, same width works, stream deck keys work".
+
+- **Confirmed on Windows by the owner**: the edge pixel fix (beta54), Bring-along flips (beta52),
+  *Same width* following the last selected (beta50), Stream Deck keys after beta53, games no longer
+  crashing with OBS open.
+- **Crashes: cause still unknown, no crash report received.** They happen in a slide and in a drag
+  with guides on, so the measuring both share is the suspect, not the guide windows. Checked against
+  OBS 32's source: `obs_queue_task(OBS_TASK_GRAPHICS, …, wait)` does wait and runs after the frame's
+  displays are drawn; `obs_source_skip_video_filter` on the filter applied first is what OBS itself
+  does. What changed in beta53, the first version with crashes, is that sources playing video frames
+  (the camera) are drawn bare and that every item is drawn twice. The first is undone here as a
+  precaution. If crashes go on, the next step is the crash report, not another guess.
+- **Guides**: neither windows over the preview nor child windows inside it show on their machine,
+  though the dock reports them on. The dock now appends a report (widget class, size, position, how
+  many widgets are named `preview`, where the canvas was found, how many lines were made, shown, and
+  visible to Windows). Ask for a screenshot of that message. The main preview is now picked by class.
+- The dock's *Ignore shadows & outlines* tick box lost its `&` (Qt took it for a shortcut mark).
+
 ## Guides inside the preview (0.1.0-beta55)
 
 The owner, on beta53, with a screenshot of the dock saying *Guides on: a frame should flash round the

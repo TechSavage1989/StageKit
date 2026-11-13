@@ -183,7 +183,7 @@ public:
 		sub->addSeparator();
 		const ArrangeOptions o = arrange_options();
 		auto option = [&](const char *name, const char *text, bool on, void (*set)(ArrangeOptions &, bool)) {
-			QAction *entry = sub->addAction(tr_text(text));
+			QAction *entry = sub->addAction(tr_text(text).replace("&", "&&"));
 			entry->setObjectName(name);
 			entry->setCheckable(true);
 			entry->setChecked(on);
@@ -624,7 +624,7 @@ public:
 		visible_ = new QCheckBox(tr_text("Arrange.Visible"), arrange_box);
 		visible_->setObjectName("arrangeVisible");
 		visible_->setToolTip(tr_text("Arrange.Visible.Tip"));
-		no_shadow_ = new QCheckBox(tr_text("Arrange.NoShadow"), arrange_box);
+		no_shadow_ = new QCheckBox(tr_text("Arrange.NoShadow").replace("&", "&&"), arrange_box);
 		no_shadow_->setObjectName("arrangeNoShadow");
 		no_shadow_->setToolTip(tr_text("Arrange.NoShadow.Tip"));
 		keep_shape_ = new QCheckBox(tr_text("Arrange.KeepShape"), arrange_box);
@@ -641,10 +641,16 @@ public:
 		QObject::connect(guides_, &QCheckBox::toggled, this, [this](bool on) {
 			if (!on || storing_)
 				return;
-			QTimer::singleShot(300, this, [this] {
-				if (guides_->isChecked())
-					say(tr_text(guides_preview_state() == 2 ? "Arrange.Guides.NoPreview"
-										: "Arrange.Guides.On"));
+			QTimer::singleShot(600, this, [this] {
+				if (!guides_->isChecked())
+					return;
+				// While guides are unproven on Windows, the dock also says
+				// what they did, so a screenshot of it is a full report.
+				QString text = tr_text(guides_preview_state() == 2 ? "Arrange.Guides.NoPreview"
+										   : "Arrange.Guides.On");
+				if (!guides_report().isEmpty())
+					text += QStringLiteral(" [") + guides_report() + QStringLiteral("]");
+				say(text);
 			});
 		});
 		auto *within_row = new QFormLayout();
