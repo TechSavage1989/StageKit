@@ -933,6 +933,104 @@ Meeting meet_lines(const Box &box, const SnapLines &lines, double within)
 	return m;
 }
 
+bool limit_resize(obs_source_t *scene, obs_sceneitem_t *item, const Box &before, double gap, const Measure &how)
+{
+	if (!scene || !item || obs_sceneitem_locked(item) || std::fabs(obs_sceneitem_get_rot(item)) > 0.01f)
+		return false;
+	refresh_item(item);
+	Box now = scene_box(scene, item);
+	// Only a change of size is a resize; an item that was moved is left to
+	// the other tools.
+	if (before.w <= 0.0 || before.h <= 0.0 || now.w <= 0.0 || now.h <= 0.0 ||
+	    (std::fabs(now.w - before.w) < 0.5 && std::fabs(now.h - before.h) < 0.5))
+		return false;
+	const double canvas_w = obs_source_get_width(scene), canvas_h = obs_source_get_height(scene);
+	const std::vector<Box> others = others_in(scene, {item}, how);
+	// Both directions grew by the same amount: it was scaled, and is pulled
+	// back the same way so its shape is kept.
+	const bool even = std::fabs(now.w / before.w - now.h / before.h) < 0.01;
+	constexpr double kTouch = 0.5;
+	bool changed = false;
+	// Twice: what is visible in an item is not always the same share of its
+	// box at another size, so the second pass takes up what the first left.
+	for (int pass = 0; pass < 2; pass++) {
+		const Box seen = measure_item(scene, item, how);
+		// How far what counts as the item sits inside its box, each side.
+		const double in_l = seen.x - now.x, in_t = seen.y - now.y;
+		const double in_r = (now.x + now.w) - (seen.x + seen.w), in_b = (now.y + now.h) - (seen.y + seen.h);
+		// Which sides were pulled outward.
+		const bool out_l = now.x<before.x - kTouch, out_r = now.x + now.w> before.x + before.w + kTouch;
+		const bool out_t = now.y<before.y - kTouch, out_b = now.y + now.h> before.y + before.h + kTouch;
+		// The furthest each side may go: the edge distance short of the
+		// screen's edge and of anything that was ahead of it and is level
+		// with the item.
+		double max_r = canvas_w - gap, min_l = gap, max_b = canvas_h - gap, min_t = gap;
+		const double was_l = before.x + in_l, was_r = before.x + before.w - in_r;
+		const double was_t = before.y + in_t, was_b = before.y + before.h - in_b;
+		for (const Box &o : others) {
+			const bool level = o.y < seen.y + seen.h - kTouch && seen.y < o.y + o.h - kTouch;
+			const bool in_line = o.x < seen.x + seen.w - kTouch && seen.x < o.x + o.w - kTouch;
+			if (level && o.x >= was_r - kTouch)
+				max_r = std::min(max_r, o.x - gap);
+			if (level && o.x + o.w <= was_l + kTouch)
+				min_l = std::max(min_l, o.x + o.w + gap);
+			if (in_line && o.y >= was_b - kTouch)
+				max_b = std::min(max_b, o.y - gap);
+			if (in_line && o.y + o.h <= was_t + kTouch)
+				min_t = std::max(min_t, o.y + o.h + gap);
+		}
+		// How much too far each pulled side went.
+		const double over_r = out_r ? std::max(0.0, seen.x + seen.w - max_r) : 0.0;
+		const double over_l = out_l ? std::max(0.0, min_l - seen.x) : 0.0;
+		const double over_b = out_b ? std::max(0.0, seen.y + seen.h - max_b) : 0.0;
+		const double over_t = out_t ? std::max(0.0, min_t - seen.y) : 0.0;
+		if (over_r < kTouch && over_l < kTouch && over_b < kTouch && over_t < kTouch)
+			break;
+		Box target = now;
+		target.x += over_l;
+		target.w -= over_l + over_r;
+		target.y += over_t;
+		target.h -= over_t + over_b;
+		if (even) {
+			// The smaller of the two sizes wins, and the side or corner that
+			// was not pulled stays where it is.
+			const double f = std::min(target.w / now.w, target.h / now.h);
+			const double w = now.w * f, h = now.h * f;
+			target.x = out_l && !out_r  ? now.x + now.w - w
+				   : out_l == out_r ? now.x + (now.w - w) / 2.0
+						    : now.x;
+			target.y = out_t && !out_b  ? now.y + now.h - h
+				   : out_t == out_b ? now.y + (now.h - h) / 2.0
+						    : now.y;
+			target.w = w;
+			target.h = h;
+		}
+		if (target.w < 1.0 || target.h < 1.0)
+			break;
+		const double fx = target.w / now.w, fy = target.h / now.h;
+		if (obs_sceneitem_get_bounds_type(item) != OBS_BOUNDS_NONE) {
+			vec2 bounds;
+			obs_sceneitem_get_bounds(item, &bounds);
+			bounds.x *= (float)fx;
+			bounds.y *= (float)fy;
+			obs_sceneitem_set_bounds(item, &bounds);
+		} else {
+			vec2 scale;
+			obs_sceneitem_get_scale(item, &scale);
+			scale.x *= (float)fx;
+			scale.y *= (float)fy;
+			obs_sceneitem_set_scale(item, &scale);
+		}
+		refresh_item(item);
+		const Box resized = scene_box(scene, item);
+		shift_item(scene, item, target.x - resized.x, target.y - resized.y);
+		refresh_item(item);
+		now = scene_box(scene, item);
+		changed = true;
+	}
+	return changed;
+}
+
 bool snap_item(obs_source_t *scene, obs_sceneitem_t *item, double within, const Measure &how)
 {
 	if (obs_sceneitem_locked(item))

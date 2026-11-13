@@ -4426,6 +4426,99 @@ int main(int argc, char **argv)
 				      "'snap when I let go' settles an item dragged with the mouse (x %.0f)", bp.x);
 				tick_box("arrangeLiveSnap", false);
 
+				// Stop resizing at edges: an item resized with the mouse is pulled
+				// back when it is let go, to stop the limit short of the screen's
+				// edge or of another item.
+				{
+					auto *limit_px = dock->findChild<QSpinBox *>("limitPx");
+					CHECK(limit_px && dock->findChild<QCheckBox *>("arrangeLimitResize"),
+					      "the Arrange box has 'Stop resizing at edges' and its limit");
+					if (limit_px)
+						limit_px->setValue(10);
+					tick_box("arrangeLimitResize", true);
+					obs_sceneitem_t *in_group = obs_scene_find_source(as, "Arrange Group");
+					const bool group_was = in_group && obs_sceneitem_visible(in_group);
+					const bool c_was = obs_sceneitem_visible(ic);
+					if (in_group)
+						obs_sceneitem_set_visible(in_group, false);
+					obs_sceneitem_set_visible(ic, false);
+					auto scale_of = [](obs_sceneitem_t *item) {
+						vec2 v;
+						obs_sceneitem_get_scale(item, &v);
+						return v;
+					};
+					auto drag_to_scale = [&](float sx, float sy) {
+						settle_snap();
+						mouse(true);
+						vec2 v;
+						vec2_set(&v, sx, sy);
+						obs_sceneitem_set_scale(ia, &v);
+						settle_snap();
+						mouse(false);
+						settle_snap();
+					};
+					auto reset = [&](float x, float y) {
+						vec2 one;
+						vec2_set(&one, 1.0f, 1.0f);
+						obs_sceneitem_set_scale(ia, &one);
+						place(ia, x, y);
+					};
+					select_only({ia});
+					place(ib, 300, 200);     // 60x80: in the way further down
+					place(ibadge, 400, 250); // out of the way: its picture starts at 450
+					// Towards the screen's edge: 100 wide at 400, pulled to 300 wide.
+					reset(400, 100);
+					drag_to_scale(3.0f, 1.0f);
+					vec2 sc = scale_of(ia);
+					CHECK(std::fabs(sc.x - 2.3f) < 0.02f && std::fabs(sc.y - 1.0f) < 0.01f &&
+						      std::fabs(pos_of(ia).x - 400) < 0.6,
+					      "an edge dragged past the screen's edge stops the limit short of it (width x%.2f; wanted 2.30)",
+					      sc.x);
+					// Towards another item.
+					reset(100, 210);
+					drag_to_scale(3.0f, 1.0f);
+					sc = scale_of(ia);
+					CHECK(std::fabs(sc.x - 1.9f) < 0.02f,
+					      "and stops the limit short of another item in its way (width x%.2f; wanted 1.90)",
+					      sc.x);
+					// Scaled evenly: pulled back evenly, keeping its shape.
+					reset(20, 20);
+					drag_to_scale(8.0f, 8.0f);
+					sc = scale_of(ia);
+					CHECK(std::fabs(sc.x - 2.7f) < 0.03f && std::fabs(sc.y - 2.7f) < 0.03f &&
+						      std::fabs(pos_of(ia).x - 20) < 0.6 &&
+						      std::fabs(pos_of(ia).y - 20) < 0.6,
+					      "an item scaled evenly is pulled back evenly and keeps its corner (x%.2f, x%.2f; wanted 2.70)",
+					      sc.x, sc.y);
+					// Only moved: left where it is.
+					reset(500, 20);
+					settle_snap();
+					mouse(true);
+					place(ia, 600, 20);
+					settle_snap();
+					mouse(false);
+					settle_snap();
+					CHECK(std::fabs(pos_of(ia).x - 600) < 0.6 &&
+						      std::fabs(scale_of(ia).x - 1.0f) < 0.01f,
+					      "an item that was only moved is left alone");
+					// Resized by a key or a filter, not the mouse: left alone.
+					reset(400, 100);
+					settle_snap();
+					vec2 big;
+					vec2_set(&big, 3.0f, 1.0f);
+					obs_sceneitem_set_scale(ia, &big);
+					settle_snap();
+					CHECK(std::fabs(scale_of(ia).x - 3.0f) < 0.01f,
+					      "and so is one resized without the mouse");
+					reset(20, 20);
+					tick_box("arrangeLimitResize", false);
+					if (in_group)
+						obs_sceneitem_set_visible(in_group, group_was);
+					obs_sceneitem_set_visible(ic, c_was);
+					select_only({});
+					settle_snap();
+				}
+
 				// Guide lines over the preview. OBS's preview is stood in for by a
 				// plain widget; the lines live in a see-through window over it.
 				{

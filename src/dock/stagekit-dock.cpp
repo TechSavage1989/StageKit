@@ -224,6 +224,8 @@ public:
 		option("menuLiveSnap", "Arrange.LiveSnap", o.live_snap,
 		       [](ArrangeOptions &c, bool on) { c.live_snap = on; });
 		option("menuGuides", "Arrange.Guides", o.guides, [](ArrangeOptions &c, bool on) { c.guides = on; });
+		option("menuLimitResize", "Arrange.LimitResize", o.limit_resize,
+		       [](ArrangeOptions &c, bool on) { c.limit_resize = on; });
 	}
 
 private:
@@ -695,19 +697,31 @@ public:
 		snap_within_->setRange(1, 200);
 		snap_within_->setSuffix(" px");
 		within_row->addRow(tr_text("Arrange.Within"), snap_within_);
+		limit_resize_ = new QCheckBox(tr_text("Arrange.LimitResize"), arrange_box);
+		limit_resize_->setObjectName("arrangeLimitResize");
+		limit_resize_->setToolTip(tr_text("Arrange.LimitResize.Tip"));
+		limit_px_ = new QSpinBox(arrange_box);
+		limit_px_->setObjectName("limitPx");
+		limit_px_->setRange(0, 1000);
+		limit_px_->setSuffix(" px");
+		limit_px_->setToolTip(tr_text("Arrange.LimitResize.Tip"));
+		within_row->addRow(tr_text("Arrange.LimitPx"), limit_px_);
 		arrange_layout->addWidget(visible_);
 		arrange_layout->addWidget(no_shadow_);
 		arrange_layout->addWidget(keep_shape_);
 		arrange_layout->addWidget(live_snap_);
 		arrange_layout->addWidget(guides_);
+		arrange_layout->addWidget(limit_resize_);
 		arrange_layout->addLayout(within_row);
 		// The options are shared with the hotkeys and the right-click menu.
 		show_arrange_options();
-		for (QCheckBox *box : {visible_, no_shadow_, keep_shape_, live_snap_, guides_, every_scene_, slide_})
+		for (QCheckBox *box :
+		     {visible_, no_shadow_, keep_shape_, live_snap_, guides_, every_scene_, slide_, limit_resize_})
 			QObject::connect(box, &QCheckBox::toggled, this, [this](bool) { store_arrange_options(); });
 		QObject::connect(against_, &QComboBox::currentIndexChanged, this,
 				 [this](int) { store_arrange_options(); });
 		QObject::connect(snap_within_, &QSpinBox::valueChanged, this, [this](int) { store_arrange_options(); });
+		QObject::connect(limit_px_, &QSpinBox::valueChanged, this, [this](int) { store_arrange_options(); });
 		layout->addWidget(arrange_box);
 
 		// Snapping on letting go: watch the selected items a few times a second.
@@ -907,6 +921,8 @@ private:
 		no_shadow_->setChecked(o.how.leave_out_shadows);
 		keep_shape_->setChecked(o.keep_shape);
 		live_snap_->setChecked(o.live_snap);
+		limit_resize_->setChecked(o.limit_resize);
+		limit_px_->setValue(o.limit_px);
 		guides_->setChecked(o.guides);
 		every_scene_->setChecked(o.send_every_scene);
 		slide_->setChecked(o.send_slide);
@@ -966,6 +982,8 @@ private:
 		o.how.leave_out_shadows = no_shadow_->isChecked();
 		o.keep_shape = keep_shape_->isChecked();
 		o.live_snap = live_snap_->isChecked();
+		o.limit_resize = limit_resize_->isChecked();
+		o.limit_px = limit_px_->value();
 		o.guides = guides_->isChecked();
 		o.send_every_scene = every_scene_->isChecked();
 		o.send_slide = slide_->isChecked();
@@ -1005,42 +1023,56 @@ private:
 	{
 		show_arrange_target();
 		const ArrangeOptions options = arrange_options();
-		if (!options.live_snap) {
+		if (!options.live_snap && !options.limit_resize) {
 			watched_.clear();
 			return;
 		}
 		obs_source_t *scene = arrange_scene();
 		const std::vector<obs_sceneitem_t *> items = selected_items(scene);
-		std::vector<std::pair<int64_t, std::pair<float, float>>> now;
-		for (obs_sceneitem_t *item : items) {
-			vec2 pos;
-			obs_sceneitem_get_pos(item, &pos);
-			now.push_back({obs_sceneitem_get_id(item), {pos.x, pos.y}});
-		}
-		const bool same_items = now.size() == watched_.size() &&
-					std::equal(now.begin(), now.end(), watched_.begin(),
-						   [](const auto &a, const auto &b) { return a.first == b.first; });
-		const bool moved = same_items && now != watched_;
-		const bool button_up = !g_test_mouse_down && !guides_mouse_down();
-		// Only a drag with the mouse counts. Items moved by a key, a filter or
-		// a Stream Deck button are where they were sent and must stay there.
-		if (moved && !button_up)
-			dragging_ = true;
-		if (dragging_ && !moved && button_up) {
-			dragging_ = false;
-			const std::string before = transform_snapshot(scene);
-			bool snapped = false;
-			for (obs_sceneitem_t *item : items)
-				snapped = snap_item(scene, item, options.within, options.how) || snapped;
-			if (snapped)
-				add_transform_undo(obs_module_text("Hotkey.Arrange.SnapNow"), before,
-						   transform_snapshot(scene));
-			now.clear();
+		auto look = [&] {
+			std::vector<Watched> out;
 			for (obs_sceneitem_t *item : items) {
 				vec2 pos;
 				obs_sceneitem_get_pos(item, &pos);
-				now.push_back({obs_sceneitem_get_id(item), {pos.x, pos.y}});
+				out.push_back({obs_sceneitem_get_id(item), pos.x, pos.y, scene_box(scene, item)});
 			}
+			return out;
+		};
+		std::vector<Watched> now = look();
+		const bool same_items = now.size() == watched_.size() &&
+					std::equal(now.begin(), now.end(), watched_.begin(),
+						   [](const Watched &a, const Watched &b) { return a.id == b.id; });
+		const bool moved = same_items && !(now == watched_);
+		const bool button_up = !g_test_mouse_down && !guides_mouse_down();
+		// Only a drag with the mouse counts. Items moved by a key, a filter or
+		// a Stream Deck button are where they were sent and must stay there.
+		if (moved && !button_up && !dragging_) {
+			dragging_ = true;
+			drag_start_ = watched_;
+		}
+		if (dragging_ && !moved && button_up) {
+			dragging_ = false;
+			const std::string before = transform_snapshot(scene);
+			bool snapped = false, limited = false;
+			for (size_t i = 0; i < items.size(); i++) {
+				const Box &began = i < drag_start_.size() ? drag_start_[i].box : now[i].box;
+				const bool resized = std::fabs(now[i].box.w - began.w) >= 0.5 ||
+						     std::fabs(now[i].box.h - began.h) >= 0.5;
+				// A resized item is pulled back to the limit and left where
+				// that puts it; one that was only moved is snapped.
+				if (resized && options.limit_resize)
+					limited = limit_resize(scene, items[i], began, options.limit_px, options.how) ||
+						  limited;
+				else if (!resized && options.live_snap)
+					snapped = snap_item(scene, items[i], options.within, options.how) || snapped;
+			}
+			if (limited || snapped)
+				add_transform_undo(obs_module_text(limited ? "Arrange.LimitResize.Undo"
+									   : "Hotkey.Arrange.SnapNow"),
+						   before, transform_snapshot(scene));
+			if (limited)
+				say(tr_text("Arrange.LimitResize.Done").arg(options.limit_px));
+			now = look();
 		}
 		if (!same_items)
 			dragging_ = false;
@@ -1380,6 +1412,8 @@ private:
 	uint64_t shown_options_ = 0;
 	bool storing_ = false;
 	QCheckBox *live_snap_ = nullptr;
+	QCheckBox *limit_resize_ = nullptr;
+	QSpinBox *limit_px_ = nullptr;
 	QCheckBox *guides_ = nullptr;
 	QCheckBox *every_scene_ = nullptr;
 	QCheckBox *slide_ = nullptr;
@@ -1401,7 +1435,20 @@ private:
 	QElapsedTimer undo_clock_;
 	int undo_ms_ = 0;
 	QSpinBox *snap_within_ = nullptr;
-	std::vector<std::pair<int64_t, std::pair<float, float>>> watched_;
+	// Each selected item's id with its place and size, at the last look.
+	struct Watched {
+		int64_t id = 0;
+		float x = 0, y = 0;
+		Box box;
+		bool operator==(const Watched &o) const
+		{
+			return id == o.id && x == o.x && y == o.y && std::fabs(box.x - o.box.x) < 0.01 &&
+			       std::fabs(box.y - o.box.y) < 0.01 && std::fabs(box.w - o.box.w) < 0.01 &&
+			       std::fabs(box.h - o.box.h) < 0.01;
+		}
+	};
+	std::vector<Watched> watched_;
+	std::vector<Watched> drag_start_; // as they were when the drag began
 	bool dragging_ = false;
 	QStringList names_;
 	QStringList scenes_;

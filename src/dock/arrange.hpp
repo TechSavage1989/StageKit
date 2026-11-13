@@ -94,6 +94,11 @@ Offset slide_offset(obs_source_t *scene, obs_sceneitem_t *item, int dx, int dy, 
 
 // Moves an item the last few pixels so an edge or centre meets the screen's
 // or another item's. Returns true when it moved.
+// After an item was resized by hand: pulls back any side that was dragged
+// to within `gap` of the screen's edge or of another item, so it stops that
+// far short. `before` is its box when the drag began. Measured as the
+// Arrange options say. Returns whether it changed anything.
+bool limit_resize(obs_source_t *scene, obs_sceneitem_t *item, const Box &before, double gap, const Measure &how);
 bool snap_item(obs_source_t *scene, obs_sceneitem_t *item, double within, const Measure &how);
 
 // The lines an item can meet: the screen's edges and centre, and the edges

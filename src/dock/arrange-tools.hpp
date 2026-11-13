@@ -29,8 +29,12 @@ struct ArrangeOptions {
 	Measure how;
 	bool keep_shape = true; // resizing keeps an item's proportions; off stretches one direction
 	bool live_snap = false; // snap after an item is dragged and let go
-	int within = 20;        // how close counts for snapping, in pixels
-	bool guides = false;    // draw guide lines over OBS's preview
+	// After an item is resized by hand, pull it back to stop `limit_px` short
+	// of the screen's edge and of other items.
+	bool limit_resize = false;
+	int limit_px = 30;
+	int within = 20;     // how close counts for snapping, in pixels
+	bool guides = false; // draw guide lines over OBS's preview
 	// Not an arrange option, but kept and saved the same way: the dock's
 	// Send to buttons, and the keys it makes, move the item's source in every
 	// scene it is in. Off: only in the scene being worked on.

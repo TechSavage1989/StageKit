@@ -196,6 +196,13 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   `ArrangeOptions::copy_scenes` only, a list built in the dock the PickList way (choose to add, a
   row each with a remove button) and saved with the collection. Name a tool for what it does, verb
   first; the owner asked for labels that say what happens.
+- **Stop resizing at edges acts on release** (`limit_resize` in `src/dock/arrange.*`, called from the
+  dock's `watch_for_drop`). OBS's own resize drag cannot be hooked, and correcting an item while the
+  mouse still holds it fights OBS's next mouse move, so the item is pulled back when the button is
+  let go, like snap on release. Only sides that were pulled outward are limited, only by things that
+  were ahead of them when the drag began, and an item that was only moved is left to snapping. The
+  owner asked for the limit to hold *while* dragging; this is the nearest that works, and they were
+  told so.
 - **Arrange options are global** (`arrange_options()`), saved with the scene collection. The dock's
   controls only show and set them. Add a new tool to `ArrangeAction` and `kInfo` and it appears in the
   dock, the menu and the hotkeys at once.
