@@ -4150,6 +4150,170 @@ int main(int argc, char **argv)
 					against(0);
 				}
 
+				// 'Ignore shadows & outlines' leaves out whatever any filter draws,
+				// not only a Shadow, Glow & Outline: here a border from Corners &
+				// Edges around the badge's whole 200x100 source, whose own picture
+				// is only the middle 100x40.
+				{
+					obs_data_t *cd = obs_data_create();
+					obs_data_set_double(cd, "size", 0.0);
+					obs_data_set_double(cd, "border", 6.0);
+					obs_data_set_double(cd, "border_opacity", 100.0);
+					obs_data_set_int(cd, "border_color", 0xFFFFFFFF);
+					obs_data_set_bool(cd, "screen_px", false);
+					obs_data_set_bool(cd, "placed", true);
+					obs_source_t *edges =
+						obs_source_create("stagekit_corners", "Corners & Edges", cd, nullptr);
+					obs_data_release(cd);
+					obs_source_filter_add(badge_src, edges);
+					against(0);
+					tick_box("arrangeVisible", true);
+					select_only({ibadge});
+					place(ibadge, 300, 200);
+					for (int i = 0; i < 4; i++) {
+						QCoreApplication::processEvents();
+						sleep_ms(50);
+					}
+					tick_box("arrangeNoShadow", false);
+					click("arrange_left");
+					const float with_border = pos_of(ibadge).x;
+					tick_box("arrangeNoShadow", true);
+					click("arrange_left");
+					const float own_pixels = pos_of(ibadge).x;
+					CHECK(std::fabs(with_border - 0) < 1.6 && std::fabs(own_pixels + 50) < 1.6,
+					      "'Ignore shadows & outlines' measures the source's own pixels, leaving out a border another filter draws (x %.0f, then %.0f)",
+					      with_border, own_pixels);
+					obs_source_filter_remove(badge_src, edges);
+					obs_source_release(edges);
+					select_only({});
+				}
+
+				// Bring along with a shadow on the leader (the report: after a
+				// flip, the gap grew by the camera's shadow). Block A's picture is
+				// 100x50 with a 20 px shadow below and right; the badge's picture
+				// sits 10 px above A's. Sent to the top, the badge must flip below
+				// and sit 10 px under A's picture, not under its shadow.
+				{
+					obs_data_t *sd = obs_data_create();
+					obs_data_set_bool(sd, "shadow", true);
+					obs_data_set_double(sd, "offset_x", 20);
+					obs_data_set_double(sd, "offset_y", 20);
+					obs_data_set_double(sd, "softness", 0);
+					obs_data_set_bool(sd, "keep_place", true);
+					for (const char *side :
+					     {"adjusted_left", "adjusted_top", "adjusted_right", "adjusted_bottom"})
+						obs_data_set_int(sd, side, 0);
+					obs_source_t *lead_shadow = obs_source_create(
+						"stagekit_shadow_backdrop", "Shadow, Glow & Outline", sd, nullptr);
+					obs_data_release(sd);
+					obs_source_filter_add(block_a, lead_shadow);
+					select_only({});
+					place(ia, 300, 200);
+					place(ibadge, 250, 120); // drawn part 100x40 at 300, 150: 10 px above A
+					for (int i = 0; i < 6; i++) {
+						QCoreApplication::processEvents();
+						sleep_ms(50);
+					}
+					obs_data_t *pd = obs_data_create();
+					obs_data_set_string(pd, "item", "Block A");
+					obs_data_set_string(pd, "linked", "Padded Badge");
+					obs_data_set_int(pd, "destination", 2); // top right
+					obs_data_set_double(pd, "margin", 30);
+					obs_data_set_int(pd, "duration_ms", 0);
+					obs_source_t *mover = obs_source_create("stagekit_place_item",
+										"Flip Shadow Test", pd, nullptr);
+					obs_data_release(pd);
+					obs_source_filter_add(as_source, mover);
+					sleep_ms(100);
+					obs_source_set_enabled(mover, true);
+					for (int i = 0; i < 6; i++) {
+						QCoreApplication::processEvents();
+						sleep_ms(50);
+					}
+					const vec2 lead_at = pos_of(ia), badge_at = pos_of(ibadge);
+					// A's picture top is at its position; the badge's picture is 30 px into the badge.
+					const double gap = (badge_at.y + 30) - (lead_at.y + 50);
+					CHECK(std::fabs(lead_at.y - 30) < 0.6 && std::fabs(gap - 10) < 1.1,
+					      "a brought-along item that flips keeps its gap to the leader's picture, not to the leader's shadow (gap %.0f)",
+					      gap);
+					obs_source_filter_remove(as_source, mover);
+					obs_source_release(mover);
+					obs_source_filter_remove(block_a, lead_shadow);
+					obs_source_release(lead_shadow);
+				}
+
+				// Same in every scene: like Copy and Paste Transform, for every
+				// other scene at once, groups included; locked copies are left alone.
+				{
+					obs_scene_t *paste_a = obs_scene_create("Paste Elsewhere");
+					obs_sceneitem_t *loose = obs_scene_add(paste_a, block_a);
+					obs_sceneitem_t *box = obs_scene_add_group(paste_a, "Paste Group");
+					obs_sceneitem_t *grouped_copy = obs_scene_add(paste_a, block_a);
+					obs_sceneitem_group_add_item(box, grouped_copy);
+					place(box, 200, 150);
+					place(grouped_copy, 0, 0);
+					place(loose, 500, 300);
+					obs_scene_t *paste_b = obs_scene_create("Paste Locked");
+					obs_sceneitem_t *locked = obs_scene_add(paste_b, block_a);
+					place(locked, 5, 5);
+					obs_sceneitem_set_locked(locked, true);
+					place(ia, 40, 60);
+					vec2 half;
+					vec2_set(&half, 0.5f, 0.5f);
+					obs_sceneitem_set_scale(ia, &half);
+					obs_sceneitem_crop crop = {10, 0, 0, 0};
+					obs_sceneitem_set_crop(ia, &crop);
+					select_only({ia});
+					for (int i = 0; i < 4; i++) {
+						QCoreApplication::processEvents();
+						sleep_ms(50);
+					}
+					CHECK(click("arrange_same_everywhere"),
+					      "the Arrange box has 'Same in every scene'");
+					sleep_ms(100);
+					vec2 loose_scale;
+					obs_sceneitem_get_scale(loose, &loose_scale);
+					obs_sceneitem_crop loose_crop;
+					obs_sceneitem_get_crop(loose, &loose_crop);
+					const vec2 lp = pos_of(loose), hp = pos_of(box), gp = pos_of(grouped_copy),
+						   kp = pos_of(locked);
+					CHECK(std::fabs(lp.x - 40) < 0.6 && std::fabs(lp.y - 60) < 0.6 &&
+						      std::fabs(loose_scale.x - 0.5) < 0.001 && loose_crop.left == 10,
+					      "every copy in the other scenes gets its place, size and crop (%.0f, %.0f at %.2f, crop %d)",
+					      lp.x, lp.y, loose_scale.x, loose_crop.left);
+					CHECK(std::fabs(hp.x + gp.x - 40) < 1.0 && std::fabs(hp.y + gp.y - 60) < 1.0,
+					      "a copy inside a group lands on the same spot of the screen (%.0f, %.0f)",
+					      hp.x + gp.x, hp.y + gp.y);
+					CHECK(std::fabs(kp.x - 5) < 0.6 && std::fabs(kp.y - 5) < 0.6,
+					      "a locked copy is left alone");
+
+					// From a hotkey or the preview's menu, and one step for Undo.
+					place(ia, 100, 100);
+					calldata_t hk = {};
+					calldata_set_string(&hk, "action", "same_everywhere");
+					proc_handler_call(obs_get_proc_handler(), "stagekit_run_arrange", &hk);
+					calldata_free(&hk);
+					const vec2 moved = pos_of(loose);
+					calldata_t undo_cd = {};
+					calldata_set_bool(&undo_cd, "redo", false);
+					proc_handler_call(obs_get_proc_handler(), "stagekit_replay_arrange", &undo_cd);
+					calldata_free(&undo_cd);
+					sleep_ms(100);
+					const vec2 back = pos_of(loose);
+					CHECK(std::fabs(moved.x - 100) < 0.6 && std::fabs(back.x - 40) < 0.6,
+					      "it works from a hotkey too, and Undo takes it back in every scene (%.0f, then %.0f)",
+					      moved.x, back.x);
+
+					vec2 one;
+					vec2_set(&one, 1.0f, 1.0f);
+					obs_sceneitem_set_scale(ia, &one);
+					obs_sceneitem_crop none = {0, 0, 0, 0};
+					obs_sceneitem_set_crop(ia, &none);
+					select_only({});
+					obs_scene_release(paste_a);
+					obs_scene_release(paste_b);
+				}
+
 				// Slide to the next edge: the Send to arrows move the chosen item
 				// that way until it comes within the edge distance of the next edge.
 				{

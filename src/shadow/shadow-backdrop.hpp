@@ -25,15 +25,17 @@ void shadow_room(obs_source_t *source, double room[4]);
 // What draws a source's picture without its shadows, glows and outlines, and
 // where that picture sits inside the whole source.
 struct ShadowFree {
-	obs_source_t *draw = nullptr; // a new reference: the filter the first shadow draws from, or the source
-	bool bare = false;            // `draw` is the source itself, to be drawn without any of its filters
-	double left = 0.0, top = 0.0; // where its picture starts in the whole source, in source pixels
+	obs_source_t *draw = nullptr;     // a new reference: the filter the first shadow draws from, or the source
+	bool bare = false;                // `draw` is the source itself, to be drawn without any of its filters
+	double left = 0.0, top = 0.0;     // where its picture starts in the whole source, in source pixels
+	double right = 0.0, bottom = 0.0; // the room the shadows take on the other two sides
 	// The room keeps its size on the screen whatever size the item is drawn
 	// at (the shadow's sizes are in screen pixels), rather than growing and
 	// shrinking with the item.
 	bool fixed_on_screen = false;
 };
-// False when the source has no Shadow, Glow & Outline switched on.
+// False when the source has no Shadow, Glow & Outline switched on (then
+// `out` is all zero and holds no reference).
 bool shadow_free(obs_source_t *source, ShadowFree &out);
 
 } // namespace stagekit

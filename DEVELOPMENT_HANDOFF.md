@@ -204,6 +204,36 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Same in every scene; own pixels; flips round the picture (0.1.0-beta52)
+
+The owner: "id like a feature to paste transforms to all of the same source in all scenes ... similar
+to the copy and paste transforms but to all scenes for the selected source/sources"; "i don't think
+slide to next edge is respecting ignore shadows of other objects. also the ignore shadows should ignore
+any of the outlines or shadows etc added by filters and force the detection to be based on the
+source's actual pixels"; then four screenshots as "proof".
+
+- **Same in every scene**: `ArrangeAction::SameEverywhere` (`same_everywhere`), so it is in the dock,
+  the preview menu and the hotkeys. `copy_to_every_scene` sets alignment, bounds type, bounds
+  alignment, bounds, scale, rotation, crop and position on every copy of each selected item's source
+  in the other scenes. Position, scale and bounds go through `item_space` of both sides, so a copy in
+  a group lands on the same canvas spot. Locked copies are skipped; one item per source (the first
+  selected); groups listed by `obs_enum_scenes` are skipped. Undo snapshots every scene. The dock's
+  13th Arrange button spans its row. Bounds crop (OBS 30.1+) is not copied: the headers the tests build
+  against do not have it.
+- **The screenshots** showed the slide itself stopping right (the camera's picture 30 px from the
+  edges). What was wrong was *Bring along*: after a flip, the widget sat a shadow's width further from
+  the camera than before. `plan()` mirrored the follower round the leader's box (shadow room
+  included); it now mirrors round the leader's picture (`Measure{true, true}`), scaled to the leader's
+  target size. A test with a 20 px shadow on the leader fails without the fix (gap 30, not 10).
+- **Own pixels**: see the AGENTS.md entry. The label is now *Ignore shadows & outlines*. Test: a
+  Corners & Edges border round the badge's whole source is counted when unticked and left out when
+  ticked. The owner's collection has no other shadow or outline filters (only Color Correction and
+  Render Delay besides StageKit's).
+- A slip while adding the action (its `case` put before *Same size* so *Same width* and *Same height*
+  fell into it) was caught by the existing size tests before anything was pushed.
+
+**Not verified:** on Windows.
+
 ## Slide to the next edge (0.1.0-beta51)
 
 The owner: the Send to arrows should also have "a second function where any one of those directions

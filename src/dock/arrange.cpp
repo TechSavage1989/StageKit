@@ -132,22 +132,37 @@ Box measure_item(obs_source_t *scene, obs_sceneitem_t *item, const Measure &how)
 	Drawn part;
 	bool measured = false;
 	ShadowFree free;
-	if (how.leave_out_shadows && shadow_free(source, free)) {
-		// The picture as it is before its shadow, glow or outline is added,
-		// then put where the shadow filter puts it. A source that plays
-		// video frames cannot be drawn without its filters, so for one of
-		// those the shadow's room is cut off the edges instead (below).
-		const bool can_draw = !free.bare || !(obs_source_get_output_flags(free.draw) & OBS_SOURCE_ASYNC);
-		if (can_draw) {
+	const bool shadowed = how.leave_out_shadows && shadow_free(source, free);
+	if (how.leave_out_shadows) {
+		// The source's own pixels: drawn with none of its filters, so no
+		// shadow, glow, outline or border any filter adds counts. That
+		// picture sits in the whole source where the shadows' room puts it.
+		// It only can when the filters change the source's size by nothing
+		// but that room (an Auto Frame, say, gives it another size) and the
+		// source draws without them (one that plays video frames does not).
+		const double bw = obs_source_get_base_width(source), bh = obs_source_get_base_height(source);
+		const double fw = obs_source_get_width(source), fh = obs_source_get_height(source);
+		const bool only_room = std::fabs(fw - (bw + free.left + free.right)) <= 1.0 &&
+				       std::fabs(fh - (bh + free.top + free.bottom)) <= 1.0;
+		const bool async = (obs_source_get_output_flags(source) & OBS_SOURCE_ASYNC) != 0;
+		if (bw > 0.0 && bh > 0.0 && only_room && !async) {
+			part = drawn_part(source, true);
+			measured = part.any;
+		}
+		// Otherwise: the picture as it is before its first shadow, glow or
+		// outline, put where the shadow puts it.
+		if (!measured && shadowed &&
+		    (!free.bare || !(obs_source_get_output_flags(free.draw) & OBS_SOURCE_ASYNC))) {
 			part = drawn_part(free.draw, free.bare);
 			measured = true;
-			if (part.any) {
-				part.x += free.left;
-				part.y += free.top;
-			}
 		}
-		obs_source_release(free.draw);
+		if (measured && part.any) {
+			part.x += free.left;
+			part.y += free.top;
+		}
 	}
+	if (shadowed)
+		obs_source_release(free.draw);
 	if (!measured) {
 		part = drawn_part(source);
 		if (part.any && how.leave_out_shadows) {
@@ -301,6 +316,105 @@ int distribute_items(obs_source_t *scene, std::vector<obs_sceneitem_t *> items, 
 		at += size(e.box) + gap;
 	}
 	return moved;
+}
+
+namespace {
+
+// One copy of a source: the scene it is in (never a group) and its item there.
+struct Copy {
+	obs_source_t *scene;
+	obs_sceneitem_t *item;
+};
+
+// Every item showing `source`, in every scene but `skip`, groups included.
+std::vector<Copy> copies_of(obs_source_t *source, obs_source_t *skip)
+{
+	std::vector<Copy> out;
+	struct Find {
+		obs_source_t *source, *skip, *scene;
+		std::vector<Copy> *out;
+	} find{source, skip, nullptr, &out};
+	static const auto match = [](obs_scene_t *, obs_sceneitem_t *item, void *param) {
+		auto *f = static_cast<Find *>(param);
+		if (obs_sceneitem_get_source(item) == f->source)
+			f->out->push_back({f->scene, item});
+		return true;
+	};
+	obs_enum_scenes(
+		[](void *param, obs_source_t *scene) {
+			auto *f = static_cast<Find *>(param);
+			// A group is listed as a scene too; its items are reached through
+			// the scene that holds it.
+			if (obs_source_is_group(scene) || scene == f->skip)
+				return true;
+			f->scene = scene;
+			obs_scene_enum_items(
+				obs_scene_from_source(scene),
+				[](obs_scene_t *s, obs_sceneitem_t *item, void *p) {
+					match(s, item, p);
+					if (obs_sceneitem_is_group(item))
+						obs_sceneitem_group_enum_items(item, match, p);
+					return true;
+				},
+				f);
+			return true;
+		},
+		&find);
+	return out;
+}
+
+// Gives `to` the transform of `from`, worked out on the screen, so a copy in
+// a group lands where a copy outside one would.
+void copy_transform(obs_source_t *from_scene, obs_sceneitem_t *from, obs_source_t *to_scene, obs_sceneitem_t *to)
+{
+	const Space fs = item_space(from_scene, from), ts = item_space(to_scene, to);
+	const double kx = fs.sx / ts.sx, ky = fs.sy / ts.sy;
+	vec2 pos, scale, bounds;
+	obs_sceneitem_get_pos(from, &pos);
+	obs_sceneitem_get_scale(from, &scale);
+	obs_sceneitem_get_bounds(from, &bounds);
+	obs_sceneitem_crop crop;
+	obs_sceneitem_get_crop(from, &crop);
+
+	obs_sceneitem_defer_update_begin(to);
+	obs_sceneitem_set_alignment(to, obs_sceneitem_get_alignment(from));
+	obs_sceneitem_set_bounds_type(to, obs_sceneitem_get_bounds_type(from));
+	obs_sceneitem_set_bounds_alignment(to, obs_sceneitem_get_bounds_alignment(from));
+	vec2 b;
+	vec2_set(&b, (float)(bounds.x * kx), (float)(bounds.y * ky));
+	obs_sceneitem_set_bounds(to, &b);
+	vec2 s;
+	vec2_set(&s, (float)(scale.x * kx), (float)(scale.y * ky));
+	obs_sceneitem_set_scale(to, &s);
+	obs_sceneitem_set_rot(to, obs_sceneitem_get_rot(from));
+	obs_sceneitem_set_crop(to, &crop);
+	vec2 p;
+	vec2_set(&p, (float)((fs.ox + pos.x * fs.sx - ts.ox) / ts.sx),
+		 (float)((fs.oy + pos.y * fs.sy - ts.oy) / ts.sy));
+	obs_sceneitem_set_pos(to, &p);
+	obs_sceneitem_defer_update_end(to);
+}
+
+} // namespace
+
+int copy_to_every_scene(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items)
+{
+	int changed = 0;
+	std::vector<obs_source_t *> done; // one item per source: the first selected
+	for (obs_sceneitem_t *item : items) {
+		obs_source_t *source = obs_sceneitem_get_source(item);
+		if (!source || obs_sceneitem_is_group(item) ||
+		    std::find(done.begin(), done.end(), source) != done.end())
+			continue;
+		done.push_back(source);
+		for (const Copy &copy : copies_of(source, scene)) {
+			if (obs_sceneitem_locked(copy.item))
+				continue;
+			copy_transform(scene, item, copy.scene, copy.item);
+			changed++;
+		}
+	}
+	return changed;
 }
 
 int match_size(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items, bool width, bool height,

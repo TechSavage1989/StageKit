@@ -41,6 +41,7 @@ const ArrangeInfo kInfo[(int)ArrangeAction::Count] = {
 	{"same_width", "Arrange.SameWidth", "Hotkey.Arrange.SameWidth", 2},
 	{"same_height", "Arrange.SameHeight", "Hotkey.Arrange.SameHeight", 2},
 	{"same_size", "Arrange.SameSize", "Hotkey.Arrange.SameSize", 2},
+	{"same_everywhere", "Arrange.SameEverywhere", "Hotkey.Arrange.SameEverywhere", 1},
 };
 
 struct Hotkey {
@@ -218,11 +219,14 @@ void replay_last_arrange(bool redo)
 
 ArrangeOutcome run_arrange(ArrangeAction action, obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items)
 {
-	// One step in OBS's Edit → Undo for whatever this changes.
-	const std::string before = transform_snapshot(scene);
+	// One step in OBS's Edit → Undo for whatever this changes, in every
+	// scene when that is where it reaches.
+	const bool everywhere = action == ArrangeAction::SameEverywhere;
+	const std::string before = everywhere ? transform_snapshot_all() : transform_snapshot(scene);
 	const ArrangeOutcome out = run_arrange_now(action, scene, items);
 	if (out.changed > 0)
-		add_transform_undo(obs_module_text(arrange_info(action).hotkey), before, transform_snapshot(scene));
+		add_transform_undo(obs_module_text(arrange_info(action).hotkey), before,
+				   everywhere ? transform_snapshot_all() : transform_snapshot(scene));
 	return out;
 }
 
@@ -278,6 +282,9 @@ ArrangeOutcome run_arrange_now(ArrangeAction action, obs_source_t *scene, const 
 					 action != ArrangeAction::SameWidth, o.keep_shape, o.how);
 		break;
 	}
+	case ArrangeAction::SameEverywhere:
+		out.changed = copy_to_every_scene(scene, items);
+		break;
 	default:
 		break;
 	}

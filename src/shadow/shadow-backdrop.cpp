@@ -940,7 +940,7 @@ bool shadow_free(obs_source_t *source, ShadowFree &out)
 		obs_source_t *source;
 		obs_source_t *first = nullptr;
 		int first_index = -1;
-		double left = 0.0, top = 0.0;
+		double left = 0.0, top = 0.0, right = 0.0, bottom = 0.0;
 		bool on_screen = false;
 	} find{source};
 	obs_source_enum_filters(
@@ -956,6 +956,8 @@ bool shadow_free(obs_source_t *source, ShadowFree &out)
 				const Padding p = shadow->padding_now();
 				f->left += p.left;
 				f->top += p.top;
+				f->right += p.right;
+				f->bottom += p.bottom;
 				f->on_screen = f->on_screen || shadow->in_screen_pixels();
 			}
 			const int index = obs_source_filter_get_index(f->source, filter);
@@ -976,6 +978,8 @@ bool shadow_free(obs_source_t *source, ShadowFree &out)
 	out.bare = under == source;
 	out.left = find.left;
 	out.top = find.top;
+	out.right = find.right;
+	out.bottom = find.bottom;
 	out.fixed_on_screen = find.on_screen;
 	return true;
 }

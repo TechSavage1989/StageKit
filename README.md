@@ -515,15 +515,18 @@ What they do:
 | *Space out ↔*, *Space out ↕* | With three or more: the outer two stay put and the rest spread so the gaps are equal. |
 | *Same width*, *Same height*, *Same size* | With two or more: resizes the others to match the first or last selected when *Align to* is set to that, otherwise the top-most one in the Sources list. |
 | *Snap now* | Moves each item the last few pixels so an edge or its centre meets the screen's or a neighbour's. |
+| *Same in every scene* | Like OBS's *Copy Transform* and *Paste Transform*, for all your scenes at once: every copy of the selected item's source in your other scenes gets the same place, size, rotation and crop. With several items selected, each does it for its own source. A copy inside a group lands on the same spot of the screen. Locked copies are left alone. |
 
 Options:
 
 - **Use visible pixels** (on by default) measures the picture actually drawn in each item and ignores
   the empty, see-through room around it. Switch it off to go by the item's box, as OBS does.
-- **Ignore shadows** (on by default) keeps a Shadow, Glow & Outline from counting: pictures are lined
-  up and sized by themselves, and their shadows reach past them. Unticked, each item counts together
-  with its shadow, so with *Same width* the picture and its shadow together come out as wide as the
-  other item and its shadow.
+- **Ignore shadows & outlines** (on by default) measures only each source's own pixels: shadows,
+  glows, outlines, borders and anything else its filters draw are left out, so pictures are lined up,
+  sized and slid by themselves and their shadows reach past them. Unticked, each item counts together
+  with everything its filters draw, so with *Same width* the picture and its shadow together come out
+  as wide as the other item and its shadow. (When a source's filters change its size in another way,
+  as an Auto Frame does, the picture is measured as it is before its first shadow.)
 - **Keep shape when resizing** (on by default) grows or shrinks an item evenly. Switch it off and
   *Same width* or *Same height* changes only that direction, which stretches the picture.
 - **Snap on release** snaps an item by itself after you drag it in the preview and let go. *Snap

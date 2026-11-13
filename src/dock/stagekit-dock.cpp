@@ -611,9 +611,14 @@ public:
 				obs_source_t *scene = arrange_scene();
 				const ArrangeOutcome out = run_arrange(action, scene, arrange_items(scene));
 				obs_source_release(scene);
-				say(arrange_message(out));
+				say(action == ArrangeAction::SameEverywhere && out.had > 0 && out.changed == 0
+					    ? tr_text("Arrange.NoneElsewhere")
+					    : arrange_message(out));
 			});
-			arrange_grid->addWidget(button, a / 3, a % 3);
+			// A last button on a row of its own takes the whole row.
+			const int count = (int)ArrangeAction::Count;
+			const bool alone = a == count - 1 && a % 3 == 0;
+			arrange_grid->addWidget(button, a / 3, a % 3, 1, alone ? 3 : 1);
 		}
 		arrange_layout->addLayout(arrange_grid);
 		visible_ = new QCheckBox(tr_text("Arrange.Visible"), arrange_box);
