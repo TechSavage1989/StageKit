@@ -204,6 +204,31 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Slide to the next edge (0.1.0-beta51)
+
+The owner: the Send to arrows should also have "a second function where any one of those directions
+moves the object in the chosen direction until it either would collide with the edge of another
+object, or would collide with the edge of the scene, but instead of colliding, respect the edge
+distance setting", "make sure the same settings like use visible pixels and all the others still work
+with it"; then: "must have the object stop at the first edge it meets, but if pressed again can pass
+through the object edge until the next edge it meets". They asked for it with "ultracode"; it was
+written directly and checked by a short review workflow.
+
+- Dock tick box *Slide to the next edge* (`sendSlide`, saved as `stagekit.send.slide` with the
+  arrange options). The arrows' tooltips change with it.
+- `slide_offset(scene, item, dx, dy, gap, how, leave_out)`: the item and every other visible item are
+  measured with the Arrange options (`how`). Along each direction the stops for the leading edge are
+  the screen's edge less `gap`, and for each item overlapping the path (by more than half a pixel
+  across it) its near side less `gap` and its far side less `gap`; the nearest stop more than half a
+  pixel ahead wins, none means no move. Diagonals do across, then down/up from the new place. The
+  centre button centres between the nearest items on either side (or the screen's edges), both ways.
+- Items in groups count on their own; a group in `leave_out` (or hidden) takes its items with it. The
+  dock leaves out the item chosen in *Bring along*.
+- The dock converts the move to the item's own position (through `item_space`) and sends it as a
+  saved-spot Send To (`send_with`), the same path as the other arrows.
+
+**Not verified:** on Windows.
+
 ## Same width, Ignore shadows, guides on Windows (0.1.0-beta50)
 
 The owner, with screenshots of the dock and the preview: "Same width doesn't appear to work. I expect

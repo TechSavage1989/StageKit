@@ -151,6 +151,11 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
 - **Edits made by a person go into OBS's undo list** (`add_transform_undo` in
   `src/dock/arrange-tools.*`): the arrange tools, snap on release, the dock's Send to buttons. Moves
   fired by filters and Stream Deck keys do not; they are part of the show.
+- **Slide to the next edge** (`slide_offset` in `src/dock/arrange.*`) stops the leading edge `gap`
+  short of the next edge ahead: the near side of an item in the path, then (next press) its far side,
+  then the screen's edge. The owner asked for exactly that: stop at the first edge, pass through on the
+  next press. The dock turns the result into a saved-spot Send To, so travel time, *In every scene*
+  and Undo behave as for the other arrows.
 - **Dock keys are Send To filters on the item's source**, not Place Item filters on the scene. The
   owner presses them from Stream Deck Filter keys on the camera.
 - **Active App follows the app in use, and nothing else.** The owner's old macros ran while a listed

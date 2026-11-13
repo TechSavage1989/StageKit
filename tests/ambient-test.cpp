@@ -18,6 +18,7 @@
 #include <QImage>
 #include <QPainter>
 #include <QLabel>
+#include <QSpinBox>
 #include <QListWidget>
 #include <QMenu>
 #include <QContextMenuEvent>
@@ -4147,6 +4148,91 @@ int main(int argc, char **argv)
 					      pos_of(ia).x, pos_of(grouped).x);
 					obs_sceneitem_select(grouped, false);
 					against(0);
+				}
+
+				// Slide to the next edge: the Send to arrows move the chosen item
+				// that way until it comes within the edge distance of the next edge.
+				{
+					auto *items_box = dock->findChild<QComboBox *>("item");
+					auto *margin = dock->findChild<QSpinBox *>("margin");
+					auto *travel = dock->findChild<QSpinBox *>("duration");
+					auto *slide = dock->findChild<QCheckBox *>("sendSlide");
+					CHECK(items_box && margin && travel && slide,
+					      "the Send to box has 'Slide to the next edge'");
+					if (items_box && margin && travel && slide) {
+						for (int i = 0; i < 30 && items_box->findText("Block A") < 0; i++) {
+							QCoreApplication::processEvents();
+							sleep_ms(50);
+						}
+						items_box->setCurrentText("Block A");
+						margin->setValue(10);
+						travel->setValue(0);
+						slide->setChecked(true);
+						tick_box("arrangeVisible", true);
+						tick_box("arrangeNoShadow", true);
+						select_only({});
+						// Block C is in a group by now; the group is put out of sight.
+						obs_sceneitem_t *c_group = obs_scene_find_source(as, "Arrange Group");
+						if (c_group)
+							obs_sceneitem_set_visible(c_group, false);
+						place(ia, 20, 20);       // 100x50
+						place(ib, 300, 15);      // 60x80, in A's way across
+						place(ibadge, 300, 250); // drawn part 100x40 at 350, 280
+						auto press = [&](int index) {
+							click(QString("grid%1").arg(index).toUtf8().constData());
+							for (int i = 0; i < 4; i++) {
+								QCoreApplication::processEvents();
+								sleep_ms(40);
+							}
+							return pos_of(ia);
+						};
+						vec2 at1 = press(5); // right: up to C, 10 short
+						vec2 at2 = press(5); // again: through C's near side to its far side
+						vec2 at3 = press(5); // again: on to the screen's edge
+						CHECK(std::fabs(at1.x - 190) < 0.6 && std::fabs(at2.x - 250) < 0.6 &&
+							      std::fabs(at3.x - 530) < 0.6 &&
+							      std::fabs(at3.y - 20) < 0.6,
+						      "each press slides to the next edge, keeping the edge distance: short of the item in the way, then through it, then the screen's edge (x %.0f, %.0f, %.0f)",
+						      at1.x, at2.x, at3.x);
+						vec2 stuck = press(5);
+						CHECK(std::fabs(stuck.x - 530) < 0.6,
+						      "with no edge left that way it stays (x %.0f)", stuck.x);
+						vec2 back = press(3); // left: meets B's near side first
+						CHECK(std::fabs(back.x - 370) < 0.6,
+						      "the other way, it meets the near side first (x %.0f)", back.x);
+						place(ia, 380, 20);
+						vec2 down = press(7); // down: the badge's picture is in the way
+						tick_box("arrangeVisible", false);
+						place(ia, 380, 20);
+						vec2 down_box = press(7);
+						tick_box("arrangeVisible", true);
+						CHECK(std::fabs(down.y - 220) < 0.6 &&
+							      std::fabs(down_box.y - 190) < 0.6,
+						      "'Use visible pixels' applies: the badge's picture stops it, or its box when that is off (y %.0f, %.0f)",
+						      down.y, down_box.y);
+						place(ia, 20, 20);
+						vec2 corner = press(8); // down and right: across first, then down
+						CHECK(std::fabs(corner.x - 190) < 0.6 &&
+							      std::fabs(corner.y - 300) < 0.6,
+						      "a diagonal slides across, then down (%.0f, %.0f)", corner.x,
+						      corner.y);
+						place(ia, 20, 20);
+						vec2 centred = press(4);
+						CHECK(std::fabs(centred.x - 100) < 0.6 &&
+							      std::fabs(centred.y - 155) < 0.6,
+						      "the centre button centres it in the free space around it (%.0f, %.0f)",
+						      centred.x, centred.y);
+						slide->setChecked(false);
+						place(ia, 20, 20);
+						vec2 sent = press(5);
+						CHECK(std::fabs(sent.x - 530) < 0.6 && std::fabs(sent.y - 155) < 0.6,
+						      "unticked, the arrows send it to the screen position again (%.0f, %.0f)",
+						      sent.x, sent.y);
+						margin->setValue(30);
+						travel->setValue(500);
+						if (c_group)
+							obs_sceneitem_set_visible(c_group, true);
+					}
 				}
 
 				select_only({});

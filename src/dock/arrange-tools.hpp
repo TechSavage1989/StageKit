@@ -35,6 +35,8 @@ struct ArrangeOptions {
 	// Send to buttons, and the keys it makes, move the item's source in every
 	// scene it is in. Off: only in the scene being worked on.
 	bool send_every_scene = true;
+	// The Send to arrows slide the item to the next edge instead of sending it to a spot.
+	bool send_slide = false;
 };
 
 ArrangeOptions arrange_options();

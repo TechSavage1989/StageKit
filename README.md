@@ -463,6 +463,14 @@ Studio Mode).
 - Click one of the nine positions and the item glides there. With *In every scene* ticked (the
   default) its source is moved in every scene it is in, keys you make do the same, and one Undo takes
   the whole move back. Untick it to change only the scene you are working on.
+- Tick **Slide to the next edge** and the arrows slide the item instead: it moves that way until it
+  comes within the *Edge distance* of the next edge it meets, which is the near side of another item in
+  its path, or the screen's edge. Press again and it goes through that edge: first to the item's far
+  side (inside it, the same distance short of that side), then on to the next item or the screen's
+  edge. The diagonals slide across, then up or down. The centre button centres the item in the free
+  space around it. *Use visible pixels* and *Ignore shadows* in the Arrange box decide what counts as
+  an edge, and an item brought along is never in the way. It glides for the *Travel time* and is one
+  step for Undo.
 - *Make 9 position keys* adds a Send To filter for each one **to the item's own source**,
   named after the position ("Top right"). Point a Stream Deck *Filter* key at the camera and one of
   those filters, or give it a hotkey.

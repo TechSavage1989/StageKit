@@ -56,6 +56,19 @@ int distribute_items(obs_source_t *scene, std::vector<obs_sceneitem_t *> items, 
 int match_size(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items, bool width, bool height,
 	       bool keep_shape, const Measure &how);
 
+// How far an item slides in a direction to the next edge it meets, in canvas
+// pixels: its leading edge stops `gap` short of the near side of another
+// visible item in its path, or of that item's far side if it is already
+// past the near side, or of the screen's edge. So each press goes one edge
+// further. dx and dy are -1, 0 or 1: a diagonal slides across first, then
+// up or down from there. Both 0 centres the item in the free space around
+// it. Items in `leave_out` (one brought along, say) are not in the way.
+struct Offset {
+	double x = 0.0, y = 0.0;
+};
+Offset slide_offset(obs_source_t *scene, obs_sceneitem_t *item, int dx, int dy, double gap, const Measure &how,
+		    const std::vector<obs_sceneitem_t *> &leave_out);
+
 // Moves an item the last few pixels so an edge or centre meets the screen's
 // or another item's. Returns true when it moved.
 bool snap_item(obs_source_t *scene, obs_sceneitem_t *item, double within, const Measure &how);

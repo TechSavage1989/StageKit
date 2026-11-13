@@ -82,6 +82,11 @@ const char *const kDestinationText[] = {"Place.TopLeft",    "Place.TopCenter",  
 					"Place.MiddleLeft", "Place.Center",       "Place.MiddleRight",
 					"Place.BottomLeft", "Place.BottomCenter", "Place.BottomRight"};
 const char *const kArrows[] = {"↖", "↑", "↗", "←", "•", "→", "↙", "↓", "↘"};
+const char *const kSlideTips[] = {"SlideTip.UpLeft",   "SlideTip.Up",     "SlideTip.UpRight",
+				  "SlideTip.Left",     "SlideTip.Centre", "SlideTip.Right",
+				  "SlideTip.DownLeft", "SlideTip.Down",   "SlideTip.DownRight"};
+const char *const kSlideText[] = {"Slide.UpLeft", "Slide.Up",       "Slide.UpRight", "Slide.Left",     "Slide.Centre",
+				  "Slide.Right",  "Slide.DownLeft", "Slide.Down",    "Slide.DownRight"};
 
 QString tr_text(const char *key)
 {
@@ -503,6 +508,16 @@ public:
 		options->addRow(tr_text("Place.Margin"), margin_);
 		options->addRow(tr_text("Place.Duration"), duration_);
 		move_layout->addLayout(options);
+		slide_ = new QCheckBox(tr_text("Dock.Slide"), move_box);
+		slide_->setObjectName("sendSlide");
+		slide_->setToolTip(tr_text("Dock.Slide.Tip"));
+		move_layout->addWidget(slide_);
+		// The arrows say what they will do.
+		QObject::connect(slide_, &QCheckBox::toggled, this, [this, move_box](bool sliding) {
+			for (int i = 0; i < 9; i++)
+				if (auto *button = move_box->findChild<QPushButton *>(QString("grid%1").arg(i)))
+					button->setToolTip(tr_text(sliding ? kSlideTips[i] : kDestinationText[i]));
+		});
 		every_scene_ = new QCheckBox(tr_text("Dock.SendEvery"), move_box);
 		every_scene_->setObjectName("sendEveryScene");
 		every_scene_->setToolTip(tr_text("Dock.SendEvery.Tip"));
@@ -627,7 +642,7 @@ public:
 		arrange_layout->addLayout(within_row);
 		// The options are shared with the hotkeys and the right-click menu.
 		show_arrange_options();
-		for (QCheckBox *box : {visible_, no_shadow_, keep_shape_, live_snap_, guides_, every_scene_})
+		for (QCheckBox *box : {visible_, no_shadow_, keep_shape_, live_snap_, guides_, every_scene_, slide_})
 			QObject::connect(box, &QCheckBox::toggled, this, [this](bool) { store_arrange_options(); });
 		QObject::connect(against_, &QComboBox::currentIndexChanged, this,
 				 [this](int) { store_arrange_options(); });
@@ -826,6 +841,7 @@ private:
 		live_snap_->setChecked(o.live_snap);
 		guides_->setChecked(o.guides);
 		every_scene_->setChecked(o.send_every_scene);
+		slide_->setChecked(o.send_slide);
 		snap_within_->setValue(o.within);
 		storing_ = false;
 	}
@@ -842,6 +858,7 @@ private:
 		o.live_snap = live_snap_->isChecked();
 		o.guides = guides_->isChecked();
 		o.send_every_scene = every_scene_->isChecked();
+		o.send_slide = slide_->isChecked();
 		o.within = snap_within_->value();
 		set_arrange_options(o);
 		shown_options_ = arrange_options_revision();
@@ -1011,13 +1028,58 @@ private:
 
 	void move_now(int destination)
 	{
+		if (slide_->isChecked()) {
+			slide_now(destination);
+			return;
+		}
 		obs_data_t *settings = place_settings(destination);
-		send_with(settings, tr_text(kDestinationText[destination]));
+		send_with(settings,
+			  tr_text("Dock.Moved").arg(item_->currentText(), tr_text(kDestinationText[destination])));
 		obs_data_release(settings);
 	}
 
-	// Sends the chosen item with these Send To settings, as one step for Undo.
-	void send_with(obs_data_t *settings, const QString &where)
+	// Slides the chosen item that way until it comes within the edge
+	// distance of another item or of the screen's edge; the centre button
+	// centres it in the free space around it. Measured by the Arrange
+	// options, so what is visible and whether shadows count apply here too.
+	void slide_now(int direction)
+	{
+		obs_source_t *scene = current_scene();
+		obs_sceneitem_t *item = find_item(scene, item_->currentText().toUtf8().constData());
+		if (!item) {
+			say(tr_text("Dock.PickItem"));
+			obs_source_release(scene);
+			return;
+		}
+		// What travels with it is not in its way.
+		std::vector<obs_sceneitem_t *> along;
+		const std::string linked = linked_->currentData().toString().toUtf8().toStdString();
+		if (obs_sceneitem_t *brought = linked.empty() ? nullptr : find_item(scene, linked))
+			along.push_back(brought);
+		refresh_item(item);
+		const Offset by = slide_offset(scene, item, direction % 3 - 1, direction / 3 - 1, margin_->value(),
+					       arrange_options().how, along);
+		if (std::fabs(by.x) < 0.5 && std::fabs(by.y) < 0.5) {
+			say(tr_text("Dock.SlideNoRoom").arg(item_->currentText()));
+			obs_source_release(scene);
+			return;
+		}
+		// A saved spot: where the item's position is after moving that far.
+		const Space space = item_space(scene, item);
+		vec2 pos;
+		obs_sceneitem_get_pos(item, &pos);
+		obs_data_t *settings = place_settings(9);
+		obs_data_set_double(settings, "saved_x", pos.x + by.x / space.sx);
+		obs_data_set_double(settings, "saved_y", pos.y + by.y / space.sy);
+		obs_data_set_bool(settings, "restore_size", false);
+		obs_source_release(scene);
+		send_with(settings, tr_text("Dock.Slid").arg(item_->currentText(), tr_text(kSlideText[direction])));
+		obs_data_release(settings);
+	}
+
+	// Sends the chosen item with these Send To settings, as one step for
+	// Undo, and says `done` when it is on its way.
+	void send_with(obs_data_t *settings, const QString &done)
 	{
 		obs_source_t *source = item_source();
 		if (!source) {
@@ -1051,7 +1113,7 @@ private:
 			calldata_t cd = {};
 			proc_handler_call(obs_source_get_proc_handler(filter), "trigger", &cd);
 			calldata_free(&cd);
-			say(tr_text("Dock.Moved").arg(item_->currentText(), where));
+			say(done);
 		}
 		obs_source_release(filter);
 		obs_source_release(source);
@@ -1165,6 +1227,7 @@ private:
 	QCheckBox *live_snap_ = nullptr;
 	QCheckBox *guides_ = nullptr;
 	QCheckBox *every_scene_ = nullptr;
+	QCheckBox *slide_ = nullptr;
 	QSpinBox *snap_within_ = nullptr;
 	std::vector<std::pair<int64_t, std::pair<float, float>>> watched_;
 	bool dragging_ = false;
