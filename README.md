@@ -545,7 +545,7 @@ Options:
   The lines are on your screen only, never in the stream or a recording. They are placed for a preview
   set to *Scale to Window*. When you tick the box, a frame flashes round the picture in the preview
   for a moment to show it is working, and the dock says so; if the dock says it cannot find OBS's
-  preview, the lines cannot be shown. Each line is a thin window of its own laid over the preview;
+  preview, the lines cannot be shown. Each line is a thin strip placed inside the preview;
   OBS's log says when guides are switched on, when a drag is first seen, and where the first line
   was put.
 

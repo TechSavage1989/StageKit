@@ -114,14 +114,14 @@ constexpr int kWatchMs = 33;
 // whatever the graphics card. Clicks go through it.
 class LineWindow : public QWidget {
 public:
-	explicit LineWindow(QWidget *owner)
-		// Not Qt::WindowTransparentForInput: on Windows that makes it a
-		// layered window, the one thing these lines must not depend on.
-		// The window is a few pixels wide, shows only while a line is up,
-		// and lets mouse events through to the widgets beneath in Qt.
-		: QWidget(owner, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowDoesNotAcceptFocus |
-					 Qt::NoDropShadowWindowHint)
+	// A small window of its own *inside* OBS's preview, not a separate
+	// window laid over it. OBS draws the preview straight to the screen, so
+	// an ordinary widget on top of it is never painted; a child window with
+	// its own surface is. Separate windows over the preview (beta50 to
+	// beta54) were reported "on" by the dock and never seen by the owner.
+	explicit LineWindow(QWidget *preview) : QWidget(preview)
 	{
+		setAttribute(Qt::WA_NativeWindow);
 		setObjectName("stagekitGuideLine");
 		setAttribute(Qt::WA_TransparentForMouseEvents);
 		setAttribute(Qt::WA_ShowWithoutActivating);
@@ -268,10 +268,10 @@ private:
 		// preview as OBS places it, wherever OBS's window is.
 		const PreviewMap map = preview_map(preview->width(), preview->height(), preview->devicePixelRatioF(),
 						   canvas_w, canvas_h);
-		const QPoint origin = preview->mapToGlobal(QPoint(0, 0));
-		const QRect over(origin, preview->size());
-		const int left = origin.x() + (int)std::lround(map.x);
-		const int top = origin.y() + (int)std::lround(map.y);
+		// In the preview's own coordinates: the lines are its children.
+		const QRect over(QPoint(0, 0), preview->size());
+		const int left = (int)std::lround(map.x);
+		const int top = (int)std::lround(map.y);
 		const int across = (int)std::lround(canvas_w * map.scale);
 		const int down = (int)std::lround(canvas_h * map.scale);
 		std::vector<QRect> rects;
@@ -285,7 +285,7 @@ private:
 			r = r.intersected(over);
 
 		while (lines_shown_.size() < rects.size())
-			lines_shown_.push_back(new LineWindow(main_.data()));
+			lines_shown_.push_back(new LineWindow(preview));
 		QString text, placed;
 		for (double x : xs)
 			text += QStringLiteral("x:%1 ").arg(std::lround(x));
@@ -296,6 +296,8 @@ private:
 			if (!line)
 				continue;
 			if (i < rects.size() && !rects[i].isEmpty()) {
+				if (line->parentWidget() != preview)
+					line->setParent(preview);
 				if (line->geometry() != rects[i])
 					line->setGeometry(rects[i]);
 				if (!line->isVisible())
@@ -315,8 +317,8 @@ private:
 		setProperty("lineWindows", placed.trimmed());
 		if (!said_line_) {
 			said_line_ = true;
-			obs_log(LOG_INFO, "Guides: showing %s on the screen at %s", text.trimmed().toUtf8().constData(),
-				placed.trimmed().toUtf8().constData());
+			obs_log(LOG_INFO, "Guides: showing %s inside the preview at %s",
+				text.trimmed().toUtf8().constData(), placed.trimmed().toUtf8().constData());
 		}
 	}
 

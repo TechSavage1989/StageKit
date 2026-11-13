@@ -204,6 +204,19 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Guides inside the preview (0.1.0-beta55)
+
+The owner, on beta53, with a screenshot of the dock saying *Guides on: a frame should flash round the
+canvas in the preview*: "no crashing with guides and snap turned off".
+
+- So the preview widget is found and the line windows are created and shown, yet nothing is seen:
+  top-level windows over the preview do not work on their machine, for a reason not known (no log).
+  The lines are now native child windows of the preview widget, in its own coordinates. This is the
+  fourth design; it is untested on Windows like the others.
+- The crashes come from the guides or snap path: either the measuring at the start and end of a drag
+  (moved to the drawing thread in beta54) or the line windows. Ask whether beta55 still crashes with
+  both ticked, and for the crash report if so.
+
 ## Groups; a pixel at the edge; measuring on the drawing thread (0.1.0-beta54)
 
 The owner, on beta53: "seems better, but it may be leaving a pixel at screen edges" (two screenshots:
