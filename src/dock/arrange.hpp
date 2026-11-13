@@ -14,6 +14,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include <obs.h>
 
+#include <string>
 #include <vector>
 
 namespace stagekit {
@@ -68,7 +69,9 @@ int distribute_items(obs_source_t *scene, std::vector<obs_sceneitem_t *> items, 
 // its source in the other scenes, on the same spot of the screen whether a
 // copy sits in a group or not. Locked copies are left alone. Returns how many
 // copies changed.
-int copy_to_every_scene(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items);
+// With `only`, just the copies in the scenes of those names.
+int copy_to_every_scene(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items,
+			const std::vector<std::string> *only = nullptr);
 
 int match_size(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items, bool width, bool height,
 	       bool keep_shape, const Measure &how);

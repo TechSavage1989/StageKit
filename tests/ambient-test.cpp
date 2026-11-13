@@ -4296,7 +4296,7 @@ int main(int argc, char **argv)
 						sleep_ms(50);
 					}
 					CHECK(click("arrange_same_everywhere"),
-					      "the Arrange box has 'Same in every scene'");
+					      "the Arrange box has 'Copy transform to all scenes'");
 					sleep_ms(100);
 					vec2 loose_scale;
 					obs_sceneitem_get_scale(loose, &loose_scale);
@@ -4705,8 +4705,83 @@ int main(int argc, char **argv)
 								const vec2 gp = pos_of(c_group), cp2 = pos_of(gcopy);
 								CHECK(ran && std::fabs(cp2.x - gp.x) < 0.6 &&
 									      std::fabs(cp2.y - gp.y) < 0.6,
-								      "'Same in every scene' puts a group where it is here in the other scenes it is in (%.0f, %.0f; wanted %.0f, %.0f)",
+								      "'Copy transform to all scenes' puts a group where it is here in the other scenes it is in (%.0f, %.0f; wanted %.0f, %.0f)",
 								      cp2.x, cp2.y, gp.x, gp.y);
+
+								// Copy transform to chosen scenes: only the scenes on
+								// the list take it.
+								obs_scene_t *chosen_a = obs_scene_create("Chosen A");
+								obs_scene_t *chosen_b = obs_scene_create("Chosen B");
+								obs_sceneitem_t *in_a = obs_scene_add(
+									chosen_a, obs_sceneitem_get_source(c_group));
+								obs_sceneitem_t *in_b = obs_scene_add(
+									chosen_b, obs_sceneitem_get_source(c_group));
+								place(in_a, 500, 10);
+								place(in_b, 520, 20);
+								auto *add_scene =
+									dock->findChild<QComboBox *>("copyScenesAdd");
+								for (int i = 0; i < 40 && add_scene &&
+										add_scene->findData("Chosen A") < 0;
+								     i++) {
+									QCoreApplication::processEvents();
+									sleep_ms(50);
+								}
+								CHECK(add_scene &&
+									      add_scene->findData("Chosen A") > 0 &&
+									      add_scene->findData("Chosen B") > 0,
+								      "the dock lists the scenes that can be added to 'Scenes to copy to'");
+								const vec2 elsewhere_before = pos_of(gcopy);
+								place(c_group, 60, 90);
+								for (int i = 0; i < 4; i++) {
+									QCoreApplication::processEvents();
+									sleep_ms(50);
+								}
+								click("arrange_same_chosen");
+								for (int i = 0; i < 4; i++) {
+									QCoreApplication::processEvents();
+									sleep_ms(50);
+								}
+								CHECK(std::fabs(pos_of(in_a).x - 500) < 0.6 &&
+									      std::fabs(pos_of(in_b).x - 520) < 0.6,
+								      "with no scene chosen, 'Copy transform to chosen scenes' changes nothing");
+								if (add_scene) {
+									emit add_scene->activated(
+										add_scene->findData("Chosen A"));
+									for (int i = 0; i < 4; i++) {
+										QCoreApplication::processEvents();
+										sleep_ms(50);
+									}
+								}
+								CHECK(add_scene &&
+									      add_scene->findData("Chosen A") < 0 &&
+									      dock->findChild<QPushButton *>(
+										      "copyScenesRemove"),
+								      "a chosen scene gets a row with its own remove button and leaves the list to add from");
+								click("arrange_same_chosen");
+								for (int i = 0; i < 4; i++) {
+									QCoreApplication::processEvents();
+									sleep_ms(50);
+								}
+								const vec2 a_now = pos_of(in_a), b_now = pos_of(in_b),
+									   e_now = pos_of(gcopy);
+								CHECK(std::fabs(a_now.x - 60) < 0.6 &&
+									      std::fabs(a_now.y - 90) < 0.6 &&
+									      std::fabs(b_now.x - 520) < 0.6 &&
+									      std::fabs(e_now.x - elsewhere_before.x) <
+										      0.6,
+								      "it copies to the chosen scene only (chosen %.0f, %.0f; not chosen %.0f and %.0f)",
+								      a_now.x, a_now.y, b_now.x, e_now.x);
+								if (auto *remove = dock->findChild<QPushButton *>(
+									    "copyScenesRemove"))
+									remove->click();
+								for (int i = 0; i < 6; i++) {
+									QCoreApplication::processEvents();
+									sleep_ms(50);
+								}
+								CHECK(add_scene && add_scene->findData("Chosen A") > 0,
+								      "the remove button takes a scene off the list again");
+								obs_scene_release(chosen_a);
+								obs_scene_release(chosen_b);
 								obs_scene_release(elsewhere);
 								obs_sceneitem_select(c_group, false);
 								obs_sceneitem_set_visible(c_group, false);

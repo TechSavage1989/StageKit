@@ -204,6 +204,23 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Copy transform to chosen scenes; clearer names (0.1.0-beta59)
+
+The owner: "did we already develop a tool that can send existing settings or transforms to specific
+copies of a source in other specific scenes?"; then "can you build that variant functionality, but
+also clearly label the option or buttons as to what they do. Same in every scene is a bit ambiguous".
+
+- *Same in every scene* is now **Copy transform to all scenes** (action name and hotkey id unchanged,
+  so bound hotkeys keep working). New: **Copy transform to chosen scenes** (`ArrangeAction::SameChosen`,
+  `same_chosen`), in the dock, the preview menu and the hotkeys.
+- Both sit in a box of their own in the dock, *Copy to other scenes*, with the list *Scenes to copy
+  to* under them. The list is `ArrangeOptions::copy_scenes`, saved as `stagekit.copy.scenes`. The
+  owner did not answer whether it should be remembered; it is.
+- `store_arrange_options` now starts from the current options, so options without a control in the
+  Arrange box are not reset when a tick box changes.
+- Asked but not built yet: a placeholder (the start image or other media) shown where a capture has
+  nothing to show. See the next message to the owner for the proposed design.
+
 ## Quiet on close (0.1.0-beta58)
 
 The owner, on beta57: "obs is crashing on close often, but it's just freezing up and not offering to

@@ -37,6 +37,8 @@ struct ArrangeOptions {
 	bool send_every_scene = true;
 	// The Send to arrows slide the item to the next edge instead of sending it to a spot.
 	bool send_slide = false;
+	// Copy transform to chosen scenes: the scenes it copies to, by name.
+	std::vector<std::string> copy_scenes;
 };
 
 ArrangeOptions arrange_options();
@@ -58,6 +60,7 @@ enum class ArrangeAction {
 	SameHeight,
 	SameSize,
 	SameEverywhere, // the selected items' place, size, rotation and crop for every copy of their sources
+	SameChosen,     // the same, only in the scenes chosen in ArrangeOptions::copy_scenes
 	Count
 };
 

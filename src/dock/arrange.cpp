@@ -25,6 +25,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <string>
 #include <cmath>
 #include <cstring>
 
@@ -602,7 +603,8 @@ void copy_transform(obs_source_t *from_scene, obs_sceneitem_t *from, obs_source_
 
 } // namespace
 
-int copy_to_every_scene(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items)
+int copy_to_every_scene(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items,
+			const std::vector<std::string> *only)
 {
 	int changed = 0;
 	std::vector<obs_source_t *> done; // one item per source: the first selected
@@ -614,6 +616,11 @@ int copy_to_every_scene(obs_source_t *scene, const std::vector<obs_sceneitem_t *
 		for (const Copy &copy : copies_of(source, scene)) {
 			if (obs_sceneitem_locked(copy.item))
 				continue;
+			if (only) {
+				const char *name = obs_source_get_name(copy.scene);
+				if (!name || std::find(only->begin(), only->end(), name) == only->end())
+					continue;
+			}
 			copy_transform(scene, item, copy.scene, copy.item);
 			changed++;
 		}
