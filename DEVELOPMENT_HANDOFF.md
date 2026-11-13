@@ -204,6 +204,20 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Confirmed by the owner on Windows (beta57, 2026-11-13)
+
+"doesn't seem to be crashing ... either way it's much better", then, after being asked to tick *Snap
+on release* with *Guides in the preview*, to watch for freezes, and to try a group with a slide and
+*Same in every scene*: "everything seems to be working."
+
+- No freeze on beta57 with guides and snap ticked, so the limited wait in `on_drawing_thread` was
+  the fix. What the drawing thread was waiting for was never found.
+- Guides show; snap on release works; groups work with slides and *Same in every scene*.
+- The owner had taken the guides to snap by themselves. They only draw lines; *Snap on release*
+  moves the item. If that confusion comes back, it is a wording or design question, not a bug.
+- Not StageKit's: OBS sometimes dies at startup inside another plugin's frontend callback (the one
+  crash file the owner had). Nothing to do here.
+
 ## The freeze: measuring no longer waits without limit (0.1.0-beta57)
 
 The owner, on beta56: "I saw a blue outline in the preview. the guides seem to appear now, but it
