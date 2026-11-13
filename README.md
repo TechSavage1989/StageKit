@@ -465,7 +465,7 @@ Studio Mode).
 **StageKit**
 
 - **Select an item in OBS's own preview** and the dock works on it. The *Item* list follows your
-  selection; you can also choose from the list.
+  selection; you can also choose from the list. A group you select is worked on as one item.
 - Click one of the nine positions and the item glides there. With *In every scene* ticked (the
   default) its source is moved in every scene it is in, keys you make do the same, and one Undo takes
   the whole move back. Untick it to change only the scene you are working on.
@@ -534,6 +534,8 @@ Options:
   as wide as the other item and its shadow. (When a source's filters change its size in another way,
   as an Auto Frame does, the picture is measured as it is before its first shadow.) What a filter
   takes away, such as trimmed edges or a mask, does not count as picture either.
+  The faint last row of pixels of a smoothed edge is not counted, so a picture sent to the screen's
+  edge leaves no line of background there.
 - **Keep shape when resizing** (on by default) grows or shrinks an item evenly. Switch it off and
   *Same width* or *Same height* changes only that direction, which stretches the picture.
 - **Snap on release** snaps an item by itself after you drag it in the preview and let go. *Snap

@@ -154,6 +154,17 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   shadow draws from (`shadow_free`), then to cutting the room off the edges. Never cut the room off
   the edges first: a widget's picture often stops short of its own edges. Unticked, a shadow sized in
   screen pixels keeps its size while the item is resized, and `match_size` allows for that.
+- **Measuring draws on OBS's drawing thread** (`on_drawing_thread` in `src/dock/arrange.cpp`), one
+  visit per measurement, waited for. Up to beta53 it drew sources from the window's thread while OBS
+  drew them for the picture; the owner had OBS crash while moving and editing items. Do not draw a
+  source from the window's thread, and do not call the measuring functions while holding a scene's
+  lock (inside `obs_scene_enum_items`): the drawing thread needs it.
+- **A smoothed edge's faint last row of pixels is not picture** (`measure_drawn`): where every pixel
+  in the outermost row or column is under half the one inside it, the picture ends one pixel further
+  in. Counting it left a line of background along the screen's edge at an edge distance of 0.
+- **Groups are items like any other.** A selected group is the dock's item and is moved, slid and
+  copied by *Same in every scene* as one thing; only when the group itself is not selected do the
+  tools look at what is selected inside it. Do not skip groups in a new tool.
 - **Every tool that places things measures by the Arrange options.** The owner: "i need the tools to
   respect all the settings". Send To and Place Item's nine screen positions keep their edge distance
   to what `arrange_options().how` counts as the item (`as_arranged`, on by default; off goes by the

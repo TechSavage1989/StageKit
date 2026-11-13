@@ -71,24 +71,27 @@ Drawn common(const Drawn &a, const Drawn &b)
 	return {x0, y0, x1 - x0, y1 - y0, true};
 }
 
-// `bare`: the source drawn without any of its filters.
-Drawn drawn_part(obs_source_t *source, bool bare = false)
+// Runs `work` on OBS's own drawing thread, between two frames, and waits for
+// it. Measuring draws sources; drawing one from the window's thread while
+// OBS draws the same source for the picture is not safe, as the two can be
+// in a source's drawing code at once. Called on that thread already (a
+// filter's tick), the work is simply done.
+template<typename Work> void on_drawing_thread(Work &&work)
 {
-	Drawn out;
-	const uint32_t sw = bare ? obs_source_get_base_width(source) : obs_source_get_width(source);
-	const uint32_t sh = bare ? obs_source_get_base_height(source) : obs_source_get_height(source);
-	if (!sw || !sh)
-		return out;
-	// Edges are found to within a source pixel up to 1024 wide; beyond that
-	// to within a couple of pixels, which the full-size box then rounds.
-	const double shrink = std::min(1.0, 1024.0 / std::max(sw, sh));
-	const uint32_t w = std::max<uint32_t>(1, (uint32_t)std::lround(sw * shrink));
-	const uint32_t h = std::max<uint32_t>(1, (uint32_t)std::lround(sh * shrink));
+	if (obs_in_task_thread(OBS_TASK_GRAPHICS)) {
+		work();
+		return;
+	}
+	obs_queue_task(OBS_TASK_GRAPHICS, [](void *param) { (*static_cast<Work *>(param))(); }, &work, true);
+}
 
-	obs_enter_graphics();
+// Draws the source small and finds the rows and columns with something in
+// them.
+void measure_drawn(obs_source_t *source, bool bare, uint32_t sw, uint32_t sh, uint32_t w, uint32_t h, uint32_t &min_x,
+		   uint32_t &min_y, uint32_t &max_x, uint32_t &max_y)
+{
 	gs_texrender_t *render = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 	gs_stagesurf_t *stage = gs_stagesurface_create(w, h, GS_RGBA);
-	uint32_t min_x = w, min_y = h, max_x = 0, max_y = 0;
 	if (gs_texrender_begin(render, w, h)) {
 		vec4 clear;
 		vec4_zero(&clear);
@@ -117,11 +120,57 @@ Drawn drawn_part(obs_source_t *source, bool bare = false)
 					max_y = std::max(max_y, y);
 				}
 			}
+			// A smoothed edge ends in one row of faint pixels, each much fainter
+			// than the one inside it. To the eye the picture ends before them,
+			// and counting them leaves a line of background showing along the
+			// screen's edge. Where the outermost row is all like that, the
+			// picture ends one pixel further in.
+			const auto at = [&](uint32_t x, uint32_t y) {
+				return (int)data[(size_t)y * linesize + x * 4 + 3];
+			};
+			const auto fringe = [&](bool column, uint32_t line, int inward) {
+				const uint32_t from = column ? min_y : min_x, to = column ? max_y : max_x;
+				for (uint32_t i = from; i <= to; i++) {
+					const int here = column ? at(line, i) : at(i, line);
+					const int inside = column ? at((uint32_t)((int)line + inward), i)
+								  : at(i, (uint32_t)((int)line + inward));
+					if (here > 12 && here * 2 >= inside)
+						return false;
+				}
+				return true;
+			};
+			if (max_x >= min_x + 3 && max_y >= min_y + 3) {
+				const bool left = fringe(true, min_x, 1), right = fringe(true, max_x, -1);
+				const bool top = fringe(false, min_y, 1), bottom = fringe(false, max_y, -1);
+				min_x += left ? 1 : 0;
+				max_x -= right ? 1 : 0;
+				min_y += top ? 1 : 0;
+				max_y -= bottom ? 1 : 0;
+			}
 			gs_stagesurface_unmap(stage);
 		}
 	}
 	gs_stagesurface_destroy(stage);
 	gs_texrender_destroy(render);
+}
+
+// `bare`: the source drawn without any of its filters.
+Drawn drawn_part(obs_source_t *source, bool bare = false)
+{
+	Drawn out;
+	const uint32_t sw = bare ? obs_source_get_base_width(source) : obs_source_get_width(source);
+	const uint32_t sh = bare ? obs_source_get_base_height(source) : obs_source_get_height(source);
+	if (!sw || !sh)
+		return out;
+	// Edges are found to within a source pixel up to 1024 wide; beyond that
+	// to within a couple of pixels, which the full-size box then rounds.
+	const double shrink = std::min(1.0, 1024.0 / std::max(sw, sh));
+	const uint32_t w = std::max<uint32_t>(1, (uint32_t)std::lround(sw * shrink));
+	const uint32_t h = std::max<uint32_t>(1, (uint32_t)std::lround(sh * shrink));
+
+	uint32_t min_x = w, min_y = h, max_x = 0, max_y = 0;
+	obs_enter_graphics();
+	measure_drawn(source, bare, sw, sh, w, h, min_x, min_y, max_x, max_y);
 	obs_leave_graphics();
 
 	if (max_x < min_x || max_y < min_y)
@@ -159,7 +208,20 @@ bool across(Edge edge)
 
 } // namespace
 
+namespace {
+Box measure_item_now(obs_source_t *scene, obs_sceneitem_t *item, const Measure &how);
+}
+
 Box measure_item(obs_source_t *scene, obs_sceneitem_t *item, const Measure &how)
+{
+	Box out;
+	on_drawing_thread([&] { out = measure_item_now(scene, item, how); });
+	return out;
+}
+
+namespace {
+
+Box measure_item_now(obs_source_t *scene, obs_sceneitem_t *item, const Measure &how)
 {
 	refresh_item(item);
 	const Box whole = scene_box(scene, item);
@@ -247,6 +309,8 @@ Box measure_item(obs_source_t *scene, obs_sceneitem_t *item, const Measure &how)
 		return whole;
 	return {x0, y0, x1 - x0, y1 - y0};
 }
+
+} // namespace
 
 std::vector<obs_sceneitem_t *> selected_items(obs_source_t *scene)
 {
@@ -446,8 +510,7 @@ int copy_to_every_scene(obs_source_t *scene, const std::vector<obs_sceneitem_t *
 	std::vector<obs_source_t *> done; // one item per source: the first selected
 	for (obs_sceneitem_t *item : items) {
 		obs_source_t *source = obs_sceneitem_get_source(item);
-		if (!source || obs_sceneitem_is_group(item) ||
-		    std::find(done.begin(), done.end(), source) != done.end())
+		if (!source || std::find(done.begin(), done.end(), source) != done.end())
 			continue;
 		done.push_back(source);
 		for (const Copy &copy : copies_of(source, scene)) {
@@ -543,7 +606,7 @@ namespace {
 
 // Every other visible item, measured: what can be in an item's way. Items in
 // a group count on their own; a group left out takes its items with it.
-std::vector<Box> others_in(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &leave_out, const Measure &how)
+std::vector<Box> others_in_now(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &leave_out, const Measure &how)
 {
 	std::vector<Box> out;
 	struct Gather {
@@ -576,6 +639,14 @@ std::vector<Box> others_in(obs_source_t *scene, const std::vector<obs_sceneitem_
 			},
 			&gather);
 	}
+	return out;
+}
+
+// Every item is measured in one visit to the drawing thread.
+std::vector<Box> others_in(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &leave_out, const Measure &how)
+{
+	std::vector<Box> out;
+	on_drawing_thread([&] { out = others_in_now(scene, leave_out, how); });
 	return out;
 }
 
@@ -661,7 +732,9 @@ Offset slide_offset(obs_source_t *scene, obs_sceneitem_t *item, int dx, int dy, 
 	return out;
 }
 
-SnapLines snap_lines(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &leave_out, const Measure &how)
+namespace {
+
+SnapLines snap_lines_now(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &leave_out, const Measure &how)
 {
 	// Lines worth meeting: the screen's edges and centre, and every other
 	// visible item's edges and centre.
@@ -699,6 +772,15 @@ SnapLines snap_lines(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &
 			},
 			&others);
 	}
+	return lines;
+}
+
+} // namespace
+
+SnapLines snap_lines(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &leave_out, const Measure &how)
+{
+	SnapLines lines;
+	on_drawing_thread([&] { lines = snap_lines_now(scene, leave_out, how); });
 	return lines;
 }
 

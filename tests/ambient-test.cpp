@@ -4601,6 +4601,114 @@ int main(int argc, char **argv)
 							      "and what a filter trims away does not count as picture (%.0f, %.0f; wanted -45, -45)",
 							      trimmed.x, trimmed.y);
 							obs_sceneitem_remove(iw);
+
+							// The report: a pixel of background left along the screen's
+							// edge. A smoothed edge ends in a faint row of pixels; that
+							// row is not counted. Here column 20 is faint, 21 to 99 are
+							// solid and column 100 is nearly solid.
+							QImage smooth(120, 60, QImage::Format_ARGB32);
+							smooth.fill(Qt::transparent);
+							for (int y = 10; y < 50; y++) {
+								smooth.setPixel(20, y, qRgba(240, 200, 40, 70));
+								for (int x = 21; x < 100; x++)
+									smooth.setPixel(x, y, qRgba(240, 200, 40, 255));
+								smooth.setPixel(100, y, qRgba(240, 200, 40, 200));
+							}
+							const std::string smooth_path = out + "/arrange-smooth.png";
+							smooth.save(QString::fromStdString(smooth_path));
+							obs_data_t *md = obs_data_create();
+							obs_data_set_string(md, "file", smooth_path.c_str());
+							obs_source_t *smooth_src = obs_source_create(
+								"image_source", "Smooth Edge", md, nullptr);
+							obs_data_release(md);
+							obs_sceneitem_t *im = obs_scene_add(as, smooth_src);
+							place(im, 250, 120);
+							for (int i = 0;
+							     i < 40 && (items_box->findText("Smooth Edge") < 0 ||
+									obs_source_get_width(smooth_src) < 120);
+							     i++) {
+								QCoreApplication::processEvents();
+								sleep_ms(50);
+							}
+							items_box->setCurrentText("Smooth Edge");
+							slide->setChecked(true);
+							auto nudge = [&](int index) {
+								click(QString("grid%1").arg(index).toUtf8().constData());
+								for (int i = 0; i < 4; i++) {
+									QCoreApplication::processEvents();
+									sleep_ms(40);
+								}
+								return pos_of(im);
+							};
+							const float at_left = nudge(3).x;
+							const float at_right = nudge(5).x;
+							CHECK(std::fabs(at_left + 11) < 0.6 &&
+								      std::fabs(at_right - 529) < 0.6,
+							      "a faint row of pixels along a smoothed edge is not counted, so no line of background is left at the screen's edge (x %.1f and %.1f; wanted -11 and 529)",
+							      at_left, at_right);
+							slide->setChecked(false);
+							obs_sceneitem_remove(im);
+							obs_source_release(smooth_src);
+
+							// The report: slides and 'Same in every scene' did nothing
+							// for a group. A selected group is worked on as one thing.
+							if (c_group) {
+								obs_sceneitem_set_visible(c_group, true);
+								select_only({});
+								obs_sceneitem_select(c_group, true);
+								for (int i = 0; i < 40 && items_box->currentText() !=
+												  "Arrange Group";
+								     i++) {
+									QCoreApplication::processEvents();
+									sleep_ms(50);
+								}
+								CHECK(items_box->currentText() == "Arrange Group",
+								      "selecting a group in OBS makes it the dock's item ('%s')",
+								      items_box->currentText().toUtf8().constData());
+								place(c_group, 300, 200);
+								for (int i = 0; i < 4; i++) {
+									QCoreApplication::processEvents();
+									sleep_ms(50);
+								}
+								const vec2 g0 = pos_of(c_group);
+								slide->setChecked(true);
+								click("grid3");
+								for (int i = 0; i < 6; i++) {
+									QCoreApplication::processEvents();
+									sleep_ms(40);
+								}
+								const vec2 g1 = pos_of(c_group);
+								CHECK(std::fabs(g0.x - 300) < 0.6 &&
+									      std::fabs(g1.x - 10) < 1.6 &&
+									      std::fabs(g1.y - g0.y) < 1.6,
+								      "a group slides to the next edge like any item (from x %.0f to %.0f; wanted 10)",
+								      g0.x, g1.x);
+								slide->setChecked(false);
+
+								// The same group in another scene takes its place.
+								obs_scene_t *elsewhere =
+									obs_scene_create("Group Elsewhere");
+								obs_sceneitem_t *gcopy = obs_scene_add(
+									elsewhere, obs_sceneitem_get_source(c_group));
+								place(gcopy, 400, 50);
+								for (int i = 0; i < 4; i++) {
+									QCoreApplication::processEvents();
+									sleep_ms(50);
+								}
+								const bool ran = click("arrange_same_everywhere");
+								for (int i = 0; i < 4; i++) {
+									QCoreApplication::processEvents();
+									sleep_ms(50);
+								}
+								const vec2 gp = pos_of(c_group), cp2 = pos_of(gcopy);
+								CHECK(ran && std::fabs(cp2.x - gp.x) < 0.6 &&
+									      std::fabs(cp2.y - gp.y) < 0.6,
+								      "'Same in every scene' puts a group where it is here in the other scenes it is in (%.0f, %.0f; wanted %.0f, %.0f)",
+								      cp2.x, cp2.y, gp.x, gp.y);
+								obs_scene_release(elsewhere);
+								obs_sceneitem_select(c_group, false);
+								obs_sceneitem_set_visible(c_group, false);
+							}
 							obs_source_release(trim);
 							obs_source_release(widget_shadow);
 							obs_source_release(widget);

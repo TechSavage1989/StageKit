@@ -966,14 +966,16 @@ private:
 		if (obs_scene_t *s = scene_of(scene)) {
 			static const auto pick = [](obs_scene_t *, obs_sceneitem_t *item, void *param) {
 				auto *out = static_cast<QString *>(param);
-				if (out->isEmpty() && obs_sceneitem_selected(item) && !obs_sceneitem_is_group(item))
+				if (out->isEmpty() && obs_sceneitem_selected(item))
 					*out = QString::fromUtf8(obs_source_get_name(obs_sceneitem_get_source(item)));
 				return true;
 			};
 			obs_scene_enum_items(
 				s,
 				[](obs_scene_t *sc, obs_sceneitem_t *item, void *param) {
-					if (obs_sceneitem_is_group(item))
+					// A selected group is worked on as one thing, like any
+					// other item; otherwise what is selected inside it is.
+					if (obs_sceneitem_is_group(item) && !obs_sceneitem_selected(item))
 						obs_sceneitem_group_enum_items(item, pick, param);
 					pick(sc, item, param);
 					return true;
