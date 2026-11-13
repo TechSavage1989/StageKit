@@ -359,8 +359,10 @@ Game Capture, Window Capture or other live source.
 
 - **Nothing to show** means no game or window is attached to the capture. A capture that is attached
   and showing a black picture, such as a loading screen, is left alone.
-- The picture fills the size the capture last had (or the frame of an Auto Frame before it), so
-  nothing in the scene moves when the capture arrives. Then it fades to the capture.
+- While it waits, the picture is shown whole, in its own shape, as tall as the capture last was.
+- When the capture starts, the size glides from the picture's shape to the capture's while the
+  picture fades into it. When the capture ends, it glides back to the picture's shape. Neither is
+  ever squashed on the way.
 - Corners, shadows and other filters after it are put on the picture as they are on the capture.
 - To go without it, switch the filter off with its eye or a Stream Deck filter key.
 
@@ -368,7 +370,8 @@ Game Capture, Window Capture or other live source.
 | --- | --- |
 | Picture | *The start image* (the default: the one set in the StageKit Background dock), *An image or video file*, or *Another source* |
 | File / Source | The file or source to show, for those two choices. A video loops, without sound |
-| Fade to the capture | How long the picture takes to fade away when the capture starts. 0 is a cut |
+| Picture keeps its shape | On (the default): the picture is shown whole in its own shape. Off: it fills the size the capture last had, with what does not fit cut off |
+| Change over | How long the change between picture and capture takes, in both directions. 0 is a cut |
 
 When first added it puts itself straight after an Auto Frame if there is one, and otherwise first in
 the list; after that the order is yours.

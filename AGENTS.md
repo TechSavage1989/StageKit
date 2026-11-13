@@ -232,6 +232,11 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   asking the capture for its width comes straight back to this filter (it crashed the first build).
   The start image is its default picture, as the owner asked. It is switched off like any filter;
   no separate enable setting.
+  It owns its size: while waiting, the picture's own shape (`own_shape`); with a capture, the size
+  of what comes before it; and it always glides between sizes itself (`cur_w_`, `glide_`), never
+  follows what comes before it directly. The first build filled the capture's last size and followed
+  the filter before it: the owner's start image was cropped, jumped shape the moment an emulator was
+  recognised, cut to the game, and stayed the game's shape afterwards.
 - **Send To moves the source in every scene it is in, by default** (`apply_in`). The owner asked for
   that: the camera sent to a spot is there in every scene. The older `where` setting is not read.
 - **Shadow sizes are in screen pixels by default.** The owner's old shadows sat on full-canvas scenes,
