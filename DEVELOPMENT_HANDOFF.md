@@ -171,9 +171,16 @@ Releases publish themselves; nobody pushes a tag by hand.
    `version` in `buildspec.json` when the base version changes. Merge the pull request.
 2. On that push to `main`, `.github/workflows/push.yaml` builds every platform. Its *Find Unpublished
    Release* job takes the newest notes file by version; if no tag of that name exists, *Publish Release*
-   creates the tag on that commit and a release with the built files, the notes and SHA-256 checksums.
+   (`.github/scripts/publish-release.sh`) creates the tag on that commit and the release **as soon as the
+   Windows files are built** (about three minutes), with the notes and SHA-256 checksums, then adds the
+   macOS and Linux files to the same release as each build finishes. Until then the notes end with a
+   line saying which files are still being built. The owner asked for this on 2026-11-13: they test on
+   Windows and a slow or stuck macOS build had held releases back (beta67 waited 50 minutes).
    Names ending in `-beta` or `-rc` (with an optional number) are published as pre-releases.
-3. Check the release page: files present, checksums listed, pre-release flag correct.
+3. Tell the owner when the Windows installer is on the release page; do not wait for the rest. Then
+   check the finished release: six files, checksums listed, no "still being built" line, pre-release
+   flag correct. If a build fails the job fails and the release stays without those files: re-run the
+   failed jobs and the missing files are added (files already there are left alone).
 
 An existing tag is never reused or overwritten; to publish again, add a new notes file with a new
 version. AI coding sessions cannot push tags or create releases themselves (the platform refuses both),
