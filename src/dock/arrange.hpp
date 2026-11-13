@@ -35,6 +35,12 @@ enum class Against { Screen, Selection, First, Last };
 // thread (it then goes by boxes). For saying so after a button press.
 int measuring_gave_up();
 
+// OBS is closing: from now on measuring answers with boxes at once and hands
+// nothing to the drawing thread, and everything that watches on a timer
+// should do nothing.
+void measuring_stop();
+bool measuring_stopped();
+
 // Where an item is on its scene's canvas, by its box or by what shows.
 Box measure_item(obs_source_t *scene, obs_sceneitem_t *item, const Measure &how);
 

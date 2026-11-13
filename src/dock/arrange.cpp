@@ -87,6 +87,8 @@ Drawn common(const Drawn &a, const Drawn &b)
 // Called on the drawing thread already (a filter's tick), it is simply done.
 constexpr int kPatienceMs = 400;
 std::atomic<int> g_gave_up{0};
+// OBS is closing: nothing is measured any more, nothing is handed over.
+std::atomic<bool> g_closing{false};
 
 struct Job {
 	std::function<void()> work;
@@ -102,6 +104,8 @@ bool on_drawing_thread(std::function<void()> work)
 		work();
 		return true;
 	}
+	if (g_closing.load())
+		return false;
 	auto job = std::make_shared<Job>();
 	job->work = std::move(work);
 	obs_queue_task(
@@ -276,6 +280,16 @@ bool across(Edge edge)
 
 namespace {
 Box measure_item_now(obs_source_t *scene, obs_sceneitem_t *item, const Measure &how);
+}
+
+void measuring_stop()
+{
+	g_closing = true;
+}
+
+bool measuring_stopped()
+{
+	return g_closing.load();
 }
 
 int measuring_gave_up()

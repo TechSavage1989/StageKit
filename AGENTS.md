@@ -169,6 +169,12 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   work, which holds its own references (`Held`), finishes later by itself. Never wait without a limit
   on another OBS thread from the window's thread, and never capture a caller's locals by reference
   in work handed over this way.
+- **Everything that runs on a timer stops when OBS closes.** `register_dock` listens for
+  `OBS_FRONTEND_EVENT_SCRIPTING_SHUTDOWN` (sent before OBS clears its scenes) and `EXIT`, calls
+  `measuring_stop()`, deletes the guides and removes the preview menu's event filter; the docks'
+  timers check `measuring_stopped()`. Before beta58 they all kept asking OBS about scenes and
+  measuring while OBS took the scenes apart, and the owner's OBS often froze on close. Anything new
+  that polls or listens for the whole session must stop there too.
 - **A smoothed edge's faint last row of pixels is not picture** (`measure_drawn`): where every pixel
   in the outermost row or column is under half the one inside it, the picture ends one pixel further
   in. Counting it left a line of background along the screen's edge at an edge distance of 0.
