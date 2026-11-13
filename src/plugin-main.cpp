@@ -26,6 +26,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "capture/auto-capture.hpp"
 #include "capture/active-app.hpp"
 #include "capture/standby.hpp"
+#include "placement/show-in-scenes.hpp"
 #include "capture/program-trigger.hpp"
 #include "common/start-image.hpp"
 #include "dock/stagekit-dock.hpp"
@@ -102,6 +103,7 @@ bool obs_module_load(void)
 	stagekit::register_shadow_backdrop();
 	stagekit::register_corners();
 	stagekit::register_standby();
+	stagekit::register_show_in_scenes();
 	stagekit::register_place_item();
 	stagekit::register_ramp_zoom();
 	stagekit::register_cropped_view();

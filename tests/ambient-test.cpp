@@ -719,6 +719,83 @@ int main(int argc, char **argv)
 			obs_source_release(picture);
 		}
 
+		// Show in Scenes: one switch that shows and hides sources across scenes.
+		printf("\n[show in scenes]\n");
+		{
+			obs_source_t *cam = obs_source_create("color_source", "Switch Camera", nullptr, nullptr);
+			obs_source_t *chat = obs_source_create("color_source", "Switch Chat", nullptr, nullptr);
+			obs_scene_t *one = obs_scene_create("Switch One");
+			obs_scene_t *two = obs_scene_create("Switch Two");
+			obs_scene_t *three = obs_scene_create("Switch Three");
+			obs_sceneitem_t *cam1 = obs_scene_add(one, cam), *cam2 = obs_scene_add(two, cam);
+			obs_sceneitem_t *chat1 = obs_scene_add(one, chat), *chat3 = obs_scene_add(three, chat);
+			// In the third scene the camera sits inside a group.
+			obs_sceneitem_t *holder = obs_scene_add_group(three, "Switch Group");
+			obs_sceneitem_t *cam3 = obs_scene_add(three, cam);
+			obs_sceneitem_group_add_item(holder, cam3);
+			obs_source_t *sw =
+				obs_source_create("stagekit_show_in_scenes", "Camera Switch", nullptr, nullptr);
+			CHECK(sw != nullptr, "the Show in Scenes filter can be created");
+			obs_source_filter_add(cam, sw);
+			sleep_ms(200);
+			auto flip = [&](bool on) {
+				obs_source_set_enabled(sw, on);
+				sleep_ms(120);
+			};
+			CHECK(obs_sceneitem_visible(cam1) && obs_sceneitem_visible(cam2) && obs_sceneitem_visible(cam3),
+			      "adding it changes nothing by itself");
+			flip(false);
+			CHECK(!obs_sceneitem_visible(cam1) && !obs_sceneitem_visible(cam2) &&
+				      !obs_sceneitem_visible(cam3) && obs_sceneitem_visible(chat1),
+			      "switched off, the source it is on is hidden in every scene, inside a group too, and nothing else is");
+			flip(true);
+			CHECK(obs_sceneitem_visible(cam1) && obs_sceneitem_visible(cam2) && obs_sceneitem_visible(cam3),
+			      "switched on, it is shown everywhere again");
+
+			// Only the scenes listed.
+			obs_properties_t *sp = obs_source_properties(sw);
+			pick_into_list(sw, sp, "scenes|a", "Switch Two");
+			obs_properties_destroy(sp);
+			obs_data_t *ss = obs_source_get_settings(sw);
+			obs_data_set_int(ss, "where", 1);
+			obs_source_update(sw, ss);
+			sleep_ms(100);
+			flip(false);
+			CHECK(obs_sceneitem_visible(cam1) && !obs_sceneitem_visible(cam2) &&
+				      obs_sceneitem_visible(cam3),
+			      "with scenes listed, only those change");
+			flip(true);
+
+			// Several sources, and "on" meaning hidden.
+			sp = obs_source_properties(sw);
+			pick_into_list(sw, sp, "sources|a", "Switch Camera");
+			pick_into_list(sw, sp, "sources|a", "Switch Chat");
+			obs_properties_destroy(sp);
+			obs_data_set_int(ss, "where", 0);
+			obs_data_set_int(ss, "on_means", 1);
+			obs_source_update(sw, ss);
+			obs_data_release(ss);
+			sleep_ms(100);
+			flip(false);
+			const bool all_shown = obs_sceneitem_visible(cam1) && obs_sceneitem_visible(cam2) &&
+					       obs_sceneitem_visible(cam3) && obs_sceneitem_visible(chat1) &&
+					       obs_sceneitem_visible(chat3);
+			flip(true);
+			const bool all_hidden = !obs_sceneitem_visible(cam1) && !obs_sceneitem_visible(cam2) &&
+						!obs_sceneitem_visible(cam3) && !obs_sceneitem_visible(chat1) &&
+						!obs_sceneitem_visible(chat3);
+			CHECK(all_shown && all_hidden,
+			      "several sources switch together, and 'on' can mean hidden (%d %d)", all_shown,
+			      all_hidden);
+			obs_source_filter_remove(cam, sw);
+			obs_source_release(sw);
+			obs_scene_release(one);
+			obs_scene_release(two);
+			obs_scene_release(three);
+			obs_source_release(cam);
+			obs_source_release(chat);
+		}
+
 		// Standby Picture: a picture in a capture's place while it has nothing.
 		printf("\n[standby picture]\n");
 		{

@@ -204,6 +204,23 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Show in Scenes (0.1.0-beta64)
+
+The owner, with a screenshot of a Stream Deck multi-action holding eight Source Visibility steps:
+"I'd like a filter that can be applied to a source and be configured to a stream deck key that allow
+adding a source, or multiple sources, and a scene, multiple scenes, or all scenes that contain that
+source, and allow to hide or unhide that source accordingly. it should follow the intuitive design as
+other tools built."
+
+- New filter `stagekit_show_in_scenes` (`src/placement/show-in-scenes.*`) for any source. Lists:
+  *Sources to show and hide* (empty means the source it is on) and *Scenes* (shown only when *In* is
+  *The scenes listed below*). *When this is on*: shown or hidden; off does the opposite.
+- It walks every scene (skipping groups listed as scenes, looking inside groups) and sets item
+  visibility on the `enable` signal. A *Do it now* button applies the current state.
+- Known gap: the key's state and the items can disagree after a change by hand; the next press sets
+  them all the same way, which can take two presses to get what is wanted.
+- Still **asked, not built**: the limit while resizing by hand (see the beta63 section).
+
 ## Standby Picture keeps its shape and morphs (0.1.0-beta63)
 
 The owner, on beta62, with a screenshot (the start image cropped to a near-square box in the game's

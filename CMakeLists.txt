@@ -88,6 +88,8 @@ target_sources(
     src/frame/auto-frame.hpp
     src/placement/place-item.cpp
     src/placement/place-item.hpp
+    src/placement/show-in-scenes.cpp
+    src/placement/show-in-scenes.hpp
     src/shape/corners.cpp
     src/shape/corners.hpp
     src/shadow/shadow-backdrop.cpp
