@@ -204,6 +204,29 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Standby Picture (0.1.0-beta62)
+
+The owner: "is there a possibility of adding a new feature/functionality/filter that allows the start
+image, or other media to take the place of game or window capture, or other live feed when it's not
+active, nothing is captured, etc? as a place holder so there isn't just a blank area"; then "you can
+build a placeholder, though it should be configurable to be enabled or disabled. Start image should
+be the default for the placeholder."
+
+- New filter `stagekit_standby` (`src/capture/standby.*`, shader `data/effects/stagekit-fade.effect`).
+  While the capture's own size is zero it draws a picture, covering the size the capture last had
+  (saved in `last_width`/`last_height`; 1920x1080 before it has ever shown anything) or the size the
+  filter before it gives. It is there at once when the capture goes and fades out (`fade_ms`, 300)
+  when it comes.
+- Picture: the start image (a private Start Image source, so it follows the dock's choice), a file
+  (image or looping muted video, by its extension), or another source by name.
+- "Enabled or disabled" is the filter's own eye; no second switch was added.
+- When first added it moves itself to just after an Auto Frame, else to be applied first (`placed`).
+- Not yet seen on Windows. The shader is new and only proven on OpenGL. Whether a Game Capture
+  and a Window Capture really report no size when nothing is attached on the owner's machine is
+  assumed from OBS's behaviour, not tested. No contact sheet was made for the README.
+- Not covered: Auto Frame before it keeps its frame's size when the capture is empty, which is what
+  makes the picture fill the frame; that pairing is not tested.
+
 ## Pale pictures in the Filters window (0.1.0-beta61)
 
 The owner: "all the sources with the new filters have a whiteness added to them, compared to the

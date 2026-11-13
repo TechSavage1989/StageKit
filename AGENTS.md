@@ -29,7 +29,7 @@ for an update notice inside OBS. This exception is recorded in the handoff.
 | `src/dock/` | Two docks (Qt widgets, no `Q_OBJECT`): StageKit follows the item selected in OBS and drives Send To filters on that item's source; StageKit Background holds the start image thumbnail. `arrange-tools.*` is the one set of line-up actions and options behind the dock, the hotkeys and the preview's right-click menu |
 | `src/common/` | Shared helpers: easing and `Tween`, `SwitchRamp`, `KawaseBlur`, scene utilities, and the start image (global path + Start Image source) |
 | `src/frame/` | Auto Frame filter and the Picture Shape key filter |
-| `src/capture/` | Auto Capture filter (aims a Game Capture at the game in front), Program Trigger filter (shows items and switches filters while a program is open) and Active App scene filter (shows the one of several captures whose app is in use). All use the Win32 window list in `auto-capture.cpp`; compiled but idle elsewhere |
+| `src/capture/` | Auto Capture filter (aims a Game Capture at the game in front), Program Trigger filter (shows items and switches filters while a program is open) and Active App scene filter (shows the one of several captures whose app is in use). All use the Win32 window list in `auto-capture.cpp`; compiled but idle elsewhere. Also Standby Picture (`standby.*`), a filter that shows a picture in a capture's place while it has nothing; it works everywhere |
 | `src/api/` | obs-websocket vendor requests (`StageKit` vendor) |
 | `src/third-party/` | Vendored `obs-websocket-api.h`, kept byte-for-byte (excluded from clang-format) |
 | `data/effects/` | Shaders in OBS `.effect` format |
@@ -226,6 +226,12 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   hidden. No new key type was added on purpose; the two hotkeys on the scene are extras. Before this
   the owner aimed a capture at the foreground window with a Stream Deck key and lost it as soon as a
   listed app was clicked into.
+- **Standby Picture goes by the capture's own size** (`obs_source_get_base_width(parent)` is 0 when
+  nothing is attached), never by how the picture looks: the owner agreed a black loading screen is
+  not "nothing". For what comes before it in the filter list it must ask through `before_width`:
+  asking the capture for its width comes straight back to this filter (it crashed the first build).
+  The start image is its default picture, as the owner asked. It is switched off like any filter;
+  no separate enable setting.
 - **Send To moves the source in every scene it is in, by default** (`apply_in`). The owner asked for
   that: the camera sent to a spot is there in every scene. The older `where` setting is not read.
 - **Shadow sizes are in screen pixels by default.** The owner's old shadows sat on full-canvas scenes,

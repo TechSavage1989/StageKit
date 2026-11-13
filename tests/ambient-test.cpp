@@ -664,7 +664,8 @@ int main(int argc, char **argv)
 				     {"stagekit_corners", "Corners & Edges"},
 				     {"stagekit_ramp_zoom", "Ramp Zoom"},
 				     {"stagekit_ramp_blur", "Ramp Blur"},
-				     {"stagekit_auto_frame", "Auto Frame"}};
+				     {"stagekit_auto_frame", "Auto Frame"},
+				     {"stagekit_standby", "Standby Picture"}};
 			for (const auto &kind : kinds) {
 				obs_data_t *kd = obs_data_create();
 				obs_data_set_bool(kd, "placed", true);
@@ -716,6 +717,102 @@ int main(int argc, char **argv)
 			picture = whole;
 			obs_source_release(self_drawn);
 			obs_source_release(picture);
+		}
+
+		// Standby Picture: a picture in a capture's place while it has nothing.
+		printf("\n[standby picture]\n");
+		{
+			// A capture with nothing attached: an image source with no file
+			// has no size, as a Game Capture has before a game is hooked.
+			obs_source_t *capture = obs_source_create("image_source", "Standby Capture", nullptr, nullptr);
+			obs_data_t *sd = obs_data_create();
+			obs_data_set_int(sd, "picture", 1); // a file
+			obs_data_set_string(sd, "file", argv[3]);
+			obs_data_set_int(sd, "fade_ms", 200);
+			obs_source_t *standby = obs_source_create("stagekit_standby", "Standby Picture", sd, nullptr);
+			CHECK(standby != nullptr, "the Standby Picture filter can be created");
+			obs_source_filter_add(capture, standby);
+			auto settle = [&](int frames) {
+				for (int i = 0; i < frames; i++) {
+					sleep_ms(50);
+					const uint32_t w = obs_source_get_width(capture),
+						       h = obs_source_get_height(capture);
+					if (w && h)
+						render(capture, w, h);
+				}
+			};
+			settle(12);
+			uint32_t w = obs_source_get_width(capture), h = obs_source_get_height(capture);
+			std::vector<uint8_t> px = w && h ? render(capture, w, h) : std::vector<uint8_t>();
+			auto solid = [&](uint32_t x, uint32_t y) {
+				return !px.empty() && px[(size_t(y) * w + x) * 4 + 3] > 250;
+			};
+			CHECK(w == 1920 && h == 1080 && solid(w / 2, h / 2) && solid(4, 4) && solid(w - 5, h - 5),
+			      "with nothing captured, the picture stands in and fills the size (%ux%u)", w, h);
+
+			// The capture arrives: a 100x60 red picture.
+			QImage red(100, 60, QImage::Format_ARGB32);
+			red.fill(QColor(255, 0, 0));
+			const std::string red_path = out + "/standby-red.png";
+			red.save(QString::fromStdString(red_path));
+			obs_data_t *cs = obs_source_get_settings(capture);
+			obs_data_set_string(cs, "file", red_path.c_str());
+			obs_source_update(capture, cs);
+			sleep_ms(120);
+			w = obs_source_get_width(capture);
+			h = obs_source_get_height(capture);
+			px = w && h ? render(capture, w, h) : std::vector<uint8_t>();
+			const uint8_t *mid = px.empty() ? nullptr : &px[(size_t(h / 2) * w + w / 2) * 4];
+			const bool part_way = mid && w == 100 && h == 60 && !(mid[0] > 250 && mid[1] < 5 && mid[2] < 5);
+			settle(12);
+			px = render(capture, w, h);
+			mid = &px[(size_t(h / 2) * w + w / 2) * 4];
+			CHECK(part_way && mid[0] > 250 && mid[1] < 5 && mid[2] < 5,
+			      "when the capture starts, the picture fades away and the capture shows (%ux%u; then %d, %d, %d)",
+			      w, h, mid[0], mid[1], mid[2]);
+
+			// And goes again: the picture comes back at the size the capture had.
+			obs_data_set_string(cs, "file", "");
+			obs_source_update(capture, cs);
+			obs_data_release(cs);
+			settle(12);
+			w = obs_source_get_width(capture);
+			h = obs_source_get_height(capture);
+			px = w && h ? render(capture, w, h) : std::vector<uint8_t>();
+			mid = px.empty() ? nullptr : &px[(size_t(h / 2) * w + w / 2) * 4];
+			CHECK(w == 100 && h == 60 && mid && mid[3] > 250 && !(mid[0] > 250 && mid[1] < 5 && mid[2] < 5),
+			      "when the capture goes, the picture is back at the size the capture last had (%ux%u)", w,
+			      h);
+
+			// Switched off, the source is as it would be without it.
+			obs_source_set_enabled(standby, false);
+			settle(4);
+			CHECK(obs_source_get_width(capture) == 0, "switched off, nothing stands in for the capture");
+			obs_source_set_enabled(standby, true);
+
+			// The start image is what it shows unless told otherwise.
+			calldata_t si = {};
+			calldata_set_string(&si, "path", red_path.c_str());
+			proc_handler_call(obs_get_proc_handler(), "stagekit_set_start_image", &si);
+			calldata_free(&si);
+			obs_data_set_int(sd, "picture", 0);
+			obs_source_update(standby, sd);
+			settle(14);
+			w = obs_source_get_width(capture);
+			h = obs_source_get_height(capture);
+			px = w && h ? render(capture, w, h) : std::vector<uint8_t>();
+			mid = px.empty() ? nullptr : &px[(size_t(h / 2) * w + w / 2) * 4];
+			CHECK(mid && mid[0] > 250 && mid[1] < 5 && mid[2] < 5,
+			      "left as it comes, it shows the start image (%d, %d, %d)", mid ? mid[0] : -1,
+			      mid ? mid[1] : -1, mid ? mid[2] : -1);
+			calldata_t back = {};
+			calldata_set_string(&back, "path", "");
+			proc_handler_call(obs_get_proc_handler(), "stagekit_set_start_image", &back);
+			calldata_free(&back);
+			obs_data_release(sd);
+			obs_source_filter_remove(capture, standby);
+			obs_source_release(standby);
+			obs_source_release(capture);
 		}
 
 		printf("\n[shadow & backdrop]\n");
