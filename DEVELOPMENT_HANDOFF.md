@@ -204,6 +204,26 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## The freeze: measuring no longer waits without limit (0.1.0-beta57)
+
+The owner, on beta56: "I saw a blue outline in the preview. the guides seem to appear now, but it
+crash after a few seconds of moving an object"; the newest file in OBS's crash folder was an older
+startup crash inside another plugin, not StageKit, so the "crashes" leave no crash file; then: "obs
+just freezes and becomes completely unresponsive".
+
+- **Guides show on Windows since beta56** (the main preview picked by class). The report in the
+  dock's message was removed again.
+- **The "crashes" are freezes**: a deadlock, which is why there is never a crash file. Every one
+  happened with guides ticked. From beta54 the window's thread waited without limit for the drawing
+  thread to measure; what the drawing thread was waiting for is not known (no log from a frozen
+  session was received; the log sent was the running session's). The wait is now limited to 400 ms,
+  which ends any deadlock of that shape whatever its other half is. Beta53's freezes (drawing from
+  the window's thread) were a different shape of the same thing.
+- If freezes go on with beta57, the wait in `on_drawing_thread` is ruled out: get the log of the
+  frozen session (second-newest in *Help → Log Files*) and look for `measuring: OBS's drawing thread
+  did not answer`.
+- Still unconfirmed by the owner: groups with slides and *Same in every scene* (beta54).
+
 ## Guides report in the dock; cameras not drawn bare (0.1.0-beta56)
 
 The owner, on beta55: "i saw no frame flash. the app did crash after moving an object and click off
