@@ -204,6 +204,37 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Tools follow the Arrange options; guides, third try (0.1.0-beta53)
+
+The owner: "the slide to next edge is not respecting the use visible pixels setting" (three
+screenshots: a browser widget with a Shadow, Glow & Outline, stopped with its box at the edge
+distance, both options ticked); "i need the tools to respect all the settings"; "i don't think guides
+in preview are working yet. i've never seen them with the box checked"; "the transform same in every
+scene works" (beta52, confirmed on Windows).
+
+- **Not reproduced here.** The tests have no browser source. Two things were wrong on reading and are
+  fixed; whether either was the owner's case is not known until they try it.
+  - The bare picture was drawn with `obs_source_default_render`, which wraps the draw in OBS's default
+    effect whatever the source is. OBS itself only does that for plain sources; one that draws itself
+    (a browser) is drawn directly. `render_bare` now uses `obs_source_skip_video_filter` on the filter
+    applied first, which is OBS's own way of drawing what is under the filters.
+  - When the bare picture came back empty, the item's whole box was used. It now falls back to
+    everything drawn, less the shadows' room.
+- The bare picture is now also cut to what is drawn with the filters on, so trimmed edges and masks
+  are not counted.
+- **Send To and Place Item** kept their edge distance to the item's box whatever the options said.
+  They now measure by the Arrange options (`as_arranged`, default on). This moves where existing keys
+  land for an item with a shadow or see-through room: the picture, not the box, is the edge distance
+  from the edge. The owner asked for the tools to follow the settings; the tick box undoes it.
+- **A slide writes a line to OBS's log** (`[stagekit] Slide: '…' counts as …`): what it measured and
+  the item's box. Ask for it if a slide stops wrong again.
+- **Guides**: line windows no longer use `Qt::WindowTransparentForInput` (a layered window on
+  Windows, like the see-through overlay that showed nothing); they do not take focus instead. Ticking
+  the box flashes a frame round the canvas for 1.5 s and the dock says *Guides are on* or that it
+  cannot find OBS's preview (`guides_preview_state`). Still not seen on Windows by anyone.
+- Tests: a Cropped View (a source that draws itself) of the padded badge with a shadow is slid, sent
+  to a corner under each combination of the two options, and sent with its edges trimmed.
+
 ## Same in every scene; own pixels; flips round the picture (0.1.0-beta52)
 
 The owner: "id like a feature to paste transforms to all of the same source in all scenes ... similar

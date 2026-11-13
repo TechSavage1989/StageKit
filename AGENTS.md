@@ -135,20 +135,29 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   fits) to find the canvas in it. One see-through window over the whole preview showed nothing on the
   owner's Windows machine (beta46 to beta49); the mouse button is also read from Windows itself. That
   only holds for *Scale to Window*. It is off by default and only shown while a line is up. Items are
-  measured once when a drag starts, never while it goes on.
+  measured once when a drag starts, never while it goes on. A line window must not be
+  `Qt::WindowTransparentForInput`: on Windows that makes it a layered window, the kind that showed
+  nothing. Switching guides on flashes a frame round the canvas for a moment, so the owner can see
+  at once whether lines show at all.
 - **The order items are selected in comes from OBS's own `item_select` signals**
   (`track_selection_order` in `src/dock/arrange-tools.cpp`), on every scene and group. It used to be
   learned by polling one scene, which forgot it whenever the dock's *Scene* list showed another scene,
   so "last selected" became the top-most item. The dock's Arrange tools act on the scene being
   edited (`arrange_scene()`), not on the dock's *Scene* list, unless nothing is selected there.
 - **Ignore shadows & outlines measures the source's own pixels** (`measure_item`): the source drawn
-  with none of its filters (`obs_source_default_render`), placed where the Shadow, Glow & Outline room
-  puts it. The owner asked for that: anything a filter draws (a Corners & Edges border, say) is left
-  out. Only when the filters change the size by more than that room (an Auto Frame) or the source
-  plays video frames does it fall back to what the first shadow draws from (`shadow_free`), then to
-  cutting the room off the edges. Never cut the room off the edges first: a widget's picture often
-  stops short of its own edges. Unticked, a shadow sized in screen pixels keeps its size while the
-  item is resized, and `match_size` allows for that.
+  with none of its filters (`render_bare`), placed where the Shadow, Glow & Outline room puts it, and
+  then only where something is also drawn with the filters on, so what a filter takes away (a mask,
+  trimmed edges) does not count. The owner asked for that: anything a filter draws (a Corners & Edges
+  border, say) is left out. Draw bare with `render_bare`, never `obs_source_default_render`: that one
+  is only right for plain sources, not for one that draws itself (a browser, a nested scene). When the
+  filters change the size by more than that room (an Auto Frame) it falls back to what the first
+  shadow draws from (`shadow_free`), then to cutting the room off the edges. Never cut the room off
+  the edges first: a widget's picture often stops short of its own edges. Unticked, a shadow sized in
+  screen pixels keeps its size while the item is resized, and `match_size` allows for that.
+- **Every tool that places things measures by the Arrange options.** The owner: "i need the tools to
+  respect all the settings". Send To and Place Item's nine screen positions keep their edge distance
+  to what `arrange_options().how` counts as the item (`as_arranged`, on by default; off goes by the
+  box). A new tool that places or sizes items must do the same.
 - **A brought-along item flips round the leader's picture** (`plan()` in `src/placement/place-item.cpp`),
   measured without shadows, not round the leader's box: round the box, the camera's shadow added its
   width to the gap after a flip (the owner's screenshots, beta51).

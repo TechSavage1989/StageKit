@@ -36,6 +36,10 @@ PreviewMap preview_map(double widget_w, double widget_h, double pixel_ratio, dou
 // in canvas pixels, and "lineWindows" where their windows are on the screen.
 QObject *install_preview_guides(QWidget *main_window, QWidget *preview = nullptr);
 
+// 0: guides are off; 1: on, over OBS's preview; 2: on, but the preview was
+// not found.
+int guides_preview_state();
+
 // Whether the left mouse button is held. The tests, which have no mouse, can
 // say that it is.
 bool guides_mouse_down();

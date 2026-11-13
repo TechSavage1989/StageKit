@@ -71,7 +71,13 @@ PreviewMap preview_map(double widget_w, double widget_h, double pixel_ratio, dou
 
 namespace {
 std::atomic<bool> g_test_mouse{false};
+std::atomic<int> g_preview_state{0};
 } // namespace
+
+int guides_preview_state()
+{
+	return g_preview_state.load();
+}
 
 bool guides_mouse_down()
 {
@@ -95,9 +101,11 @@ void guides_test_mouse(bool down)
 
 namespace {
 
-// How long a line shown by a line-up tool stays up, and how often the
-// preview is looked at while guides are switched on.
+// How long a line shown by a line-up tool stays up, how long the frame
+// shown when guides are switched on stays up, and how often the preview is
+// looked at while guides are switched on.
 constexpr int kFlashMs = 900;
+constexpr int kHelloMs = 1500;
 constexpr int kWatchMs = 33;
 
 // One guide line: a thin window of its own, laid over OBS's preview. It is
@@ -107,8 +115,12 @@ constexpr int kWatchMs = 33;
 class LineWindow : public QWidget {
 public:
 	explicit LineWindow(QWidget *owner)
-		: QWidget(owner, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowTransparentForInput |
-					 Qt::WindowDoesNotAcceptFocus | Qt::NoDropShadowWindowHint)
+		// Not Qt::WindowTransparentForInput: on Windows that makes it a
+		// layered window, the one thing these lines must not depend on.
+		// The window is a few pixels wide, shows only while a line is up,
+		// and lets mouse events through to the widgets beneath in Qt.
+		: QWidget(owner, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowDoesNotAcceptFocus |
+					 Qt::NoDropShadowWindowHint)
 	{
 		setObjectName("stagekitGuideLine");
 		setAttribute(Qt::WA_TransparentForMouseEvents);
@@ -153,12 +165,18 @@ private:
 		QWidget *preview = find_preview();
 		if (options.guides != said_on_) {
 			said_on_ = options.guides;
-			if (options.guides && preview)
+			if (options.guides && preview) {
 				obs_log(LOG_INFO, "Guides: on, over OBS's preview (%d x %d)", preview->width(),
 					preview->height());
-			else if (options.guides)
+				// A frame round the canvas for a moment, so it is plain at
+				// once that lines can show over the preview.
+				hello_.start();
+				said_line_ = false;
+			} else if (options.guides) {
 				obs_log(LOG_WARNING, "Guides: on, but OBS's preview was not found");
+			}
 		}
+		g_preview_state = !options.guides ? 0 : preview ? 1 : 2;
 		if (!options.guides || !preview || !preview->isVisible()) {
 			// Nothing a tool did while guides were off is shown later.
 			seen_serial_ = last_arrange_guide().serial;
@@ -173,6 +191,14 @@ private:
 			return;
 		}
 		std::vector<double> xs, ys;
+		const double canvas_w = obs_source_get_width(scene);
+		const double canvas_h = obs_source_get_height(scene);
+		if (hello_.isValid() && hello_.elapsed() < kHelloMs) {
+			xs.insert(xs.end(), {0.0, canvas_w});
+			ys.insert(ys.end(), {0.0, canvas_h});
+		} else {
+			hello_.invalidate();
+		}
 
 		// A line-up tool has just run: show the line it used for a moment.
 		const ArrangeGuide guide = last_arrange_guide();
@@ -232,8 +258,6 @@ private:
 		}
 		before_ = now;
 
-		const double canvas_w = obs_source_get_width(scene);
-		const double canvas_h = obs_source_get_height(scene);
 		obs_source_release(scene);
 		if (xs.empty() && ys.empty()) {
 			clear();
@@ -326,6 +350,7 @@ private:
 	std::vector<Box> insets_; // what is drawn, relative to each dragged item's box
 	// What has been written to OBS's log, so each is said once.
 	bool said_on_ = false, said_drag_ = false, said_line_ = false;
+	QElapsedTimer hello_; // the frame shown when guides are switched on
 };
 
 } // namespace

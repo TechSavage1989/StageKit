@@ -34,6 +34,43 @@ struct Drawn {
 	bool any = false;
 };
 
+// Draws a source with none of its filters, the way OBS itself draws what is
+// under the filter applied first. That works for every kind of source: one
+// that draws itself (a browser, a nested scene), one that plays video frames.
+// obs_source_default_render does not: it is only right for the plain kind.
+void render_bare(obs_source_t *source)
+{
+	struct Find {
+		obs_source_t *source;
+		obs_source_t *lowest = nullptr;
+	} find{source};
+	obs_source_enum_filters(
+		source,
+		[](obs_source_t *, obs_source_t *filter, void *param) {
+			auto *f = static_cast<Find *>(param);
+			if (obs_filter_get_target(filter) == f->source)
+				f->lowest = filter;
+		},
+		&find);
+	if (find.lowest)
+		obs_source_skip_video_filter(find.lowest);
+	else
+		obs_source_video_render(source);
+}
+
+// What two measured parts have in common. Empty when they do not meet.
+Drawn common(const Drawn &a, const Drawn &b)
+{
+	Drawn out;
+	if (!a.any || !b.any)
+		return out;
+	const double x0 = std::max(a.x, b.x), y0 = std::max(a.y, b.y);
+	const double x1 = std::min(a.x + a.w, b.x + b.w), y1 = std::min(a.y + a.h, b.y + b.h);
+	if (x1 - x0 < 1.0 || y1 - y0 < 1.0)
+		return out;
+	return {x0, y0, x1 - x0, y1 - y0, true};
+}
+
 // `bare`: the source drawn without any of its filters.
 Drawn drawn_part(obs_source_t *source, bool bare = false)
 {
@@ -60,7 +97,7 @@ Drawn drawn_part(obs_source_t *source, bool bare = false)
 		gs_blend_state_push();
 		gs_blend_function(GS_BLEND_ONE, GS_BLEND_INVSRCALPHA);
 		if (bare)
-			obs_source_default_render(source);
+			render_bare(source);
 		else
 			obs_source_video_render(source);
 		gs_blend_state_pop();
@@ -133,38 +170,44 @@ Box measure_item(obs_source_t *scene, obs_sceneitem_t *item, const Measure &how)
 	bool measured = false;
 	ShadowFree free;
 	const bool shadowed = how.leave_out_shadows && shadow_free(source, free);
+	// Everything the source draws, filters and all.
+	const Drawn drawn = drawn_part(source);
 	if (how.leave_out_shadows) {
 		// The source's own pixels: drawn with none of its filters, so no
 		// shadow, glow, outline or border any filter adds counts. That
 		// picture sits in the whole source where the shadows' room puts it.
 		// It only can when the filters change the source's size by nothing
-		// but that room (an Auto Frame, say, gives it another size) and the
-		// source draws without them (one that plays video frames does not).
+		// but that room (an Auto Frame, say, gives it another size).
 		const double bw = obs_source_get_base_width(source), bh = obs_source_get_base_height(source);
 		const double fw = obs_source_get_width(source), fh = obs_source_get_height(source);
-		const bool only_room = std::fabs(fw - (bw + free.left + free.right)) <= 1.0 &&
-				       std::fabs(fh - (bh + free.top + free.bottom)) <= 1.0;
-		const bool async = (obs_source_get_output_flags(source) & OBS_SOURCE_ASYNC) != 0;
-		if (bw > 0.0 && bh > 0.0 && only_room && !async) {
+		const bool only_room = std::fabs(fw - (bw + free.left + free.right)) <= 2.0 &&
+				       std::fabs(fh - (bh + free.top + free.bottom)) <= 2.0;
+		if (bw > 0.0 && bh > 0.0 && only_room) {
 			part = drawn_part(source, true);
 			measured = part.any;
 		}
 		// Otherwise: the picture as it is before its first shadow, glow or
 		// outline, put where the shadow puts it.
-		if (!measured && shadowed &&
-		    (!free.bare || !(obs_source_get_output_flags(free.draw) & OBS_SOURCE_ASYNC))) {
+		if (!measured && shadowed) {
 			part = drawn_part(free.draw, free.bare);
-			measured = true;
+			measured = part.any;
 		}
-		if (measured && part.any) {
+		if (measured) {
 			part.x += free.left;
 			part.y += free.top;
+			// What a filter takes away (a mask, a key, cut corners) is not
+			// there to be seen either: only what is also drawn in the end.
+			const Drawn both = common(part, drawn);
+			if (both.any)
+				part = both;
 		}
 	}
 	if (shadowed)
 		obs_source_release(free.draw);
 	if (!measured) {
-		part = drawn_part(source);
+		// Nothing to go by without the filters: everything drawn, less the
+		// room the shadows take.
+		part = drawn;
 		if (part.any && how.leave_out_shadows) {
 			double room[4];
 			shadow_room(source, room);
