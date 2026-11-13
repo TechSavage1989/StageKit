@@ -19,6 +19,12 @@ the Free Software Foundation; either version 2 of the License, or
 #include <graphics/vec4.h>
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <functional>
+#include <memory>
+#include <mutex>
 #include <cmath>
 #include <cstring>
 
@@ -71,19 +77,79 @@ Drawn common(const Drawn &a, const Drawn &b)
 	return {x0, y0, x1 - x0, y1 - y0, true};
 }
 
-// Runs `work` on OBS's own drawing thread, between two frames, and waits for
-// it. Measuring draws sources; drawing one from the window's thread while
-// OBS draws the same source for the picture is not safe, as the two can be
-// in a source's drawing code at once. Called on that thread already (a
-// filter's tick), the work is simply done.
-template<typename Work> void on_drawing_thread(Work &&work)
+// Measuring draws sources, which is only safe on OBS's own drawing thread,
+// between two frames. The work is handed to that thread and waited for, but
+// never for long: the owner's OBS froze for good while an item was dragged
+// with guides on (beta53 to beta56), the window's thread waiting here for
+// the drawing thread while that waited for something only the window's
+// thread could give. After kPatience the caller goes on without an answer
+// and the work, which owns everything it touches, finishes by itself later.
+// Called on the drawing thread already (a filter's tick), it is simply done.
+constexpr int kPatienceMs = 400;
+std::atomic<int> g_gave_up{0};
+
+struct Job {
+	std::function<void()> work;
+	std::mutex mutex;
+	std::condition_variable finished;
+	bool done = false;
+};
+
+// False when the answer did not come in time.
+bool on_drawing_thread(std::function<void()> work)
 {
 	if (obs_in_task_thread(OBS_TASK_GRAPHICS)) {
 		work();
-		return;
+		return true;
 	}
-	obs_queue_task(OBS_TASK_GRAPHICS, [](void *param) { (*static_cast<Work *>(param))(); }, &work, true);
+	auto job = std::make_shared<Job>();
+	job->work = std::move(work);
+	obs_queue_task(
+		OBS_TASK_GRAPHICS,
+		[](void *param) {
+			auto *held = static_cast<std::shared_ptr<Job> *>(param);
+			(*held)->work();
+			{
+				std::lock_guard lock((*held)->mutex);
+				(*held)->done = true;
+			}
+			(*held)->finished.notify_all();
+			delete held;
+		},
+		new std::shared_ptr<Job>(job), false);
+	std::unique_lock lock(job->mutex);
+	if (job->finished.wait_for(lock, std::chrono::milliseconds(kPatienceMs), [&] { return job->done; }))
+		return true;
+	const int count = ++g_gave_up;
+	if (count <= 5)
+		blog(LOG_WARNING,
+		     "[stagekit] measuring: OBS's drawing thread did not answer in %d ms; "
+		     "going by the items' boxes this once",
+		     kPatienceMs);
+	return false;
 }
+
+// Keeps a scene and some of its items alive for work that may finish after
+// its caller has gone on.
+struct Held {
+	obs_source_t *scene = nullptr;
+	std::vector<obs_sceneitem_t *> items;
+	Held(obs_source_t *scene_, const std::vector<obs_sceneitem_t *> &items_)
+		: scene(obs_source_get_ref(scene_)),
+		  items(items_)
+	{
+		for (obs_sceneitem_t *item : items)
+			obs_sceneitem_addref(item);
+	}
+	~Held()
+	{
+		for (obs_sceneitem_t *item : items)
+			obs_sceneitem_release(item);
+		obs_source_release(scene);
+	}
+	Held(const Held &) = delete;
+	Held &operator=(const Held &) = delete;
+};
 
 // Draws the source small and finds the rows and columns with something in
 // them.
@@ -212,11 +278,23 @@ namespace {
 Box measure_item_now(obs_source_t *scene, obs_sceneitem_t *item, const Measure &how);
 }
 
+int measuring_gave_up()
+{
+	return g_gave_up.load();
+}
+
 Box measure_item(obs_source_t *scene, obs_sceneitem_t *item, const Measure &how)
 {
-	Box out;
-	on_drawing_thread([&] { out = measure_item_now(scene, item, how); });
-	return out;
+	if (!scene || !item)
+		return {};
+	if (obs_in_task_thread(OBS_TASK_GRAPHICS))
+		return measure_item_now(scene, item, how);
+	auto held = std::make_shared<Held>(scene, std::vector<obs_sceneitem_t *>{item});
+	auto out = std::make_shared<Box>();
+	if (on_drawing_thread([held, out, item, how] { *out = measure_item_now(held->scene, item, how); }))
+		return *out;
+	// No answer in time: the item's box.
+	return scene_box(scene, item);
 }
 
 namespace {
@@ -651,9 +729,18 @@ std::vector<Box> others_in_now(obs_source_t *scene, const std::vector<obs_scenei
 // Every item is measured in one visit to the drawing thread.
 std::vector<Box> others_in(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &leave_out, const Measure &how)
 {
-	std::vector<Box> out;
-	on_drawing_thread([&] { out = others_in_now(scene, leave_out, how); });
-	return out;
+	if (!scene)
+		return {};
+	if (obs_in_task_thread(OBS_TASK_GRAPHICS))
+		return others_in_now(scene, leave_out, how);
+	// The items to leave out are only compared with, never looked into, so
+	// they are not held: one of them may already be gone.
+	auto held = std::make_shared<Held>(scene, std::vector<obs_sceneitem_t *>{});
+	auto out = std::make_shared<std::vector<Box>>();
+	if (on_drawing_thread([held, out, leave_out, how] { *out = others_in_now(held->scene, leave_out, how); }))
+		return *out;
+	// No answer in time: nothing counts as in the way this once.
+	return {};
 }
 
 } // namespace
@@ -785,9 +872,16 @@ SnapLines snap_lines_now(obs_source_t *scene, const std::vector<obs_sceneitem_t 
 
 SnapLines snap_lines(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &leave_out, const Measure &how)
 {
-	SnapLines lines;
-	on_drawing_thread([&] { lines = snap_lines_now(scene, leave_out, how); });
-	return lines;
+	if (!scene)
+		return {};
+	if (obs_in_task_thread(OBS_TASK_GRAPHICS))
+		return snap_lines_now(scene, leave_out, how);
+	auto held = std::make_shared<Held>(scene, std::vector<obs_sceneitem_t *>{});
+	auto lines = std::make_shared<SnapLines>();
+	if (on_drawing_thread([held, lines, leave_out, how] { *lines = snap_lines_now(held->scene, leave_out, how); }))
+		return *lines;
+	// No answer in time: no lines to meet this once.
+	return {};
 }
 
 Meeting meet_lines(const Box &box, const SnapLines &lines, double within)

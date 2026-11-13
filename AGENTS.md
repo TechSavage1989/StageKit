@@ -141,8 +141,9 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   owner had OBS crash while moving items with guides and snap on, and not with both off (beta53).
   OBS names four widgets `preview` (the main one, and one each in the Filters, Properties and
   Interact windows); the main one is picked by its class, `OBSBasicPreview`. Child windows inside the
-  preview were not seen either (beta55). While this is unsolved, the dock's message after ticking the
-  box carries a report in square brackets (`guides_report`); remove it once guides are confirmed.
+  preview attached to the wrong one were not seen (beta55); attached to the right one the owner saw
+  them (beta56). `guides_report()` says what the guides did, for a log line or a message if they
+  stop showing.
 - **The order items are selected in comes from OBS's own `item_select` signals**
   (`track_selection_order` in `src/dock/arrange-tools.cpp`), on every scene and group. It used to be
   learned by polling one scene, which forgot it whenever the dock's *Scene* list showed another scene,
@@ -160,11 +161,14 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   shadow draws from (`shadow_free`), then to cutting the room off the edges. Never cut the room off
   the edges first: a widget's picture often stops short of its own edges. Unticked, a shadow sized in
   screen pixels keeps its size while the item is resized, and `match_size` allows for that.
-- **Measuring draws on OBS's drawing thread** (`on_drawing_thread` in `src/dock/arrange.cpp`), one
-  visit per measurement, waited for. Up to beta53 it drew sources from the window's thread while OBS
-  drew them for the picture; the owner had OBS crash while moving and editing items. Do not draw a
-  source from the window's thread, and do not call the measuring functions while holding a scene's
-  lock (inside `obs_scene_enum_items`): the drawing thread needs it.
+- **Measuring draws on OBS's drawing thread and never waits long for it** (`on_drawing_thread` in
+  `src/dock/arrange.cpp`). Up to beta53 it drew sources from the window's thread while OBS drew them
+  for the picture. Beta54 to beta56 handed the work to the drawing thread and waited without limit;
+  the owner's OBS then froze for good while dragging with guides on (no crash file: a deadlock). Now
+  the wait is `kPatienceMs`; after that the caller goes by boxes (a slide says *OBS was busy*) and the
+  work, which holds its own references (`Held`), finishes later by itself. Never wait without a limit
+  on another OBS thread from the window's thread, and never capture a caller's locals by reference
+  in work handed over this way.
 - **A smoothed edge's faint last row of pixels is not picture** (`measure_drawn`): where every pixel
   in the outermost row or column is under half the one inside it, the picture ends one pixel further
   in. Counting it left a line of background along the screen's edge at an edge distance of 0.

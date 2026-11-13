@@ -31,6 +31,10 @@ enum class Edge { Left, Center, Right, Top, Middle, Bottom };
 // selected, which then stays put while the others come to it.
 enum class Against { Screen, Selection, First, Last };
 
+// How many times measuring went on without an answer from OBS's drawing
+// thread (it then goes by boxes). For saying so after a button press.
+int measuring_gave_up();
+
 // Where an item is on its scene's canvas, by its box or by what shows.
 Box measure_item(obs_source_t *scene, obs_sceneitem_t *item, const Measure &how);
 

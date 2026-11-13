@@ -644,12 +644,8 @@ public:
 			QTimer::singleShot(600, this, [this] {
 				if (!guides_->isChecked())
 					return;
-				// While guides are unproven on Windows, the dock also says
-				// what they did, so a screenshot of it is a full report.
 				QString text = tr_text(guides_preview_state() == 2 ? "Arrange.Guides.NoPreview"
 										   : "Arrange.Guides.On");
-				if (!guides_report().isEmpty())
-					text += QStringLiteral(" [") + guides_report() + QStringLiteral("]");
 				say(text);
 			});
 		});
@@ -1090,10 +1086,18 @@ private:
 		// on from where the last one ends, so it passes that edge.
 		const bool on_its_way = slide_item_ == obs_sceneitem_get_id(item) && slide_scene_ == scene_name &&
 					slide_clock_.isValid() && slide_clock_.elapsed() < slide_ms_ + 150;
+		const int gave_up_before = measuring_gave_up();
 		const Box from = on_its_way ? slide_measured_ : measure_item(scene, item, how);
 		const Box box = on_its_way ? slide_box_ : scene_box(scene, item);
 		const Offset by = slide_offset(scene, item, direction % 3 - 1, direction / 3 - 1, margin_->value(), how,
 					       along, &from);
+		// OBS did not get round to measuring in time: better to say so than
+		// to slide by the boxes and stop in the wrong place.
+		if (measuring_gave_up() != gave_up_before) {
+			say(tr_text("Dock.Busy"));
+			obs_source_release(scene);
+			return;
+		}
 		// For a report that a slide stopped in the wrong place: what was measured.
 		obs_log(LOG_INFO,
 			"Slide: '%s' counts as %.0f x %.0f at %.0f, %.0f (its box is %.0f x %.0f at %.0f, %.0f; "
