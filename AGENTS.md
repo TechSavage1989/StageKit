@@ -29,7 +29,7 @@ for an update notice inside OBS. This exception is recorded in the handoff.
 | `src/dock/` | Two docks (Qt widgets, no `Q_OBJECT`): StageKit follows the item selected in OBS and drives Send To filters on that item's source; StageKit Background holds the start image thumbnail. `arrange-tools.*` is the one set of line-up actions and options behind the dock, the hotkeys and the preview's right-click menu |
 | `src/common/` | Shared helpers: easing and `Tween`, `SwitchRamp`, `KawaseBlur`, scene utilities, and the start image (global path + Start Image source) |
 | `src/frame/` | Auto Frame filter and the Picture Shape key filter |
-| `src/capture/` | Auto Capture filter (aims a Game Capture at the game in front) and Program Trigger filter (shows items and switches filters while a program is open). Both use the Win32 window list in `auto-capture.cpp`; compiled but idle elsewhere |
+| `src/capture/` | Auto Capture filter (aims a Game Capture at the game in front), Program Trigger filter (shows items and switches filters while a program is open) and Active App scene filter (shows the one of several captures whose app is in use). All use the Win32 window list in `auto-capture.cpp`; compiled but idle elsewhere |
 | `src/api/` | obs-websocket vendor requests (`StageKit` vendor) |
 | `src/third-party/` | Vendored `obs-websocket-api.h`, kept byte-for-byte (excluded from clang-format) |
 | `data/effects/` | Shaders in OBS `.effect` format |
@@ -138,6 +138,12 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   fired by filters and Stream Deck keys do not; they are part of the show.
 - **Dock keys are Send To filters on the item's source**, not Place Item filters on the scene. The
   owner presses them from Stream Deck Filter keys on the camera.
+- **Active App follows the app in use, and nothing else.** The owner's old macros ran while a listed
+  program had the focus: the capture follows from one listed app to another, stays on the last one
+  while anything else is in front, and goes back to an earlier capture when an app closes. It acts on
+  events (an app opens, closes or is clicked into), never continuously, so a capture shown by hand is
+  kept. The change is OBS's own show and hide transition on each item, which the filter sets; do not
+  build a second fade.
 - **Send To moves the source in every scene it is in, by default** (`apply_in`). The owner asked for
   that: the camera sent to a spot is there in every scene. The older `where` setting is not read.
 - **Shadow sizes are in screen pixels by default.** The owner's old shadows sat on full-canvas scenes,

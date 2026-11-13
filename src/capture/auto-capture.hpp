@@ -28,8 +28,8 @@ struct OpenWindow {
 	std::string title, executable;
 	bool foreground = false;
 };
-// Every open window, everyday programs included. Looked up at most twice a
-// second however many callers ask.
+// Every open window, everyday programs included. Looked up at most five
+// times a second however many callers ask.
 std::vector<OpenWindow> open_windows();
 
 } // namespace stagekit

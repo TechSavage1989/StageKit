@@ -2,7 +2,7 @@
 """Brings an OBS scene collection that already uses StageKit up to date, without rebuilding it.
 
 It reads one collection and writes another; the one it reads is never changed. Everything in the
-collection is kept as it is except for these three things:
+collection is kept as it is except for these four things:
 
 1. Window captures get a Fit Item filter on their scene, the way a game capture has one. Only a window
    capture that is fitted inside a centred bounding box is taken, and only if its scene has no Fit Item
@@ -11,6 +11,10 @@ collection is kept as it is except for these three things:
 2. An Auto Frame set to "Just the picture" gets the canvas height, so the picture is not scaled up from
    a smaller size.
 3. A Send To or Place Item filter that brings an item along has "Flip sides to stay on screen" switched on.
+4. Where a scene has a "Show only one at a time" Visibility Link over captures, plus a Program Trigger
+   for each that shows it while its program is open, those are replaced by one Active App filter
+   listing the same captures in the same order. That shows the capture of the app in use, keeps the
+   last one while something else is in front, and goes back to an earlier one when an app closes.
 
 Usage:
     python3 -I scripts/upgrade-collection.py <collection.json> <upgraded.json> <report.txt> [new name]
@@ -113,6 +117,38 @@ for source in everything:
             if settings.get("linked") and settings.get("flip_linked") is False:
                 settings["flip_linked"] = True
                 report.append(f"{source['name']}: '{f['name']}' now flips '{settings['linked']}' to stay on screen")
+
+# 4. One Active App in place of a Visibility Link and its Program Triggers.
+CAPTURES = ("window_capture", "game_capture")
+for scene in data.get("sources", []):
+    filters = scene.get("filters", [])
+    if scene.get("id") != "scene" or any(f.get("id") == "stagekit_active_app" for f in filters):
+        continue
+    for link in [f for f in filters if f.get("id") == "stagekit_visibility_link"]:
+        link_settings = link.get("settings", {})
+        names = [e.get("value") for e in link_settings.get("items", []) if e.get("value")]
+        if link_settings.get("mode", 0) != 0 or len(names) < 2:
+            continue
+        if not all(kind_by_name.get(n) in CAPTURES for n in names):
+            continue
+
+        def shows_one_of_them(f):
+            s = f.get("settings", {})
+            shown = [e.get("value") for e in s.get("items", []) if e.get("value")]
+            return (f.get("id") == "stagekit_program_trigger" and len(shown) == 1 and shown[0] in names
+                    and not s.get("opposite") and not s.get("filters"))
+
+        triggers = [f for f in filters if shows_one_of_them(f)]
+        if not triggers:
+            continue
+        switch = make_filter("stagekit_active_app", "Show the app in use",
+                             {"items": [{"value": n, "selected": False, "hidden": False} for n in names]}, scene)
+        filters[filters.index(link)] = switch
+        for f in triggers:
+            filters.remove(f)
+        report.append(f"{scene['name']}: Active App in place of '{link['name']}' and {len(triggers)} Program "
+                      f"Trigger filters, for {', '.join(names)}")
+        break
 
 if NEW_NAME:
     report.insert(0, f"Collection name: '{data.get('name')}' -> '{NEW_NAME}'")

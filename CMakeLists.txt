@@ -57,6 +57,8 @@ target_sources(
     src/zoom/ramp-zoom.hpp
     src/capture/auto-capture.cpp
     src/capture/auto-capture.hpp
+    src/capture/active-app.cpp
+    src/capture/active-app.hpp
     src/capture/program-trigger.cpp
     src/capture/program-trigger.hpp
     src/common/pick-list.cpp
