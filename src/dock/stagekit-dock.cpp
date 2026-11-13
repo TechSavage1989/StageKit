@@ -230,6 +230,8 @@ private:
 	QElapsedTimer asked_;
 };
 
+PreviewMenu *g_preview_menu = nullptr;
+
 // The start image and the moving background, in a dock of their own.
 class BackgroundDock : public QWidget {
 public:
@@ -329,7 +331,10 @@ public:
 		layout->addStretch(1);
 
 		auto *timer = new QTimer(this);
-		QObject::connect(timer, &QTimer::timeout, this, [this] { refresh(); });
+		QObject::connect(timer, &QTimer::timeout, this, [this] {
+			if (!measuring_stopped()) // not while OBS is closing
+				refresh();
+		});
 		timer->start(400);
 		refresh();
 	}
@@ -672,7 +677,10 @@ public:
 
 		// Snapping on letting go: watch the selected items a few times a second.
 		auto *snap_timer = new QTimer(this);
-		QObject::connect(snap_timer, &QTimer::timeout, this, [this] { watch_for_drop(); });
+		QObject::connect(snap_timer, &QTimer::timeout, this, [this] {
+			if (!measuring_stopped())
+				watch_for_drop();
+		});
 		snap_timer->start(120);
 
 		auto *order_box = new QGroupBox(tr_text("Dock.OrderBox"), this);
@@ -707,7 +715,10 @@ public:
 		// Scenes and their items change behind our back; a light poll keeps
 		// the lists current without hooking every scene signal.
 		auto *timer = new QTimer(this);
-		QObject::connect(timer, &QTimer::timeout, this, [this] { refresh(); });
+		QObject::connect(timer, &QTimer::timeout, this, [this] {
+			if (!measuring_stopped()) // not while OBS is closing
+				refresh();
+		});
 		timer->start(400);
 		refresh();
 	}
@@ -1387,10 +1398,9 @@ void register_dock()
 	proc_handler_add(
 		obs_get_proc_handler(), "void stagekit_install_preview_menu()",
 		[](void *, calldata_t *) {
-			static PreviewMenu *menu = nullptr;
-			if (!menu && qApp) {
-				menu = new PreviewMenu(qApp);
-				qApp->installEventFilter(menu);
+			if (!g_preview_menu && qApp) {
+				g_preview_menu = new PreviewMenu(qApp);
+				qApp->installEventFilter(g_preview_menu);
 			}
 		},
 		nullptr);
@@ -1425,6 +1435,22 @@ void register_dock()
 		calldata_free(&cd);
 	}
 	install_preview_guides(static_cast<QWidget *>(obs_frontend_get_main_window()));
+	// When OBS closes, everything here that watches on a timer or listens to
+	// OBS stops first. Left running, it went on asking OBS about scenes and
+	// measuring items while OBS was taking them apart.
+	obs_frontend_add_event_callback(
+		[](enum obs_frontend_event event, void *) {
+			if (event != OBS_FRONTEND_EVENT_SCRIPTING_SHUTDOWN && event != OBS_FRONTEND_EVENT_EXIT)
+				return;
+			if (measuring_stopped())
+				return;
+			measuring_stop();
+			remove_preview_guides();
+			if (g_preview_menu && qApp)
+				qApp->removeEventFilter(g_preview_menu);
+			obs_log(LOG_INFO, "OBS is closing: the docks, guides and measuring have stopped");
+		},
+		nullptr);
 	add("stagekit-dock", "Dock.Title", new Dock());
 	add("stagekit-background-dock", "Dock.BackgroundTitle", new BackgroundDock());
 }

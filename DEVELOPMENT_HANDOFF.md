@@ -204,6 +204,23 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Quiet on close (0.1.0-beta58)
+
+The owner, on beta57: "obs is crashing on close often, but it's just freezing up and not offering to
+save the error log."
+
+- **Cause not proven; no log of a frozen close received.** What was wrong on reading: nothing of
+  StageKit's stopped when OBS closed. The guides' timer, both docks' timers, the snap watcher and the
+  preview menu's event filter all kept running while OBS cleared its scenes (which pumps window
+  events), asking for scenes and measuring items. They now stop at `SCRIPTING_SHUTDOWN`.
+- **Other suspects on the owner's machine, outside StageKit**: a media source reading a network
+  stream that keeps disconnecting (OBS waits for such a source's reader when it closes), and the
+  third-party plugin whose callback crashed at startup in the one crash file they had.
+- If closes still freeze on beta58: ask for the log of that session (second-newest in *Help → Log
+  Files*). Its last lines show how far the shutdown got; StageKit now writes `OBS is closing: the
+  docks, guides and measuring have stopped` when its part is done. A freeze after that line, with
+  that line present, points away from the dock code.
+
 ## Confirmed by the owner on Windows (beta57, 2026-11-13)
 
 "doesn't seem to be crashing ... either way it's much better", then, after being asked to tick *Snap

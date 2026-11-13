@@ -37,6 +37,8 @@ PreviewMap preview_map(double widget_w, double widget_h, double pixel_ratio, dou
 // Returns what watches; its "guideLines" property lists the lines showing,
 // in canvas pixels, and "lineWindows" where their windows are on the screen.
 QObject *install_preview_guides(QWidget *main_window, QWidget *preview = nullptr);
+// Stops watching and takes the lines away, when OBS closes.
+void remove_preview_guides();
 
 // 0: guides are off; 1: on, over OBS's preview; 2: on, but the preview was
 // not found.

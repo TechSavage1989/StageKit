@@ -78,6 +78,14 @@ std::atomic<int> g_preview_state{0};
 // widget they took for OBS's preview and where the lines were put.
 QString g_report;
 
+QPointer<QObject> g_overlay;
+
+void remove_preview_guides()
+{
+	// deleteLater would run after OBS has gone; this is the window's thread.
+	delete g_overlay.data();
+}
+
 QString guides_report()
 {
 	return g_report;
@@ -170,6 +178,10 @@ public:
 private:
 	void watch()
 	{
+		if (measuring_stopped()) { // OBS is closing
+			clear();
+			return;
+		}
 		const ArrangeOptions options = arrange_options();
 		QWidget *preview = find_preview();
 		if (options.guides != said_on_) {
@@ -414,7 +426,9 @@ private:
 
 QObject *install_preview_guides(QWidget *main_window, QWidget *preview)
 {
-	return new GuideOverlay(main_window, preview);
+	auto *overlay = new GuideOverlay(main_window, preview);
+	g_overlay = overlay;
+	return overlay;
 }
 
 } // namespace stagekit
