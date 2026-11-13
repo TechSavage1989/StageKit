@@ -204,6 +204,36 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Active App: captures switched to by hand (0.1.0-beta60)
+
+The owner: automatic switching between configured apps works, but a window captured by hand (the
+foreground window, with a third-party Stream Deck key) is taken over as soon as a configured app is
+clicked into. "I'd like a feature that lets me pick a window to capture, such as a web browser
+window, and manually toggle to and from it, even when automatic switching is set up for other apps
+... it would stay active until I toggle back. Then automatic switching ... would pick up again ...
+configurable options for switching and toggling between multiple captured windows ... assignable to
+Stream Deck keys or hotkeys."
+
+- New list on Active App, *Captures you switch to* (`by_hand`, a PickList of the scene's items).
+  While one of them is visible it is held: the automatic captures are hidden and nothing follows the
+  apps. Hidden again, the filter works out afresh which app's capture to show. One newly shown hides
+  the others on the list.
+- Toggled by ordinary item visibility, so a Stream Deck source key or OBS's item hotkeys work with
+  nothing new to learn. Two hotkeys per filter on the scene: step through them then back to the apps
+  (`stagekit.active.next.<filter>`), and straight back (`stagekit.active.back.<filter>`).
+- Tests drive the two actions through procs on the filter (`step_by_hand`, `back_to_apps`); the
+  headless tests cannot press a hotkey.
+- **Open, reported the same day**: "all the sources with the new filters have a whiteness added to
+  them, compared to the actual canvas viewer", with a screenshot of the Filters window's preview
+  looking paler than the main preview for a Window Capture with Shadow, Glow & Outline. Not yet
+  explained. Checked so far: every filter's final draw matches libobs's own `render_filter_tex`
+  (follow `gs_get_linear_srgb()`), and libobs forces that flag off for filters without
+  `OBS_SOURCE_SRGB` and converts for HDR displays itself (`source_render`). Next: reproduce in the
+  tests by drawing a filtered source with the state a display uses (linear sRGB on, framebuffer sRGB
+  on), and ask whether the monitor is HDR and whether OBS's own filters look the same there.
+- **Asked, not built**: a placeholder (the start image or other media) where a capture has nothing
+  to show.
+
 ## Copy transform to chosen scenes; clearer names (0.1.0-beta59)
 
 The owner: "did we already develop a tool that can send existing settings or transforms to specific

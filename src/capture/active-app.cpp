@@ -127,6 +127,13 @@ public:
 	ActiveApp(obs_data_t *settings, obs_source_t *source) : source_(source)
 	{
 		update(settings);
+		// For the tests, which cannot press a hotkey: the two hotkeys' actions.
+		proc_handler_add(
+			obs_source_get_proc_handler(source_), "void step_by_hand()",
+			[](void *data, calldata_t *) { static_cast<ActiveApp *>(data)->step_by_hand(); }, this);
+		proc_handler_add(
+			obs_source_get_proc_handler(source_), "void back_to_apps()",
+			[](void *data, calldata_t *) { static_cast<ActiveApp *>(data)->back_to_apps(); }, this);
 		// For the tests: stand-in windows, one per line, "title|exe|front".
 		proc_handler_add(
 			obs_source_get_proc_handler(source_), "void set_test_windows(in string windows)",
@@ -158,13 +165,21 @@ public:
 			this);
 	}
 
-	~ActiveApp() { keep_ready({}); }
+	~ActiveApp()
+	{
+		for (obs_hotkey_id id : {next_hotkey_, back_hotkey_})
+			if (id != OBS_INVALID_HOTKEY_ID)
+				obs_hotkey_unregister(id);
+		keep_ready({});
+	}
 
 	void update(obs_data_t *settings)
 	{
 		const std::vector<std::string> items = pick_list_read(settings, "items", false);
+		const std::vector<std::string> by_hand = pick_list_read(settings, "by_hand", false);
 		std::lock_guard lock(mutex_);
 		items_ = items;
+		by_hand_ = by_hand;
 		follow_ = obs_data_get_bool(settings, "follow");
 		transition_ = obs_data_get_string(settings, "transition");
 		transition_ms_ = (uint32_t)std::clamp<long long>(obs_data_get_int(settings, "transition_ms"), 0, 10000);
@@ -179,11 +194,13 @@ public:
 			keep_ready({});
 			return;
 		}
-		std::vector<std::string> names;
+		std::vector<std::string> names, hand_names;
 		std::vector<OpenWindow> windows;
 		std::string transition;
 		uint32_t transition_ms;
 		bool follow, use_test, first, ready;
+		int step = 0;
+		bool back = false;
 		{
 			std::lock_guard lock(mutex_);
 			timer_ -= seconds;
@@ -191,6 +208,11 @@ public:
 				return;
 			timer_ = 0.2;
 			names = items_;
+			hand_names = by_hand_;
+			step = hand_step_;
+			back = hand_back_;
+			hand_step_ = 0;
+			hand_back_ = false;
 			follow = follow_;
 			transition = transition_;
 			transition_ms = transition_ms_;
@@ -281,6 +303,80 @@ public:
 			return -1;
 		};
 
+		// Captures switched to by hand. While one of them is showing, it
+		// stays: the listed apps' captures are hidden and nothing follows the
+		// app in use, until it is hidden again. Showing one hides any other.
+		// It is shown and hidden like any item (a Stream Deck source key,
+		// OBS's own show and hide hotkeys, the eye in the Sources list), or
+		// by this filter's two hotkeys.
+		{
+			std::vector<obs_sceneitem_t *> hand;
+			std::vector<std::string> hand_shown_as;
+			for (const std::string &name : hand_names) {
+				obs_sceneitem_t *item = std::find(names.begin(), names.end(), name) == names.end()
+								? find_item(parent_, name)
+								: nullptr;
+				if (!item)
+					continue;
+				hand.push_back(item);
+				hand_shown_as.push_back(name);
+				set_transitions(item, transition, transition_ms);
+			}
+			int held = -1, newly = -1;
+			for (size_t i = 0; i < hand.size(); i++) {
+				if (!obs_sceneitem_visible(hand[i]))
+					continue;
+				if (held < 0)
+					held = (int)i;
+				if (hand_shown_ != hand_shown_as[i])
+					newly = (int)i;
+			}
+			if (newly >= 0)
+				held = newly; // the one just shown takes over from another
+			if (back) {
+				held = -1;
+			} else if (step != 0 && !hand.empty()) {
+				// The hotkey: on to the next one, and after the last, back
+				// to following the apps.
+				held = held + 1 < (int)hand.size() ? held + 1 : -1;
+			}
+			for (size_t i = 0; i < hand.size(); i++) {
+				const bool on = (int)i == held;
+				if (obs_sceneitem_visible(hand[i]) != on)
+					obs_sceneitem_set_visible(hand[i], on);
+			}
+			const std::string now_held = held >= 0 ? hand_shown_as[(size_t)held] : std::string();
+			if (now_held != hand_shown_) {
+				if (held >= 0)
+					obs_log(LOG_INFO,
+						"Active App '%s': showing '%s', switched to by hand, until it is hidden",
+						obs_source_get_name(source_), now_held.c_str());
+				else
+					obs_log(LOG_INFO, "Active App '%s': '%s' was hidden, following the apps again",
+						obs_source_get_name(source_), hand_shown_.c_str());
+			}
+			const bool released = held < 0 && !hand_shown_.empty();
+			hand_shown_ = now_held;
+			if (held >= 0) {
+				for (size_t i = 0; i < slots.size(); i++) {
+					if (slots[i].item && slots[i].visible)
+						obs_sceneitem_set_visible(slots[i].item, false);
+					was_open_[names[i]] = slots[i].open;
+					if (slots[i].item)
+						was_program_[names[i]] = slots[i].program;
+				}
+				last_front_ = front >= 0 ? names[(size_t)front] : std::string();
+				std::lock_guard lock(mutex_);
+				started_ = true;
+				status_ = now_held;
+				held_ = true;
+				return;
+			}
+			// Let go: work out afresh which app's capture to show.
+			if (released)
+				first = true;
+		}
+
 		// What is showing now. One shown by hand since the last look is taken as it is.
 		int shown = index_of(shown_);
 		if (shown < 0 || !slots[(size_t)shown].visible)
@@ -359,6 +455,27 @@ public:
 		std::lock_guard lock(mutex_);
 		started_ = true;
 		status_ = status;
+		held_ = false;
+	}
+
+	// The hotkeys: on to the next capture switched to by hand, or back to
+	// following the apps. Acted on at the next look.
+	void step_by_hand()
+	{
+		std::lock_guard lock(mutex_);
+		hand_step_ = 1;
+		timer_ = 0.0;
+	}
+	void back_to_apps()
+	{
+		std::lock_guard lock(mutex_);
+		hand_back_ = true;
+		timer_ = 0.0;
+	}
+	bool held()
+	{
+		std::lock_guard lock(mutex_);
+		return held_;
 	}
 
 	// What is showing, for the top line of the controls. Empty when nothing is.
@@ -368,9 +485,41 @@ public:
 		return status_;
 	}
 
-	void attach(obs_source_t *parent) { parent_ = parent; }
+	void attach(obs_source_t *parent)
+	{
+		parent_ = parent;
+		// Two hotkeys on the scene, named after this filter, for a Stream
+		// Deck hotkey key or the keyboard.
+		const std::string name = obs_source_get_name(source_) ? obs_source_get_name(source_) : "";
+		auto named = [&](const char *key) {
+			std::string text = obs_module_text(key);
+			const size_t at = text.find("%1");
+			if (at != std::string::npos)
+				text.replace(at, 2, name);
+			return text;
+		};
+		next_hotkey_ = obs_hotkey_register_source(
+			parent_, ("stagekit.active.next." + name).c_str(), named("Hotkey.Active.Next").c_str(),
+			[](void *data, obs_hotkey_id, obs_hotkey_t *, bool pressed) {
+				if (pressed)
+					static_cast<ActiveApp *>(data)->step_by_hand();
+			},
+			this);
+		back_hotkey_ = obs_hotkey_register_source(
+			parent_, ("stagekit.active.back." + name).c_str(), named("Hotkey.Active.Back").c_str(),
+			[](void *data, obs_hotkey_id, obs_hotkey_t *, bool pressed) {
+				if (pressed)
+					static_cast<ActiveApp *>(data)->back_to_apps();
+			},
+			this);
+	}
 	void detach()
 	{
+		for (obs_hotkey_id *id : {&next_hotkey_, &back_hotkey_}) {
+			if (*id != OBS_INVALID_HOTKEY_ID)
+				obs_hotkey_unregister(*id);
+			*id = OBS_INVALID_HOTKEY_ID;
+		}
 		parent_ = nullptr;
 		keep_ready({});
 	}
@@ -411,6 +560,11 @@ private:
 	obs_source_t *parent_ = nullptr;
 	std::mutex mutex_;
 	std::vector<std::string> items_;
+	std::vector<std::string> by_hand_; // captures switched to by hand
+	int hand_step_ = 0;                // the "next" hotkey was pressed
+	bool hand_back_ = false;           // the "back to the apps" hotkey was pressed
+	bool held_ = false;                // one switched to by hand is showing
+	obs_hotkey_id next_hotkey_ = OBS_INVALID_HOTKEY_ID, back_hotkey_ = OBS_INVALID_HOTKEY_ID;
 	bool follow_ = true;
 	std::string transition_ = "fade_transition";
 	uint32_t transition_ms_ = 250;
@@ -423,7 +577,7 @@ private:
 	std::vector<OpenWindow> test_windows_;
 	bool use_test_windows_ = false;
 	// Only the tick uses these.
-	std::string shown_, last_front_;
+	std::string shown_, last_front_, hand_shown_;
 	std::map<std::string, bool> was_open_;
 	std::map<std::string, std::string> was_program_;
 	std::vector<std::string> recent_; // most recently shown first
@@ -437,7 +591,9 @@ obs_properties_t *get_properties(void *data)
 
 	obs_property_t *status = obs_properties_add_text(props, "status", "", OBS_TEXT_INFO);
 	const std::string showing = self ? self->showing() : std::string();
-	std::string text = obs_module_text(showing.empty() ? "Active.Status.None" : "Active.Status.Showing");
+	std::string text = obs_module_text(showing.empty()        ? "Active.Status.None"
+					   : self && self->held() ? "Active.Status.Held"
+								  : "Active.Status.Showing");
 	const size_t at = text.find("%1");
 	if (at != std::string::npos)
 		text.replace(at, 2, showing);
@@ -452,6 +608,16 @@ obs_properties_t *get_properties(void *data)
 		scene_item_names(parent, names);
 	};
 	pick_list_add(props, self ? self->source() : nullptr, items);
+
+	PickList by_hand;
+	by_hand.setting = "by_hand";
+	by_hand.title = "Active.ByHand";
+	by_hand.add = "List.AddItem";
+	by_hand.tip = "Active.ByHand.Tip";
+	by_hand.choices = [parent](std::vector<std::string> &names) {
+		scene_item_names(parent, names);
+	};
+	pick_list_add(props, self ? self->source() : nullptr, by_hand);
 
 	obs_property_t *follow = obs_properties_add_bool(props, "follow", obs_module_text("Active.Follow"));
 	obs_property_set_long_description(follow, obs_module_text("Active.Follow.Tip"));
