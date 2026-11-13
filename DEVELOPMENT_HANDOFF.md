@@ -204,6 +204,29 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## An item that draws nothing is not in the way (0.1.0-beta67)
+
+The owner, on beta66, with three screenshots (a window capture resized towards the right stopped
+455 px from the screen's edge; the empty music widget's box sat there): "use visible pixels seems to
+be ignored since items that are not currently visible, like the Amuse widget, seem to be affecting
+the edge resize detection".
+
+- `measure_item` returned an item's whole box when nothing was drawn in it. That is right for the
+  item a tool is moving, wrong for an obstacle. `others_in_now` and `snap_lines_now` now leave such
+  an item out. So this also changes slides, snap on release and the guides, not only the resize
+  limit.
+- **So *Stop resizing at edges* works on Windows**: it limited the resize, only against the wrong
+  thing.
+
+**Confirmed by the owner on Windows (2026-11-14)**: the Filters window is no longer pale (beta61;
+so the wide-colour surface was the cause); OBS closes without freezing "for now" (beta58); *Copy
+transform to chosen scenes* "seems to work" (beta59); *Show in Scenes* "works as intended" (beta64);
+the transition choices "partially tested and so far works" (beta66). The icon pack is finished.
+
+**Not yet reported on**: the manual window toggle in Active App (beta60), the Standby Picture's
+morph with an emulator game (beta63), and whether to animate Shadow and Corners switching, snap and
+the resize limit.
+
 ## Transitions you can choose, everywhere (0.1.0-beta66)
 
 The owner: "Any filter or feature/effect that would do a transition or transform should have those

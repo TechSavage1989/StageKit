@@ -280,7 +280,7 @@ bool across(Edge edge)
 } // namespace
 
 namespace {
-Box measure_item_now(obs_source_t *scene, obs_sceneitem_t *item, const Measure &how);
+Box measure_item_now(obs_source_t *scene, obs_sceneitem_t *item, const Measure &how, bool *nothing = nullptr);
 }
 
 void measuring_stop()
@@ -314,8 +314,13 @@ Box measure_item(obs_source_t *scene, obs_sceneitem_t *item, const Measure &how)
 
 namespace {
 
-Box measure_item_now(obs_source_t *scene, obs_sceneitem_t *item, const Measure &how)
+// `nothing` is set when the item is measured by what shows and nothing does:
+// a widget with nothing to display, a capture with no window. Its box is
+// still returned, for a tool asked to move that very item.
+Box measure_item_now(obs_source_t *scene, obs_sceneitem_t *item, const Measure &how, bool *nothing)
 {
+	if (nothing)
+		*nothing = false;
 	refresh_item(item);
 	const Box whole = scene_box(scene, item);
 	if (!how.visible_pixels)
@@ -380,8 +385,11 @@ Box measure_item_now(obs_source_t *scene, obs_sceneitem_t *item, const Measure &
 				part = {x0, y0, x1 - x0, y1 - y0, true};
 		}
 	}
-	if (!part.any)
+	if (!part.any) {
+		if (nothing)
+			*nothing = true;
 		return whole;
+	}
 	// From the source's pixels to the canvas: the item's own drawing
 	// transform (which already allows for its crop), then its group's.
 	obs_sceneitem_crop crop;
@@ -725,7 +733,12 @@ std::vector<Box> others_in_now(obs_source_t *scene, const std::vector<obs_scenei
 		if (std::find(g->leave_out->begin(), g->leave_out->end(), other) != g->leave_out->end() ||
 		    !obs_sceneitem_visible(other) || obs_sceneitem_is_group(other))
 			return true;
-		const Box b = measure_item(g->scene, other, *g->how);
+		// With "Use visible pixels", an item that draws nothing is not there:
+		// it is not in the way of a slide or a resize.
+		bool nothing = false;
+		const Box b = measure_item_now(g->scene, other, *g->how, &nothing);
+		if (nothing)
+			return true;
 		if (b.w > 0.0 && b.h > 0.0)
 			g->out->push_back(b);
 		return true;
@@ -866,7 +879,11 @@ SnapLines snap_lines_now(obs_source_t *scene, const std::vector<obs_sceneitem_t 
 		if (std::find(o->leave_out->begin(), o->leave_out->end(), other) != o->leave_out->end() ||
 		    !obs_sceneitem_visible(other) || obs_sceneitem_is_group(other))
 			return true;
-		const Box b = measure_item(o->scene, other, *o->how);
+		// Nor does it give a line to snap to or a guide to show.
+		bool nothing = false;
+		const Box b = measure_item_now(o->scene, other, *o->how, &nothing);
+		if (nothing)
+			return true;
 		if (b.w <= 0.0 || b.h <= 0.0)
 			return true;
 		for (double x : {b.x, b.x + b.w / 2.0, b.x + b.w})

@@ -203,6 +203,10 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   were ahead of them when the drag began, and an item that was only moved is left to snapping. The
   owner asked for the limit to hold *while* dragging; this is the nearest that works, and they were
   told so.
+- **With "Use visible pixels", an item that draws nothing is not there** (`measure_item_now`'s
+  `nothing`). It is no obstacle to a slide or a resize and gives no line to snap to or guide to
+  show. The owner's music widget shows nothing between songs and still stopped a resized window
+  455 px short. Its box is still what a tool gets when asked to move that very item.
 - **Arrange options are global** (`arrange_options()`), saved with the scene collection. The dock's
   controls only show and set them. Add a new tool to `ArrangeAction` and `kInfo` and it appears in the
   dock, the menu and the hotkeys at once.

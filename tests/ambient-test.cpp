@@ -4544,6 +4544,43 @@ int main(int argc, char **argv)
 						      std::fabs(pos_of(ia).y - 20) < 0.6,
 					      "an item scaled evenly is pulled back evenly and keeps its corner (x%.2f, x%.2f; wanted 2.70)",
 					      sc.x, sc.y);
+					// The report: a widget showing nothing was still in the way.
+					// With 'Use visible pixels', an item that draws nothing is
+					// not there: the edge goes on to the screen's edge.
+					{
+						QImage blank(200, 200, QImage::Format_ARGB32);
+						blank.fill(Qt::transparent);
+						const std::string blank_path = out + "/arrange-blank.png";
+						blank.save(QString::fromStdString(blank_path));
+						obs_data_t *bd = obs_data_create();
+						obs_data_set_string(bd, "file", blank_path.c_str());
+						obs_source_t *blank_src =
+							obs_source_create("image_source", "Empty Widget", bd, nullptr);
+						obs_data_release(bd);
+						obs_sceneitem_t *iblank = obs_scene_add(as, blank_src);
+						place(iblank, 250, 40); // level with A, in its way
+						for (int i = 0; i < 10 && obs_source_get_width(blank_src) < 200; i++) {
+							QCoreApplication::processEvents();
+							sleep_ms(50);
+						}
+						reset(20, 100);
+						drag_to_scale(8.0f, 1.0f);
+						sc = scale_of(ia);
+						CHECK(std::fabs(sc.x - 6.1f) < 0.03f,
+						      "an item that draws nothing is not in the way of a resize (width x%.2f; wanted 6.10, the screen's edge)",
+						      sc.x);
+						tick_box("arrangeVisible", false);
+						reset(20, 100);
+						drag_to_scale(8.0f, 1.0f);
+						sc = scale_of(ia);
+						CHECK(std::fabs(sc.x - 2.2f) < 0.03f,
+						      "without 'Use visible pixels' its box is, as OBS shows it (width x%.2f; wanted 2.20)",
+						      sc.x);
+						tick_box("arrangeVisible", true);
+						obs_sceneitem_remove(iblank);
+						obs_source_release(blank_src);
+					}
+
 					// Only moved: left where it is.
 					reset(500, 20);
 					settle_snap();
