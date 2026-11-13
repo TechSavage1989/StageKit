@@ -63,11 +63,14 @@ int match_size(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items,
 // further. dx and dy are -1, 0 or 1: a diagonal slides across first, then
 // up or down from there. Both 0 centres the item in the free space around
 // it. Items in `leave_out` (one brought along, say) are not in the way.
+// Nothing takes it past the screen's edge. `from`, when given, is where the
+// item is taken to be instead of where it is now (it is still on its way
+// there from the last slide).
 struct Offset {
 	double x = 0.0, y = 0.0;
 };
 Offset slide_offset(obs_source_t *scene, obs_sceneitem_t *item, int dx, int dy, double gap, const Measure &how,
-		    const std::vector<obs_sceneitem_t *> &leave_out);
+		    const std::vector<obs_sceneitem_t *> &leave_out, const Box *from = nullptr);
 
 // Moves an item the last few pixels so an edge or centre meets the screen's
 // or another item's. Returns true when it moved.

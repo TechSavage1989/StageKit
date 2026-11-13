@@ -425,10 +425,10 @@ std::vector<Box> others_in(obs_source_t *scene, const std::vector<obs_sceneitem_
 } // namespace
 
 Offset slide_offset(obs_source_t *scene, obs_sceneitem_t *item, int dx, int dy, double gap, const Measure &how,
-		    const std::vector<obs_sceneitem_t *> &leave_out)
+		    const std::vector<obs_sceneitem_t *> &leave_out, const Box *from)
 {
 	Offset out;
-	Box me = measure_item(scene, item, how);
+	Box me = from ? *from : measure_item(scene, item, how);
 	if (!scene || me.w <= 0.0 || me.h <= 0.0)
 		return out;
 	std::vector<obs_sceneitem_t *> skip = leave_out;
@@ -467,7 +467,9 @@ Offset slide_offset(obs_source_t *scene, obs_sceneitem_t *item, int dx, int dy, 
 		// path. The item goes to the nearest one ahead of it, so the next
 		// press passes through that edge to the one after.
 		const double lead = dir > 0 ? end : start;
-		std::vector<double> stops{dir > 0 ? limit - gap : gap};
+		// The screen's edge is as far as it goes: nothing past it counts.
+		const double screen = dir > 0 ? limit - gap : gap;
+		std::vector<double> stops{screen};
 		for (const Box &o : others) {
 			const bool in_path = across ? overlap(o.y, o.y + o.h, me.y, me.y + me.h)
 						    : overlap(o.x, o.x + o.w, me.x, me.x + me.w);
@@ -475,12 +477,16 @@ Offset slide_offset(obs_source_t *scene, obs_sceneitem_t *item, int dx, int dy, 
 				continue;
 			const double o0 = across ? o.x : o.y, o1 = across ? o.x + o.w : o.y + o.h;
 			stops.push_back(dir > 0 ? o0 - gap : o1 + gap); // just short of it
-			stops.push_back(dir > 0 ? o1 - gap : o0 + gap); // inside it, short of its far side
+			// Inside it, short of its far side: only for something wider than
+			// the gap, or that stop would come before its near side.
+			if (dir > 0 ? o1 - gap > o0 + kTouch : o0 + gap < o1 - kTouch)
+				stops.push_back(dir > 0 ? o1 - gap : o0 + gap);
 		}
 		bool found = false;
 		double next = lead;
 		for (double stop : stops) {
-			const bool ahead = dir > 0 ? stop > lead + kTouch : stop < lead - kTouch;
+			const bool on_screen = dir > 0 ? stop <= screen + kTouch : stop >= screen - kTouch;
+			const bool ahead = on_screen && (dir > 0 ? stop > lead + kTouch : stop < lead - kTouch);
 			if (ahead && (!found || (dir > 0 ? stop < next : stop > next))) {
 				next = stop;
 				found = true;

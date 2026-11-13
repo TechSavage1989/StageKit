@@ -58,6 +58,9 @@ enum class Destination : int {
 	BottomCenter = 7,
 	BottomRight = 8,
 	Saved = 9,
+	// Where the item's box starts on the screen (spot_x, spot_y), the same in
+	// every scene whatever group the item is in there. The dock's slides use it.
+	Spot = 10,
 };
 
 // Which scenes a Send To move happens in. Saved in settings: append only.
@@ -72,6 +75,7 @@ struct Settings {
 	Destination destination = Destination::TopRight;
 	double margin = 30.0;
 	double saved_x = 0.0;
+	double spot_x = 0.0, spot_y = 0.0; // Destination::Spot, in the scene's own pixels
 	double saved_y = 0.0;
 	bool restore_size = false;
 	double saved_scale_x = 1.0;
@@ -158,6 +162,13 @@ std::vector<Target> places_of(obs_source_t *wanted, bool every_scene)
 		} all{wanted, &out};
 		obs_enum_scenes(
 			[](void *param, obs_source_t *scene) {
+				// OBS lists each group as a scene of its own too. Its items
+				// are reached through the scene that holds the group, where
+				// they are measured on that scene's canvas; reaching them
+				// again here would move them twice, the second time as if
+				// the group were the whole screen.
+				if (obs_source_is_group(scene))
+					return true;
 				auto *a = static_cast<All *>(param);
 				collect_in(scene, a->wanted, *a->out, false, 0);
 				return true;
@@ -271,6 +282,8 @@ void PlaceItem::update(obs_data_t *settings)
 	s.destination = static_cast<Destination>(obs_data_get_int(settings, "destination"));
 	s.margin = obs_data_get_double(settings, "margin");
 	s.saved_x = obs_data_get_double(settings, "saved_x");
+	s.spot_x = obs_data_get_double(settings, "spot_x");
+	s.spot_y = obs_data_get_double(settings, "spot_y");
 	s.saved_y = obs_data_get_double(settings, "saved_y");
 	s.restore_size = obs_data_get_bool(settings, "restore_size");
 	s.saved_scale_x = obs_data_get_double(settings, "saved_scale_x");
@@ -379,7 +392,10 @@ void PlaceItem::plan(const Settings &s, obs_source_t *scene, obs_sceneitem_t *it
 	const Box box = scene_box(scene, item);
 	Box target = box;
 
-	if (s.destination == Destination::Saved) {
+	if (s.destination == Destination::Spot) {
+		target.x = s.spot_x;
+		target.y = s.spot_y;
+	} else if (s.destination == Destination::Saved) {
 		// A saved spot is the item's own position (and size). Put it there
 		// for a moment to measure the box, then put it back.
 		vec2 was_pos, saved_pos;
@@ -568,9 +584,13 @@ void PlaceItem::detach()
 
 bool destination_modified(obs_properties_t *props, obs_property_t *, obs_data_t *settings)
 {
-	const bool saved = static_cast<Destination>(obs_data_get_int(settings, "destination")) == Destination::Saved;
+	const auto destination = static_cast<Destination>(obs_data_get_int(settings, "destination"));
+	const bool saved = destination == Destination::Saved;
+	const bool spot = destination == Destination::Spot;
 	const bool linked = *obs_data_get_string(settings, "linked") != 0;
-	obs_property_set_visible(obs_properties_get(props, "margin"), !saved);
+	obs_property_set_visible(obs_properties_get(props, "margin"), !saved && !spot);
+	obs_property_set_visible(obs_properties_get(props, "spot_x"), spot);
+	obs_property_set_visible(obs_properties_get(props, "spot_y"), spot);
 	obs_property_set_visible(obs_properties_get(props, "saved_x"), saved);
 	obs_property_set_visible(obs_properties_get(props, "saved_y"), saved);
 	obs_property_set_visible(obs_properties_get(props, "restore_size"), saved);
@@ -596,8 +616,8 @@ obs_properties_t *get_properties(void *data)
 						       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	const char *names[] = {"Place.TopLeft",     "Place.TopCenter",   "Place.TopRight",   "Place.MiddleLeft",
 			       "Place.Center",      "Place.MiddleRight", "Place.BottomLeft", "Place.BottomCenter",
-			       "Place.BottomRight", "Place.Saved"};
-	for (int i = 0; i < 10; i++)
+			       "Place.BottomRight", "Place.Saved",       "Place.Spot"};
+	for (int i = 0; i < 11; i++)
 		obs_property_list_add_int(dest, obs_module_text(names[i]), i);
 	obs_property_set_modified_callback(dest, destination_modified);
 
@@ -607,6 +627,12 @@ obs_properties_t *get_properties(void *data)
 	obs_properties_add_float(props, "saved_x", obs_module_text("Place.SavedX"), -20000.0, 20000.0, 1.0);
 	obs_properties_add_float(props, "saved_y", obs_module_text("Place.SavedY"), -20000.0, 20000.0, 1.0);
 	obs_properties_add_bool(props, "restore_size", obs_module_text("Place.RestoreSize"));
+	obs_property_t *spot_x =
+		obs_properties_add_float(props, "spot_x", obs_module_text("Place.SpotX"), -20000.0, 20000.0, 1.0);
+	obs_property_float_set_suffix(spot_x, " px");
+	obs_property_t *spot_y =
+		obs_properties_add_float(props, "spot_y", obs_module_text("Place.SpotY"), -20000.0, 20000.0, 1.0);
+	obs_property_float_set_suffix(spot_y, " px");
 	obs_properties_add_button2(
 		props, "capture", obs_module_text("Place.Capture"),
 		[](obs_properties_t *, obs_property_t *, void *d) {
