@@ -351,6 +351,28 @@ a game engine's own kind of window, or a window that fills its screen. A program
 once is remembered and picked up at once from then on. The filter changes the Game Capture's own
 *Mode* and *Window* settings for you.
 
+### Standby Picture
+
+A picture in a capture's place while the capture has nothing to show, so its spot in the scene is not
+an empty hole while you wait for a game or window. Add **Standby Picture (StageKit)** as a filter on a
+Game Capture, Window Capture or other live source.
+
+- **Nothing to show** means no game or window is attached to the capture. A capture that is attached
+  and showing a black picture, such as a loading screen, is left alone.
+- The picture fills the size the capture last had (or the frame of an Auto Frame before it), so
+  nothing in the scene moves when the capture arrives. Then it fades to the capture.
+- Corners, shadows and other filters after it are put on the picture as they are on the capture.
+- To go without it, switch the filter off with its eye or a Stream Deck filter key.
+
+| Setting | What it does |
+| --- | --- |
+| Picture | *The start image* (the default: the one set in the StageKit Background dock), *An image or video file*, or *Another source* |
+| File / Source | The file or source to show, for those two choices. A video loops, without sound |
+| Fade to the capture | How long the picture takes to fade away when the capture starts. 0 is a cut |
+
+When first added it puts itself straight after an Auto Frame if there is one, and otherwise first in
+the list; after that the order is yours.
+
 ### Active App
 
 For a scene that shows whichever app you are working in. Give the scene a Window Capture for each app

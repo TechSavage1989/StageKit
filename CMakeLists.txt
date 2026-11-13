@@ -61,6 +61,8 @@ target_sources(
     src/capture/active-app.hpp
     src/capture/program-trigger.cpp
     src/capture/program-trigger.hpp
+    src/capture/standby.cpp
+    src/capture/standby.hpp
     src/common/pick-list.cpp
     src/common/pick-list.hpp
     src/common/scene-util.hpp

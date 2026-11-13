@@ -25,6 +25,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "blur/ramp-blur.hpp"
 #include "capture/auto-capture.hpp"
 #include "capture/active-app.hpp"
+#include "capture/standby.hpp"
 #include "capture/program-trigger.hpp"
 #include "common/start-image.hpp"
 #include "dock/stagekit-dock.hpp"
@@ -100,6 +101,7 @@ bool obs_module_load(void)
 	stagekit::register_ambient_background();
 	stagekit::register_shadow_backdrop();
 	stagekit::register_corners();
+	stagekit::register_standby();
 	stagekit::register_place_item();
 	stagekit::register_ramp_zoom();
 	stagekit::register_cropped_view();
