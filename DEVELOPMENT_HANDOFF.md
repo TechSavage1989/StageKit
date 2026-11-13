@@ -204,6 +204,45 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Same width, Ignore shadows, guides on Windows (0.1.0-beta50)
+
+The owner, with screenshots of the dock and the preview: "Same width doesn't appear to work. I expect
+that following the rules for align to, it would set the visible pixel width to match the last selected
+object"; "Guides in the preview don't seem to work at all"; "ignore shadows feels like it has the
+opposite effect"; and the Order buttons should be front/back in one column and forward/back one in the
+other.
+
+- **Selection order.** It was learned by the dock polling `selection_in_order(dock's scene)` every
+  120 ms, which kept one remembered scene and cleared the order when asked about another. The dock's
+  *Scene* list and the scene being edited differ whenever the owner picked a scene in the dock, so the
+  order was cleared on every poll and "last selected" became the top-most item in the Sources list
+  (the Amuse widget, not the camera). Now `track_selection_order()` connects to `item_select` and
+  `item_deselect` on every scene and group (`source_create` plus `obs_enum_scenes` at load) and
+  `selection_in_order` sorts by when each was selected.
+- **Which scene.** The dock's Arrange buttons, its selection list and snap-on-release used the dock's
+  *Scene* list; hotkeys and the preview menu used the scene being edited. All now use
+  `arrange_scene()`: the scene being edited when anything is selected there, else the dock's.
+- **Ignore shadows.** `measure_item` cut the shadow's room off the source's edges. A browser widget's
+  picture stops short of its own edges, so its shadow was inside what was kept and counted as picture:
+  the widget plus its shadow was made as wide as the camera's picture. Confirmed by a test that fails
+  with the old measuring (scale 0.667 where 1.000 is right). Now `shadow_free` (in
+  `src/shadow/shadow-backdrop.*`) gives what the first enabled Shadow, Glow & Outline draws from (a
+  filter, or the source drawn with `obs_source_default_render`) and where its picture sits; an async
+  source shadowed directly falls back to the old cut. Unticked, a screen-pixel shadow keeps its size
+  while the item is resized, so `match_size` resizes only the picture to make up the difference.
+- **Guides.** Nothing showed on Windows; no log came with the report, so the cause is not known. Two
+  suspects were replaced: the single see-through (layered) window over the whole preview is now one
+  thin opaque window per line, and the mouse button is also read with `GetAsyncKeyState` (Windows only,
+  compiled by CI). OBS's log now says when guides are switched on and how big the preview is, when a
+  drag is first seen, and where the first line was put, once each.
+- OBS 32's preview was checked in its source (sparse clone of obsproject/obs-studio, not committed):
+  the widget is still `OBSBasicPreview` named `preview`, a native window (`WA_NativeWindow`,
+  `WA_PaintOnScreen`), and `ResizePreview` uses `PREVIEW_EDGE_SIZE` and `GetScaleAndCenterPos` as
+  `preview_map` assumes.
+- The dock's Order box: *Bring to front* above *Send to back*, *Forward one* above *Back one*.
+
+**Not verified:** all of it on Windows, and above all the guides.
+
 ## First sight in the dark; shapes remembered (0.1.0-beta49)
 
 The owner, after beta48: "most things are working as expected. Game capture still takes a while to

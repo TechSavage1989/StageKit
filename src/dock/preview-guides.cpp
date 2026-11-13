@@ -14,6 +14,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "arrange.hpp"
 
 #include <obs-module.h>
+#include <plugin-support.h>
 
 #include <QElapsedTimer>
 #include <QGuiApplication>
@@ -21,6 +22,14 @@ the Free Software Foundation; either version 2 of the License, or
 #include <QPointer>
 #include <QTimer>
 #include <QWidget>
+
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 
 #include <algorithm>
 #include <atomic>
@@ -66,7 +75,17 @@ std::atomic<bool> g_test_mouse{false};
 
 bool guides_mouse_down()
 {
-	return g_test_mouse.load() || QGuiApplication::mouseButtons().testFlag(Qt::LeftButton);
+	if (g_test_mouse.load() || QGuiApplication::mouseButtons().testFlag(Qt::LeftButton))
+		return true;
+#ifdef _WIN32
+	// Also asked of Windows itself: OBS's preview is a window of its own,
+	// and Windows knows about the button whichever window has the mouse.
+	// It reports the physical button, so a swapped mouse is allowed for.
+	const int button = GetSystemMetrics(SM_SWAPBUTTON) ? VK_RBUTTON : VK_LBUTTON;
+	return (GetAsyncKeyState(button) & 0x8000) != 0;
+#else
+	return false;
+#endif
 }
 
 void guides_test_mouse(bool down)
@@ -81,46 +100,50 @@ namespace {
 constexpr int kFlashMs = 900;
 constexpr int kWatchMs = 33;
 
-class GuideOverlay : public QWidget {
+// One guide line: a thin window of its own, laid over OBS's preview. It is
+// opaque, a bright line between two dark ones, so it needs nothing from
+// Windows' see-through windows and shows over the preview's own drawing
+// whatever the graphics card. Clicks go through it.
+class LineWindow : public QWidget {
 public:
-	GuideOverlay(QWidget *main_window, QWidget *preview)
-		: QWidget(main_window, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowTransparentForInput |
-					       Qt::WindowDoesNotAcceptFocus | Qt::NoDropShadowWindowHint),
-		  main_(main_window),
-		  preview_(preview)
+	explicit LineWindow(QWidget *owner)
+		: QWidget(owner, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowTransparentForInput |
+					 Qt::WindowDoesNotAcceptFocus | Qt::NoDropShadowWindowHint)
 	{
-		setObjectName("stagekitGuides");
-		setAttribute(Qt::WA_TranslucentBackground);
+		setObjectName("stagekitGuideLine");
 		setAttribute(Qt::WA_TransparentForMouseEvents);
 		setAttribute(Qt::WA_ShowWithoutActivating);
+		setAttribute(Qt::WA_OpaquePaintEvent);
 		setFocusPolicy(Qt::NoFocus);
+	}
+
+protected:
+	void paintEvent(QPaintEvent *) override
+	{
+		QPainter painter(this);
+		painter.fillRect(rect(), QColor(0, 0, 0));
+		// The bright middle, along the line's length.
+		const QRect middle = width() >= height() ? rect().adjusted(0, 1, 0, -1) : rect().adjusted(1, 0, -1, 0);
+		painter.fillRect(middle, QColor(0, 230, 255));
+	}
+};
+
+// Watches the preview and puts a LineWindow where each line belongs.
+class GuideOverlay : public QObject {
+public:
+	GuideOverlay(QWidget *main_window, QWidget *preview) : QObject(nullptr), main_(main_window), preview_(preview)
+	{
+		setObjectName("stagekitGuides");
 		seen_serial_ = last_arrange_guide().serial;
 		auto *timer = new QTimer(this);
 		QObject::connect(timer, &QTimer::timeout, this, [this] { watch(); });
 		timer->start(kWatchMs);
 	}
 
-protected:
-	void paintEvent(QPaintEvent *) override
+	~GuideOverlay() override
 	{
-		QWidget *preview = preview_.data();
-		if (!preview || canvas_w_ <= 0.0 || canvas_h_ <= 0.0)
-			return;
-		const PreviewMap map = preview_map(preview->width(), preview->height(), preview->devicePixelRatioF(),
-						   canvas_w_, canvas_h_);
-		QPainter painter(this);
-		// A bright line with a dark one under it, so it shows on any picture.
-		for (int pass = 0; pass < 2; pass++) {
-			painter.setPen(pass == 0 ? QPen(QColor(0, 0, 0, 170), 4.0) : QPen(QColor(0, 230, 255), 2.0));
-			for (double x : xs_) {
-				const double at = map.x + x * map.scale;
-				painter.drawLine(QPointF(at, map.y), QPointF(at, map.y + canvas_h_ * map.scale));
-			}
-			for (double y : ys_) {
-				const double at = map.y + y * map.scale;
-				painter.drawLine(QPointF(map.x, at), QPointF(map.x + canvas_w_ * map.scale, at));
-			}
-		}
+		for (QPointer<LineWindow> &line : lines_shown_)
+			delete line.data();
 	}
 
 private:
@@ -128,6 +151,14 @@ private:
 	{
 		const ArrangeOptions options = arrange_options();
 		QWidget *preview = find_preview();
+		if (options.guides != said_on_) {
+			said_on_ = options.guides;
+			if (options.guides && preview)
+				obs_log(LOG_INFO, "Guides: on, over OBS's preview (%d x %d)", preview->width(),
+					preview->height());
+			else if (options.guides)
+				obs_log(LOG_WARNING, "Guides: on, but OBS's preview was not found");
+		}
 		if (!options.guides || !preview || !preview->isVisible()) {
 			// Nothing a tool did while guides were off is shown later.
 			seen_serial_ = last_arrange_guide().serial;
@@ -180,6 +211,11 @@ private:
 				const Box seen = measure_item(scene, item, options.how);
 				insets_.push_back({seen.x - box.x, seen.y - box.y, seen.w - box.w, seen.h - box.h});
 			}
+			if (!said_drag_) {
+				said_drag_ = true;
+				obs_log(LOG_INFO, "Guides: a drag in the preview was seen (%zu item%s)", now.size(),
+					now.size() == 1 ? "" : "s");
+			}
 		}
 		if (dragging_ && insets_.size() == now.size()) {
 			for (size_t i = 0; i < now.size(); i++) {
@@ -196,40 +232,77 @@ private:
 		}
 		before_ = now;
 
-		canvas_w_ = obs_source_get_width(scene);
-		canvas_h_ = obs_source_get_height(scene);
+		const double canvas_w = obs_source_get_width(scene);
+		const double canvas_h = obs_source_get_height(scene);
 		obs_source_release(scene);
 		if (xs.empty() && ys.empty()) {
 			clear();
 			return;
 		}
-		// Exactly over the preview, wherever OBS's window has put it.
-		const QRect over(preview->mapToGlobal(QPoint(0, 0)), preview->size());
-		if (geometry() != over)
-			setGeometry(over);
-		if (xs != xs_ || ys != ys_) {
-			xs_ = xs;
-			ys_ = ys;
-			// Also kept as text on the window, for the tests to read.
-			QString text;
-			for (double x : xs_)
-				text += QStringLiteral("x:%1 ").arg(std::lround(x));
-			for (double y : ys_)
-				text += QStringLiteral("y:%1 ").arg(std::lround(y));
-			setProperty("guideLines", text.trimmed());
-			update();
+
+		// Where each line goes on the screen: the canvas found inside the
+		// preview as OBS places it, wherever OBS's window is.
+		const PreviewMap map = preview_map(preview->width(), preview->height(), preview->devicePixelRatioF(),
+						   canvas_w, canvas_h);
+		const QPoint origin = preview->mapToGlobal(QPoint(0, 0));
+		const QRect over(origin, preview->size());
+		const int left = origin.x() + (int)std::lround(map.x);
+		const int top = origin.y() + (int)std::lround(map.y);
+		const int across = (int)std::lround(canvas_w * map.scale);
+		const int down = (int)std::lround(canvas_h * map.scale);
+		std::vector<QRect> rects;
+		for (double x : xs)
+			rects.push_back(
+				QRect(left + (int)std::lround(x * map.scale) - kThickness / 2, top, kThickness, down));
+		for (double y : ys)
+			rects.push_back(QRect(left, top + (int)std::lround(y * map.scale) - kThickness / 2, across,
+					      kThickness));
+		for (QRect &r : rects)
+			r = r.intersected(over);
+
+		while (lines_shown_.size() < rects.size())
+			lines_shown_.push_back(new LineWindow(main_.data()));
+		QString text, placed;
+		for (double x : xs)
+			text += QStringLiteral("x:%1 ").arg(std::lround(x));
+		for (double y : ys)
+			text += QStringLiteral("y:%1 ").arg(std::lround(y));
+		for (size_t i = 0; i < lines_shown_.size(); i++) {
+			LineWindow *line = lines_shown_[i].data();
+			if (!line)
+				continue;
+			if (i < rects.size() && !rects[i].isEmpty()) {
+				if (line->geometry() != rects[i])
+					line->setGeometry(rects[i]);
+				if (!line->isVisible())
+					line->show();
+				line->raise();
+				placed += QStringLiteral("%1,%2,%3,%4 ")
+						  .arg(rects[i].x())
+						  .arg(rects[i].y())
+						  .arg(rects[i].width())
+						  .arg(rects[i].height());
+			} else if (line->isVisible()) {
+				line->hide();
+			}
 		}
-		if (!isVisible())
-			show();
+		// Also kept as text, for the tests to read.
+		setProperty("guideLines", text.trimmed());
+		setProperty("lineWindows", placed.trimmed());
+		if (!said_line_) {
+			said_line_ = true;
+			obs_log(LOG_INFO, "Guides: showing %s on the screen at %s", text.trimmed().toUtf8().constData(),
+				placed.trimmed().toUtf8().constData());
+		}
 	}
 
 	void clear()
 	{
-		xs_.clear();
-		ys_.clear();
 		setProperty("guideLines", QString());
-		if (isVisible())
-			hide();
+		setProperty("lineWindows", QString());
+		for (QPointer<LineWindow> &line : lines_shown_)
+			if (line && line->isVisible())
+				line->hide();
 	}
 
 	QWidget *find_preview()
@@ -239,10 +312,11 @@ private:
 		return preview_.data();
 	}
 
+	static constexpr int kThickness = 4;
+
 	QPointer<QWidget> main_;
 	QPointer<QWidget> preview_;
-	std::vector<double> xs_, ys_; // the lines showing, in canvas pixels
-	double canvas_w_ = 0.0, canvas_h_ = 0.0;
+	std::vector<QPointer<LineWindow>> lines_shown_;
 	uint64_t seen_serial_ = 0;
 	ArrangeGuide flash_;
 	QElapsedTimer flash_timer_;
@@ -250,11 +324,13 @@ private:
 	std::vector<std::pair<obs_sceneitem_t *, Box>> before_; // compared, never used as items
 	SnapLines lines_;
 	std::vector<Box> insets_; // what is drawn, relative to each dragged item's box
+	// What has been written to OBS's log, so each is said once.
+	bool said_on_ = false, said_drag_ = false, said_line_ = false;
 };
 
 } // namespace
 
-QWidget *install_preview_guides(QWidget *main_window, QWidget *preview)
+QObject *install_preview_guides(QWidget *main_window, QWidget *preview)
 {
 	return new GuideOverlay(main_window, preview);
 }

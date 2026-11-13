@@ -3507,6 +3507,19 @@ int main(int argc, char **argv)
 				obs_scene_release(second);
 			}
 
+			// Order buttons: front above back in one column, forward one above back one in the other.
+			{
+				dock->grab(); // lays out a widget that is not on screen
+				auto at = [&](const char *name) {
+					auto *button = dock->findChild<QPushButton *>(name);
+					return button ? button->mapTo(dock, QPoint(0, 0)) : QPoint(-1, -1);
+				};
+				const QPoint top = at("orderTop"), bottom = at("orderBottom"), up = at("orderUp"),
+					     down = at("orderDown");
+				CHECK(top.x() == bottom.x() && up.x() == down.x() && top.x() < up.x() &&
+					      top.y() < bottom.y() && up.y() < down.y() && top.y() == up.y(),
+				      "'Bring to front' sits above 'Send to back', and 'Forward one' above 'Back one'");
+			}
 			// Order buttons: the camera was added first, so it starts at the back.
 			const int before = obs_sceneitem_get_order_position(cam_item);
 			click("orderTop");
@@ -3589,6 +3602,9 @@ int main(int argc, char **argv)
 				}
 				if (scenes)
 					scenes->setCurrentIndex(std::max(0, scenes->findData("Arrange Scene")));
+				// It is also the scene being edited, where items are selected in OBS's preview.
+				obs_source_t *edited_before = obs_get_output_source(0);
+				obs_set_output_source(0, as_source);
 				auto select_only = [&](std::initializer_list<obs_sceneitem_t *> chosen) {
 					for (obs_sceneitem_t *item : {ia, ib, ic, ibadge})
 						obs_sceneitem_select(item, false);
@@ -3688,6 +3704,111 @@ int main(int argc, char **argv)
 					vec2_set(&one, 1.0f, 1.0f);
 					for (obs_sceneitem_t *item : {ia, ib, ic})
 						obs_sceneitem_set_scale(item, &one);
+
+					// The report: the dock's own scene picker left on another
+					// scene, and items picked one after the other without a pause.
+					// The order comes from OBS, and the tools work where the items
+					// are selected.
+					if (scenes)
+						scenes->setCurrentIndex(std::max(0, scenes->findData("Test Scene")));
+					settle();
+					select_only({ib});
+					obs_sceneitem_select(ia, true); // A (100 wide) is selected last
+					against(3);
+					settle();
+					click("arrange_same_width");
+					vec2 scale_b;
+					obs_sceneitem_get_scale(ib, &scale_b);
+					CHECK(std::fabs(scale_b.x - 100.0 / 60.0) < 0.01,
+					      "'same width' takes the last selected item's width, whatever scene the dock is showing (scale %.2f)",
+					      scale_b.x);
+					obs_sceneitem_set_scale(ib, &one);
+					// The same from a hotkey or the preview's menu, picked the other way round.
+					select_only({ia});
+					obs_sceneitem_select(ib, true); // now B (60 wide) is last
+					calldata_t hk = {};
+					calldata_set_string(&hk, "action", "same_width");
+					proc_handler_call(obs_get_proc_handler(), "stagekit_run_arrange", &hk);
+					calldata_free(&hk);
+					vec2 scale_a2;
+					obs_sceneitem_get_scale(ia, &scale_a2);
+					CHECK(std::fabs(scale_a2.x - 0.6) < 0.005,
+					      "and from a hotkey or the preview's menu too (scale %.2f)", scale_a2.x);
+					for (obs_sceneitem_t *item : {ia, ib, ic})
+						obs_sceneitem_set_scale(item, &one);
+
+					// Shadows and sizes (the report: 'Ignore shadows' seemed to do
+					// the opposite). A has a 20 px shadow, the badge a 40 px one, both
+					// in screen pixels. The badge's picture (100 of its 200 px) does
+					// not reach its own edges, as a widget's often does not.
+					{
+						auto shadow_on = [](obs_source_t *source, int offset) {
+							obs_data_t *d = obs_data_create();
+							obs_data_set_bool(d, "shadow", true);
+							obs_data_set_double(d, "offset_x", offset);
+							obs_data_set_double(d, "offset_y", offset);
+							obs_data_set_double(d, "softness", 0);
+							obs_data_set_bool(d, "keep_place", true);
+							for (const char *side : {"adjusted_left", "adjusted_top",
+										 "adjusted_right", "adjusted_bottom"})
+								obs_data_set_int(d, side, 0);
+							obs_source_t *f = obs_source_create("stagekit_shadow_backdrop",
+											    "Shadow, Glow & Outline", d,
+											    nullptr);
+							obs_data_release(d);
+							obs_source_filter_add(source, f);
+							return f;
+						};
+						obs_source_t *shadow_a = shadow_on(block_a, 20);
+						obs_source_t *shadow_badge = shadow_on(badge_src, 40);
+						vec2 badge_was;
+						obs_sceneitem_get_scale(ibadge, &badge_was);
+						vec2 half;
+						vec2_set(&half, 0.5f, 0.5f);
+						auto start = [&] {
+							obs_sceneitem_set_scale(ibadge, &half);
+							place(ia, 40, 150);
+							place(ibadge, 300, 150);
+							settle();
+							select_only({ibadge});
+							obs_sceneitem_select(ia, true); // A is selected last
+							settle();
+						};
+						against(3);
+						tick_box("arrangeVisible", true);
+
+						tick_box("arrangeNoShadow", true);
+						start();
+						click("arrange_same_width");
+						settle();
+						vec2 ignored;
+						obs_sceneitem_get_scale(ibadge, &ignored);
+						CHECK(std::fabs(ignored.x - 1.0) < 0.02,
+						      "with 'Ignore shadows', the pictures come out the same width and the badge's shadow reaches past it (scale %.3f, wanted 1.000)",
+						      ignored.x);
+
+						tick_box("arrangeNoShadow", false);
+						start();
+						click("arrange_same_width");
+						settle();
+						vec2 counted;
+						obs_sceneitem_get_scale(ibadge, &counted);
+						CHECK(std::fabs(counted.x - 0.8) < 0.02,
+						      "without it, each with its shadow comes out the same width (scale %.3f, wanted 0.800)",
+						      counted.x);
+
+						tick_box("arrangeNoShadow", true);
+						obs_source_filter_remove(block_a, shadow_a);
+						obs_source_filter_remove(badge_src, shadow_badge);
+						obs_source_release(shadow_a);
+						obs_source_release(shadow_badge);
+						obs_sceneitem_set_scale(ibadge, &badge_was);
+						obs_sceneitem_set_scale(ia, &one);
+						settle();
+					}
+
+					if (scenes)
+						scenes->setCurrentIndex(std::max(0, scenes->findData("Arrange Scene")));
 					against(1);
 					select_only({ia, ib, ic});
 					settle();
@@ -3899,18 +4020,26 @@ int main(int argc, char **argv)
 					calldata_set_ptr(&gd, "preview", &stand_in);
 					proc_handler_call(obs_get_proc_handler(), "stagekit_install_preview_guides",
 							  &gd);
-					auto *overlay = static_cast<QWidget *>(calldata_ptr(&gd, "overlay"));
+					auto *overlay = static_cast<QObject *>(calldata_ptr(&gd, "overlay"));
 					calldata_free(&gd);
 					auto lines = [&] {
 						return overlay ? overlay->property("guideLines").toString()
 							       : QString("none");
+					};
+					// The line windows showing on the screen.
+					auto shown = [] {
+						QList<QRect> out;
+						for (QWidget *w : QApplication::topLevelWidgets())
+							if (w->objectName() == "stagekitGuideLine" && w->isVisible())
+								out.push_back(w->geometry());
+						return out;
 					};
 					against(0);
 					select_only({ia});
 					settle_snap();
 					click("arrange_right");
 					settle_snap();
-					CHECK(overlay && !overlay->isVisible(),
+					CHECK(overlay && shown().isEmpty(),
 					      "guides stay out of the way until they are switched on");
 					tick_box("arrangeGuides", true);
 					click("arrange_left");
@@ -3918,16 +4047,19 @@ int main(int argc, char **argv)
 						QCoreApplication::processEvents();
 						sleep_ms(40);
 					}
-					CHECK(overlay && overlay->isVisible() && lines() == "x:0" &&
-						      overlay->geometry() == QRect(stand_in.mapToGlobal(QPoint(0, 0)),
-										   stand_in.size()),
-					      "a line-up tool shows the line it used, over the preview (%s)",
+					// 600x400 preview, 640x360 canvas: drawn at 0.90625 from (10, 37), 580x326.
+					const QPoint corner = stand_in.mapToGlobal(QPoint(0, 0));
+					const QList<QRect> flash = shown();
+					CHECK(lines() == "x:0" && flash.size() == 1 &&
+						      flash[0] == QRect(corner.x() + 10 - 2, corner.y() + 37, 4, 326),
+					      "a line-up tool shows the line it used, a window of its own exactly over the canvas's edge in the preview (%s)",
 					      lines().toUtf8().constData());
 					for (int i = 0; i < 28; i++) {
 						QCoreApplication::processEvents();
 						sleep_ms(40);
 					}
-					CHECK(overlay && !overlay->isVisible(), "and the line goes away by itself");
+					CHECK(shown().isEmpty() && lines().isEmpty(),
+					      "and the line goes away by itself");
 
 					// Dragging: the block's centre comes within reach of the screen's centre line.
 					place(ib, 20, 300);
@@ -3940,7 +4072,12 @@ int main(int argc, char **argv)
 					settle_snap();
 					place(ia, 266, 20); // 100 wide: its centre is at 316, the screen's at 320
 					settle_snap();
-					CHECK(overlay && overlay->isVisible() && lines().contains("x:320"),
+					// The screen's centre, 320, is at 10 + 290 = 300 in the preview.
+					bool centre_line = false;
+					for (const QRect &r : shown())
+						centre_line = centre_line ||
+							      (r.x() == corner.x() + 300 - 2 && r.height() == 326);
+					CHECK(lines().contains("x:320") && centre_line,
 					      "while an item is dragged, the line it is about to meet is shown (%s)",
 					      lines().toUtf8().constData());
 					mouse(false);
@@ -3949,7 +4086,7 @@ int main(int argc, char **argv)
 						QCoreApplication::processEvents();
 						sleep_ms(40);
 					}
-					CHECK(overlay && !overlay->isVisible(), "and it goes when the mouse is let go");
+					CHECK(shown().isEmpty(), "and it goes when the mouse is let go");
 					tick_box("arrangeGuides", false);
 					delete overlay;
 					obs_set_output_source(0, was_out);
@@ -4015,6 +4152,8 @@ int main(int argc, char **argv)
 				select_only({});
 				if (scenes)
 					scenes->setCurrentIndex(std::max(0, scenes->findData("Test Scene")));
+				obs_set_output_source(0, edited_before);
+				obs_source_release(edited_before);
 				obs_scene_release(as);
 				for (obs_source_t *source : {block_a, block_b, block_c, badge_src})
 					obs_source_release(source);
