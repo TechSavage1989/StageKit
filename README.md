@@ -578,6 +578,12 @@ Options:
   *Same width* or *Same height* changes only that direction, which stretches the picture.
 - **Snap on release** snaps an item by itself after you drag it in the preview and let go. *Snap
   within* sets how close counts.
+- **Stop resizing at edges** (off by default) is for resizing by hand. Resize an item in the preview
+  as you always do, by an edge or a corner. When you let go, any side you dragged to within the
+  *Resize limit* of the screen's edge or of another item is pulled back, so it stops that far short.
+  An item scaled evenly is pulled back evenly and keeps its shape. *Use visible pixels* and *Ignore
+  shadows & outlines* decide what counts as the item and as the others. It acts when you let go of
+  the mouse, not while you drag; rotated and locked items are left alone; it is one step in Undo.
 - **Guides in the preview** (off by default) draws a line across the preview where an item you are
   dragging lines up with the screen or another item, and where a line-up tool has just put things.
   The lines are on your screen only, never in the stream or a recording. They are placed for a preview

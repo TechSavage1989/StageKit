@@ -204,6 +204,28 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Stop resizing at edges (0.1.0-beta65)
+
+The owner: "I'd like to be able to resize objects the way i usually would, like dragging an edge to
+extend it, or scale, etc, but I'd like to have a border/edge limiter set up that would prevent the
+object from being extended or scaled ... to a point that it would collide with another object, or
+come within the specified pixel range. for example if the padding is set to 30px, dragging a box edge
+... down to the bottom of the screen would prevent it from ... extending past ... once it is 30px
+from the edge, or from another object. it should follow the same visible pixels and other rules."
+
+- New Arrange option *Stop resizing at edges* with *Resize limit* (`ArrangeOptions::limit_resize`,
+  `limit_px`, default off and 30). In the dock and the preview menu.
+- It works on release, not during the drag (see AGENTS.md for why). Told to the owner plainly; if
+  they want it to hold during the drag, that needs a different approach and may flicker.
+- `limit_resize()` compares the item's box with its box when the drag began, limits each side pulled
+  outward to the limit short of the screen's edge and of items that were ahead of it and level with
+  it, scales evenly when the drag was even, and makes two passes because what is visible is not
+  always the same share of the box at another size. Bounding-box items have their bounds scaled.
+- The dock's watcher now tracks each selected item's box as well as its position, so a resize that
+  does not move the item's position is seen. Snap on release now skips an item that was resized.
+- Not covered: rotated items (skipped), items in groups (uses `scene_box`, untested), cropping with
+  Alt-drag (changes the box like a resize and would be "limited" by scaling; untested).
+
 ## Show in Scenes (0.1.0-beta64)
 
 The owner, with a screenshot of a Stream Deck multi-action holding eight Source Visibility steps:
