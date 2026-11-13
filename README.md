@@ -39,7 +39,7 @@ from hotkeys, or from the Stream Deck OBS Studio plugin's *Filter* and *Source* 
   its own. Filters on the view follow the crop, so no wrapper scene is needed.
 - **Ramp Zoom** (filter): zooms smoothly into a point of a source and back out.
 - **Send To** (filter): put it on your camera, once per spot. Each one is a Stream Deck key that moves
-  the camera to a corner or to a spot you saved.
+  the camera to a corner or to a spot you saved, in every scene the camera is in.
 - **Place Item** (scene filter): the same move, set up on a scene instead of on the source.
 - **Show/Hide Animation** (scene filter): slides or pops an item in and out when it is shown or hidden.
 - **Visibility Link** (scene filter): ties eye icons together. Show only one of a set of items, or show
@@ -248,16 +248,26 @@ The settings are in five numbered groups:
 | --- | --- |
 | 1. Frame size | Width and height, or pick a scene and an item and press *Use that item's size* |
 | 2. Picture | Fit (whole picture, whole-number scale, fill, stretch), picture shape, where it sits, sharp pixels |
-| 3. Black bars | Trim automatically, trim a set amount, or leave them. Automatic trims only when the picture left is a standard game shape, so a game with a black background is not mistaken for bars. *Hold a shape for* sets how long a different shape must be clearly on screen before the picture changes to it |
+| 3. Black bars | Trim automatically, trim a set amount, or leave them. Automatic trims only when the picture is seen to end in a straight line, the same distance in from both sides, leaving a standard game shape. Artwork, a logo or a dark scene on black is not mistaken for bars. *Hold a shape for* sets how long a different shape must be clearly on screen before the picture changes to it |
 | 4. Picture shape for each program | Shapes used at once when that program is captured (see below) |
 | 5. Movement | How long the picture takes to settle after a resolution change |
+
+**The first clear sight of a picture is used at once.** When a game appears, or its window changes
+size, the bars are trimmed within about a second of the picture being seen clearly: a windowed game
+whose picture sits inside its window with bars above and below does not wait for the hold time. A
+black loading screen teaches nothing, and nothing is trimmed on a guess.
 
 **A shape, once found, is held.** When a window goes full-screen, or the resolution changes, the
 picture keeps the shape it had: there is no moment of showing the bars and trimming them again. The
 last good picture stays up for a fifth of a second while the capture settles, and for up to a second if
-the capture drops out, so the switch does not blink. A menu
-or pop-up drawn over the bars does not resize it. It changes only when another real picture shape has
-been clearly on screen for the hold time, or when a different program is captured.
+the capture drops out, so the switch does not blink. A menu, a pop-up or a mouse pointer over the bars
+does not resize it. It changes when another real picture shape has been clearly on screen for the hold
+time, when the picture itself keeps showing inside the trimmed part, or when a different program is
+captured. A shape carried over to a new size is only a starting point until the picture is seen to fit
+it: if the picture plainly shows inside it, it is let go within about a second.
+
+**If a game's shape is slow to come right**, OBS's log says what Auto Frame saw and when
+(*Help → Log Files → Show Log Files*, the lines with `Auto Frame:` in them).
 
 **Unusual shapes.** Automatic trimming knows the shapes consoles and handhelds use, including two
 screens stacked or side by side (DS, 3DS), upright and ultra-wide. For a picture in some other shape,
@@ -367,8 +377,10 @@ spot and name each after its spot ("Camera top right").
 1. Choose where to send it: one of nine screen positions with a margin from the edge, or a saved spot.
    For a saved spot, drag the camera where you want it in the preview and press *Save the item's
    current spot*. Its size is saved too if you tick *Also restore the item's size*.
-2. Choose whether it moves in the scene on screen or in every scene it is in. It is found inside nested
-   scenes and groups.
+2. Choose where it moves (*Move it in*). **Every scene it is in** is the default: the source ends up
+   in the same place in each of its scenes, on screen or not. **Only the scene on screen** leaves the
+   other scenes as they are. **Only one scene I choose** always moves it in that scene. It is found
+   inside nested scenes and groups.
 3. Optionally choose an item to bring along.
 
 On a Stream Deck, add the OBS Studio plugin's *Filter* key, pick the camera as the source and one of
@@ -402,7 +414,9 @@ Studio Mode).
 
 - **Select an item in OBS's own preview** and the dock works on it. The *Item* list follows your
   selection; you can also choose from the list.
-- Click one of the nine positions and the item glides there.
+- Click one of the nine positions and the item glides there. With *In every scene* ticked (the
+  default) its source is moved in every scene it is in, keys you make do the same, and one Undo takes
+  the whole move back. Untick it to change only the scene you are working on.
 - *Make 9 position keys* adds a Send To filter for each one **to the item's own source**,
   named after the position ("Top right"). Point a Stream Deck *Filter* key at the camera and one of
   those filters, or give it a hotkey.
