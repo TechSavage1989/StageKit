@@ -64,7 +64,7 @@ These are real frames rendered by the plugin in its automated tests, using made-
 
 **Ambient Background: from image to finished backdrop**
 
-<p align="center"><img src="docs/images/ambient-background.png" width="900" alt="Stages of the Ambient Background: plain image, blur, saturation and glow, hexagon mosaic, texture overlay, live capture blended in, square, circle, Voronoi and triakis mosaics, bloom, and a background made from another source"></p>
+<p align="center"><img src="docs/images/ambient-background.png" width="900" alt="Stages of the Ambient Background: plain image, blur, saturation and glow, hexagon mosaic, texture overlay, a live capture blended in, fitted small and replacing the picture, square, circle, Voronoi and triakis mosaics, bloom, and a background made from another source"></p>
 
 **Shadow, Glow & Outline**
 
