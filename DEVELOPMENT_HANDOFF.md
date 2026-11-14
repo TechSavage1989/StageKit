@@ -211,6 +211,19 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Shadows kept on screen, a box sized by hand, standby ignored by the background (0.1.0-beta71)
+
+Three requests from the owner in one release:
+
+- Shadow, Glow & Outline: *Keep it on screen* (off by default). See AGENTS.md for its limits.
+- Fit Item: *Size it by hand* for *A box I set*.
+- Ambient Background: *Ignore a standby picture* (on by default).
+- The owner on beta70's *The whole screen*: 16:9 games fill the screen and other shapes keep the
+  margin, "not sure why ... but I'm not complaining". Told: that is the design.
+- **Open:** the owner had OBS crash on closing with the window's X "after making a lot of changes".
+  Version not stated; no crash file yet. Asked for it. Nothing found by reading the code: filters
+  are removed from a source before it is destroyed, so Fit Item's signal disconnect is safe.
+
 ## Fit Item: the free space around it (0.1.0-beta70)
 
 The owner asked for the fitting and resizing filters to follow *Use visible pixels*, *Ignore shadows*

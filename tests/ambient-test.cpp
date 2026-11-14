@@ -960,6 +960,50 @@ int main(int argc, char **argv)
 			calldata_set_string(&back, "path", "");
 			proc_handler_call(obs_get_proc_handler(), "stagekit_set_start_image", &back);
 			calldata_free(&back);
+			// An Ambient Background blending in this capture does not take
+			// the standby picture (all red here) for the capture.
+			{
+				// (The start image is cleared by now; the standby picture is the red file.)
+				obs_data_set_int(sd, "picture", 1);
+				obs_data_set_string(sd, "file", red_path.c_str());
+				obs_source_update(standby, sd);
+				obs_data_t *bs = obs_data_create();
+				obs_data_set_int(bs, "live_mode", 2);
+				obs_data_set_string(bs, "live_source", "Standby Capture");
+				obs_data_set_bool(bs, "live_replace", true);
+				obs_data_set_string(bs, "image", argv[3]);
+				obs_data_set_double(bs, "blur", 0);
+				obs_data_set_double(bs, "glow", 0);
+				obs_data_set_double(bs, "speed_x", 0);
+				obs_data_set_double(bs, "speed_y", 0);
+				obs_source_t *behind = obs_source_create("stagekit_ambient_background",
+									 "Standby Background", bs, nullptr);
+				obs_source_inc_showing(behind);
+				auto all_red = [&] {
+					std::vector<uint8_t> shot;
+					for (int i = 0; i < 8; i++) {
+						sleep_ms(150);
+						const uint32_t aw = obs_source_get_width(behind),
+							       ah = obs_source_get_height(behind);
+						if (aw && ah)
+							shot = render(behind, aw, ah);
+						render(capture, obs_source_get_width(capture),
+						       obs_source_get_height(capture));
+					}
+					if (shot.size() < 8)
+						return false;
+					const uint8_t *c = &shot[(shot.size() / 8) * 4];
+					return c[0] > 200 && c[1] < 40 && c[2] < 40;
+				};
+				CHECK(!all_red(),
+				      "an Ambient Background does not blend in a standby picture as if it were the capture");
+				obs_data_set_bool(bs, "live_skip_standby", false);
+				obs_source_update(behind, bs);
+				CHECK(all_red(), "unless 'Ignore a standby picture' is unticked");
+				obs_data_release(bs);
+				obs_source_dec_showing(behind);
+				obs_source_release(behind);
+			}
 			// After an Auto Frame, and before a Corners & Edges: the game
 			// picture's rectangle kept from the last game must not cut the
 			// standby picture.
@@ -1671,6 +1715,118 @@ int main(int argc, char **argv)
 			      "a change of resolution at the same shape changes neither the source's size nor its place");
 		}
 
+		// "Size it by hand": resizing the item in the preview sets the box.
+		{
+			obs_source_t *game3 = obs_source_create("color_source", "Hand Game", nullptr, nullptr);
+			sized(game3, 400, 300);
+			obs_scene_t *sc = obs_scene_create("Fit By Hand");
+			obs_sceneitem_t *gi = obs_scene_add(sc, game3);
+			obs_data_t *hd = obs_data_create();
+			obs_data_set_string(hd, "item", "Hand Game");
+			obs_data_set_int(hd, "box", 1);
+			obs_data_set_double(hd, "box_x", 30);
+			obs_data_set_double(hd, "box_y", 30);
+			obs_data_set_double(hd, "box_width", 300);
+			obs_data_set_double(hd, "box_height", 200);
+			obs_data_set_double(hd, "margin", 0);
+			obs_data_set_bool(hd, "by_hand", true);
+			obs_source_t *hand = obs_source_create("stagekit_fit_item", "Fit By Hand", hd, nullptr);
+			obs_source_filter_add(obs_scene_get_source(sc), hand);
+			auto settle = [&](int ms) {
+				for (int i = 0; i < ms / 50; i++) {
+					render(obs_scene_get_source(sc), 640, 360);
+					sleep_ms(50);
+				}
+			};
+			settle(400);
+			vec2 hp, hb;
+			obs_sceneitem_get_bounds(gi, &hb);
+			const bool began = std::fabs(hb.x - 300) < 0.6 && std::fabs(hb.y - 200) < 0.6;
+			// What a drag on a corner handle does: a new box, and a new place.
+			vec2_set(&hb, 400.0f, 250.0f);
+			obs_sceneitem_set_bounds(gi, &hb);
+			vec2_set(&hp, 50.0f, 60.0f);
+			obs_sceneitem_set_pos(gi, &hp);
+			settle(1000);
+			obs_sceneitem_get_bounds(gi, &hb);
+			obs_sceneitem_get_pos(gi, &hp);
+			obs_data_t *saved = obs_source_get_settings(hand);
+			CHECK(began && std::fabs(hb.x - 400) < 0.6 && std::fabs(hb.y - 250) < 0.6 &&
+				      std::fabs(hp.x - 30) < 0.6 && std::fabs(hp.y - 30) < 0.6 &&
+				      std::fabs(obs_data_get_double(saved, "box_width") - 400) < 0.6 &&
+				      std::fabs(obs_data_get_double(saved, "box_height") - 250) < 0.6,
+			      "with 'Size it by hand', the size given in the preview becomes the box's, and it goes back to the box's corner (%.0fx%.0f at %.0f, %.0f)",
+			      hb.x, hb.y, hp.x, hp.y);
+			obs_data_release(saved);
+			obs_data_release(hd);
+			obs_source_filter_remove(obs_scene_get_source(sc), hand);
+			obs_source_release(hand);
+			obs_scene_release(sc);
+			obs_source_release(game3);
+		}
+
+		// Shadow, Glow & Outline's "Keep it on screen": an item whose shadow
+		// would run off the canvas is made smaller instead.
+		{
+			obs_source_t *box = obs_source_create("color_source", "In View Box", nullptr, nullptr);
+			sized(box, 600, 330);
+			obs_scene_t *sc = obs_scene_create("In View");      // 640x360
+			obs_scene_t *other = obs_scene_create("In View 2"); // the same source, pushed off screen
+			obs_sceneitem_t *bi = obs_scene_add(sc, box);
+			obs_sceneitem_t *oi = obs_scene_add(other, box);
+			vec2 p;
+			vec2_set(&p, 20.0f, 10.0f);
+			obs_sceneitem_set_pos(bi, &p);
+			vec2_set(&p, 150.0f, 10.0f);
+			obs_sceneitem_set_pos(oi, &p);
+			obs_data_t *sd = obs_data_create();
+			obs_data_set_double(sd, "offset_x", 30);
+			obs_data_set_double(sd, "offset_y", 30);
+			obs_data_set_double(sd, "softness", 0);
+			obs_source_t *shadow = obs_source_create("stagekit_shadow_backdrop", "Shadow", sd, nullptr);
+			obs_source_filter_add(box, shadow);
+			auto settle = [&](int ms) {
+				for (int i = 0; i < ms / 50; i++) {
+					render(obs_scene_get_source(sc), 640, 360);
+					render(obs_scene_get_source(other), 640, 360);
+					sleep_ms(50);
+				}
+			};
+			settle(800);
+			struct Edges {
+				double x, y, w, h;
+			};
+			auto edges = [&] {
+				vec2 at, by;
+				obs_sceneitem_get_pos(bi, &at);
+				obs_sceneitem_get_scale(bi, &by);
+				return Edges{at.x, at.y, obs_source_get_width(box) * by.x,
+					     obs_source_get_height(box) * by.y};
+			};
+			Edges b = edges();
+			CHECK(b.x + b.w > 645.0 && b.y + b.h > 365.0,
+			      "left as it comes, a shadow runs off the canvas's edge (to %.0f, %.0f)", b.x + b.w,
+			      b.y + b.h);
+			obs_data_set_bool(sd, "in_view", true);
+			obs_source_update(shadow, sd);
+			settle(1500);
+			b = edges();
+			vec2 sc_now, sc_other;
+			obs_sceneitem_get_scale(bi, &sc_now);
+			obs_sceneitem_get_scale(oi, &sc_other);
+			CHECK(std::fabs(b.x + b.w - 640.0) < 1.5 && std::fabs(b.y + b.h - 360.0) < 1.5 &&
+				      sc_now.x < 0.99f && std::fabs(sc_now.x - sc_now.y) < 0.001f,
+			      "with 'Keep it on screen' the item is made smaller, keeping its shape, until the shadow ends at the edge (to %.1f, %.1f; scale %.3f)",
+			      b.x + b.w, b.y + b.h, sc_now.x);
+			CHECK(std::fabs(sc_other.x - 1.0f) < 0.001f,
+			      "an item whose picture is itself off the canvas is left alone (scale %.3f)", sc_other.x);
+			obs_data_release(sd);
+			obs_source_filter_remove(box, shadow);
+			obs_source_release(shadow);
+			obs_scene_release(sc);
+			obs_scene_release(other);
+			obs_source_release(box);
+		}
 		obs_set_output_source(0, before_out);
 		obs_source_release(before_out);
 		obs_data_release(fs);

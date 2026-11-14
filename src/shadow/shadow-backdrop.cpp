@@ -27,12 +27,14 @@ the Free Software Foundation; either version 2 of the License, or
 #include <graphics/vec2.h>
 #include <graphics/vec4.h>
 #include <plugin-support.h>
+#include <util/platform.h>
 
 #include <algorithm>
 #include <cmath>
 #include <memory>
 #include <mutex>
 #include <cstring>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -309,6 +311,7 @@ private:
 	bool capture_input(uint32_t w, uint32_t h);
 
 	void settle_items(obs_source_t *parent, const Padding &wanted);
+	void keep_in_view(obs_source_t *parent);
 
 	obs_source_t *source_;
 	std::mutex mutex_;
@@ -319,6 +322,14 @@ private:
 	bool adjusted_loaded_ = false;
 	bool owner_checked_ = false;
 	bool keep_place_ = true;
+	// "Keep it on screen": where each item was last seen and since when it
+	// has been still (used on the tick only).
+	bool in_view_ = false;
+	struct Still {
+		Box box;
+		uint64_t since = 0;
+	};
+	std::map<obs_sceneitem_t *, Still> still_;
 	// How big the source is drawn on screen, for sizes given in screen pixels.
 	double shown_sx_ = 1.0, shown_sy_ = 1.0;
 	// Standing down because of the scene on screen.
@@ -467,6 +478,7 @@ void ShadowBackdrop::update(obs_data_t *settings)
 	if (s.outline_width < 0.5)
 		s.outline = false;
 	s.screen_px = obs_data_get_bool(settings, "screen_px");
+	in_view_ = obs_data_get_bool(settings, "in_view");
 
 	std::lock_guard lock(mutex_);
 	settings_ = s;
@@ -520,6 +532,112 @@ void ShadowBackdrop::settle_items(obs_source_t *parent, const Padding &wanted)
 	obs_data_set_int(settings, "adjusted_right", wanted.right);
 	obs_data_set_int(settings, "adjusted_bottom", wanted.bottom);
 	obs_data_release(settings);
+}
+
+// "Keep it on screen": an item whose picture is on the canvas but whose
+// shadow, glow or outline runs off an edge is made smaller, by just enough
+// for the effect to show whole. It stays against the edge it was at.
+//
+// Only an item that has been still for a moment is touched, so one being
+// dragged, or gliding in from off screen, is left alone; so is one whose
+// picture itself is off the canvas, which is somebody's intention.
+void ShadowBackdrop::keep_in_view(obs_source_t *parent)
+{
+	Padding room;
+	bool fixed;
+	{
+		std::lock_guard lock(mutex_);
+		room = adjusted_;
+		fixed = settings_.screen_px;
+	}
+	const uint64_t now = os_gettime_ns();
+	std::map<obs_sceneitem_t *, Still> next;
+	for (obs_sceneitem_t *item : items_showing(parent)) {
+		struct Release {
+			obs_sceneitem_t *item;
+			~Release() { obs_sceneitem_release(item); }
+		} release{item};
+		obs_scene_t *scene = obs_sceneitem_get_scene(item);
+		obs_source_t *scene_source = scene ? obs_scene_get_source(scene) : nullptr;
+		// Plain items straight in a scene: an item fitted by a bounding box
+		// is sized by whoever set the box (Fit Item does this itself), and
+		// an item in a group is placed in the group's own space.
+		if (!scene_source || obs_scene_is_group(scene) || !obs_sceneitem_visible(item) ||
+		    obs_sceneitem_locked(item) || obs_sceneitem_get_bounds_type(item) != OBS_BOUNDS_NONE ||
+		    std::fabs(obs_sceneitem_get_rot(item)) > 0.01f)
+			continue;
+		const double cw = obs_source_get_width(scene_source), ch = obs_source_get_height(scene_source);
+		const Box box = item_box(item);
+		if (cw < 2.0 || ch < 2.0 || box.w < 2.0 || box.h < 2.0)
+			continue;
+		Still seen;
+		const auto found = still_.find(item);
+		if (found != still_.end() && std::fabs(found->second.box.x - box.x) < 0.25 &&
+		    std::fabs(found->second.box.y - box.y) < 0.25 && std::fabs(found->second.box.w - box.w) < 0.25 &&
+		    std::fabs(found->second.box.h - box.h) < 0.25) {
+			seen = found->second;
+		} else {
+			seen.box = box;
+			seen.since = now;
+		}
+		next[item] = seen;
+		if (now - seen.since < 400000000ULL)
+			continue;
+
+		vec2 scale, pos;
+		obs_sceneitem_get_scale(item, &scale);
+		obs_sceneitem_get_pos(item, &pos);
+		obs_sceneitem_crop crop;
+		obs_sceneitem_get_crop(item, &crop);
+		// The effect's room on each side, on the canvas.
+		const double rl = std::max(0.0, (double)room.left - crop.left) * std::fabs(scale.x);
+		const double rr = std::max(0.0, (double)room.right - crop.right) * std::fabs(scale.x);
+		const double rt = std::max(0.0, (double)room.top - crop.top) * std::fabs(scale.y);
+		const double rb = std::max(0.0, (double)room.bottom - crop.bottom) * std::fabs(scale.y);
+		const double over_l = -box.x, over_r = box.x + box.w - cw;
+		const double over_t = -box.y, over_b = box.y + box.h - ch;
+		// The picture itself off the canvas: not for this to change.
+		if (over_l > rl + 1.0 || over_r > rr + 1.0 || over_t > rt + 1.0 || over_b > rb + 1.0)
+			continue;
+		const bool cut_l = over_l > 0.5, cut_r = over_r > 0.5, cut_t = over_t > 0.5, cut_b = over_b > 0.5;
+		if (!cut_l && !cut_r && !cut_t && !cut_b)
+			continue;
+		// The size the whole item may have, and how much smaller the picture
+		// must be for that. A room in screen pixels keeps its size.
+		const double may_w = box.w - std::max(0.0, over_l) - std::max(0.0, over_r);
+		const double may_h = box.h - std::max(0.0, over_t) - std::max(0.0, over_b);
+		const double pic_w = box.w - rl - rr, pic_h = box.h - rt - rb;
+		double k;
+		if (fixed && pic_w > 2.0 && pic_h > 2.0)
+			k = std::min((may_w - rl - rr) / pic_w, (may_h - rt - rb) / pic_h);
+		else
+			k = std::min(may_w / box.w, may_h / box.h);
+		if (!(k > 0.05) || k >= 1.0)
+			continue;
+		const double new_w = fixed ? pic_w * k + rl + rr : box.w * k;
+		const double new_h = fixed ? pic_h * k + rt + rb : box.h * k;
+		// Against the edge it ran over; centred where it ran over both, and
+		// about its own centre where it ran over neither.
+		const double new_x = cut_l && cut_r ? (cw - new_w) / 2.0
+				     : cut_l        ? 0.0
+				     : cut_r        ? cw - new_w
+						    : box.x + (box.w - new_w) / 2.0;
+		const double new_y = cut_t && cut_b ? (ch - new_h) / 2.0
+				     : cut_t        ? 0.0
+				     : cut_b        ? ch - new_h
+						    : box.y + (box.h - new_h) / 2.0;
+		// The item's position is somewhere on its box, by its alignment.
+		const double ax = (pos.x - box.x) / box.w, ay = (pos.y - box.y) / box.h;
+		obs_sceneitem_defer_update_begin(item);
+		vec2_set(&scale, (float)(scale.x * k), (float)(scale.y * k));
+		obs_sceneitem_set_scale(item, &scale);
+		vec2_set(&pos, (float)(new_x + ax * new_w), (float)(new_y + ay * new_h));
+		obs_sceneitem_set_pos(item, &pos);
+		obs_sceneitem_defer_update_end(item);
+		// What it did does not count as the item being moved.
+		next[item].box = Box{new_x, new_y, new_w, new_h};
+	}
+	still_.swap(next);
 }
 
 void ShadowBackdrop::tick()
@@ -590,6 +708,15 @@ void ShadowBackdrop::tick()
 	}
 	const bool active = keep && effect_ && obs_source_enabled(source_);
 	settle_items(parent, active ? padding_for(settings()) : Padding());
+	bool in_view;
+	{
+		std::lock_guard lock(mutex_);
+		in_view = in_view_;
+	}
+	if (in_view && active)
+		keep_in_view(parent);
+	else
+		still_.clear();
 }
 
 // The filter is being taken off its source: give the room back.
@@ -895,6 +1022,8 @@ obs_properties_t *get_properties(void *data)
 	}
 	obs_property_t *screen = obs_properties_add_bool(props, "screen_px", obs_module_text("Shadow.ScreenPx"));
 	obs_property_set_long_description(screen, obs_module_text("Shadow.ScreenPx.Tip"));
+	obs_property_t *in_view = obs_properties_add_bool(props, "in_view", obs_module_text("Shadow.InView"));
+	obs_property_set_long_description(in_view, obs_module_text("Shadow.InView.Tip"));
 	obs_property_t *keep = obs_properties_add_bool(props, "keep_place", obs_module_text("Shadow.Keep"));
 	obs_property_set_long_description(keep, obs_module_text("Shadow.Keep.Tip"));
 	return props;
@@ -1005,6 +1134,24 @@ void shadow_room(obs_source_t *source, double room[4])
 			obs_data_release(settings);
 		},
 		&find);
+}
+
+bool shadow_kept_in_view(obs_source_t *source)
+{
+	bool kept = false;
+	obs_source_enum_filters(
+		source,
+		[](obs_source_t *, obs_source_t *filter, void *param) {
+			const char *id = obs_source_get_unversioned_id(filter);
+			if (!id || strcmp(id, kShadowBackdropId) != 0 || !obs_source_enabled(filter))
+				return;
+			obs_data_t *settings = obs_source_get_settings(filter);
+			if (obs_data_get_bool(settings, "in_view"))
+				*static_cast<bool *>(param) = true;
+			obs_data_release(settings);
+		},
+		&kept);
+	return kept;
 }
 
 void register_shadow_backdrop()

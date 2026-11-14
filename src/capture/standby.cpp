@@ -137,12 +137,13 @@ public:
 		// For the filters around it: is the picture standing in, or still
 		// changing to or from the capture?
 		proc_handler_add(
-			obs_source_get_proc_handler(source_), "void get_standing(out bool standing)",
+			obs_source_get_proc_handler(source_), "void get_standing(out bool standing, out bool waiting)",
 			[](void *data, calldata_t *cd) {
 				auto *self = static_cast<Standby *>(data);
 				std::lock_guard lock(self->mutex_);
 				calldata_set_bool(cd, "standing",
 						  self->empty_ || self->mix_ > 0.0 || self->glide_ < 1.0);
+				calldata_set_bool(cd, "waiting", self->empty_);
 			},
 			this);
 	}
@@ -758,6 +759,27 @@ obs_properties_t *get_properties(void *data)
 }
 
 } // namespace
+
+bool standby_waiting(obs_source_t *source)
+{
+	bool waiting = false;
+	if (!source)
+		return false;
+	obs_source_enum_filters(
+		source,
+		[](obs_source_t *, obs_source_t *filter, void *param) {
+			const char *id = obs_source_get_unversioned_id(filter);
+			if (!id || strcmp(id, kStandbyId) != 0 || !obs_source_enabled(filter))
+				return;
+			calldata_t cd = {};
+			if (proc_handler_call(obs_source_get_proc_handler(filter), "get_standing", &cd) &&
+			    calldata_bool(&cd, "waiting"))
+				*static_cast<bool *>(param) = true;
+			calldata_free(&cd);
+		},
+		&waiting);
+	return waiting;
+}
 
 void register_standby()
 {

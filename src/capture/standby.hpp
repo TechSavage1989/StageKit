@@ -10,6 +10,8 @@ the Free Software Foundation; either version 2 of the License, or
 
 #pragma once
 
+#include <obs.h>
+
 namespace stagekit {
 
 inline constexpr const char *kStandbyId = "stagekit_standby";
@@ -17,5 +19,9 @@ inline constexpr const char *kStandbyId = "stagekit_standby";
 // Registers the "Standby Picture (StageKit)" filter: a picture in a capture's
 // place while the capture has nothing to show.
 void register_standby();
+
+// Is a Standby Picture on the source showing its picture because the capture
+// has nothing? (Not while it changes over to a capture that has arrived.)
+bool standby_waiting(obs_source_t *source);
 
 } // namespace stagekit
