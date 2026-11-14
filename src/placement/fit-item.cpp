@@ -49,7 +49,7 @@ struct Settings {
 	double tolerance = 8;          // free space: pictures this close in size count as equal
 	bool resize = true;            // off: the item keeps its size and is only moved, centred in the space
 	std::string orig_item;         // the item whose size was noted before the filter first touched it
-	double orig_w = 0, orig_h = 0; // that size (the picture's, in the scene)
+	double orig_k = 0;             // how large it was drawn then, as a scale of its source
 	bool visible_pixels = true;    // other items are measured by what they draw, not their boxes
 	bool no_shadows = true;        // and shadows, glows and outlines do not count, its own included
 	std::vector<std::string> skip; // items that are never in the way
@@ -150,9 +150,9 @@ public:
 		s.tolerance = std::clamp(obs_data_get_double(settings, "tolerance"), 0.0, 200.0);
 		s.resize = obs_data_get_bool(settings, "resize");
 		s.orig_item = obs_data_get_string(settings, "orig_item");
-		s.orig_w = obs_data_get_double(settings, "orig_w");
-		s.orig_h = obs_data_get_double(settings, "orig_h");
+		s.orig_k = obs_data_get_double(settings, "orig_k");
 		have_keep_ = false; // the size to keep is read from the item afresh
+		own_seen_ = false;  // and what shows of the item is looked at again
 		{
 			// Unticked just now: the size to keep is the one the item had
 			// before this filter resized it, not the fitted one.
@@ -235,10 +235,92 @@ public:
 		const double bare_h = sh - std::max(room[1], (double)crop.top) - std::max(room[3], (double)crop.bottom);
 		if (!s.no_shadows || shadow_in_view)
 			room[0] = room[1] = room[2] = room[3] = 0.0;
-		const double left = std::max(room[0], (double)crop.left), top = std::max(room[1], (double)crop.top);
-		const double right = std::max(room[2], (double)crop.right),
-			     bottom = std::max(room[3], (double)crop.bottom);
-		const double pw = sw - left - right, ph = sh - top - bottom;
+		double left = std::max(room[0], (double)crop.left), top = std::max(room[1], (double)crop.top);
+		double right = std::max(room[2], (double)crop.right), bottom = std::max(room[3], (double)crop.bottom);
+		double pw = sw - left - right, ph = sh - top - bottom;
+		if (pw < 2.0 || ph < 2.0)
+			return;
+		// "Use visible pixels" is about the fitted item too: what is fitted
+		// and kept clear is the part of it that shows, not its box. A group
+		// or a widget is often larger than what it draws; the owner: "only
+		// the visible pixels in the group, or any other item should be
+		// counted. otherwise, what's the point of that setting?" Looking is
+		// costly, so it is done when the item is first met, when its source
+		// changes size, and every few seconds while it sits where it was put.
+		if (s.visible_pixels) {
+			own_for_ += seconds;
+			// Its source changed size (a filter was added, a window
+			// resized): what was seen no longer holds, and the look waits
+			// until the size has stayed put for half a second, so that it
+			// is not taken while things are still settling.
+			if (own_sw_ != sw || own_sh_ != sh) {
+				own_sw_ = sw;
+				own_sh_ = sh;
+				own_cut_[0] = own_cut_[1] = own_cut_[2] = own_cut_[3] = 0.0;
+				own_seen_ = false;
+				own_for_ = 0.0;
+			}
+			const bool due = (!own_seen_ && own_for_ >= 0.5) || (was_placed_ && own_for_ >= 3.0);
+			if (due && obs_source_showing(parent_) && !measuring_stopped()) {
+				own_for_ = 0.0;
+				own_seen_ = true;
+				// (Measured first: that also brings the item's box up to date.)
+				Box shows;
+				const bool any = measure_seen(parent_, item, how, shows);
+				const Box whole = scene_box(parent_, item);
+				const double cw = sw - crop.left - crop.right, ch = sh - crop.top - crop.bottom;
+				// Only an item wholly on the screen is believed: what hangs
+				// over the edge may not be measured at all.
+				const double scene_w = obs_source_get_width(parent_),
+					     scene_h = obs_source_get_height(parent_);
+				const bool on_screen = whole.x >= -0.5 && whole.y >= -0.5 &&
+						       whole.x + whole.w <= scene_w + 0.5 &&
+						       whole.y + whole.h <= scene_h + 0.5;
+				if (!on_screen)
+					own_seen_ = false; // looked at again once it is
+				if (any && on_screen && whole.w >= 1.0 && whole.h >= 1.0 && cw >= 1.0 && ch >= 1.0) {
+					// Where the picture itself is drawn: inside a bounding
+					// box it is scaled to fit and centred; without one the
+					// box is the picture.
+					const bool boxed = obs_sceneitem_get_bounds_type(item) != OBS_BOUNDS_NONE;
+					const double kk = boxed ? std::min(whole.w / cw, whole.h / ch) : whole.w / cw;
+					const double ky = boxed ? kk : whole.h / ch;
+					const double dx = whole.x + (whole.w - cw * kk) / 2.0;
+					const double dy = whole.y + (whole.h - ch * ky) / 2.0;
+					const double px = dx + (left - crop.left) * kk, py = dy + (top - crop.top) * ky;
+					const double pwn = pw * kk, phn = ph * ky;
+					if (pwn >= 1.0 && phn >= 1.0) {
+						// Under a fiftieth of the picture is the measuring (it is
+						// done on a small copy), not empty room.
+						auto cut = [](double part) {
+							return part < 0.02 ? 0.0 : std::min(part, 0.9);
+						};
+						const double l = cut((shows.x - px) / pwn);
+						const double t = cut((shows.y - py) / phn);
+						const double r = cut((px + pwn - shows.x - shows.w) / pwn);
+						const double b = cut((py + phn - shows.y - shows.h) / phn);
+						// A change of a pixel or so is the measuring, not the item.
+						const double least = 1.5 / std::max(pwn, phn);
+						if (l + r < 0.95 && t + b < 0.95 &&
+						    (std::fabs(l - own_cut_[0]) > least ||
+						     std::fabs(t - own_cut_[1]) > least ||
+						     std::fabs(r - own_cut_[2]) > least ||
+						     std::fabs(b - own_cut_[3]) > least)) {
+							own_cut_[0] = l;
+							own_cut_[1] = t;
+							own_cut_[2] = r;
+							own_cut_[3] = b;
+						}
+					}
+				}
+			}
+			left += own_cut_[0] * pw;
+			right += own_cut_[2] * pw;
+			top += own_cut_[1] * ph;
+			bottom += own_cut_[3] * ph;
+			pw = sw - left - right;
+			ph = sh - top - bottom;
+		}
 		if (pw < 2.0 || ph < 2.0)
 			return;
 
@@ -255,7 +337,7 @@ public:
 		// the scene and is only moved, to the middle of its space. That size
 		// is read from the item once, and again after it is resized by hand.
 		// How large the picture is drawn in the scene right now.
-		auto drawn_now = [&](double &w_now, double &h_now) {
+		auto drawn_now = [&](double &k_now) {
 			double kx = 1.0, ky = 1.0;
 			if (obs_sceneitem_get_bounds_type(item) != OBS_BOUNDS_NONE) {
 				vec2 b;
@@ -269,10 +351,8 @@ public:
 				kx = std::fabs(scale.x);
 				ky = std::fabs(scale.y);
 			}
-			const double kept = std::min(kx, ky);
-			w_now = pw * kept;
-			h_now = ph * kept;
-			return kept > 0.0;
+			k_now = std::min(kx, ky);
+			return k_now > 0.0;
 		};
 		// Before the filter does anything to an item, the size it has is
 		// noted, so that "Resize it to fit" can be unticked later and the
@@ -280,20 +360,17 @@ public:
 		// owner's chat box was fitted, and so shrunk, before the box could
 		// be unticked, and then kept the shrunken size.)
 		if (s.orig_item != s.item) {
-			double w0 = 0.0, h0 = 0.0;
-			if (drawn_now(w0, h0)) {
+			double k0 = 0.0;
+			if (drawn_now(k0)) {
 				s.orig_item = s.item;
-				s.orig_w = w0;
-				s.orig_h = h0;
+				s.orig_k = k0;
 				obs_data_t *settings = obs_source_get_settings(source_);
 				obs_data_set_string(settings, "orig_item", s.orig_item.c_str());
-				obs_data_set_double(settings, "orig_w", w0);
-				obs_data_set_double(settings, "orig_h", h0);
+				obs_data_set_double(settings, "orig_k", k0);
 				obs_data_release(settings);
 				std::lock_guard lock(mutex_);
 				settings_.orig_item = s.orig_item;
-				settings_.orig_w = w0;
-				settings_.orig_h = h0;
+				settings_.orig_k = k0;
 			}
 		}
 		if (!s.resize) {
@@ -303,16 +380,16 @@ public:
 			if (have_keep_ && boxed && have_set_ &&
 			    (std::fabs(b_now.x - set_bw_) > 0.5 || std::fabs(b_now.y - set_bh_) > 0.5))
 				have_keep_ = false;
-			if (!have_keep_ && back_to_original_ && s.orig_item == s.item && s.orig_w >= 2.0 &&
-			    s.orig_h >= 2.0) {
-				keep_w_ = s.orig_w;
-				keep_h_ = s.orig_h;
+			if (!have_keep_ && back_to_original_ && s.orig_item == s.item && s.orig_k > 0.0) {
+				keep_k_ = s.orig_k;
 				have_keep_ = true;
 			}
 			if (!have_keep_)
-				have_keep_ = drawn_now(keep_w_, keep_h_);
+				have_keep_ = drawn_now(keep_k_);
 			back_to_original_ = false;
 		}
+		// The size kept is the size of what shows of it.
+		const double keep_w_ = pw * keep_k_, keep_h_ = ph * keep_k_;
 		const double picture = pw / ph;
 		// The screen (or the box) itself, before a free space is taken in it.
 		const Box outer{bx, by, bw, bh};
@@ -334,7 +411,9 @@ public:
 		const double box = bw / bh;
 		// (The shape that counts is the picture's, also when its shadow is
 		// fitted with it.)
-		const double bare = bare_w >= 2.0 && bare_h >= 2.0 ? bare_w / bare_h : picture;
+		// (Or, when only part of the item shows, the shape of that part.)
+		const bool cut_down = s.visible_pixels && own_cut_[0] + own_cut_[1] + own_cut_[2] + own_cut_[3] > 0.0;
+		const double bare = !cut_down && bare_w >= 2.0 && bare_h >= 2.0 ? bare_w / bare_h : picture;
 		const bool fills = !free && std::fabs(bare - box) / box < 0.01;
 		double margin = fills || free ? 0.0 : std::min({s.margin, bw / 2.0 - 1.0, bh / 2.0 - 1.0});
 		if (!s.resize && have_keep_) {
@@ -388,6 +467,7 @@ public:
 		set_bw_ = want_w;
 		set_bh_ = want_h;
 		have_set_ = true;
+		was_placed_ = placed;
 		if (placed)
 			return;
 		obs_sceneitem_defer_update_begin(item);
@@ -619,7 +699,12 @@ private:
 	double shape_seen_ = 0.0, shape_used_ = 0.0, shape_for_ = 0.0;
 	double used_margin_ = -1.0, used_tolerance_ = -1.0;
 	double set_bw_ = 0.0, set_bh_ = 0.0; // the bounding box last given to the item
-	double keep_w_ = 0.0, keep_h_ = 0.0; // "Resize it to fit" off: the picture's size, kept
+	double keep_k_ = 0.0;                // "Resize it to fit" off: how large the picture is kept, as a scale
+	// What shows of the fitted item itself: the part of its picture cut off
+	// on the left, top, right and bottom, when it was last looked at.
+	double own_cut_[4] = {0.0, 0.0, 0.0, 0.0};
+	bool own_seen_ = false, was_placed_ = false;
+	double own_sw_ = 0.0, own_sh_ = 0.0, own_for_ = 0.0;
 	bool have_keep_ = false;
 	bool back_to_original_ = false; // just unticked: keep the size from before the filter
 	Box goal_, from_, cur_;

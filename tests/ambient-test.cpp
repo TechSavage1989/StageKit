@@ -2287,6 +2287,63 @@ int main(int argc, char **argv)
 				obs_source_release(above);
 				obs_source_release(chat);
 			}
+			// "Use visible pixels" counts for the fitted item itself: an item
+			// larger than what it shows (a nested scene, a group, a widget)
+			// is fitted by what shows, not by its box.
+			{
+				obs_scene_t *inner = obs_scene_create("Mostly Empty"); // 640x360, a 100x100 block in it
+				obs_source_t *block =
+					obs_source_create("color_source", "Small Block", nullptr, nullptr);
+				sized(block, 100, 100);
+				vec2 ip;
+				vec2_set(&ip, 270.0f, 130.0f);
+				obs_sceneitem_set_pos(obs_scene_add(inner, block), &ip);
+				obs_scene_t *vs = obs_scene_create("Fit What Shows"); // 640x360
+				obs_sceneitem_t *nested = obs_scene_add(vs, obs_scene_get_source(inner));
+				obs_data_t *vf = obs_data_create();
+				obs_data_set_string(vf, "item", "Mostly Empty");
+				obs_data_set_int(vf, "box", 0);
+				obs_data_set_double(vf, "margin", 20);
+				obs_source_t *vis_fit =
+					obs_source_create("stagekit_fit_item", "Fit Shows", vf, nullptr);
+				obs_source_filter_add(obs_scene_get_source(vs), vis_fit);
+				obs_set_output_source(0, obs_scene_get_source(vs));
+				for (int i = 0; i < 16; i++) {
+					render(obs_scene_get_source(vs), 640, 360);
+					sleep_ms(50);
+				}
+				auto shows_at = [&](double &x, double &y, double &w) {
+					vec2 p, b;
+					obs_sceneitem_get_pos(nested, &p);
+					obs_sceneitem_get_bounds(nested, &b);
+					const double kk = std::min(b.x / 640.0, b.y / 360.0);
+					x = p.x + (b.x - 640.0 * kk) / 2.0 + 270.0 * kk;
+					y = p.y + (b.y - 360.0 * kk) / 2.0 + 130.0 * kk;
+					w = 100.0 * kk;
+				};
+				double x1, y1, w1;
+				shows_at(x1, y1, w1);
+				CHECK(std::fabs(w1 - 320) < 12 && std::fabs(x1 - 160) < 8 && std::fabs(y1 - 20) < 8,
+				      "an item larger than what it shows is fitted by what shows: the block fills the height less the margin (%.0f wide at %.0f, %.0f)",
+				      w1, x1, y1);
+				obs_data_set_bool(vf, "visible_pixels", false);
+				obs_source_update(vis_fit, vf);
+				for (int i = 0; i < 12; i++) {
+					render(obs_scene_get_source(vs), 640, 360);
+					sleep_ms(50);
+				}
+				double x2, y2, w2;
+				shows_at(x2, y2, w2);
+				CHECK(w2 < 110,
+				      "with 'Use visible pixels' unticked it goes by its box again (block %.0f wide)",
+				      w2);
+				obs_data_release(vf);
+				obs_source_filter_remove(obs_scene_get_source(vs), vis_fit);
+				obs_source_release(vis_fit);
+				obs_scene_release(vs);
+				obs_source_release(block);
+				obs_scene_release(inner);
+			}
 			obs_set_output_source(0, shown_before);
 			obs_source_release(shown_before);
 			obs_data_release(ff);

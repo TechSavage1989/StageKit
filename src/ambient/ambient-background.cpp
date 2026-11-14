@@ -54,7 +54,8 @@ enum class LiveFit : int { Fill = 0, Fit = 1, Stretch = 2, Width = 3, Height = 4
 enum class PixelStyle : int { None = 0, Square = 1, Hex = 2 };
 enum class OverlayMode : int { Multiply = 0, Screen = 1 };
 
-constexpr int kBlurLevels = 6;
+// Enough halvings for the strongest blur the slider offers (1000).
+constexpr int kBlurLevels = 8;
 constexpr double kInternalScale = 0.5;
 
 struct Settings {
@@ -337,7 +338,7 @@ void AmbientBackground::update(obs_data_t *settings)
 	s.live_replace = obs_data_get_bool(settings, "live_replace");
 	s.live_ready = obs_data_get_bool(settings, "live_ready");
 	s.live_skip_standby = obs_data_get_bool(settings, "live_skip_standby");
-	s.blur = std::clamp(obs_data_get_double(settings, "blur"), 0.0, 250.0);
+	s.blur = std::clamp(obs_data_get_double(settings, "blur"), 0.0, 1000.0);
 	s.pixel_style = static_cast<PixelStyle>(obs_data_get_int(settings, "pixel_style"));
 	s.pixel_size = std::clamp(obs_data_get_double(settings, "pixel_size"), 2.0, 200.0);
 	s.saturation = std::clamp(obs_data_get_double(settings, "saturation") / 100.0, 0.0, 3.0);
@@ -979,7 +980,7 @@ obs_properties_t *get_properties(void *)
 
 	// Look
 	obs_properties_t *look = obs_properties_create();
-	obs_properties_add_float_slider(look, "blur", obs_module_text("Ambient.Blur"), 0.0, 250.0, 1.0);
+	obs_properties_add_float_slider(look, "blur", obs_module_text("Ambient.Blur"), 0.0, 1000.0, 1.0);
 	obs_property_t *pixel = obs_properties_add_list(look, "pixel_style", obs_module_text("Ambient.Pixel"),
 							OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(pixel, obs_module_text("Ambient.Pixel.None"), (int)PixelStyle::None);
