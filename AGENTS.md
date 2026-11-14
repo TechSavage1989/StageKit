@@ -502,7 +502,10 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
 - **The updater installs only what it has checked.** `newest_release` takes a release only if it
   has a Windows installer *and* the notes carry that file's SHA-256 (the release workflow writes
   them); `install_script` downloads, compares the hash, and only then closes OBS. Keep that order
-  and never offer a file without a checksum. A release appears minutes before its Windows files
+  and never offer a file without a checksum. Every page of releases is read (`kReleasesPath`,
+  a hundred to a page) and the highest version taken: GitHub does not list them newest first as it
+  says, and a build that read only the first 20 (beta83 to beta100) told the owner beta99 was the
+  newest when beta100 was 33rd in the list. A release appears minutes before its Windows files
   (they are published in stages); such a release is passed over until they are up. The build
   knows which release it is from the newest notes file at configure time (`STAGEKIT_RELEASE`): the
   plugin's version number alone is the same for every pre-release. The download and install are a

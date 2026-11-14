@@ -44,7 +44,11 @@ namespace stagekit {
 namespace {
 
 constexpr const char *kReleasesHost = "api.github.com";
-constexpr const char *kReleasesPath = "/repos/TechSavage1989/StageKit/releases?per_page=20";
+// Every release is read, a hundred to a page. GitHub does not list them
+// newest first as it says: with 99 releases, beta100 came 33rd, and a build
+// that read the first 20 told the owner that beta99 was the newest.
+constexpr const char *kReleasesPath = "/repos/TechSavage1989/StageKit/releases?per_page=100&page=";
+constexpr int kMostPages = 5;
 
 std::mutex g_mutex;
 std::thread g_looking;
@@ -347,9 +351,28 @@ void check_for_update(std::function<void(bool, const Release &)> done)
 	const bool betas = update_settings().betas;
 	g_looking = std::thread([done, betas] {
 		os_set_thread_name("stagekit: update check");
-		const std::string json = https_get(kReleasesHost, kReleasesPath);
 		Release newest;
-		const bool found = !json.empty() && newest_release(json, betas, newest);
+		bool found = false;
+		for (int page = 1; page <= kMostPages; page++) {
+			const std::string json =
+				https_get(kReleasesHost, (std::string(kReleasesPath) + std::to_string(page)).c_str());
+			// Nothing, or an empty list: that was the last page.
+			if (json.find('{') == std::string::npos)
+				break;
+			Release best;
+			if (newest_release(json, betas, best) &&
+			    (!found || compare_versions(best.version, newest.version) > 0)) {
+				newest = best;
+				found = true;
+			}
+			// A page that is not full is the last one: no need to ask again.
+			size_t entries = 0;
+			for (size_t at = json.find("\"tag_name\""); at != std::string::npos;
+			     at = json.find("\"tag_name\"", at + 1))
+				entries++;
+			if (entries < 100)
+				break;
+		}
 		if (found && compare_versions(newest.version, current_release()) <= 0)
 			newest = Release(); // nothing newer than this build
 		if (!found)
