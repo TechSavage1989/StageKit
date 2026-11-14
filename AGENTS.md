@@ -9,10 +9,11 @@ every TechSavage1989 app repository. Change that file only to change the standar
 
 ## What StageKit is not
 
-It is an OBS plugin, not a standalone desktop app. It has no window of its own, no executable, no
-installer and no updater, and it cannot restart OBS. The parts of the shared standard about in-app
-update checks, update banners, download bars and install dialogs do not apply unless the owner asks
-for an update notice inside OBS. This exception is recorded in the handoff.
+It is an OBS plugin, not a standalone desktop app: it has no window or executable of its own. It
+does have an updater, because the owner asked for one (2026-11-14: "can you build an automatic
+updater? ... or build into the obs plugin an updater feature?"): a notice in the dock and a one-press
+install, in `src/update/`. The shared standard's download bar and install dialog are not built; the
+notice and the confirmation are what there is. This is recorded in the handoff.
 
 ## Folder map
 
@@ -31,6 +32,7 @@ for an update notice inside OBS. This exception is recorded in the handoff.
 | `src/frame/` | Auto Frame filter and the Picture Shape key filter |
 | `src/capture/` | Auto Capture filter (aims a Game Capture at the game in front), Program Trigger filter (shows items and switches filters while a program is open) and Active App scene filter (shows the one of several captures whose app is in use). All use the Win32 window list in `auto-capture.cpp`; compiled but idle elsewhere. Also Standby Picture (`standby.*`), a filter that shows a picture in a capture's place while it has nothing; it works everywhere |
 | `src/api/` | obs-websocket vendor requests (`StageKit` vendor) |
+| `src/update/` | The updater: reads the releases from GitHub, tells the dock about a newer one, and on Windows installs it through a PowerShell helper that outlives OBS |
 | `src/third-party/` | Vendored `obs-websocket-api.h`, kept byte-for-byte (excluded from clang-format) |
 | `data/effects/` | Shaders in OBS `.effect` format |
 | `data/locale/en-US.ini` | Every user-visible string |
@@ -385,6 +387,16 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   breaks the key. *Blur everything* uses the `BlurAll` and `ListBlurFilters` vendor requests.
   `com.techsavage1989.stagekit` and the action UUIDs under it must never change once
   the owner has keys on their decks: Stream Deck ties saved keys to them.
+- **The updater installs only what it has checked.** `newest_release` takes a release only if it
+  has a Windows installer *and* the notes carry that file's SHA-256 (the release workflow writes
+  them); `install_script` downloads, compares the hash, and only then closes OBS. Keep that order
+  and never offer a file without a checksum. A release appears minutes before its Windows files
+  (they are published in stages); such a release is passed over until they are up. The build
+  knows which release it is from the newest notes file at configure time (`STAGEKIT_RELEASE`): the
+  plugin's version number alone is the same for every pre-release. The download and install are a
+  PowerShell script because the DLL cannot be replaced while OBS runs. None of the Windows side
+  (WinHTTP, the script, the installer's silent run) has run in the tests; they cover the choosing,
+  the ordering and the script's text.
 - **Auto Capture's Windows code is only compiled by CI and never run by the tests.** The tests feed it
   stand-in windows through its `set_test_windows` call. The owner wants no list of games to maintain:
   detection is by loaded modules (graphics engine plus controller support, or full-screen), with a

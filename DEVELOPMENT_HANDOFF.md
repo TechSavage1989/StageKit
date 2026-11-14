@@ -10,7 +10,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
 | Working branch | None open. Start new work on a `feat/`, `fix/`, `docs/` or `chore/` branch |
-| Releases / update feed | GitHub releases on this repository. The plugin has no updater |
+| Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
 ## What is built
@@ -155,9 +155,9 @@ writes no files of its own.
 
 ## Exceptions to the shared standard
 
-- **Update checks, the update notice, the download bar and the install dialog do not apply.** StageKit
-  is an OBS plugin with no window, executable or updater of its own. Revisit only if the owner asks for
-  an update notice inside OBS.
+- **The update notice is the dock's line and a confirmation; there is no download bar or install
+  dialog.** The owner asked for an updater on 2026-11-14 and it was built into the plugin
+  (`src/update/`, since 0.1.0-beta83) rather than as a separate application.
 - **No hero image or logo.** The README uses frames rendered by the tests instead of window
   screenshots, because OBS has not been run with a display.
 - **`ramp-blur` predates the branch-naming rule** (`feat/`, `fix/`, ...). It is kept because pull
@@ -210,6 +210,23 @@ information), which is what the template uses for pushes to `main`.
 - 2026-11-12: Owner said "yes merge and publish each one without asking" for the test releases of
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
+
+## An updater inside the plugin (0.1.0-beta83)
+
+The owner: "can you build an automatic updater? an application i can install that will be able to
+download updates without me going to github every time", then "or build into the obs plugin an
+updater feature?". Built into the plugin: nothing extra to install or keep running.
+
+- A look at GitHub's release list ten seconds after OBS starts (and on *Check for updates now*), a
+  line in the dock when there is something newer, *Update* to install it. See the README and
+  AGENTS.md for what it does and the rules it keeps.
+- **None of the Windows side has run.** First real test is the owner updating from beta83 to the
+  release after it. If it fails: the helper script is `%TEMP%\stagekit-update.ps1` and can be read;
+  OBS's log has an `Updates:` line for each look.
+- Beta82's first build failed on Windows only (`setAlphaF(0.45)`: double to float is an error
+  there). Fixed and published. Watch number types in Qt calls; the Linux build does not complain.
+- Asked for next, not started: transition options for the Hook key; Stream Deck keys for setting a
+  game's picture shape by hand, kept until that game ends; "every feature that makes sense as a key".
 
 ## The dock in four tabs (0.1.0-beta82)
 

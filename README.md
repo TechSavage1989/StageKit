@@ -746,11 +746,28 @@ The plugin's code is in [`streamdeck/`](streamdeck); `npm install`, then `npm ru
 
 ## Updates and settings
 
-StageKit does not check for updates and never downloads anything. To update, close OBS and run a newer
-installer, or replace the plugin folder with a newer build.
+StageKit updates itself from inside OBS, on Windows.
+
+- **It looks for a newer release** about ten seconds after OBS starts, by reading the list of
+  releases of this project on GitHub. Nothing about you or your setup is sent; it is an ordinary
+  web request to `api.github.com`.
+- **When there is one**, a line appears at the bottom of the StageKit dock: *StageKit … is
+  available*, with **What's new** (the release page) and **Update**.
+- **Update** asks first. Then the installer (and the Stream Deck plugin's file, if that plugin is
+  installed) is downloaded and checked against the checksums in the release notes. If that fails it
+  says so and nothing is changed. Otherwise OBS closes, Windows asks for permission to install, the
+  installer runs without its pages, and OBS opens again. It will not start while you are streaming
+  or recording.
+- The **⋯** button at the bottom right of the dock shows the version you have and holds *Check for
+  updates now*, *Check when OBS starts* and *Include test versions* (pre-releases; on, because that
+  is all there is so far).
+- On macOS and Linux it tells you about a newer release and opens its page; installing is by hand.
+
+To update by hand instead, close OBS and run a newer installer, or replace the plugin folder with a
+newer build.
 
 All settings are stored by OBS in your scene collection, alongside the filters and sources they belong
-to. Replacing the plugin does not change them. Hotkey bindings are stored there too.
+to (the two update choices are kept with the plugin instead). Replacing the plugin does not change them. Hotkey bindings are stored there too.
 
 ## Troubleshooting
 

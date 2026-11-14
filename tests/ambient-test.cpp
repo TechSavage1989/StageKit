@@ -721,6 +721,105 @@ int main(int argc, char **argv)
 		}
 
 		// Show in Scenes: one switch that shows and hides sources across scenes.
+		// Updates: which release is newest, which is newer than this build,
+		// and the helper that installs one.
+		printf("\n[updates]\n");
+		{
+			auto order = [](const char *a, const char *b) {
+				calldata_t cd = {};
+				calldata_set_string(&cd, "a", a);
+				calldata_set_string(&cd, "b", b);
+				proc_handler_call(obs_get_proc_handler(), "stagekit_update_compare", &cd);
+				const long long got = calldata_int(&cd, "order");
+				calldata_free(&cd);
+				return got;
+			};
+			CHECK(order("0.1.0-beta9", "0.1.0-beta10") < 0 && order("0.1.0-beta82", "0.1.0-rc1") < 0 &&
+				      order("0.1.0-rc2", "0.1.0") < 0 && order("0.1.0", "0.1.1-beta1") < 0 &&
+				      order("0.2.0", "0.10.0") < 0 && order("0.1.0-beta82", "0.1.0-beta82") == 0,
+			      "versions are put in order: beta 9 before beta 10, betas before release candidates before the finished one");
+			{
+				calldata_t cd = {};
+				proc_handler_call(obs_get_proc_handler(), "stagekit_update_current", &cd);
+				const char *now = calldata_string(&cd, "version");
+				CHECK(now && strncmp(now, "0.", 2) == 0 && strlen(now) >= 5,
+				      "the build knows which release it is (%s)", now ? now : "");
+				calldata_free(&cd);
+			}
+			const std::string sha_a(64, 'a'), sha_b(64, 'b'), sha_c(64, 'c');
+			auto release = [&](const char *tag, bool pre, bool draft, const std::string &assets,
+					   const std::string &notes) {
+				return std::string("{\"tag_name\":\"") + tag +
+				       "\",\"prerelease\":" + (pre ? "true" : "false") +
+				       ",\"draft\":" + (draft ? "true" : "false") +
+				       ",\"html_url\":\"https://example.invalid/" + tag + "\",\"body\":\"" + notes +
+				       "\",\"assets\":[" + assets + "]}";
+			};
+			auto asset = [](const std::string &name) {
+				return "{\"name\":\"" + name +
+				       "\",\"browser_download_url\":\"https://example.invalid/dl/" + name + "\"}";
+			};
+			const std::string exe = "stagekit-0.1.0-windows-x64-Installer.exe";
+			const std::string deck = "stagekit-0.1.0-streamdeck.streamDeckPlugin";
+			const std::string list =
+				"[" +
+				// Newest of all, but its Windows files are not up yet.
+				release("0.1.0-beta90", true, false, asset(deck),
+					"### Checksums\\n    " + deck + ": " + sha_c) +
+				"," +
+				release("0.1.0-beta89", true, false, asset(exe) + "," + asset(deck),
+					"Notes.\\n### Checksums\\n    " + deck + ": " + sha_b + "\\n    " + exe + ": " +
+						sha_a) +
+				"," + release("0.1.0-beta91", true, true, asset(exe), "    " + exe + ": " + sha_a) +
+				"," + release("0.0.9", false, false, asset(exe), "    " + exe + ": " + sha_c) + "," +
+				// No checksum in its notes: never offered.
+				release("0.1.0-beta95", true, false, asset(exe), "no checksums here") + "]";
+			auto newest = [&](bool betas, std::string &version, std::string &sha, std::string &deck_url) {
+				calldata_t cd = {};
+				calldata_set_string(&cd, "json", list.c_str());
+				calldata_set_bool(&cd, "betas", betas);
+				proc_handler_call(obs_get_proc_handler(), "stagekit_update_newest", &cd);
+				const bool found = calldata_bool(&cd, "found");
+				version = calldata_string(&cd, "version") ? calldata_string(&cd, "version") : "";
+				sha = calldata_string(&cd, "sha") ? calldata_string(&cd, "sha") : "";
+				deck_url = calldata_string(&cd, "deck") ? calldata_string(&cd, "deck") : "";
+				calldata_free(&cd);
+				return found;
+			};
+			std::string version, sha, deck_url;
+			const bool with_betas = newest(true, version, sha, deck_url);
+			CHECK(with_betas && version == "0.1.0-beta89" && sha == sha_a &&
+				      deck_url.find("streamDeckPlugin") != std::string::npos,
+			      "the newest release is the newest with a checked Windows installer: not a draft, not one whose files are still on their way, not one without a checksum (%s)",
+			      version.c_str());
+			const bool without = newest(false, version, sha, deck_url);
+			CHECK(without && version == "0.0.9" && sha == sha_c && deck_url.empty(),
+			      "without test versions only finished releases count (%s)", version.c_str());
+			{
+				calldata_t cd = {};
+				calldata_set_string(&cd, "installer", "https://example.invalid/dl/it's.exe");
+				calldata_set_string(&cd, "sha", sha_a.c_str());
+				calldata_set_string(&cd, "deck", "https://example.invalid/dl/deck");
+				calldata_set_string(&cd, "deck_sha", sha_b.c_str());
+				calldata_set_string(&cd, "obs", "C:\\Program Files\\obs-studio\\bin\\64bit\\obs64.exe");
+				proc_handler_call(obs_get_proc_handler(), "stagekit_update_script", &cd);
+				const std::string script =
+					calldata_string(&cd, "script") ? calldata_string(&cd, "script") : "";
+				calldata_free(&cd);
+				const size_t fetch =
+					script.find("Fetch 'https://example.invalid/dl/it''s.exe' '" + sha_a + "'");
+				const size_t close = script.find("CloseMainWindow");
+				const size_t setup = script.find("/VERYSILENT");
+				const size_t again = script.find("obs64.exe'");
+				CHECK(fetch != std::string::npos && close != std::string::npos &&
+					      setup != std::string::npos && again != std::string::npos &&
+					      fetch < close && close < setup && setup < again &&
+					      script.find("Get-FileHash") != std::string::npos &&
+					      script.find("'" + sha_b + "'") != std::string::npos,
+				      "the install helper downloads and checks before it closes OBS, then installs, then starts OBS again, with quotes in names kept safe");
+			}
+		}
+
 		// A capture hooked onto the window in front, by hand (the Stream Deck
 		// plugin's Hook key asks for this through obs-websocket).
 		printf("\n[hook a capture by hand]\n");
