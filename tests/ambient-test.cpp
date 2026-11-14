@@ -4760,6 +4760,9 @@ int main(int argc, char **argv)
 				CHECK(arrow_tool && arrow_tool->minimumWidth() == 40 &&
 					      arrow_tool->maximumHeight() == 40,
 				      "the Place arrows are squares");
+				auto *updates = dock->findChild<QPushButton *>("updateMenu");
+				CHECK(updates && updates->text() == "Updates" && !updates->menu(),
+				      "'Updates' is a plain button with no menu arrow drawn over it");
 				// Pictures of the two busiest tabs, to look at.
 				dock->resize(380, dock->sizeHint().height());
 				dock->grab().save(QString::fromStdString(out + "/../stagekit-dock-arrange.png"));

@@ -72,7 +72,6 @@ the Free Software Foundation; either version 2 of the License, or
 #include <QMessageBox>
 #include <QPointer>
 #include <QTabWidget>
-#include <QToolButton>
 #include <QUrl>
 #include <QTimer>
 #include <QVBoxLayout>
@@ -985,12 +984,12 @@ public:
 		status_->setWordWrap(true);
 		status_->setEnabled(false); // the theme's quieter text colour
 		footer->addWidget(status_, 1);
-		auto *more = new QToolButton(this);
+		// A plain button like the dock's others, which opens the menu
+		// itself: a tool button with a menu drew its arrow over the word.
+		auto *more = new QPushButton(this);
 		more->setObjectName("updateMenu");
 		// In words: three dots drew as something the owner could not make out.
 		more->setText(tr_text("Update.Menu"));
-		more->setAutoRaise(true);
-		more->setPopupMode(QToolButton::InstantPopup);
 		more->setToolTip(tr_text("Update.Menu.Tip"));
 		auto *menu = new QMenu(more);
 		QAction *about = menu->addAction(QString("StageKit %1").arg(QString::fromUtf8(current_release())));
@@ -1013,7 +1012,10 @@ public:
 		};
 		QObject::connect(at_start, &QAction::toggled, this, [store](bool) { store(); });
 		QObject::connect(betas, &QAction::toggled, this, [store](bool) { store(); });
-		more->setMenu(menu);
+		QObject::connect(more, &QPushButton::clicked, this, [more, menu] {
+			// Above the button: it sits at the bottom of the dock.
+			menu->popup(more->mapToGlobal(QPoint(0, -menu->sizeHint().height())));
+		});
 		footer->addWidget(more, 0, Qt::AlignBottom);
 		layout->addLayout(footer);
 		// A look when OBS has started, if that is wanted: a little later, so
