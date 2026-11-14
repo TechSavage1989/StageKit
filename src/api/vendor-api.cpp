@@ -19,6 +19,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "vendor-api.hpp"
 
 #include "../blur/ramp-blur.hpp"
+#include "../capture/auto-capture.hpp"
 #include "../third-party/obs-websocket-api.h"
 
 #include <obs-module.h>
@@ -26,6 +27,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include <atomic>
 #include <cstring>
+#include <string>
 
 namespace stagekit {
 
@@ -33,8 +35,8 @@ namespace {
 
 std::atomic<obs_websocket_vendor> g_vendor{nullptr};
 
-const char *const kRequests[] = {"GetVersion", "ListBlurFilters", "BlurOn", "BlurOff",
-				 "BlurToggle", "SetBlur",         "BlurAll"};
+const char *const kRequests[] = {"GetVersion", "ListBlurFilters", "BlurOn",  "BlurOff",
+				 "BlurToggle", "SetBlur",         "BlurAll", "HookFront"};
 
 void fail(obs_data_t *response, const char *message)
 {
@@ -188,6 +190,26 @@ void req_blur_all(obs_data_t *request, obs_data_t *response, void *)
 	obs_data_set_bool(response, "success", true);
 }
 
+// "sourceName": a Game Capture or a Window Capture. Aims it at the window in
+// front right now and switches an Auto Capture on it off.
+void req_hook_front(obs_data_t *request, obs_data_t *response, void *)
+{
+	const char *name = obs_data_get_string(request, "sourceName");
+	obs_source_t *source = name && *name ? obs_get_source_by_name(name) : nullptr;
+	if (!source) {
+		fail(response, "No source with that sourceName");
+		return;
+	}
+	std::string what, error;
+	if (hook_front_window(source, what, error)) {
+		obs_data_set_bool(response, "success", true);
+		obs_data_set_string(response, "executable", what.c_str());
+	} else {
+		fail(response, error.c_str());
+	}
+	obs_source_release(source);
+}
+
 } // namespace
 
 void vendor_api_register()
@@ -209,7 +231,7 @@ void vendor_api_register()
 		{"GetVersion", req_get_version}, {"ListBlurFilters", req_list_blur_filters},
 		{"BlurOn", req_blur_on},         {"BlurOff", req_blur_off},
 		{"BlurToggle", req_blur_toggle}, {"SetBlur", req_set_blur},
-		{"BlurAll", req_blur_all},
+		{"BlurAll", req_blur_all},       {"HookFront", req_hook_front},
 	};
 	for (const auto &r : requests) {
 		if (!obs_websocket_vendor_register_request(vendor, r.name, r.fn, nullptr))

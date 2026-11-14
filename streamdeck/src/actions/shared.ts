@@ -25,7 +25,8 @@ export type KeySettings = {
  * Answers the property inspector's lists (sdpi-components "datasource"):
  * `getSources` with the sources that have a filter of the wanted sort,
  * `getFilters` with the chosen source's filters of that sort, and
- * `getPictures` with the icon pack.
+ * `getPictures` with the icon pack, and `getCaptures` with the Game and
+ * Window Captures.
  */
 export async function answerLists(
 	payload: JsonValue,
@@ -35,6 +36,21 @@ export async function answerLists(
 	const event = (payload as { event?: string } | null)?.event;
 	if (event === "getPictures") {
 		await streamDeck.ui.sendToPropertyInspector({ event, items: pictureItems() });
+		return;
+	}
+	if (event === "getCaptures") {
+		let captures: Array<{ label: string; value: string }> = [];
+		try {
+			captures = (await obs.captures()).map((c) => ({
+				label: `${c.name} (${c.kind === "window_capture" ? "Window Capture" : "Game Capture"})`,
+				value: c.name,
+			}));
+		} catch (error) {
+			streamDeck.logger.warn(`Could not read the captures from OBS: ${String(error)}`);
+		}
+		if (!obs.isConnected) captures = [{ label: "OBS is not connected (see below)", value: "" }];
+		else if (captures.length === 0) captures = [{ label: "No Game Capture or Window Capture yet", value: "" }];
+		await streamDeck.ui.sendToPropertyInspector({ event, items: captures });
 		return;
 	}
 	if (event !== "getSources" && event !== "getFilters") return;

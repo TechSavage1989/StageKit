@@ -27,7 +27,16 @@ function answer(requestType: string, data: Record<string, unknown> = {}): { ok: 
 	const list = filters[String(data.sourceName)];
 	switch (requestType) {
 		case "GetInputList":
-			return { ok: true, data: { inputs: [{ inputName: "camera" }] } };
+			return {
+				ok: true,
+				data: {
+					inputs: [
+						{ inputName: "camera", unversionedInputKind: "dshow_input" },
+						{ inputName: "Window", unversionedInputKind: "window_capture" },
+						{ inputName: "Game", unversionedInputKind: "game_capture" },
+					],
+				},
+			};
 		case "GetSceneList":
 			return { ok: true, data: { scenes: [{ sceneName: "Game Scene" }] } };
 		case "GetGroupList":
@@ -139,5 +148,13 @@ test("it connects, lists only StageKit's filters, switches one and hears of it",
 	assert.deepEqual(pressed, ["stagekit.arrange.left"], "an arrange tool is one of OBS's hotkeys, pressed by name");
 
 	assert.equal((await obs.stageKit("BlurAll", { mode: "toggle" }))?.active, true, "StageKit's own requests are answered");
+	assert.deepEqual(
+		await obs.captures(),
+		[
+			{ name: "Game", kind: "game_capture" },
+			{ name: "Window", kind: "window_capture" },
+		],
+		"a Hook key is offered the Game and Window Captures only",
+	);
 	assert.equal(await obs.stageKit("NoSuchRequest"), undefined, "and one it refuses comes back as nothing");
 });

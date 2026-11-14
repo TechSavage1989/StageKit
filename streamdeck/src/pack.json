@@ -660,6 +660,20 @@
 			"off": "camera/camera-top-right"
 		},
 		{
+			"id": "capture/game",
+			"group": "capture",
+			"label": "game",
+			"on": "capture/game-on",
+			"off": "capture/game-off"
+		},
+		{
+			"id": "capture/window",
+			"group": "capture",
+			"label": "window",
+			"on": "capture/window-on",
+			"off": "capture/window-off"
+		},
+		{
 			"id": "corners/cut",
 			"group": "corners",
 			"label": "cut",

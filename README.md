@@ -692,6 +692,7 @@ With obs-websocket, send `CallVendorRequest` with `vendorName: "StageKit"`:
 | `BlurOn` / `BlurOff` / `BlurToggle` | `sourceName`, `filterName?`, `durationMs?` | the filter's new state |
 | `SetBlur` | `sourceName`, `filterName?`, `active`, `durationMs?` | the filter's new state |
 | `BlurAll` | `mode?`: `on`, `off` or `toggle` | `active` |
+| `HookFront` | `sourceName`: a Game Capture or a Window Capture | `executable`: the program in front, which the capture now takes. An Auto Capture on the source is switched off |
 
 Every response has `success` and, on failure, `error`. A `BlurChanged` event is sent when a blur turns
 on or off. The other tools are filters, so the standard `SetSourceFilterEnabled` request triggers them.
@@ -718,6 +719,7 @@ connection, and it reconnects by itself when OBS is started later.
 | **Move** | Runs one StageKit move: a Send To key on the camera, a Place Item, a Layout or a Picture Shape key. A tick shows on the key when OBS has taken it |
 | **Arrange tool** | One of the dock's arrange tools on a key: line up an edge or centre, space out evenly, snap, make the same width, height or size, or copy a transform to all or to the chosen scenes. It works on the items selected in OBS's preview |
 | **Blur everything** | Switches every Ramp Blur on, and the next press switches them all off. It shows on while any is on |
+| **Hook capture** | Makes a Game Capture or a Window Capture take whatever window or game is in front at the moment you press it. OBS and Elgato's plugin have no key for that. Choose the capture in the key's settings; bring the game or window to the front and press. If the capture has an Auto Capture, the key switches it off so the capture stays where you put it; a *Filter switch* key for that Auto Capture (set to *Switches it on*) hands it back. Needs StageKit 0.1.0-beta81 or later in OBS |
 
 For *Filter switch* and *Move*, choose the **Source** first: the list holds only the sources (and
 scenes) that have such a filter. Then choose the filter. A key that cannot reach OBS, or whose filter

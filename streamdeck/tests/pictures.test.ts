@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { test } from "node:test";
 
-import { automatic, choose, COLOURS, file, pictureItems, PICTURES, plain, toolPicture } from "../src/pictures.ts";
+import { automatic, choose, COLOURS, file, pictureItems, PICTURES, hookPicture, plain, toolPicture } from "../src/pictures.ts";
 import { hotkeyOf, TOOLS } from "../src/tools.ts";
 
 const plugin = new URL("../com.techsavage1989.stagekit.sdPlugin/", import.meta.url);
@@ -48,6 +48,10 @@ test("what the pack has no picture of gets a plain key, and tools get theirs", (
 	assert.equal(hotkeyOf("nonsense"), undefined);
 	assert.equal(hotkeyOf(undefined), undefined);
 	assert.equal(TOOLS.length, 14);
+	assert.equal(hookPicture(undefined, "game_capture").id, "capture/game");
+	assert.equal(hookPicture(undefined, "window_capture").id, "capture/window");
+	assert.equal(hookPicture(undefined, undefined).id, "capture/game", "until OBS says which kind it is");
+	assert.equal(hookPicture("show-hide/chat", "window_capture").id, "show-hide/chat");
 });
 
 test("files are per palette, mono unless another is asked for", () => {

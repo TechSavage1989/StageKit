@@ -76,6 +76,15 @@ def blur(draw, s, on):
         draw.rounded_rectangle((s * 0.30, s * 0.38, s * 0.70, s * 0.62), radius=s * 0.03, fill=DIM)
 
 
+def hook(draw, s, colour, lit):
+    """A window with a viewfinder's corners closing on it."""
+    w = max(2, s // 14)
+    draw.rounded_rectangle((s * 0.24, s * 0.32, s * 0.76, s * 0.68), radius=s * 0.05, outline=colour, width=w)
+    for cx, cy, sx, sy in ((0.12, 0.20, 1, 1), (0.88, 0.20, -1, 1), (0.12, 0.80, 1, -1), (0.88, 0.80, -1, -1)):
+        draw.line((s * cx, s * cy, s * (cx + sx * 0.16), s * cy), fill=lit, width=w)
+        draw.line((s * cx, s * cy, s * cx, s * (cy + sy * 0.16)), fill=lit, width=w)
+
+
 def main():
     for size, name in ((256, "marketplace.png"), (512, "marketplace@2x.png")):
         image, draw, s = canvas(size, PANEL)
@@ -99,6 +108,10 @@ def main():
         image, draw, s = canvas(size)
         blur(draw, s, True)
         save(image, size, os.path.join(OUT, "actions", "blur", f"icon{suffix}.png"))
+    for size, suffix, back in ((20, "", None), (40, "@2x", None), (72, "", PANEL), (144, "@2x", PANEL)):
+        image, draw, s = canvas(size, back)
+        hook(draw, s, INK, ACCENT if back else INK)
+        save(image, size, os.path.join(OUT, "actions", "hook", f"{'key' if back else 'icon'}{'@2x' if suffix else ''}.png"))
     for size, suffix in ((72, ""), (144, "@2x")):
         image, draw, s = canvas(size, PANEL)
         tool(draw, s, INK, ACCENT)

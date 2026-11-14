@@ -211,6 +211,17 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Hooking a capture by hand, with its own key and pictures (0.1.0-beta81)
+
+- The owner on beta80: "the plugin seems to work fully", then: still "a bit clunky and not very
+  aesthetically or visually appealing"; asked for icons for keys that hook a window or a game, and
+  for the key itself; asked whether a key can switch Auto Capture on and off (yes: *Filter switch*).
+- Done: `HookFront` in the OBS plugin, a *Hook capture* key in the Stream Deck plugin, and "hook
+  game" / "hook window" pictures in all six palettes.
+- **Next, asked for and not started:** "the stagekit dock is ugly and messy. id like it organized,
+  and made visually appealing and a polish UX/UI". Also still open: what exactly feels clunky in
+  the Stream Deck plugin (asked; no answer yet).
+
 ## Stream Deck plugin: first device test, palette per key, two more keys (0.1.0-beta80)
 
 The owner on beta79, **on their own Stream Deck**: "plugin installed. i see two icons. they connect
