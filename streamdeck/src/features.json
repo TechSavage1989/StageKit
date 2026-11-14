@@ -1,0 +1,22 @@
+{
+	"switches": [
+		{ "key": "blur", "kind": "stagekit_ramp_blur", "name": "Ramp Blur", "tip": "Blurs a source and clears it again. The key shows which way it is." },
+		{ "key": "shadow", "kind": "stagekit_shadow_backdrop", "name": "Shadow, Glow & Outline", "tip": "Switches a source's shadow, glow or outline on and off." },
+		{ "key": "corners", "kind": "stagekit_corners", "name": "Corners & Edges", "tip": "Switches a source's shaped corners and edges on and off." },
+		{ "key": "zoom", "kind": "stagekit_ramp_zoom", "name": "Ramp Zoom", "tip": "Zooms a source in and back out." },
+		{ "key": "autocapture", "kind": "stagekit_auto_capture", "name": "Auto Capture", "tip": "Switches automatic game capture on and off. On hands a hooked capture back to it." },
+		{ "key": "autoframe", "kind": "stagekit_auto_frame", "name": "Auto Frame", "tip": "Switches a capture's automatic framing on and off." },
+		{ "key": "standby", "kind": "stagekit_standby", "name": "Standby Picture", "tip": "Switches the picture shown while nothing is captured on and off." },
+		{ "key": "showinscenes", "kind": "stagekit_show_in_scenes", "name": "Show in Scenes", "tip": "Shows and hides sources across scenes with one switch." },
+		{ "key": "fititem", "kind": "stagekit_fit_item", "name": "Fit Item", "tip": "Switches a scene's fitting of its game or window on and off." },
+		{ "key": "activeapp", "kind": "stagekit_active_app", "name": "Active App", "tip": "Switches following the app in use on and off." },
+		{ "key": "programtrigger", "kind": "stagekit_program_trigger", "name": "Program Trigger", "tip": "Switches a program trigger on and off." },
+		{ "key": "visibilitylink", "kind": "stagekit_visibility_link", "name": "Visibility Link", "tip": "Switches a link between items' visibility on and off." },
+		{ "key": "showhide", "kind": "stagekit_show_hide", "name": "Show/Hide Animation", "tip": "Switches a scene's show and hide animations on and off." }
+	],
+	"moves": [
+		{ "key": "sendto", "kind": "stagekit_send_to", "name": "Send To", "tip": "Sends the camera, or any source, to one of its saved places." },
+		{ "key": "placeitem", "kind": "stagekit_place_item", "name": "Place Item", "tip": "Moves a scene's item to its place." },
+		{ "key": "layout", "kind": "stagekit_layout", "name": "Layout", "tip": "Puts a scene's items into a saved layout." }
+	]
+}

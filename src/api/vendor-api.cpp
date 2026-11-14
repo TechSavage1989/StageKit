@@ -20,11 +20,13 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include "../blur/ramp-blur.hpp"
 #include "../capture/auto-capture.hpp"
+#include "../frame/auto-frame.hpp"
 #include "../third-party/obs-websocket-api.h"
 
 #include <obs-module.h>
 #include <plugin-support.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cstring>
 #include <string>
@@ -35,8 +37,8 @@ namespace {
 
 std::atomic<obs_websocket_vendor> g_vendor{nullptr};
 
-const char *const kRequests[] = {"GetVersion", "ListBlurFilters", "BlurOn",  "BlurOff",
-				 "BlurToggle", "SetBlur",         "BlurAll", "HookFront"};
+const char *const kRequests[] = {"GetVersion", "ListBlurFilters", "BlurOn",    "BlurOff",        "BlurToggle",
+				 "SetBlur",    "BlurAll",         "HookFront", "SetPictureShape"};
 
 void fail(obs_data_t *response, const char *message)
 {
@@ -190,8 +192,31 @@ void req_blur_all(obs_data_t *request, obs_data_t *response, void *)
 	obs_data_set_bool(response, "success", true);
 }
 
+// "sourceName", "shape" ("4:3", "8:7", a number, or "auto"), "untilGone"
+// (bool, true unless given): the picture's shape, set by hand on the source's
+// Auto Frame; with untilGone it is dropped when that game's capture ends.
+void req_set_picture_shape(obs_data_t *request, obs_data_t *response, void *)
+{
+	const char *name = obs_data_get_string(request, "sourceName");
+	obs_source_t *source = name && *name ? obs_get_source_by_name(name) : nullptr;
+	if (!source) {
+		fail(response, "No source with that sourceName");
+		return;
+	}
+	const bool until_gone = !obs_data_has_user_value(request, "untilGone") ||
+				obs_data_get_bool(request, "untilGone");
+	std::string error;
+	if (set_picture_shape_on(source, obs_data_get_string(request, "shape"), until_gone, error))
+		obs_data_set_bool(response, "success", true);
+	else
+		fail(response, error.c_str());
+	obs_source_release(source);
+}
+
 // "sourceName": a Game Capture or a Window Capture. Aims it at the window in
-// front right now and switches an Auto Capture on it off.
+// front right now and switches an Auto Capture on it off. "transition" (an
+// OBS transition's id, or "none") and "transitionMs" make the change with a
+// transition: out, aimed, back in.
 void req_hook_front(obs_data_t *request, obs_data_t *response, void *)
 {
 	const char *name = obs_data_get_string(request, "sourceName");
@@ -201,7 +226,10 @@ void req_hook_front(obs_data_t *request, obs_data_t *response, void *)
 		return;
 	}
 	std::string what, error;
-	if (hook_front_window(source, what, error)) {
+	const std::string transition = obs_data_get_string(request, "transition");
+	const uint32_t transition_ms =
+		(uint32_t)std::clamp<long long>(obs_data_get_int(request, "transitionMs"), 0, 10000);
+	if (hook_front_window(source, what, error, transition, transition_ms)) {
 		obs_data_set_bool(response, "success", true);
 		obs_data_set_string(response, "executable", what.c_str());
 	} else {
@@ -228,10 +256,15 @@ void vendor_api_register()
 		const char *name;
 		obs_websocket_request_callback_function fn;
 	} requests[] = {
-		{"GetVersion", req_get_version}, {"ListBlurFilters", req_list_blur_filters},
-		{"BlurOn", req_blur_on},         {"BlurOff", req_blur_off},
-		{"BlurToggle", req_blur_toggle}, {"SetBlur", req_set_blur},
-		{"BlurAll", req_blur_all},       {"HookFront", req_hook_front},
+		{"GetVersion", req_get_version},
+		{"ListBlurFilters", req_list_blur_filters},
+		{"BlurOn", req_blur_on},
+		{"BlurOff", req_blur_off},
+		{"BlurToggle", req_blur_toggle},
+		{"SetBlur", req_set_blur},
+		{"BlurAll", req_blur_all},
+		{"HookFront", req_hook_front},
+		{"SetPictureShape", req_set_picture_shape},
 	};
 	for (const auto &r : requests) {
 		if (!obs_websocket_vendor_register_request(vendor, r.name, r.fn, nullptr))

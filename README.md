@@ -700,7 +700,8 @@ With obs-websocket, send `CallVendorRequest` with `vendorName: "StageKit"`:
 | `BlurOn` / `BlurOff` / `BlurToggle` | `sourceName`, `filterName?`, `durationMs?` | the filter's new state |
 | `SetBlur` | `sourceName`, `filterName?`, `active`, `durationMs?` | the filter's new state |
 | `BlurAll` | `mode?`: `on`, `off` or `toggle` | `active` |
-| `HookFront` | `sourceName`: a Game Capture or a Window Capture | `executable`: the program in front, which the capture now takes. An Auto Capture on the source is switched off |
+| `HookFront` | `sourceName`: a Game Capture or a Window Capture; `transition?`: an OBS transition's kind or `none`; `transitionMs?` | `executable`: the program in front, which the capture now takes. An Auto Capture on the source is switched off |
+| `SetPictureShape` | `sourceName`: a source with an Auto Frame; `shape`: `4:3`, `8:7`, a number, or `auto`; `untilGone?` (true unless given): drop it when that game's capture ends | none |
 
 Every response has `success` and, on failure, `error`. A `BlurChanged` event is sent when a blur turns
 on or off. The other tools are filters, so the standard `SetSourceFilterEnabled` request triggers them.
@@ -721,17 +722,22 @@ on a button, open **OBS connection** at the bottom of its settings and fill in t
 (the address stays `127.0.0.1` when OBS runs on the same computer). Every StageKit key uses that one
 connection, and it reconnects by itself when OBS is started later.
 
+There is one key for each feature, under **StageKit** in Stream Deck's list. Each has one list to
+choose from, holding only what that key is for.
+
 | Key | What it does |
 | --- | --- |
-| **Filter switch** | Switches one StageKit filter on and off, and the key shows which way it is, also when the filter is switched some other way. For Ramp Blur, Shadow, Glow & Outline, Corners & Edges, Show in Scenes, Standby Picture and the other filters that stay on or off. *A press* can switch it over, only on, or only off |
-| **Move** | Runs one StageKit move: a Send To key on the camera, a Place Item, a Layout or a Picture Shape key. A tick shows on the key when OBS has taken it |
+| **Ramp Blur**, **Shadow, Glow & Outline**, **Corners & Edges**, **Ramp Zoom**, **Auto Capture**, **Auto Frame**, **Standby Picture**, **Show in Scenes**, **Fit Item**, **Active App**, **Program Trigger**, **Visibility Link**, **Show/Hide Animation** | Switches that feature on a source (or scene) on and off, and the key shows which way it is, also when it is switched some other way. *A press* can switch it over, only on, or only off |
+| **Send To**, **Place Item**, **Layout** | Runs that move. A tick shows on the key when OBS has taken it |
+| **Picture shape** | Sets a game's picture shape by hand, for when Auto Frame's own reading is not what you want: 4:3, 8:7, 3:2, 10:9, 16:9 and more, or *Automatic* to hand it back. *Keep it*: *For this game* (the shape lasts while that game is captured and goes back to automatic when it ends; set before the game starts, it waits for it) or *Until I change it*. The key shows its shape |
+| **Hook capture** | Makes a Game Capture or a Window Capture take whatever window or game is in front when you press it. *Change with* and *Lasting* choose how the capture changes over: a fade (as it comes), a cut, or any other transition OBS has. An Auto Capture on that capture is switched off so it stays where you put it; the **Auto Capture** key, set to *Switches it on*, hands it back |
+| **Window switch** | For a scene with an Active App filter: shows the next of its *Captures you switch to*, or goes back to following the apps |
 | **Arrange tool** | One of the dock's arrange tools on a key: line up an edge or centre, space out evenly, snap, make the same width, height or size, or copy a transform to all or to the chosen scenes. It works on the items selected in OBS's preview |
 | **Blur everything** | Switches every Ramp Blur on, and the next press switches them all off. It shows on while any is on |
-| **Hook capture** | Makes a Game Capture or a Window Capture take whatever window or game is in front at the moment you press it. OBS and Elgato's plugin have no key for that. Choose the capture in the key's settings; bring the game or window to the front and press. If the capture has an Auto Capture, the key switches it off so the capture stays where you put it; a *Filter switch* key for that Auto Capture (set to *Switches it on*) hands it back. Needs StageKit 0.1.0-beta81 or later in OBS |
 
-For *Filter switch* and *Move*, choose the **Source** first: the list holds only the sources (and
-scenes) that have such a filter. Then choose the filter. A key that cannot reach OBS, or whose filter
-is gone, shows Stream Deck's yellow warning triangle when pressed.
+A key that cannot reach OBS, or whose target is gone, shows Stream Deck's yellow warning triangle when
+pressed. *Picture shape* and *Hook capture* need StageKit 0.1.0-beta84 or later in OBS. Keys made with
+the first versions' *Filter switch* and *Move* keep working; those two are no longer in the list.
 
 **Pictures.** The keys use the StageKit icon pack. Left on *Automatic*, a key takes the picture that
 fits its filter and how it is set: a Ramp Blur key shows its blur type, a Send To key the corner it

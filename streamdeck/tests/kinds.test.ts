@@ -1,7 +1,17 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { afterPress, filterItems, isMove, isSwitch, sourceItems, type FilterInfo } from "../src/kinds.ts";
+import {
+	afterPress,
+	filterItems,
+	isMove,
+	isSwitch,
+	sourceItems,
+	targetItems,
+	targetOf,
+	TARGET_SEP,
+	type FilterInfo,
+} from "../src/kinds.ts";
 
 const filters: FilterInfo[] = [
 	{ source: "camera", name: "Top right", kind: "stagekit_send_to", enabled: false },
@@ -45,4 +55,23 @@ test("a press switches over, or only on, or only off", () => {
 	assert.equal(afterPress("toggle", true), false);
 	assert.equal(afterPress("on", true), true);
 	assert.equal(afterPress("off", false), false);
+});
+
+test("a feature's key chooses from one list: a source by its name, or with the filter's where that is needed", () => {
+	const blur = (kind: string) => kind === "stagekit_ramp_blur";
+	assert.deepEqual(targetItems(filters, blur), [
+		{ label: "camera \u2014 Soft", value: `camera${TARGET_SEP}Soft` },
+		{ label: "Game", value: `Game${TARGET_SEP}Ramp Blur` },
+	]);
+	assert.deepEqual(targetItems(filters, (kind) => kind === "stagekit_fit_item"), [
+		{ label: "Scene \u2014 Fit the game", value: `Scene${TARGET_SEP}Fit the game` },
+	]);
+	assert.deepEqual(targetItems(filters, (kind) => kind === "stagekit_standby"), []);
+});
+
+test("a key's target is read from the one setting, or from the two older ones", () => {
+	assert.deepEqual(targetOf({ target: `camera${TARGET_SEP}Soft` }), { source: "camera", filter: "Soft" });
+	assert.deepEqual(targetOf({ source: "Game", filter: "Ramp Blur" }), { source: "Game", filter: "Ramp Blur" });
+	assert.deepEqual(targetOf({ target: `a${TARGET_SEP}b`, source: "old", filter: "older" }), { source: "a", filter: "b" });
+	assert.deepEqual(targetOf({}), { source: "", filter: "" });
 });

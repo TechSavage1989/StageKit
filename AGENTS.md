@@ -358,6 +358,15 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   switches an Auto Capture on that source off, or that would aim it elsewhere a quarter second
   later; switching the Auto Capture on again is how it is handed back. OBS itself in front is
   refused. Its Windows side has not run in the tests (they give it a stand-in window).
+- **A picture shape set by hand lasts for one game when asked to** (`force_until_gone` in Auto
+  Frame, `SetPictureShape`, the *Picture shape* key). The owner: "it should maintain that ratio for
+  the active or hooked game until its over". It is dropped once the capture has had a picture since
+  the shape was set and then nothing for `kNewSession`; set before a game starts, it waits for it.
+  The Picture Shape key filter still sets a shape that stays.
+- **The hook can change over with a transition** (`hook_front_window`'s `transition`): the items
+  showing the capture are hidden with it, the capture is aimed while out of sight, and they are
+  shown again, on a thread that holds what it uses and is joined at unload. The owner asked for
+  "configurable transition options" on the hook key.
 - **Auto Capture keeps its capture shown** (`keep_ready`, on by default, `obs_source_inc_showing` on
   the capture). OBS stops a Game Capture about 0.3 s after the last scene showing it is left and
   hooks it again on the way back; the owner's log showed that at every scene switch.
@@ -381,6 +390,12 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   made the pack has both, and added the "hook game" and "hook window" pictures to it for beta81). A key left on
   *Automatic* gets its picture from the filter's kind and settings (`automatic()` in
   `src/pictures.ts`); keep that by kind and setting, never by the owner's source names. The
+  Stream Deck shows one key per feature (`src/features.json`: the owner asked for "a key for each
+  of the major functions", not "one filter key with a ton of filters"), each choosing from one
+  list (`target`, source and filter in one setting). The manifest, the settings pages and the
+  default key pictures are written by `tools/make-plugin-files.py` from that table: add a feature
+  there and run it, do not edit `manifest.json` or `ui/*.html` by hand. The first two catch-all
+  keys (`.switch`, `.move`) stay registered and hidden so keys made with them keep working. The
   palette is each key's own setting (`palette`): the first build had one colour for all keys and
   the owner asked for it per key and for the word *Palette*. An *Arrange tool* key presses the
   tool's OBS hotkey by name (`stagekit.arrange.<tool>`, the names in `kInfo`): renaming one there

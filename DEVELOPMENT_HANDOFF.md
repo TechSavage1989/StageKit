@@ -211,6 +211,24 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## A key per feature, shapes by hand, a hook with a transition (0.1.0-beta84)
+
+Asked for by the owner, all in one go:
+
+- "have a key for each of the major functions ... don't just have one filter key with a ton of
+  filters": 13 switch keys and 3 move keys from `streamdeck/src/features.json`, one list each.
+- "ratio setting buttons ... maintain that ratio for the active or hooked game until its over":
+  the *Picture shape* key and `SetPictureShape`.
+- "the hook button should have configurable transition options": *Change with* and *Lasting*.
+- "I need every feature that makes sense as a key": also *Window switch* (Active App's next and
+  back). **Not yet keys:** the dock's Snap on release, Guides and Stop resizing switches, and the
+  slides (the pack has pictures for all of them); they need requests in `src/api/` first.
+- **Asked, to be answered, not started:** a morph between scenes like the Standby Picture's: "detecting
+  object and doing a morph". Plausible as an OBS transition that matches items showing the same
+  source in both scenes and glides them from one place and size to the other while the rest
+  cross-fades. Told to the owner; build only on their say-so.
+- None of this has run on Windows or on a device.
+
 ## An updater inside the plugin (0.1.0-beta83)
 
 The owner: "can you build an automatic updater? an application i can install that will be able to

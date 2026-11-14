@@ -12,6 +12,8 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include <obs.h>
 
+#include <string>
+
 namespace stagekit {
 
 inline constexpr const char *kAutoFrameId = "stagekit_auto_frame";
@@ -23,5 +25,12 @@ void register_auto_frame();
 // in the source's own pixels, allowing for the room a Shadow & Backdrop after
 // it adds. Leaves the values alone and returns false when there is none.
 bool auto_frame_picture(obs_source_t *source, double &x, double &y, double &width, double &height);
+
+// Sets the picture's shape by hand on a source's Auto Frame: `shape` is "4:3",
+// "8:7", a number, or "auto" to hand it back. With `until_gone` the shape is
+// kept for the game being captured and dropped when that capture has ended.
+// False, with a reason, when the source has no Auto Frame or the shape is
+// not one.
+bool set_picture_shape_on(obs_source_t *source, const std::string &shape, bool until_gone, std::string &error);
 
 } // namespace stagekit
