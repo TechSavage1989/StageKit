@@ -84,8 +84,13 @@ Box free_space(const Box &within, double ax, double ay, const std::vector<Box> &
 		if (grown.y >= ay)
 			bottoms.push_back(grown.y);
 	}
-	Box best{};
-	double best_k = -1.0, best_area = -1.0;
+	// Every clear space, with how big a picture it holds (`k`).
+	struct Space {
+		Box box;
+		double k, area;
+	};
+	std::vector<Space> spaces;
+	double best_k = -1.0;
 	for (double l : lefts)
 		for (double r : rights)
 			for (double t : tops)
@@ -103,12 +108,22 @@ Box free_space(const Box &within, double ax, double ay, const std::vector<Box> &
 					if (!clear)
 						continue;
 					const double k = shape > 0.0 ? std::min(w / shape, h) : w * h;
-					if (k > best_k + 0.01 || (std::fabs(k - best_k) <= 0.01 && w * h > best_area)) {
-						best = Box{l, t, w, h};
-						best_k = k;
-						best_area = w * h;
-					}
+					spaces.push_back({Box{l, t, w, h}, k, w * h});
+					best_k = std::max(best_k, k);
 				}
+	// The biggest picture wins; among spaces whose pictures are as good as
+	// the same size (a few pixels: what shows of a small item is measured
+	// to about that), the roomiest. Without that, a widget read as 3 px
+	// wider than the column above it cost the owner's game the whole strip
+	// beside the widget: the space stopped above it to keep those 3 px.
+	const double near = shape > 0.0 ? std::max(8.0, 0.01 * best_k) : 0.01;
+	Box best{};
+	double best_area = -1.0;
+	for (const Space &one : spaces)
+		if (one.k >= best_k - near && one.area > best_area) {
+			best = one.box;
+			best_area = one.area;
+		}
 	return best;
 }
 

@@ -347,6 +347,14 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   nothing while all is quick. A filter's drawing time includes what it draws from. It measures the
   processor's side only: a slow shader shows up as OBS's own rendering lag, not here. Ask the owner
   for the log when frames drop; do not guess.
+- **Fit to Space's free space takes the roomiest of the spaces that are as good as equal**
+  (`free_space`: pictures within 8 px or 1%). The owner's music widget, set to the same width as the
+  column above it, was read a few pixels wider (what shows is measured on a small copy), and the
+  space stopped 95 px above the screen's edge to keep those pixels of width.
+- **The dock's two measuring options show on the Place tab as well as the Arrange tab**
+  (`placeVisible`, `placeNoShadow`, the same options, each following the other), and the Arrange tab
+  has its own *In every scene* (`arrange_every_scene`, off as it comes: a tool's result is copied to
+  the other scenes with `copy_to_every_scene`). Both asked for by the owner on beta87.
 - **Fit to Space's free space waits for a move to end.** It takes its new space in one glide once the
   other items have been still for 0.15 s. Beta74 had it chase a moving item, resizing the picture
   (and its shadow) on every frame of the move; the owner still saw dropped frames during moves.

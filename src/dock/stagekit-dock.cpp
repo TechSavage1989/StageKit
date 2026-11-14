@@ -609,6 +609,19 @@ public:
 		every_scene_->setChecked(true);
 		move_layout->addWidget(every_scene_);
 		place_page->addWidget(move_box);
+		// How the Place tools measure: the same two options as on the
+		// Arrange tab, shown here too so they are at hand where they act.
+		auto *place_measure = new QGroupBox(tr_text("Dock.MeasureBox"), this);
+		auto *place_measure_layout = new QVBoxLayout(place_measure);
+		place_visible_ = new QCheckBox(tr_text("Arrange.Visible"), place_measure);
+		place_visible_->setObjectName("placeVisible");
+		place_visible_->setToolTip(tr_text("Arrange.Visible.Tip"));
+		place_no_shadow_ = new QCheckBox(tr_text("Arrange.NoShadow").replace("&", "&&"), place_measure);
+		place_no_shadow_->setObjectName("placeNoShadow");
+		place_no_shadow_->setToolTip(tr_text("Arrange.NoShadow.Tip"));
+		place_measure_layout->addWidget(place_visible_);
+		place_measure_layout->addWidget(place_no_shadow_);
+		place_page->addWidget(place_measure);
 
 		auto *keys_box = new QGroupBox(tr_text("Dock.KeysBox"), this);
 		auto *keys_layout = new QVBoxLayout(keys_box);
@@ -828,6 +841,16 @@ public:
 		measure_layout->addWidget(visible_);
 		measure_layout->addWidget(no_shadow_);
 		measure_layout->addWidget(keep_shape_);
+		arrange_every_ = new QCheckBox(tr_text("Dock.SendEvery"), arrange_box);
+		arrange_every_->setObjectName("arrangeEveryScene");
+		arrange_every_->setToolTip(tr_text("Arrange.Every.Tip"));
+		measure_layout->addWidget(arrange_every_);
+		// One option, two tick boxes: each follows the other.
+		for (auto pair :
+		     {std::make_pair(visible_, place_visible_), std::make_pair(no_shadow_, place_no_shadow_)}) {
+			QObject::connect(pair.first, &QCheckBox::toggled, pair.second, &QCheckBox::setChecked);
+			QObject::connect(pair.second, &QCheckBox::toggled, pair.first, &QCheckBox::setChecked);
+		}
 		auto *drop_box = new QGroupBox(tr_text("Dock.DropBox"), arrange_box);
 		auto *drop_layout = new QVBoxLayout(drop_box);
 		drop_layout->addWidget(live_snap_);
@@ -838,8 +861,8 @@ public:
 		options_drop_ = drop_box;
 		// The options are shared with the hotkeys and the right-click menu.
 		show_arrange_options();
-		for (QCheckBox *box :
-		     {visible_, no_shadow_, keep_shape_, live_snap_, guides_, every_scene_, slide_, limit_resize_})
+		for (QCheckBox *box : {visible_, no_shadow_, keep_shape_, live_snap_, guides_, every_scene_, slide_,
+				       limit_resize_, arrange_every_})
 			QObject::connect(box, &QCheckBox::toggled, this, [this](bool) { store_arrange_options(); });
 		QObject::connect(against_, &QComboBox::currentIndexChanged, this,
 				 [this](int) { store_arrange_options(); });
@@ -1225,6 +1248,9 @@ private:
 		limit_px_->setValue(o.limit_px);
 		guides_->setChecked(o.guides);
 		every_scene_->setChecked(o.send_every_scene);
+		arrange_every_->setChecked(o.arrange_every_scene);
+		place_visible_->setChecked(o.how.visible_pixels);
+		place_no_shadow_->setChecked(o.how.leave_out_shadows);
 		slide_->setChecked(o.send_slide);
 		curve_->setCurrentIndex(std::clamp(o.send_curve, 0, curve_->count() - 1));
 		ease_mode_->setCurrentIndex(std::clamp(o.send_mode, 0, ease_mode_->count() - 1));
@@ -1337,6 +1363,7 @@ private:
 		o.limit_px = limit_px_->value();
 		o.guides = guides_->isChecked();
 		o.send_every_scene = every_scene_->isChecked();
+		o.arrange_every_scene = arrange_every_->isChecked();
 		o.send_slide = slide_->isChecked();
 		o.send_curve = curve_->currentIndex();
 		o.send_mode = ease_mode_->currentIndex();
@@ -1958,6 +1985,7 @@ private:
 	QSpinBox *limit_px_ = nullptr;
 	QCheckBox *guides_ = nullptr;
 	QCheckBox *every_scene_ = nullptr;
+	QCheckBox *arrange_every_ = nullptr, *place_visible_ = nullptr, *place_no_shadow_ = nullptr;
 	QCheckBox *slide_ = nullptr;
 	// The dock's last slide, while the item may still be on its way there:
 	// what was measured and the item's box, where they end up.

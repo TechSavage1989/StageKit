@@ -2141,6 +2141,54 @@ int main(int argc, char **argv)
 			CHECK(is(during.x, 300) && is(sp.x, 20) && is(sp.w, 600),
 			      "moved by hand it is let go, then fitted again where it was put (%.0f while moving; then %.0f, %.0f wide)",
 			      during.x, sp.x, sp.w);
+			// A widget under a column, read as a few pixels wider than the
+			// column: the game keeps its gap from both and still takes the
+			// whole height, not a space that stops above the widget.
+			{
+				obs_source_t *wide = obs_source_create("color_source", "Wide Game", nullptr, nullptr);
+				sized(wide, 320, 180);
+				obs_source_t *column =
+					obs_source_create("color_source", "Free Column", nullptr, nullptr);
+				sized(column, 120, 200);
+				obs_source_t *widget =
+					obs_source_create("color_source", "Free Widget", nullptr, nullptr);
+				sized(widget, 124, 40);
+				obs_scene_t *ws = obs_scene_create("Fit Beside A Widget"); // 640x360
+				obs_sceneitem_t *wi = obs_scene_add(ws, wide);
+				vec2 wp;
+				vec2_set(&wp, 60.0f, 60.0f);
+				obs_sceneitem_set_pos(wi, &wp);
+				vec2_set(&wp, 500.0f, 20.0f);
+				obs_sceneitem_set_pos(obs_scene_add(ws, column), &wp);
+				vec2_set(&wp, 496.0f, 300.0f);
+				obs_sceneitem_set_pos(obs_scene_add(ws, widget), &wp);
+				obs_data_t *wf = obs_data_create();
+				obs_data_set_string(wf, "item", "Wide Game");
+				obs_data_set_int(wf, "box", 2);
+				obs_data_set_double(wf, "margin", 20);
+				obs_data_set_int(wf, "glide_ms", 0);
+				obs_source_t *wide_fit =
+					obs_source_create("stagekit_fit_item", "Fit Wide", wf, nullptr);
+				obs_source_filter_add(obs_scene_get_source(ws), wide_fit);
+				obs_set_output_source(0, obs_scene_get_source(ws));
+				for (int i = 0; i < 12; i++) {
+					render(obs_scene_get_source(ws), 640, 360);
+					sleep_ms(50);
+				}
+				vec2 p, b;
+				obs_sceneitem_get_pos(wi, &p);
+				obs_sceneitem_get_bounds(wi, &b);
+				CHECK(is(p.x, 20) && is(p.y, 20) && is(b.x, 456) && is(b.y, 320),
+				      "a widget a few pixels wider than the column above it does not cost the space its height (%.0f, %.0f %.0fx%.0f)",
+				      p.x, p.y, b.x, b.y);
+				obs_data_release(wf);
+				obs_source_filter_remove(obs_scene_get_source(ws), wide_fit);
+				obs_source_release(wide_fit);
+				obs_scene_release(ws);
+				obs_source_release(widget);
+				obs_source_release(column);
+				obs_source_release(wide);
+			}
 			obs_set_output_source(0, shown_before);
 			obs_source_release(shown_before);
 			obs_data_release(ff);
@@ -5577,6 +5625,43 @@ int main(int argc, char **argv)
 					CHECK(std::fabs(moved.x - 100) < 0.6 && std::fabs(back.x - 40) < 0.6,
 					      "it works from a hotkey too, and Undo takes it back in every scene (%.0f, then %.0f)",
 					      moved.x, back.x);
+
+					// "In every scene" on the Arrange tab: a tool's result goes
+					// to the other scenes too. Unticked, it stays in this one.
+					place(ia, 300, 200);
+					place(loose, 500, 300);
+					select_only({ia});
+					for (int i = 0; i < 4; i++) {
+						QCoreApplication::processEvents();
+						sleep_ms(50);
+					}
+					click("arrange_left");
+					sleep_ms(100);
+					const vec2 here_only = pos_of(ia), not_there = pos_of(loose);
+					tick_box("arrangeEveryScene", true);
+					place(ia, 300, 200);
+					click("arrange_left");
+					sleep_ms(100);
+					const vec2 here_too = pos_of(ia), there_too = pos_of(loose);
+					tick_box("arrangeEveryScene", false);
+					CHECK(here_only.x < 299 && std::fabs(not_there.x - 500) < 0.6 &&
+						      std::fabs(there_too.x - here_too.x) < 0.6 &&
+						      std::fabs(there_too.y - here_too.y) < 0.6,
+					      "'In every scene' on the Arrange tab puts a lined-up item the same way in the other scenes (without: %.0f; with: %.0f, here %.0f)",
+					      not_there.x, there_too.x, here_too.x);
+					// The measuring options show on the Place tab too, as the same options.
+					auto *place_visible = dock->findChild<QCheckBox *>("placeVisible");
+					auto *arrange_visible = dock->findChild<QCheckBox *>("arrangeVisible");
+					bool follows = place_visible && arrange_visible;
+					if (follows) {
+						const bool was = arrange_visible->isChecked();
+						place_visible->setChecked(!was);
+						follows = arrange_visible->isChecked() == !was;
+						arrange_visible->setChecked(was);
+						follows = follows && place_visible->isChecked() == was;
+					}
+					CHECK(follows,
+					      "the Place tab's measuring options are the Arrange tab's, each following the other");
 
 					vec2 one;
 					vec2_set(&one, 1.0f, 1.0f);

@@ -40,6 +40,9 @@ struct ArrangeOptions {
 	// Send to buttons, and the keys it makes, move the item's source in every
 	// scene it is in. Off: only in the scene being worked on.
 	bool send_every_scene = true;
+	// The arrange tools also put each item they moved in the same place in
+	// every other scene showing its source. Off as it comes.
+	bool arrange_every_scene = false;
 	// The Send to arrows slide the item to the next edge instead of sending it to a spot.
 	bool send_slide = false;
 	// How the dock's Send to moves glide: the curve and which end it shapes
