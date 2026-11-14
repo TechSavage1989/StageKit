@@ -284,10 +284,10 @@ ArrangeOutcome run_arrange_now(ArrangeAction action, obs_source_t *scene, const 
 		break;
 	}
 	case ArrangeAction::SameEverywhere:
-		out.changed = copy_to_every_scene(scene, items);
+		out.changed = copy_to_every_scene(scene, items, nullptr, &o.copy_sources);
 		break;
 	case ArrangeAction::SameChosen:
-		out.changed = copy_to_every_scene(scene, items, &o.copy_scenes);
+		out.changed = copy_to_every_scene(scene, items, &o.copy_scenes, &o.copy_sources);
 		break;
 	default:
 		break;
@@ -359,6 +359,15 @@ void arrange_save_load(obs_data_t *save_data, bool saving)
 		}
 		obs_data_set_array(save_data, "stagekit.copy.scenes", copy_scenes);
 		obs_data_array_release(copy_scenes);
+		obs_data_array_t *copy_sources = obs_data_array_create();
+		for (const std::string &name : o.copy_sources) {
+			obs_data_t *entry = obs_data_create();
+			obs_data_set_string(entry, "name", name.c_str());
+			obs_data_array_push_back(copy_sources, entry);
+			obs_data_release(entry);
+		}
+		obs_data_set_array(save_data, "stagekit.copy.sources", copy_sources);
+		obs_data_array_release(copy_sources);
 		obs_data_set_int(save_data, "stagekit.arrange.within", o.within);
 	} else if (obs_data_has_user_value(save_data, "stagekit.arrange.within")) {
 		ArrangeOptions o;
@@ -389,6 +398,16 @@ void arrange_save_load(obs_data_t *save_data, bool saving)
 				obs_data_release(entry);
 			}
 			obs_data_array_release(copy_scenes);
+		}
+		if (obs_data_array_t *copy_sources = obs_data_get_array(save_data, "stagekit.copy.sources")) {
+			for (size_t i = 0; i < obs_data_array_count(copy_sources); i++) {
+				obs_data_t *entry = obs_data_array_item(copy_sources, i);
+				const char *name = obs_data_get_string(entry, "name");
+				if (name && *name)
+					o.copy_sources.push_back(name);
+				obs_data_release(entry);
+			}
+			obs_data_array_release(copy_sources);
 		}
 		set_arrange_options(o);
 	}

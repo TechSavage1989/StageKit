@@ -194,7 +194,10 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   copy's group (`item_space`), skipping locked copies and groups listed as scenes.
   *Copy transform to chosen scenes* (`same_chosen`) does the same for the scenes named in
   `ArrangeOptions::copy_scenes` only, a list built in the dock the PickList way (choose to add, a
-  row each with a remove button) and saved with the collection. Name a tool for what it does, verb
+  row each with a remove button) and saved with the collection. Both go to the sources named in
+  `ArrangeOptions::copy_sources` instead when that list is not empty (the owner: "when not
+  specifically set, it only applies to the same source in other scenes"); the transform is copied as
+  it is, like OBS's Paste Transform, so a source of another size ends up another size. Name a tool for what it does, verb
   first; the owner asked for labels that say what happens.
 - **Stop resizing at edges acts on release** (`limit_resize` in `src/dock/arrange.*`, called from the
   dock's `watch_for_drop`). OBS's own resize drag cannot be hooked, and correcting an item while the
