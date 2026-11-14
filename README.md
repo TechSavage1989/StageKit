@@ -337,6 +337,11 @@ nearest.
 - It only works while its scene is being shown, so scenes you are not on cost nothing.
 - **Items never in the way**: items the free space ignores, such as a camera meant to overlap the
   game.
+- **Resize it to fit** (ticked as it comes). Unticked, the item keeps the size it has and is only
+  moved, to the middle of its space, so the room left over is the same on both sides and above and
+  below; when the space changes (a camera above it is hidden, say) it moves to the new middle.
+  Resize it yourself in the preview and that is the size it keeps. This works for the whole screen
+  and a box as well as the free space.
 - **Tolerance** (8 px as it comes): when something sticks a little way into the space, the picture
   may be made up to this many pixels smaller to keep the whole space, instead of keeping its size and
   losing the part of the space beside that thing. At 0 the biggest picture always wins, even by one
@@ -613,6 +618,12 @@ What they do:
 | *Copy transform to all scenes* | Takes the selected item's position, size, rotation and crop in this scene and gives them to every copy of the same source in all your other scenes: OBS's *Copy Transform* and *Paste Transform* done for every scene at once. Copies inside groups land on the same spot of the screen; locked copies are left alone; one step in *Edit → Undo* |
 | *Copy transform to chosen scenes* | The same, but only to the scenes listed under *Scenes to copy to* in the dock. Choose a scene from *Add a scene...* to put it on the list; press the **x** beside one to take it off. The list is saved with your scene collection |
 | *Sources to copy to* | Which sources take the transform, for both copy buttons. Empty (it then reads *The same source*): the copies of the selected item's own source in the other scenes. With sources listed, the transform goes to those sources instead, in this scene and the others, or in the listed scenes with *Copy transform to chosen scenes*. Add the item's own source to the list to include it too. With several items selected, the last one selected is the one copied. Saved with your scene collection |
+
+**Lock and unlock** (on the Copy tab) locks or unlocks items across scenes in one press. *Items*: the
+sources of the items selected in the preview, the sources listed under *Sources to copy to*, or every
+source. *In*: all scenes, the scenes listed under *Scenes to copy to*, or only the scene being worked
+on. Items inside groups are reached too. The copy tools leave locked copies alone, so *Unlock* is
+also how to free one for them.
 
 Options:
 

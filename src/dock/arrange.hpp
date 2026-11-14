@@ -82,6 +82,12 @@ int copy_to_every_scene(obs_source_t *scene, const std::vector<obs_sceneitem_t *
 			const std::vector<std::string> *only = nullptr,
 			const std::vector<std::string> *to_sources = nullptr);
 
+// Locks or unlocks scene items, groups' items included, and says how many
+// changed. `sources`: only items showing a source of one of these names
+// (null: every item). `scenes`: only in the scenes of these names (null:
+// every scene).
+int set_items_locked(bool lock, const std::vector<std::string> *sources, const std::vector<std::string> *scenes);
+
 int match_size(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items, bool width, bool height,
 	       bool keep_shape, const Measure &how);
 

@@ -47,6 +47,7 @@ struct Settings {
 	double x = 0, y = 0, w = 1920, h = 1080;
 	double margin = 80;
 	double tolerance = 8;          // free space: pictures this close in size count as equal
+	bool resize = true;            // off: the item keeps its size and is only moved, centred in the space
 	bool visible_pixels = true;    // other items are measured by what they draw, not their boxes
 	bool no_shadows = true;        // and shadows, glows and outlines do not count, its own included
 	std::vector<std::string> skip; // items that are never in the way
@@ -145,6 +146,8 @@ public:
 		s.h = std::max(2.0, obs_data_get_double(settings, "box_height"));
 		s.margin = std::clamp(obs_data_get_double(settings, "margin"), 0.0, 2000.0);
 		s.tolerance = std::clamp(obs_data_get_double(settings, "tolerance"), 0.0, 200.0);
+		s.resize = obs_data_get_bool(settings, "resize");
+		have_keep_ = false; // the size to keep is read from the item afresh
 		const long long kind = obs_data_get_int(settings, "box");
 		if (kind == 2)
 			s.box = BoxKind::FreeSpace;
@@ -232,6 +235,36 @@ public:
 		}
 		if (bw < 2.0 || bh < 2.0)
 			return;
+		// "Resize it to fit" unticked: the picture keeps the size it has in
+		// the scene and is only moved, to the middle of its space. That size
+		// is read from the item once, and again after it is resized by hand.
+		if (!s.resize) {
+			vec2 b_now;
+			obs_sceneitem_get_bounds(item, &b_now);
+			const bool boxed = obs_sceneitem_get_bounds_type(item) != OBS_BOUNDS_NONE;
+			if (have_keep_ && boxed && have_set_ &&
+			    (std::fabs(b_now.x - set_bw_) > 0.5 || std::fabs(b_now.y - set_bh_) > 0.5))
+				have_keep_ = false;
+			if (!have_keep_) {
+				double kx = 1.0, ky = 1.0;
+				if (boxed) {
+					const double cw = sw - crop.left - crop.right, ch = sh - crop.top - crop.bottom;
+					if (cw >= 1.0 && ch >= 1.0)
+						kx = ky = std::min(b_now.x / cw, b_now.y / ch);
+				} else {
+					vec2 scale;
+					obs_sceneitem_get_scale(item, &scale);
+					kx = std::fabs(scale.x);
+					ky = std::fabs(scale.y);
+				}
+				const double kept = std::min(kx, ky);
+				if (kept > 0.0) {
+					keep_w_ = pw * kept;
+					keep_h_ = ph * kept;
+					have_keep_ = true;
+				}
+			}
+		}
 		const double picture = pw / ph;
 		bool free = s.box == BoxKind::FreeSpace;
 		if (free) {
@@ -253,7 +286,16 @@ public:
 		// fitted with it.)
 		const double bare = bare_w >= 2.0 && bare_h >= 2.0 ? bare_w / bare_h : picture;
 		const bool fills = !free && std::fabs(bare - box) / box < 0.01;
-		const double margin = fills || free ? 0.0 : std::min({s.margin, bw / 2.0 - 1.0, bh / 2.0 - 1.0});
+		double margin = fills || free ? 0.0 : std::min({s.margin, bw / 2.0 - 1.0, bh / 2.0 - 1.0});
+		if (!s.resize && have_keep_) {
+			// Its own size, in the middle of the room it has: the gaps are
+			// balanced, left with right and top with bottom.
+			bx += margin + (bw - 2.0 * margin - keep_w_) / 2.0;
+			by += margin + (bh - 2.0 * margin - keep_h_) / 2.0;
+			bw = keep_w_;
+			bh = keep_h_;
+			margin = 0.0;
+		}
 		const double aw = bw - 2.0 * margin, ah = bh - 2.0 * margin;
 		const double k = std::min(aw / pw, ah / ph);
 		// The fit itself is left to OBS's bounding box, which OBS works out
@@ -281,6 +323,8 @@ public:
 				    obs_sceneitem_get_rot(item) == 0.0f;
 		set_x_ = x;
 		set_y_ = y;
+		set_bw_ = want_w;
+		set_bh_ = want_h;
 		have_set_ = true;
 		if (placed)
 			return;
@@ -512,6 +556,9 @@ private:
 	size_t turn_ = 0;
 	double shape_seen_ = 0.0, shape_used_ = 0.0, shape_for_ = 0.0;
 	double used_margin_ = -1.0, used_tolerance_ = -1.0;
+	double set_bw_ = 0.0, set_bh_ = 0.0; // the bounding box last given to the item
+	double keep_w_ = 0.0, keep_h_ = 0.0; // "Resize it to fit" off: the picture's size, kept
+	bool have_keep_ = false;
 	Box goal_, from_, cur_;
 	bool have_goal_ = false, have_cur_ = false;
 	double glide_ = 1.0;
@@ -561,6 +608,8 @@ obs_properties_t *get_properties(void *data)
 		obs_properties_add_float_slider(props, "margin", obs_module_text("Fit.Margin"), 0.0, 400.0, 1.0);
 	obs_property_float_set_suffix(margin, " px");
 	obs_property_set_long_description(margin, obs_module_text("Fit.Margin.Tip"));
+	obs_property_t *resize = obs_properties_add_bool(props, "resize", obs_module_text("Fit.Resize"));
+	obs_property_set_long_description(resize, obs_module_text("Fit.Resize.Tip"));
 	obs_property_t *tolerance =
 		obs_properties_add_float_slider(props, "tolerance", obs_module_text("Fit.Tolerance"), 0.0, 100.0, 1.0);
 	obs_property_float_set_suffix(tolerance, " px");
@@ -601,6 +650,7 @@ void get_defaults(obs_data_t *settings)
 	obs_data_set_default_double(settings, "box_height", have ? ovi.base_height : 1080);
 	obs_data_set_default_double(settings, "margin", 80.0);
 	obs_data_set_default_double(settings, "tolerance", 8.0);
+	obs_data_set_default_bool(settings, "resize", true);
 	obs_data_set_default_bool(settings, "visible_pixels", true);
 	obs_data_set_default_bool(settings, "no_shadows", true);
 	obs_data_set_default_int(settings, "glide_ms", 300);

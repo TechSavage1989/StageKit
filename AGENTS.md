@@ -375,6 +375,14 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   (`placeVisible`, `placeNoShadow`, the same options, each following the other), and the Arrange tab
   has its own *In every scene* (`arrange_every_scene`, off as it comes: a tool's result is copied to
   the other scenes with `copy_to_every_scene`). Both asked for by the owner on beta87.
+- **Fit to Space can leave the size alone** (`resize`, *Resize it to fit*, ticked as it comes).
+  Unticked, the picture keeps the size it has (`keep_w_`, read from the item once and again after a
+  resize by hand) and is centred in its space. The owner: "move the box without changing the shape
+  or size to fill the gap ... a safety option as well informing the filter to not resize".
+- **The Copy tab locks and unlocks across scenes** (`set_items_locked` in `src/dock/arrange.*`): the
+  selected items' sources, the listed sources or every source; in all scenes, the listed scenes or
+  this one. The owner asked for it so a locked copy can be freed for the copy tools, and as a
+  "global lock sources toggle". It is not in OBS's undo list.
 - **Fit to Space's free space waits for a move to end.** It takes its new space in one glide once the
   other items have been still for 0.15 s. Beta74 had it chase a moving item, resizing the picture
   (and its shadow) on every frame of the move; the owner still saw dropped frames during moves.

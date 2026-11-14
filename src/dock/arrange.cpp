@@ -1096,4 +1096,56 @@ bool snap_item(obs_source_t *scene, obs_sceneitem_t *item, double within, const 
 	return true;
 }
 
+int set_items_locked(bool lock, const std::vector<std::string> *sources, const std::vector<std::string> *scenes)
+{
+	struct Work {
+		bool lock;
+		const std::vector<std::string> *sources, *scenes;
+		int changed = 0;
+	} work{lock, sources, scenes};
+	static const auto each = [](obs_scene_t *, obs_sceneitem_t *item, void *param) {
+		auto *w = static_cast<Work *>(param);
+		const char *name = obs_source_get_name(obs_sceneitem_get_source(item));
+		const bool wanted = !w->sources || (name && std::find(w->sources->begin(), w->sources->end(), name) !=
+								    w->sources->end());
+		if (wanted && obs_sceneitem_locked(item) != w->lock) {
+			obs_sceneitem_set_locked(item, w->lock);
+			w->changed++;
+		}
+		// A group's own items belong to the scene that holds the group.
+		if (obs_sceneitem_is_group(item))
+			obs_sceneitem_group_enum_items(
+				item,
+				[](obs_scene_t *, obs_sceneitem_t *inner, void *p) {
+					auto *w2 = static_cast<Work *>(p);
+					const char *inner_name = obs_source_get_name(obs_sceneitem_get_source(inner));
+					const bool inner_wanted =
+						!w2->sources ||
+						(inner_name && std::find(w2->sources->begin(), w2->sources->end(),
+									 inner_name) != w2->sources->end());
+					if (inner_wanted && obs_sceneitem_locked(inner) != w2->lock) {
+						obs_sceneitem_set_locked(inner, w2->lock);
+						w2->changed++;
+					}
+					return true;
+				},
+				param);
+		return true;
+	};
+	obs_enum_scenes(
+		[](void *param, obs_source_t *scene) {
+			auto *w = static_cast<Work *>(param);
+			if (obs_source_is_group(scene))
+				return true; // reached through the scene that holds it
+			const char *name = obs_source_get_name(scene);
+			if (w->scenes &&
+			    (!name || std::find(w->scenes->begin(), w->scenes->end(), name) == w->scenes->end()))
+				return true;
+			obs_scene_enum_items(obs_scene_from_source(scene), each, param);
+			return true;
+		},
+		&work);
+	return work.changed;
+}
+
 } // namespace stagekit

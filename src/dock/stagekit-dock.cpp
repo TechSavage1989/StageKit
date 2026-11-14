@@ -807,6 +807,33 @@ public:
 		});
 		copy_layout->addWidget(source_add_);
 		copy_page->addWidget(copy_box);
+		// Locking and unlocking across scenes: which items, in which
+		// scenes, then one button each way. A locked copy is left alone by
+		// the copy tools above, so this is also how one is freed for them.
+		auto *lock_box = new QGroupBox(tr_text("Dock.LockBox"), this);
+		auto *lock_form = new QFormLayout(lock_box);
+		lock_which_ = new QComboBox(lock_box);
+		lock_which_->setObjectName("lockWhich");
+		for (const char *name : {"Dock.Lock.Selected", "Dock.Lock.Listed", "Dock.Lock.Every"})
+			lock_which_->addItem(tr_text(name));
+		lock_which_->setToolTip(tr_text("Dock.Lock.Which.Tip"));
+		lock_where_ = new QComboBox(lock_box);
+		lock_where_->setObjectName("lockWhere");
+		for (const char *name : {"Dock.Lock.AllScenes", "Dock.Lock.ListedScenes", "Dock.Lock.ThisScene"})
+			lock_where_->addItem(tr_text(name));
+		lock_where_->setToolTip(tr_text("Dock.Lock.Where.Tip"));
+		lock_form->addRow(tr_text("Dock.Lock.Which"), lock_which_);
+		lock_form->addRow(tr_text("Dock.Lock.Where"), lock_where_);
+		auto *lock_buttons = new QHBoxLayout();
+		lock_buttons->setSpacing(4);
+		for (const bool lock : {true, false}) {
+			auto *button = new QPushButton(tr_text(lock ? "Dock.Lock.Lock" : "Dock.Lock.Unlock"), lock_box);
+			button->setObjectName(lock ? "lockItems" : "unlockItems");
+			QObject::connect(button, &QPushButton::clicked, this, [this, lock] { lock_items(lock); });
+			lock_buttons->addWidget(button, 1);
+		}
+		lock_form->addRow(lock_buttons);
+		copy_page->addWidget(lock_box);
 		copy_page->addStretch(1);
 		visible_ = new QCheckBox(tr_text("Arrange.Visible"), arrange_box);
 		visible_->setObjectName("arrangeVisible");
@@ -1218,6 +1245,42 @@ private:
 			watch->start(2000);
 		} else
 			say(QString::fromStdString(error));
+	}
+
+	// Locks or unlocks by the Copy tab's two choices.
+	void lock_items(bool lock)
+	{
+		const ArrangeOptions o = arrange_options();
+		std::vector<std::string> sources, scenes;
+		obs_source_t *scene = arrange_scene();
+		const int which = lock_which_->currentIndex(), where = lock_where_->currentIndex();
+		if (which == 0) {
+			for (obs_sceneitem_t *item : scene ? arrange_items(scene) : std::vector<obs_sceneitem_t *>())
+				if (const char *name = obs_source_get_name(obs_sceneitem_get_source(item)))
+					sources.push_back(name);
+		} else if (which == 1) {
+			sources = o.copy_sources;
+		}
+		if (where == 1)
+			scenes = o.copy_scenes;
+		else if (where == 2 && scene && obs_source_get_name(scene))
+			scenes.push_back(obs_source_get_name(scene));
+		obs_source_release(scene);
+		if (which == 0 && sources.empty()) {
+			say(tr_text("Dock.Lock.NoneSelected"));
+			return;
+		}
+		if (which == 1 && sources.empty()) {
+			say(tr_text("Dock.Lock.NoSources"));
+			return;
+		}
+		if (where == 1 && scenes.empty()) {
+			say(tr_text("Arrange.ChooseScenes"));
+			return;
+		}
+		const int changed =
+			set_items_locked(lock, which == 2 ? nullptr : &sources, where == 0 ? nullptr : &scenes);
+		say(tr_text(lock ? "Dock.Lock.Locked" : "Dock.Lock.Unlocked").arg(changed));
 	}
 
 	// Lists what the Arrange buttons will act on, and marks the item the
@@ -2031,6 +2094,7 @@ private:
 	QSpinBox *limit_px_ = nullptr;
 	QCheckBox *guides_ = nullptr;
 	QCheckBox *every_scene_ = nullptr;
+	QComboBox *lock_which_ = nullptr, *lock_where_ = nullptr;
 	QCheckBox *arrange_every_ = nullptr, *place_visible_ = nullptr, *place_no_shadow_ = nullptr;
 	QCheckBox *slide_ = nullptr;
 	// The dock's last slide, while the item may still be on its way there:
