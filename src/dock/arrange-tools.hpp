@@ -43,6 +43,8 @@ struct ArrangeOptions {
 	// The arrange tools also put each item they moved in the same place in
 	// every other scene showing its source. Off as it comes.
 	bool arrange_every_scene = false;
+	// The copy tools also change copies that are locked. Off as it comes.
+	bool copy_locked = false;
 	// The Send to arrows slide the item to the next edge instead of sending it to a spot.
 	bool send_slide = false;
 	// How the dock's Send to moves glide: the curve and which end it shapes

@@ -80,7 +80,7 @@ int distribute_items(obs_source_t *scene, std::vector<obs_sceneitem_t *> items, 
 // in the list is the one copied.
 int copy_to_every_scene(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items,
 			const std::vector<std::string> *only = nullptr,
-			const std::vector<std::string> *to_sources = nullptr);
+			const std::vector<std::string> *to_sources = nullptr, bool even_locked = false);
 
 // Locks or unlocks scene items, groups' items included, and says how many
 // changed. `sources`: only items showing a source of one of these names

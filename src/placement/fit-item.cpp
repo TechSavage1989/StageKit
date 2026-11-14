@@ -100,6 +100,10 @@ bool claim_of(obs_source_t *scene, int64_t item, const void *asking, Claim &out)
 	return true;
 }
 
+class FitItem;
+std::mutex g_filters_mutex;
+std::vector<FitItem *> g_filters; // every Fit to Space there is, for fit_item_placed
+
 // The largest clear space for a picture of the shape given (width over
 // height) that holds the point (ax, ay): inside `within` less the gap, and
 // the gap away from everything in `others`. Something the point is inside (a
@@ -175,8 +179,26 @@ Box free_space(const Box &within, double ax, double ay, const std::vector<Box> &
 
 class FitItem {
 public:
-	FitItem(obs_data_t *settings, obs_source_t *source) : source_(source) { update(settings); }
-	~FitItem() { claim_clear(this); }
+	FitItem(obs_data_t *settings, obs_source_t *source) : source_(source)
+	{
+		update(settings);
+		std::lock_guard lock(g_filters_mutex);
+		g_filters.push_back(this);
+	}
+	~FitItem()
+	{
+		claim_clear(this);
+		std::lock_guard lock(g_filters_mutex);
+		g_filters.erase(std::remove(g_filters.begin(), g_filters.end(), this), g_filters.end());
+	}
+
+	// See fit_item_placed.
+	void placed(obs_source_t *scene, const char *item_name)
+	{
+		std::lock_guard lock(mutex_);
+		if (settings_.item == item_name && (!scene || scene == parent_ || obs_source_is_group(scene)))
+			placed_ = true;
+	}
 
 	void update(obs_data_t *settings)
 	{
@@ -243,9 +265,24 @@ public:
 		if (obs_source_is_group(parent_))
 			return;
 		Settings s;
+		bool placed_now = false;
 		{
 			std::lock_guard lock(mutex_);
+			// Placed on purpose by a tool: its space is looked for where
+			// it is now, starting afresh.
+			if (placed_) {
+				placed_ = false;
+				placed_now = true;
+				settings_.have_anchor = false;
+			}
 			s = settings_;
+		}
+		if (placed_now) {
+			have_keep_ = false;
+			have_cur_ = have_goal_ = have_set_ = false;
+			moving_ = false;
+			own_seen_ = false;
+			placed_by_tool_ = true;
 		}
 		// Held for the length of this tick: OBS's window may remove the item
 		// at any moment from its own thread.
@@ -458,7 +495,9 @@ public:
 					obs_log(LOG_INFO,
 						"Fit to Space '%s': the size kept for '%s' went from %.4f to %.4f of its source (%s)",
 						obs_source_get_name(source_), s.item.c_str(), was, keep_k_,
-						resized_by_hand_ ? "resized in the preview" : "settings changed");
+						resized_by_hand_  ? "resized in the preview"
+						: placed_by_tool_ ? "placed by a copy tool"
+								  : "settings changed");
 				resized_by_hand_ = false;
 			}
 			back_to_original_ = false;
@@ -870,6 +909,8 @@ private:
 	double own_sw_ = 0.0, own_sh_ = 0.0, own_for_ = 0.0;
 	bool have_keep_ = false;
 	bool back_to_original_ = false, resized_by_hand_ = false;
+	bool placed_by_tool_ = false;
+	bool placed_ = false; // under mutex_: the item was just placed on purpose by a tool
 	double steady_sw_ = 0.0, steady_sh_ = 0.0,
 	       steady_for_ =
 		       0.0; // the item's source has kept its size this long // just unticked: keep the size from before the filter
@@ -981,6 +1022,15 @@ void get_defaults(obs_data_t *settings)
 }
 
 } // namespace
+
+void fit_item_placed(obs_source_t *scene, const char *item_name)
+{
+	if (!item_name)
+		return;
+	std::lock_guard lock(g_filters_mutex);
+	for (FitItem *filter : g_filters)
+		filter->placed(scene, item_name);
+}
 
 void register_fit_item()
 {
