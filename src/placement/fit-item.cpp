@@ -45,7 +45,6 @@ struct Settings {
 	BoxKind box = BoxKind::WholeScene;
 	double x = 0, y = 0, w = 1920, h = 1080;
 	double margin = 80;
-	bool by_hand = false;          // a box I set: resizing the item in the preview sets the box's size
 	bool visible_pixels = true;    // other items are measured by what they draw, not their boxes
 	bool no_shadows = true;        // and shadows, glows and outlines do not count, its own included
 	std::vector<std::string> skip; // items that are never in the way
@@ -129,7 +128,6 @@ public:
 		const long long kind = obs_data_get_int(settings, "box");
 		if (kind == 2)
 			s.box = BoxKind::FreeSpace;
-		s.by_hand = obs_data_get_bool(settings, "by_hand");
 		// The filter's own two measuring options. Before they existed there
 		// was one tick box that followed the dock; unticked, it meant boxes.
 		s.visible_pixels = obs_data_get_bool(settings, "visible_pixels");
@@ -237,45 +235,6 @@ public:
 			bw = s.w;
 			bh = s.h;
 		}
-		// "Size it by hand": resized in the preview (which changes its
-		// bounding box), the item is left alone until it has been still for
-		// a moment; the size it was given is then the box's width and height.
-		// The box's left and top, and the margin, stay as they are set.
-		if (s.box == BoxKind::Custom && s.by_hand && have_set_ &&
-		    obs_sceneitem_get_bounds_type(item) != OBS_BOUNDS_NONE) {
-			vec2 now;
-			obs_sceneitem_get_bounds(item, &now);
-			if (!sizing_ && (std::fabs(now.x - set_w_) > 0.5 || std::fabs(now.y - set_h_) > 0.5)) {
-				sizing_ = true;
-				sized_for_ = 0.0;
-			}
-			if (sizing_) {
-				if (std::fabs(now.x - sized_w_) > 0.05 || std::fabs(now.y - sized_h_) > 0.05)
-					sized_for_ = 0.0;
-				else
-					sized_for_ += seconds;
-				sized_w_ = now.x;
-				sized_h_ = now.y;
-				if (sized_for_ < 0.4)
-					return;
-				sizing_ = false;
-				// Back from the bounding box to the box asked for: less the
-				// shadow's room, plus the margin on both sides.
-				const double room_w = (left - crop.left) + (right - crop.right);
-				const double room_h = (top - crop.top) + (bottom - crop.bottom);
-				bw = std::max(2.0, now.x - room_w * set_k_ + 2.0 * set_margin_);
-				bh = std::max(2.0, now.y - room_h * set_k_ + 2.0 * set_margin_);
-				s.w = bw;
-				s.h = bh;
-				obs_data_t *settings = obs_source_get_settings(source_);
-				obs_data_set_double(settings, "box_width", bw);
-				obs_data_set_double(settings, "box_height", bh);
-				obs_data_release(settings);
-				std::lock_guard lock(mutex_);
-				settings_.w = bw;
-				settings_.h = bh;
-			}
-		}
 		if (bw < 2.0 || bh < 2.0)
 			return;
 		const double picture = pw / ph;
@@ -328,10 +287,6 @@ public:
 				    obs_sceneitem_get_rot(item) == 0.0f;
 		set_x_ = x;
 		set_y_ = y;
-		set_w_ = want_w;
-		set_h_ = want_h;
-		set_k_ = k;
-		set_margin_ = margin;
 		have_set_ = true;
 		if (placed)
 			return;
@@ -529,16 +484,12 @@ private:
 	double glide_ = 1.0;
 	bool have_set_ = false, moving_ = false;
 	double set_x_ = 0.0, set_y_ = 0.0, seen_x_ = 0.0, seen_y_ = 0.0, still_for_ = 0.0;
-	// What was last given to the item, and a resize by hand in progress.
-	double set_w_ = 0.0, set_h_ = 0.0, set_k_ = 1.0, set_margin_ = 0.0;
-	bool sizing_ = false;
-	double sized_w_ = 0.0, sized_h_ = 0.0, sized_for_ = 0.0;
 };
 
 bool box_modified(obs_properties_t *props, obs_property_t *, obs_data_t *settings)
 {
 	const long long kind = obs_data_get_int(settings, "box");
-	for (const char *name : {"box_x", "box_y", "box_width", "box_height", "by_hand"})
+	for (const char *name : {"box_x", "box_y", "box_width", "box_height"})
 		obs_property_set_visible(obs_properties_get(props, name), kind == 1);
 	for (const char *name : {"skip|alist", "glide_ms", "ease_curve", "ease_mode", "visible_pixels"})
 		if (obs_property_t *p = obs_properties_get(props, name))
@@ -572,8 +523,6 @@ obs_properties_t *get_properties(void *data)
 	number("box_y", "Fit.BoxY");
 	number("box_width", "Fit.BoxWidth");
 	number("box_height", "Fit.BoxHeight");
-	obs_property_t *by_hand = obs_properties_add_bool(props, "by_hand", obs_module_text("Fit.ByHand"));
-	obs_property_set_long_description(by_hand, obs_module_text("Fit.ByHand.Tip"));
 
 	obs_property_t *margin =
 		obs_properties_add_float_slider(props, "margin", obs_module_text("Fit.Margin"), 0.0, 400.0, 1.0);
@@ -616,7 +565,6 @@ void get_defaults(obs_data_t *settings)
 	obs_data_set_default_double(settings, "margin", 80.0);
 	obs_data_set_default_bool(settings, "visible_pixels", true);
 	obs_data_set_default_bool(settings, "no_shadows", true);
-	obs_data_set_default_bool(settings, "by_hand", false);
 	obs_data_set_default_int(settings, "glide_ms", 300);
 	obs_data_set_default_int(settings, "ease_curve", (int)EaseCurve::Cubic);
 	obs_data_set_default_int(settings, "ease_mode", (int)EaseMode::InOut);

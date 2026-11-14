@@ -211,6 +211,24 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## "Size it by hand" removed (0.1.0-beta73)
+
+The owner asked for Fit Item's *Size it by hand* (beta71) to be removed. Confirmed by the owner on
+their machine the same day, nothing further to check for these:
+
+- beta72: both tick boxes in the filters work.
+- beta71: *Keep it on screen* works; the Ambient Background shows its moving picture again.
+- beta70: *The free space around it* "works great".
+- beta69: copy transform to other sources works.
+- beta67: the resize past the empty widget works.
+- beta68: the standby picture is right at start, on opening an emulator and into a game.
+
+The crash on closing with the X: no crash file was written (the newest was a day old); the owner
+said to ignore it for now. If it comes back, ask for that session's log.
+
+Still not reported: Active App's captures switched to by hand (beta60); whether Shadow/Corners
+switching and snap/resize-limit moves should animate; the real streaming test.
+
 ## Filters measure by their own options, not the dock's (0.1.0-beta72)
 
 The owner, on beta70's *Measure by Arrange options*: the dock's options are for what is being edited

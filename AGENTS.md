@@ -301,9 +301,9 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   after 0.4 s without moving. An item being dragged or gliding in, or whose picture is itself off
   the canvas, is left alone. It is one-way: the item does not grow back. Items with a bounding box
   are whoever set the box's business; Fit Item asks `shadow_kept_in_view` and fits the shadow too.
-- **Fit Item's "Size it by hand" reads the bounding box back** (`by_hand`): a resize in the preview
-  changes the item's bounds, which the filter takes as the box's width and height once they have
-  been still for 0.4 s, and saves. Left, top and margin are never taken from the item.
+- **Fit Item has no "size it by hand".** One was built (beta71: a resize in the preview became the
+  box's width and height) and the owner had it removed: "i don't know if the size by hand really
+  works. just remove it". An old `by_hand` setting is ignored. Do not bring it back unasked.
 - **Ambient Background does not blend in a standby picture** (`live_skip_standby`, on by default):
   `standby_waiting()` says the capture is only showing its Standby Picture. The owner's background
   turned into the still start image.
