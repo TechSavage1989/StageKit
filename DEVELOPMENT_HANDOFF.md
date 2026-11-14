@@ -211,6 +211,19 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Corrections glide; free space no longer makes moves choppy (0.1.0-beta74)
+
+- The owner: "snap and resize should glide if able". Done in the dock, over its glide time and curve.
+- The owner: "animations when the camera moves witht he buttons, and some others are very choppy".
+  **Cause not proven.** The suspect was Fit Item's free-space measuring (new in beta70, which the
+  owner had just switched on): a read-back every quarter second and a full round after every move.
+  It now follows moving items by their boxes and reads back one item a second only while nothing
+  moves. *Keep it on screen* also looks only a few times a second now. If moves are still choppy on
+  beta74, ask which moves and whether it goes away with Fit Item set back to *The whole screen*; the
+  next suspects are the dock's 0.4 s refresh (it now walks every scene's items for *Sources to copy
+  to*) and Standby Picture drawing every capture through a copy.
+- The owner did not remember Active App's *Captures you switch to* (beta60); it was explained again.
+
 ## "Size it by hand" removed (0.1.0-beta73)
 
 The owner asked for Fit Item's *Size it by hand* (beta71) to be removed. Confirmed by the owner on
