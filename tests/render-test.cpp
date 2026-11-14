@@ -253,6 +253,108 @@ int main(int argc, char **argv)
 		CHECK(diff > 0.5, "%-8s strength %5.1f changes the image (mean diff %.2f)", c.label, c.strength, diff);
 	}
 
+	// ------------------------------------------------ 1a. mosaic shapes
+	printf("\n[render] mosaic shapes\n");
+	{
+		obs_data_t *now = obs_source_get_settings(filter);
+		CHECK(obs_data_get_int(now, "blur_type") == 3 && obs_data_get_int(now, "pixel_shape") == 1,
+		      "the old 'Hexagons' blur type is read as Pixelate with hexagon cells (type %lld, shape %lld)",
+		      obs_data_get_int(now, "blur_type"), obs_data_get_int(now, "pixel_shape"));
+		obs_data_release(now);
+		auto mosaic = [&](int shape, double smooth, double rotation, double origin_x) {
+			obs_data_t *fs = obs_data_create();
+			obs_data_set_int(fs, "blur_type", 3);
+			obs_data_set_double(fs, "strength", 30);
+			obs_data_set_int(fs, "pixel_shape", shape);
+			obs_data_set_double(fs, "pixel_smooth", smooth);
+			obs_data_set_double(fs, "rotation", rotation);
+			obs_data_set_double(fs, "origin_x", origin_x);
+			obs_source_update(filter, fs);
+			obs_data_release(fs);
+			sleep_ms(60);
+			return render(img, w, h);
+		};
+		const std::vector<uint8_t> squares = mosaic(0, 0, 0, 50);
+		const std::vector<uint8_t> hexagons = mosaic(1, 0, 0, 50);
+		const char *names[] = {"squares", "hexagons",  "circles", "triangles",
+				       "voronoi", "rhomboids", "triakis"};
+		std::vector<std::vector<uint8_t>> shapes{squares, hexagons};
+		for (int shape = 2; shape <= 6; shape++) {
+			shapes.push_back(mosaic(shape, 0, 0, 50));
+			write_frame(out + "/" + names[shape] + "_030.rgba", shapes.back(), w, h);
+		}
+		// Each is a picture of its own, and none leaves holes in an opaque picture.
+		for (int a = 2; a <= 6; a++) {
+			double nearest = 1e9;
+			for (int b = 0; b < a; b++)
+				nearest = std::min(nearest, mean_abs_diff(shapes[a], shapes[b]));
+			double see_through = 0;
+			for (size_t i = 3; i < shapes[a].size(); i += 4)
+				see_through += shapes[a][i] < original[i] ? 1 : 0;
+			CHECK(mean_abs_diff(shapes[a], original) > 0.5 && nearest > 0.3 &&
+				      see_through < shapes[a].size() / 4 * 0.001,
+			      "%-9s cells change the picture, differ from the other shapes and leave no holes (diff %.2f, nearest other shape %.2f)",
+			      names[a], mean_abs_diff(shapes[a], original), nearest);
+		}
+		const std::vector<uint8_t> smoothed = mosaic(1, 100, 0, 50);
+		write_frame(out + "/smoothed_030.rgba", smoothed, w, h);
+		CHECK(mean_abs_diff(smoothed, hexagons) > 0.2 &&
+			      mean_abs_diff(smoothed, hexagons) < mean_abs_diff(hexagons, original),
+		      "smoothing softens the edges between cells (diff from hard edges %.2f)",
+		      mean_abs_diff(smoothed, hexagons));
+		const std::vector<uint8_t> turned = mosaic(0, 0, 30, 50);
+		const std::vector<uint8_t> shifted = mosaic(0, 0, 0, 52);
+		CHECK(mean_abs_diff(turned, squares) > 0.3 && mean_abs_diff(shifted, squares) > 0.3,
+		      "the pattern can be turned and laid out from another point (diff %.2f turned, %.2f moved)",
+		      mean_abs_diff(turned, squares), mean_abs_diff(shifted, squares));
+		const std::vector<uint8_t> again = mosaic(0, 0, 0, 50);
+		CHECK(mean_abs_diff(again, squares) < 0.01, "with the settings back, squares are as they were");
+	}
+
+	// ------------------------------------------------ 1a2. temporal
+	printf("\n[render] temporal\n");
+	{
+		obs_data_t *cs = obs_data_create();
+		obs_data_set_int(cs, "color", 0xFF0000FF); // red (ABGR)
+		obs_data_set_int(cs, "width", 64);
+		obs_data_set_int(cs, "height", 64);
+		obs_source_t *card = obs_source_create("color_source", "Trail Card", cs, nullptr);
+		obs_data_t *ts = obs_data_create();
+		obs_data_set_int(ts, "blur_type", 7);
+		obs_data_set_double(ts, "strength", 40); // things stay about 0.4 s
+		obs_data_set_int(ts, "ramp_in_ms", 0);
+		obs_source_t *trail = obs_source_create("stagekit_ramp_blur", "Trail", ts, nullptr);
+		obs_data_release(ts);
+		obs_source_filter_add(card, trail);
+		std::vector<uint8_t> px;
+		for (int i = 0; i < 20; i++) {
+			sleep_ms(30);
+			px = render(card, 64, 64);
+		}
+		const int red0 = px[0], blue0 = px[2];
+		obs_data_set_int(cs, "color", 0xFFFF0000); // blue
+		obs_source_update(card, cs);
+		sleep_ms(100);
+		px = render(card, 64, 64);
+		const int red1 = px[0], blue1 = px[2];
+		for (int i = 0; i < 80; i++) {
+			sleep_ms(30);
+			px = render(card, 64, 64);
+		}
+		const int red2 = px[0], blue2 = px[2];
+		CHECK(red0 > 250 && blue0 < 5, "a still picture is left as it is by Temporal (red %d, blue %d)", red0,
+		      blue0);
+		CHECK(red1 > 20 && red1 < 250 && blue1 > 5 && blue1 < 250,
+		      "just after a change the old picture still shows through: a trail (red %d, blue %d)", red1,
+		      blue1);
+		CHECK(red2 < 5 && blue2 > 250, "and it has faded all the way out a little later (red %d, blue %d)",
+		      red2, blue2);
+		obs_source_filter_remove(card, trail);
+		obs_source_release(trail);
+		obs_source_release(card);
+		obs_data_release(cs);
+	}
+
 	// ------------------------------------------------ 1b. ramp smoothness
 	// Sweep strength in small steps. A smooth ramp changes the picture by a
 	// similar amount every step; a "pop" shows up as a spike.

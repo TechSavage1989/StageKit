@@ -211,6 +211,20 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## More blur: cell shapes, Temporal, Bloom (0.1.0-beta104)
+
+- The owner showed Composite Blur's *Blur Algorithm* and *Pixelate Type* lists and asked for
+  similar settings in the Blur filter and Ambient Background, and for Bloom in Ambient Background.
+  Built: the cell shapes with smoothing, origin and rotation, a Temporal type, Gaussian, Box and
+  Temporal for the background, and Bloom. See the three entries in AGENTS.md.
+- Not built, and said so to the owner: Composite Blur's effect masks and its background source for
+  compositing; its tilt-shift and area/directional variants of Gaussian and Box.
+- **Not proven**: the new shader code on Direct3D (Windows). It compiles and draws on OpenGL in the
+  tests. It is in a file of its own (`stagekit-looks.effect`), so if Direct3D refuses it the older
+  looks still work and only the new ones are missing; the OBS log then holds `failed to load`
+  with the compiler's message. Ask for the log if the owner says a new shape, Temporal or Bloom
+  does nothing.
+
 ## Fit to Space: hidden items, one move, a side to keep towards (0.1.0-beta103)
 
 - The owner's screenshots: camera above chat box, each with its own Fit to Space. Camera hidden,
