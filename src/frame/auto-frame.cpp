@@ -344,6 +344,16 @@ public:
 			"void get_picture(out float x, out float y, out float width, out float height)",
 			[](void *data, calldata_t *cd) {
 				auto *self = static_cast<AutoFrame *>(data);
+				// While a Standby Picture stands in for the capture there
+				// is no game picture: the rectangle kept from the last
+				// game would cut the standby picture to that game's shape.
+				if (self->standby_showing()) {
+					calldata_set_float(cd, "x", 0.0);
+					calldata_set_float(cd, "y", 0.0);
+					calldata_set_float(cd, "width", 0.0);
+					calldata_set_float(cd, "height", 0.0);
+					return;
+				}
 				std::lock_guard lock(self->mutex_);
 				calldata_set_float(cd, "x", self->current_.x);
 				calldata_set_float(cd, "y", self->current_.y);
@@ -496,6 +506,30 @@ public:
 	}
 
 	// The shape a Picture Shape key asked for; 0 goes back to automatic.
+	// Is a Standby Picture on this source showing its picture (or still
+	// changing to or from the capture)?
+	bool standby_showing()
+	{
+		obs_source_t *parent = obs_filter_get_parent(source_);
+		if (!parent)
+			return false;
+		bool standing = false;
+		obs_source_enum_filters(
+			parent,
+			[](obs_source_t *, obs_source_t *filter, void *param) {
+				const char *id = obs_source_get_unversioned_id(filter);
+				if (!id || strcmp(id, "stagekit_standby") != 0 || !obs_source_enabled(filter))
+					return;
+				calldata_t cd = {};
+				if (proc_handler_call(obs_source_get_proc_handler(filter), "get_standing", &cd) &&
+				    calldata_bool(&cd, "standing"))
+					*static_cast<bool *>(param) = true;
+				calldata_free(&cd);
+			},
+			&standing);
+		return standing;
+	}
+
 	void set_forced_ratio(double ratio)
 	{
 		obs_data_t *settings = obs_source_get_settings(source_);

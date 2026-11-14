@@ -960,6 +960,98 @@ int main(int argc, char **argv)
 			calldata_set_string(&back, "path", "");
 			proc_handler_call(obs_get_proc_handler(), "stagekit_set_start_image", &back);
 			calldata_free(&back);
+			// After an Auto Frame, and before a Corners & Edges: the game
+			// picture's rectangle kept from the last game must not cut the
+			// standby picture.
+			{
+				QImage small(400, 300, QImage::Format_ARGB32);
+				small.fill(QColor(0, 200, 0));
+				const std::string small_path = out + "/standby-game.png";
+				small.save(QString::fromStdString(small_path));
+				obs_data_t *gd = obs_data_create();
+				obs_data_set_string(gd, "file", small_path.c_str());
+				obs_source_t *game = obs_source_create("image_source", "Standby Framed", gd, nullptr);
+				obs_data_t *fs = obs_data_create();
+				obs_data_set_int(fs, "frame_width", 800);
+				obs_data_set_int(fs, "frame_height", 300);
+				obs_data_set_int(fs, "glide_ms", 0);
+				obs_source_t *frame =
+					obs_source_create("stagekit_auto_frame", "Auto Frame", fs, nullptr);
+				obs_data_release(fs);
+				obs_data_t *wd = obs_data_create();
+				obs_data_set_int(wd, "picture", 1);
+				obs_data_set_string(wd, "file", argv[3]);
+				obs_data_set_int(wd, "fade_ms", 100);
+				obs_data_set_int(wd, "back_ms", 600);
+				obs_data_set_bool(wd, "placed", true);
+				obs_source_t *wait =
+					obs_source_create("stagekit_standby", "Standby Picture", wd, nullptr);
+				obs_data_release(wd);
+				// Added before the Auto Frame, the wrong way round: it must
+				// put itself after it, or the Auto Frame trims the picture.
+				obs_source_filter_add(game, wait);
+				obs_source_filter_add(game, frame);
+				obs_data_t *cd = obs_data_create();
+				obs_data_set_double(cd, "size", 40);
+				obs_source_t *shape = obs_source_create("stagekit_corners", "Corners", cd, nullptr);
+				obs_data_release(cd);
+				obs_source_filter_add(game, shape);
+				auto draw = [&](int frames) {
+					std::vector<uint8_t> got;
+					for (int i = 0; i < frames; i++) {
+						sleep_ms(50);
+						const uint32_t gw = obs_source_get_width(game),
+							       gh = obs_source_get_height(game);
+						if (gw && gh)
+							got = render(game, gw, gh);
+					}
+					return got;
+				};
+				std::vector<uint8_t> gp = draw(24);
+				uint32_t gw = obs_source_get_width(game), gh = obs_source_get_height(game);
+				auto a = [&](uint32_t x, uint32_t y) {
+					return gp.size() == size_t(gw) * gh * 4 ? (int)gp[(size_t(y) * gw + x) * 4 + 3]
+										: -1;
+				};
+				CHECK(gw == 800 && gh == 300 && a(100, 150) == 0 && a(400, 150) == 255,
+				      "with a game, Corners & Edges shapes the game picture in the frame (%ux%u, %d, %d)",
+				      gw, gh, a(100, 150), a(400, 150));
+				CHECK(gp.size() > 4 && gp[(size_t(150) * gw + 400) * 4 + 1] > 190 &&
+					      gp[(size_t(150) * gw + 400) * 4] < 12,
+				      "and the game is drawn as it is");
+				obs_data_set_string(gd, "file", "");
+				obs_source_update(game, gd);
+				// Just after the game goes, its last frame is still fading out.
+				int greenest = 0;
+				for (int i = 0; i < 5; i++) {
+					gp = draw(1);
+					gw = obs_source_get_width(game);
+					gh = obs_source_get_height(game);
+					if (gp.size() == size_t(gw) * gh * 4 && gw && gh) {
+						const uint8_t *c = &gp[(size_t(gh / 2) * gw + gw / 2) * 4];
+						if (c[1] > c[0] + 40 && c[1] > c[2] + 40)
+							greenest = std::max(greenest, (int)c[1]);
+					}
+				}
+				CHECK(greenest > 60, "when the game goes, its last frame fades into the picture (%d)",
+				      greenest);
+				gp = draw(24);
+				gw = obs_source_get_width(game);
+				gh = obs_source_get_height(game);
+				CHECK(gw > 400 && gh == 300 && a(6, gh / 2) == 255 && a(gw - 7, gh / 2) == 255 &&
+					      a(gw / 2, 3) == 255,
+				      "the game gone, the standby picture is whole: not cut to the last game's shape "
+				      "(%ux%u, left %d, right %d)",
+				      gw, gh, gw ? a(6, gh / 2) : -1, gw ? a(gw - 7, gh / 2) : -1);
+				obs_data_release(gd);
+				obs_source_filter_remove(game, shape);
+				obs_source_filter_remove(game, wait);
+				obs_source_filter_remove(game, frame);
+				obs_source_release(shape);
+				obs_source_release(wait);
+				obs_source_release(frame);
+				obs_source_release(game);
+			}
 			obs_data_release(sd);
 			obs_source_filter_remove(capture, standby);
 			obs_source_release(standby);

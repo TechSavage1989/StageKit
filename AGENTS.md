@@ -248,6 +248,12 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   follows what comes before it directly. The first build filled the capture's last size and followed
   the filter before it: the owner's start image was cropped, jumped shape the moment an emulator was
   recognised, cut to the game, and stayed the game's shape afterwards.
+  It must come after an Auto Frame and checks that twice a second (`order_check_`), not only when
+  first added: before it, Auto Frame trimmed the picture as if it were a game (the same four
+  complaints again, beta67). While it stands in, Auto Frame's `get_picture` reports no picture
+  (`get_standing`), so Corners & Edges and the rest shape the whole picture. The capture is always
+  drawn by way of a copy (`render_live_`), kept when the capture ends so the change back starts from
+  the last frame: a capture that has ended draws nothing.
 - **Show in Scenes is a switch, not a trigger.** Its on and off state is the shown and hidden
   state, so one Stream Deck Filter key toggles and shows which way it is. It acts on the `enable`
   signal only (never each tick, so a change by hand is kept) and ignores the state restored at load
