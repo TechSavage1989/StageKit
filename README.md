@@ -353,6 +353,14 @@ nearest.
   If the filter had already resized the item (a new filter starts ticked), unticking gives it back
   the size it had before. Resize it yourself in the preview and that is the size it keeps. This works for the whole screen
   and a box as well as the free space.
+- **Keep it towards** (*The middle* as it comes): where the item lies in its space when it does not
+  fill it, which is a picture of another shape than the space, or an item that keeps its size. A
+  side or a corner puts it against that side, the gap away, with all the room left over on the
+  other side, so it only ever moves that way: a camera kept towards the top stays at the top, and a
+  chat box kept towards the bottom stays put when the camera above it is hidden. A side where
+  another fitted item makes room for this one is not used.
+- An item that is hidden is left exactly where it is and holds no space, so the others take its
+  room. Shown again, it is where it was, and the others make way for it in one move.
 - **Tolerance** (8 px as it comes): when something sticks a little way into the space, the picture
   may be made up to this many pixels smaller to keep the whole space, instead of keeping its size and
   losing the part of the space beside that thing. At 0 the biggest picture always wins, even by one

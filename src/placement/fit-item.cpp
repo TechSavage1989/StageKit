@@ -46,14 +46,15 @@ struct Settings {
 	BoxKind box = BoxKind::WholeScene;
 	double x = 0, y = 0, w = 1920, h = 1080;
 	double margin = 80;
-	double tolerance = 8;          // free space: pictures this close in size count as equal
-	bool resize = true;            // off: the item keeps its size and is only moved, centred in the space
-	std::string orig_item;         // the item whose size was noted before the filter first touched it
-	double orig_k = 0;             // how large it was drawn then, as a scale of its source
-	bool visible_pixels = true;    // other items are measured by what they draw, not their boxes
-	bool no_shadows = true;        // and shadows, glows and outlines do not count, its own included
-	std::vector<std::string> skip; // items that are never in the way
-	bool have_anchor = false;      // the free space is the one round this point
+	double tolerance = 8;           // free space: pictures this close in size count as equal
+	bool resize = true;             // off: the item keeps its size and is only moved, centred in the space
+	int toward_x = 0, toward_y = 0; // the side of its space it is kept towards: -1, 0 (the middle) or 1
+	std::string orig_item;          // the item whose size was noted before the filter first touched it
+	double orig_k = 0;              // how large it was drawn then, as a scale of its source
+	bool visible_pixels = true;     // other items are measured by what they draw, not their boxes
+	bool no_shadows = true;         // and shadows, glows and outlines do not count, its own included
+	std::vector<std::string> skip;  // items that are never in the way
+	bool have_anchor = false;       // the free space is the one round this point
 	double anchor_x = 0, anchor_y = 0;
 	double glide_s = 0.3;
 	EaseCurve curve = EaseCurve::Cubic;
@@ -212,6 +213,12 @@ public:
 		s.margin = std::clamp(obs_data_get_double(settings, "margin"), 0.0, 2000.0);
 		s.tolerance = std::clamp(obs_data_get_double(settings, "tolerance"), 0.0, 200.0);
 		s.resize = obs_data_get_bool(settings, "resize");
+		// 0 the middle, then top, bottom, left, right, and the four corners.
+		static const int kTowardX[] = {0, 0, 0, -1, 1, -1, 1, -1, 1};
+		static const int kTowardY[] = {0, -1, 1, 0, 0, -1, -1, 1, 1};
+		const long long toward = std::clamp<long long>(obs_data_get_int(settings, "toward"), 0, 8);
+		s.toward_x = kTowardX[toward];
+		s.toward_y = kTowardY[toward];
 		s.orig_item = obs_data_get_string(settings, "orig_item");
 		s.orig_k = obs_data_get_double(settings, "orig_k");
 		own_seen_ = false; // what shows of the item is looked at again
@@ -297,6 +304,32 @@ public:
 		obs_sceneitem_t *item = held.item;
 		if (item)
 			obs_sceneitem_addref(item);
+		// A hidden item is left exactly as it is and holds no space: the
+		// others take its room, and it is found where it was when it is
+		// shown again. (Fitted while hidden, the owner's camera was put in
+		// the middle of the room the chat box had taken meanwhile, came
+		// back on top of it, and neither moved again.)
+		if (item && !obs_sceneitem_visible(item)) {
+			claim_clear(this);
+			hidden_ = true;
+			return;
+		}
+		// Shown again: for a moment it only says where it is, so that
+		// whatever took its room goes by that and makes way first. Looking
+		// for its space at once, it would find its place inside the other
+		// and take that for something it sits on.
+		if (hidden_) {
+			hidden_ = false;
+			back_for_ = 0.0;
+			coming_back_ = have_claim_;
+		}
+		if (coming_back_) {
+			if ((back_for_ += seconds) < kComingBack && item) {
+				claim_set(parent_, obs_sceneitem_get_id(item), this, last_claim_);
+				return;
+			}
+			coming_back_ = false;
+		}
 		obs_source_t *shown = item ? obs_sceneitem_get_source(item) : nullptr;
 		const double sw = shown ? obs_source_get_width(shown) : 0.0,
 			     sh = shown ? obs_source_get_height(shown) : 0.0;
@@ -556,15 +589,20 @@ public:
 		}
 		// Where a kept-size picture goes in a space.
 		auto kept_in = [&](const Box &room, double kw, double kh) {
-			auto along = [](double from, double size, double own, bool soft_near, bool soft_far) {
+			// (A side it is to be kept towards counts unless that side is
+			// the one that gives way: the two would close in for good.)
+			auto along = [](double from, double size, double own, bool soft_near, bool soft_far,
+					int toward) {
 				if (soft_near && !soft_far)
 					return from + size - own; // against the far, firm side
 				if (soft_far && !soft_near)
 					return from;
+				if (toward != 0)
+					return toward < 0 ? from : from + size - own;
 				return from + (size - own) / 2.0;
 			};
-			return Box{along(room.x, room.w, kw, soft_l, soft_r), along(room.y, room.h, kh, soft_t, soft_b),
-				   kw, kh};
+			return Box{along(room.x, room.w, kw, soft_l, soft_r, s.toward_x),
+				   along(room.y, room.h, kh, soft_t, soft_b, s.toward_y), kw, kh};
 		};
 		if (!s.resize && have_keep_) {
 			// Its own size, in the middle of the room it has: the gaps are
@@ -607,12 +645,16 @@ public:
 								 outer.y + outer.h - gap - keep_h_);
 			} else {
 				const double kg = std::min(goal_.w / pw, goal_.h / ph);
-				claim.box = Box{goal_.x + (goal_.w - pw * kg) / 2.0,
-						goal_.y + (goal_.h - ph * kg) / 2.0, pw * kg, ph * kg};
+				claim.box = Box{goal_.x + (goal_.w - pw * kg) * (s.toward_x + 1) / 2.0,
+						goal_.y + (goal_.h - ph * kg) * (s.toward_y + 1) / 2.0, pw * kg,
+						ph * kg};
 			}
 			claim_set(parent_, obs_sceneitem_get_id(item), this, claim);
+			last_claim_ = claim;
+			have_claim_ = true;
 		} else {
 			claim_clear(this);
+			have_claim_ = false;
 		}
 		// The fit itself is left to OBS's bounding box, which OBS works out
 		// afresh for every frame it draws. The box is the space the picture
@@ -628,15 +670,22 @@ public:
 		const double x = bx + margin - room_l * k;
 		const double y = by + margin - room_t * k;
 
+		// A picture of another shape than its space floats in the middle
+		// of it, or lies against the side it is kept towards.
+		const uint32_t toward = (s.toward_x < 0   ? OBS_ALIGN_LEFT
+					 : s.toward_x > 0 ? OBS_ALIGN_RIGHT
+							  : OBS_ALIGN_CENTER) |
+					(s.toward_y < 0   ? OBS_ALIGN_TOP
+					 : s.toward_y > 0 ? OBS_ALIGN_BOTTOM
+							  : OBS_ALIGN_CENTER);
 		vec2 pos, bounds;
 		obs_sceneitem_get_pos(item, &pos);
 		obs_sceneitem_get_bounds(item, &bounds);
 		const bool placed = obs_sceneitem_get_bounds_type(item) == OBS_BOUNDS_SCALE_INNER &&
 				    obs_sceneitem_get_alignment(item) == (OBS_ALIGN_LEFT | OBS_ALIGN_TOP) &&
-				    obs_sceneitem_get_bounds_alignment(item) == OBS_ALIGN_CENTER &&
-				    std::fabs(pos.x - x) < 0.05 && std::fabs(pos.y - y) < 0.05 &&
-				    std::fabs(bounds.x - want_w) < 0.05 && std::fabs(bounds.y - want_h) < 0.05 &&
-				    obs_sceneitem_get_rot(item) == 0.0f;
+				    obs_sceneitem_get_bounds_alignment(item) == toward && std::fabs(pos.x - x) < 0.05 &&
+				    std::fabs(pos.y - y) < 0.05 && std::fabs(bounds.x - want_w) < 0.05 &&
+				    std::fabs(bounds.y - want_h) < 0.05 && obs_sceneitem_get_rot(item) == 0.0f;
 		set_x_ = x;
 		set_y_ = y;
 		set_bw_ = want_w;
@@ -649,7 +698,7 @@ public:
 		obs_sceneitem_set_alignment(item, OBS_ALIGN_LEFT | OBS_ALIGN_TOP);
 		obs_sceneitem_set_rot(item, 0.0f);
 		obs_sceneitem_set_bounds_type(item, OBS_BOUNDS_SCALE_INNER);
-		obs_sceneitem_set_bounds_alignment(item, OBS_ALIGN_CENTER);
+		obs_sceneitem_set_bounds_alignment(item, toward);
 		vec2_set(&bounds, (float)want_w, (float)want_h);
 		obs_sceneitem_set_bounds(item, &bounds);
 		vec2_set(&pos, (float)x, (float)y);
@@ -669,11 +718,21 @@ private:
 		// filters run all the time, and looking at the items of scenes nobody
 		// sees would cost the picture on screen its smoothness for nothing.
 		if (!obs_source_showing(parent_)) {
+			was_showing_ = false;
 			if (!have_cur_)
 				return false;
 			space = cur_;
 			return true;
 		}
+		// A scene that has only just come into view is put right at once
+		// and without a glide: nobody has seen it as it was.
+		if (!was_showing_) {
+			was_showing_ = true;
+			shown_for_ = 0.0;
+		} else {
+			shown_for_ += seconds;
+		}
+		const bool arriving = shown_for_ < kArriving;
 		// Moved by something else (dragged in the preview, sent somewhere by
 		// a key): left alone while it moves, then its new place is where the
 		// free space is looked for.
@@ -773,24 +832,28 @@ private:
 		// Where each is now: what was seen in it, carried along with its box.
 		std::vector<Box> boxes;
 		std::vector<bool> gives;
+		std::vector<int64_t> ids; // which item each is, and whether its
+		std::vector<bool> said;   // filter said where it is going
 		for (obs_sceneitem_t *other : others) {
 			Claim claim;
 			if (claim_of(parent_, obs_sceneitem_get_id(other), this, claim)) {
 				boxes.push_back(claim.box);
 				gives.push_back(claim.resizes);
+				ids.push_back(obs_sceneitem_get_id(other));
+				said.push_back(true);
 				continue;
 			}
-			gives.push_back(false);
 			auto found = seen_.find(obs_sceneitem_get_id(other));
 			if (found == seen_.end()) {
 				look(other);
 				found = seen_.find(obs_sceneitem_get_id(other));
 			}
 			const Seen &seen = found->second;
-			if (!seen.there) {
-				gives.pop_back();
+			if (!seen.there)
 				continue;
-			}
+			gives.push_back(false);
+			ids.push_back(obs_sceneitem_get_id(other));
+			said.push_back(false);
 			const Box now = scene_box(parent_, other);
 			if (seen.item_at.w < 1.0 || seen.item_at.h < 1.0 || now.w < 1.0 || now.h < 1.0) {
 				boxes.push_back(seen.box);
@@ -801,31 +864,53 @@ private:
 					    now.y + (seen.box.y - seen.item_at.y) * ky, seen.box.w * kx,
 					    seen.box.h * ky});
 		}
-		auto same = [](const std::vector<Box> &a, const std::vector<Box> &b) {
-			if (a.size() != b.size())
-				return false;
-			for (size_t i = 0; i < a.size(); i++)
-				if (std::fabs(a[i].x - b[i].x) > 0.25 || std::fabs(a[i].y - b[i].y) > 0.25 ||
-				    std::fabs(a[i].w - b[i].w) > 0.25 || std::fabs(a[i].h - b[i].h) > 0.25)
-					return false;
-			return true;
+		auto differs = [](const Box &a, const Box &b) {
+			return std::fabs(a.x - b.x) > 0.25 || std::fabs(a.y - b.y) > 0.25 ||
+			       std::fabs(a.w - b.w) > 0.25 || std::fabs(a.h - b.h) > 0.25;
 		};
+		// What changed since the last look: `moved`, an item that is on its
+		// way somewhere (gliding, being dragged, a window growing), or
+		// `stepped`, a change made in one go: an item shown or hidden, or
+		// another filter saying where its item is going.
+		bool moved = false, stepped = ids != ids_ || said != said_;
+		if (!stepped)
+			for (size_t i = 0; i < boxes.size(); i++)
+				if (differs(boxes[i], boxes_[i]))
+					(said[i] ? stepped : moved) = true;
+		if (moved && arriving) {
+			moved = false;
+			stepped = true;
+		}
 		// Which of them give way can change while nothing moves (another
 		// filter has just said where its item is going).
-		if (gives != gives_ && same(boxes, boxes_)) {
+		if (gives != gives_ && !moved && !stepped) {
 			gives_ = gives;
 			changed_ = true;
 		}
-		if (!same(boxes, boxes_)) {
+		if (moved) {
 			// Something is moving. The fitted item waits for it to come to
 			// rest and then takes its new space in one glide: chasing a
 			// moving item would resize the picture (and redo its shadow)
 			// on every frame of the move. No looking meanwhile either.
 			boxes_ = boxes;
 			gives_ = gives;
+			ids_ = ids;
+			said_ = said;
 			unsettled_ = true;
 			calm_for_ = 0.0;
 			since_look_ = 0.0;
+		} else if (stepped) {
+			// Nothing to wait for: the new space is taken at once, in the
+			// one glide. (Waiting here as for a moving item, two filters
+			// answered each other a moment apart, and the owner's items
+			// "adjust multiple times before settling".)
+			boxes_ = boxes;
+			gives_ = gives;
+			ids_ = ids;
+			said_ = said;
+			since_look_ = 0.0;
+			if (!unsettled_)
+				changed_ = true;
 		} else if (unsettled_) {
 			if ((calm_for_ += seconds) >= 0.15) {
 				unsettled_ = false;
@@ -863,7 +948,7 @@ private:
 			    std::fabs(goal.w - goal_.w) > 0.05 || std::fabs(goal.h - goal_.h) > 0.05) {
 				from_ = have_cur_ ? cur_ : goal;
 				goal_ = goal;
-				glide_ = have_cur_ && s.glide_s > 0.0 ? 0.0 : 1.0;
+				glide_ = have_cur_ && s.glide_s > 0.0 && !arriving ? 0.0 : 1.0;
 				have_goal_ = true;
 			}
 		}
@@ -893,6 +978,11 @@ private:
 	};
 	std::vector<Box> boxes_;  // what is in the way now
 	std::vector<bool> gives_; // and which of them another filter resizes to make room
+	std::vector<int64_t> ids_;
+	std::vector<bool> said_;
+	static constexpr double kArriving = 0.25;
+	bool was_showing_ = false;
+	double shown_for_ = 0.0;
 	std::map<int64_t, Seen> seen_;
 	bool look_again_ = true, changed_ = false, unsettled_ = false;
 	double calm_for_ = 0.0;
@@ -918,6 +1008,11 @@ private:
 	bool have_goal_ = false, have_cur_ = false;
 	double glide_ = 1.0;
 	bool have_set_ = false, moving_ = false;
+	// A hidden item is left alone; shown again, it first says where it is.
+	static constexpr double kComingBack = 0.1;
+	bool hidden_ = false, coming_back_ = false, have_claim_ = false;
+	double back_for_ = 0.0;
+	Claim last_claim_;
 	double set_x_ = 0.0, set_y_ = 0.0, seen_x_ = 0.0, seen_y_ = 0.0, still_for_ = 0.0;
 };
 
@@ -973,6 +1068,15 @@ obs_properties_t *get_properties(void *data)
 	obs_property_set_long_description(margin, obs_module_text("Fit.Margin.Tip"));
 	obs_property_t *resize = obs_properties_add_bool(props, "resize", obs_module_text("Fit.Resize"));
 	obs_property_set_long_description(resize, obs_module_text("Fit.Resize.Tip"));
+	obs_property_t *toward = obs_properties_add_list(props, "toward", obs_module_text("Fit.Toward"),
+							 OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+	// Saved by number: new ones go at the end.
+	int toward_value = 0;
+	for (const char *name :
+	     {"Fit.Toward.Middle", "Fit.Toward.Top", "Fit.Toward.Bottom", "Fit.Toward.Left", "Fit.Toward.Right",
+	      "Fit.Toward.TopLeft", "Fit.Toward.TopRight", "Fit.Toward.BottomLeft", "Fit.Toward.BottomRight"})
+		obs_property_list_add_int(toward, obs_module_text(name), toward_value++);
+	obs_property_set_long_description(toward, obs_module_text("Fit.Toward.Tip"));
 	obs_property_t *tolerance =
 		obs_properties_add_float_slider(props, "tolerance", obs_module_text("Fit.Tolerance"), 0.0, 100.0, 1.0);
 	obs_property_float_set_suffix(tolerance, " px");
@@ -1014,6 +1118,7 @@ void get_defaults(obs_data_t *settings)
 	obs_data_set_default_double(settings, "margin", 80.0);
 	obs_data_set_default_double(settings, "tolerance", 8.0);
 	obs_data_set_default_bool(settings, "resize", true);
+	obs_data_set_default_int(settings, "toward", 0);
 	obs_data_set_default_bool(settings, "visible_pixels", true);
 	obs_data_set_default_bool(settings, "no_shadows", true);
 	obs_data_set_default_int(settings, "glide_ms", 300);
