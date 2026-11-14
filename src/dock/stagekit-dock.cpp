@@ -920,7 +920,12 @@ public:
 		// Hidden until there is one.
 		update_bar_ = new QWidget(this);
 		update_bar_->setObjectName("updateBar");
-		auto *update_row = new QHBoxLayout(update_bar_);
+		// The words above, the two buttons below sharing the width: side
+		// by side with the words, a narrow dock cut the buttons off.
+		auto *update_column = new QVBoxLayout(update_bar_);
+		update_column->setContentsMargins(0, 0, 0, 0);
+		update_column->setSpacing(4);
+		auto *update_row = new QHBoxLayout();
 		update_row->setContentsMargins(0, 0, 0, 0);
 		update_text_ = new QLabel(update_bar_);
 		update_text_->setObjectName("updateText");
@@ -935,9 +940,14 @@ public:
 			if (!found_.page.empty())
 				QDesktopServices::openUrl(QUrl(QString::fromStdString(found_.page)));
 		});
-		update_row->addWidget(update_text_, 1);
-		update_row->addWidget(whats_new);
-		update_row->addWidget(update_now);
+		update_column->addWidget(update_text_);
+		update_column->addLayout(update_row);
+		// They give way before the dock is cut off.
+		for (QPushButton *button : {whats_new, update_now}) {
+			button->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
+			button->setMinimumWidth(40);
+			update_row->addWidget(button, 1);
+		}
 		update_bar_->hide();
 		layout->addWidget(update_bar_);
 

@@ -4711,6 +4711,14 @@ int main(int argc, char **argv)
 						shortest = std::min(shortest, needs);
 					}
 					printf("        the dock needs %d to %d px by tab\n", shortest, tallest);
+					// The update notice fits a narrow dock: it must never be
+					// what makes the dock wider than its window.
+					auto *bar = dock->findChild<QWidget *>("updateBar");
+					const int bar_needs = bar ? bar->minimumSizeHint().width() : 9999;
+					printf("        the dock needs %d px across, the update notice %d\n",
+					       dock->minimumSizeHint().width(), bar_needs);
+					CHECK(bar_needs <= 120, "the update notice fits a narrow dock (%d px)",
+					      bar_needs);
 					CHECK(shortest > 0 && shortest < tallest - 40,
 					      "the dock is as tall as the tab showing, not as the tallest tab");
 				}
