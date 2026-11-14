@@ -47,6 +47,9 @@ struct ArrangeOptions {
 	int send_mode = 0;
 	// Copy transform to chosen scenes: the scenes it copies to, by name.
 	std::vector<std::string> copy_scenes;
+	// Both copy tools: the sources that take the transform, by name. Empty
+	// (as it comes): the copies of the selected item's own source.
+	std::vector<std::string> copy_sources;
 };
 
 ArrangeOptions arrange_options();

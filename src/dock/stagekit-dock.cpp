@@ -633,9 +633,14 @@ public:
 				const ArrangeOutcome out = run_arrange(action, scene, arrange_items(scene));
 				obs_source_release(scene);
 				const bool copied_nothing = out.had > 0 && out.changed == 0;
+				const bool to_sources = !arrange_options().copy_sources.empty();
 				if (action == ArrangeAction::SameChosen && out.had > 0 &&
 				    arrange_options().copy_scenes.empty())
 					say(tr_text("Arrange.ChooseScenes"));
+				else if (to_sources && copied_nothing &&
+					 (action == ArrangeAction::SameChosen ||
+					  action == ArrangeAction::SameEverywhere))
+					say(tr_text("Arrange.NoneOfSources"));
 				else if (action == ArrangeAction::SameChosen && copied_nothing)
 					say(tr_text("Arrange.NoneChosen"));
 				else if (action == ArrangeAction::SameEverywhere && copied_nothing)
@@ -677,6 +682,27 @@ public:
 			show_copy_scenes();
 		});
 		copy_layout->addWidget(copy_add_);
+		// The sources that take the transform: the same kind of list. Left
+		// empty, it is the selected item's own source.
+		auto *sources_label = new QLabel(tr_text("Arrange.CopySources"), copy_box);
+		sources_label->setToolTip(tr_text("Arrange.CopySources.Tip"));
+		copy_layout->addWidget(sources_label);
+		source_rows_ = new QVBoxLayout();
+		source_rows_->setSpacing(2);
+		copy_layout->addLayout(source_rows_);
+		source_add_ = new QComboBox(copy_box);
+		source_add_->setObjectName("copySourcesAdd");
+		source_add_->setToolTip(tr_text("Arrange.CopySources.Tip"));
+		QObject::connect(source_add_, QOverload<int>::of(&QComboBox::activated), this, [this](int index) {
+			const QString name = source_add_->itemData(index).toString();
+			if (name.isEmpty())
+				return;
+			ArrangeOptions o = arrange_options();
+			o.copy_sources.push_back(name.toUtf8().toStdString());
+			set_arrange_options(o);
+			show_copy_sources();
+		});
+		copy_layout->addWidget(source_add_);
 		arrange_layout->addWidget(copy_box);
 		visible_ = new QCheckBox(tr_text("Arrange.Visible"), arrange_box);
 		visible_->setObjectName("arrangeVisible");
@@ -807,6 +833,36 @@ public:
 				return true;
 			},
 			&scenes);
+		// Every source shown in a scene, for 'Sources to copy to'.
+		QStringList sources;
+		obs_enum_scenes(
+			[](void *param, obs_source_t *source) {
+				if (obs_source_is_group(source))
+					return true;
+				static const auto add = [](obs_scene_t *, obs_sceneitem_t *item, void *p) {
+					auto *list = static_cast<QStringList *>(p);
+					const char *name = obs_source_get_name(obs_sceneitem_get_source(item));
+					if (name && *name && !list->contains(QString::fromUtf8(name)))
+						list->append(QString::fromUtf8(name));
+					return true;
+				};
+				obs_scene_enum_items(
+					obs_scene_from_source(source),
+					[](obs_scene_t *sc, obs_sceneitem_t *item, void *p) {
+						add(sc, item, p);
+						if (obs_sceneitem_is_group(item))
+							obs_sceneitem_group_enum_items(item, add, p);
+						return true;
+					},
+					param);
+				return true;
+			},
+			&sources);
+		sources.sort(Qt::CaseInsensitive);
+		if (sources != sources_) {
+			sources_ = sources;
+			show_copy_sources();
+		}
 		if (scenes != scenes_) {
 			scenes_ = scenes;
 			show_copy_scenes();
@@ -949,6 +1005,55 @@ private:
 		snap_within_->setValue(o.within);
 		storing_ = false;
 		show_copy_scenes();
+		show_copy_sources();
+	}
+
+	// The list of sources to copy to, and the sources that can still be
+	// added. With none listed, one plain row says what is copied to.
+	void show_copy_sources()
+	{
+		const ArrangeOptions o = arrange_options();
+		while (QLayoutItem *row = source_rows_->takeAt(0)) {
+			if (row->widget())
+				row->widget()->deleteLater();
+			delete row;
+		}
+		if (o.copy_sources.empty()) {
+			auto *same = new QLabel(tr_text("Arrange.CopySources.Same"));
+			same->setObjectName(QStringLiteral("copySourcesSame"));
+			same->setEnabled(false);
+			source_rows_->addWidget(same);
+		}
+		for (const std::string &name : o.copy_sources) {
+			auto *row = new QWidget();
+			auto *row_layout = new QHBoxLayout(row);
+			row_layout->setContentsMargins(0, 0, 0, 0);
+			row_layout->addWidget(new QLabel(QString::fromStdString(name), row), 1);
+			auto *remove = new QPushButton(QStringLiteral("x"), row);
+			remove->setObjectName(QStringLiteral("copySourcesRemove"));
+			remove->setFixedWidth(28);
+			remove->setToolTip(tr_text("Arrange.CopySources.Remove"));
+			QObject::connect(remove, &QPushButton::clicked, this, [this, name] {
+				ArrangeOptions changed = arrange_options();
+				changed.copy_sources.erase(std::remove(changed.copy_sources.begin(),
+								       changed.copy_sources.end(), name),
+							   changed.copy_sources.end());
+				set_arrange_options(changed);
+				show_copy_sources();
+			});
+			row_layout->addWidget(remove);
+			source_rows_->addWidget(row);
+		}
+		source_add_->blockSignals(true);
+		source_add_->clear();
+		source_add_->addItem(tr_text("Arrange.CopySources.Add"), QString());
+		for (const QString &source : sources_)
+			if (std::find(o.copy_sources.begin(), o.copy_sources.end(), source.toUtf8().toStdString()) ==
+			    o.copy_sources.end())
+				source_add_->addItem(source, source);
+		source_add_->setCurrentIndex(0);
+		source_add_->blockSignals(false);
+		shown_options_ = arrange_options_revision();
 	}
 
 	// The list of scenes to copy to, and the scenes that can still be added.
@@ -1428,6 +1533,8 @@ private:
 	QComboBox *against_ = nullptr;
 	QVBoxLayout *copy_rows_ = nullptr;
 	QComboBox *copy_add_ = nullptr;
+	QVBoxLayout *source_rows_ = nullptr;
+	QComboBox *source_add_ = nullptr;
 	QListWidget *arrange_list_ = nullptr;
 	QStringList arrange_rows_;
 	QCheckBox *visible_ = nullptr;
@@ -1478,6 +1585,7 @@ private:
 	bool dragging_ = false;
 	QStringList names_;
 	QStringList scenes_;
+	QStringList sources_;
 	QComboBox *scene_ = nullptr;
 	QComboBox *item_ = nullptr;
 	QComboBox *linked_ = nullptr;

@@ -70,8 +70,13 @@ int distribute_items(obs_source_t *scene, std::vector<obs_sceneitem_t *> items, 
 // copy sits in a group or not. Locked copies are left alone. Returns how many
 // copies changed.
 // With `only`, just the copies in the scenes of those names.
+// With `to_sources` (and it is not empty), the transform goes to the items
+// showing the sources of those names instead of to copies of the same source,
+// in this scene as well as the others; with several items selected, the last
+// in the list is the one copied.
 int copy_to_every_scene(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items,
-			const std::vector<std::string> *only = nullptr);
+			const std::vector<std::string> *only = nullptr,
+			const std::vector<std::string> *to_sources = nullptr);
 
 int match_size(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items, bool width, bool height,
 	       bool keep_shape, const Measure &how);

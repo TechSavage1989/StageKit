@@ -612,9 +612,35 @@ void copy_transform(obs_source_t *from_scene, obs_sceneitem_t *from, obs_source_
 } // namespace
 
 int copy_to_every_scene(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items,
-			const std::vector<std::string> *only)
+			const std::vector<std::string> *only, const std::vector<std::string> *to_sources)
 {
 	int changed = 0;
+	const auto wanted_scene = [only](obs_source_t *in) {
+		if (!only)
+			return true;
+		const char *name = obs_source_get_name(in);
+		return name && std::find(only->begin(), only->end(), name) != only->end();
+	};
+	if (to_sources && !to_sources->empty()) {
+		// To other sources: one item is the model, and every item showing a
+		// listed source takes its transform, here and in the other scenes.
+		if (items.empty())
+			return 0;
+		obs_sceneitem_t *model = items.back();
+		for (const std::string &name : *to_sources) {
+			obs_source_t *source = obs_get_source_by_name(name.c_str());
+			if (!source)
+				continue;
+			for (const Copy &copy : copies_of(source, nullptr)) {
+				if (copy.item == model || obs_sceneitem_locked(copy.item) || !wanted_scene(copy.scene))
+					continue;
+				copy_transform(scene, model, copy.scene, copy.item);
+				changed++;
+			}
+			obs_source_release(source);
+		}
+		return changed;
+	}
 	std::vector<obs_source_t *> done; // one item per source: the first selected
 	for (obs_sceneitem_t *item : items) {
 		obs_source_t *source = obs_sceneitem_get_source(item);
@@ -624,11 +650,8 @@ int copy_to_every_scene(obs_source_t *scene, const std::vector<obs_sceneitem_t *
 		for (const Copy &copy : copies_of(source, scene)) {
 			if (obs_sceneitem_locked(copy.item))
 				continue;
-			if (only) {
-				const char *name = obs_source_get_name(copy.scene);
-				if (!name || std::find(only->begin(), only->end(), name) == only->end())
-					continue;
-			}
+			if (!wanted_scene(copy.scene))
+				continue;
 			copy_transform(scene, item, copy.scene, copy.item);
 			changed++;
 		}

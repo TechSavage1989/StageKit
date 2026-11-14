@@ -5497,6 +5497,84 @@ int main(int argc, char **argv)
 								}
 								CHECK(add_scene && add_scene->findData("Chosen A") > 0,
 								      "the remove button takes a scene off the list again");
+
+								// Sources to copy to: with a source listed, the
+								// transform goes to that source's items instead.
+								obs_source_t *other =
+									obs_source_create("color_source", "Copy Target",
+											  nullptr, nullptr);
+								obs_sceneitem_t *other_a =
+									obs_scene_add(chosen_a, other);
+								obs_sceneitem_t *other_b =
+									obs_scene_add(chosen_b, other);
+								place(other_a, 700, 300);
+								place(other_b, 710, 310);
+								auto *add_source =
+									dock->findChild<QComboBox *>("copySourcesAdd");
+								for (int i = 0; i < 40 && add_source &&
+										add_source->findData("Copy Target") < 0;
+								     i++) {
+									QCoreApplication::processEvents();
+									sleep_ms(50);
+								}
+								CHECK(add_source &&
+									      add_source->findData("Copy Target") > 0 &&
+									      dock->findChild<QLabel *>(
+										      "copySourcesSame"),
+								      "the dock lists the sources that can be added to 'Sources to copy to', and says 'The same source' while none is");
+								if (add_source) {
+									emit add_source->activated(
+										add_source->findData("Copy Target"));
+									for (int i = 0; i < 4; i++) {
+										QCoreApplication::processEvents();
+										sleep_ms(50);
+									}
+								}
+								place(c_group, 80, 110);
+								const vec2 same_before = pos_of(in_b);
+								for (int i = 0; i < 4; i++) {
+									QCoreApplication::processEvents();
+									sleep_ms(50);
+								}
+								click("arrange_same_everywhere");
+								for (int i = 0; i < 4; i++) {
+									QCoreApplication::processEvents();
+									sleep_ms(50);
+								}
+								const vec2 oa = pos_of(other_a), ob = pos_of(other_b),
+									   same_now = pos_of(in_b);
+								CHECK(std::fabs(oa.x - 80) < 0.6 &&
+									      std::fabs(oa.y - 110) < 0.6 &&
+									      std::fabs(ob.x - 80) < 0.6 &&
+									      std::fabs(same_now.x - same_before.x) <
+										      0.6,
+								      "with a source listed, 'Copy transform to all scenes' gives the transform to that source's items, not to the same source's (%.0f, %.0f and %.0f; same source %.0f)",
+								      oa.x, oa.y, ob.x, same_now.x);
+								if (auto *remove = dock->findChild<QPushButton *>(
+									    "copySourcesRemove"))
+									remove->click();
+								for (int i = 0; i < 6; i++) {
+									QCoreApplication::processEvents();
+									sleep_ms(50);
+								}
+								place(c_group, 90, 120);
+								place(other_a, 700, 300);
+								for (int i = 0; i < 4; i++) {
+									QCoreApplication::processEvents();
+									sleep_ms(50);
+								}
+								click("arrange_same_everywhere");
+								for (int i = 0; i < 4; i++) {
+									QCoreApplication::processEvents();
+									sleep_ms(50);
+								}
+								CHECK(add_source &&
+									      add_source->findData("Copy Target") > 0 &&
+									      std::fabs(pos_of(in_b).x - 90) < 0.6 &&
+									      std::fabs(pos_of(other_a).x - 700) < 0.6,
+								      "taken off the list again, it goes to the same source in the other scenes as before (%.0f; other source %.0f)",
+								      pos_of(in_b).x, pos_of(other_a).x);
+								obs_source_release(other);
 								obs_scene_release(chosen_a);
 								obs_scene_release(chosen_b);
 								obs_scene_release(elsewhere);

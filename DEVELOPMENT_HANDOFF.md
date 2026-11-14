@@ -211,6 +211,17 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Copy transform to other sources (0.1.0-beta69)
+
+The owner: "copy transform to should also allow selecting specific other sources to apply the
+transform to, not just other scenes. assume when not specifically set, it only applies to the same
+source in other scenes."
+
+- *Sources to copy to* in the dock's *Copy transform* box, the same kind of list as the scenes.
+- My reading, told to the owner: listed sources take the transform *instead of* the same source
+  (add the item's own source to have both), and in the current scene too. The transform is literal
+  (scale, not size on screen). Change either if the owner says so.
+
 ## Standby Picture after Auto Frame, and a real fade back (0.1.0-beta68)
 
 The owner, on beta67: the standby picture started cropped before any game, took an emulator's shape
