@@ -192,12 +192,16 @@ public:
 		s.resize = obs_data_get_bool(settings, "resize");
 		s.orig_item = obs_data_get_string(settings, "orig_item");
 		s.orig_k = obs_data_get_double(settings, "orig_k");
-		have_keep_ = false; // the size to keep is read from the item afresh
-		own_seen_ = false;  // and what shows of the item is looked at again
+		own_seen_ = false; // what shows of the item is looked at again
 		{
+			std::lock_guard lock(mutex_);
+			// The size kept is only read afresh when the filter is given
+			// another item or told to stop resizing: any other change of
+			// settings (and OBS sends them for many reasons) leaves it.
+			if (s.item != settings_.item || s.resize != settings_.resize)
+				have_keep_ = false;
 			// Unticked just now: the size to keep is the one the item had
 			// before this filter resized it, not the fitted one.
-			std::lock_guard lock(mutex_);
 			if (!s.resize && settings_.resize)
 				back_to_original_ = true;
 		}
@@ -420,15 +424,43 @@ public:
 			vec2 b_now;
 			obs_sceneitem_get_bounds(item, &b_now);
 			const bool boxed = obs_sceneitem_get_bounds_type(item) != OBS_BOUNDS_NONE;
-			if (have_keep_ && boxed && have_set_ &&
-			    (std::fabs(b_now.x - set_bw_) > 0.5 || std::fabs(b_now.y - set_bh_) > 0.5))
+			// Resized by hand in the preview: that is the size to keep
+			// from now on. Only a person does that to an item that is
+			// showing and whose source is not changing size. A shadow
+			// filter also changes the bounding box, when its room does
+			// (an item hidden or shown changes it): taken for a resize
+			// by hand, that made the owner's camera a little smaller
+			// each time it was hidden and shown again.
+			if (sw != steady_sw_ || sh != steady_sh_ || !obs_sceneitem_visible(item)) {
+				steady_sw_ = sw;
+				steady_sh_ = sh;
+				steady_for_ = 0.0;
+			} else {
+				steady_for_ += seconds;
+			}
+			// (And only to an item that is selected: the handles
+			// that resize one are on the selected item.)
+			if (have_keep_ && boxed && have_set_ && steady_for_ >= 1.0 && obs_sceneitem_selected(item) &&
+			    (std::fabs(b_now.x - set_bw_) > 2.0 || std::fabs(b_now.y - set_bh_) > 2.0)) {
 				have_keep_ = false;
+				resized_by_hand_ = true;
+			}
 			if (!have_keep_ && back_to_original_ && s.orig_item == s.item && s.orig_k > 0.0) {
 				keep_k_ = s.orig_k;
 				have_keep_ = true;
 			}
-			if (!have_keep_)
+			if (!have_keep_) {
+				const double was = keep_k_;
 				have_keep_ = drawn_now(keep_k_);
+				// For the log, so a size that changes by itself can be
+				// traced: when the kept size was read, and why.
+				if (have_keep_ && was > 0.0 && std::fabs(keep_k_ - was) > 0.001 * was)
+					obs_log(LOG_INFO,
+						"Fit to Space '%s': the size kept for '%s' went from %.4f to %.4f of its source (%s)",
+						obs_source_get_name(source_), s.item.c_str(), was, keep_k_,
+						resized_by_hand_ ? "resized in the preview" : "settings changed");
+				resized_by_hand_ = false;
+			}
 			back_to_original_ = false;
 		}
 		// The size kept is the size of what shows of it.
@@ -837,7 +869,10 @@ private:
 	bool own_seen_ = false, was_placed_ = false;
 	double own_sw_ = 0.0, own_sh_ = 0.0, own_for_ = 0.0;
 	bool have_keep_ = false;
-	bool back_to_original_ = false; // just unticked: keep the size from before the filter
+	bool back_to_original_ = false, resized_by_hand_ = false;
+	double steady_sw_ = 0.0, steady_sh_ = 0.0,
+	       steady_for_ =
+		       0.0; // the item's source has kept its size this long // just unticked: keep the size from before the filter
 	Box goal_, from_, cur_;
 	bool have_goal_ = false, have_cur_ = false;
 	double glide_ = 1.0;

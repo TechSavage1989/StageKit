@@ -2262,6 +2262,74 @@ int main(int argc, char **argv)
 				CHECK(fitted.x > 150 && is(again.x, 100) && is(again.y, 100),
 				      "unticking 'Resize it to fit' gives the item back the size it had before the filter (fitted %.0f wide, then %.0fx%.0f)",
 				      fitted.x, again.x, again.y);
+				// A camera drawn much smaller than its source, with a shadow
+				// sized in screen pixels, hidden and shown again a few times:
+				// it is still the size it was. (Hidden, the shadow's room in
+				// the source changes and with it the bounding box, which is
+				// not a resize by hand.)
+				{
+					obs_source_t *cam =
+						obs_source_create("color_source", "Kept Camera", nullptr, nullptr);
+					sized(cam, 400, 400);
+					obs_scene_t *cs = obs_scene_create("Fit Kept Camera"); // 640x360
+					obs_sceneitem_t *cam_item = obs_scene_add(cs, cam);
+					vec2 quarter;
+					vec2_set(&quarter, 0.25f, 0.25f);
+					obs_sceneitem_set_scale(cam_item, &quarter);
+					obs_data_t *cf = obs_data_create();
+					obs_data_set_string(cf, "item", "Kept Camera");
+					obs_data_set_int(cf, "box", 2);
+					obs_data_set_double(cf, "margin", 20);
+					obs_data_set_int(cf, "glide_ms", 0);
+					obs_data_set_bool(cf, "resize", false);
+					obs_source_t *cam_fit =
+						obs_source_create("stagekit_fit_item", "Fit Camera", cf, nullptr);
+					obs_source_filter_add(obs_scene_get_source(cs), cam_fit);
+					obs_set_output_source(0, obs_scene_get_source(cs));
+					auto pause = [&](int ms) {
+						for (int i = 0; i < ms / 50; i++) {
+							render(obs_scene_get_source(cs), 640, 360);
+							sleep_ms(50);
+						}
+					};
+					pause(600);
+					obs_data_t *sd = obs_data_create();
+					obs_data_set_bool(sd, "screen_px", true);
+					obs_source_t *sh = obs_source_create("stagekit_shadow_backdrop", "Kept Shadow",
+									     sd, nullptr);
+					obs_data_release(sd);
+					obs_source_filter_add(cam, sh);
+					pause(1800);
+					// How wide the camera's own picture is drawn, whatever
+					// room its shadow takes around it.
+					auto drawn = [&] {
+						vec2 b;
+						obs_sceneitem_get_bounds(cam_item, &b);
+						const double k = std::min(b.x / (double)obs_source_get_width(cam),
+									  b.y / (double)obs_source_get_height(cam));
+						return 400.0 * k;
+					};
+					const double before = drawn();
+					for (int i = 0; i < 3; i++) {
+						obs_sceneitem_set_visible(cam_item, false);
+						pause(700);
+						obs_sceneitem_set_visible(cam_item, true);
+						pause(1500);
+					}
+					const double after = drawn();
+					CHECK(std::fabs(before - 100) < 3 && std::fabs(after - before) < 1.5,
+					      "hidden and shown again three times, a kept-size camera with a shadow is still its size (%.1f then %.1f px wide)",
+					      before, after);
+					obs_source_filter_remove(cam, sh);
+					obs_source_release(sh);
+					obs_source_filter_remove(obs_scene_get_source(cs), cam_fit);
+					obs_source_release(cam_fit);
+					obs_data_release(cf);
+					obs_scene_release(cs);
+					obs_source_release(cam);
+					obs_set_output_source(0, obs_scene_get_source(ks));
+					settle(300);
+				}
 				// Something grows beside it until the space is narrower than
 				// the item: it stays the gap inside the screen's edge.
 				obs_source_t *wall = obs_source_create("color_source", "Kept Wall", nullptr, nullptr);
