@@ -604,6 +604,10 @@ What they do:
 
 Options:
 
+- **In every scene** (off as it comes): whatever an arrange tool moves or resizes here is put the
+  same way in every other scene showing that source. One Undo takes it back everywhere.
+- *Use visible pixels* and *Ignore shadows & outlines* are also on the dock's **Place** tab. They are
+  the same two options in both places: ticking one ticks the other.
 - **Use visible pixels** (on by default) measures the picture actually drawn in each item and ignores
   the empty, see-through room around it. Switch it off to go by the item's box, as OBS does. An item
   that is drawing nothing at all, such as a widget with nothing to show, is treated as not there: it

@@ -250,9 +250,14 @@ ArrangeOutcome run_arrange(ArrangeAction action, obs_source_t *scene, const std:
 {
 	// One step in OBS's Edit → Undo for whatever this changes, in every
 	// scene when that is where it reaches.
-	const bool everywhere = action == ArrangeAction::SameEverywhere || action == ArrangeAction::SameChosen;
+	const bool copies = action == ArrangeAction::SameEverywhere || action == ArrangeAction::SameChosen;
+	const bool everywhere = copies || arrange_options().arrange_every_scene;
 	const std::string before = everywhere ? transform_snapshot_all() : transform_snapshot(scene);
 	const ArrangeOutcome out = run_arrange_now(action, scene, items);
+	// "In every scene": what was lined up here sits the same way wherever
+	// else its source is shown.
+	if (!copies && everywhere && out.changed > 0)
+		copy_to_every_scene(scene, items);
 	if (out.changed > 0)
 		add_transform_undo(obs_module_text(arrange_info(action).hotkey), before,
 				   everywhere ? transform_snapshot_all() : transform_snapshot(scene));
@@ -373,6 +378,7 @@ void arrange_save_load(obs_data_t *save_data, bool saving)
 		obs_data_set_bool(save_data, "stagekit.arrange.live_snap", o.live_snap);
 		obs_data_set_bool(save_data, "stagekit.arrange.guides", o.guides);
 		obs_data_set_bool(save_data, "stagekit.send.every_scene", o.send_every_scene);
+		obs_data_set_bool(save_data, "stagekit.arrange.every_scene", o.arrange_every_scene);
 		obs_data_set_bool(save_data, "stagekit.send.slide", o.send_slide);
 		obs_data_set_int(save_data, "stagekit.send.curve", o.send_curve);
 		obs_data_set_int(save_data, "stagekit.send.mode", o.send_mode);
@@ -408,6 +414,7 @@ void arrange_save_load(obs_data_t *save_data, bool saving)
 		o.guides = obs_data_get_bool(save_data, "stagekit.arrange.guides");
 		o.within = (int)obs_data_get_int(save_data, "stagekit.arrange.within");
 		// Collections saved before this option existed take its default.
+		o.arrange_every_scene = obs_data_get_bool(save_data, "stagekit.arrange.every_scene");
 		if (obs_data_has_user_value(save_data, "stagekit.send.every_scene"))
 			o.send_every_scene = obs_data_get_bool(save_data, "stagekit.send.every_scene");
 		o.send_slide = obs_data_get_bool(save_data, "stagekit.send.slide");
