@@ -411,7 +411,10 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   (they are published in stages); such a release is passed over until they are up. The build
   knows which release it is from the newest notes file at configure time (`STAGEKIT_RELEASE`): the
   plugin's version number alone is the same for every pre-release. The download and install are a
-  PowerShell script because the DLL cannot be replaced while OBS runs. None of the Windows side
+  PowerShell script because the DLL cannot be replaced while OBS runs. The helper is started with
+  `CREATE_NO_WINDOW` alone: with `DETACHED_PROCESS` (beta83 to beta85) the owner pressed *Update*
+  and nothing followed. It writes its steps to `%TEMP%\StageKitUpdate\update.log`, and the dock says
+  so when the helper ends while OBS is still open (`update_state`). None of the Windows side
   (WinHTTP, the script, the installer's silent run) has run in the tests; they cover the choosing,
   the ordering and the script's text.
 - **Auto Capture's Windows code is only compiled by CI and never run by the tests.** The tests feed it

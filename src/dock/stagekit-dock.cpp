@@ -526,6 +526,18 @@ public:
 		QVBoxLayout *copy_page = page("Dock.Tab.Copy", "pageCopy");
 		QVBoxLayout *effects_page = page("Dock.Tab.Effects", "pageEffects");
 		layout->addWidget(tabs, 1);
+		// A tab set is as tall as its tallest page, so the dock scrolled on
+		// a short tab with nothing below it. Only the page showing counts.
+		auto only_showing = [tabs] {
+			for (int i = 0; i < tabs->count(); i++) {
+				const bool showing = i == tabs->currentIndex();
+				tabs->widget(i)->setSizePolicy(QSizePolicy::Preferred,
+							       showing ? QSizePolicy::Preferred : QSizePolicy::Ignored);
+			}
+			tabs->updateGeometry();
+		};
+		QObject::connect(tabs, &QTabWidget::currentChanged, this, [only_showing](int) { only_showing(); });
+		only_showing();
 
 		auto *move_box = new QWidget(this);
 		auto *move_layout = new QVBoxLayout(move_box);
@@ -1129,9 +1141,21 @@ private:
 					  QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes) != QMessageBox::Yes)
 			return;
 		std::string error;
-		if (install_update(found_, error))
+		if (install_update(found_, error)) {
 			say(tr_text("Update.Started"));
-		else
+			// A helper that works closes OBS; one that ends while OBS is
+			// still here gave up, and that is said instead of nothing.
+			auto *watch = new QTimer(this);
+			QObject::connect(watch, &QTimer::timeout, this, [this, watch] {
+				const UpdateState state = update_state();
+				if (state == UpdateState::Running && !measuring_stopped())
+					return;
+				if (state == UpdateState::Stopped)
+					say(tr_text("Update.Stopped"));
+				watch->deleteLater();
+			});
+			watch->start(2000);
+		} else
 			say(QString::fromStdString(error));
 	}
 
