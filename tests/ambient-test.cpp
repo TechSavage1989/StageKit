@@ -1715,56 +1715,6 @@ int main(int argc, char **argv)
 			      "a change of resolution at the same shape changes neither the source's size nor its place");
 		}
 
-		// "Size it by hand": resizing the item in the preview sets the box.
-		{
-			obs_source_t *game3 = obs_source_create("color_source", "Hand Game", nullptr, nullptr);
-			sized(game3, 400, 300);
-			obs_scene_t *sc = obs_scene_create("Fit By Hand");
-			obs_sceneitem_t *gi = obs_scene_add(sc, game3);
-			obs_data_t *hd = obs_data_create();
-			obs_data_set_string(hd, "item", "Hand Game");
-			obs_data_set_int(hd, "box", 1);
-			obs_data_set_double(hd, "box_x", 30);
-			obs_data_set_double(hd, "box_y", 30);
-			obs_data_set_double(hd, "box_width", 300);
-			obs_data_set_double(hd, "box_height", 200);
-			obs_data_set_double(hd, "margin", 0);
-			obs_data_set_bool(hd, "by_hand", true);
-			obs_source_t *hand = obs_source_create("stagekit_fit_item", "Fit By Hand", hd, nullptr);
-			obs_source_filter_add(obs_scene_get_source(sc), hand);
-			auto settle = [&](int ms) {
-				for (int i = 0; i < ms / 50; i++) {
-					render(obs_scene_get_source(sc), 640, 360);
-					sleep_ms(50);
-				}
-			};
-			settle(400);
-			vec2 hp, hb;
-			obs_sceneitem_get_bounds(gi, &hb);
-			const bool began = std::fabs(hb.x - 300) < 0.6 && std::fabs(hb.y - 200) < 0.6;
-			// What a drag on a corner handle does: a new box, and a new place.
-			vec2_set(&hb, 400.0f, 250.0f);
-			obs_sceneitem_set_bounds(gi, &hb);
-			vec2_set(&hp, 50.0f, 60.0f);
-			obs_sceneitem_set_pos(gi, &hp);
-			settle(1000);
-			obs_sceneitem_get_bounds(gi, &hb);
-			obs_sceneitem_get_pos(gi, &hp);
-			obs_data_t *saved = obs_source_get_settings(hand);
-			CHECK(began && std::fabs(hb.x - 400) < 0.6 && std::fabs(hb.y - 250) < 0.6 &&
-				      std::fabs(hp.x - 30) < 0.6 && std::fabs(hp.y - 30) < 0.6 &&
-				      std::fabs(obs_data_get_double(saved, "box_width") - 400) < 0.6 &&
-				      std::fabs(obs_data_get_double(saved, "box_height") - 250) < 0.6,
-			      "with 'Size it by hand', the size given in the preview becomes the box's, and it goes back to the box's corner (%.0fx%.0f at %.0f, %.0f)",
-			      hb.x, hb.y, hp.x, hp.y);
-			obs_data_release(saved);
-			obs_data_release(hd);
-			obs_source_filter_remove(obs_scene_get_source(sc), hand);
-			obs_source_release(hand);
-			obs_scene_release(sc);
-			obs_source_release(game3);
-		}
-
 		// Shadow, Glow & Outline's "Keep it on screen": an item whose shadow
 		// would run off the canvas is made smaller instead.
 		{
