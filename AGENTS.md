@@ -27,7 +27,7 @@ for an update notice inside OBS. This exception is recorded in the handoff.
 | `src/view/` | Cropped View source (part of another source as a source, so filters follow the crop) |
 | `src/placement/` | Scene filters: Place Item, Show/Hide Animation, Visibility Link, Match Item, Layout, Fit Item (keeps one item fitted in a box, filling it or floating centred by shape); Send To, Place Item's code as a filter on the source it moves; and Show in Scenes (`show-in-scenes.*`), a filter on any source that is a switch for showing and hiding sources across scenes |
 | `src/dock/` | Two docks (Qt widgets, no `Q_OBJECT`): StageKit follows the item selected in OBS and drives Send To filters on that item's source; StageKit Background holds the start image thumbnail. `arrange-tools.*` is the one set of line-up actions and options behind the dock, the hotkeys and the preview's right-click menu |
-| `src/common/` | Shared helpers: easing and `Tween`, `SwitchRamp`, `KawaseBlur`, scene utilities, `item-transition` (the *Change with* control for filters that show and hide items), and the start image (global path + Start Image source) |
+| `src/common/` | Shared helpers: `timing` (registers every kind and logs what is slow), easing and `Tween`, `SwitchRamp`, `KawaseBlur`, scene utilities, `item-transition` (the *Change with* control for filters that show and hide items), and the start image (global path + Start Image source) |
 | `src/frame/` | Auto Frame filter and the Picture Shape key filter |
 | `src/capture/` | Auto Capture filter (aims a Game Capture at the game in front), Program Trigger filter (shows items and switches filters while a program is open) and Active App scene filter (shows the one of several captures whose app is in use). All use the Win32 window list in `auto-capture.cpp`; compiled but idle elsewhere. Also Standby Picture (`standby.*`), a filter that shows a picture in a capture's place while it has nothing; it works everywhere |
 | `src/api/` | obs-websocket vendor requests (`StageKit` vendor) |
@@ -319,6 +319,15 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
 - **Ambient Background does not blend in a standby picture** (`live_skip_standby`, on by default):
   `standby_waiting()` says the capture is only showing its Standby Picture. The owner's background
   turned into the still start image.
+- **Every filter and source is registered through `register_timed`** (`src/common/timing.*`), not
+  `obs_register_source`. It keeps time of each kind's tick and drawing and, twice a minute, writes a
+  `timing, last 30 s:` line to OBS's log for any kind with a call over 3 ms or over 2% of the time;
+  nothing while all is quick. A filter's drawing time includes what it draws from. It measures the
+  processor's side only: a slow shader shows up as OBS's own rendering lag, not here. Ask the owner
+  for the log when frames drop; do not guess.
+- **Fit Item's free space waits for a move to end.** It takes its new space in one glide once the
+  other items have been still for 0.15 s. Beta74 had it chase a moving item, resizing the picture
+  (and its shadow) on every frame of the move; the owner still saw dropped frames during moves.
 - **Fit Item gives OBS the space, not the size.** Its bounding box is the space the picture may take
   (plus a shadow's room at the fitted scale), with scale-to-inner-bounds and centre alignment, so OBS
   fits the picture every frame and a window being resized never lags. Do not go back to setting the

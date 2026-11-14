@@ -21,6 +21,7 @@ the Free Software Foundation; either version 2 of the License, or
 // watched one item and switched the others.
 
 #include "visibility-link.hpp"
+#include "../common/timing.hpp"
 
 #include "../common/item-transition.hpp"
 #include "../common/pick-list.hpp"
@@ -242,7 +243,7 @@ void register_visibility_link()
 	info.filter_remove = [](void *data, obs_source_t *) {
 		static_cast<VisibilityLink *>(data)->detach();
 	};
-	obs_register_source(&info);
+	register_timed(&info);
 }
 
 } // namespace stagekit

@@ -17,6 +17,7 @@ the Free Software Foundation; either version 2 of the License, or
 // scene is required.
 
 #include "shadow-backdrop.hpp"
+#include "../common/timing.hpp"
 
 #include "../common/kawase-blur.hpp"
 #include "../common/pick-list.hpp"
@@ -1195,7 +1196,7 @@ void register_shadow_backdrop()
 	info.filter_remove = [](void *data, obs_source_t *parent) {
 		static_cast<ShadowBackdrop *>(data)->leave(parent);
 	};
-	obs_register_source(&info);
+	register_timed(&info);
 }
 
 } // namespace stagekit

@@ -20,6 +20,7 @@ the Free Software Foundation; either version 2 of the License, or
 // systems the filter loads and does nothing.
 
 #include "program-trigger.hpp"
+#include "../common/timing.hpp"
 
 #include "auto-capture.hpp"
 #include "../common/item-transition.hpp"
@@ -378,7 +379,7 @@ void register_program_trigger()
 	info.filter_remove = [](void *data, obs_source_t *) {
 		static_cast<ProgramTrigger *>(data)->detach();
 	};
-	obs_register_source(&info);
+	register_timed(&info);
 }
 
 } // namespace stagekit

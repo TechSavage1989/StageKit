@@ -211,6 +211,17 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## A timing log, and free space waits for moves to end (0.1.0-beta76)
+
+- The owner on beta74: "definitely smoother overall, but switching scenes or making moves does cause
+  frame drops at least during the animations".
+- No longer guessing: `register_timed` writes `timing, last 30 s:` lines to the log for whatever is
+  slow. **Next step is the owner's log** from a session with scene switches and moves.
+- Fit Item's free space no longer chases a moving item (see AGENTS.md).
+- Still unproven suspects for drops during a scene switch: OBS draws both scenes during a
+  transition, so every StageKit filter in both is drawn twice; and a shadow sized in screen pixels
+  rebuilds its textures whenever its source is shown at another size.
+
 ## Lag: free space only for scenes on screen; Show in Scenes takes bring-along items (0.1.0-beta75)
 
 - The owner, before trying beta74: "live feed and animations are both very laggy. framerate is

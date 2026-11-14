@@ -18,6 +18,7 @@ the Free Software Foundation; either version 2 of the License, or
 // linked to it stay put, while the picture inside glides to its new fit.
 
 #include "auto-frame.hpp"
+#include "../common/timing.hpp"
 
 #include "../capture/auto-capture.hpp"
 #include "../common/easing.hpp"
@@ -2007,7 +2008,7 @@ void register_auto_frame()
 	info.video_render = [](void *data, gs_effect_t *) {
 		static_cast<AutoFrame *>(data)->render();
 	};
-	obs_register_source(&info);
+	register_timed(&info);
 
 	obs_source_info shape = {};
 	shape.id = kPictureShapeId;
@@ -2042,7 +2043,7 @@ void register_auto_frame()
 	shape.filter_remove = [](void *data, obs_source_t *) {
 		static_cast<PictureShape *>(data)->detach();
 	};
-	obs_register_source(&shape);
+	register_timed(&shape);
 }
 
 } // namespace stagekit

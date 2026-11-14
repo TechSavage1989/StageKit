@@ -14,6 +14,7 @@ the Free Software Foundation; either version 2 of the License, or
 // scene item showing it, carries on as before.
 
 #include "corners.hpp"
+#include "../common/timing.hpp"
 
 #include "../common/shown-scale.hpp"
 #include "../frame/auto-frame.hpp"
@@ -409,7 +410,7 @@ void register_corners()
 	info.video_render = [](void *data, gs_effect_t *) {
 		static_cast<Corners *>(data)->render();
 	};
-	obs_register_source(&info);
+	register_timed(&info);
 }
 
 } // namespace stagekit

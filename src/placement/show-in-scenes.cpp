@@ -21,6 +21,7 @@ the Free Software Foundation; either version 2 of the License, or
 // shown or hidden by hand stays that way until the next press.
 
 #include "show-in-scenes.hpp"
+#include "../common/timing.hpp"
 
 #include "place-item.hpp"
 
@@ -366,7 +367,7 @@ void register_show_in_scenes()
 	info.video_render = [](void *data, gs_effect_t *) {
 		obs_source_skip_video_filter(static_cast<ShowInScenes *>(data)->source());
 	};
-	obs_register_source(&info);
+	register_timed(&info);
 }
 
 } // namespace stagekit

@@ -12,6 +12,7 @@ the Free Software Foundation; either version 2 of the License, or
 // the filter on zooms in; switching it off zooms back out.
 
 #include "ramp-zoom.hpp"
+#include "../common/timing.hpp"
 
 #include "../common/switch-ramp.hpp"
 
@@ -239,7 +240,7 @@ void register_ramp_zoom()
 	info.filter_remove = [](void *data, obs_source_t *) {
 		static_cast<RampZoom *>(data)->detach();
 	};
-	obs_register_source(&info);
+	register_timed(&info);
 }
 
 } // namespace stagekit

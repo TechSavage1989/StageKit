@@ -21,6 +21,7 @@ the Free Software Foundation; either version 2 of the License, or
 //   vignette, brightness -> output
 
 #include "ambient-background.hpp"
+#include "../common/timing.hpp"
 
 #include "../capture/standby.hpp"
 #include "../common/scene-util.hpp"
@@ -1075,7 +1076,7 @@ void register_ambient_background()
 	info.enum_active_sources = [](void *data, obs_source_enum_proc_t cb, void *param) {
 		static_cast<AmbientBackground *>(data)->enum_children(cb, param);
 	};
-	obs_register_source(&info);
+	register_timed(&info);
 }
 
 } // namespace stagekit

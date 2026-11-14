@@ -34,6 +34,7 @@ the Free Software Foundation; either version 2 of the License, or
 // systems the filter loads and does nothing.
 
 #include "active-app.hpp"
+#include "../common/timing.hpp"
 
 #include "auto-capture.hpp"
 #include "../common/item-transition.hpp"
@@ -642,7 +643,7 @@ void register_active_app()
 	info.filter_remove = [](void *data, obs_source_t *) {
 		static_cast<ActiveApp *>(data)->detach();
 	};
-	obs_register_source(&info);
+	register_timed(&info);
 }
 
 } // namespace stagekit

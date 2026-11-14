@@ -11,6 +11,7 @@ the Free Software Foundation; either version 2 of the License, or
 // Three small filters for scenes. See scene-tools.hpp.
 
 #include "scene-tools.hpp"
+#include "../common/timing.hpp"
 
 #include "../common/easing.hpp"
 #include "../common/pick-list.hpp"
@@ -818,7 +819,7 @@ void register_show_hide()
 	info.filter_remove = [](void *data, obs_source_t *) {
 		static_cast<ShowHide *>(data)->detach();
 	};
-	obs_register_source(&info);
+	register_timed(&info);
 }
 
 void register_match_item()
@@ -854,7 +855,7 @@ void register_match_item()
 	info.filter_remove = [](void *data, obs_source_t *) {
 		static_cast<MatchItem *>(data)->detach();
 	};
-	obs_register_source(&info);
+	register_timed(&info);
 }
 
 void register_layout()
@@ -891,7 +892,7 @@ void register_layout()
 	info.filter_remove = [](void *data, obs_source_t *) {
 		static_cast<Layout *>(data)->detach();
 	};
-	obs_register_source(&info);
+	register_timed(&info);
 }
 
 } // namespace stagekit

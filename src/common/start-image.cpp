@@ -9,6 +9,7 @@ the Free Software Foundation; either version 2 of the License, or
 */
 
 #include "start-image.hpp"
+#include "timing.hpp"
 
 #include <obs-module.h>
 #include <graphics/image-file.h>
@@ -243,7 +244,7 @@ void register_start_image()
 	info.video_render = [](void *data, gs_effect_t *) {
 		static_cast<StartImageSource *>(data)->render();
 	};
-	obs_register_source(&info);
+	register_timed(&info);
 
 	proc_handler_add(
 		obs_get_proc_handler(), "void stagekit_set_start_image(in string path)",
