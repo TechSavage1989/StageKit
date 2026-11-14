@@ -356,7 +356,12 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   another part of the item drawn than at its last look (`looked_`). Until beta106 one item a second
   was looked at properly, in turn, by every filter: the owner's log showed Fit to Space ticks of
   8 to 45 ms, the preview was choppy, and the chat box took seconds to make room for the music
-  widget. The first build (beta70) read one
+  widget. A glance is not free either: it draws its item once more, filters and all. At fifteen
+  a second over every item (beta107) the owner saw the frame time go up, so only an item that
+  can come and go is glanced at often (`comes_and_goes`: a browser widget, text, a group, a
+  nested scene, and anything once seen to change; twice a second each), and the rest about every
+  ten seconds, one at a time. An item's first glance after a look is not trusted as that look's
+  measure (they can be seconds apart): the item is looked at once more. The first build (beta70) read one
   item back every quarter second and all of them after any move; the owner then found camera moves
   "very choppy". Never add a read-back that is read in the same frame on a timer, and none that
   runs while things animate. It only looks while its scene

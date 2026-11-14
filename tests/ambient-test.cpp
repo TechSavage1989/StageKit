@@ -3035,16 +3035,23 @@ int main(int argc, char **argv)
 			// widget or a group) are glanced at twice a second; anything
 			// else seldom, until it has once been seen to change.
 			for (const bool known_kind : {true, false}) {
-				obs_source_t *game3 =
-					obs_source_create("color_source", "Glance Game", nullptr, nullptr);
+				// (Names of their own each time round: a source just let go
+				// may still be there for a moment, and OBS would rename
+				// the new one.)
+				const char *game_name = known_kind ? "Glance Game" : "Glance Game Too";
+				obs_source_t *game3 = obs_source_create("color_source", game_name, nullptr, nullptr);
 				sized(game3, 320, 180);
 				obs_data_t *wd = obs_data_create();
 				obs_data_set_int(wd, "width", 200);
 				obs_data_set_int(wd, "height", 100);
 				obs_data_set_int(wd, "color", 0x00000000); // there, and drawing nothing
-				obs_source_t *widget = obs_source_create("color_source", "Glance Widget", wd, nullptr);
-				obs_scene_t *gs = obs_scene_create("Fit And A Widget"); // 640x360
-				obs_scene_t *inner = obs_scene_create("Glance Widget Scene");
+				obs_source_t *widget = obs_source_create(
+					"color_source", known_kind ? "Glance Widget" : "Glance Widget Too", wd,
+					nullptr);
+				obs_scene_t *gs = obs_scene_create(known_kind ? "Fit And A Widget"
+									      : "Fit And A Plain Item"); // 640x360
+				obs_scene_t *inner =
+					obs_scene_create(known_kind ? "Glance Widget Scene" : "Glance Scene Unused");
 				obs_sceneitem_t *game_item = obs_scene_add(gs, game3);
 				obs_sceneitem_t *widget_item;
 				vec2 pp;
@@ -3061,7 +3068,7 @@ int main(int argc, char **argv)
 				vec2_set(&pp, 40.0f, 40.0f);
 				obs_sceneitem_set_pos(game_item, &pp);
 				obs_data_t *d = obs_data_create();
-				obs_data_set_string(d, "item", "Glance Game");
+				obs_data_set_string(d, "item", game_name);
 				obs_data_set_int(d, "box", 2);
 				obs_data_set_double(d, "margin", 20);
 				obs_data_set_int(d, "glide_ms", 0);
