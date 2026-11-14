@@ -211,6 +211,14 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Morph did nothing in OBS's own window (0.1.0-beta110)
+
+- The owner on beta109: "it doesn't morph, it literally just instantly switches scenes". The
+  transition took its size from `obs_transition_get_size`, which is 0 by 0 unless something sets
+  one, and OBS's window does not; with no size it skipped its own drawing and cut at the end.
+  The tests had set a size. Fixed, and the tests now drive it as OBS does. See AGENTS.md.
+- **Still not seen by the owner**: an actual morph on their scenes.
+
 ## Glances only where they are needed (0.1.0-beta109)
 
 - The owner on beta107: detection and speed "much better", but "it does seem like my frametime

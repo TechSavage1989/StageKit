@@ -486,6 +486,11 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   - Before the first frame, after the last and with only one scene it must call
     `obs_transition_video_render_direct`: that call is also what ends a transition. Drawing by
     itself all the way, the transition never stops.
+  - Its size is its scenes': OBS's own window never calls `obs_transition_set_size`, and
+    `obs_transition_get_size` then says 0 by 0. The first build (beta108) went by that alone,
+    skipped the morph for want of a size, and the owner saw "instantly switches scenes with no
+    animation". The tests had given the transition a size by hand; they no longer do, and one
+    runs it by the clock as OBS does. Test a transition the way OBS's window drives it.
   - A scene with an enabled filter that draws cannot be taken apart (`plain_scene`); the change is
     then a cross-fade and the log says which filter. Filters that draw nothing are listed in
     `draws_nothing`: add a new StageKit scene filter there, or scenes carrying it lose the morph.

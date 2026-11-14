@@ -333,7 +333,8 @@ int main(int argc, char **argv)
 			return (int)frame[(size_t(y) * w + x) * 4 + channel];
 		};
 		auto at_time = [&](obs_scene_t *from, obs_scene_t *to, float t) {
-			obs_transition_set_size(morph, w, h);
+			// (No size is given to the transition: OBS's own window gives
+			// it none either, and it must take its scenes' size.)
 			obs_transition_set(morph, obs_scene_get_source(from));
 			obs_transition_start(morph, OBS_TRANSITION_MODE_MANUAL, 0, obs_scene_get_source(to));
 			obs_transition_set_manual_time(morph, t);
@@ -389,6 +390,23 @@ int main(int argc, char **argv)
 			      "at the end the new scene is drawn as it is, and the transition has ended (diff %.2f)",
 			      mean_abs_diff(done, last));
 			obs_source_release(showing);
+
+			// Run by the clock, the way OBS runs it on a change of scene:
+			// part-way through the second it is neither scene, and after
+			// it the new one.
+			obs_transition_set(morph, obs_scene_get_source(ma));
+			sleep_ms(100);
+			obs_transition_start(morph, OBS_TRANSITION_MODE_AUTO, 1000, obs_scene_get_source(mb));
+			sleep_ms(450);
+			const std::vector<uint8_t> timed = render(morph, w, h);
+			sleep_ms(900);
+			render(morph, w, h);
+			const std::vector<uint8_t> timed_done = render(morph, w, h);
+			CHECK(mean_abs_diff(timed, first) > 5.0 && mean_abs_diff(timed, last) > 5.0 &&
+				      px(timed, 50, 40, 0) < 15 && px(timed, 550, 300, 0) < 15 &&
+				      mean_abs_diff(timed_done, last) < 0.01,
+			      "run by the clock it is part-way after part of its time, with the shared item on its way, and the new scene after it (%.1f from the old scene, %.1f from the new; %.2f at the end)",
+			      mean_abs_diff(timed, first), mean_abs_diff(timed, last), mean_abs_diff(timed_done, last));
 
 			// Unticked, the game and the window are cross-faded in place.
 			obs_data_set_bool(ms, "pair_main", false);
