@@ -349,10 +349,16 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   remain exactly 30 pixel within the edges of the screen, and within 30 pixels of any objects")
   needs to know what shows in every other item. Each is drawn and read back once when first met;
   after that an item that moves or changes size is followed by its box (what shows keeps its place
-  in the box), which costs nothing, and one item a second is looked at again, in turn, only while
-  nothing moves (how a widget that starts drawing is noticed). The first build (beta70) read one
+  in the box), which costs nothing. A widget that starts or stops drawing is noticed by *glances*
+  (`glance_step`): one item at a time is drawn 128 px small, handed to the graphics card and read
+  back two frames later, which does not stall; a proper look follows only when a glance shows
+  another part of the item drawn than at its last look (`looked_`). Until beta106 one item a second
+  was looked at properly, in turn, by every filter: the owner's log showed Fit to Space ticks of
+  8 to 45 ms, the preview was choppy, and the chat box took seconds to make room for the music
+  widget. The first build (beta70) read one
   item back every quarter second and all of them after any move; the owner then found camera moves
-  "very choppy". Never add a read-back that runs while things animate. It only looks while its scene
+  "very choppy". Never add a read-back that is read in the same frame on a timer, and none that
+  runs while things animate. It only looks while its scene
   is being shown (`obs_source_showing`): every scene's filters tick all the time, shown or not. The space is the largest
   clear one holding the item's place (`anchor_x/y`, saved; retaken when the item is moved by
   anything else, which it lets finish first). Whatever the place lies inside is not in the way. It

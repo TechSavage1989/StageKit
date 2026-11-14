@@ -2873,6 +2873,74 @@ int main(int argc, char **argv)
 				obs_scene_release(rs);
 				obs_source_release(box);
 			}
+			// A widget that begins to show something, or stops, is noticed
+			// quickly, and without the filter looking at every item once a
+			// second. The report: "when my amuse widget appears or
+			// disappears, the text box is much slower to react and move
+			// than when my camera box hides and shows".
+			{
+				obs_source_t *game3 =
+					obs_source_create("color_source", "Glance Game", nullptr, nullptr);
+				sized(game3, 320, 180);
+				obs_data_t *wd = obs_data_create();
+				obs_data_set_int(wd, "width", 200);
+				obs_data_set_int(wd, "height", 100);
+				obs_data_set_int(wd, "color", 0x00000000); // there, and drawing nothing
+				obs_source_t *widget = obs_source_create("color_source", "Glance Widget", wd, nullptr);
+				obs_scene_t *gs = obs_scene_create("Fit And A Widget"); // 640x360
+				obs_sceneitem_t *game_item = obs_scene_add(gs, game3);
+				obs_sceneitem_t *widget_item = obs_scene_add(gs, widget);
+				vec2 pp;
+				vec2_set(&pp, 40.0f, 40.0f);
+				obs_sceneitem_set_pos(game_item, &pp);
+				vec2_set(&pp, 420.0f, 240.0f);
+				obs_sceneitem_set_pos(widget_item, &pp);
+				obs_data_t *d = obs_data_create();
+				obs_data_set_string(d, "item", "Glance Game");
+				obs_data_set_int(d, "box", 2);
+				obs_data_set_double(d, "margin", 20);
+				obs_data_set_int(d, "glide_ms", 0);
+				obs_source_t *fit3 = obs_source_create("stagekit_fit_item", "Fit Glance", d, nullptr);
+				obs_data_release(d);
+				obs_source_filter_add(obs_scene_get_source(gs), fit3);
+				obs_set_output_source(0, obs_scene_get_source(gs));
+				auto width = [&] {
+					vec2 b;
+					obs_sceneitem_get_bounds(game_item, &b);
+					return (double)b.x;
+				};
+				// Draws frames until the fitted width is `wanted`; says how
+				// long that took, or -1 after three seconds.
+				auto until = [&](double wanted) {
+					for (int ms = 0; ms <= 3000; ms += 25) {
+						render(obs_scene_get_source(gs), 640, 360);
+						if (is(width(), wanted))
+							return ms;
+						sleep_ms(25);
+					}
+					return -1;
+				};
+				const int at_first = until(600);
+				for (int i = 0; i < 40; i++) { // long enough for every item to have been glanced at
+					render(obs_scene_get_source(gs), 640, 360);
+					sleep_ms(25);
+				}
+				obs_data_set_int(wd, "color", 0xFF00FF00);
+				obs_source_update(widget, wd);
+				const int appeared = until(380);
+				obs_data_set_int(wd, "color", 0x00000000);
+				obs_source_update(widget, wd);
+				const int gone = until(600);
+				CHECK(at_first >= 0 && appeared >= 0 && appeared <= 400 && gone >= 0 && gone <= 400,
+				      "a widget that begins to draw, or stops, is made room for within 0.4 s (took %d ms and %d ms; the widget's place is 20 px clear of the game at %.0f wide)",
+				      appeared, gone, width());
+				obs_source_filter_remove(obs_scene_get_source(gs), fit3);
+				obs_source_release(fit3);
+				obs_scene_release(gs);
+				obs_source_release(widget);
+				obs_source_release(game3);
+				obs_data_release(wd);
+			}
 			obs_set_output_source(0, shown_before);
 			obs_source_release(shown_before);
 			obs_data_release(ff);
