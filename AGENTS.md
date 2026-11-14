@@ -383,6 +383,13 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   selected items' sources, the listed sources or every source; in all scenes, the listed scenes or
   this one. The owner asked for it so a locked copy can be freed for the copy tools, and as a
   "global lock sources toggle". It is not in OBS's undo list.
+- **A filter is changed everywhere by copying one filter's settings** (`copy_filter_settings` in
+  `src/dock/arrange.*`, *Copy a filter's settings* on the Copy tab), not by a second editor: the
+  owner asked for "selecting a filter and changing its settings" for all sources, chosen sources or
+  the sources of chosen scenes. OBS's own Filters window stays the editor; the dock pushes the
+  result. `kOwnSettings` lists what each filter keeps for its own source (`item`, `adjusted_*`,
+  `learned`, anchors and the like) and is never copied: add a filter's new self-written setting
+  there. A filter belongs to a source, so "in a scene" means the sources shown in that scene.
 - **Fit to Space's free space waits for a move to end.** It takes its new space in one glide once the
   other items have been still for 0.15 s. Beta74 had it chase a moving item, resizing the picture
   (and its shadow) on every frame of the move; the owner still saw dropped frames during moves.

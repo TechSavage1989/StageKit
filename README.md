@@ -625,6 +625,22 @@ source. *In*: all scenes, the scenes listed under *Scenes to copy to*, or only t
 on. Items inside groups are reached too. The copy tools leave locked copies alone, so *Unlock* is
 also how to free one for them.
 
+**Copy a filter's settings** (on the Copy tab) is for changing a filter everywhere at once. Set one
+filter up the way you want, choose it under *Filter* (the filters of the item chosen at the top of the
+dock, and of its scene, are listed), choose *To* and press *Copy filter settings*:
+
+- *Every source that has one*: every filter of the same kind, on any source.
+- *The listed sources*: only on the sources under *Sources to copy to*.
+- *Sources in the listed scenes*: only on sources shown in the scenes under *Scenes to copy to*.
+- *Sources in this scene*: only on sources shown in the scene being worked on.
+
+On a source with several filters of that kind, the one with the same name is changed, or all of them
+when none has that name. *Add it where it is missing* also gives a copy to chosen sources that have no
+such filter (never with *Every source that has one*). It works for any filter, OBS's own included.
+What a filter keeps for its own source is left alone on each: which item it works on, where a shadow
+moved its items, what an Auto Frame has learned. Whether each filter is switched on is not changed.
+There is no Undo for it.
+
 Options:
 
 - **In every scene** (off as it comes): whatever an arrange tool moves or resizes here is put the

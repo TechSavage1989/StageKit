@@ -1148,4 +1148,182 @@ int set_items_locked(bool lock, const std::vector<std::string> *sources, const s
 	return work.changed;
 }
 
+namespace {
+
+// Settings that belong to the source a filter is on, not to how the filter
+// looks or behaves: copied to another source they would point it at the
+// wrong item or undo what it had placed or learned there.
+const char *const kOwnSettings[] = {
+	"item",           "items",           "linked",           "skip",
+	"by_hand",        "elsewhere",       "sources",          "scenes",
+	"saved_x",        "saved_y",         "saved_scale_x",    "saved_scale_y",
+	"saved_count",    "spot_x",          "spot_y",           "anchor_x",
+	"anchor_y",       "have_anchor",     "adjusted_left",    "adjusted_top",
+	"adjusted_right", "adjusted_bottom", "adjusted_for",     "placed",
+	"learned",        "last_width",      "last_height",      "rule_program",
+	"rule_browse",    "force_ratio",     "force_until_gone",
+};
+
+// Copies one setting, whatever it holds, by way of its JSON.
+void keep_setting(obs_data_t *into, obs_data_t *from, const char *name)
+{
+	obs_data_erase(into, name);
+	if (!obs_data_has_user_value(from, name))
+		return;
+	obs_data_t *one = obs_data_create();
+	obs_data_item_t *item = obs_data_item_byname(from, name);
+	if (item) {
+		switch (obs_data_item_gettype(item)) {
+		case OBS_DATA_STRING:
+			obs_data_set_string(one, name, obs_data_item_get_string(item));
+			break;
+		case OBS_DATA_BOOLEAN:
+			obs_data_set_bool(one, name, obs_data_item_get_bool(item));
+			break;
+		case OBS_DATA_NUMBER:
+			if (obs_data_item_numtype(item) == OBS_DATA_NUM_INT)
+				obs_data_set_int(one, name, obs_data_item_get_int(item));
+			else
+				obs_data_set_double(one, name, obs_data_item_get_double(item));
+			break;
+		case OBS_DATA_OBJECT: {
+			obs_data_t *object = obs_data_item_get_obj(item);
+			obs_data_set_obj(one, name, object);
+			obs_data_release(object);
+			break;
+		}
+		case OBS_DATA_ARRAY: {
+			obs_data_array_t *array = obs_data_item_get_array(item);
+			obs_data_set_array(one, name, array);
+			obs_data_array_release(array);
+			break;
+		}
+		default:
+			break;
+		}
+		obs_data_item_release(&item);
+	}
+	obs_data_apply(into, one);
+	obs_data_release(one);
+}
+
+} // namespace
+
+int copy_filter_settings(obs_source_t *from, const char *filter_name, const std::vector<std::string> *to,
+			 bool add_missing, int &added)
+{
+	added = 0;
+	obs_source_t *filter = from && filter_name ? obs_source_get_filter_by_name(from, filter_name) : nullptr;
+	if (!filter)
+		return 0;
+	struct Work {
+		obs_source_t *from, *filter;
+		std::string kind, name;
+		obs_data_t *settings;
+		const std::vector<std::string> *to;
+		bool add_missing;
+		int changed = 0, added = 0;
+		std::vector<obs_source_t *> same_name, same_kind;
+	} work{from, filter, obs_source_get_id(filter), filter_name, obs_source_get_settings(filter), to, add_missing};
+	const auto each = [](void *param, obs_source_t *target) {
+		auto *w = static_cast<Work *>(param);
+		const char *name = obs_source_get_name(target);
+		if (target == w->from || !name || !*name)
+			return true;
+		if (w->to && std::find(w->to->begin(), w->to->end(), name) == w->to->end())
+			return true;
+		w->same_name.clear();
+		w->same_kind.clear();
+		obs_source_enum_filters(
+			target,
+			[](obs_source_t *, obs_source_t *one, void *p) {
+				auto *w2 = static_cast<Work *>(p);
+				if (w2->kind != obs_source_get_id(one))
+					return;
+				w2->same_kind.push_back(one);
+				const char *one_name = obs_source_get_name(one);
+				if (one_name && w2->name == one_name)
+					w2->same_name.push_back(one);
+			},
+			w);
+		const std::vector<obs_source_t *> &chosen = w->same_name.empty() ? w->same_kind : w->same_name;
+		for (obs_source_t *one : chosen) {
+			// Everything as on the filter copied from, except what this
+			// one keeps for its own source.
+			obs_data_t *merged = obs_data_create();
+			obs_data_apply(merged, w->settings);
+			obs_data_t *own = obs_source_get_settings(one);
+			for (const char *keep : kOwnSettings)
+				keep_setting(merged, own, keep);
+			obs_data_release(own);
+			obs_source_reset_settings(one, merged);
+			obs_data_release(merged);
+			w->changed++;
+		}
+		// A copy for a source that has none, where the filter can go: a
+		// picture filter on something with a picture, a sound filter on sound.
+		const uint32_t needs = obs_source_get_output_flags(w->filter) & (OBS_SOURCE_VIDEO | OBS_SOURCE_AUDIO);
+		// A scene's filter is only added to scenes, a source's only to sources.
+		const bool alike = (obs_source_get_type(target) == OBS_SOURCE_TYPE_SCENE) ==
+				   (obs_source_get_type(w->from) == OBS_SOURCE_TYPE_SCENE);
+		if (chosen.empty() && w->add_missing && alike &&
+		    (obs_source_get_output_flags(target) & needs) == needs) {
+			obs_data_t *fresh = obs_data_create();
+			obs_data_apply(fresh, w->settings);
+			for (const char *keep : kOwnSettings)
+				obs_data_erase(fresh, keep);
+			obs_source_t *made = obs_source_create(w->kind.c_str(), w->name.c_str(), fresh, nullptr);
+			obs_data_release(fresh);
+			if (made) {
+				obs_source_filter_add(target, made);
+				obs_source_set_enabled(made, obs_source_enabled(w->filter));
+				obs_source_release(made);
+				w->added++;
+			}
+		}
+		return true;
+	};
+	obs_enum_sources(each, &work);
+	obs_enum_scenes(each, &work); // scenes and groups carry filters too
+	obs_data_release(work.settings);
+	obs_source_release(filter);
+	added = work.added;
+	return work.changed;
+}
+
+std::vector<std::string> sources_in_scenes(const std::vector<std::string> &scenes)
+{
+	std::vector<std::string> names;
+	static const auto add = [](obs_scene_t *, obs_sceneitem_t *item, void *param) {
+		auto *list = static_cast<std::vector<std::string> *>(param);
+		const char *name = obs_source_get_name(obs_sceneitem_get_source(item));
+		if (name && *name && std::find(list->begin(), list->end(), name) == list->end())
+			list->push_back(name);
+		if (obs_sceneitem_is_group(item))
+			obs_sceneitem_group_enum_items(
+				item,
+				[](obs_scene_t *, obs_sceneitem_t *inner, void *p) {
+					auto *inner_list = static_cast<std::vector<std::string> *>(p);
+					const char *inner_name = obs_source_get_name(obs_sceneitem_get_source(inner));
+					if (inner_name && *inner_name &&
+					    std::find(inner_list->begin(), inner_list->end(), inner_name) ==
+						    inner_list->end())
+						inner_list->push_back(inner_name);
+					return true;
+				},
+				param);
+		return true;
+	};
+	for (const std::string &scene_name : scenes) {
+		obs_source_t *scene = obs_get_source_by_name(scene_name.c_str());
+		if (obs_scene_t *s = scene ? obs_scene_from_source(scene) : nullptr) {
+			if (std::find(names.begin(), names.end(), scene_name) == names.end())
+				names.push_back(scene_name);
+			obs_scene_enum_items(s, add, &names);
+		}
+		obs_source_release(scene);
+	}
+	return names;
+}
+
 } // namespace stagekit

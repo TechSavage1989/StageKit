@@ -88,6 +88,20 @@ int copy_to_every_scene(obs_source_t *scene, const std::vector<obs_sceneitem_t *
 // every scene).
 int set_items_locked(bool lock, const std::vector<std::string> *sources, const std::vector<std::string> *scenes);
 
+// Gives one filter's settings to the filters of the same kind on other
+// sources (scenes and groups count as sources), and says how many filters
+// were changed. `to`: only the sources of these names (null: every source).
+// On a source with several filters of that kind, the one with the same name
+// is taken, or all of them when none has it. `add_missing`: a source with
+// none gets a copy of the filter; `added` counts those. What a filter keeps
+// for its own source (which item it works on, where it put things, what it
+// has learned) is left as it is on each.
+int copy_filter_settings(obs_source_t *from, const char *filter_name, const std::vector<std::string> *to,
+			 bool add_missing, int &added);
+// The names of the sources shown as items in these scenes (null: no scene
+// in particular, so nothing), groups' items and the scenes themselves included.
+std::vector<std::string> sources_in_scenes(const std::vector<std::string> &scenes);
+
 int match_size(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items, bool width, bool height,
 	       bool keep_shape, const Measure &how);
 
