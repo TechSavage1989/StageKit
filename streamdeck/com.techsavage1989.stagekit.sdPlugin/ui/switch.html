@@ -1,0 +1,49 @@
+<!doctype html>
+<html>
+	<head lang="en">
+		<title>StageKit filter switch</title>
+		<meta charset="utf-8" />
+		<script src="https://sdpi-components.dev/releases/v4/sdpi-components.js"></script>
+	</head>
+
+	<body>
+		<sdpi-item label="Source">
+			<sdpi-select id="source" setting="source" datasource="getSources" placeholder="Choose a source" show-refresh></sdpi-select>
+		</sdpi-item>
+		<sdpi-item label="Filter">
+			<sdpi-select id="filter" setting="filter" datasource="getFilters" placeholder="Choose" show-refresh></sdpi-select>
+		</sdpi-item>
+		<sdpi-item label="A press">
+			<sdpi-select setting="press" default="toggle">
+				<option value="toggle">Switches it over</option>
+				<option value="on">Switches it on</option>
+				<option value="off">Switches it off</option>
+			</sdpi-select>
+		</sdpi-item>
+		<details>
+			<summary>OBS connection</summary>
+			<sdpi-item label="Address">
+				<sdpi-textfield setting="host" global placeholder="127.0.0.1"></sdpi-textfield>
+			</sdpi-item>
+			<sdpi-item label="Port">
+				<sdpi-textfield setting="port" global placeholder="4455"></sdpi-textfield>
+			</sdpi-item>
+			<sdpi-item label="Password">
+				<sdpi-password setting="password" global></sdpi-password>
+			</sdpi-item>
+			<p>
+				In OBS: Tools &rarr; WebSocket Server Settings. Tick &ldquo;Enable WebSocket server&rdquo;, then
+				&ldquo;Show Connect Info&rdquo; for the port and password.
+			</p>
+		</details>
+
+		<script>
+			// The second list depends on the first: ask for it again when the
+			// source changes (after the new source has been saved).
+			const source = document.getElementById("source");
+			const filter = document.getElementById("filter");
+			source.addEventListener("valuechange", () => setTimeout(() => filter.refresh(), 200));
+			source.addEventListener("change", () => setTimeout(() => filter.refresh(), 200));
+		</script>
+	</body>
+</html>

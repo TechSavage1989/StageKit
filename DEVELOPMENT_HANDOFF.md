@@ -211,6 +211,24 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## A Stream Deck plugin, first step (0.1.0-beta78)
+
+The owner: "Can you start working on a stream deck plugin?" with a link to Elgato's getting-started
+page (not reachable from the session; see AGENTS.md for what it was built from instead).
+
+- `streamdeck/`: two key types, *Filter switch* (two states, follows OBS) and *Move* (runs a trigger
+  filter). One connection to OBS for all keys, set in any key's settings, kept in Stream Deck's
+  global settings.
+- CI builds it (`streamdeck-build` in `build-project.yaml`) and the release carries
+  `stagekit-<version>-streamdeck.streamDeckPlugin` (a stage in `publish-release.sh`).
+- **Untested on a device.** Ask the owner what they see: whether it installs, whether the lists
+  fill, whether a key switches a filter and follows it.
+- Ideas not started, for the owner to choose from: keys that need no filter set up first (send the
+  camera to a corner, arrange tools, blur everything), which need new requests in `src/api/`; key
+  pictures from the owner's icon pack; a dial for blur amount on a Stream Deck +.
+- The beta77 fixes were confirmed by the owner's closed-session log: 99.2% of frames on schedule
+  (97.6% on beta76), 99.83% drawn inside their time, and no capture stop from a scene switch.
+
 ## What the timing log found (0.1.0-beta77)
 
 The owner sent three logs (private, not in the repository); the beta76 one had 96 timing lines.

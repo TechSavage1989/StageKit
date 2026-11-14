@@ -35,6 +35,7 @@ for an update notice inside OBS. This exception is recorded in the handoff.
 | `data/effects/` | Shaders in OBS `.effect` format |
 | `data/locale/en-US.ini` | Every user-visible string |
 | `tests/` | Headless libobs tests, test-image generators, `run-tests.sh` |
+| `streamdeck/` | The Stream Deck plugin (TypeScript, Elgato's SDK 3, Node): `src/` (the link to OBS over obs-websocket, the key types), `com.techsavage1989.stagekit.sdPlugin/` (manifest, settings pages, icons), `tests/`, `tools/make-icons.py`. It has its own `package.json`; nothing in the OBS plugin depends on it |
 | `scripts/` | Repository checks (`check-root.sh`, `root-allowlist.txt`); `rebuild-collection.py` writes a StageKit collection from an old one and `upgrade-collection.py` brings a StageKit collection up to date. Both read one file and write another; the owner's collections are private and never committed |
 | `docs/images/` | README imagery, produced by the tests |
 | `cmake/`, `build-aux/`, `.github/` | From the official obs-plugintemplate; change only when needed |
@@ -349,6 +350,16 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   the camera in twenty scenes took 40 to 70 ms before a single frame of the move. An item straight
   in its scene that only moves is stepped from where it began (`Move::plain`), with nothing looked
   up on the way.
+- **The Stream Deck plugin has never run in Stream Deck from here.** This session has no Stream Deck
+  and cannot reach docs.elgato.com; it was written from the SDK's npm packages (`@elgato/streamdeck`,
+  the project template in `@elgato/cli`) and their type definitions. Proven here: it type-checks,
+  builds, passes `streamdeck validate`, packs, and its link to OBS works against a stand-in
+  WebSocket server (`streamdeck/tests/obs.test.ts`). Not proven: the settings pages (the lists come
+  from the plugin through sdpi-components' `datasource`; the filter list is refreshed when the
+  source changes; the connection fields use `global`), and how the keys look. Its keys act on OBS
+  through plain obs-websocket requests (`SetSourceFilterEnabled`), so they need nothing new in the
+  OBS plugin. `com.techsavage1989.stagekit` and the action UUIDs under it must never change once
+  the owner has keys on their decks: Stream Deck ties saved keys to them.
 - **Auto Capture's Windows code is only compiled by CI and never run by the tests.** The tests feed it
   stand-in windows through its `set_test_windows` call. The owner wants no list of games to maintain:
   detection is by loaded modules (graphics engine plus controller support, or full-screen), with a

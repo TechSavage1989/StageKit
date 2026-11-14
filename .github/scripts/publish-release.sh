@@ -27,11 +27,17 @@ poll="${POLL_SECONDS:-30}"
 
 # Each stage: the build artifacts it needs (the end of their names, before the
 # commit hash) and the file types taken from each.
-stages=(windows macos linux)
-declare -A label=([windows]='Windows' [macos]='macOS' [linux]='Linux')
-declare -A needs=([windows]='windows-x64' [macos]='macos-universal' [linux]='ubuntu-24.04-x86_64 sources')
+stages=(windows streamdeck macos linux)
+declare -A label=([windows]='Windows' [streamdeck]='Stream Deck' [macos]='macOS' [linux]='Linux')
+declare -A needs=(
+  [windows]='windows-x64'
+  [streamdeck]='streamdeck'
+  [macos]='macos-universal'
+  [linux]='ubuntu-24.04-x86_64 sources'
+)
 declare -A types=(
   [windows-x64]='zip|exe'
+  [streamdeck]='streamDeckPlugin'
   [macos-universal]='tar.xz|pkg'
   [ubuntu-24.04-x86_64]='tar.xz|deb|ddeb'
   [sources]='tar.xz'

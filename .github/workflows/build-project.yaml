@@ -295,3 +295,44 @@ jobs:
         with:
           name: ${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-windows-x64-${{ needs.check-event.outputs.commitHash }}
           path: ${{ github.workspace }}/release/${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-windows-x64*.*
+
+  # The Stream Deck plugin (streamdeck/): typed, tested, built, checked with
+  # Elgato's own validator and packed into the file Stream Deck installs.
+  streamdeck-build:
+    name: Build Stream Deck Plugin 🎛️
+    runs-on: ubuntu-24.04
+    needs: check-event
+    defaults:
+      run:
+        shell: bash
+        working-directory: streamdeck
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: streamdeck/package-lock.json
+
+      - name: Test, Build and Pack 🧱
+        id: pack
+        run: |
+          : Test, Build and Pack 🧱
+          npm ci
+          npm test
+          npm run build
+          npm run validate
+          npm run pack
+          name="$(jq -r .name ../buildspec.json)"
+          version="$(jq -r .version ../buildspec.json)"
+          mkdir -p ../release
+          mv dist/*.streamDeckPlugin "../release/${name}-${version}-streamdeck.streamDeckPlugin"
+          echo "pluginName=${name}" >> $GITHUB_OUTPUT
+          echo "pluginVersion=${version}" >> $GITHUB_OUTPUT
+
+      - name: Upload Artifacts 📡
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.pack.outputs.pluginName }}-${{ steps.pack.outputs.pluginVersion }}-streamdeck-${{ needs.check-event.outputs.commitHash }}
+          path: ${{ github.workspace }}/release/*.streamDeckPlugin

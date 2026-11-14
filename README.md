@@ -696,6 +696,34 @@ With obs-websocket, send `CallVendorRequest` with `vendorName: "StageKit"`:
 Every response has `success` and, on failure, `error`. A `BlurChanged` event is sent when a blur turns
 on or off. The other tools are filters, so the standard `SetSourceFilterEnabled` request triggers them.
 
+## Stream Deck plugin
+
+StageKit has its own plugin for the Elgato Stream Deck. It is new and **has not been run on a real
+Stream Deck yet**; Elgato's OBS Studio plugin and its *Filter* and *Source* keys keep working as
+before, side by side with it.
+
+**Install:** download `stagekit-<version>-streamdeck.streamDeckPlugin` from the release page and
+double-click it. Stream Deck (7.1 or later) asks whether to install it; the keys then appear under
+**StageKit** in the list on the right.
+
+**Connect it to OBS once:** in OBS, *Tools → WebSocket Server Settings*, tick *Enable WebSocket
+server*, and press *Show Connect Info* for the port and password. In Stream Deck, drop a StageKit key
+on a button, open **OBS connection** at the bottom of its settings and fill in the port and password
+(the address stays `127.0.0.1` when OBS runs on the same computer). Every StageKit key uses that one
+connection, and it reconnects by itself when OBS is started later.
+
+| Key | What it does |
+| --- | --- |
+| **Filter switch** | Switches one StageKit filter on and off, and the key shows which way it is, also when the filter is switched some other way. For Ramp Blur, Shadow, Glow & Outline, Corners & Edges, Show in Scenes, Standby Picture and the other filters that stay on or off. *A press* can switch it over, only on, or only off |
+| **Move** | Runs one StageKit move: a Send To key on the camera, a Place Item, a Layout or a Picture Shape key |
+
+For both, choose the **Source** first: the list holds only the sources (and scenes) that have such a
+filter. Then choose the filter. A key that cannot reach OBS, or whose filter is gone, shows Stream
+Deck's yellow warning triangle when pressed.
+
+The plugin's code is in [`streamdeck/`](streamdeck); `npm install`, then `npm run build`, `npm test`,
+`npm run validate` and `npm run pack` there.
+
 ## Updates and settings
 
 StageKit does not check for updates and never downloads anything. To update, close OBS and run a newer
