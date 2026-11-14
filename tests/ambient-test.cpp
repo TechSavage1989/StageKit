@@ -2201,6 +2201,59 @@ int main(int argc, char **argv)
 				obs_source_release(column);
 				obs_source_release(wide);
 			}
+			// "Resize it to fit" unticked: the item keeps its size and is
+			// only moved to the middle of its space, and moves again when
+			// the space changes.
+			{
+				obs_source_t *chat = obs_source_create("color_source", "Kept Chat", nullptr, nullptr);
+				sized(chat, 100, 100);
+				obs_source_t *above = obs_source_create("color_source", "Kept Cam", nullptr, nullptr);
+				sized(above, 100, 80);
+				obs_scene_t *ks = obs_scene_create("Fit Keeping Size"); // 640x360
+				obs_sceneitem_t *chat_item = obs_scene_add(ks, chat);
+				obs_sceneitem_t *above_item = obs_scene_add(ks, above);
+				vec2 kp;
+				vec2_set(&kp, 500.0f, 200.0f);
+				obs_sceneitem_set_pos(chat_item, &kp);
+				vec2_set(&kp, 500.0f, 20.0f);
+				obs_sceneitem_set_pos(above_item, &kp);
+				obs_data_t *kf = obs_data_create();
+				obs_data_set_string(kf, "item", "Kept Chat");
+				obs_data_set_int(kf, "box", 2);
+				obs_data_set_double(kf, "margin", 20);
+				obs_data_set_int(kf, "glide_ms", 0);
+				obs_data_set_bool(kf, "resize", false);
+				obs_source_t *keep_fit =
+					obs_source_create("stagekit_fit_item", "Fit Keeping", kf, nullptr);
+				obs_source_filter_add(obs_scene_get_source(ks), keep_fit);
+				obs_set_output_source(0, obs_scene_get_source(ks));
+				auto settle = [&](int ms) {
+					for (int i = 0; i < ms / 50; i++) {
+						render(obs_scene_get_source(ks), 640, 360);
+						sleep_ms(50);
+					}
+				};
+				settle(700);
+				vec2 p1, b1, p2, b2;
+				obs_sceneitem_get_pos(chat_item, &p1);
+				obs_sceneitem_get_bounds(chat_item, &b1);
+				obs_sceneitem_set_visible(above_item, false);
+				settle(900);
+				obs_sceneitem_get_pos(chat_item, &p2);
+				obs_sceneitem_get_bounds(chat_item, &b2);
+				CHECK(is(b1.x, 100) && is(b1.y, 100) && is(p1.x, 270) && is(p1.y, 180),
+				      "with 'Resize it to fit' unticked the item keeps its size and sits in the middle of its space (%.0f, %.0f %.0fx%.0f)",
+				      p1.x, p1.y, b1.x, b1.y);
+				CHECK(is(b2.x, 100) && is(b2.y, 100) && is(p2.x, 270) && is(p2.y, 130),
+				      "and when the space grows it moves to the new middle, still its own size (%.0f, %.0f %.0fx%.0f)",
+				      p2.x, p2.y, b2.x, b2.y);
+				obs_data_release(kf);
+				obs_source_filter_remove(obs_scene_get_source(ks), keep_fit);
+				obs_source_release(keep_fit);
+				obs_scene_release(ks);
+				obs_source_release(above);
+				obs_source_release(chat);
+			}
 			obs_set_output_source(0, shown_before);
 			obs_source_release(shown_before);
 			obs_data_release(ff);
@@ -5810,6 +5863,41 @@ int main(int argc, char **argv)
 					}
 					CHECK(follows,
 					      "the Place tab's measuring options are the Arrange tab's, each following the other");
+
+					// Lock and unlock across scenes, from the Copy tab.
+					{
+						select_only({ia});
+						for (int i = 0; i < 4; i++) {
+							QCoreApplication::processEvents();
+							sleep_ms(50);
+						}
+						auto *which = dock->findChild<QComboBox *>("lockWhich");
+						auto *where = dock->findChild<QComboBox *>("lockWhere");
+						CHECK(which && where, "the Copy tab has 'Lock and unlock'");
+						if (which && where) {
+							which->setCurrentIndex(0); // the selected items' sources
+							where->setCurrentIndex(0); // all scenes
+							click("unlockItems");
+							const bool freed = !obs_sceneitem_locked(locked);
+							click("lockItems");
+							const bool all_locked = obs_sceneitem_locked(ia) &&
+										obs_sceneitem_locked(loose) &&
+										obs_sceneitem_locked(grouped_copy) &&
+										obs_sceneitem_locked(locked) &&
+										!obs_sceneitem_locked(ib);
+							where->setCurrentIndex(2); // this scene only
+							click("unlockItems");
+							const bool only_here = !obs_sceneitem_locked(ia) &&
+									       obs_sceneitem_locked(loose);
+							where->setCurrentIndex(0);
+							click("unlockItems");
+							CHECK(freed && all_locked && only_here &&
+								      !obs_sceneitem_locked(loose) &&
+								      !obs_sceneitem_locked(grouped_copy),
+							      "Lock and Unlock reach the selected item's source in every scene, groups included, or only in this scene (%d %d %d)",
+							      freed, all_locked, only_here);
+						}
+					}
 
 					vec2 one;
 					vec2_set(&one, 1.0f, 1.0f);
