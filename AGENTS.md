@@ -397,6 +397,15 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   every three seconds while it sits where it was put; only while it is wholly on the screen; and a
   cut under a fiftieth of the picture is taken for measuring error. Sizes kept (`keep_k_`,
   `orig_k`) are scales of the source, so they hold whatever part shows.
+- **Two Fit to Space filters in one scene go by each other's destinations** (`Claim`, `claim_set`,
+  `claim_of` in `src/placement/fit-item.cpp`): each says where its item will be once it has got
+  there and whether it resizes it, and the other takes that for the obstacle, a claimed group as
+  one thing. A kept-size item with something that resizes on one side of it and something firm on
+  the other goes against the firm side at once (`kept_in`, `soft_l` and so on); centring between
+  them never came to rest, because the other made room each time. The owner's game and chat box
+  shifted "a number of times" after a scene switch or a camera being hidden. Which side gives way
+  is judged by which side of the space's middle it lies on, never by whether it touches the space:
+  judged by touching, the two filters chased each other without end.
 - **Blur goes to 1000** (`kMaxStrength`; it was 250 and the owner asked for more). A Gaussian or box
   blur set above `kTapLimit` (250) is drawn the Dual Kawase way for its whole ramp, so there is no
   change of look part-way through a ramp. Zoom's pull is still worked out from 250. Ambient

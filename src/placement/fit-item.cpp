@@ -60,6 +60,46 @@ struct Settings {
 	EaseMode mode = EaseMode::InOut;
 };
 
+// Where each Fit to Space filter (in "the free space around it") is taking
+// its item: what will show of it, on the canvas, once it has got there, and
+// whether the filter resizes it. Two filters in one scene go by each other's
+// claims, not by where the other's item happens to be on its way: without
+// that they took turns, each gliding a little after the other had, and the
+// owner's game and chat box shifted "a number of times" before they settled.
+struct Claim {
+	Box box;
+	bool resizes = true;
+};
+std::mutex g_claims_mutex;
+std::map<std::pair<obs_source_t *, int64_t>, std::pair<const void *, Claim>> g_claims;
+
+void claim_set(obs_source_t *scene, int64_t item, const void *owner, const Claim &claim)
+{
+	std::lock_guard lock(g_claims_mutex);
+	for (auto it = g_claims.begin(); it != g_claims.end();)
+		it = it->second.first == owner && it->first != std::make_pair(scene, item) ? g_claims.erase(it)
+											   : std::next(it);
+	g_claims[{scene, item}] = {owner, claim};
+}
+
+void claim_clear(const void *owner)
+{
+	std::lock_guard lock(g_claims_mutex);
+	for (auto it = g_claims.begin(); it != g_claims.end();)
+		it = it->second.first == owner ? g_claims.erase(it) : std::next(it);
+}
+
+// Another filter's claim on an item, if there is one.
+bool claim_of(obs_source_t *scene, int64_t item, const void *asking, Claim &out)
+{
+	std::lock_guard lock(g_claims_mutex);
+	const auto found = g_claims.find({scene, item});
+	if (found == g_claims.end() || found->second.first == asking)
+		return false;
+	out = found->second.second;
+	return true;
+}
+
 // The largest clear space for a picture of the shape given (width over
 // height) that holds the point (ax, ay): inside `within` less the gap, and
 // the gap away from everything in `others`. Something the point is inside (a
@@ -136,6 +176,7 @@ Box free_space(const Box &within, double ax, double ay, const std::vector<Box> &
 class FitItem {
 public:
 	FitItem(obs_data_t *settings, obs_source_t *source) : source_(source) { update(settings); }
+	~FitItem() { claim_clear(this); }
 
 	void update(obs_data_t *settings)
 	{
@@ -189,8 +230,10 @@ public:
 
 	void tick(float seconds)
 	{
-		if (!parent_ || !obs_source_enabled(source_))
+		if (!parent_ || !obs_source_enabled(source_)) {
+			claim_clear(this);
 			return;
+		}
 		// Not on a group: its size is whatever is in it, so there is no
 		// space to fit into, and moving an item inside it moves the space.
 		if (obs_source_is_group(parent_))
@@ -416,11 +459,49 @@ public:
 		const double bare = !cut_down && bare_w >= 2.0 && bare_h >= 2.0 ? bare_w / bare_h : picture;
 		const bool fills = !free && std::fabs(bare - box) / box < 0.01;
 		double margin = fills || free ? 0.0 : std::min({s.margin, bw / 2.0 - 1.0, bh / 2.0 - 1.0});
+		// Which sides of the free space end at something another filter
+		// resizes to make room (a game fitted beside it). Centring between
+		// such a thing and a wall never comes to rest: it makes room, the
+		// middle moves, it makes room again. So against one of those the
+		// item goes to the other side at once, and stays.
+		bool soft_l = false, soft_r = false, soft_t = false, soft_b = false;
+		if (free && have_goal_) {
+			for (size_t i = 0; i < boxes_.size() && i < gives_.size(); i++) {
+				if (!gives_[i])
+					continue;
+				const Box &o = boxes_[i];
+				const bool beside = o.y < goal_.y + goal_.h && o.y + o.h > goal_.y;
+				const bool above_below = o.x < goal_.x + goal_.w && o.x + o.w > goal_.x;
+				// By which side of the space's middle it lies on, not by
+				// whether it touches the space: it may have grown into
+				// the space since that was worked out, and judged by
+				// touching, the two filters chased each other for good.
+				const double mid_x = goal_.x + goal_.w / 2.0, mid_y = goal_.y + goal_.h / 2.0;
+				soft_l = soft_l || (beside && o.x + o.w <= mid_x);
+				soft_r = soft_r || (beside && o.x >= mid_x);
+				soft_t = soft_t || (above_below && !beside && o.y + o.h <= mid_y);
+				soft_b = soft_b || (above_below && !beside && o.y >= mid_y);
+			}
+		}
+		// Where a kept-size picture goes in a space.
+		auto kept_in = [&](const Box &room, double kw, double kh) {
+			auto along = [](double from, double size, double own, bool soft_near, bool soft_far) {
+				if (soft_near && !soft_far)
+					return from + size - own; // against the far, firm side
+				if (soft_far && !soft_near)
+					return from;
+				return from + (size - own) / 2.0;
+			};
+			return Box{along(room.x, room.w, kw, soft_l, soft_r), along(room.y, room.h, kh, soft_t, soft_b),
+				   kw, kh};
+		};
 		if (!s.resize && have_keep_) {
 			// Its own size, in the middle of the room it has: the gaps are
 			// balanced, left with right and top with bottom.
-			bx += margin + (bw - 2.0 * margin - keep_w_) / 2.0;
-			by += margin + (bh - 2.0 * margin - keep_h_) / 2.0;
+			const Box put = kept_in(Box{bx + margin, by + margin, bw - 2.0 * margin, bh - 2.0 * margin},
+						keep_w_, keep_h_);
+			bx = put.x;
+			by = put.y;
 			// A space smaller than the item cannot hold it, and its
 			// middle may then lie off the screen: the item stays the gap
 			// inside the screen's edges whatever else gives way. (The
@@ -439,6 +520,29 @@ public:
 		}
 		const double aw = bw - 2.0 * margin, ah = bh - 2.0 * margin;
 		const double k = std::min(aw / pw, ah / ph);
+		// What will show of it once it is where it is going, for any other
+		// Fit to Space in this scene to go by.
+		if (free && have_goal_) {
+			Claim claim;
+			claim.resizes = s.resize;
+			if (!s.resize && have_keep_) {
+				claim.box = kept_in(goal_, keep_w_, keep_h_);
+				const double gap = std::min({s.margin, outer.w / 2.0 - 1.0, outer.h / 2.0 - 1.0});
+				if (outer.w - 2.0 * gap >= keep_w_)
+					claim.box.x = std::clamp(claim.box.x, outer.x + gap,
+								 outer.x + outer.w - gap - keep_w_);
+				if (outer.h - 2.0 * gap >= keep_h_)
+					claim.box.y = std::clamp(claim.box.y, outer.y + gap,
+								 outer.y + outer.h - gap - keep_h_);
+			} else {
+				const double kg = std::min(goal_.w / pw, goal_.h / ph);
+				claim.box = Box{goal_.x + (goal_.w - pw * kg) / 2.0,
+						goal_.y + (goal_.h - ph * kg) / 2.0, pw * kg, ph * kg};
+			}
+			claim_set(parent_, obs_sceneitem_get_id(item), this, claim);
+		} else {
+			claim_clear(this);
+		}
 		// The fit itself is left to OBS's bounding box, which OBS works out
 		// afresh for every frame it draws. The box is the space the picture
 		// may take, grown by whatever the item draws round the picture (a
@@ -550,7 +654,9 @@ private:
 			std::vector<obs_sceneitem_t *> *out;
 			obs_sceneitem_t *self;
 			const std::vector<std::string> *skip;
-		} gather{&others, item, &s.skip};
+			obs_source_t *scene;
+			const void *asking;
+		} gather{&others, item, &s.skip, parent_, this};
 		static const auto add = [](obs_scene_t *, obs_sceneitem_t *other, void *param) {
 			auto *g = static_cast<Gather *>(param);
 			if (other == g->self || !obs_sceneitem_visible(other) || obs_sceneitem_is_group(other))
@@ -567,8 +673,15 @@ private:
 				auto *g = static_cast<Gather *>(param);
 				if (other == g->self)
 					return true;
-				if (obs_sceneitem_is_group(other) && obs_sceneitem_visible(other))
-					obs_sceneitem_group_enum_items(other, add, param);
+				if (obs_sceneitem_is_group(other) && obs_sceneitem_visible(other)) {
+					// A group another Fit to Space is placing counts as
+					// one thing, where that filter is taking it.
+					Claim claim;
+					if (claim_of(g->scene, obs_sceneitem_get_id(other), g->asking, claim))
+						g->out->push_back(other);
+					else
+						obs_sceneitem_group_enum_items(other, add, param);
+				}
 				add(sc, other, param);
 				return true;
 			},
@@ -588,15 +701,25 @@ private:
 		}
 		// Where each is now: what was seen in it, carried along with its box.
 		std::vector<Box> boxes;
+		std::vector<bool> gives;
 		for (obs_sceneitem_t *other : others) {
+			Claim claim;
+			if (claim_of(parent_, obs_sceneitem_get_id(other), this, claim)) {
+				boxes.push_back(claim.box);
+				gives.push_back(claim.resizes);
+				continue;
+			}
+			gives.push_back(false);
 			auto found = seen_.find(obs_sceneitem_get_id(other));
 			if (found == seen_.end()) {
 				look(other);
 				found = seen_.find(obs_sceneitem_get_id(other));
 			}
 			const Seen &seen = found->second;
-			if (!seen.there)
+			if (!seen.there) {
+				gives.pop_back();
 				continue;
+			}
 			const Box now = scene_box(parent_, other);
 			if (seen.item_at.w < 1.0 || seen.item_at.h < 1.0 || now.w < 1.0 || now.h < 1.0) {
 				boxes.push_back(seen.box);
@@ -616,12 +739,19 @@ private:
 					return false;
 			return true;
 		};
+		// Which of them give way can change while nothing moves (another
+		// filter has just said where its item is going).
+		if (gives != gives_ && same(boxes, boxes_)) {
+			gives_ = gives;
+			changed_ = true;
+		}
 		if (!same(boxes, boxes_)) {
 			// Something is moving. The fitted item waits for it to come to
 			// rest and then takes its new space in one glide: chasing a
 			// moving item would resize the picture (and redo its shadow)
 			// on every frame of the move. No looking meanwhile either.
 			boxes_ = boxes;
+			gives_ = gives;
 			unsettled_ = true;
 			calm_for_ = 0.0;
 			since_look_ = 0.0;
@@ -690,7 +820,8 @@ private:
 		Box item_at; // and where its box was then
 		bool there = false;
 	};
-	std::vector<Box> boxes_; // what is in the way now
+	std::vector<Box> boxes_;  // what is in the way now
+	std::vector<bool> gives_; // and which of them another filter resizes to make room
 	std::map<int64_t, Seen> seen_;
 	bool look_again_ = true, changed_ = false, unsettled_ = false;
 	double calm_for_ = 0.0;

@@ -2344,6 +2344,73 @@ int main(int argc, char **argv)
 				obs_source_release(block);
 				obs_scene_release(inner);
 			}
+			// Two filters in one scene, a game that is resized and a chat box
+			// that keeps its size: each goes by where the other is going, so
+			// they settle in one move and then stay.
+			{
+				obs_source_t *wide = obs_source_create("color_source", "Pair Game", nullptr, nullptr);
+				sized(wide, 320, 180);
+				obs_source_t *chat = obs_source_create("color_source", "Pair Chat", nullptr, nullptr);
+				sized(chat, 100, 200);
+				obs_scene_t *ps = obs_scene_create("Fit As A Pair"); // 640x360
+				obs_sceneitem_t *game_item = obs_scene_add(ps, wide);
+				obs_sceneitem_t *chat_item = obs_scene_add(ps, chat);
+				vec2 pp;
+				vec2_set(&pp, 40.0f, 60.0f);
+				obs_sceneitem_set_pos(game_item, &pp);
+				vec2_set(&pp, 450.0f, 100.0f);
+				obs_sceneitem_set_pos(chat_item, &pp);
+				auto fit_for = [&](const char *name, const char *item_name, bool resize) {
+					obs_data_t *d = obs_data_create();
+					obs_data_set_string(d, "item", item_name);
+					obs_data_set_int(d, "box", 2);
+					obs_data_set_double(d, "margin", 20);
+					obs_data_set_int(d, "glide_ms", 100);
+					obs_data_set_bool(d, "resize", resize);
+					obs_source_t *f = obs_source_create("stagekit_fit_item", name, d, nullptr);
+					obs_data_release(d);
+					obs_source_filter_add(obs_scene_get_source(ps), f);
+					return f;
+				};
+				obs_source_t *fit_game = fit_for("Fit Pair Game", "Pair Game", true);
+				obs_source_t *fit_chat = fit_for("Fit Pair Chat", "Pair Chat", false);
+				obs_set_output_source(0, obs_scene_get_source(ps));
+				auto wait = [&](int ms) {
+					for (int i = 0; i < ms / 50; i++) {
+						render(obs_scene_get_source(ps), 640, 360);
+						sleep_ms(50);
+					}
+				};
+				auto where = [&](obs_sceneitem_t *it) {
+					vec2 p, b;
+					obs_sceneitem_get_pos(it, &p);
+					obs_sceneitem_get_bounds(it, &b);
+					struct {
+						double x, y, w, h;
+					} out{p.x, p.y, b.x, b.y};
+					return out;
+				};
+				wait(1500);
+				const auto g1 = where(game_item), c1 = where(chat_item);
+				wait(1500);
+				const auto g2 = where(game_item), c2 = where(chat_item);
+				CHECK(is(c1.x, 520) && is(c1.y, 80) && is(c1.w, 100) && is(c1.h, 200),
+				      "beside a game that is resized, a kept-size item goes to the firm side and the middle of its height (%.0f, %.0f %.0fx%.0f)",
+				      c1.x, c1.y, c1.w, c1.h);
+				CHECK(is(g1.x, 20) && is(g1.y, 20) && is(g1.w, 480) && is(g1.h, 320),
+				      "and the game takes the room up to the gap from it (%.0f, %.0f %.0fx%.0f)", g1.x,
+				      g1.y, g1.w, g1.h);
+				CHECK(is(g2.x, g1.x) && is(g2.w, g1.w) && is(c2.x, c1.x) && is(c2.y, c1.y),
+				      "having settled, neither moves again (game %.0f then %.0f, chat %.0f then %.0f)",
+				      g1.x, g2.x, c1.x, c2.x);
+				for (obs_source_t *f : {fit_game, fit_chat}) {
+					obs_source_filter_remove(obs_scene_get_source(ps), f);
+					obs_source_release(f);
+				}
+				obs_scene_release(ps);
+				obs_source_release(chat);
+				obs_source_release(wide);
+			}
 			obs_set_output_source(0, shown_before);
 			obs_source_release(shown_before);
 			obs_data_release(ff);

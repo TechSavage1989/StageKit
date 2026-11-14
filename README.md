@@ -342,6 +342,10 @@ nearest.
 - With *Use visible pixels* ticked, the fitted item itself goes by what it shows, like the items
   around it: a group, a widget or a nested scene that is larger than its picture is fitted, kept
   and centred by the picture, and the empty part of its box may reach into the gap.
+- Two Fit to Space filters in one scene work together: each goes by where the other is taking its
+  item, so they settle in one move. An item that keeps its size, with a resized item on one side
+  and the screen's edge or a fixed item on the other, sits against the fixed side; the resized item
+  takes the rest.
 - An item is never put past the screen's edges: it stays the gap inside them whatever is beside it.
 - **Resize it to fit** (ticked as it comes). Unticked, the item keeps the size it has and is only
   moved, to the middle of its space, so the room left over is the same on both sides and above and
