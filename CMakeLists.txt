@@ -17,9 +17,24 @@ add_library(${CMAKE_PROJECT_NAME} MODULE)
 find_package(libobs REQUIRED)
 target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE OBS::libobs)
 if(WIN32)
-  # Auto Capture reads a program's module list.
-  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE psapi)
+  # Auto Capture reads a program's module list; the updater reads the list of
+  # releases with Windows' own HTTP.
+  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE psapi winhttp)
 endif()
+
+# The release this build is: the newest notes file in docs/releases. The
+# plugin's own version number stays the same through a run of pre-releases, so
+# this is what the updater compares with what is on GitHub.
+file(GLOB _release_notes RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}/docs/releases" "docs/releases/*.md")
+list(TRANSFORM _release_notes REPLACE "\\.md$" "")
+list(SORT _release_notes COMPARE NATURAL)
+list(GET _release_notes -1 _release)
+# A finished version sorts before its own pre-releases by name; it is the newer.
+string(REGEX REPLACE "-.*$" "" _release_base "${_release}")
+if(_release_base IN_LIST _release_notes)
+  set(_release "${_release_base}")
+endif()
+target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE STAGEKIT_RELEASE="${_release}")
 
 if(ENABLE_FRONTEND_API)
   find_package(obs-frontend-api REQUIRED)
@@ -55,6 +70,8 @@ target_sources(
     src/common/switch-ramp.hpp
     src/common/timing.cpp
     src/common/timing.hpp
+    src/update/updater.cpp
+    src/update/updater.hpp
     src/view/cropped-view.cpp
     src/view/cropped-view.hpp
     src/zoom/ramp-zoom.cpp

@@ -24,6 +24,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "api/vendor-api.hpp"
 #include "blur/ramp-blur.hpp"
 #include "capture/auto-capture.hpp"
+#include "update/updater.hpp"
 #include "capture/active-app.hpp"
 #include "capture/standby.hpp"
 #include "placement/show-in-scenes.hpp"
@@ -108,6 +109,7 @@ bool obs_module_load(void)
 	stagekit::register_ramp_zoom();
 	stagekit::register_cropped_view();
 	stagekit::register_auto_capture();
+	stagekit::register_updater_test_hooks();
 	stagekit::register_program_trigger();
 	stagekit::register_active_app();
 	stagekit::register_auto_frame();
@@ -140,5 +142,6 @@ void obs_module_unload(void)
 		obs_hotkey_unregister(hk.id);
 	stagekit::vendor_api_unregister();
 	stagekit::stop_window_watch();
+	stagekit::stop_updater();
 	obs_log(LOG_INFO, "plugin unloaded");
 }

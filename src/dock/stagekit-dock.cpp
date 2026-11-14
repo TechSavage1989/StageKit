@@ -25,6 +25,8 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include "stagekit-dock.hpp"
 
+#include "../update/updater.hpp"
+
 #include "../common/easing.hpp"
 
 #include "../common/scene-util.hpp"
@@ -66,7 +68,12 @@ the Free Software Foundation; either version 2 of the License, or
 #include <QStringList>
 #include <QPainter>
 #include <QPainterPath>
+#include <QDesktopServices>
+#include <QMessageBox>
+#include <QPointer>
 #include <QTabWidget>
+#include <QToolButton>
+#include <QUrl>
 #include <QTimer>
 #include <QVBoxLayout>
 #include <QWidget>
@@ -869,12 +876,77 @@ public:
 		arrange_page->addWidget(options_drop_);
 		arrange_page->addStretch(1);
 
-		// What the last press did, under whichever tab is open.
+		// A newer StageKit: said here, with one button that installs it.
+		// Hidden until there is one.
+		update_bar_ = new QWidget(this);
+		update_bar_->setObjectName("updateBar");
+		auto *update_row = new QHBoxLayout(update_bar_);
+		update_row->setContentsMargins(0, 0, 0, 0);
+		update_text_ = new QLabel(update_bar_);
+		update_text_->setObjectName("updateText");
+		update_text_->setWordWrap(true);
+		auto *update_now = new QPushButton(tr_text("Update.Now"), update_bar_);
+		update_now->setObjectName("updateNow");
+		update_now->setToolTip(tr_text("Update.Now.Tip"));
+		QObject::connect(update_now, &QPushButton::clicked, this, [this] { install_now(); });
+		auto *whats_new = new QPushButton(tr_text("Update.WhatsNew"), update_bar_);
+		whats_new->setObjectName("updateWhatsNew");
+		QObject::connect(whats_new, &QPushButton::clicked, this, [this] {
+			if (!found_.page.empty())
+				QDesktopServices::openUrl(QUrl(QString::fromStdString(found_.page)));
+		});
+		update_row->addWidget(update_text_, 1);
+		update_row->addWidget(whats_new);
+		update_row->addWidget(update_now);
+		update_bar_->hide();
+		layout->addWidget(update_bar_);
+
+		// What the last press did, under whichever tab is open, and beside it
+		// a small menu for the updates.
+		auto *footer = new QHBoxLayout();
+		footer->setContentsMargins(0, 0, 0, 0);
 		status_ = new QLabel(this);
 		status_->setObjectName("status");
 		status_->setWordWrap(true);
 		status_->setEnabled(false); // the theme's quieter text colour
-		layout->addWidget(status_);
+		footer->addWidget(status_, 1);
+		auto *more = new QToolButton(this);
+		more->setObjectName("updateMenu");
+		more->setText(QString::fromUtf8("\xE2\x8B\xAF")); // three dots
+		more->setAutoRaise(true);
+		more->setPopupMode(QToolButton::InstantPopup);
+		more->setToolTip(tr_text("Update.Menu.Tip"));
+		auto *menu = new QMenu(more);
+		QAction *about = menu->addAction(QString("StageKit %1").arg(QString::fromUtf8(current_release())));
+		about->setEnabled(false);
+		menu->addSeparator();
+		QAction *check_now = menu->addAction(tr_text("Update.CheckNow"));
+		QObject::connect(check_now, &QAction::triggered, this, [this] { look_for_update(true); });
+		const UpdateSettings updates = update_settings();
+		QAction *at_start = menu->addAction(tr_text("Update.AtStart"));
+		at_start->setCheckable(true);
+		at_start->setChecked(updates.check_at_start);
+		QAction *betas = menu->addAction(tr_text("Update.Betas"));
+		betas->setCheckable(true);
+		betas->setChecked(updates.betas);
+		auto store = [at_start, betas] {
+			UpdateSettings changed;
+			changed.check_at_start = at_start->isChecked();
+			changed.betas = betas->isChecked();
+			set_update_settings(changed);
+		};
+		QObject::connect(at_start, &QAction::toggled, this, [store](bool) { store(); });
+		QObject::connect(betas, &QAction::toggled, this, [store](bool) { store(); });
+		more->setMenu(menu);
+		footer->addWidget(more, 0, Qt::AlignBottom);
+		layout->addLayout(footer);
+		// A look when OBS has started, if that is wanted: a little later, so
+		// it is not one more thing at start-up.
+		if (updates.check_at_start && obs_frontend_get_main_window())
+			QTimer::singleShot(10000, this, [this] {
+				if (!measuring_stopped())
+					look_for_update(false);
+			});
 
 		// Scenes and their items change behind our back; a light poll keeps
 		// the lists current without hooking every scene signal.
@@ -1003,6 +1075,60 @@ private:
 	}
 
 	void say(const QString &text) { status_->setText(text); }
+
+	// Looks for a newer release. `asked`: somebody pressed "Check now", so the
+	// answer is said either way; a look at start-up only speaks up when there
+	// is something.
+	void look_for_update(bool asked)
+	{
+		if (asked)
+			say(tr_text("Update.Looking"));
+		QPointer<Dock> self(this);
+		check_for_update([self, asked](bool found, const Release &release) {
+			// Called on another thread: handed to the window's own.
+			QMetaObject::invokeMethod(
+				qApp,
+				[self, asked, found, release] {
+					if (self)
+						self->show_update(asked, found, release);
+				},
+				Qt::QueuedConnection);
+		});
+	}
+
+	void show_update(bool asked, bool found, const Release &release)
+	{
+		found_ = found ? release : Release();
+		const bool newer = found && !release.version.empty();
+		update_bar_->setVisible(newer);
+		if (newer)
+			update_text_->setText(tr_text("Update.Available").arg(QString::fromStdString(release.version)));
+		if (asked)
+			say(!found  ? tr_text("Update.NoAnswer")
+			    : newer ? tr_text("Update.Available").arg(QString::fromStdString(release.version))
+				    : tr_text("Update.Newest").arg(QString::fromUtf8(current_release())));
+	}
+
+	// One press: after a yes, the update is downloaded and checked, OBS
+	// closes, the installer runs and OBS opens again.
+	void install_now()
+	{
+		if (found_.version.empty())
+			return;
+		if (!can_install_updates()) {
+			QDesktopServices::openUrl(QUrl(QString::fromStdString(found_.page)));
+			return;
+		}
+		if (QMessageBox::question(this, tr_text("Update.Title"),
+					  tr_text("Update.Confirm").arg(QString::fromStdString(found_.version)),
+					  QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes) != QMessageBox::Yes)
+			return;
+		std::string error;
+		if (install_update(found_, error))
+			say(tr_text("Update.Started"));
+		else
+			say(QString::fromStdString(error));
+	}
 
 	// Lists what the Arrange buttons will act on, and marks the item the
 	// others will come to when lining up to the first or last selected.
@@ -1838,6 +1964,10 @@ private:
 	std::vector<Watched> drag_start_; // as they were when the drag began
 	bool dragging_ = false;
 	QWidget *options_measure_ = nullptr, *options_drop_ = nullptr;
+	// The newer release found, and the row that says so.
+	Release found_;
+	QWidget *update_bar_ = nullptr;
+	QLabel *update_text_ = nullptr;
 	std::vector<Glide> glides_;
 	QTimer *glide_timer_ = nullptr;
 	QElapsedTimer glide_clock_;
