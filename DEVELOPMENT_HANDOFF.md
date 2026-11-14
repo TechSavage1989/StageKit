@@ -211,6 +211,17 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Glances only where they are needed (0.1.0-beta109)
+
+- The owner on beta107: detection and speed "much better", but "it does seem like my frametime
+  has gone up". Each glance draws its item once more, filters and all, and beta107 did that
+  fifteen times a second over every item, the game capture and the background included. Now only
+  items that can come and go are glanced at often; see AGENTS.md.
+- In the tests a widget of such a kind is made room for in under half a second; an item of any
+  other kind is first noticed within about ten seconds and quickly from then on.
+- **Not measured**: the frame time itself, which only the owner's machine shows (OBS's Stats
+  window, *Average time to render frame*). Ask for the before and after if it is still up.
+
 ## The Morph transition (0.1.0-beta108)
 
 - Offered to the owner on 2026-11-14 as plausible; asked for the same day ("i would like to work
