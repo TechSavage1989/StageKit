@@ -211,6 +211,19 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Fit to Space: hidden items, one move, a side to keep towards (0.1.0-beta103)
+
+- The owner's screenshots: camera above chat box, each with its own Fit to Space. Camera hidden,
+  the chat box moved to the middle of the column; camera shown, it came back in the middle on top
+  of the chat box and both stayed. Read from the code, not reproduced on the owner's machine: the
+  filter kept fitting the hidden camera, whose place by then lay just inside the chat box. A test
+  now covers three fitted items with one hidden and shown again.
+- Also asked for in the same messages: faster and "not jumpy", and a preferred direction. See the
+  three Fit to Space entries in AGENTS.md (*hidden item*, *one step*, *Keep it towards*).
+- The copy tools no longer touch an item inside a group that is shown in several scenes (it is the
+  same item in each). The owner confirmed beta102 copies a group's transform.
+- **Not confirmed by the owner yet**: the hide and show on their scenes, and *Keep it towards*.
+
 ## New names (0.1.0-beta87), and the first run of the updater (0.1.0-beta86)
 
 - beta86: the owner pressed *Update* on beta83 and nothing followed; no `StageKitUpdate` folder was

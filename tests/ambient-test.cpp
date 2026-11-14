@@ -2479,6 +2479,121 @@ int main(int argc, char **argv)
 				obs_source_release(chat);
 				obs_source_release(wide);
 			}
+			// A fitted item that is hidden is left where it is, and comes
+			// back there. The report: a camera above a chat box, each with
+			// its own filter; hidden and shown again, the camera came back
+			// in the middle of the column, on top of the chat box, and
+			// neither moved again. Here the chat box is kept towards the
+			// top, so it takes the camera's very place while that is hidden.
+			{
+				obs_source_t *wide = obs_source_create("color_source", "Trio Game", nullptr, nullptr);
+				sized(wide, 320, 180);
+				obs_source_t *cam3 = obs_source_create("color_source", "Trio Camera", nullptr, nullptr);
+				sized(cam3, 100, 60);
+				obs_source_t *chat = obs_source_create("color_source", "Trio Chat", nullptr, nullptr);
+				sized(chat, 100, 150);
+				obs_scene_t *ts = obs_scene_create("Fit As A Trio"); // 640x360
+				obs_sceneitem_t *game_item = obs_scene_add(ts, wide);
+				obs_sceneitem_t *cam_item = obs_scene_add(ts, cam3);
+				obs_sceneitem_t *chat_item = obs_scene_add(ts, chat);
+				vec2 pp;
+				vec2_set(&pp, 40.0f, 60.0f);
+				obs_sceneitem_set_pos(game_item, &pp);
+				vec2_set(&pp, 520.0f, 20.0f);
+				obs_sceneitem_set_pos(cam_item, &pp);
+				vec2_set(&pp, 520.0f, 100.0f);
+				obs_sceneitem_set_pos(chat_item, &pp);
+				auto fit_for = [&](const char *name, const char *item_name, bool resize, int toward) {
+					obs_data_t *d = obs_data_create();
+					obs_data_set_string(d, "item", item_name);
+					obs_data_set_int(d, "box", 2);
+					obs_data_set_double(d, "margin", 20);
+					obs_data_set_int(d, "glide_ms", 100);
+					obs_data_set_bool(d, "resize", resize);
+					obs_data_set_int(d, "toward", toward);
+					obs_source_t *f = obs_source_create("stagekit_fit_item", name, d, nullptr);
+					obs_data_release(d);
+					obs_source_filter_add(obs_scene_get_source(ts), f);
+					return f;
+				};
+				obs_source_t *fit_game = fit_for("Fit Trio Game", "Trio Game", true, 0);
+				obs_source_t *fit_cam = fit_for("Fit Trio Camera", "Trio Camera", false, 1);
+				obs_source_t *fit_chat = fit_for("Fit Trio Chat", "Trio Chat", false, 1);
+				obs_set_output_source(0, obs_scene_get_source(ts));
+				auto wait = [&](int ms) {
+					for (int i = 0; i < ms / 50; i++) {
+						render(obs_scene_get_source(ts), 640, 360);
+						sleep_ms(50);
+					}
+				};
+				auto at = [&](obs_sceneitem_t *it) {
+					vec2 p;
+					obs_sceneitem_get_pos(it, &p);
+					return p;
+				};
+				wait(1500);
+				const vec2 cam0 = at(cam_item), chat0 = at(chat_item), game0 = at(game_item);
+				CHECK(is(cam0.x, 520) && is(cam0.y, 20) && is(chat0.x, 520) && is(chat0.y, 100),
+				      "kept towards the top, a kept-size item lies at the top of its space, not in the middle (camera %.0f, %.0f; chat box %.0f, %.0f)",
+				      cam0.x, cam0.y, chat0.x, chat0.y);
+				obs_sceneitem_set_visible(cam_item, false);
+				wait(1000);
+				const vec2 cam1 = at(cam_item), chat1 = at(chat_item);
+				CHECK(is(chat1.y, 20) && is(cam1.x, cam0.x) && is(cam1.y, cam0.y),
+				      "with the camera hidden the chat box takes its place, and the hidden camera is left where it was (chat box y %.0f; camera %.0f, %.0f)",
+				      chat1.y, cam1.x, cam1.y);
+				// Shown again: watched every 50 ms, the chat box goes back in
+				// one move and is there within 0.4 s; nothing shifts after.
+				obs_sceneitem_set_visible(cam_item, true);
+				int turns = 0;
+				double last_y = chat1.y, last_step = 0.0, y_at_400 = 0.0;
+				bool cam_stayed = true;
+				for (int i = 0; i < 30; i++) {
+					render(obs_scene_get_source(ts), 640, 360);
+					sleep_ms(50);
+					const double y = at(chat_item).y, step = y - last_y;
+					// A move that stops and starts again, or turns round.
+					if (std::fabs(step) > 0.05 && std::fabs(last_step) <= 0.05 && i > 0 &&
+					    std::fabs(last_y - chat1.y) > 0.05)
+						turns++;
+					if (step * last_step < 0.0)
+						turns++;
+					last_step = step;
+					last_y = y;
+					if (i == 7)
+						y_at_400 = y;
+					const vec2 c = at(cam_item);
+					cam_stayed = cam_stayed && is(c.x, cam0.x) && is(c.y, cam0.y);
+				}
+				const vec2 chat2 = at(chat_item), game2_at = at(game_item);
+				CHECK(cam_stayed,
+				      "shown again, the camera is where it was hidden and stays there (%.0f, %.0f)",
+				      at(cam_item).x, at(cam_item).y);
+				CHECK(is(chat2.x, chat0.x) && is(chat2.y, chat0.y) && is(game2_at.x, game0.x),
+				      "and the chat box makes way for it, back to where it was (%.0f, %.0f; wanted %.0f, %.0f)",
+				      chat2.x, chat2.y, chat0.x, chat0.y);
+				CHECK(turns == 0 && is(y_at_400, chat0.y),
+				      "in one move, done within 0.4 s (stops and turns on the way: %d; y after 0.4 s: %.0f)",
+				      turns, y_at_400);
+				// A resized picture of another shape than its space lies
+				// against the side it is kept towards.
+				obs_data_t *gd = obs_source_get_settings(fit_game);
+				obs_data_set_int(gd, "toward", 2);
+				obs_source_update(fit_game, gd);
+				obs_data_release(gd);
+				wait(500);
+				CHECK(obs_sceneitem_get_bounds_alignment(game_item) == OBS_ALIGN_BOTTOM,
+				      "a resized picture kept towards the bottom lies at the bottom of its space (bounds alignment %u)",
+				      obs_sceneitem_get_bounds_alignment(game_item));
+				for (obs_source_t *f : {fit_game, fit_cam, fit_chat}) {
+					obs_source_filter_remove(obs_scene_get_source(ts), f);
+					obs_source_release(f);
+				}
+				obs_scene_release(ts);
+				obs_source_release(chat);
+				obs_source_release(cam3);
+				obs_source_release(wide);
+			}
 			obs_set_output_source(0, shown_before);
 			obs_source_release(shown_before);
 			obs_data_release(ff);

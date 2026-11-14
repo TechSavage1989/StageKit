@@ -423,6 +423,26 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   shifted "a number of times" after a scene switch or a camera being hidden. Which side gives way
   is judged by which side of the space's middle it lies on, never by whether it touches the space:
   judged by touching, the two filters chased each other without end.
+- **Fit to Space does nothing to a hidden item** (`hidden_` in `src/placement/fit-item.cpp`): no
+  placing, no claim, anchor and kept size untouched, so the other filters take its room. Shown
+  again it first only repeats its last claim for `kComingBack` (0.1 s), so whatever took its room
+  makes way before it looks for its own space: looking at once, it found its place *inside* the
+  other item and took that for something it sits on. The owner's camera, fitted while hidden, was
+  put in the middle of the column the chat box had taken, came back on top of it, and neither
+  moved again. Do not fit, measure or claim for a hidden item.
+- **Fit to Space answers a change made in one step at once** (`stepped` in `free_box`): an item
+  shown or hidden, or another filter's claim changing. Only something on its way (`moved`: a box
+  that is not a claim and has changed) is waited for, 0.15 s after it stops. And a scene that has
+  only just come into view is put right without a glide (`kArriving`, 0.25 s). The owner: "make
+  the detection faster and not jumpy so the objects don't continue to adjust multiple times before
+  settling". Waiting 0.15 s for every change, two filters answered each other a moment apart.
+- **Fit to Space's *Keep it towards*** (`toward`, saved by number, append-only: middle, top,
+  bottom, left, right, then the four corners): where an item lies in its space when it does not
+  fill it. A kept-size item goes against that side (`kept_in`), a resized picture is aligned in
+  OBS's bounding box (`obs_sceneitem_set_bounds_alignment`). A side where a resizing filter's item
+  makes room (`soft_*`) still wins over it, or the two would close in for good. The owner asked
+  for "a directional bias or preferred direction ... prevent it from going in an undesirable
+  direction".
 - **Blur goes to 1000** (`kMaxStrength`; it was 250 and the owner asked for more). A Gaussian or box
   blur set above `kTapLimit` (250) is drawn the Dual Kawase way for its whole ramp, so there is no
   change of look part-way through a ramp. Zoom's pull is still worked out from 250. Ambient
