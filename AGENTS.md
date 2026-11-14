@@ -282,6 +282,15 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   alpha, so it follows the shape); when first added it moves itself above an existing shadow once and
   records that in its `placed` setting. After an Auto Frame it shapes the rectangle from Auto Frame's
   `get_picture`.
+- **Fit Item's free space is measured in turns, never every frame** (`free_box` in
+  `src/placement/fit-item.cpp`). *The free space around it* (the owner: a margin of 30 "should
+  remain exactly 30 pixel within the edges of the screen, and within 30 pixels of any objects")
+  measures every other item once at the start and once the scene has been quiet for 0.3 s after an
+  item was added, removed, shown, hidden or moved, and otherwise one item every quarter second in
+  turn (how a widget that starts drawing is noticed). The space is the largest clear one holding the
+  item's place (`anchor_x/y`, saved; retaken when the item is moved by anything else, which it lets
+  finish first). Whatever the place lies inside is not in the way. It follows the Arrange options
+  (`as_arranged`) and glides to a new space.
 - **Fit Item gives OBS the space, not the size.** Its bounding box is the space the picture may take
   (plus a shadow's room at the fitted scale), with scale-to-inner-bounds and centre alignment, so OBS
   fits the picture every frame and a window being resized never lags. Do not go back to setting the

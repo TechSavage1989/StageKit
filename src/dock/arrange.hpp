@@ -45,6 +45,10 @@ bool measuring_stopped();
 // Where an item is on its scene's canvas, by its box or by what shows.
 Box measure_item(obs_source_t *scene, obs_sceneitem_t *item, const Measure &how);
 
+// The same, for something that may be in another item's way: false when the
+// item is measured by what shows and nothing does (it is then not there).
+bool measure_seen(obs_source_t *scene, obs_sceneitem_t *item, const Measure &how, Box &box);
+
 // The items selected in a scene, bottom-most first. A selected group is one
 // item; in a group that is not selected, its selected items count.
 std::vector<obs_sceneitem_t *> selected_items(obs_source_t *scene);

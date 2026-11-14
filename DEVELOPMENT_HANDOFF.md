@@ -211,6 +211,21 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Fit Item: the free space around it (0.1.0-beta70)
+
+The owner asked for the fitting and resizing filters to follow *Use visible pixels*, *Ignore shadows*
+and the edge limit, and for a "fill space" choice in Fit Item's *Fit it in* that keeps the margin
+from the screen and from other objects.
+
+- Done for Fit Item: *The free space around it*, *Measure by Arrange options*, *Items never in the
+  way*, a glide with a curve. See AGENTS.md for how it measures.
+- **Not done, told to the owner:** Match Item and Layout still go by boxes. The gap is exact on the
+  sides that limit the picture; a picture of another shape than the space is centred in it.
+- Not run in OBS. Watch for: the item fighting a drag (it waits 0.4 s after the last move), and
+  cost with many items (one small draw and read-back every 0.25 s).
+- Beta68 confirmed by the owner: standby picture right at start, unchanged when an emulator opens,
+  smooth to the game, also with a full-screen game.
+
 ## Copy transform to other sources (0.1.0-beta69)
 
 The owner: "copy transform to should also allow selecting specific other sources to apply the
