@@ -64,6 +64,9 @@ the Free Software Foundation; either version 2 of the License, or
 #include <QScrollArea>
 #include <QSpinBox>
 #include <QStringList>
+#include <QPainter>
+#include <QPainterPath>
+#include <QTabWidget>
 #include <QTimer>
 #include <QVBoxLayout>
 #include <QWidget>
@@ -479,8 +482,13 @@ public:
 		  fixed_scene_(fixed_scene)
 	{
 		auto *layout = new QVBoxLayout(this);
+		layout->setContentsMargins(8, 8, 8, 8);
+		layout->setSpacing(8);
 
+		// What it works on, always in view; below it one tab for each kind
+		// of job, so the dock is four short pages instead of one long one.
 		auto *form = new QFormLayout();
+		form->setContentsMargins(0, 0, 0, 0);
 		// Any scene can be worked on, not only the one on screen, so items
 		// that live in a nested scene are reachable.
 		scene_ = new QComboBox(this);
@@ -492,17 +500,40 @@ public:
 		linked_ = new QComboBox(this);
 		linked_->setObjectName("linked");
 		form->addRow(tr_text("Dock.Item"), item_);
-		form->addRow(tr_text("Place.Linked"), linked_);
 		layout->addLayout(form);
 
-		auto *move_box = new QGroupBox(tr_text("Dock.MoveBox"), this);
+		auto *tabs = new QTabWidget(this);
+		tabs->setObjectName("stagekitTabs");
+		tabs->setDocumentMode(true);
+		auto page = [tabs](const char *title, const char *name) {
+			auto *content = new QWidget(tabs);
+			content->setObjectName(name);
+			auto *column = new QVBoxLayout(content);
+			column->setContentsMargins(0, 10, 0, 0);
+			column->setSpacing(10);
+			tabs->addTab(content, tr_text(title));
+			return column;
+		};
+		QVBoxLayout *place_page = page("Dock.Tab.Place", "pagePlace");
+		QVBoxLayout *arrange_page = page("Dock.Tab.Arrange", "pageArrange");
+		QVBoxLayout *copy_page = page("Dock.Tab.Copy", "pageCopy");
+		QVBoxLayout *effects_page = page("Dock.Tab.Effects", "pageEffects");
+		layout->addWidget(tabs, 1);
+
+		auto *move_box = new QWidget(this);
 		auto *move_layout = new QVBoxLayout(move_box);
+		move_layout->setContentsMargins(0, 0, 0, 0);
+		move_layout->setSpacing(8);
 		auto *grid = new QGridLayout();
+		grid->setSpacing(4);
 		for (int i = 0; i < 9; i++) {
 			auto *button = new QPushButton(QString::fromUtf8(kArrows[i]), move_box);
 			button->setObjectName(QString("grid%1").arg(i));
 			button->setToolTip(tr_text(kDestinationText[i]));
-			button->setMinimumHeight(34);
+			button->setMinimumHeight(44);
+			QFont arrow = button->font();
+			arrow.setPointSizeF(arrow.pointSizeF() * 1.5);
+			button->setFont(arrow);
 			QObject::connect(button, &QPushButton::clicked, this, [this, i] { move_now(i); });
 			grid->addWidget(button, i / 3, i % 3);
 		}
@@ -520,6 +551,7 @@ public:
 		duration_->setSingleStep(50);
 		duration_->setValue(500);
 		duration_->setSuffix(" ms");
+		options->addRow(tr_text("Place.Linked"), linked_);
 		options->addRow(tr_text("Place.Margin"), margin_);
 		options->addRow(tr_text("Place.Duration"), duration_);
 		// How the move glides: the same curves the filters offer.
@@ -535,8 +567,12 @@ public:
 		for (const char *name : {"Easing.InOut", "Easing.In", "Easing.Out"})
 			ease_mode_->addItem(tr_text(name));
 		ease_mode_->setToolTip(tr_text("Dock.Motion.Tip"));
-		options->addRow(tr_text("Dock.Motion"), curve_);
-		options->addRow(QString(), ease_mode_);
+		// Curve and direction side by side: one row, not two.
+		auto *motion = new QHBoxLayout();
+		motion->setSpacing(4);
+		motion->addWidget(curve_, 1);
+		motion->addWidget(ease_mode_, 1);
+		options->addRow(tr_text("Dock.Motion"), motion);
 		move_layout->addLayout(options);
 		slide_ = new QCheckBox(tr_text("Dock.Slide"), move_box);
 		slide_->setObjectName("sendSlide");
@@ -553,7 +589,7 @@ public:
 		every_scene_->setToolTip(tr_text("Dock.SendEvery.Tip"));
 		every_scene_->setChecked(true);
 		move_layout->addWidget(every_scene_);
-		layout->addWidget(move_box);
+		place_page->addWidget(move_box);
 
 		auto *keys_box = new QGroupBox(tr_text("Dock.KeysBox"), this);
 		auto *keys_layout = new QVBoxLayout(keys_box);
@@ -574,10 +610,13 @@ public:
 		keys_box->setToolTip(tr_text("Dock.KeysHint"));
 		keys_layout->addWidget(make_keys);
 		keys_layout->addWidget(save_spot);
-		layout->addWidget(keys_box);
+		place_page->addWidget(keys_box);
+		place_page->addStretch(1);
 
-		auto *add_box = new QGroupBox(tr_text("Dock.AddBox"), this);
+		auto *add_box = new QWidget(this);
 		auto *add_layout = new QGridLayout(add_box);
+		add_layout->setContentsMargins(0, 0, 0, 0);
+		add_layout->setSpacing(6);
 		struct {
 			const char *object_name, *text, *filter_id;
 			bool on_scene;
@@ -597,14 +636,19 @@ public:
 			const bool on_scene = effect.on_scene;
 			QObject::connect(button, &QPushButton::clicked, this,
 					 [this, id, on_scene] { add_effect(id, on_scene); });
-			add_layout->addWidget(button, n / 2, n % 2);
+			button->setMinimumHeight(30);
+			// One to a row: the names are long, and a list reads easier.
+			add_layout->addWidget(button, n, 0);
 			n++;
 		}
-		layout->addWidget(add_box);
+		effects_page->addWidget(add_box);
+		effects_page->addStretch(1);
 
 		// Lining up, spacing and snapping whatever is selected in OBS.
-		auto *arrange_box = new QGroupBox(tr_text("Arrange.Box"), this);
+		auto *arrange_box = new QWidget(this);
 		auto *arrange_layout = new QVBoxLayout(arrange_box);
+		arrange_layout->setContentsMargins(0, 0, 0, 0);
+		arrange_layout->setSpacing(8);
 		// Says what the buttons below will move, so nothing is a surprise.
 		// Every selected item, in the order selected. It only shows: items
 		// are selected in OBS's preview.
@@ -632,6 +676,8 @@ public:
 			const ArrangeInfo &info = arrange_info(action);
 			auto *button = new QPushButton(tr_text(info.text), parent);
 			button->setObjectName(QString("arrange_") + info.name);
+			button->setIcon(tool_icon(info.name, button));
+			button->setMinimumHeight(30);
 			button->setToolTip(tr_text((std::string(info.text) + ".Tip").c_str()));
 			QObject::connect(button, &QPushButton::clicked, this, [this, action] {
 				obs_source_t *scene = arrange_scene();
@@ -662,8 +708,11 @@ public:
 			arrange_grid->addWidget(arrange_button(static_cast<ArrangeAction>(a), arrange_box), a / 3,
 						a % 3);
 		arrange_layout->addLayout(arrange_grid);
-		auto *copy_box = new QGroupBox(tr_text("Arrange.CopyBox"), arrange_box);
+		arrange_grid->setSpacing(4);
+		auto *copy_box = new QWidget(this);
 		auto *copy_layout = new QVBoxLayout(copy_box);
+		copy_layout->setContentsMargins(0, 0, 0, 0);
+		copy_layout->setSpacing(6);
 		copy_layout->addWidget(arrange_button(ArrangeAction::SameEverywhere, copy_box));
 		copy_layout->addWidget(arrange_button(ArrangeAction::SameChosen, copy_box));
 		// The scenes the second one copies to: choose to add, one row each
@@ -708,7 +757,8 @@ public:
 			show_copy_sources();
 		});
 		copy_layout->addWidget(source_add_);
-		arrange_layout->addWidget(copy_box);
+		copy_page->addWidget(copy_box);
+		copy_page->addStretch(1);
 		visible_ = new QCheckBox(tr_text("Arrange.Visible"), arrange_box);
 		visible_->setObjectName("arrangeVisible");
 		visible_->setToolTip(tr_text("Arrange.Visible.Tip"));
@@ -752,13 +802,21 @@ public:
 		limit_px_->setSuffix(" px");
 		limit_px_->setToolTip(tr_text("Arrange.LimitResize.Tip"));
 		within_row->addRow(tr_text("Arrange.LimitPx"), limit_px_);
-		arrange_layout->addWidget(visible_);
-		arrange_layout->addWidget(no_shadow_);
-		arrange_layout->addWidget(keep_shape_);
-		arrange_layout->addWidget(live_snap_);
-		arrange_layout->addWidget(guides_);
-		arrange_layout->addWidget(limit_resize_);
-		arrange_layout->addLayout(within_row);
+		// How the tools measure, and what happens when an item is let go:
+		// two short groups instead of one run of tick boxes.
+		auto *measure_box = new QGroupBox(tr_text("Dock.MeasureBox"), arrange_box);
+		auto *measure_layout = new QVBoxLayout(measure_box);
+		measure_layout->addWidget(visible_);
+		measure_layout->addWidget(no_shadow_);
+		measure_layout->addWidget(keep_shape_);
+		auto *drop_box = new QGroupBox(tr_text("Dock.DropBox"), arrange_box);
+		auto *drop_layout = new QVBoxLayout(drop_box);
+		drop_layout->addWidget(live_snap_);
+		drop_layout->addWidget(guides_);
+		drop_layout->addWidget(limit_resize_);
+		drop_layout->addLayout(within_row);
+		options_measure_ = measure_box;
+		options_drop_ = drop_box;
 		// The options are shared with the hotkeys and the right-click menu.
 		show_arrange_options();
 		for (QCheckBox *box :
@@ -771,7 +829,7 @@ public:
 		for (QComboBox *box : {curve_, ease_mode_})
 			QObject::connect(box, &QComboBox::currentIndexChanged, this,
 					 [this](int) { store_arrange_options(); });
-		layout->addWidget(arrange_box);
+		arrange_page->addWidget(arrange_box);
 
 		// Snapping on letting go: watch the selected items a few times a second.
 		auto *snap_timer = new QTimer(this);
@@ -785,6 +843,7 @@ public:
 
 		auto *order_box = new QGroupBox(tr_text("Dock.OrderBox"), this);
 		auto *order_layout = new QGridLayout(order_box);
+		order_layout->setSpacing(4);
 		// Two columns: all the way (front above back) and one step (forward
 		// above back), each pair one above the other.
 		struct {
@@ -802,15 +861,20 @@ public:
 			button->setObjectName(order.object_name);
 			const obs_order_movement movement = order.movement;
 			QObject::connect(button, &QPushButton::clicked, this, [this, movement] { reorder(movement); });
+			button->setIcon(tool_icon(order.object_name, button));
 			order_layout->addWidget(button, order.row, order.column);
 		}
-		layout->addWidget(order_box);
+		arrange_page->addWidget(order_box);
+		arrange_page->addWidget(options_measure_);
+		arrange_page->addWidget(options_drop_);
+		arrange_page->addStretch(1);
 
+		// What the last press did, under whichever tab is open.
 		status_ = new QLabel(this);
 		status_->setObjectName("status");
 		status_->setWordWrap(true);
+		status_->setEnabled(false); // the theme's quieter text colour
 		layout->addWidget(status_);
-		layout->addStretch(1);
 
 		// Scenes and their items change behind our back; a light poll keeps
 		// the lists current without hooking every scene signal.
@@ -1220,6 +1284,94 @@ private:
 		}
 		if (glides_.empty())
 			glide_timer_->stop();
+	}
+
+	// A small drawing of what a tool does, in the theme's own text colour, so
+	// the buttons can be told apart at a glance in any OBS theme.
+	static QIcon tool_icon(const std::string &name, const QWidget *on)
+	{
+		const int n = 64;
+		QPixmap pixmap(n, n);
+		pixmap.fill(Qt::transparent);
+		QPainter p(&pixmap);
+		p.setRenderHint(QPainter::Antialiasing);
+		const QColor ink = on->palette().color(QPalette::ButtonText);
+		QColor soft = ink;
+		soft.setAlphaF(0.45f);
+		const QPen line(ink, 5, Qt::SolidLine, Qt::RoundCap);
+		auto bar = [&](qreal x, qreal y, qreal w, qreal h, const QColor &c) {
+			QPainterPath path;
+			path.addRoundedRect(QRectF(x, y, w, h), 4, 4);
+			p.fillPath(path, c);
+		};
+		auto arrow = [&](QPointF from, QPointF to) {
+			p.setPen(line);
+			p.drawLine(from, to);
+			const QLineF l(to, from);
+			QLineF a = l, b = l;
+			a.setLength(11);
+			b.setLength(11);
+			a.setAngle(l.angle() + 35);
+			b.setAngle(l.angle() - 35);
+			p.drawLine(a);
+			p.drawLine(b);
+		};
+		p.setPen(line);
+		if (name == "left" || name == "center" || name == "right") {
+			const qreal x = name == "left" ? 8 : name == "center" ? 32 : 56;
+			p.drawLine(QPointF(x, 6), QPointF(x, 58));
+			const qreal w1 = 38, w2 = 24;
+			auto at = [&](qreal w) {
+				return name == "left" ? x + 5 : name == "center" ? x - w / 2 : x - 5 - w;
+			};
+			bar(at(w1), 16, w1, 12, name == "center" ? soft : ink);
+			bar(at(w2), 36, w2, 12, name == "center" ? soft : ink);
+		} else if (name == "top" || name == "middle" || name == "bottom") {
+			const qreal y = name == "top" ? 8 : name == "middle" ? 32 : 56;
+			p.drawLine(QPointF(6, y), QPointF(58, y));
+			const qreal h1 = 38, h2 = 24;
+			auto at = [&](qreal h) {
+				return name == "top" ? y + 5 : name == "middle" ? y - h / 2 : y - 5 - h;
+			};
+			bar(16, at(h1), 12, h1, name == "middle" ? soft : ink);
+			bar(36, at(h2), 12, h2, name == "middle" ? soft : ink);
+		} else if (name == "space_across" || name == "space_down") {
+			for (int i = 0; i < 3; i++) {
+				if (name == "space_across")
+					bar(8 + i * 19, 14, 10, 36, ink);
+				else
+					bar(14, 8 + i * 19, 36, 10, ink);
+			}
+		} else if (name == "snap_now") {
+			bar(6, 18, 22, 28, soft);
+			bar(36, 18, 22, 28, ink);
+			arrow(QPointF(36, 54), QPointF(28, 54));
+		} else if (name == "same_width" || name == "same_height" || name == "same_size") {
+			p.setPen(QPen(ink, 4));
+			p.drawRoundedRect(QRectF(10, 10, 44, 44), 5, 5);
+			p.setPen(line);
+			if (name != "same_height") {
+				arrow(QPointF(32, 32), QPointF(18, 32));
+				arrow(QPointF(32, 32), QPointF(46, 32));
+			}
+			if (name != "same_width") {
+				arrow(QPointF(32, 32), QPointF(32, 18));
+				arrow(QPointF(32, 32), QPointF(32, 46));
+			}
+		} else if (name == "same_everywhere" || name == "same_chosen") {
+			// One arrangement handed on to other scenes: all of them, or some.
+			bar(6, 22, 20, 20, ink);
+			for (int i = 0; i < 3; i++)
+				bar(40, 6 + i * 19, 18, 14, name == "same_chosen" && i == 1 ? soft : ink);
+			arrow(QPointF(28, 32), QPointF(37, 32));
+		} else if (name.rfind("order", 0) == 0) {
+			// Two sheets, one above the other, and which way this one goes.
+			const bool up = name == "orderTop" || name == "orderUp";
+			bar(8, up ? 30 : 10, 34, 24, soft);
+			bar(22, up ? 10 : 30, 34, 24, ink);
+		}
+		p.end();
+		return QIcon(pixmap);
 	}
 
 	void watch_for_drop()
@@ -1685,6 +1837,7 @@ private:
 	std::vector<Watched> watched_;
 	std::vector<Watched> drag_start_; // as they were when the drag began
 	bool dragging_ = false;
+	QWidget *options_measure_ = nullptr, *options_drop_ = nullptr;
 	std::vector<Glide> glides_;
 	QTimer *glide_timer_ = nullptr;
 	QElapsedTimer glide_clock_;
