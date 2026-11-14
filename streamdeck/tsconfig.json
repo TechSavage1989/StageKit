@@ -2,7 +2,8 @@
 	"extends": "@tsconfig/node20/tsconfig.json",
 	"compilerOptions": {
 		"customConditions": ["node"],
-		"module": "ES2022",
+		"module": "ESNext",
+		"resolveJsonModule": true,
 		"moduleResolution": "Bundler",
 		"noImplicitOverride": true,
 		"rewriteRelativeImportExtensions": true

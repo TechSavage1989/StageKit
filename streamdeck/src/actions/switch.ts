@@ -11,7 +11,8 @@ import type { JsonValue } from "@elgato/utils";
 
 import { afterPress, isSwitch } from "../kinds.ts";
 import { obs } from "../obs.ts";
-import { answerLists, type KeySettings } from "./shared.ts";
+import { choose, file } from "../pictures.ts";
+import { answerLists, type KeySettings, look } from "./shared.ts";
 
 /**
  * A key that switches one StageKit filter on and off and shows which way it
@@ -33,6 +34,7 @@ export class FilterSwitch extends SingletonAction<KeySettings> {
 		});
 		obs.on("connection", () => void this.showAll());
 		obs.on("changed", () => void this.showAll());
+		look.on("changed", () => void this.showAll());
 	}
 
 	override onWillAppear(ev: WillAppearEvent<KeySettings>): Promise<void> {
@@ -66,8 +68,13 @@ export class FilterSwitch extends SingletonAction<KeySettings> {
 	}
 
 	private async show(key: KeyAction<KeySettings>, settings: KeySettings): Promise<void> {
-		const enabled = await obs.filterEnabled(settings.source ?? "", settings.filter ?? "");
-		await key.setState(enabled ? 1 : 0);
+		const now = await obs.filter(settings.source ?? "", settings.filter ?? "");
+		// Its two looks: the picture that fits the filter (or the one chosen),
+		// in its "off" and "on" form. Without one, the plugin's plain switch.
+		const picture = choose(settings.picture, now?.kind ?? "", now?.settings);
+		await key.setImage(picture ? file(picture, false, look.colour) : undefined, { state: 0 });
+		await key.setImage(picture ? file(picture, true, look.colour) : undefined, { state: 1 });
+		await key.setState(now?.enabled ? 1 : 0);
 	}
 
 	private async showAll(): Promise<void> {

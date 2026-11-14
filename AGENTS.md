@@ -358,7 +358,13 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   from the plugin through sdpi-components' `datasource`; the filter list is refreshed when the
   source changes; the connection fields use `global`), and how the keys look. Its keys act on OBS
   through plain obs-websocket requests (`SetSourceFilterEnabled`), so they need nothing new in the
-  OBS plugin. `com.techsavage1989.stagekit` and the action UUIDs under it must never change once
+  OBS plugin. Its key pictures are the owner's icon pack, published with the owner's say-so
+  ("its fine for the icon pack to be publishes", mono as the default colour): 144 px copies under
+  `imgs/pack/<colour>/`, written with `src/pack.json` by `tools/import-icons.py` from the pack's
+  folder, which is not in the repository (nor is the program that draws it). A key left on
+  *Automatic* gets its picture from the filter's kind and settings (`automatic()` in
+  `src/pictures.ts`); keep that by kind and setting, never by the owner's source names.
+  `com.techsavage1989.stagekit` and the action UUIDs under it must never change once
   the owner has keys on their decks: Stream Deck ties saved keys to them.
 - **Auto Capture's Windows code is only compiled by CI and never run by the tests.** The tests feed it
   stand-in windows through its `set_test_windows` call. The owner wants no list of games to maintain:

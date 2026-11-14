@@ -20,6 +20,20 @@
 				<option value="off">Switches it off</option>
 			</sdpi-select>
 		</sdpi-item>
+		<sdpi-item label="Picture">
+			<sdpi-select setting="picture" datasource="getPictures" default=""></sdpi-select>
+		</sdpi-item>
+		<sdpi-item label="Colour">
+			<sdpi-select setting="colour" global default="mono">
+				<option value="mono">Mono</option>
+				<option value="violet">Violet</option>
+				<option value="ocean">Ocean</option>
+				<option value="forest">Forest</option>
+				<option value="ember">Ember</option>
+				<option value="neon">Neon</option>
+			</sdpi-select>
+		</sdpi-item>
+
 		<details>
 			<summary>OBS connection</summary>
 			<sdpi-item label="Address">

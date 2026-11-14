@@ -211,6 +211,19 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## The Stream Deck plugin's keys use the icon pack (0.1.0-beta79)
+
+The owner asked whether the plugin's icons were the ones made earlier (they were not), allowed the
+pack to be published, and chose mono as the default colour.
+
+- 187 pictures in six colours are in the plugin (6.7 MB of 144 px files; the packed plugin is
+  4.4 MB). *Picture* (Automatic or any of the pack) per key, *Colour* for all keys at once.
+- Automatic covers Ramp Blur (by type), Corners & Edges (by style), Shadow, Glow & Outline (by
+  look), Send To and Place Item (by place), Auto Capture, Auto Frame, Show in Scenes and Standby
+  Picture. The other kinds show the plain switch until the pack has pictures for them.
+- The blur-type pictures had no "off" look; `import-icons.py` makes a greyed one.
+- Still untested on a device, like the rest of the plugin.
+
 ## A Stream Deck plugin, first step (0.1.0-beta78)
 
 The owner: "Can you start working on a stream deck plugin?" with a link to Elgato's getting-started
