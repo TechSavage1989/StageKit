@@ -39,4 +39,40 @@ void item_transition_defaults(obs_data_t *settings);
 std::string item_transition_kind(obs_data_t *settings);
 uint32_t item_transition_ms(obs_data_t *settings);
 
+// ---------------------------------------------------------------------------
+// The fuller control: showing and hiding each have their own transition, a
+// transition's own settings (the way a slide goes, a fade's colour) are set
+// in the filter, and each source on a filter's list can have its own in
+// place of the filter's usual ones. The owner: "must allow you to select the
+// specific settings for the transition type in the filter setting, like left
+// right up or down for slide ... for linked sources also allow each one to
+// have its specific setting set independently".
+
+// One way of appearing, or of disappearing.
+struct ItemWay {
+	std::string kind = kTransitionFade;
+	uint32_t ms = 300;
+	std::string own; // the kind's own settings that were set, as JSON; empty for none
+};
+
+struct ItemChange {
+	ItemWay show, hide;
+};
+
+// What the settings say: the filter's usual change (`source` null or empty),
+// or the one for a source on its list, which falls back on the usual one
+// wherever it is left as "the same".
+ItemChange item_change_read(obs_data_t *settings, const char *source = nullptr);
+
+// Gives an item its show and its hide transition, each with its own settings.
+void apply_item_change(obs_sceneitem_t *item, const ItemChange &change);
+
+// Adds the control. `list_setting` names the PickList of sources the filter
+// acts on (null for a filter without one): with it, a "Settings for" box
+// chooses between the usual change and each listed source's own.
+void add_item_change_properties(obs_properties_t *props, obs_source_t *owner, const char *list_setting);
+
+// Fade, 300 ms, hiding the same way as showing.
+void item_change_defaults(obs_data_t *settings);
+
 } // namespace stagekit

@@ -40,6 +40,12 @@ void pick_list_write(obs_data_t *settings, const char *setting, bool as_text, co
 // level. `owner` is the filter or source the settings belong to.
 void pick_list_add(obs_properties_t *props, obs_source_t *owner, const PickList &list);
 
+// Something to call whenever a list in a properties window has had an entry
+// added or taken off, for a control beside it that shows the list's entries.
+// One for the whole plugin; it gets the window's properties, the list's owner
+// and the owner's settings.
+void pick_list_on_change(void (*changed)(obs_properties_t *top, obs_source_t *owner, obs_data_t *settings));
+
 // Rebuilds a list's rows after something other than the list itself changed it.
 void pick_list_refresh(obs_properties_t *top, obs_source_t *owner, const char *setting, bool as_text);
 

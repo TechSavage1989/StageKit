@@ -331,6 +331,18 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   keep; default fade, 300 ms): Follow Active App, Show in Scenes, Program Trigger, Link Visibility. A filter
   that animates its own drawing offers a style list, its timings and `add_easing_properties`. Do not
   ship a fixed fade or a fixed curve in anything new.
+- **Show in Scenes has the fuller *Change with*** (`add_item_change_properties`, `ItemChange` in
+  `src/common/item-transition.*`): *Show with* and *Hide with* apart (hiding is *The same as
+  showing* as it comes), the chosen transition's own settings copied into the filter's window from
+  that transition's own (`add_own`: tick boxes, numbers, lists and colours; kept as
+  `show|<kind>|<its setting>`), and *Settings for*, which switches the controls between the usual
+  change and each listed source's own (`for|<source>|...`, *As for all sources* until changed).
+  The owner: "must allow you to select the specific settings for the transition type in the filter
+  setting, like left right up or down for slide ... each one to have its specific setting set
+  independently". The controls are rebuilt in place when a kind or the *Settings for* box changes,
+  and when the source list does (`pick_list_on_change`). Follow Active App, Program Trigger and
+  Link Visibility still have the plain two controls; give them this one when it is asked for,
+  not a third kind.
 - **Move Source moves the source in every scene it is in, by default** (`apply_in`). The owner asked for
   that: the camera sent to a spot is there in every scene. The older `where` setting is not read.
 - **Shadow sizes are in screen pixels by default.** The owner's old shadows sat on full-canvas scenes,
@@ -361,7 +373,10 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   can come and go is glanced at often (`comes_and_goes`: a browser widget, text, a group, a
   nested scene, and anything once seen to change; twice a second each), and the rest about every
   ten seconds, one at a time. An item's first glance after a look is not trusted as that look's
-  measure (they can be seconds apart): the item is looked at once more. The first build (beta70) read one
+  measure (they can be seconds apart): the item is looked at once more. What was seen of a
+  scene's items is forgotten when a filter joins or leaves the scene (`glance_forget`): a deleted
+  scene's entries were taken for those of a new scene made at the same address, and its widget
+  went unnoticed (found by a test that failed one run in three). The first build (beta70) read one
   item back every quarter second and all of them after any move; the owner then found camera moves
   "very choppy". Never add a read-back that is read in the same frame on a timer, and none that
   runs while things animate. It only looks while its scene
@@ -499,6 +514,10 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     half-way, a dark dip.
   - The plan (which items go together, and the order) holds scene items by reference and is let go
     through `changed()` on the drawing thread, never from the thread a transition is started on.
+  - *Linked sources* (`links`, lines of "A ↔ B" in a PickList, made with two boxes and a button)
+    are matched after sources that are the same and before the main picture; a link holds by way
+    of other links too (`linked`). The owner: "link my different camera sources to each other
+    across scenes ... multiple links should be able to be configured".
   - Like every shader here, `stagekit-morph.effect` has only run on OpenGL; without it the
     transition cuts.
   - Not followed during the change: an item's blending mode, its show and hide transition, a crop

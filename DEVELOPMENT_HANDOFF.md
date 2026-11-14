@@ -211,6 +211,13 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Transitions with their own settings; Morph links (0.1.0-beta111)
+
+- Two requests, released together because the owner said "release everything i've requested in
+  the next release": Show in Scenes' *Show with* / *Hide with* with each transition's own settings
+  and per-source choices, and *Linked sources* in Morph. See AGENTS.md for both.
+- **Not confirmed by the owner yet**: either of them, nor a first real morph (beta110).
+
 ## Morph did nothing in OBS's own window (0.1.0-beta110)
 
 - The owner on beta109: "it doesn't morph, it literally just instantly switches scenes". The

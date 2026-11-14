@@ -304,6 +304,25 @@ void glance_step(const void *asking, obs_source_t *scene, const std::vector<obs_
 	obs_leave_graphics();
 }
 
+// What was seen of a scene's items is let go when a filter joins or leaves
+// the scene. A scene that is deleted leaves its entries behind, and OBS may
+// make the next scene in the very same place, with items numbered from one
+// again: the new scene's items would be taken for the old one's, and a widget
+// in it go unnoticed.
+void glance_forget(obs_source_t *scene)
+{
+	if (!scene)
+		return;
+	std::lock_guard lock(g_glance_mutex);
+	const auto drop = [scene](auto &table) {
+		for (auto it = table.begin(); it != table.end();)
+			it = it->first.first == scene ? table.erase(it) : std::next(it);
+	};
+	drop(g_glance.seen);
+	drop(g_glance.when);
+	drop(g_glance.lively);
+}
+
 // When the last filter has gone: nothing is kept, on the graphics card or off it.
 void glance_free()
 {
@@ -522,8 +541,17 @@ public:
 		settings_ = s;
 	}
 
-	void attach(obs_source_t *parent) { parent_ = parent; }
-	void detach() { parent_ = nullptr; }
+	void attach(obs_source_t *parent)
+	{
+		parent_ = parent;
+		glance_forget(parent);
+		looked_.clear();
+	}
+	void detach()
+	{
+		glance_forget(parent_);
+		parent_ = nullptr;
+	}
 	obs_source_t *source() const { return source_; }
 	obs_source_t *parent() const { return parent_; }
 
