@@ -2247,6 +2247,24 @@ int main(int argc, char **argv)
 				CHECK(is(b2.x, 100) && is(b2.y, 100) && is(p2.x, 270) && is(p2.y, 130),
 				      "and when the space grows it moves to the new middle, still its own size (%.0f, %.0f %.0fx%.0f)",
 				      p2.x, p2.y, b2.x, b2.y);
+				// Something grows beside it until the space is narrower than
+				// the item: it stays the gap inside the screen's edge.
+				obs_source_t *wall = obs_source_create("color_source", "Kept Wall", nullptr, nullptr);
+				sized(wall, 520, 340);
+				obs_sceneitem_t *wall_item = obs_scene_add(ks, wall);
+				vec2_set(&kp, 0.0f, 10.0f);
+				obs_sceneitem_set_pos(wall_item, &kp);
+				vec2_set(&kp, 530.0f, 130.0f);
+				obs_sceneitem_set_pos(chat_item, &kp);
+				settle(1200);
+				vec2 p3, b3;
+				obs_sceneitem_get_pos(chat_item, &p3);
+				obs_sceneitem_get_bounds(chat_item, &b3);
+				CHECK(is(b3.x, 100) && p3.x <= 520.5 && p3.x >= 19.5 && p3.y >= 19.5 && p3.y <= 240.5,
+				      "squeezed by a neighbour it stays the gap inside the screen, at its own size (%.0f, %.0f %.0fx%.0f)",
+				      p3.x, p3.y, b3.x, b3.y);
+				obs_sceneitem_remove(wall_item);
+				obs_source_release(wall);
 				obs_data_release(kf);
 				obs_source_filter_remove(obs_scene_get_source(ks), keep_fit);
 				obs_source_release(keep_fit);

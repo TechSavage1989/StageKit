@@ -56,7 +56,13 @@ enum class RampStyle : int {
 };
 
 constexpr int kMaxKawaseLevels = 8;
-constexpr double kMaxStrength = 250.0;
+// The slider's top. It was 250; the owner asked for more.
+constexpr double kMaxStrength = 1000.0;
+// Up to here the Gaussian and the box blur are drawn tap by tap. A filter set
+// stronger than this is drawn the Dual Kawase way for its whole ramp: the taps
+// would stand so far apart that they show as stripes, and Kawase at the same
+// number looks about as strong.
+constexpr double kTapLimit = 250.0;
 
 struct Settings {
 	BlurType type = BlurType::Gaussian;
@@ -749,7 +755,10 @@ RampBlur::Blurred RampBlur::run_blur(const Settings &s, gs_texture_t *input, uin
 		return (float)std::clamp(std::ceil(px), 1.0, max_taps);
 	};
 
-	switch (s.type) {
+	BlurType type = s.type;
+	if ((type == BlurType::Gaussian || type == BlurType::Box) && s.strength > kTapLimit)
+		type = BlurType::Kawase;
+	switch (type) {
 	case BlurType::Gaussian:
 	case BlurType::Box: {
 		const char *tech = s.type == BlurType::Gaussian ? "Gaussian" : "Box";
@@ -792,7 +801,8 @@ RampBlur::Blurred RampBlur::run_blur(const Settings &s, gs_texture_t *input, uin
 
 	case BlurType::Zoom: {
 		// Strength 250 pulls samples 60% of the way to the centre.
-		const double amount = strength / kMaxStrength * 0.6;
+		// (Never all the way: at the centre itself there is nothing to pull.)
+		const double amount = std::min(strength / 250.0 * 0.6, 0.95);
 		const double reach_px = amount * 0.75 * std::max(w, h);
 		vec2 center;
 		vec2_set(&center, (float)s.center_x, (float)s.center_y);

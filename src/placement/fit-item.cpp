@@ -179,6 +179,10 @@ public:
 	{
 		if (!parent_ || !obs_source_enabled(source_))
 			return;
+		// Not on a group: its size is whatever is in it, so there is no
+		// space to fit into, and moving an item inside it moves the space.
+		if (obs_source_is_group(parent_))
+			return;
 		Settings s;
 		{
 			std::lock_guard lock(mutex_);
@@ -266,6 +270,8 @@ public:
 			}
 		}
 		const double picture = pw / ph;
+		// The screen (or the box) itself, before a free space is taken in it.
+		const Box outer{bx, by, bw, bh};
 		bool free = s.box == BoxKind::FreeSpace;
 		if (free) {
 			Box space;
@@ -292,6 +298,18 @@ public:
 			// balanced, left with right and top with bottom.
 			bx += margin + (bw - 2.0 * margin - keep_w_) / 2.0;
 			by += margin + (bh - 2.0 * margin - keep_h_) / 2.0;
+			// A space smaller than the item cannot hold it, and its
+			// middle may then lie off the screen: the item stays the gap
+			// inside the screen's edges whatever else gives way. (The
+			// owner's chat box was pushed off the canvas by a game that
+			// grew beside it; kept on the canvas, the game makes room.)
+			const double gap = std::min({s.margin, outer.w / 2.0 - 1.0, outer.h / 2.0 - 1.0});
+			auto inside = [](double at, double size, double from, double room) {
+				return room >= size ? std::clamp(at, from, from + room - size)
+						    : from + (room - size) / 2.0;
+			};
+			bx = inside(bx, keep_w_, outer.x + gap, outer.w - 2.0 * gap);
+			by = inside(by, keep_h_, outer.y + gap, outer.h - 2.0 * gap);
 			bw = keep_w_;
 			bh = keep_h_;
 			margin = 0.0;
@@ -583,6 +601,14 @@ obs_properties_t *get_properties(void *data)
 {
 	auto *self = static_cast<FitItem *>(data);
 	obs_properties_t *props = obs_properties_create();
+	// On a group it has nothing to go by (a group is only as large as what
+	// is in it) and does nothing; said here, where it will be looked for.
+	if (self && self->parent() && obs_source_is_group(self->parent())) {
+		obs_property_t *wrong =
+			obs_properties_add_text(props, "on_group", obs_module_text("Fit.OnGroup"), OBS_TEXT_INFO);
+		obs_property_text_set_info_type(wrong, OBS_TEXT_INFO_WARNING);
+		obs_property_text_set_info_word_wrap(wrong, true);
+	}
 	obs_property_t *item = obs_properties_add_list(props, "item", obs_module_text("Fit.Item"), OBS_COMBO_TYPE_LIST,
 						       OBS_COMBO_FORMAT_STRING);
 	obs_property_list_add_string(item, obs_module_text("Fit.Item.None"), "");
