@@ -397,7 +397,9 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   there and run it, do not edit `manifest.json` or `ui/*.html` by hand. The first two catch-all
   keys (`.switch`, `.move`) stay registered and hidden so keys made with them keep working. The
   palette is each key's own setting (`palette`): the first build had one colour for all keys and
-  the owner asked for it per key and for the word *Palette*. An *Arrange tool* key presses the
+  the owner asked for it per key and for the word *Palette*. A *Dock switch* key and a *Slide to next edge* key go
+  through the `SetOption`, `GetOptions` and `Slide` vendor requests; the slide is the dock's own
+  (`set_slide_handler`), run on the window's thread, so it needs the dock. An *Arrange tool* key presses the
   tool's OBS hotkey by name (`stagekit.arrange.<tool>`, the names in `kInfo`): renaming one there
   breaks the key. *Blur everything* uses the `BlurAll` and `ListBlurFilters` vendor requests.
   `com.techsavage1989.stagekit` and the action UUIDs under it must never change once

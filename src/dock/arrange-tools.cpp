@@ -10,6 +10,8 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include "arrange-tools.hpp"
 
+#include "../api/vendor-api.hpp"
+
 #include <obs-module.h>
 #include <obs-frontend-api.h>
 
@@ -77,6 +79,32 @@ void set_arrange_options(const ArrangeOptions &options)
 		g_options.within = std::clamp(g_options.within, 1, 200);
 	}
 	g_revision++;
+	vendor_emit_options_changed();
+}
+
+namespace {
+std::function<void(int)> g_slide; // only touched on the window's thread
+std::atomic<bool> g_can_slide{false};
+} // namespace
+
+void set_slide_handler(std::function<void(int)> handler)
+{
+	g_can_slide = (bool)handler;
+	g_slide = std::move(handler);
+}
+
+bool request_slide(int direction)
+{
+	if (!g_can_slide || direction < 0 || direction > 8)
+		return false;
+	obs_queue_task(
+		OBS_TASK_UI,
+		[](void *param) {
+			if (g_slide)
+				g_slide((int)(intptr_t)param);
+		},
+		(void *)(intptr_t)direction, false);
+	return true;
 }
 
 ArrangeGuide last_arrange_guide()

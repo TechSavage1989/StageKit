@@ -28,6 +28,9 @@ export type KeySettings = {
 	keep?: "game" | "always";
 	/** A Window switch key: on to the next capture, or back to following the apps. */
 	step?: "next" | "back";
+	/** A Dock switch key's switch ("snap", "guides", ...) and a Slide key's way ("up", "down-left", ...). */
+	option?: string;
+	direction?: string;
 	[key: string]: JsonValue | undefined;
 };
 

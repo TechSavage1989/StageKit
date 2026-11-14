@@ -211,6 +211,13 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Keys for the dock's switches and slides (0.1.0-beta85)
+
+The rest of "I need every feature that makes sense as a key": a *Dock switch* key (snap on release,
+guides, stop resizing, slide, in every scene, keep shape; it follows the dock through the
+`OptionsChanged` event) and a *Slide to next edge* key. Still no key: Auto Frame's *Frame it now*
+and a dial for a blur's amount; nobody has asked for those by name. Not run on Windows or a device.
+
 ## A key per feature, shapes by hand, a hook with a transition (0.1.0-beta84)
 
 Asked for by the owner, all in one go:

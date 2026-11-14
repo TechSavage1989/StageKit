@@ -1,6 +1,6 @@
 {
 	"Name": "StageKit",
-	"Version": "0.4.0.0",
+	"Version": "0.5.0.0",
 	"Author": "StageKit contributors",
 	"Actions": [
 		{
@@ -419,6 +419,44 @@
 				{
 					"Image": "imgs/actions/blurall/on",
 					"Name": "On",
+					"TitleAlignment": "bottom"
+				}
+			]
+		},
+		{
+			"Name": "Dock switch",
+			"UUID": "com.techsavage1989.stagekit.option",
+			"Icon": "imgs/actions/switch/icon",
+			"Tooltip": "One of the StageKit dock's switches on a key: snap on release, guides, stop resizing at edges. Shows which way it is.",
+			"PropertyInspectorPath": "ui/option.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/option/off",
+					"Name": "Off",
+					"TitleAlignment": "bottom"
+				},
+				{
+					"Image": "imgs/actions/option/on",
+					"Name": "On",
+					"TitleAlignment": "bottom"
+				}
+			]
+		},
+		{
+			"Name": "Slide to next edge",
+			"UUID": "com.techsavage1989.stagekit.slide",
+			"Icon": "imgs/actions/move/icon",
+			"Tooltip": "Slides the item selected in OBS to the next edge that way; the next press passes it.",
+			"PropertyInspectorPath": "ui/slide.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/slide/on",
 					"TitleAlignment": "bottom"
 				}
 			]

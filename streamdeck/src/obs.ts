@@ -54,6 +54,7 @@ class ObsLink extends EventEmitter {
 		}
 		this.obs.on("VendorEvent", (ev) => {
 			if (ev.vendorName === "StageKit" && ev.eventType === "BlurChanged") this.emit("blur");
+			if (ev.vendorName === "StageKit" && ev.eventType === "OptionsChanged") this.emit("options");
 		});
 	}
 

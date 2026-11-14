@@ -16,6 +16,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -56,6 +57,14 @@ ArrangeOptions arrange_options();
 void set_arrange_options(const ArrangeOptions &options);
 // Changes whenever the options do, so anything showing them can follow.
 uint64_t arrange_options_revision();
+
+// The dock's slide (Send to's arrows with "Slide to the next edge"), for a
+// key or a remote control: `direction` is 0 to 8, row by row from up-left,
+// 4 the centre. The dock gives the handler and takes it away again; both,
+// and the slide itself, happen on the window's thread.
+void set_slide_handler(std::function<void(int)> handler);
+// Asks for a slide from any thread. False when no dock is there to do it.
+bool request_slide(int direction);
 
 enum class ArrangeAction {
 	Left,

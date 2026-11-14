@@ -445,6 +445,36 @@ int main(int argc, char **argv)
 		auto [ok_bad, bad_json] = vendor_call("BlurOn", bad);
 		CHECK(!ok_bad && bad_json.find("No source") != std::string::npos, "unknown source returns an error");
 		obs_data_release(bad);
+
+		// The dock's switches and slides, as a Stream Deck key asks for them.
+		auto [ok_opts, opts_json] = vendor_call("GetOptions", nullptr);
+		CHECK(ok_opts && opts_json.find("\"snap\":false") != std::string::npos &&
+			      opts_json.find("\"guides\":false") != std::string::npos,
+		      "GetOptions gives the dock's switches");
+		obs_data_t *opt = obs_data_create();
+		obs_data_set_string(opt, "option", "snap");
+		auto [ok_set, set_json] = vendor_call("SetOption", opt);
+		CHECK(ok_set && set_json.find("\"on\":true") != std::string::npos, "SetOption switches one over");
+		obs_data_set_string(opt, "mode", "on");
+		auto [ok_on, on_json] = vendor_call("SetOption", opt);
+		CHECK(ok_on && on_json.find("\"on\":true") != std::string::npos, "SetOption 'on' leaves it on");
+		obs_data_set_string(opt, "mode", "off");
+		auto [ok_soff, soff_json] = vendor_call("SetOption", opt);
+		CHECK(ok_soff && soff_json.find("\"on\":false") != std::string::npos,
+		      "SetOption 'off' switches it off");
+		obs_data_set_string(opt, "option", "nothing");
+		auto [ok_none, none_json] = vendor_call("SetOption", opt);
+		CHECK(!ok_none, "an unknown option is refused");
+		obs_data_release(opt);
+		obs_data_t *slide = obs_data_create();
+		obs_data_set_string(slide, "direction", "sideways");
+		auto [ok_side, side_json] = vendor_call("Slide", slide);
+		CHECK(!ok_side && side_json.find("direction must be") != std::string::npos,
+		      "an unknown direction is refused");
+		obs_data_set_string(slide, "direction", "left");
+		auto [ok_left, left_json] = vendor_call("Slide", slide);
+		CHECK(!ok_left && left_json.find("dock") != std::string::npos, "a slide without the dock says so");
+		obs_data_release(slide);
 	}
 
 	obs_source_filter_remove(img, filter);
