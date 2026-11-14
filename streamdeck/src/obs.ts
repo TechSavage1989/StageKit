@@ -15,6 +15,8 @@ export type Connection = {
 	password?: string;
 };
 
+export type FilterNow = { enabled: boolean; kind: string; settings: Record<string, unknown> };
+
 const RETRY_MS = 3000;
 
 class ObsLink extends EventEmitter {
@@ -144,15 +146,28 @@ class ObsLink extends EventEmitter {
 		return out;
 	}
 
-	/** Whether a filter is on; undefined when it (or OBS) cannot be reached. */
-	async filterEnabled(sourceName: string, filterName: string): Promise<boolean | undefined> {
+	/**
+	 * One filter as it is now: on or off, what kind it is, and its settings
+	 * (OBS leaves out the ones still at their usual value). Undefined when
+	 * it, or OBS, cannot be reached.
+	 */
+	async filter(sourceName: string, filterName: string): Promise<FilterNow | undefined> {
 		if (!this.connected || !sourceName || !filterName) return undefined;
 		try {
 			const answer = await this.obs.call("GetSourceFilter", { sourceName, filterName });
-			return answer.filterEnabled;
+			return {
+				enabled: answer.filterEnabled,
+				kind: answer.filterKind,
+				settings: (answer.filterSettings ?? {}) as Record<string, unknown>,
+			};
 		} catch {
 			return undefined;
 		}
+	}
+
+	/** Whether a filter is on; undefined when it (or OBS) cannot be reached. */
+	async filterEnabled(sourceName: string, filterName: string): Promise<boolean | undefined> {
+		return (await this.filter(sourceName, filterName))?.enabled;
 	}
 
 	async setFilter(sourceName: string, filterName: string, filterEnabled: boolean): Promise<void> {

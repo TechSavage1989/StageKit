@@ -1,0 +1,1321 @@
+{
+	"colours": [
+		"mono",
+		"violet",
+		"ocean",
+		"forest",
+		"ember",
+		"neon"
+	],
+	"pictures": [
+		{
+			"id": "blur-box/blender",
+			"group": "blur box",
+			"label": "blender",
+			"on": "blur-box/blender-on",
+			"off": "blur-off/blender-off"
+		},
+		{
+			"id": "blur-box/camera-elgato",
+			"group": "blur box",
+			"label": "camera elgato",
+			"on": "blur-box/camera-elgato-on",
+			"off": "blur-off/camera-elgato-off"
+		},
+		{
+			"id": "blur-box/fusion-360",
+			"group": "blur box",
+			"label": "fusion 360",
+			"on": "blur-box/fusion-360-on",
+			"off": "blur-off/fusion-360-off"
+		},
+		{
+			"id": "blur-box/game-capture",
+			"group": "blur box",
+			"label": "game capture",
+			"on": "blur-box/game-capture-on",
+			"off": "blur-off/game-capture-off"
+		},
+		{
+			"id": "blur-box/gba-link-1",
+			"group": "blur box",
+			"label": "gba link 1",
+			"on": "blur-box/gba-link-1-on",
+			"off": "blur-off/gba-link-1-off"
+		},
+		{
+			"id": "blur-box/gba-link-2",
+			"group": "blur box",
+			"label": "gba link 2",
+			"on": "blur-box/gba-link-2-on",
+			"off": "blur-off/gba-link-2-off"
+		},
+		{
+			"id": "blur-box/hd60s",
+			"group": "blur box",
+			"label": "hd60s",
+			"on": "blur-box/hd60s-on",
+			"off": "blur-off/hd60s-off"
+		},
+		{
+			"id": "blur-box/main-display",
+			"group": "blur box",
+			"label": "main display",
+			"on": "blur-box/main-display-on",
+			"off": "blur-off/main-display-off"
+		},
+		{
+			"id": "blur-box/tablet",
+			"group": "blur box",
+			"label": "tablet",
+			"on": "blur-box/tablet-on",
+			"off": "blur-off/tablet-off"
+		},
+		{
+			"id": "blur-box/window-capture",
+			"group": "blur box",
+			"label": "window capture",
+			"on": "blur-box/window-capture-on",
+			"off": "blur-off/window-capture-off"
+		},
+		{
+			"id": "blur-box/zbrush",
+			"group": "blur box",
+			"label": "zbrush",
+			"on": "blur-box/zbrush-on",
+			"off": "blur-off/zbrush-off"
+		},
+		{
+			"id": "blur-gaussian/blender",
+			"group": "blur gaussian",
+			"label": "blender",
+			"on": "blur-gaussian/blender-on",
+			"off": "blur-off/blender-off"
+		},
+		{
+			"id": "blur-gaussian/camera-elgato",
+			"group": "blur gaussian",
+			"label": "camera elgato",
+			"on": "blur-gaussian/camera-elgato-on",
+			"off": "blur-off/camera-elgato-off"
+		},
+		{
+			"id": "blur-gaussian/fusion-360",
+			"group": "blur gaussian",
+			"label": "fusion 360",
+			"on": "blur-gaussian/fusion-360-on",
+			"off": "blur-off/fusion-360-off"
+		},
+		{
+			"id": "blur-gaussian/game-capture",
+			"group": "blur gaussian",
+			"label": "game capture",
+			"on": "blur-gaussian/game-capture-on",
+			"off": "blur-off/game-capture-off"
+		},
+		{
+			"id": "blur-gaussian/gba-link-1",
+			"group": "blur gaussian",
+			"label": "gba link 1",
+			"on": "blur-gaussian/gba-link-1-on",
+			"off": "blur-off/gba-link-1-off"
+		},
+		{
+			"id": "blur-gaussian/gba-link-2",
+			"group": "blur gaussian",
+			"label": "gba link 2",
+			"on": "blur-gaussian/gba-link-2-on",
+			"off": "blur-off/gba-link-2-off"
+		},
+		{
+			"id": "blur-gaussian/hd60s",
+			"group": "blur gaussian",
+			"label": "hd60s",
+			"on": "blur-gaussian/hd60s-on",
+			"off": "blur-off/hd60s-off"
+		},
+		{
+			"id": "blur-gaussian/main-display",
+			"group": "blur gaussian",
+			"label": "main display",
+			"on": "blur-gaussian/main-display-on",
+			"off": "blur-off/main-display-off"
+		},
+		{
+			"id": "blur-gaussian/tablet",
+			"group": "blur gaussian",
+			"label": "tablet",
+			"on": "blur-gaussian/tablet-on",
+			"off": "blur-off/tablet-off"
+		},
+		{
+			"id": "blur-gaussian/window-capture",
+			"group": "blur gaussian",
+			"label": "window capture",
+			"on": "blur-gaussian/window-capture-on",
+			"off": "blur-off/window-capture-off"
+		},
+		{
+			"id": "blur-gaussian/zbrush",
+			"group": "blur gaussian",
+			"label": "zbrush",
+			"on": "blur-gaussian/zbrush-on",
+			"off": "blur-off/zbrush-off"
+		},
+		{
+			"id": "blur-hexagons/blender",
+			"group": "blur hexagons",
+			"label": "blender",
+			"on": "blur-hexagons/blender-on",
+			"off": "blur-off/blender-off"
+		},
+		{
+			"id": "blur-hexagons/camera-elgato",
+			"group": "blur hexagons",
+			"label": "camera elgato",
+			"on": "blur-hexagons/camera-elgato-on",
+			"off": "blur-off/camera-elgato-off"
+		},
+		{
+			"id": "blur-hexagons/fusion-360",
+			"group": "blur hexagons",
+			"label": "fusion 360",
+			"on": "blur-hexagons/fusion-360-on",
+			"off": "blur-off/fusion-360-off"
+		},
+		{
+			"id": "blur-hexagons/game-capture",
+			"group": "blur hexagons",
+			"label": "game capture",
+			"on": "blur-hexagons/game-capture-on",
+			"off": "blur-off/game-capture-off"
+		},
+		{
+			"id": "blur-hexagons/gba-link-1",
+			"group": "blur hexagons",
+			"label": "gba link 1",
+			"on": "blur-hexagons/gba-link-1-on",
+			"off": "blur-off/gba-link-1-off"
+		},
+		{
+			"id": "blur-hexagons/gba-link-2",
+			"group": "blur hexagons",
+			"label": "gba link 2",
+			"on": "blur-hexagons/gba-link-2-on",
+			"off": "blur-off/gba-link-2-off"
+		},
+		{
+			"id": "blur-hexagons/hd60s",
+			"group": "blur hexagons",
+			"label": "hd60s",
+			"on": "blur-hexagons/hd60s-on",
+			"off": "blur-off/hd60s-off"
+		},
+		{
+			"id": "blur-hexagons/main-display",
+			"group": "blur hexagons",
+			"label": "main display",
+			"on": "blur-hexagons/main-display-on",
+			"off": "blur-off/main-display-off"
+		},
+		{
+			"id": "blur-hexagons/tablet",
+			"group": "blur hexagons",
+			"label": "tablet",
+			"on": "blur-hexagons/tablet-on",
+			"off": "blur-off/tablet-off"
+		},
+		{
+			"id": "blur-hexagons/window-capture",
+			"group": "blur hexagons",
+			"label": "window capture",
+			"on": "blur-hexagons/window-capture-on",
+			"off": "blur-off/window-capture-off"
+		},
+		{
+			"id": "blur-hexagons/zbrush",
+			"group": "blur hexagons",
+			"label": "zbrush",
+			"on": "blur-hexagons/zbrush-on",
+			"off": "blur-off/zbrush-off"
+		},
+		{
+			"id": "blur-kawase/blender",
+			"group": "blur kawase",
+			"label": "blender",
+			"on": "blur-kawase/blender-on",
+			"off": "blur-off/blender-off"
+		},
+		{
+			"id": "blur-kawase/camera-elgato",
+			"group": "blur kawase",
+			"label": "camera elgato",
+			"on": "blur-kawase/camera-elgato-on",
+			"off": "blur-off/camera-elgato-off"
+		},
+		{
+			"id": "blur-kawase/fusion-360",
+			"group": "blur kawase",
+			"label": "fusion 360",
+			"on": "blur-kawase/fusion-360-on",
+			"off": "blur-off/fusion-360-off"
+		},
+		{
+			"id": "blur-kawase/game-capture",
+			"group": "blur kawase",
+			"label": "game capture",
+			"on": "blur-kawase/game-capture-on",
+			"off": "blur-off/game-capture-off"
+		},
+		{
+			"id": "blur-kawase/gba-link-1",
+			"group": "blur kawase",
+			"label": "gba link 1",
+			"on": "blur-kawase/gba-link-1-on",
+			"off": "blur-off/gba-link-1-off"
+		},
+		{
+			"id": "blur-kawase/gba-link-2",
+			"group": "blur kawase",
+			"label": "gba link 2",
+			"on": "blur-kawase/gba-link-2-on",
+			"off": "blur-off/gba-link-2-off"
+		},
+		{
+			"id": "blur-kawase/hd60s",
+			"group": "blur kawase",
+			"label": "hd60s",
+			"on": "blur-kawase/hd60s-on",
+			"off": "blur-off/hd60s-off"
+		},
+		{
+			"id": "blur-kawase/main-display",
+			"group": "blur kawase",
+			"label": "main display",
+			"on": "blur-kawase/main-display-on",
+			"off": "blur-off/main-display-off"
+		},
+		{
+			"id": "blur-kawase/tablet",
+			"group": "blur kawase",
+			"label": "tablet",
+			"on": "blur-kawase/tablet-on",
+			"off": "blur-off/tablet-off"
+		},
+		{
+			"id": "blur-kawase/window-capture",
+			"group": "blur kawase",
+			"label": "window capture",
+			"on": "blur-kawase/window-capture-on",
+			"off": "blur-off/window-capture-off"
+		},
+		{
+			"id": "blur-kawase/zbrush",
+			"group": "blur kawase",
+			"label": "zbrush",
+			"on": "blur-kawase/zbrush-on",
+			"off": "blur-off/zbrush-off"
+		},
+		{
+			"id": "blur-motion/blender",
+			"group": "blur motion",
+			"label": "blender",
+			"on": "blur-motion/blender-on",
+			"off": "blur-off/blender-off"
+		},
+		{
+			"id": "blur-motion/camera-elgato",
+			"group": "blur motion",
+			"label": "camera elgato",
+			"on": "blur-motion/camera-elgato-on",
+			"off": "blur-off/camera-elgato-off"
+		},
+		{
+			"id": "blur-motion/fusion-360",
+			"group": "blur motion",
+			"label": "fusion 360",
+			"on": "blur-motion/fusion-360-on",
+			"off": "blur-off/fusion-360-off"
+		},
+		{
+			"id": "blur-motion/game-capture",
+			"group": "blur motion",
+			"label": "game capture",
+			"on": "blur-motion/game-capture-on",
+			"off": "blur-off/game-capture-off"
+		},
+		{
+			"id": "blur-motion/gba-link-1",
+			"group": "blur motion",
+			"label": "gba link 1",
+			"on": "blur-motion/gba-link-1-on",
+			"off": "blur-off/gba-link-1-off"
+		},
+		{
+			"id": "blur-motion/gba-link-2",
+			"group": "blur motion",
+			"label": "gba link 2",
+			"on": "blur-motion/gba-link-2-on",
+			"off": "blur-off/gba-link-2-off"
+		},
+		{
+			"id": "blur-motion/hd60s",
+			"group": "blur motion",
+			"label": "hd60s",
+			"on": "blur-motion/hd60s-on",
+			"off": "blur-off/hd60s-off"
+		},
+		{
+			"id": "blur-motion/main-display",
+			"group": "blur motion",
+			"label": "main display",
+			"on": "blur-motion/main-display-on",
+			"off": "blur-off/main-display-off"
+		},
+		{
+			"id": "blur-motion/tablet",
+			"group": "blur motion",
+			"label": "tablet",
+			"on": "blur-motion/tablet-on",
+			"off": "blur-off/tablet-off"
+		},
+		{
+			"id": "blur-motion/window-capture",
+			"group": "blur motion",
+			"label": "window capture",
+			"on": "blur-motion/window-capture-on",
+			"off": "blur-off/window-capture-off"
+		},
+		{
+			"id": "blur-motion/zbrush",
+			"group": "blur motion",
+			"label": "zbrush",
+			"on": "blur-motion/zbrush-on",
+			"off": "blur-off/zbrush-off"
+		},
+		{
+			"id": "blur-pixelate/blender",
+			"group": "blur pixelate",
+			"label": "blender",
+			"on": "blur-pixelate/blender-on",
+			"off": "blur-off/blender-off"
+		},
+		{
+			"id": "blur-pixelate/camera-elgato",
+			"group": "blur pixelate",
+			"label": "camera elgato",
+			"on": "blur-pixelate/camera-elgato-on",
+			"off": "blur-off/camera-elgato-off"
+		},
+		{
+			"id": "blur-pixelate/fusion-360",
+			"group": "blur pixelate",
+			"label": "fusion 360",
+			"on": "blur-pixelate/fusion-360-on",
+			"off": "blur-off/fusion-360-off"
+		},
+		{
+			"id": "blur-pixelate/game-capture",
+			"group": "blur pixelate",
+			"label": "game capture",
+			"on": "blur-pixelate/game-capture-on",
+			"off": "blur-off/game-capture-off"
+		},
+		{
+			"id": "blur-pixelate/gba-link-1",
+			"group": "blur pixelate",
+			"label": "gba link 1",
+			"on": "blur-pixelate/gba-link-1-on",
+			"off": "blur-off/gba-link-1-off"
+		},
+		{
+			"id": "blur-pixelate/gba-link-2",
+			"group": "blur pixelate",
+			"label": "gba link 2",
+			"on": "blur-pixelate/gba-link-2-on",
+			"off": "blur-off/gba-link-2-off"
+		},
+		{
+			"id": "blur-pixelate/hd60s",
+			"group": "blur pixelate",
+			"label": "hd60s",
+			"on": "blur-pixelate/hd60s-on",
+			"off": "blur-off/hd60s-off"
+		},
+		{
+			"id": "blur-pixelate/main-display",
+			"group": "blur pixelate",
+			"label": "main display",
+			"on": "blur-pixelate/main-display-on",
+			"off": "blur-off/main-display-off"
+		},
+		{
+			"id": "blur-pixelate/tablet",
+			"group": "blur pixelate",
+			"label": "tablet",
+			"on": "blur-pixelate/tablet-on",
+			"off": "blur-off/tablet-off"
+		},
+		{
+			"id": "blur-pixelate/window-capture",
+			"group": "blur pixelate",
+			"label": "window capture",
+			"on": "blur-pixelate/window-capture-on",
+			"off": "blur-off/window-capture-off"
+		},
+		{
+			"id": "blur-pixelate/zbrush",
+			"group": "blur pixelate",
+			"label": "zbrush",
+			"on": "blur-pixelate/zbrush-on",
+			"off": "blur-off/zbrush-off"
+		},
+		{
+			"id": "blur-types/box",
+			"group": "blur types",
+			"label": "box",
+			"on": "blur-types/box-on",
+			"off": "blur-types/box-off"
+		},
+		{
+			"id": "blur-types/gaussian",
+			"group": "blur types",
+			"label": "gaussian",
+			"on": "blur-types/gaussian-on",
+			"off": "blur-types/gaussian-off"
+		},
+		{
+			"id": "blur-types/hexagons",
+			"group": "blur types",
+			"label": "hexagons",
+			"on": "blur-types/hexagons-on",
+			"off": "blur-types/hexagons-off"
+		},
+		{
+			"id": "blur-types/kawase",
+			"group": "blur types",
+			"label": "kawase",
+			"on": "blur-types/kawase-on",
+			"off": "blur-types/kawase-off"
+		},
+		{
+			"id": "blur-types/motion",
+			"group": "blur types",
+			"label": "motion",
+			"on": "blur-types/motion-on",
+			"off": "blur-types/motion-off"
+		},
+		{
+			"id": "blur-types/pixelate",
+			"group": "blur types",
+			"label": "pixelate",
+			"on": "blur-types/pixelate-on",
+			"off": "blur-types/pixelate-off"
+		},
+		{
+			"id": "blur-types/zoom",
+			"group": "blur types",
+			"label": "zoom",
+			"on": "blur-types/zoom-on",
+			"off": "blur-types/zoom-off"
+		},
+		{
+			"id": "blur-zoom/blender",
+			"group": "blur zoom",
+			"label": "blender",
+			"on": "blur-zoom/blender-on",
+			"off": "blur-off/blender-off"
+		},
+		{
+			"id": "blur-zoom/camera-elgato",
+			"group": "blur zoom",
+			"label": "camera elgato",
+			"on": "blur-zoom/camera-elgato-on",
+			"off": "blur-off/camera-elgato-off"
+		},
+		{
+			"id": "blur-zoom/fusion-360",
+			"group": "blur zoom",
+			"label": "fusion 360",
+			"on": "blur-zoom/fusion-360-on",
+			"off": "blur-off/fusion-360-off"
+		},
+		{
+			"id": "blur-zoom/game-capture",
+			"group": "blur zoom",
+			"label": "game capture",
+			"on": "blur-zoom/game-capture-on",
+			"off": "blur-off/game-capture-off"
+		},
+		{
+			"id": "blur-zoom/gba-link-1",
+			"group": "blur zoom",
+			"label": "gba link 1",
+			"on": "blur-zoom/gba-link-1-on",
+			"off": "blur-off/gba-link-1-off"
+		},
+		{
+			"id": "blur-zoom/gba-link-2",
+			"group": "blur zoom",
+			"label": "gba link 2",
+			"on": "blur-zoom/gba-link-2-on",
+			"off": "blur-off/gba-link-2-off"
+		},
+		{
+			"id": "blur-zoom/hd60s",
+			"group": "blur zoom",
+			"label": "hd60s",
+			"on": "blur-zoom/hd60s-on",
+			"off": "blur-off/hd60s-off"
+		},
+		{
+			"id": "blur-zoom/main-display",
+			"group": "blur zoom",
+			"label": "main display",
+			"on": "blur-zoom/main-display-on",
+			"off": "blur-off/main-display-off"
+		},
+		{
+			"id": "blur-zoom/tablet",
+			"group": "blur zoom",
+			"label": "tablet",
+			"on": "blur-zoom/tablet-on",
+			"off": "blur-off/tablet-off"
+		},
+		{
+			"id": "blur-zoom/window-capture",
+			"group": "blur zoom",
+			"label": "window capture",
+			"on": "blur-zoom/window-capture-on",
+			"off": "blur-off/window-capture-off"
+		},
+		{
+			"id": "blur-zoom/zbrush",
+			"group": "blur zoom",
+			"label": "zbrush",
+			"on": "blur-zoom/zbrush-on",
+			"off": "blur-off/zbrush-off"
+		},
+		{
+			"id": "camera/camera-bottom-centre",
+			"group": "camera",
+			"label": "camera bottom centre",
+			"on": "camera/camera-bottom-centre",
+			"off": "camera/camera-bottom-centre"
+		},
+		{
+			"id": "camera/camera-bottom-left",
+			"group": "camera",
+			"label": "camera bottom left",
+			"on": "camera/camera-bottom-left",
+			"off": "camera/camera-bottom-left"
+		},
+		{
+			"id": "camera/camera-bottom-right",
+			"group": "camera",
+			"label": "camera bottom right",
+			"on": "camera/camera-bottom-right",
+			"off": "camera/camera-bottom-right"
+		},
+		{
+			"id": "camera/camera-centre",
+			"group": "camera",
+			"label": "camera centre",
+			"on": "camera/camera-centre",
+			"off": "camera/camera-centre"
+		},
+		{
+			"id": "camera/camera-middle-left",
+			"group": "camera",
+			"label": "camera middle left",
+			"on": "camera/camera-middle-left",
+			"off": "camera/camera-middle-left"
+		},
+		{
+			"id": "camera/camera-middle-right",
+			"group": "camera",
+			"label": "camera middle right",
+			"on": "camera/camera-middle-right",
+			"off": "camera/camera-middle-right"
+		},
+		{
+			"id": "camera/camera-top-centre",
+			"group": "camera",
+			"label": "camera top centre",
+			"on": "camera/camera-top-centre",
+			"off": "camera/camera-top-centre"
+		},
+		{
+			"id": "camera/camera-top-left",
+			"group": "camera",
+			"label": "camera top left",
+			"on": "camera/camera-top-left",
+			"off": "camera/camera-top-left"
+		},
+		{
+			"id": "camera/camera-top-right",
+			"group": "camera",
+			"label": "camera top right",
+			"on": "camera/camera-top-right",
+			"off": "camera/camera-top-right"
+		},
+		{
+			"id": "corners/cut",
+			"group": "corners",
+			"label": "cut",
+			"on": "corners/cut-on",
+			"off": "corners/cut-off"
+		},
+		{
+			"id": "corners/notch",
+			"group": "corners",
+			"label": "notch",
+			"on": "corners/notch-on",
+			"off": "corners/notch-off"
+		},
+		{
+			"id": "corners/round",
+			"group": "corners",
+			"label": "round",
+			"on": "corners/round-on",
+			"off": "corners/round-off"
+		},
+		{
+			"id": "corners/scoop",
+			"group": "corners",
+			"label": "scoop",
+			"on": "corners/scoop-on",
+			"off": "corners/scoop-off"
+		},
+		{
+			"id": "filters/app-blender",
+			"group": "filters",
+			"label": "app blender",
+			"on": "filters/app-blender",
+			"off": "filters/app-blender"
+		},
+		{
+			"id": "filters/app-fusion-360",
+			"group": "filters",
+			"label": "app fusion 360",
+			"on": "filters/app-fusion-360",
+			"off": "filters/app-fusion-360"
+		},
+		{
+			"id": "filters/app-zbrush",
+			"group": "filters",
+			"label": "app zbrush",
+			"on": "filters/app-zbrush",
+			"off": "filters/app-zbrush"
+		},
+		{
+			"id": "filters/auto-capture",
+			"group": "filters",
+			"label": "auto capture",
+			"on": "filters/auto-capture-on",
+			"off": "filters/auto-capture-off"
+		},
+		{
+			"id": "filters/auto-frame",
+			"group": "filters",
+			"label": "auto frame",
+			"on": "filters/auto-frame-on",
+			"off": "filters/auto-frame-off"
+		},
+		{
+			"id": "filters/back-to-apps",
+			"group": "filters",
+			"label": "back to apps",
+			"on": "filters/back-to-apps",
+			"off": "filters/back-to-apps"
+		},
+		{
+			"id": "filters/browser-capture",
+			"group": "filters",
+			"label": "browser capture",
+			"on": "filters/browser-capture-on",
+			"off": "filters/browser-capture-off"
+		},
+		{
+			"id": "filters/next-capture",
+			"group": "filters",
+			"label": "next capture",
+			"on": "filters/next-capture",
+			"off": "filters/next-capture"
+		},
+		{
+			"id": "filters/shadow",
+			"group": "filters",
+			"label": "shadow",
+			"on": "filters/shadow-on",
+			"off": "filters/shadow-off"
+		},
+		{
+			"id": "filters/show-in-scenes",
+			"group": "filters",
+			"label": "show in scenes",
+			"on": "filters/show-in-scenes-on",
+			"off": "filters/show-in-scenes-off"
+		},
+		{
+			"id": "filters/standby-picture",
+			"group": "filters",
+			"label": "standby picture",
+			"on": "filters/standby-picture-on",
+			"off": "filters/standby-picture-off"
+		},
+		{
+			"id": "scenes/01-stream-start",
+			"group": "scenes",
+			"label": "01 stream start",
+			"on": "scenes/01-stream-start",
+			"off": "scenes/01-stream-start"
+		},
+		{
+			"id": "scenes/02-game-capture",
+			"group": "scenes",
+			"label": "02 game capture",
+			"on": "scenes/02-game-capture",
+			"off": "scenes/02-game-capture"
+		},
+		{
+			"id": "scenes/03-game-component",
+			"group": "scenes",
+			"label": "03 game component",
+			"on": "scenes/03-game-component",
+			"off": "scenes/03-game-component"
+		},
+		{
+			"id": "scenes/04-console",
+			"group": "scenes",
+			"label": "04 console",
+			"on": "scenes/04-console",
+			"off": "scenes/04-console"
+		},
+		{
+			"id": "scenes/05-game-hd60s",
+			"group": "scenes",
+			"label": "05 game hd60s",
+			"on": "scenes/05-game-hd60s",
+			"off": "scenes/05-game-hd60s"
+		},
+		{
+			"id": "scenes/06-game-component-hd60s",
+			"group": "scenes",
+			"label": "06 game component hd60s",
+			"on": "scenes/06-game-component-hd60s",
+			"off": "scenes/06-game-component-hd60s"
+		},
+		{
+			"id": "scenes/07-window-capture",
+			"group": "scenes",
+			"label": "07 window capture",
+			"on": "scenes/07-window-capture",
+			"off": "scenes/07-window-capture"
+		},
+		{
+			"id": "scenes/08-window-component",
+			"group": "scenes",
+			"label": "08 window component",
+			"on": "scenes/08-window-component",
+			"off": "scenes/08-window-component"
+		},
+		{
+			"id": "scenes/09-main-display",
+			"group": "scenes",
+			"label": "09 main display",
+			"on": "scenes/09-main-display",
+			"off": "scenes/09-main-display"
+		},
+		{
+			"id": "scenes/10-tablet",
+			"group": "scenes",
+			"label": "10 tablet",
+			"on": "scenes/10-tablet",
+			"off": "scenes/10-tablet"
+		},
+		{
+			"id": "scenes/11-dolphin-gba",
+			"group": "scenes",
+			"label": "11 dolphin gba",
+			"on": "scenes/11-dolphin-gba",
+			"off": "scenes/11-dolphin-gba"
+		},
+		{
+			"id": "scenes/12-camera-only",
+			"group": "scenes",
+			"label": "12 camera only",
+			"on": "scenes/12-camera-only",
+			"off": "scenes/12-camera-only"
+		},
+		{
+			"id": "scenes/13-intermission",
+			"group": "scenes",
+			"label": "13 intermission",
+			"on": "scenes/13-intermission",
+			"off": "scenes/13-intermission"
+		},
+		{
+			"id": "scenes/14-be-right-back",
+			"group": "scenes",
+			"label": "14 be right back",
+			"on": "scenes/14-be-right-back",
+			"off": "scenes/14-be-right-back"
+		},
+		{
+			"id": "scenes/15-stream-ending",
+			"group": "scenes",
+			"label": "15 stream ending",
+			"on": "scenes/15-stream-ending",
+			"off": "scenes/15-stream-ending"
+		},
+		{
+			"id": "shadow-by-source/blender",
+			"group": "shadow by source",
+			"label": "blender",
+			"on": "shadow-by-source/blender-on",
+			"off": "shadow-by-source/blender-off"
+		},
+		{
+			"id": "shadow-by-source/chat",
+			"group": "shadow by source",
+			"label": "chat",
+			"on": "shadow-by-source/chat-on",
+			"off": "shadow-by-source/chat-off"
+		},
+		{
+			"id": "shadow-by-source/countdown",
+			"group": "shadow by source",
+			"label": "countdown",
+			"on": "shadow-by-source/countdown-on",
+			"off": "shadow-by-source/countdown-off"
+		},
+		{
+			"id": "shadow-by-source/fusion-360",
+			"group": "shadow by source",
+			"label": "fusion 360",
+			"on": "shadow-by-source/fusion-360-on",
+			"off": "shadow-by-source/fusion-360-off"
+		},
+		{
+			"id": "shadow-by-source/game-capture",
+			"group": "shadow by source",
+			"label": "game capture",
+			"on": "shadow-by-source/game-capture-on",
+			"off": "shadow-by-source/game-capture-off"
+		},
+		{
+			"id": "shadow-by-source/gba-link-1",
+			"group": "shadow by source",
+			"label": "gba link 1",
+			"on": "shadow-by-source/gba-link-1-on",
+			"off": "shadow-by-source/gba-link-1-off"
+		},
+		{
+			"id": "shadow-by-source/gba-link-2",
+			"group": "shadow by source",
+			"label": "gba link 2",
+			"on": "shadow-by-source/gba-link-2-on",
+			"off": "shadow-by-source/gba-link-2-off"
+		},
+		{
+			"id": "shadow-by-source/hd60s",
+			"group": "shadow by source",
+			"label": "hd60s",
+			"on": "shadow-by-source/hd60s-on",
+			"off": "shadow-by-source/hd60s-off"
+		},
+		{
+			"id": "shadow-by-source/side-camera",
+			"group": "shadow by source",
+			"label": "side camera",
+			"on": "shadow-by-source/side-camera-on",
+			"off": "shadow-by-source/side-camera-off"
+		},
+		{
+			"id": "shadow-by-source/square-camera",
+			"group": "shadow by source",
+			"label": "square camera",
+			"on": "shadow-by-source/square-camera-on",
+			"off": "shadow-by-source/square-camera-off"
+		},
+		{
+			"id": "shadow-by-source/start-image",
+			"group": "shadow by source",
+			"label": "start image",
+			"on": "shadow-by-source/start-image-on",
+			"off": "shadow-by-source/start-image-off"
+		},
+		{
+			"id": "shadow-by-source/window-capture",
+			"group": "shadow by source",
+			"label": "window capture",
+			"on": "shadow-by-source/window-capture-on",
+			"off": "shadow-by-source/window-capture-off"
+		},
+		{
+			"id": "shadow-by-source/zbrush",
+			"group": "shadow by source",
+			"label": "zbrush",
+			"on": "shadow-by-source/zbrush-on",
+			"off": "shadow-by-source/zbrush-off"
+		},
+		{
+			"id": "shadow-glow-outline/glow",
+			"group": "shadow glow outline",
+			"label": "glow",
+			"on": "shadow-glow-outline/glow-on",
+			"off": "shadow-glow-outline/glow-off"
+		},
+		{
+			"id": "shadow-glow-outline/outline",
+			"group": "shadow glow outline",
+			"label": "outline",
+			"on": "shadow-glow-outline/outline-on",
+			"off": "shadow-glow-outline/outline-off"
+		},
+		{
+			"id": "shadow-glow-outline/panel",
+			"group": "shadow glow outline",
+			"label": "panel",
+			"on": "shadow-glow-outline/panel-on",
+			"off": "shadow-glow-outline/panel-off"
+		},
+		{
+			"id": "shadow-glow-outline/soft",
+			"group": "shadow glow outline",
+			"label": "soft",
+			"on": "shadow-glow-outline/soft-on",
+			"off": "shadow-glow-outline/soft-off"
+		},
+		{
+			"id": "show-hide/alerts",
+			"group": "show hide",
+			"label": "alerts",
+			"on": "show-hide/alerts-shown",
+			"off": "show-hide/alerts-hidden"
+		},
+		{
+			"id": "show-hide/blender",
+			"group": "show hide",
+			"label": "blender",
+			"on": "show-hide/blender-shown",
+			"off": "show-hide/blender-hidden"
+		},
+		{
+			"id": "show-hide/browser",
+			"group": "show hide",
+			"label": "browser",
+			"on": "show-hide/browser-shown",
+			"off": "show-hide/browser-hidden"
+		},
+		{
+			"id": "show-hide/chat",
+			"group": "show hide",
+			"label": "chat",
+			"on": "show-hide/chat-shown",
+			"off": "show-hide/chat-hidden"
+		},
+		{
+			"id": "show-hide/console",
+			"group": "show hide",
+			"label": "console",
+			"on": "show-hide/console-shown",
+			"off": "show-hide/console-hidden"
+		},
+		{
+			"id": "show-hide/countdown",
+			"group": "show hide",
+			"label": "countdown",
+			"on": "show-hide/countdown-shown",
+			"off": "show-hide/countdown-hidden"
+		},
+		{
+			"id": "show-hide/discord",
+			"group": "show hide",
+			"label": "discord",
+			"on": "show-hide/discord-shown",
+			"off": "show-hide/discord-hidden"
+		},
+		{
+			"id": "show-hide/full-camera",
+			"group": "show hide",
+			"label": "full camera",
+			"on": "show-hide/full-camera-shown",
+			"off": "show-hide/full-camera-hidden"
+		},
+		{
+			"id": "show-hide/fusion-360",
+			"group": "show hide",
+			"label": "fusion 360",
+			"on": "show-hide/fusion-360-shown",
+			"off": "show-hide/fusion-360-hidden"
+		},
+		{
+			"id": "show-hide/game-capture",
+			"group": "show hide",
+			"label": "game capture",
+			"on": "show-hide/game-capture-shown",
+			"off": "show-hide/game-capture-hidden"
+		},
+		{
+			"id": "show-hide/gba-link-1",
+			"group": "show hide",
+			"label": "gba link 1",
+			"on": "show-hide/gba-link-1-shown",
+			"off": "show-hide/gba-link-1-hidden"
+		},
+		{
+			"id": "show-hide/gba-link-2",
+			"group": "show hide",
+			"label": "gba link 2",
+			"on": "show-hide/gba-link-2-shown",
+			"off": "show-hide/gba-link-2-hidden"
+		},
+		{
+			"id": "show-hide/hd60s",
+			"group": "show hide",
+			"label": "hd60s",
+			"on": "show-hide/hd60s-shown",
+			"off": "show-hide/hd60s-hidden"
+		},
+		{
+			"id": "show-hide/main-display",
+			"group": "show hide",
+			"label": "main display",
+			"on": "show-hide/main-display-shown",
+			"off": "show-hide/main-display-hidden"
+		},
+		{
+			"id": "show-hide/music",
+			"group": "show hide",
+			"label": "music",
+			"on": "show-hide/music-shown",
+			"off": "show-hide/music-hidden"
+		},
+		{
+			"id": "show-hide/phone-camera",
+			"group": "show hide",
+			"label": "phone camera",
+			"on": "show-hide/phone-camera-shown",
+			"off": "show-hide/phone-camera-hidden"
+		},
+		{
+			"id": "show-hide/printer-camera",
+			"group": "show hide",
+			"label": "printer camera",
+			"on": "show-hide/printer-camera-shown",
+			"off": "show-hide/printer-camera-hidden"
+		},
+		{
+			"id": "show-hide/pureref",
+			"group": "show hide",
+			"label": "pureref",
+			"on": "show-hide/pureref-shown",
+			"off": "show-hide/pureref-hidden"
+		},
+		{
+			"id": "show-hide/side-camera",
+			"group": "show hide",
+			"label": "side camera",
+			"on": "show-hide/side-camera-shown",
+			"off": "show-hide/side-camera-hidden"
+		},
+		{
+			"id": "show-hide/square-camera",
+			"group": "show hide",
+			"label": "square camera",
+			"on": "show-hide/square-camera-shown",
+			"off": "show-hide/square-camera-hidden"
+		},
+		{
+			"id": "show-hide/start-image",
+			"group": "show hide",
+			"label": "start image",
+			"on": "show-hide/start-image-shown",
+			"off": "show-hide/start-image-hidden"
+		},
+		{
+			"id": "show-hide/tablet",
+			"group": "show hide",
+			"label": "tablet",
+			"on": "show-hide/tablet-shown",
+			"off": "show-hide/tablet-hidden"
+		},
+		{
+			"id": "show-hide/virtual-camera",
+			"group": "show hide",
+			"label": "virtual camera",
+			"on": "show-hide/virtual-camera-shown",
+			"off": "show-hide/virtual-camera-hidden"
+		},
+		{
+			"id": "show-hide/window-capture",
+			"group": "show hide",
+			"label": "window capture",
+			"on": "show-hide/window-capture-shown",
+			"off": "show-hide/window-capture-hidden"
+		},
+		{
+			"id": "show-hide/zbrush",
+			"group": "show hide",
+			"label": "zbrush",
+			"on": "show-hide/zbrush-shown",
+			"off": "show-hide/zbrush-hidden"
+		},
+		{
+			"id": "standby-by-source/blender",
+			"group": "standby by source",
+			"label": "blender",
+			"on": "standby-by-source/blender-on",
+			"off": "standby-by-source/blender-off"
+		},
+		{
+			"id": "standby-by-source/console",
+			"group": "standby by source",
+			"label": "console",
+			"on": "standby-by-source/console-on",
+			"off": "standby-by-source/console-off"
+		},
+		{
+			"id": "standby-by-source/fusion-360",
+			"group": "standby by source",
+			"label": "fusion 360",
+			"on": "standby-by-source/fusion-360-on",
+			"off": "standby-by-source/fusion-360-off"
+		},
+		{
+			"id": "standby-by-source/game-capture",
+			"group": "standby by source",
+			"label": "game capture",
+			"on": "standby-by-source/game-capture-on",
+			"off": "standby-by-source/game-capture-off"
+		},
+		{
+			"id": "standby-by-source/hd60s",
+			"group": "standby by source",
+			"label": "hd60s",
+			"on": "standby-by-source/hd60s-on",
+			"off": "standby-by-source/hd60s-off"
+		},
+		{
+			"id": "standby-by-source/main-display",
+			"group": "standby by source",
+			"label": "main display",
+			"on": "standby-by-source/main-display-on",
+			"off": "standby-by-source/main-display-off"
+		},
+		{
+			"id": "standby-by-source/tablet",
+			"group": "standby by source",
+			"label": "tablet",
+			"on": "standby-by-source/tablet-on",
+			"off": "standby-by-source/tablet-off"
+		},
+		{
+			"id": "standby-by-source/window-capture",
+			"group": "standby by source",
+			"label": "window capture",
+			"on": "standby-by-source/window-capture-on",
+			"off": "standby-by-source/window-capture-off"
+		},
+		{
+			"id": "standby-by-source/zbrush",
+			"group": "standby by source",
+			"label": "zbrush",
+			"on": "standby-by-source/zbrush-on",
+			"off": "standby-by-source/zbrush-off"
+		},
+		{
+			"id": "tools/copy-transform-all",
+			"group": "tools",
+			"label": "copy transform all",
+			"on": "tools/copy-transform-all",
+			"off": "tools/copy-transform-all"
+		},
+		{
+			"id": "tools/copy-transform-chosen",
+			"group": "tools",
+			"label": "copy transform chosen",
+			"on": "tools/copy-transform-chosen",
+			"off": "tools/copy-transform-chosen"
+		},
+		{
+			"id": "tools/guides",
+			"group": "tools",
+			"label": "guides",
+			"on": "tools/guides-on",
+			"off": "tools/guides-off"
+		},
+		{
+			"id": "tools/slide-down",
+			"group": "tools",
+			"label": "slide down",
+			"on": "tools/slide-down",
+			"off": "tools/slide-down"
+		},
+		{
+			"id": "tools/slide-down-left",
+			"group": "tools",
+			"label": "slide down left",
+			"on": "tools/slide-down-left",
+			"off": "tools/slide-down-left"
+		},
+		{
+			"id": "tools/slide-down-right",
+			"group": "tools",
+			"label": "slide down right",
+			"on": "tools/slide-down-right",
+			"off": "tools/slide-down-right"
+		},
+		{
+			"id": "tools/slide-left",
+			"group": "tools",
+			"label": "slide left",
+			"on": "tools/slide-left",
+			"off": "tools/slide-left"
+		},
+		{
+			"id": "tools/slide-right",
+			"group": "tools",
+			"label": "slide right",
+			"on": "tools/slide-right",
+			"off": "tools/slide-right"
+		},
+		{
+			"id": "tools/slide-up",
+			"group": "tools",
+			"label": "slide up",
+			"on": "tools/slide-up",
+			"off": "tools/slide-up"
+		},
+		{
+			"id": "tools/slide-up-left",
+			"group": "tools",
+			"label": "slide up left",
+			"on": "tools/slide-up-left",
+			"off": "tools/slide-up-left"
+		},
+		{
+			"id": "tools/slide-up-right",
+			"group": "tools",
+			"label": "slide up right",
+			"on": "tools/slide-up-right",
+			"off": "tools/slide-up-right"
+		},
+		{
+			"id": "tools/snap",
+			"group": "tools",
+			"label": "snap",
+			"on": "tools/snap-on",
+			"off": "tools/snap-off"
+		},
+		{
+			"id": "tools/stop-resizing",
+			"group": "tools",
+			"label": "stop resizing",
+			"on": "tools/stop-resizing-on",
+			"off": "tools/stop-resizing-off"
+		}
+	]
+}
