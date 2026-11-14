@@ -7,6 +7,18 @@ Read `DEVELOPMENT_HANDOFF.md` next for the current state, then
 [docs/REPOSITORY_STANDARDS.md](docs/REPOSITORY_STANDARDS.md), the shared standard that is identical in
 every TechSavage1989 app repository. Change that file only to change the standard everywhere.
 
+## Names
+
+The owner asked for names "to make more sense" and approved a table (2026-11-14, beta87). What a
+user sees changed; ids, settings, folders and code names did not. Old name, then the name shown:
+Ramp Blur: Blur. Ramp Zoom: Zoom. Send To: Move Source. Place Item: Move Scene Item. Layout: Apply
+Layout. Fit Item: Fit to Space. Active App: Follow Active App. Visibility Link: Link Visibility.
+Picture Shape key: Aspect Ratio Preset. Stream Deck keys: Picture shape: Set Aspect Ratio. Hook
+capture: Capture Front Window. Window switch: Next Manual Capture. Dock switch: Dock Option. Slide
+to next edge: Slide to Edge. Blur everything: Blur All. A key's press is *On press*: *Toggle*,
+*Switch on*, *Switch off*. The handoff's history and the code still use the old names; a filter
+already on a source keeps the name it was given.
+
 ## What StageKit is not
 
 It is an OBS plugin, not a standalone desktop app: it has no window or executable of its own. It
@@ -20,17 +32,17 @@ notice and the confirmation are what there is. This is recorded in the handoff.
 | Path | What lives there |
 | --- | --- |
 | `src/plugin-main.cpp` | Module entry: registers every filter and source, global hotkeys, the obs-websocket vendor |
-| `src/blur/` | Ramp Blur filter (owns its own multi-type blur pipeline) |
+| `src/blur/` | Blur filter (owns its own multi-type blur pipeline) |
 | `src/ambient/` | Ambient Background source |
 | `src/shadow/` | Shadow, Glow & Outline filter (id `stagekit_shadow_backdrop`, its first name): shadow or glow in a colour or the picture's own colours, outline, panel, rounded corners |
-| `src/zoom/` | Ramp Zoom filter |
+| `src/zoom/` | Zoom filter |
 | `src/shape/` | Corners & Edges filter (rounds, cuts, notches or scoops corners; trims, softens and outlines edges; never changes the source's size) |
 | `src/view/` | Cropped View source (part of another source as a source, so filters follow the crop) |
-| `src/placement/` | Scene filters: Place Item, Show/Hide Animation, Visibility Link, Match Item, Layout, Fit Item (keeps one item fitted in a box, filling it or floating centred by shape); Send To, Place Item's code as a filter on the source it moves; and Show in Scenes (`show-in-scenes.*`), a filter on any source that is a switch for showing and hiding sources across scenes |
-| `src/dock/` | Two docks (Qt widgets, no `Q_OBJECT`): StageKit follows the item selected in OBS and drives Send To filters on that item's source; StageKit Background holds the start image thumbnail. `arrange-tools.*` is the one set of line-up actions and options behind the dock, the hotkeys and the preview's right-click menu |
+| `src/placement/` | Scene filters: Move Scene Item, Show/Hide Animation, Link Visibility, Match Item, Layout, Fit to Space (keeps one item fitted in a box, filling it or floating centred by shape); Move Source, Move Scene Item's code as a filter on the source it moves; and Show in Scenes (`show-in-scenes.*`), a filter on any source that is a switch for showing and hiding sources across scenes |
+| `src/dock/` | Two docks (Qt widgets, no `Q_OBJECT`): StageKit follows the item selected in OBS and drives Move Source filters on that item's source; StageKit Background holds the start image thumbnail. `arrange-tools.*` is the one set of line-up actions and options behind the dock, the hotkeys and the preview's right-click menu |
 | `src/common/` | Shared helpers: `timing` (registers every kind and logs what is slow), easing and `Tween`, `SwitchRamp`, `KawaseBlur`, scene utilities, `item-transition` (the *Change with* control for filters that show and hide items), and the start image (global path + Start Image source) |
-| `src/frame/` | Auto Frame filter and the Picture Shape key filter |
-| `src/capture/` | Auto Capture filter (aims a Game Capture at the game in front), Program Trigger filter (shows items and switches filters while a program is open) and Active App scene filter (shows the one of several captures whose app is in use). All use the Win32 window list in `auto-capture.cpp`; compiled but idle elsewhere. Also Standby Picture (`standby.*`), a filter that shows a picture in a capture's place while it has nothing; it works everywhere |
+| `src/frame/` | Auto Frame filter and the Aspect Ratio Preset filter |
+| `src/capture/` | Auto Capture filter (aims a Game Capture at the game in front), Program Trigger filter (shows items and switches filters while a program is open) and Follow Active App scene filter (shows the one of several captures whose app is in use). All use the Win32 window list in `auto-capture.cpp`; compiled but idle elsewhere. Also Standby Picture (`standby.*`), a filter that shows a picture in a capture's place while it has nothing; it works everywhere |
 | `src/api/` | obs-websocket vendor requests (`StageKit` vendor) |
 | `src/update/` | The updater: reads the releases from GitHub, tells the dock about a newer one, and on Windows installs it through a PowerShell helper that outlives OBS |
 | `src/third-party/` | Vendored `obs-websocket-api.h`, kept byte-for-byte (excluded from clang-format) |
@@ -85,7 +97,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   `obs_source_update` before rendering.
 - **A disabled filter is not drawn.** Effects that animate out when switched off use `SwitchRamp`
   (`src/common/switch-ramp.*`): it re-enables the filter until the ramp ends. Reuse it; do not write a
-  second copy. Ramp Blur still has its own older copy of this logic.
+  second copy. Blur still has its own older copy of this logic.
 - **OBS finishes hiding a scene item after its `item_visible` signal returns.** Re-showing inside the
   handler leaves the item undrawn. Show/Hide Animation re-shows on the next tick instead.
 - **A scene item's box is cached and can be a 1x1 placeholder.** An item never moved since it was added
@@ -118,7 +130,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   (`obs_property_set_long_description`).
 - **Built-in emulator shapes are a starting guess, never an order.** The owner's Snes9x shows 8:7; the
   first table said 64:49 and cropped the picture. `kKnownPrograms` only seeds the held shape; what is
-  seen on screen corrects it. Only a shape the owner saved, or a Picture Shape key, is obeyed blindly.
+  seen on screen corrects it. Only a shape the owner saved, or an Aspect Ratio Preset, is obeyed blindly.
 - **The StageKit dock is four tabs** (`stagekitTabs`: Place, Arrange, Copy, Effects) under the
   *Scene* and *Item* rows, with the status line below them. It was one column 1,460 px tall; the
   owner called it "ugly and messy" and asked for it "organized, and made visually appealing".
@@ -194,10 +206,10 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
 - **Each filter has its own measuring options; the dock's are the dock's.** First every placing
   tool followed the dock's Arrange options (`as_arranged`; the owner: "i need the tools to respect
   all the settings"). Then, on beta70: "those options should only apply to the actively edited items
-  ... the filters needs their own separate toggles". So Send To, Place Item and Fit Item each have
+  ... the filters needs their own separate toggles". So Move Source, Move Scene Item and Fit to Space each have
   *Use visible pixels* and *Ignore shadows & outlines* (`visible_pixels`, `no_shadows`, both on by
   default; an old `as_arranged` unticked reads as boxes). The dock writes its own two options into
-  the Send To filters it drives. A new filter that places or sizes items gets the same two tick
+  the Move Source filters it drives. A new filter that places or sizes items gets the same two tick
   boxes; a new dock tool uses `arrange_options().how`.
 - **A brought-along item flips round the leader's picture** (`plan()` in `src/placement/place-item.cpp`),
   measured without shadows, not round the leader's box: round the box, the camera's shadow added its
@@ -239,21 +251,21 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   short of the next edge ahead: the near side of an item in the path, then (next press) its far side,
   then the screen's edge, never past it. The owner asked for exactly that: stop at the first edge,
   pass through on the next press. A press made while the item is still gliding starts from where the
-  last slide ends. The dock sends the result as a Send To to *a spot on the screen*
+  last slide ends. The dock sends the result as a Move Source to *a spot on the screen*
   (`Destination::Spot`, the box's top-left in canvas pixels), so with *In every scene* the item lands
   on the same spot of the screen everywhere, grouped or not. Do not send a slide as a saved spot: that
   is the item's own position, which means something else inside a group.
-- **Send To's "every scene" skips groups in `obs_enum_scenes`**: OBS lists each group as a scene too,
+- **Move Source's "every scene" skips groups in `obs_enum_scenes`**: OBS lists each group as a scene too,
   and reaching a grouped item that way moved it a second time as if the group were the screen.
-- **Dock keys are Send To filters on the item's source**, not Place Item filters on the scene. The
+- **Dock keys are Move Source filters on the item's source**, not Move Scene Item filters on the scene. The
   owner presses them from Stream Deck Filter keys on the camera.
-- **Active App follows the app in use, and nothing else.** The owner's old macros ran while a listed
+- **Follow Active App follows the app in use, and nothing else.** The owner's old macros ran while a listed
   program had the focus: the capture follows from one listed app to another, stays on the last one
   while anything else is in front, and goes back to an earlier capture when an app closes. It acts on
   events (an app opens, closes or is clicked into), never continuously, so a capture shown by hand is
   kept. The change is OBS's own show and hide transition on each item, which the filter sets; do not
   build a second fade.
-- **Active App's captures switched to by hand** (`by_hand`) are how the owner holds a window that is
+- **Follow Active App's captures switched to by hand** (`by_hand`) are how the owner holds a window that is
   not one of the automatic apps: showing one (any way OBS shows an item: a Stream Deck source key, the
   item's own hotkeys, the eye) hides the automatic captures and stops the following until it is
   hidden. No new key type was added on purpose; the two hotkeys on the scene are extras. Before this
@@ -277,7 +289,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   drawn by way of a copy (`render_live_`), kept when the capture ends so the change back starts from
   the last frame: a capture that has ended draws nothing.
 - **Show in Scenes can take bring-along items with it** (`with_linked`, off by default): the
-  `linked` item of every Send To filter on a listed source, and of Place Item filters that move it.
+  `linked` item of every Move Source filter on a listed source, and of Move Scene Item filters that move it.
   The owner asked for it.
 - **Show in Scenes is a switch, not a trigger.** Its on and off state is the shown and hidden
   state, so one Stream Deck Filter key toggles and shows which way it is. It acts on the `enable`
@@ -287,10 +299,10 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   feature/effect that would do a transition or transform should have those ... be customizable, and
   not only offer fade. fade should be the default". A filter that shows and hides scene items offers
   *Change with* and *Lasting* through `src/common/item-transition.*` (any OBS transition, a cut, or
-  keep; default fade, 300 ms): Active App, Show in Scenes, Program Trigger, Visibility Link. A filter
+  keep; default fade, 300 ms): Follow Active App, Show in Scenes, Program Trigger, Link Visibility. A filter
   that animates its own drawing offers a style list, its timings and `add_easing_properties`. Do not
   ship a fixed fade or a fixed curve in anything new.
-- **Send To moves the source in every scene it is in, by default** (`apply_in`). The owner asked for
+- **Move Source moves the source in every scene it is in, by default** (`apply_in`). The owner asked for
   that: the camera sent to a spot is there in every scene. The older `where` setting is not read.
 - **Shadow sizes are in screen pixels by default.** The owner's old shadows sat on full-canvas scenes,
   so 20 px was 20 px everywhere; a filter on a scaled item is not. The filter divides its sizes by how
@@ -304,7 +316,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   alpha, so it follows the shape); when first added it moves itself above an existing shadow once and
   records that in its `placed` setting. After an Auto Frame it shapes the rectangle from Auto Frame's
   `get_picture`.
-- **Fit Item's free space draws an item to look at it as seldom as can be** (`free_box` in
+- **Fit to Space's free space draws an item to look at it as seldom as can be** (`free_box` in
   `src/placement/fit-item.cpp`). *The free space around it* (the owner: a margin of 30 "should
   remain exactly 30 pixel within the edges of the screen, and within 30 pixels of any objects")
   needs to know what shows in every other item. Each is drawn and read back once when first met;
@@ -322,8 +334,8 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   picture is on the canvas but whose effect runs off an edge is scaled down, keeping its shape,
   after 0.4 s without moving. An item being dragged or gliding in, or whose picture is itself off
   the canvas, is left alone. It is one-way: the item does not grow back. Items with a bounding box
-  are whoever set the box's business; Fit Item asks `shadow_kept_in_view` and fits the shadow too.
-- **Fit Item has no "size it by hand".** One was built (beta71: a resize in the preview became the
+  are whoever set the box's business; Fit to Space asks `shadow_kept_in_view` and fits the shadow too.
+- **Fit to Space has no "size it by hand".** One was built (beta71: a resize in the preview became the
   box's width and height) and the owner had it removed: "i don't know if the size by hand really
   works. just remove it". An old `by_hand` setting is ignored. Do not bring it back unasked.
 - **Ambient Background does not blend in a standby picture** (`live_skip_standby`, on by default):
@@ -335,14 +347,14 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   nothing while all is quick. A filter's drawing time includes what it draws from. It measures the
   processor's side only: a slow shader shows up as OBS's own rendering lag, not here. Ask the owner
   for the log when frames drop; do not guess.
-- **Fit Item's free space waits for a move to end.** It takes its new space in one glide once the
+- **Fit to Space's free space waits for a move to end.** It takes its new space in one glide once the
   other items have been still for 0.15 s. Beta74 had it chase a moving item, resizing the picture
   (and its shadow) on every frame of the move; the owner still saw dropped frames during moves.
-- **Fit Item gives OBS the space, not the size.** Its bounding box is the space the picture may take
+- **Fit to Space gives OBS the space, not the size.** Its bounding box is the space the picture may take
   (plus a shadow's room at the fitted scale), with scale-to-inner-bounds and centre alignment, so OBS
   fits the picture every frame and a window being resized never lags. Do not go back to setting the
   item's scale or a box of the picture's exact size: both are one tick late.
-- **Trigger filters** (Send To, Place Item, Layout) switch themselves off after running and ignore the enabled
+- **Trigger filters** (Move Source, Move Scene Item, Layout) switch themselves off after running and ignore the enabled
   state restored at load (`ready_`), so they do not fire when OBS starts.
 - **The list of open windows is kept by a thread of its own** (`WindowWatch` in
   `src/capture/auto-capture.cpp`); a filter's tick only takes a copy (`open_windows()`,
@@ -352,17 +364,17 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   App up to 361 ms). Never call `list_windows()` from a tick. The thread is stopped in
   `obs_module_unload`.
 - **A capture can be hooked by hand** (`hook_front_window` in `src/capture/auto-capture.cpp`, the
-  `HookFront` vendor request, the Stream Deck plugin's *Hook capture* key). The owner: "i want to be
+  `HookFront` vendor request, the Stream Deck plugin's *Capture Front Window* key). The owner: "i want to be
   able to press a button to hook a window for capture or a game manually. the built in obs plugin
   does not have that". It aims the capture at the window in front (from the window watch) and
   switches an Auto Capture on that source off, or that would aim it elsewhere a quarter second
   later; switching the Auto Capture on again is how it is handed back. OBS itself in front is
   refused. Its Windows side has not run in the tests (they give it a stand-in window).
 - **A picture shape set by hand lasts for one game when asked to** (`force_until_gone` in Auto
-  Frame, `SetPictureShape`, the *Picture shape* key). The owner: "it should maintain that ratio for
+  Frame, `SetPictureShape`, the *Set Aspect Ratio* key). The owner: "it should maintain that ratio for
   the active or hooked game until its over". It is dropped once the capture has had a picture since
   the shape was set and then nothing for `kNewSession`; set before a game starts, it waits for it.
-  The Picture Shape key filter still sets a shape that stays.
+  The Aspect Ratio Preset filter still sets a shape that stays.
 - **The hook can change over with a transition** (`hook_front_window`'s `transition`): the items
   showing the capture are hidden with it, the capture is aimed while out of sight, and they are
   shown again, on a thread that holds what it uses and is joined at unload. The owner asked for
@@ -370,7 +382,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
 - **Auto Capture keeps its capture shown** (`keep_ready`, on by default, `obs_source_inc_showing` on
   the capture). OBS stops a Game Capture about 0.3 s after the last scene showing it is left and
   hooks it again on the way back; the owner's log showed that at every scene switch.
-- **A Send To press looks at each source once** (`seen_part` in `src/placement/place-item.cpp`), not
+- **A Move Source press looks at each source once** (`seen_part` in `src/placement/place-item.cpp`), not
   once per scene: what shows of a source is the same part of its box everywhere. A press that moved
   the camera in twenty scenes took 40 to 70 ms before a single frame of the move. An item straight
   in its scene that only moves is stepped from where it began (`Move::plain`), with nothing looked
@@ -397,11 +409,11 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   there and run it, do not edit `manifest.json` or `ui/*.html` by hand. The first two catch-all
   keys (`.switch`, `.move`) stay registered and hidden so keys made with them keep working. The
   palette is each key's own setting (`palette`): the first build had one colour for all keys and
-  the owner asked for it per key and for the word *Palette*. A *Dock switch* key and a *Slide to next edge* key go
+  the owner asked for it per key and for the word *Palette*. A *Dock Option* key and a *Slide to Edge* key go
   through the `SetOption`, `GetOptions` and `Slide` vendor requests; the slide is the dock's own
   (`set_slide_handler`), run on the window's thread, so it needs the dock. An *Arrange tool* key presses the
   tool's OBS hotkey by name (`stagekit.arrange.<tool>`, the names in `kInfo`): renaming one there
-  breaks the key. *Blur everything* uses the `BlurAll` and `ListBlurFilters` vendor requests.
+  breaks the key. *Blur All* uses the `BlurAll` and `ListBlurFilters` vendor requests.
   `com.techsavage1989.stagekit` and the action UUIDs under it must never change once
   the owner has keys on their decks: Stream Deck ties saved keys to them.
 - **The updater installs only what it has checked.** `newest_release` takes a release only if it
@@ -422,13 +434,13 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   detection is by loaded modules (graphics engine plus controller support, or full-screen), with a
   *Never capture* list for mistakes. Do not make a program list the default again.
 - **The owner triggers camera moves from Stream Deck Filter keys on the camera source**, not from the
-  dock's buttons. Send To exists for that; keep its controls complete without the dock.
+  dock's buttons. Move Source exists for that; keep its controls complete without the dock.
 - **Deprecated libobs calls fail CI** (warnings are errors). Avoid `obs_sceneitem_get_info`; use the
   individual position, scale, rotation and bounds calls.
 - **`.gitignore` is an allowlist.** A new top-level file or folder is ignored until it is added there
   and to `scripts/root-allowlist.txt`.
 - Colour is handled as raw (non-linear) values inside multi-pass pipelines; the final draw follows
-  `gs_get_linear_srgb()`. Ramp Blur instead blurs in linear light through sRGB views.
+  `gs_get_linear_srgb()`. Blur instead blurs in linear light through sRGB views.
 - **Every filter and source that draws is flagged `OBS_SOURCE_SRGB`.** Without it OBS forces
   `gs_get_linear_srgb()` off for that filter, and where a window has a wide-colour (16-bit float)
   surface the filter writes ordinary values into linear light: the picture is pale. The owner saw

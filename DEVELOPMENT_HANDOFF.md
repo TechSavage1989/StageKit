@@ -211,6 +211,16 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## New names (0.1.0-beta87), and the first run of the updater (0.1.0-beta86)
+
+- beta86: the owner pressed *Update* on beta83 and nothing followed; no `StageKitUpdate` folder was
+  made, so the helper never ran. It is now started with `CREATE_NO_WINDOW` alone and logs its steps.
+  **Unproven until the owner updates from beta86 or later to a newer release.** Also the dock's
+  height by tab, and the Stream Deck settings pages' font.
+- beta87: the names in the table in AGENTS.md (*Names*), approved by the owner with "go". Sections
+  below this one use the old names.
+- Still to be answered by the owner: whether to build the scene morph.
+
 ## Keys for the dock's switches and slides (0.1.0-beta85)
 
 The rest of "I need every feature that makes sense as a key": a *Dock switch* key (snap on release,

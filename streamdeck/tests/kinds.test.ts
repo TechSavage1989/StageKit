@@ -44,9 +44,9 @@ test("the source list holds only sources with a filter of the wanted sort, by na
 test("the filter list is one source's, and a renamed filter says what it is", () => {
 	assert.deepEqual(filterItems(filters, "camera", isSwitch), [
 		{ label: "Shadow, Glow & Outline", value: "Shadow, Glow & Outline" },
-		{ label: "Soft (Ramp Blur)", value: "Soft" },
+		{ label: "Soft (Blur)", value: "Soft" },
 	]);
-	assert.deepEqual(filterItems(filters, "camera", isMove), [{ label: "Top right (Send To)", value: "Top right" }]);
+	assert.deepEqual(filterItems(filters, "camera", isMove), [{ label: "Top right (Move Source)", value: "Top right" }]);
 	assert.deepEqual(filterItems(filters, "nobody", isSwitch), []);
 });
 

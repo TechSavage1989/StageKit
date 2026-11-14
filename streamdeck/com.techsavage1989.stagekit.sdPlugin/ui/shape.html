@@ -1,7 +1,7 @@
 <!doctype html>
 <html>
 	<head lang="en">
-		<title>StageKit picture shape</title>
+		<title>StageKit set aspect ratio</title>
 		<meta charset="utf-8" />
 		<script src="https://sdpi-components.dev/releases/v4/sdpi-components.js"></script>
 		<style>
@@ -20,7 +20,7 @@
 		<sdpi-item label="Capture">
 			<sdpi-select setting="target" datasource="getTargets" placeholder="Choose" show-refresh></sdpi-select>
 		</sdpi-item>
-		<sdpi-item label="Shape">
+		<sdpi-item label="Ratio">
 			<sdpi-select setting="shape" default="4:3">
 				<option value="auto">Automatic (hand it back)</option>
 				<option value="4:3">4:3</option>
@@ -34,10 +34,10 @@
 				<option value="64:49">64:49</option>
 			</sdpi-select>
 		</sdpi-item>
-		<sdpi-item label="Keep it">
+		<sdpi-item label="Keep ratio">
 			<sdpi-select setting="keep" default="game">
-				<option value="game">For this game, then automatic again</option>
-				<option value="always">Until I change it</option>
+				<option value="game">This game only</option>
+				<option value="always">Until changed</option>
 			</sdpi-select>
 		</sdpi-item>
 		<sdpi-item label="Picture">
