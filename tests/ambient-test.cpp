@@ -1677,6 +1677,97 @@ int main(int argc, char **argv)
 		obs_source_filter_remove(game, frame);
 		obs_source_release(frame);
 		obs_source_filter_remove(obs_scene_get_source(full), fit);
+		// The free space around it: as large as it can be where it is, the
+		// gap away from the screen's edges and from the other items.
+		{
+			obs_source_t *game2 = obs_source_create("color_source", "Free Game", nullptr, nullptr);
+			sized(game2, 400, 300);
+			obs_source_t *cam = obs_source_create("color_source", "Free Cam", nullptr, nullptr);
+			sized(cam, 100, 100);
+			obs_scene_t *sc = obs_scene_create("Fit Free Space"); // 640x360
+			obs_sceneitem_t *gi = obs_scene_add(sc, game2);
+			obs_sceneitem_t *ci = obs_scene_add(sc, cam);
+			vec2 at2;
+			vec2_set(&at2, 100.0f, 50.0f);
+			obs_sceneitem_set_pos(gi, &at2);
+			vec2_set(&at2, 520.0f, 240.0f);
+			obs_sceneitem_set_pos(ci, &at2);
+			obs_data_t *ff = obs_data_create();
+			obs_data_set_string(ff, "item", "Free Game");
+			obs_data_set_int(ff, "box", 2);
+			obs_data_set_double(ff, "margin", 20);
+			obs_data_set_int(ff, "glide_ms", 0);
+			obs_source_t *free_fit = obs_source_create("stagekit_fit_item", "Fit Free", ff, nullptr);
+			obs_source_filter_add(obs_scene_get_source(sc), free_fit);
+			obs_source_t *shown_before = obs_get_output_source(0);
+			obs_set_output_source(0, obs_scene_get_source(sc));
+			auto space = [&](int wait_ms) {
+				for (int i = 0; i < wait_ms / 50; i++) {
+					render(obs_scene_get_source(sc), 640, 360);
+					sleep_ms(50);
+				}
+				vec2 p, b;
+				obs_sceneitem_get_pos(gi, &p);
+				obs_sceneitem_get_bounds(gi, &b);
+				struct {
+					double x, y, w, h;
+				} out{p.x, p.y, b.x, b.y};
+				return out;
+			};
+			auto is = [](double a, double b) {
+				return std::fabs(a - b) < 0.6;
+			};
+			auto sp = space(500);
+			CHECK(is(sp.x, 20) && is(sp.y, 20) && is(sp.w, 480) && is(sp.h, 320),
+			      "'The free space around it' keeps the gap from the screen's edges and from the item beside it (%.0f, %.0f %.0fx%.0f)",
+			      sp.x, sp.y, sp.w, sp.h);
+			obs_sceneitem_set_visible(ci, false);
+			sp = space(900);
+			CHECK(is(sp.x, 20) && is(sp.y, 20) && is(sp.w, 600) && is(sp.h, 320),
+			      "an item hidden gives its space up (%.0f, %.0f %.0fx%.0f)", sp.x, sp.y, sp.w, sp.h);
+			obs_sceneitem_set_visible(ci, true);
+			sp = space(900);
+			CHECK(is(sp.w, 480), "and shown again takes it back (%.0f wide)", sp.w);
+			// Moved somewhere else in the scene: the item beside it moves
+			// over the game's place, so it is the game that makes room.
+			vec2_set(&at2, 20.0f, 20.0f);
+			obs_sceneitem_set_pos(ci, &at2);
+			sp = space(900);
+			CHECK(is(sp.x, 140) && is(sp.y, 20) && is(sp.w, 480) && is(sp.h, 320),
+			      "an item moved in beside it is kept clear of too (%.0f, %.0f %.0fx%.0f)", sp.x, sp.y,
+			      sp.w, sp.h);
+			// Listed as never in the way: it is as if it were not there.
+			obs_data_t *entry = obs_data_create();
+			obs_data_set_string(entry, "value", "Free Cam");
+			obs_data_array_t *skip = obs_data_array_create();
+			obs_data_array_push_back(skip, entry);
+			obs_data_set_array(ff, "skip", skip);
+			obs_data_array_release(skip);
+			obs_data_release(entry);
+			obs_source_update(free_fit, ff);
+			sp = space(600);
+			CHECK(is(sp.x, 20) && is(sp.w, 600),
+			      "an item listed as never in the way is not (%.0f, %.0f wide)", sp.x, sp.w);
+			// Dragged to another place: left alone while it moves.
+			vec2_set(&at2, 300.0f, 200.0f);
+			obs_sceneitem_set_pos(gi, &at2);
+			render(obs_scene_get_source(sc), 640, 360);
+			sleep_ms(100);
+			vec2 during;
+			obs_sceneitem_get_pos(gi, &during);
+			sp = space(900);
+			CHECK(is(during.x, 300) && is(sp.x, 20) && is(sp.w, 600),
+			      "moved by hand it is let go, then fitted again where it was put (%.0f while moving; then %.0f, %.0f wide)",
+			      during.x, sp.x, sp.w);
+			obs_set_output_source(0, shown_before);
+			obs_source_release(shown_before);
+			obs_data_release(ff);
+			obs_source_filter_remove(obs_scene_get_source(sc), free_fit);
+			obs_source_release(free_fit);
+			obs_scene_release(sc);
+			obs_source_release(cam);
+			obs_source_release(game2);
+		}
 		obs_source_release(fit);
 		obs_scene_release(full);
 		obs_source_release(game);

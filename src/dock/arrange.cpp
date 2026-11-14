@@ -312,6 +312,19 @@ Box measure_item(obs_source_t *scene, obs_sceneitem_t *item, const Measure &how)
 	return scene_box(scene, item);
 }
 
+bool measure_seen(obs_source_t *scene, obs_sceneitem_t *item, const Measure &how, Box &box)
+{
+	if (!scene || !item)
+		return false;
+	if (!obs_in_task_thread(OBS_TASK_GRAPHICS)) {
+		box = measure_item(scene, item, how);
+		return box.w > 0.0 && box.h > 0.0;
+	}
+	bool nothing = false;
+	box = measure_item_now(scene, item, how, &nothing);
+	return !nothing && box.w > 0.0 && box.h > 0.0;
+}
+
 namespace {
 
 // `nothing` is set when the item is measured by what shows and nothing does:

@@ -310,9 +310,26 @@ automation that switched between them. Put Shadow, Glow & Outline after it and t
 Add **Fit Item (StageKit)** as a filter on a *scene*. It places one item of that scene for you.
 
 - **Item**: the item to place, usually your game capture.
-- **Fit it in**: *The whole screen*, or *A box I set* (left, top, width, height in canvas pixels).
+- **Fit it in**: *The whole screen*, *A box I set* (left, top, width, height in canvas pixels), or
+  *The free space around it*.
 - **Margin for other shapes**: a picture with the box's shape fills the box. Any other shape is kept
   this far from the box's edges and centred.
+
+**The free space around it** makes the item as large as it can be where it is, always keeping the
+gap you set (*Gap to edges and items*) from the screen's edges and from every other item, at its
+nearest.
+
+- Move, show or hide another item and the fitted item glides to its new space (*Glide to a new space
+  over*, with a curve to choose; 0 changes at once).
+- Drag the fitted item to another part of the scene, or send it there with a key, and it takes the
+  free space around that place instead.
+- A background or a frame is not in the way: anything the item's place lies inside is ignored.
+- **Items never in the way**: items the free space ignores, such as a camera meant to overlap the
+  game.
+- **Measure by Arrange options** (on as it comes): the items around it are measured the way the
+  dock's Arrange options say, by what is drawn (*Use visible pixels*) and with or without shadows
+  (*Ignore shadows & outlines*). An item that is drawing nothing is not in the way. With shadows
+  counted, the fitted item's own shadow keeps the gap too.
 
 Use it with Auto Frame's *Frame → Just the picture*, so the source is only the trimmed picture. One
 game capture can then sit in a full-screen scene (a widescreen game fills it, an emulator floats in the
