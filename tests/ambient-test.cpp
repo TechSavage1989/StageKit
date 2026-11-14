@@ -5864,6 +5864,85 @@ int main(int argc, char **argv)
 					CHECK(follows,
 					      "the Place tab's measuring options are the Arrange tab's, each following the other");
 
+					// Copy a filter's settings to the same kind of filter elsewhere.
+					{
+						auto with_filter = [](obs_source_t *on, const char *name, double amount,
+								      int own) {
+							obs_data_t *d = obs_data_create();
+							obs_data_set_double(d, "test_amount", amount);
+							obs_data_set_int(d, "adjusted_left", own);
+							obs_source_t *f = obs_source_create("stagekit_ramp_blur", name,
+											    d, nullptr);
+							obs_data_release(d);
+							obs_source_filter_add(on, f);
+							return f;
+						};
+						obs_source_t *look = with_filter(block_a, "Look", 7.0, 5);
+						obs_source_t *other = with_filter(block_b, "Another Look", 1.0, 9);
+						obs_source_t *block_c =
+							obs_source_create("color_source", "Block C", nullptr, nullptr);
+						obs_sceneitem_t *ic = obs_scene_add(as, block_c);
+						select_only({ia});
+						for (int i = 0; i < 8; i++) {
+							QCoreApplication::processEvents();
+							sleep_ms(50);
+						}
+						auto *from = dock->findChild<QComboBox *>("filterFrom");
+						auto *to = dock->findChild<QComboBox *>("filterTo");
+						auto *add_missing = dock->findChild<QCheckBox *>("filterAddMissing");
+						const int row = from ? from->findText("Look (", Qt::MatchStartsWith)
+								     : -1;
+						CHECK(from && to && add_missing && row >= 0,
+						      "the Copy tab lists the chosen item's filters to copy from");
+						if (from && to && add_missing && row >= 0) {
+							from->setCurrentIndex(row);
+							to->setCurrentIndex(0); // every source that has one
+							click("filterCopy");
+							obs_data_t *got = obs_source_get_settings(other);
+							CHECK(obs_data_get_double(got, "test_amount") == 7.0 &&
+								      obs_data_get_int(got, "adjusted_left") == 9,
+							      "'Copy filter settings' gives them to the same kind of filter on other sources, and leaves what that filter keeps for its own source (%.0f, %d)",
+							      obs_data_get_double(got, "test_amount"),
+							      (int)obs_data_get_int(got, "adjusted_left"));
+							obs_data_release(got);
+							obs_source_t *none_yet =
+								obs_source_get_filter_by_name(block_c, "Look");
+							to->setCurrentIndex(3); // sources in this scene
+							add_missing->setChecked(true);
+							click("filterCopy");
+							obs_source_t *now =
+								obs_source_get_filter_by_name(block_c, "Look");
+							obs_data_t *made = now ? obs_source_get_settings(now) : nullptr;
+							CHECK(!none_yet && now &&
+								      obs_data_get_double(made, "test_amount") == 7.0 &&
+								      !obs_data_has_user_value(made, "adjusted_left"),
+							      "with 'Add it where it is missing' a source in the scene without the filter gets a copy");
+							obs_data_release(made);
+							obs_source_release(now);
+							obs_source_release(none_yet);
+							add_missing->setChecked(false);
+						}
+						// The copies it added go again: the scene is used further on.
+						const auto strip = [](void *, obs_source_t *source) {
+							if (obs_source_t *copy =
+								    obs_source_get_filter_by_name(source, "Look")) {
+								obs_source_filter_remove(source, copy);
+								obs_source_release(copy);
+							}
+							return true;
+						};
+						obs_source_filter_remove(block_a, look);
+						obs_enum_sources(strip, nullptr);
+						obs_enum_scenes(strip, nullptr);
+						obs_sceneitem_remove(ic);
+						obs_source_release(block_c);
+						obs_source_filter_add(block_a, look);
+						obs_source_filter_remove(block_a, look);
+						obs_source_filter_remove(block_b, other);
+						obs_source_release(look);
+						obs_source_release(other);
+					}
+
 					// Lock and unlock across scenes, from the Copy tab.
 					{
 						select_only({ia});

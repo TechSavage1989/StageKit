@@ -834,6 +834,30 @@ public:
 		}
 		lock_form->addRow(lock_buttons);
 		copy_page->addWidget(lock_box);
+		// One filter's settings given to the same kind of filter elsewhere:
+		// set a shadow up once, then give that look to the rest.
+		auto *filter_box = new QGroupBox(tr_text("Dock.FilterBox"), this);
+		auto *filter_form = new QFormLayout(filter_box);
+		filter_from_ = new QComboBox(filter_box);
+		filter_from_->setObjectName("filterFrom");
+		filter_from_->setToolTip(tr_text("Dock.Filter.From.Tip"));
+		filter_to_ = new QComboBox(filter_box);
+		filter_to_->setObjectName("filterTo");
+		for (const char *name :
+		     {"Dock.Filter.Every", "Dock.Filter.Listed", "Dock.Filter.ListedScenes", "Dock.Filter.ThisScene"})
+			filter_to_->addItem(tr_text(name));
+		filter_to_->setToolTip(tr_text("Dock.Filter.To.Tip"));
+		filter_add_ = new QCheckBox(tr_text("Dock.Filter.Add"), filter_box);
+		filter_add_->setObjectName("filterAddMissing");
+		filter_add_->setToolTip(tr_text("Dock.Filter.Add.Tip"));
+		auto *filter_go = new QPushButton(tr_text("Dock.Filter.Go"), filter_box);
+		filter_go->setObjectName("filterCopy");
+		QObject::connect(filter_go, &QPushButton::clicked, this, [this] { copy_filter(); });
+		filter_form->addRow(tr_text("Dock.Filter.From"), filter_from_);
+		filter_form->addRow(tr_text("Dock.Filter.To"), filter_to_);
+		filter_form->addRow(filter_add_);
+		filter_form->addRow(filter_go);
+		copy_page->addWidget(filter_box);
 		copy_page->addStretch(1);
 		visible_ = new QCheckBox(tr_text("Arrange.Visible"), arrange_box);
 		visible_->setObjectName("arrangeVisible");
@@ -1068,6 +1092,7 @@ public:
 	{
 		follow_selection();
 		show_arrange_target();
+		show_filters();
 		if (shown_options_ != arrange_options_revision())
 			show_arrange_options();
 
@@ -1245,6 +1270,88 @@ private:
 			watch->start(2000);
 		} else
 			say(QString::fromStdString(error));
+	}
+
+	// The filters of the dock's item and of its scene, to copy from. Filled
+	// again only when they change.
+	void show_filters()
+	{
+		QStringList labels, sources, names;
+		obs_source_t *item = item_source();
+		obs_source_t *scene = current_scene();
+		struct Fill {
+			QStringList *labels, *sources, *names;
+			obs_source_t *owner;
+		};
+		for (obs_source_t *owner : {item, scene}) {
+			if (!owner)
+				continue;
+			Fill fill{&labels, &sources, &names, owner};
+			obs_source_enum_filters(
+				owner,
+				[](obs_source_t *, obs_source_t *filter, void *param) {
+					auto *f = static_cast<Fill *>(param);
+					const char *name = obs_source_get_name(filter);
+					const char *owner_name = obs_source_get_name(f->owner);
+					if (!name || !owner_name)
+						return;
+					f->labels->append(QString("%1 (%2)").arg(QString::fromUtf8(name),
+										 QString::fromUtf8(owner_name)));
+					f->sources->append(QString::fromUtf8(owner_name));
+					f->names->append(QString::fromUtf8(name));
+				},
+				&fill);
+		}
+		obs_source_release(item);
+		obs_source_release(scene);
+		if (labels == filter_labels_)
+			return;
+		filter_labels_ = labels;
+		const QString chosen = filter_from_->currentText();
+		filter_from_->blockSignals(true);
+		filter_from_->clear();
+		for (int i = 0; i < labels.size(); i++)
+			filter_from_->addItem(labels[i], QStringList{sources[i], names[i]});
+		filter_from_->setCurrentIndex(std::max(0, filter_from_->findText(chosen)));
+		filter_from_->blockSignals(false);
+	}
+
+	// Gives the chosen filter's settings to the same kind of filter elsewhere.
+	void copy_filter()
+	{
+		const QStringList from = filter_from_->currentData().toStringList();
+		if (from.size() != 2) {
+			say(tr_text("Dock.Filter.None"));
+			return;
+		}
+		const ArrangeOptions o = arrange_options();
+		std::vector<std::string> to;
+		const int where = filter_to_->currentIndex();
+		if (where == 1) {
+			to = o.copy_sources;
+			if (to.empty()) {
+				say(tr_text("Dock.Lock.NoSources"));
+				return;
+			}
+		} else if (where == 2) {
+			if (o.copy_scenes.empty()) {
+				say(tr_text("Arrange.ChooseScenes"));
+				return;
+			}
+			to = sources_in_scenes(o.copy_scenes);
+		} else if (where == 3) {
+			obs_source_t *scene = current_scene();
+			if (scene && obs_source_get_name(scene))
+				to = sources_in_scenes({obs_source_get_name(scene)});
+			obs_source_release(scene);
+		}
+		obs_source_t *source = obs_get_source_by_name(from[0].toUtf8().constData());
+		int added = 0;
+		const int changed = copy_filter_settings(source, from[1].toUtf8().constData(),
+							 where == 0 ? nullptr : &to,
+							 where != 0 && filter_add_->isChecked(), added);
+		obs_source_release(source);
+		say(tr_text("Dock.Filter.Done").arg(changed).arg(added));
 	}
 
 	// Locks or unlocks by the Copy tab's two choices.
@@ -2095,6 +2202,9 @@ private:
 	QCheckBox *guides_ = nullptr;
 	QCheckBox *every_scene_ = nullptr;
 	QComboBox *lock_which_ = nullptr, *lock_where_ = nullptr;
+	QComboBox *filter_from_ = nullptr, *filter_to_ = nullptr;
+	QCheckBox *filter_add_ = nullptr;
+	QStringList filter_labels_;
 	QCheckBox *arrange_every_ = nullptr, *place_visible_ = nullptr, *place_no_shadow_ = nullptr;
 	QCheckBox *slide_ = nullptr;
 	// The dock's last slide, while the item may still be on its way there:
