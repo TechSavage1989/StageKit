@@ -1,0 +1,292 @@
+// StageKit looks: the mosaic's cell shapes, the trail over time and bloom.
+//
+// These are used by the Blur filter and by Ambient Background. They are a
+// file of their own so that, should a graphics system refuse any of it, the
+// older shader files still load and everything older keeps working.
+//
+// Mosaic and Temporal read and write straight (non-premultiplied) alpha and
+// weight colour by alpha, like the blur passes. The bloom passes are for an
+// opaque picture.
+
+uniform float4x4 ViewProj;
+uniform texture2d image;
+uniform texture2d image2;   // Temporal: what was drawn last time. BloomAdd: the light
+
+uniform float2 texel;       // 1 / input texture size
+uniform float2 size;        // input texture size in pixels
+uniform float strength;     // mosaic: cell size in pixels
+uniform float mix2;         // Temporal: how much of image2 stays
+uniform float shape;        // mosaic: 0 square, 1 hexagon, 2 circle, 3 triangle, 4 voronoi, 5 rhomboid, 6 triakis
+uniform float smoothing;    // mosaic: how far, in pixels, neighbouring cells run into each other
+uniform float2 origin;      // mosaic: the point the pattern is laid out from, in pixels
+uniform float2 turn;        // mosaic: cos and sin of the pattern's rotation
+uniform float bloom_threshold;  // BloomBright: how bright a part must be to shine, 0..1
+uniform float bloom_amount;     // BloomAdd: how strongly the light is laid over
+
+sampler_state linearClamp {
+	Filter   = Linear;
+	AddressU = Clamp;
+	AddressV = Clamp;
+};
+
+struct VertData {
+	float4 pos : POSITION;
+	float2 uv  : TEXCOORD0;
+};
+
+VertData VSDefault(VertData v_in)
+{
+	VertData vert_out;
+	vert_out.pos = mul(float4(v_in.pos.xyz, 1.0), ViewProj);
+	vert_out.uv  = v_in.uv;
+	return vert_out;
+}
+
+float4 tap(float2 uv)
+{
+	return image.SampleLevel(linearClamp, uv, 0.0);
+}
+
+// sum.rgb holds colour * alpha * weight, sum.a holds alpha * weight.
+float4 resolve(float4 sum, float wsum)
+{
+	return float4(sum.rgb / max(sum.a, 0.00001), sum.a / max(wsum, 0.00001));
+}
+
+// ------------------------------------------------------------------ Mosaic
+// The picture cut into cells of one shape; each cell takes the colour of the
+// picture at its centre. `strength` is the cell size: every shape is sized so
+// that its cells cover about strength x strength pixels.
+
+float2 hash2(float2 c)
+{
+	float2 k = float2(dot(c, float2(127.1, 311.7)), dot(c, float2(269.5, 183.3)));
+	return frac(sin(k) * 43758.5453);
+}
+
+// Two offset rectangular grids; the nearer cell centre wins, which carves
+// the plane into hexagons whose centres are `block` apart.
+float2 hex_centre(float2 p, float block)
+{
+	float2 step_size = float2(1.7320508, 1.0) * block;
+	float2 half_step = step_size * 0.5;
+	float2 a = p - step_size * floor(p / step_size) - half_step;
+	float2 moved = p - half_step;
+	float2 b = moved - step_size * floor(moved / step_size) - half_step;
+	float2 nearest = lerp(b, a, step(dot(a, a), dot(b, b)));
+	return p - nearest;
+}
+
+// Circles packed like the hexagons. The gap between three circles is a cell
+// of its own, centred on the hexagon corner in the middle of it.
+float2 circle_centre(float2 p, float block)
+{
+	float2 c = hex_centre(p, block);
+	float2 d = p - c;
+	float2 best = c;
+	float best_d = 1.0e20;
+	for (int i = 0; i < 6; i++) {
+		float ang = float(i) * 1.0471976;
+		float2 corner = c + float2(cos(ang), sin(ang)) * block * 0.57735027;
+		float2 e = p - corner;
+		float dd = dot(e, e);
+		if (dd < best_d) {
+			best_d = dd;
+			best = corner;
+		}
+	}
+	float inside = step(dot(d, d), block * block * 0.25);
+	return lerp(best, c, inside);
+}
+
+// A grid of equilateral triangles is a grid of slanted squares, each cut in
+// two. These go to and from that slanted grid.
+float2 to_slanted(float2 p, float side)
+{
+	float v = p.y / (side * 0.8660254);
+	return float2(p.x / side - v * 0.5, v);
+}
+
+float2 from_slanted(float2 l, float side)
+{
+	return float2((l.x + l.y * 0.5) * side, l.y * side * 0.8660254);
+}
+
+float2 triangle_centre(float2 p, float side)
+{
+	float2 l = to_slanted(p, side);
+	float2 i = floor(l);
+	float2 f = l - i;
+	float upper = step(1.0, f.x + f.y);
+	float third = lerp(0.33333333, 0.66666667, upper);
+	return from_slanted(i + float2(third, third), side);
+}
+
+float2 rhomboid_centre(float2 p, float side)
+{
+	float2 l = to_slanted(p, side);
+	return from_slanted(floor(l) + float2(0.5, 0.5), side);
+}
+
+// Each triangle cut in three from its middle to its corners.
+float2 triakis_centre(float2 p, float side)
+{
+	float2 l = to_slanted(p, side);
+	float2 i = floor(l);
+	float2 f = l - i;
+	float upper = step(1.0, f.x + f.y);
+	float2 g = lerp(f, float2(1.0, 1.0) - f, upper);
+	float2 v0 = i + float2(upper, upper);
+	float2 v1 = i + lerp(float2(1.0, 0.0), float2(0.0, 1.0), upper);
+	float2 v2 = i + lerp(float2(0.0, 1.0), float2(1.0, 0.0), upper);
+	float b0 = 1.0 - g.x - g.y;
+	float b1 = g.x;
+	float b2 = g.y;
+	float2 middle = (v0 + v1 + v2) / 3.0;
+	// The third it is in lies across from the corner it is furthest from.
+	float2 part = (middle + v1 + v2) / 3.0;
+	if (b1 < b0 && b1 <= b2)
+		part = (middle + v0 + v2) / 3.0;
+	if (b2 < b0 && b2 < b1)
+		part = (middle + v0 + v1) / 3.0;
+	return from_slanted(part, side);
+}
+
+// One point at a chance place in every square; the nearest point's cell.
+float2 voronoi_centre(float2 p, float block)
+{
+	float2 q = p / block;
+	float2 i = floor(q);
+	float2 best = i;
+	float best_d = 1.0e20;
+	for (int y = 0; y < 3; y++) {
+		for (int x = 0; x < 3; x++) {
+			float2 n = i + float2(float(x) - 1.0, float(y) - 1.0);
+			float2 point_at = n + hash2(n);
+			float2 e = q - point_at;
+			float dd = dot(e, e);
+			if (dd < best_d) {
+				best_d = dd;
+				best = point_at;
+			}
+		}
+	}
+	return best * block;
+}
+
+float2 cell_centre(float2 p, float block)
+{
+	float2 c = (floor(p / block) + float2(0.5, 0.5)) * block;
+	if (shape > 5.5)
+		c = triakis_centre(p, block * 2.63);
+	else if (shape > 4.5)
+		c = rhomboid_centre(p, block * 1.075);
+	else if (shape > 3.5)
+		c = voronoi_centre(p, block);
+	else if (shape > 2.5)
+		c = triangle_centre(p, block * 1.52);
+	else if (shape > 1.5)
+		c = circle_centre(p, block);
+	else if (shape > 0.5)
+		c = hex_centre(p, block);
+	return c;
+}
+
+// The colour of the cell that `p + o * smoothing` lies in, read a little
+// off the cell's centre (towards `o`), so that nine of these together are
+// the cell's colour and, with smoothing, a soft edge between cells.
+float4 mosaic_tap(float2 p, float2 o, float block)
+{
+	float2 c = cell_centre(p + o * smoothing, block) + o * block * 0.2;
+	float2 back = float2(c.x * turn.x - c.y * turn.y, c.x * turn.y + c.y * turn.x) + origin;
+	float4 s = tap(back * texel);
+	return float4(s.rgb * s.a, s.a);
+}
+
+float4 PSMosaic(VertData v_in) : TARGET
+{
+	float block = max(strength, 1.0);
+	float2 d = v_in.uv * size - origin;
+	float2 p = float2(d.x * turn.x + d.y * turn.y, d.y * turn.x - d.x * turn.y);
+
+	float4 sum = mosaic_tap(p, float2(0.0, 0.0), block);
+	sum += mosaic_tap(p, float2(-1.0, -1.0), block);
+	sum += mosaic_tap(p, float2(0.0, -1.0), block);
+	sum += mosaic_tap(p, float2(1.0, -1.0), block);
+	sum += mosaic_tap(p, float2(-1.0, 0.0), block);
+	sum += mosaic_tap(p, float2(1.0, 0.0), block);
+	sum += mosaic_tap(p, float2(-1.0, 1.0), block);
+	sum += mosaic_tap(p, float2(0.0, 1.0), block);
+	sum += mosaic_tap(p, float2(1.0, 1.0), block);
+	return resolve(sum, 9.0);
+}
+
+// ---------------------------------------------------------------- Temporal
+// The picture mixed with what this pass drew last time (`image2`): `mix2` of
+// the old stays. Premultiplied while mixing, straight alpha out.
+
+float4 PSTemporal(VertData v_in) : TARGET
+{
+	float4 now = image.Sample(linearClamp, v_in.uv);
+	float4 was = image2.Sample(linearClamp, v_in.uv);
+	float4 m = lerp(float4(now.rgb * now.a, now.a), float4(was.rgb * was.a, was.a), mix2);
+	return float4(m.rgb / max(m.a, 0.00001), m.a);
+}
+
+// ------------------------------------------------------------------- Bloom
+
+// The parts of the picture bright enough to shine: all of a part well above
+// the threshold, none of one well below it.
+float4 PSBloomBright(VertData v_in) : TARGET
+{
+	float3 rgb = image.Sample(linearClamp, v_in.uv).rgb;
+	float top = max(rgb.r, max(rgb.g, rgb.b));
+	float shine = smoothstep(bloom_threshold - 0.1, bloom_threshold + 0.1, top);
+	return float4(rgb * shine, 1.0);
+}
+
+// That light (`image2`, spread out by a blur) laid over the picture the way
+// light adds up: it brightens, and never past white.
+float4 PSBloomAdd(VertData v_in) : TARGET
+{
+	float3 rgb = image.Sample(linearClamp, v_in.uv).rgb;
+	float3 light = saturate(image2.Sample(linearClamp, v_in.uv).rgb * bloom_amount);
+	float3 with_light = float3(1.0, 1.0, 1.0) - (float3(1.0, 1.0, 1.0) - rgb) * (float3(1.0, 1.0, 1.0) - light);
+	return float4(with_light, 1.0);
+}
+
+technique Mosaic
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSMosaic(v_in);
+	}
+}
+
+technique Temporal
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSTemporal(v_in);
+	}
+}
+
+technique BloomBright
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSBloomBright(v_in);
+	}
+}
+
+technique BloomAdd
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSBloomAdd(v_in);
+	}
+}

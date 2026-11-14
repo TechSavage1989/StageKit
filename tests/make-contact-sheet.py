@@ -21,10 +21,14 @@ def load(path):
                     d.rectangle([x, y, x + 15, y + 15], fill=(150, 150, 150, 255))
     return Image.alpha_composite(base, img).convert("RGB")
 
-rows = [["original"], ["gaussian"], ["kawase"], ["box"], ["pixelate"], ["hexagon"], ["zoom"], ["motion"]]
+rows = [["original"], ["gaussian"], ["kawase"], ["box"], ["pixelate"], ["hexagon"], ["circles", "triangles", "voronoi"],
+        ["rhomboids", "triakis", "smoothed"], ["zoom"], ["motion"]]
 grid = []
-for (prefix,) in rows:
-    files = sorted(glob.glob(os.path.join(frames_dir, f"{prefix}*.rgba")))
+for prefixes in rows:
+    prefix = prefixes[0]
+    files = []
+    for each in prefixes:
+        files += sorted(glob.glob(os.path.join(frames_dir, f"{each}*.rgba")))
     if prefix == "original":
         files += [os.path.join(frames_dir, "ramp_mid.rgba")]
     grid.append([(os.path.basename(p)[:-5], load(p)) for p in files if os.path.exists(p)])

@@ -360,6 +360,83 @@ int main(int argc, char **argv)
 	auto square = shot("7_square_mosaic", [](obs_data_t *d) { obs_data_set_int(d, "pixel_style", 1); });
 	CHECK(mean_abs_diff(square, with_live) > 0.2, "square mosaic differs from hex");
 
+	// The other cell shapes, the blur types and bloom, on the plain picture.
+	{
+		auto reset = shot("7_square_mosaic", [](obs_data_t *) {});
+		auto circles = shot("7b_circles_smoothed", [](obs_data_t *d) {
+			obs_data_set_int(d, "pixel_style", 3);
+			obs_data_set_double(d, "pixel_smooth", 60);
+		});
+		auto voronoi = shot("7c_voronoi_turned", [](obs_data_t *d) {
+			obs_data_set_int(d, "pixel_style", 5);
+			obs_data_set_double(d, "pixel_smooth", 0);
+			obs_data_set_double(d, "pixel_rotation", 20);
+		});
+		auto triakis = shot("7d_triakis", [](obs_data_t *d) {
+			obs_data_set_int(d, "pixel_style", 7);
+			obs_data_set_double(d, "pixel_rotation", 0);
+		});
+		CHECK(mean_abs_diff(circles, reset) > 0.2 && mean_abs_diff(voronoi, circles) > 0.2 &&
+			      mean_abs_diff(triakis, voronoi) > 0.2 && opaque(circles) && opaque(voronoi) &&
+			      opaque(triakis),
+		      "the mosaic has more cell shapes, each a picture of its own and all opaque (%.2f, %.2f, %.2f)",
+		      mean_abs_diff(circles, reset), mean_abs_diff(voronoi, circles), mean_abs_diff(triakis, voronoi));
+		// The blur types: each softens, and they agree roughly on how much.
+		obs_data_set_int(s, "pixel_style", 0);
+		obs_data_set_int(s, "live_mode", 0);
+		obs_data_set_string(s, "overlay", "");
+		obs_data_set_double(s, "saturation", 100);
+		obs_data_set_double(s, "glow", 0);
+		obs_data_set_double(s, "blur", 0);
+		const std::vector<uint8_t> sharp = shot("x_sharp", [](obs_data_t *) {});
+		obs_data_set_double(s, "blur", 24);
+		const std::vector<uint8_t> kawase =
+			shot("x_kawase", [](obs_data_t *d) { obs_data_set_int(d, "blur_type", 0); });
+		const std::vector<uint8_t> gaussian =
+			shot("x_gaussian", [](obs_data_t *d) { obs_data_set_int(d, "blur_type", 1); });
+		const std::vector<uint8_t> box =
+			shot("x_box", [](obs_data_t *d) { obs_data_set_int(d, "blur_type", 2); });
+		const std::vector<uint8_t> temporal =
+			shot("x_temporal", [](obs_data_t *d) { obs_data_set_int(d, "blur_type", 3); });
+		CHECK(mean_abs_diff(gaussian, sharp) > 2.0 && mean_abs_diff(box, sharp) > 2.0 &&
+			      mean_abs_diff(gaussian, kawase) < mean_abs_diff(gaussian, sharp) &&
+			      mean_abs_diff(box, kawase) < mean_abs_diff(box, sharp),
+		      "Gaussian and Box blur the background too, about as much as Dual Kawase (from sharp: %.2f, %.2f, %.2f; from each other: %.2f, %.2f)",
+		      mean_abs_diff(kawase, sharp), mean_abs_diff(gaussian, sharp), mean_abs_diff(box, sharp),
+		      mean_abs_diff(gaussian, kawase), mean_abs_diff(box, kawase));
+		CHECK(mean_abs_diff(temporal, sharp) < 1.0 && opaque(temporal),
+		      "Temporal leaves a still picture sharp (diff %.2f)", mean_abs_diff(temporal, sharp));
+		for (const char *name : {"x_sharp", "x_kawase", "x_gaussian", "x_box", "x_temporal"})
+			remove((out + "/" + name + ".rgba").c_str());
+		// Bloom: the bright parts shine; a higher threshold lets fewer of them.
+		obs_data_set_int(s, "blur_type", 0);
+		obs_data_set_double(s, "blur", 12);
+		const std::vector<uint8_t> before = shot("x_before", [](obs_data_t *) {});
+		const std::vector<uint8_t> bloom = shot("7e_bloom", [](obs_data_t *d) {
+			obs_data_set_double(d, "bloom", 120);
+			obs_data_set_double(d, "bloom_threshold", 40);
+			obs_data_set_double(d, "bloom_size", 120);
+		});
+		const std::vector<uint8_t> picky =
+			shot("x_picky", [](obs_data_t *d) { obs_data_set_double(d, "bloom_threshold", 90); });
+		CHECK(mean_rgb(bloom) > mean_rgb(before) + 1.0 && mean_rgb(picky) < mean_rgb(bloom) &&
+			      mean_rgb(picky) >= mean_rgb(before) - 0.01 && opaque(bloom),
+		      "bloom makes the bright parts shine, and fewer of them from a higher brightness (mean %.1f, with bloom %.1f, from 90%% %.1f)",
+		      mean_rgb(before), mean_rgb(bloom), mean_rgb(picky));
+		for (const char *name : {"x_before", "x_picky"})
+			remove((out + "/" + name + ".rgba").c_str());
+		// Back as the checks below expect to find it.
+		obs_data_set_double(s, "bloom", 0);
+		obs_data_set_double(s, "blur", 24);
+		obs_data_set_int(s, "pixel_style", 1);
+		obs_data_set_int(s, "live_mode", 2);
+		obs_data_set_string(s, "overlay", texture_image);
+		obs_data_set_double(s, "saturation", 200);
+		obs_data_set_double(s, "glow", 30);
+		obs_source_update(bg, s);
+		sleep_ms(700);
+	}
+
 	auto from_source = shot("8_from_source", [](obs_data_t *d) {
 		obs_data_set_int(d, "live_mode", 0);
 		obs_data_set_int(d, "pixel_style", 0);

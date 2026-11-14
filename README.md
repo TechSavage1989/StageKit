@@ -18,7 +18,7 @@ takes several filters, source clones or wrapper scenes. Everything can be trigge
 from hotkeys, or from the Stream Deck OBS Studio plugin's *Filter* and *Source* keys.
 
 - **Blur** (filter): blurs a source in and out smoothly. Seven types: Gaussian, Dual Kawase, Box,
-  Pixelate, Hexagons, Zoom and Motion.
+  Pixelate (in seven cell shapes), Zoom, Motion and Temporal.
 - **Ambient Background** (source): a soft, drifting backdrop built from an image or another source,
   optionally tinted by whatever capture is live.
 - **Start image**: one picture, chosen once, shown on the start scene and used by the background.
@@ -60,11 +60,11 @@ These are real frames rendered by the plugin in its automated tests, using made-
 
 **Blur: every blur type at three strengths**
 
-<p align="center"><img src="docs/images/blur-types-game.png" width="900" alt="A sample game frame blurred with each of the six Blur types at three strengths"></p>
+<p align="center"><img src="docs/images/blur-types-game.png" width="900" alt="A sample game frame blurred with each Blur type at three strengths, and pixelated in each cell shape"></p>
 
 **Ambient Background: from image to finished backdrop**
 
-<p align="center"><img src="docs/images/ambient-background.png" width="900" alt="Eight stages of the Ambient Background: plain image, blur, saturation and glow, hexagon mosaic, texture overlay, live capture blended in, square mosaic, and a background made from another source"></p>
+<p align="center"><img src="docs/images/ambient-background.png" width="900" alt="Stages of the Ambient Background: plain image, blur, saturation and glow, hexagon mosaic, texture overlay, a live capture blended in, fitted small and replacing the picture, square, circle, Voronoi and triakis mosaics, bloom, and a background made from another source"></p>
 
 **Shadow, Glow & Outline**
 
@@ -122,7 +122,10 @@ off, so it costs nothing while off.
 
 | Setting | What it does |
 | --- | --- |
-| Blur type | Gaussian (smoothest), Dual Kawase (fastest, best for strong blur), Box, Pixelate (square blocks), Hexagons (a honeycomb mosaic), Zoom, Motion |
+| Blur type | Gaussian (smoothest), Dual Kawase (fastest, best for strong blur), Box, Pixelate (a mosaic of cells), Zoom, Motion, Temporal (the picture stays sharp and whatever moves leaves a trail; strength 100 is a trail of one second) |
+| Cell shape | For Pixelate: squares, hexagons, circles, triangles, Voronoi (uneven cells), rhomboids or triakis (triangles split in three). A filter set to the old *Hexagons* type is now Pixelate with hexagon cells and looks the same |
+| Smoothing | For Pixelate: how far each cell's colour runs into its neighbours. 0 gives hard edges |
+| Origin X / Y, Rotation | For Pixelate: the point of the picture the pattern is laid out from and turned around, and by how much it is turned |
 | Strength | 0–1000. Gaussian, Kawase and Box look alike at the same number; above 250, Gaussian and Box are drawn the Kawase way, which stays smooth |
 | Ramp style | Grow the blur strength, or cross-fade a fully blurred image in |
 | Ramp in / out time | 0–5000 ms each. 0 is instant |
@@ -157,7 +160,7 @@ Add **Ambient Background (StageKit)** as a source. It fills the canvas.
 | --- | --- |
 | Picture | The start image, an image file, or any existing source or scene. Optionally blend in a live capture: a chosen source, or *Automatic*, which uses the largest visible capture in the current scene. The capture can fill the screen, fit inside it, match its width or height, or stretch, with its own zoom. *Live capture replaces the picture* makes the capture the whole background while there is one; the moment there is none, the usual picture is back. A capture with an Auto Frame is used as the trimmed game picture, without the empty frame around it. A capture showing nothing, or black all over for two seconds, counts as no capture. *Keep the capture ready* keeps it running in scenes that do not show it, so it is there at once in the next scene that does |
 | Motion | Drift speed in each direction, zoom, and mirroring at the edges so the drift never shows a seam |
-| Look | Blur, hexagon or square mosaic, saturation, glow, brightness, vignette |
+| Look | Blur type (Dual Kawase, Gaussian, Box, or Temporal, which blurs over time and leaves trails) and blur; a mosaic in the Blur filter's seven cell shapes, with the same smoothing, origin and rotation; saturation; glow; **Bloom**, where the bright parts of the picture shine over what is around them (how strongly, from what brightness, and how far the light spreads); brightness; vignette |
 | Texture overlay | An image multiplied or screened over the result, optionally in black and white |
 
 Put it in one shared scene and nest that scene wherever you need the background.

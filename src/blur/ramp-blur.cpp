@@ -47,7 +47,20 @@ enum class BlurType : int {
 	Pixelate = 3,
 	Zoom = 4,
 	Motion = 5,
-	Hexagon = 6,
+	Hexagon = 6, // before the mosaic had shapes: now Pixelate with that shape
+	Temporal = 7,
+};
+
+// The shape of a mosaic's cells. Saved by number: new ones go at the end.
+// The shader goes by the same numbers.
+enum class PixelShape : int {
+	Square = 0,
+	Hexagon = 1,
+	Circle = 2,
+	Triangle = 3,
+	Voronoi = 4,
+	Rhomboid = 5,
+	Triakis = 6,
 };
 
 enum class RampStyle : int {
@@ -70,6 +83,11 @@ struct Settings {
 	double angle_deg = 0.0;
 	double center_x = 0.5;
 	double center_y = 0.5;
+	PixelShape pixel_shape = PixelShape::Square;
+	double pixel_smooth = 0.0; // 0..1 of a fifth of a cell
+	double origin_x = 0.5;     // where the mosaic is laid out from, 0..1 of the picture
+	double origin_y = 0.5;
+	double rotation_deg = 0.0;
 	RampStyle style = RampStyle::Grow;
 	double ramp_in_s = 0.4;
 	double ramp_out_s = 0.4;
@@ -119,6 +137,11 @@ public:
 		std::lock_guard lock(mutex_);
 		return settings_.type;
 	}
+	PixelShape pixel_shape() const
+	{
+		std::lock_guard lock(mutex_);
+		return settings_.pixel_shape;
+	}
 	bool include_in_all() const
 	{
 		std::lock_guard lock(mutex_);
@@ -128,7 +151,9 @@ public:
 
 private:
 	bool capture_input(uint32_t w, uint32_t h);
-	void pass(gs_texrender_t *dst, gs_texture_t *src, uint32_t w, uint32_t h, const char *technique);
+	// (`looks`: with the newer shader file instead of the blur's own.)
+	void pass(gs_texrender_t *dst, gs_texture_t *src, uint32_t w, uint32_t h, const char *technique,
+		  bool looks = false);
 	struct Blurred {
 		gs_texture_t *a = nullptr;
 		gs_texture_t *b = nullptr; // optional second result, cross-faded in by b_mix
@@ -188,10 +213,33 @@ private:
 	gs_eparam_t *p_center_ = nullptr;
 	gs_eparam_t *p_strength_ = nullptr;
 	gs_eparam_t *p_mix_ = nullptr;
+	// The mosaic's cell shapes and the trail are a shader file of their own,
+	// newer than the rest and proven on OpenGL only. If Direct3D should
+	// refuse it, the blur's own file still loads and everything older works.
+	gs_effect_t *looks_ = nullptr;
+	gs_eparam_t *pl_image_ = nullptr;
+	gs_eparam_t *pl_image2_ = nullptr;
+	gs_eparam_t *pl_mix2_ = nullptr;
+	gs_eparam_t *pl_texel_ = nullptr;
+	gs_eparam_t *pl_size_ = nullptr;
+	gs_eparam_t *pl_strength_ = nullptr;
+	gs_eparam_t *pl_shape_ = nullptr;
+	gs_eparam_t *pl_smoothing_ = nullptr;
+	gs_eparam_t *pl_origin_ = nullptr;
+	gs_eparam_t *pl_turn_ = nullptr;
 
 	gs_texrender_t *tr_input_ = nullptr;
 	gs_texrender_t *tr_a_ = nullptr;
 	gs_texrender_t *tr_b_ = nullptr;
+	// Temporal: what was drawn last time, kept in more than 8 bits so that a
+	// long trail still fades all the way out. Moved on once per frame, however
+	// often the filter is drawn in it.
+	gs_texrender_t *tr_past_[2] = {nullptr, nullptr};
+	int past_ = 0;
+	bool past_valid_ = false;
+	uint32_t past_w_ = 0, past_h_ = 0;
+	std::atomic<float> frame_seconds_{0.0f};
+	std::atomic<bool> new_frame_{false};
 	LevelTargets tr_down_{};
 	LevelTargets tr_up_{};
 	LevelTargets tr_down2_{};
@@ -225,6 +273,29 @@ RampBlur::RampBlur(obs_data_t *settings, obs_source_t *source) : source_(source)
 		p_strength_ = gs_effect_get_param_by_name(effect_, "strength");
 		p_mix_ = gs_effect_get_param_by_name(effect_, "mix_amount");
 	}
+	char *looks_path = obs_module_file("effects/stagekit-looks.effect");
+	char *looks_errors = nullptr;
+	looks_ = looks_path ? gs_effect_create_from_file(looks_path, &looks_errors) : nullptr;
+	if (!looks_)
+		obs_log(LOG_ERROR,
+			"Blur: failed to load effect '%s': %s. Cell shapes other than squares and hexagons, and the Temporal type, are not available.",
+			looks_path ? looks_path : "(missing)", looks_errors ? looks_errors : "unknown error");
+	bfree(looks_errors);
+	bfree(looks_path);
+	if (looks_) {
+		pl_image_ = gs_effect_get_param_by_name(looks_, "image");
+		pl_image2_ = gs_effect_get_param_by_name(looks_, "image2");
+		pl_mix2_ = gs_effect_get_param_by_name(looks_, "mix2");
+		pl_texel_ = gs_effect_get_param_by_name(looks_, "texel");
+		pl_size_ = gs_effect_get_param_by_name(looks_, "size");
+		pl_strength_ = gs_effect_get_param_by_name(looks_, "strength");
+		pl_shape_ = gs_effect_get_param_by_name(looks_, "shape");
+		pl_smoothing_ = gs_effect_get_param_by_name(looks_, "smoothing");
+		pl_origin_ = gs_effect_get_param_by_name(looks_, "origin");
+		pl_turn_ = gs_effect_get_param_by_name(looks_, "turn");
+	}
+	for (gs_texrender_t *&tr : tr_past_)
+		tr = gs_texrender_create(GS_RGBA16F, GS_ZS_NONE);
 	tr_input_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 	tr_a_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 	tr_b_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
@@ -282,9 +353,12 @@ RampBlur::~RampBlur()
 
 	obs_enter_graphics();
 	gs_effect_destroy(effect_);
+	gs_effect_destroy(looks_);
 	gs_texrender_destroy(tr_input_);
 	gs_texrender_destroy(tr_a_);
 	gs_texrender_destroy(tr_b_);
+	for (gs_texrender_t *tr : tr_past_)
+		gs_texrender_destroy(tr);
 	for (LevelTargets *targets : {&tr_down_, &tr_up_, &tr_down2_, &tr_up2_})
 		for (auto *tr : *targets)
 			gs_texrender_destroy(tr);
@@ -299,6 +373,18 @@ void RampBlur::update(obs_data_t *settings)
 	s.angle_deg = obs_data_get_double(settings, "angle");
 	s.center_x = obs_data_get_double(settings, "center_x") / 100.0;
 	s.center_y = obs_data_get_double(settings, "center_y") / 100.0;
+	s.pixel_shape = static_cast<PixelShape>(std::clamp<long long>(obs_data_get_int(settings, "pixel_shape"), 0, 6));
+	s.pixel_smooth = std::clamp(obs_data_get_double(settings, "pixel_smooth") / 100.0, 0.0, 1.0);
+	s.origin_x = obs_data_get_double(settings, "origin_x") / 100.0;
+	s.origin_y = obs_data_get_double(settings, "origin_y") / 100.0;
+	s.rotation_deg = obs_data_get_double(settings, "rotation");
+	// "Hexagons" was a blur type of its own before the mosaic had shapes.
+	if (s.type == BlurType::Hexagon) {
+		s.type = BlurType::Pixelate;
+		s.pixel_shape = PixelShape::Hexagon;
+		obs_data_set_int(settings, "blur_type", (int)BlurType::Pixelate);
+		obs_data_set_int(settings, "pixel_shape", (int)PixelShape::Hexagon);
+	}
 	s.style = static_cast<RampStyle>(obs_data_get_int(settings, "ramp_style"));
 	s.ramp_in_s = std::max<long long>(0, obs_data_get_int(settings, "ramp_in_ms")) / 1000.0;
 	s.ramp_out_s = std::max<long long>(0, obs_data_get_int(settings, "ramp_out_ms")) / 1000.0;
@@ -579,6 +665,8 @@ void RampBlur::tick(float seconds)
 		}
 		// Back/Elastic curves overshoot; a negative blur makes no sense.
 		level_ = std::max(0.0, tween_.advance(seconds));
+		frame_seconds_ = std::min(frame_seconds_.load() + seconds, 1.0f); // since the trail last moved on
+		new_frame_ = true;
 		finished_off = !target_active_ && !tween_.running() && level_ <= 0.0;
 	}
 	if (finished_off)
@@ -684,7 +772,7 @@ bool RampBlur::capture_input(uint32_t w, uint32_t h)
 	return true;
 }
 
-void RampBlur::pass(gs_texrender_t *dst, gs_texture_t *src, uint32_t w, uint32_t h, const char *technique)
+void RampBlur::pass(gs_texrender_t *dst, gs_texture_t *src, uint32_t w, uint32_t h, const char *technique, bool looks)
 {
 	gs_texrender_reset(dst);
 	if (!gs_texrender_begin_with_color_space(dst, w, h, GS_CS_SRGB))
@@ -698,8 +786,8 @@ void RampBlur::pass(gs_texrender_t *dst, gs_texture_t *src, uint32_t w, uint32_t
 	// light; bright highlights spread naturally instead of going muddy.
 	const bool previous = gs_framebuffer_srgb_enabled();
 	gs_enable_framebuffer_srgb(true);
-	gs_effect_set_texture_srgb(p_image_, src);
-	while (gs_effect_loop(effect_, technique))
+	gs_effect_set_texture_srgb(looks ? pl_image_ : p_image_, src);
+	while (gs_effect_loop(looks ? looks_ : effect_, technique))
 		gs_draw_sprite(src, 0, w, h);
 	gs_enable_framebuffer_srgb(previous);
 
@@ -790,14 +878,53 @@ RampBlur::Blurred RampBlur::run_blur(const Settings &s, gs_texture_t *input, uin
 	}
 
 	case BlurType::Pixelate:
-		gs_effect_set_float(p_strength_, (float)(1.0 + strength));
-		pass(tr_a_, input, w, h, "Pixelate");
+	case BlurType::Hexagon: {
+		const double block = 1.0 + strength;
+		if (!looks_) {
+			// Without the newer shader file: squares and hexagons, as before it.
+			gs_effect_set_float(p_strength_, (float)block);
+			pass(tr_a_, input, w, h, s.pixel_shape == PixelShape::Hexagon ? "Hexagon" : "Pixelate");
+			return {gs_texrender_get_texture(tr_a_)};
+		}
+		const double rad = s.rotation_deg * 3.14159265358979323846 / 180.0;
+		vec2 origin, turn;
+		vec2_set(&origin, (float)(s.origin_x * w), (float)(s.origin_y * h));
+		vec2_set(&turn, (float)std::cos(rad), (float)std::sin(rad));
+		gs_effect_set_vec2(pl_texel_, &texel);
+		gs_effect_set_vec2(pl_size_, &size);
+		gs_effect_set_float(pl_strength_, (float)block);
+		gs_effect_set_float(pl_shape_, (float)(int)s.pixel_shape);
+		gs_effect_set_float(pl_smoothing_, (float)(s.pixel_smooth * block * 0.2));
+		gs_effect_set_vec2(pl_origin_, &origin);
+		gs_effect_set_vec2(pl_turn_, &turn);
+		pass(tr_a_, input, w, h, "Mosaic", true);
 		return {gs_texrender_get_texture(tr_a_)};
+	}
 
-	case BlurType::Hexagon:
-		gs_effect_set_float(p_strength_, (float)(1.0 + strength));
-		pass(tr_a_, input, w, h, "Hexagon");
-		return {gs_texrender_get_texture(tr_a_)};
+	case BlurType::Temporal: {
+		// A trail: each frame is the picture mixed with what was drawn the
+		// frame before. The strength is how long a thing stays, as a
+		// hundredth of a second for each point, whatever the frame rate.
+		if (!looks_)
+			return {};
+		if (w != past_w_ || h != past_h_) {
+			past_w_ = w;
+			past_h_ = h;
+			past_valid_ = false;
+		}
+		gs_texture_t *past = past_valid_ ? gs_texrender_get_texture(tr_past_[past_]) : nullptr;
+		if (past && !new_frame_.exchange(false))
+			return {past}; // drawn again in the same frame
+		new_frame_ = false;
+		const double lasts = std::max(strength / 100.0, 0.001);
+		const double keep = past ? std::exp(-(double)frame_seconds_.exchange(0.0f) / lasts) : 0.0;
+		gs_effect_set_texture_srgb(pl_image2_, past ? past : input);
+		gs_effect_set_float(pl_mix2_, (float)std::clamp(keep, 0.0, 0.999));
+		pass(tr_past_[1 - past_], input, w, h, "Temporal", true);
+		past_ = 1 - past_;
+		past_valid_ = true;
+		return {gs_texrender_get_texture(tr_past_[past_])};
+	}
 
 	case BlurType::Zoom: {
 		// Strength 250 pulls samples 60% of the way to the centre.
@@ -883,6 +1010,7 @@ void RampBlur::render()
 
 	// Fully off costs nothing: hand rendering straight back to OBS.
 	if (!effect_ || level <= 0.0005 || strength <= 0.01 || mix <= 0.0005) {
+		past_valid_ = false; // a trail starts afresh when the blur comes back
 		obs_source_skip_video_filter(source_);
 		return;
 	}
@@ -916,6 +1044,9 @@ bool type_modified(obs_properties_t *props, obs_property_t *, obs_data_t *settin
 	obs_property_set_visible(obs_properties_get(props, "angle"), type == BlurType::Motion);
 	obs_property_set_visible(obs_properties_get(props, "center_x"), type == BlurType::Zoom);
 	obs_property_set_visible(obs_properties_get(props, "center_y"), type == BlurType::Zoom);
+	for (const char *name : {"pixel_shape", "pixel_smooth", "origin_x", "origin_y", "rotation"})
+		obs_property_set_visible(obs_properties_get(props, name),
+					 type == BlurType::Pixelate || type == BlurType::Hexagon);
 	return true;
 }
 
@@ -930,9 +1061,10 @@ obs_properties_t *get_properties(void *data)
 	obs_property_list_add_int(type, obs_module_text("RampBlur.Type.Kawase"), (int)BlurType::Kawase);
 	obs_property_list_add_int(type, obs_module_text("RampBlur.Type.Box"), (int)BlurType::Box);
 	obs_property_list_add_int(type, obs_module_text("RampBlur.Type.Pixelate"), (int)BlurType::Pixelate);
-	obs_property_list_add_int(type, obs_module_text("RampBlur.Type.Hexagon"), (int)BlurType::Hexagon);
 	obs_property_list_add_int(type, obs_module_text("RampBlur.Type.Zoom"), (int)BlurType::Zoom);
 	obs_property_list_add_int(type, obs_module_text("RampBlur.Type.Motion"), (int)BlurType::Motion);
+	obs_property_list_add_int(type, obs_module_text("RampBlur.Type.Temporal"), (int)BlurType::Temporal);
+	obs_property_set_long_description(type, obs_module_text("RampBlur.Type.Tip"));
 	obs_property_set_modified_callback(type, type_modified);
 
 	obs_properties_add_float_slider(look, "strength", obs_module_text("RampBlur.Strength"), 0.0, kMaxStrength, 0.5);
@@ -945,6 +1077,27 @@ obs_properties_t *get_properties(void *data)
 	obs_property_t *cy =
 		obs_properties_add_float_slider(look, "center_y", obs_module_text("RampBlur.CenterY"), 0.0, 100.0, 0.5);
 	obs_property_float_set_suffix(cy, "%");
+	obs_property_t *shape = obs_properties_add_list(look, "pixel_shape", obs_module_text("Mosaic.Shape"),
+							OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+	int shape_value = 0;
+	for (const char *name : {"Mosaic.Square", "Mosaic.Hexagon", "Mosaic.Circle", "Mosaic.Triangle",
+				 "Mosaic.Voronoi", "Mosaic.Rhomboid", "Mosaic.Triakis"})
+		obs_property_list_add_int(shape, obs_module_text(name), shape_value++);
+	obs_property_t *smooth = obs_properties_add_float_slider(look, "pixel_smooth", obs_module_text("Mosaic.Smooth"),
+								 0.0, 100.0, 1.0);
+	obs_property_float_set_suffix(smooth, "%");
+	obs_property_set_long_description(smooth, obs_module_text("Mosaic.Smooth.Tip"));
+	obs_property_t *ox =
+		obs_properties_add_float_slider(look, "origin_x", obs_module_text("Mosaic.OriginX"), 0.0, 100.0, 0.5);
+	obs_property_float_set_suffix(ox, "%");
+	obs_property_set_long_description(ox, obs_module_text("Mosaic.Origin.Tip"));
+	obs_property_t *oy =
+		obs_properties_add_float_slider(look, "origin_y", obs_module_text("Mosaic.OriginY"), 0.0, 100.0, 0.5);
+	obs_property_float_set_suffix(oy, "%");
+	obs_property_set_long_description(oy, obs_module_text("Mosaic.Origin.Tip"));
+	obs_property_t *rotation = obs_properties_add_float_slider(look, "rotation", obs_module_text("Mosaic.Rotation"),
+								   -180.0, 180.0, 1.0);
+	obs_property_float_set_suffix(rotation, "°");
 
 	obs_properties_add_group(props, "look_group", obs_module_text("RampBlur.LookGroup"), OBS_GROUP_NORMAL, look);
 
@@ -1012,6 +1165,11 @@ void get_defaults(obs_data_t *settings)
 	obs_data_set_default_double(settings, "angle", 0.0);
 	obs_data_set_default_double(settings, "center_x", 50.0);
 	obs_data_set_default_double(settings, "center_y", 50.0);
+	obs_data_set_default_int(settings, "pixel_shape", (int)PixelShape::Square);
+	obs_data_set_default_double(settings, "pixel_smooth", 0.0);
+	obs_data_set_default_double(settings, "origin_x", 50.0);
+	obs_data_set_default_double(settings, "origin_y", 50.0);
+	obs_data_set_default_double(settings, "rotation", 0.0);
 	obs_data_set_default_int(settings, "ramp_style", (int)RampStyle::Grow);
 	obs_data_set_default_int(settings, "ramp_in_ms", 400);
 	obs_data_set_default_int(settings, "ramp_out_ms", 400);
@@ -1137,9 +1295,12 @@ const char *ramp_blur_type_name(RampBlur *blur)
 	case BlurType::Kawase:
 		return "kawase";
 	case BlurType::Pixelate:
-		return "pixelate";
+		// (Hexagons were a type of their own once, and are still named so.)
+		return blur->pixel_shape() == PixelShape::Hexagon ? "hexagon" : "pixelate";
 	case BlurType::Hexagon:
 		return "hexagon";
+	case BlurType::Temporal:
+		return "temporal";
 	case BlurType::Zoom:
 		return "zoom";
 	case BlurType::Motion:

@@ -32,7 +32,7 @@ notice and the confirmation are what there is. This is recorded in the handoff.
 | Path | What lives there |
 | --- | --- |
 | `src/plugin-main.cpp` | Module entry: registers every filter and source, global hotkeys, the obs-websocket vendor |
-| `src/blur/` | Blur filter (owns its own multi-type blur pipeline) |
+| `src/blur/` | Blur filter (owns its own multi-type blur pipeline: soft blurs, a mosaic in seven cell shapes, zoom, motion and a trail over time) |
 | `src/ambient/` | Ambient Background source |
 | `src/shadow/` | Shadow, Glow & Outline filter (id `stagekit_shadow_backdrop`, its first name): shadow or glow in a colour or the picture's own colours, outline, panel, rounded corners |
 | `src/zoom/` | Zoom filter |
@@ -46,7 +46,7 @@ notice and the confirmation are what there is. This is recorded in the handoff.
 | `src/api/` | obs-websocket vendor requests (`StageKit` vendor) |
 | `src/update/` | The updater: reads the releases from GitHub, tells the dock about a newer one, and on Windows installs it through a PowerShell helper that outlives OBS |
 | `src/third-party/` | Vendored `obs-websocket-api.h`, kept byte-for-byte (excluded from clang-format) |
-| `data/effects/` | Shaders in OBS `.effect` format |
+| `data/effects/` | Shaders in OBS `.effect` format. `stagekit-looks.effect` holds the newer looks (mosaic shapes, trail, bloom) apart from the older files |
 | `data/locale/en-US.ini` | Every user-visible string |
 | `tests/` | Headless libobs tests, test-image generators, `run-tests.sh` |
 | `streamdeck/` | The Stream Deck plugin (TypeScript, Elgato's SDK 3, Node): `src/` (the link to OBS over obs-websocket, the key types), `com.techsavage1989.stagekit.sdPlugin/` (manifest, settings pages, icons), `tests/`, `tools/make-icons.py`. It has its own `package.json`; nothing in the OBS plugin depends on it |
@@ -447,6 +447,31 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   blur set above `kTapLimit` (250) is drawn the Dual Kawase way for its whole ramp, so there is no
   change of look part-way through a ramp. Zoom's pull is still worked out from 250. Ambient
   Background's own blur goes to 1000 as well (`kBlurLevels` 8), asked for in the same breath.
+- **The mosaic is one shader for the Blur filter and Ambient Background** (`Mosaic` in
+  `data/effects/stagekit-looks.effect`): seven cell shapes by
+  number (`PixelShape`: square, hexagon, circle, triangle, Voronoi, rhomboid, triakis; append-only),
+  smoothing, an origin and a rotation. The owner showed Composite Blur's lists and asked for
+  "similar blur settings added to the blur filters and ambient background". The old *Hexagons* blur
+  type (6) is read as Pixelate with hexagon cells and rewritten so in the settings. Hexagon and
+  circle cells keep the old hexagon size; the other shapes are scaled to cover about the same area.
+  Like every shader here it has only run on OpenGL: it keeps to constant loop bounds, `float(i)`
+  casts, no `inout` and no `atan2`.
+- **New shader code goes in `stagekit-looks.effect`, not in the older files.** The mosaic, the
+  trail and bloom live there so that, should Direct3D refuse any of it, `stagekit-blur.effect` and
+  `stagekit-ambient.effect` still load: both features then log one error and fall back (squares and
+  hexagons by the old techniques, no Temporal, no Bloom). The tests ran that way once, with the
+  file moved aside. One effect file that fails to compile takes every technique in it with it; do
+  not add untried code to a file an existing feature needs.
+- **Temporal blur keeps what it drew last** (`tr_past_`, 16-bit float so a long trail fades all
+  the way out) and moves it on once per frame however often the filter is drawn (`new_frame_`),
+  by the time since it last did (`frame_seconds_`), so the trail's length does not depend on the
+  frame rate. It starts afresh when the blur has been off or the size changes. The same in
+  Ambient Background (`trail`).
+- **Ambient Background's Bloom** (`bloom`, 0 is off) takes the bright parts of the picture as it
+  is *before* the blur (`BloomBright`), spreads them with a `KawaseBlur` of their own and lays them
+  over the blurred picture the way light adds up (`BloomAdd`), before the mosaic. The owner: "Add
+  Bloom as a function in ambient background". Effect masks and a background source to blend over,
+  which Composite Blur also has, were not asked for by name and are not built.
 - **The Copy tab locks and unlocks across scenes** (`set_items_locked` in `src/dock/arrange.*`): the
   selected items' sources, the listed sources or every source; in all scenes, the listed scenes or
   this one. The owner asked for it so a locked copy can be freed for the copy tools, and as a

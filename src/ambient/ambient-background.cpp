@@ -24,6 +24,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/timing.hpp"
 
 #include "../capture/standby.hpp"
+#include "../common/kawase-blur.hpp"
 #include "../common/scene-util.hpp"
 #include "../common/start-image.hpp"
 #include "../frame/auto-frame.hpp"
@@ -40,6 +41,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <atomic>
 #include <cmath>
 #include <cstring>
+#include <memory>
 #include <mutex>
 #include <string>
 
@@ -51,12 +53,28 @@ enum class BaseType : int { Image = 0, Source = 1, StartImage = 2 };
 enum class LiveMode : int { None = 0, Auto = 1, Source = 2 };
 // How the live capture is laid over the screen.
 enum class LiveFit : int { Fill = 0, Fit = 1, Stretch = 2, Width = 3, Height = 4 };
-enum class PixelStyle : int { None = 0, Square = 1, Hex = 2 };
+// Saved by number: new ones go at the end. From Circle on they follow the
+// blur shader's shape numbers, one higher.
+enum class PixelStyle : int {
+	None = 0,
+	Square = 1,
+	Hex = 2,
+	Circle = 3,
+	Triangle = 4,
+	Voronoi = 5,
+	Rhomboid = 6,
+	Triakis = 7,
+};
+// How the picture is blurred. Temporal blurs over time, not across the picture.
+enum class BlurKind : int { Kawase = 0, Gaussian = 1, Box = 2, Temporal = 3 };
 enum class OverlayMode : int { Multiply = 0, Screen = 1 };
 
 // Enough halvings for the strongest blur the slider offers (1000).
 constexpr int kBlurLevels = 8;
 constexpr double kInternalScale = 0.5;
+// A Gaussian or box blur reaching further than this many (internal) pixels is
+// drawn the Dual Kawase way: the taps would stand too far apart.
+constexpr double kTapLimit = 125.0;
 
 struct Settings {
 	BaseType base_type = BaseType::Image;
@@ -75,8 +93,16 @@ struct Settings {
 	bool live_ready = true;        // keep the capture running in scenes that do not show it
 	bool live_skip_standby = true; // a Standby Picture standing in for the capture is no capture
 	double blur = 60.0;
+	BlurKind blur_kind = BlurKind::Kawase;
 	PixelStyle pixel_style = PixelStyle::None;
 	double pixel_size = 10.0;
+	double pixel_smooth = 0.0; // 0..1 of a fifth of a cell
+	double pixel_origin_x = 0.5;
+	double pixel_origin_y = 0.5;
+	double pixel_rotation = 0.0;
+	double bloom = 0.0;           // how strongly the bright parts shine, 0 = off
+	double bloom_threshold = 0.6; // how bright a part must be to shine
+	double bloom_size = 80.0;     // how far the light spreads, on the blur's scale
 	double saturation = 1.0;
 	double glow = 0.0;
 	double brightness = 1.0;
@@ -159,6 +185,8 @@ private:
 	void pass(gs_effect_t *effect, gs_eparam_t *image, gs_texrender_t *dst, gs_texture_t *src, uint32_t w,
 		  uint32_t h, const char *technique);
 	gs_texture_t *blur(gs_texture_t *input, uint32_t w, uint32_t h, double strength);
+	gs_texture_t *blur_taps(gs_texture_t *input, uint32_t w, uint32_t h, double strength, bool box);
+	gs_texture_t *trail(gs_texture_t *input, uint32_t w, uint32_t h, double strength);
 
 	obs_source_t *source_;
 	std::mutex mutex_; // guards settings_ and the child references
@@ -192,8 +220,6 @@ private:
 	gs_eparam_t *p_opacity_ = nullptr;
 	gs_eparam_t *p_saturation_ = nullptr;
 	gs_eparam_t *p_gain_ = nullptr;
-	gs_eparam_t *p_size_ = nullptr;
-	gs_eparam_t *p_cell_ = nullptr;
 	gs_eparam_t *p_overlay_scale_ = nullptr;
 	gs_eparam_t *p_overlay_strength_ = nullptr;
 	gs_eparam_t *p_overlay_mode_ = nullptr;
@@ -205,6 +231,40 @@ private:
 	gs_eparam_t *pb_image_ = nullptr;
 	gs_eparam_t *pb_texel_ = nullptr;
 	gs_eparam_t *pb_offset_ = nullptr;
+	gs_eparam_t *pb_direction_ = nullptr;
+	gs_eparam_t *pb_radius_ = nullptr;
+	gs_eparam_t *pb_samples_ = nullptr;
+	gs_eparam_t *p_size_ = nullptr;
+	gs_eparam_t *p_cell_ = nullptr;
+	// The mosaic's cell shapes, the trail and bloom are a shader file of their
+	// own, newer than the rest and proven on OpenGL only. If Direct3D should
+	// refuse it, the older files still load and everything older works.
+	gs_effect_t *looks_ = nullptr;
+	gs_eparam_t *pl_image_ = nullptr;
+	gs_eparam_t *pl_image2_ = nullptr;
+	gs_eparam_t *pl_mix2_ = nullptr;
+	gs_eparam_t *pl_texel_ = nullptr;
+	gs_eparam_t *pl_size_ = nullptr;
+	gs_eparam_t *pl_strength_ = nullptr;
+	gs_eparam_t *pl_shape_ = nullptr;
+	gs_eparam_t *pl_smoothing_ = nullptr;
+	gs_eparam_t *pl_origin_ = nullptr;
+	gs_eparam_t *pl_turn_ = nullptr;
+	gs_eparam_t *pl_bloom_threshold_ = nullptr;
+	gs_eparam_t *pl_bloom_amount_ = nullptr;
+	// Bloom: the bright parts, and those spread out.
+	gs_texrender_t *tr_bright_ = nullptr;
+	gs_texrender_t *tr_bloom_ = nullptr;
+	std::unique_ptr<KawaseBlur> bloom_blur_;
+	gs_texrender_t *tr_taps_ = nullptr; // between the two passes of a Gaussian or box blur
+	// Temporal: what was drawn last time, in more than 8 bits so that a long
+	// trail fades all the way out; moved on once per frame.
+	gs_texrender_t *tr_past_[2] = {nullptr, nullptr};
+	int past_ = 0;
+	bool past_valid_ = false;
+	uint32_t past_w_ = 0, past_h_ = 0;
+	std::atomic<float> frame_seconds_{0.0f};
+	std::atomic<bool> new_frame_{false};
 
 	gs_texrender_t *tr_base_ = nullptr;
 	gs_texrender_t *tr_live_ = nullptr;
@@ -265,8 +325,33 @@ AmbientBackground::AmbientBackground(obs_data_t *settings, obs_source_t *source)
 		pb_image_ = gs_effect_get_param_by_name(blur_effect_, "image");
 		pb_texel_ = gs_effect_get_param_by_name(blur_effect_, "texel");
 		pb_offset_ = gs_effect_get_param_by_name(blur_effect_, "offset");
+		pb_direction_ = gs_effect_get_param_by_name(blur_effect_, "direction");
+		pb_radius_ = gs_effect_get_param_by_name(blur_effect_, "radius");
+		pb_samples_ = gs_effect_get_param_by_name(blur_effect_, "samples");
 	}
-	for (gs_texrender_t **tr : {&tr_base_, &tr_live_, &tr_scene_, &tr_blur_, &tr_pixel_, &tr_final_})
+	looks_ = load_effect("effects/stagekit-looks.effect");
+	if (looks_) {
+		pl_image_ = gs_effect_get_param_by_name(looks_, "image");
+		pl_image2_ = gs_effect_get_param_by_name(looks_, "image2");
+		pl_mix2_ = gs_effect_get_param_by_name(looks_, "mix2");
+		pl_texel_ = gs_effect_get_param_by_name(looks_, "texel");
+		pl_size_ = gs_effect_get_param_by_name(looks_, "size");
+		pl_strength_ = gs_effect_get_param_by_name(looks_, "strength");
+		pl_shape_ = gs_effect_get_param_by_name(looks_, "shape");
+		pl_smoothing_ = gs_effect_get_param_by_name(looks_, "smoothing");
+		pl_origin_ = gs_effect_get_param_by_name(looks_, "origin");
+		pl_turn_ = gs_effect_get_param_by_name(looks_, "turn");
+		pl_bloom_threshold_ = gs_effect_get_param_by_name(looks_, "bloom_threshold");
+		pl_bloom_amount_ = gs_effect_get_param_by_name(looks_, "bloom_amount");
+	} else {
+		obs_log(LOG_ERROR,
+			"Ambient Background: cell shapes other than squares and hexagons, the Temporal blur type and Bloom are not available.");
+	}
+	bloom_blur_ = std::make_unique<KawaseBlur>();
+	for (gs_texrender_t *&tr : tr_past_)
+		tr = gs_texrender_create(GS_RGBA16F, GS_ZS_NONE);
+	for (gs_texrender_t **tr :
+	     {&tr_base_, &tr_live_, &tr_scene_, &tr_blur_, &tr_pixel_, &tr_final_, &tr_bright_, &tr_bloom_, &tr_taps_})
 		*tr = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 	for (auto &tr : tr_down_)
 		tr = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
@@ -289,10 +374,13 @@ AmbientBackground::~AmbientBackground()
 		gs_image_file4_free(&overlay_image_);
 	gs_effect_destroy(effect_);
 	gs_effect_destroy(blur_effect_);
+	gs_effect_destroy(looks_);
 	gs_texrender_destroy(tr_probe_);
 	gs_stagesurface_destroy(probe_stage_);
-	for (gs_texrender_t *tr : {tr_base_, tr_live_, tr_scene_, tr_blur_, tr_pixel_, tr_final_})
+	for (gs_texrender_t *tr : {tr_base_, tr_live_, tr_scene_, tr_blur_, tr_pixel_, tr_final_, tr_bright_, tr_bloom_,
+				   tr_taps_, tr_past_[0], tr_past_[1]})
 		gs_texrender_destroy(tr);
+	bloom_blur_.reset();
 	for (auto *tr : tr_down_)
 		gs_texrender_destroy(tr);
 	for (auto *tr : tr_up_)
@@ -339,8 +427,16 @@ void AmbientBackground::update(obs_data_t *settings)
 	s.live_ready = obs_data_get_bool(settings, "live_ready");
 	s.live_skip_standby = obs_data_get_bool(settings, "live_skip_standby");
 	s.blur = std::clamp(obs_data_get_double(settings, "blur"), 0.0, 1000.0);
-	s.pixel_style = static_cast<PixelStyle>(obs_data_get_int(settings, "pixel_style"));
+	s.blur_kind = static_cast<BlurKind>(std::clamp<long long>(obs_data_get_int(settings, "blur_type"), 0, 3));
+	s.pixel_style = static_cast<PixelStyle>(std::clamp<long long>(obs_data_get_int(settings, "pixel_style"), 0, 7));
 	s.pixel_size = std::clamp(obs_data_get_double(settings, "pixel_size"), 2.0, 200.0);
+	s.pixel_smooth = std::clamp(obs_data_get_double(settings, "pixel_smooth") / 100.0, 0.0, 1.0);
+	s.pixel_origin_x = obs_data_get_double(settings, "pixel_origin_x") / 100.0;
+	s.pixel_origin_y = obs_data_get_double(settings, "pixel_origin_y") / 100.0;
+	s.pixel_rotation = obs_data_get_double(settings, "pixel_rotation");
+	s.bloom = std::clamp(obs_data_get_double(settings, "bloom") / 100.0, 0.0, 3.0);
+	s.bloom_threshold = std::clamp(obs_data_get_double(settings, "bloom_threshold") / 100.0, 0.0, 1.0);
+	s.bloom_size = std::clamp(obs_data_get_double(settings, "bloom_size"), 0.0, 1000.0);
 	s.saturation = std::clamp(obs_data_get_double(settings, "saturation") / 100.0, 0.0, 3.0);
 	s.glow = std::clamp(obs_data_get_double(settings, "glow") / 100.0, 0.0, 1.0);
 	s.brightness = std::clamp(obs_data_get_double(settings, "brightness") / 100.0, 0.0, 2.0);
@@ -468,6 +564,8 @@ void AmbientBackground::resolve_children()
 void AmbientBackground::tick(float seconds)
 {
 	time_ += seconds;
+	frame_seconds_ = std::min(frame_seconds_.load() + seconds, 1.0f); // since the trail last moved on
+	new_frame_ = true;
 
 	// A start image picked by the owner becomes this background's picture
 	// without a visit to these settings.
@@ -737,6 +835,61 @@ gs_texture_t *AmbientBackground::blur(gs_texture_t *input, uint32_t w, uint32_t 
 	return cur;
 }
 
+// A Gaussian or box blur, tap by tap in two passes. Past what the taps can
+// cover without showing as stripes it is drawn the Dual Kawase way, as the
+// Blur filter does.
+gs_texture_t *AmbientBackground::blur_taps(gs_texture_t *input, uint32_t w, uint32_t h, double strength, bool box)
+{
+	if (!blur_effect_ || strength < 0.5)
+		return input;
+	if (strength > kTapLimit)
+		return blur(input, w, h, strength);
+	const char *technique = box ? "Box" : "Gaussian";
+	const float taps = (float)std::clamp(std::ceil(strength), 1.0, box ? 64.0 : 32.0);
+	vec2 texel, dir;
+	vec2_set(&texel, 1.0f / (float)w, 1.0f / (float)h);
+	for (int axis = 0; axis < 2; axis++) {
+		gs_effect_set_vec2(pb_texel_, &texel);
+		gs_effect_set_float(pb_radius_, (float)strength);
+		gs_effect_set_float(pb_samples_, taps);
+		vec2_set(&dir, axis == 0 ? texel.x : 0.0f, axis == 0 ? 0.0f : texel.y);
+		gs_effect_set_vec2(pb_direction_, &dir);
+		pass(blur_effect_, pb_image_, axis == 0 ? tr_taps_ : tr_blur_, input, w, h, technique);
+		input = gs_texrender_get_texture(axis == 0 ? tr_taps_ : tr_blur_);
+		if (!input)
+			return nullptr;
+	}
+	return input;
+}
+
+// Temporal: each frame is the picture mixed with what was drawn the frame
+// before, so whatever moves leaves a trail. The strength is how long a thing
+// stays, a hundredth of a second for each point, whatever the frame rate.
+gs_texture_t *AmbientBackground::trail(gs_texture_t *input, uint32_t w, uint32_t h, double strength)
+{
+	if (!looks_ || strength < 0.5) {
+		past_valid_ = false;
+		return input;
+	}
+	if (w != past_w_ || h != past_h_) {
+		past_w_ = w;
+		past_h_ = h;
+		past_valid_ = false;
+	}
+	gs_texture_t *past = past_valid_ ? gs_texrender_get_texture(tr_past_[past_]) : nullptr;
+	// Drawn again in the same frame (the preview and the output both show it).
+	if (past && !new_frame_.exchange(false))
+		return past;
+	new_frame_ = false;
+	const double keep = past ? std::exp(-(double)frame_seconds_.exchange(0.0f) / (strength / 100.0)) : 0.0;
+	gs_effect_set_texture(pl_image2_, past ? past : input);
+	gs_effect_set_float(pl_mix2_, (float)std::clamp(keep, 0.0, 0.999));
+	pass(looks_, pl_image_, tr_past_[1 - past_], input, w, h, "Temporal");
+	past_ = 1 - past_;
+	past_valid_ = true;
+	return gs_texrender_get_texture(tr_past_[past_]);
+}
+
 void AmbientBackground::render()
 {
 	// A base or live source could (indirectly) contain this background.
@@ -808,11 +961,59 @@ void AmbientBackground::render()
 		gs_texrender_end(tr_scene_);
 	}
 
-	gs_texture_t *cur = gs_texrender_get_texture(tr_scene_);
-	if (cur)
-		cur = blur(cur, iw, ih, s.blur * kInternalScale);
+	gs_texture_t *const scene = gs_texrender_get_texture(tr_scene_);
+	gs_texture_t *cur = scene;
+	if (cur) {
+		if (s.blur_kind == BlurKind::Temporal) {
+			cur = trail(cur, iw, ih, s.blur);
+		} else {
+			past_valid_ = false;
+			cur = s.blur_kind == BlurKind::Kawase
+				      ? blur(cur, iw, ih, s.blur * kInternalScale)
+				      : blur_taps(cur, iw, ih, s.blur * kInternalScale, s.blur_kind == BlurKind::Box);
+		}
+	}
 
-	if (cur && s.pixel_style != PixelStyle::None) {
+	// Bloom: the bright parts of the picture as it was before the blur,
+	// spread out and laid over it as light.
+	if (cur && scene && s.bloom > 0.001 && bloom_blur_ && looks_) {
+		gs_effect_set_float(pl_bloom_threshold_, (float)s.bloom_threshold);
+		pass(looks_, pl_image_, tr_bright_, scene, iw, ih, "BloomBright");
+		gs_texture_t *light = gs_texrender_get_texture(tr_bright_);
+		if (light)
+			light = bloom_blur_->blur(light, iw, ih, s.bloom_size * kInternalScale);
+		if (light) {
+			gs_effect_set_texture(pl_image2_, light);
+			gs_effect_set_float(pl_bloom_amount_, (float)s.bloom);
+			pass(looks_, pl_image_, tr_bloom_, cur, iw, ih, "BloomAdd");
+			if (gs_texture_t *with_light = gs_texrender_get_texture(tr_bloom_))
+				cur = with_light;
+		}
+	}
+
+	if (cur && s.pixel_style != PixelStyle::None && looks_) {
+		const double cell = std::max(1.0, s.pixel_size * kInternalScale);
+		const double rad = s.pixel_rotation * 3.14159265358979323846 / 180.0;
+		vec2 size, texel, origin, turn;
+		vec2_set(&size, (float)iw, (float)ih);
+		vec2_set(&texel, 1.0f / (float)iw, 1.0f / (float)ih);
+		vec2_set(&origin, (float)(s.pixel_origin_x * iw), (float)(s.pixel_origin_y * ih));
+		vec2_set(&turn, (float)std::cos(rad), (float)std::sin(rad));
+		gs_effect_set_vec2(pl_size_, &size);
+		gs_effect_set_vec2(pl_texel_, &texel);
+		gs_effect_set_float(pl_strength_, (float)cell);
+		// The shader's shapes start at squares, the list here at "none".
+		const int shape = s.pixel_style == PixelStyle::Square ? 0
+				  : s.pixel_style == PixelStyle::Hex  ? 1
+								      : (int)s.pixel_style - 1;
+		gs_effect_set_float(pl_shape_, (float)shape);
+		gs_effect_set_float(pl_smoothing_, (float)(s.pixel_smooth * cell * 0.2));
+		gs_effect_set_vec2(pl_origin_, &origin);
+		gs_effect_set_vec2(pl_turn_, &turn);
+		pass(looks_, pl_image_, tr_pixel_, cur, iw, ih, "Mosaic");
+		cur = gs_texrender_get_texture(tr_pixel_);
+	} else if (cur && s.pixel_style != PixelStyle::None) {
+		// Without the newer shader file: squares and hexagons, as before it.
 		vec2 size;
 		vec2_set(&size, (float)iw, (float)ih);
 		gs_effect_set_vec2(p_size_, &size);
@@ -901,7 +1102,11 @@ bool visibility_modified(obs_properties_t *props, obs_property_t *, obs_data_t *
 	obs_property_set_visible(obs_properties_get(props, "live_opacity"), live != LiveMode::None);
 	for (const char *name : {"live_fit", "live_zoom", "live_replace", "live_ready", "live_skip_standby"})
 		obs_property_set_visible(obs_properties_get(props, name), live != LiveMode::None);
-	obs_property_set_visible(obs_properties_get(props, "pixel_size"), pixel != PixelStyle::None);
+	for (const char *name : {"pixel_size", "pixel_smooth", "pixel_origin_x", "pixel_origin_y", "pixel_rotation"})
+		obs_property_set_visible(obs_properties_get(props, name), pixel != PixelStyle::None);
+	const bool bloom = obs_data_get_double(settings, "bloom") > 0.0;
+	obs_property_set_visible(obs_properties_get(props, "bloom_threshold"), bloom);
+	obs_property_set_visible(obs_properties_get(props, "bloom_size"), bloom);
 	obs_property_set_visible(obs_properties_get(props, "overlay_mode"), has_overlay);
 	obs_property_set_visible(obs_properties_get(props, "overlay_strength"), has_overlay);
 	obs_property_set_visible(obs_properties_get(props, "overlay_gray"), has_overlay);
@@ -980,18 +1185,57 @@ obs_properties_t *get_properties(void *)
 
 	// Look
 	obs_properties_t *look = obs_properties_create();
+	obs_property_t *blur_type = obs_properties_add_list(look, "blur_type", obs_module_text("RampBlur.Type"),
+							    OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+	obs_property_list_add_int(blur_type, obs_module_text("RampBlur.Type.Kawase"), (int)BlurKind::Kawase);
+	obs_property_list_add_int(blur_type, obs_module_text("RampBlur.Type.Gaussian"), (int)BlurKind::Gaussian);
+	obs_property_list_add_int(blur_type, obs_module_text("RampBlur.Type.Box"), (int)BlurKind::Box);
+	obs_property_list_add_int(blur_type, obs_module_text("RampBlur.Type.Temporal"), (int)BlurKind::Temporal);
+	obs_property_set_long_description(blur_type, obs_module_text("Ambient.BlurType.Tip"));
 	obs_properties_add_float_slider(look, "blur", obs_module_text("Ambient.Blur"), 0.0, 1000.0, 1.0);
 	obs_property_t *pixel = obs_properties_add_list(look, "pixel_style", obs_module_text("Ambient.Pixel"),
 							OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(pixel, obs_module_text("Ambient.Pixel.None"), (int)PixelStyle::None);
 	obs_property_list_add_int(pixel, obs_module_text("Ambient.Pixel.Hex"), (int)PixelStyle::Hex);
 	obs_property_list_add_int(pixel, obs_module_text("Ambient.Pixel.Square"), (int)PixelStyle::Square);
+	obs_property_list_add_int(pixel, obs_module_text("Mosaic.Circle"), (int)PixelStyle::Circle);
+	obs_property_list_add_int(pixel, obs_module_text("Mosaic.Triangle"), (int)PixelStyle::Triangle);
+	obs_property_list_add_int(pixel, obs_module_text("Mosaic.Voronoi"), (int)PixelStyle::Voronoi);
+	obs_property_list_add_int(pixel, obs_module_text("Mosaic.Rhomboid"), (int)PixelStyle::Rhomboid);
+	obs_property_list_add_int(pixel, obs_module_text("Mosaic.Triakis"), (int)PixelStyle::Triakis);
 	obs_property_set_modified_callback(pixel, visibility_modified);
 	obs_property_t *cell = obs_properties_add_float_slider(look, "pixel_size", obs_module_text("Ambient.PixelSize"),
 							       2.0, 200.0, 1.0);
 	obs_property_float_set_suffix(cell, " px");
+	obs_property_t *smooth = obs_properties_add_float_slider(look, "pixel_smooth", obs_module_text("Mosaic.Smooth"),
+								 0.0, 100.0, 1.0);
+	obs_property_float_set_suffix(smooth, "%");
+	obs_property_set_long_description(smooth, obs_module_text("Mosaic.Smooth.Tip"));
+	obs_property_t *origin_x = obs_properties_add_float_slider(look, "pixel_origin_x",
+								   obs_module_text("Mosaic.OriginX"), 0.0, 100.0, 0.5);
+	obs_property_float_set_suffix(origin_x, "%");
+	obs_property_set_long_description(origin_x, obs_module_text("Mosaic.Origin.Tip"));
+	obs_property_t *origin_y = obs_properties_add_float_slider(look, "pixel_origin_y",
+								   obs_module_text("Mosaic.OriginY"), 0.0, 100.0, 0.5);
+	obs_property_float_set_suffix(origin_y, "%");
+	obs_property_set_long_description(origin_y, obs_module_text("Mosaic.Origin.Tip"));
+	obs_property_t *rotation = obs_properties_add_float_slider(
+		look, "pixel_rotation", obs_module_text("Mosaic.Rotation"), -180.0, 180.0, 1.0);
+	obs_property_float_set_suffix(rotation, "°");
 	percent_slider(look, "saturation", "Ambient.Saturation", 0.0, 300.0);
 	percent_slider(look, "glow", "Ambient.Glow", 0.0, 100.0);
+	obs_property_t *bloom =
+		obs_properties_add_float_slider(look, "bloom", obs_module_text("Ambient.Bloom"), 0.0, 300.0, 1.0);
+	obs_property_float_set_suffix(bloom, "%");
+	obs_property_set_long_description(bloom, obs_module_text("Ambient.Bloom.Tip"));
+	obs_property_set_modified_callback(bloom, visibility_modified);
+	obs_property_t *bloom_from = obs_properties_add_float_slider(
+		look, "bloom_threshold", obs_module_text("Ambient.BloomThreshold"), 0.0, 100.0, 1.0);
+	obs_property_float_set_suffix(bloom_from, "%");
+	obs_property_set_long_description(bloom_from, obs_module_text("Ambient.BloomThreshold.Tip"));
+	obs_property_t *bloom_size = obs_properties_add_float_slider(
+		look, "bloom_size", obs_module_text("Ambient.BloomSize"), 0.0, 1000.0, 1.0);
+	obs_property_set_long_description(bloom_size, obs_module_text("Ambient.BloomSize.Tip"));
 	percent_slider(look, "brightness", "Ambient.Brightness", 0.0, 200.0);
 	percent_slider(look, "vignette", "Ambient.Vignette", 0.0, 100.0);
 	obs_properties_add_group(props, "look_group", obs_module_text("Ambient.Group.Look"), OBS_GROUP_NORMAL, look);
@@ -1030,6 +1274,14 @@ void get_defaults(obs_data_t *settings)
 	obs_data_set_default_double(settings, "blur", 60.0);
 	obs_data_set_default_int(settings, "pixel_style", (int)PixelStyle::None);
 	obs_data_set_default_double(settings, "pixel_size", 10.0);
+	obs_data_set_default_int(settings, "blur_type", (int)BlurKind::Kawase);
+	obs_data_set_default_double(settings, "pixel_smooth", 0.0);
+	obs_data_set_default_double(settings, "pixel_origin_x", 50.0);
+	obs_data_set_default_double(settings, "pixel_origin_y", 50.0);
+	obs_data_set_default_double(settings, "pixel_rotation", 0.0);
+	obs_data_set_default_double(settings, "bloom", 0.0);
+	obs_data_set_default_double(settings, "bloom_threshold", 60.0);
+	obs_data_set_default_double(settings, "bloom_size", 80.0);
 	obs_data_set_default_double(settings, "saturation", 100.0);
 	obs_data_set_default_double(settings, "glow", 0.0);
 	obs_data_set_default_double(settings, "brightness", 100.0);
