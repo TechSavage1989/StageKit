@@ -6697,6 +6697,115 @@ int main(int argc, char **argv)
 										      0.6,
 								      "it copies to the chosen scene only (chosen %.0f, %.0f; not chosen %.0f and %.0f)",
 								      a_now.x, a_now.y, b_now.x, e_now.x);
+								// The report: "transforms still not applying to the
+								// selected scenes for the selected source. the source
+								// is a group". A group that a Fit to Space looks after
+								// in the chosen scene, locked there, and that scene
+								// not on screen.
+								{
+									obs_data_t *fd = obs_data_create();
+									obs_data_set_string(fd, "item",
+											    "Arrange Group");
+									obs_data_set_int(fd, "box", 2);
+									obs_data_set_double(fd, "margin", 10);
+									obs_data_set_int(fd, "glide_ms", 0);
+									obs_data_set_bool(fd, "resize", false);
+									obs_source_t *held = obs_source_create(
+										"stagekit_fit_item", "Fit Group", fd,
+										nullptr);
+									obs_data_release(fd);
+									obs_source_filter_add(
+										obs_scene_get_source(chosen_a), held);
+									obs_source_t *was_out =
+										obs_get_output_source(0);
+									obs_set_output_source(
+										0, obs_scene_get_source(chosen_a));
+									for (int i = 0; i < 16; i++) {
+										render(obs_scene_get_source(chosen_a),
+										       640, 360);
+										sleep_ms(50);
+									}
+									obs_set_output_source(0, was_out);
+									obs_source_release(was_out);
+									sleep_ms(300);
+									const vec2 fitted_at = pos_of(in_a);
+									obs_sceneitem_set_locked(in_a, true);
+									place(c_group, 150, 120);
+									for (int i = 0; i < 4; i++) {
+										QCoreApplication::processEvents();
+										sleep_ms(50);
+									}
+									click("arrange_same_chosen");
+									sleep_ms(600);
+									const vec2 left_alone = pos_of(in_a);
+									tick_box("copyLocked", true);
+									click("arrange_same_chosen");
+									sleep_ms(600);
+									const vec2 put = pos_of(in_a);
+									tick_box("copyLocked", false);
+									CHECK(std::fabs(left_alone.x - fitted_at.x) <
+											      0.6 &&
+										      std::fabs(put.x - 150) < 0.6 &&
+										      std::fabs(put.y - 120) < 0.6 &&
+										      obs_sceneitem_locked(in_a),
+									      "a group that is locked and looked after by a Fit to Space in a chosen scene takes the transform with 'Also change locked copies', and keeps it (%.0f, %.0f; left alone at %.0f; the filter had it at %.0f, %.0f)",
+									      put.x, put.y, left_alone.x, fitted_at.x,
+									      fitted_at.y);
+									// The same with the group named in 'Sources to
+									// copy to', which is how a source is chosen.
+									auto *name_source =
+										dock->findChild<QComboBox *>(
+											"copySourcesAdd");
+									for (int i = 0;
+									     i < 40 && name_source &&
+									     name_source->findData("Arrange Group") < 0;
+									     i++) {
+										QCoreApplication::processEvents();
+										sleep_ms(50);
+									}
+									if (name_source)
+										emit name_source->activated(
+											name_source->findData(
+												"Arrange Group"));
+									obs_sceneitem_set_locked(in_a, false);
+									place(c_group, 170, 140);
+									for (int i = 0; i < 4; i++) {
+										QCoreApplication::processEvents();
+										sleep_ms(50);
+									}
+									click("arrange_same_chosen");
+									sleep_ms(600);
+									const vec2 named = pos_of(in_a),
+										   not_named = pos_of(in_b);
+									CHECK(std::fabs(named.x - 170) < 0.6 &&
+										      std::fabs(named.y - 140) < 0.6 &&
+										      std::fabs(not_named.x - 520) <
+											      0.6,
+									      "with the group itself named in 'Sources to copy to', its copy in the chosen scene takes the transform (%.0f, %.0f; a scene not chosen %.0f)",
+									      named.x, named.y, not_named.x);
+									if (auto *unname =
+										    dock->findChild<QPushButton *>(
+											    "copySourcesRemove"))
+										unname->click();
+									// The row taken away is deleted now, so the checks
+									// below do not find its remove button.
+									QCoreApplication::sendPostedEvents(
+										nullptr, QEvent::DeferredDelete);
+									for (int i = 0; i < 6; i++) {
+										QCoreApplication::processEvents();
+										sleep_ms(50);
+									}
+									obs_source_filter_remove(
+										obs_scene_get_source(chosen_a), held);
+									obs_source_release(held);
+									// Back as the checks below expect to find it.
+									place(c_group, 60, 90);
+									place(in_a, 60, 90);
+									for (int i = 0; i < 4; i++) {
+										QCoreApplication::processEvents();
+										sleep_ms(50);
+									}
+								}
 								if (auto *remove = dock->findChild<QPushButton *>(
 									    "copyScenesRemove"))
 									remove->click();

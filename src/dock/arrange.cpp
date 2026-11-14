@@ -671,6 +671,11 @@ int copy_to_every_scene(obs_source_t *scene, const std::vector<obs_sceneitem_t *
 			continue;
 		done.push_back(source);
 		for (const Copy &copy : copies_of(source, scene)) {
+			// An item inside a group shown in several scenes is one and
+			// the same item in all of them: there is nothing to copy to,
+			// and "copying" would move it inside its group.
+			if (copy.item == item)
+				continue;
 			if (!even_locked && obs_sceneitem_locked(copy.item))
 				continue;
 			if (!wanted_scene(copy.scene))
