@@ -49,13 +49,16 @@ struct Settings {
 	double tolerance = 8;           // free space: pictures this close in size count as equal
 	bool resize = true;             // off: the item keeps its size and is only moved, centred in the space
 	int toward_x = 0, toward_y = 0; // the side of its space it is kept towards: -1, 0 (the middle) or 1
-	bool share = false;             // its place here is given to its copies in the scenes not on screen
-	std::string orig_item;          // the item whose size was noted before the filter first touched it
-	double orig_k = 0;              // how large it was drawn then, as a scale of its source
-	bool visible_pixels = true;     // other items are measured by what they draw, not their boxes
-	bool no_shadows = true;         // and shadows, glows and outlines do not count, its own included
-	std::vector<std::string> skip;  // items that are never in the way
-	bool have_anchor = false;       // the free space is the one round this point
+	// Its place here is given to its copies in these scenes while they are
+	// not on screen. (A tick box for every scene came first, in beta105; the
+	// owner has the same source in scenes where it belongs elsewhere.)
+	std::vector<std::string> share_scenes;
+	std::string orig_item;         // the item whose size was noted before the filter first touched it
+	double orig_k = 0;             // how large it was drawn then, as a scale of its source
+	bool visible_pixels = true;    // other items are measured by what they draw, not their boxes
+	bool no_shadows = true;        // and shadows, glows and outlines do not count, its own included
+	std::vector<std::string> skip; // items that are never in the way
+	bool have_anchor = false;      // the free space is the one round this point
 	double anchor_x = 0, anchor_y = 0;
 	double glide_s = 0.3;
 	EaseCurve curve = EaseCurve::Cubic;
@@ -105,6 +108,8 @@ bool claim_of(obs_source_t *scene, int64_t item, const void *asking, Claim &out)
 class FitItem;
 std::mutex g_filters_mutex;
 std::vector<FitItem *> g_filters; // every Fit to Space there is, for fit_item_placed
+// Adds the scenes whose own filter for `item` lists `asking`'s scene to share with.
+void share_partners(FitItem *asking, const std::string &item, std::vector<std::string> &with);
 
 // The largest clear space for a picture of the shape given (width over
 // height) that holds the point (ax, ay): inside `within` less the gap, and
@@ -202,6 +207,17 @@ public:
 			placed_ = true;
 	}
 
+	// Whether this filter, looking after the item of that name, lists the
+	// scene of that name to share its place with.
+	bool shares_with(const std::string &item_name, const char *scene_name)
+	{
+		std::lock_guard lock(mutex_);
+		return settings_.item == item_name &&
+		       std::find(settings_.share_scenes.begin(), settings_.share_scenes.end(), scene_name) !=
+			       settings_.share_scenes.end();
+	}
+	const char *scene_name() const { return parent_ ? obs_source_get_name(parent_) : nullptr; }
+
 	// See fit_item_shared.
 	void shared(obs_source_t *scene, const char *item_name, const double *home)
 	{
@@ -234,7 +250,7 @@ public:
 		const long long toward = std::clamp<long long>(obs_data_get_int(settings, "toward"), 0, 8);
 		s.toward_x = kTowardX[toward];
 		s.toward_y = kTowardY[toward];
-		s.share = obs_data_get_bool(settings, "share");
+		s.share_scenes = pick_list_read(settings, "share_scenes", false);
 		s.orig_item = obs_data_get_string(settings, "orig_item");
 		s.orig_k = obs_data_get_double(settings, "orig_k");
 		own_seen_ = false; // what shows of the item is looked at again
@@ -245,10 +261,28 @@ public:
 			// settings (and OBS sends them for many reasons) leaves it.
 			if (s.item != settings_.item || s.resize != settings_.resize)
 				have_keep_ = false;
+			// Another list of scenes to share with: they get the place now.
+			if (s.share_scenes != settings_.share_scenes)
+				share_again_ = true;
 			// Unticked just now: the size to keep is the one the item had
 			// before this filter resized it, not the fitted one.
 			if (!s.resize && settings_.resize)
 				back_to_original_ = true;
+			// When OBS starts, the size kept is the one saved, not one
+			// read off the item: just after loading, a group or a source
+			// with a shadow is not yet the size it will be, and a size
+			// worked out from it then came out a few pixels large. The
+			// owner: "if i restart, the chat box is slightly larger".
+			if (first_update_) {
+				first_update_ = false;
+				back_to_original_ = false;
+				saved_keep_item_ = obs_data_get_string(settings, "keep_item");
+				saved_keep_k_ = obs_data_get_double(settings, "keep_k");
+				if (!s.resize && !s.item.empty() && saved_keep_item_ == s.item && saved_keep_k_ > 0.0) {
+					keep_k_ = saved_keep_k_;
+					have_keep_ = true;
+				}
+			}
 		}
 		const long long kind = obs_data_get_int(settings, "box");
 		if (kind == 2)
@@ -556,6 +590,10 @@ public:
 				keep_k_ = s.orig_k;
 				have_keep_ = true;
 			}
+			// (Read only from an item whose source has kept its size for
+			// half a second: one that is still loading says a wrong size.)
+			if (!have_keep_ && !resized_by_hand_ && steady_for_ < 0.5)
+				return;
 			if (!have_keep_) {
 				const double was = keep_k_;
 				have_keep_ = drawn_now(keep_k_);
@@ -571,6 +609,16 @@ public:
 				resized_by_hand_ = false;
 			}
 			back_to_original_ = false;
+			// Saved with the scene collection, for the next time OBS starts.
+			if (have_keep_ &&
+			    (saved_keep_item_ != s.item || std::fabs(saved_keep_k_ - keep_k_) > 1e-9 * keep_k_)) {
+				saved_keep_item_ = s.item;
+				saved_keep_k_ = keep_k_;
+				obs_data_t *settings = obs_source_get_settings(source_);
+				obs_data_set_string(settings, "keep_item", s.item.c_str());
+				obs_data_set_double(settings, "keep_k", keep_k_);
+				obs_data_release(settings);
+			}
 		}
 		// The size kept is the size of what shows of it.
 		const double keep_w_ = pw * keep_k_, keep_h_ = ph * keep_k_;
@@ -734,7 +782,9 @@ public:
 			// same source in the scenes that are not on screen is put
 			// exactly there too, each time this place changes, so that
 			// it is already there when one of them is switched to.
-			if (s.share && glide_ >= 1.0 && obs_source_showing(parent_) &&
+			if (share_again_.exchange(false))
+				have_shared_ = false;
+			if (glide_ >= 1.0 && obs_source_showing(parent_) &&
 			    !(have_shared_ && std::fabs(shared_[0] - x) < 0.05 && std::fabs(shared_[1] - y) < 0.05 &&
 			      std::fabs(shared_[2] - want_w) < 0.05 && std::fabs(shared_[3] - want_h) < 0.05 &&
 			      shared_toward_ == toward)) {
@@ -744,8 +794,14 @@ public:
 				shared_[2] = want_w;
 				shared_[3] = want_h;
 				shared_toward_ = toward;
-				const double home[2] = {s.anchor_x, s.anchor_y};
-				share_place(parent_, item, free && s.have_anchor ? home : nullptr);
+				// The scenes listed here, and any whose own filter for
+				// this item lists this scene: a link holds both ways.
+				std::vector<std::string> with = s.share_scenes;
+				share_partners(this, s.item, with);
+				if (!with.empty()) {
+					const double home[2] = {s.anchor_x, s.anchor_y};
+					share_place(parent_, item, with, free && s.have_anchor ? home : nullptr);
+				}
 			}
 			return;
 		}
@@ -1053,6 +1109,11 @@ private:
 	bool own_seen_ = false, was_placed_ = false;
 	double own_sw_ = 0.0, own_sh_ = 0.0, own_for_ = 0.0;
 	bool have_keep_ = false;
+	// The kept size as it is saved in the settings, and whether the settings
+	// have been read yet (the first time is OBS loading the filter).
+	bool first_update_ = true;
+	std::string saved_keep_item_;
+	double saved_keep_k_ = 0.0;
 	bool back_to_original_ = false, resized_by_hand_ = false;
 	bool placed_by_tool_ = false;
 	bool placed_ = false; // under mutex_: the item was just placed on purpose by a tool
@@ -1068,6 +1129,7 @@ private:
 	bool have_set_ = false, moving_ = false;
 	// "Same place in other scenes": the place last given to the other scenes.
 	bool have_shared_ = false;
+	std::atomic<bool> share_again_{false};
 	double shared_[4] = {0.0, 0.0, 0.0, 0.0};
 	uint32_t shared_toward_ = 0;
 	// A hidden item is left alone; shown again, it first says where it is.
@@ -1077,6 +1139,20 @@ private:
 	Claim last_claim_;
 	double set_x_ = 0.0, set_y_ = 0.0, seen_x_ = 0.0, seen_y_ = 0.0, still_for_ = 0.0;
 };
+
+void share_partners(FitItem *asking, const std::string &item, std::vector<std::string> &with)
+{
+	const char *here = asking->scene_name();
+	if (!here)
+		return;
+	std::lock_guard lock(g_filters_mutex);
+	for (FitItem *filter : g_filters) {
+		const char *there = filter == asking ? nullptr : filter->scene_name();
+		if (there && filter->shares_with(item, here) &&
+		    std::find(with.begin(), with.end(), there) == with.end())
+			with.push_back(there);
+	}
+}
 
 bool box_modified(obs_properties_t *props, obs_property_t *, obs_data_t *settings)
 {
@@ -1139,8 +1215,6 @@ obs_properties_t *get_properties(void *data)
 	      "Fit.Toward.TopLeft", "Fit.Toward.TopRight", "Fit.Toward.BottomLeft", "Fit.Toward.BottomRight"})
 		obs_property_list_add_int(toward, obs_module_text(name), toward_value++);
 	obs_property_set_long_description(toward, obs_module_text("Fit.Toward.Tip"));
-	obs_property_t *share = obs_properties_add_bool(props, "share", obs_module_text("Fit.Share"));
-	obs_property_set_long_description(share, obs_module_text("Fit.Share.Tip"));
 	obs_property_t *tolerance =
 		obs_properties_add_float_slider(props, "tolerance", obs_module_text("Fit.Tolerance"), 0.0, 100.0, 1.0);
 	obs_property_float_set_suffix(tolerance, " px");
@@ -1165,6 +1239,27 @@ obs_properties_t *get_properties(void *data)
 		scene_item_names(parent, names);
 	};
 	pick_list_add(props, self ? self->source() : nullptr, skip);
+	PickList share;
+	share.setting = "share_scenes";
+	share.title = "Fit.Share";
+	share.add = "List.AddScene";
+	share.tip = "Fit.Share.Tip";
+	share.choices = [parent](std::vector<std::string> &names) {
+		struct Other {
+			std::vector<std::string> *names;
+			obs_source_t *self;
+		} other{&names, parent};
+		obs_enum_scenes(
+			[](void *param, obs_source_t *scene) {
+				auto *o = static_cast<Other *>(param);
+				const char *name = obs_source_get_name(scene);
+				if (name && *name && !obs_source_is_group(scene) && scene != o->self)
+					o->names->push_back(name);
+				return true;
+			},
+			&other);
+	};
+	pick_list_add(props, self ? self->source() : nullptr, share);
 	// Last, so that everything it shows and hides is there.
 	obs_property_set_modified_callback(box, box_modified);
 	return props;
@@ -1183,7 +1278,6 @@ void get_defaults(obs_data_t *settings)
 	obs_data_set_default_double(settings, "tolerance", 8.0);
 	obs_data_set_default_bool(settings, "resize", true);
 	obs_data_set_default_int(settings, "toward", 0);
-	obs_data_set_default_bool(settings, "share", false);
 	obs_data_set_default_bool(settings, "visible_pixels", true);
 	obs_data_set_default_bool(settings, "no_shadows", true);
 	obs_data_set_default_int(settings, "glide_ms", 300);

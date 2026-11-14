@@ -688,7 +688,7 @@ int copy_to_every_scene(obs_source_t *scene, const std::vector<obs_sceneitem_t *
 	return changed;
 }
 
-int share_place(obs_source_t *scene, obs_sceneitem_t *item, const double *home)
+int share_place(obs_source_t *scene, obs_sceneitem_t *item, const std::vector<std::string> &scenes, const double *home)
 {
 	obs_source_t *source = item ? obs_sceneitem_get_source(item) : nullptr;
 	if (!scene || !source)
@@ -697,6 +697,9 @@ int share_place(obs_source_t *scene, obs_sceneitem_t *item, const double *home)
 	for (const Copy &copy : copies_of(source, scene)) {
 		// (The same item, where a group holding it is shown in several scenes.)
 		if (copy.item == item || obs_source_showing(copy.scene))
+			continue;
+		const char *in = obs_source_get_name(copy.scene);
+		if (!in || std::find(scenes.begin(), scenes.end(), in) == scenes.end())
 			continue;
 		copy_transform(scene, item, copy.scene, copy.item);
 		fit_item_shared(copy.scene, obs_source_get_name(source), home);
@@ -1195,7 +1198,7 @@ const char *const kOwnSettings[] = {
 	"adjusted_right", "adjusted_bottom", "adjusted_for",     "placed",
 	"learned",        "last_width",      "last_height",      "rule_program",
 	"rule_browse",    "force_ratio",     "force_until_gone", "orig_item",
-	"orig_k",
+	"orig_k",         "share_scenes",    "keep_item",        "keep_k",
 };
 
 // Copies one setting, whatever it holds, by way of its JSON.

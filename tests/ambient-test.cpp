@@ -2671,9 +2671,11 @@ int main(int argc, char **argv)
 				obs_source_release(cam3);
 				obs_source_release(wide);
 			}
-			// "Same place in other scenes": what the filter does in the scene
-			// on screen, the same source has in the scenes that are not, so
-			// it is already there when one of them is switched to.
+			// "Same place in these scenes": what the filter does in the scene
+			// on screen, the same source has in the scenes listed, so it is
+			// already there when one of them is switched to. A scene that
+			// is not listed keeps the source where it belongs there (the
+			// owner: "it should not be all scenes").
 			{
 				obs_source_t *wall = obs_source_create("color_source", "Share Wall", nullptr, nullptr);
 				sized(wall, 300, 360);
@@ -2696,20 +2698,35 @@ int main(int argc, char **argv)
 				vec2_set(&pp, 10.0f, 10.0f);
 				obs_sceneitem_set_pos(in_three, &pp);
 				obs_sceneitem_set_locked(in_three, true);
+				obs_scene_t *four = obs_scene_create("Share Four");
+				obs_sceneitem_t *in_four = obs_scene_add(four, cam4);
+				vec2_set(&pp, 30.0f, 40.0f);
+				obs_sceneitem_set_pos(in_four, &pp);
 				auto fit_in = [&](obs_scene_t *scene, const char *name, bool share) {
 					obs_data_t *d = obs_data_create();
 					obs_data_set_string(d, "item", "Share Camera");
 					obs_data_set_int(d, "box", 2);
 					obs_data_set_double(d, "margin", 20);
 					obs_data_set_int(d, "glide_ms", 100);
-					obs_data_set_bool(d, "share", share);
+					// The first scene lists two of the others; the second
+					// lists none and is linked back all the same.
+					obs_data_array_t *with = obs_data_array_create();
+					for (const char *listed : {"Share Two", "Share Three"}) {
+						obs_data_t *entry = obs_data_create();
+						obs_data_set_string(entry, "value", listed);
+						if (share)
+							obs_data_array_push_back(with, entry);
+						obs_data_release(entry);
+					}
+					obs_data_set_array(d, "share_scenes", with);
+					obs_data_array_release(with);
 					obs_source_t *f = obs_source_create("stagekit_fit_item", name, d, nullptr);
 					obs_data_release(d);
 					obs_source_filter_add(obs_scene_get_source(scene), f);
 					return f;
 				};
 				obs_source_t *fit_one = fit_in(one, "Fit Share One", true);
-				obs_source_t *fit_two = fit_in(two, "Fit Share Two", true);
+				obs_source_t *fit_two = fit_in(two, "Fit Share Two", false);
 				struct Where {
 					double x, y, w, h;
 				};
@@ -2732,8 +2749,11 @@ int main(int argc, char **argv)
 				      "the item is fitted in the scene on screen (%.0f, %.0f %.0fx%.0f)", a.x, a.y, a.w,
 				      a.h);
 				CHECK(alike(a, b) && alike(a, c) && obs_sceneitem_locked(in_three),
-				      "with 'Same place in other scenes' its copies in the scenes not on screen have the same place and size, with a filter of their own (%.0f, %.0f %.0fx%.0f) or without, locked or not (%.0f, %.0f %.0fx%.0f)",
+				      "its copies in the scenes listed under 'Same place in these scenes' have the same place and size, with a filter of their own (%.0f, %.0f %.0fx%.0f) or without, locked or not (%.0f, %.0f %.0fx%.0f)",
 				      b.x, b.y, b.w, b.h, c.x, c.y, c.w, c.h);
+				CHECK(is(where(in_four).x, 30) && is(where(in_four).y, 40),
+				      "a scene that is not listed keeps the source where it was (%.0f, %.0f)",
+				      where(in_four).x, where(in_four).y);
 				// Switched to: it is already there, and does not move.
 				obs_set_output_source(0, obs_scene_get_source(two));
 				bool stayed = true;
@@ -2746,16 +2766,20 @@ int main(int argc, char **argv)
 				CHECK(stayed,
 				      "switching to the other scene, the item is already in its place and does not move (%.0f, %.0f %.0fx%.0f)",
 				      b2.x, b2.y, b2.w, b2.h);
-				// Moved on purpose in the scene now on screen: the scene left
-				// behind takes that too.
-				vec2_set(&pp, 330.0f, 30.0f);
-				obs_sceneitem_set_pos(in_two, &pp);
+				// Fitted another way in the scene now on screen (a wider gap):
+				// the scene left behind takes that, though only it listed
+				// this one. The scene not listed still keeps its own.
+				obs_data_t *wider = obs_source_get_settings(fit_two);
+				obs_data_set_double(wider, "margin", 40);
+				obs_source_update(fit_two, wider);
+				obs_data_release(wider);
 				for (int i = 0; i < 30; i++) {
 					render(obs_scene_get_source(two), 640, 360);
 					sleep_ms(50);
 				}
-				CHECK(alike(where(in_one), where(in_two)),
-				      "and the scene left behind follows what happens in the one on screen (%.0f, %.0f; here %.0f, %.0f)",
+				CHECK(is(where(in_two).x, 340) && is(where(in_two).y, 40) &&
+					      alike(where(in_one), where(in_two)) && is(where(in_four).x, 30),
+				      "and the link holds both ways: the scene left behind, which listed this one, follows what happens here (%.0f, %.0f; here %.0f, %.0f)",
 				      where(in_one).x, where(in_one).y, where(in_two).x, where(in_two).y);
 				obs_source_filter_remove(obs_scene_get_source(one), fit_one);
 				obs_source_filter_remove(obs_scene_get_source(two), fit_two);
@@ -2764,8 +2788,90 @@ int main(int argc, char **argv)
 				obs_scene_release(one);
 				obs_scene_release(two);
 				obs_scene_release(three);
+				obs_scene_release(four);
 				obs_source_release(cam4);
 				obs_source_release(wall);
+			}
+			// The size kept survives a restart. The report: "even after i fix
+			// it, if i restart, the chat box is slightly larger". A filter
+			// created with "Resize it to fit" unticked (which is OBS loading
+			// it) went back to the size from before it was first added.
+			{
+				obs_source_t *box = obs_source_create("color_source", "Restart Box", nullptr, nullptr);
+				sized(box, 100, 50);
+				obs_scene_t *rs = obs_scene_create("Fit After Restart"); // 640x360
+				obs_sceneitem_t *it = obs_scene_add(rs, box);
+				// As the filter left it when OBS closed: its own size.
+				auto as_saved = [&] {
+					vec2 p, b;
+					vec2_set(&p, 270.0f, 155.0f);
+					vec2_set(&b, 100.0f, 50.0f);
+					obs_sceneitem_set_pos(it, &p);
+					obs_sceneitem_set_bounds_type(it, OBS_BOUNDS_SCALE_INNER);
+					obs_sceneitem_set_bounds(it, &b);
+				};
+				as_saved();
+				auto load = [&](bool with_saved_size) {
+					obs_data_t *d = obs_data_create();
+					obs_data_set_string(d, "item", "Restart Box");
+					obs_data_set_int(d, "box", 2);
+					obs_data_set_double(d, "margin", 10);
+					obs_data_set_int(d, "glide_ms", 0);
+					obs_data_set_bool(d, "resize", false);
+					// Before the filter was first added it was a fifth larger.
+					obs_data_set_string(d, "orig_item", "Restart Box");
+					obs_data_set_double(d, "orig_k", 1.2);
+					if (with_saved_size) {
+						obs_data_set_string(d, "keep_item", "Restart Box");
+						obs_data_set_double(d, "keep_k", 1.0);
+					}
+					obs_source_t *f =
+						obs_source_create("stagekit_fit_item", "Fit Restart", d, nullptr);
+					obs_data_release(d);
+					obs_source_filter_add(obs_scene_get_source(rs), f);
+					return f;
+				};
+				auto wait = [&](int ms) {
+					for (int i = 0; i < ms / 50; i++) {
+						render(obs_scene_get_source(rs), 640, 360);
+						sleep_ms(50);
+					}
+				};
+				auto width = [&] {
+					vec2 b;
+					obs_sceneitem_get_bounds(it, &b);
+					return (double)b.x;
+				};
+				obs_set_output_source(0, obs_scene_get_source(rs));
+				// A collection saved by an older version: no size saved yet.
+				obs_source_t *loaded = load(false);
+				wait(1500);
+				obs_data_t *now = obs_source_get_settings(loaded);
+				CHECK(is(width(), 100) && std::fabs(obs_data_get_double(now, "keep_k") - 1.0) < 0.001 &&
+					      std::string(obs_data_get_string(now, "keep_item")) == "Restart Box",
+				      "loaded with 'Resize it to fit' unticked, the item keeps the size it was saved at, not the one from before the filter, and that size is saved (%.0f wide, saved %.3f)",
+				      width(), obs_data_get_double(now, "keep_k"));
+				obs_data_release(now);
+				obs_source_filter_remove(obs_scene_get_source(rs), loaded);
+				obs_source_release(loaded);
+				// Loading again, while the source is for a moment not the
+				// size it will be (a group still filling up, a shadow not
+				// yet round it): the saved size is used, not one worked out
+				// from the item.
+				sized(box, 80, 40);
+				as_saved();
+				wait(200);
+				loaded = load(true);
+				wait(100);
+				sized(box, 100, 50);
+				wait(1500);
+				CHECK(is(width(), 100),
+				      "and a source that is not yet its full size while OBS loads does not change it (%.0f wide)",
+				      width());
+				obs_source_filter_remove(obs_scene_get_source(rs), loaded);
+				obs_source_release(loaded);
+				obs_scene_release(rs);
+				obs_source_release(box);
 			}
 			obs_set_output_source(0, shown_before);
 			obs_source_release(shown_before);

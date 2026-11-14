@@ -211,6 +211,14 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Shared place for chosen scenes only; kept size survives a restart (0.1.0-beta106)
+
+- The owner, an hour after beta105: the link "should not be all scenes", because the same source
+  sits elsewhere on purpose in some scenes. The tick box became a list of scenes, linked both ways.
+- The owner's chat box was a few pixels larger after every restart. Found in the code: a filter
+  loaded with *Resize it to fit* unticked went back to the size from before it was first added.
+  The kept size is now saved and used at load. See AGENTS.md. **Not confirmed by the owner yet.**
+
 ## A fitted item's place shared with the other scenes (0.1.0-beta105)
 
 - Asked for by the owner after beta103: a link so that what Fit to Space does in the scene on

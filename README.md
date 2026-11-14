@@ -364,12 +364,16 @@ nearest.
   another fitted item makes room for this one is not used.
 - An item that is hidden is left exactly where it is and holds no space, so the others take its
   room. Shown again, it is where it was, and the others make way for it in one move.
-- **Same place in other scenes** (unticked as it comes): each time the filter has put its item in
-  place in the scene on screen, the same source in your other scenes is given exactly that place
-  and size, so it is already there when you switch to one of them and nothing shifts in view.
-  Scenes that are on screen at that moment are left alone. Locked copies are moved too. A scene
-  that has a Fit to Space of its own for the item fits it to that scene when it comes into view
-  (at once, without a glide); where your scenes are laid out alike that is the same place.
+- **Same place in these scenes** (a list, empty as it comes): each time the filter has put its
+  item in place while its scene is on screen, the same source in the scenes you list is given
+  exactly that place and size, so it is already there when you switch to one of them and nothing
+  shifts in view. Scenes you do not list are never touched: the source keeps its own place there.
+  A listed scene that is on screen at that moment is left alone. Locked copies are moved too. The
+  link holds both ways: a listed scene with a Fit to Space of its own for the item gives its place
+  back when it is the one on screen, and fits the item to itself when it comes into view (at once,
+  without a glide); where the scenes are laid out alike that is the same place.
+- With *Resize it to fit* unticked, the size the item keeps is saved with the scene collection and
+  is the size it has the next time OBS starts.
 - **Tolerance** (8 px as it comes): when something sticks a little way into the space, the picture
   may be made up to this many pixels smaller to keep the whole space, instead of keeping its size and
   losing the part of the space beside that thing. At 0 the biggest picture always wins, even by one

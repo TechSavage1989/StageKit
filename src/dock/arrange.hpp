@@ -82,8 +82,8 @@ int copy_to_every_scene(obs_source_t *scene, const std::vector<obs_sceneitem_t *
 			const std::vector<std::string> *only = nullptr,
 			const std::vector<std::string> *to_sources = nullptr, bool even_locked = false);
 
-// Gives every copy of `item`'s source in the scenes that are not on screen
-// the transform it has here, locked copies too, and hands each to a Fit to
+// Gives every copy of `item`'s source in the scenes of these names, while
+// they are not on screen, the transform it has here, locked copies too, and hands each to a Fit to
 // Space in its scene as placed on purpose. Scenes being shown are left as
 // they are: nothing jumps in view. For a filter that keeps an item the same
 // in every scene, so that it is already there when the scene is switched to.
@@ -91,7 +91,8 @@ int copy_to_every_scene(obs_source_t *scene, const std::vector<obs_sceneitem_t *
 // `home`: the point (x, y on the screen) the sharing filter looks for its
 // space around, which the other scenes' filters take for theirs; null when
 // it has none.
-int share_place(obs_source_t *scene, obs_sceneitem_t *item, const double *home = nullptr);
+int share_place(obs_source_t *scene, obs_sceneitem_t *item, const std::vector<std::string> &scenes,
+		const double *home = nullptr);
 
 // Locks or unlocks scene items, groups' items included, and says how many
 // changed. `sources`: only items showing a source of one of these names
