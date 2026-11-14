@@ -15,6 +15,7 @@ the Free Software Foundation; either version 2 of the License, or
 // that has its own hotkeys, obs-websocket requests and Stream Deck support.
 
 #include "ramp-blur.hpp"
+#include "../common/timing.hpp"
 
 #include "../api/vendor-api.hpp"
 #include "../common/easing.hpp"
@@ -1045,7 +1046,7 @@ void register_ramp_blur()
 	info.filter_remove = [](void *data, obs_source_t *) {
 		static_cast<RampBlur *>(data)->detach();
 	};
-	obs_register_source(&info);
+	register_timed(&info);
 }
 
 RampBlur *ramp_blur_from_source(obs_source_t *filter)

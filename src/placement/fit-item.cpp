@@ -13,6 +13,7 @@ the Free Software Foundation; either version 2 of the License, or
 // with a margin, with nothing to switch by hand between the two.
 
 #include "fit-item.hpp"
+#include "../common/timing.hpp"
 
 #include "../common/easing.hpp"
 #include "../common/pick-list.hpp"
@@ -411,9 +412,19 @@ private:
 			return true;
 		};
 		if (!same(boxes, boxes_)) {
+			// Something is moving. The fitted item waits for it to come to
+			// rest and then takes its new space in one glide: chasing a
+			// moving item would resize the picture (and redo its shadow)
+			// on every frame of the move. No looking meanwhile either.
 			boxes_ = boxes;
-			changed_ = true;
-			since_look_ = 0.0; // something is moving: no looking meanwhile
+			unsettled_ = true;
+			calm_for_ = 0.0;
+			since_look_ = 0.0;
+		} else if (unsettled_) {
+			if ((calm_for_ += seconds) >= 0.15) {
+				unsettled_ = false;
+				changed_ = true;
+			}
 		} else if ((since_look_ += seconds) >= 1.0 && !others.empty() && glide_ >= 1.0) {
 			since_look_ = 0.0;
 			turn_ = (turn_ + 1) % others.size();
@@ -469,7 +480,8 @@ private:
 	};
 	std::vector<Box> boxes_; // what is in the way now
 	std::map<int64_t, Seen> seen_;
-	bool look_again_ = true, changed_ = false;
+	bool look_again_ = true, changed_ = false, unsettled_ = false;
+	double calm_for_ = 0.0;
 	double since_look_ = 0.0;
 	size_t turn_ = 0;
 	double shape_seen_ = 0.0, shape_used_ = 0.0, shape_for_ = 0.0;
@@ -599,7 +611,7 @@ void register_fit_item()
 	info.filter_remove = [](void *data, obs_source_t *) {
 		static_cast<FitItem *>(data)->detach();
 	};
-	obs_register_source(&info);
+	register_timed(&info);
 }
 
 } // namespace stagekit

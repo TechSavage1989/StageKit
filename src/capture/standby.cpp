@@ -22,6 +22,7 @@ the Free Software Foundation; either version 2 of the License, or
 // is ever squashed: both are drawn to cover the size of the moment.
 
 #include "standby.hpp"
+#include "../common/timing.hpp"
 
 #include "../common/easing.hpp"
 #include "../common/start-image.hpp"
@@ -823,7 +824,7 @@ void register_standby()
 	info.get_height = [](void *data) {
 		return static_cast<Standby *>(data)->height();
 	};
-	obs_register_source(&info);
+	register_timed(&info);
 }
 
 } // namespace stagekit

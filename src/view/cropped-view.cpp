@@ -19,6 +19,7 @@ the Free Software Foundation; either version 2 of the License, or
 // Backdrop, Ramp Zoom) follow the crop. The camera itself is captured once.
 
 #include "cropped-view.hpp"
+#include "../common/timing.hpp"
 
 #include <obs-module.h>
 #include <graphics/vec4.h>
@@ -436,7 +437,7 @@ void register_cropped_view()
 			obs_source_release(source);
 		}
 	};
-	obs_register_source(&info);
+	register_timed(&info);
 }
 
 } // namespace stagekit

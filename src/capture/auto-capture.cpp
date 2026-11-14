@@ -40,6 +40,7 @@ the Free Software Foundation; either version 2 of the License, or
 #endif
 
 #include "auto-capture.hpp"
+#include "../common/timing.hpp"
 
 #include "../common/pick-list.hpp"
 
@@ -761,7 +762,7 @@ void register_auto_capture()
 	info.filter_remove = [](void *data, obs_source_t *) {
 		static_cast<AutoCapture *>(data)->detach();
 	};
-	obs_register_source(&info);
+	register_timed(&info);
 }
 
 } // namespace stagekit

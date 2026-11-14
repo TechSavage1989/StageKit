@@ -24,6 +24,7 @@ the Free Software Foundation; either version 2 of the License, or
 // or in every scene, so there is no scene or item to choose.
 
 #include "place-item.hpp"
+#include "../common/timing.hpp"
 
 #include "../common/easing.hpp"
 #include "../common/scene-util.hpp"
@@ -784,7 +785,7 @@ void register_place_item()
 	info.create = [](obs_data_t *settings, obs_source_t *source) -> void * {
 		return new PlaceItem(settings, source, false);
 	};
-	obs_register_source(&info);
+	register_timed(&info);
 
 	// On a source: moves that source.
 	info.id = kSendToId;
@@ -794,7 +795,7 @@ void register_place_item()
 	info.create = [](obs_data_t *settings, obs_source_t *source) -> void * {
 		return new PlaceItem(settings, source, true);
 	};
-	obs_register_source(&info);
+	register_timed(&info);
 }
 
 } // namespace stagekit
