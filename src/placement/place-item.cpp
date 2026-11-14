@@ -88,7 +88,8 @@ struct Settings {
 	bool flip_linked = true;
 	// A place on the screen is measured the way the Arrange options say
 	// (what is visible, without shadows); off, by the item's whole box.
-	bool as_arranged = true;
+	bool visible_pixels = true; // the edge distance is to what is drawn, not the box
+	bool no_shadows = true;     // and a shadow, glow or outline does not count
 	// Send To only: which scenes the move happens in.
 	ApplyIn apply_in = ApplyIn::Every;
 	std::string apply_scene; // the scene, for ApplyIn::Chosen
@@ -297,7 +298,13 @@ void PlaceItem::update(obs_data_t *settings)
 	s.mode = static_cast<EaseMode>(obs_data_get_int(settings, "ease_mode"));
 	s.linked = obs_data_get_string(settings, "linked");
 	s.flip_linked = obs_data_get_bool(settings, "flip_linked");
-	s.as_arranged = obs_data_get_bool(settings, "as_arranged");
+	// The filter's own two measuring options. Before they existed there
+	// was one tick box that followed the dock; unticked, it meant boxes.
+	s.visible_pixels = obs_data_get_bool(settings, "visible_pixels");
+	s.no_shadows = obs_data_get_bool(settings, "no_shadows");
+	if (obs_data_has_user_value(settings, "as_arranged") && !obs_data_get_bool(settings, "as_arranged") &&
+	    !obs_data_has_user_value(settings, "visible_pixels"))
+		s.visible_pixels = false;
 	// 0.1.0-beta8 to beta46 kept this in "where", where the scene on screen
 	// was the default and what the dock wrote into every key it made. That
 	// setting is no longer read, so those keys take the new default.
@@ -418,10 +425,10 @@ void PlaceItem::plan(const Settings &s, obs_source_t *scene, obs_sceneitem_t *it
 	} else {
 		const int column = static_cast<int>(s.destination) % 3;
 		const int row = static_cast<int>(s.destination) / 3;
-		// The edge distance is to what the Arrange options count as the
-		// item: its visible picture, with or without its shadow. The box
-		// goes wherever that puts it.
-		const Box seen = s.as_arranged ? measure_item(scene, item, arrange_options().how) : box;
+		// The edge distance is to what this filter counts as the item: its
+		// visible picture, with or without its shadow. The box goes
+		// wherever that puts it.
+		const Box seen = s.visible_pixels ? measure_item(scene, item, Measure{true, s.no_shadows}) : box;
 		const double seen_x = column == 0   ? s.margin
 				      : column == 1 ? (canvas_w - seen.w) / 2.0
 						    : canvas_w - s.margin - seen.w;
@@ -610,7 +617,9 @@ bool destination_modified(obs_properties_t *props, obs_property_t *, obs_data_t 
 	const bool spot = destination == Destination::Spot;
 	const bool linked = *obs_data_get_string(settings, "linked") != 0;
 	obs_property_set_visible(obs_properties_get(props, "margin"), !saved && !spot);
-	obs_property_set_visible(obs_properties_get(props, "as_arranged"), !saved && !spot);
+	obs_property_set_visible(obs_properties_get(props, "visible_pixels"), !saved && !spot);
+	obs_property_set_visible(obs_properties_get(props, "no_shadows"),
+				 !saved && !spot && obs_data_get_bool(settings, "visible_pixels"));
 	obs_property_set_visible(obs_properties_get(props, "spot_x"), spot);
 	obs_property_set_visible(obs_properties_get(props, "spot_y"), spot);
 	obs_property_set_visible(obs_properties_get(props, "saved_x"), saved);
@@ -646,9 +655,12 @@ obs_properties_t *get_properties(void *data)
 	obs_property_t *margin =
 		obs_properties_add_float_slider(props, "margin", obs_module_text("Place.Margin"), 0.0, 400.0, 1.0);
 	obs_property_float_set_suffix(margin, " px");
-	obs_property_t *as_arranged =
-		obs_properties_add_bool(props, "as_arranged", obs_module_text("Place.AsArranged"));
-	obs_property_set_long_description(as_arranged, obs_module_text("Place.AsArranged.Tip"));
+	obs_property_t *visible_pixels =
+		obs_properties_add_bool(props, "visible_pixels", obs_module_text("Measure.Visible"));
+	obs_property_set_long_description(visible_pixels, obs_module_text("Measure.Visible.Tip"));
+	obs_property_set_modified_callback(visible_pixels, destination_modified);
+	obs_property_t *no_shadows = obs_properties_add_bool(props, "no_shadows", obs_module_text("Measure.NoShadows"));
+	obs_property_set_long_description(no_shadows, obs_module_text("Measure.NoShadows.Tip"));
 	obs_properties_add_float(props, "saved_x", obs_module_text("Place.SavedX"), -20000.0, 20000.0, 1.0);
 	obs_properties_add_float(props, "saved_y", obs_module_text("Place.SavedY"), -20000.0, 20000.0, 1.0);
 	obs_properties_add_bool(props, "restore_size", obs_module_text("Place.RestoreSize"));
@@ -730,7 +742,8 @@ void get_defaults(obs_data_t *settings)
 	obs_data_set_default_int(settings, "ease_curve", (int)EaseCurve::Cubic);
 	obs_data_set_default_int(settings, "ease_mode", (int)EaseMode::InOut);
 	obs_data_set_default_bool(settings, "flip_linked", true);
-	obs_data_set_default_bool(settings, "as_arranged", true);
+	obs_data_set_default_bool(settings, "visible_pixels", true);
+	obs_data_set_default_bool(settings, "no_shadows", true);
 	obs_data_set_default_int(settings, "apply_in", (int)ApplyIn::Every);
 }
 

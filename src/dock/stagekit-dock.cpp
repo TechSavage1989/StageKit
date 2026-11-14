@@ -1281,6 +1281,11 @@ private:
 		obs_data_set_int(d, "duration_ms", duration_->value());
 		obs_data_set_int(d, "ease_curve", curve_->currentIndex());
 		obs_data_set_int(d, "ease_mode", ease_mode_->currentIndex());
+		// The dock's own measuring options go with what the dock sends; a
+		// filter set up by hand has its own.
+		const Measure how = arrange_options().how;
+		obs_data_set_bool(d, "visible_pixels", how.visible_pixels);
+		obs_data_set_bool(d, "no_shadows", how.leave_out_shadows);
 		return d;
 	}
 

@@ -46,7 +46,8 @@ struct Settings {
 	double x = 0, y = 0, w = 1920, h = 1080;
 	double margin = 80;
 	bool by_hand = false;          // a box I set: resizing the item in the preview sets the box's size
-	bool as_arranged = true;       // measure by the dock's Arrange options
+	bool visible_pixels = true;    // other items are measured by what they draw, not their boxes
+	bool no_shadows = true;        // and shadows, glows and outlines do not count, its own included
 	std::vector<std::string> skip; // items that are never in the way
 	bool have_anchor = false;      // the free space is the one round this point
 	double anchor_x = 0, anchor_y = 0;
@@ -129,7 +130,13 @@ public:
 		if (kind == 2)
 			s.box = BoxKind::FreeSpace;
 		s.by_hand = obs_data_get_bool(settings, "by_hand");
-		s.as_arranged = obs_data_get_bool(settings, "as_arranged");
+		// The filter's own two measuring options. Before they existed there
+		// was one tick box that followed the dock; unticked, it meant boxes.
+		s.visible_pixels = obs_data_get_bool(settings, "visible_pixels");
+		s.no_shadows = obs_data_get_bool(settings, "no_shadows");
+		if (obs_data_has_user_value(settings, "as_arranged") && !obs_data_get_bool(settings, "as_arranged") &&
+		    !obs_data_has_user_value(settings, "visible_pixels"))
+			s.visible_pixels = false;
 		s.skip = pick_list_read(settings, "skip", false);
 		s.have_anchor = obs_data_get_bool(settings, "have_anchor");
 		s.anchor_x = obs_data_get_double(settings, "anchor_x");
@@ -206,15 +213,15 @@ public:
 		shadow_room(shown, room);
 		obs_sceneitem_crop crop;
 		obs_sceneitem_get_crop(item, &crop);
-		// With the Arrange options counting shadows as part of an item, the
+		// With shadows counted as part of an item (its own tick box), the
 		// shadow is fitted too: it keeps the margin, not the picture.
-		const Measure how = arrange_options().how;
+		const Measure how{s.visible_pixels, s.no_shadows};
 		// So is one asked to stay on screen ("Keep it on screen" in its
 		// shadow filter): a picture that fills the box makes room for it.
 		const bool shadow_in_view = shadow_kept_in_view(shown);
 		const double bare_w = sw - std::max(room[0], (double)crop.left) - std::max(room[2], (double)crop.right);
 		const double bare_h = sh - std::max(room[1], (double)crop.top) - std::max(room[3], (double)crop.bottom);
-		if ((s.as_arranged && !how.leave_out_shadows) || shadow_in_view)
+		if (!s.no_shadows || shadow_in_view)
 			room[0] = room[1] = room[2] = room[3] = 0.0;
 		const double left = std::max(room[0], (double)crop.left), top = std::max(room[1], (double)crop.top);
 		const double right = std::max(room[2], (double)crop.right),
@@ -429,7 +436,7 @@ private:
 				return true;
 			},
 			&gather);
-		const Measure by = s.as_arranged ? how : Measure{false, false};
+		const Measure by = how;
 		auto look = [&](obs_sceneitem_t *other) {
 			Seen seen;
 			seen.there = measure_seen(parent_, other, by, seen.box);
@@ -533,7 +540,7 @@ bool box_modified(obs_properties_t *props, obs_property_t *, obs_data_t *setting
 	const long long kind = obs_data_get_int(settings, "box");
 	for (const char *name : {"box_x", "box_y", "box_width", "box_height", "by_hand"})
 		obs_property_set_visible(obs_properties_get(props, name), kind == 1);
-	for (const char *name : {"skip|alist", "glide_ms", "ease_curve", "ease_mode"})
+	for (const char *name : {"skip|alist", "glide_ms", "ease_curve", "ease_mode", "visible_pixels"})
 		if (obs_property_t *p = obs_properties_get(props, name))
 			obs_property_set_visible(p, kind == 2);
 	obs_property_set_description(obs_properties_get(props, "margin"),
@@ -572,8 +579,11 @@ obs_properties_t *get_properties(void *data)
 		obs_properties_add_float_slider(props, "margin", obs_module_text("Fit.Margin"), 0.0, 400.0, 1.0);
 	obs_property_float_set_suffix(margin, " px");
 	obs_property_set_long_description(margin, obs_module_text("Fit.Margin.Tip"));
-	obs_property_t *as_arranged = obs_properties_add_bool(props, "as_arranged", obs_module_text("Fit.AsArranged"));
-	obs_property_set_long_description(as_arranged, obs_module_text("Fit.AsArranged.Tip"));
+	obs_property_t *visible_pixels =
+		obs_properties_add_bool(props, "visible_pixels", obs_module_text("Measure.Visible"));
+	obs_property_set_long_description(visible_pixels, obs_module_text("Fit.Visible.Tip"));
+	obs_property_t *no_shadows = obs_properties_add_bool(props, "no_shadows", obs_module_text("Measure.NoShadows"));
+	obs_property_set_long_description(no_shadows, obs_module_text("Fit.NoShadows.Tip"));
 	obs_property_t *glide = obs_properties_add_int(props, "glide_ms", obs_module_text("Fit.Glide"), 0, 10000, 50);
 	obs_property_int_set_suffix(glide, " ms");
 	obs_property_set_long_description(glide, obs_module_text("Fit.Glide.Tip"));
@@ -604,7 +614,8 @@ void get_defaults(obs_data_t *settings)
 	obs_data_set_default_double(settings, "box_width", have ? ovi.base_width : 1920);
 	obs_data_set_default_double(settings, "box_height", have ? ovi.base_height : 1080);
 	obs_data_set_default_double(settings, "margin", 80.0);
-	obs_data_set_default_bool(settings, "as_arranged", true);
+	obs_data_set_default_bool(settings, "visible_pixels", true);
+	obs_data_set_default_bool(settings, "no_shadows", true);
 	obs_data_set_default_bool(settings, "by_hand", false);
 	obs_data_set_default_int(settings, "glide_ms", 300);
 	obs_data_set_default_int(settings, "ease_curve", (int)EaseCurve::Cubic);

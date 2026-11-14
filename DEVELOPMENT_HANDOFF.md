@@ -211,6 +211,13 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Filters measure by their own options, not the dock's (0.1.0-beta72)
+
+The owner, on beta70's *Measure by Arrange options*: the dock's options are for what is being edited
+with them; a filter needs its own toggles. Fit Item, Place Item and Send To now have *Use visible
+pixels* and *Ignore shadows & outlines* each. See AGENTS.md. No new test: the dock tests that tick
+the dock's boxes and then send still pass, because the dock passes its options along.
+
 ## Shadows kept on screen, a box sized by hand, standby ignored by the background (0.1.0-beta71)
 
 Three requests from the owner in one release:

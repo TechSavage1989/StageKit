@@ -181,10 +181,14 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
 - **Groups are items like any other.** A selected group is the dock's item and is moved, slid and
   copied by *Copy transform to all scenes* as one thing; only when the group itself is not selected do the
   tools look at what is selected inside it. Do not skip groups in a new tool.
-- **Every tool that places things measures by the Arrange options.** The owner: "i need the tools to
-  respect all the settings". Send To and Place Item's nine screen positions keep their edge distance
-  to what `arrange_options().how` counts as the item (`as_arranged`, on by default; off goes by the
-  box). A new tool that places or sizes items must do the same.
+- **Each filter has its own measuring options; the dock's are the dock's.** First every placing
+  tool followed the dock's Arrange options (`as_arranged`; the owner: "i need the tools to respect
+  all the settings"). Then, on beta70: "those options should only apply to the actively edited items
+  ... the filters needs their own separate toggles". So Send To, Place Item and Fit Item each have
+  *Use visible pixels* and *Ignore shadows & outlines* (`visible_pixels`, `no_shadows`, both on by
+  default; an old `as_arranged` unticked reads as boxes). The dock writes its own two options into
+  the Send To filters it drives. A new filter that places or sizes items gets the same two tick
+  boxes; a new dock tool uses `arrange_options().how`.
 - **A brought-along item flips round the leader's picture** (`plan()` in `src/placement/place-item.cpp`),
   measured without shadows, not round the leader's box: round the box, the camera's shadow added its
   width to the gap after a flip (the owner's screenshots, beta51).
@@ -289,8 +293,8 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   item was added, removed, shown, hidden or moved, and otherwise one item every quarter second in
   turn (how a widget that starts drawing is noticed). The space is the largest clear one holding the
   item's place (`anchor_x/y`, saved; retaken when the item is moved by anything else, which it lets
-  finish first). Whatever the place lies inside is not in the way. It follows the Arrange options
-  (`as_arranged`) and glides to a new space.
+  finish first). Whatever the place lies inside is not in the way. It measures by its own two tick
+  boxes and glides to a new space.
 - **Shadow, Glow & Outline's "Keep it on screen" only touches an item that is still**
   (`keep_in_view`): a plain item (no bounding box, not in a group, not rotated or locked) whose
   picture is on the canvas but whose effect runs off an edge is scaled down, keeping its shape,

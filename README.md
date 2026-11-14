@@ -330,10 +330,10 @@ nearest.
 - A background or a frame is not in the way: anything the item's place lies inside is ignored.
 - **Items never in the way**: items the free space ignores, such as a camera meant to overlap the
   game.
-- **Measure by Arrange options** (on as it comes): the items around it are measured the way the
-  dock's Arrange options say, by what is drawn (*Use visible pixels*) and with or without shadows
-  (*Ignore shadows & outlines*). An item that is drawing nothing is not in the way. With shadows
-  counted, the fitted item's own shadow keeps the gap too.
+- **Use visible pixels** and **Ignore shadows & outlines** (both on as they come) are this filter's
+  own settings; the dock's Arrange options do not change them. With the first, the items around it
+  are measured by what they draw, and an item that is drawing nothing is not in the way. With the
+  second unticked, shadows, glows and outlines keep the gap too, the fitted item's own included.
 
 Use it with Auto Frame's *Frame → Just the picture*, so the source is only the trimmed picture. One
 game capture can then sit in a full-screen scene (a widescreen game fills it, an emulator floats in the
@@ -485,8 +485,9 @@ Add **Send To (StageKit)** as a filter on the source you want to move, such as y
 spot and name each after its spot ("Camera top right").
 
 1. Choose where to send it: one of nine screen positions with a margin from the edge, or a saved spot.
-   The margin is kept to the picture you can see, as the dock's Arrange options say; untick *Use the
-   Arrange options* to keep it to the item's box.
+   The margin is kept to the picture you can see. *Use visible pixels* and *Ignore shadows &
+   outlines* are the filter's own settings (the dock's Arrange options do not change them); untick
+   the first to keep the margin to the item's box.
    For a saved spot, drag the camera where you want it in the preview and press *Save the item's
    current spot*. Its size is saved too if you tick *Also restore the item's size*. *A spot on the
    screen* puts the item's left and top edges at the numbers you give, in every scene alike; the
@@ -508,8 +509,9 @@ Place Item does the same job from the scene's side. Add **Place Item (StageKit)*
 
 1. Choose the item to move.
 2. Choose where to send it: one of nine screen positions with a margin from the edge, or a saved spot.
-   The margin is kept to the picture you can see, as the dock's Arrange options say; untick *Use the
-   Arrange options* to keep it to the item's box.
+   The margin is kept to the picture you can see. *Use visible pixels* and *Ignore shadows &
+   outlines* are the filter's own settings (the dock's Arrange options do not change them); untick
+   the first to keep the margin to the item's box.
    For a saved spot, drag the item where you want it and press *Save the item's current spot*.
 3. Optionally choose an item to bring along. It keeps its place relative to the moved item and flips to
    the other side if it would leave the screen.
