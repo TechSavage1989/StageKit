@@ -94,6 +94,17 @@ export function toolPicture(chosen: string | undefined, tool: string | undefined
 	return (chosen && BY_ID.get(chosen)) || BY_ID.get(TOOLS[tool ?? ""] ?? "") || plain("tool");
 }
 
+/** The dock's switches the pack has a picture of. */
+const OPTION_PICTURES: Record<string, string> = { snap: "tools/snap", guides: "tools/guides" };
+
+export function optionPicture(chosen: string | undefined, option: string | undefined): Picture {
+	return (chosen && BY_ID.get(chosen)) || BY_ID.get(OPTION_PICTURES[option ?? "snap"] ?? "") || plain("switch");
+}
+
+export function slidePicture(chosen: string | undefined, direction: string | undefined): Picture {
+	return (chosen && BY_ID.get(chosen)) || BY_ID.get(`tools/slide-${direction ?? "left"}`) || plain("move");
+}
+
 /** The picture a key was given by name, or the one that fits its filter. */
 export function choose(chosen: string | undefined, kind: string, settings: Settings = {}): Picture | undefined {
 	return (chosen && BY_ID.get(chosen)) || automatic(kind, settings);

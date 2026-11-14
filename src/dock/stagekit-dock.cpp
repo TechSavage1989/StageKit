@@ -845,6 +845,11 @@ public:
 				watch_for_drop();
 		});
 		snap_timer->start(120);
+		// A Stream Deck key or a remote control can ask for a slide.
+		set_slide_handler([this](int direction) {
+			if (!measuring_stopped())
+				slide_now(direction);
+		});
 		glide_timer_ = new QTimer(this);
 		QObject::connect(glide_timer_, &QTimer::timeout, this, [this] { step_glides(); });
 
@@ -2097,6 +2102,7 @@ void register_dock()
 			if (measuring_stopped())
 				return;
 			measuring_stop();
+			set_slide_handler(nullptr);
 			remove_preview_guides();
 			if (g_preview_menu && qApp)
 				qApp->removeEventFilter(g_preview_menu);

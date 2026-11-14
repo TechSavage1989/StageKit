@@ -24,4 +24,8 @@ void vendor_api_unregister();
 // no-op when obs-websocket is not installed.
 void vendor_emit_blur_changed(obs_source_t *filter, bool active);
 
+// Emits "OptionsChanged" when the dock's arrange options change, so a key
+// showing one can follow. Safe from any thread.
+void vendor_emit_options_changed();
+
 } // namespace stagekit

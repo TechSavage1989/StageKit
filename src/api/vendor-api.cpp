@@ -20,6 +20,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include "../blur/ramp-blur.hpp"
 #include "../capture/auto-capture.hpp"
+#include "../dock/arrange-tools.hpp"
 #include "../frame/auto-frame.hpp"
 #include "../third-party/obs-websocket-api.h"
 
@@ -37,8 +38,9 @@ namespace {
 
 std::atomic<obs_websocket_vendor> g_vendor{nullptr};
 
-const char *const kRequests[] = {"GetVersion", "ListBlurFilters", "BlurOn",    "BlurOff",        "BlurToggle",
-				 "SetBlur",    "BlurAll",         "HookFront", "SetPictureShape"};
+const char *const kRequests[] = {"GetVersion",      "ListBlurFilters", "BlurOn",    "BlurOff",
+				 "BlurToggle",      "SetBlur",         "BlurAll",   "HookFront",
+				 "SetPictureShape", "GetOptions",      "SetOption", "Slide"};
 
 void fail(obs_data_t *response, const char *message)
 {
@@ -238,6 +240,72 @@ void req_hook_front(obs_data_t *request, obs_data_t *response, void *)
 	obs_source_release(source);
 }
 
+// The dock's switches a key can hold: its name here, and the option.
+bool *option_named(ArrangeOptions &o, const std::string &name)
+{
+	if (name == "snap")
+		return &o.live_snap;
+	if (name == "guides")
+		return &o.guides;
+	if (name == "limit")
+		return &o.limit_resize;
+	if (name == "slide")
+		return &o.send_slide;
+	if (name == "everyScene")
+		return &o.send_every_scene;
+	if (name == "keepShape")
+		return &o.keep_shape;
+	return nullptr;
+}
+
+void write_options(obs_data_t *response)
+{
+	ArrangeOptions o = arrange_options();
+	for (const char *name : {"snap", "guides", "limit", "slide", "everyScene", "keepShape"})
+		obs_data_set_bool(response, name, *option_named(o, name));
+}
+
+void req_get_options(obs_data_t *, obs_data_t *response, void *)
+{
+	write_options(response);
+	obs_data_set_bool(response, "success", true);
+}
+
+// { option, mode?: "toggle" (as it comes) | "on" | "off" }
+void req_set_option(obs_data_t *request, obs_data_t *response, void *)
+{
+	ArrangeOptions o = arrange_options();
+	bool *option = option_named(o, obs_data_get_string(request, "option"));
+	if (!option) {
+		fail(response, "option must be snap, guides, limit, slide, everyScene or keepShape");
+		return;
+	}
+	const std::string mode = obs_data_get_string(request, "mode");
+	*option = mode == "on" ? true : mode == "off" ? false : !*option;
+	const bool on = *option;
+	set_arrange_options(o);
+	obs_data_set_bool(response, "on", on);
+	obs_data_set_bool(response, "success", true);
+}
+
+// { direction: "up", "down-left", "centre", ... }
+void req_slide(obs_data_t *request, obs_data_t *response, void *)
+{
+	static const char *const kDirections[] = {"up-left", "up",        "up-right", "left",      "centre",
+						  "right",   "down-left", "down",     "down-right"};
+	const std::string wanted = obs_data_get_string(request, "direction");
+	for (int i = 0; i < 9; i++) {
+		if (wanted != kDirections[i])
+			continue;
+		if (request_slide(i))
+			obs_data_set_bool(response, "success", true);
+		else
+			fail(response, "The StageKit dock is not there to slide with");
+		return;
+	}
+	fail(response, "direction must be up, down, left, right, up-left, up-right, down-left, down-right or centre");
+}
+
 } // namespace
 
 void vendor_api_register()
@@ -265,6 +333,9 @@ void vendor_api_register()
 		{"BlurAll", req_blur_all},
 		{"HookFront", req_hook_front},
 		{"SetPictureShape", req_set_picture_shape},
+		{"GetOptions", req_get_options},
+		{"SetOption", req_set_option},
+		{"Slide", req_slide},
 	};
 	for (const auto &r : requests) {
 		if (!obs_websocket_vendor_register_request(vendor, r.name, r.fn, nullptr))
@@ -294,6 +365,17 @@ void vendor_emit_blur_changed(obs_source_t *filter, bool active)
 	obs_data_set_string(data, "filterName", obs_source_get_name(filter));
 	obs_data_set_bool(data, "active", active);
 	obs_websocket_vendor_emit_event(vendor, "BlurChanged", data);
+	obs_data_release(data);
+}
+
+void vendor_emit_options_changed()
+{
+	obs_websocket_vendor vendor = g_vendor.load();
+	if (!vendor)
+		return;
+	obs_data_t *data = obs_data_create();
+	write_options(data);
+	obs_websocket_vendor_emit_event(vendor, "OptionsChanged", data);
 	obs_data_release(data);
 }
 

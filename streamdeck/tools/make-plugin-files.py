@@ -17,7 +17,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, "..")
 PLUGIN = os.path.join(ROOT, "com.techsavage1989.stagekit.sdPlugin")
 BASE = "com.techsavage1989.stagekit"
-VERSION = "0.4.0.0"
+VERSION = "0.5.0.0"
 
 # The pack picture each feature's key starts with (its "on" and "off" look).
 PICTURES = {
@@ -204,6 +204,33 @@ def main():
     key_pictures("blurall", "blur-types/gaussian-on", "blur-types/gaussian-off")
     page("blur-all", "StageKit blur everything", "")
     add("blurall", "Blur everything", "Switches every Ramp Blur on, or all of them off again. Shows on while any is on.", "blur-all", "imgs/actions/blur/icon", two("blurall"))
+
+    key_pictures("option", "tools/snap-on", "tools/snap-off")
+    switches = [
+        ("snap", "Snap on release"),
+        ("guides", "Guides"),
+        ("limit", "Stop resizing at edges"),
+        ("slide", "Slide to the next edge"),
+        ("everyScene", "Send to: in every scene"),
+        ("keepShape", "Keep shape when resizing"),
+    ]
+    page("option", "StageKit dock switch", options("Switch", "option", "snap", switches) + PRESS)
+    add("option", "Dock switch", "One of the StageKit dock's switches on a key: snap on release, guides, stop resizing at edges. Shows which way it is.", "option", "imgs/actions/switch/icon", two("option"))
+
+    key_pictures("slide", "tools/slide-left", None)
+    ways = [
+        ("left", "Left"),
+        ("right", "Right"),
+        ("up", "Up"),
+        ("down", "Down"),
+        ("up-left", "Up and left"),
+        ("up-right", "Up and right"),
+        ("down-left", "Down and left"),
+        ("down-right", "Down and right"),
+        ("centre", "Centre in the free space"),
+    ]
+    page("slide", "StageKit slide", options("Slide", "direction", "left", ways))
+    add("slide", "Slide to next edge", "Slides the item selected in OBS to the next edge that way; the next press passes it.", "slide", "imgs/actions/move/icon", one("slide"))
 
     # The first two keys, kept for the keys already made with them.
     two_lists = (

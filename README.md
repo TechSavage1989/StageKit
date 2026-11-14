@@ -702,6 +702,9 @@ With obs-websocket, send `CallVendorRequest` with `vendorName: "StageKit"`:
 | `BlurAll` | `mode?`: `on`, `off` or `toggle` | `active` |
 | `HookFront` | `sourceName`: a Game Capture or a Window Capture; `transition?`: an OBS transition's kind or `none`; `transitionMs?` | `executable`: the program in front, which the capture now takes. An Auto Capture on the source is switched off |
 | `SetPictureShape` | `sourceName`: a source with an Auto Frame; `shape`: `4:3`, `8:7`, a number, or `auto`; `untilGone?` (true unless given): drop it when that game's capture ends | none |
+| `GetOptions` | none | The dock's switches: `snap`, `guides`, `limit`, `slide`, `everyScene`, `keepShape` |
+| `SetOption` | `option`: one of those names; `mode?`: `toggle` (unless given), `on` or `off` | `on`: which way it is now. An `OptionsChanged` event with all six follows every change |
+| `Slide` | `direction`: `left`, `right`, `up`, `down`, `up-left`, `up-right`, `down-left`, `down-right` or `centre` | none. Slides the item the dock is on, as its arrows do |
 
 Every response has `success` and, on failure, `error`. A `BlurChanged` event is sent when a blur turns
 on or off. The other tools are filters, so the standard `SetSourceFilterEnabled` request triggers them.
@@ -733,10 +736,12 @@ choose from, holding only what that key is for.
 | **Hook capture** | Makes a Game Capture or a Window Capture take whatever window or game is in front when you press it. *Change with* and *Lasting* choose how the capture changes over: a fade (as it comes), a cut, or any other transition OBS has. An Auto Capture on that capture is switched off so it stays where you put it; the **Auto Capture** key, set to *Switches it on*, hands it back |
 | **Window switch** | For a scene with an Active App filter: shows the next of its *Captures you switch to*, or goes back to following the apps |
 | **Arrange tool** | One of the dock's arrange tools on a key: line up an edge or centre, space out evenly, snap, make the same width, height or size, or copy a transform to all or to the chosen scenes. It works on the items selected in OBS's preview |
+| **Dock switch** | One of the dock's switches on a key: *Snap on release*, *Guides*, *Stop resizing at edges*, *Slide to the next edge*, *In every scene* or *Keep shape*. It shows which way the switch is, also when you change it in the dock |
+| **Slide to next edge** | Slides the item selected in OBS left, right, up, down or cornerwise to the next edge, or centres it in the free space, with the dock's edge distance and timing. The next press passes that edge |
 | **Blur everything** | Switches every Ramp Blur on, and the next press switches them all off. It shows on while any is on |
 
 A key that cannot reach OBS, or whose target is gone, shows Stream Deck's yellow warning triangle when
-pressed. *Picture shape* and *Hook capture* need StageKit 0.1.0-beta84 or later in OBS. Keys made with
+pressed. *Picture shape* and *Hook capture* need StageKit 0.1.0-beta84 or later in OBS; *Dock switch* and *Slide to next edge* need 0.1.0-beta85. Keys made with
 the first versions' *Filter switch* and *Move* keep working; those two are no longer in the list.
 
 **Pictures.** The keys use the StageKit icon pack. Left on *Automatic*, a key takes the picture that
