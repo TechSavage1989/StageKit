@@ -93,6 +93,40 @@ std::string program_of(obs_sceneitem_t *item)
 	return lowered(program);
 }
 
+// The window title a capture was aimed at, in lower case: the first part of
+// the same setting.
+std::string title_of(obs_sceneitem_t *item)
+{
+	obs_source_t *source = item ? obs_sceneitem_get_source(item) : nullptr;
+	if (!source)
+		return {};
+	obs_data_t *settings = obs_source_get_settings(source);
+	const std::string window = obs_data_get_string(settings, "window");
+	obs_data_release(settings);
+	std::string title;
+	for (size_t i = 0; i < window.size() && window[i] != ':'; i++) {
+		if (window.compare(i, 3, "#3A") == 0) {
+			title += ':';
+			i += 2;
+		} else if (window.compare(i, 3, "#22") == 0) {
+			title += '#';
+			i += 2;
+		} else {
+			title += window[i];
+		}
+	}
+	return lowered(title);
+}
+
+// How many letters two titles start with in common.
+size_t same_start(const std::string &a, const std::string &b)
+{
+	size_t n = 0;
+	while (n < a.size() && n < b.size() && a[n] == b[n])
+		n++;
+	return n;
+}
+
 class ActiveApp {
 public:
 	ActiveApp(obs_data_t *settings, obs_source_t *source) : source_(source)
@@ -205,26 +239,41 @@ public:
 
 		struct Slot {
 			obs_sceneitem_t *item = nullptr;
-			std::string program;
+			std::string program, title;
 			bool open = false, visible = false;
 		};
-		std::string front_program;
-		for (const OpenWindow &w : windows)
-			if (w.foreground)
-				front_program = lowered(w.executable);
 		std::vector<Slot> slots(names.size());
+		for (size_t i = 0; i < names.size(); i++) {
+			slots[i].item = find_item(parent_, names[i]);
+			slots[i].program = slots[i].item ? program_of(slots[i].item) : std::string();
+			slots[i].title = slots[i].item ? title_of(slots[i].item) : std::string();
+		}
+		// Whether a window is the one a capture is for. One capture for a
+		// program: any of its windows. Several captures for the same
+		// program (two builds of an emulator share a file name): the one
+		// whose window title starts most like this window's, if any does.
+		auto is_for = [&](const OpenWindow &w, size_t index) {
+			const Slot &slot = slots[index];
+			if (slot.program.empty() || lowered(w.executable) != slot.program)
+				return false;
+			const std::string title = lowered(w.title);
+			size_t best = 0;
+			for (const Slot &other : slots)
+				if (other.program == slot.program)
+					best = std::max(best, same_start(title, other.title));
+			return best < 3 || same_start(title, slot.title) == best;
+		};
 		int front = -1, visible_count = 0, first_visible = -1;
 		for (size_t i = 0; i < names.size(); i++) {
 			Slot &slot = slots[i];
-			slot.item = find_item(parent_, names[i]);
 			if (!slot.item)
 				continue;
-			slot.program = program_of(slot.item);
 			slot.visible = obs_sceneitem_visible(slot.item);
-			if (!slot.program.empty()) {
-				for (const OpenWindow &w : windows)
-					slot.open = slot.open || lowered(w.executable) == slot.program;
-				if (front < 0 && slot.program == front_program)
+			for (const OpenWindow &w : windows) {
+				if (!is_for(w, i))
+					continue;
+				slot.open = true;
+				if (front < 0 && w.foreground)
 					front = (int)i;
 			}
 			if (slot.visible) {

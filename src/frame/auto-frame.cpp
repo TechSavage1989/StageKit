@@ -485,10 +485,13 @@ public:
 			rule_ratio = 0.0;
 			double usual = 0.0;
 			bool seen_before = false;
+			// The rule that says the most wins: "primehack" over "dolphin"
+			// for a window of Dolphin.exe titled PrimeHack.
+			size_t said = 0;
 			for (const auto &[text, ratio] : settings_.rules) {
-				if (!program.empty() && program.find(text) != std::string::npos) {
+				if (!program.empty() && text.size() > said && program.find(text) != std::string::npos) {
 					rule_ratio = ratio;
-					break;
+					said = text.size();
 				}
 			}
 			if (rule_ratio <= 0.0 && settings_.known_programs && !executable.empty()) {
@@ -668,6 +671,12 @@ public:
 		program = lower(program);
 		if (program.size() > 4 && program.compare(program.size() - 4, 4, ".exe") == 0)
 			program.resize(program.size() - 4);
+		// A window's title can be given instead of a file name. The list
+		// is kept as "name = shape, name = shape", so a title is used up
+		// to its first comma or equals sign: still enough to find it by.
+		program = program.substr(0, program.find_first_of(",="));
+		while (!program.empty() && (program.back() == ' ' || program.back() == '\t'))
+			program.pop_back();
 		const bool ok = !program.empty() && parse_ratio(shape) > 0.0;
 		if (ok) {
 			std::vector<std::pair<std::string, double>> rules;
@@ -1730,6 +1739,7 @@ obs_properties_t *get_properties(void *data)
 	obs_property_set_long_description(forget, forget_tip.c_str());
 	obs_property_t *program = obs_properties_add_list(props, "rule_program", obs_module_text("Frame.RuleProgram"),
 							  OBS_COMBO_TYPE_EDITABLE, OBS_COMBO_FORMAT_STRING);
+	obs_property_set_long_description(program, obs_module_text("Frame.RuleProgram.Tip"));
 	if (self) {
 		std::vector<std::string> names;
 		const std::string captured = self->captured_executable();
@@ -1738,6 +1748,11 @@ obs_properties_t *get_properties(void *data)
 		for (const std::string &name : open_program_names())
 			if (std::find(names.begin(), names.end(), name) == names.end())
 				names.push_back(name);
+		// And the open windows by title, for telling apart two programs
+		// with the same file name.
+		for (const OpenWindow &w : open_windows())
+			if (!w.title.empty() && std::find(names.begin(), names.end(), w.title) == names.end())
+				names.push_back(w.title);
 		for (const std::string &name : names)
 			obs_property_list_add_string(program, name.c_str(), name.c_str());
 	}

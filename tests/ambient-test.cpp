@@ -3087,6 +3087,52 @@ int main(int argc, char **argv)
 			CHECK(only(any_item), "with none of the apps open, the first in the list stays on show");
 			CHECK(obs_sceneitem_visible(second_item), "items not on the list are left alone");
 
+			// Two captures of programs with the same file name: each goes
+			// with the window whose title starts like the one it was aimed at.
+			{
+				obs_scene_t *ts = obs_scene_create("Twin Scene");
+				obs_source_t *plain = capture("Emu Plain", "Dolphin 5.0:Wnd:Dolphin.exe", 0xFF00FFFFLL);
+				obs_source_t *prime = capture("Emu Prime", "PrimeHack Release [v1.0.4]:Wnd:Dolphin.exe",
+							      0xFFFF00FFLL);
+				obs_sceneitem_t *plain_item = obs_scene_add(ts, plain);
+				obs_sceneitem_t *prime_item = obs_scene_add(ts, prime);
+				obs_data_t *td = obs_data_create();
+				obs_data_set_int(td, "transition_ms", 0);
+				obs_source_t *twin = obs_source_create("stagekit_active_app", "Twin Apps", td, nullptr);
+				obs_source_filter_add(obs_scene_get_source(ts), twin);
+				sleep_ms(80);
+				obs_properties_t *tp = obs_source_properties(twin);
+				pick_into_list(twin, tp, "items|a", "Emu Plain");
+				pick_into_list(twin, tp, "items|a", "Emu Prime");
+				obs_properties_destroy(tp);
+				auto see_twin = [&](const char *windows) {
+					calldata_t cd = {};
+					calldata_set_string(&cd, "windows", windows);
+					proc_handler_call(obs_source_get_proc_handler(twin), "set_test_windows", &cd);
+					calldata_free(&cd);
+					sleep_ms(450);
+				};
+				see_twin("Notes|notes.exe|\nDolphin 5.0 - JIT64 - Some Game|dolphin.exe|front");
+				const bool plain_first = obs_sceneitem_visible(plain_item) &&
+							 !obs_sceneitem_visible(prime_item);
+				see_twin("Notes|notes.exe|\nDolphin 5.0 - JIT64 - Some Game|dolphin.exe|\n"
+					 "PrimeHack Release [v1.0.4] - Another Game|dolphin.exe|front");
+				const bool prime_next = !obs_sceneitem_visible(plain_item) &&
+							obs_sceneitem_visible(prime_item);
+				see_twin("Notes|notes.exe|front\nDolphin 5.0 - JIT64 - Some Game|dolphin.exe|");
+				const bool plain_back = obs_sceneitem_visible(plain_item) &&
+							!obs_sceneitem_visible(prime_item);
+				CHECK(plain_first && prime_next && plain_back,
+				      "two captures of programs with one file name each follow their own window, by its title (%d %d %d)",
+				      plain_first, prime_next, plain_back);
+				obs_source_filter_remove(obs_scene_get_source(ts), twin);
+				obs_source_release(twin);
+				obs_data_release(td);
+				obs_source_release(plain);
+				obs_source_release(prime);
+				obs_scene_release(ts);
+			}
+
 			// A change made by hand is kept until something happens.
 			obs_sceneitem_set_visible(model_item, true);
 			obs_sceneitem_set_visible(any_item, false);
@@ -3808,6 +3854,25 @@ int main(int argc, char **argv)
 				auto [d4, dp4] = look(1200);
 				CHECK(std::fabs(d4 - 145) <= 1.5,
 				      "and it is used straight away the next time, at any size (trim %.0f)", d4);
+				// Two builds with one file name, told apart by the window's
+				// title: the saved shape that says the most is the one used.
+				obs_data_set_string(bd, "file", paint2("odd-shape.png", 1280, 720, 290).c_str());
+				obs_source_update(barred, bd);
+				obs_data_set_string(bf, "rules_text", "oddemu = 16:9, special build = 0.97");
+				obs_source_update(trimmer, bf);
+				obs_data_t *twin = obs_source_get_settings(barred);
+				obs_data_set_string(twin, "window", "Special Build 2:OddWnd:oddemu.exe");
+				obs_data_release(twin);
+				auto [d5, dp5] = look(1500);
+				twin = obs_source_get_settings(barred);
+				obs_data_set_string(twin, "window", "Odd Emulator:OddWnd:oddemu.exe");
+				obs_data_release(twin);
+				auto [d6, dp6] = look(1500);
+				CHECK(std::fabs(d5 - 290) <= 1.5 && d6 < 5.0,
+				      "a shape saved for part of a window's title wins over one for the program's file name (trim %.0f; the other window %.0f)",
+				      d5, d6);
+				obs_data_set_string(bf, "rules_text", "oddemu = 0.97");
+				obs_source_update(trimmer, bf);
 				obs_data_t *cap2 = obs_source_get_settings(barred);
 				obs_data_set_string(cap2, "window", "");
 				obs_data_release(cap2);
