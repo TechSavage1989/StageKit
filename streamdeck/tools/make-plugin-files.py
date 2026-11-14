@@ -17,7 +17,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, "..")
 PLUGIN = os.path.join(ROOT, "com.techsavage1989.stagekit.sdPlugin")
 BASE = "com.techsavage1989.stagekit"
-VERSION = "0.5.1.0"
+VERSION = "0.6.0.0"
 
 # The pack picture each feature's key starts with (its "on" and "off" look).
 PICTURES = {
@@ -184,12 +184,12 @@ def main():
     shapes = [("auto", "Automatic (hand it back)")] + [(s, s) for s in ("4:3", "8:7", "3:2", "10:9", "16:9", "16:10", "5:4", "1:1", "64:49")]
     page(
         "shape",
-        "StageKit picture shape",
+        "StageKit set aspect ratio",
         one_list("Capture")
-        + options("Shape", "shape", "4:3", shapes)
-        + options("Keep it", "keep", "game", [("game", "For this game, then automatic again"), ("always", "Until I change it")]),
+        + options("Ratio", "shape", "4:3", shapes)
+        + options("Keep ratio", "keep", "game", [("game", "This game only"), ("always", "Until changed")]),
     )
-    add("shape", "Picture shape", "Sets a game's picture shape by hand: 4:3, 8:7 and so on, or back to automatic. It can last just for the game being captured.", "shape", "imgs/actions/switch/icon", one("shape"))
+    add("shape", "Set Aspect Ratio", "Sets a game's aspect ratio by hand: 4:3, 8:7 and so on, or back to automatic. It can last just for the game being captured.", "shape", "imgs/actions/switch/icon", one("shape"))
 
     key_pictures("hookgame", "capture/game-on", None)
     page(
@@ -203,23 +203,23 @@ def main():
         '			<sdpi-textfield setting="lasting" placeholder="300" pattern="[0-9]*"></sdpi-textfield>\n'
         "		</sdpi-item>\n",
     )
-    add("hook", "Hook capture", "Makes a Game Capture or a Window Capture take the window or game that is in front right now.", "hook", "imgs/actions/hook/icon", one("hookgame"))
+    add("hook", "Capture Front Window", "Makes a Game Capture or a Window Capture take the window or game that is in front right now.", "hook", "imgs/actions/hook/icon", one("hookgame"))
 
     key_pictures("appswitch", "filters/next-capture", None)
     page(
         "appswitch",
-        "StageKit window switch",
-        one_list("Scene") + options("A press", "step", "next", [("next", "Shows the next capture"), ("back", "Goes back to following the apps")]),
+        "StageKit next manual capture",
+        one_list("Scene") + options("On press", "step", "next", [("next", "Next capture"), ("back", "Back to automatic")]),
     )
-    add("appswitch", "Window switch", "Steps an Active App scene to the next of its captures by hand, or back to following the apps.", "appswitch", "imgs/actions/move/icon", one("appswitch"))
+    add("appswitch", "Next Manual Capture", "Steps a Follow Active App scene to the next of its captures by hand, or back to following the apps.", "appswitch", "imgs/actions/move/icon", one("appswitch"))
 
     key_pictures("toolkey", "plain/tool", None)
     page("tool", "StageKit arrange tool", options("Tool", "tool", "left", tools_list()))
     add("tool", "Arrange tool", "Lines up, spaces out, snaps or resizes the items selected in OBS, or copies a transform to other scenes.", "tool", "imgs/actions/tool/icon", one("toolkey"))
 
     key_pictures("blurall", "blur-types/gaussian-on", "blur-types/gaussian-off")
-    page("blur-all", "StageKit blur everything", "")
-    add("blurall", "Blur everything", "Switches every Ramp Blur on, or all of them off again. Shows on while any is on.", "blur-all", "imgs/actions/blur/icon", two("blurall"))
+    page("blur-all", "StageKit blur all", "")
+    add("blurall", "Blur All", "Switches every Blur on, or all of them off again. Shows on while any is on.", "blur-all", "imgs/actions/blur/icon", two("blurall"))
 
     key_pictures("option", "tools/snap-on", "tools/snap-off")
     switches = [
@@ -230,8 +230,8 @@ def main():
         ("everyScene", "Send to: in every scene"),
         ("keepShape", "Keep shape when resizing"),
     ]
-    page("option", "StageKit dock switch", options("Switch", "option", "snap", switches) + PRESS)
-    add("option", "Dock switch", "One of the StageKit dock's switches on a key: snap on release, guides, stop resizing at edges. Shows which way it is.", "option", "imgs/actions/switch/icon", two("option"))
+    page("option", "StageKit dock option", options("Option", "option", "snap", switches) + PRESS)
+    add("option", "Dock Option", "One of the StageKit dock's options on a key: snap on release, guides, stop resizing at edges. Shows which way it is.", "option", "imgs/actions/switch/icon", two("option"))
 
     key_pictures("slide", "tools/slide-left", None)
     ways = [
@@ -246,7 +246,7 @@ def main():
         ("centre", "Centre in the free space"),
     ]
     page("slide", "StageKit slide", options("Slide", "direction", "left", ways))
-    add("slide", "Slide to next edge", "Slides the item selected in OBS to the next edge that way; the next press passes it.", "slide", "imgs/actions/move/icon", one("slide"))
+    add("slide", "Slide to Edge", "Slides the item selected in OBS to the next edge that way; the next press passes it.", "slide", "imgs/actions/move/icon", one("slide"))
 
     # The first two keys, kept for the keys already made with them.
     two_lists = (

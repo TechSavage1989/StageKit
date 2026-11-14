@@ -17,7 +17,7 @@ StageKit is for streamers who build their scenes by hand. Each tool replaces a s
 takes several filters, source clones or wrapper scenes. Everything can be triggered from OBS itself,
 from hotkeys, or from the Stream Deck OBS Studio plugin's *Filter* and *Source* keys.
 
-- **Ramp Blur** (filter): blurs a source in and out smoothly. Seven types: Gaussian, Dual Kawase, Box,
+- **Blur** (filter): blurs a source in and out smoothly. Seven types: Gaussian, Dual Kawase, Box,
   Pixelate, Hexagons, Zoom and Motion.
 - **Ambient Background** (source): a soft, drifting backdrop built from an image or another source,
   optionally tinted by whatever capture is live.
@@ -29,27 +29,27 @@ from hotkeys, or from the Stream Deck OBS Studio plugin's *Filter* and *Source* 
   its edges and outlines it. A shadow added after it takes the same shape.
 - **Auto Frame** (filter): gives a game or emulator capture a fixed frame and fits any resolution inside
   it, so one scene serves every picture shape.
-- **Fit Item** (scene filter): one capture for every shape. A picture with the screen's shape fills it;
+- **Fit to Space** (scene filter): one capture for every shape. A picture with the screen's shape fills it;
   an emulator's squarer picture floats centred inside a margin.
 - **Auto Capture** (filter): one Game Capture finds whatever game is running, windowed or full-screen,
   with no list of games to keep. Windows only.
-- **Active App** (scene filter): a scene has a capture for each of several apps, and the one you are
+- **Follow Active App** (scene filter): a scene has a capture for each of several apps, and the one you are
   using is shown, with a fade. The last one stays while something else is in front, and an earlier
   one comes back when an app closes. Windows only.
 - **Program Trigger** (filter): while a program is open, shows chosen items and switches chosen filters
   on; puts them back when it closes. Windows only.
 - **Cropped View** (source): part of another source, such as your camera cropped square, as a source of
   its own. Filters on the view follow the crop, so no wrapper scene is needed.
-- **Ramp Zoom** (filter): zooms smoothly into a point of a source and back out.
-- **Send To** (filter): put it on your camera, once per spot. Each one is a Stream Deck key that moves
+- **Zoom** (filter): zooms smoothly into a point of a source and back out.
+- **Move Source** (filter): put it on your camera, once per spot. Each one is a Stream Deck key that moves
   the camera to a corner or to a spot you saved, in every scene the camera is in.
-- **Place Item** (scene filter): the same move, set up on a scene instead of on the source.
+- **Move Scene Item** (scene filter): the same move, set up on a scene instead of on the source.
 - **Show/Hide Animation** (scene filter): slides or pops an item in and out when it is shown or hidden.
-- **Visibility Link** (scene filter): ties eye icons together. Show only one of a set of items, or show
+- **Link Visibility** (scene filter): ties eye icons together. Show only one of a set of items, or show
   and hide a set together.
 - **Match Item** (scene filter): keeps an item lined up with an item in another scene, so titles sit in
   the same place in every scene.
-- **Layout** (scene filter): saves an arrangement of a scene's items and glides back to it.
+- **Apply Layout** (scene filter): saves an arrangement of a scene's items and glides back to it.
 - **StageKit dock**: click an item into place, and make Stream Deck keys for its positions in one click.
 - **Line up, resize and snap**: from a right-click in the preview, hotkeys or the dock, measured by
   what is actually drawn in each item.
@@ -58,9 +58,9 @@ from hotkeys, or from the Stream Deck OBS Studio plugin's *Filter* and *Source* 
 
 These are real frames rendered by the plugin in its automated tests, using made-up sample images.
 
-**Ramp Blur: every blur type at three strengths**
+**Blur: every blur type at three strengths**
 
-<p align="center"><img src="docs/images/blur-types-game.png" width="900" alt="A sample game frame blurred with each of the six Ramp Blur types at three strengths"></p>
+<p align="center"><img src="docs/images/blur-types-game.png" width="900" alt="A sample game frame blurred with each of the six Blur types at three strengths"></p>
 
 **Ambient Background: from image to finished backdrop**
 
@@ -97,7 +97,7 @@ On Windows, with the installer:
 1. Download the file ending in `windows-x64-Installer.exe` from the releases page.
 2. Close OBS, then run the installer. Windows may warn that the publisher is unknown, because the
    installer is not signed: choose *More info*, then *Run anyway*, if you trust this download.
-3. Start OBS. *Ramp Blur (StageKit)* and the other tools appear in the filter list of any source,
+3. Start OBS. *Blur (StageKit)* and the other tools appear in the filter list of any source,
    *Ambient Background (StageKit)* in the list of sources, and the dock under *Docks → StageKit*.
 
 The installer puts the plugin in `C:\ProgramData\obs-studio\plugins\stagekit` and adds an entry under
@@ -114,9 +114,9 @@ Neither route has been checked on a real Windows machine yet; please report anyt
 programs to capture, items to link), it works the same way: choose from the box to add, and press the
 ✕ on a row to remove that entry.
 
-### Ramp Blur
+### Blur
 
-Add **Ramp Blur (StageKit)** as a filter on a source or scene. The filter's own on/off switch is the
+Add **Blur (StageKit)** as a filter on a source or scene. The filter's own on/off switch is the
 blur: turning it on ramps the blur in, turning it off ramps it out and then really switches the filter
 off, so it costs nothing while off.
 
@@ -137,15 +137,15 @@ Ways to trigger it:
 - A Stream Deck OBS Studio plugin *Filter* key pointing at the filter.
 - Hotkeys under the source in *Settings → Hotkeys*: `StageKit: Blur Toggle / On / Off`.
 - `StageKit: Blur All Toggle / On / Off` in the top section of *Settings → Hotkeys*, which drives every
-  Ramp Blur at once.
+  Blur at once.
 
 **One key for several sources.** Under *Blur these too*, choose a source in the *Add a source* box,
 once for each source; each becomes a row. From then on, switching this one filter on or off, from a single Stream
-Deck *Filter* key, blurs and clears every source in the list. A listed source with no Ramp Blur of its
-own is given one with the same settings (*Ramp Blur (follows another)*); one that already has a Ramp
+Deck *Filter* key, blurs and clears every source in the list. A listed source with no Blur of its
+own is given one with the same settings (*Blur (follows another)*); one that already has a Ramp
 Blur keeps its own settings. Remove a source with the ✕ on its row.
 
-To replace a Composite Blur + Move chain: add one Ramp Blur, pick the type and strength (Composite
+To replace a Composite Blur + Move chain: add one Blur, pick the type and strength (Composite
 Blur's Pixelate at radius 5 is *Pixelate* at strength 4), point your existing keys at it, then delete
 the old filters.
 
@@ -229,14 +229,14 @@ widget.
 
 It works with the other tools:
 
-- The source **keeps its size**, so nothing moves or resizes in any scene, and Send To keys, layouts
+- The source **keeps its size**, so nothing moves or resizes in any scene, and Move Source keys, layouts
   and the line-up tools carry on as before. The line-up tools measure the new shape when *Use visible
   pixels* is on.
 - **Shadow, Glow & Outline** after it in the filter list casts a shadow of the new shape. If you add
   Corners & Edges to a source that already has a shadow, it places itself above the shadow for you.
 - After an **Auto Frame**, it shapes the game picture inside the frame, and follows it when the picture
   changes shape.
-- Ramp Blur and Ramp Zoom can go before it (the blur or zoom stays inside the shape) or after it.
+- Blur and Zoom can go before it (the blur or zoom stays inside the shape) or after it.
 
 ### Auto Frame
 
@@ -298,16 +298,16 @@ open programs (or find its file with *…or find it on this computer*), choose i
 *Remember this shape for this program*. A shape you save is always obeyed as it is. Emulators that play
 several consoles, such as RetroArch and Dolphin, are not built in because their shape depends on the game.
 
-To set the shape from a Stream Deck, add **Picture Shape key (StageKit)** next to Auto Frame, once per
+To set the shape from a Stream Deck, add **Aspect Ratio Preset (StageKit)** next to Auto Frame, once per
 shape, and point a *Filter* key at it. Switching it on sets the shape and it switches itself off; a key
 set to *Automatic* hands control back.
 
 Because the source's size no longer changes, one scene can replace a scene per picture shape and the
 automation that switched between them. Put Shadow, Glow & Outline after it and the shadow follows the picture.
 
-### Fit Item
+### Fit to Space
 
-Add **Fit Item (StageKit)** as a filter on a *scene*. It places one item of that scene for you.
+Add **Fit to Space (StageKit)** as a filter on a *scene*. It places one item of that scene for you.
 
 - **Item**: the item to place, usually your game capture.
 - **Fit it in**: *The whole screen*, *A box I set* (left, top, width, height in canvas pixels), or
@@ -339,12 +339,12 @@ game capture can then sit in a full-screen scene (a widescreen game fills it, an
 middle) and in a scene with a camera and chat beside it (fitted to that scene's game box), with nothing
 to change when you switch games. A shadow on the source is allowed for.
 
-It works on any source. For a **Window Capture**, add Fit Item to the scene and choose the window
+It works on any source. For a **Window Capture**, add Fit to Space to the scene and choose the window
 capture: the window fills the space when it has the space's shape and floats centred otherwise, and it
 stays fitted while you drag the window to a new size, because the fitting itself is done by OBS on
-every frame. Use one Fit Item filter for each item to be fitted.
+every frame. Use one Fit to Space filter for each item to be fitted.
 
-Fit Item takes over the item's position and bounding box and removes its rotation. Switch the
+Fit to Space takes over the item's position and bounding box and removes its rotation. Switch the
 filter off to move the item by hand.
 
 ### Auto Capture
@@ -403,10 +403,10 @@ Game Capture, Window Capture or other live source.
 When first added it puts itself straight after an Auto Frame if there is one, and otherwise first in
 the list; after that the order is yours.
 
-### Active App
+### Follow Active App
 
 For a scene that shows whichever app you are working in. Give the scene a Window Capture for each app
-(Blender, ZBrush, a browser, and so on), then add **Active App (StageKit)** as a filter on the *scene*
+(Blender, ZBrush, a browser, and so on), then add **Follow Active App (StageKit)** as a filter on the *scene*
 and add those captures to its list. Windows only.
 
 Which app a capture belongs to is read from the capture itself, so there is nothing to type. From then
@@ -442,7 +442,7 @@ it to *Captures you switch to*, and hide it. Then:
 
 It acts only when one of those things happens, so a capture you show by hand stays until then. A
 minimised window counts as closed. The top line says what is showing. Switch the filter off to pause it.
-Each capture can have its own [Fit Item](#fit-item), shadow and blur; they follow the capture.
+Each capture can have its own [Fit to Space](#fit-item), shadow and blur; they follow the capture.
 
 ### Program Trigger
 
@@ -473,17 +473,17 @@ settled.
 
 Use it when one camera is wanted in more than one shape. OBS applies an item's crop after the source's
 filters, so a shadow on the camera is cut off by the crop; a Cropped View is the cropped picture as a
-source, and a Shadow, Glow & Outline or Ramp Zoom added to the view follows it. Make one view per shape. The
+source, and a Shadow, Glow & Outline or Zoom added to the view follows it. Make one view per shape. The
 camera is still captured only once.
 
-### Ramp Zoom
+### Zoom
 
-Add **Ramp Zoom (StageKit)** as a filter on a source. Turning it on zooms into the point you choose;
+Add **Zoom (StageKit)** as a filter on a source. Turning it on zooms into the point you choose;
 turning it off zooms back out. It has a `StageKit: Zoom Toggle` hotkey under the source.
 
-### Send To
+### Move Source
 
-Add **Send To (StageKit)** as a filter on the source you want to move, such as your camera. Add one per
+Add **Move Source (StageKit)** as a filter on the source you want to move, such as your camera. Add one per
 spot and name each after its spot ("Camera top right").
 
 1. Choose where to send it: one of nine screen positions with a margin from the edge, or a saved spot.
@@ -504,9 +504,9 @@ On a Stream Deck, add the OBS Studio plugin's *Filter* key, pick the camera as t
 these filters. Pressing the key moves the camera; the filter switches itself off again, ready for the
 next press. Each filter also has a `StageKit: Move` hotkey under the source.
 
-### Place Item
+### Move Scene Item
 
-Place Item does the same job from the scene's side. Add **Place Item (StageKit)** as a filter on a
+Move Scene Item does the same job from the scene's side. Add **Move Scene Item (StageKit)** as a filter on a
 *scene*, once per destination.
 
 1. Choose the item to move.
@@ -559,14 +559,14 @@ at the bottom, whichever tab is open.
   the screen in each of its scenes. It glides for the *Travel time*, following the *Motion* you choose
   (the curve, and whether it eases at the start, the end or both); a run of presses made while it is
   still moving is one step for Undo.
-- *Make 9 position keys* adds a Send To filter for each one **to the item's own source**,
+- *Make 9 position keys* adds a Move Source filter for each one **to the item's own source**,
   named after the position ("Top right"). Point a Stream Deck *Filter* key at the camera and one of
   those filters, or give it a hotkey.
 - *Save this spot as a key* does the same for wherever the item is now: drag it where you want
   it in the preview first.
 - *Bring to front*, *Forward one*, *Back one* and *Send to back* change which items cover which.
-- *Add effect* puts a Ramp Blur, Shadow, Glow & Outline, Ramp Zoom or Show/Hide Animation on the item
-  and opens its filter window. Ramp Blur and Ramp Zoom are added switched off.
+- *Add effect* puts a Blur, Shadow, Glow & Outline, Zoom or Show/Hide Animation on the item
+  and opens its filter window. Blur and Zoom are added switched off.
 - The *Scene* list reaches a scene that is not on screen.
 
 **StageKit Background**
@@ -655,16 +655,16 @@ off, and the sources are shown or hidden to match.
 | In | *Every scene they are in*, or *The scenes listed below* |
 | Scenes | The scenes to act in, when you chose to list them |
 | When this is on | *They are shown* (off hides them) or *They are hidden* (off shows them) |
-| Bring-along items too | Ticked: the items those sources bring along are shown and hidden with them. They are the items chosen under *Bring along* in the sources' Send To keys, and in Place Item filters that move them |
+| Bring-along items too | Ticked: the items those sources bring along are shown and hidden with them. They are the items chosen under *Bring along* in the sources' Move Source keys, and in Move Scene Item filters that move them |
 | Change with / Lasting | How each item appears and disappears: a fade (the default), any other transition OBS has, a cut, or whatever is already set on the item; and for how long |
 | Do it now | Shows or hides them to match how the filter is switched now |
 
 It acts when it is switched, not all the time, so something you show or hide by hand stays until the
 next press. Items inside groups are included. OBS's own show and hide transitions on each item apply.
 
-### Visibility Link
+### Link Visibility
 
-Add **Visibility Link (StageKit)** as a filter on a *scene*, once per set of items.
+Add **Link Visibility (StageKit)** as a filter on a *scene*, once per set of items.
 
 1. Choose *Show only one at a time* or *Show and hide together*.
 2. Pick each item from the list and press *Add it to the list*.
@@ -682,11 +682,11 @@ the scene and item it should line up with. *Fit inside the same box* scales the 
 item's box, which suits titles of different lengths; *Copy its position and size settings* matches it
 exactly. Moving the original moves every matched item.
 
-### Layout
+### Apply Layout
 
-Add **Layout (StageKit)** as a filter on a scene. Arrange the scene and press *Save where everything is
+Add **Apply Layout (StageKit)** as a filter on a scene. Arrange the scene and press *Save where everything is
 now*. Switching the filter on glides every saved item back to that arrangement. To cover only some
-items, add their names under *Only these items* before saving; several Layout filters can then each
+items, add their names under *Only these items* before saving; several Apply Layout filters can then each
 move a different set.
 
 ### Remote control
@@ -730,22 +730,22 @@ choose from, holding only what that key is for.
 
 | Key | What it does |
 | --- | --- |
-| **Ramp Blur**, **Shadow, Glow & Outline**, **Corners & Edges**, **Ramp Zoom**, **Auto Capture**, **Auto Frame**, **Standby Picture**, **Show in Scenes**, **Fit Item**, **Active App**, **Program Trigger**, **Visibility Link**, **Show/Hide Animation** | Switches that feature on a source (or scene) on and off, and the key shows which way it is, also when it is switched some other way. *On press* can be *Toggle*, *Switch on* or *Switch off* |
-| **Send To**, **Place Item**, **Layout** | Runs that move. A tick shows on the key when OBS has taken it |
-| **Picture shape** | Sets a game's picture shape by hand, for when Auto Frame's own reading is not what you want: 4:3, 8:7, 3:2, 10:9, 16:9 and more, or *Automatic* to hand it back. *Keep it*: *For this game* (the shape lasts while that game is captured and goes back to automatic when it ends; set before the game starts, it waits for it) or *Until I change it*. The key shows its shape |
-| **Hook capture** | Makes a Game Capture or a Window Capture take whatever window or game is in front when you press it. *Change with* and *Lasting* choose how the capture changes over: a fade (as it comes), a cut, or any other transition OBS has. An Auto Capture on that capture is switched off so it stays where you put it; the **Auto Capture** key, set to *Switches it on*, hands it back |
-| **Window switch** | For a scene with an Active App filter: shows the next of its *Captures you switch to*, or goes back to following the apps |
+| **Blur**, **Shadow, Glow & Outline**, **Corners & Edges**, **Zoom**, **Auto Capture**, **Auto Frame**, **Standby Picture**, **Show in Scenes**, **Fit to Space**, **Follow Active App**, **Program Trigger**, **Link Visibility**, **Show/Hide Animation** | Switches that feature on a source (or scene) on and off, and the key shows which way it is, also when it is switched some other way. *On press* can be *Toggle*, *Switch on* or *Switch off* |
+| **Move Source**, **Move Scene Item**, **Apply Layout** | Runs that move. A tick shows on the key when OBS has taken it |
+| **Set Aspect Ratio** | Sets a game's aspect ratio by hand, for when Auto Frame's own reading is not what you want: 4:3, 8:7, 3:2, 10:9, 16:9 and more, or *Automatic* to hand it back. *Keep ratio*: *This game only* (the shape lasts while that game is captured and goes back to automatic when it ends; set before the game starts, it waits for it) or *Until changed*. The key shows its ratio |
+| **Capture Front Window** | Makes a Game Capture or a Window Capture take whatever window or game is in front when you press it. *Change with* and *Lasting* choose how the capture changes over: a fade (as it comes), a cut, or any other transition OBS has. An Auto Capture on that capture is switched off so it stays where you put it; the **Auto Capture** key, set to *Switches it on*, hands it back |
+| **Next Manual Capture** | For a scene with a Follow Active App filter: shows the next of its *Captures you switch to*, or goes back to following the apps |
 | **Arrange tool** | One of the dock's arrange tools on a key: line up an edge or centre, space out evenly, snap, make the same width, height or size, or copy a transform to all or to the chosen scenes. It works on the items selected in OBS's preview |
-| **Dock switch** | One of the dock's switches on a key: *Snap on release*, *Guides*, *Stop resizing at edges*, *Slide to the next edge*, *In every scene* or *Keep shape*. It shows which way the switch is, also when you change it in the dock |
-| **Slide to next edge** | Slides the item selected in OBS left, right, up, down or cornerwise to the next edge, or centres it in the free space, with the dock's edge distance and timing. The next press passes that edge |
-| **Blur everything** | Switches every Ramp Blur on, and the next press switches them all off. It shows on while any is on |
+| **Dock Option** | One of the dock's switches on a key: *Snap on release*, *Guides*, *Stop resizing at edges*, *Slide to the next edge*, *In every scene* or *Keep shape*. It shows which way the switch is, also when you change it in the dock |
+| **Slide to Edge** | Slides the item selected in OBS left, right, up, down or cornerwise to the next edge, or centres it in the free space, with the dock's edge distance and timing. The next press passes that edge |
+| **Blur All** | Switches every Blur on, and the next press switches them all off. It shows on while any is on |
 
 A key that cannot reach OBS, or whose target is gone, shows Stream Deck's yellow warning triangle when
-pressed. *Picture shape* and *Hook capture* need StageKit 0.1.0-beta84 or later in OBS; *Dock switch* and *Slide to next edge* need 0.1.0-beta85. Keys made with
+pressed. *Set Aspect Ratio* and *Capture Front Window* need StageKit 0.1.0-beta84 or later in OBS; *Dock Option* and *Slide to Edge* need 0.1.0-beta85. Keys made with
 the first versions' *Filter switch* and *Move* keep working; those two are no longer in the list.
 
 **Pictures.** The keys use the StageKit icon pack. Left on *Automatic*, a key takes the picture that
-fits its filter and how it is set: a Ramp Blur key shows its blur type, a Send To key the corner it
+fits its filter and how it is set: a Blur key shows its blur type, a Move Source key the corner it
 sends the camera to, Shadow, Glow & Outline its look, Corners & Edges its corner style, and switch
 keys have an "on" and an "off" look. A filter the pack has no picture for gets a plain key in the same
 style. **Picture** lets you give a key any other picture of the pack (the ones drawn for a particular
@@ -785,7 +785,7 @@ to (the two update choices are kept with the plugin instead). Replacing the plug
 - **A StageKit filter or source shows a blank or unchanged picture on Windows.** The shaders have only
   been tested with OpenGL. Open *Help → Log Files → View Current Log*, search for `stagekit`, and
   report any line that mentions an effect failing to load.
-- **A filter you switched on turned itself off.** Send To, Place Item and Layout do that on purpose
+- **A filter you switched on turned itself off.** Move Source, Move Scene Item and Layout do that on purpose
   after each move.
 - **Auto Capture picked up a program that is not a game.** Add part of its file name to *Never
   capture*.

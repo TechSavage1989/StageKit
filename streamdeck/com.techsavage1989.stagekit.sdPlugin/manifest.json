@@ -1,10 +1,10 @@
 {
 	"Name": "StageKit",
-	"Version": "0.5.1.0",
+	"Version": "0.6.0.0",
 	"Author": "StageKit contributors",
 	"Actions": [
 		{
-			"Name": "Ramp Blur",
+			"Name": "Blur",
 			"UUID": "com.techsavage1989.stagekit.blur",
 			"Icon": "imgs/actions/switch/icon",
 			"Tooltip": "Blurs a source and clears it again. The key shows which way it is.",
@@ -70,7 +70,7 @@
 			]
 		},
 		{
-			"Name": "Ramp Zoom",
+			"Name": "Zoom",
 			"UUID": "com.techsavage1989.stagekit.zoom",
 			"Icon": "imgs/actions/switch/icon",
 			"Tooltip": "Zooms a source in and back out.",
@@ -180,7 +180,7 @@
 			]
 		},
 		{
-			"Name": "Fit Item",
+			"Name": "Fit to Space",
 			"UUID": "com.techsavage1989.stagekit.fititem",
 			"Icon": "imgs/actions/switch/icon",
 			"Tooltip": "Switches a scene's fitting of its game or window on and off.",
@@ -202,7 +202,7 @@
 			]
 		},
 		{
-			"Name": "Active App",
+			"Name": "Follow Active App",
 			"UUID": "com.techsavage1989.stagekit.activeapp",
 			"Icon": "imgs/actions/switch/icon",
 			"Tooltip": "Switches following the app in use on and off.",
@@ -246,7 +246,7 @@
 			]
 		},
 		{
-			"Name": "Visibility Link",
+			"Name": "Link Visibility",
 			"UUID": "com.techsavage1989.stagekit.visibilitylink",
 			"Icon": "imgs/actions/switch/icon",
 			"Tooltip": "Switches a link between items' visibility on and off.",
@@ -290,7 +290,7 @@
 			]
 		},
 		{
-			"Name": "Send To",
+			"Name": "Move Source",
 			"UUID": "com.techsavage1989.stagekit.sendto",
 			"Icon": "imgs/actions/move/icon",
 			"Tooltip": "Sends the camera, or any source, to one of its saved places.",
@@ -306,7 +306,7 @@
 			]
 		},
 		{
-			"Name": "Place Item",
+			"Name": "Move Scene Item",
 			"UUID": "com.techsavage1989.stagekit.placeitem",
 			"Icon": "imgs/actions/move/icon",
 			"Tooltip": "Moves a scene's item to its place.",
@@ -322,7 +322,7 @@
 			]
 		},
 		{
-			"Name": "Layout",
+			"Name": "Apply Layout",
 			"UUID": "com.techsavage1989.stagekit.layout",
 			"Icon": "imgs/actions/move/icon",
 			"Tooltip": "Puts a scene's items into a saved layout.",
@@ -338,10 +338,10 @@
 			]
 		},
 		{
-			"Name": "Picture shape",
+			"Name": "Set Aspect Ratio",
 			"UUID": "com.techsavage1989.stagekit.shape",
 			"Icon": "imgs/actions/switch/icon",
-			"Tooltip": "Sets a game's picture shape by hand: 4:3, 8:7 and so on, or back to automatic. It can last just for the game being captured.",
+			"Tooltip": "Sets a game's aspect ratio by hand: 4:3, 8:7 and so on, or back to automatic. It can last just for the game being captured.",
 			"PropertyInspectorPath": "ui/shape.html",
 			"Controllers": [
 				"Keypad"
@@ -354,7 +354,7 @@
 			]
 		},
 		{
-			"Name": "Hook capture",
+			"Name": "Capture Front Window",
 			"UUID": "com.techsavage1989.stagekit.hook",
 			"Icon": "imgs/actions/hook/icon",
 			"Tooltip": "Makes a Game Capture or a Window Capture take the window or game that is in front right now.",
@@ -370,10 +370,10 @@
 			]
 		},
 		{
-			"Name": "Window switch",
+			"Name": "Next Manual Capture",
 			"UUID": "com.techsavage1989.stagekit.appswitch",
 			"Icon": "imgs/actions/move/icon",
-			"Tooltip": "Steps an Active App scene to the next of its captures by hand, or back to following the apps.",
+			"Tooltip": "Steps a Follow Active App scene to the next of its captures by hand, or back to following the apps.",
 			"PropertyInspectorPath": "ui/appswitch.html",
 			"Controllers": [
 				"Keypad"
@@ -402,10 +402,10 @@
 			]
 		},
 		{
-			"Name": "Blur everything",
+			"Name": "Blur All",
 			"UUID": "com.techsavage1989.stagekit.blurall",
 			"Icon": "imgs/actions/blur/icon",
-			"Tooltip": "Switches every Ramp Blur on, or all of them off again. Shows on while any is on.",
+			"Tooltip": "Switches every Blur on, or all of them off again. Shows on while any is on.",
 			"PropertyInspectorPath": "ui/blur-all.html",
 			"Controllers": [
 				"Keypad"
@@ -424,10 +424,10 @@
 			]
 		},
 		{
-			"Name": "Dock switch",
+			"Name": "Dock Option",
 			"UUID": "com.techsavage1989.stagekit.option",
 			"Icon": "imgs/actions/switch/icon",
-			"Tooltip": "One of the StageKit dock's switches on a key: snap on release, guides, stop resizing at edges. Shows which way it is.",
+			"Tooltip": "One of the StageKit dock's options on a key: snap on release, guides, stop resizing at edges. Shows which way it is.",
 			"PropertyInspectorPath": "ui/option.html",
 			"Controllers": [
 				"Keypad"
@@ -446,7 +446,7 @@
 			]
 		},
 		{
-			"Name": "Slide to next edge",
+			"Name": "Slide to Edge",
 			"UUID": "com.techsavage1989.stagekit.slide",
 			"Icon": "imgs/actions/move/icon",
 			"Tooltip": "Slides the item selected in OBS to the next edge that way; the next press passes it.",
