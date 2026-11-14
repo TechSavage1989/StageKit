@@ -361,8 +361,9 @@ Game Capture, Window Capture or other live source.
   and showing a black picture, such as a loading screen, is left alone.
 - While it waits, the picture is shown whole, in its own shape, as tall as the capture last was.
 - When the capture starts, the size glides from the picture's shape to the capture's while the
-  picture fades into it. When the capture ends, it glides back to the picture's shape. Neither is
-  ever squashed on the way.
+  picture fades into it. When the capture ends, its last frame fades back into the picture, which
+  glides back to its own shape. Neither is ever squashed on the way.
+- It belongs after an Auto Frame in the filter list and puts itself there.
 - Corners, shadows and other filters after it are put on the picture as they are on the capture.
 - To go without it, switch the filter off with its eye or a Stream Deck filter key.
 

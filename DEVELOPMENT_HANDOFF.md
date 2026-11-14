@@ -211,6 +211,21 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Standby Picture after Auto Frame, and a real fade back (0.1.0-beta68)
+
+The owner, on beta67: the standby picture started cropped before any game, took an emulator's shape
+when the emulator opened, shook and cut to the game, came back at once and kept the game's shape.
+
+- Not seen on their machine; deduced: their Standby Picture is before Auto Frame in the list (the
+  placing ran once and only moved it up), so Auto Frame trimmed the picture by the held shape. The
+  filter now moves itself after an Auto Frame whenever it finds itself before one.
+- Reproduced in a test: Corners & Edges after an Auto Frame cut the standby picture to the last
+  game's rectangle. Auto Frame's `get_picture` now gives no rectangle while the picture stands in.
+- The last frame of the capture is kept and fades into the picture. The capture is therefore always
+  drawn through an 8-bit copy, also when settled; watch for any change in how a game looks.
+- **Not confirmed by the owner.** If the shape still goes wrong, ask for the OBS log of that session:
+  Auto Frame's "is now WxH" lines say what it was looking at.
+
 ## An item that draws nothing is not in the way (0.1.0-beta67)
 
 The owner, on beta66, with three screenshots (a window capture resized towards the right stopped
