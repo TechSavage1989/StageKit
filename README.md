@@ -29,6 +29,8 @@ from hotkeys, or from the Stream Deck OBS Studio plugin's *Filter* and *Source* 
   its edges and outlines it. A shadow added after it takes the same shape.
 - **Auto Frame** (filter): gives a game or emulator capture a fixed frame and fits any resolution inside
   it, so one scene serves every picture shape.
+- **Morph** (scene transition): on a change of scene, whatever is in both scenes glides from its
+  place and size in the one to its place and size in the other, and the rest cross-fades.
 - **Fit to Space** (scene filter): one capture for every shape. A picture with the screen's shape fills it;
   an emulator's squarer picture floats centred inside a margin.
 - **Auto Capture** (filter): one Game Capture finds whatever game is running, windowed or full-screen,
@@ -775,6 +777,38 @@ Add **Apply Layout (StageKit)** as a filter on a scene. Arrange the scene and pr
 now*. Switching the filter on glides every saved item back to that arrangement. To cover only some
 items, add their names under *Only these items* before saving; several Apply Layout filters can then each
 move a different set.
+
+### Morph transition
+
+A scene transition, chosen like any other: in OBS's *Scene Transitions* box press the plus, pick
+**Morph (StageKit)**, and set its duration there.
+
+- Every item that shows the **same source in both scenes** (the camera, the chat box, a widget, the
+  background) is drawn once and glides from its place, size and crop in the scene you leave to its
+  place, size and crop in the scene you go to. Groups move as one.
+- **Morph the main picture** (ticked as it comes): besides those, the largest item left over in
+  each scene is taken for the main picture, and the one changes into the other while it moves and
+  resizes: a game capture in one scene and a window capture in the next. Unticked, those two are
+  cross-faded where they are.
+- **Other items**, which are in only one of the scenes, fade (as it comes), fade and zoom, or slide
+  off the nearest edge of the screen. Something that fills the screen is a background and always
+  fades; two backgrounds changing over stay a whole picture all the way.
+- **Easing**: the same eleven curves as everywhere else, eased in, out or both.
+
+Things to know:
+
+- Items are matched by source, not by how they look. Two different sources that look alike are
+  cross-faded, unless they are the two main pictures.
+- A scene that carries a filter which draws (a blur or a colour correction on the scene itself)
+  cannot be taken apart; a change to or from it is a plain cross-fade, and OBS's log says which
+  filter it was. Filters that only move, show and hide items do not count, StageKit's own and the
+  Move plugin's among them.
+- An item's blending mode, its own show and hide transition and a crop made by *Crop to bounding
+  box* are not followed during the change.
+- A shadow sized in screen pixels goes by one scene at a time, so on an item that changes size it
+  may change thickness at the start of the change instead of gliding with it.
+
+<p align="center"><img src="docs/images/morph-transition.png" width="900" alt="A change of scene with the Morph transition in five steps: the camera glides across the screen, the game capture turns into the window capture as it moves and resizes, a picture that is only in the first scene fades out, and the two backgrounds cross-fade"></p>
 
 ### Remote control
 

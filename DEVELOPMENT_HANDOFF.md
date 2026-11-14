@@ -211,6 +211,22 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## The Morph transition (0.1.0-beta108)
+
+- Offered to the owner on 2026-11-14 as plausible; asked for the same day ("i would like to work
+  on the morph transitions as well"). Built as a scene transition, `stagekit_morph`: see AGENTS.md
+  and the README's *Morph transition*.
+- Proven in the tests: an item in both scenes is half-way between its places at half time, two
+  backgrounds cross-fade with no dip, the largest leftover items change into each other, two
+  scenes that are alike give the scene's own picture mid-way (colours, crop, a scaled image), and
+  the transition ends on the new scene.
+- **Not proven**: anything on the owner's machine. Their scenes carry Fit to Space filters (fine)
+  and may carry others; shadows sized in screen pixels may change size at the first frame; a
+  2560x1440 canvas means several full-screen passes per frame for the length of the transition.
+  Ask how it looks and for a log if it cross-fades where a morph was expected.
+- Not built: pairing two different sources by hand (only the automatic main picture), a morph of
+  items inside different groups, rotation taken the short way round.
+
 ## Glances: Fit to Space stops stalling the picture (0.1.0-beta107)
 
 - The owner's two logs from beta106 (private, not in the repository): `stagekit_fit_item` with
@@ -221,8 +237,9 @@ information), which is what the template uses for pushes to `main`.
   machine: the new mosaic, trail and bloom shader code compiles on Direct3D.
 - The owner confirmed on beta106: "Everything seems to work very well", and scene switches look
   right without *Same place in these scenes* being filled in.
-- **Not confirmed by the owner yet**: that the choppiness is gone. If it is not, ask for a log:
-  the `timing, last 30 s` lines say which kind is slow.
+- The owner on beta107: "THE DETECTION AND SPEED IS MUCH BETTER". Whether the preview's
+  choppiness is gone as well was not said; if it comes up again, ask for a log: the
+  `timing, last 30 s` lines say which kind is slow.
 
 ## Shared place for chosen scenes only; kept size survives a restart (0.1.0-beta106)
 

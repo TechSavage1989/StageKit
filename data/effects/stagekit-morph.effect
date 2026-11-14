@@ -1,0 +1,63 @@
+// StageKit Morph transition.
+//
+// Draw  a picture at a strength from 0 (nothing) to 1 (all of it).
+// Mix   two pictures cross-faded: all of `image` at 0, all of `image2` at 1.
+//       Mixed in one pass, the two never add up to less than a whole
+//       picture part-way, as two fades laid over each other would.
+//
+// Pictures are premultiplied, so every channel is scaled alike.
+
+uniform float4x4 ViewProj;
+uniform texture2d image;
+uniform texture2d image2;
+uniform float opacity;
+uniform float amount;
+
+sampler_state linearClamp {
+	Filter   = Linear;
+	AddressU = Clamp;
+	AddressV = Clamp;
+};
+
+struct VertData {
+	float4 pos : POSITION;
+	float2 uv  : TEXCOORD0;
+};
+
+VertData VSDefault(VertData v_in)
+{
+	VertData vert_out;
+	vert_out.pos = mul(float4(v_in.pos.xyz, 1.0), ViewProj);
+	vert_out.uv  = v_in.uv;
+	return vert_out;
+}
+
+float4 PSDraw(VertData v_in) : TARGET
+{
+	return image.Sample(linearClamp, v_in.uv) * opacity;
+}
+
+float4 PSMix(VertData v_in) : TARGET
+{
+	float4 from = image.Sample(linearClamp, v_in.uv);
+	float4 to = image2.Sample(linearClamp, v_in.uv);
+	return lerp(from, to, amount) * opacity;
+}
+
+technique Draw
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSDraw(v_in);
+	}
+}
+
+technique Mix
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSMix(v_in);
+	}
+}

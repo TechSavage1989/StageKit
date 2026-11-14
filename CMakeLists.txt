@@ -101,6 +101,8 @@ target_sources(
     src/dock/stagekit-dock.hpp
     src/placement/scene-tools.cpp
     src/placement/scene-tools.hpp
+    src/transition/morph.cpp
+    src/transition/morph.hpp
     src/placement/fit-item.cpp
     src/placement/fit-item.hpp
     src/placement/visibility-link.cpp

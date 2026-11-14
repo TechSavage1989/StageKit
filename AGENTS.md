@@ -44,6 +44,7 @@ notice and the confirmation are what there is. This is recorded in the handoff.
 | `src/frame/` | Auto Frame filter and the Aspect Ratio Preset filter |
 | `src/capture/` | Auto Capture filter (aims a Game Capture at the game in front), Program Trigger filter (shows items and switches filters while a program is open) and Follow Active App scene filter (shows the one of several captures whose app is in use). All use the Win32 window list in `auto-capture.cpp`; compiled but idle elsewhere. Also Standby Picture (`standby.*`), a filter that shows a picture in a capture's place while it has nothing; it works everywhere |
 | `src/api/` | obs-websocket vendor requests (`StageKit` vendor) |
+| `src/transition/` | Morph, a scene transition: items showing the same source in both scenes glide from one place to the other, the rest cross-fades |
 | `src/update/` | The updater: reads the releases from GitHub, tells the dock about a newer one, and on Windows installs it through a PowerShell helper that outlives OBS |
 | `src/third-party/` | Vendored `obs-websocket-api.h`, kept byte-for-byte (excluded from clang-format) |
 | `data/effects/` | Shaders in OBS `.effect` format. `stagekit-looks.effect` holds the newer looks (mosaic shapes, trail, bloom) apart from the older files |
@@ -471,6 +472,28 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   the camera's width, was "slightly larger" after every restart. A size is also only read off an
   item whose source has kept its size for half a second: while OBS loads, a group or a shadowed
   source is not yet the size it will be.
+- **Morph draws the scenes' items itself** (`src/transition/morph.cpp`). OBS gives a transition
+  its two scenes as finished pictures; Morph instead draws each item the way a scene does
+  (`obs_sceneitem_get_draw_transform`, the source drawn straight on, or through a picture of its own
+  when it is cropped), at a place part-way between the two scenes for an item whose source is in
+  both. The owner asked whether a morph between scenes was possible and then to "work on the morph
+  transitions". What that means for anything touching it:
+  - Before the first frame, after the last and with only one scene it must call
+    `obs_transition_video_render_direct`: that call is also what ends a transition. Drawing by
+    itself all the way, the transition never stops.
+  - A scene with an enabled filter that draws cannot be taken apart (`plain_scene`); the change is
+    then a cross-fade and the log says which filter. Filters that draw nothing are listed in
+    `draws_nothing`: add a new StageKit scene filter there, or scenes carrying it lose the morph.
+  - Runs of items that are in one scene only are drawn into two full-screen pictures and mixed in
+    one pass (`Mix`): faded over each other, two backgrounds add up to less than a whole picture
+    half-way, a dark dip.
+  - The plan (which items go together, and the order) holds scene items by reference and is let go
+    through `changed()` on the drawing thread, never from the thread a transition is started on.
+  - Like every shader here, `stagekit-morph.effect` has only run on OpenGL; without it the
+    transition cuts.
+  - Not followed during the change: an item's blending mode, its show and hide transition, a crop
+    to the bounding box, and a shadow's size in screen pixels (`shown_scale` goes by one scene at
+    a time, so it may jump at the start). None has been asked for.
 - **Blur goes to 1000** (`kMaxStrength`; it was 250 and the owner asked for more). A Gaussian or box
   blur set above `kTapLimit` (250) is drawn the Dual Kawase way for its whole ramp, so there is no
   change of look part-way through a ramp. Zoom's pull is still worked out from 250. Ambient
