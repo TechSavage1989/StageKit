@@ -1,0 +1,69 @@
+{
+	"Name": "StageKit",
+	"Version": "0.1.0.0",
+	"Author": "StageKit contributors",
+	"Actions": [
+		{
+			"Name": "Filter switch",
+			"UUID": "com.techsavage1989.stagekit.switch",
+			"Icon": "imgs/actions/switch/icon",
+			"Tooltip": "Switches a StageKit filter on and off, and shows which way it is.",
+			"PropertyInspectorPath": "ui/switch.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/switch/off",
+					"Name": "Off",
+					"TitleAlignment": "bottom"
+				},
+				{
+					"Image": "imgs/actions/switch/on",
+					"Name": "On",
+					"TitleAlignment": "bottom"
+				}
+			]
+		},
+		{
+			"Name": "Move",
+			"UUID": "com.techsavage1989.stagekit.move",
+			"Icon": "imgs/actions/move/icon",
+			"Tooltip": "Runs a StageKit move: a Send To key, a Place Item, a Layout or a Picture Shape key.",
+			"PropertyInspectorPath": "ui/move.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/move/key",
+					"TitleAlignment": "bottom"
+				}
+			]
+		}
+	],
+	"Category": "StageKit",
+	"CategoryIcon": "imgs/plugin/category-icon",
+	"CodePath": "bin/plugin.js",
+	"Description": "Keys for StageKit, the OBS Studio plugin: switch its filters on and off with the key showing which way they are, and run its camera moves. Talks to OBS through OBS's own WebSocket server.",
+	"Icon": "imgs/plugin/marketplace",
+	"SDKVersion": 3,
+	"Software": {
+		"MinimumVersion": "7.1"
+	},
+	"OS": [
+		{
+			"Platform": "mac",
+			"MinimumVersion": "12"
+		},
+		{
+			"Platform": "windows",
+			"MinimumVersion": "10"
+		}
+	],
+	"Nodejs": {
+		"Version": "24",
+		"Debug": "enabled"
+	},
+	"UUID": "com.techsavage1989.stagekit"
+}
