@@ -300,6 +300,13 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
 - **Show in Scenes can take bring-along items with it** (`with_linked`, off by default): the
   `linked` item of every Move Source filter on a listed source, and of Move Scene Item filters that move it.
   The owner asked for it.
+- **Link Visibility reaches into other scenes** (`elsewhere`, *Also in other scenes*): the sources
+  listed are shown and hidden with the scene's linked items wherever they are, and a change to one
+  of them in any scene comes back. For that the filter listens to every scene's `item_visible`
+  (`watch_others`, found again every two seconds, each held weakly and let go in `unwatch`). The
+  owner: "The link visibility filter only works with sources in the same scene ... one streamdeck
+  button to affect them together". Show in Scenes does the same job as a switch on a key; this one
+  follows whatever shows or hides an item.
 - **Show in Scenes is a switch, not a trigger.** Its on and off state is the shown and hidden
   state, so one Stream Deck Filter key toggles and shows which way it is. It acts on the `enable`
   signal only (never each tick, so a change by hand is kept) and ignores the state restored at load

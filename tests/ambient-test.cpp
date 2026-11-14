@@ -2914,6 +2914,45 @@ int main(int argc, char **argv)
 			sleep_ms(150);
 			CHECK(shown() == "000", "and hides the rest when one is hidden (%s)", shown().c_str());
 
+			// Also in other scenes: sources listed there are shown and hidden
+			// with the set wherever they are, and it works from there too.
+			{
+				obs_scene_t *other = obs_scene_create("Link Other Scene");
+				obs_source_t *cam2 =
+					obs_source_create("color_source", "Other Camera", nullptr, nullptr);
+				obs_source_t *loose = obs_source_create("color_source", "Not Linked", nullptr, nullptr);
+				obs_sceneitem_t *same_there = obs_scene_add(other, vsources[0]);
+				obs_sceneitem_t *cam2_there = obs_scene_add(other, cam2);
+				obs_sceneitem_t *loose_there = obs_scene_add(other, loose);
+				obs_properties_t *ep = obs_source_properties(link);
+				pick_into_list(link, ep, "elsewhere|a", "Frame SNES");
+				pick_into_list(link, ep, "elsewhere|a", "Other Camera");
+				CHECK(list_rows(ep, "elsewhere|a") == 2, "sources in other scenes can be listed (%d)",
+				      list_rows(ep, "elsewhere|a"));
+				obs_properties_destroy(ep);
+				sleep_ms(2300); // the other scenes are found within a couple of seconds
+				obs_sceneitem_set_visible(vi[1], true);
+				sleep_ms(200);
+				const bool shown_there = obs_sceneitem_visible(same_there) &&
+							 obs_sceneitem_visible(cam2_there);
+				obs_sceneitem_set_visible(vi[1], false);
+				sleep_ms(200);
+				CHECK(shown_there && !obs_sceneitem_visible(same_there) &&
+					      !obs_sceneitem_visible(cam2_there) && obs_sceneitem_visible(loose_there),
+				      "showing and hiding a linked item does the same to the listed sources in other scenes, and to nothing else");
+				obs_sceneitem_set_visible(cam2_there, true);
+				sleep_ms(200);
+				const bool came = shown() == "111" && obs_sceneitem_visible(same_there);
+				obs_sceneitem_set_visible(cam2_there, false);
+				sleep_ms(200);
+				CHECK(came && shown() == "000" && !obs_sceneitem_visible(same_there),
+				      "and showing or hiding one of them in the other scene does the same here (%s)",
+				      shown().c_str());
+				obs_scene_release(other);
+				obs_source_release(cam2);
+				obs_source_release(loose);
+			}
+
 			obs_source_set_enabled(link, false);
 			obs_sceneitem_set_visible(vi[0], true);
 			sleep_ms(150);

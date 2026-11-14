@@ -687,6 +687,13 @@ the eye icon, a Stream Deck *Source* key, a hotkey. Switch the filter off to pau
 and *Lasting* choose how the items it shows and hides appear and disappear: a fade to begin with, any
 other transition OBS has, a cut, or whatever is set on each item.
 
+**Also in other scenes** reaches past the filter's own scene. Add sources to that list (the same
+camera, or another camera that lives in another scene) and they are shown and hidden with the linked
+items wherever they are, in groups too. It works both ways: hiding one of the listed sources in any
+scene hides the linked items here and the listed sources everywhere. So one Stream Deck *Source* key
+on one camera hides every camera. For a plain on and off switch on a key, with no item to press,
+there is also [Show in Scenes](#show-in-scenes).
+
 ### Match Item
 
 Add **Match Item (StageKit)** as a filter on a scene and leave it on. Choose an item in this scene, and
