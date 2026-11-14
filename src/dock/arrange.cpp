@@ -688,6 +688,23 @@ int copy_to_every_scene(obs_source_t *scene, const std::vector<obs_sceneitem_t *
 	return changed;
 }
 
+int share_place(obs_source_t *scene, obs_sceneitem_t *item, const double *home)
+{
+	obs_source_t *source = item ? obs_sceneitem_get_source(item) : nullptr;
+	if (!scene || !source)
+		return 0;
+	int changed = 0;
+	for (const Copy &copy : copies_of(source, scene)) {
+		// (The same item, where a group holding it is shown in several scenes.)
+		if (copy.item == item || obs_source_showing(copy.scene))
+			continue;
+		copy_transform(scene, item, copy.scene, copy.item);
+		fit_item_shared(copy.scene, obs_source_get_name(source), home);
+		changed++;
+	}
+	return changed;
+}
+
 int match_size(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items, bool width, bool height,
 	       bool keep_shape, const Measure &how)
 {

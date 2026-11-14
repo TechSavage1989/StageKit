@@ -2671,6 +2671,101 @@ int main(int argc, char **argv)
 				obs_source_release(cam3);
 				obs_source_release(wide);
 			}
+			// "Same place in other scenes": what the filter does in the scene
+			// on screen, the same source has in the scenes that are not, so
+			// it is already there when one of them is switched to.
+			{
+				obs_source_t *wall = obs_source_create("color_source", "Share Wall", nullptr, nullptr);
+				sized(wall, 300, 360);
+				obs_source_t *cam4 = obs_source_create("color_source", "Share Camera", nullptr, nullptr);
+				sized(cam4, 100, 60);
+				obs_scene_t *one = obs_scene_create("Share One"); // 640x360
+				obs_scene_t *two = obs_scene_create("Share Two");
+				obs_scene_t *three = obs_scene_create("Share Three");
+				obs_scene_add(one, wall);
+				obs_scene_add(two, wall);
+				obs_sceneitem_t *in_one = obs_scene_add(one, cam4);
+				obs_sceneitem_t *in_two = obs_scene_add(two, cam4);
+				obs_sceneitem_t *in_three = obs_scene_add(three, cam4);
+				vec2 pp;
+				vec2_set(&pp, 400.0f, 100.0f);
+				obs_sceneitem_set_pos(in_one, &pp);
+				vec2_set(&pp, 350.0f, 250.0f);
+				obs_sceneitem_set_pos(in_two, &pp);
+				vec2_set(&pp, 10.0f, 10.0f);
+				obs_sceneitem_set_pos(in_three, &pp);
+				obs_sceneitem_set_locked(in_three, true);
+				auto fit_in = [&](obs_scene_t *scene, const char *name, bool share) {
+					obs_data_t *d = obs_data_create();
+					obs_data_set_string(d, "item", "Share Camera");
+					obs_data_set_int(d, "box", 2);
+					obs_data_set_double(d, "margin", 20);
+					obs_data_set_int(d, "glide_ms", 100);
+					obs_data_set_bool(d, "share", share);
+					obs_source_t *f = obs_source_create("stagekit_fit_item", name, d, nullptr);
+					obs_data_release(d);
+					obs_source_filter_add(obs_scene_get_source(scene), f);
+					return f;
+				};
+				obs_source_t *fit_one = fit_in(one, "Fit Share One", true);
+				obs_source_t *fit_two = fit_in(two, "Fit Share Two", true);
+				struct Where {
+					double x, y, w, h;
+				};
+				auto where = [&](obs_sceneitem_t *it) {
+					vec2 p, b;
+					obs_sceneitem_get_pos(it, &p);
+					obs_sceneitem_get_bounds(it, &b);
+					return Where{p.x, p.y, b.x, b.y};
+				};
+				auto alike = [&](const Where &a, const Where &b) {
+					return is(a.x, b.x) && is(a.y, b.y) && is(a.w, b.w) && is(a.h, b.h);
+				};
+				obs_set_output_source(0, obs_scene_get_source(one));
+				for (int i = 0; i < 30; i++) {
+					render(obs_scene_get_source(one), 640, 360);
+					sleep_ms(50);
+				}
+				const Where a = where(in_one), b = where(in_two), c = where(in_three);
+				CHECK(is(a.x, 320) && is(a.y, 20) && is(a.w, 300) && is(a.h, 320),
+				      "the item is fitted in the scene on screen (%.0f, %.0f %.0fx%.0f)", a.x, a.y, a.w,
+				      a.h);
+				CHECK(alike(a, b) && alike(a, c) && obs_sceneitem_locked(in_three),
+				      "with 'Same place in other scenes' its copies in the scenes not on screen have the same place and size, with a filter of their own (%.0f, %.0f %.0fx%.0f) or without, locked or not (%.0f, %.0f %.0fx%.0f)",
+				      b.x, b.y, b.w, b.h, c.x, c.y, c.w, c.h);
+				// Switched to: it is already there, and does not move.
+				obs_set_output_source(0, obs_scene_get_source(two));
+				bool stayed = true;
+				for (int i = 0; i < 20; i++) {
+					render(obs_scene_get_source(two), 640, 360);
+					stayed = stayed && alike(where(in_two), a);
+					sleep_ms(50);
+				}
+				const Where b2 = where(in_two);
+				CHECK(stayed,
+				      "switching to the other scene, the item is already in its place and does not move (%.0f, %.0f %.0fx%.0f)",
+				      b2.x, b2.y, b2.w, b2.h);
+				// Moved on purpose in the scene now on screen: the scene left
+				// behind takes that too.
+				vec2_set(&pp, 330.0f, 30.0f);
+				obs_sceneitem_set_pos(in_two, &pp);
+				for (int i = 0; i < 30; i++) {
+					render(obs_scene_get_source(two), 640, 360);
+					sleep_ms(50);
+				}
+				CHECK(alike(where(in_one), where(in_two)),
+				      "and the scene left behind follows what happens in the one on screen (%.0f, %.0f; here %.0f, %.0f)",
+				      where(in_one).x, where(in_one).y, where(in_two).x, where(in_two).y);
+				obs_source_filter_remove(obs_scene_get_source(one), fit_one);
+				obs_source_filter_remove(obs_scene_get_source(two), fit_two);
+				obs_source_release(fit_one);
+				obs_source_release(fit_two);
+				obs_scene_release(one);
+				obs_scene_release(two);
+				obs_scene_release(three);
+				obs_source_release(cam4);
+				obs_source_release(wall);
+			}
 			obs_set_output_source(0, shown_before);
 			obs_source_release(shown_before);
 			obs_data_release(ff);

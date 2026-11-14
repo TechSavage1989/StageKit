@@ -28,4 +28,13 @@ void register_fit_item();
 // kept. Without it the filter puts the item straight back.
 void fit_item_placed(obs_source_t *scene, const char *item_name);
 
+// Tells the Fit to Space that looks after the item of this name in `scene`
+// that another scene's filter has just given the item its own place and size
+// ("Same place in other scenes"). The filter leaves the item there while its
+// scene is not on screen, takes the size for the one kept, and takes `home`
+// (x, y on the screen; null for none) as the point its space is looked for
+// around, so a move made on purpose in one scene carries over. When its scene
+// comes into view it fits the item to that scene, from that point.
+void fit_item_shared(obs_source_t *scene, const char *item_name, const double *home);
+
 } // namespace stagekit

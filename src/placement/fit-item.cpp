@@ -49,6 +49,7 @@ struct Settings {
 	double tolerance = 8;           // free space: pictures this close in size count as equal
 	bool resize = true;             // off: the item keeps its size and is only moved, centred in the space
 	int toward_x = 0, toward_y = 0; // the side of its space it is kept towards: -1, 0 (the middle) or 1
+	bool share = false;             // its place here is given to its copies in the scenes not on screen
 	std::string orig_item;          // the item whose size was noted before the filter first touched it
 	double orig_k = 0;              // how large it was drawn then, as a scale of its source
 	bool visible_pixels = true;     // other items are measured by what they draw, not their boxes
@@ -201,6 +202,20 @@ public:
 			placed_ = true;
 	}
 
+	// See fit_item_shared.
+	void shared(obs_source_t *scene, const char *item_name, const double *home)
+	{
+		std::lock_guard lock(mutex_);
+		if (settings_.item != item_name || scene != parent_)
+			return;
+		shared_in_ = true;
+		shared_home_ = home != nullptr;
+		if (home) {
+			shared_home_x_ = home[0];
+			shared_home_y_ = home[1];
+		}
+	}
+
 	void update(obs_data_t *settings)
 	{
 		Settings s;
@@ -219,6 +234,7 @@ public:
 		const long long toward = std::clamp<long long>(obs_data_get_int(settings, "toward"), 0, 8);
 		s.toward_x = kTowardX[toward];
 		s.toward_y = kTowardY[toward];
+		s.share = obs_data_get_bool(settings, "share");
 		s.orig_item = obs_data_get_string(settings, "orig_item");
 		s.orig_k = obs_data_get_double(settings, "orig_k");
 		own_seen_ = false; // what shows of the item is looked at again
@@ -272,9 +288,23 @@ public:
 		if (obs_source_is_group(parent_))
 			return;
 		Settings s;
-		bool placed_now = false;
+		bool placed_now = false, shared_now = false, new_home = false;
 		{
 			std::lock_guard lock(mutex_);
+			// Given its place by another scene's filter: it stays there
+			// until this scene comes into view, and the size it was given
+			// is the one kept. The point its space is looked for around
+			// is the other filter's, not where the item happens to be.
+			if (shared_in_) {
+				shared_in_ = false;
+				shared_now = true;
+				if (shared_home_) {
+					new_home = true;
+					settings_.have_anchor = true;
+					settings_.anchor_x = shared_home_x_;
+					settings_.anchor_y = shared_home_y_;
+				}
+			}
 			// Placed on purpose by a tool: its space is looked for where
 			// it is now, starting afresh.
 			if (placed_) {
@@ -284,12 +314,19 @@ public:
 			}
 			s = settings_;
 		}
-		if (placed_now) {
+		if (placed_now || shared_now) {
 			have_keep_ = false;
 			have_cur_ = have_goal_ = have_set_ = false;
 			moving_ = false;
 			own_seen_ = false;
 			placed_by_tool_ = true;
+		}
+		if (new_home) {
+			obs_data_t *settings = obs_source_get_settings(source_);
+			obs_data_set_bool(settings, "have_anchor", true);
+			obs_data_set_double(settings, "anchor_x", s.anchor_x);
+			obs_data_set_double(settings, "anchor_y", s.anchor_y);
+			obs_data_release(settings);
 		}
 		// Held for the length of this tick: OBS's window may remove the item
 		// at any moment from its own thread.
@@ -692,8 +729,26 @@ public:
 		set_bh_ = want_h;
 		have_set_ = true;
 		was_placed_ = placed;
-		if (placed)
+		if (placed) {
+			// At rest where it belongs. "Same place in other scenes": the
+			// same source in the scenes that are not on screen is put
+			// exactly there too, each time this place changes, so that
+			// it is already there when one of them is switched to.
+			if (s.share && glide_ >= 1.0 && obs_source_showing(parent_) &&
+			    !(have_shared_ && std::fabs(shared_[0] - x) < 0.05 && std::fabs(shared_[1] - y) < 0.05 &&
+			      std::fabs(shared_[2] - want_w) < 0.05 && std::fabs(shared_[3] - want_h) < 0.05 &&
+			      shared_toward_ == toward)) {
+				have_shared_ = true;
+				shared_[0] = x;
+				shared_[1] = y;
+				shared_[2] = want_w;
+				shared_[3] = want_h;
+				shared_toward_ = toward;
+				const double home[2] = {s.anchor_x, s.anchor_y};
+				share_place(parent_, item, free && s.have_anchor ? home : nullptr);
+			}
 			return;
+		}
 		obs_sceneitem_defer_update_begin(item);
 		obs_sceneitem_set_alignment(item, OBS_ALIGN_LEFT | OBS_ALIGN_TOP);
 		obs_sceneitem_set_rot(item, 0.0f);
@@ -1001,6 +1056,9 @@ private:
 	bool back_to_original_ = false, resized_by_hand_ = false;
 	bool placed_by_tool_ = false;
 	bool placed_ = false; // under mutex_: the item was just placed on purpose by a tool
+	// Under mutex_: the item was just given its place by another scene's filter.
+	bool shared_in_ = false, shared_home_ = false;
+	double shared_home_x_ = 0.0, shared_home_y_ = 0.0;
 	double steady_sw_ = 0.0, steady_sh_ = 0.0,
 	       steady_for_ =
 		       0.0; // the item's source has kept its size this long // just unticked: keep the size from before the filter
@@ -1008,6 +1066,10 @@ private:
 	bool have_goal_ = false, have_cur_ = false;
 	double glide_ = 1.0;
 	bool have_set_ = false, moving_ = false;
+	// "Same place in other scenes": the place last given to the other scenes.
+	bool have_shared_ = false;
+	double shared_[4] = {0.0, 0.0, 0.0, 0.0};
+	uint32_t shared_toward_ = 0;
 	// A hidden item is left alone; shown again, it first says where it is.
 	static constexpr double kComingBack = 0.1;
 	bool hidden_ = false, coming_back_ = false, have_claim_ = false;
@@ -1077,6 +1139,8 @@ obs_properties_t *get_properties(void *data)
 	      "Fit.Toward.TopLeft", "Fit.Toward.TopRight", "Fit.Toward.BottomLeft", "Fit.Toward.BottomRight"})
 		obs_property_list_add_int(toward, obs_module_text(name), toward_value++);
 	obs_property_set_long_description(toward, obs_module_text("Fit.Toward.Tip"));
+	obs_property_t *share = obs_properties_add_bool(props, "share", obs_module_text("Fit.Share"));
+	obs_property_set_long_description(share, obs_module_text("Fit.Share.Tip"));
 	obs_property_t *tolerance =
 		obs_properties_add_float_slider(props, "tolerance", obs_module_text("Fit.Tolerance"), 0.0, 100.0, 1.0);
 	obs_property_float_set_suffix(tolerance, " px");
@@ -1119,6 +1183,7 @@ void get_defaults(obs_data_t *settings)
 	obs_data_set_default_double(settings, "tolerance", 8.0);
 	obs_data_set_default_bool(settings, "resize", true);
 	obs_data_set_default_int(settings, "toward", 0);
+	obs_data_set_default_bool(settings, "share", false);
 	obs_data_set_default_bool(settings, "visible_pixels", true);
 	obs_data_set_default_bool(settings, "no_shadows", true);
 	obs_data_set_default_int(settings, "glide_ms", 300);
@@ -1135,6 +1200,15 @@ void fit_item_placed(obs_source_t *scene, const char *item_name)
 	std::lock_guard lock(g_filters_mutex);
 	for (FitItem *filter : g_filters)
 		filter->placed(scene, item_name);
+}
+
+void fit_item_shared(obs_source_t *scene, const char *item_name, const double *home)
+{
+	if (!item_name || !scene)
+		return;
+	std::lock_guard lock(g_filters_mutex);
+	for (FitItem *filter : g_filters)
+		filter->shared(scene, item_name, home);
 }
 
 void register_fit_item()

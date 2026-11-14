@@ -443,6 +443,16 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   makes room (`soft_*`) still wins over it, or the two would close in for good. The owner asked
   for "a directional bias or preferred direction ... prevent it from going in an undesirable
   direction".
+- **Fit to Space's *Same place in other scenes*** (`share`, off as it comes; `share_place` in
+  `src/dock/arrange.*`, `fit_item_shared` in `src/placement/fit-item.*`): each time the filter's
+  item has come to rest in a scene that is showing, the same source's copies in the scenes that
+  are *not* showing get its transform, locked ones too. A filter of its own in such a scene leaves
+  the item there until its scene comes into view, re-reads the kept size, and takes the sharing
+  filter's *home* point (anchor) for its own, not the spot the item happens to be at: taken from
+  the spot, a chat box that had moved up into a hidden camera's place would be "at home" inside
+  the camera in the next scene. Scenes on screen are never written to, or two scenes showing at
+  once would push each other for good. The owner: "links the same object between scenes ... so
+  it's already there when scene switches and it's not jarring".
 - **Blur goes to 1000** (`kMaxStrength`; it was 250 and the owner asked for more). A Gaussian or box
   blur set above `kTapLimit` (250) is drawn the Dual Kawase way for its whole ramp, so there is no
   change of look part-way through a ramp. Zoom's pull is still worked out from 250. Ambient
