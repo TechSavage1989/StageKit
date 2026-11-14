@@ -14,7 +14,7 @@ import json
 import os
 import sys
 
-from PIL import Image, ImageEnhance
+from PIL import Image, ImageDraw, ImageEnhance
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "..", "com.techsavage1989.stagekit.sdPlugin", "imgs", "pack")
@@ -63,6 +63,46 @@ def build_index(groups):
     return pictures
 
 
+def accent_of(folder):
+    """The palette's own bright colour, taken from one of its pictures."""
+    image = Image.open(os.path.join(folder, "filters", "show-in-scenes-on.png")).convert("RGB").resize((64, 64))
+    best, most = (255, 255, 255), -1.0
+    for r, g, b in image.getdata():
+        high, low = max(r, g, b), min(r, g, b)
+        strength = (high - low) * high  # saturated and bright
+        if strength > most:
+            best, most = (r, g, b), strength
+    return best if most > 2000 else (255, 255, 255)
+
+
+def plain(kind, on, accent):
+    """A plain key in the palette's colour, for what the pack has no picture of."""
+    s = SIZE * 4
+    ink = (255, 255, 255, 255) if on else (120, 126, 140, 255)
+    lit = accent + (255,) if on else (86, 90, 104, 255)
+    image = Image.new("RGBA", (s, s), (24, 26, 34, 255))
+    draw = ImageDraw.Draw(image)
+    w = s // 22
+    frame = (s * 0.14, s * 0.22, s * 0.86, s * 0.70)
+    draw.rounded_rectangle(frame, radius=s * 0.06, outline=ink, width=w)
+    if kind == "switch":
+        draw.rounded_rectangle((s * 0.52, s * 0.42, s * 0.78, s * 0.62), radius=s * 0.035, fill=lit)
+        y0, y1 = s * 0.78, s * 0.90
+        draw.rounded_rectangle((s * 0.36, y0, s * 0.64, y1), radius=(y1 - y0) / 2, fill=lit)
+        knob, r = (s * 0.57 if on else s * 0.43), (y1 - y0) * 0.36
+        draw.ellipse((knob - r, (y0 + y1) / 2 - r, knob + r, (y0 + y1) / 2 + r), fill=(255, 255, 255, 255))
+    elif kind == "move":
+        draw.rounded_rectangle((s * 0.22, s * 0.46, s * 0.42, s * 0.62), radius=s * 0.03, outline=(120, 126, 140, 255), width=w // 2)
+        draw.rounded_rectangle((s * 0.58, s * 0.30, s * 0.78, s * 0.46), radius=s * 0.03, fill=lit)
+        draw.line((s * 0.40, s * 0.48, s * 0.55, s * 0.41), fill=ink, width=w)
+    else:  # tool: three items lined up on one edge
+        draw.line((s * 0.26, s * 0.30, s * 0.26, s * 0.62), fill=lit, width=w)
+        for i, length in enumerate((0.40, 0.26, 0.34)):
+            y = s * (0.32 + i * 0.105)
+            draw.rounded_rectangle((s * 0.30, y, s * (0.30 + length), y + s * 0.07), radius=s * 0.02, fill=ink)
+    return image.resize((SIZE, SIZE), Image.LANCZOS)
+
+
 def main():
     if len(sys.argv) != 2:
         print(__doc__)
@@ -100,6 +140,20 @@ def main():
                     found[group][-1] = file[:-4] + "-on"
                     found[group].append(file[:-4] + "-off")
                     count += 1
+        accent = accent_of(source)
+        target = os.path.join(OUT, colour, "plain")
+        os.makedirs(target, exist_ok=True)
+        for name, kind, on in (
+            ("switch-on", "switch", True),
+            ("switch-off", "switch", False),
+            ("move", "move", True),
+            ("tool", "tool", True),
+        ):
+            plain(kind, on, accent).quantize(255, method=Image.FASTOCTREE).save(
+                os.path.join(target, name + ".png"), "PNG", optimize=True
+            )
+            found.setdefault("plain", []).append(name)
+            count += 1
         if groups is None:
             groups = found
         elif found != groups:

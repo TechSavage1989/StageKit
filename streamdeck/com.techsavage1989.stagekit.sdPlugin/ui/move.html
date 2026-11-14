@@ -13,12 +13,11 @@
 		<sdpi-item label="Move">
 			<sdpi-select id="filter" setting="filter" datasource="getFilters" placeholder="Choose" show-refresh></sdpi-select>
 		</sdpi-item>
-
 		<sdpi-item label="Picture">
 			<sdpi-select setting="picture" datasource="getPictures" default=""></sdpi-select>
 		</sdpi-item>
-		<sdpi-item label="Colour">
-			<sdpi-select setting="colour" global default="mono">
+		<sdpi-item label="Palette">
+			<sdpi-select setting="palette" default="mono">
 				<option value="mono">Mono</option>
 				<option value="violet">Violet</option>
 				<option value="ocean">Ocean</option>
@@ -41,7 +40,7 @@
 			</sdpi-item>
 			<p>
 				In OBS: Tools &rarr; WebSocket Server Settings. Tick &ldquo;Enable WebSocket server&rdquo;, then
-				&ldquo;Show Connect Info&rdquo; for the port and password.
+				&ldquo;Show Connect Info&rdquo; for the port and password. One connection serves every StageKit key.
 			</p>
 		</details>
 

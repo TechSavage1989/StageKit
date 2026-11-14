@@ -11,8 +11,8 @@ import type { JsonValue } from "@elgato/utils";
 
 import { isMove } from "../kinds.ts";
 import { obs } from "../obs.ts";
-import { choose, file } from "../pictures.ts";
-import { answerLists, type KeySettings, look } from "./shared.ts";
+import { choose, file, plain } from "../pictures.ts";
+import { answerLists, type KeySettings } from "./shared.ts";
 
 /**
  * A key that runs one StageKit move: a Send To key on the camera, a Place
@@ -26,7 +26,6 @@ export class Move extends SingletonAction<KeySettings> {
 		const all = () => void this.showAll();
 		obs.on("connection", all);
 		obs.on("changed", all);
-		look.on("changed", all);
 	}
 
 	override onWillAppear(ev: WillAppearEvent<KeySettings>): Promise<void> {
@@ -40,8 +39,8 @@ export class Move extends SingletonAction<KeySettings> {
 	/** The picture of where it sends the camera (or the one chosen). */
 	private async show(key: KeyAction<KeySettings>, settings: KeySettings): Promise<void> {
 		const now = await obs.filter(settings.source ?? "", settings.filter ?? "");
-		const picture = choose(settings.picture, now?.kind ?? "", now?.settings);
-		await key.setImage(picture ? file(picture, true, look.colour) : undefined);
+		const picture = choose(settings.picture, now?.kind ?? "", now?.settings) ?? plain("move");
+		await key.setImage(file(picture, true, settings.palette));
 	}
 
 	private async showAll(): Promise<void> {
@@ -58,6 +57,7 @@ export class Move extends SingletonAction<KeySettings> {
 		}
 		try {
 			await obs.setFilter(source, filter, true);
+			await ev.action.showOk();
 		} catch {
 			await ev.action.showAlert();
 		}

@@ -4,26 +4,9 @@
 import streamDeck from "@elgato/streamdeck";
 import type { JsonValue } from "@elgato/utils";
 
-import { EventEmitter } from "node:events";
-
 import { filterItems, sourceItems } from "../kinds.ts";
 import { obs } from "../obs.ts";
-import { DEFAULT_COLOUR, pictureItems } from "../pictures.ts";
-
-/**
- * The colour of the pictures, one choice for every key (kept with the OBS
- * connection in Stream Deck's settings for the whole plugin). "changed" is
- * sent when another colour is chosen.
- */
-export const look = new (class extends EventEmitter {
-	colour = DEFAULT_COLOUR;
-	use(colour: string | undefined): void {
-		const next = colour || DEFAULT_COLOUR;
-		if (next === this.colour) return;
-		this.colour = next;
-		this.emit("changed");
-	}
-})();
+import { pictureItems } from "../pictures.ts";
 
 export type KeySettings = {
 	source?: string;
@@ -31,6 +14,10 @@ export type KeySettings = {
 	press?: "toggle" | "on" | "off";
 	/** A picture of the pack by name; empty for the one that fits the filter. */
 	picture?: string;
+	/** The palette of this key's picture: mono unless another is chosen. */
+	palette?: string;
+	/** An arrange tool, for a Tool key. */
+	tool?: string;
 	[key: string]: JsonValue | undefined;
 };
 

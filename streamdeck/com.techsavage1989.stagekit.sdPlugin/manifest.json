@@ -1,13 +1,13 @@
 {
 	"Name": "StageKit",
-	"Version": "0.1.0.0",
+	"Version": "0.2.0.0",
 	"Author": "StageKit contributors",
 	"Actions": [
 		{
 			"Name": "Filter switch",
 			"UUID": "com.techsavage1989.stagekit.switch",
 			"Icon": "imgs/actions/switch/icon",
-			"Tooltip": "Switches a StageKit filter on and off, and shows which way it is.",
+			"Tooltip": "Switches a StageKit filter on and off. The key shows which way it is.",
 			"PropertyInspectorPath": "ui/switch.html",
 			"Controllers": [
 				"Keypad"
@@ -29,7 +29,7 @@
 			"Name": "Move",
 			"UUID": "com.techsavage1989.stagekit.move",
 			"Icon": "imgs/actions/move/icon",
-			"Tooltip": "Runs a StageKit move: a Send To key, a Place Item, a Layout or a Picture Shape key.",
+			"Tooltip": "Runs a StageKit move: Send To, Place Item, Layout or a Picture Shape key.",
 			"PropertyInspectorPath": "ui/move.html",
 			"Controllers": [
 				"Keypad"
@@ -37,6 +37,44 @@
 			"States": [
 				{
 					"Image": "imgs/actions/move/key",
+					"TitleAlignment": "bottom"
+				}
+			]
+		},
+		{
+			"Name": "Arrange tool",
+			"UUID": "com.techsavage1989.stagekit.tool",
+			"Icon": "imgs/actions/tool/icon",
+			"Tooltip": "Lines up, spaces out, snaps or resizes the items selected in OBS, or copies a transform to other scenes.",
+			"PropertyInspectorPath": "ui/tool.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/tool/key",
+					"TitleAlignment": "bottom"
+				}
+			]
+		},
+		{
+			"Name": "Blur everything",
+			"UUID": "com.techsavage1989.stagekit.blurall",
+			"Icon": "imgs/actions/blur/icon",
+			"Tooltip": "Switches every Ramp Blur on, or all of them off again. Shows on while any is on.",
+			"PropertyInspectorPath": "ui/blur-all.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/blur/off",
+					"Name": "Off",
+					"TitleAlignment": "bottom"
+				},
+				{
+					"Image": "imgs/actions/blur/on",
+					"Name": "On",
 					"TitleAlignment": "bottom"
 				}
 			]

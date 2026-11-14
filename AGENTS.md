@@ -363,7 +363,11 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   `imgs/pack/<colour>/`, written with `src/pack.json` by `tools/import-icons.py` from the pack's
   folder, which is not in the repository (nor is the program that draws it). A key left on
   *Automatic* gets its picture from the filter's kind and settings (`automatic()` in
-  `src/pictures.ts`); keep that by kind and setting, never by the owner's source names.
+  `src/pictures.ts`); keep that by kind and setting, never by the owner's source names. The
+  palette is each key's own setting (`palette`): the first build had one colour for all keys and
+  the owner asked for it per key and for the word *Palette*. An *Arrange tool* key presses the
+  tool's OBS hotkey by name (`stagekit.arrange.<tool>`, the names in `kInfo`): renaming one there
+  breaks the key. *Blur everything* uses the `BlurAll` and `ListBlurFilters` vendor requests.
   `com.techsavage1989.stagekit` and the action UUIDs under it must never change once
   the owner has keys on their decks: Stream Deck ties saved keys to them.
 - **Auto Capture's Windows code is only compiled by CI and never run by the tests.** The tests feed it

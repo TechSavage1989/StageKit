@@ -765,6 +765,27 @@
 			"off": "filters/standby-picture-off"
 		},
 		{
+			"id": "plain/move",
+			"group": "plain",
+			"label": "move",
+			"on": "plain/move",
+			"off": "plain/move"
+		},
+		{
+			"id": "plain/switch",
+			"group": "plain",
+			"label": "switch",
+			"on": "plain/switch-on",
+			"off": "plain/switch-off"
+		},
+		{
+			"id": "plain/tool",
+			"group": "plain",
+			"label": "tool",
+			"on": "plain/tool",
+			"off": "plain/tool"
+		},
+		{
 			"id": "scenes/01-stream-start",
 			"group": "scenes",
 			"label": "01 stream start",
