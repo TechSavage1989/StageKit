@@ -543,9 +543,6 @@ public:
 		if (!use_test)
 			windows = g_window_watch.latest();
 
-		auto excluded = [&](const std::string &exe) {
-			return matches(exe, never) || built_in_never(exe);
-		};
 		auto key_of = [](const Window &w) {
 			return w.window_class + ":" + w.executable;
 		};
@@ -560,9 +557,12 @@ public:
 		bool learned_something = false;
 		for (const Window &w : windows) {
 			const std::string exe = lower(w.executable);
-			if (excluded(exe) && !matches(exe, always))
+			// Either list can name a program or part of a window's title:
+			// two builds of one program share a file name.
+			const std::string title = lower(w.title);
+			const bool listed = matches(exe, always) || matches(title, always);
+			if (!listed && (matches(exe, never) || matches(title, never) || built_in_never(exe)))
 				continue;
-			const bool listed = matches(exe, always);
 			if (mode == Mode::AnyGame && w.looks_like_game && known_games_.insert(exe).second) {
 				learned_something = true;
 				// For the log: from here on this program is picked up at once.

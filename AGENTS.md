@@ -128,6 +128,15 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
 - **Long control labels push every control to the right** in OBS's filter window, which the owner
   rejected. Keep a label under about 26 characters and put the rest in a tooltip
   (`obs_property_set_long_description`).
+- **A program can be named by part of its window's title wherever it is named by file.** The owner
+  runs Dolphin (4:3) and PrimeHack, a build of it with the same `Dolphin.exe` (16:9): "some
+  applications i have are the same exe name but they are different versions and need different
+  rules". Auto Frame's saved shapes are looked for in the file name and the title, and the longest
+  name that fits wins (`said`); its *Program or window* list offers the open windows' titles.
+  Follow Active App gives each of several captures of one program the window whose title starts
+  most like the title the capture was aimed at (`is_for`). Auto Capture's two lists match the title
+  too. Program Trigger had a title box already. What Auto Frame *learns* by itself is still kept by
+  file name only; a saved shape for the title is how the two are told apart.
 - **Built-in emulator shapes are a starting guess, never an order.** The owner's Snes9x shows 8:7; the
   first table said 64:49 and cropped the picture. `kKnownPrograms` only seeds the held shape; what is
   seen on screen corrects it. Only a shape the owner saved, or an Aspect Ratio Preset, is obeyed blindly.

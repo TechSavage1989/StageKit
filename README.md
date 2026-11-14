@@ -298,6 +298,14 @@ open programs (or find its file with *…or find it on this computer*), choose i
 *Remember this shape for this program*. A shape you save is always obeyed as it is. Emulators that play
 several consoles, such as RetroArch and Dolphin, are not built in because their shape depends on the game.
 
+**Two programs with the same file name.** A special build of an emulator often keeps the original's
+file name (PrimeHack is `Dolphin.exe`). The *Program or window* list also offers the titles of the
+open windows: pick one, shorten it if you like (`primehack` is enough: part of a title will do),
+choose its shape and press the button. When several saved shapes fit a window, the one with the
+longest name is used, so `primehack = 16:9` and `dolphin = 4:3` can sit side by side. In the same way
+Follow Active App tells two captures of such programs apart by their window titles, and Auto
+Capture's *Never capture* and *Always capture* take part of a title as well as part of a file name.
+
 To set the shape from a Stream Deck, add **Aspect Ratio Preset (StageKit)** next to Auto Frame, once per
 shape, and point a *Filter* key at it. Switching it on sets the shape and it switches itself off; a key
 set to *Automatic* hands control back.
