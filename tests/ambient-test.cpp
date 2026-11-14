@@ -408,6 +408,59 @@ int main(int argc, char **argv)
 			      "run by the clock it is part-way after part of its time, with the shared item on its way, and the new scene after it (%.1f from the old scene, %.1f from the new; %.2f at the end)",
 			      mean_abs_diff(timed, first), mean_abs_diff(timed, last), mean_abs_diff(timed_done, last));
 
+			// Links: two different sources set to count as the same thing.
+			// The owner: "link my different camera sources to each other
+			// across scenes so the camera from one morphs into the camera
+			// for the other ... multiple links".
+			{
+				obs_source_t *camera_two = block("Morph Camera Two", 0xFFFF00FF, 100, 60); // magenta
+				obs_scene_t *md = obs_scene_create("Morph Linked From");
+				obs_scene_t *me = obs_scene_create("Morph Linked To");
+				put(md, old_back, 0, 0);
+				put(md, camera, 20, 20);
+				put(me, new_back, 0, 0);
+				put(me, camera_two, 520, 280);
+				const std::vector<uint8_t> unlinked = at_time(md, me, 0.5f);
+				// In the settings window: choose the two, press the button.
+				obs_properties_t *lp = obs_source_properties(morph);
+				obs_data_t *ls2 = obs_source_get_settings(morph);
+				obs_data_set_string(ls2, "link_a", "Morph Camera");
+				obs_data_set_string(ls2, "link_b", "Morph Camera Two");
+				obs_source_update(morph, ls2);
+				const bool pressed =
+					obs_properties_get(lp, "link_add") &&
+					obs_property_button_clicked(obs_properties_get(lp, "link_add"), morph);
+				const int rows = list_rows(lp, "links|a");
+				obs_data_release(ls2);
+				sleep_ms(100);
+				const std::vector<uint8_t> linked_half = at_time(md, me, 0.5f);
+				// Unlinked, each camera fades where it is. Linked, there is
+				// one camera half-way (270,150 to 370,210), both mixed, and
+				// none at either end.
+				CHECK(pressed && rows == 1 && px(unlinked, 50, 40, 0) > 80 &&
+					      px(unlinked, 550, 300, 2) > 80 && px(linked_half, 320, 180, 0) > 240 &&
+					      px(linked_half, 320, 180, 2) > 80 && px(linked_half, 320, 180, 2) < 215 &&
+					      px(linked_half, 50, 40, 0) < 15 && px(linked_half, 550, 300, 0) < 15,
+				      "two sources linked in the settings change into each other on the way, like one source in both scenes (half-way: red %d, blue %d; red %d and %d at the ends; unlinked they fade in place: %d and %d)",
+				      px(linked_half, 320, 180, 0), px(linked_half, 320, 180, 2),
+				      px(linked_half, 50, 40, 0), px(linked_half, 550, 300, 0), px(unlinked, 50, 40, 0),
+				      px(unlinked, 550, 300, 2));
+				// The row's own button takes the link off again.
+				obs_property_button_clicked(obs_properties_get(lp, "links|arow|0"), morph);
+				sleep_ms(100);
+				const std::vector<uint8_t> off_again = at_time(md, me, 0.5f);
+				CHECK(list_rows(lp, "links|a") == 0 && mean_abs_diff(off_again, unlinked) < 0.5,
+				      "and a link taken off the list no longer counts (diff %.2f)",
+				      mean_abs_diff(off_again, unlinked));
+				obs_properties_destroy(lp);
+				obs_transition_set_manual_time(morph, 1.0f);
+				sleep_ms(120);
+				render(morph, w, h);
+				obs_scene_release(md);
+				obs_scene_release(me);
+				obs_source_release(camera_two);
+			}
+
 			// Unticked, the game and the window are cross-faded in place.
 			obs_data_set_bool(ms, "pair_main", false);
 			obs_source_update(morph, ms);
@@ -1288,6 +1341,77 @@ int main(int argc, char **argv)
 			CHECK(all_shown && all_hidden,
 			      "several sources switch together, and 'on' can mean hidden (%d %d)", all_shown,
 			      all_hidden);
+			// How items appear and disappear: showing and hiding each with a
+			// transition of its own, that transition's own settings (the way
+			// a slide goes) set in the filter, and one listed source with a
+			// change of its own. The owner: "if one has slide up to hide and
+			// down to show, another can be fade".
+			if (obs_source_get_display_name("slide_transition")) {
+				obs_data_t *cs = obs_source_get_settings(sw);
+				obs_data_set_string(cs, "transition", "slide_transition");
+				obs_data_set_int(cs, "transition_ms", 400);
+				obs_data_set_string(cs, "show|slide_transition|direction", "down");
+				obs_data_set_string(cs, "hide_transition", "slide_transition");
+				obs_data_set_int(cs, "hide_ms", 250);
+				obs_data_set_string(cs, "hide|slide_transition|direction", "up");
+				obs_data_set_string(cs, "for|Switch Chat|transition", "fade_transition");
+				obs_data_set_int(cs, "for|Switch Chat|transition_ms", 150);
+				obs_source_update(sw, cs);
+				sleep_ms(100);
+				flip(false); // shown
+				flip(true);  // hidden
+				auto way = [](obs_sceneitem_t *item, bool show, const char *kind, const char *direction,
+					      uint32_t ms) {
+					obs_source_t *t = obs_sceneitem_get_transition(item, show);
+					if (!t || strcmp(obs_source_get_unversioned_id(t), kind) != 0 ||
+					    obs_sceneitem_get_transition_duration(item, show) != ms)
+						return false;
+					obs_data_t *ts = obs_source_get_settings(t);
+					const bool right = !direction ||
+							   strcmp(obs_data_get_string(ts, "direction"), direction) == 0;
+					obs_data_release(ts);
+					return right;
+				};
+				CHECK(way(cam1, true, "slide_transition", "down", 400) &&
+					      way(cam1, false, "slide_transition", "up", 250) &&
+					      way(cam3, false, "slide_transition", "up", 250),
+				      "showing and hiding each have their own transition, with its own settings: a slide down to show and a slide up to hide");
+				CHECK(way(chat1, true, "fade_transition", nullptr, 150) &&
+					      way(chat1, false, "fade_transition", nullptr, 150) &&
+					      way(chat3, true, "fade_transition", nullptr, 150),
+				      "and a listed source can have a change of its own: here a fade, while the others slide");
+				// The settings window: the slide's own settings are there, and
+				// choosing a source under 'Settings for' brings up that source's.
+				obs_properties_t *cp = obs_source_properties(sw);
+				obs_property_t *direction = obs_properties_get(cp, "show|slide_transition|direction");
+				obs_property_t *for_box = obs_properties_get(cp, "change|for");
+				const bool offered = direction && obs_property_list_item_count(direction) >= 4 &&
+						     obs_properties_get(cp, "hide|slide_transition|direction") &&
+						     for_box && obs_property_list_item_count(for_box) == 3;
+				obs_data_set_string(cs, "change|for", "Switch Chat");
+				if (for_box)
+					obs_property_modified(for_box, cs);
+				obs_property_t *own_kind = obs_properties_get(cp, "for|Switch Chat|transition");
+				CHECK(offered && own_kind &&
+					      !obs_properties_get(cp, "show|slide_transition|direction") &&
+					      strcmp(obs_property_list_item_string(own_kind, 0), "usual") == 0,
+				      "the filter's settings offer the slide's own direction for showing and for hiding, and 'Settings for' switches them to one source's own");
+				obs_properties_destroy(cp);
+				// Back to a cut for everything, as the checks below found it.
+				obs_data_set_string(cs, "change|for", "");
+				obs_data_set_string(cs, "transition", "none");
+				obs_data_set_string(cs, "hide_transition", "same");
+				obs_data_set_string(cs, "for|Switch Chat|transition", "usual");
+				obs_source_update(sw, cs);
+				obs_data_release(cs);
+				sleep_ms(100);
+				flip(false);
+				flip(true);
+				CHECK(obs_sceneitem_get_transition(chat1, true) == nullptr &&
+					      obs_sceneitem_get_transition(cam1, false) == nullptr,
+				      "set back to a cut, and the source back to the usual, every item's transitions are taken off again");
+			}
+
 			// Bring-along items too: what the camera's Send To key brings along.
 			{
 				obs_source_t *tag = obs_source_create("color_source", "Switch Tag", nullptr, nullptr);

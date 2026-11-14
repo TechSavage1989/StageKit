@@ -738,7 +738,9 @@ off, and the sources are shown or hidden to match.
 | Scenes | The scenes to act in, when you chose to list them |
 | When this is on | *They are shown* (off hides them) or *They are hidden* (off shows them) |
 | Bring-along items too | Ticked: the items those sources bring along are shown and hidden with them. They are the items chosen under *Bring along* in the sources' Move Source keys, and in Move Scene Item filters that move them |
-| Change with / Lasting | How each item appears and disappears: a fade (the default), any other transition OBS has, a cut, or whatever is already set on the item; and for how long |
+| Show with / Lasting | How each item appears: a fade (the default), any other transition OBS has, a cut, or whatever is already set on the item; and for how long. Under it come that transition's own settings, such as the way a slide goes |
+| Hide with / Lasting | How each item disappears: *The same as showing* (the default), or a transition of its own with its own settings, so an item can slide down into view and slide up out of it |
+| Settings for | With sources on the list: *All sources (the usual)*, or one of the listed sources. Choose a source and the controls below are that source's own: it can show and hide with another transition, another duration and other settings than the rest, or be left *As for all sources* |
 | Do it now | Shows or hides them to match how the filter is switched now |
 
 It acts when it is switched, not all the time, so something you show or hide by hand stays until the
@@ -790,6 +792,11 @@ A scene transition, chosen like any other: in OBS's *Scene Transitions* box pres
   each scene is taken for the main picture, and the one changes into the other while it moves and
   resizes: a game capture in one scene and a window capture in the next. Unticked, those two are
   cross-faded where they are.
+- **Linked sources**: two different sources that are to count as the same thing, your camera in
+  one scene and another camera in the next, say. Choose the two under *Link this source* and *With
+  this source* and press *Add this link*; the one then moves, resizes and changes into the other.
+  Add as many links as you like, each with its own remove button. A source linked to several
+  others goes with whichever of them the other scene shows.
 - **Other items**, which are in only one of the scenes, fade (as it comes), fade and zoom, or slide
   off the nearest edge of the screen. Something that fills the screen is a background and always
   fades; two backgrounds changing over stay a whole picture all the way.
@@ -798,7 +805,7 @@ A scene transition, chosen like any other: in OBS's *Scene Transitions* box pres
 Things to know:
 
 - Items are matched by source, not by how they look. Two different sources that look alike are
-  cross-faded, unless they are the two main pictures.
+  cross-faded, unless you link them or they are the two main pictures.
 - A scene that carries a filter which draws (a blur or a colour correction on the scene itself)
   cannot be taken apart; a change to or from it is a plain cross-fade, and OBS's log says which
   filter it was. Filters that only move, show and hide items do not count, StageKit's own and the

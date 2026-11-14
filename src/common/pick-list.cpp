@@ -59,6 +59,8 @@ std::string trimmed(const std::string &text)
 
 bool remove_row(obs_properties_t *top, obs_property_t *property, void *data);
 
+void (*g_changed)(obs_properties_t *top, obs_source_t *owner, obs_data_t *settings) = nullptr;
+
 // Puts one row per entry under the heading, replacing whatever rows were there.
 void build_rows(obs_properties_t *top, obs_source_t *owner, obs_data_t *settings, const char *setting, bool as_text)
 {
@@ -107,6 +109,8 @@ bool remove_row(obs_properties_t *top, obs_property_t *property, void *data)
 		obs_source_update(owner, settings);
 	}
 	build_rows(top, owner, settings, which.setting.c_str(), which.as_text);
+	if (g_changed)
+		g_changed(top, owner, settings);
 	obs_data_release(settings);
 	return true;
 }
@@ -127,10 +131,17 @@ bool picked(void *priv, obs_properties_t *top, obs_property_t *property, obs_dat
 	}
 	obs_data_set_string(settings, pick_name.c_str(), "");
 	build_rows(top, owner, settings, which.setting.c_str(), which.as_text);
+	if (g_changed)
+		g_changed(top, owner, settings);
 	return true;
 }
 
 } // namespace
+
+void pick_list_on_change(void (*changed)(obs_properties_t *top, obs_source_t *owner, obs_data_t *settings))
+{
+	g_changed = changed;
+}
 
 std::vector<std::string> pick_list_read(obs_data_t *settings, const char *setting, bool as_text)
 {

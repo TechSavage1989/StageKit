@@ -25,6 +25,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include "morph.hpp"
 #include "../common/easing.hpp"
+#include "../common/pick-list.hpp"
 #include "../common/scene-util.hpp"
 #include "../common/timing.hpp"
 #include "../placement/fit-item.hpp"
@@ -165,7 +166,34 @@ struct Settings {
 	EaseMode mode = EaseMode::InOut;
 	Others others = Others::Fade;
 	bool pair_main = true; // the largest item left over in each scene becomes one that changes into the other
+	// Sources set to count as one thing: the one changes into the other.
+	std::vector<std::pair<std::string, std::string>> links;
 };
+
+// A link is kept as one line of a list: the two names with this between them.
+inline constexpr const char *kLinkMark = " \xE2\x86\x94 ";
+
+// Whether two sources are linked, straight or by way of others (A with B and
+// B with C links A with C).
+bool linked(const Settings &s, const char *a, const char *b)
+{
+	if (!a || !b || s.links.empty())
+		return false;
+	std::vector<std::string> reached{a};
+	for (size_t at = 0; at < reached.size(); at++) {
+		for (const auto &link : s.links) {
+			const std::string *other = link.first == reached[at]    ? &link.second
+						   : link.second == reached[at] ? &link.first
+										: nullptr;
+			if (!other || std::find(reached.begin(), reached.end(), *other) != reached.end())
+				continue;
+			if (*other == b)
+				return true;
+			reached.push_back(*other);
+		}
+	}
+	return false;
+}
 
 // One thing to draw, from the back: an item of the old scene, of the new
 // scene, or of both.
@@ -264,6 +292,11 @@ void Morph::update(obs_data_t *settings)
 	s.mode = static_cast<EaseMode>(obs_data_get_int(settings, "ease_mode"));
 	s.others = static_cast<Others>(std::clamp<long long>(obs_data_get_int(settings, "others"), 0, 2));
 	s.pair_main = obs_data_get_bool(settings, "pair_main");
+	for (const std::string &line : pick_list_read(settings, "links", false)) {
+		const size_t mark = line.find(kLinkMark);
+		if (mark != std::string::npos && mark > 0 && mark + strlen(kLinkMark) < line.size())
+			s.links.emplace_back(line.substr(0, mark), line.substr(mark + strlen(kLinkMark)));
+	}
 	std::lock_guard lock(mutex_);
 	settings_ = s;
 }
@@ -314,6 +347,21 @@ void Morph::plan(obs_source_t *from, obs_source_t *to)
 		for (size_t o = 0; o < olds.size(); o++) {
 			if (partner_of_old[o] < 0 &&
 			    obs_sceneitem_get_source(olds[o]) == obs_sceneitem_get_source(news[n])) {
+				partner_of_old[o] = (int)n;
+				partner_of_new[n] = (int)o;
+				break;
+			}
+		}
+	}
+	// Then sources linked in the settings: one camera in this scene and
+	// another in that, set to count as the same thing.
+	for (size_t n = 0; n < news.size() && !s.links.empty(); n++) {
+		if (partner_of_new[n] >= 0)
+			continue;
+		const char *new_name = obs_source_get_name(obs_sceneitem_get_source(news[n]));
+		for (size_t o = 0; o < olds.size(); o++) {
+			if (partner_of_old[o] < 0 &&
+			    linked(s, obs_source_get_name(obs_sceneitem_get_source(olds[o])), new_name)) {
 				partner_of_old[o] = (int)n;
 				partner_of_new[n] = (int)o;
 				break;
@@ -686,8 +734,56 @@ float mix_in(void *, float t)
 	return t;
 }
 
-obs_properties_t *get_properties(void *)
+// Every source and scene there is, for the two boxes a link is made from.
+void add_sources(obs_property_t *box)
 {
+	std::vector<std::string> names;
+	const auto add = [](void *param, obs_source_t *source) {
+		const char *name = obs_source_get_name(source);
+		if (name && *name && (obs_source_get_output_flags(source) & OBS_SOURCE_VIDEO))
+			static_cast<std::vector<std::string> *>(param)->push_back(name);
+		return true;
+	};
+	obs_enum_sources(add, &names);
+	obs_enum_scenes(add, &names);
+	std::sort(names.begin(), names.end());
+	names.erase(std::unique(names.begin(), names.end()), names.end());
+	obs_property_list_add_string(box, obs_module_text("List.Choose"), "");
+	for (const std::string &name : names)
+		obs_property_list_add_string(box, name.c_str(), name.c_str());
+}
+
+// "Add this link": the two sources chosen become one line of the list.
+bool add_link(obs_properties_t *props, obs_property_t *, void *data)
+{
+	auto *self = static_cast<Morph *>(data);
+	if (!self)
+		return false;
+	obs_data_t *settings = obs_source_get_settings(self->source());
+	const std::string a = obs_data_get_string(settings, "link_a"), b = obs_data_get_string(settings, "link_b");
+	bool added = false;
+	if (!a.empty() && !b.empty() && a != b) {
+		std::vector<std::string> lines = pick_list_read(settings, "links", false);
+		const std::string line = a + kLinkMark + b, other_way = b + kLinkMark + a;
+		if (std::find(lines.begin(), lines.end(), line) == lines.end() &&
+		    std::find(lines.begin(), lines.end(), other_way) == lines.end()) {
+			lines.push_back(line);
+			pick_list_write(settings, "links", false, lines);
+		}
+		obs_data_set_string(settings, "link_a", "");
+		obs_data_set_string(settings, "link_b", "");
+		obs_source_update(self->source(), settings);
+		added = true;
+	}
+	obs_data_release(settings);
+	if (added)
+		pick_list_refresh(props, self->source(), "links", false);
+	return added;
+}
+
+obs_properties_t *get_properties(void *data)
+{
+	auto *self = static_cast<Morph *>(data);
 	obs_properties_t *props = obs_properties_create();
 	obs_property_t *others = obs_properties_add_list(props, "others", obs_module_text("Morph.Others"),
 							 OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
@@ -698,6 +794,22 @@ obs_properties_t *get_properties(void *)
 	obs_property_t *pair_main = obs_properties_add_bool(props, "pair_main", obs_module_text("Morph.PairMain"));
 	obs_property_set_long_description(pair_main, obs_module_text("Morph.PairMain.Tip"));
 	add_easing_properties(props, "");
+
+	// Links: two different sources that are to count as the same thing.
+	obs_property_t *link_a = obs_properties_add_list(props, "link_a", obs_module_text("Morph.LinkA"),
+							 OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
+	add_sources(link_a);
+	obs_property_set_long_description(link_a, obs_module_text("Morph.Links.Tip"));
+	obs_property_t *link_b = obs_properties_add_list(props, "link_b", obs_module_text("Morph.LinkB"),
+							 OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
+	add_sources(link_b);
+	obs_property_set_long_description(link_b, obs_module_text("Morph.Links.Tip"));
+	obs_properties_add_button2(props, "link_add", obs_module_text("Morph.LinkAdd"), add_link, self);
+	PickList links;
+	links.setting = "links";
+	links.title = "Morph.Links";
+	links.tip = "Morph.Links.Tip";
+	pick_list_add(props, self ? self->source() : nullptr, links);
 	return props;
 }
 

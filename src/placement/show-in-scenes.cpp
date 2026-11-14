@@ -34,6 +34,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <algorithm>
 #include <atomic>
 #include <cstring>
+#include <map>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -70,8 +71,11 @@ public:
 		where_ = static_cast<Where>(std::clamp((int)obs_data_get_int(settings, "where"), 0, 1));
 		on_hides_ = obs_data_get_int(settings, "on_means") == 1;
 		with_linked_ = obs_data_get_bool(settings, "with_linked");
-		transition_ = item_transition_kind(settings);
-		transition_ms_ = item_transition_ms(settings);
+		// How items change: the usual way, and each listed source's own.
+		change_ = item_change_read(settings);
+		own_change_.clear();
+		for (const std::string &name : sources)
+			own_change_[name] = item_change_read(settings, name.c_str());
 	}
 
 	// The state OBS restores when it loads a collection is not a press.
@@ -83,12 +87,12 @@ public:
 		std::vector<std::string> sources, scenes;
 		Where where;
 		bool show, with_linked;
-		std::string transition;
-		uint32_t transition_ms;
+		ItemChange change;
+		std::map<std::string, ItemChange> own_change;
 		{
 			std::lock_guard lock(mutex_);
-			transition = transition_;
-			transition_ms = transition_ms_;
+			change = change_;
+			own_change = own_change_;
 			sources = sources_;
 			scenes = scenes_;
 			where = where_;
@@ -158,16 +162,22 @@ public:
 		struct Work {
 			const std::vector<std::string> *sources, *scenes;
 			bool every, show;
-			const std::string *transition;
-			uint32_t transition_ms;
+			const ItemChange *change;
+			const std::map<std::string, ItemChange> *own_change;
 			int changed = 0;
-		} work{&sources, &scenes, where == Where::Every, show, &transition, transition_ms};
+			// A listed source's own change, or the usual one.
+			const ItemChange &change_for(const char *name) const
+			{
+				const auto own = own_change->find(name);
+				return own == own_change->end() ? *change : own->second;
+			}
+		} work{&sources, &scenes, where == Where::Every, show, &change, &own_change};
 		static const auto each = [](obs_scene_t *, obs_sceneitem_t *item, void *param) {
 			auto *w = static_cast<Work *>(param);
 			const char *name = obs_source_get_name(obs_sceneitem_get_source(item));
 			if (name && std::find(w->sources->begin(), w->sources->end(), name) != w->sources->end() &&
 			    obs_sceneitem_visible(item) != w->show) {
-				set_item_transitions(item, *w->transition, w->transition_ms);
+				apply_item_change(item, w->change_for(name));
 				obs_sceneitem_set_visible(item, w->show);
 				w->changed++;
 			}
@@ -183,7 +193,7 @@ public:
 						    std::find(w2->sources->begin(), w2->sources->end(), inner_name) !=
 							    w2->sources->end() &&
 						    obs_sceneitem_visible(inner) != w2->show) {
-							set_item_transitions(inner, *w2->transition, w2->transition_ms);
+							apply_item_change(inner, w2->change_for(inner_name));
 							obs_sceneitem_set_visible(inner, w2->show);
 							w2->changed++;
 						}
@@ -233,8 +243,8 @@ private:
 	Where where_ = Where::Every;
 	bool on_hides_ = false;
 	bool with_linked_ = false;
-	std::string transition_ = kTransitionFade;
-	uint32_t transition_ms_ = 300;
+	ItemChange change_;                            // how items change, usually
+	std::map<std::string, ItemChange> own_change_; // and for each listed source
 	std::atomic<bool> ready_{false};
 };
 
@@ -317,7 +327,7 @@ obs_properties_t *get_properties(void *data)
 		obs_properties_add_bool(props, "with_linked", obs_module_text("ShowIn.WithLinked"));
 	obs_property_set_long_description(with_linked, obs_module_text("ShowIn.WithLinked.Tip"));
 
-	add_item_transition_properties(props);
+	add_item_change_properties(props, self ? self->source() : nullptr, "sources");
 
 	obs_properties_add_button2(
 		props, "apply_now", obs_module_text("ShowIn.ApplyNow"),
@@ -357,7 +367,7 @@ void register_show_in_scenes()
 	info.get_defaults = [](obs_data_t *settings) {
 		obs_data_set_default_int(settings, "where", (int)Where::Every);
 		obs_data_set_default_int(settings, "on_means", 0);
-		item_transition_defaults(settings);
+		item_change_defaults(settings);
 	};
 	info.get_properties = get_properties;
 	info.video_tick = [](void *data, float) {
