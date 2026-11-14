@@ -325,6 +325,7 @@ private:
 	// "Keep it on screen": where each item was last seen and since when it
 	// has been still (used on the tick only).
 	bool in_view_ = false;
+	unsigned in_view_turn_ = 0;
 	struct Still {
 		Box box;
 		uint64_t since = 0;
@@ -713,10 +714,12 @@ void ShadowBackdrop::tick()
 		std::lock_guard lock(mutex_);
 		in_view = in_view_;
 	}
-	if (in_view && active)
-		keep_in_view(parent);
-	else
+	// Looked at a few times a second: it only acts on an item that has been
+	// still for a while, and going through every scene's items is not free.
+	if (!(in_view && active))
 		still_.clear();
+	else if (++in_view_turn_ % 8 == 0)
+		keep_in_view(parent);
 }
 
 // The filter is being taken off its source: give the room back.

@@ -147,33 +147,8 @@ public:
 		settings_ = s;
 	}
 
-	void attach(obs_source_t *parent)
-	{
-		parent_ = parent;
-		// Something added, removed, shown, hidden or moved in the scene:
-		// the free space is looked at again once things are quiet.
-		signal_handler_t *handler = obs_source_get_signal_handler(parent);
-		for (const char *name : {"item_add", "item_remove", "item_visible", "item_transform"})
-			signal_handler_connect(handler, name, scene_changed, this);
-	}
-	void detach()
-	{
-		if (parent_) {
-			signal_handler_t *handler = obs_source_get_signal_handler(parent_);
-			for (const char *name : {"item_add", "item_remove", "item_visible", "item_transform"})
-				signal_handler_disconnect(handler, name, scene_changed, this);
-		}
-		parent_ = nullptr;
-	}
-	~FitItem() { detach(); }
-	static void scene_changed(void *data, calldata_t *cd)
-	{
-		auto *self = static_cast<FitItem *>(data);
-		auto *item = static_cast<obs_sceneitem_t *>(calldata_ptr(cd, "item"));
-		if (item && obs_sceneitem_get_id(item) == self->own_id_.load())
-			return; // its own moves
-		self->stirred_ = true;
-	}
+	void attach(obs_source_t *parent) { parent_ = parent; }
+	void detach() { parent_ = nullptr; }
 	obs_source_t *source() const { return source_; }
 	obs_source_t *parent() const { return parent_; }
 
@@ -240,7 +215,6 @@ public:
 		const double picture = pw / ph;
 		bool free = s.box == BoxKind::FreeSpace;
 		if (free) {
-			own_id_ = obs_sceneitem_get_id(item);
 			Box space;
 			if (!free_box(item, s, how, Box{bx, by, bw, bh}, picture, seconds, space))
 				return; // being moved by hand, or no room at all
@@ -349,20 +323,13 @@ private:
 			look_again_ = true;
 		}
 
-		// What is in the way. Everything is measured in one go at the start
-		// and once things are quiet after a change in the scene; otherwise
-		// one item every quarter of a second, in turn, which is how a widget
-		// that begins to show something is noticed.
-		if (stirred_.exchange(false)) {
-			quiet_for_ = 0.0;
-			waiting_ = true;
-		} else if (waiting_) {
-			quiet_for_ += seconds;
-			if (quiet_for_ >= 0.3) {
-				waiting_ = false;
-				look_again_ = true;
-			}
-		}
+		// What is in the way. Drawing an item to see what shows in it is
+		// costly (it stalls the picture for a moment), so it is done as
+		// seldom as can be: once for each item when it is first met, and
+		// after that one item a second, in turn, while nothing is moving,
+		// which is how a widget that begins to show something is noticed.
+		// An item that only moves or changes size is followed by its box,
+		// which costs nothing: what shows in it keeps its place in the box.
 		std::vector<obs_sceneitem_t *> others;
 		struct Gather {
 			std::vector<obs_sceneitem_t *> *out;
@@ -395,28 +362,50 @@ private:
 		auto look = [&](obs_sceneitem_t *other) {
 			Seen seen;
 			seen.there = measure_seen(parent_, other, by, seen.box);
-			seen.kept = true;
-			auto found = seen_.find(obs_sceneitem_get_id(other));
-			if (found == seen_.end() || found->second.there != seen.there ||
-			    std::fabs(found->second.box.x - seen.box.x) > 0.5 ||
-			    std::fabs(found->second.box.y - seen.box.y) > 0.5 ||
-			    std::fabs(found->second.box.w - seen.box.w) > 0.5 ||
-			    std::fabs(found->second.box.h - seen.box.h) > 0.5)
-				changed_ = true;
+			seen.item_at = scene_box(parent_, other);
 			seen_[obs_sceneitem_get_id(other)] = seen;
 		};
 		if (look_again_) {
 			look_again_ = false;
-			for (auto &entry : seen_)
-				entry.second.kept = false;
-			for (obs_sceneitem_t *other : others)
-				look(other);
-			for (auto it = seen_.begin(); it != seen_.end();)
-				it = it->second.kept ? std::next(it) : seen_.erase(it);
-			changed_ = true;
+			seen_.clear();
 			turn_ = 0;
 			since_look_ = 0.0;
-		} else if ((since_look_ += seconds) >= 0.25 && !others.empty()) {
+		}
+		// Where each is now: what was seen in it, carried along with its box.
+		std::vector<Box> boxes;
+		for (obs_sceneitem_t *other : others) {
+			auto found = seen_.find(obs_sceneitem_get_id(other));
+			if (found == seen_.end()) {
+				look(other);
+				found = seen_.find(obs_sceneitem_get_id(other));
+			}
+			const Seen &seen = found->second;
+			if (!seen.there)
+				continue;
+			const Box now = scene_box(parent_, other);
+			if (seen.item_at.w < 1.0 || seen.item_at.h < 1.0 || now.w < 1.0 || now.h < 1.0) {
+				boxes.push_back(seen.box);
+				continue;
+			}
+			const double kx = now.w / seen.item_at.w, ky = now.h / seen.item_at.h;
+			boxes.push_back(Box{now.x + (seen.box.x - seen.item_at.x) * kx,
+					    now.y + (seen.box.y - seen.item_at.y) * ky, seen.box.w * kx,
+					    seen.box.h * ky});
+		}
+		auto same = [](const std::vector<Box> &a, const std::vector<Box> &b) {
+			if (a.size() != b.size())
+				return false;
+			for (size_t i = 0; i < a.size(); i++)
+				if (std::fabs(a[i].x - b[i].x) > 0.25 || std::fabs(a[i].y - b[i].y) > 0.25 ||
+				    std::fabs(a[i].w - b[i].w) > 0.25 || std::fabs(a[i].h - b[i].h) > 0.25)
+					return false;
+			return true;
+		};
+		if (!same(boxes, boxes_)) {
+			boxes_ = boxes;
+			changed_ = true;
+			since_look_ = 0.0; // something is moving: no looking meanwhile
+		} else if ((since_look_ += seconds) >= 1.0 && !others.empty() && glide_ >= 1.0) {
 			since_look_ = 0.0;
 			turn_ = (turn_ + 1) % others.size();
 			look(others[turn_]);
@@ -434,11 +423,7 @@ private:
 			changed_ = false;
 			if (!have_goal_ || shape_for_ >= 0.5 || shape_used_ <= 0.0)
 				shape_used_ = shape;
-			std::vector<Box> boxes;
-			for (const auto &entry : seen_)
-				if (entry.second.there)
-					boxes.push_back(entry.second.box);
-			const Box goal = free_space(within, s.anchor_x, s.anchor_y, boxes, s.margin, shape_used_);
+			const Box goal = free_space(within, s.anchor_x, s.anchor_y, boxes_, s.margin, shape_used_);
 			if (goal.w < 2.0 || goal.h < 2.0)
 				return false;
 			if (!have_goal_ || std::fabs(goal.x - goal_.x) > 0.05 || std::fabs(goal.y - goal_.y) > 0.05 ||
@@ -469,14 +454,14 @@ private:
 	Settings settings_;
 	// The free space: used on the tick only, but for the two flags.
 	struct Seen {
-		Box box;
-		bool there = false, kept = false;
+		Box box;     // what shows in it, on the canvas, when it was looked at
+		Box item_at; // and where its box was then
+		bool there = false;
 	};
+	std::vector<Box> boxes_; // what is in the way now
 	std::map<int64_t, Seen> seen_;
-	std::atomic<bool> stirred_{false};
-	std::atomic<int64_t> own_id_{-1};
-	bool look_again_ = true, waiting_ = false, changed_ = false;
-	double quiet_for_ = 0.0, since_look_ = 0.0;
+	bool look_again_ = true, changed_ = false;
+	double since_look_ = 0.0;
 	size_t turn_ = 0;
 	double shape_seen_ = 0.0, shape_used_ = 0.0, shape_for_ = 0.0;
 	Box goal_, from_, cur_;

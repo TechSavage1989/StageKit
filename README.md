@@ -321,7 +321,8 @@ gap you set (*Gap to edges and items*) from the screen's edges and from every ot
 nearest.
 
 - Move, show or hide another item and the fitted item glides to its new space (*Glide to a new space
-  over*, with a curve to choose; 0 changes at once).
+  over*, with a curve to choose; 0 changes at once). An item that starts drawing something after
+  showing nothing, such as a music widget, is noticed within a few seconds.
 - Drag the fitted item to another part of the scene, or send it there with a key, and it takes the
   free space around that place instead.
 - A background or a frame is not in the way: anything the item's place lies inside is ignored.

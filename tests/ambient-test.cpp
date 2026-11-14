@@ -4744,6 +4744,15 @@ int main(int argc, char **argv)
 					proc_handler_call(obs_get_proc_handler(), "stagekit_test_mouse_down", &cd);
 					calldata_free(&cd);
 				};
+				// Corrections glide into place; for the checks that follow
+				// they are made to land at once.
+				auto correct_glide = [](int ms) {
+					calldata_t cd = {};
+					calldata_set_int(&cd, "ms", ms);
+					proc_handler_call(obs_get_proc_handler(), "stagekit_test_correct_glide", &cd);
+					calldata_free(&cd);
+				};
+				correct_glide(0);
 				auto settle_snap = [&] {
 					for (int i = 0; i < 8; i++) {
 						QCoreApplication::processEvents();
@@ -4767,6 +4776,31 @@ int main(int argc, char **argv)
 				bp = pos_of(ibadge);
 				CHECK(std::fabs(bp.x - 110) < 1.6,
 				      "'snap when I let go' settles an item dragged with the mouse (x %.0f)", bp.x);
+				// The same again with a glide: part-way there shortly after
+				// letting go, and in place at the end.
+				correct_glide(600);
+				place(ibadge, 300, 250);
+				settle_snap();
+				mouse(true);
+				place(ibadge, 116, 250);
+				settle_snap();
+				mouse(false);
+				double part_way = -1.0;
+				for (int i = 0; i < 40 && part_way < 0.0; i++) {
+					QCoreApplication::processEvents();
+					sleep_ms(20);
+					const double x = pos_of(ibadge).x;
+					if (x < 115.5 && x > 110.5)
+						part_way = x;
+				}
+				for (int i = 0; i < 20; i++) {
+					QCoreApplication::processEvents();
+					sleep_ms(50);
+				}
+				CHECK(part_way > 0.0 && std::fabs(pos_of(ibadge).x - 110) < 1.6,
+				      "a snap glides into place rather than jumping (%.1f on the way, then %.0f)",
+				      part_way, pos_of(ibadge).x);
+				correct_glide(0);
 				tick_box("arrangeLiveSnap", false);
 
 				// Stop resizing at edges: an item resized with the mouse is pulled

@@ -25,6 +25,8 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include "stagekit-dock.hpp"
 
+#include "../common/easing.hpp"
+
 #include "../common/scene-util.hpp"
 #include "../common/start-image.hpp"
 #include "../placement/place-item.hpp"
@@ -139,6 +141,9 @@ private:
 
 // For the tests, which have no mouse: stands in for a button being held.
 bool g_test_mouse_down = false;
+// For the tests: how long a snap or a resize limit takes to glide into
+// place; -1 for the dock's own glide time.
+int g_test_correct_ms = -1;
 
 // Adds a StageKit menu to the menu OBS opens on a right-click in its preview,
 // so lining up and snapping are at hand where the items are being moved. OBS
@@ -775,6 +780,8 @@ public:
 				watch_for_drop();
 		});
 		snap_timer->start(120);
+		glide_timer_ = new QTimer(this);
+		QObject::connect(glide_timer_, &QTimer::timeout, this, [this] { step_glides(); });
 
 		auto *order_box = new QGroupBox(tr_text("Dock.OrderBox"), this);
 		auto *order_layout = new QGridLayout(order_box);
@@ -1146,6 +1153,75 @@ private:
 
 	// "Snap when I let go": once a selected item has been moved and the mouse
 	// button is up again, move it the last few pixels onto the nearest line.
+	// An item's place and size, as a snap or a resize limit may change them.
+	struct Placed {
+		vec2 pos, scale, bounds;
+		bool operator==(const Placed &o) const
+		{
+			return std::fabs(pos.x - o.pos.x) < 0.01f && std::fabs(pos.y - o.pos.y) < 0.01f &&
+			       std::fabs(scale.x - o.scale.x) < 0.00001f && std::fabs(scale.y - o.scale.y) < 0.00001f &&
+			       std::fabs(bounds.x - o.bounds.x) < 0.01f && std::fabs(bounds.y - o.bounds.y) < 0.01f;
+		}
+	};
+	static Placed placed_of(obs_sceneitem_t *item)
+	{
+		Placed p;
+		obs_sceneitem_get_pos(item, &p.pos);
+		obs_sceneitem_get_scale(item, &p.scale);
+		obs_sceneitem_get_bounds(item, &p.bounds);
+		return p;
+	}
+	static void place_at(obs_sceneitem_t *item, const Placed &p)
+	{
+		obs_sceneitem_defer_update_begin(item);
+		obs_sceneitem_set_pos(item, &p.pos);
+		obs_sceneitem_set_scale(item, &p.scale);
+		if (obs_sceneitem_get_bounds_type(item) != OBS_BOUNDS_NONE)
+			obs_sceneitem_set_bounds(item, &p.bounds);
+		obs_sceneitem_defer_update_end(item);
+	}
+	struct Glide {
+		obs_sceneitem_t *item; // holds a reference
+		Placed from, to;
+		double at, lasts;
+	};
+	// One step of every correction still gliding. Taking hold of an item
+	// again ends them where they are.
+	void step_glides()
+	{
+		const double dt = glide_clock_.restart() / 1000.0;
+		const bool grabbed = g_test_mouse_down || guides_mouse_down();
+		const auto curve = static_cast<EaseCurve>(curve_->currentIndex());
+		const auto mode = static_cast<EaseMode>(ease_mode_->currentIndex());
+		for (auto it = glides_.begin(); it != glides_.end();) {
+			bool done = grabbed || measuring_stopped();
+			if (!done) {
+				it->at = std::min(1.0, it->at + dt / it->lasts);
+				const float t = (float)ease(curve, mode, it->at);
+				auto mix = [t](const vec2 &a, const vec2 &b) {
+					vec2 out;
+					vec2_set(&out, a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t);
+					return out;
+				};
+				Placed now{mix(it->from.pos, it->to.pos), mix(it->from.scale, it->to.scale),
+					   mix(it->from.bounds, it->to.bounds)};
+				if (it->at >= 1.0) {
+					now = it->to;
+					done = true;
+				}
+				place_at(it->item, now);
+			}
+			if (done) {
+				obs_sceneitem_release(it->item);
+				it = glides_.erase(it);
+			} else {
+				++it;
+			}
+		}
+		if (glides_.empty())
+			glide_timer_->stop();
+	}
+
 	void watch_for_drop()
 	{
 		show_arrange_target();
@@ -1181,6 +1257,9 @@ private:
 			dragging_ = false;
 			const std::string before = transform_snapshot(scene);
 			bool snapped = false, limited = false;
+			std::vector<Placed> dropped;
+			for (obs_sceneitem_t *item : items)
+				dropped.push_back(placed_of(item));
 			for (size_t i = 0; i < items.size(); i++) {
 				const Box &began = i < drag_start_.size() ? drag_start_[i].box : now[i].box;
 				const bool resized = std::fabs(now[i].box.w - began.w) >= 0.5 ||
@@ -1199,6 +1278,24 @@ private:
 						   before, transform_snapshot(scene));
 			if (limited)
 				say(tr_text("Arrange.LimitResize.Done").arg(options.limit_px));
+			// The correction glides: each item goes back to where it was let
+			// go and travels to its place from there, over the dock's glide
+			// time and curve. (Undo already holds the finished places.)
+			const int glide_ms = g_test_correct_ms >= 0 ? g_test_correct_ms : duration_->value();
+			if ((limited || snapped) && glide_ms > 0) {
+				for (size_t i = 0; i < items.size(); i++) {
+					const Placed to = placed_of(items[i]);
+					if (to == dropped[i])
+						continue;
+					obs_sceneitem_addref(items[i]);
+					glides_.push_back({items[i], dropped[i], to, 0.0, glide_ms / 1000.0});
+					place_at(items[i], dropped[i]);
+				}
+				if (!glides_.empty() && !glide_timer_->isActive()) {
+					glide_clock_.start();
+					glide_timer_->start(16);
+				}
+			}
 			now = look();
 		}
 		if (!same_items)
@@ -1588,6 +1685,9 @@ private:
 	std::vector<Watched> watched_;
 	std::vector<Watched> drag_start_; // as they were when the drag began
 	bool dragging_ = false;
+	std::vector<Glide> glides_;
+	QTimer *glide_timer_ = nullptr;
+	QElapsedTimer glide_clock_;
 	QStringList names_;
 	QStringList scenes_;
 	QStringList sources_;
@@ -1637,6 +1737,9 @@ void register_dock()
 			guides_test_mouse(g_test_mouse_down);
 		},
 		nullptr);
+	proc_handler_add(
+		obs_get_proc_handler(), "void stagekit_test_correct_glide(in int ms)",
+		[](void *, calldata_t *cd) { g_test_correct_ms = (int)calldata_int(cd, "ms"); }, nullptr);
 	// For the tests: the guide overlay for a stand-in preview widget, and
 	// where OBS would draw the canvas in a preview of a given size.
 	proc_handler_add(

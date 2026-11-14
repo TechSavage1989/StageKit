@@ -203,6 +203,11 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   specifically set, it only applies to the same source in other scenes"); the transform is copied as
   it is, like OBS's Paste Transform, so a source of another size ends up another size. Name a tool for what it does, verb
   first; the owner asked for labels that say what happens.
+- **Snap on release and the resize limit glide into place** (`step_glides` in
+  `src/dock/stagekit-dock.cpp`): the correction is worked out at once (and that is what Undo holds),
+  the item is put back where it was let go and travels from there over the dock's glide time and
+  curve. Taking hold of an item again ends its glide where it is. The owner: "snap and resize should
+  glide if able".
 - **Stop resizing at edges acts on release** (`limit_resize` in `src/dock/arrange.*`, called from the
   dock's `watch_for_drop`). OBS's own resize drag cannot be hooked, and correcting an item while the
   mouse still holds it fights OBS's next mouse move, so the item is pulled back when the button is
@@ -286,15 +291,18 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   alpha, so it follows the shape); when first added it moves itself above an existing shadow once and
   records that in its `placed` setting. After an Auto Frame it shapes the rectangle from Auto Frame's
   `get_picture`.
-- **Fit Item's free space is measured in turns, never every frame** (`free_box` in
+- **Fit Item's free space draws an item to look at it as seldom as can be** (`free_box` in
   `src/placement/fit-item.cpp`). *The free space around it* (the owner: a margin of 30 "should
   remain exactly 30 pixel within the edges of the screen, and within 30 pixels of any objects")
-  measures every other item once at the start and once the scene has been quiet for 0.3 s after an
-  item was added, removed, shown, hidden or moved, and otherwise one item every quarter second in
-  turn (how a widget that starts drawing is noticed). The space is the largest clear one holding the
-  item's place (`anchor_x/y`, saved; retaken when the item is moved by anything else, which it lets
-  finish first). Whatever the place lies inside is not in the way. It measures by its own two tick
-  boxes and glides to a new space.
+  needs to know what shows in every other item. Each is drawn and read back once when first met;
+  after that an item that moves or changes size is followed by its box (what shows keeps its place
+  in the box), which costs nothing, and one item a second is looked at again, in turn, only while
+  nothing moves (how a widget that starts drawing is noticed). The first build (beta70) read one
+  item back every quarter second and all of them after any move; the owner then found camera moves
+  "very choppy". Never add a read-back that runs while things animate. The space is the largest
+  clear one holding the item's place (`anchor_x/y`, saved; retaken when the item is moved by
+  anything else, which it lets finish first). Whatever the place lies inside is not in the way. It
+  measures by its own two tick boxes and glides to a new space.
 - **Shadow, Glow & Outline's "Keep it on screen" only touches an item that is still**
   (`keep_in_view`): a plain item (no bounding box, not in a group, not rotated or locked) whose
   picture is on the canvas but whose effect runs off an edge is scaled down, keeping its shape,
