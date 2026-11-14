@@ -337,6 +337,10 @@ nearest.
 - It only works while its scene is being shown, so scenes you are not on cost nothing.
 - **Items never in the way**: items the free space ignores, such as a camera meant to overlap the
   game.
+- **Tolerance** (8 px as it comes): when something sticks a little way into the space, the picture
+  may be made up to this many pixels smaller to keep the whole space, instead of keeping its size and
+  losing the part of the space beside that thing. At 0 the biggest picture always wins, even by one
+  pixel. The gap is kept either way.
 - **Use visible pixels** and **Ignore shadows & outlines** (both on as they come) are this filter's
   own settings; the dock's Arrange options do not change them. With the first, the items around it
   are measured by what they draw, and an item that is drawing nothing is not in the way. With the

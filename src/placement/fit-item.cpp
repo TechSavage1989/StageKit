@@ -46,6 +46,7 @@ struct Settings {
 	BoxKind box = BoxKind::WholeScene;
 	double x = 0, y = 0, w = 1920, h = 1080;
 	double margin = 80;
+	double tolerance = 8;          // free space: pictures this close in size count as equal
 	bool visible_pixels = true;    // other items are measured by what they draw, not their boxes
 	bool no_shadows = true;        // and shadows, glows and outlines do not count, its own included
 	std::vector<std::string> skip; // items that are never in the way
@@ -60,7 +61,8 @@ struct Settings {
 // height) that holds the point (ax, ay): inside `within` less the gap, and
 // the gap away from everything in `others`. Something the point is inside (a
 // background, a frame round the picture) is not in the way.
-Box free_space(const Box &within, double ax, double ay, const std::vector<Box> &others, double gap, double shape)
+Box free_space(const Box &within, double ax, double ay, const std::vector<Box> &others, double gap, double shape,
+	       double tolerance)
 {
 	const double l0 = within.x + gap, t0 = within.y + gap;
 	const double r0 = within.x + within.w - gap, b0 = within.y + within.h - gap;
@@ -116,7 +118,8 @@ Box free_space(const Box &within, double ax, double ay, const std::vector<Box> &
 	// to about that), the roomiest. Without that, a widget read as 3 px
 	// wider than the column above it cost the owner's game the whole strip
 	// beside the widget: the space stopped above it to keep those 3 px.
-	const double near = shape > 0.0 ? std::max(8.0, 0.01 * best_k) : 0.01;
+	// How many pixels count as "the same size" is the filter's Tolerance.
+	const double near = shape > 0.0 ? std::max(0.01, tolerance) : 0.01;
 	Box best{};
 	double best_area = -1.0;
 	for (const Space &one : spaces)
@@ -141,6 +144,7 @@ public:
 		s.w = std::max(2.0, obs_data_get_double(settings, "box_width"));
 		s.h = std::max(2.0, obs_data_get_double(settings, "box_height"));
 		s.margin = std::clamp(obs_data_get_double(settings, "margin"), 0.0, 2000.0);
+		s.tolerance = std::clamp(obs_data_get_double(settings, "tolerance"), 0.0, 200.0);
 		const long long kind = obs_data_get_int(settings, "box");
 		if (kind == 2)
 			s.box = BoxKind::FreeSpace;
@@ -454,11 +458,18 @@ private:
 			   std::fabs(shape - shape_used_) > 0.01 * shape) {
 			changed_ = true;
 		}
+		// The gap or the tolerance set anew: the space is worked out again.
+		if (s.margin != used_margin_ || s.tolerance != used_tolerance_) {
+			used_margin_ = s.margin;
+			used_tolerance_ = s.tolerance;
+			changed_ = true;
+		}
 		if (changed_ || !have_goal_) {
 			changed_ = false;
 			if (!have_goal_ || shape_for_ >= 0.5 || shape_used_ <= 0.0)
 				shape_used_ = shape;
-			const Box goal = free_space(within, s.anchor_x, s.anchor_y, boxes_, s.margin, shape_used_);
+			const Box goal =
+				free_space(within, s.anchor_x, s.anchor_y, boxes_, s.margin, shape_used_, s.tolerance);
 			if (goal.w < 2.0 || goal.h < 2.0)
 				return false;
 			if (!have_goal_ || std::fabs(goal.x - goal_.x) > 0.05 || std::fabs(goal.y - goal_.y) > 0.05 ||
@@ -500,6 +511,7 @@ private:
 	double since_look_ = 0.0;
 	size_t turn_ = 0;
 	double shape_seen_ = 0.0, shape_used_ = 0.0, shape_for_ = 0.0;
+	double used_margin_ = -1.0, used_tolerance_ = -1.0;
 	Box goal_, from_, cur_;
 	bool have_goal_ = false, have_cur_ = false;
 	double glide_ = 1.0;
@@ -512,7 +524,7 @@ bool box_modified(obs_properties_t *props, obs_property_t *, obs_data_t *setting
 	const long long kind = obs_data_get_int(settings, "box");
 	for (const char *name : {"box_x", "box_y", "box_width", "box_height"})
 		obs_property_set_visible(obs_properties_get(props, name), kind == 1);
-	for (const char *name : {"skip|alist", "glide_ms", "ease_curve", "ease_mode", "visible_pixels"})
+	for (const char *name : {"skip|alist", "glide_ms", "ease_curve", "ease_mode", "visible_pixels", "tolerance"})
 		if (obs_property_t *p = obs_properties_get(props, name))
 			obs_property_set_visible(p, kind == 2);
 	obs_property_set_description(obs_properties_get(props, "margin"),
@@ -549,6 +561,10 @@ obs_properties_t *get_properties(void *data)
 		obs_properties_add_float_slider(props, "margin", obs_module_text("Fit.Margin"), 0.0, 400.0, 1.0);
 	obs_property_float_set_suffix(margin, " px");
 	obs_property_set_long_description(margin, obs_module_text("Fit.Margin.Tip"));
+	obs_property_t *tolerance =
+		obs_properties_add_float_slider(props, "tolerance", obs_module_text("Fit.Tolerance"), 0.0, 100.0, 1.0);
+	obs_property_float_set_suffix(tolerance, " px");
+	obs_property_set_long_description(tolerance, obs_module_text("Fit.Tolerance.Tip"));
 	obs_property_t *visible_pixels =
 		obs_properties_add_bool(props, "visible_pixels", obs_module_text("Measure.Visible"));
 	obs_property_set_long_description(visible_pixels, obs_module_text("Fit.Visible.Tip"));
@@ -584,6 +600,7 @@ void get_defaults(obs_data_t *settings)
 	obs_data_set_default_double(settings, "box_width", have ? ovi.base_width : 1920);
 	obs_data_set_default_double(settings, "box_height", have ? ovi.base_height : 1080);
 	obs_data_set_default_double(settings, "margin", 80.0);
+	obs_data_set_default_double(settings, "tolerance", 8.0);
 	obs_data_set_default_bool(settings, "visible_pixels", true);
 	obs_data_set_default_bool(settings, "no_shadows", true);
 	obs_data_set_default_int(settings, "glide_ms", 300);
