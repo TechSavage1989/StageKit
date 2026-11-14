@@ -343,7 +343,8 @@ nearest.
 - **Resize it to fit** (ticked as it comes). Unticked, the item keeps the size it has and is only
   moved, to the middle of its space, so the room left over is the same on both sides and above and
   below; when the space changes (a camera above it is hidden, say) it moves to the new middle.
-  Resize it yourself in the preview and that is the size it keeps. This works for the whole screen
+  If the filter had already resized the item (a new filter starts ticked), unticking gives it back
+  the size it had before. Resize it yourself in the preview and that is the size it keeps. This works for the whole screen
   and a box as well as the free space.
 - **Tolerance** (8 px as it comes): when something sticks a little way into the space, the picture
   may be made up to this many pixels smaller to keep the whole space, instead of keeping its size and

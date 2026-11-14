@@ -2247,6 +2247,21 @@ int main(int argc, char **argv)
 				CHECK(is(b2.x, 100) && is(b2.y, 100) && is(p2.x, 270) && is(p2.y, 130),
 				      "and when the space grows it moves to the new middle, still its own size (%.0f, %.0f %.0fx%.0f)",
 				      p2.x, p2.y, b2.x, b2.y);
+				// Ticked, it is fitted (and so resized); unticked again it
+				// gets back the size it had before the filter touched it.
+				obs_data_set_bool(kf, "resize", true);
+				obs_source_update(keep_fit, kf);
+				settle(600);
+				vec2 fitted;
+				obs_sceneitem_get_bounds(chat_item, &fitted);
+				obs_data_set_bool(kf, "resize", false);
+				obs_source_update(keep_fit, kf);
+				settle(600);
+				vec2 again;
+				obs_sceneitem_get_bounds(chat_item, &again);
+				CHECK(fitted.x > 150 && is(again.x, 100) && is(again.y, 100),
+				      "unticking 'Resize it to fit' gives the item back the size it had before the filter (fitted %.0f wide, then %.0fx%.0f)",
+				      fitted.x, again.x, again.y);
 				// Something grows beside it until the space is narrower than
 				// the item: it stays the gap inside the screen's edge.
 				obs_source_t *wall = obs_source_create("color_source", "Kept Wall", nullptr, nullptr);

@@ -48,6 +48,8 @@ struct Settings {
 	double margin = 80;
 	double tolerance = 8;          // free space: pictures this close in size count as equal
 	bool resize = true;            // off: the item keeps its size and is only moved, centred in the space
+	std::string orig_item;         // the item whose size was noted before the filter first touched it
+	double orig_w = 0, orig_h = 0; // that size (the picture's, in the scene)
 	bool visible_pixels = true;    // other items are measured by what they draw, not their boxes
 	bool no_shadows = true;        // and shadows, glows and outlines do not count, its own included
 	std::vector<std::string> skip; // items that are never in the way
@@ -147,7 +149,17 @@ public:
 		s.margin = std::clamp(obs_data_get_double(settings, "margin"), 0.0, 2000.0);
 		s.tolerance = std::clamp(obs_data_get_double(settings, "tolerance"), 0.0, 200.0);
 		s.resize = obs_data_get_bool(settings, "resize");
+		s.orig_item = obs_data_get_string(settings, "orig_item");
+		s.orig_w = obs_data_get_double(settings, "orig_w");
+		s.orig_h = obs_data_get_double(settings, "orig_h");
 		have_keep_ = false; // the size to keep is read from the item afresh
+		{
+			// Unticked just now: the size to keep is the one the item had
+			// before this filter resized it, not the fitted one.
+			std::lock_guard lock(mutex_);
+			if (!s.resize && settings_.resize)
+				back_to_original_ = true;
+		}
 		const long long kind = obs_data_get_int(settings, "box");
 		if (kind == 2)
 			s.box = BoxKind::FreeSpace;
@@ -242,6 +254,48 @@ public:
 		// "Resize it to fit" unticked: the picture keeps the size it has in
 		// the scene and is only moved, to the middle of its space. That size
 		// is read from the item once, and again after it is resized by hand.
+		// How large the picture is drawn in the scene right now.
+		auto drawn_now = [&](double &w_now, double &h_now) {
+			double kx = 1.0, ky = 1.0;
+			if (obs_sceneitem_get_bounds_type(item) != OBS_BOUNDS_NONE) {
+				vec2 b;
+				obs_sceneitem_get_bounds(item, &b);
+				const double cw = sw - crop.left - crop.right, ch = sh - crop.top - crop.bottom;
+				if (cw >= 1.0 && ch >= 1.0)
+					kx = ky = std::min(b.x / cw, b.y / ch);
+			} else {
+				vec2 scale;
+				obs_sceneitem_get_scale(item, &scale);
+				kx = std::fabs(scale.x);
+				ky = std::fabs(scale.y);
+			}
+			const double kept = std::min(kx, ky);
+			w_now = pw * kept;
+			h_now = ph * kept;
+			return kept > 0.0;
+		};
+		// Before the filter does anything to an item, the size it has is
+		// noted, so that "Resize it to fit" can be unticked later and the
+		// item gets its own size back. (A new filter starts ticked: the
+		// owner's chat box was fitted, and so shrunk, before the box could
+		// be unticked, and then kept the shrunken size.)
+		if (s.orig_item != s.item) {
+			double w0 = 0.0, h0 = 0.0;
+			if (drawn_now(w0, h0)) {
+				s.orig_item = s.item;
+				s.orig_w = w0;
+				s.orig_h = h0;
+				obs_data_t *settings = obs_source_get_settings(source_);
+				obs_data_set_string(settings, "orig_item", s.orig_item.c_str());
+				obs_data_set_double(settings, "orig_w", w0);
+				obs_data_set_double(settings, "orig_h", h0);
+				obs_data_release(settings);
+				std::lock_guard lock(mutex_);
+				settings_.orig_item = s.orig_item;
+				settings_.orig_w = w0;
+				settings_.orig_h = h0;
+			}
+		}
 		if (!s.resize) {
 			vec2 b_now;
 			obs_sceneitem_get_bounds(item, &b_now);
@@ -249,25 +303,15 @@ public:
 			if (have_keep_ && boxed && have_set_ &&
 			    (std::fabs(b_now.x - set_bw_) > 0.5 || std::fabs(b_now.y - set_bh_) > 0.5))
 				have_keep_ = false;
-			if (!have_keep_) {
-				double kx = 1.0, ky = 1.0;
-				if (boxed) {
-					const double cw = sw - crop.left - crop.right, ch = sh - crop.top - crop.bottom;
-					if (cw >= 1.0 && ch >= 1.0)
-						kx = ky = std::min(b_now.x / cw, b_now.y / ch);
-				} else {
-					vec2 scale;
-					obs_sceneitem_get_scale(item, &scale);
-					kx = std::fabs(scale.x);
-					ky = std::fabs(scale.y);
-				}
-				const double kept = std::min(kx, ky);
-				if (kept > 0.0) {
-					keep_w_ = pw * kept;
-					keep_h_ = ph * kept;
-					have_keep_ = true;
-				}
+			if (!have_keep_ && back_to_original_ && s.orig_item == s.item && s.orig_w >= 2.0 &&
+			    s.orig_h >= 2.0) {
+				keep_w_ = s.orig_w;
+				keep_h_ = s.orig_h;
+				have_keep_ = true;
 			}
+			if (!have_keep_)
+				have_keep_ = drawn_now(keep_w_, keep_h_);
+			back_to_original_ = false;
 		}
 		const double picture = pw / ph;
 		// The screen (or the box) itself, before a free space is taken in it.
@@ -577,6 +621,7 @@ private:
 	double set_bw_ = 0.0, set_bh_ = 0.0; // the bounding box last given to the item
 	double keep_w_ = 0.0, keep_h_ = 0.0; // "Resize it to fit" off: the picture's size, kept
 	bool have_keep_ = false;
+	bool back_to_original_ = false; // just unticked: keep the size from before the filter
 	Box goal_, from_, cur_;
 	bool have_goal_ = false, have_cur_ = false;
 	double glide_ = 1.0;

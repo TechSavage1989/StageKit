@@ -379,6 +379,10 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   Unticked, the picture keeps the size it has (`keep_w_`, read from the item once and again after a
   resize by hand) and is centred in its space. The owner: "move the box without changing the shape
   or size to fill the gap ... a safety option as well informing the filter to not resize".
+  A new filter starts ticked and fits the item the moment one is chosen, so the size an item has
+  before the filter first touches it is saved (`orig_item`, `orig_w`, `orig_h`) and is what
+  unticking goes back to: the owner's chat box had been shrunk to its space before the box could
+  be unticked ("it shrinks").
 - **Fit to Space never puts an item past the screen's edge, and does nothing on a group.** With
   *Resize it to fit* unticked, a space narrower than the item used to centre it past the edge (the
   owner's chat box, pushed off the canvas by the game growing beside it); it is now held the gap
