@@ -72,14 +72,30 @@ export function automatic(kind: string, settings: Settings = {}): Picture | unde
 	return id ? BY_ID.get(id) : undefined;
 }
 
+/** The plain key for what the pack has no picture of. */
+export function plain(sort: "switch" | "move" | "tool"): Picture {
+	return BY_ID.get(`plain/${sort}`)!;
+}
+
+/** The arrange tools the pack has a picture of. */
+const TOOLS: Record<string, string> = {
+	same_everywhere: "tools/copy-transform-all",
+	same_chosen: "tools/copy-transform-chosen",
+	snap_now: "tools/snap",
+};
+
+export function toolPicture(chosen: string | undefined, tool: string | undefined): Picture {
+	return (chosen && BY_ID.get(chosen)) || BY_ID.get(TOOLS[tool ?? ""] ?? "") || plain("tool");
+}
+
 /** The picture a key was given by name, or the one that fits its filter. */
 export function choose(chosen: string | undefined, kind: string, settings: Settings = {}): Picture | undefined {
 	return (chosen && BY_ID.get(chosen)) || automatic(kind, settings);
 }
 
-/** Where a picture's file is, inside the plugin's folder. */
-export function file(picture: Picture, on: boolean, colour: string | undefined): string {
-	const use = colour && COLOURS.includes(colour) ? colour : DEFAULT_COLOUR;
+/** Where a picture's file is, inside the plugin's folder, in a key's palette. */
+export function file(picture: Picture, on: boolean, palette: string | undefined): string {
+	const use = palette && COLOURS.includes(palette) ? palette : DEFAULT_COLOUR;
 	return `imgs/pack/${use}/${on ? picture.on : picture.off}.png`;
 }
 

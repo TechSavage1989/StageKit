@@ -211,6 +211,21 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Stream Deck plugin: first device test, palette per key, two more keys (0.1.0-beta80)
+
+The owner on beta79, **on their own Stream Deck**: "plugin installed. i see two icons. they connect
+to websocket. move works", and a Show in Scenes switch with the camera worked. So the settings
+pages (the lists from the plugin, the shared connection fields) work on a device.
+
+- Asked for and done: *Colour* is now *Palette* and is each key's own.
+- "polish the app, make it more aesthetically appealing and simple. also add any other feature or
+  QoL items": plain keys in each palette for filters the pack has no picture of (no more grey
+  placeholder beside pack pictures); a tick on a Move key when OBS took it; the settings pages share
+  one layout; two new keys, *Arrange tool* and *Blur everything*.
+- Not confirmed yet: switch keys following a change made in OBS, the *Picture* list, the new keys.
+- Ideas still open: keys that need no filter set up first (send the camera to a corner), a dial for
+  blur amount, titles filled in automatically.
+
 ## The Stream Deck plugin's keys use the icon pack (0.1.0-beta79)
 
 The owner asked whether the plugin's icons were the ones made earlier (they were not), allowed the

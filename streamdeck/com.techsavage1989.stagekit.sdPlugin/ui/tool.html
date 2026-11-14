@@ -1,0 +1,60 @@
+<!doctype html>
+<html>
+	<head lang="en">
+		<title>StageKit arrange tool</title>
+		<meta charset="utf-8" />
+		<script src="https://sdpi-components.dev/releases/v4/sdpi-components.js"></script>
+	</head>
+
+	<body>
+		<sdpi-item label="Tool">
+			<sdpi-select setting="tool" placeholder="Choose a tool">
+				<option value="left">Line up: left edges</option>
+				<option value="center">Line up: centres, across</option>
+				<option value="right">Line up: right edges</option>
+				<option value="top">Line up: top edges</option>
+				<option value="middle">Line up: middles, down</option>
+				<option value="bottom">Line up: bottom edges</option>
+				<option value="space_across">Space out evenly, across</option>
+				<option value="space_down">Space out evenly, down</option>
+				<option value="snap_now">Snap to what is near</option>
+				<option value="same_width">Make the same width</option>
+				<option value="same_height">Make the same height</option>
+				<option value="same_size">Make the same size</option>
+				<option value="same_everywhere">Copy transform to all scenes</option>
+				<option value="same_chosen">Copy transform to chosen scenes</option>
+			</sdpi-select>
+		</sdpi-item>
+		<sdpi-item label="Picture">
+			<sdpi-select setting="picture" datasource="getPictures" default=""></sdpi-select>
+		</sdpi-item>
+		<sdpi-item label="Palette">
+			<sdpi-select setting="palette" default="mono">
+				<option value="mono">Mono</option>
+				<option value="violet">Violet</option>
+				<option value="ocean">Ocean</option>
+				<option value="forest">Forest</option>
+				<option value="ember">Ember</option>
+				<option value="neon">Neon</option>
+			</sdpi-select>
+		</sdpi-item>
+
+		<details>
+			<summary>OBS connection</summary>
+			<sdpi-item label="Address">
+				<sdpi-textfield setting="host" global placeholder="127.0.0.1"></sdpi-textfield>
+			</sdpi-item>
+			<sdpi-item label="Port">
+				<sdpi-textfield setting="port" global placeholder="4455"></sdpi-textfield>
+			</sdpi-item>
+			<sdpi-item label="Password">
+				<sdpi-password setting="password" global></sdpi-password>
+			</sdpi-item>
+			<p>
+				In OBS: Tools &rarr; WebSocket Server Settings. Tick &ldquo;Enable WebSocket server&rdquo;, then
+				&ldquo;Show Connect Info&rdquo; for the port and password. One connection serves every StageKit key.
+			</p>
+		</details>
+
+	</body>
+</html>

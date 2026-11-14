@@ -52,6 +52,9 @@ class ObsLink extends EventEmitter {
 		] as const) {
 			this.obs.on(name, () => this.emit("changed"));
 		}
+		this.obs.on("VendorEvent", (ev) => {
+			if (ev.vendorName === "StageKit" && ev.eventType === "BlurChanged") this.emit("blur");
+		});
 	}
 
 	get isConnected(): boolean {
@@ -168,6 +171,31 @@ class ObsLink extends EventEmitter {
 	/** Whether a filter is on; undefined when it (or OBS) cannot be reached. */
 	async filterEnabled(sourceName: string, filterName: string): Promise<boolean | undefined> {
 		return (await this.filter(sourceName, filterName))?.enabled;
+	}
+
+	/** Presses one of OBS's hotkeys by its name (StageKit's arrange tools have one each). */
+	async pressHotkey(hotkeyName: string): Promise<void> {
+		await this.obs.call("TriggerHotkeyByName", { hotkeyName });
+	}
+
+	/**
+	 * Asks the StageKit plugin in OBS for something (its own requests, see
+	 * "Remote control" in the README). Undefined when it cannot be reached
+	 * or says no.
+	 */
+	async stageKit(requestType: string, requestData: Record<string, unknown> = {}): Promise<Record<string, unknown> | undefined> {
+		if (!this.connected) return undefined;
+		try {
+			const answer = await this.obs.call("CallVendorRequest", {
+				vendorName: "StageKit",
+				requestType,
+				requestData: requestData as never,
+			});
+			const data = (answer.responseData ?? {}) as Record<string, unknown>;
+			return data.success === false ? undefined : data;
+		} catch {
+			return undefined;
+		}
 	}
 
 	async setFilter(sourceName: string, filterName: string, filterEnabled: boolean): Promise<void> {

@@ -20,6 +20,9 @@ const filters: Record<string, Filter[]> = {
 	"A Group": [],
 };
 
+const pressed: string[] = [];
+let blurred = false;
+
 function answer(requestType: string, data: Record<string, unknown> = {}): { ok: boolean; data?: unknown } {
 	const list = filters[String(data.sourceName)];
 	switch (requestType) {
@@ -40,6 +43,17 @@ function answer(requestType: string, data: Record<string, unknown> = {}): { ok: 
 			if (!found) return { ok: false };
 			found.filterEnabled = data.filterEnabled === true;
 			return { ok: true };
+		}
+		case "TriggerHotkeyByName":
+			pressed.push(String(data.hotkeyName));
+			return { ok: true };
+		case "CallVendorRequest": {
+			if (data.vendorName !== "StageKit") return { ok: false };
+			if (data.requestType === "BlurAll") {
+				blurred = !blurred;
+				return { ok: true, data: { vendorName: "StageKit", requestType: "BlurAll", responseData: { success: true, active: blurred } } };
+			}
+			return { ok: true, data: { vendorName: "StageKit", requestType: data.requestType, responseData: { success: false, error: "no such request" } } };
 		}
 		default:
 			return { ok: false };
@@ -117,4 +131,13 @@ test("it connects, lists only StageKit's filters, switches one and hears of it",
 	await obs.setFilter("camera", "Ramp Blur", true);
 	assert.deepEqual(await heard, ["camera", "Ramp Blur", true]);
 	assert.equal(await obs.filterEnabled("camera", "Ramp Blur"), true);
+
+	const now = await obs.filter("camera", "Ramp Blur");
+	assert.equal(now?.kind, "stagekit_ramp_blur", "a key learns what kind its filter is, for its picture");
+
+	await obs.pressHotkey("stagekit.arrange.left");
+	assert.deepEqual(pressed, ["stagekit.arrange.left"], "an arrange tool is one of OBS's hotkeys, pressed by name");
+
+	assert.equal((await obs.stageKit("BlurAll", { mode: "toggle" }))?.active, true, "StageKit's own requests are answered");
+	assert.equal(await obs.stageKit("NoSuchRequest"), undefined, "and one it refuses comes back as nothing");
 });

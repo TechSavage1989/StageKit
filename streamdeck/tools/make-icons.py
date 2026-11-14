@@ -54,6 +54,28 @@ def move(draw, s, colour):
     draw.line((s * 0.40, s * 0.52, s * 0.55, s * 0.44), fill=colour, width=w)
 
 
+def tool(draw, s, colour, lit):
+    """Three items lined up on one edge."""
+    w = max(2, s // 14)
+    draw.rounded_rectangle((s * 0.14, s * 0.24, s * 0.86, s * 0.76), radius=s * 0.07, outline=colour, width=w)
+    draw.line((s * 0.27, s * 0.33, s * 0.27, s * 0.67), fill=lit, width=max(2, w * 2 // 3))
+    for i, length in enumerate((0.40, 0.26, 0.34)):
+        y = s * (0.35 + i * 0.11)
+        draw.rounded_rectangle((s * 0.31, y, s * (0.31 + length), y + s * 0.07), radius=s * 0.02, fill=colour)
+
+
+def blur(draw, s, on):
+    """A screen whose picture is blurred (soft dots) or clear (one sharp block)."""
+    colour = INK if on else DIM
+    w = max(2, s // 14)
+    draw.rounded_rectangle((s * 0.14, s * 0.24, s * 0.86, s * 0.76), radius=s * 0.07, outline=colour, width=w)
+    if on:
+        for cx, cy, r in ((0.34, 0.42, 0.07), (0.52, 0.52, 0.10), (0.68, 0.40, 0.06), (0.40, 0.62, 0.05), (0.66, 0.62, 0.07)):
+            draw.ellipse((s * (cx - r), s * (cy - r), s * (cx + r), s * (cy + r)), fill=ACCENT)
+    else:
+        draw.rounded_rectangle((s * 0.30, s * 0.38, s * 0.70, s * 0.62), radius=s * 0.03, fill=DIM)
+
+
 def main():
     for size, name in ((256, "marketplace.png"), (512, "marketplace@2x.png")):
         image, draw, s = canvas(size, PANEL)
@@ -70,6 +92,21 @@ def main():
         image, draw, s = canvas(size)
         move(draw, s, INK)
         save(image, size, os.path.join(OUT, "actions", "move", f"icon{suffix}.png"))
+    for size, suffix in ((20, ""), (40, "@2x")):
+        image, draw, s = canvas(size)
+        tool(draw, s, INK, INK)
+        save(image, size, os.path.join(OUT, "actions", "tool", f"icon{suffix}.png"))
+        image, draw, s = canvas(size)
+        blur(draw, s, True)
+        save(image, size, os.path.join(OUT, "actions", "blur", f"icon{suffix}.png"))
+    for size, suffix in ((72, ""), (144, "@2x")):
+        image, draw, s = canvas(size, PANEL)
+        tool(draw, s, INK, ACCENT)
+        save(image, size, os.path.join(OUT, "actions", "tool", f"key{suffix}.png"))
+        for on in (False, True):
+            image, draw, s = canvas(size, PANEL)
+            blur(draw, s, on)
+            save(image, size, os.path.join(OUT, "actions", "blur", f"{'on' if on else 'off'}{suffix}.png"))
     for size, suffix in ((72, ""), (144, "@2x")):
         for on in (False, True):
             image, draw, s = canvas(size, PANEL)

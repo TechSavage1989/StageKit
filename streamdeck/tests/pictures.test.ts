@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { test } from "node:test";
 
-import { automatic, choose, COLOURS, file, pictureItems, PICTURES } from "../src/pictures.ts";
+import { automatic, choose, COLOURS, file, pictureItems, PICTURES, plain, toolPicture } from "../src/pictures.ts";
+import { hotkeyOf, TOOLS } from "../src/tools.ts";
 
 const plugin = new URL("../com.techsavage1989.stagekit.sdPlugin/", import.meta.url);
 
@@ -36,7 +37,20 @@ test("a picture chosen by name wins; an unknown name falls back to the fitting o
 	assert.equal(choose("", "stagekit_fit_item"), undefined);
 });
 
-test("files are per colour, mono unless another is asked for", () => {
+test("what the pack has no picture of gets a plain key, and tools get theirs", () => {
+	assert.equal(plain("switch").on, "plain/switch-on");
+	assert.equal(plain("switch").off, "plain/switch-off");
+	assert.equal(plain("move").on, "plain/move");
+	assert.equal(toolPicture(undefined, "same_everywhere").id, "tools/copy-transform-all");
+	assert.equal(toolPicture(undefined, "left").id, "plain/tool");
+	assert.equal(toolPicture("camera/camera-centre", "left").id, "camera/camera-centre");
+	assert.equal(hotkeyOf("left"), "stagekit.arrange.left");
+	assert.equal(hotkeyOf("nonsense"), undefined);
+	assert.equal(hotkeyOf(undefined), undefined);
+	assert.equal(TOOLS.length, 14);
+});
+
+test("files are per palette, mono unless another is asked for", () => {
 	const blur = automatic("stagekit_ramp_blur")!;
 	assert.equal(file(blur, true, undefined), "imgs/pack/mono/blur-types/gaussian-on.png");
 	assert.equal(file(blur, false, "ocean"), "imgs/pack/ocean/blur-types/gaussian-off.png");

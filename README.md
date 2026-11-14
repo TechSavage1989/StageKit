@@ -715,19 +715,21 @@ connection, and it reconnects by itself when OBS is started later.
 | Key | What it does |
 | --- | --- |
 | **Filter switch** | Switches one StageKit filter on and off, and the key shows which way it is, also when the filter is switched some other way. For Ramp Blur, Shadow, Glow & Outline, Corners & Edges, Show in Scenes, Standby Picture and the other filters that stay on or off. *A press* can switch it over, only on, or only off |
-| **Move** | Runs one StageKit move: a Send To key on the camera, a Place Item, a Layout or a Picture Shape key |
+| **Move** | Runs one StageKit move: a Send To key on the camera, a Place Item, a Layout or a Picture Shape key. A tick shows on the key when OBS has taken it |
+| **Arrange tool** | One of the dock's arrange tools on a key: line up an edge or centre, space out evenly, snap, make the same width, height or size, or copy a transform to all or to the chosen scenes. It works on the items selected in OBS's preview |
+| **Blur everything** | Switches every Ramp Blur on, and the next press switches them all off. It shows on while any is on |
 
-For both, choose the **Source** first: the list holds only the sources (and scenes) that have such a
-filter. Then choose the filter.
+For *Filter switch* and *Move*, choose the **Source** first: the list holds only the sources (and
+scenes) that have such a filter. Then choose the filter. A key that cannot reach OBS, or whose filter
+is gone, shows Stream Deck's yellow warning triangle when pressed.
 
 **Pictures.** The keys use the StageKit icon pack. Left on *Automatic*, a key takes the picture that
 fits its filter and how it is set: a Ramp Blur key shows its blur type, a Send To key the corner it
 sends the camera to, Shadow, Glow & Outline its look, Corners & Edges its corner style, and switch
-keys have an "on" and an "off" look. **Picture** lets you give a key any other picture of the pack
-(the ones drawn for a particular source, for instance), and **Colour** sets the colour of every
-StageKit key at once: mono (as it comes), violet, ocean, forest, ember or neon. A filter the pack has
-no picture for shows a plain switch. You can still set your own picture on a key in Stream Deck. A key that cannot reach OBS, or whose filter is gone, shows Stream
-Deck's yellow warning triangle when pressed.
+keys have an "on" and an "off" look. A filter the pack has no picture for gets a plain key in the same
+style. **Picture** lets you give a key any other picture of the pack (the ones drawn for a particular
+source, for instance). **Palette** is each key's own colour: mono (as it comes), violet, ocean,
+forest, ember or neon. You can still set your own picture on a key in Stream Deck.
 
 The plugin's code is in [`streamdeck/`](streamdeck); `npm install`, then `npm run build`, `npm test`,
 `npm run validate` and `npm run pack` there.
