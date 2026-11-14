@@ -39,6 +39,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "dock/arrange-tools.hpp"
 #include "shadow/shadow-backdrop.hpp"
 #include "shape/corners.hpp"
+#include "transition/morph.hpp"
 #include "view/cropped-view.hpp"
 #include "zoom/ramp-zoom.hpp"
 
@@ -117,6 +118,7 @@ bool obs_module_load(void)
 	stagekit::register_visibility_link();
 	stagekit::register_match_item();
 	stagekit::register_fit_item();
+	stagekit::register_morph();
 	stagekit::register_layout();
 	for (GlobalHotkey &hk : g_hotkeys)
 		hk.id = obs_hotkey_register_frontend(hk.name, obs_module_text(hk.text), blur_all_hotkey, &hk);

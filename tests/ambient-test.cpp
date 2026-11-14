@@ -272,6 +272,159 @@ int main(int argc, char **argv)
 	obs_source_t *live = obs_source_create("image_source", "Live Capture", ls, nullptr);
 	obs_data_release(ls);
 
+	// ---------------------------------------------------- morph transition
+	{
+		printf("\n[morph transition]\n");
+		auto block = [](const char *name, long long abgr, int bw, int bh) {
+			obs_data_t *d = obs_data_create();
+			obs_data_set_int(d, "color", abgr);
+			obs_data_set_int(d, "width", bw);
+			obs_data_set_int(d, "height", bh);
+			obs_source_t *src = obs_source_create("color_source", name, d, nullptr);
+			obs_data_release(d);
+			return src;
+		};
+		auto put = [](obs_scene_t *scene, obs_source_t *src, float x, float y) {
+			obs_sceneitem_t *item = obs_scene_add(scene, src);
+			vec2 p;
+			vec2_set(&p, x, y);
+			obs_sceneitem_set_pos(item, &p);
+			return item;
+		};
+		obs_source_t *old_back = block("Morph Old Back", 0xFFFF0000, 640, 360); // blue
+		obs_source_t *new_back = block("Morph New Back", 0xFF00FF00, 640, 360); // green
+		obs_source_t *game = block("Morph Game", 0xFF00FFFF, 320, 180);         // yellow
+		obs_source_t *window = block("Morph Window", 0xFFFFFF00, 200, 200);     // cyan
+		obs_source_t *camera = block("Morph Camera", 0xFF0000FF, 100, 60);      // red
+		obs_scene_t *ma = obs_scene_create("Morph From");
+		obs_scene_t *mb = obs_scene_create("Morph To");
+		obs_scene_t *mc = obs_scene_create("Morph From Again");
+		put(ma, old_back, 0, 0);
+		put(ma, game, 100, 90);
+		put(ma, live, 0, 0);
+		obs_sceneitem_t *cam_a = put(ma, camera, 20, 20);
+		put(mb, new_back, 0, 0);
+		put(mb, window, 300, 60);
+		obs_sceneitem_t *cam_b = put(mb, camera, 520, 280);
+		// The same as the first scene, item for item, with a crop and a
+		// scaled picture in it: mid-way between the two nothing may change.
+		put(mc, old_back, 0, 0);
+		put(mc, game, 100, 90);
+		obs_sceneitem_t *pic_c = put(mc, live, 0, 0);
+		obs_sceneitem_t *cam_c = put(mc, camera, 20, 20);
+		obs_sceneitem_t *pic_a = obs_scene_find_source(ma, "Live Capture");
+		for (obs_sceneitem_t *pic : {pic_a, pic_c}) {
+			vec2 at, small;
+			vec2_set(&at, 430, 200);
+			vec2_set(&small, 0.25f, 0.25f);
+			obs_sceneitem_set_pos(pic, &at);
+			obs_sceneitem_set_scale(pic, &small);
+		}
+		const obs_sceneitem_crop cut = {10, 6, 20, 4};
+		obs_sceneitem_set_crop(cam_a, &cut);
+		obs_sceneitem_set_crop(cam_c, &cut);
+		(void)cam_b;
+
+		obs_data_t *ms = obs_data_create();
+		obs_data_set_int(ms, "ease_curve", 0); // linear, so half the time is half the way
+		obs_source_t *morph = obs_source_create_private("stagekit_morph", "Morph", ms);
+		CHECK(morph != nullptr, "the Morph transition is registered and can be created");
+		auto px = [&](const std::vector<uint8_t> &frame, int x, int y, int channel) {
+			return (int)frame[(size_t(y) * w + x) * 4 + channel];
+		};
+		auto at_time = [&](obs_scene_t *from, obs_scene_t *to, float t) {
+			obs_transition_set_size(morph, w, h);
+			obs_transition_set(morph, obs_scene_get_source(from));
+			obs_transition_start(morph, OBS_TRANSITION_MODE_MANUAL, 0, obs_scene_get_source(to));
+			obs_transition_set_manual_time(morph, t);
+			sleep_ms(120);
+			return render(morph, w, h);
+		};
+		if (morph) {
+			const std::vector<uint8_t> first = render(obs_scene_get_source(ma), w, h);
+			const std::vector<uint8_t> same = at_time(ma, mc, 0.5f);
+			CHECK(mean_abs_diff(same, first) < 0.6 && opaque(same),
+			      "half-way between two scenes that are alike, the picture is the scene's own, colours, crop and all (diff %.2f)",
+			      mean_abs_diff(same, first));
+
+			const std::vector<uint8_t> half = at_time(ma, mb, 0.5f);
+			// For the README: the change of scene in five steps.
+			write_frame(out + "/../morph/1 before.rgba", first, w, h);
+			write_frame(out + "/../morph/2 a quarter.rgba", at_time(ma, mb, 0.25f), w, h);
+			write_frame(out + "/../morph/3 half-way.rgba", half, w, h);
+			write_frame(out + "/../morph/4 three quarters.rgba", at_time(ma, mb, 0.75f), w, h);
+			write_frame(out + "/../morph/5 after.rgba", render(obs_scene_get_source(mb), w, h), w, h);
+			at_time(ma, mb, 0.5f);
+			// The camera: from 20,20 to 520,280, cut to 70x50. Half-way its
+			// top-left is at 270,150.
+			CHECK(px(half, 300, 170, 0) > 240 && px(half, 300, 170, 1) < 15 && px(half, 300, 170, 2) < 15 &&
+				      px(half, 50, 40, 0) < 15 && px(half, 550, 300, 0) < 15,
+			      "an item in both scenes is half-way between its two places, and at neither of them (red %d there; %d and %d at the ends)",
+			      px(half, 300, 170, 0), px(half, 50, 40, 0), px(half, 550, 300, 0));
+			// The backgrounds: one fades into the other and the two always
+			// make a whole picture.
+			CHECK(opaque(half) && px(half, 20, 340, 1) > 80 && px(half, 20, 340, 1) < 215 &&
+				      px(half, 20, 340, 2) > 80 && px(half, 20, 340, 2) < 215 &&
+				      px(half, 20, 340, 0) < 15,
+			      "the two backgrounds are cross-faded, with no see-through dip (green %d, blue %d)",
+			      px(half, 20, 340, 1), px(half, 20, 340, 2));
+			// The main picture: the yellow game (100,90 320x180) becomes the
+			// cyan window (300,60 200x200): half-way 200,75 260x190, both mixed.
+			CHECK(px(half, 215, 100, 1) > 240 && px(half, 215, 100, 0) > 80 &&
+				      px(half, 215, 100, 0) < 215 && px(half, 215, 100, 2) > 80 &&
+				      px(half, 215, 100, 2) < 215 && px(half, 120, 100, 0) < 15 &&
+				      px(half, 480, 120, 0) < 15,
+			      "the largest item left in each scene changes into the other on the way (red %d, green %d, blue %d in it; red %d where the game was)",
+			      px(half, 215, 100, 0), px(half, 215, 100, 1), px(half, 215, 100, 2),
+			      px(half, 120, 100, 0));
+
+			// At the end it is the new scene, and the transition is over.
+			const std::vector<uint8_t> last = render(obs_scene_get_source(mb), w, h);
+			obs_transition_set_manual_time(morph, 1.0f);
+			sleep_ms(120);
+			render(morph, w, h);
+			const std::vector<uint8_t> done = render(morph, w, h);
+			obs_source_t *showing = obs_transition_get_active_source(morph);
+			CHECK(mean_abs_diff(done, last) < 0.01 && showing == obs_scene_get_source(mb),
+			      "at the end the new scene is drawn as it is, and the transition has ended (diff %.2f)",
+			      mean_abs_diff(done, last));
+			obs_source_release(showing);
+
+			// Unticked, the game and the window are cross-faded in place.
+			obs_data_set_bool(ms, "pair_main", false);
+			obs_source_update(morph, ms);
+			const std::vector<uint8_t> apart = at_time(ma, mb, 0.5f);
+			CHECK(px(apart, 120, 100, 0) > 80 && px(apart, 480, 120, 2) > 80,
+			      "with 'Morph the main picture' unticked those two fade where they are (red %d where the game is, blue %d where the window is)",
+			      px(apart, 120, 100, 0), px(apart, 480, 250, 2));
+			// Sliding: the game, on its way out, has moved towards the edge.
+			obs_data_set_int(ms, "others", 2);
+			obs_source_update(morph, ms);
+			const std::vector<uint8_t> slid = at_time(ma, mb, 0.5f);
+			CHECK(mean_abs_diff(slid, apart) > 1.0 && opaque(slid),
+			      "'Slide off the nearest edge' moves the items that are in one scene only (diff %.2f)",
+			      mean_abs_diff(slid, apart));
+			obs_transition_set_manual_time(morph, 1.0f);
+			sleep_ms(120);
+			render(morph, w, h);
+			obs_transition_clear(morph);
+			obs_source_release(morph);
+		}
+		obs_data_release(ms);
+		obs_scene_release(ma);
+		obs_scene_release(mb);
+		obs_scene_release(mc);
+		for (obs_source_t *src : {old_back, new_back, game, window, camera})
+			obs_source_release(src);
+		if (getenv("STAGEKIT_TEST_ONLY_MORPH")) { // to try this section alone
+			obs_source_release(live);
+			obs_shutdown();
+			printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+			       g_failures == 1 ? "" : "s");
+			return g_failures ? 1 : 0;
+		}
+	}
+
 	obs_data_t *s = obs_data_create();
 	obs_data_set_string(s, "image", base_image);
 	obs_data_set_double(s, "speed_x", 0);
