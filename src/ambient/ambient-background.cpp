@@ -22,6 +22,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include "ambient-background.hpp"
 
+#include "../capture/standby.hpp"
 #include "../common/scene-util.hpp"
 #include "../common/start-image.hpp"
 #include "../frame/auto-frame.hpp"
@@ -68,8 +69,9 @@ struct Settings {
 	double live_opacity = 0.7;
 	LiveFit live_fit = LiveFit::Fill;
 	double live_zoom = 1.0;
-	bool live_replace = false; // the capture is the whole background while there is one
-	bool live_ready = true;    // keep the capture running in scenes that do not show it
+	bool live_replace = false;     // the capture is the whole background while there is one
+	bool live_ready = true;        // keep the capture running in scenes that do not show it
+	bool live_skip_standby = true; // a Standby Picture standing in for the capture is no capture
 	double blur = 60.0;
 	PixelStyle pixel_style = PixelStyle::None;
 	double pixel_size = 10.0;
@@ -333,6 +335,7 @@ void AmbientBackground::update(obs_data_t *settings)
 	s.live_zoom = std::clamp(obs_data_get_double(settings, "live_zoom") / 100.0, 0.25, 8.0);
 	s.live_replace = obs_data_get_bool(settings, "live_replace");
 	s.live_ready = obs_data_get_bool(settings, "live_ready");
+	s.live_skip_standby = obs_data_get_bool(settings, "live_skip_standby");
 	s.blur = std::clamp(obs_data_get_double(settings, "blur"), 0.0, 250.0);
 	s.pixel_style = static_cast<PixelStyle>(obs_data_get_int(settings, "pixel_style"));
 	s.pixel_size = std::clamp(obs_data_get_double(settings, "pixel_size"), 2.0, 200.0);
@@ -767,6 +770,10 @@ void AmbientBackground::render()
 	// A capture with nothing in it is no capture: the usual picture shows.
 	if (live && !live_shows_something(live))
 		live = nullptr;
+	// Nor is a Standby Picture standing in for it: blended in, the
+	// background would turn into that still picture.
+	if (live && s.live_skip_standby && standby_waiting(live_source))
+		live = nullptr;
 
 	gs_texrender_reset(tr_scene_);
 	if (gs_texrender_begin(tr_scene_, iw, ih)) {
@@ -890,7 +897,7 @@ bool visibility_modified(obs_properties_t *props, obs_property_t *, obs_data_t *
 	obs_property_set_visible(obs_properties_get(props, "base_source"), base == BaseType::Source);
 	obs_property_set_visible(obs_properties_get(props, "live_source"), live == LiveMode::Source);
 	obs_property_set_visible(obs_properties_get(props, "live_opacity"), live != LiveMode::None);
-	for (const char *name : {"live_fit", "live_zoom", "live_replace", "live_ready"})
+	for (const char *name : {"live_fit", "live_zoom", "live_replace", "live_ready", "live_skip_standby"})
 		obs_property_set_visible(obs_properties_get(props, name), live != LiveMode::None);
 	obs_property_set_visible(obs_properties_get(props, "pixel_size"), pixel != PixelStyle::None);
 	obs_property_set_visible(obs_properties_get(props, "overlay_mode"), has_overlay);
@@ -947,6 +954,9 @@ obs_properties_t *get_properties(void *)
 	percent_slider(picture, "live_zoom", "Ambient.LiveZoom", 25.0, 400.0);
 	obs_property_t *replace =
 		obs_properties_add_bool(picture, "live_replace", obs_module_text("Ambient.LiveReplace"));
+	obs_property_t *skip_standby =
+		obs_properties_add_bool(picture, "live_skip_standby", obs_module_text("Ambient.LiveSkipStandby"));
+	obs_property_set_long_description(skip_standby, obs_module_text("Ambient.LiveSkipStandby.Tip"));
 	obs_property_t *ready = obs_properties_add_bool(picture, "live_ready", obs_module_text("Ambient.LiveReady"));
 	obs_property_set_long_description(ready, obs_module_text("Ambient.LiveReady.Tip"));
 	obs_property_set_long_description(replace, obs_module_text("Ambient.LiveReplace.Tip"));
@@ -1010,6 +1020,7 @@ void get_defaults(obs_data_t *settings)
 	obs_data_set_default_double(settings, "live_zoom", 100.0);
 	obs_data_set_default_bool(settings, "live_replace", false);
 	obs_data_set_default_bool(settings, "live_ready", true);
+	obs_data_set_default_bool(settings, "live_skip_standby", true);
 	obs_data_set_default_double(settings, "speed_x", 30.0);
 	obs_data_set_default_double(settings, "speed_y", 15.0);
 	obs_data_set_default_double(settings, "zoom", 120.0);

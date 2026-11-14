@@ -22,6 +22,10 @@ void register_shadow_backdrop();
 // pixels: left, top, right, bottom.
 void shadow_room(obs_source_t *source, double room[4]);
 
+// Is a shadow filter on the source asked to keep its effect on screen
+// ("Keep it on screen")? Fit Item then fits the shadow as well as the picture.
+bool shadow_kept_in_view(obs_source_t *source);
+
 // What draws a source's picture without its shadows, glows and outlines, and
 // where that picture sits inside the whole source.
 struct ShadowFree {

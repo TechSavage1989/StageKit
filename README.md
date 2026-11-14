@@ -312,8 +312,12 @@ Add **Fit Item (StageKit)** as a filter on a *scene*. It places one item of that
 - **Item**: the item to place, usually your game capture.
 - **Fit it in**: *The whole screen*, *A box I set* (left, top, width, height in canvas pixels), or
   *The free space around it*.
+- **Size it by hand** (with *A box I set*): resize the item in the preview as you would any other,
+  and the size you give it becomes the box's width and height a moment after you let go. The box's
+  left and top and the margin stay as set, so the item goes back to that corner.
 - **Margin for other shapes**: a picture with the box's shape fills the box. Any other shape is kept
-  this far from the box's edges and centred.
+  this far from the box's edges and centred. With a Shadow, Glow & Outline set to *Keep it on
+  screen*, a picture that fills the box makes room for its shadow.
 
 **The free space around it** makes the item as large as it can be where it is, always keeping the
 gap you set (*Gap to edges and items*) from the screen's edges and from every other item, at its

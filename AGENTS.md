@@ -291,6 +291,18 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   item's place (`anchor_x/y`, saved; retaken when the item is moved by anything else, which it lets
   finish first). Whatever the place lies inside is not in the way. It follows the Arrange options
   (`as_arranged`) and glides to a new space.
+- **Shadow, Glow & Outline's "Keep it on screen" only touches an item that is still**
+  (`keep_in_view`): a plain item (no bounding box, not in a group, not rotated or locked) whose
+  picture is on the canvas but whose effect runs off an edge is scaled down, keeping its shape,
+  after 0.4 s without moving. An item being dragged or gliding in, or whose picture is itself off
+  the canvas, is left alone. It is one-way: the item does not grow back. Items with a bounding box
+  are whoever set the box's business; Fit Item asks `shadow_kept_in_view` and fits the shadow too.
+- **Fit Item's "Size it by hand" reads the bounding box back** (`by_hand`): a resize in the preview
+  changes the item's bounds, which the filter takes as the box's width and height once they have
+  been still for 0.4 s, and saves. Left, top and margin are never taken from the item.
+- **Ambient Background does not blend in a standby picture** (`live_skip_standby`, on by default):
+  `standby_waiting()` says the capture is only showing its Standby Picture. The owner's background
+  turned into the still start image.
 - **Fit Item gives OBS the space, not the size.** Its bounding box is the space the picture may take
   (plus a shadow's room at the fitted scale), with scale-to-inner-bounds and centre alignment, so OBS
   fits the picture every frame and a window being resized never lags. Do not go back to setting the
