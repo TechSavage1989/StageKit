@@ -1297,7 +1297,7 @@ private:
 		p.setRenderHint(QPainter::Antialiasing);
 		const QColor ink = on->palette().color(QPalette::ButtonText);
 		QColor soft = ink;
-		soft.setAlphaF(0.45);
+		soft.setAlphaF(0.45f);
 		const QPen line(ink, 5, Qt::SolidLine, Qt::RoundCap);
 		auto bar = [&](qreal x, qreal y, qreal w, qreal h, const QColor &c) {
 			QPainterPath path;
