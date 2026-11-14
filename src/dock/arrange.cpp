@@ -10,6 +10,8 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include "arrange.hpp"
 
+#include "../placement/fit-item.hpp"
+
 #include "../common/shown-scale.hpp"
 #include "../shadow/shadow-backdrop.hpp"
 
@@ -625,9 +627,15 @@ void copy_transform(obs_source_t *from_scene, obs_sceneitem_t *from, obs_source_
 } // namespace
 
 int copy_to_every_scene(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items,
-			const std::vector<std::string> *only, const std::vector<std::string> *to_sources)
+			const std::vector<std::string> *only, const std::vector<std::string> *to_sources,
+			bool even_locked)
 {
 	int changed = 0;
+	// A copy that a Fit to Space looks after is handed over to it as placed
+	// on purpose, or the filter would put it straight back where it was.
+	const auto placed = [](const Copy &copy) {
+		fit_item_placed(nullptr, obs_source_get_name(obs_sceneitem_get_source(copy.item)));
+	};
 	const auto wanted_scene = [only](obs_source_t *in) {
 		if (!only)
 			return true;
@@ -645,9 +653,11 @@ int copy_to_every_scene(obs_source_t *scene, const std::vector<obs_sceneitem_t *
 			if (!source)
 				continue;
 			for (const Copy &copy : copies_of(source, nullptr)) {
-				if (copy.item == model || obs_sceneitem_locked(copy.item) || !wanted_scene(copy.scene))
+				if (copy.item == model || (!even_locked && obs_sceneitem_locked(copy.item)) ||
+				    !wanted_scene(copy.scene))
 					continue;
 				copy_transform(scene, model, copy.scene, copy.item);
+				placed(copy);
 				changed++;
 			}
 			obs_source_release(source);
@@ -661,11 +671,12 @@ int copy_to_every_scene(obs_source_t *scene, const std::vector<obs_sceneitem_t *
 			continue;
 		done.push_back(source);
 		for (const Copy &copy : copies_of(source, scene)) {
-			if (obs_sceneitem_locked(copy.item))
+			if (!even_locked && obs_sceneitem_locked(copy.item))
 				continue;
 			if (!wanted_scene(copy.scene))
 				continue;
 			copy_transform(scene, item, copy.scene, copy.item);
+			placed(copy);
 			changed++;
 		}
 	}

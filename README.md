@@ -630,6 +630,11 @@ What they do:
 | *Copy transform to chosen scenes* | The same, but only to the scenes listed under *Scenes to copy to* in the dock. Choose a scene from *Add a scene...* to put it on the list; press the **x** beside one to take it off. The list is saved with your scene collection |
 | *Sources to copy to* | Which sources take the transform, for both copy buttons. Empty (it then reads *The same source*): the copies of the selected item's own source in the other scenes. With sources listed, the transform goes to those sources instead, in this scene and the others, or in the listed scenes with *Copy transform to chosen scenes*. Add the item's own source to the list to include it too. With several items selected, the last one selected is the one copied. Saved with your scene collection |
 
+*Also change locked copies* (off as it comes): ticked, both copy buttons change copies that are locked
+in their scenes too, and leave them locked. A copy that a Fit to Space filter looks after takes the
+copied transform as its new place (and, with *Resize it to fit* unticked, its new size); a filter that
+resizes it fits it again around that place.
+
 **Lock and unlock** (on the Copy tab) locks or unlocks items across scenes in one press. *Items*: the
 sources of the items selected in the preview, the sources listed under *Sources to copy to*, or every
 source. *In*: all scenes, the scenes listed under *Scenes to copy to*, or only the scene being worked

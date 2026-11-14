@@ -6035,6 +6035,60 @@ int main(int argc, char **argv)
 					CHECK(std::fabs(kp.x - 5) < 0.6 && std::fabs(kp.y - 5) < 0.6,
 					      "a locked copy is left alone");
 
+					// With "Also change locked copies" ticked the locked one is
+					// changed too, and stays locked.
+					tick_box("copyLocked", true);
+					place(ia, 44, 66);
+					click("arrange_same_everywhere");
+					sleep_ms(100);
+					const vec2 kp2 = pos_of(locked);
+					tick_box("copyLocked", false);
+					CHECK(std::fabs(kp2.x - 44) < 0.6 && std::fabs(kp2.y - 66) < 0.6 &&
+						      obs_sceneitem_locked(locked),
+					      "with 'Also change locked copies' a locked copy takes the transform and stays locked (%.0f, %.0f)",
+					      kp2.x, kp2.y);
+					// A copy looked after by a Fit to Space, in a scene that is
+					// not on screen: the filter takes it where it was put and
+					// does not put it back.
+					{
+						obs_data_t *fd = obs_data_create();
+						obs_data_set_string(fd, "item", "Block A");
+						obs_data_set_int(fd, "box", 2);
+						obs_data_set_double(fd, "margin", 10);
+						obs_data_set_int(fd, "glide_ms", 0);
+						obs_data_set_bool(fd, "resize", false);
+						obs_source_t *held = obs_source_create("stagekit_fit_item", "Fit Paste",
+										       fd, nullptr);
+						obs_data_release(fd);
+						obs_source_filter_add(obs_scene_get_source(paste_b), held);
+						// Shown for a moment, so the filter takes the item in hand.
+						obs_source_t *was_out = obs_get_output_source(0);
+						obs_set_output_source(0, obs_scene_get_source(paste_b));
+						for (int i = 0; i < 16; i++) {
+							render(obs_scene_get_source(paste_b), 640, 360);
+							sleep_ms(50);
+						}
+						obs_set_output_source(0, was_out);
+						obs_source_release(was_out);
+						sleep_ms(300);
+						obs_sceneitem_set_locked(locked, false);
+						const vec2 fitted_at = pos_of(locked);
+						place(ia, 150, 120);
+						click("arrange_same_everywhere");
+						sleep_ms(600);
+						const vec2 put = pos_of(locked);
+						CHECK(std::fabs(put.x - 150) < 0.6 && std::fabs(put.y - 120) < 0.6,
+						      "a copy that a Fit to Space looks after, in a scene not on screen, stays where the transform was copied to (%.0f, %.0f; the filter had it at %.0f, %.0f)",
+						      put.x, put.y, fitted_at.x, fitted_at.y);
+						obs_source_filter_remove(obs_scene_get_source(paste_b), held);
+						obs_source_release(held);
+						obs_sceneitem_set_locked(locked, true);
+						// Back as the checks below expect to find it.
+						place(ia, 40, 60);
+						click("arrange_same_everywhere");
+						sleep_ms(100);
+					}
+
 					// From a hotkey or the preview's menu, and one step for Undo.
 					place(ia, 100, 100);
 					calldata_t hk = {};

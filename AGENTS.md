@@ -238,6 +238,14 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   specifically set, it only applies to the same source in other scenes"); the transform is copied as
   it is, like OBS's Paste Transform, so a source of another size ends up another size. Name a tool for what it does, verb
   first; the owner asked for labels that say what happens.
+- **The copy tools hand a copy over to its Fit to Space** (`fit_item_placed` in
+  `src/placement/fit-item.*`, called from `copy_to_every_scene`): the filter takes the item where
+  it was put (its space is looked for there, and a kept size is read from it) and does not put it
+  back. Before, a copy in a scene with a Fit to Space was reverted at once, above all in scenes not
+  on screen, where the filter only repeats its last placing; the owner found the copy tools worked
+  only on copies "unlocked and selected manually in each affected scene". Anything else that places
+  an item on purpose across scenes should call it too. *Also change locked copies* (`copy_locked`,
+  off as it comes) lets both copy tools change locked copies, which stay locked.
 - **Snap on release and the resize limit glide into place** (`step_glides` in
   `src/dock/stagekit-dock.cpp`): the correction is worked out at once (and that is what Undo holds),
   the item is put back where it was let go and travels from there over the dock's glide time and

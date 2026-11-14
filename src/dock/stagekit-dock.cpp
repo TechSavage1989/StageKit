@@ -806,6 +806,10 @@ public:
 			show_copy_sources();
 		});
 		copy_layout->addWidget(source_add_);
+		copy_locked_ = new QCheckBox(tr_text("Arrange.CopyLocked"), copy_box);
+		copy_locked_->setObjectName("copyLocked");
+		copy_locked_->setToolTip(tr_text("Arrange.CopyLocked.Tip"));
+		copy_layout->addWidget(copy_locked_);
 		copy_page->addWidget(copy_box);
 		// Locking and unlocking across scenes: which items, in which
 		// scenes, then one button each way. A locked copy is left alone by
@@ -930,7 +934,7 @@ public:
 		// The options are shared with the hotkeys and the right-click menu.
 		show_arrange_options();
 		for (QCheckBox *box : {visible_, no_shadow_, keep_shape_, live_snap_, guides_, every_scene_, slide_,
-				       limit_resize_, arrange_every_})
+				       limit_resize_, arrange_every_, copy_locked_})
 			QObject::connect(box, &QCheckBox::toggled, this, [this](bool) { store_arrange_options(); });
 		QObject::connect(against_, &QComboBox::currentIndexChanged, this,
 				 [this](int) { store_arrange_options(); });
@@ -1457,6 +1461,7 @@ private:
 		guides_->setChecked(o.guides);
 		every_scene_->setChecked(o.send_every_scene);
 		arrange_every_->setChecked(o.arrange_every_scene);
+		copy_locked_->setChecked(o.copy_locked);
 		place_visible_->setChecked(o.how.visible_pixels);
 		place_no_shadow_->setChecked(o.how.leave_out_shadows);
 		slide_->setChecked(o.send_slide);
@@ -1572,6 +1577,7 @@ private:
 		o.guides = guides_->isChecked();
 		o.send_every_scene = every_scene_->isChecked();
 		o.arrange_every_scene = arrange_every_->isChecked();
+		o.copy_locked = copy_locked_->isChecked();
 		o.send_slide = slide_->isChecked();
 		o.send_curve = curve_->currentIndex();
 		o.send_mode = ease_mode_->currentIndex();
@@ -2202,6 +2208,7 @@ private:
 	QCheckBox *guides_ = nullptr;
 	QCheckBox *every_scene_ = nullptr;
 	QComboBox *lock_which_ = nullptr, *lock_where_ = nullptr;
+	QCheckBox *copy_locked_ = nullptr;
 	QComboBox *filter_from_ = nullptr, *filter_to_ = nullptr;
 	QCheckBox *filter_add_ = nullptr;
 	QStringList filter_labels_;
