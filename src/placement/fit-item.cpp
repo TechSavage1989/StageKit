@@ -284,6 +284,15 @@ private:
 	{
 		if (measuring_stopped())
 			return false;
+		// Only for a scene that is being shown somewhere. Every scene's
+		// filters run all the time, and looking at the items of scenes nobody
+		// sees would cost the picture on screen its smoothness for nothing.
+		if (!obs_source_showing(parent_)) {
+			if (!have_cur_)
+				return false;
+			space = cur_;
+			return true;
+		}
 		// Moved by something else (dragged in the preview, sent somewhere by
 		// a key): left alone while it moves, then its new place is where the
 		// free space is looked for.

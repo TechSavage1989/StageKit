@@ -802,6 +802,44 @@ int main(int argc, char **argv)
 			CHECK(all_shown && all_hidden,
 			      "several sources switch together, and 'on' can mean hidden (%d %d)", all_shown,
 			      all_hidden);
+			// Bring-along items too: what the camera's Send To key brings along.
+			{
+				obs_source_t *tag = obs_source_create("color_source", "Switch Tag", nullptr, nullptr);
+				obs_sceneitem_t *tag1 = obs_scene_add(one, tag);
+				obs_data_t *kd = obs_data_create();
+				obs_data_set_string(kd, "linked", "Switch Tag");
+				obs_source_t *key = obs_source_create("stagekit_send_to", "Camera Key", kd, nullptr);
+				obs_data_release(kd);
+				obs_source_filter_add(cam, key);
+				obs_source_set_enabled(key, false);
+				obs_data_t *ls = obs_source_get_settings(sw);
+				obs_data_array_t *only_cam = obs_data_array_create();
+				obs_data_t *entry = obs_data_create();
+				obs_data_set_string(entry, "value", "Switch Camera");
+				obs_data_array_push_back(only_cam, entry);
+				obs_data_release(entry);
+				obs_data_set_array(ls, "sources", only_cam);
+				obs_data_array_release(only_cam);
+				obs_data_set_int(ls, "on_means", 0);
+				obs_source_update(sw, ls);
+				sleep_ms(100);
+				flip(false);
+				const bool tag_stays = obs_sceneitem_visible(tag1) && !obs_sceneitem_visible(cam1);
+				flip(true);
+				obs_data_set_bool(ls, "with_linked", true);
+				obs_source_update(sw, ls);
+				obs_data_release(ls);
+				sleep_ms(100);
+				flip(false);
+				const bool tag_goes = !obs_sceneitem_visible(tag1) && !obs_sceneitem_visible(cam1);
+				flip(true);
+				CHECK(tag_stays && tag_goes && obs_sceneitem_visible(tag1),
+				      "with 'Bring-along items too', what the source's Send To key brings along is hidden and shown with it (%d %d)",
+				      tag_stays, tag_goes);
+				obs_source_filter_remove(cam, key);
+				obs_source_release(key);
+				obs_source_release(tag);
+			}
 			obs_source_filter_remove(cam, sw);
 			obs_source_release(sw);
 			obs_scene_release(one);

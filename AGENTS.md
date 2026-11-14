@@ -266,6 +266,9 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   (`get_standing`), so Corners & Edges and the rest shape the whole picture. The capture is always
   drawn by way of a copy (`render_live_`), kept when the capture ends so the change back starts from
   the last frame: a capture that has ended draws nothing.
+- **Show in Scenes can take bring-along items with it** (`with_linked`, off by default): the
+  `linked` item of every Send To filter on a listed source, and of Place Item filters that move it.
+  The owner asked for it.
 - **Show in Scenes is a switch, not a trigger.** Its on and off state is the shown and hidden
   state, so one Stream Deck Filter key toggles and shows which way it is. It acts on the `enable`
   signal only (never each tick, so a change by hand is kept) and ignores the state restored at load
@@ -299,7 +302,8 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   in the box), which costs nothing, and one item a second is looked at again, in turn, only while
   nothing moves (how a widget that starts drawing is noticed). The first build (beta70) read one
   item back every quarter second and all of them after any move; the owner then found camera moves
-  "very choppy". Never add a read-back that runs while things animate. The space is the largest
+  "very choppy". Never add a read-back that runs while things animate. It only looks while its scene
+  is being shown (`obs_source_showing`): every scene's filters tick all the time, shown or not. The space is the largest
   clear one holding the item's place (`anchor_x/y`, saved; retaken when the item is moved by
   anything else, which it lets finish first). Whatever the place lies inside is not in the way. It
   measures by its own two tick boxes and glides to a new space.

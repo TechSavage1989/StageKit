@@ -211,6 +211,21 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Lag: free space only for scenes on screen; Show in Scenes takes bring-along items (0.1.0-beta75)
+
+- The owner, before trying beta74: "live feed and animations are both very laggy. framerate is
+  dropping a lot", with OBS's Stats showing 53 fps and 2.1% of frames missed to rendering lag, and
+  "OBS also appears to be constantly writing to disk".
+- Found by reading: a Fit Item on *The free space around it* measured its scene's items whether or
+  not the scene was shown anywhere. It now stands still unless its scene is being shown.
+- **Not explained:** the disk writing. In the owner's Task Manager picture the megabytes a second
+  are a browser page's (a browser source), not OBS's own process, which wrote about 9 KB/s. StageKit
+  writes to the log only on events. Asked for the session's log to see whether anything repeats.
+- If beta75 is still laggy: ask for the log and for Stats with the StageKit filters switched off one
+  kind at a time; suspects in order are Standby Picture's copy of every capture, Auto Frame's
+  read-back every 0.4 s, and the dock's 0.4 s refresh.
+- New: *Bring-along items too* in Show in Scenes, as asked.
+
 ## Corrections glide; free space no longer makes moves choppy (0.1.0-beta74)
 
 - The owner: "snap and resize should glide if able". Done in the dock, over its glide time and curve.
