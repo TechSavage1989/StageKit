@@ -211,6 +211,13 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Slide off the nearest edge in Show in Scenes (0.1.0-beta112)
+
+- The owner: "for slide show in scenes filter, slide off the nearest edge should be an option".
+  Added as a direction in the Slide's and the Swipe's own list. See AGENTS.md.
+- The owner also asked whether Morph's links carry through one another. They do (`linked`), and
+  were told so.
+
 ## Transitions with their own settings; Morph links (0.1.0-beta111)
 
 - Two requests, released together because the owner said "release everything i've requested in

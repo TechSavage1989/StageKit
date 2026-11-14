@@ -65,7 +65,10 @@ struct ItemChange {
 ItemChange item_change_read(obs_data_t *settings, const char *source = nullptr);
 
 // Gives an item its show and its hide transition, each with its own settings.
-void apply_item_change(obs_sceneitem_t *item, const ItemChange &change);
+// `scene` is the scene the item is in (the one holding its group, for an item
+// in a group): a slide or a swipe set to "Off the nearest edge" goes by where
+// the item lies in it.
+void apply_item_change(obs_sceneitem_t *item, const ItemChange &change, obs_source_t *scene = nullptr);
 
 // Adds the control. `list_setting` names the PickList of sources the filter
 // acts on (null for a filter without one): with it, a "Settings for" box

@@ -10,6 +10,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include "item-transition.hpp"
 #include "pick-list.hpp"
+#include "scene-util.hpp"
 
 #include <obs-module.h>
 
@@ -158,7 +159,41 @@ ItemWay way_read(obs_data_t *settings, const std::string &scope, bool show)
 	return way;
 }
 
-void apply_way(obs_sceneitem_t *item, bool show, const ItemWay &way)
+// A direction of StageKit's own in the lists of a slide and a swipe: towards
+// whichever edge of the screen the item is nearest to. The owner: "for slide
+// show in scenes filter, slide off the nearest edge should be an option".
+inline constexpr const char *kNearest = "nearest";
+
+bool has_direction(const std::string &kind)
+{
+	return kind == "slide_transition" || kind == "swipe_transition";
+}
+
+// Which way an item goes off the nearest edge of its scene, in a slide's
+// words. To hide it moves towards that edge; to show it comes in from it,
+// which is moving the other way.
+const char *off_nearest_edge(obs_sceneitem_t *item, obs_source_t *scene, bool show)
+{
+	if (!scene)
+		scene = obs_scene_get_source(obs_sceneitem_get_scene(item));
+	const double w = scene ? obs_source_get_width(scene) : 0.0, h = scene ? obs_source_get_height(scene) : 0.0;
+	if (w < 1.0 || h < 1.0)
+		return show ? "right" : "left";
+	refresh_item(item);
+	const Box box = scene_box(scene, item);
+	// How far each way until it is all off the screen.
+	const double left = box.x + box.w, right = w - box.x, up = box.y + box.h, down = h - box.y;
+	const double least = std::min({left, right, up, down});
+	if (least == left)
+		return show ? "right" : "left";
+	if (least == right)
+		return show ? "left" : "right";
+	if (least == up)
+		return show ? "down" : "up";
+	return show ? "up" : "down";
+}
+
+void apply_way(obs_sceneitem_t *item, bool show, const ItemWay &way, obs_source_t *scene)
 {
 	if (way.kind == kTransitionKeep || way.kind.empty())
 		return;
@@ -169,6 +204,12 @@ void apply_way(obs_sceneitem_t *item, bool show, const ItemWay &way)
 		return;
 	}
 	obs_data_t *own = way.own.empty() ? nullptr : obs_data_create_from_json(way.own.c_str());
+	if (own && has_direction(way.kind) && strcmp(obs_data_get_string(own, "direction"), kNearest) == 0) {
+		obs_data_set_string(own, "direction", off_nearest_edge(item, scene, show));
+		// (A swipe only moves the item on its way in when told it is one.)
+		if (way.kind == "swipe_transition")
+			obs_data_set_bool(own, "swipe_in", show);
+	}
 	const char *now_id = now ? obs_source_get_unversioned_id(now) : nullptr;
 	if (!now_id || way.kind != now_id) {
 		const char *of = obs_source_get_name(obs_sceneitem_get_source(item));
@@ -278,6 +319,10 @@ void add_own(obs_properties_t *into, obs_data_t *settings, const std::string &pr
 				else
 					obs_property_list_add_float(made, item, obs_property_list_item_float(p, i));
 			}
+			// One more way to go, for a slide and a swipe.
+			if (format == OBS_COMBO_FORMAT_STRING && has_direction(kind) &&
+			    strcmp(their_name, "direction") == 0)
+				obs_property_list_add_string(made, obs_module_text("Change.Nearest"), kNearest);
 			if (!defaults)
 				break;
 			if (format == OBS_COMBO_FORMAT_STRING)
@@ -417,12 +462,12 @@ ItemChange item_change_read(obs_data_t *settings, const char *source)
 	return own;
 }
 
-void apply_item_change(obs_sceneitem_t *item, const ItemChange &change)
+void apply_item_change(obs_sceneitem_t *item, const ItemChange &change, obs_source_t *scene)
 {
 	if (!item)
 		return;
-	apply_way(item, true, change.show);
-	apply_way(item, false, change.hide);
+	apply_way(item, true, change.show, scene);
+	apply_way(item, false, change.hide, scene);
 }
 
 void add_item_change_properties(obs_properties_t *props, obs_source_t *owner, const char *list_setting)

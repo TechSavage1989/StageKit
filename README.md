@@ -738,10 +738,14 @@ off, and the sources are shown or hidden to match.
 | Scenes | The scenes to act in, when you chose to list them |
 | When this is on | *They are shown* (off hides them) or *They are hidden* (off shows them) |
 | Bring-along items too | Ticked: the items those sources bring along are shown and hidden with them. They are the items chosen under *Bring along* in the sources' Move Source keys, and in Move Scene Item filters that move them |
-| Show with / Lasting | How each item appears: a fade (the default), any other transition OBS has, a cut, or whatever is already set on the item; and for how long. Under it come that transition's own settings, such as the way a slide goes |
+| Show with / Lasting | How each item appears: a fade (the default), any other transition OBS has, a cut, or whatever is already set on the item; and for how long. Under it come that transition's own settings, such as the way a slide goes. A Slide and a Swipe have one more direction, *Off the nearest edge*: each item goes towards whichever edge of the screen it is nearest to when it hides, and comes in from that side when it shows |
 | Hide with / Lasting | How each item disappears: *The same as showing* (the default), or a transition of its own with its own settings, so an item can slide down into view and slide up out of it |
 | Settings for | With sources on the list: *All sources (the usual)*, or one of the listed sources. Choose a source and the controls below are that source's own: it can show and hide with another transition, another duration and other settings than the rest, or be left *As for all sources* |
 | Do it now | Shows or hides them to match how the filter is switched now |
+
+OBS's own transitions move an item's picture inside the item's own frame, so a slide leaves through
+the side of that frame, not across the screen. To have an item travel in from the screen's edge, use
+Show/Hide Animation below.
 
 It acts when it is switched, not all the time, so something you show or hide by hand stays until the
 next press. Items inside groups are included. OBS's own show and hide transitions on each item apply.

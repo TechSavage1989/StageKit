@@ -165,6 +165,7 @@ public:
 			const ItemChange *change;
 			const std::map<std::string, ItemChange> *own_change;
 			int changed = 0;
+			obs_source_t *scene = nullptr; // the scene being gone through
 			// A listed source's own change, or the usual one.
 			const ItemChange &change_for(const char *name) const
 			{
@@ -177,7 +178,7 @@ public:
 			const char *name = obs_source_get_name(obs_sceneitem_get_source(item));
 			if (name && std::find(w->sources->begin(), w->sources->end(), name) != w->sources->end() &&
 			    obs_sceneitem_visible(item) != w->show) {
-				apply_item_change(item, w->change_for(name));
+				apply_item_change(item, w->change_for(name), w->scene);
 				obs_sceneitem_set_visible(item, w->show);
 				w->changed++;
 			}
@@ -193,7 +194,7 @@ public:
 						    std::find(w2->sources->begin(), w2->sources->end(), inner_name) !=
 							    w2->sources->end() &&
 						    obs_sceneitem_visible(inner) != w2->show) {
-							apply_item_change(inner, w2->change_for(inner_name));
+							apply_item_change(inner, w2->change_for(inner_name), w2->scene);
 							obs_sceneitem_set_visible(inner, w2->show);
 							w2->changed++;
 						}
@@ -213,6 +214,7 @@ public:
 				if (!w->every && (!name || std::find(w->scenes->begin(), w->scenes->end(), name) ==
 								   w->scenes->end()))
 					return true;
+				w->scene = scene;
 				obs_scene_enum_items(obs_scene_from_source(scene), each, param);
 				return true;
 			},
