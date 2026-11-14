@@ -1141,9 +1141,21 @@ private:
 					  QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes) != QMessageBox::Yes)
 			return;
 		std::string error;
-		if (install_update(found_, error))
+		if (install_update(found_, error)) {
 			say(tr_text("Update.Started"));
-		else
+			// A helper that works closes OBS; one that ends while OBS is
+			// still here gave up, and that is said instead of nothing.
+			auto *watch = new QTimer(this);
+			QObject::connect(watch, &QTimer::timeout, this, [this, watch] {
+				const UpdateState state = update_state();
+				if (state == UpdateState::Running && !measuring_stopped())
+					return;
+				if (state == UpdateState::Stopped)
+					say(tr_text("Update.Stopped"));
+				watch->deleteLater();
+			});
+			watch->start(2000);
+		} else
 			say(QString::fromStdString(error));
 	}
 

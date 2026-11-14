@@ -17,7 +17,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, "..")
 PLUGIN = os.path.join(ROOT, "com.techsavage1989.stagekit.sdPlugin")
 BASE = "com.techsavage1989.stagekit"
-VERSION = "0.5.0.0"
+VERSION = "0.5.1.0"
 
 # The pack picture each feature's key starts with (its "on" and "off" look).
 PICTURES = {
@@ -65,6 +65,21 @@ CONNECTION = """		<details>
 		</details>
 """
 
+# The page's own text (the fold-out's heading and its note) in the same
+# font, size and quiet colours as Stream Deck's own controls: left alone, a
+# browser shows it in a serif face.
+STYLE = """		<style>
+			body, summary, p {
+				font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+				font-size: 9pt;
+			}
+			details { margin-top: 10px; border-top: 1px solid rgba(255, 255, 255, 0.08); padding-top: 8px; }
+			summary { color: #969696; cursor: pointer; padding: 2px 0 8px 2px; outline: none; }
+			summary:hover { color: #d8d8d8; }
+			details p { color: #8a8a8a; line-height: 1.45; margin: 8px 4px 4px 4px; }
+		</style>
+"""
+
 FOLLOW = """
 		<script>
 			// The second list depends on the first: ask for it again when the
@@ -94,7 +109,7 @@ def options(label, setting, default, pairs):
     )
 
 
-PRESS = options("A press", "press", "toggle", [("toggle", "Switches it over"), ("on", "Switches it on"), ("off", "Switches it off")])
+PRESS = options("On press", "press", "toggle", [("toggle", "Toggle"), ("on", "Switch on"), ("off", "Switch off")])
 
 
 def page(name, title, body, script=""):
@@ -103,6 +118,7 @@ def page(name, title, body, script=""):
         f"		<title>{title}</title>\n"
         '		<meta charset="utf-8" />\n'
         '		<script src="https://sdpi-components.dev/releases/v4/sdpi-components.js"></script>\n'
+        + STYLE +
         "	</head>\n\n	<body>\n" + body + PICTURE_AND_PALETTE + "\n" + CONNECTION + script + "	</body>\n</html>\n"
     )
     with open(os.path.join(PLUGIN, "ui", name + ".html"), "w", encoding="utf-8") as out:

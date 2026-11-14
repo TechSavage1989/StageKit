@@ -815,6 +815,8 @@ int main(int argc, char **argv)
 					      setup != std::string::npos && again != std::string::npos &&
 					      fetch < close && close < setup && setup < again &&
 					      script.find("Get-FileHash") != std::string::npos &&
+					      script.find("update.log") != std::string::npos &&
+					      script.find("trap {") != std::string::npos &&
 					      script.find("'" + sha_b + "'") != std::string::npos,
 				      "the install helper downloads and checks before it closes OBS, then installs, then starts OBS again, with quotes in names kept safe");
 			}

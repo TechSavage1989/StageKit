@@ -4,6 +4,16 @@
 		<title>StageKit filter switch</title>
 		<meta charset="utf-8" />
 		<script src="https://sdpi-components.dev/releases/v4/sdpi-components.js"></script>
+		<style>
+			body, summary, p {
+				font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+				font-size: 9pt;
+			}
+			details { margin-top: 10px; border-top: 1px solid rgba(255, 255, 255, 0.08); padding-top: 8px; }
+			summary { color: #969696; cursor: pointer; padding: 2px 0 8px 2px; outline: none; }
+			summary:hover { color: #d8d8d8; }
+			details p { color: #8a8a8a; line-height: 1.45; margin: 8px 4px 4px 4px; }
+		</style>
 	</head>
 
 	<body>
@@ -13,11 +23,11 @@
 		<sdpi-item label="Filter">
 			<sdpi-select id="filter" setting="filter" datasource="getFilters" placeholder="Choose" show-refresh></sdpi-select>
 		</sdpi-item>
-		<sdpi-item label="A press">
+		<sdpi-item label="On press">
 			<sdpi-select setting="press" default="toggle">
-				<option value="toggle">Switches it over</option>
-				<option value="on">Switches it on</option>
-				<option value="off">Switches it off</option>
+				<option value="toggle">Toggle</option>
+				<option value="on">Switch on</option>
+				<option value="off">Switch off</option>
 			</sdpi-select>
 		</sdpi-item>
 		<sdpi-item label="Picture">

@@ -63,6 +63,12 @@ bool can_install_updates();
 // could not be started.
 bool install_update(const Release &release, std::string &error);
 
+// How the install's helper is doing, for the dock to say when it gave up:
+// one that works closes OBS before it ends. Its steps are written to
+// %TEMP%\\StageKitUpdate\\update.log.
+enum class UpdateState { None, Running, Stopped };
+UpdateState update_state();
+
 // The script the install runs (see updater.cpp); here for the tests.
 std::string install_script(const Release &release, const std::string &obs_exe);
 

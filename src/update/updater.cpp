@@ -48,6 +48,9 @@ constexpr const char *kReleasesPath = "/repos/TechSavage1989/StageKit/releases?p
 
 std::mutex g_mutex;
 std::thread g_looking;
+#ifdef _WIN32
+HANDLE g_helper = nullptr; // the install's helper, while it runs
+#endif
 
 // "0.1.0-beta82" as numbers that sort: major, minor, patch, stage (beta 0,
 // rc 1, finished 2) and the stage's own number.
@@ -203,6 +206,12 @@ std::string install_script(const Release &release, const std::string &obs_exe)
 	s += "}\r\n";
 	s += "$dir = Join-Path $env:TEMP 'StageKitUpdate'\r\n";
 	s += "New-Item -ItemType Directory -Force -Path $dir | Out-Null\r\n";
+	// What it did, step by step, for when an update does not go through.
+	s += "$log = Join-Path $dir 'update.log'\r\n";
+	s += "function Note($m) { Add-Content -Path $log -Value ((Get-Date -Format s) + ' ' + $m) }\r\n";
+	s += "Set-Content -Path $log -Value 'StageKit update'\r\n";
+	s += "trap { Note ('stopped: ' + $_); Fail ('The update stopped: ' + $_ + ' StageKit was not changed.') }\r\n";
+	s += "Note 'downloading'\r\n";
 	s += "$setup = Join-Path $dir 'stagekit-setup.exe'\r\n";
 	s += "$deck = Join-Path $dir 'stagekit.streamDeckPlugin'\r\n";
 	s += "$deckUrl = " + quoted(release.deck_url) + "\r\n";
@@ -212,8 +221,10 @@ std::string install_script(const Release &release, const std::string &obs_exe)
 	s += "  Fetch " + quoted(release.installer_url) + " " + quoted(release.installer_sha) + " $setup\r\n";
 	s += "  if ($hasDeck) { Fetch $deckUrl " + quoted(release.deck_sha) + " $deck }\r\n";
 	s += "} catch {\r\n";
+	s += "  Note ('download failed: ' + $_)\r\n";
 	s += "  Fail 'The update could not be downloaded, or a file did not match its checksum. Nothing was changed.'\r\n";
 	s += "}\r\n";
+	s += "Note 'downloaded and checked; closing OBS'\r\n";
 	s += "$obs = Get-Process obs64 -ErrorAction SilentlyContinue\r\n";
 	s += "if ($obs) {\r\n";
 	s += "  $obs | ForEach-Object { $_.CloseMainWindow() | Out-Null }\r\n";
@@ -222,6 +233,7 @@ std::string install_script(const Release &release, const std::string &obs_exe)
 	s += "    Fail 'OBS did not close, so the update was not installed. Close OBS and start the update again from the StageKit dock.'\r\n";
 	s += "  }\r\n";
 	s += "}\r\n";
+	s += "Note 'installing'\r\n";
 	s += "try {\r\n";
 	s += "  Start-Process $setup -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait\r\n";
 	s += "} catch {\r\n";
@@ -230,6 +242,7 @@ std::string install_script(const Release &release, const std::string &obs_exe)
 	s += "if ($hasDeck) { Start-Process $deck }\r\n";
 	s += "$exe = " + quoted(obs_exe) + "\r\n";
 	s += "if (Test-Path $exe) { Start-Process $exe -WorkingDirectory (Split-Path $exe) }\r\n";
+	s += "Note 'done'\r\n";
 	return s;
 }
 
@@ -396,19 +409,46 @@ bool install_update(const Release &release, std::string &error)
 	STARTUPINFOW start = {};
 	start.cb = sizeof(start);
 	PROCESS_INFORMATION process = {};
-	if (!CreateProcessW(nullptr, command.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW | DETACHED_PROCESS,
-			    nullptr, nullptr, &start, &process)) {
+	// A console of its own that is not shown. Started with no console at all
+	// (DETACHED_PROCESS, the first build), PowerShell never got going: the
+	// owner's dock said "Downloading" and nothing followed.
+	if (!CreateProcessW(nullptr, command.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr,
+			    &start, &process)) {
 		error = obs_module_text("Update.NoHelper");
 		return false;
 	}
 	CloseHandle(process.hThread);
-	CloseHandle(process.hProcess);
+	{
+		std::lock_guard lock(g_mutex);
+		if (g_helper)
+			CloseHandle(g_helper);
+		g_helper = process.hProcess;
+	}
 	obs_log(LOG_INFO, "Updates: installing %s", release.version.c_str());
 	return true;
 #else
 	(void)release;
 	error = obs_module_text("Update.WindowsOnly");
 	return false;
+#endif
+}
+
+UpdateState update_state()
+{
+#ifdef _WIN32
+	std::lock_guard lock(g_mutex);
+	if (!g_helper)
+		return UpdateState::None;
+	DWORD code = STILL_ACTIVE;
+	if (!GetExitCodeProcess(g_helper, &code) || code == STILL_ACTIVE)
+		return UpdateState::Running;
+	// It ends by itself only when it gave up: when it works, OBS is closed
+	// before it is done.
+	CloseHandle(g_helper);
+	g_helper = nullptr;
+	return UpdateState::Stopped;
+#else
+	return UpdateState::None;
 #endif
 }
 
