@@ -543,20 +543,29 @@ public:
 		auto *move_layout = new QVBoxLayout(move_box);
 		move_layout->setContentsMargins(0, 0, 0, 0);
 		move_layout->setSpacing(8);
+		// The nine places as a block of squares, and beside them, in the
+		// room that leaves, what the arrows do. They were three bars the
+		// full width of the dock; the owner: "no reason they are so long".
 		auto *grid = new QGridLayout();
 		grid->setSpacing(4);
 		for (int i = 0; i < 9; i++) {
 			auto *button = new QPushButton(QString::fromUtf8(kArrows[i]), move_box);
 			button->setObjectName(QString("grid%1").arg(i));
 			button->setToolTip(tr_text(kDestinationText[i]));
-			button->setMinimumHeight(44);
+			button->setFixedSize(40, 40);
 			QFont arrow = button->font();
 			arrow.setPointSizeF(arrow.pointSizeF() * 1.5);
 			button->setFont(arrow);
 			QObject::connect(button, &QPushButton::clicked, this, [this, i] { move_now(i); });
 			grid->addWidget(button, i / 3, i % 3);
 		}
-		move_layout->addLayout(grid);
+		auto *arrows_row = new QHBoxLayout();
+		arrows_row->setSpacing(12);
+		arrows_row->addLayout(grid);
+		auto *beside_arrows = new QVBoxLayout();
+		beside_arrows->setSpacing(6);
+		arrows_row->addLayout(beside_arrows, 1);
+		move_layout->addLayout(arrows_row);
 
 		auto *options = new QFormLayout();
 		margin_ = new QSpinBox(move_box);
@@ -596,7 +605,7 @@ public:
 		slide_ = new QCheckBox(tr_text("Dock.Slide"), move_box);
 		slide_->setObjectName("sendSlide");
 		slide_->setToolTip(tr_text("Dock.Slide.Tip"));
-		move_layout->addWidget(slide_);
+		beside_arrows->addWidget(slide_);
 		// The arrows say what they will do.
 		QObject::connect(slide_, &QCheckBox::toggled, this, [this, move_box](bool sliding) {
 			for (int i = 0; i < 9; i++)
@@ -607,21 +616,19 @@ public:
 		every_scene_->setObjectName("sendEveryScene");
 		every_scene_->setToolTip(tr_text("Dock.SendEvery.Tip"));
 		every_scene_->setChecked(true);
-		move_layout->addWidget(every_scene_);
+		beside_arrows->addWidget(every_scene_);
+		beside_arrows->addStretch(1);
 		place_page->addWidget(move_box);
 		// How the Place tools measure: the same two options as on the
-		// Arrange tab, shown here too so they are at hand where they act.
-		auto *place_measure = new QGroupBox(tr_text("Dock.MeasureBox"), this);
-		auto *place_measure_layout = new QVBoxLayout(place_measure);
-		place_visible_ = new QCheckBox(tr_text("Arrange.Visible"), place_measure);
+		// Arrange tab, here beside the arrows where they act.
+		place_visible_ = new QCheckBox(tr_text("Arrange.Visible"), move_box);
 		place_visible_->setObjectName("placeVisible");
 		place_visible_->setToolTip(tr_text("Arrange.Visible.Tip"));
-		place_no_shadow_ = new QCheckBox(tr_text("Arrange.NoShadow").replace("&", "&&"), place_measure);
+		place_no_shadow_ = new QCheckBox(tr_text("Arrange.NoShadow").replace("&", "&&"), move_box);
 		place_no_shadow_->setObjectName("placeNoShadow");
 		place_no_shadow_->setToolTip(tr_text("Arrange.NoShadow.Tip"));
-		place_measure_layout->addWidget(place_visible_);
-		place_measure_layout->addWidget(place_no_shadow_);
-		place_page->addWidget(place_measure);
+		beside_arrows->insertWidget(2, place_visible_);
+		beside_arrows->insertWidget(3, place_no_shadow_);
 
 		auto *keys_box = new QGroupBox(tr_text("Dock.KeysBox"), this);
 		auto *keys_layout = new QVBoxLayout(keys_box);
@@ -704,13 +711,24 @@ public:
 		against_row->addRow(tr_text("Arrange.Against"), against_);
 		arrange_layout->addLayout(against_row);
 		auto *arrange_grid = new QGridLayout();
-		auto arrange_button = [this](ArrangeAction action, QWidget *parent) {
+		// The line-up tools are drawings alone, six to a row, each saying
+		// its name and what it does when pointed at; the two copy tools
+		// keep their words. The owner: "these could be just icons with
+		// tooltips, making space for more functions".
+		auto arrange_button = [this](ArrangeAction action, QWidget *parent, bool drawing_only = false) {
 			const ArrangeInfo &info = arrange_info(action);
-			auto *button = new QPushButton(tr_text(info.text), parent);
+			auto *button = new QPushButton(drawing_only ? QString() : tr_text(info.text), parent);
 			button->setObjectName(QString("arrange_") + info.name);
 			button->setIcon(tool_icon(info.name, button));
 			button->setMinimumHeight(30);
-			button->setToolTip(tr_text((std::string(info.text) + ".Tip").c_str()));
+			const QString tip = tr_text((std::string(info.text) + ".Tip").c_str());
+			if (drawing_only) {
+				icon_only(button);
+				button->setAccessibleName(tr_text(info.text));
+				button->setToolTip(tr_text(info.text) + "\n" + tip);
+			} else {
+				button->setToolTip(tip);
+			}
 			QObject::connect(button, &QPushButton::clicked, this, [this, action] {
 				obs_source_t *scene = arrange_scene();
 				const ArrangeOutcome out = run_arrange(action, scene, arrange_items(scene));
@@ -737,8 +755,8 @@ public:
 		// other scenes follow in a box of their own, named for what they do.
 		const int first_copy = (int)ArrangeAction::SameEverywhere;
 		for (int a = 0; a < first_copy; a++)
-			arrange_grid->addWidget(arrange_button(static_cast<ArrangeAction>(a), arrange_box), a / 3,
-						a % 3);
+			arrange_grid->addWidget(arrange_button(static_cast<ArrangeAction>(a), arrange_box, true), a / 6,
+						a % 6);
 		arrange_layout->addLayout(arrange_grid);
 		arrange_grid->setSpacing(4);
 		auto *copy_box = new QWidget(this);
@@ -891,26 +909,33 @@ public:
 		auto *order_box = new QGroupBox(tr_text("Dock.OrderBox"), this);
 		auto *order_layout = new QGridLayout(order_box);
 		order_layout->setSpacing(4);
-		// Two columns: all the way (front above back) and one step (forward
-		// above back), each pair one above the other.
+		// One row, front to back: to the front, forward one, back one, to
+		// the back.
 		struct {
 			const char *object_name, *text;
 			obs_order_movement movement;
 			int row, column;
 		} orders[] = {
 			{"orderTop", "Dock.OrderTop", OBS_ORDER_MOVE_TOP, 0, 0},
-			{"orderBottom", "Dock.OrderBottom", OBS_ORDER_MOVE_BOTTOM, 1, 0},
 			{"orderUp", "Dock.OrderUp", OBS_ORDER_MOVE_UP, 0, 1},
-			{"orderDown", "Dock.OrderDown", OBS_ORDER_MOVE_DOWN, 1, 1},
+			{"orderDown", "Dock.OrderDown", OBS_ORDER_MOVE_DOWN, 0, 2},
+			{"orderBottom", "Dock.OrderBottom", OBS_ORDER_MOVE_BOTTOM, 0, 3},
 		};
 		for (const auto &order : orders) {
-			auto *button = new QPushButton(tr_text(order.text), order_box);
+			auto *button = new QPushButton(order_box);
 			button->setObjectName(order.object_name);
+			button->setAccessibleName(tr_text(order.text));
+			button->setToolTip(tr_text(order.text));
+			button->setMinimumHeight(30);
+			icon_only(button);
 			const obs_order_movement movement = order.movement;
 			QObject::connect(button, &QPushButton::clicked, this, [this, movement] { reorder(movement); });
 			button->setIcon(tool_icon(order.object_name, button));
 			order_layout->addWidget(button, order.row, order.column);
 		}
+		// As wide as the six above it: four tools and two empty places.
+		for (int column = 0; column < 6; column++)
+			order_layout->setColumnStretch(column, 1);
 		arrange_page->addWidget(order_box);
 		arrange_page->addWidget(options_measure_);
 		arrange_page->addWidget(options_drop_);
@@ -962,7 +987,8 @@ public:
 		footer->addWidget(status_, 1);
 		auto *more = new QToolButton(this);
 		more->setObjectName("updateMenu");
-		more->setText(QString::fromUtf8("\xE2\x8B\xAF")); // three dots
+		// In words: three dots drew as something the owner could not make out.
+		more->setText(tr_text("Update.Menu"));
 		more->setAutoRaise(true);
 		more->setPopupMode(QToolButton::InstantPopup);
 		more->setToolTip(tr_text("Update.Menu.Tip"));
@@ -1480,6 +1506,14 @@ private:
 
 	// A small drawing of what a tool does, in the theme's own text colour, so
 	// the buttons can be told apart at a glance in any OBS theme.
+	// A button that is its drawing alone: as wide as its share of the row.
+	static void icon_only(QPushButton *button)
+	{
+		button->setIconSize(QSize(20, 20));
+		button->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
+		button->setMinimumWidth(28);
+	}
+
 	static QIcon tool_icon(const std::string &name, const QWidget *on)
 	{
 		const int n = 64;
