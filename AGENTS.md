@@ -383,6 +383,15 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   before the filter first touches it is saved (`orig_item`, `orig_w`, `orig_h`) and is what
   unticking goes back to: the owner's chat box had been shrunk to its space before the box could
   be unticked ("it shrinks").
+- **Fit to Space's kept size is read from the item on three occasions only**: when the filter is
+  given another item, when *Resize it to fit* is unticked (then the size from before the filter),
+  and after a resize by hand, which counts only on an item that is selected, showing, and whose
+  source has kept its size for a second. Any other change of settings leaves it. The owner's
+  camera, with *Resize it to fit* unticked, got smaller each time it was hidden and shown
+  (beta98/99). **The cause was not reproduced here**: two tests built to match (a shadow in screen
+  pixels, a camera drawn at a quarter of its source) passed without the fix. The filter now logs
+  `the size kept for ... went from ... to ...` with the reason whenever it re-reads the size; ask
+  for the log if it happens again.
 - **Fit to Space never puts an item past the screen's edge, and does nothing on a group.** With
   *Resize it to fit* unticked, a space narrower than the item used to centre it past the edge (the
   owner's chat box, pushed off the canvas by the game growing beside it); it is now held the gap
