@@ -364,6 +364,12 @@ nearest.
   another fitted item makes room for this one is not used.
 - An item that is hidden is left exactly where it is and holds no space, so the others take its
   room. Shown again, it is where it was, and the others make way for it in one move.
+- **Same place in other scenes** (unticked as it comes): each time the filter has put its item in
+  place in the scene on screen, the same source in your other scenes is given exactly that place
+  and size, so it is already there when you switch to one of them and nothing shifts in view.
+  Scenes that are on screen at that moment are left alone. Locked copies are moved too. A scene
+  that has a Fit to Space of its own for the item fits it to that scene when it comes into view
+  (at once, without a glide); where your scenes are laid out alike that is the same place.
 - **Tolerance** (8 px as it comes): when something sticks a little way into the space, the picture
   may be made up to this many pixels smaller to keep the whole space, instead of keeping its size and
   losing the part of the space beside that thing. At 0 the biggest picture always wins, even by one

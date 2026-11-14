@@ -211,6 +211,15 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## A fitted item's place shared with the other scenes (0.1.0-beta105)
+
+- Asked for by the owner after beta103: a link so that what Fit to Space does in the scene on
+  screen is already done in the scene switched to. Built as a tick box on the filter (*Same place
+  in other scenes*), see AGENTS.md. **Not confirmed by the owner yet.**
+- The owner also asked whether filter order decides priority between Fit to Space filters. It
+  does not; they were told so and that a priority setting can be added if two items still want
+  the same room.
+
 ## More blur: cell shapes, Temporal, Bloom (0.1.0-beta104)
 
 - The owner showed Composite Blur's *Blur Algorithm* and *Pixelate Type* lists and asked for
