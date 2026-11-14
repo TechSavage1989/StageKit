@@ -339,6 +339,9 @@ nearest.
   game.
 - Add the filter to the **scene**, not to a group. To fit a group, choose the group as the *Item*.
   On a group the filter does nothing and says so.
+- With *Use visible pixels* ticked, the fitted item itself goes by what it shows, like the items
+  around it: a group, a widget or a nested scene that is larger than its picture is fitted, kept
+  and centred by the picture, and the empty part of its box may reach into the gap.
 - An item is never put past the screen's edges: it stays the gap inside them whatever is beside it.
 - **Resize it to fit** (ticked as it comes). Unticked, the item keeps the size it has and is only
   moved, to the middle of its space, so the room left over is the same on both sides and above and

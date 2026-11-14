@@ -389,9 +389,18 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   inside the screen (`inside`). The owner had also added the filter to the *group* holding the chat
   box, where the "scene" is the group itself: the filter now stays idle there and says so in its
   settings (`Fit.OnGroup`). It belongs on the scene, with the group as its item.
+- **Fit to Space's "Use visible pixels" counts for the fitted item too** (`own_cut_` in
+  `src/placement/fit-item.cpp`): the part of the item's picture that shows is what is fitted, kept
+  and held clear, not its box. The owner, of a group wider than its grey panel: "only the visible
+  pixels in the group, or any other item should be counted. otherwise, what's the point of that
+  setting?" It is looked at when first met, half a second after its source last changed size, and
+  every three seconds while it sits where it was put; only while it is wholly on the screen; and a
+  cut under a fiftieth of the picture is taken for measuring error. Sizes kept (`keep_k_`,
+  `orig_k`) are scales of the source, so they hold whatever part shows.
 - **Blur goes to 1000** (`kMaxStrength`; it was 250 and the owner asked for more). A Gaussian or box
   blur set above `kTapLimit` (250) is drawn the Dual Kawase way for its whole ramp, so there is no
-  change of look part-way through a ramp. Zoom's pull is still worked out from 250.
+  change of look part-way through a ramp. Zoom's pull is still worked out from 250. Ambient
+  Background's own blur goes to 1000 as well (`kBlurLevels` 8), asked for in the same breath.
 - **The Copy tab locks and unlocks across scenes** (`set_items_locked` in `src/dock/arrange.*`): the
   selected items' sources, the listed sources or every source; in all scenes, the listed scenes or
   this one. The owner asked for it so a locked copy can be freed for the copy tools, and as a

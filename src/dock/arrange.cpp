@@ -1162,7 +1162,7 @@ const char *const kOwnSettings[] = {
 	"adjusted_right", "adjusted_bottom", "adjusted_for",     "placed",
 	"learned",        "last_width",      "last_height",      "rule_program",
 	"rule_browse",    "force_ratio",     "force_until_gone", "orig_item",
-	"orig_w",         "orig_h",
+	"orig_k",
 };
 
 // Copies one setting, whatever it holds, by way of its JSON.
