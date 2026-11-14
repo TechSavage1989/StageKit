@@ -139,5 +139,6 @@ void obs_module_unload(void)
 	for (GlobalHotkey &hk : g_hotkeys)
 		obs_hotkey_unregister(hk.id);
 	stagekit::vendor_api_unregister();
+	stagekit::stop_window_watch();
 	obs_log(LOG_INFO, "plugin unloaded");
 }

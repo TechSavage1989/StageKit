@@ -106,6 +106,10 @@ struct Move {
 	double from_x = 0, from_y = 0, to_x = 0, to_y = 0;
 	vec2 from_scale, to_scale;
 	bool scale = false;
+	// An item straight in its scene that only moves is stepped from where it
+	// began, with nothing to look up on the way.
+	bool plain = false;
+	vec2 from_pos;
 };
 
 void release_move(Move &move)
@@ -198,6 +202,13 @@ void apply_move(const Move &move, double t)
 		scale.y = (float)(move.from_scale.y + (move.to_scale.y - move.from_scale.y) * t);
 		obs_sceneitem_set_scale(move.item, &scale);
 	}
+	if (move.plain) {
+		vec2 pos;
+		vec2_set(&pos, (float)(move.from_pos.x + (move.to_x - move.from_x) * t),
+			 (float)(move.from_pos.y + (move.to_y - move.from_y) * t));
+		obs_sceneitem_set_pos(move.item, &pos);
+		return;
+	}
 	// Nudge the item from where its box is now to where it should be. Working
 	// from the current box keeps this right even when OBS re-fits a group
 	// around its moving contents, which shifts the group's own origin.
@@ -230,6 +241,7 @@ public:
 private:
 	void start();
 	void plan(const Settings &s, obs_source_t *scene, obs_sceneitem_t *item);
+	Box seen_part(obs_source_t *scene, obs_sceneitem_t *item, const Measure &how);
 	void finish();
 	void register_hotkey();
 	void unregister_hotkey();
@@ -252,6 +264,16 @@ private:
 	EaseCurve curve_ = EaseCurve::Cubic;
 	EaseMode mode_ = EaseMode::InOut;
 	std::vector<Move> moves_;
+	// What shows of a source, as a part of its item's box: looked at once per
+	// press and used for every scene the source is in.
+	struct SeenPart {
+		obs_source_t *source;
+		bool no_shadows;
+		obs_sceneitem_crop crop;
+		obs_bounds_type bounds;
+		double fx, fy, fw, fh;
+	};
+	std::vector<SeenPart> seen_parts_;
 
 	obs_hotkey_id hotkey_ = OBS_INVALID_HOTKEY_ID;
 };
@@ -335,6 +357,33 @@ void PlaceItem::enable_cb(void *data, calldata_t *cd)
 
 // Works out where everything should end up and starts the glide. Runs on
 // the graphics thread, between frames.
+// What shows of an item, where it is now. Drawing an item to see that holds
+// the picture up for a moment, and a press that moves a source in twenty
+// scenes used to do it in each (the owner's log, beta76: 40 to 70 ms at the
+// start of every move). The same source shows the same part of itself
+// wherever it is, so it is looked at once and placed in each scene's box.
+Box PlaceItem::seen_part(obs_source_t *scene, obs_sceneitem_t *item, const Measure &how)
+{
+	const Box box = scene_box(scene, item);
+	obs_source_t *source = obs_sceneitem_get_source(item);
+	obs_sceneitem_crop crop;
+	obs_sceneitem_get_crop(item, &crop);
+	const obs_bounds_type bounds = obs_sceneitem_get_bounds_type(item);
+	const bool straight = std::fabs(obs_sceneitem_get_rot(item)) < 0.01f && box.w >= 1.0 && box.h >= 1.0;
+	if (straight) {
+		for (const SeenPart &p : seen_parts_)
+			if (p.source == source && p.no_shadows == how.leave_out_shadows && p.bounds == bounds &&
+			    p.crop.left == crop.left && p.crop.top == crop.top && p.crop.right == crop.right &&
+			    p.crop.bottom == crop.bottom)
+				return Box{box.x + p.fx * box.w, box.y + p.fy * box.h, p.fw * box.w, p.fh * box.h};
+	}
+	const Box seen = measure_item(scene, item, how);
+	if (straight && bounds == OBS_BOUNDS_NONE)
+		seen_parts_.push_back({source, how.leave_out_shadows, crop, bounds, (seen.x - box.x) / box.w,
+				       (seen.y - box.y) / box.h, seen.w / box.w, seen.h / box.h});
+	return seen;
+}
+
 void PlaceItem::start()
 {
 	Settings s;
@@ -346,6 +395,7 @@ void PlaceItem::start()
 		release_move(move);
 	moves_.clear();
 	moving_ = false;
+	seen_parts_.clear();
 
 	if (on_source_) {
 		std::vector<Target> targets;
@@ -429,7 +479,7 @@ void PlaceItem::plan(const Settings &s, obs_source_t *scene, obs_sceneitem_t *it
 		// The edge distance is to what this filter counts as the item: its
 		// visible picture, with or without its shadow. The box goes
 		// wherever that puts it.
-		const Box seen = s.visible_pixels ? measure_item(scene, item, Measure{true, s.no_shadows}) : box;
+		const Box seen = s.visible_pixels ? seen_part(scene, item, Measure{true, s.no_shadows}) : box;
 		const double seen_x = column == 0   ? s.margin
 				      : column == 1 ? (canvas_w - seen.w) / 2.0
 						    : canvas_w - s.margin - seen.w;
@@ -462,7 +512,7 @@ void PlaceItem::plan(const Settings &s, obs_source_t *scene, obs_sceneitem_t *it
 			// Judged by what is drawn, not by the item's box: a widget's box
 			// is often far bigger than the widget, and that empty room should
 			// neither force a flip nor hide the need for one.
-			const Box seen = measure_item(scene, linked, Measure{true, true});
+			const Box seen = seen_part(scene, linked, Measure{true, true});
 			const double vx = seen.x - fbox.x, vy = seen.y - fbox.y; // the drawn part inside its box
 			auto off_screen = [](double pos, double size, double limit) {
 				return std::max(0.0, -pos) + std::max(0.0, pos + size - limit);
@@ -472,7 +522,7 @@ void PlaceItem::plan(const Settings &s, obs_source_t *scene, obs_sceneitem_t *it
 			// shadow, outline or empty room is no part of that: mirrored
 			// round the leader's box, a shadow along one side added its width
 			// to the gap after a flip.
-			const Box lead = measure_item(scene, item, Measure{true, true});
+			const Box lead = seen_part(scene, item, Measure{true, true});
 			const double kx = box.w > 0.0 ? target.w / box.w : 1.0; // the leader's size where it is going
 			const double ky = box.h > 0.0 ? target.h / box.h : 1.0;
 			const double lead_x = target.x + (lead.x - box.x) * kx, lead_w = lead.w * kx;
@@ -489,9 +539,14 @@ void PlaceItem::plan(const Settings &s, obs_source_t *scene, obs_sceneitem_t *it
 		follower_.to_x = tx;
 		follower_.to_y = ty;
 	}
-	moves_.push_back(leader_);
-	if (follower_.item)
-		moves_.push_back(follower_);
+	for (Move *move : {&leader_, &follower_}) {
+		if (!move->item)
+			continue;
+		obs_scene_t *holder = scene_of(scene);
+		move->plain = !move->scale && !(holder && obs_sceneitem_get_group(holder, move->item));
+		obs_sceneitem_get_pos(move->item, &move->from_pos);
+		moves_.push_back(*move);
+	}
 }
 
 void PlaceItem::finish()

@@ -211,6 +211,23 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## What the timing log found (0.1.0-beta77)
+
+The owner sent three logs (private, not in the repository); the beta76 one had 96 timing lines.
+
+- **Window scans on the drawing thread.** `stagekit_auto_capture` ticks up to 22–73 ms and
+  `stagekit_active_app` up to 87–361 ms, in almost every 30 s window. Now on a thread of its own.
+- **Send To.** Up to 17% of the time while moving, longest tick 40–72 ms (the start of a move,
+  measuring the camera in every scene). Now one look per source per press, and cheap steps.
+- **The game capture stopped and re-hooked at every scene switch** (28 times in the session). Auto
+  Capture now keeps it shown (*Keep capturing in other scenes*).
+- **Not StageKit:** the capture card source logs `Video configuration failed` each time a scene
+  with it is shown (18 times); its device was not connected. Told to the owner.
+- Fine in the log: Fit Item (17 filters, 0.01 ms a tick), Shadow (27 filters, 0.05 ms a draw),
+  Standby, Auto Frame, Ambient Background (0.1 ms a draw).
+- The owner on beta76, before this: "smooth but still frame drops".
+- Confirmed by the owner: *Bring-along items too* works.
+
 ## A timing log, and free space waits for moves to end (0.1.0-beta76)
 
 - The owner on beta74: "definitely smoother overall, but switching scenes or making moves does cause

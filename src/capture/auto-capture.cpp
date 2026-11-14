@@ -46,15 +46,20 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include <obs-module.h>
 #include <util/platform.h>
+#include <util/threading.h>
 #include <plugin-support.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
+#include <chrono>
+#include <condition_variable>
 #include <cstring>
 #include <map>
 #include <mutex>
 #include <set>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace stagekit {
@@ -284,6 +289,10 @@ BOOL CALLBACK collect_window(HWND window, LPARAM param)
 
 std::vector<Window> list_windows()
 {
+	// One look at a time: the thread that keeps the list and a properties
+	// window asking for itself share what is remembered about programs.
+	static std::mutex one_at_a_time;
+	std::lock_guard lock(one_at_a_time);
 	std::vector<Window> windows;
 	EnumWindows(collect_window, reinterpret_cast<LPARAM>(&windows));
 	return windows;
@@ -297,6 +306,74 @@ std::vector<Window> list_windows()
 }
 
 #endif
+
+// Looking at every open window (and inside the program in front) takes
+// anything from a few milliseconds to a third of a second, and the filters
+// that need the list tick on OBS's drawing thread: done there four times a
+// second, it held frames up (the owner's log, beta76: ticks of 20 to 360 ms).
+// So one thread of its own keeps the list, and a tick only takes a copy.
+// The thread looks while somebody has asked in the last few seconds.
+class WindowWatch {
+public:
+	~WindowWatch() { stop(); }
+
+	std::vector<Window> latest()
+	{
+		asked_at_ = os_gettime_ns();
+		std::unique_lock lock(mutex_);
+		if (stopped_)
+			return {};
+		if (!thread_.joinable()) {
+			// The first time: one look here and now, so nobody starts
+			// from an empty list, then the thread takes over.
+			lock.unlock();
+			std::vector<Window> first = list_windows();
+			lock.lock();
+			if (!thread_.joinable() && !stopped_) {
+				windows_ = std::move(first);
+				thread_ = std::thread([this] { run(); });
+			}
+		}
+		return windows_;
+	}
+
+	void stop()
+	{
+		{
+			std::lock_guard lock(mutex_);
+			stopped_ = true;
+		}
+		wake_.notify_all();
+		if (thread_.joinable())
+			thread_.join();
+	}
+
+private:
+	void run()
+	{
+		os_set_thread_name("stagekit: open windows");
+		std::unique_lock lock(mutex_);
+		while (!stopped_) {
+			wake_.wait_for(lock, std::chrono::milliseconds(250));
+			if (stopped_)
+				break;
+			if (os_gettime_ns() - asked_at_.load() > 3000000000ULL)
+				continue; // nobody is asking
+			lock.unlock();
+			std::vector<Window> now = list_windows();
+			lock.lock();
+			windows_ = std::move(now);
+		}
+	}
+
+	std::mutex mutex_;
+	std::condition_variable wake_;
+	std::thread thread_;
+	std::vector<Window> windows_;
+	std::atomic<uint64_t> asked_at_{0};
+	bool stopped_ = false;
+};
+WindowWatch g_window_watch;
 
 // OBS writes a window as "title:class:executable", with ':' and '#' in
 // each part escaped.
@@ -419,6 +496,7 @@ public:
 		always_ = always;
 		never_ = never;
 		fallback_fullscreen_ = obs_data_get_bool(settings, "fallback_fullscreen");
+		keep_ready_ = obs_data_get_bool(settings, "keep_ready");
 		if (!known_loaded_) {
 			known_loaded_ = true;
 			for (const std::string &exe : read_list(settings, "known_games_list", "known_games"))
@@ -429,6 +507,18 @@ public:
 
 	void tick(float seconds)
 	{
+		// "Keep capturing in other scenes": OBS stops a capture a moment
+		// after the last scene showing it is left and starts it again on
+		// the way back, which the owner's log showed at every scene switch.
+		// Held as shown, it carries on and is there at once.
+		const bool hold = parent_ && obs_source_enabled(source_) && keep_ready_.load();
+		if (hold != holding_) {
+			if (hold)
+				obs_source_inc_showing(parent_);
+			else if (parent_)
+				obs_source_dec_showing(parent_);
+			holding_ = hold;
+		}
 		if (!parent_ || !obs_source_enabled(source_))
 			return;
 		Mode mode;
@@ -450,7 +540,7 @@ public:
 				windows = test_windows_;
 		}
 		if (!use_test)
-			windows = list_windows();
+			windows = g_window_watch.latest();
 
 		auto excluded = [&](const std::string &exe) {
 			return matches(exe, never) || built_in_never(exe);
@@ -545,7 +635,13 @@ public:
 		aimed_once_ = false;
 		applied_key_.clear();
 	}
-	void detach() { parent_ = nullptr; }
+	void detach()
+	{
+		if (holding_ && parent_)
+			obs_source_dec_showing(parent_);
+		holding_ = false;
+		parent_ = nullptr;
+	}
 	obs_source_t *source() const { return source_; }
 
 	// The program being captured now; empty when there is none.
@@ -608,6 +704,8 @@ private:
 	Mode mode_ = Mode::AnyGame;
 	std::vector<std::string> always_, never_;
 	bool fallback_fullscreen_ = true;
+	std::atomic<bool> keep_ready_{true};
+	bool holding_ = false; // used on the tick only
 	double timer_ = 0.0;
 	std::vector<Window> test_windows_;
 	bool use_test_windows_ = false;
@@ -690,6 +788,8 @@ obs_properties_t *get_properties(void *data)
 	obs_property_list_add_int(mode, obs_module_text("Capture.Mode.AnyGame"), (int)Mode::AnyGame);
 	obs_property_list_add_int(mode, obs_module_text("Capture.Mode.ListedOnly"), (int)Mode::ListedOnly);
 	obs_properties_add_bool(lists, "fallback_fullscreen", obs_module_text("Capture.Fallback"));
+	obs_property_t *keep_ready = obs_properties_add_bool(lists, "keep_ready", obs_module_text("Capture.KeepReady"));
+	obs_property_set_long_description(keep_ready, obs_module_text("Capture.KeepReady.Tip"));
 	obs_properties_add_group(props, "lists", obs_module_text("Capture.Lists"), OBS_GROUP_NORMAL, lists);
 
 	show_status(props, self);
@@ -700,18 +800,15 @@ obs_properties_t *get_properties(void *data)
 
 std::vector<OpenWindow> open_windows()
 {
-	static std::mutex mutex;
-	static std::vector<OpenWindow> cached;
-	static uint64_t looked_at = 0;
-	std::lock_guard lock(mutex);
-	const uint64_t now = os_gettime_ns();
-	if (!looked_at || now - looked_at > 200000000ULL) {
-		looked_at = now;
-		cached.clear();
-		for (const Window &w : list_windows())
-			cached.push_back({w.title, w.executable, w.foreground});
-	}
-	return cached;
+	std::vector<OpenWindow> out;
+	for (const Window &w : g_window_watch.latest())
+		out.push_back({w.title, w.executable, w.foreground});
+	return out;
+}
+
+void stop_window_watch()
+{
+	g_window_watch.stop();
 }
 
 std::vector<std::string> open_program_names()
@@ -747,6 +844,7 @@ void register_auto_capture()
 	info.get_defaults = [](obs_data_t *settings) {
 		obs_data_set_default_int(settings, "mode", (int)Mode::AnyGame);
 		obs_data_set_default_bool(settings, "fallback_fullscreen", true);
+		obs_data_set_default_bool(settings, "keep_ready", true);
 	};
 	info.get_properties = get_properties;
 	info.video_tick = [](void *data, float seconds) {
