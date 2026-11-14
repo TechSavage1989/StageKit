@@ -181,6 +181,13 @@ class ObsLink extends EventEmitter {
 			.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
 	}
 
+	/** The kinds of transition OBS has ("fade_transition", "swipe_transition" and so on). */
+	async transitionKinds(): Promise<string[]> {
+		if (!this.connected) return [];
+		const answer = await this.obs.call("GetTransitionKindList");
+		return answer.transitionKinds.map((kind) => String(kind));
+	}
+
 	/** Whether a filter is on; undefined when it (or OBS) cannot be reached. */
 	async filterEnabled(sourceName: string, filterName: string): Promise<boolean | undefined> {
 		return (await this.filter(sourceName, filterName))?.enabled;

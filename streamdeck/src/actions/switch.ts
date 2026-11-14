@@ -1,5 +1,4 @@
 import {
-	action,
 	type DidReceiveSettingsEvent,
 	type KeyAction,
 	type KeyDownEvent,
@@ -9,26 +8,33 @@ import {
 } from "@elgato/streamdeck";
 import type { JsonValue } from "@elgato/utils";
 
-import { afterPress, isSwitch } from "../kinds.ts";
+import { afterPress, targetOf } from "../kinds.ts";
 import { obs } from "../obs.ts";
 import { choose, file, plain } from "../pictures.ts";
 import { answerLists, type KeySettings } from "./shared.ts";
 
 /**
  * A key that switches one StageKit filter on and off and shows which way it
- * is: Ramp Blur, Shadow, Glow & Outline, Corners & Edges, Show in Scenes,
- * Standby Picture and the rest.
+ * is. There is one of these for each feature (Ramp Blur, Shadow, Auto
+ * Capture and so on), each offering only that feature's filters; `wanted`
+ * says which filter kinds this one is for.
  */
-@action({ UUID: "com.techsavage1989.stagekit.switch" })
 export class FilterSwitch extends SingletonAction<KeySettings> {
-	constructor() {
+	override readonly manifestId: string;
+
+	constructor(
+		uuid: string,
+		private readonly wanted: (kind: string) => boolean,
+	) {
 		super();
+		this.manifestId = uuid;
 		// OBS says when a filter is switched, by this key or any other way.
 		obs.on("filter", (source: string, filter: string, enabled: boolean) => {
 			for (const key of this.actions) {
 				if (!key.isKey()) continue;
 				void key.getSettings().then((settings) => {
-					if (settings.source === source && settings.filter === filter) void key.setState(enabled ? 1 : 0);
+					const mine = targetOf(settings);
+					if (mine.source === source && mine.filter === filter) void key.setState(enabled ? 1 : 0);
 				});
 			}
 		});
@@ -45,15 +51,16 @@ export class FilterSwitch extends SingletonAction<KeySettings> {
 	}
 
 	override async onKeyDown(ev: KeyDownEvent<KeySettings>): Promise<void> {
-		const { source, filter, press } = ev.payload.settings;
-		const now = await obs.filterEnabled(source ?? "", filter ?? "");
+		const { source, filter } = targetOf(ev.payload.settings);
+		const { press } = ev.payload.settings;
+		const now = await obs.filterEnabled(source, filter);
 		if (now === undefined) {
 			// Not set up, OBS closed, or the filter is gone.
 			await ev.action.showAlert();
 			return;
 		}
 		try {
-			await obs.setFilter(source!, filter!, afterPress(press, now));
+			await obs.setFilter(source, filter, afterPress(press, now));
 		} catch {
 			await ev.action.showAlert();
 		}
@@ -63,11 +70,12 @@ export class FilterSwitch extends SingletonAction<KeySettings> {
 	}
 
 	override onSendToPlugin(ev: SendToPluginEvent<JsonValue, KeySettings>): Promise<void> {
-		return ev.action.getSettings().then((settings) => answerLists(ev.payload, settings, isSwitch));
+		return ev.action.getSettings().then((settings) => answerLists(ev.payload, settings, this.wanted));
 	}
 
 	private async show(key: KeyAction<KeySettings>, settings: KeySettings): Promise<void> {
-		const now = await obs.filter(settings.source ?? "", settings.filter ?? "");
+		const { source, filter } = targetOf(settings);
+		const now = await obs.filter(source, filter);
 		// Its two looks: the picture that fits the filter (or the one chosen),
 		// in its "off" and "on" form, in this key's palette.
 		const picture = choose(settings.picture, now?.kind ?? "", now?.settings) ?? plain("switch");

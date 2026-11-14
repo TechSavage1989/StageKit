@@ -1,5 +1,4 @@
 import {
-	action,
 	type DidReceiveSettingsEvent,
 	type KeyAction,
 	type KeyDownEvent,
@@ -19,8 +18,9 @@ import { answerLists, type KeySettings } from "./shared.ts";
  * An Auto Capture on that source is switched off by it, so the capture stays
  * where it was put; a Filter switch key for the Auto Capture hands it back.
  */
-@action({ UUID: "com.techsavage1989.stagekit.hook" })
 export class Hook extends SingletonAction<KeySettings> {
+	override readonly manifestId = "com.techsavage1989.stagekit.hook";
+
 	constructor() {
 		super();
 		const all = () => void this.showAll();
@@ -38,7 +38,16 @@ export class Hook extends SingletonAction<KeySettings> {
 
 	override async onKeyDown(ev: KeyDownEvent<KeySettings>): Promise<void> {
 		const { source } = ev.payload.settings;
-		const answer = source ? await obs.stageKit("HookFront", { sourceName: source }) : undefined;
+		// How the capture changes over: a fade unless something else is chosen.
+		const { transition, lasting } = ev.payload.settings;
+		const ms = Math.max(0, Math.min(10000, Number(lasting ?? 300) || 0));
+		const answer = source
+			? await obs.stageKit("HookFront", {
+					sourceName: source,
+					transition: transition || "fade_transition",
+					transitionMs: ms,
+				})
+			: undefined;
 		if (answer) await ev.action.showOk();
 		else await ev.action.showAlert();
 	}

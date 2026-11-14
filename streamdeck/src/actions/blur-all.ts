@@ -1,5 +1,4 @@
 import {
-	action,
 	type DidReceiveSettingsEvent,
 	type KeyAction,
 	type KeyDownEvent,
@@ -17,8 +16,9 @@ import { answerLists, type KeySettings } from "./shared.ts";
  * One key for every Ramp Blur at once: a press blurs everything that has a
  * Ramp Blur, the next press clears them all. It shows "on" while any is on.
  */
-@action({ UUID: "com.techsavage1989.stagekit.blurall" })
 export class BlurAll extends SingletonAction<KeySettings> {
+	override readonly manifestId = "com.techsavage1989.stagekit.blurall";
+
 	constructor() {
 		super();
 		const all = () => void this.showAll();

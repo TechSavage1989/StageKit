@@ -1,5 +1,4 @@
 import {
-	action,
 	type DidReceiveSettingsEvent,
 	type KeyAction,
 	type KeyDownEvent,
@@ -9,20 +8,25 @@ import {
 } from "@elgato/streamdeck";
 import type { JsonValue } from "@elgato/utils";
 
-import { isMove } from "../kinds.ts";
+import { targetOf } from "../kinds.ts";
 import { obs } from "../obs.ts";
 import { choose, file, plain } from "../pictures.ts";
 import { answerLists, type KeySettings } from "./shared.ts";
 
 /**
- * A key that runs one StageKit move: a Send To key on the camera, a Place
- * Item, a Layout or a Picture Shape key. Those run when they are switched on
- * and switch themselves off again.
+ * A key that runs one StageKit move: a Send To on the camera, a Place Item or
+ * a Layout. Those run when they are switched on and switch themselves off
+ * again. One of these per feature; `wanted` says which filter kinds it is for.
  */
-@action({ UUID: "com.techsavage1989.stagekit.move" })
 export class Move extends SingletonAction<KeySettings> {
-	constructor() {
+	override readonly manifestId: string;
+
+	constructor(
+		uuid: string,
+		private readonly wanted: (kind: string) => boolean,
+	) {
 		super();
+		this.manifestId = uuid;
 		const all = () => void this.showAll();
 		obs.on("connection", all);
 		obs.on("changed", all);
@@ -38,7 +42,8 @@ export class Move extends SingletonAction<KeySettings> {
 
 	/** The picture of where it sends the camera (or the one chosen). */
 	private async show(key: KeyAction<KeySettings>, settings: KeySettings): Promise<void> {
-		const now = await obs.filter(settings.source ?? "", settings.filter ?? "");
+		const { source, filter } = targetOf(settings);
+		const now = await obs.filter(source, filter);
 		const picture = choose(settings.picture, now?.kind ?? "", now?.settings) ?? plain("move");
 		await key.setImage(file(picture, true, settings.palette));
 	}
@@ -50,7 +55,7 @@ export class Move extends SingletonAction<KeySettings> {
 	}
 
 	override async onKeyDown(ev: KeyDownEvent<KeySettings>): Promise<void> {
-		const { source, filter } = ev.payload.settings;
+		const { source, filter } = targetOf(ev.payload.settings);
 		if (!obs.isConnected || !source || !filter) {
 			await ev.action.showAlert();
 			return;
@@ -64,6 +69,6 @@ export class Move extends SingletonAction<KeySettings> {
 	}
 
 	override onSendToPlugin(ev: SendToPluginEvent<JsonValue, KeySettings>): Promise<void> {
-		return ev.action.getSettings().then((settings) => answerLists(ev.payload, settings, isMove));
+		return ev.action.getSettings().then((settings) => answerLists(ev.payload, settings, this.wanted));
 	}
 }

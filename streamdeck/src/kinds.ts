@@ -75,6 +75,33 @@ export function filterItems(filters: FilterInfo[], source: string, wanted: (kind
 		});
 }
 
+/** What separates a source from its filter in a key's one "target" setting. */
+export const TARGET_SEP = "\u001f";
+
+/**
+ * Every filter of the wanted sort as one list to choose from. A source with
+ * one such filter is listed by its own name; where a source has several, or
+ * the filter was renamed, the filter's name is said too.
+ */
+export function targetItems(filters: FilterInfo[], wanted: (kind: string) => boolean): Item[] {
+	const mine = filters.filter((f) => wanted(f.kind));
+	const count = new Map<string, number>();
+	for (const f of mine) count.set(f.source, (count.get(f.source) ?? 0) + 1);
+	return mine
+		.map((f) => {
+			const plain = (count.get(f.source) ?? 0) === 1 && (f.name === kindName(f.kind) || f.name.includes(kindName(f.kind)));
+			return { label: plain ? f.source : `${f.source} \u2014 ${f.name}`, value: `${f.source}${TARGET_SEP}${f.name}` };
+		})
+		.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" }));
+}
+
+/** The source and filter a key acts on: its one "target", or the two older settings. */
+export function targetOf(settings: { target?: string; source?: string; filter?: string }): { source: string; filter: string } {
+	const at = settings.target ? settings.target.indexOf(TARGET_SEP) : -1;
+	if (settings.target && at > 0) return { source: settings.target.slice(0, at), filter: settings.target.slice(at + 1) };
+	return { source: settings.source ?? "", filter: settings.filter ?? "" };
+}
+
 /** What a switch key does when pressed. Saved in the key's settings. */
 export type Press = "toggle" | "on" | "off";
 

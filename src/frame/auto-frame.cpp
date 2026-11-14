@@ -91,6 +91,7 @@ struct Settings {
 	// for it: by a Picture Shape key (force_ratio), or by a rule naming the
 	// program being captured (rules: text found in the program -> shape).
 	double force_ratio = 0.0;
+	bool force_until_gone = false; // a shape set by hand for this game: dropped when its capture ends
 	std::vector<std::pair<std::string, double>> rules;
 	bool known_programs = true; // use the built-in shapes for common emulators
 	double glide_s = 0.35;
@@ -363,9 +364,11 @@ public:
 			},
 			this);
 		proc_handler_add(
-			obs_source_get_proc_handler(source_), "void set_picture_shape(in float ratio)",
+			obs_source_get_proc_handler(source_),
+			"void set_picture_shape(in float ratio, in bool until_gone)",
 			[](void *data, calldata_t *cd) {
-				static_cast<AutoFrame *>(data)->set_forced_ratio(calldata_float(cd, "ratio"));
+				static_cast<AutoFrame *>(data)->set_forced_ratio(calldata_float(cd, "ratio"),
+										 calldata_bool(cd, "until_gone"));
 			},
 			this);
 		proc_handler_add(
@@ -412,6 +415,7 @@ public:
 		s.trim_y = std::max(0.0, obs_data_get_double(settings, "trim_y"));
 		s.trim_wait_s = std::max(0.0, obs_data_get_double(settings, "trim_wait"));
 		s.force_ratio = std::max(0.0, obs_data_get_double(settings, "force_ratio"));
+		s.force_until_gone = obs_data_get_bool(settings, "force_until_gone");
 		s.known_programs = obs_data_get_bool(settings, "known_programs");
 		parse_rules_text(obs_data_get_string(settings, "rules_text"), s.rules);
 		// 0.1.0-beta6 to beta9 kept the rules in a list box.
@@ -450,6 +454,24 @@ public:
 			obs_source_t *target = obs_filter_get_target(source_);
 			const uint32_t w = target ? obs_source_get_base_width(target) : 0;
 			const uint32_t h = target ? obs_source_get_base_height(target) : 0;
+			// A shape set by hand "for this game" lasts as long as the game
+			// is captured: once the capture has had nothing for a while, the
+			// game is over and the shape goes back to automatic.
+			bool drop = false;
+			{
+				std::lock_guard lock(mutex_);
+				away_for_ = w && h ? 0.0 : away_for_ + seconds;
+				// (A shape set before the game has started waits for it.)
+				if (w && h)
+					forced_seen_ = true;
+				drop = settings_.force_until_gone && settings_.force_ratio > 0.0 && forced_seen_ &&
+				       away_for_ > kNewSession;
+			}
+			if (drop) {
+				obs_log(LOG_INFO,
+					"Auto Frame: the capture has ended; the shape set by hand is dropped");
+				set_forced_ratio(0.0);
+			}
 			std::lock_guard lock(mutex_);
 			if (w && h && last_w_ && (w != last_w_ || h != last_h_))
 				identity_timer_ = 0.0;
@@ -531,10 +553,15 @@ public:
 		return standing;
 	}
 
-	void set_forced_ratio(double ratio)
+	void set_forced_ratio(double ratio, bool until_gone = false)
 	{
 		obs_data_t *settings = obs_source_get_settings(source_);
 		obs_data_set_double(settings, "force_ratio", std::max(0.0, ratio));
+		obs_data_set_bool(settings, "force_until_gone", until_gone && ratio > 0.0);
+		{
+			std::lock_guard lock(mutex_);
+			forced_seen_ = false; // the game it is for has not been seen with it yet
+		}
 		obs_source_update(source_, settings);
 		obs_data_release(settings);
 	}
@@ -1460,6 +1487,8 @@ private:
 	double probe_timer_ = 0.0;
 	// The picture shape found by looking, kept across resolution changes.
 	double held_ratio_ = 0.0;
+	double away_for_ = 0.0;    // how long the capture has had nothing (counted on the tick)
+	bool forced_seen_ = false; // the capture has had a picture since the shape was set by hand
 	static constexpr int kQuickLooks = 8;
 	// How long the last good picture is held: while the capture settles
 	// at a new size, and when the capture drops out altogether.
@@ -1974,8 +2003,55 @@ bool auto_frame_picture(obs_source_t *source, double &x, double &y, double &widt
 	return found;
 }
 
+bool set_picture_shape_on(obs_source_t *source, const std::string &shape, bool until_gone, std::string &error)
+{
+	const bool automatic = shape.empty() || shape == "auto" || shape == "automatic";
+	const double ratio = automatic ? 0.0 : parse_ratio(shape);
+	if (!automatic && !(ratio > 0.05 && ratio < 20.0)) {
+		error = "That is not a picture shape; use 4:3, 8:7, a number, or auto";
+		return false;
+	}
+	obs_source_t *frame = nullptr;
+	if (source)
+		obs_source_enum_filters(
+			source,
+			[](obs_source_t *, obs_source_t *filter, void *param) {
+				const char *id = obs_source_get_unversioned_id(filter);
+				if (id && strcmp(id, kAutoFrameId) == 0 && obs_source_enabled(filter))
+					*static_cast<obs_source_t **>(param) = filter;
+			},
+			&frame);
+	if (!frame) {
+		error = "That source has no Auto Frame switched on";
+		return false;
+	}
+	calldata_t cd = {};
+	calldata_set_float(&cd, "ratio", ratio);
+	calldata_set_bool(&cd, "until_gone", until_gone);
+	proc_handler_call(obs_source_get_proc_handler(frame), "set_picture_shape", &cd);
+	calldata_free(&cd);
+	return true;
+}
+
 void register_auto_frame()
 {
+	// For the tests: the shape set by hand, as the remote request sets it.
+	proc_handler_add(
+		obs_get_proc_handler(),
+		"void stagekit_set_picture_shape(in string source, in string shape, in bool until_gone, out bool success, "
+		"out string said)",
+		[](void *, calldata_t *cd) {
+			obs_source_t *source = obs_get_source_by_name(calldata_string(cd, "source"));
+			std::string error;
+			const char *shape = calldata_string(cd, "shape");
+			const bool ok = set_picture_shape_on(source, shape ? shape : "",
+							     calldata_bool(cd, "until_gone"), error);
+			calldata_set_bool(cd, "success", ok);
+			calldata_set_string(cd, "said", error.c_str());
+			obs_source_release(source);
+		},
+		nullptr);
+
 	obs_source_info info = {};
 	info.id = kAutoFrameId;
 	info.type = OBS_SOURCE_TYPE_FILTER;

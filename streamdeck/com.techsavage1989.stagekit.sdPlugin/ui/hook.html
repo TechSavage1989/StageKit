@@ -10,7 +10,12 @@
 		<sdpi-item label="Capture">
 			<sdpi-select setting="source" datasource="getCaptures" placeholder="Choose a capture" show-refresh></sdpi-select>
 		</sdpi-item>
-
+		<sdpi-item label="Change with">
+			<sdpi-select setting="transition" datasource="getTransitions" default="fade_transition"></sdpi-select>
+		</sdpi-item>
+		<sdpi-item label="Lasting (ms)">
+			<sdpi-textfield setting="lasting" placeholder="300" pattern="[0-9]*"></sdpi-textfield>
+		</sdpi-item>
 		<sdpi-item label="Picture">
 			<sdpi-select setting="picture" datasource="getPictures" default=""></sdpi-select>
 		</sdpi-item>
@@ -41,6 +46,5 @@
 				&ldquo;Show Connect Info&rdquo; for the port and password. One connection serves every StageKit key.
 			</p>
 		</details>
-
 	</body>
 </html>

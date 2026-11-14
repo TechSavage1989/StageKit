@@ -42,6 +42,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "auto-capture.hpp"
 #include "../common/timing.hpp"
 
+#include "../common/item-transition.hpp"
 #include "../common/pick-list.hpp"
 
 #include <obs-module.h>
@@ -822,7 +823,61 @@ void set_front_window_for_tests(const std::string &title, const std::string &win
 	g_test_front.foreground = true;
 }
 
-bool hook_front_window(obs_source_t *capture, std::string &what, std::string &error)
+namespace {
+std::mutex g_hook_mutex;
+std::thread g_hook_thread; // the hide, aim, show of the last hook, when it has a transition
+
+// Every scene item showing a source, held, for the hook's transition.
+std::vector<obs_sceneitem_t *> items_of(obs_source_t *wanted)
+{
+	struct Find {
+		obs_source_t *wanted;
+		std::vector<obs_sceneitem_t *> out;
+	} find{wanted, {}};
+	static const auto visit = [](obs_scene_t *, obs_sceneitem_t *item, void *param) {
+		auto *f = static_cast<Find *>(param);
+		if (obs_sceneitem_get_source(item) == f->wanted && obs_sceneitem_visible(item)) {
+			obs_sceneitem_addref(item);
+			f->out.push_back(item);
+		}
+		return true;
+	};
+	obs_enum_scenes(
+		[](void *param, obs_source_t *scene_source) {
+			if (obs_source_is_group(scene_source))
+				return true; // reached through the scene that holds it
+			if (obs_scene_t *scene = obs_scene_from_source(scene_source))
+				obs_scene_enum_items(
+					scene,
+					[](obs_scene_t *s, obs_sceneitem_t *item, void *p) {
+						visit(s, item, p);
+						if (obs_sceneitem_is_group(item))
+							obs_sceneitem_group_enum_items(item, visit, p);
+						return true;
+					},
+					param);
+			return true;
+		},
+		&find);
+	return find.out;
+}
+
+void aim(obs_source_t *capture, const Window &front, bool game)
+{
+	obs_data_t *settings = obs_source_get_settings(capture);
+	const std::string window =
+		encode_part(front.title) + ":" + encode_part(front.window_class) + ":" + encode_part(front.executable);
+	obs_data_set_string(settings, "window", window.c_str());
+	obs_data_set_int(settings, "priority", 2); // match by executable
+	if (game)
+		obs_data_set_string(settings, "capture_mode", "window");
+	obs_source_update(capture, settings);
+	obs_data_release(settings);
+}
+} // namespace
+
+bool hook_front_window(obs_source_t *capture, std::string &what, std::string &error, const std::string &transition,
+		       uint32_t transition_ms)
 {
 	const char *id = capture ? obs_source_get_unversioned_id(capture) : nullptr;
 	const bool game = id && strcmp(id, "game_capture") == 0;
@@ -858,23 +913,47 @@ bool hook_front_window(obs_source_t *capture, std::string &what, std::string &er
 				obs_source_set_enabled(filter, false);
 		},
 		nullptr);
-	obs_data_t *settings = obs_source_get_settings(capture);
-	const std::string window =
-		encode_part(front.title) + ":" + encode_part(front.window_class) + ":" + encode_part(front.executable);
-	obs_data_set_string(settings, "window", window.c_str());
-	obs_data_set_int(settings, "priority", 2); // match by executable
-	if (game)
-		obs_data_set_string(settings, "capture_mode", "window");
-	obs_source_update(capture, settings);
-	obs_data_release(settings);
 	obs_log(LOG_INFO, "Hook: '%s' now captures %s, by hand", obs_source_get_name(capture),
 		front.executable.c_str());
 	what = front.executable;
+
+	const bool at_once = transition.empty() || transition == kTransitionCut || transition_ms == 0;
+	std::vector<obs_sceneitem_t *> items = at_once ? std::vector<obs_sceneitem_t *>() : items_of(capture);
+	if (items.empty()) {
+		aim(capture, front, game);
+		return true;
+	}
+	// Out with the transition chosen, aimed while out of sight, back in with
+	// it: on a thread of its own, which holds what it uses.
+	for (obs_sceneitem_t *item : items) {
+		set_item_transitions(item, transition, transition_ms);
+		obs_sceneitem_set_visible(item, false);
+	}
+	obs_source_t *held = obs_source_get_ref(capture);
+	std::lock_guard lock(g_hook_mutex);
+	if (g_hook_thread.joinable())
+		g_hook_thread.join();
+	g_hook_thread = std::thread([held, items, front, game, transition_ms] {
+		os_set_thread_name("stagekit: hook");
+		os_sleep_ms(transition_ms);
+		aim(held, front, game);
+		os_sleep_ms(350); // the capture takes a moment to find its window
+		for (obs_sceneitem_t *item : items) {
+			obs_sceneitem_set_visible(item, true);
+			obs_sceneitem_release(item);
+		}
+		obs_source_release(held);
+	});
 	return true;
 }
 
 void stop_window_watch()
 {
+	{
+		std::lock_guard lock(g_hook_mutex);
+		if (g_hook_thread.joinable())
+			g_hook_thread.join();
+	}
 	g_window_watch.stop();
 }
 
@@ -903,11 +982,14 @@ void register_auto_capture()
 		},
 		nullptr);
 	proc_handler_add(
-		obs_get_proc_handler(), "void stagekit_hook_front(in string source, out bool success, out string said)",
+		obs_get_proc_handler(),
+		"void stagekit_hook_front(in string source, in string transition, in int ms, out bool success, out string said)",
 		[](void *, calldata_t *cd) {
 			obs_source_t *source = obs_get_source_by_name(calldata_string(cd, "source"));
 			std::string what, error;
-			const bool ok = hook_front_window(source, what, error);
+			const char *transition = calldata_string(cd, "transition");
+			const bool ok = hook_front_window(source, what, error, transition ? transition : "",
+							  (uint32_t)calldata_int(cd, "ms"));
 			calldata_set_bool(cd, "success", ok);
 			calldata_set_string(cd, "said", ok ? what.c_str() : error.c_str());
 			obs_source_release(source);

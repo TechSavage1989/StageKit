@@ -1,5 +1,4 @@
 import {
-	action,
 	type DidReceiveSettingsEvent,
 	type KeyAction,
 	type KeyDownEvent,
@@ -19,8 +18,9 @@ import { answerLists, type KeySettings } from "./shared.ts";
  * sizes, copy a transform to other scenes. It works on the items selected in
  * OBS's preview, exactly like the tool's button in the StageKit dock.
  */
-@action({ UUID: "com.techsavage1989.stagekit.tool" })
 export class Tool extends SingletonAction<KeySettings> {
+	override readonly manifestId = "com.techsavage1989.stagekit.tool";
+
 	override onWillAppear(ev: WillAppearEvent<KeySettings>): Promise<void> {
 		return ev.action.isKey() ? this.show(ev.action, ev.payload.settings) : Promise.resolve();
 	}

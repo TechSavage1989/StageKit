@@ -866,6 +866,89 @@ int main(int argc, char **argv)
 			front("Some Game", "GameWnd", "somegame.exe");
 			CHECK(!hook("Hook Colour", said), "a source that is not a capture is refused (%s)",
 			      said.c_str());
+			// With a transition: the items showing the capture go out, the
+			// capture is aimed, and they come back.
+			{
+				obs_scene_t *hs = obs_scene_create("Hook Scene");
+				obs_sceneitem_t *hi = obs_scene_add(hs, gc);
+				front("Other Game", "OtherWnd", "othergame.exe");
+				calldata_t cd = {};
+				calldata_set_string(&cd, "source", "Hook Game");
+				calldata_set_string(&cd, "transition", "fade_transition");
+				calldata_set_int(&cd, "ms", 200);
+				proc_handler_call(obs_get_proc_handler(), "stagekit_hook_front", &cd);
+				const bool ok = calldata_bool(&cd, "success");
+				calldata_free(&cd);
+				const bool hidden_first = !obs_sceneitem_visible(hi);
+				obs_data_t *mid = obs_source_get_settings(gc);
+				const bool not_yet =
+					std::string(obs_data_get_string(mid, "window")).find("othergame") ==
+					std::string::npos;
+				obs_data_release(mid);
+				sleep_ms(1000);
+				obs_data_t *after = obs_source_get_settings(gc);
+				const bool aimed =
+					std::string(obs_data_get_string(after, "window")).find("othergame") !=
+					std::string::npos;
+				obs_data_release(after);
+				CHECK(ok && hidden_first && not_yet && aimed && obs_sceneitem_visible(hi),
+				      "with a transition the capture goes out first, is aimed out of sight, and comes back (%d %d %d %d)",
+				      hidden_first, not_yet, aimed, (int)obs_sceneitem_visible(hi));
+				obs_scene_release(hs);
+			}
+			// A picture shape set by hand, for this game only.
+			{
+				obs_source_t *shaped =
+					obs_source_create("image_source", "Shape Game", nullptr, nullptr);
+				obs_data_t *sd = obs_data_create();
+				obs_data_set_string(sd, "file", argv[3]);
+				obs_source_update(shaped, sd);
+				obs_source_t *sframe =
+					obs_source_create("stagekit_auto_frame", "Auto Frame", nullptr, nullptr);
+				obs_source_filter_add(shaped, sframe);
+				sleep_ms(300);
+				auto shape = [](const char *source, const char *text, std::string &said2) {
+					calldata_t cd = {};
+					calldata_set_string(&cd, "source", source);
+					calldata_set_string(&cd, "shape", text);
+					calldata_set_bool(&cd, "until_gone", true);
+					proc_handler_call(obs_get_proc_handler(), "stagekit_set_picture_shape", &cd);
+					const bool ok = calldata_bool(&cd, "success");
+					said2 = calldata_string(&cd, "said") ? calldata_string(&cd, "said") : "";
+					calldata_free(&cd);
+					return ok;
+				};
+				auto forced = [&] {
+					obs_data_t *fs = obs_source_get_settings(sframe);
+					const double r = obs_data_get_double(fs, "force_ratio");
+					obs_data_release(fs);
+					return r;
+				};
+				std::string said2;
+				const bool set = shape("Shape Game", "8:7", said2);
+				sleep_ms(200);
+				CHECK(set && std::fabs(forced() - 8.0 / 7.0) < 0.001,
+				      "a shape set by hand is put on the source's Auto Frame (%.4f)", forced());
+				CHECK(!shape("Shape Game", "banana", said2) && !shape("Hook Colour", "4:3", said2),
+				      "something that is not a shape, and a source without an Auto Frame, are refused");
+				// The game ends: nothing captured for a while.
+				obs_data_set_string(sd, "file", "");
+				obs_source_update(shaped, sd);
+				sleep_ms(5200);
+				CHECK(forced() == 0.0, "and it is dropped when that game's capture has ended (%.4f)",
+				      forced());
+				shape("Shape Game", "4:3", said2);
+				sleep_ms(200);
+				const bool again = std::fabs(forced() - 4.0 / 3.0) < 0.001;
+				shape("Shape Game", "auto", said2);
+				sleep_ms(200);
+				CHECK(again && forced() == 0.0,
+				      "set before a game has started it waits for the game, and 'auto' hands it back at once");
+				obs_data_release(sd);
+				obs_source_filter_remove(shaped, sframe);
+				obs_source_release(sframe);
+				obs_source_release(shaped);
+			}
 			front("", "", "");
 			obs_source_filter_remove(gc, autocap);
 			obs_source_release(autocap);

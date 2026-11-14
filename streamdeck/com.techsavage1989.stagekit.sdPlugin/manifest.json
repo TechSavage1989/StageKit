@@ -1,68 +1,14 @@
 {
 	"Name": "StageKit",
-	"Version": "0.3.0.0",
+	"Version": "0.4.0.0",
 	"Author": "StageKit contributors",
 	"Actions": [
 		{
-			"Name": "Filter switch",
-			"UUID": "com.techsavage1989.stagekit.switch",
+			"Name": "Ramp Blur",
+			"UUID": "com.techsavage1989.stagekit.blur",
 			"Icon": "imgs/actions/switch/icon",
-			"Tooltip": "Switches a StageKit filter on and off. The key shows which way it is.",
-			"PropertyInspectorPath": "ui/switch.html",
-			"Controllers": [
-				"Keypad"
-			],
-			"States": [
-				{
-					"Image": "imgs/actions/switch/off",
-					"Name": "Off",
-					"TitleAlignment": "bottom"
-				},
-				{
-					"Image": "imgs/actions/switch/on",
-					"Name": "On",
-					"TitleAlignment": "bottom"
-				}
-			]
-		},
-		{
-			"Name": "Move",
-			"UUID": "com.techsavage1989.stagekit.move",
-			"Icon": "imgs/actions/move/icon",
-			"Tooltip": "Runs a StageKit move: Send To, Place Item, Layout or a Picture Shape key.",
-			"PropertyInspectorPath": "ui/move.html",
-			"Controllers": [
-				"Keypad"
-			],
-			"States": [
-				{
-					"Image": "imgs/actions/move/key",
-					"TitleAlignment": "bottom"
-				}
-			]
-		},
-		{
-			"Name": "Arrange tool",
-			"UUID": "com.techsavage1989.stagekit.tool",
-			"Icon": "imgs/actions/tool/icon",
-			"Tooltip": "Lines up, spaces out, snaps or resizes the items selected in OBS, or copies a transform to other scenes.",
-			"PropertyInspectorPath": "ui/tool.html",
-			"Controllers": [
-				"Keypad"
-			],
-			"States": [
-				{
-					"Image": "imgs/actions/tool/key",
-					"TitleAlignment": "bottom"
-				}
-			]
-		},
-		{
-			"Name": "Blur everything",
-			"UUID": "com.techsavage1989.stagekit.blurall",
-			"Icon": "imgs/actions/blur/icon",
-			"Tooltip": "Switches every Ramp Blur on, or all of them off again. Shows on while any is on.",
-			"PropertyInspectorPath": "ui/blur-all.html",
+			"Tooltip": "Blurs a source and clears it again. The key shows which way it is.",
+			"PropertyInspectorPath": "ui/blur.html",
 			"Controllers": [
 				"Keypad"
 			],
@@ -80,6 +26,334 @@
 			]
 		},
 		{
+			"Name": "Shadow, Glow & Outline",
+			"UUID": "com.techsavage1989.stagekit.shadow",
+			"Icon": "imgs/actions/switch/icon",
+			"Tooltip": "Switches a source's shadow, glow or outline on and off.",
+			"PropertyInspectorPath": "ui/shadow.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/shadow/off",
+					"Name": "Off",
+					"TitleAlignment": "bottom"
+				},
+				{
+					"Image": "imgs/actions/shadow/on",
+					"Name": "On",
+					"TitleAlignment": "bottom"
+				}
+			]
+		},
+		{
+			"Name": "Corners & Edges",
+			"UUID": "com.techsavage1989.stagekit.corners",
+			"Icon": "imgs/actions/switch/icon",
+			"Tooltip": "Switches a source's shaped corners and edges on and off.",
+			"PropertyInspectorPath": "ui/corners.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/corners/off",
+					"Name": "Off",
+					"TitleAlignment": "bottom"
+				},
+				{
+					"Image": "imgs/actions/corners/on",
+					"Name": "On",
+					"TitleAlignment": "bottom"
+				}
+			]
+		},
+		{
+			"Name": "Ramp Zoom",
+			"UUID": "com.techsavage1989.stagekit.zoom",
+			"Icon": "imgs/actions/switch/icon",
+			"Tooltip": "Zooms a source in and back out.",
+			"PropertyInspectorPath": "ui/zoom.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/zoom/off",
+					"Name": "Off",
+					"TitleAlignment": "bottom"
+				},
+				{
+					"Image": "imgs/actions/zoom/on",
+					"Name": "On",
+					"TitleAlignment": "bottom"
+				}
+			]
+		},
+		{
+			"Name": "Auto Capture",
+			"UUID": "com.techsavage1989.stagekit.autocapture",
+			"Icon": "imgs/actions/switch/icon",
+			"Tooltip": "Switches automatic game capture on and off. On hands a hooked capture back to it.",
+			"PropertyInspectorPath": "ui/autocapture.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/autocapture/off",
+					"Name": "Off",
+					"TitleAlignment": "bottom"
+				},
+				{
+					"Image": "imgs/actions/autocapture/on",
+					"Name": "On",
+					"TitleAlignment": "bottom"
+				}
+			]
+		},
+		{
+			"Name": "Auto Frame",
+			"UUID": "com.techsavage1989.stagekit.autoframe",
+			"Icon": "imgs/actions/switch/icon",
+			"Tooltip": "Switches a capture's automatic framing on and off.",
+			"PropertyInspectorPath": "ui/autoframe.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/autoframe/off",
+					"Name": "Off",
+					"TitleAlignment": "bottom"
+				},
+				{
+					"Image": "imgs/actions/autoframe/on",
+					"Name": "On",
+					"TitleAlignment": "bottom"
+				}
+			]
+		},
+		{
+			"Name": "Standby Picture",
+			"UUID": "com.techsavage1989.stagekit.standby",
+			"Icon": "imgs/actions/switch/icon",
+			"Tooltip": "Switches the picture shown while nothing is captured on and off.",
+			"PropertyInspectorPath": "ui/standby.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/standby/off",
+					"Name": "Off",
+					"TitleAlignment": "bottom"
+				},
+				{
+					"Image": "imgs/actions/standby/on",
+					"Name": "On",
+					"TitleAlignment": "bottom"
+				}
+			]
+		},
+		{
+			"Name": "Show in Scenes",
+			"UUID": "com.techsavage1989.stagekit.showinscenes",
+			"Icon": "imgs/actions/switch/icon",
+			"Tooltip": "Shows and hides sources across scenes with one switch.",
+			"PropertyInspectorPath": "ui/showinscenes.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/showinscenes/off",
+					"Name": "Off",
+					"TitleAlignment": "bottom"
+				},
+				{
+					"Image": "imgs/actions/showinscenes/on",
+					"Name": "On",
+					"TitleAlignment": "bottom"
+				}
+			]
+		},
+		{
+			"Name": "Fit Item",
+			"UUID": "com.techsavage1989.stagekit.fititem",
+			"Icon": "imgs/actions/switch/icon",
+			"Tooltip": "Switches a scene's fitting of its game or window on and off.",
+			"PropertyInspectorPath": "ui/fititem.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/fititem/off",
+					"Name": "Off",
+					"TitleAlignment": "bottom"
+				},
+				{
+					"Image": "imgs/actions/fititem/on",
+					"Name": "On",
+					"TitleAlignment": "bottom"
+				}
+			]
+		},
+		{
+			"Name": "Active App",
+			"UUID": "com.techsavage1989.stagekit.activeapp",
+			"Icon": "imgs/actions/switch/icon",
+			"Tooltip": "Switches following the app in use on and off.",
+			"PropertyInspectorPath": "ui/activeapp.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/activeapp/off",
+					"Name": "Off",
+					"TitleAlignment": "bottom"
+				},
+				{
+					"Image": "imgs/actions/activeapp/on",
+					"Name": "On",
+					"TitleAlignment": "bottom"
+				}
+			]
+		},
+		{
+			"Name": "Program Trigger",
+			"UUID": "com.techsavage1989.stagekit.programtrigger",
+			"Icon": "imgs/actions/switch/icon",
+			"Tooltip": "Switches a program trigger on and off.",
+			"PropertyInspectorPath": "ui/programtrigger.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/programtrigger/off",
+					"Name": "Off",
+					"TitleAlignment": "bottom"
+				},
+				{
+					"Image": "imgs/actions/programtrigger/on",
+					"Name": "On",
+					"TitleAlignment": "bottom"
+				}
+			]
+		},
+		{
+			"Name": "Visibility Link",
+			"UUID": "com.techsavage1989.stagekit.visibilitylink",
+			"Icon": "imgs/actions/switch/icon",
+			"Tooltip": "Switches a link between items' visibility on and off.",
+			"PropertyInspectorPath": "ui/visibilitylink.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/visibilitylink/off",
+					"Name": "Off",
+					"TitleAlignment": "bottom"
+				},
+				{
+					"Image": "imgs/actions/visibilitylink/on",
+					"Name": "On",
+					"TitleAlignment": "bottom"
+				}
+			]
+		},
+		{
+			"Name": "Show/Hide Animation",
+			"UUID": "com.techsavage1989.stagekit.showhide",
+			"Icon": "imgs/actions/switch/icon",
+			"Tooltip": "Switches a scene's show and hide animations on and off.",
+			"PropertyInspectorPath": "ui/showhide.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/showhide/off",
+					"Name": "Off",
+					"TitleAlignment": "bottom"
+				},
+				{
+					"Image": "imgs/actions/showhide/on",
+					"Name": "On",
+					"TitleAlignment": "bottom"
+				}
+			]
+		},
+		{
+			"Name": "Send To",
+			"UUID": "com.techsavage1989.stagekit.sendto",
+			"Icon": "imgs/actions/move/icon",
+			"Tooltip": "Sends the camera, or any source, to one of its saved places.",
+			"PropertyInspectorPath": "ui/sendto.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/sendto/on",
+					"TitleAlignment": "bottom"
+				}
+			]
+		},
+		{
+			"Name": "Place Item",
+			"UUID": "com.techsavage1989.stagekit.placeitem",
+			"Icon": "imgs/actions/move/icon",
+			"Tooltip": "Moves a scene's item to its place.",
+			"PropertyInspectorPath": "ui/placeitem.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/placeitem/on",
+					"TitleAlignment": "bottom"
+				}
+			]
+		},
+		{
+			"Name": "Layout",
+			"UUID": "com.techsavage1989.stagekit.layout",
+			"Icon": "imgs/actions/move/icon",
+			"Tooltip": "Puts a scene's items into a saved layout.",
+			"PropertyInspectorPath": "ui/layout.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/layout/on",
+					"TitleAlignment": "bottom"
+				}
+			]
+		},
+		{
+			"Name": "Picture shape",
+			"UUID": "com.techsavage1989.stagekit.shape",
+			"Icon": "imgs/actions/switch/icon",
+			"Tooltip": "Sets a game's picture shape by hand: 4:3, 8:7 and so on, or back to automatic. It can last just for the game being captured.",
+			"PropertyInspectorPath": "ui/shape.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/shape/on",
+					"TitleAlignment": "bottom"
+				}
+			]
+		},
+		{
 			"Name": "Hook capture",
 			"UUID": "com.techsavage1989.stagekit.hook",
 			"Icon": "imgs/actions/hook/icon",
@@ -90,16 +364,110 @@
 			],
 			"States": [
 				{
-					"Image": "imgs/actions/hook/key",
+					"Image": "imgs/actions/hookgame/on",
 					"TitleAlignment": "bottom"
 				}
 			]
+		},
+		{
+			"Name": "Window switch",
+			"UUID": "com.techsavage1989.stagekit.appswitch",
+			"Icon": "imgs/actions/move/icon",
+			"Tooltip": "Steps an Active App scene to the next of its captures by hand, or back to following the apps.",
+			"PropertyInspectorPath": "ui/appswitch.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/appswitch/on",
+					"TitleAlignment": "bottom"
+				}
+			]
+		},
+		{
+			"Name": "Arrange tool",
+			"UUID": "com.techsavage1989.stagekit.tool",
+			"Icon": "imgs/actions/tool/icon",
+			"Tooltip": "Lines up, spaces out, snaps or resizes the items selected in OBS, or copies a transform to other scenes.",
+			"PropertyInspectorPath": "ui/tool.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/toolkey/on",
+					"TitleAlignment": "bottom"
+				}
+			]
+		},
+		{
+			"Name": "Blur everything",
+			"UUID": "com.techsavage1989.stagekit.blurall",
+			"Icon": "imgs/actions/blur/icon",
+			"Tooltip": "Switches every Ramp Blur on, or all of them off again. Shows on while any is on.",
+			"PropertyInspectorPath": "ui/blur-all.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/blurall/off",
+					"Name": "Off",
+					"TitleAlignment": "bottom"
+				},
+				{
+					"Image": "imgs/actions/blurall/on",
+					"Name": "On",
+					"TitleAlignment": "bottom"
+				}
+			]
+		},
+		{
+			"Name": "Filter switch (older)",
+			"UUID": "com.techsavage1989.stagekit.switch",
+			"Icon": "imgs/actions/switch/icon",
+			"Tooltip": "Switches any StageKit filter. Use the key named after the feature instead.",
+			"PropertyInspectorPath": "ui/switch.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/anyswitch/off",
+					"Name": "Off",
+					"TitleAlignment": "bottom"
+				},
+				{
+					"Image": "imgs/actions/anyswitch/on",
+					"Name": "On",
+					"TitleAlignment": "bottom"
+				}
+			],
+			"VisibleInActionsList": false
+		},
+		{
+			"Name": "Move (older)",
+			"UUID": "com.techsavage1989.stagekit.move",
+			"Icon": "imgs/actions/move/icon",
+			"Tooltip": "Runs any StageKit move. Use the key named after the feature instead.",
+			"PropertyInspectorPath": "ui/move.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/anymove/on",
+					"TitleAlignment": "bottom"
+				}
+			],
+			"VisibleInActionsList": false
 		}
 	],
 	"Category": "StageKit",
 	"CategoryIcon": "imgs/plugin/category-icon",
 	"CodePath": "bin/plugin.js",
-	"Description": "Keys for StageKit, the OBS Studio plugin: switch its filters on and off with the key showing which way they are, and run its camera moves. Talks to OBS through OBS's own WebSocket server.",
+	"Description": "Keys for StageKit, the OBS Studio plugin: one for each of its features, each showing its state, plus keys that hook a capture, set a picture shape, run the arrange tools and blur everything. Talks to OBS through OBS's own WebSocket server.",
 	"Icon": "imgs/plugin/marketplace",
 	"SDKVersion": 3,
 	"Software": {

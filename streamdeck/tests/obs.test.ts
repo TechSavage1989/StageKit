@@ -53,6 +53,8 @@ function answer(requestType: string, data: Record<string, unknown> = {}): { ok: 
 			found.filterEnabled = data.filterEnabled === true;
 			return { ok: true };
 		}
+		case "GetTransitionKindList":
+			return { ok: true, data: { transitionKinds: ["cut_transition", "fade_transition", "swipe_transition"] } };
 		case "TriggerHotkeyByName":
 			pressed.push(String(data.hotkeyName));
 			return { ok: true };
@@ -156,5 +158,6 @@ test("it connects, lists only StageKit's filters, switches one and hears of it",
 		],
 		"a Hook key is offered the Game and Window Captures only",
 	);
+	assert.deepEqual(await obs.transitionKinds(), ["cut_transition", "fade_transition", "swipe_transition"]);
 	assert.equal(await obs.stageKit("NoSuchRequest"), undefined, "and one it refuses comes back as nothing");
 });

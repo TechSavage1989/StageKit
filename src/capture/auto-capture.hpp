@@ -39,7 +39,12 @@ std::vector<OpenWindow> open_windows();
 // switched off, or it would aim the capture somewhere else again a moment
 // later; switching it back on hands the capture back to it. On success
 // `what` is the program taken; otherwise `error` says why not.
-bool hook_front_window(obs_source_t *capture, std::string &what, std::string &error);
+// With `transition` (an OBS transition's id) and `transition_ms`, every item
+// showing the capture is hidden with that transition, the capture is aimed
+// while it is out of sight, and the items come back with it. "none" or an
+// empty id changes over at once.
+bool hook_front_window(obs_source_t *capture, std::string &what, std::string &error,
+		       const std::string &transition = std::string(), uint32_t transition_ms = 0);
 
 // For the tests: the window to take as the one in front (an empty
 // executable goes back to the real ones).

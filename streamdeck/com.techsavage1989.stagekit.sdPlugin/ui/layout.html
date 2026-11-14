@@ -1,0 +1,44 @@
+<!doctype html>
+<html>
+	<head lang="en">
+		<title>StageKit Layout</title>
+		<meta charset="utf-8" />
+		<script src="https://sdpi-components.dev/releases/v4/sdpi-components.js"></script>
+	</head>
+
+	<body>
+		<sdpi-item label="Move">
+			<sdpi-select setting="target" datasource="getTargets" placeholder="Choose" show-refresh></sdpi-select>
+		</sdpi-item>
+		<sdpi-item label="Picture">
+			<sdpi-select setting="picture" datasource="getPictures" default=""></sdpi-select>
+		</sdpi-item>
+		<sdpi-item label="Palette">
+			<sdpi-select setting="palette" default="mono">
+				<option value="mono">Mono</option>
+				<option value="violet">Violet</option>
+				<option value="ocean">Ocean</option>
+				<option value="forest">Forest</option>
+				<option value="ember">Ember</option>
+				<option value="neon">Neon</option>
+			</sdpi-select>
+		</sdpi-item>
+
+		<details>
+			<summary>OBS connection</summary>
+			<sdpi-item label="Address">
+				<sdpi-textfield setting="host" global placeholder="127.0.0.1"></sdpi-textfield>
+			</sdpi-item>
+			<sdpi-item label="Port">
+				<sdpi-textfield setting="port" global placeholder="4455"></sdpi-textfield>
+			</sdpi-item>
+			<sdpi-item label="Password">
+				<sdpi-password setting="password" global></sdpi-password>
+			</sdpi-item>
+			<p>
+				In OBS: Tools &rarr; WebSocket Server Settings. Tick &ldquo;Enable WebSocket server&rdquo;, then
+				&ldquo;Show Connect Info&rdquo; for the port and password. One connection serves every StageKit key.
+			</p>
+		</details>
+	</body>
+</html>
