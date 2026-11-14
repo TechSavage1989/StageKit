@@ -25,6 +25,7 @@
 #include <QMouseEvent>
 #include <QWheelEvent>
 #include <QPixmap>
+#include <QTabWidget>
 #include <QPushButton>
 #include <QWidget>
 
@@ -4385,6 +4386,12 @@ int main(int argc, char **argv)
 
 			// Order buttons: front above back in one column, forward one above back one in the other.
 			{
+				// They are on the Arrange tab, which has to be the one showing
+				// for its buttons to have a place.
+				auto *order_tabs = dock->findChild<QTabWidget *>("stagekitTabs");
+				if (order_tabs)
+					order_tabs->setCurrentIndex(1);
+				QCoreApplication::processEvents();
 				dock->grab(); // lays out a widget that is not on screen
 				auto at = [&](const char *name) {
 					auto *button = dock->findChild<QPushButton *>(name);
@@ -4395,6 +4402,8 @@ int main(int argc, char **argv)
 				CHECK(top.x() == bottom.x() && up.x() == down.x() && top.x() < up.x() &&
 					      top.y() < bottom.y() && up.y() < down.y() && top.y() == up.y(),
 				      "'Bring to front' sits above 'Send to back', and 'Forward one' above 'Back one'");
+				if (order_tabs)
+					order_tabs->setCurrentIndex(0);
 			}
 			// Order buttons: the camera was added first, so it starts at the back.
 			const int before = obs_sceneitem_get_order_position(cam_item);
@@ -6097,9 +6106,41 @@ int main(int argc, char **argv)
 				      target && target->count() ? target->item(0)->text().toUtf8().constData() : "");
 			}
 
-			dock->resize(340, dock->sizeHint().height());
-			QCoreApplication::processEvents();
-			dock->grab().save(QString::fromStdString(out + "/../stagekit-dock.png"));
+			// The dock is four tabs; each is pictured, and the README shows
+			// them side by side.
+			{
+				auto *tabs = dock->findChild<QTabWidget *>("stagekitTabs");
+				CHECK(tabs && tabs->count() == 4,
+				      "the dock has four tabs: Place, Arrange, Copy and Effects");
+				std::vector<QPixmap> pages;
+				int height = 0;
+				for (int i = 0; tabs && i < tabs->count(); i++) {
+					tabs->setCurrentIndex(i);
+					QCoreApplication::processEvents();
+					dock->resize(340, 10);
+					dock->resize(340, dock->sizeHint().height());
+					QCoreApplication::processEvents();
+					pages.push_back(dock->grab());
+					height = std::max(height, pages.back().height());
+				}
+				int width = 0;
+				for (const QPixmap &one : pages)
+					width += one.width() + 12;
+				QImage sheet(std::max(1, width - 12), height, QImage::Format_ARGB32);
+				sheet.fill(Qt::transparent);
+				{
+					QPainter painter(&sheet);
+					int x = 0;
+					for (const QPixmap &one : pages) {
+						painter.drawPixmap(x, 0, one);
+						x += one.width() + 12;
+					}
+				}
+				sheet.save(QString::fromStdString(out + "/../stagekit-dock.png"));
+				CHECK(height > 200 && height < 900,
+				      "and no tab is taller than a screen (the tallest is %d px; it was 1460 as one column)",
+				      height);
+			}
 			delete dock;
 		}
 

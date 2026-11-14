@@ -211,6 +211,20 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## The dock in four tabs (0.1.0-beta82)
+
+The owner: "the stagekit dock is ugly and messy. id like it organized, and made visually appealing
+and a polish UX/UI".
+
+- Place / Arrange / Copy / Effects tabs; *Bring along* moved next to the move settings; curve and
+  direction on one row; the tick boxes split into "How the tools measure" and "When I let go of an
+  item"; drawn icons on the arrange and order buttons; the status line stays under the tabs.
+- Every control kept its object name and behaviour; the tests only needed to open the Arrange tab
+  before measuring where the order buttons sit.
+- Not seen in OBS's own themes yet (the test picture is Qt's plain style). Ask the owner for a
+  screenshot.
+- The Background dock was left as it is.
+
 ## Hooking a capture by hand, with its own key and pictures (0.1.0-beta81)
 
 - The owner on beta80: "the plugin seems to work fully", then: still "a bit clunky and not very

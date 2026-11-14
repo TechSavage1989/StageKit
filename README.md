@@ -528,9 +528,17 @@ There are two, under *Docks*: **StageKit** for the item you are working on, and 
 for the start image and the moving background. Both work on the current scene (the preview scene in
 Studio Mode).
 
-<p align="center"><img src="docs/images/stagekit-dock.png" width="340" alt="The StageKit dock: scene and item pickers, a three-by-three grid of position buttons, margin and travel time, buttons that make Stream Deck keys, buttons that add an effect to the item, and buttons that line up, space out, resize and snap the selected items"> <img src="docs/images/stagekit-background-dock.png" width="340" alt="The StageKit Background dock: a thumbnail of the start image, its file name, and buttons to choose the start image, give the background its own picture and open the background's settings"></p>
+<p align="center"><img src="docs/images/stagekit-dock.png" width="900" alt="The StageKit dock's four tabs side by side. Place: a three-by-three grid of position buttons, bring along, edge distance, travel time and motion, and buttons that make Stream Deck keys. Arrange: the selected items, buttons that line up, space out, snap and resize them, the order buttons, and the measuring and letting-go options. Copy: the two copy-transform buttons with their lists of scenes and sources. Effects: buttons that add a StageKit filter to the item"></p>
+
+<p align="center"><img src="docs/images/stagekit-background-dock.png" width="340" alt="The StageKit Background dock: a thumbnail of the start image, its file name, and buttons to choose the start image, give the background its own picture and open the background's settings"></p>
 
 **StageKit**
+
+The *Scene* and *Item* it works on stay at the top; below them are four tabs. **Place** sends the
+item to a spot and makes Stream Deck keys for it. **Arrange** lines up, spaces, snaps, resizes and
+reorders what is selected, and holds the measuring options. **Copy** copies a transform to other
+scenes or sources. **Effects** adds a StageKit filter to the item. What the last press did is said
+at the bottom, whichever tab is open.
 
 - **Select an item in OBS's own preview** and the dock works on it. The *Item* list follows your
   selection; you can also choose from the list. A group you select is worked on as one item.

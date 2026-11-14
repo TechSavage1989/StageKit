@@ -117,6 +117,13 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
 - **Built-in emulator shapes are a starting guess, never an order.** The owner's Snes9x shows 8:7; the
   first table said 64:49 and cropped the picture. `kKnownPrograms` only seeds the held shape; what is
   seen on screen corrects it. Only a shape the owner saved, or a Picture Shape key, is obeyed blindly.
+- **The StageKit dock is four tabs** (`stagekitTabs`: Place, Arrange, Copy, Effects) under the
+  *Scene* and *Item* rows, with the status line below them. It was one column 1,460 px tall; the
+  owner called it "ugly and messy" and asked for it "organized, and made visually appealing".
+  A new control goes on the tab its job belongs to, not in a new box at the bottom. The arrange and
+  order buttons carry small drawings (`tool_icon`) in the theme's own text colour; no stylesheet is
+  set, so OBS's themes keep styling it. Widgets on a tab that is not showing have no geometry: a
+  test that measures positions must switch to that tab first.
 - **The dock carries no explanatory paragraphs.** The owner wants it clean: controls and short labels
   only. Put explanations in tooltips and the README.
 - **The dock has no picture of the scene.** One was built (drag, wheel, zoom cross) and the owner
