@@ -29,6 +29,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <cstring>
 #include <map>
 #include <mutex>
 #include <string>
@@ -120,21 +121,44 @@ struct Glance {
 	int x0 = 0, y0 = 0, x1 = 0, y1 = 0; // and where, in cells of the small copy
 };
 constexpr uint32_t kGlanceSize = 128;
-constexpr uint64_t kGlanceEvery = 4;                  // frames from one glance to the next
+// A glance draws its item once more, filters and all, so it is not free on
+// the graphics card: at fifteen a second on every item the owner saw the
+// frame time go up (beta107). Only an item that can come and go is glanced at
+// often: a browser widget, text, a group or a nested scene, and anything that
+// has once been seen to change. The rest (a game capture, a camera, a
+// background) are glanced at seldom, one of them at a time.
+constexpr uint64_t kGlanceEvery = 4;                  // frames from one glance to the next, at the least
+constexpr uint64_t kLivelyEvery = 30;                 // an item that comes and goes: every half second
+constexpr uint64_t kOthersEvery = 600;                // any other item: every ten seconds
+constexpr uint64_t kOthersApart = 120;                // and no two of those within two seconds
 using GlanceKey = std::pair<obs_source_t *, int64_t>; // scene, item
 std::mutex g_glance_mutex;
 struct GlanceState {
 	std::map<GlanceKey, Glance> seen;
 	std::map<GlanceKey, uint64_t> when;   // the frame each was last glanced at
-	std::map<GlanceKey, uint64_t> lively; // and the frame it last changed in
+	std::map<GlanceKey, uint64_t> lively; // and the frame it last changed in, if it ever has
+	uint64_t last_other = 0;              // the frame an item that never changes was last glanced at
 	gs_texrender_t *render = nullptr;
 	gs_stagesurf_t *stage = nullptr;
 	bool out = false; // a copy is with the graphics card
 	GlanceKey of{nullptr, 0};
-	uint64_t begun = 0, frame = 0, frame_time = 0, turn = 0;
+	uint64_t begun = 0, frame = 0, frame_time = 0;
 	const void *last = nullptr; // whose list the last glance came from
 	bool others_asked = false;  // and whether another has asked since
 } g_glance;
+
+// Whether a source is of a kind that shows something at one time and nothing
+// at another without changing size.
+bool comes_and_goes(obs_source_t *source)
+{
+	if (obs_scene_from_source(source) || obs_group_from_source(source))
+		return true;
+	const char *id = obs_source_get_unversioned_id(source);
+	for (const char *kind : {"browser_source", "text_gdiplus", "text_ft2_source", "text_pango_source"})
+		if (id && std::strcmp(id, kind) == 0)
+			return true;
+	return false;
+}
 
 bool glance_differs(const Glance &a, const Glance &b)
 {
@@ -158,9 +182,8 @@ bool glance_of(obs_source_t *scene, int64_t item, Glance &out)
 }
 
 // Called every tick by each filter that is at rest in a scene on screen, with
-// the items it wants watched. Reads the glance that is due, or begins one, on
-// the item of the list that has waited longest (every other time, on one of
-// those that changed lately, so a widget coming and going is noticed quickly).
+// the items it wants watched. Reads the glance that is out, or begins one on
+// whichever item of the list is due and has waited longest.
 void glance_step(const void *asking, obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items)
 {
 	if (measuring_stopped() || items.empty())
@@ -215,27 +238,36 @@ void glance_step(const void *asking, obs_source_t *scene, const std::vector<obs_
 	// stands back while another is asking.
 	if (asking == g.last && g.others_asked && g.frame - g.begun < 3 * kGlanceEvery)
 		return;
-	// Which: every other time the longest-waiting of those that changed in
-	// the last ten seconds, otherwise the longest-waiting of all.
-	const bool lively_turn = (g.turn++ % 2) == 0;
+	// Which: the longest-waiting of the items that come and go and are due;
+	// failing one, the longest-waiting of the others that is due, if none of
+	// those has been glanced at lately.
 	obs_sceneitem_t *pick = nullptr;
 	uint64_t pick_when = 0;
-	for (int pass = lively_turn ? 0 : 1; pass < 2 && !pick; pass++) {
+	bool pick_lively = false;
+	for (int pass = 0; pass < 2 && !pick; pass++) {
+		if (pass == 1 && g.last_other && g.frame - g.last_other < kOthersApart)
+			break;
 		for (obs_sceneitem_t *item : items) {
+			obs_source_t *shows = obs_sceneitem_get_source(item);
+			if (!shows)
+				continue;
 			const GlanceKey key{scene, obs_sceneitem_get_id(item)};
-			if (pass == 0) {
-				const auto changed = g.lively.find(key);
-				if (changed == g.lively.end() || g.frame - changed->second > 600)
-					continue;
-			}
+			const bool lively = g.lively.count(key) || comes_and_goes(shows);
+			if (lively != (pass == 0))
+				continue;
 			const auto at = g.when.find(key);
 			const uint64_t when = at == g.when.end() ? 0 : at->second;
+			if (when && g.frame - when < (lively ? kLivelyEvery : kOthersEvery))
+				continue; // not due yet
 			if (!pick || when < pick_when) {
 				pick = item;
 				pick_when = when;
+				pick_lively = lively;
 			}
 		}
 	}
+	if (pick && !pick_lively)
+		g.last_other = g.frame;
 	obs_source_t *source = pick ? obs_sceneitem_get_source(pick) : nullptr;
 	if (!source)
 		return;
@@ -643,10 +675,7 @@ public:
 				Glance glance;
 				if (glance_of(parent_, own_id, glance)) {
 					const auto was = looked_.find(own_id);
-					if (was == looked_.end())
-						looked_[own_id] = glance;
-					else
-						own_changed = glance_differs(glance, was->second);
+					own_changed = was == looked_.end() || glance_differs(glance, was->second);
 				}
 			}
 			const bool due = (!own_seen_ && own_for_ >= 0.5) || (own_changed && own_for_ >= 0.5);
@@ -1254,10 +1283,12 @@ private:
 				Glance glance;
 				if (claim_of(parent_, id, this, claim) || !glance_of(parent_, id, glance))
 					continue;
+				// (Its first glance since it was looked at is no measure
+				// of that look: the item may have changed in between,
+				// seconds apart as they can be. It is looked at once
+				// more, and the two go together from then on.)
 				const auto was = looked_.find(id);
-				if (was == looked_.end()) {
-					looked_[id] = glance; // its first glance since the look
-				} else if (glance_differs(glance, was->second)) {
+				if (was == looked_.end() || glance_differs(glance, was->second)) {
 					look(other);
 					break; // one look a tick is enough
 				}
