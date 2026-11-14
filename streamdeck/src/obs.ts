@@ -168,6 +168,19 @@ class ObsLink extends EventEmitter {
 		}
 	}
 
+	/** The Game Captures and Window Captures in OBS: the sources a Hook key can aim. */
+	async captures(): Promise<Array<{ name: string; kind: string }>> {
+		if (!this.connected) return [];
+		const answer = await this.obs.call("GetInputList");
+		return answer.inputs
+			.map((input) => ({
+				name: String(input.inputName),
+				kind: String(input.unversionedInputKind ?? input.inputKind ?? ""),
+			}))
+			.filter((input) => input.kind === "game_capture" || input.kind === "window_capture")
+			.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+	}
+
 	/** Whether a filter is on; undefined when it (or OBS) cannot be reached. */
 	async filterEnabled(sourceName: string, filterName: string): Promise<boolean | undefined> {
 		return (await this.filter(sourceName, filterName))?.enabled;

@@ -806,6 +806,73 @@ std::vector<OpenWindow> open_windows()
 	return out;
 }
 
+namespace {
+std::mutex g_test_front_mutex;
+Window g_test_front; // set by the tests; no executable means "not set"
+} // namespace
+
+void set_front_window_for_tests(const std::string &title, const std::string &window_class,
+				const std::string &executable)
+{
+	std::lock_guard lock(g_test_front_mutex);
+	g_test_front = Window();
+	g_test_front.title = title;
+	g_test_front.window_class = window_class;
+	g_test_front.executable = executable;
+	g_test_front.foreground = true;
+}
+
+bool hook_front_window(obs_source_t *capture, std::string &what, std::string &error)
+{
+	const char *id = capture ? obs_source_get_unversioned_id(capture) : nullptr;
+	const bool game = id && strcmp(id, "game_capture") == 0;
+	if (!game && !(id && strcmp(id, "window_capture") == 0)) {
+		error = "That source is not a Game Capture or a Window Capture";
+		return false;
+	}
+	Window front;
+	{
+		std::lock_guard lock(g_test_front_mutex);
+		front = g_test_front;
+	}
+	if (front.executable.empty()) {
+		for (const Window &w : g_window_watch.latest())
+			if (w.foreground)
+				front = w;
+	}
+	if (front.executable.empty()) {
+		error = "No window is in front";
+		return false;
+	}
+	const std::string exe = lower(front.executable);
+	if (exe == "obs64.exe" || exe == "obs.exe" || exe == "obs") {
+		error = "OBS itself is in front";
+		return false;
+	}
+	// An Auto Capture here would aim the capture somewhere else again.
+	obs_source_enum_filters(
+		capture,
+		[](obs_source_t *, obs_source_t *filter, void *) {
+			const char *kind = obs_source_get_unversioned_id(filter);
+			if (kind && strcmp(kind, kAutoCaptureId) == 0 && obs_source_enabled(filter))
+				obs_source_set_enabled(filter, false);
+		},
+		nullptr);
+	obs_data_t *settings = obs_source_get_settings(capture);
+	const std::string window =
+		encode_part(front.title) + ":" + encode_part(front.window_class) + ":" + encode_part(front.executable);
+	obs_data_set_string(settings, "window", window.c_str());
+	obs_data_set_int(settings, "priority", 2); // match by executable
+	if (game)
+		obs_data_set_string(settings, "capture_mode", "window");
+	obs_source_update(capture, settings);
+	obs_data_release(settings);
+	obs_log(LOG_INFO, "Hook: '%s' now captures %s, by hand", obs_source_get_name(capture),
+		front.executable.c_str());
+	what = front.executable;
+	return true;
+}
+
 void stop_window_watch()
 {
 	g_window_watch.stop();
@@ -825,6 +892,28 @@ std::vector<std::string> open_program_names()
 
 void register_auto_capture()
 {
+	// For the tests: a window to take as the one in front, and the hook
+	// itself as the remote request runs it.
+	proc_handler_add(
+		obs_get_proc_handler(),
+		"void stagekit_test_front_window(in string title, in string window_class, in string executable)",
+		[](void *, calldata_t *cd) {
+			set_front_window_for_tests(calldata_string(cd, "title"), calldata_string(cd, "window_class"),
+						   calldata_string(cd, "executable"));
+		},
+		nullptr);
+	proc_handler_add(
+		obs_get_proc_handler(), "void stagekit_hook_front(in string source, out bool success, out string said)",
+		[](void *, calldata_t *cd) {
+			obs_source_t *source = obs_get_source_by_name(calldata_string(cd, "source"));
+			std::string what, error;
+			const bool ok = hook_front_window(source, what, error);
+			calldata_set_bool(cd, "success", ok);
+			calldata_set_string(cd, "said", ok ? what.c_str() : error.c_str());
+			obs_source_release(source);
+		},
+		nullptr);
+
 	obs_source_info info = {};
 	info.id = kAutoCaptureId;
 	info.type = OBS_SOURCE_TYPE_FILTER;

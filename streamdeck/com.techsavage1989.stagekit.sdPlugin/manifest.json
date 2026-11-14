@@ -1,6 +1,6 @@
 {
 	"Name": "StageKit",
-	"Version": "0.2.0.0",
+	"Version": "0.3.0.0",
 	"Author": "StageKit contributors",
 	"Actions": [
 		{
@@ -75,6 +75,22 @@
 				{
 					"Image": "imgs/actions/blur/on",
 					"Name": "On",
+					"TitleAlignment": "bottom"
+				}
+			]
+		},
+		{
+			"Name": "Hook capture",
+			"UUID": "com.techsavage1989.stagekit.hook",
+			"Icon": "imgs/actions/hook/icon",
+			"Tooltip": "Makes a Game Capture or a Window Capture take the window or game that is in front right now.",
+			"PropertyInspectorPath": "ui/hook.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/hook/key",
 					"TitleAlignment": "bottom"
 				}
 			]

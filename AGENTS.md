@@ -342,6 +342,13 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   dropped frames all the time (the owner's log, beta76: Auto Capture ticks of 20 to 70 ms, Active
   App up to 361 ms). Never call `list_windows()` from a tick. The thread is stopped in
   `obs_module_unload`.
+- **A capture can be hooked by hand** (`hook_front_window` in `src/capture/auto-capture.cpp`, the
+  `HookFront` vendor request, the Stream Deck plugin's *Hook capture* key). The owner: "i want to be
+  able to press a button to hook a window for capture or a game manually. the built in obs plugin
+  does not have that". It aims the capture at the window in front (from the window watch) and
+  switches an Auto Capture on that source off, or that would aim it elsewhere a quarter second
+  later; switching the Auto Capture on again is how it is handed back. OBS itself in front is
+  refused. Its Windows side has not run in the tests (they give it a stand-in window).
 - **Auto Capture keeps its capture shown** (`keep_ready`, on by default, `obs_source_inc_showing` on
   the capture). OBS stops a Game Capture about 0.3 s after the last scene showing it is left and
   hooks it again on the way back; the owner's log showed that at every scene switch.
@@ -361,7 +368,8 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   OBS plugin. Its key pictures are the owner's icon pack, published with the owner's say-so
   ("its fine for the icon pack to be publishes", mono as the default colour): 144 px copies under
   `imgs/pack/<colour>/`, written with `src/pack.json` by `tools/import-icons.py` from the pack's
-  folder, which is not in the repository (nor is the program that draws it). A key left on
+  folder, which is not in the repository (nor is the program that draws it; the session that
+  made the pack has both, and added the "hook game" and "hook window" pictures to it for beta81). A key left on
   *Automatic* gets its picture from the filter's kind and settings (`automatic()` in
   `src/pictures.ts`); keep that by kind and setting, never by the owner's source names. The
   palette is each key's own setting (`palette`): the first build had one colour for all keys and

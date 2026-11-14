@@ -10,6 +10,8 @@ the Free Software Foundation; either version 2 of the License, or
 
 #pragma once
 
+#include <obs.h>
+
 #include <string>
 #include <vector>
 
@@ -31,6 +33,18 @@ struct OpenWindow {
 // Every open window, everyday programs included. Looked up at most five
 // times a second however many callers ask.
 std::vector<OpenWindow> open_windows();
+
+// Aims a Game Capture or a Window Capture at the window in front right now,
+// for a key that hooks a capture by hand. An Auto Capture on that source is
+// switched off, or it would aim the capture somewhere else again a moment
+// later; switching it back on hands the capture back to it. On success
+// `what` is the program taken; otherwise `error` says why not.
+bool hook_front_window(obs_source_t *capture, std::string &what, std::string &error);
+
+// For the tests: the window to take as the one in front (an empty
+// executable goes back to the real ones).
+void set_front_window_for_tests(const std::string &title, const std::string &window_class,
+				const std::string &executable);
 
 // Stops the thread that keeps the list of open windows. For when the plugin
 // is unloaded.

@@ -77,6 +77,12 @@ export function plain(sort: "switch" | "move" | "tool"): Picture {
 	return BY_ID.get(`plain/${sort}`)!;
 }
 
+/** A Hook key's picture: the kind of capture it hooks. */
+export function hookPicture(chosen: string | undefined, inputKind: string | undefined): Picture {
+	const fits = inputKind === "window_capture" ? "capture/window" : "capture/game";
+	return (chosen && BY_ID.get(chosen)) || BY_ID.get(fits) || plain("move");
+}
+
 /** The arrange tools the pack has a picture of. */
 const TOOLS: Record<string, string> = {
 	same_everywhere: "tools/copy-transform-all",

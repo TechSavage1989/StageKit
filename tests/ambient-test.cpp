@@ -720,6 +720,59 @@ int main(int argc, char **argv)
 		}
 
 		// Show in Scenes: one switch that shows and hides sources across scenes.
+		// A capture hooked onto the window in front, by hand (the Stream Deck
+		// plugin's Hook key asks for this through obs-websocket).
+		printf("\n[hook a capture by hand]\n");
+		{
+			obs_source_t *gc = obs_source_create("game_capture", "Hook Game", nullptr, nullptr);
+			obs_source_t *other = obs_source_create("color_source", "Hook Colour", nullptr, nullptr);
+			obs_source_t *autocap =
+				obs_source_create("stagekit_auto_capture", "Auto Capture", nullptr, nullptr);
+			obs_source_filter_add(gc, autocap);
+			sleep_ms(150);
+			auto front = [](const char *title, const char *cls, const char *exe) {
+				calldata_t cd = {};
+				calldata_set_string(&cd, "title", title);
+				calldata_set_string(&cd, "window_class", cls);
+				calldata_set_string(&cd, "executable", exe);
+				proc_handler_call(obs_get_proc_handler(), "stagekit_test_front_window", &cd);
+				calldata_free(&cd);
+			};
+			auto hook = [](const char *source, std::string &said) {
+				calldata_t cd = {};
+				calldata_set_string(&cd, "source", source);
+				proc_handler_call(obs_get_proc_handler(), "stagekit_hook_front", &cd);
+				const bool ok = calldata_bool(&cd, "success");
+				const char *text = calldata_string(&cd, "said");
+				said = text ? text : "";
+				calldata_free(&cd);
+				return ok;
+			};
+			std::string said;
+			front("Some Game", "GameWnd", "somegame.exe");
+			const bool hooked = hook("Hook Game", said);
+			obs_data_t *gs = obs_source_get_settings(gc);
+			const std::string window = obs_data_get_string(gs, "window");
+			CHECK(hooked && said == "somegame.exe" && window.find("somegame.exe") != std::string::npos &&
+				      strcmp(obs_data_get_string(gs, "capture_mode"), "window") == 0 &&
+				      obs_data_get_int(gs, "priority") == 2,
+			      "a Game Capture is aimed at the window in front (%s; %s)", said.c_str(), window.c_str());
+			obs_data_release(gs);
+			CHECK(!obs_source_enabled(autocap),
+			      "and its Auto Capture is switched off, so it does not aim it elsewhere again");
+			front("OBS", "Qt", "obs64.exe");
+			CHECK(!hook("Hook Game", said) && said.find("OBS") != std::string::npos,
+			      "OBS itself in front is refused (%s)", said.c_str());
+			front("Some Game", "GameWnd", "somegame.exe");
+			CHECK(!hook("Hook Colour", said), "a source that is not a capture is refused (%s)",
+			      said.c_str());
+			front("", "", "");
+			obs_source_filter_remove(gc, autocap);
+			obs_source_release(autocap);
+			obs_source_release(other);
+			obs_source_release(gc);
+		}
+
 		printf("\n[show in scenes]\n");
 		{
 			obs_source_t *cam = obs_source_create("color_source", "Switch Camera", nullptr, nullptr);
