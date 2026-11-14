@@ -211,6 +211,19 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Glances: Fit to Space stops stalling the picture (0.1.0-beta107)
+
+- The owner's two logs from beta106 (private, not in the repository): `stagekit_fit_item` with
+  23 filters, single ticks of 8 to 45 ms; the owner saw a choppy preview and a chat box slow to
+  react to the music widget appearing. Both came from the once-a-second look at each item.
+  Replaced by glances, see AGENTS.md. In the test a widget is made room for in about 0.1 s.
+- The same logs show `stagekit-looks.effect` loading without error on the owner's Windows
+  machine: the new mosaic, trail and bloom shader code compiles on Direct3D.
+- The owner confirmed on beta106: "Everything seems to work very well", and scene switches look
+  right without *Same place in these scenes* being filled in.
+- **Not confirmed by the owner yet**: that the choppiness is gone. If it is not, ask for a log:
+  the `timing, last 30 s` lines say which kind is slow.
+
 ## Shared place for chosen scenes only; kept size survives a restart (0.1.0-beta106)
 
 - The owner, an hour after beta105: the link "should not be all scenes", because the same source

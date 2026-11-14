@@ -105,6 +105,184 @@ bool claim_of(obs_source_t *scene, int64_t item, const void *asking, Claim &out)
 	return true;
 }
 
+// ---------------------------------------------------------------- glances
+// A cheap watch on what the items of a scene draw. Looking at an item
+// properly (drawing it, reading it back at once and finding its edges) stalls
+// the picture for a few milliseconds each time, and it used to be done once a
+// second by every filter, whether anything had changed or not: the owner's log
+// showed single ticks of 8 to 45 ms, and a widget that began to draw could go
+// unnoticed for as many seconds as the scene has items. A glance instead
+// draws one item very small, hands the copy to the graphics card and reads it
+// two frames later, when that costs nothing. It only says roughly what part of
+// the item is drawn; a filter looks properly only when that has changed.
+struct Glance {
+	bool any = false;                   // something is drawn
+	int x0 = 0, y0 = 0, x1 = 0, y1 = 0; // and where, in cells of the small copy
+};
+constexpr uint32_t kGlanceSize = 128;
+constexpr uint64_t kGlanceEvery = 4;                  // frames from one glance to the next
+using GlanceKey = std::pair<obs_source_t *, int64_t>; // scene, item
+std::mutex g_glance_mutex;
+struct GlanceState {
+	std::map<GlanceKey, Glance> seen;
+	std::map<GlanceKey, uint64_t> when;   // the frame each was last glanced at
+	std::map<GlanceKey, uint64_t> lively; // and the frame it last changed in
+	gs_texrender_t *render = nullptr;
+	gs_stagesurf_t *stage = nullptr;
+	bool out = false; // a copy is with the graphics card
+	GlanceKey of{nullptr, 0};
+	uint64_t begun = 0, frame = 0, frame_time = 0, turn = 0;
+	const void *last = nullptr; // whose list the last glance came from
+	bool others_asked = false;  // and whether another has asked since
+} g_glance;
+
+bool glance_differs(const Glance &a, const Glance &b)
+{
+	if (a.any != b.any)
+		return true;
+	// By two cells or more: an edge that lies on the line between two cells
+	// flickers by one.
+	return a.any && (std::abs(a.x0 - b.x0) >= 2 || std::abs(a.y0 - b.y0) >= 2 || std::abs(a.x1 - b.x1) >= 2 ||
+			 std::abs(a.y1 - b.y1) >= 2);
+}
+
+// What was last seen of an item at a glance; false while it has had none.
+bool glance_of(obs_source_t *scene, int64_t item, Glance &out)
+{
+	std::lock_guard lock(g_glance_mutex);
+	const auto found = g_glance.seen.find({scene, item});
+	if (found == g_glance.seen.end())
+		return false;
+	out = found->second;
+	return true;
+}
+
+// Called every tick by each filter that is at rest in a scene on screen, with
+// the items it wants watched. Reads the glance that is due, or begins one, on
+// the item of the list that has waited longest (every other time, on one of
+// those that changed lately, so a widget coming and going is noticed quickly).
+void glance_step(const void *asking, obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items)
+{
+	if (measuring_stopped() || items.empty())
+		return;
+	std::lock_guard lock(g_glance_mutex);
+	GlanceState &g = g_glance;
+	const uint64_t now = obs_get_video_frame_time();
+	if (now != g.frame_time) {
+		g.frame_time = now;
+		g.frame++;
+	}
+	if (g.out) {
+		if (g.frame - g.begun < 2)
+			return;
+		g.out = false;
+		Glance seen;
+		obs_enter_graphics();
+		uint8_t *data = nullptr;
+		uint32_t linesize = 0;
+		const bool read = gs_stagesurface_map(g.stage, &data, &linesize);
+		if (read) {
+			int x0 = (int)kGlanceSize, y0 = (int)kGlanceSize, x1 = -1, y1 = -1;
+			for (uint32_t y = 0; y < kGlanceSize; y++) {
+				const uint8_t *row = data + (size_t)y * linesize;
+				for (uint32_t x = 0; x < kGlanceSize; x++) {
+					if (row[x * 4 + 3] <= 12)
+						continue;
+					x0 = std::min(x0, (int)x);
+					x1 = std::max(x1, (int)x);
+					y0 = std::min(y0, (int)y);
+					y1 = std::max(y1, (int)y);
+				}
+			}
+			gs_stagesurface_unmap(g.stage);
+			if (x1 >= x0 && y1 >= y0)
+				seen = Glance{true, x0, y0, x1, y1};
+		}
+		obs_leave_graphics();
+		if (read) {
+			const auto was = g.seen.find(g.of);
+			if (was != g.seen.end() && glance_differs(seen, was->second))
+				g.lively[g.of] = g.frame;
+			g.seen[g.of] = seen;
+		}
+		return;
+	}
+	if (asking != g.last)
+		g.others_asked = true;
+	if (g.frame - g.begun < kGlanceEvery)
+		return;
+	// Each filter in turn: the one whose list the last glance came from
+	// stands back while another is asking.
+	if (asking == g.last && g.others_asked && g.frame - g.begun < 3 * kGlanceEvery)
+		return;
+	// Which: every other time the longest-waiting of those that changed in
+	// the last ten seconds, otherwise the longest-waiting of all.
+	const bool lively_turn = (g.turn++ % 2) == 0;
+	obs_sceneitem_t *pick = nullptr;
+	uint64_t pick_when = 0;
+	for (int pass = lively_turn ? 0 : 1; pass < 2 && !pick; pass++) {
+		for (obs_sceneitem_t *item : items) {
+			const GlanceKey key{scene, obs_sceneitem_get_id(item)};
+			if (pass == 0) {
+				const auto changed = g.lively.find(key);
+				if (changed == g.lively.end() || g.frame - changed->second > 600)
+					continue;
+			}
+			const auto at = g.when.find(key);
+			const uint64_t when = at == g.when.end() ? 0 : at->second;
+			if (!pick || when < pick_when) {
+				pick = item;
+				pick_when = when;
+			}
+		}
+	}
+	obs_source_t *source = pick ? obs_sceneitem_get_source(pick) : nullptr;
+	if (!source)
+		return;
+	const GlanceKey key{scene, obs_sceneitem_get_id(pick)};
+	g.when[key] = g.frame;
+	g.begun = g.frame;
+	g.last = asking;
+	g.others_asked = false;
+	const uint32_t sw = obs_source_get_width(source), sh = obs_source_get_height(source);
+	if (!sw || !sh) {
+		g.seen[key] = Glance{};
+		return;
+	}
+	obs_enter_graphics();
+	if (!g.render)
+		g.render = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
+	if (!g.stage)
+		g.stage = gs_stagesurface_create(kGlanceSize, kGlanceSize, GS_RGBA);
+	gs_texrender_reset(g.render);
+	if (g.render && g.stage && gs_texrender_begin(g.render, kGlanceSize, kGlanceSize)) {
+		vec4 clear;
+		vec4_zero(&clear);
+		gs_clear(GS_CLEAR_COLOR, &clear, 0.0f, 0);
+		gs_ortho(0.0f, (float)sw, 0.0f, (float)sh, -100.0f, 100.0f);
+		gs_blend_state_push();
+		gs_blend_function(GS_BLEND_ONE, GS_BLEND_INVSRCALPHA);
+		obs_source_video_render(source);
+		gs_blend_state_pop();
+		gs_texrender_end(g.render);
+		gs_stage_texture(g.stage, gs_texrender_get_texture(g.render));
+		g.out = true;
+		g.of = key;
+	}
+	obs_leave_graphics();
+}
+
+// When the last filter has gone: nothing is kept, on the graphics card or off it.
+void glance_free()
+{
+	std::lock_guard lock(g_glance_mutex);
+	obs_enter_graphics();
+	gs_texrender_destroy(g_glance.render);
+	gs_stagesurface_destroy(g_glance.stage);
+	obs_leave_graphics();
+	g_glance = GlanceState{};
+}
+
 class FitItem;
 std::mutex g_filters_mutex;
 std::vector<FitItem *> g_filters; // every Fit to Space there is, for fit_item_placed
@@ -195,8 +373,14 @@ public:
 	~FitItem()
 	{
 		claim_clear(this);
-		std::lock_guard lock(g_filters_mutex);
-		g_filters.erase(std::remove(g_filters.begin(), g_filters.end(), this), g_filters.end());
+		bool last;
+		{
+			std::lock_guard lock(g_filters_mutex);
+			g_filters.erase(std::remove(g_filters.begin(), g_filters.end(), this), g_filters.end());
+			last = g_filters.empty();
+		}
+		if (last)
+			glance_free();
 	}
 
 	// See fit_item_placed.
@@ -448,10 +632,32 @@ public:
 				own_seen_ = false;
 				own_for_ = 0.0;
 			}
-			const bool due = (!own_seen_ && own_for_ >= 0.5) || (was_placed_ && own_for_ >= 3.0);
+			// (While it sits where it was put, a glance says when it
+			// draws another part of itself; outside the free space, where
+			// nothing else is watched, the glances are asked for here.)
+			const int64_t own_id = obs_sceneitem_get_id(item);
+			bool own_changed = false;
+			if (was_placed_ && own_seen_ && obs_source_showing(parent_)) {
+				if (s.box != BoxKind::FreeSpace)
+					glance_step(this, parent_, {item});
+				Glance glance;
+				if (glance_of(parent_, own_id, glance)) {
+					const auto was = looked_.find(own_id);
+					if (was == looked_.end())
+						looked_[own_id] = glance;
+					else
+						own_changed = glance_differs(glance, was->second);
+				}
+			}
+			const bool due = (!own_seen_ && own_for_ >= 0.5) || (own_changed && own_for_ >= 0.5);
 			if (due && obs_source_showing(parent_) && !measuring_stopped()) {
 				own_for_ = 0.0;
 				own_seen_ = true;
+				Glance own_glance;
+				if (glance_of(parent_, own_id, own_glance))
+					looked_[own_id] = own_glance;
+				else
+					looked_.erase(own_id);
 				// (Measured first: that also brings the item's box up to date.)
 				Box shows;
 				const bool any = measure_seen(parent_, item, how, shows);
@@ -933,6 +1139,13 @@ private:
 			seen.there = measure_seen(parent_, other, by, seen.box);
 			seen.item_at = scene_box(parent_, other);
 			seen_[obs_sceneitem_get_id(other)] = seen;
+			// What a glance last said of it goes with this look: another
+			// look is due when a glance says otherwise.
+			Glance glance;
+			if (glance_of(parent_, obs_sceneitem_get_id(other), glance))
+				looked_[obs_sceneitem_get_id(other)] = glance;
+			else
+				looked_.erase(obs_sceneitem_get_id(other));
 		};
 		if (look_again_) {
 			look_again_ = false;
@@ -1027,10 +1240,28 @@ private:
 				unsettled_ = false;
 				changed_ = true;
 			}
-		} else if ((since_look_ += seconds) >= 1.0 && !others.empty() && glide_ >= 1.0) {
-			since_look_ = 0.0;
-			turn_ = (turn_ + 1) % others.size();
-			look(others[turn_]);
+		} else if (glide_ >= 1.0) {
+			// At rest: the items are glanced at, which costs next to
+			// nothing, and one is looked at properly only when a glance
+			// shows it drawing another part of itself than at the last
+			// look (a widget that begins to show something, or stops).
+			std::vector<obs_sceneitem_t *> watched = others;
+			watched.push_back(item);
+			glance_step(this, parent_, watched);
+			for (obs_sceneitem_t *other : others) {
+				const int64_t id = obs_sceneitem_get_id(other);
+				Claim claim;
+				Glance glance;
+				if (claim_of(parent_, id, this, claim) || !glance_of(parent_, id, glance))
+					continue;
+				const auto was = looked_.find(id);
+				if (was == looked_.end()) {
+					looked_[id] = glance; // its first glance since the look
+				} else if (glance_differs(glance, was->second)) {
+					look(other);
+					break; // one look a tick is enough
+				}
+			}
 		}
 
 		// The shape counts once it has stopped changing.
@@ -1099,6 +1330,7 @@ private:
 	double calm_for_ = 0.0;
 	double since_look_ = 0.0;
 	size_t turn_ = 0;
+	std::map<int64_t, Glance> looked_; // what a glance said of each item when it was last looked at
 	double shape_seen_ = 0.0, shape_used_ = 0.0, shape_for_ = 0.0;
 	double used_margin_ = -1.0, used_tolerance_ = -1.0;
 	double set_bw_ = 0.0, set_bh_ = 0.0; // the bounding box last given to the item
