@@ -4584,6 +4584,21 @@ int main(int argc, char **argv)
 				CHECK(top.x() == bottom.x() && up.x() == down.x() && top.x() < up.x() &&
 					      top.y() < bottom.y() && up.y() < down.y() && top.y() == up.y(),
 				      "'Bring to front' sits above 'Send to back', and 'Forward one' above 'Back one'");
+				// The dock is only as tall as the tab showing needs: a tall
+				// tab out of sight must not make a short one scroll.
+				if (order_tabs) {
+					int tallest = 0, shortest = 1 << 20;
+					for (int i = 0; i < order_tabs->count(); i++) {
+						order_tabs->setCurrentIndex(i);
+						QCoreApplication::processEvents();
+						const int needs = dock->minimumSizeHint().height();
+						tallest = std::max(tallest, needs);
+						shortest = std::min(shortest, needs);
+					}
+					printf("        the dock needs %d to %d px by tab\n", shortest, tallest);
+					CHECK(shortest > 0 && shortest < tallest - 40,
+					      "the dock is as tall as the tab showing, not as the tallest tab");
+				}
 				if (order_tabs)
 					order_tabs->setCurrentIndex(0);
 			}

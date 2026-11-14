@@ -526,6 +526,18 @@ public:
 		QVBoxLayout *copy_page = page("Dock.Tab.Copy", "pageCopy");
 		QVBoxLayout *effects_page = page("Dock.Tab.Effects", "pageEffects");
 		layout->addWidget(tabs, 1);
+		// A tab set is as tall as its tallest page, so the dock scrolled on
+		// a short tab with nothing below it. Only the page showing counts.
+		auto only_showing = [tabs] {
+			for (int i = 0; i < tabs->count(); i++) {
+				const bool showing = i == tabs->currentIndex();
+				tabs->widget(i)->setSizePolicy(QSizePolicy::Preferred,
+							       showing ? QSizePolicy::Preferred : QSizePolicy::Ignored);
+			}
+			tabs->updateGeometry();
+		};
+		QObject::connect(tabs, &QTabWidget::currentChanged, this, [only_showing](int) { only_showing(); });
+		only_showing();
 
 		auto *move_box = new QWidget(this);
 		auto *move_layout = new QVBoxLayout(move_box);
