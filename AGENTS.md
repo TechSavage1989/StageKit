@@ -340,7 +340,12 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   The owner: "must allow you to select the specific settings for the transition type in the filter
   setting, like left right up or down for slide ... each one to have its specific setting set
   independently". The controls are rebuilt in place when a kind or the *Settings for* box changes,
-  and when the source list does (`pick_list_on_change`). Follow Active App, Program Trigger and
+  and when the source list does (`pick_list_on_change`). A slide's and a swipe's direction list
+  has one entry of StageKit's own, *Off the nearest edge* (`nearest`, turned into left, right, up
+  or down for each item when it is applied, `off_nearest_edge`; a swipe is also told whether it
+  is coming in): the owner asked for it by Morph's name for the same thing. OBS's item
+  transitions move the picture inside the item's own frame, not across the screen; the owner was
+  told so, and that Show/Hide Animation is the one that travels. Follow Active App, Program Trigger and
   Link Visibility still have the plain two controls; give them this one when it is asked for,
   not a third kind.
 - **Move Source moves the source in every scene it is in, by default** (`apply_in`). The owner asked for

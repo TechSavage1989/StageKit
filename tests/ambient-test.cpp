@@ -1397,6 +1397,49 @@ int main(int argc, char **argv)
 					      strcmp(obs_property_list_item_string(own_kind, 0), "usual") == 0,
 				      "the filter's settings offer the slide's own direction for showing and for hiding, and 'Settings for' switches them to one source's own");
 				obs_properties_destroy(cp);
+				// "Off the nearest edge": a direction of StageKit's own in the
+				// slide's list. Each item goes by where it lies in its scene:
+				// towards that edge to hide, in from it to show.
+				{
+					vec2 at;
+					vec2_set(&at, 500.0f, 100.0f); // nearest the right edge of 640x360
+					obs_sceneitem_set_pos(cam1, &at);
+					vec2_set(&at, -1800.0f, 0.0f); // nearest the left edge
+					obs_sceneitem_set_pos(cam2, &at);
+					obs_data_set_string(cs, "change|for", ""); // the usual change's controls
+					obs_data_set_string(cs, "show|slide_transition|direction", "nearest");
+					obs_data_set_string(cs, "hide|slide_transition|direction", "nearest");
+					obs_source_update(sw, cs);
+					obs_properties_t *np = obs_source_properties(sw);
+					obs_property_t *ways =
+						obs_properties_get(np, "show|slide_transition|direction");
+					bool listed = false;
+					for (size_t i = 0; ways && i < obs_property_list_item_count(ways); i++)
+						listed = listed ||
+							 strcmp(obs_property_list_item_string(ways, i), "nearest") == 0;
+					obs_properties_destroy(np);
+					sleep_ms(100);
+					flip(false);
+					flip(true);
+					auto going = [](obs_sceneitem_t *item, bool show) {
+						obs_source_t *t = obs_sceneitem_get_transition(item, show);
+						obs_data_t *ts = t ? obs_source_get_settings(t) : nullptr;
+						const std::string dir = ts ? obs_data_get_string(ts, "direction")
+									   : "none";
+						obs_data_release(ts);
+						return dir;
+					};
+					CHECK(listed && way(cam1, false, "slide_transition", "right", 250) &&
+						      way(cam1, true, "slide_transition", "left", 400) &&
+						      way(cam2, false, "slide_transition", "left", 250) &&
+						      way(cam2, true, "slide_transition", "right", 400),
+					      "a slide can go 'Off the nearest edge': an item by the right edge leaves to the right and comes back from it, one by the left edge the other way (offered %d; the first hides %s and shows %s, the second hides %s and shows %s)",
+					      (int)listed, going(cam1, false).c_str(), going(cam1, true).c_str(),
+					      going(cam2, false).c_str(), going(cam2, true).c_str());
+					vec2_set(&at, 0.0f, 0.0f);
+					obs_sceneitem_set_pos(cam1, &at);
+					obs_sceneitem_set_pos(cam2, &at);
+				}
 				// Back to a cut for everything, as the checks below found it.
 				obs_data_set_string(cs, "change|for", "");
 				obs_data_set_string(cs, "transition", "none");
