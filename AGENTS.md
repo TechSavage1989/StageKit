@@ -379,6 +379,15 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   Unticked, the picture keeps the size it has (`keep_w_`, read from the item once and again after a
   resize by hand) and is centred in its space. The owner: "move the box without changing the shape
   or size to fill the gap ... a safety option as well informing the filter to not resize".
+- **Fit to Space never puts an item past the screen's edge, and does nothing on a group.** With
+  *Resize it to fit* unticked, a space narrower than the item used to centre it past the edge (the
+  owner's chat box, pushed off the canvas by the game growing beside it); it is now held the gap
+  inside the screen (`inside`). The owner had also added the filter to the *group* holding the chat
+  box, where the "scene" is the group itself: the filter now stays idle there and says so in its
+  settings (`Fit.OnGroup`). It belongs on the scene, with the group as its item.
+- **Blur goes to 1000** (`kMaxStrength`; it was 250 and the owner asked for more). A Gaussian or box
+  blur set above `kTapLimit` (250) is drawn the Dual Kawase way for its whole ramp, so there is no
+  change of look part-way through a ramp. Zoom's pull is still worked out from 250.
 - **The Copy tab locks and unlocks across scenes** (`set_items_locked` in `src/dock/arrange.*`): the
   selected items' sources, the listed sources or every source; in all scenes, the listed scenes or
   this one. The owner asked for it so a locked copy can be freed for the copy tools, and as a

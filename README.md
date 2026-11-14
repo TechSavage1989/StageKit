@@ -123,7 +123,7 @@ off, so it costs nothing while off.
 | Setting | What it does |
 | --- | --- |
 | Blur type | Gaussian (smoothest), Dual Kawase (fastest, best for strong blur), Box, Pixelate (square blocks), Hexagons (a honeycomb mosaic), Zoom, Motion |
-| Strength | 0–250. Gaussian, Kawase and Box look alike at the same number |
+| Strength | 0–1000. Gaussian, Kawase and Box look alike at the same number; above 250, Gaussian and Box are drawn the Kawase way, which stays smooth |
 | Ramp style | Grow the blur strength, or cross-fade a fully blurred image in |
 | Ramp in / out time | 0–5000 ms each. 0 is instant |
 | Easing | Eleven curves, eased in, out or both |
@@ -337,6 +337,9 @@ nearest.
 - It only works while its scene is being shown, so scenes you are not on cost nothing.
 - **Items never in the way**: items the free space ignores, such as a camera meant to overlap the
   game.
+- Add the filter to the **scene**, not to a group. To fit a group, choose the group as the *Item*.
+  On a group the filter does nothing and says so.
+- An item is never put past the screen's edges: it stays the gap inside them whatever is beside it.
 - **Resize it to fit** (ticked as it comes). Unticked, the item keeps the size it has and is only
   moved, to the middle of its space, so the room left over is the same on both sides and above and
   below; when the space changes (a camera above it is hidden, say) it moves to the new middle.
