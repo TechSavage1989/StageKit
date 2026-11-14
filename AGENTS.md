@@ -334,6 +334,21 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   item's scale or a box of the picture's exact size: both are one tick late.
 - **Trigger filters** (Send To, Place Item, Layout) switch themselves off after running and ignore the enabled
   state restored at load (`ready_`), so they do not fire when OBS starts.
+- **The list of open windows is kept by a thread of its own** (`WindowWatch` in
+  `src/capture/auto-capture.cpp`); a filter's tick only takes a copy (`open_windows()`,
+  `g_window_watch.latest()`). Looking at every window, and inside the program in front, takes from a
+  few milliseconds to a third of a second; done on OBS's drawing thread four times a second it
+  dropped frames all the time (the owner's log, beta76: Auto Capture ticks of 20 to 70 ms, Active
+  App up to 361 ms). Never call `list_windows()` from a tick. The thread is stopped in
+  `obs_module_unload`.
+- **Auto Capture keeps its capture shown** (`keep_ready`, on by default, `obs_source_inc_showing` on
+  the capture). OBS stops a Game Capture about 0.3 s after the last scene showing it is left and
+  hooks it again on the way back; the owner's log showed that at every scene switch.
+- **A Send To press looks at each source once** (`seen_part` in `src/placement/place-item.cpp`), not
+  once per scene: what shows of a source is the same part of its box everywhere. A press that moved
+  the camera in twenty scenes took 40 to 70 ms before a single frame of the move. An item straight
+  in its scene that only moves is stepped from where it began (`Move::plain`), with nothing looked
+  up on the way.
 - **Auto Capture's Windows code is only compiled by CI and never run by the tests.** The tests feed it
   stand-in windows through its `set_test_windows` call. The owner wants no list of games to maintain:
   detection is by loaded modules (graphics engine plus controller support, or full-screen), with a

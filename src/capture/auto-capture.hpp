@@ -32,4 +32,8 @@ struct OpenWindow {
 // times a second however many callers ask.
 std::vector<OpenWindow> open_windows();
 
+// Stops the thread that keeps the list of open windows. For when the plugin
+// is unloaded.
+void stop_window_watch();
+
 } // namespace stagekit

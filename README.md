@@ -363,6 +363,9 @@ The filter's controls show what it is capturing now.
 - **Your lists**: the two lists those buttons fill in, as plain text you can edit (`blender, vlc`). OBS,
   browsers, Discord, Steam's own windows and similar are already left alone.
 - **Find games**: *Automatically*, or *Only from 'Always capture'*.
+- **Keep capturing in other scenes** (on as it comes): the capture carries on while you are on a scene
+  that does not show it, so it is there at once when you come back. Unticked, OBS stops it a moment
+  after you leave and starts it again when you return.
 - With no game open, the Game Capture goes back to *Capture any fullscreen application*.
 
 A game is recognised by what the program has loaded: a graphics engine together with something only
