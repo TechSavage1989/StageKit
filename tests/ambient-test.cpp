@@ -2677,7 +2677,8 @@ int main(int argc, char **argv)
 			{
 				obs_source_t *wall = obs_source_create("color_source", "Share Wall", nullptr, nullptr);
 				sized(wall, 300, 360);
-				obs_source_t *cam4 = obs_source_create("color_source", "Share Camera", nullptr, nullptr);
+				obs_source_t *cam4 =
+					obs_source_create("color_source", "Share Camera", nullptr, nullptr);
 				sized(cam4, 100, 60);
 				obs_scene_t *one = obs_scene_create("Share One"); // 640x360
 				obs_scene_t *two = obs_scene_create("Share Two");
