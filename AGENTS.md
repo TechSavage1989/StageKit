@@ -143,8 +143,12 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
 - **The StageKit dock is four tabs** (`stagekitTabs`: Place, Arrange, Copy, Effects) under the
   *Scene* and *Item* rows, with the status line below them. It was one column 1,460 px tall; the
   owner called it "ugly and messy" and asked for it "organized, and made visually appealing".
-  A new control goes on the tab its job belongs to, not in a new box at the bottom. The arrange and
-  order buttons carry small drawings (`tool_icon`) in the theme's own text colour; no stylesheet is
+  A new control goes on the tab its job belongs to, not in a new box at the bottom. The line-up and
+  order tools are drawings alone (`icon_only`, six to a row, name and use in the tooltip) and the
+  Place arrows a block of 40 px squares with the tab's tick boxes beside them: the owner asked for
+  "just icons with tooltips, making space for more functions" and found the three-dot update menu
+  unreadable, so that is the word *Updates*. The copy tools keep their words. The
+  drawings (`tool_icon`) are in the theme's own text colour; no stylesheet is
   set, so OBS's themes keep styling it. Widgets on a tab that is not showing have no geometry: a
   test that measures positions must switch to that tab first.
 - **The dock carries no explanatory paragraphs.** The owner wants it clean: controls and short labels
@@ -364,7 +368,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   processor's side only: a slow shader shows up as OBS's own rendering lag, not here. Ask the owner
   for the log when frames drop; do not guess.
 - **Fit to Space's free space takes the roomiest of the spaces that are as good as equal**
-  (`free_space`: pictures within 8 px or 1%). The owner's music widget, set to the same width as the
+  (`free_space`: pictures within the filter's *Tolerance*, 8 px as it comes; the owner asked for it to be a setting). The owner's music widget, set to the same width as the
   column above it, was read a few pixels wider (what shows is measured on a small copy), and the
   space stopped 95 px above the screen's edge to keep those pixels of width.
 - **The dock's two measuring options show on the Place tab as well as the Arrange tab**

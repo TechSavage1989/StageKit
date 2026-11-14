@@ -2181,6 +2181,18 @@ int main(int argc, char **argv)
 				CHECK(is(p.x, 20) && is(p.y, 20) && is(b.x, 456) && is(b.y, 320),
 				      "a widget a few pixels wider than the column above it does not cost the space its height (%.0f, %.0f %.0fx%.0f)",
 				      p.x, p.y, b.x, b.y);
+				// The tolerance is the filter's own setting: at 0 the biggest
+				// picture wins, even by a pixel or two.
+				obs_data_set_double(wf, "tolerance", 0);
+				obs_source_update(wide_fit, wf);
+				for (int i = 0; i < 16; i++) {
+					render(obs_scene_get_source(ws), 640, 360);
+					sleep_ms(50);
+				}
+				obs_sceneitem_get_bounds(wi, &b);
+				CHECK(is(b.x, 460) && is(b.y, 260),
+				      "with a tolerance of 0 the space that gives the biggest picture is taken (%.0fx%.0f)",
+				      b.x, b.y);
 				obs_data_release(wf);
 				obs_source_filter_remove(obs_scene_get_source(ws), wide_fit);
 				obs_source_release(wide_fit);
@@ -4735,9 +4747,30 @@ int main(int argc, char **argv)
 				};
 				const QPoint top = at("orderTop"), bottom = at("orderBottom"), up = at("orderUp"),
 					     down = at("orderDown");
-				CHECK(top.x() == bottom.x() && up.x() == down.x() && top.x() < up.x() &&
-					      top.y() < bottom.y() && up.y() < down.y() && top.y() == up.y(),
-				      "'Bring to front' sits above 'Send to back', and 'Forward one' above 'Back one'");
+				CHECK(top.x() < up.x() && up.x() < down.x() && down.x() < bottom.x() &&
+					      top.y() == up.y() && up.y() == down.y() && down.y() == bottom.y(),
+				      "the order tools sit in one row, front to back: to the front, forward one, back one, to the back");
+				// The line-up tools are drawings alone, each named when pointed at.
+				auto *left_tool = dock->findChild<QPushButton *>("arrange_left");
+				auto *arrow_tool = dock->findChild<QPushButton *>("grid0");
+				CHECK(left_tool && left_tool->text().isEmpty() && !left_tool->icon().isNull() &&
+					      left_tool->toolTip().startsWith("Left") && left_tool->width() < 90,
+				      "an arrange tool is a drawing with its name in the tooltip (%d px wide)",
+				      left_tool ? left_tool->width() : -1);
+				CHECK(arrow_tool && arrow_tool->minimumWidth() == 40 &&
+					      arrow_tool->maximumHeight() == 40,
+				      "the Place arrows are squares");
+				// Pictures of the two busiest tabs, to look at.
+				dock->resize(380, dock->sizeHint().height());
+				dock->grab().save(QString::fromStdString(out + "/../stagekit-dock-arrange.png"));
+				if (order_tabs) {
+					order_tabs->setCurrentIndex(0);
+					QCoreApplication::processEvents();
+					dock->resize(380, dock->sizeHint().height());
+					dock->grab().save(QString::fromStdString(out + "/../stagekit-dock-place.png"));
+					order_tabs->setCurrentIndex(1);
+					QCoreApplication::processEvents();
+				}
 				// The dock is only as tall as the tab showing needs: a tall
 				// tab out of sight must not make a short one scroll.
 				if (order_tabs) {
