@@ -443,7 +443,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   makes room (`soft_*`) still wins over it, or the two would close in for good. The owner asked
   for "a directional bias or preferred direction ... prevent it from going in an undesirable
   direction".
-- **Fit to Space's *Same place in other scenes*** (`share`, off as it comes; `share_place` in
+- **Fit to Space's *Same place in these scenes*** (`share_scenes`, a PickList, empty as it comes; `share_place` in
   `src/dock/arrange.*`, `fit_item_shared` in `src/placement/fit-item.*`): each time the filter's
   item has come to rest in a scene that is showing, the same source's copies in the scenes that
   are *not* showing get its transform, locked ones too. A filter of its own in such a scene leaves
@@ -452,7 +452,19 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   the spot, a chat box that had moved up into a hidden camera's place would be "at home" inside
   the camera in the next scene. Scenes on screen are never written to, or two scenes showing at
   once would push each other for good. The owner: "links the same object between scenes ... so
-  it's already there when scene switches and it's not jarring".
+  it's already there when scene switches and it's not jarring". It began (beta105) as a tick box
+  for every other scene; the owner: "it should not be all scenes. because i have the same source
+  on other scenes in which their position is supposed to be different". Now only the scenes
+  listed get it, plus any scene whose own filter for the item lists this one (`share_partners`),
+  so one list links two scenes both ways. The old `share` tick box is not read. Never share with
+  a scene that is not named.
+- **Fit to Space's kept size is saved** (`keep_item`, `keep_k`, written whenever the size is read)
+  and is what a filter starts from when OBS loads it (`first_update_`). Before, a filter created
+  with *Resize it to fit* unticked looked like one that had just been unticked and went back to
+  the size from before the filter was first added (`orig_k`): the owner's chat box, set by hand to
+  the camera's width, was "slightly larger" after every restart. A size is also only read off an
+  item whose source has kept its size for half a second: while OBS loads, a group or a shadowed
+  source is not yet the size it will be.
 - **Blur goes to 1000** (`kMaxStrength`; it was 250 and the owner asked for more). A Gaussian or box
   blur set above `kTapLimit` (250) is drawn the Dual Kawase way for its whole ramp, so there is no
   change of look part-way through a ramp. Zoom's pull is still worked out from 250. Ambient
