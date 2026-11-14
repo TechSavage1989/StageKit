@@ -630,8 +630,21 @@ void Morph::render()
 	// (Curves that overshoot would fade past all or nothing: kept between.)
 	const double eased = t <= 0.0f ? 0.0 : t >= 1.0f ? 1.0 : ease(s.curve, s.mode, t);
 	eased_ = (float)std::clamp(eased, 0.0, 1.0);
+	// The size to draw at. OBS's own window never gives a transition one,
+	// and then `obs_transition_get_size` says 0 by 0: the transition is as
+	// large as its scenes, which is what its width and height say. (Going
+	// by the first alone, the morph was skipped for want of a size and the
+	// owner saw a plain cut.)
 	uint32_t cx = 0, cy = 0;
 	obs_transition_get_size(source_, &cx, &cy);
+	if (!cx || !cy) {
+		cx = obs_source_get_width(source_);
+		cy = obs_source_get_height(source_);
+	}
+	if ((!cx || !cy) && to) {
+		cx = obs_source_get_width(to);
+		cy = obs_source_get_height(to);
+	}
 	if (stale_.exchange(false))
 		forget();
 	const bool between_scenes = effect_ && from && to && t > 0.0f && t < 1.0f && cx && cy;
