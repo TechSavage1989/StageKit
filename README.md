@@ -326,6 +326,7 @@ nearest.
 - Drag the fitted item to another part of the scene, or send it there with a key, and it takes the
   free space around that place instead.
 - A background or a frame is not in the way: anything the item's place lies inside is ignored.
+- It only works while its scene is being shown, so scenes you are not on cost nothing.
 - **Items never in the way**: items the free space ignores, such as a camera meant to overlap the
   game.
 - **Use visible pixels** and **Ignore shadows & outlines** (both on as they come) are this filter's
@@ -643,6 +644,7 @@ off, and the sources are shown or hidden to match.
 | In | *Every scene they are in*, or *The scenes listed below* |
 | Scenes | The scenes to act in, when you chose to list them |
 | When this is on | *They are shown* (off hides them) or *They are hidden* (off shows them) |
+| Bring-along items too | Ticked: the items those sources bring along are shown and hidden with them. They are the items chosen under *Bring along* in the sources' Send To keys, and in Place Item filters that move them |
 | Change with / Lasting | How each item appears and disappears: a fade (the default), any other transition OBS has, a cut, or whatever is already set on the item; and for how long |
 | Do it now | Shows or hides them to match how the filter is switched now |
 

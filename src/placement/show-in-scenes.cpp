@@ -22,6 +22,8 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include "show-in-scenes.hpp"
 
+#include "place-item.hpp"
+
 #include "../common/item-transition.hpp"
 #include "../common/pick-list.hpp"
 
@@ -30,6 +32,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include <algorithm>
 #include <atomic>
+#include <cstring>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -65,6 +68,7 @@ public:
 		scenes_ = scenes;
 		where_ = static_cast<Where>(std::clamp((int)obs_data_get_int(settings, "where"), 0, 1));
 		on_hides_ = obs_data_get_int(settings, "on_means") == 1;
+		with_linked_ = obs_data_get_bool(settings, "with_linked");
 		transition_ = item_transition_kind(settings);
 		transition_ms_ = item_transition_ms(settings);
 	}
@@ -77,7 +81,7 @@ public:
 	{
 		std::vector<std::string> sources, scenes;
 		Where where;
-		bool show;
+		bool show, with_linked;
 		std::string transition;
 		uint32_t transition_ms;
 		{
@@ -88,10 +92,68 @@ public:
 			scenes = scenes_;
 			where = where_;
 			show = enabled != on_hides_;
+			with_linked = with_linked_;
 		}
 		obs_source_t *parent = obs_filter_get_parent(source_);
 		if (sources.empty() && parent && obs_source_get_name(parent))
 			sources.push_back(obs_source_get_name(parent));
+		// "Bring-along items too": whatever the sources' Send To keys, and
+		// Place Item filters that move them, are set to bring along.
+		if (with_linked) {
+			const std::vector<std::string> leaders = sources;
+			auto add = [&sources](const char *name) {
+				if (name && *name && std::find(sources.begin(), sources.end(), name) == sources.end())
+					sources.push_back(name);
+			};
+			for (const std::string &leader : leaders) {
+				obs_source_t *found = obs_get_source_by_name(leader.c_str());
+				if (!found)
+					continue;
+				std::vector<std::string> linked;
+				obs_source_enum_filters(
+					found,
+					[](obs_source_t *, obs_source_t *filter, void *param) {
+						const char *id = obs_source_get_unversioned_id(filter);
+						if (!id || strcmp(id, kSendToId) != 0)
+							return;
+						obs_data_t *settings = obs_source_get_settings(filter);
+						static_cast<std::vector<std::string> *>(param)->push_back(
+							obs_data_get_string(settings, "linked"));
+						obs_data_release(settings);
+					},
+					&linked);
+				obs_source_release(found);
+				for (const std::string &name : linked)
+					add(name.c_str());
+			}
+			struct Scan {
+				const std::vector<std::string> *leaders;
+				std::vector<std::string> linked;
+			} scan{&leaders, {}};
+			obs_enum_scenes(
+				[](void *param, obs_source_t *scene) {
+					obs_source_enum_filters(
+						scene,
+						[](obs_source_t *, obs_source_t *filter, void *p) {
+							auto *sc = static_cast<Scan *>(p);
+							const char *id = obs_source_get_unversioned_id(filter);
+							if (!id || strcmp(id, kPlaceItemId) != 0)
+								return;
+							obs_data_t *settings = obs_source_get_settings(filter);
+							const char *moved = obs_data_get_string(settings, "item");
+							if (std::find(sc->leaders->begin(), sc->leaders->end(),
+								      moved) != sc->leaders->end())
+								sc->linked.push_back(
+									obs_data_get_string(settings, "linked"));
+							obs_data_release(settings);
+						},
+						param);
+					return true;
+				},
+				&scan);
+			for (const std::string &name : scan.linked)
+				add(name.c_str());
+		}
 		struct Work {
 			const std::vector<std::string> *sources, *scenes;
 			bool every, show;
@@ -169,6 +231,7 @@ private:
 	std::vector<std::string> sources_, scenes_;
 	Where where_ = Where::Every;
 	bool on_hides_ = false;
+	bool with_linked_ = false;
 	std::string transition_ = kTransitionFade;
 	uint32_t transition_ms_ = 300;
 	std::atomic<bool> ready_{false};
@@ -248,6 +311,10 @@ obs_properties_t *get_properties(void *data)
 	obs_property_list_add_int(means, obs_module_text("ShowIn.OnMeans.Shown"), 0);
 	obs_property_list_add_int(means, obs_module_text("ShowIn.OnMeans.Hidden"), 1);
 	obs_property_set_long_description(means, obs_module_text("ShowIn.OnMeans.Tip"));
+
+	obs_property_t *with_linked =
+		obs_properties_add_bool(props, "with_linked", obs_module_text("ShowIn.WithLinked"));
+	obs_property_set_long_description(with_linked, obs_module_text("ShowIn.WithLinked.Tip"));
 
 	add_item_transition_properties(props);
 
