@@ -886,6 +886,20 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   (`vendor_switch_state`, reported by the two switchers and Auto Capture): *Toggle* is on while
   a manual window is shown, *Hide* while the capture is shown (`shown_nowhere`). A new key with
   two states goes through `showOnOff`.
+- **The Switch Scene key** (`src/actions/scene.ts`, UUID `.scene`) uses obs-websocket's own scene
+  requests, nothing of the OBS plugin: `SetCurrentProgramScene`, or `SetCurrentPreviewScene` in
+  Studio Mode; a transition named in the key is set first with `SetCurrentSceneTransition`, which
+  makes it OBS's current one (obs-websocket has no transition for one switch). Lit while its scene
+  is on (`CurrentProgramSceneChanged` and the preview's). The owner asked for "streamdeck key ...
+  for scene switching".
+- **Device pictures and SVGs.** `DEVICES` in `tools/make-option-icons.py` (group `devices`; the
+  owner: "icons available for things like generic capture cards, external capture cards"), and
+  `tools/make-svgs.py` writes `streamdeck/svg/`: every picture drawn here as editable SVG, through
+  `tools/svgdraw.py`, a stand-in for Pillow's `ImageDraw` that writes shapes, so the SVG and PNG
+  come from the same code. Run it after changing a drawing. The original pack's pictures have no
+  SVG here: only their PNGs came to this repository; the owner was asked for the pack's source.
+  The word-stripper in `make-option-icons.py` skips `options/` and `status/`: run over the marked
+  copies, it took their dot and slash for words.
 - **Blur's *Never blur these* offers every source with a picture**, not only the capture kinds,
   and a Cropped View listed there keeps the source it shows clear too (the blur sits on that
   source). The owner could not find their camera: "this list should show all sources".

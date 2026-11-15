@@ -153,6 +153,11 @@ export function overlapPicture(chosen: string | undefined): Picture {
 	return (chosen && BY_ID.get(chosen)) || BY_ID.get("options/overlap") || plain("switch");
 }
 
+/** A Switch Scene key's picture: a scene with its sources laid out (or the one chosen). */
+export function scenePicture(chosen: string | undefined): Picture {
+	return (chosen && BY_ID.get(chosen)) || BY_ID.get("options/scene") || plain("switch");
+}
+
 /** A Set Aspect Ratio key's picture: a frame of that shape. */
 export function shapePicture(chosen: string | undefined, shape: string | undefined): Picture {
 	const fits = `options/ratio-${shape && shape !== "auto" ? shape.replace(":", "x") : "auto"}`;

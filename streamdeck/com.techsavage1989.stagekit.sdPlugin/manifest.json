@@ -1,6 +1,6 @@
 {
 	"Name": "StageKit",
-	"Version": "0.13.0.0",
+	"Version": "0.14.0.0",
 	"Author": "StageKit contributors",
 	"Actions": [
 		{
@@ -445,6 +445,29 @@
 				},
 				{
 					"Image": "imgs/actions/fitoverlap/on",
+					"Name": "On",
+					"TitleAlignment": "bottom"
+				}
+			],
+			"DisableAutomaticStates": true
+		},
+		{
+			"Name": "Switch Scene",
+			"UUID": "com.techsavage1989.stagekit.scene",
+			"Icon": "imgs/actions/scene/icon",
+			"Tooltip": "Switches OBS to a scene, on the program or (Studio Mode) the preview, with a transition if you choose one. Lit while that scene is on.",
+			"PropertyInspectorPath": "ui/scene.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/scene/off",
+					"Name": "Off",
+					"TitleAlignment": "bottom"
+				},
+				{
+					"Image": "imgs/actions/scene/on",
 					"Name": "On",
 					"TitleAlignment": "bottom"
 				}

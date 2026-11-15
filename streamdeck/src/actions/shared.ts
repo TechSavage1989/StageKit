@@ -45,6 +45,9 @@ export type KeySettings = {
 	keep?: "game" | "always";
 	/** A Window switch key: on to the next capture, or back to following the apps. */
 	step?: "next" | "back" | "hide" | "toggle" | "clear";
+	/** A Switch Scene key's scene, and whether it goes to the program or the preview. */
+	scene?: string;
+	where?: "program" | "preview";
 	/** A Dock switch key's switch ("snap", "guides", ...) and a Slide key's way ("up", "down-left", ...). */
 	option?: string;
 	direction?: string;
@@ -93,6 +96,20 @@ export async function answerLists(
 			if (kind === "fade_transition" || names[kind] === "") continue;
 			items.push({ label: names[kind] ?? kind.replace(/_transition$/, "").replace(/_/g, " "), value: kind });
 		}
+		await streamDeck.ui.sendToPropertyInspector({ event, items });
+		return;
+	}
+	if (event === "getScenes" || event === "getSceneTransitions") {
+		let items: Array<{ label: string; value: string }> = [];
+		try {
+			items =
+				event === "getScenes"
+					? (await obs.scenes()).map((name) => ({ label: name, value: name }))
+					: [{ label: "As set in OBS", value: "" }, ...(await obs.sceneTransitions()).map((name) => ({ label: name, value: name }))];
+		} catch (error) {
+			streamDeck.logger.warn(`Could not read the scenes from OBS: ${String(error)}`);
+		}
+		if (!obs.isConnected) items = [{ label: "OBS is not connected (see below)", value: "" }];
 		await streamDeck.ui.sendToPropertyInspector({ event, items });
 		return;
 	}

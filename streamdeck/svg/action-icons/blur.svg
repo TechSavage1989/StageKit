@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" width="40" height="40" viewBox="0 0 160 160">
+<defs><filter id="soft" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="8.4"/></filter></defs>
+<g id="icon" inkscape:groupmode="layer" inkscape:label="Icon">
+<g filter="url(#soft)">
+<rect x="22.4" y="38.4" width="115.2" height="83.2" rx="19.2" fill="#ffffff"/>
+</g>
+</g>
+</svg>

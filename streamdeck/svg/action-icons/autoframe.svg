@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" width="40" height="40" viewBox="0 0 160 160">
+<g id="icon" inkscape:groupmode="layer" inkscape:label="Icon">
+<polyline points="12.8,35.2 12.8,64" fill="none" stroke="#ffffff" stroke-width="13"/>
+<ellipse cx="12.8" cy="35.2" rx="6.5" ry="6.5" fill="#ffffff"/>
+<ellipse cx="12.8" cy="64" rx="6.5" ry="6.5" fill="#ffffff"/>
+<polyline points="12.8,35.2 41.6,35.2" fill="none" stroke="#ffffff" stroke-width="13"/>
+<ellipse cx="12.8" cy="35.2" rx="6.5" ry="6.5" fill="#ffffff"/>
+<ellipse cx="41.6" cy="35.2" rx="6.5" ry="6.5" fill="#ffffff"/>
+<polyline points="147.2,35.2 147.2,64" fill="none" stroke="#ffffff" stroke-width="13"/>
+<ellipse cx="147.2" cy="35.2" rx="6.5" ry="6.5" fill="#ffffff"/>
+<ellipse cx="147.2" cy="64" rx="6.5" ry="6.5" fill="#ffffff"/>
+<polyline points="147.2,35.2 118.4,35.2" fill="none" stroke="#ffffff" stroke-width="13"/>
+<ellipse cx="147.2" cy="35.2" rx="6.5" ry="6.5" fill="#ffffff"/>
+<ellipse cx="118.4" cy="35.2" rx="6.5" ry="6.5" fill="#ffffff"/>
+<polyline points="12.8,124.8 12.8,96" fill="none" stroke="#ffffff" stroke-width="13"/>
+<ellipse cx="12.8" cy="124.8" rx="6.5" ry="6.5" fill="#ffffff"/>
+<ellipse cx="12.8" cy="96" rx="6.5" ry="6.5" fill="#ffffff"/>
+<polyline points="12.8,124.8 41.6,124.8" fill="none" stroke="#ffffff" stroke-width="13"/>
+<ellipse cx="12.8" cy="124.8" rx="6.5" ry="6.5" fill="#ffffff"/>
+<ellipse cx="41.6" cy="124.8" rx="6.5" ry="6.5" fill="#ffffff"/>
+<polyline points="147.2,124.8 147.2,96" fill="none" stroke="#ffffff" stroke-width="13"/>
+<ellipse cx="147.2" cy="124.8" rx="6.5" ry="6.5" fill="#ffffff"/>
+<ellipse cx="147.2" cy="96" rx="6.5" ry="6.5" fill="#ffffff"/>
+<polyline points="147.2,124.8 118.4,124.8" fill="none" stroke="#ffffff" stroke-width="13"/>
+<ellipse cx="147.2" cy="124.8" rx="6.5" ry="6.5" fill="#ffffff"/>
+<ellipse cx="118.4" cy="124.8" rx="6.5" ry="6.5" fill="#ffffff"/>
+<rect x="48" y="60.8" width="64" height="38.4" rx="8" fill="#ffffff"/>
+</g>
+</svg>
