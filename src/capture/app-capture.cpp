@@ -57,7 +57,9 @@ the Free Software Foundation; either version 2 of the License, or
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <atomic>
 #include <cstring>
+#include <map>
 #include <mutex>
 #include <string>
 #include <utility>
@@ -199,6 +201,10 @@ std::vector<obs_sceneitem_t *> items_showing(obs_source_t *wanted)
 	return find.out;
 }
 
+// What every enabled switcher lists, for Auto Capture to leave alone.
+std::mutex g_listed_mutex;
+std::map<const void *, std::vector<std::string>> g_listed;
+
 class AppCapture : public MorphPaint {
 public:
 	AppCapture(obs_data_t *settings, obs_source_t *source) : source_(source)
@@ -267,6 +273,10 @@ public:
 
 	~AppCapture()
 	{
+		{
+			std::lock_guard lock(g_listed_mutex);
+			g_listed.erase(this);
+		}
 		detach();
 		keep_ready({});
 		set_bridge(nullptr);
@@ -282,6 +292,14 @@ public:
 	{
 		const std::vector<std::string> apps = pick_list_read(settings, "apps", false);
 		const std::vector<std::string> by_hand = pick_list_read(settings, "by_hand", false);
+		{
+			std::vector<std::string> all;
+			for (const std::vector<std::string> *list : {&apps, &by_hand})
+				for (const std::string &entry : *list)
+					all.push_back(lowered(entry));
+			std::lock_guard lock(g_listed_mutex);
+			g_listed[this] = all;
+		}
 		std::lock_guard lock(mutex_);
 		apps_ = apps;
 		by_hand_ = by_hand;
@@ -325,6 +343,8 @@ public:
 		have_hold_ = true;
 		timer_ = 0.0;
 	}
+
+	uint64_t changes() const { return changes_.load(); }
 
 	// The entry being shown, as far as this filter knows.
 	std::string current()
@@ -510,6 +530,7 @@ private:
 	double settle_s_ = 0.0;            // since the capture was last aimed
 	double own_s_ = 0.0;               // how long the capture itself has had a picture without a break
 	bool own_ok_ = true;               // the capture itself is aimed at what is to be shown
+	std::atomic<uint64_t> changes_{0}; // how many times the window has been changed
 	obs_source_t *bridge_ = nullptr;   // held: the ready capture drawn until the capture itself has the window
 	uint32_t kept_w_ = 0, kept_h_ = 0; // the size of the picture in `last_`
 	double drawn_ago_ = 10.0;          // seconds since this filter last drew
@@ -585,10 +606,25 @@ void AppCapture::aim(obs_source_t *parent, const OpenWindow &window, const std::
 		std::lock_guard lock(mutex_);
 		return kept_w_ && kept_h_ && drawn_ago_ < 0.5;
 	}();
-	set_bridge(ready);
-	std::lock_guard lock(mutex_);
+	changes_++;
+	// The capture drawn from and the change to it are set as one: with the
+	// new capture in place a frame before the change began, that frame took
+	// its picture for the last one, and the new window was there at a
+	// stroke before its size had begun to change.
+	obs_source_t *old_bridge;
+	std::unique_lock lock(mutex_);
+	old_bridge = bridge_;
+	bridge_ = ready; // (its reference goes with it)
 	own_ok_ = !ready;
-	obs_source_release(ready);
+	struct Release {
+		obs_source_t *source;
+		std::unique_lock<std::mutex> *lock;
+		~Release()
+		{
+			lock->unlock();
+			obs_source_release(source);
+		}
+	} release{old_bridge, &lock};
 	current_ = entry;
 	if (remember) {
 		recent_.erase(std::remove(recent_.begin(), recent_.end(), entry), recent_.end());
@@ -777,10 +813,12 @@ void AppCapture::follow(obs_source_t *parent)
 
 	// By hand: on to the next of the apps switched to that is open, and
 	// after the last, back to following. While one is held nothing follows.
+	bool released = false;
 	auto let_go = [&] {
 		held.clear();
 		current.clear();
 		first = true;
+		released = true;
 		std::lock_guard lock(mutex_);
 		held_.clear();
 		current_.clear();
@@ -852,7 +890,10 @@ void AppCapture::follow(obs_source_t *parent)
 	};
 
 	int now = index_of(current);
-	if (first && now < 0) {
+	// (Not on the way back from a manual window: what the capture itself is
+	// aimed at is not what is showing then, and taking it for that put its
+	// picture up at a stroke.)
+	if (first && now < 0 && !released) {
 		// What the capture is aimed at already, if that is one of the apps.
 		obs_data_t *settings = obs_source_get_settings(parent);
 		const std::string window = obs_data_get_string(settings, "window");
@@ -1309,6 +1350,34 @@ bool app_capture_hold(obs_source_t *capture, const OpenWindow &window)
 		},
 		&hand);
 	return hand.taken;
+}
+
+uint64_t app_capture_changes(obs_source_t *capture)
+{
+	uint64_t changes = 0;
+	if (!capture)
+		return changes;
+	obs_source_enum_filters(
+		capture,
+		[](obs_source_t *, obs_source_t *filter, void *param) {
+			const char *id = obs_source_get_unversioned_id(filter);
+			if (!id || strcmp(id, kAppCaptureId) != 0)
+				return;
+			if (auto *self = static_cast<AppCapture *>(obs_obj_get_data(filter)))
+				*static_cast<uint64_t *>(param) += self->changes();
+		},
+		&changes);
+	return changes;
+}
+
+bool app_capture_lists(const std::string &executable, const std::string &title)
+{
+	std::lock_guard lock(g_listed_mutex);
+	for (const auto &one : g_listed)
+		for (const std::string &entry : one.second)
+			if (!entry.empty() && (entry == executable || title.find(entry) != std::string::npos))
+				return true;
+	return false;
 }
 
 bool app_capture_holding(obs_source_t *capture)

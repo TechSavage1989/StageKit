@@ -23,7 +23,9 @@ the Free Software Foundation; either version 2 of the License, or
 #include "ambient-background.hpp"
 #include "../common/timing.hpp"
 
+#include "../capture/app-capture.hpp"
 #include "../capture/standby.hpp"
+#include "../common/easing.hpp"
 #include "../common/kawase-blur.hpp"
 #include "../common/scene-util.hpp"
 #include "../common/start-image.hpp"
@@ -103,6 +105,13 @@ struct Settings {
 	double bloom = 0.0;           // how strongly the bright parts shine, 0 = off
 	double bloom_threshold = 0.6; // how bright a part must be to shine
 	double bloom_size = 80.0;     // how far the light spreads, on the blur's scale
+	int bloom_style = 0;          // 0: the bright parts shine; 1: the whole picture is amplified
+	// How the picture gives way when the capture blended in changes.
+	int live_change = 0; // 0 fade, 1 cut, 2..5 the old picture slides away left, right, up, down
+	double live_change_s = 0.6;
+	double live_delay_s = 0.0; // how long the old picture stays first
+	EaseCurve live_curve = EaseCurve::Cubic;
+	EaseMode live_mode_ease = EaseMode::InOut;
 	double saturation = 1.0;
 	double glow = 0.0;
 	double brightness = 1.0;
@@ -181,7 +190,7 @@ private:
 	gs_texture_t *render_child(obs_source_t *child, gs_texrender_t *target, bool picture_only = false);
 	void draw_layer(gs_texture_t *tex, uint32_t w, uint32_t h, double scroll_x, double scroll_y, double zoom,
 			double opacity, const Settings &s, LiveFit fit = LiveFit::Fill, bool clip = false,
-			double focus_x = 0.5, double focus_y = 0.5);
+			double focus_x = 0.5, double focus_y = 0.5, bool as_is = false);
 	void pass(gs_effect_t *effect, gs_eparam_t *image, gs_texrender_t *dst, gs_texture_t *src, uint32_t w,
 		  uint32_t h, const char *technique);
 	gs_texture_t *blur(gs_texture_t *input, uint32_t w, uint32_t h, double strength);
@@ -268,6 +277,15 @@ private:
 
 	gs_texrender_t *tr_base_ = nullptr;
 	gs_texrender_t *tr_live_ = nullptr;
+	// The change from one live picture to another: the scene as it was
+	// shown when the capture changed, kept while the new one comes in.
+	gs_texrender_t *tr_was_ = nullptr;
+	bool was_valid_ = false;
+	const void *live_key_ = nullptr; // the capture last blended in (compared, never used)
+	uint64_t live_changes_ = 0;      // and how often its window had changed
+	bool live_key_set_ = false;
+	int change_phase_ = 0;     // 0 none, 1 the old picture stays, 2 it gives way
+	double change_from_ = 0.0; // when that phase began, on `time_`
 	gs_texrender_t *tr_scene_ = nullptr;
 
 	// Whether the live capture is showing anything, looked at twice a second
@@ -350,8 +368,8 @@ AmbientBackground::AmbientBackground(obs_data_t *settings, obs_source_t *source)
 	bloom_blur_ = std::make_unique<KawaseBlur>();
 	for (gs_texrender_t *&tr : tr_past_)
 		tr = gs_texrender_create(GS_RGBA16F, GS_ZS_NONE);
-	for (gs_texrender_t **tr :
-	     {&tr_base_, &tr_live_, &tr_scene_, &tr_blur_, &tr_pixel_, &tr_final_, &tr_bright_, &tr_bloom_, &tr_taps_})
+	for (gs_texrender_t **tr : {&tr_base_, &tr_live_, &tr_scene_, &tr_blur_, &tr_pixel_, &tr_final_, &tr_bright_,
+				    &tr_bloom_, &tr_taps_, &tr_was_})
 		*tr = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 	for (auto &tr : tr_down_)
 		tr = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
@@ -377,6 +395,7 @@ AmbientBackground::~AmbientBackground()
 	gs_effect_destroy(looks_);
 	gs_texrender_destroy(tr_probe_);
 	gs_stagesurface_destroy(probe_stage_);
+	gs_texrender_destroy(tr_was_);
 	for (gs_texrender_t *tr : {tr_base_, tr_live_, tr_scene_, tr_blur_, tr_pixel_, tr_final_, tr_bright_, tr_bloom_,
 				   tr_taps_, tr_past_[0], tr_past_[1]})
 		gs_texrender_destroy(tr);
@@ -434,7 +453,13 @@ void AmbientBackground::update(obs_data_t *settings)
 	s.pixel_origin_x = obs_data_get_double(settings, "pixel_origin_x") / 100.0;
 	s.pixel_origin_y = obs_data_get_double(settings, "pixel_origin_y") / 100.0;
 	s.pixel_rotation = obs_data_get_double(settings, "pixel_rotation");
-	s.bloom = std::clamp(obs_data_get_double(settings, "bloom") / 100.0, 0.0, 3.0);
+	s.bloom = std::clamp(obs_data_get_double(settings, "bloom") / 100.0, 0.0, 20.0);
+	s.bloom_style = (int)std::clamp<long long>(obs_data_get_int(settings, "bloom_style"), 0, 1);
+	s.live_change = (int)std::clamp<long long>(obs_data_get_int(settings, "live_change"), 0, 5);
+	s.live_change_s = std::clamp<long long>(obs_data_get_int(settings, "live_change_ms"), 0, 10000) / 1000.0;
+	s.live_delay_s = std::clamp<long long>(obs_data_get_int(settings, "live_delay_ms"), 0, 10000) / 1000.0;
+	s.live_curve = static_cast<EaseCurve>(obs_data_get_int(settings, "live_ease_curve"));
+	s.live_mode_ease = static_cast<EaseMode>(obs_data_get_int(settings, "live_ease_mode"));
 	s.bloom_threshold = std::clamp(obs_data_get_double(settings, "bloom_threshold") / 100.0, 0.0, 1.0);
 	s.bloom_size = std::clamp(obs_data_get_double(settings, "bloom_size"), 0.0, 1000.0);
 	s.saturation = std::clamp(obs_data_get_double(settings, "saturation") / 100.0, 0.0, 3.0);
@@ -727,7 +752,7 @@ bool AmbientBackground::live_shows_something(gs_texture_t *live)
 // caller's ortho), scrolled by the given number of output pixels.
 void AmbientBackground::draw_layer(gs_texture_t *tex, uint32_t out_w, uint32_t out_h, double scroll_x, double scroll_y,
 				   double zoom, double opacity, const Settings &s, LiveFit fit, bool clip,
-				   double focus_x, double focus_y)
+				   double focus_x, double focus_y, bool as_is)
 {
 	const double tex_aspect = (double)gs_texture_get_width(tex) / (double)gs_texture_get_height(tex);
 	const double out_aspect = (double)out_w / (double)out_h;
@@ -768,11 +793,13 @@ void AmbientBackground::draw_layer(gs_texture_t *tex, uint32_t out_w, uint32_t o
 	gs_effect_set_texture(p_image_, tex);
 	gs_effect_set_vec2(p_uv_scale_, &scale);
 	gs_effect_set_vec2(p_uv_offset_, &offset);
-	gs_effect_set_float(p_wrap_mirror_, s.mirror ? 1.0f : 0.0f);
+	// (`as_is`: a picture that has been through this already, laid down
+	// again without being coloured a second time.)
+	gs_effect_set_float(p_wrap_mirror_, s.mirror && !as_is ? 1.0f : 0.0f);
 	gs_effect_set_float(p_clip_edges_, clip ? 1.0f : 0.0f);
 	gs_effect_set_float(p_opacity_, (float)opacity);
-	gs_effect_set_float(p_saturation_, (float)s.saturation);
-	gs_effect_set_float(p_gain_, (float)(1.0 + s.glow * 3.0));
+	gs_effect_set_float(p_saturation_, as_is ? 1.0f : (float)s.saturation);
+	gs_effect_set_float(p_gain_, as_is ? 1.0f : (float)(1.0 + s.glow * 3.0));
 	while (gs_effect_loop(effect_, "Layer"))
 		gs_draw_sprite(tex, 0, out_w, out_h);
 }
@@ -930,6 +957,62 @@ void AmbientBackground::render()
 	if (live && s.live_skip_standby && standby_waiting(live_source))
 		live = nullptr;
 
+	// The capture blended in has changed (another capture, none any more,
+	// or an Automatic Window Switcher has taken another window): the
+	// picture as it was stays for the delay asked for and then gives way.
+	// The owner: "the ambient background changes to it instantly. there
+	// should be a configurable delay ... and the transition for that blend
+	// in should include the same transition options that others do".
+	{
+		const void *key = live ? live_source : nullptr;
+		const uint64_t changes = live ? app_capture_changes(live_source) : 0;
+		if (!live_key_set_) {
+			live_key_set_ = true;
+		} else if ((key != live_key_ || changes != live_changes_) && was_valid_ &&
+			   (s.live_delay_s > 0.0 || (s.live_change != 1 && s.live_change_s > 0.0))) {
+			// What was shown last, kept. (During a change already under
+			// way that is the picture part-way, so one runs into the next.)
+			if (gs_texture_t *shown = gs_texrender_get_texture(tr_scene_)) {
+				gs_texrender_reset(tr_was_);
+				if (gs_texrender_begin(tr_was_, iw, ih)) {
+					gs_ortho(0.0f, (float)iw, 0.0f, (float)ih, -100.0f, 100.0f);
+					gs_blend_state_push();
+					gs_blend_function(GS_BLEND_ONE, GS_BLEND_ZERO);
+					draw_layer(shown, iw, ih, 0.0, 0.0, 1.0, 1.0, s, LiveFit::Stretch, false, 0.5,
+						   0.5, true);
+					gs_blend_state_pop();
+					gs_texrender_end(tr_was_);
+					change_phase_ = s.live_delay_s > 0.0 ? 1 : 2;
+					change_from_ = time_;
+				}
+			}
+		}
+		live_key_ = key;
+		live_changes_ = changes;
+	}
+	// How much of the old picture is left, and how far it has slid away.
+	double was_left = 0.0, was_gone = 0.0;
+	if (change_phase_ == 1) {
+		was_left = 1.0;
+		if (time_ - change_from_ >= s.live_delay_s) {
+			// (From when the delay ran out, not from this drawing: a
+			// background that is not drawn every frame keeps time too.)
+			change_phase_ = 2;
+			change_from_ += s.live_delay_s;
+		}
+	}
+	if (change_phase_ == 2) {
+		const double over = s.live_change == 1 ? 0.0 : s.live_change_s;
+		const double way = over > 0.0 ? std::clamp((time_ - change_from_) / over, 0.0, 1.0) : 1.0;
+		was_gone = std::clamp(ease(s.live_curve, s.live_mode_ease, way), 0.0, 1.0);
+		was_left = 1.0 - was_gone;
+		if (way >= 1.0) {
+			change_phase_ = 0;
+			was_left = 0.0;
+		}
+	}
+	gs_texture_t *const was = was_left > 0.0 ? gs_texrender_get_texture(tr_was_) : nullptr;
+
 	gs_texrender_reset(tr_scene_);
 	if (gs_texrender_begin(tr_scene_, iw, ih)) {
 		vec4 black;
@@ -957,8 +1040,22 @@ void AmbientBackground::render()
 			draw_layer(live, iw, ih, 0.0, 0.0, s.live_zoom, whole ? 1.0 : s.live_opacity, s, s.live_fit,
 				   !whole);
 		}
+		if (was) {
+			// The picture from before the change, over the new one: fading,
+			// or sliding off the way chosen.
+			const bool slides = s.live_change >= 2 && change_phase_ == 2;
+			const double dx = s.live_change == 2   ? was_gone * iw
+					  : s.live_change == 3 ? -was_gone * iw
+							       : 0.0;
+			const double dy = s.live_change == 4   ? was_gone * ih
+					  : s.live_change == 5 ? -was_gone * ih
+							       : 0.0;
+			draw_layer(was, iw, ih, slides ? dx : 0.0, slides ? dy : 0.0, 1.0, slides ? 1.0 : was_left, s,
+				   LiveFit::Stretch, slides, 0.5, 0.5, true);
+		}
 		gs_blend_state_pop();
 		gs_texrender_end(tr_scene_);
+		was_valid_ = true;
 	}
 
 	gs_texture_t *const scene = gs_texrender_get_texture(tr_scene_);
@@ -977,15 +1074,20 @@ void AmbientBackground::render()
 	// Bloom: the bright parts of the picture as it was before the blur,
 	// spread out and laid over it as light.
 	if (cur && scene && s.bloom > 0.001 && bloom_blur_ && looks_) {
-		gs_effect_set_float(pl_bloom_threshold_, (float)s.bloom_threshold);
+		// (The other style takes the whole picture's light: a threshold under
+		// nothing lets everything through.)
+		const bool amplify = s.bloom_style == 1;
+		gs_effect_set_float(pl_bloom_threshold_, amplify ? -1.0f : (float)s.bloom_threshold);
 		pass(looks_, pl_image_, tr_bright_, scene, iw, ih, "BloomBright");
 		gs_texture_t *light = gs_texrender_get_texture(tr_bright_);
 		if (light)
 			light = bloom_blur_->blur(light, iw, ih, s.bloom_size * kInternalScale);
 		if (light) {
 			gs_effect_set_texture(pl_image2_, light);
-			gs_effect_set_float(pl_bloom_amount_, (float)s.bloom);
-			pass(looks_, pl_image_, tr_bloom_, cur, iw, ih, "BloomAdd");
+			// (At 100 % the amplifying style adds what the shader it is after
+			// adds at its strength of 1: a little over half the light.)
+			gs_effect_set_float(pl_bloom_amount_, amplify ? (float)(s.bloom * 0.55) : (float)s.bloom);
+			pass(looks_, pl_image_, tr_bloom_, cur, iw, ih, amplify ? "BloomAmplify" : "BloomAdd");
 			if (gs_texture_t *with_light = gs_texrender_get_texture(tr_bloom_))
 				cur = with_light;
 		}
@@ -1105,7 +1207,15 @@ bool visibility_modified(obs_properties_t *props, obs_property_t *, obs_data_t *
 	for (const char *name : {"pixel_size", "pixel_smooth", "pixel_origin_x", "pixel_origin_y", "pixel_rotation"})
 		obs_property_set_visible(obs_properties_get(props, name), pixel != PixelStyle::None);
 	const bool bloom = obs_data_get_double(settings, "bloom") > 0.0;
-	obs_property_set_visible(obs_properties_get(props, "bloom_threshold"), bloom);
+	obs_property_set_visible(obs_properties_get(props, "bloom_style"), bloom);
+	obs_property_set_visible(obs_properties_get(props, "bloom_threshold"),
+				 bloom && obs_data_get_int(settings, "bloom_style") == 0);
+	for (const char *name : {"live_change", "live_delay_ms"})
+		obs_property_set_visible(obs_properties_get(props, name), live != LiveMode::None);
+	const bool live_timed = live != LiveMode::None && obs_data_get_int(settings, "live_change") != 1;
+	for (const char *name : {"live_change_ms", "live_ease_curve", "live_ease_mode"})
+		obs_property_set_visible(obs_properties_get(props, name), live_timed);
+
 	obs_property_set_visible(obs_properties_get(props, "bloom_size"), bloom);
 	obs_property_set_visible(obs_properties_get(props, "overlay_mode"), has_overlay);
 	obs_property_set_visible(obs_properties_get(props, "overlay_strength"), has_overlay);
@@ -1167,6 +1277,26 @@ obs_properties_t *get_properties(void *)
 	obs_property_t *ready = obs_properties_add_bool(picture, "live_ready", obs_module_text("Ambient.LiveReady"));
 	obs_property_set_long_description(ready, obs_module_text("Ambient.LiveReady.Tip"));
 	obs_property_set_long_description(replace, obs_module_text("Ambient.LiveReplace.Tip"));
+	// How the background follows when the capture changes.
+	obs_property_t *live_change = obs_properties_add_list(picture, "live_change",
+							      obs_module_text("Ambient.LiveChange"),
+							      OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+	obs_property_list_add_int(live_change, obs_module_text("Standby.Style.Fade"), 0);
+	obs_property_list_add_int(live_change, obs_module_text("Standby.Style.Cut"), 1);
+	obs_property_list_add_int(live_change, obs_module_text("Standby.Style.SlideLeft"), 2);
+	obs_property_list_add_int(live_change, obs_module_text("Standby.Style.SlideRight"), 3);
+	obs_property_list_add_int(live_change, obs_module_text("Standby.Style.SlideUp"), 4);
+	obs_property_list_add_int(live_change, obs_module_text("Standby.Style.SlideDown"), 5);
+	obs_property_set_long_description(live_change, obs_module_text("Ambient.LiveChange.Tip"));
+	obs_property_set_modified_callback(live_change, visibility_modified);
+	obs_property_t *live_delay = obs_properties_add_int_slider(picture, "live_delay_ms",
+								   obs_module_text("Ambient.LiveDelay"), 0, 5000, 50);
+	obs_property_int_set_suffix(live_delay, " ms");
+	obs_property_set_long_description(live_delay, obs_module_text("Ambient.LiveDelay.Tip"));
+	obs_property_t *live_time =
+		obs_properties_add_int_slider(picture, "live_change_ms", obs_module_text("Change.Time"), 50, 5000, 50);
+	obs_property_int_set_suffix(live_time, " ms");
+	add_easing_properties(picture, "live_");
 	obs_properties_add_group(props, "picture_group", obs_module_text("Ambient.Group.Picture"), OBS_GROUP_NORMAL,
 				 picture);
 
@@ -1225,10 +1355,16 @@ obs_properties_t *get_properties(void *)
 	percent_slider(look, "saturation", "Ambient.Saturation", 0.0, 300.0);
 	percent_slider(look, "glow", "Ambient.Glow", 0.0, 100.0);
 	obs_property_t *bloom =
-		obs_properties_add_float_slider(look, "bloom", obs_module_text("Ambient.Bloom"), 0.0, 300.0, 1.0);
+		obs_properties_add_float_slider(look, "bloom", obs_module_text("Ambient.Bloom"), 0.0, 1000.0, 1.0);
 	obs_property_float_set_suffix(bloom, "%");
 	obs_property_set_long_description(bloom, obs_module_text("Ambient.Bloom.Tip"));
 	obs_property_set_modified_callback(bloom, visibility_modified);
+	obs_property_t *bloom_style = obs_properties_add_list(
+		look, "bloom_style", obs_module_text("Ambient.BloomStyle"), OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+	obs_property_list_add_int(bloom_style, obs_module_text("Ambient.BloomStyle.Shine"), 0);
+	obs_property_list_add_int(bloom_style, obs_module_text("Ambient.BloomStyle.Amplify"), 1);
+	obs_property_set_long_description(bloom_style, obs_module_text("Ambient.BloomStyle.Tip"));
+	obs_property_set_modified_callback(bloom_style, visibility_modified);
 	obs_property_t *bloom_from = obs_properties_add_float_slider(
 		look, "bloom_threshold", obs_module_text("Ambient.BloomThreshold"), 0.0, 100.0, 1.0);
 	obs_property_float_set_suffix(bloom_from, "%");
@@ -1280,6 +1416,12 @@ void get_defaults(obs_data_t *settings)
 	obs_data_set_default_double(settings, "pixel_origin_y", 50.0);
 	obs_data_set_default_double(settings, "pixel_rotation", 0.0);
 	obs_data_set_default_double(settings, "bloom", 0.0);
+	obs_data_set_default_int(settings, "bloom_style", 0);
+	obs_data_set_default_int(settings, "live_change", 0);
+	obs_data_set_default_int(settings, "live_change_ms", 600);
+	obs_data_set_default_int(settings, "live_delay_ms", 0);
+	obs_data_set_default_int(settings, "live_ease_curve", (int)EaseCurve::Cubic);
+	obs_data_set_default_int(settings, "live_ease_mode", (int)EaseMode::InOut);
 	obs_data_set_default_double(settings, "bloom_threshold", 60.0);
 	obs_data_set_default_double(settings, "bloom_size", 80.0);
 	obs_data_set_default_double(settings, "saturation", 100.0);

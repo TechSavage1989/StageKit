@@ -255,6 +255,25 @@ float4 PSBloomAdd(VertData v_in) : TARGET
 	return float4(with_light, 1.0);
 }
 
+// The other bloom: the whole picture's light (`image2`, spread out) added to
+// the picture, as obs-shaderfilter's bloom shader does it. It brightens
+// everything and runs into white.
+float4 PSBloomAmplify(VertData v_in) : TARGET
+{
+	float3 rgb = image.Sample(linearClamp, v_in.uv).rgb;
+	float3 light = image2.Sample(linearClamp, v_in.uv).rgb * bloom_amount;
+	return float4(saturate(rgb + light), 1.0);
+}
+
+technique BloomAmplify
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSBloomAmplify(v_in);
+	}
+}
+
 technique Mosaic
 {
 	pass
