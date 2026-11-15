@@ -532,6 +532,11 @@ capture for each app.
   window (with *Auto-switch manual windows*) or back to automatic, and with nowhere to go it
   shows the Standby Picture, or nothing. A program named in a list still means any of its
   windows.
+- **Picked windows are cleared.** *Clear picked windows on exit* (ticked as it comes): windows
+  picked with *Capture Active Window* last only for this OBS session. *Clear picked windows* (a
+  button, a hotkey under the capture, and the Stream Deck *Manual Window / Source* key's *Clear
+  picked windows*) takes them off the list at any time; a picked window being shown goes back to
+  the automatic windows. Programs you added to the list yourself stay.
 - **The window shown is watched.** When it closes, OBS's Window Capture looks for another window
   of the same program by itself. StageKit does not show that picture: it keeps the last frame of
   the window that closed until it has chosen and aimed at the next one.

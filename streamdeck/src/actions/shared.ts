@@ -27,7 +27,7 @@ export type KeySettings = {
 	shape?: string;
 	keep?: "game" | "always";
 	/** A Window switch key: on to the next capture, or back to following the apps. */
-	step?: "next" | "back" | "hide" | "toggle";
+	step?: "next" | "back" | "hide" | "toggle" | "clear";
 	/** A Dock switch key's switch ("snap", "guides", ...) and a Slide key's way ("up", "down-left", ...). */
 	option?: string;
 	direction?: string;

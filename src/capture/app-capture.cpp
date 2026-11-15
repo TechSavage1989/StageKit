@@ -331,7 +331,26 @@ public:
 	void update(obs_data_t *settings)
 	{
 		const std::vector<std::string> apps = pick_list_read(settings, "apps", false);
-		const std::vector<std::string> by_hand = pick_list_read(settings, "by_hand", false);
+		std::vector<std::string> by_hand = pick_list_read(settings, "by_hand", false);
+		// "Clear picked windows on exit": the windows picked by hand in the
+		// last session are not kept into this one. (Done when the filter is
+		// loaded, which also covers an OBS that did not close cleanly.)
+		if (!loaded_) {
+			loaded_ = true;
+			if (obs_data_get_bool(settings, "clear_picked")) {
+				std::vector<std::string> keep;
+				for (const std::string &entry : by_hand)
+					if (!is_pinned(entry))
+						keep.push_back(entry);
+				if (keep.size() != by_hand.size()) {
+					obs_log(LOG_INFO,
+						"Capture App in Use: %zu window(s) picked last session cleared",
+						by_hand.size() - keep.size());
+					by_hand = keep;
+					pick_list_write(settings, "by_hand", false, by_hand);
+				}
+			}
+		}
 		{
 			std::vector<std::string> all;
 			for (const std::vector<std::string> *list : {&apps, &by_hand})
@@ -371,6 +390,8 @@ public:
 			cmd_back_ = true;
 		else if (what == "hide")
 			cmd_hide_ = true;
+		else if (what == "clear")
+			cmd_clear_ = true;
 		else if (what == "toggle")
 			// Between the app held by hand and following the apps: back
 			// from one that is held, else on to the one held last.
@@ -448,11 +469,12 @@ public:
 		};
 		static const struct {
 			const char *id, *text, *what;
-		} keys[4] = {{"stagekit.active.next.", "Hotkey.AppCapture.Next", "next"},
+		} keys[5] = {{"stagekit.active.next.", "Hotkey.AppCapture.Next", "next"},
 			     {"stagekit.active.back.", "Hotkey.AppCapture.Back", "back"},
 			     {"stagekit.active.hide.", "Hotkey.AppCapture.Hide", "hide"},
-			     {"stagekit.active.toggle.", "Hotkey.AppCapture.Toggle", "toggle"}};
-		for (size_t i = 0; i < 4; i++) {
+			     {"stagekit.active.toggle.", "Hotkey.AppCapture.Toggle", "toggle"},
+			     {"stagekit.active.clear.", "Hotkey.AppCapture.Clear", "clear"}};
+		for (size_t i = 0; i < 5; i++) {
 			struct Pressed {
 				AppCapture *self;
 				const char *what;
@@ -584,9 +606,11 @@ private:
 	std::string last_held_;                  // the app last held by hand: the first to go back to
 	double order_check_ = 10.0;
 	std::vector<Ready> ready_;
-	obs_hotkey_id hotkeys_[4] = {OBS_INVALID_HOTKEY_ID, OBS_INVALID_HOTKEY_ID, OBS_INVALID_HOTKEY_ID,
-				     OBS_INVALID_HOTKEY_ID};
-	std::pair<AppCapture *, const char *> pressed_[4];
+	obs_hotkey_id hotkeys_[5] = {OBS_INVALID_HOTKEY_ID, OBS_INVALID_HOTKEY_ID, OBS_INVALID_HOTKEY_ID,
+				     OBS_INVALID_HOTKEY_ID, OBS_INVALID_HOTKEY_ID};
+	std::pair<AppCapture *, const char *> pressed_[5];
+	bool cmd_clear_ = false; // the windows picked by hand are to be taken off the list
+	bool loaded_ = false;    // the settings have been read once (OBS loading the filter)
 	// The change between two windows.
 	Phase phase_ = Phase::Idle;
 	double phase_s_ = 0.0;
@@ -796,7 +820,7 @@ void AppCapture::keep_first(obs_source_t *parent)
 void AppCapture::follow(obs_source_t *parent)
 {
 	std::vector<std::string> apps, by_hand, recent, was_open, hand_was_open, hand_recent;
-	bool hand_follow;
+	bool hand_follow, clear = false;
 	std::vector<OpenWindow> windows;
 	std::string current, held, last_held;
 	OpenWindow picked;
@@ -823,11 +847,39 @@ void AppCapture::follow(obs_source_t *parent)
 		step = cmd_step_;
 		back = cmd_back_;
 		cmd_step_ = cmd_back_ = false;
+		clear = cmd_clear_;
+		cmd_clear_ = false;
 		if (have_hold_) {
 			picked = hold_window_;
 			have_picked = true;
 			have_hold_ = false;
 		}
+	}
+	// The windows picked by hand taken off the list (the button, its hotkey,
+	// a Stream Deck key). One that is being shown is let go of: back to the
+	// automatic windows. Programs put on the list by name stay.
+	if (clear) {
+		std::vector<std::string> keep;
+		for (const std::string &entry : by_hand)
+			if (!is_pinned(entry))
+				keep.push_back(entry);
+		if (keep.size() != by_hand.size()) {
+			by_hand = keep;
+			obs_data_t *settings = obs_source_get_settings(source_);
+			pick_list_write(settings, "by_hand", false, by_hand);
+			obs_data_release(settings);
+		}
+		if (is_pinned(held))
+			back = true;
+		if (is_pinned(last_held))
+			last_held.clear();
+		std::lock_guard lock(mutex_);
+		by_hand_ = by_hand;
+		pins_.clear();
+		if (is_pinned(last_held_))
+			last_held_.clear();
+		obs_log(LOG_INFO, "Capture App in Use: '%s': the windows picked by hand were cleared",
+			obs_source_get_name(parent));
 	}
 	if (have_picked && !picked.executable.empty()) {
 		// That window goes on the list of manual windows: the window
@@ -1543,6 +1595,30 @@ obs_properties_t *get_properties(void *data)
 			return false;
 		},
 		self);
+	obs_property_t *clear_now = obs_properties_add_button2(
+		props, "by_hand_clear", obs_module_text("AppCapture.ByHand.Clear"),
+		[](obs_properties_t *p, obs_property_t *, void *data) {
+			if (!data)
+				return false;
+			auto *self = static_cast<AppCapture *>(data);
+			self->command("clear");
+			// The list shown here at once (the filter takes them off on its
+			// next look as well).
+			obs_data_t *settings = obs_source_get_settings(self->source());
+			std::vector<std::string> keep;
+			for (const std::string &entry : pick_list_read(settings, "by_hand", false))
+				if (!is_pinned(entry))
+					keep.push_back(entry);
+			pick_list_write(settings, "by_hand", false, keep);
+			obs_data_release(settings);
+			pick_list_refresh(p, self->source(), "by_hand", false);
+			return true;
+		},
+		self);
+	obs_property_set_long_description(clear_now, obs_module_text("AppCapture.ByHand.Clear.Tip"));
+	obs_property_t *clear_on_start =
+		obs_properties_add_bool(props, "clear_picked", obs_module_text("AppCapture.ClearPicked"));
+	obs_property_set_long_description(clear_on_start, obs_module_text("AppCapture.ClearPicked.Tip"));
 
 	obs_property_t *follow = obs_properties_add_bool(props, "follow", obs_module_text("AppCapture.Follow"));
 	obs_property_set_long_description(follow, obs_module_text("AppCapture.Follow.Tip"));
@@ -1604,6 +1680,7 @@ void get_defaults(obs_data_t *settings)
 	obs_data_set_default_bool(settings, "ready", true);
 	obs_data_set_default_int(settings, "picked", 0);
 	obs_data_set_default_bool(settings, "hand_follow", true);
+	obs_data_set_default_bool(settings, "clear_picked", true);
 	obs_data_set_default_bool(settings, "hide_standby", true);
 	item_transition_defaults(settings);
 	obs_data_set_default_int(settings, "change", (int)Style::Fade);

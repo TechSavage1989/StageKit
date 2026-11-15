@@ -87,6 +87,7 @@ DRAWINGS = {
     # Manual window / source
     "toggle": arrow(14, 12, 50, 12) + arrow(50, 24, 14, 24),
     "hide": EYE + [("line", 16, 32, 48, 4)],
+    "clear": WINDOW + [("line", 40, 12, 56, 28), ("line", 56, 12, 40, 28)],
     # Filters with no picture in the pack (each also in an "off" look)
     "zoom": [("ring", 27, 16, 11), ("line", 35, 24, 46, 33), ("line", 22, 16, 32, 16), ("line", 27, 11, 27, 21)],
     "fit": [("frame", 6, 3, 58, 33), ("box", 20, 9, 44, 27)],

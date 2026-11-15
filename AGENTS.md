@@ -773,6 +773,9 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     shown (`guard_cover_`). Program entries are still aimed by executable: aimed by title, a
     window whose title changes all the time (an emulator's frame rate) would never be found.
     Windows side not run here: the tests give stand-in windows ids.
+    Picked windows are cleared (`clear` command, hotkey `stagekit.active.clear.` + name, the
+    Stream Deck step `clear`; `clear_picked`, on as it comes, drops them when the filter is
+    first loaded, `loaded_`): the owner did not want them "retained in the next session".
   - *Auto-switch manual windows* (`hand_follow`, on as it comes): while one is held, the same
     rules as automatic mode among `by_hand` only (clicked into, just opened via
     `hand_was_open_`, the one before via `hand_recent_` when the held one closes); without it a

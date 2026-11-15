@@ -120,3 +120,10 @@ test("the Fit to Space Overlap key has a picture of its own and says which way i
 	assert.equal(overlapTitle("toggle"), "Overlap\nIf Fills");
 	assert.equal(overlapTitle("off"), "Overlap\nIf Fills\nOff");
 });
+
+test("the Manual Window / Source key's Clear picked windows has its own picture and title", async () => {
+	const { stepPicture } = await import("../src/pictures.ts");
+	const { stepTitle } = await import("../src/titles.ts");
+	assert.equal(stepPicture(undefined, "clear").id, "options/clear");
+	assert.equal(stepTitle("clear"), "Clear\nPicked");
+});

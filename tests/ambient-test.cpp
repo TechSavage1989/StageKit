@@ -5118,6 +5118,85 @@ int main(int argc, char **argv)
 				}
 				obs_data_set_int(ps, "picked", 0);
 				obs_source_update(one, ps);
+				// Picked windows cleared by hand (the button, its hotkey, a
+				// Stream Deck key): a picked window being shown is let go of,
+				// and programs put on the list by name stay.
+				{
+					obs_data_set_int(ps, "picked", 1);
+					obs_source_update(one, ps);
+					windows("Stream profile|browser2.exe|front|21\nSculpt 2026|ZSculpt.exe||5");
+					draw_for(300);
+					calldata_t cd2 = {};
+					calldata_set_string(&cd2, "title", "Stream profile");
+					calldata_set_string(&cd2, "executable", "browser2.exe");
+					calldata_set_int(&cd2, "id", 21);
+					proc_handler_call(obs_source_get_proc_handler(one), "hold", &cd2);
+					calldata_free(&cd2);
+					draw_for(400);
+					std::string t;
+					const std::string held_it = aimed(t, priority);
+					obs_properties_t *cp = obs_source_properties(one);
+					const int with_picked = list_rows(cp, "by_hand|a");
+					obs_properties_destroy(cp);
+					command("clear");
+					draw_for(400);
+					cp = obs_source_properties(one);
+					const int cleared = list_rows(cp, "by_hand|a");
+					obs_properties_destroy(cp);
+					obs_data_t *now = obs_source_get_settings(one);
+					bool any_picked = false;
+					obs_data_array_t *list = obs_data_get_array(now, "by_hand");
+					for (size_t i = 0; i < obs_data_array_count(list); i++) {
+						obs_data_t *e = obs_data_array_item(list, i);
+						any_picked = any_picked ||
+							     strstr(obs_data_get_string(e, "value"), " \xE2\x80\x94 ");
+						obs_data_release(e);
+					}
+					obs_data_array_release(list);
+					obs_data_release(now);
+					CHECK(held_it == "browser2.exe" && with_picked > cleared && cleared >= 1 &&
+						      !any_picked && aimed(t, priority) == "ZSculpt.exe",
+					      "clearing the picked windows takes them off the list, keeps the programs named there, and goes back to the automatic windows (%s; %d then %d on the list; then %s)",
+					      held_it.c_str(), with_picked, cleared, aimed(t, priority).c_str());
+					// And "Clear picked windows on exit": a filter loaded with
+					// picked windows on its list starts without them.
+					obs_data_t *saved = obs_data_create();
+					obs_data_array_t *arr = obs_data_array_create();
+					for (const char *v :
+					     {"browser.exe", "browser2.exe \xE2\x80\x94 Stream profile"}) {
+						obs_data_t *e = obs_data_create();
+						obs_data_set_string(e, "value", v);
+						obs_data_array_push_back(arr, e);
+						obs_data_release(e);
+					}
+					obs_data_set_array(saved, "by_hand", arr);
+					obs_data_array_release(arr);
+					obs_source_t *fresh = obs_source_create("stagekit_app_capture",
+										"Loaded Switcher", saved, nullptr);
+					obs_data_t *loaded = obs_source_get_settings(fresh);
+					obs_data_array_t *after = obs_data_get_array(loaded, "by_hand");
+					const size_t left = obs_data_array_count(after);
+					obs_data_array_release(after);
+					obs_data_release(loaded);
+					obs_data_set_bool(saved, "clear_picked", false);
+					obs_source_t *kept = obs_source_create("stagekit_app_capture", "Kept Switcher",
+									       saved, nullptr);
+					obs_data_t *kept_s = obs_source_get_settings(kept);
+					obs_data_array_t *kept_a = obs_data_get_array(kept_s, "by_hand");
+					const size_t kept_n = obs_data_array_count(kept_a);
+					obs_data_array_release(kept_a);
+					obs_data_release(kept_s);
+					CHECK(left == 1 && kept_n == 2,
+					      "loaded again, the picked windows are gone, unless 'Clear picked windows on exit' is unticked (%zu left; %zu kept)",
+					      left, kept_n);
+					obs_source_release(fresh);
+					obs_source_release(kept);
+					obs_data_release(saved);
+					obs_data_set_int(ps, "picked", 0);
+					obs_source_update(one, ps);
+					command("back");
+					draw_for(600);
+				}
 				obs_data_set_int(ps, "picked", 0);
 				obs_source_update(one, ps);
 				obs_data_release(ps);
