@@ -5179,9 +5179,22 @@ int main(int argc, char **argv)
 					const size_t left = obs_data_array_count(after);
 					obs_data_array_release(after);
 					obs_data_release(loaded);
-					obs_data_set_bool(saved, "clear_picked", false);
+					// (Settings of its own: the first filter took the picked window out of those.)
+					obs_data_t *saved2 = obs_data_create();
+					obs_data_array_t *arr2 = obs_data_array_create();
+					for (const char *v :
+					     {"browser.exe", "browser2.exe \xE2\x80\x94 Stream profile"}) {
+						obs_data_t *e = obs_data_create();
+						obs_data_set_string(e, "value", v);
+						obs_data_array_push_back(arr2, e);
+						obs_data_release(e);
+					}
+					obs_data_set_array(saved2, "by_hand", arr2);
+					obs_data_array_release(arr2);
+					obs_data_set_bool(saved2, "clear_picked", false);
 					obs_source_t *kept = obs_source_create("stagekit_app_capture", "Kept Switcher",
-									       saved, nullptr);
+									       saved2, nullptr);
+					obs_data_release(saved2);
 					obs_data_t *kept_s = obs_source_get_settings(kept);
 					obs_data_array_t *kept_a = obs_data_get_array(kept_s, "by_hand");
 					const size_t kept_n = obs_data_array_count(kept_a);
@@ -5270,7 +5283,7 @@ int main(int argc, char **argv)
 			}
 
 			obs_properties_t *props = obs_source_properties(one);
-			CHECK(list_rows(props, "apps|a") == 3 && list_rows(props, "by_hand|a") == 3 &&
+			CHECK(list_rows(props, "apps|a") == 3 && list_rows(props, "by_hand|a") == 1 &&
 				      obs_properties_get(props, "follow") && obs_properties_get(props, "ready") &&
 				      obs_properties_get(props, "picked") && obs_properties_get(props, "change") &&
 				      obs_properties_get(props, "ease_curve") &&
