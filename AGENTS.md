@@ -809,6 +809,11 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   drawing in it), listing them in `src/pack.json`. `src/titles.ts` is what each key calls itself
   (`setTitle` in every action's `show`); a title typed in Stream Deck wins. A new option gets a
   drawing in `DRAWINGS`, a line in `src/pictures.ts` and a title, or it shows the plain key.
+  Each key offered also has its own small icon in Stream Deck's list of actions
+  (`tools/make-action-icons.py`, `ICONS`, white lines, 20 and 40 px, into
+  `imgs/actions/<key>/icon`); the owner, of a list where all keys showed one of two drawings:
+  "I'd like all of the stream deck buttons to get specific icons". A new key gets a drawing there;
+  `tests/features.test.ts` fails if two keys share one.
 - **The Stream Deck plugin has never run in Stream Deck from here.** This session has no Stream Deck
   and cannot reach docs.elgato.com; it was written from the SDK's npm packages (`@elgato/streamdeck`,
   the project template in `@elgato/cli`) and their type definitions. Proven here: it type-checks,

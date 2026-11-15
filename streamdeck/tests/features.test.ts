@@ -20,6 +20,18 @@ test("every feature has its own key in the manifest, with a settings page and pi
 	}
 });
 
+test("every key offered has an icon of its own in Stream Deck's list, at both sizes", () => {
+	const offered = manifest.Actions.filter((a: { VisibleInActionsList?: boolean }) => a.VisibleInActionsList !== false);
+	const icons = offered.map((a: { Icon: string }) => a.Icon);
+	assert.equal(new Set(icons).size, icons.length, "two keys share an icon");
+	const drawings = new Set<string>();
+	for (const icon of icons) {
+		for (const size of ["", "@2x"]) assert.ok(existsSync(new URL(`${icon}${size}.png`, plugin)), `${icon}${size}`);
+		drawings.add(readFileSync(new URL(`${icon}@2x.png`, plugin)).toString("base64"));
+	}
+	assert.equal(drawings.size, icons.length, "two keys have the same drawing");
+});
+
 test("the two catch-all keys are no longer offered, and the keys made with them are still known", () => {
 	const hidden = manifest.Actions.filter((a: { VisibleInActionsList?: boolean }) => a.VisibleInActionsList === false);
 	assert.deepEqual(hidden.map((a: { UUID: string }) => a.UUID).sort(), [`${base}.move`, `${base}.switch`]);
