@@ -38,6 +38,20 @@ uint64_t app_capture_changes(obs_source_t *capture);
 // alone: they are windows to capture as windows, not games to hook.
 bool app_capture_lists(const std::string &executable, const std::string &title);
 
+// A change from one window's picture to another's, while it runs: the size
+// the capture reports now, the size it is on its way to, how long the change
+// takes in all and how far along it is (0 to 1), and its easing. `id` counts
+// the changes. For Fit to Space, which takes the new picture's space with the
+// change instead of after it.
+struct AppCaptureChange {
+	uint64_t id = 0;
+	double now_w = 0.0, now_h = 0.0, to_w = 0.0, to_h = 0.0;
+	double total_s = 0.0, done = 0.0;
+	int curve = 0, mode = 0;
+};
+// False when no Automatic Window Switcher on the source is changing over.
+bool app_capture_change(obs_source_t *capture, AppCaptureChange &change);
+
 struct OpenWindow;
 // Hands a window picked by hand to an enabled Capture App in Use on this
 // capture: it changes over to it in its own way, holds it, and remembers its

@@ -5263,6 +5263,102 @@ int main(int argc, char **argv)
 				      morph_w, obs_source_get_width(cap));
 			}
 
+			// Fit to Space goes with the change: the space for the new window's
+			// shape is taken while the switcher changes over, by its time,
+			// not after it. The owner: "the window switches, but then it's
+			// like the auto fit has to catch up".
+			{
+				obs_source_t *fcam = obs_source_create("color_source", "Switch Cam", nullptr, nullptr);
+				{
+					obs_data_t *cs = obs_source_get_settings(fcam);
+					obs_data_set_int(cs, "width", 120);
+					obs_data_set_int(cs, "height", 120);
+					obs_source_update(fcam, cs);
+					obs_data_release(cs);
+				}
+				obs_scene_t *fs = obs_scene_create("Fit Switch Scene"); // 640x360
+				obs_sceneitem_t *fi = obs_scene_add(fs, cap);
+				obs_sceneitem_t *ci = obs_scene_add(fs, fcam);
+				vec2 at2;
+				vec2_set(&at2, 500.0f, 220.0f);
+				obs_sceneitem_set_pos(ci, &at2);
+				vec2_set(&at2, 100.0f, 100.0f);
+				obs_sceneitem_set_pos(fi, &at2);
+				obs_data_t *fd2 = obs_data_create();
+				obs_data_set_string(fd2, "item", obs_source_get_name(cap));
+				obs_data_set_int(fd2, "box", 2);
+				obs_data_set_double(fd2, "margin", 0);
+				// (Its own glide is far slower than the switcher's 600 ms:
+				// the two cannot be mistaken for each other.)
+				obs_data_set_int(fd2, "glide_ms", 3000);
+				obs_data_set_bool(fd2, "skip_fill_on", true);
+				obs_data_set_double(fd2, "skip_fill", 90.0);
+				obs_data_array_t *skip = obs_data_array_create();
+				obs_data_t *entry = obs_data_create();
+				obs_data_set_string(entry, "value", "Switch Cam");
+				obs_data_array_push_back(skip, entry);
+				obs_data_release(entry);
+				obs_data_set_array(fd2, "skip", skip);
+				obs_data_array_release(skip);
+				obs_source_t *ffit =
+					obs_source_create("stagekit_fit_item", "Fit With Switch", fd2, nullptr);
+				obs_data_release(fd2);
+				obs_source_filter_add(obs_scene_get_source(fs), ffit);
+				obs_source_t *was_out = obs_get_output_source(0);
+				obs_set_output_source(0, obs_scene_get_source(fs));
+				auto shown_for = [&](int ms) {
+					for (int i = 0; i < ms / 50; i++) {
+						render(obs_scene_get_source(fs), 640, 360);
+						sleep_ms(50);
+					}
+				};
+				auto bounds_w = [&]() {
+					vec2 b;
+					obs_sceneitem_get_bounds(fi, &b);
+					return (double)b.x;
+				};
+				// A square window: beside the camera, since it would fill
+				// little of the screen.
+				shown_for(4500);
+				const double square_w = bounds_w();
+				// On to a 16:9 window, which fills the screen: over the camera.
+				windows("Docs|browser.exe|\nModel scene|modeller.exe|\nSculpt 2026|ZSculpt.exe|front");
+				shown_for(150);
+				coloured(cap, 0xFFFF0000LL, 320, 180);
+				double mid_w = 0.0, at_end_w = 0.0;
+				bool ended = false;
+				for (int i = 0; i < 60 && !ended; i++) {
+					shown_for(50);
+					const uint32_t cw = obs_source_get_width(cap), ch = obs_source_get_height(cap);
+					const double bw = bounds_w();
+					if (cw > 110 && cw < 300 && bw > square_w + 8.0 && bw < 632.0)
+						mid_w = bw; // both on their way
+					if (cw == 320 && ch == 180) {
+						// The switcher has arrived: so has the fit, or nearly
+						// (one look of the fit, a twentieth of a second).
+						shown_for(150);
+						at_end_w = bounds_w();
+						ended = true;
+					}
+				}
+				CHECK(square_w > 100.0 && square_w < 600.0 && mid_w > 0.0 && ended && at_end_w > 630.0,
+				      "Fit to Space takes the new window's space with the switcher's change, not after it (%.0f wide for the square window; %.0f part-way; %.0f when the switcher had arrived)",
+				      square_w, mid_w, at_end_w);
+				obs_set_output_source(0, was_out);
+				obs_source_release(was_out);
+				obs_source_filter_remove(obs_scene_get_source(fs), ffit);
+				obs_source_release(ffit);
+				obs_sceneitem_remove(fi);
+				obs_sceneitem_remove(ci);
+				obs_scene_release(fs);
+				obs_source_release(fcam);
+				// (As the checks after this one found it.)
+				windows("Docs|browser.exe|\nModel scene|modeller.exe|front\nSculpt 2026|ZSculpt.exe|");
+				draw_for(150);
+				coloured(cap, 0xFF00FF00LL, 100, 100);
+				draw_for(1700);
+			}
+
 			// Hidden and shown altogether, wherever it is.
 			{
 				obs_scene_t *hs = obs_scene_create("Capture Hide Scene");

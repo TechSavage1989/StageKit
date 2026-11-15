@@ -826,6 +826,15 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   the picture's shape, never from where it is now, or the choice would flip once it had moved.
   The owner: a camera overlapping a window capture, but beside it when the window "doesn't fit
   the whole screen".
+- **Fit to Space goes with a window switcher's change** (`app_capture_change`, `AppCaptureChange`;
+  `with_switch`, `synced_`, `sync_s_` in `free_box`): while the switcher brings a new window's
+  picture in (`Phase::Mix`) it says the size it is going to, how far along it is and its easing;
+  the fit takes that shape at once (scaled by the same ratio, so a shadow after the switcher is
+  carried along) and glides to its space over the switcher's remaining time and easing, not its
+  own. Left to notice the shape, it waited half a second after the shape stopped changing and
+  then set off on its own glide. The owner: "the window switches, but then it's like the auto
+  fit has to catch up". Only the free space depends on the shape; the other two fit areas are
+  fitted by OBS every frame and never lagged.
 - **A Standby Picture can be shown over a running capture** (`cover_`, the `cover` proc,
   `standby_cover_toggle`, hotkey `stagekit.standby.cover.` + filter name). The Automatic Window
   Switcher's hide does that when the capture has an enabled Standby Picture (`hide_standby`, on

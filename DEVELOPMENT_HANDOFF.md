@@ -211,6 +211,12 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Fit to Space goes with the window switcher's change (0.1.0-beta128)
+
+The owner: the fit of the window capture should "line up with and coordinate with the auto switch
+transition ... right now the window switches, but then it's like the auto fit has to catch up".
+See AGENTS.md. Tested with stand-in windows; not seen on the owner's machine yet.
+
 ## Switch Scene key, device pictures, editable SVGs (0.1.0-beta127)
 
 The owner asked for a Stream Deck key "for scene switching", icons "for things like generic capture

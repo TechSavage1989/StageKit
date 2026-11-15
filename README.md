@@ -359,6 +359,9 @@ nearest.
   free space around that place instead.
 - A background or a frame is not in the way: anything the item's place lies inside is ignored.
 - It only works while its scene is being shown, so scenes you are not on cost nothing.
+- When the fitted source is a Window Capture with an **Automatic Window Switcher**, the fit goes with
+  the switch: as the switcher changes to a window of another shape, the space for that shape is
+  taken over the switcher's own *Duration* and easing, so the picture and its place arrive together.
 - **Ignored sources**: sources the free space ignores, such as a camera meant to overlap the
   game.
 - **Overlap only when it fills** (unticked as it comes) with **Fill needed to overlap**: the ignored
