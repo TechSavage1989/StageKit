@@ -101,6 +101,8 @@ target_sources(
     src/dock/stagekit-dock.hpp
     src/placement/scene-tools.cpp
     src/placement/scene-tools.hpp
+    src/capture/app-capture.cpp
+    src/capture/app-capture.hpp
     src/transition/morph.cpp
     src/transition/morph.hpp
     src/transition/morph-paint.cpp

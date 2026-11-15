@@ -39,6 +39,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "dock/arrange-tools.hpp"
 #include "shadow/shadow-backdrop.hpp"
 #include "shape/corners.hpp"
+#include "capture/app-capture.hpp"
 #include "transition/fade-zoom.hpp"
 #include "transition/item-morph.hpp"
 #include "transition/morph.hpp"
@@ -115,6 +116,7 @@ bool obs_module_load(void)
 	stagekit::register_updater_test_hooks();
 	stagekit::register_program_trigger();
 	stagekit::register_active_app();
+	stagekit::register_app_capture();
 	stagekit::register_auto_frame();
 	stagekit::register_show_hide();
 	stagekit::register_visibility_link();

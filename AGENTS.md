@@ -12,7 +12,8 @@ every TechSavage1989 app repository. Change that file only to change the standar
 The owner asked for names "to make more sense" and approved a table (2026-11-14, beta87). What a
 user sees changed; ids, settings, folders and code names did not. Old name, then the name shown:
 Ramp Blur: Blur. Ramp Zoom: Zoom. Send To: Move Source. Place Item: Move Scene Item. Layout: Apply
-Layout. Fit Item: Fit to Space. Active App: Follow Active App. Visibility Link: Link Visibility.
+Layout. Fit Item: Fit to Space. Active App: Show Source in Use (first Follow Active App; the owner on
+2026-11-15: "should probably be called show source in use, or similar"). Visibility Link: Link Visibility.
 Picture Shape key: Aspect Ratio Preset. Stream Deck keys: Picture shape: Set Aspect Ratio. Hook
 capture: Capture Front Window. Window switch: Next Manual Capture. Dock switch: Dock Option. Slide
 to next edge: Slide to Edge. Blur everything: Blur All. A key's press is *On press*: *Toggle*,
@@ -42,7 +43,7 @@ notice and the confirmation are what there is. This is recorded in the handoff.
 | `src/dock/` | Two docks (Qt widgets, no `Q_OBJECT`): StageKit follows the item selected in OBS and drives Move Source filters on that item's source; StageKit Background holds the start image thumbnail. `arrange-tools.*` is the one set of line-up actions and options behind the dock, the hotkeys and the preview's right-click menu |
 | `src/common/` | Shared helpers: `timing` (registers every kind and logs what is slow), easing and `Tween`, `SwitchRamp`, `KawaseBlur`, scene utilities, `item-transition` (the *Change with* control for filters that show and hide items), and the start image (global path + Start Image source) |
 | `src/frame/` | Auto Frame filter and the Aspect Ratio Preset filter |
-| `src/capture/` | Auto Capture filter (aims a Game Capture at the game in front), Program Trigger filter (shows items and switches filters while a program is open) and Follow Active App scene filter (shows the one of several captures whose app is in use). All use the Win32 window list in `auto-capture.cpp`; compiled but idle elsewhere. Also Standby Picture (`standby.*`), a filter that shows a picture in a capture's place while it has nothing; it works everywhere |
+| `src/capture/` | Auto Capture filter (aims a Game Capture at the game in front), Program Trigger filter (shows items and switches filters while a program is open) and Show Source in Use scene filter (shows the one of several captures whose app is in use). Capture App in Use (`app-capture.*`), a filter on one Window Capture that aims it at whichever of several listed apps is in use. All use the Win32 window list in `auto-capture.cpp`; compiled but idle elsewhere. Also Standby Picture (`standby.*`), a filter that shows a picture in a capture's place while it has nothing; it works everywhere |
 | `src/api/` | obs-websocket vendor requests (`StageKit` vendor) |
 | `src/transition/` | Morph, a scene transition: items showing the same source in both scenes glide from one place to the other, the rest cross-fades (`morph.*`); the same between two items of one scene, one hidden as the other is shown (`item-morph.*`); Fade and Zoom, a transition for scenes and single items (`fade-zoom.*`); what the three draw with (`morph-paint.*`) |
 | `src/update/` | The updater: reads the releases from GitHub, tells the dock about a newer one, and on Windows installs it through a PowerShell helper that outlives OBS |
@@ -134,7 +135,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   applications i have are the same exe name but they are different versions and need different
   rules". Auto Frame's saved shapes are looked for in the file name and the title, and the longest
   name that fits wins (`said`); its *Program or window* list offers the open windows' titles.
-  Follow Active App gives each of several captures of one program the window whose title starts
+  Show Source in Use gives each of several captures of one program the window whose title starts
   most like the title the capture was aimed at (`is_for`). Auto Capture's two lists match the title
   too. Program Trigger had a title box already. What Auto Frame *learns* by itself is still kept by
   file name only; a saved shape for the title is how the two are told apart.
@@ -281,13 +282,13 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   and reaching a grouped item that way moved it a second time as if the group were the screen.
 - **Dock keys are Move Source filters on the item's source**, not Move Scene Item filters on the scene. The
   owner presses them from Stream Deck Filter keys on the camera.
-- **Follow Active App follows the app in use, and nothing else.** The owner's old macros ran while a listed
+- **Show Source in Use follows the app in use, and nothing else.** The owner's old macros ran while a listed
   program had the focus: the capture follows from one listed app to another, stays on the last one
   while anything else is in front, and goes back to an earlier capture when an app closes. It acts on
   events (an app opens, closes or is clicked into), never continuously, so a capture shown by hand is
   kept. The change is OBS's own show and hide transition on each item, which the filter sets; do not
   build a second fade.
-- **Follow Active App's captures switched to by hand** (`by_hand`) are how the owner holds a window that is
+- **Show Source in Use's captures switched to by hand** (`by_hand`) are how the owner holds a window that is
   not one of the automatic apps: showing one (any way OBS shows an item: a Stream Deck source key, the
   item's own hotkeys, the eye) hides the automatic captures and stops the following until it is
   hidden. No new key type was added on purpose; the two hotkeys on the scene are extras. Before this
@@ -328,7 +329,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   feature/effect that would do a transition or transform should have those ... be customizable, and
   not only offer fade. fade should be the default". A filter that shows and hides scene items offers
   *Change with* and *Lasting* through `src/common/item-transition.*` (any OBS transition, a cut, or
-  keep; default fade, 300 ms): Follow Active App, Show in Scenes, Program Trigger, Link Visibility. A filter
+  keep; default fade, 300 ms): Show Source in Use, Show in Scenes, Program Trigger, Link Visibility. A filter
   that animates its own drawing offers a style list, its timings and `add_easing_properties`. Do not
   ship a fixed fade or a fixed curve in anything new.
 - **Show in Scenes has the fuller *Change with*** (`add_item_change_properties`, `ItemChange` in
@@ -345,7 +346,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   or down for each item when it is applied, `off_nearest_edge`; a swipe is also told whether it
   is coming in): the owner asked for it by Morph's name for the same thing. OBS's item
   transitions move the picture inside the item's own frame, not across the screen; the owner was
-  told so, and that Show/Hide Animation is the one that travels. Follow Active App, Program Trigger and
+  told so, and that Show/Hide Animation is the one that travels. Show Source in Use, Program Trigger and
   Link Visibility still have the plain two controls; give them this one when it is asked for,
   not a third kind.
 - **Move Source moves the source in every scene it is in, by default** (`apply_in`). The owner asked for
@@ -660,6 +661,30 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   showing the capture are hidden with it, the capture is aimed while out of sight, and they are
   shown again, on a thread that holds what it uses and is joined at unload. The owner asked for
   "configurable transition options" on the hook key.
+- **Capture App in Use is Show Source in Use with one capture** (`src/capture/app-capture.cpp`,
+  id `stagekit_app_capture`). The owner: "I'd like to have a single Window capture, and a new
+  filter added that can have multiple apps associated with the Window capture and effectively
+  emulate my current process and visibility functionality ... but with only a single window
+  capture source." Keep its rules the same as the scene filter's: an app that opens is taken,
+  the app clicked into is taken with *Follow the app in use*, anything else in front changes
+  nothing, and the one used before comes back when the captured app closes. It acts on those
+  events only. What is its own:
+  - One capture cannot show two windows, so the filter draws the change: it copies the capture's
+    picture every frame (`last_`), keeps it while the capture has none (`Phase::Wait` after
+    aiming, `Phase::Lost` when the picture goes without warning) and brings the new one in over
+    it (`Phase::Mix`), in the style chosen. It reports the kept size meanwhile. A capture goes on
+    showing its old window for a moment after being aimed: the new picture is believed once the
+    capture has been seen empty, or after `kSettle`.
+  - Standby Picture goes by the capture's own size, so it is told (`app_capture_holding`), or it
+    would stand in for that moment. A new filter that stands in for a capture must ask too.
+  - It belongs first in the filter list and moves itself there once (`placed`).
+  - Entries are a program's file name or part of a window's title (`answers`); a title entry aims
+    the capture by title (`priority` 1), a program entry by executable.
+  - The Capture Front Window key switches it off, as it does an Auto Capture; switching it on
+    hands the capture back (it takes the app in front or the last one used).
+  - None of the Windows side has run in the tests: they feed it stand-in windows
+    (`set_test_windows`) and a colour source for the capture. How a real Window Capture behaves
+    while it is re-aimed (how long it is empty, whether it flashes the old window) is unknown here.
 - **Auto Capture keeps its capture shown** (`keep_ready`, on by default, `obs_source_inc_showing` on
   the capture). OBS stops a Game Capture about 0.3 s after the last scene showing it is left and
   hooks it again on the way back; the owner's log showed that at every scene switch.
