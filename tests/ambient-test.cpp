@@ -4566,6 +4566,15 @@ int main(int argc, char **argv)
 			}
 			obs_data_set_array(fd, "apps", apps);
 			obs_data_array_release(apps);
+			obs_data_array_t *hand = obs_data_array_create();
+			obs_data_t *hand_entry = obs_data_create();
+			obs_data_set_string(hand_entry, "value", "browser.exe");
+			obs_data_array_push_back(hand, hand_entry);
+			obs_data_release(hand_entry);
+			obs_data_set_array(fd, "by_hand", hand);
+			obs_data_array_release(hand);
+			// (First without the other apps kept ready: the capture alone.)
+			obs_data_set_bool(fd, "ready", false);
 			obs_data_set_int(fd, "change_ms", 600);
 			obs_data_set_int(fd, "ease_curve", 0); // linear
 			obs_source_t *one =
@@ -4676,9 +4685,97 @@ int main(int argc, char **argv)
 			      "switched off it leaves the capture where it is, and switched on again it takes the app in front (%s, then %s)",
 			      while_off.c_str(), aimed(title, priority).c_str());
 
+			auto command = [&](const char *what) {
+				calldata_t cd = {};
+				calldata_set_string(&cd, "what", what);
+				proc_handler_call(obs_source_get_proc_handler(one), "command", &cd);
+				calldata_free(&cd);
+			};
+			// An app switched to by hand: it is held whatever app is used,
+			// until the next press lets it go. The owner: "manually switch
+			// to and from a specific app, like a browser page".
+			windows("Docs|browser.exe|\nModel scene|modeller.exe|front\nSculpt 2026|ZSculpt.exe|");
+			draw_for(300);
+			command("next");
+			draw_for(300);
+			const std::string by_hand = aimed(title, priority);
+			windows("Docs|browser.exe|\nModel scene|modeller.exe|\nSculpt 2026|ZSculpt.exe|front");
+			draw_for(400);
+			const std::string still_held = aimed(title, priority);
+			command("next");
+			draw_for(400);
+			CHECK(by_hand == "browser.exe" && still_held == "browser.exe" &&
+				      aimed(title, priority) == "ZSculpt.exe",
+			      "an app switched to by hand is held while other apps are clicked into, and after the last of them the apps are followed again (%s, %s, then %s)",
+			      by_hand.c_str(), still_held.c_str(), aimed(title, priority).c_str());
+			draw_for(1500);
+
+			// Morph: the frame's size is on the way from the one window's to
+			// the other's while the picture changes.
+			{
+				obs_data_t *ms = obs_source_get_settings(one);
+				obs_data_set_int(ms, "change", 7);
+				obs_source_update(one, ms);
+				obs_data_release(ms);
+				draw_for(400);
+				windows("Docs|browser.exe|\nModel scene|modeller.exe|front\nSculpt 2026|ZSculpt.exe|");
+				draw_for(150);
+				coloured(cap, 0xFF00FF00LL, 100, 100);
+				draw_for(750);
+				const uint32_t morph_w = obs_source_get_width(cap);
+				draw_for(900);
+				CHECK(morph_w > 104 && morph_w < 196 && obs_source_get_width(cap) == 100,
+				      "with Morph the capture's size glides from the one window's to the other's (%u wide part-way, %u after)",
+				      morph_w, obs_source_get_width(cap));
+			}
+
+			// Hidden and shown altogether, wherever it is.
+			{
+				obs_scene_t *hs = obs_scene_create("Capture Hide Scene");
+				obs_sceneitem_t *shown = obs_scene_add(hs, cap);
+				command("hide");
+				draw_for(300);
+				const bool hidden = !obs_sceneitem_visible(shown);
+				command("hide");
+				draw_for(300);
+				CHECK(hidden && obs_sceneitem_visible(shown) &&
+					      obs_sceneitem_get_transition(shown, false),
+				      "the capture can be hidden everywhere it is shown, and shown again, with a transition");
+				obs_sceneitem_remove(shown);
+				obs_scene_release(hs);
+			}
+
+			// The other open apps kept ready: a capture of each runs in the
+			// background, so a switch does not wait for the capture.
+			{
+				obs_data_t *rs = obs_source_get_settings(one);
+				obs_data_set_bool(rs, "ready", true);
+				obs_data_set_int(rs, "change", 0);
+				obs_source_update(one, rs);
+				obs_data_release(rs);
+				coloured(cap, 0xFF0000FFLL, 200, 100);
+				draw_for(600);
+				calldata_t cd = {};
+				proc_handler_call(obs_source_get_proc_handler(one), "ready_count", &cd);
+				const long long ready = calldata_int(&cd, "count");
+				calldata_free(&cd);
+				windows("Docs|browser.exe|\nModel scene|modeller.exe|\nSculpt 2026|ZSculpt.exe|front");
+				draw_for(150);
+				// (The stand-in for the new window's picture: the capture's
+				// own, which the ready one was made a copy of.)
+				const uint32_t at_once = obs_source_get_width(cap);
+				draw_for(1200);
+				CHECK(ready == 2 && aimed(title, priority) == "ZSculpt.exe" && at_once == 200 &&
+					      opaque(frame),
+				      "with 'Keep the others ready' the other open apps are captured in the background and a switch goes straight to that picture (%lld kept ready, aimed at %s)",
+				      ready, aimed(title, priority).c_str());
+			}
+
 			obs_properties_t *props = obs_source_properties(one);
-			CHECK(list_rows(props, "apps|a") == 3 && obs_properties_get(props, "follow") &&
-				      obs_properties_get(props, "change") && obs_properties_get(props, "ease_curve"),
+			CHECK(list_rows(props, "apps|a") == 3 && list_rows(props, "by_hand|a") == 1 &&
+				      obs_properties_get(props, "follow") && obs_properties_get(props, "ready") &&
+				      obs_properties_get(props, "change") && obs_properties_get(props, "ease_curve") &&
+				      obs_properties_get(props, "transition") && obs_properties_get(props, "hide_now"),
 			      "its settings list the apps, with how to follow them and how the picture changes");
 			obs_properties_destroy(props);
 			obs_source_dec_showing(cap);

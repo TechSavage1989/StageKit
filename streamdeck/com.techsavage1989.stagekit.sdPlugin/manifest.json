@@ -1,6 +1,6 @@
 {
 	"Name": "StageKit",
-	"Version": "0.7.0.0",
+	"Version": "0.8.0.0",
 	"Author": "StageKit contributors",
 	"Actions": [
 		{
@@ -395,7 +395,7 @@
 			"Name": "Next Manual Capture",
 			"UUID": "com.techsavage1989.stagekit.appswitch",
 			"Icon": "imgs/actions/move/icon",
-			"Tooltip": "Steps a Show Source in Use scene to the next of its captures by hand, or back to following the apps.",
+			"Tooltip": "For Show Source in Use and Capture App in Use: the next capture or app switched to by hand, back to following the apps, or the capture hidden and shown.",
 			"PropertyInspectorPath": "ui/appswitch.html",
 			"Controllers": [
 				"Keypad"
