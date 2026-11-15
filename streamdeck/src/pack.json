@@ -1367,6 +1367,13 @@
 			"off": "options/hide"
 		},
 		{
+			"id": "options/clear",
+			"group": "options",
+			"label": "clear",
+			"on": "options/clear",
+			"off": "options/clear"
+		},
+		{
 			"id": "options/zoom",
 			"group": "options",
 			"label": "zoom",

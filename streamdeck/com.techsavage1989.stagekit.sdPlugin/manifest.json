@@ -1,6 +1,6 @@
 {
 	"Name": "StageKit",
-	"Version": "0.11.0.0",
+	"Version": "0.12.0.0",
 	"Author": "StageKit contributors",
 	"Actions": [
 		{
@@ -395,7 +395,7 @@
 			"Name": "Manual Window / Source",
 			"UUID": "com.techsavage1989.stagekit.appswitch",
 			"Icon": "imgs/actions/appswitch/icon",
-			"Tooltip": "For an Automatic Window Switcher or an Automatic Source Switcher: toggles between the manual window and automatic, steps to the next manual one, returns to automatic, or hides and shows the capture.",
+			"Tooltip": "For an Automatic Window Switcher or an Automatic Source Switcher: toggles between the manual window and automatic, steps to the next manual one, returns to automatic, hides and shows the capture, or clears the windows picked by hand.",
 			"PropertyInspectorPath": "ui/appswitch.html",
 			"Controllers": [
 				"Keypad"

@@ -106,7 +106,9 @@ export function slideTitle(direction: string | undefined): string {
 }
 
 export function stepTitle(step: string | undefined): string {
-	return step === "toggle"
+	return step === "clear"
+		? "Clear\nPicked"
+		: step === "toggle"
 		? "Manual /\nAuto"
 		: step === "back"
 			? "Automatic"

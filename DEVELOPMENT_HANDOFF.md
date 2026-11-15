@@ -211,6 +211,13 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## A picked window is that window, never another of its program (0.1.0-beta125)
+
+The owner runs several browser profiles: closing the picked one, the capture moved to another
+profile's window, which could put private information on stream. Windows picked by hand are now
+kept as that window (by its handle), and the window shown is watched so that OBS's own fallback
+to another window of the program is never drawn. See AGENTS.md. Not run on Windows here.
+
 ## The approved control names (0.1.0-beta124)
 
 The owner took the name table proposed with beta122, "mostly good", with *picture* as *image*,

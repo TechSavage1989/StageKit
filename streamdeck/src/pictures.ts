@@ -136,7 +136,9 @@ export function slidePicture(chosen: string | undefined, direction: string | und
 /** A Manual Window / Source key's picture: one for each thing it can do. */
 export function stepPicture(chosen: string | undefined, step: string | undefined): Picture {
 	const fits =
-		step === "toggle"
+		step === "clear"
+			? "options/clear"
+			: step === "toggle"
 			? "options/toggle"
 			: step === "hide"
 				? "options/hide"

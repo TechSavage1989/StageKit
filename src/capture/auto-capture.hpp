@@ -12,6 +12,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include <obs.h>
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -30,6 +31,10 @@ struct OpenWindow {
 	std::string title, executable;
 	bool foreground = false;
 	std::string window_class;
+	// Which window this is, while it is open (on Windows its handle): two
+	// windows of one program, such as two browser profiles, are told apart
+	// by it. 0 where it is not known.
+	uint64_t handle = 0;
 };
 // Every open window, everyday programs included. Looked up at most five
 // times a second however many callers ask.
