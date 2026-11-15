@@ -4742,6 +4742,16 @@ int main(int argc, char **argv)
 				      "a window picked by hand is held by the filter, which stays on; going back follows the apps again, and the next press returns to that window, now on the list (%s, %s, %s, %s; %d on the list)",
 				      picked.c_str(), kept_it.c_str(), followed.c_str(), aimed(title, priority).c_str(),
 				      hand_rows);
+				// One command for both ways: the owner's "toggle between manual
+				// capture and automatic".
+				command("toggle");
+				draw_for(400);
+				const std::string to_auto = aimed(title, priority);
+				command("toggle");
+				draw_for(400);
+				CHECK(to_auto == "ZSculpt.exe" && aimed(title, priority) == "refs.exe",
+				      "'toggle' goes from the window held by hand back to the apps, and from there back to that window (%s, then %s)",
+				      to_auto.c_str(), aimed(title, priority).c_str());
 				command("back");
 				draw_for(1500);
 			}
@@ -4784,12 +4794,14 @@ int main(int argc, char **argv)
 			// The other open apps kept ready: a capture of each runs in the
 			// background, so a switch does not wait for the capture.
 			{
+				// (The colour first: the ready captures are made as copies.)
+				coloured(cap, 0xFF0000FFLL, 200, 100);
+				draw_for(300);
 				obs_data_t *rs = obs_source_get_settings(one);
 				obs_data_set_bool(rs, "ready", true);
 				obs_data_set_int(rs, "change", 0);
 				obs_source_update(one, rs);
 				obs_data_release(rs);
-				coloured(cap, 0xFF0000FFLL, 200, 100);
 				draw_for(600);
 				calldata_t cd = {};
 				proc_handler_call(obs_source_get_proc_handler(one), "ready_count", &cd);

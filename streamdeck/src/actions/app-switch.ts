@@ -39,7 +39,7 @@ export class AppSwitch extends SingletonAction<KeySettings> {
 		}
 		try {
 			const step = ev.payload.settings.step;
-			await obs.pressHotkey(`stagekit.active.${step === "back" || step === "hide" ? step : "next"}.${filter}`);
+			await obs.pressHotkey(`stagekit.active.${step === "back" || step === "hide" || step === "toggle" ? step : "next"}.${filter}`);
 			await ev.action.showOk();
 		} catch {
 			await ev.action.showAlert();
