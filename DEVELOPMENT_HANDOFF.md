@@ -211,6 +211,14 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Keys show on or off; Never blur these lists every source (0.1.0-beta126)
+
+The owner: the Blur key "just flashed when pressed, but does not otherwise signify if blur is on or
+off ... this logic must apply to all keys", and *Never blur these* did not offer their camera. Both
+are in AGENTS.md. Stream Deck plugin 0.13.0.0. **Not seen on a Stream Deck here**: the marked
+pictures, `DisableAutomaticStates` and the per-state images are from the SDK's documentation and
+pass `streamdeck validate`.
+
 ## Confirmed by the owner on beta125 (2026-11-15)
 
 "everything seems to be working as intended": the work of beta121 to beta125 on their machine

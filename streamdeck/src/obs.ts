@@ -59,6 +59,7 @@ class ObsLink extends EventEmitter {
 		this.obs.on("VendorEvent", (ev) => {
 			if (ev.vendorName === "StageKit" && ev.eventType === "BlurChanged") this.emit("blur");
 			if (ev.vendorName === "StageKit" && ev.eventType === "OptionsChanged") this.emit("options");
+			if (ev.vendorName === "StageKit" && ev.eventType === "SwitcherChanged") this.emit("switcher");
 		});
 	}
 
@@ -221,6 +222,17 @@ class ObsLink extends EventEmitter {
 		} catch {
 			return undefined;
 		}
+	}
+
+	/**
+	 * A window or source switcher (or Auto Capture): is it on a manual window,
+	 * and is its capture hidden. Undefined when it cannot be asked.
+	 */
+	async switcherState(sourceName: string, filterName: string): Promise<{ manual: boolean; hidden: boolean } | undefined> {
+		if (!sourceName || !filterName) return undefined;
+		const answer = await this.stageKit("GetSwitcherState", { sourceName, filterName });
+		if (!answer) return undefined;
+		return { manual: answer.manual === true, hidden: answer.hidden === true };
 	}
 
 	/** Changes some of a filter's settings, leaving the rest as they are. */

@@ -127,3 +127,26 @@ test("the Manual Window / Source key's Clear picked windows has its own picture 
 	assert.equal(stepPicture(undefined, "clear").id, "options/clear");
 	assert.equal(stepTitle("clear"), "Clear\nPicked");
 });
+
+test("a key with two states shows a picture marked on or off, in every palette", async () => {
+	const { stateFile } = await import("../src/pictures.ts");
+	for (const colour of COLOURS)
+		for (const picture of PICTURES)
+			for (const on of [true, false]) {
+				const path = stateFile(picture, on, colour);
+				assert.ok(path.includes(`/status/${on ? "on" : "off"}/`), path);
+				assert.ok(existsSync(new URL(path, plugin)), path);
+			}
+	// One file for both, as some pictures have: two marked copies all the same.
+	const toggle = PICTURES.find((p) => p.on === p.off);
+	if (toggle) assert.notEqual(stateFile(toggle, true, "mono"), stateFile(toggle, false, "mono"));
+});
+
+test("Stream Deck does not flip a two-state key by itself", async () => {
+	const { readFileSync } = await import("node:fs");
+	const manifest = JSON.parse(readFileSync(new URL("manifest.json", plugin), "utf8"));
+	for (const action of manifest.Actions)
+		if (action.States.length === 2) assert.equal(action.DisableAutomaticStates, true, action.UUID);
+	const app = manifest.Actions.find((a: { UUID: string }) => a.UUID.endsWith(".appswitch"));
+	assert.equal(app.States.length, 2, "Manual Window / Source shows which way it is");
+});

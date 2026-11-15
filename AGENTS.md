@@ -873,6 +873,22 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   `imgs/actions/<key>/icon`); the owner, of a list where all keys showed one of two drawings:
   "I'd like all of the stream deck buttons to get specific icons". A new key gets a drawing there;
   `tests/features.test.ts` fails if two keys share one.
+- **A key that switches something shows which way it is with a mark, not by brightness.** The
+  owner: "the options that have an on and an off or toggle must represent that current status on
+  the key with the image ... right now, the stagekit blur button just flashed". The pack's own on
+  and off pictures differ only in brightness; `tools/make-state-icons.py` writes marked copies
+  (`imgs/pack/<palette>/status/on|off/`, a green dot on, dimmed with a red slash off, 256
+  colours) and `stateFile`/`showOnOff` (`src/actions/shared.ts`) set both states' pictures and
+  the state. Every two-state action has `DisableAutomaticStates` in the manifest
+  (`make-plugin-files.py`): Stream Deck flipped the key on each press before the plugin put it
+  back, the flash. *Manual Window / Source* has two states and asks OBS with the
+  `GetSwitcherState` vendor request, following the `SwitcherChanged` event
+  (`vendor_switch_state`, reported by the two switchers and Auto Capture): *Toggle* is on while
+  a manual window is shown, *Hide* while the capture is shown (`shown_nowhere`). A new key with
+  two states goes through `showOnOff`.
+- **Blur's *Never blur these* offers every source with a picture**, not only the capture kinds,
+  and a Cropped View listed there keeps the source it shows clear too (the blur sits on that
+  source). The owner could not find their camera: "this list should show all sources".
 - **The Stream Deck plugin has never run in Stream Deck from here.** This session has no Stream Deck
   and cannot reach docs.elgato.com; it was written from the SDK's npm packages (`@elgato/streamdeck`,
   the project template in `@elgato/cli`) and their type definitions. Proven here: it type-checks,

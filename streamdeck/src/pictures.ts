@@ -164,6 +164,15 @@ export function choose(chosen: string | undefined, kind: string, settings: Setti
 	return (chosen && BY_ID.get(chosen)) || automatic(kind, settings);
 }
 
+/**
+ * A key with two states: the picture marked so that which way it is cannot be
+ * missed (a green dot on, a red slash off; tools/make-state-icons.py).
+ */
+export function stateFile(picture: Picture, on: boolean, palette: string | undefined): string {
+	const use = palette && COLOURS.includes(palette) ? palette : DEFAULT_COLOUR;
+	return `imgs/pack/${use}/status/${on ? "on" : "off"}/${on ? picture.on : picture.off}.png`;
+}
+
 /** Where a picture's file is, inside the plugin's folder, in a key's palette. */
 export function file(picture: Picture, on: boolean, palette: string | undefined): string {
 	const use = palette && COLOURS.includes(palette) ? palette : DEFAULT_COLOUR;

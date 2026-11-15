@@ -17,7 +17,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, "..")
 PLUGIN = os.path.join(ROOT, "com.techsavage1989.stagekit.sdPlugin")
 BASE = "com.techsavage1989.stagekit"
-VERSION = "0.12.0.0"
+VERSION = "0.13.0.0"
 
 # The pack picture each feature's key starts with (its "on" and "off" look).
 PICTURES = {
@@ -133,14 +133,18 @@ def page(name, title, body, script=""):
         out.write(html)
 
 
-def key_pictures(folder, on, off):
-    """A key's default pictures, from the mono pack, at 72 and 144 px."""
+def key_pictures(folder, on, off, status=None):
+    """A key's default pictures, from the mono pack, at 72 and 144 px (for a
+    key with two states, the copies marked on and off)."""
+    if status is None:
+        status = off is not None
     target = os.path.join(PLUGIN, "imgs", "actions", folder)
     os.makedirs(target, exist_ok=True)
     for name, pack in (("on", on), ("off", off)):
         if not pack:
             continue
-        image = Image.open(os.path.join(PLUGIN, "imgs", "pack", "mono", pack + ".png")).convert("RGBA")
+        marked = ("status/" + name + "/") if status else ""
+        image = Image.open(os.path.join(PLUGIN, "imgs", "pack", "mono", marked + pack + ".png")).convert("RGBA")
         image.save(os.path.join(target, f"{name}@2x.png"))
         image.resize((72, 72), Image.LANCZOS).save(os.path.join(target, f"{name}.png"))
 
@@ -170,6 +174,10 @@ def main():
         }
         if not visible:
             action["VisibleInActionsList"] = False
+        if len(states) == 2:
+            # The plugin says which state a key is in (what OBS says);
+            # flipped by Stream Deck on every press, it flashed the other one.
+            action["DisableAutomaticStates"] = True
         actions.append(action)
 
     def two(folder):
@@ -217,13 +225,13 @@ def main():
     )
     add("hook", "Capture Active Window", "Makes a Game Capture or a Window Capture take the active window or game. An Automatic Window Switcher on it holds that window as its manual window.", "hook", "imgs/actions/hook/icon", one("hookgame"))
 
-    key_pictures("appswitch", "options/toggle", None)
+    key_pictures("appswitch", "options/toggle", "options/toggle")
     page(
         "appswitch",
         "StageKit next manual capture",
         one_list("Scene or capture") + options("On press", "step", "next", [("toggle", "Toggle manual / automatic"), ("next", "Next manual window or source"), ("back", "Return to automatic"), ("hide", "Hide or show the capture"), ("clear", "Clear picked windows")]),
     )
-    add("appswitch", "Manual Window / Source", "For an Automatic Window Switcher or an Automatic Source Switcher: toggles between the manual window and automatic, steps to the next manual one, returns to automatic, hides and shows the capture, or clears the windows picked by hand.", "appswitch", "imgs/actions/move/icon", one("appswitch"))
+    add("appswitch", "Manual Window / Source", "For an Automatic Window Switcher or an Automatic Source Switcher: toggles between the manual window and automatic, steps to the next manual one, returns to automatic, hides and shows the capture, or clears the windows picked by hand.", "appswitch", "imgs/actions/move/icon", two("appswitch"))
 
     key_pictures("fitoverlap", "options/overlap-on", "options/overlap-off")
     page("fitoverlap", "StageKit Fit to Space overlap", one_list("Scene") + PRESS)

@@ -6,7 +6,24 @@ import type { JsonValue } from "@elgato/utils";
 
 import { filterItems, sourceItems, targetItems } from "../kinds.ts";
 import { obs } from "../obs.ts";
-import { pictureItems } from "../pictures.ts";
+import { type Picture, pictureItems, stateFile } from "../pictures.ts";
+
+/**
+ * Shows whether a two-state key is on: its marked pictures for both states,
+ * then the state. Stream Deck does not flip these keys by itself
+ * ("DisableAutomaticStates" in the manifest), so what shows is always what
+ * OBS says, never a flash of the other picture.
+ */
+export async function showOnOff(
+	key: { setImage(image?: string, options?: { state?: 0 | 1 }): Promise<void>; setState(state: 0 | 1): Promise<void> },
+	picture: Picture,
+	on: boolean,
+	palette: string | undefined,
+): Promise<void> {
+	await key.setImage(stateFile(picture, false, palette), { state: 0 });
+	await key.setImage(stateFile(picture, true, palette), { state: 1 });
+	await key.setState(on ? 1 : 0);
+}
 
 export type KeySettings = {
 	/** The source and filter in one: what the keys for one feature choose from. */
