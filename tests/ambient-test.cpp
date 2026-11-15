@@ -4635,9 +4635,9 @@ int main(int argc, char **argv)
 			CHECK(after_click == "modeller.exe" && held_w == 200 && held_red > 240 && held_green < 15,
 			      "clicking into another of its apps aims the capture at that one, and the last picture stays, at its size, until the new one is there (aimed at %s; %u wide, red %d, green %d)",
 			      after_click.c_str(), held_w, held_red, held_green);
-			CHECK(mix_w == 100 && mix_red > 40 && mix_green > 40 && obs_source_get_width(cap) == 100 &&
-				      at(50, 50, 0) < 15 && at(50, 50, 1) > 240,
-			      "then the new picture comes in over it, and is all there is at the end (part-way %u wide, red %d, green %d; after: red %d, green %d)",
+			CHECK(mix_w > 100 && mix_w < 200 && mix_red > 40 && mix_green > 40 &&
+				      obs_source_get_width(cap) == 100 && at(50, 50, 0) < 15 && at(50, 50, 1) > 240,
+			      "then the new picture comes in over it while the size glides to the new one's, and is all there is at the end (part-way %u wide, red %d, green %d; after: red %d, green %d)",
 			      mix_w, mix_red, mix_green, at(50, 50, 0), at(50, 50, 1));
 
 			windows("Notes|notes.exe|front\nSculpt 2026|ZSculpt.exe|\nModel scene|modeller.exe|");
@@ -4710,6 +4710,42 @@ int main(int argc, char **argv)
 			      by_hand.c_str(), still_held.c_str(), aimed(title, priority).c_str());
 			draw_for(1500);
 
+			// A window picked by hand (the Capture Front Window key) goes
+			// through the filter: it is held, its program is remembered
+			// among the apps switched to, and one press goes back to it.
+			// The owner: "I don't know how to [switch back] while also
+			// keeping the previously manually selected window available".
+			{
+				windows("Reference board|refs.exe|front\nDocs|browser.exe|\nSculpt 2026|ZSculpt.exe|");
+				draw_for(300);
+				calldata_t cd = {};
+				calldata_set_string(&cd, "title", "Reference board");
+				calldata_set_string(&cd, "executable", "refs.exe");
+				proc_handler_call(obs_source_get_proc_handler(one), "hold", &cd);
+				calldata_free(&cd);
+				draw_for(300);
+				const std::string picked = aimed(title, priority);
+				windows("Reference board|refs.exe|\nDocs|browser.exe|\nSculpt 2026|ZSculpt.exe|front");
+				draw_for(400);
+				const std::string kept_it = aimed(title, priority);
+				command("back");
+				draw_for(400);
+				const std::string followed = aimed(title, priority);
+				command("next");
+				draw_for(400);
+				obs_properties_t *hp = obs_source_properties(one);
+				const int hand_rows = list_rows(hp, "by_hand|a");
+				obs_properties_destroy(hp);
+				CHECK(picked == "refs.exe" && kept_it == "refs.exe" && followed == "ZSculpt.exe" &&
+					      aimed(title, priority) == "refs.exe" && hand_rows == 2 &&
+					      obs_source_enabled(one),
+				      "a window picked by hand is held by the filter, which stays on; going back follows the apps again, and the next press returns to that window, now on the list (%s, %s, %s, %s; %d on the list)",
+				      picked.c_str(), kept_it.c_str(), followed.c_str(), aimed(title, priority).c_str(),
+				      hand_rows);
+				command("back");
+				draw_for(1500);
+			}
+
 			// Morph: the frame's size is on the way from the one window's to
 			// the other's while the picture changes.
 			{
@@ -4772,7 +4808,7 @@ int main(int argc, char **argv)
 			}
 
 			obs_properties_t *props = obs_source_properties(one);
-			CHECK(list_rows(props, "apps|a") == 3 && list_rows(props, "by_hand|a") == 1 &&
+			CHECK(list_rows(props, "apps|a") == 3 && list_rows(props, "by_hand|a") == 2 &&
 				      obs_properties_get(props, "follow") && obs_properties_get(props, "ready") &&
 				      obs_properties_get(props, "change") && obs_properties_get(props, "ease_curve") &&
 				      obs_properties_get(props, "transition") && obs_properties_get(props, "hide_now"),

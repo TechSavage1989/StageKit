@@ -921,14 +921,22 @@ bool hook_front_window(obs_source_t *capture, std::string &what, std::string &er
 		error = "OBS itself is in front";
 		return false;
 	}
+	// A Capture App in Use on it takes the window itself: it changes over
+	// in its own way, with the last picture kept until the new one is
+	// there, and holds it. (Switched off instead, as up to beta117, the
+	// picture vanished at once.)
+	if (app_capture_hold(capture, OpenWindow{front.title, front.executable, true, front.window_class})) {
+		obs_log(LOG_INFO, "Hook: '%s' is handed %s, by hand", obs_source_get_name(capture),
+			front.executable.c_str());
+		what = front.executable;
+		return true;
+	}
 	// An Auto Capture here would aim the capture somewhere else again.
 	obs_source_enum_filters(
 		capture,
 		[](obs_source_t *, obs_source_t *filter, void *) {
 			const char *kind = obs_source_get_unversioned_id(filter);
-			// (And so would a Capture App in Use.)
-			if (kind && (strcmp(kind, kAutoCaptureId) == 0 || strcmp(kind, kAppCaptureId) == 0) &&
-			    obs_source_enabled(filter))
+			if (kind && strcmp(kind, kAutoCaptureId) == 0 && obs_source_enabled(filter))
 				obs_source_set_enabled(filter, false);
 		},
 		nullptr);

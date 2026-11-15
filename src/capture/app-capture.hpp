@@ -25,4 +25,10 @@ void register_app_capture();
 // the app closed. For Standby Picture, which must not stand in meanwhile.
 bool app_capture_holding(obs_source_t *capture);
 
+struct OpenWindow;
+// Hands a window picked by hand to an enabled Capture App in Use on this
+// capture: it changes over to it in its own way, holds it, and remembers its
+// program among the apps switched to. False when there is no such filter.
+bool app_capture_hold(obs_source_t *capture, const OpenWindow &window);
+
 } // namespace stagekit

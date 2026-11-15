@@ -694,8 +694,19 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     transition chosen. The three commands are hotkeys on the capture named
     `stagekit.active.next.` / `.back.` / `.hide.` + the filter's name, the same beginning as Show
     Source in Use's, so the Stream Deck *Next Manual Capture* key serves both.
-  - *Morph* (`Style::Morph`) is its own drawing: the reported size glides from the last picture's
-    to the new one's with both stretched over it. It is not the item Morph, which needs two items.
+  - The reported size glides from the last picture's to the new one's for every style but a cut:
+    taking the new size at once (beta117, all but Morph) made the item jump on screen before the
+    picture changed. *Morph* (`Style::Morph`) stretches both pictures over the gliding frame; the
+    others fit each inside it. It is not the item Morph, which needs two items.
+  - A ready capture that is being drawn (`holding()`) is never stopped. Up to beta117 the capture
+    of the app switched to was dropped in the same tick as the switch, being "the current one"
+    now; the owner's log had `Window Capture (<app>)` re-made at every switch and they saw the
+    picture drop out and come back.
+  - **The Capture Front Window key goes through the filter** (`app_capture_hold`, called first in
+    `hook_front_window`): the window is held (`held_`), its program is added to `by_hand`, and
+    the filter stays on. Switched off instead (beta116, beta117), the picture vanished at once and
+    there was no way back to that window. From following the apps, *next* goes to the app held
+    last (`last_held_`), so with one hand-picked window the key is a toggle.
   - Entries are a program's file name or part of a window's title (`answers`); a title entry aims
     the capture by title (`priority` 1), a program entry by executable.
   - The Capture Front Window key switches it off, as it does an Auto Capture; switching it on

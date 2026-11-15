@@ -211,6 +211,22 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Capture App in Use: the flicker, the hook key, names (0.1.0-beta118)
+
+- The owner on beta117, with a log: "There is still a flicker where it looks like the source sort
+  of jumps immediately after switching to the other app, then the other app instantly appears,
+  then it morphs. This occurs when I have any 'change with' setting other than Morph"; the *Capture
+  Front Window* key "immediately makes the previously automatically captured source vanish
+  instantly then a part of a second later the manually captured window morphs in"; "once i want
+  to switch back to the Apps to capture, I don't know how to do so while also keeping the
+  previously manually selected window available"; and "I'd also like the verbiage and filter and
+  feature names to be reviewed and changed to make more sense based on OBS terminology".
+- Fixed: see AGENTS.md (the ready capture dropped mid-change, the size jump, the hook through the
+  filter). **Not confirmed by the owner yet.**
+- **Names: proposed, not changed.** A table of new names in OBS's terms was put to the owner in
+  chat (the last rename, Follow Active App to Show Source in Use, was followed by "where is
+  follow active app?"). Change nothing until they say which.
+
 ## Capture App in Use: fast switching, apps by hand, Morph, hiding (0.1.0-beta117)
 
 - The owner after beta116, with a screenshot of the filter on their capture: "Capture app in use
