@@ -52,6 +52,11 @@ struct AppCaptureChange {
 // False when no Automatic Window Switcher on the source is changing over.
 bool app_capture_change(obs_source_t *capture, AppCaptureChange &change);
 
+// Whether the source has an enabled Automatic Window Switcher: it glides the
+// capture's size from one window's to the next itself, so what comes after
+// it (Standby Picture) follows that size as it is and does not glide again.
+bool app_capture_present(obs_source_t *capture);
+
 struct OpenWindow;
 // Hands a window picked by hand to an enabled Capture App in Use on this
 // capture: it changes over to it in its own way, holds it, and remembers its

@@ -5276,6 +5276,12 @@ int main(int argc, char **argv)
 					obs_source_update(fcam, cs);
 					obs_data_release(cs);
 				}
+				// (With a Standby Picture after the switcher, as on the owner's
+				// capture: it follows the switcher's size, it does not glide
+				// after it over its own, longer time.)
+				obs_source_t *sby =
+					obs_source_create("stagekit_standby", "Switch Standby", nullptr, nullptr);
+				obs_source_filter_add(cap, sby);
 				obs_scene_t *fs = obs_scene_create("Fit Switch Scene"); // 640x360
 				obs_sceneitem_t *fi = obs_scene_add(fs, cap);
 				obs_sceneitem_t *ci = obs_scene_add(fs, fcam);
@@ -5327,10 +5333,15 @@ int main(int argc, char **argv)
 				coloured(cap, 0xFFFF0000LL, 320, 180);
 				double mid_w = 0.0, at_end_w = 0.0;
 				bool ended = false;
+				int began = -1, took = -1;
 				for (int i = 0; i < 60 && !ended; i++) {
 					shown_for(50);
 					const uint32_t cw = obs_source_get_width(cap), ch = obs_source_get_height(cap);
 					const double bw = bounds_w();
+					if (began < 0 && cw != 100)
+						began = i;
+					if (took < 0 && cw == 320 && ch == 180)
+						took = i - began;
 					if (cw > 110 && cw < 300 && bw > square_w + 8.0 && bw < 632.0)
 						mid_w = bw; // both on their way
 					if (cw == 320 && ch == 180) {
@@ -5341,6 +5352,12 @@ int main(int argc, char **argv)
 						ended = true;
 					}
 				}
+				// (The switcher's change is 600 ms here, a look every 50 or so;
+				// gliding after it for its own 800 ms, the Standby Picture took
+				// well over twice as long.)
+				CHECK(began >= 0 && took >= 0 && took <= 16,
+				      "a Standby Picture after the switcher takes the new size with the switcher's change, not after it (%d looks of about 50 ms)",
+				      took);
 				CHECK(square_w > 100.0 && square_w < 600.0 && mid_w > 0.0 && ended && at_end_w > 630.0,
 				      "Fit to Space takes the new window's space with the switcher's change, not after it (%.0f wide for the square window; %.0f part-way; %.0f when the switcher had arrived)",
 				      square_w, mid_w, at_end_w);
@@ -5348,6 +5365,8 @@ int main(int argc, char **argv)
 				obs_source_release(was_out);
 				obs_source_filter_remove(obs_scene_get_source(fs), ffit);
 				obs_source_release(ffit);
+				obs_source_filter_remove(cap, sby);
+				obs_source_release(sby);
 				obs_sceneitem_remove(fi);
 				obs_sceneitem_remove(ci);
 				obs_scene_release(fs);

@@ -153,9 +153,48 @@ export function overlapPicture(chosen: string | undefined): Picture {
 	return (chosen && BY_ID.get(chosen)) || BY_ID.get("options/overlap") || plain("switch");
 }
 
-/** A Switch Scene key's picture: a scene with its sources laid out (or the one chosen). */
-export function scenePicture(chosen: string | undefined): Picture {
-	return (chosen && BY_ID.get(chosen)) || BY_ID.get("options/scene") || plain("switch");
+/** The words of a scene's or a picture's name: lower case, without "scene" and any leading number. */
+function nameWords(name: string): string[] {
+	return name
+		.toLowerCase()
+		.split(/[^a-z0-9]+/)
+		.filter((word) => word !== "" && word !== "scene" && !/^\d+$/.test(word));
+}
+
+/**
+ * The pack's own scene picture for a scene, by name: the pack has one drawn
+ * from each scene's layout ("game component", "window capture" ...). It fits
+ * when all its words are in the scene's name; of several, the one with the
+ * most words, and then the one that follows the name furthest from its start
+ * ("Game-Component-Capture" is "game component" before "game capture").
+ */
+export function scenePictureFor(scene: string | undefined): Picture | undefined {
+	const words = nameWords(scene ?? "");
+	if (words.length === 0) return undefined;
+	let best: Picture | undefined;
+	let bestScore = 0;
+	for (const picture of PICTURES) {
+		if (picture.group !== "scenes") continue;
+		const own = nameWords(picture.label);
+		if (own.length === 0 || !own.every((word) => words.includes(word))) continue;
+		let run = 0;
+		while (run < own.length && own[run] === words[run]) run++;
+		const score = own.length * 10 + run;
+		if (score > bestScore) {
+			best = picture;
+			bestScore = score;
+		}
+	}
+	return best;
+}
+
+/**
+ * A Switch Scene key's picture: the one chosen; else the pack's picture of
+ * that scene's layout, when it has one by that name; else a scene with its
+ * sources laid out.
+ */
+export function scenePicture(chosen: string | undefined, scene?: string): Picture {
+	return (chosen && BY_ID.get(chosen)) || scenePictureFor(scene) || BY_ID.get("options/scene") || plain("switch");
 }
 
 /** A Set Aspect Ratio key's picture: a frame of that shape. */

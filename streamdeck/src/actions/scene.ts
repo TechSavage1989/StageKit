@@ -61,7 +61,7 @@ export class SceneSwitch extends SingletonAction<KeySettings> {
 		const scene = settings.scene ? String(settings.scene) : "";
 		const now = await obs.currentScenes();
 		const live = settings.where === "preview" ? now?.preview : now?.program;
-		await showOnOff(key, scenePicture(settings.picture), scene !== "" && live === scene, settings.palette);
+		await showOnOff(key, scenePicture(settings.picture, scene), scene !== "" && live === scene, settings.palette);
 		await key.setTitle(sceneTitle(scene));
 	}
 
