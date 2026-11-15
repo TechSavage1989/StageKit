@@ -768,8 +768,10 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   the sharp picture back over the blurred one. The owner: "blur does not appear to work correctly
   when bloom is enabled". And a slider has no modified callback that shows or hides other
   controls: OBS rebuilds the window at each step and the slider "cannot be dragged smoothly".
-- **Fit to Space's items never in the way can count after all** (`skip_fill`, *Avoid them under a
-  fill of*, 0 = off): the space is worked out without them first, and when the picture would fill
+- **Fit to Space's items never in the way can count after all** (`skip_fill_on`, *Overlap only when it fills*, and `skip_fill`, *Fill needed to
+  overlap*; first one slider called *Avoid them under a fill of*, which the owner found "unclear
+  and ambiguous" and asked to have "a toggle on or off and have a streamdeck button": the
+  *Fit to Space Overlap* key sets `skip_fill_on` with obs-websocket's `SetSourceFilterSettings`): the space is worked out without them first, and when the picture would fill
   less than that share of it (width share times height share), again with them. Both come from
   the picture's shape, never from where it is now, or the choice would flip once it had moved.
   The owner: a camera overlapping a window capture, but beside it when the window "doesn't fit
@@ -778,7 +780,12 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   `standby_cover_toggle`, hotkey `stagekit.standby.cover.` + filter name). The Automatic Window
   Switcher's hide does that when the capture has an enabled Standby Picture (`hide_standby`, on
   as it comes) instead of hiding the items. The owner: "I'd like the standby picture filter to
-  somehow work when the capture show/hide option is used". Not saved: OBS starts uncovered.
+  somehow work when the capture show/hide option is used". Not saved: OBS starts uncovered. While the picture comes in
+  over a running capture the capture is still drawn live under it (`under`). The owner found the
+  change "instantly goes on or off" on beta121; here it fades (a test looks part-way), so the
+  cause on their machine is **not known**: the log line `Standby Picture '...': shown over the
+  capture, over ... ms (transition n)` is there to tell. `Style::Morph` (11) stretches both
+  pictures over the gliding frame, as the window switcher's Morph does.
 - **Ambient Background's Bloom has two styles** (`bloom_style`): 0, the bright parts shine
   (threshold, screen-blended); 1, *Whole picture, amplified*: all of the picture's light added
   back (`BloomAmplify`), which is what the bloom in the owner's old collection did

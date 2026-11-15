@@ -1381,6 +1381,13 @@
 			"off": "options/fit-off"
 		},
 		{
+			"id": "options/overlap",
+			"group": "options",
+			"label": "overlap",
+			"on": "options/overlap-on",
+			"off": "options/overlap-off"
+		},
+		{
 			"id": "options/source-switcher",
 			"group": "options",
 			"label": "source switcher",

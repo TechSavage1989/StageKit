@@ -52,6 +52,10 @@ class ObsLink extends EventEmitter {
 		] as const) {
 			this.obs.on(name, () => this.emit("changed"));
 		}
+		// A filter's settings changed (in OBS's window, or by a key).
+		this.obs.on("SourceFilterSettingsChanged", (ev) => {
+			this.emit("settings", ev.sourceName, ev.filterName);
+		});
 		this.obs.on("VendorEvent", (ev) => {
 			if (ev.vendorName === "StageKit" && ev.eventType === "BlurChanged") this.emit("blur");
 			if (ev.vendorName === "StageKit" && ev.eventType === "OptionsChanged") this.emit("options");
@@ -217,6 +221,11 @@ class ObsLink extends EventEmitter {
 		} catch {
 			return undefined;
 		}
+	}
+
+	/** Changes some of a filter's settings, leaving the rest as they are. */
+	async setFilterSettings(sourceName: string, filterName: string, filterSettings: Record<string, boolean | number | string>): Promise<void> {
+		await this.obs.call("SetSourceFilterSettings", { sourceName, filterName, filterSettings, overlay: true });
 	}
 
 	async setFilter(sourceName: string, filterName: string, filterEnabled: boolean): Promise<void> {

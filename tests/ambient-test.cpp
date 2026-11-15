@@ -1998,7 +1998,32 @@ int main(int argc, char **argv)
 				};
 				const bool live_first = red_mid();
 				cover();
+				// Part-way: neither the capture alone nor the picture alone,
+				// and a size between the two.
+				sleep_ms(60);
+				render(capture, obs_source_get_width(capture), obs_source_get_height(capture));
+				sleep_ms(50);
+				uint8_t part[4] = {0, 0, 0, 0};
+				const uint32_t part_w = obs_source_get_width(capture);
+				{
+					const uint32_t ch = obs_source_get_height(capture);
+					const std::vector<uint8_t> p = render(capture, part_w, ch);
+					memcpy(part, &p[(size_t(ch / 2) * part_w + part_w / 2) * 4], 4);
+				}
 				settle(12);
+				{
+					const uint32_t cw = obs_source_get_width(capture),
+						       ch = obs_source_get_height(capture);
+					const std::vector<uint8_t> p = render(capture, cw, ch);
+					const uint8_t *e = &p[(size_t(ch / 2) * cw + cw / 2) * 4];
+					const bool mixed = !(part[0] > 250 && part[1] < 5 && part[2] < 5) &&
+							   (std::abs(part[0] - e[0]) > 8 ||
+							    std::abs(part[1] - e[1]) > 8 ||
+							    std::abs(part[2] - e[2]) > 8);
+					CHECK(mixed && part_w > 100 && part_w < 107,
+					      "and it comes in with the filter's transition, not at a stroke (part-way %d, %d, %d and %u wide; then %d, %d, %d)",
+					      part[0], part[1], part[2], part_w, e[0], e[1], e[2]);
+				}
 				bool waiting = false;
 				{
 					calldata_t cd = {};
@@ -3012,7 +3037,19 @@ int main(int argc, char **argv)
 			sp = space(600);
 			CHECK(is(sp.x, 20) && is(sp.w, 600),
 			      "and one that fills more than that still overlaps it (%.0f, %.0f wide)", sp.x, sp.w);
-			obs_data_set_double(ff, "skip_fill", 0.0);
+			// Its own switch: off, the share set counts for nothing.
+			obs_data_set_double(ff, "skip_fill", 95.0);
+			obs_data_set_bool(ff, "skip_fill_on", false);
+			obs_source_update(free_fit, ff);
+			sp = space(600);
+			const bool off_overlaps = is(sp.x, 20) && is(sp.w, 600);
+			obs_data_set_bool(ff, "skip_fill_on", true);
+			obs_source_update(free_fit, ff);
+			sp = space(600);
+			CHECK(off_overlaps && is(sp.x, 140) && is(sp.w, 480),
+			      "the rule has a switch of its own: off it overlaps, on it goes beside (%d; %.0f, %.0f wide)",
+			      off_overlaps, sp.x, sp.w);
+			obs_data_set_bool(ff, "skip_fill_on", false);
 			obs_source_update(free_fit, ff);
 			sp = space(400);
 			// Dragged to another place: left alone while it moves.

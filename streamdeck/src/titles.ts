@@ -115,6 +115,10 @@ export function stepTitle(step: string | undefined): string {
 				: "Next\nManual";
 }
 
+export function overlapTitle(press: string | undefined): string {
+	return pressed("Overlap\nIf Fills", press);
+}
+
 export function hookTitle(inputKind: string | undefined): string {
 	return inputKind === "window_capture" ? "Capture\nWindow" : "Capture\nGame";
 }
