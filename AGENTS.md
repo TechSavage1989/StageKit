@@ -525,6 +525,14 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     across scenes ... multiple links should be able to be configured".
   - Like every shader here, `stagekit-morph.effect` has only run on OpenGL; without it the
     transition cuts.
+  - An item's place is worked out by Morph, not by OBS, while it draws (`look`): OBS does it when
+    a scene is drawn, from the size the source has then, and neither scene is drawn during a
+    morph. `look` does it when an item is first met and again whenever its source changes size.
+    Worked out once at the start (up to beta112), a display capture in a bounding box, which has
+    no size until it has started again, had no place for the whole change: the owner's "capture
+    source doesn't appear until the transition animations completes, and it's abrupt". Reach an
+    item through `look`, never `shown_of` alone. The log says `had no picture for the first ...
+    ms` for a source that started late.
   - Not followed during the change: an item's blending mode, its show and hide transition, a crop
     to the bounding box, and a shadow's size in screen pixels (`shown_scale` goes by one scene at
     a time, so it may jump at the start). None has been asked for.

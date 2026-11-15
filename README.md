@@ -814,6 +814,8 @@ Things to know:
   cannot be taken apart; a change to or from it is a plain cross-fade, and OBS's log says which
   filter it was. Filters that only move, show and hide items do not count, StageKit's own and the
   Move plugin's among them.
+- A capture that OBS only starts when its scene is switched to (a display capture, say) joins the
+  change the moment it has a picture, a little after the start.
 - An item's blending mode, its own show and hide transition and a crop made by *Crop to bounding
   box* are not followed during the change.
 - A shadow sized in screen pixels goes by one scene at a time, so on an item that changes size it

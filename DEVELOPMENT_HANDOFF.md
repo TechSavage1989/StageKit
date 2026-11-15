@@ -211,6 +211,25 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Morph: a capture that starts during the change (0.1.0-beta113)
+
+- The owner: "when i switch to my main display scene, the capture source doesn't appear until the
+  transition animations completes, and it's abrupt and jarring", with Morph as the transition
+  (their collection, sent with it, is private and not in the repository).
+- Found: the display capture's item fits a bounding box. OBS stops a display capture while it is
+  not showing, so at the start of the change its source is 0 by 0, and OBS's sum for a bounding
+  box then gives a scale that is not a number. Morph worked places out once, at the start, so the
+  item was nowhere until OBS drew the new scene itself at the end. A test with a stand-in that
+  starts part-way failed on beta112's code and passes now (`Morph::look`). See AGENTS.md.
+- **Not confirmed by the owner yet.** Not tried with a real display capture (Windows only).
+- Not built: keeping display captures running while their scene is off screen, which would take
+  away the capture's own start-up moment as well. It costs capturing every display all the time
+  (OBS stops them on purpose) and was not asked for. If the owner still sees the display come in
+  late, ask for the log: `Morph: '...' had no picture for the first ... ms of the change` says how
+  long the start-up was, and that is the figure to decide by.
+- An item with no picture yet at the start is also not taken for the *main picture* (it has no
+  size to go by). Not asked about.
+
 ## The owner's word after beta112 (2026-11-15)
 
 - "everything is working and does what it should for now." Said after beta112 was published,
@@ -221,7 +240,6 @@ information), which is what the template uses for pushes to `main`.
 - Not answered one by one: the frame time after beta109 (*Average time to render frame*), the
   Stream Deck plugin's version, the `primehack` rule in Auto Frame. Ask again only if one of them
   comes up; do not repeat them as open requests.
-- No work is in progress. The next request starts a new branch.
 
 ## Slide off the nearest edge in Show in Scenes (0.1.0-beta112)
 
