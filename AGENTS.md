@@ -763,6 +763,22 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   to it instantly. there should be a configurable delay ... and the transition for that blend in
   should include the same transition options that others do". The tests use a cut for the
   pictures they take and check the fade separately.
+- **Ambient Background's bloom light is spread at least as far as the blur** (`spread`, the larger
+  of `bloom_size` and `blur`). It is taken from the picture before the blur; spread less, it laid
+  the sharp picture back over the blurred one. The owner: "blur does not appear to work correctly
+  when bloom is enabled". And a slider has no modified callback that shows or hides other
+  controls: OBS rebuilds the window at each step and the slider "cannot be dragged smoothly".
+- **Fit to Space's items never in the way can count after all** (`skip_fill`, *Avoid them under a
+  fill of*, 0 = off): the space is worked out without them first, and when the picture would fill
+  less than that share of it (width share times height share), again with them. Both come from
+  the picture's shape, never from where it is now, or the choice would flip once it had moved.
+  The owner: a camera overlapping a window capture, but beside it when the window "doesn't fit
+  the whole screen".
+- **A Standby Picture can be shown over a running capture** (`cover_`, the `cover` proc,
+  `standby_cover_toggle`, hotkey `stagekit.standby.cover.` + filter name). The Automatic Window
+  Switcher's hide does that when the capture has an enabled Standby Picture (`hide_standby`, on
+  as it comes) instead of hiding the items. The owner: "I'd like the standby picture filter to
+  somehow work when the capture show/hide option is used". Not saved: OBS starts uncovered.
 - **Ambient Background's Bloom has two styles** (`bloom_style`): 0, the bright parts shine
   (threshold, screen-blended); 1, *Whole picture, amplified*: all of the picture's light added
   back (`BloomAmplify`), which is what the bloom in the owner's old collection did

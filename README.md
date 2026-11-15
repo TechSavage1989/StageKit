@@ -181,7 +181,8 @@ Two more things about the capture blended in and the bloom:
 - **Bloom style**: *Bright parts shine* (only what is brighter than the threshold spreads its light)
   or *Whole picture, amplified* (the picture's own light added back onto all of it, which brightens
   everything and lets colours run into white: the look of obs-shaderfilter's bloom shader, with
-  100 % its strength of 1). Bloom now goes to 1000 %.
+  100 % its strength of 1). Bloom now goes to 1000 %. The light always spreads at least as far as
+  *Blur*, so bloom never makes the background sharper.
 
 Put it in one shared scene and nest that scene wherever you need the background.
 
@@ -360,6 +361,10 @@ nearest.
 - It only works while its scene is being shown, so scenes you are not on cost nothing.
 - **Items never in the way**: items the free space ignores, such as a camera meant to overlap the
   game.
+- **Avoid them under a fill of** (0, off, as it comes): those items are only overlapped while the
+  picture fills at least this much of its space. Set to 95 %, a window that fills the screen stays
+  under the camera, and a window of another shape, which would leave bars beside it, is fitted
+  beside the camera instead.
 - Add the filter to the **scene**, not to a group. To fit a group, choose the group as the *Item*.
   On a group the filter does nothing and says so.
 - With *Use visible pixels* ticked, the fitted item itself goes by what it shows, like the items
@@ -462,6 +467,11 @@ Game Capture, Window Capture or other live source.
 - It belongs after an Auto Frame in the filter list and puts itself there.
 - Corners, shadows and other filters after it are put on the picture as they are on the capture.
 - To go without it, switch the filter off with its eye or a Stream Deck filter key.
+- **Show or hide the picture now** (a button, and a hotkey on the source) brings the picture in over
+  a capture that is running and takes it away again: a way to hide the capture without leaving a
+  hole. An Automatic Window Switcher on the same capture does this when asked to hide the capture
+  (*Hide to the Standby Picture*, ticked as it comes), so the Stream Deck *Hide or show the capture*
+  key shows the Standby Picture.
 
 | Setting | What it does |
 | --- | --- |

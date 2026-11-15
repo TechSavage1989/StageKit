@@ -33,6 +33,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <plugin-support.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <cmath>
 #include <cstring>
@@ -148,10 +149,27 @@ public:
 				calldata_set_bool(cd, "waiting", self->empty_);
 			},
 			this);
+		// Shown on purpose, over a capture that has a picture: by its
+		// hotkey, the button, or a window switcher asked to hide the capture.
+		proc_handler_add(
+			obs_source_get_proc_handler(source_),
+			"void cover(in bool toggle, in bool on, out bool covering)",
+			[](void *data, calldata_t *cd) {
+				auto *self = static_cast<Standby *>(data);
+				if (calldata_bool(cd, "toggle"))
+					self->cover_ = !self->cover_;
+				else
+					self->cover_ = calldata_bool(cd, "on");
+				calldata_set_bool(cd, "covering", self->cover_);
+			},
+			this);
 	}
+	void toggle_cover() { cover_ = !cover_; }
 
 	~Standby()
 	{
+		if (hotkey_ != OBS_INVALID_HOTKEY_ID)
+			obs_hotkey_unregister(hotkey_);
 		let_go();
 		obs_enter_graphics();
 		gs_texrender_destroy(render_);
@@ -183,6 +201,20 @@ public:
 	{
 		obs_source_t *parent = obs_filter_get_parent(source_);
 		obs_source_t *target = obs_filter_get_target(source_);
+		if (parent && hotkey_ == OBS_INVALID_HOTKEY_ID) {
+			const std::string name = obs_source_get_name(source_) ? obs_source_get_name(source_) : "";
+			std::string text = obs_module_text("Hotkey.Standby.Cover");
+			const size_t at = text.find("%1");
+			if (at != std::string::npos)
+				text.replace(at, 2, name);
+			hotkey_ = obs_hotkey_register_source(
+				parent, ("stagekit.standby.cover." + name).c_str(), text.c_str(),
+				[](void *data, obs_hotkey_id, obs_hotkey_t *, bool pressed) {
+					if (pressed)
+						static_cast<Standby *>(data)->toggle_cover();
+				},
+				this);
+		}
 		if (!parent || !target)
 			return;
 		Picture kind;
@@ -242,9 +274,10 @@ public:
 		// Nothing to show: the capture itself has no size.
 		// (Not while a Capture App in Use is changing from one window to
 		// another: it shows the last picture for that moment.)
-		const bool empty =
-			(obs_source_get_base_width(parent) == 0 || obs_source_get_base_height(parent) == 0) &&
-			!app_capture_holding(parent);
+		// (Or the picture has been asked for over the capture.)
+		const bool empty = cover_ || ((obs_source_get_base_width(parent) == 0 ||
+					       obs_source_get_base_height(parent) == 0) &&
+					      !app_capture_holding(parent));
 		const uint32_t tw = before_width(source_), th = before_height(source_);
 		if (!empty && tw && th && (tw != last_w_ || th != last_h_)) {
 			// Remembered, for the next time there is nothing.
@@ -657,8 +690,10 @@ private:
 	uint32_t last_w_ = 0, last_h_ = 0;
 	bool placed_ = false;
 	bool changed_ = true;
-	double mix_ = 0.0;                 // how much of the picture shows
-	bool empty_ = false;               // the capture has nothing to show
+	double mix_ = 0.0;               // how much of the picture shows
+	bool empty_ = false;             // the capture has nothing to show
+	std::atomic<bool> cover_{false}; // the picture is shown on purpose, over a capture that has one
+	obs_hotkey_id hotkey_ = OBS_INVALID_HOTKEY_ID;
 	bool own_shape_ = true;            // while waiting, the picture keeps its own shape
 	uint32_t live_w_ = 0, live_h_ = 0; // the capture's size while it shows
 	// The size, gliding from one to the next.
@@ -689,6 +724,15 @@ obs_properties_t *get_properties(void *data)
 				obs_module_text(self && self->showing() ? "Standby.Status.Showing"
 									: "Standby.Status.Waiting"),
 				OBS_TEXT_INFO);
+	obs_property_t *cover = obs_properties_add_button2(
+		props, "cover_now", obs_module_text("Standby.Cover"),
+		[](obs_properties_t *, obs_property_t *, void *param) {
+			if (param)
+				static_cast<Standby *>(param)->toggle_cover();
+			return false;
+		},
+		self);
+	obs_property_set_long_description(cover, obs_module_text("Standby.Cover.Tip"));
 
 	obs_property_t *picture = obs_properties_add_list(props, "picture", obs_module_text("Standby.Picture"),
 							  OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
@@ -765,6 +809,28 @@ obs_properties_t *get_properties(void *data)
 }
 
 } // namespace
+
+bool standby_cover_toggle(obs_source_t *source)
+{
+	bool found = false;
+	if (!source)
+		return false;
+	obs_source_enum_filters(
+		source,
+		[](obs_source_t *, obs_source_t *filter, void *param) {
+			const char *id = obs_source_get_unversioned_id(filter);
+			if (*static_cast<bool *>(param) || !id || strcmp(id, kStandbyId) != 0 ||
+			    !obs_source_enabled(filter))
+				return;
+			calldata_t cd = {};
+			calldata_set_bool(&cd, "toggle", true);
+			if (proc_handler_call(obs_source_get_proc_handler(filter), "cover", &cd))
+				*static_cast<bool *>(param) = true;
+			calldata_free(&cd);
+		},
+		&found);
+	return found;
+}
 
 bool standby_waiting(obs_source_t *source)
 {
