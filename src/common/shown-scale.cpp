@@ -70,12 +70,13 @@ struct ShownScale {
 	double *out_x, *out_y;
 	bool *found;
 	int depth;
+	bool hidden_too; // also an item that is hidden
 };
 
 bool find_shown_scale(obs_scene_t *, obs_sceneitem_t *item, void *param)
 {
 	auto *f = static_cast<ShownScale *>(param);
-	if (*f->found || !obs_sceneitem_visible(item))
+	if (*f->found || (!f->hidden_too && !obs_sceneitem_visible(item)))
 		return true;
 	double sx = 1.0, sy = 1.0;
 	item_draw_scale(item, sx, sy);
@@ -88,7 +89,7 @@ bool find_shown_scale(obs_scene_t *, obs_sceneitem_t *item, void *param)
 	}
 	if (f->depth >= 8)
 		return true;
-	ShownScale inner{f->wanted, f->sx * sx, f->sy * sy, f->out_x, f->out_y, f->found, f->depth + 1};
+	ShownScale inner{f->wanted, f->sx * sx, f->sy * sy, f->out_x, f->out_y, f->found, f->depth + 1, f->hidden_too};
 	if (obs_sceneitem_is_group(item))
 		obs_sceneitem_group_enum_items(item, find_shown_scale, &inner);
 	else if (obs_scene_t *nested = obs_scene_from_source(source))
@@ -98,16 +99,29 @@ bool find_shown_scale(obs_scene_t *, obs_sceneitem_t *item, void *param)
 
 } // namespace
 
+// Where to look, in turn: the scene on screen, then the others; in each, an
+// item that is showing before one that is hidden. A hidden item counts
+// because it is the size it will be shown at. Passed over (up to beta113), a
+// hidden item's source went by a copy in another scene, or by no scale at
+// all, until a moment after it was shown: the owner saw a shadow and an
+// outline come in thinner while the item slid in and snap to their thickness
+// part-way, and the items fitted round it move twice.
 bool shown_scale(obs_source_t *source, double &sx, double &sy)
 {
 	bool found = false;
-	ShownScale look{source, 1.0, 1.0, &sx, &sy, &found, 0};
-	if (obs_source_t *scene = scene_on_screen()) {
-		if (obs_scene_t *s = obs_scene_from_source(scene))
+	obs_source_t *on_screen = scene_on_screen();
+	for (const bool hidden_too : {false, true}) {
+		ShownScale look{source, 1.0, 1.0, &sx, &sy, &found, 0, hidden_too};
+		if (obs_scene_t *s = on_screen ? obs_scene_from_source(on_screen) : nullptr)
 			obs_scene_enum_items(s, find_shown_scale, &look);
-		obs_source_release(scene);
+		if (found)
+			break;
 	}
-	if (!found) {
+	obs_source_release(on_screen);
+	for (const bool hidden_too : {false, true}) {
+		if (found)
+			break;
+		ShownScale look{source, 1.0, 1.0, &sx, &sy, &found, 0, hidden_too};
 		obs_enum_scenes(
 			[](void *param, obs_source_t *scene) {
 				if (obs_scene_t *s = obs_scene_from_source(scene))

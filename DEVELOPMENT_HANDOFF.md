@@ -211,6 +211,20 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Shadow and outline sizes while an item is hidden (0.1.0-beta114)
+
+- The owner: with a slide off the nearest edge in Show in Scenes, an item's shadow and outline
+  "start out thinner, or less pixels as they enter into the canvas from the edge of screen, then
+  grow or instantly snap to the correct pixel thickness towards the end of the transition", and
+  the Fit to Space items round it "adjust unsmoothly".
+- Found: sizes in screen pixels go by how big the item is drawn (`shown_scale`), which skipped
+  hidden items. Fixed there; see AGENTS.md. A test hides an item and looks at its corners; it
+  fails on beta113's code and passes now.
+- **Not confirmed by the owner yet.**
+- Still so: the scale is looked up every 20 ticks, so an item that is a different size in the
+  scene switched to gets its new thickness up to a third of a second into that scene (README,
+  Morph's *Things to know*). Not what was reported here.
+
 ## Morph: a capture that starts during the change (0.1.0-beta113)
 
 - The owner: "when i switch to my main display scene, the capture source doesn't appear until the
@@ -221,7 +235,10 @@ information), which is what the template uses for pushes to `main`.
   box then gives a scale that is not a number. Morph worked places out once, at the start, so the
   item was nowhere until OBS drew the new scene itself at the end. A test with a stand-in that
   starts part-way failed on beta112's code and passes now (`Morph::look`). See AGENTS.md.
-- **Not confirmed by the owner yet.** Not tried with a real display capture (Windows only).
+- **Confirmed by the owner (2026-11-15): "113 works and the frametimes are a bit lower too on
+  average as are the cpu usage"**, with OBS's Stats window showing 60 fps, an average of 0.8 ms to
+  render a frame and 2 frames in 5,093 missed. That also answers the frame-time question left
+  open after beta109.
 - Not built: keeping display captures running while their scene is off screen, which would take
   away the capture's own start-up moment as well. It costs capturing every display all the time
   (OBS stops them on purpose) and was not asked for. If the owner still sees the display come in
@@ -237,7 +254,7 @@ information), which is what the template uses for pushes to `main`.
   confirmed by the owner yet* (beta103 to beta112: Fit to Space's hidden items, kept size and
   shared place, the blur additions, the glances, Morph and its links, Show in Scenes' transitions),
   as far as the owner had tried them.
-- Not answered one by one: the frame time after beta109 (*Average time to render frame*), the
+- Not answered one by one (the frame time has been since, see beta113): the
   Stream Deck plugin's version, the `primehack` rule in Auto Frame. Ask again only if one of them
   comes up; do not repeat them as open requests.
 
