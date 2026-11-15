@@ -5094,6 +5094,7 @@ int main(int argc, char **argv)
 					std::string shown_title;
 					const std::string picked_exe = aimed(shown_title, priority);
 					const std::string picked_title = shown_title;
+					const long long picked_priority = priority;
 					obs_properties_t *bp = obs_source_properties(one);
 					const int rows_before = list_rows(bp, "by_hand|a");
 					obs_properties_destroy(bp);
@@ -5107,7 +5108,7 @@ int main(int argc, char **argv)
 					const int rows_after = list_rows(bp, "by_hand|a");
 					obs_properties_destroy(bp);
 					CHECK(picked_exe == "browser2.exe" && picked_title == "Stream profile" &&
-						      priority == 1 &&
+						      picked_priority == 1 &&
 						      !(after_exe == "browser2.exe" && shown_title == other_title) &&
 						      rows_after == rows_before - 1,
 					      "a window picked by hand is that window: closed, another window of its program ('%s') is not taken, and it leaves the list (%s '%s', then %s '%s'; %d then %d on the list)",

@@ -353,7 +353,8 @@ public:
 		}
 		{
 			std::vector<std::string> all;
-			for (const std::vector<std::string> *list : {&apps, &by_hand})
+			for (const std::vector<std::string> *list :
+			     {&apps, static_cast<const std::vector<std::string> *>(&by_hand)})
 				for (const std::string &entry : *list)
 					all.push_back(lowered(is_pinned(entry) ? pinned_program(entry) : entry));
 			std::lock_guard lock(g_listed_mutex);
