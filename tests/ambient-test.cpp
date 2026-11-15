@@ -2061,7 +2061,7 @@ int main(int argc, char **argv)
 				obs_data_set_string(entry, "value", "oddgame");
 				obs_data_array_push_back(listed, entry);
 				obs_data_release(entry);
-				obs_data_set_array(acd, "always", listed);
+				obs_data_set_array(acd, "programs", listed);
 				obs_data_array_release(listed);
 				obs_source_t *ac = obs_source_create("stagekit_auto_capture", "Standby Auto Capture",
 								     acd, nullptr);

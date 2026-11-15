@@ -719,6 +719,12 @@ public:
 	}
 	void detach()
 	{
+		// Taken off the capture: a Standby Picture it had put over it goes.
+		if (covered_ && parent_) {
+			std::lock_guard lock(mutex_);
+			standby_cover_set(parent_, false, cover_style_, cover_ms_, cover_curve_, cover_mode_);
+		}
+		covered_ = hidden_ = false;
 		if (holding_ && parent_)
 			obs_source_dec_showing(parent_);
 		holding_ = false;
