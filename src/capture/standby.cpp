@@ -157,6 +157,21 @@ public:
 			"void cover(in bool toggle, in bool on, out bool covering)",
 			[](void *data, calldata_t *cd) {
 				auto *self = static_cast<Standby *>(data);
+				// Another filter may lend its own transition for this
+				// change in and back out ("style" 0 and up); without
+				// one, the filter's own is used.
+				long long style = -1;
+				if (calldata_get_int(cd, "style", &style) && style >= 0) {
+					std::lock_guard lock(self->mutex_);
+					Look lent;
+					lent.style = static_cast<Style>(std::clamp<long long>(style, 0, 11));
+					lent.fade_s = lent.back_s =
+						std::clamp<long long>(calldata_int(cd, "ms"), 0, 10000) / 1000.0;
+					lent.curve = static_cast<EaseCurve>(calldata_int(cd, "curve"));
+					lent.mode = static_cast<EaseMode>(calldata_int(cd, "mode"));
+					self->lent_ = true;
+					self->use(lent);
+				}
 				if (calldata_bool(cd, "toggle"))
 					self->cover_ = !self->cover_;
 				else
@@ -166,6 +181,23 @@ public:
 			this);
 	}
 	void toggle_cover() { cover_ = !cover_; }
+
+	// How the picture comes and goes: the filter's own settings, or ones
+	// lent by another filter for the change it asked for.
+	struct Look {
+		double fade_s = 0.8, back_s = 0.8;
+		Style style = Style::Fade;
+		EaseCurve curve = EaseCurve::Cubic;
+		EaseMode mode = EaseMode::InOut;
+	};
+	void use(const Look &look) // (with mutex_ held)
+	{
+		fade_s_ = look.fade_s;
+		back_s_ = look.back_s;
+		style_ = look.style;
+		curve_ = look.curve;
+		mode_ = look.mode;
+	}
 
 	~Standby()
 	{
@@ -185,11 +217,13 @@ public:
 		kind_ = static_cast<Picture>(std::clamp((int)obs_data_get_int(settings, "picture"), 0, 2));
 		file_ = obs_data_get_string(settings, "file");
 		named_ = obs_data_get_string(settings, "source");
-		fade_s_ = std::clamp<long long>(obs_data_get_int(settings, "fade_ms"), 0, 5000) / 1000.0;
-		back_s_ = std::clamp<long long>(obs_data_get_int(settings, "back_ms"), 0, 5000) / 1000.0;
-		style_ = static_cast<Style>(std::clamp((int)obs_data_get_int(settings, "style"), 0, 11));
-		curve_ = static_cast<EaseCurve>(obs_data_get_int(settings, "ease_curve"));
-		mode_ = static_cast<EaseMode>(obs_data_get_int(settings, "ease_mode"));
+		own_.fade_s = std::clamp<long long>(obs_data_get_int(settings, "fade_ms"), 0, 5000) / 1000.0;
+		own_.back_s = std::clamp<long long>(obs_data_get_int(settings, "back_ms"), 0, 5000) / 1000.0;
+		own_.style = static_cast<Style>(std::clamp((int)obs_data_get_int(settings, "style"), 0, 11));
+		own_.curve = static_cast<EaseCurve>(obs_data_get_int(settings, "ease_curve"));
+		own_.mode = static_cast<EaseMode>(obs_data_get_int(settings, "ease_mode"));
+		if (!lent_)
+			use(own_);
 		glide_size_ = obs_data_get_bool(settings, "glide_size");
 		last_w_ = (uint32_t)std::max<long long>(0, obs_data_get_int(settings, "last_width"));
 		last_h_ = (uint32_t)std::max<long long>(0, obs_data_get_int(settings, "last_height"));
@@ -343,6 +377,11 @@ public:
 			// none with a capture, changing over the same times.
 			const double step = cut ? 1.0 : seconds / over;
 			mix_ = empty ? std::min(1.0, mix_ + step) : std::max(0.0, mix_ - step);
+			// A lent transition lasts until the picture is all gone again.
+			if (lent_ && !cover_ && mix_ <= 0.0) {
+				lent_ = false;
+				use(own_);
+			}
 			// (Shown over a capture that is still running, the capture goes
 			// on being drawn under the picture until the picture is all
 			// there: the change is from a live picture, not a still one.)
@@ -719,6 +758,8 @@ private:
 	double mix_ = 0.0;               // how much of the picture shows
 	bool empty_ = false;             // the capture has nothing to show
 	std::atomic<bool> cover_{false}; // the picture is shown on purpose, over a capture that has one
+	Look own_;                       // the filter's own transition
+	bool lent_ = false;              // another's is in use until the picture has gone again
 	obs_hotkey_id hotkey_ = OBS_INVALID_HOTKEY_ID;
 	bool own_shape_ = true;            // while waiting, the picture keeps its own shape
 	uint32_t live_w_ = 0, live_h_ = 0; // the capture's size while it shows
@@ -851,6 +892,37 @@ bool standby_cover_toggle(obs_source_t *source)
 		},
 		&found);
 	return found;
+}
+
+bool standby_cover_set(obs_source_t *source, bool on, int style, int ms, int curve, int mode)
+{
+	struct Ask {
+		bool on;
+		int style, ms, curve, mode;
+		bool found;
+	} ask{on, style, ms, curve, mode, false};
+	if (!source)
+		return false;
+	obs_source_enum_filters(
+		source,
+		[](obs_source_t *, obs_source_t *filter, void *param) {
+			auto *a = static_cast<Ask *>(param);
+			const char *id = obs_source_get_unversioned_id(filter);
+			if (a->found || !id || strcmp(id, kStandbyId) != 0 || !obs_source_enabled(filter))
+				return;
+			calldata_t cd = {};
+			calldata_set_bool(&cd, "toggle", false);
+			calldata_set_bool(&cd, "on", a->on);
+			calldata_set_int(&cd, "style", a->style);
+			calldata_set_int(&cd, "ms", a->ms);
+			calldata_set_int(&cd, "curve", a->curve);
+			calldata_set_int(&cd, "mode", a->mode);
+			if (proc_handler_call(obs_source_get_proc_handler(filter), "cover", &cd))
+				a->found = true;
+			calldata_free(&cd);
+		},
+		&ask);
+	return ask.found;
 }
 
 bool standby_waiting(obs_source_t *source)

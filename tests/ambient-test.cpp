@@ -2046,6 +2046,64 @@ int main(int argc, char **argv)
 				settle(12);
 			}
 
+			// Auto Capture on the same capture: its Standby Picture while no
+			// game is captured, and behind it when the capture is hidden, with
+			// Auto Capture's own transition.
+			{
+				obs_data_t *again = obs_source_get_settings(capture);
+				obs_data_set_string(again, "file", red_path.c_str());
+				obs_source_update(capture, again);
+				obs_data_t *acd = obs_data_create();
+				obs_data_set_bool(acd, "no_game_standby", true);
+				obs_data_set_int(acd, "standby_style", 1); // a cut, so the check need not wait
+				obs_data_array_t *listed = obs_data_array_create();
+				obs_data_t *entry = obs_data_create();
+				obs_data_set_string(entry, "value", "oddgame");
+				obs_data_array_push_back(listed, entry);
+				obs_data_release(entry);
+				obs_data_set_array(acd, "programs", listed);
+				obs_data_array_release(listed);
+				obs_source_t *ac = obs_source_create("stagekit_auto_capture", "Standby Auto Capture",
+								     acd, nullptr);
+				obs_data_release(acd);
+				obs_source_filter_add(capture, ac);
+				auto windows = [&](const char *list) {
+					calldata_t cd = {};
+					calldata_set_string(&cd, "windows", list);
+					proc_handler_call(obs_source_get_proc_handler(ac), "set_test_windows", &cd);
+					calldata_free(&cd);
+				};
+				auto waiting = [&]() {
+					bool w = false;
+					calldata_t cd = {};
+					if (proc_handler_call(obs_source_get_proc_handler(standby), "get_standing",
+							      &cd))
+						w = calldata_bool(&cd, "waiting");
+					calldata_free(&cd);
+					return w;
+				};
+				windows("Inbox|MailWnd|mail.exe|front|");
+				settle(10);
+				const bool no_game = waiting();
+				windows("Odd Game|OddWnd|OddGame.exe|front|");
+				settle(10);
+				const bool with_game = waiting();
+				proc_handler_call(obs_source_get_proc_handler(ac), "hide", nullptr);
+				settle(10);
+				const bool hidden = waiting();
+				proc_handler_call(obs_source_get_proc_handler(ac), "hide", nullptr);
+				settle(10);
+				CHECK(no_game && !with_game && hidden && !waiting(),
+				      "Auto Capture shows the Standby Picture while there is no game, and hides the capture behind it and back (%d, %d, %d, %d)",
+				      no_game, with_game, hidden, waiting());
+				obs_source_filter_remove(capture, ac);
+				obs_source_release(ac);
+				obs_data_set_string(again, "file", "");
+				obs_source_update(capture, again);
+				obs_data_release(again);
+				settle(12);
+			}
+
 			// Asked to fill instead, it takes the size the capture last had.
 			obs_data_set_bool(sd, "own_shape", false);
 			obs_source_update(standby, sd);
@@ -4927,6 +4985,12 @@ int main(int argc, char **argv)
 			// The owner: "I don't know how to [switch back] while also
 			// keeping the previously manually selected window available".
 			{
+				{
+					obs_data_t *now = obs_source_get_settings(one);
+					obs_data_set_int(now, "picked", 1); // switch at selection
+					obs_source_update(one, now);
+					obs_data_release(now);
+				}
 				windows("Reference board|refs.exe|front\nDocs|browser.exe|\nSculpt 2026|ZSculpt.exe|");
 				draw_for(300);
 				calldata_t cd = {};
@@ -4964,6 +5028,50 @@ int main(int argc, char **argv)
 				      "'toggle' goes from the window held by hand back to the apps, and from there back to that window (%s, then %s)",
 				      to_auto.c_str(), aimed(title, priority).c_str());
 				command("back");
+				draw_for(1500);
+				// "Wait until switched to", as it comes: the window picked is
+				// only kept as the manual window, until it is switched to.
+				obs_data_t *ps = obs_source_get_settings(one);
+				obs_data_set_int(ps, "picked", 0);
+				obs_source_update(one, ps);
+				windows("Notes|notes.exe|front\nDocs|browser.exe|\nSculpt 2026|ZSculpt.exe|");
+				draw_for(300);
+				const std::string before = aimed(title, priority);
+				calldata_t kd = {};
+				calldata_set_string(&kd, "title", "Notes");
+				calldata_set_string(&kd, "executable", "notes.exe");
+				proc_handler_call(obs_source_get_proc_handler(one), "hold", &kd);
+				calldata_free(&kd);
+				draw_for(400);
+				const std::string waited = aimed(title, priority);
+				command("toggle");
+				draw_for(400);
+				CHECK(waited == before && waited != "notes.exe" &&
+					      aimed(title, priority) == "notes.exe",
+				      "as it comes, a window picked by hand waits until it is switched to (%s, still %s, then %s)",
+				      before.c_str(), waited.c_str(), aimed(title, priority).c_str());
+				// "Auto-switch manual windows", on as it comes: in manual mode the
+				// capture follows the manual window clicked into, and only those.
+				windows("Notes|notes.exe|\nDocs|browser.exe|front\nSculpt 2026|ZSculpt.exe|");
+				draw_for(400);
+				const std::string followed_hand = aimed(title, priority);
+				windows("Notes|notes.exe|\nDocs|browser.exe|\nSculpt 2026|ZSculpt.exe|front");
+				draw_for(400);
+				const std::string not_auto = aimed(title, priority);
+				obs_data_set_bool(ps, "hand_follow", false);
+				obs_source_update(one, ps);
+				windows("Notes|notes.exe|front\nDocs|browser.exe|\nSculpt 2026|ZSculpt.exe|");
+				draw_for(400);
+				CHECK(followed_hand == "browser.exe" && not_auto == "browser.exe" &&
+					      aimed(title, priority) == "browser.exe",
+				      "in manual mode it follows the manual window clicked into and no other; switched off, it stays (%s, %s, %s)",
+				      followed_hand.c_str(), not_auto.c_str(), aimed(title, priority).c_str());
+				obs_data_set_bool(ps, "hand_follow", true);
+				obs_source_update(one, ps);
+				command("back");
+				obs_data_set_int(ps, "picked", 0);
+				obs_source_update(one, ps);
+				obs_data_release(ps);
 				draw_for(1500);
 			}
 
@@ -5033,9 +5141,10 @@ int main(int argc, char **argv)
 			}
 
 			obs_properties_t *props = obs_source_properties(one);
-			CHECK(list_rows(props, "apps|a") == 3 && list_rows(props, "by_hand|a") == 2 &&
+			CHECK(list_rows(props, "apps|a") == 3 && list_rows(props, "by_hand|a") == 3 &&
 				      obs_properties_get(props, "follow") && obs_properties_get(props, "ready") &&
-				      obs_properties_get(props, "change") && obs_properties_get(props, "ease_curve") &&
+				      obs_properties_get(props, "picked") && obs_properties_get(props, "change") &&
+				      obs_properties_get(props, "ease_curve") &&
 				      obs_properties_get(props, "transition") && obs_properties_get(props, "hide_now"),
 			      "its settings list the apps, with how to follow them and how the picture changes");
 			obs_properties_destroy(props);

@@ -29,7 +29,27 @@ apps: Return to automatic. Keep the others ready: Keep other windows captured (K
 ready in the scene filter). Change with / Lasting, in every filter: Transition / Duration; Show
 with / Hide with: Show transition / Hide transition. Hiding and showing it: Show/Hide transition.
 Stream Deck keys: Next Manual Capture: Manual Window / Source. Capture Front Window: Capture Active
-Window. Do not rename anything again without the owner's say-so: after one unannounced rename they
+Window.
+
+A third table, for control labels, was approved on 2026-11-15 (beta124) with two changes of the
+owner's: *picture* becomes *image* and *item* becomes *source*, "to align with more
+professional/technically accurate verbiage for OBS", and "the verbiage should be concise". Then
+and now: Items never in the way: Ignored sources. Fit it in: Fit area. The free space around it:
+Free space around source. Gap to edges and items: Gap. Glide to a new space over: Move duration.
+Resize it to fit: Resize to fit. Keep it towards: Align in the space. Same place in these scenes:
+Sync position to scenes. Tolerance: Size tolerance. Bring along: Linked source. Send it to:
+Destination. Travel time: Duration. Comes in from / Time to come in / Time to leave: Direction /
+Show duration / Hide duration. Ramp style / Ramp in time / Ramp out time: Blur transition /
+Blur-in duration / Blur-out duration. Zoom in time / Zoom out time: Zoom-in duration / Zoom-out
+duration. Blend in live capture: Live capture. Live capture amount: Live capture opacity. Bloom
+from brightness: Bloom threshold. Picture shape: Aspect ratio. Saved shapes: Saved aspect
+ratios. Hold a shape for: Keep aspect ratio for. Made from: Colour source (its *The picture
+itself*: The image itself). Sizes as they look on screen: Sizes in screen pixels. Standby
+Picture's Show or hide the picture now: Cover the capture now; To the capture / Back to the
+picture: Duration: image to capture / capture to image; Picture keeps its shape: Keep image's
+aspect ratio; Size glides too: Animate the size change. Window switcher's Hide to the Standby
+Picture: Hide shows Standby Picture; Hide or show it now: Hide/show capture now. Dock: Send to:
+Move to; When I let go of an item: On drop. Names of filters and keys were not part of it. Do not rename anything again without the owner's say-so: after one unannounced rename they
 asked "where is follow active app?".
 
 ## What StageKit is not
@@ -732,6 +752,18 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     transitioning"; OBS's profiler in their log had `tick_sources` at up to 135 ms with drawing
     under 10 ms and no StageKit tick over 7 ms: it was the captures starting. The parent is aimed
     only when there is no ready capture with a picture yet.
+  - *Captured window* (`picked`, by number, append-only: 0 *Wait until switched to*, as it
+    comes; 1 *Switch at selection*): what the Capture Active Window key does through the filter.
+    Waiting, the window's program joins `by_hand` and becomes `last_held_`, so it is captured in
+    the background and the toggle goes to it, but `held_` is not set and nothing is aimed. The
+    owner: "select a browser or other windows for capture in the background while using my
+    autoswitch apps, but then use the switch to manually captured window when i want".
+  - *Auto-switch manual windows* (`hand_follow`, on as it comes): while one is held, the same
+    rules as automatic mode among `by_hand` only (clicked into, just opened via
+    `hand_was_open_`, the one before via `hand_recent_` when the held one closes); without it a
+    held window stays until let go. The owner: "when in manual window mode, it follow the same
+    behavior as the auto mode, but only for the manually selected windows ... it should be able
+    to be toggled with a switch in the settings".
   - *Toggle manual / automatic* (`toggle`, hotkey `stagekit.active.toggle.` + name, also on the
     scene filter): back from a held window, else on to the one held last. The owner: "the
     capture front window can be used to select the manual capture, and then the toggle can be
@@ -786,6 +818,15 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   cause on their machine is **not known**: the log line `Standby Picture '...': shown over the
   capture, over ... ms (transition n)` is there to tell. `Style::Morph` (11) stretches both
   pictures over the gliding frame, as the window switcher's Morph does.
+- **Auto Capture can show the capture's Standby Picture** (`no_game_standby`, *No game: Standby
+  Picture*, off as it comes; `hide_standby`, *Hide shows Standby Picture*, on; hotkey
+  `stagekit.active.hide.` + filter name, the window switchers' beginning, so the Stream Deck
+  *Manual Window / Source* key's *hide* serves it). It goes through `standby_cover_set`, which
+  lends the Standby Picture Auto Capture's own transition (`standby_style`, by the Standby
+  Picture's numbers; `standby_ms`; `standby_ease_*`) for that change in and the one back
+  (`lent_`, `own_` in `src/capture/standby.cpp`); then the filter's own settings apply again. The
+  owner: "add an option for no game: show standby image, with transition options similar to
+  other filters". Without a Standby Picture, hiding hides the capture's items in every scene.
 - **Ambient Background's Bloom has two styles** (`bloom_style`): 0, the bright parts shine
   (threshold, screen-blended); 1, *Whole picture, amplified*: all of the picture's light added
   back (`BloomAmplify`), which is what the bloom in the owner's old collection did

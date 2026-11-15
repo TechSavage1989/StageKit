@@ -243,7 +243,7 @@ def main():
         ("guides", "Guides"),
         ("limit", "Stop resizing at edges"),
         ("slide", "Slide to the next edge"),
-        ("everyScene", "Send to: in every scene"),
+        ("everyScene", "Move to: in every scene"),
         ("keepShape", "Keep shape when resizing"),
     ]
     page("option", "StageKit dock option", options("Option", "option", "snap", switches) + PRESS)
