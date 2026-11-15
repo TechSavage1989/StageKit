@@ -5296,7 +5296,7 @@ int main(int argc, char **argv)
 				obs_data_set_double(fd2, "margin", 0);
 				// (Its own glide is far slower than the switcher's 600 ms:
 				// the two cannot be mistaken for each other.)
-				obs_data_set_int(fd2, "glide_ms", 3000);
+				obs_data_set_int(fd2, "glide_ms", 1800);
 				obs_data_set_bool(fd2, "skip_fill_on", true);
 				obs_data_set_double(fd2, "skip_fill", 90.0);
 				obs_data_array_t *skip = obs_data_array_create();
@@ -5325,7 +5325,7 @@ int main(int argc, char **argv)
 				};
 				// A square window: beside the camera, since it would fill
 				// little of the screen.
-				shown_for(4500);
+				shown_for(6000);
 				const double square_w = bounds_w();
 				// On to a 16:9 window, which fills the screen: over the camera.
 				windows("Docs|browser.exe|\nModel scene|modeller.exe|\nSculpt 2026|ZSculpt.exe|front");
