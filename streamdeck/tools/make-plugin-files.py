@@ -17,7 +17,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, "..")
 PLUGIN = os.path.join(ROOT, "com.techsavage1989.stagekit.sdPlugin")
 BASE = "com.techsavage1989.stagekit"
-VERSION = "0.10.0.0"
+VERSION = "0.11.0.0"
 
 # The pack picture each feature's key starts with (its "on" and "off" look).
 PICTURES = {
@@ -155,6 +155,10 @@ def main():
     actions = []
 
     def add(key, name, tip, page_name, icon, states, visible=True):
+        # Every key offered has its own icon in Stream Deck's list
+        # (tools/make-action-icons.py); the two hidden older keys keep theirs.
+        if visible:
+            icon = f"imgs/actions/{key}/icon"
         action = {
             "Name": name,
             "UUID": f"{BASE}.{key}",

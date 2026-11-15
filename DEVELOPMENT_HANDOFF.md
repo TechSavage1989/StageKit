@@ -211,6 +211,14 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Stream Deck: an icon of its own for every key in the list (0.1.0-beta123)
+
+The owner sent a screenshot of Stream Deck's list of StageKit actions, where every key showed the
+same small drawing, and asked for "all of the stream deck buttons to get specific icons". Each
+of the 25 keys offered now has its own (`tools/make-action-icons.py`); Stream Deck plugin
+0.11.0.0. Not seen in Stream Deck here. The name table proposed with beta122 is still unanswered
+and not applied.
+
 ## The overlap rule gets a switch, a clearer name and a Stream Deck key (0.1.0-beta122)
 
 The owner on beta121: the fill rule at 98 % "seemed to work as intended" and "all the ambient

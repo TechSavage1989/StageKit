@@ -1,12 +1,12 @@
 {
 	"Name": "StageKit",
-	"Version": "0.10.0.0",
+	"Version": "0.11.0.0",
 	"Author": "StageKit contributors",
 	"Actions": [
 		{
 			"Name": "Blur",
 			"UUID": "com.techsavage1989.stagekit.blur",
-			"Icon": "imgs/actions/switch/icon",
+			"Icon": "imgs/actions/blur/icon",
 			"Tooltip": "Blurs a source and clears it again. The key shows which way it is.",
 			"PropertyInspectorPath": "ui/blur.html",
 			"Controllers": [
@@ -28,7 +28,7 @@
 		{
 			"Name": "Shadow, Glow & Outline",
 			"UUID": "com.techsavage1989.stagekit.shadow",
-			"Icon": "imgs/actions/switch/icon",
+			"Icon": "imgs/actions/shadow/icon",
 			"Tooltip": "Switches a source's shadow, glow or outline on and off.",
 			"PropertyInspectorPath": "ui/shadow.html",
 			"Controllers": [
@@ -50,7 +50,7 @@
 		{
 			"Name": "Corners & Edges",
 			"UUID": "com.techsavage1989.stagekit.corners",
-			"Icon": "imgs/actions/switch/icon",
+			"Icon": "imgs/actions/corners/icon",
 			"Tooltip": "Switches a source's shaped corners and edges on and off.",
 			"PropertyInspectorPath": "ui/corners.html",
 			"Controllers": [
@@ -72,7 +72,7 @@
 		{
 			"Name": "Zoom",
 			"UUID": "com.techsavage1989.stagekit.zoom",
-			"Icon": "imgs/actions/switch/icon",
+			"Icon": "imgs/actions/zoom/icon",
 			"Tooltip": "Zooms a source in and back out.",
 			"PropertyInspectorPath": "ui/zoom.html",
 			"Controllers": [
@@ -94,7 +94,7 @@
 		{
 			"Name": "Auto Capture",
 			"UUID": "com.techsavage1989.stagekit.autocapture",
-			"Icon": "imgs/actions/switch/icon",
+			"Icon": "imgs/actions/autocapture/icon",
 			"Tooltip": "Switches automatic game capture on and off. On hands a hooked capture back to it.",
 			"PropertyInspectorPath": "ui/autocapture.html",
 			"Controllers": [
@@ -116,7 +116,7 @@
 		{
 			"Name": "Auto Frame",
 			"UUID": "com.techsavage1989.stagekit.autoframe",
-			"Icon": "imgs/actions/switch/icon",
+			"Icon": "imgs/actions/autoframe/icon",
 			"Tooltip": "Switches a capture's automatic framing on and off.",
 			"PropertyInspectorPath": "ui/autoframe.html",
 			"Controllers": [
@@ -138,7 +138,7 @@
 		{
 			"Name": "Standby Picture",
 			"UUID": "com.techsavage1989.stagekit.standby",
-			"Icon": "imgs/actions/switch/icon",
+			"Icon": "imgs/actions/standby/icon",
 			"Tooltip": "Switches the picture shown while nothing is captured on and off.",
 			"PropertyInspectorPath": "ui/standby.html",
 			"Controllers": [
@@ -160,7 +160,7 @@
 		{
 			"Name": "Show in Scenes",
 			"UUID": "com.techsavage1989.stagekit.showinscenes",
-			"Icon": "imgs/actions/switch/icon",
+			"Icon": "imgs/actions/showinscenes/icon",
 			"Tooltip": "Shows and hides sources across scenes with one switch.",
 			"PropertyInspectorPath": "ui/showinscenes.html",
 			"Controllers": [
@@ -182,7 +182,7 @@
 		{
 			"Name": "Fit to Space",
 			"UUID": "com.techsavage1989.stagekit.fititem",
-			"Icon": "imgs/actions/switch/icon",
+			"Icon": "imgs/actions/fititem/icon",
 			"Tooltip": "Switches a scene's fitting of its game or window on and off.",
 			"PropertyInspectorPath": "ui/fititem.html",
 			"Controllers": [
@@ -204,7 +204,7 @@
 		{
 			"Name": "Automatic Source Switcher",
 			"UUID": "com.techsavage1989.stagekit.activeapp",
-			"Icon": "imgs/actions/switch/icon",
+			"Icon": "imgs/actions/activeapp/icon",
 			"Tooltip": "Switches a scene's automatic switching between sources on and off.",
 			"PropertyInspectorPath": "ui/activeapp.html",
 			"Controllers": [
@@ -226,7 +226,7 @@
 		{
 			"Name": "Automatic Window Switcher",
 			"UUID": "com.techsavage1989.stagekit.appcapture",
-			"Icon": "imgs/actions/switch/icon",
+			"Icon": "imgs/actions/appcapture/icon",
 			"Tooltip": "Switches a Window Capture's automatic switching between windows on and off.",
 			"PropertyInspectorPath": "ui/appcapture.html",
 			"Controllers": [
@@ -248,7 +248,7 @@
 		{
 			"Name": "Program Trigger",
 			"UUID": "com.techsavage1989.stagekit.programtrigger",
-			"Icon": "imgs/actions/switch/icon",
+			"Icon": "imgs/actions/programtrigger/icon",
 			"Tooltip": "Switches a program trigger on and off.",
 			"PropertyInspectorPath": "ui/programtrigger.html",
 			"Controllers": [
@@ -270,7 +270,7 @@
 		{
 			"Name": "Link Visibility",
 			"UUID": "com.techsavage1989.stagekit.visibilitylink",
-			"Icon": "imgs/actions/switch/icon",
+			"Icon": "imgs/actions/visibilitylink/icon",
 			"Tooltip": "Switches a link between items' visibility on and off.",
 			"PropertyInspectorPath": "ui/visibilitylink.html",
 			"Controllers": [
@@ -292,7 +292,7 @@
 		{
 			"Name": "Show/Hide Animation",
 			"UUID": "com.techsavage1989.stagekit.showhide",
-			"Icon": "imgs/actions/switch/icon",
+			"Icon": "imgs/actions/showhide/icon",
 			"Tooltip": "Switches a scene's show and hide animations on and off.",
 			"PropertyInspectorPath": "ui/showhide.html",
 			"Controllers": [
@@ -314,7 +314,7 @@
 		{
 			"Name": "Move Source",
 			"UUID": "com.techsavage1989.stagekit.sendto",
-			"Icon": "imgs/actions/move/icon",
+			"Icon": "imgs/actions/sendto/icon",
 			"Tooltip": "Sends the camera, or any source, to one of its saved places.",
 			"PropertyInspectorPath": "ui/sendto.html",
 			"Controllers": [
@@ -330,7 +330,7 @@
 		{
 			"Name": "Move Scene Item",
 			"UUID": "com.techsavage1989.stagekit.placeitem",
-			"Icon": "imgs/actions/move/icon",
+			"Icon": "imgs/actions/placeitem/icon",
 			"Tooltip": "Moves a scene's item to its place.",
 			"PropertyInspectorPath": "ui/placeitem.html",
 			"Controllers": [
@@ -346,7 +346,7 @@
 		{
 			"Name": "Apply Layout",
 			"UUID": "com.techsavage1989.stagekit.layout",
-			"Icon": "imgs/actions/move/icon",
+			"Icon": "imgs/actions/layout/icon",
 			"Tooltip": "Puts a scene's items into a saved layout.",
 			"PropertyInspectorPath": "ui/layout.html",
 			"Controllers": [
@@ -362,7 +362,7 @@
 		{
 			"Name": "Set Aspect Ratio",
 			"UUID": "com.techsavage1989.stagekit.shape",
-			"Icon": "imgs/actions/switch/icon",
+			"Icon": "imgs/actions/shape/icon",
 			"Tooltip": "Sets a game's aspect ratio by hand: 4:3, 8:7 and so on, or back to automatic. It can last just for the game being captured.",
 			"PropertyInspectorPath": "ui/shape.html",
 			"Controllers": [
@@ -394,7 +394,7 @@
 		{
 			"Name": "Manual Window / Source",
 			"UUID": "com.techsavage1989.stagekit.appswitch",
-			"Icon": "imgs/actions/move/icon",
+			"Icon": "imgs/actions/appswitch/icon",
 			"Tooltip": "For an Automatic Window Switcher or an Automatic Source Switcher: toggles between the manual window and automatic, steps to the next manual one, returns to automatic, or hides and shows the capture.",
 			"PropertyInspectorPath": "ui/appswitch.html",
 			"Controllers": [
@@ -410,7 +410,7 @@
 		{
 			"Name": "Fit to Space Overlap",
 			"UUID": "com.techsavage1989.stagekit.fitoverlap",
-			"Icon": "imgs/actions/switch/icon",
+			"Icon": "imgs/actions/fitoverlap/icon",
 			"Tooltip": "Switches a Fit to Space filter's 'Overlap only when it fills': on, the fitted window goes under the camera only while it fills its space, and beside it otherwise.",
 			"PropertyInspectorPath": "ui/fitoverlap.html",
 			"Controllers": [
@@ -448,7 +448,7 @@
 		{
 			"Name": "Blur All",
 			"UUID": "com.techsavage1989.stagekit.blurall",
-			"Icon": "imgs/actions/blur/icon",
+			"Icon": "imgs/actions/blurall/icon",
 			"Tooltip": "Switches every Blur on, or all of them off again. Shows on while any is on.",
 			"PropertyInspectorPath": "ui/blur-all.html",
 			"Controllers": [
@@ -470,7 +470,7 @@
 		{
 			"Name": "Dock Option",
 			"UUID": "com.techsavage1989.stagekit.option",
-			"Icon": "imgs/actions/switch/icon",
+			"Icon": "imgs/actions/option/icon",
 			"Tooltip": "One of the StageKit dock's options on a key: snap on release, guides, stop resizing at edges. Shows which way it is.",
 			"PropertyInspectorPath": "ui/option.html",
 			"Controllers": [
@@ -492,7 +492,7 @@
 		{
 			"Name": "Slide to Edge",
 			"UUID": "com.techsavage1989.stagekit.slide",
-			"Icon": "imgs/actions/move/icon",
+			"Icon": "imgs/actions/slide/icon",
 			"Tooltip": "Slides the item selected in OBS to the next edge that way; the next press passes it.",
 			"PropertyInspectorPath": "ui/slide.html",
 			"Controllers": [
