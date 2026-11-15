@@ -5065,9 +5065,10 @@ int main(int argc, char **argv)
 			}
 
 			obs_properties_t *props = obs_source_properties(one);
-			CHECK(list_rows(props, "apps|a") == 3 && list_rows(props, "by_hand|a") == 2 &&
+			CHECK(list_rows(props, "apps|a") == 3 && list_rows(props, "by_hand|a") == 3 &&
 				      obs_properties_get(props, "follow") && obs_properties_get(props, "ready") &&
-				      obs_properties_get(props, "change") && obs_properties_get(props, "ease_curve") &&
+				      obs_properties_get(props, "picked") && obs_properties_get(props, "change") &&
+				      obs_properties_get(props, "ease_curve") &&
 				      obs_properties_get(props, "transition") && obs_properties_get(props, "hide_now"),
 			      "its settings list the apps, with how to follow them and how the picture changes");
 			obs_properties_destroy(props);
