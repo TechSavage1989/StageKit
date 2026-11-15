@@ -525,6 +525,16 @@ capture for each app.
   it. The filter adds its program to *Manual windows* and captures it; with *Captured window*
   set to *Switch at selection* it also changes over to it with your *Transition* and holds it.
   *Manual Window / Source* (*Toggle*) then switches between that window and your apps.
+- **A window you pick is that window, not its program.** *Capture Active Window* adds it to
+  *Manual windows* as *program — its title*, for example two browser profiles as two entries.
+  Another window of the same program never stands in for it. When it closes it leaves the list,
+  and the capture does not move to the program's other window. It goes to your next manual
+  window (with *Auto-switch manual windows*) or back to automatic, and with nowhere to go it
+  shows the Standby Picture, or nothing. A program named in a list still means any of its
+  windows.
+- **The window shown is watched.** When it closes, OBS's Window Capture looks for another window
+  of the same program by itself. StageKit does not show that picture: it keeps the last frame of
+  the window that closed until it has chosen and aimed at the next one.
 - **Captured window**: what happens to a window picked with *Capture Active Window*.
   *Wait until switched to* (as it comes): it becomes the manual window and is captured in the
   background while your automatic windows go on showing; it is shown when you switch to it with

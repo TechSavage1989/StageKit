@@ -79,6 +79,7 @@ struct Window {
 	std::string title, window_class, executable;
 	bool foreground = false;
 	bool looks_like_game = false; // only worked out for the window in front
+	uint64_t handle = 0;          // which window it is, while it is open
 };
 
 std::string lower(std::string text)
@@ -275,6 +276,7 @@ BOOL CALLBACK collect_window(HWND window, LPARAM param)
 	found.window_class = utf8(window_class, class_length);
 	found.executable = utf8(name, (int)(path + path_length - name));
 	found.foreground = window == GetForegroundWindow();
+	found.handle = (uint64_t)(uintptr_t)window;
 	if (found.foreground) {
 		// Looking inside a program is the costly part, so it is only done
 		// for the one window in front.
@@ -1009,7 +1011,7 @@ std::vector<OpenWindow> open_windows()
 {
 	std::vector<OpenWindow> out;
 	for (const Window &w : g_window_watch.latest())
-		out.push_back({w.title, w.executable, w.foreground, w.window_class});
+		out.push_back({w.title, w.executable, w.foreground, w.window_class, w.handle});
 	return out;
 }
 
@@ -1130,7 +1132,8 @@ bool hook_front_window(obs_source_t *capture, std::string &what, std::string &er
 	// in its own way, with the last picture kept until the new one is
 	// there, and holds it. (Switched off instead, as up to beta117, the
 	// picture vanished at once.)
-	if (app_capture_hold(capture, OpenWindow{front.title, front.executable, true, front.window_class})) {
+	if (app_capture_hold(capture,
+			     OpenWindow{front.title, front.executable, true, front.window_class, front.handle})) {
 		obs_log(LOG_INFO, "Hook: '%s' is handed %s, by hand", obs_source_get_name(capture),
 			front.executable.c_str());
 		what = front.executable;

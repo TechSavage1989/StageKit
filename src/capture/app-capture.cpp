@@ -123,10 +123,44 @@ std::string decoded(const std::string &part)
 	return out;
 }
 
+// A window picked by hand is kept as that one window, not its program:
+// "<program> — <its title when picked>". Two windows of one program (two
+// browser profiles) are then never taken for each other.
+const char *const kPinMark = " \xE2\x80\x94 "; // " — "
+bool is_pinned(const std::string &entry)
+{
+	return entry.find(kPinMark) != std::string::npos;
+}
+std::string pinned_program(const std::string &entry)
+{
+	return entry.substr(0, entry.find(kPinMark));
+}
+std::string pinned_title(const std::string &entry)
+{
+	const size_t at = entry.find(kPinMark);
+	return at == std::string::npos ? std::string() : entry.substr(at + strlen(kPinMark));
+}
+std::string pinned_name(const OpenWindow &w)
+{
+	std::string title = w.title;
+	if (title.size() > 120) {
+		size_t cut = 120;
+		while (cut > 0 && (static_cast<unsigned char>(title[cut]) & 0xC0) == 0x80)
+			cut--; // (not in the middle of a character)
+		title.resize(cut);
+	}
+	return w.executable + kPinMark + title;
+}
+
 // How well a window answers to an entry of the list: 2 by its program's
-// file name, 1 by part of its title, 0 not at all.
+// file name, 1 by part of its title, 0 not at all. A window picked by hand
+// answers (1) only with its program and its whole title as they were; once
+// it has been seen, it is known by the window itself (`pins_`).
 int answers(const std::string &entry, const OpenWindow &w)
 {
+	if (is_pinned(entry))
+		return lowered(w.executable) == lowered(pinned_program(entry)) && w.title == pinned_title(entry) ? 1
+														 : 0;
 	const std::string e = lowered(entry);
 	if (e.empty())
 		return 0;
@@ -214,7 +248,8 @@ public:
 		next_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 		obs_leave_graphics();
 		update(settings);
-		// For the tests: stand-in windows, one per line, "title|exe|front".
+		// For the tests: stand-in windows, one per line, "title|exe|front|id"
+		// (the id, which window it is, may be left out).
 		proc_handler_add(
 			obs_source_get_proc_handler(source_), "void set_test_windows(in string windows)",
 			[](void *data, calldata_t *cd) {
@@ -223,9 +258,10 @@ public:
 				std::vector<OpenWindow> windows;
 				std::vector<std::string> fields(1);
 				auto flush = [&] {
-					fields.resize(3);
+					fields.resize(4);
 					if (!fields[1].empty())
-						windows.push_back({fields[0], fields[1], fields[2] == "front", ""});
+						windows.push_back({fields[0], fields[1], fields[2] == "front", "",
+								   fields[3].empty() ? 0 : std::stoull(fields[3])});
 					fields.assign(1, std::string());
 				};
 				for (const char *p = text ? text : ""; *p; p++) {
@@ -252,12 +288,16 @@ public:
 			},
 			this);
 		proc_handler_add(
-			obs_source_get_proc_handler(source_), "void hold(in string title, in string executable)",
+			obs_source_get_proc_handler(source_),
+			"void hold(in string title, in string executable, in int id)",
 			[](void *data, calldata_t *cd) {
 				OpenWindow window;
 				window.title = calldata_string(cd, "title") ? calldata_string(cd, "title") : "";
 				window.executable =
 					calldata_string(cd, "executable") ? calldata_string(cd, "executable") : "";
+				long long id = 0;
+				if (calldata_get_int(cd, "id", &id))
+					window.handle = (uint64_t)id;
 				static_cast<AppCapture *>(data)->hold(window);
 			},
 			this);
@@ -296,7 +336,7 @@ public:
 			std::vector<std::string> all;
 			for (const std::vector<std::string> *list : {&apps, &by_hand})
 				for (const std::string &entry : *list)
-					all.push_back(lowered(entry));
+					all.push_back(lowered(is_pinned(entry) ? pinned_program(entry) : entry));
 			std::lock_guard lock(g_listed_mutex);
 			g_listed[this] = all;
 		}
@@ -446,6 +486,8 @@ private:
 	struct Ready {
 		std::string entry;
 		obs_source_t *capture = nullptr; // held, and kept showing
+		std::string title;               // the window's title when it was aimed
+		double empty_s = 0.0;            // how long it has had no picture
 	};
 
 	void follow(obs_source_t *parent);
@@ -529,6 +571,14 @@ private:
 	// among the automatic ones: the one clicked into, one that opens, and the
 	// one before when the one shown closes.
 	bool hand_follow_ = true;
+	// Windows picked by hand, by the window itself once it has been seen.
+	std::map<std::string, uint64_t> pins_;
+	// The window being shown, as StageKit chose it. When it closes, the
+	// capture's own picture is not believed again (OBS's Window Capture may
+	// take another window of the program by itself) until StageKit has
+	// aimed it at a window it has chosen.
+	uint64_t shown_handle_ = 0;
+	bool unsafe_ = false, guard_cover_ = false;
 	std::vector<std::string> hand_was_open_; // manual windows open at the last look
 	std::vector<std::string> hand_recent_;   // manual windows shown, the latest first
 	std::string last_held_;                  // the app last held by hand: the first to go back to
@@ -582,9 +632,23 @@ void AppCapture::keep_ready(const std::vector<std::pair<std::string, const OpenW
 		if (!capture)
 			continue;
 		OpenWindow window = *w.second;
-		aim_capture_at(capture, window, answers(w.first, window) == 1);
+		// (A picked window only ever by its whole title: aimed by its
+		// program, OBS would take another window of it once this one closes.)
+		aim_capture_at(capture, window, is_pinned(w.first) || answers(w.first, window) == 1);
 		obs_source_inc_showing(capture);
-		kept.push_back(Ready{w.first, capture});
+		kept.push_back(Ready{w.first, capture, window.title, 0.0});
+	}
+	// A picked window's title changes (a browser's with its tab): a capture
+	// that has not found it by the title it was aimed with is aimed again.
+	for (Ready &r : kept) {
+		if (!is_pinned(r.entry) || obs_source_get_width(r.capture))
+			continue;
+		for (const auto &w : wanted)
+			if (w.first == r.entry && w.second->title != r.title && (r.empty_s += 0.05) >= 1.5) {
+				aim_capture_at(r.capture, *w.second, true);
+				r.title = w.second->title;
+				r.empty_s = 0.0;
+			}
 	}
 	{
 		std::lock_guard lock(mutex_);
@@ -603,6 +667,20 @@ void AppCapture::keep_ready(const std::vector<std::pair<std::string, const OpenW
 void AppCapture::aim(obs_source_t *parent, const OpenWindow &window, const std::string &entry, bool by_title,
 		     bool remember)
 {
+	// This is the window to show now, chosen here: the guard that held
+	// back a capture whose window had closed is let go.
+	bool uncover;
+	{
+		std::lock_guard lock(mutex_);
+		shown_handle_ = window.handle;
+		unsafe_ = false;
+		uncover = guard_cover_;
+		guard_cover_ = false;
+	}
+	if (uncover)
+		standby_cover_set(parent, false, -1, 0, 0, 0);
+	if (is_pinned(entry))
+		by_title = true;
 	obs_log(LOG_INFO, "Capture App in Use: '%s' now captures %s (%s%s)", obs_source_get_name(parent),
 		window.executable.c_str(), entry.c_str(), remember ? "" : ", by hand");
 	// Its picture may be here already: a capture kept ready for it.
@@ -752,8 +830,15 @@ void AppCapture::follow(obs_source_t *parent)
 		}
 	}
 	if (have_picked && !picked.executable.empty()) {
-		// Its program goes on the list of apps switched to, if it is not there.
-		const std::string entry = picked.executable;
+		// That window goes on the list of manual windows: the window
+		// itself, not its program, so that another window of the same
+		// program (another browser profile) never stands in for it.
+		const std::string entry = pinned_name(picked);
+		{
+			std::lock_guard lock(mutex_);
+			if (picked.handle)
+				pins_[entry] = picked.handle;
+		}
 		if (std::none_of(by_hand.begin(), by_hand.end(),
 				 [&](const std::string &e) { return lowered(e) == lowered(entry); })) {
 			by_hand.push_back(entry);
@@ -771,7 +856,7 @@ void AppCapture::follow(obs_source_t *parent)
 				held_ = entry;
 		}
 		if (now) {
-			aim(parent, picked, entry, false, false);
+			aim(parent, picked, entry, true, false);
 			return;
 		}
 		// Kept for later: what shows now goes on as before.
@@ -786,6 +871,47 @@ void AppCapture::follow(obs_source_t *parent)
 	if (!use_test)
 		windows = open_windows();
 
+	// The window being shown has closed: whatever the capture shows now is
+	// not believed. OBS's Window Capture goes looking for another window of
+	// the same program by itself, and that may be one never meant to be on
+	// stream (another browser profile). The last picture stays until a
+	// window chosen here is aimed at; with nothing to go to, the Standby
+	// Picture is shown, or nothing.
+	{
+		std::unique_lock lock(mutex_);
+		const uint64_t shown = shown_handle_;
+		if (shown && std::none_of(windows.begin(), windows.end(),
+					  [&](const OpenWindow &w) { return w.handle == shown; })) {
+			shown_handle_ = 0;
+			unsafe_ = true;
+			own_ok_ = false;
+			if (phase_ == Phase::Idle && kept_w_ && kept_h_) {
+				phase_ = Phase::Lost;
+				phase_s_ = 0.0;
+			}
+			lock.unlock();
+			set_bridge(nullptr);
+			obs_log(LOG_INFO,
+				"Capture App in Use: '%s': the window shown has closed; no other window takes its place unless chosen",
+				obs_source_get_name(parent));
+		}
+	}
+
+	// Windows picked by hand are known by the window itself once seen.
+	std::map<std::string, uint64_t> pins;
+	{
+		std::lock_guard lock(mutex_);
+		pins = pins_;
+	}
+	auto match = [&](const std::string &entry, const OpenWindow &w) {
+		if (is_pinned(entry)) {
+			const auto pin = pins.find(entry);
+			if (pin != pins.end() && pin->second)
+				return w.handle == pin->second ? 1 : 0;
+		}
+		return answers(entry, w);
+	};
+
 	// For an entry: the window to take (the one in front if it is one of
 	// its windows, else the first), and whether one of them is in front.
 	struct Slot {
@@ -795,16 +921,23 @@ void AppCapture::follow(obs_source_t *parent)
 	};
 	auto slot_of = [&](const std::string &entry) {
 		Slot slot;
+		int found = 0;
 		for (const OpenWindow &w : windows) {
-			const int how = answers(entry, w);
+			const int how = match(entry, w);
 			if (!how)
 				continue;
+			found++;
 			if (!slot.window || (w.foreground && !slot.front) || (how > slot.how && !slot.front)) {
 				slot.window = &w;
 				slot.how = how;
 			}
 			slot.front = slot.front || w.foreground;
 		}
+		// A picked window not seen since it was picked (OBS restarted) is
+		// known again by its program and whole title, but only when one
+		// window answers: two alike, and neither is taken.
+		if (is_pinned(entry) && found > 1 && !pins.count(entry))
+			return Slot();
 		return slot;
 	};
 	std::vector<Slot> slots(apps.size()), hand(by_hand.size());
@@ -812,6 +945,41 @@ void AppCapture::follow(obs_source_t *parent)
 		slots[i] = slot_of(apps[i]);
 	for (size_t i = 0; i < by_hand.size(); i++)
 		hand[i] = slot_of(by_hand[i]);
+	// The picked windows: known from now on by the window itself, and one
+	// that has closed is taken off the list (it cannot come back).
+	{
+		std::vector<std::string> keep;
+		bool dropped = false;
+		for (size_t i = 0; i < by_hand.size(); i++) {
+			const std::string &entry = by_hand[i];
+			const auto pin = pins.find(entry);
+			if (is_pinned(entry) && pin != pins.end() && pin->second && !hand[i].window) {
+				dropped = true;
+				std::lock_guard lock(mutex_);
+				pins_.erase(entry);
+				continue;
+			}
+			if (is_pinned(entry) && hand[i].window && hand[i].window->handle &&
+			    (pin == pins.end() || !pin->second)) {
+				std::lock_guard lock(mutex_);
+				pins_[entry] = hand[i].window->handle;
+			}
+			keep.push_back(entry);
+		}
+		if (dropped) {
+			std::vector<Slot> kept_hand;
+			for (size_t i = 0; i < by_hand.size(); i++)
+				if (std::find(keep.begin(), keep.end(), by_hand[i]) != keep.end())
+					kept_hand.push_back(hand[i]);
+			by_hand = keep;
+			hand = kept_hand;
+			obs_data_t *settings = obs_source_get_settings(source_);
+			pick_list_write(settings, "by_hand", false, by_hand);
+			obs_data_release(settings);
+			std::lock_guard lock(mutex_);
+			by_hand_ = by_hand;
+		}
+	}
 
 	// The other open apps' captures keep running while this one is on
 	// show, so whichever is switched to has its picture at once.
@@ -999,6 +1167,8 @@ void AppCapture::follow(obs_source_t *parent)
 			std::lock_guard lock(mutex_);
 			current_ = current = apps[(size_t)now];
 			own_ok_ = true;
+			// (Which window that is, for noticing when it closes.)
+			shown_handle_ = slots[(size_t)now].window ? slots[(size_t)now].window->handle : 0;
 		}
 	}
 	int target = -1;
@@ -1132,6 +1302,19 @@ void AppCapture::tick(float seconds)
 		toggle_hidden(parent);
 	if (look)
 		follow(parent);
+	// The window shown has closed and nothing chosen has taken its place:
+	// the Standby Picture on the capture stands in, if there is one (its
+	// own transition). Without one, nothing of the capture is drawn.
+	bool cover = false;
+	{
+		std::lock_guard lock(mutex_);
+		cover = unsafe_ && !guard_cover_ && phase_ != Phase::Lost;
+		if (cover)
+			guard_cover_ = true;
+	}
+	if (cover && !standby_cover_set(parent, true, -1, 0, 0, 0)) {
+		// (No Standby Picture: remembered as done, so it is not asked again.)
+	}
 }
 
 // The live picture into a picture of its own, as it is: what comes before

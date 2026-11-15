@@ -758,6 +758,21 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     the background and the toggle goes to it, but `held_` is not set and nothing is aimed. The
     owner: "select a browser or other windows for capture in the background while using my
     autoswitch apps, but then use the switch to manually captured window when i want".
+  - **A picked window is that window** (`pinned_name`: "program — title", `pins_`: entry to
+    window handle, `OpenWindow::handle`). The owner, with two browser profiles: "i close one, it
+    defaults to the other one and may show private info on stream ... this needs to have a global
+    solution that works with any app". Two causes: entries were programs, and OBS's Window
+    Capture, aimed by executable, takes another window of the program by itself when its window
+    closes (`window_rating` in OBS's window-helpers.c: priority 2 matches any window of the
+    executable, priority 1 only an exact title). So a pinned entry is matched by the window's
+    handle once seen (by program and whole title before that, and only when one window answers),
+    aimed by title (ready captures too, re-aimed when the title has changed), and taken off the
+    list when its window closes. And the window shown is watched (`shown_handle_`): when it
+    closes, the capture's own picture and bridge are not believed (`unsafe_`, `own_ok_` false)
+    until `aim` is called for a window chosen here; with nowhere to go the Standby Picture is
+    shown (`guard_cover_`). Program entries are still aimed by executable: aimed by title, a
+    window whose title changes all the time (an emulator's frame rate) would never be found.
+    Windows side not run here: the tests give stand-in windows ids.
   - *Auto-switch manual windows* (`hand_follow`, on as it comes): while one is held, the same
     rules as automatic mode among `by_hand` only (clicked into, just opened via
     `hand_was_open_`, the one before via `hand_recent_` when the held one closes); without it a

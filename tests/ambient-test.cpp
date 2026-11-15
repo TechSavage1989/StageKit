@@ -5069,6 +5069,55 @@ int main(int argc, char **argv)
 				obs_data_set_bool(ps, "hand_follow", true);
 				obs_source_update(one, ps);
 				command("back");
+				draw_for(1500);
+				// Two windows of one program (two browser profiles): the one
+				// picked is that window, not its program. Closed, the other is
+				// never taken in its place, whatever its title. The owner: "if
+				// i have 2 separate firefox window groups open and i close one,
+				// it defaults to the other one and may show private info".
+				for (const char *other_title : {"Private profile", "Stream profile"}) {
+					obs_data_set_int(ps, "picked", 1); // switch at selection
+					obs_source_update(one, ps);
+					const std::string both =
+						std::string(
+							"Stream profile|browser2.exe|front|11\nSculpt 2026|ZSculpt.exe||5\n") +
+						other_title + "|browser2.exe||12";
+					windows(both.c_str());
+					draw_for(300);
+					calldata_t pd = {};
+					calldata_set_string(&pd, "title", "Stream profile");
+					calldata_set_string(&pd, "executable", "browser2.exe");
+					calldata_set_int(&pd, "id", 11);
+					proc_handler_call(obs_source_get_proc_handler(one), "hold", &pd);
+					calldata_free(&pd);
+					draw_for(400);
+					std::string shown_title;
+					const std::string picked_exe = aimed(shown_title, priority);
+					const std::string picked_title = shown_title;
+					obs_properties_t *bp = obs_source_properties(one);
+					const int rows_before = list_rows(bp, "by_hand|a");
+					obs_properties_destroy(bp);
+					// The picked window closes; the other profile stays open.
+					const std::string left = std::string("Sculpt 2026|ZSculpt.exe||5\n") +
+								 other_title + "|browser2.exe|front|12";
+					windows(left.c_str());
+					draw_for(1500);
+					const std::string after_exe = aimed(shown_title, priority);
+					bp = obs_source_properties(one);
+					const int rows_after = list_rows(bp, "by_hand|a");
+					obs_properties_destroy(bp);
+					CHECK(picked_exe == "browser2.exe" && picked_title == "Stream profile" &&
+						      priority == 1 &&
+						      !(after_exe == "browser2.exe" && shown_title == other_title) &&
+						      rows_after == rows_before - 1,
+					      "a window picked by hand is that window: closed, another window of its program ('%s') is not taken, and it leaves the list (%s '%s', then %s '%s'; %d then %d on the list)",
+					      other_title, picked_exe.c_str(), picked_title.c_str(), after_exe.c_str(),
+					      shown_title.c_str(), rows_before, rows_after);
+					command("back");
+					draw_for(600);
+				}
+				obs_data_set_int(ps, "picked", 0);
+				obs_source_update(one, ps);
 				obs_data_set_int(ps, "picked", 0);
 				obs_source_update(one, ps);
 				obs_data_release(ps);
