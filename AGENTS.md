@@ -587,6 +587,11 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   blur set above `kTapLimit` (250) is drawn the Dual Kawase way for its whole ramp, so there is no
   change of look part-way through a ramp. Zoom's pull is still worked out from 250. Ambient
   Background's own blur goes to 1000 as well (`kBlurLevels` 8), asked for in the same breath.
+- **Blur's "And live captures on screen" has a list it leaves alone** (`never`, *Never blur
+  these*, a PickList of captures; `lead_others` in `src/blur/ramp-blur.cpp`). The owner: "there
+  should be an exclusion option ... so cameras for example can be intentionally excluded from
+  blur". It only holds back that tick box: a source named under *Blur these too* is still
+  blurred, and so is one with a Blur of its own under the *Blur All* hotkeys.
 - **The mosaic is one shader for the Blur filter and Ambient Background** (`Mosaic` in
   `data/effects/stagekit-looks.effect`): seven cell shapes by
   number (`PixelShape`: square, hexagon, circle, triangle, Voronoi, rhomboid, triakis; append-only),
