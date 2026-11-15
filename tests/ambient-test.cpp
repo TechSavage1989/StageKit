@@ -461,6 +461,47 @@ int main(int argc, char **argv)
 				obs_source_release(camera_two);
 			}
 
+			// A capture that only starts when its scene is switched to. The
+			// owner: "when i switch to my main display scene, the capture
+			// source doesn't appear until the transition animations completes,
+			// and it's abrupt". A display capture has no size until it has
+			// started, and its item's place in a bounding box is worked out
+			// from that size.
+			{
+				obs_source_t *late = block("Morph Late Capture", 0xFF0000FF, 0, 0); // red, nothing yet
+				obs_scene_t *mf = obs_scene_create("Morph Late From");
+				obs_scene_t *mg = obs_scene_create("Morph Late To");
+				put(mf, old_back, 0, 0);
+				put(mg, new_back, 0, 0);
+				obs_sceneitem_t *boxed = put(mg, late, 160, 90);
+				vec2 box;
+				vec2_set(&box, 320, 180);
+				obs_sceneitem_set_bounds_type(boxed, OBS_BOUNDS_SCALE_INNER);
+				obs_sceneitem_set_bounds(boxed, &box);
+				const std::vector<uint8_t> nothing_yet = at_time(mf, mg, 0.5f);
+				// It starts: 160x90, which its box shows at twice the size.
+				obs_data_t *ld = obs_source_get_settings(late);
+				obs_data_set_int(ld, "width", 160);
+				obs_data_set_int(ld, "height", 90);
+				obs_source_update(late, ld);
+				obs_data_release(ld);
+				sleep_ms(120);
+				const std::vector<uint8_t> started = render(morph, w, h);
+				CHECK(px(nothing_yet, 320, 180, 0) < 15 && px(started, 320, 180, 0) > 80 &&
+					      px(started, 320, 180, 0) < 215 && px(started, 180, 100, 0) > 80 &&
+					      px(started, 460, 260, 0) > 80 && px(started, 140, 80, 0) < 15 &&
+					      px(started, 500, 280, 0) < 15 && opaque(started),
+				      "a capture that starts during the change is drawn from then on, in its bounding box (red %d in the middle and %d, %d in the corners of the box, %d and %d outside it; %d before it started)",
+				      px(started, 320, 180, 0), px(started, 180, 100, 0), px(started, 460, 260, 0),
+				      px(started, 140, 80, 0), px(started, 500, 280, 0), px(nothing_yet, 320, 180, 0));
+				obs_transition_set_manual_time(morph, 1.0f);
+				sleep_ms(120);
+				render(morph, w, h);
+				obs_scene_release(mf);
+				obs_scene_release(mg);
+				obs_source_release(late);
+			}
+
 			// Unticked, the game and the window are cross-faded in place.
 			obs_data_set_bool(ms, "pair_main", false);
 			obs_source_update(morph, ms);

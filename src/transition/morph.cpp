@@ -40,12 +40,14 @@ the Free Software Foundation; either version 2 of the License, or
 #include <graphics/matrix4.h>
 #include <graphics/vec4.h>
 #include <plugin-support.h>
+#include <util/platform.h>
 
 #include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <cstring>
 #include <mutex>
+#include <unordered_map>
 #include <vector>
 
 namespace stagekit {
@@ -217,6 +219,7 @@ public:
 private:
 	void forget();
 	void plan(obs_source_t *from, obs_source_t *to);
+	bool look(obs_sceneitem_t *item, Shown &out);
 	void draw_morph(double t, uint32_t cx, uint32_t cy);
 	void draw_run(const std::vector<const Part *> &run, double t, uint32_t cx, uint32_t cy);
 	void draw_side(gs_texrender_t *into, const std::vector<const Part *> &run, bool leaving, double t, uint32_t cx,
@@ -239,6 +242,14 @@ private:
 
 	// Used on the drawing thread only.
 	std::vector<Part> parts_;
+	// The size each item's source had when the item's place was last worked
+	// out, and whether it has had a picture yet.
+	struct Sized {
+		uint32_t w = 0, h = 0;
+		bool had = false;
+	};
+	std::unordered_map<obs_sceneitem_t *, Sized> sized_;
+	uint64_t planned_at_ = 0;
 	obs_source_t *planned_from_ = nullptr; // compared, never used
 	obs_source_t *planned_to_ = nullptr;
 	gs_texrender_t *tr_from_ = nullptr; // a run of the old scene's own items
@@ -308,7 +319,41 @@ void Morph::forget()
 		obs_sceneitem_release(part.to);
 	}
 	parts_.clear();
+	sized_.clear();
 	planned_from_ = planned_to_ = nullptr;
+}
+
+// An item as it is to be drawn now. OBS works an item's place out when its
+// scene is drawn, from the size its source has then, and while Morph draws
+// the items itself neither scene is drawn. So it is worked out here: when the
+// item is first met (its scene may never have been drawn) and again whenever
+// its source changes size. A display capture is stopped while no scene shows
+// it and has no size until it has started again, a moment into the change;
+// its place in a bounding box, worked out from no size, is nowhere. Left at
+// that, the owner's display capture was missing for the whole change and
+// came in at a stroke when it ended.
+bool Morph::look(obs_sceneitem_t *item, Shown &out)
+{
+	obs_source_t *source = item ? obs_sceneitem_get_source(item) : nullptr;
+	if (!source)
+		return false;
+	const uint32_t w = obs_source_get_width(source), h = obs_source_get_height(source);
+	auto found = sized_.find(item);
+	if (found == sized_.end()) {
+		refresh_item(item);
+		sized_[item] = Sized{w, h, w && h};
+	} else if (found->second.w != w || found->second.h != h) {
+		refresh_item(item);
+		if (!found->second.had && w && h) {
+			// (For the log, should a capture still be seen to come in late.)
+			obs_log(LOG_INFO, "Morph: '%s' had no picture for the first %d ms of the change",
+				obs_source_get_name(source), (int)((os_gettime_ns() - planned_at_) / 1000000ULL));
+			found->second.had = true;
+		}
+		found->second.w = w;
+		found->second.h = h;
+	}
+	return shown_of(item, out);
 }
 
 // Which items go together, and in what order everything is drawn.
@@ -317,6 +362,7 @@ void Morph::plan(obs_source_t *from, obs_source_t *to)
 	forget();
 	planned_from_ = from;
 	planned_to_ = to;
+	planned_at_ = os_gettime_ns();
 	Settings s;
 	{
 		std::lock_guard lock(mutex_);
@@ -329,9 +375,6 @@ void Morph::plan(obs_source_t *from, obs_source_t *to)
 			[](obs_scene_t *, obs_sceneitem_t *item, void *param) {
 				if (obs_sceneitem_visible(item)) {
 					obs_sceneitem_addref(item);
-					// (So that its place is worked out even in a scene
-					// that has never been drawn.)
-					refresh_item(item);
 					static_cast<std::vector<obs_sceneitem_t *> *>(param)->push_back(item);
 				}
 				return true;
@@ -372,12 +415,13 @@ void Morph::plan(obs_source_t *from, obs_source_t *to)
 	// covers a good part of the screen (a game in one, a window in the other).
 	if (s.pair_main) {
 		const double screen = (double)obs_source_get_width(to) * (double)obs_source_get_height(to);
-		auto largest = [screen](const std::vector<obs_sceneitem_t *> &items, const std::vector<int> &partner) {
+		auto largest = [this, screen](const std::vector<obs_sceneitem_t *> &items,
+					      const std::vector<int> &partner) {
 			int best = -1;
 			double best_area = screen * 0.15;
 			for (size_t i = 0; i < items.size(); i++) {
 				Shown shown;
-				if (partner[i] >= 0 || !shown_of(items[i], shown))
+				if (partner[i] >= 0 || !look(items[i], shown))
 					continue;
 				const Bounds b = bounds_of(shown.quad);
 				const double area = (b.x1 - b.x0) * (b.y1 - b.y0);
@@ -525,7 +569,7 @@ void Morph::draw_side(gs_texrender_t *into, const std::vector<const Part *> &run
 	const double gone = std::clamp(leaving ? t : 1.0 - t, 0.0, 1.0);
 	for (const Part *part : run) {
 		Shown shown;
-		if (!shown_of(leaving ? part->from : part->to, shown))
+		if (!look(leaving ? part->from : part->to, shown))
 			continue;
 		Quad quad = shown.quad;
 		const Bounds b = bounds_of(quad);
@@ -616,7 +660,7 @@ void Morph::draw_morph(double t, uint32_t cx, uint32_t cy)
 		}
 		end_run();
 		Shown was, will;
-		const bool had = shown_of(part.from, was), has = shown_of(part.to, will);
+		const bool had = look(part.from, was), has = look(part.to, will);
 		if (!had && !has)
 			continue;
 		// (A source with nothing in it on one side: the other side's place.)
