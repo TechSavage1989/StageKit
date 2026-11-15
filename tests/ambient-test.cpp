@@ -4927,6 +4927,12 @@ int main(int argc, char **argv)
 			// The owner: "I don't know how to [switch back] while also
 			// keeping the previously manually selected window available".
 			{
+				{
+					obs_data_t *now = obs_source_get_settings(one);
+					obs_data_set_int(now, "picked", 1); // switch at selection
+					obs_source_update(one, now);
+					obs_data_release(now);
+				}
 				windows("Reference board|refs.exe|front\nDocs|browser.exe|\nSculpt 2026|ZSculpt.exe|");
 				draw_for(300);
 				calldata_t cd = {};
@@ -4964,6 +4970,32 @@ int main(int argc, char **argv)
 				      "'toggle' goes from the window held by hand back to the apps, and from there back to that window (%s, then %s)",
 				      to_auto.c_str(), aimed(title, priority).c_str());
 				command("back");
+				draw_for(1500);
+				// "Wait until switched to", as it comes: the window picked is
+				// only kept as the manual window, until it is switched to.
+				obs_data_t *ps = obs_source_get_settings(one);
+				obs_data_set_int(ps, "picked", 0);
+				obs_source_update(one, ps);
+				windows("Notes|notes.exe|front\nDocs|browser.exe|\nSculpt 2026|ZSculpt.exe|");
+				draw_for(300);
+				const std::string before = aimed(title, priority);
+				calldata_t kd = {};
+				calldata_set_string(&kd, "title", "Notes");
+				calldata_set_string(&kd, "executable", "notes.exe");
+				proc_handler_call(obs_source_get_proc_handler(one), "hold", &kd);
+				calldata_free(&kd);
+				draw_for(400);
+				const std::string waited = aimed(title, priority);
+				command("toggle");
+				draw_for(400);
+				CHECK(waited == before && waited != "notes.exe" &&
+					      aimed(title, priority) == "notes.exe",
+				      "as it comes, a window picked by hand waits until it is switched to (%s, still %s, then %s)",
+				      before.c_str(), waited.c_str(), aimed(title, priority).c_str());
+				command("back");
+				obs_data_set_int(ps, "picked", 0);
+				obs_source_update(one, ps);
+				obs_data_release(ps);
 				draw_for(1500);
 			}
 

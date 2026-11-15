@@ -752,6 +752,12 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     transitioning"; OBS's profiler in their log had `tick_sources` at up to 135 ms with drawing
     under 10 ms and no StageKit tick over 7 ms: it was the captures starting. The parent is aimed
     only when there is no ready capture with a picture yet.
+  - *Captured window* (`picked`, by number, append-only: 0 *Wait until switched to*, as it
+    comes; 1 *Switch at selection*): what the Capture Active Window key does through the filter.
+    Waiting, the window's program joins `by_hand` and becomes `last_held_`, so it is captured in
+    the background and the toggle goes to it, but `held_` is not set and nothing is aimed. The
+    owner: "select a browser or other windows for capture in the background while using my
+    autoswitch apps, but then use the switch to manually captured window when i want".
   - *Toggle manual / automatic* (`toggle`, hotkey `stagekit.active.toggle.` + name, also on the
     scene filter): back from a held window, else on to the one held last. The owner: "the
     capture front window can be used to select the manual capture, and then the toggle can be

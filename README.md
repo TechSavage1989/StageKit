@@ -516,9 +516,14 @@ capture for each app.
   switched to by hand*, *back to following the apps*, *hide or show the capture*. The Stream Deck
   *Manual Window / Source* key presses any of the three.
 - To hold a window that is on neither list, press the Stream Deck *Capture Active Window* key on
-  it. The filter takes the window, changes over to it with your *Transition*, holds it, and adds
-  its program to *Manual windows*. *Manual Window / Source* then goes back to your apps, and on
-  the next press back to that window.
+  it. The filter adds its program to *Manual windows* and captures it; with *Captured window*
+  set to *Switch at selection* it also changes over to it with your *Transition* and holds it.
+  *Manual Window / Source* (*Toggle*) then switches between that window and your apps.
+- **Captured window**: what happens to a window picked with *Capture Active Window*.
+  *Wait until switched to* (as it comes): it becomes the manual window and is captured in the
+  background while your automatic windows go on showing; it is shown when you switch to it with
+  *Manual Window / Source* (*Toggle* or *Next*). *Switch at selection*: the capture changes to
+  it straight away, as before.
 - The capture's size glides from the one window's to the other's with every *Transition* but a
   cut. *Morph* stretches both pictures over the gliding frame; the others keep each picture's own
   shape inside it.

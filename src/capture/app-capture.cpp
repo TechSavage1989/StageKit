@@ -305,6 +305,9 @@ public:
 		by_hand_ = by_hand;
 		follow_ = obs_data_get_bool(settings, "follow");
 		ready_wanted_ = obs_data_get_bool(settings, "ready");
+		// 0: wait until switched to (as it comes); 1: switch to it at once.
+		// Saved by number: append only.
+		pick_now_ = obs_data_get_int(settings, "picked") == 1;
 		hide_standby_ = obs_data_get_bool(settings, "hide_standby");
 		style_ = static_cast<Style>(std::clamp<long long>(obs_data_get_int(settings, "change"), 0, 7));
 		change_s_ = std::clamp<long long>(obs_data_get_int(settings, "change_ms"), 0, 10000) / 1000.0;
@@ -518,6 +521,9 @@ private:
 	std::atomic<bool> hide_standby_{true};
 	OpenWindow hold_window_; // handed over by hand, to be taken at the next look
 	bool have_hold_ = false;
+	// A window picked by hand is switched to at once, or only kept as the
+	// manual window to switch to (the toggle and next go to it).
+	bool pick_now_ = false;
 	std::string last_held_; // the app last held by hand: the first to go back to
 	double order_check_ = 10.0;
 	std::vector<Ready> ready_;
@@ -744,13 +750,20 @@ void AppCapture::follow(obs_source_t *parent)
 			pick_list_write(settings, "by_hand", false, by_hand);
 			obs_data_release(settings);
 		}
+		bool now;
 		{
 			std::lock_guard lock(mutex_);
 			by_hand_ = by_hand;
-			held_ = last_held_ = entry;
+			now = pick_now_;
+			last_held_ = entry;
+			if (now)
+				held_ = entry;
 		}
-		aim(parent, picked, entry, false, false);
-		return;
+		if (now) {
+			aim(parent, picked, entry, false, false);
+			return;
+		}
+		// Kept for later: what shows now goes on as before.
 	}
 #ifndef _WIN32
 	// Nothing to go by on other systems.
@@ -1282,6 +1295,11 @@ obs_properties_t *get_properties(void *data)
 	obs_property_set_long_description(follow, obs_module_text("AppCapture.Follow.Tip"));
 	obs_property_t *ready = obs_properties_add_bool(props, "ready", obs_module_text("AppCapture.Ready"));
 	obs_property_set_long_description(ready, obs_module_text("AppCapture.Ready.Tip"));
+	obs_property_t *picked = obs_properties_add_list(props, "picked", obs_module_text("AppCapture.Picked"),
+							 OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+	obs_property_list_add_int(picked, obs_module_text("AppCapture.Picked.Wait"), 0);
+	obs_property_list_add_int(picked, obs_module_text("AppCapture.Picked.Now"), 1);
+	obs_property_set_long_description(picked, obs_module_text("AppCapture.Picked.Tip"));
 
 	obs_property_t *change = obs_properties_add_list(props, "change", obs_module_text("AppCapture.Change"),
 							 OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
@@ -1328,6 +1346,7 @@ void get_defaults(obs_data_t *settings)
 {
 	obs_data_set_default_bool(settings, "follow", true);
 	obs_data_set_default_bool(settings, "ready", true);
+	obs_data_set_default_int(settings, "picked", 0);
 	obs_data_set_default_bool(settings, "hide_standby", true);
 	item_transition_defaults(settings);
 	obs_data_set_default_int(settings, "change", (int)Style::Fade);

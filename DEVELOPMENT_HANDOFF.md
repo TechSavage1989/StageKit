@@ -218,6 +218,11 @@ The owner took the name table proposed with beta122, "mostly good", with *pictur
 list is in AGENTS.md (Names). Only what the user sees changed: setting names, ids and saved values
 did not, so nothing in a scene collection moves. Filter and key names were not in the table.
 
+Also in beta124, asked for in the same session: the Automatic Window Switcher's *Captured
+window* (`picked`), a list with *Wait until switched to* as the default (the owner asked for a
+list and for that default) and *Switch at selection* (their wording). The default changes what
+the Capture Active Window key did before: it no longer switches at once.
+
 ## Stream Deck: an icon of its own for every key in the list (0.1.0-beta123)
 
 The owner sent a screenshot of Stream Deck's list of StageKit actions, where every key showed the
