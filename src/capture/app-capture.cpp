@@ -415,6 +415,29 @@ public:
 
 	uint64_t changes() const { return changes_.load(); }
 
+	// The change to another window's picture, while the new picture comes
+	// in: where the reported size is and where it is going.
+	bool change(AppCaptureChange &out)
+	{
+		obs_source_t *bridge = bridge_ref();
+		const uint32_t bw = live_size(bridge, true), bh = live_size(bridge, false);
+		obs_source_release(bridge);
+		const uint32_t w = size(true), h = size(false);
+		std::lock_guard lock(mutex_);
+		if (phase_ != Phase::Mix || !bw || !bh || !w || !h)
+			return false;
+		out.id = changes_.load();
+		out.now_w = w;
+		out.now_h = h;
+		out.to_w = bw;
+		out.to_h = bh;
+		out.total_s = style_ == Style::Cut ? 0.0 : change_s_;
+		out.done = mix_;
+		out.curve = (int)curve_;
+		out.mode = (int)mode_;
+		return true;
+	}
+
 	// The entry being shown, as far as this filter knows.
 	std::string current()
 	{
@@ -1731,6 +1754,28 @@ bool app_capture_hold(obs_source_t *capture, const OpenWindow &window)
 		},
 		&hand);
 	return hand.taken;
+}
+
+bool app_capture_change(obs_source_t *capture, AppCaptureChange &change)
+{
+	struct Ask {
+		AppCaptureChange *out;
+		bool found;
+	} ask{&change, false};
+	if (!capture)
+		return false;
+	obs_source_enum_filters(
+		capture,
+		[](obs_source_t *, obs_source_t *filter, void *param) {
+			auto *a = static_cast<Ask *>(param);
+			const char *id = obs_source_get_unversioned_id(filter);
+			if (a->found || !id || strcmp(id, kAppCaptureId) != 0 || !obs_source_enabled(filter))
+				return;
+			if (auto *self = static_cast<AppCapture *>(obs_obj_get_data(filter)))
+				a->found = self->change(*a->out);
+		},
+		&ask);
+	return ask.found;
 }
 
 uint64_t app_capture_changes(obs_source_t *capture)

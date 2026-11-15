@@ -21,6 +21,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../dock/arrange-tools.hpp"
 #include "../dock/arrange.hpp"
 #include "../shadow/shadow-backdrop.hpp"
+#include "../capture/app-capture.hpp"
 
 #include <obs-module.h>
 #include <graphics/vec2.h>
@@ -1351,6 +1352,35 @@ private:
 			}
 		}
 
+		// An Automatic Window Switcher on the fitted item is changing to
+		// another window: the shape it is on its way to is taken now, and
+		// the space for it is glided to over the switcher's own time and
+		// easing, so the two move as one. (Left to notice the shape by
+		// itself, the fit waited for it to stop changing and only then set
+		// off: the owner saw the window switch "but then it's like the auto
+		// fit has to catch up".)
+		bool with_switch = false;
+		{
+			AppCaptureChange change;
+			if (app_capture_change(obs_sceneitem_get_source(item), change) && change.id != switch_id_ &&
+			    change.now_w > 0.0 && change.now_h > 0.0 && change.to_w > 0.0 && change.to_h > 0.0) {
+				switch_id_ = change.id;
+				// (By how much the picture's shape will change: what comes
+				// after the switcher, a shadow say, is carried along.)
+				const double target =
+					shape * (change.to_w / change.to_h) / (change.now_w / change.now_h);
+				if (target > 0.0) {
+					shape_used_ = target;
+					shape_seen_ = shape;
+					shape_for_ = 0.0;
+					changed_ = true;
+					with_switch = true;
+					sync_s_ = change.total_s * std::clamp(1.0 - change.done, 0.0, 1.0);
+					sync_curve_ = static_cast<EaseCurve>(change.curve);
+					sync_mode_ = static_cast<EaseMode>(change.mode);
+				}
+			}
+		}
 		// The shape counts once it has stopped changing.
 		if (std::fabs(shape - shape_seen_) > 0.01 * shape) {
 			shape_seen_ = shape;
@@ -1368,7 +1398,7 @@ private:
 		}
 		if (changed_ || !have_goal_) {
 			changed_ = false;
-			if (!have_goal_ || shape_for_ >= 0.5 || shape_used_ <= 0.0)
+			if (!with_switch && (!have_goal_ || shape_for_ >= 0.5 || shape_used_ <= 0.0))
 				shape_used_ = shape;
 			// First without the items never in the way. Should the picture
 			// then leave too much of its space empty (a narrow window on a
@@ -1404,13 +1434,18 @@ private:
 			    std::fabs(goal.w - goal_.w) > 0.05 || std::fabs(goal.h - goal_.h) > 0.05) {
 				from_ = have_cur_ ? cur_ : goal;
 				goal_ = goal;
-				glide_ = have_cur_ && s.glide_s > 0.0 && !arriving ? 0.0 : 1.0;
+				// (With a window switcher's change: over its time, not this
+				// filter's own.)
+				synced_ = with_switch;
+				glide_ = have_cur_ && (synced_ ? sync_s_ : s.glide_s) > 0.0 && !arriving ? 0.0 : 1.0;
 				have_goal_ = true;
 			}
 		}
 		if (glide_ < 1.0) {
-			glide_ = s.glide_s > 0.0 ? std::min(1.0, glide_ + seconds / s.glide_s) : 1.0;
-			const double t = ease(s.curve, s.mode, glide_);
+			const double over = synced_ ? sync_s_ : s.glide_s;
+			glide_ = over > 0.0 ? std::min(1.0, glide_ + seconds / over) : 1.0;
+			const double t = synced_ ? ease(sync_curve_, sync_mode_, glide_)
+						 : ease(s.curve, s.mode, glide_);
 			cur_ = Box{from_.x + (goal_.x - from_.x) * t, from_.y + (goal_.y - from_.y) * t,
 				   std::max(2.0, from_.w + (goal_.w - from_.w) * t),
 				   std::max(2.0, from_.h + (goal_.h - from_.h) * t)};
@@ -1475,6 +1510,13 @@ private:
 	Box goal_, from_, cur_;
 	bool have_goal_ = false, have_cur_ = false;
 	double glide_ = 1.0;
+	// A glide that goes with a window switcher's change of window: its time
+	// and easing, and which change was last answered.
+	bool synced_ = false;
+	double sync_s_ = 0.0;
+	EaseCurve sync_curve_ = EaseCurve::Cubic;
+	EaseMode sync_mode_ = EaseMode::InOut;
+	uint64_t switch_id_ = 0;
 	bool have_set_ = false, moving_ = false;
 	// "Same place in other scenes": the place last given to the other scenes.
 	bool have_shared_ = false;
