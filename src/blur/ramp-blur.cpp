@@ -526,6 +526,10 @@ void RampBlur::lead_others(bool active)
 	obs_data_t *settings = obs_source_get_settings(source_);
 	const std::vector<std::string> names = also_names(settings);
 	const bool captures = obs_data_get_bool(settings, "also_captures");
+	// Captures that "And live captures on screen" is to leave alone: a
+	// camera, say. The owner: "there should be an exclusion option ... so
+	// cameras for example can be intentionally excluded from blur".
+	const std::vector<std::string> never = pick_list_read(settings, "never", false);
 	if (names.empty() && !captures && led_.empty()) {
 		obs_data_release(settings);
 		return;
@@ -550,7 +554,8 @@ void RampBlur::lead_others(bool active)
 			obs_source_release(scene);
 		}
 		for (obs_source_t *source : live) {
-			if (source == parent)
+			const char *name = obs_source_get_name(source);
+			if (source == parent || (name && std::find(never.begin(), never.end(), name) != never.end()))
 				continue;
 			add(source);
 			led_.push_back(obs_source_get_weak_source(source));
@@ -575,7 +580,7 @@ void RampBlur::lead_others(bool active)
 			// A copy of this one, without a list of its own.
 			obs_data_t *copy = obs_data_create();
 			obs_data_apply(copy, settings);
-			for (const char *own : {"also", "also_pick", "also_captures"})
+			for (const char *own : {"also", "also_pick", "also_captures", "never"})
 				obs_data_erase(copy, own);
 			obs_source_t *made =
 				obs_source_create(kRampBlurId, obs_module_text("RampBlur.LedName"), copy, nullptr);
@@ -1140,6 +1145,28 @@ obs_properties_t *get_properties(void *data)
 	obs_property_t *live =
 		obs_properties_add_bool(props, "also_captures", obs_module_text("RampBlur.AlsoCaptures"));
 	obs_property_set_long_description(live, obs_module_text("RampBlur.AlsoCaptures.Tip"));
+	// The captures that tick box is to leave alone.
+	PickList never;
+	never.setting = "never";
+	never.title = "RampBlur.Never";
+	never.add = "RampBlur.NeverPick";
+	never.tip = "RampBlur.Never.Tip";
+	never.choices = [own_filter](std::vector<std::string> &names) {
+		obs_enum_sources(
+			[](void *param, obs_source_t *source) {
+				const char *name = obs_source_get_name(source);
+				if (name && *name && is_capture_source(source))
+					static_cast<std::vector<std::string> *>(param)->push_back(name);
+				return true;
+			},
+			&names);
+		std::sort(names.begin(), names.end());
+		obs_source_t *parent = own_filter ? obs_filter_get_parent(own_filter) : nullptr;
+		const char *own = parent ? obs_source_get_name(parent) : nullptr;
+		if (own)
+			names.erase(std::remove(names.begin(), names.end(), std::string(own)), names.end());
+	};
+	pick_list_add(props, own_filter, never);
 
 	obs_properties_t *keys = obs_properties_create();
 	obs_property_t *in_all =

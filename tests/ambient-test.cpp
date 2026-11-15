@@ -3785,6 +3785,84 @@ int main(int argc, char **argv)
 		CHECK(made && !obs_source_enabled(made) && !obs_source_enabled(third_blur) && !obs_source_enabled(blur),
 		      "switching it off clears them all");
 
+		// "And live captures on screen", and the captures it is told to leave
+		// alone. The owner: "there should be an exclusion option ... so
+		// cameras for example can be intentionally excluded from blur".
+		// (No capture works here, so a kind of the camera's name with a
+		// size of its own stands in for them.)
+		{
+			obs_source_info stand_in = {};
+			stand_in.id = "dshow_input";
+			stand_in.type = OBS_SOURCE_TYPE_INPUT;
+			stand_in.output_flags = OBS_SOURCE_VIDEO;
+			stand_in.get_name = [](void *) {
+				return "Capture (stand-in)";
+			};
+			stand_in.create = [](obs_data_t *, obs_source_t *) -> void * {
+				return bmalloc(1);
+			};
+			stand_in.destroy = [](void *data) {
+				bfree(data);
+			};
+			stand_in.get_width = [](void *) -> uint32_t {
+				return 64;
+			};
+			stand_in.get_height = [](void *) -> uint32_t {
+				return 48;
+			};
+			stand_in.video_render = [](void *, gs_effect_t *) {
+			};
+			obs_register_source(&stand_in);
+			obs_source_t *screen = obs_source_create("dshow_input", "Live Screen", nullptr, nullptr);
+			obs_source_t *camera = obs_source_create("dshow_input", "Live Camera", nullptr, nullptr);
+			obs_scene_t *ls = obs_scene_create("Live Scene");
+			if (screen && camera) {
+				obs_scene_add(ls, screen);
+				obs_scene_add(ls, camera);
+			}
+			obs_source_t *before_out = obs_get_output_source(0);
+			obs_set_output_source(0, obs_scene_get_source(ls));
+			sleep_ms(600);
+			const bool live = screen && camera && obs_source_get_width(screen) > 0 &&
+					  obs_source_get_width(camera) > 0;
+			CHECK(live, "the stand-in captures have a picture (needed for the next check)");
+			if (live) {
+				obs_data_t *ns = obs_source_get_settings(blur);
+				obs_data_set_bool(ns, "also_captures", true);
+				obs_data_array_t *never = obs_data_array_create();
+				obs_data_t *entry = obs_data_create();
+				obs_data_set_string(entry, "value", "Live Camera");
+				obs_data_array_push_back(never, entry);
+				obs_data_release(entry);
+				obs_data_set_array(ns, "never", never);
+				obs_data_array_release(never);
+				obs_source_update(blur, ns);
+				obs_properties_t *bp = obs_source_properties(blur);
+				const int rows = list_rows(bp, "never|a");
+				obs_properties_destroy(bp);
+				obs_data_release(ns);
+				sleep_ms(200);
+				obs_source_set_enabled(blur, true);
+				draw_all(400);
+				obs_source_t *on_screen = blur_of(screen);
+				CHECK(rows == 1 && on_screen && obs_source_enabled(on_screen) &&
+					      blur_of(camera) == nullptr,
+				      "'And live captures on screen' blurs a capture that is showing and leaves alone one listed under 'Never blur these' (rows %d, the screen blurred %d, the camera given a blur %d)",
+				      rows, (int)(on_screen && obs_source_enabled(on_screen)),
+				      (int)(blur_of(camera) != nullptr));
+				obs_source_set_enabled(blur, false);
+				draw_all(400);
+				on_screen = blur_of(screen);
+				CHECK(on_screen && !obs_source_enabled(on_screen),
+				      "and switching it off clears the capture it blurred");
+			}
+			obs_set_output_source(0, before_out);
+			obs_source_release(before_out);
+			obs_scene_release(ls);
+			obs_source_release(screen);
+			obs_source_release(camera);
+		}
+
 		for (obs_source_t *src : {lead, second, third})
 			obs_source_dec_showing(src);
 		obs_source_filter_remove(lead, blur);
