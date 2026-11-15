@@ -923,7 +923,35 @@ int main(int argc, char **argv)
 		CHECK(mean_rgb(amplified) > mean_rgb(bloom) + 5.0 && opaque(amplified),
 		      "'Whole picture, amplified' brightens everything, bright or not (mean %.1f, against %.1f for the bright parts alone)",
 		      mean_rgb(amplified), mean_rgb(bloom));
-		for (const char *name : {"x_before", "x_picky"})
+		// Bloom never brings the sharp picture back over a blurred one: the
+		// light spreads at least as far as the blur, however small its size.
+		{
+			auto detail = [&](const std::vector<uint8_t> &px) {
+				double sum = 0.0;
+				size_t n = 0;
+				for (uint32_t y = 0; y < h; y++)
+					for (uint32_t x = 0; x + 1 < w; x++)
+						for (int c = 0; c < 3; c++, n++)
+							sum += std::abs((int)px[(y * w + x) * 4 + c] -
+									(int)px[(y * w + x + 1) * 4 + c]);
+				return n ? sum / (double)n : 0.0;
+			};
+			const std::vector<uint8_t> soft = shot("x_soft", [](obs_data_t *d) {
+				obs_data_set_int(d, "bloom_style", 1);
+				obs_data_set_double(d, "bloom", 0);
+				obs_data_set_double(d, "blur", 200);
+				obs_data_set_int(d, "pixel_style", 0);
+			});
+			const std::vector<uint8_t> lit = shot("x_lit", [](obs_data_t *d) {
+				obs_data_set_double(d, "bloom", 200);
+				obs_data_set_double(d, "bloom_size", 0);
+			});
+			CHECK(mean_rgb(lit) > mean_rgb(soft) + 5.0 && detail(lit) < detail(soft) * 2.5 + 0.05,
+			      "bloom leaves a blurred background as soft as it was (detail %.3f without, %.3f with; mean %.1f and %.1f)",
+			      detail(soft), detail(lit), mean_rgb(soft), mean_rgb(lit));
+			obs_data_set_double(s, "bloom_size", 80);
+		}
+		for (const char *name : {"x_before", "x_picky", "x_soft", "x_lit"})
 			remove((out + "/" + name + ".rgba").c_str());
 		// Back as the checks below expect to find it.
 		obs_data_set_int(s, "bloom_style", 0);
@@ -1947,6 +1975,52 @@ int main(int argc, char **argv)
 			      "when the capture goes, the picture is back and glides to its own shape again (%u part-way; then %ux%u)",
 			      back_w, w, h);
 
+			// Asked for over a capture that is running: the picture comes
+			// in as if the capture had gone, and leaves again.
+			{
+				obs_data_t *again = obs_source_get_settings(capture);
+				obs_data_set_string(again, "file", red_path.c_str());
+				obs_source_update(capture, again);
+				settle(12);
+				auto cover = [&]() {
+					calldata_t cd = {};
+					calldata_set_bool(&cd, "toggle", true);
+					proc_handler_call(obs_source_get_proc_handler(standby), "cover", &cd);
+					calldata_free(&cd);
+				};
+				auto red_mid = [&]() {
+					const uint32_t cw = obs_source_get_width(capture),
+						       ch = obs_source_get_height(capture);
+					const std::vector<uint8_t> p = cw && ch ? render(capture, cw, ch)
+										: std::vector<uint8_t>();
+					const uint8_t *m = p.empty() ? nullptr : &p[(size_t(ch / 2) * cw + cw / 2) * 4];
+					return m && m[0] > 250 && m[1] < 5 && m[2] < 5;
+				};
+				const bool live_first = red_mid();
+				cover();
+				settle(12);
+				bool waiting = false;
+				{
+					calldata_t cd = {};
+					if (proc_handler_call(obs_source_get_proc_handler(standby), "get_standing",
+							      &cd))
+						waiting = calldata_bool(&cd, "waiting");
+					calldata_free(&cd);
+				}
+				const bool covered = !red_mid() && waiting;
+				const uint32_t cover_w = obs_source_get_width(capture);
+				cover();
+				settle(12);
+				CHECK(live_first && covered && cover_w == 107 && red_mid() &&
+					      obs_source_get_width(capture) == 100,
+				      "asked for over a running capture, the picture stands in and leaves again (%d, %d, %u wide; then %d, %u wide)",
+				      live_first, covered, cover_w, red_mid(), obs_source_get_width(capture));
+				obs_data_set_string(again, "file", "");
+				obs_source_update(capture, again);
+				obs_data_release(again);
+				settle(12);
+			}
+
 			// Asked to fill instead, it takes the size the capture last had.
 			obs_data_set_bool(sd, "own_shape", false);
 			obs_source_update(standby, sd);
@@ -2925,6 +2999,22 @@ int main(int argc, char **argv)
 			sp = space(600);
 			CHECK(is(sp.x, 20) && is(sp.w, 600),
 			      "an item listed as never in the way is not (%.0f, %.0f wide)", sp.x, sp.w);
+			// ... unless the picture would leave too much of its space
+			// empty. A 4:3 game fills 71 % of the 600 by 320 space.
+			obs_data_set_double(ff, "skip_fill", 95.0);
+			obs_source_update(free_fit, ff);
+			sp = space(600);
+			CHECK(is(sp.x, 140) && is(sp.w, 480),
+			      "a picture that fills under the share set goes beside the item never in the way (%.0f, %.0f wide)",
+			      sp.x, sp.w);
+			obs_data_set_double(ff, "skip_fill", 60.0);
+			obs_source_update(free_fit, ff);
+			sp = space(600);
+			CHECK(is(sp.x, 20) && is(sp.w, 600),
+			      "and one that fills more than that still overlaps it (%.0f, %.0f wide)", sp.x, sp.w);
+			obs_data_set_double(ff, "skip_fill", 0.0);
+			obs_source_update(free_fit, ff);
+			sp = space(400);
 			// Dragged to another place: left alone while it moves.
 			vec2_set(&at2, 300.0f, 200.0f);
 			obs_sceneitem_set_pos(gi, &at2);

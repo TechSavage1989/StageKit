@@ -24,4 +24,8 @@ void register_standby();
 // has nothing? (Not while it changes over to a capture that has arrived.)
 bool standby_waiting(obs_source_t *source);
 
+// Shows the picture of an enabled Standby Picture on the source over its
+// capture, or takes it away again. False when the source has none.
+bool standby_cover_toggle(obs_source_t *source);
+
 } // namespace stagekit

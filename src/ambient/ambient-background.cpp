@@ -1080,8 +1080,13 @@ void AmbientBackground::render()
 		gs_effect_set_float(pl_bloom_threshold_, amplify ? -1.0f : (float)s.bloom_threshold);
 		pass(looks_, pl_image_, tr_bright_, scene, iw, ih, "BloomBright");
 		gs_texture_t *light = gs_texrender_get_texture(tr_bright_);
+		// The light is spread at least as far as the picture is blurred. It
+		// is taken from the picture before the blur, and spread less than
+		// that it laid the sharp picture back over the blurred one: the
+		// owner saw the blur go when Bloom was on.
+		const double spread = s.blur_kind == BlurKind::Temporal ? s.bloom_size : std::max(s.bloom_size, s.blur);
 		if (light)
-			light = bloom_blur_->blur(light, iw, ih, s.bloom_size * kInternalScale);
+			light = bloom_blur_->blur(light, iw, ih, spread * kInternalScale);
 		if (light) {
 			gs_effect_set_texture(pl_image2_, light);
 			// (At 100 % the amplifying style adds what the shader it is after
@@ -1206,17 +1211,17 @@ bool visibility_modified(obs_properties_t *props, obs_property_t *, obs_data_t *
 		obs_property_set_visible(obs_properties_get(props, name), live != LiveMode::None);
 	for (const char *name : {"pixel_size", "pixel_smooth", "pixel_origin_x", "pixel_origin_y", "pixel_rotation"})
 		obs_property_set_visible(obs_properties_get(props, name), pixel != PixelStyle::None);
-	const bool bloom = obs_data_get_double(settings, "bloom") > 0.0;
-	obs_property_set_visible(obs_properties_get(props, "bloom_style"), bloom);
+	// (Bloom's own controls do not come and go with its strength: showing
+	// and hiding them rebuilt the window at each step of the slider, which
+	// then could not be dragged.)
 	obs_property_set_visible(obs_properties_get(props, "bloom_threshold"),
-				 bloom && obs_data_get_int(settings, "bloom_style") == 0);
+				 obs_data_get_int(settings, "bloom_style") == 0);
 	for (const char *name : {"live_change", "live_delay_ms"})
 		obs_property_set_visible(obs_properties_get(props, name), live != LiveMode::None);
 	const bool live_timed = live != LiveMode::None && obs_data_get_int(settings, "live_change") != 1;
 	for (const char *name : {"live_change_ms", "live_ease_curve", "live_ease_mode"})
 		obs_property_set_visible(obs_properties_get(props, name), live_timed);
 
-	obs_property_set_visible(obs_properties_get(props, "bloom_size"), bloom);
 	obs_property_set_visible(obs_properties_get(props, "overlay_mode"), has_overlay);
 	obs_property_set_visible(obs_properties_get(props, "overlay_strength"), has_overlay);
 	obs_property_set_visible(obs_properties_get(props, "overlay_gray"), has_overlay);
@@ -1358,7 +1363,6 @@ obs_properties_t *get_properties(void *)
 		obs_properties_add_float_slider(look, "bloom", obs_module_text("Ambient.Bloom"), 0.0, 1000.0, 1.0);
 	obs_property_float_set_suffix(bloom, "%");
 	obs_property_set_long_description(bloom, obs_module_text("Ambient.Bloom.Tip"));
-	obs_property_set_modified_callback(bloom, visibility_modified);
 	obs_property_t *bloom_style = obs_properties_add_list(
 		look, "bloom_style", obs_module_text("Ambient.BloomStyle"), OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(bloom_style, obs_module_text("Ambient.BloomStyle.Shine"), 0);

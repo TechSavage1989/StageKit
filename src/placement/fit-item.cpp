@@ -31,6 +31,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <cmath>
 #include <cstring>
 #include <map>
+#include <set>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -59,6 +60,7 @@ struct Settings {
 	bool visible_pixels = true;    // other items are measured by what they draw, not their boxes
 	bool no_shadows = true;        // and shadows, glows and outlines do not count, its own included
 	std::vector<std::string> skip; // items that are never in the way
+	double skip_fill = 0.0;        // ... unless the picture would fill less than this share of its space; 0: never
 	bool have_anchor = false;      // the free space is the one round this point
 	double anchor_x = 0, anchor_y = 0;
 	double glide_s = 0.3;
@@ -478,6 +480,7 @@ public:
 		s.h = std::max(2.0, obs_data_get_double(settings, "box_height"));
 		s.margin = std::clamp(obs_data_get_double(settings, "margin"), 0.0, 2000.0);
 		s.tolerance = std::clamp(obs_data_get_double(settings, "tolerance"), 0.0, 200.0);
+		s.skip_fill = std::clamp(obs_data_get_double(settings, "skip_fill") / 100.0, 0.0, 1.0);
 		s.resize = obs_data_get_bool(settings, "resize");
 		// 0 the middle, then top, bottom, left, right, and the four corners.
 		static const int kTowardX[] = {0, 0, 0, -1, 1, -1, 1, -1, 1};
@@ -891,7 +894,9 @@ public:
 		bool free = s.box == BoxKind::FreeSpace;
 		if (free) {
 			Box space;
-			if (!free_box(item, s, how, Box{bx, by, bw, bh}, picture, seconds, space))
+			const bool kept = !s.resize && have_keep_;
+			if (!free_box(item, s, how, Box{bx, by, bw, bh}, picture, kept ? keep_w_ : 0.0,
+				      kept ? keep_h_ : 0.0, seconds, space))
 				return; // being moved by hand, or no room at all
 			bx = space.x;
 			by = space.y;
@@ -1083,8 +1088,9 @@ public:
 private:
 	// The free space round the item's place, gliding to it when it changes.
 	// False while there is nothing to do this tick.
+	// (`kept_w` by `kept_h`: the size the picture keeps when it is not resized.)
 	bool free_box(obs_sceneitem_t *item, Settings &s, const Measure &how, const Box &within, double shape,
-		      float seconds, Box &space)
+		      double kept_w, double kept_h, float seconds, Box &space)
 	{
 		if (measuring_stopped())
 			return false;
@@ -1160,15 +1166,24 @@ private:
 			const std::vector<std::string> *skip;
 			obs_source_t *scene;
 			const void *asking;
-		} gather{&others, item, &s.skip, parent_, this};
+			// The items never in the way are passed over, or, when they
+			// may count after all, kept and marked.
+			std::set<obs_sceneitem_t *> *passed;
+		} gather{&others, item, &s.skip, parent_, this, nullptr};
+		std::set<obs_sceneitem_t *> passed_over;
+		if (s.skip_fill > 0.0)
+			gather.passed = &passed_over;
 		static const auto add = [](obs_scene_t *, obs_sceneitem_t *other, void *param) {
 			auto *g = static_cast<Gather *>(param);
 			if (other == g->self || !obs_sceneitem_visible(other) || obs_sceneitem_is_group(other) ||
 			    is_morph_layer(other))
 				return true;
 			const char *name = obs_source_get_name(obs_sceneitem_get_source(other));
-			if (name && std::find(g->skip->begin(), g->skip->end(), name) != g->skip->end())
-				return true;
+			if (name && std::find(g->skip->begin(), g->skip->end(), name) != g->skip->end()) {
+				if (!g->passed)
+					return true;
+				g->passed->insert(other);
+			}
 			g->out->push_back(other);
 			return true;
 		};
@@ -1216,10 +1231,12 @@ private:
 		std::vector<bool> gives;
 		std::vector<int64_t> ids; // which item each is, and whether its
 		std::vector<bool> said;   // filter said where it is going
+		std::vector<bool> passed; // one of the items never in the way
 		for (obs_sceneitem_t *other : others) {
 			Claim claim;
 			if (claim_of(parent_, obs_sceneitem_get_id(other), this, claim)) {
 				boxes.push_back(claim.box);
+				passed.push_back(passed_over.count(other) > 0);
 				gives.push_back(claim.resizes);
 				ids.push_back(obs_sceneitem_get_id(other));
 				said.push_back(true);
@@ -1234,6 +1251,7 @@ private:
 			if (!seen.there)
 				continue;
 			gives.push_back(false);
+			passed.push_back(passed_over.count(other) > 0);
 			ids.push_back(obs_sceneitem_get_id(other));
 			said.push_back(false);
 			const Box now = scene_box(parent_, other);
@@ -1254,7 +1272,7 @@ private:
 		// way somewhere (gliding, being dragged, a window growing), or
 		// `stepped`, a change made in one go: an item shown or hidden, or
 		// another filter saying where its item is going.
-		bool moved = false, stepped = ids != ids_ || said != said_;
+		bool moved = false, stepped = ids != ids_ || said != said_ || passed != passed_;
 		if (!stepped)
 			for (size_t i = 0; i < boxes.size(); i++)
 				if (differs(boxes[i], boxes_[i]))
@@ -1278,6 +1296,7 @@ private:
 			gives_ = gives;
 			ids_ = ids;
 			said_ = said;
+			passed_ = passed;
 			unsettled_ = true;
 			calm_for_ = 0.0;
 			since_look_ = 0.0;
@@ -1290,6 +1309,7 @@ private:
 			gives_ = gives;
 			ids_ = ids;
 			said_ = said;
+			passed_ = passed;
 			since_look_ = 0.0;
 			if (!unsettled_)
 				changed_ = true;
@@ -1333,7 +1353,8 @@ private:
 			changed_ = true;
 		}
 		// The gap or the tolerance set anew: the space is worked out again.
-		if (s.margin != used_margin_ || s.tolerance != used_tolerance_) {
+		if (s.margin != used_margin_ || s.tolerance != used_tolerance_ || s.skip_fill != used_fill_) {
+			used_fill_ = s.skip_fill;
 			used_margin_ = s.margin;
 			used_tolerance_ = s.tolerance;
 			changed_ = true;
@@ -1342,8 +1363,34 @@ private:
 			changed_ = false;
 			if (!have_goal_ || shape_for_ >= 0.5 || shape_used_ <= 0.0)
 				shape_used_ = shape;
-			const Box goal =
-				free_space(within, s.anchor_x, s.anchor_y, boxes_, s.margin, shape_used_, s.tolerance);
+			// First without the items never in the way. Should the picture
+			// then leave too much of its space empty (a narrow window on a
+			// wide screen), they count after all: the picture goes beside
+			// the camera rather than under it. Both spaces come from the
+			// picture's shape alone, not from where it is now, so the
+			// choice does not flip once the picture has moved.
+			std::vector<Box> firm;
+			for (size_t i = 0; i < boxes_.size(); i++)
+				if (i >= passed_.size() || !passed_[i])
+					firm.push_back(boxes_[i]);
+			Box goal = free_space(within, s.anchor_x, s.anchor_y, firm, s.margin, shape_used_, s.tolerance);
+			avoiding_ = false;
+			if (s.skip_fill > 0.0 && firm.size() != boxes_.size() && goal.w >= 2.0 && goal.h >= 2.0) {
+				double fw = kept_w, fh = kept_h;
+				if (fw <= 0.0 || fh <= 0.0) {
+					fw = std::min(goal.w, goal.h * shape_used_);
+					fh = fw / shape_used_;
+				}
+				const double fill = std::min(1.0, fw / goal.w) * std::min(1.0, fh / goal.h);
+				if (fill < s.skip_fill) {
+					const Box beside = free_space(within, s.anchor_x, s.anchor_y, boxes_, s.margin,
+								      shape_used_, s.tolerance);
+					if (beside.w >= 2.0 && beside.h >= 2.0) {
+						goal = beside;
+						avoiding_ = true;
+					}
+				}
+			}
 			if (goal.w < 2.0 || goal.h < 2.0)
 				return false;
 			if (!have_goal_ || std::fabs(goal.x - goal_.x) > 0.05 || std::fabs(goal.y - goal_.y) > 0.05 ||
@@ -1382,6 +1429,9 @@ private:
 	std::vector<bool> gives_; // and which of them another filter resizes to make room
 	std::vector<int64_t> ids_;
 	std::vector<bool> said_;
+	std::vector<bool> passed_; // which are items never in the way, counted only when the picture leaves room
+	bool avoiding_ = false;    // they count just now
+	double used_fill_ = -1.0;
 	static constexpr double kArriving = 0.25;
 	bool was_showing_ = false;
 	double shown_for_ = 0.0;
@@ -1451,7 +1501,8 @@ bool box_modified(obs_properties_t *props, obs_property_t *, obs_data_t *setting
 	const long long kind = obs_data_get_int(settings, "box");
 	for (const char *name : {"box_x", "box_y", "box_width", "box_height"})
 		obs_property_set_visible(obs_properties_get(props, name), kind == 1);
-	for (const char *name : {"skip|alist", "glide_ms", "ease_curve", "ease_mode", "visible_pixels", "tolerance"})
+	for (const char *name :
+	     {"skip|alist", "glide_ms", "ease_curve", "ease_mode", "visible_pixels", "tolerance", "skip_fill"})
 		if (obs_property_t *p = obs_properties_get(props, name))
 			obs_property_set_visible(p, kind == 2);
 	obs_property_set_description(obs_properties_get(props, "margin"),
@@ -1531,6 +1582,10 @@ obs_properties_t *get_properties(void *data)
 		scene_item_names(parent, names);
 	};
 	pick_list_add(props, self ? self->source() : nullptr, skip);
+	obs_property_t *skip_fill =
+		obs_properties_add_float_slider(props, "skip_fill", obs_module_text("Fit.SkipFill"), 0.0, 100.0, 1.0);
+	obs_property_float_set_suffix(skip_fill, "%");
+	obs_property_set_long_description(skip_fill, obs_module_text("Fit.SkipFill.Tip"));
 	PickList share;
 	share.setting = "share_scenes";
 	share.title = "Fit.Share";
@@ -1568,6 +1623,7 @@ void get_defaults(obs_data_t *settings)
 	obs_data_set_default_double(settings, "box_height", have ? ovi.base_height : 1080);
 	obs_data_set_default_double(settings, "margin", 80.0);
 	obs_data_set_default_double(settings, "tolerance", 8.0);
+	obs_data_set_default_double(settings, "skip_fill", 0.0);
 	obs_data_set_default_bool(settings, "resize", true);
 	obs_data_set_default_int(settings, "toward", 0);
 	obs_data_set_default_bool(settings, "visible_pixels", true);

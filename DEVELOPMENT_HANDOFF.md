@@ -211,6 +211,23 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Bloom and blur, the fill rule for Fit to Space, hiding to the Standby Picture (0.1.0-beta121)
+
+The owner on beta120: "frametimes are much better and all the transitions seem much smoother and
+ambient background transition is better". Then four requests, all in this release:
+
+- Blur looked wrong with Bloom on: the bloom's light came from the unblurred picture and was spread
+  by *Bloom size* alone. It is now spread at least as far as the blur. **Not seen on the owner's
+  machine**; it is the cause that fits the code, and a test measures the detail with and without.
+- The Bloom slider would not drag: it had a modified callback that showed and hid the other bloom
+  controls, so OBS rebuilt the window at each step. The callback is gone and the controls stay.
+- Fit to Space: *Avoid them under a fill of* (`skip_fill`). See AGENTS.md.
+- The switcher's hide brings in the Standby Picture (`hide_standby`, `standby_cover_toggle`), and
+  Standby Picture has a button and hotkey of its own for it.
+
+Still unconfirmed by the owner: Stream Deck 0.9.0.0 (wordless art, titles, toggle key), Morph in
+Automatic Source Switcher, Fade and Zoom, *Never blur these*, the amplified bloom's look.
+
 ## The real cause of the late frames; background transition; the old bloom (0.1.0-beta120)
 
 - The owner on beta119, with two logs: "the transition between manual and automatic is a bit

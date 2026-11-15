@@ -305,6 +305,7 @@ public:
 		by_hand_ = by_hand;
 		follow_ = obs_data_get_bool(settings, "follow");
 		ready_wanted_ = obs_data_get_bool(settings, "ready");
+		hide_standby_ = obs_data_get_bool(settings, "hide_standby");
 		style_ = static_cast<Style>(std::clamp<long long>(obs_data_get_int(settings, "change"), 0, 7));
 		change_s_ = std::clamp<long long>(obs_data_get_int(settings, "change_ms"), 0, 10000) / 1000.0;
 		curve_ = static_cast<EaseCurve>(obs_data_get_int(settings, "ease_curve"));
@@ -514,6 +515,7 @@ private:
 	std::vector<OpenWindow> test_windows_;
 	bool use_test_windows_ = false;
 	bool cmd_step_ = false, cmd_back_ = false, cmd_hide_ = false;
+	std::atomic<bool> hide_standby_{true};
 	OpenWindow hold_window_; // handed over by hand, to be taken at the next look
 	bool have_hold_ = false;
 	std::string last_held_; // the app last held by hand: the first to go back to
@@ -1041,7 +1043,9 @@ void AppCapture::tick(float seconds)
 		set_bridge(nullptr);
 	if (order)
 		keep_first(parent);
-	if (hide)
+	// Hidden: a Standby Picture on the capture takes its place, when there is
+	// one; otherwise its items are hidden.
+	if (hide && !(hide_standby_ && standby_cover_toggle(parent)))
 		toggle_hidden(parent);
 	if (look)
 		follow(parent);
@@ -1305,6 +1309,9 @@ obs_properties_t *get_properties(void *data)
 	// Hiding the capture altogether, and showing it again.
 	obs_properties_t *hiding = obs_properties_create();
 	add_item_transition_properties(hiding);
+	obs_property_t *to_standby =
+		obs_properties_add_bool(hiding, "hide_standby", obs_module_text("AppCapture.HideStandby"));
+	obs_property_set_long_description(to_standby, obs_module_text("AppCapture.HideStandby.Tip"));
 	obs_properties_add_button2(
 		hiding, "hide_now", obs_module_text("AppCapture.Hide.Now"),
 		[](obs_properties_t *, obs_property_t *, void *data) {
@@ -1321,6 +1328,7 @@ void get_defaults(obs_data_t *settings)
 {
 	obs_data_set_default_bool(settings, "follow", true);
 	obs_data_set_default_bool(settings, "ready", true);
+	obs_data_set_default_bool(settings, "hide_standby", true);
 	item_transition_defaults(settings);
 	obs_data_set_default_int(settings, "change", (int)Style::Fade);
 	obs_data_set_default_int(settings, "change_ms", 300);
