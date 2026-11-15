@@ -11,6 +11,8 @@ the Free Software Foundation; either version 2 of the License, or
 #include "item-transition.hpp"
 #include "pick-list.hpp"
 #include "scene-util.hpp"
+#include "../transition/morph-paint.hpp"
+#include "../transition/morph.hpp"
 
 #include <obs-module.h>
 
@@ -95,6 +97,10 @@ namespace {
 
 inline constexpr const char *kUsual = "usual"; // a listed source: as the filter's usual change
 inline constexpr const char *kSame = "same";   // hiding: the same way as showing
+// The links a filter keeps for Morph: `kMorphPrefix` + "links", made with
+// the boxes `add_morph_link_properties` adds under that prefix.
+inline constexpr const char *kMorphPrefix = "morph_";
+inline constexpr const char *kMorphLinks = "morph_links";
 
 // Settings are kept under these names. `scope` is empty for the filter's
 // usual change and "for|<source>|" for a listed source's own.
@@ -156,6 +162,22 @@ ItemWay way_read(obs_data_t *settings, const std::string &scope, bool show)
 		obs_data_get_int(settings, key(scope, show ? "transition_ms" : "hide_ms").c_str()), 0, 10000);
 	if (way.kind != kTransitionCut && way.kind != kTransitionKeep && way.kind != kUsual && way.kind != kSame)
 		way.own = own_json(settings, own_prefix(scope, show, way.kind));
+	// A Morph also gets the links made in this filter: which sources change
+	// into each other.
+	if (way.kind == kMorphId) {
+		obs_data_array_t *links = obs_data_get_array(settings, kMorphLinks);
+		if (links && obs_data_array_count(links) > 0) {
+			obs_data_t *own = way.own.empty() ? obs_data_create()
+							  : obs_data_create_from_json(way.own.c_str());
+			if (own) {
+				obs_data_set_array(own, "links", links);
+				const char *json = obs_data_get_json(own);
+				way.own = json ? json : "";
+				obs_data_release(own);
+			}
+		}
+		obs_data_array_release(links);
+	}
 	return way;
 }
 
@@ -234,10 +256,8 @@ void add_kinds(obs_property_t *list)
 	obs_property_list_add_string(list, obs_module_text("Change.Cut"), kTransitionCut);
 	const char *id = nullptr;
 	for (size_t i = 0; obs_enum_transition_types(i, &id); i++) {
-		// (Not the ones that need a file of their own, nor StageKit's own
-		// change of scene, which has no meaning on one item.)
-		if (!id || strcmp(id, "cut_transition") == 0 || strcmp(id, "obs_stinger_transition") == 0 ||
-		    strcmp(id, "stagekit_morph") == 0)
+		// (Not the ones that need a file of their own.)
+		if (!id || strcmp(id, "cut_transition") == 0 || strcmp(id, "obs_stinger_transition") == 0)
 			continue;
 		const char *shown_as = obs_source_get_display_name(id);
 		obs_property_list_add_string(list, shown_as ? shown_as : id, id);
@@ -258,6 +278,13 @@ void add_own(obs_properties_t *into, obs_data_t *settings, const std::string &pr
 		const char *text = obs_property_description(p);
 		if (!their_name || !obs_property_visible(p))
 			continue;
+		// Morph's links are made once for the whole filter, further down;
+		// and what it calls "Other items" is here the item by itself.
+		const bool morph = kind == kMorphId;
+		if (morph && (strcmp(their_name, "link_a") == 0 || strcmp(their_name, "link_b") == 0))
+			continue;
+		if (morph && strcmp(their_name, "others") == 0)
+			text = obs_module_text("Morph.Alone");
 		const std::string name = prefix + their_name;
 		obs_property_t *made = nullptr;
 		switch (obs_property_get_type(p)) {
@@ -339,7 +366,11 @@ void add_own(obs_properties_t *into, obs_data_t *settings, const std::string &pr
 		default:
 			break; // a file, a font, a button: not offered here
 		}
-		if (made && obs_property_long_description(p))
+		if (made && morph && strcmp(their_name, "others") == 0)
+			obs_property_set_long_description(made, obs_module_text("Morph.Alone.Tip"));
+		else if (made && morph && strcmp(their_name, "pair_main") == 0)
+			obs_property_set_long_description(made, obs_module_text("Morph.Item.Tip"));
+		else if (made && obs_property_long_description(p))
 			obs_property_set_long_description(made, obs_property_long_description(p));
 	}
 	obs_data_release(defaults);
@@ -428,9 +459,31 @@ void build(obs_properties_t *top, obs_source_t *owner, obs_data_t *settings)
 	}
 }
 
+// The boxes and the list that Morph's links are made with show only while
+// Morph is chosen for something in this filter.
+void show_links(obs_properties_t *top, obs_data_t *settings)
+{
+	bool any = false;
+	for (obs_data_item_t *item = obs_data_first(settings); item; obs_data_item_next(&item)) {
+		const char *name = obs_data_item_get_name(item);
+		const size_t len = name ? strlen(name) : 0;
+		// "transition", "hide_transition", and the same after "for|<source>|".
+		if (len < 10 || strcmp(name + len - 10, "transition") != 0 ||
+		    obs_data_item_gettype(item) != OBS_DATA_STRING)
+			continue;
+		any = any || strcmp(obs_data_item_get_string(item), kMorphId) == 0;
+	}
+	const std::string prefix = kMorphPrefix;
+	for (const std::string &name :
+	     {prefix + "link_a", prefix + "link_b", prefix + "link_add", std::string(kMorphLinks) + "|alist"})
+		if (obs_property_t *p = obs_properties_get(top, name.c_str()))
+			obs_property_set_visible(p, any);
+}
+
 bool rebuild_cb(void *priv, obs_properties_t *top, obs_property_t *, obs_data_t *settings)
 {
 	build(top, static_cast<obs_source_t *>(priv), settings);
+	show_links(top, settings);
 	return true;
 }
 
@@ -475,6 +528,7 @@ void add_item_change_properties(obs_properties_t *props, obs_source_t *owner, co
 	// When the list of sources changes, the "Settings for" box follows.
 	pick_list_on_change([](obs_properties_t *top, obs_source_t *list_owner, obs_data_t *settings) {
 		build(top, list_owner, settings);
+		show_links(top, settings);
 	});
 	obs_properties_t *content = obs_properties_create();
 	obs_property_t *for_box = obs_properties_add_list(content, kForName, obs_module_text("Change.For"),
@@ -483,8 +537,12 @@ void add_item_change_properties(obs_properties_t *props, obs_source_t *owner, co
 	obs_property_set_modified_callback2(for_box, rebuild_cb, owner);
 	const std::string group_name = std::string(kGroupStart) + (list_setting ? list_setting : "");
 	obs_properties_add_group(props, group_name.c_str(), obs_module_text("Change.Group"), OBS_GROUP_NORMAL, content);
+	// For Morph: which sources change into each other.
+	add_morph_link_properties(props, owner, kMorphPrefix);
 	obs_data_t *settings = owner ? obs_source_get_settings(owner) : nullptr;
 	build(props, owner, settings);
+	if (settings)
+		show_links(props, settings);
 	obs_data_release(settings);
 }
 

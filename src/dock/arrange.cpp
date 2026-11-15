@@ -803,7 +803,7 @@ std::vector<Box> others_in_now(obs_source_t *scene, const std::vector<obs_scenei
 	static const auto add = [](obs_scene_t *, obs_sceneitem_t *other, void *param) {
 		auto *g = static_cast<Gather *>(param);
 		if (std::find(g->leave_out->begin(), g->leave_out->end(), other) != g->leave_out->end() ||
-		    !obs_sceneitem_visible(other) || obs_sceneitem_is_group(other))
+		    !obs_sceneitem_visible(other) || obs_sceneitem_is_group(other) || is_morph_layer(other))
 			return true;
 		// With "Use visible pixels", an item that draws nothing is not there:
 		// it is not in the way of a slide or a resize.
@@ -949,7 +949,7 @@ SnapLines snap_lines_now(obs_source_t *scene, const std::vector<obs_sceneitem_t 
 	static const auto add = [](obs_scene_t *, obs_sceneitem_t *other, void *param) {
 		auto *o = static_cast<Others *>(param);
 		if (std::find(o->leave_out->begin(), o->leave_out->end(), other) != o->leave_out->end() ||
-		    !obs_sceneitem_visible(other) || obs_sceneitem_is_group(other))
+		    !obs_sceneitem_visible(other) || obs_sceneitem_is_group(other) || is_morph_layer(other))
 			return true;
 		// Nor does it give a line to snap to or a guide to show.
 		bool nothing = false;

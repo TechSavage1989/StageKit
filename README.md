@@ -29,8 +29,11 @@ from hotkeys, or from the Stream Deck OBS Studio plugin's *Filter* and *Source* 
   its edges and outlines it. A shadow added after it takes the same shape.
 - **Auto Frame** (filter): gives a game or emulator capture a fixed frame and fits any resolution inside
   it, so one scene serves every picture shape.
-- **Morph** (scene transition): on a change of scene, whatever is in both scenes glides from its
-  place and size in the one to its place and size in the other, and the rest cross-fades.
+- **Morph** (transition): on a change of scene, whatever is in both scenes glides from its place
+  and size in the one to its place and size in the other, and the rest cross-fades. Inside a scene,
+  an item hidden and another shown at the same moment change into each other the same way.
+- **Fade and Zoom** (transition): what appears grows to its size as it fades in, what disappears
+  shrinks as it fades out. For a change of scene and for single items.
 - **Fit to Space** (scene filter): one capture for every shape. A picture with the screen's shape fills it;
   an emulator's squarer picture floats centred inside a margin.
 - **Auto Capture** (filter): one Game Capture finds whatever game is running, windowed or full-screen,
@@ -476,7 +479,7 @@ on one of the listed captures is shown at a time:
 | Captures to switch between | The scene's captures, one per app. Choose to add; each row has its own remove button. The first is the standby |
 | Captures you switch to | Other captures in the scene that you show yourself, such as a Window Capture of your browser. Show one and it takes over and stays, whatever app you use; hide it and the captures above follow your apps again. Showing one hides any other on this list |
 | Follow the app in use | On: the app you click into is shown. Off: an app is shown when it opens and stays until it closes |
-| Change with | How one capture gives way to the next: a fade (the default), any other transition OBS has, a cut, or whatever is already set on each item. It sets OBS's own show and hide transition on each listed item |
+| Change with | How one capture gives way to the next: a fade (the default), any other transition OBS has, a cut, or whatever is already set on each item. With *Morph (StageKit)* the capture you leave moves, resizes and changes into the one you go to (see [Morph between items](#morph-between-items)). It sets OBS's own show and hide transition on each listed item |
 | Lasting | How long the change takes |
 | Keep the others ready | While the scene is showing, the captures of the other open apps keep running, so the one you switch to has its picture at once |
 
@@ -738,9 +741,10 @@ off, and the sources are shown or hidden to match.
 | Scenes | The scenes to act in, when you chose to list them |
 | When this is on | *They are shown* (off hides them) or *They are hidden* (off shows them) |
 | Bring-along items too | Ticked: the items those sources bring along are shown and hidden with them. They are the items chosen under *Bring along* in the sources' Move Source keys, and in Move Scene Item filters that move them |
-| Show with / Lasting | How each item appears: a fade (the default), any other transition OBS has, a cut, or whatever is already set on the item; and for how long. Under it come that transition's own settings, such as the way a slide goes. A Slide and a Swipe have one more direction, *Off the nearest edge*: each item goes towards whichever edge of the screen it is nearest to when it hides, and comes in from that side when it shows |
+| Show with / Lasting | How each item appears: a fade (the default), any other transition OBS has, a cut, or whatever is already set on the item; and for how long. Under it come that transition's own settings, such as the way a slide goes. *Morph (StageKit)* and *Fade and Zoom (StageKit)* are on the list too (see [Morph between items](#morph-between-items) and [Fade and Zoom](#fade-and-zoom-transition)). A Slide and a Swipe have one more direction, *Off the nearest edge*: each item goes towards whichever edge of the screen it is nearest to when it hides, and comes in from that side when it shows |
 | Hide with / Lasting | How each item disappears: *The same as showing* (the default), or a transition of its own with its own settings, so an item can slide down into view and slide up out of it |
 | Settings for | With sources on the list: *All sources (the usual)*, or one of the listed sources. Choose a source and the controls below are that source's own: it can show and hide with another transition, another duration and other settings than the rest, or be left *As for all sources* |
+| Link this source / With this source / Add this link / Linked sources | Shown while *Morph (StageKit)* is chosen above: two sources that change into each other when one is hidden as the other is shown. See [Morph between items](#morph-between-items) |
 | Do it now | Shows or hides them to match how the filter is switched now |
 
 OBS's own transitions move an item's picture inside the item's own frame, so a slide leaves through
@@ -822,6 +826,56 @@ Things to know:
   may change thickness at the start of the change instead of gliding with it.
 
 <p align="center"><img src="docs/images/morph-transition.png" width="900" alt="A change of scene with the Morph transition in five steps: the camera glides across the screen, the game capture turns into the window capture as it moves and resizes, a picture that is only in the first scene fades out, and the two backgrounds cross-fade"></p>
+
+### Morph between items
+
+The same change inside one scene: when one item is hidden and another is shown at the same moment,
+the one moves, resizes and turns into the other, instead of each fading where it is.
+
+It happens whenever both items have **Morph (StageKit)** as their way of going and coming:
+
+- in a StageKit filter that shows and hides items (Follow Active App, Show in Scenes, Program
+  Trigger, Link Visibility), choose *Morph (StageKit)* under *Change with* or *Show with*;
+- or set it on the items yourself: right-click an item, *Show Transition* and *Hide Transition*.
+
+Who hides and shows them does not matter: one filter, two filters, two Stream Deck keys in one
+multi-action, or the eye in OBS's list, as long as it happens within a tenth of a second.
+
+Which two go together follows the Morph transition's rules:
+
+- **Linked sources** first: every link made in any Morph's settings counts, the ones under *Scene
+  Transitions* and the ones made in a Show in Scenes filter. Links carry through one another.
+- Then **the main picture**: the largest item hidden and the largest item shown, when each covers
+  at least 15 % of the screen. That is what pairs two captures in Follow Active App with no link
+  at all. Untick *Morph the main picture* to have only linked sources change into each other.
+
+An item with nothing to change into fades by itself, or fades and zooms if *With nothing to change
+into* (in Show in Scenes; *Other items* in the transition's own settings) says so.
+
+Things to know:
+
+- While a change lasts, a locked item named *Morph (StageKit, in progress)* is in the scene, straight
+  above the two items; it draws the change and takes itself out again. You may see it flash by in
+  the Sources list.
+- It works in the scene that is on screen and for items straight in the scene. An item inside a
+  group, or in a scene that is not showing, fades instead.
+- The two items are hidden and shown from the first moment, as far as OBS and everything else is
+  concerned; only the drawing is taken over. A Fit to Space on the item that is shown places it as
+  usual, and the change ends wherever that puts it.
+
+<p align="center"><img src="docs/images/morph-items.png" width="900" alt="One item changing into another inside a scene, in three steps: a cyan picture at the top left, a picture part-way between the two in place, size and colour, and a yellow picture at the bottom right"></p>
+
+### Fade and Zoom transition
+
+A transition for single items and for scenes: **Fade and Zoom (StageKit)**.
+
+- For an item, choose it under *Change with* or *Show with* in a StageKit filter, or as the item's
+  own *Show Transition* or *Hide Transition*. The item grows to its size as it fades in, and shrinks
+  as it fades out.
+- For a change of scene, add it with the plus in *Scene Transitions*. The scene you leave stays as it
+  is underneath and the new one fades in over it as it grows.
+- **Smallest size**: how small the picture is when it is all but gone (80 % as it comes; 100 % is a
+  plain fade). **Easing**: the same curves as everywhere else.
 
 ### Remote control
 

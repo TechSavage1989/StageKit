@@ -61,6 +61,15 @@ inline void refresh_item(obs_sceneitem_t *item)
 	obs_sceneitem_force_update_transform(item);
 }
 
+// The layer Morph puts into a scene while one item changes into another
+// (`src/transition/item-morph.cpp`): there for a moment, the size of the
+// scene, and nothing to fit round, line up with or keep clear of.
+inline bool is_morph_layer(obs_sceneitem_t *item)
+{
+	const char *id = item ? obs_source_get_unversioned_id(obs_sceneitem_get_source(item)) : nullptr;
+	return id && strcmp(id, "stagekit_morph_layer") == 0;
+}
+
 // The scene (or group) behind a source, or nullptr.
 inline obs_scene_t *scene_of(obs_source_t *source)
 {
