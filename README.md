@@ -140,7 +140,7 @@ off, so it costs nothing while off.
 | Include in 'Blur All' | Whether the global Blur All hotkeys affect this filter |
 | Blur these too | Other sources that are blurred and cleared together with this one |
 | And live captures on screen | Also blurs every game, window, screen and camera capture showing in the scene on screen when this filter is switched on |
-| Never blur these | Captures that *And live captures on screen* leaves alone: your camera, say, so it stays clear while everything else on screen is blurred. Choose to add; each row has its own remove button |
+| Never blur these | Sources that *And live captures on screen* leaves alone: your camera, say, so it stays clear while everything else on screen is blurred. Any source can be chosen; a Cropped View (a camera's crop) also keeps the source it shows clear. Choose to add; each row has its own remove button |
 
 Ways to trigger it:
 

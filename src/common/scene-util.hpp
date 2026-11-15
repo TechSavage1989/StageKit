@@ -207,4 +207,34 @@ inline obs_source_t *scene_on_screen()
 	return output;
 }
 
+// Is the source in some scene or group, and hidden in every one? (A capture
+// that is "hidden": shown nowhere.)
+inline bool shown_nowhere(obs_source_t *source)
+{
+	struct Look {
+		obs_source_t *source;
+		bool found = false, shown = false;
+	} look{source};
+	obs_enum_scenes(
+		[](void *param, obs_source_t *scene_source) {
+			auto *l = static_cast<Look *>(param);
+			obs_scene_t *scene = obs_group_or_scene_from_source(scene_source);
+			if (scene)
+				obs_scene_enum_items(
+					scene,
+					[](obs_scene_t *, obs_sceneitem_t *item, void *p) {
+						auto *l2 = static_cast<Look *>(p);
+						if (obs_sceneitem_get_source(item) == l2->source) {
+							l2->found = true;
+							l2->shown = l2->shown || obs_sceneitem_visible(item);
+						}
+						return !l2->shown;
+					},
+					l);
+			return !l->shown;
+		},
+		&look);
+	return look.found && !look.shown;
+}
+
 } // namespace stagekit
