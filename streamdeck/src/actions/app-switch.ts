@@ -12,7 +12,7 @@ import { targetOf } from "../kinds.ts";
 import { obs } from "../obs.ts";
 import { file, stepPicture } from "../pictures.ts";
 import { stepTitle } from "../titles.ts";
-import { answerLists, type KeySettings } from "./shared.ts";
+import { answerLists, type KeySettings, showOnOff } from "./shared.ts";
 
 /**
  * A key for the hand controls of a Show Source in Use filter (on a scene) or
@@ -23,6 +23,14 @@ import { answerLists, type KeySettings } from "./shared.ts";
  */
 export class AppSwitch extends SingletonAction<KeySettings> {
 	override readonly manifestId = "com.techsavage1989.stagekit.appswitch";
+
+	constructor() {
+		super();
+		// The switcher says when it goes manual or automatic, hidden or shown.
+		obs.on("switcher", () => void this.showAll());
+		obs.on("connection", () => void this.showAll());
+		obs.on("changed", () => void this.showAll());
+	}
 
 	override onWillAppear(ev: WillAppearEvent<KeySettings>): Promise<void> {
 		return ev.action.isKey() ? this.show(ev.action, ev.payload.settings) : Promise.resolve();
@@ -41,7 +49,8 @@ export class AppSwitch extends SingletonAction<KeySettings> {
 		try {
 			const step = ev.payload.settings.step;
 			await obs.pressHotkey(`stagekit.active.${step === "back" || step === "hide" || step === "toggle" || step === "clear" ? step : "next"}.${filter}`);
-			await ev.action.showOk();
+			// (A key showing which way it is says so by its picture.)
+			if (step !== "toggle" && step !== "hide") await ev.action.showOk();
 		} catch {
 			await ev.action.showAlert();
 		}
@@ -54,7 +63,26 @@ export class AppSwitch extends SingletonAction<KeySettings> {
 	}
 
 	private async show(key: KeyAction<KeySettings>, settings: KeySettings): Promise<void> {
-		await key.setImage(file(stepPicture(settings.picture, settings.step), true, settings.palette));
+		const picture = stepPicture(settings.picture, settings.step);
 		await key.setTitle(stepTitle(settings.step));
+		if (settings.step === "toggle" || settings.step === "hide") {
+			// Which way it is: on a manual window (Toggle), or the capture
+			// shown (Hide).
+			const { source, filter } = targetOf(settings);
+			const now = await obs.switcherState(source, filter);
+			const on = settings.step === "toggle" ? now?.manual === true : now !== undefined && !now.hidden;
+			await showOnOff(key, picture, on, settings.palette);
+			return;
+		}
+		// One look for a key that only does something.
+		await key.setImage(file(picture, true, settings.palette), { state: 0 });
+		await key.setImage(file(picture, true, settings.palette), { state: 1 });
+		await key.setState(0);
+	}
+
+	private async showAll(): Promise<void> {
+		for (const key of this.actions) {
+			if (key.isKey()) await this.show(key, await key.getSettings());
+		}
 	}
 }

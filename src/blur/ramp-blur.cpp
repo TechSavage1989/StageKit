@@ -529,7 +529,21 @@ void RampBlur::lead_others(bool active)
 	// Captures that "And live captures on screen" is to leave alone: a
 	// camera, say. The owner: "there should be an exclusion option ... so
 	// cameras for example can be intentionally excluded from blur".
-	const std::vector<std::string> never = pick_list_read(settings, "never", false);
+	std::vector<std::string> never = pick_list_read(settings, "never", false);
+	// A Cropped View (a camera's crop, say) is blurred by way of the source it
+	// shows: leaving the view alone means leaving that source alone too.
+	for (size_t i = 0, n = never.size(); i < n; i++) {
+		obs_source_t *named = obs_get_source_by_name(never[i].c_str());
+		const char *id = named ? obs_source_get_unversioned_id(named) : nullptr;
+		if (id && strcmp(id, "stagekit_cropped_view") == 0) {
+			obs_data_t *view = obs_source_get_settings(named);
+			const std::string shows = obs_data_get_string(view, "source");
+			obs_data_release(view);
+			if (!shows.empty())
+				never.push_back(shows);
+		}
+		obs_source_release(named);
+	}
 	if (names.empty() && !captures && led_.empty()) {
 		obs_data_release(settings);
 		return;
@@ -1152,10 +1166,16 @@ obs_properties_t *get_properties(void *data)
 	never.add = "RampBlur.NeverPick";
 	never.tip = "RampBlur.Never.Tip";
 	never.choices = [own_filter](std::vector<std::string> &names) {
+		// Every source with a picture (not only the kinds counted as
+		// captures): a camera may come from a plugin of its own, and a
+		// Cropped View of it is how it is often shown.
 		obs_enum_sources(
 			[](void *param, obs_source_t *source) {
 				const char *name = obs_source_get_name(source);
-				if (name && *name && is_capture_source(source))
+				const char *id = obs_source_get_unversioned_id(source);
+				const bool video = (obs_source_get_output_flags(source) & OBS_SOURCE_VIDEO) != 0;
+				if (name && *name && video && id && strcmp(id, "scene") != 0 &&
+				    strcmp(id, "group") != 0)
 					static_cast<std::vector<std::string> *>(param)->push_back(name);
 				return true;
 			},

@@ -10,9 +10,9 @@ import type { JsonValue } from "@elgato/utils";
 
 import { afterPress, targetOf } from "../kinds.ts";
 import { obs } from "../obs.ts";
-import { choose, file, plain } from "../pictures.ts";
+import { choose, plain } from "../pictures.ts";
 import { switchTitle } from "../titles.ts";
-import { answerLists, type KeySettings } from "./shared.ts";
+import { answerLists, type KeySettings, showOnOff } from "./shared.ts";
 
 /**
  * A key that switches one StageKit filter on and off and shows which way it
@@ -80,9 +80,7 @@ export class FilterSwitch extends SingletonAction<KeySettings> {
 		// Its two looks: the picture that fits the filter (or the one chosen),
 		// in its "off" and "on" form, in this key's palette.
 		const picture = choose(settings.picture, now?.kind ?? "", now?.settings) ?? plain("switch");
-		await key.setImage(file(picture, false, settings.palette), { state: 0 });
-		await key.setImage(file(picture, true, settings.palette), { state: 1 });
-		await key.setState(now?.enabled ? 1 : 0);
+		await showOnOff(key, picture, now?.enabled === true, settings.palette);
 		await key.setTitle(switchTitle(now?.kind, settings.press));
 	}
 

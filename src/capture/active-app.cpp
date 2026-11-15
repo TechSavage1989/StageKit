@@ -40,6 +40,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/item-transition.hpp"
 #include "../common/pick-list.hpp"
 #include "../common/scene-util.hpp"
+#include "../api/vendor-api.hpp"
 
 #include <obs-module.h>
 #include <plugin-support.h>
@@ -172,6 +173,7 @@ public:
 
 	~ActiveApp()
 	{
+		vendor_switch_forget(source_);
 		for (obs_hotkey_id id : {next_hotkey_, back_hotkey_, toggle_hotkey_})
 			if (id != OBS_INVALID_HOTKEY_ID)
 				obs_hotkey_unregister(id);
@@ -377,6 +379,8 @@ public:
 			}
 			const bool released = held < 0 && !hand_shown_.empty();
 			hand_shown_ = now_held;
+			// For a Stream Deck key showing manual or automatic.
+			vendor_switch_state(source_, !hand_shown_.empty(), false);
 			if (held >= 0) {
 				for (size_t i = 0; i < slots.size(); i++) {
 					if (slots[i].item && slots[i].visible)

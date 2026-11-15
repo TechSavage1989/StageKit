@@ -10,9 +10,9 @@ import type { JsonValue } from "@elgato/utils";
 
 import { afterPress, targetOf } from "../kinds.ts";
 import { obs } from "../obs.ts";
-import { file, overlapPicture } from "../pictures.ts";
+import { overlapPicture } from "../pictures.ts";
 import { overlapTitle } from "../titles.ts";
-import { answerLists, type KeySettings } from "./shared.ts";
+import { answerLists, type KeySettings, showOnOff } from "./shared.ts";
 
 /**
  * A key for one setting of a Fit to Space filter: "Overlap only when it
@@ -65,9 +65,7 @@ export class FitOverlap extends SingletonAction<KeySettings> {
 		const { source, filter } = targetOf(settings);
 		const now = await obs.filter(source, filter);
 		const picture = overlapPicture(settings.picture);
-		await key.setImage(file(picture, false, settings.palette), { state: 0 });
-		await key.setImage(file(picture, true, settings.palette), { state: 1 });
-		await key.setState(now?.settings.skip_fill_on === true ? 1 : 0);
+		await showOnOff(key, picture, now?.settings.skip_fill_on === true, settings.palette);
 		await key.setTitle(overlapTitle(settings.press));
 	}
 

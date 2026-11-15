@@ -4085,6 +4085,11 @@ int main(int argc, char **argv)
 			obs_register_source(&stand_in);
 			obs_source_t *screen = obs_source_create("dshow_input", "Live Screen", nullptr, nullptr);
 			obs_source_t *camera = obs_source_create("dshow_input", "Live Camera", nullptr, nullptr);
+			obs_data_t *crop_s = obs_data_create();
+			obs_data_set_string(crop_s, "source", "Live Camera");
+			obs_source_t *crop =
+				obs_source_create("stagekit_cropped_view", "Live Camera Crop", crop_s, nullptr);
+			obs_data_release(crop_s);
 			obs_scene_t *ls = obs_scene_create("Live Scene");
 			if (screen && camera) {
 				obs_scene_add(ls, screen);
@@ -4101,7 +4106,9 @@ int main(int argc, char **argv)
 				obs_data_set_bool(ns, "also_captures", true);
 				obs_data_array_t *never = obs_data_array_create();
 				obs_data_t *entry = obs_data_create();
-				obs_data_set_string(entry, "value", "Live Camera");
+				// (Listed by its crop, as the owner's camera is shown: a
+				// Cropped View keeps the source it shows clear too.)
+				obs_data_set_string(entry, "value", "Live Camera Crop");
 				obs_data_array_push_back(never, entry);
 				obs_data_release(entry);
 				obs_data_set_array(ns, "never", never);
@@ -4109,7 +4116,26 @@ int main(int argc, char **argv)
 				obs_source_update(blur, ns);
 				obs_properties_t *bp = obs_source_properties(blur);
 				const int rows = list_rows(bp, "never|a");
+				// Every source with a picture is offered, not only captures.
+				bool offers_any = false;
+				if (obs_property_t *pick = obs_properties_get(bp, "never|apick"))
+					for (size_t i = 0; i < obs_property_list_item_count(pick); i++)
+						offers_any = offers_any ||
+							     strcmp(obs_property_list_item_string(pick, i),
+								    "Live Scene") == 0;
+				size_t offered = 0;
+				bool has_capture = false;
+				if (obs_property_t *pick = obs_properties_get(bp, "never|apick")) {
+					offered = obs_property_list_item_count(pick);
+					for (size_t i = 0; i < offered; i++)
+						has_capture = has_capture ||
+							      strcmp(obs_property_list_item_string(pick, i),
+								     "Live Screen") == 0;
+				}
 				obs_properties_destroy(bp);
+				CHECK(has_capture && offered > 3 && !offers_any,
+				      "'Never blur these' offers every source with a picture, not scenes (%zu offered)",
+				      offered);
 				obs_data_release(ns);
 				sleep_ms(200);
 				obs_source_set_enabled(blur, true);
@@ -4126,6 +4152,7 @@ int main(int argc, char **argv)
 				CHECK(on_screen && !obs_source_enabled(on_screen),
 				      "and switching it off clears the capture it blurred");
 			}
+			obs_source_release(crop);
 			obs_set_output_source(0, before_out);
 			obs_source_release(before_out);
 			obs_scene_release(ls);

@@ -48,6 +48,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/pick-list.hpp"
 #include "../common/scene-util.hpp"
 #include "../common/timing.hpp"
+#include "../api/vendor-api.hpp"
 #include "../transition/morph-paint.hpp"
 
 #include <obs-module.h>
@@ -313,6 +314,7 @@ public:
 
 	~AppCapture()
 	{
+		vendor_switch_forget(source_);
 		{
 			std::lock_guard lock(g_listed_mutex);
 			g_listed.erase(this);
@@ -610,8 +612,10 @@ private:
 	obs_hotkey_id hotkeys_[5] = {OBS_INVALID_HOTKEY_ID, OBS_INVALID_HOTKEY_ID, OBS_INVALID_HOTKEY_ID,
 				     OBS_INVALID_HOTKEY_ID, OBS_INVALID_HOTKEY_ID};
 	std::pair<AppCapture *, const char *> pressed_[5];
-	bool cmd_clear_ = false; // the windows picked by hand are to be taken off the list
-	bool loaded_ = false;    // the settings have been read once (OBS loading the filter)
+	bool cmd_clear_ = false;      // the windows picked by hand are to be taken off the list
+	bool standby_hidden_ = false; // hidden behind its Standby Picture by the hide command (tick only)
+	double state_s_ = 1.0;        // since the state was last reported
+	bool loaded_ = false;         // the settings have been read once (OBS loading the filter)
 	// The change between two windows.
 	Phase phase_ = Phase::Idle;
 	double phase_s_ = 0.0;
@@ -1351,8 +1355,23 @@ void AppCapture::tick(float seconds)
 		keep_first(parent);
 	// Hidden: a Standby Picture on the capture takes its place, when there is
 	// one; otherwise its items are hidden.
-	if (hide && !(hide_standby_ && standby_cover_toggle(parent)))
-		toggle_hidden(parent);
+	if (hide) {
+		if (hide_standby_ && standby_cover_toggle(parent))
+			standby_hidden_ = !standby_hidden_;
+		else
+			toggle_hidden(parent);
+	}
+	// For a Stream Deck key showing manual or automatic, shown or hidden
+	// (looked at twice a second: the scenes are gone through for it).
+	if ((state_s_ += seconds) >= 0.5 || hide) {
+		state_s_ = 0.0;
+		bool manual;
+		{
+			std::lock_guard lock(mutex_);
+			manual = !held_.empty();
+		}
+		vendor_switch_state(source_, manual, standby_hidden_ || shown_nowhere(parent));
+	}
 	if (look)
 		follow(parent);
 	// The window shown has closed and nothing chosen has taken its place:

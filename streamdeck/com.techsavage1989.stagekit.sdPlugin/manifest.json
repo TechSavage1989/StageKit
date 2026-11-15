@@ -1,6 +1,6 @@
 {
 	"Name": "StageKit",
-	"Version": "0.12.0.0",
+	"Version": "0.13.0.0",
 	"Author": "StageKit contributors",
 	"Actions": [
 		{
@@ -23,7 +23,8 @@
 					"Name": "On",
 					"TitleAlignment": "bottom"
 				}
-			]
+			],
+			"DisableAutomaticStates": true
 		},
 		{
 			"Name": "Shadow, Glow & Outline",
@@ -45,7 +46,8 @@
 					"Name": "On",
 					"TitleAlignment": "bottom"
 				}
-			]
+			],
+			"DisableAutomaticStates": true
 		},
 		{
 			"Name": "Corners & Edges",
@@ -67,7 +69,8 @@
 					"Name": "On",
 					"TitleAlignment": "bottom"
 				}
-			]
+			],
+			"DisableAutomaticStates": true
 		},
 		{
 			"Name": "Zoom",
@@ -89,7 +92,8 @@
 					"Name": "On",
 					"TitleAlignment": "bottom"
 				}
-			]
+			],
+			"DisableAutomaticStates": true
 		},
 		{
 			"Name": "Auto Capture",
@@ -111,7 +115,8 @@
 					"Name": "On",
 					"TitleAlignment": "bottom"
 				}
-			]
+			],
+			"DisableAutomaticStates": true
 		},
 		{
 			"Name": "Auto Frame",
@@ -133,7 +138,8 @@
 					"Name": "On",
 					"TitleAlignment": "bottom"
 				}
-			]
+			],
+			"DisableAutomaticStates": true
 		},
 		{
 			"Name": "Standby Picture",
@@ -155,7 +161,8 @@
 					"Name": "On",
 					"TitleAlignment": "bottom"
 				}
-			]
+			],
+			"DisableAutomaticStates": true
 		},
 		{
 			"Name": "Show in Scenes",
@@ -177,7 +184,8 @@
 					"Name": "On",
 					"TitleAlignment": "bottom"
 				}
-			]
+			],
+			"DisableAutomaticStates": true
 		},
 		{
 			"Name": "Fit to Space",
@@ -199,7 +207,8 @@
 					"Name": "On",
 					"TitleAlignment": "bottom"
 				}
-			]
+			],
+			"DisableAutomaticStates": true
 		},
 		{
 			"Name": "Automatic Source Switcher",
@@ -221,7 +230,8 @@
 					"Name": "On",
 					"TitleAlignment": "bottom"
 				}
-			]
+			],
+			"DisableAutomaticStates": true
 		},
 		{
 			"Name": "Automatic Window Switcher",
@@ -243,7 +253,8 @@
 					"Name": "On",
 					"TitleAlignment": "bottom"
 				}
-			]
+			],
+			"DisableAutomaticStates": true
 		},
 		{
 			"Name": "Program Trigger",
@@ -265,7 +276,8 @@
 					"Name": "On",
 					"TitleAlignment": "bottom"
 				}
-			]
+			],
+			"DisableAutomaticStates": true
 		},
 		{
 			"Name": "Link Visibility",
@@ -287,7 +299,8 @@
 					"Name": "On",
 					"TitleAlignment": "bottom"
 				}
-			]
+			],
+			"DisableAutomaticStates": true
 		},
 		{
 			"Name": "Show/Hide Animation",
@@ -309,7 +322,8 @@
 					"Name": "On",
 					"TitleAlignment": "bottom"
 				}
-			]
+			],
+			"DisableAutomaticStates": true
 		},
 		{
 			"Name": "Move Source",
@@ -402,10 +416,17 @@
 			],
 			"States": [
 				{
+					"Image": "imgs/actions/appswitch/off",
+					"Name": "Off",
+					"TitleAlignment": "bottom"
+				},
+				{
 					"Image": "imgs/actions/appswitch/on",
+					"Name": "On",
 					"TitleAlignment": "bottom"
 				}
-			]
+			],
+			"DisableAutomaticStates": true
 		},
 		{
 			"Name": "Fit to Space Overlap",
@@ -427,7 +448,8 @@
 					"Name": "On",
 					"TitleAlignment": "bottom"
 				}
-			]
+			],
+			"DisableAutomaticStates": true
 		},
 		{
 			"Name": "Arrange tool",
@@ -465,7 +487,8 @@
 					"Name": "On",
 					"TitleAlignment": "bottom"
 				}
-			]
+			],
+			"DisableAutomaticStates": true
 		},
 		{
 			"Name": "Dock Option",
@@ -487,7 +510,8 @@
 					"Name": "On",
 					"TitleAlignment": "bottom"
 				}
-			]
+			],
+			"DisableAutomaticStates": true
 		},
 		{
 			"Name": "Slide to Edge",
@@ -526,7 +550,8 @@
 					"TitleAlignment": "bottom"
 				}
 			],
-			"VisibleInActionsList": false
+			"VisibleInActionsList": false,
+			"DisableAutomaticStates": true
 		},
 		{
 			"Name": "Move (older)",

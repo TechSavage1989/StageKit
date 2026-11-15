@@ -42,6 +42,8 @@ the Free Software Foundation; either version 2 of the License, or
 #include "auto-capture.hpp"
 #include "app-capture.hpp"
 #include "standby.hpp"
+#include "../api/vendor-api.hpp"
+#include "../common/scene-util.hpp"
 #include "../common/easing.hpp"
 #include "../common/timing.hpp"
 
@@ -499,6 +501,7 @@ public:
 
 	~AutoCapture()
 	{
+		vendor_switch_forget(source_);
 		if (hotkey_ != OBS_INVALID_HOTKEY_ID)
 			obs_hotkey_unregister(hotkey_);
 	}
@@ -811,6 +814,13 @@ private:
 				hidden_ = !hidden_;
 			else
 				hide_items();
+			state_s_ = 1.0; // (said at once)
+		}
+		// For a Stream Deck key showing shown or hidden (once a second: the
+		// scenes are gone through for it).
+		if ((state_s_ += 0.25) >= 1.0) {
+			state_s_ = 0.0;
+			vendor_switch_state(source_, false, hidden_ || shown_nowhere(parent_));
 		}
 		const bool want = hidden_ || (no_game && !have_game);
 		if (want != covered_) {
@@ -867,6 +877,7 @@ private:
 	int cover_style_ = 0, cover_ms_ = 600, cover_curve_ = 0, cover_mode_ = 0;
 	std::atomic<bool> cmd_hide_{false};
 	bool hidden_ = false, covered_ = false; // used on the tick only
+	double state_s_ = 1.0;                  // since the state was last reported
 	obs_hotkey_id hotkey_ = OBS_INVALID_HOTKEY_ID;
 	Mode mode_ = Mode::AnyGame;
 	std::vector<std::string> always_, never_;

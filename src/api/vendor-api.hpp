@@ -28,4 +28,12 @@ void vendor_emit_blur_changed(obs_source_t *filter, bool active);
 // showing one can follow. Safe from any thread.
 void vendor_emit_options_changed();
 
+// A window or source switcher (or Auto Capture) says whether it is on a
+// manual window and whether its capture is hidden. Emits "SwitcherChanged"
+// when that differs from what it said last, so a Stream Deck key showing it
+// can follow. Safe from any thread; call as often as you like.
+void vendor_switch_state(obs_source_t *filter, bool manual, bool hidden);
+// Forgets a filter that is going away.
+void vendor_switch_forget(obs_source_t *filter);
+
 } // namespace stagekit

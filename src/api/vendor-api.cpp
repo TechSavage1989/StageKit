@@ -31,6 +31,8 @@ the Free Software Foundation; either version 2 of the License, or
 #include <atomic>
 #include <cstring>
 #include <string>
+#include <mutex>
+#include <map>
 
 namespace stagekit {
 
@@ -38,9 +40,9 @@ namespace {
 
 std::atomic<obs_websocket_vendor> g_vendor{nullptr};
 
-const char *const kRequests[] = {"GetVersion",      "ListBlurFilters", "BlurOn",    "BlurOff",
-				 "BlurToggle",      "SetBlur",         "BlurAll",   "HookFront",
-				 "SetPictureShape", "GetOptions",      "SetOption", "Slide"};
+const char *const kRequests[] = {"GetVersion", "ListBlurFilters", "BlurOn",          "BlurOff",         "BlurToggle",
+				 "SetBlur",    "BlurAll",         "HookFront",       "SetPictureShape", "GetOptions",
+				 "SetOption",  "Slide",           "GetSwitcherState"};
 
 void fail(obs_data_t *response, const char *message)
 {
@@ -265,6 +267,37 @@ void write_options(obs_data_t *response)
 		obs_data_set_bool(response, name, *option_named(o, name));
 }
 
+// What a switcher said last, by filter (the key: its address).
+std::mutex g_switch_mutex;
+std::map<const void *, std::pair<bool, bool>> g_switch;
+
+// {sourceName, filterName} -> {manual, hidden}: is the switcher on a manual
+// window, and is its capture hidden.
+void req_get_switcher_state(obs_data_t *request, obs_data_t *response, void *)
+{
+	obs_source_t *source = obs_get_source_by_name(obs_data_get_string(request, "sourceName"));
+	obs_source_t *filter =
+		source ? obs_source_get_filter_by_name(source, obs_data_get_string(request, "filterName")) : nullptr;
+	obs_source_release(source);
+	if (!filter) {
+		fail(response, "No such source and filter");
+		return;
+	}
+	bool manual = false, hidden = false;
+	{
+		std::lock_guard lock(g_switch_mutex);
+		const auto said = g_switch.find(filter);
+		if (said != g_switch.end()) {
+			manual = said->second.first;
+			hidden = said->second.second;
+		}
+	}
+	obs_source_release(filter);
+	obs_data_set_bool(response, "manual", manual);
+	obs_data_set_bool(response, "hidden", hidden);
+	obs_data_set_bool(response, "success", true);
+}
+
 void req_get_options(obs_data_t *, obs_data_t *response, void *)
 {
 	write_options(response);
@@ -336,6 +369,7 @@ void vendor_api_register()
 		{"GetOptions", req_get_options},
 		{"SetOption", req_set_option},
 		{"Slide", req_slide},
+		{"GetSwitcherState", req_get_switcher_state},
 	};
 	for (const auto &r : requests) {
 		if (!obs_websocket_vendor_register_request(vendor, r.name, r.fn, nullptr))
@@ -366,6 +400,38 @@ void vendor_emit_blur_changed(obs_source_t *filter, bool active)
 	obs_data_set_bool(data, "active", active);
 	obs_websocket_vendor_emit_event(vendor, "BlurChanged", data);
 	obs_data_release(data);
+}
+
+void vendor_switch_state(obs_source_t *filter, bool manual, bool hidden)
+{
+	if (!filter)
+		return;
+	{
+		std::lock_guard lock(g_switch_mutex);
+		auto &said = g_switch[filter];
+		const bool known = g_switch.size() && said.first == manual && said.second == hidden;
+		// (A new entry starts at false, false: that is "nothing changed" too.)
+		if (known)
+			return;
+		said = {manual, hidden};
+	}
+	obs_websocket_vendor vendor = g_vendor.load();
+	if (!vendor)
+		return;
+	obs_data_t *data = obs_data_create();
+	obs_source_t *parent = obs_filter_get_parent(filter);
+	obs_data_set_string(data, "sourceName", parent ? obs_source_get_name(parent) : "");
+	obs_data_set_string(data, "filterName", obs_source_get_name(filter));
+	obs_data_set_bool(data, "manual", manual);
+	obs_data_set_bool(data, "hidden", hidden);
+	obs_websocket_vendor_emit_event(vendor, "SwitcherChanged", data);
+	obs_data_release(data);
+}
+
+void vendor_switch_forget(obs_source_t *filter)
+{
+	std::lock_guard lock(g_switch_mutex);
+	g_switch.erase(filter);
 }
 
 void vendor_emit_options_changed()
