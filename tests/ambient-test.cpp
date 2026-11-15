@@ -5282,6 +5282,9 @@ int main(int argc, char **argv)
 				obs_source_t *sby =
 					obs_source_create("stagekit_standby", "Switch Standby", nullptr, nullptr);
 				obs_source_filter_add(cap, sby);
+				// (Until it has ticked, a Standby Picture says a size of its
+				// own; the fit's place is taken once the real one is there.)
+				draw_for(1000);
 				obs_scene_t *fs = obs_scene_create("Fit Switch Scene"); // 640x360
 				obs_sceneitem_t *fi = obs_scene_add(fs, cap);
 				obs_sceneitem_t *ci = obs_scene_add(fs, fcam);
@@ -5294,6 +5297,9 @@ int main(int argc, char **argv)
 				obs_data_set_string(fd2, "item", obs_source_get_name(cap));
 				obs_data_set_int(fd2, "box", 2);
 				obs_data_set_double(fd2, "margin", 0);
+				obs_data_set_bool(fd2, "have_anchor", true);
+				obs_data_set_double(fd2, "anchor_x", 150.0);
+				obs_data_set_double(fd2, "anchor_y", 150.0);
 				// (Its own glide is far slower than the switcher's 600 ms:
 				// the two cannot be mistaken for each other.)
 				obs_data_set_int(fd2, "glide_ms", 1800);
