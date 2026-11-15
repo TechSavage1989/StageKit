@@ -314,6 +314,13 @@ public:
 					       obs_source_get_base_height(parent) == 0) &&
 					      !app_capture_holding(parent));
 		const uint32_t tw = before_width(source_), th = before_height(source_);
+		// A window switcher before this glides the capture's size from one
+		// window to the next by itself. Gliding after it again, over this
+		// filter's own time, the size arrived long after the switch: the
+		// owner's "fit still trails the source window switch" (the switcher
+		// at 250 ms, this at 800). While the capture is live its size is
+		// taken as it is.
+		const bool led = app_capture_present(parent);
 		if (!empty && tw && th && (tw != last_w_ || th != last_h_)) {
 			// Remembered, for the next time there is nothing.
 			obs_data_t *settings = obs_source_get_settings(source_);
@@ -357,6 +364,10 @@ public:
 			if (unknown) {
 				// No size yet.
 			} else if (cur_w_ <= 0.0 || cur_h_ <= 0.0) {
+				cur_w_ = from_w_ = to_w_ = want_w;
+				cur_h_ = from_h_ = to_h_ = want_h;
+				glide_ = 1.0;
+			} else if (led && !empty && mix_ <= 0.0 && tw && th) {
 				cur_w_ = from_w_ = to_w_ = want_w;
 				cur_h_ = from_h_ = to_h_ = want_h;
 				glide_ = 1.0;

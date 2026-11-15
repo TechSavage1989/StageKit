@@ -211,6 +211,14 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## The fit still trailed: Standby Picture's own glide; scene keys use the pack's scenes (0.1.0-beta129)
+
+On beta128 the owner still saw the fit trail the switch and sent two logs. The Standby Picture
+after the switcher glided the size a second time (AGENTS.md). Also: Switch Scene keys take the
+pack's scene pictures by name (Stream Deck 0.15.0.0), and the owner confirmed "keys show dot and
+slash correctly". They said the original icon pack was attached; **no such file arrived**, only
+the two logs, and they were told.
+
 ## Fit to Space goes with the window switcher's change (0.1.0-beta128)
 
 The owner: the fit of the window capture should "line up with and coordinate with the auto switch

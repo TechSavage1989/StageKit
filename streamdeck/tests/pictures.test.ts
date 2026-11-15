@@ -167,3 +167,18 @@ test("Stream Deck does not flip a two-state key by itself", async () => {
 	const app = manifest.Actions.find((a: { UUID: string }) => a.UUID.endsWith(".appswitch"));
 	assert.equal(app.States.length, 2, "Manual Window / Source shows which way it is");
 });
+
+test("a Switch Scene key takes the pack's picture of its scene's layout, by name", async () => {
+	const { scenePicture, scenePictureFor } = await import("../src/pictures.ts");
+	assert.equal(scenePictureFor("Game-Capture-Scene")?.label.includes("game capture"), true);
+	assert.equal(scenePictureFor("Game-Component-Capture-Scene")?.label.includes("game component"), true);
+	assert.equal(scenePictureFor("Game-Component-HD60S-Capture-Scene")?.label.includes("game component hd60s"), true);
+	assert.equal(scenePictureFor("Window-Component-Capture-Scene")?.label.includes("window component"), true);
+	assert.equal(scenePictureFor("Window-Capture-Scene")?.label.includes("window capture"), true);
+	assert.equal(scenePictureFor("Be Right Back")?.label.includes("be right back"), true);
+	assert.equal(scenePictureFor("Stream Start")?.label.includes("stream start"), true);
+	assert.equal(scenePictureFor("Something Else Entirely"), undefined);
+	assert.equal(scenePicture(undefined, "Something Else Entirely").id, "options/scene");
+	assert.equal(scenePicture(undefined, "Intermission").group, "scenes");
+	assert.equal(scenePicture("options/scene", "Intermission").id, "options/scene", "a picture chosen by hand wins");
+});

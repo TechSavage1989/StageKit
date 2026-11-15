@@ -835,6 +835,20 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   then set off on its own glide. The owner: "the window switches, but then it's like the auto
   fit has to catch up". Only the free space depends on the shape; the other two fit areas are
   fitted by OBS every frame and never lagged.
+- **Standby Picture does not glide after a window switcher** (`led`, `app_capture_present`): with
+  an enabled Automatic Window Switcher on the capture, and the capture live (`!empty`, `mix_` 0),
+  it takes the size before it as it is. Its own size glide (800 ms as it comes) set off after
+  each step of the switcher's (250 ms on the owner's capture) and arrived long after the switch;
+  beta128 had synchronised Fit to Space with the switcher and left this in between, and the owner
+  still saw the fit trail ("fit still trails the source window switch", with logs). Found from
+  the filter order in their log and the times in their collection, not reproduced on Windows.
+  The rule above it, never following what comes before it directly, still holds for everything
+  else (an Auto Frame settling on a shape).
+- **A Switch Scene key's picture is the pack's own for that scene** (`scenePictureFor` in
+  `streamdeck/src/pictures.ts`): the pack's `scenes` group was drawn from the owner's layouts, and
+  the owner asked that "the scene keys should be based off the original scene key designs". A
+  picture fits when all the words of its label are in the scene's name; no scene names are in the
+  code.
 - **A Standby Picture can be shown over a running capture** (`cover_`, the `cover` proc,
   `standby_cover_toggle`, hotkey `stagekit.standby.cover.` + filter name). The Automatic Window
   Switcher's hide does that when the capture has an enabled Standby Picture (`hide_standby`, on

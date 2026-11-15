@@ -1778,6 +1778,22 @@ bool app_capture_change(obs_source_t *capture, AppCaptureChange &change)
 	return ask.found;
 }
 
+bool app_capture_present(obs_source_t *capture)
+{
+	bool found = false;
+	if (!capture)
+		return false;
+	obs_source_enum_filters(
+		capture,
+		[](obs_source_t *, obs_source_t *filter, void *param) {
+			const char *id = obs_source_get_unversioned_id(filter);
+			if (id && strcmp(id, kAppCaptureId) == 0 && obs_source_enabled(filter))
+				*static_cast<bool *>(param) = true;
+		},
+		&found);
+	return found;
+}
+
 uint64_t app_capture_changes(obs_source_t *capture)
 {
 	uint64_t changes = 0;
