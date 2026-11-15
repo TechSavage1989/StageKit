@@ -784,6 +784,9 @@ int main(int argc, char **argv)
 		obs_data_set_int(d, "live_mode", 2);
 		obs_data_set_string(d, "live_source", "Live Capture");
 		obs_data_set_double(d, "live_opacity", 70);
+		// (A cut when the capture changes, for the pictures taken here; its
+		// transition has a check of its own below.)
+		obs_data_set_int(d, "live_change", 1);
 	});
 	CHECK(mean_abs_diff(with_live, textured) > 1.0, "live capture is blended in (diff %.2f)",
 	      mean_abs_diff(with_live, textured));
@@ -809,10 +812,37 @@ int main(int argc, char **argv)
 				 [](obs_data_t *d) { obs_data_set_string(d, "live_source", "No Such Source"); });
 		CHECK(mean_abs_diff(gone, textured) < 0.5, "and with no capture the picture is back (diff %.2f)",
 		      mean_abs_diff(gone, textured));
+		// The capture coming back with a delay and a fade: the background
+		// stays as it was for the delay, is part-way after that, and has
+		// followed at the end. The owner: "there should be a configurable
+		// delay in the ambient background transition to the live capture".
+		{
+			auto held = shot("6d_live_gone", [](obs_data_t *d) {
+				obs_data_set_int(d, "live_change", 0);
+				obs_data_set_int(d, "live_delay_ms", 700);
+				obs_data_set_int(d, "live_change_ms", 1500);
+				obs_data_set_int(d, "live_ease_curve", 0);
+				obs_data_set_string(d, "live_source", "Live Capture");
+			});
+			sleep_ms(1300);
+			auto part_way = shot("6d_live_gone", [](obs_data_t *) {});
+			sleep_ms(1700);
+			auto followed = shot("6d_live_gone", [](obs_data_t *) {});
+			CHECK(mean_abs_diff(held, gone) < 0.6 && mean_abs_diff(part_way, gone) > 0.4 &&
+				      mean_abs_diff(part_way, replaced) > 0.4 &&
+				      mean_abs_diff(followed, replaced) < 0.6,
+			      "when the capture changes the background stays for the delay, then gives way over its time (%.2f from before during the delay; part-way %.2f from before and %.2f from after; %.2f from after at the end)",
+			      mean_abs_diff(held, gone), mean_abs_diff(part_way, gone),
+			      mean_abs_diff(part_way, replaced), mean_abs_diff(followed, replaced));
+		}
 		shot("6_live_capture", [](obs_data_t *d) {
+			obs_data_set_int(d, "live_change", 1);
+			obs_data_set_int(d, "live_delay_ms", 0);
 			obs_data_set_string(d, "live_source", "Live Capture");
 			obs_data_set_bool(d, "live_replace", false);
 		});
+		sleep_ms(200);
+		shot("6_live_capture", [](obs_data_t *) {});
 	}
 
 	auto square = shot("7_square_mosaic", [](obs_data_t *d) { obs_data_set_int(d, "pixel_style", 1); });
@@ -881,9 +911,22 @@ int main(int argc, char **argv)
 			      mean_rgb(picky) >= mean_rgb(before) - 0.01 && opaque(bloom),
 		      "bloom makes the bright parts shine, and fewer of them from a higher brightness (mean %.1f, with bloom %.1f, from 90%% %.1f)",
 		      mean_rgb(before), mean_rgb(bloom), mean_rgb(picky));
+		// The other style, the bloom of the owner's old collection (the
+		// shader filter's): the whole picture's light added back onto it,
+		// whatever the threshold says.
+		const std::vector<uint8_t> amplified = shot("7f_bloom_amplified", [](obs_data_t *d) {
+			obs_data_set_int(d, "bloom_style", 1);
+			obs_data_set_double(d, "bloom", 300);
+			obs_data_set_double(d, "bloom_threshold", 90);
+			obs_data_set_double(d, "bloom_size", 20);
+		});
+		CHECK(mean_rgb(amplified) > mean_rgb(bloom) + 5.0 && opaque(amplified),
+		      "'Whole picture, amplified' brightens everything, bright or not (mean %.1f, against %.1f for the bright parts alone)",
+		      mean_rgb(amplified), mean_rgb(bloom));
 		for (const char *name : {"x_before", "x_picky"})
 			remove((out + "/" + name + ".rgba").c_str());
 		// Back as the checks below expect to find it.
+		obs_data_set_int(s, "bloom_style", 0);
 		obs_data_set_double(s, "bloom", 0);
 		obs_data_set_double(s, "blur", 24);
 		obs_data_set_int(s, "pixel_style", 1);
@@ -995,6 +1038,47 @@ int main(int argc, char **argv)
 		CHECK(aimed.find("OddGame.exe") != std::string::npos,
 		      "in 'only the listed programs' mode an unlisted game is left alone");
 		obs_data_release(ad);
+
+		// A program taken for a game that cannot be hooked: OBS would go on
+		// trying for good, several times a second, each try a stall. After
+		// a while with no picture the program goes on the Never list. (The
+		// owner's 3D modelling program: 3,404 tries in twelve minutes.)
+		{
+			obs_source_t *stuck = obs_source_create("game_capture", "Stuck Game Capture", nullptr, nullptr);
+			obs_data_t *gd = obs_data_create();
+			obs_data_set_int(gd, "give_up_ms", 750);
+			obs_source_t *giver = obs_source_create("stagekit_auto_capture", "Auto Capture 3", gd, nullptr);
+			obs_data_release(gd);
+			obs_source_filter_add(stuck, giver);
+			auto show = [&](const char *windows) {
+				calldata_t cd = {};
+				calldata_set_string(&cd, "windows", windows);
+				proc_handler_call(obs_source_get_proc_handler(giver), "set_test_windows", &cd);
+				calldata_free(&cd);
+			};
+			auto aimed_at = [&] {
+				obs_data_t *d = obs_source_get_settings(stuck);
+				const std::string window = obs_data_get_string(d, "window");
+				const std::string mode = obs_data_get_string(d, "capture_mode");
+				obs_data_release(d);
+				return mode + " " + window;
+			};
+			show("Sculpt 2026|SculptWnd|sculpt3d.exe|front|game");
+			sleep_ms(400);
+			const std::string taken = aimed_at();
+			sleep_ms(1600);
+			obs_data_t *gs = obs_source_get_settings(giver);
+			const std::string never_now = obs_data_get_string(gs, "never");
+			obs_data_release(gs);
+			CHECK(taken.find("sculpt3d.exe") != std::string::npos &&
+				      never_now.find("sculpt3d.exe") != std::string::npos &&
+				      aimed_at().rfind("any_fullscreen", 0) == 0,
+			      "a program taken for a game that gives the capture no picture is given up on and put on the Never capture list (%s; never: %s; then %s)",
+			      taken.c_str(), never_now.c_str(), aimed_at().c_str());
+			obs_source_filter_remove(stuck, giver);
+			obs_source_release(giver);
+			obs_source_release(stuck);
+		}
 
 		// The controls: say what is captured, undo a wrong pick in one
 		// press, and choose from open programs instead of typing names.

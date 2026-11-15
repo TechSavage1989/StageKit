@@ -736,9 +736,39 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     scene filter): back from a held window, else on to the one held last. The owner: "the
     capture front window can be used to select the manual capture, and then the toggle can be
     used to switch".
+  - The capture drawn from (`bridge_`) and the change to it (`phase_`) are set under one lock in
+    `aim`, and coming back from a manual window never takes what the capture itself is aimed at
+    for what is showing (`released`). Either way the new window's picture was up at a stroke
+    before its size had begun to change: the owner's "the image of the next capture appears to
+    instantly appear, then the morphing and window size changes happen".
   - None of the Windows side has run in the tests: they feed it stand-in windows
     (`set_test_windows`) and a colour source for the capture. How a real Window Capture behaves
     while it is re-aimed (how long it is empty, whether it flashes the old window) is unknown here.
+- **Auto Capture gives up on a program it cannot hook** (`unhooked_s_`, `give_up_s_` 10 s, in
+  `src/capture/auto-capture.cpp`): aimed at a program for that long with no picture, the program
+  goes on the *Never capture* list and the log says so. OBS's Game Capture tries to hook about
+  five times a second for as long as it is aimed, each try some 20 ms on the drawing thread. The
+  owner's 3D modelling program had been taken for a game (it loads a graphics engine): 3,404
+  tries in twelve minutes, `tick_sources` late in 7 % of frames in every log from beta114 on, and
+  they saw "choppiness during the animations". It was first put down to the window switcher's
+  captures (beta119); the tell was a 19-second session with no switch at all and the same 7 %.
+  **Read OBS's own profiler lines and count repeated lines in a log before blaming new code.**
+  Programs an Automatic Window Switcher lists are never candidates (`app_capture_lists`). A
+  program on *Always capture* is never given up on.
+- **Ambient Background follows a change of capture with a transition** (`live_change`,
+  `live_change_ms`, `live_delay_ms`, `live_ease_*`): when the capture blended in changes (another
+  source, none, or `app_capture_changes` says the switcher took another window) the scene as last
+  shown is kept (`tr_was_`) and laid over the new one, fading or sliding away after the delay. It
+  is laid down `as_is` (not coloured a second time). The owner: "the ambient background changes
+  to it instantly. there should be a configurable delay ... and the transition for that blend in
+  should include the same transition options that others do". The tests use a cut for the
+  pictures they take and check the fade separately.
+- **Ambient Background's Bloom has two styles** (`bloom_style`): 0, the bright parts shine
+  (threshold, screen-blended); 1, *Whole picture, amplified*: all of the picture's light added
+  back (`BloomAmplify`), which is what the bloom in the owner's old collection did
+  (obs-shaderfilter's `bloom.shader`, Angle_Steps 1, Radius_Steps 20, ampFactor 4 to 10; 100 %
+  here is its ampFactor of 1). The owner: "the bloom effect ... is not the effect i intended. I
+  like the bloom effect from my old scene collection".
 - **Auto Capture keeps its capture shown** (`keep_ready`, on by default, `obs_source_inc_showing` on
   the capture). OBS stops a Game Capture about 0.3 s after the last scene showing it is left and
   hooks it again on the way back; the owner's log showed that at every scene switch.

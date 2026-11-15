@@ -171,6 +171,18 @@ Add **Ambient Background (StageKit)** as a source. It fills the canvas.
 | Look | Blur type (Dual Kawase, Gaussian, Box, or Temporal, which blurs over time and leaves trails) and blur; a mosaic in the Blur filter's seven cell shapes, with the same smoothing, origin and rotation; saturation; glow; **Bloom**, where the bright parts of the picture shine over what is around them (how strongly, from what brightness, and how far the light spreads); brightness; vignette |
 | Texture overlay | An image multiplied or screened over the result, optionally in black and white |
 
+Two more things about the capture blended in and the bloom:
+
+- **Capture transition**, **Capture delay**, **Duration** and easing: how the background follows when
+  the capture changes (another capture, none any more, or an Automatic Window Switcher taking
+  another window). The background as it was stays for the delay, then gives way with a fade (as it
+  comes), a cut, or a slide to any side. Set the delay to the length of the capture's own transition
+  to have the background change after the picture has.
+- **Bloom style**: *Bright parts shine* (only what is brighter than the threshold spreads its light)
+  or *Whole picture, amplified* (the picture's own light added back onto all of it, which brightens
+  everything and lets colours run into white: the look of obs-shaderfilter's bloom shader, with
+  100 % its strength of 1). Bloom now goes to 1000 %.
+
 Put it in one shared scene and nest that scene wherever you need the background.
 
 ### Start image
@@ -414,6 +426,10 @@ when the game closes or another game comes to the front. There is nothing to set
 
 The filter's controls show what it is capturing now.
 
+- **It gives up on what it cannot hook.** A program taken for a game that gives the capture no
+  picture for ten seconds is put on *Never capture* by itself (OBS's log says so). Left aimed at
+  it, OBS goes on trying several times a second, and each try stalls the picture for a moment.
+  Programs listed in an Automatic Window Switcher are never taken at all.
 - **Not a game? Never capture this program**: one press when it picks up the wrong thing.
 - **Pick from the programs that are open**: choose a program and press *Always capture it* (for a game
   it misses) or *Never capture it*. There are no file names to type.

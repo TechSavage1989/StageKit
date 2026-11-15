@@ -12,6 +12,9 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include <obs.h>
 
+#include <cstdint>
+#include <string>
+
 namespace stagekit {
 
 inline constexpr const char *kAppCaptureId = "stagekit_app_capture";
@@ -24,6 +27,16 @@ void register_app_capture();
 // had while the capture itself has none: between two apps, or just after
 // the app closed. For Standby Picture, which must not stand in meanwhile.
 bool app_capture_holding(obs_source_t *capture);
+
+// How many times the Automatic Window Switchers on this source have changed
+// window: something that shows the capture's picture elsewhere (Ambient
+// Background) can tell that it is another window's now.
+uint64_t app_capture_changes(obs_source_t *capture);
+
+// Whether an enabled Automatic Window Switcher lists this program (its file
+// name, or a window title, both in lower case). Auto Capture leaves those
+// alone: they are windows to capture as windows, not games to hook.
+bool app_capture_lists(const std::string &executable, const std::string &title);
 
 struct OpenWindow;
 // Hands a window picked by hand to an enabled Capture App in Use on this

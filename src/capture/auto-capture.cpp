@@ -499,6 +499,11 @@ public:
 		never_ = never;
 		fallback_fullscreen_ = obs_data_get_bool(settings, "fallback_fullscreen");
 		keep_ready_ = obs_data_get_bool(settings, "keep_ready");
+		// For the tests: giving up sooner, and at all.
+		if (obs_data_has_user_value(settings, "give_up_ms")) {
+			give_up_s_ = std::max(0.25, obs_data_get_int(settings, "give_up_ms") / 1000.0);
+			give_up_in_tests_ = true;
+		}
 		if (!known_loaded_) {
 			known_loaded_ = true;
 			for (const std::string &exe : read_list(settings, "known_games_list", "known_games"))
@@ -548,6 +553,9 @@ public:
 			return w.window_class + ":" + w.executable;
 		};
 
+		const char *parent_id = obs_source_get_unversioned_id(parent_);
+		const bool game_capture = parent_id && strcmp(parent_id, "game_capture") == 0;
+
 		// 1. A game in front wins.  2. Otherwise stay on the game already
 		// being captured while its window exists.  3. Otherwise any program
 		// from the "always capture" list that is open.
@@ -562,7 +570,10 @@ public:
 			// two builds of one program share a file name.
 			const std::string title = lower(w.title);
 			const bool listed = matches(exe, always) || matches(title, always);
-			if (!listed && (matches(exe, never) || matches(title, never) || built_in_never(exe)))
+			// (Nor a program an Automatic Window Switcher is for: that is a
+			// window to capture as a window, not a game to hook.)
+			if (!listed && (matches(exe, never) || matches(title, never) || built_in_never(exe) ||
+					app_capture_lists(exe, title)))
 				continue;
 			if (mode == Mode::AnyGame && w.looks_like_game && known_games_.insert(exe).second) {
 				learned_something = true;
@@ -591,9 +602,6 @@ public:
 			obs_data_release(own);
 		}
 
-		const char *parent_id = obs_source_get_unversioned_id(parent_);
-		const bool game_capture = parent_id && strcmp(parent_id, "game_capture") == 0;
-
 		// Emulators put the frame rate in their title, so what counts as
 		// "a different window" is the program and window class only.
 		const std::string key = chosen ? key_of(*chosen) : std::string();
@@ -601,9 +609,29 @@ public:
 			std::lock_guard lock(mutex_);
 			current_ = chosen ? chosen->executable : std::string();
 		}
-		if (aimed_once_ && key == applied_key_)
+		if (aimed_once_ && key == applied_key_) {
+			// A program taken for a game that the capture cannot hook: OBS
+			// goes on trying several times a second for as long as the
+			// capture is aimed at it, and every try stalls the picture. The
+			// owner's 3D modelling program was tried 3,404 times in twelve
+			// minutes, and one frame in fourteen ran late. After a while
+			// without a picture the program goes on the "never" list.
+			const bool mine = chosen && game_capture && !matches(lower(chosen->executable), always) &&
+					  !matches(lower(chosen->title), always);
+			if (!mine || obs_source_get_base_width(parent_) > 0) {
+				unhooked_s_ = 0.0;
+			} else if ((!use_test || give_up_in_tests_) && (unhooked_s_ += 0.25) >= give_up_s_) {
+				unhooked_s_ = 0.0;
+				obs_log(LOG_WARNING,
+					"Auto Capture: '%s' could not hook %s in %.0f s; it is now on the Never capture list",
+					obs_source_get_name(parent_), chosen->executable.c_str(), give_up_s_);
+				known_games_.erase(lower(chosen->executable));
+				add_to("never", chosen->executable);
+			}
 			return;
+		}
 		aimed_once_ = true;
+		unhooked_s_ = 0.0;
 
 		obs_data_t *settings = obs_source_get_settings(parent_);
 		bool changed = false;
@@ -717,6 +745,9 @@ private:
 	bool known_loaded_ = false;
 	std::string current_;
 	bool aimed_once_ = false;
+	double unhooked_s_ = 0.0;       // how long the capture has been aimed with no picture
+	double give_up_s_ = 10.0;       // and how long that may last
+	bool give_up_in_tests_ = false; // (the tests' stand-in capture never has a picture)
 };
 
 void show_status(obs_properties_t *props, AutoCapture *self)

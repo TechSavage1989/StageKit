@@ -211,6 +211,26 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## The real cause of the late frames; background transition; the old bloom (0.1.0-beta120)
+
+- The owner on beta119, with two logs: "the transition between manual and automatic is a bit
+  jarring, since the image of the next capture appears to instantly appear, then the morphing and
+  windows size changes happen"; "before the capture image appears, the ambient background changes
+  to it instantly. there should be a configurable delay ... and the transition ... should include
+  the same transition options that others do"; "the bloom effect in the ambient background doesn't
+  appear to work correctly and is not the effect i intended. I like the bloom effect from my old
+  scene collection"; "There is choppiness during the animations of morph transitions and resizing
+  moves".
+- **The choppiness was Auto Capture, not the window switcher.** Every log from beta114 on has the
+  Game Capture trying to hook the owner's 3D modelling program about five times a second (5,338,
+  3,215 and 3,404 tries in three sessions) and 7 % of frames late in `tick_sources`; the beta106
+  log has one try and 0.2 %. beta119's change to the switcher was worth making (it did start
+  captures at every switch) but was not this. Auto Capture now gives up; see AGENTS.md.
+- The other three are fixed as AGENTS.md describes. The old bloom was found in the old collection
+  the owner sent on 2026-11-11 (private, not in the repository).
+- **Not confirmed by the owner yet.** If frames are still late, the profiler lines at the end of
+  OBS's log (`tick_sources`, `render_video`) and a count of repeated lines are where to look first.
+
 ## Frame time at a switch, the toggle, the new names, Stream Deck art and titles (0.1.0-beta119)
 
 - The owner on beta118: "the transitions work smoothly now, but there is a significant increase in
