@@ -2085,6 +2085,16 @@ int main(int argc, char **argv)
 			auto shown = look(nullptr);
 			CHECK(alpha(shown, cw, 30, 30) == 0 && alpha(shown, cw, 100, 100) == 255,
 			      "sizes follow how big the item is on screen");
+			// Hidden, the item is still the size it will be shown at. The
+			// owner saw a shadow and an outline come in thinner while their
+			// item slid in, and snap to their thickness part-way: while it
+			// was hidden the sizes had been worked out for some other size.
+			obs_sceneitem_set_visible(item, false);
+			sleep_ms(1200);
+			auto hidden = look(nullptr);
+			obs_sceneitem_set_visible(item, true);
+			CHECK(alpha(hidden, cw, 30, 30) == 0 && alpha(hidden, cw, 100, 100) == 255,
+			      "and stay so while the item is hidden, ready for when it is shown");
 			obs_data_set_bool(cs, "screen_px", false);
 			auto own = look(nullptr);
 			CHECK(alpha(own, cw, 30, 30) == 255, "or the source's own pixels when that is switched off");

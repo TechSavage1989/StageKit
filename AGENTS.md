@@ -353,6 +353,14 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
 - **Shadow sizes are in screen pixels by default.** The owner's old shadows sat on full-canvas scenes,
   so 20 px was 20 px everywhere; a filter on a scaled item is not. The filter divides its sizes by how
   big the item is drawn in the scene on screen (`find_shown_scale`).
+- **A hidden item still says how big its source is drawn** (`shown_scale` in
+  `src/common/shown-scale.cpp`, used by Shadow, Glow & Outline and Corners & Edges): the scene on
+  screen before the others, and in each a showing item before a hidden one. Hidden items were
+  passed over up to beta113, so a hidden item's effect was sized for a copy in another scene, or
+  for no scaling at all, and put right up to a third of a second after it was shown (the scale is
+  looked up every 20 ticks). The owner, of a slide in Show in Scenes: the shadow and outline
+  "start out thinner ... then grow or instantly snap to the correct pixel thickness towards the
+  end of the transition, which cause the fit to space filter items to adjust unsmoothly".
 - **Shadow, Glow & Outline moves scene items on purpose.** The shadow's room makes the source bigger; the
   filter shifts each item showing the source (and grows its bounding box) by that room so the picture
   stays put, and remembers what it applied in `adjusted_*` settings. Anything else that changes the
