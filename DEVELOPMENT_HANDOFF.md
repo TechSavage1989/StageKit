@@ -211,6 +211,13 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Confirmed by the owner on beta125 (2026-11-15)
+
+"everything seems to be working as intended": the work of beta121 to beta125 on their machine
+(the window switcher's pinned windows, clearing, *Captured window*, *Auto-switch manual windows*,
+Auto Capture's Standby Picture options, the overlap switch and key, the new names and the renamed
+collection). Nothing is open from that work.
+
 ## A picked window is that window, never another of its program (0.1.0-beta125)
 
 The owner runs several browser profiles: closing the picked one, the capture moved to another
