@@ -2046,6 +2046,64 @@ int main(int argc, char **argv)
 				settle(12);
 			}
 
+			// Auto Capture on the same capture: its Standby Picture while no
+			// game is captured, and behind it when the capture is hidden, with
+			// Auto Capture's own transition.
+			{
+				obs_data_t *again = obs_source_get_settings(capture);
+				obs_data_set_string(again, "file", red_path.c_str());
+				obs_source_update(capture, again);
+				obs_data_t *acd = obs_data_create();
+				obs_data_set_bool(acd, "no_game_standby", true);
+				obs_data_set_int(acd, "standby_style", 1); // a cut, so the check need not wait
+				obs_data_array_t *listed = obs_data_array_create();
+				obs_data_t *entry = obs_data_create();
+				obs_data_set_string(entry, "value", "oddgame");
+				obs_data_array_push_back(listed, entry);
+				obs_data_release(entry);
+				obs_data_set_array(acd, "always", listed);
+				obs_data_array_release(listed);
+				obs_source_t *ac = obs_source_create("stagekit_auto_capture", "Standby Auto Capture",
+								     acd, nullptr);
+				obs_data_release(acd);
+				obs_source_filter_add(capture, ac);
+				auto windows = [&](const char *list) {
+					calldata_t cd = {};
+					calldata_set_string(&cd, "windows", list);
+					proc_handler_call(obs_source_get_proc_handler(ac), "set_test_windows", &cd);
+					calldata_free(&cd);
+				};
+				auto waiting = [&]() {
+					bool w = false;
+					calldata_t cd = {};
+					if (proc_handler_call(obs_source_get_proc_handler(standby), "get_standing",
+							      &cd))
+						w = calldata_bool(&cd, "waiting");
+					calldata_free(&cd);
+					return w;
+				};
+				windows("Inbox|MailWnd|mail.exe|front|");
+				settle(10);
+				const bool no_game = waiting();
+				windows("Odd Game|OddWnd|OddGame.exe|front|");
+				settle(10);
+				const bool with_game = waiting();
+				proc_handler_call(obs_source_get_proc_handler(ac), "hide", nullptr);
+				settle(10);
+				const bool hidden = waiting();
+				proc_handler_call(obs_source_get_proc_handler(ac), "hide", nullptr);
+				settle(10);
+				CHECK(no_game && !with_game && hidden && !waiting(),
+				      "Auto Capture shows the Standby Picture while there is no game, and hides the capture behind it and back (%d, %d, %d, %d)",
+				      no_game, with_game, hidden, waiting());
+				obs_source_filter_remove(capture, ac);
+				obs_source_release(ac);
+				obs_data_set_string(again, "file", "");
+				obs_source_update(capture, again);
+				obs_data_release(again);
+				settle(12);
+			}
+
 			// Asked to fill instead, it takes the size the capture last had.
 			obs_data_set_bool(sd, "own_shape", false);
 			obs_source_update(standby, sd);

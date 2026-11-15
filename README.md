@@ -445,6 +445,12 @@ The filter's controls show what it is capturing now.
 - **Keep capturing in other scenes** (on as it comes): the capture carries on while you are on a scene
   that does not show it, so it is there at once when you come back. Unticked, OBS stops it a moment
   after you leave and starts it again when you return.
+- **No game: Standby Picture** (off as it comes): with a Standby Picture filter on the capture, the
+  Standby Picture is shown while no game is captured, and gives way when a game is found.
+- **Standby Picture** group: *Hide shows Standby Picture* (on as it comes) hides the capture behind
+  its Standby Picture instead of hiding the item; *Hide/show capture now* does it, as does the
+  hotkey under the capture and the Stream Deck *Manual Window / Source* key. *Transition*,
+  *Duration* and the easing are how the Standby Picture comes and goes for these two.
 - With no game open, the Game Capture goes back to *Capture any fullscreen application*.
 
 A game is recognised by what the program has loaded: a graphics engine together with something only

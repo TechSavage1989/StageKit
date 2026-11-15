@@ -50,7 +50,7 @@ export class AppSwitch extends SingletonAction<KeySettings> {
 	override onSendToPlugin(ev: SendToPluginEvent<JsonValue, KeySettings>): Promise<void> {
 		return ev.action
 			.getSettings()
-			.then((settings) => answerLists(ev.payload, settings, (kind) => kind === "stagekit_active_app" || kind === "stagekit_app_capture"));
+			.then((settings) => answerLists(ev.payload, settings, (kind) => kind === "stagekit_active_app" || kind === "stagekit_app_capture" || kind === "stagekit_auto_capture"));
 	}
 
 	private async show(key: KeyAction<KeySettings>, settings: KeySettings): Promise<void> {

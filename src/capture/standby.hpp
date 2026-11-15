@@ -28,4 +28,10 @@ bool standby_waiting(obs_source_t *source);
 // capture, or takes it away again. False when the source has none.
 bool standby_cover_toggle(obs_source_t *source);
 
+// Shows (on) or takes away the picture of an enabled Standby Picture on the
+// source over its capture, with a transition lent for that change and the
+// one back: `style` is a Standby Picture transition by number (-1: its own),
+// `ms` how long, `curve` and `mode` the easing. False when there is none.
+bool standby_cover_set(obs_source_t *source, bool on, int style, int ms, int curve, int mode);
+
 } // namespace stagekit

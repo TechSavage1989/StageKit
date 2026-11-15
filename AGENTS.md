@@ -812,6 +812,15 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   cause on their machine is **not known**: the log line `Standby Picture '...': shown over the
   capture, over ... ms (transition n)` is there to tell. `Style::Morph` (11) stretches both
   pictures over the gliding frame, as the window switcher's Morph does.
+- **Auto Capture can show the capture's Standby Picture** (`no_game_standby`, *No game: Standby
+  Picture*, off as it comes; `hide_standby`, *Hide shows Standby Picture*, on; hotkey
+  `stagekit.active.hide.` + filter name, the window switchers' beginning, so the Stream Deck
+  *Manual Window / Source* key's *hide* serves it). It goes through `standby_cover_set`, which
+  lends the Standby Picture Auto Capture's own transition (`standby_style`, by the Standby
+  Picture's numbers; `standby_ms`; `standby_ease_*`) for that change in and the one back
+  (`lent_`, `own_` in `src/capture/standby.cpp`); then the filter's own settings apply again. The
+  owner: "add an option for no game: show standby image, with transition options similar to
+  other filters". Without a Standby Picture, hiding hides the capture's items in every scene.
 - **Ambient Background's Bloom has two styles** (`bloom_style`): 0, the bright parts shine
   (threshold, screen-blended); 1, *Whole picture, amplified*: all of the picture's light added
   back (`BloomAmplify`), which is what the bloom in the owner's old collection did
