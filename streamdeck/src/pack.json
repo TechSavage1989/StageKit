@@ -1351,6 +1351,265 @@
 			"label": "stop resizing",
 			"on": "tools/stop-resizing-on",
 			"off": "tools/stop-resizing-off"
+		},
+		{
+			"id": "options/toggle",
+			"group": "options",
+			"label": "toggle",
+			"on": "options/toggle",
+			"off": "options/toggle"
+		},
+		{
+			"id": "options/hide",
+			"group": "options",
+			"label": "hide",
+			"on": "options/hide",
+			"off": "options/hide"
+		},
+		{
+			"id": "options/zoom",
+			"group": "options",
+			"label": "zoom",
+			"on": "options/zoom-on",
+			"off": "options/zoom-off"
+		},
+		{
+			"id": "options/fit",
+			"group": "options",
+			"label": "fit",
+			"on": "options/fit-on",
+			"off": "options/fit-off"
+		},
+		{
+			"id": "options/source-switcher",
+			"group": "options",
+			"label": "source switcher",
+			"on": "options/source-switcher-on",
+			"off": "options/source-switcher-off"
+		},
+		{
+			"id": "options/window-switcher",
+			"group": "options",
+			"label": "window switcher",
+			"on": "options/window-switcher-on",
+			"off": "options/window-switcher-off"
+		},
+		{
+			"id": "options/trigger",
+			"group": "options",
+			"label": "trigger",
+			"on": "options/trigger-on",
+			"off": "options/trigger-off"
+		},
+		{
+			"id": "options/link",
+			"group": "options",
+			"label": "link",
+			"on": "options/link-on",
+			"off": "options/link-off"
+		},
+		{
+			"id": "options/show-hide",
+			"group": "options",
+			"label": "show hide",
+			"on": "options/show-hide-on",
+			"off": "options/show-hide-off"
+		},
+		{
+			"id": "options/layout",
+			"group": "options",
+			"label": "layout",
+			"on": "options/layout",
+			"off": "options/layout"
+		},
+		{
+			"id": "options/spot",
+			"group": "options",
+			"label": "spot",
+			"on": "options/spot",
+			"off": "options/spot"
+		},
+		{
+			"id": "options/align-left",
+			"group": "options",
+			"label": "align left",
+			"on": "options/align-left",
+			"off": "options/align-left"
+		},
+		{
+			"id": "options/align-right",
+			"group": "options",
+			"label": "align right",
+			"on": "options/align-right",
+			"off": "options/align-right"
+		},
+		{
+			"id": "options/align-center",
+			"group": "options",
+			"label": "align center",
+			"on": "options/align-center",
+			"off": "options/align-center"
+		},
+		{
+			"id": "options/align-top",
+			"group": "options",
+			"label": "align top",
+			"on": "options/align-top",
+			"off": "options/align-top"
+		},
+		{
+			"id": "options/align-bottom",
+			"group": "options",
+			"label": "align bottom",
+			"on": "options/align-bottom",
+			"off": "options/align-bottom"
+		},
+		{
+			"id": "options/align-middle",
+			"group": "options",
+			"label": "align middle",
+			"on": "options/align-middle",
+			"off": "options/align-middle"
+		},
+		{
+			"id": "options/space-across",
+			"group": "options",
+			"label": "space across",
+			"on": "options/space-across",
+			"off": "options/space-across"
+		},
+		{
+			"id": "options/space-down",
+			"group": "options",
+			"label": "space down",
+			"on": "options/space-down",
+			"off": "options/space-down"
+		},
+		{
+			"id": "options/same-width",
+			"group": "options",
+			"label": "same width",
+			"on": "options/same-width",
+			"off": "options/same-width"
+		},
+		{
+			"id": "options/same-height",
+			"group": "options",
+			"label": "same height",
+			"on": "options/same-height",
+			"off": "options/same-height"
+		},
+		{
+			"id": "options/same-size",
+			"group": "options",
+			"label": "same size",
+			"on": "options/same-size",
+			"off": "options/same-size"
+		},
+		{
+			"id": "options/limit",
+			"group": "options",
+			"label": "limit",
+			"on": "options/limit-on",
+			"off": "options/limit-off"
+		},
+		{
+			"id": "options/slide-to-edge",
+			"group": "options",
+			"label": "slide to edge",
+			"on": "options/slide-to-edge-on",
+			"off": "options/slide-to-edge-off"
+		},
+		{
+			"id": "options/every-scene",
+			"group": "options",
+			"label": "every scene",
+			"on": "options/every-scene-on",
+			"off": "options/every-scene-off"
+		},
+		{
+			"id": "options/keep-shape",
+			"group": "options",
+			"label": "keep shape",
+			"on": "options/keep-shape-on",
+			"off": "options/keep-shape-off"
+		},
+		{
+			"id": "options/slide-centre",
+			"group": "options",
+			"label": "slide centre",
+			"on": "options/slide-centre",
+			"off": "options/slide-centre"
+		},
+		{
+			"id": "options/ratio-4x3",
+			"group": "options",
+			"label": "ratio 4:3",
+			"on": "options/ratio-4x3",
+			"off": "options/ratio-4x3"
+		},
+		{
+			"id": "options/ratio-8x7",
+			"group": "options",
+			"label": "ratio 8:7",
+			"on": "options/ratio-8x7",
+			"off": "options/ratio-8x7"
+		},
+		{
+			"id": "options/ratio-3x2",
+			"group": "options",
+			"label": "ratio 3:2",
+			"on": "options/ratio-3x2",
+			"off": "options/ratio-3x2"
+		},
+		{
+			"id": "options/ratio-10x9",
+			"group": "options",
+			"label": "ratio 10:9",
+			"on": "options/ratio-10x9",
+			"off": "options/ratio-10x9"
+		},
+		{
+			"id": "options/ratio-16x9",
+			"group": "options",
+			"label": "ratio 16:9",
+			"on": "options/ratio-16x9",
+			"off": "options/ratio-16x9"
+		},
+		{
+			"id": "options/ratio-16x10",
+			"group": "options",
+			"label": "ratio 16:10",
+			"on": "options/ratio-16x10",
+			"off": "options/ratio-16x10"
+		},
+		{
+			"id": "options/ratio-5x4",
+			"group": "options",
+			"label": "ratio 5:4",
+			"on": "options/ratio-5x4",
+			"off": "options/ratio-5x4"
+		},
+		{
+			"id": "options/ratio-1x1",
+			"group": "options",
+			"label": "ratio 1:1",
+			"on": "options/ratio-1x1",
+			"off": "options/ratio-1x1"
+		},
+		{
+			"id": "options/ratio-64x49",
+			"group": "options",
+			"label": "ratio 64:49",
+			"on": "options/ratio-64x49",
+			"off": "options/ratio-64x49"
+		},
+		{
+			"id": "options/ratio-auto",
+			"group": "options",
+			"label": "ratio auto",
+			"on": "options/ratio-auto",
+			"off": "options/ratio-auto"
 		}
 	]
 }

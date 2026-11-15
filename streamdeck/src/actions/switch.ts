@@ -11,6 +11,7 @@ import type { JsonValue } from "@elgato/utils";
 import { afterPress, targetOf } from "../kinds.ts";
 import { obs } from "../obs.ts";
 import { choose, file, plain } from "../pictures.ts";
+import { switchTitle } from "../titles.ts";
 import { answerLists, type KeySettings } from "./shared.ts";
 
 /**
@@ -82,6 +83,7 @@ export class FilterSwitch extends SingletonAction<KeySettings> {
 		await key.setImage(file(picture, false, settings.palette), { state: 0 });
 		await key.setImage(file(picture, true, settings.palette), { state: 1 });
 		await key.setState(now?.enabled ? 1 : 0);
+		await key.setTitle(switchTitle(now?.kind, settings.press));
 	}
 
 	private async showAll(): Promise<void> {

@@ -11,6 +11,7 @@ import type { JsonValue } from "@elgato/utils";
 import { targetOf } from "../kinds.ts";
 import { obs } from "../obs.ts";
 import { choose, file, plain } from "../pictures.ts";
+import { moveTitle } from "../titles.ts";
 import { answerLists, type KeySettings } from "./shared.ts";
 
 /**
@@ -46,6 +47,7 @@ export class Move extends SingletonAction<KeySettings> {
 		const now = await obs.filter(source, filter);
 		const picture = choose(settings.picture, now?.kind ?? "", now?.settings) ?? plain("move");
 		await key.setImage(file(picture, true, settings.palette));
+		await key.setTitle(moveTitle(now?.kind, now?.settings));
 	}
 
 	private async showAll(): Promise<void> {

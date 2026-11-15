@@ -12,13 +12,25 @@ every TechSavage1989 app repository. Change that file only to change the standar
 The owner asked for names "to make more sense" and approved a table (2026-11-14, beta87). What a
 user sees changed; ids, settings, folders and code names did not. Old name, then the name shown:
 Ramp Blur: Blur. Ramp Zoom: Zoom. Send To: Move Source. Place Item: Move Scene Item. Layout: Apply
-Layout. Fit Item: Fit to Space. Active App: Show Source in Use (first Follow Active App; the owner on
-2026-11-15: "should probably be called show source in use, or similar"). Visibility Link: Link Visibility.
+Layout. Fit Item: Fit to Space. Visibility Link: Link Visibility.
 Picture Shape key: Aspect Ratio Preset. Stream Deck keys: Picture shape: Set Aspect Ratio. Hook
 capture: Capture Front Window. Window switch: Next Manual Capture. Dock switch: Dock Option. Slide
 to next edge: Slide to Edge. Blur everything: Blur All. A key's press is *On press*: *Toggle*,
 *Switch on*, *Switch off*. The handoff's history and the code still use the old names; a filter
 already on a source keeps the name it was given.
+
+A second table, in OBS's own terms, was put to the owner and taken whole (2026-11-15, beta119: "use
+all the recommended names you proposed"). **The rest of this file still uses the names from before
+it.** Then and now: Capture App in Use: Automatic Window Switcher. Show Source in Use (first Follow
+Active App): Automatic Source Switcher. Apps to capture: Windows to switch between. Follow the app
+in use: Switch to the active window. Apps you switch to / Captures you switch to: Manual windows /
+Manual sources. Switch to the next of these: Switch to next manual window. Back to following the
+apps: Return to automatic. Keep the others ready: Keep other windows captured (Keep other sources
+ready in the scene filter). Change with / Lasting, in every filter: Transition / Duration; Show
+with / Hide with: Show transition / Hide transition. Hiding and showing it: Show/Hide transition.
+Stream Deck keys: Next Manual Capture: Manual Window / Source. Capture Front Window: Capture Active
+Window. Do not rename anything again without the owner's say-so: after one unannounced rename they
+asked "where is follow active app?".
 
 ## What StageKit is not
 
@@ -711,6 +723,19 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     the capture by title (`priority` 1), a program entry by executable.
   - The Capture Front Window key switches it off, as it does an Auto Capture; switching it on
     hands the capture back (it takes the app in front or the last one used).
+  - **Nothing is started, aimed or stopped at a switch** (beta119). Every open entry of the two
+    lists has its ready capture from the moment its app opens, the one being shown too, and a
+    switch only changes which is drawn (`bridge_`); the capture itself is left where it was
+    (`own_ok_` false: its own picture is not shown, or the wrong window would flash up when the
+    ready capture goes). Up to beta118 each switch started one capture, aimed the parent and
+    stopped a third. The owner: "a significant increase in frame times and FPS drop when
+    transitioning"; OBS's profiler in their log had `tick_sources` at up to 135 ms with drawing
+    under 10 ms and no StageKit tick over 7 ms: it was the captures starting. The parent is aimed
+    only when there is no ready capture with a picture yet.
+  - *Toggle manual / automatic* (`toggle`, hotkey `stagekit.active.toggle.` + name, also on the
+    scene filter): back from a held window, else on to the one held last. The owner: "the
+    capture front window can be used to select the manual capture, and then the toggle can be
+    used to switch".
   - None of the Windows side has run in the tests: they feed it stand-in windows
     (`set_test_windows`) and a colour source for the capture. How a real Window Capture behaves
     while it is re-aimed (how long it is empty, whether it flashes the old window) is unknown here.
@@ -722,6 +747,15 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   the camera in twenty scenes took 40 to 70 ms before a single frame of the move. An item straight
   in its scene that only moves is stepped from where it began (`Move::plain`), with nothing looked
   up on the way.
+- **Stream Deck key art has no words, and every option has its own picture and title.** The owner:
+  "there should be icons specific to each option, and this goes for every stream deck key",
+  "remove the embedded text names of the keys in the art, but ... make sure the Title for the key
+  is set accordingly based on the options selected". `streamdeck/tools/make-option-icons.py` takes
+  the words out of every pack picture (run it after `import-icons.py`) and draws the pictures the
+  pack has none of into `imgs/pack/<palette>/options/` (the pack's own little screen with a
+  drawing in it), listing them in `src/pack.json`. `src/titles.ts` is what each key calls itself
+  (`setTitle` in every action's `show`); a title typed in Stream Deck wins. A new option gets a
+  drawing in `DRAWINGS`, a line in `src/pictures.ts` and a title, or it shows the plain key.
 - **The Stream Deck plugin has never run in Stream Deck from here.** This session has no Stream Deck
   and cannot reach docs.elgato.com; it was written from the SDK's npm packages (`@elgato/streamdeck`,
   the project template in `@elgato/cli`) and their type definitions. Proven here: it type-checks,

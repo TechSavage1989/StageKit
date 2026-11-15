@@ -172,7 +172,7 @@ public:
 
 	~ActiveApp()
 	{
-		for (obs_hotkey_id id : {next_hotkey_, back_hotkey_})
+		for (obs_hotkey_id id : {next_hotkey_, back_hotkey_, toggle_hotkey_})
 			if (id != OBS_INVALID_HOTKEY_ID)
 				obs_hotkey_unregister(id);
 		keep_ready({});
@@ -525,6 +525,19 @@ public:
 					static_cast<ActiveApp *>(data)->step_by_hand();
 			},
 			this);
+		// One for both ways: back from a source held by hand, else on to one.
+		toggle_hotkey_ = obs_hotkey_register_source(
+			parent_, ("stagekit.active.toggle." + name).c_str(), named("Hotkey.Active.Toggle").c_str(),
+			[](void *data, obs_hotkey_id, obs_hotkey_t *, bool pressed) {
+				auto *self = static_cast<ActiveApp *>(data);
+				if (!pressed)
+					return;
+				if (self->held())
+					self->back_to_apps();
+				else
+					self->step_by_hand();
+			},
+			this);
 		back_hotkey_ = obs_hotkey_register_source(
 			parent_, ("stagekit.active.back." + name).c_str(), named("Hotkey.Active.Back").c_str(),
 			[](void *data, obs_hotkey_id, obs_hotkey_t *, bool pressed) {
@@ -535,7 +548,7 @@ public:
 	}
 	void detach()
 	{
-		for (obs_hotkey_id *id : {&next_hotkey_, &back_hotkey_}) {
+		for (obs_hotkey_id *id : {&next_hotkey_, &back_hotkey_, &toggle_hotkey_}) {
 			if (*id != OBS_INVALID_HOTKEY_ID)
 				obs_hotkey_unregister(*id);
 			*id = OBS_INVALID_HOTKEY_ID;
@@ -585,6 +598,7 @@ private:
 	bool hand_back_ = false;           // the "back to the apps" hotkey was pressed
 	bool held_ = false;                // one switched to by hand is showing
 	obs_hotkey_id next_hotkey_ = OBS_INVALID_HOTKEY_ID, back_hotkey_ = OBS_INVALID_HOTKEY_ID;
+	obs_hotkey_id toggle_hotkey_ = OBS_INVALID_HOTKEY_ID;
 	bool follow_ = true;
 	std::string transition_ = "fade_transition";
 	uint32_t transition_ms_ = 250;

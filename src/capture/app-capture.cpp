@@ -308,6 +308,10 @@ public:
 			cmd_back_ = true;
 		else if (what == "hide")
 			cmd_hide_ = true;
+		else if (what == "toggle")
+			// Between the app held by hand and following the apps: back
+			// from one that is held, else on to the one held last.
+			(held_.empty() ? cmd_step_ : cmd_back_) = true;
 		timer_ = 0.0;
 	}
 
@@ -320,6 +324,13 @@ public:
 		hold_window_ = window;
 		have_hold_ = true;
 		timer_ = 0.0;
+	}
+
+	// The entry being shown, as far as this filter knows.
+	std::string current()
+	{
+		std::lock_guard lock(mutex_);
+		return current_;
 	}
 
 	// The app held by hand, if any.
@@ -372,10 +383,11 @@ public:
 		};
 		static const struct {
 			const char *id, *text, *what;
-		} keys[3] = {{"stagekit.active.next.", "Hotkey.AppCapture.Next", "next"},
+		} keys[4] = {{"stagekit.active.next.", "Hotkey.AppCapture.Next", "next"},
 			     {"stagekit.active.back.", "Hotkey.AppCapture.Back", "back"},
-			     {"stagekit.active.hide.", "Hotkey.AppCapture.Hide", "hide"}};
-		for (size_t i = 0; i < 3; i++) {
+			     {"stagekit.active.hide.", "Hotkey.AppCapture.Hide", "hide"},
+			     {"stagekit.active.toggle.", "Hotkey.AppCapture.Toggle", "toggle"}};
+		for (size_t i = 0; i < 4; i++) {
 			struct Pressed {
 				AppCapture *self;
 				const char *what;
@@ -442,6 +454,14 @@ private:
 	{
 		if (bridge)
 			return across ? obs_source_get_width(bridge) : obs_source_get_height(bridge);
+		{
+			// (The capture itself is left where it was while a ready
+			// capture is drawn: when that one goes, its window is not
+			// the one wanted, and must not flash up.)
+			std::lock_guard lock(mutex_);
+			if (!own_ok_)
+				return 0;
+		}
 		return before_size(source_, across);
 	}
 
@@ -479,8 +499,9 @@ private:
 	std::string last_held_; // the app last held by hand: the first to go back to
 	double order_check_ = 10.0;
 	std::vector<Ready> ready_;
-	obs_hotkey_id hotkeys_[3] = {OBS_INVALID_HOTKEY_ID, OBS_INVALID_HOTKEY_ID, OBS_INVALID_HOTKEY_ID};
-	std::pair<AppCapture *, const char *> pressed_[3];
+	obs_hotkey_id hotkeys_[4] = {OBS_INVALID_HOTKEY_ID, OBS_INVALID_HOTKEY_ID, OBS_INVALID_HOTKEY_ID,
+				     OBS_INVALID_HOTKEY_ID};
+	std::pair<AppCapture *, const char *> pressed_[4];
 	// The change between two windows.
 	Phase phase_ = Phase::Idle;
 	double phase_s_ = 0.0;
@@ -488,6 +509,7 @@ private:
 	bool seen_empty_ = false;
 	double settle_s_ = 0.0;            // since the capture was last aimed
 	double own_s_ = 0.0;               // how long the capture itself has had a picture without a break
+	bool own_ok_ = true;               // the capture itself is aimed at what is to be shown
 	obs_source_t *bridge_ = nullptr;   // held: the ready capture drawn until the capture itself has the window
 	uint32_t kept_w_ = 0, kept_h_ = 0; // the size of the picture in `last_`
 	double drawn_ago_ = 10.0;          // seconds since this filter last drew
@@ -533,6 +555,10 @@ void AppCapture::keep_ready(const std::vector<std::pair<std::string, const OpenW
 		ready_ = kept;
 	}
 	for (const Ready &r : gone) {
+		obs_source_t *bridge = bridge_ref();
+		if (bridge == r.capture)
+			set_bridge(nullptr);
+		obs_source_release(bridge);
 		obs_source_dec_showing(r.capture);
 		obs_source_release(r.capture);
 	}
@@ -551,14 +577,18 @@ void AppCapture::aim(obs_source_t *parent, const OpenWindow &window, const std::
 			if (r.entry == entry && obs_source_get_width(r.capture) && obs_source_get_height(r.capture))
 				ready = obs_source_get_ref(r.capture);
 	}
-	aim_capture_at(parent, window, by_title);
+	// With one, the capture itself is left alone: aiming it starts its
+	// capturing afresh, which costs a frame or more.
+	if (!ready)
+		aim_capture_at(parent, window, by_title);
 	const bool drawn = [&] {
 		std::lock_guard lock(mutex_);
 		return kept_w_ && kept_h_ && drawn_ago_ < 0.5;
 	}();
-	set_bridge(drawn ? ready : nullptr);
-	obs_source_release(ready);
+	set_bridge(ready);
 	std::lock_guard lock(mutex_);
+	own_ok_ = !ready;
+	obs_source_release(ready);
 	current_ = entry;
 	if (remember) {
 		recent_.erase(std::remove(recent_.begin(), recent_.end(), entry), recent_.end());
@@ -723,11 +753,14 @@ void AppCapture::follow(obs_source_t *parent)
 
 	// The other open apps' captures keep running while this one is on
 	// show, so whichever is switched to has its picture at once.
-	auto ready_for = [&](const std::string &current_entry) {
-		// (The one being captured needs none, except while its ready
-		// capture is still what is drawn: stopped then, as it was up to
-		// beta117, its picture dropped out in the middle of the change.)
-		const std::string but = holding() ? std::string() : current_entry;
+	auto ready_for = [&](const std::string &) {
+		// Every open app on the two lists has one, the one being shown
+		// too: it is what is drawn. Nothing is started or stopped when
+		// the app changes, only when one opens or closes. (Up to beta118
+		// each change started one capture, aimed another and stopped a
+		// third, on OBS's drawing thread: the owner saw the frame time
+		// jump at every change.)
+		const std::string but;
 		std::vector<std::pair<std::string, const OpenWindow *>> wanted;
 		if (ready && obs_source_showing(parent)) {
 			for (size_t i = 0; i < apps.size(); i++)
@@ -839,6 +872,7 @@ void AppCapture::follow(obs_source_t *parent)
 		if (now >= 0) {
 			std::lock_guard lock(mutex_);
 			current_ = current = apps[(size_t)now];
+			own_ok_ = true;
 		}
 	}
 	int target = -1;
@@ -889,6 +923,7 @@ void AppCapture::tick(float seconds)
 		std::lock_guard lock(mutex_);
 		phase_ = Phase::Idle;
 		started_ = false;
+		own_ok_ = true;
 		held_.clear();
 		cmd_step_ = cmd_back_ = false;
 		const bool hide = cmd_hide_;
@@ -917,7 +952,7 @@ void AppCapture::tick(float seconds)
 			// of the old window and has had a picture for a moment since,
 			// or a good while has gone by. Believed sooner, it could still
 			// be showing the old window: a flash of the app just left.)
-			done_bridging = bridge_ && own &&
+			done_bridging = bridge_ && own_ok_ && own &&
 					((seen_empty_ && own_s_ >= kSteady) || settle_s_ >= kBridgeFor);
 			break;
 		case Phase::Lost:
@@ -1137,6 +1172,10 @@ obs_properties_t *get_properties(void *data)
 		if (colon != std::string::npos)
 			now = decoded(window.substr(colon + 1));
 	}
+	// (What this filter is showing says more, when it knows: the capture
+	// itself is left where it was while another one is drawn for it.)
+	if (self && !self->current().empty())
+		now = self->current();
 	const bool by_hand = self && !self->held().empty();
 	std::string status = obs_module_text(now.empty() ? "AppCapture.Status.None"
 					     : by_hand   ? "AppCapture.Status.Held"
@@ -1169,6 +1208,14 @@ obs_properties_t *get_properties(void *data)
 	by_hand_list.tip = "AppCapture.ByHand.Tip";
 	by_hand_list.choices = apps.choices;
 	pick_list_add(props, self ? self->source() : nullptr, by_hand_list);
+	obs_properties_add_button2(
+		props, "by_hand_toggle", obs_module_text("AppCapture.ByHand.Toggle"),
+		[](obs_properties_t *, obs_property_t *, void *data) {
+			if (data)
+				static_cast<AppCapture *>(data)->command("toggle");
+			return false;
+		},
+		self);
 	obs_properties_add_button2(
 		props, "by_hand_next", obs_module_text("AppCapture.ByHand.Next"),
 		[](obs_properties_t *, obs_property_t *, void *data) {

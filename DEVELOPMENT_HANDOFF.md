@@ -211,6 +211,27 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Frame time at a switch, the toggle, the new names, Stream Deck art and titles (0.1.0-beta119)
+
+- The owner on beta118: "the transitions work smoothly now, but there is a significant increase in
+  frame times and FPS drop when transitioning. Capture front window does come in smoothly", with
+  two logs. Then, one after another: "the next manual capture button should have an option to
+  toggle between manual capture and automatic"; "there should be icons specific to each option,
+  and this goes for every stream deck key"; "for all of the key art, remove the embedded text
+  names of the keys in the art, but for the stream deck keys themselves, make sure the Title for
+  the key is set accordingly based on the options selected"; "make all the changes for this
+  release"; "use all the recommended names you proposed in the release".
+- The logs: OBS's profiler had `tick_sources` up to 135 ms and 152 ms, drawing under 10 ms, no
+  StageKit tick over 7 ms. 106 switches in the longer session. Fixed by never starting, aiming or
+  stopping a capture at a switch; see AGENTS.md. **Not confirmed by the owner yet.**
+- All of the proposed names are in: the table is in AGENTS.md under *Names*. Ids, settings and
+  hotkey names are unchanged. The rest of AGENTS.md and this file keep the older names.
+- Stream Deck plugin 0.9.0.0: no words in any key picture, a title from the key's options, a
+  picture for every option (drawn here, not from the owner's pack: plain line drawings on the
+  pack's little screen), *Toggle manual / automatic*. None of it seen on a real deck.
+- An earlier step of this work was interrupted by the owner and a half-finished state was pushed
+  to the branch as a WIP commit; the branch was finished afterwards.
+
 ## Capture App in Use: the flicker, the hook key, names (0.1.0-beta118)
 
 - The owner on beta117, with a log: "There is still a flicker where it looks like the source sort

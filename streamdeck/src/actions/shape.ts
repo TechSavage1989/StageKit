@@ -10,7 +10,8 @@ import type { JsonValue } from "@elgato/utils";
 
 import { targetOf } from "../kinds.ts";
 import { obs } from "../obs.ts";
-import { choose, file, plain } from "../pictures.ts";
+import { file, shapePicture } from "../pictures.ts";
+import { shapeTitle } from "../titles.ts";
 import { answerLists, type KeySettings } from "./shared.ts";
 
 /**
@@ -53,8 +54,7 @@ export class PictureShape extends SingletonAction<KeySettings> {
 
 	/** The shape is the key's title unless the user wrote their own; the picture is Auto Frame's. */
 	private async show(key: KeyAction<KeySettings>, settings: KeySettings): Promise<void> {
-		const picture = choose(settings.picture, "stagekit_auto_frame") ?? plain("switch");
-		await key.setImage(file(picture, true, settings.palette));
-		await key.setTitle(settings.shape && settings.shape !== "auto" ? settings.shape : "Auto");
+		await key.setImage(file(shapePicture(settings.picture, settings.shape), true, settings.palette));
+		await key.setTitle(shapeTitle(settings.shape));
 	}
 }

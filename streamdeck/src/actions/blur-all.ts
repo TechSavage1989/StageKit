@@ -10,6 +10,7 @@ import type { JsonValue } from "@elgato/utils";
 
 import { obs } from "../obs.ts";
 import { automatic, choose, file, plain } from "../pictures.ts";
+import { blurAllTitle } from "../titles.ts";
 import { answerLists, type KeySettings } from "./shared.ts";
 
 /**
@@ -56,6 +57,7 @@ export class BlurAll extends SingletonAction<KeySettings> {
 		await key.setImage(file(picture, false, settings.palette), { state: 0 });
 		await key.setImage(file(picture, true, settings.palette), { state: 1 });
 		await key.setState((await this.anyOn()) ? 1 : 0);
+		await key.setTitle(blurAllTitle(settings.press));
 	}
 
 	private async showAll(): Promise<void> {

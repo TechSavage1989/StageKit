@@ -10,6 +10,7 @@ import type { JsonValue } from "@elgato/utils";
 
 import { obs } from "../obs.ts";
 import { file, hookPicture } from "../pictures.ts";
+import { hookTitle } from "../titles.ts";
 import { answerLists, type KeySettings } from "./shared.ts";
 
 /**
@@ -65,6 +66,7 @@ export class Hook extends SingletonAction<KeySettings> {
 			// OBS went away meanwhile; the game picture will do.
 		}
 		await key.setImage(file(hookPicture(settings.picture, kind), true, settings.palette));
+		await key.setTitle(hookTitle(kind));
 	}
 
 	private async showAll(): Promise<void> {
