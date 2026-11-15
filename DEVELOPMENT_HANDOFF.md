@@ -211,6 +211,18 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## The owner's word after beta112 (2026-11-15)
+
+- "everything is working and does what it should for now." Said after beta112 was published,
+  without naming a version or a feature. Take it as covering what the sections below mark *not
+  confirmed by the owner yet* (beta103 to beta112: Fit to Space's hidden items, kept size and
+  shared place, the blur additions, the glances, Morph and its links, Show in Scenes' transitions),
+  as far as the owner had tried them.
+- Not answered one by one: the frame time after beta109 (*Average time to render frame*), the
+  Stream Deck plugin's version, the `primehack` rule in Auto Frame. Ask again only if one of them
+  comes up; do not repeat them as open requests.
+- No work is in progress. The next request starts a new branch.
+
 ## Slide off the nearest edge in Show in Scenes (0.1.0-beta112)
 
 - The owner: "for slide show in scenes filter, slide off the nearest edge should be an option".
