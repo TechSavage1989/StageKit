@@ -211,6 +211,28 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Capture App in Use: fast switching, apps by hand, Morph, hiding (0.1.0-beta117)
+
+- The owner after beta116, with a screenshot of the filter on their capture: "Capture app in use
+  should have the additionally added transitions, like morph ... my Show source in use filter on
+  the scene includes a 'Captures you switch to' ... I need a similar functionality and morph
+  transition capability ... also still be able to hide the window capture entirely if desired.
+  these capabilities should be included in the obs plugin as well as the stream deck plugin", and
+  then: "capture app in use switches between apps much slower than the show source in use filter
+  ... it should be much faster and none of this should slow down OBS or increase frametime
+  significantly". And: "where is follow active app?" (told: renamed, offered to change it back).
+- Built: see AGENTS.md. Stream Deck plugin 0.8.0.0: the *Next Manual Capture* key also takes a
+  Capture App in Use, with *Hide or show the capture*.
+- The screenshot also showed the filter third in the list and a status line saying nothing was
+  captured while a listed app plainly was. The order is now kept (`keep_first`); the status line
+  now reads the capture's own setting. Why beta116's move to the top did not hold is not known.
+- **Not confirmed by the owner yet; none of it has run on Windows.** *Keep the others ready* runs
+  one more capture per other open app, as Show Source in Use's option of the same name does on
+  the owner's present scene; ask for the log's `timing` lines if the frame time goes up.
+- Not built: switching by hand to one named app out of several (the key steps through the list,
+  which is the same thing with one app on it); the item Morph between this capture and another
+  item works as for any item, through *Hiding and showing it*.
+
 ## Capture App in Use; Follow Active App renamed (0.1.0-beta116)
 
 - The owner (2026-11-15), with a log: "I'd like a new filter for window capture. Currently I have

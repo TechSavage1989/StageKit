@@ -471,8 +471,11 @@ capture for each app.
 | --- | --- |
 | Apps to capture | Open the app, then choose it under *Add an app*: by its program, or by a window's title for two programs with the same file name. Each row has its own remove button |
 | Follow the app in use | Ticked (as it comes): clicking into one of the apps captures it; clicking into anything else changes nothing, so the last one stays. Unticked: an app is captured when it opens and stays until it closes |
-| Change with | How one app's picture gives way to the next: a fade (as it comes), a cut, a fade and zoom, or sliding in from any of the four sides |
+| Apps you switch to | Other apps the capture shows when you say so, such as your browser. *Switch to the next of these* (a button here, a hotkey, a Stream Deck key) takes the next one that is open and holds it whatever app you use; after the last, or with *Back to following the apps*, the apps above are followed again |
+| Keep the others ready | Ticked (as it comes): while the capture is showing, the other open apps on the two lists are captured in the background, so the one you switch to is there at once. Unticked, a switch waits for the capture to find the other window, which saves graphics memory |
+| Change with | How one app's picture gives way to the next: a fade (as it comes), **Morph** (the frame changes shape and size as the one picture turns into the other), a cut, a fade and zoom, or sliding in from any of the four sides |
 | Lasting / Easing | How long that takes, and its curve |
+| Hiding and showing it | *Hide or show it now* hides the capture in every scene it is in, or shows it again, with the transition chosen under it. Also a hotkey and a Stream Deck key |
 
 - An app on the list that opens is captured. When the app being captured closes, the one you used
   before it comes back.
@@ -480,11 +483,13 @@ capture for each app.
   capture had, shows it while the capture is finding the other window, and brings the new picture in
   over it. A Standby Picture on the same capture does not stand in for that moment; it does once
   none of the apps is open.
-- To hold a window that is not on the list, aim the capture at it by hand: the Stream Deck
+- Three hotkeys under the capture in *Settings → Hotkeys*, named after the filter: *next app
+  switched to by hand*, *back to following the apps*, *hide or show the capture*. The Stream Deck
+  *Next Manual Capture* key presses any of the three.
+- To hold a window that is on neither list, aim the capture at it by hand: the Stream Deck
   *Capture Front Window* key switches this filter off as it does so, and switching the filter on
   again (its own key, or the eye next to it) hands the capture back to your apps.
-- It puts itself first in the capture's filter list when you add it, before whatever frames, shapes
-  or stands in for the picture. Leave it there.
+- It keeps itself before a Standby Picture and an Auto Frame in the capture's filter list.
 - Windows only, like the other capture tools.
 
 For a capture per app in one scene, each with its own filters, Show Source in Use below is still
@@ -955,7 +960,7 @@ choose from, holding only what that key is for.
 | **Move Source**, **Move Scene Item**, **Apply Layout** | Runs that move. A tick shows on the key when OBS has taken it |
 | **Set Aspect Ratio** | Sets a game's aspect ratio by hand, for when Auto Frame's own reading is not what you want: 4:3, 8:7, 3:2, 10:9, 16:9 and more, or *Automatic* to hand it back. *Keep ratio*: *This game only* (the shape lasts while that game is captured and goes back to automatic when it ends; set before the game starts, it waits for it) or *Until changed*. The key shows its ratio |
 | **Capture Front Window** | Makes a Game Capture or a Window Capture take whatever window or game is in front when you press it. *Change with* and *Lasting* choose how the capture changes over: a fade (as it comes), a cut, or any other transition OBS has. An Auto Capture on that capture is switched off so it stays where you put it; the **Auto Capture** key, set to *Switches it on*, hands it back |
-| **Next Manual Capture** | For a scene with a Show Source in Use filter: shows the next of its *Captures you switch to*, or goes back to following the apps |
+| **Next Manual Capture** | Also for a Window Capture with a Capture App in Use filter: the next of its *Apps you switch to*, back to following the apps, or the capture hidden and shown. For a scene with a Show Source in Use filter: shows the next of its *Captures you switch to*, or goes back to following the apps |
 | **Arrange tool** | One of the dock's arrange tools on a key: line up an edge or centre, space out evenly, snap, make the same width, height or size, or copy a transform to all or to the chosen scenes. It works on the items selected in OBS's preview |
 | **Dock Option** | One of the dock's switches on a key: *Snap on release*, *Guides*, *Stop resizing at edges*, *Slide to the next edge*, *In every scene* or *Keep shape*. It shows which way the switch is, also when you change it in the dock |
 | **Slide to Edge** | Slides the item selected in OBS left, right, up, down or cornerwise to the next edge, or centres it in the free space, with the dock's edge distance and timing. The next press passes that edge |

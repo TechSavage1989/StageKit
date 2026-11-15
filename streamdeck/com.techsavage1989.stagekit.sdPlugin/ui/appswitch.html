@@ -17,13 +17,14 @@
 	</head>
 
 	<body>
-		<sdpi-item label="Scene">
+		<sdpi-item label="Scene or capture">
 			<sdpi-select setting="target" datasource="getTargets" placeholder="Choose" show-refresh></sdpi-select>
 		</sdpi-item>
 		<sdpi-item label="On press">
 			<sdpi-select setting="step" default="next">
-				<option value="next">Next capture</option>
+				<option value="next">Next capture or app</option>
 				<option value="back">Back to automatic</option>
+				<option value="hide">Hide or show the capture</option>
 			</sdpi-select>
 		</sdpi-item>
 		<sdpi-item label="Picture">

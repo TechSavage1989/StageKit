@@ -677,7 +677,25 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     capture has been seen empty, or after `kSettle`.
   - Standby Picture goes by the capture's own size, so it is told (`app_capture_holding`), or it
     would stand in for that moment. A new filter that stands in for a capture must ask too.
-  - It belongs first in the filter list and moves itself there once (`placed`).
+  - It keeps itself before a Standby Picture and an Auto Frame, looked at twice a second
+    (`keep_first`). Moving to the top once when added (beta116) did not hold on the owner's
+    machine: their screenshot had it third, after the Standby Picture. Cause not found.
+  - **The other open apps are captured in the background** (`ready`, *Keep the others ready*, on
+    as it comes; `keep_ready`): a private capture like the parent for each other open entry of
+    the two lists, kept showing while the parent is. On a switch the filter draws that capture at
+    once (`bridge_`) while the parent is being aimed, and goes back to the parent's own picture
+    once it has the window. The owner, of beta116, which waited for the one capture every time:
+    "switches between apps much slower than the show source in use filter ... a long pause". The
+    parent is still aimed, because Auto Frame and others read the program from its settings.
+  - *Apps you switch to* (`by_hand`) are held by hand (`held_`): the *next* command takes the next
+    one that is open, and after the last, or with *back*, the apps are followed again. Nothing is
+    followed while one is held. The owner: "manually switch to and from a specific app, like a
+    browser page". *Hide* hides and shows the capture's items in every scene with the item
+    transition chosen. The three commands are hotkeys on the capture named
+    `stagekit.active.next.` / `.back.` / `.hide.` + the filter's name, the same beginning as Show
+    Source in Use's, so the Stream Deck *Next Manual Capture* key serves both.
+  - *Morph* (`Style::Morph`) is its own drawing: the reported size glides from the last picture's
+    to the new one's with both stretched over it. It is not the item Morph, which needs two items.
   - Entries are a program's file name or part of a window's title (`answers`); a title entry aims
     the capture by title (`priority` 1), a program entry by executable.
   - The Capture Front Window key switches it off, as it does an Auto Capture; switching it on

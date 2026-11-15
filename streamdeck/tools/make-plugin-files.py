@@ -17,7 +17,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, "..")
 PLUGIN = os.path.join(ROOT, "com.techsavage1989.stagekit.sdPlugin")
 BASE = "com.techsavage1989.stagekit"
-VERSION = "0.7.0.0"
+VERSION = "0.8.0.0"
 
 # The pack picture each feature's key starts with (its "on" and "off" look).
 PICTURES = {
@@ -209,9 +209,9 @@ def main():
     page(
         "appswitch",
         "StageKit next manual capture",
-        one_list("Scene") + options("On press", "step", "next", [("next", "Next capture"), ("back", "Back to automatic")]),
+        one_list("Scene or capture") + options("On press", "step", "next", [("next", "Next capture or app"), ("back", "Back to automatic"), ("hide", "Hide or show the capture")]),
     )
-    add("appswitch", "Next Manual Capture", "Steps a Show Source in Use scene to the next of its captures by hand, or back to following the apps.", "appswitch", "imgs/actions/move/icon", one("appswitch"))
+    add("appswitch", "Next Manual Capture", "For Show Source in Use and Capture App in Use: the next capture or app switched to by hand, back to following the apps, or the capture hidden and shown.", "appswitch", "imgs/actions/move/icon", one("appswitch"))
 
     key_pictures("toolkey", "plain/tool", None)
     page("tool", "StageKit arrange tool", options("Tool", "tool", "left", tools_list()))
