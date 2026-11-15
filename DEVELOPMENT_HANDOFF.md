@@ -211,6 +211,14 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Switch Scene key, device pictures, editable SVGs (0.1.0-beta127)
+
+The owner asked for a Stream Deck key "for scene switching", icons "for things like generic capture
+cards, external capture cards, etc", and "the full icon set with editable SVGs". All in AGENTS.md;
+Stream Deck plugin 0.14.0.0. The SVGs cover everything drawn here; the original pack's pictures
+are PNG only in this repository, and the owner was asked whether they have its source (the session
+that made the pack had the program that draws it). Not run on a Stream Deck here.
+
 ## Keys show on or off; Never blur these lists every source (0.1.0-beta126)
 
 The owner: the Blur key "just flashed when pressed, but does not otherwise signify if blur is on or

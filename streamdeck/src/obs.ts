@@ -52,6 +52,10 @@ class ObsLink extends EventEmitter {
 		] as const) {
 			this.obs.on(name, () => this.emit("changed"));
 		}
+		// The scene on the program or the preview changed, or Studio Mode.
+		for (const name of ["CurrentProgramSceneChanged", "CurrentPreviewSceneChanged", "StudioModeStateChanged"] as const) {
+			this.obs.on(name, () => this.emit("scene"));
+		}
 		// A filter's settings changed (in OBS's window, or by a key).
 		this.obs.on("SourceFilterSettingsChanged", (ev) => {
 			this.emit("settings", ev.sourceName, ev.filterName);
@@ -222,6 +226,57 @@ class ObsLink extends EventEmitter {
 		} catch {
 			return undefined;
 		}
+	}
+
+	/** The scenes, in OBS's order (top first). */
+	async scenes(): Promise<string[]> {
+		if (!this.connected) return [];
+		const answer = await this.obs.call("GetSceneList");
+		return (answer.scenes as Array<{ sceneName?: unknown }>)
+			.map((s) => String(s.sceneName ?? ""))
+			.filter((name) => name !== "")
+			.reverse();
+	}
+
+	/** OBS's transitions by name, for a Switch Scene key. */
+	async sceneTransitions(): Promise<string[]> {
+		if (!this.connected) return [];
+		const answer = await this.obs.call("GetSceneTransitionList");
+		return (answer.transitions as Array<{ transitionName?: unknown }>).map((t) => String(t.transitionName ?? ""));
+	}
+
+	/** The scene on the program, and on the preview while Studio Mode is on. */
+	async currentScenes(): Promise<{ program: string; preview: string } | undefined> {
+		if (!this.connected) return undefined;
+		try {
+			const program = await this.obs.call("GetCurrentProgramScene");
+			let preview = "";
+			try {
+				preview = String((await this.obs.call("GetCurrentPreviewScene")).currentPreviewSceneName ?? "");
+			} catch {
+				// Studio Mode is off: there is no preview.
+			}
+			return { program: String(program.currentProgramSceneName ?? ""), preview };
+		} catch {
+			return undefined;
+		}
+	}
+
+	/**
+	 * Switches to a scene: the program, or the preview (Studio Mode; the program
+	 * when it is off). A transition named here, and a duration, are set first.
+	 */
+	async switchScene(sceneName: string, toPreview: boolean, transitionName: string, durationMs: number): Promise<void> {
+		if (transitionName) await this.obs.call("SetCurrentSceneTransition", { transitionName });
+		if (durationMs > 0) await this.obs.call("SetCurrentSceneTransitionDuration", { transitionDuration: durationMs });
+		if (toPreview) {
+			const studio = await this.obs.call("GetStudioModeEnabled");
+			if (studio.studioModeEnabled) {
+				await this.obs.call("SetCurrentPreviewScene", { sceneName });
+				return;
+			}
+		}
+		await this.obs.call("SetCurrentProgramScene", { sceneName });
 	}
 
 	/**

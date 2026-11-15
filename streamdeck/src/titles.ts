@@ -121,6 +121,19 @@ export function overlapTitle(press: string | undefined): string {
 	return pressed("Overlap\nIf Fills", press);
 }
 
+/** A Switch Scene key: the scene's name, over two lines if it is long. */
+export function sceneTitle(scene: string | undefined): string {
+	const name = (scene ?? "").trim();
+	if (!name) return "Scene";
+	if (name.length <= 10) return name;
+	const words = name.split(/[\s_-]+/).filter(Boolean);
+	let first = "";
+	while (words.length && (first + " " + words[0]).trim().length <= 10) first = (first + " " + words.shift()).trim();
+	const rest = words.join(" ");
+	if (!first) return name.slice(0, 10) + "\n" + name.slice(10, 20);
+	return rest ? `${first}\n${rest.length > 10 ? rest.slice(0, 9) + "…" : rest}` : first;
+}
+
 export function hookTitle(inputKind: string | undefined): string {
 	return inputKind === "window_capture" ? "Capture\nWindow" : "Capture\nGame";
 }

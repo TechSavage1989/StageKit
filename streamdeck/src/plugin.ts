@@ -2,6 +2,7 @@ import streamDeck from "@elgato/streamdeck";
 
 import { AppSwitch } from "./actions/app-switch.ts";
 import { DockOption } from "./actions/option.ts";
+import { SceneSwitch } from "./actions/scene.ts";
 import { Slide } from "./actions/slide.ts";
 import { BlurAll } from "./actions/blur-all.ts";
 import { FitOverlap } from "./actions/fit-overlap.ts";
@@ -29,6 +30,7 @@ streamDeck.actions.registerAction(new PictureShape());
 streamDeck.actions.registerAction(new Hook());
 streamDeck.actions.registerAction(new AppSwitch());
 streamDeck.actions.registerAction(new FitOverlap());
+streamDeck.actions.registerAction(new SceneSwitch());
 streamDeck.actions.registerAction(new Tool());
 streamDeck.actions.registerAction(new BlurAll());
 streamDeck.actions.registerAction(new DockOption());

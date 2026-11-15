@@ -1556,6 +1556,104 @@
 			"off": "options/slide-centre"
 		},
 		{
+			"id": "options/capture-card",
+			"group": "devices",
+			"label": "capture card",
+			"on": "options/capture-card",
+			"off": "options/capture-card"
+		},
+		{
+			"id": "options/capture-box",
+			"group": "devices",
+			"label": "capture box",
+			"on": "options/capture-box",
+			"off": "options/capture-box"
+		},
+		{
+			"id": "options/hdmi",
+			"group": "devices",
+			"label": "hdmi",
+			"on": "options/hdmi",
+			"off": "options/hdmi"
+		},
+		{
+			"id": "options/console",
+			"group": "devices",
+			"label": "console",
+			"on": "options/console",
+			"off": "options/console"
+		},
+		{
+			"id": "options/webcam",
+			"group": "devices",
+			"label": "webcam",
+			"on": "options/webcam",
+			"off": "options/webcam"
+		},
+		{
+			"id": "options/camcorder",
+			"group": "devices",
+			"label": "camcorder",
+			"on": "options/camcorder",
+			"off": "options/camcorder"
+		},
+		{
+			"id": "options/dslr",
+			"group": "devices",
+			"label": "dslr",
+			"on": "options/dslr",
+			"off": "options/dslr"
+		},
+		{
+			"id": "options/microphone",
+			"group": "devices",
+			"label": "microphone",
+			"on": "options/microphone",
+			"off": "options/microphone"
+		},
+		{
+			"id": "options/phone",
+			"group": "devices",
+			"label": "phone",
+			"on": "options/phone",
+			"off": "options/phone"
+		},
+		{
+			"id": "options/display",
+			"group": "devices",
+			"label": "display",
+			"on": "options/display",
+			"off": "options/display"
+		},
+		{
+			"id": "options/laptop",
+			"group": "devices",
+			"label": "laptop",
+			"on": "options/laptop",
+			"off": "options/laptop"
+		},
+		{
+			"id": "options/browser",
+			"group": "devices",
+			"label": "browser",
+			"on": "options/browser",
+			"off": "options/browser"
+		},
+		{
+			"id": "options/speaker",
+			"group": "devices",
+			"label": "speaker",
+			"on": "options/speaker",
+			"off": "options/speaker"
+		},
+		{
+			"id": "options/scene",
+			"group": "options",
+			"label": "scene",
+			"on": "options/scene-on",
+			"off": "options/scene-off"
+		},
+		{
 			"id": "options/ratio-4x3",
 			"group": "options",
 			"label": "ratio 4:3",

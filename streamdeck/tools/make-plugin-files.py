@@ -17,7 +17,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, "..")
 PLUGIN = os.path.join(ROOT, "com.techsavage1989.stagekit.sdPlugin")
 BASE = "com.techsavage1989.stagekit"
-VERSION = "0.13.0.0"
+VERSION = "0.14.0.0"
 
 # The pack picture each feature's key starts with (its "on" and "off" look).
 PICTURES = {
@@ -236,6 +236,21 @@ def main():
     key_pictures("fitoverlap", "options/overlap-on", "options/overlap-off")
     page("fitoverlap", "StageKit Fit to Space overlap", one_list("Scene") + PRESS)
     add("fitoverlap", "Fit to Space Overlap", "Switches a Fit to Space filter's 'Overlap only when it fills': on, the fitted window goes under the camera only while it fills its space, and beside it otherwise.", "fitoverlap", "imgs/actions/switch/icon", two("fitoverlap"))
+
+    key_pictures("scene", "options/scene-on", "options/scene-off")
+    page(
+        "scene",
+        "StageKit switch scene",
+        one_list("Scene", "getScenes", "scene", "Choose a scene")
+        + options("Switch", "where", "program", [("program", "Program (live)"), ("preview", "Preview (Studio Mode)")])
+        + '		<sdpi-item label="Transition">\n'
+        '			<sdpi-select setting="transition" datasource="getSceneTransitions" default=""></sdpi-select>\n'
+        "		</sdpi-item>\n"
+        '		<sdpi-item label="Duration (ms)">\n'
+        '			<sdpi-textfield setting="lasting" placeholder="As set in OBS" pattern="[0-9]*"></sdpi-textfield>\n'
+        "		</sdpi-item>\n",
+    )
+    add("scene", "Switch Scene", "Switches OBS to a scene, on the program or (Studio Mode) the preview, with a transition if you choose one. Lit while that scene is on.", "scene", "imgs/actions/switch/icon", two("scene"))
 
     key_pictures("toolkey", "plain/tool", None)
     page("tool", "StageKit arrange tool", options("Tool", "tool", "left", tools_list()))

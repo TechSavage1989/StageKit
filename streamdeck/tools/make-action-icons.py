@@ -86,6 +86,9 @@ def blurred(draw_fn, radius=10):
         alpha = alpha.point(lambda v: min(255, int(v * 1.5)))
         layer.putalpha(alpha)
         image.alpha_composite(layer)
+    # (For tools/make-svgs.py, which draws the same as shapes and a blur.)
+    go.inner = draw_fn
+    go.radius = radius
     return go
 
 
@@ -124,6 +127,7 @@ ICONS = {
     "tool": lambda d: (line(d, 0.1, 0.08, 0.1, 0.92), bars(d, 0.2, 0.12, 0.88, [0.7, 0.42, 0.56])),
     "blurall": blurred(lambda d: (ring(d, 0.26, 0.34, 0.16, fill=True), ring(d, 0.74, 0.34, 0.16, fill=True), ring(d, 0.5, 0.72, 0.16, fill=True)), 7),
     "option": lambda d: (box(d, 0.06, 0.28, 0.94, 0.72, r=0.22), ring(d, 0.72, 0.5, 0.15, fill=True)),
+    "scene": lambda d: (box(d, 0.04, 0.12, 0.96, 0.88), box(d, 0.14, 0.26, 0.56, 0.74, r=0.03, fill=True), box(d, 0.64, 0.26, 0.86, 0.46, r=0.03, fill=True), box(d, 0.64, 0.54, 0.86, 0.74, r=0.03, fill=True)),
     "slide": lambda d: (line(d, 0.9, 0.08, 0.9, 0.92), box(d, 0.06, 0.34, 0.34, 0.66, r=0.03, fill=True), arrow(d, 0.42, 0.5, 0.8, 0.5, 0.15)),
 }
 

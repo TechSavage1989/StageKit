@@ -20,6 +20,23 @@ import {
 import { moveTitle, optionTitle, shapeTitle, slideTitle, stepTitle, switchTitle, toolTitle } from "../src/titles.ts";
 import { hotkeyOf, TOOLS } from "../src/tools.ts";
 
+test("a Switch Scene key is called after its scene, over two lines when it is long", async () => {
+	const { sceneTitle } = await import("../src/titles.ts");
+	const { scenePicture } = await import("../src/pictures.ts");
+	assert.equal(sceneTitle(""), "Scene");
+	assert.equal(sceneTitle("Gaming"), "Gaming");
+	assert.equal(sceneTitle("Be Right Back"), "Be Right\nBack");
+	assert.ok(sceneTitle("Game-Component-HD60S-Capture-Scene").split("\n").every((line) => line.length <= 10));
+	assert.equal(scenePicture(undefined).id, "options/scene");
+	assert.notEqual(scenePicture(undefined).on, scenePicture(undefined).off);
+});
+
+test("the devices group offers capture cards and the rest, in every palette", () => {
+	const devices = PICTURES.filter((p) => p.group === "devices").map((p) => p.id);
+	for (const name of ["capture-card", "capture-box", "hdmi", "console", "webcam", "camcorder", "dslr", "microphone"])
+		assert.ok(devices.includes(`options/${name}`), name);
+});
+
 const plugin = new URL("../com.techsavage1989.stagekit.sdPlugin/", import.meta.url);
 
 test("every picture of the pack is there, on and off, in every colour", () => {

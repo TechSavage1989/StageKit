@@ -121,6 +121,37 @@ DRAWINGS = {
     # Slide to Edge: the middle of the free space
     "slide-centre": arrow(6, 18, 24, 18, 4) + arrow(58, 18, 40, 18, 4) + arrow(32, 2, 32, 12, 4) + arrow(32, 34, 32, 24, 4) + [("dot", 32, 18, 3)],
 }
+# Devices and sources, for any key's picture: capture cards inside and out,
+# cameras, consoles and the like (the owner: "an additional set of streamdeck
+# icons available for things like generic capture cards, external capture
+# cards, etc"). Listed in the "devices" group.
+DEVICES = {
+    # A card that goes inside the computer: board, gold fingers, bracket, port.
+    "capture-card": [("frame", 6, 8, 50, 26), ("box", 10, 26, 16, 30), ("box", 19, 26, 25, 30), ("box", 28, 26, 34, 30),
+                     ("line", 55, 4, 55, 32), ("box", 51, 12, 59, 19), ("box", 14, 12, 30, 21)],
+    # A box outside it, with its cable in and out.
+    "capture-box": [("frame", 16, 9, 46, 27), ("dot", 40, 14, 2), ("line", 4, 18, 16, 18), ("line", 46, 18, 54, 18),
+                    ("box", 54, 14, 60, 22), ("line", 21, 22, 34, 22)],
+    "hdmi": [("frame", 18, 10, 46, 24), ("tri", 18, 24, 24, 30, 24, 24), ("tri", 46, 24, 40, 30, 40, 24), ("box", 24, 24, 40, 30),
+             ("line", 32, 2, 32, 10)],
+    "console": [("frame", 8, 12, 56, 28), ("line", 12, 20, 30, 20), ("dot", 48, 20, 2.5), ("line", 4, 30, 60, 30)],
+    "webcam": [("ring", 32, 15, 10), ("dot", 32, 15, 4), ("line", 32, 25, 32, 31), ("line", 22, 32, 42, 32)],
+    "camcorder": [("frame", 8, 10, 40, 28), ("tri", 40, 19, 56, 10, 56, 28), ("dot", 14, 15, 2)],
+    "dslr": [("frame", 10, 10, 54, 31), ("box", 24, 5, 38, 10), ("ring", 32, 20, 7), ("dot", 47, 15, 2)],
+    "microphone": [("frame", 27, 2, 37, 20), ("line", 22, 13, 22, 20), ("line", 42, 13, 42, 20), ("line", 22, 21, 42, 21),
+                   ("line", 32, 21, 32, 30), ("line", 24, 32, 40, 32)],
+    "phone": [("frame", 23, 2, 41, 34), ("line", 29, 6, 35, 6), ("dot", 32, 29, 2)],
+    "display": [("frame", 10, 3, 54, 26), ("line", 32, 26, 32, 31), ("line", 22, 32, 42, 32)],
+    "laptop": [("frame", 14, 5, 50, 24), ("box", 6, 26, 58, 30)],
+    "browser": [("frame", 8, 4, 56, 32), ("box", 8, 4, 56, 11), ("line", 14, 18, 50, 18), ("line", 14, 25, 40, 25)],
+    "speaker": [("box", 12, 13, 21, 23), ("tri", 21, 18, 33, 6, 33, 30), ("line", 38, 13, 42, 9), ("line", 38, 23, 42, 27),
+                ("line", 39, 18, 45, 18)],
+}
+DRAWINGS.update(DEVICES)
+# The Switch Scene key: a scene, its sources laid out in it.
+DRAWINGS["scene"] = [("frame", 6, 3, 58, 33), ("box", 11, 8, 35, 28), ("box", 39, 8, 53, 16), ("box", 39, 20, 53, 28)]
+SWITCHES_EXTRA = ["scene"]
+
 # Aspect ratios: the ratio as a frame of that shape.
 RATIOS = ["4:3", "8:7", "3:2", "10:9", "16:9", "16:10", "5:4", "1:1", "64:49"]
 for ratio in RATIOS:
@@ -132,7 +163,7 @@ for ratio in RATIOS:
 DRAWINGS["ratio-auto"] = [("frame", 6, 4, 58, 32), ("text", "A")]
 
 # The ones that are a filter's key, with an "on" and an "off" look.
-SWITCHES = ["zoom", "fit", "overlap", "source-switcher", "window-switcher", "trigger", "link", "show-hide", "limit", "slide-to-edge", "every-scene", "keep-shape"]
+SWITCHES = ["scene", "zoom", "fit", "overlap", "source-switcher", "window-switcher", "trigger", "link", "show-hide", "limit", "slide-to-edge", "every-scene", "keep-shape"]
 
 
 def drawn(shapes, ink):
@@ -177,7 +208,10 @@ def main():
     stripped = 0
     for palette in palettes:
         for folder, _, files in os.walk(os.path.join(PACK, palette)):
-            if os.path.basename(folder) == "options":
+            # (Not the pictures drawn here, nor the marked copies of
+            # tools/make-state-icons.py: their dot and slash are no words.)
+            parts = os.path.relpath(folder, os.path.join(PACK, palette)).split(os.sep)
+            if parts[0] in ("options", "status"):
                 continue
             for name in files:
                 if not name.endswith(".png"):
@@ -216,7 +250,7 @@ def main():
         pictures.append(
             {
                 "id": "options/" + name,
-                "group": "options",
+                "group": "devices" if name in DEVICES else "options",
                 "label": name.replace("-", " ").replace("ratio ", "ratio ").replace("x", ":") if name.startswith("ratio-") else name.replace("-", " "),
                 "on": f"options/{name}-on" if two else f"options/{name}",
                 "off": f"options/{name}-off" if two else f"options/{name}",
