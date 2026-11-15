@@ -10,6 +10,7 @@ import type { JsonValue } from "@elgato/utils";
 
 import { obs } from "../obs.ts";
 import { file, optionPicture } from "../pictures.ts";
+import { optionTitle } from "../titles.ts";
 import { answerLists, type KeySettings } from "./shared.ts";
 
 /** The dock's switches a key can hold, by the names StageKit's requests use. */
@@ -57,6 +58,7 @@ export class DockOption extends SingletonAction<KeySettings> {
 		await key.setImage(file(picture, true, settings.palette), { state: 1 });
 		const options = await obs.stageKit("GetOptions");
 		await key.setState(options?.[settings.option ?? "snap"] === true ? 1 : 0);
+		await key.setTitle(optionTitle(settings.option, settings.press));
 	}
 
 	private async showAll(): Promise<void> {

@@ -4813,10 +4813,12 @@ int main(int argc, char **argv)
 				// own, which the ready one was made a copy of.)
 				const uint32_t at_once = obs_source_get_width(cap);
 				draw_for(1200);
-				CHECK(ready == 2 && aimed(title, priority) == "ZSculpt.exe" && at_once == 200 &&
-					      opaque(frame),
-				      "with 'Keep the others ready' the other open apps are captured in the background and a switch goes straight to that picture (%lld kept ready, aimed at %s)",
-				      ready, aimed(title, priority).c_str());
+				// (The capture itself is left where it was: aiming it again is
+				// what cost frames at every switch.)
+				const std::string left_at = aimed(title, priority);
+				CHECK(ready == 3 && left_at == "modeller.exe" && at_once == 200 && opaque(frame),
+				      "with the other windows kept captured, every open app has a capture in the background and a switch draws that picture without aiming the capture again (%lld kept, the capture still at %s)",
+				      ready, left_at.c_str());
 			}
 
 			obs_properties_t *props = obs_source_properties(one);

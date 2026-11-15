@@ -36,11 +36,11 @@ from hotkeys, or from the Stream Deck OBS Studio plugin's *Filter* and *Source* 
   shrinks as it fades out. For a change of scene and for single items.
 - **Fit to Space** (scene filter): one capture for every shape. A picture with the screen's shape fills it;
   an emulator's squarer picture floats centred inside a margin.
-- **Capture App in Use** (filter): one Window Capture follows several apps, taking whichever of
+- **Automatic Window Switcher** (filter): one Window Capture follows several apps, taking whichever of
   them you are using.
 - **Auto Capture** (filter): one Game Capture finds whatever game is running, windowed or full-screen,
   with no list of games to keep. Windows only.
-- **Show Source in Use** (scene filter): a scene has a capture for each of several apps, and the one you are
+- **Automatic Source Switcher** (scene filter): a scene has a capture for each of several apps, and the one you are
   using is shown, with a fade. The last one stays while something else is in front, and an earlier
   one comes back when an app closes. Windows only.
 - **Program Trigger** (filter): while a program is open, shows chosen items and switches chosen filters
@@ -314,7 +314,7 @@ file name (PrimeHack is `Dolphin.exe`). The *Program or window* list also offers
 open windows: pick one, shorten it if you like (`primehack` is enough: part of a title will do),
 choose its shape and press the button. When several saved shapes fit a window, the one with the
 longest name is used, so `primehack = 16:9` and `dolphin = 4:3` can sit side by side. In the same way
-Show Source in Use tells two captures of such programs apart by their window titles, and Auto
+Automatic Source Switcher tells two captures of such programs apart by their window titles, and Auto
 Capture's *Never capture* and *Always capture* take part of a title as well as part of a file name.
 
 To set the shape from a Stream Deck, add **Aspect Ratio Preset (StageKit)** next to Auto Frame, once per
@@ -452,7 +452,7 @@ Game Capture, Window Capture or other live source.
 | Picture | *The start image* (the default: the one set in the StageKit Background dock), *An image or video file*, or *Another source* |
 | File / Source | The file or source to show, for those two choices. A video loops, without sound |
 | Picture keeps its shape | On (the default): the picture is shown whole in its own shape. Off: it fills the size the capture last had, with what does not fit cut off |
-| Change with | How the picture gives way to the capture: a fade (the default), a cut, sliding away or wiping in any of four directions, or a zoom and fade. It comes back the same way in reverse |
+| Transition | How the picture gives way to the capture: a fade (the default), a cut, sliding away or wiping in any of four directions, or a zoom and fade. It comes back the same way in reverse |
 | To the capture / Back to the picture | How long each change takes |
 | Easing curve / Easing direction | The motion the change follows |
 | Size glides too | On (the default): the size glides between the two shapes over the same time. Off: the size changes at once |
@@ -460,22 +460,22 @@ Game Capture, Window Capture or other live source.
 When first added it puts itself straight after an Auto Frame if there is one, and otherwise first in
 the list; after that the order is yours.
 
-### Capture App in Use
+### Automatic Window Switcher
 
-One Window Capture for several apps. Add **Capture App in Use (StageKit)** as a filter on a
+One Window Capture for several apps. Add **Automatic Window Switcher (StageKit)** as a filter on a
 *Window Capture* and list the apps it is for. The filter aims that one capture at whichever of them
 you are using, so a scene needs one capture, one set of filters and one Fit to Space instead of a
 capture for each app.
 
 | Setting | What it does |
 | --- | --- |
-| Apps to capture | Open the app, then choose it under *Add an app*: by its program, or by a window's title for two programs with the same file name. Each row has its own remove button |
-| Follow the app in use | Ticked (as it comes): clicking into one of the apps captures it; clicking into anything else changes nothing, so the last one stays. Unticked: an app is captured when it opens and stays until it closes |
-| Apps you switch to | Other apps the capture shows when you say so, such as your browser. *Switch to the next of these* (a button here, a hotkey, a Stream Deck key) takes the next one that is open and holds it whatever app you use; after the last, or with *Back to following the apps*, the apps above are followed again |
-| Keep the others ready | Ticked (as it comes): while the capture is showing, the other open apps on the two lists are captured in the background, so the one you switch to is there at once. Unticked, a switch waits for the capture to find the other window, which saves graphics memory |
-| Change with | How one app's picture gives way to the next: a fade (as it comes), **Morph** (the frame changes shape and size as the one picture turns into the other), a cut, a fade and zoom, or sliding in from any of the four sides |
-| Lasting / Easing | How long that takes, and its curve |
-| Hiding and showing it | *Hide or show it now* hides the capture in every scene it is in, or shows it again, with the transition chosen under it. Also a hotkey and a Stream Deck key |
+| Windows to switch between | Open the app, then choose it under *Add a window*: by its program, or by a window's title for two programs with the same file name. Each row has its own remove button |
+| Switch to the active window | Ticked (as it comes): clicking into one of the apps captures it; clicking into anything else changes nothing, so the last one stays. Unticked: an app is captured when it opens and stays until it closes |
+| Manual windows | Other apps the capture shows when you say so, such as your browser. *Switch to next manual window* (a button here, a hotkey, a Stream Deck key) takes the next one that is open and holds it whatever app you use; after the last, or with *Return to automatic*, the apps above are followed again |
+| Keep other windows captured | Ticked (as it comes): while the capture is showing, the other open apps on the two lists are captured in the background, so the one you switch to is there at once. Unticked, a switch waits for the capture to find the other window, which saves graphics memory |
+| Transition | How one app's picture gives way to the next: a fade (as it comes), **Morph** (the frame changes shape and size as the one picture turns into the other), a cut, a fade and zoom, or sliding in from any of the four sides |
+| Duration / Easing | How long that takes, and its curve |
+| Show/Hide transition | *Hide or show it now* hides the capture in every scene it is in, or shows it again, with the transition chosen under it. Also a hotkey and a Stream Deck key |
 
 - An app on the list that opens is captured. When the app being captured closes, the one you used
   before it comes back.
@@ -485,31 +485,31 @@ capture for each app.
   none of the apps is open.
 - Three hotkeys under the capture in *Settings → Hotkeys*, named after the filter: *next app
   switched to by hand*, *back to following the apps*, *hide or show the capture*. The Stream Deck
-  *Next Manual Capture* key presses any of the three.
-- To hold a window that is on neither list, press the Stream Deck *Capture Front Window* key on
-  it. The filter takes the window, changes over to it with your *Change with*, holds it, and adds
-  its program to *Apps you switch to*. *Next Manual Capture* then goes back to your apps, and on
+  *Manual Window / Source* key presses any of the three.
+- To hold a window that is on neither list, press the Stream Deck *Capture Active Window* key on
+  it. The filter takes the window, changes over to it with your *Transition*, holds it, and adds
+  its program to *Manual windows*. *Manual Window / Source* then goes back to your apps, and on
   the next press back to that window.
-- The capture's size glides from the one window's to the other's with every *Change with* but a
+- The capture's size glides from the one window's to the other's with every *Transition* but a
   cut. *Morph* stretches both pictures over the gliding frame; the others keep each picture's own
   shape inside it.
 - It keeps itself before a Standby Picture and an Auto Frame in the capture's filter list.
 - Windows only, like the other capture tools.
 
-For a capture per app in one scene, each with its own filters, Show Source in Use below is still
+For a capture per app in one scene, each with its own filters, Automatic Source Switcher below is still
 there.
 
-### Show Source in Use
+### Automatic Source Switcher
 
 For a scene that shows whichever app you are working in. Give the scene a Window Capture for each app
-(Blender, ZBrush, a browser, and so on), then add **Show Source in Use (StageKit)** as a filter on the *scene*
+(Blender, ZBrush, a browser, and so on), then add **Automatic Source Switcher (StageKit)** as a filter on the *scene*
 and add those captures to its list. Windows only.
 
 Which app a capture belongs to is read from the capture itself, so there is nothing to type. From then
 on one of the listed captures is shown at a time:
 
 - **An app that opens is shown.** So is a capture you aim at another window in its own settings.
-- **Clicking into one of the apps shows it** (*Follow the app in use*, on to begin with). With two of
+- **Clicking into one of the apps shows it** (*Switch to the active window*, on to begin with). With two of
   them open, the capture follows you from one to the other.
 - **Clicking into anything else changes nothing.** The last app stays captured while OBS, a chat
   window or anything not on the list is in front.
@@ -518,15 +518,15 @@ on one of the listed captures is shown at a time:
 
 | Setting | What it does |
 | --- | --- |
-| Captures to switch between | The scene's captures, one per app. Choose to add; each row has its own remove button. The first is the standby |
-| Captures you switch to | Other captures in the scene that you show yourself, such as a Window Capture of your browser. Show one and it takes over and stays, whatever app you use; hide it and the captures above follow your apps again. Showing one hides any other on this list |
-| Follow the app in use | On: the app you click into is shown. Off: an app is shown when it opens and stays until it closes |
-| Change with | How one capture gives way to the next: a fade (the default), any other transition OBS has, a cut, or whatever is already set on each item. With *Morph (StageKit)* the capture you leave moves, resizes and changes into the one you go to (see [Morph between items](#morph-between-items)). It sets OBS's own show and hide transition on each listed item |
-| Lasting | How long the change takes |
-| Keep the others ready | While the scene is showing, the captures of the other open apps keep running, so the one you switch to has its picture at once |
+| Sources to switch between | The scene's captures, one per app. Choose to add; each row has its own remove button. The first is the standby |
+| Manual sources | Other captures in the scene that you show yourself, such as a Window Capture of your browser. Show one and it takes over and stays, whatever app you use; hide it and the captures above follow your apps again. Showing one hides any other on this list |
+| Switch to the active window | On: the app you click into is shown. Off: an app is shown when it opens and stays until it closes |
+| Transition | How one capture gives way to the next: a fade (the default), any other transition OBS has, a cut, or whatever is already set on each item. With *Morph (StageKit)* the capture you leave moves, resizes and changes into the one you go to (see [Morph between items](#morph-between-items)). It sets OBS's own show and hide transition on each listed item |
+| Duration | How long the change takes |
+| Keep other windows captured | While the scene is showing, the captures of the other open apps keep running, so the one you switch to has its picture at once |
 
 **Switching to a window by hand.** Add a Window Capture for the window you want (a browser, say), add
-it to *Captures you switch to*, and hide it. Then:
+it to *Manual sources*, and hide it. Then:
 
 - **A Stream Deck key** set to show and hide that source in the scene (Elgato's OBS *Source* key)
   switches to it and back. OBS's own *Show* and *Hide* hotkeys for the item do the same.
@@ -550,7 +550,7 @@ any *source* to switch that source's other filters. Windows only.
    decides. Choose whether it counts when it has a window open or only when that window is in front.
 2. **Show and switch on**: pick items and filters and add them to the lists. *Do the opposite* hides and
    switches off while the program is here instead.
-3. **Change with** and **Lasting**: how the items appear and disappear. A fade to begin with; any other
+3. **Transition** and **Duration**: how the items appear and disappear. A fade to begin with; any other
    transition OBS has, a cut, or whatever is set on each item.
 
 While the program is here the items are shown and the filters are on; when it goes they are hidden and
@@ -783,8 +783,8 @@ off, and the sources are shown or hidden to match.
 | Scenes | The scenes to act in, when you chose to list them |
 | When this is on | *They are shown* (off hides them) or *They are hidden* (off shows them) |
 | Bring-along items too | Ticked: the items those sources bring along are shown and hidden with them. They are the items chosen under *Bring along* in the sources' Move Source keys, and in Move Scene Item filters that move them |
-| Show with / Lasting | How each item appears: a fade (the default), any other transition OBS has, a cut, or whatever is already set on the item; and for how long. Under it come that transition's own settings, such as the way a slide goes. *Morph (StageKit)* and *Fade and Zoom (StageKit)* are on the list too (see [Morph between items](#morph-between-items) and [Fade and Zoom](#fade-and-zoom-transition)). A Slide and a Swipe have one more direction, *Off the nearest edge*: each item goes towards whichever edge of the screen it is nearest to when it hides, and comes in from that side when it shows |
-| Hide with / Lasting | How each item disappears: *The same as showing* (the default), or a transition of its own with its own settings, so an item can slide down into view and slide up out of it |
+| Show transition / Duration | How each item appears: a fade (the default), any other transition OBS has, a cut, or whatever is already set on the item; and for how long. Under it come that transition's own settings, such as the way a slide goes. *Morph (StageKit)* and *Fade and Zoom (StageKit)* are on the list too (see [Morph between items](#morph-between-items) and [Fade and Zoom](#fade-and-zoom-transition)). A Slide and a Swipe have one more direction, *Off the nearest edge*: each item goes towards whichever edge of the screen it is nearest to when it hides, and comes in from that side when it shows |
+| Hide transition / Duration | How each item disappears: *The same as showing* (the default), or a transition of its own with its own settings, so an item can slide down into view and slide up out of it |
 | Settings for | With sources on the list: *All sources (the usual)*, or one of the listed sources. Choose a source and the controls below are that source's own: it can show and hide with another transition, another duration and other settings than the rest, or be left *As for all sources* |
 | Link this source / With this source / Add this link / Linked sources | Shown while *Morph (StageKit)* is chosen above: two sources that change into each other when one is hidden as the other is shown. See [Morph between items](#morph-between-items) |
 | Do it now | Shows or hides them to match how the filter is switched now |
@@ -805,8 +805,8 @@ Add **Link Visibility (StageKit)** as a filter on a *scene*, once per set of ite
 
 With *Show only one at a time*, showing one item hides the others in the set. With *Show and hide
 together*, showing or hiding one does the same to the rest. It follows whatever shows or hides an item:
-the eye icon, a Stream Deck *Source* key, a hotkey. Switch the filter off to pause it. *Change with*
-and *Lasting* choose how the items it shows and hides appear and disappear: a fade to begin with, any
+the eye icon, a Stream Deck *Source* key, a hotkey. Switch the filter off to pause it. *Transition*
+and *Duration* choose how the items it shows and hides appear and disappear: a fade to begin with, any
 other transition OBS has, a cut, or whatever is set on each item.
 
 **Also in other scenes** reaches past the filter's own scene. Add sources to that list (the same
@@ -876,8 +876,8 @@ the one moves, resizes and turns into the other, instead of each fading where it
 
 It happens whenever both items have **Morph (StageKit)** as their way of going and coming:
 
-- in a StageKit filter that shows and hides items (Show Source in Use, Show in Scenes, Program
-  Trigger, Link Visibility), choose *Morph (StageKit)* under *Change with* or *Show with*;
+- in a StageKit filter that shows and hides items (Automatic Source Switcher, Show in Scenes, Program
+  Trigger, Link Visibility), choose *Morph (StageKit)* under *Transition* or *Show transition*;
 - or set it on the items yourself: right-click an item, *Show Transition* and *Hide Transition*.
 
 Who hides and shows them does not matter: one filter, two filters, two Stream Deck keys in one
@@ -888,7 +888,7 @@ Which two go together follows the Morph transition's rules:
 - **Linked sources** first: every link made in any Morph's settings counts, the ones under *Scene
   Transitions* and the ones made in a Show in Scenes filter. Links carry through one another.
 - Then **the main picture**: the largest item hidden and the largest item shown, when each covers
-  at least 15 % of the screen. That is what pairs two captures in Show Source in Use with no link
+  at least 15 % of the screen. That is what pairs two captures in Automatic Source Switcher with no link
   at all. Untick *Morph the main picture* to have only linked sources change into each other.
 
 An item with nothing to change into fades by itself, or fades and zooms if *With nothing to change
@@ -911,7 +911,7 @@ Things to know:
 
 A transition for single items and for scenes: **Fade and Zoom (StageKit)**.
 
-- For an item, choose it under *Change with* or *Show with* in a StageKit filter, or as the item's
+- For an item, choose it under *Transition* or *Show transition* in a StageKit filter, or as the item's
   own *Show Transition* or *Hide Transition*. The item grows to its size as it fades in, and shrinks
   as it fades out.
 - For a change of scene, add it with the plus in *Scene Transitions*. The scene you leave stays as it
@@ -958,20 +958,25 @@ connection, and it reconnects by itself when OBS is started later.
 There is one key for each feature, under **StageKit** in Stream Deck's list. Each has one list to
 choose from, holding only what that key is for.
 
+Key pictures carry no words: each key sets its own title from what it does and the options you
+choose (*Manual / Auto*, *Blur Off*, *Slide Up Left*), and a title you type in Stream Deck takes its
+place. Left on *Automatic*, a key's picture is the one for its filter and its options; every
+option has one.
+
 | Key | What it does |
 | --- | --- |
-| **Blur**, **Shadow, Glow & Outline**, **Corners & Edges**, **Zoom**, **Auto Capture**, **Auto Frame**, **Standby Picture**, **Show in Scenes**, **Fit to Space**, **Show Source in Use**, **Capture App in Use**, **Program Trigger**, **Link Visibility**, **Show/Hide Animation** | Switches that feature on a source (or scene) on and off, and the key shows which way it is, also when it is switched some other way. *On press* can be *Toggle*, *Switch on* or *Switch off* |
+| **Blur**, **Shadow, Glow & Outline**, **Corners & Edges**, **Zoom**, **Auto Capture**, **Auto Frame**, **Standby Picture**, **Show in Scenes**, **Fit to Space**, **Automatic Source Switcher**, **Automatic Window Switcher**, **Program Trigger**, **Link Visibility**, **Show/Hide Animation** | Switches that feature on a source (or scene) on and off, and the key shows which way it is, also when it is switched some other way. *On press* can be *Toggle*, *Switch on* or *Switch off* |
 | **Move Source**, **Move Scene Item**, **Apply Layout** | Runs that move. A tick shows on the key when OBS has taken it |
 | **Set Aspect Ratio** | Sets a game's aspect ratio by hand, for when Auto Frame's own reading is not what you want: 4:3, 8:7, 3:2, 10:9, 16:9 and more, or *Automatic* to hand it back. *Keep ratio*: *This game only* (the shape lasts while that game is captured and goes back to automatic when it ends; set before the game starts, it waits for it) or *Until changed*. The key shows its ratio |
-| **Capture Front Window** | Makes a Game Capture or a Window Capture take whatever window or game is in front when you press it. *Change with* and *Lasting* choose how the capture changes over: a fade (as it comes), a cut, or any other transition OBS has. An Auto Capture on that capture is switched off so it stays where you put it; the **Auto Capture** key, set to *Switches it on*, hands it back |
-| **Next Manual Capture** | Also for a Window Capture with a Capture App in Use filter: the next of its *Apps you switch to*, back to following the apps, or the capture hidden and shown. For a scene with a Show Source in Use filter: shows the next of its *Captures you switch to*, or goes back to following the apps |
+| **Capture Active Window** | Makes a Game Capture or a Window Capture take whatever window or game is in front when you press it. *Transition* and *Duration* choose how the capture changes over: a fade (as it comes), a cut, or any other transition OBS has. An Auto Capture on that capture is switched off so it stays where you put it; the **Auto Capture** key, set to *Switches it on*, hands it back |
+| **Manual Window / Source** | Also for a Window Capture with a Automatic Window Switcher filter: the next of its *Manual windows*, back to following the apps, or the capture hidden and shown. For a scene with a Automatic Source Switcher filter: shows the next of its *Manual sources*, or goes back to following the apps |
 | **Arrange tool** | One of the dock's arrange tools on a key: line up an edge or centre, space out evenly, snap, make the same width, height or size, or copy a transform to all or to the chosen scenes. It works on the items selected in OBS's preview |
 | **Dock Option** | One of the dock's switches on a key: *Snap on release*, *Guides*, *Stop resizing at edges*, *Slide to the next edge*, *In every scene* or *Keep shape*. It shows which way the switch is, also when you change it in the dock |
 | **Slide to Edge** | Slides the item selected in OBS left, right, up, down or cornerwise to the next edge, or centres it in the free space, with the dock's edge distance and timing. The next press passes that edge |
 | **Blur All** | Switches every Blur on, and the next press switches them all off. It shows on while any is on |
 
 A key that cannot reach OBS, or whose target is gone, shows Stream Deck's yellow warning triangle when
-pressed. *Set Aspect Ratio* and *Capture Front Window* need StageKit 0.1.0-beta84 or later in OBS; *Dock Option* and *Slide to Edge* need 0.1.0-beta85. Keys made with
+pressed. *Set Aspect Ratio* and *Capture Active Window* need StageKit 0.1.0-beta84 or later in OBS; *Dock Option* and *Slide to Edge* need 0.1.0-beta85. Keys made with
 the first versions' *Filter switch* and *Move* keep working; those two are no longer in the list.
 
 **Pictures.** The keys use the StageKit icon pack. Left on *Automatic*, a key takes the picture that

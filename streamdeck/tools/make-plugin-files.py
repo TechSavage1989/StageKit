@@ -30,6 +30,14 @@ PICTURES = {
     "stagekit_show_in_scenes": ("filters/show-in-scenes-on", "filters/show-in-scenes-off"),
     "stagekit_send_to": ("camera/camera-top-right", None),
     "stagekit_place_item": ("camera/camera-centre", None),
+    "stagekit_ramp_zoom": ("options/zoom-on", "options/zoom-off"),
+    "stagekit_fit_item": ("options/fit-on", "options/fit-off"),
+    "stagekit_active_app": ("options/source-switcher-on", "options/source-switcher-off"),
+    "stagekit_app_capture": ("options/window-switcher-on", "options/window-switcher-off"),
+    "stagekit_program_trigger": ("options/trigger-on", "options/trigger-off"),
+    "stagekit_visibility_link": ("options/link-on", "options/link-off"),
+    "stagekit_show_hide": ("options/show-hide-on", "options/show-hide-off"),
+    "stagekit_layout": ("options/layout", None),
 }
 
 PICTURE_AND_PALETTE = """		<sdpi-item label="Picture">
@@ -196,22 +204,22 @@ def main():
         "hook",
         "StageKit hook capture",
         one_list("Capture", "getCaptures", "source", "Choose a capture")
-        + '		<sdpi-item label="Change with">\n'
+        + '		<sdpi-item label="Transition">\n'
         '			<sdpi-select setting="transition" datasource="getTransitions" default="fade_transition"></sdpi-select>\n'
         "		</sdpi-item>\n"
-        '		<sdpi-item label="Lasting (ms)">\n'
+        '		<sdpi-item label="Duration (ms)">\n'
         '			<sdpi-textfield setting="lasting" placeholder="300" pattern="[0-9]*"></sdpi-textfield>\n'
         "		</sdpi-item>\n",
     )
-    add("hook", "Capture Front Window", "Makes a Game Capture or a Window Capture take the window or game that is in front right now.", "hook", "imgs/actions/hook/icon", one("hookgame"))
+    add("hook", "Capture Active Window", "Makes a Game Capture or a Window Capture take the active window or game. An Automatic Window Switcher on it holds that window as its manual window.", "hook", "imgs/actions/hook/icon", one("hookgame"))
 
-    key_pictures("appswitch", "filters/next-capture", None)
+    key_pictures("appswitch", "options/toggle", None)
     page(
         "appswitch",
         "StageKit next manual capture",
-        one_list("Scene or capture") + options("On press", "step", "next", [("toggle", "Toggle manual / automatic"), ("next", "Next capture or app"), ("back", "Back to automatic"), ("hide", "Hide or show the capture")]),
+        one_list("Scene or capture") + options("On press", "step", "next", [("toggle", "Toggle manual / automatic"), ("next", "Next manual window or source"), ("back", "Return to automatic"), ("hide", "Hide or show the capture")]),
     )
-    add("appswitch", "Next Manual Capture", "For Show Source in Use and Capture App in Use: the next capture or app switched to by hand, back to following the apps, or the capture hidden and shown.", "appswitch", "imgs/actions/move/icon", one("appswitch"))
+    add("appswitch", "Manual Window / Source", "For an Automatic Window Switcher or an Automatic Source Switcher: toggles between the manual window and automatic, steps to the next manual one, returns to automatic, or hides and shows the capture.", "appswitch", "imgs/actions/move/icon", one("appswitch"))
 
     key_pictures("toolkey", "plain/tool", None)
     page("tool", "StageKit arrange tool", options("Tool", "tool", "left", tools_list()))

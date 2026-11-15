@@ -202,10 +202,10 @@
 			]
 		},
 		{
-			"Name": "Show Source in Use",
+			"Name": "Automatic Source Switcher",
 			"UUID": "com.techsavage1989.stagekit.activeapp",
 			"Icon": "imgs/actions/switch/icon",
-			"Tooltip": "Switches showing the capture of the app in use on and off.",
+			"Tooltip": "Switches a scene's automatic switching between sources on and off.",
 			"PropertyInspectorPath": "ui/activeapp.html",
 			"Controllers": [
 				"Keypad"
@@ -224,10 +224,10 @@
 			]
 		},
 		{
-			"Name": "Capture App in Use",
+			"Name": "Automatic Window Switcher",
 			"UUID": "com.techsavage1989.stagekit.appcapture",
 			"Icon": "imgs/actions/switch/icon",
-			"Tooltip": "Switches one Window Capture's following of your apps on and off. On hands a hooked capture back to it.",
+			"Tooltip": "Switches a Window Capture's automatic switching between windows on and off.",
 			"PropertyInspectorPath": "ui/appcapture.html",
 			"Controllers": [
 				"Keypad"
@@ -376,10 +376,10 @@
 			]
 		},
 		{
-			"Name": "Capture Front Window",
+			"Name": "Capture Active Window",
 			"UUID": "com.techsavage1989.stagekit.hook",
 			"Icon": "imgs/actions/hook/icon",
-			"Tooltip": "Makes a Game Capture or a Window Capture take the window or game that is in front right now.",
+			"Tooltip": "Makes a Game Capture or a Window Capture take the active window or game. An Automatic Window Switcher on it holds that window as its manual window.",
 			"PropertyInspectorPath": "ui/hook.html",
 			"Controllers": [
 				"Keypad"
@@ -392,10 +392,10 @@
 			]
 		},
 		{
-			"Name": "Next Manual Capture",
+			"Name": "Manual Window / Source",
 			"UUID": "com.techsavage1989.stagekit.appswitch",
 			"Icon": "imgs/actions/move/icon",
-			"Tooltip": "For Show Source in Use and Capture App in Use: the next capture or app switched to by hand, back to following the apps, or the capture hidden and shown.",
+			"Tooltip": "For an Automatic Window Switcher or an Automatic Source Switcher: toggles between the manual window and automatic, steps to the next manual one, returns to automatic, or hides and shows the capture.",
 			"PropertyInspectorPath": "ui/appswitch.html",
 			"Controllers": [
 				"Keypad"

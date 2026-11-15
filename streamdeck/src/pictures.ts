@@ -31,6 +31,15 @@ const PLAIN: Record<string, string> = {
 	stagekit_auto_frame: "filters/auto-frame",
 	stagekit_show_in_scenes: "filters/show-in-scenes",
 	stagekit_standby: "filters/standby-picture",
+	// Drawn for the kinds the pack has no picture of (tools/make-option-icons.py).
+	stagekit_ramp_zoom: "options/zoom",
+	stagekit_fit_item: "options/fit",
+	stagekit_active_app: "options/source-switcher",
+	stagekit_app_capture: "options/window-switcher",
+	stagekit_program_trigger: "options/trigger",
+	stagekit_visibility_link: "options/link",
+	stagekit_show_hide: "options/show-hide",
+	stagekit_layout: "options/layout",
 };
 
 type Settings = Record<string, unknown>;
@@ -67,7 +76,7 @@ export function automatic(kind: string, settings: Settings = {}): Picture | unde
 		// One of the nine places on the screen (top right is where a new one
 		// starts); a saved spot has no picture of its own.
 		const place = PLACES[whole(settings, "destination", 2)];
-		id = place ? `camera/camera-${place}` : "";
+		id = place ? `camera/camera-${place}` : "options/spot";
 	}
 	return id ? BY_ID.get(id) : undefined;
 }
@@ -88,6 +97,17 @@ const TOOLS: Record<string, string> = {
 	same_everywhere: "tools/copy-transform-all",
 	same_chosen: "tools/copy-transform-chosen",
 	snap_now: "tools/snap",
+	left: "options/align-left",
+	center: "options/align-center",
+	right: "options/align-right",
+	top: "options/align-top",
+	middle: "options/align-middle",
+	bottom: "options/align-bottom",
+	space_across: "options/space-across",
+	space_down: "options/space-down",
+	same_width: "options/same-width",
+	same_height: "options/same-height",
+	same_size: "options/same-size",
 };
 
 export function toolPicture(chosen: string | undefined, tool: string | undefined): Picture {
@@ -95,14 +115,41 @@ export function toolPicture(chosen: string | undefined, tool: string | undefined
 }
 
 /** The dock's switches the pack has a picture of. */
-const OPTION_PICTURES: Record<string, string> = { snap: "tools/snap", guides: "tools/guides" };
+const OPTION_PICTURES: Record<string, string> = {
+	snap: "tools/snap",
+	guides: "tools/guides",
+	limit: "options/limit",
+	slide: "options/slide-to-edge",
+	everyScene: "options/every-scene",
+	keepShape: "options/keep-shape",
+};
 
 export function optionPicture(chosen: string | undefined, option: string | undefined): Picture {
 	return (chosen && BY_ID.get(chosen)) || BY_ID.get(OPTION_PICTURES[option ?? "snap"] ?? "") || plain("switch");
 }
 
 export function slidePicture(chosen: string | undefined, direction: string | undefined): Picture {
-	return (chosen && BY_ID.get(chosen)) || BY_ID.get(`tools/slide-${direction ?? "left"}`) || plain("move");
+	const fits = direction === "centre" ? "options/slide-centre" : `tools/slide-${direction ?? "left"}`;
+	return (chosen && BY_ID.get(chosen)) || BY_ID.get(fits) || plain("move");
+}
+
+/** A Manual Window / Source key's picture: one for each thing it can do. */
+export function stepPicture(chosen: string | undefined, step: string | undefined): Picture {
+	const fits =
+		step === "toggle"
+			? "options/toggle"
+			: step === "hide"
+				? "options/hide"
+				: step === "back"
+					? "filters/back-to-apps"
+					: "filters/next-capture";
+	return (chosen && BY_ID.get(chosen)) || BY_ID.get(fits) || plain("move");
+}
+
+/** A Set Aspect Ratio key's picture: a frame of that shape. */
+export function shapePicture(chosen: string | undefined, shape: string | undefined): Picture {
+	const fits = `options/ratio-${shape && shape !== "auto" ? shape.replace(":", "x") : "auto"}`;
+	return (chosen && BY_ID.get(chosen)) || BY_ID.get(fits) || plain("switch");
 }
 
 /** The picture a key was given by name, or the one that fits its filter. */

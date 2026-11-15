@@ -10,7 +10,8 @@ import type { JsonValue } from "@elgato/utils";
 
 import { targetOf } from "../kinds.ts";
 import { obs } from "../obs.ts";
-import { file, PICTURES, plain } from "../pictures.ts";
+import { file, stepPicture } from "../pictures.ts";
+import { stepTitle } from "../titles.ts";
 import { answerLists, type KeySettings } from "./shared.ts";
 
 /**
@@ -52,10 +53,8 @@ export class AppSwitch extends SingletonAction<KeySettings> {
 			.then((settings) => answerLists(ev.payload, settings, (kind) => kind === "stagekit_active_app" || kind === "stagekit_app_capture"));
 	}
 
-	private show(key: KeyAction<KeySettings>, settings: KeySettings): Promise<void> {
-		const fits = settings.step === "back" ? "filters/back-to-apps" : "filters/next-capture";
-		const picture =
-			PICTURES.find((p) => p.id === settings.picture) ?? PICTURES.find((p) => p.id === fits) ?? plain("move");
-		return key.setImage(file(picture, true, settings.palette));
+	private async show(key: KeyAction<KeySettings>, settings: KeySettings): Promise<void> {
+		await key.setImage(file(stepPicture(settings.picture, settings.step), true, settings.palette));
+		await key.setTitle(stepTitle(settings.step));
 	}
 }
