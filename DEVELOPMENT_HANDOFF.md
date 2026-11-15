@@ -220,7 +220,9 @@ information), which is what the template uses for pushes to `main`.
 - Found: sizes in screen pixels go by how big the item is drawn (`shown_scale`), which skipped
   hidden items. Fixed there; see AGENTS.md. A test hides an item and looks at its corners; it
   fails on beta113's code and passes now.
-- **Not confirmed by the owner yet.**
+- The owner after installing it (2026-11-15): "much better". Not said: whether the thickness is
+  now the same all the way, or whether the fitted items move once. Take it as improved, not as
+  proven perfect; do not repeat the two checks as open requests.
 - Still so: the scale is looked up every 20 ticks, so an item that is a different size in the
   scene switched to gets its new thickness up to a third of a second into that scene (README,
   Morph's *Things to know*). Not what was reported here.
