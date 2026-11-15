@@ -486,9 +486,13 @@ capture for each app.
 - Three hotkeys under the capture in *Settings → Hotkeys*, named after the filter: *next app
   switched to by hand*, *back to following the apps*, *hide or show the capture*. The Stream Deck
   *Next Manual Capture* key presses any of the three.
-- To hold a window that is on neither list, aim the capture at it by hand: the Stream Deck
-  *Capture Front Window* key switches this filter off as it does so, and switching the filter on
-  again (its own key, or the eye next to it) hands the capture back to your apps.
+- To hold a window that is on neither list, press the Stream Deck *Capture Front Window* key on
+  it. The filter takes the window, changes over to it with your *Change with*, holds it, and adds
+  its program to *Apps you switch to*. *Next Manual Capture* then goes back to your apps, and on
+  the next press back to that window.
+- The capture's size glides from the one window's to the other's with every *Change with* but a
+  cut. *Morph* stretches both pictures over the gliding frame; the others keep each picture's own
+  shape inside it.
 - It keeps itself before a Standby Picture and an Auto Frame in the capture's filter list.
 - Windows only, like the other capture tools.
 

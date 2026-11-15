@@ -246,6 +246,16 @@ public:
 			},
 			this);
 		proc_handler_add(
+			obs_source_get_proc_handler(source_), "void hold(in string title, in string executable)",
+			[](void *data, calldata_t *cd) {
+				OpenWindow window;
+				window.title = calldata_string(cd, "title") ? calldata_string(cd, "title") : "";
+				window.executable =
+					calldata_string(cd, "executable") ? calldata_string(cd, "executable") : "";
+				static_cast<AppCapture *>(data)->hold(window);
+			},
+			this);
+		proc_handler_add(
 			obs_source_get_proc_handler(source_), "void ready_count(out int count)",
 			[](void *data, calldata_t *cd) {
 				auto *self = static_cast<AppCapture *>(data);
@@ -301,6 +311,17 @@ public:
 		timer_ = 0.0;
 	}
 
+	// A window picked by hand (the Capture Front Window key): it is held like
+	// an app switched to, and its program joins that list so that it can be
+	// gone back to.
+	void hold(const OpenWindow &window)
+	{
+		std::lock_guard lock(mutex_);
+		hold_window_ = window;
+		have_hold_ = true;
+		timer_ = 0.0;
+	}
+
 	// The app held by hand, if any.
 	std::string held()
 	{
@@ -326,9 +347,10 @@ public:
 		if (phase_ == Phase::Mix) {
 			if (!live || !kept)
 				return live ? live : kept;
-			if (style_ != Style::Morph)
+			if (style_ == Style::Cut)
 				return live;
-			// A morph: its size is on the way too.
+			// Its size is on the way too, whatever comes in over it: a size
+			// that jumped at the start made the item jump on screen.
 			const double t = std::clamp(ease(curve_, mode_, mix_), 0.0, 1.0);
 			return (uint32_t)std::lround(kept + ((double)live - kept) * t);
 		}
@@ -452,6 +474,9 @@ private:
 	std::vector<OpenWindow> test_windows_;
 	bool use_test_windows_ = false;
 	bool cmd_step_ = false, cmd_back_ = false, cmd_hide_ = false;
+	OpenWindow hold_window_; // handed over by hand, to be taken at the next look
+	bool have_hold_ = false;
+	std::string last_held_; // the app last held by hand: the first to go back to
 	double order_check_ = 10.0;
 	std::vector<Ready> ready_;
 	obs_hotkey_id hotkeys_[3] = {OBS_INVALID_HOTKEY_ID, OBS_INVALID_HOTKEY_ID, OBS_INVALID_HOTKEY_ID};
@@ -613,8 +638,9 @@ void AppCapture::follow(obs_source_t *parent)
 {
 	std::vector<std::string> apps, by_hand, recent, was_open;
 	std::vector<OpenWindow> windows;
-	std::string current, held;
-	bool follow, use_test, first, ready, step, back;
+	std::string current, held, last_held;
+	OpenWindow picked;
+	bool follow, use_test, first, ready, step, back, have_picked = false;
 	{
 		std::lock_guard lock(mutex_);
 		apps = apps_;
@@ -628,11 +654,35 @@ void AppCapture::follow(obs_source_t *parent)
 		started_ = true;
 		current = current_;
 		held = held_;
+		last_held = last_held_;
 		recent = recent_;
 		was_open = was_open_;
 		step = cmd_step_;
 		back = cmd_back_;
 		cmd_step_ = cmd_back_ = false;
+		if (have_hold_) {
+			picked = hold_window_;
+			have_picked = true;
+			have_hold_ = false;
+		}
+	}
+	if (have_picked && !picked.executable.empty()) {
+		// Its program goes on the list of apps switched to, if it is not there.
+		const std::string entry = picked.executable;
+		if (std::none_of(by_hand.begin(), by_hand.end(),
+				 [&](const std::string &e) { return lowered(e) == lowered(entry); })) {
+			by_hand.push_back(entry);
+			obs_data_t *settings = obs_source_get_settings(source_);
+			pick_list_write(settings, "by_hand", false, by_hand);
+			obs_data_release(settings);
+		}
+		{
+			std::lock_guard lock(mutex_);
+			by_hand_ = by_hand;
+			held_ = last_held_ = entry;
+		}
+		aim(parent, picked, entry, false, false);
+		return;
 	}
 #ifndef _WIN32
 	// Nothing to go by on other systems.
@@ -673,7 +723,11 @@ void AppCapture::follow(obs_source_t *parent)
 
 	// The other open apps' captures keep running while this one is on
 	// show, so whichever is switched to has its picture at once.
-	auto ready_for = [&](const std::string &but) {
+	auto ready_for = [&](const std::string &current_entry) {
+		// (The one being captured needs none, except while its ready
+		// capture is still what is drawn: stopped then, as it was up to
+		// beta117, its picture dropped out in the middle of the change.)
+		const std::string but = holding() ? std::string() : current_entry;
 		std::vector<std::pair<std::string, const OpenWindow *>> wanted;
 		if (ready && obs_source_showing(parent)) {
 			for (size_t i = 0; i < apps.size(); i++)
@@ -706,14 +760,19 @@ void AppCapture::follow(obs_source_t *parent)
 			if (by_hand[i] == held)
 				from = i + 1;
 		int next = -1;
+		// From following the apps: the one held last, so that one press
+		// goes back to it; else the first that is open.
+		for (size_t i = 0; held.empty() && i < by_hand.size(); i++)
+			if (by_hand[i] == last_held && hand[i].window)
+				next = (int)i;
 		for (size_t i = held.empty() ? 0 : from; i < by_hand.size() && next < 0; i++)
-			if (hand[i].window)
+			if (hand[i].window && (held.empty() || by_hand[i] != last_held || i >= from))
 				next = (int)i;
 		if (next >= 0) {
 			held = by_hand[(size_t)next];
 			{
 				std::lock_guard lock(mutex_);
-				held_ = held;
+				held_ = last_held_ = held;
 			}
 			aim(parent, *hand[(size_t)next].window, held, hand[(size_t)next].how == 1, false);
 			current = held;
@@ -1013,37 +1072,50 @@ void AppCapture::render()
 	} else {
 		const double t = std::clamp(ease(curve, mode, mix), 0.0, 1.0);
 		gs_texture_t *next = gs_texrender_get_texture(next_);
+		// The frame's size is on the way from the one picture's to the
+		// other's (a cut apart).
+		const bool glides = style != Style::Cut && kw && kh;
+		const double w = glides ? kw + ((double)bw - kw) * t : bw, h = glides ? kh + ((double)bh - kh) * t : bh;
 		if (style == Style::Morph && kw && kh) {
-			// Both on a frame whose size is on the way from the one to the other.
-			const double w = kw + ((double)bw - kw) * t, h = kh + ((double)bh - kh) * t;
+			// Both stretched over it: the one turns into the other.
 			put(last, 0.0, 0.0, w, h, 1.0f);
 			put(next, 0.0, 0.0, w, h, (float)t);
 		} else {
-			// The new picture over the last, which is fitted inside the new size.
+			// Each keeps its own shape, fitted inside the frame: the last
+			// picture, and the new one coming in over it.
+			struct Fit {
+				double x, y, w, h;
+			};
+			auto fitted = [&](double pw, double ph) {
+				const double k = std::min(w / pw, h / ph);
+				return Fit{(w - pw * k) / 2.0, (h - ph * k) / 2.0, pw * k, ph * k};
+			};
 			if (kw && kh) {
-				const double k = std::min((double)bw / kw, (double)bh / kh);
-				put(last, (bw - kw * k) / 2.0, (bh - kh * k) / 2.0, kw * k, kh * k, 1.0f);
+				const Fit f = fitted(kw, kh);
+				put(last, f.x, f.y, f.w, f.h, 1.0f);
 			}
+			const Fit f = fitted(bw, bh);
 			switch (style) {
 			case Style::Zoom: {
 				const double k = 0.85 + 0.15 * t;
-				put(next, bw * (1.0 - k) / 2.0, bh * (1.0 - k) / 2.0, bw * k, bh * k, (float)t);
+				put(next, f.x + f.w * (1.0 - k) / 2.0, f.y + f.h * (1.0 - k) / 2.0, f.w * k, f.h * k,
+				    (float)t);
 				break;
 			}
 			case Style::FromLeft:
-				put(next, -(double)bw * (1.0 - t), 0.0, bw, bh, 1.0f);
+				put(next, f.x - w * (1.0 - t), f.y, f.w, f.h, 1.0f);
 				break;
 			case Style::FromRight:
-				put(next, (double)bw * (1.0 - t), 0.0, bw, bh, 1.0f);
+				put(next, f.x + w * (1.0 - t), f.y, f.w, f.h, 1.0f);
 				break;
 			case Style::FromTop:
-				put(next, 0.0, -(double)bh * (1.0 - t), bw, bh, 1.0f);
+				put(next, f.x, f.y - h * (1.0 - t), f.w, f.h, 1.0f);
 				break;
 			case Style::FromBottom:
-				put(next, 0.0, (double)bh * (1.0 - t), bw, bh, 1.0f);
+				put(next, f.x, f.y + h * (1.0 - t), f.w, f.h, 1.0f);
 				break;
 			default:
-				put(next, 0.0, 0.0, bw, bh, (float)t);
+				put(next, f.x, f.y, f.w, f.h, (float)t);
 				break;
 			}
 		}
@@ -1169,6 +1241,28 @@ void get_defaults(obs_data_t *settings)
 }
 
 } // namespace
+
+bool app_capture_hold(obs_source_t *capture, const OpenWindow &window)
+{
+	struct Hand {
+		const OpenWindow *window;
+		bool taken;
+	} hand{&window, false};
+	obs_source_enum_filters(
+		capture,
+		[](obs_source_t *, obs_source_t *filter, void *param) {
+			auto *h = static_cast<Hand *>(param);
+			const char *id = obs_source_get_unversioned_id(filter);
+			if (h->taken || !id || strcmp(id, kAppCaptureId) != 0 || !obs_source_enabled(filter))
+				return;
+			if (auto *self = static_cast<AppCapture *>(obs_obj_get_data(filter))) {
+				self->hold(*h->window);
+				h->taken = true;
+			}
+		},
+		&hand);
+	return hand.taken;
+}
 
 bool app_capture_holding(obs_source_t *capture)
 {
