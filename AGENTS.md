@@ -29,7 +29,27 @@ apps: Return to automatic. Keep the others ready: Keep other windows captured (K
 ready in the scene filter). Change with / Lasting, in every filter: Transition / Duration; Show
 with / Hide with: Show transition / Hide transition. Hiding and showing it: Show/Hide transition.
 Stream Deck keys: Next Manual Capture: Manual Window / Source. Capture Front Window: Capture Active
-Window. Do not rename anything again without the owner's say-so: after one unannounced rename they
+Window.
+
+A third table, for control labels, was approved on 2026-11-15 (beta124) with two changes of the
+owner's: *picture* becomes *image* and *item* becomes *source*, "to align with more
+professional/technically accurate verbiage for OBS", and "the verbiage should be concise". Then
+and now: Items never in the way: Ignored sources. Fit it in: Fit area. The free space around it:
+Free space around source. Gap to edges and items: Gap. Glide to a new space over: Move duration.
+Resize it to fit: Resize to fit. Keep it towards: Align in the space. Same place in these scenes:
+Sync position to scenes. Tolerance: Size tolerance. Bring along: Linked source. Send it to:
+Destination. Travel time: Duration. Comes in from / Time to come in / Time to leave: Direction /
+Show duration / Hide duration. Ramp style / Ramp in time / Ramp out time: Blur transition /
+Blur-in duration / Blur-out duration. Zoom in time / Zoom out time: Zoom-in duration / Zoom-out
+duration. Blend in live capture: Live capture. Live capture amount: Live capture opacity. Bloom
+from brightness: Bloom threshold. Picture shape: Aspect ratio. Saved shapes: Saved aspect
+ratios. Hold a shape for: Keep aspect ratio for. Made from: Colour source (its *The picture
+itself*: The image itself). Sizes as they look on screen: Sizes in screen pixels. Standby
+Picture's Show or hide the picture now: Cover the capture now; To the capture / Back to the
+picture: Duration: image to capture / capture to image; Picture keeps its shape: Keep image's
+aspect ratio; Size glides too: Animate the size change. Window switcher's Hide to the Standby
+Picture: Hide shows Standby Picture; Hide or show it now: Hide/show capture now. Dock: Send to:
+Move to; When I let go of an item: On drop. Names of filters and keys were not part of it. Do not rename anything again without the owner's say-so: after one unannounced rename they
 asked "where is follow active app?".
 
 ## What StageKit is not

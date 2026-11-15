@@ -211,6 +211,13 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## The approved control names (0.1.0-beta124)
+
+The owner took the name table proposed with beta122, "mostly good", with *picture* as *image*,
+*item* as *source*, and *Items it may overlap* as *Ignored sources*. 37 labels changed; the full
+list is in AGENTS.md (Names). Only what the user sees changed: setting names, ids and saved values
+did not, so nothing in a scene collection moves. Filter and key names were not in the table.
+
 ## Stream Deck: an icon of its own for every key in the list (0.1.0-beta123)
 
 The owner sent a screenshot of Stream Deck's list of StageKit actions, where every key showed the

@@ -134,7 +134,7 @@ off, so it costs nothing while off.
 | Smoothing | For Pixelate: how far each cell's colour runs into its neighbours. 0 gives hard edges |
 | Origin X / Y, Rotation | For Pixelate: the point of the picture the pattern is laid out from and turned around, and by how much it is turned |
 | Strength | 0–1000. Gaussian, Kawase and Box look alike at the same number; above 250, Gaussian and Box are drawn the Kawase way, which stays smooth |
-| Ramp style | Grow the blur strength, or cross-fade a fully blurred image in |
+| Blur transition | Grow the blur strength, or cross-fade a fully blurred image in |
 | Ramp in / out time | 0–5000 ms each. 0 is instant |
 | Easing | Eleven curves, eased in, out or both |
 | Include in 'Blur All' | Whether the global Blur All hotkeys affect this filter |
@@ -208,13 +208,13 @@ its heading:
 
 - **Shadow or glow**
   - *Type*: *Drop shadow (to one side)* or *Glow (all round)*.
-  - *Made from*: *A colour*, or ***The picture itself***. With the picture itself, a game, camera or
+  - *Colour source*: *A colour*, or ***The image itself***. With the picture itself, a game, camera or
     video casts a soft, moving copy of its own colours instead of a flat colour. *Colour boost* makes
     that richer.
   - *Opacity*, *Softness* (0 gives a hard edge), *Strength*, and for a drop shadow how far right/left
     and down/up it falls.
   - *Hide the picture* leaves only the shadow or glow.
-- **Outline**: a line round the picture, any width. *Made from* a colour or the picture itself. Made
+- **Outline**: a line round the picture, any width. *Colour source* a colour or the image itself. Made
   from the picture, *Past the edge* chooses between stretching the picture's edge outwards and
   mirroring the picture, and *Outline blur* softens it. The
   line follows the picture's real shape, including text and rounded or cut corners. A shadow is cast
@@ -227,7 +227,7 @@ its heading:
 ✕ to remove it. While a listed scene is on screen the filter draws nothing; the source shows plain
 there and keeps its place. It goes by the scene on screen (Program in Studio Mode).
 
-Sizes are as they look on screen: with *Sizes as they look on screen* ticked (the default), 20 px of
+Sizes are as they look on screen: with *Sizes in screen pixels* ticked (the default), 20 px of
 shadow is 20 px in the finished picture however much the item is scaled, so a small camera and a large
 panel get the same shadow. Untick it to give sizes in the source's own pixels.
 
@@ -275,8 +275,8 @@ The settings are in five numbered groups:
 | --- | --- |
 | 1. Frame size | Width and height, or pick a scene and an item and press *Use that item's size* |
 | 2. Picture | Fit (whole picture, whole-number scale, fill, stretch), picture shape, where it sits, sharp pixels |
-| 3. Black bars | Trim automatically, trim a set amount, or leave them. Automatic trims only when the picture is seen to end in a straight line, the same distance in from both sides, leaving a standard game shape. Artwork, a logo or a dark scene on black is not mistaken for bars. *Hold a shape for* sets how long a different shape must be clearly on screen before the picture changes to it |
-| 4. Picture shape for each program | *Start from each program's usual shape*, *Forget shapes seen before*, and shapes you save yourself, used at once when that program is captured (see below) |
+| 3. Black bars | Trim automatically, trim a set amount, or leave them. Automatic trims only when the picture is seen to end in a straight line, the same distance in from both sides, leaving a standard game shape. Artwork, a logo or a dark scene on black is not mistaken for bars. *Keep aspect ratio for* sets how long a different shape must be clearly on screen before the picture changes to it |
+| 4. Aspect ratio for each program | *Start from each program's usual shape*, *Forget shapes seen before*, and shapes you save yourself, used at once when that program is captured (see below) |
 | 5. Movement | How long the picture takes to settle after a resolution change |
 
 **The first clear sight of a picture is used at once.** When a game appears, or its window changes
@@ -342,14 +342,14 @@ automation that switched between them. Put Shadow, Glow & Outline after it and t
 Add **Fit to Space (StageKit)** as a filter on a *scene*. It places one item of that scene for you.
 
 - **Item**: the item to place, usually your game capture.
-- **Fit it in**: *The whole screen*, *A box I set* (left, top, width, height in canvas pixels), or
-  *The free space around it*.
+- **Fit area**: *The whole screen*, *A box I set* (left, top, width, height in canvas pixels), or
+  *Free space around source*.
 - **Margin for other shapes**: a picture with the box's shape fills the box. Any other shape is kept
   this far from the box's edges and centred. With a Shadow, Glow & Outline set to *Keep it on
   screen*, a picture that fills the box makes room for its shadow.
 
-**The free space around it** makes the item as large as it can be where it is, always keeping the
-gap you set (*Gap to edges and items*) from the screen's edges and from every other item, at its
+**Free space around source** makes the item as large as it can be where it is, always keeping the
+gap you set (*Gap*) from the screen's edges and from every other item, at its
 nearest.
 
 - Move, show or hide another item and the fitted item glides to its new space (*Glide to a new space
@@ -359,10 +359,10 @@ nearest.
   free space around that place instead.
 - A background or a frame is not in the way: anything the item's place lies inside is ignored.
 - It only works while its scene is being shown, so scenes you are not on cost nothing.
-- **Items never in the way**: items the free space ignores, such as a camera meant to overlap the
+- **Ignored sources**: sources the free space ignores, such as a camera meant to overlap the
   game.
-- **Overlap only when it fills** (unticked as it comes) with **Fill needed to overlap**: the items
-  never in the way are only overlapped while the fitted item fills at least that much of its
+- **Overlap only when it fills** (unticked as it comes) with **Fill needed to overlap**: the ignored
+  sources are only overlapped while the fitted item fills at least that much of its
   space. At 98 %, a window that fills the screen stays under the camera, and a window of another
   shape, which would leave bars beside it, is fitted beside the camera instead. The Stream Deck
   *Fit to Space Overlap* key switches it.
@@ -376,13 +376,13 @@ nearest.
   and the screen's edge or a fixed item on the other, sits against the fixed side; the resized item
   takes the rest.
 - An item is never put past the screen's edges: it stays the gap inside them whatever is beside it.
-- **Resize it to fit** (ticked as it comes). Unticked, the item keeps the size it has and is only
+- **Resize to fit** (ticked as it comes). Unticked, the item keeps the size it has and is only
   moved, to the middle of its space, so the room left over is the same on both sides and above and
   below; when the space changes (a camera above it is hidden, say) it moves to the new middle.
   If the filter had already resized the item (a new filter starts ticked), unticking gives it back
   the size it had before. Resize it yourself in the preview and that is the size it keeps. This works for the whole screen
   and a box as well as the free space.
-- **Keep it towards** (*The middle* as it comes): where the item lies in its space when it does not
+- **Align in the space** (*The middle* as it comes): where the item lies in its space when it does not
   fill it, which is a picture of another shape than the space, or an item that keeps its size. A
   side or a corner puts it against that side, the gap away, with all the room left over on the
   other side, so it only ever moves that way: a camera kept towards the top stays at the top, and a
@@ -390,7 +390,7 @@ nearest.
   another fitted item makes room for this one is not used.
 - An item that is hidden is left exactly where it is and holds no space, so the others take its
   room. Shown again, it is where it was, and the others make way for it in one move.
-- **Same place in these scenes** (a list, empty as it comes): each time the filter has put its
+- **Sync position to scenes** (a list, empty as it comes): each time the filter has put its
   item in place while its scene is on screen, the same source in the scenes you list is given
   exactly that place and size, so it is already there when you switch to one of them and nothing
   shifts in view. Scenes you do not list are never touched: the source keeps its own place there.
@@ -398,9 +398,9 @@ nearest.
   link holds both ways: a listed scene with a Fit to Space of its own for the item gives its place
   back when it is the one on screen, and fits the item to itself when it comes into view (at once,
   without a glide); where the scenes are laid out alike that is the same place.
-- With *Resize it to fit* unticked, the size the item keeps is saved with the scene collection and
+- With *Resize to fit* unticked, the size the item keeps is saved with the scene collection and
   is the size it has the next time OBS starts.
-- **Tolerance** (8 px as it comes): when something sticks a little way into the space, the picture
+- **Size tolerance** (8 px as it comes): when something sticks a little way into the space, the picture
   may be made up to this many pixels smaller to keep the whole space, instead of keeping its size and
   losing the part of the space beside that thing. At 0 the biggest picture always wins, even by one
   pixel. The gap is kept either way.
@@ -470,21 +470,21 @@ Game Capture, Window Capture or other live source.
 - To go without it, switch the filter off with its eye or a Stream Deck filter key.
 - *Transition* has a fade, a cut, slides, wipes, *Fade and zoom* and *Morph* (the capture and the
   picture both stretched over the frame as it glides from one shape to the other).
-- **Show or hide the picture now** (a button, and a hotkey on the source) brings the picture in over
+- **Cover the capture now** (a button, and a hotkey on the source) brings the picture in over
   a capture that is running and takes it away again: a way to hide the capture without leaving a
   hole. An Automatic Window Switcher on the same capture does this when asked to hide the capture
-  (*Hide to the Standby Picture*, ticked as it comes), so the Stream Deck *Hide or show the capture*
+  (*Hide shows Standby Picture*, ticked as it comes), so the Stream Deck *Hide or show the capture*
   key shows the Standby Picture.
 
 | Setting | What it does |
 | --- | --- |
 | Picture | *The start image* (the default: the one set in the StageKit Background dock), *An image or video file*, or *Another source* |
 | File / Source | The file or source to show, for those two choices. A video loops, without sound |
-| Picture keeps its shape | On (the default): the picture is shown whole in its own shape. Off: it fills the size the capture last had, with what does not fit cut off |
+| Keep image's aspect ratio | On (the default): the picture is shown whole in its own shape. Off: it fills the size the capture last had, with what does not fit cut off |
 | Transition | How the picture gives way to the capture: a fade (the default), a cut, sliding away or wiping in any of four directions, or a zoom and fade. It comes back the same way in reverse |
-| To the capture / Back to the picture | How long each change takes |
+| Duration: image to capture / capture to image | How long each change takes |
 | Easing curve / Easing direction | The motion the change follows |
-| Size glides too | On (the default): the size glides between the two shapes over the same time. Off: the size changes at once |
+| Animate the size change | On (the default): the size glides between the two shapes over the same time. Off: the size changes at once |
 
 When first added it puts itself straight after an Auto Frame if there is one, and otherwise first in
 the list; after that the order is yours.
@@ -504,7 +504,7 @@ capture for each app.
 | Keep other windows captured | Ticked (as it comes): while the capture is showing, the other open apps on the two lists are captured in the background, so the one you switch to is there at once. Unticked, a switch waits for the capture to find the other window, which saves graphics memory |
 | Transition | How one app's picture gives way to the next: a fade (as it comes), **Morph** (the frame changes shape and size as the one picture turns into the other), a cut, a fade and zoom, or sliding in from any of the four sides |
 | Duration / Easing | How long that takes, and its curve |
-| Show/Hide transition | *Hide or show it now* hides the capture in every scene it is in, or shows it again, with the transition chosen under it. Also a hotkey and a Stream Deck key |
+| Show/Hide transition | *Hide/show capture now* hides the capture in every scene it is in, or shows it again, with the transition chosen under it. Also a hotkey and a Stream Deck key |
 
 - An app on the list that opens is captured. When the app being captured closes, the one you used
   before it comes back.
@@ -681,7 +681,7 @@ at the bottom, whichever tab is open.
   diagonals slide across, then up or down. The centre button centres the item in the free space around
   it. *Use visible pixels* and *Ignore shadows* in the Arrange box decide what counts as an edge, and
   an item brought along is never in the way. With *In every scene*, the item lands on the same spot of
-  the screen in each of its scenes. It glides for the *Travel time*, following the *Motion* you choose
+  the screen in each of its scenes. It glides for the *Duration*, following the *Motion* you choose
   (the curve, and whether it eases at the start, the end or both); a run of presses made while it is
   still moving is one step for Undo.
 - *Make 9 position keys* adds a Move Source filter for each one **to the item's own source**,
@@ -729,7 +729,7 @@ What they do:
 
 *Also change locked copies* (off as it comes): ticked, both copy buttons change copies that are locked
 in their scenes too, and leave them locked. A copy that a Fit to Space filter looks after takes the
-copied transform as its new place (and, with *Resize it to fit* unticked, its new size); a filter that
+copied transform as its new place (and, with *Resize to fit* unticked, its new size); a filter that
 resizes it fits it again around that place.
 
 **Lock and unlock** (on the Copy tab) locks or unlocks items across scenes in one press. *Items*: the
@@ -811,7 +811,7 @@ off, and the sources are shown or hidden to match.
 | In | *Every scene they are in*, or *The scenes listed below* |
 | Scenes | The scenes to act in, when you chose to list them |
 | When this is on | *They are shown* (off hides them) or *They are hidden* (off shows them) |
-| Bring-along items too | Ticked: the items those sources bring along are shown and hidden with them. They are the items chosen under *Bring along* in the sources' Move Source keys, and in Move Scene Item filters that move them |
+| Bring-along items too | Ticked: the items those sources bring along are shown and hidden with them. They are the items chosen under *Linked source* in the sources' Move Source keys, and in Move Scene Item filters that move them |
 | Show transition / Duration | How each item appears: a fade (the default), any other transition OBS has, a cut, or whatever is already set on the item; and for how long. Under it come that transition's own settings, such as the way a slide goes. *Morph (StageKit)* and *Fade and Zoom (StageKit)* are on the list too (see [Morph between items](#morph-between-items) and [Fade and Zoom](#fade-and-zoom-transition)). A Slide and a Swipe have one more direction, *Off the nearest edge*: each item goes towards whichever edge of the screen it is nearest to when it hides, and comes in from that side when it shows |
 | Hide transition / Duration | How each item disappears: *The same as showing* (the default), or a transition of its own with its own settings, so an item can slide down into view and slide up out of it |
 | Settings for | With sources on the list: *All sources (the usual)*, or one of the listed sources. Choose a source and the controls below are that source's own: it can show and hide with another transition, another duration and other settings than the rest, or be left *As for all sources* |
