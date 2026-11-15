@@ -5050,6 +5050,24 @@ int main(int argc, char **argv)
 					      aimed(title, priority) == "notes.exe",
 				      "as it comes, a window picked by hand waits until it is switched to (%s, still %s, then %s)",
 				      before.c_str(), waited.c_str(), aimed(title, priority).c_str());
+				// "Auto-switch manual windows", on as it comes: in manual mode the
+				// capture follows the manual window clicked into, and only those.
+				windows("Notes|notes.exe|\nDocs|browser.exe|front\nSculpt 2026|ZSculpt.exe|");
+				draw_for(400);
+				const std::string followed_hand = aimed(title, priority);
+				windows("Notes|notes.exe|\nDocs|browser.exe|\nSculpt 2026|ZSculpt.exe|front");
+				draw_for(400);
+				const std::string not_auto = aimed(title, priority);
+				obs_data_set_bool(ps, "hand_follow", false);
+				obs_source_update(one, ps);
+				windows("Notes|notes.exe|front\nDocs|browser.exe|\nSculpt 2026|ZSculpt.exe|");
+				draw_for(400);
+				CHECK(followed_hand == "browser.exe" && not_auto == "browser.exe" &&
+					      aimed(title, priority) == "browser.exe",
+				      "in manual mode it follows the manual window clicked into and no other; switched off, it stays (%s, %s, %s)",
+				      followed_hand.c_str(), not_auto.c_str(), aimed(title, priority).c_str());
+				obs_data_set_bool(ps, "hand_follow", true);
+				obs_source_update(one, ps);
 				command("back");
 				obs_data_set_int(ps, "picked", 0);
 				obs_source_update(one, ps);

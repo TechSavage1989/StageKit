@@ -758,6 +758,12 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     the background and the toggle goes to it, but `held_` is not set and nothing is aimed. The
     owner: "select a browser or other windows for capture in the background while using my
     autoswitch apps, but then use the switch to manually captured window when i want".
+  - *Auto-switch manual windows* (`hand_follow`, on as it comes): while one is held, the same
+    rules as automatic mode among `by_hand` only (clicked into, just opened via
+    `hand_was_open_`, the one before via `hand_recent_` when the held one closes); without it a
+    held window stays until let go. The owner: "when in manual window mode, it follow the same
+    behavior as the auto mode, but only for the manually selected windows ... it should be able
+    to be toggled with a switch in the settings".
   - *Toggle manual / automatic* (`toggle`, hotkey `stagekit.active.toggle.` + name, also on the
     scene filter): back from a held window, else on to the one held last. The owner: "the
     capture front window can be used to select the manual capture, and then the toggle can be

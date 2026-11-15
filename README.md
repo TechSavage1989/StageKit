@@ -530,6 +530,11 @@ capture for each app.
   background while your automatic windows go on showing; it is shown when you switch to it with
   *Manual Window / Source* (*Toggle* or *Next*). *Switch at selection*: the capture changes to
   it straight away, as before.
+- **Auto-switch manual windows** (ticked as it comes): in manual mode the capture follows among
+  your *Manual windows* the way automatic mode follows among the others: the manual window you
+  click into or that opens is shown, and when the one shown closes the one before comes back.
+  Nothing off the *Manual windows* list is taken. Unticked, the manual window stays until you
+  switch.
 - The capture's size glides from the one window's to the other's with every *Transition* but a
   cut. *Morph* stretches both pictures over the gliding frame; the others keep each picture's own
   shape inside it.

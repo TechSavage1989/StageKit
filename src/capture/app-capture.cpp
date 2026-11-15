@@ -308,6 +308,7 @@ public:
 		// 0: wait until switched to (as it comes); 1: switch to it at once.
 		// Saved by number: append only.
 		pick_now_ = obs_data_get_int(settings, "picked") == 1;
+		hand_follow_ = obs_data_get_bool(settings, "hand_follow");
 		hide_standby_ = obs_data_get_bool(settings, "hide_standby");
 		style_ = static_cast<Style>(std::clamp<long long>(obs_data_get_int(settings, "change"), 0, 7));
 		change_s_ = std::clamp<long long>(obs_data_get_int(settings, "change_ms"), 0, 10000) / 1000.0;
@@ -524,7 +525,13 @@ private:
 	// A window picked by hand is switched to at once, or only kept as the
 	// manual window to switch to (the toggle and next go to it).
 	bool pick_now_ = false;
-	std::string last_held_; // the app last held by hand: the first to go back to
+	// In manual mode, follow among the manual windows as automatic mode does
+	// among the automatic ones: the one clicked into, one that opens, and the
+	// one before when the one shown closes.
+	bool hand_follow_ = true;
+	std::vector<std::string> hand_was_open_; // manual windows open at the last look
+	std::vector<std::string> hand_recent_;   // manual windows shown, the latest first
+	std::string last_held_;                  // the app last held by hand: the first to go back to
 	double order_check_ = 10.0;
 	std::vector<Ready> ready_;
 	obs_hotkey_id hotkeys_[4] = {OBS_INVALID_HOTKEY_ID, OBS_INVALID_HOTKEY_ID, OBS_INVALID_HOTKEY_ID,
@@ -710,7 +717,8 @@ void AppCapture::keep_first(obs_source_t *parent)
 // Which app to capture, looked at twenty times a second.
 void AppCapture::follow(obs_source_t *parent)
 {
-	std::vector<std::string> apps, by_hand, recent, was_open;
+	std::vector<std::string> apps, by_hand, recent, was_open, hand_was_open, hand_recent;
+	bool hand_follow;
 	std::vector<OpenWindow> windows;
 	std::string current, held, last_held;
 	OpenWindow picked;
@@ -731,6 +739,9 @@ void AppCapture::follow(obs_source_t *parent)
 		last_held = last_held_;
 		recent = recent_;
 		was_open = was_open_;
+		hand_follow = hand_follow_;
+		hand_was_open = hand_was_open_;
+		hand_recent = hand_recent_;
 		step = cmd_step_;
 		back = cmd_back_;
 		cmd_step_ = cmd_back_ = false;
@@ -866,17 +877,76 @@ void AppCapture::follow(obs_source_t *parent)
 			let_go();
 		}
 	}
+	// The manual windows open now, for noticing one that opens.
+	std::vector<std::string> hand_open;
+	for (size_t i = 0; i < by_hand.size(); i++)
+		if (hand[i].window)
+			hand_open.push_back(by_hand[i]);
+	auto remember_hand = [&](const std::string &shown) {
+		std::lock_guard lock(mutex_);
+		hand_was_open_ = hand_open;
+		if (!shown.empty()) {
+			hand_recent_.erase(std::remove(hand_recent_.begin(), hand_recent_.end(), shown),
+					   hand_recent_.end());
+			hand_recent_.insert(hand_recent_.begin(), shown);
+			if (hand_recent_.size() > 16)
+				hand_recent_.resize(16);
+		}
+	};
 	if (!held.empty()) {
-		// It stays until it is let go, or its window closes.
-		bool open = false;
+		int now = -1;
 		for (size_t i = 0; i < by_hand.size(); i++)
-			open = open || (by_hand[i] == held && hand[i].window);
+			if (by_hand[i] == held)
+				now = (int)i;
+		const bool open = now >= 0 && hand[(size_t)now].window;
+		int target = -1;
+		if (hand_follow) {
+			// The same rules as among the automatic windows, but only among
+			// the manual ones: the one clicked into, else one that has just
+			// opened, else (the one shown has closed) the one shown before.
+			int front = -1;
+			for (size_t i = 0; i < by_hand.size(); i++)
+				if (hand[i].front && (front < 0 || hand[i].how < hand[(size_t)front].how))
+					front = (int)i;
+			if (front >= 0 && front != now) {
+				target = front;
+			} else {
+				for (size_t i = 0; i < by_hand.size() && target < 0; i++)
+					if (hand[i].window && (int)i != now &&
+					    std::find(hand_was_open.begin(), hand_was_open.end(), by_hand[i]) ==
+						    hand_was_open.end())
+						target = (int)i;
+			}
+			if (target < 0 && !open) {
+				for (const std::string &entry : hand_recent)
+					for (size_t i = 0; i < by_hand.size() && target < 0; i++)
+						if (by_hand[i] == entry && hand[i].window)
+							target = (int)i;
+				for (size_t i = 0; i < by_hand.size() && target < 0; i++)
+					if (hand[i].window)
+						target = (int)i;
+			}
+		}
+		if (target >= 0) {
+			held = by_hand[(size_t)target];
+			{
+				std::lock_guard lock(mutex_);
+				held_ = last_held_ = held;
+			}
+			aim(parent, *hand[(size_t)target].window, held, hand[(size_t)target].how == 1, false);
+			remember_hand(held);
+			ready_for(held);
+			return;
+		}
+		// It stays until it is let go, or its window closes.
 		if (open) {
+			remember_hand(held);
 			ready_for(held);
 			return;
 		}
 		let_go();
 	}
+	remember_hand(std::string());
 
 	auto index_of = [&](const std::string &entry) {
 		for (size_t i = 0; i < apps.size(); i++)
@@ -1300,6 +1370,9 @@ obs_properties_t *get_properties(void *data)
 	obs_property_list_add_int(picked, obs_module_text("AppCapture.Picked.Wait"), 0);
 	obs_property_list_add_int(picked, obs_module_text("AppCapture.Picked.Now"), 1);
 	obs_property_set_long_description(picked, obs_module_text("AppCapture.Picked.Tip"));
+	obs_property_t *hand_follow =
+		obs_properties_add_bool(props, "hand_follow", obs_module_text("AppCapture.HandFollow"));
+	obs_property_set_long_description(hand_follow, obs_module_text("AppCapture.HandFollow.Tip"));
 
 	obs_property_t *change = obs_properties_add_list(props, "change", obs_module_text("AppCapture.Change"),
 							 OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
@@ -1347,6 +1420,7 @@ void get_defaults(obs_data_t *settings)
 	obs_data_set_default_bool(settings, "follow", true);
 	obs_data_set_default_bool(settings, "ready", true);
 	obs_data_set_default_int(settings, "picked", 0);
+	obs_data_set_default_bool(settings, "hand_follow", true);
 	obs_data_set_default_bool(settings, "hide_standby", true);
 	item_transition_defaults(settings);
 	obs_data_set_default_int(settings, "change", (int)Style::Fade);

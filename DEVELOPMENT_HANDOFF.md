@@ -223,6 +223,8 @@ window* (`picked`), a list with *Wait until switched to* as the default (the own
 list and for that default) and *Switch at selection* (their wording). The default changes what
 the Capture Active Window key did before: it no longer switches at once.
 
+Also the switcher's *Auto-switch manual windows* (`hand_follow`), asked for in the same session.
+
 And Auto Capture's *No game: Standby Picture* and *Hide shows Standby Picture* with their own
 transition, asked for from a screenshot of Auto Capture's lists. See AGENTS.md.
 
