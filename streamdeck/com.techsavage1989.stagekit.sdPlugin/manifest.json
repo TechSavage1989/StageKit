@@ -1,6 +1,6 @@
 {
 	"Name": "StageKit",
-	"Version": "0.6.0.0",
+	"Version": "0.7.0.0",
 	"Author": "StageKit contributors",
 	"Actions": [
 		{
@@ -202,10 +202,10 @@
 			]
 		},
 		{
-			"Name": "Follow Active App",
+			"Name": "Show Source in Use",
 			"UUID": "com.techsavage1989.stagekit.activeapp",
 			"Icon": "imgs/actions/switch/icon",
-			"Tooltip": "Switches following the app in use on and off.",
+			"Tooltip": "Switches showing the capture of the app in use on and off.",
 			"PropertyInspectorPath": "ui/activeapp.html",
 			"Controllers": [
 				"Keypad"
@@ -218,6 +218,28 @@
 				},
 				{
 					"Image": "imgs/actions/activeapp/on",
+					"Name": "On",
+					"TitleAlignment": "bottom"
+				}
+			]
+		},
+		{
+			"Name": "Capture App in Use",
+			"UUID": "com.techsavage1989.stagekit.appcapture",
+			"Icon": "imgs/actions/switch/icon",
+			"Tooltip": "Switches one Window Capture's following of your apps on and off. On hands a hooked capture back to it.",
+			"PropertyInspectorPath": "ui/appcapture.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/appcapture/off",
+					"Name": "Off",
+					"TitleAlignment": "bottom"
+				},
+				{
+					"Image": "imgs/actions/appcapture/on",
 					"Name": "On",
 					"TitleAlignment": "bottom"
 				}
@@ -373,7 +395,7 @@
 			"Name": "Next Manual Capture",
 			"UUID": "com.techsavage1989.stagekit.appswitch",
 			"Icon": "imgs/actions/move/icon",
-			"Tooltip": "Steps a Follow Active App scene to the next of its captures by hand, or back to following the apps.",
+			"Tooltip": "Steps a Show Source in Use scene to the next of its captures by hand, or back to following the apps.",
 			"PropertyInspectorPath": "ui/appswitch.html",
 			"Controllers": [
 				"Keypad"

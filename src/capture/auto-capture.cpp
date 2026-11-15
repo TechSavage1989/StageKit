@@ -40,6 +40,7 @@ the Free Software Foundation; either version 2 of the License, or
 #endif
 
 #include "auto-capture.hpp"
+#include "app-capture.hpp"
 #include "../common/timing.hpp"
 
 #include "../common/item-transition.hpp"
@@ -803,7 +804,7 @@ std::vector<OpenWindow> open_windows()
 {
 	std::vector<OpenWindow> out;
 	for (const Window &w : g_window_watch.latest())
-		out.push_back({w.title, w.executable, w.foreground});
+		out.push_back({w.title, w.executable, w.foreground, w.window_class});
 	return out;
 }
 
@@ -876,6 +877,22 @@ void aim(obs_source_t *capture, const Window &front, bool game)
 }
 } // namespace
 
+void aim_capture_at(obs_source_t *capture, const OpenWindow &window, bool by_title)
+{
+	const char *id = capture ? obs_source_get_unversioned_id(capture) : nullptr;
+	if (!id)
+		return;
+	obs_data_t *settings = obs_source_get_settings(capture);
+	const std::string text = encode_part(window.title) + ":" + encode_part(window.window_class) + ":" +
+				 encode_part(window.executable);
+	obs_data_set_string(settings, "window", text.c_str());
+	obs_data_set_int(settings, "priority", by_title ? 1 : 2); // by title, or by executable
+	if (strcmp(id, "game_capture") == 0)
+		obs_data_set_string(settings, "capture_mode", "window");
+	obs_source_update(capture, settings);
+	obs_data_release(settings);
+}
+
 bool hook_front_window(obs_source_t *capture, std::string &what, std::string &error, const std::string &transition,
 		       uint32_t transition_ms)
 {
@@ -909,7 +926,9 @@ bool hook_front_window(obs_source_t *capture, std::string &what, std::string &er
 		capture,
 		[](obs_source_t *, obs_source_t *filter, void *) {
 			const char *kind = obs_source_get_unversioned_id(filter);
-			if (kind && strcmp(kind, kAutoCaptureId) == 0 && obs_source_enabled(filter))
+			// (And so would a Capture App in Use.)
+			if (kind && (strcmp(kind, kAutoCaptureId) == 0 || strcmp(kind, kAppCaptureId) == 0) &&
+			    obs_source_enabled(filter))
 				obs_source_set_enabled(filter, false);
 		},
 		nullptr);

@@ -36,9 +36,11 @@ from hotkeys, or from the Stream Deck OBS Studio plugin's *Filter* and *Source* 
   shrinks as it fades out. For a change of scene and for single items.
 - **Fit to Space** (scene filter): one capture for every shape. A picture with the screen's shape fills it;
   an emulator's squarer picture floats centred inside a margin.
+- **Capture App in Use** (filter): one Window Capture follows several apps, taking whichever of
+  them you are using.
 - **Auto Capture** (filter): one Game Capture finds whatever game is running, windowed or full-screen,
   with no list of games to keep. Windows only.
-- **Follow Active App** (scene filter): a scene has a capture for each of several apps, and the one you are
+- **Show Source in Use** (scene filter): a scene has a capture for each of several apps, and the one you are
   using is shown, with a fade. The last one stays while something else is in front, and an earlier
   one comes back when an app closes. Windows only.
 - **Program Trigger** (filter): while a program is open, shows chosen items and switches chosen filters
@@ -312,7 +314,7 @@ file name (PrimeHack is `Dolphin.exe`). The *Program or window* list also offers
 open windows: pick one, shorten it if you like (`primehack` is enough: part of a title will do),
 choose its shape and press the button. When several saved shapes fit a window, the one with the
 longest name is used, so `primehack = 16:9` and `dolphin = 4:3` can sit side by side. In the same way
-Follow Active App tells two captures of such programs apart by their window titles, and Auto
+Show Source in Use tells two captures of such programs apart by their window titles, and Auto
 Capture's *Never capture* and *Always capture* take part of a title as well as part of a file name.
 
 To set the shape from a Stream Deck, add **Aspect Ratio Preset (StageKit)** next to Auto Frame, once per
@@ -458,10 +460,40 @@ Game Capture, Window Capture or other live source.
 When first added it puts itself straight after an Auto Frame if there is one, and otherwise first in
 the list; after that the order is yours.
 
-### Follow Active App
+### Capture App in Use
+
+One Window Capture for several apps. Add **Capture App in Use (StageKit)** as a filter on a
+*Window Capture* and list the apps it is for. The filter aims that one capture at whichever of them
+you are using, so a scene needs one capture, one set of filters and one Fit to Space instead of a
+capture for each app.
+
+| Setting | What it does |
+| --- | --- |
+| Apps to capture | Open the app, then choose it under *Add an app*: by its program, or by a window's title for two programs with the same file name. Each row has its own remove button |
+| Follow the app in use | Ticked (as it comes): clicking into one of the apps captures it; clicking into anything else changes nothing, so the last one stays. Unticked: an app is captured when it opens and stays until it closes |
+| Change with | How one app's picture gives way to the next: a fade (as it comes), a cut, a fade and zoom, or sliding in from any of the four sides |
+| Lasting / Easing | How long that takes, and its curve |
+
+- An app on the list that opens is captured. When the app being captured closes, the one you used
+  before it comes back.
+- The change is smooth although there is only one capture: the filter keeps the last picture the
+  capture had, shows it while the capture is finding the other window, and brings the new picture in
+  over it. A Standby Picture on the same capture does not stand in for that moment; it does once
+  none of the apps is open.
+- To hold a window that is not on the list, aim the capture at it by hand: the Stream Deck
+  *Capture Front Window* key switches this filter off as it does so, and switching the filter on
+  again (its own key, or the eye next to it) hands the capture back to your apps.
+- It puts itself first in the capture's filter list when you add it, before whatever frames, shapes
+  or stands in for the picture. Leave it there.
+- Windows only, like the other capture tools.
+
+For a capture per app in one scene, each with its own filters, Show Source in Use below is still
+there.
+
+### Show Source in Use
 
 For a scene that shows whichever app you are working in. Give the scene a Window Capture for each app
-(Blender, ZBrush, a browser, and so on), then add **Follow Active App (StageKit)** as a filter on the *scene*
+(Blender, ZBrush, a browser, and so on), then add **Show Source in Use (StageKit)** as a filter on the *scene*
 and add those captures to its list. Windows only.
 
 Which app a capture belongs to is read from the capture itself, so there is nothing to type. From then
@@ -835,7 +867,7 @@ the one moves, resizes and turns into the other, instead of each fading where it
 
 It happens whenever both items have **Morph (StageKit)** as their way of going and coming:
 
-- in a StageKit filter that shows and hides items (Follow Active App, Show in Scenes, Program
+- in a StageKit filter that shows and hides items (Show Source in Use, Show in Scenes, Program
   Trigger, Link Visibility), choose *Morph (StageKit)* under *Change with* or *Show with*;
 - or set it on the items yourself: right-click an item, *Show Transition* and *Hide Transition*.
 
@@ -847,7 +879,7 @@ Which two go together follows the Morph transition's rules:
 - **Linked sources** first: every link made in any Morph's settings counts, the ones under *Scene
   Transitions* and the ones made in a Show in Scenes filter. Links carry through one another.
 - Then **the main picture**: the largest item hidden and the largest item shown, when each covers
-  at least 15 % of the screen. That is what pairs two captures in Follow Active App with no link
+  at least 15 % of the screen. That is what pairs two captures in Show Source in Use with no link
   at all. Untick *Morph the main picture* to have only linked sources change into each other.
 
 An item with nothing to change into fades by itself, or fades and zooms if *With nothing to change
@@ -919,11 +951,11 @@ choose from, holding only what that key is for.
 
 | Key | What it does |
 | --- | --- |
-| **Blur**, **Shadow, Glow & Outline**, **Corners & Edges**, **Zoom**, **Auto Capture**, **Auto Frame**, **Standby Picture**, **Show in Scenes**, **Fit to Space**, **Follow Active App**, **Program Trigger**, **Link Visibility**, **Show/Hide Animation** | Switches that feature on a source (or scene) on and off, and the key shows which way it is, also when it is switched some other way. *On press* can be *Toggle*, *Switch on* or *Switch off* |
+| **Blur**, **Shadow, Glow & Outline**, **Corners & Edges**, **Zoom**, **Auto Capture**, **Auto Frame**, **Standby Picture**, **Show in Scenes**, **Fit to Space**, **Show Source in Use**, **Capture App in Use**, **Program Trigger**, **Link Visibility**, **Show/Hide Animation** | Switches that feature on a source (or scene) on and off, and the key shows which way it is, also when it is switched some other way. *On press* can be *Toggle*, *Switch on* or *Switch off* |
 | **Move Source**, **Move Scene Item**, **Apply Layout** | Runs that move. A tick shows on the key when OBS has taken it |
 | **Set Aspect Ratio** | Sets a game's aspect ratio by hand, for when Auto Frame's own reading is not what you want: 4:3, 8:7, 3:2, 10:9, 16:9 and more, or *Automatic* to hand it back. *Keep ratio*: *This game only* (the shape lasts while that game is captured and goes back to automatic when it ends; set before the game starts, it waits for it) or *Until changed*. The key shows its ratio |
 | **Capture Front Window** | Makes a Game Capture or a Window Capture take whatever window or game is in front when you press it. *Change with* and *Lasting* choose how the capture changes over: a fade (as it comes), a cut, or any other transition OBS has. An Auto Capture on that capture is switched off so it stays where you put it; the **Auto Capture** key, set to *Switches it on*, hands it back |
-| **Next Manual Capture** | For a scene with a Follow Active App filter: shows the next of its *Captures you switch to*, or goes back to following the apps |
+| **Next Manual Capture** | For a scene with a Show Source in Use filter: shows the next of its *Captures you switch to*, or goes back to following the apps |
 | **Arrange tool** | One of the dock's arrange tools on a key: line up an edge or centre, space out evenly, snap, make the same width, height or size, or copy a transform to all or to the chosen scenes. It works on the items selected in OBS's preview |
 | **Dock Option** | One of the dock's switches on a key: *Snap on release*, *Guides*, *Stop resizing at edges*, *Slide to the next edge*, *In every scene* or *Keep shape*. It shows which way the switch is, also when you change it in the dock |
 | **Slide to Edge** | Slides the item selected in OBS left, right, up, down or cornerwise to the next edge, or centres it in the free space, with the dock's edge distance and timing. The next press passes that edge |

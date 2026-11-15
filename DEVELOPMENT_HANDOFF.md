@@ -211,6 +211,30 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Capture App in Use; Follow Active App renamed (0.1.0-beta116)
+
+- The owner (2026-11-15), with a log: "I'd like a new filter for window capture. Currently I have
+  multiple window captures set up to capture specific apps, and they have to be hidden and shown
+  individually, per the existing show app in use filter (which should probably be called show
+  source in use, or similar), or manually. I'd like to have a single Window capture, and a new
+  filter added that can have multiple apps associated with the Window capture and effectively
+  emulate my current process and visibility functionality based on the open and captured apps,
+  but with only a single window capture source. Understand?"
+- Built as **Capture App in Use**, a filter on the Window Capture. See AGENTS.md for how it draws
+  the change between two windows. Follow Active App is now shown as **Show Source in Use**; its
+  id and settings are unchanged, and a filter already in a scene keeps the name it was given.
+- The Stream Deck plugin (0.7.0.0) has a *Capture App in Use* key and the renamed *Show Source in
+  Use* key. Its action for the renamed key is the same one, so keys already on a deck keep working.
+- **Not confirmed by the owner yet. None of it has run on Windows.** The log sent with the request
+  showed the scene it is meant to replace (a capture for each app, one capture switched to by
+  hand, a Fit to Space each) and nothing wrong. Things to ask for a log about if the change
+  between apps is not smooth: the line `Capture App in Use: '...' now captures ...` gives the
+  moment; whether the old window flashes back, or the picture is empty, says which of `kSettle`
+  and `kWaitFor` to look at.
+- Not built: hiding the capture's items while none of the apps is open (the capture has no picture
+  then, and a Standby Picture stands in); moving the owner's scene over to one capture, which is
+  theirs to do in OBS (add the filter to *Window Capture*, list the apps, remove the others).
+
 ## Morph between items; Fade and Zoom; Blur exclusions (0.1.0-beta115)
 
 - Three requests in a row (2026-11-15), released together:

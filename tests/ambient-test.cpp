@@ -1201,7 +1201,8 @@ int main(int argc, char **argv)
 				     {"stagekit_ramp_zoom", "Ramp Zoom"},
 				     {"stagekit_ramp_blur", "Ramp Blur"},
 				     {"stagekit_auto_frame", "Auto Frame"},
-				     {"stagekit_standby", "Standby Picture"}};
+				     {"stagekit_standby", "Standby Picture"},
+				     {"stagekit_app_capture", "Capture App in Use"}};
 			for (const auto &kind : kinds) {
 				obs_data_t *kd = obs_data_create();
 				obs_data_set_bool(kd, "placed", true);
@@ -4538,6 +4539,152 @@ int main(int argc, char **argv)
 			obs_source_release(sculpt);
 			obs_source_release(other);
 			obs_scene_release(ts);
+		}
+
+		// Capture App in Use: one Window Capture for several apps. The owner:
+		// "I'd like to have a single Window capture, and a new filter added
+		// that can have multiple apps associated with the Window capture".
+		printf("\n[capture app in use]\n");
+		{
+			auto coloured = [](obs_source_t *src, long long abgr, int cw, int ch) {
+				obs_data_t *d = obs_source_get_settings(src);
+				obs_data_set_int(d, "color", abgr);
+				obs_data_set_int(d, "width", cw);
+				obs_data_set_int(d, "height", ch);
+				obs_source_update(src, d);
+				obs_data_release(d);
+			};
+			obs_source_t *cap = obs_source_create("color_source", "One Capture", nullptr, nullptr);
+			coloured(cap, 0xFF0000FFLL, 200, 100); // red
+			obs_data_t *fd = obs_data_create();
+			obs_data_array_t *apps = obs_data_array_create();
+			for (const char *name : {"ZSculpt.exe", "modeller.exe", "Prime"}) {
+				obs_data_t *entry = obs_data_create();
+				obs_data_set_string(entry, "value", name);
+				obs_data_array_push_back(apps, entry);
+				obs_data_release(entry);
+			}
+			obs_data_set_array(fd, "apps", apps);
+			obs_data_array_release(apps);
+			obs_data_set_int(fd, "change_ms", 600);
+			obs_data_set_int(fd, "ease_curve", 0); // linear
+			obs_source_t *one =
+				obs_source_create("stagekit_app_capture", "Capture App in Use", fd, nullptr);
+			obs_data_release(fd);
+			CHECK(one != nullptr, "the Capture App in Use filter can be created");
+			obs_source_filter_add(cap, one);
+			obs_source_inc_showing(cap);
+			const uint32_t cw = 200, ch = 100;
+			std::vector<uint8_t> frame;
+			// Drawn all the while, as a capture on screen is.
+			auto draw_for = [&](int ms) {
+				for (int waited = 0; waited < ms; waited += 50) {
+					frame = render(cap, cw, ch);
+					sleep_ms(50);
+				}
+			};
+			auto at = [&](int x, int y, int channel) {
+				return (int)frame[(size_t(y) * cw + x) * 4 + channel];
+			};
+			auto windows = [&](const char *text) {
+				calldata_t cd = {};
+				calldata_set_string(&cd, "windows", text);
+				proc_handler_call(obs_source_get_proc_handler(one), "set_test_windows", &cd);
+				calldata_free(&cd);
+			};
+			// What the capture is aimed at: the program and the title.
+			auto aimed = [&](std::string &title, long long &priority) {
+				obs_data_t *d = obs_source_get_settings(cap);
+				const std::string window = obs_data_get_string(d, "window");
+				priority = obs_data_get_int(d, "priority");
+				obs_data_release(d);
+				title = window.substr(0, window.find(':'));
+				const size_t colon = window.rfind(':');
+				return colon == std::string::npos ? std::string() : window.substr(colon + 1);
+			};
+			std::string title;
+			long long priority = 0;
+			draw_for(300);
+			windows("Notes|notes.exe|front\nSculpt 2026|ZSculpt.exe|");
+			draw_for(450);
+			CHECK(aimed(title, priority) == "ZSculpt.exe" && priority == 2,
+			      "with one of its apps open, the capture is aimed at it, by its program (%s)",
+			      aimed(title, priority).c_str());
+			draw_for(1500); // (the change that goes with being aimed runs out)
+			windows("Notes|notes.exe|\nSculpt 2026|ZSculpt.exe|\nModel scene|modeller.exe|front");
+			draw_for(150);
+			const std::string after_click = aimed(title, priority);
+			// The new window's picture: another colour and another size.
+			coloured(cap, 0xFF00FF00LL, 100, 100); // green
+			draw_for(200);
+			const uint32_t held_w = obs_source_get_width(cap);
+			const int held_red = at(100, 50, 0), held_green = at(100, 50, 1);
+			draw_for(550);
+			const uint32_t mix_w = obs_source_get_width(cap);
+			const int mix_red = at(50, 50, 0), mix_green = at(50, 50, 1);
+			draw_for(900);
+			CHECK(after_click == "modeller.exe" && held_w == 200 && held_red > 240 && held_green < 15,
+			      "clicking into another of its apps aims the capture at that one, and the last picture stays, at its size, until the new one is there (aimed at %s; %u wide, red %d, green %d)",
+			      after_click.c_str(), held_w, held_red, held_green);
+			CHECK(mix_w == 100 && mix_red > 40 && mix_green > 40 && obs_source_get_width(cap) == 100 &&
+				      at(50, 50, 0) < 15 && at(50, 50, 1) > 240,
+			      "then the new picture comes in over it, and is all there is at the end (part-way %u wide, red %d, green %d; after: red %d, green %d)",
+			      mix_w, mix_red, mix_green, at(50, 50, 0), at(50, 50, 1));
+
+			windows("Notes|notes.exe|front\nSculpt 2026|ZSculpt.exe|\nModel scene|modeller.exe|");
+			draw_for(450);
+			CHECK(aimed(title, priority) == "modeller.exe",
+			      "clicking into something that is not one of its apps changes nothing");
+			windows("Notes|notes.exe|front\nSculpt 2026|ZSculpt.exe|");
+			draw_for(450);
+			CHECK(aimed(title, priority) == "ZSculpt.exe",
+			      "when the app being captured closes, the one used before it is captured again (%s)",
+			      aimed(title, priority).c_str());
+			draw_for(1500);
+			// Two programs with the same file name, told apart by a title.
+			windows("Other Game|emu.exe|\nPrime Hack|emu.exe|front\nSculpt 2026|ZSculpt.exe|");
+			draw_for(450);
+			const std::string by_title = aimed(title, priority);
+			CHECK(by_title == "emu.exe" && title == "Prime Hack" && priority == 1,
+			      "an app listed by part of its window's title is found among windows of one program, and the capture goes by the title (%s, '%s', priority %lld)",
+			      by_title.c_str(), title.c_str(), priority);
+			draw_for(1500);
+
+			// Its app closes and no other is open: the picture stays for a
+			// moment (which app to go back to is not known at once), then
+			// the capture has none, and a Standby Picture can stand in.
+			windows("Notes|notes.exe|front");
+			coloured(cap, 0xFF00FF00LL, 0, 0);
+			draw_for(300);
+			const uint32_t lost_w = obs_source_get_width(cap);
+			const int lost_green = at(50, 50, 1);
+			draw_for(1100);
+			CHECK(lost_w == 100 && lost_green > 240 && obs_source_get_width(cap) == 0,
+			      "a capture that loses its picture keeps the last one for a moment and then has none (%u wide with green %d at first, %u wide after)",
+			      lost_w, lost_green, obs_source_get_width(cap));
+
+			// Switched off it follows nothing; switched on again it takes
+			// the app in front.
+			coloured(cap, 0xFF0000FFLL, 200, 100);
+			obs_source_set_enabled(one, false);
+			windows("Model scene|modeller.exe|front\nSculpt 2026|ZSculpt.exe|");
+			draw_for(450);
+			const std::string while_off = aimed(title, priority);
+			obs_source_set_enabled(one, true);
+			draw_for(450);
+			CHECK(while_off == "emu.exe" && aimed(title, priority) == "modeller.exe",
+			      "switched off it leaves the capture where it is, and switched on again it takes the app in front (%s, then %s)",
+			      while_off.c_str(), aimed(title, priority).c_str());
+
+			obs_properties_t *props = obs_source_properties(one);
+			CHECK(list_rows(props, "apps|a") == 3 && obs_properties_get(props, "follow") &&
+				      obs_properties_get(props, "change") && obs_properties_get(props, "ease_curve"),
+			      "its settings list the apps, with how to follow them and how the picture changes");
+			obs_properties_destroy(props);
+			obs_source_dec_showing(cap);
+			obs_source_filter_remove(cap, one);
+			obs_source_release(one);
+			obs_source_release(cap);
 		}
 
 		// Active App: one of several captures shows, the one whose app is in use.

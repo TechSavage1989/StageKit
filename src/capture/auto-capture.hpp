@@ -29,6 +29,7 @@ std::vector<std::string> open_program_names();
 struct OpenWindow {
 	std::string title, executable;
 	bool foreground = false;
+	std::string window_class;
 };
 // Every open window, everyday programs included. Looked up at most five
 // times a second however many callers ask.
@@ -45,6 +46,11 @@ std::vector<OpenWindow> open_windows();
 // empty id changes over at once.
 bool hook_front_window(obs_source_t *capture, std::string &what, std::string &error,
 		       const std::string &transition = std::string(), uint32_t transition_ms = 0);
+
+// Aims a Window Capture (or a Game Capture) at a window, at once. The capture
+// finds it by its program's file name, or with `by_title` by its title, for
+// two programs that share a file name.
+void aim_capture_at(obs_source_t *capture, const OpenWindow &window, bool by_title);
 
 // For the tests: the window to take as the one in front (an empty
 // executable goes back to the real ones).

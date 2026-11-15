@@ -22,6 +22,7 @@ the Free Software Foundation; either version 2 of the License, or
 // is ever squashed: both are drawn to cover the size of the moment.
 
 #include "standby.hpp"
+#include "app-capture.hpp"
 #include "../common/timing.hpp"
 
 #include "../common/easing.hpp"
@@ -239,7 +240,11 @@ public:
 			make_picture(kind, file, named);
 
 		// Nothing to show: the capture itself has no size.
-		const bool empty = obs_source_get_base_width(parent) == 0 || obs_source_get_base_height(parent) == 0;
+		// (Not while a Capture App in Use is changing from one window to
+		// another: it shows the last picture for that moment.)
+		const bool empty =
+			(obs_source_get_base_width(parent) == 0 || obs_source_get_base_height(parent) == 0) &&
+			!app_capture_holding(parent);
 		const uint32_t tw = before_width(source_), th = before_height(source_);
 		if (!empty && tw && th && (tw != last_w_ || th != last_h_)) {
 			// Remembered, for the next time there is nothing.

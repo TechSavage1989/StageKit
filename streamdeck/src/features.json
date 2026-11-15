@@ -9,7 +9,8 @@
 		{ "key": "standby", "kind": "stagekit_standby", "name": "Standby Picture", "tip": "Switches the picture shown while nothing is captured on and off." },
 		{ "key": "showinscenes", "kind": "stagekit_show_in_scenes", "name": "Show in Scenes", "tip": "Shows and hides sources across scenes with one switch." },
 		{ "key": "fititem", "kind": "stagekit_fit_item", "name": "Fit to Space", "tip": "Switches a scene's fitting of its game or window on and off." },
-		{ "key": "activeapp", "kind": "stagekit_active_app", "name": "Follow Active App", "tip": "Switches following the app in use on and off." },
+		{ "key": "activeapp", "kind": "stagekit_active_app", "name": "Show Source in Use", "tip": "Switches showing the capture of the app in use on and off." },
+		{ "key": "appcapture", "kind": "stagekit_app_capture", "name": "Capture App in Use", "tip": "Switches one Window Capture's following of your apps on and off. On hands a hooked capture back to it." },
 		{ "key": "programtrigger", "kind": "stagekit_program_trigger", "name": "Program Trigger", "tip": "Switches a program trigger on and off." },
 		{ "key": "visibilitylink", "kind": "stagekit_visibility_link", "name": "Link Visibility", "tip": "Switches a link between items' visibility on and off." },
 		{ "key": "showhide", "kind": "stagekit_show_hide", "name": "Show/Hide Animation", "tip": "Switches a scene's show and hide animations on and off." }

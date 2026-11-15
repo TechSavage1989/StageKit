@@ -8,7 +8,8 @@ const MOVES = new Set(["stagekit_send_to", "stagekit_place_item", "stagekit_layo
 
 /** What each kind is called in OBS's own list of filters. */
 const NAMES: Record<string, string> = {
-	stagekit_active_app: "Follow Active App",
+	stagekit_active_app: "Show Source in Use",
+	stagekit_app_capture: "Capture App in Use",
 	stagekit_auto_capture: "Auto Capture",
 	stagekit_auto_frame: "Auto Frame",
 	stagekit_corners: "Corners & Edges",
