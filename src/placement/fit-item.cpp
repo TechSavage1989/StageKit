@@ -1163,7 +1163,8 @@ private:
 		} gather{&others, item, &s.skip, parent_, this};
 		static const auto add = [](obs_scene_t *, obs_sceneitem_t *other, void *param) {
 			auto *g = static_cast<Gather *>(param);
-			if (other == g->self || !obs_sceneitem_visible(other) || obs_sceneitem_is_group(other))
+			if (other == g->self || !obs_sceneitem_visible(other) || obs_sceneitem_is_group(other) ||
+			    is_morph_layer(other))
 				return true;
 			const char *name = obs_source_get_name(obs_sceneitem_get_source(other));
 			if (name && std::find(g->skip->begin(), g->skip->end(), name) != g->skip->end())

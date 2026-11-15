@@ -103,6 +103,12 @@ target_sources(
     src/placement/scene-tools.hpp
     src/transition/morph.cpp
     src/transition/morph.hpp
+    src/transition/morph-paint.cpp
+    src/transition/morph-paint.hpp
+    src/transition/item-morph.cpp
+    src/transition/item-morph.hpp
+    src/transition/fade-zoom.cpp
+    src/transition/fade-zoom.hpp
     src/placement/fit-item.cpp
     src/placement/fit-item.hpp
     src/placement/visibility-link.cpp

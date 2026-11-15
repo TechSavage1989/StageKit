@@ -44,7 +44,7 @@ notice and the confirmation are what there is. This is recorded in the handoff.
 | `src/frame/` | Auto Frame filter and the Aspect Ratio Preset filter |
 | `src/capture/` | Auto Capture filter (aims a Game Capture at the game in front), Program Trigger filter (shows items and switches filters while a program is open) and Follow Active App scene filter (shows the one of several captures whose app is in use). All use the Win32 window list in `auto-capture.cpp`; compiled but idle elsewhere. Also Standby Picture (`standby.*`), a filter that shows a picture in a capture's place while it has nothing; it works everywhere |
 | `src/api/` | obs-websocket vendor requests (`StageKit` vendor) |
-| `src/transition/` | Morph, a scene transition: items showing the same source in both scenes glide from one place to the other, the rest cross-fades |
+| `src/transition/` | Morph, a scene transition: items showing the same source in both scenes glide from one place to the other, the rest cross-fades (`morph.*`); the same between two items of one scene, one hidden as the other is shown (`item-morph.*`); Fade and Zoom, a transition for scenes and single items (`fade-zoom.*`); what the three draw with (`morph-paint.*`) |
 | `src/update/` | The updater: reads the releases from GitHub, tells the dock about a newer one, and on Windows installs it through a PowerShell helper that outlives OBS |
 | `src/third-party/` | Vendored `obs-websocket-api.h`, kept byte-for-byte (excluded from clang-format) |
 | `data/effects/` | Shaders in OBS `.effect` format. `stagekit-looks.effect` holds the newer looks (mosaic shapes, trail, bloom) apart from the older files |
@@ -544,6 +544,45 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   - Not followed during the change: an item's blending mode, its show and hide transition, a crop
     to the bounding box, and a shadow's size in screen pixels (`shown_scale` goes by one scene at
     a time, so it may jump at the start). None has been asked for.
+- **Morph between two items of one scene is drawn by a layer, not by the items' transitions**
+  (`src/transition/item-morph.cpp`). The owner: "id like a similar morph effect when showing and
+  hiding objects ... morph should be a transition in show in scene, and follow the same rules as
+  the global morph source links, or specify source links in the filter". What that rests on:
+  - OBS draws an item's show and hide transition inside the item's own frame, often by way of a
+    picture the size of that frame (any crop, scale filter or blending mode does it), so nothing
+    drawn there can cross the screen. A private source of the scene's size (`stagekit_morph_layer`)
+    is added to the scene straight above the two items, locked, for as long as the change lasts,
+    and taken out after. It draws the pair as the Morph transition does.
+  - The two items are hidden and shown for OBS and everything else from the first moment. Their
+    own transitions are the Morph transition as an item's (`ItemMorph`): *Paired* draws nothing,
+    *Alone* fades (or fades and zooms, `others`), *Waiting* is a hiding item left as it is and a
+    showing one not drawn yet.
+  - Pairs are found whoever hid and showed the items. Every Morph says when it starts
+    (`item_morph_started`); on the next tick the ones that are an item's are looked up in the
+    scenes (`find_items`), and a hide and a show in one scene within `kGraceNs` (0.1 s) pair up
+    when their sources are linked in *any* Morph's settings (`g_said`), or are the largest of each
+    at 15 % of the screen or more (`pair_main`). Only in a scene that is showing and for items
+    straight in it: a group would grow to the layer's size.
+  - The change goes by the shown item's transition's clock, and the tick ends it at the very frame
+    that transition draws the item itself: OBS's video time is the same in a frame's tick and its
+    drawing. Do not time it any other way, or there is a frame with both or with neither.
+  - Scene items are added and removed from a tick callback, never from inside a signal or while
+    drawing. Everything stops at `item_morph_stop()` (OBS closing, unload).
+  - Anything that goes through a scene's items to fit round them, line up with them or snap to
+    them must pass the layer over (`is_morph_layer` in `src/common/scene-util.hpp`): Fit to Space,
+    the arrange tools' obstacles and the Morph transition's own plan do.
+  - A filter with the fuller *Change with* (Show in Scenes) has its own links (`morph_links`, made
+    with `add_morph_link_properties`), handed to its items' Morph transitions as their `links`
+    setting, shown only while Morph is chosen. The other three filters go by the links made
+    elsewhere and by the main picture.
+  - A comparison of two times taken from the clock at different moments must not be made by
+    subtracting unsigned numbers: the first build ended every change in the tick that began it.
+- **Fade and Zoom** (`stagekit_fade_zoom`, `src/transition/fade-zoom.cpp`; the owner: "also add
+  fade and zoom as a transition") is a transition like OBS's own, so it is in every list of
+  transitions by itself. One side (an item): it fades as it grows or shrinks. Two sides (a change
+  of scene): the old scene stays underneath and the new one fades in over it as it grows, so the
+  picture is whole all the way. *Smallest size* stays at 100 % or under: larger would be cut off
+  at the item's frame.
 - **Blur goes to 1000** (`kMaxStrength`; it was 250 and the owner asked for more). A Gaussian or box
   blur set above `kTapLimit` (250) is drawn the Dual Kawase way for its whole ramp, so there is no
   change of look part-way through a ramp. Zoom's pull is still worked out from 250. Ambient

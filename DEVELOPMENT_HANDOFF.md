@@ -211,6 +211,28 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Morph between items; Fade and Zoom; Blur exclusions (0.1.0-beta115)
+
+- Three requests in a row (2026-11-15), released together:
+  - "id like a similar morph effect when showing and hiding objects. for example for my auto hide
+    and show between my 3d modeling apps, and regular window capture. morph should be a transition
+    in show in scene, and follow the same rules as the global morph source links, or specify
+    source links in the filter."
+  - "also add fade and zoom as a transition"
+  - "for ramp blur, there should be an exclusion option for And live capture on screen, so cameras
+    for example can be intentionally excluded from blur"
+- How the first is built, and why a layer in the scene: AGENTS.md. Tested with stand-in colour
+  blocks: a linked pair, an item by itself, the main-picture pair, the layer coming and going.
+- **Not confirmed by the owner yet**, and not run in a real OBS window. Things to listen for:
+  - the layer item flashing by in the Sources list, and a `User added source` line in OBS's log
+    for each change (OBS's window writes it for any item added);
+  - Follow Active App's captures in a group, or a Morph asked for in a scene that is not showing:
+    those fade (said in the README);
+  - a capture that is hidden keeps running for the length of the change (`obs_source_inc_showing`).
+- Not built: links of their own in Follow Active App, Program Trigger and Link Visibility (they
+  have the plain *Change with*; the links made in a Morph transition or a Show in Scenes count for
+  them, and so does the main picture). Give them the link boxes if asked.
+
 ## Shadow and outline sizes while an item is hidden (0.1.0-beta114)
 
 - The owner: with a slide off the nearest edge in Show in Scenes, an item's shadow and outline

@@ -522,6 +522,199 @@ int main(int argc, char **argv)
 			obs_transition_clear(morph);
 			obs_source_release(morph);
 		}
+		// --------------------------------------- one item into another
+		// The owner: "id like a similar morph effect when showing and
+		// hiding objects ... morph should be a transition in show in scene,
+		// and follow the same rules as the global morph source links".
+		{
+			printf("\n[morph between items]\n");
+			obs_source_t *first = block("Item Morph First", 0xFF0000FF, 100, 60);      // red
+			obs_source_t *second = block("Item Morph Second", 0xFF00FF00, 200, 120);   // green
+			obs_source_t *big_one = block("Item Morph Big One", 0xFFFFFF00, 300, 200); // cyan
+			obs_source_t *big_two = block("Item Morph Big Two", 0xFF00FFFF, 300, 200); // yellow
+			obs_scene_t *is = obs_scene_create("Item Morph Scene");
+			put(is, old_back, 0, 0); // blue
+			obs_sceneitem_t *one = put(is, first, 20, 150);
+			obs_sceneitem_t *two = put(is, second, 420, 120);
+			obs_sceneitem_set_visible(two, false);
+			auto count_items = [](obs_scene_t *scene) {
+				int n = 0;
+				obs_scene_enum_items(
+					scene,
+					[](obs_scene_t *, obs_sceneitem_t *, void *param) {
+						++*static_cast<int *>(param);
+						return true;
+					},
+					&n);
+				return n;
+			};
+			// Every Morph's links count: here the links of a Morph kept as a
+			// change of scene would be.
+			obs_data_t *gs_ = obs_data_create();
+			obs_data_set_int(gs_, "ease_curve", 0);
+			obs_data_array_t *links = obs_data_array_create();
+			obs_data_t *line = obs_data_create();
+			obs_data_set_string(line, "value", "Item Morph First \xE2\x86\x94 Item Morph Second");
+			obs_data_array_push_back(links, line);
+			obs_data_release(line);
+			obs_data_set_array(gs_, "links", links);
+			obs_data_array_release(links);
+			obs_source_t *global = obs_source_create_private("stagekit_morph", "Global Morph", gs_);
+			obs_data_release(gs_);
+			auto as_morph = [&](obs_sceneitem_t *item, bool show) {
+				obs_data_t *d = obs_data_create();
+				obs_data_set_int(d, "ease_curve", 0); // linear
+				obs_source_t *t = obs_source_create_private("stagekit_morph", "Item Morph", d);
+				obs_data_release(d);
+				obs_sceneitem_set_transition(item, show, t);
+				obs_sceneitem_set_transition_duration(item, show, 1000);
+				obs_source_release(t);
+			};
+			for (obs_sceneitem_t *item : {one, two}) {
+				as_morph(item, true);
+				as_morph(item, false);
+			}
+			obs_source_t *before_out = obs_get_output_source(0);
+			obs_set_output_source(0, obs_scene_get_source(is));
+			sleep_ms(300);
+			render(obs_scene_get_source(is), w, h);
+			// Where something of both colours is, in a frame.
+			struct Mixed {
+				int n = 0, x0 = 100000, x1 = -1;
+			};
+			auto mixed = [&](const std::vector<uint8_t> &frame, int c1, int c2) {
+				Mixed m;
+				for (int y = 0; y < (int)h; y++) {
+					for (int x = 0; x < (int)w; x++) {
+						if (px(frame, x, y, c1) > 90 && px(frame, x, y, c2) > 90) {
+							m.n++;
+							m.x0 = std::min(m.x0, x);
+							m.x1 = std::max(m.x1, x);
+						}
+					}
+				}
+				return m;
+			};
+			obs_sceneitem_set_visible(one, false);
+			obs_sceneitem_set_visible(two, true);
+			sleep_ms(450);
+			const std::vector<uint8_t> mid = render(obs_scene_get_source(is), w, h);
+			const Mixed m = mixed(mid, 0, 1);
+			const int during = count_items(is);
+			CHECK(m.n > 3000 && m.x0 > 120 && m.x1 < 600 && m.x1 - m.x0 > 104 && m.x1 - m.x0 < 196 &&
+				      px(mid, 60, 180, 0) < 15 && px(mid, 600, 180, 1) < 15 &&
+				      !obs_sceneitem_visible(one) && obs_sceneitem_visible(two),
+			      "an item hidden and a linked item shown at the same moment change into each other on the way: one picture of both colours between the two places, wider than the one and narrower than the other, and nothing at either end (%d px from x %d to %d; red %d where the first was, green %d at the far side of the second)",
+			      m.n, m.x0, m.x1, px(mid, 60, 180, 0), px(mid, 600, 180, 1));
+			sleep_ms(900);
+			render(obs_scene_get_source(is), w, h);
+			const std::vector<uint8_t> after = render(obs_scene_get_source(is), w, h);
+			CHECK(during == 4 && count_items(is) == 3 && px(after, 520, 180, 1) > 240 &&
+				      px(after, 520, 180, 0) < 15 && px(after, 60, 180, 0) < 15 &&
+				      mixed(after, 0, 1).n == 0,
+			      "it is drawn by a layer that is in the scene only while the change lasts, and afterwards the shown item is drawn as it is (%d items during, %d after; green %d in the second)",
+			      during, count_items(is), px(after, 520, 180, 1));
+
+			// By itself: nothing hidden or shown with it, so it fades.
+			obs_sceneitem_set_visible(two, false);
+			sleep_ms(550);
+			const std::vector<uint8_t> going = render(obs_scene_get_source(is), w, h);
+			const int alone_items = count_items(is);
+			sleep_ms(800);
+			render(obs_scene_get_source(is), w, h);
+			const std::vector<uint8_t> gone = render(obs_scene_get_source(is), w, h);
+			CHECK(px(going, 520, 180, 1) > 40 && px(going, 520, 180, 1) < 235 && alone_items == 3 &&
+				      px(gone, 520, 180, 1) < 15,
+			      "an item hidden with Morph and nothing to change into fades out where it is (green %d part-way, %d after; %d items)",
+			      px(going, 520, 180, 1), px(gone, 520, 180, 1), alone_items);
+
+			// The main picture: the largest item hidden and the largest shown
+			// go together without a link.
+			obs_sceneitem_t *b1 = put(is, big_one, 20, 20);
+			obs_sceneitem_t *b2 = put(is, big_two, 320, 140);
+			obs_sceneitem_set_visible(b2, false);
+			for (obs_sceneitem_t *item : {b1, b2}) {
+				as_morph(item, true);
+				as_morph(item, false);
+			}
+			sleep_ms(200);
+			render(obs_scene_get_source(is), w, h);
+			// For the README: before, on the way, after.
+			write_frame(out + "/../item-morph/1 before.rgba", render(obs_scene_get_source(is), w, h), w, h);
+			obs_sceneitem_set_visible(b1, false);
+			obs_sceneitem_set_visible(b2, true);
+			sleep_ms(450);
+			const std::vector<uint8_t> big_mid = render(obs_scene_get_source(is), w, h);
+			write_frame(out + "/../item-morph/2 on the way.rgba", big_mid, w, h);
+			// Cyan into yellow: red and blue are both part-way.
+			const Mixed bm = mixed(big_mid, 0, 2);
+			CHECK(bm.n > 30000 && bm.x0 > 40 && bm.x1 < 600,
+			      "with no link, the largest item hidden and the largest shown change into each other (%d px of both colours, from x %d to %d)",
+			      bm.n, bm.x0, bm.x1);
+			sleep_ms(900);
+			render(obs_scene_get_source(is), w, h);
+			write_frame(out + "/../item-morph/3 after.rgba", render(obs_scene_get_source(is), w, h), w, h);
+			CHECK(count_items(is) == 5, "and the layer is gone again (%d items)", count_items(is));
+
+			// Fade and Zoom, the owner's "also add fade and zoom as a
+			// transition": an item grows to its size as it fades in.
+			{
+				obs_source_t *zoomed = block("Fade Zoom Item", 0xFF0000FF, 200, 100); // red
+				obs_sceneitem_t *zi = put(is, zoomed, 20, 240);
+				obs_sceneitem_set_visible(zi, false);
+				obs_data_t *zd = obs_data_create();
+				obs_data_set_int(zd, "ease_curve", 0);
+				obs_data_set_double(zd, "zoom", 50.0);
+				obs_source_t *zt = obs_source_create_private("stagekit_fade_zoom", "Fade Zoom", zd);
+				CHECK(zt != nullptr, "the Fade and Zoom transition is registered and can be created");
+				if (zt) {
+					obs_sceneitem_set_transition(zi, true, zt);
+					obs_sceneitem_set_transition_duration(zi, true, 1000);
+					sleep_ms(200);
+					render(obs_scene_get_source(is), w, h);
+					obs_sceneitem_set_visible(zi, true);
+					sleep_ms(450);
+					const std::vector<uint8_t> zmid = render(obs_scene_get_source(is), w, h);
+					sleep_ms(800);
+					render(obs_scene_get_source(is), w, h);
+					const std::vector<uint8_t> zend = render(obs_scene_get_source(is), w, h);
+					// The item is 200x100 at 20,240: its middle is 120,290.
+					CHECK(px(zmid, 120, 290, 0) > 40 && px(zmid, 120, 290, 0) < 235 &&
+						      px(zmid, 25, 244, 0) < 15 && px(zend, 25, 244, 0) > 240 &&
+						      px(zend, 120, 290, 0) > 240,
+					      "an item shown with Fade and Zoom is part-way there and smaller than its frame on the way, and whole at the end (red %d in the middle and %d in the corner part-way; %d in the corner after)",
+					      px(zmid, 120, 290, 0), px(zmid, 25, 244, 0), px(zend, 25, 244, 0));
+					// As a change of scene the picture stays whole.
+					obs_source_t *zs =
+						obs_source_create_private("stagekit_fade_zoom", "Fade Zoom Scenes", zd);
+					obs_transition_set(zs, obs_scene_get_source(ma));
+					obs_transition_start(zs, OBS_TRANSITION_MODE_MANUAL, 0,
+							     obs_scene_get_source(mb));
+					obs_transition_set_manual_time(zs, 0.5f);
+					sleep_ms(120);
+					const std::vector<uint8_t> zscene = render(zs, w, h);
+					const double from_a =
+						mean_abs_diff(zscene, render(obs_scene_get_source(ma), w, h));
+					const double from_b =
+						mean_abs_diff(zscene, render(obs_scene_get_source(mb), w, h));
+					CHECK(opaque(zscene) && from_a > 3.0 && from_b > 3.0,
+					      "as a change of scene it is neither scene half-way, and a whole picture (%.1f from the old scene, %.1f from the new, whole %d)",
+					      from_a, from_b, (int)opaque(zscene));
+					obs_transition_clear(zs);
+					obs_source_release(zs);
+				}
+				obs_sceneitem_set_transition(zi, true, nullptr);
+				obs_source_release(zt);
+				obs_data_release(zd);
+				obs_source_release(zoomed);
+			}
+			obs_set_output_source(0, before_out);
+			obs_source_release(before_out);
+			obs_source_release(global);
+			obs_scene_release(is);
+			for (obs_source_t *src : {first, second, big_one, big_two})
+				obs_source_release(src);
+		}
 		obs_data_release(ms);
 		obs_scene_release(ma);
 		obs_scene_release(mb);
@@ -1480,6 +1673,57 @@ int main(int argc, char **argv)
 					vec2_set(&at, 0.0f, 0.0f);
 					obs_sceneitem_set_pos(cam1, &at);
 					obs_sceneitem_set_pos(cam2, &at);
+				}
+				// Morph as the way an item appears: the filter offers it, with
+				// the boxes a link is made from, and the items it shows are
+				// given the links made here. The owner: "morph should be a
+				// transition in show in scene, and follow the same rules as
+				// the global morph source links, or specify source links in
+				// the filter".
+				{
+					obs_data_set_string(cs, "change|for", "");
+					obs_data_set_string(cs, "transition", "stagekit_morph");
+					obs_data_set_string(cs, "hide_transition", "same");
+					obs_data_set_string(cs, "morph_link_a", "Switch Camera");
+					obs_data_set_string(cs, "morph_link_b", "Switch Chat");
+					obs_source_update(sw, cs);
+					obs_properties_t *mp = obs_source_properties(sw);
+					obs_property_t *add = obs_properties_get(mp, "morph_link_add");
+					const bool offered = add && obs_property_visible(add) &&
+							     obs_properties_get(mp, "show|stagekit_morph|others") &&
+							     obs_properties_get(mp, "show|stagekit_morph|ease_curve") &&
+							     !obs_properties_get(mp, "show|stagekit_morph|link_a");
+					const bool pressed = add && obs_property_button_clicked(add, sw);
+					const int rows = list_rows(mp, "morph_links|a");
+					obs_properties_destroy(mp);
+					sleep_ms(100);
+					flip(false);
+					flip(true);
+					obs_source_t *as = obs_sceneitem_get_transition(cam1, true);
+					obs_data_t *as_set = as ? obs_source_get_settings(as) : nullptr;
+					obs_data_array_t *given = as_set ? obs_data_get_array(as_set, "links")
+									 : nullptr;
+					CHECK(offered && pressed && rows == 1 && as &&
+						      strcmp(obs_source_get_unversioned_id(as), "stagekit_morph") ==
+							      0 &&
+						      given && obs_data_array_count(given) == 1,
+					      "Morph is offered as a way to show and hide, with its own settings and the boxes to link two sources; a link made in the filter goes to the items it shows (offered %d, pressed %d, rows %d, links on the item's transition %d)",
+					      (int)offered, (int)pressed, rows,
+					      given ? (int)obs_data_array_count(given) : -1);
+					obs_data_array_release(given);
+					obs_data_release(as_set);
+					// With another way chosen the link boxes are out of the way.
+					obs_data_t *now = obs_source_get_settings(sw);
+					obs_data_set_string(now, "transition", "fade_transition");
+					obs_source_update(sw, now);
+					obs_data_release(now);
+					obs_properties_t *fp = obs_source_properties(sw);
+					obs_property_t *hidden_add = obs_properties_get(fp, "morph_link_add");
+					CHECK(hidden_add && !obs_property_visible(hidden_add),
+					      "and with no Morph chosen the link boxes are not shown");
+					obs_properties_destroy(fp);
+					obs_data_release(cs);
+					cs = obs_source_get_settings(sw);
 				}
 				// Back to a cut for everything, as the checks below found it.
 				obs_data_set_string(cs, "change|for", "");
