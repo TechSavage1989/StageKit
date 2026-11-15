@@ -90,6 +90,8 @@ DRAWINGS = {
     # Filters with no picture in the pack (each also in an "off" look)
     "zoom": [("ring", 27, 16, 11), ("line", 35, 24, 46, 33), ("line", 22, 16, 32, 16), ("line", 27, 11, 27, 21)],
     "fit": [("frame", 6, 3, 58, 33), ("box", 20, 9, 44, 27)],
+    # Fit to Space Overlap: a window with a camera over its corner
+    "overlap": [("frame", 6, 3, 50, 29), ("box", 38, 19, 58, 33)],
     "source-switcher": [("frame", 6, 8, 24, 28), ("box", 40, 8, 58, 28)] + arrow(27, 18, 37, 18, 4),
     "window-switcher": WINDOW + [("frame", 30, 12, 58, 34), ("box", 30, 12, 58, 17)],
     "trigger": WINDOW + [("tri", 42, 10, 42, 30, 58, 20)],
@@ -129,7 +131,7 @@ for ratio in RATIOS:
 DRAWINGS["ratio-auto"] = [("frame", 6, 4, 58, 32), ("text", "A")]
 
 # The ones that are a filter's key, with an "on" and an "off" look.
-SWITCHES = ["zoom", "fit", "source-switcher", "window-switcher", "trigger", "link", "show-hide", "limit", "slide-to-edge", "every-scene", "keep-shape"]
+SWITCHES = ["zoom", "fit", "overlap", "source-switcher", "window-switcher", "trigger", "link", "show-hide", "limit", "slide-to-edge", "every-scene", "keep-shape"]
 
 
 def drawn(shapes, ink):

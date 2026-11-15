@@ -211,6 +211,25 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## The overlap rule gets a switch, a clearer name and a Stream Deck key (0.1.0-beta122)
+
+The owner on beta121: the fill rule at 98 % "seemed to work as intended" and "all the ambient
+background changes work"; *Avoid them* was "unclear and ambiguous" and should have "a toggle on or
+off and have a streamdeck button". Now *Overlap only when it fills* (`skip_fill_on`) and *Fill
+needed to overlap* (`skip_fill`); a share set in beta121 reads as switched on. Stream Deck 0.10.0.0
+adds the *Fit to Space Overlap* key, which sets the tick box through obs-websocket
+(`SetSourceFilterSettings`, overlay) and reads it back from `GetSourceFilter`; never run in Stream
+Deck from here.
+
+Mid-task the owner added: the Standby Picture's show and hide "just instantly goes on or off" and
+needs transitions "including morph and fade and zoom". It has both now (Morph is new, *Fade and
+zoom* was there as *Zoom and fade*), and the capture stays live under the picture while it comes
+in. The instant change was **not reproduced**; see AGENTS.md for the log line to ask for.
+
+The owner also asked for "the verbiage of the whole plugin and feature set" to be reviewed. A third
+table of names was put to them in chat on 2026-11-15 and is **not applied**: apply only what they
+approve, as with the first two (AGENTS.md, Names).
+
 ## Bloom and blur, the fill rule for Fit to Space, hiding to the Standby Picture (0.1.0-beta121)
 
 The owner on beta120: "frametimes are much better and all the transitions seem much smoother and

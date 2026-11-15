@@ -361,10 +361,11 @@ nearest.
 - It only works while its scene is being shown, so scenes you are not on cost nothing.
 - **Items never in the way**: items the free space ignores, such as a camera meant to overlap the
   game.
-- **Avoid them under a fill of** (0, off, as it comes): those items are only overlapped while the
-  picture fills at least this much of its space. Set to 95 %, a window that fills the screen stays
-  under the camera, and a window of another shape, which would leave bars beside it, is fitted
-  beside the camera instead.
+- **Overlap only when it fills** (unticked as it comes) with **Fill needed to overlap**: the items
+  never in the way are only overlapped while the fitted item fills at least that much of its
+  space. At 98 %, a window that fills the screen stays under the camera, and a window of another
+  shape, which would leave bars beside it, is fitted beside the camera instead. The Stream Deck
+  *Fit to Space Overlap* key switches it.
 - Add the filter to the **scene**, not to a group. To fit a group, choose the group as the *Item*.
   On a group the filter does nothing and says so.
 - With *Use visible pixels* ticked, the fitted item itself goes by what it shows, like the items
@@ -467,6 +468,8 @@ Game Capture, Window Capture or other live source.
 - It belongs after an Auto Frame in the filter list and puts itself there.
 - Corners, shadows and other filters after it are put on the picture as they are on the capture.
 - To go without it, switch the filter off with its eye or a Stream Deck filter key.
+- *Transition* has a fade, a cut, slides, wipes, *Fade and zoom* and *Morph* (the capture and the
+  picture both stretched over the frame as it glides from one shape to the other).
 - **Show or hide the picture now** (a button, and a hotkey on the source) brings the picture in over
   a capture that is running and takes it away again: a way to hide the capture without leaving a
   hole. An Automatic Window Switcher on the same capture does this when asked to hide the capture
@@ -995,6 +998,7 @@ option has one.
 | **Move Source**, **Move Scene Item**, **Apply Layout** | Runs that move. A tick shows on the key when OBS has taken it |
 | **Set Aspect Ratio** | Sets a game's aspect ratio by hand, for when Auto Frame's own reading is not what you want: 4:3, 8:7, 3:2, 10:9, 16:9 and more, or *Automatic* to hand it back. *Keep ratio*: *This game only* (the shape lasts while that game is captured and goes back to automatic when it ends; set before the game starts, it waits for it) or *Until changed*. The key shows its ratio |
 | **Capture Active Window** | Makes a Game Capture or a Window Capture take whatever window or game is in front when you press it. *Transition* and *Duration* choose how the capture changes over: a fade (as it comes), a cut, or any other transition OBS has. An Auto Capture on that capture is switched off so it stays where you put it; the **Auto Capture** key, set to *Switches it on*, hands it back |
+| **Fit to Space Overlap** | Switches a Fit to Space filter's *Overlap only when it fills* on and off, and shows which way it is. On: the fitted window goes under the camera only while it fills its space, and beside it otherwise |
 | **Manual Window / Source** | Also for a Window Capture with a Automatic Window Switcher filter: the next of its *Manual windows*, back to following the apps, or the capture hidden and shown. For a scene with a Automatic Source Switcher filter: shows the next of its *Manual sources*, or goes back to following the apps |
 | **Arrange tool** | One of the dock's arrange tools on a key: line up an edge or centre, space out evenly, snap, make the same width, height or size, or copy a transform to all or to the chosen scenes. It works on the items selected in OBS's preview |
 | **Dock Option** | One of the dock's switches on a key: *Snap on release*, *Guides*, *Stop resizing at edges*, *Slide to the next edge*, *In every scene* or *Keep shape*. It shows which way the switch is, also when you change it in the dock |

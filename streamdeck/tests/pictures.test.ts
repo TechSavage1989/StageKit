@@ -111,3 +111,12 @@ test("every option of every key has a picture of its own, and a title", () => {
 	assert.equal(slideTitle("up-left"), "Slide\nUp Left");
 	assert.equal(shapeTitle("8:7"), "8:7");
 });
+
+test("the Fit to Space Overlap key has a picture of its own and says which way it switches", async () => {
+	const { overlapPicture } = await import("../src/pictures.ts");
+	const { overlapTitle } = await import("../src/titles.ts");
+	assert.equal(overlapPicture(undefined).id, "options/overlap");
+	assert.notEqual(overlapPicture(undefined).on, overlapPicture(undefined).off);
+	assert.equal(overlapTitle("toggle"), "Overlap\nIf Fills");
+	assert.equal(overlapTitle("off"), "Overlap\nIf Fills\nOff");
+});

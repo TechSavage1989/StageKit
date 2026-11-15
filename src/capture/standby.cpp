@@ -57,6 +57,7 @@ enum class Style : int {
 	WipeUp = 8,
 	WipeDown = 9,
 	Zoom = 10,
+	Morph = 11, // both pictures stretched over the frame as it glides
 };
 
 enum class Picture : int {
@@ -186,7 +187,7 @@ public:
 		named_ = obs_data_get_string(settings, "source");
 		fade_s_ = std::clamp<long long>(obs_data_get_int(settings, "fade_ms"), 0, 5000) / 1000.0;
 		back_s_ = std::clamp<long long>(obs_data_get_int(settings, "back_ms"), 0, 5000) / 1000.0;
-		style_ = static_cast<Style>(std::clamp((int)obs_data_get_int(settings, "style"), 0, 10));
+		style_ = static_cast<Style>(std::clamp((int)obs_data_get_int(settings, "style"), 0, 11));
 		curve_ = static_cast<EaseCurve>(obs_data_get_int(settings, "ease_curve"));
 		mode_ = static_cast<EaseMode>(obs_data_get_int(settings, "ease_mode"));
 		glide_size_ = obs_data_get_bool(settings, "glide_size");
@@ -342,9 +343,20 @@ public:
 			// none with a capture, changing over the same times.
 			const double step = cut ? 1.0 : seconds / over;
 			mix_ = empty ? std::min(1.0, mix_ + step) : std::max(0.0, mix_ - step);
+			// (Shown over a capture that is still running, the capture goes
+			// on being drawn under the picture until the picture is all
+			// there: the change is from a live picture, not a still one.)
+			const bool under = empty && cover_ && mix_ < 1.0 && tw && th &&
+					   obs_source_get_base_width(parent) != 0;
+			if (empty != empty_)
+				obs_log(LOG_INFO, "Standby Picture '%s': %s, over %.0f ms (transition %d)",
+					obs_source_get_name(source_),
+					empty ? (cover_ ? "shown over the capture" : "the capture has gone")
+					      : "back to the capture",
+					cut ? 0.0 : over * 1000.0, (int)style_);
 			empty_ = empty;
-			live_w_ = empty ? 0 : tw;
-			live_h_ = empty ? 0 : th;
+			live_w_ = empty && !under ? 0 : tw;
+			live_h_ = empty && !under ? 0 : th;
 		}
 		double mix;
 		{
@@ -381,7 +393,12 @@ public:
 			live_h = live_h_;
 		}
 		const uint32_t w = width(), h = height();
-		const bool live = !empty && live_w && live_h;
+		const bool live = live_w && live_h;
+		bool morph;
+		{
+			std::lock_guard lock(mutex_);
+			morph = style_ == Style::Morph;
+		}
 		if (!w || !h) {
 			if (live)
 				obs_source_skip_video_filter(source_);
@@ -412,7 +429,7 @@ public:
 		if (live) {
 			if (!render_live_)
 				render_live_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
-			if (gs_texture_t *texture = covered(render_live_, w, h, live_w, live_h, nullptr)) {
+			if (gs_texture_t *texture = covered(render_live_, w, h, live_w, live_h, nullptr, morph)) {
 				draw(texture, w, h, 1.0f);
 				kept_w_ = w;
 				kept_h_ = h;
@@ -421,7 +438,7 @@ public:
 			}
 		} else if (mix < 1.0 && render_live_ && kept_w_ && kept_h_) {
 			if (gs_texture_t *texture = gs_texrender_get_texture(render_live_))
-				draw_kept(texture, w, h);
+				draw_kept(texture, w, h, morph);
 		} else {
 			kept_w_ = kept_h_ = 0;
 		}
@@ -431,7 +448,7 @@ public:
 		if (mix > 0.0 && pw && ph) {
 			if (!render_)
 				render_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
-			if (gs_texture_t *texture = covered(render_, w, h, pw, ph, picture))
+			if (gs_texture_t *texture = covered(render_, w, h, pw, ph, picture, morph))
 				draw_styled(texture, w, h, mix);
 		}
 	}
@@ -460,7 +477,7 @@ private:
 	// Draws a source (or, with none given, what comes before this filter)
 	// into `into` at w x h, covering it. Returns the texture.
 	gs_texture_t *covered(gs_texrender_t *into, uint32_t w, uint32_t h, uint32_t sw, uint32_t sh,
-			      obs_source_t *source)
+			      obs_source_t *source, bool stretch = false)
 	{
 		gs_texrender_reset(into);
 		const bool was_linear = gs_set_linear_srgb(false);
@@ -476,9 +493,14 @@ private:
 			gs_blend_state_push();
 			gs_blend_function(GS_BLEND_ONE, GS_BLEND_INVSRCALPHA);
 			gs_matrix_push();
-			gs_matrix_translate3f(((float)w - (float)sw * scale) / 2.0f,
-					      ((float)h - (float)sh * scale) / 2.0f, 0.0f);
-			gs_matrix_scale3f(scale, scale, 1.0f);
+			if (stretch) {
+				// Morph: the whole picture, stretched to the frame.
+				gs_matrix_scale3f((float)w / (float)sw, (float)h / (float)sh, 1.0f);
+			} else {
+				gs_matrix_translate3f(((float)w - (float)sw * scale) / 2.0f,
+						      ((float)h - (float)sh * scale) / 2.0f, 0.0f);
+				gs_matrix_scale3f(scale, scale, 1.0f);
+			}
 			if (source)
 				obs_source_video_render(source);
 			else
@@ -513,6 +535,7 @@ private:
 		double sx = 0, sy = 0, sw = fw, sh = fh, dx = 0, dy = 0, scale_x = 1.0, scale_y = 1.0, strength = 1.0;
 		switch (style) {
 		case Style::Fade:
+		case Style::Morph:
 			strength = v;
 			break;
 		case Style::Cut:
@@ -607,11 +630,14 @@ private:
 
 	// The last frame of a capture that has ended, covering the size of the
 	// moment: as large as needed, centred, what does not fit left out.
-	void draw_kept(gs_texture_t *texture, uint32_t w, uint32_t h)
+	void draw_kept(gs_texture_t *texture, uint32_t w, uint32_t h, bool stretch)
 	{
 		const float scale = std::max((float)w / (float)kept_w_, (float)h / (float)kept_h_);
-		const uint32_t part_w = std::clamp((uint32_t)std::lround((float)w / scale), 1u, kept_w_);
-		const uint32_t part_h = std::clamp((uint32_t)std::lround((float)h / scale), 1u, kept_h_);
+		// (Morph stretches all of it over the frame; the others cover it.)
+		const uint32_t part_w = stretch ? kept_w_
+						: std::clamp((uint32_t)std::lround((float)w / scale), 1u, kept_w_);
+		const uint32_t part_h = stretch ? kept_h_
+						: std::clamp((uint32_t)std::lround((float)h / scale), 1u, kept_h_);
 		gs_eparam_t *image = gs_effect_get_param_by_name(effect_, "image");
 		gs_effect_set_float(gs_effect_get_param_by_name(effect_, "opacity"), 1.0f);
 		const bool linear = gs_get_linear_srgb();
@@ -771,17 +797,12 @@ obs_properties_t *get_properties(void *data)
 	const struct {
 		Style value;
 		const char *text;
-	} styles[] = {{Style::Fade, "Standby.Style.Fade"},
-		      {Style::Cut, "Standby.Style.Cut"},
-		      {Style::SlideLeft, "Standby.Style.SlideLeft"},
-		      {Style::SlideRight, "Standby.Style.SlideRight"},
-		      {Style::SlideUp, "Standby.Style.SlideUp"},
-		      {Style::SlideDown, "Standby.Style.SlideDown"},
-		      {Style::WipeLeft, "Standby.Style.WipeLeft"},
-		      {Style::WipeRight, "Standby.Style.WipeRight"},
-		      {Style::WipeUp, "Standby.Style.WipeUp"},
-		      {Style::WipeDown, "Standby.Style.WipeDown"},
-		      {Style::Zoom, "Standby.Style.Zoom"}};
+	} styles[] = {{Style::Fade, "Standby.Style.Fade"},           {Style::Cut, "Standby.Style.Cut"},
+		      {Style::SlideLeft, "Standby.Style.SlideLeft"}, {Style::SlideRight, "Standby.Style.SlideRight"},
+		      {Style::SlideUp, "Standby.Style.SlideUp"},     {Style::SlideDown, "Standby.Style.SlideDown"},
+		      {Style::WipeLeft, "Standby.Style.WipeLeft"},   {Style::WipeRight, "Standby.Style.WipeRight"},
+		      {Style::WipeUp, "Standby.Style.WipeUp"},       {Style::WipeDown, "Standby.Style.WipeDown"},
+		      {Style::Zoom, "Standby.Style.Zoom"},           {Style::Morph, "Standby.Style.Morph"}};
 	for (const auto &entry : styles)
 		obs_property_list_add_int(style, obs_module_text(entry.text), (int)entry.value);
 	obs_property_set_long_description(style, obs_module_text("Standby.Style.Tip"));

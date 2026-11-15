@@ -4,6 +4,7 @@ import { AppSwitch } from "./actions/app-switch.ts";
 import { DockOption } from "./actions/option.ts";
 import { Slide } from "./actions/slide.ts";
 import { BlurAll } from "./actions/blur-all.ts";
+import { FitOverlap } from "./actions/fit-overlap.ts";
 import { Hook } from "./actions/hook.ts";
 import { Move } from "./actions/move.ts";
 import { PictureShape } from "./actions/shape.ts";
@@ -27,6 +28,7 @@ for (const feature of features.moves)
 streamDeck.actions.registerAction(new PictureShape());
 streamDeck.actions.registerAction(new Hook());
 streamDeck.actions.registerAction(new AppSwitch());
+streamDeck.actions.registerAction(new FitOverlap());
 streamDeck.actions.registerAction(new Tool());
 streamDeck.actions.registerAction(new BlurAll());
 streamDeck.actions.registerAction(new DockOption());

@@ -146,6 +146,11 @@ export function stepPicture(chosen: string | undefined, step: string | undefined
 	return (chosen && BY_ID.get(chosen)) || BY_ID.get(fits) || plain("move");
 }
 
+/** A Fit to Space Overlap key's picture: a window with a camera over its corner. */
+export function overlapPicture(chosen: string | undefined): Picture {
+	return (chosen && BY_ID.get(chosen)) || BY_ID.get("options/overlap") || plain("switch");
+}
+
 /** A Set Aspect Ratio key's picture: a frame of that shape. */
 export function shapePicture(chosen: string | undefined, shape: string | undefined): Picture {
 	const fits = `options/ratio-${shape && shape !== "auto" ? shape.replace(":", "x") : "auto"}`;

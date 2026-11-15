@@ -1,6 +1,6 @@
 {
 	"Name": "StageKit",
-	"Version": "0.9.0.0",
+	"Version": "0.10.0.0",
 	"Author": "StageKit contributors",
 	"Actions": [
 		{
@@ -403,6 +403,28 @@
 			"States": [
 				{
 					"Image": "imgs/actions/appswitch/on",
+					"TitleAlignment": "bottom"
+				}
+			]
+		},
+		{
+			"Name": "Fit to Space Overlap",
+			"UUID": "com.techsavage1989.stagekit.fitoverlap",
+			"Icon": "imgs/actions/switch/icon",
+			"Tooltip": "Switches a Fit to Space filter's 'Overlap only when it fills': on, the fitted window goes under the camera only while it fills its space, and beside it otherwise.",
+			"PropertyInspectorPath": "ui/fitoverlap.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/fitoverlap/off",
+					"Name": "Off",
+					"TitleAlignment": "bottom"
+				},
+				{
+					"Image": "imgs/actions/fitoverlap/on",
+					"Name": "On",
 					"TitleAlignment": "bottom"
 				}
 			]

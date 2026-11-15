@@ -480,7 +480,14 @@ public:
 		s.h = std::max(2.0, obs_data_get_double(settings, "box_height"));
 		s.margin = std::clamp(obs_data_get_double(settings, "margin"), 0.0, 2000.0);
 		s.tolerance = std::clamp(obs_data_get_double(settings, "tolerance"), 0.0, 200.0);
-		s.skip_fill = std::clamp(obs_data_get_double(settings, "skip_fill") / 100.0, 0.0, 1.0);
+		// (A switch of its own since beta122; a share set before that
+		// counts as switched on, and is written down as such.)
+		if (!obs_data_has_user_value(settings, "skip_fill_on") &&
+		    obs_data_has_user_value(settings, "skip_fill") && obs_data_get_double(settings, "skip_fill") > 0.0)
+			obs_data_set_bool(settings, "skip_fill_on", true);
+		s.skip_fill = obs_data_get_bool(settings, "skip_fill_on")
+				      ? std::clamp(obs_data_get_double(settings, "skip_fill") / 100.0, 0.0, 1.0)
+				      : 0.0;
 		s.resize = obs_data_get_bool(settings, "resize");
 		// 0 the middle, then top, bottom, left, right, and the four corners.
 		static const int kTowardX[] = {0, 0, 0, -1, 1, -1, 1, -1, 1};
@@ -1502,9 +1509,11 @@ bool box_modified(obs_properties_t *props, obs_property_t *, obs_data_t *setting
 	for (const char *name : {"box_x", "box_y", "box_width", "box_height"})
 		obs_property_set_visible(obs_properties_get(props, name), kind == 1);
 	for (const char *name :
-	     {"skip|alist", "glide_ms", "ease_curve", "ease_mode", "visible_pixels", "tolerance", "skip_fill"})
+	     {"skip|alist", "glide_ms", "ease_curve", "ease_mode", "visible_pixels", "tolerance", "skip_fill_on"})
 		if (obs_property_t *p = obs_properties_get(props, name))
 			obs_property_set_visible(p, kind == 2);
+	if (obs_property_t *p = obs_properties_get(props, "skip_fill"))
+		obs_property_set_visible(p, kind == 2 && obs_data_get_bool(settings, "skip_fill_on"));
 	obs_property_set_description(obs_properties_get(props, "margin"),
 				     obs_module_text(kind == 2 ? "Fit.Gap" : "Fit.Margin"));
 	return true;
@@ -1582,6 +1591,10 @@ obs_properties_t *get_properties(void *data)
 		scene_item_names(parent, names);
 	};
 	pick_list_add(props, self ? self->source() : nullptr, skip);
+	obs_property_t *skip_fill_on =
+		obs_properties_add_bool(props, "skip_fill_on", obs_module_text("Fit.SkipFillOn"));
+	obs_property_set_long_description(skip_fill_on, obs_module_text("Fit.SkipFillOn.Tip"));
+	obs_property_set_modified_callback(skip_fill_on, box_modified);
 	obs_property_t *skip_fill =
 		obs_properties_add_float_slider(props, "skip_fill", obs_module_text("Fit.SkipFill"), 0.0, 100.0, 1.0);
 	obs_property_float_set_suffix(skip_fill, "%");
@@ -1623,7 +1636,8 @@ void get_defaults(obs_data_t *settings)
 	obs_data_set_default_double(settings, "box_height", have ? ovi.base_height : 1080);
 	obs_data_set_default_double(settings, "margin", 80.0);
 	obs_data_set_default_double(settings, "tolerance", 8.0);
-	obs_data_set_default_double(settings, "skip_fill", 0.0);
+	obs_data_set_default_bool(settings, "skip_fill_on", false);
+	obs_data_set_default_double(settings, "skip_fill", 95.0);
 	obs_data_set_default_bool(settings, "resize", true);
 	obs_data_set_default_int(settings, "toward", 0);
 	obs_data_set_default_bool(settings, "visible_pixels", true);
