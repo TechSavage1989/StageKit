@@ -418,8 +418,10 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   `set_item_transitions` and `apply_item_change` pass them over. A new filter that sets item
   transitions must go through those two calls. Seen in the tests with a fade and by the
   transitions set; a Morph between the two on screen has not been looked at on Windows.
-- **Shadow, Glow & Outline and Corners & Edges take their input afresh at each drawing**
-  (`draw_filter_input` in `src/common/filter-input.hpp`, beta142), not through
+- **Every StageKit filter takes its input afresh at each drawing** (Shadow, Glow & Outline and
+  Corners & Edges since beta142; Blur, Zoom and Auto Frame since beta146, at the owner's word:
+  "yes, make blur, zoom and auto frame safe too"; `draw_filter_input` in
+  `src/common/filter-input.hpp`), not through
   `obs_source_process_filter_begin`. OBS's way fills a texture of the filter's that is only
   cleared in the filter's tick, so a source drawn twice in one frame comes out the same both
   times. A source and its stand-in are both on screen for the whole of a transition between
@@ -429,9 +431,9 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   Two other ways were tried and cannot work: a copy of the stand-in's look made in the filter's
   tick or in OBS's tick callback either keeps the source's picture from the frame before or
   leaves its own in the later filters, and nothing a plugin can call clears that texture
-  (`obs_source_video_tick` is not exported). So: a StageKit filter that may come after a
-  Standby filter uses `draw_filter_input`; Blur, Zoom and Auto Frame still go OBS's way and
-  would need the same if they are put after one. A filter of OBS's own or of another plugin
+  (`obs_source_video_tick` is not exported). So: **a new StageKit filter takes its input with
+  `draw_filter_input`, never `obs_source_process_filter_begin`** (only that helper calls it,
+  for a picture in a wide colour space). A filter of OBS's own or of another plugin
   after the Standby filter still has the fault; the README says to put those before it. While
   building this, three test runs in a row tested an old build, because the build had failed
   and its errors were filtered away: **check the build's exit code before a run.** The
