@@ -211,6 +211,16 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Stream Deck keys keep their image and name (0.1.0-beta140)
+
+The owner's screenshot: a Capture Active Window key set to a Window Capture showing *Capture
+Game*, and rows of keys named *Move* and *Switch*; the plugin's lists still said *Picture* and
+*Standby Picture*, so Stream Deck had not taken beta135's copy. **The cause was reasoned from the
+code, not seen**: every one of those looks is what a key shows when OBS gives no answer. Keys now
+remember the last answer and look again after OBS has loaded; the plugin is 0.17.0.0. Whether
+the installer's hand-over of the `.streamDeckPlugin` file updates an installed plugin by itself is
+still not known: ask the owner which version Stream Deck shows.
+
 ## StageKit keeps OBS's window layout (0.1.0-beta138)
 
 The owner: their dock-layout plugins save the layout, "but whenever I start OBS the layout is lost

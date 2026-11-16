@@ -25,6 +25,8 @@ export async function showOnOff(
 	await key.setState(on ? 1 : 0);
 }
 
+export { remembered, type Seen } from "../seen.ts";
+
 export type KeySettings = {
 	/** The source and filter in one: what the keys for one feature choose from. */
 	target?: string;

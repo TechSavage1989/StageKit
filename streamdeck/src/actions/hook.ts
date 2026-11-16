@@ -11,7 +11,7 @@ import type { JsonValue } from "@elgato/utils";
 import { obs } from "../obs.ts";
 import { file, hookPicture } from "../pictures.ts";
 import { hookTitle } from "../titles.ts";
-import { answerLists, type KeySettings } from "./shared.ts";
+import { answerLists, type KeySettings, remembered } from "./shared.ts";
 
 /**
  * A key that hooks a Game Capture or a Window Capture onto whatever window
@@ -65,8 +65,11 @@ export class Hook extends SingletonAction<KeySettings> {
 		} catch {
 			// OBS went away meanwhile; the game picture will do.
 		}
-		await key.setImage(file(hookPicture(settings.picture, kind), true, settings.palette));
-		await key.setTitle(hookTitle(kind));
+		// (While OBS cannot say which kind of capture it is, the key goes by
+		// what it last learned: it used to turn into "Capture Game".)
+		const seen = await remembered(key, settings, settings.source ?? "", kind ? { kind } : undefined);
+		await key.setImage(file(hookPicture(settings.picture, seen?.kind), true, settings.palette));
+		await key.setTitle(hookTitle(seen?.kind));
 	}
 
 	private async showAll(): Promise<void> {

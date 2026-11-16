@@ -12,7 +12,7 @@ import { afterPress, targetOf } from "../kinds.ts";
 import { obs } from "../obs.ts";
 import { chooseFor, plain } from "../pictures.ts";
 import { switchTitle } from "../titles.ts";
-import { answerLists, type KeySettings, showOnOff } from "./shared.ts";
+import { answerLists, type KeySettings, remembered, showOnOff } from "./shared.ts";
 
 /**
  * A key that switches one StageKit filter on and off and shows which way it
@@ -81,11 +81,13 @@ export class FilterSwitch extends SingletonAction<KeySettings> {
 		// in its "off" and "on" form, in this key's palette.
 		// (And the source it is on: the pack's own picture of that source,
 		// or, for a key that shows and hides a source, what that source is.)
-		const kind = now?.kind ?? "";
+		// (While OBS cannot say, the key goes by what it last learned.)
+		const seen = await remembered(key, settings, `${source}\n${filter}`, now);
+		const kind = seen?.kind ?? "";
 		const inputKind = kind === "stagekit_show_in_scenes" && !settings.picture ? await obs.inputKind(source) : undefined;
-		const picture = chooseFor(settings.picture, kind, now?.settings, source, inputKind) ?? plain("switch");
-		await showOnOff(key, picture, now?.enabled === true, settings.palette);
-		await key.setTitle(switchTitle(now?.kind, settings.press));
+		const picture = chooseFor(settings.picture, kind, seen?.settings, source, inputKind) ?? plain("switch");
+		await showOnOff(key, picture, seen?.enabled === true, settings.palette);
+		await key.setTitle(switchTitle(seen?.kind, settings.press));
 	}
 
 	private async showAll(): Promise<void> {
