@@ -395,6 +395,25 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   `set_item_transitions` and `apply_item_change` pass them over. A new filter that sets item
   transitions must go through those two calls. Seen in the tests with a fade and by the
   transitions set; a Morph between the two on screen has not been looked at on Windows.
+- **Shadow, Glow & Outline and Corners & Edges take their input afresh at each drawing**
+  (`draw_filter_input` in `src/common/filter-input.hpp`, beta142), not through
+  `obs_source_process_filter_begin`. OBS's way fills a texture of the filter's that is only
+  cleared in the filter's tick, so a source drawn twice in one frame comes out the same both
+  times. A source and its stand-in are both on screen for the whole of a transition between
+  them, and with a shadow or corners after the Standby filter both showed whichever was drawn
+  first: the owner's "most of the transitions don't work. they just instantly switch in place
+  ... the standby image flash then change when showing". Beta141's tests had no later filter.
+  Two other ways were tried and cannot work: a copy of the stand-in's look made in the filter's
+  tick or in OBS's tick callback either keeps the source's picture from the frame before or
+  leaves its own in the later filters, and nothing a plugin can call clears that texture
+  (`obs_source_video_tick` is not exported). So: a StageKit filter that may come after a
+  Standby filter uses `draw_filter_input`; Blur, Zoom and Auto Frame still go OBS's way and
+  would need the same if they are put after one. A filter of OBS's own or of another plugin
+  after the Standby filter still has the fault; the README says to put those before it. While
+  building this, three test runs in a row tested an old build, because the build had failed
+  and its errors were filtered away: **check the build's exit code before a run.** The
+  first of the two transition lists is called *No-signal transition* since then (the owner: "no
+  signal transition is ok").
 - **Show in Scenes can take bring-along items with it** (`with_linked`, off by default): the
   `linked` item of every Move Source filter on a listed source, and of Move Scene Item filters that move it.
   The owner asked for it.
