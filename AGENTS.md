@@ -418,7 +418,15 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   it on the item and, the two ways swapped, on its twin (`apply_item_change_as_owner`), ahead of
   time. With Morph both transitions get a link "<source> ↔ <source> (standby)" on top of the
   links made in the filter, so the item Morph pairs them. The twin's visibility follows its item
-  every tick (`pairs_`, held from the last look), inside Morph's 0.1 s. And while it is ticked
+  every tick (`pairs_`, from the last look), inside Morph's 0.1 s. `pairs_` knows each item
+  and twin by its id in its scene (`Held`: a weak scene and two ids), **never by holding the
+  item**: an item holds its source, so a filter that holds the items of the source it sits on
+  keeps that source alive for good. Up to beta147 it did, the hold was only let go at the next
+  look, and no look comes once a collection starts changing (`scenes_loaded()`): OBS logged "Not
+  all sources were cleared ... - DSLR" and closed itself at every change of scene collection
+  ("Source Cleanup Error"). A filter must never keep a reference to an item of its own source
+  past one call. The tests can say a collection is changing (`stagekit_test_loaded`, a global
+  proc). And while it is ticked
   nothing else sets those items' transitions: `item_transitions_owner` (`g_stood_in`) makes
   `set_item_transitions` and `apply_item_change` pass them over. A new filter that sets item
   transitions must go through those two calls. Seen in the tests with a fade and by the

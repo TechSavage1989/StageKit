@@ -230,10 +230,7 @@ public:
 			std::lock_guard lock(g_stood_in_mutex);
 			g_stood_in.erase(obs_filter_get_parent(source_));
 		}
-		for (const auto &pair : pairs_) {
-			obs_sceneitem_release(pair.first);
-			obs_sceneitem_release(pair.second);
-		}
+		forget_pairs();
 		// Its stand-in items go with it.
 		if (stand_in_) {
 			std::vector<obs_sceneitem_t *> twins;
@@ -332,10 +329,17 @@ public:
 		// Every frame, for the pairs known: the stand-in shows the moment its
 		// item is hidden and goes the moment it is shown, so the two changes
 		// are one (and a Morph finds them together).
-		for (const auto &pair : pairs_) {
-			const bool shown = obs_sceneitem_visible(pair.first);
-			if (obs_sceneitem_visible(pair.second) == shown)
-				obs_sceneitem_set_visible(pair.second, !shown);
+		for (const Held &pair : pairs_) {
+			obs_source_t *scene_source = obs_weak_source_get_source(pair.scene);
+			obs_scene_t *scene = obs_scene_from_source(scene_source);
+			obs_sceneitem_t *item = scene ? obs_scene_find_sceneitem_by_id(scene, pair.item) : nullptr;
+			obs_sceneitem_t *twin = scene ? obs_scene_find_sceneitem_by_id(scene, pair.twin) : nullptr;
+			if (item && twin) {
+				const bool shown = obs_sceneitem_visible(item);
+				if (obs_sceneitem_visible(twin) == shown)
+					obs_sceneitem_set_visible(twin, !shown);
+			}
+			obs_source_release(scene_source);
 		}
 		Picture kind;
 		std::string file, named;
@@ -630,11 +634,7 @@ public:
 			else
 				g_stood_in.erase(parent);
 		}
-		for (const auto &pair : pairs_) {
-			obs_sceneitem_release(pair.first);
-			obs_sceneitem_release(pair.second);
-		}
-		pairs_.clear();
+		forget_pairs();
 		if (!wanted && !stand_in_)
 			return;
 		if (wanted && !stand_in_) {
@@ -773,9 +773,8 @@ public:
 			}
 			if (obs_sceneitem_visible(twin) == shown)
 				obs_sceneitem_set_visible(twin, !shown);
-			obs_sceneitem_addref(real.item);
-			obs_sceneitem_addref(twin);
-			pairs_.emplace_back(real.item, twin);
+			pairs_.push_back({obs_source_get_weak_source(obs_scene_get_source(real.scene)),
+					  obs_sceneitem_get_id(real.item), obs_sceneitem_get_id(twin)});
 		}
 		// A stand-in whose item has gone, or all of them when they are no
 		// longer wanted, is taken out.
@@ -792,11 +791,7 @@ public:
 		for (const Pair &pair : found)
 			obs_sceneitem_release(pair.item);
 		if (!wanted) {
-			for (const auto &pair : pairs_) {
-				obs_sceneitem_release(pair.first);
-				obs_sceneitem_release(pair.second);
-			}
-			pairs_.clear();
+			forget_pairs();
 			obs_source_release(stand_in_);
 			stand_in_ = nullptr;
 		}
@@ -1120,7 +1115,22 @@ private:
 	bool hidden_changed_ = true;
 	obs_source_t *stand_in_ = nullptr;
 	// Each item with its stand-in, both held, from the last look.
-	std::vector<std::pair<obs_sceneitem_t *, obs_sceneitem_t *>> pairs_;
+	// Each item of the source and its stand-in, known by their ids in their
+	// scene, never held: the items hold the source this filter is on, so
+	// holding them kept the source alive for good once its scenes were
+	// cleared, and OBS would not change scene collection or close cleanly
+	// ("Not all sources were cleared ... - DSLR", beta139 to beta147).
+	struct Held {
+		obs_weak_source_t *scene;
+		int64_t item, twin;
+	};
+	std::vector<Held> pairs_;
+	void forget_pairs()
+	{
+		for (const Held &pair : pairs_)
+			obs_weak_source_release(pair.scene);
+		pairs_.clear();
+	}
 	double stand_in_check_ = 1.0;
 	uint32_t kept_w_ = 0, kept_h_ = 0; // the size of the capture's last frame in render_live_
 	double order_check_ = 1.0, waited_ = 0.0;

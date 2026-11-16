@@ -1352,6 +1352,70 @@ int main(int argc, char **argv)
 	}
 
 	// ------------------------------------------------------------ start image
+	// ------------------------------------------- a stand-in lets its source go
+	{
+		printf("\n[a source with stand-ins is let go of with its scenes]\n");
+		obs_data_t *cd = obs_data_create();
+		obs_data_set_int(cd, "color", 0xFF2040C0);
+		obs_data_set_int(cd, "width", 320);
+		obs_data_set_int(cd, "height", 180);
+		obs_source_t *cam = obs_source_create("color_source", "Freed Camera", cd, nullptr);
+		obs_data_release(cd);
+		static bool freed = false;
+		signal_handler_connect(
+			obs_source_get_signal_handler(cam), "destroy", [](void *, calldata_t *) { freed = true; },
+			nullptr);
+		obs_data_t *sd = obs_data_create();
+		obs_data_set_bool(sd, "when_hidden", true);
+		obs_source_t *standby = obs_source_create("stagekit_standby", "Freed Standby", sd, nullptr);
+		obs_data_release(sd);
+		obs_source_filter_add(cam, standby);
+		obs_scene_t *one = obs_scene_create("Freed One");
+		obs_scene_t *two = obs_scene_create("Freed Two");
+		obs_sceneitem_t *hidden = obs_scene_add(one, cam);
+		obs_scene_add(two, cam);
+		obs_set_output_source(0, obs_scene_get_source(one));
+		sleep_ms(700);
+		obs_sceneitem_set_visible(hidden, false);
+		sleep_ms(700);
+		int twins = 0;
+		obs_scene_enum_items(
+			one,
+			[](obs_scene_t *, obs_sceneitem_t *item, void *param) {
+				if (strcmp(obs_source_get_unversioned_id(obs_sceneitem_get_source(item)),
+					   "stagekit_stand_in") == 0)
+					(*static_cast<int *>(param))++;
+				return true;
+			},
+			&twins);
+		// Cleared the way OBS clears a collection: it first says the
+		// collection is changing (from then on nothing goes through the
+		// scenes' items), then every source is taken out and every reference
+		// the collection held let go.
+		auto set_loaded = [](bool loaded) {
+			calldata_t ld;
+			calldata_init(&ld);
+			calldata_set_bool(&ld, "loaded", loaded);
+			proc_handler_call(obs_get_proc_handler(), "stagekit_test_loaded", &ld);
+			calldata_free(&ld);
+		};
+		set_loaded(false);
+		sleep_ms(300);
+		obs_set_output_source(0, nullptr);
+		obs_source_release(standby);
+		for (obs_scene_t *scene : {one, two}) {
+			obs_source_remove(obs_scene_get_source(scene));
+			obs_scene_release(scene);
+		}
+		obs_source_remove(cam);
+		obs_source_release(cam);
+		sleep_ms(500);
+		set_loaded(true);
+		CHECK(twins == 1 && freed,
+		      "a source with a stand-in (Show when source is hidden) is let go of when its scenes are cleared, so OBS can change scene collection and close (stand-ins %d, let go %d)",
+		      twins, (int)freed);
+	}
+
 	{
 		printf("\n[start image]\n");
 		auto set_start = [](const char *path) {
