@@ -52,6 +52,11 @@ class ObsLink extends EventEmitter {
 		] as const) {
 			this.obs.on(name, () => this.emit("changed"));
 		}
+		// Sources coming and going, and another scene collection: while OBS
+		// loads there are a great many of these, so they are told on as one.
+		for (const name of ["InputCreated", "InputRemoved", "CurrentSceneCollectionChanged", "SceneListChanged"] as const) {
+			this.obs.on(name, () => this.changedSoon(500));
+		}
 		// The scene on the program or the preview changed, or Studio Mode.
 		for (const name of ["CurrentProgramSceneChanged", "CurrentPreviewSceneChanged", "StudioModeStateChanged"] as const) {
 			this.obs.on(name, () => this.emit("scene"));
@@ -69,6 +74,20 @@ class ObsLink extends EventEmitter {
 
 	get isConnected(): boolean {
 		return this.connected;
+	}
+
+	private soon = new Map<number, ReturnType<typeof setTimeout>>();
+
+	/** Says "changed" once, a little later, however often it is asked meanwhile. */
+	private changedSoon(ms: number): void {
+		if (this.soon.has(ms)) return;
+		this.soon.set(
+			ms,
+			setTimeout(() => {
+				this.soon.delete(ms);
+				if (this.connected) this.emit("changed");
+			}, ms),
+		);
 	}
 
 	/** Starts (or restarts, with other settings) the connection. */
@@ -114,6 +133,10 @@ class ObsLink extends EventEmitter {
 			this.lastError = "";
 			streamDeck.logger.info(`OBS: connected to ${host}:${port}`);
 			this.emit("connection", true);
+			// OBS answers before it has loaded its scenes: asked then, a key
+			// finds no source and no filter. The keys look again shortly
+			// after, and again once OBS has surely finished.
+			for (const ms of [2000, 6000, 15000]) this.changedSoon(ms);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			if (message !== this.lastError) streamDeck.logger.warn(`OBS: cannot connect to ${host}:${port}: ${message}`);

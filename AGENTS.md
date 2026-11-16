@@ -1014,6 +1014,17 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   (`vendor_switch_state`, reported by the two switchers and Auto Capture): *Toggle* is on while
   a manual window is shown, *Hide* while the capture is shown (`shown_nowhere`). A new key with
   two states goes through `showOnOff`.
+- **A Stream Deck key keeps what OBS last told it** (`remembered` in `streamdeck/src/seen.ts`: the
+  filter's kind, on or off, and the few settings an image or a name depends on, in the key's own
+  settings under `seen`, with what it was for). Without an answer from OBS (closed, the connection
+  lost, or just started: obs-websocket connects before the scenes are loaded) the filter, move and
+  Capture Active Window keys showed the plain image and *Switch*, *Move* or *Capture Game*, and
+  nothing made them look again. The owner: "Some keys on streamdeck default back to the wrong
+  image, and do not take on the correct name". `obs.ts` also says `changed` 2, 6 and 15 s after
+  connecting and, once per half second at most, when inputs come and go or the collection
+  changes. **Raise `VERSION` in `tools/make-plugin-files.py` whenever anything under
+  `streamdeck/` changes**: with the same number Stream Deck may keep the copy it has (beta135
+  changed its wording without a new number, and the owner's keys still said *Picture* afterwards).
 - **The Switch Scene key** (`src/actions/scene.ts`, UUID `.scene`) uses obs-websocket's own scene
   requests, nothing of the OBS plugin: `SetCurrentProgramScene`, or `SetCurrentPreviewScene` in
   Studio Mode; a transition named in the key is set first with `SetCurrentSceneTransition`, which

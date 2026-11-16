@@ -12,7 +12,7 @@ import { targetOf } from "../kinds.ts";
 import { obs } from "../obs.ts";
 import { choose, file, plain } from "../pictures.ts";
 import { moveTitle } from "../titles.ts";
-import { answerLists, type KeySettings } from "./shared.ts";
+import { answerLists, type KeySettings, remembered } from "./shared.ts";
 
 /**
  * A key that runs one StageKit move: a Send To on the camera, a Place Item or
@@ -45,9 +45,11 @@ export class Move extends SingletonAction<KeySettings> {
 	private async show(key: KeyAction<KeySettings>, settings: KeySettings): Promise<void> {
 		const { source, filter } = targetOf(settings);
 		const now = await obs.filter(source, filter);
-		const picture = choose(settings.picture, now?.kind ?? "", now?.settings) ?? plain("move");
+		// (While OBS cannot say, the key goes by what it last learned.)
+		const seen = await remembered(key, settings, `${source}\n${filter}`, now);
+		const picture = choose(settings.picture, seen?.kind ?? "", seen?.settings) ?? plain("move");
 		await key.setImage(file(picture, true, settings.palette));
-		await key.setTitle(moveTitle(now?.kind, now?.settings));
+		await key.setTitle(moveTitle(seen?.kind, seen?.settings));
 	}
 
 	private async showAll(): Promise<void> {
