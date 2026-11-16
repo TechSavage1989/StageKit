@@ -178,10 +178,16 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   *Scene* and *Item* rows, with the status line below them. It was one column 1,460 px tall; the
   owner called it "ugly and messy" and asked for it "organized, and made visually appealing".
   A new control goes on the tab its job belongs to, not in a new box at the bottom. The line-up and
-  order tools are drawings alone (`icon_only`, six to a row, name and use in the tooltip) and the
+  order tools are drawings alone (`icon_only`, name and use in the tooltip; the line-up tools a block three across and four down since beta132, with *How the tools measure* beside it, as the owner laid it out: "align left to align right on top, then align top to align bottom under that row ... then how tools measure can fit to the right") and the
   Place arrows a block of 40 px squares with the tab's tick boxes beside them: the owner asked for
   "just icons with tooltips, making space for more functions" and found the three-dot update menu
-  unreadable, so that is the word *Updates*. The copy tools keep their words. The
+  unreadable, so that became the word *Updates*; since beta132 it is not in the dock at all: the
+  update notice (`updateBar`) is the dock's first row, shown only while a newer version is there,
+  and the menu (`updateMenu`: version, check now, the two settings, *Update to … now*) hangs under
+  *StageKit* in OBS's Tools menu (`obs_frontend_add_tools_menu_qaction`). The owner: "I need the
+  updater to appear at the top, and only when there is an available update. otherwise it should be
+  contained in the tools menu". A check asked for there answers in a message box when there is
+  nothing newer. The copy tools keep their words. The
   drawings (`tool_icon`) are in the theme's own text colour; no stylesheet is
   set, so OBS's themes keep styling it. Widgets on a tab that is not showing have no geometry: a
   test that measures positions must switch to that tab first.

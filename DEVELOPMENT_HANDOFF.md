@@ -211,6 +211,17 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## The updater: notice at the top of the dock, the rest in the Tools menu (0.1.0-beta132)
+
+The owner's screenshot had the status line and the *Updates* button below the dock's visible area,
+behind a scroll bar. Asked: the notice at the top and only with an update; everything else in
+OBS's Tools menu. Done as asked (see AGENTS.md, the dock's bullet). The Tools menu entry is only
+made when OBS has a main window, so the tests see the menu as a child of the dock; how it looks in
+OBS's own menu has not been seen here.
+
+In the same release the Arrange tab's twelve line-up tools became a block three across (the
+order of `ArrangeAction` gives the rows the owner asked for) with the measure options beside it.
+
 ## The capture gone after a scene change; edge gaps as sliders; the pack's SVGs (0.1.0-beta131)
 
 The owner, on beta130: "When switching to a non window capture containing scene then to window

@@ -710,8 +710,11 @@ public:
 		against_row->addRow(tr_text("Arrange.Against"), against_);
 		arrange_layout->addLayout(against_row);
 		auto *arrange_grid = new QGridLayout();
-		// The line-up tools are drawings alone, six to a row, each saying
-		// its name and what it does when pointed at; the two copy tools
+		// The line-up tools are drawings alone, in a block three across,
+		// each saying its name and what it does when pointed at: left to
+		// right, top to bottom, the spacing tools, the same-size tools.
+		// "How the tools measure" stands beside the block. The owner asked
+		// for exactly that, so the tab needs no scroll bar. The two copy tools
 		// keep their words. The owner: "these could be just icons with
 		// tooltips, making space for more functions".
 		auto arrange_button = [this](ArrangeAction action, QWidget *parent, bool drawing_only = false) {
@@ -753,11 +756,20 @@ public:
 		// The line-up and size tools, three to a row. The two that copy to
 		// other scenes follow in a box of their own, named for what they do.
 		const int first_copy = (int)ArrangeAction::SameEverywhere;
-		for (int a = 0; a < first_copy; a++)
-			arrange_grid->addWidget(arrange_button(static_cast<ArrangeAction>(a), arrange_box, true), a / 6,
-						a % 6);
-		arrange_layout->addLayout(arrange_grid);
+		for (int a = 0; a < first_copy; a++) {
+			QPushButton *tool = arrange_button(static_cast<ArrangeAction>(a), arrange_box, true);
+			// (Its own size, whatever room there is: left to give way like the
+			// other drawings, the block was squeezed flat under the options.)
+			tool->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+			tool->setFixedSize(40, 30);
+			arrange_grid->addWidget(tool, a / 3, a % 3);
+		}
 		arrange_grid->setSpacing(4);
+		auto *tools_row = new QHBoxLayout();
+		tools_row->setContentsMargins(0, 0, 0, 0);
+		tools_row->setSpacing(10);
+		tools_row->addLayout(arrange_grid);
+		arrange_layout->addLayout(tools_row);
 		auto *copy_box = new QWidget(this);
 		auto *copy_layout = new QVBoxLayout(copy_box);
 		copy_layout->setContentsMargins(0, 0, 0, 0);
@@ -931,6 +943,7 @@ public:
 		drop_layout->addLayout(within_row);
 		options_measure_ = measure_box;
 		options_drop_ = drop_box;
+		tools_row->addWidget(measure_box, 1, Qt::AlignTop);
 		// The options are shared with the hotkeys and the right-click menu.
 		show_arrange_options();
 		for (QCheckBox *box : {visible_, no_shadow_, keep_shape_, live_snap_, guides_, every_scene_, slide_,
@@ -991,12 +1004,12 @@ public:
 		for (int column = 0; column < 6; column++)
 			order_layout->setColumnStretch(column, 1);
 		arrange_page->addWidget(order_box);
-		arrange_page->addWidget(options_measure_);
 		arrange_page->addWidget(options_drop_);
 		arrange_page->addStretch(1);
 
-		// A newer StageKit: said here, with one button that installs it.
-		// Hidden until there is one.
+		// A newer StageKit: said at the very top of the dock, with one button
+		// that installs it. Hidden until there is one. (It was at the bottom,
+		// out of sight below a scroll bar on the owner's dock.)
 		update_bar_ = new QWidget(this);
 		update_bar_->setObjectName("updateBar");
 		// The words above, the two buttons below sharing the width: side
@@ -1028,30 +1041,29 @@ public:
 			update_row->addWidget(button, 1);
 		}
 		update_bar_->hide();
-		layout->addWidget(update_bar_);
+		layout->insertWidget(0, update_bar_);
 
-		// What the last press did, under whichever tab is open, and beside it
-		// a small menu for the updates.
-		auto *footer = new QHBoxLayout();
-		footer->setContentsMargins(0, 0, 0, 0);
+		// What the last press did, under whichever tab is open.
 		status_ = new QLabel(this);
 		status_->setObjectName("status");
 		status_->setWordWrap(true);
 		status_->setEnabled(false); // the theme's quieter text colour
-		footer->addWidget(status_, 1);
-		// A plain button like the dock's others, which opens the menu
-		// itself: a tool button with a menu drew its arrow over the word.
-		auto *more = new QPushButton(this);
-		more->setObjectName("updateMenu");
-		// In words: three dots drew as something the owner could not make out.
-		more->setText(tr_text("Update.Menu"));
-		more->setToolTip(tr_text("Update.Menu.Tip"));
-		auto *menu = new QMenu(more);
+		layout->addWidget(status_);
+		// The version and the updates are in OBS's Tools menu, under
+		// StageKit: the owner asked for the dock to show an update only when
+		// there is one, and for the rest to be "contained in the tools menu".
+		auto *menu = new QMenu(this);
+		menu->setObjectName("updateMenu");
 		QAction *about = menu->addAction(QString("StageKit %1").arg(QString::fromUtf8(current_release())));
 		about->setEnabled(false);
 		menu->addSeparator();
 		QAction *check_now = menu->addAction(tr_text("Update.CheckNow"));
 		QObject::connect(check_now, &QAction::triggered, this, [this] { look_for_update(true); });
+		update_action_ = menu->addAction(QString());
+		update_action_->setObjectName("updateInstall");
+		update_action_->setVisible(false);
+		QObject::connect(update_action_, &QAction::triggered, this, [this] { install_now(); });
+		menu->addSeparator();
 		const UpdateSettings updates = update_settings();
 		QAction *at_start = menu->addAction(tr_text("Update.AtStart"));
 		at_start->setCheckable(true);
@@ -1067,12 +1079,9 @@ public:
 		};
 		QObject::connect(at_start, &QAction::toggled, this, [store](bool) { store(); });
 		QObject::connect(betas, &QAction::toggled, this, [store](bool) { store(); });
-		QObject::connect(more, &QPushButton::clicked, this, [more, menu] {
-			// Above the button: it sits at the bottom of the dock.
-			menu->popup(more->mapToGlobal(QPoint(0, -menu->sizeHint().height())));
-		});
-		footer->addWidget(more, 0, Qt::AlignBottom);
-		layout->addLayout(footer);
+		if (obs_frontend_get_main_window())
+			if (auto *tools = static_cast<QAction *>(obs_frontend_add_tools_menu_qaction("StageKit")))
+				tools->setMenu(menu);
 		// A look when OBS has started, if that is wanted: a little later, so
 		// it is not one more thing at start-up.
 		if (updates.check_at_start && obs_frontend_get_main_window())
@@ -1235,12 +1244,23 @@ private:
 		found_ = found ? release : Release();
 		const bool newer = found && !release.version.empty();
 		update_bar_->setVisible(newer);
-		if (newer)
+		update_action_->setVisible(newer);
+		if (newer) {
 			update_text_->setText(tr_text("Update.Available").arg(QString::fromStdString(release.version)));
-		if (asked)
-			say(!found  ? tr_text("Update.NoAnswer")
-			    : newer ? tr_text("Update.Available").arg(QString::fromStdString(release.version))
-				    : tr_text("Update.Newest").arg(QString::fromUtf8(current_release())));
+			update_action_->setText(
+				tr_text("Update.InstallNow").arg(QString::fromStdString(release.version)));
+		}
+		if (!asked)
+			return;
+		const QString answer =
+			!found  ? tr_text("Update.NoAnswer")
+			: newer ? tr_text("Update.Available").arg(QString::fromStdString(release.version))
+				: tr_text("Update.Newest").arg(QString::fromUtf8(current_release()));
+		say(answer);
+		// Asked from the Tools menu, where the dock may not be in sight: the
+		// answer is said in a window too. (A newer one shows in the dock.)
+		if (auto *window = static_cast<QWidget *>(obs_frontend_get_main_window()); window && !newer)
+			QMessageBox::information(window, tr_text("Update.Title"), answer);
 	}
 
 	// One press: after a yes, the update is downloaded and checked, OBS
@@ -2252,6 +2272,7 @@ private:
 	Release found_;
 	QWidget *update_bar_ = nullptr;
 	QLabel *update_text_ = nullptr;
+	QAction *update_action_ = nullptr;
 	std::vector<Glide> glides_;
 	QTimer *glide_timer_ = nullptr;
 	QElapsedTimer glide_clock_;
