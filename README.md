@@ -697,7 +697,7 @@ There are two, under *Docks*: **StageKit** for the item you are working on, and 
 for the start image and the moving background. Both work on the current scene (the preview scene in
 Studio Mode).
 
-<p align="center"><img src="docs/images/stagekit-dock.png" width="900" alt="The StageKit dock's four tabs side by side. Place: a three-by-three grid of position buttons, bring along, edge distance, travel time and motion, and buttons that make Stream Deck keys. Arrange: the selected items, buttons that line up, space out, snap and resize them, the order buttons, and the measuring and letting-go options. Copy: the two copy-transform buttons with their lists of scenes and sources. Effects: buttons that add a StageKit filter to the item"></p>
+<p align="center"><img src="docs/images/stagekit-dock.png" width="900" alt="The StageKit dock's four tabs side by side. Place: a three-by-three grid of position buttons, bring along, edge distance, travel time and motion, and buttons that make Stream Deck keys. Arrange: the selected items, a block of buttons that line up, space out, snap and resize them with the measuring options beside it, the order buttons, and the letting-go options. Copy: the two copy-transform buttons with their lists of scenes and sources. Effects: buttons that add a StageKit filter to the item"></p>
 
 <p align="center"><img src="docs/images/stagekit-background-dock.png" width="340" alt="The StageKit Background dock: a thumbnail of the start image, its file name, and buttons to choose the start image, give the background its own picture and open the background's settings"></p>
 
