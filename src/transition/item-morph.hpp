@@ -27,6 +27,7 @@ inline constexpr const char *kMorphLayerId = "stagekit_morph_layer";
 struct MorphSaid {
 	MorphLinks links;
 	bool pair_main = true;
+	bool seen = true; // two sources change into each other by what shows of them
 	EaseCurve curve = EaseCurve::Cubic;
 	EaseMode mode = EaseMode::InOut;
 };

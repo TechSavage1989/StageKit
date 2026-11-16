@@ -572,6 +572,61 @@ int main(int argc, char **argv)
 			sleep_ms(120);
 			render(morph, w, h);
 			obs_transition_clear(morph);
+			// Two different sources change into each other by what shows of
+			// them, not by their boxes. The owner: "the morph transition effect
+			// should morph objects based on visible pixels, not bounding box".
+			// Here each is a whole-screen source with one small block in it.
+			{
+				obs_source_t *dot_a = block("Morph Dot A", 0xFF0000FF, 100, 100); // red
+				obs_source_t *dot_b = block("Morph Dot B", 0xFF00FF00, 100, 100); // green
+				obs_scene_t *pad_a = obs_scene_create("Morph Pad A");
+				obs_scene_t *pad_b = obs_scene_create("Morph Pad B");
+				put(pad_a, dot_a, 40, 40);
+				put(pad_b, dot_b, 400, 200);
+				obs_scene_t *va = obs_scene_create("Morph Seen From");
+				obs_scene_t *vb = obs_scene_create("Morph Seen To");
+				put(va, obs_scene_get_source(pad_a), 0, 0);
+				put(vb, obs_scene_get_source(pad_b), 0, 0);
+				obs_data_t *vs = obs_source_get_settings(morph);
+				obs_data_array_t *links = obs_data_array_create();
+				obs_data_t *link = obs_data_create();
+				obs_data_set_string(link, "value", "Morph Pad A \xE2\x86\x94 Morph Pad B");
+				obs_data_array_push_back(links, link);
+				obs_data_release(link);
+				obs_data_set_array(vs, "links", links);
+				obs_data_array_release(links);
+				for (bool seen : {true, false}) {
+					obs_data_set_bool(vs, "visible_pixels", seen);
+					obs_source_update(morph, vs);
+					sleep_ms(150);
+					const std::vector<uint8_t> mid = at_time(va, vb, 0.5f);
+					// Half-way: one block between the two places (the two colours
+					// mixed), and nothing left where the first one was. By boxes,
+					// which are the same here, each block fades where it is.
+					const int mr = px(mid, 270, 170, 0), mg = px(mid, 270, 170, 1),
+						  ma_ = px(mid, 270, 170, 3);
+					const int was_r = px(mid, 90, 90, 0), was_a = px(mid, 90, 90, 3);
+					if (seen)
+						CHECK(mr > 40 && mg > 40 && ma_ > 240 && was_a < 12,
+						      "two linked sources morph by what shows of them: half-way one whole block lies between their two places and none is left behind (between %d,%d alpha %d; where it was: alpha %d)",
+						      mr, mg, ma_, was_a);
+					else
+						CHECK(ma_ < 12 && was_r > 40 && was_a > 60,
+						      "and unticked they change box into box as before (between: alpha %d; where it was %d, alpha %d)",
+						      ma_, was_r, was_a);
+				}
+				obs_properties_t *vp = obs_source_properties(morph);
+				CHECK(obs_properties_get(vp, "visible_pixels") != nullptr,
+				      "Morph offers Use visible pixels");
+				obs_properties_destroy(vp);
+				obs_data_release(vs);
+				obs_scene_release(va);
+				obs_scene_release(vb);
+				obs_scene_release(pad_a);
+				obs_scene_release(pad_b);
+				obs_source_release(dot_a);
+				obs_source_release(dot_b);
+			}
 			obs_source_release(morph);
 		}
 		// --------------------------------------- one item into another

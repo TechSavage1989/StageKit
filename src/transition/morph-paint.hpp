@@ -58,6 +58,10 @@ struct Bounds {
 
 Bounds bounds_of(const Quad &q);
 
+// Where the part of an item left by `part` goes, when the item's own crop
+// goes to its quad: `part` cuts at least as much as the item's crop.
+Quad part_quad(const Shown &shown, const Crop &part);
+
 void set_quad(const Quad &q);
 
 // Sources set to count as one thing: the one changes into the other. A link
@@ -94,6 +98,15 @@ protected:
 	gs_texrender_t *spare();
 	// The source with `crop` cut off it, as a picture of its own.
 	gs_texture_t *cropped(const Shown &shown, const Crop &crop);
+	// The item's crop drawn in to what shows of its picture: the smallest
+	// part holding everything that is not see-through. Two different sources
+	// change into each other by these parts, not by their boxes: the owner,
+	// "the morph transition effect should morph objects based on visible
+	// pixels, not bounding box". Looked at once for an item (a small copy,
+	// read back) and kept until `forget_seen`; the crop as it is for an item
+	// that shows nothing.
+	Crop seen_crop(obs_sceneitem_t *item, const Shown &shown);
+	void forget_seen();
 	// One picture, or two mixed (`amount` of the second), laid onto a quad.
 	void draw_texture(gs_texture_t *first, gs_texture_t *second, const Quad &quad, float amount);
 	// An item's source on a quad, with a crop.
@@ -118,6 +131,7 @@ private:
 		bool had = false;
 	};
 	std::unordered_map<obs_sceneitem_t *, Sized> sized_;
+	std::unordered_map<obs_sceneitem_t *, Crop> seen_;
 	uint64_t since_ = 0;
 };
 

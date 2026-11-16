@@ -73,6 +73,7 @@ struct Job {
 	uint32_t cx = 0, cy = 0;
 	EaseCurve curve = EaseCurve::Cubic;
 	EaseMode mode = EaseMode::InOut;
+	bool seen = true;             // by what shows of the two, not their boxes
 	std::atomic<float> t0{-1.0f}; // the clock's time when the change was first drawn
 	std::atomic<bool> done{false};
 	uint64_t made_ns = 0;
@@ -97,6 +98,7 @@ public:
 	{
 		std::lock_guard lock(mutex_);
 		job_ = job;
+		fresh_ = true;
 	}
 	std::shared_ptr<Job> job()
 	{
@@ -108,6 +110,7 @@ public:
 private:
 	std::mutex mutex_;
 	std::shared_ptr<Job> job_;
+	std::atomic<bool> fresh_{false}; // another change: what was seen of the last one's items is let go
 };
 
 void Layer::render()
@@ -118,6 +121,8 @@ void Layer::render()
 	const float clock = obs_transition_get_time(job->to_transition);
 	if (clock >= 1.0f)
 		return; // the item draws itself from here
+	if (fresh_.exchange(false))
+		forget_seen();
 	float t0 = job->t0;
 	if (t0 < 0.0f) {
 		t0 = std::min(clock, 0.95f);
@@ -134,9 +139,12 @@ void Layer::render()
 	Shown was, will;
 	const bool had = look(job->from, was), has = look(job->to, will);
 	if (had && has) {
-		const Quad quad = between(was.quad, will.quad, t);
-		gs_texture_t *first = cropped(was, was.crop);
-		gs_texture_t *second = cropped(will, will.crop);
+		// By what shows of each, looked at once as the change begins.
+		const Crop from_part = job->seen ? seen_crop(job->from, was) : was.crop;
+		const Crop to_part = job->seen ? seen_crop(job->to, will) : will.crop;
+		const Quad quad = between(part_quad(was, from_part), part_quad(will, to_part), t);
+		gs_texture_t *first = cropped(was, from_part);
+		gs_texture_t *second = cropped(will, to_part);
 		if (first && second)
 			draw_texture(first, second, quad, amount);
 	} else if (had || has) {
@@ -291,6 +299,7 @@ void start_job(Half &hide, Half &show)
 	job->cx = obs_source_get_width(job->scene);
 	job->cy = obs_source_get_height(job->scene);
 	job->curve = show.said.curve;
+	job->seen = show.said.seen;
 	job->mode = show.said.mode;
 	job->made_ns = os_gettime_ns();
 

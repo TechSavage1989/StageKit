@@ -14,6 +14,14 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
 
+## Morph by visible pixels (0.1.0-beta145)
+
+The owner: "I think the morph transition effect should morph objects based on visible pixels,
+not bounding box". Morph (between scenes and between two items) has *Use visible pixels*, on as
+it comes: two different sources are matched by the part of each that shows. One small read-back
+per item at the start of a change; if the owner sees a hitch as a Morph begins, that is where to
+look. Not seen on Windows.
+
 ## A shadowed item grew at every start (0.1.0-beta144)
 
 The owner: "even after i make them the same size, if i restart obs, the camera in a couple of my
