@@ -74,6 +74,7 @@ struct Job {
 	EaseCurve curve = EaseCurve::Cubic;
 	EaseMode mode = EaseMode::InOut;
 	bool seen = true;             // by what shows of the two, not their boxes
+	bool no_shadows = true;       // and without their shadows, glows and outlines
 	std::atomic<float> t0{-1.0f}; // the clock's time when the change was first drawn
 	std::atomic<bool> done{false};
 	uint64_t made_ns = 0;
@@ -140,8 +141,11 @@ void Layer::render()
 	const bool had = look(job->from, was), has = look(job->to, will);
 	if (had && has) {
 		// By what shows of each, looked at once as the change begins.
-		const Crop from_part = job->seen ? seen_crop(job->from, was) : was.crop;
-		const Crop to_part = job->seen ? seen_crop(job->to, will) : will.crop;
+		const Crop from_whole = job->seen ? seen_crop(job->from, was) : was.crop;
+		const Crop to_whole = job->seen ? seen_crop(job->to, will) : will.crop;
+		Crop from_part, to_part;
+		match_parts(was, job->no_shadows ? without_room(was, from_whole) : from_whole, from_whole, will,
+			    job->no_shadows ? without_room(will, to_whole) : to_whole, to_whole, from_part, to_part);
 		const Quad quad = between(part_quad(was, from_part), part_quad(will, to_part), t);
 		gs_texture_t *first = cropped(was, from_part);
 		gs_texture_t *second = cropped(will, to_part);
@@ -300,6 +304,7 @@ void start_job(Half &hide, Half &show)
 	job->cy = obs_source_get_height(job->scene);
 	job->curve = show.said.curve;
 	job->seen = show.said.seen;
+	job->no_shadows = show.said.no_shadows;
 	job->mode = show.said.mode;
 	job->made_ns = os_gettime_ns();
 

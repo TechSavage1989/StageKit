@@ -8,6 +8,7 @@ the Free Software Foundation; either version 2 of the License, or
 (at your option) any later version.
 */
 
+#include "../shadow/shadow-backdrop.hpp"
 #include "morph-paint.hpp"
 #include "../common/pick-list.hpp"
 #include "../common/scene-util.hpp"
@@ -209,6 +210,33 @@ Quad part_quad(const Shown &shown, const Crop &part)
 	const double us = (shown.sw - part.l - part.r) / cw, vs = (shown.sh - part.t - part.b) / ch;
 	const Quad &q = shown.quad;
 	return Quad{q.a * us, q.b * us, q.c * vs, q.d * vs, q.tx + q.a * u0 + q.c * v0, q.ty + q.b * u0 + q.d * v0};
+}
+
+Crop without_room(const Shown &shown, const Crop &part)
+{
+	double room[4] = {0.0, 0.0, 0.0, 0.0};
+	shadow_room(shown.source, room);
+	Crop out{std::max(part.l, room[0]), std::max(part.t, room[1]), std::max(part.r, room[2]),
+		 std::max(part.b, room[3])};
+	// (Nothing left: then there is nothing but the effect, and it is the part.)
+	if (shown.sw - out.l - out.r < 1.0 || shown.sh - out.t - out.b < 1.0)
+		return part;
+	return out;
+}
+
+void match_parts(const Shown &a, const Crop &match_a, const Crop &whole_a, const Shown &b, const Crop &match_b,
+		 const Crop &whole_b, Crop &draw_a, Crop &draw_b)
+{
+	const double aw = std::max(1.0, a.sw - match_a.l - match_a.r), ah = std::max(1.0, a.sh - match_a.t - match_a.b);
+	const double bw = std::max(1.0, b.sw - match_b.l - match_b.r), bh = std::max(1.0, b.sh - match_b.t - match_b.b);
+	// How far each one's whole reaches past its matched part, as a share of
+	// the matched part's size; the larger of the two on each side.
+	const double l = std::max({0.0, (match_a.l - whole_a.l) / aw, (match_b.l - whole_b.l) / bw});
+	const double t = std::max({0.0, (match_a.t - whole_a.t) / ah, (match_b.t - whole_b.t) / bh});
+	const double r = std::max({0.0, (match_a.r - whole_a.r) / aw, (match_b.r - whole_b.r) / bw});
+	const double bt = std::max({0.0, (match_a.b - whole_a.b) / ah, (match_b.b - whole_b.b) / bh});
+	draw_a = Crop{match_a.l - l * aw, match_a.t - t * ah, match_a.r - r * aw, match_a.b - bt * ah};
+	draw_b = Crop{match_b.l - l * bw, match_b.t - t * bh, match_b.r - r * bw, match_b.b - bt * bh};
 }
 
 void MorphPaint::forget_seen()

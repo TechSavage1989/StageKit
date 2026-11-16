@@ -684,8 +684,17 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     their own and mixed on one quad that goes from the one part's place to the other's. It is
     found from a 256 px copy read back at once, **once per item per change** (kept in `seen_`,
     let go by `forget_sizes` and at each new item change): never per frame. The same source in
-    both scenes is not looked at; its box is the same part of it either way. A shadow counts as
-    showing; there is no *Ignore shadows* here, and none was asked for.
+    both scenes is not looked at; its box is the same part of it either way.
+    *Ignore shadows & outlines* (`no_shadows`, on as it comes; the owner: "add ignore shadows,
+    strokes/glow, etc") matches the pictures without the room their Shadow, Glow & Outline
+    filters take (`without_room`, from `shadow_room`: no drawing bare, so cameras are safe).
+    The effects are still drawn: `match_parts` gives each side the matched part and the same
+    share of it all round, as much as the larger effect needs, so both can still be mixed on one
+    quad (a part may reach past its source; `cropped` draws nothing there). Only StageKit's own
+    filter is known by its room; another plugin's glow counts as picture.
+    A shadow filter that had never changed its room since it was made (default sizes, or one
+    from before the room was kept track of) had no `adjusted_*` in its settings, and
+    `shadow_room` took it for none: it is written down in that case too since beta145.
   - Not followed during the change: an item's blending mode, its show and hide transition, a crop
     to the bounding box, and a shadow's size in screen pixels (`shown_scale` goes by one scene at
     a time, so it may jump at the start). None has been asked for.

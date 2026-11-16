@@ -21,6 +21,8 @@ not bounding box". Morph (between scenes and between two items) has *Use visible
 it comes: two different sources are matched by the part of each that shows. One small read-back
 per item at the start of a change; if the owner sees a hitch as a Morph begins, that is where to
 look. Not seen on Windows.
+*Ignore shadows & outlines* (asked for the same day) matches the images without the room of
+their Shadow, Glow & Outline filters; the effects are still drawn.
 
 ## A shadowed item grew at every start (0.1.0-beta144)
 

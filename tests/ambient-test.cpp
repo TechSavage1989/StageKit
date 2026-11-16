@@ -615,9 +615,63 @@ int main(int argc, char **argv)
 						      "and unticked they change box into box as before (between: alpha %d; where it was %d, alpha %d)",
 						      ma_, was_r, was_a);
 				}
+				// And by their images, a shadow left out of the matching: the
+				// owner, "add ignore shadows, strokes/glow, etc". One block has a
+				// shadow 20 px to its right and below, the other has none.
+				{
+					obs_source_t *lit = block("Morph Shadowed", 0xFF0000FF, 100, 100); // red
+					obs_source_t *plain = block("Morph Plain", 0xFF00FF00, 100, 100);  // green
+					obs_data_t *sd = obs_data_create();
+					obs_data_set_bool(sd, "shadow", true);
+					obs_data_set_double(sd, "offset_x", 20.0);
+					obs_data_set_double(sd, "offset_y", 20.0);
+					obs_data_set_double(sd, "softness", 0.0);
+					obs_data_set_double(sd, "shadow_opacity", 100.0);
+					obs_source_t *shade = obs_source_create("stagekit_shadow_backdrop",
+										"Morph Shade", sd, nullptr);
+					obs_scene_t *sa = obs_scene_create("Morph Shadow From");
+					obs_scene_t *sb = obs_scene_create("Morph Shadow To");
+					put(sa, lit, 40, 40);
+					put(sb, plain, 400, 200);
+					obs_source_filter_add(lit, shade);
+					for (int i = 0; i < 12; i++) {
+						render(obs_scene_get_source(sa), w, h);
+						sleep_ms(50);
+					}
+					obs_data_array_t *both = obs_data_array_create();
+					obs_data_t *one = obs_data_create();
+					obs_data_set_string(one, "value", "Morph Shadowed \xE2\x86\x94 Morph Plain");
+					obs_data_array_push_back(both, one);
+					obs_data_release(one);
+					obs_data_set_array(vs, "links", both);
+					obs_data_array_release(both);
+					obs_data_set_bool(vs, "visible_pixels", true);
+					int seen_r[2] = {0, 0}, seen_g[2] = {0, 0};
+					for (int round = 0; round < 2; round++) {
+						obs_data_set_bool(vs, "no_shadows", round == 0);
+						obs_source_update(morph, vs);
+						sleep_ms(150);
+						const std::vector<uint8_t> mid = at_time(sa, sb, 0.5f);
+						// Just inside the far corner of where the image is half-way.
+						seen_r[round] = px(mid, 314, 214, 0);
+						seen_g[round] = px(mid, 314, 214, 1);
+					}
+					CHECK(seen_r[0] > 40 && seen_g[0] > 40 && seen_r[1] < 25 && seen_g[1] > 40,
+					      "with shadows left out the two images land on each other, the shadow drawn beside them; counted in, the shadowed one is matched shadow and all (corner of the image half-way: %d,%d left out; %d,%d counted)",
+					      seen_r[0], seen_g[0], seen_r[1], seen_g[1]);
+					obs_data_set_bool(vs, "no_shadows", true);
+					obs_source_filter_remove(lit, shade);
+					obs_source_release(shade);
+					obs_data_release(sd);
+					obs_scene_release(sa);
+					obs_scene_release(sb);
+					obs_source_release(lit);
+					obs_source_release(plain);
+				}
 				obs_properties_t *vp = obs_source_properties(morph);
-				CHECK(obs_properties_get(vp, "visible_pixels") != nullptr,
-				      "Morph offers Use visible pixels");
+				CHECK(obs_properties_get(vp, "visible_pixels") != nullptr &&
+					      obs_properties_get(vp, "no_shadows") != nullptr,
+				      "Morph offers Use visible pixels and Ignore shadows & outlines");
 				obs_properties_destroy(vp);
 				obs_data_release(vs);
 				obs_scene_release(va);

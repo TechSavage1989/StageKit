@@ -62,6 +62,20 @@ Bounds bounds_of(const Quad &q);
 // goes to its quad: `part` cuts at least as much as the item's crop.
 Quad part_quad(const Shown &shown, const Crop &part);
 
+// `part` without the room the item's Shadow, Glow & Outline filters take
+// round its picture: what is matched when shadows and outlines are left out.
+Crop without_room(const Shown &shown, const Crop &part);
+
+// Two items that change into each other: `match_a` and `match_b` are the
+// parts that are to land on each other, `whole_a` and `whole_b` all that is
+// to be drawn of each (the matched part and what lies round it: a shadow).
+// Gives the part of each to draw, `draw_a` and `draw_b`: the matched part and
+// the same share of it round both, as much as the larger of the two needs, so
+// the two can be mixed on one quad with the matched parts on each other. (A
+// part may then reach past its source; nothing is drawn there.)
+void match_parts(const Shown &a, const Crop &match_a, const Crop &whole_a, const Shown &b, const Crop &match_b,
+		 const Crop &whole_b, Crop &draw_a, Crop &draw_b);
+
 void set_quad(const Quad &q);
 
 // Sources set to count as one thing: the one changes into the other. A link

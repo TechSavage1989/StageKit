@@ -925,6 +925,10 @@ A scene transition, chosen like any other: in OBS's *Scene Transitions* box pres
   their boxes. A shadow's side, a transparent border or a group wider than its contents is left
   out, so the one image lands exactly on the other. Each is looked at once as the change begins.
   Unticked, box changes into box.
+- **Ignore shadows & outlines** (ticked as it comes): the two images themselves are matched. The
+  room a Shadow, Glow & Outline filter takes round an image is left out of the matching, and the
+  shadows, glows and outlines are still drawn, each fading with its own image. Unticked, the
+  effects count as part of the image.
 - **Linked sources**: two different sources that are to count as the same thing, your camera in
   one scene and another camera in the next, say. Choose the two under *Link this source* and *With
   this source* and press *Add this link*; the one then moves, resizes and changes into the other.

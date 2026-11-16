@@ -496,6 +496,12 @@ void ShadowBackdrop::update(obs_data_t *settings)
 		obs_data_item_release(&first);
 		if (set_up_before && keep_place_) {
 			adjusted_ = padding_for(s);
+			// (Written down as well: the other tools read the room from
+			// here, and took such a shadow for one that takes none.)
+			obs_data_set_int(settings, "adjusted_left", adjusted_.left);
+			obs_data_set_int(settings, "adjusted_top", adjusted_.top);
+			obs_data_set_int(settings, "adjusted_right", adjusted_.right);
+			obs_data_set_int(settings, "adjusted_bottom", adjusted_.bottom);
 			return;
 		}
 		adjusted_.left = (uint32_t)obs_data_get_int(settings, "adjusted_left");
