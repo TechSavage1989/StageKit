@@ -14,6 +14,14 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
 
+## Blur, Zoom and Auto Frame after a Standby filter (0.1.0-beta146)
+
+The owner asked why other filters had to come before Standby Image, was told, and said: "yes,
+make blur, zoom and auto frame safe too". All five StageKit filters that work on a source's
+picture now take it with `draw_filter_input`. Betas 141 to 145 are confirmed by the owner (the
+chosen transition, slide and fade with a shadow, the start-up crash, the camera's size, Morph by
+visible pixels). OBS's own and other plugins' filters after Standby Image still cut.
+
 ## Morph by visible pixels (0.1.0-beta145)
 
 The owner: "I think the morph transition effect should morph objects based on visible pixels,

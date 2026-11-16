@@ -17,6 +17,7 @@ the Free Software Foundation; either version 2 of the License, or
 // size never changes, so its place in the scene, its shadow and anything
 // linked to it stay put, while the picture inside glides to its new fit.
 
+#include "../common/filter-input.hpp"
 #include "auto-frame.hpp"
 #include "../common/timing.hpp"
 
@@ -952,20 +953,11 @@ public:
 		}
 
 		// 1. The capture as it is.
-		gs_texrender_reset(tr_input_);
-		if (!obs_source_process_filter_begin(source_, GS_RGBA, OBS_ALLOW_DIRECT_RENDERING))
+		// (Afresh at each drawing: see filter-input.hpp.)
+		if (!draw_filter_input(source_, tr_input_, w, h))
 			return;
-		if (!gs_texrender_begin(tr_input_, w, h))
-			return;
-		gs_blend_state_push();
-		gs_blend_function(GS_BLEND_ONE, GS_BLEND_ZERO);
 		vec4 clear;
 		vec4_zero(&clear);
-		gs_clear(GS_CLEAR_COLOR, &clear, 0.0f, 0);
-		gs_ortho(0.0f, (float)w, 0.0f, (float)h, -100.0f, 100.0f);
-		obs_source_process_filter_end(source_, obs_get_base_effect(OBS_EFFECT_DEFAULT), w, h);
-		gs_blend_state_pop();
-		gs_texrender_end(tr_input_);
 		gs_texture_t *input = gs_texrender_get_texture(tr_input_);
 		if (!input)
 			return;
