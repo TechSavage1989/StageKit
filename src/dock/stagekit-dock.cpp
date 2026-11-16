@@ -35,6 +35,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "arrange.hpp"
 #include "arrange-tools.hpp"
 #include "preview-guides.hpp"
+#include "window-layout.hpp"
 #include "../placement/scene-tools.hpp"
 
 #include <obs-module.h>
@@ -54,6 +55,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QMainWindow>
 #include <QMenu>
 #include <QApplication>
 #include <QContextMenuEvent>
@@ -1081,6 +1083,8 @@ public:
 		};
 		QObject::connect(at_start, &QAction::toggled, this, [store](bool) { store(); });
 		QObject::connect(betas, &QAction::toggled, this, [store](bool) { store(); });
+		// OBS's window layout, saved and brought back.
+		window_layout_menu(menu);
 		if (obs_frontend_get_main_window())
 			if (auto *tools = static_cast<QAction *>(obs_frontend_add_tools_menu_qaction("StageKit")))
 				tools->setMenu(menu);
@@ -2320,6 +2324,16 @@ void register_dock()
 			calldata_set_ptr(cd, "widget", static_cast<QWidget *>(new BackgroundDock()));
 		},
 		nullptr);
+	// For the tests: a window's layout saved, or brought back.
+	proc_handler_add(
+		obs_get_proc_handler(), "void stagekit_window_layout(in ptr window, in bool save, out bool ok)",
+		[](void *, calldata_t *cd) {
+			auto *window = static_cast<QMainWindow *>(calldata_ptr(cd, "window"));
+			calldata_set_bool(cd, "ok",
+					  calldata_bool(cd, "save") ? window_layout_save(window)
+								    : window_layout_restore(window));
+		},
+		nullptr);
 	// For the tests: what a hotkey or the preview's menu does, by the tool's name.
 	proc_handler_add(
 		obs_get_proc_handler(), "void stagekit_run_arrange(in string action)",
@@ -2412,6 +2426,7 @@ void register_dock()
 	// measuring items while OBS was taking them apart.
 	obs_frontend_add_event_callback(
 		[](enum obs_frontend_event event, void *) {
+			window_layout_event(event);
 			if (event != OBS_FRONTEND_EVENT_SCRIPTING_SHUTDOWN && event != OBS_FRONTEND_EVENT_EXIT)
 				return;
 			if (measuring_stopped())

@@ -81,7 +81,7 @@ notice and the confirmation are what there is. This is recorded in the handoff.
 | `src/shape/` | Corners & Edges filter (rounds, cuts, notches or scoops corners; trims, softens and outlines edges; never changes the source's size) |
 | `src/view/` | Cropped View source (part of another source as a source, so filters follow the crop) |
 | `src/placement/` | Scene filters: Move Scene Item, Show/Hide Animation, Link Visibility, Match Item, Layout, Fit to Space (keeps one item fitted in a box, filling it or floating centred by shape); Move Source, Move Scene Item's code as a filter on the source it moves; and Show in Scenes (`show-in-scenes.*`), a filter on any source that is a switch for showing and hiding sources across scenes |
-| `src/dock/` | Two docks (Qt widgets, no `Q_OBJECT`): StageKit follows the item selected in OBS and drives Move Source filters on that item's source; StageKit Background holds the start image thumbnail. `arrange-tools.*` is the one set of line-up actions and options behind the dock, the hotkeys and the preview's right-click menu |
+| `src/dock/` | `window-layout.*` keeps OBS's window layout. Two docks (Qt widgets, no `Q_OBJECT`): StageKit follows the item selected in OBS and drives Move Source filters on that item's source; StageKit Background holds the start image thumbnail. `arrange-tools.*` is the one set of line-up actions and options behind the dock, the hotkeys and the preview's right-click menu |
 | `src/common/` | Shared helpers: `timing` (registers every kind and logs what is slow), easing and `Tween`, `SwitchRamp`, `KawaseBlur`, scene utilities, `item-transition` (the *Change with* control for filters that show and hide items), and the start image (global path + Start Image source) |
 | `src/frame/` | Auto Frame filter and the Aspect Ratio Preset filter |
 | `src/capture/` | Auto Capture filter (aims a Game Capture at the game in front), Program Trigger filter (shows items and switches filters while a program is open) and Show Source in Use scene filter (shows the one of several captures whose app is in use). Capture App in Use (`app-capture.*`), a filter on one Window Capture that aims it at whichever of several listed apps is in use. All use the Win32 window list in `auto-capture.cpp`; compiled but idle elsewhere. Also Standby Picture (`standby.*`), a filter that shows a picture in a capture's place while it has nothing; it works everywhere |
@@ -200,6 +200,16 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   drawings (`tool_icon`) are in the theme's own text colour; no stylesheet is
   set, so OBS's themes keep styling it. Widgets on a tab that is not showing have no geometry: a
   test that measures positions must switch to that tab first.
+- **StageKit keeps OBS's window layout** (`src/dock/window-layout.*`, beta138): `QMainWindow`'s
+  `saveState` as base64 in `window-layout.json` in the module's config folder, with *Restore it
+  when OBS starts* (`at_start`, on) and *Save it when OBS closes* (`at_exit`, off), all in the
+  Tools menu's StageKit entry. It is brought back `kAfterLoadingMs` (1.5 s) after
+  `OBS_FRONTEND_EVENT_FINISHED_LOADING`, and saved at `SCRIPTING_SHUTDOWN`, before OBS takes its
+  window apart. The owner had dock-layout plugins and still lost the layout at every start: "I'd
+  like stagekit to also have a tool to store my OBS dock and layout, and also auto load it at
+  startup". **Why OBS lost their layout was not found**; this restores it afterwards whatever the
+  cause. Only the docks' state is kept, not the main window's size and place, which OBS restores
+  itself.
 - **The dock carries no explanatory paragraphs.** The owner wants it clean: controls and short labels
   only. Put explanations in tooltips and the README.
 - **The dock has no picture of the scene.** One was built (drag, wheel, zoom cross) and the owner

@@ -21,6 +21,9 @@
 #include <QSpinBox>
 #include <QListWidget>
 #include <QLayout>
+#include <QAction>
+#include <QMainWindow>
+#include <QDockWidget>
 #include <QMenu>
 #include <QContextMenuEvent>
 #include <QMouseEvent>
@@ -7491,6 +7494,47 @@ int main(int argc, char **argv)
 					      dock->layout()->indexOf(notice) == 0 && notice->isHidden() && install &&
 					      !install->isVisible(),
 				      "the updates are a menu for OBS's Tools menu; the dock only has a notice, first of all and hidden until there is a newer version");
+				// OBS's window layout, kept by StageKit: the menu has the four
+				// entries, and a layout saved comes back after the docks have
+				// been moved about.
+				{
+					CHECK(updates && updates->findChild<QAction *>("layoutSave") &&
+						      updates->findChild<QAction *>("layoutRestore") &&
+						      updates->findChild<QAction *>("layoutAtStart") &&
+						      updates->findChild<QAction *>("layoutAtExit"),
+					      "the menu has the window layout's entries: save, restore, at start-up and on closing");
+					QMainWindow window;
+					window.setObjectName("layoutTestWindow");
+					auto *one_dock = new QDockWidget("One", &window);
+					auto *two_dock = new QDockWidget("Two", &window);
+					one_dock->setObjectName("layoutTestOne");
+					two_dock->setObjectName("layoutTestTwo");
+					window.addDockWidget(Qt::LeftDockWidgetArea, one_dock);
+					window.addDockWidget(Qt::BottomDockWidgetArea, two_dock);
+					auto layout = [&](bool save) {
+						calldata_t cd = {};
+						calldata_set_ptr(&cd, "window", &window);
+						calldata_set_bool(&cd, "save", save);
+						proc_handler_call(obs_get_proc_handler(), "stagekit_window_layout",
+								  &cd);
+						const bool ok = calldata_bool(&cd, "ok");
+						calldata_free(&cd);
+						return ok;
+					};
+					const bool saved = layout(true);
+					window.addDockWidget(Qt::RightDockWidgetArea, one_dock);
+					window.addDockWidget(Qt::TopDockWidgetArea, two_dock);
+					two_dock->setFloating(true);
+					const bool moved = window.dockWidgetArea(one_dock) == Qt::RightDockWidgetArea &&
+							   two_dock->isFloating();
+					const bool restored = layout(false);
+					CHECK(saved && moved && restored &&
+						      window.dockWidgetArea(one_dock) == Qt::LeftDockWidgetArea &&
+						      window.dockWidgetArea(two_dock) == Qt::BottomDockWidgetArea &&
+						      !two_dock->isFloating(),
+					      "a saved window layout comes back: each dock where it was, docked again (saved %d, restored %d)",
+					      (int)saved, (int)restored);
+				}
 				// Pictures of the two busiest tabs, to look at.
 				dock->resize(380, dock->sizeHint().height());
 				dock->grab().save(QString::fromStdString(out + "/../stagekit-dock-arrange.png"));

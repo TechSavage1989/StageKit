@@ -1112,6 +1112,11 @@ StageKit updates itself from inside OBS, on Windows.
 - OBS's **Tools** menu has a **StageKit** entry: the version you have, *Check for updates now*,
   *Check when OBS starts* and *Include test versions* (pre-releases; on, because that is all there
   is so far), and *Update to … now* while a newer version is waiting.
+- The same entry keeps **OBS's window layout**: *Save window layout* stores where every dock is,
+  docked or floating; *Restore window layout* brings it back; *Restore it when OBS starts* (ticked
+  as it comes) does so shortly after OBS has loaded, once every plugin's docks are there; *Save it
+  when OBS closes* (unticked as it comes) keeps it up to date by itself. Nothing happens until a
+  layout has been saved once.
 - On macOS and Linux it tells you about a newer release and opens its page; installing is by hand.
 
 To update by hand instead, close OBS and run a newer installer, or replace the plugin folder with a

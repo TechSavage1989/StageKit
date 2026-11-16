@@ -99,6 +99,8 @@ target_sources(
     src/dock/preview-guides.hpp
     src/dock/stagekit-dock.cpp
     src/dock/stagekit-dock.hpp
+    src/dock/window-layout.cpp
+    src/dock/window-layout.hpp
     src/placement/scene-tools.cpp
     src/placement/scene-tools.hpp
     src/capture/app-capture.cpp
