@@ -40,8 +40,6 @@ the Free Software Foundation; either version 2 of the License, or
 #include <cctype>
 #include <cmath>
 #include <cstring>
-#include <map>
-#include <atomic>
 #include <mutex>
 #include <set>
 #include <string>
@@ -159,16 +157,6 @@ constexpr const char *kStandInFor = "stagekit_stand_in_for";
 std::mutex g_stood_in_mutex;
 std::set<obs_source_t *> g_stood_in;
 
-// What each stood-in source's stand-ins draw: a copy of the source as its
-// standby image, made by its Standby filter in the tick (see `snapshot`).
-std::mutex g_snap_mutex;
-std::map<obs_source_t *, gs_texrender_t *> g_snaps;
-// The Standby filters that stand in for a hidden source: their copies are
-// made at the very start of a frame (`snap_all`).
-class Standby;
-std::mutex g_standing_in_mutex;
-std::set<Standby *> g_standing_in;
-
 class Standby {
 public:
 	Standby(obs_data_t *settings, obs_source_t *source) : source_(source)
@@ -279,17 +267,7 @@ public:
 		if (hotkey_ != OBS_INVALID_HOTKEY_ID)
 			obs_hotkey_unregister(hotkey_);
 		let_go();
-		{
-			std::lock_guard lock(g_standing_in_mutex);
-			g_standing_in.erase(this);
-		}
 		obs_enter_graphics();
-		{
-			std::lock_guard lock(g_snap_mutex);
-			for (auto it = g_snaps.begin(); it != g_snaps.end();)
-				it = it->second == snap_ ? g_snaps.erase(it) : std::next(it);
-		}
-		gs_texrender_destroy(snap_);
 		gs_texrender_destroy(render_);
 		gs_texrender_destroy(render_live_);
 		gs_texrender_destroy(render_stand_in_);
@@ -355,15 +333,6 @@ public:
 			const bool shown = obs_sceneitem_visible(pair.first);
 			if (obs_sceneitem_visible(pair.second) == shown)
 				obs_sceneitem_set_visible(pair.second, !shown);
-		}
-		// What the stand-ins draw: every frame while one is on screen, and
-		// four times a second otherwise, to be ready the moment one is.
-		if (stand_in_) {
-			snap_wait_ += seconds;
-			if (obs_source_showing(stand_in_) || snap_wait_ >= 0.25) {
-				snap_wait_ = 0.0;
-				snap_due_ = true;
-			}
 		}
 		Picture kind;
 		std::string file, named;
@@ -658,13 +627,6 @@ public:
 			else
 				g_stood_in.erase(parent);
 		}
-		{
-			std::lock_guard lock(g_standing_in_mutex);
-			if (wanted)
-				g_standing_in.insert(this);
-			else
-				g_standing_in.erase(this);
-		}
 		for (const auto &pair : pairs_) {
 			obs_sceneitem_release(pair.first);
 			obs_sceneitem_release(pair.second);
@@ -891,81 +853,6 @@ private:
 
 	// Draws a source (or, with none given, what comes before this filter)
 	// into `into` at w x h, covering it. Returns the texture.
-	// The source as its stand-ins show it: drawn once, with the standby image
-	// alone and every filter after this one, into a copy the stand-ins draw. A
-	// stand-in cannot draw the source itself: OBS draws what a filter is given
-	// once a frame (into a texture of the filter's that only its tick clears)
-	// and hands the same picture to every drawing of the source in that
-	// frame, so while the source and its stand-in were both on screen (the
-	// whole of a transition between them) both showed whichever was drawn
-	// first. So this runs before anything else in a frame, from OBS's tick
-	// callback: every filter then starts its frame afresh in its own tick,
-	// and what is drawn here is forgotten before the source is drawn. For the
-	// same reason the filters after this one still hold the last frame's
-	// picture of the source at that moment, and are ticked once here, over no
-	// time, to let go of it first.
-	void snapshot_if_due()
-	{
-		if (!snap_due_.exchange(false))
-			return;
-		if (obs_source_t *parent = obs_filter_get_parent(source_))
-			snapshot(parent);
-	}
-
-	void snapshot(obs_source_t *parent)
-	{
-		const uint32_t w = obs_source_get_width(parent), h = obs_source_get_height(parent);
-		if (!w || !h)
-			return;
-		// (In the order they are applied: the ones after this filter.)
-		std::vector<obs_source_t *> filters;
-		obs_source_enum_filters(
-			parent,
-			[](obs_source_t *, obs_source_t *filter, void *param) {
-				static_cast<std::vector<obs_source_t *> *>(param)->push_back(
-					obs_source_get_ref(filter));
-			},
-			&filters);
-		bool after = false;
-		for (obs_source_t *filter : filters) {
-			if (!filter)
-				continue;
-			// (Another Standby filter keeps no such picture, and its tick is
-			// not one to run from here.)
-			if (filter == source_)
-				after = true;
-			else if (after && strcmp(obs_source_get_unversioned_id(filter), kStandbyId) != 0)
-				obs_source_video_tick(filter, 0.0f);
-			obs_source_release(filter);
-		}
-		obs_enter_graphics();
-		if (!snap_) {
-			snap_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
-			std::lock_guard lock(g_snap_mutex);
-			g_snaps[parent] = snap_;
-		}
-		gs_texrender_reset(snap_);
-		const bool was_linear = gs_set_linear_srgb(false);
-		const bool was_srgb = gs_framebuffer_srgb_enabled();
-		gs_enable_framebuffer_srgb(false);
-		if (gs_texrender_begin(snap_, w, h)) {
-			vec4 clear;
-			vec4_zero(&clear);
-			gs_clear(GS_CLEAR_COLOR, &clear, 0.0f, 0);
-			gs_ortho(0.0f, (float)w, 0.0f, (float)h, -100.0f, 100.0f);
-			gs_blend_state_push();
-			gs_blend_function(GS_BLEND_ONE, GS_BLEND_INVSRCALPHA);
-			t_stand_in = true;
-			obs_source_video_render(parent);
-			t_stand_in = false;
-			gs_blend_state_pop();
-			gs_texrender_end(snap_);
-		}
-		gs_enable_framebuffer_srgb(was_srgb);
-		gs_set_linear_srgb(was_linear);
-		obs_leave_graphics();
-	}
-
 	gs_texture_t *covered(gs_texrender_t *into, uint32_t w, uint32_t h, uint32_t sw, uint32_t sh,
 			      obs_source_t *source, bool stretch = false)
 	{
@@ -1232,9 +1119,6 @@ private:
 	// Each item with its stand-in, both held, from the last look.
 	std::vector<std::pair<obs_sceneitem_t *, obs_sceneitem_t *>> pairs_;
 	double stand_in_check_ = 1.0;
-	gs_texrender_t *snap_ = nullptr; // the source as its stand-ins show it
-	double snap_wait_ = 1.0;
-	std::atomic<bool> snap_due_{false};
 	uint32_t kept_w_ = 0, kept_h_ = 0; // the size of the capture's last frame in render_live_
 	double order_check_ = 1.0, waited_ = 0.0;
 	gs_effect_t *effect_ = nullptr;
@@ -1417,24 +1301,8 @@ bool standby_waiting(obs_source_t *source)
 	return waiting;
 }
 
-namespace {
-// Before anything is ticked in a frame: the stand-ins' copies.
-void snap_all(void *, float)
-{
-	std::lock_guard lock(g_standing_in_mutex);
-	for (Standby *each : g_standing_in)
-		each->snapshot_if_due();
-}
-} // namespace
-
-void standby_stop()
-{
-	obs_remove_tick_callback(snap_all, nullptr);
-}
-
 void register_standby()
 {
-	obs_add_tick_callback(snap_all, nullptr);
 	obs_source_info info = {};
 	info.id = kStandbyId;
 	info.type = OBS_SOURCE_TYPE_FILTER;
@@ -1521,30 +1389,9 @@ void register_standby()
 		obs_source_t *source = held(data);
 		if (!source)
 			return;
-		// The copy its Standby filter made of it this frame.
-		{
-			std::lock_guard lock(g_snap_mutex);
-			const auto found = g_snaps.find(source);
-			gs_texture_t *texture = found != g_snaps.end() ? gs_texrender_get_texture(found->second)
-								       : nullptr;
-			if (texture) {
-				gs_effect_t *effect = obs_get_base_effect(OBS_EFFECT_DEFAULT);
-				gs_eparam_t *image = gs_effect_get_param_by_name(effect, "image");
-				const bool linear = gs_get_linear_srgb();
-				const bool was_srgb = gs_framebuffer_srgb_enabled();
-				gs_enable_framebuffer_srgb(linear);
-				if (linear)
-					gs_effect_set_texture_srgb(image, texture);
-				else
-					gs_effect_set_texture(image, texture);
-				gs_blend_state_push();
-				gs_blend_function(GS_BLEND_ONE, GS_BLEND_INVSRCALPHA);
-				while (gs_effect_loop(effect, "Draw"))
-					gs_draw_sprite(texture, 0, 0, 0);
-				gs_blend_state_pop();
-				gs_enable_framebuffer_srgb(was_srgb);
-			}
-		}
+		t_stand_in = true;
+		obs_source_video_render(source);
+		t_stand_in = false;
 		obs_source_release(source);
 	};
 	register_timed(&stand_in);

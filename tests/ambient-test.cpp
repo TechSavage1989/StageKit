@@ -2580,7 +2580,10 @@ int main(int argc, char **argv)
 							sleep_ms(15);
 							l = at_px(frame, 330, 250);
 							const uint8_t *r = at_px(frame, 470, 250);
-							if (slide) printf("    (TRACE %s step %d: left %d,%d right %d,%d)\n", round ? "show" : "hide", step, l[0], l[1], r[0], r[1]);
+							if (slide)
+								printf("    (TRACE %s step %d: left %d,%d right %d,%d)\n",
+								       round ? "show" : "hide", step, l[0], l[1], r[0],
+								       r[1]);
 							const bool here = slide ? (round == 0
 											   ? l[1] > 250 && r[0] > 250
 											   : l[0] > 250 && r[1] > 250)

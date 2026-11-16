@@ -19,8 +19,6 @@ inline constexpr const char *kStandbyId = "stagekit_standby";
 // Registers the "Standby Picture (StageKit)" filter: a picture in a capture's
 // place while the capture has nothing to show.
 void register_standby();
-// When OBS closes or the plugin is unloaded: nothing more at the start of a frame.
-void standby_stop();
 
 // Is a Standby Picture on the source showing its picture because the capture
 // has nothing? (Not while it changes over to a capture that has arrived.)
