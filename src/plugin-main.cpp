@@ -26,6 +26,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "capture/auto-capture.hpp"
 #include "update/updater.hpp"
 #include "capture/active-app.hpp"
+#include "common/loading.hpp"
 #include "capture/standby.hpp"
 #include "placement/show-in-scenes.hpp"
 #include "capture/program-trigger.hpp"
@@ -107,6 +108,7 @@ bool obs_module_load(void)
 	stagekit::register_ambient_background();
 	stagekit::register_shadow_backdrop();
 	stagekit::register_corners();
+	stagekit::loading_watch_start();
 	stagekit::register_standby();
 	stagekit::register_show_in_scenes();
 	stagekit::register_place_item();
@@ -158,7 +160,8 @@ void obs_module_unload(void)
 		obs_hotkey_unregister(hk.id);
 	stagekit::vendor_api_unregister();
 	stagekit::item_morph_stop();
-	stagekit::standby_stop();
+	stagekit::loading_watch_stop();
+	stagekit::fit_item_stop();
 	stagekit::stop_window_watch();
 	stagekit::stop_updater();
 	obs_log(LOG_INFO, "plugin unloaded");

@@ -20,6 +20,8 @@ inline constexpr const char *kFitItemId = "stagekit_fit_item";
 // when the picture has the box's shape, floating centred inside a margin when
 // it has not.
 void register_fit_item();
+// At unload.
+void fit_item_stop();
 
 // Tells any Fit to Space that looks after the item of this name (in `scene`,
 // or in any scene when that is null) that it has just been placed on

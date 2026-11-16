@@ -16,6 +16,7 @@ the Free Software Foundation; either version 2 of the License, or
 // the source by exactly the room the shadow and panel need, so no wrapper
 // scene is required.
 
+#include "../common/loading.hpp"
 #include "../common/filter-input.hpp"
 #include "shadow-backdrop.hpp"
 #include "../common/timing.hpp"
@@ -671,6 +672,14 @@ void ShadowBackdrop::tick()
 			obs_data_set_string(settings, "adjusted_for", uuid);
 		obs_data_release(settings);
 	}
+	// Nothing is adjusted while OBS loads its scenes: only some of them have
+	// their items yet, and how big the source is drawn is not known, so the
+	// room was given back to the items there were (as if drawn full size) and
+	// then taken from all of them. An item in a scene loaded later got the
+	// room a second time at every start: the owner's camera, 11 px larger
+	// after each restart in two scenes of three.
+	if (!scenes_loaded())
+		return;
 	// A filter that is switched off, or told not to, takes no room.
 	// Now and then, see how big the source is drawn where it is on screen.
 	if (--scale_countdown_ <= 0) {

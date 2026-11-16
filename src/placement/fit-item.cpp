@@ -1766,8 +1766,48 @@ void fit_item_shared(obs_source_t *scene, const char *item_name, const double *h
 		filter->shared(scene, item_name, home);
 }
 
+namespace {
+// A source is renamed: the filters that name it go on naming it. Before, a
+// filter kept the old name, found no such item and did nothing from then on;
+// the owner's camera, renamed, was left unfitted in two scenes of three.
+void on_source_rename(void *, calldata_t *cd)
+{
+	const char *was = calldata_string(cd, "prev_name");
+	const char *now = calldata_string(cd, "new_name");
+	if (!was || !now || !*was || !*now)
+		return;
+	std::vector<obs_source_t *> filters;
+	{
+		std::lock_guard lock(g_filters_mutex);
+		for (FitItem *each : g_filters)
+			if (obs_source_t *held = obs_source_get_ref(each->source()))
+				filters.push_back(held);
+	}
+	for (obs_source_t *filter : filters) {
+		obs_data_t *settings = obs_source_get_settings(filter);
+		bool changed = false;
+		for (const char *key : {"item", "keep_item", "orig_item"}) {
+			if (strcmp(obs_data_get_string(settings, key), was) == 0) {
+				obs_data_set_string(settings, key, now);
+				changed = true;
+			}
+		}
+		if (changed)
+			obs_source_update(filter, settings);
+		obs_data_release(settings);
+		obs_source_release(filter);
+	}
+}
+} // namespace
+
+void fit_item_stop()
+{
+	signal_handler_disconnect(obs_get_signal_handler(), "source_rename", on_source_rename, nullptr);
+}
+
 void register_fit_item()
 {
+	signal_handler_connect(obs_get_signal_handler(), "source_rename", on_source_rename, nullptr);
 	obs_source_info info = {};
 	info.id = kFitItemId;
 	info.type = OBS_SOURCE_TYPE_FILTER;
