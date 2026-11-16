@@ -894,14 +894,16 @@ private:
 	// The source as its stand-ins show it: drawn once, with the standby image
 	// alone and every filter after this one, into a copy the stand-ins draw. A
 	// stand-in cannot draw the source itself: OBS draws what a filter is given
-	// once a frame and hands the same picture to every drawing of the source
-	// in that frame, so while the source and its stand-in were both on screen
-	// (the whole of a transition between them) both showed whichever was
-	// drawn first. So this runs before anything else in a frame, from OBS's
-	// tick callback: every filter starts its frame afresh in its own tick,
-	// which comes after, so what is drawn here is forgotten before the source
-	// is drawn. (From this filter's own tick it is not: OBS ticks filters in
-	// no order one can go by, and those ticked already kept this picture.)
+	// once a frame (into a texture of the filter's that only its tick clears)
+	// and hands the same picture to every drawing of the source in that
+	// frame, so while the source and its stand-in were both on screen (the
+	// whole of a transition between them) both showed whichever was drawn
+	// first. So this runs before anything else in a frame, from OBS's tick
+	// callback: every filter then starts its frame afresh in its own tick,
+	// and what is drawn here is forgotten before the source is drawn. For the
+	// same reason the filters after this one still hold the last frame's
+	// picture of the source at that moment, and are ticked once here, over no
+	// time, to let go of it first.
 	void snapshot_if_due()
 	{
 		if (!snap_due_.exchange(false))
@@ -915,6 +917,27 @@ private:
 		const uint32_t w = obs_source_get_width(parent), h = obs_source_get_height(parent);
 		if (!w || !h)
 			return;
+		// (In the order they are applied: the ones after this filter.)
+		std::vector<obs_source_t *> filters;
+		obs_source_enum_filters(
+			parent,
+			[](obs_source_t *, obs_source_t *filter, void *param) {
+				static_cast<std::vector<obs_source_t *> *>(param)->push_back(
+					obs_source_get_ref(filter));
+			},
+			&filters);
+		bool after = false;
+		for (obs_source_t *filter : filters) {
+			if (!filter)
+				continue;
+			// (Another Standby filter keeps no such picture, and its tick is
+			// not one to run from here.)
+			if (filter == source_)
+				after = true;
+			else if (after && strcmp(obs_source_get_unversioned_id(filter), kStandbyId) != 0)
+				obs_source_video_tick(filter, 0.0f);
+			obs_source_release(filter);
+		}
 		obs_enter_graphics();
 		if (!snap_) {
 			snap_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
