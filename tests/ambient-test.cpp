@@ -38,6 +38,7 @@
 #include <cstdio>
 #include <cstring>
 #include <functional>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -5266,6 +5267,493 @@ int main(int argc, char **argv)
 			obs_scene_release(vs);
 		}
 
+		// One scene holding several captures, one shown at a time: what
+		// Link Visibility and Show in Scenes need for that.
+		printf("\n[capture scenes: out of view, locked while hidden, switches that follow]\n");
+		if (obs_source_get_display_name("fade_transition")) {
+			obs_source_t *before_out = obs_get_output_source(0);
+			auto colour = [](const char *name) {
+				return obs_source_create("color_source", name, nullptr, nullptr);
+			};
+			// A list as the plugin keeps it: a row for each name.
+			auto set_list = [](obs_data_t *settings, const char *list, std::vector<const char *> names) {
+				obs_data_array_t *rows = obs_data_array_create();
+				for (const char *name : names) {
+					obs_data_t *row = obs_data_create();
+					obs_data_set_string(row, "value", name);
+					obs_data_array_push_back(rows, row);
+					obs_data_release(row);
+				}
+				obs_data_set_array(settings, list, rows);
+				obs_data_array_release(rows);
+			};
+			auto is_fade = [](obs_sceneitem_t *item, bool show, uint32_t ms) {
+				obs_source_t *t = obs_sceneitem_get_transition(item, show);
+				return t && strcmp(obs_source_get_unversioned_id(t), "fade_transition") == 0 &&
+				       obs_sceneitem_get_transition_duration(item, show) == ms;
+			};
+			auto in_use = [](obs_source_t *source) {
+				return obs_source_active(source) || obs_source_showing(source);
+			};
+			// How often a source was taken into use (a capture card opens its device then).
+			static int opened = 0;
+			const auto count_opened = [](void *, calldata_t *) {
+				opened++;
+			};
+
+			// --- A change made in a scene that is not being shown is a cut.
+			{
+				obs_scene_t *view = obs_scene_create("Cut In View");
+				obs_scene_t *away = obs_scene_create("Cut Away");
+				obs_source_t *away_src = obs_scene_get_source(away);
+				obs_set_output_source(0, obs_scene_get_source(view));
+				sleep_ms(100);
+
+				// What OBS does by itself, which is why: the transition
+				// it starts is only ended by drawing the scene.
+				obs_source_t *plain = colour("Cut Plain");
+				obs_sceneitem_t *plain_item = obs_scene_add(away, plain);
+				obs_source_t *fade =
+					obs_source_create_private("fade_transition", "Plain Hide", nullptr);
+				obs_sceneitem_set_transition(plain_item, false, fade);
+				obs_sceneitem_set_transition_duration(plain_item, false, 300);
+				obs_source_release(fade);
+				sleep_ms(100);
+				obs_sceneitem_set_visible(plain_item, false);
+				sleep_ms(500);
+				obs_set_output_source(0, away_src);
+				CHECK(in_use(plain),
+				      "left to OBS, a source hidden with a fade while its scene was out of view counts as in use again when the scene comes on");
+				obs_set_output_source(0, obs_scene_get_source(view));
+				obs_sceneitem_remove(plain_item);
+				sleep_ms(100);
+
+				// Link Visibility, in the scene out of view.
+				const char *names[3] = {"Cut A", "Cut B", "Cut C"};
+				obs_source_t *src[3];
+				obs_sceneitem_t *item[3];
+				for (int i = 0; i < 3; i++) {
+					src[i] = colour(names[i]);
+					item[i] = obs_scene_add(away, src[i]);
+				}
+				obs_sceneitem_set_visible(item[1], false);
+				obs_sceneitem_set_visible(item[2], false);
+				obs_data_t *ld = obs_data_create();
+				set_list(ld, "items", {names[0], names[1], names[2]});
+				obs_data_set_int(ld, "transition_ms", 600);
+				obs_source_t *link =
+					obs_source_create("stagekit_visibility_link", "Cut Link", ld, nullptr);
+				obs_source_filter_add(away_src, link);
+				sleep_ms(150);
+				signal_handler_connect(obs_source_get_signal_handler(src[0]), "activate", count_opened,
+						       nullptr);
+				opened = 0;
+				obs_sceneitem_set_visible(item[1], true);
+				sleep_ms(150);
+				CHECK(!obs_sceneitem_visible(item[0]) && obs_sceneitem_visible(item[1]) &&
+					      is_fade(item[0], false, 600),
+				      "Link Visibility hides the other source in a scene that is out of view, and it keeps the fade it was given");
+				obs_set_output_source(0, away_src);
+				const bool at_once = in_use(src[0]);
+				sleep_ms(300);
+				CHECK(!at_once && !in_use(src[0]) && opened == 0,
+				      "when that scene comes on, the source hidden there is not taken into use, not even for a moment (%d %d)",
+				      at_once, opened);
+				// The same scene, now showing: the fade is used as before, so
+				// the source is still in use while it fades. (These tests
+				// have no sound running, and a fade is over for OBS only
+				// once its sound is too: its end cannot be seen here.)
+				obs_sceneitem_set_visible(item[2], true);
+				sleep_ms(250);
+				CHECK(!obs_sceneitem_visible(item[1]) && in_use(src[1]),
+				      "in a scene that is showing, the source it hides fades out as before");
+				signal_handler_disconnect(obs_source_get_signal_handler(src[0]), "activate",
+							  count_opened, nullptr);
+				obs_set_output_source(0, obs_scene_get_source(view));
+				sleep_ms(100);
+
+				// Show in Scenes, in the scene out of view.
+				obs_source_t *solo = colour("Cut Solo");
+				obs_sceneitem_t *solo_item = obs_scene_add(away, solo);
+				obs_data_t *sd = obs_data_create();
+				obs_data_set_int(sd, "transition_ms", 600);
+				obs_source_t *sw =
+					obs_source_create("stagekit_show_in_scenes", "Cut Switch", sd, nullptr);
+				obs_source_filter_add(solo, sw);
+				sleep_ms(150);
+				signal_handler_connect(obs_source_get_signal_handler(solo), "activate", count_opened,
+						       nullptr);
+				opened = 0;
+				obs_source_set_enabled(sw, false);
+				sleep_ms(150);
+				CHECK(!obs_sceneitem_visible(solo_item) && is_fade(solo_item, false, 600),
+				      "Show in Scenes hides its source in a scene that is out of view, and it keeps its fade");
+				obs_set_output_source(0, away_src);
+				const bool solo_at_once = in_use(solo);
+				sleep_ms(300);
+				CHECK(!solo_at_once && !in_use(solo) && opened == 0,
+				      "when that scene comes on, the hidden source is not taken into use (%d %d)",
+				      solo_at_once, opened);
+				obs_set_output_source(0, obs_scene_get_source(view));
+				sleep_ms(100);
+				obs_source_set_enabled(sw, true);
+				sleep_ms(150);
+				obs_source_t *show_way = obs_sceneitem_get_transition(solo_item, true);
+				obs_source_t *under_way = show_way ? obs_transition_get_active_source(show_way)
+								   : nullptr;
+				CHECK(obs_sceneitem_visible(solo_item) && is_fade(solo_item, true, 600) && !under_way,
+				      "shown again out of view, it is simply shown: no fade is left under way");
+				obs_source_release(under_way);
+				obs_set_output_source(0, away_src);
+				sleep_ms(200);
+				obs_source_set_enabled(sw, false);
+				sleep_ms(250);
+				CHECK(!obs_sceneitem_visible(solo_item) && in_use(solo),
+				      "and in a scene that is showing, Show in Scenes fades its source out as before");
+				signal_handler_disconnect(obs_source_get_signal_handler(solo), "activate", count_opened,
+							  nullptr);
+
+				obs_set_output_source(0, before_out);
+				obs_source_filter_remove(solo, sw);
+				obs_source_release(sw);
+				obs_data_release(sd);
+				obs_source_filter_remove(away_src, link);
+				obs_source_release(link);
+				obs_data_release(ld);
+				for (obs_source_t *source : src)
+					obs_source_release(source);
+				obs_source_release(solo);
+				obs_source_release(plain);
+				obs_scene_release(away);
+				obs_scene_release(view);
+			}
+
+			// --- Link Visibility: "Lock hidden sources".
+			{
+				obs_scene_t *ls = obs_scene_create("Lock Scene");
+				obs_source_t *lsrc = obs_scene_get_source(ls);
+				const char *names[3] = {"Lock A", "Lock B", "Lock C"};
+				obs_source_t *src[3];
+				obs_sceneitem_t *item[3];
+				for (int i = 0; i < 3; i++) {
+					src[i] = colour(names[i]);
+					item[i] = obs_scene_add(ls, src[i]);
+				}
+				obs_source_t *loose = colour("Lock Loose");
+				obs_sceneitem_t *loose_item = obs_scene_add(ls, loose);
+				obs_sceneitem_set_visible(item[1], false);
+				obs_sceneitem_set_visible(item[2], false);
+				obs_sceneitem_set_visible(loose_item, false);
+				auto locks = [&] {
+					return std::string(obs_sceneitem_locked(item[0]) ? "1" : "0") +
+					       (obs_sceneitem_locked(item[1]) ? "1" : "0") +
+					       (obs_sceneitem_locked(item[2]) ? "1" : "0");
+				};
+				auto shown = [&] {
+					return std::string(obs_sceneitem_visible(item[0]) ? "1" : "0") +
+					       (obs_sceneitem_visible(item[1]) ? "1" : "0") +
+					       (obs_sceneitem_visible(item[2]) ? "1" : "0");
+				};
+				obs_data_t *ld = obs_data_create();
+				set_list(ld, "items", {names[0], names[1], names[2]});
+				obs_data_set_string(ld, "transition", "none");
+				obs_source_t *link =
+					obs_source_create("stagekit_visibility_link", "Lock Link", ld, nullptr);
+				obs_source_filter_add(lsrc, link);
+				sleep_ms(150);
+				obs_properties_t *lp = obs_source_properties(link);
+				obs_property_t *box = obs_properties_get(lp, "lock_hidden");
+				CHECK(box && obs_property_long_description(box) &&
+					      strlen(obs_property_description(box)) <= 26,
+				      "Link Visibility has a 'Lock hidden sources' tick box with a tooltip");
+				obs_properties_destroy(lp);
+				obs_sceneitem_set_visible(item[1], true);
+				sleep_ms(150);
+				CHECK(shown() == "010" && locks() == "000",
+				      "unticked, as it comes, nothing is locked (%s %s)", shown().c_str(),
+				      locks().c_str());
+				obs_sceneitem_set_locked(item[1], true); // a lock set by hand on the one shown
+				obs_data_t *now = obs_source_get_settings(link);
+				obs_data_set_bool(now, "lock_hidden", true);
+				obs_source_update(link, now);
+				sleep_ms(150);
+				CHECK(locks() == "111" && !obs_sceneitem_locked(loose_item),
+				      "ticked, the listed sources that are hidden are locked, the one shown is left as it is, and a hidden source not on the list is not touched (%s)",
+				      locks().c_str());
+				obs_sceneitem_set_visible(item[2], true);
+				sleep_ms(150);
+				CHECK(shown() == "001" && locks() == "110",
+				      "showing a source unlocks it, and the one the filter hides for it is locked (%s %s)",
+				      shown().c_str(), locks().c_str());
+				obs_sceneitem_set_visible(item[2], false);
+				sleep_ms(150);
+				CHECK(shown() == "000" && locks() == "111",
+				      "a source hidden by hand is locked too (%s %s)", shown().c_str(),
+				      locks().c_str());
+				obs_sceneitem_set_visible(item[0], true);
+				sleep_ms(150);
+				CHECK(shown() == "100" && locks() == "011", "and shown by hand it is unlocked (%s %s)",
+				      shown().c_str(), locks().c_str());
+				// Switched off, the filter does nothing; switched on again it
+				// locks what is hidden.
+				obs_source_set_enabled(link, false);
+				sleep_ms(100);
+				obs_sceneitem_set_visible(item[0], false);
+				obs_sceneitem_set_locked(item[1], false);
+				sleep_ms(150);
+				const std::string while_off = locks();
+				obs_source_set_enabled(link, true);
+				sleep_ms(150);
+				CHECK(while_off == "001" && locks() == "111",
+				      "while the filter is switched off no lock is changed, and switched on again it locks the hidden ones (%s %s)",
+				      while_off.c_str(), locks().c_str());
+				// Unticked again: locks are left as they are.
+				obs_data_set_bool(now, "lock_hidden", false);
+				obs_source_update(link, now);
+				obs_data_release(now);
+				sleep_ms(150);
+				obs_sceneitem_set_visible(item[1], true);
+				sleep_ms(150);
+				obs_sceneitem_set_visible(item[1], false);
+				sleep_ms(150);
+				obs_sceneitem_set_locked(item[2], false);
+				obs_sceneitem_set_visible(item[0], true);
+				sleep_ms(150);
+				CHECK(shown() == "100" && locks() == "110",
+				      "unticked again, showing and hiding changes no lock (%s %s)", shown().c_str(),
+				      locks().c_str());
+				obs_source_filter_remove(lsrc, link);
+				obs_source_release(link);
+				obs_data_release(ld);
+				for (obs_source_t *source : src)
+					obs_source_release(source);
+				obs_source_release(loose);
+				obs_scene_release(ls);
+			}
+
+			// --- Show in Scenes: "Follow what is shown".
+			{
+				obs_scene_t *one = obs_scene_create("Follow One");
+				obs_scene_t *two = obs_scene_create("Follow Two");
+				obs_scene_t *other = obs_scene_create("Follow Other");
+				obs_source_t *cam = colour("Follow Camera");
+				obs_sceneitem_t *cam1 = obs_scene_add(one, cam), *cam2 = obs_scene_add(two, cam);
+				obs_sceneitem_t *cam_other = obs_scene_add(other, cam); // a scene it does not cover
+				obs_data_t *sd = obs_data_create();
+				set_list(sd, "scenes", {"Follow One", "Follow Two"});
+				obs_data_set_int(sd, "where", 1);
+				obs_data_set_string(sd, "transition", "none");
+				obs_source_t *sw =
+					obs_source_create("stagekit_show_in_scenes", "Follow Switch", sd, nullptr);
+				obs_source_filter_add(cam, sw);
+				sleep_ms(150);
+				obs_properties_t *sp = obs_source_properties(sw);
+				obs_property_t *box = obs_properties_get(sp, "follow");
+				CHECK(box && obs_property_long_description(box) &&
+					      strlen(obs_property_description(box)) <= 26,
+				      "Show in Scenes has a 'Follow what is shown' tick box with a tooltip");
+				obs_properties_destroy(sp);
+				obs_sceneitem_set_visible(cam2, false);
+				sleep_ms(500);
+				CHECK(obs_source_enabled(sw),
+				      "unticked, as it comes, the switch stays as it was last pressed");
+				obs_sceneitem_set_visible(cam2, true);
+				obs_data_t *now = obs_source_get_settings(sw);
+				obs_data_set_bool(now, "follow", true);
+				obs_source_update(sw, now);
+				sleep_ms(500);
+				CHECK(obs_source_enabled(sw), "ticked, with all its sources shown the switch stays on");
+				obs_sceneitem_set_visible(cam2, false);
+				sleep_ms(500);
+				CHECK(!obs_source_enabled(sw) && obs_sceneitem_visible(cam1) &&
+					      !obs_sceneitem_visible(cam2),
+				      "a source hidden by something else in one of its scenes turns the switch off, and that hides nothing more");
+				sleep_ms(500);
+				CHECK(!obs_source_enabled(sw) && obs_sceneitem_visible(cam1),
+				      "and it stays that way: the switch does not act on its own correction");
+				obs_sceneitem_set_visible(cam2, true);
+				sleep_ms(500);
+				CHECK(obs_source_enabled(sw) && obs_sceneitem_visible(cam1) &&
+					      obs_sceneitem_visible(cam2),
+				      "shown again everywhere, the switch turns on");
+				obs_sceneitem_set_visible(cam_other, false);
+				sleep_ms(500);
+				CHECK(obs_source_enabled(sw), "a scene it does not cover does not count");
+				// A press on a switch that is on already still acts.
+				obs_sceneitem_set_visible(cam1, false);
+				obs_source_set_enabled(sw, true);
+				sleep_ms(100);
+				const bool acted = obs_sceneitem_visible(cam1);
+				sleep_ms(500);
+				CHECK(acted && obs_source_enabled(sw),
+				      "switching it on when it is on already still shows its sources, and it stays on");
+				// A press, and the switch does not undo itself.
+				obs_source_set_enabled(sw, false);
+				sleep_ms(600);
+				CHECK(!obs_source_enabled(sw) && !obs_sceneitem_visible(cam1) &&
+					      !obs_sceneitem_visible(cam2),
+				      "switched off by a press, its sources are hidden and it stays off");
+				obs_source_set_enabled(sw, true);
+				sleep_ms(600);
+				CHECK(obs_source_enabled(sw) && obs_sceneitem_visible(cam1) &&
+					      obs_sceneitem_visible(cam2),
+				      "switched on by a press, they are shown and it stays on");
+				// "On" meaning hidden.
+				obs_data_set_int(now, "on_means", 1);
+				obs_source_update(sw, now);
+				sleep_ms(500);
+				CHECK(!obs_source_enabled(sw) && obs_sceneitem_visible(cam1) &&
+					      obs_sceneitem_visible(cam2),
+				      "with 'on' meaning hidden, the switch reads off while its sources are shown, and changing that hid nothing");
+				obs_sceneitem_set_visible(cam1, false);
+				sleep_ms(500);
+				CHECK(obs_source_enabled(sw) && obs_sceneitem_visible(cam2),
+				      "and on once one of them is hidden, without hiding the other");
+				obs_sceneitem_set_visible(cam1, true);
+				sleep_ms(500);
+				CHECK(!obs_source_enabled(sw), "and off again when all are shown");
+				// In none of its scenes: nothing to go by.
+				set_list(now, "scenes", {"Follow Nowhere"});
+				obs_source_update(sw, now);
+				obs_data_release(now);
+				sleep_ms(100);
+				obs_source_set_enabled(sw, true);
+				sleep_ms(500);
+				CHECK(obs_source_enabled(sw),
+				      "with its source in none of its scenes the switch is left alone");
+				obs_source_filter_remove(cam, sw);
+				obs_source_release(sw);
+				obs_data_release(sd);
+				obs_source_release(cam);
+				obs_scene_release(one);
+				obs_scene_release(two);
+				obs_scene_release(other);
+			}
+
+			// --- The whole chain: two scenes, each holding three captures of
+			// which one is shown, and a switch on each capture.
+			{
+				const char *scene_names[2] = {"Chain Full", "Chain Component"};
+				const char *names[3] = {"Chain A", "Chain B", "Chain C"};
+				const char *kind = obs_source_get_display_name("stagekit_morph") ? "stagekit_morph"
+												 : "fade_transition";
+				obs_scene_t *scene[2];
+				obs_source_t *src[3], *sw[3], *link[2];
+				obs_sceneitem_t *item[2][3];
+				for (int i = 0; i < 3; i++)
+					src[i] = colour(names[i]);
+				for (int s = 0; s < 2; s++) {
+					scene[s] = obs_scene_create(scene_names[s]);
+					for (int i = 0; i < 3; i++) {
+						item[s][i] = obs_scene_add(scene[s], src[i]);
+						if (i)
+							obs_sceneitem_set_visible(item[s][i], false);
+					}
+				}
+				// The first is on screen, the second is not.
+				obs_set_output_source(0, obs_scene_get_source(scene[0]));
+				sleep_ms(100);
+				for (int s = 0; s < 2; s++) {
+					obs_data_t *ld = obs_data_create();
+					set_list(ld, "items", {names[0], names[1], names[2]});
+					obs_data_set_string(ld, "transition", kind);
+					obs_data_set_int(ld, "transition_ms", 300);
+					obs_data_set_bool(ld, "lock_hidden", true);
+					link[s] = obs_source_create("stagekit_visibility_link",
+								    "Link Visibility-Captures", ld, nullptr);
+					obs_source_filter_add(obs_scene_get_source(scene[s]), link[s]);
+					obs_data_release(ld);
+				}
+				for (int i = 0; i < 3; i++) {
+					obs_data_t *sd = obs_data_create();
+					set_list(sd, "scenes", {scene_names[0], scene_names[1]});
+					obs_data_set_int(sd, "where", 1);
+					obs_data_set_string(sd, "transition", kind);
+					obs_data_set_int(sd, "transition_ms", 300);
+					obs_data_set_bool(sd, "follow", true);
+					sw[i] = obs_source_create("stagekit_show_in_scenes", "Show in Scenes-Capture",
+								  sd, nullptr);
+					obs_source_filter_add(src[i], sw[i]);
+					obs_data_release(sd);
+				}
+				// As many letters as captures: which are shown in the two
+				// scenes, which are locked, which switches are on.
+				auto state = [&] {
+					std::string text;
+					for (int s = 0; s < 2; s++) {
+						for (int i = 0; i < 3; i++)
+							text += obs_sceneitem_visible(item[s][i]) ? "1" : "0";
+						text += s ? " locked " : "/";
+					}
+					for (int s = 0; s < 2; s++) {
+						for (int i = 0; i < 3; i++)
+							text += obs_sceneitem_locked(item[s][i]) ? "1" : "0";
+						text += s ? " on " : "/";
+					}
+					for (int i = 0; i < 3; i++)
+						text += obs_source_enabled(sw[i]) ? "1" : "0";
+					return text;
+				};
+				sleep_ms(700);
+				CHECK(state() == "100/100 locked 011/011 on 100",
+				      "to begin with the first capture is shown in both scenes, the hidden ones are locked and only its switch reads on (%s)",
+				      state().c_str());
+				obs_source_set_enabled(sw[1], true);
+				sleep_ms(1000);
+				CHECK(state() == "010/010 locked 101/101 on 010",
+				      "switching the second capture on shows only it in both scenes, locks the other two, unlocks it, and only its switch is on (%s)",
+				      state().c_str());
+				obs_source_set_enabled(sw[2], true);
+				sleep_ms(1000);
+				CHECK(state() == "001/001 locked 110/110 on 001", "then the third (%s)",
+				      state().c_str());
+				obs_source_set_enabled(sw[0], true);
+				sleep_ms(1000);
+				CHECK(state() == "100/100 locked 011/011 on 100", "then the first again (%s)",
+				      state().c_str());
+				// The other scene comes on: nothing hidden there is opened.
+				for (int i = 1; i < 3; i++)
+					signal_handler_connect(obs_source_get_signal_handler(src[i]), "activate",
+							       count_opened, nullptr);
+				opened = 0;
+				obs_set_output_source(0, obs_scene_get_source(scene[1]));
+				sleep_ms(400);
+				CHECK(opened == 0 && !in_use(src[1]) && !in_use(src[2]) && in_use(src[0]),
+				      "and when the scene that was out of view comes on, the captures hidden in it are not taken into use (%d)",
+				      opened);
+				for (int i = 1; i < 3; i++)
+					signal_handler_disconnect(obs_source_get_signal_handler(src[i]), "activate",
+								  count_opened, nullptr);
+				// Shown by the eye instead of a key: the switches follow.
+				obs_sceneitem_set_visible(item[1][2], true);
+				sleep_ms(1000);
+				CHECK(state() == "100/001 locked 011/110 on 000",
+				      "a capture shown by hand in one scene only: each scene shows one, and no switch reads on, as none is shown in both (%s)",
+				      state().c_str());
+				obs_source_set_enabled(sw[2], true);
+				sleep_ms(1000);
+				CHECK(state() == "001/001 locked 110/110 on 001",
+				      "and a press on its switch brings the two scenes together again (%s)",
+				      state().c_str());
+
+				obs_set_output_source(0, before_out);
+				for (int i = 0; i < 3; i++) {
+					obs_source_filter_remove(src[i], sw[i]);
+					obs_source_release(sw[i]);
+				}
+				for (int s = 0; s < 2; s++) {
+					obs_source_filter_remove(obs_scene_get_source(scene[s]), link[s]);
+					obs_source_release(link[s]);
+				}
+				sleep_ms(100);
+				for (obs_source_t *source : src)
+					obs_source_release(source);
+				for (obs_scene_t *each : scene)
+					obs_scene_release(each);
+			}
+			obs_source_release(before_out);
+		}
+
 		// Program Trigger: items and filters follow a program.
 		printf("\n[program trigger]\n");
 		{
@@ -9926,6 +10414,545 @@ int main(int argc, char **argv)
 		obs_source_release(widget);
 		obs_source_release(badge);
 		obs_scene_release(scene);
+	}
+
+	{
+		// A layout scene: every capture stacked in the capture's place with one
+		// shown, a camera above a chat box beside it, a Fit to Space for each.
+		// Changing the capture must leave everything else where it is. What is
+		// drawn is noted for every frame, so a lurch of a few frames shows.
+		printf("\n[layout scenes: changing the capture leaves the rest where it is]\n");
+		if (obs_source_get_display_name("fade_transition")) {
+			obs_source_t *before_out = obs_get_output_source(0);
+			// With sound, as in OBS: OBS ends an item's show or hide transition
+			// only once its sound side is over too, and until it has ended the
+			// source it hides counts as in use. (The tests before this one run
+			// without sound, which is why this section comes last.)
+			obs_audio_info sound = {};
+			sound.samples_per_sec = 48000;
+			sound.speakers = SPEAKERS_STEREO;
+			const bool with_sound = obs_reset_audio(&sound);
+			const char *kind = obs_source_get_display_name("stagekit_morph") ? "stagekit_morph"
+											 : "fade_transition";
+			auto block = [](const char *name, long long abgr, int bw, int bh) {
+				obs_data_t *d = obs_data_create();
+				obs_data_set_int(d, "color", abgr);
+				obs_data_set_int(d, "width", bw);
+				obs_data_set_int(d, "height", bh);
+				obs_source_t *src = obs_source_create("color_source", name, d, nullptr);
+				obs_data_release(d);
+				return src;
+			};
+			auto set_list = [](obs_data_t *settings, const char *list, std::vector<const char *> names) {
+				obs_data_array_t *rows = obs_data_array_create();
+				for (const char *name : names) {
+					obs_data_t *row = obs_data_create();
+					obs_data_set_string(row, "value", name);
+					obs_data_array_push_back(rows, row);
+					obs_data_release(row);
+				}
+				obs_data_set_array(settings, list, rows);
+				obs_data_array_release(rows);
+			};
+			// The five captures: two of the screen's shape, a squarer window,
+			// a display that has no size until it has started, and a tablet.
+			enum { Game, Card, Window, Display, Tablet, Captures };
+			const char *cap_names[Captures] = {"Layout Game", "Layout Card", "Layout Window",
+							   "Layout Display", "Layout Tablet"};
+			const int cap_w[Captures] = {320, 320, 400, 0, 320}, cap_h[Captures] = {180, 180, 300, 0, 200};
+			const long long cap_colour[Captures] = {0xFF00FFFF, 0xFFFFFF00, 0xFFFF00FF, 0xFF0000FF,
+								0xFF00FF00};
+			obs_source_t *cap[Captures], *sw[Captures];
+			for (int i = 0; i < Captures; i++)
+				cap[i] = block(cap_names[i], cap_colour[i], cap_w[i], cap_h[i]);
+			obs_source_t *camera = block("Layout Camera", 0xFF808080, 100, 60);
+			obs_source_t *chat = block("Layout Chat", 0xFF404040, 100, 150);
+			const char *scene_names[2] = {"Layout Full", "Layout Component"};
+			obs_scene_t *full_scene = obs_scene_create(scene_names[0]);
+			obs_scene_t *comp = obs_scene_create(scene_names[1]); // 640x360
+			obs_source_t *full_src = obs_scene_get_source(full_scene),
+				     *comp_src = obs_scene_get_source(comp);
+			// As the file is written: each capture in the capture's box, all
+			// but the first hidden, never fitted.
+			obs_sceneitem_t *in_full[Captures], *in_comp[Captures];
+			for (int i = 0; i < Captures; i++) {
+				in_full[i] = obs_scene_add(full_scene, cap[i]);
+				in_comp[i] = obs_scene_add(comp, cap[i]);
+				vec2 at, box;
+				vec2_set(&at, 20.0f, 20.0f);
+				vec2_set(&box, 480.0f, 320.0f);
+				// (Two as a file may well have them: the window's box a
+				// pixel larger, the tablet lying a little off the space.)
+				if (i == Window)
+					vec2_set(&box, 481.0f, 321.0f);
+				if (i == Tablet) {
+					vec2_set(&at, 24.0f, 26.0f);
+					vec2_set(&box, 470.0f, 300.0f);
+				}
+				obs_sceneitem_set_pos(in_comp[i], &at);
+				obs_sceneitem_set_bounds_type(in_comp[i], OBS_BOUNDS_SCALE_INNER);
+				obs_sceneitem_set_bounds(in_comp[i], &box);
+				if (i != Game) {
+					obs_sceneitem_set_visible(in_full[i], false);
+					obs_sceneitem_set_visible(in_comp[i], false);
+				}
+			}
+			obs_sceneitem_t *cam_item = obs_scene_add(comp, camera);
+			obs_sceneitem_t *chat_item = obs_scene_add(comp, chat);
+			vec2 put;
+			vec2_set(&put, 520.0f, 50.0f);
+			obs_sceneitem_set_pos(cam_item, &put);
+			vec2_set(&put, 520.0f, 160.0f);
+			obs_sceneitem_set_pos(chat_item, &put);
+			obs_set_output_source(0, comp_src);
+			sleep_ms(100);
+
+			std::vector<obs_source_t *> scene_filters[2];
+			auto fit_for = [&](int scene, const std::string &name, const char *item_name, int box,
+					   bool resize, int toward = 0) {
+				obs_data_t *d = obs_data_create();
+				obs_data_set_string(d, "item", item_name);
+				obs_data_set_int(d, "box", box);
+				obs_data_set_double(d, "margin", 20);
+				obs_data_set_bool(d, "resize", resize);
+				obs_data_set_int(d, "toward", toward);
+				obs_data_set_bool(d, "visible_pixels", true);
+				obs_data_set_bool(d, "no_shadows", true);
+				obs_source_t *f = obs_source_create("stagekit_fit_item", name.c_str(), d, nullptr);
+				obs_data_release(d);
+				obs_source_filter_add(scene ? comp_src : full_src, f);
+				scene_filters[scene].push_back(f);
+			};
+			for (int i = 0; i < Captures; i++) {
+				fit_for(0, std::string("Full Fit ") + cap_names[i], cap_names[i], 0, true);
+				// (The window is kept towards the left of its space, as the owner's is.)
+				fit_for(1, std::string("Fit ") + cap_names[i], cap_names[i], 2, true,
+					i == Window ? 3 : 0);
+			}
+			fit_for(1, "Fit Layout Camera", "Layout Camera", 2, false);
+			fit_for(1, "Fit Layout Chat", "Layout Chat", 2, false);
+			for (int s = 0; s < 2; s++) {
+				obs_data_t *ld = obs_data_create();
+				set_list(ld, "items",
+					 {cap_names[0], cap_names[1], cap_names[2], cap_names[3], cap_names[4]});
+				obs_data_set_string(ld, "transition", kind);
+				obs_data_set_int(ld, "transition_ms", 300);
+				obs_data_set_bool(ld, "lock_hidden", true);
+				obs_source_t *link = obs_source_create("stagekit_visibility_link",
+								       "Link Visibility-Captures", ld, nullptr);
+				obs_data_release(ld);
+				obs_source_filter_add(s ? comp_src : full_src, link);
+				scene_filters[s].push_back(link);
+			}
+			auto switch_for = [&](obs_source_t *on, const char *name, std::vector<const char *> scenes) {
+				obs_data_t *sd = obs_data_create();
+				set_list(sd, "scenes", scenes);
+				obs_data_set_int(sd, "where", 1);
+				obs_data_set_string(sd, "transition", kind);
+				obs_data_set_int(sd, "transition_ms", 300);
+				obs_data_set_bool(sd, "follow", true);
+				obs_source_t *f = obs_source_create("stagekit_show_in_scenes", name, sd, nullptr);
+				obs_data_release(sd);
+				obs_source_filter_add(on, f);
+				return f;
+			};
+			for (int i = 0; i < Captures; i++)
+				sw[i] = switch_for(cap[i], "Show in Scenes-Capture", {scene_names[0], scene_names[1]});
+			obs_source_t *cam_sw = switch_for(camera, "Show in Scenes-Camera", {scene_names[1]});
+
+			// What was drawn, frame by frame: where each watched item of the
+			// Component scene was (position and bounding box) in every frame
+			// OBS drew, and whether that scene was the one on screen.
+			enum { TCam = Captures, TChat, Watched };
+			struct Frame {
+				bool on_screen;
+				bool visible[Watched];
+				float at[Watched][4];
+			};
+			struct Trace {
+				std::mutex mutex;
+				bool on = false;
+				obs_source_t *scene = nullptr;
+				obs_sceneitem_t *item[Watched];
+				std::vector<Frame> frames;
+			} trace;
+			trace.scene = comp_src;
+			for (int i = 0; i < Captures; i++)
+				trace.item[i] = in_comp[i];
+			trace.item[TCam] = cam_item;
+			trace.item[TChat] = chat_item;
+			const auto drawn = [](void *param) {
+				auto *t = static_cast<Trace *>(param);
+				std::lock_guard lock(t->mutex);
+				if (!t->on)
+					return;
+				Frame f;
+				f.on_screen = obs_source_active(t->scene);
+				for (int i = 0; i < Watched; i++) {
+					vec2 p, b;
+					obs_sceneitem_get_pos(t->item[i], &p);
+					obs_sceneitem_get_bounds(t->item[i], &b);
+					f.visible[i] = obs_sceneitem_visible(t->item[i]);
+					f.at[i][0] = p.x;
+					f.at[i][1] = p.y;
+					f.at[i][2] = b.x;
+					f.at[i][3] = b.y;
+				}
+				t->frames.push_back(f);
+			};
+			obs_add_main_rendered_callback(drawn, &trace);
+			auto watch = [&] {
+				std::lock_guard lock(trace.mutex);
+				trace.frames.clear();
+				trace.on = true;
+			};
+			auto watched = [&] {
+				std::lock_guard lock(trace.mutex);
+				trace.on = false;
+				return trace.frames;
+			};
+			struct Place {
+				float v[4];
+			};
+			auto place = [&](int which) {
+				Place out;
+				vec2 p, b;
+				obs_sceneitem_get_pos(trace.item[which], &p);
+				obs_sceneitem_get_bounds(trace.item[which], &b);
+				out.v[0] = p.x;
+				out.v[1] = p.y;
+				out.v[2] = b.x;
+				out.v[3] = b.y;
+				return out;
+			};
+			// How far an item was from a place at the worst, over the frames
+			// in which its scene was on screen, and in how many of them it
+			// was more than a pixel off.
+			struct Off {
+				double worst = 0.0;
+				int frames = 0, of = 0;
+			};
+			auto off_from = [](const std::vector<Frame> &frames, int which, const Place &ref) {
+				Off out;
+				for (const Frame &f : frames) {
+					if (!f.on_screen)
+						continue;
+					double d = 0.0;
+					for (int k = 0; k < 4; k++)
+						d = std::max(d, (double)std::fabs(f.at[which][k] - ref.v[k]));
+					out.worst = std::max(out.worst, d);
+					out.frames += d > 1.0;
+					out.of++;
+				}
+				return out;
+			};
+			auto same = [](const Place &a, const Place &b) {
+				for (int k = 0; k < 4; k++)
+					if (std::fabs(a.v[k] - b.v[k]) > 1.0f)
+						return false;
+				return true;
+			};
+			// What shows of an item on the canvas: the picture inside its box.
+			struct Rect {
+				double x, y, w, h;
+			};
+			auto picture_of = [&](int which) {
+				const Place p = place(which);
+				obs_source_t *src = obs_sceneitem_get_source(trace.item[which]);
+				const double pw = obs_source_get_width(src), ph = obs_source_get_height(src);
+				if (pw < 1.0 || ph < 1.0)
+					return Rect{p.v[0], p.v[1], 0.0, 0.0};
+				if (obs_sceneitem_get_bounds_type(trace.item[which]) == OBS_BOUNDS_NONE)
+					return Rect{p.v[0], p.v[1], pw, ph};
+				const double k = std::min(p.v[2] / pw, p.v[3] / ph);
+				const uint32_t to = obs_sceneitem_get_bounds_alignment(trace.item[which]);
+				const double fx = to & OBS_ALIGN_LEFT ? 0.0 : to & OBS_ALIGN_RIGHT ? 1.0 : 0.5;
+				const double fy = to & OBS_ALIGN_TOP ? 0.0 : to & OBS_ALIGN_BOTTOM ? 1.0 : 0.5;
+				return Rect{p.v[0] + (p.v[2] - pw * k) * fx, p.v[1] + (p.v[3] - ph * k) * fy, pw * k,
+					    ph * k};
+			};
+			// Whether any two of the items showing lie over each other.
+			auto overlap = [&] {
+				std::vector<Rect> shown;
+				for (int i = 0; i < Watched; i++)
+					if (obs_sceneitem_visible(trace.item[i]))
+						shown.push_back(picture_of(i));
+				for (size_t a = 0; a < shown.size(); a++)
+					for (size_t b = a + 1; b < shown.size(); b++)
+						if (shown[a].x < shown[b].x + shown[b].w - 0.5 &&
+						    shown[b].x < shown[a].x + shown[a].w - 0.5 &&
+						    shown[a].y < shown[b].y + shown[b].h - 0.5 &&
+						    shown[b].y < shown[a].y + shown[a].h - 0.5)
+							return true;
+				return false;
+			};
+			// Which captures are shown in the two scenes, and which are locked
+			// in the Component scene.
+			auto state = [&] {
+				std::string text;
+				for (int i = 0; i < Captures; i++)
+					text += obs_sceneitem_visible(in_full[i]) ? "1" : "0";
+				text += "/";
+				for (int i = 0; i < Captures; i++)
+					text += obs_sceneitem_visible(in_comp[i]) ? "1" : "0";
+				text += " locked ";
+				for (int i = 0; i < Captures; i++)
+					text += obs_sceneitem_locked(in_comp[i]) ? "1" : "0";
+				return text;
+			};
+			auto only = [](int which) {
+				std::string shown = "00000", locked = "11111";
+				shown[which] = '1';
+				locked[which] = '0';
+				return shown + "/" + shown + " locked " + locked;
+			};
+
+			sleep_ms(3000);
+			const Place cam0 = place(TCam), chat0 = place(TChat), space0 = place(Game);
+			const Rect cam_pic = picture_of(TCam), chat_pic = picture_of(TChat),
+				   game_pic = picture_of(Game);
+			CHECK(state() == only(Game) && std::fabs(space0.v[0] - 20) < 1 &&
+				      std::fabs(space0.v[1] - 20) < 1 && std::fabs(space0.v[2] - 480) < 1 &&
+				      std::fabs(space0.v[3] - 320) < 1 && std::fabs(cam_pic.x - 520) < 1 &&
+				      std::fabs(chat_pic.x - 520) < 1 && cam_pic.y + cam_pic.h < chat_pic.y &&
+				      !overlap(),
+			      "to begin with the game is fitted in the space beside the column, the camera above the chat box (%s; game %.0f, %.0f %.0fx%.0f in a space %.0fx%.0f; camera %.0f, %.0f; chat box %.0f, %.0f)",
+			      state().c_str(), game_pic.x, game_pic.y, game_pic.w, game_pic.h, space0.v[2], space0.v[3],
+			      cam_pic.x, cam_pic.y, chat_pic.x, chat_pic.y);
+
+			// One capture change, watched for a second and a quarter.
+			struct Change {
+				Off cam, chat;
+				std::vector<Frame> frames;
+			};
+			auto change_to = [&](int which, const Place &cam_ref, const Place &chat_ref) {
+				watch();
+				obs_source_set_enabled(sw[which], true);
+				sleep_ms(1250);
+				Change out;
+				out.frames = watched();
+				out.cam = off_from(out.frames, TCam, cam_ref);
+				out.chat = off_from(out.frames, TChat, chat_ref);
+				return out;
+			};
+
+			// 1. Another capture of the same shape, never shown here before.
+			{
+				const Change c = change_to(Card, cam0, chat0);
+				CHECK(c.cam.worst <= 1.0 && c.chat.worst <= 1.0 && c.cam.of > 40,
+				      "another capture switched on, for the first time in this scene: the camera and the chat box do not move in any frame (at most %.2f and %.2f px off over %d frames)",
+				      c.cam.worst, c.chat.worst, c.cam.of);
+				CHECK(state() == only(Card) && same(place(Card), space0) && !overlap(),
+				      "it ends where the first was, which is hidden and locked (%s; %.1f, %.1f %.1fx%.1f)",
+				      state().c_str(), place(Card).v[0], place(Card).v[1], place(Card).v[2],
+				      place(Card).v[3]);
+				// And back to one that has been fitted here before.
+				const Change back = change_to(Game, cam0, chat0);
+				CHECK(back.cam.worst <= 1.0 && back.chat.worst <= 1.0 && state() == only(Game) &&
+					      same(place(Game), space0),
+				      "and back to the first, which was fitted here before: the same (at most %.2f and %.2f px off; %s)",
+				      back.cam.worst, back.chat.worst, state().c_str());
+			}
+			// 2. A capture of another shape.
+			{
+				const Change c = change_to(Window, cam0, chat0);
+				const Rect pic = picture_of(Window);
+				CHECK(c.cam.worst <= 1.0 && c.chat.worst <= 1.0,
+				      "a capture of another shape (4:3 after 16:9): the column does not move in any frame (at most %.2f and %.2f px off over %d frames)",
+				      c.cam.worst, c.chat.worst, c.cam.of);
+				CHECK(state() == only(Window) && same(place(Window), space0) &&
+					      std::fabs(pic.h - 320) < 1 && std::fabs(pic.w - 426.7) < 1 && !overlap(),
+				      "and its space is the same one, though it was written a pixel larger (%s; picture %.0f, %.0f %.0fx%.0f)",
+				      state().c_str(), pic.x, pic.y, pic.w, pic.h);
+				const Change back = change_to(Game, cam0, chat0);
+				CHECK(back.cam.worst <= 1.0 && back.chat.worst <= 1.0 && state() == only(Game) &&
+					      same(place(Game), space0),
+				      "and back to the wide one: the same (at most %.2f and %.2f px off; %s)",
+				      back.cam.worst, back.chat.worst, state().c_str());
+			}
+			// 3. The camera hidden by its switch, the capture changed, the
+			// camera shown again.
+			{
+				obs_source_set_enabled(cam_sw, false);
+				sleep_ms(1200);
+				const Place chat1 = place(TChat);
+				CHECK(!obs_sceneitem_visible(cam_item) && std::fabs(chat1.v[1] - chat0.v[1]) > 5.0 &&
+					      same(place(TCam), cam0),
+				      "with the camera hidden by its switch the chat box takes the room, as before (chat box y %.1f, was %.1f)",
+				      chat1.v[1], chat0.v[1]);
+				const Change c = change_to(Window, cam0, chat1);
+				CHECK(c.chat.worst <= 1.0 && c.cam.worst <= 1.0 && state() == only(Window) &&
+					      same(place(Window), space0),
+				      "the capture changed meanwhile: the chat box and the hidden camera stay where they are (at most %.2f and %.2f px off)",
+				      c.chat.worst, c.cam.worst);
+				watch();
+				obs_source_set_enabled(cam_sw, true);
+				sleep_ms(1500);
+				const std::vector<Frame> frames = watched();
+				// The chat box goes back in one move; everything else stays.
+				int turns = 0, rest = -1, n = 0;
+				double last_y = chat1.v[1], last_step = 0.0;
+				bool begun = false;
+				for (const Frame &f : frames) {
+					const double y = f.at[TChat][1], step = y - last_y;
+					if (std::fabs(step) > 0.05 && std::fabs(last_step) <= 0.05 && begun)
+						turns++; // stopped and set off again
+					if (step * last_step < 0.0)
+						turns++; // turned round
+					begun = begun || std::fabs(step) > 0.05;
+					if (std::fabs(y - chat0.v[1]) > 0.5)
+						rest = -1;
+					else if (rest < 0)
+						rest = n;
+					last_step = step;
+					last_y = y;
+					n++;
+				}
+				const Off cam = off_from(frames, TCam, cam0), win = off_from(frames, Window, space0);
+				CHECK(obs_sceneitem_visible(cam_item) && cam.worst <= 1.0 && win.worst <= 1.0,
+				      "the camera shown again: it is where it was and the capture does not move (at most %.2f and %.2f px off over %d frames)",
+				      cam.worst, win.worst, cam.of);
+				CHECK(turns == 0 && rest >= 0 && same(place(TChat), chat0) && same(place(TCam), cam0) &&
+					      same(place(Window), space0) && !overlap(),
+				      "and the chat box makes way in one move, everything coming to rest once with nothing inside anything else (stops and turns: %d; at rest from frame %d of %d; chat box y %.1f, wanted %.1f)",
+				      turns, rest, n, place(TChat).v[1], chat0.v[1]);
+				change_to(Game, cam0, chat0);
+			}
+			// 4. A display, which has no size until it has started.
+			{
+				watch();
+				obs_source_set_enabled(sw[Display], true);
+				sleep_ms(300);
+				const std::vector<Frame> unsized = watched();
+				const std::string while_unsized = state();
+				watch();
+				obs_data_t *dd = obs_source_get_settings(cap[Display]);
+				obs_data_set_int(dd, "width", 320);
+				obs_data_set_int(dd, "height", 200);
+				obs_source_update(cap[Display], dd);
+				obs_data_release(dd);
+				sleep_ms(1500);
+				const std::vector<Frame> sized_frames = watched();
+				const Off cam_a = off_from(unsized, TCam, cam0),
+					  chat_a = off_from(unsized, TChat, chat0);
+				const Off cam_b = off_from(sized_frames, TCam, cam0),
+					  chat_b = off_from(sized_frames, TChat, chat0);
+				CHECK(while_unsized == only(Display) && cam_a.worst <= 1.0 && chat_a.worst <= 1.0,
+				      "a display shown before it has a size: the camera and the chat box stay put while it has none (at most %.2f and %.2f px off over %d frames; %s)",
+				      cam_a.worst, chat_a.worst, cam_a.of, while_unsized.c_str());
+				CHECK(cam_b.worst <= 1.0 && chat_b.worst <= 1.0,
+				      "nor do they move when its size comes (at most %.2f and %.2f px off over %d frames)",
+				      cam_b.worst, chat_b.worst, cam_b.of);
+				// Drawn: the display is red, 320x200, so 480x300 in its space.
+				const std::vector<uint8_t> px = render(comp_src, 640, 360);
+				int x0 = 640, y0 = 360, x1 = -1, y1 = -1;
+				for (int y = 0; y < 360; y++)
+					for (int x = 0; x < 640; x++) {
+						const uint8_t *p = &px[(size_t(y) * 640 + x) * 4];
+						if (p[0] > 200 && p[1] < 50 && p[2] < 50) {
+							x0 = std::min(x0, x);
+							y0 = std::min(y0, y);
+							x1 = std::max(x1, x);
+							y1 = std::max(y1, y);
+						}
+					}
+				CHECK(same(place(Display), space0) && std::abs(x0 - 20) <= 1 &&
+					      std::abs(y0 - 30) <= 1 && std::abs(x1 - x0 + 1 - 480) <= 2 &&
+					      std::abs(y1 - y0 + 1 - 300) <= 2 && !overlap(),
+				      "and it is then fitted in the capture's space (drawn at %d, %d %dx%d)", x0, y0,
+				      x1 - x0 + 1, y1 - y0 + 1);
+			}
+			// 5. The capture changed while this scene is not on screen.
+			{
+				static int taken = 0;
+				const auto count = [](void *, calldata_t *) {
+					taken++;
+				};
+				auto listen = [&](int which, bool on) {
+					signal_handler_t *sh = obs_source_get_signal_handler(cap[which]);
+					for (const char *signal : {"activate", "show"}) {
+						if (on)
+							signal_handler_connect(sh, signal, count, nullptr);
+						else
+							signal_handler_disconnect(sh, signal, count, nullptr);
+					}
+				};
+				auto in_use = [&](int which) {
+					return obs_source_active(cap[which]) || obs_source_showing(cap[which]);
+				};
+				// `to` is switched on while the other scene is on screen;
+				// `from` is the one showing until then. Every other capture
+				// is hidden all the while and listened to from the start;
+				// `from` from the moment this scene comes back, as the scene
+				// on screen until then fades it out, which uses it.
+				auto away_change = [&](int from, int to, const char *what) {
+					obs_set_output_source(0, full_src);
+					sleep_ms(300);
+					std::vector<int> idle;
+					for (int i = 0; i < Captures; i++)
+						if (i != from && i != to)
+							idle.push_back(i);
+					taken = 0;
+					for (int which : idle)
+						listen(which, true);
+					obs_source_set_enabled(sw[to], true);
+					sleep_ms(900);
+					const std::string away = state();
+					listen(from, true);
+					watch();
+					obs_set_output_source(0, comp_src);
+					sleep_ms(1000);
+					const std::vector<Frame> frames = watched();
+					bool unused = !in_use(from);
+					for (int which : idle)
+						unused = unused && !in_use(which);
+					std::string using_now;
+					for (int i = 0; i < Captures; i++) {
+						using_now += obs_source_active(cap[i]) ? "a" : "-";
+						using_now += obs_source_showing(cap[i]) ? "s" : "-";
+					}
+					listen(from, false);
+					for (int which : idle)
+						listen(which, false);
+					const Off cam = off_from(frames, TCam, cam0),
+						  chat_off = off_from(frames, TChat, chat0),
+						  capture = off_from(frames, to, space0);
+					CHECK(away == only(to) && cam.of > 30 && cam.worst <= 1.0 &&
+						      chat_off.worst <= 1.0 && capture.worst <= 1.0 && !overlap(),
+					      "%s while the scene is out of view: from the first frame it is drawn again everything is in its place, with no glide (%s; camera %.2f, chat box %.2f, capture %.2f px off at most over %d frames)",
+					      what, away.c_str(), cam.worst, chat_off.worst, capture.worst, cam.of);
+					CHECK(with_sound && taken == 0 && unused && in_use(to),
+					      "and no capture hidden there is taken into use at any moment (taken into use %d times; active and showing at the end: %s)",
+					      taken, using_now.c_str());
+				};
+				away_change(Display, Window,
+					    "a squarer capture that was fitted there before, switched on");
+				away_change(
+					Window, Tablet,
+					"a capture never shown there before and lying a little off the space, switched on");
+			}
+			obs_remove_main_rendered_callback(drawn, &trace);
+			obs_set_output_source(0, before_out);
+			for (int i = 0; i < Captures; i++) {
+				obs_source_filter_remove(cap[i], sw[i]);
+				obs_source_release(sw[i]);
+			}
+			obs_source_filter_remove(camera, cam_sw);
+			obs_source_release(cam_sw);
+			for (int s = 0; s < 2; s++)
+				for (obs_source_t *f : scene_filters[s]) {
+					obs_source_filter_remove(s ? comp_src : full_src, f);
+					obs_source_release(f);
+				}
+			sleep_ms(100);
+			obs_scene_release(full_scene);
+			obs_scene_release(comp);
+			for (obs_source_t *source : cap)
+				obs_source_release(source);
+			obs_source_release(camera);
+			obs_source_release(chat);
+			obs_source_release(before_out);
+		}
 	}
 
 	obs_source_dec_showing(bg);

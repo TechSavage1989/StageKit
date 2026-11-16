@@ -670,8 +670,29 @@ public:
 		obs_source_t *shown = item ? obs_sceneitem_get_source(item) : nullptr;
 		const double sw = shown ? obs_source_get_width(shown) : 0.0,
 			     sh = shown ? obs_source_get_height(shown) : 0.0;
-		if (sw < 2.0 || sh < 2.0)
-			return; // nothing to fit yet
+		if (sw < 2.0 || sh < 2.0) {
+			// Nothing to fit yet. An item that is showing but has no
+			// picture so far (a display capture before its first frame)
+			// still holds its room in the free space: the room it was last
+			// given or, for one never fitted here, its bounding box as it
+			// was saved. Holding none, it was not there for the other
+			// filters, and with five captures stacked in one place and a
+			// display switched to, the camera beside it glided to the middle
+			// of the screen and stayed there, the display fitted under it.
+			if (item && s.box == BoxKind::FreeSpace) {
+				if (!have_claim_ && obs_sceneitem_get_bounds_type(item) != OBS_BOUNDS_NONE) {
+					refresh_item(item);
+					const Box at = scene_box(parent_, item);
+					if (at.w >= 2.0 && at.h >= 2.0) {
+						last_claim_ = Claim{at, s.resize};
+						have_claim_ = true;
+					}
+				}
+				if (have_claim_)
+					claim_set(parent_, obs_sceneitem_get_id(item), this, last_claim_);
+			}
+			return;
+		}
 
 		// What is fitted is the picture, without the room a shadow takes
 		// around it and without what the item crops away.
@@ -758,8 +779,18 @@ public:
 					const bool boxed = obs_sceneitem_get_bounds_type(item) != OBS_BOUNDS_NONE;
 					const double kk = boxed ? std::min(whole.w / cw, whole.h / ch) : whole.w / cw;
 					const double ky = boxed ? kk : whole.h / ch;
-					const double dx = whole.x + (whole.w - cw * kk) / 2.0;
-					const double dy = whole.y + (whole.h - ch * ky) / 2.0;
+					// (Against the side it is kept towards, when it is: taken
+					// for centred, a squarer window kept towards the left was
+					// seen as cut off on its right, more at every look.)
+					const uint32_t lies = boxed ? obs_sceneitem_get_bounds_alignment(item) : 0;
+					const double fx = lies & OBS_ALIGN_LEFT    ? 0.0
+							  : lies & OBS_ALIGN_RIGHT ? 1.0
+										   : 0.5;
+					const double fy = lies & OBS_ALIGN_TOP      ? 0.0
+							  : lies & OBS_ALIGN_BOTTOM ? 1.0
+										    : 0.5;
+					const double dx = whole.x + (whole.w - cw * kk) * fx;
+					const double dy = whole.y + (whole.h - ch * ky) * fy;
 					const double px = dx + (left - crop.left) * kk, py = dy + (top - crop.top) * ky;
 					const double pwn = pw * kk, phn = ph * ky;
 					if (pwn >= 1.0 && phn >= 1.0) {

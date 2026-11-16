@@ -16,6 +16,10 @@ the Free Software Foundation; either version 2 of the License, or
 //   Together        showing or hiding one does the same to the rest (a
 //                   camera with its frame and its label)
 //
+// "Lock hidden sources" locks each listed item while it is hidden and unlocks
+// it when it is shown: OBS's preview lets a click select a hidden item, and
+// with several captures stacked in one scene a click would pick a hidden one.
+//
 // It can also reach into the other scenes: sources listed under "Also in
 // other scenes" are shown and hidden with the set wherever they are, and
 // showing or hiding one of them anywhere does the same here. For that it
@@ -29,6 +33,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/timing.hpp"
 
 #include "../common/item-transition.hpp"
+#include "../common/loading.hpp"
 #include "../common/pick-list.hpp"
 #include "../common/scene-util.hpp"
 
@@ -75,7 +80,13 @@ public:
 	{
 		const std::vector<std::string> names = names_in(settings);
 		const std::vector<std::string> elsewhere = pick_list_read(settings, "elsewhere", false);
+		const bool lock_hidden = obs_data_get_bool(settings, "lock_hidden");
 		std::lock_guard lock(mutex_);
+		// Switched on (or loaded with it on): the listed items that are hidden
+		// now are locked, as soon as that may be done.
+		if (lock_hidden && !lock_hidden_)
+			lock_sweep_ = true;
+		lock_hidden_ = lock_hidden;
 		elsewhere_ = elsewhere;
 		watch_timer_ = 0.0;
 		mode_ = static_cast<LinkMode>(obs_data_get_int(settings, "mode"));
@@ -138,14 +149,19 @@ public:
 	// has not finished showing or hiding the item while the signal runs.
 	void tick(float seconds)
 	{
-		std::vector<std::pair<std::string, bool>> changes;
+		std::vector<Change> changes;
 		LinkMode mode;
 		std::vector<std::string> names, elsewhere;
 		bool look_for_scenes = false;
 		std::string transition;
 		uint32_t transition_ms = 0;
+		bool lock_hidden = false;
 		{
 			std::lock_guard lock(mutex_);
+			lock_hidden = lock_hidden_;
+			if (lock_sweep_)
+				sweep_due_ = true;
+			lock_sweep_ = false;
 			changes.swap(pending_);
 			mode = mode_;
 			names = names_;
@@ -163,10 +179,43 @@ public:
 			else
 				watch_others();
 		}
-		if (changes.empty() || !parent_ || !obs_source_enabled(source_))
+		if (!parent_ || !obs_source_enabled(source_)) {
+			was_on_ = false;
 			return;
+		}
+		// Nothing is locked while OBS is still loading its scenes; the hidden
+		// ones are locked once it has.
+		const bool locking = lock_hidden && scenes_loaded();
+		// The ones hidden already: when the option is switched on, once after
+		// loading, and when the filter is switched on again.
+		if (!was_on_)
+			sweep_due_ = true;
+		was_on_ = true;
+		if (!lock_hidden)
+			sweep_due_ = false;
+		if (sweep_due_ && locking) {
+			for (const std::string &name : names) {
+				obs_sceneitem_t *item = find_item(parent_, name);
+				if (item && !obs_sceneitem_visible(item) && !obs_sceneitem_locked(item))
+					obs_sceneitem_set_locked(item, true);
+			}
+			sweep_due_ = false;
+		}
+		if (changes.empty())
+			return;
+		// Locked while hidden, unlocked while shown: a listed item of this
+		// scene that has just been shown or hidden, by anything.
+		const auto lock_as_shown = [&](const std::string &name) {
+			obs_sceneitem_t *item = locking ? find_item(parent_, name) : nullptr;
+			if (item && obs_sceneitem_locked(item) == obs_sceneitem_visible(item))
+				obs_sceneitem_set_locked(item, !obs_sceneitem_visible(item));
+		};
 		applying_ = true;
-		for (const auto &[changed, visible] : changes) {
+		for (const Change &change : changes) {
+			const std::string &changed = change.name;
+			const bool visible = change.visible;
+			if (change.own)
+				lock_as_shown(changed);
 			if (mode == LinkMode::OnlyOne && !visible)
 				continue; // hiding one says nothing about the others
 			for (const std::string &name : names) {
@@ -176,7 +225,8 @@ public:
 				const bool want = mode == LinkMode::Together ? visible : false;
 				if (item && obs_sceneitem_visible(item) != want) {
 					set_item_transitions(item, transition, transition_ms);
-					obs_sceneitem_set_visible(item, want);
+					set_item_visible(item, want);
+					lock_as_shown(name);
 				}
 			}
 			// And the sources followed into the other scenes, groups included.
@@ -199,7 +249,7 @@ public:
 				const bool want = w->only_one ? false : w->visible;
 				if (act && obs_sceneitem_visible(item) != want) {
 					set_item_transitions(item, *w->transition, w->transition_ms);
-					obs_sceneitem_set_visible(item, want);
+					set_item_visible(item, want);
 				}
 				return true;
 			};
@@ -264,8 +314,16 @@ private:
 		std::lock_guard lock(self->mutex_);
 		const std::vector<std::string> &list = own ? self->names_ : self->elsewhere_;
 		if (std::find(list.begin(), list.end(), name) != list.end())
-			self->pending_.emplace_back(name, calldata_bool(cd, "visible"));
+			self->pending_.push_back({name, calldata_bool(cd, "visible"), own});
 	}
+
+	// An item that was shown or hidden: its source's name, which of the two,
+	// and whether that was in this filter's own scene.
+	struct Change {
+		std::string name;
+		bool visible = false;
+		bool own = false;
+	};
 
 	obs_source_t *source_;
 	obs_source_t *parent_ = nullptr;
@@ -276,7 +334,11 @@ private:
 	std::vector<std::string> names_, elsewhere_;
 	std::vector<obs_weak_source_t *> watched_; // the other scenes listened to
 	double watch_timer_ = 0.0;
-	std::vector<std::pair<std::string, bool>> pending_;
+	std::vector<Change> pending_;
+	bool lock_hidden_ = false; // lock the listed items while they are hidden
+	bool lock_sweep_ = false;  // the option has just been switched on
+	bool sweep_due_ = false;   // the hidden ones are still to be locked (the tick's own)
+	bool was_on_ = false;      // the filter was enabled at its last tick
 	std::atomic<bool> applying_{false};
 };
 
@@ -318,6 +380,8 @@ obs_properties_t *get_properties(void *data)
 	pick_list_add(props, self ? self->source() : nullptr, elsewhere);
 
 	add_item_transition_properties(props);
+	obs_property_t *lock_hidden = obs_properties_add_bool(props, "lock_hidden", obs_module_text("Link.LockHidden"));
+	obs_property_set_long_description(lock_hidden, obs_module_text("Link.LockHidden.Tip"));
 	obs_property_t *help = obs_properties_add_text(props, "help", obs_module_text("Link.Help"), OBS_TEXT_INFO);
 	obs_property_text_set_info_word_wrap(help, true);
 	return props;
@@ -345,6 +409,7 @@ void register_visibility_link()
 	};
 	info.get_defaults = [](obs_data_t *settings) {
 		obs_data_set_default_int(settings, "mode", (int)LinkMode::OnlyOne);
+		obs_data_set_default_bool(settings, "lock_hidden", false);
 		item_transition_defaults(settings);
 	};
 	info.get_properties = get_properties;

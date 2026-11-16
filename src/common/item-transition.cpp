@@ -62,6 +62,37 @@ void set_item_transitions(obs_sceneitem_t *item, const std::string &kind, uint32
 	}
 }
 
+bool set_item_visible(obs_sceneitem_t *item, bool visible)
+{
+	if (!item)
+		return false;
+	// The scene the item is straight in; for an item in a group, the group.
+	// A group is shown while a scene that shows it is.
+	obs_source_t *holder = obs_scene_get_source(obs_sceneitem_get_scene(item));
+	const bool in_view = holder && obs_source_showing(holder);
+	// (Held: taking a transition off an item elsewhere must not end it here.)
+	obs_source_t *held[2] = {nullptr, nullptr};
+	if (!in_view && !owned(item)) {
+		held[0] = obs_source_get_ref(obs_sceneitem_get_transition(item, visible));
+		held[1] = obs_source_get_ref(obs_sceneitem_get_transition(item, !visible));
+	}
+	const bool changed = obs_sceneitem_set_visible(item, visible);
+	if (changed) {
+		// OBS has started the first of these. Stopping it takes it off the
+		// scene's list of what is in use; clearing it lets go of the item's
+		// source and says it is no longer under way. The other may have been
+		// left running when its scene went out of view.
+		if (held[0])
+			obs_transition_force_stop(held[0]);
+		for (obs_source_t *transition : held)
+			if (transition)
+				obs_transition_clear(transition);
+	}
+	for (obs_source_t *transition : held)
+		obs_source_release(transition);
+	return changed;
+}
+
 void add_item_transition_properties(obs_properties_t *props)
 {
 	// Any transition OBS has, except the ones that need a file of their own.

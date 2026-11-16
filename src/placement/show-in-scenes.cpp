@@ -19,6 +19,11 @@ the Free Software Foundation; either version 2 of the License, or
 // It replaces a Stream Deck multi-action holding one Source Visibility step
 // for every scene. It acts when it is switched, not all the time, so an item
 // shown or hidden by hand stays that way until the next press.
+//
+// "Follow what is shown" turns it round as well: the switch reads on or off
+// by what is shown in its scenes, so a key's light stays true when something
+// else (a Link Visibility, the eye) shows or hides its sources. Correcting
+// the switch never shows or hides anything.
 
 #include "show-in-scenes.hpp"
 #include "../common/timing.hpp"
@@ -26,6 +31,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "place-item.hpp"
 
 #include "../common/item-transition.hpp"
+#include "../common/loading.hpp"
 #include "../common/pick-list.hpp"
 
 #include <obs-module.h>
@@ -34,9 +40,11 @@ the Free Software Foundation; either version 2 of the License, or
 #include <algorithm>
 #include <atomic>
 #include <cstring>
+#include <functional>
 #include <map>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace stagekit {
@@ -47,6 +55,54 @@ enum class Where : int {
 	Every = 0, // saved: append only
 	Listed = 1,
 };
+
+// Goes through the items showing one of `sources` in the scenes covered:
+// every scene, or the ones named. A group's own items are reached through the
+// scene that holds the group, and `scene` is that scene for them too.
+void each_item(const std::vector<std::string> &sources, const std::vector<std::string> &scenes, bool every,
+	       const std::function<void(obs_sceneitem_t *item, const char *name, obs_source_t *scene)> &act)
+{
+	struct Work {
+		const std::vector<std::string> *sources, *scenes;
+		bool every;
+		const std::function<void(obs_sceneitem_t *, const char *, obs_source_t *)> *act;
+		obs_source_t *scene = nullptr; // the scene being gone through
+		void look(obs_sceneitem_t *item) const
+		{
+			const char *name = obs_source_get_name(obs_sceneitem_get_source(item));
+			if (name && std::find(sources->begin(), sources->end(), name) != sources->end())
+				(*act)(item, name, scene);
+		}
+	} work{&sources, &scenes, every, &act};
+	static const auto each = [](obs_scene_t *, obs_sceneitem_t *item, void *param) {
+		static_cast<Work *>(param)->look(item);
+		if (obs_sceneitem_is_group(item))
+			obs_sceneitem_group_enum_items(
+				item,
+				[](obs_scene_t *, obs_sceneitem_t *inner, void *p) {
+					static_cast<Work *>(p)->look(inner);
+					return true;
+				},
+				param);
+		return true;
+	};
+	obs_enum_scenes(
+		[](void *param, obs_source_t *scene) {
+			auto *w = static_cast<Work *>(param);
+			// OBS lists each group as a scene too; its items are reached
+			// through the scene that holds it.
+			if (obs_source_is_group(scene))
+				return true;
+			const char *name = obs_source_get_name(scene);
+			if (!w->every &&
+			    (!name || std::find(w->scenes->begin(), w->scenes->end(), name) == w->scenes->end()))
+				return true;
+			w->scene = scene;
+			obs_scene_enum_items(obs_scene_from_source(scene), each, param);
+			return true;
+		},
+		&work);
+}
 
 class ShowInScenes {
 public:
@@ -71,6 +127,7 @@ public:
 		where_ = static_cast<Where>(std::clamp((int)obs_data_get_int(settings, "where"), 0, 1));
 		on_hides_ = obs_data_get_int(settings, "on_means") == 1;
 		with_linked_ = obs_data_get_bool(settings, "with_linked");
+		follow_ = obs_data_get_bool(settings, "follow");
 		// How items change: the usual way, and each listed source's own.
 		change_ = item_change_read(settings);
 		own_change_.clear();
@@ -79,7 +136,59 @@ public:
 	}
 
 	// The state OBS restores when it loads a collection is not a press.
-	void tick() { ready_ = true; }
+	void tick(float seconds)
+	{
+		ready_ = true;
+		if ((follow_timer_ -= seconds) > 0.0)
+			return;
+		follow_timer_ = 0.25;
+		follow();
+	}
+
+	// "Follow what is shown": the switch is put the way its sources are in
+	// the scenes it covers, shown only when every one of their items is. That
+	// only corrects the switch: nothing is shown or hidden for it.
+	void follow()
+	{
+		std::vector<std::string> sources, scenes;
+		Where where;
+		bool on_hides;
+		{
+			std::lock_guard lock(mutex_);
+			if (!follow_)
+				return;
+			sources = sources_;
+			scenes = scenes_;
+			where = where_;
+			on_hides = on_hides_;
+		}
+		// (Not while OBS loads its scenes: only some have their items yet.)
+		if (!scenes_loaded())
+			return;
+		obs_source_t *parent = obs_filter_get_parent(source_);
+		if (sources.empty() && parent && obs_source_get_name(parent))
+			sources.push_back(obs_source_get_name(parent));
+		int found = 0, shown = 0;
+		each_item(sources, scenes, where == Where::Every,
+			  [&](obs_sceneitem_t *item, const char *, obs_source_t *) {
+				  found++;
+				  if (obs_sceneitem_visible(item))
+					  shown++;
+			  });
+		if (!found)
+			return; // in none of its scenes: nothing to go by
+		const bool on = (shown == found) != on_hides;
+		if (obs_source_enabled(source_) == on)
+			return;
+		// OBS tells the filter of this change as of any other; it is known
+		// by the thread it comes from, so a press made at the same moment
+		// from elsewhere still counts.
+		correcting_ = std::this_thread::get_id();
+		obs_source_set_enabled(source_, on);
+		correcting_ = std::thread::id();
+		obs_log(LOG_INFO, "Show in Scenes '%s': now reads %s, as %d of %d source(s) are shown",
+			obs_source_get_name(source_), on ? "on" : "off", shown, found);
+	}
 
 	// Shows or hides every item it is set to, and says how many.
 	int apply(bool enabled)
@@ -159,69 +268,20 @@ public:
 			for (const std::string &name : scan.linked)
 				add(name.c_str());
 		}
-		struct Work {
-			const std::vector<std::string> *sources, *scenes;
-			bool every, show;
-			const ItemChange *change;
-			const std::map<std::string, ItemChange> *own_change;
-			int changed = 0;
-			obs_source_t *scene = nullptr; // the scene being gone through
-			// A listed source's own change, or the usual one.
-			const ItemChange &change_for(const char *name) const
-			{
-				const auto own = own_change->find(name);
-				return own == own_change->end() ? *change : own->second;
-			}
-		} work{&sources, &scenes, where == Where::Every, show, &change, &own_change};
-		static const auto each = [](obs_scene_t *, obs_sceneitem_t *item, void *param) {
-			auto *w = static_cast<Work *>(param);
-			const char *name = obs_source_get_name(obs_sceneitem_get_source(item));
-			if (name && std::find(w->sources->begin(), w->sources->end(), name) != w->sources->end() &&
-			    obs_sceneitem_visible(item) != w->show) {
-				apply_item_change(item, w->change_for(name), w->scene);
-				obs_sceneitem_set_visible(item, w->show);
-				w->changed++;
-			}
-			// A group's own items are in the scene that holds the group.
-			if (obs_sceneitem_is_group(item))
-				obs_sceneitem_group_enum_items(
-					item,
-					[](obs_scene_t *, obs_sceneitem_t *inner, void *p) {
-						auto *w2 = static_cast<Work *>(p);
-						const char *inner_name =
-							obs_source_get_name(obs_sceneitem_get_source(inner));
-						if (inner_name &&
-						    std::find(w2->sources->begin(), w2->sources->end(), inner_name) !=
-							    w2->sources->end() &&
-						    obs_sceneitem_visible(inner) != w2->show) {
-							apply_item_change(inner, w2->change_for(inner_name), w2->scene);
-							obs_sceneitem_set_visible(inner, w2->show);
-							w2->changed++;
-						}
-						return true;
-					},
-					param);
-			return true;
-		};
-		obs_enum_scenes(
-			[](void *param, obs_source_t *scene) {
-				auto *w = static_cast<Work *>(param);
-				// OBS lists each group as a scene too; its items are reached
-				// through the scene that holds it.
-				if (obs_source_is_group(scene))
-					return true;
-				const char *name = obs_source_get_name(scene);
-				if (!w->every && (!name || std::find(w->scenes->begin(), w->scenes->end(), name) ==
-								   w->scenes->end()))
-					return true;
-				w->scene = scene;
-				obs_scene_enum_items(obs_scene_from_source(scene), each, param);
-				return true;
-			},
-			&work);
+		int changed = 0;
+		each_item(sources, scenes, where == Where::Every,
+			  [&](obs_sceneitem_t *item, const char *name, obs_source_t *scene) {
+				  if (obs_sceneitem_visible(item) == show)
+					  return;
+				  // A listed source's own change, or the usual one.
+				  const auto own = own_change.find(name);
+				  apply_item_change(item, own == own_change.end() ? change : own->second, scene);
+				  set_item_visible(item, show);
+				  changed++;
+			  });
 		obs_log(LOG_INFO, "Show in Scenes '%s': %s %d item(s)", obs_source_get_name(source_),
-			show ? "showed" : "hid", work.changed);
-		return work.changed;
+			show ? "showed" : "hid", changed);
+		return changed;
 	}
 
 	obs_source_t *source() const { return source_; }
@@ -235,7 +295,8 @@ private:
 	static void enabled_cb(void *data, calldata_t *cd)
 	{
 		auto *self = static_cast<ShowInScenes *>(data);
-		if (self->ready_)
+		// (Its own correction of the switch is not a press.)
+		if (self->ready_ && self->correcting_.load() != std::this_thread::get_id())
 			self->apply(calldata_bool(cd, "enabled"));
 	}
 
@@ -248,6 +309,9 @@ private:
 	ItemChange change_;                            // how items change, usually
 	std::map<std::string, ItemChange> own_change_; // and for each listed source
 	std::atomic<bool> ready_{false};
+	bool follow_ = false;                       // the switch goes by what is shown
+	double follow_timer_ = 0.0;                 // until the next look, in seconds
+	std::atomic<std::thread::id> correcting_{}; // the thread putting the switch right, if any
 };
 
 bool where_modified(obs_properties_t *props, obs_property_t *, obs_data_t *settings)
@@ -329,6 +393,9 @@ obs_properties_t *get_properties(void *data)
 		obs_properties_add_bool(props, "with_linked", obs_module_text("ShowIn.WithLinked"));
 	obs_property_set_long_description(with_linked, obs_module_text("ShowIn.WithLinked.Tip"));
 
+	obs_property_t *follow = obs_properties_add_bool(props, "follow", obs_module_text("ShowIn.Follow"));
+	obs_property_set_long_description(follow, obs_module_text("ShowIn.Follow.Tip"));
+
 	add_item_change_properties(props, self ? self->source() : nullptr, "sources");
 
 	obs_properties_add_button2(
@@ -369,11 +436,12 @@ void register_show_in_scenes()
 	info.get_defaults = [](obs_data_t *settings) {
 		obs_data_set_default_int(settings, "where", (int)Where::Every);
 		obs_data_set_default_int(settings, "on_means", 0);
+		obs_data_set_default_bool(settings, "follow", false);
 		item_change_defaults(settings);
 	};
 	info.get_properties = get_properties;
-	info.video_tick = [](void *data, float) {
-		static_cast<ShowInScenes *>(data)->tick();
+	info.video_tick = [](void *data, float seconds) {
+		static_cast<ShowInScenes *>(data)->tick(seconds);
 	};
 	// A switch: it never changes the picture.
 	info.video_render = [](void *data, gs_effect_t *) {
