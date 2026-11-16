@@ -20,6 +20,7 @@
 #include <QLabel>
 #include <QSpinBox>
 #include <QListWidget>
+#include <QLayout>
 #include <QMenu>
 #include <QContextMenuEvent>
 #include <QMouseEvent>
@@ -7192,12 +7193,32 @@ int main(int argc, char **argv)
 					      left_tool->toolTip().startsWith("Left") && left_tool->width() < 90,
 				      "an arrange tool is a drawing with its name in the tooltip (%d px wide)",
 				      left_tool ? left_tool->width() : -1);
+				// The line-up tools are a block three across, four rows, with
+				// how the tools measure beside it.
+				{
+					const QPoint l = at("arrange_left"), r = at("arrange_right"),
+						     t2 = at("arrange_top"), w = at("arrange_same_width");
+					auto *measure = dock->findChild<QCheckBox *>("arrangeEveryScene");
+					const QPoint m = measure ? measure->mapTo(dock, QPoint(0, 0)) : QPoint(-1, -1);
+					CHECK(l.y() == r.y() && r.x() > l.x() && t2.x() == l.x() && t2.y() > l.y() &&
+						      w.x() == l.x() && w.y() > t2.y() && r.x() >= l.x() + 80 &&
+						      m.x() >= r.x() + 40 && m.y() < w.y() + 40,
+					      "the arrange tools are a block three across with how the tools measure beside it (left %d,%d; top %d,%d; same width %d,%d; options from %d)",
+					      l.x(), l.y(), t2.x(), t2.y(), w.x(), w.y(), m.x());
+				}
 				CHECK(arrow_tool && arrow_tool->minimumWidth() == 40 &&
 					      arrow_tool->maximumHeight() == 40,
 				      "the Place arrows are squares");
-				auto *updates = dock->findChild<QPushButton *>("updateMenu");
-				CHECK(updates && updates->text() == "Updates" && !updates->menu(),
-				      "'Updates' is a plain button with no menu arrow drawn over it");
+				// The updates are a menu for OBS's Tools menu, not a button in
+				// the dock, and the notice of a newer one is the dock's first row.
+				auto *updates = dock->findChild<QMenu *>("updateMenu");
+				auto *notice = dock->findChild<QWidget *>("updateBar");
+				auto *install = dock->findChild<QAction *>("updateInstall");
+				CHECK(updates && updates->actions().size() >= 5 &&
+					      !dock->findChild<QPushButton *>("updateMenu") && notice &&
+					      dock->layout()->indexOf(notice) == 0 && notice->isHidden() && install &&
+					      !install->isVisible(),
+				      "the updates are a menu for OBS's Tools menu; the dock only has a notice, first of all and hidden until there is a newer version");
 				// Pictures of the two busiest tabs, to look at.
 				dock->resize(380, dock->sizeHint().height());
 				dock->grab().save(QString::fromStdString(out + "/../stagekit-dock-arrange.png"));
