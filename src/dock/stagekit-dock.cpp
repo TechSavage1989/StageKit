@@ -1798,12 +1798,15 @@ private:
 			const bool up = name == "orderTop" || name == "orderUp";
 			const bool all_the_way = name == "orderTop" || name == "orderBottom";
 			if (all_the_way) {
-				const qreal edge = up ? 9 : 55;
-				p.drawLine(QPointF(10, edge), QPointF(54, edge));
-				arrow(QPointF(32, up ? 56 : 8), QPointF(32, up ? 20 : 44));
+				// A heavy line at the far edge, and an arrow running to it.
+				const qreal edge = up ? 8 : 56;
+				bar(6, edge - 4, 52, 8, ink);
+				arrow(QPointF(32, up ? 58 : 6), QPointF(32, up ? 22 : 42));
 			} else {
-				bar(8, 26, 48, 12, soft);
-				arrow(QPointF(32, up ? 56 : 8), QPointF(32, up ? 10 : 54));
+				// One sheet, and an arrow leaving it: the sheet below and the
+				// arrow above it for forward, the other way round for back.
+				bar(10, up ? 40 : 6, 44, 18, soft);
+				arrow(QPointF(32, up ? 36 : 28), QPointF(32, up ? 6 : 58));
 			}
 		}
 		p.end();
