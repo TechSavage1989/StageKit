@@ -211,6 +211,12 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## The order tools: two by two, four drawings (0.1.0-beta137)
+
+The owner asked for the dock's four order buttons stacked "into two columns and two rows" and for
+drawings that are "completely distinguishable". Done in `stagekit-dock.cpp` (`orders`,
+`tool_icon`); the README's dock picture is regenerated.
+
 ## A window named by part of its title is followed through title changes (0.1.0-beta136)
 
 The owner confirmed beta135 ("everything seems correct and functional") and asked whether one

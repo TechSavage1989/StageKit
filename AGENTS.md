@@ -196,7 +196,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   *StageKit* in OBS's Tools menu (`obs_frontend_add_tools_menu_qaction`). The owner: "I need the
   updater to appear at the top, and only when there is an available update. otherwise it should be
   contained in the tools menu". A check asked for there answers in a message box when there is
-  nothing newer. The copy tools keep their words. The
+  nothing newer. The four order tools are a block two by two (the two upward ones on top), each with a drawing of its own since beta137: an arrow to a line for all the way, an arrow past one sheet for one step; as two overlapping sheets the owner found them "too similar. they need to be completely distinguishable". A test fails if two of them are alike. The copy tools keep their words. The
   drawings (`tool_icon`) are in the theme's own text colour; no stylesheet is
   set, so OBS's themes keep styling it. Widgets on a tab that is not showing have no geometry: a
   test that measures positions must switch to that tab first.
