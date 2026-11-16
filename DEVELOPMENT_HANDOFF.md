@@ -14,6 +14,16 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
 
+## Standby when hidden: transitions with later filters (0.1.0-beta142)
+
+The owner, of beta141: "most of the transitions don't work. they just instantly switch in place.
+also some of them make the standby image flash then change when showing". Reproduced in the
+tests by adding a Corners & Edges after the Standby filter: OBS draws a filter's input once a
+frame, so source and stand-in showed the same picture during a change. The stand-in now draws a
+copy the filter makes in its tick (`snapshot`). *Transition* at the top of the filter is now
+*No-signal transition*, as agreed. To check with the owner: the DSLR with its shadow and corners,
+hidden and shown with a slide, a fade and Morph.
+
 ## Standby when hidden: the transition is chosen (0.1.0-beta141)
 
 The owner: "the dslr standby works, but I want it to morph or perform transition that I choose.

@@ -2549,6 +2549,62 @@ int main(int argc, char **argv)
 				      "and after a Morph back the source is there again (%d,%d,%d)", p[0], p[1], p[2]);
 				obs_data_set_string(hd, "transition", "none");
 			}
+			// With another filter after the Standby one, as the owner has: OBS
+			// draws what a filter is given once a frame, so the source and its
+			// stand-in, both on screen during the change, showed the same picture.
+			// The owner: "most of the transitions don't work. they just instantly
+			// switch in place. also some of them make the standby image flash then
+			// change when showing".
+			if (obs_source_get_display_name("slide_transition")) {
+				obs_source_t *corners =
+					obs_source_create("stagekit_corners", "Hidden Cam Corners", nullptr, nullptr);
+				obs_source_filter_add(cam, corners);
+				for (const char *kind : {"slide_transition", "fade_transition"}) {
+					const bool slide = strcmp(kind, "slide_transition") == 0;
+					obs_sceneitem_set_visible(cam_item, true);
+					obs_data_set_string(hd, "transition", kind);
+					obs_data_set_int(hd, "transition_ms", 800);
+					obs_data_set_string(hd, "show|slide_transition|direction", "left");
+					obs_source_update(filter, hd);
+					shown_for(1200);
+					bool both[2] = {false, false}, ends[2] = {false, false};
+					int seen[2][4] = {};
+					for (int round = 0; round < 2; round++) {
+						obs_sceneitem_set_visible(cam_item, round == 1);
+						// Part-way both are there: side by side in a slide (going
+						// left: what is left of the one on the left, the other coming
+						// in on the right), mixed in a fade. Looked for at each step.
+						const uint8_t *l = nullptr;
+						for (int step = 0; step < 45; step++) {
+							frame = render(obs_scene_get_source(hs), 640, 360);
+							sleep_ms(15);
+							l = at_px(frame, 330, 250);
+							const uint8_t *r = at_px(frame, 470, 250);
+							const bool here = slide ? (round == 0
+											   ? l[1] > 250 && r[0] > 250
+											   : l[0] > 250 && r[1] > 250)
+										: l[0] > 30 && l[1] > 30;
+							if (here && !both[round]) {
+								both[round] = true;
+								seen[round][0] = l[0], seen[round][1] = l[1],
+								seen[round][2] = r[0], seen[round][3] = r[1];
+							}
+						}
+						frame = shown_for(800);
+						l = at_px(frame, 330, 250);
+						ends[round] = round == 0 ? l[0] > 250 && l[1] < 5
+									 : l[1] > 250 && l[0] < 5;
+					}
+					CHECK(both[0] && both[1] && ends[0] && ends[1],
+					      "with a later filter on the source, a %s shows the source and its standby image apart all the way (hiding: left %d,%d right %d,%d; showing: left %d,%d right %d,%d; ends %d %d)",
+					      slide ? "slide" : "fade", seen[0][0], seen[0][1], seen[0][2], seen[0][3],
+					      seen[1][0], seen[1][1], seen[1][2], seen[1][3], (int)ends[0],
+					      (int)ends[1]);
+				}
+				obs_source_filter_remove(cam, corners);
+				obs_source_release(corners);
+				obs_data_set_string(hd, "transition", "none");
+			}
 			// Unticked: the stand-ins are taken out again.
 			obs_data_set_bool(hd, "when_hidden", false);
 			obs_source_update(filter, hd);

@@ -395,6 +395,21 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   `set_item_transitions` and `apply_item_change` pass them over. A new filter that sets item
   transitions must go through those two calls. Seen in the tests with a fade and by the
   transitions set; a Morph between the two on screen has not been looked at on Windows.
+- **A stand-in never draws the source; it draws a copy the Standby filter made in the tick**
+  (`snapshot`, `g_snaps`, beta142). OBS draws what a filter is given once a frame
+  (`obs_source_process_filter_begin` fills the filter's own texture, which is only cleared in
+  the tick) and hands that picture to every drawing of the source in the frame. With any filter
+  after the Standby one (the owner's shadow and corners), the source and its stand-in, both on
+  screen for the whole of a transition between them, both showed whichever was drawn first: the
+  owner's "most of the transitions don't work. they just instantly switch in place ... the
+  standby image flash then change when showing". Beta141's tests had no later filter. Now the
+  filter draws the source as its standby image once in its own tick, where the filters after it
+  have not begun their frame (OBS ticks a source's filters in order, and clears each one's
+  texture in its tick) and the ones before it are not drawn; every frame while a stand-in is on
+  screen, four times a second otherwise. **Never draw one filtered source two ways in one
+  frame's drawing**; anything new that needs a second look of a source goes the same way. The
+  first of the two transition lists is called *No-signal transition* since then (the owner: "no
+  signal transition is ok").
 - **Show in Scenes can take bring-along items with it** (`with_linked`, off by default): the
   `linked` item of every Move Source filter on a listed source, and of Move Scene Item filters that move it.
   The owner asked for it.
