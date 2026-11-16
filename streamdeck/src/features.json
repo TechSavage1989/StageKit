@@ -6,7 +6,7 @@
 		{ "key": "zoom", "kind": "stagekit_ramp_zoom", "name": "Zoom", "tip": "Zooms a source in and back out." },
 		{ "key": "autocapture", "kind": "stagekit_auto_capture", "name": "Auto Capture", "tip": "Switches automatic game capture on and off. On hands a hooked capture back to it." },
 		{ "key": "autoframe", "kind": "stagekit_auto_frame", "name": "Auto Frame", "tip": "Switches a capture's automatic framing on and off." },
-		{ "key": "standby", "kind": "stagekit_standby", "name": "Standby Picture", "tip": "Switches the picture shown while nothing is captured on and off." },
+		{ "key": "standby", "kind": "stagekit_standby", "name": "Standby Image", "tip": "Switches the image shown while nothing is captured on and off." },
 		{ "key": "showinscenes", "kind": "stagekit_show_in_scenes", "name": "Show in Scenes", "tip": "Shows and hides sources across scenes with one switch." },
 		{ "key": "fititem", "kind": "stagekit_fit_item", "name": "Fit to Space", "tip": "Switches a scene's fitting of its game or window on and off." },
 		{ "key": "activeapp", "kind": "stagekit_active_app", "name": "Automatic Source Switcher", "tip": "Switches a scene's automatic switching between sources on and off." },

@@ -142,10 +142,10 @@
 			"DisableAutomaticStates": true
 		},
 		{
-			"Name": "Standby Picture",
+			"Name": "Standby Image",
 			"UUID": "com.techsavage1989.stagekit.standby",
 			"Icon": "imgs/actions/standby/icon",
-			"Tooltip": "Switches the picture shown while nothing is captured on and off.",
+			"Tooltip": "Switches the image shown while nothing is captured on and off.",
 			"PropertyInspectorPath": "ui/standby.html",
 			"Controllers": [
 				"Keypad"

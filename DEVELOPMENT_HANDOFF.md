@@ -220,11 +220,13 @@ last one 12 s after `vulkan capture freed`: the game had just been closed), and 
 at once in between when a game ran. The give-up is now a rest kept in memory (AGENTS.md). Entries
 the old code added stay on the owner's list: they were told to take `dolphin.exe` off once more.
 
-## Start image is shown as Standby image (0.1.0-beta135)
+## Start image is Standby image; picture is image everywhere (0.1.0-beta135)
 
-At the owner's word, every string a user reads says *Standby image* for the start image
-(`data/locale/en-US.ini`, README). Ids, settings and code are unchanged. Open: whether the Standby
-Picture filter should be renamed *Standby Image* as well; asked, not done.
+Two instructions from the owner (see AGENTS.md, Names, the fourth). Done by script over the
+values of `data/locale/en-US.ini`, the README outside code spans and links, and the Stream Deck
+plugin's `features.json`, `kinds.ts`, the *Image* label in `make-plugin-files.py` and one label in
+`pack.json` (which `import-icons.py` would write back as "standby picture" from the file name if
+the pack is imported again: change it again then). Ids, settings and code names are unchanged.
 
 ## Morph rules for two scenes; a glass look for the mosaic (0.1.0-beta134)
 

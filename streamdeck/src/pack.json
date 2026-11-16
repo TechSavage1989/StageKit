@@ -774,7 +774,7 @@
 		{
 			"id": "filters/standby-picture",
 			"group": "filters",
-			"label": "standby picture",
+			"label": "standby image",
 			"on": "filters/standby-picture-on",
 			"off": "filters/standby-picture-off"
 		},

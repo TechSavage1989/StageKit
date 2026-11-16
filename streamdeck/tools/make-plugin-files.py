@@ -40,7 +40,7 @@ PICTURES = {
     "stagekit_layout": ("options/layout", None),
 }
 
-PICTURE_AND_PALETTE = """		<sdpi-item label="Picture">
+PICTURE_AND_PALETTE = """		<sdpi-item label="Image">
 			<sdpi-select setting="picture" datasource="getPictures" default=""></sdpi-select>
 		</sdpi-item>
 		<sdpi-item label="Palette">
