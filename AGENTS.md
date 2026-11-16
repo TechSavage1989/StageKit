@@ -572,6 +572,14 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     across scenes ... multiple links should be able to be configured".
   - Like every shader here, `stagekit-morph.effect` has only run on OpenGL; without it the
     transition cuts.
+  - **Rules for two scenes** (`rules`, a PickList of "From → To" lines, either side *(any scene)*;
+    each rule's settings under `rule|<line>|style`, `others`, `pair_main`, `ease_curve`,
+    `ease_mode`, `both`; made in the `rule_*` controls and saved with a button, like the links):
+    `for_change` gives the settings for the change going on (`active_`), the most exact rule
+    first. Style 1 is a cross-fade, 2 a cut. The owner: "specific overrides for transitions for
+    specific scenes transitioning between specific scenes". The duration is OBS's and is not
+    overridden. `pick_list_on_change` has one slot for the whole plugin and is Show in Scenes':
+    do not take it for a second rebuilt-in-place control.
   - An item's place is worked out by Morph, not by OBS, while it draws (`look`): OBS does it when
     a scene is drawn, from the size the source has then, and neither scene is drawn during a
     morph. `look` does it when an item is first met and again whenever its source changes size.
@@ -640,6 +648,13 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   circle cells keep the old hexagon size; the other shapes are scaled to cover about the same area.
   Like every shader here it has only run on OpenGL: it keeps to constant loop bounds, `float(i)`
   casts, no `inout` and no `atan2`.
+  *Glass* (`pixel_glass`, the `glass` uniform, beta134): each cell lit from the upper left by
+  where the pixel lies in it (one more `cell_centre`, no more reads of the picture). The owner:
+  "make the mosaic glassy ... with no or extremely low impact on performance". Two styles
+  (`pixel_glass_style`, `glass_style`, by number, append-only): 0 *Dome*, 1 *Flat plate*, in the
+  owner's words "a hexagon that has flat sharp edges because it's a flat plate of glass, and ...
+  a curved dome glass". The plate's bevel has straight facets for squares and hexagons (the
+  hexagon's three axes are those of `hex_centre`: change them together) and is round for the rest.
 - **New shader code goes in `stagekit-looks.effect`, not in the older files.** The mosaic, the
   trail and bloom live there so that, should Direct3D refuse any of it, `stagekit-blur.effect` and
   `stagekit-ambient.effect` still load: both features then log one error and fall back (squares and
@@ -971,7 +986,15 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   folder, which is not in the repository (nor is the program that draws it; the session that
   made the pack has both, and added the "hook game" and "hook window" pictures to it for beta81). A key left on
   *Automatic* gets its picture from the filter's kind and settings (`automatic()` in
-  `src/pictures.ts`); keep that by kind and setting, never by the owner's source names. The
+  `src/pictures.ts`); keep that by kind and setting, never by the owner's source names. Since
+  beta134 a filter key first takes the pack's own picture of the source it is on, where the words
+  of a picture's label are all in the source's name (`sourcePictureFor`: the pack's *show hide*,
+  *shadow by source*, *standby by source* and *blur <type>* groups), and a Show in Scenes key then
+  the picture of what the source is (`inputPicture`, by OBS input kind; `obs.inputKind` follows a
+  Cropped View to what it shows), before the filter's general picture (`chooseFor`). The owner:
+  "the show in scenes key set to square camera should either set to the correct icon relative to
+  a camera source, or at least have another option". Matching is by words; still no source names
+  in the code. The
   Stream Deck shows one key per feature (`src/features.json`: the owner asked for "a key for each
   of the major functions", not "one filter key with a ton of filters"), each choosing from one
   list (`target`, source and filter in one setting). The manifest, the settings pages and the

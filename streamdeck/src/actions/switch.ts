@@ -10,7 +10,7 @@ import type { JsonValue } from "@elgato/utils";
 
 import { afterPress, targetOf } from "../kinds.ts";
 import { obs } from "../obs.ts";
-import { choose, plain } from "../pictures.ts";
+import { chooseFor, plain } from "../pictures.ts";
 import { switchTitle } from "../titles.ts";
 import { answerLists, type KeySettings, showOnOff } from "./shared.ts";
 
@@ -79,7 +79,11 @@ export class FilterSwitch extends SingletonAction<KeySettings> {
 		const now = await obs.filter(source, filter);
 		// Its two looks: the picture that fits the filter (or the one chosen),
 		// in its "off" and "on" form, in this key's palette.
-		const picture = choose(settings.picture, now?.kind ?? "", now?.settings) ?? plain("switch");
+		// (And the source it is on: the pack's own picture of that source,
+		// or, for a key that shows and hides a source, what that source is.)
+		const kind = now?.kind ?? "";
+		const inputKind = kind === "stagekit_show_in_scenes" && !settings.picture ? await obs.inputKind(source) : undefined;
+		const picture = chooseFor(settings.picture, kind, now?.settings, source, inputKind) ?? plain("switch");
 		await showOnOff(key, picture, now?.enabled === true, settings.palette);
 		await key.setTitle(switchTitle(now?.kind, settings.press));
 	}

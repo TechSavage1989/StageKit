@@ -380,6 +380,54 @@ int main(int argc, char **argv)
 			      px(half, 215, 100, 0), px(half, 215, 100, 1), px(half, 215, 100, 2),
 			      px(half, 120, 100, 0));
 
+			// A rule for two scenes: the change from the one to the other
+			// is made another way, and only that change.
+			{
+				const std::vector<uint8_t> scene_b = render(obs_scene_get_source(mb), w, h);
+				const char *line = "Morph From \xE2\x86\x92 Morph To";
+				obs_data_t *rs = obs_source_get_settings(morph);
+				obs_data_array_t *rules = obs_data_array_create();
+				obs_data_t *entry = obs_data_create();
+				obs_data_set_string(entry, "value", line);
+				obs_data_array_push_back(rules, entry);
+				obs_data_release(entry);
+				obs_data_set_array(rs, "rules", rules);
+				obs_data_array_release(rules);
+				const std::string key = std::string("rule|") + line + "|";
+				obs_data_set_int(rs, (key + "style").c_str(), 2); // a cut
+				obs_source_update(morph, rs);
+				const std::vector<uint8_t> cut = at_time(ma, mb, 0.5f);
+				const std::vector<uint8_t> back = at_time(mb, ma, 0.5f);
+				// (The other way there is no rule: the camera is half-way.)
+				const bool back_morphs = px(back, 300, 170, 0) > 240 && px(back, 50, 40, 0) < 15;
+				obs_data_set_bool(rs, (key + "both").c_str(), true);
+				obs_source_update(morph, rs);
+				const std::vector<uint8_t> back_cut = at_time(mb, ma, 0.5f);
+				CHECK(mean_abs_diff(cut, scene_b) < 0.6 && back_morphs &&
+					      mean_abs_diff(back_cut, first) < 0.6,
+				      "a rule for two scenes makes that change a cut and leaves the change back a morph, until it is set for both ways (diff %.2f; back morphs %d; both ways %.2f)",
+				      mean_abs_diff(cut, scene_b), (int)back_morphs, mean_abs_diff(back_cut, first));
+				// A cross-fade by rule: no item travels.
+				obs_data_set_int(rs, (key + "style").c_str(), 1);
+				obs_source_update(morph, rs);
+				const std::vector<uint8_t> faded = at_time(ma, mb, 0.5f);
+				CHECK(px(faded, 300, 170, 1) > 150 && px(faded, 50, 40, 0) > 80 &&
+					      px(faded, 50, 40, 0) < 215,
+				      "and a cross-fade by rule: the camera fades where it is and does not travel (green %d where the morph has the red camera half-way; red %d at its old place)",
+				      px(faded, 300, 170, 1), px(faded, 50, 40, 0));
+				// The settings offer it.
+				obs_properties_t *mp = obs_source_properties(morph);
+				CHECK(obs_properties_get(mp, "rule_from") && obs_properties_get(mp, "rule_to") &&
+					      obs_properties_get(mp, "rule_style") &&
+					      obs_properties_get(mp, "rule_add") && list_rows(mp, "rules|a") == 1,
+				      "the Morph's settings have the two scenes, how the change is made, and the list of rules");
+				obs_properties_destroy(mp);
+				obs_data_erase(rs, "rules");
+				obs_source_update(morph, rs);
+				obs_data_release(rs);
+				at_time(ma, mb, 0.5f);
+			}
+
 			// At the end it is the new scene, and the transition is over.
 			const std::vector<uint8_t> last = render(obs_scene_get_source(mb), w, h);
 			obs_transition_set_manual_time(morph, 1.0f);
@@ -865,6 +913,11 @@ int main(int argc, char **argv)
 			obs_data_set_int(d, "pixel_style", 7);
 			obs_data_set_double(d, "pixel_rotation", 0);
 		});
+		auto glass =
+			shot("7e_triakis_glass", [](obs_data_t *d) { obs_data_set_double(d, "pixel_glass", 100); });
+		CHECK(mean_abs_diff(glass, triakis) > 0.5 && opaque(glass),
+		      "the background's mosaic can be glassy too (diff %.2f)", mean_abs_diff(glass, triakis));
+		obs_data_set_double(s, "pixel_glass", 0);
 		CHECK(mean_abs_diff(circles, reset) > 0.2 && mean_abs_diff(voronoi, circles) > 0.2 &&
 			      mean_abs_diff(triakis, voronoi) > 0.2 && opaque(circles) && opaque(voronoi) &&
 			      opaque(triakis),

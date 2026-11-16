@@ -20,6 +20,8 @@ uniform float shape;        // mosaic: 0 square, 1 hexagon, 2 circle, 3 triangle
 uniform float smoothing;    // mosaic: how far, in pixels, neighbouring cells run into each other
 uniform float2 origin;      // mosaic: the point the pattern is laid out from, in pixels
 uniform float2 turn;        // mosaic: cos and sin of the pattern's rotation
+uniform float glass;        // mosaic: how much each cell looks like a piece of glass, 0..1
+uniform float glass_style;  // mosaic: 0 a dome, 1 a flat plate with bevelled edges
 uniform float bloom_threshold;  // BloomBright: how bright a part must be to shine, 0..1
 uniform float bloom_amount;     // BloomAdd: how strongly the light is laid over
 
@@ -218,7 +220,60 @@ float4 PSMosaic(VertData v_in) : TARGET
 	sum += mosaic_tap(p, float2(-1.0, 1.0), block);
 	sum += mosaic_tap(p, float2(0.0, 1.0), block);
 	sum += mosaic_tap(p, float2(1.0, 1.0), block);
-	return resolve(sum, 9.0);
+	float4 colour = resolve(sum, 9.0);
+	// Glass: each cell is lit from the upper left like a small pane, brighter
+	// towards the light, darker away from it, with a glint and a dark rim.
+	// One more look at which cell this is; nothing more is read.
+	if (glass > 0.001) {
+		float2 q = (p - cell_centre(p, block)) / block;
+		float2 light = float2(-0.62, -0.78);
+		float3 lit = colour.rgb;
+		if (glass_style > 0.5) {
+			// A flat plate: the face is left as it is, and a narrow, sharp
+			// bevel runs along the cell's edges, each facet lit as one,
+			// bright where it faces the light and dark where it faces away.
+			// Squares and hexagons have straight facets; the other shapes
+			// are taken as round.
+			float2 n = q / max(length(q), 0.001);
+			float far = length(q) * 2.0;
+			if (shape < 0.5) {
+				n = float2(0.0, sign(q.y));
+				if (abs(q.x) > abs(q.y))
+					n = float2(sign(q.x), 0.0);
+				far = max(abs(q.x), abs(q.y)) * 2.0;
+			} else if (shape < 1.5) {
+				float a1 = 0.8660254 * q.x + 0.5 * q.y;
+				float a2 = 0.8660254 * q.x - 0.5 * q.y;
+				n = float2(0.0, sign(q.y));
+				far = abs(q.y);
+				if (abs(a1) > far) {
+					far = abs(a1);
+					n = float2(0.8660254, 0.5) * sign(a1);
+				}
+				if (abs(a2) > far) {
+					far = abs(a2);
+					n = float2(0.8660254, -0.5) * sign(a2);
+				}
+				far = far * 2.0;
+			}
+			float band = clamp((far - 0.8) * 30.0, 0.0, 1.0);
+			float side = dot(n, light);
+			lit = lit * (1.0 + glass * band * 0.6 * side);
+			lit += float3(1.0, 1.0, 1.0) * (glass * 0.4 * band * clamp(side, 0.0, 1.0));
+		} else {
+			// A dome: the whole cell leans towards the light like a bead of
+			// glass, with a glint and a darker rim.
+			float lean = clamp(dot(q, light) * 1.6, -1.0, 1.0);
+			float2 away = q - light * 0.2;
+			float glint = clamp(1.0 - dot(away, away) * 22.0, 0.0, 1.0);
+			glint = glint * glint * glint;
+			float rim = clamp((dot(q, q) - 0.16) * 7.0, 0.0, 1.0);
+			lit = lit * (1.0 + glass * (0.45 * lean - 0.4 * rim));
+			lit += float3(1.0, 1.0, 1.0) * (glass * 0.55 * glint);
+		}
+		colour.rgb = clamp(lit, 0.0, 1.0);
+	}
+	return colour;
 }
 
 // ---------------------------------------------------------------- Temporal

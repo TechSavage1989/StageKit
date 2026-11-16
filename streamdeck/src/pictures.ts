@@ -81,6 +81,83 @@ export function automatic(kind: string, settings: Settings = {}): Picture | unde
 	return id ? BY_ID.get(id) : undefined;
 }
 
+/** The pack's groups drawn source by source, for the filter kinds that have one. */
+function sourceGroup(kind: string, settings: Settings): string | undefined {
+	if (kind === "stagekit_show_in_scenes") return "show hide";
+	if (kind === "stagekit_shadow_backdrop") return "shadow by source";
+	if (kind === "stagekit_standby") return "standby by source";
+	if (kind === "stagekit_ramp_blur") return `blur ${BLUR[whole(settings, "blur_type", 0)] ?? BLUR[0]}`;
+	return undefined;
+}
+
+/**
+ * The pack's picture of one source for a filter kind, by the source's name:
+ * the pack has "show hide", shadow, standby and blur pictures drawn for
+ * single sources ("square camera", "window capture" ...). It fits when all
+ * the words of its label are in the source's name; of several, the one with
+ * the most words. No source names are in this code.
+ */
+export function sourcePictureFor(kind: string, settings: Settings, source: string | undefined): Picture | undefined {
+	const group = sourceGroup(kind, settings);
+	const words = nameWords(source ?? "");
+	if (!group || words.length === 0) return undefined;
+	let best: Picture | undefined;
+	let bestWords = 0;
+	for (const picture of PICTURES) {
+		if (picture.group !== group) continue;
+		const own = nameWords(picture.label);
+		if (own.length > bestWords && own.every((word) => words.includes(word))) {
+			best = picture;
+			bestWords = own.length;
+		}
+	}
+	return best;
+}
+
+/** The picture of what a source is, by its kind in OBS: a camera, a game, a window, a screen ... */
+const BY_INPUT: Record<string, string> = {
+	dshow_input: "options/webcam",
+	av_capture_input: "options/webcam",
+	av_capture_input_v2: "options/webcam",
+	"macos-avcapture": "options/webcam",
+	v4l2_input: "options/webcam",
+	game_capture: "capture/game",
+	window_capture: "capture/window",
+	xcomposite_input: "capture/window",
+	monitor_capture: "options/display",
+	display_capture: "options/display",
+	screen_capture: "options/display",
+	xshm_input: "options/display",
+	browser_source: "options/browser",
+	wasapi_input_capture: "options/microphone",
+	wasapi_output_capture: "options/speaker",
+};
+
+export function inputPicture(inputKind: string | undefined): Picture | undefined {
+	return BY_ID.get(BY_INPUT[inputKind ?? ""] ?? "");
+}
+
+/**
+ * A filter key's picture: the one chosen; else the pack's own picture of the
+ * source it is on, by name; else, for a key that shows and hides a source,
+ * the picture of what that source is (a camera, a window ...); else the one
+ * that fits the filter.
+ */
+export function chooseFor(
+	chosen: string | undefined,
+	kind: string,
+	settings: Settings = {},
+	source?: string,
+	inputKind?: string,
+): Picture | undefined {
+	return (
+		(chosen && BY_ID.get(chosen)) ||
+		sourcePictureFor(kind, settings, source) ||
+		(kind === "stagekit_show_in_scenes" ? inputPicture(inputKind) : undefined) ||
+		automatic(kind, settings)
+	);
+}
+
 /** The plain key for what the pack has no picture of. */
 export function plain(sort: "switch" | "move" | "tool"): Picture {
 	return BY_ID.get(`plain/${sort}`)!;

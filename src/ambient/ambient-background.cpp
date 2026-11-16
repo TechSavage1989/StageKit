@@ -99,6 +99,8 @@ struct Settings {
 	PixelStyle pixel_style = PixelStyle::None;
 	double pixel_size = 10.0;
 	double pixel_smooth = 0.0; // 0..1 of a fifth of a cell
+	double pixel_glass = 0.0;  // 0..1: each cell lit like a piece of glass
+	int pixel_glass_style = 0; // 0 rounded, 1 edges; kept by number
 	double pixel_origin_x = 0.5;
 	double pixel_origin_y = 0.5;
 	double pixel_rotation = 0.0;
@@ -257,6 +259,8 @@ private:
 	gs_eparam_t *pl_strength_ = nullptr;
 	gs_eparam_t *pl_shape_ = nullptr;
 	gs_eparam_t *pl_smoothing_ = nullptr;
+	gs_eparam_t *pl_glass_ = nullptr;
+	gs_eparam_t *pl_glass_style_ = nullptr;
 	gs_eparam_t *pl_origin_ = nullptr;
 	gs_eparam_t *pl_turn_ = nullptr;
 	gs_eparam_t *pl_bloom_threshold_ = nullptr;
@@ -357,6 +361,8 @@ AmbientBackground::AmbientBackground(obs_data_t *settings, obs_source_t *source)
 		pl_strength_ = gs_effect_get_param_by_name(looks_, "strength");
 		pl_shape_ = gs_effect_get_param_by_name(looks_, "shape");
 		pl_smoothing_ = gs_effect_get_param_by_name(looks_, "smoothing");
+		pl_glass_ = gs_effect_get_param_by_name(looks_, "glass");
+		pl_glass_style_ = gs_effect_get_param_by_name(looks_, "glass_style");
 		pl_origin_ = gs_effect_get_param_by_name(looks_, "origin");
 		pl_turn_ = gs_effect_get_param_by_name(looks_, "turn");
 		pl_bloom_threshold_ = gs_effect_get_param_by_name(looks_, "bloom_threshold");
@@ -450,6 +456,8 @@ void AmbientBackground::update(obs_data_t *settings)
 	s.pixel_style = static_cast<PixelStyle>(std::clamp<long long>(obs_data_get_int(settings, "pixel_style"), 0, 7));
 	s.pixel_size = std::clamp(obs_data_get_double(settings, "pixel_size"), 2.0, 200.0);
 	s.pixel_smooth = std::clamp(obs_data_get_double(settings, "pixel_smooth") / 100.0, 0.0, 1.0);
+	s.pixel_glass = std::clamp(obs_data_get_double(settings, "pixel_glass") / 100.0, 0.0, 1.0);
+	s.pixel_glass_style = (int)std::clamp<long long>(obs_data_get_int(settings, "pixel_glass_style"), 0, 1);
 	s.pixel_origin_x = obs_data_get_double(settings, "pixel_origin_x") / 100.0;
 	s.pixel_origin_y = obs_data_get_double(settings, "pixel_origin_y") / 100.0;
 	s.pixel_rotation = obs_data_get_double(settings, "pixel_rotation");
@@ -1115,6 +1123,10 @@ void AmbientBackground::render()
 								      : (int)s.pixel_style - 1;
 		gs_effect_set_float(pl_shape_, (float)shape);
 		gs_effect_set_float(pl_smoothing_, (float)(s.pixel_smooth * cell * 0.2));
+		if (pl_glass_)
+			gs_effect_set_float(pl_glass_, (float)s.pixel_glass);
+		if (pl_glass_style_)
+			gs_effect_set_float(pl_glass_style_, (float)s.pixel_glass_style);
 		gs_effect_set_vec2(pl_origin_, &origin);
 		gs_effect_set_vec2(pl_turn_, &turn);
 		pass(looks_, pl_image_, tr_pixel_, cur, iw, ih, "Mosaic");
@@ -1209,7 +1221,8 @@ bool visibility_modified(obs_properties_t *props, obs_property_t *, obs_data_t *
 	obs_property_set_visible(obs_properties_get(props, "live_opacity"), live != LiveMode::None);
 	for (const char *name : {"live_fit", "live_zoom", "live_replace", "live_ready", "live_skip_standby"})
 		obs_property_set_visible(obs_properties_get(props, name), live != LiveMode::None);
-	for (const char *name : {"pixel_size", "pixel_smooth", "pixel_origin_x", "pixel_origin_y", "pixel_rotation"})
+	for (const char *name : {"pixel_size", "pixel_smooth", "pixel_glass", "pixel_glass_style", "pixel_origin_x",
+				 "pixel_origin_y", "pixel_rotation"})
 		obs_property_set_visible(obs_properties_get(props, name), pixel != PixelStyle::None);
 	// (Bloom's own controls do not come and go with its strength: showing
 	// and hiding them rebuilt the window at each step of the slider, which
@@ -1346,6 +1359,16 @@ obs_properties_t *get_properties(void *)
 								 0.0, 100.0, 1.0);
 	obs_property_float_set_suffix(smooth, "%");
 	obs_property_set_long_description(smooth, obs_module_text("Mosaic.Smooth.Tip"));
+	obs_property_t *glass =
+		obs_properties_add_float_slider(look, "pixel_glass", obs_module_text("Mosaic.Glass"), 0.0, 100.0, 1.0);
+	obs_property_float_set_suffix(glass, "%");
+	obs_property_set_long_description(glass, obs_module_text("Mosaic.Glass.Tip"));
+	obs_property_t *glass_style = obs_properties_add_list(look, "pixel_glass_style",
+							      obs_module_text("Mosaic.GlassStyle"), OBS_COMBO_TYPE_LIST,
+							      OBS_COMBO_FORMAT_INT);
+	obs_property_list_add_int(glass_style, obs_module_text("Mosaic.GlassStyle.Rounded"), 0);
+	obs_property_list_add_int(glass_style, obs_module_text("Mosaic.GlassStyle.Edges"), 1);
+	obs_property_set_long_description(glass_style, obs_module_text("Mosaic.GlassStyle.Tip"));
 	obs_property_t *origin_x = obs_properties_add_float_slider(look, "pixel_origin_x",
 								   obs_module_text("Mosaic.OriginX"), 0.0, 100.0, 0.5);
 	obs_property_float_set_suffix(origin_x, "%");
@@ -1416,6 +1439,8 @@ void get_defaults(obs_data_t *settings)
 	obs_data_set_default_double(settings, "pixel_size", 10.0);
 	obs_data_set_default_int(settings, "blur_type", (int)BlurKind::Kawase);
 	obs_data_set_default_double(settings, "pixel_smooth", 0.0);
+	obs_data_set_default_double(settings, "pixel_glass", 0.0);
+	obs_data_set_default_int(settings, "pixel_glass_style", 0);
 	obs_data_set_default_double(settings, "pixel_origin_x", 50.0);
 	obs_data_set_default_double(settings, "pixel_origin_y", 50.0);
 	obs_data_set_default_double(settings, "pixel_rotation", 0.0);

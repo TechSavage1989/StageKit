@@ -178,6 +178,31 @@ class ObsLink extends EventEmitter {
 		}
 	}
 
+	/**
+	 * What a source is in OBS ("dshow_input", "window_capture" ...). A Cropped
+	 * View is what it shows: a camera's crop is a camera. Undefined for a
+	 * scene, a group, or when OBS cannot be asked.
+	 */
+	async inputKind(sourceName: string): Promise<string | undefined> {
+		if (!this.connected || !sourceName) return undefined;
+		try {
+			const answer = await this.obs.call("GetInputList");
+			const kinds = new Map(
+				answer.inputs.map((input) => [String(input.inputName), String(input.unversionedInputKind ?? input.inputKind ?? "")]),
+			);
+			let name = sourceName;
+			for (let step = 0; step < 4 && kinds.get(name) === "stagekit_cropped_view"; step++) {
+				const view = await this.obs.call("GetInputSettings", { inputName: name });
+				const shows = (view.inputSettings as Record<string, unknown>).source;
+				if (typeof shows !== "string" || shows === "") break;
+				name = shows;
+			}
+			return kinds.get(name);
+		} catch {
+			return undefined;
+		}
+	}
+
 	/** The Game Captures and Window Captures in OBS: the sources a Hook key can aim. */
 	async captures(): Promise<Array<{ name: string; kind: string }>> {
 		if (!this.connected) return [];
