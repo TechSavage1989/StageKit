@@ -211,6 +211,15 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## StageKit keeps OBS's window layout (0.1.0-beta138)
+
+The owner: their dock-layout plugins save the layout, "but whenever I start OBS the layout is lost
+and I have to manually reload", and then asked for StageKit to store the docks and layout and load
+it at start-up. Built as four entries in the Tools menu (AGENTS.md). Tested with a stand-in
+QMainWindow and two docks; **not run in OBS**, where the timing after loading (1.5 s) is a guess
+to be confirmed by the owner. Their log has OBS Dock Layout Manager, OBS Auto Dock Resizer and
+jrdockie loaded, the first two keeping their profiles in `C:/Program Files/obs-studio/bin/64bit/`.
+
 ## Auto Capture: retries long enough and often enough (0.1.0-beta137)
 
 The owner: "auto capture is not capturing a game even when i've added it manually to the always
