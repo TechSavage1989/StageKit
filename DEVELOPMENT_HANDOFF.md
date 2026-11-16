@@ -231,6 +231,9 @@ RTX 4090 and their NVIDIA *Vulkan/OpenGL present method* was *Prefer layered on 
 the log's pattern, nothing StageKit can change. Ask for the result before touching Auto Capture
 again for this.
 
+**Confirmed by the owner**: "set to prefer native and the capture works immediately now". It is in
+the README's Troubleshooting and in AGENTS.md.
+
 ## The order tools: two by two, four drawings (0.1.0-beta137)
 
 The owner asked for the dock's four order buttons stacked "into two columns and two rows" and for

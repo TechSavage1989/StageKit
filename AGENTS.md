@@ -859,6 +859,14 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   **Read OBS's own profiler lines and count repeated lines in a log before blaming new code.**
   Programs an Automatic Window Switcher lists are never candidates (`app_capture_lists`). A
   program on *Always capture* is never given up on.
+- **A game that OBS will not hook is not always Auto Capture's doing.** The owner's Ryujinx, on
+  *Always capture* with a game running, was tried 254 times before a picture came, and their
+  Dolphin's Vulkan capture was freed and started 109 times in one session. Their NVIDIA driver's
+  *Vulkan/OpenGL present method* was *Prefer layered on DXGI Swapchain*: OBS started a Vulkan and a
+  Direct3D 12 capture of the same game at once. Set to *Prefer native*, "the capture works
+  immediately now" (the owner, 2026-11-16). In a log, look for `attempting to hook process` /
+  `capture stopped` in a tight loop, or `vulkan capture freed` many times a second, before
+  changing Auto Capture; the README's Troubleshooting has the fix.
 - **Ambient Background follows a change of capture with a transition** (`live_change`,
   `live_change_ms`, `live_delay_ms`, `live_ease_*`): when the capture blended in changes (another
   source, none, or `app_capture_changes` says the switcher took another window) the scene as last

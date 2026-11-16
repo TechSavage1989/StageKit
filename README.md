@@ -1131,6 +1131,14 @@ to (the two update choices are kept with the plugin instead). Replacing the plug
   capture*.
 - **Auto Capture does not pick up a game.** Add part of its file name to *Always capture*. The OBS log
   has a line starting `Auto Capture:` each time it changes what it follows.
+- **Auto Capture is aimed at a game but the capture stays empty, or comes only after clicking out
+  of the game and back in.** With an NVIDIA card, open *NVIDIA Control Panel → Manage 3D settings*
+  and set **Vulkan/OpenGL present method** to **Prefer native**, then restart the game. Set to
+  *Prefer layered on DXGI Swapchain*, the driver shows a Vulkan or OpenGL game through a Direct3D
+  swapchain; OBS's Game Capture then starts two captures of the one game and they keep ending each
+  other. OBS's log shows it as `attempting to hook process` followed by `capture stopped` over and
+  over, or `vulkan capture freed` many times a second. Emulators such as Ryujinx and Dolphin are
+  typical. It can be set for single programs under *Program Settings* instead.
 - **Items inside a group are missing from a scene filter's item list.** Add the filter to the group
   itself instead.
 
