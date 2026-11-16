@@ -628,13 +628,19 @@ public:
 			// grows each time.
 			if (auto rest = rest_.find(exe); !listed && rest != rest_.end() && rest->second.resting) {
 				const bool retitled = w.title != rest->second.title && rest->second.title_tries < 3;
-				if (!retitled && clock_s_ - rest->second.since < rest->second.wait)
+				// (Or it has been clicked into again: what one does to start
+				// a game in an emulator whose title stays as it is.)
+				rest->second.away = rest->second.away || !w.foreground;
+				const bool came_back = w.foreground && rest->second.away;
+				if (!retitled && !came_back && clock_s_ - rest->second.since < rest->second.wait)
 					continue;
 				rest->second.resting = false;
 				if (retitled)
 					rest->second.title_tries++;
 				obs_log(LOG_INFO, "Auto Capture: trying %s again (%s)", w.executable.c_str(),
-					retitled ? "its window's title changed" : "after a wait");
+					retitled    ? "its window's title changed"
+					: came_back ? "it is in front again"
+						    : "after a wait");
 			}
 			if (mode == Mode::AnyGame && w.looks_like_game && known_games_.insert(exe).second) {
 				learned_something = true;
@@ -685,8 +691,10 @@ public:
 			const bool mine = chosen && game_capture && !matches(lower(chosen->executable), always) &&
 					  !matches(lower(chosen->title), always);
 			const std::string exe = chosen ? lower(chosen->executable) : std::string();
-			// (Tried again after a rest, it gets half the time.)
-			const double patience = rest_.count(exe) ? std::max(0.25, give_up_s_ * 0.5) : give_up_s_;
+			// (As long each time: the owner's Ryujinx gave its first picture
+			// seven seconds after being aimed at, and tried again for five
+			// it was given up on three times running.)
+			const double patience = give_up_s_;
 			if (!mine || obs_source_get_base_width(parent_) > 0) {
 				unhooked_s_ = 0.0;
 				if (chosen && obs_source_get_base_width(parent_) > 0)
@@ -696,8 +704,14 @@ public:
 				Rest &rest = rest_[exe];
 				rest.title = chosen->title;
 				rest.since = clock_s_;
-				rest.wait = rest.wait > 0.0 ? std::min(rest.wait * 2.0, 300.0) : give_up_s_ * 3.0;
+				// (Twice the patience, then half as long again each time up
+				// to a minute: an emulator with no game running gives no
+				// picture, and one whose title never changes is only found
+				// again by trying. Up to beta136 the wait grew to five
+				// minutes.)
+				rest.wait = rest.wait > 0.0 ? std::min(rest.wait * 1.5, 60.0) : give_up_s_ * 2.0;
 				rest.resting = true;
+				rest.away = false;
 				obs_log(LOG_INFO,
 					"Auto Capture: '%s' got no picture from %s in %.0f s; leaving it alone until its window's title changes, or for %.0f s",
 					obs_source_get_name(parent_), chosen->executable.c_str(), patience, rest.wait);
@@ -772,6 +786,8 @@ public:
 	obs_source_t *source() const { return source_; }
 
 	// The program being captured now; empty when there is none.
+	// Aimed at a program whose picture has not come yet.
+	bool waiting_for_picture() const { return parent_ && obs_source_get_base_width(parent_) == 0; }
 	std::string current()
 	{
 		std::lock_guard lock(mutex_);
@@ -937,6 +953,7 @@ private:
 		double wait = 0.0;  // how long before it is tried again whatever its title
 		int title_tries = 0;
 		bool resting = false;
+		bool away = false; // seen behind another window since it was given up on
 	};
 	std::map<std::string, Rest> rest_;
 	double clock_s_ = 0.0;
@@ -946,7 +963,13 @@ private:
 void show_status(obs_properties_t *props, AutoCapture *self)
 {
 	const std::string current = self ? self->current() : std::string();
-	std::string text = obs_module_text(current.empty() ? "Capture.Status.None" : "Capture.Status.Now");
+	// (Aimed at a program that gives no picture yet, an emulator with no game
+	// running for one, it says so: "Now capturing" over an empty capture read
+	// as a fault.)
+	const bool empty = !current.empty() && self && self->waiting_for_picture();
+	std::string text = obs_module_text(current.empty() ? "Capture.Status.None"
+					   : empty         ? "Capture.Status.Waiting"
+							   : "Capture.Status.Now");
 	const size_t at = text.find("%1");
 	if (at != std::string::npos)
 		text.replace(at, 2, current);

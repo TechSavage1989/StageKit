@@ -841,8 +841,14 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   gives a Game Capture no picture either: their log had it put on the list three times in one
   session, each time after they had taken it off ("Dolphin keeps getting added to the never
   capture"). Now it is rested in memory only: tried again when its window's title changes (a game
-  was started; three such tries at most) or after a wait that doubles from 30 s to 5 minutes, for
-  half the usual time; a picture or the program closing ends it. **Do not write to the user's
+  was started; three such tries at most), when it is clicked into again (`away`), or after a wait
+  of 20 s that grows by half each time to a minute at most, for the full time each try; a picture
+  or the program closing ends it. (Beta135 and 136 tried for half the time, 5 s, with waits up to
+  5 minutes: the owner's Ryujinx, whose title never changes and whose first picture took 7 s, was
+  given up on three times running and they reported "auto capture is not capturing a game". Its
+  log also showed OBS hooking it the moment a game drew: an emulator's menu gives no picture.) The
+  status says *Aimed at ..., which shows no image yet* (`waiting_for_picture`) instead of *Now
+  capturing* over an empty capture. **Do not write to the user's
   lists from the tick again.** What follows is why the giving up exists at all: aimed at a
   program for that long with no picture, the program was given up on and the log says so. OBS's Game Capture tries to hook about
   five times a second for as long as it is aimed, each try some 20 ms on the drawing thread. The
