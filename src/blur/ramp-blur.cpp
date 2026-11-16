@@ -493,6 +493,24 @@ bool find_live(obs_scene_t *, obs_sceneitem_t *item, void *param)
 	} else if (is_capture_source(source) && obs_source_get_width(source) > 0 &&
 		   std::find(search->found->begin(), search->found->end(), source) == search->found->end()) {
 		search->found->push_back(source);
+	} else if (const char *id = obs_source_get_unversioned_id(source);
+		   id && strcmp(id, "stagekit_cropped_view") == 0) {
+		// A capture on screen by way of a Cropped View (the owner's camera
+		// is only ever shown through its crop) is a live capture too: it is
+		// the capture that is blurred, and the view draws it blurred.
+		obs_data_t *view = obs_source_get_settings(source);
+		obs_source_t *shown = obs_get_source_by_name(obs_data_get_string(view, "source"));
+		obs_data_release(view);
+		// (Held by the scene's view for as long as this search is used.)
+		if (shown && is_capture_source(shown) && obs_source_get_width(shown) > 0 &&
+		    std::find(search->found->begin(), search->found->end(), shown) == search->found->end())
+			search->found->push_back(shown);
+		// (Or a scene or group holding it.)
+		if (obs_scene_t *inner = shown ? scene_of(shown) : nullptr; inner && search->depth < 8) {
+			LiveSearch deeper{search->found, search->depth + 1};
+			obs_scene_enum_items(inner, find_live, &deeper);
+		}
+		obs_source_release(shown);
 	}
 	return true;
 }

@@ -4183,6 +4183,30 @@ int main(int argc, char **argv)
 				on_screen = blur_of(screen);
 				CHECK(on_screen && !obs_source_enabled(on_screen),
 				      "and switching it off clears the capture it blurred");
+				// A capture on screen only by way of a Cropped View (the
+				// owner's camera) is blurred as well.
+				obs_source_t *inner =
+					obs_source_create("dshow_input", "Viewed Camera", nullptr, nullptr);
+				obs_data_t *view_s = obs_data_create();
+				obs_data_set_string(view_s, "source", "Viewed Camera");
+				obs_source_t *view = obs_source_create("stagekit_cropped_view", "Viewed Camera Crop",
+								       view_s, nullptr);
+				obs_data_release(view_s);
+				obs_sceneitem_t *view_item = obs_scene_add(ls, view);
+				draw_all(300);
+				obs_source_set_enabled(blur, true);
+				draw_all(400);
+				obs_source_t *on_inner = blur_of(inner);
+				const bool viewed = on_inner && obs_source_enabled(on_inner);
+				obs_source_set_enabled(blur, false);
+				draw_all(400);
+				on_inner = blur_of(inner);
+				CHECK(viewed && on_inner && !obs_source_enabled(on_inner) && blur_of(camera) == nullptr,
+				      "a capture shown only through a Cropped View is blurred and cleared with the rest (blurred %d)",
+				      (int)viewed);
+				obs_sceneitem_remove(view_item);
+				obs_source_release(view);
+				obs_source_release(inner);
 			}
 			obs_source_release(crop);
 			obs_set_output_source(0, before_out);

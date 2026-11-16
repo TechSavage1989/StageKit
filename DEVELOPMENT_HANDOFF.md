@@ -211,6 +211,13 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Blur reaches a capture shown through a Cropped View (0.1.0-beta133)
+
+The owner confirmed beta131 and beta132 (scene changes keep the capture, the arrange block, the
+update notice and the Tools menu) and reported that *Square Camera*, a Cropped View of the camera,
+was not blurred at all. `find_live` only took capture kinds that were scene items themselves; it
+now also takes the capture a Cropped View shows. Tested with stand-in captures.
+
 ## The updater: notice at the top of the dock, the rest in the Tools menu (0.1.0-beta132)
 
 The owner's screenshot had the status line and the *Updates* button below the dock's visible area,
