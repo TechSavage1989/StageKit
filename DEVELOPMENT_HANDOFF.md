@@ -211,6 +211,15 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## The standby image in a hidden source's place (0.1.0-beta139)
+
+Asked for by the owner in those words; built into the Standby filter as a tick box (AGENTS.md).
+The owner confirmed beta138: "layout restore worked great". Tested with colour sources in one
+scene: the stand-in appears in the source's place and size, follows a move, and is taken out when
+unticked. **Not tried here**: a source with a shadow or corners after the filter, a source in
+several scenes on screen at once, a camera that stops when hidden, and how the twin items look in
+OBS's Sources list. Items in groups are left out.
+
 ## StageKit keeps OBS's window layout (0.1.0-beta138)
 
 The owner: their dock-layout plugins save the layout, "but whenever I start OBS the layout is lost

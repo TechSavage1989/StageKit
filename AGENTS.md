@@ -368,6 +368,20 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   (`get_standing`), so Corners & Edges and the rest shape the whole picture. The capture is always
   drawn by way of a copy (`render_live_`), kept when the capture ends so the change back starts from
   the last frame: a capture that has ended draws nothing.
+- **Standby Picture can stand in for a hidden source** (`when_hidden`, *Show when source is
+  hidden*, off as it comes; beta139). The owner: "I need a way for the standby image to be displayed
+  in place of any source I choose when it's hidden". A hidden scene item draws nothing, so each
+  item showing the source, in every scene (not in groups yet), gets a twin item straight under it
+  (`sync_stand_ins`, from the tick four times a second): locked, placed like the item while the
+  item shows (`place_like`), visible exactly while the item is hidden, with the filter's item
+  transition. The twin's source is private (`stagekit_stand_in`, `OBS_SOURCE_CAP_DISABLED`): it
+  draws the source itself with `t_stand_in` up, and the Standby filter then draws its picture
+  alone, so the picture has the source's size and every later filter. `get_standing` says
+  standing while that flag is up, so Auto Frame's `get_picture` and Corners & Edges treat it as
+  the whole picture. The twin knows its item by the item's id in its private settings
+  (`stagekit_stand_in_for`); twins are taken out when the option or the filter goes, and a private
+  source's items are not loaded back by OBS, so they are made again at each start. Anything that
+  lists a scene's items will see them, as "<source> (standby)".
 - **Show in Scenes can take bring-along items with it** (`with_linked`, off by default): the
   `linked` item of every Move Source filter on a listed source, and of Move Scene Item filters that move it.
   The owner asked for it.

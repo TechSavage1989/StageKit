@@ -502,6 +502,7 @@ Game Capture, Window Capture or other live source.
 | Setting | What it does |
 | --- | --- |
 | Image | *The standby image* (the default: the one set in the StageKit Background dock), *An image or video file*, or *Another source* |
+| Show when source is hidden | While the source is hidden in a scene, the standby image is shown in its place there, at the same position and size and with the source's later filters (shadow, corners). StageKit adds a locked item named *<source> (standby)* under each item of the source and shows and hides it by itself. *Transition* and *Duration* below it set how it appears. Not for sources inside a group yet |
 | File / Source | The file or source to show, for those two choices. A video loops, without sound |
 | Keep image's aspect ratio | On (the default): the image is shown whole in its own shape. Off: it fills the size the capture last had, with what does not fit cut off |
 | Transition | How the image gives way to the capture: a fade (the default), a cut, sliding away or wiping in any of four directions, or a zoom and fade. It comes back the same way in reverse |

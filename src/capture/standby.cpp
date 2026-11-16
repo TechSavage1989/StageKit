@@ -26,6 +26,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/timing.hpp"
 
 #include "../common/easing.hpp"
+#include "../common/item-transition.hpp"
 #include "../common/start-image.hpp"
 #include "../frame/auto-frame.hpp"
 
@@ -39,6 +40,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <cstring>
 #include <mutex>
 #include <string>
+#include <vector>
 
 namespace stagekit {
 
@@ -133,6 +135,20 @@ uint32_t before_height(obs_source_t *filter)
 	return target == parent ? obs_source_get_base_height(target) : obs_source_get_height(target);
 }
 
+// A source's place taken while it is hidden. The owner: "I need a way for the
+// standby image to be displayed in place of any source I choose when it's
+// hidden". A hidden scene item draws nothing, so each item showing the source
+// gets a second item straight under it, in the same place and of the same
+// size, that shows only while the first is hidden. That second item's source
+// (a stand-in, private) draws the source itself with this flag up, which
+// makes the source's Standby filter draw its picture and nothing else: the
+// picture gets the source's size and every filter after this one, its shadow
+// and corners included.
+thread_local bool t_stand_in = false;
+constexpr const char *kStandInId = "stagekit_stand_in";
+// On a stand-in's scene item: the id of the item it stands in for.
+constexpr const char *kStandInFor = "stagekit_stand_in_for";
+
 class Standby {
 public:
 	Standby(obs_data_t *settings, obs_source_t *source) : source_(source)
@@ -146,7 +162,7 @@ public:
 				auto *self = static_cast<Standby *>(data);
 				std::lock_guard lock(self->mutex_);
 				calldata_set_bool(cd, "standing",
-						  self->empty_ || self->mix_ > 0.0 || self->glide_ < 1.0);
+						  t_stand_in || self->empty_ || self->mix_ > 0.0 || self->glide_ < 1.0);
 				calldata_set_bool(cd, "waiting", self->empty_);
 			},
 			this);
@@ -201,12 +217,44 @@ public:
 
 	~Standby()
 	{
+		// Its stand-in items go with it.
+		if (stand_in_) {
+			std::vector<obs_sceneitem_t *> twins;
+			struct Search {
+				std::vector<obs_sceneitem_t *> *found;
+				obs_source_t *stand_in;
+			} search{&twins, stand_in_};
+			obs_enum_scenes(
+				[](void *param, obs_source_t *source) {
+					if (obs_source_is_group(source))
+						return true;
+					obs_scene_enum_items(
+						obs_scene_from_source(source),
+						[](obs_scene_t *, obs_sceneitem_t *item, void *inner) {
+							auto *s = static_cast<Search *>(inner);
+							if (obs_sceneitem_get_source(item) == s->stand_in) {
+								obs_sceneitem_addref(item);
+								s->found->push_back(item);
+							}
+							return true;
+						},
+						param);
+					return true;
+				},
+				&search);
+			for (obs_sceneitem_t *twin : twins) {
+				obs_sceneitem_remove(twin);
+				obs_sceneitem_release(twin);
+			}
+			obs_source_release(stand_in_);
+		}
 		if (hotkey_ != OBS_INVALID_HOTKEY_ID)
 			obs_hotkey_unregister(hotkey_);
 		let_go();
 		obs_enter_graphics();
 		gs_texrender_destroy(render_);
 		gs_texrender_destroy(render_live_);
+		gs_texrender_destroy(render_stand_in_);
 		gs_effect_destroy(effect_);
 		obs_leave_graphics();
 	}
@@ -229,6 +277,9 @@ public:
 		last_h_ = (uint32_t)std::max<long long>(0, obs_data_get_int(settings, "last_height"));
 		placed_ = obs_data_get_bool(settings, "placed");
 		own_shape_ = obs_data_get_bool(settings, "own_shape");
+		when_hidden_ = obs_data_get_bool(settings, "when_hidden");
+		hidden_kind_ = item_transition_kind(settings);
+		hidden_ms_ = item_transition_ms(settings);
 		changed_ = true;
 	}
 
@@ -252,6 +303,13 @@ public:
 		}
 		if (!parent || !target)
 			return;
+		// The stand-ins for the source while it is hidden, looked at four
+		// times a second.
+		stand_in_check_ += seconds;
+		if (stand_in_check_ >= 0.25) {
+			stand_in_check_ = 0.0;
+			sync_stand_ins(parent);
+		}
 		Picture kind;
 		std::string file, named;
 		bool changed, placed;
@@ -443,17 +501,6 @@ public:
 			live_h = live_h_;
 		}
 		const uint32_t w = width(), h = height();
-		const bool live = live_w && live_h;
-		bool morph;
-		{
-			std::lock_guard lock(mutex_);
-			morph = style_ == Style::Morph;
-		}
-		if (!w || !h) {
-			if (live)
-				obs_source_skip_video_filter(source_);
-			return;
-		}
 		if (!effect_) {
 			char *path = obs_module_file("effects/stagekit-fade.effect");
 			char *errors = nullptr;
@@ -464,10 +511,35 @@ public:
 			bfree(errors);
 			bfree(path);
 			if (!effect_) {
-				if (live)
+				if (live_w && live_h && !t_stand_in)
 					obs_source_skip_video_filter(source_);
 				return;
 			}
+		}
+		// As a stand-in for the source while it is hidden: the picture alone,
+		// all of it, whatever the capture is doing.
+		if (t_stand_in) {
+			obs_source_t *only = picture_;
+			const uint32_t ow = only ? obs_source_get_width(only) : 0;
+			const uint32_t oh = only ? obs_source_get_height(only) : 0;
+			if (!w || !h || !ow || !oh || !effect_)
+				return;
+			if (!render_stand_in_)
+				render_stand_in_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
+			if (gs_texture_t *texture = covered(render_stand_in_, w, h, ow, oh, only))
+				draw(texture, w, h, 1.0f);
+			return;
+		}
+		const bool live = live_w && live_h;
+		bool morph;
+		{
+			std::lock_guard lock(mutex_);
+			morph = style_ == Style::Morph;
+		}
+		if (!w || !h) {
+			if (live)
+				obs_source_skip_video_filter(source_);
+			return;
 		}
 		// The capture is always drawn by way of a copy, which is kept: when
 		// the capture ends there is nothing left to draw, and the change
@@ -507,6 +579,168 @@ public:
 	{
 		std::lock_guard lock(mutex_);
 		return empty_;
+	}
+
+	// Every scene item showing the source has its stand-in: made when
+	// missing, kept in the item's place and straight under it while the item
+	// shows, and shown exactly while the item is hidden. With the option
+	// off, or the filter, they are taken out again. Called from the tick.
+	void sync_stand_ins(obs_source_t *parent)
+	{
+		bool wanted;
+		std::string kind;
+		uint32_t ms;
+		{
+			std::lock_guard lock(mutex_);
+			wanted = when_hidden_ && obs_source_enabled(source_);
+			kind = hidden_kind_;
+			ms = hidden_ms_;
+		}
+		if (!wanted && !stand_in_)
+			return;
+		if (wanted && !stand_in_) {
+			obs_data_t *settings = obs_data_create();
+			obs_data_set_string(settings, "of", obs_source_get_name(parent));
+			const std::string name = std::string(obs_source_get_name(parent)) + " " +
+						 obs_module_text("Standby.StandIn.Suffix");
+			stand_in_ = obs_source_create_private(kStandInId, name.c_str(), settings);
+			obs_data_release(settings);
+			if (!stand_in_)
+				return;
+		}
+		// The items of both, scene by scene, each held. (Scenes only: OBS
+		// lists every group as a scene as well, and an item in a group is
+		// left out of this for now.)
+		struct Pair {
+			obs_scene_t *scene;
+			obs_sceneitem_t *item;
+			bool stand_in;
+		};
+		struct Search {
+			std::vector<Pair> *found;
+			obs_source_t *parent, *stand_in;
+			obs_scene_t *scene;
+		};
+		std::vector<Pair> found;
+		Search search{&found, parent, stand_in_, nullptr};
+		obs_enum_scenes(
+			[](void *param, obs_source_t *source) {
+				auto *s = static_cast<Search *>(param);
+				if (obs_source_is_group(source))
+					return true;
+				s->scene = obs_scene_from_source(source);
+				obs_scene_enum_items(
+					s->scene,
+					[](obs_scene_t *, obs_sceneitem_t *item, void *inner) {
+						auto *s2 = static_cast<Search *>(inner);
+						obs_source_t *shown = obs_sceneitem_get_source(item);
+						if (shown == s2->parent || shown == s2->stand_in) {
+							obs_sceneitem_addref(item);
+							s2->found->push_back(
+								Pair{s2->scene, item, shown == s2->stand_in});
+						}
+						return true;
+					},
+					s);
+				return true;
+			},
+			&search);
+		auto for_id = [](obs_sceneitem_t *stand_in) {
+			obs_data_t *own = obs_sceneitem_get_private_settings(stand_in);
+			const long long id = obs_data_get_int(own, kStandInFor);
+			obs_data_release(own);
+			return id;
+		};
+		for (const Pair &real : found) {
+			if (real.stand_in || !wanted)
+				continue;
+			obs_sceneitem_t *twin = nullptr;
+			for (const Pair &other : found)
+				if (other.stand_in && other.scene == real.scene &&
+				    for_id(other.item) == obs_sceneitem_get_id(real.item))
+					twin = other.item;
+			const bool shown = obs_sceneitem_visible(real.item);
+			if (!twin) {
+				twin = obs_scene_add(real.scene, stand_in_);
+				if (!twin)
+					continue;
+				obs_data_t *own = obs_sceneitem_get_private_settings(twin);
+				obs_data_set_int(own, kStandInFor, obs_sceneitem_get_id(real.item));
+				obs_data_release(own);
+				obs_sceneitem_set_locked(twin, true);
+				// (As it should be from the first moment, without a
+				// transition: it is not something that just appeared.)
+				obs_sceneitem_set_visible(twin, !shown);
+				place_like(twin, real.item);
+			}
+			// Where the item is, while that can be seen; a hidden item is
+			// not moved about, and its stand-in stays.
+			if (shown)
+				place_like(twin, real.item);
+			const int at = obs_sceneitem_get_order_position(real.item);
+			const int twin_at = obs_sceneitem_get_order_position(twin);
+			if (twin_at != at - 1)
+				obs_sceneitem_set_order_position(twin, twin_at < at ? at - 1 : at);
+			if (obs_sceneitem_visible(twin) == shown) {
+				set_item_transitions(twin, kind, ms);
+				obs_sceneitem_set_visible(twin, !shown);
+			}
+		}
+		// A stand-in whose item has gone, or all of them when they are no
+		// longer wanted, is taken out.
+		for (const Pair &twin : found) {
+			if (!twin.stand_in)
+				continue;
+			bool has_item = false;
+			for (const Pair &real : found)
+				has_item = has_item || (!real.stand_in && real.scene == twin.scene &&
+							obs_sceneitem_get_id(real.item) == for_id(twin.item));
+			if (!wanted || !has_item)
+				obs_sceneitem_remove(twin.item);
+		}
+		for (const Pair &pair : found)
+			obs_sceneitem_release(pair.item);
+		if (!wanted) {
+			obs_source_release(stand_in_);
+			stand_in_ = nullptr;
+		}
+	}
+
+	// The same place, size, turn, crop and bounding box as another item.
+	static void place_like(obs_sceneitem_t *item, obs_sceneitem_t *like)
+	{
+		vec2 pos, scale, bounds;
+		obs_sceneitem_get_pos(like, &pos);
+		obs_sceneitem_get_scale(like, &scale);
+		obs_sceneitem_get_bounds(like, &bounds);
+		obs_sceneitem_crop crop;
+		obs_sceneitem_get_crop(like, &crop);
+		vec2 now_pos, now_scale, now_bounds;
+		obs_sceneitem_get_pos(item, &now_pos);
+		obs_sceneitem_get_scale(item, &now_scale);
+		obs_sceneitem_get_bounds(item, &now_bounds);
+		obs_sceneitem_crop now_crop;
+		obs_sceneitem_get_crop(item, &now_crop);
+		// (Only when something differs: setting a transform marks the scene
+		// as changed each time.)
+		if (vec2_close(&pos, &now_pos, 0.001f) && vec2_close(&scale, &now_scale, 0.00001f) &&
+		    vec2_close(&bounds, &now_bounds, 0.001f) && memcmp(&crop, &now_crop, sizeof(crop)) == 0 &&
+		    obs_sceneitem_get_rot(item) == obs_sceneitem_get_rot(like) &&
+		    obs_sceneitem_get_alignment(item) == obs_sceneitem_get_alignment(like) &&
+		    obs_sceneitem_get_bounds_type(item) == obs_sceneitem_get_bounds_type(like) &&
+		    obs_sceneitem_get_bounds_alignment(item) == obs_sceneitem_get_bounds_alignment(like))
+			return;
+		obs_sceneitem_defer_update_begin(item);
+		obs_sceneitem_set_pos(item, &pos);
+		obs_sceneitem_set_scale(item, &scale);
+		obs_sceneitem_set_rot(item, obs_sceneitem_get_rot(like));
+		obs_sceneitem_set_alignment(item, obs_sceneitem_get_alignment(like));
+		obs_sceneitem_set_bounds_type(item, obs_sceneitem_get_bounds_type(like));
+		obs_sceneitem_set_bounds_alignment(item, obs_sceneitem_get_bounds_alignment(like));
+		obs_sceneitem_set_bounds(item, &bounds);
+		obs_sceneitem_set_crop(item, &crop);
+		obs_sceneitem_set_scale_filter(item, obs_sceneitem_get_scale_filter(like));
+		obs_sceneitem_defer_update_end(item);
 	}
 	obs_source_t *source() const { return source_; }
 
@@ -781,6 +1015,15 @@ private:
 	bool holding_ = false;
 	gs_texrender_t *render_ = nullptr;
 	gs_texrender_t *render_live_ = nullptr;
+	gs_texrender_t *render_stand_in_ = nullptr;
+	// In the source's place while it is hidden: wanted, with which change,
+	// and the private source its stand-in items show. (The last two on the
+	// tick only.)
+	bool when_hidden_ = false;
+	std::string hidden_kind_ = kTransitionFade;
+	uint32_t hidden_ms_ = 300;
+	obs_source_t *stand_in_ = nullptr;
+	double stand_in_check_ = 1.0;
 	uint32_t kept_w_ = 0, kept_h_ = 0; // the size of the capture's last frame in render_live_
 	double order_check_ = 1.0, waited_ = 0.0;
 	gs_effect_t *effect_ = nullptr;
@@ -875,6 +1118,12 @@ obs_properties_t *get_properties(void *data)
 	add_easing_properties(props, "");
 	obs_property_t *glide = obs_properties_add_bool(props, "glide_size", obs_module_text("Standby.GlideSize"));
 	obs_property_set_long_description(glide, obs_module_text("Standby.GlideSize.Tip"));
+
+	// In the source's place while the source is hidden.
+	obs_property_t *when_hidden =
+		obs_properties_add_bool(props, "when_hidden", obs_module_text("Standby.WhenHidden"));
+	obs_property_set_long_description(when_hidden, obs_module_text("Standby.WhenHidden.Tip"));
+	add_item_transition_properties(props);
 
 	obs_property_t *help = obs_properties_add_text(props, "help", obs_module_text("Standby.Help"), OBS_TEXT_INFO);
 	obs_property_text_set_info_word_wrap(help, true);
@@ -985,6 +1234,8 @@ void register_standby()
 		obs_data_set_default_bool(settings, "glide_size", true);
 		obs_data_set_default_bool(settings, "own_shape", true);
 		obs_data_set_default_bool(settings, "placed", false);
+		obs_data_set_default_bool(settings, "when_hidden", false);
+		item_transition_defaults(settings);
 	};
 	info.get_properties = get_properties;
 	info.video_tick = [](void *data, float seconds) {
@@ -1000,6 +1251,55 @@ void register_standby()
 		return static_cast<Standby *>(data)->height();
 	};
 	register_timed(&info);
+
+	// What a stand-in item shows: the source itself, drawn so that its
+	// Standby filter gives its picture alone. Not offered in OBS's list of
+	// sources: the filter makes it.
+	obs_source_info stand_in = {};
+	stand_in.id = kStandInId;
+	stand_in.type = OBS_SOURCE_TYPE_INPUT;
+	stand_in.output_flags = OBS_SOURCE_VIDEO | OBS_SOURCE_CUSTOM_DRAW | OBS_SOURCE_SRGB | OBS_SOURCE_CAP_DISABLED;
+	stand_in.get_name = [](void *) {
+		return obs_module_text("Standby.StandIn");
+	};
+	stand_in.create = [](obs_data_t *settings, obs_source_t *) -> void * {
+		obs_source_t *of = obs_get_source_by_name(obs_data_get_string(settings, "of"));
+		obs_weak_source_t *weak = of ? obs_source_get_weak_source(of) : nullptr;
+		obs_source_release(of);
+		// (Something to hand back even with no source: null means failure.)
+		return new obs_weak_source_t *(weak);
+	};
+	stand_in.destroy = [](void *data) {
+		auto *weak = static_cast<obs_weak_source_t **>(data);
+		obs_weak_source_release(*weak);
+		delete weak;
+	};
+	auto of = [](void *data) {
+		return obs_weak_source_get_source(*static_cast<obs_weak_source_t **>(data));
+	};
+	static const auto held = of;
+	stand_in.get_width = [](void *data) -> uint32_t {
+		obs_source_t *source = held(data);
+		const uint32_t w = source ? obs_source_get_width(source) : 0;
+		obs_source_release(source);
+		return w;
+	};
+	stand_in.get_height = [](void *data) -> uint32_t {
+		obs_source_t *source = held(data);
+		const uint32_t h = source ? obs_source_get_height(source) : 0;
+		obs_source_release(source);
+		return h;
+	};
+	stand_in.video_render = [](void *data, gs_effect_t *) {
+		obs_source_t *source = held(data);
+		if (!source)
+			return;
+		t_stand_in = true;
+		obs_source_video_render(source);
+		t_stand_in = false;
+		obs_source_release(source);
+	};
+	register_timed(&stand_in);
 }
 
 } // namespace stagekit
