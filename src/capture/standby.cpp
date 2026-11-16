@@ -41,6 +41,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <cmath>
 #include <cstring>
 #include <map>
+#include <atomic>
 #include <mutex>
 #include <set>
 #include <string>
@@ -162,6 +163,11 @@ std::set<obs_source_t *> g_stood_in;
 // standby image, made by its Standby filter in the tick (see `snapshot`).
 std::mutex g_snap_mutex;
 std::map<obs_source_t *, gs_texrender_t *> g_snaps;
+// The Standby filters that stand in for a hidden source: their copies are
+// made at the very start of a frame (`snap_all`).
+class Standby;
+std::mutex g_standing_in_mutex;
+std::set<Standby *> g_standing_in;
 
 class Standby {
 public:
@@ -273,6 +279,10 @@ public:
 		if (hotkey_ != OBS_INVALID_HOTKEY_ID)
 			obs_hotkey_unregister(hotkey_);
 		let_go();
+		{
+			std::lock_guard lock(g_standing_in_mutex);
+			g_standing_in.erase(this);
+		}
 		obs_enter_graphics();
 		{
 			std::lock_guard lock(g_snap_mutex);
@@ -352,7 +362,7 @@ public:
 			snap_wait_ += seconds;
 			if (obs_source_showing(stand_in_) || snap_wait_ >= 0.25) {
 				snap_wait_ = 0.0;
-				snapshot(parent);
+				snap_due_ = true;
 			}
 		}
 		Picture kind;
@@ -648,6 +658,13 @@ public:
 			else
 				g_stood_in.erase(parent);
 		}
+		{
+			std::lock_guard lock(g_standing_in_mutex);
+			if (wanted)
+				g_standing_in.insert(this);
+			else
+				g_standing_in.erase(this);
+		}
 		for (const auto &pair : pairs_) {
 			obs_sceneitem_release(pair.first);
 			obs_sceneitem_release(pair.second);
@@ -874,16 +891,25 @@ private:
 
 	// Draws a source (or, with none given, what comes before this filter)
 	// into `into` at w x h, covering it. Returns the texture.
-	// The source as its stand-ins show it: drawn once here, in the tick, with
-	// the standby image alone and every filter after this one, into a copy the
-	// stand-ins draw. A stand-in cannot draw the source itself: OBS draws what
-	// a filter is given once a frame and hands the same picture to every
-	// drawing of the source in that frame, so while the source and its
-	// stand-in were both on screen (the whole of a transition between them)
-	// both showed whichever was drawn first. Here in the tick the filters
-	// after this one have not started their frame yet (OBS ticks them after
-	// it), so what is drawn now is forgotten before the source is drawn; the
-	// ones before it are not drawn at all.
+	// The source as its stand-ins show it: drawn once, with the standby image
+	// alone and every filter after this one, into a copy the stand-ins draw. A
+	// stand-in cannot draw the source itself: OBS draws what a filter is given
+	// once a frame and hands the same picture to every drawing of the source
+	// in that frame, so while the source and its stand-in were both on screen
+	// (the whole of a transition between them) both showed whichever was
+	// drawn first. So this runs before anything else in a frame, from OBS's
+	// tick callback: every filter starts its frame afresh in its own tick,
+	// which comes after, so what is drawn here is forgotten before the source
+	// is drawn. (From this filter's own tick it is not: OBS ticks filters in
+	// no order one can go by, and those ticked already kept this picture.)
+	void snapshot_if_due()
+	{
+		if (!snap_due_.exchange(false))
+			return;
+		if (obs_source_t *parent = obs_filter_get_parent(source_))
+			snapshot(parent);
+	}
+
 	void snapshot(obs_source_t *parent)
 	{
 		const uint32_t w = obs_source_get_width(parent), h = obs_source_get_height(parent);
@@ -1185,6 +1211,7 @@ private:
 	double stand_in_check_ = 1.0;
 	gs_texrender_t *snap_ = nullptr; // the source as its stand-ins show it
 	double snap_wait_ = 1.0;
+	std::atomic<bool> snap_due_{false};
 	uint32_t kept_w_ = 0, kept_h_ = 0; // the size of the capture's last frame in render_live_
 	double order_check_ = 1.0, waited_ = 0.0;
 	gs_effect_t *effect_ = nullptr;
@@ -1367,8 +1394,24 @@ bool standby_waiting(obs_source_t *source)
 	return waiting;
 }
 
+namespace {
+// Before anything is ticked in a frame: the stand-ins' copies.
+void snap_all(void *, float)
+{
+	std::lock_guard lock(g_standing_in_mutex);
+	for (Standby *each : g_standing_in)
+		each->snapshot_if_due();
+}
+} // namespace
+
+void standby_stop()
+{
+	obs_remove_tick_callback(snap_all, nullptr);
+}
+
 void register_standby()
 {
+	obs_add_tick_callback(snap_all, nullptr);
 	obs_source_info info = {};
 	info.id = kStandbyId;
 	info.type = OBS_SOURCE_TYPE_FILTER;

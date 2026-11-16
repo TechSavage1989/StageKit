@@ -131,6 +131,7 @@ bool obs_module_load(void)
 		[](enum obs_frontend_event event, void *) {
 			if (event == OBS_FRONTEND_EVENT_SCRIPTING_SHUTDOWN || event == OBS_FRONTEND_EVENT_EXIT)
 				stagekit::item_morph_stop();
+			stagekit::standby_stop();
 		},
 		nullptr);
 	stagekit::register_layout();
@@ -158,6 +159,7 @@ void obs_module_unload(void)
 		obs_hotkey_unregister(hk.id);
 	stagekit::vendor_api_unregister();
 	stagekit::item_morph_stop();
+	stagekit::standby_stop();
 	stagekit::stop_window_watch();
 	stagekit::stop_updater();
 	obs_log(LOG_INFO, "plugin unloaded");
