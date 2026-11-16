@@ -1306,7 +1306,11 @@ void AppCapture::follow(obs_source_t *parent)
 		aimed.executable = colon == std::string::npos ? std::string() : decoded(window.substr(colon + 1));
 		int best = 0;
 		for (size_t i = 0; i < apps.size() && !aimed.executable.empty(); i++) {
-			const int how = slots[i].window ? answers(apps[i], aimed) : 0;
+			// (Not a window that is to be ignored: that one is left.)
+			const bool ignore =
+				std::any_of(ignored.begin(), ignored.end(),
+					    [&](const std::string &not_this) { return answers(not_this, aimed) != 0; });
+			const int how = slots[i].window && !ignore ? answers(apps[i], aimed) : 0;
 			if (how && (!best || how < best)) {
 				now = (int)i;
 				best = how;
