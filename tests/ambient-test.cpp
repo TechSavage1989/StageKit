@@ -2462,6 +2462,93 @@ int main(int argc, char **argv)
 			CHECK(back && p[0] > 250 && p[1] < 5 && at_px(frame, 200, 110)[3] < 5,
 			      "shown again the source is back, and its stand-in follows it to a new place (%d; %d,%d,%d there)",
 			      (int)back, p[0], p[1], p[2]);
+			// The change is one the owner chooses, for the source and its
+			// stand-in alike: "I want it to morph or perform transition that I
+			// choose. currently it seems to just slide". Whatever else sets the
+			// item's transitions is passed over.
+			{
+				obs_sceneitem_set_visible(cam_item, true);
+				obs_data_set_string(hd, "transition", "fade_transition");
+				obs_data_set_int(hd, "transition_ms", 600);
+				obs_data_set_string(hd, "hide_transition", "same");
+				obs_source_update(filter, hd);
+				shown_for(700);
+				struct Found {
+					obs_sceneitem_t *twin = nullptr;
+				} found;
+				obs_scene_enum_items(
+					hs,
+					[](obs_scene_t *, obs_sceneitem_t *item, void *param) {
+						if (strcmp(obs_source_get_unversioned_id(obs_sceneitem_get_source(item)),
+							   "stagekit_stand_in") == 0)
+							static_cast<Found *>(param)->twin = item;
+						return true;
+					},
+					&found);
+				auto kind_of = [](obs_sceneitem_t *item, bool show) -> std::string {
+					obs_source_t *tr = item ? obs_sceneitem_get_transition(item, show) : nullptr;
+					return tr ? obs_source_get_unversioned_id(tr) : "";
+				};
+				const bool fades = kind_of(cam_item, false) == "fade_transition" &&
+						   kind_of(found.twin, true) == "fade_transition" &&
+						   obs_sceneitem_get_transition_duration(cam_item, false) == 600;
+				// Hidden: part-way, both are there, the one going and the other coming.
+				obs_sceneitem_set_visible(cam_item, false);
+				frame = shown_for(300);
+				p = at_px(frame, 400, 250);
+				const int mid_r = p[0], mid_g = p[1];
+				frame = shown_for(700);
+				p = at_px(frame, 400, 250);
+				CHECK(fades && mid_r > 30 && mid_r < 230 && mid_g > 30 && mid_g < 230 && p[0] > 250 &&
+					      p[1] < 5,
+				      "the source and its stand-in change with the one transition chosen in the filter (set on both %d; part-way red %d, green %d; after %d,%d)",
+				      (int)fades, mid_r, mid_g, p[0], p[1]);
+				// Another filter's change for the item is passed over.
+				{
+					obs_data_t *sd = obs_data_create();
+					obs_data_set_string(sd, "transition", "none");
+					obs_source_t *sw = obs_source_create("stagekit_show_in_scenes",
+									     "Hidden Cam Switch", sd, nullptr);
+					obs_source_filter_add(cam, sw);
+					shown_for(300);
+					obs_source_set_enabled(sw, false);
+					shown_for(300);
+					obs_source_set_enabled(sw, true);
+					shown_for(900);
+					obs_source_filter_remove(cam, sw);
+					obs_source_release(sw);
+					obs_data_release(sd);
+				}
+				CHECK(kind_of(cam_item, false) == "fade_transition",
+				      "nothing else changes the transitions of a source the filter stands in for (hide: %s)",
+				      kind_of(cam_item, false).c_str());
+				// Morph: both get it, linked to each other.
+				obs_data_set_string(hd, "transition", "stagekit_morph");
+				obs_source_update(filter, hd);
+				shown_for(700);
+				obs_source_t *hide_tr = obs_sceneitem_get_transition(cam_item, false);
+				obs_data_t *hs_set = hide_tr ? obs_source_get_settings(hide_tr) : nullptr;
+				obs_data_array_t *links = hs_set ? obs_data_get_array(hs_set, "links") : nullptr;
+				obs_data_t *first = links && obs_data_array_count(links) ? obs_data_array_item(links, 0)
+											 : nullptr;
+				const std::string line = first ? obs_data_get_string(first, "value") : "";
+				CHECK(kind_of(cam_item, false) == "stagekit_morph" &&
+					      kind_of(found.twin, true) == "stagekit_morph" &&
+					      line.find("Hidden Cam") == 0 &&
+					      line.find("(standby)") != std::string::npos,
+				      "with Morph chosen the source and its stand-in are linked, so the one changes into the other (%s / %s; link '%s')",
+				      kind_of(cam_item, false).c_str(), kind_of(found.twin, true).c_str(),
+				      line.c_str());
+				obs_data_release(first);
+				obs_data_array_release(links);
+				obs_data_release(hs_set);
+				obs_sceneitem_set_visible(cam_item, true);
+				frame = shown_for(1200);
+				p = at_px(frame, 400, 250);
+				CHECK(p[1] > 250 && p[0] < 5,
+				      "and after a Morph back the source is there again (%d,%d,%d)", p[0], p[1], p[2]);
+				obs_data_set_string(hd, "transition", "none");
+			}
 			// Unticked: the stand-ins are taken out again.
 			obs_data_set_bool(hd, "when_hidden", false);
 			obs_source_update(filter, hd);

@@ -22,9 +22,22 @@ the Free Software Foundation; either version 2 of the License, or
 
 namespace stagekit {
 
+namespace {
+bool (*g_owns)(obs_source_t *) = nullptr;
+bool owned(obs_sceneitem_t *item)
+{
+	return item && g_owns && g_owns(obs_sceneitem_get_source(item));
+}
+} // namespace
+
+void item_transitions_owner(bool (*owns)(obs_source_t *source))
+{
+	g_owns = owns;
+}
+
 void set_item_transitions(obs_sceneitem_t *item, const std::string &kind, uint32_t ms)
 {
-	if (!item || kind == kTransitionKeep)
+	if (!item || kind == kTransitionKeep || owned(item))
 		return;
 	for (bool show : {true, false}) {
 		obs_source_t *now = obs_sceneitem_get_transition(item, show);
@@ -516,6 +529,14 @@ ItemChange item_change_read(obs_data_t *settings, const char *source)
 }
 
 void apply_item_change(obs_sceneitem_t *item, const ItemChange &change, obs_source_t *scene)
+{
+	if (!item || owned(item))
+		return;
+	apply_way(item, true, change.show, scene);
+	apply_way(item, false, change.hide, scene);
+}
+
+void apply_item_change_as_owner(obs_sceneitem_t *item, const ItemChange &change, obs_source_t *scene)
 {
 	if (!item)
 		return;
