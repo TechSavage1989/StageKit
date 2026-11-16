@@ -2383,6 +2383,100 @@ int main(int argc, char **argv)
 			obs_source_release(capture);
 		}
 
+		// The standby image in a hidden source's place. The owner: "I need a
+		// way for the standby image to be displayed in place of any source I
+		// choose when it's hidden".
+		{
+			auto colour = [](const char *name, long long abgr, int cw, int ch) {
+				obs_data_t *d = obs_data_create();
+				obs_data_set_int(d, "color", abgr);
+				obs_data_set_int(d, "width", cw);
+				obs_data_set_int(d, "height", ch);
+				obs_source_t *made = obs_source_create("color_source", name, d, nullptr);
+				obs_data_release(d);
+				return made;
+			};
+			obs_source_t *cam = colour("Hidden Cam", 0xFF00FF00LL, 200, 100);         // green
+			obs_source_t *stand = colour("Hidden Cam Standby", 0xFF0000FFLL, 64, 64); // red
+			obs_scene_t *hs = obs_scene_create("Standby When Hidden Scene");
+			obs_sceneitem_t *cam_item = obs_scene_add(hs, cam);
+			vec2 at;
+			vec2_set(&at, 100.0f, 60.0f);
+			obs_sceneitem_set_pos(cam_item, &at);
+			obs_data_t *hd = obs_data_create();
+			obs_data_set_int(hd, "picture", 2);
+			obs_data_set_string(hd, "source", "Hidden Cam Standby");
+			obs_data_set_bool(hd, "when_hidden", true);
+			obs_data_set_string(hd, "transition", "none");
+			obs_source_t *filter =
+				obs_source_create("stagekit_standby", "Standby When Hidden", hd, nullptr);
+			obs_source_filter_add(cam, filter);
+			auto shown_for = [&](int ms) {
+				std::vector<uint8_t> last;
+				for (int i = 0; i < ms / 50; i++) {
+					last = render(obs_scene_get_source(hs), 640, 360);
+					sleep_ms(50);
+				}
+				return last;
+			};
+			auto items = [&] {
+				int n = 0;
+				obs_scene_enum_items(
+					hs,
+					[](obs_scene_t *, obs_sceneitem_t *, void *param) {
+						(*static_cast<int *>(param))++;
+						return true;
+					},
+					&n);
+				return n;
+			};
+			auto at_px = [&](const std::vector<uint8_t> &frame, int x, int y) {
+				return &frame[(size_t(y) * 640 + x) * 4];
+			};
+			std::vector<uint8_t> frame = shown_for(900);
+			const int with_stand_in = items();
+			const uint8_t *p = at_px(frame, 200, 110);
+			const bool shows_source = p[1] > 250 && p[0] < 5;
+			obs_sceneitem_set_visible(cam_item, false);
+			frame = shown_for(900);
+			p = at_px(frame, 200, 110);
+			const bool shows_standby = p[0] > 250 && p[1] < 5 && p[3] > 250;
+			const uint8_t *outside = at_px(frame, 400, 300);
+			CHECK(with_stand_in == 2 && shows_source && shows_standby && outside[3] < 5,
+			      "a hidden source's place is taken by its standby image, at the source's place and size (items %d; source shown %d; standby in its place %d: %d,%d,%d)",
+			      with_stand_in, (int)shows_source, (int)shows_standby, p[0], p[1], p[2]);
+			// Moved while it shows, the stand-in goes with it; shown again,
+			// the source is back.
+			obs_sceneitem_set_visible(cam_item, true);
+			vec2_set(&at, 300.0f, 200.0f);
+			obs_sceneitem_set_pos(cam_item, &at);
+			frame = shown_for(600);
+			p = at_px(frame, 400, 250);
+			const bool back = p[1] > 250 && p[0] < 5;
+			obs_sceneitem_set_visible(cam_item, false);
+			frame = shown_for(600);
+			p = at_px(frame, 400, 250);
+			CHECK(back && p[0] > 250 && p[1] < 5 && at_px(frame, 200, 110)[3] < 5,
+			      "shown again the source is back, and its stand-in follows it to a new place (%d; %d,%d,%d there)",
+			      (int)back, p[0], p[1], p[2]);
+			// Unticked: the stand-ins are taken out again.
+			obs_data_set_bool(hd, "when_hidden", false);
+			obs_source_update(filter, hd);
+			shown_for(600);
+			CHECK(items() == 1, "unticked, the stand-in items are taken out of the scenes (%d left)",
+			      items());
+			obs_properties_t *hp = obs_source_properties(filter);
+			CHECK(obs_properties_get(hp, "when_hidden") && obs_properties_get(hp, "transition"),
+			      "the Standby filter offers it, with the transition its stand-in appears with");
+			obs_properties_destroy(hp);
+			obs_data_release(hd);
+			obs_source_filter_remove(cam, filter);
+			obs_source_release(filter);
+			obs_scene_release(hs);
+			obs_source_release(stand);
+			obs_source_release(cam);
+		}
+
 		printf("\n[shadow & backdrop]\n");
 		const std::string shadow_out = argv[8];
 		obs_data_t *ts = obs_data_create();
