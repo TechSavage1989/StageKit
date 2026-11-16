@@ -365,6 +365,7 @@ public:
 		std::lock_guard lock(mutex_);
 		apps_ = apps;
 		by_hand_ = by_hand;
+		ignore_ = pick_list_read(settings, "ignore", false);
 		follow_ = obs_data_get_bool(settings, "follow");
 		ready_wanted_ = obs_data_get_bool(settings, "ready");
 		// 0: wait until switched to (as it comes); 1: switch to it at once.
@@ -591,6 +592,9 @@ private:
 	std::mutex mutex_;
 	// Settings.
 	std::vector<std::string> apps_, by_hand_;
+	// Windows never taken, whatever entry they answer to: a program's file
+	// name or part of a title. The owner: "can exclusions be added?"
+	std::vector<std::string> ignore_;
 	bool follow_ = true;
 	bool ready_wanted_ = true;
 	Style style_ = Style::Fade;
@@ -692,18 +696,24 @@ void AppCapture::keep_ready(const std::vector<std::pair<std::string, const OpenW
 	}
 	// A picked window's title changes (a browser's with its tab): a capture
 	// that has not found it by the title it was aimed with is aimed again.
-	// And a window named by part of its title is followed at once when the
-	// rest of its title changes (Dolphin's "GBA1 | Volume 100%" becomes
-	// "GBA1 | Muted"): OBS finds a window aimed by title by its whole title
-	// only, so the capture would lose it.
+	// And a window named by part of its title is found again when the rest
+	// of its title has changed (Dolphin's "GBA1 | Volume 100%" is "GBA1 |
+	// Muted" the next time): OBS finds a window aimed by title by its whole
+	// title only, so a capture that has to look for it again does not.
+	// (Only ever a capture with no picture: one that holds its window goes on
+	// holding it whatever the title does, and aiming it again would start it
+	// afresh, at every change of a title with a frame rate in it.)
 	for (Ready &r : kept) {
 		const bool pinned = is_pinned(r.entry);
-		if (pinned && obs_source_get_width(r.capture))
+		if (obs_source_get_width(r.capture)) {
+			r.empty_s = 0.0;
 			continue;
+		}
 		for (const auto &w : wanted) {
 			if (w.first != r.entry || w.second->title == r.title)
 				continue;
-			if (pinned ? (r.empty_s += 0.05) >= 1.5 : answers(r.entry, *w.second) == 1) {
+			if ((pinned || answers(r.entry, *w.second) == 1) &&
+			    (r.empty_s += 0.05) >= (pinned ? 1.5 : 0.3)) {
 				aim_capture_at(r.capture, *w.second, true);
 				r.title = w.second->title;
 				r.empty_s = 0.0;
@@ -855,7 +865,7 @@ void AppCapture::keep_first(obs_source_t *parent)
 // Which app to capture, looked at twenty times a second.
 void AppCapture::follow(obs_source_t *parent)
 {
-	std::vector<std::string> apps, by_hand, recent, was_open, hand_was_open, hand_recent;
+	std::vector<std::string> apps, by_hand, recent, was_open, hand_was_open, hand_recent, ignored;
 	bool hand_follow, clear = false;
 	std::vector<OpenWindow> windows;
 	std::string current, held, last_held;
@@ -864,6 +874,7 @@ void AppCapture::follow(obs_source_t *parent)
 	{
 		std::lock_guard lock(mutex_);
 		apps = apps_;
+		ignored = ignore_;
 		by_hand = by_hand_;
 		follow = follow_;
 		ready = ready_wanted_;
@@ -992,6 +1003,9 @@ void AppCapture::follow(obs_source_t *parent)
 		pins = pins_;
 	}
 	auto match = [&](const std::string &entry, const OpenWindow &w) {
+		for (const std::string &not_this : ignored)
+			if (answers(not_this, w))
+				return 0;
 		if (is_pinned(entry)) {
 			const auto pin = pins.find(entry);
 			if (pin != pins.end() && pin->second)
@@ -1090,7 +1104,8 @@ void AppCapture::follow(obs_source_t *parent)
 				const std::string was = decoded(aimed.substr(0, aimed.find(':')));
 				// (Only a capture that is aimed at this window by its title:
 				// one left where it was while a ready capture is drawn stays.)
-				if (by == 1 && was != window->title &&
+				// (And only one that has no picture: see keep_ready.)
+				if (by == 1 && was != window->title && obs_source_get_base_width(parent) == 0 &&
 				    answers(shown, OpenWindow{was, window->executable}) == 1)
 					aim_capture_at(parent, *window, true);
 			}
@@ -1671,6 +1686,13 @@ obs_properties_t *get_properties(void *data)
 			}
 	};
 	pick_list_add(props, self ? self->source() : nullptr, apps);
+	PickList ignore_list;
+	ignore_list.setting = "ignore";
+	ignore_list.title = "AppCapture.Ignore";
+	ignore_list.add = "AppCapture.Apps.Add";
+	ignore_list.tip = "AppCapture.Ignore.Tip";
+	ignore_list.choices = apps.choices;
+	pick_list_add(props, self ? self->source() : nullptr, ignore_list);
 	PickList by_hand_list;
 	by_hand_list.setting = "by_hand";
 	by_hand_list.title = "AppCapture.ByHand";
