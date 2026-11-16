@@ -211,6 +211,19 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Fit to Space: overlap by edge distances (0.1.0-beta130)
+
+The owner asked for the *Fill needed to overlap* rule to have, beside the percentage, pixel amounts
+for the top, bottom, left and right edges, each measure with its own tick box. `skip_use_pct` (on)
+and `skip_use_px` (off) under the existing `skip_fill_on` switch; four `skip_px_*` amounts. The
+edge rule overlaps when the empty room at all four edges is within its amount; either ticked rule
+is enough; neither ticked means always beside. Tested in the free-space test (edge rule, both,
+neither). Also in this session: the owner's icon pack arrived with SVGs for every picture (the same
+pictures the plugin has); a zip of the pack's SVGs with StageKit's own was sent to the owner, and
+nothing of it is committed (about 42 MB; the owner was asked whether they want it in the
+repository). The owner confirmed beta129: "the fit to now follows the windows size transition
+perfectly".
+
 ## The fit still trailed: Standby Picture's own glide; scene keys use the pack's scenes (0.1.0-beta129)
 
 On beta128 the owner still saw the fit trail the switch and sent two logs. The Standby Picture
