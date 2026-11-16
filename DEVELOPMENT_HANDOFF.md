@@ -14,6 +14,30 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
 
+## One scene per layout (0.1.0-beta147)
+
+The owner asked whether their ten capture scenes could be one scene that changes between layouts.
+A study (inventory, three designs, three sceptical reviews) found literal one-scene possible only
+with new, unproven work (a Morph from a private copy of the scene to the scene, shown in a headless
+test only), and offered one scene per layout instead. The owner: "having two primary scenes for
+both component and full layouts that contain all the live sources is fine".
+
+- `scripts/merge-capture-scenes.py` writes the trial collection: all fifteen scenes kept, plus
+  Full-Capture-Scene and Component-Capture-Scene, each with the five captures (Game Capture shown,
+  the rest hidden and locked), a Link Visibility each, a Show in Scenes-Capture on each capture.
+  Its fidelity table: every old scene is matched by the new one with that capture shown, apart from
+  the options (Alerts centred in Full, widget under the camera, Pureref hidden) and one copy taken
+  for every capture (Discord at 30,30; the chat box's y differs by 0.04 px). The trial file and its
+  report are made from the owner's private collection and never committed.
+- Plugin: *Lock hidden sources* on Link Visibility, *Follow what is shown* on Show in Scenes, a cut
+  for visibility changes in scenes out of view, Show in Scenes' presses acted on in its tick, Link
+  Visibility no longer losing a press from another thread, and three Fit to Space fixes (a hidden
+  item's room on record, a showing item with no image holds its room, the own cut from the side it
+  is kept towards).
+- Not seen on Windows: the Morph between two captures as items, a real display capture's first
+  frames, the HD60S when Component-Capture-Scene comes on. Open questions put to the owner: Alerts
+  place, widget order, Pureref, one key per look, Studio Mode.
+
 ## Blur, Zoom and Auto Frame after a Standby filter (0.1.0-beta146)
 
 The owner asked why other filters had to come before Standby Image, was told, and said: "yes,

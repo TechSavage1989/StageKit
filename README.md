@@ -402,6 +402,9 @@ nearest.
   another fitted item makes room for this one is not used.
 - An item that is hidden is left exactly where it is and holds no space, so the others take its
   room. Shown again, it is where it was, and the others make way for it in one move.
+- An item that is showing but has no image yet (a display capture before its first frame, a
+  capture card that is off) keeps the room it was last given, or its bounding box if it was never
+  fitted, so the items beside it stay where they are until the image comes.
 - **Sync position to scenes** (a list, empty as it comes): each time the filter has put its
   item in place while its scene is on screen, the same source in the scenes you list is given
   exactly that place and size, so it is already there when you switch to one of them and nothing
@@ -864,6 +867,7 @@ off, and the sources are shown or hidden to match.
 | Show transition / Duration | How each item appears: a fade (the default), any other transition OBS has, a cut, or whatever is already set on the item; and for how long. Under it come that transition's own settings, such as the way a slide goes. *Morph (StageKit)* and *Fade and Zoom (StageKit)* are on the list too (see [Morph between items](#morph-between-items) and [Fade and Zoom](#fade-and-zoom-transition)). A Slide and a Swipe have one more direction, *Off the nearest edge*: each item goes towards whichever edge of the screen it is nearest to when it hides, and comes in from that side when it shows |
 | Hide transition / Duration | How each item disappears: *The same as showing* (the default), or a transition of its own with its own settings, so an item can slide down into view and slide up out of it |
 | Settings for | With sources on the list: *All sources (the usual)*, or one of the listed sources. Choose a source and the controls below are that source's own: it can show and hide with another transition, another duration and other settings than the rest, or be left *As for all sources* |
+| Follow what is shown | Unticked as it comes. Ticked, the switch also goes by what is shown: when something else shows or hides its sources (a Link Visibility filter, the eye icon, another key), the switch turns on or off to match, so a Stream Deck key's light stays true. It reads *shown* only while every one of its sources is shown in the scenes it covers. Matching the switch never shows or hides anything, and pressing a switch that is already on still shows its sources. Best left unticked on a switch whose source is hidden on purpose in some scene: it would read off for good there |
 | Link this source / With this source / Add this link / Linked sources | Shown while *Morph (StageKit)* is chosen above: two sources that change into each other when one is hidden as the other is shown. See [Morph between items](#morph-between-items) |
 | Do it now | Shows or hides them to match how the filter is switched now |
 
@@ -872,7 +876,11 @@ the side of that frame, not across the screen. To have an item travel in from th
 Show/Hide Animation below.
 
 It acts when it is switched, not all the time, so something you show or hide by hand stays until the
-next press. Items inside groups are included. OBS's own show and hide transitions on each item apply.
+next press. It acts on the next frame after the press; of several presses in one frame, the last
+counts. Items inside groups are included. OBS's own show and hide transitions on each item apply,
+except in a scene that is not on screen: there the change is made at once, without a transition (a
+transition only runs while its scene is drawn, and one left waiting would bring a hidden capture to
+life for a moment when that scene comes on). The transitions stay set for the next change you see.
 
 ### Link Visibility
 
@@ -887,12 +895,42 @@ the eye icon, a Stream Deck *Source* key, a hotkey. Switch the filter off to pau
 and *Duration* choose how the items it shows and hides appear and disappear: a fade to begin with, any
 other transition OBS has, a cut, or whatever is set on each item.
 
+**Lock hidden sources** (unticked as it comes): each linked source is locked while it is hidden and
+unlocked when it is shown, whatever shows or hides it. OBS's preview lets a click select a hidden
+source, so with several captures stacked in one scene a click could pick one you cannot see; a locked
+one cannot be clicked or moved there. Sources already hidden are locked when you tick it. A lock you
+set yourself on a linked source is taken off the next time it is shown, and unticking leaves every
+lock as it is. The copy tools pass over locked copies unless *Also change locked copies* is ticked.
+
+As with Show in Scenes, a source shown or hidden in a scene that is not on screen changes at once,
+without its transition.
+
 **Also in other scenes** reaches past the filter's own scene. Add sources to that list (the same
 camera, or another camera that lives in another scene) and they are shown and hidden with the linked
 items wherever they are, in groups too. It works both ways: hiding one of the listed sources in any
 scene hides the linked items here and the listed sources everywhere. So one Stream Deck *Source* key
 on one camera hides every camera. For a plain on and off switch on a key, with no item to press,
 there is also [Show in Scenes](#show-in-scenes).
+
+### One scene per layout
+
+Instead of one scene for each capture in each layout (game full screen, game with camera and chat,
+window full screen, window with camera and chat ...), a scene can hold every capture for its layout
+with one shown:
+
+1. Put all the captures in the scene, stacked in the capture's place, each with its own Fit to Space.
+2. Add a **Link Visibility** to the scene: *Show only one at a time*, the captures listed,
+   *Lock hidden sources* ticked, and *Morph (StageKit)* as the transition, so one capture changes
+   into the next where it stands.
+3. On each capture add a **Show in Scenes** named alike on every capture (say *Show in Scenes-Capture*):
+   *The scenes listed below* with the layout scenes, *Morph (StageKit)*, and *Follow what is shown*
+   ticked. A Stream Deck *Show in Scenes* key per capture, set to *Switch on*, then chooses the capture
+   in every layout scene at once, and only the key of the capture showing is lit.
+4. Changing layout stays a change of scene, with the Morph transition: the capture showing is the
+   same source in both scenes, so it glides to its place in the other layout.
+
+The camera, chat box and widgets beside the captures stay where they are when the capture changes.
+A capture that is showing but has no image yet keeps its room meanwhile.
 
 ### Match Item
 
@@ -1166,6 +1204,10 @@ Build and run every test on Linux:
 ```bash
 tests/run-tests.sh
 ```
+
+`scripts/merge-capture-scenes.py` turns a collection with a scene per capture into one with two
+layout scenes added beside the old ones, for a side-by-side trial (see the script's header). It reads
+one file and writes another, with a report.
 
 Windows and macOS builds come from GitHub Actions, based on the official
 [obs-plugintemplate](https://github.com/obsproject/obs-plugintemplate).

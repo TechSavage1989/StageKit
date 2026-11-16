@@ -136,9 +136,17 @@ public:
 	}
 
 	// The state OBS restores when it loads a collection is not a press.
+	// A press is acted on here, in the tick, not on the thread that made it
+	// (a Stream Deck key's comes from obs-websocket's): a Link Visibility
+	// acts on the same items from its tick, and two threads setting an
+	// item's transitions at once could each let go of the other's. It also
+	// keeps "Follow what is shown" from looking at a press half done.
 	void tick(float seconds)
 	{
 		ready_ = true;
+		const int press = press_.exchange(-1);
+		if (press >= 0)
+			apply(press == 1);
 		if ((follow_timer_ -= seconds) > 0.0)
 			return;
 		follow_timer_ = 0.25;
@@ -297,9 +305,14 @@ private:
 		auto *self = static_cast<ShowInScenes *>(data);
 		// (Its own correction of the switch is not a press.)
 		if (self->ready_ && self->correcting_.load() != std::this_thread::get_id())
-			self->apply(calldata_bool(cd, "enabled"));
+			self->press(calldata_bool(cd, "enabled"));
 	}
 
+public:
+	// Acted on at the next tick; of several presses in one frame, the last.
+	void press(bool enabled) { press_ = enabled ? 1 : 0; }
+
+private:
 	obs_source_t *source_;
 	std::mutex mutex_;
 	std::vector<std::string> sources_, scenes_;
@@ -312,6 +325,7 @@ private:
 	bool follow_ = false;                       // the switch goes by what is shown
 	double follow_timer_ = 0.0;                 // until the next look, in seconds
 	std::atomic<std::thread::id> correcting_{}; // the thread putting the switch right, if any
+	std::atomic<int> press_{-1};                // a press to act on: 1 on, 0 off, -1 none
 };
 
 bool where_modified(obs_properties_t *props, obs_property_t *, obs_data_t *settings)
@@ -403,7 +417,7 @@ obs_properties_t *get_properties(void *data)
 		[](obs_properties_t *, obs_property_t *, void *d) {
 			auto *filter = static_cast<ShowInScenes *>(d);
 			if (filter)
-				filter->apply(obs_source_enabled(filter->source()));
+				filter->press(obs_source_enabled(filter->source()));
 			return false;
 		},
 		self);

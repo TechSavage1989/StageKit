@@ -44,6 +44,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <atomic>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -210,14 +211,33 @@ public:
 			if (item && obs_sceneitem_locked(item) == obs_sceneitem_visible(item))
 				obs_sceneitem_set_locked(item, !obs_sceneitem_visible(item));
 		};
-		applying_ = true;
-		for (const Change &change : changes) {
+		// Its own changes are known by the thread they are made on: a show
+		// made at the same moment from anywhere else still counts.
+		applying_ = std::this_thread::get_id();
+		// Only one: of several shown in this scene since the last tick (two
+		// keys pressed in one frame), the last one shown that still shows is
+		// the one kept. Acting on each in turn, the second hid the first and
+		// the first the second, and nothing was left showing.
+		size_t keep = changes.size();
+		if (mode == LinkMode::OnlyOne)
+			for (size_t i = changes.size(); i-- > 0;) {
+				const Change &c = changes[i];
+				obs_sceneitem_t *item = c.own && c.visible ? find_item(parent_, c.name) : nullptr;
+				if (item && obs_sceneitem_visible(item)) {
+					keep = i;
+					break;
+				}
+			}
+		for (size_t i = 0; i < changes.size(); i++) {
+			const Change &change = changes[i];
 			const std::string &changed = change.name;
 			const bool visible = change.visible;
 			if (change.own)
 				lock_as_shown(changed);
 			if (mode == LinkMode::OnlyOne && !visible)
 				continue; // hiding one says nothing about the others
+			if (mode == LinkMode::OnlyOne && change.own && keep < changes.size() && i != keep)
+				continue; // a later one is kept
 			for (const std::string &name : names) {
 				if (name == changed)
 					continue;
@@ -267,7 +287,7 @@ public:
 				},
 				&scenes);
 		}
-		applying_ = false;
+		applying_ = std::thread::id();
 	}
 
 	// Adds the item chosen in the "pick" box to the list.
@@ -301,7 +321,7 @@ private:
 	static void visible_cb(void *data, calldata_t *cd)
 	{
 		auto *self = static_cast<VisibilityLink *>(data);
-		if (self->applying_)
+		if (self->applying_.load() == std::this_thread::get_id())
 			return; // our own doing
 		auto *item = static_cast<obs_sceneitem_t *>(calldata_ptr(cd, "item"));
 		auto *scene = static_cast<obs_scene_t *>(calldata_ptr(cd, "scene"));
@@ -335,11 +355,11 @@ private:
 	std::vector<obs_weak_source_t *> watched_; // the other scenes listened to
 	double watch_timer_ = 0.0;
 	std::vector<Change> pending_;
-	bool lock_hidden_ = false; // lock the listed items while they are hidden
-	bool lock_sweep_ = false;  // the option has just been switched on
-	bool sweep_due_ = false;   // the hidden ones are still to be locked (the tick's own)
-	bool was_on_ = false;      // the filter was enabled at its last tick
-	std::atomic<bool> applying_{false};
+	bool lock_hidden_ = false;                // lock the listed items while they are hidden
+	bool lock_sweep_ = false;                 // the option has just been switched on
+	bool sweep_due_ = false;                  // the hidden ones are still to be locked (the tick's own)
+	bool was_on_ = false;                     // the filter was enabled at its last tick
+	std::atomic<std::thread::id> applying_{}; // the thread acting for the filter, while it does
 };
 
 obs_properties_t *get_properties(void *data)

@@ -40,9 +40,11 @@ void set_item_transitions(obs_sceneitem_t *item, const std::string &kind, uint32
 // item keeps its transitions for the next change made in view. Items whose
 // transitions are another filter's (`item_transitions_owner`) are passed over
 // here too: they are shown and hidden as OBS does it.
-// Every StageKit filter that shows and hides items in scenes that may not be
-// in view goes through this, after `set_item_transitions` or
-// `apply_item_change`.
+// Link Visibility and Show in Scenes go through this, after
+// `set_item_transitions` or `apply_item_change`. Program Trigger, the two
+// switchers, Auto Capture's hide, Show/Hide Animation and Standby's stand-ins
+// do not yet. A group's inner items, whose transitions OBS starts when the
+// group itself is shown or hidden, are not stopped.
 bool set_item_visible(obs_sceneitem_t *item, bool visible);
 
 // Adds the "Change with" list and its "Lasting" time to a properties window.

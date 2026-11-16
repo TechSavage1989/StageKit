@@ -104,7 +104,8 @@ void claim_clear(const void *owner)
 		it = it->second.first == owner ? g_claims.erase(it) : std::next(it);
 }
 
-// Another filter's claim on an item, if there is one.
+// Another filter's claim on an item, if there is one. Asked only about items
+// that show: a hidden item's claim is kept on record for when it is shown.
 bool claim_of(obs_source_t *scene, int64_t item, const void *asking, Claim &out)
 {
 	std::lock_guard lock(g_claims_mutex);
@@ -518,6 +519,9 @@ public:
 			// settings (and OBS sends them for many reasons) leaves it.
 			if (s.item != settings_.item || s.resize != settings_.resize)
 				have_keep_ = false;
+			// Another item: the room the last one held is not its room.
+			if (s.item != settings_.item)
+				new_item_ = true;
 			// Another list of scenes to share with: they get the place now.
 			if (s.share_scenes != settings_.share_scenes)
 				share_again_ = true;
@@ -577,6 +581,26 @@ public:
 	obs_source_t *source() const { return source_; }
 	obs_source_t *parent() const { return parent_; }
 
+	// The room an item holds in the free space while this filter is not
+	// fitting it (it is hidden, or shows but has no picture yet): the room it
+	// was last given or, for one never fitted here, its bounding box as it
+	// was saved.
+	bool holds_room(obs_sceneitem_t *item, const Settings &s)
+	{
+		if (s.box != BoxKind::FreeSpace)
+			return false;
+		if (!have_claim_ && !box_asked_ && obs_sceneitem_get_bounds_type(item) != OBS_BOUNDS_NONE) {
+			box_asked_ = true;
+			refresh_item(item);
+			const Box at = scene_box(parent_, item);
+			if (at.w >= 2.0 && at.h >= 2.0) {
+				last_claim_ = Claim{at, s.resize};
+				have_claim_ = true;
+			}
+		}
+		return have_claim_;
+	}
+
 	void tick(float seconds)
 	{
 		if (!parent_ || !obs_source_enabled(source_)) {
@@ -612,9 +636,15 @@ public:
 				placed_now = true;
 				settings_.have_anchor = false;
 			}
+			if (new_item_) {
+				new_item_ = false;
+				have_claim_ = box_asked_ = false;
+			}
 			s = settings_;
 		}
 		if (placed_now || shared_now) {
+			// The room it held is not where it is now.
+			have_claim_ = box_asked_ = false;
 			have_keep_ = false;
 			have_cur_ = have_goal_ = have_set_ = false;
 			moving_ = false;
@@ -646,8 +676,20 @@ public:
 		// shown again. (Fitted while hidden, the owner's camera was put in
 		// the middle of the room the chat box had taken meanwhile, came
 		// back on top of it, and neither moved again.)
+		// The room it will say is its own when it is shown is kept on
+		// record meanwhile. Nothing goes by it while the item is hidden
+		// (only items that show are asked about), and it is there from the
+		// moment the item is shown, not from this filter's next tick: until
+		// then a filter ticked before this one took the item for something
+		// firm, and with the captures of a layout scene changed by a key
+		// the camera and the chat box beside them jumped 27 px for a frame.
 		if (item && !obs_sceneitem_visible(item)) {
-			claim_clear(this);
+			if (!hidden_)
+				box_asked_ = false;
+			if (holds_room(item, s))
+				claim_set(parent_, obs_sceneitem_get_id(item), this, last_claim_);
+			else
+				claim_clear(this);
 			hidden_ = true;
 			return;
 		}
@@ -657,6 +699,7 @@ public:
 		// and take that for something it sits on.
 		if (hidden_) {
 			hidden_ = false;
+			box_asked_ = false;
 			back_for_ = 0.0;
 			coming_back_ = have_claim_;
 		}
@@ -673,24 +716,13 @@ public:
 		if (sw < 2.0 || sh < 2.0) {
 			// Nothing to fit yet. An item that is showing but has no
 			// picture so far (a display capture before its first frame)
-			// still holds its room in the free space: the room it was last
-			// given or, for one never fitted here, its bounding box as it
-			// was saved. Holding none, it was not there for the other
-			// filters, and with five captures stacked in one place and a
-			// display switched to, the camera beside it glided to the middle
-			// of the screen and stayed there, the display fitted under it.
-			if (item && s.box == BoxKind::FreeSpace) {
-				if (!have_claim_ && obs_sceneitem_get_bounds_type(item) != OBS_BOUNDS_NONE) {
-					refresh_item(item);
-					const Box at = scene_box(parent_, item);
-					if (at.w >= 2.0 && at.h >= 2.0) {
-						last_claim_ = Claim{at, s.resize};
-						have_claim_ = true;
-					}
-				}
-				if (have_claim_)
-					claim_set(parent_, obs_sceneitem_get_id(item), this, last_claim_);
-			}
+			// still holds its room in the free space. Holding none, it was
+			// not there for the other filters, and with five captures
+			// stacked in one place and a display switched to, the camera
+			// beside it glided to the middle of the screen and stayed
+			// there, and the display was fitted smaller in what was left.
+			if (item && holds_room(item, s))
+				claim_set(parent_, obs_sceneitem_get_id(item), this, last_claim_);
 			return;
 		}
 
@@ -781,7 +813,8 @@ public:
 					const double ky = boxed ? kk : whole.h / ch;
 					// (Against the side it is kept towards, when it is: taken
 					// for centred, a squarer window kept towards the left was
-					// seen as cut off on its right, more at every look.)
+					// seen as cut off on its right, and was fitted to a
+					// space of another size than the one it had.)
 					const uint32_t lies = boxed ? obs_sceneitem_get_bounds_alignment(item) : 0;
 					const double fx = lies & OBS_ALIGN_LEFT    ? 0.0
 							  : lies & OBS_ALIGN_RIGHT ? 1.0
@@ -1587,6 +1620,8 @@ private:
 	// A hidden item is left alone; shown again, it first says where it is.
 	static constexpr double kComingBack = 0.1;
 	bool hidden_ = false, coming_back_ = false, have_claim_ = false;
+	bool box_asked_ = false; // its bounding box was asked for, for want of a room it was given
+	bool new_item_ = false;  // the filter was given another item (set under mutex_)
 	double back_for_ = 0.0;
 	Claim last_claim_;
 	double set_x_ = 0.0, set_y_ = 0.0, seen_x_ = 0.0, seen_y_ = 0.0, still_for_ = 0.0;

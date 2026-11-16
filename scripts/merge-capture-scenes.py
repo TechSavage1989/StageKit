@@ -334,6 +334,13 @@ for plan in PLANS:
         item["name"] = name
         item["source_uuid"] = by_name[name]["uuid"]
         item["id"] = len(hotkeys) // 2 + 1
+        if like:
+            # The capture copied from has a shadow, whose room is in its bounding box; this one has none. Its box
+            # is the space its Fit to Space was given, so the room it holds before it is first fitted is that space.
+            fit = [f for f in fits_of(by_name[from_scene]) if f["settings"].get("item") == like]
+            fs = fit[0]["settings"] if fit else {}
+            if item.get("bounds_type") and fs.get("box_width") and fs.get("box_height"):
+                item["bounds"] = {"x": fs["box_width"], "y": fs["box_height"]}
         if name in CAPTURES:
             item["visible"] = name == opt.shown
             if name != opt.shown:
@@ -355,7 +362,8 @@ for plan in PLANS:
         box = f"box {say(item['bounds'])}" if item.get("bounds_type") else f"scale {say(item['scale'])}"
         note = f"copied from {from_scene}"
         if like:
-            note = f"new here: a copy of {like}'s item in {from_scene} (same box)"
+            note = (f"new here: a copy of {like}'s item in {from_scene}, its box the space {like}'s Fit to Space "
+                    f"was given (no shadow room)")
         report.append(f"  {item['id']:>2}. {name}: {'shown' if item['visible'] else 'hidden'}"
                       f"{', locked' if item.get('locked') else ''}; at {say(item['pos'])}, {box}; {note}")
         if like:
@@ -423,8 +431,9 @@ for plan in PLANS:
             fit_name = f"{FIT_NAMES.get(name, 'Fit ' + name)} {n}"
             n += 1
         add_fit(own[0], from_scene, fit_name, name)
-    # In the order of the items they fit, captures first.
-    filters.sort(key=lambda f: order.index(f["settings"]["item"]) if f["settings"].get("item") in order else len(order))
+    # The captures' first, in the order of their items; then the others in the order they had in the scene
+    # they were copied from (a scene's filters tick in list order: the camera's before the chat box's, as today).
+    filters.sort(key=lambda f: order.index(f["settings"]["item"]) if f["settings"].get("item") in CAPTURES else len(order))
     for f in filters:
         report.extend(told[f["name"]])
 
