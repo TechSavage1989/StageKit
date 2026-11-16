@@ -223,6 +223,14 @@ known**: OBS hooks a program when it draws, and an emulator's menu does not. Cha
 patience at each try, waits of 20 s to 60 s, a retry on coming to the front, and a status that
 says the capture is aimed but empty. Asked the owner whether the game shows once it is running.
 
+The owner then said a game *was* running, and that the capture came after clicking out of the game
+and back in. The same log has OBS starting a Vulkan and a Direct3D 12 capture of Ryujinx in one
+instant, and for Dolphin the Vulkan capture freed and started again 109 times; their card is an
+RTX 4090 and their NVIDIA *Vulkan/OpenGL present method* was *Prefer layered on DXGI Swapchain*
+(their screenshot). They were asked to set *Prefer native* and report. **Not proven**: read from
+the log's pattern, nothing StageKit can change. Ask for the result before touching Auto Capture
+again for this.
+
 ## The order tools: two by two, four drawings (0.1.0-beta137)
 
 The owner asked for the dock's four order buttons stacked "into two columns and two rows" and for
