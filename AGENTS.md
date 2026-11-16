@@ -49,7 +49,16 @@ Picture's Show or hide the picture now: Cover the capture now; To the capture / 
 picture: Duration: image to capture / capture to image; Picture keeps its shape: Keep image's
 aspect ratio; Size glides too: Animate the size change. Window switcher's Hide to the Standby
 Picture: Hide shows Standby Picture; Hide or show it now: Hide/show capture now. Dock: Send to:
-Move to; When I let go of an item: On drop. Names of filters and keys were not part of it. Do not rename anything again without the owner's say-so: after one unannounced rename they
+Move to; When I let go of an item: On drop. Names of filters and keys were not part of it.
+
+A fourth, of one name, at the owner's word (2026-11-16, beta135: "I would like Start image change
+throughout the plugin and settings as Standby Image"): *Start image* is shown as *Standby image*
+everywhere a user reads it (the dock's box, Ambient Background's and Standby Picture's choices, the
+source *Standby Image (StageKit)*). The id `stagekit_start_image`, the code and **the rest of this
+file still say start image**. The Standby Picture filter kept its name; the owner was asked whether
+it should become *Standby Image* too.
+
+ Do not rename anything again without the owner's say-so: after one unannounced rename they
 asked "where is follow active app?".
 
 ## What StageKit is not

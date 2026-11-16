@@ -21,7 +21,7 @@ from hotkeys, or from the Stream Deck OBS Studio plugin's *Filter* and *Source* 
   Pixelate (in seven cell shapes), Zoom, Motion and Temporal.
 - **Ambient Background** (source): a soft, drifting backdrop built from an image or another source,
   optionally tinted by whatever capture is live.
-- **Start image**: one picture, chosen once, shown on the start scene and used by the background.
+- **Standby image**: one picture, chosen once, shown on the start scene and used by the background.
 - **Shadow, Glow & Outline** (filter): drop shadow or glow, in a colour or in the picture's own moving
   colours, an outline, a panel behind the source, and rounded corners, with no
   wrapper scene.
@@ -167,7 +167,7 @@ Add **Ambient Background (StageKit)** as a source. It fills the canvas.
 
 | Group | Settings |
 | --- | --- |
-| Picture | The start image, an image file, or any existing source or scene. Optionally blend in a live capture: a chosen source, or *Automatic*, which uses the largest visible capture in the current scene. The capture can fill the screen, fit inside it, match its width or height, or stretch, with its own zoom. *Live capture replaces the picture* makes the capture the whole background while there is one; the moment there is none, the usual picture is back. A capture with an Auto Frame is used as the trimmed game picture, without the empty frame around it. A capture showing nothing, or black all over for two seconds, counts as no capture. *Keep the capture ready* keeps it running in scenes that do not show it, so it is there at once in the next scene that does |
+| Picture | The standby image, an image file, or any existing source or scene. Optionally blend in a live capture: a chosen source, or *Automatic*, which uses the largest visible capture in the current scene. The capture can fill the screen, fit inside it, match its width or height, or stretch, with its own zoom. *Live capture replaces the picture* makes the capture the whole background while there is one; the moment there is none, the usual picture is back. A capture with an Auto Frame is used as the trimmed game picture, without the empty frame around it. A capture showing nothing, or black all over for two seconds, counts as no capture. *Keep the capture ready* keeps it running in scenes that do not show it, so it is there at once in the next scene that does |
 | Motion | Drift speed in each direction, zoom, and mirroring at the edges so the drift never shows a seam |
 | Look | Blur type (Dual Kawase, Gaussian, Box, or Temporal, which blurs over time and leaves trails) and blur; a mosaic in the Blur filter's seven cell shapes, with the same smoothing, origin and rotation; saturation; glow; **Bloom**, where the bright parts of the picture shine over what is around them (how strongly, from what brightness, and how far the light spreads); brightness; vignette |
 | Texture overlay | An image multiplied or screened over the result, optionally in black and white |
@@ -187,17 +187,17 @@ Two more things about the capture blended in and the bloom:
 
 Put it in one shared scene and nest that scene wherever you need the background.
 
-### Start image
+### Standby image
 
-Choose the start image once, in the StageKit dock under *Start image*. The dock shows a small picture
+Choose the standby image once, in the StageKit dock under *Standby image*. The dock shows a small picture
 of it. It is saved with the scene collection.
 
-- Add **Start Image (StageKit)** as a source wherever the picture itself should be shown.
+- Add **Standby Image (StageKit)** as a source wherever the picture itself should be shown.
 - Every Ambient Background uses it as its picture automatically. A background you had pointed at an
-  image of its own switches over when you choose a start image; to keep one on its own picture, set its
+  image of its own switches over when you choose a standby image; to keep one on its own picture, set its
   *Background from* back to *An image* afterwards.
 
-Changing the start image updates both at once.
+Changing the standby image updates both at once.
 
 ### Shadow, Glow & Outline
 
@@ -498,7 +498,7 @@ Game Capture, Window Capture or other live source.
 
 | Setting | What it does |
 | --- | --- |
-| Picture | *The start image* (the default: the one set in the StageKit Background dock), *An image or video file*, or *Another source* |
+| Picture | *The standby image* (the default: the one set in the StageKit Background dock), *An image or video file*, or *Another source* |
 | File / Source | The file or source to show, for those two choices. A video loops, without sound |
 | Keep image's aspect ratio | On (the default): the picture is shown whole in its own shape. Off: it fills the size the capture last had, with what does not fit cut off |
 | Transition | How the picture gives way to the capture: a fade (the default), a cut, sliding away or wiping in any of four directions, or a zoom and fade. It comes back the same way in reverse |
@@ -695,12 +695,12 @@ hotkey under the scene.
 ### The StageKit docks
 
 There are two, under *Docks*: **StageKit** for the item you are working on, and **StageKit Background**
-for the start image and the moving background. Both work on the current scene (the preview scene in
+for the standby image and the moving background. Both work on the current scene (the preview scene in
 Studio Mode).
 
 <p align="center"><img src="docs/images/stagekit-dock.png" width="900" alt="The StageKit dock's four tabs side by side. Place: a three-by-three grid of position buttons, bring along, edge distance, travel time and motion, and buttons that make Stream Deck keys. Arrange: the selected items, a block of buttons that line up, space out, snap and resize them with the measuring options beside it, the order buttons, and the letting-go options. Copy: the two copy-transform buttons with their lists of scenes and sources. Effects: buttons that add a StageKit filter to the item"></p>
 
-<p align="center"><img src="docs/images/stagekit-background-dock.png" width="340" alt="The StageKit Background dock: a thumbnail of the start image, its file name, and buttons to choose the start image, give the background its own picture and open the background's settings"></p>
+<p align="center"><img src="docs/images/stagekit-background-dock.png" width="340" alt="The StageKit Background dock: a thumbnail of the standby image, its file name, and buttons to choose the standby image, give the background its own picture and open the background's settings"></p>
 
 **StageKit**
 
@@ -741,9 +741,9 @@ at the bottom, whichever tab is open.
 
 **StageKit Background**
 
-- A picture of the start image, as wide as the dock. Turn the mouse wheel on it for a closer look, drag to move around,
+- A picture of the standby image, as wide as the dock. Turn the mouse wheel on it for a closer look, drag to move around,
   double-click to reset; this changes only the thumbnail, never your scene.
-- The start image is also the moving background's picture. *Background picture…* gives the
+- The standby image is also the moving background's picture. *Background picture…* gives the
   background a picture of its own; *Background settings…* opens the Ambient Background's settings.
 
 ### Lining up, resizing and snapping items

@@ -73,7 +73,7 @@ public:
 			obs_leave_graphics();
 			loaded_ = true;
 			if (!image_.image3.image2.image.loaded)
-				obs_log(LOG_WARNING, "Start Image: could not load '%s'", path.c_str());
+				obs_log(LOG_WARNING, "Standby Image: could not load '%s'", path.c_str());
 		}
 
 		// Keep this source's own file field showing the current image.

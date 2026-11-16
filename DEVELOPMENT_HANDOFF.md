@@ -211,6 +211,12 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Start image is shown as Standby image (0.1.0-beta135)
+
+At the owner's word, every string a user reads says *Standby image* for the start image
+(`data/locale/en-US.ini`, README). Ids, settings and code are unchanged. Open: whether the Standby
+Picture filter should be renamed *Standby Image* as well; asked, not done.
+
 ## Morph rules for two scenes; a glass look for the mosaic (0.1.0-beta134)
 
 Two asks from the owner in one message. Morph: rules by pair of scenes (see AGENTS.md, under
