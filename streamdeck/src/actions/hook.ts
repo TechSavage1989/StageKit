@@ -1,4 +1,4 @@
-import {
+import streamDeck, {
 	type DidReceiveSettingsEvent,
 	type KeyAction,
 	type KeyDownEvent,
@@ -62,9 +62,16 @@ export class Hook extends SingletonAction<KeySettings> {
 		let kind: string | undefined;
 		try {
 			kind = (await obs.captures()).find((c) => c.name === settings.source)?.kind;
-		} catch {
-			// OBS went away meanwhile; the game picture will do.
+		} catch (error) {
+			// OBS went away meanwhile; what the key last learned will do.
+			streamDeck.logger.warn(`Capture Active Window: could not ask OBS about '${settings.source ?? ""}': ${String(error)}`);
 		}
+		// (For the plugin's log, when a key shows the wrong kind: what OBS
+		// said, or that it said nothing.)
+		if (settings.source && !kind)
+			streamDeck.logger.info(
+				`Capture Active Window: OBS ${obs.isConnected ? "has no Game or Window Capture named" : "is not connected, so nothing is known of"} '${settings.source}'`,
+			);
 		// (While OBS cannot say which kind of capture it is, the key goes by
 		// what it last learned: it used to turn into "Capture Game".)
 		const seen = await remembered(key, settings, settings.source ?? "", kind ? { kind } : undefined);

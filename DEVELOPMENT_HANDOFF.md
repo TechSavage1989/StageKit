@@ -220,6 +220,14 @@ code, not seen**: every one of those looks is what a key shows when OBS gives no
 remember the last answer and look again after OBS has loaded; the plugin is 0.17.0.0. Whether
 the installer's hand-over of the `.streamDeckPlugin` file updates an installed plugin by itself is
 still not known: ask the owner which version Stream Deck shows.
+## The standby image in a hidden source's place (0.1.0-beta139)
+
+Asked for by the owner in those words; built into the Standby filter as a tick box (AGENTS.md).
+The owner confirmed beta138: "layout restore worked great". Tested with colour sources in one
+scene: the stand-in appears in the source's place and size, follows a move, and is taken out when
+unticked. **Not tried here**: a source with a shadow or corners after the filter, a source in
+several scenes on screen at once, a camera that stops when hidden, and how the twin items look in
+OBS's Sources list. Items in groups are left out.
 
 ## StageKit keeps OBS's window layout (0.1.0-beta138)
 
