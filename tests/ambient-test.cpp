@@ -277,6 +277,15 @@ int main(int argc, char **argv)
 	obs_source_t *live = obs_source_create("image_source", "Live Capture", ls, nullptr);
 	obs_data_release(ls);
 
+	if (getenv("SK_LAYOUT_ONLY")) { // TEMPORARY-HOOK
+		obs_source_t *bg = nullptr; // TEMPORARY-HOOK
+		(void)bg; // TEMPORARY-HOOK
+#include "/tmp/claude-0/-home-user-stagekit/e6c4dabd-a941-557a-89d4-513baac3abcb/scratchpad/tools/c-layout2.inc"
+		printf("\n%s (%d failures)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures); // TEMPORARY-HOOK
+		fflush(stdout); // TEMPORARY-HOOK
+		_Exit(g_failures ? 1 : 0); // TEMPORARY-HOOK
+	} // TEMPORARY-HOOK
+
 	// ---------------------------------------------------- morph transition
 	{
 		printf("\n[morph transition]\n");
@@ -10523,14 +10532,6 @@ int main(int argc, char **argv)
 				obs_source_filter_add(scene ? comp_src : full_src, f);
 				scene_filters[scene].push_back(f);
 			};
-			for (int i = 0; i < Captures; i++) {
-				fit_for(0, std::string("Full Fit ") + cap_names[i], cap_names[i], 0, true);
-				// (The window is kept towards the left of its space, as the owner's is.)
-				fit_for(1, std::string("Fit ") + cap_names[i], cap_names[i], 2, true,
-					i == Window ? 3 : 0);
-			}
-			fit_for(1, "Fit Layout Camera", "Layout Camera", 2, false);
-			fit_for(1, "Fit Layout Chat", "Layout Chat", 2, false);
 			for (int s = 0; s < 2; s++) {
 				obs_data_t *ld = obs_data_create();
 				set_list(ld, "items",
@@ -10543,6 +10544,14 @@ int main(int argc, char **argv)
 				obs_data_release(ld);
 				obs_source_filter_add(s ? comp_src : full_src, link);
 				scene_filters[s].push_back(link);
+			}
+			fit_for(1, "Fit Layout Camera", "Layout Camera", 2, false);
+			fit_for(1, "Fit Layout Chat", "Layout Chat", 2, false);
+			for (int i = Captures - 1; i >= 0; i--) {
+				fit_for(0, std::string("Full Fit ") + cap_names[i], cap_names[i], 0, true);
+				// (The window is kept towards the left of its space, as the owner's is.)
+				fit_for(1, std::string("Fit ") + cap_names[i], cap_names[i], 2, true,
+					i == Window ? 3 : 0);
 			}
 			auto switch_for = [&](obs_source_t *on, const char *name, std::vector<const char *> scenes) {
 				obs_data_t *sd = obs_data_create();
@@ -10731,6 +10740,14 @@ int main(int argc, char **argv)
 				sleep_ms(1250);
 				Change out;
 				out.frames = watched();
+				if (getenv("SK_TRACE")) { // TEMPORARY-HOOK
+					int n = 0; // TEMPORARY-HOOK
+					for (const Frame &f : out.frames) { // TEMPORARY-HOOK
+						printf("    %3d to %d %d%d%d%d%d cam %.1f,%.1f chat %.1f,%.1f cap", n++, which, f.visible[0], f.visible[1], f.visible[2], f.visible[3], f.visible[4], f.at[TCam][0], f.at[TCam][1], f.at[TChat][0], f.at[TChat][1]); // TEMPORARY-HOOK
+						for (int i = 0; i < Captures; i++) if (f.visible[i]) printf(" [%d %.1f,%.1f %.1fx%.1f]", i, f.at[i][0], f.at[i][1], f.at[i][2], f.at[i][3]); // TEMPORARY-HOOK
+						printf("\n"); // TEMPORARY-HOOK
+					} // TEMPORARY-HOOK
+				} // TEMPORARY-HOOK
 				out.cam = off_from(out.frames, TCam, cam_ref);
 				out.chat = off_from(out.frames, TChat, chat_ref);
 				return out;
