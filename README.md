@@ -444,10 +444,12 @@ when the game closes or another game comes to the front. There is nothing to set
 
 The filter's controls show what it is capturing now.
 
-- **It gives up on what it cannot hook.** A program taken for a game that gives the capture no
-  picture for ten seconds is put on *Never capture* by itself (OBS's log says so). Left aimed at
-  it, OBS goes on trying several times a second, and each try stalls the picture for a moment.
-  Programs listed in an Automatic Window Switcher are never taken at all.
+- **It leaves alone what it cannot hook, for a while.** A program taken for a game that gives
+  the capture no picture for ten seconds is left alone (OBS's log says so): left aimed at it, OBS
+  goes on trying several times a second, and each try stalls the picture for a moment. It is tried
+  again when its window's title changes, as when a game is started in an emulator, and otherwise
+  after a wait that grows from 30 seconds to 5 minutes. Nothing is added to *Never capture* by
+  itself. Programs listed in an Automatic Window Switcher are never taken at all.
 - **Not a game? Never capture this program**: one press when it picks up the wrong thing.
 - **Pick from the programs that are open**: choose a program and press *Always capture it* (for a game
   it misses) or *Never capture it*. There are no file names to type.

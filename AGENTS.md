@@ -824,9 +824,16 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   - None of the Windows side has run in the tests: they feed it stand-in windows
     (`set_test_windows`) and a colour source for the capture. How a real Window Capture behaves
     while it is re-aimed (how long it is empty, whether it flashes the old window) is unknown here.
-- **Auto Capture gives up on a program it cannot hook** (`unhooked_s_`, `give_up_s_` 10 s, in
-  `src/capture/auto-capture.cpp`): aimed at a program for that long with no picture, the program
-  goes on the *Never capture* list and the log says so. OBS's Game Capture tries to hook about
+- **Auto Capture leaves a program it cannot hook alone for a while, never for good** (`rest_`,
+  `unhooked_s_`, `give_up_s_` 10 s, in `src/capture/auto-capture.cpp`). Up to beta134 such a
+  program went on the saved *Never capture* list. The owner's Dolphin, open with no game running,
+  gives a Game Capture no picture either: their log had it put on the list three times in one
+  session, each time after they had taken it off ("Dolphin keeps getting added to the never
+  capture"). Now it is rested in memory only: tried again when its window's title changes (a game
+  was started; three such tries at most) or after a wait that doubles from 30 s to 5 minutes, for
+  half the usual time; a picture or the program closing ends it. **Do not write to the user's
+  lists from the tick again.** What follows is why the giving up exists at all: aimed at a
+  program for that long with no picture, the program was given up on and the log says so. OBS's Game Capture tries to hook about
   five times a second for as long as it is aimed, each try some 20 ms on the drawing thread. The
   owner's 3D modelling program had been taken for a game (it loads a graphics engine): 3,404
   tries in twelve minutes, `tick_sources` late in 7 % of frames in every log from beta114 on, and

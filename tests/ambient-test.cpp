@@ -1123,8 +1123,10 @@ int main(int argc, char **argv)
 
 		// A program taken for a game that cannot be hooked: OBS would go on
 		// trying for good, several times a second, each try a stall. After
-		// a while with no picture the program goes on the Never list. (The
-		// owner's 3D modelling program: 3,404 tries in twelve minutes.)
+		// a while with no picture the program is left alone for a time (the
+		// owner's 3D modelling program: 3,404 tries in twelve minutes), but
+		// never put on the Never list: the owner's Dolphin, open with no
+		// game running, was put there each time they took it off.
 		{
 			obs_source_t *stuck = obs_source_create("game_capture", "Stuck Game Capture", nullptr, nullptr);
 			obs_data_t *gd = obs_data_create();
@@ -1152,11 +1154,18 @@ int main(int argc, char **argv)
 			obs_data_t *gs = obs_source_get_settings(giver);
 			const std::string never_now = obs_data_get_string(gs, "never");
 			obs_data_release(gs);
+			const std::string rested = aimed_at();
+			// A game is started in it: the window's title changes, and it is
+			// tried again at once.
+			show("Sculpt 2026 - playing|SculptWnd|sculpt3d.exe|front|game");
+			sleep_ms(500);
+			const std::string again = aimed_at();
 			CHECK(taken.find("sculpt3d.exe") != std::string::npos &&
-				      never_now.find("sculpt3d.exe") != std::string::npos &&
-				      aimed_at().rfind("any_fullscreen", 0) == 0,
-			      "a program taken for a game that gives the capture no picture is given up on and put on the Never capture list (%s; never: %s; then %s)",
-			      taken.c_str(), never_now.c_str(), aimed_at().c_str());
+				      never_now.find("sculpt3d.exe") == std::string::npos &&
+				      rested.rfind("any_fullscreen", 0) == 0 &&
+				      again.find("sculpt3d.exe") != std::string::npos,
+			      "a program that gives the capture no picture is left alone for a while, not put on the Never capture list, and tried again when its window's title changes (%s; never: '%s'; then %s; then %s)",
+			      taken.c_str(), never_now.c_str(), rested.c_str(), again.c_str());
 			obs_source_filter_remove(stuck, giver);
 			obs_source_release(giver);
 			obs_source_release(stuck);
