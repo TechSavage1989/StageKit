@@ -132,7 +132,7 @@ off, so it costs nothing while off.
 | Blur type | Gaussian (smoothest), Dual Kawase (fastest, best for strong blur), Box, Pixelate (a mosaic of cells), Zoom, Motion, Temporal (the picture stays sharp and whatever moves leaves a trail; strength 100 is a trail of one second) |
 | Cell shape | For Pixelate: squares, hexagons, circles, triangles, Voronoi (uneven cells), rhomboids or triakis (triangles split in three). A filter set to the old *Hexagons* type is now Pixelate with hexagon cells and looks the same |
 | Smoothing | For Pixelate: how far each cell's colour runs into its neighbours. 0 gives hard edges |
-| Glass | For Pixelate: lights each cell like a small piece of glass, with a glint and a darker rim. 0 gives flat cells. Ambient Background's mosaic has the same slider |
+| Glass / Glass style | For Pixelate: lights each cell like a small piece of glass. *Dome*: curved like a bead, with a glint and a darker rim. *Flat plate*: a flat face with sharp bevelled edges (straight facets on squares and hexagons). 0 gives plain cells. Ambient Background's mosaic has the same two controls |
 | Origin X / Y, Rotation | For Pixelate: the point of the picture the pattern is laid out from and turned around, and by how much it is turned |
 | Strength | 0–1000. Gaussian, Kawase and Box look alike at the same number; above 250, Gaussian and Box are drawn the Kawase way, which stays smooth |
 | Blur transition | Grow the blur strength, or cross-fade a fully blurred image in |

@@ -650,7 +650,11 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   casts, no `inout` and no `atan2`.
   *Glass* (`pixel_glass`, the `glass` uniform, beta134): each cell lit from the upper left by
   where the pixel lies in it (one more `cell_centre`, no more reads of the picture). The owner:
-  "make the mosaic glassy ... with no or extremely low impact on performance".
+  "make the mosaic glassy ... with no or extremely low impact on performance". Two styles
+  (`pixel_glass_style`, `glass_style`, by number, append-only): 0 *Dome*, 1 *Flat plate*, in the
+  owner's words "a hexagon that has flat sharp edges because it's a flat plate of glass, and ...
+  a curved dome glass". The plate's bevel has straight facets for squares and hexagons (the
+  hexagon's three axes are those of `hex_centre`: change them together) and is round for the rest.
 - **New shader code goes in `stagekit-looks.effect`, not in the older files.** The mosaic, the
   trail and bloom live there so that, should Direct3D refuse any of it, `stagekit-blur.effect` and
   `stagekit-ambient.effect` still load: both features then log one error and fall back (squares and
