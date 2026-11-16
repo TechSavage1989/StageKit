@@ -17,7 +17,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, "..")
 PLUGIN = os.path.join(ROOT, "com.techsavage1989.stagekit.sdPlugin")
 BASE = "com.techsavage1989.stagekit"
-VERSION = "0.17.0.0"
+VERSION = "0.17.1.0"
 
 # The pack picture each feature's key starts with (its "on" and "off" look).
 PICTURES = {
@@ -311,7 +311,7 @@ def main():
         "Category": "StageKit",
         "CategoryIcon": "imgs/plugin/category-icon",
         "CodePath": "bin/plugin.js",
-        "Description": "Keys for StageKit, the OBS Studio plugin: one for each of its features, each showing its state, plus keys that hook a capture, set a picture shape, run the arrange tools and blur everything. Talks to OBS through OBS's own WebSocket server.",
+        "Description": "Keys for StageKit, the OBS Studio plugin: one for each of its features, each showing its state, plus keys that capture the active window, set an aspect ratio, switch scenes, run the arrange tools and blur everything. Talks to OBS through OBS's own WebSocket server.",
         "Icon": "imgs/plugin/marketplace",
         "SDKVersion": 3,
         "Software": {"MinimumVersion": "7.1"},

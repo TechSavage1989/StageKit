@@ -1,6 +1,6 @@
 {
 	"Name": "StageKit",
-	"Version": "0.17.0.0",
+	"Version": "0.17.1.0",
 	"Author": "StageKit contributors",
 	"Actions": [
 		{
@@ -597,7 +597,7 @@
 	"Category": "StageKit",
 	"CategoryIcon": "imgs/plugin/category-icon",
 	"CodePath": "bin/plugin.js",
-	"Description": "Keys for StageKit, the OBS Studio plugin: one for each of its features, each showing its state, plus keys that hook a capture, set a picture shape, run the arrange tools and blur everything. Talks to OBS through OBS's own WebSocket server.",
+	"Description": "Keys for StageKit, the OBS Studio plugin: one for each of its features, each showing its state, plus keys that capture the active window, set an aspect ratio, switch scenes, run the arrange tools and blur everything. Talks to OBS through OBS's own WebSocket server.",
 	"Icon": "imgs/plugin/marketplace",
 	"SDKVersion": 3,
 	"Software": {

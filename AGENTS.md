@@ -382,6 +382,19 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   (`stagekit_stand_in_for`); twins are taken out when the option or the filter goes, and a private
   source's items are not loaded back by OBS, so they are made again at each start. Anything that
   lists a scene's items will see them, as "<source> (standby)".
+- **The change between a source and its stand-in is one transition, the Standby filter's**
+  (beta141). The owner: "the dslr standby works, but I want it to morph or perform transition
+  that I choose. currently it seems to just slide": the slide was the item's own hide transition,
+  set by another filter, and the stand-in only faded, up to a quarter second late. Now the filter
+  has the fuller *Show/Hide transition* (`add_item_change_properties`, no source list) and sets
+  it on the item and, the two ways swapped, on its twin (`apply_item_change_as_owner`), ahead of
+  time. With Morph both transitions get a link "<source> ↔ <source> (standby)" on top of the
+  links made in the filter, so the item Morph pairs them. The twin's visibility follows its item
+  every tick (`pairs_`, held from the last look), inside Morph's 0.1 s. And while it is ticked
+  nothing else sets those items' transitions: `item_transitions_owner` (`g_stood_in`) makes
+  `set_item_transitions` and `apply_item_change` pass them over. A new filter that sets item
+  transitions must go through those two calls. Seen in the tests with a fade and by the
+  transitions set; a Morph between the two on screen has not been looked at on Windows.
 - **Show in Scenes can take bring-along items with it** (`with_linked`, off by default): the
   `linked` item of every Move Source filter on a listed source, and of Move Scene Item filters that move it.
   The owner asked for it.

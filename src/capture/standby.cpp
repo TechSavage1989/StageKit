@@ -29,6 +29,8 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/item-transition.hpp"
 #include "../common/start-image.hpp"
 #include "../frame/auto-frame.hpp"
+#include "../transition/morph-paint.hpp"
+#include "../transition/morph.hpp"
 
 #include <obs-module.h>
 #include <plugin-support.h>
@@ -39,6 +41,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <cmath>
 #include <cstring>
 #include <mutex>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -149,6 +152,11 @@ constexpr const char *kStandInId = "stagekit_stand_in";
 // On a stand-in's scene item: the id of the item it stands in for.
 constexpr const char *kStandInFor = "stagekit_stand_in_for";
 
+// The sources a Standby filter stands in for while they are hidden: their
+// items' transitions are that filter's to set (see `item_transitions_owner`).
+std::mutex g_stood_in_mutex;
+std::set<obs_source_t *> g_stood_in;
+
 class Standby {
 public:
 	Standby(obs_data_t *settings, obs_source_t *source) : source_(source)
@@ -217,6 +225,14 @@ public:
 
 	~Standby()
 	{
+		{
+			std::lock_guard lock(g_stood_in_mutex);
+			g_stood_in.erase(obs_filter_get_parent(source_));
+		}
+		for (const auto &pair : pairs_) {
+			obs_sceneitem_release(pair.first);
+			obs_sceneitem_release(pair.second);
+		}
 		// Its stand-in items go with it.
 		if (stand_in_) {
 			std::vector<obs_sceneitem_t *> twins;
@@ -278,8 +294,8 @@ public:
 		placed_ = obs_data_get_bool(settings, "placed");
 		own_shape_ = obs_data_get_bool(settings, "own_shape");
 		when_hidden_ = obs_data_get_bool(settings, "when_hidden");
-		hidden_kind_ = item_transition_kind(settings);
-		hidden_ms_ = item_transition_ms(settings);
+		hidden_change_ = item_change_read(settings);
+		hidden_changed_ = true;
 		changed_ = true;
 	}
 
@@ -309,6 +325,14 @@ public:
 		if (stand_in_check_ >= 0.25) {
 			stand_in_check_ = 0.0;
 			sync_stand_ins(parent);
+		}
+		// Every frame, for the pairs known: the stand-in shows the moment its
+		// item is hidden and goes the moment it is shown, so the two changes
+		// are one (and a Morph finds them together).
+		for (const auto &pair : pairs_) {
+			const bool shown = obs_sceneitem_visible(pair.first);
+			if (obs_sceneitem_visible(pair.second) == shown)
+				obs_sceneitem_set_visible(pair.second, !shown);
 		}
 		Picture kind;
 		std::string file, named;
@@ -587,15 +611,27 @@ public:
 	// off, or the filter, they are taken out again. Called from the tick.
 	void sync_stand_ins(obs_source_t *parent)
 	{
-		bool wanted;
-		std::string kind;
-		uint32_t ms;
+		bool wanted, changed;
+		ItemChange change;
 		{
 			std::lock_guard lock(mutex_);
 			wanted = when_hidden_ && obs_source_enabled(source_);
-			kind = hidden_kind_;
-			ms = hidden_ms_;
+			change = hidden_change_;
+			changed = hidden_changed_;
+			hidden_changed_ = false;
 		}
+		{
+			std::lock_guard lock(g_stood_in_mutex);
+			if (wanted)
+				g_stood_in.insert(parent);
+			else
+				g_stood_in.erase(parent);
+		}
+		for (const auto &pair : pairs_) {
+			obs_sceneitem_release(pair.first);
+			obs_sceneitem_release(pair.second);
+		}
+		pairs_.clear();
 		if (!wanted && !stand_in_)
 			return;
 		if (wanted && !stand_in_) {
@@ -681,10 +717,62 @@ public:
 			const int twin_at = obs_sceneitem_get_order_position(twin);
 			if (twin_at != at - 1)
 				obs_sceneitem_set_order_position(twin, twin_at < at ? at - 1 : at);
-			if (obs_sceneitem_visible(twin) == shown) {
-				set_item_transitions(twin, kind, ms);
-				obs_sceneitem_set_visible(twin, !shown);
+			// The one change chosen in this filter is the item's way out and
+			// in and its stand-in's: both get it, ahead of time, so whatever
+			// hides the item does it this way. With Morph the two are linked,
+			// so the one changes into the other.
+			ItemChange linked = change;
+			for (ItemWay *way : {&linked.show, &linked.hide}) {
+				if (way->kind != kMorphId)
+					continue;
+				obs_data_t *own = way->own.empty() ? obs_data_create()
+								   : obs_data_create_from_json(way->own.c_str());
+				if (!own)
+					own = obs_data_create();
+				obs_data_array_t *links = obs_data_get_array(own, "links");
+				if (!links)
+					links = obs_data_array_create();
+				obs_data_t *link = obs_data_create();
+				const std::string line = std::string(obs_source_get_name(parent)) + kLinkMark +
+							 obs_source_get_name(stand_in_);
+				obs_data_set_string(link, "value", line.c_str());
+				obs_data_array_push_back(links, link);
+				obs_data_release(link);
+				obs_data_set_array(own, "links", links);
+				obs_data_array_release(links);
+				way->own = obs_data_get_json(own);
+				obs_data_release(own);
 			}
+			// The stand-in is shown as the item is hidden: it comes the way the
+			// item goes, and goes the way the item comes.
+			ItemChange swapped;
+			swapped.show = linked.hide;
+			swapped.hide = linked.show;
+			for (obs_sceneitem_t *each : {real.item, twin}) {
+				const ItemChange &its = each == twin ? swapped : linked;
+				bool fits = !changed;
+				for (bool show : {true, false}) {
+					const ItemWay &way = show ? its.show : its.hide;
+					if (way.kind == kTransitionKeep || way.kind.empty())
+						continue;
+					obs_source_t *now = obs_sceneitem_get_transition(each, show);
+					const char *id = now ? obs_source_get_unversioned_id(now) : nullptr;
+					if (way.kind == kTransitionCut) {
+						if (now)
+							fits = false;
+					} else if (!id || way.kind != id ||
+						   obs_sceneitem_get_transition_duration(each, show) != way.ms) {
+						fits = false;
+					}
+				}
+				if (!fits)
+					apply_item_change_as_owner(each, its, obs_scene_get_source(real.scene));
+			}
+			if (obs_sceneitem_visible(twin) == shown)
+				obs_sceneitem_set_visible(twin, !shown);
+			obs_sceneitem_addref(real.item);
+			obs_sceneitem_addref(twin);
+			pairs_.emplace_back(real.item, twin);
 		}
 		// A stand-in whose item has gone, or all of them when they are no
 		// longer wanted, is taken out.
@@ -701,6 +789,11 @@ public:
 		for (const Pair &pair : found)
 			obs_sceneitem_release(pair.item);
 		if (!wanted) {
+			for (const auto &pair : pairs_) {
+				obs_sceneitem_release(pair.first);
+				obs_sceneitem_release(pair.second);
+			}
+			pairs_.clear();
 			obs_source_release(stand_in_);
 			stand_in_ = nullptr;
 		}
@@ -1020,9 +1113,11 @@ private:
 	// and the private source its stand-in items show. (The last two on the
 	// tick only.)
 	bool when_hidden_ = false;
-	std::string hidden_kind_ = kTransitionFade;
-	uint32_t hidden_ms_ = 300;
+	ItemChange hidden_change_;
+	bool hidden_changed_ = true;
 	obs_source_t *stand_in_ = nullptr;
+	// Each item with its stand-in, both held, from the last look.
+	std::vector<std::pair<obs_sceneitem_t *, obs_sceneitem_t *>> pairs_;
 	double stand_in_check_ = 1.0;
 	uint32_t kept_w_ = 0, kept_h_ = 0; // the size of the capture's last frame in render_live_
 	double order_check_ = 1.0, waited_ = 0.0;
@@ -1123,7 +1218,7 @@ obs_properties_t *get_properties(void *data)
 	obs_property_t *when_hidden =
 		obs_properties_add_bool(props, "when_hidden", obs_module_text("Standby.WhenHidden"));
 	obs_property_set_long_description(when_hidden, obs_module_text("Standby.WhenHidden.Tip"));
-	add_item_transition_properties(props);
+	add_item_change_properties(props, self ? self->source() : nullptr, nullptr);
 
 	obs_property_t *help = obs_properties_add_text(props, "help", obs_module_text("Standby.Help"), OBS_TEXT_INFO);
 	obs_property_text_set_info_word_wrap(help, true);
@@ -1235,7 +1330,7 @@ void register_standby()
 		obs_data_set_default_bool(settings, "own_shape", true);
 		obs_data_set_default_bool(settings, "placed", false);
 		obs_data_set_default_bool(settings, "when_hidden", false);
-		item_transition_defaults(settings);
+		item_change_defaults(settings);
 	};
 	info.get_properties = get_properties;
 	info.video_tick = [](void *data, float seconds) {
@@ -1300,6 +1395,11 @@ void register_standby()
 		obs_source_release(source);
 	};
 	register_timed(&stand_in);
+	// Their items' transitions are the Standby filter's to set.
+	item_transitions_owner([](obs_source_t *source) {
+		std::lock_guard lock(g_stood_in_mutex);
+		return g_stood_in.count(source) > 0;
+	});
 }
 
 } // namespace stagekit

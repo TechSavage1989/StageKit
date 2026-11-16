@@ -13,6 +13,17 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
+
+## Standby when hidden: the transition is chosen (0.1.0-beta141)
+
+The owner: "the dslr standby works, but I want it to morph or perform transition that I choose.
+currently it seems to just slide". The Standby filter's *Show when source is hidden* now has the
+fuller *Show/Hide transition* and sets it on the source's items and on their stand-ins (ways
+swapped); Morph links the two; the stand-in follows its item every tick; other StageKit filters
+pass those items over (`item_transitions_owner`). Also the Stream Deck plugin's description fix
+(0.17.1.0). Not seen on Windows: how the Morph between a camera and its standby image looks.
+To check with the owner: the DSLR hidden and shown with Morph and with one other transition.
+
 ## What is built
 
 All on `main`, each with headless tests on Linux:
