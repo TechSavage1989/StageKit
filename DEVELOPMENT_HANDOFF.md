@@ -19,8 +19,10 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 The owner, of beta141: "most of the transitions don't work. they just instantly switch in place.
 also some of them make the standby image flash then change when showing". Reproduced in the
 tests by adding a Corners & Edges after the Standby filter: OBS draws a filter's input once a
-frame, so source and stand-in showed the same picture during a change. The stand-in now draws a
-copy made at the very start of each frame, from OBS's tick callback (`snap_all`, `snapshot`). *Transition* at the top of the filter is now
+frame, so source and stand-in showed the same picture during a change. Shadow, Glow & Outline
+and Corners & Edges now take their input afresh (`draw_filter_input`); Blur, Zoom and Auto
+Frame do not yet, and other plugins' filters after the Standby filter still have the fault.
+*Transition* at the top of the filter is now
 *No-signal transition*, as agreed. To check with the owner: the DSLR with its shadow and corners,
 hidden and shown with a slide, a fade and Morph.
 
