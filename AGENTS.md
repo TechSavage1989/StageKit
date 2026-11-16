@@ -953,6 +953,10 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
 - **Blur's *Never blur these* offers every source with a picture**, not only the capture kinds,
   and a Cropped View listed there keeps the source it shows clear too (the blur sits on that
   source). The owner could not find their camera: "this list should show all sources".
+  And *And live captures on screen* finds a capture that is on screen only through a Cropped View
+  (`find_live`, beta133; into a scene or group the view shows as well): the owner's *Square
+  Camera* "is actually not blurring at all even with it not included in the exclusion list".
+  The blur goes on the capture, which the view draws with its filters.
 - **The Stream Deck plugin has never run in Stream Deck from here.** This session has no Stream Deck
   and cannot reach docs.elgato.com; it was written from the SDK's npm packages (`@elgato/streamdeck`,
   the project template in `@elgato/cli`) and their type definitions. Proven here: it type-checks,
