@@ -576,6 +576,7 @@ public:
 			if (timer_ > 0.0)
 				return;
 			timer_ = 0.25;
+			clock_s_ += 0.25;
 			mode = mode_;
 			always = always_;
 			never = never_;
@@ -602,6 +603,13 @@ public:
 		// picked up at once, in a window, in front or not.
 		const Window *in_front = nullptr, *current = nullptr, *listed_open = nullptr, *known_open = nullptr;
 		bool learned_something = false;
+		// (A program that has closed is no longer being rested from.)
+		for (auto it = rest_.begin(); it != rest_.end();) {
+			const bool open = std::any_of(windows.begin(), windows.end(), [&](const Window &w) {
+				return lower(w.executable) == it->first;
+			});
+			it = open ? std::next(it) : rest_.erase(it);
+		}
 		for (const Window &w : windows) {
 			const std::string exe = lower(w.executable);
 			// Either list can name a program or part of a window's title:
@@ -613,6 +621,21 @@ public:
 			if (!listed && (matches(exe, never) || matches(title, never) || built_in_never(exe) ||
 					app_capture_lists(exe, title)))
 				continue;
+			// A program the capture got no picture from is left alone for a
+			// while, not for good: an emulator with no game running gives
+			// none either. It is tried again when its window's title changes
+			// (a game was started) and, failing that, after a wait that
+			// grows each time.
+			if (auto rest = rest_.find(exe); !listed && rest != rest_.end() && rest->second.resting) {
+				const bool retitled = w.title != rest->second.title && rest->second.title_tries < 3;
+				if (!retitled && clock_s_ - rest->second.since < rest->second.wait)
+					continue;
+				rest->second.resting = false;
+				if (retitled)
+					rest->second.title_tries++;
+				obs_log(LOG_INFO, "Auto Capture: trying %s again (%s)", w.executable.c_str(),
+					retitled ? "its window's title changed" : "after a wait");
+			}
 			if (mode == Mode::AnyGame && w.looks_like_game && known_games_.insert(exe).second) {
 				learned_something = true;
 				// For the log: from here on this program is picked up at once.
@@ -655,18 +678,29 @@ public:
 			// capture is aimed at it, and every try stalls the picture. The
 			// owner's 3D modelling program was tried 3,404 times in twelve
 			// minutes, and one frame in fourteen ran late. After a while
-			// without a picture the program goes on the "never" list.
+			// without a picture the program is left alone for a time. (It
+			// went on the "never" list for good up to beta134; the owner's
+			// Dolphin, open with no game running, was put there again each
+			// time they took it off.)
 			const bool mine = chosen && game_capture && !matches(lower(chosen->executable), always) &&
 					  !matches(lower(chosen->title), always);
+			const std::string exe = chosen ? lower(chosen->executable) : std::string();
+			// (Tried again after a rest, it gets half the time.)
+			const double patience = rest_.count(exe) ? std::max(0.25, give_up_s_ * 0.5) : give_up_s_;
 			if (!mine || obs_source_get_base_width(parent_) > 0) {
 				unhooked_s_ = 0.0;
-			} else if ((!use_test || give_up_in_tests_) && (unhooked_s_ += 0.25) >= give_up_s_) {
+				if (chosen && obs_source_get_base_width(parent_) > 0)
+					rest_.erase(exe); // it can be hooked after all
+			} else if ((!use_test || give_up_in_tests_) && (unhooked_s_ += 0.25) >= patience) {
 				unhooked_s_ = 0.0;
-				obs_log(LOG_WARNING,
-					"Auto Capture: '%s' could not hook %s in %.0f s; it is now on the Never capture list",
-					obs_source_get_name(parent_), chosen->executable.c_str(), give_up_s_);
-				known_games_.erase(lower(chosen->executable));
-				add_to("never", chosen->executable);
+				Rest &rest = rest_[exe];
+				rest.title = chosen->title;
+				rest.since = clock_s_;
+				rest.wait = rest.wait > 0.0 ? std::min(rest.wait * 2.0, 300.0) : give_up_s_ * 3.0;
+				rest.resting = true;
+				obs_log(LOG_INFO,
+					"Auto Capture: '%s' got no picture from %s in %.0f s; leaving it alone until its window's title changes, or for %.0f s",
+					obs_source_get_name(parent_), chosen->executable.c_str(), patience, rest.wait);
 			}
 			return;
 		}
@@ -893,8 +927,19 @@ private:
 	bool known_loaded_ = false;
 	std::string current_;
 	bool aimed_once_ = false;
-	double unhooked_s_ = 0.0;       // how long the capture has been aimed with no picture
-	double give_up_s_ = 10.0;       // and how long that may last
+	double unhooked_s_ = 0.0; // how long the capture has been aimed with no picture
+	double give_up_s_ = 10.0; // and how long that may last
+	// Programs the capture got no picture from, by executable in lower case,
+	// left alone for now. Never saved. Only the tick uses it.
+	struct Rest {
+		std::string title;  // its window's title when it was given up on
+		double since = 0.0; // by clock_s_
+		double wait = 0.0;  // how long before it is tried again whatever its title
+		int title_tries = 0;
+		bool resting = false;
+	};
+	std::map<std::string, Rest> rest_;
+	double clock_s_ = 0.0;
 	bool give_up_in_tests_ = false; // (the tests' stand-in capture never has a picture)
 };
 

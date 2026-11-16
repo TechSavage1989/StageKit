@@ -25,7 +25,7 @@ const NAMES: Record<string, string> = {
 	stagekit_shadow_backdrop: "Shadow, Glow & Outline",
 	stagekit_show_hide: "Show/Hide Animation",
 	stagekit_show_in_scenes: "Show in Scenes",
-	stagekit_standby: "Standby Picture",
+	stagekit_standby: "Standby Image",
 	stagekit_visibility_link: "Link Visibility",
 };
 

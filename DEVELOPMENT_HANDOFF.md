@@ -211,6 +211,23 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Auto Capture no longer puts programs on Never capture by itself (0.1.0-beta135)
+
+The owner: "Dolphin keeps getting added to the never capture of auto capture, even after i remove
+it", with two logs. The log of 21:01 has `could not hook Dolphin.exe in 10 s; it is now on the
+Never capture list` at 21:24, 21:50 and 21:55, each while Dolphin was open without a game (the
+last one 12 s after `vulkan capture freed`: the game had just been closed), and Dolphin hooked
+at once in between when a game ran. The give-up is now a rest kept in memory (AGENTS.md). Entries
+the old code added stay on the owner's list: they were told to take `dolphin.exe` off once more.
+
+## Start image is Standby image; picture is image everywhere (0.1.0-beta135)
+
+Two instructions from the owner (see AGENTS.md, Names, the fourth). Done by script over the
+values of `data/locale/en-US.ini`, the README outside code spans and links, and the Stream Deck
+plugin's `features.json`, `kinds.ts`, the *Image* label in `make-plugin-files.py` and one label in
+`pack.json` (which `import-icons.py` would write back as "standby picture" from the file name if
+the pack is imported again: change it again then). Ids, settings and code names are unchanged.
+
 ## Morph rules for two scenes; a glass look for the mosaic (0.1.0-beta134)
 
 Two asks from the owner in one message. Morph: rules by pair of scenes (see AGENTS.md, under
