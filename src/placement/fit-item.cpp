@@ -28,6 +28,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <plugin-support.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cmath>
 #include <cstring>
@@ -61,8 +62,13 @@ struct Settings {
 	bool visible_pixels = true;    // other items are measured by what they draw, not their boxes
 	bool no_shadows = true;        // and shadows, glows and outlines do not count, its own included
 	std::vector<std::string> skip; // items that are never in the way
-	double skip_fill = 0.0;        // ... unless the picture would fill less than this share of its space; 0: never
-	bool have_anchor = false;      // the free space is the one round this point
+	// ... unless a rule says the picture leaves too much of its space empty:
+	bool skip_rule = false; // the switch for both rules
+	bool skip_pct = false;  // by the share of its space it would fill
+	double skip_fill = 0.0; // (that share)
+	bool skip_px = false;   // by the empty room it would leave at each edge of its space
+	double px_top = 0.0, px_bottom = 0.0, px_left = 0.0, px_right = 0.0;
+	bool have_anchor = false; // the free space is the one round this point
 	double anchor_x = 0, anchor_y = 0;
 	double glide_s = 0.3;
 	EaseCurve curve = EaseCurve::Cubic;
@@ -486,9 +492,14 @@ public:
 		if (!obs_data_has_user_value(settings, "skip_fill_on") &&
 		    obs_data_has_user_value(settings, "skip_fill") && obs_data_get_double(settings, "skip_fill") > 0.0)
 			obs_data_set_bool(settings, "skip_fill_on", true);
-		s.skip_fill = obs_data_get_bool(settings, "skip_fill_on")
-				      ? std::clamp(obs_data_get_double(settings, "skip_fill") / 100.0, 0.0, 1.0)
-				      : 0.0;
+		s.skip_rule = obs_data_get_bool(settings, "skip_fill_on");
+		s.skip_pct = obs_data_get_bool(settings, "skip_use_pct");
+		s.skip_fill = std::clamp(obs_data_get_double(settings, "skip_fill") / 100.0, 0.0, 1.0);
+		s.skip_px = obs_data_get_bool(settings, "skip_use_px");
+		s.px_top = std::max(0.0, obs_data_get_double(settings, "skip_px_top"));
+		s.px_bottom = std::max(0.0, obs_data_get_double(settings, "skip_px_bottom"));
+		s.px_left = std::max(0.0, obs_data_get_double(settings, "skip_px_left"));
+		s.px_right = std::max(0.0, obs_data_get_double(settings, "skip_px_right"));
 		s.resize = obs_data_get_bool(settings, "resize");
 		// 0 the middle, then top, bottom, left, right, and the four corners.
 		static const int kTowardX[] = {0, 0, 0, -1, 1, -1, 1, -1, 1};
@@ -1179,7 +1190,7 @@ private:
 			std::set<obs_sceneitem_t *> *passed;
 		} gather{&others, item, &s.skip, parent_, this, nullptr};
 		std::set<obs_sceneitem_t *> passed_over;
-		if (s.skip_fill > 0.0)
+		if (s.skip_rule)
 			gather.passed = &passed_over;
 		static const auto add = [](obs_scene_t *, obs_sceneitem_t *other, void *param) {
 			auto *g = static_cast<Gather *>(param);
@@ -1390,8 +1401,16 @@ private:
 			changed_ = true;
 		}
 		// The gap or the tolerance set anew: the space is worked out again.
-		if (s.margin != used_margin_ || s.tolerance != used_tolerance_ || s.skip_fill != used_fill_) {
-			used_fill_ = s.skip_fill;
+		const std::array<double, 8> rule{s.skip_rule ? 1.0 : 0.0,
+						 s.skip_pct ? 1.0 : 0.0,
+						 s.skip_fill,
+						 s.skip_px ? 1.0 : 0.0,
+						 s.px_top,
+						 s.px_bottom,
+						 s.px_left,
+						 s.px_right};
+		if (s.margin != used_margin_ || s.tolerance != used_tolerance_ || rule != used_rule_) {
+			used_rule_ = rule;
 			used_margin_ = s.margin;
 			used_tolerance_ = s.tolerance;
 			changed_ = true;
@@ -1412,14 +1431,25 @@ private:
 					firm.push_back(boxes_[i]);
 			Box goal = free_space(within, s.anchor_x, s.anchor_y, firm, s.margin, shape_used_, s.tolerance);
 			avoiding_ = false;
-			if (s.skip_fill > 0.0 && firm.size() != boxes_.size() && goal.w >= 2.0 && goal.h >= 2.0) {
+			if (s.skip_rule && firm.size() != boxes_.size() && goal.w >= 2.0 && goal.h >= 2.0) {
 				double fw = kept_w, fh = kept_h;
 				if (fw <= 0.0 || fh <= 0.0) {
 					fw = std::min(goal.w, goal.h * shape_used_);
 					fh = fw / shape_used_;
 				}
+				// Either rule that is ticked may say the picture fills its
+				// space: by the share it takes up, or by the empty room at
+				// each edge, the picture lying where it is kept towards.
+				// With neither ticked nothing says so.
 				const double fill = std::min(1.0, fw / goal.w) * std::min(1.0, fh / goal.h);
-				if (fill < s.skip_fill) {
+				const double spare_w = std::max(0.0, goal.w - fw), spare_h = std::max(0.0, goal.h - fh);
+				const double left = spare_w * (s.toward_x + 1) / 2.0,
+					     top = spare_h * (s.toward_y + 1) / 2.0;
+				const bool fills = (s.skip_pct && fill >= s.skip_fill) ||
+						   (s.skip_px && left <= s.px_left + 0.05 &&
+						    spare_w - left <= s.px_right + 0.05 && top <= s.px_top + 0.05 &&
+						    spare_h - top <= s.px_bottom + 0.05);
+				if (!fills) {
 					const Box beside = free_space(within, s.anchor_x, s.anchor_y, boxes_, s.margin,
 								      shape_used_, s.tolerance);
 					if (beside.w >= 2.0 && beside.h >= 2.0) {
@@ -1473,7 +1503,7 @@ private:
 	std::vector<bool> said_;
 	std::vector<bool> passed_; // which are items never in the way, counted only when the picture leaves room
 	bool avoiding_ = false;    // they count just now
-	double used_fill_ = -1.0;
+	std::array<double, 8> used_rule_{-1.0};
 	static constexpr double kArriving = 0.25;
 	bool was_showing_ = false;
 	double shown_for_ = 0.0;
@@ -1554,8 +1584,15 @@ bool box_modified(obs_properties_t *props, obs_property_t *, obs_data_t *setting
 	     {"skip|alist", "glide_ms", "ease_curve", "ease_mode", "visible_pixels", "tolerance", "skip_fill_on"})
 		if (obs_property_t *p = obs_properties_get(props, name))
 			obs_property_set_visible(p, kind == 2);
+	const bool rule = kind == 2 && obs_data_get_bool(settings, "skip_fill_on");
+	for (const char *name : {"skip_use_pct", "skip_use_px"})
+		if (obs_property_t *p = obs_properties_get(props, name))
+			obs_property_set_visible(p, rule);
 	if (obs_property_t *p = obs_properties_get(props, "skip_fill"))
-		obs_property_set_visible(p, kind == 2 && obs_data_get_bool(settings, "skip_fill_on"));
+		obs_property_set_visible(p, rule && obs_data_get_bool(settings, "skip_use_pct"));
+	for (const char *name : {"skip_px_top", "skip_px_bottom", "skip_px_left", "skip_px_right"})
+		if (obs_property_t *p = obs_properties_get(props, name))
+			obs_property_set_visible(p, rule && obs_data_get_bool(settings, "skip_use_px"));
 	obs_property_set_description(obs_properties_get(props, "margin"),
 				     obs_module_text(kind == 2 ? "Fit.Gap" : "Fit.Margin"));
 	return true;
@@ -1637,10 +1674,26 @@ obs_properties_t *get_properties(void *data)
 		obs_properties_add_bool(props, "skip_fill_on", obs_module_text("Fit.SkipFillOn"));
 	obs_property_set_long_description(skip_fill_on, obs_module_text("Fit.SkipFillOn.Tip"));
 	obs_property_set_modified_callback(skip_fill_on, box_modified);
+	obs_property_t *use_pct = obs_properties_add_bool(props, "skip_use_pct", obs_module_text("Fit.SkipUsePct"));
+	obs_property_set_long_description(use_pct, obs_module_text("Fit.SkipUsePct.Tip"));
+	obs_property_set_modified_callback(use_pct, box_modified);
 	obs_property_t *skip_fill =
 		obs_properties_add_float_slider(props, "skip_fill", obs_module_text("Fit.SkipFill"), 0.0, 100.0, 1.0);
 	obs_property_float_set_suffix(skip_fill, "%");
 	obs_property_set_long_description(skip_fill, obs_module_text("Fit.SkipFill.Tip"));
+	obs_property_t *use_px = obs_properties_add_bool(props, "skip_use_px", obs_module_text("Fit.SkipUsePx"));
+	obs_property_set_long_description(use_px, obs_module_text("Fit.SkipUsePx.Tip"));
+	obs_property_set_modified_callback(use_px, box_modified);
+	static const char *const kEdges[][2] = {{"skip_px_top", "Fit.SkipPxTop"},
+						{"skip_px_bottom", "Fit.SkipPxBottom"},
+						{"skip_px_left", "Fit.SkipPxLeft"},
+						{"skip_px_right", "Fit.SkipPxRight"}};
+	for (const auto &edge : kEdges) {
+		obs_property_t *px =
+			obs_properties_add_float(props, edge[0], obs_module_text(edge[1]), 0.0, 8000.0, 1.0);
+		obs_property_float_set_suffix(px, " px");
+		obs_property_set_long_description(px, obs_module_text("Fit.SkipPx.Tip"));
+	}
 	PickList share;
 	share.setting = "share_scenes";
 	share.title = "Fit.Share";
@@ -1680,6 +1733,10 @@ void get_defaults(obs_data_t *settings)
 	obs_data_set_default_double(settings, "tolerance", 8.0);
 	obs_data_set_default_bool(settings, "skip_fill_on", false);
 	obs_data_set_default_double(settings, "skip_fill", 95.0);
+	obs_data_set_default_bool(settings, "skip_use_pct", true);
+	obs_data_set_default_bool(settings, "skip_use_px", false);
+	for (const char *name : {"skip_px_top", "skip_px_bottom", "skip_px_left", "skip_px_right"})
+		obs_data_set_default_double(settings, name, 50.0);
 	obs_data_set_default_bool(settings, "resize", true);
 	obs_data_set_default_int(settings, "toward", 0);
 	obs_data_set_default_bool(settings, "visible_pixels", true);

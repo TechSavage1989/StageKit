@@ -826,6 +826,14 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   the picture's shape, never from where it is now, or the choice would flip once it had moved.
   The owner: a camera overlapping a window capture, but beside it when the window "doesn't fit
   the whole screen".
+- **Fit to Space's overlap rule has two measures, each with a tick box** (`skip_use_pct`, *Use fill
+  percentage*, on as it comes, with `skip_fill`; `skip_use_px`, *Use edge distances*, with
+  `skip_px_top`, `_bottom`, `_left`, `_right`, 50 px as they come): the second overlaps when the
+  empty room the picture would leave at every edge of its space (lying where *Align in the space*
+  keeps it) is within that edge's pixels. Either ticked rule is enough to overlap; with neither,
+  the item always goes beside. `skip_fill_on` is still the one switch, and the Stream Deck key's.
+  The owner: "individual configurations for specific pixel amounts from the top, bottom, left and
+  right edges ... a tick box to use percentage, and a tick box to use the specific pixel values".
 - **Fit to Space goes with a window switcher's change** (`app_capture_change`, `AppCaptureChange`;
   `with_switch`, `synced_`, `sync_s_` in `free_box`): while the switcher brings a new window's
   picture in (`Phase::Mix`) it says the size it is going to, how far along it is and its easing;

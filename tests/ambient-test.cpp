@@ -3107,6 +3107,37 @@ int main(int argc, char **argv)
 			CHECK(off_overlaps && is(sp.x, 140) && is(sp.w, 480),
 			      "the rule has a switch of its own: off it overlaps, on it goes beside (%d; %.0f, %.0f wide)",
 			      off_overlaps, sp.x, sp.w);
+			// By the empty room at each edge instead: the 4:3 game leaves
+			// 87 px at the left and at the right of its space.
+			obs_data_set_bool(ff, "skip_use_pct", false);
+			obs_data_set_bool(ff, "skip_use_px", true);
+			for (const char *edge : {"skip_px_top", "skip_px_bottom", "skip_px_left", "skip_px_right"})
+				obs_data_set_double(ff, edge, 90.0);
+			obs_source_update(free_fit, ff);
+			sp = space(600);
+			const bool near_overlaps = is(sp.x, 20) && is(sp.w, 600);
+			obs_data_set_double(ff, "skip_px_right", 50.0);
+			obs_source_update(free_fit, ff);
+			sp = space(600);
+			CHECK(near_overlaps && is(sp.x, 140) && is(sp.w, 480),
+			      "by edge distances: within the pixels set at every edge it overlaps, past them at one edge it goes beside (%d; %.0f, %.0f wide)",
+			      near_overlaps, sp.x, sp.w);
+			// Both rules ticked: either is enough.
+			obs_data_set_bool(ff, "skip_use_pct", true);
+			obs_data_set_double(ff, "skip_fill", 60.0);
+			obs_source_update(free_fit, ff);
+			sp = space(600);
+			const bool either = is(sp.x, 20) && is(sp.w, 600);
+			// Neither: nothing says it fills, so it goes beside.
+			obs_data_set_bool(ff, "skip_use_pct", false);
+			obs_data_set_bool(ff, "skip_use_px", false);
+			obs_source_update(free_fit, ff);
+			sp = space(600);
+			CHECK(either && is(sp.x, 140) && is(sp.w, 480),
+			      "with both rules ticked either is enough, with neither it goes beside (%d; %.0f, %.0f wide)",
+			      either, sp.x, sp.w);
+			obs_data_set_bool(ff, "skip_use_pct", true);
+			obs_data_set_double(ff, "skip_fill", 95.0);
 			obs_data_set_bool(ff, "skip_fill_on", false);
 			obs_source_update(free_fit, ff);
 			sp = space(400);
