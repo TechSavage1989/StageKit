@@ -8,6 +8,7 @@ the Free Software Foundation; either version 2 of the License, or
 (at your option) any later version.
 */
 
+#include "../shadow/shadow-backdrop.hpp"
 #include "morph-paint.hpp"
 #include "../common/pick-list.hpp"
 #include "../common/scene-util.hpp"
@@ -200,8 +201,106 @@ MorphPaint::~MorphPaint()
 	obs_leave_graphics();
 }
 
+Quad part_quad(const Shown &shown, const Crop &part)
+{
+	const double cw = shown.sw - shown.crop.l - shown.crop.r, ch = shown.sh - shown.crop.t - shown.crop.b;
+	if (cw < 1.0 || ch < 1.0)
+		return shown.quad;
+	const double u0 = (part.l - shown.crop.l) / cw, v0 = (part.t - shown.crop.t) / ch;
+	const double us = (shown.sw - part.l - part.r) / cw, vs = (shown.sh - part.t - part.b) / ch;
+	const Quad &q = shown.quad;
+	return Quad{q.a * us, q.b * us, q.c * vs, q.d * vs, q.tx + q.a * u0 + q.c * v0, q.ty + q.b * u0 + q.d * v0};
+}
+
+Crop without_room(const Shown &shown, const Crop &part)
+{
+	double room[4] = {0.0, 0.0, 0.0, 0.0};
+	shadow_room(shown.source, room);
+	Crop out{std::max(part.l, room[0]), std::max(part.t, room[1]), std::max(part.r, room[2]),
+		 std::max(part.b, room[3])};
+	// (Nothing left: then there is nothing but the effect, and it is the part.)
+	if (shown.sw - out.l - out.r < 1.0 || shown.sh - out.t - out.b < 1.0)
+		return part;
+	return out;
+}
+
+void match_parts(const Shown &a, const Crop &match_a, const Crop &whole_a, const Shown &b, const Crop &match_b,
+		 const Crop &whole_b, Crop &draw_a, Crop &draw_b)
+{
+	const double aw = std::max(1.0, a.sw - match_a.l - match_a.r), ah = std::max(1.0, a.sh - match_a.t - match_a.b);
+	const double bw = std::max(1.0, b.sw - match_b.l - match_b.r), bh = std::max(1.0, b.sh - match_b.t - match_b.b);
+	// How far each one's whole reaches past its matched part, as a share of
+	// the matched part's size; the larger of the two on each side.
+	const double l = std::max({0.0, (match_a.l - whole_a.l) / aw, (match_b.l - whole_b.l) / bw});
+	const double t = std::max({0.0, (match_a.t - whole_a.t) / ah, (match_b.t - whole_b.t) / bh});
+	const double r = std::max({0.0, (match_a.r - whole_a.r) / aw, (match_b.r - whole_b.r) / bw});
+	const double bt = std::max({0.0, (match_a.b - whole_a.b) / ah, (match_b.b - whole_b.b) / bh});
+	draw_a = Crop{match_a.l - l * aw, match_a.t - t * ah, match_a.r - r * aw, match_a.b - bt * ah};
+	draw_b = Crop{match_b.l - l * bw, match_b.t - t * bh, match_b.r - r * bw, match_b.b - bt * bh};
+}
+
+void MorphPaint::forget_seen()
+{
+	seen_.clear();
+}
+
+Crop MorphPaint::seen_crop(obs_sceneitem_t *item, const Shown &shown)
+{
+	const auto found = seen_.find(item);
+	if (found != seen_.end())
+		return found->second;
+	Crop out = shown.crop;
+	const double cw = shown.sw - shown.crop.l - shown.crop.r, ch = shown.sh - shown.crop.t - shown.crop.b;
+	if (cw >= 2.0 && ch >= 2.0) {
+		// A small copy is enough: its edges are taken a pixel generously.
+		const double k = std::min(1.0, 256.0 / std::max(cw, ch));
+		const uint32_t w = (uint32_t)std::max(2.0, std::round(cw * k)),
+			       h = (uint32_t)std::max(2.0, std::round(ch * k));
+		gs_texrender_t *into = spare();
+		gs_texrender_reset(into);
+		gs_stagesurf_t *stage = gs_stagesurface_create(w, h, GS_RGBA);
+		if (stage && gs_texrender_begin(into, w, h)) {
+			vec4 clear;
+			vec4_zero(&clear);
+			gs_clear(GS_CLEAR_COLOR, &clear, 0.0f, 0);
+			gs_ortho((float)shown.crop.l, (float)(shown.crop.l + cw), (float)shown.crop.t,
+				 (float)(shown.crop.t + ch), -100.0f, 100.0f);
+			obs_source_video_render(shown.source);
+			gs_texrender_end(into);
+			gs_stage_texture(stage, gs_texrender_get_texture(into));
+			uint8_t *data = nullptr;
+			uint32_t linesize = 0;
+			if (gs_stagesurface_map(stage, &data, &linesize)) {
+				uint32_t x0 = w, y0 = h, x1 = 0, y1 = 0;
+				for (uint32_t y = 0; y < h; y++) {
+					const uint8_t *row = data + (size_t)y * linesize;
+					for (uint32_t x = 0; x < w; x++) {
+						if (row[x * 4 + 3] <= 12) // all but invisible
+							continue;
+						x0 = std::min(x0, x);
+						x1 = std::max(x1, x);
+						y0 = std::min(y0, y);
+						y1 = std::max(y1, y);
+					}
+				}
+				gs_stagesurface_unmap(stage);
+				if (x1 >= x0 && y1 >= y0) {
+					out.l = shown.crop.l + (double)x0 / k;
+					out.t = shown.crop.t + (double)y0 / k;
+					out.r = shown.crop.r + std::max(0.0, cw - (double)(x1 + 1) / k);
+					out.b = shown.crop.b + std::max(0.0, ch - (double)(y1 + 1) / k);
+				}
+			}
+		}
+		gs_stagesurface_destroy(stage);
+	}
+	seen_[item] = out;
+	return out;
+}
+
 void MorphPaint::forget_sizes()
 {
+	seen_.clear();
 	sized_.clear();
 	since_ = os_gettime_ns();
 }

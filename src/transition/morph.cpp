@@ -124,7 +124,9 @@ struct Settings {
 	EaseCurve curve = EaseCurve::Cubic;
 	EaseMode mode = EaseMode::InOut;
 	Others others = Others::Fade;
-	bool pair_main = true; // the largest item left over in each scene becomes one that changes into the other
+	bool pair_main = true;  // the largest item left over in each scene becomes one that changes into the other
+	bool seen = true;       // two sources change into each other by what shows of them, not their boxes
+	bool no_shadows = true; // and by their pictures, without shadows, glows and outlines
 	// Sources set to count as one thing: the one changes into the other.
 	MorphLinks links;
 	std::vector<Rule> rules;
@@ -240,6 +242,8 @@ void Morph::update(obs_data_t *settings)
 	s.mode = static_cast<EaseMode>(obs_data_get_int(settings, "ease_mode"));
 	s.others = static_cast<Others>(std::clamp<long long>(obs_data_get_int(settings, "others"), 0, 2));
 	s.pair_main = obs_data_get_bool(settings, "pair_main");
+	s.seen = obs_data_get_bool(settings, "visible_pixels");
+	s.no_shadows = obs_data_get_bool(settings, "no_shadows");
 	s.links = morph_links_read(settings, "links");
 	for (const std::string &line : pick_list_read(settings, "rules", false)) {
 		const size_t mark = line.find(kRuleMark);
@@ -266,7 +270,7 @@ void Morph::update(obs_data_t *settings)
 		s.rules.push_back(rule);
 	}
 	// (For a Morph that is one item's way of appearing: who it may pair with.)
-	item_morph_said(source_, MorphSaid{s.links, s.pair_main, s.curve, s.mode});
+	item_morph_said(source_, MorphSaid{s.links, s.pair_main, s.seen, s.no_shadows, s.curve, s.mode});
 	std::lock_guard lock(mutex_);
 	settings_ = s;
 }
@@ -500,7 +504,21 @@ void Morph::draw_morph(double t, uint32_t cx, uint32_t cy)
 		if (!had && !has)
 			continue;
 		// (A source with nothing in it on one side: the other side's place.)
-		const Quad quad = had && has ? between(was.quad, will.quad, t) : had ? was.quad : will.quad;
+		const bool two = had && has && was.source != will.source;
+		// Two sources: by what shows of each, looked at once as the change
+		// begins.
+		Crop from_part = was.crop, to_part = will.crop;
+		if (two) {
+			const Crop from_whole = active_.seen ? seen_crop(part.from, was) : was.crop;
+			const Crop to_whole = active_.seen ? seen_crop(part.to, will) : will.crop;
+			match_parts(was, active_.no_shadows ? without_room(was, from_whole) : from_whole, from_whole,
+				    will, active_.no_shadows ? without_room(will, to_whole) : to_whole, to_whole,
+				    from_part, to_part);
+		}
+		const Quad quad = two          ? between(part_quad(was, from_part), part_quad(will, to_part), t)
+				  : had && has ? between(was.quad, will.quad, t)
+				  : had        ? was.quad
+					       : will.quad;
 		if (had && has && was.source == will.source) {
 			// The same source: once, its crop part-way as well. (A curve
 			// that overshoots moves past its place, but cuts no further.)
@@ -512,8 +530,8 @@ void Morph::draw_morph(double t, uint32_t cx, uint32_t cy)
 			draw_item(will, quad, crop);
 		} else if (had && has) {
 			// Two sources that change into each other: both, mixed.
-			gs_texture_t *first = cropped(was, was.crop);
-			gs_texture_t *second = cropped(will, will.crop);
+			gs_texture_t *first = cropped(was, from_part);
+			gs_texture_t *second = cropped(will, to_part);
 			if (first && second)
 				draw_texture(first, second, quad, (float)std::clamp(t, 0.0, 1.0));
 		} else {
@@ -734,6 +752,10 @@ obs_properties_t *get_properties(void *data)
 	obs_property_set_long_description(others, obs_module_text("Morph.Others.Tip"));
 	obs_property_t *pair_main = obs_properties_add_bool(props, "pair_main", obs_module_text("Morph.PairMain"));
 	obs_property_set_long_description(pair_main, obs_module_text("Morph.PairMain.Tip"));
+	obs_property_t *seen = obs_properties_add_bool(props, "visible_pixels", obs_module_text("Morph.Seen"));
+	obs_property_set_long_description(seen, obs_module_text("Morph.Seen.Tip"));
+	obs_property_t *no_shadows = obs_properties_add_bool(props, "no_shadows", obs_module_text("Measure.NoShadows"));
+	obs_property_set_long_description(no_shadows, obs_module_text("Morph.NoShadows.Tip"));
 	add_easing_properties(props, "");
 
 	// Links: two different sources that are to count as the same thing.
@@ -791,6 +813,8 @@ void get_defaults(obs_data_t *settings)
 {
 	obs_data_set_default_int(settings, "others", (int)Others::Fade);
 	obs_data_set_default_bool(settings, "pair_main", true);
+	obs_data_set_default_bool(settings, "visible_pixels", true);
+	obs_data_set_default_bool(settings, "no_shadows", true);
 	obs_data_set_default_int(settings, "ease_curve", (int)EaseCurve::Cubic);
 	obs_data_set_default_int(settings, "ease_mode", (int)EaseMode::InOut);
 	obs_data_set_default_int(settings, "rule_style", (int)Style::Morph);

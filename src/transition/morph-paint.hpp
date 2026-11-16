@@ -58,6 +58,24 @@ struct Bounds {
 
 Bounds bounds_of(const Quad &q);
 
+// Where the part of an item left by `part` goes, when the item's own crop
+// goes to its quad: `part` cuts at least as much as the item's crop.
+Quad part_quad(const Shown &shown, const Crop &part);
+
+// `part` without the room the item's Shadow, Glow & Outline filters take
+// round its picture: what is matched when shadows and outlines are left out.
+Crop without_room(const Shown &shown, const Crop &part);
+
+// Two items that change into each other: `match_a` and `match_b` are the
+// parts that are to land on each other, `whole_a` and `whole_b` all that is
+// to be drawn of each (the matched part and what lies round it: a shadow).
+// Gives the part of each to draw, `draw_a` and `draw_b`: the matched part and
+// the same share of it round both, as much as the larger of the two needs, so
+// the two can be mixed on one quad with the matched parts on each other. (A
+// part may then reach past its source; nothing is drawn there.)
+void match_parts(const Shown &a, const Crop &match_a, const Crop &whole_a, const Shown &b, const Crop &match_b,
+		 const Crop &whole_b, Crop &draw_a, Crop &draw_b);
+
 void set_quad(const Quad &q);
 
 // Sources set to count as one thing: the one changes into the other. A link
@@ -94,6 +112,15 @@ protected:
 	gs_texrender_t *spare();
 	// The source with `crop` cut off it, as a picture of its own.
 	gs_texture_t *cropped(const Shown &shown, const Crop &crop);
+	// The item's crop drawn in to what shows of its picture: the smallest
+	// part holding everything that is not see-through. Two different sources
+	// change into each other by these parts, not by their boxes: the owner,
+	// "the morph transition effect should morph objects based on visible
+	// pixels, not bounding box". Looked at once for an item (a small copy,
+	// read back) and kept until `forget_seen`; the crop as it is for an item
+	// that shows nothing.
+	Crop seen_crop(obs_sceneitem_t *item, const Shown &shown);
+	void forget_seen();
 	// One picture, or two mixed (`amount` of the second), laid onto a quad.
 	void draw_texture(gs_texture_t *first, gs_texture_t *second, const Quad &quad, float amount);
 	// An item's source on a quad, with a crop.
@@ -118,6 +145,7 @@ private:
 		bool had = false;
 	};
 	std::unordered_map<obs_sceneitem_t *, Sized> sized_;
+	std::unordered_map<obs_sceneitem_t *, Crop> seen_;
 	uint64_t since_ = 0;
 };
 
