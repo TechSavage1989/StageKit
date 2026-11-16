@@ -976,8 +976,9 @@ public:
 		auto *order_box = new QGroupBox(tr_text("Dock.OrderBox"), this);
 		auto *order_layout = new QGridLayout(order_box);
 		order_layout->setSpacing(4);
-		// One row, front to back: to the front, forward one, back one, to
-		// the back.
+		// A block of two by two: upwards on top (to the front, forward one),
+		// downwards under them (to the back, back one). The owner: "stack
+		// these icons into two columns and two rows".
 		struct {
 			const char *object_name, *text;
 			obs_order_movement movement;
@@ -985,24 +986,25 @@ public:
 		} orders[] = {
 			{"orderTop", "Dock.OrderTop", OBS_ORDER_MOVE_TOP, 0, 0},
 			{"orderUp", "Dock.OrderUp", OBS_ORDER_MOVE_UP, 0, 1},
-			{"orderDown", "Dock.OrderDown", OBS_ORDER_MOVE_DOWN, 0, 2},
-			{"orderBottom", "Dock.OrderBottom", OBS_ORDER_MOVE_BOTTOM, 0, 3},
+			{"orderBottom", "Dock.OrderBottom", OBS_ORDER_MOVE_BOTTOM, 1, 0},
+			{"orderDown", "Dock.OrderDown", OBS_ORDER_MOVE_DOWN, 1, 1},
 		};
 		for (const auto &order : orders) {
 			auto *button = new QPushButton(order_box);
 			button->setObjectName(order.object_name);
 			button->setAccessibleName(tr_text(order.text));
 			button->setToolTip(tr_text(order.text));
-			button->setMinimumHeight(30);
 			icon_only(button);
+			// (The size of the line-up tools above them.)
+			button->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+			button->setFixedSize(40, 30);
 			const obs_order_movement movement = order.movement;
 			QObject::connect(button, &QPushButton::clicked, this, [this, movement] { reorder(movement); });
 			button->setIcon(tool_icon(order.object_name, button));
 			order_layout->addWidget(button, order.row, order.column);
 		}
-		// As wide as the six above it: four tools and two empty places.
-		for (int column = 0; column < 6; column++)
-			order_layout->setColumnStretch(column, 1);
+		// (The block keeps to the left; the room beside it stays empty.)
+		order_layout->setColumnStretch(2, 1);
 		arrange_page->addWidget(order_box);
 		arrange_page->addWidget(options_drop_);
 		arrange_page->addStretch(1);
@@ -1789,10 +1791,23 @@ private:
 				bar(40, 6 + i * 19, 18, 14, name == "same_chosen" && i == 1 ? soft : ink);
 			arrow(QPointF(28, 32), QPointF(37, 32));
 		} else if (name.rfind("order", 0) == 0) {
-			// Two sheets, one above the other, and which way this one goes.
+			// Each its own drawing, told apart at a glance (two sheets, one
+			// over the other, looked alike in all four to the owner). All the
+			// way: an arrow up to a line at the top, or down to one at the
+			// bottom. One step: an arrow that passes one sheet, up or down.
 			const bool up = name == "orderTop" || name == "orderUp";
-			bar(8, up ? 30 : 10, 34, 24, soft);
-			bar(22, up ? 10 : 30, 34, 24, ink);
+			const bool all_the_way = name == "orderTop" || name == "orderBottom";
+			if (all_the_way) {
+				// A heavy line at the far edge, and an arrow running to it.
+				const qreal edge = up ? 8 : 56;
+				bar(6, edge - 4, 52, 8, ink);
+				arrow(QPointF(32, up ? 58 : 6), QPointF(32, up ? 22 : 42));
+			} else {
+				// One sheet, and an arrow leaving it: the sheet below and the
+				// arrow above it for forward, the other way round for back.
+				bar(10, up ? 40 : 6, 44, 18, soft);
+				arrow(QPointF(32, up ? 36 : 28), QPointF(32, up ? 6 : 58));
+			}
 		}
 		p.end();
 		return QIcon(pixmap);

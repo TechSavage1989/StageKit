@@ -7341,9 +7341,29 @@ int main(int argc, char **argv)
 				};
 				const QPoint top = at("orderTop"), bottom = at("orderBottom"), up = at("orderUp"),
 					     down = at("orderDown");
-				CHECK(top.x() < up.x() && up.x() < down.x() && down.x() < bottom.x() &&
-					      top.y() == up.y() && up.y() == down.y() && down.y() == bottom.y(),
-				      "the order tools sit in one row, front to back: to the front, forward one, back one, to the back");
+				CHECK(top.x() == bottom.x() && up.x() == down.x() && top.x() < up.x() &&
+					      top.y() == up.y() && bottom.y() == down.y() && top.y() < bottom.y(),
+				      "the order tools are a block of two by two: to the front and forward one on top, to the back and back one under them");
+				// Each has a drawing of its own: no two look alike.
+				{
+					std::vector<QImage> drawn;
+					for (const char *name : {"orderTop", "orderUp", "orderDown", "orderBottom"})
+						if (auto *button = dock->findChild<QPushButton *>(name))
+							drawn.push_back(button->icon().pixmap(64, 64).toImage());
+					double least = 1e9;
+					for (size_t a = 0; a < drawn.size(); a++)
+						for (size_t b = a + 1; b < drawn.size(); b++) {
+							double differ = 0;
+							for (int y = 0; y < 64; y++)
+								for (int x = 0; x < 64; x++)
+									differ += qAlpha(drawn[a].pixel(x, y)) !=
+										  qAlpha(drawn[b].pixel(x, y));
+							least = std::min(least, differ / (64.0 * 64.0));
+						}
+					CHECK(drawn.size() == 4 && least > 0.08,
+					      "the four order tools' drawings are told apart at a glance (the two most alike differ in %.0f %% of the drawing)",
+					      least * 100.0);
+				}
 				// The line-up tools are drawings alone, each named when pointed at.
 				auto *left_tool = dock->findChild<QPushButton *>("arrange_left");
 				auto *arrow_tool = dock->findChild<QPushButton *>("grid0");

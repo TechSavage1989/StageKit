@@ -211,6 +211,32 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## Auto Capture: retries long enough and often enough (0.1.0-beta137)
+
+The owner: "auto capture is not capturing a game even when i've added it manually to the always
+capture list", with screenshots (aimed at Ryujinx, *Now capturing: Ryujinx.exe*, the Standby image
+showing) and a log. The log: before it was on the list, Ryujinx was given up on after 10 s and
+then tried for 5 s at 30, 60 and 120 s apart, each without a picture; aimed again at 01:17:40 it
+gave one after 7 s (Vulkan); on the list, OBS tried 254 times from 01:17:55 and got the picture at
+01:19:43, nine seconds before OBS was closed. **Whether a game was running all that time is not
+known**: OBS hooks a program when it draws, and an emulator's menu does not. Changed: full
+patience at each try, waits of 20 s to 60 s, a retry on coming to the front, and a status that
+says the capture is aimed but empty. Asked the owner whether the game shows once it is running.
+
+The owner then said a game *was* running, and that the capture came after clicking out of the game
+and back in. The same log has OBS starting a Vulkan and a Direct3D 12 capture of Ryujinx in one
+instant, and for Dolphin the Vulkan capture freed and started again 109 times; their card is an
+RTX 4090 and their NVIDIA *Vulkan/OpenGL present method* was *Prefer layered on DXGI Swapchain*
+(their screenshot). They were asked to set *Prefer native* and report. **Not proven**: read from
+the log's pattern, nothing StageKit can change. Ask for the result before touching Auto Capture
+again for this.
+
+## The order tools: two by two, four drawings (0.1.0-beta137)
+
+The owner asked for the dock's four order buttons stacked "into two columns and two rows" and for
+drawings that are "completely distinguishable". Done in `stagekit-dock.cpp` (`orders`,
+`tool_icon`); the README's dock picture is regenerated.
+
 ## A window named by part of its title is followed through title changes (0.1.0-beta136)
 
 The owner confirmed beta135 ("everything seems correct and functional") and asked whether one
