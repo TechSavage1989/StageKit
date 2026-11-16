@@ -382,6 +382,17 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   (`stagekit_stand_in_for`); twins are taken out when the option or the filter goes, and a private
   source's items are not loaded back by OBS, so they are made again at each start. Anything that
   lists a scene's items will see them, as "<source> (standby)".
+- **Stand-in items are made only once OBS has finished loading** (`g_scenes_loaded`,
+  `on_frontend_event` in `src/capture/standby.cpp`, beta143): two seconds after
+  `FINISHED_LOADING` or `SCENE_COLLECTION_CHANGED`, and not from `SCENE_COLLECTION_CHANGING` or
+  shutdown on. Up to beta142 a filter made them in its first tick, while OBS was still loading
+  the collection. The owner's OBS then crashed at start three times running, in another plugin
+  (`obs-quick-access-utility.dll`, `LinkSceneItem` under its `frontendSaveLoad`): it goes through
+  every scene's items in its load step and looks each item's source up in a list made from
+  OBS's public sources, where a private source is not. **That reading of its code is from the
+  crash's stack, not from its source**, and why the versions before did not crash is not known.
+  Anything else that adds items showing a private source (the Morph layer) must not do so
+  while a collection loads either.
 - **The change between a source and its stand-in is one transition, the Standby filter's**
   (beta141). The owner: "the dslr standby works, but I want it to morph or perform transition
   that I choose. currently it seems to just slide": the slide was the item's own hide transition,

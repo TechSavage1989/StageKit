@@ -14,6 +14,14 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
 
+## Stand-ins wait for OBS to finish loading (0.1.0-beta143)
+
+The owner's OBS crashed at start three times after beta142, in `obs-quick-access-utility.dll`
+(`QuickAccessUtility::LinkSceneItem`, from its load callback). Stand-in items, whose source is
+private, were being added during loading. They are now made two seconds after OBS has finished
+loading. Not confirmed on the owner's machine yet; if it still crashes, ask for the new crash
+file and whether it starts with *Show when source is hidden* unticked.
+
 ## Standby when hidden: transitions with later filters (0.1.0-beta142)
 
 The owner, of beta141: "most of the transitions don't work. they just instantly switch in place.
