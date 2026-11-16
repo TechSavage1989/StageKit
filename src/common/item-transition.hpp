@@ -29,6 +29,32 @@ inline constexpr const char *kTransitionFade = "fade_transition";
 // them already. Call it before showing or hiding the item.
 void set_item_transitions(obs_sceneitem_t *item, const std::string &kind, uint32_t ms);
 
+// Shows or hides an item, and says whether that changed anything. In a scene
+// (or group) that is being shown this is OBS's own call and nothing more: the
+// item changes with the transitions it has. In one that is not being shown the
+// change is a cut: OBS starts the item's transition all the same, but only
+// drawing the scene ends it, so it would still be running whenever that scene
+// next came on, and until it had been drawn once a hidden source would count
+// as in use there again (a capture card set to let go of its device would
+// open it and close it). The transition OBS started is stopped at once; the
+// item keeps its transitions for the next change made in view. Items whose
+// transitions are another filter's (`item_transitions_owner`) are passed over
+// here too: they are shown and hidden as OBS does it.
+// Link Visibility and Show in Scenes go through this, after
+// `set_item_transitions` or `apply_item_change`. Program Trigger, the two
+// switchers, Auto Capture's hide, Show/Hide Animation and Standby's stand-ins
+// do not yet. A group's inner items, whose transitions OBS starts when the
+// group itself is shown or hidden, are not stopped.
+bool set_item_visible(obs_sceneitem_t *item, bool visible);
+
+// Ends a show transition still under way on a hidden item, or a hide
+// transition on a shown one. OBS only ends an item's transition by drawing
+// it, so one whose scene was left with a cut part-way through is never ended,
+// and its source is in use again whenever that scene is on (a capture card
+// stays open). The next change in the other direction does not end it either.
+// Says whether there was one.
+bool end_stale_transition(obs_sceneitem_t *item);
+
 // Adds the "Change with" list and its "Lasting" time to a properties window.
 void add_item_transition_properties(obs_properties_t *props);
 

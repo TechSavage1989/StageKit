@@ -93,7 +93,7 @@ notice and the confirmation are what there is. This is recorded in the handoff.
 | `data/locale/en-US.ini` | Every user-visible string |
 | `tests/` | Headless libobs tests, test-image generators, `run-tests.sh` |
 | `streamdeck/` | The Stream Deck plugin (TypeScript, Elgato's SDK 3, Node): `src/` (the link to OBS over obs-websocket, the key types), `com.techsavage1989.stagekit.sdPlugin/` (manifest, settings pages, icons), `tests/`, `tools/make-icons.py`. It has its own `package.json`; nothing in the OBS plugin depends on it |
-| `scripts/` | Repository checks (`check-root.sh`, `root-allowlist.txt`); `rebuild-collection.py` writes a StageKit collection from an old one and `upgrade-collection.py` brings a StageKit collection up to date. Both read one file and write another; the owner's collections are private and never committed |
+| `scripts/` | Repository checks (`check-root.sh`, `root-allowlist.txt`); `rebuild-collection.py` writes a StageKit collection from an old one and `upgrade-collection.py` brings a StageKit collection up to date; `merge-capture-scenes.py` adds the two layout scenes to a StageKit collection for a side-by-side trial. All three read one file and write another; the owner's collections are private and never committed |
 | `docs/images/` | README imagery, produced by the tests |
 | `cmake/`, `build-aux/`, `.github/` | From the official obs-plugintemplate; change only when needed |
 
@@ -317,6 +317,11 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   were ahead of them when the drag began, and an item that was only moved is left to snapping. The
   owner asked for the limit to hold *while* dragging; this is the nearest that works, and they were
   told so.
+- **What shows of the fitted item is worked out from the side it is kept towards** (beta147,
+  `obs_sceneitem_get_bounds_alignment` in Fit to Space's own-cut look). Taken for centred, a squarer
+  window kept towards the left was seen as cut off on its right and was fitted to a space of
+  another size. This also changes existing filters with *Align in the space* on a side and *Use
+  visible pixels* (the owner's Window-Component filter is one).
 - **With "Use visible pixels", an item that draws nothing is not there** (`measure_item_now`'s
   `nothing`). It is no obstacle to a slide or a resize and gives no line to snap to or guide to
   show. The owner's music widget shows nothing between songs and still stopped a resized window
@@ -453,6 +458,57 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   state, so one Stream Deck Filter key toggles and shows which way it is. It acts on the `enable`
   signal only (never each tick, so a change by hand is kept) and ignores the state restored at load
   (`ready_`). The owner had a multi-action with a Source Visibility step per scene for this.
+  Since beta147 a press is acted on in the filter's next tick (`press_`, the last of a frame), not
+  on the thread that pressed: a Link Visibility acts on the same items from its tick, and two
+  threads setting one item's transitions at once can each let go of the other's.
+- **Show in Scenes' *Follow what is shown*** (`follow`, off as it comes; beta147): four times a
+  second the switch is put the way its items are (`each_item`, the same items `apply` acts on,
+  without bring-along items): on when all are shown, with `on_means` respected, left alone when
+  there are none. The correction is `obs_source_set_enabled` from the tick with the thread noted in
+  `correcting_`; `enabled_cb` passes over a signal from that thread, so correcting never shows or
+  hides anything and a press from any other thread still acts. Do not make the guard a plain flag.
+  It is for switches like the layout scenes' capture switches; on a switch whose source is hidden
+  on purpose in some covered scene it reads off for good.
+- **Link Visibility's *Lock hidden sources*** (`lock_hidden`, off as it comes; beta147): a listed
+  item of the filter's own scene is locked while hidden and unlocked when shown, in the tick after
+  the change, whoever made it; the hidden ones are locked when the option or the filter is switched
+  on and once after loading (`sweep_due_`), never before `scenes_loaded()`. OBS's preview selects
+  a hidden item on a click. Its own changes are known by the thread they are made on
+  (`applying_`): a plain flag dropped a show made from another thread meanwhile, which left two
+  captures shown and the new one locked.
+- **A filter that shows or hides an item in a scene that may be out of view calls
+  `set_item_visible`** (`src/common/item-transition.*`, beta147), after `set_item_transitions` or
+  `apply_item_change`, never `obs_sceneitem_set_visible` itself. OBS starts the item's transition
+  whether or not its scene is drawn, and only drawing ends it (`obs_transition_force_stop` alone
+  does not clear it); left running, it makes the hidden source count as in use the moment that
+  scene comes on, and a capture card set to let go of its device opens it and closes it again.
+  Out of view the helper takes the item's transition off for that one change and puts it back
+  after, so OBS starts none and the change is a cut. (Started and then stopped from outside, the
+  first way, a Morph could not end the next change made in view.) And a change under way when its
+  scene is left with a cut is never ended either: Link Visibility ends one left on a listed item
+  twice a second (`end_stale_transition`: a show transition on a hidden item, or a hide on a shown
+  one). Found by driving the generated collection headless with the new build; the tests had
+  waited for every change to end before the next step. Items a Standby filter owns are passed over. Link Visibility and Show
+  in Scenes go through it; Program Trigger, the two switchers, Auto Capture's hide, Show/Hide
+  Animation and the stand-ins do not yet. A source with sound is finished hiding in the scene's
+  audio mix, so it may still be in use for one audio tick when the scene comes on; not measured.
+  The tests had no sound until the layout section (`obs_reset_audio`), so no item transition ended
+  in them: test that a fade is used by the source still being in use part-way.
+- **One scene per layout** (beta147; the owner, 2026-11-16: "having two primary scenes for both
+  component and full layouts that contain all the live sources is fine"). Each layout scene holds
+  every capture, stacked, one shown, each with its own Fit to Space; a Link Visibility (only one,
+  `lock_hidden`, Morph) per scene and a Show in Scenes (`follow`, the layout scenes listed, Morph)
+  per capture. A layout change is still a change of scene with the Morph transition, untouched.
+  Literally one scene was looked at and put aside: OBS will not transition a scene to itself, an
+  item has one eye per scene (a layout change would bring back a camera switched off), and the
+  owner's Morph would become several animations. A Morph from a private copy of the scene to the
+  scene itself was shown to work in a headless test (not committed), not on Windows.
+  `scripts/merge-capture-scenes.py` writes the trial collection (all fifteen old scenes kept, two
+  added); removing the old scenes is a later step. Its plan (which old scene each item is copied
+  from) is a table for this owner's collection, not a general tool. The changing of a capture in
+  a layout scene is tested in both filter orders (`[layout scenes: changing the capture leaves the
+  rest where it is]`, last in the test file because it turns sound on): camera and chat box move
+  at most 0.2 px. A new test that changes visibility between frames should try both orders.
 - **Anything that changes over time lets the user choose how.** The owner: "Any filter or
   feature/effect that would do a transition or transform should have those ... be customizable, and
   not only offer fade. fade should be the default". A filter that shows and hides scene items offers
@@ -593,7 +649,16 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   is judged by which side of the space's middle it lies on, never by whether it touches the space:
   judged by touching, the two filters chased each other without end.
 - **Fit to Space does nothing to a hidden item** (`hidden_` in `src/placement/fit-item.cpp`): no
-  placing, no claim, anchor and kept size untouched, so the other filters take its room. Shown
+  placing, anchor and kept size untouched, so the other filters take its room. Its room stays on
+  record (`holds_room`, beta147): nothing goes by it while the item is hidden (claims are only asked
+  for items that show), but it counts from the moment the item is shown, not from its filter's next
+  tick. Cleared before, a capture just shown in a layout scene was taken for something firm for one
+  frame when the Link Visibility and the camera's filter ticked before the capture's, and the camera
+  and chat box jumped 27 px (test canvas). A showing item with no image yet holds that room too (or
+  its saved bounding box if never fitted; `box_asked_`), so a display capture before its first
+  frame does not send the column beside it to the middle of the screen; the room is forgotten when
+  the filter is given another item or the item is placed by a tool. A generated collection must
+  give each capture of a layout scene a bounding box the size of its space. Shown
   again it first only repeats its last claim for `kComingBack` (0.1 s), so whatever took its room
   makes way before it looks for its own space: looking at once, it found its place *inside* the
   other item and took that for something it sits on. The owner's camera, fitted while hidden, was
