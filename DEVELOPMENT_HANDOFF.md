@@ -220,6 +220,11 @@ Ambient Background, done in the existing `Mosaic` technique of `stagekit-looks.e
 is the one that may fail to compile on Direct3D without taking the older effects with it; **the
 new lines have only run on OpenGL**, so ask the owner whether the mosaic still shows on beta134.
 
+Also in beta134 (Stream Deck 0.16.0.0): a filter key left on *Automatic* fits its source (the
+pack's per-source picture by name, then the source's kind for Show in Scenes). One run of the
+Stream Deck tests failed in `obs.test.ts` while the OBS tests were running at the same time and
+passed on the next two runs; not looked into further.
+
 ## Blur reaches a capture shown through a Cropped View (0.1.0-beta133)
 
 The owner confirmed beta131 and beta132 (scene changes keep the capture, the arrange block, the

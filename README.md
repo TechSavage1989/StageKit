@@ -1079,7 +1079,11 @@ the first versions' *Filter switch* and *Move* keep working; those two are no lo
 **Pictures.** The keys use the StageKit icon pack. Left on *Automatic*, a key takes the picture that
 fits its filter and how it is set: a Blur key shows its blur type, a Move Source key the corner it
 sends the camera to, Shadow, Glow & Outline its look, Corners & Edges its corner style, and switch
-keys have an "on" and an "off" look. A filter the pack has no picture for gets a plain key in the same
+keys have an "on" and an "off" look. Where the pack has a picture drawn for one source (its *show
+hide*, shadow, standby and blur pictures) and that picture's name is in the source's name, a Show
+in Scenes, Shadow, Standby Picture or Blur key on that source takes it. Failing that, a Show in
+Scenes key shows what its source is: a camera, a game, a window, a display or a browser (a Cropped
+View counts as what it shows). A filter the pack has no picture for gets a plain key in the same
 style. **Picture** lets you give a key any other picture of the pack (the ones drawn for a particular
 source, for instance). **Palette** is each key's own colour: mono (as it comes), violet, ocean,
 forest, ember or neon. You can still set your own picture on a key in Stream Deck.

@@ -182,3 +182,21 @@ test("a Switch Scene key takes the pack's picture of its scene's layout, by name
 	assert.equal(scenePicture(undefined, "Intermission").group, "scenes");
 	assert.equal(scenePicture("options/scene", "Intermission").id, "options/scene", "a picture chosen by hand wins");
 });
+
+test("a filter key's picture fits the source it is on", async () => {
+	const { chooseFor, sourcePictureFor, inputPicture } = await import("../src/pictures.ts");
+	// The pack's own picture of that source, by the words of its name.
+	assert.equal(sourcePictureFor("stagekit_show_in_scenes", {}, "Square Camera")?.id, "show-hide/square-camera");
+	assert.equal(sourcePictureFor("stagekit_shadow_backdrop", {}, "Window Capture")?.id, "shadow-by-source/window-capture");
+	assert.equal(sourcePictureFor("stagekit_ramp_blur", { blur_type: 1 }, "Game Capture")?.group, "blur box");
+	assert.equal(sourcePictureFor("stagekit_show_in_scenes", {}, "Something Else"), undefined);
+	assert.equal(sourcePictureFor("stagekit_corners", {}, "Square Camera"), undefined, "only kinds the pack drew by source");
+	// Else what the source is: a camera, a window ...
+	assert.equal(inputPicture("dshow_input")?.id, "options/webcam");
+	assert.equal(chooseFor(undefined, "stagekit_show_in_scenes", {}, "Overhead", "dshow_input")?.id, "options/webcam");
+	assert.equal(chooseFor(undefined, "stagekit_show_in_scenes", {}, "Notes", "window_capture")?.id, "capture/window");
+	// Else the filter's own picture; and a picture chosen by hand always wins.
+	assert.equal(chooseFor(undefined, "stagekit_show_in_scenes", {}, "Overhead", undefined)?.id, "filters/show-in-scenes");
+	assert.equal(chooseFor(undefined, "stagekit_shadow_backdrop", {}, "Overhead", "dshow_input")?.group, "shadow glow outline");
+	assert.equal(chooseFor("options/browser", "stagekit_show_in_scenes", {}, "Square Camera", "dshow_input")?.id, "options/browser");
+});
