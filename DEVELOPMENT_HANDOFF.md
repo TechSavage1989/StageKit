@@ -220,6 +220,12 @@ their collection: the windows' titles change with the volume ("GBA1 | Volume 100
 Muted"), so the old scene had four captures. A switcher's title entry is now re-aimed when the
 title changes, and the lists offer a title's first part. Windows side not run here.
 
+Before it was published the owner asked whether it works for other apps, whether it breaks
+things, and for exclusions. The first version re-aimed at every title change, which restarts a
+capture; it now does so only for a capture with no picture. *Ignored windows* was added. One run
+of the suite failed in Ambient Background's timing check (`when the capture changes the background
+stays for the delay`) while a commit and push ran beside it; it passed in the two runs after.
+
 ## Auto Capture no longer puts programs on Never capture by itself (0.1.0-beta135)
 
 The owner: "Dolphin keeps getting added to the never capture of auto capture, even after i remove
