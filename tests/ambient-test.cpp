@@ -5459,6 +5459,23 @@ int main(int argc, char **argv)
 				CHECK(ready == 3 && left_at == "modeller.exe" && at_once == 200 && opaque(frame),
 				      "with the other windows kept captured, every open app has a capture in the background and a switch draws that picture without aiming the capture again (%lld kept, the capture still at %s)",
 				      ready, left_at.c_str());
+				// In no scene on show for a while (another scene is on), and
+				// back: the picture is there again without switching windows.
+				auto kept_now = [&] {
+					calldata_t count = {};
+					proc_handler_call(obs_source_get_proc_handler(one), "ready_count", &count);
+					const long long n = calldata_int(&count, "count");
+					calldata_free(&count);
+					return n;
+				};
+				obs_source_dec_showing(cap);
+				draw_for(600);
+				const long long away = kept_now();
+				obs_source_inc_showing(cap);
+				draw_for(600);
+				CHECK(away == 1 && kept_now() == 3 && obs_source_get_width(cap) == 200 && opaque(frame),
+				      "away from every scene on show only the window shown stays captured, and its picture is there on the way back (%lld kept away, %lld back, %u wide)",
+				      away, kept_now(), obs_source_get_width(cap));
 			}
 
 			obs_properties_t *props = obs_source_properties(one);

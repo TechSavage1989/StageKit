@@ -832,8 +832,19 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   empty room the picture would leave at every edge of its space (lying where *Align in the space*
   keeps it) is within that edge's pixels. Either ticked rule is enough to overlap; with neither,
   the item always goes beside. `skip_fill_on` is still the one switch, and the Stream Deck key's.
+  The amounts are sliders and are called *Top / Bottom / Left / Right gap up to* under *Use edge
+  gaps (pixels)* since beta131: as plain number boxes called *Most empty room: top* the owner
+  found them "not clear" and asked for "sliders with digit inputs".
   The owner: "individual configurations for specific pixel amounts from the top, bottom, left and
   right edges ... a tick box to use percentage, and a tick box to use the specific pixel values".
+- **The window switcher keeps the shown window's ready capture while its scene is away**
+  (`ready_for` in `src/capture/app-capture.cpp`). Every ready capture used to be dropped the moment
+  the capture was in no scene on show, the one being drawn from too (`bridge_`), with the capture
+  itself not believed (`own_ok_` false): back in its scene there was no picture until another
+  window was switched to. The owner, beta130: "the capture is gone and does not come back unless
+  I specifically pick a certain one of the auto capture windows". Now only the others are dropped,
+  and a lost bridge is taken up again from the ready capture of what is shown (the log says
+  `draws ... again`). Never leave `bridge_` empty with `own_ok_` false.
 - **Fit to Space goes with a window switcher's change** (`app_capture_change`, `AppCaptureChange`;
   `with_switch`, `synced_`, `sync_s_` in `free_box`): while the switcher brings a new window's
   picture in (`Phase::Mix`) it says the size it is going to, how far along it is and its easing;
@@ -927,8 +938,10 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   owner: "icons available for things like generic capture cards, external capture cards"), and
   `tools/make-svgs.py` writes `streamdeck/svg/`: every picture drawn here as editable SVG, through
   `tools/svgdraw.py`, a stand-in for Pillow's `ImageDraw` that writes shapes, so the SVG and PNG
-  come from the same code. Run it after changing a drawing. The original pack's pictures have no
-  SVG here: only their PNGs came to this repository; the owner was asked for the pack's source.
+  come from the same code. Run it after changing a drawing. The original pack's own SVGs, sent by
+  the owner ("pack the svgs in the repository/ all of them is fine"), are under
+  `streamdeck/svg/pack/<palette>/<group>/` (1,572 files, 42 MB): copied as they came, written by
+  no tool here, and not what the plugin's PNGs are made from.
   The word-stripper in `make-option-icons.py` skips `options/` and `status/`: run over the marked
   copies, it took their dot and slash for words.
 - **Blur's *Never blur these* offers every source with a picture**, not only the capture kinds,

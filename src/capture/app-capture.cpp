@@ -1063,26 +1063,49 @@ void AppCapture::follow(obs_source_t *parent)
 
 	// The other open apps' captures keep running while this one is on
 	// show, so whichever is switched to has its picture at once.
-	auto ready_for = [&](const std::string &) {
+	auto ready_for = [&](const std::string &shown) {
 		// Every open app on the two lists has one, the one being shown
 		// too: it is what is drawn. Nothing is started or stopped when
 		// the app changes, only when one opens or closes. (Up to beta118
 		// each change started one capture, aimed another and stopped a
 		// third, on OBS's drawing thread: the owner saw the frame time
 		// jump at every change.)
-		const std::string but;
+		// While the capture is in no scene on show only the one being
+		// shown is kept: it is what is drawn, and with it gone there was
+		// no picture on the way back to the capture's scene until another
+		// window was switched to (the owner, beta130: "the capture is
+		// gone and does not come back").
+		const bool all = obs_source_showing(parent);
 		std::vector<std::pair<std::string, const OpenWindow *>> wanted;
-		if (ready && obs_source_showing(parent)) {
+		if (ready) {
 			for (size_t i = 0; i < apps.size(); i++)
-				if (slots[i].window && apps[i] != but)
+				if (slots[i].window && (all || apps[i] == shown))
 					wanted.emplace_back(apps[i], slots[i].window);
 			for (size_t i = 0; i < by_hand.size(); i++)
-				if (hand[i].window && by_hand[i] != but &&
+				if (hand[i].window && (all || by_hand[i] == shown) &&
 				    std::none_of(wanted.begin(), wanted.end(),
 						 [&](const auto &w) { return w.first == by_hand[i]; }))
 					wanted.emplace_back(by_hand[i], hand[i].window);
 		}
 		keep_ready(wanted, parent);
+		// And should the capture drawn from be gone all the same, with the
+		// capture itself not to be believed: the ready one for what is
+		// shown is drawn from again as soon as it has a picture.
+		obs_source_t *again = nullptr;
+		{
+			std::lock_guard lock(mutex_);
+			if (!bridge_ && !own_ok_ && !unsafe_ && !shown.empty())
+				for (const Ready &r : ready_)
+					if (r.entry == shown && obs_source_get_width(r.capture) &&
+					    obs_source_get_height(r.capture))
+						again = obs_source_get_ref(r.capture);
+		}
+		if (again) {
+			set_bridge(again);
+			obs_source_release(again);
+			obs_log(LOG_INFO, "Capture App in Use: '%s' draws %s again", obs_source_get_name(parent),
+				shown.c_str());
+		}
 	};
 
 	// By hand: on to the next of the apps switched to that is open, and

@@ -1690,7 +1690,7 @@ obs_properties_t *get_properties(void *data)
 						{"skip_px_right", "Fit.SkipPxRight"}};
 	for (const auto &edge : kEdges) {
 		obs_property_t *px =
-			obs_properties_add_float(props, edge[0], obs_module_text(edge[1]), 0.0, 8000.0, 1.0);
+			obs_properties_add_float_slider(props, edge[0], obs_module_text(edge[1]), 0.0, 2000.0, 1.0);
 		obs_property_float_set_suffix(px, " px");
 		obs_property_set_long_description(px, obs_module_text("Fit.SkipPx.Tip"));
 	}

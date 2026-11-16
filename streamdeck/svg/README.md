@@ -11,18 +11,15 @@ or any SVG editor.
 | `keys/<palette>/devices/` | Devices and sources for any key: internal capture card, external capture box, HDMI, console, webcam, camcorder, DSLR, microphone, phone, display, laptop, browser, speaker. |
 | `keys/<palette>/options/` | The pictures for each key's options (alignments, aspect ratios, dock options, the Switch Scene key and the rest). |
 | `marks/` | The on mark (green dot) and the off mark (dimmed, red slash) that keys showing a state carry. |
+| `pack/<palette>/<group>/` | The original icon pack itself, all six palettes: blur types, shadows, corners and edges, camera positions, scenes, show/hide, tools and the rest, as the pack's own program wrote them. Pure shapes in named layers (`background`, `layout`, `main`, `cam`, `chat`, `effect`, `label`); the `label` layer holds the words, which the plugin's key pictures leave out. 288 x 288 px. |
 
 Each key picture has its own layers:
 
-- **Background (the pack's key):** the key's frame and pattern from the icon pack. This one is a
-  picture, not shapes: the icon pack came to this project as PNG files only.
+- **Background (the pack's key):** the key's frame and pattern from the icon pack. In these files it is a
+  picture, not shapes; the pack's own shapes are under `pack/`.
 - **Drawing:** the drawing itself, as lines, boxes and circles in the palette's colour. Edit, recolour
   or replace freely.
 - **Off look**, **Mark: on**, **Mark: off:** hidden; show them for the switched-off picture and for
   the marked copies a key shows while it is on or off.
 
-The pictures of the original icon pack itself (blur types, shadows, corners, the camera positions,
-scenes and so on) are not here: they exist in this repository only as PNGs. Their editable source is
-with the program that drew the pack.
-
-Pictures are 144 x 144 units, the size of a Stream Deck key at 2x.
+The pictures drawn here are 144 x 144 units, the size of a Stream Deck key at 2x.
