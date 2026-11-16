@@ -2,6 +2,7 @@
 
 #include <obs-frontend-api.h>
 #include <obs-module.h>
+#include <callback/proc.h>
 #include <util/platform.h>
 
 #include <atomic>
@@ -35,6 +36,15 @@ void on_event(enum obs_frontend_event event, void *)
 
 void loading_watch_start()
 {
+	// For the tests, which have no OBS window to say a collection is being
+	// changed: "stagekit_test_loaded" (bool loaded) sets it by hand.
+	static bool test_call = false;
+	if (!test_call) {
+		test_call = true;
+		proc_handler_add(
+			obs_get_proc_handler(), "void stagekit_test_loaded(bool loaded)",
+			[](void *, calldata_t *cd) { g_loaded = calldata_bool(cd, "loaded"); }, nullptr);
+	}
 	if (!obs_frontend_get_main_window() || g_watching.exchange(true))
 		return;
 	g_loaded = false;

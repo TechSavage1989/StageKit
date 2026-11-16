@@ -14,6 +14,17 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
 
+## OBS closed itself on a change of scene collection (0.1.0-beta148)
+
+The owner imported the trial collection and got OBS's "Source Cleanup Error ... some sources
+could not be unloaded ... OBS Studio will now exit". Every log they sent, back to one from before
+beta147, said `Not all sources were cleared when clearing scene data: - DSLR`. The Standby filter
+on DSLR (*Show when source is hidden*) held DSLR's own scene items (`pairs_`), each holding DSLR:
+a cycle that was only broken at the filter's next look, which does not come while a collection
+changes. It now knows them by id. A test clears a collection the way OBS does and fails without
+the fix. The beta147 trial itself (capture keys, Morph between captures) has not been reported on
+yet.
+
 ## One scene per layout (0.1.0-beta147)
 
 The owner asked whether their ten capture scenes could be one scene that changes between layouts.
