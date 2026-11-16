@@ -5502,6 +5502,44 @@ int main(int argc, char **argv)
 				draw_for(1700);
 			}
 
+			// A window named by part of its title is followed when the rest of
+			// its title changes: the owner's emulator windows are "GBA1 |
+			// Volume 100%" and then "GBA1 | Muted".
+			{
+				obs_data_t *ts = obs_source_get_settings(one);
+				obs_data_array_t *before = obs_data_get_array(ts, "apps");
+				obs_data_array_t *only = obs_data_array_create();
+				obs_data_t *entry = obs_data_create();
+				obs_data_set_string(entry, "value", "Pad1");
+				obs_data_array_push_back(only, entry);
+				obs_data_release(entry);
+				obs_data_set_array(ts, "apps", only);
+				obs_data_array_release(only);
+				obs_source_update(one, ts);
+				windows("Pad1 - Volume 100%|pads.exe|front\nPad2 - Volume 100%|pads.exe|");
+				draw_for(500);
+				std::string at_first;
+				long long how_first = 0;
+				aimed(at_first, how_first);
+				windows("Pad1 - Muted|pads.exe|front\nPad2 - Volume 100%|pads.exe|");
+				draw_for(500);
+				std::string then;
+				long long how_then = 0;
+				const std::string program = aimed(then, how_then);
+				CHECK(at_first == "Pad1 - Volume 100%" && then == "Pad1 - Muted" && how_then == 1 &&
+					      program == "pads.exe",
+				      "a window named by part of its title is followed when the rest of its title changes (%s, then %s, priority %lld)",
+				      at_first.c_str(), then.c_str(), how_then);
+				obs_data_set_array(ts, "apps", before);
+				obs_data_array_release(before);
+				obs_source_update(one, ts);
+				obs_data_release(ts);
+				windows("Docs|browser.exe|\nModel scene|modeller.exe|front\nSculpt 2026|ZSculpt.exe|");
+				draw_for(150);
+				coloured(cap, 0xFF00FF00LL, 100, 100);
+				draw_for(1700);
+			}
+
 			// Hidden and shown altogether, wherever it is.
 			{
 				obs_scene_t *hs = obs_scene_create("Capture Hide Scene");

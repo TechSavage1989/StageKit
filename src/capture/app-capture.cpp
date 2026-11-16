@@ -692,15 +692,23 @@ void AppCapture::keep_ready(const std::vector<std::pair<std::string, const OpenW
 	}
 	// A picked window's title changes (a browser's with its tab): a capture
 	// that has not found it by the title it was aimed with is aimed again.
+	// And a window named by part of its title is followed at once when the
+	// rest of its title changes (Dolphin's "GBA1 | Volume 100%" becomes
+	// "GBA1 | Muted"): OBS finds a window aimed by title by its whole title
+	// only, so the capture would lose it.
 	for (Ready &r : kept) {
-		if (!is_pinned(r.entry) || obs_source_get_width(r.capture))
+		const bool pinned = is_pinned(r.entry);
+		if (pinned && obs_source_get_width(r.capture))
 			continue;
-		for (const auto &w : wanted)
-			if (w.first == r.entry && w.second->title != r.title && (r.empty_s += 0.05) >= 1.5) {
+		for (const auto &w : wanted) {
+			if (w.first != r.entry || w.second->title == r.title)
+				continue;
+			if (pinned ? (r.empty_s += 0.05) >= 1.5 : answers(r.entry, *w.second) == 1) {
 				aim_capture_at(r.capture, *w.second, true);
 				r.title = w.second->title;
 				r.empty_s = 0.0;
 			}
+		}
 	}
 	{
 		std::lock_guard lock(mutex_);
@@ -1064,6 +1072,29 @@ void AppCapture::follow(obs_source_t *parent)
 	// The other open apps' captures keep running while this one is on
 	// show, so whichever is switched to has its picture at once.
 	auto ready_for = [&](const std::string &shown) {
+		// The capture itself follows a window named by part of its title
+		// when the rest of the title changes, where it is aimed at it.
+		{
+			const OpenWindow *window = nullptr;
+			for (size_t i = 0; i < apps.size(); i++)
+				if (apps[i] == shown && slots[i].window && slots[i].how == 1 && !is_pinned(shown))
+					window = slots[i].window;
+			for (size_t i = 0; i < by_hand.size() && !window; i++)
+				if (by_hand[i] == shown && hand[i].window && hand[i].how == 1 && !is_pinned(shown))
+					window = hand[i].window;
+			if (window) {
+				obs_data_t *own = obs_source_get_settings(parent);
+				const std::string aimed = obs_data_get_string(own, "window");
+				const long long by = obs_data_get_int(own, "priority");
+				obs_data_release(own);
+				const std::string was = decoded(aimed.substr(0, aimed.find(':')));
+				// (Only a capture that is aimed at this window by its title:
+				// one left where it was while a ready capture is drawn stays.)
+				if (by == 1 && was != window->title &&
+				    answers(shown, OpenWindow{was, window->executable}) == 1)
+					aim_capture_at(parent, *window, true);
+			}
+		}
 		// Every open app on the two lists has one, the one being shown
 		// too: it is what is drawn. Nothing is started or stopped when
 		// the app changes, only when one opens or closes. (Up to beta118
@@ -1628,6 +1659,16 @@ obs_properties_t *get_properties(void *data)
 		for (const OpenWindow &w : open_windows())
 			if (!w.title.empty() && std::find(names.begin(), names.end(), w.title) == names.end())
 				names.push_back(w.title);
+		// And the first part of a title that has several ("GBA1" of
+		// "GBA1 | Volume 100%"): the part that stays when the rest changes.
+		for (const OpenWindow &w : open_windows())
+			for (const char *mark : {" | ", " - "}) {
+				const size_t at = w.title.find(mark);
+				const std::string first = at == std::string::npos ? std::string()
+										  : w.title.substr(0, at);
+				if (first.size() >= 3 && std::find(names.begin(), names.end(), first) == names.end())
+					names.push_back(first);
+			}
 	};
 	pick_list_add(props, self ? self->source() : nullptr, apps);
 	PickList by_hand_list;

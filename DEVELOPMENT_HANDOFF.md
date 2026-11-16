@@ -211,6 +211,15 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## A window named by part of its title is followed through title changes (0.1.0-beta136)
+
+The owner confirmed beta135 ("everything seems correct and functional") and asked whether one
+Window Capture could show two windows at once, for Dolphin's two GBA link windows beside the game.
+No; and their layout places the two apart, so it is two captures. What stood in the way was in
+their collection: the windows' titles change with the volume ("GBA1 | Volume 100%", "GBA1 |
+Muted"), so the old scene had four captures. A switcher's title entry is now re-aimed when the
+title changes, and the lists offer a title's first part. Windows side not run here.
+
 ## Auto Capture no longer puts programs on Never capture by itself (0.1.0-beta135)
 
 The owner: "Dolphin keeps getting added to the never capture of auto capture, even after i remove
