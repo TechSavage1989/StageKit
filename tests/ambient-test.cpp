@@ -2623,6 +2623,33 @@ int main(int argc, char **argv)
 			obs_source_release(cam);
 		}
 
+		// A renamed source goes on being fitted: the owner's camera, renamed,
+		// was left out of its Fit to Space in two scenes of three.
+		{
+			obs_source_t *named = obs_source_create("color_source", "Fit Renamed Before", nullptr, nullptr);
+			obs_scene_t *rs = obs_scene_create("Fit Rename Scene");
+			obs_scene_add(rs, named);
+			obs_data_t *rd = obs_data_create();
+			obs_data_set_string(rd, "item", "Fit Renamed Before");
+			obs_data_set_string(rd, "keep_item", "Fit Renamed Before");
+			obs_source_t *fit = obs_source_create("stagekit_fit_item", "Fit Rename", rd, nullptr);
+			obs_source_filter_add(obs_scene_get_source(rs), fit);
+			sleep_ms(200);
+			obs_source_set_name(named, "Fit Renamed After");
+			sleep_ms(200);
+			obs_data_t *now = obs_source_get_settings(fit);
+			CHECK(strcmp(obs_data_get_string(now, "item"), "Fit Renamed After") == 0 &&
+				      strcmp(obs_data_get_string(now, "keep_item"), "Fit Renamed After") == 0,
+			      "a Fit to Space follows its source's new name (item '%s', kept size for '%s')",
+			      obs_data_get_string(now, "item"), obs_data_get_string(now, "keep_item"));
+			obs_data_release(now);
+			obs_data_release(rd);
+			obs_source_filter_remove(obs_scene_get_source(rs), fit);
+			obs_source_release(fit);
+			obs_scene_release(rs);
+			obs_source_release(named);
+		}
+
 		printf("\n[shadow & backdrop]\n");
 		const std::string shadow_out = argv[8];
 		obs_data_t *ts = obs_data_create();

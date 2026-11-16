@@ -382,17 +382,29 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   (`stagekit_stand_in_for`); twins are taken out when the option or the filter goes, and a private
   source's items are not loaded back by OBS, so they are made again at each start. Anything that
   lists a scene's items will see them, as "<source> (standby)".
-- **Stand-in items are made only once OBS has finished loading** (`g_scenes_loaded`,
-  `on_frontend_event` in `src/capture/standby.cpp`, beta143): two seconds after
-  `FINISHED_LOADING` or `SCENE_COLLECTION_CHANGED`, and not from `SCENE_COLLECTION_CHANGING` or
-  shutdown on. Up to beta142 a filter made them in its first tick, while OBS was still loading
-  the collection. The owner's OBS then crashed at start three times running, in another plugin
-  (`obs-quick-access-utility.dll`, `LinkSceneItem` under its `frontendSaveLoad`): it goes through
-  every scene's items in its load step and looks each item's source up in a list made from
-  OBS's public sources, where a private source is not. **That reading of its code is from the
-  crash's stack, not from its source**, and why the versions before did not crash is not known.
-  Anything else that adds items showing a private source (the Morph layer) must not do so
-  while a collection loads either.
+- **Nothing goes through every scene's items while OBS loads them** (`scenes_loaded()` in
+  `src/common/loading.*`: true from two seconds after `FINISHED_LOADING` or
+  `SCENE_COLLECTION_CHANGED` until `SCENE_COLLECTION_CHANGING` or shutdown; always true in the
+  tests, which have no OBS window). While a collection loads, filters are already ticked but
+  only some scenes have their items. Two faults came of acting then:
+  - Stand-in items, made in a Standby filter's first tick (up to beta142), were in the scenes
+    when another plugin went through them in its load step (`obs-quick-access-utility.dll`,
+    `LinkSceneItem`), and it crashed on an item showing a private source: the owner's OBS would
+    not start. Since beta143 it starts with that plugin on (the owner: "obs loads with quick
+    access enabled"). Whether OBS crashed depended on how fast it loaded.
+  - Shadow, Glow & Outline, not yet knowing how big its source is drawn, gave its room back to
+    the items there were (as if drawn full size) and then took it again from all of them
+    (`settle_items`). An item in a scene loaded later got the room twice: the owner's camera
+    (*DSLR Component*) was 11 px larger after every restart in two scenes of three, exactly the
+    room at that item's scale. The third scene hid it, because its Fit to Space put the item
+    right each time; in the other two that filter's *Source* was empty. Fixed in beta144: the
+    filter's tick returns before anything is adjusted until `scenes_loaded()`.
+  A new filter that adds, removes or adjusts scene items from its tick asks `scenes_loaded()`
+  first.
+- **Fit to Space follows a renamed source** (`on_source_rename` in `src/placement/fit-item.cpp`,
+  beta144: `item`, `keep_item`, `orig_item`). The owner's camera source had been renamed and
+  two of its three filters still named the old one, so they did nothing. No other filter
+  follows a rename yet; give one the same when it is asked for.
 - **The change between a source and its stand-in is one transition, the Standby filter's**
   (beta141). The owner: "the dslr standby works, but I want it to morph or perform transition
   that I choose. currently it seems to just slide": the slide was the item's own hide transition,

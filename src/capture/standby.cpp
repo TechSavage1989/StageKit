@@ -27,15 +27,14 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include "../common/easing.hpp"
 #include "../common/item-transition.hpp"
+#include "../common/loading.hpp"
 #include "../common/start-image.hpp"
 #include "../frame/auto-frame.hpp"
 #include "../transition/morph-paint.hpp"
 #include "../transition/morph.hpp"
 
-#include <obs-frontend-api.h>
 #include <obs-module.h>
 #include <plugin-support.h>
-#include <util/platform.h>
 
 #include <algorithm>
 #include <atomic>
@@ -158,34 +157,6 @@ constexpr const char *kStandInFor = "stagekit_stand_in_for";
 // items' transitions are that filter's to set (see `item_transitions_owner`).
 std::mutex g_stood_in_mutex;
 std::set<obs_source_t *> g_stood_in;
-
-// Stand-in items are only made once OBS has finished loading its scenes.
-// Made while it loads, they were in the scenes when other plugins went
-// through them in their own load step, and one (a dock listing every scene's
-// sources) crashed on an item whose source it had never been told of: the
-// owner's OBS would not start, three times running (beta142). True at once
-// where there is no OBS window (the tests).
-std::atomic<bool> g_scenes_loaded{true};
-std::atomic<uint64_t> g_loaded_at{0};
-constexpr uint64_t kAfterLoadingNs = 2000000000ULL;
-
-void on_frontend_event(enum obs_frontend_event event, void *)
-{
-	switch (event) {
-	case OBS_FRONTEND_EVENT_FINISHED_LOADING:
-	case OBS_FRONTEND_EVENT_SCENE_COLLECTION_CHANGED:
-		g_loaded_at = os_gettime_ns() + kAfterLoadingNs;
-		g_scenes_loaded = true;
-		break;
-	case OBS_FRONTEND_EVENT_SCENE_COLLECTION_CHANGING:
-	case OBS_FRONTEND_EVENT_SCRIPTING_SHUTDOWN:
-	case OBS_FRONTEND_EVENT_EXIT:
-		g_scenes_loaded = false;
-		break;
-	default:
-		break;
-	}
-}
 
 class Standby {
 public:
@@ -354,7 +325,8 @@ public:
 		stand_in_check_ += seconds;
 		if (stand_in_check_ >= 0.25) {
 			stand_in_check_ = 0.0;
-			if (g_scenes_loaded && os_gettime_ns() >= g_loaded_at)
+			// (Not while OBS loads its scenes: see loading.hpp.)
+			if (scenes_loaded())
 				sync_stand_ins(parent);
 		}
 		// Every frame, for the pairs known: the stand-in shows the moment its
@@ -1332,18 +1304,8 @@ bool standby_waiting(obs_source_t *source)
 	return waiting;
 }
 
-void standby_stop()
-{
-	g_scenes_loaded = false;
-	obs_frontend_remove_event_callback(on_frontend_event, nullptr);
-}
-
 void register_standby()
 {
-	if (obs_frontend_get_main_window()) {
-		g_scenes_loaded = false;
-		obs_frontend_add_event_callback(on_frontend_event, nullptr);
-	}
 	obs_source_info info = {};
 	info.id = kStandbyId;
 	info.type = OBS_SOURCE_TYPE_FILTER;

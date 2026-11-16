@@ -14,6 +14,17 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
 
+## A shadowed item grew at every start (0.1.0-beta144)
+
+The owner: "even after i make them the same size, if i restart obs, the camera in a couple of my
+scenes does not match". Their collection showed *DSLR Component*'s box 11 px larger in the two
+scenes whose Fit to Space had no source chosen (the camera source had been renamed). Cause:
+Shadow, Glow & Outline settled its room while the collection was still loading (see AGENTS.md).
+Fixed with `scenes_loaded()`; Fit to Space now follows a rename. The beta143 crash fix is
+confirmed by the owner. **For the owner to do once**: choose *DSLR Component* as the source in
+*Fit to Space-ComponentCamera* in the HD60S and Window component scenes, or size the camera
+there once more by hand.
+
 ## Stand-ins wait for OBS to finish loading (0.1.0-beta143)
 
 The owner's OBS crashed at start three times after beta142, in `obs-quick-access-utility.dll`
