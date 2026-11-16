@@ -5502,6 +5502,78 @@ int main(int argc, char **argv)
 				draw_for(1700);
 			}
 
+			// A window named by part of its title is followed when the rest of
+			// its title changes: the owner's emulator windows are "GBA1 |
+			// Volume 100%" and then "GBA1 | Muted".
+			{
+				obs_data_t *ts = obs_source_get_settings(one);
+				obs_data_array_t *before = obs_data_get_array(ts, "apps");
+				obs_data_array_t *only = obs_data_array_create();
+				obs_data_t *entry = obs_data_create();
+				obs_data_set_string(entry, "value", "Pad1");
+				obs_data_array_push_back(only, entry);
+				obs_data_release(entry);
+				obs_data_set_array(ts, "apps", only);
+				obs_data_array_release(only);
+				obs_source_update(one, ts);
+				windows("Pad1 - Volume 100%|pads.exe|front\nPad2 - Volume 100%|pads.exe|");
+				draw_for(500);
+				std::string at_first;
+				long long how_first = 0;
+				aimed(at_first, how_first);
+				// While the capture has its window nothing is done: it holds
+				// it whatever the title does.
+				windows("Pad1 - Muted|pads.exe|front\nPad2 - Volume 100%|pads.exe|");
+				draw_for(500);
+				std::string held_title;
+				long long how_held = 0;
+				aimed(held_title, how_held);
+				// Once it has lost it (OBS looks for it by the old title and
+				// does not find it), it is aimed at the window again.
+				coloured(cap, 0xFF00FF00LL, 0, 0);
+				draw_for(500);
+				std::string then;
+				long long how_then = 0;
+				const std::string program = aimed(then, how_then);
+				CHECK(at_first == "Pad1 - Volume 100%" && held_title == at_first &&
+					      then == "Pad1 - Muted" && how_then == 1 && program == "pads.exe",
+				      "a window named by part of its title is found again when the rest of its title has changed, and left alone while the capture still holds it (%s; holding: %s; lost: %s, priority %lld)",
+				      at_first.c_str(), held_title.c_str(), then.c_str(), how_then);
+				// Ignored windows: never taken, whatever they answer to.
+				coloured(cap, 0xFF00FF00LL, 100, 100);
+				obs_data_array_t *any = obs_data_array_create(), *not_these = obs_data_array_create();
+				obs_data_t *any_pad = obs_data_create(), *not_one = obs_data_create();
+				obs_data_set_string(any_pad, "value", "Pad");
+				obs_data_set_string(not_one, "value", "Pad1");
+				obs_data_array_push_back(any, any_pad);
+				obs_data_array_push_back(not_these, not_one);
+				obs_data_release(any_pad);
+				obs_data_release(not_one);
+				obs_data_set_array(ts, "apps", any);
+				obs_data_set_array(ts, "ignore", not_these);
+				obs_data_array_release(any);
+				obs_data_array_release(not_these);
+				obs_source_update(one, ts);
+				draw_for(600);
+				std::string other;
+				long long how_other = 0;
+				aimed(other, how_other);
+				obs_properties_t *ip = obs_source_properties(one);
+				CHECK(other == "Pad2 - Volume 100%" && list_rows(ip, "ignore|a") == 1,
+				      "a window on the Ignored windows list is never taken, even in front and matching an entry (%s taken)",
+				      other.c_str());
+				obs_properties_destroy(ip);
+				obs_data_erase(ts, "ignore");
+				obs_data_set_array(ts, "apps", before);
+				obs_data_array_release(before);
+				obs_source_update(one, ts);
+				obs_data_release(ts);
+				windows("Docs|browser.exe|\nModel scene|modeller.exe|front\nSculpt 2026|ZSculpt.exe|");
+				draw_for(150);
+				coloured(cap, 0xFF00FF00LL, 100, 100);
+				draw_for(1700);
+			}
+
 			// Hidden and shown altogether, wherever it is.
 			{
 				obs_scene_t *hs = obs_scene_create("Capture Hide Scene");

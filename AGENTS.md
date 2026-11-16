@@ -771,6 +771,17 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     last (`last_held_`), so with one hand-picked window the key is a toggle.
   - Entries are a program's file name or part of a window's title (`answers`); a title entry aims
     the capture by title (`priority` 1), a program entry by executable.
+    A title entry is aimed again when its window's title has changed **and the capture has no
+    picture** (the ready capture in `keep_ready` after 0.3 s, the capture itself in `ready_for`,
+    beta136): OBS finds a window aimed by title by its whole title only. Never aim a capture that
+    still has its picture because a title changed: it holds its window, and a title with a frame
+    rate in it changes every second. The owner's Dolphin GBA windows are "GBA1 | Volume 100%" or
+    "GBA1 | Muted"; their old scene had two captures for each window. *Ignored windows* (`ignore`,
+    a PickList; checked first in `match`) are never taken, by program or part of a title: the
+    owner asked "can exclusions be added?". The lists offer the first
+    part of a title with " | " or " - " in it. **One capture per window** is the answer to "two
+    windows in one scene": the owner asked whether one capture could show two, was told no, and
+    the scene they showed places the two windows apart.
   - The Capture Front Window key switches it off, as it does an Auto Capture; switching it on
     hands the capture back (it takes the app in front or the last one used).
   - **Nothing is started, aimed or stopped at a switch** (beta119). Every open entry of the two
