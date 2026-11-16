@@ -102,14 +102,68 @@ bool plain_scene(obs_source_t *source, const char **why = nullptr)
 	return !in_the_way;
 }
 
+// How a change of scene is made: the morph, or, by a rule for two scenes,
+// a plain cross-fade or a cut. Kept by number.
+enum class Style { Morph = 0, CrossFade = 1, Cut = 2 };
+
+// A rule of its own for the change from one scene to another. The owner:
+// "specific overrides for transitions for specific scenes transitioning
+// between specific scenes".
+struct Rule {
+	std::string from, to; // a scene's name; empty for any scene
+	bool both = false;    // the other way round as well
+	Style style = Style::Morph;
+	EaseCurve curve = EaseCurve::Cubic;
+	EaseMode mode = EaseMode::InOut;
+	Others others = Others::Fade;
+	bool pair_main = true;
+};
+
 struct Settings {
+	Style style = Style::Morph;
 	EaseCurve curve = EaseCurve::Cubic;
 	EaseMode mode = EaseMode::InOut;
 	Others others = Others::Fade;
 	bool pair_main = true; // the largest item left over in each scene becomes one that changes into the other
 	// Sources set to count as one thing: the one changes into the other.
 	MorphLinks links;
+	std::vector<Rule> rules;
 };
+
+// Between the scenes of a rule's line in the list, and before each setting
+// of a rule in the settings.
+constexpr const char *kRuleMark = " \xE2\x86\x92 ";
+constexpr const char *kRuleKey = "rule|";
+
+// The settings for one change of scene: the usual ones, or those of the rule
+// that names it most exactly (both scenes before one, one before none).
+Settings for_change(const Settings &usual, const char *from, const char *to)
+{
+	const std::string a = from ? from : "", b = to ? to : "";
+	const Rule *best = nullptr;
+	int best_score = -1;
+	for (const Rule &rule : usual.rules) {
+		auto fits = [&](const std::string &x, const std::string &y) {
+			return (rule.from.empty() || rule.from == x) && (rule.to.empty() || rule.to == y);
+		};
+		if (!fits(a, b) && !(rule.both && fits(b, a)))
+			continue;
+		const int score = (rule.from.empty() ? 0 : 1) + (rule.to.empty() ? 0 : 1);
+		if (score > best_score) {
+			best = &rule;
+			best_score = score;
+		}
+	}
+	Settings s = usual;
+	if (best) {
+		s.style = best->style;
+		s.curve = best->curve;
+		s.mode = best->mode;
+		s.others = best->others;
+		s.pair_main = best->pair_main;
+	}
+	return s;
+}
 
 // One thing to draw, from the back: an item of the old scene, of the new
 // scene, or of both.
@@ -145,6 +199,7 @@ private:
 	Settings settings_;
 
 	// Used on the drawing thread only.
+	Settings active_; // the settings for the change of scene going on, a rule's or the usual ones
 	std::vector<Part> parts_;
 	obs_source_t *planned_from_ = nullptr; // compared, never used
 	obs_source_t *planned_to_ = nullptr;
@@ -186,6 +241,30 @@ void Morph::update(obs_data_t *settings)
 	s.others = static_cast<Others>(std::clamp<long long>(obs_data_get_int(settings, "others"), 0, 2));
 	s.pair_main = obs_data_get_bool(settings, "pair_main");
 	s.links = morph_links_read(settings, "links");
+	for (const std::string &line : pick_list_read(settings, "rules", false)) {
+		const size_t mark = line.find(kRuleMark);
+		if (mark == std::string::npos)
+			continue;
+		const std::string any = obs_module_text("Morph.AnyScene");
+		Rule rule;
+		rule.from = line.substr(0, mark);
+		rule.to = line.substr(mark + strlen(kRuleMark));
+		if (rule.from == any)
+			rule.from.clear();
+		if (rule.to == any)
+			rule.to.clear();
+		const std::string key = std::string(kRuleKey) + line + "|";
+		auto number = [&](const char *name) {
+			return obs_data_get_int(settings, (key + name).c_str());
+		};
+		rule.both = obs_data_get_bool(settings, (key + "both").c_str());
+		rule.style = static_cast<Style>(std::clamp<long long>(number("style"), 0, 2));
+		rule.curve = static_cast<EaseCurve>(number("ease_curve"));
+		rule.mode = static_cast<EaseMode>(number("ease_mode"));
+		rule.others = static_cast<Others>(std::clamp<long long>(number("others"), 0, 2));
+		rule.pair_main = obs_data_get_bool(settings, (key + "pair_main").c_str());
+		s.rules.push_back(rule);
+	}
 	// (For a Morph that is one item's way of appearing: who it may pair with.)
 	item_morph_said(source_, MorphSaid{s.links, s.pair_main, s.curve, s.mode});
 	std::lock_guard lock(mutex_);
@@ -209,11 +288,7 @@ void Morph::plan(obs_source_t *from, obs_source_t *to)
 	forget();
 	planned_from_ = from;
 	planned_to_ = to;
-	Settings s;
-	{
-		std::lock_guard lock(mutex_);
-		s = settings_;
-	}
+	const Settings s = active_;
 	// The items each scene shows, from the back, each held.
 	auto gather = [](obs_source_t *scene, std::vector<obs_sceneitem_t *> &out) {
 		obs_scene_enum_items(
@@ -318,11 +393,7 @@ void Morph::plan(obs_source_t *from, obs_source_t *to)
 void Morph::draw_side(gs_texrender_t *into, const std::vector<const Part *> &run, bool leaving, double t, uint32_t cx,
 		      uint32_t cy)
 {
-	Settings s;
-	{
-		std::lock_guard lock(mutex_);
-		s = settings_;
-	}
+	const Settings s = active_;
 	gs_texrender_reset(into);
 	if (!gs_texrender_begin_with_color_space(into, cx, cy, GS_CS_SRGB))
 		return;
@@ -494,8 +565,14 @@ void Morph::render()
 	Settings s;
 	{
 		std::lock_guard lock(mutex_);
-		s = settings_;
+		s = for_change(settings_, from ? obs_source_get_name(from) : nullptr,
+			       to ? obs_source_get_name(to) : nullptr);
 	}
+	// (A rule for these two scenes may have other settings than the last
+	// change had: the plan is made again.)
+	if (s.pair_main != active_.pair_main || s.others != active_.others)
+		planned_from_ = planned_to_ = nullptr;
+	active_ = s;
 	// (Curves that overshoot would fade past all or nothing: kept between.)
 	const double eased = t <= 0.0f ? 0.0 : t >= 1.0f ? 1.0 : ease(s.curve, s.mode, t);
 	eased_ = (float)std::clamp(eased, 0.0, 1.0);
@@ -542,7 +619,12 @@ void Morph::render()
 	}
 	const bool between_scenes = effect_ && from && to && t > 0.0f && t < 1.0f && cx && cy;
 	const char *filter_from = nullptr, *filter_to = nullptr;
-	if (between_scenes && plain_scene(from, &filter_from) && plain_scene(to, &filter_to)) {
+	if (between_scenes && s.style == Style::Cut) {
+		// By a rule for these two scenes: the new scene at once.
+		obs_transition_video_render_direct(source_, OBS_TRANSITION_SOURCE_B);
+	} else if (between_scenes && s.style == Style::CrossFade) {
+		obs_transition_video_render(source_, mix_cb);
+	} else if (between_scenes && plain_scene(from, &filter_from) && plain_scene(to, &filter_to)) {
 		if (from != planned_from_ || to != planned_to_)
 			plan(from, to);
 		draw_morph(eased, cx, cy);
@@ -579,6 +661,67 @@ float mix_in(void *, float t)
 	return t;
 }
 
+// What a rule keeps, each under "rule|<its line>|<name>" and, while it is
+// being made, under "rule_<name>".
+const char *const kRuleNumbers[] = {"style", "others", "ease_curve", "ease_mode"};
+const char *const kRuleSwitches[] = {"both", "pair_main"};
+
+std::string rule_line(obs_data_t *settings)
+{
+	const std::string from = obs_data_get_string(settings, "rule_from"),
+			  to = obs_data_get_string(settings, "rule_to");
+	return from.empty() || to.empty() ? std::string() : from + kRuleMark + to;
+}
+
+// The two scenes chosen have a rule already: its settings are shown, to be
+// looked at or changed.
+bool rule_chosen(obs_properties_t *, obs_property_t *, obs_data_t *settings)
+{
+	const std::string line = rule_line(settings);
+	const std::vector<std::string> lines = pick_list_read(settings, "rules", false);
+	if (line.empty() || std::find(lines.begin(), lines.end(), line) == lines.end())
+		return false;
+	const std::string key = std::string(kRuleKey) + line + "|";
+	for (const char *name : kRuleNumbers)
+		obs_data_set_int(settings, (std::string("rule_") + name).c_str(),
+				 obs_data_get_int(settings, (key + name).c_str()));
+	for (const char *name : kRuleSwitches)
+		obs_data_set_bool(settings, (std::string("rule_") + name).c_str(),
+				  obs_data_get_bool(settings, (key + name).c_str()));
+	return true;
+}
+
+// "Save this rule": what is set becomes the rule for the two scenes chosen,
+// a new line of the list or an old one changed.
+bool add_rule(obs_properties_t *props, obs_property_t *, void *data)
+{
+	auto *owner = static_cast<obs_source_t *>(data);
+	if (!owner)
+		return false;
+	obs_data_t *settings = obs_source_get_settings(owner);
+	const std::string line = rule_line(settings);
+	if (line.empty()) {
+		obs_data_release(settings);
+		return false;
+	}
+	const std::string key = std::string(kRuleKey) + line + "|";
+	for (const char *name : kRuleNumbers)
+		obs_data_set_int(settings, (key + name).c_str(),
+				 obs_data_get_int(settings, (std::string("rule_") + name).c_str()));
+	for (const char *name : kRuleSwitches)
+		obs_data_set_bool(settings, (key + name).c_str(),
+				  obs_data_get_bool(settings, (std::string("rule_") + name).c_str()));
+	std::vector<std::string> lines = pick_list_read(settings, "rules", false);
+	if (std::find(lines.begin(), lines.end(), line) == lines.end()) {
+		lines.push_back(line);
+		pick_list_write(settings, "rules", false, lines);
+	}
+	obs_source_update(owner, settings);
+	obs_data_release(settings);
+	pick_list_refresh(props, owner, "rules", false);
+	return true;
+}
+
 obs_properties_t *get_properties(void *data)
 {
 	auto *self = static_cast<Morph *>(data);
@@ -595,6 +738,52 @@ obs_properties_t *get_properties(void *data)
 
 	// Links: two different sources that are to count as the same thing.
 	add_morph_link_properties(props, self ? self->source() : nullptr, "");
+
+	// Rules: a change between two named scenes made another way.
+	obs_source_t *owner = self ? self->source() : nullptr;
+	obs_properties_t *rule = obs_properties_create();
+	for (const char *name : {"rule_from", "rule_to"}) {
+		obs_property_t *scene = obs_properties_add_list(
+			rule, name, obs_module_text(strcmp(name, "rule_from") == 0 ? "Morph.RuleFrom" : "Morph.RuleTo"),
+			OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
+		obs_property_list_add_string(scene, obs_module_text("List.Choose"), "");
+		obs_property_list_add_string(scene, obs_module_text("Morph.AnyScene"),
+					     obs_module_text("Morph.AnyScene"));
+		obs_enum_scenes(
+			[](void *param, obs_source_t *source) {
+				const char *scene_name = obs_source_get_name(source);
+				if (scene_name && *scene_name && !obs_source_is_group(source))
+					obs_property_list_add_string(static_cast<obs_property_t *>(param), scene_name,
+								     scene_name);
+				return true;
+			},
+			scene);
+		obs_property_set_long_description(scene, obs_module_text("Morph.Rules.Tip"));
+		// Two scenes that have a rule already: its settings are shown.
+		obs_property_set_modified_callback(scene, rule_chosen);
+	}
+	obs_property_t *both = obs_properties_add_bool(rule, "rule_both", obs_module_text("Morph.RuleBoth"));
+	obs_property_set_long_description(both, obs_module_text("Morph.RuleBoth.Tip"));
+	obs_property_t *style = obs_properties_add_list(rule, "rule_style", obs_module_text("Morph.RuleStyle"),
+							OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+	obs_property_list_add_int(style, obs_module_text("Morph.RuleStyle.Morph"), (int)Style::Morph);
+	obs_property_list_add_int(style, obs_module_text("Morph.RuleStyle.Fade"), (int)Style::CrossFade);
+	obs_property_list_add_int(style, obs_module_text("Morph.RuleStyle.Cut"), (int)Style::Cut);
+	obs_property_set_long_description(style, obs_module_text("Morph.RuleStyle.Tip"));
+	obs_property_t *rule_others = obs_properties_add_list(rule, "rule_others", obs_module_text("Morph.Others"),
+							      OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+	obs_property_list_add_int(rule_others, obs_module_text("Morph.Others.Fade"), (int)Others::Fade);
+	obs_property_list_add_int(rule_others, obs_module_text("Morph.Others.Zoom"), (int)Others::Zoom);
+	obs_property_list_add_int(rule_others, obs_module_text("Morph.Others.Slide"), (int)Others::Slide);
+	obs_properties_add_bool(rule, "rule_pair_main", obs_module_text("Morph.PairMain"));
+	add_easing_properties(rule, "rule_");
+	obs_properties_add_button2(rule, "rule_add", obs_module_text("Morph.RuleAdd"), add_rule, owner);
+	obs_properties_add_group(props, "rule_group", obs_module_text("Morph.RuleGroup"), OBS_GROUP_NORMAL, rule);
+	PickList rules;
+	rules.setting = "rules";
+	rules.title = "Morph.Rules";
+	rules.tip = "Morph.Rules.Tip";
+	pick_list_add(props, owner, rules);
 	return props;
 }
 
@@ -604,6 +793,11 @@ void get_defaults(obs_data_t *settings)
 	obs_data_set_default_bool(settings, "pair_main", true);
 	obs_data_set_default_int(settings, "ease_curve", (int)EaseCurve::Cubic);
 	obs_data_set_default_int(settings, "ease_mode", (int)EaseMode::InOut);
+	obs_data_set_default_int(settings, "rule_style", (int)Style::Morph);
+	obs_data_set_default_int(settings, "rule_others", (int)Others::Fade);
+	obs_data_set_default_bool(settings, "rule_pair_main", true);
+	obs_data_set_default_int(settings, "rule_ease_curve", (int)EaseCurve::Cubic);
+	obs_data_set_default_int(settings, "rule_ease_mode", (int)EaseMode::InOut);
 }
 
 } // namespace

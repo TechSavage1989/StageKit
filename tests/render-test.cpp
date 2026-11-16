@@ -307,6 +307,37 @@ int main(int argc, char **argv)
 			      mean_abs_diff(smoothed, hexagons) < mean_abs_diff(hexagons, original),
 		      "smoothing softens the edges between cells (diff from hard edges %.2f)",
 		      mean_abs_diff(smoothed, hexagons));
+		// Glass: each cell lit like a small pane. Off it changes nothing.
+		{
+			obs_data_t *gs = obs_source_get_settings(filter);
+			obs_data_set_double(gs, "pixel_smooth", 0);
+			obs_data_set_double(gs, "pixel_glass", 100);
+			obs_source_update(filter, gs);
+			sleep_ms(60);
+			const std::vector<uint8_t> glassy = render(img, w, h);
+			write_frame(out + "/glass_030.rgba", glassy, w, h);
+			obs_data_set_int(gs, "pixel_glass_style", 1);
+			obs_source_update(filter, gs);
+			sleep_ms(60);
+			const std::vector<uint8_t> edged = render(img, w, h);
+			write_frame(out + "/glass_edges_030.rgba", edged, w, h);
+			CHECK(mean_abs_diff(edged, hexagons) > 0.5 && mean_abs_diff(edged, glassy) > 0.5,
+			      "Glass has two styles, rounded and edges, each a look of its own (edges differ %.2f from flat, %.2f from rounded)",
+			      mean_abs_diff(edged, hexagons), mean_abs_diff(edged, glassy));
+			obs_data_set_int(gs, "pixel_glass_style", 0);
+			obs_data_set_double(gs, "pixel_glass", 0);
+			obs_source_update(filter, gs);
+			obs_data_release(gs);
+			sleep_ms(60);
+			const std::vector<uint8_t> flat = render(img, w, h);
+			double see_through = 0;
+			for (size_t i = 3; i < glassy.size(); i += 4)
+				see_through += glassy[i] < flat[i] ? 1 : 0;
+			CHECK(mean_abs_diff(glassy, hexagons) > 1.0 && mean_abs_diff(flat, hexagons) < 0.3 &&
+				      see_through == 0,
+			      "Glass lights each cell like a pane and takes nothing of the picture away; at 0 the cells are flat (diff %.2f with, %.2f without)",
+			      mean_abs_diff(glassy, hexagons), mean_abs_diff(flat, hexagons));
+		}
 		const std::vector<uint8_t> turned = mosaic(0, 0, 30, 50);
 		const std::vector<uint8_t> shifted = mosaic(0, 0, 0, 52);
 		CHECK(mean_abs_diff(turned, squares) > 0.3 && mean_abs_diff(shifted, squares) > 0.3,

@@ -132,6 +132,7 @@ off, so it costs nothing while off.
 | Blur type | Gaussian (smoothest), Dual Kawase (fastest, best for strong blur), Box, Pixelate (a mosaic of cells), Zoom, Motion, Temporal (the picture stays sharp and whatever moves leaves a trail; strength 100 is a trail of one second) |
 | Cell shape | For Pixelate: squares, hexagons, circles, triangles, Voronoi (uneven cells), rhomboids or triakis (triangles split in three). A filter set to the old *Hexagons* type is now Pixelate with hexagon cells and looks the same |
 | Smoothing | For Pixelate: how far each cell's colour runs into its neighbours. 0 gives hard edges |
+| Glass | For Pixelate: lights each cell like a small piece of glass, with a glint and a darker rim. 0 gives flat cells. Ambient Background's mosaic has the same slider |
 | Origin X / Y, Rotation | For Pixelate: the point of the picture the pattern is laid out from and turned around, and by how much it is turned |
 | Strength | 0–1000. Gaussian, Kawase and Box look alike at the same number; above 250, Gaussian and Box are drawn the Kawase way, which stays smooth |
 | Blur transition | Grow the blur strength, or cross-fade a fully blurred image in |
@@ -920,6 +921,12 @@ A scene transition, chosen like any other: in OBS's *Scene Transitions* box pres
   this source* and press *Add this link*; the one then moves, resizes and changes into the other.
   Add as many links as you like, each with its own remove button. A source linked to several
   others goes with whichever of them the other scene shows.
+- **A rule for two scenes**: the change from one named scene to another made its own way. Choose
+  the *From scene* and the *To scene* (either can be *(any scene)*), set *Change with* (*Morph*,
+  *Cross-fade* or *Cut*), *Other items*, *Morph the main picture* and the easing, tick *Both ways*
+  for the change back as well, and press *Save this rule*. Rules are listed under *Rules for
+  scenes*, each with its remove button; choosing two scenes that have a rule shows it again. The
+  duration stays the one set for the transition in OBS.
 - **Other items**, which are in only one of the scenes, fade (as it comes), fade and zoom, or slide
   off the nearest edge of the screen. Something that fills the screen is a background and always
   fades; two backgrounds changing over stay a whole picture all the way.
