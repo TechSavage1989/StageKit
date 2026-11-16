@@ -369,11 +369,14 @@ nearest.
   space. At 98 %, a window that fills the screen stays under the camera, and a window of another
   shape, which would leave bars beside it, is fitted beside the camera instead. The Stream Deck
   *Fit to Space Overlap* key switches it.
-  Two tick boxes under it choose what counts as filling: **Use fill percentage** (ticked as it
-  comes) is the share above; **Use edge distances** goes by the empty room the fitted item would
-  leave at each edge of its space, with a pixel amount each for **top**, **bottom**, **left** and
-  **right**: it overlaps only when all four are within their amounts. With both ticked either is
-  enough; with neither, the item is always fitted beside the ignored sources.
+  Two tick boxes under it choose what counts as filling. **Use fill percentage** (ticked as it
+  comes) is the share above. **Use edge gaps (pixels)** has four sliders, **Top**, **Bottom**,
+  **Left** and **Right gap up to**: the widest empty gap allowed between the fitted source and
+  that edge of its space. The source overlaps the ignored sources only when all four gaps are
+  within their sliders; 0 means it must reach that edge. A window that fills the width and leaves
+  20 px above and below overlaps the camera with top and bottom at 30; a narrower one that leaves
+  300 px at the sides goes beside it. With both boxes ticked, meeting either is enough; with
+  neither, the source is always fitted beside the ignored sources.
 - Add the filter to the **scene**, not to a group. To fit a group, choose the group as the *Item*.
   On a group the filter does nothing and says so.
 - With *Use visible pixels* ticked, the fitted item itself goes by what it shows, like the items

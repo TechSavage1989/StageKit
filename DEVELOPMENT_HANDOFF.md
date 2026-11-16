@@ -211,6 +211,19 @@ information), which is what the template uses for pushes to `main`.
   the scene-collection rebuild. Scope: merging rebuild changes after green checks and publishing them
   as pre-releases. Not covered: a stable release, visibility or access changes, unrelated work.
 
+## The capture gone after a scene change; edge gaps as sliders; the pack's SVGs (0.1.0-beta131)
+
+The owner, on beta130: "When switching to a non window capture containing scene then to window
+capture scene, the capture is gone and does not come back unless I specifically pick a certain one
+of the auto capture windows." Cause, read from the code (a test now covers it; it was not run against the old code): `ready_for`
+dropped every ready capture while the parent was in no scene on show, the bridge too, with
+`own_ok_` false, and nothing took a bridge up again but `aim`. Now the shown entry's ready capture
+is kept while away and a lost bridge is restored. Not run on Windows. Also: the edge amounts are
+sliders named *Top / Bottom / Left / Right gap up to* under *Use edge gaps (pixels)* (the owner:
+"should be sliders with digit inputs", "it's not clear how it works"); the owner's icon pack SVGs
+are committed under `streamdeck/svg/pack/` with their say-so. The owner confirmed "key icons work".
+Still unanswered: whether *Square Camera* stays clear under Blur with *Never blur these*.
+
 ## Fit to Space: overlap by edge distances (0.1.0-beta130)
 
 The owner asked for the *Fill needed to overlap* rule to have, beside the percentage, pixel amounts
