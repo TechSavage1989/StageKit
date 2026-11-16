@@ -903,7 +903,8 @@ set yourself on a linked source is taken off the next time it is shown, and unti
 lock as it is. The copy tools pass over locked copies unless *Also change locked copies* is ticked.
 
 As with Show in Scenes, a source shown or hidden in a scene that is not on screen changes at once,
-without its transition.
+without its transition. And a change still under way when its scene is left with a cut is finished
+for the linked sources, so a hidden capture does not stay running.
 
 **Also in other scenes** reaches past the filter's own scene. Add sources to that list (the same
 camera, or another camera that lives in another scene) and they are shown and hidden with the linked

@@ -47,6 +47,14 @@ void set_item_transitions(obs_sceneitem_t *item, const std::string &kind, uint32
 // group itself is shown or hidden, are not stopped.
 bool set_item_visible(obs_sceneitem_t *item, bool visible);
 
+// Ends a show transition still under way on a hidden item, or a hide
+// transition on a shown one. OBS only ends an item's transition by drawing
+// it, so one whose scene was left with a cut part-way through is never ended,
+// and its source is in use again whenever that scene is on (a capture card
+// stays open). The next change in the other direction does not end it either.
+// Says whether there was one.
+bool end_stale_transition(obs_sceneitem_t *item);
+
 // Adds the "Change with" list and its "Lasting" time to a properties window.
 void add_item_transition_properties(obs_properties_t *props);
 

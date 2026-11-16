@@ -34,6 +34,10 @@ both component and full layouts that contain all the live sources is fine".
   Visibility no longer losing a press from another thread, and three Fit to Space fixes (a hidden
   item's room on record, a showing item with no image holds its room, the own cut from the side it
   is kept towards).
+- The generated collection was driven headless with the new build (a program kept in the
+  scratchpad, not committed): every capture switch in both scenes, the eye, the camera and chat
+  switches, and that no hidden capture stays in use. It found the transition left under way when a
+  scene is left with a cut, now ended by Link Visibility.
 - Not seen on Windows: the Morph between two captures as items, a real display capture's first
   frames, the HD60S when Component-Capture-Scene comes on. Open questions put to the owner: Alerts
   place, widget order, Pureref, one key per look, Studio Mode.

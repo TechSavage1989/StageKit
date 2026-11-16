@@ -194,6 +194,16 @@ public:
 		was_on_ = true;
 		if (!lock_hidden)
 			sweep_due_ = false;
+		// A transition left under way on a listed item (its scene was left
+		// with a cut part-way through) is ended, twice a second.
+		if ((stale_timer_ -= seconds) <= 0.0) {
+			stale_timer_ = 0.5;
+			for (const std::string &name : names)
+				if (end_stale_transition(find_item(parent_, name)))
+					obs_log(LOG_INFO,
+						"Link Visibility '%s': ended a transition left under way on '%s'",
+						obs_source_get_name(source_), name.c_str());
+		}
 		if (sweep_due_ && locking) {
 			for (const std::string &name : names) {
 				obs_sceneitem_t *item = find_item(parent_, name);
@@ -359,6 +369,7 @@ private:
 	bool lock_sweep_ = false;                 // the option has just been switched on
 	bool sweep_due_ = false;                  // the hidden ones are still to be locked (the tick's own)
 	bool was_on_ = false;                     // the filter was enabled at its last tick
+	double stale_timer_ = 0.0;                // until the next look for transitions left under way
 	std::atomic<std::thread::id> applying_{}; // the thread acting for the filter, while it does
 };
 

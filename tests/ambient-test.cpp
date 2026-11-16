@@ -5773,6 +5773,25 @@ int main(int argc, char **argv)
 				CHECK(wrong == 0 && settled(),
 				      "keys pressed from two threads at once, again and again: each time one capture ends up shown in both scenes, unlocked, with only its switch on (%d wrong; %s)",
 				      wrong, state().c_str());
+				// A scene left with a cut while a capture's change is still
+				// under way there: OBS never ends that change, and the
+				// capture would stay in use whenever the scene is on.
+				obs_set_output_source(0, obs_scene_get_source(scene[0]));
+				sleep_ms(300);
+				obs_source_set_enabled(sw[1], true);
+				sleep_ms(80);
+				obs_set_output_source(0, obs_scene_get_source(scene[1]));
+				sleep_ms(400);
+				obs_source_set_enabled(sw[2], true);
+				sleep_ms(400);
+				obs_set_output_source(0, obs_scene_get_source(scene[0]));
+				sleep_ms(1500);
+				// (Only the second is looked at: without sound in these tests
+				// no item transition ends by itself, so the first, hidden
+				// earlier with one, is still in use either way.)
+				CHECK(state() == "001/001 locked 110/110 on 001" && !in_use(src[1]) && in_use(src[2]),
+				      "a scene left with a cut part-way through a change: back on it, the capture whose change was cut off is not in use (%s; %d %d)",
+				      state().c_str(), (int)in_use(src[1]), (int)in_use(src[2]));
 
 				obs_set_output_source(0, before_out);
 				for (int i = 0; i < 3; i++) {

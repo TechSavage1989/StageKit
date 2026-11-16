@@ -70,27 +70,38 @@ bool set_item_visible(obs_sceneitem_t *item, bool visible)
 	// A group is shown while a scene that shows it is.
 	obs_source_t *holder = obs_scene_get_source(obs_sceneitem_get_scene(item));
 	const bool in_view = holder && obs_source_showing(holder);
-	// (Held: taking a transition off an item elsewhere must not end it here.)
-	obs_source_t *held[2] = {nullptr, nullptr};
-	if (!in_view && !owned(item)) {
-		held[0] = obs_source_get_ref(obs_sceneitem_get_transition(item, visible));
-		held[1] = obs_source_get_ref(obs_sceneitem_get_transition(item, !visible));
-	}
+	if (in_view || owned(item) || obs_sceneitem_visible(item) == visible)
+		return obs_sceneitem_set_visible(item, visible);
+	// Out of view: the item's transition for this change is taken off for
+	// the change and put back after it, so OBS starts none. One started and
+	// then stopped from outside (the first way, during beta147's making)
+	// left a Morph unable to end the next change made in view: the source
+	// it hid stayed in use for good.
+	obs_source_t *held = obs_source_get_ref(obs_sceneitem_get_transition(item, visible));
+	const uint32_t ms = obs_sceneitem_get_transition_duration(item, visible);
+	if (held)
+		obs_sceneitem_set_transition(item, visible, nullptr);
 	const bool changed = obs_sceneitem_set_visible(item, visible);
-	if (changed) {
-		// OBS has started the first of these. Stopping it takes it off the
-		// scene's list of what is in use; clearing it lets go of the item's
-		// source and says it is no longer under way. The other may have been
-		// left running when its scene went out of view.
-		if (held[0])
-			obs_transition_force_stop(held[0]);
-		for (obs_source_t *transition : held)
-			if (transition)
-				obs_transition_clear(transition);
+	if (held) {
+		obs_sceneitem_set_transition(item, visible, held);
+		obs_sceneitem_set_transition_duration(item, visible, ms);
+		obs_source_release(held);
 	}
-	for (obs_source_t *transition : held)
-		obs_source_release(transition);
 	return changed;
+}
+
+bool end_stale_transition(obs_sceneitem_t *item)
+{
+	if (!item || owned(item))
+		return false;
+	obs_source_t *other = obs_sceneitem_get_transition(item, !obs_sceneitem_visible(item));
+	if (!other || !obs_source_active(other))
+		return false;
+	// Stopping it says so to OBS, which takes it off the scene's list of
+	// what is in use; clearing it lets go of the source it held.
+	obs_transition_force_stop(other);
+	obs_transition_clear(other);
+	return true;
 }
 
 void add_item_transition_properties(obs_properties_t *props)

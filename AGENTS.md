@@ -482,8 +482,13 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   whether or not its scene is drawn, and only drawing ends it (`obs_transition_force_stop` alone
   does not clear it); left running, it makes the hidden source count as in use the moment that
   scene comes on, and a capture card set to let go of its device opens it and closes it again.
-  Out of view the helper stops and clears the transition OBS started, so the change is a cut; the
-  item keeps its transitions. Items a Standby filter owns are passed over. Link Visibility and Show
+  Out of view the helper takes the item's transition off for that one change and puts it back
+  after, so OBS starts none and the change is a cut. (Started and then stopped from outside, the
+  first way, a Morph could not end the next change made in view.) And a change under way when its
+  scene is left with a cut is never ended either: Link Visibility ends one left on a listed item
+  twice a second (`end_stale_transition`: a show transition on a hidden item, or a hide on a shown
+  one). Found by driving the generated collection headless with the new build; the tests had
+  waited for every change to end before the next step. Items a Standby filter owns are passed over. Link Visibility and Show
   in Scenes go through it; Program Trigger, the two switchers, Auto Capture's hide, Show/Hide
   Animation and the stand-ins do not yet. A source with sound is finished hiding in the scene's
   audio mix, so it may still be in use for one audio tick when the scene comes on; not measured.
