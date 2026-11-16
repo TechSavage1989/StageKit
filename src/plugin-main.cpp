@@ -158,6 +158,7 @@ void obs_module_unload(void)
 		obs_hotkey_unregister(hk.id);
 	stagekit::vendor_api_unregister();
 	stagekit::item_morph_stop();
+	stagekit::standby_stop();
 	stagekit::stop_window_watch();
 	stagekit::stop_updater();
 	obs_log(LOG_INFO, "plugin unloaded");
