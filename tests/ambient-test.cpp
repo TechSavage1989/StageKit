@@ -1111,6 +1111,40 @@ static void fit_priority_test()
 // sources. The owner: "Link visibility scene filter should have additional
 // transition options including a fallback or other items transition for
 // items that don't have partners".
+// A Scene Blur's window has all of the Blur filter's look controls, each
+// shown for the blur types it is for: the mosaic's for Pixelate, the angle
+// for Motion, the centre for Zoom. The owner: "the new scene blur filter is
+// missing most of the original blur filter configurations including cell
+// shape etc."
+static void scene_blur_controls_test()
+{
+	printf("\n[scene blur: the blur's own controls]\n");
+	obs_source_t *scene = obs_scene_get_source(obs_scene_create("SBC Scene"));
+	obs_source_t *filter = obs_source_create("stagekit_scene_blur", "SBC Blur", nullptr, nullptr);
+	obs_source_filter_add(scene, filter);
+	auto shown = [&](int type, const char *name) {
+		obs_data_t *s = obs_source_get_settings(filter);
+		obs_data_set_int(s, "blur_type", type);
+		obs_data_release(s);
+		obs_properties_t *props = obs_source_properties(filter);
+		obs_property_t *p = obs_properties_get(props, name);
+		const bool visible = p && obs_property_visible(p);
+		obs_properties_destroy(props);
+		return visible;
+	};
+	// (BlurType: 0 Gaussian, 1 Kawase, 2 Box, 3 Pixelate, 4 Zoom, 5 Motion.)
+	bool mosaic = true;
+	for (const char *name :
+	     {"pixel_shape", "pixel_smooth", "pixel_glass", "pixel_glass_style", "origin_x", "origin_y", "rotation"})
+		mosaic = mosaic && shown(3, name);
+	CHECK(mosaic && !shown(1, "pixel_shape") && shown(5, "angle") && shown(4, "center_x") && shown(3, "strength") &&
+		      shown(1, "ramp_style"),
+	      "a Scene Blur offers the Blur filter's controls for each blur type: cell shape, smoothing, glass, origin and rotation for Pixelate, angle for Motion, centre for Zoom");
+	obs_source_filter_remove(scene, filter);
+	obs_source_release(filter);
+	obs_source_release(scene);
+}
+
 static void link_transitions_test(uint32_t w, uint32_t h)
 {
 	printf("\n[link visibility: show and hide transitions, and Morph's unpaired sources]\n");
@@ -1549,6 +1583,14 @@ int main(int argc, char **argv)
 		return g_failures ? 1 : 0;
 	}
 
+	if (getenv("STAGEKIT_TEST_ONLY_SCENE_BLUR_CONTROLS")) { // to try that section alone
+		scene_blur_controls_test();
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
+
 	if (getenv("STAGEKIT_TEST_ONLY_LINK_TRANS")) { // to try that section alone
 		link_transitions_test(w, h);
 		obs_shutdown();
@@ -1831,6 +1873,7 @@ int main(int argc, char **argv)
 	// A blur on a scene: all its sources, its live and capture sources or
 	// the ones chosen, never the ones listed, and in that scene only.
 	{
+		scene_blur_controls_test();
 		printf("\n[scene blur]\n");
 		const std::string blur_dir = out + "/../scene-blur";
 		if (std::system(("mkdir -p '" + blur_dir + "'").c_str()) != 0)
