@@ -1544,7 +1544,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   is on (`CurrentProgramSceneChanged` and the preview's). The owner asked for "streamdeck key ...
   for scene switching".
 - **The Stream and Record keys** (`src/actions/output.ts`, one `OutputKey` class, UUIDs `.stream`
-  and `.record`, betaNEXT; `src/live.ts`, `src/animate.ts`, `src/hold.ts`). The owner: "Id like
+  and `.record`, beta168; `src/live.ts`, `src/animate.ts`, `src/hold.ts`). The owner: "Id like
   animated stream Start buttons and stream Record buttons. both should be able to be set to
   toggle, start, pause or stop, and have animations that are relevant, and match the existing
   color themes", then "the new keys also need a long press setting". Like the Switch Scene key
