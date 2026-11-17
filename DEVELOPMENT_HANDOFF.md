@@ -13,6 +13,27 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
+## Fix: a capture comes out of the DSLR again (item Morph, one item in two changes)
+
+The owner, with their collection and four logs: "when I switch to window or game source from DSLR
+by hiding DSLR, it doesn't smoothly morph and transition into the new source like all the others
+do". In their Full-Capture-Scene a capture's key shows the capture; Link Visibility-Captures
+(*Show only one*, Morph) hides DSLR; the capture's *Follow the first* link (Link Visibility-Camera
+Window, Game, ...) shows Square Camera, hidden while DSLR fills the screen. Their Morph links
+include "DSLR ↔ Square Camera", and links are paired first, so DSLR went into Square Camera and the
+capture, with nothing left to change into, faded in by itself. Their log shows one morph layer per
+switch (03:47:43 and 03:47:44). Between two captures only one pair changes, so those morphed.
+
+- `src/transition/item-morph.cpp`: an item left over changes into (or out of) one already paired,
+  in this tick or within `kGraceNs` before, by the same rules (linked, then the largest). So the
+  capture comes out of DSLR while DSLR goes into Square Camera, and back both go into DSLR. The
+  order the three changes arrive in no longer matters.
+- Test: `[morph between items]` gains the owner's case with three blocks (both ways, the capture a
+  moment late, and a small unlinked item that still fades by itself). The new checks fail on the
+  old code (no picture of camera and capture half-way, one layer) and pass now.
+- Not seen on Windows. A workaround for the old build was to take "DSLR ↔ Square Camera" off the
+  Morph (StageKit) links (then DSLR and the capture pair as main images, and Square Camera fades).
+
 
 ## Live, Chat Live and Standby; Switch to scene (0.1.0-beta154)
 

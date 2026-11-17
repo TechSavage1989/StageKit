@@ -857,6 +857,19 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     when their sources are linked in *any* Morph's settings (`g_said`), or are the largest of each
     at 15 % of the screen or more (`pair_main`). Only in a scene that is showing and for items
     straight in it: a group would grow to the layer's size.
+  - **One item can be in two changes** (the fix after beta154). An item left over after the pairing
+    changes into (or out of) one already paired, in this tick or within `kGraceNs` before (a
+    `Paired` entry is offered again with `taken` set, while its item is still hidden or shown as it
+    was), by the same two rules: linked, then the largest left over with the largest of the other
+    kind. Each such pair is a job and a layer of its own. The owner's Live scene: showing a capture
+    hides the full-screen DSLR (Link Visibility, *Show only one*) and brings back Square Camera (a
+    *Follow the first* link per capture), and their Morph links say DSLR ↔ Square Camera. The camera
+    took the corner view and the capture, left over, faded in by itself: "when I switch to window or
+    game source from DSLR by hiding DSLR, it doesn't smoothly morph and transition into the new
+    source like all the others do". Now the capture comes out of the DSLR as well, and whichever
+    order the three changes arrive in, the result is the same. Tested in `[morph between items]`
+    (both ways, the capture a moment late, a small unlinked item still fading by itself); not yet
+    seen on Windows.
   - The change goes by the shown item's transition's clock, and the tick ends it at the very frame
     that transition draws the item itself: OBS's video time is the same in a frame's tick and its
     drawing. Do not time it any other way, or there is a frame with both or with neither.

@@ -1061,6 +1061,10 @@ Which two go together follows the Morph transition's rules:
 - Then **the main image**: the largest item hidden and the largest item shown, when each covers
   at least 15 % of the screen. That is what pairs two captures in Automatic Source Switcher with no link
   at all. Untick *Morph the main image* to have only linked sources change into each other.
+- An item **left over** still changes into (or out of) one that is already changing, by the same
+  two rules. Hiding a full-screen camera to show a capture often brings the camera's corner view
+  back as well: with the two cameras linked, the camera goes into its corner view, and the capture
+  comes out of the camera too, instead of fading in by itself. Going back, both go into the camera.
 
 An item with nothing to change into fades by itself, or fades and zooms if *With nothing to change
 into* (in Show in Scenes; *Other items* in the transition's own settings) says so.
