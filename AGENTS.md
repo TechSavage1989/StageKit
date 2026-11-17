@@ -1008,6 +1008,24 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   owner's words "a hexagon that has flat sharp edges because it's a flat plate of glass, and ...
   a curved dome glass". The plate's bevel has straight facets for squares and hexagons (the
   hexagon's three axes are those of `hex_centre`: change them together) and is round for the rest.
+  *Mosaic edge* (`pixel_edge`, `MosaicEdge`, by number, append-only: 0 *Cut at the edge*, as it
+  comes, 1 *Whole cells*; `BlurLook::whole_cells`, the `whole` uniform; a control of the shared
+  look, so the Blur filter and Scene Blur both have it, Scene Blur only with *Each source by
+  itself*). The owner: "I'd like if there was a configuration to have the shadows or other applied
+  strokes, glows or filters in general take on the visible pixel shape, so when a screen is
+  blurred it can take on the pixel shape for example". With whole cells a tap whose cell the
+  picture's edge cuts gives nothing (`cell_whole` in `mosaic_tap`), so the outline is whole cells
+  and the alpha follows it; with smoothing it fades into the cells left out. The picture cannot
+  grow, so cells are only left out, never drawn past the edge. Each shape is judged by its own
+  corners (`inside_by` on the cell's corners turned back to the picture, half a pixel of slack),
+  a circle by its radius (the gap cell between three circles by 0.29 of a cell), a Voronoi cell by
+  its 24 neighbours (`voronoi_whole`: whether the cell reaches the line of any picture edge,
+  worked out as a stretch of that line, only for cells within a square's diagonal of an edge).
+  Anything after the Blur filter that reads alpha (Shadow, Glow & Outline, Corners & Edges)
+  follows the cells by itself; a test checks that an outline after it is jagged. The nine taps are
+  a loop since then (`PSMosaic`): written out nine times, the Voronoi test made a very long shader,
+  and Direct3D compiles every technique of the file when OBS loads the plugin. Not run on
+  Direct3D.
 - **New shader code goes in `stagekit-looks.effect`, not in the older files.** The mosaic, the
   trail and bloom live there so that, should Direct3D refuse any of it, `stagekit-blur.effect` and
   `stagekit-ambient.effect` still load: both features then log one error and fall back (squares and
@@ -1865,6 +1883,45 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     (beta161). The OBS side reports `style` (`blur_style_name`), an entry of key-types.json's
     Blur style list (fourteen: the blurs, `trail`, the mosaic shapes, `glass` for any mosaic with
     glass), which is what the key shows on *Automatic*; keep the two in step.
+  - **Blur area** (`blur_area`, `Area`, by number, append-only: 0 *The scene as drawn*, as it
+    comes and as every filter saved before reads, 1 *Each source by itself*). The owner: "i want a
+    configuration option to keep scene filters within the bounds of a source, or overlay the
+    whole source. see the difference between the local source blur filter and the scene blur
+    filter with the same settings. the scene blur filter doesn't seem to go all the way to the
+    edges". Blurring the finished scene, the cells along a source's edge took in the background
+    round it, and the mosaic's grid is the canvas's. With *Each source by itself*
+    (`render_each`): each covered item's picture (`LookPaint::item_picture`: its source, crop and
+    running show or hide transition, at the source's size) is blurred by itself with
+    `BlurPipeline::blur_into` (the Blur filter's own run and composite, so origin, rotation, zoom
+    centre and strength are the source's, as on the source) once a frame (`cache_` by item id,
+    `blurred_item`; a trail of its own per item, `BlurTrail`, moved on by the video frame's time;
+    let go 2 s after last use, and all of them when the blur is off or draws the scene as a whole).
+    Then the covered items' boxes are drawn (`tr_boxes_`), the scene is drawn again from its items
+    (`tr_redrawn_`: a covered item as its blurred picture, `LookPaint::draw_picture`, the rest
+    with `draw_item`), the frame's Scene Shadow is laid over that again
+    (`scene_shadow_lay_over`: the same cast and mask, `compose` into its own `tr_over_`), and that
+    goes over the scene inside the boxes only (`composite_masked`, mix 1). Outside the boxes the
+    scene is OBS's own; inside, the redraw does not follow a crop to bounds, scale filters or
+    blending modes (as `tr_under_` before it). Tested equal to a Blur filter on the source: 0.00
+    off in the box and along the edge for hexagons, Gaussian and whole cells (the scene as drawn:
+    40.7 along the top edge). A crop is the edge: the per-source filter blurs the whole source
+    and OBS crops it after, so at a crop the two differ.
+  - **Scene Shadow takes the blurred shape** of a source blurred by itself: in its render it looks
+    for an enabled Scene Blur on the scene and draws each casting or masked item through
+    `scene_blur_item_picture` (the same picture, made once a frame by whichever asks first;
+    Scene Shadow draws first, inside Scene Blur's `draw_filter_input`), else as before. So the
+    shadow, glow and outline follow whole cells, and a soft blur's soft edge, and stay sharp
+    over the blurred source (Scene Blur lays the frame's shadow over its redraw). With *The scene
+    as drawn* nothing changes: shadows are blurred with what they fall on. Morph never carries
+    this: it cross-fades while a Scene Blur blurs.
+  - Tests: `[blur edges: each source by itself, and whole cells]` (`blur_edges_test`, a
+    stand-in kind `stagekit_test_photo`; alone with `STAGEKIT_TEST_ONLY_BLUR_EDGES`, which also
+    runs the controls test; contact sheet `docs/images/blur-edges.png` from `$out/blur-edges`):
+    the match above, nothing of the background in the top cells, drawn twice alike, whole cells
+    for every shape and a turned pattern, an outline after a Blur filter and a Scene Shadow's
+    outline jagged with whole cells (inside the box too) and straight without, Temporal and
+    Kawase each source by itself. `scene_blur_controls_test` checks *Blur area* and *Mosaic edge*'s
+    visibility and defaults.
   - Tests: `[scene blur]` in `tests/ambient-test.cpp` (stand-in captures of kind `xshm_input`
     drawing a checkerboard, sharpness measured as the mean step between neighbouring pixels),
     `streamdeck/tests/obs.test.ts` (stand-in server). Not run on Windows or Direct3D; the key not

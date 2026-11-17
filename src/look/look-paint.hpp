@@ -89,6 +89,10 @@ public:
 	// puts that picture where the scene draws it. nullptr when it draws
 	// nothing. The picture is borrowed until the next begin_frame.
 	gs_texture_t *item_picture(obs_sceneitem_t *item, matrix4 &m, uint32_t &w, uint32_t &h);
+	// A picture of an item made some other way (`texture`, w by h, straight
+	// alpha, as item_picture's matrix places it: Scene Blur's source blurred
+	// by itself) drawn where `m` puts it, with the blending set now.
+	void draw_picture(gs_texture_t *texture, const matrix4 &m, uint32_t w, uint32_t h);
 
 	// A picture of the canvas (cx by cy), cleared, ready to draw items into
 	// with the blending OBS fills a filter's picture with. `end_canvas`
@@ -102,8 +106,10 @@ public:
 	// The shadow and outline of `cast` laid over `scene`, off `mask`
 	// (nullptr: the mask is `cast` itself). Kept in a picture of its own
 	// until the next call; false when nothing could be drawn.
+	// (`into`: a picture of the caller's instead, left as it is for
+	// draw_out.)
 	bool compose(gs_texture_t *scene, gs_texture_t *cast, gs_texture_t *mask, const ShadowLook &look, uint32_t cx,
-		     uint32_t cy);
+		     uint32_t cy, gs_texrender_t *into = nullptr);
 	// What `compose` made, onto what is being drawn, following OBS's
 	// linear-light setting.
 	void draw_out(uint32_t cx, uint32_t cy);

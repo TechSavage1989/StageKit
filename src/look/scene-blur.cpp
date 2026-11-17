@@ -38,6 +38,24 @@ the Free Software Foundation; either version 2 of the License, or
 // the shape of what shows of a covered source (a per-source blur spreads
 // past a see-through edge), and a group or nested scene counts as one
 // source.
+//
+// That is the "Blur area" called "The scene as drawn". The other, "Each
+// source by itself", blurs each covered source from its own image, as a Blur
+// filter on it would (the owner: "the scene blur filter doesn't seem to go all
+// the way to the edges"; blurring the finished scene, a source's edge took in
+// the background around it, and a mosaic was laid out over the screen):
+//
+//  - each covered item's own picture (LookPaint::item_picture) blurred by
+//    itself, once a frame (`cache_`), with a trail of its own for Temporal;
+//  - the scene drawn again from its items, a covered one as that picture,
+//    the rest as they are, and the frame's Scene Shadow laid over it again
+//    (scene_shadow_lay_over), so a shadow falling there is kept;
+//  - that laid over the scene only inside the covered items' boxes, where
+//    something changed. Outside them the scene is as OBS drew it.
+//
+// A Scene Shadow asks for those pictures (scene_blur_item_picture) and casts
+// its shadow from them, so the shadow takes the blurred shape: a mosaic's
+// whole cells, say.
 
 #include "scene-blur.hpp"
 
@@ -84,6 +102,15 @@ enum class Cover : int {
 	Live = 1,   // live and capture sources
 	Chosen = 2, // the sources listed
 };
+
+// What is blurred. Kept by number: new ones go at the end.
+enum class Area : int {
+	Scene = 0,      // the finished scene, kept to where covered sources show
+	EachSource = 1, // each covered source from its own image, in its place
+};
+
+// A source's picture not drawn for this long is forgotten.
+constexpr uint64_t kForgetItemNs = 2000000000ULL;
 
 // How often the scene's items are looked at again while it is blurred and
 // showing.
@@ -245,6 +272,10 @@ public:
 	// Whether it blurs nothing at all now: Morph may then still take the
 	// scene apart.
 	bool blurs_nothing() const { return ramp_.level() <= 0.0005 || !covers_any_.load(); }
+	// "Each source by itself": `item` as this filter draws it this frame,
+	// blurred by itself, with the transform that puts it in the scene.
+	// nullptr when it is not blurred that way now. On the drawing thread.
+	gs_texture_t *blurred_item(obs_sceneitem_t *item, matrix4 &m, uint32_t &w, uint32_t &h);
 
 private:
 	void look_again(obs_source_t *parent);
@@ -255,6 +286,9 @@ private:
 	static void hotkey_cb(void *data, obs_hotkey_id id, obs_hotkey_t *hotkey, bool pressed);
 	static void rename_cb(void *data, calldata_t *cd);
 	void draw_out(uint32_t cx, uint32_t cy);
+	void begin_paint(uint64_t frame);
+	bool render_each(obs_source_t *parent, uint32_t cx, uint32_t cy);
+	void forget_items(bool all);
 
 	obs_source_t *source_;
 	SwitchRamp ramp_;
@@ -263,6 +297,7 @@ private:
 	BlurLook look_;
 	RampStyle style_ = RampStyle::Grow;
 	Cover cover_ = Cover::All;
+	Area area_ = Area::Scene;
 	std::vector<std::string> chosen_, never_;
 	Covered covered_;
 	bool classified_ = false;
@@ -295,6 +330,21 @@ private:
 	gs_texrender_t *tr_under_ = nullptr;
 	gs_texrender_t *tr_mask_ = nullptr;
 	gs_texrender_t *tr_out_ = nullptr;
+	gs_texrender_t *tr_boxes_ = nullptr;   // Each source by itself: where the scene changes
+	gs_texrender_t *tr_redrawn_ = nullptr; // and the scene drawn again there
+	// Each source by itself: each covered item's own picture blurred, by id.
+	struct ItemBlur {
+		gs_texrender_t *tr = nullptr;
+		BlurTrail trail;
+		uint64_t frame = 0; // the video frame it was drawn for
+		uint64_t used_ns = 0;
+		bool drawn = false;
+		matrix4 m;
+		uint32_t w = 0, h = 0;
+	};
+	std::unordered_map<int64_t, ItemBlur> cache_;
+	uint64_t paint_frame_ = 0;
+	bool paint_begun_ = false;
 	uint64_t last_frame_ = 0;
 	uint32_t last_cx_ = 0, last_cy_ = 0;
 	bool last_linear_ = false;
@@ -311,6 +361,8 @@ SceneBlur::SceneBlur(obs_data_t *settings, obs_source_t *source) : source_(sourc
 	tr_under_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 	tr_mask_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 	tr_out_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
+	tr_boxes_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
+	tr_redrawn_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 	obs_leave_graphics();
 	signal_handler_connect(obs_source_get_signal_handler(source_), "rename", rename_cb, this);
 	proc_handler_t *ph = obs_source_get_proc_handler(source);
@@ -331,9 +383,14 @@ SceneBlur::~SceneBlur()
 {
 	signal_handler_disconnect(obs_source_get_signal_handler(source_), "rename", rename_cb, this);
 	unregister_hotkeys();
+	obs_enter_graphics();
+	forget_items(true);
+	obs_leave_graphics();
 	blur_.reset();
 	paint_.reset();
 	obs_enter_graphics();
+	gs_texrender_destroy(tr_boxes_);
+	gs_texrender_destroy(tr_redrawn_);
 	gs_texrender_destroy(tr_scene_);
 	gs_texrender_destroy(tr_under_);
 	gs_texrender_destroy(tr_mask_);
@@ -350,6 +407,7 @@ void SceneBlur::update(obs_data_t *settings)
 	look_ = look;
 	style_ = ramp.style;
 	cover_ = static_cast<Cover>(std::clamp<long long>(obs_data_get_int(settings, "cover"), 0, 2));
+	area_ = static_cast<Area>(std::clamp<long long>(obs_data_get_int(settings, "blur_area"), 0, 1));
 	chosen_ = pick_list_read(settings, "chosen", false);
 	never_ = pick_list_read(settings, "never", false);
 	settings_changed_ = true;
@@ -614,6 +672,7 @@ void SceneBlur::render()
 	if (!usable || !parent || !paint_->ready() || !blur_->ready() || !blur_->has_looks() || !scenes_loaded() ||
 	    level <= 0.0005 || strength <= 0.01 || mix <= 0.0005 || !cx || !cy) {
 		blur_->forget_trail(); // a trail starts afresh when the blur comes back
+		forget_items(true);
 		obs_source_skip_video_filter(source_);
 		have_out_ = false;
 		return;
@@ -628,6 +687,27 @@ void SceneBlur::render()
 		return;
 	}
 	have_out_ = false;
+	Area area;
+	{
+		std::lock_guard lock(mutex_);
+		area = area_;
+	}
+	if (area == Area::EachSource) {
+		if (!render_each(parent, cx, cy)) {
+			obs_source_skip_video_filter(source_);
+			return;
+		}
+		forget_items(false);
+		draw_out(cx, cy);
+		draws_++;
+		have_out_ = true;
+		last_frame_ = frame;
+		last_cx_ = cx;
+		last_cy_ = cy;
+		last_linear_ = linear;
+		return;
+	}
+	forget_items(true);
 
 	// The scene's items, from the back, each held for this call only.
 	std::vector<obs_sceneitem_t *> items = held_items(obs_scene_from_source(parent));
@@ -661,7 +741,7 @@ void SceneBlur::render()
 	}
 	gs_texture_t *scene = gs_texrender_get_texture(tr_scene_);
 
-	paint_->begin_frame();
+	begin_paint(frame);
 	// The mask: from the top down, each item's coverage laid under what is
 	// above it, counted where it is blurred.
 	gs_texture_t *mask = nullptr;
@@ -721,6 +801,192 @@ void SceneBlur::render()
 	last_cx_ = cx;
 	last_cy_ = cy;
 	last_linear_ = linear;
+}
+
+// The pictures borrowed from `paint_` are free again once a frame. (A Scene
+// Shadow may ask for a source's picture before this filter draws.)
+void SceneBlur::begin_paint(uint64_t frame)
+{
+	if (paint_begun_ && frame == paint_frame_)
+		return;
+	paint_->begin_frame();
+	paint_frame_ = frame;
+	paint_begun_ = true;
+}
+
+// Pictures of sources not drawn for a while are let go (all of them when the
+// blur is off or draws the scene as a whole). In the graphics context.
+void SceneBlur::forget_items(bool all)
+{
+	if (cache_.empty())
+		return;
+	const uint64_t now = os_gettime_ns();
+	for (auto it = cache_.begin(); it != cache_.end();) {
+		ItemBlur &entry = it->second;
+		if (all || now < entry.used_ns || now - entry.used_ns > kForgetItemNs) {
+			gs_texrender_destroy(entry.tr);
+			forget_trail_pictures(entry.trail);
+			it = cache_.erase(it);
+		} else {
+			++it;
+		}
+	}
+}
+
+gs_texture_t *SceneBlur::blurred_item(obs_sceneitem_t *item, matrix4 &m, uint32_t &w, uint32_t &h)
+{
+	if (!item || !paint_->ready() || !blur_->ready() || !blur_->has_looks() || !scenes_loaded())
+		return nullptr;
+	const int64_t id = obs_sceneitem_get_id(item);
+	BlurLook look;
+	RampStyle style;
+	{
+		std::lock_guard lock(mutex_);
+		if (area_ != Area::EachSource || !classified_ || blocked_ || wide_ || on_group_)
+			return nullptr;
+		// (An item added since the last look stays sharp until it is looked at.)
+		const auto found = covered_.find(id);
+		if (found == covered_.end() || !found->second)
+			return nullptr;
+		look = look_;
+		style = style_;
+	}
+	double strength = 0.0, mix = 0.0;
+	blur_at_level(look, style, ramp_.level(), strength, mix);
+	if (ramp_.level() <= 0.0005 || strength <= 0.01 || mix <= 0.0005)
+		return nullptr;
+	const uint64_t frame = obs_get_video_frame_time();
+	ItemBlur &entry = cache_[id];
+	entry.used_ns = os_gettime_ns();
+	if (entry.frame == frame && entry.tr) {
+		if (!entry.drawn)
+			return nullptr;
+		m = entry.m;
+		w = entry.w;
+		h = entry.h;
+		return gs_texrender_get_texture(entry.tr);
+	}
+	entry.frame = frame;
+	entry.drawn = false;
+	if (!entry.tr)
+		entry.tr = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
+	begin_paint(frame);
+	uint32_t iw = 0, ih = 0;
+	gs_texture_t *piece = paint_->item_picture(item, entry.m, iw, ih);
+	if (!piece)
+		return nullptr;
+	gs_texture_t *done = blur_->blur_into(entry.tr, look, piece, iw, ih, strength, mix, &entry.trail);
+	if (!done)
+		return nullptr;
+	entry.drawn = true;
+	entry.w = iw;
+	entry.h = ih;
+	m = entry.m;
+	w = iw;
+	h = ih;
+	return done;
+}
+
+// "Each source by itself", into tr_out_: each covered item blurred from its
+// own picture and drawn in its place in a copy of the scene drawn again from
+// its items, laid over the scene inside the covered items' boxes.
+bool SceneBlur::render_each(obs_source_t *parent, uint32_t cx, uint32_t cy)
+{
+	// The scene's items, from the back, each held for this call only.
+	std::vector<obs_sceneitem_t *> items = held_items(obs_scene_from_source(parent));
+	struct Blurred {
+		gs_texture_t *texture;
+		matrix4 m;
+		uint32_t w, h;
+	};
+	std::vector<Blurred> blurred(items.size(), Blurred{nullptr, {}, 0, 0});
+	bool any = false;
+	for (size_t i = 0; i < items.size(); i++) {
+		Blurred &b = blurred[i];
+		b.texture = blurred_item(items[i], b.m, b.w, b.h);
+		any = any || b.texture;
+	}
+	// (Made before the scene is drawn: a Scene Shadow drawn with it takes the
+	// same pictures.)
+	if (!any || !draw_filter_input(source_, tr_scene_, cx, cy) || !gs_texrender_get_texture(tr_scene_)) {
+		release_items(items);
+		return false;
+	}
+	gs_texture_t *scene = gs_texrender_get_texture(tr_scene_);
+	// Where the scene changes: the covered items' boxes (what was drawn of
+	// them sharp lies inside, and so does the blur, which never grows).
+	gs_texture_t *boxes = nullptr;
+	if (paint_->begin_canvas(tr_boxes_, cx, cy)) {
+		gs_effect_t *solid = obs_get_base_effect(OBS_EFFECT_SOLID);
+		vec4 red;
+		vec4_set(&red, 1.0f, 0.0f, 0.0f, 1.0f);
+		gs_effect_set_vec4(gs_effect_get_param_by_name(solid, "color"), &red);
+		gs_blend_function(GS_BLEND_ONE, GS_BLEND_ZERO);
+		for (const Blurred &b : blurred) {
+			if (!b.texture)
+				continue;
+			gs_matrix_push();
+			gs_matrix_mul(&b.m);
+			while (gs_effect_loop(solid, "Solid"))
+				gs_draw_sprite(nullptr, 0, b.w, b.h);
+			gs_matrix_pop();
+		}
+		paint_->end_canvas(tr_boxes_);
+		boxes = gs_texrender_get_texture(tr_boxes_);
+	}
+	// The scene drawn again: a covered item as its blurred picture.
+	gs_texture_t *redrawn = nullptr;
+	if (boxes && paint_->begin_canvas(tr_redrawn_, cx, cy)) {
+		for (size_t i = 0; i < items.size(); i++) {
+			// (A covered item with no picture draws nothing either way.)
+			if (blurred[i].texture)
+				paint_->draw_picture(blurred[i].texture, blurred[i].m, blurred[i].w, blurred[i].h);
+			else
+				paint_->draw_item(items[i]);
+		}
+		paint_->end_canvas(tr_redrawn_);
+		redrawn = gs_texrender_get_texture(tr_redrawn_);
+	}
+	release_items(items);
+	if (!redrawn)
+		return false;
+	// The frame's Scene Shadow, laid over that copy as it was over the scene.
+	struct Find {
+		obs_source_t *self;
+		obs_source_t *shadow = nullptr; // a reference
+		bool reached = false;
+	} find{source_};
+	obs_source_enum_filters(
+		parent,
+		[](obs_source_t *, obs_source_t *f, void *param) {
+			auto *x = static_cast<Find *>(param);
+			if (f == x->self)
+				x->reached = true;
+			else if (!x->reached && !x->shadow && obs_source_enabled(f) && is_scene_shadow(f))
+				x->shadow = obs_source_get_ref(f);
+		},
+		&find);
+	if (find.shadow) {
+		if (gs_texture_t *shadowed = scene_shadow_lay_over(find.shadow, redrawn, cx, cy))
+			redrawn = shadowed;
+		obs_source_release(find.shadow);
+	}
+	bool drawn = false;
+	gs_texrender_reset(tr_out_);
+	if (gs_texrender_begin_with_color_space(tr_out_, cx, cy, GS_CS_SRGB)) {
+		vec4 clear;
+		vec4_zero(&clear);
+		gs_clear(GS_CLEAR_COLOR, &clear, 0.0f, 0);
+		gs_ortho(0.0f, (float)cx, 0.0f, (float)cy, -100.0f, 100.0f);
+		gs_blend_state_push();
+		gs_blend_function(GS_BLEND_ONE, GS_BLEND_ZERO);
+		BlurPipeline::Result whole;
+		whole.a = redrawn;
+		drawn = blur_->composite_masked(scene, whole, boxes, cx, cy, 1.0);
+		gs_blend_state_pop();
+		gs_texrender_end(tr_out_);
+	}
+	return drawn;
 }
 
 // ------------------------------------------------------------ properties
@@ -787,6 +1053,16 @@ obs_properties_t *get_properties(void *data)
 	never.choices = sources;
 	pick_list_add(props, filter, never);
 
+	obs_property_t *area = obs_properties_add_list(props, "blur_area", obs_module_text("SceneBlur.Area"),
+						       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+	obs_property_list_add_int(area, obs_module_text("SceneBlur.Area.Scene"), (int)Area::Scene);
+	obs_property_list_add_int(area, obs_module_text("SceneBlur.Area.Each"), (int)Area::EachSource);
+	obs_property_set_long_description(area, obs_module_text("SceneBlur.Area.Tip"));
+	obs_property_set_modified_callback(area, [](obs_properties_t *p, obs_property_t *, obs_data_t *settings) {
+		blur_look_visibility(p, settings);
+		return true;
+	});
+
 	add_blur_look_properties(props);
 	add_blur_ramp_properties(props);
 	obs_properties_add_button2(
@@ -804,6 +1080,7 @@ void get_defaults(obs_data_t *settings)
 {
 	blur_look_defaults(settings);
 	obs_data_set_default_int(settings, "cover", (int)Cover::All);
+	obs_data_set_default_int(settings, "blur_area", (int)Area::Scene);
 }
 
 // Every Scene Blur that `want` takes, held, with its scene's name.
@@ -877,6 +1154,14 @@ bool is_scene_blur(obs_source_t *filter)
 {
 	const char *id = filter ? obs_source_get_unversioned_id(filter) : nullptr;
 	return id && std::strcmp(id, kSceneBlurId) == 0;
+}
+
+gs_texture_t *scene_blur_item_picture(obs_source_t *filter, obs_sceneitem_t *item, matrix4 &m, uint32_t &w, uint32_t &h)
+{
+	if (!is_scene_blur(filter) || !obs_source_enabled(filter))
+		return nullptr;
+	auto *self = static_cast<SceneBlur *>(obs_obj_get_data(filter));
+	return self ? self->blurred_item(item, m, w, h) : nullptr;
 }
 
 std::vector<SceneBlurState> scene_blur_list(const std::string &scene, const std::string &filter)

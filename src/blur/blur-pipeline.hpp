@@ -71,7 +71,32 @@ struct BlurLook {
 	double origin_x = 0.5;     // where the mosaic is laid out from, 0..1 of the picture
 	double origin_y = 0.5;
 	double rotation_deg = 0.0;
+	// "Whole cells" (Mosaic edge, `pixel_edge` 1): a cell the picture's edge
+	// cuts is left out, so the outline is made of whole cells and the
+	// image's alpha follows it. Never drawn past the edge.
+	bool whole_cells = false;
 };
+
+// How a mosaic's edge is drawn (`pixel_edge`). Kept by number: new ones go
+// at the end.
+enum class MosaicEdge : int {
+	Cut = 0,   // cells cut straight at the picture's edge, as before
+	Whole = 1, // whole cells only
+};
+
+// A trail (Temporal) of its own, for a picture blurred apart from the rest
+// (Scene Blur's "Each source by itself"). It moves on once per video frame
+// by the frame's own time, however often it is drawn in that frame. Its
+// pictures are made the first time and freed by forget_trail_pictures (in
+// the graphics context).
+struct BlurTrail {
+	gs_texrender_t *past[2] = {nullptr, nullptr};
+	int index = 0;
+	bool valid = false;
+	uint32_t w = 0, h = 0;
+	uint64_t frame = 0; // the video frame it last moved on in
+};
+void forget_trail_pictures(BlurTrail &trail);
 
 // How it comes and goes.
 struct BlurRamp {
@@ -94,6 +119,10 @@ void add_blur_look_properties(obs_properties_t *props);
 void add_blur_ramp_properties(obs_properties_t *props);
 // Their defaults.
 void blur_look_defaults(obs_data_t *settings);
+// Shows each look control for the blur types it is for. A window with a
+// "blur_area" list (Scene Blur) shows the mosaic's edge only for "Each
+// source by itself", where there is a source's edge to keep to.
+void blur_look_visibility(obs_properties_t *props, obs_data_t *settings);
 
 // The strength to blur at and how much of the blur to lay over, for a
 // switch at `level` (0..1): a Grow ramp grows the strength, a Fade fades the
@@ -129,7 +158,15 @@ public:
 	// Blurs `input` (w by h, straight alpha) at `strength`. `mix` may be
 	// lowered (the first, smallest Kawase step fades in). On the drawing
 	// thread.
-	Result run(const BlurLook &look, gs_texture_t *input, uint32_t w, uint32_t h, double strength, double &mix);
+	// `trail`: a trail of the caller's own for Temporal (nullptr: the
+	// pipeline's, moved on by frame_passed).
+	Result run(const BlurLook &look, gs_texture_t *input, uint32_t w, uint32_t h, double strength, double &mix,
+		   BlurTrail *trail = nullptr);
+	// `input` blurred and laid over itself by `mix`, as the Blur filter
+	// draws it, into `into` (w by h, straight alpha). Its picture, or
+	// nullptr.
+	gs_texture_t *blur_into(gs_texrender_t *into, const BlurLook &look, gs_texture_t *input, uint32_t w, uint32_t h,
+				double strength, double mix, BlurTrail *trail = nullptr);
 	// The blur laid over `input` by `mix`, onto what is being drawn.
 	void composite(gs_texture_t *input, const Result &blurred, uint32_t w, uint32_t h, double mix);
 	// The blur laid over `original` by `mix` only where `mask` (red) says,
@@ -153,6 +190,7 @@ private:
 	// (`looks`: with the newer shader file instead of the blur's own.)
 	void pass(gs_texrender_t *dst, gs_texture_t *src, uint32_t w, uint32_t h, const char *technique,
 		  bool looks = false);
+	Result own_trail(BlurTrail &trail, gs_texture_t *input, uint32_t w, uint32_t h, double strength);
 	gs_texture_t *kawase_chain(gs_texture_t *input, uint32_t w, uint32_t h, int levels, float offset,
 				   LevelTargets &down, LevelTargets &up, gs_texrender_t *out);
 
@@ -185,6 +223,7 @@ private:
 	gs_eparam_t *pl_smoothing_ = nullptr;
 	gs_eparam_t *pl_glass_ = nullptr;
 	gs_eparam_t *pl_glass_style_ = nullptr;
+	gs_eparam_t *pl_whole_ = nullptr;
 	gs_eparam_t *pl_origin_ = nullptr;
 	gs_eparam_t *pl_turn_ = nullptr;
 	gs_eparam_t *pl_original_ = nullptr;

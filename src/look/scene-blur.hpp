@@ -11,6 +11,7 @@ the Free Software Foundation; either version 2 of the License, or
 #pragma once
 
 #include <obs.h>
+#include <graphics/matrix4.h>
 
 #include <string>
 #include <vector>
@@ -23,6 +24,14 @@ void register_scene_blur();
 
 // Whether a filter is a Scene Blur.
 bool is_scene_blur(obs_source_t *filter);
+
+// For Scene Shadow, on the drawing thread: `item` as the Scene Blur `filter`
+// draws it this frame when its "Blur area" is "Each source by itself" (the
+// item's own picture blurred by itself, straight alpha, w by h) and `m`, the
+// transform that puts it in the scene; made once a frame, whoever asks first.
+// nullptr when that filter does not blur the item that way now.
+gs_texture_t *scene_blur_item_picture(obs_source_t *filter, obs_sceneitem_t *item, matrix4 &m, uint32_t &w,
+				      uint32_t &h);
 
 // A Scene Blur as a key or a request sees it.
 struct SceneBlurState {

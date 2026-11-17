@@ -40,6 +40,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/timing.hpp"
 #include "../shadow/shadow-backdrop.hpp"
 #include "../transition/morph.hpp"
+#include "scene-blur.hpp"
 
 #include <obs-module.h>
 #include <plugin-support.h>
@@ -147,6 +148,7 @@ public:
 	void tick(float seconds);
 	void render();
 	bool now(SceneShadowNow &out);
+	gs_texture_t *lay_over(gs_texture_t *picture, uint32_t cx, uint32_t cy);
 	void attached() { ramp_.attached(); }
 	int draws() const { return draws_.load(); }
 
@@ -179,6 +181,9 @@ private:
 	gs_texrender_t *tr_scene_ = nullptr;
 	gs_texrender_t *tr_cast_ = nullptr;
 	gs_texrender_t *tr_mask_ = nullptr;
+	gs_texrender_t *tr_over_ = nullptr; // lay_over's picture
+	bool mask_used_ = false;            // tr_mask_ was drawn for the last frame
+	ShadowLook last_look_;
 	uint64_t last_frame_ = 0;
 	uint32_t last_cx_ = 0, last_cy_ = 0;
 	bool last_linear_ = false;
@@ -193,6 +198,7 @@ SceneShadow::SceneShadow(obs_data_t *settings, obs_source_t *source) : source_(s
 	tr_scene_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 	tr_cast_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 	tr_mask_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
+	tr_over_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 	obs_leave_graphics();
 	// For the tests: how many times it has drawn the shadow (once a frame
 	// at most, however often the scene is drawn).
@@ -212,6 +218,7 @@ SceneShadow::~SceneShadow()
 	gs_texrender_destroy(tr_scene_);
 	gs_texrender_destroy(tr_cast_);
 	gs_texrender_destroy(tr_mask_);
+	gs_texrender_destroy(tr_over_);
 	obs_leave_graphics();
 }
 
@@ -394,13 +401,37 @@ void SceneShadow::render()
 		// nothing until it has been looked at.)
 		return found != flags.end() ? found->second : (uint8_t)kShadowMasked;
 	};
+	// A Scene Blur after this one that blurs each source by itself: such a
+	// source's shape is its blurred image's (a mosaic's whole cells, say), so
+	// that is what casts and is kept clear.
+	struct FindBlur {
+		obs_source_t *blur = nullptr; // a reference
+	} find_blur;
+	obs_source_enum_filters(
+		obs_filter_get_parent(source_),
+		[](obs_source_t *, obs_source_t *f, void *param) {
+			auto *x = static_cast<FindBlur *>(param);
+			if (!x->blur && obs_source_enabled(f) && is_scene_blur(f))
+				x->blur = obs_source_get_ref(f);
+		},
+		&find_blur);
+	auto draw = [&](obs_sceneitem_t *item) {
+		matrix4 m;
+		uint32_t w = 0, h = 0;
+		gs_texture_t *blurred = find_blur.blur ? scene_blur_item_picture(find_blur.blur, item, m, w, h)
+						       : nullptr;
+		if (blurred)
+			paint_->draw_picture(blurred, m, w, h);
+		else
+			paint_->draw_item(item);
+	};
 	paint_->begin_frame();
 	bool masked_only = false;
 	if (paint_->begin_canvas(tr_cast_, cx, cy)) {
 		for (obs_sceneitem_t *item : items) {
 			const uint8_t f = flags_of(item);
 			if (f & kShadowCasts)
-				paint_->draw_item(item);
+				draw(item);
 			else if (f & kShadowMasked)
 				masked_only = true;
 		}
@@ -413,13 +444,16 @@ void SceneShadow::render()
 		for (obs_sceneitem_t *item : items) {
 			const uint8_t f = flags_of(item);
 			if ((f & kShadowMasked) && !(f & kShadowCasts))
-				paint_->draw_item(item);
+				draw(item);
 		}
 		paint_->end_canvas(tr_mask_);
 		mask = gs_texrender_get_texture(tr_mask_);
 	}
+	obs_source_release(find_blur.blur);
 	for (obs_sceneitem_t *item : items)
 		obs_sceneitem_release(item);
+	mask_used_ = mask != nullptr;
+	last_look_ = look;
 	if (!paint_->compose(gs_texrender_get_texture(tr_scene_), cast, mask, look, cx, cy)) {
 		obs_source_skip_video_filter(source_);
 		return;
@@ -431,6 +465,19 @@ void SceneShadow::render()
 	last_cx_ = cx;
 	last_cy_ = cy;
 	last_linear_ = linear;
+}
+
+// The shadow drawn this frame, from the same shapes, over another picture of
+// the scene.
+gs_texture_t *SceneShadow::lay_over(gs_texture_t *picture, uint32_t cx, uint32_t cy)
+{
+	if (!picture || !have_out_ || last_frame_ != obs_get_video_frame_time() || cx != last_cx_ || cy != last_cy_)
+		return nullptr;
+	gs_texture_t *cast = gs_texrender_get_texture(tr_cast_);
+	gs_texture_t *mask = mask_used_ ? gs_texrender_get_texture(tr_mask_) : nullptr;
+	if (!cast || !paint_->compose(picture, cast, mask, last_look_, cx, cy, tr_over_))
+		return nullptr;
+	return gs_texrender_get_texture(tr_over_);
 }
 
 // --------------------------------------------------------------- properties
@@ -610,6 +657,14 @@ bool scene_shadow_now(obs_source_t *scene, SceneShadowNow &out)
 		},
 		&find);
 	return find.found;
+}
+
+gs_texture_t *scene_shadow_lay_over(obs_source_t *filter, gs_texture_t *picture, uint32_t cx, uint32_t cy)
+{
+	if (!is_scene_shadow(filter))
+		return nullptr;
+	auto *self = static_cast<SceneShadow *>(obs_obj_get_data(filter));
+	return self ? self->lay_over(picture, cx, cy) : nullptr;
 }
 
 void scene_shadow_default_flags(obs_source_t *scene, ShadowFlags &out)

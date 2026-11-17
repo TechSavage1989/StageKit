@@ -51,6 +51,7 @@ python3 "$root/tests/make-sheet.py" "$out/scene-shadow" "$out/scene-shadow.png" 
 # ==== end scene-filters:shadow ====
 # ==== scene-filters:blur ====
 python3 "$root/tests/make-sheet.py" "$out/scene-blur" "$out/scene-blur.png" 3
+python3 "$root/tests/make-sheet.py" "$out/blur-edges" "$out/blur-edges.png" 3
 # ==== end scene-filters:blur ====
 # ==== scene-filters:collection ====
 # ==== end scene-filters:collection ====

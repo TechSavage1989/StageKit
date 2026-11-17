@@ -9,9 +9,41 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | `feat/sd-scene-art` (any image on any key, beta164), on `main` after beta163 (#179). Next: `feat/blur-edges`, then the new collection |
+| Working branch | `feat/blur-edges` (Scene Blur's blur area, whole mosaic cells, beta165), on `main` after beta164 (#180). Next: `feat/sd-layouts` (the Layout selector), then the new collection |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
+
+## Scene Blur's blur area and whole mosaic cells (0.1.0-beta165)
+
+Branch `feat/blur-edges`, on `main` after beta164. Notes: `docs/releases/0.1.0-beta165.md`. No
+Stream Deck file changed. The owner, with screenshots of a window capture as a hexagon mosaic under
+a Blur filter and under Scene Blur: "I'd like if there was a configuration to have the shadows or
+other applied strokes, glows or filters in general take on the visible pixel shape, so when a
+screen is blurred it can take on the pixel shape for example. also, i want a configuration option
+to keep scene filters within the bounds of a source, or overlay the whole source ... the scene
+blur filter doesn't seem to go all the way to the edges".
+
+- **Scene Blur's *Blur area*** (`blur_area`: 0 *The scene as drawn*, as before and the default;
+  1 *Each source by itself*). In 1 each covered source is blurred from its own picture with the
+  Blur filter's own passes and drawn in its place in a redraw of the scene, laid over the scene
+  inside the covered sources' boxes (AGENTS, Scene Blur, *Blur area*). Tested equal to a Blur
+  filter on the source (0.00 off, edges included, hexagons, Gaussian and whole cells); the scene
+  as drawn is 40.7 off along the top edge, the light-blue band of the owner's screenshot.
+- **Mosaic edge** (`pixel_edge`: 0 *Cut at the edge*, default; 1 *Whole cells*), in the shared
+  blur look: cells the picture's edge cuts are left out, never drawn past it (AGENTS, the mosaic
+  entry). Every shape, a turned pattern too; Voronoi cells are judged by their neighbours.
+- **Shadows follow**: a Shadow, Glow & Outline after the Blur filter reads alpha and follows the
+  cells by itself (tested). Scene Shadow draws a source a Scene Blur blurs by itself from that
+  blurred picture (`scene_blur_item_picture`, made once a frame for both filters), and Scene Blur
+  lays the frame's shadow over its redraw (`scene_shadow_lay_over`), so the outline follows the
+  cells inside the source's box too (tested).
+- The mosaic's nine taps are a loop now (same result; a shorter shader for Direct3D to compile).
+- Tests: `[blur edges: ...]` (alone: `STAGEKIT_TEST_ONLY_BLUR_EDGES`), `scene_blur_controls_test`
+  extended; contact sheet `docs/images/blur-edges.png`.
+- **Not proven**: Direct3D (the whole-cells code, the Voronoi neighbour test and the loop), the
+  cost on the owner's scenes with many covered sources, and a source with a crop or a scale filter
+  in *Each source by itself* (the redraw does not follow a crop to bounds, scale filters or
+  blending modes, as Scene Blur's redraw before it).
 
 ## Any image on any key (0.1.0-beta164)
 
@@ -25,6 +57,8 @@ type list. Stream Deck plugin `VERSION` 0.22.0.0. Tests: `npm test` 55 of 55, `n
 Not tried on a Stream Deck.
 
 ## Frame time, and a settings-window crash (0.1.0-beta163)
+
+**On the owner's PC (2026-11-17, beta163/164):** "frametimes are better. averaging .8ms when idle with a capture" (about 1.1 ms before).
 
 The owner: OBS's *Average time to render frame* about 1.1 ms with StageKit, under 1 ms before; their
 logs had `tick_sources` median 0.25 to 0.45 ms with `render_video` unchanged (0.33 ms). Started again
