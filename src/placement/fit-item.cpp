@@ -94,6 +94,9 @@ void get_defaults(obs_data_t *settings)
 		obs_data_set_default_double(settings, name, 50.0);
 	obs_data_set_default_bool(settings, "resize", true);
 	obs_data_set_default_int(settings, "toward", 0);
+	// Sharing, not by list order, old and new alike (see the handoff).
+	obs_data_set_default_int(settings, "space_priority", (int)SpacePriority::Shares);
+	obs_data_set_default_bool(settings, "list_priority", false);
 	obs_data_set_default_bool(settings, "visible_pixels", true);
 	obs_data_set_default_bool(settings, "no_shadows", true);
 	obs_data_set_default_int(settings, "glide_ms", 300);

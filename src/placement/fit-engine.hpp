@@ -37,6 +37,8 @@ namespace stagekit::fit {
 
 // Saved in settings: append only.
 enum class BoxKind { WholeScene = 0, Custom = 1, FreeSpace = 2 };
+// Saved in settings (`space_priority`): append only.
+enum class SpacePriority { Shares = 0, First = 1, MakesRoom = 2 };
 
 struct FitSettings {
 	std::string item;
@@ -61,6 +63,9 @@ struct FitSettings {
 	double skip_fill = 0.0; // (that share)
 	bool skip_px = false;   // by the empty room it would leave at each edge of its space
 	double px_top = 0.0, px_bottom = 0.0, px_left = 0.0, px_right = 0.0;
+	// Which fits of the scene make room for which (see `Rank`).
+	SpacePriority priority = SpacePriority::Shares;
+	bool by_list = false;     // "Priority by list order": the level is not read
 	bool have_anchor = false; // the free space is the one round this point
 	double anchor_x = 0, anchor_y = 0;
 	double glide_s = 0.3;
@@ -68,11 +73,37 @@ struct FitSettings {
 	EaseMode mode = EaseMode::InOut;
 };
 
+// Where a fit stands in its scene. `by_list` ("Priority by list order"):
+// it goes by its filter's place in the scene's filter list (0 the top) and,
+// for an entry of a Scene Fit, its place in that list; else by its level.
+struct Rank {
+	bool by_list = false;
+	SpacePriority level = SpacePriority::Shares;
+	int filter = 0;
+	int entry = 0;
+};
+// Whether `a` takes its space before `b`: `b` makes room for it and `a`
+// does not see `b` at all. Two going by list order: the one higher in the
+// list. Otherwise by level (one going by list order counts as sharing):
+// taking space first, then sharing, then making room. The same level:
+// neither, and the two go by each other's claims as before.
+inline bool outranks(const Rank &a, const Rank &b)
+{
+	if (a.by_list && b.by_list)
+		return a.filter < b.filter || (a.filter == b.filter && a.entry < b.entry);
+	auto tier = [](const Rank &r) {
+		const SpacePriority level = r.by_list ? SpacePriority::Shares : r.level;
+		return level == SpacePriority::First ? 0 : level == SpacePriority::Shares ? 1 : 2;
+	};
+	return tier(a) < tier(b);
+}
+
 // What a fit will show of its item once it has got there, for the other
-// fits of the scene to go by.
+// fits of the scene to go by, and where that fit stands.
 struct Claim {
 	Box box;
 	bool resizes = true;
+	Rank rank;
 };
 void claim_set(obs_source_t *scene, int64_t item, const void *owner, const Claim &claim);
 void claim_clear(const void *owner);
@@ -89,8 +120,11 @@ void glance_step(const void *asking, obs_source_t *scene, const std::vector<obs_
 void glance_forget(obs_source_t *scene);
 void glance_free();
 
+// `firm`, when given, marks the boxes of `others` placed by a fit that takes
+// its space before this one: those count even when the point is inside them
+// (the point is then moved just off them, for this answer only).
 Box free_space(const Box &within, double ax, double ay, const std::vector<Box> &others, double gap, double shape,
-	       double tolerance);
+	       double tolerance, const std::vector<bool> *firm = nullptr);
 
 // What a fit has found out about its item in one tick, before its space is
 // looked for. `item` is valid for that tick only: the host holds it.
@@ -112,10 +146,11 @@ struct Prep {
 // One thing in the way of a fitted item: what shows of it, or where another
 // fit is taking it (`said`), whether that fit resizes it (`gives`), and
 // whether it is one of the items never in the way (`passed`).
+// `above`: placed by a fit that takes its space before this one.
 struct Obstacle {
 	Box box;
 	int64_t id = 0;
-	bool said = false, gives = false, passed = false;
+	bool said = false, gives = false, passed = false, above = false;
 };
 
 // What is in the way: the items of a scene, each looked at (drawn and read
@@ -129,9 +164,11 @@ public:
 	// The things in the way of `self`, from what was gathered: items another
 	// fit (not `asking`) places by where it is taking them, the rest by what
 	// shows of them. Items in `skip` are left out, or marked when `keep_skipped`.
+	// With `mine`: an item placed by a fit `mine` outranks is not in the way
+	// at all, and one placed by a fit that outranks `mine` is firm.
 	void obstacles(obs_source_t *scene, obs_sceneitem_t *self, const std::vector<std::string> &skip,
 		       bool keep_skipped, const void *asking, const Measure &how, std::vector<Obstacle> &out,
-		       const std::vector<int64_t> *twins_of = nullptr);
+		       const std::vector<int64_t> *twins_of = nullptr, const Rank *mine = nullptr);
 	// At rest: one glance a tick at the gathered items and `extra`, and one
 	// proper look at an item a glance shows to have changed.
 	void at_rest(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &extra, const void *glance_owner,
@@ -196,6 +233,10 @@ public:
 		return settings_.item;
 	}
 	bool holds_room(obs_sceneitem_t *item, const FitSettings &s);
+	// A Scene Fit entry's place in its list (0 the top); read at each prepare.
+	void set_entry_index(int index) { entry_index_ = index; }
+	// Where it stands in its scene, as found at its last prepare.
+	const Rank &rank() const { return rank_; }
 	// A Fit to Space's tick: the steps below, in order, with its own scan.
 	void tick(float seconds, FitScan &scan);
 
@@ -245,11 +286,15 @@ private:
 	void store_double(const char *key, double v);
 	void store_string(const char *key, const char *v);
 	void soft_sides(bool &l, bool &r, bool &t, bool &b) const;
+	// Says where the item will be, with where this fit stands.
+	void say(int64_t item, Claim claim);
 	Box kept_in(const Prep &p, const Box &room, double kw, double kh) const;
 
 	obs_source_t *source_;
 	std::string prefix_, entry_, list_prefix_;
 	obs_source_t *parent_ = nullptr;
+	int entry_index_ = 0;
+	Rank rank_;
 	std::mutex mutex_;
 	FitSettings settings_;
 	bool dirty_ = true; // under mutex_: settings changed since the last full tick
@@ -270,6 +315,7 @@ private:
 	std::vector<int64_t> ids_;
 	std::vector<bool> said_;
 	std::vector<bool> passed_; // which are items never in the way, counted only when the picture leaves room
+	std::vector<bool> above_;  // which are placed by a fit that takes its space before this one
 	bool avoiding_ = false;    // they count just now
 	std::array<double, 8> used_rule_{-1.0};
 	static constexpr double kArriving = 0.25;
