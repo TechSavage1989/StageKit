@@ -1103,6 +1103,35 @@ place of one per source. Add one from the scene's own Filters window (right-clic
 #### Scene Transitions
 
 <!-- ==== scene-filters:transitions (Scene Transitions) ==== -->
+**Scene Transitions (StageKit)** is one place to set how every source in a scene shows and hides, instead of
+a transition setting inside each filter. It sets OBS's own show and hide transition on each source (the ones
+in a source's right-click menu), so they also hold when a source is shown or hidden with the eye, its
+hotkeys, a Stream Deck *Source Visibility* key or obs-websocket.
+
+- **Applies to**: *All sources in the scene*, or *Only listed sources*.
+- **Sources**: with *All sources*, a source listed here can have settings of its own: choose it under
+  *Settings for* in *Show/Hide transition*. With *Only listed sources*, only these are set.
+- **Leave these alone**: sources this filter never sets, such as one another tool animates. A source a
+  Show/Hide Animation animates, and one a Standby Image stands in for, are always left to those filters.
+- **Sources in groups**: also set the sources inside groups (off as it comes: a group is then one source
+  like any other). OBS plays an inner source's transitions whenever its group is shown or hidden too, so a
+  fade on both fades twice.
+- **Show/Hide transition**: the same control as Show in Scenes': a show and a hide transition, each with its
+  own duration and settings (the way a slide goes, *Off the nearest edge*), settings of their own for listed
+  sources, and Morph links. Fade, 300 ms, as it comes.
+
+**As the scene sets** is a new choice in every StageKit filter that shows and hides sources (Show in
+Scenes, Link Visibility, Program Trigger, the two switchers, Auto Capture's hide, Standby Image), and the
+one they start with. With a Scene Transitions on the source's scene, the change is the one set there; where
+the scene has none, it is a fade of the filter's own duration, which is what those filters did before. A
+filter set to a transition of its own uses it for the changes it makes, and afterwards the source carries
+the scene's transitions again. A Standby Image that stands in for a source sets that source's transitions
+itself.
+
+Switching the filter off or removing it leaves each source the transitions it has. It writes only when a
+source differs from what it should carry, so nothing is written at each start. For a source set to *Off the
+nearest edge* that is shown or hidden by hand (the eye, a Stream Deck key), the direction is the one worked
+out where the source last came to rest: OBS starts the transition before StageKit hears of the change.
 <!-- ==== end scene-filters:transitions (Scene Transitions) ==== -->
 
 #### Scene Fit

@@ -7298,6 +7298,429 @@ int main(int argc, char **argv)
 	// ==== scene-filters:modes ====
 	// ==== end scene-filters:modes ====
 	// ==== scene-filters:transitions ====
+	// ------------------------------------------------------------ scene transitions
+	if (obs_source_get_display_name("fade_transition") && obs_source_get_display_name("slide_transition")) {
+		printf("\n[scene transitions: sets every source]\n");
+		auto trans_colour = [](const char *name, long long abgr, int cw, int ch) {
+			obs_data_t *d = obs_data_create();
+			obs_data_set_int(d, "color", abgr);
+			obs_data_set_int(d, "width", cw);
+			obs_data_set_int(d, "height", ch);
+			obs_source_t *made = obs_source_create("color_source", name, d, nullptr);
+			obs_data_release(d);
+			return made;
+		};
+		auto trans_kind = [](obs_sceneitem_t *item, bool show) {
+			obs_source_t *t = obs_sceneitem_get_transition(item, show);
+			const char *id = t ? obs_source_get_unversioned_id(t) : nullptr;
+			return std::string(id ? id : "");
+		};
+		auto trans_ms = [](obs_sceneitem_t *item, bool show) {
+			return (int)obs_sceneitem_get_transition_duration(item, show);
+		};
+		auto trans_setting = [](obs_sceneitem_t *item, bool show, const char *name) {
+			obs_source_t *t = obs_sceneitem_get_transition(item, show);
+			if (!t)
+				return std::string();
+			obs_data_t *s = obs_source_get_settings(t);
+			std::string v = obs_data_get_string(s, name);
+			obs_data_release(s);
+			return v;
+		};
+		auto trans_writes = [] {
+			calldata_t cd;
+			calldata_init(&cd);
+			proc_handler_call(obs_get_proc_handler(), "stagekit_scene_transitions_writes", &cd);
+			const long long n = calldata_int(&cd, "writes");
+			calldata_free(&cd);
+			return n;
+		};
+		auto trans_list = [](obs_data_t *settings, const char *name, std::vector<const char *> values) {
+			obs_data_array_t *array = obs_data_array_create();
+			for (const char *v : values) {
+				obs_data_t *row = obs_data_create();
+				obs_data_set_string(row, "value", v);
+				obs_data_array_push_back(array, row);
+				obs_data_release(row);
+			}
+			obs_data_set_array(settings, name, array);
+			obs_data_array_release(array);
+		};
+		auto trans_change = [](obs_source_t *filter, const std::function<void(obs_data_t *)> &edit) {
+			obs_data_t *s = obs_source_get_settings(filter);
+			edit(s);
+			obs_source_update(filter, s);
+			obs_data_release(s);
+		};
+		// Waits while the scene is drawn, so transitions started in it end.
+		auto trans_wait = [](obs_source_t *scene, int ms) {
+			for (int i = 0; i < ms / 50; i++) {
+				render(scene, 640, 360);
+				sleep_ms(50);
+			}
+		};
+		auto trans_put = [](obs_scene_t *scene, obs_source_t *src, float x, float y) {
+			obs_sceneitem_t *item = obs_scene_add(scene, src);
+			vec2 p;
+			vec2_set(&p, x, y);
+			obs_sceneitem_set_pos(item, &p);
+			return item;
+		};
+		obs_source_t *ta = trans_colour("Trans A", 0xFF0000FFLL, 100, 60);
+		obs_source_t *tb = trans_colour("Trans B", 0xFF00FF00LL, 100, 60);
+		obs_source_t *tc = trans_colour("Trans C", 0xFFFF0000LL, 100, 60);
+		obs_source_t *td = trans_colour("Trans D", 0xFFFFFF00LL, 100, 60);
+		auto trans_make = [](obs_source_t *scene_src, const std::function<void(obs_data_t *)> &edit) {
+			obs_data_t *s = obs_data_create();
+			edit(s);
+			obs_source_t *f =
+				obs_source_create("stagekit_scene_transitions", "Scene Transitions", s, nullptr);
+			obs_data_release(s);
+			obs_source_filter_add(scene_src, f);
+			return f;
+		};
+
+		// 1 and 7: every source set; nothing written again when it matches;
+		// a collection loaded again writes nothing.
+		{
+			obs_scene_t *sc = obs_scene_create("Trans Every");
+			obs_source_t *src = obs_scene_get_source(sc);
+			obs_sceneitem_t *ia = trans_put(sc, ta, 10, 10);
+			obs_sceneitem_t *ib = trans_put(sc, tb, 200, 10);
+			obs_sceneitem_t *ic = trans_put(sc, tc, 400, 10);
+			obs_source_t *priv = obs_source_create_private("color_source", "Trans Private", nullptr);
+			obs_sceneitem_t *ip = obs_scene_add(sc, priv);
+			const long long w0 = trans_writes();
+			obs_source_t *f = trans_make(src, [](obs_data_t *s) {
+				obs_data_set_string(s, "transition", "fade_transition");
+				obs_data_set_int(s, "transition_ms", 400);
+			});
+			sleep_ms(200);
+			bool all = true;
+			for (obs_sceneitem_t *item : {ia, ib, ic})
+				for (bool show : {true, false})
+					all = all && trans_kind(item, show) == "fade_transition" &&
+					      trans_ms(item, show) == 400;
+			CHECK(all && trans_kind(ip, true).empty() && trans_kind(ip, false).empty(),
+			      "every source's show and hide transition is the scene's (fade, 400 ms); a private source is left alone");
+			CHECK(trans_writes() - w0 == 3, "each source is written once (%lld)", trans_writes() - w0);
+
+			printf("\n[scene transitions: nothing written when it matches]\n");
+			obs_source_t *before_show = obs_sceneitem_get_transition(ia, true);
+			obs_source_t *before_hide = obs_sceneitem_get_transition(ib, false);
+			const long long w1 = trans_writes();
+			trans_change(f, [](obs_data_t *s) { obs_data_set_bool(s, "in_groups", false); });
+			sleep_ms(200);
+			CHECK(trans_writes() == w1 && obs_sceneitem_get_transition(ia, true) == before_show &&
+				      obs_sceneitem_get_transition(ib, false) == before_hide,
+			      "a settings change that changes nothing writes nothing (%lld)", trans_writes() - w1);
+			// Saved and loaded again, as OBS does with a collection.
+			obs_sceneitem_remove(ip);
+			obs_source_release(priv);
+			obs_data_t *saved = obs_save_source(src);
+			obs_source_filter_remove(src, f);
+			obs_source_release(f);
+			obs_source_remove(src);
+			obs_scene_release(sc);
+			sleep_ms(100);
+			const long long w2 = trans_writes();
+			obs_source_t *loaded = obs_load_source(saved);
+			obs_data_release(saved);
+			if (loaded)
+				obs_source_load(loaded); // (its items, as OBS loads a collection)
+			sleep_ms(300);
+			obs_scene_t *again = loaded ? obs_scene_from_source(loaded) : nullptr;
+			obs_sceneitem_t *la = again ? obs_scene_find_source(again, "Trans A") : nullptr;
+			CHECK(again && la && trans_kind(la, false) == "fade_transition" && trans_ms(la, false) == 400 &&
+				      trans_writes() == w2,
+			      "a scene loaded again with its transitions saved is written nothing (%lld)",
+			      trans_writes() - w2);
+			if (loaded) {
+				obs_source_remove(loaded);
+				obs_source_release(loaded);
+			}
+		}
+
+		// 2: a listed source with its own settings.
+		printf("\n[scene transitions: own settings for a listed source]\n");
+		{
+			obs_scene_t *sc = obs_scene_create("Trans Own");
+			obs_source_t *src = obs_scene_get_source(sc);
+			obs_sceneitem_t *ia = trans_put(sc, ta, 10, 10);
+			obs_sceneitem_t *ib = trans_put(sc, tb, 200, 10);
+			obs_source_t *f = trans_make(src, [&](obs_data_t *s) {
+				obs_data_set_string(s, "transition", "fade_transition");
+				obs_data_set_int(s, "transition_ms", 400);
+				trans_list(s, "sources", {"Trans B"});
+				obs_data_set_string(s, "for|Trans B|transition", "slide_transition");
+				obs_data_set_int(s, "for|Trans B|transition_ms", 500);
+				obs_data_set_string(s, "for|Trans B|show|slide_transition|direction", "left");
+			});
+			sleep_ms(200);
+			CHECK(trans_kind(ib, true) == "slide_transition" &&
+				      trans_setting(ib, true, "direction") == "left" && trans_ms(ib, true) == 500 &&
+				      trans_kind(ib, false) == "slide_transition" &&
+				      trans_setting(ib, false, "direction") == "left",
+			      "the listed source slides left both ways, its hide the same as its show (%s %s / %s %s)",
+			      trans_kind(ib, true).c_str(), trans_setting(ib, true, "direction").c_str(),
+			      trans_kind(ib, false).c_str(), trans_setting(ib, false, "direction").c_str());
+			CHECK(trans_kind(ia, true) == "fade_transition" && trans_kind(ia, false) == "fade_transition",
+			      "the others fade");
+			// A listed source renamed keeps its own settings.
+			obs_source_set_name(tb, "Trans B Renamed");
+			sleep_ms(100);
+			obs_data_t *now = obs_source_get_settings(f);
+			const bool followed = strcmp(obs_data_get_string(now, "for|Trans B Renamed|transition"),
+						     "slide_transition") == 0;
+			obs_data_release(now);
+			obs_source_set_name(tb, "Trans B");
+			sleep_ms(100);
+			CHECK(followed, "a listed source that is renamed keeps its own settings under its new name");
+			obs_source_filter_remove(src, f);
+			obs_source_release(f);
+			obs_scene_release(sc);
+		}
+
+		// 3 and 4: only listed, leave these alone, a source added later.
+		printf("\n[scene transitions: only listed, and leave these alone]\n");
+		{
+			obs_scene_t *sc = obs_scene_create("Trans Listed");
+			obs_source_t *src = obs_scene_get_source(sc);
+			obs_sceneitem_t *ia = trans_put(sc, ta, 10, 10);
+			obs_sceneitem_t *ib = trans_put(sc, tb, 200, 10);
+			obs_sceneitem_t *ic = trans_put(sc, tc, 400, 10);
+			obs_source_t *f = trans_make(src, [&](obs_data_t *s) {
+				obs_data_set_int(s, "cover", 1);
+				trans_list(s, "sources", {"Trans A"});
+			});
+			sleep_ms(200);
+			CHECK(trans_kind(ia, true) == "fade_transition" && trans_kind(ib, true).empty() &&
+				      trans_kind(ic, true).empty(),
+			      "with Only listed sources, only the listed one is set");
+			trans_change(f, [&](obs_data_t *s) {
+				obs_data_set_int(s, "cover", 0);
+				trans_list(s, "except", {"Trans C"});
+			});
+			sleep_ms(200);
+			CHECK(trans_kind(ib, true) == "fade_transition" && trans_kind(ic, true).empty(),
+			      "with All sources, a source left alone keeps what it had");
+
+			printf("\n[scene transitions: a source added later]\n");
+			obs_sceneitem_t *id = trans_put(sc, td, 10, 200);
+			sleep_ms(120);
+			CHECK(trans_kind(id, true) == "fade_transition" && trans_kind(id, false) == "fade_transition",
+			      "a source added to the scene is set within a few frames");
+			obs_sceneitem_remove(id);
+			sleep_ms(100);
+			CHECK(true, "and taking it out again is fine");
+			obs_source_filter_remove(src, f);
+			obs_source_release(f);
+			obs_scene_release(sc);
+		}
+
+		// 5 and 6: As the scene sets, and a filter's own choice.
+		printf("\n[scene transitions: as the scene sets]\n");
+		if (obs_source_get_display_name("swipe_transition")) {
+			obs_scene_t *sc = obs_scene_create("Trans Link");
+			obs_source_t *src = obs_scene_get_source(sc);
+			obs_source_inc_showing(src);
+			obs_sceneitem_t *ia = trans_put(sc, ta, 10, 10);
+			obs_sceneitem_t *ib = trans_put(sc, tb, 200, 10);
+			obs_sceneitem_set_visible(ib, false);
+			obs_source_t *f = trans_make(src, [](obs_data_t *s) {
+				obs_data_set_string(s, "transition", "swipe_transition");
+				obs_data_set_int(s, "transition_ms", 450);
+			});
+			obs_data_t *ls = obs_data_create();
+			trans_list(ls, "items", {"Trans A", "Trans B"});
+			obs_source_t *link = obs_source_create("stagekit_visibility_link", "Trans Link", ls, nullptr);
+			obs_data_release(ls);
+			obs_source_filter_add(src, link);
+			obs_data_t *defaults = obs_source_get_settings(link);
+			const std::string link_default = obs_data_get_string(defaults, "transition");
+			obs_data_release(defaults);
+			CHECK(link_default == "scene", "a filter's transition is As the scene sets as it comes (%s)",
+			      link_default.c_str());
+			trans_wait(src, 300);
+			obs_sceneitem_set_visible(ib, true); // the link hides A
+			trans_wait(src, 150);
+			CHECK(!obs_sceneitem_visible(ia) && trans_kind(ia, false) == "swipe_transition" &&
+				      trans_ms(ia, false) == 450,
+			      "a filter on As the scene sets changes a source the scene's way (%s %d)",
+			      trans_kind(ia, false).c_str(), trans_ms(ia, false));
+			trans_wait(src, 700);
+			obs_source_filter_remove(src, f);
+			obs_source_release(f);
+			trans_wait(src, 100);
+			obs_sceneitem_set_visible(ia, true); // the link hides B, with no scene filter now
+			trans_wait(src, 150);
+			CHECK(!obs_sceneitem_visible(ib) && trans_kind(ib, false) == "fade_transition" &&
+				      trans_ms(ib, false) == 300,
+			      "with no Scene Transitions it is a fade of the filter's own length, as before (%s %d)",
+			      trans_kind(ib, false).c_str(), trans_ms(ib, false));
+			trans_wait(src, 500);
+
+			printf("\n[scene transitions: a filter's own choice, then back]\n");
+			f = trans_make(src, [](obs_data_t *s) {
+				obs_data_set_string(s, "transition", "fade_transition");
+				obs_data_set_int(s, "transition_ms", 400);
+			});
+			trans_change(link, [](obs_data_t *s) {
+				obs_data_set_string(s, "transition", "slide_transition");
+				obs_data_set_int(s, "transition_ms", 1000);
+			});
+			trans_wait(src, 300);
+			CHECK(trans_kind(ia, false) == "fade_transition" && trans_kind(ib, true) == "fade_transition",
+			      "at rest the sources carry the scene's transitions");
+			obs_sceneitem_set_visible(ib, true); // the link hides A with its slide
+			trans_wait(src, 500);
+			const bool sliding = trans_kind(ia, false) == "slide_transition" && trans_ms(ia, false) == 1000;
+			trans_wait(src, 1000);
+			CHECK(sliding && trans_kind(ia, false) == "fade_transition" && trans_ms(ia, false) == 400 &&
+				      trans_kind(ia, true) == "fade_transition",
+			      "a filter's own choice is used for its change, not replaced part-way, and the scene's is back after (%d, then %s %d)",
+			      (int)sliding, trans_kind(ia, false).c_str(), trans_ms(ia, false));
+			obs_source_filter_remove(src, link);
+			obs_source_release(link);
+			obs_source_filter_remove(src, f);
+			obs_source_release(f);
+			obs_source_dec_showing(src);
+			obs_scene_release(sc);
+		}
+
+		// 8: a Standby that stands in for a source owns its transitions.
+		printf("\n[scene transitions: standby owns its source]\n");
+		{
+			obs_source_t *cam = trans_colour("Trans Cam", 0xFF00FF00LL, 200, 100);
+			obs_source_t *stand = trans_colour("Trans Cam Standby", 0xFF0000FFLL, 64, 64);
+			obs_scene_t *sc = obs_scene_create("Trans Standby");
+			obs_source_t *src = obs_scene_get_source(sc);
+			obs_sceneitem_t *ci = trans_put(sc, cam, 100, 60);
+			obs_data_t *hd = obs_data_create();
+			obs_data_set_int(hd, "picture", 2);
+			obs_data_set_string(hd, "source", "Trans Cam Standby");
+			obs_data_set_bool(hd, "when_hidden", true);
+			obs_source_t *standby = obs_source_create("stagekit_standby", "Trans Standby", hd, nullptr);
+			obs_data_release(hd);
+			obs_source_filter_add(cam, standby);
+			obs_source_t *f = trans_make(src, [](obs_data_t *s) {
+				obs_data_set_string(s, "transition", "slide_transition");
+				obs_data_set_int(s, "transition_ms", 450);
+			});
+			trans_wait(src, 900);
+			obs_source_t *show_was = obs_sceneitem_get_transition(ci, true);
+			obs_source_t *hide_was = obs_sceneitem_get_transition(ci, false);
+			const long long w0 = trans_writes();
+			trans_change(f, [](obs_data_t *s) { obs_data_set_int(s, "transition_ms", 500); });
+			trans_wait(src, 600);
+			CHECK(trans_writes() == w0 && show_was && obs_sceneitem_get_transition(ci, true) == show_was &&
+				      obs_sceneitem_get_transition(ci, false) == hide_was,
+			      "the Scene Transitions never writes a source a Standby stands in for (%lld)",
+			      trans_writes() - w0);
+			CHECK(trans_kind(ci, false) == "slide_transition" && trans_ms(ci, false) == 500,
+			      "with As the scene sets, the Standby gives its source the scene's hide (%s %d)",
+			      trans_kind(ci, false).c_str(), trans_ms(ci, false));
+			obs_source_filter_remove(src, f);
+			obs_source_release(f);
+			obs_source_filter_remove(cam, standby);
+			obs_source_release(standby);
+			trans_wait(src, 300);
+			obs_scene_release(sc);
+			obs_source_release(cam);
+			obs_source_release(stand);
+		}
+
+		// 9: the Morph still morphs between scenes that carry the filter.
+		printf("\n[scene transitions: the morph still works]\n");
+		{
+			obs_source_t *cam = trans_colour("Trans Morph Cam", 0xFF0000FFLL, 100, 60); // red
+			obs_scene_t *pa = obs_scene_create("Trans Morph From");
+			obs_scene_t *pb = obs_scene_create("Trans Morph To");
+			trans_put(pa, cam, 20, 20);
+			trans_put(pb, cam, 520, 280);
+			obs_source_t *fa = trans_make(obs_scene_get_source(pa), [](obs_data_t *) {});
+			obs_source_t *fb = trans_make(obs_scene_get_source(pb), [](obs_data_t *) {});
+			obs_data_t *ms = obs_data_create();
+			obs_data_set_int(ms, "ease_curve", 0);
+			obs_source_t *morph = obs_source_create_private("stagekit_morph", "Trans Morph", ms);
+			obs_data_release(ms);
+			obs_transition_set(morph, obs_scene_get_source(pa));
+			obs_transition_start(morph, OBS_TRANSITION_MODE_MANUAL, 0, obs_scene_get_source(pb));
+			obs_transition_set_manual_time(morph, 0.5f);
+			sleep_ms(120);
+			const std::vector<uint8_t> half = render(morph, w, h);
+			auto red = [&](int x, int y) {
+				const uint8_t *p = &half[(size_t(y) * w + x) * 4];
+				return p[0] > 240 && p[1] < 15 && p[2] < 15;
+			};
+			CHECK(red(300, 170) && !red(50, 40) && !red(550, 300),
+			      "a source in both scenes is half-way between its two places half-way through");
+			obs_transition_force_stop(morph);
+			obs_source_release(morph);
+			obs_source_filter_remove(obs_scene_get_source(pa), fa);
+			obs_source_filter_remove(obs_scene_get_source(pb), fb);
+			obs_source_release(fa);
+			obs_source_release(fb);
+			obs_scene_release(pa);
+			obs_scene_release(pb);
+			obs_source_release(cam);
+		}
+
+		// 10: off the nearest edge, kept current at rest.
+		printf("\n[scene transitions: off the nearest edge at rest]\n");
+		{
+			obs_scene_t *sc = obs_scene_create("Trans Nearest");
+			obs_source_t *src = obs_scene_get_source(sc);
+			obs_sceneitem_t *ib = trans_put(sc, tb, 10, 150);
+			obs_source_t *f = trans_make(src, [&](obs_data_t *s) {
+				trans_list(s, "sources", {"Trans B"});
+				obs_data_set_string(s, "for|Trans B|transition", "slide_transition");
+				obs_data_set_string(s, "for|Trans B|show|slide_transition|direction", "nearest");
+			});
+			sleep_ms(200);
+			obs_source_t *hide_was = obs_sceneitem_get_transition(ib, false);
+			const bool left = trans_setting(ib, false, "direction") == "left" &&
+					  trans_setting(ib, true, "direction") == "right";
+			vec2 at;
+			vec2_set(&at, 530.0f, 150.0f);
+			obs_sceneitem_set_pos(ib, &at);
+			sleep_ms(500);
+			CHECK(left && trans_setting(ib, false, "direction") == "right" &&
+				      obs_sceneitem_get_transition(ib, false) == hide_was,
+			      "near the left edge it goes off to the left; moved to the right edge it goes off to the right once it is still, the same transition re-set (%d, %s)",
+			      (int)left, trans_setting(ib, false, "direction").c_str());
+			obs_source_filter_remove(src, f);
+			obs_source_release(f);
+			obs_scene_release(sc);
+		}
+
+		// 12: sources in groups.
+		printf("\n[scene transitions: sources in groups]\n");
+		{
+			obs_scene_t *sc = obs_scene_create("Trans Groups");
+			obs_source_t *src = obs_scene_get_source(sc);
+			obs_sceneitem_t *group = obs_scene_add_group(sc, "Trans Group");
+			obs_sceneitem_t *loose = obs_scene_add(sc, td);
+			obs_sceneitem_group_add_item(group, loose);
+			obs_sceneitem_t *inner = obs_scene_find_source(obs_sceneitem_group_get_scene(group), "Trans D");
+			obs_source_t *f = trans_make(src, [](obs_data_t *) {});
+			sleep_ms(200);
+			CHECK(inner && trans_kind(group, true) == "fade_transition" && trans_kind(inner, true).empty(),
+			      "a group is one source: it is set and what is in it is not");
+			trans_change(f, [](obs_data_t *s) { obs_data_set_bool(s, "in_groups", true); });
+			sleep_ms(200);
+			CHECK(inner && trans_kind(inner, true) == "fade_transition",
+			      "with Sources in groups, what is in a group is set too");
+			obs_source_filter_remove(src, f);
+			obs_source_release(f);
+			obs_scene_release(sc);
+		}
+
+		obs_source_release(ta);
+		obs_source_release(tb);
+		obs_source_release(tc);
+		obs_source_release(td);
+	}
 	// ==== end scene-filters:transitions ====
 	// ==== scene-filters:standby-corners ====
 	// ==== end scene-filters:standby-corners ====

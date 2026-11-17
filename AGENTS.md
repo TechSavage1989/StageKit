@@ -1383,7 +1383,31 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
 - **Scene Modes**: to come.
 <!-- ==== end scene-filters:modes ==== -->
 <!-- ==== scene-filters:transitions ==== -->
-- **Scene Transitions**: to come.
+- **Scene Transitions** (`src/placement/scene-transitions.*`, `stagekit_scene_transitions`; the owner
+  was promised "one place to set how every source in the scene shows and hides, instead of a
+  transition setting inside each filter") writes OBS's own item transitions, **only from its tick,
+  only on events** (created, switched on, settings changed, `item_add`, a covered item's
+  `item_visible`, a nearest-edge item still for 0.25 s after `item_transform`), only once
+  `scenes_loaded()`, and only where `item_change_matches` says the item differs: a collection
+  loaded again writes nothing (a test saves and loads a scene and counts writes through the
+  `stagekit_scene_transitions_writes` proc). It passes over owned items
+  (`item_transitions_owned`), private sources (stand-ins, the item Morph's layer), *Leave these
+  alone*, items an enabled Show/Hide Animation names and, unless `in_groups`, items in groups.
+  Items are known by id in their scene or group (`Key`), never held. The first enabled one in a
+  scene's filter list is the one used. **`kTransitionScene` ("As the scene sets") is resolved
+  only in `resolve_item_change`** (`src/common/item-transition.*`), through the lookup the filter
+  registers (`item_transitions_scene`); `set_item_transitions`, `apply_item_change` and
+  `apply_item_change_as_owner` all go through it, so a filter that sets item transitions through
+  them gets the choice for free, with a fade of the way's own duration where the scene sets
+  nothing. It is the default of `item_transition_defaults` and `item_change_defaults` since
+  beta155: settings left on the old default (fade) read it, which changes nothing in a scene
+  without a Scene Transitions. After another filter's own choice the scene's transitions are put
+  back once that change's duration + 100 ms has passed (from `item_visible`), never part-way; a
+  full pass skips an item with such a wait pending. A Standby must resolve *before* it swaps a
+  change for its twin (the twin, a private source, is never covered and would get the fallback).
+  Never write item transitions into a generated collection: this filter writes them at the first
+  load. Test 11 of `transitions.md` (a mode change pairs captures in the item Morph) belongs with
+  Scene Modes' section.
 <!-- ==== end scene-filters:transitions ==== -->
 <!-- ==== scene-filters:fit ==== -->
 - **Scene Fit**: to come.

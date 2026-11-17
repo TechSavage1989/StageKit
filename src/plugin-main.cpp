@@ -49,6 +49,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 // ==== scene-filters:modes ====
 // ==== end scene-filters:modes ====
 // ==== scene-filters:transitions ====
+#include "placement/scene-transitions.hpp"
 // ==== end scene-filters:transitions ====
 // ==== scene-filters:fit ====
 // ==== end scene-filters:fit ====
@@ -142,6 +143,7 @@ bool obs_module_load(void)
 	// ==== scene-filters:modes ====
 	// ==== end scene-filters:modes ====
 	// ==== scene-filters:transitions ====
+	stagekit::register_scene_transitions();
 	// ==== end scene-filters:transitions ====
 	// ==== scene-filters:fit ====
 	// ==== end scene-filters:fit ====
