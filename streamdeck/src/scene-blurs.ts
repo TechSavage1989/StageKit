@@ -5,9 +5,14 @@
 // each, and one key can switch them all ("all scenes with the blur filter of
 // the same name", the owner) or the one on a scene.
 
-/** One name of Scene Blur, as ListSceneBlurs gives it: the look of its blur, and each scene it is on. */
+/**
+ * One name of Scene Blur, as ListSceneBlurs gives it: the look of its blur
+ * (`style`, an entry of the keys' Blur style list; `type`, the plain blur
+ * type), and each scene it is on.
+ */
 export type SceneBlurFilter = {
 	filter: string;
+	style: string;
 	type: string;
 	active: boolean;
 	scenes: Array<{ scene: string; active: boolean }>;
@@ -23,6 +28,7 @@ export function readSceneBlurs(answer: Record<string, unknown> | undefined): Sce
 	return filters
 		.map((f: Record<string, unknown>) => ({
 			filter: String(f?.filter ?? ""),
+			style: String(f?.style ?? ""),
 			type: String(f?.type ?? ""),
 			active: f?.active === true,
 			scenes: Array.isArray(f?.scenes)

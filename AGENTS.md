@@ -1729,8 +1729,11 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     looked at and not built: not asked for, and the picture blurred would have to be the
     morph's own. Tested: cross-fade logged while blurring, morphed when off or blurring nothing.
   - **Filter order**: anything enabled before it that draws, other than a Scene Shadow, makes it
-    stand aside (logged once). Scene Shadow was not changed: with Scene Blur *before* it, Scene
-    Shadow stands aside; the README says to put Scene Blur last.
+    stand aside (logged once). It keeps itself after every Scene Shadow (`keep_after_shadow`,
+    from the tick twice a second, on or off, once `scenes_loaded()`, as Standby keeps itself after
+    an Auto Frame), so either add order works; and Scene Shadow passes over a Scene Blur before
+    it (`kSceneBlurId` in its `look_again`) for that half second instead of standing aside.
+    Tested both ways (`... first: Scene Blur is kept after Scene Shadow and both draw`).
   - **Vendor**: `ListSceneBlurs` and `SceneBlur` (`scene_blur_list`, `scene_blur_press`; a toggle
     over several is all off when any is on, else all on), and `SceneBlurChanged` from the tick
     when `ramp_.active()` changes (not at the first tick), through `emit_event` so the tests see
@@ -1739,7 +1742,10 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     `src/scene-blurs.ts`): features.json's new `scenes` list (make-plugin-files.py writes its
     page from it: *Blur filter* `getSceneBlurs`, *Scene* `getSceneBlurScenes` refreshed when the
     filter changes, *On press*), *Blur style* type list (`LOOK_KEYS`), `sceneBlurPicture`,
-    `sceneBlurTitle`, `showOnOff`, `remembered` with the filter's look as `type`. Plugin 0.20.0.0.
+    `sceneBlurTitle`, `showOnOff`, `remembered` with the filter's look as `type`. Plugin 0.21.0.0
+    (beta161). The OBS side reports `style` (`blur_style_name`), an entry of key-types.json's
+    Blur style list (fourteen: the blurs, `trail`, the mosaic shapes, `glass` for any mosaic with
+    glass), which is what the key shows on *Automatic*; keep the two in step.
   - Tests: `[scene blur]` in `tests/ambient-test.cpp` (stand-in captures of kind `xshm_input`
     drawing a checkerboard, sharpness measured as the mean step between neighbouring pixels),
     `streamdeck/tests/obs.test.ts` (stand-in server). Not run on Windows or Direct3D; the key not

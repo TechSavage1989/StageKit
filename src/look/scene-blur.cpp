@@ -47,6 +47,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../blur/blur-pipeline.hpp"
 #include "../blur/ramp-blur.hpp"
 #include "../common/filter-input.hpp"
+#include "../common/filter-order.hpp"
 #include "../common/loading.hpp"
 #include "../common/pick-list.hpp"
 #include "../common/scene-filter-ids.hpp"
@@ -231,6 +232,11 @@ public:
 	bool active() const { return ramp_.active(); }
 	double level() const { return ramp_.level(); }
 	int draws() const { return draws_.load(); }
+	std::string style_name() const
+	{
+		std::lock_guard lock(mutex_);
+		return blur_style_name(look_);
+	}
 	std::string type_name() const
 	{
 		std::lock_guard lock(mutex_);
@@ -242,6 +248,7 @@ public:
 
 private:
 	void look_again(obs_source_t *parent);
+	void keep_after_shadow(obs_source_t *parent);
 	void register_hotkeys(obs_source_t *parent);
 	void unregister_hotkeys();
 	void on_rename();
@@ -267,6 +274,7 @@ private:
 	// On the tick only.
 	double countdown_ = 0.0;
 	bool looked_ = false; // since it was last switched on
+	double order_check_ = 0.5;
 	bool was_showing_ = false;
 	std::string told_blocked_;
 	bool said_valid_ = false;
@@ -475,6 +483,37 @@ void SceneBlur::look_again(obs_source_t *parent)
 	wide_ = wide;
 }
 
+// A Scene Shadow must come before this filter in the order the scene applies
+// them, whichever was added first: after it, a Scene Shadow sees a filter that
+// draws before it and stands aside (its shadow would not fit a blurred
+// picture), and before it, its shadows are blurred with what they fall on.
+// Moved down past the last one, as Standby keeps itself after an Auto Frame.
+void SceneBlur::keep_after_shadow(obs_source_t *parent)
+{
+	struct Last {
+		obs_source_t *found = nullptr;
+	} last;
+	obs_source_enum_filters(
+		parent,
+		[](obs_source_t *, obs_source_t *f, void *param) {
+			if (is_scene_shadow(f))
+				static_cast<Last *>(param)->found = f;
+		},
+		&last);
+	if (!last.found || applied_index(parent, source_) > applied_index(parent, last.found))
+		return;
+	for (int i = 0; i < 64; i++) {
+		const int mine = applied_index(parent, source_);
+		if (mine < 0 || mine > applied_index(parent, last.found))
+			break;
+		obs_source_filter_set_order(parent, source_, OBS_ORDER_MOVE_DOWN);
+		if (applied_index(parent, source_) == mine)
+			break;
+	}
+	obs_log(LOG_INFO, "Scene Blur '%s': moved after the Scene Shadow '%s', so that both draw",
+		obs_source_get_name(source_), obs_source_get_name(last.found));
+}
+
 void SceneBlur::tick(float seconds)
 {
 	ramp_.tick(seconds);
@@ -496,6 +535,12 @@ void SceneBlur::tick(float seconds)
 		std::lock_guard lock(mutex_);
 		on_group_ = true;
 		return;
+	}
+	// Kept after every Scene Shadow, twice a second, on or off.
+	order_check_ += seconds;
+	if (order_check_ >= 0.5 && scenes_loaded()) {
+		order_check_ = 0.0;
+		keep_after_shadow(parent);
 	}
 	// Nothing is looked at while it is off, or while OBS loads a
 	// collection (only some scenes have their items yet).
@@ -813,6 +858,7 @@ SceneBlurState state_of(const Found &found)
 	if (auto *self = static_cast<SceneBlur *>(obs_obj_get_data(found.filter))) {
 		state.active = self->active();
 		state.type = self->type_name();
+		state.style = self->style_name();
 	}
 	return state;
 }

@@ -236,3 +236,10 @@ test("a Blur style the pack has no pictures of: its drawing, or the source in th
 	assert.equal(chooseFor(undefined, "stagekit_show_hide", {}, "", undefined, { look: "morph" })?.id, "options/style-morph");
 	assert.equal(chooseFor(undefined, "stagekit_show_hide", {}, "", undefined, { look: "morph", sceneType: "cooking" })?.id, "options/scene-type-cooking", "the scene first");
 });
+
+test("the Scene Blur key's Blur style list is the Blur key's, all fourteen", () => {
+	const look = (key: string) => typeLists(key).find((l) => l.setting === "look");
+	const values = (key: string) => look(key)!.groups.flatMap((g) => g.entries.map((e) => e.value));
+	assert.equal(values("sceneblur").length, 14);
+	assert.deepEqual(look("sceneblur"), look("blur"));
+});

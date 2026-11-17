@@ -75,7 +75,7 @@ export class SceneBlurKey extends SingletonAction<KeySettings> {
 		const { filter, scene } = settings;
 		const filters = filter ? await obs.sceneBlurs() : [];
 		const on = sceneBlurOn(filters, filter, scene);
-		const type = filters.find((f) => f.filter === filter)?.type;
+		const type = filters.find((f) => f.filter === filter)?.style;
 		const fresh = on === undefined ? undefined : { kind: "stagekit_scene_blur", enabled: on, type };
 		// (While OBS cannot say, the key goes by what it last learned.)
 		const seen = await remembered(key, settings, sceneBlurTarget(filter, scene), fresh);

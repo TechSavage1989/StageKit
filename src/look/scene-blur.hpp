@@ -28,6 +28,7 @@ bool is_scene_blur(obs_source_t *filter);
 struct SceneBlurState {
 	std::string scene;
 	std::string filter;
+	std::string style;    // its entry in the keys' Blur style list (blur_style_name)
 	std::string type;     // the blur's look: "gaussian", "pixelate" ... (blur_type_name)
 	bool active = false;  // switched on (or on its way on)
 	bool enabled = false; // the filter's own switch (on while it blurs out)

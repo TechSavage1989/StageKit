@@ -445,6 +445,7 @@ void write_blur_state(obs_data_t *into, const SceneBlurState &state)
 	obs_data_set_string(into, "scene", state.scene.c_str());
 	obs_data_set_string(into, "filter", state.filter.c_str());
 	obs_data_set_string(into, "type", state.type.c_str());
+	obs_data_set_string(into, "style", state.style.c_str());
 	obs_data_set_bool(into, "active", state.active);
 	obs_data_set_bool(into, "enabled", state.enabled);
 }
@@ -472,7 +473,7 @@ void req_list_scene_blurs(obs_data_t *request, obs_data_t *response, void *)
 		obs_data_set_string(f, "filter", name.c_str());
 		obs_data_array_t *scenes = obs_data_array_create();
 		bool any = false;
-		std::string type;
+		std::string type, style;
 		for (const SceneBlurState &state : all) {
 			if (state.filter != name)
 				continue;
@@ -482,10 +483,13 @@ void req_list_scene_blurs(obs_data_t *request, obs_data_t *response, void *)
 			obs_data_array_push_back(scenes, s);
 			obs_data_release(s);
 			any = any || state.active;
-			if (type.empty())
+			if (type.empty()) {
 				type = state.type;
+				style = state.style;
+			}
 		}
 		obs_data_set_string(f, "type", type.c_str());
+		obs_data_set_string(f, "style", style.c_str());
 		obs_data_set_bool(f, "active", any);
 		obs_data_set_array(f, "scenes", scenes);
 		obs_data_array_release(scenes);

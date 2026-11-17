@@ -63,9 +63,9 @@ function sceneModes(request: string, data: Record<string, unknown>): Record<stri
 // Scene Blurs, as the StageKit plugin answers for them: one name on two
 // scenes, another on one.
 const sceneBlurs = [
-	{ scene: "Live", filter: "Blur", type: "gaussian", active: false },
-	{ scene: "Chat Live", filter: "Blur", type: "gaussian", active: false },
-	{ scene: "Standby", filter: "Mosaic", type: "hexagon", active: false },
+	{ scene: "Live", filter: "Blur", type: "gaussian", style: "gaussian", active: false },
+	{ scene: "Chat Live", filter: "Blur", type: "gaussian", style: "gaussian", active: false },
+	{ scene: "Standby", filter: "Mosaic", type: "pixelate", style: "mosaic_voronoi", active: false },
 ];
 const blurRequests: Array<Record<string, unknown>> = [];
 const blurEvents: Array<Record<string, unknown>> = [];
@@ -77,7 +77,7 @@ function sceneBlur(request: string, data: Record<string, unknown>): Record<strin
 			success: true,
 			filters: names.map((filter) => {
 				const mine = sceneBlurs.filter((b) => b.filter === filter);
-				return { filter, type: mine[0].type, active: mine.some((b) => b.active), scenes: mine.map((b) => ({ scene: b.scene, active: b.active })) };
+				return { filter, type: mine[0].type, style: mine[0].style, active: mine.some((b) => b.active), scenes: mine.map((b) => ({ scene: b.scene, active: b.active })) };
 			}),
 			blurs: sceneBlurs,
 		};
@@ -442,11 +442,12 @@ test("a Scene Blur key lists the blurs and their scenes, switches one scene or a
 	// The picture: the Blur style chosen > the style the filter is set to.
 	settings = { filter: "Mosaic", scene: "Standby", press: "toggle" };
 	await action.show(key, settings);
-	assert.ok(shown.images.at(-1)?.endsWith("/blur-types/hexagons-on.png"), "the filter's own look");
+	assert.ok(shown.images.at(-1)?.endsWith("/options/style-mosaic-voronoi-on.png"), `the filter's own look: ${shown.images.at(-1)}`);
 	settings = { ...settings, look: "motion" };
 	await action.show(key, settings);
 	assert.ok(shown.images.at(-1)?.endsWith("/blur-types/motion-on.png"), "a Blur style chosen wins");
-	assert.equal(sceneBlurPicture(undefined, undefined, "temporal").id, "blur-types/gaussian", "a look the pack has no picture of");
+	assert.equal(sceneBlurPicture(undefined, undefined, "trail").id, "options/style-trail", "a trail");
+	assert.equal(sceneBlurPicture(undefined, undefined, "").id, "blur-types/gaussian", "a look not said: Gaussian");
 
 	// A name no scene has: an alert. OBS gone: the key keeps what it learned last.
 	settings = { filter: "Gone", scene: "", press: "on" };

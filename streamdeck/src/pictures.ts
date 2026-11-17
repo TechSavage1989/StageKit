@@ -387,15 +387,15 @@ export function blurAllPicture(chosen: string | undefined, look?: unknown): Pict
 
 /**
  * A Scene Blur key's picture: its Blur style; else the image kept from before
- * the type lists; else the style the filter is set to (its `type` as
- * ListSceneBlurs says it); else Gaussian.
+ * the type lists; else the entry of the Blur style list the filter is set to
+ * (its `style` as ListSceneBlurs says it); else Gaussian.
  */
-export function sceneBlurPicture(chosen: string | undefined, look?: unknown, type?: string): Picture {
-	const style = type === "hexagon" ? "hexagons" : type;
+export function sceneBlurPicture(chosen: string | undefined, look?: unknown, style?: string): Picture {
 	return (
 		BY_ID.get(lookPicture("blur", explicit(look)) ?? "") ||
 		(chosen && BY_ID.get(chosen)) ||
-		BY_ID.get(`blur-types/${style && BLUR.includes(style) ? style : "gaussian"}`) ||
+		BY_ID.get(lookPicture("blur", style) ?? "") ||
+		BY_ID.get("blur-types/gaussian") ||
 		plain("switch")
 	);
 }

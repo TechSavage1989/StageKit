@@ -1015,6 +1015,59 @@ int main(int argc, char **argv)
 			      mean_abs_diff(in_window, a));
 		}
 
+		// With a Scene Shadow, whichever was added first: Scene Blur keeps
+		// itself after the shadow, so that both draw.
+		for (int shadow_first = 1; shadow_first >= 0; shadow_first--) {
+			obs_scene_t *os = obs_scene_create(shadow_first ? "SB Order 1" : "SB Order 2");
+			sb_put(os, bg, 0, 0);
+			sb_put(os, picture, 240, 40);
+			sb_put(os, badge, 60, 200);
+			obs_source_t *os_src = obs_scene_get_source(os);
+			obs_data_t *od = obs_data_create();
+			obs_data_set_int(od, "ramp_in_ms", 0);
+			obs_data_set_int(od, "cover", 2);
+			sb_list(od, "chosen", {"SB Picture"});
+			obs_source_t *ob = obs_source_create("stagekit_scene_blur", "SB Order Blur", od, nullptr);
+			obs_data_release(od);
+			obs_source_t *osh =
+				obs_source_create("stagekit_scene_shadow", "SB Order Shadow", nullptr, nullptr);
+			obs_source_filter_add(os_src, shadow_first ? osh : ob);
+			sleep_ms(200);
+			obs_source_filter_add(os_src, shadow_first ? ob : osh);
+			sleep_ms(900);
+			for (int i = 0; i < 3; i++) {
+				render(os_src, w, h);
+				sleep_ms(40);
+			}
+			const long long blur_before = sb_draws(ob), shadow_before = sb_draws(osh);
+			std::vector<uint8_t> frame;
+			for (int i = 0; i < 3; i++) {
+				frame = render(os_src, w, h);
+				sleep_ms(40);
+			}
+			std::vector<std::string> order;
+			obs_source_enum_filters(
+				os_src,
+				[](obs_source_t *, obs_source_t *f, void *param) {
+					static_cast<std::vector<std::string> *>(param)->push_back(
+						obs_source_get_name(f));
+				},
+				&order);
+			// The badge's shadow: 12 px right and down of it, on the grey back.
+			const int under = sb_px(frame, 105, 236, 1), back = sb_px(frame, 600, 340, 1);
+			CHECK(order.size() == 2 && order[0] == "SB Order Shadow" && order[1] == "SB Order Blur" &&
+				      sb_draws(ob) > blur_before && sb_draws(osh) > shadow_before &&
+				      blurred(frame, p_picture) && under < back - 15,
+			      "%s first: Scene Blur is kept after Scene Shadow and both draw (shadow %d against %d, picture %.1f)",
+			      shadow_first ? "Scene Shadow added" : "Scene Blur added", under, back,
+			      sharpness(frame, 250, 50, 390, 150));
+			obs_source_filter_remove(os_src, ob);
+			obs_source_filter_remove(os_src, osh);
+			obs_source_release(ob);
+			obs_source_release(osh);
+			obs_scene_release(os);
+		}
+
 		// The ramp: in and out over the switch's duration, and a state
 		// restored at load is taken as it is.
 		{
@@ -1085,7 +1138,8 @@ int main(int argc, char **argv)
 				obs_data_array_t *scenes = obs_data_get_array(f, "scenes");
 				if (strcmp(obs_data_get_string(f, "filter"), "Scene Blur") == 0 &&
 				    obs_data_array_count(scenes) == 2 &&
-				    strcmp(obs_data_get_string(f, "type"), "gaussian") == 0)
+				    strcmp(obs_data_get_string(f, "type"), "gaussian") == 0 &&
+				    strcmp(obs_data_get_string(f, "style"), "gaussian") == 0)
 					both = true;
 				obs_data_array_release(scenes);
 				obs_data_release(f);

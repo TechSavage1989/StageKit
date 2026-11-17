@@ -102,6 +102,10 @@ void blur_at_level(const BlurLook &look, RampStyle style, double level, double &
 
 // "gaussian", "pixelate", "hexagon" ...: a look's name for keys and requests.
 const char *blur_type_name(BlurType type, PixelShape shape);
+// The look's entry in the Stream Deck keys' Blur style list (streamdeck/src/
+// key-types.json): "gaussian", "trail", "pixelate", "hexagons",
+// "mosaic_circle" ... and "glass" for a mosaic with glass.
+const char *blur_style_name(const BlurLook &look);
 
 // The blur passes. Make, use and destroy on any thread; the graphics calls
 // enter the graphics context themselves where they need to.

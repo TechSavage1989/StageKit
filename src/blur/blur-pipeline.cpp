@@ -216,6 +216,46 @@ const char *blur_type_name(BlurType type, PixelShape shape)
 	return "";
 }
 
+const char *blur_style_name(const BlurLook &look)
+{
+	switch (look.type) {
+	case BlurType::Gaussian:
+		return "gaussian";
+	case BlurType::Box:
+		return "box";
+	case BlurType::Kawase:
+		return "kawase";
+	case BlurType::Zoom:
+		return "zoom";
+	case BlurType::Motion:
+		return "motion";
+	case BlurType::Temporal:
+		return "trail";
+	case BlurType::Pixelate:
+	case BlurType::Hexagon:
+		break;
+	}
+	if (look.pixel_glass > 0.0)
+		return "glass";
+	switch (look.type == BlurType::Hexagon ? PixelShape::Hexagon : look.pixel_shape) {
+	case PixelShape::Square:
+		return "pixelate";
+	case PixelShape::Hexagon:
+		return "hexagons";
+	case PixelShape::Circle:
+		return "mosaic_circle";
+	case PixelShape::Triangle:
+		return "mosaic_triangle";
+	case PixelShape::Voronoi:
+		return "mosaic_voronoi";
+	case PixelShape::Rhomboid:
+		return "mosaic_rhomboid";
+	case PixelShape::Triakis:
+		return "mosaic_triakis";
+	}
+	return "pixelate";
+}
+
 // ------------------------------------------------------------------ passes
 
 BlurPipeline::BlurPipeline()
