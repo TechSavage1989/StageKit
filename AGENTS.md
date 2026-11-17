@@ -1307,7 +1307,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   - **Settings.** `sourceType` (Source type, or *Mode type* on the Scene Mode key; ids append-only,
     the first twenty those of the Scene Modes filter's *Mode type* in OBS, which has not been given
     the new ones), `sceneType` (Scene type), `look` (Blur style, Corner style, Shadow style,
-    Transition, Position, Capture type). Each list starts with *Automatic*, value `auto`; unset or empty reads the same. Since beta159
+    Transition, Position, Capture type). Each list starts with *Automatic*, value `auto`; unset or empty reads the same. Since beta160
     every key a user can add has one (tested from the manifest): the keys whose own list is what
     they do (Arrange tool, Dock Option, Slide to Edge, Set Aspect Ratio, Manual Window / Source:
     `OWN_LISTS`) have a Source type too, Capture Active Window and Move Source / Move Scene Item a
@@ -1325,9 +1325,9 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     key's lists shows that very picture (`typeForKept`, tried with the key's own resolver), the
     type is set instead so the page says what it is. Choosing anything in a list, Automatic
     included, drops it. Hook and Manual Window / Source keys' old `sourceType` (beta155) is the
-    value of their new Source type list (since beta159 drawn as the type with a badge, no longer as
+    value of their new Source type list (since beta160 drawn as the type with a badge, no longer as
     `hook-type-*`).
-  - **A type and a function on one image** (beta159; `*Shown` in `src/pictures.ts`,
+  - **A type and a function on one image** (beta160; `*Shown` in `src/pictures.ts`,
     `src/compose.ts`, `tools/make-badges.py`). With a type chosen on a key that also does
     something of its own (step, tool, option, slide, ratio, capture kind, blur style, destination),
     the image is the type's picture with that function as a badge, 54 x 36 px, top right

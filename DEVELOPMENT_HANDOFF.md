@@ -13,7 +13,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
-## Stream Deck: a type list on every key, its function as a corner badge (beta159 expected, plugin 0.20.1.0)
+## Stream Deck: a type list on every key, its function as a corner badge (0.1.0-beta160, plugin 0.20.1.0)
 
 Branch `feat/streamdeck-every-key`. The owner, of the Manual Window / Source key: "no types
 selection for manual window/source? all keys must have the options"; and of Move Source: "Move
