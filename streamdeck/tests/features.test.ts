@@ -49,11 +49,11 @@ test("a feature's key is named for the feature, and each is for one kind of filt
 test("a dock switch key and a slide key have a picture for each choice the pack covers", async () => {
 	const { optionPicture, slidePicture } = await import("../src/pictures.ts");
 	const { DIRECTIONS } = await import("../src/actions/slide.ts").catch(() => ({ DIRECTIONS: [] as string[] }));
-	assert.equal(optionPicture(undefined, "snap").id, "tools/snap");
-	assert.equal(optionPicture(undefined, "guides").id, "tools/guides");
+	assert.equal(optionPicture(undefined, "snap").id, "options/snap");
+	assert.equal(optionPicture(undefined, "guides").id, "options/guides");
 	assert.ok(optionPicture(undefined, "limit").on);
 	for (const way of ["up", "down", "left", "right", "up-left", "up-right", "down-left", "down-right"])
-		assert.equal(slidePicture(undefined, way).id, `tools/slide-${way}`);
+		assert.equal(slidePicture(undefined, way).id, `options/slide-${way}`);
 	assert.ok(slidePicture(undefined, "centre").on);
 	assert.ok(Array.isArray(DIRECTIONS));
 });

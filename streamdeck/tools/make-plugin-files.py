@@ -17,7 +17,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, "..")
 PLUGIN = os.path.join(ROOT, "com.techsavage1989.stagekit.sdPlugin")
 BASE = "com.techsavage1989.stagekit"
-VERSION = "0.17.1.0"
+VERSION = "0.17.2.0"
 
 # The pack picture each feature's key starts with (its "on" and "off" look).
 PICTURES = {
@@ -28,8 +28,8 @@ PICTURES = {
     "stagekit_auto_frame": ("filters/auto-frame-on", "filters/auto-frame-off"),
     "stagekit_standby": ("filters/standby-picture-on", "filters/standby-picture-off"),
     "stagekit_show_in_scenes": ("filters/show-in-scenes-on", "filters/show-in-scenes-off"),
-    "stagekit_send_to": ("camera/camera-top-right", None),
-    "stagekit_place_item": ("camera/camera-centre", None),
+    "stagekit_send_to": ("options/camera-top-right", None),
+    "stagekit_place_item": ("options/camera-centre", None),
     "stagekit_ramp_zoom": ("options/zoom-on", "options/zoom-off"),
     "stagekit_fit_item": ("options/fit-on", "options/fit-off"),
     "stagekit_active_app": ("options/source-switcher-on", "options/source-switcher-off"),
@@ -190,12 +190,12 @@ def main():
         return [{"Image": f"imgs/actions/{folder}/{image}", "TitleAlignment": "bottom"}]
 
     for feature in features["switches"]:
-        on, off = PICTURES.get(feature["kind"], ("plain/switch-on", "plain/switch-off"))
+        on, off = PICTURES.get(feature["kind"], ("options/plain-switch-on", "options/plain-switch-off"))
         key_pictures(feature["key"], on, off)
         page(feature["key"], f"StageKit {feature['name']}", one_list("Source") + PRESS)
         add(feature["key"], feature["name"], feature["tip"], feature["key"], "imgs/actions/switch/icon", two(feature["key"]))
     for feature in features["moves"]:
-        on, _ = PICTURES.get(feature["kind"], ("plain/move", None))
+        on, _ = PICTURES.get(feature["kind"], ("options/plain-move", None))
         key_pictures(feature["key"], on, None)
         page(feature["key"], f"StageKit {feature['name']}", one_list("Move"))
         add(feature["key"], feature["name"], feature["tip"], feature["key"], "imgs/actions/move/icon", one(feature["key"]))
@@ -211,7 +211,7 @@ def main():
     )
     add("shape", "Set Aspect Ratio", "Sets a game's aspect ratio by hand: 4:3, 8:7 and so on, or back to automatic. It can last just for the game being captured.", "shape", "imgs/actions/switch/icon", one("shape"))
 
-    key_pictures("hookgame", "capture/game-on", None)
+    key_pictures("hookgame", "options/hook-game", None)
     page(
         "hook",
         "StageKit hook capture",
@@ -252,7 +252,7 @@ def main():
     )
     add("scene", "Switch Scene", "Switches OBS to a scene, on the program or (Studio Mode) the preview, with a transition if you choose one. Lit while that scene is on.", "scene", "imgs/actions/switch/icon", two("scene"))
 
-    key_pictures("toolkey", "plain/tool", None)
+    key_pictures("toolkey", "options/align-left", None)
     page("tool", "StageKit arrange tool", options("Tool", "tool", "left", tools_list()))
     add("tool", "Arrange tool", "Lines up, spaces out, snaps or resizes the items selected in OBS, or copies a transform to other scenes.", "tool", "imgs/actions/tool/icon", one("toolkey"))
 
@@ -260,7 +260,7 @@ def main():
     page("blur-all", "StageKit blur all", "")
     add("blurall", "Blur All", "Switches every Blur on, or all of them off again. Shows on while any is on.", "blur-all", "imgs/actions/blur/icon", two("blurall"))
 
-    key_pictures("option", "tools/snap-on", "tools/snap-off")
+    key_pictures("option", "options/snap-on", "options/snap-off")
     switches = [
         ("snap", "Snap on release"),
         ("guides", "Guides"),
@@ -272,7 +272,7 @@ def main():
     page("option", "StageKit dock option", options("Option", "option", "snap", switches) + PRESS)
     add("option", "Dock Option", "One of the StageKit dock's options on a key: snap on release, guides, stop resizing at edges. Shows which way it is.", "option", "imgs/actions/switch/icon", two("option"))
 
-    key_pictures("slide", "tools/slide-left", None)
+    key_pictures("slide", "options/slide-left", None)
     ways = [
         ("left", "Left"),
         ("right", "Right"),
@@ -296,8 +296,8 @@ def main():
         '			<sdpi-select id="filter" setting="filter" datasource="getFilters" placeholder="Choose" show-refresh></sdpi-select>\n'
         "		</sdpi-item>\n"
     )
-    key_pictures("anyswitch", "plain/switch-on", "plain/switch-off")
-    key_pictures("anymove", "plain/move", None)
+    key_pictures("anyswitch", "options/plain-switch-on", "options/plain-switch-off")
+    key_pictures("anymove", "options/plain-move", None)
     page("switch", "StageKit filter switch", two_lists + PRESS, FOLLOW)
     page("move", "StageKit move", two_lists, FOLLOW)
     add("switch", "Filter switch (older)", "Switches any StageKit filter. Use the key named after the feature instead.", "switch", "imgs/actions/switch/icon", two("anyswitch"), visible=False)

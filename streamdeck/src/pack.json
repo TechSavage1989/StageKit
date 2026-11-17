@@ -1722,6 +1722,195 @@
 			"label": "ratio auto",
 			"on": "options/ratio-auto",
 			"off": "options/ratio-auto"
+		},
+		{
+			"id": "options/copy-all",
+			"group": "options",
+			"label": "copy all",
+			"on": "options/copy-all",
+			"off": "options/copy-all"
+		},
+		{
+			"id": "options/copy-chosen",
+			"group": "options",
+			"label": "copy chosen",
+			"on": "options/copy-chosen",
+			"off": "options/copy-chosen"
+		},
+		{
+			"id": "options/snap",
+			"group": "options",
+			"label": "snap",
+			"on": "options/snap-on",
+			"off": "options/snap-off"
+		},
+		{
+			"id": "options/guides",
+			"group": "options",
+			"label": "guides",
+			"on": "options/guides-on",
+			"off": "options/guides-off"
+		},
+		{
+			"id": "options/snap-now",
+			"group": "options",
+			"label": "snap now",
+			"on": "options/snap-now",
+			"off": "options/snap-now"
+		},
+		{
+			"id": "options/slide-up",
+			"group": "options",
+			"label": "slide up",
+			"on": "options/slide-up",
+			"off": "options/slide-up"
+		},
+		{
+			"id": "options/slide-down",
+			"group": "options",
+			"label": "slide down",
+			"on": "options/slide-down",
+			"off": "options/slide-down"
+		},
+		{
+			"id": "options/slide-left",
+			"group": "options",
+			"label": "slide left",
+			"on": "options/slide-left",
+			"off": "options/slide-left"
+		},
+		{
+			"id": "options/slide-right",
+			"group": "options",
+			"label": "slide right",
+			"on": "options/slide-right",
+			"off": "options/slide-right"
+		},
+		{
+			"id": "options/slide-up-left",
+			"group": "options",
+			"label": "slide up left",
+			"on": "options/slide-up-left",
+			"off": "options/slide-up-left"
+		},
+		{
+			"id": "options/slide-up-right",
+			"group": "options",
+			"label": "slide up right",
+			"on": "options/slide-up-right",
+			"off": "options/slide-up-right"
+		},
+		{
+			"id": "options/slide-down-left",
+			"group": "options",
+			"label": "slide down left",
+			"on": "options/slide-down-left",
+			"off": "options/slide-down-left"
+		},
+		{
+			"id": "options/slide-down-right",
+			"group": "options",
+			"label": "slide down right",
+			"on": "options/slide-down-right",
+			"off": "options/slide-down-right"
+		},
+		{
+			"id": "options/camera-top-left",
+			"group": "options",
+			"label": "camera top left",
+			"on": "options/camera-top-left",
+			"off": "options/camera-top-left"
+		},
+		{
+			"id": "options/camera-top-centre",
+			"group": "options",
+			"label": "camera top centre",
+			"on": "options/camera-top-centre",
+			"off": "options/camera-top-centre"
+		},
+		{
+			"id": "options/camera-top-right",
+			"group": "options",
+			"label": "camera top right",
+			"on": "options/camera-top-right",
+			"off": "options/camera-top-right"
+		},
+		{
+			"id": "options/camera-middle-left",
+			"group": "options",
+			"label": "camera middle left",
+			"on": "options/camera-middle-left",
+			"off": "options/camera-middle-left"
+		},
+		{
+			"id": "options/camera-centre",
+			"group": "options",
+			"label": "camera centre",
+			"on": "options/camera-centre",
+			"off": "options/camera-centre"
+		},
+		{
+			"id": "options/camera-middle-right",
+			"group": "options",
+			"label": "camera middle right",
+			"on": "options/camera-middle-right",
+			"off": "options/camera-middle-right"
+		},
+		{
+			"id": "options/camera-bottom-left",
+			"group": "options",
+			"label": "camera bottom left",
+			"on": "options/camera-bottom-left",
+			"off": "options/camera-bottom-left"
+		},
+		{
+			"id": "options/camera-bottom-centre",
+			"group": "options",
+			"label": "camera bottom centre",
+			"on": "options/camera-bottom-centre",
+			"off": "options/camera-bottom-centre"
+		},
+		{
+			"id": "options/camera-bottom-right",
+			"group": "options",
+			"label": "camera bottom right",
+			"on": "options/camera-bottom-right",
+			"off": "options/camera-bottom-right"
+		},
+		{
+			"id": "options/hook-game",
+			"group": "options",
+			"label": "hook game",
+			"on": "options/hook-game",
+			"off": "options/hook-game"
+		},
+		{
+			"id": "options/hook-window",
+			"group": "options",
+			"label": "hook window",
+			"on": "options/hook-window",
+			"off": "options/hook-window"
+		},
+		{
+			"id": "options/plain-switch",
+			"group": "options",
+			"label": "plain switch",
+			"on": "options/plain-switch-on",
+			"off": "options/plain-switch-off"
+		},
+		{
+			"id": "options/plain-move",
+			"group": "options",
+			"label": "plain move",
+			"on": "options/plain-move",
+			"off": "options/plain-move"
+		},
+		{
+			"id": "options/plain-tool",
+			"group": "options",
+			"label": "plain tool",
+			"on": "options/plain-tool",
+			"off": "options/plain-tool"
 		}
 	]
 }

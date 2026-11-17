@@ -162,8 +162,47 @@ for ratio in RATIOS:
     DRAWINGS["ratio-" + ratio.replace(":", "x")] = [("frame", 32 - w / 2, 18 - h / 2, 32 + w / 2, 18 + h / 2)]
 DRAWINGS["ratio-auto"] = [("frame", 6, 4, 58, 32), ("text", "A")]
 
+# The pictures that came from the pack in another style (the arrange tools,
+# the camera places, the hook keys, the plain keys), drawn again in this one.
+# The owner: "all keys for the plugin must be of consistent design language
+# and styling".
+DRAWINGS["copy-all"] = [("box", 4, 11, 20, 25)] + arrow(22, 18, 34, 18, 4) + [
+    ("frame", 38, 2, 58, 12), ("frame", 38, 13, 58, 23), ("frame", 38, 24, 58, 34)]
+DRAWINGS["copy-chosen"] = [("box", 4, 11, 20, 25)] + arrow(22, 18, 34, 18, 4) + [
+    ("box", 38, 2, 58, 12), ("frame", 38, 13, 58, 23), ("box", 38, 24, 58, 34)]
+DRAWINGS["snap"] = [("box", 8, 8, 28, 28), ("frame", 36, 8, 56, 28), ("line", 32, 2, 32, 34)]
+DRAWINGS["guides"] = [("frame", 6, 3, 58, 33), ("line", 32, 3, 32, 33), ("line", 6, 18, 58, 18), ("box", 22, 10, 30, 16)]
+DRAWINGS["snap-now"] = [("box", 8, 8, 28, 28), ("frame", 36, 8, 56, 28)] + arrow(30, 18, 34, 18, 3)
+# A box with an arrow to the edge it slides to.
+for _name, (_dx, _dy) in {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0), "up-left": (-1, -1),
+                          "up-right": (1, -1), "down-left": (-1, 1), "down-right": (1, 1)}.items():
+    _ex, _ey = 32 + _dx * 26, 18 + _dy * 15
+    _edge = []
+    if _dx:
+        _edge.append(("line", _ex, 3, _ex, 33))
+    if _dy:
+        _edge.append(("line", 6, _ey, 58, _ey))
+    _bx, _by = 32 - _dx * 10, 18 - _dy * 6
+    DRAWINGS["slide-" + _name] = _edge + [("box", _bx - 5, _by - 5, _bx + 5, _by + 5)] + arrow(
+        _bx + _dx * 7, _by + _dy * 7, _ex - _dx * 5, _ey - _dy * 4, 4)
+# The camera's nine places on the screen.
+for _row, _y in (("top", 4), ("middle", 13), ("bottom", 22)):
+    for _col, _x in (("left", 9), ("centre", 26), ("right", 43)):
+        _place = "centre" if (_row, _col) == ("middle", "centre") else f"{_row}-{_col}"
+        DRAWINGS["camera-" + _place] = [("frame", 6, 2, 58, 34), ("box", _x, _y, _x + 12, _y + 10)]
+# The hook keys: a game, a window, inside the corners of a capture.
+_CORNERS = [("line", 6, 4, 11, 4), ("line", 6, 4, 6, 9), ("line", 53, 4, 58, 4), ("line", 58, 4, 58, 9),
+            ("line", 6, 32, 11, 32), ("line", 6, 27, 6, 32), ("line", 53, 32, 58, 32), ("line", 58, 27, 58, 32)]
+DRAWINGS["hook-game"] = _CORNERS + [("frame", 16, 10, 48, 26), ("line", 22, 18, 30, 18), ("line", 26, 14, 26, 22),
+                                    ("dot", 39, 15, 2), ("dot", 43, 20, 2)]
+DRAWINGS["hook-window"] = _CORNERS + [("frame", 16, 9, 48, 27), ("box", 16, 9, 48, 14)]
+# The plain keys, for a key whose target is not chosen yet.
+DRAWINGS["plain-switch"] = [("frame", 14, 10, 50, 26), ("dot", 41, 18, 5)]
+DRAWINGS["plain-move"] = [("frame", 6, 3, 58, 33), ("box", 12, 9, 24, 19)] + arrow(26, 21, 48, 27, 4)
+DRAWINGS["plain-tool"] = [("line", 8, 3, 8, 33), ("box", 12, 7, 50, 15), ("box", 12, 21, 34, 29)]
+
 # The ones that are a filter's key, with an "on" and an "off" look.
-SWITCHES = ["scene", "zoom", "fit", "overlap", "source-switcher", "window-switcher", "trigger", "link", "show-hide", "limit", "slide-to-edge", "every-scene", "keep-shape"]
+SWITCHES = ["scene", "zoom", "fit", "overlap", "source-switcher", "window-switcher", "trigger", "link", "show-hide", "limit", "slide-to-edge", "every-scene", "keep-shape", "snap", "guides", "plain-switch"]
 
 
 def drawn(shapes, ink):
