@@ -258,6 +258,21 @@ obs_data_t *take_timing()
 	return data ? data : obs_data_create();
 }
 
+// What changed in the scenes (signals) and how often StageKit's periodic
+// looks ran, so far (`stagekit_test_looks`).
+obs_data_t *take_looks()
+{
+	calldata_t cd;
+	calldata_init(&cd);
+	obs_data_t *data = nullptr;
+	if (proc_handler_call(obs_get_proc_handler(), "stagekit_test_looks", &cd)) {
+		const char *json = calldata_string(&cd, "json");
+		data = json ? obs_data_create_from_json(json) : nullptr;
+	}
+	calldata_free(&cd);
+	return data ? data : obs_data_create();
+}
+
 // --------------------------------------------------------------- scenes
 
 void show_only(obs_source_t *scene_source, const std::vector<std::string> &names, size_t shown)
@@ -471,6 +486,7 @@ int main(int argc, char **argv)
 		obs_transition_set(transition, scene);
 		os_sleep_ms((uint32_t)(warmup * 1000.0));
 		obs_data_release(take_timing());
+		obs_data_t *looks_a = take_looks();
 		profiler_snapshot_t *a = profile_snapshot_create();
 		std::vector<obs_source_t *> ring;
 		for (const std::string &c : cycle)
@@ -493,6 +509,7 @@ int main(int argc, char **argv)
 			}
 		});
 		obs_data_t *took = take_timing();
+		obs_data_t *looks_b = take_looks();
 		profiler_snapshot_t *b = profile_snapshot_create();
 		if (!whole) {
 			printf("FAIL: '%s' did not reach %llu frames in time\n", name.c_str(),
@@ -519,7 +536,7 @@ int main(int argc, char **argv)
 		obs_data_array_t *kinds = obs_data_get_array(took, "kinds");
 		for (size_t i = 0; i < obs_data_array_count(kinds); i++) {
 			obs_data_t *k = obs_data_array_item(kinds, i);
-			Row row{obs_data_get_string(k, "id"),         (double)obs_data_get_int(k, "tick_calls"),
+			Row row{obs_data_get_string(k, "id"),          (double)obs_data_get_int(k, "tick_calls"),
 				obs_data_get_double(k, "tick_us"),     obs_data_get_double(k, "render_us"),
 				obs_data_get_double(k, "tick_p50_us"), obs_data_get_double(k, "tick_p95_us"),
 				obs_data_get_double(k, "tick_max_us")};
@@ -533,16 +550,36 @@ int main(int argc, char **argv)
 		std::sort(rows.begin(), rows.end(), [](const Row &x, const Row &y) { return x.tick_us > y.tick_us; });
 		// (Drawing is not summed here: a filter's drawing includes what it
 		// draws from, so the kinds' drawing times overlap.)
-		printf("   StageKit ticks %.1f us a frame (p50 %.1f, p95 %.1f, max %.1f us)\n", tick_total / took_frames,
-		       obs_data_get_double(took, "frame_tick_p50_us"), obs_data_get_double(took, "frame_tick_p95_us"),
-		       obs_data_get_double(took, "frame_tick_max_us"));
-		printf("   %-24s %5s %9s %8s %8s %8s %9s %10s\n", "kind", "inst", "us/frame", "mean", "p50", "p95", "max",
-		       "render/fr");
+		printf("   StageKit ticks %.1f us a frame (p50 %.1f, p95 %.1f, max %.1f us)\n",
+		       tick_total / took_frames, obs_data_get_double(took, "frame_tick_p50_us"),
+		       obs_data_get_double(took, "frame_tick_p95_us"), obs_data_get_double(took, "frame_tick_max_us"));
+		printf("   %-24s %5s %9s %8s %8s %8s %9s %10s\n", "kind", "inst", "us/frame", "mean", "p50", "p95",
+		       "max", "render/fr");
 		for (const Row &row : rows) {
 			const std::string short_id = row.id.rfind("stagekit_", 0) == 0 ? row.id.substr(9) : row.id;
 			printf("   %-24s %5.1f %9.2f %8.2f %8.2f %8.2f %9.1f %10.1f\n", short_id.c_str(),
-			       row.calls / took_frames, row.tick_us / took_frames, row.calls ? row.tick_us / row.calls : 0.0,
-			       row.p50, row.p95, row.max, row.render_us / took_frames);
+			       row.calls / took_frames, row.tick_us / took_frames,
+			       row.calls ? row.tick_us / row.calls : 0.0, row.p50, row.p95, row.max,
+			       row.render_us / took_frames);
+		}
+		{
+			// Per second: the scene signals and StageKit's periodic looks.
+			const double secs = std::max(0.001, obs_data_get_double(took, "seconds"));
+			obs_data_t *per_s = obs_data_create();
+			printf("   a second:");
+			for (const char *key :
+			     {"item_add", "item_remove", "item_visible", "item_transform", "reorder", "refresh",
+			      "switch_follow", "link_follow", "shadow_scale", "ambient_sources"}) {
+				const double n =
+					(obs_data_get_int(looks_b, key) - obs_data_get_int(looks_a, key)) / secs;
+				obs_data_set_double(per_s, key, n);
+				printf(" %s %.1f", key, n);
+			}
+			printf("\n");
+			obs_data_set_obj(took, "per_second", per_s);
+			obs_data_release(per_s);
+			obs_data_release(looks_a);
+			obs_data_release(looks_b);
 		}
 		if (activity == "scenes")
 			printf("   Morph cross-fades logged: %d\n", g_crossfades - crossfades_before);

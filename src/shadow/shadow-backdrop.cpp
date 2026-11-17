@@ -17,6 +17,7 @@ the Free Software Foundation; either version 2 of the License, or
 // scene is required.
 
 #include "../common/loading.hpp"
+#include "../common/scene-rev.hpp"
 #include "../common/filter-input.hpp"
 #include "shadow-backdrop.hpp"
 #include "../common/timing.hpp"
@@ -348,9 +349,27 @@ private:
 	std::map<obs_sceneitem_t *, Still> still_;
 	// How big the source is drawn on screen, for sizes given in screen pixels.
 	double shown_sx_ = 1.0, shown_sy_ = 1.0;
+	double prev_sx_ = 0.0, prev_sy_ = 0.0; // the scale taken before this one
 	// Standing down because of the scene on screen.
 	bool off_here_ = false;
 	int scale_countdown_ = 0;
+	// ==== scene-filters:perf ====
+	// What the scale was last looked at with: the scenes' revision, the
+	// scene on screen (compared, never held) and the source's size.
+	bool scale_check_due(obs_source_t *parent);
+	bool view_check_due(obs_source_t *parent);
+	bool view_pending_ = true; // "Keep it on screen" has an item to look at again
+	std::atomic<bool> view_dirty_{true};
+	uint64_t view_rev_ = 0;
+	uint32_t view_w_ = 0, view_h_ = 0;
+	int view_idle_ = 0;
+	std::atomic<bool> scale_dirty_{true};
+	uint64_t seen_scene_rev_ = 0;
+	const obs_source_t *seen_on_screen_ = nullptr;
+	uint32_t seen_w_ = 0, seen_h_ = 0;
+	int scale_idle_ = 0;
+	bool scale_staggered_ = false;
+	// ==== end scene-filters:perf ====
 
 	gs_effect_t *effect_ = nullptr;
 	gs_eparam_t *p_image_ = nullptr;
@@ -498,6 +517,10 @@ void ShadowBackdrop::update(obs_data_t *settings)
 		s.outline = false;
 	s.screen_px = obs_data_get_bool(settings, "screen_px");
 	in_view_ = obs_data_get_bool(settings, "in_view");
+	// ==== scene-filters:perf ====
+	scale_dirty_ = true; // "Off in these scenes" may have changed
+	view_dirty_ = true;
+	// ==== end scene-filters:perf ====
 
 	std::lock_guard lock(mutex_);
 	settings_ = s;
@@ -580,6 +603,7 @@ void ShadowBackdrop::keep_in_view(obs_source_t *parent)
 	}
 	const uint64_t now = os_gettime_ns();
 	std::map<obs_sceneitem_t *, Still> next;
+	view_pending_ = false;
 	for (obs_sceneitem_t *item : items_showing(parent)) {
 		struct Release {
 			obs_sceneitem_t *item;
@@ -609,8 +633,10 @@ void ShadowBackdrop::keep_in_view(obs_source_t *parent)
 			seen.since = now;
 		}
 		next[item] = seen;
-		if (now - seen.since < 400000000ULL)
+		if (now - seen.since < 400000000ULL) {
+			view_pending_ = true; // not still long enough yet: looked at again
 			continue;
+		}
 
 		vec2 scale, pos;
 		obs_sceneitem_get_scale(item, &scale);
@@ -706,8 +732,9 @@ void ShadowBackdrop::tick()
 		return;
 	// A filter that is switched off, or told not to, takes no room.
 	// Now and then, see how big the source is drawn where it is on screen.
-	if (--scale_countdown_ <= 0) {
-		scale_countdown_ = 20;
+	// ==== scene-filters:perf ====
+	if (scale_check_due(parent)) {
+		// ==== end scene-filters:perf ====
 		// And whether the scene on screen is one it is left off in.
 		bool off = false;
 		if (obs_source_t *on_screen = scene_on_screen()) {
@@ -739,8 +766,27 @@ void ShadowBackdrop::tick()
 		const bool found = shown_scale(parent, sx, sy);
 		std::lock_guard lock(mutex_);
 		// Guard against a source drawn almost invisibly small.
-		shown_sx_ = found ? std::max(0.05, sx) : 1.0;
-		shown_sy_ = found ? std::max(0.05, sy) : 1.0;
+		const double nx = found ? std::max(0.05, sx) : 1.0, ny = found ? std::max(0.05, sy) : 1.0;
+		// ==== scene-filters:perf ====
+		// In a bounding box the scale read depends on the room this
+		// filter takes (the source is that much larger), and the room on
+		// the scale: rounded to whole pixels, the two could take turns
+		// between two values for good, moving every item showing the
+		// source by a pixel and back three times a second. A scale that
+		// goes straight back to the one before, by under 2 %, is that
+		// and is not taken.
+		const auto near = [](double a, double b, double share) {
+			return std::fabs(a - b) <= share * std::max(a, b);
+		};
+		const bool back = near(nx, prev_sx_, 1e-4) && near(ny, prev_sy_, 1e-4) && near(nx, shown_sx_, 0.02) &&
+				  near(ny, shown_sy_, 0.02) && !(nx == shown_sx_ && ny == shown_sy_);
+		if (!back && !(nx == shown_sx_ && ny == shown_sy_)) {
+			prev_sx_ = shown_sx_;
+			prev_sy_ = shown_sy_;
+			shown_sx_ = nx;
+			shown_sy_ = ny;
+		}
+		// ==== end scene-filters:perf ====
 	}
 	const bool active = keep && effect_ && obs_source_enabled(source_);
 	settle_items(parent, active ? padding_for(settings()) : Padding());
@@ -751,11 +797,77 @@ void ShadowBackdrop::tick()
 	}
 	// Looked at a few times a second: it only acts on an item that has been
 	// still for a while, and going through every scene's items is not free.
-	if (!(in_view && active))
+	if (!(in_view && active)) {
 		still_.clear();
-	else if (++in_view_turn_ % 8 == 0)
+		view_pending_ = true;
+	} else if (++in_view_turn_ % 8 == 0 && view_check_due(parent)) {
 		keep_in_view(parent);
+	}
 }
+
+// ==== scene-filters:perf ====
+// Every 20 ticks, as before, but only when something it depends on changed;
+// otherwise every 120 ticks. The first look comes at once; after it, the
+// filters' 20-tick rounds are spread by their uuid.
+bool ShadowBackdrop::scale_check_due(obs_source_t *parent)
+{
+	if (--scale_countdown_ > 0)
+		return false;
+	scale_countdown_ = 20;
+	if (!scale_staggered_) {
+		scale_staggered_ = true;
+		scale_countdown_ = 1 + stagger_phase(source_, 20);
+		scale_idle_ = stagger_phase(source_, 120);
+	}
+	const uint64_t rev = scene_revision();
+	scale_idle_ += 20;
+	// The cheap tests first: a scene changed, or its settings.
+	bool changed = scale_dirty_.exchange(false) || rev != seen_scene_rev_ || scale_idle_ >= 120;
+	// Then another scene on screen, or another size of the source (which
+	// a scene not drawn does not signal).
+	obs_source_t *on_screen = scene_on_screen();
+	obs_source_release(on_screen);
+	changed = changed || on_screen != seen_on_screen_;
+	uint32_t w = seen_w_, h = seen_h_;
+	if (!changed) {
+		w = obs_source_get_width(parent);
+		h = obs_source_get_height(parent);
+		changed = w != seen_w_ || h != seen_h_;
+	}
+	if (!changed)
+		return false;
+	if (w == seen_w_ && h == seen_h_) {
+		w = obs_source_get_width(parent);
+		h = obs_source_get_height(parent);
+	}
+	seen_scene_rev_ = rev;
+	seen_on_screen_ = on_screen;
+	seen_w_ = w;
+	seen_h_ = h;
+	scale_idle_ = 0;
+	count_look(Look::ShadowScale);
+	return true;
+}
+
+// "Keep it on screen" goes through every scene's items, eight ticks apart,
+// but only while an item may yet need it: something in a scene changed, the
+// source changed size, an item has not been still for long enough yet, or
+// its settings changed. Otherwise every 120 ticks.
+bool ShadowBackdrop::view_check_due(obs_source_t *parent)
+{
+	const uint64_t rev = scene_revision();
+	const uint32_t w = obs_source_get_width(parent), h = obs_source_get_height(parent);
+	view_idle_ += 8;
+	if (!view_pending_ && !view_dirty_.exchange(false) && rev == view_rev_ && w == view_w_ && h == view_h_ &&
+	    view_idle_ < 120)
+		return false;
+	view_rev_ = rev;
+	view_w_ = w;
+	view_h_ = h;
+	view_idle_ = 0;
+	return true;
+}
+// ==== end scene-filters:perf ====
 
 // The filter is being taken off its source: give the room back.
 void ShadowBackdrop::leave(obs_source_t *parent)

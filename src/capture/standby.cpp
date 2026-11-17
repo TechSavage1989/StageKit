@@ -347,17 +347,20 @@ public:
 			}
 			obs_source_release(scene_source);
 		}
-		Picture kind;
+		Picture kind = Picture();
 		std::string file, named;
 		bool changed, placed;
 		double fade_s;
 		{
 			std::lock_guard lock(mutex_);
-			kind = kind_;
-			file = file_;
-			named = named_;
 			changed = changed_;
 			changed_ = false;
+			// (Only when the image is made again: they are strings.)
+			if (changed) {
+				kind = kind_;
+				file = file_;
+				named = named_;
+			}
 			placed = placed_;
 			fade_s = fade_s_;
 		}
@@ -426,7 +429,8 @@ public:
 		// owner's "fit still trails the source window switch" (the switcher
 		// at 250 ms, this at 800). While the capture is live its size is
 		// taken as it is.
-		const bool led = app_capture_present(parent);
+		// (Asked only when it can matter: it goes through the filters.)
+		const bool led = !empty && tw && th && app_capture_present(parent);
 		if (!empty && tw && th && (tw != last_w_ || th != last_h_)) {
 			// Remembered, for the next time there is nothing.
 			obs_data_t *settings = obs_source_get_settings(source_);

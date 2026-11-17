@@ -9,6 +9,7 @@ the Free Software Foundation; either version 2 of the License, or
 */
 
 #include "timing.hpp"
+#include "scene-rev.hpp"
 
 #include <obs-module.h>
 #include <plugin-support.h>
@@ -63,9 +64,14 @@ struct Spread {
 	{
 		if (ns < 32)
 			return 0;
-		int top = 5; // ns in [2^top, 2^(top+1))
-		while (top < 63 && (ns >> (top + 1)))
-			top++;
+		// ns in [2^top, 2^(top+1)), found in six steps.
+		int top = 0;
+		uint64_t v = ns;
+		for (int step : {32, 16, 8, 4, 2, 1})
+			if (v >> step) {
+				v >>= step;
+				top += step;
+			}
 		const int part = (int)((ns >> (top - 3)) & (kSteps - 1));
 		const int at = (top - 5) * kSteps + part;
 		return std::min(at, kBuckets - 1);
@@ -382,6 +388,8 @@ void register_probe()
 	register_timed(&info);
 }
 
+std::array<std::atomic<uint64_t>, (size_t)Look::Count> g_looks{};
+
 uint32_t uuid_hash(obs_source_t *source)
 {
 	const char *uuid = source ? obs_source_get_uuid(source) : nullptr;
@@ -426,6 +434,27 @@ void timing_add_procs()
 		[](void *, calldata_t *cd) { calldata_set_string(cd, "json", take().c_str()); }, nullptr);
 	proc_handler_add(ph, "void stagekit_timing_report()", [](void *, calldata_t *) { write_report(); }, nullptr);
 	proc_handler_add(ph, "void stagekit_timing_probe()", [](void *, calldata_t *) { register_probe(); }, nullptr);
+	proc_handler_add(
+		ph, "void stagekit_test_looks(out string json)",
+		[](void *, calldata_t *cd) {
+			static const char *const kNames[] = {"switch_follow", "link_follow", "shadow_scale",
+							     "ambient_sources"};
+			obs_data_t *out = obs_data_create();
+			for (size_t i = 0; i < g_looks.size(); i++)
+				obs_data_set_int(out, kNames[i], (long long)g_looks[i].load());
+			obs_data_set_int(out, "scene_revision", (long long)scene_revision());
+			for (const char *signal :
+			     {"item_add", "item_remove", "item_visible", "item_transform", "reorder", "refresh"})
+				obs_data_set_int(out, signal, (long long)scene_signals_seen(signal));
+			calldata_set_string(cd, "json", obs_data_get_json(out));
+			obs_data_release(out);
+		},
+		nullptr);
+}
+
+void count_look(Look which)
+{
+	g_looks[(size_t)which].fetch_add(1, std::memory_order_relaxed);
 }
 
 double stagger_phase(obs_source_t *source, double period)

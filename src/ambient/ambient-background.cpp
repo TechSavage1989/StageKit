@@ -27,6 +27,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../capture/standby.hpp"
 #include "../common/easing.hpp"
 #include "../common/kawase-blur.hpp"
+#include "../common/scene-rev.hpp"
 #include "../common/scene-util.hpp"
 #include "../common/start-image.hpp"
 #include "../frame/auto-frame.hpp"
@@ -206,6 +207,10 @@ private:
 	uint32_t height_ = 1080;
 	double time_ = 0.0;
 	double resolve_timer_ = 0.0;
+	std::atomic<bool> resolve_now_{true};             // settings changed: look the sources up again
+	uint64_t resolve_rev_ = 0;                        // scene_revision() at the last look
+	const obs_source_t *resolve_on_screen_ = nullptr; // the scene on screen then (never held)
+	double resolve_idle_ = 0.0;                       // seconds since the last look
 	// False while the capture is only being kept running, not shown.
 	std::atomic<bool> live_shown_{true};
 	bool rendering_ = false;
@@ -497,6 +502,7 @@ void AmbientBackground::update(obs_data_t *settings)
 	if (s.overlay != old_overlay || (!s.overlay.empty() && !overlay_image_loaded_))
 		load_image(overlay_image_, overlay_image_loaded_, s.overlay);
 	resolve_timer_ = 0.0;
+	resolve_now_ = true;
 }
 
 void AmbientBackground::set_child(obs_weak_source_t *&slot, obs_source_t *source)
@@ -635,9 +641,24 @@ void AmbientBackground::tick(float seconds)
 
 	resolve_timer_ -= seconds;
 	if (resolve_timer_ <= 0.0) {
-		// Often enough that a scene change is followed at once.
+		// Often enough that a scene change is followed at once. Going
+		// through the scenes costs (a capture's size goes through its
+		// filters), so it is done when the scene on screen, an item in
+		// any scene or the settings changed, and otherwise twice a second
+		// (a capture changing size, a source made or renamed).
 		resolve_timer_ = 0.1;
-		resolve_children();
+		const uint64_t rev = scene_revision();
+		obs_source_t *on_screen = scene_on_screen();
+		obs_source_release(on_screen); // compared, never held
+		resolve_idle_ += 0.1;
+		if (resolve_now_.exchange(false) || rev != resolve_rev_ || on_screen != resolve_on_screen_ ||
+		    resolve_idle_ >= 0.5 - 1e-6) {
+			resolve_rev_ = rev;
+			resolve_on_screen_ = on_screen;
+			resolve_idle_ = 0.0;
+			count_look(Look::AmbientSources);
+			resolve_children();
+		}
 	}
 }
 

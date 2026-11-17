@@ -12,6 +12,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include <obs.h>
 #include <obs-frontend-api.h>
+#include "scene-rev.hpp"
 #include <graphics/matrix4.h>
 #include <graphics/vec2.h>
 #include <graphics/vec3.h>
@@ -81,12 +82,24 @@ inline double screen_share(obs_sceneitem_t *item)
 // since it was added still carries a placeholder 1x1 box until the scene is
 // next drawn; setting its position to itself flags it for recalculation.
 // Call once before measuring at the start of an operation, not every frame.
+//
+// That makes OBS say the item was transformed, which would count as a change
+// for everything that looks again only when a scene changed
+// (`scene_revision`): the signal is passed over, and counted only when the
+// box did change.
 inline void refresh_item(obs_sceneitem_t *item)
 {
+	matrix4 before, after;
+	obs_sceneitem_get_box_transform(item, &before);
 	vec2 pos;
 	obs_sceneitem_get_pos(item, &pos);
+	scene_signals_quiet(true);
 	obs_sceneitem_set_pos(item, &pos);
 	obs_sceneitem_force_update_transform(item);
+	scene_signals_quiet(false);
+	obs_sceneitem_get_box_transform(item, &after);
+	if (memcmp(&before, &after, sizeof(before)) != 0)
+		scene_revision_bump();
 }
 
 // The layer Morph puts into a scene while one item changes into another

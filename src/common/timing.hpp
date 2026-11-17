@@ -37,4 +37,15 @@ void timing_add_procs();
 double stagger_phase(obs_source_t *source, double period);
 int stagger_phase(obs_source_t *source, int period);
 
+// Periodic looks that are skipped when nothing changed, counted for the tests
+// (`stagekit_test_looks(out string json)`: how many of each so far).
+enum class Look : int {
+	SwitchFollow,   // Show in Scenes' "Follow what is shown"
+	LinkFollow,     // Link Visibility's "Follow the first source"
+	ShadowScale,    // Shadow, Glow & Outline's scale and on-screen check
+	AmbientSources, // Ambient Background looking its sources up
+	Count,
+};
+void count_look(Look which);
+
 } // namespace stagekit
