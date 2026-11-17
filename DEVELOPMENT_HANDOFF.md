@@ -13,6 +13,25 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
+## The chat box no longer joins the camera's morph (0.1.0-beta159)
+
+The owner, on beta158: "the camera is morphing from the chat box. how do i change that", with their
+current collection (2026-11-17). By then Component-Capture-Scene (Chat Live) held DSLR full-screen
+too, Link Visibility-ComponentChat (*Show only one*: Column: Chat, DSLR) hid the chat column when
+DSLR was shown, every item there had Morph, and the Morph links list was empty. Showing DSLR hid
+Window Capture and Chat Box Group (686x853 of 2560x1440, 16 %): DSLR paired with Window Capture
+(main image), and beta158's join rule, at the main image's 15 %, let the chat box join DSLR's
+change as well. Going back, the chat box came out of the camera.
+
+- `kJoinShare` (a third of the screen) for joining a change as the main image, on both the item
+  left over and the one it joins; joining by a link is unchanged. The owner's original case
+  (captures and DSLR fill most of the screen) still joins.
+- Each pairing is logged: `Morph: 'A' changes into 'B' in '<scene>' (<rule>)`.
+- Test: `[morph between items]` gains the owner's case (a 21 % panel hidden or shown with the
+  capture as the camera goes or comes): 2 layers on beta158, 1 now. The beta158 blocks there grew
+  from 26 % to 56 % of the screen to stay over the new bar, as the owner's camera and captures are.
+- There is no setting for it: a panel is only pulled into another item's change through a link.
+
 ## A capture comes out of the DSLR (0.1.0-beta158)
 
 The owner, with their collection and four logs: "when I switch to window or game source from DSLR
