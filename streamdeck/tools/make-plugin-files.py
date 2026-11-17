@@ -19,7 +19,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, "..")
 PLUGIN = os.path.join(ROOT, "com.techsavage1989.stagekit.sdPlugin")
 BASE = "com.techsavage1989.stagekit"
-VERSION = "0.22.0.0"
+VERSION = "0.23.1.0"
 
 # The pack picture each feature's key starts with (its "on" and "off" look).
 PICTURES = {
@@ -147,8 +147,14 @@ def type_lists(key):
     global _LISTS
     if _LISTS is None:
         script = (
-            "import { keysWithLists, typeLists } from './src/key-types.ts';"
-            "const out = {}; for (const k of keysWithLists()) out[k] = typeLists(k);"
+            "import { keysWithLists, layoutList, typeLists } from './src/key-types.ts';"
+            "const out = {}; for (const k of keysWithLists()) {"
+            # (The Layout list goes just before the Source type or Scene type
+            # list: the owner, "a selector to choose the layout and a second
+            # selector for the specific type".)
+            "const lists = typeLists(k); const layout = layoutList(k);"
+            "if (layout) lists.splice(lists.findIndex((l) => l.setting === 'sourceType' || l.setting === 'sceneType'), 0, layout);"
+            "out[k] = lists; }"
             "console.log(JSON.stringify(out));"
         )
         done = subprocess.run(["node", "--input-type=module", "-e", script], cwd=ROOT, capture_output=True, text=True, check=True)

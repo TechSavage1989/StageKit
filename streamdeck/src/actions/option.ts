@@ -58,7 +58,7 @@ export class DockOption extends SingletonAction<KeySettings> {
 		settings = await settle(key, "option", settings, (s) => shownId(pick(s)));
 		const picture = pick(settings);
 		const options = await obs.stageKit("GetOptions");
-		await showOnOff(key, picture, options?.[settings.option ?? "snap"] === true, settings.palette);
+		await showOnOff(key, picture, options?.[settings.option ?? "snap"] === true, settings);
 		await key.setTitle(optionTitle(settings.option, settings.press));
 	}
 

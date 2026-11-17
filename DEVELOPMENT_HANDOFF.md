@@ -9,9 +9,31 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | `feat/blur-edges` (Scene Blur's blur area, whole mosaic cells, beta165), on `main` after beta164 (#180). Next: `feat/sd-layouts` (the Layout selector), then the new collection |
+| Working branch | `feat/sd-layouts` (a Layout list on every key, beta166), on `main` after beta165 (#181). Next: the new collection |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
+
+## Layouts on the Stream Deck keys (0.1.0-beta166, plugin 0.23.1.0)
+
+The owner: "every icon should have a standalone version, live/no chat version, and a
+component/chat version", then "perhaps have a selector to choose the layout and a second selector
+for the specific type". Every key with a Source type or Scene type list has a *Layout* list just
+before it (setting `layout`: `auto` Automatic, `standalone`, `live` Live (no chat), `chat` Live +
+chat). Automatic is what every key showed before, so no key changes on update. The two layouts are
+the pack's game capture and game component scenes with their gamepad taken out; each type's drawing
+goes in the panel (`tools/make-option-icons.py`, `layout_pictures`): 100 drawings, 202 pictures a
+palette with the two frames, in all six palettes, marked on and off, SVGs too. An image with no
+drawing of its own is laid smaller into the panel when the key is shown (`src/compose.ts`).
+
+After the owner saw the first contact sheet ("they should all be consistent ... any app type should
+not have a specific letter ... make them all centered. fix the icons universally"): one template
+per layout for every type (game, window and capture card no longer use the pack's 02/03, 05/06,
+07/08, whose camera is elsewhere); the 3D, sculpting and CAD app types are drawings, not the pack's
+lettered app pictures (their show, shadow and blur art dropped with them); and every drawing the
+tools make is centred by its ink, on keys, in layouts and on badges (before, every key drawing sat
+7.5 px left of the frame's centre). This changes how every drawn key looks, not only the layouts. AGENTS, *Layout*, under *Every key chooses
+its image from type lists*. Stream Deck plugin `VERSION` 0.23.1.0. Tests: `npm test` 64 of 64 (9 new
+in `tests/layouts.test.ts`), `npm run validate`. Not tried on a Stream Deck.
 
 ## Scene Blur's blur area and whole mosaic cells (0.1.0-beta165)
 

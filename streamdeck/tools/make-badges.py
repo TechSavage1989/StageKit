@@ -123,7 +123,8 @@ TAKEN = (
 )
 
 BADGES = {name: DRAWINGS[name] for name in TAKEN}
-BADGES.update(OWN)
+# (Each in the middle of its badge, as every drawing is on a key.)
+BADGES.update({name: OPTIONS.centred(shapes) for name, shapes in OWN.items()})
 
 
 def paint(d, shapes, ink, ox, oy, k, pen):

@@ -47,7 +47,7 @@ export class Slide extends SingletonAction<KeySettings> {
 	private async show(key: KeyAction<KeySettings>, settings: KeySettings): Promise<void> {
 		const pick = (s: KeySettings) => slideShown(keptPicture(s), s.direction, s.sourceType);
 		settings = await settle(key, "slide", settings, (s) => shownId(pick(s)));
-		await key.setImage(imageOf(pick(settings), settings.palette));
+		await key.setImage(imageOf(pick(settings), settings));
 		await key.setTitle(slideTitle(settings.direction));
 	}
 }

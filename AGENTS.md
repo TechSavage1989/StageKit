@@ -1377,7 +1377,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     JSON, by family: `show` the *show hide* pictures, `shadow` *shadow by source*, `blur` the
     *blur <style>* pictures in the filter's style, `mode` the *scenes* layouts), otherwise the
     type's own picture (`base`: a drawing of `make-option-icons.py`'s `TYPES`/`MORE_TYPES`, a
-    `devices` picture, or the pack's `filters/app-*`). Scene types are the owner's *scenes*
+    `devices` picture; never the pack's `filters/app-*`, see *Layout*). Scene types are the owner's *scenes*
     pictures under generic names (*dolphin gba* is **Console + handheld link**, and its source
     pictures *gba link 1/2* are *Linked handheld screen* and *Second linked handheld screen*: the
     owner, "Retro icon should be specific to GC+GBA"; *Retro gaming*, *Classic gaming* and *Retro
@@ -1436,6 +1436,50 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     (tested for every function and setting). A new key with a function gets a `*Shown` function,
     a badge per function and a Source type in `SOURCES`; run `make-badges.py` after
     `make-option-icons.py`. Not seen on a Stream Deck.
+  - **Layout** (beta166; `layout`, `layoutList` and `LAYOUTS` in `src/key-types.ts`, `laidOut` in
+    `src/pictures.ts`, `src/layouts.json`). The owner: "every icon should have a standalone version,
+    live/no chat version, and a component/chat version", then "perhaps have a selector to choose the
+    layout and a second selector for the specific type". Every key with a Source type or Scene type
+    list has a *Layout* list just before it (`make-plugin-files.py` puts it there): `auto`
+    *Automatic*, `standalone`, `live` *Live (no chat)*, `chat` *Live + chat* (append-only). It is
+    **not** one of `typeLists` (so `typeForKept` never sets it) and not in `snapshot` (choosing a
+    layout keeps an image from the old Image list, laid out). Automatic is unchanged: `laidOut`
+    returns the very `Shown` it was given (tested). The layouts are the pack's game capture and
+    game component scenes (02/03): `make-option-icons.py`'s `layout_pictures` takes the gamepad out
+    of them (`GLYPH`, the frames `layouts/live-frame`, `layouts/chat-frame`) and draws each type's
+    drawing in the panel (`PANEL`, `LAYOUT_SIZE` 1.1) as `layouts/<live|chat>-<drawing>`, for every
+    drawing a source type's `base` or a scene type's `picture` is, and those of `GLYPH_OF` (the
+    pack's scene pictures by the drawing of what they show): 100 drawings, 202 pictures a palette
+    with the frames, status copies by `make-state-icons.py`, SVGs in `svg/keys/<palette>/layouts/`.
+    **One template per layout, for every type** (beta166's second pass; the owner, of the first
+    contact sheet: "they should all be consistent. for the live the square camera image should be
+    in the same position for all, but the window icon appears to have it moved to the bottom.
+    also, App 3D, or any app type should not have a specific letter or anything. it should only be
+    images relevant to the source, capture, type etc. also, all the standalone icons appear to
+    have the images offset to the left. make them all centered. fix the icons universally"). So:
+    game, window and capture card are drawn in the template too (the pack's 05 to 08 put the
+    camera elsewhere or show a bar; the pack's scenes stay as scene types); the three app types
+    that were the pack's lettered `filters/app-blender`, `app-zbrush`, `app-fusion-360` (and
+    their show, shadow and blur art) are drawings now (`type-app-3d` a wireframe cube,
+    `type-sculpting` a bust and a loop tool, `type-cad` a set square and a ruler; no type picture
+    is a program's logo or letter, tested; an old key's hand-chosen app picture still loads); and
+    **every drawing is centred** (`centred` in `make-option-icons.py`, by the ink's bounds,
+    `bounds`, applied to every entry of `DRAWINGS` and to the badges' `OWN`): `SCREEN` is now a
+    box round the key frame's centre (`FRAME` 14..129 x 17..81, centre 71.5, 49), `ERASE` what is
+    cleared of the pack's own glyph. Up to beta164 every key drawing sat 7.5 px left of the
+    frame's centre. The pack's small camera in the screen's bottom right corner is the pack's own
+    (its app pictures have it) and stays. Tested: every options picture, layout picture and badge
+    has its ink's middle within 2 px of its frame's, panel's or badge's middle.
+    `laidOut` goes by the picture the key would show: a Source type's function art (eye, shadow,
+    blur, mode) is taken back to the type's `base` (`typeBehind`), then `byPicture`, then
+    `glyphOf`; a picture with neither (the standby image's, a key on Automatic, a kept image) is laid,
+    smaller, into the frame's panel when the key is shown (`inset`; `laidIn`/`shrink` in
+    `src/compose.ts`, the key's whole picture, `crop`), and the on/off mark is put on that whole
+    (`imgs/marks/on|off.png`, the off look as `make-state-icons.py` makes it). *Standalone* changes
+    only the six pack scenes that are layouts themselves (`standalone`): their drawing alone.
+    Every action goes through `imageOf`/`showOnOff` with the key's settings (not its palette
+    alone), so there is no per-action code. Badges and marks are laid as before. Not seen on a
+    Stream Deck.
   - **Stream Deck's own image menu**: titles are documented (setTitle "can only be set by the
     plugin when the user has not specified a custom title"); for images the SDK's types say only
     that state images "can be overridden by the user", nothing of setImage against a user's image.

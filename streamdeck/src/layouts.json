@@ -1,0 +1,458 @@
+{
+	"_": "Written by tools/make-option-icons.py. Each picture's place in the two layouts (live: no chat, chat: live + chat), by the picture a key shows alone (byPicture); the drawing a scene picture of the pack shows (glyphOf); the scene pictures that are a layout themselves and are their drawing alone when Standalone is chosen (standalone); and, for a picture with no layout of its own, the empty layout (frames), its panel and the part of a key's picture laid into it (panel, crop).",
+	"layouts": [
+		"live",
+		"chat"
+	],
+	"frames": {
+		"live": "layouts/live-frame",
+		"chat": "layouts/chat-frame"
+	},
+	"panel": {
+		"live": [
+			27,
+			17,
+			117,
+			82
+		],
+		"chat": [
+			8,
+			17,
+			98,
+			83
+		]
+	},
+	"crop": [
+		3,
+		11,
+		141,
+		88
+	],
+	"byPicture": {
+		"options/type-game": {
+			"live": "layouts/live-type-game",
+			"chat": "layouts/chat-type-game"
+		},
+		"options/type-retro": {
+			"live": "layouts/live-type-retro",
+			"chat": "layouts/chat-type-retro"
+		},
+		"options/type-emulator": {
+			"live": "layouts/live-type-emulator",
+			"chat": "layouts/chat-type-emulator"
+		},
+		"options/console": {
+			"live": "layouts/live-console",
+			"chat": "layouts/chat-console"
+		},
+		"options/type-handheld": {
+			"live": "layouts/live-type-handheld",
+			"chat": "layouts/chat-type-handheld"
+		},
+		"options/type-linked-handheld": {
+			"live": "layouts/live-type-linked-handheld",
+			"chat": "layouts/chat-type-linked-handheld"
+		},
+		"options/type-linked-handheld-2": {
+			"live": "layouts/live-type-linked-handheld-2",
+			"chat": "layouts/chat-type-linked-handheld-2"
+		},
+		"options/type-capture-card": {
+			"live": "layouts/live-type-capture-card",
+			"chat": "layouts/chat-type-capture-card"
+		},
+		"options/capture-box": {
+			"live": "layouts/live-capture-box",
+			"chat": "layouts/chat-capture-box"
+		},
+		"options/hdmi": {
+			"live": "layouts/live-hdmi",
+			"chat": "layouts/chat-hdmi"
+		},
+		"options/type-window": {
+			"live": "layouts/live-type-window",
+			"chat": "layouts/chat-type-window"
+		},
+		"options/type-browser": {
+			"live": "layouts/live-type-browser",
+			"chat": "layouts/chat-type-browser"
+		},
+		"options/type-display": {
+			"live": "layouts/live-type-display",
+			"chat": "layouts/chat-type-display"
+		},
+		"options/type-second-display": {
+			"live": "layouts/live-type-second-display",
+			"chat": "layouts/chat-type-second-display"
+		},
+		"options/type-tablet": {
+			"live": "layouts/live-type-tablet",
+			"chat": "layouts/chat-type-tablet"
+		},
+		"options/type-phone": {
+			"live": "layouts/live-type-phone",
+			"chat": "layouts/chat-type-phone"
+		},
+		"options/type-art-app": {
+			"live": "layouts/live-type-art-app",
+			"chat": "layouts/chat-type-art-app"
+		},
+		"options/type-app-3d": {
+			"live": "layouts/live-type-app-3d",
+			"chat": "layouts/chat-type-app-3d"
+		},
+		"options/type-sculpting": {
+			"live": "layouts/live-type-sculpting",
+			"chat": "layouts/chat-type-sculpting"
+		},
+		"options/type-cad": {
+			"live": "layouts/live-type-cad",
+			"chat": "layouts/chat-type-cad"
+		},
+		"options/type-code-editor": {
+			"live": "layouts/live-type-code-editor",
+			"chat": "layouts/chat-type-code-editor"
+		},
+		"options/type-office": {
+			"live": "layouts/live-type-office",
+			"chat": "layouts/chat-type-office"
+		},
+		"options/type-video-player": {
+			"live": "layouts/live-type-video-player",
+			"chat": "layouts/chat-type-video-player"
+		},
+		"options/type-reference": {
+			"live": "layouts/live-type-reference",
+			"chat": "layouts/chat-type-reference"
+		},
+		"options/type-camera": {
+			"live": "layouts/live-type-camera",
+			"chat": "layouts/chat-type-camera"
+		},
+		"options/dslr": {
+			"live": "layouts/live-dslr",
+			"chat": "layouts/chat-dslr"
+		},
+		"options/camcorder": {
+			"live": "layouts/live-camcorder",
+			"chat": "layouts/chat-camcorder"
+		},
+		"options/type-action-cam": {
+			"live": "layouts/live-type-action-cam",
+			"chat": "layouts/chat-type-action-cam"
+		},
+		"options/type-ptz-camera": {
+			"live": "layouts/live-type-ptz-camera",
+			"chat": "layouts/chat-type-ptz-camera"
+		},
+		"options/type-facecam": {
+			"live": "layouts/live-type-facecam",
+			"chat": "layouts/chat-type-facecam"
+		},
+		"options/type-full-camera": {
+			"live": "layouts/live-type-full-camera",
+			"chat": "layouts/chat-type-full-camera"
+		},
+		"options/type-side-camera": {
+			"live": "layouts/live-type-side-camera",
+			"chat": "layouts/chat-type-side-camera"
+		},
+		"options/type-phone-camera": {
+			"live": "layouts/live-type-phone-camera",
+			"chat": "layouts/chat-type-phone-camera"
+		},
+		"options/type-workspace-camera": {
+			"live": "layouts/live-type-workspace-camera",
+			"chat": "layouts/chat-type-workspace-camera"
+		},
+		"options/type-virtual-camera": {
+			"live": "layouts/live-type-virtual-camera",
+			"chat": "layouts/chat-type-virtual-camera"
+		},
+		"options/type-pc": {
+			"live": "layouts/live-type-pc",
+			"chat": "layouts/chat-type-pc"
+		},
+		"options/laptop": {
+			"live": "layouts/live-laptop",
+			"chat": "layouts/chat-laptop"
+		},
+		"options/type-retro-console": {
+			"live": "layouts/live-type-retro-console",
+			"chat": "layouts/chat-type-retro-console"
+		},
+		"options/type-controller": {
+			"live": "layouts/live-type-controller",
+			"chat": "layouts/chat-type-controller"
+		},
+		"options/type-stream-deck": {
+			"live": "layouts/live-type-stream-deck",
+			"chat": "layouts/chat-type-stream-deck"
+		},
+		"options/type-pen-display": {
+			"live": "layouts/live-type-pen-display",
+			"chat": "layouts/chat-type-pen-display"
+		},
+		"options/type-vr-headset": {
+			"live": "layouts/live-type-vr-headset",
+			"chat": "layouts/chat-type-vr-headset"
+		},
+		"options/type-headset": {
+			"live": "layouts/live-type-headset",
+			"chat": "layouts/chat-type-headset"
+		},
+		"options/microphone": {
+			"live": "layouts/live-microphone",
+			"chat": "layouts/chat-microphone"
+		},
+		"options/speaker": {
+			"live": "layouts/live-speaker",
+			"chat": "layouts/chat-speaker"
+		},
+		"options/type-mixer": {
+			"live": "layouts/live-type-mixer",
+			"chat": "layouts/chat-type-mixer"
+		},
+		"options/type-key-light": {
+			"live": "layouts/live-type-key-light",
+			"chat": "layouts/chat-type-key-light"
+		},
+		"options/type-green-screen": {
+			"live": "layouts/live-type-green-screen",
+			"chat": "layouts/chat-type-green-screen"
+		},
+		"options/type-chat": {
+			"live": "layouts/live-type-chat",
+			"chat": "layouts/chat-type-chat"
+		},
+		"options/type-voice-chat": {
+			"live": "layouts/live-type-voice-chat",
+			"chat": "layouts/chat-type-voice-chat"
+		},
+		"options/type-music": {
+			"live": "layouts/live-type-music",
+			"chat": "layouts/chat-type-music"
+		},
+		"options/type-alerts": {
+			"live": "layouts/live-type-alerts",
+			"chat": "layouts/chat-type-alerts"
+		},
+		"options/type-events": {
+			"live": "layouts/live-type-events",
+			"chat": "layouts/chat-type-events"
+		},
+		"options/type-countdown": {
+			"live": "layouts/live-type-countdown",
+			"chat": "layouts/chat-type-countdown"
+		},
+		"options/type-title": {
+			"live": "layouts/live-type-title",
+			"chat": "layouts/chat-type-title"
+		},
+		"options/type-image": {
+			"live": "layouts/live-type-image",
+			"chat": "layouts/chat-type-image"
+		},
+		"options/type-video": {
+			"live": "layouts/live-type-video",
+			"chat": "layouts/chat-type-video"
+		},
+		"options/type-logo": {
+			"live": "layouts/live-type-logo",
+			"chat": "layouts/chat-type-logo"
+		},
+		"options/type-live": {
+			"live": "layouts/live-type-live",
+			"chat": "layouts/chat-type-live"
+		},
+		"options/type-recording": {
+			"live": "layouts/live-type-recording",
+			"chat": "layouts/chat-type-recording"
+		},
+		"options/type-paused": {
+			"live": "layouts/live-type-paused",
+			"chat": "layouts/chat-type-paused"
+		},
+		"options/type-muted": {
+			"live": "layouts/live-type-muted",
+			"chat": "layouts/chat-type-muted"
+		},
+		"options/type-offline": {
+			"live": "layouts/live-type-offline",
+			"chat": "layouts/chat-type-offline"
+		},
+		"options/type-privacy": {
+			"live": "layouts/live-type-privacy",
+			"chat": "layouts/chat-type-privacy"
+		},
+		"options/type-raid": {
+			"live": "layouts/live-type-raid",
+			"chat": "layouts/chat-type-raid"
+		},
+		"options/mode-starting": {
+			"live": "layouts/live-mode-starting",
+			"chat": "layouts/chat-mode-starting"
+		},
+		"options/mode-brb": {
+			"live": "layouts/live-mode-brb",
+			"chat": "layouts/chat-mode-brb"
+		},
+		"options/mode-intermission": {
+			"live": "layouts/live-mode-intermission",
+			"chat": "layouts/chat-mode-intermission"
+		},
+		"options/type-technical": {
+			"live": "layouts/live-type-technical",
+			"chat": "layouts/chat-type-technical"
+		},
+		"options/mode-ending": {
+			"live": "layouts/live-mode-ending",
+			"chat": "layouts/chat-mode-ending"
+		},
+		"options/mode-column-chat": {
+			"live": "layouts/live-mode-column-chat",
+			"chat": "layouts/chat-mode-column-chat"
+		},
+		"options/mode-column-gba": {
+			"live": "layouts/live-mode-column-gba",
+			"chat": "layouts/chat-mode-column-gba"
+		},
+		"options/scene-type-speedrun": {
+			"live": "layouts/live-scene-type-speedrun",
+			"chat": "layouts/chat-scene-type-speedrun"
+		},
+		"options/scene-type-music-production": {
+			"live": "layouts/live-scene-type-music-production",
+			"chat": "layouts/chat-scene-type-music-production"
+		},
+		"options/scene-type-cooking": {
+			"live": "layouts/live-scene-type-cooking",
+			"chat": "layouts/chat-scene-type-cooking"
+		},
+		"options/scene-type-irl": {
+			"live": "layouts/live-scene-type-irl",
+			"chat": "layouts/chat-scene-type-irl"
+		},
+		"options/scene-type-tutorial": {
+			"live": "layouts/live-scene-type-tutorial",
+			"chat": "layouts/chat-scene-type-tutorial"
+		},
+		"options/scene-type-unboxing": {
+			"live": "layouts/live-scene-type-unboxing",
+			"chat": "layouts/chat-scene-type-unboxing"
+		},
+		"options/scene-type-fitness": {
+			"live": "layouts/live-scene-type-fitness",
+			"chat": "layouts/chat-scene-type-fitness"
+		},
+		"options/scene-type-reading": {
+			"live": "layouts/live-scene-type-reading",
+			"chat": "layouts/chat-scene-type-reading"
+		},
+		"options/scene-type-watch-party": {
+			"live": "layouts/live-scene-type-watch-party",
+			"chat": "layouts/chat-scene-type-watch-party"
+		},
+		"options/scene-type-charity": {
+			"live": "layouts/live-scene-type-charity",
+			"chat": "layouts/chat-scene-type-charity"
+		},
+		"options/scene-type-just-chatting": {
+			"live": "layouts/live-scene-type-just-chatting",
+			"chat": "layouts/chat-scene-type-just-chatting"
+		},
+		"options/scene-type-podcast": {
+			"live": "layouts/live-scene-type-podcast",
+			"chat": "layouts/chat-scene-type-podcast"
+		},
+		"options/scene-type-interview": {
+			"live": "layouts/live-scene-type-interview",
+			"chat": "layouts/chat-scene-type-interview"
+		},
+		"options/scene-type-countdown": {
+			"live": "layouts/live-scene-type-countdown",
+			"chat": "layouts/chat-scene-type-countdown"
+		},
+		"options/scene-type-technical": {
+			"live": "layouts/live-scene-type-technical",
+			"chat": "layouts/chat-scene-type-technical"
+		},
+		"options/scene-standby": {
+			"live": "layouts/live-scene-standby",
+			"chat": "layouts/chat-scene-standby"
+		},
+		"options/scene-type-pc-game": {
+			"live": "layouts/live-scene-type-pc-game",
+			"chat": "layouts/chat-scene-type-pc-game"
+		},
+		"options/scene-type-retro": {
+			"live": "layouts/live-scene-type-retro",
+			"chat": "layouts/chat-scene-type-retro"
+		},
+		"options/scene-type-classic": {
+			"live": "layouts/live-scene-type-classic",
+			"chat": "layouts/chat-scene-type-classic"
+		},
+		"options/scene-type-emulator": {
+			"live": "layouts/live-scene-type-emulator",
+			"chat": "layouts/chat-scene-type-emulator"
+		},
+		"options/scene-type-second-screen": {
+			"live": "layouts/live-scene-type-second-screen",
+			"chat": "layouts/chat-scene-type-second-screen"
+		},
+		"options/scene-type-browsing": {
+			"live": "layouts/live-scene-type-browsing",
+			"chat": "layouts/chat-scene-type-browsing"
+		},
+		"options/scene-type-art": {
+			"live": "layouts/live-scene-type-art",
+			"chat": "layouts/chat-scene-type-art"
+		},
+		"options/scene-type-modelling": {
+			"live": "layouts/live-scene-type-modelling",
+			"chat": "layouts/chat-scene-type-modelling"
+		},
+		"options/scene-type-coding": {
+			"live": "layouts/live-scene-type-coding",
+			"chat": "layouts/chat-scene-type-coding"
+		},
+		"options/scene-type-music": {
+			"live": "layouts/live-scene-type-music",
+			"chat": "layouts/chat-scene-type-music"
+		},
+		"options/scene-live": {
+			"live": "layouts/live-scene-live",
+			"chat": "layouts/chat-scene-live"
+		},
+		"options/scene-chat-live": {
+			"live": "layouts/live-scene-chat-live",
+			"chat": "layouts/chat-scene-chat-live"
+		}
+	},
+	"glyphOf": {
+		"scenes/01-stream-start": "options/mode-starting",
+		"scenes/02-game-capture": "options/type-game",
+		"scenes/03-game-component": "options/type-game",
+		"scenes/04-console": "options/console",
+		"scenes/05-game-hd60s": "options/type-capture-card",
+		"scenes/06-game-component-hd60s": "options/type-capture-card",
+		"scenes/07-window-capture": "options/type-window",
+		"scenes/08-window-component": "options/type-window",
+		"scenes/09-main-display": "options/type-display",
+		"scenes/10-tablet": "options/type-tablet",
+		"scenes/11-dolphin-gba": "options/type-linked-handheld",
+		"scenes/12-camera-only": "options/type-full-camera",
+		"scenes/13-intermission": "options/mode-intermission",
+		"scenes/14-be-right-back": "options/mode-brb",
+		"scenes/15-stream-ending": "options/mode-ending"
+	},
+	"standalone": [
+		"scenes/02-game-capture",
+		"scenes/03-game-component",
+		"scenes/05-game-hd60s",
+		"scenes/06-game-component-hd60s",
+		"scenes/07-window-capture",
+		"scenes/08-window-component"
+	]
+}

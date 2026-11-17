@@ -81,7 +81,7 @@ export class SceneBlurKey extends SingletonAction<KeySettings> {
 		const seen = await remembered(key, settings, sceneBlurTarget(filter, scene), fresh);
 		const pick = (s: KeySettings) => sceneBlurShown(keptPicture(s), s.look, s.sceneType, seen?.type);
 		settings = await settle(key, "sceneblur", seen ? { ...settings, seen } : settings, (s) => shownId(pick(s)));
-		await showOnOff(key, pick(settings), seen?.enabled === true, settings.palette);
+		await showOnOff(key, pick(settings), seen?.enabled === true, settings);
 		await key.setTitle(sceneBlurTitle(settings.press));
 	}
 

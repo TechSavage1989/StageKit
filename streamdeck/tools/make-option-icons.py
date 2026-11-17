@@ -27,9 +27,17 @@ PACK = os.path.join(ROOT, "com.techsavage1989.stagekit.sdPlugin", "imgs", "pack"
 LIST = os.path.join(ROOT, "src", "pack.json")
 FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 SIZE = 144
-# The inside of the pack's little screen, clear of its frame and of the
-# small camera in its corner; drawings are 64 x 36 in the middle of it.
-SCREEN = (22, 27, 106, 67)
+# The inside of the pack's little screen: its frame's lines are at x 14 and
+# 129, y 17 and 81 (centre 71.5, 49), with the pack's small camera in its
+# bottom right corner (the pack's own pictures of this screen have it too).
+# Drawings are 64 x 36, centred on the frame's centre: SCREEN is a box of that
+# centre, clear of the camera. (Up to beta164 it was (22, 27, 106, 67), the
+# drawings sat 7.5 px left of the frame's centre; the owner: "all the
+# standalone icons appear to have the images offset to the left. make them
+# all centered".) ERASE is what is cleared of the pack's own drawing.
+FRAME = (14, 17, 129, 81)
+SCREEN = (30, 29, 113, 69)
+ERASE = (22, 27, 113, 69)
 SCALE = 4
 
 
@@ -364,6 +372,18 @@ MORE_TYPES = {
     # A speech bubble with a voice in it.
     "voice_chat": [("frame", 8, 3, 50, 26), ("tri", 14, 26, 24, 26, 11, 34), ("line", 17, 11, 17, 18), ("line", 23, 8, 23, 21),
                    ("line", 29, 12, 29, 17), ("line", 35, 9, 35, 20), ("line", 41, 12, 41, 17)],
+    # Apps, as what they make, never a program's logo or letter (the owner:
+    # "App 3D, or any app type should not have a specific letter or anything.
+    # it should only be images relevant to the source"): a wireframe cube, a
+    # bust on its stand with a loop tool, a set square beside a ruler.
+    "app_3d": [("line", 32, 2, 47, 10), ("line", 47, 10, 47, 26), ("line", 47, 26, 32, 34), ("line", 32, 34, 17, 26),
+               ("line", 17, 26, 17, 10), ("line", 17, 10, 32, 2), ("line", 17, 10, 32, 18), ("line", 47, 10, 32, 18),
+               ("line", 32, 18, 32, 34), ("dot", 32, 18, 2.5)],
+    "sculpting": [("ring", 26, 10, 7), ("arc", 26, 31, 13, 180, 360), ("box", 11, 30, 41, 34), ("line", 46, 32, 54, 9),
+                  ("ring", 56, 6, 3.5)],
+    "cad": [("line", 6, 33, 6, 3), ("line", 6, 3, 36, 33), ("line", 36, 33, 6, 33), ("line", 12, 27, 12, 17), ("line", 12, 17, 22, 27),
+            ("line", 22, 27, 12, 27), ("frame", 44, 2, 58, 34), ("line", 44, 8, 50, 8), ("line", 44, 14, 53, 14), ("line", 44, 20, 50, 20),
+            ("line", 44, 26, 53, 26)],
     # Devices.
     "headset": [("arc", 32, 21, 15, 180, 360), ("box", 14, 19, 22, 31), ("box", 42, 19, 50, 31), ("line", 46, 31, 38, 34),
                 ("dot", 36, 34, 2)],
@@ -525,6 +545,64 @@ DRAWINGS["scene-shadow"] = [("frame", 2, 2, 62, 34), ("box", 12, 11, 31, 29), ("
                             ("frame", 35, 7, 54, 25)]
 DRAWINGS["scene-corners"] = [("frame", 2, 2, 62, 34)] + rounded(7, 7, 35, 29, 7) + rounded(39, 7, 57, 29, 5)
 
+
+
+def bounds(shapes, pen=2.6):
+    """Where a drawing's ink is, in its own units: (x0, y0, x1, y1). Outlines
+    are drawn inside their box (as Pillow does); a line is a pen wide."""
+    import math
+
+    xs, ys = [], []
+    h = pen / 2
+    for shape in shapes:
+        kind, v = shape[0], shape[1:]
+        if kind in ("box", "frame"):
+            xs += [v[0], v[2]]
+            ys += [v[1], v[3]]
+        elif kind == "line":
+            xs += [v[0] - h, v[0] + h, v[2] - h, v[2] + h]
+            ys += [v[1] - h, v[1] + h, v[3] - h, v[3] + h]
+        elif kind in ("ring", "dot"):
+            xs += [v[0] - v[2], v[0] + v[2]]
+            ys += [v[1] - v[2], v[1] + v[2]]
+        elif kind == "arc":
+            cx, cy, r, start, end = v
+            end = end if end >= start else end + 360
+            for a in range(int(start), int(end) + 1):
+                xs.append(cx + r * math.cos(math.radians(a)))
+                ys.append(cy + r * math.sin(math.radians(a)))
+        elif kind == "tri":
+            xs += [v[0], v[2], v[4]]
+            ys += [v[1], v[3], v[5]]
+    return min(xs), min(ys), max(xs), max(ys)
+
+
+def centred(shapes):
+    """A drawing moved so its ink is in the middle of its 64 x 36 field (and
+    so in the middle of whatever it is drawn in). Words stay where they are:
+    they are always drawn in the middle."""
+    x0, y0, x1, y1 = bounds([s for s in shapes if s[0] != "text"])
+    dx, dy = 32 - (x0 + x1) / 2, 18 - (y0 + y1) / 2
+    out = []
+    for shape in shapes:
+        kind, v = shape[0], list(shape[1:])
+        if kind in ("ring", "dot", "arc"):
+            v[0] += dx
+            v[1] += dy
+        elif kind != "text":
+            v = [c + (dx if i % 2 == 0 else dy) for i, c in enumerate(v)]
+        out.append((kind, *v))
+    return out
+
+
+# Every drawing centred (the owner: "make them all centered. fix the icons
+# universally"); the hook keys' types again from the centred types.
+for _name in list(DRAWINGS):
+    DRAWINGS[_name] = centred(DRAWINGS[_name])
+for _type in SOURCE_TYPES:
+    HOOK_TYPES["hook-type-" + _type.replace("_", "-")] = _CORNERS + scaled(DRAWINGS[type_name(_type)], 0.7)
+DRAWINGS.update(HOOK_TYPES)
+
 # The ones that are a filter's key, with an "on" and an "off" look.
 SWITCHES = ["scene", "zoom", "fit", "overlap", "source-switcher", "window-switcher", "trigger", "link", "show-hide", "limit", "slide-to-edge", "every-scene", "keep-shape", "snap", "guides", "plain-switch"]
 SWITCHES += list(GROUPED)
@@ -533,15 +611,18 @@ SWITCHES += [type_name(t) for t in MORE_TYPES] + ["scene-type-" + s.replace("_",
 SWITCHES += ["style-" + s for s in STYLES]
 
 
-def drawn(shapes, ink):
+def drawn(shapes, ink, box=SCREEN, size=1.0):
+    """A drawing on a transparent layer the size of `box` (the key's little
+    screen, or a layout's main panel), its 64 x 36 field in the middle of it
+    at `size` times its own units."""
     s = SCALE
-    w, h = (SCREEN[2] - SCREEN[0]) * s, (SCREEN[3] - SCREEN[1]) * s
+    w, h = (box[2] - box[0]) * s, (box[3] - box[1]) * s
     layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     draw = ImageDraw.Draw(layer)
     # The field of 64 x 36 in the middle of the screen.
-    ox, oy = (w - 64 * s) / 2, (h - 36 * s) / 2
-    k = s
-    pen = int(2.6 * s)
+    k = s * size
+    ox, oy = (w - 64 * k) / 2, (h - 36 * k) / 2
+    pen = int(2.6 * k)
 
     def at(x, y):
         return (ox + x * k, oy + y * k)
@@ -566,10 +647,138 @@ def drawn(shapes, ink):
         elif kind == "tri":
             draw.polygon((at(shape[1], shape[2]), at(shape[3], shape[4]), at(shape[5], shape[6])), fill=ink)
         elif kind == "text":
-            font = ImageFont.truetype(FONT, 22 * s)
-            box = draw.textbbox((0, 0), shape[1], font=font)
-            draw.text(((w - box[2] - box[0]) / 2, (h - box[3] - box[1]) / 2), shape[1], font=font, fill=ink)
-    return layer.resize((SCREEN[2] - SCREEN[0], SCREEN[3] - SCREEN[1]), Image.LANCZOS)
+            font = ImageFont.truetype(FONT, int(22 * k))
+            tb = draw.textbbox((0, 0), shape[1], font=font)
+            draw.text(((w - tb[2] - tb[0]) / 2, (h - tb[3] - tb[1]) / 2), shape[1], font=font, fill=ink)
+    return layer.resize((box[2] - box[0], box[3] - box[1]), Image.LANCZOS)
+
+# ---------------------------------------------------------------- layouts
+# Every type in the pack's two scene layouts (the owner: "every icon should
+# have a standalone version, live/no chat version, and a component/chat
+# version", and "perhaps have a selector to choose the layout and a second
+# selector for the specific type"). The layouts are the pack's own: Live (no
+# chat) is its game capture scene (a hexagon frame, the big panel, a small
+# camera top right), Live + chat its game component scene (the panel on the
+# left, a column of camera over chat on the right). Each is taken from the
+# pack's picture in that palette with its gamepad taken out of the panel
+# (the "frame"), and each type's drawing is put in the panel where the
+# gamepad was, game included: one template for each layout, the same for
+# every type but the drawing. src/layouts.json says which picture is which;
+# src/pictures.ts (`laidOut`) chooses from it.
+LAYOUTS = ("live", "chat")
+LAYOUT_FROM = {"live": "scenes/02-game-capture", "chat": "scenes/03-game-component"}
+# The main panel of each (the same in every palette), and the part of it the
+# pack's gamepad (with its soft edge) takes.
+PANEL = {"live": (27, 17, 117, 82), "chat": (8, 17, 98, 83)}
+GLYPH = {"live": (45, 31, 99, 68), "chat": (25, 31, 80, 68)}
+# A drawing in a panel is this much larger than on a key's little screen.
+LAYOUT_SIZE = 1.1
+# Every type is drawn in the same two layouts, game, window and capture card
+# too (the owner: "they should all be consistent. for the live the square
+# camera image should be in the same position for all"): the pack's own
+# window and capture card scenes put the camera elsewhere or show a plain
+# bar. The pack's scenes stay what they are as scene types.
+# The pack's scene pictures, each by the drawing of what it shows: what goes
+# in a layout's panel for that scene. Those that are a layout themselves are
+# also that drawing alone when Standalone is chosen (STANDALONE).
+GLYPH_OF = {
+    "scenes/01-stream-start": "options/mode-starting",
+    "scenes/02-game-capture": "options/type-game",
+    "scenes/03-game-component": "options/type-game",
+    "scenes/04-console": "options/console",
+    "scenes/05-game-hd60s": "options/type-capture-card",
+    "scenes/06-game-component-hd60s": "options/type-capture-card",
+    "scenes/07-window-capture": "options/type-window",
+    "scenes/08-window-component": "options/type-window",
+    "scenes/09-main-display": "options/type-display",
+    "scenes/10-tablet": "options/type-tablet",
+    "scenes/11-dolphin-gba": "options/type-linked-handheld",
+    "scenes/12-camera-only": "options/type-full-camera",
+    "scenes/13-intermission": "options/mode-intermission",
+    "scenes/14-be-right-back": "options/mode-brb",
+    "scenes/15-stream-ending": "options/mode-ending",
+}
+STANDALONE = ["scenes/02-game-capture", "scenes/03-game-component", "scenes/05-game-hd60s", "scenes/06-game-component-hd60s",
+              "scenes/07-window-capture", "scenes/08-window-component"]
+# Where a key's whole picture is (every picture of the pack is drawn there):
+# what is laid into a layout's panel, made smaller, for a picture with no
+# layout of its own (src/compose.ts).
+CROP = (3, 11, 141, 88)
+TYPES_LIST = os.path.join(ROOT, "src", "key-types.json")
+LAYOUT_LIST = os.path.join(ROOT, "src", "layouts.json")
+
+
+def layout_drawings():
+    """The drawings that get a picture in each layout, by picture id
+    (options/<name>): every source type's and scene type's that is a drawing
+    here, and the drawings of the pack's scene pictures."""
+    types = json.load(open(TYPES_LIST, encoding="utf-8"))
+    ids = [t["base"] for t in types["sourceTypes"]] + [t["picture"] for t in types["sceneTypes"]] + list(GLYPH_OF.values())
+    out = []
+    for pid in ids:
+        name = pid[len("options/"):] if pid.startswith("options/") else None
+        if name and name in DRAWINGS and name not in out:
+            out.append(name)
+    return out
+
+
+def layout_frame(palette, layout):
+    """The pack's layout picture in a palette with its gamepad taken out, the
+    colour of the panel and the colour the gamepad was drawn in."""
+    image = Image.open(os.path.join(PACK, palette, LAYOUT_FROM[layout] + ".png")).convert("RGBA")
+    x0, y0, x1, y1 = GLYPH[layout]
+    ink = max((image.getpixel((x, y)) for x in range(x0, x1) for y in range(y0, y1)), key=lambda c: sum(c[:3]))
+    panel = image.getpixel((PANEL[layout][0] + 3, PANEL[layout][1] + 3))
+    ImageDraw.Draw(image).rectangle((x0, y0, x1 - 1, y1 - 1), fill=panel)
+    return image, ink
+
+
+def layout_pictures(palettes):
+    """Draws imgs/pack/<palette>/layouts/: the two frames, and each drawing in
+    each layout. Returns the pictures to list in src/pack.json and writes
+    src/layouts.json."""
+    names = layout_drawings()
+    made = 0
+    for palette in palettes:
+        out = os.path.join(PACK, palette, "layouts")
+        os.makedirs(out, exist_ok=True)
+        for layout in LAYOUTS:
+            frame, ink = layout_frame(palette, layout)
+            frame.save(os.path.join(out, f"{layout}-frame.png"))
+            box = PANEL[layout]
+            for name in names:
+                picture = frame.copy()
+                picture.alpha_composite(drawn(DRAWINGS[name], ink, box, LAYOUT_SIZE), (box[0], box[1]))
+                picture.save(os.path.join(out, f"{layout}-{name}.png"))
+                made += 1
+    pictures = []
+    for layout in LAYOUTS:
+        word = "live" if layout == "live" else "live chat"
+        pictures.append({"id": f"layouts/{layout}-frame", "group": "layouts", "label": f"{word} frame",
+                         "on": f"layouts/{layout}-frame", "off": f"layouts/{layout}-frame"})
+        for name in names:
+            pid = f"layouts/{layout}-{name}"
+            pictures.append({"id": pid, "group": "layouts", "label": f"{word} {name.replace('-', ' ')}", "on": pid, "off": pid})
+    by_picture = {}
+    for name in names:
+        by_picture["options/" + name] = {layout: f"layouts/{layout}-{name}" for layout in LAYOUTS}
+    listed = {
+        "_": "Written by tools/make-option-icons.py. Each picture's place in the two layouts (live: no chat, chat: live + chat), "
+             "by the picture a key shows alone (byPicture); the drawing a scene picture of the pack shows (glyphOf); the scene pictures "
+             "that are a layout themselves and are their drawing alone when Standalone is chosen (standalone); and, for a picture with "
+             "no layout of its own, the empty layout (frames), its panel and the part of a key's picture laid into it (panel, crop).",
+        "layouts": list(LAYOUTS),
+        "frames": {layout: f"layouts/{layout}-frame" for layout in LAYOUTS},
+        "panel": {layout: list(PANEL[layout]) for layout in LAYOUTS},
+        "crop": list(CROP),
+        "byPicture": by_picture,
+        "glyphOf": GLYPH_OF,
+        "standalone": STANDALONE,
+    }
+    with open(LAYOUT_LIST, "w", encoding="utf-8") as f:
+        json.dump(listed, f, indent="\t", ensure_ascii=False)
+        f.write("\n")
+    return pictures, made
 
 
 def main():
@@ -581,7 +790,7 @@ def main():
             # (Not the pictures drawn here, nor the marked copies of
             # tools/make-state-icons.py: their dot and slash are no words.)
             parts = os.path.relpath(folder, os.path.join(PACK, palette)).split(os.sep)
-            if parts[0] in ("options", "status"):
+            if parts[0] in ("options", "status", "layouts", "badges"):
                 continue
             for name in files:
                 if not name.endswith(".png"):
@@ -599,7 +808,7 @@ def main():
         inside = base.getpixel((30, 60))
         ink = max((base.getpixel((x, y)) for x in range(40, 90) for y in range(36, 62)), key=lambda c: sum(c[:3]))
         ground = base.getpixel((2, 2))
-        ImageDraw.Draw(base).rectangle(SCREEN, fill=inside)
+        ImageDraw.Draw(base).rectangle(ERASE, fill=inside)
         out = os.path.join(PACK, palette, "options")
         os.makedirs(out, exist_ok=True)
         for name, shapes in DRAWINGS.items():
@@ -614,7 +823,7 @@ def main():
             else:
                 picture.save(os.path.join(out, name + ".png"))
                 made += 1
-    pictures = [p for p in listed["pictures"] if not p["id"].startswith("options/")]
+    pictures = [p for p in listed["pictures"] if not p["id"].startswith(("options/", "layouts/"))]
     for name in DRAWINGS:
         two = name in SWITCHES
         if name in GROUPED:
@@ -642,6 +851,9 @@ def main():
                 "off": f"options/{name}-off" if two else f"options/{name}",
             }
         )
+    laid, drawn_in_layouts = layout_pictures(palettes)
+    pictures += laid
+    made += drawn_in_layouts
     listed["pictures"] = pictures
     with open(LIST, "w", encoding="utf-8") as f:
         json.dump(listed, f, indent="\t", ensure_ascii=False)

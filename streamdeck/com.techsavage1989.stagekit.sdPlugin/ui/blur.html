@@ -50,6 +50,14 @@
 				</optgroup>
 			</sdpi-select>
 		</sdpi-item>
+		<sdpi-item label="Layout" title="How the key&#x27;s image is laid out: the type alone, in the live layout with a camera in its corner, or in the live layout with a camera and chat column. Automatic keeps the image as it is.">
+			<sdpi-select setting="layout" placeholder="Automatic">
+				<option value="auto">Automatic</option>
+				<option value="standalone">Standalone</option>
+				<option value="live">Live (no chat)</option>
+				<option value="chat">Live + chat</option>
+			</sdpi-select>
+		</sdpi-item>
 		<sdpi-item label="Source type" title="What is blurred, for the key&#x27;s image, drawn in the blur style.">
 			<sdpi-select setting="sourceType" placeholder="Automatic (by the source)">
 				<option value="auto">Automatic (by the source)</option>
@@ -61,11 +69,6 @@
 					<option value="window">Window</option>
 					<option value="display">Display</option>
 					<option value="tablet">Tablet</option>
-				</optgroup>
-				<optgroup label="Apps">
-					<option value="app_3d">3D app</option>
-					<option value="sculpting">Sculpting app</option>
-					<option value="cad">CAD app</option>
 				</optgroup>
 				<optgroup label="Cameras">
 					<option value="camera">Camera / webcam</option>
@@ -83,6 +86,9 @@
 				</optgroup>
 				<optgroup label="More: Apps">
 					<option value="art_app">Art app</option>
+					<option value="app_3d">3D app</option>
+					<option value="sculpting">Sculpting app</option>
+					<option value="cad">CAD app</option>
 					<option value="code_editor">Code editor</option>
 					<option value="office">Office / documents</option>
 					<option value="video_player">Video player</option>

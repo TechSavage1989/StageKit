@@ -78,7 +78,7 @@ export class Hook extends SingletonAction<KeySettings> {
 		const seen = await remembered(key, settings, settings.source ?? "", kind ? { kind } : undefined);
 		const pick = (s: KeySettings) => hookShown(keptPicture(s), seen?.kind, s.sourceType, s.look);
 		settings = await settle(key, "hook", seen ? { ...settings, seen } : settings, (s) => shownId(pick(s)));
-		await key.setImage(imageOf(pick(settings), settings.palette));
+		await key.setImage(imageOf(pick(settings), settings));
 		await key.setTitle(hookTitle(seen?.kind, settings.look));
 	}
 

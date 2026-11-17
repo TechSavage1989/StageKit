@@ -77,7 +77,7 @@ export class SceneModeKey extends SingletonAction<KeySettings> {
 		const pick = (s: KeySettings) => modePicture(keptPicture(s), s.sourceType, seen?.type, seen?.name);
 		settings = await settle(key, "mode", seen ? { ...settings, seen } : settings, (s) => pick(s).id);
 		const picture = pick(settings);
-		await showOnOff(key, picture, seen?.enabled === true, settings.palette);
+		await showOnOff(key, picture, seen?.enabled === true, settings);
 		await key.setTitle(modeTitle(seen?.name));
 	}
 

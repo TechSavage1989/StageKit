@@ -53,7 +53,7 @@ export class Move extends SingletonAction<KeySettings> {
 		const seen = await remembered(key, settings, `${source}\n${filter}`, now);
 		const pick = (s: KeySettings) => moveShown(keptPicture(s), seen?.kind ?? "", seen?.settings, s) ?? { picture: plain("move") };
 		settings = await settle(key, this.name, seen ? { ...settings, seen } : settings, (s) => shownId(pick(s)));
-		await key.setImage(imageOf(pick(settings), settings.palette));
+		await key.setImage(imageOf(pick(settings), settings));
 		await key.setTitle(moveTitle(seen?.kind, seen?.settings));
 	}
 

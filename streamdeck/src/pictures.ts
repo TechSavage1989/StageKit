@@ -7,7 +7,8 @@
 
 import { isSceneKind } from "./kinds.ts";
 import pack from "./pack.json" with { type: "json" };
-import { BLUR_STYLES, explicit, type Family, lookPicture, packBlurStyle, sceneTypePicture, sourceTypePicture } from "./key-types.ts";
+import layouts from "./layouts.json" with { type: "json" };
+import { BLUR_STYLES, explicit, type Family, layoutOf, lookPicture, packBlurStyle, sceneTypePicture, sourceTypePicture, typeBehind } from "./key-types.ts";
 import { hookTypePictureId, typeOfInput, typeOfName, typePictureId } from "./source-types.ts";
 
 export type Picture = { id: string; group: string; label: string; on: string; off: string };
@@ -436,22 +437,90 @@ export function file(picture: Picture, on: boolean, palette: string | undefined)
 // corner (tools/make-badges.py, laid over it by src/compose.ts). With none
 // (Automatic) it shows exactly what it showed before.
 
-/** A key's image: a picture, and the badges laid over it (none: the picture as it is). */
-export type Shown = { picture: Picture; badge?: string; extra?: string };
+/**
+ * A key's image: a picture, and the badges laid over it (none: the picture as
+ * it is). With `inset`, the picture is laid, made smaller, into that layout's
+ * main panel (a picture with no layout of its own; see `laidOut`).
+ */
+export type Shown = { picture: Picture; badge?: string; extra?: string; inset?: "live" | "chat" };
 
 /** One string for what a key shows, for comparing (`settle`'s resolvers). */
 export function shownId(shown: Shown): string {
-	return [shown.picture.id, shown.badge, shown.extra].filter(Boolean).join("+");
+	return [shown.inset ? `${shown.inset}:${shown.picture.id}` : shown.picture.id, shown.badge, shown.extra].filter(Boolean).join("+");
+}
+
+// ------------------------------------------------------------------ layouts
+// The owner: "every icon should have a standalone version, live/no chat
+// version, and a component/chat version" and "perhaps have a selector to
+// choose the layout and a second selector for the specific type". A key's
+// Layout (src/key-types.ts) takes what the key would show and puts it in the
+// pack's two scene layouts (tools/make-option-icons.py, src/layouts.json).
+
+const BY_PICTURE = layouts.byPicture as Record<string, { live: string; chat: string }>;
+const GLYPH_OF = layouts.glyphOf as Record<string, string>;
+const STANDALONE = new Set<string>(layouts.standalone);
+export const LAYOUT_FRAMES = layouts.frames as { live: string; chat: string };
+export const LAYOUT_PANEL = layouts.panel as { live: number[]; chat: number[] };
+export const LAYOUT_CROP: number[] = layouts.crop;
+
+/** What a key's Layout depends on: the list itself and the type lists (for the picture a type's art stands for). */
+export type LayoutSettings = { layout?: unknown; sourceType?: unknown; sceneType?: unknown };
+
+/**
+ * What a key shows in its Layout. Automatic (and a key from before there was
+ * one): exactly what it showed. Standalone: the same, but a scene picture
+ * that is itself a layout (the pack's game, capture card and window scenes)
+ * is its drawing alone. Live (no chat) and Live + chat: the picture of that
+ * type in that layout, the pack's own where it has one (game, window, capture
+ * card), drawn otherwise; a key showing its Source type with the owner's art
+ * for its function (an eye, a shadow, a blur) goes by the type. A picture
+ * with no layout of its own (an app's logo, the owner's art for a source on
+ * Automatic, an option's drawing) is laid, smaller, into the layout's panel
+ * (`inset`; src/compose.ts). Badges and the on/off mark stay as they are.
+ */
+export function laidOut(shown: Shown, settings: LayoutSettings = {}): Shown {
+	const layout = layoutOf(settings.layout);
+	if (!layout) return shown;
+	const behind = typeBehind(settings as Record<string, unknown>, shown.picture.id) ?? shown.picture.id;
+	if (layout === "standalone") {
+		const glyph = STANDALONE.has(behind) ? BY_ID.get(GLYPH_OF[behind]) : undefined;
+		return glyph ? { ...shown, picture: glyph } : shown;
+	}
+	const own = BY_PICTURE[behind]?.[layout] ?? BY_PICTURE[GLYPH_OF[behind] ?? ""]?.[layout];
+	const drawn = own ? BY_ID.get(own) : undefined;
+	return drawn ? { ...shown, picture: drawn } : { ...shown, inset: layout };
 }
 
 function palette(of: string | undefined): string {
 	return of && COLOURS.includes(of) ? of : DEFAULT_COLOUR;
 }
 
-/** What src/compose.ts lays together for a key: the picture's file (marked on or off for a key with two states) and its badges. */
-export function layersOf(shown: Shown, colour: string | undefined, state?: boolean): { base: string; palette: string; right?: string; left?: string } {
+/**
+ * What src/compose.ts lays together for a key: the picture's file (marked on
+ * or off for a key with two states) and its badges. A picture laid into a
+ * layout (`inset`) is the empty layout with the picture in its panel, and
+ * the on/off mark (`mark`) is put on the whole when it is laid together.
+ */
+export function layersOf(
+	shown: Shown,
+	colour: string | undefined,
+	state?: boolean,
+): { base: string; palette: string; right?: string; left?: string; inset?: { file: string; panel: number[]; crop: number[] }; mark?: boolean } {
+	const right = shown.badge;
+	const left = shown.extra;
+	if (shown.inset) {
+		const frame = BY_ID.get(LAYOUT_FRAMES[shown.inset])!;
+		return {
+			base: file(frame, true, colour),
+			palette: palette(colour),
+			right,
+			left,
+			inset: { file: file(shown.picture, true, colour), panel: LAYOUT_PANEL[shown.inset], crop: LAYOUT_CROP },
+			mark: state,
+		};
+	}
 	const base = state === undefined ? file(shown.picture, true, colour) : stateFile(shown.picture, state, colour);
-	return { base, palette: palette(colour), right: shown.badge, left: shown.extra };
+	return { base, palette: palette(colour), right, left };
 }
 
 /** The picture of a source type chosen in a key's list, or undefined for Automatic. */
