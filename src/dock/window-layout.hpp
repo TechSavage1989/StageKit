@@ -39,4 +39,9 @@ void window_layout_menu(QMenu *menu);
 // and is saved as OBS closes, each when asked for.
 void window_layout_event(enum obs_frontend_event event);
 
+// Whether the saved layout is brought back after this event (when the owner
+// has *Restore it when a collection loads* ticked): OBS starting, and a change
+// of scene collection.
+bool window_layout_restores_after(enum obs_frontend_event event);
+
 } // namespace stagekit

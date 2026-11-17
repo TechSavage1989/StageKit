@@ -2334,6 +2334,15 @@ void register_dock()
 								    : window_layout_restore(window));
 		},
 		nullptr);
+	// For the tests: whether a layout saved comes back after this OBS event.
+	proc_handler_add(
+		obs_get_proc_handler(), "void stagekit_window_layout_after(in int event, out bool restores)",
+		[](void *, calldata_t *cd) {
+			calldata_set_bool(cd, "restores",
+					  window_layout_restores_after(
+						  static_cast<enum obs_frontend_event>(calldata_int(cd, "event"))));
+		},
+		nullptr);
 	// For the tests: what a hotkey or the preview's menu does, by the tool's name.
 	proc_handler_add(
 		obs_get_proc_handler(), "void stagekit_run_arrange(in string action)",

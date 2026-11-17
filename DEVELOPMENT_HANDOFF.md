@@ -14,6 +14,14 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
 
+## Window layout after a change of collection (0.1.0-beta149)
+
+The owner confirmed beta148 ("collection switching works now, no error") and reported that the
+saved window layout did not come back after switching collection. It was only brought back after
+OBS started; now also after every change of scene collection. The menu's tick box is now *Restore
+it when a collection loads*. On the way: the window layout's menu and Apply Layout shared the
+`Layout.Save` string; the menu's strings are `WindowLayout.*` now.
+
 ## OBS closed itself on a change of scene collection (0.1.0-beta148)
 
 The owner imported the trial collection and got OBS's "Source Cleanup Error ... some sources
