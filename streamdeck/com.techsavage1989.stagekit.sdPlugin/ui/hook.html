@@ -26,11 +26,38 @@
 		<sdpi-item label="Duration (ms)">
 			<sdpi-textfield setting="lasting" placeholder="300" pattern="[0-9]*"></sdpi-textfield>
 		</sdpi-item>
-		<sdpi-item label="Capture type" title="What the image shows the key capturing. Automatic goes by the kind of capture chosen.">
+		<sdpi-item label="Capture type" title="What the image shows the key capturing (with a Source type, in its corner). Automatic goes by the kind of capture chosen.">
 			<sdpi-select setting="look" placeholder="Automatic">
 				<option value="auto">Automatic</option>
 				<option value="game">Game</option>
 				<option value="window">Window</option>
+			</sdpi-select>
+		</sdpi-item>
+		<sdpi-item label="Source type" title="What the capture takes, for the key&#x27;s image; the kind of capture is drawn in its corner. Automatic shows the capture alone.">
+			<sdpi-select setting="sourceType" placeholder="Automatic (the capture&#x27;s image)">
+				<option value="auto">Automatic (the capture&#x27;s image)</option>
+				<optgroup label="Captures &amp; games">
+					<option value="game">Game</option>
+					<option value="retro">Retro game</option>
+					<option value="emulator">Emulator</option>
+					<option value="window">Window</option>
+					<option value="browser">Browser</option>
+				</optgroup>
+				<optgroup label="Apps">
+					<option value="art_app">Art app</option>
+					<option value="app_3d">3D app</option>
+					<option value="sculpting">Sculpting app</option>
+					<option value="cad">CAD app</option>
+					<option value="code_editor">Code editor</option>
+					<option value="office">Office / documents</option>
+					<option value="video_player">Video player</option>
+					<option value="reference">Reference board</option>
+				</optgroup>
+				<optgroup label="Overlays">
+					<option value="chat">Chat</option>
+					<option value="voice_chat">Voice chat</option>
+					<option value="music">Music</option>
+				</optgroup>
 			</sdpi-select>
 		</sdpi-item>
 		<sdpi-item label="Palette">

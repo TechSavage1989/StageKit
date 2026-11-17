@@ -141,8 +141,9 @@ test("scene filters' keys are marked as such, and only keys on a source offer a 
 	for (const f of features.switches) assert.equal((f as { scene?: boolean }).scene === true, isSceneKind(f.kind), f.kind);
 	const offered = (page: string) => readFileSync(new URL(`ui/${page}.html`, plugin), "utf8").includes('setting="sourceType"');
 	for (const f of features.switches) if (isSceneKind(f.kind)) assert.ok(!offered(f.key), f.key);
-	for (const page of ["showinscenes", "shadow", "standby", "blur", "zoom", "mode"]) assert.ok(offered(page), page);
-	for (const page of ["scene", "tool", "option", "slide", "fitoverlap", "blur-all", "shape", "hook", "appswitch"]) assert.ok(!offered(page), page);
+	for (const page of ["showinscenes", "shadow", "standby", "blur", "zoom", "mode", "tool", "option", "slide", "shape", "hook", "appswitch", "sendto", "placeitem"])
+		assert.ok(offered(page), page);
+	for (const page of ["scene", "fitoverlap", "blur-all", "layout"]) assert.ok(!offered(page), page);
 	const page = readFileSync(new URL("ui/showinscenes.html", plugin), "utf8");
 	for (const type of SOURCE_TYPES)
 		assert.equal(page.includes(`<option value="${type.id}">${type.label.replace(/&/g, "&amp;")}</option>`), type.group !== "Activities", type.id);

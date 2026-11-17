@@ -10,10 +10,10 @@ import type { JsonValue } from "@elgato/utils";
 
 import { targetOf } from "../kinds.ts";
 import { obs } from "../obs.ts";
-import { file, stepPicture } from "../pictures.ts";
+import { shownId, stepShown } from "../pictures.ts";
 import { stepTitle } from "../titles.ts";
 import { keptPicture } from "../key-types.ts";
-import { answerLists, type KeySettings, settle, showOnOff } from "./shared.ts";
+import { answerLists, imageOf, type KeySettings, settle, showOnOff } from "./shared.ts";
 
 /**
  * A key for the hand controls of a Show Source in Use filter (on a scene) or
@@ -64,8 +64,8 @@ export class AppSwitch extends SingletonAction<KeySettings> {
 	}
 
 	private async show(key: KeyAction<KeySettings>, settings: KeySettings): Promise<void> {
-		const pick = (s: KeySettings) => stepPicture(keptPicture(s), s.step, s.sourceType);
-		settings = await settle(key, "appswitch", settings, (s) => pick(s).id);
+		const pick = (s: KeySettings) => stepShown(keptPicture(s), s.step, s.sourceType);
+		settings = await settle(key, "appswitch", settings, (s) => shownId(pick(s)));
 		const picture = pick(settings);
 		await key.setTitle(stepTitle(settings.step));
 		if (settings.step === "toggle" || settings.step === "hide") {
@@ -78,8 +78,8 @@ export class AppSwitch extends SingletonAction<KeySettings> {
 			return;
 		}
 		// One look for a key that only does something.
-		await key.setImage(file(picture, true, settings.palette), { state: 0 });
-		await key.setImage(file(picture, true, settings.palette), { state: 1 });
+		await key.setImage(imageOf(picture, settings.palette), { state: 0 });
+		await key.setImage(imageOf(picture, settings.palette), { state: 1 });
 		await key.setState(0);
 	}
 

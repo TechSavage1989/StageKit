@@ -29,7 +29,9 @@ export type Fresh = {
 };
 
 /** The filter settings a key's image or name can depend on. */
-const LOOK_SETTINGS = ["blur_type", "style", "shadow", "shadow_type", "outline", "backdrop", "destination"];
+const LOOK_SETTINGS = ["blur_type", "style", "shadow", "shadow_type", "outline", "backdrop", "destination",
+	// (A Move Source's second badge: a source brought along, flipped or not; the scenes it moves in.)
+	"linked", "flip_linked", "apply_in"];
 
 /**
  * A key keeps what it last learned from OBS, in its own settings: while OBS

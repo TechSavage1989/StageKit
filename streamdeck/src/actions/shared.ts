@@ -7,22 +7,41 @@ import type { JsonValue } from "@elgato/utils";
 import { filterItems, sourceItems, targetItems } from "../kinds.ts";
 import { obs } from "../obs.ts";
 import { adoptOld, typeForKept } from "../key-types.ts";
-import { type Picture, stateFile } from "../pictures.ts";
+import { composed } from "../compose.ts";
+import { layersOf, type Picture, type Shown } from "../pictures.ts";
+
+/**
+ * A key's image as Stream Deck takes it: the picture's file, or, with a
+ * badge (a type chosen with a function), the picture and its badges laid
+ * together (src/compose.ts). `state` is on or off for a key with two states
+ * (the marked pictures), undefined for one.
+ */
+export function imageOf(shown: Picture | Shown, palette: string | undefined, state?: boolean): string {
+	const s: Shown = "picture" in shown ? shown : { picture: shown };
+	const layers = layersOf(s, palette, state);
+	try {
+		return composed(layers);
+	} catch (error) {
+		// (A file that cannot be read or laid together: the picture alone.)
+		streamDeck.logger.warn(`Could not lay a badge over ${layers.base}: ${String(error)}`);
+		return layers.base;
+	}
+}
 
 /**
  * Shows whether a two-state key is on: its marked pictures for both states,
  * then the state. Stream Deck does not flip these keys by itself
  * ("DisableAutomaticStates" in the manifest), so what shows is always what
- * OBS says, never a flash of the other picture.
+ * OBS says, never a flash of the other picture. A badge goes on both.
  */
 export async function showOnOff(
 	key: { setImage(image?: string, options?: { state?: 0 | 1 }): Promise<void>; setState(state: 0 | 1): Promise<void> },
-	picture: Picture,
+	picture: Picture | Shown,
 	on: boolean,
 	palette: string | undefined,
 ): Promise<void> {
-	await key.setImage(stateFile(picture, false, palette), { state: 0 });
-	await key.setImage(stateFile(picture, true, palette), { state: 1 });
+	await key.setImage(imageOf(picture, palette, false), { state: 0 });
+	await key.setImage(imageOf(picture, palette, true), { state: 1 });
 	await key.setState(on ? 1 : 0);
 }
 

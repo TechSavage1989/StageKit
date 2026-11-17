@@ -14,10 +14,18 @@ import {
 	hookPicture,
 	modePicture,
 	movePicture,
+	moveShown,
+	optionShown,
 	overlapPicture,
 	PICTURES,
 	scenePicture,
+	shapeShown,
+	slideShown,
 	stateFile,
+	stepShown,
+	toolShown,
+	hookShown,
+	blurAllShown,
 } from "../src/pictures.ts";
 
 const plugin = new URL("../com.techsavage1989.stagekit.sdPlugin/", import.meta.url);
@@ -29,19 +37,45 @@ function shown(key: string, setting: string, value: string): string | undefined 
 	const types = { [setting]: value };
 	if (key === "scene") return scenePicture(undefined, "", value).id;
 	if (key === "mode") return modePicture(undefined, value).id;
-	if (key === "hook") return hookPicture(undefined, "game_capture", undefined, value).id;
-	if (key === "blurall") return blurAllPicture(undefined, value).id;
+	// (The keys that draw what they do as a badge: the type's picture is the one under it.)
+	if (key === "hook") return hookShown(undefined, "game_capture", types.sourceType, types.look).picture.id;
+	if (key === "blurall") return blurAllShown(undefined, types.look, types.sceneType).picture.id;
+	if (key === "appswitch") return stepShown(undefined, "next", value).picture.id;
+	if (key === "tool") return toolShown(undefined, "left", value).picture.id;
+	if (key === "slide") return slideShown(undefined, "left", value).picture.id;
+	if (key === "shape") return shapeShown(undefined, "4:3", value).picture.id;
+	if (key === "option") return optionShown(undefined, "snap", value).picture.id;
+	if (key === "sendto" || key === "placeitem") return moveShown(undefined, KIND.get(key)!, {}, types)?.picture.id;
 	if (key === "fitoverlap") return overlapPicture(undefined, value).id;
 	const kind = KIND.get(key)!;
 	if (features.moves.some((f) => f.key === key)) return movePicture(undefined, kind, {}, types)?.id;
 	return chooseFor(undefined, kind, {}, "", undefined, types)?.id;
 }
 
-test("every key but the two old hidden ones has a type list", () => {
-	const all = [...features.switches, ...features.moves].map((f) => f.key).concat(["scene", "mode", "hook", "blurall", "fitoverlap"]);
-	for (const key of all) assert.ok(typeLists(key).length > 0, key);
-	for (const key of Object.keys(OWN_LISTS)) assert.equal(typeLists(key).length, 0, `${key}: its own list is its type`);
-	assert.deepEqual([...keysWithLists()].sort(), [...all].sort());
+test("every key a user can add has a type list; only the two old hidden ones have none", () => {
+	// The owner: "no types selection for manual window/source? all keys must have the options".
+	const manifest = JSON.parse(readFileSync(new URL("manifest.json", plugin), "utf8"));
+	const offered = manifest.Actions.filter((a: { VisibleInActionsList?: boolean }) => a.VisibleInActionsList !== false).map((a: { UUID: string }) =>
+		a.UUID.slice(a.UUID.lastIndexOf(".") + 1),
+	);
+	assert.ok(offered.length >= 31, `${offered.length}`);
+	for (const key of offered) assert.ok(typeLists(key).length > 0, key);
+	for (const key of Object.keys(OWN_LISTS)) assert.ok(typeLists(key).some((l) => l.setting === "sourceType"), `${key}: a Source type besides its own list`);
+	for (const key of ["switch", "move"]) assert.equal(typeLists(key).length, 0, key);
+	assert.deepEqual([...keysWithLists()].sort(), [...offered].sort());
+	// The ones asked for by name, and what they offer.
+	const values = (key: string, setting: string) => typeLists(key).find((l) => l.setting === setting)!.groups.flatMap((g) => g.entries.map((e) => e.value));
+	for (const v of ["window", "browser", "game", "retro", "emulator", "art_app", "code_editor", "chat", "voice_chat", "music", "camera"])
+		assert.ok(values("appswitch", "sourceType").includes(v), `appswitch ${v}`);
+	for (const key of ["slide", "tool", "option", "sendto", "placeitem"])
+		for (const v of ["camera", "facecam", "chat", "alerts", "game", "window", "music", "logo", "title"]) assert.ok(values(key, "sourceType").includes(v), `${key} ${v}`);
+	for (const v of ["game", "retro", "console", "capture_card", "emulator", "handheld"]) assert.ok(values("shape", "sourceType").includes(v), `shape ${v}`);
+	assert.deepEqual(typeLists("hook").map((l) => l.setting), ["look", "sourceType"], "Capture type and Source type");
+	assert.deepEqual(typeLists("blurall").map((l) => l.setting), ["look", "sceneType"], "Blur style and Scene type");
+	assert.deepEqual(typeLists("sendto").map((l) => l.setting), ["look", "sourceType"], "Position and Source type");
+	// Every destination Move Source can have (place-item.cpp's Destination: nine places, a saved place, a spot on the screen).
+	assert.deepEqual(values("sendto", "look"), ["top-left", "top-centre", "top-right", "middle-left", "centre", "middle-right", "bottom-left", "bottom-centre", "bottom-right", "spot", "screen"]);
+	for (const list of typeLists("appswitch")) assert.ok(!list.groups.some((g) => g.label === "Activities"));
 });
 
 test("every entry of every list is the picture the key shows for it, in every palette, on and off", () => {

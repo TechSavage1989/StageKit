@@ -1391,23 +1391,39 @@ key's gameplay-with-chat layout), and drawings in the same style for the rest.
 | **Show in Scenes** | Source type | What a source can be, in seven groups: *Captures & games* (Game, Retro game, Emulator, Console, Handheld, Linked handheld screen, Second linked handheld screen, Capture card internal and external, HDMI source, Window, Browser, Display, Second display, Tablet, Phone screen), *Apps* (Art app, 3D app, Sculpting app, CAD app, Code editor, Office / documents, Video player, Reference board), *Cameras* (Camera / webcam, DSLR / mirrorless, Camcorder, Action camera, PTZ camera, Facecam, Full-screen, Side, Phone, Desk / overhead and Virtual camera), *Devices & audio* (Gaming PC, Laptop, Retro console, Controller, Stream controller, Pen display, VR headset, Headset, Microphone, Speakers, Audio mixer, Key light, Green screen), *Overlays* (Chat, Voice chat, Music, Alerts, Events / goals, Countdown, Title / text, Image, Video, Logo, Standby image), *Status & holding screens* (Live / on air, Recording, Paused, Muted, Offline, Camera off, Raid / host, Starting soon, Be right back, Intermission, Technical difficulties, Ending) and *Layout markers* (Chat column, Handheld column) |
 | **Shadow, Glow & Outline** | Shadow style, Source type | *Shadow style*: Soft, Hard and Long shadow; Glow, Neon, Outline, Panel (*Automatic*: the filter's own look). *Source type*: the types the pack has a shadow image of |
 | **Blur** | Blur style, Source type | *Blur style*: *Blurs* (Gaussian, Box, Dual Kawase, Zoom blur, Motion blur, Trail) and *Mosaics* (Square, Hexagon, Circle, Triangle, Voronoi, Rhomboid, Triakis, Glass). *Source type*: the types the pack has a blurred image of, drawn in that style (or the nearest style the pack has) |
-| **Blur All** | Blur style | As on the Blur key |
+| **Blur All** | Blur style, Scene type | *Blur style* as on the Blur key. *Scene type*: what is blurred, as on Switch Scene; with one chosen, the blur style is drawn in its corner |
 | **Corners & Edges** | Corner style | *Corners*: Rounded, Cut, Notched, Scooped. *Edges*: Soft, Outlined, Trimmed |
 | **Show/Hide Animation**, **Link Visibility**, **Automatic Source Switcher**, **Automatic Window Switcher** | Transition | Fade, Cut, Slide, Swipe, Wipe, Zoom, Morph, beside the key's Scene type or Source type (which comes first when both are set) |
 | **Zoom**, **Standby Image**, **Auto Capture**, **Auto Frame**, **Automatic Window Switcher**, **Program Trigger** | Source type | The types that make sense for that feature (captures, devices and cameras for Zoom and Standby Image, games for Auto Capture and Auto Frame, programs for the switcher and the trigger) |
 | **Scene Mode** | Mode type | Status and holding screens, layouts (Game, Console, Linked handheld screen, Capture card, Window, Display, Tablet, Camera: the icon pack's scene image of that layout), apps, the layout markers and activities (Speedrun, Music production, Cooking, IRL / outdoors, Tutorial, Unboxing, Fitness, Reading, Watch party, Charity, Just chatting, Podcast, Interview / guest). *Automatic* takes the mode's *Mode type* in OBS |
 | **Switch Scene**, and the keys for a filter on a scene (Fit to Space, Scene Fit, Link Visibility and the rest), **Fit to Space Overlap**, **Apply Layout** | Scene type | *Holding & status* (Starting soon, Countdown, Be right back, Intermission, Technical difficulties, Ending, Holding screen, Paused, Offline, Camera off, Raid / host), *Games* (Gameplay, Gameplay + chat, PC game, Retro gaming, Classic gaming, Speedrun, Emulator, Console, Console + handheld link, Capture card, Capture card + chat), *Apps & screens* (Window / app, App + chat, Desktop, Second screen, Browsing), *Creative* (Tablet / drawing, Art / design, 3D modelling, Coding, Music production), *Camera & talk* (Just chatting, Camera only, Interview / guest, Podcast, Live music, Tutorial), *IRL & lifestyle* (IRL / outdoors, Cooking, Fitness, Reading, Unboxing, Watch party, Charity), *All in one* (On air, On air + chat). On a Switch Scene key *Automatic* goes by the scene's name; on the others it shows the filter's own image |
-| **Move Source**, **Move Scene Item** | Position | The nine places on the screen and *Saved spot* (*Automatic*: where the filter sends the source) |
-| **Capture Active Window** | Capture type | Game, Window (*Automatic*: by the kind of capture chosen); the key's title follows it |
-| **Arrange tool**, **Dock Option**, **Slide to Edge**, **Set Aspect Ratio**, **Manual Window / Source** | Their own list | The tool, option, direction, ratio or step is the type: each has its own image already |
+| **Move Source**, **Move Scene Item** | Position, Source type | *Position*: every place the filter can send a source: the nine places on the screen, *Saved spot* (the source's own saved place) and *Spot on the screen* (the same spot in every scene, as the dock's slides use; *Automatic*: where the filter sends the source). *Source type*: what is moved (cameras, overlays such as Chat, Alerts, Music, Logo, Title, games, windows, apps) |
+| **Capture Active Window** | Capture type, Source type | *Capture type*: Game, Window (*Automatic*: by the kind of capture chosen); the key's title follows it. *Source type*: what it takes (Game, Retro game, Emulator, Window, Browser, the apps, Chat, Voice chat, Music) |
+| **Manual Window / Source** | Source type, beside *On press* | What the capture or the scene switches between: Window, Browser, Game, Retro game, Emulator, Console, Capture card, Display, Linked handheld screen, the apps, Chat, Voice chat, Music and the cameras |
+| **Arrange tool**, **Slide to Edge**, **Dock Option** | Source type, beside *Tool*, *Slide* or *Option* | What is lined up, slid or placed: the cameras, the overlays, games, windows, browsers, displays and the apps |
+| **Set Aspect Ratio** | Source type, beside *Ratio* | What is framed: Game, Retro game, Emulator, Console, Retro console, Handheld, Linked handheld screens, Capture card internal and external, HDMI source, Window, Display, Gaming PC, VR headset |
 
 Hold the pointer over a list's name for a line on what it does.
 
+**A type and what the key does, both on the image.** On a key that has both (a step, a tool, a
+slide direction, an aspect ratio, a dock option, a kind of capture, a blur style or a destination
+besides its type), choosing a type shows that type's image with what the key does drawn small in
+the top right corner, in the same style: a switch for *Toggle*, a play-to-bar for *Next*, a
+turning-back arrow for *Return to automatic*, the eye crossed out for *Hide*, an arrow to the edge
+for a slide, a frame of the ratio's shape for an aspect ratio, a little screen with the source at
+that spot for a move, the tool's or option's own drawing, the capture's corners with a game or a
+window, the blur style. A Move Source or Move Scene Item key also shows, in the top left corner,
+what else its filter does: a source brought along (with arrows both ways when it is flipped round
+the moved one), or the move made in the scene on screen or a chosen scene only. On a key that shows
+whether it is on, the green dot or red sign stays in the top left corner. Left on *Automatic*, the
+type list changes nothing: the key shows exactly the image it showed before.
+
 **Keys made before (Stream Deck plugin 0.18 and earlier)** keep their look. An image chosen in the
 old *Image* list is set as the type that shows that same image where there is one, and is otherwise
-kept as it is, until you choose something in one of the key's lists (*Automatic* included). Old
-*Source type* choices on *Capture Active Window* and *Manual Window / Source*, which no longer offer
-that list, are kept the same way.
+kept as it is, until you choose something in one of the key's lists (*Automatic* included). An old
+*Source type* choice on *Capture Active Window* or *Manual Window / Source* (Stream Deck plugin
+0.18) is the type in their new *Source type* list, so those keys now carry their capture kind or
+step as a corner badge too.
 
 **Editable SVGs:** `streamdeck/svg/` holds every image drawn in this repository as SVG, with the
 drawing as shapes in a layer of its own (see its README). The original icon pack's own images
