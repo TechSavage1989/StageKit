@@ -1075,9 +1075,10 @@ Which two go together follows the Morph transition's rules:
 
 An item with nothing to change into fades by itself, or fades and zooms if *With nothing to change
 into* (in Show in Scenes; *Other items* in the transition's own settings) says so. That holds for an
-item being shown as much as for one being hidden, over the same time as the change. (Up to beta154 an
-item left over and being shown appeared all at once at the end of the change; in beta156 the capture
-in the camera example above faded in where it is, and since beta157 it comes out of the camera.)
+item being shown as much as for one being hidden, over the same time as the change. (Up to beta155 an
+item left over and being shown appeared all at once at the end of the change; in beta156 and beta157
+the capture in the camera example above faded in where it is, and since beta158 it comes out of the
+camera.)
 
 Things to know:
 
@@ -1372,24 +1373,36 @@ choose (*Manual / Auto*, *Blur Off*, *Slide Up Left*), and a title you type in S
 place. Left on *Automatic*, a key's image is the one for its filter and its options; every
 option has one.
 
-**Source type:** every key that acts on a source (the feature keys on a source, *Capture Active
-Window*, *Manual Window / Source*) and the *Scene Mode* key has a **Source type** list under
-*Image*: *Automatic* (as it comes), then *Game*, *Window*, *Art app*, *Code editor*, *Browser*,
-*Camera*, *Capture card*, *Display*, *Phone*, *Tablet*, *Chat*, *Music*, *Alerts*, *Title / text*,
-*Image*, *Video*, *Starting*, *Be right back*, *Intermission* and *Ending*. Choose what your source
-is, whatever it is called, and the key shows that image: a feature key the image by itself, with its
-on and off marks; *Capture Active Window* the image inside the corners of a capture. An image chosen
-under *Image* still comes first. On *Automatic* a key keeps the image of its feature, except a *Show
-in Scenes* key, which shows what its source is: the icon pack's image of a source by that name if
-there is one, else the type the source's name speaks of (*BRB Text* is *Be right back*, *GBA* a
-game), else what OBS says the source is (a Game Capture is a game, a Window Capture a window, a
-Display Capture a display, a video capture device a camera, a browser source a browser, text a
-title, an image or slide show an image, a media source a video). Keys on a scene's own filters
-(*Fit to Space*, *Scene Fit* and the like) have no source, so no Source type.
+**Type lists, in place of the Image list.** Each key has a list, or two, of what it is for, and its
+image follows what you choose there. The types are general (no list is about one particular
+stream), each has its own image, and no list shows the same image twice. Every list starts with
+*Automatic*, the key's image as it comes. The images are the icon pack's own where the pack has one
+that fits the type and what the key does (a Show in Scenes key's camera with the eye over it, a
+Shadow key's game with its shadow, a Blur key's window blurred in the blur's style, a Switch Scene
+key's gameplay-with-chat layout), and drawings in the same style for the rest.
 
-**Images for devices:** besides each key's own, the *Image* list has a *devices* group for any
-key: internal capture card, external capture box, HDMI, console, webcam, camcorder, DSLR,
-microphone, phone, display, laptop, browser and speaker, in every palette.
+| Key | List | What it offers |
+| --- | --- | --- |
+| **Show in Scenes** | Source type | What a source can be, in seven groups: *Captures & games* (Game, Retro game, Emulator, Console, Handheld, Linked handheld screen, Second linked handheld screen, Capture card internal and external, HDMI source, Window, Browser, Display, Second display, Tablet, Phone screen), *Apps* (Art app, 3D app, Sculpting app, CAD app, Code editor, Office / documents, Video player, Reference board), *Cameras* (Camera / webcam, DSLR / mirrorless, Camcorder, Action camera, PTZ camera, Facecam, Full-screen, Side, Phone, Desk / overhead and Virtual camera), *Devices & audio* (Gaming PC, Laptop, Retro console, Controller, Stream controller, Pen display, VR headset, Headset, Microphone, Speakers, Audio mixer, Key light, Green screen), *Overlays* (Chat, Voice chat, Music, Alerts, Events / goals, Countdown, Title / text, Image, Video, Logo, Standby image), *Status & holding screens* (Live / on air, Recording, Paused, Muted, Offline, Camera off, Raid / host, Starting soon, Be right back, Intermission, Technical difficulties, Ending) and *Layout markers* (Chat column, Handheld column) |
+| **Shadow, Glow & Outline** | Shadow style, Source type | *Shadow style*: Soft, Hard and Long shadow; Glow, Neon, Outline, Panel (*Automatic*: the filter's own look). *Source type*: the types the pack has a shadow image of |
+| **Blur** | Blur style, Source type | *Blur style*: *Blurs* (Gaussian, Box, Dual Kawase, Zoom blur, Motion blur, Trail) and *Mosaics* (Square, Hexagon, Circle, Triangle, Voronoi, Rhomboid, Triakis, Glass). *Source type*: the types the pack has a blurred image of, drawn in that style (or the nearest style the pack has) |
+| **Blur All** | Blur style | As on the Blur key |
+| **Corners & Edges** | Corner style | *Corners*: Rounded, Cut, Notched, Scooped. *Edges*: Soft, Outlined, Trimmed |
+| **Show/Hide Animation**, **Link Visibility**, **Automatic Source Switcher**, **Automatic Window Switcher** | Transition | Fade, Cut, Slide, Swipe, Wipe, Zoom, Morph, beside the key's Scene type or Source type (which comes first when both are set) |
+| **Zoom**, **Standby Image**, **Auto Capture**, **Auto Frame**, **Automatic Window Switcher**, **Program Trigger** | Source type | The types that make sense for that feature (captures, devices and cameras for Zoom and Standby Image, games for Auto Capture and Auto Frame, programs for the switcher and the trigger) |
+| **Scene Mode** | Mode type | Status and holding screens, layouts (Game, Console, Linked handheld screen, Capture card, Window, Display, Tablet, Camera: the icon pack's scene image of that layout), apps, the layout markers and activities (Speedrun, Music production, Cooking, IRL / outdoors, Tutorial, Unboxing, Fitness, Reading, Watch party, Charity, Just chatting, Podcast, Interview / guest). *Automatic* takes the mode's *Mode type* in OBS |
+| **Switch Scene**, and the keys for a filter on a scene (Fit to Space, Scene Fit, Link Visibility and the rest), **Fit to Space Overlap**, **Apply Layout** | Scene type | *Holding & status* (Starting soon, Countdown, Be right back, Intermission, Technical difficulties, Ending, Holding screen, Paused, Offline, Camera off, Raid / host), *Games* (Gameplay, Gameplay + chat, PC game, Retro gaming, Classic gaming, Speedrun, Emulator, Console, Console + handheld link, Capture card, Capture card + chat), *Apps & screens* (Window / app, App + chat, Desktop, Second screen, Browsing), *Creative* (Tablet / drawing, Art / design, 3D modelling, Coding, Music production), *Camera & talk* (Just chatting, Camera only, Interview / guest, Podcast, Live music, Tutorial), *IRL & lifestyle* (IRL / outdoors, Cooking, Fitness, Reading, Unboxing, Watch party, Charity), *All in one* (On air, On air + chat). On a Switch Scene key *Automatic* goes by the scene's name; on the others it shows the filter's own image |
+| **Move Source**, **Move Scene Item** | Position | The nine places on the screen and *Saved spot* (*Automatic*: where the filter sends the source) |
+| **Capture Active Window** | Capture type | Game, Window (*Automatic*: by the kind of capture chosen); the key's title follows it |
+| **Arrange tool**, **Dock Option**, **Slide to Edge**, **Set Aspect Ratio**, **Manual Window / Source** | Their own list | The tool, option, direction, ratio or step is the type: each has its own image already |
+
+Hold the pointer over a list's name for a line on what it does.
+
+**Keys made before (Stream Deck plugin 0.18 and earlier)** keep their look. An image chosen in the
+old *Image* list is set as the type that shows that same image where there is one, and is otherwise
+kept as it is, until you choose something in one of the key's lists (*Automatic* included). Old
+*Source type* choices on *Capture Active Window* and *Manual Window / Source*, which no longer offer
+that list, are kept the same way.
 
 **Editable SVGs:** `streamdeck/svg/` holds every image drawn in this repository as SVG, with the
 drawing as shapes in a layer of its own (see its README). The original icon pack's own images
@@ -1405,12 +1418,12 @@ pressed, so it never flashes the wrong one.
 | Key | What it does |
 | --- | --- |
 | **Blur**, **Shadow, Glow & Outline**, **Corners & Edges**, **Zoom**, **Auto Capture**, **Auto Frame**, **Standby Image**, **Show in Scenes**, **Fit to Space**, **Automatic Source Switcher**, **Automatic Window Switcher**, **Program Trigger**, **Link Visibility**, **Show/Hide Animation**, **Scene Fit**, **Scene Shadow**, **Scene Corners**, **Scene Standby** | Switches that feature on a source (or scene) on and off, and the key shows which way it is, also when it is switched some other way. *On press* can be *Toggle*, *Switch on* or *Switch off* |
-| **Scene Mode** | Turns on one mode of a scene's *Scene Modes* filter: that mode's sources show, the other modes' sources hide. *Mode* lists every mode of every scene (*Standby: Intermission*, *Chat Live: GBA*; the filter's name too where a scene has two). *On press*: *Switch on* (as it comes) or *Toggle* (pressed while its mode is on, it goes to no mode where the filter allows that, else back to the mode before). Lit (green dot) while its mode is on, however it was turned on; titled with the mode's name. The key keeps the mode itself, not its name, so renaming the mode in OBS does not break it. Its image: the *Source type* chosen; on *Automatic*, the mode's own *Mode type* in OBS, else the type its name speaks of (*Be Right Back*, *GBA* is a game), else a stack of modes |
+| **Scene Mode** | Turns on one mode of a scene's *Scene Modes* filter: that mode's sources show, the other modes' sources hide. *Mode* lists every mode of every scene (*Standby: Intermission*, *Chat Live: GBA*; the filter's name too where a scene has two). *On press*: *Switch on* (as it comes) or *Toggle* (pressed while its mode is on, it goes to no mode where the filter allows that, else back to the mode before). Lit (green dot) while its mode is on, however it was turned on; titled with the mode's name. The key keeps the mode itself, not its name, so renaming the mode in OBS does not break it. Its image: the *Mode type* chosen; on *Automatic*, the mode's own *Mode type* in OBS, else the type its name speaks of (*Be Right Back*; *GBA* is a handheld), else a stack of modes |
 | **Move Source**, **Move Scene Item**, **Apply Layout** | Runs that move. A tick shows on the key when OBS has taken it |
 | **Set Aspect Ratio** | Sets a game's aspect ratio by hand, for when Auto Frame's own reading is not what you want: 4:3, 8:7, 3:2, 10:9, 16:9 and more, or *Automatic* to hand it back. *Keep ratio*: *This game only* (the shape lasts while that game is captured and goes back to automatic when it ends; set before the game starts, it waits for it) or *Until changed*. The key shows its ratio |
 | **Capture Active Window** | Makes a Game Capture or a Window Capture take whatever window or game is in front when you press it. *Transition* and *Duration* choose how the capture changes over: a fade (as it comes), a cut, or any other transition OBS has. An Auto Capture on that capture is switched off so it stays where you put it; the **Auto Capture** key, set to *Switches it on*, hands it back |
 | **Fit to Space Overlap** | Switches a Fit to Space filter's, or a Scene Fit's, *Overlap only when it fills* on and off, and shows which way it is. On: the fitted window goes under the camera only while it fills its space, and beside it otherwise |
-| **Switch Scene** | Switches OBS to the scene chosen: on the program (live), or on the preview in Studio Mode. *Transition* and *Duration* can be chosen (*As set in OBS* as it comes); a transition chosen here becomes OBS's current one. Lit (green dot) while that scene is the one on the program or preview, however it got there; titled with the scene's name. Left on *Automatic*, its image is the icon pack's own image of that scene's layout when the pack has one by the scene's name, and a generic scene otherwise. A scene called *Live*, *Chat Live* or *Standby* has an image of its own: a screen with a record button, a record button beside chat bubbles, and a screen with the standby sign |
+| **Switch Scene** | Switches OBS to the scene chosen: on the program (live), or on the preview in Studio Mode. *Transition* and *Duration* can be chosen (*As set in OBS* as it comes); a transition chosen here becomes OBS's current one. Lit (green dot) while that scene is the one on the program or preview, however it got there; titled with the scene's name. Its image is the *Scene type* chosen; left on *Automatic*, the icon pack's own image of that scene's layout when the pack has one by the scene's name, and a generic scene otherwise. A scene called *Live*, *Chat Live* or *Standby* has an image of its own: a screen with a record button, a record button beside chat bubbles, and a screen with the standby sign |
 | **Manual Window / Source** | Also for a Window Capture with a Automatic Window Switcher filter: the next of its *Manual windows*, back to following the apps, or the capture hidden and shown. For a scene with a Automatic Source Switcher filter: shows the next of its *Manual sources*, or goes back to following the apps. Set to *Toggle* it shows whether a manual window is on; set to *Hide*, whether the capture is shown. Also lists Auto Capture filters, for *Hide* |
 | **Arrange tool** | One of the dock's arrange tools on a key: line up an edge or centre, space out evenly, snap, make the same width, height or size, or copy a transform to all or to the chosen scenes. It works on the items selected in OBS's preview |
 | **Dock Option** | One of the dock's switches on a key: *Snap on release*, *Guides*, *Stop resizing at edges*, *Slide to the next edge*, *In every scene* or *Keep shape*. It shows which way the switch is, also when you change it in the dock |
@@ -1433,9 +1446,10 @@ images of their own, by the source's name: *starting* (a play sign), *BRB* (a cu
 (an hourglass), *ending* (a stop sign), *column chat* and *column GBA*. When several images fit a
 name, the one whose label has the most words wins, so *Chat Live* gets its own image, not *Live*'s.
 A filter the pack has no image for gets a plain key in the same
-style. **Image** lets you give a key any other image of the pack (the ones drawn for a particular
-source, for instance). **Palette** is each key's own colour: mono (as it comes), violet, ocean,
-forest, ember or neon. You can still set your own image on a key in Stream Deck.
+style. **Palette** is each key's own colour: mono (as it comes), violet, ocean, forest, ember or
+neon. You can still set your own image or title on a key in Stream Deck: Stream Deck keeps a title
+you type over the plugin's, and an image you set there (from a file or the icon library) should
+likewise be kept over the plugin's, though that has not been tried on a Stream Deck here.
 
 The plugin's code is in [`streamdeck/`](streamdeck); `npm install`, then `npm run build`, `npm test`,
 `npm run validate` and `npm run pack` there.

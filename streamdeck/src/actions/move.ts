@@ -10,9 +10,10 @@ import type { JsonValue } from "@elgato/utils";
 
 import { targetOf } from "../kinds.ts";
 import { obs } from "../obs.ts";
-import { choose, file, plain } from "../pictures.ts";
+import { keptPicture } from "../key-types.ts";
+import { file, movePicture, plain } from "../pictures.ts";
 import { moveTitle } from "../titles.ts";
-import { answerLists, type KeySettings, remembered } from "./shared.ts";
+import { answerLists, type KeySettings, remembered, settle } from "./shared.ts";
 
 /**
  * A key that runs one StageKit move: a Send To on the camera, a Place Item or
@@ -21,6 +22,8 @@ import { answerLists, type KeySettings, remembered } from "./shared.ts";
  */
 export class Move extends SingletonAction<KeySettings> {
 	override readonly manifestId: string;
+	/** The key's name in features.json ("sendto" ...), for its type lists. */
+	private readonly name: string;
 
 	constructor(
 		uuid: string,
@@ -28,6 +31,7 @@ export class Move extends SingletonAction<KeySettings> {
 	) {
 		super();
 		this.manifestId = uuid;
+		this.name = uuid.slice(uuid.lastIndexOf(".") + 1);
 		const all = () => void this.showAll();
 		obs.on("connection", all);
 		obs.on("changed", all);
@@ -47,7 +51,9 @@ export class Move extends SingletonAction<KeySettings> {
 		const now = await obs.filter(source, filter);
 		// (While OBS cannot say, the key goes by what it last learned.)
 		const seen = await remembered(key, settings, `${source}\n${filter}`, now);
-		const picture = choose(settings.picture, seen?.kind ?? "", seen?.settings) ?? plain("move");
+		const pick = (s: KeySettings) => movePicture(keptPicture(s), seen?.kind ?? "", seen?.settings, s) ?? plain("move");
+		settings = await settle(key, this.name, seen ? { ...settings, seen } : settings, (s) => pick(s).id);
+		const picture = pick(settings);
 		await key.setImage(file(picture, true, settings.palette));
 		await key.setTitle(moveTitle(seen?.kind, seen?.settings));
 	}

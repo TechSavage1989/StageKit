@@ -562,10 +562,10 @@ static void capture_pop_in_test(uint32_t w, uint32_t h, const std::string &out)
 
 	// 1. As the owner has it: the camera linked to its square view, the
 	// capture's picture coming only after the change (40 frames). Up to
-	// beta155 the capture appeared at the end of the change, in beta156 it
-	// faded in by itself (its own transition drew it); since beta157 it
-	// comes out of the camera as well, drawn by a second layer, and its own
-	// transition draws nothing.
+	// beta155 the capture appeared at the end of the change, in beta156 and
+	// beta157 it faded in by itself (its own transition drew it); since
+	// beta158 it comes out of the camera as well, drawn by a second layer,
+	// and its own transition draws nothing.
 	{
 		printf("  (the camera linked to its square view; the capture's picture comes after the change)\n");
 		const std::vector<Sample> s = run(40);

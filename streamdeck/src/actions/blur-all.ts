@@ -9,9 +9,10 @@ import {
 import type { JsonValue } from "@elgato/utils";
 
 import { obs } from "../obs.ts";
-import { automatic, choose, plain } from "../pictures.ts";
+import { keptPicture } from "../key-types.ts";
+import { blurAllPicture } from "../pictures.ts";
 import { blurAllTitle } from "../titles.ts";
-import { answerLists, type KeySettings, showOnOff } from "./shared.ts";
+import { answerLists, type KeySettings, settle, showOnOff } from "./shared.ts";
 
 /**
  * One key for every Ramp Blur at once: a press blurs everything that has a
@@ -53,7 +54,9 @@ export class BlurAll extends SingletonAction<KeySettings> {
 	}
 
 	private async show(key: KeyAction<KeySettings>, settings: KeySettings): Promise<void> {
-		const picture = choose(settings.picture, "stagekit_ramp_blur") ?? automatic("stagekit_ramp_blur") ?? plain("switch");
+		const pick = (s: KeySettings) => blurAllPicture(keptPicture(s), s.look);
+		settings = await settle(key, "blurall", settings, (s) => pick(s).id);
+		const picture = pick(settings);
 		await showOnOff(key, picture, await this.anyOn(), settings.palette);
 		await key.setTitle(blurAllTitle(settings.press));
 	}

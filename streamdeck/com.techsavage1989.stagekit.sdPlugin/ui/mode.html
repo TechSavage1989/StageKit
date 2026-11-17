@@ -26,32 +26,70 @@
 				<option value="toggle">Toggle</option>
 			</sdpi-select>
 		</sdpi-item>
-		<sdpi-item label="Image">
-			<sdpi-select setting="picture" datasource="getPictures" default=""></sdpi-select>
-		</sdpi-item>
-		<sdpi-item label="Source type">
-			<sdpi-select setting="sourceType" default="">
-				<option value="">Automatic</option>
-				<option value="game">Game</option>
-				<option value="window">Window</option>
-				<option value="art_app">Art app</option>
-				<option value="code_editor">Code editor</option>
-				<option value="browser">Browser</option>
-				<option value="camera">Camera</option>
-				<option value="capture_card">Capture card</option>
-				<option value="display">Display</option>
-				<option value="phone">Phone</option>
-				<option value="tablet">Tablet</option>
-				<option value="chat">Chat</option>
-				<option value="music">Music</option>
-				<option value="alerts">Alerts</option>
-				<option value="title">Title / text</option>
-				<option value="image">Image</option>
-				<option value="video">Video</option>
-				<option value="starting">Starting</option>
-				<option value="brb">Be right back</option>
-				<option value="intermission">Intermission</option>
-				<option value="ending">Ending</option>
+		<sdpi-item label="Mode type" title="What the mode shows, for the key&#x27;s image. Automatic takes the Mode type set in OBS.">
+			<sdpi-select setting="sourceType" placeholder="Automatic (the mode&#x27;s type)">
+				<option value="auto">Automatic (the mode&#x27;s type)</option>
+				<optgroup label="Captures &amp; games">
+					<option value="game">Game</option>
+					<option value="retro">Retro game</option>
+					<option value="emulator">Emulator</option>
+					<option value="console">Console</option>
+					<option value="handheld">Handheld</option>
+					<option value="linked_handheld">Linked handheld screen</option>
+					<option value="capture_card">Capture card (internal)</option>
+					<option value="window">Window</option>
+					<option value="display">Display</option>
+					<option value="tablet">Tablet</option>
+				</optgroup>
+				<optgroup label="Apps">
+					<option value="art_app">Art app</option>
+					<option value="app_3d">3D app</option>
+					<option value="sculpting">Sculpting app</option>
+					<option value="cad">CAD app</option>
+					<option value="code_editor">Code editor</option>
+					<option value="office">Office / documents</option>
+					<option value="video_player">Video player</option>
+					<option value="reference">Reference board</option>
+				</optgroup>
+				<optgroup label="Cameras">
+					<option value="camera">Camera / webcam</option>
+				</optgroup>
+				<optgroup label="Overlays">
+					<option value="countdown">Countdown</option>
+				</optgroup>
+				<optgroup label="Status &amp; holding screens">
+					<option value="live">Live / on air</option>
+					<option value="recording">Recording</option>
+					<option value="paused">Paused</option>
+					<option value="muted">Muted</option>
+					<option value="offline">Offline</option>
+					<option value="privacy">Camera off</option>
+					<option value="raid">Raid / host</option>
+					<option value="starting">Starting soon</option>
+					<option value="brb">Be right back</option>
+					<option value="intermission">Intermission</option>
+					<option value="technical">Technical difficulties</option>
+					<option value="ending">Ending</option>
+				</optgroup>
+				<optgroup label="Layout markers">
+					<option value="column_chat">Chat column</option>
+					<option value="column_handheld">Handheld column</option>
+				</optgroup>
+				<optgroup label="Activities">
+					<option value="speedrun">Speedrun</option>
+					<option value="music_production">Music production</option>
+					<option value="cooking">Cooking</option>
+					<option value="irl">IRL / outdoors</option>
+					<option value="tutorial">Tutorial</option>
+					<option value="unboxing">Unboxing</option>
+					<option value="fitness">Fitness</option>
+					<option value="reading">Reading</option>
+					<option value="watch_party">Watch party</option>
+					<option value="charity">Charity</option>
+					<option value="just_chatting">Just chatting</option>
+					<option value="podcast">Podcast</option>
+					<option value="interview">Interview / guest</option>
+				</optgroup>
 			</sdpi-select>
 		</sdpi-item>
 		<sdpi-item label="Palette">

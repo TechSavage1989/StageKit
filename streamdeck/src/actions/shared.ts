@@ -6,7 +6,8 @@ import type { JsonValue } from "@elgato/utils";
 
 import { filterItems, sourceItems, targetItems } from "../kinds.ts";
 import { obs } from "../obs.ts";
-import { type Picture, pictureItems, stateFile } from "../pictures.ts";
+import { adoptOld, typeForKept } from "../key-types.ts";
+import { type Picture, stateFile } from "../pictures.ts";
 
 /**
  * Shows whether a two-state key is on: its marked pictures for both states,
@@ -27,19 +28,46 @@ export async function showOnOff(
 
 export { remembered, type Seen } from "../seen.ts";
 
+/**
+ * A key's settings from before beta156 brought up to date, once: the image
+ * chosen in the old Image list is set as the type that shows it, where one
+ * does (`resolve` is the key's own choice of picture), and kept aside
+ * otherwise (src/key-types.ts). Returns the settings to go on with.
+ */
+export async function settle(
+	key: { setSettings(settings: KeySettings): Promise<void> },
+	name: string,
+	settings: KeySettings,
+	resolve: (settings: KeySettings) => string | undefined,
+): Promise<KeySettings> {
+	if (typeof settings.picture !== "string") return settings;
+	const next = (typeForKept(name, settings, (s) => resolve(s as KeySettings)) ?? adoptOld(settings)) as KeySettings | undefined;
+	if (!next) return settings;
+	await key.setSettings(next);
+	return next;
+}
+
 export type KeySettings = {
 	/** The source and filter in one: what the keys for one feature choose from. */
 	target?: string;
 	source?: string;
 	filter?: string;
 	press?: "toggle" | "on" | "off";
-	/** A picture of the pack by name; empty for the one that fits the filter. */
+	/**
+	 * A picture of the pack by name, from the Image list before beta156: put
+	 * aside as `oldImage` (with `oldImageWhile`) and shown until a type list
+	 * is changed (src/key-types.ts).
+	 */
 	picture?: string;
 	/**
-	 * What the source the key acts on is ("game", "camera" ...; src/source-types.ts),
-	 * for its picture; empty for Automatic.
+	 * The key's type lists (src/key-types.ts): what the source it acts on is
+	 * ("game", "camera" ...), what the scene is ("gameplay" ...), and the
+	 * look of what it does (a blur style, a corner style, a position, a
+	 * capture type). Empty or "auto" for Automatic.
 	 */
 	sourceType?: string;
+	sceneType?: string;
+	look?: string;
 	/** The palette of this key's picture: mono unless another is chosen. */
 	palette?: string;
 	/** An arrange tool, for a Tool key. */
@@ -65,8 +93,7 @@ export type KeySettings = {
  * Answers the property inspector's lists (sdpi-components "datasource"):
  * `getSources` with the sources that have a filter of the wanted sort,
  * `getFilters` with the chosen source's filters of that sort, and
- * `getPictures` with the icon pack, and `getCaptures` with the Game and
- * Window Captures.
+ * `getCaptures` with the Game and Window Captures.
  */
 export async function answerLists(
 	payload: JsonValue,
@@ -74,10 +101,6 @@ export async function answerLists(
 	wanted: (kind: string) => boolean,
 ): Promise<void> {
 	const event = (payload as { event?: string } | null)?.event;
-	if (event === "getPictures") {
-		await streamDeck.ui.sendToPropertyInspector({ event, items: pictureItems() });
-		return;
-	}
 	if (event === "getTransitions") {
 		// "A fade" first, as everywhere in StageKit; then a cut; then the rest OBS has.
 		const names: Record<string, string> = {

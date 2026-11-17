@@ -12,6 +12,7 @@ import { obs } from "../obs.ts";
 import { optionPicture } from "../pictures.ts";
 import { optionTitle } from "../titles.ts";
 import { answerLists, type KeySettings, showOnOff } from "./shared.ts";
+import { keptPicture } from "../key-types.ts";
 
 /** The dock's switches a key can hold, by the names StageKit's requests use. */
 export const OPTIONS = ["snap", "guides", "limit", "slide", "everyScene", "keepShape"];
@@ -53,7 +54,7 @@ export class DockOption extends SingletonAction<KeySettings> {
 	}
 
 	private async show(key: KeyAction<KeySettings>, settings: KeySettings): Promise<void> {
-		const picture = optionPicture(settings.picture, settings.option);
+		const picture = optionPicture(keptPicture(settings), settings.option);
 		const options = await obs.stageKit("GetOptions");
 		await showOnOff(key, picture, options?.[settings.option ?? "snap"] === true, settings.palette);
 		await key.setTitle(optionTitle(settings.option, settings.press));

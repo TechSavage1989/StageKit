@@ -11,9 +11,9 @@ import type { JsonValue } from "@elgato/utils";
 import { afterPress, targetOf } from "../kinds.ts";
 import { obs } from "../obs.ts";
 import { chooseFor, plain } from "../pictures.ts";
-import { isSourceType } from "../source-types.ts";
+import { explicit, keptPicture } from "../key-types.ts";
 import { switchTitle } from "../titles.ts";
-import { answerLists, type KeySettings, remembered, showOnOff } from "./shared.ts";
+import { answerLists, type KeySettings, remembered, settle, showOnOff } from "./shared.ts";
 
 /**
  * A key that switches one StageKit filter on and off and shows which way it
@@ -23,6 +23,8 @@ import { answerLists, type KeySettings, remembered, showOnOff } from "./shared.t
  */
 export class FilterSwitch extends SingletonAction<KeySettings> {
 	override readonly manifestId: string;
+	/** The key's name in features.json ("blur", "shadow" ...), for its type lists. */
+	private readonly name: string;
 
 	constructor(
 		uuid: string,
@@ -30,6 +32,7 @@ export class FilterSwitch extends SingletonAction<KeySettings> {
 	) {
 		super();
 		this.manifestId = uuid;
+		this.name = uuid.slice(uuid.lastIndexOf(".") + 1);
 		// OBS says when a filter is switched, by this key or any other way.
 		obs.on("filter", (source: string, filter: string, enabled: boolean) => {
 			for (const key of this.actions) {
@@ -87,12 +90,14 @@ export class FilterSwitch extends SingletonAction<KeySettings> {
 		// hides it, left on Automatic; kept with the rest, for while OBS
 		// cannot be asked.)
 		const kindNow = now?.kind ?? (settings.seen as { kind?: string } | undefined)?.kind ?? "";
-		const wantsInput = kindNow === "stagekit_show_in_scenes" && !settings.picture && !isSourceType(settings.sourceType);
+		const wantsInput = kindNow === "stagekit_show_in_scenes" && !keptPicture(settings) && !explicit(settings.sourceType);
 		const inputKind = now && wantsInput ? await obs.inputKind(source) : undefined;
 		const seen = await remembered(key, settings, `${source}\n${filter}`, now ? { ...now, inputKind } : undefined);
 		const kind = seen?.kind ?? "";
-		const picture =
-			chooseFor(settings.picture, kind, seen?.settings, source, seen?.inputKind, settings.sourceType) ?? plain("switch");
+		const pick = (s: KeySettings) => chooseFor(keptPicture(s), kind, seen?.settings, source, seen?.inputKind, s) ?? plain("switch");
+		// (An image chosen before the type lists becomes the type that shows it.)
+		settings = await settle(key, this.name, seen ? { ...settings, seen } : settings, (s) => pick(s).id);
+		const picture = pick(settings);
 		await showOnOff(key, picture, seen?.enabled === true, settings.palette);
 		await key.setTitle(switchTitle(seen?.kind, settings.press));
 	}

@@ -12,7 +12,8 @@ import { targetOf } from "../kinds.ts";
 import { obs } from "../obs.ts";
 import { file, stepPicture } from "../pictures.ts";
 import { stepTitle } from "../titles.ts";
-import { answerLists, type KeySettings, showOnOff } from "./shared.ts";
+import { keptPicture } from "../key-types.ts";
+import { answerLists, type KeySettings, settle, showOnOff } from "./shared.ts";
 
 /**
  * A key for the hand controls of a Show Source in Use filter (on a scene) or
@@ -63,7 +64,9 @@ export class AppSwitch extends SingletonAction<KeySettings> {
 	}
 
 	private async show(key: KeyAction<KeySettings>, settings: KeySettings): Promise<void> {
-		const picture = stepPicture(settings.picture, settings.step, settings.sourceType);
+		const pick = (s: KeySettings) => stepPicture(keptPicture(s), s.step, s.sourceType);
+		settings = await settle(key, "appswitch", settings, (s) => pick(s).id);
+		const picture = pick(settings);
 		await key.setTitle(stepTitle(settings.step));
 		if (settings.step === "toggle" || settings.step === "hide") {
 			// Which way it is: on a manual window (Toggle), or the capture
