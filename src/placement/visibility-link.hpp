@@ -20,15 +20,16 @@ inline constexpr const char *kVisibilityLinkId = "stagekit_visibility_link";
 // "show only one of these" or "show and hide these together".
 void register_visibility_link();
 
-// True when an enabled Link Visibility in `scene` set to "Follow the first"
-// lists the item's source after its first entry, and every such filter that
-// lists it has its first source hidden: the item belongs to a mode that is
-// not showing. Show in Scenes passes over such an item when it shows things.
+// True when an enabled Link Visibility in `scene` set to "Follow sources"
+// has the item's source among its followers, and every such filter that
+// lists it has its lead sources saying hidden (none shown, or not all with
+// "All leads shown"; a filter saved without lead sources: its first entry
+// hidden): the item belongs to a mode that is not showing. Show in Scenes passes over such an item when it shows things.
 // Safe from any thread.
 bool link_visibility_holds_hidden(obs_source_t *scene, obs_sceneitem_t *item);
 
-// True while such a filter has not yet followed a change of its first
-// source: the items it leads are on their way to being shown or hidden.
+// True while such a filter has not yet followed a change of what its lead
+// sources say: the items it leads are on their way to being shown or hidden.
 // Show in Scenes' "Follow what is shown" does not read the switch meanwhile.
 // Safe from any thread.
 bool link_visibility_settling(obs_source_t *scene, obs_sceneitem_t *item);

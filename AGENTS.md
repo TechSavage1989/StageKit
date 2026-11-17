@@ -554,7 +554,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   BRB, and Stream ending are all affectively the same design. Can this also be combine into a
   single scene"): `Standby` (Holding-Scene until beta154) holds Stream Start, Be Right Back, Stream Ending and (since beta153)
   Intermission as modes, each a title group plus extras; Link Visibility-Titles (only one) over
-  the titles, one Link Visibility *Follow the first source* per mode (first a *Together*, which a
+  the titles, one Link Visibility *Follow sources* (then called *Follow the first source*) per mode (first a *Together*, which a
   camera switch showing one member would flip), a Show in Scenes-Mode (`follow`) on each title.
   One Link Visibility reacts to another's change because each passes over only what it does on
   its own thread while acting (`applying_`). Written by `scripts/merge-holding-scenes.py`; the GBA
@@ -563,27 +563,45 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   *Column: GBA*) because every visible item of a column is worked by the camera or chat switch.
   Both driven headless with the plugin (every mode and column, camera and chat off and on, two
   keys at once, off screen, nothing hidden left in use).
-- **Link Visibility's *Follow the first source*** (mode 2, `LinkMode::Follow`; 2026-11-17, the
-  owner: "can the intermission screen be merged with the other hold scenes? also the GBA scene?").
-  The first entry of `items` leads: when its state changes (the tick compares it with the state
-  last followed, `acted_lead_`; the state found at the first look after start, enable or loading
-  is taken as it is) the others are shown with it, except one a Show in Scenes holds off
+- **Link Visibility's *Follow sources*** (mode 2, `LinkMode::Follow`, saved as 2; first *Follow the
+  first source*, 2026-11-17, the owner: "can the intermission screen be merged with the other hold
+  scenes? also the GBA scene?"; several leads since beta169, the owner, of five such filters on
+  Component-Capture-Scene, one per capture, each followed by *Column: Chat*: "I have all these
+  filters effectively just to make the Column chat follow all my main live sources. I think the
+  follow first source option should be changed to a follow source option, where one or more
+  sources can be added, then the linked sources can be added"). **Lead sources** (`leads`, a
+  PickList) lead; `items` (shown as *Following sources* in this mode) follow, any lead among them
+  left out. **With `leads` empty, the first entry of `items` is the one lead** (`split_follow`):
+  every filter saved before keeps its meaning, and nothing rewrites its settings; the window's
+  *Make the first a lead* (`take_first`, shown only then) moves it on a press. What the leads say
+  is `leads_say_shown`: *Any lead is shown* (`lead_rule` 0, the default; append-only) is shown
+  while one is, hidden once all are, so going from one capture to another, in either order within
+  a frame, never hides the followers in between; *All leads are shown* (1) needs every lead found
+  in the scene. Leads not in the scene are passed over; none there leads nothing. When that state
+  changes (the tick compares it with the state last followed, `acted_lead_`; the state found at
+  the first look after start, enable, loading or a change of the lists or the rule is taken as it
+  is) the followers are shown, except one a Show in Scenes holds off
   (`show_in_scenes_holds_off`: a switch covering that source in that scene whose state means
-  hidden, the same rule as `apply()`, bring-along items counted), or hidden with it. While the
-  leader is hidden, every tick, a listed item shown by anything else is hidden again. A change to
-  another item moves nothing; changes from *Also in other scenes* are not followed in this mode,
-  only the leader's state is sent there. Show in Scenes asks `mode_holds_hidden`
+  hidden, the same rule as `apply()`, bring-along items counted), or hidden. While the leads say
+  hidden, every tick, a follower shown by anything else is hidden again. A change to a follower
+  moves nothing; changes from *Also in other scenes* are not followed in this mode, only the
+  leads' state is sent there. Every listed source, leads too, is watched, locked by *Lock hidden
+  sources* and offered under *Settings for*. Show in Scenes asks `mode_holds_hidden`
   (`src/common/holds-hidden.*`, which asks every registered kind; this one registers
   `link_visibility_holds_hidden`: every
-  enabled mode-2 link of that scene that lists the source after its first entry has its leader
+  enabled mode-2 link of that scene that has the source among its followers has its leads saying
   hidden) and passes over such an item when showing, never when hiding, and leaves it out of
-  *Follow what is shown*; `mode_settling` (here `link_visibility_settling`: a leader not yet followed) makes that look
+  *Follow what is shown*; `mode_settling` (here `link_visibility_settling`: a leads' state not yet followed) makes that look
   wait, or a camera switch read off for the tick between a mode change and its extras. Both
   filters keep a registry of live instances (`g_links`, `g_switches`) and copy what they need out
   under it: no lock is held while the other filter is asked, which both do from their ticks.
   This is what lets the camera switch (every scene) live with modes holding camera views. Tested
-  in `[modes in one scene: follow the first source, and a camera switch]`, both filter orders,
-  off screen too. **Any** Show in Scenes covering a source counts, even one with `follow` off and
+  in `[modes in one scene: follow the first source, and a camera switch]` (filters saved the old
+  way), both filter orders, off screen too, and in `[link visibility: follow sources, several leads
+  and their followers]` (alone: `STAGEKIT_TEST_ONLY_LINK_FOLLOW`; five leads, a chat follower, a
+  capture changed by its Show in Scenes key with *Show only one* and Morph, two changes in one
+  frame both ways through a tick callback, *All leads are shown*, a filter saved without leads, the
+  window; both orders, on and off screen, with sound as in OBS, so it runs last). **Any** Show in Scenes covering a source counts, even one with `follow` off and
   a stale state: the owner's old *Show in Scenes (StageKit)* on DSLR Component lists DSLR, and if
   it is ever off no mode shows the camera. A Standby stand-in is not shown for an item a mode holds
   hidden (`stands_in` in `standby.cpp`): the owner's DSLR, in the Intermission mode, had its
@@ -2075,8 +2093,8 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     the scenes compares it and is skipped when nothing changed, with a slow look anyway:
     Show in Scenes' *Follow what is shown* (still on its quarter second, skipped unless the revision,
     a press, its settings or loading changed, or the last look found a mode settling; a look every
-    2 s anyway), Link Visibility's *Follow the first source* (every tick as before when one of its
-    items changed or no state is followed yet, else every fifteenth tick), a shadow's scale check
+    2 s anyway), Link Visibility's *Follow sources* (every tick as before when one of its
+    items or leads changed or no state is followed yet, else every fifteenth tick), a shadow's scale check
     (every 20 ticks only when the revision, the scene on screen, the source's size or its settings
     changed, else every 120) and its *Keep it on screen* (also while an item has not been still for
     0.4 s yet), and Ambient Background's sources (10 Hz only on a change of revision, scene on

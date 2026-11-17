@@ -15,13 +15,18 @@ the Free Software Foundation; either version 2 of the License, or
 //                   per console, one of several overlays)
 //   Together        showing or hiding one does the same to the rest (a
 //                   camera with its frame and its label)
-//   Follow the first  the first item listed leads: shown, the others are
-//                   shown with it (but not one a Show in Scenes switch holds
-//                   off: a camera switched off); hidden, they are hidden and
-//                   kept hidden. A change to any other item moves nothing
-//                   else. One scene with several modes (a title and its
-//                   extras each) uses this, so a camera switch that acts in
-//                   every scene shows the camera only in the mode showing.
+//   Follow sources  one or more lead sources lead the listed items (the
+//                   followers): while any lead is shown (or, by choice, all
+//                   of them) the followers are shown (but not one a Show in
+//                   Scenes switch holds off: a camera switched off); once the
+//                   leads say hidden, they are hidden and kept hidden. A
+//                   change to a follower moves nothing else. One scene with
+//                   several modes (a title and its extras each) uses this, so
+//                   a camera switch that acts in every scene shows the camera
+//                   only in the mode showing; so does a chat column that
+//                   follows every capture of a layout scene. Saved without
+//                   lead sources (the first build, "Follow the first
+//                   source"), the first listed item is the one lead.
 //
 // "Lock hidden sources" locks each listed item while it is hidden and unlocks
 // it when it is shown: OBS's preview lets a click select a hidden item, and
@@ -68,7 +73,13 @@ namespace {
 enum class LinkMode : int {
 	OnlyOne = 0, // saved: append only
 	Together = 1,
-	Follow = 2, // the first listed leads
+	Follow = 2, // the lead sources lead the rest (no lead sources: the first listed)
+};
+
+// Follow sources: when the followers show. Saved: append only.
+enum class LeadRule : int {
+	Any = 0, // any lead shown
+	All = 1, // every lead shown
 };
 
 class VisibilityLink;
@@ -79,12 +90,50 @@ class VisibilityLink;
 std::mutex g_links_mutex;
 std::vector<VisibilityLink *> g_links;
 
-// What a "Follow the first" filter says, copied out under the locks.
+// What a "Follow sources" filter says, copied out under the locks.
 struct FollowLook {
-	std::vector<std::string> names; // the first is the leader
-	bool acted_valid = false;       // it has looked at its leader since it last started
-	bool acted_lead = false;        // the leader's state it has followed
+	std::vector<std::string> leads, followers;
+	LeadRule rule = LeadRule::Any;
+	bool acted_valid = false; // it has looked at its leads since it last started
+	bool acted_lead = false;  // the leads' state it has followed
 };
+
+// What the leads of a "Follow sources" filter say in `scene`: shown or not,
+// by the rule. `found` is false when none of them is in the scene (then
+// they lead nothing).
+bool leads_say_shown(obs_source_t *scene, const std::vector<std::string> &leads, LeadRule rule, bool &found)
+{
+	size_t there = 0, on = 0;
+	for (const std::string &lead : leads) {
+		obs_sceneitem_t *item = find_item(scene, lead);
+		if (!item)
+			continue;
+		there++;
+		if (obs_sceneitem_visible(item))
+			on++;
+	}
+	found = there > 0;
+	return rule == LeadRule::All ? there > 0 && on == there : on > 0;
+}
+
+// Who leads and who follows, in mode 2. With lead sources listed, they lead
+// and the listed items (any lead left out) follow; saved without any, the
+// first listed item leads the rest, as "Follow the first source" did.
+void split_follow(const std::vector<std::string> &items, const std::vector<std::string> &lead_list,
+		  std::vector<std::string> &leads, std::vector<std::string> &followers)
+{
+	leads.clear();
+	followers.clear();
+	if (!lead_list.empty()) {
+		leads = lead_list;
+		for (const std::string &name : items)
+			if (std::find(leads.begin(), leads.end(), name) == leads.end())
+				followers.push_back(name);
+	} else if (items.size() >= 2) {
+		leads.push_back(items[0]);
+		followers.assign(items.begin() + 1, items.end());
+	}
+}
 
 std::vector<FollowLook> follow_links_in(obs_source_t *scene);
 
@@ -120,6 +169,8 @@ class VisibilityLink {
 	// strings).
 	struct Config {
 		std::vector<std::string> names, elsewhere;
+		std::vector<std::string> leads, followers; // Follow sources
+		LeadRule rule = LeadRule::Any;
 		Changes how;
 	};
 
@@ -154,9 +205,11 @@ public:
 		if (!scene || parent_ != scene || !obs_source_enabled(source_))
 			return false;
 		std::lock_guard lock(mutex_);
-		if (mode_ != LinkMode::Follow || names_.size() < 2)
+		if (mode_ != LinkMode::Follow || leads_.empty() || followers_.empty())
 			return false;
-		look.names = names_;
+		look.leads = leads_;
+		look.followers = followers_;
+		look.rule = rule_;
 		look.acted_valid = acted_valid_;
 		look.acted_lead = acted_lead_;
 		return true;
@@ -164,9 +217,11 @@ public:
 
 	void update(obs_data_t *settings)
 	{
-		const std::vector<std::string> names = names_in(settings);
+		const std::vector<std::string> items = names_in(settings);
+		const std::vector<std::string> lead_list = pick_list_read(settings, "leads", false);
 		const std::vector<std::string> elsewhere = pick_list_read(settings, "elsewhere", false);
 		const bool lock_hidden = obs_data_get_bool(settings, "lock_hidden");
+		const auto rule = static_cast<LeadRule>(std::clamp((int)obs_data_get_int(settings, "lead_rule"), 0, 1));
 		std::lock_guard lock(mutex_);
 		// Switched on (or loaded with it on): the listed items that are hidden
 		// now are locked, as soon as that may be done.
@@ -176,20 +231,34 @@ public:
 		elsewhere_ = elsewhere;
 		watch_timer_ = 0.0;
 		const auto mode = static_cast<LinkMode>(std::clamp((int)obs_data_get_int(settings, "mode"), 0, 2));
-		// Another leader perhaps, or back from another mode: look afresh.
-		if (names != names_ || mode != mode_)
+		// Follow sources: who leads and who follows. Every listed source,
+		// leads first, is what is watched, locked and given its own change.
+		std::vector<std::string> leads, followers, names = items;
+		if (mode == LinkMode::Follow) {
+			split_follow(items, lead_list, leads, followers);
+			if (!lead_list.empty()) {
+				names = leads;
+				names.insert(names.end(), followers.begin(), followers.end());
+			}
+		}
+		// Other leads perhaps, or back from another mode: look afresh.
+		if (names != names_ || mode != mode_ || leads != leads_ || followers != followers_ || rule != rule_)
 			acted_valid_ = false;
 		mode_ = mode;
+		leads_ = leads;
+		followers_ = followers;
+		rule_ = rule;
 		// How items change: the usual way, and each listed source's own
 		// (*Settings for*). A filter saved with the plain two controls
 		// keeps them under the same names: it reads as it did.
 		change_.usual = item_change_read(settings);
 		change_.own.clear();
-		for (const std::vector<std::string> *list : {&names, &elsewhere})
+		for (const std::vector<std::string> *list : {&std::as_const(names), &elsewhere})
 			for (const std::string &name : *list)
 				change_.own[name] = item_change_read(settings, name.c_str());
 		names_ = names;
-		config_ = std::make_shared<const Config>(Config{names_, elsewhere_, change_});
+		config_ =
+			std::make_shared<const Config>(Config{names_, elsewhere_, leads_, followers_, rule_, change_});
 	}
 
 	void attach(obs_source_t *parent)
@@ -346,7 +415,7 @@ public:
 			follow_rev_ = rev;
 			count_look(Look::LinkFollow);
 			applying_ = std::this_thread::get_id();
-			follow_first(names, elsewhere, changes, how, lock_as_shown);
+			follow_leads(*config, changes, lock_as_shown);
 			applying_ = std::thread::id();
 			return;
 		}
@@ -398,7 +467,7 @@ public:
 	}
 
 	// Shows or hides the sources followed into the other scenes, groups
-	// included: as `changed` was (Together, Follow the first), or, for
+	// included: as `changed` was (Together, Follow sources), or, for
 	// Show only one, all but the one shown.
 	void follow_elsewhere(const std::vector<std::string> &elsewhere, const std::string &changed,
 			      const Changes &change, bool only_one, bool visible)
@@ -443,23 +512,23 @@ public:
 			&scenes);
 	}
 
-	// Follow the first: the leader's state is followed once each time it
-	// changes, and while it is hidden none of the others may show.
-	void follow_first(const std::vector<std::string> &names, const std::vector<std::string> &elsewhere,
-			  const std::vector<Change> &changes, const Changes &change,
+	// Follow sources: the leads' state is followed once each time it
+	// changes, and while they say hidden none of the followers may show.
+	void follow_leads(const Config &config, const std::vector<Change> &changes,
 			  const std::function<void(const std::string &)> &lock_as_shown)
 	{
 		for (const Change &c : changes)
 			if (c.own)
 				lock_as_shown(c.name);
-		obs_sceneitem_t *leader = names.size() >= 2 ? find_item(parent_, names[0]) : nullptr;
+		bool found = false;
+		const bool lead_on = !config.leads.empty() && !config.followers.empty() &&
+				     leads_say_shown(parent_, config.leads, config.rule, found);
 		// (Not while OBS loads its scenes: only some have their items yet.)
-		if (!leader || !scenes_loaded()) {
+		if (!found || config.followers.empty() || !scenes_loaded()) {
 			std::lock_guard lock(mutex_);
 			acted_valid_ = false;
 			return;
 		}
-		const bool lead_on = obs_sceneitem_visible(leader);
 		bool valid, acted;
 		{
 			std::lock_guard lock(mutex_);
@@ -469,27 +538,27 @@ public:
 		// The state found at the first look is taken as it is: the others
 		// are as they were left (a camera hidden by hand stays hidden).
 		const bool act = valid && acted != lead_on;
-		for (size_t i = 1; i < names.size(); i++) {
-			obs_sceneitem_t *item = find_item(parent_, names[i]);
-			if (!item || item == leader)
+		for (const std::string &name : config.followers) {
+			obs_sceneitem_t *item = find_item(parent_, name);
+			if (!item)
 				continue;
 			const bool shown = obs_sceneitem_visible(item);
 			bool want = shown;
 			if (act && lead_on)
-				// Shown with the leader, unless a switch holds it off.
+				// Shown with the leads, unless a switch holds it off.
 				want = shown || !show_in_scenes_holds_off(parent_, obs_sceneitem_get_source(item));
 			else if (!lead_on && shown)
-				// Hidden with the leader, and hidden again if something
+				// Hidden with the leads, and hidden again if something
 				// shows it meanwhile; unless another mode showing has it.
 				want = !link_visibility_holds_hidden(parent_, item);
 			if (want == shown)
 				continue;
-			apply_item_change(item, change.of(names[i]), parent_);
+			apply_item_change(item, config.how.of(name), parent_);
 			set_item_visible(item, want);
-			lock_as_shown(names[i]);
+			lock_as_shown(name);
 		}
-		if (act && !elsewhere.empty())
-			follow_elsewhere(elsewhere, names[0], change, false, lead_on);
+		if (act && !config.elsewhere.empty())
+			follow_elsewhere(config.elsewhere, config.leads[0], config.how, false, lead_on);
 		std::lock_guard lock(mutex_);
 		// Another state followed: the other links and switches that ask
 		// what this one holds hidden look again.
@@ -553,21 +622,76 @@ private:
 	std::shared_ptr<const Config> config_;
 	LinkMode mode_ = LinkMode::OnlyOne;
 	std::vector<std::string> names_, elsewhere_;
+	std::vector<std::string> leads_, followers_; // Follow sources: who leads, who follows
+	LeadRule rule_ = LeadRule::Any;
 	std::vector<obs_weak_source_t *> watched_; // the other scenes listened to
 	double watch_timer_ = 0.0;
 	std::vector<Change> pending_;
-	bool acted_valid_ = false;                // Follow the first: the leader has been looked at
-	bool acted_lead_ = false;                 // and this is the state of it last followed
+	bool acted_valid_ = false;                // Follow sources: the leads have been looked at
+	bool acted_lead_ = false;                 // and this is the state of them last followed
 	bool lock_hidden_ = false;                // lock the listed items while they are hidden
 	bool lock_sweep_ = false;                 // the option has just been switched on
 	bool sweep_due_ = false;                  // the hidden ones are still to be locked (the tick's own)
 	bool was_on_ = false;                     // the filter was enabled at its last tick
 	double stale_timer_ = 0.0;                // until the next look for transitions left under way
 	bool staggered_ = false;                  // the timers have been given their phase
-	uint64_t follow_rev_ = 0;                 // Follow the first: scene_revision() at the last look
+	uint64_t follow_rev_ = 0;                 // Follow sources: scene_revision() at the last look
 	int follow_skip_ = 0;                     // and ticks until a look comes anyway
 	std::atomic<std::thread::id> applying_{}; // the thread acting for the filter, while it does
 };
+
+// Follow sources' controls are shown in that mode only, and the list of
+// linked items is called what it is there: the sources that follow.
+void show_follow_controls(obs_properties_t *props, obs_data_t *settings)
+{
+	const bool follow = obs_data_get_int(settings, "mode") == (int)LinkMode::Follow;
+	const bool no_leads = pick_list_read(settings, "leads", false).empty();
+	if (obs_property_t *leads = obs_properties_get(props, "leads|alist"))
+		obs_property_set_visible(leads, follow);
+	if (obs_property_t *rule = obs_properties_get(props, "lead_rule"))
+		obs_property_set_visible(rule, follow);
+	// Saved without lead sources: the first listed leads. Offered to be
+	// made a lead source; nothing is rewritten unasked.
+	if (obs_property_t *take = obs_properties_get(props, "take_first"))
+		obs_property_set_visible(take, follow && no_leads && names_in(settings).size() >= 2);
+	if (obs_property_t *items = obs_properties_get(props, "items|alist"))
+		obs_property_set_description(items, obs_module_text(follow ? "Link.Following" : "Link.Items"));
+}
+
+bool mode_modified(obs_properties_t *props, obs_property_t *, obs_data_t *settings)
+{
+	show_follow_controls(props, settings);
+	return true;
+}
+
+// A list of this kind's was changed in its window.
+void lists_changed(obs_properties_t *top, obs_source_t *, obs_data_t *settings)
+{
+	show_follow_controls(top, settings);
+}
+
+// "Make the first a lead source": the first listed item goes to Lead
+// sources, which leads exactly as before.
+bool take_first_clicked(obs_properties_t *props, obs_property_t *, void *data)
+{
+	auto *self = static_cast<VisibilityLink *>(data);
+	obs_source_t *owner = self ? self->source() : nullptr;
+	if (!owner)
+		return false;
+	obs_data_t *settings = obs_source_get_settings(owner);
+	std::vector<std::string> items = names_in(settings);
+	if (pick_list_read(settings, "leads", false).empty() && items.size() >= 2) {
+		pick_list_write(settings, "leads", false, {items[0]});
+		items.erase(items.begin());
+		pick_list_write(settings, "items", false, items);
+		obs_source_update(owner, settings);
+		pick_list_refresh(props, owner, "leads", false);
+		pick_list_refresh(props, owner, "items", false);
+	}
+	show_follow_controls(props, settings);
+	obs_data_release(settings);
+	return true;
+}
 
 obs_properties_t *get_properties(void *data)
 {
@@ -579,11 +703,32 @@ obs_properties_t *get_properties(void *data)
 	obs_property_list_add_int(mode, obs_module_text("Link.Mode.Together"), (int)LinkMode::Together);
 	obs_property_list_add_int(mode, obs_module_text("Link.Mode.Follow"), (int)LinkMode::Follow);
 	obs_property_set_long_description(mode, obs_module_text("Link.Mode.Tip"));
+	obs_property_set_modified_callback(mode, mode_modified);
+
+	// Follow sources: the sources that lead, and when the rest show.
+	PickList leads;
+	leads.setting = "leads";
+	leads.title = "Link.Leads";
+	leads.add = "Link.Leads.Add";
+	leads.tip = "Link.Leads.Tip";
+	leads.choices = [self](std::vector<std::string> &names) {
+		scene_item_names(self ? self->parent() : nullptr, names);
+	};
+	pick_list_add(props, self ? self->source() : nullptr, leads);
+	obs_property_t *rule = obs_properties_add_list(props, "lead_rule", obs_module_text("Link.LeadRule"),
+						       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+	obs_property_list_add_int(rule, obs_module_text("Link.LeadRule.Any"), (int)LeadRule::Any);
+	obs_property_list_add_int(rule, obs_module_text("Link.LeadRule.All"), (int)LeadRule::All);
+	obs_property_set_long_description(rule, obs_module_text("Link.LeadRule.Tip"));
+	obs_property_t *take = obs_properties_add_button2(props, "take_first", obs_module_text("Link.TakeFirst"),
+							  take_first_clicked, self);
+	obs_property_set_long_description(take, obs_module_text("Link.TakeFirst.Tip"));
 
 	PickList items;
 	items.setting = "items";
 	items.title = "Link.Items";
 	items.add = "List.AddItem";
+	items.tip = "Link.Items.Tip";
 	items.choices = [self](std::vector<std::string> &names) {
 		scene_item_names(self ? self->parent() : nullptr, names);
 	};
@@ -610,11 +755,16 @@ obs_properties_t *get_properties(void *data)
 
 	// The fuller Show/Hide transition, with Settings for each source of
 	// both lists.
-	add_item_change_properties(props, self ? self->source() : nullptr, "items,elsewhere");
+	add_item_change_properties(props, self ? self->source() : nullptr, "leads,items,elsewhere");
 	obs_property_t *lock_hidden = obs_properties_add_bool(props, "lock_hidden", obs_module_text("Link.LockHidden"));
 	obs_property_set_long_description(lock_hidden, obs_module_text("Link.LockHidden.Tip"));
 	obs_property_t *help = obs_properties_add_text(props, "help", obs_module_text("Link.Help"), OBS_TEXT_INFO);
 	obs_property_text_set_info_word_wrap(help, true);
+	if (self) {
+		obs_data_t *settings = obs_source_get_settings(self->source());
+		show_follow_controls(props, settings);
+		obs_data_release(settings);
+	}
 	return props;
 }
 
@@ -632,7 +782,7 @@ std::vector<FollowLook> follow_links_in(obs_source_t *scene)
 
 bool is_follower(const FollowLook &look, const char *name)
 {
-	return name && std::find(look.names.begin() + 1, look.names.end(), name) != look.names.end();
+	return name && std::find(look.followers.begin(), look.followers.end(), name) != look.followers.end();
 }
 
 } // namespace
@@ -651,10 +801,11 @@ bool link_visibility_holds_hidden(obs_source_t *scene, obs_sceneitem_t *item)
 		// the scene, not another copy or one inside a group.)
 		if (find_item(scene, name) != item)
 			continue;
-		obs_sceneitem_t *leader = find_item(scene, look.names[0]);
-		if (!leader)
-			continue; // a mode without its leader leads nothing
-		if (obs_sceneitem_visible(leader))
+		bool found = false;
+		const bool on = leads_say_shown(scene, look.leads, look.rule, found);
+		if (!found)
+			continue; // a mode without its leads leads nothing
+		if (on)
 			return false; // a mode that is showing has it
 		held = true;
 	}
@@ -669,8 +820,9 @@ bool link_visibility_settling(obs_source_t *scene, obs_sceneitem_t *item)
 	for (const FollowLook &look : follow_links_in(scene)) {
 		if (!look.acted_valid || !is_follower(look, name))
 			continue;
-		obs_sceneitem_t *leader = find_item(scene, look.names[0]);
-		if (leader && obs_sceneitem_visible(leader) != look.acted_lead)
+		bool found = false;
+		const bool on = leads_say_shown(scene, look.leads, look.rule, found);
+		if (found && on != look.acted_lead)
 			return true;
 	}
 	return false;
@@ -697,6 +849,7 @@ void register_visibility_link()
 	info.get_defaults = [](obs_data_t *settings) {
 		obs_data_set_default_int(settings, "mode", (int)LinkMode::OnlyOne);
 		obs_data_set_default_bool(settings, "lock_hidden", false);
+		obs_data_set_default_int(settings, "lead_rule", (int)LeadRule::Any);
 		item_change_defaults(settings);
 	};
 	info.get_properties = get_properties;
@@ -714,7 +867,8 @@ void register_visibility_link()
 		static_cast<VisibilityLink *>(data)->detach();
 	};
 	register_timed(&info);
-	// Its "Follow the first source" modes hold the sources of the modes not
+	pick_list_on_change_for(kVisibilityLinkId, lists_changed);
+	// Its "Follow sources" modes hold the sources of the modes not
 	// showing hidden, for every filter that shows things.
 	holds_hidden_register(link_visibility_holds_hidden, link_visibility_settling);
 }
