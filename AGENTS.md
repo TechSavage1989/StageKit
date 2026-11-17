@@ -1478,6 +1478,44 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   `src/plugin-main.cpp` (includes and registration), `CMakeLists.txt`, `data/locale/en-US.ini`,
   `tests/ambient-test.cpp`, `README.md` and here; write only inside your own. `tests/run-tests.sh`
   stops on a locale key used twice and on a failed build.
+<!-- ==== scene-filters:all-sources ==== -->
+- **Every scene filter's *Sources covered* starts with *All sources*** (2026-11-17; the owner: "the
+  scene filters must have an all sources option"). The saved numbers are append-only and the list
+  shows *All sources* first whatever its number: Scene Transitions `cover` (0 All sources, 1 Chosen
+  sources), Scene Fit `which` (0 Chosen sources, its *Fitted sources*; 1 All sources), Scene Standby
+  `which` (0 Every capture, 1 Chosen sources, 2 All sources), Scene Corners `which` (0 All but the
+  background, 1 Chosen sources, 2 All sources), Scene Shadow `which` (0 All sources, 1 Chosen
+  sources, listed in `shadow_sources`). **No default was changed**: OBS saves no value left on its
+  default, so a filter saved before reads the default, and a new default would change it. A new
+  filter therefore starts where an old one was: All sources for Transitions and Shadow, Every
+  capture, All but the background, and Chosen sources for Fit (fitting every source the moment the
+  filter is added would move and resize the whole scene). *All sources* is the items straight in
+  the scene, a group counting as one (Standby opens groups instead and covers no group or nested
+  scene: a scene is never empty), never the Morph layer, a stand-in or a private source, less
+  *Ignored sources* (`skip`; Transitions' `except`, Shadow's `shadow_skip`), counted afresh at each
+  look so a source added later joins. Scene Fit's unlisted entries (`unlisted_sources`, the window
+  and the tick both use it; counted every `kLookForSources`, 0.5 s) come after the listed ones,
+  top of the scene first, with `fit_entry_defaults` and a group under *Settings for* like a listed
+  one. Left out there: `skip`, a source an enabled Fit to Space or another enabled Scene Fit lists,
+  everything when an earlier enabled Scene Fit of the scene has All sources (two would fight), a
+  source with no size yet (until it has one), and one covering nine tenths of the canvas
+  (`screen_share`) unless `fit|<name>|orig_item` names it: fitted once, it stays (the key is saved,
+  so it holds over a restart; a game fitted to the screen less a 30 px gap covers 0.91 of it and
+  would otherwise drop out at the next load). A source not fitted yet whose box centre lies inside
+  a fitted entry's box (`pos` + bounds) waits too: its place inside that space would make the
+  engine take the same space for it (what the place lies inside is not in the way) and the two
+  overlapped for good; meanwhile it is an obstacle, the other makes room, and it joins once its
+  place is clear. And with All sources every entry is `set_claims_firm`: in `FitEngine::solve` a
+  place lying inside another fit's claim (`said_`) is first moved to the nearest point clear of
+  it (the gap beyond its edge, on the screen) before `free_space` is asked. Without it a newcomer
+  and the chat box in the test, each resized, ended in one shared space for good, each place
+  inside the other's claim. Only an All-sources Scene Fit sets it, so Fit to Space and a Scene
+  Fit on Chosen sources solve as before. A full-screen source is no obstacle anyway
+  (`free_space` passes over what the place lies inside). A rename moves an unlisted source's
+  `fit|<name>|` keys too. **Scene Modes has no All sources, on purpose**: a source in no mode is
+  never touched, and a mode of every source (or of every source in no other mode) would hide the
+  background, the overlays and every source added later whenever another mode came on.
+<!-- ==== end scene-filters:all-sources ==== -->
 <!-- ==== scene-filters:modes ==== -->
 - **Scene Modes** (`stagekit_scene_modes`, `src/placement/scene-modes.*`; beta155). The owner:
   "scene modes should not have specific names built in. instead scene modes should be able to be
@@ -1518,8 +1556,8 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   `scenes_loaded()`, and only where `item_change_matches` says the item differs: a collection
   loaded again writes nothing (a test saves and loads a scene and counts writes through the
   `stagekit_scene_transitions_writes` proc). It passes over owned items
-  (`item_transitions_owned`), private sources (stand-ins, the item Morph's layer), *Leave these
-  alone*, items an enabled Show/Hide Animation names and, unless `in_groups`, items in groups.
+  (`item_transitions_owned`), private sources (stand-ins, the item Morph's layer), *Ignored
+  sources* (`except`; *Leave these alone* before), items an enabled Show/Hide Animation names and, unless `in_groups`, items in groups.
   Items are known by id in their scene or group (`Key`), never held. The first enabled one in a
   scene's filter list is the one used. **`kTransitionScene` ("As the scene sets") is resolved
   only in `resolve_item_change`** (`src/common/item-transition.*`), through the lookup the filter
@@ -1559,7 +1597,8 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   and `..._share_scenes` (`fit_list_prefix`): a PickList's setting cannot hold a bar and a
   source's name may. The overlap switch `skip_fill_on` is one for the whole Scene Fit, so the
   *Fit to Space Overlap* key works on it. Every entry always carries its own settings (seeded by
-  `fit_entry_defaults`, gap 30); there is no "every source" set. The window has a group per entry
+  `fit_entry_defaults`, gap 30); with *All sources* the unlisted sources are entries of the same
+  kind (see the all-sources entry above). The window has a group per entry
   (`fit|<source>|g`, controls from the shared `fit_add_controls`), only the one chosen in
   *Settings for* (`fit_for`) shown, kept in step with the list by `pick_list_on_change_for`.
   *Take over Fit to Space* (`take_over`) copies each enabled Fit to Space's effective settings
@@ -1606,9 +1645,11 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   now (it never had a stand-in). The change given to each scene is remembered as text (`applied_`) so
   a change made in the Scene Standby is applied again. `sync_stand_ins` resolves *As the scene sets*
   (`resolve_item_change`, in the item's scene) before the change is swapped for the twin.
-- **Scene Corners leaves the background out by size alone** (`screen_share`: bounds, or source size
+- **Scene Corners leaves the background out by size alone** (`screen_share` in
+  `src/common/scene-util.hpp`, which Scene Fit uses too: bounds, or source size
   times scale less crop; no `refresh_item`, which would mark the scene changed every second): items
-  from the bottom while each covers 90 % of the canvas. Corners & Edges' look controls and defaults are
+  from the bottom while each covers 90 % of the canvas, with *All but the background* only (*All
+  sources* covers the background too). Corners & Edges' look controls and defaults are
   shared (`corners_add_look_properties`, `corners_look_defaults`), so the keys are the same.
 <!-- ==== end scene-filters:standby-corners ==== -->
 <!-- ==== scene-filters:shadow ==== -->

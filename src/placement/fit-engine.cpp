@@ -1209,7 +1209,47 @@ bool FitEngine::solve(Prep &p, float seconds, bool first_pass, bool &moved)
 		for (size_t i = 0; i < boxes_.size(); i++)
 			if (i >= passed_.size() || !passed_[i])
 				firm.push_back(boxes_[i]);
-		Box goal = free_space(within, s.anchor_x, s.anchor_y, firm, s.margin, shape_used_, s.tolerance);
+		// Where the space is looked for round. What the place lies inside
+		// is not in the way (a background, a frame). With All sources in a
+		// Scene Fit every source is fitted, and two resized ones whose
+		// places lay inside each other's claims took the same space for
+		// good: there the place is first taken out of any other fit's
+		// claim, to the nearest point clear of it.
+		double ax = s.anchor_x, ay = s.anchor_y;
+		if (claims_firm_) {
+			for (int round = 0; round < 4; round++) {
+				bool inside = false;
+				for (size_t i = 0; i < boxes_.size() && i < said_.size(); i++) {
+					const Box &b = boxes_[i];
+					if (!said_[i] || !(ax > b.x && ax < b.x + b.w && ay > b.y && ay < b.y + b.h))
+						continue;
+					inside = true;
+					const double out = s.margin + 1.0;
+					const double l = b.x - out, r = b.x + b.w + out, t = b.y - out,
+						     d = b.y + b.h + out;
+					struct Way {
+						double x, y;
+					};
+					const Way ways[] = {{l, ay}, {r, ay}, {ax, t}, {ax, d}};
+					double best = 1e18;
+					Way to = ways[0];
+					for (const Way &w : ways) {
+						const bool on = w.x >= within.x && w.x <= within.x + within.w &&
+								w.y >= within.y && w.y <= within.y + within.h;
+						const double far = std::fabs(w.x - ax) + std::fabs(w.y - ay);
+						if (on && far < best) {
+							best = far;
+							to = w;
+						}
+					}
+					ax = to.x;
+					ay = to.y;
+				}
+				if (!inside)
+					break;
+			}
+		}
+		Box goal = free_space(within, ax, ay, firm, s.margin, shape_used_, s.tolerance);
 		avoiding_ = false;
 		if (s.skip_rule && firm.size() != boxes_.size() && goal.w >= 2.0 && goal.h >= 2.0) {
 			double fw = kept_w, fh = kept_h;
@@ -1229,8 +1269,8 @@ bool FitEngine::solve(Prep &p, float seconds, bool first_pass, bool &moved)
 					    spare_w - left <= s.px_right + 0.05 && top <= s.px_top + 0.05 &&
 					    spare_h - top <= s.px_bottom + 0.05);
 			if (!fills) {
-				const Box beside = free_space(within, s.anchor_x, s.anchor_y, boxes_, s.margin,
-							      shape_used_, s.tolerance);
+				const Box beside =
+					free_space(within, ax, ay, boxes_, s.margin, shape_used_, s.tolerance);
 				if (beside.w >= 2.0 && beside.h >= 2.0) {
 					goal = beside;
 					avoiding_ = true;

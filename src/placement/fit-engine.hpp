@@ -225,6 +225,9 @@ public:
 	const Box &goal() const { return goal_; }
 	bool has_goal() const { return have_goal_; }
 	bool look_again() { return std::exchange(look_again_, false); }
+	// A Scene Fit with All sources: another fit's claim is in the way even
+	// where this item's place lies inside it (see `solve`).
+	void set_claims_firm(bool firm) { claims_firm_ = firm; }
 	// For the tests: full ticks had, and glides set off.
 	uint64_t full_ticks() const { return full_ticks_; }
 	uint64_t glides() const { return glides_; }
@@ -269,6 +272,7 @@ private:
 	std::vector<bool> gives_; // and which of them another filter resizes to make room
 	std::vector<int64_t> ids_;
 	std::vector<bool> said_;
+	bool claims_firm_ = false; // on the tick only
 	std::vector<bool> passed_; // which are items never in the way, counted only when the picture leaves room
 	bool avoiding_ = false;    // they count just now
 	std::array<double, 8> used_rule_{-1.0};

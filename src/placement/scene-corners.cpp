@@ -46,8 +46,10 @@ namespace stagekit {
 
 namespace {
 
-// Sources covered. Saved by number: append only.
-enum class Which : int { AllButBackground = 0, Chosen = 1 };
+// Sources covered. Saved by number: append only. A filter left on the
+// default has no number saved and reads as All but the background, the
+// default it had before All sources was added and still has.
+enum class Which : int { AllButBackground = 0, Chosen = 1, AllSources = 2 };
 
 // The Corners & Edges settings set on each source's filter: the same names
 // and numbers.
@@ -87,32 +89,6 @@ double phase_of(obs_source_t *source)
 	return (hash % 1000) / 1000.0;
 }
 
-// How much of the screen an item covers, from its size and scale (or its
-// bounding box), without asking OBS to work out its box afresh.
-double screen_share(obs_sceneitem_t *item)
-{
-	obs_video_info ovi = {};
-	if (!obs_get_video_info(&ovi) || !ovi.base_width || !ovi.base_height)
-		return 0.0;
-	obs_source_t *source = obs_sceneitem_get_source(item);
-	double w, h;
-	if (obs_sceneitem_get_bounds_type(item) != OBS_BOUNDS_NONE) {
-		vec2 bounds;
-		obs_sceneitem_get_bounds(item, &bounds);
-		w = bounds.x;
-		h = bounds.y;
-	} else {
-		obs_sceneitem_crop crop;
-		obs_sceneitem_get_crop(item, &crop);
-		vec2 scale;
-		obs_sceneitem_get_scale(item, &scale);
-		w = std::max(0.0, (double)obs_source_get_width(source) - crop.left - crop.right) * std::fabs(scale.x);
-		h = std::max(0.0, (double)obs_source_get_height(source) - crop.top - crop.bottom) * std::fabs(scale.y);
-	}
-	return std::min(w, (double)ovi.base_width) * std::min(h, (double)ovi.base_height) /
-	       ((double)ovi.base_width * (double)ovi.base_height);
-}
-
 class SceneCorners {
 public:
 	SceneCorners(obs_data_t *settings, obs_source_t *source) : source_(source), managed_(kSpec, source)
@@ -125,7 +101,7 @@ public:
 	void update(obs_data_t *settings)
 	{
 		auto config = std::make_shared<Config>();
-		config->which = static_cast<Which>(std::clamp((int)obs_data_get_int(settings, "which"), 0, 1));
+		config->which = static_cast<Which>(std::clamp((int)obs_data_get_int(settings, "which"), 0, 2));
 		config->sources = pick_list_read(settings, "sources", false);
 		config->skip = pick_list_read(settings, "skip", false);
 		config->auto_background = obs_data_get_bool(settings, "auto_background");
@@ -205,8 +181,11 @@ private:
 			covered.insert(config->sources.begin(), config->sources.end());
 		} else {
 			// Every item straight in the scene (a group counts as one
-			// source), bottom first, leaving out the background: what
-			// covers most of the screen under everything else.
+			// source), bottom first. All but the background also leaves
+			// out what covers most of the screen under everything else;
+			// All sources leaves out only the ignored ones.
+			const bool find_background = config->which == Which::AllButBackground &&
+						     config->auto_background;
 			std::vector<obs_sceneitem_t *> items;
 			obs_scene_enum_items(
 				obs_scene_from_source(scene),
@@ -221,9 +200,10 @@ private:
 				obs_source_t *source = obs_sceneitem_get_source(item);
 				const char *name = obs_source_get_name(source);
 				if (!name || !*name || is_morph_layer(item) || is_stand_in(source) ||
+				    obs_obj_is_private(source) ||
 				    !(obs_source_get_output_flags(source) & OBS_SOURCE_VIDEO))
 					continue;
-				if (under_all && config->auto_background && screen_share(item) >= kBackgroundShare)
+				if (under_all && find_background && screen_share(item) >= kBackgroundShare)
 					continue;
 				under_all = false;
 				if (std::find(config->skip.begin(), config->skip.end(), name) != config->skip.end())
@@ -263,10 +243,11 @@ private:
 
 bool which_modified(obs_properties_t *props, obs_property_t *, obs_data_t *settings)
 {
-	const bool chosen = obs_data_get_int(settings, "which") == (int)Which::Chosen;
+	const int which = (int)obs_data_get_int(settings, "which");
+	const bool chosen = which == (int)Which::Chosen;
 	obs_property_set_visible(obs_properties_get(props, "sources|alist"), chosen);
 	obs_property_set_visible(obs_properties_get(props, "skip|alist"), !chosen);
-	obs_property_set_visible(obs_properties_get(props, "auto_background"), !chosen);
+	obs_property_set_visible(obs_properties_get(props, "auto_background"), which == (int)Which::AllButBackground);
 	return true;
 }
 
@@ -290,6 +271,8 @@ obs_properties_t *get_properties(void *data)
 
 	obs_property_t *which = obs_properties_add_list(props, "which", obs_module_text("SceneCorners.Which"),
 							OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+	// All sources first, as in every scene filter; the numbers stay as saved.
+	obs_property_list_add_int(which, obs_module_text("SceneCorners.Which.Every"), (int)Which::AllSources);
 	obs_property_list_add_int(which, obs_module_text("SceneCorners.Which.All"), (int)Which::AllButBackground);
 	obs_property_list_add_int(which, obs_module_text("SceneCorners.Which.Chosen"), (int)Which::Chosen);
 	obs_property_set_long_description(which, obs_module_text("SceneCorners.Which.Tip"));
@@ -359,6 +342,8 @@ void register_scene_corners()
 		static_cast<SceneCorners *>(data)->update(settings);
 	};
 	info.get_defaults = [](obs_data_t *settings) {
+		// (Not All sources: it would round a full-screen background's
+		// corners, and change every filter saved with the default.)
 		obs_data_set_default_int(settings, "which", (int)Which::AllButBackground);
 		obs_data_set_default_bool(settings, "auto_background", true);
 		corners_look_defaults(settings);

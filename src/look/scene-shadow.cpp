@@ -14,7 +14,7 @@ the Free Software Foundation; either version 2 of the License, or
 // The scene draws itself as it always does (every item transition, crop and
 // blending mode is OBS's own). The filter then draws the scene's items again
 // as two silhouettes: the sources that cast (not background, not listed under
-// "No shadow for", without a Shadow, Glow & Outline of their own), and every
+// "Ignored sources", without a Shadow, Glow & Outline of their own), and every
 // source that is not background. The first, softened and offset, is laid over
 // the finished picture as the shadow, and kept off the second, so the shadow
 // falls on the background and never on a source. Nothing is ever moved or
@@ -66,14 +66,21 @@ constexpr double kLookEvery = 0.25;
 // looking, though its scene is not showing.
 constexpr uint64_t kWantedNs = 1000000000ULL;
 
+// Sources covered. Saved by number: append only. A filter saved before
+// there was a choice has no number and reads as All sources, which is what
+// it did then.
+enum class Which : int { AllSources = 0, Chosen = 1 };
+
 bool listed(const std::vector<std::string> &list, const char *name)
 {
 	return name && std::find(list.begin(), list.end(), name) != list.end();
 }
 
 // What each item of the scene does, by its id. See ShadowFlag.
+// `chosen`, when not null: only these cast (the rest are still kept clear).
 void classify(obs_source_t *scene_source, const std::vector<std::string> &background,
-	      const std::vector<std::string> &skip, bool auto_background, ShadowFlags &out)
+	      const std::vector<std::string> &skip, const std::vector<std::string> *chosen, bool auto_background,
+	      ShadowFlags &out)
 {
 	out.clear();
 	obs_scene_t *scene = obs_scene_from_source(scene_source);
@@ -116,7 +123,8 @@ void classify(obs_source_t *scene_source, const std::vector<std::string> &backgr
 			at_bottom = false;
 		uint8_t flags = back ? kShadowBackground : kShadowMasked;
 		// A source with a shadow of its own keeps that one: no shadow twice.
-		if (!back && !listed(skip, name) && !first_filter(source, "stagekit_shadow_backdrop"))
+		if (!back && !listed(skip, name) && (!chosen || listed(*chosen, name)) &&
+		    !first_filter(source, "stagekit_shadow_backdrop"))
 			flags |= kShadowCasts;
 		out[id] = flags;
 	}
@@ -150,7 +158,8 @@ private:
 
 	std::mutex mutex_;
 	ShadowLook look_;
-	std::vector<std::string> background_, skip_;
+	std::vector<std::string> background_, skip_, chosen_;
+	Which which_ = Which::AllSources;
 	bool auto_background_ = true;
 	ShadowFlags flags_;
 	bool classified_ = false;
@@ -216,6 +225,8 @@ void SceneShadow::update(obs_data_t *settings)
 	look_ = look;
 	background_ = pick_list_read(settings, "background", false);
 	skip_ = pick_list_read(settings, "shadow_skip", false);
+	which_ = static_cast<Which>(std::clamp((int)obs_data_get_int(settings, "which"), 0, 1));
+	chosen_ = pick_list_read(settings, "shadow_sources", false);
 	auto_background_ = obs_data_get_bool(settings, "auto_background");
 	settings_changed_ = true;
 }
@@ -252,16 +263,18 @@ void SceneShadow::look_again(obs_source_t *parent)
 	obs_video_info ovi = {};
 	const bool wide = obs_get_video_info(&ovi) &&
 			  (ovi.colorspace == VIDEO_CS_2100_PQ || ovi.colorspace == VIDEO_CS_2100_HLG);
-	std::vector<std::string> background, skip;
-	bool auto_background;
+	std::vector<std::string> background, skip, chosen;
+	bool auto_background, only_chosen;
 	{
 		std::lock_guard lock(mutex_);
 		background = background_;
 		skip = skip_;
+		chosen = chosen_;
+		only_chosen = which_ == Which::Chosen;
 		auto_background = auto_background_;
 	}
 	ShadowFlags flags;
-	classify(parent, background, skip, auto_background, flags);
+	classify(parent, background, skip, only_chosen ? &chosen : nullptr, auto_background, flags);
 	std::lock_guard lock(mutex_);
 	flags_.swap(flags);
 	classified_ = true;
@@ -438,6 +451,13 @@ obs_property_t *slider(obs_properties_t *props, const char *name, const char *te
 	return p;
 }
 
+bool which_modified(obs_properties_t *props, obs_property_t *, obs_data_t *settings)
+{
+	const bool chosen = obs_data_get_int(settings, "which") == (int)Which::Chosen;
+	obs_property_set_visible(obs_properties_get(props, "shadow_sources|alist"), chosen);
+	return true;
+}
+
 obs_properties_t *get_properties(void *data)
 {
 	obs_properties_t *props = obs_properties_create();
@@ -498,6 +518,19 @@ obs_properties_t *get_properties(void *data)
 			},
 			&names);
 	};
+	obs_property_t *which = obs_properties_add_list(props, "which", obs_module_text("SceneShadow.Which"),
+							OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+	obs_property_list_add_int(which, obs_module_text("SceneShadow.Which.All"), (int)Which::AllSources);
+	obs_property_list_add_int(which, obs_module_text("SceneShadow.Which.Chosen"), (int)Which::Chosen);
+	obs_property_set_long_description(which, obs_module_text("SceneShadow.Which.Tip"));
+	obs_property_set_modified_callback(which, which_modified);
+	PickList chosen;
+	chosen.setting = "shadow_sources";
+	chosen.title = "SceneShadow.Sources";
+	chosen.add = "SceneShadow.AddSource";
+	chosen.tip = "SceneShadow.Sources.Tip";
+	chosen.choices = sources;
+	pick_list_add(props, filter, chosen);
 	PickList background;
 	background.setting = "background";
 	background.title = "SceneShadow.Background";
@@ -541,6 +574,7 @@ void get_defaults(obs_data_t *settings)
 	obs_data_set_default_int(settings, "outline_color", 0xFFFFFFFF);
 	obs_data_set_default_double(settings, "outline_opacity", 100.0);
 	obs_data_set_default_bool(settings, "auto_background", true);
+	obs_data_set_default_int(settings, "which", (int)Which::AllSources);
 	obs_data_set_default_int(settings, "ramp_ms", 300);
 	obs_data_set_default_int(settings, "ramp_ease_curve", (int)EaseCurve::Cubic);
 	obs_data_set_default_int(settings, "ramp_ease_mode", (int)EaseMode::InOut);
@@ -577,7 +611,7 @@ bool scene_shadow_now(obs_source_t *scene, SceneShadowNow &out)
 
 void scene_shadow_default_flags(obs_source_t *scene, ShadowFlags &out)
 {
-	classify(scene, {}, {}, true, out);
+	classify(scene, {}, {}, nullptr, true, out);
 }
 
 void register_scene_shadow()
