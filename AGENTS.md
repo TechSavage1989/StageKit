@@ -1034,6 +1034,49 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   at the item's frame. Which case it is goes by the transition's sources (`has_a_`, `has_b_`), not
   by the textures it is handed (a placeholder stands in for a missing side): up to beta154 an item
   hidden with it was drawn as a change of scene into nothing and stayed whole until it went.
+- **Make Room** (betaNEXT; the owner: "a transition in which sources move off screen on the closed
+  side of the screen based on other objects morphing into the scene? can it be its own transition,
+  but also an "other" transition to be used for objects with no link set up in morph? ... the
+  sources would move off screen, on the closest screen edge but away based on the incoming morph").
+  Three ways in, one rule:
+  - Morph's *Other items* `Others::MakeRoom` (3) and *Unpaired sources* `kUnpairedRoom`
+    (`morph_make_room`, in `item-morph.hpp`), both appended; settings `room_way` (`RoomWay`: 0 away
+    from the morph, 1 nearest edge only, append-only) and `room_fade` (off as it comes). Rules
+    offer it too (`kLastOthers`).
+  - The transition `stagekit_make_room` (`kMakeRoomId`, in `morph.hpp`): **the Morph class with
+    `room_` set**, registered in the same loop of `register_morph`, so it is in every transition
+    list by itself and in `add_kinds`. `update` fixes `others` and `unpaired` to Make Room; its
+    window (`get_room_properties`) has no *Other items*, *Unpaired sources* or rules. Do not fork
+    Morph's logic for it. As an item's transition it **never pairs** (`MorphSaid::pairs` false:
+    `can` and `largest` pass it over), and `add_own` leaves out its pairing and link controls in a
+    filter's window. It is not a fallback kind (`item_transition_is_fallback_kind`): Morph's own
+    `morph_make_room` is.
+  - **The direction rule** (`room_edge` in `morph-paint.*`): the middle of what morphs in
+    (`RoomCentre`, boxes weighted by area), a line from it to the source's middle; the candidate
+    edges are those the line points to by more than 2 % of its length (left if dx < 0, and so
+    on); of those, the one with the least travel to be all off the screen (the same travel the
+    plain Slide uses); a line under 1 % of the screen's diagonal, or no middle, is the plain
+    nearest edge. In the scene Morph (`find_room_centres`, every frame from the plan's parts) the
+    middle is the paired parts' boxes in the new scene for a leaving item and in the old scene for
+    a coming one, leaving out pairs that neither move nor resize (1 px) and backgrounds (90 %).
+    Without *Fade while moving* the moving items are drawn whole straight into the target after
+    the run's backgrounds are cross-faded (`Only::Fills` / `Only::Movers` in `draw_side_items`).
+  - **As an item's change** (a Morph's *Alone* item with Make Room, and every Make Room item): the
+    tick, as it sets an entry *Alone* in a scene on screen and not in a group, starts a job with
+    one side (`Job::solo`, `start_solo`) with the item Morph's layer, so the item crosses the
+    screen; its own transition is then `Paired` and draws nothing. Every edge of a tick is worked
+    out before any job starts (`room_centre`): for an item going, the destinations of the jobs in
+    its scene, the items of the other kind that started near it, and any item of the scene whose
+    own show transition is running (`item_transition_running`, any kind: a Fade and Zoom shown
+    beside it counts); for one coming, the reverse. A solo job ends when its clock runs out, its
+    item's visibility flips back, it leaves the scene or the scene is removed; like a pair's job
+    it keeps its scene weakly and holds its one item only while the change lasts (beta170's rule). Out of view or in a group there is no
+    layer: `start_alone` takes Make Room for a Slide inside the item's frame (fading with
+    `room_fade`). The log has one line per item: `Morph: 'X' makes room in 'S', by the right
+    edge (away from the change under way)`.
+  - Tested in `[make room: ...]` (`make_room_test`, alone: `STAGEKIT_TEST_ONLY_MAKE_ROOM`), the
+    frames in `docs/images/make-room.png`. Not seen on Windows; the item version waits the item
+    Morph's 0.1 s before it moves, like Morph's own *Alone*.
 - **Blur goes to 1000** (`kMaxStrength`; it was 250 and the owner asked for more). A Gaussian or box
   blur set above `kTapLimit` (250) is drawn the Dual Kawase way for its whole ramp, so there is no
   change of look part-way through a ramp. Zoom's pull is still worked out from 250. Ambient

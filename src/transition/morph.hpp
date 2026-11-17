@@ -15,10 +15,14 @@ the Free Software Foundation; either version 2 of the License, or
 namespace stagekit {
 
 inline constexpr const char *kMorphId = "stagekit_morph";
+// Make Room: Morph with Make Room for whatever has no partner. As an item's
+// own transition it never pairs: the item leaves by (or comes in from) an
+// edge of the screen, away from what else changes in its scene.
+inline constexpr const char *kMakeRoomId = "stagekit_make_room";
 
 // A scene transition. Whatever shows the same source in both scenes glides
 // from its place and size in the one to its place and size in the other;
-// everything else is cross-faded where it is.
+// everything else is cross-faded where it is. Registers Make Room too.
 void register_morph();
 
 // Lets a scene with a drawing filter that `accepts` answers yes for still be

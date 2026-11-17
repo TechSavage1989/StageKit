@@ -13,6 +13,39 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
+## Make Room, a transition and a way for unpaired sources (0.1.0-betaNEXT)
+
+Branch `feat/make-room`, rebased on `main` after beta172. Notes: `docs/releases/0.1.0-betaNEXT.md`. No
+Stream Deck file changed. The owner: "can we make a new transition called something like "make
+room" which would be a transition in which sources move off screen on the closed side of the screen
+based on other objects morphing into the scene? can it be its own transition, but also an "other"
+transition to be used for objects with no link set up in morph? ... the sources would move off
+screen, on the closest screen edge but away based on the incoming morph."
+
+- **Morph's *Make room***: `Others::MakeRoom` (3) under *Other items* (and in rules) and
+  `morph_make_room` under *Unpaired sources*, both appended; `room_way` (0 away from the morph,
+  1 nearest edge only) and `room_fade` (off).
+- **Make Room (StageKit)**, `stagekit_make_room`: the Morph class with `room_` set, registered in
+  `register_morph`'s loop; Morph's pairing and links, no *Other items*, *Unpaired sources* or
+  rules. As an item's own transition it never pairs.
+- **The direction rule** (`room_edge`, `morph-paint.*`): the area-weighted middle of what morphs
+  (the paired parts' boxes in the new scene for a source going, in the old for one coming; pairs
+  that do not move or resize, and backgrounds, left out); of the edges the line from that middle
+  to the source points to (each component over 2 % of the line), the one with the least travel
+  to be off the screen; no middle, or a line under 1 % of the diagonal: the nearest edge.
+- **Items**: an *Alone* item with Make Room, in a scene on screen and not in a group, is moved by
+  the item Morph's layer (`Job::solo`, `start_solo`), away from the jobs, the items of the other
+  kind started with it and any item whose own show (or hide) transition runs in its scene
+  (`room_centre`). Out of view or in a group it slides inside its own frame.
+  Under beta170's rules: a solo job keeps a weak scene and holds its one item and source only
+  while the change lasts (`Job`), works from the tick's `Half::scene` / `Half::item`, and is ended
+  with the rest by `let_go_all` and when its scene is removed.
+- Tests: `[make room: ...]` (alone: `STAGEKIT_TEST_ONLY_MAKE_ROOM`), 15 checks; contact sheet
+  `docs/images/make-room.png`. AGENTS, *Make Room*.
+- **Not proven**: Windows (no new shader: it reuses Morph's drawing); the owner's scenes. Under
+  valgrind the two item checks that look at 550 ms miss the moving item (the run is too slow for
+  the clock); the log lines show the right edge chosen.
+
 ## Show in Scenes: a switch is a command, not a hold (0.1.0-beta174)
 
 Branch `feat/switch-is-command`, on `main` after beta169. Notes: `docs/releases/0.1.0-beta174.md`.

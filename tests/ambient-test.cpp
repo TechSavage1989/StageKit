@@ -3343,6 +3343,352 @@ static void blur_off_draw_test(uint32_t w, uint32_t h, const char *base_image)
 	}
 }
 
+// Make Room. The owner: "can we make a new transition called something like
+// "make room" which would be a transition in which sources move off screen on
+// the closed side of the screen based on other objects morphing into the
+// scene? ... the sources would move off screen, on the closest screen edge
+// but away based on the incoming morph." Run alone with
+// STAGEKIT_TEST_ONLY_MAKE_ROOM.
+static void make_room_test(uint32_t w, uint32_t h, const std::string &out)
+{
+	printf("\n[make room: sources slide off the screen, away from the morph]\n");
+	for (const char *kind : {"stagekit_morph", "stagekit_make_room", "stagekit_fade_zoom"})
+		if (!obs_source_get_display_name(kind)) {
+			CHECK(false, "the transition %s is there", kind);
+			return;
+		}
+	auto block = [](const char *name, long long abgr, int bw, int bh) {
+		obs_data_t *d = obs_data_create();
+		obs_data_set_int(d, "color", abgr);
+		obs_data_set_int(d, "width", bw);
+		obs_data_set_int(d, "height", bh);
+		obs_source_t *src = obs_source_create("color_source", name, d, nullptr);
+		obs_data_release(d);
+		return src;
+	};
+	auto put = [](obs_scene_t *scene, obs_source_t *src, float x, float y, float sx = 1.0f, float sy = 1.0f) {
+		obs_sceneitem_t *item = obs_scene_add(scene, src);
+		vec2 p, k;
+		vec2_set(&p, x, y);
+		vec2_set(&k, sx, sy);
+		obs_sceneitem_set_pos(item, &p);
+		obs_sceneitem_set_scale(item, &k);
+		return item;
+	};
+	auto px = [&](const std::vector<uint8_t> &frame, int x, int y, int channel) {
+		return (int)frame[(size_t(y) * w + x) * 4 + channel];
+	};
+	// Where one colour is in a frame: red (255, 0, 0) or magenta (255, 0, 255).
+	struct Box {
+		int n = 0, x0 = 100000, y0 = 100000, x1 = -1, y1 = -1;
+	};
+	auto find = [&](const std::vector<uint8_t> &frame, bool magenta) {
+		Box b;
+		for (int y = 0; y < (int)h; y++)
+			for (int x = 0; x < (int)w; x++) {
+				const int r = px(frame, x, y, 0), g = px(frame, x, y, 1), bl = px(frame, x, y, 2);
+				if (r > 200 && g < 60 && (magenta ? bl > 200 : bl < 60)) {
+					b.n++;
+					b.x0 = std::min(b.x0, x);
+					b.y0 = std::min(b.y0, y);
+					b.x1 = std::max(b.x1, x);
+					b.y1 = std::max(b.y1, y);
+				}
+			}
+		return b;
+	};
+	auto count_items = [](obs_scene_t *scene) {
+		int n = 0;
+		obs_scene_enum_items(
+			scene,
+			[](obs_scene_t *, obs_sceneitem_t *, void *param) {
+				++*static_cast<int *>(param);
+				return true;
+			},
+			&n);
+		return n;
+	};
+
+	obs_source_t *back_a = block("Room Back A", 0xFFFF0000, 640, 360); // blue
+	obs_source_t *back_b = block("Room Back B", 0xFF00FF00, 640, 360); // green
+	obs_source_t *game = block("Room Game", 0xFF00FFFF, 100, 100);     // yellow
+	obs_source_t *lefty = block("Room Lefty", 0xFF0000FF, 40, 200);    // red
+	obs_source_t *corner = block("Room Corner", 0xFFFF00FF, 60, 60);   // magenta
+
+	// One: the game morphs from the lower right to the middle (200x200 at
+	// 220,80, its middle at 320,180). Lefty (100..140 x 80..280) lies left of
+	// it, Corner (540..600 x 20..80) above and to the right of it.
+	obs_scene_t *a1 = obs_scene_create("Room One From");
+	obs_scene_t *b1 = obs_scene_create("Room One To");
+	put(a1, back_a, 0, 0);
+	put(a1, game, 500, 250);
+	put(a1, lefty, 100, 80);
+	put(a1, corner, 540, 20);
+	put(b1, back_b, 0, 0);
+	put(b1, game, 220, 80, 2.0f, 2.0f);
+	// Two: the game morphs to the left (200x300 at 0,30, its middle at
+	// 100,180); Lefty at 220..260 x 80..280, whose nearest edge is the left
+	// one, towards the game.
+	obs_scene_t *a2 = obs_scene_create("Room Two From");
+	obs_scene_t *b2 = obs_scene_create("Room Two To");
+	put(a2, back_a, 0, 0);
+	put(a2, game, 500, 250);
+	put(a2, lefty, 220, 80);
+	put(b2, back_b, 0, 0);
+	put(b2, game, 0, 30, 2.0f, 3.0f);
+	// Three: nothing in the new scene but its background.
+	obs_scene_t *b3 = obs_scene_create("Room Three To");
+	put(b3, back_b, 0, 0);
+
+	obs_data_t *ms = obs_data_create();
+	obs_data_set_int(ms, "ease_curve", 0); // linear, so half the time is half the way
+	obs_data_set_int(ms, "others", 3);     // Make room
+	obs_source_t *morph = obs_source_create_private("stagekit_morph", "Room Morph", ms);
+	auto at_time = [&](obs_source_t *t, obs_scene_t *from, obs_scene_t *to, float time) {
+		obs_transition_set(t, obs_scene_get_source(from));
+		obs_transition_start(t, OBS_TRANSITION_MODE_MANUAL, 0, obs_scene_get_source(to));
+		obs_transition_set_manual_time(t, time);
+		sleep_ms(120);
+		return render(t, w, h);
+	};
+	auto finish = [&](obs_source_t *t) {
+		obs_transition_set_manual_time(t, 1.0f);
+		sleep_ms(120);
+		render(t, w, h);
+		obs_transition_clear(t);
+	};
+
+	// The scene Morph with Make room.
+	{
+		const std::vector<uint8_t> quarter = at_time(morph, a1, b1, 0.25f);
+		const std::vector<uint8_t> half = at_time(morph, a1, b1, 0.5f);
+		const std::vector<uint8_t> three = at_time(morph, a1, b1, 0.75f);
+		const std::vector<uint8_t> end = at_time(morph, a1, b1, 0.999f);
+		write_frame(out + "/../make-room/1 before.rgba", render(obs_scene_get_source(a1), w, h), w, h);
+		write_frame(out + "/../make-room/2 a quarter.rgba", quarter, w, h);
+		write_frame(out + "/../make-room/3 half-way.rgba", half, w, h);
+		write_frame(out + "/../make-room/4 three quarters.rgba", three, w, h);
+		write_frame(out + "/../make-room/5 after.rgba", render(obs_scene_get_source(b1), w, h), w, h);
+		// Lefty has 140 px to go to the left: half-way it is at 30..70.
+		const Box l = find(half, false), l_end = find(end, false);
+		CHECK(l.n > 7000 && l.x0 >= 27 && l.x0 <= 33 && l.x1 >= 66 && l.x1 <= 72 && l.y0 == 80 && l.y1 >= 278 &&
+			      l_end.n == 0,
+		      "a source left of the incoming morph leaves through the left edge: half-way it is half the way there, at the end it is off the screen (x %d..%d, y %d..%d; %d px left at the end)",
+		      l.x0, l.x1, l.y0, l.y1, l_end.n);
+		// Corner: up (80 px to go) or right (100), never down: half-way it is
+		// at y -20..40.
+		bool never_down = true;
+		for (const std::vector<uint8_t> *frame : {&quarter, &half, &three}) {
+			const Box c = find(*frame, true);
+			never_down = never_down && (c.n == 0 || c.y1 <= 80);
+		}
+		const Box c = find(half, true), c_end = find(end, true);
+		CHECK(c.n > 1500 && c.y0 == 0 && c.y1 >= 37 && c.y1 <= 42 && c.x0 == 540 && never_down && c_end.n == 0,
+		      "a source above and right of it leaves through the nearer of the top and right edges, the top, and never the bottom (half-way x %d..%d, y %d..%d; %d px at the end)",
+		      c.x0, c.x1, c.y0, c.y1, c_end.n);
+		const Box q = find(quarter, false);
+		CHECK(q.n > 0 && q.x0 > l.x0 && q.x0 < 100, "and part-way it is on its way (a quarter: x %d)", q.x0);
+		finish(morph);
+
+		// The other way round: what comes in comes from the edge away from
+		// where the morph comes out of.
+		const std::vector<uint8_t> back = at_time(morph, b1, a1, 0.5f);
+		const Box bl = find(back, false), bc = find(back, true);
+		CHECK(bl.x0 >= 27 && bl.x0 <= 33 && bl.y0 == 80 && bc.y0 == 0 && bc.y1 >= 37 && bc.y1 <= 42 &&
+			      bc.x0 == 540,
+		      "a source coming in comes in from the same edges, the reverse way (half-way: Lefty at x %d, Corner at y %d..%d)",
+		      bl.x0, bc.y0, bc.y1);
+		finish(morph);
+
+		// Away from the morph, not simply the nearest edge.
+		const Box pushed = find(at_time(morph, a2, b2, 0.5f), false);
+		finish(morph);
+		obs_data_set_int(ms, "room_way", 1); // Nearest edge only
+		obs_source_update(morph, ms);
+		const Box nearest = find(at_time(morph, a2, b2, 0.5f), false);
+		finish(morph);
+		obs_data_set_int(ms, "room_way", 0);
+		obs_source_update(morph, ms);
+		CHECK(pushed.x0 >= 427 && pushed.x0 <= 433 && nearest.x0 >= 87 && nearest.x0 <= 93,
+		      "a source whose nearest edge lies towards the morph leaves the other way, and with 'Nearest edge only' by that nearest edge (x %d away from the morph, %d by the nearest edge)",
+		      pushed.x0, nearest.x0);
+		const Box alone = find(at_time(morph, a2, b3, 0.5f), false);
+		finish(morph);
+		CHECK(alone.x0 >= 87 && alone.x0 <= 93,
+		      "with nothing morphing in, it leaves by the plain nearest edge (x %d)", alone.x0);
+
+		// Fading as it goes.
+		obs_data_set_bool(ms, "room_fade", true);
+		obs_source_update(morph, ms);
+		const std::vector<uint8_t> faded = at_time(morph, a1, b1, 0.5f);
+		finish(morph);
+		obs_data_set_bool(ms, "room_fade", false);
+		obs_source_update(morph, ms);
+		CHECK(px(faded, 50, 180, 0) > 60 && px(faded, 50, 180, 0) < 215 && px(faded, 120, 180, 0) < 60,
+		      "with 'Fade while moving' it is half there half-way, and on its way all the same (red %d where it has got to, %d where it was)",
+		      px(faded, 50, 180, 0), px(faded, 120, 180, 0));
+
+		// The settings offer it.
+		obs_properties_t *mp = obs_source_properties(morph);
+		obs_property_t *unpaired = obs_properties_get(mp, "unpaired");
+		bool listed = false;
+		for (size_t i = 0; unpaired && i < obs_property_list_item_count(unpaired); i++)
+			listed = listed || strcmp(obs_property_list_item_string(unpaired, i), "morph_make_room") == 0;
+		CHECK(listed && obs_properties_get(mp, "room_way") && obs_properties_get(mp, "room_fade"),
+		      "Morph's settings offer Make room for unpaired sources, with its two settings");
+		obs_properties_destroy(mp);
+	}
+
+	// Make Room as a transition of its own, between scenes.
+	obs_data_t *rs = obs_data_create();
+	obs_data_set_int(rs, "ease_curve", 0);
+	obs_source_t *room = obs_source_create_private("stagekit_make_room", "Make Room", rs);
+	CHECK(room != nullptr, "the Make Room transition is registered and can be created");
+	if (room) {
+		const std::vector<uint8_t> half = at_time(room, a1, b1, 0.5f);
+		const Box l = find(half, false), c = find(half, true);
+		// (The game, paired, is half-way: 360..510 x 165..315.)
+		CHECK(l.x0 >= 27 && l.x0 <= 33 && c.y0 == 0 && c.y1 >= 37 && c.y1 <= 42 &&
+			      px(half, 430, 240, 0) > 240 && px(half, 430, 240, 1) > 240 && px(half, 430, 240, 2) < 30,
+		      "as a change of scene it is Morph with Make room: the shared source morphs, the rest make room (Lefty at x %d, Corner at y %d..%d)",
+		      l.x0, c.y0, c.y1);
+		finish(room);
+		obs_properties_t *rp = obs_source_properties(room);
+		CHECK(obs_properties_get(rp, "room_way") && obs_properties_get(rp, "room_fade") &&
+			      obs_properties_get(rp, "pair_main") && obs_properties_get(rp, "ease_curve") &&
+			      !obs_properties_get(rp, "unpaired") && !obs_properties_get(rp, "others"),
+		      "its settings are Make Room's own two, the easing and Morph's pairing, and no other way for unpaired sources");
+		obs_properties_destroy(rp);
+	}
+
+	// As an item's own show and hide transition: a layer moves it across the
+	// screen, since an item's transition cannot leave its frame.
+	{
+		obs_source_t *small = block("Room Small", 0xFF0000FF, 60, 60); // red
+		obs_source_t *big = block("Room Big", 0xFF00FFFF, 200, 200);   // yellow
+		obs_source_t *pa = block("Room Pair A", 0xFF00FF00, 80, 80);   // green
+		obs_source_t *pb = block("Room Pair B", 0xFF00FFFF, 160, 160); // yellow
+		obs_scene_t *is = obs_scene_create("Room Items");
+		put(is, back_a, 0, 0);
+		obs_sceneitem_t *si = put(is, small, 40, 150);
+		auto with = [&](obs_sceneitem_t *item, bool show, const char *kind, obs_data_t *d) {
+			obs_source_t *t = obs_source_create_private(kind, "Room Item Transition", d);
+			obs_sceneitem_set_transition(item, show, t);
+			obs_sceneitem_set_transition_duration(item, show, 1000);
+			obs_source_release(t);
+		};
+		with(si, true, "stagekit_make_room", rs);
+		with(si, false, "stagekit_make_room", rs);
+		obs_source_t *before_out = obs_get_output_source(0);
+		obs_set_output_source(0, obs_scene_get_source(is));
+		sleep_ms(300);
+		render(obs_scene_get_source(is), w, h);
+		const int resting = count_items(is);
+		// Hidden by itself: off the nearest edge, the left (100 px to go).
+		obs_sceneitem_set_visible(si, false);
+		sleep_ms(550);
+		const std::vector<uint8_t> going = render(obs_scene_get_source(is), w, h);
+		const int during = count_items(is);
+		sleep_ms(800);
+		render(obs_scene_get_source(is), w, h);
+		const std::vector<uint8_t> gone = render(obs_scene_get_source(is), w, h);
+		const Box g = find(going, false);
+		CHECK(g.n > 1000 && g.x0 < 15 && g.x1 < 85 && g.x1 > 10 && g.y0 == 150 && find(gone, false).n == 0 &&
+			      during == resting + 1 && count_items(is) == resting,
+		      "an item hidden with Make Room and nothing else changing slides off its nearest edge, by a layer that is there only while it moves (part-way x %d..%d; %d px after; %d items during, %d before and after)",
+		      g.x0, g.x1, find(gone, false).n, during, count_items(is));
+		// Shown: in from that edge.
+		obs_sceneitem_set_visible(si, true);
+		sleep_ms(550);
+		const Box coming = find(render(obs_scene_get_source(is), w, h), false);
+		sleep_ms(800);
+		render(obs_scene_get_source(is), w, h);
+		const Box there = find(render(obs_scene_get_source(is), w, h), false);
+		CHECK(coming.n > 1000 && coming.x0 < 15 && coming.x1 < 85 && coming.x1 > 10 && there.x0 == 40 &&
+			      there.x1 == 99 && there.y0 == 150,
+		      "and shown with it, it comes in from that edge and ends in its place (part-way x %d..%d; after %d..%d)",
+		      coming.x0, coming.x1, there.x0, there.x1);
+
+		// Away from what else changes: a large source shown with Fade and
+		// Zoom to its left, so it goes right (its nearest edge is the top).
+		vec2 p;
+		vec2_set(&p, 240, 150);
+		obs_sceneitem_set_pos(si, &p);
+		obs_sceneitem_t *bi = put(is, big, 20, 80);
+		obs_sceneitem_set_visible(bi, false);
+		obs_data_t *zd = obs_data_create();
+		with(bi, true, "stagekit_fade_zoom", zd);
+		obs_data_release(zd);
+		sleep_ms(200);
+		render(obs_scene_get_source(is), w, h);
+		obs_sceneitem_set_visible(si, false);
+		obs_sceneitem_set_visible(bi, true);
+		sleep_ms(550);
+		const Box away = find(render(obs_scene_get_source(is), w, h), false);
+		sleep_ms(800);
+		render(obs_scene_get_source(is), w, h);
+		CHECK(away.n > 1000 && away.x0 > 270 && away.y0 == 150 && away.y1 == 209,
+		      "hidden as another source is shown beside it, it slides off the nearest edge away from that one, the right, not its nearest, the top (part-way x %d..%d, y %d..%d)",
+		      away.x0, away.x1, away.y0, away.y1);
+
+		// Morph with Make room for unpaired sources: one hidden as a linked
+		// pair changes over makes room for the pair, going right (its own
+		// nearest edge is the top).
+		obs_sceneitem_set_visible(bi, false);
+		obs_sceneitem_set_visible(si, true);
+		obs_sceneitem_t *ai = put(is, pa, 40, 140);
+		obs_sceneitem_t *bpi = put(is, pb, 240, 100);
+		obs_sceneitem_set_visible(bpi, false);
+		vec2_set(&p, 420, 150);
+		obs_sceneitem_set_pos(si, &p);
+		obs_data_t *md = obs_data_create();
+		obs_data_set_int(md, "ease_curve", 0);
+		obs_data_set_string(md, "unpaired", "morph_make_room");
+		obs_data_array_t *links = obs_data_array_create();
+		obs_data_t *line = obs_data_create();
+		obs_data_set_string(line, "value", "Room Pair A \xE2\x86\x94 Room Pair B");
+		obs_data_array_push_back(links, line);
+		obs_data_release(line);
+		obs_data_set_array(md, "links", links);
+		obs_data_array_release(links);
+		for (obs_sceneitem_t *item : {ai, bpi, si}) {
+			with(item, true, "stagekit_morph", md);
+			with(item, false, "stagekit_morph", md);
+		}
+		obs_data_release(md);
+		sleep_ms(1400);
+		render(obs_scene_get_source(is), w, h);
+		obs_sceneitem_set_visible(ai, false);
+		obs_sceneitem_set_visible(bpi, true);
+		obs_sceneitem_set_visible(si, false);
+		sleep_ms(550);
+		const std::vector<uint8_t> mid = render(obs_scene_get_source(is), w, h);
+		const Box left_over = find(mid, false);
+		const int layers = count_items(is);
+		sleep_ms(800);
+		render(obs_scene_get_source(is), w, h);
+		const std::vector<uint8_t> after = render(obs_scene_get_source(is), w, h);
+		CHECK(left_over.n > 1000 && left_over.x0 > 450 && left_over.y0 == 150 && find(after, false).n == 0 &&
+			      layers == count_items(is) + 2,
+		      "with Morph, a source left over makes room for the pair changing over: right, away from where the pair goes, by a layer of its own beside the pair's (part-way x %d..%d, y %d; %d items during, %d after)",
+		      left_over.x0, left_over.x1, left_over.y0, layers, count_items(is));
+		obs_set_output_source(0, before_out);
+		obs_source_release(before_out);
+		obs_scene_release(is);
+		for (obs_source_t *src : {small, big, pa, pb})
+			obs_source_release(src);
+	}
+
+	obs_data_release(rs);
+	obs_data_release(ms);
+	obs_source_release(room);
+	obs_source_release(morph);
+	for (obs_scene_t *scene : {a1, b1, a2, b2, b3})
+		obs_scene_release(scene);
+	for (obs_source_t *src : {back_a, back_b, game, lefty, corner})
+		obs_source_release(src);
+}
+
 int main(int argc, char **argv)
 {
 	if (argc < 7) {
@@ -3469,6 +3815,14 @@ int main(int argc, char **argv)
 
 	if (getenv("STAGEKIT_TEST_ONLY_SWITCH_COMMAND")) { // to try that section alone
 		switch_is_command_test();
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
+
+	if (getenv("STAGEKIT_TEST_ONLY_MAKE_ROOM")) { // to try that section alone
+		make_room_test(w, h, out);
 		obs_shutdown();
 		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
 		       g_failures == 1 ? "" : "s");
@@ -5241,6 +5595,7 @@ int main(int argc, char **argv)
 			obs_source_release(src);
 		link_transitions_test(w, h);
 		item_morph_holds_test(w, h);
+		make_room_test(w, h, out);
 		if (getenv("STAGEKIT_TEST_ONLY_MORPH")) { // to try this section alone
 			obs_source_release(live);
 			obs_shutdown();

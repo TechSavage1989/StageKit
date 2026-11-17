@@ -78,6 +78,31 @@ void match_parts(const Shown &a, const Crop &match_a, const Crop &whole_a, const
 
 void set_quad(const Quad &q);
 
+// Make Room: a source with nothing to change into leaves by an edge of the
+// screen, away from what morphs in. The owner: "sources move off screen, on
+// the closest screen edge but away based on the incoming morph".
+enum class RoomEdge { Left = 0, Right = 1, Up = 2, Down = 3 };
+
+// The middle of the changes a source makes room for: each box counts by its
+// area. Empty until a box is added.
+struct RoomCentre {
+	double x = 0.0, y = 0.0, weight = 0.0;
+	void add(const Bounds &b);
+	bool any() const { return weight > 0.0; }
+	double cx() const { return x / weight; }
+	double cy() const { return y / weight; }
+};
+
+// The edge a source with the box `b` leaves by (or comes in from), on a
+// screen of `w` by `h`: of the edges that lie the way the line from `from`'s
+// middle to the source's middle points (each by more than a hair), the one
+// it has least far to go to be all off the screen; with no `from`, a line
+// too short to point anywhere, or no such edge, simply that nearest edge.
+RoomEdge room_edge(const Bounds &b, double w, double h, const RoomCentre *from);
+
+// `q` moved `gone` (0 in place, 1 all off the screen) of the way off `edge`.
+Quad room_moved(const Quad &q, const Bounds &b, RoomEdge edge, double gone, double w, double h);
+
 // Sources set to count as one thing: the one changes into the other. A link
 // is kept as one line of a list, the two names with `kLinkMark` between them.
 using MorphLinks = std::vector<std::pair<std::string, std::string>>;

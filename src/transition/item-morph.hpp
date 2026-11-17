@@ -22,6 +22,8 @@ the Free Software Foundation; either version 2 of the License, or
 namespace stagekit {
 
 inline constexpr const char *kMorphLayerId = "stagekit_morph_layer";
+// Morph's *Unpaired sources* value for Make Room.
+inline constexpr const char *kUnpairedRoom = "morph_make_room";
 
 // What a Morph transition's settings say that matters here.
 struct MorphSaid {
@@ -31,6 +33,14 @@ struct MorphSaid {
 	bool no_shadows = true; // and by their pictures, without shadows, glows and outlines
 	EaseCurve curve = EaseCurve::Cubic;
 	EaseMode mode = EaseMode::InOut;
+	// Make Room: a Morph whose *Unpaired sources* is Make Room, or the Make
+	// Room transition itself. An item left by itself is moved off an edge of
+	// the screen by a layer (it cannot leave its own frame otherwise).
+	bool room = false;
+	bool room_push = true;  // away from the change under way in its scene; else the nearest edge
+	bool room_fade = false; // fading as it goes
+	// False for the Make Room transition: its items never pair with another.
+	bool pairs = true;
 };
 
 // Told by every Morph transition: its settings, each start and stop, and

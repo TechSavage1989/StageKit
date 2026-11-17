@@ -22,6 +22,16 @@ the Free Software Foundation; either version 2 of the License, or
 // old scene's, the new scene's) and those are mixed in one pass, so that two
 // full-screen backgrounds changing over never add up to less than a whole
 // picture part-way.
+//
+// Make Room (`Others::MakeRoom`, and the Make Room transition, which is this
+// class with that way fixed): the items in one scene only leave by an edge of
+// the screen, away from what morphs in. The middle of what morphs is the
+// middle of the paired items' places, each counted by its area: in the new
+// scene for an item going, in the old scene for an item coming. A pair that
+// neither moves nor resizes is not morphing and does not count, nor does a
+// background. Of the edges that lie the way the line from that middle to the
+// item points, the item takes the one it has least far to go to be off the
+// screen (`room_edge`); with nothing morphing, the nearest edge.
 
 #include "morph.hpp"
 #include "item-morph.hpp"
@@ -65,8 +75,16 @@ namespace {
 // ones go at the end.
 enum class Others : int {
 	Fade = 0,
-	Zoom = 1,  // and grow from, or shrink to, a little smaller
-	Slide = 2, // and slide in from, or out to, the nearest edge of the screen
+	Zoom = 1,     // and grow from, or shrink to, a little smaller
+	Slide = 2,    // and slide in from, or out to, the nearest edge of the screen
+	MakeRoom = 3, // off the nearest edge that lies away from what morphs in
+};
+constexpr long long kLastOthers = 3;
+
+// Make Room's way of choosing an edge (`room_way`). Saved by number.
+enum class RoomWay : int {
+	Push = 0,    // the nearest edge away from the morph
+	Nearest = 1, // the nearest edge, whatever morphs
 };
 
 // How an item with nothing to change into comes in or goes out, when Morph
@@ -76,6 +94,7 @@ enum class Others : int {
 constexpr const char *kUnpairedFade = "morph_fade";
 constexpr const char *kUnpairedZoom = "morph_zoom";
 constexpr const char *kUnpairedSlide = "morph_slide";
+// (and Make Room, `kUnpairedRoom` in item-morph.hpp)
 
 // A scene filter that only moves, shows and hides items, or only handles
 // sound: it draws nothing, so a scene with it can still be drawn item by item.
@@ -160,6 +179,9 @@ struct Settings {
 	bool pair_main = true;  // the largest item left over in each scene becomes one that changes into the other
 	bool seen = true;       // two sources change into each other by what shows of them, not their boxes
 	bool no_shadows = true; // and by their pictures, without shadows, glows and outlines
+	// Make Room: away from the morph, or the nearest edge; fading as it goes.
+	bool room_push = true;
+	bool room_fade = false;
 	// An item's own Morph, with nothing to change into: how it comes or goes,
 	// and, for another transition, that transition's settings as JSON.
 	std::string unpaired = kUnpairedFade;
@@ -213,7 +235,9 @@ struct Part {
 
 class Morph : public MorphPaint {
 public:
-	Morph(obs_data_t *settings, obs_source_t *source);
+	// `room`: the Make Room transition, Morph with Make Room for whatever
+	// has no partner, and whose items, as their own transition, never pair.
+	Morph(obs_data_t *settings, obs_source_t *source, bool room = false);
 	~Morph();
 
 	void update(obs_data_t *settings);
@@ -232,8 +256,14 @@ private:
 	uint8_t flags_of(obs_sceneitem_t *item, bool old_side) const;
 	double weight(const Part &part, double t) const;
 	void draw_run(const std::vector<const Part *> &run, double t, uint32_t cx, uint32_t cy);
+	// Which of a run's items to draw: all, or (Make Room without a fade)
+	// the backgrounds, which fade, apart from the rest, which do not.
+	enum class Only { All, Fills, Movers };
 	void draw_side(gs_texrender_t *into, const std::vector<const Part *> &run, bool leaving, double t, uint32_t cx,
-		       uint32_t cy);
+		       uint32_t cy, Only only);
+	void draw_side_items(const std::vector<const Part *> &run, bool leaving, double t, uint32_t cx, uint32_t cy,
+			     Only only);
+	void find_room_centres(uint32_t cx, uint32_t cy);
 	static void mix_cb(void *data, gs_texture_t *a, gs_texture_t *b, float t, uint32_t cx, uint32_t cy);
 	static void alone_cb(void *data, gs_texture_t *a, gs_texture_t *b, float t, uint32_t cx, uint32_t cy);
 	void start_alone(const Settings &s, obs_source_t *from, obs_source_t *to, uint32_t cx, uint32_t cy);
@@ -241,6 +271,7 @@ private:
 	void let_go_fallback();
 
 	obs_source_t *source_;
+	const bool room_;
 	std::mutex mutex_;
 	Settings settings_;
 
@@ -252,11 +283,15 @@ private:
 	gs_texrender_t *tr_from_ = nullptr; // a run of the old scene's own items
 	gs_texrender_t *tr_to_ = nullptr;   // and of the new scene's
 	float eased_ = 0.0f;                // for the plain cross-fade
+	// Make Room: the middle of what morphs, where it goes (for the items
+	// going) and where it comes from (for the items coming), each frame.
+	RoomCentre room_to_, room_from_;
 	// As one item's way of appearing, with nothing to change into or from:
 	// the clock's time when it began to fade by itself, and how it goes.
 	float alone_from_ = -1.0f;
 	bool alone_zoom_ = false;
-	bool alone_in_ = false; // the item is coming in (shown), not going
+	bool alone_in_ = false;   // the item is coming in (shown), not going
+	bool alone_fade_ = false; // a slide that fades as well (Make Room's, in its own frame)
 	// *Slide off the nearest edge*: the way it moves, as a step of the
 	// item's own width and height (one of them 1 or -1, the other 0).
 	int slide_x_ = 0, slide_y_ = 0;
@@ -283,7 +318,7 @@ private:
 	gs_texrender_t *tr_mask_ = nullptr;
 };
 
-Morph::Morph(obs_data_t *settings, obs_source_t *source) : source_(source)
+Morph::Morph(obs_data_t *settings, obs_source_t *source, bool room) : source_(source), room_(room)
 {
 	obs_enter_graphics();
 	tr_from_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
@@ -316,7 +351,9 @@ void Morph::update(obs_data_t *settings)
 	Settings s;
 	s.curve = static_cast<EaseCurve>(obs_data_get_int(settings, "ease_curve"));
 	s.mode = static_cast<EaseMode>(obs_data_get_int(settings, "ease_mode"));
-	s.others = static_cast<Others>(std::clamp<long long>(obs_data_get_int(settings, "others"), 0, 2));
+	s.others = static_cast<Others>(std::clamp<long long>(obs_data_get_int(settings, "others"), 0, kLastOthers));
+	s.room_push = obs_data_get_int(settings, "room_way") != (int)RoomWay::Nearest;
+	s.room_fade = obs_data_get_bool(settings, "room_fade");
 	s.pair_main = obs_data_get_bool(settings, "pair_main");
 	s.seen = obs_data_get_bool(settings, "visible_pixels");
 	s.no_shadows = obs_data_get_bool(settings, "no_shadows");
@@ -326,6 +363,11 @@ void Morph::update(obs_data_t *settings)
 	if (!obs_data_has_user_value(settings, "unpaired") || s.unpaired.empty()) {
 		s.unpaired = s.others == Others::Zoom ? kUnpairedZoom : kUnpairedFade;
 		obs_data_set_default_string(settings, "unpaired", s.unpaired.c_str());
+	}
+	if (room_) {
+		// (Make Room's way is fixed, for a change of scene and for an item.)
+		s.others = Others::MakeRoom;
+		s.unpaired = kUnpairedRoom;
 	}
 	if (item_transition_is_fallback_kind(s.unpaired.c_str()))
 		s.unpaired_own = item_transition_own_json(settings, "unpaired|" + s.unpaired + "|");
@@ -350,12 +392,17 @@ void Morph::update(obs_data_t *settings)
 		rule.style = static_cast<Style>(std::clamp<long long>(number("style"), 0, 2));
 		rule.curve = static_cast<EaseCurve>(number("ease_curve"));
 		rule.mode = static_cast<EaseMode>(number("ease_mode"));
-		rule.others = static_cast<Others>(std::clamp<long long>(number("others"), 0, 2));
+		rule.others = static_cast<Others>(std::clamp<long long>(number("others"), 0, kLastOthers));
 		rule.pair_main = obs_data_get_bool(settings, (key + "pair_main").c_str());
 		s.rules.push_back(rule);
 	}
 	// (For a Morph that is one item's way of appearing: who it may pair with.)
-	item_morph_said(source_, MorphSaid{s.links, s.pair_main, s.seen, s.no_shadows, s.curve, s.mode});
+	MorphSaid said{s.links, s.pair_main, s.seen, s.no_shadows, s.curve, s.mode};
+	said.room = s.unpaired == kUnpairedRoom;
+	said.room_push = s.room_push;
+	said.room_fade = s.room_fade;
+	said.pairs = !room_;
+	item_morph_said(source_, said);
 	std::lock_guard lock(mutex_);
 	settings_ = s;
 }
@@ -484,9 +531,8 @@ void Morph::plan(obs_source_t *from, obs_source_t *to)
 // draws them into a picture of the whole screen. With a style other than
 // Fade they are also on their way in or out.
 void Morph::draw_side(gs_texrender_t *into, const std::vector<const Part *> &run, bool leaving, double t, uint32_t cx,
-		      uint32_t cy)
+		      uint32_t cy, Only only)
 {
-	const Settings s = active_;
 	gs_texrender_reset(into);
 	if (!gs_texrender_begin_with_color_space(into, cx, cy, GS_CS_SRGB))
 		return;
@@ -494,6 +540,14 @@ void Morph::draw_side(gs_texrender_t *into, const std::vector<const Part *> &run
 	vec4_zero(&clear);
 	gs_clear(GS_CLEAR_COLOR, &clear, 0.0f, 0);
 	gs_ortho(0.0f, (float)cx, 0.0f, (float)cy, -100.0f, 100.0f);
+	draw_side_items(run, leaving, t, cx, cy, only);
+	gs_texrender_end(into);
+}
+
+void Morph::draw_side_items(const std::vector<const Part *> &run, bool leaving, double t, uint32_t cx, uint32_t cy,
+			    Only only)
+{
+	const Settings s = active_;
 	// How far gone: 0 in place, 1 all the way out.
 	const double gone = std::clamp(leaving ? t : 1.0 - t, 0.0, 1.0);
 	const uint8_t wanted = pass_ == Pass::Cast ? kShadowCasts : kShadowMasked;
@@ -509,6 +563,8 @@ void Morph::draw_side(gs_texrender_t *into, const std::vector<const Part *> &run
 		// (Something that fills the screen is a background: it only fades.
 		// Slid or shrunk, it would leave the screen bare behind it.)
 		const bool fills = (b.x1 - b.x0) * (b.y1 - b.y0) >= 0.9 * (double)cx * (double)cy;
+		if ((only == Only::Fills && !fills) || (only == Only::Movers && fills))
+			continue;
 		if (fills) {
 			// as it is
 		} else if (s.others == Others::Zoom) {
@@ -523,20 +579,46 @@ void Morph::draw_side(gs_texrender_t *into, const std::vector<const Part *> &run
 			quad.ty = my + (quad.ty - my) * k;
 		} else if (s.others == Others::Slide) {
 			// Off the nearest edge of the screen, all of it.
-			const double left = b.x1, right = (double)cx - b.x0, up = b.y1, down = (double)cy - b.y0;
-			const double least = std::min({left, right, up, down});
-			if (least == left)
-				quad.tx -= left * gone;
-			else if (least == right)
-				quad.tx += right * gone;
-			else if (least == up)
-				quad.ty -= up * gone;
-			else
-				quad.ty += down * gone;
+			quad = room_moved(quad, b, room_edge(b, (double)cx, (double)cy, nullptr), gone, (double)cx,
+					  (double)cy);
+		} else if (s.others == Others::MakeRoom) {
+			// Off the nearest edge that lies away from what morphs in (or
+			// in from the one that lies away from what morphs out).
+			const RoomCentre &centre = leaving ? room_to_ : room_from_;
+			const bool push = s.room_push && centre.any();
+			quad = room_moved(quad, b, room_edge(b, (double)cx, (double)cy, push ? &centre : nullptr), gone,
+					  (double)cx, (double)cy);
 		}
 		draw_item(shown, quad, shown.crop);
 	}
-	gs_texrender_end(into);
+}
+
+// Make Room: the middle of what morphs, in the new scene and in the old.
+// Pairs that stay as they are, and backgrounds, do not count.
+void Morph::find_room_centres(uint32_t cx, uint32_t cy)
+{
+	room_to_ = RoomCentre();
+	room_from_ = RoomCentre();
+	if (active_.others != Others::MakeRoom)
+		return;
+	const double screen = (double)cx * (double)cy;
+	for (const Part &part : parts_) {
+		Shown was, will;
+		if (!part.from || !part.to || !look(part.from, was) || !look(part.to, will))
+			continue;
+		const Bounds a = bounds_of(was.quad), b = bounds_of(will.quad);
+		const bool still = std::abs(a.x0 - b.x0) < 1.0 && std::abs(a.y0 - b.y0) < 1.0 &&
+				   std::abs(a.x1 - b.x1) < 1.0 && std::abs(a.y1 - b.y1) < 1.0;
+		auto background = [screen](const Bounds &x) {
+			return (x.x1 - x.x0) * (x.y1 - x.y0) >= 0.9 * screen;
+		};
+		if (still)
+			continue;
+		if (!background(b))
+			room_to_.add(b);
+		if (!background(a))
+			room_from_.add(a);
+	}
 }
 
 // A run of items that are each in one scene only: the old scene's cross-fade
@@ -548,10 +630,14 @@ void Morph::draw_run(const std::vector<const Part *> &run, double t, uint32_t cx
 		any_from = any_from || part->from;
 		any_to = any_to || part->to;
 	}
+	// (Make Room without a fade: what moves is drawn whole on its way, after
+	// the backgrounds have been cross-faded.)
+	const bool solid = active_.others == Others::MakeRoom && !active_.room_fade;
+	const Only only = solid ? Only::Fills : Only::All;
 	if (any_from)
-		draw_side(tr_from_, run, true, t, cx, cy);
+		draw_side(tr_from_, run, true, t, cx, cy, only);
 	if (any_to)
-		draw_side(tr_to_, run, false, t, cx, cy);
+		draw_side(tr_to_, run, false, t, cx, cy, only);
 	gs_texture_t *from = any_from ? gs_texrender_get_texture(tr_from_) : nullptr;
 	gs_texture_t *to = any_to ? gs_texrender_get_texture(tr_to_) : nullptr;
 	const Quad screen{(double)cx, 0.0, 0.0, (double)cy, 0.0, 0.0};
@@ -564,20 +650,27 @@ void Morph::draw_run(const std::vector<const Part *> &run, double t, uint32_t cx
 		const bool linear = gs_get_linear_srgb();
 		const bool was_srgb = gs_framebuffer_srgb_enabled();
 		gs_enable_framebuffer_srgb(linear);
-		gs_texture_t *only = from ? from : to;
+		gs_texture_t *only_one = from ? from : to;
 		if (linear)
-			gs_effect_set_texture_srgb(p_image_, only);
+			gs_effect_set_texture_srgb(p_image_, only_one);
 		else
-			gs_effect_set_texture(p_image_, only);
+			gs_effect_set_texture(p_image_, only_one);
 		while (gs_effect_loop(effect_, "Draw"))
-			gs_draw_sprite(only, 0, cx, cy);
+			gs_draw_sprite(only_one, 0, cx, cy);
 		gs_enable_framebuffer_srgb(was_srgb);
+	}
+	if (solid) {
+		if (any_from)
+			draw_side_items(run, true, t, cx, cy, Only::Movers);
+		if (any_to)
+			draw_side_items(run, false, t, cx, cy, Only::Movers);
 	}
 }
 
 void Morph::draw_morph(double t, uint32_t cx, uint32_t cy)
 {
 	spare_ = 0;
+	find_room_centres(cx, cy);
 	gs_blend_state_push();
 	gs_blend_function_separate(GS_BLEND_ONE, GS_BLEND_INVSRCALPHA, GS_BLEND_ONE, GS_BLEND_INVSRCALPHA);
 	std::vector<const Part *> run;
@@ -772,7 +865,7 @@ void Morph::alone_cb(void *data, gs_texture_t *a, gs_texture_t *b, float, uint32
 	const bool was_srgb = gs_framebuffer_srgb_enabled();
 	gs_enable_framebuffer_srgb(true);
 	gs_effect_set_texture_srgb(self->p_image_, only);
-	gs_effect_set_float(self->p_opacity_, 1.0f);
+	gs_effect_set_float(self->p_opacity_, self->alone_fade_ ? there : 1.0f);
 	gs_matrix_push();
 	gs_matrix_translate3f((float)std::max(ox, 0), (float)std::max(oy, 0), 0.0f);
 	while (gs_effect_loop(self->effect_, "Draw"))
@@ -790,7 +883,11 @@ void Morph::start_alone(const Settings &s, obs_source_t *from, obs_source_t *to,
 	alone_in_ = to != nullptr;
 	alone_zoom_ = s.unpaired == kUnpairedZoom;
 	slide_x_ = slide_y_ = 0;
-	const bool slide = s.unpaired == kUnpairedSlide;
+	// (Make Room by itself here: its scene is not on screen, or it is in a
+	// group, where no layer is put. It slides off its nearest edge inside
+	// its own frame, as Slide does.)
+	const bool slide = s.unpaired == kUnpairedSlide || s.unpaired == kUnpairedRoom;
+	alone_fade_ = s.unpaired == kUnpairedRoom && s.room_fade;
 	const bool other = item_transition_is_fallback_kind(s.unpaired.c_str());
 	// Off the nearest edge: of the item's own scene, as the item lies in it.
 	const char *edge = slide || other ? item_morph_edge(source_) : nullptr;
@@ -1072,6 +1169,37 @@ bool unpaired_own_cb(obs_properties_t *props, obs_property_t *, obs_data_t *sett
 	return true;
 }
 
+// Make Room's own two settings: which edge, and whether it fades.
+void add_room_properties(obs_properties_t *props)
+{
+	obs_property_t *way = obs_properties_add_list(props, "room_way", obs_module_text("MakeRoom.Way"),
+						      OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+	obs_property_list_add_int(way, obs_module_text("MakeRoom.Way.Push"), (int)RoomWay::Push);
+	obs_property_list_add_int(way, obs_module_text("MakeRoom.Way.Nearest"), (int)RoomWay::Nearest);
+	obs_property_set_long_description(way, obs_module_text("MakeRoom.Way.Tip"));
+	obs_property_t *fade = obs_properties_add_bool(props, "room_fade", obs_module_text("MakeRoom.Fade"));
+	obs_property_set_long_description(fade, obs_module_text("MakeRoom.Fade.Tip"));
+}
+
+// The Make Room transition's window: Morph's pairing and links, its easing,
+// and Make Room's own two settings. (Its way for what has no partner is
+// fixed, so neither Other items nor Unpaired sources is offered, nor rules.)
+obs_properties_t *get_room_properties(void *data)
+{
+	auto *self = static_cast<Morph *>(data);
+	obs_properties_t *props = obs_properties_create();
+	add_room_properties(props);
+	obs_property_t *pair_main = obs_properties_add_bool(props, "pair_main", obs_module_text("Morph.PairMain"));
+	obs_property_set_long_description(pair_main, obs_module_text("Morph.PairMain.Tip"));
+	obs_property_t *seen = obs_properties_add_bool(props, "visible_pixels", obs_module_text("Morph.Seen"));
+	obs_property_set_long_description(seen, obs_module_text("Morph.Seen.Tip"));
+	obs_property_t *no_shadows = obs_properties_add_bool(props, "no_shadows", obs_module_text("Measure.NoShadows"));
+	obs_property_set_long_description(no_shadows, obs_module_text("Morph.NoShadows.Tip"));
+	add_easing_properties(props, "");
+	add_morph_link_properties(props, self ? self->source() : nullptr, "");
+	return props;
+}
+
 obs_properties_t *get_properties(void *data)
 {
 	auto *self = static_cast<Morph *>(data);
@@ -1081,6 +1209,7 @@ obs_properties_t *get_properties(void *data)
 	obs_property_list_add_int(others, obs_module_text("Morph.Others.Fade"), (int)Others::Fade);
 	obs_property_list_add_int(others, obs_module_text("Morph.Others.Zoom"), (int)Others::Zoom);
 	obs_property_list_add_int(others, obs_module_text("Morph.Others.Slide"), (int)Others::Slide);
+	obs_property_list_add_int(others, obs_module_text("MakeRoom.Option"), (int)Others::MakeRoom);
 	obs_property_set_long_description(others, obs_module_text("Morph.Others.Tip"));
 	// Unpaired sources: when this is an item's own transition, how an item
 	// with nothing to change into comes and goes. Morph's own ways, a cut, or
@@ -1090,6 +1219,7 @@ obs_properties_t *get_properties(void *data)
 	obs_property_list_add_string(unpaired, obs_module_text("Morph.Others.Fade"), kUnpairedFade);
 	obs_property_list_add_string(unpaired, obs_module_text("Morph.Others.Zoom"), kUnpairedZoom);
 	obs_property_list_add_string(unpaired, obs_module_text("Morph.Others.Slide"), kUnpairedSlide);
+	obs_property_list_add_string(unpaired, obs_module_text("MakeRoom.Option"), kUnpairedRoom);
 	obs_property_list_add_string(unpaired, obs_module_text("Change.Cut"), kTransitionCut);
 	const char *kind = nullptr;
 	for (size_t i = 0; obs_enum_transition_types(i, &kind); i++) {
@@ -1107,6 +1237,7 @@ obs_properties_t *get_properties(void *data)
 		obs_data_release(settings);
 		obs_property_set_modified_callback(unpaired, unpaired_own_cb);
 	}
+	add_room_properties(props);
 	obs_property_t *pair_main = obs_properties_add_bool(props, "pair_main", obs_module_text("Morph.PairMain"));
 	obs_property_set_long_description(pair_main, obs_module_text("Morph.PairMain.Tip"));
 	obs_property_t *seen = obs_properties_add_bool(props, "visible_pixels", obs_module_text("Morph.Seen"));
@@ -1154,6 +1285,7 @@ obs_properties_t *get_properties(void *data)
 	obs_property_list_add_int(rule_others, obs_module_text("Morph.Others.Fade"), (int)Others::Fade);
 	obs_property_list_add_int(rule_others, obs_module_text("Morph.Others.Zoom"), (int)Others::Zoom);
 	obs_property_list_add_int(rule_others, obs_module_text("Morph.Others.Slide"), (int)Others::Slide);
+	obs_property_list_add_int(rule_others, obs_module_text("MakeRoom.Option"), (int)Others::MakeRoom);
 	obs_properties_add_bool(rule, "rule_pair_main", obs_module_text("Morph.PairMain"));
 	add_easing_properties(rule, "rule_");
 	obs_properties_add_button2(rule, "rule_add", obs_module_text("Morph.RuleAdd"), add_rule, owner);
@@ -1175,11 +1307,20 @@ void get_defaults(obs_data_t *settings)
 	obs_data_set_default_bool(settings, "no_shadows", true);
 	obs_data_set_default_int(settings, "ease_curve", (int)EaseCurve::Cubic);
 	obs_data_set_default_int(settings, "ease_mode", (int)EaseMode::InOut);
+	obs_data_set_default_int(settings, "room_way", (int)RoomWay::Push);
+	obs_data_set_default_bool(settings, "room_fade", false);
 	obs_data_set_default_int(settings, "rule_style", (int)Style::Morph);
 	obs_data_set_default_int(settings, "rule_others", (int)Others::Fade);
 	obs_data_set_default_bool(settings, "rule_pair_main", true);
 	obs_data_set_default_int(settings, "rule_ease_curve", (int)EaseCurve::Cubic);
 	obs_data_set_default_int(settings, "rule_ease_mode", (int)EaseMode::InOut);
+}
+
+void get_room_defaults(obs_data_t *settings)
+{
+	get_defaults(settings);
+	obs_data_set_default_int(settings, "others", (int)Others::MakeRoom);
+	obs_data_set_default_string(settings, "unpaired", kUnpairedRoom);
 }
 
 } // namespace
@@ -1208,40 +1349,53 @@ void morph_accept_drawing_filter(bool (*accepts)(obs_source_t *filter))
 
 void register_morph()
 {
-	obs_source_info info = {};
-	info.id = kMorphId;
-	info.type = OBS_SOURCE_TYPE_TRANSITION;
-	info.get_name = [](void *) {
-		return obs_module_text("Morph.Name");
-	};
-	info.create = [](obs_data_t *settings, obs_source_t *source) -> void * {
-		return new Morph(settings, source);
-	};
-	info.destroy = [](void *data) {
-		delete static_cast<Morph *>(data);
-	};
-	info.update = [](void *data, obs_data_t *settings) {
-		static_cast<Morph *>(data)->update(settings);
-	};
-	info.video_render = [](void *data, gs_effect_t *) {
-		static_cast<Morph *>(data)->render();
-	};
-	info.audio_render = [](void *data, uint64_t *ts_out, obs_source_audio_mix *audio, uint32_t mixers,
-			       size_t channels, size_t sample_rate) {
-		return obs_transition_audio_render(static_cast<Morph *>(data)->source(), ts_out, audio, mixers,
-						   channels, sample_rate, mix_out, mix_in);
-	};
-	info.transition_start = [](void *data) {
-		static_cast<Morph *>(data)->changed();
-		item_morph_started(static_cast<Morph *>(data)->source());
-	};
-	info.transition_stop = [](void *data) {
-		static_cast<Morph *>(data)->changed();
-		item_morph_stopped(static_cast<Morph *>(data)->source());
-	};
-	info.get_properties = get_properties;
-	info.get_defaults = get_defaults;
-	register_timed(&info);
+	// Morph, and Make Room: the same transition with Make Room for whatever
+	// has no partner (`room`).
+	for (const bool room : {false, true}) {
+		obs_source_info info = {};
+		info.id = room ? kMakeRoomId : kMorphId;
+		info.type = OBS_SOURCE_TYPE_TRANSITION;
+		if (room) {
+			info.get_name = [](void *) {
+				return obs_module_text("MakeRoom.Name");
+			};
+			info.create = [](obs_data_t *settings, obs_source_t *source) -> void * {
+				return new Morph(settings, source, true);
+			};
+		} else {
+			info.get_name = [](void *) {
+				return obs_module_text("Morph.Name");
+			};
+			info.create = [](obs_data_t *settings, obs_source_t *source) -> void * {
+				return new Morph(settings, source, false);
+			};
+		}
+		info.destroy = [](void *data) {
+			delete static_cast<Morph *>(data);
+		};
+		info.update = [](void *data, obs_data_t *settings) {
+			static_cast<Morph *>(data)->update(settings);
+		};
+		info.video_render = [](void *data, gs_effect_t *) {
+			static_cast<Morph *>(data)->render();
+		};
+		info.audio_render = [](void *data, uint64_t *ts_out, obs_source_audio_mix *audio, uint32_t mixers,
+				       size_t channels, size_t sample_rate) {
+			return obs_transition_audio_render(static_cast<Morph *>(data)->source(), ts_out, audio, mixers,
+							   channels, sample_rate, mix_out, mix_in);
+		};
+		info.transition_start = [](void *data) {
+			static_cast<Morph *>(data)->changed();
+			item_morph_started(static_cast<Morph *>(data)->source());
+		};
+		info.transition_stop = [](void *data) {
+			static_cast<Morph *>(data)->changed();
+			item_morph_stopped(static_cast<Morph *>(data)->source());
+		};
+		info.get_properties = room ? get_room_properties : get_properties;
+		info.get_defaults = room ? get_room_defaults : get_defaults;
+		register_timed(&info);
+	}
 }
 
 } // namespace stagekit
