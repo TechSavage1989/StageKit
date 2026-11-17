@@ -27,6 +27,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "item-morph.hpp"
 #include "morph-paint.hpp"
 #include "../common/easing.hpp"
+#include "../common/item-transition.hpp"
 #include "../common/pick-list.hpp"
 #include "../common/scene-filter-ids.hpp"
 #include "../common/scene-util.hpp"
@@ -66,6 +67,14 @@ enum class Others : int {
 	Zoom = 1,  // and grow from, or shrink to, a little smaller
 	Slide = 2, // and slide in from, or out to, the nearest edge of the screen
 };
+
+// How an item with nothing to change into comes in or goes out, when Morph
+// is an item's own transition (*Unpaired sources*, `unpaired`): one of
+// these, a cut (`kTransitionCut`), or any other transition by its id, with
+// that transition's settings under "unpaired|<id>|". Saved as text.
+constexpr const char *kUnpairedFade = "morph_fade";
+constexpr const char *kUnpairedZoom = "morph_zoom";
+constexpr const char *kUnpairedSlide = "morph_slide";
 
 // A scene filter that only moves, shows and hides items, or only handles
 // sound: it draws nothing, so a scene with it can still be drawn item by item.
@@ -144,6 +153,10 @@ struct Settings {
 	bool pair_main = true;  // the largest item left over in each scene becomes one that changes into the other
 	bool seen = true;       // two sources change into each other by what shows of them, not their boxes
 	bool no_shadows = true; // and by their pictures, without shadows, glows and outlines
+	// An item's own Morph, with nothing to change into: how it comes or goes,
+	// and, for another transition, that transition's settings as JSON.
+	std::string unpaired = kUnpairedFade;
+	std::string unpaired_own;
 	// Sources set to count as one thing: the one changes into the other.
 	MorphLinks links;
 	std::vector<Rule> rules;
@@ -216,6 +229,9 @@ private:
 		       uint32_t cy);
 	static void mix_cb(void *data, gs_texture_t *a, gs_texture_t *b, float t, uint32_t cx, uint32_t cy);
 	static void alone_cb(void *data, gs_texture_t *a, gs_texture_t *b, float t, uint32_t cx, uint32_t cy);
+	void start_alone(const Settings &s, obs_source_t *from, obs_source_t *to, uint32_t cx, uint32_t cy);
+	void draw_alone(const Settings &s, double way, uint32_t cx, uint32_t cy, bool was_linear);
+	void let_go_fallback();
 
 	obs_source_t *source_;
 	std::mutex mutex_;
@@ -234,6 +250,15 @@ private:
 	float alone_from_ = -1.0f;
 	bool alone_zoom_ = false;
 	bool alone_in_ = false; // the item is coming in (shown), not going
+	// *Slide off the nearest edge*: the way it moves, as a step of the
+	// item's own width and height (one of them 1 or -1, the other 0).
+	int slide_x_ = 0, slide_y_ = 0;
+	// Another transition as the way it comes or goes: a private one of that
+	// kind, driven by hand (`OBS_TRANSITION_MODE_MANUAL`) from the change's
+	// own clock, with the item as its one side. Made when first needed.
+	obs_source_t *fallback_ = nullptr;
+	std::string fallback_kind_;
+	bool fallback_on_ = false; // it holds the item of the change under way
 	std::atomic<bool> stale_{false};
 	obs_source_t *told_about_ = nullptr; // the scene whose filter was last written to the log
 
@@ -267,6 +292,8 @@ Morph::~Morph()
 {
 	item_morph_gone(source_);
 	forget();
+	let_go_fallback();
+	obs_source_release(fallback_);
 	obs_enter_graphics();
 	gs_texrender_destroy(tr_from_);
 	gs_texrender_destroy(tr_to_);
@@ -286,6 +313,15 @@ void Morph::update(obs_data_t *settings)
 	s.pair_main = obs_data_get_bool(settings, "pair_main");
 	s.seen = obs_data_get_bool(settings, "visible_pixels");
 	s.no_shadows = obs_data_get_bool(settings, "no_shadows");
+	// Unpaired sources. Made before the choice: as "Other items" said, which
+	// an item by itself followed for a fade and zoom only (a slide was a fade).
+	s.unpaired = obs_data_get_string(settings, "unpaired");
+	if (!obs_data_has_user_value(settings, "unpaired") || s.unpaired.empty()) {
+		s.unpaired = s.others == Others::Zoom ? kUnpairedZoom : kUnpairedFade;
+		obs_data_set_default_string(settings, "unpaired", s.unpaired.c_str());
+	}
+	if (item_transition_is_fallback_kind(s.unpaired.c_str()))
+		s.unpaired_own = item_transition_own_json(settings, "unpaired|" + s.unpaired + "|");
 	s.links = morph_links_read(settings, "links");
 	for (const std::string &line : pick_list_read(settings, "rules", false)) {
 		const size_t mark = line.find(kRuleMark);
@@ -713,7 +749,131 @@ void Morph::alone_cb(void *data, gs_texture_t *a, gs_texture_t *b, float, uint32
 	if (!only)
 		return;
 	const float there = self->alone_in_ ? self->eased_ : 1.0f - self->eased_; // how much of it is there
-	self->draw_faded(only, cx, cy, there, self->alone_zoom_ ? 0.8 + 0.2 * (double)there : 1.0);
+	if (!self->slide_x_ && !self->slide_y_) {
+		self->draw_faded(only, cx, cy, there, self->alone_zoom_ ? 0.8 + 0.2 * (double)there : 1.0);
+		return;
+	}
+	// Slid towards (or in from) the nearest edge, inside the item's own
+	// frame as every item transition is: the part still in the frame is
+	// drawn where it has got to.
+	const double gone = 1.0 - (double)there;
+	const int ox = (int)std::lround(self->slide_x_ * gone * (double)cx);
+	const int oy = (int)std::lround(self->slide_y_ * gone * (double)cy);
+	const int vw = (int)cx - std::abs(ox), vh = (int)cy - std::abs(oy);
+	if (vw <= 0 || vh <= 0 || !self->effect_)
+		return;
+	const bool was_srgb = gs_framebuffer_srgb_enabled();
+	gs_enable_framebuffer_srgb(true);
+	gs_effect_set_texture_srgb(self->p_image_, only);
+	gs_effect_set_float(self->p_opacity_, 1.0f);
+	gs_matrix_push();
+	gs_matrix_translate3f((float)std::max(ox, 0), (float)std::max(oy, 0), 0.0f);
+	while (gs_effect_loop(self->effect_, "Draw"))
+		gs_draw_sprite_subregion(only, 0, (uint32_t)std::max(-ox, 0), (uint32_t)std::max(-oy, 0), (uint32_t)vw,
+					 (uint32_t)vh);
+	gs_matrix_pop();
+	gs_enable_framebuffer_srgb(was_srgb);
+}
+
+// The change for an item by itself begins: which way it slides, and, for
+// another transition, that transition set up with the item as its one side
+// (in from nothing when shown, out to nothing when hidden).
+void Morph::start_alone(const Settings &s, obs_source_t *from, obs_source_t *to, uint32_t cx, uint32_t cy)
+{
+	alone_in_ = to != nullptr;
+	alone_zoom_ = s.unpaired == kUnpairedZoom;
+	slide_x_ = slide_y_ = 0;
+	const bool slide = s.unpaired == kUnpairedSlide;
+	const bool other = item_transition_is_fallback_kind(s.unpaired.c_str());
+	// Off the nearest edge: of the item's own scene, as the item lies in it.
+	const char *edge = nullptr;
+	obs_source_t *scene = nullptr;
+	obs_sceneitem_t *item = slide || other ? item_morph_item(source_, &scene) : nullptr;
+	if (item)
+		edge = item_off_nearest_edge(item, scene, alone_in_);
+	obs_sceneitem_release(item);
+	obs_source_release(scene);
+	if (slide) {
+		const std::string way = edge ? edge : (alone_in_ ? "right" : "left");
+		// (Shown, it comes in moving that way: from the other side.)
+		const int sign = alone_in_ ? -1 : 1;
+		slide_x_ = way == "left" ? -sign : way == "right" ? sign : 0;
+		slide_y_ = way == "up" ? -sign : way == "down" ? sign : 0;
+	}
+	if (!other)
+		return;
+	if (!fallback_ || fallback_kind_ != s.unpaired) {
+		let_go_fallback();
+		obs_source_release(fallback_);
+		fallback_ = obs_source_create_private(s.unpaired.c_str(), "Morph unpaired", nullptr);
+		fallback_kind_ = s.unpaired;
+	}
+	if (!fallback_)
+		return; // (that kind is not installed any more)
+	obs_data_t *own = s.unpaired_own.empty() ? obs_data_create()
+						 : obs_data_create_from_json(s.unpaired_own.c_str());
+	if (!own)
+		own = obs_data_create();
+	// A slide's or a swipe's "Off the nearest edge", made a direction.
+	if (strcmp(obs_data_get_string(own, "direction"), "nearest") == 0) {
+		obs_data_set_string(own, "direction", edge ? edge : (alone_in_ ? "right" : "left"));
+		if (s.unpaired == "swipe_transition")
+			obs_data_set_bool(own, "swipe_in", alone_in_);
+	}
+	obs_source_reset_settings(fallback_, own);
+	obs_data_release(own);
+	obs_transition_set_size(fallback_, cx, cy);
+	obs_transition_set_alignment(fallback_, OBS_ALIGN_CENTER);
+	obs_transition_set_scale_type(fallback_, OBS_TRANSITION_SCALE_ASPECT);
+	obs_transition_set_manual_torque(fallback_, 0.0f, 0.0f);
+	// As a scene starts an item's own transition.
+	if (alone_in_) {
+		obs_transition_set(fallback_, nullptr);
+		obs_transition_start(fallback_, OBS_TRANSITION_MODE_MANUAL, 300, to);
+	} else {
+		obs_transition_set(fallback_, from);
+		obs_transition_start(fallback_, OBS_TRANSITION_MODE_MANUAL, 300, nullptr);
+	}
+	obs_transition_set_manual_time(fallback_, 0.0f);
+	fallback_on_ = true;
+}
+
+// One frame of an item by itself, `way` along its change (0 to 1, by the
+// clock, not eased: another transition eases itself).
+void Morph::draw_alone(const Settings &s, double way, uint32_t cx, uint32_t cy, bool was_linear)
+{
+	if (s.unpaired == kTransitionCut) {
+		// At once: shown whole, or gone.
+		if (alone_in_)
+			obs_transition_video_render_direct(source_, OBS_TRANSITION_SOURCE_B);
+		return;
+	}
+	if (fallback_on_ && fallback_) {
+		// (Never all the way there: at its end the transition would draw
+		// its first side again, the item it hid. The end is drawn here.)
+		if (way >= 0.999) {
+			if (alone_in_)
+				obs_transition_video_render_direct(source_, OBS_TRANSITION_SOURCE_B);
+			return;
+		}
+		obs_transition_set_size(fallback_, cx, cy);
+		obs_transition_set_manual_time(fallback_, (float)way);
+		// (Drawn as OBS would draw it in the item's place: in the state the
+		// scene drew this transition in.)
+		const bool linear = gs_set_linear_srgb(was_linear);
+		obs_source_video_render(fallback_);
+		gs_set_linear_srgb(linear);
+		return;
+	}
+	obs_transition_video_render(source_, alone_cb);
+}
+
+// The item the fallback transition held is let go (its change is over).
+void Morph::let_go_fallback()
+{
+	if (fallback_ && fallback_on_)
+		obs_transition_set(fallback_, nullptr);
+	fallback_on_ = false;
 }
 
 void Morph::render()
@@ -754,6 +914,7 @@ void Morph::render()
 	if (stale_.exchange(false)) {
 		forget();
 		alone_from_ = -1.0f;
+		let_go_fallback();
 	}
 	// As one item's own show or hide transition (one side is nothing), what
 	// is drawn depends on whether another item is changing into it.
@@ -766,13 +927,13 @@ void Morph::render()
 		return;
 	}
 	if (as_item == ItemMorph::Alone && effect_) {
-		if (alone_from_ < 0.0f)
+		if (alone_from_ < 0.0f) {
 			alone_from_ = std::min(t, 0.95f);
+			start_alone(s, from, to, cx, cy);
+		}
 		const double way = std::clamp((double)(t - alone_from_) / (double)(1.0f - alone_from_), 0.0, 1.0);
 		eased_ = (float)std::clamp(ease(s.curve, s.mode, way), 0.0, 1.0);
-		alone_zoom_ = s.others == Others::Zoom;
-		alone_in_ = to != nullptr;
-		obs_transition_video_render(source_, alone_cb);
+		draw_alone(s, way, cx, cy, was_linear);
 		obs_source_release(from);
 		obs_source_release(to);
 		gs_set_linear_srgb(was_linear);
@@ -890,6 +1051,26 @@ bool add_rule(obs_properties_t *props, obs_property_t *, void *data)
 	return true;
 }
 
+// The settings of the transition chosen under Unpaired sources, in their
+// own group, made again whenever another is chosen.
+bool unpaired_own_cb(obs_properties_t *props, obs_property_t *, obs_data_t *settings)
+{
+	obs_property_t *group = obs_properties_get(props, "unpaired|g");
+	obs_properties_t *content = group ? obs_property_group_content(group) : nullptr;
+	if (!content || !settings)
+		return false;
+	std::vector<std::string> old;
+	for (obs_property_t *p = obs_properties_first(content); p; obs_property_next(&p))
+		old.push_back(obs_property_name(p));
+	for (const std::string &name : old)
+		obs_properties_remove_by_name(content, name.c_str());
+	const std::string kind = obs_data_get_string(settings, "unpaired");
+	if (item_transition_is_fallback_kind(kind.c_str()))
+		item_transition_add_own(content, settings, "unpaired|" + kind + "|", kind);
+	obs_property_set_visible(group, obs_properties_first(content) != nullptr);
+	return true;
+}
+
 obs_properties_t *get_properties(void *data)
 {
 	auto *self = static_cast<Morph *>(data);
@@ -900,6 +1081,31 @@ obs_properties_t *get_properties(void *data)
 	obs_property_list_add_int(others, obs_module_text("Morph.Others.Zoom"), (int)Others::Zoom);
 	obs_property_list_add_int(others, obs_module_text("Morph.Others.Slide"), (int)Others::Slide);
 	obs_property_set_long_description(others, obs_module_text("Morph.Others.Tip"));
+	// Unpaired sources: when this is an item's own transition, how an item
+	// with nothing to change into comes and goes. Morph's own ways, a cut, or
+	// any other transition, whose own settings follow (`unpaired|g`).
+	obs_property_t *unpaired = obs_properties_add_list(props, "unpaired", obs_module_text("Morph.Alone"),
+							   OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
+	obs_property_list_add_string(unpaired, obs_module_text("Morph.Others.Fade"), kUnpairedFade);
+	obs_property_list_add_string(unpaired, obs_module_text("Morph.Others.Zoom"), kUnpairedZoom);
+	obs_property_list_add_string(unpaired, obs_module_text("Morph.Others.Slide"), kUnpairedSlide);
+	obs_property_list_add_string(unpaired, obs_module_text("Change.Cut"), kTransitionCut);
+	const char *kind = nullptr;
+	for (size_t i = 0; obs_enum_transition_types(i, &kind); i++) {
+		if (!item_transition_is_fallback_kind(kind))
+			continue;
+		const char *shown_as = obs_source_get_display_name(kind);
+		obs_property_list_add_string(unpaired, shown_as ? shown_as : kind, kind);
+	}
+	obs_property_set_long_description(unpaired, obs_module_text("Morph.Alone.Tip"));
+	if (self) {
+		obs_properties_add_group(props, "unpaired|g", obs_module_text("Morph.AloneOwn"), OBS_GROUP_NORMAL,
+					 obs_properties_create());
+		obs_data_t *settings = obs_source_get_settings(self->source());
+		unpaired_own_cb(props, nullptr, settings);
+		obs_data_release(settings);
+		obs_property_set_modified_callback(unpaired, unpaired_own_cb);
+	}
 	obs_property_t *pair_main = obs_properties_add_bool(props, "pair_main", obs_module_text("Morph.PairMain"));
 	obs_property_set_long_description(pair_main, obs_module_text("Morph.PairMain.Tip"));
 	obs_property_t *seen = obs_properties_add_bool(props, "visible_pixels", obs_module_text("Morph.Seen"));
@@ -962,6 +1168,7 @@ obs_properties_t *get_properties(void *data)
 void get_defaults(obs_data_t *settings)
 {
 	obs_data_set_default_int(settings, "others", (int)Others::Fade);
+	obs_data_set_default_string(settings, "unpaired", kUnpairedFade);
 	obs_data_set_default_bool(settings, "pair_main", true);
 	obs_data_set_default_bool(settings, "visible_pixels", true);
 	obs_data_set_default_bool(settings, "no_shadows", true);

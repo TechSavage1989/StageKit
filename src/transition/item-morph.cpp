@@ -604,6 +604,18 @@ ItemMorph item_morph_now(obs_source_t *transition)
 	return entry->second.state;
 }
 
+obs_sceneitem_t *item_morph_item(obs_source_t *transition, obs_source_t **scene)
+{
+	std::lock_guard lock(g_mutex);
+	auto entry = g_entries.find(transition);
+	if (entry == g_entries.end() || entry->second.over || !entry->second.item)
+		return nullptr;
+	if (scene)
+		*scene = obs_source_get_ref(entry->second.scene);
+	obs_sceneitem_addref(entry->second.item);
+	return entry->second.item;
+}
+
 void item_morph_stop()
 {
 	if (g_stopped.exchange(true))

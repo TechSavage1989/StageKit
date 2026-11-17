@@ -49,6 +49,10 @@ enum class ItemMorph {
 };
 ItemMorph item_morph_now(obs_source_t *transition);
 
+// The item a Morph transition is the show or hide transition of, held, and
+// the scene it was found in (held, into `scene`); null when not known.
+obs_sceneitem_t *item_morph_item(obs_source_t *transition, obs_source_t **scene);
+
 void register_item_morph();
 // OBS is closing, or the plugin is being unloaded: every change under way is
 // ended and nothing more is started.

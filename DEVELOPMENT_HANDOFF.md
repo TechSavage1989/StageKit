@@ -13,6 +13,48 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
+## Link Visibility's show and hide transitions; Morph's Unpaired sources (release number to come)
+
+Branch `feat/link-visibility-transitions`. The owner, with a screenshot of a Link Visibility
+(*Follow the first source*, Game Capture and Column: Chat, *Also in other scenes*, Morph, 500 ms,
+*Lock hidden sources*): "Link visibility scene filter should have additional transition options
+including a fallback or other items transition for items that don't have partners".
+
+- `src/placement/visibility-link.cpp`: the fuller *Show/Hide transition*, the one Show in Scenes
+  has (`add_item_change_properties`, `item_change_read`, `apply_item_change`), not a third kind.
+  *Settings for* lists the sources of both lists (the list setting is now `"items,elsewhere"`;
+  `build` in `src/common/item-transition.cpp` reads comma-separated lists). Old filters keep the
+  same `transition` / `transition_ms` keys and `hide_transition` defaults to *The same as
+  showing*, so they read as before (tested: the kinds and durations set on the items, and *What is
+  set on each item* left alone).
+- `src/transition/morph.cpp`: *Unpaired sources* (`unpaired`, text; `morph_fade` as it comes):
+  Fade, Fade and zoom, Slide off the nearest edge (new for an item by itself: it was a fade), a cut,
+  or any other transition with its own settings (`unpaired|<kind>|...`). Another transition is a
+  private one (`fallback_`) set up in `start_alone` as a scene starts an item's own and driven by
+  hand from the change's clock; never to its end (it would draw the hidden item again), Morph
+  draws the last frames. Shown in Morph's own window (with the chosen kind's settings in a group
+  `unpaired|g`, rebuilt by `unpaired_own_cb`) and, copied, under Morph in every fuller *Change
+  with* in place of *With nothing to change into* (`others` is not copied: it only means something
+  in a change of scene). Old settings: `others` Fade and zoom reads as Fade and zoom, anything else
+  a fade, as before.
+- `build` in `item-transition.cpp` now makes nothing again when the controls are already made for
+  what is chosen (a hidden mark, `change|sig|...`). OBS calls every control's callback once when it
+  builds a window, from a list taken beforehand; one more callback that rebuilt (Unpaired sources)
+  made a callback run on a control already taken off, and a test window crashed in
+  `obs_properties_apply_settings`. The same was true before for the two kind lists and went unseen.
+- `item_morph_item` (`item-morph.*`) gives the item a Morph is the transition of, for the nearest
+  edge.
+- Test `[link visibility: show and hide transitions, and Morph's unpaired sources]` (run alone with
+  `STAGEKIT_TEST_ONLY_LINK_TRANS=1`): old settings, separate show and hide with a transition's own
+  settings, a source's own settings, the window; Morph's and Show in Scenes' controls and old
+  `others`; and a camera hidden as a capture is shown with a small source shown by the Link
+  Visibility, for each fallback (Morph's fade, zoom and slide, Fade and Zoom (StageKit), OBS's Slide
+  off the nearest edge, a cut): part-way in and out (or at once for the cut), whole or gone after,
+  with the camera and capture still morphing by one layer. `[show in scenes]` now looks for
+  `show|stagekit_morph|unpaired` where it looked for `...|others`.
+- Not seen on Windows; another plugin's transition used as the fallback has only been tried with
+  OBS's Slide and StageKit's Fade and Zoom.
+
 ## A capture comes out of the DSLR (0.1.0-beta158)
 
 The owner, with their collection and four logs: "when I switch to window or game source from DSLR

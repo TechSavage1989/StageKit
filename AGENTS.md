@@ -610,9 +610,20 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   or down for each item when it is applied, `off_nearest_edge`; a swipe is also told whether it
   is coming in): the owner asked for it by Morph's name for the same thing. OBS's item
   transitions move the picture inside the item's own frame, not across the screen; the owner was
-  told so, and that Show/Hide Animation is the one that travels. Show Source in Use, Program Trigger and
-  Link Visibility still have the plain two controls; give them this one when it is asked for,
-  not a third kind.
+  told so, and that Show/Hide Animation is the one that travels. **Link Visibility has it too**
+  (the owner: "Link visibility scene filter should have additional transition options including
+  a fallback or other items transition for items that don't have partners"): *Settings for*
+  lists the sources of both its lists (`add_item_change_properties(..., "items,elsewhere")`; the
+  list setting may name several, comma-separated). A filter saved with the plain two controls
+  reads as before: they are the same `transition` and `transition_ms`, and `hide_transition`
+  is *The same as showing* as it comes. Under Morph the filter's window offers Morph's
+  *Unpaired sources* (`unpaired`) in place of *Other items* (`others`, which only means
+  something in a change of scene and is not copied), and, for another transition there, that
+  transition's own settings, kept as `show|stagekit_morph|unpaired|<kind>|<its setting>` and
+  handed to the item's Morph inside its own settings like `links`. An old filter's `others` of
+  Fade and zoom reads as *Unpaired sources* Fade and zoom. Show Source in Use and Program
+  Trigger still have the plain two controls; give them this one when it is asked for, not a
+  third kind.
 - **Move Source moves the source in every scene it is in, by default** (`apply_in`). The owner asked for
   that: the camera sent to a spot is there in every scene. The older `where` setting is not read.
 - **Shadow sizes are in screen pixels by default.** The owner's old shadows sat on full-canvas scenes,
@@ -858,8 +869,25 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     and taken out after. It draws the pair as the Morph transition does.
   - The two items are hidden and shown for OBS and everything else from the first moment. Their
     own transitions are the Morph transition as an item's (`ItemMorph`): *Paired* draws nothing,
-    *Alone* fades (or fades and zooms, `others`), *Waiting* is a hiding item left as it is and a
+    *Alone* goes by *Unpaired sources* (below), *Waiting* is a hiding item left as it is and a
     showing one not drawn yet.
+  - **Unpaired sources** (`unpaired`, a string, `morph_fade` as it comes; in Morph's own window
+    and, copied, under Morph in every fuller *Change with*): how an *Alone* item comes or goes.
+    `morph_fade`, `morph_zoom` and `morph_slide` are drawn by `alone_cb` (the slide off the
+    nearest edge of the item's scene, `item_morph_item` + `item_off_nearest_edge`, inside the
+    item's own frame: `gs_draw_sprite_subregion`); `none` is a cut (shown whole, or gone, once
+    *Alone*); any other transition id (`item_transition_is_fallback_kind`: not Morph, not a
+    stinger) is a private transition of that kind (`fallback_`) with its settings from
+    `unpaired|<kind>|...` (a slide's or swipe's *Off the nearest edge* made a direction), set up
+    in `start_alone` as a scene starts an item's own (nothing to the item when shown, the item to
+    nothing when hidden) and driven in `OBS_TRANSITION_MODE_MANUAL` by the change's own clock,
+    not eased (it eases itself). It is never driven to 1: at its end OBS's transition draws its
+    first side again, which for a hide is the item, so the last frames are drawn by Morph itself;
+    it lets go of the item at the next start or stop (`let_go_fallback`). A Morph saved before
+    reads `others` (Fade and zoom stays so; Slide, then a fade for an item, stays a fade). Which
+    side is the item's is still read from the transition's sources (`alone_in_`). Tested in
+    `[link visibility: show and hide transitions, and Morph's unpaired sources]`, each way in and
+    out while a pair morphs beside it; not seen on Windows.
   - Pairs are found whoever hid and showed the items. Every Morph says when it starts
     (`item_morph_started`); on the next tick the ones that are an item's are looked up in the
     scenes (`find_items`), and a hide and a show in one scene within `kGraceNs` (0.1 s) pair up

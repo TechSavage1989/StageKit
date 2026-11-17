@@ -909,9 +909,17 @@ stays off. Two rules make it suit several modes in one scene:
   camera only in the mode showing, and switching modes with the camera off leaves it off.
 
 It follows whatever shows or hides an item:
-the eye icon, a Stream Deck *Source* key, a hotkey. Switch the filter off to pause it. *Transition*
-and *Duration* choose how the items it shows and hides appear and disappear: a fade to begin with, any
-other transition OBS has, a cut, or whatever is set on each item.
+the eye icon, a Stream Deck *Source* key, a hotkey. Switch the filter off to pause it.
+
+Under *Show/Hide transition*, *Show transition* and *Hide transition* choose how the items it shows
+and hides appear and disappear: *As the scene sets* to begin with, any other transition OBS has (with
+its own settings, such as the way a slide goes, right under it), a cut, or whatever is set on each
+item. *Hide transition* is *The same as showing* until you choose another, and each has its own
+*Duration*. *Settings for* switches the controls to one listed source (from *Linked items* or *Also in
+other scenes*), so that source can come and go its own way; the rest keep the usual settings. With
+*Morph (StageKit)* chosen, *Unpaired sources* says how a source with nothing to change into comes and
+goes ([below](#morph-between-items)). A filter set up before this keeps its *Transition* and *Duration*
+as they were, for showing and hiding alike.
 
 **Lock hidden sources** (unticked as it comes): each linked source is locked while it is hidden and
 unlocked when it is shown, whatever shows or hides it. OBS's preview lets a click select a hidden
@@ -1073,8 +1081,14 @@ Which two go together follows the Morph transition's rules:
   back as well: with the two cameras linked, the camera goes into its corner view, and the capture
   comes out of the camera too, instead of fading in by itself. Going back, both go into the camera.
 
-An item with nothing to change into fades by itself, or fades and zooms if *With nothing to change
-into* (in Show in Scenes; *Other items* in the transition's own settings) says so. That holds for an
+An item with nothing to change into goes by **Unpaired sources**, under Morph in the filter's
+settings (Show in Scenes, Link Visibility, Scene Transitions and the rest; per source with *Settings
+for*) and in the Morph transition's own settings: *Fade* (as it comes), *Fade and zoom*, *Slide off
+the nearest edge*, *A cut* (at once), or any other transition you have, such as *Fade and Zoom
+(StageKit)*, *Swipe* or *Slide*, with that transition's own settings right under it (a slide or swipe
+can go *Off the nearest edge* too). Every way stays inside the item's own frame, as OBS's show and
+hide transitions do. Settings made before this read as before: *Fade and zoom* under *With nothing to
+change into* (or *Other items*) is *Fade and zoom* here, and anything else a fade. That holds for an
 item being shown as much as for one being hidden, over the same time as the change. (Up to beta155 an
 item left over and being shown appeared all at once at the end of the change; in beta156 and beta157
 the capture in the camera example above faded in where it is, and since beta158 it comes out of the
