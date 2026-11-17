@@ -57,6 +57,13 @@ from hotkeys, or from the Stream Deck OBS Studio plugin's *Filter* and *Source* 
 - **Match Item** (scene filter): keeps an item lined up with an item in another scene, so titles sit in
   the same place in every scene.
 - **Apply Layout** (scene filter): saves an arrangement of a scene's items and glides back to it.
+- **Scene Modes** (scene filter): named modes (Game, Window, Be right back...), one on at a time, a key
+  each. Turning one on shows its sources and hides the other modes'.
+- **Scene Transitions** (scene filter): one place for how every source in a scene shows and hides.
+- **Scene Fit** (scene filter): several sources fitted into the free space together, all moving at once.
+- **Scene Standby** (scene filter): every empty capture in a scene shows the standby image, set once.
+- **Scene Corners** (scene filter): the same corners and edges on every source of a scene, set once.
+- **Scene Shadow** (scene filter): one shadow, glow or outline for a whole scene; no source changes size.
 - **StageKit dock**: click an item into place, and make Stream Deck keys for its positions in one click.
 - **Line up, resize and snap**: from a right-click in the preview, hotkeys or the dock, measured by
   what is actually drawn in each item.
@@ -1094,6 +1101,12 @@ A transition for single items and for scenes: **Fade and Zoom (StageKit)**.
 
 A scene filter sits on a scene, not on a source, and looks after the scene's sources together: one filter in
 place of one per source. Add one from the scene's own Filters window (right-click the scene, *Filters*).
+There are six: **Scene Modes** (which sources show), **Scene Transitions** (how they show and hide), **Scene
+Fit** (where they go), **Scene Standby** (the standby image in a capture's place), **Scene Corners** and
+**Scene Shadow** (how they look). They work together, and a Standby Image, Corners & Edges or Shadow, Glow &
+Outline you put on a source yourself is left as it is. Five of them draw nothing, and Scene Shadow is
+built to keep Morph working, so a scene carrying any of them still morphs. In a scene that is not on screen
+they do as little as they can, and nothing at all while a scene collection loads.
 
 #### Scene Modes
 
@@ -1188,7 +1201,7 @@ out where the source last came to rest: OBS starts the transition before StageKi
 #### Scene Fit
 
 <!-- ==== scene-filters:fit (Scene Fit) ==== -->
-Scene Fit does what a Fit to Space filter does, for several sources of the scene at once. Each source in
+**Scene Fit (StageKit)** does what a Fit to Space filter does, for several sources of the scene at once. Each source in
 *Fitted sources* has the whole set of Fit to Space settings of its own (choose it under *Settings for*), and
 starts from a gap of 30 px in the free space round its place.
 
@@ -1267,8 +1280,8 @@ and says so.
 #### Scene Shadow
 
 <!-- ==== scene-filters:shadow (Scene Shadow) ==== -->
-One shadow, glow or outline for every source of a scene, set once. Add **Scene Shadow (StageKit)** to the scene
-(right-click the scene, *Filters*) instead of a Shadow, Glow & Outline on each source.
+**Scene Shadow (StageKit)** gives every source of a scene one shadow, glow or outline, set once, instead of a
+Shadow, Glow & Outline on each source.
 
 <p align="center"><img src="docs/images/scene-shadow.png" width="900" alt="The same scene as OBS draws it, with one drop shadow under the game, the chat box and the camera, with an amber glow and a white outline round them, and half-way through a Morph to a scene without a shadow, the shadow at half strength"></p>
 

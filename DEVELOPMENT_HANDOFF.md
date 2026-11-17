@@ -13,6 +13,130 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
+## Scene filters and the Scene Mode key (0.1.0-beta155)
+
+The owner asked for filters on a scene that look after its sources together, and then: "if you can release
+faster in multiple releases then so be it". So beta155 ships the six scene filters and the Stream Deck side;
+the frame-time work and a new scene collection built with them follow in beta156.
+
+Built as a groundwork commit and six branches, merged on `feat/scene-filters` in this order:
+`feat/scene-transitions`, `feat/scene-standby-corners`, `feat/scene-modes`, `feat/scene-fit`,
+`feat/scene-shadow` (both phases), `feat/streamdeck-scene`. Each scene filter keeps a block of its own between
+`==== scene-filters:<unit> ====` lines; the only file two units both edited outside their blocks was this
+handoff. The Morph fix (the five non-drawing scene filters in `draws_nothing`, which the groundwork commit
+had meant to include) came on two branches as the same change and is in once. Added at integration:
+Standby's `sync_stand_ins` resolves *As the scene sets* before swapping a change for its twin, and the two
+tests that needed Scene Modes (Standby's test 11, Transitions' test 11 reduced).
+
+**Not in beta155, next (beta156):** the frame-time work (`feat/frame-time`: per-frame timing in µs,
+`stagekit_timing_take`, the shadow scale check, the measurement harness) and the new collection
+(`scripts/make-scene-filter-collection.py`, with `--no-scene-fit` / `--no-scene-shadow`). Deferred perf cuts:
+Show in Scenes *Follow what is shown* by signal, Link Visibility's copies, Scene Fit's `kComingBack`.
+
+**Not proven on Windows:** `stagekit-scene-shadow.effect` (Direct3D compiles it at load; an error leaves
+the scene without its shadow), every scene filter's window in OBS's own Filters window (Scene Fit's per-entry
+lists rebuilt in place are the least proven: cut to one filter-wide list if they misbehave), Morph between
+two captures as a Scene Modes change, the Stream Deck settings pages and the Scene Mode key against the real
+filter. Scene Shadow differs from a true layer only at see-through edges and does not follow a crop to
+bounds. *As the scene sets* is the new default in every filter that shows and hides sources: it changes
+nothing in a scene without a Scene Transitions (a fade of the filter's own length, as before); Transitions'
+test 5 is the guard.
+
+### Groundwork
+
+The shared pieces the six scene filters build on, with no change of behaviour: their ids
+(`src/common/scene-filter-ids.hpp`) and Morph's `draws_nothing` for the five that draw nothing,
+`morph_accept_drawing_filter`; `kOwnSettings` by the last `|` part, plus `mode_now`, `mode_before`,
+`managed`, `managed_by`; PickList `title_text` and `pick_list_on_change_for` (called after the plugin-wide
+callback); `item_transitions_owner` asked per item; `holds-hidden.*` (`mode_holds_hidden`,
+`mode_settling`, Link Visibility registered); `go-to-scene.*` moved out of Show in Scenes with `stay_in`;
+`filter-order.hpp`, `stand-in.hpp`, `is_screen_capture`; the `==== scene-filters:<unit> ====` blocks in
+plugin-main, CMake, the locale file, the tests, the README and AGENTS; `tests/run-tests.sh` stops on a
+repeated locale key and on a failed build. Whole suite: ALL PASSED.
+
+### Scene Transitions
+
+Scene Transitions (`src/placement/scene-transitions.*`): one filter on a scene that writes every source's
+OBS item transitions from its tick, on events, only where they differ; *As the scene sets*
+(`kTransitionScene`) is the new default of every filter's transition, resolved only in
+`resolve_item_change` (fade of the filter's own duration where the scene sets nothing). Owned (Standby),
+private, *Leave these alone*, Show/Hide Animation and grouped items (unless `in_groups`) are passed over; the
+scene's transitions are put back after another filter's own change. Standby's `resolve_item_change` call and
+test 11 with Scene Modes (reduced: the scene's way in view, a cut out of view, nothing hidden left in use; the
+item Morph pairing of two captures is not in it) were added at integration. Whole suite: ALL PASSED.
+
+### Scene Standby and Scene Corners
+
+Two scene filters that draw nothing and keep a filter on each source they cover, through one helper
+(`src/common/managed-filter.*`, `ManagedSet`): Scene Standby (`stagekit_scene_standby`) a Standby Image
+filter on each capture (or chosen source), Scene Corners (`stagekit_scene_corners`) a Corners & Edges on
+each source but the full-screen background. Managed filters carry `managed` / `managed_by`, follow only the
+scene filter they name (taken over by the next one when it is gone), are taken off 3 s after no scene
+filter covers them, only from a scene filter's tick, never from `destroy`; a filter made by hand is left
+alone. A managed Standby filter with no covering Scene Standby goes idle (draws straight through); a
+Scene Corners switches its filters off and on with itself. Stand-ins are now per scene (the filter's own
+*Show when source is hidden* in every scene, a Scene Standby's *Show when hidden* in its own scene with its
+transition), and the transitions owner is per (scene, source). `Standby::update` makes the image again only
+when `picture`, `file` or `source` change. Since the integration, `sync_stand_ins` resolves *As the scene sets* with
+`resolve_item_change` before swapping the change for the twin. Test 11 (a camera held hidden by a Scene Modes mode gets no
+standby image, both filter orders) was added at integration. The collection's adoption of existing filters
+comes with the new collection (beta156).
+
+### Scene Modes
+
+Scene Modes (StageKit), a scene filter: modes made by hand or from a template (Starting, Game,
+Display / Screen, Window, Camera, Chat, Intermission, Be right back, Ending), each known by an id
+(`mode|<id>|name/type/go_to/sources`, `mode_now`, `mode_before`); one on at a time, hides before
+shows, a source in both not touched; *Allow no mode*, *Same modes in scenes*, *Lock hidden sources*,
+the fuller Show/Hide transition; hotkeys per mode, next and none; vendor requests `ListSceneModes`,
+`GetSceneMode`, `SetSceneMode` and the `SceneModeChanged` event; registered with `holds-hidden`.
+Also: PickList's `parse` copes with a setting name that has
+bars in it. Tests: the `[scene modes: ...]` sections (16 of the design's, the out-of-view one in the
+sound section).
+
+### Scene Fit and Fit to Space off screen
+
+Three commits, the whole suite passing after each. (1) Fit to Space's engine moved as it was into
+`src/placement/fit-engine.*`. (2) The engine's tick cut into steps (`prepare`, `motion`, `observe`,
+`solve`, `publish_claim`, `advance`, `apply`) with what is in the way in a `FitScan` of its own, Fit to Space
+calling them in the old order; off screen with nothing asked of it a fit's tick is skipped but four times a
+second (perf cut 1); the shadow room is read again only when `shadow_room_revision()` changes (perf cut 2,
+three anchored lines in `shadow-backdrop.cpp`). (3) Scene Fit (`stagekit_scene_fit`): one entry per source
+with Fit to Space's settings under `fit|<source>|` (lists under `fit_<hex>_`), all worked out in one tick in
+list order with up to four passes, one glance a tick, *Take over Fit to Space*, renames followed.
+Not done (next work): `kComingBack` inside Scene Fit, one glide time for every entry during a window
+switcher's change, the both-orders Link Visibility test, the window-switcher sync test, and the cost test
+against seven Fit to Space filters, which waits for `stagekit_timing_take` (the frame-time work, beta156). The new collection
+script's `fit_for` must write the keys *Take over* writes (effective values, Scene Fit's own gap default is
+30, the lists under `fit_list_prefix`).
+
+### Scene Shadow
+
+Scene Shadow (`stagekit_scene_shadow`, `src/look/`): one shadow, glow or outline for a scene, laid over the
+scene's own picture and kept off every source that is not background (silhouettes drawn from the items with
+`LookPaint`), in linear light so it matches Shadow, Glow & Outline (off by at most 1/255 on an opaque square).
+Nothing is moved or resized. Tested in `[scene shadow]`: unchanged where there is no shadow, the per-source
+match, background, *No shadow for*, own shadows, sizes, once a frame, a hide transition still ends and its
+shadow fades, the switch fades, nothing before loading, linear light, the outline off the mask. Shader proven
+on OpenGL only. Whole suite: ALL PASSED.
+
+Scene Shadow phase 2 (Morph): a scene whose only drawing filter is a Scene Shadow is still morphed
+item by item (`morph_accept_drawing_filter`), and Morph carries the shadow: the morph is drawn as a picture and two
+silhouettes (each part weighted between its two scenes' flags by eased t) and composed with the look part-way
+between the scenes' (`lerp_look`). Tested: no cross-fade logged, the square half-way, the shadow at about half
+strength half-way to a plain scene (111 against 111 expected), run by the clock, and the item Morph's layer
+casting. Not on Windows yet.
+
+### Stream Deck: Source type and the Scene Mode key
+
+Stream Deck plugin 0.18.0.0. A *Source type* list (Automatic and twenty types, ids shared with the
+Scene Modes filter's *Mode type*) on every key that acts on a source and on the new *Scene Mode* key
+(`com.techsavage1989.stagekit.mode`, vendor requests `ListSceneModes`, `GetSceneMode`,
+`SetSceneMode`, event `SceneModeChanged`); keys for Scene Fit, Scene Shadow, Scene Corners and
+Scene Standby; *Fit to Space Overlap* takes a Scene Fit. On Automatic a Show in Scenes key goes by
+the source's name before its OBS input kind (not the other way, as first asked: that undid
+beta154's holding-mode key images). `npm test`, `npm run build`, `npm run validate` and `npm run
+pack` pass. Not run on a Stream Deck, and the Scene Mode key not run against the real filter.
 
 ## Live, Chat Live and Standby; Switch to scene (0.1.0-beta154)
 
@@ -2173,100 +2297,3 @@ xvfb-run -a /tmp/loadcheck build-tests/stagekit.so data <rebuilt.json> "<scene t
 
   On Linux the capture, browser and text sources are missing plugins, so it proves the file loads and
   the StageKit filters are created, not that the picture is right.
-
-## Scene filters: groundwork (0.1.0-beta155, in progress on `feat/scene-filters`)
-
-The shared pieces the six scene filters build on, with no change of behaviour: their ids
-(`src/common/scene-filter-ids.hpp`) and Morph's `draws_nothing` for the five that draw nothing,
-`morph_accept_drawing_filter`; `kOwnSettings` by the last `|` part, plus `mode_now`, `mode_before`,
-`managed`, `managed_by`; PickList `title_text` and `pick_list_on_change_for` (called after the plugin-wide
-callback); `item_transitions_owner` asked per item; `holds-hidden.*` (`mode_holds_hidden`,
-`mode_settling`, Link Visibility registered); `go-to-scene.*` moved out of Show in Scenes with `stay_in`;
-`filter-order.hpp`, `stand-in.hpp`, `is_screen_capture`; the `==== scene-filters:<unit> ====` blocks in
-plugin-main, CMake, the locale file, the tests, the README and AGENTS; `tests/run-tests.sh` stops on a
-repeated locale key and on a failed build. Whole suite: ALL PASSED.
-
-## Scene Transitions (0.1.0-beta155, on `feat/scene-transitions`)
-
-Scene Transitions (`src/placement/scene-transitions.*`): one filter on a scene that writes every source's
-OBS item transitions from its tick, on events, only where they differ; *As the scene sets*
-(`kTransitionScene`) is the new default of every filter's transition, resolved only in
-`resolve_item_change` (fade of the filter's own duration where the scene sets nothing). Owned (Standby),
-private, *Leave these alone*, Show/Hide Animation and grouped items (unless `in_groups`) are passed over; the
-scene's transitions are put back after another filter's own change. Left for others: Standby's one
-`resolve_item_change` call before swapping for its twin (Unit 4), test 11 with Scene Modes (Unit 1), the
-collection's Scene Transitions settings (Collection unit). Whole suite: ALL PASSED.
-
-## Scene Standby and Scene Corners (0.1.0-beta155, on `feat/scene-standby-corners`)
-
-Two scene filters that draw nothing and keep a filter on each source they cover, through one helper
-(`src/common/managed-filter.*`, `ManagedSet`): Scene Standby (`stagekit_scene_standby`) a Standby Image
-filter on each capture (or chosen source), Scene Corners (`stagekit_scene_corners`) a Corners & Edges on
-each source but the full-screen background. Managed filters carry `managed` / `managed_by`, follow only the
-scene filter they name (taken over by the next one when it is gone), are taken off 3 s after no scene
-filter covers them, only from a scene filter's tick, never from `destroy`; a filter made by hand is left
-alone. A managed Standby filter with no covering Scene Standby goes idle (draws straight through); a
-Scene Corners switches its filters off and on with itself. Stand-ins are now per scene (the filter's own
-*Show when source is hidden* in every scene, a Scene Standby's *Show when hidden* in its own scene with its
-transition), and the transitions owner is per (scene, source). `Standby::update` makes the image again only
-when `picture`, `file` or `source` change. Since the integration, `sync_stand_ins` resolves *As the scene sets* with
-`resolve_item_change` before swapping the change for the twin. Not built: the Stream Deck entries and the collection's adoption of existing filters (units SD
-and C), and test 11 (Scene Modes holding the camera hidden) until Scene Modes is merged.
-
-## Scene Modes (0.1.0-beta155, in progress on `feat/scene-modes`)
-
-Scene Modes (StageKit), a scene filter: modes made by hand or from a template (Starting, Game,
-Display / Screen, Window, Camera, Chat, Intermission, Be right back, Ending), each known by an id
-(`mode|<id>|name/type/go_to/sources`, `mode_now`, `mode_before`); one on at a time, hides before
-shows, a source in both not touched; *Allow no mode*, *Same modes in scenes*, *Lock hidden sources*,
-the fuller Show/Hide transition; hotkeys per mode, next and none; vendor requests `ListSceneModes`,
-`GetSceneMode`, `SetSceneMode` and the `SceneModeChanged` event; registered with `holds-hidden`.
-Also on this branch: Morph's `draws_nothing` lists the five non-drawing scene filter ids (the
-groundwork commit said so but had not), and PickList's `parse` copes with a setting name that has
-bars in it. Tests: the `[scene modes: ...]` sections (16 of the design's, the out-of-view one in the
-sound section). Whole suite: see the unit's report.
-
-## Scene Fit and Fit to Space off screen (0.1.0-beta155, in progress on `feat/scene-fit`)
-
-Three commits, the whole suite passing after each. (1) Fit to Space's engine moved as it was into
-`src/placement/fit-engine.*`. (2) The engine's tick cut into steps (`prepare`, `motion`, `observe`,
-`solve`, `publish_claim`, `advance`, `apply`) with what is in the way in a `FitScan` of its own, Fit to Space
-calling them in the old order; off screen with nothing asked of it a fit's tick is skipped but four times a
-second (perf cut 1); the shadow room is read again only when `shadow_room_revision()` changes (perf cut 2,
-three anchored lines in `shadow-backdrop.cpp`). (3) Scene Fit (`stagekit_scene_fit`): one entry per source
-with Fit to Space's settings under `fit|<source>|` (lists under `fit_<hex>_`), all worked out in one tick in
-list order with up to four passes, one glance a tick, *Take over Fit to Space*, renames followed. Gate D4:
-GO. Not done (next work): `kComingBack` inside Scene Fit, one glide time for every entry during a window
-switcher's change, the both-orders Link Visibility test, the window-switcher sync test, and the cost test
-against seven Fit to Space filters, which waits for `stagekit_timing_take` (perf unit). The Stream Deck key
-and *Fit to Space Overlap* accepting `stagekit_scene_fit` belong to the Stream Deck unit; the collection
-script's `fit_for` must write the keys *Take over* writes (effective values, Scene Fit's own gap default is
-30, the lists under `fit_list_prefix`).
-
-## Scene Shadow (0.1.0-beta155, on `feat/scene-shadow`)
-
-Scene Shadow (`stagekit_scene_shadow`, `src/look/`): one shadow, glow or outline for a scene, laid over the
-scene's own picture and kept off every source that is not background (silhouettes drawn from the items with
-`LookPaint`), in linear light so it matches Shadow, Glow & Outline (off by at most 1/255 on an opaque square).
-Nothing is moved or resized. Tested in `[scene shadow]`: unchanged where there is no shadow, the per-source
-match, background, *No shadow for*, own shadows, sizes, once a frame, a hide transition still ends and its
-shadow fades, the switch fades, nothing before loading, linear light, the outline off the mask. Shader proven
-on OpenGL only. Whole suite: ALL PASSED.
-
-Scene Shadow phase 2 (Morph, gate D4: GO): a scene whose only drawing filter is a Scene Shadow is still morphed
-item by item (`morph_accept_drawing_filter`), and Morph carries the shadow: the morph is drawn as a picture and two
-silhouettes (each part weighted between its two scenes' flags by eased t) and composed with the look part-way
-between the scenes' (`lerp_look`). Tested: no cross-fade logged, the square half-way, the shadow at about half
-strength half-way to a plain scene (111 against 111 expected), run by the clock, and the item Morph's layer
-casting. Not on Windows yet.
-
-## Stream Deck: Source type and the Scene Mode key (0.1.0-beta155, `feat/streamdeck-scene`)
-
-Stream Deck plugin 0.18.0.0. A *Source type* list (Automatic and twenty types, ids shared with the
-Scene Modes filter's *Mode type*) on every key that acts on a source and on the new *Scene Mode* key
-(`com.techsavage1989.stagekit.mode`, vendor requests `ListSceneModes`, `GetSceneMode`,
-`SetSceneMode`, event `SceneModeChanged`); keys for Scene Fit, Scene Shadow, Scene Corners and
-Scene Standby; *Fit to Space Overlap* takes a Scene Fit. On Automatic a Show in Scenes key goes by
-the source's name before its OBS input kind (not the other way, as first asked: that undid
-beta154's holding-mode key images). `npm test`, `npm run build`, `npm run validate` and `npm run
-pack` pass. Not run on a Stream Deck, and the Scene Mode key not run against the real filter.

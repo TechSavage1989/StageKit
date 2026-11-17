@@ -810,9 +810,10 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     `for_change` gives the settings for the change going on (`active_`), the most exact rule
     first. Style 1 is a cross-fade, 2 a cut. The owner: "specific overrides for transitions for
     specific scenes transitioning between specific scenes". The duration is OBS's and is not
-    overridden. `pick_list_on_change` has one slot for the whole plugin and is the fuller
-    *Change with*'s: do not take it for a second rebuilt-in-place control; a kind that needs
-    one registers `pick_list_on_change_for(<its id>, ...)`, called after it.
+    overridden. `pick_list_on_change` is a chain, not one slot: the fuller *Change with*
+    installs its rebuild there each time a window is built, and a kind that needs a control
+    rebuilt in place registers `pick_list_on_change_for(<its id>, ...)`, which runs after it.
+    Never replace the first: *Settings for* stops rebuilding.
   - An item's place is worked out by Morph, not by OBS, while it draws (`look`): OBS does it when
     a scene is drawn, from the size the source has then, and neither scene is drawn during a
     morph. `look` does it when an item is first met and again whenever its source changes size.
@@ -1400,7 +1401,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   each time a window is built; a kind's own callback is `pick_list_on_change_for`, called after
   it. `item_transitions_owner` is asked per item. Whether a mode not showing holds an item hidden
   is `mode_holds_hidden` / `mode_settling` (`holds_hidden_register` adds a kind's answers; Link
-  Visibility's are there); Show in Scenes and Standby ask it. *Switch to scene* is
+  Visibility's and Scene Modes' are there); Show in Scenes, Standby and Scene Modes ask it. *Switch to scene* is
   `go_to_scene` (`src/common/go-to-scene.*`, with `stay_in`; Show in Scenes passes none), and its
   test procs are added by `go_to_scene_add_test_calls`. Each scene filter has a block of its own,
   between `==== scene-filters:<unit> ====` and `==== end scene-filters:<unit> ====` lines, in
@@ -1536,8 +1537,12 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
 <!-- ==== end scene-filters:standby-corners ==== -->
 <!-- ==== scene-filters:shadow ==== -->
 - **Scene Shadow** (`src/look/scene-shadow.*`, `src/look/look-paint.*`,
-  `data/effects/stagekit-scene-shadow.effect`; D1/D2 of the beta155 plan): a scene filter that
-  draws. The scene draws itself (`draw_filter_input`); the filter then draws the scene's items
+  `data/effects/stagekit-scene-shadow.effect`; beta155): a scene filter that draws, over
+  OBS's own picture of the scene. A filter that drew every item itself (the first design, with
+  corners in it) would have had to repeat OBS's item drawing with public calls only (crop to
+  bounds, scale filters, blending, groups, nested scenes, item transitions to their last frame):
+  each a way to break the owner's main scenes. So corners are Scene Corners' Corners & Edges per
+  source, and only a mask is drawn here, where a mistake shows as a slightly wrong shadow edge. The scene draws itself (`draw_filter_input`); the filter then draws the scene's items
   again with `LookPaint::draw_item` as two silhouettes, S (the casting sources) and M (every
   source not background; skipped when it would equal S), and lays the Kawase-blurred S over the
   picture **off M** (`MaskedShadow`, `Ring` for the outline). That pass works **in linear light**
@@ -1559,8 +1564,9 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   Skips itself with a drawing filter before it (`morph_draws_nothing`, logged once), on a group,
   on an HDR canvas, before loading, and with nothing to draw. Its sizes are canvas pixels; it
   has no `shown_scale` and no room.
-  **Morph carries it** (D3; `morph_accept_drawing_filter(is_scene_shadow)` in
-  `register_scene_shadow`, so `plain_scene` takes such a scene apart): when either scene has one
+  **Morph carries it** (without it every change between Live and Chat Live would be a
+  cross-fade; `morph_accept_drawing_filter(is_scene_shadow)` in `register_scene_shadow`, so
+  `plain_scene` takes such a scene apart): when either scene has one
   (`scene_shadow_now`, a copy of the look faded by its switch and the flags, taken each frame),
   `Morph::draw_shadowed` draws `draw_morph` three times into canvas pictures, `pass_` Picture,
   Cast and Mask (only when some item is masked but does not cast), each part weighted by what
