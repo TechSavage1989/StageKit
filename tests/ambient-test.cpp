@@ -10529,8 +10529,10 @@ int main(int argc, char **argv)
 			// them side by side.
 			{
 				auto *tabs = dock->findChild<QTabWidget *>("stagekitTabs");
-				CHECK(tabs && tabs->count() == 4,
-				      "the dock has four tabs: Place, Arrange, Copy and Effects");
+				CHECK(tabs && tabs->count() == 5 && tabs->widget(4)->objectName() == "pageBackground" &&
+					      tabs->widget(4)->findChild<QLabel *>("startThumb") &&
+					      tabs->widget(4)->findChild<QPushButton *>("chooseStartImage"),
+				      "the dock has five tabs: Place, Arrange, Copy, Effects, and Background with the standby image and the moving background");
 				std::vector<QPixmap> pages;
 				int height = 0;
 				for (int i = 0; tabs && i < tabs->count(); i++) {
