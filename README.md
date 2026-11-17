@@ -504,7 +504,7 @@ Game Capture, Window Capture or other live source.
 
 | Setting | What it does |
 | --- | --- |
-| Image | *The standby image* (the default: the one set in the StageKit Background dock), *An image or video file*, or *Another source* |
+| Image | *The standby image* (the default: the one set on the StageKit dock's Background tab), *An image or video file*, or *Another source* |
 | Show when source is hidden | While the source is hidden in a scene, the standby image is shown in its place there, at the same position and size and with the source's later filters (shadow, corners). StageKit adds a locked item named *<source> (standby)* under each item of the source and shows and hides it by itself. *Show/Hide transition* below it is the one change between the source and the standby image: any OBS transition or *Morph (StageKit)*, with that transition's own settings, showing and hiding apart if you like. StageKit sets it on the source's items and on the stand-ins, so the source leaves and the standby image arrives the same way whatever hides the source (a Stream Deck key, Show in Scenes, the eye); other StageKit filters leave those items' transitions alone while this is ticked. With Morph the source changes into the standby image and back. Any StageKit filter may come after Standby Image; put OBS's own filters (colour correction, crop) and other plugins' filters before it in the list, or the change cuts instead of using the transition. The stand-in items appear two seconds after OBS has finished loading. Not for sources inside a group yet |
 | File / Source | The file or source to show, for those two choices. A video loops, without sound |
 | Keep image's aspect ratio | On (the default): the image is shown whole in its own shape. Off: it fills the size the capture last had, with what does not fit cut off |
@@ -701,20 +701,18 @@ hotkey under the scene.
 
 ### The StageKit docks
 
-There are two, under *Docks*: **StageKit** for the item you are working on, and **StageKit Background**
-for the standby image and the moving background. Both work on the current scene (the preview scene in
-Studio Mode).
+**StageKit**, under *Docks*, works on the item you are working on in the current scene (the preview
+scene in Studio Mode). Its *Background* tab holds the standby image and the moving background.
 
-<p align="center"><img src="docs/images/stagekit-dock.png" width="900" alt="The StageKit dock's four tabs side by side. Place: a three-by-three grid of position buttons, bring along, edge distance, travel time and motion, and buttons that make Stream Deck keys. Arrange: the selected items, a block of buttons that line up, space out, snap and resize them with the measuring options beside it, the order buttons, and the letting-go options. Copy: the two copy-transform buttons with their lists of scenes and sources. Effects: buttons that add a StageKit filter to the item"></p>
-
-<p align="center"><img src="docs/images/stagekit-background-dock.png" width="340" alt="The StageKit Background dock: a thumbnail of the standby image, its file name, and buttons to choose the standby image, give the background its own image and open the background's settings"></p>
+<p align="center"><img src="docs/images/stagekit-dock.png" width="900" alt="The StageKit dock's five tabs side by side. Place: a three-by-three grid of position buttons, bring along, edge distance, travel time and motion, and buttons that make Stream Deck keys. Arrange: the selected items, a block of buttons that line up, space out, snap and resize them with the measuring options beside it, the order buttons, and the letting-go options. Copy: the two copy-transform buttons with their lists of scenes and sources. Effects: buttons that add a StageKit filter to the item. Background: a thumbnail of the standby image, its file name, and buttons to choose the standby image, give the background its own image and open the background's settings"></p>
 
 **StageKit**
 
-The *Scene* and *Item* it works on stay at the top; below them are four tabs. **Place** sends the
+The *Scene* and *Item* it works on stay at the top; below them are five tabs. **Place** sends the
 item to a spot and makes Stream Deck keys for it. **Arrange** lines up, spaces, snaps, resizes and
 reorders what is selected, and holds the measuring options. **Copy** copies a transform to other
-scenes or sources. **Effects** adds a StageKit filter to the item. What the last press did is said
+scenes or sources. **Effects** adds a StageKit filter to the item. **Background** holds the standby image and the moving
+background. What the last press did is said
 at the bottom, whichever tab is open.
 
 - **Select an item in OBS's own preview** and the dock works on it. The *Item* list follows your
@@ -746,7 +744,7 @@ at the bottom, whichever tab is open.
   and opens its filter window. Blur and Zoom are added switched off.
 - The *Scene* list reaches a scene that is not on screen.
 
-**StageKit Background**
+**Background tab**
 
 - An image of the standby image, as wide as the dock. Turn the mouse wheel on it for a closer look, drag to move around,
   double-click to reset; this changes only the thumbnail, never your scene.

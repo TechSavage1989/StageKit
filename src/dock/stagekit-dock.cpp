@@ -250,7 +250,7 @@ private:
 
 PreviewMenu *g_preview_menu = nullptr;
 
-// The start image and the moving background, in a dock of their own.
+// The start image and the moving background: the dock's Background tab.
 class BackgroundDock : public QWidget {
 public:
 	explicit BackgroundDock(QWidget *parent = nullptr) : QWidget(parent)
@@ -526,6 +526,16 @@ public:
 		QVBoxLayout *arrange_page = page("Dock.Tab.Arrange", "pageArrange");
 		QVBoxLayout *copy_page = page("Dock.Tab.Copy", "pageCopy");
 		QVBoxLayout *effects_page = page("Dock.Tab.Effects", "pageEffects");
+		// The standby image and the moving background, which had a dock of
+		// their own up to beta151. The owner: "id like the stagekit
+		// Background dock to be added to the primary stagekit dock as a new
+		// tab".
+		{
+			auto *background = new BackgroundDock(tabs);
+			background->setObjectName("pageBackground");
+			background->layout()->setContentsMargins(0, 10, 0, 0);
+			tabs->addTab(background, tr_text("Dock.Tab.Background"));
+		}
 		layout->addWidget(tabs, 1);
 		// A tab set is as tall as its tallest page, so the dock scrolled on
 		// a short tab with nothing below it. Only the page showing counts.
@@ -2449,7 +2459,6 @@ void register_dock()
 		},
 		nullptr);
 	add("stagekit-dock", "Dock.Title", new Dock());
-	add("stagekit-background-dock", "Dock.BackgroundTitle", new BackgroundDock());
 }
 
 } // namespace stagekit

@@ -81,7 +81,7 @@ notice and the confirmation are what there is. This is recorded in the handoff.
 | `src/shape/` | Corners & Edges filter (rounds, cuts, notches or scoops corners; trims, softens and outlines edges; never changes the source's size) |
 | `src/view/` | Cropped View source (part of another source as a source, so filters follow the crop) |
 | `src/placement/` | Scene filters: Move Scene Item, Show/Hide Animation, Link Visibility, Match Item, Layout, Fit to Space (keeps one item fitted in a box, filling it or floating centred by shape); Move Source, Move Scene Item's code as a filter on the source it moves; and Show in Scenes (`show-in-scenes.*`), a filter on any source that is a switch for showing and hiding sources across scenes |
-| `src/dock/` | `window-layout.*` keeps OBS's window layout. Two docks (Qt widgets, no `Q_OBJECT`): StageKit follows the item selected in OBS and drives Move Source filters on that item's source; StageKit Background holds the start image thumbnail. `arrange-tools.*` is the one set of line-up actions and options behind the dock, the hotkeys and the preview's right-click menu |
+| `src/dock/` | `window-layout.*` keeps OBS's window layout. One dock (Qt widgets, no `Q_OBJECT`): StageKit follows the item selected in OBS and drives Move Source filters on that item's source; its Background tab (`BackgroundDock`, a dock of its own up to beta151) holds the start image thumbnail. `arrange-tools.*` is the one set of line-up actions and options behind the dock, the hotkeys and the preview's right-click menu |
 | `src/common/` | Shared helpers: `timing` (registers every kind and logs what is slow), easing and `Tween`, `SwitchRamp`, `KawaseBlur`, scene utilities, `item-transition` (the *Change with* control for filters that show and hide items), and the start image (global path + Start Image source) |
 | `src/frame/` | Auto Frame filter and the Aspect Ratio Preset filter |
 | `src/capture/` | Auto Capture filter (aims a Game Capture at the game in front), Program Trigger filter (shows items and switches filters while a program is open) and Show Source in Use scene filter (shows the one of several captures whose app is in use). Capture App in Use (`app-capture.*`), a filter on one Window Capture that aims it at whichever of several listed apps is in use. All use the Win32 window list in `auto-capture.cpp`; compiled but idle elsewhere. Also Standby Picture (`standby.*`), a filter that shows a picture in a capture's place while it has nothing; it works everywhere |
@@ -183,7 +183,9 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
 - **Built-in emulator shapes are a starting guess, never an order.** The owner's Snes9x shows 8:7; the
   first table said 64:49 and cropped the picture. `kKnownPrograms` only seeds the held shape; what is
   seen on screen corrects it. Only a shape the owner saved, or an Aspect Ratio Preset, is obeyed blindly.
-- **The StageKit dock is four tabs** (`stagekitTabs`: Place, Arrange, Copy, Effects) under the
+- **The StageKit dock is five tabs** (`stagekitTabs`: Place, Arrange, Copy, Effects, and since
+  beta152 Background, which was the separate StageKit Background dock; the owner: "id like the
+  stagekit Background dock to be added to the primary stagekit dock as a new tab") under the
   *Scene* and *Item* rows, with the status line below them. It was one column 1,460 px tall; the
   owner called it "ugly and messy" and asked for it "organized, and made visually appealing".
   A new control goes on the tab its job belongs to, not in a new box at the bottom. The line-up and

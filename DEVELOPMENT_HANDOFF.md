@@ -24,6 +24,13 @@ layout scenes and the holding scene beside all fifteen old scenes. Not seen on W
 between modes, the text and browser sources in them, Be Right Back's own transition (a Transition
 Table rule and a scene override) which Holding-Scene does not have.
 
+## Background dock becomes a tab (0.1.0-beta152)
+
+The owner: "id like the stagekit Background dock to be added to the primary stagekit dock as a new
+tab". `BackgroundDock` is now the dock's fifth tab (`pageBackground`); the separate dock
+`stagekit-background-dock` is no longer added, so a saved window layout simply has nothing to put
+there. The owner confirmed beta151's off keys: "the off keys are much easier to tell apart now".
+
 ## Off keys show what they control (0.1.0-beta151)
 
 The owner, with a photo of their capture keys all off: "these all look virtually identical. how

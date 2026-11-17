@@ -10377,8 +10377,9 @@ int main(int argc, char **argv)
 				      "the dock no longer has a picture of the scene");
 			}
 
-			// The start image and background live in a dock of their own. A very
-			// long file name must not widen it, and it shows a small picture.
+			// The start image and background: the dock's Background tab, also
+			// made on its own here to look at it. A very long file name must not
+			// widen it, and it shows a small picture.
 			{
 				// Chosen before the dock exists, as when OBS starts.
 				{
@@ -10391,8 +10392,9 @@ int main(int argc, char **argv)
 				proc_handler_call(obs_get_proc_handler(), "stagekit_create_background_dock", &bd);
 				auto *background_dock = static_cast<QWidget *>(calldata_ptr(&bd, "widget"));
 				calldata_free(&bd);
-				CHECK(background_dock && dock->findChild<QLabel *>("startThumb") == nullptr,
-				      "the start image and background have a dock of their own");
+				CHECK(background_dock && dock->findChild<QLabel *>("startThumb") != nullptr &&
+					      dock->findChild<QWidget *>("pageBackground") != nullptr,
+				      "the start image and background are the dock's Background tab (they had a dock of their own up to beta151)");
 				if (!background_dock)
 					background_dock = new QWidget();
 				background_dock->resize(340, 320);
@@ -10529,8 +10531,10 @@ int main(int argc, char **argv)
 			// them side by side.
 			{
 				auto *tabs = dock->findChild<QTabWidget *>("stagekitTabs");
-				CHECK(tabs && tabs->count() == 4,
-				      "the dock has four tabs: Place, Arrange, Copy and Effects");
+				CHECK(tabs && tabs->count() == 5 && tabs->widget(4)->objectName() == "pageBackground" &&
+					      tabs->widget(4)->findChild<QLabel *>("startThumb") &&
+					      tabs->widget(4)->findChild<QPushButton *>("chooseStartImage"),
+				      "the dock has five tabs: Place, Arrange, Copy, Effects, and Background with the standby image and the moving background");
 				std::vector<QPixmap> pages;
 				int height = 0;
 				for (int i = 0; tabs && i < tabs->count(); i++) {
