@@ -1645,6 +1645,19 @@ to (the two update choices are kept with the plugin instead). Replacing the plug
   typical. It can be set for single programs under *Program Settings* instead.
 - **Items inside a group are missing from a scene filter's item list.** Add the filter to the group
   itself instead.
+<!-- ==== scene-filters:perf (Frame time) ==== -->
+- **OBS's *Average time to render frame* went up.** Every 30 seconds StageKit writes to the OBS log
+  what its own work cost, when it was noticeable: a line per filter that was slow (`timing, last 30
+  s: stagekit_...: tick ... calls, 0.012 ms each ...`), and one line for all of StageKit together,
+  `timing, last 30 s: StageKit ticks 0.123 ms a frame (fit_item 0.081, shadow_backdrop 0.012, ...)`,
+  naming the filters that cost most. Send the log (*Help → Log Files → Upload Current Log File*) with
+  the problem; the end of it also has OBS's own figures (`obs_graphics_thread`, `tick_sources`). Most
+  StageKit filters do less while their scene is not on screen, and the ones that watch your scenes
+  (Show in Scenes' *Follow what is shown*, Link Visibility's *Follow the first source*, a shadow's
+  size in screen pixels, Ambient Background's live capture) look again when something in a scene
+  changes rather than many times a second. A Multiview or a projector shows every scene, so with
+  one open they all count as on screen.
+<!-- ==== end scene-filters:perf (Frame time) ==== -->
 
 ## Development
 
@@ -1666,6 +1679,17 @@ the captures' to Live, the titles' to Standby, the column markers' to Chat Live.
 file and writes another, with a report. A collection merged before 0.1.0-beta154 (scenes called
 Full-Capture-Scene, Component-Capture-Scene, Holding-Scene) is refused: merge again from the file
 before it.
+
+<!-- ==== scene-filters:perf (Measuring) ==== -->
+`tests/run-perf.sh <build dir>` measures what StageKit's filters cost a frame, headless
+(`tests/collection-perf`, built with the tests): it writes a synthetic collection of the shape of a
+large StageKit setup (`tests/make-perf-collection.py`, nobody's own sources), shows each of its
+layout scenes and then none, and prints each StageKit kind's instances, microseconds a frame and its
+per-call mean, p50, p95 and longest, beside OBS's own `tick_sources` (`tests/perf-compare.py` puts
+two runs side by side). `PLUGIN=<other stagekit.so>` measures another build the same way. It is not
+part of `run-tests.sh`, and its times are llvmpipe's: compare runs with each other, not with a real
+OBS.
+<!-- ==== end scene-filters:perf (Measuring) ==== -->
 
 Windows and macOS builds come from GitHub Actions, based on the official
 [obs-plugintemplate](https://github.com/obsproject/obs-plugintemplate).

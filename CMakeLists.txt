@@ -175,6 +175,8 @@ target_sources(
     src/look/scene-blur.hpp
     # ==== end scene-filters:blur ====
     # ==== scene-filters:perf ====
+    src/common/scene-rev.cpp
+    src/common/scene-rev.hpp
     # ==== end scene-filters:perf ====
     src/third-party/obs-websocket-api.h
 )

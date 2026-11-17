@@ -44,6 +44,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/item-transition.hpp"
 #include "../common/loading.hpp"
 #include "../common/pick-list.hpp"
+#include "../common/scene-rev.hpp"
 #include "../common/scene-util.hpp"
 
 #include <obs-module.h>
@@ -53,6 +54,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <atomic>
 #include <functional>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -113,6 +115,14 @@ struct Changes {
 };
 
 class VisibilityLink {
+	// What the tick goes by, made in `update` and shared with the tick as it
+	// is (never copied a frame: the lists and each source's own change are
+	// strings).
+	struct Config {
+		std::vector<std::string> names, elsewhere;
+		Changes how;
+	};
+
 	// An item that was shown or hidden: its source's name, which of the two,
 	// and whether that was in this filter's own scene.
 	struct Change {
@@ -179,6 +189,7 @@ public:
 			for (const std::string &name : *list)
 				change_.own[name] = item_change_read(settings, name.c_str());
 		names_ = names;
+		config_ = std::make_shared<const Config>(Config{names_, elsewhere_, change_});
 	}
 
 	void attach(obs_source_t *parent)
@@ -243,9 +254,8 @@ public:
 	{
 		std::vector<Change> changes;
 		LinkMode mode;
-		std::vector<std::string> names, elsewhere;
+		std::shared_ptr<const Config> config;
 		bool look_for_scenes = false;
-		Changes how;
 		bool lock_hidden = false;
 		{
 			std::lock_guard lock(mutex_);
@@ -255,14 +265,14 @@ public:
 			lock_sweep_ = false;
 			changes.swap(pending_);
 			mode = mode_;
-			names = names_;
-			elsewhere = elsewhere_;
+			config = config_;
 			if ((watch_timer_ -= seconds) <= 0.0) {
 				watch_timer_ = 2.0;
 				look_for_scenes = true;
 			}
-			how = change_;
 		}
+		const std::vector<std::string> &names = config->names, &elsewhere = config->elsewhere;
+		const Changes &how = config->how;
 		if (look_for_scenes && parent_) {
 			if (elsewhere.empty())
 				unwatch();
@@ -270,6 +280,8 @@ public:
 				watch_others();
 		}
 		if (!parent_ || !obs_source_enabled(source_)) {
+			if (was_on_)
+				scene_revision_bump(); // it holds nothing hidden now
 			was_on_ = false;
 			std::lock_guard lock(mutex_);
 			acted_valid_ = false;
@@ -286,7 +298,13 @@ public:
 		if (!lock_hidden)
 			sweep_due_ = false;
 		// A transition left under way on a listed item (its scene was left
-		// with a cut part-way through) is ended, twice a second.
+		// with a cut part-way through) is ended, twice a second (each link
+		// on a half second of its own).
+		if (!staggered_) {
+			staggered_ = true;
+			stale_timer_ = stagger_phase(source_, 0.5);
+			follow_skip_ = 1 + stagger_phase(source_, 15);
+		}
 		if ((stale_timer_ -= seconds) <= 0.0) {
 			stale_timer_ = 0.5;
 			for (const std::string &name : names)
@@ -311,6 +329,22 @@ public:
 				obs_sceneitem_set_locked(item, !obs_sceneitem_visible(item));
 		};
 		if (mode == LinkMode::Follow) {
+			// Looked at only when something it goes by may have changed:
+			// an item shown or hidden in any scene (its own listed ones
+			// among them), a link's leader followed or a switch pressed
+			// (both raise `scene_revision`), its settings, or no state
+			// followed yet; and every fifteenth tick anyway.
+			const uint64_t rev = scene_revision();
+			bool valid;
+			{
+				std::lock_guard lock(mutex_);
+				valid = acted_valid_;
+			}
+			if (changes.empty() && valid && rev == follow_rev_ && --follow_skip_ > 0)
+				return;
+			follow_skip_ = 15;
+			follow_rev_ = rev;
+			count_look(Look::LinkFollow);
 			applying_ = std::this_thread::get_id();
 			follow_first(names, elsewhere, changes, how, lock_as_shown);
 			applying_ = std::thread::id();
@@ -457,6 +491,10 @@ public:
 		if (act && !elsewhere.empty())
 			follow_elsewhere(elsewhere, names[0], change, false, lead_on);
 		std::lock_guard lock(mutex_);
+		// Another state followed: the other links and switches that ask
+		// what this one holds hidden look again.
+		if (!valid || acted != lead_on)
+			scene_revision_bump();
 		acted_valid_ = true;
 		acted_lead_ = lead_on;
 	}
@@ -512,6 +550,7 @@ private:
 	obs_source_t *parent_ = nullptr;
 	std::mutex mutex_;
 	Changes change_;
+	std::shared_ptr<const Config> config_;
 	LinkMode mode_ = LinkMode::OnlyOne;
 	std::vector<std::string> names_, elsewhere_;
 	std::vector<obs_weak_source_t *> watched_; // the other scenes listened to
@@ -524,6 +563,9 @@ private:
 	bool sweep_due_ = false;                  // the hidden ones are still to be locked (the tick's own)
 	bool was_on_ = false;                     // the filter was enabled at its last tick
 	double stale_timer_ = 0.0;                // until the next look for transitions left under way
+	bool staggered_ = false;                  // the timers have been given their phase
+	uint64_t follow_rev_ = 0;                 // Follow the first: scene_revision() at the last look
+	int follow_skip_ = 0;                     // and ticks until a look comes anyway
 	std::atomic<std::thread::id> applying_{}; // the thread acting for the filter, while it does
 };
 

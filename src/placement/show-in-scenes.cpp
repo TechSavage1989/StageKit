@@ -48,6 +48,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/item-transition.hpp"
 #include "../common/loading.hpp"
 #include "../common/pick-list.hpp"
+#include "../common/scene-rev.hpp"
 
 #include <obs-frontend-api.h>
 #include <obs-module.h>
@@ -242,6 +243,7 @@ public:
 		with_linked_ = obs_data_get_bool(settings, "with_linked");
 		follow_ = obs_data_get_bool(settings, "follow");
 		go_to_ = obs_data_get_string(settings, "go_to");
+		look_again_ = true;
 		// How items change: the usual way, and each listed source's own.
 		change_ = item_change_read(settings);
 		own_change_.clear();
@@ -264,9 +266,31 @@ public:
 		// A press that showed the sources also changes scene, when set to.
 		if (press >= 0 && !(press & kPressStay) && scenes_loaded())
 			switch_scene((press & kPressOn) != 0);
+		if (press >= 0)
+			look_again_ = true;
+		if (!follow_staggered_) {
+			// Each switch on a quarter second of its own, so a dozen of
+			// them do not all look in the same frame.
+			follow_staggered_ = true;
+			follow_timer_ = stagger_phase(source_, 0.25);
+		}
 		if ((follow_timer_ -= seconds) > 0.0)
 			return;
 		follow_timer_ = 0.25;
+		// Only when something it goes by may have changed: an item in any
+		// scene shown, hidden, added, removed (`scene_revision`), a press,
+		// its settings, loading, or a look that found a mode settling. And
+		// every two seconds anyway, for what no signal tells of (a filter
+		// that holds items hidden switched on or off).
+		const uint64_t rev = scene_revision();
+		const bool loaded = scenes_loaded();
+		follow_safety_ -= 0.25;
+		if (!look_again_.exchange(false) && rev == follow_rev_ && loaded == follow_loaded_ &&
+		    follow_safety_ > 0.0)
+			return;
+		follow_rev_ = rev;
+		follow_loaded_ = loaded;
+		follow_safety_ = 2.0;
 		follow();
 	}
 
@@ -287,6 +311,7 @@ public:
 			where = where_;
 			on_hides = on_hides_;
 		}
+		count_look(Look::SwitchFollow);
 		// (Not while OBS loads its scenes: only some have their items yet.)
 		if (!scenes_loaded())
 			return;
@@ -308,6 +333,8 @@ public:
 				  if (obs_sceneitem_visible(item))
 					  shown++;
 			  });
+		if (settling)
+			look_again_ = true; // looked at again in a quarter second
 		if (settling || !found)
 			return; // in none of its scenes: nothing to go by
 		const bool on = (shown == found) != on_hides;
@@ -401,6 +428,8 @@ private:
 	static void enabled_cb(void *data, calldata_t *cd)
 	{
 		auto *self = static_cast<ShowInScenes *>(data);
+		// What a switch holds off has changed: whatever asks looks again.
+		scene_revision_bump();
 		// (Its own correction of the switch is not a press.)
 		if (self->ready_ && self->correcting_.load() != std::this_thread::get_id())
 			self->press(calldata_bool(cd, "enabled"));
@@ -422,9 +451,14 @@ private:
 	ItemChange change_;                            // how items change, usually
 	std::map<std::string, ItemChange> own_change_; // and for each listed source
 	std::atomic<bool> ready_{false};
-	bool follow_ = false;                       // the switch goes by what is shown
-	std::string go_to_;                         // the scene a press turning it on goes to
-	double follow_timer_ = 0.0;                 // until the next look, in seconds
+	bool follow_ = false;       // the switch goes by what is shown
+	std::string go_to_;         // the scene a press turning it on goes to
+	double follow_timer_ = 0.0; // until the next look, in seconds
+	bool follow_staggered_ = false;
+	std::atomic<bool> look_again_{true}; // the next look is not skipped
+	uint64_t follow_rev_ = 0;            // scene_revision() at the last look
+	bool follow_loaded_ = false;
+	double follow_safety_ = 0.0;                // until a look comes whatever changed
 	std::atomic<std::thread::id> correcting_{}; // the thread putting the switch right, if any
 	std::atomic<int> press_{-1};                // a press (kPressOn, kPressStay), or -1 for none
 };

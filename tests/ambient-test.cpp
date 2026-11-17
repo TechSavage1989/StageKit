@@ -1563,6 +1563,267 @@ int main(int argc, char **argv)
 	obs_data_release(ls);
 
 	// ==== scene-filters:perf ====
+	// ---------------------------------------------- timing: µs and the per-frame line
+	{
+		printf("\n[timing: µs and the per-frame line]\n");
+		auto take = []() {
+			calldata_t cd;
+			calldata_init(&cd);
+			proc_handler_call(obs_get_proc_handler(), "stagekit_timing_take", &cd);
+			const char *json = calldata_string(&cd, "json");
+			obs_data_t *data = obs_data_create_from_json(json ? json : "{}");
+			calldata_free(&cd);
+			return data;
+		};
+		auto kind_in = [](obs_data_t *data, const char *id) -> obs_data_t * {
+			obs_data_array_t *kinds = obs_data_get_array(data, "kinds");
+			obs_data_t *found = nullptr;
+			for (size_t i = 0; i < obs_data_array_count(kinds) && !found; i++) {
+				obs_data_t *k = obs_data_array_item(kinds, i);
+				if (strcmp(obs_data_get_string(k, "id"), id) == 0)
+					found = k;
+				else
+					obs_data_release(k);
+			}
+			obs_data_array_release(kinds);
+			return found;
+		};
+		calldata_t cd;
+		calldata_init(&cd);
+		proc_handler_call(obs_get_proc_handler(), "stagekit_timing_probe", &cd);
+		calldata_free(&cd);
+		const long long wait_us = 400;
+		obs_data_t *ps = obs_data_create();
+		obs_data_set_int(ps, "wait_us", wait_us);
+		obs_source_t *probe = obs_source_create("stagekit_timing_probe", "Timing probe", ps, nullptr);
+		obs_data_release(ps);
+		CHECK(probe != nullptr, "a kind registered through register_timed can be made");
+		sleep_ms(100);
+		obs_data_release(take()); // counting starts here
+		const uint64_t from = obs_get_total_frames();
+		for (int i = 0; i < 600 && obs_get_total_frames() < from + 180; i++)
+			sleep_ms(10);
+		obs_data_t *took = take();
+		const long long frames = obs_data_get_int(took, "frames");
+		obs_data_t *pk = kind_in(took, "stagekit_timing_probe");
+		const long long calls = pk ? obs_data_get_int(pk, "tick_calls") : 0;
+		const double each = calls ? obs_data_get_double(pk, "tick_us") / calls : 0.0;
+		CHECK(frames >= 180 && calls >= frames * 8 / 10 && calls <= frames * 12 / 10 + 2,
+		      "the probe was ticked once a frame (%lld calls over %lld frames)", calls, frames);
+		CHECK(each >= wait_us && each <= wait_us * 1.2, "its tick is timed in µs: %.1f µs each (waits %lld)",
+		      each, wait_us);
+		CHECK(pk && obs_data_get_double(pk, "tick_max_us") >= wait_us, "and its longest tick is kept (%.1f µs)",
+		      pk ? obs_data_get_double(pk, "tick_max_us") : 0.0);
+		obs_data_t *ak = kind_in(took, "stagekit_ambient_background");
+		CHECK(ak != nullptr, "every StageKit kind is in the take");
+		obs_data_release(ak);
+		obs_data_release(pk);
+		obs_data_release(took);
+		// A second take straight after starts afresh.
+		obs_data_t *again = take();
+		obs_data_t *pk2 = kind_in(again, "stagekit_timing_probe");
+		CHECK(pk2 && obs_data_get_int(pk2, "tick_calls") <= 3, "a take starts counting afresh (%lld calls)",
+		      pk2 ? obs_data_get_int(pk2, "tick_calls") : -1);
+		obs_data_release(pk2);
+		obs_data_release(again);
+
+		// The log: the probe's own line in ms with three decimals, and the
+		// line for all of StageKit's ticks a frame.
+		static std::vector<std::string> lines;
+		static std::mutex lines_mutex;
+		log_handler_t was = nullptr;
+		void *was_param = nullptr;
+		base_get_log_handler(&was, &was_param);
+		struct Was {
+			log_handler_t handler;
+			void *param;
+		} prior{was, was_param};
+		base_set_log_handler(
+			[](int level, const char *format, va_list args, void *param) {
+				va_list copy;
+				va_copy(copy, args);
+				char text[2048];
+				vsnprintf(text, sizeof(text), format, copy);
+				va_end(copy);
+				{
+					std::lock_guard lock(lines_mutex);
+					lines.push_back(text);
+				}
+				auto *p = static_cast<Was *>(param);
+				if (p->handler)
+					p->handler(level, format, args, p->param);
+			},
+			&prior);
+		const uint64_t from2 = obs_get_total_frames();
+		for (int i = 0; i < 600 && obs_get_total_frames() < from2 + 120; i++)
+			sleep_ms(10);
+		calldata_init(&cd);
+		proc_handler_call(obs_get_proc_handler(), "stagekit_timing_report", &cd);
+		calldata_free(&cd);
+		base_set_log_handler(was, was_param);
+		std::string kind_line, frame_line;
+		{
+			std::lock_guard lock(lines_mutex);
+			for (const std::string &l : lines) {
+				if (l.find("stagekit_timing_probe: tick") != std::string::npos)
+					kind_line = l;
+				if (l.find("StageKit ticks") != std::string::npos)
+					frame_line = l;
+			}
+		}
+		double ms_each = 0.0;
+		const size_t calls_at = kind_line.find(" calls, ");
+		const size_t each_at = kind_line.find(" ms each");
+		if (calls_at != std::string::npos)
+			ms_each = atof(kind_line.c_str() + calls_at + 8);
+		const bool three = each_at != std::string::npos && each_at >= 4 && kind_line[each_at - 4] == '.';
+		CHECK(!kind_line.empty() && three && ms_each >= 0.4 && ms_each < 0.48,
+		      "the probe's line has µs in it (%.3f ms each): %s", ms_each, kind_line.c_str());
+		double frame_ms = 0.0;
+		const size_t ticks_at = frame_line.find("StageKit ticks ");
+		if (ticks_at != std::string::npos)
+			frame_ms = atof(frame_line.c_str() + ticks_at + 15);
+		CHECK(frame_ms >= 0.4 && frame_line.find("timing_probe 0.4") != std::string::npos,
+		      "the per-frame line adds up the ticks and names the dearest: %s", frame_line.c_str());
+		obs_source_remove(probe);
+		obs_source_release(probe);
+	}
+	// ------------------------------- frame time: looks only when something changed
+	// Show in Scenes' Follow what is shown, Link Visibility's Follow the
+	// first source, a shadow's scale check and Ambient Background's sources
+	// look when an item in some scene changed (or settings, or a press), and
+	// otherwise seldom; what they do when something changes is as before.
+	{
+		printf("\n[frame time: looks only when something changed]\n");
+		struct Looks {
+			long long sw, link, shadow, ambient;
+		};
+		auto looks = []() {
+			calldata_t cd;
+			calldata_init(&cd);
+			proc_handler_call(obs_get_proc_handler(), "stagekit_test_looks", &cd);
+			const char *json = calldata_string(&cd, "json");
+			obs_data_t *data = obs_data_create_from_json(json ? json : "{}");
+			calldata_free(&cd);
+			Looks l{obs_data_get_int(data, "switch_follow"), obs_data_get_int(data, "link_follow"),
+				obs_data_get_int(data, "shadow_scale"), obs_data_get_int(data, "ambient_sources")};
+			obs_data_release(data);
+			return l;
+		};
+		auto wait_frames = [](uint64_t n) {
+			const uint64_t from = obs_get_total_frames();
+			for (int i = 0; i < 2000 && obs_get_total_frames() < from + n; i++)
+				sleep_ms(2);
+		};
+		auto colour = [](const char *name, int w, int h) {
+			obs_data_t *cd = obs_data_create();
+			obs_data_set_int(cd, "width", w);
+			obs_data_set_int(cd, "height", h);
+			obs_data_set_int(cd, "color", 0xFF4080C0);
+			obs_source_t *s = obs_source_create("color_source", name, cd, nullptr);
+			obs_data_release(cd);
+			return s;
+		};
+		auto list = [](obs_data_t *settings, const char *setting, std::vector<const char *> names) {
+			obs_data_array_t *arr = obs_data_array_create();
+			for (const char *n : names) {
+				obs_data_t *e = obs_data_create();
+				obs_data_set_string(e, "value", n);
+				obs_data_array_push_back(arr, e);
+				obs_data_release(e);
+			}
+			obs_data_set_array(settings, setting, arr);
+			obs_data_array_release(arr);
+		};
+		obs_scene_t *scene = obs_scene_create("FT Scene");
+		obs_source_t *scene_src = obs_scene_get_source(scene);
+		obs_source_t *lead = colour("FT Lead", 320, 180), *other = colour("FT Other", 200, 120);
+		obs_sceneitem_t *lead_item = obs_scene_add(scene, lead);
+		obs_sceneitem_t *other_item = obs_scene_add(scene, other);
+		// A switch on the leader that follows what is shown, a link that
+		// follows the first source, a shadow on the leader, a background.
+		obs_data_t *sd = obs_data_create();
+		obs_data_set_int(sd, "where", 1);
+		list(sd, "scenes", {"FT Scene"});
+		obs_data_set_bool(sd, "follow", true);
+		obs_data_set_string(sd, "transition", "cut_transition");
+		obs_source_t *sw = obs_source_create("stagekit_show_in_scenes", "FT Switch", sd, nullptr);
+		obs_data_release(sd);
+		obs_source_filter_add(lead, sw);
+		obs_data_t *ld = obs_data_create();
+		list(ld, "items", {"FT Lead", "FT Other"});
+		obs_data_set_int(ld, "mode", 2);
+		obs_data_set_string(ld, "transition", "cut_transition");
+		obs_source_t *link = obs_source_create("stagekit_visibility_link", "FT Link", ld, nullptr);
+		obs_data_release(ld);
+		obs_source_filter_add(scene_src, link);
+		obs_source_t *shadow = obs_source_create("stagekit_shadow_backdrop", "FT Shadow", nullptr, nullptr);
+		obs_source_filter_add(lead, shadow);
+		obs_data_t *ad = obs_data_create();
+		obs_data_set_int(ad, "live_mode", 1);
+		obs_source_t *ambient = obs_source_create("stagekit_ambient_background", "FT Ambient", ad, nullptr);
+		obs_data_release(ad);
+		obs_scene_add(scene, ambient);
+		obs_source_t *before_out = obs_get_output_source(0);
+		obs_set_output_source(0, scene_src);
+		sleep_ms(800); // the first looks; the switch reads on
+		CHECK(obs_source_enabled(sw), "the switch reads on while its source shows");
+
+		// Nothing changes for 180 frames (3 s at 60 fps).
+		const Looks a = looks();
+		wait_frames(180);
+		const Looks b = looks();
+		CHECK(b.sw - a.sw <= 2, "Follow what is shown looked %lld times in 3 s with nothing changed (was 12)",
+		      b.sw - a.sw);
+		CHECK(b.link - a.link <= 180 / 15 + 1,
+		      "Follow the first source looked %lld times in 180 frames with nothing changed (was 180)",
+		      b.link - a.link);
+		CHECK(b.shadow - a.shadow <= 2,
+		      "the shadow's scale check ran %lld times in 3 s with nothing changed (was 9)",
+		      b.shadow - a.shadow);
+		CHECK(b.ambient - a.ambient <= 7, "Ambient Background looked its sources up %lld times in 3 s (was 30)",
+		      b.ambient - a.ambient);
+
+		// The leader hidden by hand: the link hides the other at once, the
+		// switch reads off within a look (a quarter second), the shadow and
+		// the background look again.
+		obs_sceneitem_set_visible(lead_item, false);
+		wait_frames(3);
+		CHECK(!obs_sceneitem_visible(other_item), "the other source is hidden with the leader within 3 frames");
+		for (int i = 0; i < 50 && obs_source_enabled(sw); i++)
+			sleep_ms(10);
+		CHECK(!obs_source_enabled(sw), "the switch reads off once its source is hidden");
+		wait_frames(25);
+		const Looks c = looks();
+		CHECK(c.shadow > b.shadow && c.ambient > b.ambient,
+		      "the shadow and the background looked again (%lld, %lld)", c.shadow - b.shadow,
+		      c.ambient - b.ambient);
+		// While the leader is hidden, the other shown by anything is hidden
+		// again.
+		obs_sceneitem_set_visible(other_item, true);
+		wait_frames(3);
+		CHECK(!obs_sceneitem_visible(other_item), "shown while the leader is hidden, it is hidden again");
+		// A press shows the leader, and the link the other with it.
+		obs_source_set_enabled(sw, true);
+		wait_frames(4);
+		CHECK(obs_sceneitem_visible(lead_item) && obs_sceneitem_visible(other_item),
+		      "a press shows the leader, and the other comes with it");
+		// The item moved: the shadow looks at its scale within 20 ticks.
+		const Looks d = looks();
+		vec2 pos = {40.0f, 40.0f};
+		obs_sceneitem_set_pos(lead_item, &pos);
+		wait_frames(45);
+		CHECK(looks().shadow > d.shadow, "a moved item makes the shadow look at its scale again");
+
+		obs_set_output_source(0, before_out);
+		obs_source_release(before_out);
+		obs_source_filter_remove(lead, sw);
+		obs_source_filter_remove(lead, shadow);
+		obs_source_filter_remove(scene_src, link);
+		for (obs_source_t *s : {sw, shadow, link, lead, other, ambient})
+			obs_source_release(s);
+		obs_scene_release(scene);
+	}
 	// ==== end scene-filters:perf ====
 
 	// ==== scene-filters:blur ====

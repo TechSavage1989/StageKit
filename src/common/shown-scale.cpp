@@ -78,9 +78,15 @@ bool find_shown_scale(obs_scene_t *, obs_sceneitem_t *item, void *param)
 	auto *f = static_cast<ShownScale *>(param);
 	if (*f->found || (!f->hidden_too && !obs_sceneitem_visible(item)))
 		return true;
+	obs_source_t *source = obs_sceneitem_get_source(item);
+	// Only the item wanted, a group or a nested scene needs its scale (a
+	// source's size goes through all its filters: not free).
+	const bool group = obs_sceneitem_is_group(item);
+	obs_scene_t *nested = group || source == f->wanted ? nullptr : obs_scene_from_source(source);
+	if (source != f->wanted && !group && !nested)
+		return true;
 	double sx = 1.0, sy = 1.0;
 	item_draw_scale(item, sx, sy);
-	obs_source_t *source = obs_sceneitem_get_source(item);
 	if (source == f->wanted) {
 		*f->out_x = std::fabs(f->sx * sx);
 		*f->out_y = std::fabs(f->sy * sy);
@@ -90,9 +96,9 @@ bool find_shown_scale(obs_scene_t *, obs_sceneitem_t *item, void *param)
 	if (f->depth >= 8)
 		return true;
 	ShownScale inner{f->wanted, f->sx * sx, f->sy * sy, f->out_x, f->out_y, f->found, f->depth + 1, f->hidden_too};
-	if (obs_sceneitem_is_group(item))
+	if (group)
 		obs_sceneitem_group_enum_items(item, find_shown_scale, &inner);
-	else if (obs_scene_t *nested = obs_scene_from_source(source))
+	else if (nested)
 		obs_scene_enum_items(nested, find_shown_scale, &inner);
 	return true;
 }
