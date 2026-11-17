@@ -93,7 +93,7 @@ notice and the confirmation are what there is. This is recorded in the handoff.
 | `data/locale/en-US.ini` | Every user-visible string |
 | `tests/` | Headless libobs tests, test-image generators, `run-tests.sh` |
 | `streamdeck/` | The Stream Deck plugin (TypeScript, Elgato's SDK 3, Node): `src/` (the link to OBS over obs-websocket, the key types), `com.techsavage1989.stagekit.sdPlugin/` (manifest, settings pages, icons), `tests/`, `tools/make-icons.py`. It has its own `package.json`; nothing in the OBS plugin depends on it |
-| `scripts/` | Repository checks (`check-root.sh`, `root-allowlist.txt`); `rebuild-collection.py` writes a StageKit collection from an old one and `upgrade-collection.py` brings a StageKit collection up to date; `merge-capture-scenes.py` adds the two layout scenes to a StageKit collection for a side-by-side trial. All three read one file and write another; the owner's collections are private and never committed |
+| `scripts/` | Repository checks (`check-root.sh`, `root-allowlist.txt`); `rebuild-collection.py` writes a StageKit collection from an old one and `upgrade-collection.py` brings a StageKit collection up to date; `merge-capture-scenes.py` adds the two layout scenes and `merge-holding-scenes.py` the holding scene to a StageKit collection for a side-by-side trial. All four read one file and write another; the owner's collections are private and never committed |
 | `docs/images/` | README imagery, produced by the tests |
 | `cmake/`, `build-aux/`, `.github/` | From the official obs-plugintemplate; change only when needed |
 
@@ -520,6 +520,16 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   a layout scene is tested in both filter orders (`[layout scenes: changing the capture leaves the
   rest where it is]`, last in the test file because it turns sound on): camera and chat box move
   at most 0.2 px. A new test that changes visibility between frames should try both orders.
+  **One holding scene** the same way (2026-11-17; the owner: "The start screen, Intermission,
+  BRB, and Stream ending are all affectively the same design. Can this also be combine into a
+  single scene"): `Holding-Scene` holds Stream Start, Be Right Back and Stream Ending as modes,
+  each a title group plus extras; Link Visibility-Titles (only one) over the titles, one Link
+  Visibility *Together* per mode for its extras, a Show in Scenes-Mode (`follow`) on each title.
+  One Link Visibility reacts to another's change because each passes over only what it does on
+  its own thread while acting (`applying_`). Intermission stays a scene: the camera switch acts
+  in every scene and would show the camera in every mode. Written by
+  `scripts/merge-holding-scenes.py`, driven headless with the plugin (all modes, two keys at
+  once, off screen, nothing hidden left in use); no plugin change was needed.
 - **Anything that changes over time lets the user choose how.** The owner: "Any filter or
   feature/effect that would do a transition or transform should have those ... be customizable, and
   not only offer fade. fade should be the default". A filter that shows and hides scene items offers
