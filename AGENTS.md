@@ -880,7 +880,14 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     in, the result is the same. Tested in `[morph between items]` (both ways, the capture a moment
     late, a small unlinked item still fading by itself) and in the first case of `[a capture shown
     in the camera's place ...]` (two layers at once; the capture's own transition draws nothing);
-    not yet seen on Windows.
+    not yet seen on Windows. **Joining as the main image needs a third of the screen on both
+    sides** (`kJoinShare`, beta159), not the main image's own 15 % (`kMainShare`): at 15 % the
+    owner's chat box (Chat Box Group, 16 %) joined the full-screen DSLR's change in Chat Live, where
+    showing DSLR hides Window Capture and the chat column (the owner: "the camera is morphing from
+    the chat box"). Their collection by then had no Morph links at all, and DSLR in Chat Live.
+    Joining by a link has no size rule. Every pairing is logged once (`start_job`'s `why`:
+    `Morph: 'A' changes into 'B' in '<scene>' (linked | main image | ..., joining a change under
+    way)`): ask for the log before guessing which rule paired two items.
   - The change goes by the shown item's transition's clock, and the tick ends it at the very frame
     that transition draws the item itself: OBS's video time is the same in a frame's tick and its
     drawing. Do not time it any other way, or there is a frame with both or with neither.

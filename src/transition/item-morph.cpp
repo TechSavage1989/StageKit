@@ -31,11 +31,12 @@ the Free Software Foundation; either version 2 of the License, or
 //
 // One item can be in two changes at once. An item left over, with nothing
 // of its own kind to change into, changes into (or out of) one that is
-// already changing, by the same rules: linked, then the largest. Hiding a
-// full-screen camera to show a capture brings back the camera's corner
-// view too; linked to the camera, the corner view takes the camera, and the
-// capture, left over, still comes out of the camera instead of fading in by
-// itself.
+// already changing, by the same rules: linked, then the largest, where for
+// the largest both must fill a good part of the screen (kJoinShare), not be
+// a panel beside it. Hiding a full-screen camera to show a capture brings
+// back the camera's corner view too; linked to the camera, the corner view
+// takes the camera, and the capture, left over, still comes out of the
+// camera instead of fading in by itself.
 
 #include "item-morph.hpp"
 #include "../common/scene-util.hpp"
@@ -66,6 +67,13 @@ constexpr uint64_t kGraceNs = 100'000'000ULL;
 constexpr uint64_t kTooLongNs = 20'000'000'000ULL;
 // The least an item covers of its scene to be taken for the main picture.
 constexpr double kMainShare = 0.15;
+// The least an item left over, and the item it would join, each cover of
+// their scene for it to join a change already under way as the main
+// picture: a picture filling most of the screen, not a panel beside it. At
+// the main picture's own 15 % the owner's chat box (16 %), left over when the
+// full-screen DSLR was shown in Chat Live, joined the camera's change
+// (beta158): "the camera is morphing from the chat box".
+constexpr double kJoinShare = 1.0 / 3.0;
 
 // One change under way.
 struct Job {
@@ -289,7 +297,8 @@ struct Half {
 	bool taken = false;
 };
 
-void start_job(Half &hide, Half &show)
+// `why` is for the log: which rule paired the two.
+void start_job(Half &hide, Half &show, const char *why)
 {
 	// (The transition the change goes by must still be the item's.)
 	obs_source_t *clock = obs_sceneitem_get_transition(show.entry->item, true);
@@ -357,6 +366,9 @@ void start_job(Half &hide, Half &show)
 	}
 	hide.taken = show.taken = true;
 	g_jobs.push_back(job);
+	// Once per change, so that a pairing nobody wanted can be told from the log.
+	obs_log(LOG_INFO, "Morph: '%s' changes into '%s' in '%s' (%s)", obs_source_get_name(job->from_source),
+		obs_source_get_name(job->to_source), obs_source_get_name(job->scene), why);
 }
 
 void tick(void *, float)
@@ -439,11 +451,11 @@ void tick(void *, float)
 	auto apart = [](const Half &a, const Half &b) {
 		return a.entry->scene == b.entry->scene && a.entry->item != b.entry->item;
 	};
-	// The largest of `of` in `scene` covering at least kMainShare of it; with
+	// The largest of `of` in `scene` covering at least `least` of it; with
 	// `taken_too`, ones already in a pair count as well.
-	auto largest = [&](std::vector<Half> &of, obs_source_t *scene, bool taken_too) {
+	auto largest = [&](std::vector<Half> &of, obs_source_t *scene, bool taken_too, double least = kMainShare) {
 		Half *best = nullptr;
-		double best_share = kMainShare;
+		double best_share = least;
 		for (Half &h : of) {
 			if (!(taken_too ? there(h) : can(h)) || h.entry->scene != scene)
 				continue;
@@ -460,7 +472,7 @@ void tick(void *, float)
 			if (!can(show) || !can(hide) || !apart(hide, show) ||
 			    !morph_linked(links, name(hide), name(show)))
 				continue;
-			start_job(hide, show);
+			start_job(hide, show, "linked");
 		}
 	}
 	for (Half &show : shows) {
@@ -470,7 +482,7 @@ void tick(void *, float)
 		Half *main_show = largest(shows, show.entry->scene, false),
 		     *main_hide = largest(hides, show.entry->scene, false);
 		if (main_show == &show && main_hide && apart(*main_hide, show))
-			start_job(*main_hide, show);
+			start_job(*main_hide, show, "main image");
 	}
 	// One left over changes into (or out of) one already in a pair: linked
 	// first, then the main image. (See the top: the capture that comes out
@@ -480,32 +492,34 @@ void tick(void *, float)
 		return can(left) && other.taken && there(other) && apart(left, other) &&
 		       obs_sceneitem_visible(other.entry->item) == other.entry->show;
 	};
-	auto join = [](Half &left, Half &other) {
+	auto join = [](Half &left, Half &other, const char *why) {
 		if (left.entry->show)
-			start_job(other, left);
+			start_job(other, left, why);
 		else
-			start_job(left, other);
+			start_job(left, other, why);
 	};
 	for (const bool showing : {true, false}) {
 		std::vector<Half> &lefts = showing ? shows : hides, &others = showing ? hides : shows;
 		for (Half &left : lefts)
 			for (Half &other : others)
 				if (shared(left, other) && morph_linked(links, name(left), name(other)))
-					join(left, other);
+					join(left, other, "linked, joining a change under way");
 	}
 	for (const bool showing : {true, false}) {
 		std::vector<Half> &lefts = showing ? shows : hides, &others = showing ? hides : shows;
 		// (Only the largest left over in each scene, as it is before any of
-		// them joins: one item goes into two changes, not into every one.)
+		// them joins: one item goes into two changes, not into every one. Both
+		// must fill a good part of the screen, kJoinShare: a panel beside the
+		// main picture fades by itself.)
 		std::vector<Half *> mains;
 		for (Half &left : lefts)
-			if (can(left) && largest(lefts, left.entry->scene, false) == &left)
+			if (can(left) && largest(lefts, left.entry->scene, false, kJoinShare) == &left)
 				mains.push_back(&left);
 		for (Half *left : mains) {
-			Half *other = largest(others, left->entry->scene, true);
+			Half *other = largest(others, left->entry->scene, true, kJoinShare);
 			const Half *show = showing ? left : other;
 			if (other && show->said.pair_main && shared(*left, *other))
-				join(*left, *other);
+				join(*left, *other, "main image, joining a change under way");
 		}
 	}
 	// Whatever has waited long enough, or cannot be paired, goes by itself.

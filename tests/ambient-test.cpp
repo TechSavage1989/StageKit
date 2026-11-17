@@ -1315,12 +1315,14 @@ int main(int argc, char **argv)
 			// the new source like all the others do". The corner view took the
 			// camera and the capture faded in by itself.
 			{
-				obs_source_t *cam = block("Item Morph Cam", 0xFF0000FF, 300, 200);     // red
-				obs_source_t *grab = block("Item Morph Grab", 0xFF00FF00, 300, 200);   // green
+				// (Camera and capture each fill more than a third of the screen,
+				// as the owner's do: over half of it here.)
+				obs_source_t *cam = block("Item Morph Cam", 0xFF0000FF, 480, 270);     // red
+				obs_source_t *grab = block("Item Morph Grab", 0xFF00FF00, 480, 270);   // green
 				obs_source_t *corner = block("Item Morph Corner", 0xFFFF0000, 80, 60); // blue
 				obs_scene_t *ls = obs_scene_create("Item Morph Live");                 // no background
 				obs_sceneitem_t *ci = put(ls, cam, 20, 20); // lowest, as DSLR
-				obs_sceneitem_t *gi = put(ls, grab, 320, 140);
+				obs_sceneitem_t *gi = put(ls, grab, 140, 70);
 				obs_sceneitem_t *ki = put(ls, corner, 540, 280); // highest
 				obs_sceneitem_set_visible(gi, false);
 				obs_sceneitem_set_visible(ki, false);
@@ -1405,10 +1407,34 @@ int main(int argc, char **argv)
 				CHECK(small.items == 6,
 				      "an item too small to be the main image, with no link, is in no change: it fades by itself (%d items half-way)",
 				      small.items);
+				// A panel beside the main picture (a fifth of the screen: above
+				// the main image's 15 %, under a third), unlinked, hidden or shown
+				// with the capture as the camera comes or goes: it fades by itself
+				// and does not join the camera's change. The owner's chat box in
+				// Chat Live, with beta158: "the camera is morphing from the chat
+				// box".
+				obs_source_t *side = block("Item Morph Side", 0xFFFFFF00, 160, 300); // cyan
+				obs_sceneitem_t *si = put(ls, side, 460, 30);
+				obs_sceneitem_set_visible(si, false);
+				as_morph(si, true);
+				as_morph(si, false);
+				sleep_ms(100);
+				obs_sceneitem_set_visible(ci, false);
+				obs_sceneitem_set_visible(gi, true);
+				obs_sceneitem_set_visible(si, true);
+				const Halfway panel_in = halfway();
+				obs_sceneitem_set_visible(gi, false);
+				obs_sceneitem_set_visible(si, false);
+				obs_sceneitem_set_visible(ci, true);
+				const Halfway panel_out = halfway();
+				CHECK(panel_in.items == 6 && panel_out.items == 6 && panel_in.grab.n > 15000 &&
+					      panel_out.grab.n > 15000,
+				      "a panel under a third of the screen, shown or hidden with the capture as the camera goes or comes, fades by itself: only the camera and the capture change into each other (%d and %d items half-way, one layer each; %d and %d px of camera and capture)",
+				      panel_in.items, panel_out.items, panel_in.grab.n, panel_out.grab.n);
 				obs_set_output_source(0, obs_scene_get_source(is));
 				obs_source_release(cam_links);
 				obs_scene_release(ls);
-				for (obs_source_t *src : {cam, grab, corner, dot})
+				for (obs_source_t *src : {cam, grab, corner, dot, side})
 					obs_source_release(src);
 			}
 			obs_set_output_source(0, before_out);
