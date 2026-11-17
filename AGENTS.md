@@ -974,7 +974,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     drawing. Do not time it any other way, or there is a frame with both or with neither.
   - Scene items are added and removed from a tick callback, never from inside a signal or while
     drawing. Everything stops at `item_morph_stop()` (OBS closing, unload).
-  - **Nothing here holds a scene, and an item only while its change is drawn** (betaNEXT). An
+  - **Nothing here holds a scene, and an item only while its change is drawn** (beta170). An
     item's Morph transition is known (`Entry`) from its start until OBS says it stopped, and OBS
     says that only when the transition is drawn to its end with its sound ended: never for a
     scene out of view, never in the tests before they turn sound on. Up to beta167 each entry

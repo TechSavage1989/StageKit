@@ -13,9 +13,9 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
-## The item Morph lets go of scenes and sources (0.1.0-betaNEXT)
+## The item Morph lets go of scenes and sources (0.1.0-beta170)
 
-Branch `fix/item-morph-holds`, from `main` at beta167. Notes: `docs/releases/0.1.0-betaNEXT.md`.
+Branch `fix/item-morph-holds`, from `main` at beta167. Notes: `docs/releases/0.1.0-beta170.md`.
 No Stream Deck file changed. Found by a helper writing a Link Visibility test: with Morph on the
 captures, the section's scenes and sources were still there at `obs_shutdown` ("source(s) were
 remaining", "Double destroy"), and not with a fade. The owner uses Morph as the show and hide
