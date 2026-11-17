@@ -33,6 +33,9 @@ the Free Software Foundation; either version 2 of the License, or
 #include <util/platform.h>
 
 #include <algorithm>
+// ==== scene-filters:perf ====
+#include <atomic>
+// ==== end scene-filters:perf ====
 #include <cmath>
 #include <memory>
 #include <mutex>
@@ -288,6 +291,51 @@ void showing_holders(obs_source_t *scene_source, Showing &look)
 		&look);
 }
 
+// ==== scene-filters:perf ====
+// Anything that can change how big a source is drawn in a scene (an item
+// added, removed, shown, hidden, moved, scaled or reordered, in any scene or
+// group) raises this number, so a shadow looks at its scale again only when
+// something changed (or every two seconds), not every 20 ticks. The scenes
+// are watched from the first shadow filter on; a scene made later is watched
+// from its creation. Signals are only counted here; nothing is done in them.
+std::atomic<uint64_t> g_scene_rev{1};
+
+void scene_changed(void *, calldata_t *)
+{
+	g_scene_rev.fetch_add(1, std::memory_order_relaxed);
+}
+
+void watch_scene(obs_source_t *source)
+{
+	if (!source || obs_source_get_type(source) != OBS_SOURCE_TYPE_SCENE)
+		return;
+	signal_handler_t *sh = obs_source_get_signal_handler(source);
+	// OBS connects a callback once however often it is asked.
+	for (const char *signal : {"item_add", "item_remove", "item_visible", "item_transform", "reorder", "refresh"})
+		signal_handler_connect(sh, signal, scene_changed, nullptr);
+	g_scene_rev.fetch_add(1, std::memory_order_relaxed);
+}
+
+void watch_scenes()
+{
+	static std::once_flag once;
+	std::call_once(once, [] {
+		signal_handler_connect(
+			obs_get_signal_handler(), "source_create",
+			[](void *, calldata_t *cd) {
+				watch_scene(static_cast<obs_source_t *>(calldata_ptr(cd, "source")));
+			},
+			nullptr);
+		obs_enum_scenes(
+			[](void *, obs_source_t *scene) {
+				watch_scene(scene);
+				return true;
+			},
+			nullptr);
+	});
+}
+// ==== end scene-filters:perf ====
+
 class ShadowBackdrop {
 public:
 	obs_source_t *filter() const { return source_; }
@@ -339,6 +387,17 @@ private:
 	// Standing down because of the scene on screen.
 	bool off_here_ = false;
 	int scale_countdown_ = 0;
+	// ==== scene-filters:perf ====
+	// What the scale was last looked at with: the scenes' revision, the
+	// scene on screen (compared, never held) and the source's size.
+	bool scale_check_due(obs_source_t *parent);
+	std::atomic<bool> scale_dirty_{true};
+	uint64_t seen_scene_rev_ = 0;
+	const obs_source_t *seen_on_screen_ = nullptr;
+	uint32_t seen_w_ = 0, seen_h_ = 0;
+	int scale_idle_ = 0;
+	bool scale_staggered_ = false;
+	// ==== end scene-filters:perf ====
 
 	gs_effect_t *effect_ = nullptr;
 	gs_eparam_t *p_image_ = nullptr;
@@ -483,6 +542,9 @@ void ShadowBackdrop::update(obs_data_t *settings)
 		s.outline = false;
 	s.screen_px = obs_data_get_bool(settings, "screen_px");
 	in_view_ = obs_data_get_bool(settings, "in_view");
+	// ==== scene-filters:perf ====
+	scale_dirty_ = true; // "Off in these scenes" may have changed
+	// ==== end scene-filters:perf ====
 
 	std::lock_guard lock(mutex_);
 	settings_ = s;
@@ -688,8 +750,9 @@ void ShadowBackdrop::tick()
 		return;
 	// A filter that is switched off, or told not to, takes no room.
 	// Now and then, see how big the source is drawn where it is on screen.
-	if (--scale_countdown_ <= 0) {
-		scale_countdown_ = 20;
+	// ==== scene-filters:perf ====
+	if (scale_check_due(parent)) {
+		// ==== end scene-filters:perf ====
 		// And whether the scene on screen is one it is left off in.
 		bool off = false;
 		if (obs_source_t *on_screen = scene_on_screen()) {
@@ -738,6 +801,39 @@ void ShadowBackdrop::tick()
 	else if (++in_view_turn_ % 8 == 0)
 		keep_in_view(parent);
 }
+
+// ==== scene-filters:perf ====
+// Every 20 ticks, as before, but only when something it depends on changed;
+// otherwise every 120 ticks. The first look comes at once; after it, the
+// filters' 20-tick rounds are spread by their uuid.
+bool ShadowBackdrop::scale_check_due(obs_source_t *parent)
+{
+	if (--scale_countdown_ > 0)
+		return false;
+	scale_countdown_ = 20;
+	if (!scale_staggered_) {
+		scale_staggered_ = true;
+		watch_scenes();
+		scale_countdown_ = 1 + stagger_phase(source_, 20);
+		scale_idle_ = stagger_phase(source_, 120);
+	}
+	const uint64_t rev = g_scene_rev.load(std::memory_order_relaxed);
+	obs_source_t *on_screen = scene_on_screen();
+	obs_source_release(on_screen);
+	const uint32_t w = obs_source_get_width(parent), h = obs_source_get_height(parent);
+	scale_idle_ += 20;
+	const bool changed = scale_dirty_.exchange(false) || rev != seen_scene_rev_ || on_screen != seen_on_screen_ ||
+			     w != seen_w_ || h != seen_h_;
+	if (!changed && scale_idle_ < 120)
+		return false;
+	seen_scene_rev_ = rev;
+	seen_on_screen_ = on_screen;
+	seen_w_ = w;
+	seen_h_ = h;
+	scale_idle_ = 0;
+	return true;
+}
+// ==== end scene-filters:perf ====
 
 // The filter is being taken off its source: give the room back.
 void ShadowBackdrop::leave(obs_source_t *parent)
