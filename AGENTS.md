@@ -1413,7 +1413,36 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
 - **Scene Fit**: to come.
 <!-- ==== end scene-filters:fit ==== -->
 <!-- ==== scene-filters:standby-corners ==== -->
-- **Scene Standby and Scene Corners**: to come.
+- **Scene Standby and Scene Corners keep a filter on each source; neither draws**
+  (`src/placement/scene-standby.*`, `src/placement/scene-corners.*`, both through
+  `src/common/managed-filter.*`, `ManagedSet`). Each adds a `stagekit_standby` or `stagekit_corners`
+  to each source it covers, with `managed` and `managed_by` (the scene's name) in its settings, and
+  pushes only the look keys that differ, from its own tick (once a second on screen, three off it, at
+  once after a change; never before `scenes_loaded()`). A filter takes its look only from the scene
+  filter in the scene it names; when that one is gone the first other one covering the source (by
+  scene name) rewrites `managed_by` and takes it over: no last-edited-wins. A filter of the kind the
+  user made (no `managed`) is left alone and no second one is added. One is taken off only from a
+  scene filter's tick, after `kManagedGraceS` (3 s) covered by none, **never from `destroy`**, which
+  also runs at a change of collection and at shutdown. Scene Corners is the switch for its filters
+  (`mirror_enabled`, on an edge of its own state); Scene Standby never switches its filters on again.
+  The registry (`g_entries`, and Scene Standby's `g_hidden`) holds no item and no strong reference:
+  copied out under its lock, nothing held while OBS is asked.
+- **A managed Standby filter goes idle, never away by itself**: not covered for 2 s by an enabled
+  Scene Standby with *Show when no image* (`check_managed`, `idle_`), it draws straight through and
+  takes the size of what comes before it. `Standby::update` makes the image again only when
+  `picture`, `file` or `source` change (`made_`, the `test_state` proc): a pushed duration made it flash.
+- **Stand-ins are per scene since Scene Standby** (`sync_stand_ins`): a scene has them when the
+  filter's own `when_hidden` is ticked (every scene) or its Scene Standby lists the source under
+  *Show when hidden* (`scene_standby_hidden`, that scene's change, per source). `g_stood_in` is
+  (scene, source) pairs, so the transitions owner is per item: in a scene without stand-ins the item
+  is free for Show in Scenes and Scene Transitions. An item in a group was owned before and is not
+  now (it never had a stand-in). The change given to each scene is remembered as text (`applied_`) so
+  a change made in the Scene Standby is applied again. `sync_stand_ins` resolves *As the scene sets*
+  (`resolve_item_change`, in the item's scene) before the change is swapped for the twin.
+- **Scene Corners leaves the background out by size alone** (`screen_share`: bounds, or source size
+  times scale less crop; no `refresh_item`, which would mark the scene changed every second): items
+  from the bottom while each covers 90 % of the canvas. Corners & Edges' look controls and defaults are
+  shared (`corners_add_look_properties`, `corners_look_defaults`), so the keys are the same.
 <!-- ==== end scene-filters:standby-corners ==== -->
 <!-- ==== scene-filters:shadow ==== -->
 - **Scene Shadow**: to come.

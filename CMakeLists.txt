@@ -149,6 +149,12 @@ target_sources(
     # ==== scene-filters:fit ====
     # ==== end scene-filters:fit ====
     # ==== scene-filters:standby-corners ====
+    src/common/managed-filter.cpp
+    src/common/managed-filter.hpp
+    src/placement/scene-corners.cpp
+    src/placement/scene-corners.hpp
+    src/placement/scene-standby.cpp
+    src/placement/scene-standby.hpp
     # ==== end scene-filters:standby-corners ====
     # ==== scene-filters:shadow ====
     # ==== end scene-filters:shadow ====

@@ -33,6 +33,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/stand-in.hpp"
 #include "../common/start-image.hpp"
 #include "../frame/auto-frame.hpp"
+#include "../placement/scene-standby.hpp"
 #include "../transition/morph-paint.hpp"
 #include "../transition/morph.hpp"
 
@@ -44,9 +45,11 @@ the Free Software Foundation; either version 2 of the License, or
 #include <cctype>
 #include <cmath>
 #include <cstring>
+#include <map>
 #include <mutex>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace stagekit {
@@ -118,10 +121,29 @@ thread_local bool t_stand_in = false;
 // The stand-in's kind and the key naming its item's item (kStandInId,
 // kStandInFor) are in stand-in.hpp, for the scene filters.
 
-// The sources a Standby filter stands in for while they are hidden: their
-// items' transitions are that filter's to set (see `item_transitions_owner`).
+// The sources a Standby filter stands in for while they are hidden, scene by
+// scene: their items' transitions in that scene are that filter's to set
+// (see `item_transitions_owner`). In a scene where it makes no stand-in the
+// item is free for Show in Scenes or a Scene Transitions to set. Pointers are
+// keys only, never used.
 std::mutex g_stood_in_mutex;
-std::set<obs_source_t *> g_stood_in;
+std::set<std::pair<obs_source_t * /*scene*/, obs_source_t * /*source*/>> g_stood_in;
+
+void stood_in_forget(obs_source_t *source)
+{
+	std::lock_guard lock(g_stood_in_mutex);
+	for (auto it = g_stood_in.begin(); it != g_stood_in.end();)
+		it = it->second == source ? g_stood_in.erase(it) : std::next(it);
+}
+
+// One way an item comes and goes, as text, to see whether it has changed.
+std::string change_text(const ItemChange &change)
+{
+	std::string text;
+	for (const ItemWay *way : {&change.show, &change.hide})
+		text += way->kind + "|" + std::to_string(way->ms) + "|" + way->own + "|";
+	return text;
+}
 
 class Standby {
 public:
@@ -138,6 +160,18 @@ public:
 				calldata_set_bool(cd, "standing",
 						  t_stand_in || self->empty_ || self->mix_ > 0.0 || self->glide_ < 1.0);
 				calldata_set_bool(cd, "waiting", self->empty_);
+			},
+			this);
+		// For the tests: how many times the image has been made, and
+		// whether the filter is idle (made by a Scene Standby that no longer
+		// covers it).
+		proc_handler_add(
+			obs_source_get_proc_handler(source_), "void test_state(out int made, out bool idle)",
+			[](void *data, calldata_t *cd) {
+				auto *self = static_cast<Standby *>(data);
+				std::lock_guard lock(self->mutex_);
+				calldata_set_int(cd, "made", self->made_);
+				calldata_set_bool(cd, "idle", self->idle_);
 			},
 			this);
 		// Shown on purpose, over a capture that has a picture: by its
@@ -191,10 +225,7 @@ public:
 
 	~Standby()
 	{
-		{
-			std::lock_guard lock(g_stood_in_mutex);
-			g_stood_in.erase(obs_filter_get_parent(source_));
-		}
+		stood_in_forget(obs_filter_get_parent(source_));
 		forget_pairs();
 		// Its stand-in items go with it.
 		if (stand_in_) {
@@ -241,9 +272,18 @@ public:
 	void update(obs_data_t *settings)
 	{
 		std::lock_guard lock(mutex_);
-		kind_ = static_cast<Picture>(std::clamp((int)obs_data_get_int(settings, "picture"), 0, 2));
-		file_ = obs_data_get_string(settings, "file");
-		named_ = obs_data_get_string(settings, "source");
+		const auto kind = static_cast<Picture>(std::clamp((int)obs_data_get_int(settings, "picture"), 0, 2));
+		const std::string file = obs_data_get_string(settings, "file");
+		const std::string named = obs_data_get_string(settings, "source");
+		// The image is made again only when what it shows changes: a Scene
+		// Standby pushing a new duration must not make it flash.
+		if (kind != kind_ || file != file_ || named != named_)
+			changed_ = true;
+		kind_ = kind;
+		file_ = file;
+		named_ = named;
+		managed_ = obs_data_get_bool(settings, "managed");
+		managed_by_ = obs_data_get_string(settings, "managed_by");
 		own_.fade_s = std::clamp<long long>(obs_data_get_int(settings, "fade_ms"), 0, 5000) / 1000.0;
 		own_.back_s = std::clamp<long long>(obs_data_get_int(settings, "back_ms"), 0, 5000) / 1000.0;
 		own_.style = static_cast<Style>(std::clamp((int)obs_data_get_int(settings, "style"), 0, 11));
@@ -259,7 +299,6 @@ public:
 		when_hidden_ = obs_data_get_bool(settings, "when_hidden");
 		hidden_change_ = item_change_read(settings);
 		hidden_changed_ = true;
-		changed_ = true;
 	}
 
 	void tick(float seconds)
@@ -288,8 +327,10 @@ public:
 		if (stand_in_check_ >= 0.25) {
 			stand_in_check_ = 0.0;
 			// (Not while OBS loads its scenes: see loading.hpp.)
-			if (scenes_loaded())
+			if (scenes_loaded()) {
+				check_managed(parent, 0.25);
 				sync_stand_ins(parent);
+			}
 		}
 		// Every frame, for the pairs known: the stand-in shows the moment its
 		// item is hidden and goes the moment it is shown, so the two changes
@@ -357,16 +398,27 @@ public:
 				}
 			}
 		}
-		if (changed)
+		if (changed) {
 			make_picture(kind, file, named);
+			std::lock_guard lock(mutex_);
+			made_++;
+		}
+		bool idle;
+		{
+			std::lock_guard lock(mutex_);
+			idle = idle_;
+		}
 
 		// Nothing to show: the capture itself has no size.
 		// (Not while a Capture App in Use is changing from one window to
 		// another: it shows the last picture for that moment.)
 		// (Or the picture has been asked for over the capture.)
-		const bool empty = cover_ || ((obs_source_get_base_width(parent) == 0 ||
-					       obs_source_get_base_height(parent) == 0) &&
-					      !app_capture_holding(parent));
+		// (Nor while a Scene Standby that made this filter no longer covers
+		// the source: then it is idle.)
+		const bool empty =
+			cover_ ||
+			(!idle && (obs_source_get_base_width(parent) == 0 || obs_source_get_base_height(parent) == 0) &&
+			 !app_capture_holding(parent));
 		const uint32_t tw = before_width(source_), th = before_height(source_);
 		// A window switcher before this glides the capture's size from one
 		// window to the next by itself. Gliding after it again, over this
@@ -496,6 +548,16 @@ public:
 			live_w = live_w_;
 			live_h = live_h_;
 		}
+		bool idle;
+		{
+			std::lock_guard lock(mutex_);
+			idle = idle_ && mix <= 0.0;
+		}
+		// Idle with nothing left to show: as if it were not there.
+		if (idle && !t_stand_in) {
+			obs_source_skip_video_filter(source_);
+			return;
+		}
 		const uint32_t w = width(), h = height();
 		if (!effect_) {
 			char *path = obs_module_file("effects/stagekit-fade.effect");
@@ -577,31 +639,69 @@ public:
 		return empty_;
 	}
 
+	// Made by a Scene Standby: which scene sets it, and whether none covers
+	// it any more. False for a filter made by hand.
+	bool managed(std::string &by, bool &orphan)
+	{
+		std::lock_guard lock(mutex_);
+		by = owner_scene_.empty() ? managed_by_ : owner_scene_;
+		orphan = orphan_;
+		return managed_;
+	}
+
+	// For a filter a Scene Standby made: is it still covered by one? Not
+	// covered for two seconds, it goes idle (no image when the capture is
+	// empty) and says so; it never takes itself off.
+	void check_managed(obs_source_t *parent, double seconds)
+	{
+		bool managed;
+		std::string by;
+		{
+			std::lock_guard lock(mutex_);
+			managed = managed_;
+			by = managed_by_;
+		}
+		const ManagedState state = managed ? scene_standby_state(parent, by.c_str()) : ManagedState();
+		std::lock_guard lock(mutex_);
+		uncovered_s_ = !managed || state.covered ? 0.0 : uncovered_s_ + seconds;
+		const bool idle = managed && uncovered_s_ >= 2.0;
+		if (idle != idle_)
+			obs_log(LOG_INFO, "Standby Picture '%s' on '%s': %s", obs_source_get_name(source_),
+				obs_source_get_name(parent),
+				idle ? "no Scene Standby covers it now, idle" : "covered by a Scene Standby again");
+		idle_ = idle;
+		orphan_ = managed && !state.listed;
+		owner_scene_ = state.owner_found ? state.owner_scene : by;
+	}
+
 	// Every scene item showing the source has its stand-in: made when
 	// missing, kept in the item's place and straight under it while the item
 	// shows, and shown exactly while the item is hidden. With the option
 	// off, or the filter, they are taken out again. Called from the tick.
+	// The option is the filter's own "Show when source is hidden" (every
+	// scene), or a Scene Standby listing the source under "Show when hidden"
+	// (its own scene only, with its own transition).
 	void sync_stand_ins(obs_source_t *parent)
 	{
-		bool wanted, changed;
-		ItemChange change;
+		bool own_wanted;
+		ItemChange own_change;
+		bool changed;
 		{
 			std::lock_guard lock(mutex_);
-			wanted = when_hidden_ && obs_source_enabled(source_);
-			change = hidden_change_;
+			own_wanted = when_hidden_;
+			own_change = hidden_change_;
 			changed = hidden_changed_;
 			hidden_changed_ = false;
 		}
-		{
-			std::lock_guard lock(g_stood_in_mutex);
-			if (wanted)
-				g_stood_in.insert(parent);
-			else
-				g_stood_in.erase(parent);
-		}
+		const bool enabled = obs_source_enabled(source_);
+		own_wanted = own_wanted && enabled;
+		const bool wanted = own_wanted || (enabled && scene_standby_any_hidden(parent));
+		stood_in_forget(parent);
 		forget_pairs();
-		if (!wanted && !stand_in_)
+		if (!wanted && !stand_in_) {
+			applied_.clear();
 			return;
+		}
 		if (wanted && !stand_in_) {
 			obs_data_t *settings = obs_data_create();
 			obs_data_set_string(settings, "of", obs_source_get_name(parent));
@@ -649,19 +749,36 @@ public:
 				return true;
 			},
 			&search);
-		auto for_id = [](obs_sceneitem_t *stand_in) {
-			obs_data_t *own = obs_sceneitem_get_private_settings(stand_in);
-			const long long id = obs_data_get_int(own, kStandInFor);
-			obs_data_release(own);
-			return id;
-		};
+		// Which scenes have stand-ins, and with which change: a Scene
+		// Standby's own for its scene, or else this filter's.
+		std::map<obs_scene_t *, ItemChange> scenes;
 		for (const Pair &real : found) {
-			if (real.stand_in || !wanted)
+			if (real.stand_in || !wanted || scenes.count(real.scene))
 				continue;
+			ItemChange change = own_change;
+			if (scene_standby_hidden(obs_scene_get_source(real.scene), parent, &change) || own_wanted)
+				scenes[real.scene] = change;
+		}
+		{
+			std::lock_guard lock(g_stood_in_mutex);
+			for (const auto &[scene, change] : scenes)
+				g_stood_in.insert({obs_scene_get_source(scene), parent});
+		}
+		std::map<obs_scene_t *, std::string> applied;
+		for (const Pair &real : found) {
+			if (real.stand_in || !scenes.count(real.scene))
+				continue;
+			ItemChange change = scenes[real.scene];
+			// In the scene's terms, before it is swapped for the twin.
+			change = resolve_item_change(real.item, change, obs_scene_get_source(real.scene));
+			const std::string text = change_text(change);
+			applied[real.scene] = text;
+			auto before = applied_.find(real.scene);
+			const bool scene_changed = changed || before == applied_.end() || before->second != text;
 			obs_sceneitem_t *twin = nullptr;
 			for (const Pair &other : found)
 				if (other.stand_in && other.scene == real.scene &&
-				    for_id(other.item) == obs_sceneitem_get_id(real.item))
+				    stand_in_for_item(other.item) == obs_sceneitem_get_id(real.item))
 					twin = other.item;
 			const bool shown = obs_sceneitem_visible(real.item);
 			if (!twin) {
@@ -685,10 +802,10 @@ public:
 			const int twin_at = obs_sceneitem_get_order_position(twin);
 			if (twin_at != at - 1)
 				obs_sceneitem_set_order_position(twin, twin_at < at ? at - 1 : at);
-			// The one change chosen in this filter is the item's way out and
-			// in and its stand-in's: both get it, ahead of time, so whatever
-			// hides the item does it this way. With Morph the two are linked,
-			// so the one changes into the other.
+			// The one change chosen is the item's way out and in and its
+			// stand-in's: both get it, ahead of time, so whatever hides the
+			// item does it this way. With Morph the two are linked, so the
+			// one changes into the other.
 			ItemChange linked = change;
 			for (ItemWay *way : {&linked.show, &linked.hide}) {
 				if (way->kind != kMorphId)
@@ -718,7 +835,7 @@ public:
 			swapped.hide = linked.show;
 			for (obs_sceneitem_t *each : {real.item, twin}) {
 				const ItemChange &its = each == twin ? swapped : linked;
-				bool fits = !changed;
+				bool fits = !scene_changed;
 				for (bool show : {true, false}) {
 					const ItemWay &way = show ? its.show : its.hide;
 					if (way.kind == kTransitionKeep || way.kind.empty())
@@ -742,16 +859,19 @@ public:
 			pairs_.push_back({obs_source_get_weak_source(obs_scene_get_source(real.scene)),
 					  obs_sceneitem_get_id(real.item), obs_sceneitem_get_id(twin)});
 		}
-		// A stand-in whose item has gone, or all of them when they are no
-		// longer wanted, is taken out.
+		applied_ = std::move(applied);
+		// A stand-in whose item has gone, or in a scene that no longer has
+		// stand-ins, or all of them when they are no longer wanted, is taken
+		// out.
 		for (const Pair &twin : found) {
 			if (!twin.stand_in)
 				continue;
 			bool has_item = false;
 			for (const Pair &real : found)
-				has_item = has_item || (!real.stand_in && real.scene == twin.scene &&
-							obs_sceneitem_get_id(real.item) == for_id(twin.item));
-			if (!wanted || !has_item)
+				has_item = has_item ||
+					   (!real.stand_in && real.scene == twin.scene &&
+					    obs_sceneitem_get_id(real.item) == stand_in_for_item(twin.item));
+			if (!wanted || !has_item || !scenes.count(twin.scene))
 				obs_sceneitem_remove(twin.item);
 		}
 		for (const Pair &pair : found)
@@ -806,12 +926,19 @@ private:
 	// through, in whole pixels.
 	uint32_t size(bool across)
 	{
-		std::lock_guard lock(mutex_);
-		const double now = across ? cur_w_ : cur_h_;
-		if (now >= 1.0)
-			return (uint32_t)std::lround(now);
-		if (last_w_ && last_h_)
-			return across ? last_w_ : last_h_;
+		bool idle;
+		{
+			std::lock_guard lock(mutex_);
+			idle = idle_ && mix_ <= 0.0;
+			const double now = across ? cur_w_ : cur_h_;
+			if (!idle && now >= 1.0)
+				return (uint32_t)std::lround(now);
+			if (!idle && last_w_ && last_h_)
+				return across ? last_w_ : last_h_;
+		}
+		// Idle with nothing left to show: the size of what comes before it.
+		if (idle)
+			return across ? before_width(source_) : before_height(source_);
 		return across ? 1920 : 1080;
 	}
 
@@ -1080,6 +1207,16 @@ private:
 	ItemChange hidden_change_;
 	bool hidden_changed_ = true;
 	obs_source_t *stand_in_ = nullptr;
+	// The change last given to the items of each scene with stand-ins
+	// (scene pointers as keys only; the tick's own).
+	std::map<obs_scene_t *, std::string> applied_;
+	// Made by a Scene Standby (`managed`, which says in which scene), and
+	// whether one covers the source now. Idle: no image for an empty capture.
+	bool managed_ = false;
+	std::string managed_by_, owner_scene_;
+	bool idle_ = false, orphan_ = false;
+	double uncovered_s_ = 0.0;
+	int made_ = 0; // how many times the image has been made (for the tests)
 	// Each item with its stand-in, both held, from the last look.
 	// Each item of the source and its stand-in, known by their ids in their
 	// scene, never held: the items hold the source this filter is on, so
@@ -1125,10 +1262,25 @@ obs_properties_t *get_properties(void *data)
 {
 	auto *self = static_cast<Standby *>(data);
 	obs_properties_t *props = obs_properties_create();
-	obs_properties_add_text(props, "status",
-				obs_module_text(self && self->showing() ? "Standby.Status.Showing"
-									: "Standby.Status.Waiting"),
-				OBS_TEXT_INFO);
+	std::string by;
+	bool orphan = false;
+	const bool managed = self && self->managed(by, orphan);
+	// Set by a Scene Standby: it says so, and the image's controls are left
+	// out (whatever was set here would be put back from the scene filter).
+	if (managed) {
+		obs_property_t *status =
+			obs_properties_add_text(props, "status",
+						orphan ? obs_module_text("Standby.Status.Orphan")
+						       : text_with("Standby.Status.Managed", by).c_str(),
+						OBS_TEXT_INFO);
+		obs_property_text_set_info_word_wrap(status, true);
+		obs_property_set_long_description(status, obs_module_text("Standby.Status.Managed.Tip"));
+	} else {
+		obs_properties_add_text(props, "status",
+					obs_module_text(self && self->showing() ? "Standby.Status.Showing"
+										: "Standby.Status.Waiting"),
+					OBS_TEXT_INFO);
+	}
 	obs_property_t *cover = obs_properties_add_button2(
 		props, "cover_now", obs_module_text("Standby.Cover"),
 		[](obs_properties_t *, obs_property_t *, void *param) {
@@ -1138,6 +1290,12 @@ obs_properties_t *get_properties(void *data)
 		},
 		self);
 	obs_property_set_long_description(cover, obs_module_text("Standby.Cover.Tip"));
+	if (managed) {
+		obs_property_t *help =
+			obs_properties_add_text(props, "help", obs_module_text("Standby.Help"), OBS_TEXT_INFO);
+		obs_property_text_set_info_word_wrap(help, true);
+		return props;
+	}
 
 	obs_property_t *picture = obs_properties_add_list(props, "picture", obs_module_text("Standby.Picture"),
 							  OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
@@ -1319,6 +1477,8 @@ void register_standby()
 		obs_data_set_default_bool(settings, "own_shape", true);
 		obs_data_set_default_bool(settings, "placed", false);
 		obs_data_set_default_bool(settings, "when_hidden", false);
+		obs_data_set_default_bool(settings, "managed", false);
+		obs_data_set_default_string(settings, "managed_by", "");
 		item_change_defaults(settings);
 	};
 	info.get_properties = get_properties;
@@ -1384,13 +1544,15 @@ void register_standby()
 		obs_source_release(source);
 	};
 	register_timed(&stand_in);
-	// Their items' transitions are the Standby filter's to set.
-	// Every item of a source stood in for is the Standby filter's, in
-	// every scene.
+	// Their items' transitions are the Standby filter's to set, in the
+	// scenes where it has stand-ins for them (every scene with "Show when
+	// source is hidden", a Scene Standby's own scene with its list).
 	item_transitions_owner([](obs_sceneitem_t *item) {
 		obs_source_t *source = obs_sceneitem_get_source(item);
+		obs_scene_t *scene = obs_sceneitem_get_scene(item);
+		obs_source_t *scene_source = scene ? obs_scene_get_source(scene) : nullptr;
 		std::lock_guard lock(g_stood_in_mutex);
-		return g_stood_in.count(source) > 0;
+		return g_stood_in.count({scene_source, source}) > 0;
 	});
 }
 
