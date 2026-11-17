@@ -296,7 +296,7 @@
 			"id": "app_3d",
 			"label": "3D app",
 			"group": "Apps",
-			"base": "filters/app-blender",
+			"base": "options/type-app-3d",
 			"words": [
 				[
 					"3d"
@@ -310,7 +310,7 @@
 			"id": "sculpting",
 			"label": "Sculpting app",
 			"group": "Apps",
-			"base": "filters/app-zbrush",
+			"base": "options/type-sculpting",
 			"words": [
 				[
 					"sculpt"
@@ -327,7 +327,7 @@
 			"id": "cad",
 			"label": "CAD app",
 			"group": "Apps",
-			"base": "filters/app-fusion-360",
+			"base": "options/type-cad",
 			"words": [
 				[
 					"cad"
@@ -1312,9 +1312,6 @@
 			"browser": "show-hide/browser",
 			"display": "show-hide/main-display",
 			"tablet": "show-hide/tablet",
-			"app_3d": "show-hide/blender",
-			"sculpting": "show-hide/zbrush",
-			"cad": "show-hide/fusion-360",
 			"reference": "show-hide/pureref",
 			"camera": "show-hide/square-camera",
 			"full_camera": "show-hide/full-camera",
@@ -1335,9 +1332,6 @@
 			"game": "shadow-by-source/game-capture",
 			"capture_card": "shadow-by-source/hd60s",
 			"window": "shadow-by-source/window-capture",
-			"app_3d": "shadow-by-source/blender",
-			"sculpting": "shadow-by-source/zbrush",
-			"cad": "shadow-by-source/fusion-360",
 			"camera": "shadow-by-source/square-camera",
 			"side_camera": "shadow-by-source/side-camera",
 			"chat": "shadow-by-source/chat",
@@ -1352,9 +1346,6 @@
 			"window": "window-capture",
 			"display": "main-display",
 			"tablet": "tablet",
-			"app_3d": "blender",
-			"sculpting": "zbrush",
-			"cad": "fusion-360",
 			"camera": "camera-elgato",
 			"linked_handheld": "gba-link-1",
 			"linked_handheld_2": "gba-link-2"

@@ -157,7 +157,7 @@ def key_pictures():
         inside = base.getpixel((30, 60))
         ink = max((base.getpixel((x, y)) for x in range(40, 90) for y in range(36, 62)), key=lambda c: sum(c[:3]))
         ground = base.getpixel((2, 2))
-        ImageDraw.Draw(base).rectangle(OPTIONS.SCREEN, fill=inside)
+        ImageDraw.Draw(base).rectangle(OPTIONS.ERASE, fill=inside)
         buf = io.BytesIO()
         base.save(buf, format="PNG", optimize=True)
         href = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")

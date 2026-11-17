@@ -1563,11 +1563,13 @@ type* list has a *Layout* list just above it, so the layout is chosen first and 
 | *Live (no chat)* | The icon pack's live layout: the hexagon frame, the type's drawing in the big panel and a small camera in the top right corner |
 | *Live + chat* | The icon pack's layout with chat: the type's drawing in the panel on the left, a camera over a chat column on the right |
 
-Game, Window and Capture card use the icon pack's own scene images for the two layouts; every other
-source type and scene type with a drawing has its own pair, drawn in the same style, in all six
-palettes. A key showing the type with its function (a Show in Scenes key's eye, a Shadow key's
+Every layout image is the same template, with the camera in the same place, whatever the type:
+only the drawing in the panel changes. Every source type and scene type with a drawing has its own
+pair, in all six palettes. Drawings sit in the middle of their frame or panel, and no type shows a
+program's logo or letter (the 3D, sculpting and CAD app types are a wireframe cube, a bust with a
+sculpting tool, and a set square with a ruler). A key showing the type with its function (a Show in Scenes key's eye, a Shadow key's
 shadow, a Blur key's blur) shows the type's drawing in the layout. An image with no drawing of its
-own (an app's logo, a key left on *Automatic* type, an image kept from the old *Image* list) is
+own (the standby image, a key left on *Automatic* type, an image kept from the old *Image* list) is
 shown smaller inside the layout's panel. The corner badge and the green dot or red sign stay on
 top, as on any key.
 

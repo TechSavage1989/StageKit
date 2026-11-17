@@ -126,15 +126,15 @@ test("every source type and scene type with a drawing has its own picture in eac
 			const shown = laidOut({ picture: BY_ID.get(t.base)! }, { layout, sourceType: t.id });
 			if (drawn) {
 				assert.equal(shown.inset, undefined, `${t.id} ${layout}`);
-				assert.ok(shown.picture.id.startsWith("layouts/") || shown.picture.id.startsWith("scenes/"), `${t.id} ${layout}: ${shown.picture.id}`);
-			} else assert.equal(shown.inset, layout, `${t.id}: an app's picture laid into the panel`);
+				assert.ok(shown.picture.id.startsWith(`layouts/${layout}-`), `${t.id} ${layout}: ${shown.picture.id}`);
+			} else assert.equal(shown.inset, layout, `${t.id}: the pack's picture laid into the panel`);
 		}
 	}
 	for (const t of SCENE_TYPES)
 		for (const layout of ["live", "chat"]) {
 			const shown = sceneKey(t.id, layout);
 			assert.equal(shown.inset, undefined, `${t.id} ${layout}`);
-			assert.ok(shown.picture.id.startsWith("layouts/") || shown.picture.id.startsWith("scenes/0"), `${t.id} ${layout}: ${shown.picture.id}`);
+			assert.ok(shown.picture.id.startsWith(`layouts/${layout}-`), `${t.id} ${layout}: ${shown.picture.id}`);
 		}
 	// Within one layout, a type's picture is its own: no two drawings share one.
 	const live = new Set(SOURCE_TYPES.filter((t) => t.base.startsWith("options/")).map((t) => laidOut({ picture: BY_ID.get(t.base)! }, { layout: "live" }).picture.id));
@@ -143,13 +143,16 @@ test("every source type and scene type with a drawing has its own picture in eac
 
 test("a key with a type and a layout shows that type in that layout", () => {
 	const cases: Array<[Shown | undefined, string, string]> = [
-		// The pack's own layouts, for the game, the capture card and the window.
-		[showKey("game", "live"), "scenes/02-game-capture", "show game live"],
-		[showKey("game", "chat"), "scenes/03-game-component", "show game chat"],
-		[showKey("capture_card", "live"), "scenes/05-game-hd60s", "show capture card live"],
-		[showKey("capture_card", "chat"), "scenes/06-game-component-hd60s", "show capture card chat"],
-		[showKey("window", "live"), "scenes/07-window-capture", "show window live"],
-		[showKey("window", "chat"), "scenes/08-window-component", "show window chat"],
+		// One template for every type, game, capture card and window included (the owner: "they should all be consistent").
+		[showKey("game", "live"), "layouts/live-type-game", "show game live"],
+		[showKey("game", "chat"), "layouts/chat-type-game", "show game chat"],
+		[showKey("capture_card", "live"), "layouts/live-type-capture-card", "show capture card live"],
+		[showKey("capture_card", "chat"), "layouts/chat-type-capture-card", "show capture card chat"],
+		[showKey("window", "live"), "layouts/live-type-window", "show window live"],
+		[showKey("window", "chat"), "layouts/chat-type-window", "show window chat"],
+		[showKey("app_3d", "live"), "layouts/live-type-app-3d", "show 3D app live"],
+		[showKey("sculpting"), "options/type-sculpting", "show sculpting automatic: no program's letter"],
+		[showKey("cad", "chat"), "layouts/chat-type-cad", "show CAD chat"],
 		// Drawn: the Show in Scenes key's art (an eye) is the type's drawing in a layout.
 		[showKey("chat"), "show-hide/chat", "show chat automatic"],
 		[showKey("chat", "standalone"), "show-hide/chat", "show chat standalone"],
@@ -164,8 +167,9 @@ test("a key with a type and a layout shows that type in that layout", () => {
 		[sceneKey("gameplay"), "scenes/02-game-capture", "scene gameplay automatic"],
 		[sceneKey("gameplay", "standalone"), "options/type-game", "scene gameplay standalone"],
 		[sceneKey("gameplay_chat", "standalone"), "options/type-game", "scene gameplay chat standalone"],
-		[sceneKey("gameplay_chat", "live"), "scenes/02-game-capture", "scene gameplay chat live"],
-		[sceneKey("gameplay", "chat"), "scenes/03-game-component", "scene gameplay chat"],
+		[sceneKey("gameplay_chat", "live"), "layouts/live-type-game", "scene gameplay chat live"],
+		[sceneKey("gameplay", "chat"), "layouts/chat-type-game", "scene gameplay chat"],
+		[sceneKey("app", "live"), "layouts/live-type-window", "scene app live"],
 		[sceneKey("app_chat", "standalone"), "options/type-window", "scene app chat standalone"],
 		[sceneKey("console", "standalone"), "scenes/04-console", "scene console standalone: not a layout itself"],
 		[sceneKey("console", "chat"), "layouts/chat-console", "scene console chat"],
@@ -173,7 +177,7 @@ test("a key with a type and a layout shows that type in that layout", () => {
 		[sceneKey("art", "chat"), "layouts/chat-scene-type-art", "scene art chat"],
 		[sceneKey("source:music", "live"), "layouts/live-type-music", "a source type in a Scene type list"],
 		// A Scene Mode key: its type drawn as a mode, in a layout by its type.
-		[laidOut({ picture: modePicture(undefined, "game") }, { layout: "chat", sourceType: "game" }), "scenes/03-game-component", "mode game chat"],
+		[laidOut({ picture: modePicture(undefined, "game") }, { layout: "chat", sourceType: "game" }), "layouts/chat-type-game", "mode game chat"],
 		[laidOut({ picture: modePicture(undefined, "music") }, { layout: "live", sourceType: "music" }), "layouts/live-type-music", "mode music live"],
 	];
 	for (const [shown, id, what] of cases) {
@@ -226,8 +230,8 @@ test("a picture with no layout of its own is laid into the layout's panel", () =
 		// Outside the panel nothing else changes.
 		assert.deepEqual(px(image, 2, 100), px(frame, 2, 100));
 	}
-	// An app's logo (no drawing): laid in, with the on/off mark over the whole.
-	const app = showKey("app_3d", "chat");
+	// A type whose picture is the pack's (the standby image): laid in, with the on/off mark over the whole.
+	const app = showKey("standby_image", "chat");
 	assert.equal(app.inset, "chat");
 	const on = fromUrl(composed(layersOf(app, "ocean", true)));
 	const off = fromUrl(composed(layersOf(app, "ocean", false)));
@@ -261,4 +265,86 @@ test("a key without a Layout looks exactly as before", () => {
 	// Standalone leaves every picture as it is but a scene that is a layout itself.
 	assert.equal(laidOut(plain, { layout: "standalone" }), plain);
 	assert.equal(showKey("game", "standalone").picture.id, showKey("game").picture.id);
+});
+
+test("no type's picture is a program's logo or letter", () => {
+	// The owner: "App 3D, or any app type should not have a specific letter or anything. it should only be images relevant to the source".
+	const art = JSON.parse(readFileSync(new URL("src/key-types.json", root), "utf8")).art as Record<string, Record<string, string>>;
+	const branded = /^filters\/app-|blender|zbrush|fusion-360/;
+	for (const t of SOURCE_TYPES) assert.ok(!branded.test(t.base), `${t.id}: ${t.base}`);
+	for (const t of SCENE_TYPES) assert.ok(!branded.test(t.picture), `${t.id}: ${t.picture}`);
+	for (const [family, pictures] of Object.entries(art))
+		for (const [type, picture] of Object.entries(pictures)) assert.ok(!branded.test(picture), `${family} ${type}: ${picture}`);
+	for (const key of keysWithLists())
+		for (const list of typeLists(key))
+			for (const group of list.groups) for (const e of group.entries) assert.ok(!branded.test(e.picture), `${key} ${e.value}: ${e.picture}`);
+	for (const t of SOURCE_TYPES.filter((t) => t.group === "Apps")) assert.ok(t.base.startsWith("options/type-"), `${t.id}: a drawing of its own`);
+	// A picture chosen by hand from the old Image list still loads.
+	for (const id of ["filters/app-blender", "filters/app-zbrush", "filters/app-fusion-360"]) {
+		assert.ok(BY_ID.has(id), id);
+		assert.equal(chooseFor(id, "stagekit_ramp_zoom", {}, "")?.id, id);
+	}
+});
+
+/** The middle of what is drawn in a part of a picture: pixels that differ from `ground` by more than a little. */
+function middleOfInk(image: Raster, area: number[], ground: number[], skip?: number[]): [number, number] | undefined {
+	let x0 = Infinity,
+		y0 = Infinity,
+		x1 = -Infinity,
+		y1 = -Infinity;
+	for (let y = area[1]; y < area[3]; y++)
+		for (let x = area[0]; x < area[2]; x++) {
+			if (skip && x >= skip[0] && y >= skip[1] && x < skip[2] && y < skip[3]) continue;
+			const p = px(image, x, y);
+			if (Math.abs(p[0] - ground[0]) + Math.abs(p[1] - ground[1]) + Math.abs(p[2] - ground[2]) < 90) continue;
+			x0 = Math.min(x0, x);
+			y0 = Math.min(y0, y);
+			x1 = Math.max(x1, x + 1);
+			y1 = Math.max(y1, y + 1);
+		}
+	return x1 > x0 ? [(x0 + x1) / 2, (y0 + y1) / 2] : undefined;
+}
+
+test("every drawing is in the middle of its frame, its panel and its badge", () => {
+	// The owner: "all the standalone icons appear to have the images offset to the left. make them all centered. fix the icons universally".
+	// The key's little screen: its frame's lines at x 14 and 129, y 17 and 81; the pack's small camera in its bottom right corner.
+	const frameMiddle = [(14 + 130) / 2, (17 + 82) / 2];
+	let looked = 0;
+	for (const palette of ["mono", "ember"]) {
+		for (const p of PICTURES.filter((p) => p.id.startsWith("options/"))) {
+			const image = read(file(p, true, palette));
+			const middle = middleOfInk(image, [18, 21, 127, 78], px(image, 20, 49), [110, 62, 127, 78]);
+			assert.ok(middle, `${palette} ${p.id}: something drawn`);
+			assert.ok(Math.abs(middle[0] - frameMiddle[0]) <= 2 && Math.abs(middle[1] - frameMiddle[1]) <= 2, `${palette} ${p.id}: middle at ${middle}, the frame's at ${frameMiddle}`);
+			looked++;
+		}
+		for (const p of PICTURES.filter((p) => p.group === "layouts" && !p.id.endsWith("-frame"))) {
+			const layout = p.id.startsWith("layouts/live-") ? "live" : "chat";
+			const [x0, y0, x1, y1] = layouts.panel[layout];
+			const image = read(file(p, true, palette));
+			const middle = middleOfInk(image, [x0 + 3, y0 + 3, x1 - 3, y1 - 3], px(image, x0 + 3, y0 + 3));
+			assert.ok(middle, `${palette} ${p.id}: something drawn`);
+			assert.ok(Math.abs(middle[0] - (x0 + x1) / 2) <= 2 && Math.abs(middle[1] - (y0 + y1) / 2) <= 2, `${palette} ${p.id}: middle at ${middle}`);
+			looked++;
+		}
+		for (const name of JSON.parse(readFileSync(new URL("src/badges.json", root), "utf8")).badges as string[]) {
+			const image = read(`imgs/pack/${palette}/badges/${name}.png`);
+			const middle = middleOfInk(image, [5, 5, image.width - 5, image.height - 5], px(image, 5, 5));
+			assert.ok(middle, `${palette} badge ${name}`);
+			assert.ok(Math.abs(middle[0] - image.width / 2) <= 2 && Math.abs(middle[1] - image.height / 2) <= 2, `${palette} badge ${name}: middle at ${middle}`);
+			looked++;
+		}
+	}
+	assert.ok(looked > 900, `${looked}`);
+	// Every Live picture is one template: the camera top right, the same pixels for every type.
+	const frame = read("imgs/pack/mono/layouts/live-frame.png");
+	for (const p of PICTURES.filter((p) => p.id.startsWith("layouts/live-"))) {
+		const image = read(file(p, true, "mono"));
+		for (const [x, y] of [
+			[128, 24],
+			[125, 70],
+			[5, 50],
+		])
+			assert.deepEqual(px(image, x, y), px(frame, x, y), `${p.id} at ${x}, ${y}`);
+	}
 });

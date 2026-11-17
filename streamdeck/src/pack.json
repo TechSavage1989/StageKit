@@ -2347,6 +2347,27 @@
 			"off": "options/type-voice-chat-off"
 		},
 		{
+			"id": "options/type-app-3d",
+			"group": "source types",
+			"label": "app 3d",
+			"on": "options/type-app-3d-on",
+			"off": "options/type-app-3d-off"
+		},
+		{
+			"id": "options/type-sculpting",
+			"group": "source types",
+			"label": "sculpting",
+			"on": "options/type-sculpting-on",
+			"off": "options/type-sculpting-off"
+		},
+		{
+			"id": "options/type-cad",
+			"group": "source types",
+			"label": "cad",
+			"on": "options/type-cad-on",
+			"off": "options/type-cad-off"
+		},
+		{
 			"id": "options/type-headset",
 			"group": "source types",
 			"label": "headset",
@@ -2858,6 +2879,13 @@
 			"off": "layouts/live-frame"
 		},
 		{
+			"id": "layouts/live-type-game",
+			"group": "layouts",
+			"label": "live type game",
+			"on": "layouts/live-type-game",
+			"off": "layouts/live-type-game"
+		},
+		{
 			"id": "layouts/live-type-retro",
 			"group": "layouts",
 			"label": "live type retro",
@@ -2900,6 +2928,13 @@
 			"off": "layouts/live-type-linked-handheld-2"
 		},
 		{
+			"id": "layouts/live-type-capture-card",
+			"group": "layouts",
+			"label": "live type capture card",
+			"on": "layouts/live-type-capture-card",
+			"off": "layouts/live-type-capture-card"
+		},
+		{
 			"id": "layouts/live-capture-box",
 			"group": "layouts",
 			"label": "live capture box",
@@ -2912,6 +2947,13 @@
 			"label": "live hdmi",
 			"on": "layouts/live-hdmi",
 			"off": "layouts/live-hdmi"
+		},
+		{
+			"id": "layouts/live-type-window",
+			"group": "layouts",
+			"label": "live type window",
+			"on": "layouts/live-type-window",
+			"off": "layouts/live-type-window"
 		},
 		{
 			"id": "layouts/live-type-browser",
@@ -2954,6 +2996,27 @@
 			"label": "live type art app",
 			"on": "layouts/live-type-art-app",
 			"off": "layouts/live-type-art-app"
+		},
+		{
+			"id": "layouts/live-type-app-3d",
+			"group": "layouts",
+			"label": "live type app 3d",
+			"on": "layouts/live-type-app-3d",
+			"off": "layouts/live-type-app-3d"
+		},
+		{
+			"id": "layouts/live-type-sculpting",
+			"group": "layouts",
+			"label": "live type sculpting",
+			"on": "layouts/live-type-sculpting",
+			"off": "layouts/live-type-sculpting"
+		},
+		{
+			"id": "layouts/live-type-cad",
+			"group": "layouts",
+			"label": "live type cad",
+			"on": "layouts/live-type-cad",
+			"off": "layouts/live-type-cad"
 		},
 		{
 			"id": "layouts/live-type-code-editor",
@@ -3523,6 +3586,13 @@
 			"off": "layouts/chat-frame"
 		},
 		{
+			"id": "layouts/chat-type-game",
+			"group": "layouts",
+			"label": "live chat type game",
+			"on": "layouts/chat-type-game",
+			"off": "layouts/chat-type-game"
+		},
+		{
 			"id": "layouts/chat-type-retro",
 			"group": "layouts",
 			"label": "live chat type retro",
@@ -3565,6 +3635,13 @@
 			"off": "layouts/chat-type-linked-handheld-2"
 		},
 		{
+			"id": "layouts/chat-type-capture-card",
+			"group": "layouts",
+			"label": "live chat type capture card",
+			"on": "layouts/chat-type-capture-card",
+			"off": "layouts/chat-type-capture-card"
+		},
+		{
 			"id": "layouts/chat-capture-box",
 			"group": "layouts",
 			"label": "live chat capture box",
@@ -3577,6 +3654,13 @@
 			"label": "live chat hdmi",
 			"on": "layouts/chat-hdmi",
 			"off": "layouts/chat-hdmi"
+		},
+		{
+			"id": "layouts/chat-type-window",
+			"group": "layouts",
+			"label": "live chat type window",
+			"on": "layouts/chat-type-window",
+			"off": "layouts/chat-type-window"
 		},
 		{
 			"id": "layouts/chat-type-browser",
@@ -3619,6 +3703,27 @@
 			"label": "live chat type art app",
 			"on": "layouts/chat-type-art-app",
 			"off": "layouts/chat-type-art-app"
+		},
+		{
+			"id": "layouts/chat-type-app-3d",
+			"group": "layouts",
+			"label": "live chat type app 3d",
+			"on": "layouts/chat-type-app-3d",
+			"off": "layouts/chat-type-app-3d"
+		},
+		{
+			"id": "layouts/chat-type-sculpting",
+			"group": "layouts",
+			"label": "live chat type sculpting",
+			"on": "layouts/chat-type-sculpting",
+			"off": "layouts/chat-type-sculpting"
+		},
+		{
+			"id": "layouts/chat-type-cad",
+			"group": "layouts",
+			"label": "live chat type cad",
+			"on": "layouts/chat-type-cad",
+			"off": "layouts/chat-type-cad"
 		},
 		{
 			"id": "layouts/chat-type-code-editor",
