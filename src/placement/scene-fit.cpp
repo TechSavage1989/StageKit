@@ -69,6 +69,54 @@ constexpr double kFillsScreen = 0.9;    // a source this much of the screen is n
 // all it fitted then.
 enum class Which : int { Chosen = 0, AllSources = 1 };
 
+// Settings (`settings_mode`). Saved by number: append only. A filter saved
+// before there was a choice has no number and reads as each its own.
+enum class Shared : int { Each = 0, Same = 1 };
+// Where the set shared by every entry is kept.
+const char *const kGroupPrefix = "group|";
+const char *const kGroupLists = "group_";
+
+// The names of the fit keys a Fit to Space keeps, with what kind each is,
+// and whether it is written by the fit itself (`own`: its home and the size
+// it keeps), not set by the user.
+enum class Kind { Int, Double, Bool, String };
+struct FitKey {
+	const char *name;
+	Kind kind;
+	bool own;
+};
+const FitKey kFitKeys[] = {
+	{"box", Kind::Int, false},
+	{"box_x", Kind::Double, false},
+	{"box_y", Kind::Double, false},
+	{"box_width", Kind::Double, false},
+	{"box_height", Kind::Double, false},
+	{"margin", Kind::Double, false},
+	{"tolerance", Kind::Double, false},
+	{"resize", Kind::Bool, false},
+	{"toward", Kind::Int, false},
+	{"space_priority", Kind::Int, false},
+	{"visible_pixels", Kind::Bool, false},
+	{"no_shadows", Kind::Bool, false},
+	{"glide_ms", Kind::Int, false},
+	{"ease_curve", Kind::Int, false},
+	{"ease_mode", Kind::Int, false},
+	{"skip_use_pct", Kind::Bool, false},
+	{"skip_fill", Kind::Double, false},
+	{"skip_use_px", Kind::Bool, false},
+	{"skip_px_top", Kind::Double, false},
+	{"skip_px_bottom", Kind::Double, false},
+	{"skip_px_left", Kind::Double, false},
+	{"skip_px_right", Kind::Double, false},
+	{"have_anchor", Kind::Bool, true},
+	{"anchor_x", Kind::Double, true},
+	{"anchor_y", Kind::Double, true},
+	{"orig_item", Kind::String, true},
+	{"orig_k", Kind::Double, true},
+	{"keep_item", Kind::String, true},
+	{"keep_k", Kind::Double, true},
+};
+
 std::string prefix_of(const std::string &entry)
 {
 	return "fit|" + entry + "|";
@@ -207,6 +255,113 @@ std::vector<std::string> unlisted_sources(obs_source_t *self, obs_source_t *scen
 	return out;
 }
 
+bool same_for_all(obs_data_t *settings)
+{
+	return obs_data_get_int(settings, "settings_mode") == (int)Shared::Same;
+}
+
+// How one set fits (not what a fit writes for itself) copied over another:
+// a value left on its default stays so (both sets have the same defaults).
+void copy_look(obs_data_t *settings, const std::string &from, const std::string &from_lists, const std::string &to,
+	       const std::string &to_lists)
+{
+	for (const FitKey &key : kFitKeys) {
+		if (key.own)
+			continue;
+		const std::string a = from + key.name, b = to + key.name;
+		if (!obs_data_has_user_value(settings, a.c_str())) {
+			obs_data_unset_user_value(settings, b.c_str());
+			continue;
+		}
+		switch (key.kind) {
+		case Kind::Int:
+			obs_data_set_int(settings, b.c_str(), obs_data_get_int(settings, a.c_str()));
+			break;
+		case Kind::Double:
+			obs_data_set_double(settings, b.c_str(), obs_data_get_double(settings, a.c_str()));
+			break;
+		case Kind::Bool:
+			obs_data_set_bool(settings, b.c_str(), obs_data_get_bool(settings, a.c_str()));
+			break;
+		case Kind::String:
+			obs_data_set_string(settings, b.c_str(), obs_data_get_string(settings, a.c_str()));
+			break;
+		}
+	}
+	for (const char *list : {"skip", "share_scenes"})
+		pick_list_write(settings, (to_lists + list).c_str(), false,
+				pick_list_read(settings, (from_lists + list).c_str(), false));
+}
+
+// Whether two sets fit alike (as read, defaults included).
+bool same_look(obs_data_t *settings, const std::string &a, const std::string &a_lists, const std::string &b,
+	       const std::string &b_lists)
+{
+	for (const FitKey &key : kFitKeys) {
+		if (key.own)
+			continue;
+		const std::string x = a + key.name, y = b + key.name;
+		switch (key.kind) {
+		case Kind::Int:
+			if (obs_data_get_int(settings, x.c_str()) != obs_data_get_int(settings, y.c_str()))
+				return false;
+			break;
+		case Kind::Double:
+			if (obs_data_get_double(settings, x.c_str()) != obs_data_get_double(settings, y.c_str()))
+				return false;
+			break;
+		case Kind::Bool:
+			if (obs_data_get_bool(settings, x.c_str()) != obs_data_get_bool(settings, y.c_str()))
+				return false;
+			break;
+		case Kind::String:
+			if (std::strcmp(obs_data_get_string(settings, x.c_str()),
+					obs_data_get_string(settings, y.c_str())))
+				return false;
+			break;
+		}
+	}
+	for (const char *list : {"skip", "share_scenes"})
+		if (pick_list_read(settings, (a_lists + list).c_str(), false) !=
+		    pick_list_read(settings, (b_lists + list).c_str(), false))
+			return false;
+	return true;
+}
+
+// Settings changed from each its own to the same for all, or back, since it
+// was last settled (`settings_mode_was`): to the same, the shared set starts
+// as the first entry's (the defaults with no entry); back, every entry is
+// given the shared set. Either way nothing moves. True when it did either.
+// `names`: the entries, the first one first.
+bool settle_mode(obs_data_t *settings, const std::vector<std::string> &names)
+{
+	const long long mode = obs_data_get_int(settings, "settings_mode");
+	if (mode == obs_data_get_int(settings, "settings_mode_was"))
+		return false;
+	fit_entry_defaults(settings, kGroupPrefix);
+	if (mode == (int)Shared::Same) {
+		if (!names.empty()) {
+			fit_entry_defaults(settings, prefix_of(names.front()));
+			copy_look(settings, prefix_of(names.front()), fit_list_prefix(names.front()), kGroupPrefix,
+				  kGroupLists);
+		} else {
+			for (const FitKey &key : kFitKeys)
+				if (!key.own)
+					obs_data_unset_user_value(settings,
+								  (std::string(kGroupPrefix) + key.name).c_str());
+			for (const char *list : {"skip", "share_scenes"})
+				pick_list_write(settings, (std::string(kGroupLists) + list).c_str(), false, {});
+		}
+	} else {
+		for (const std::string &name : names) {
+			fit_entry_defaults(settings, prefix_of(name));
+			copy_look(settings, kGroupPrefix, kGroupLists, prefix_of(name), fit_list_prefix(name));
+		}
+	}
+	obs_data_set_int(settings, "settings_mode_was", mode);
+	return true;
+}
+
 // Every source fitted: the listed ones, then (with All sources) the rest.
 std::vector<std::string> fitted_names(obs_source_t *self, obs_data_t *settings)
 {
@@ -260,6 +415,19 @@ public:
 				names.push_back(name);
 			count_now_ = true;
 		}
+		// Settings changed between each its own and the same for all
+		// (from outside the window: the window settles it at once). As
+		// OBS makes or loads the filter its settings are read as they
+		// were saved, never settled.
+		if (std::exchange(first_update_, false)) {
+			if (obs_data_get_int(settings, "settings_mode") !=
+			    obs_data_get_int(settings, "settings_mode_was"))
+				obs_data_set_int(settings, "settings_mode_was",
+						 obs_data_get_int(settings, "settings_mode"));
+		} else if (settle_mode(settings, names)) {
+			obs_log(LOG_INFO, "Scene Fit '%s': settings now %s", obs_source_get_name(source_),
+				same_for_all(settings) ? "the same for all sources" : "each source's own");
+		}
 		build(settings, names);
 	}
 
@@ -273,6 +441,11 @@ private:
 	{
 		for (const std::string &name : names)
 			fit_entry_defaults(settings, prefix_of(name));
+		// The same for all sources: each entry reads how to fit from the
+		// shared set (what it writes for itself stays its own).
+		const bool same = same_for_all(settings);
+		const std::string look = same ? kGroupPrefix : std::string();
+		const std::string look_lists = same ? kGroupLists : std::string();
 		std::vector<std::shared_ptr<Entry>> was;
 		{
 			std::lock_guard lock(mutex_);
@@ -285,12 +458,15 @@ private:
 				if (old->name == name)
 					entry = old;
 			if (entry) {
-				if (again)
+				if (again) {
+					entry->engine->set_look(look, look_lists);
 					entry->engine->update(settings);
+				}
 			} else {
 				entry = std::make_shared<Entry>();
 				entry->name = name;
-				entry->engine = std::make_unique<FitEngine>(settings, source_, prefix_of(name), name);
+				entry->engine = std::make_unique<FitEngine>(settings, source_, prefix_of(name), name,
+									    look, look_lists);
 				if (parent_)
 					entry->engine->attach(parent_, false);
 			}
@@ -370,6 +546,7 @@ private:
 	std::atomic<bool> forget_{false};
 	uint32_t idle_turn_ = 0;
 	uint64_t unsettled_logged_ = 0;
+	bool first_update_ = true; // the settings read as OBS made or loaded the filter
 };
 
 void SceneFit::tick(float seconds)
@@ -577,19 +754,25 @@ void SceneFit::tick(float seconds)
 
 // The entries' groups follow the list (and, with All sources, the scene): one
 // is added for an entry just added, and the one of an entry taken off goes.
-// Only the chosen entry's shows.
+// Only the chosen entry's shows; with the same settings for all, only the
+// shared set's, and no Settings for.
 void show_chosen(obs_properties_t *top, obs_data_t *settings, const std::vector<std::string> &names)
 {
+	const bool same = same_for_all(settings);
 	std::string chosen = obs_data_get_string(settings, "fit_for");
 	if (std::find(names.begin(), names.end(), chosen) == names.end())
 		chosen = names.empty() ? std::string() : names.front();
 	for (const std::string &name : names)
 		if (obs_property_t *group = obs_properties_get(top, (prefix_of(name) + "g").c_str())) {
-			obs_property_set_visible(group, name == chosen);
+			obs_property_set_visible(group, !same && name == chosen);
 			fit_controls_shown(top, settings, prefix_of(name), fit_list_prefix(name), true);
 		}
 	if (obs_property_t *box = obs_properties_get(top, "fit_for"))
-		obs_property_set_visible(box, !names.empty());
+		obs_property_set_visible(box, !same && !names.empty());
+	if (obs_property_t *group = obs_properties_get(top, (std::string(kGroupPrefix) + "g").c_str())) {
+		obs_property_set_visible(group, same);
+		fit_controls_shown(top, settings, kGroupPrefix, kGroupLists, true);
+	}
 	const bool all = obs_data_get_int(settings, "which") == (int)Which::AllSources;
 	if (obs_property_t *skip = obs_properties_get(top, "skip|alist"))
 		obs_property_set_visible(skip, all);
@@ -636,44 +819,6 @@ void sync_groups(obs_properties_t *top, obs_source_t *owner, obs_data_t *setting
 	show_chosen(top, settings, names);
 }
 
-// The names of the fit keys a Fit to Space keeps, with what kind each is.
-enum class Kind { Int, Double, Bool, String };
-struct FitKey {
-	const char *name;
-	Kind kind;
-};
-const FitKey kFitKeys[] = {
-	{"box", Kind::Int},
-	{"box_x", Kind::Double},
-	{"box_y", Kind::Double},
-	{"box_width", Kind::Double},
-	{"box_height", Kind::Double},
-	{"margin", Kind::Double},
-	{"tolerance", Kind::Double},
-	{"resize", Kind::Bool},
-	{"toward", Kind::Int},
-	{"space_priority", Kind::Int},
-	{"visible_pixels", Kind::Bool},
-	{"no_shadows", Kind::Bool},
-	{"glide_ms", Kind::Int},
-	{"ease_curve", Kind::Int},
-	{"ease_mode", Kind::Int},
-	{"skip_use_pct", Kind::Bool},
-	{"skip_fill", Kind::Double},
-	{"skip_use_px", Kind::Bool},
-	{"skip_px_top", Kind::Double},
-	{"skip_px_bottom", Kind::Double},
-	{"skip_px_left", Kind::Double},
-	{"skip_px_right", Kind::Double},
-	{"have_anchor", Kind::Bool},
-	{"anchor_x", Kind::Double},
-	{"anchor_y", Kind::Double},
-	{"orig_item", Kind::String},
-	{"orig_k", Kind::Double},
-	{"keep_item", Kind::String},
-	{"keep_k", Kind::Double},
-};
-
 // "Take over Fit to Space": each enabled Fit to Space of the scene whose
 // source is not listed yet becomes an entry, with all its settings and what
 // it has written down (the place it is kept round, the size it keeps), and is
@@ -700,6 +845,7 @@ bool take_over(obs_properties_t *top, obs_property_t *, void *data)
 	std::vector<std::string> names = pick_list_read(settings, "entries", false);
 	const bool had_none = names.empty();
 	bool first = true;
+	std::vector<std::string> taken;
 	for (obs_source_t *filter : found.fits) {
 		obs_data_t *theirs = obs_source_get_settings(filter);
 		const std::string item = obs_data_get_string(theirs, "item");
@@ -745,6 +891,7 @@ bool take_over(obs_properties_t *top, obs_property_t *, void *data)
 						  obs_data_get_bool(theirs, "list_priority"));
 			}
 			first = false;
+			taken.push_back(item);
 			obs_source_set_enabled(filter, false);
 			obs_log(LOG_INFO, "Scene Fit '%s': took over Fit to Space '%s' (%s)",
 				obs_source_get_name(owner), obs_source_get_name(filter), item.c_str());
@@ -753,9 +900,28 @@ bool take_over(obs_properties_t *top, obs_property_t *, void *data)
 		obs_source_release(filter);
 	}
 	pick_list_write(settings, "entries", false, names);
+	// Taken over into an empty Scene Fit, two or more that all fit alike
+	// become one group: the same settings for all (each its own copy is
+	// kept, for going back). Different ones stay each its own. Into a Scene
+	// Fit that already has the same for all, they take its shared set.
+	if (had_none && taken.size() >= 2 && !same_for_all(settings)) {
+		bool alike = true;
+		for (size_t i = 1; i < taken.size() && alike; i++)
+			alike = same_look(settings, prefix_of(taken[0]), fit_list_prefix(taken[0]), prefix_of(taken[i]),
+					  fit_list_prefix(taken[i]));
+		if (alike) {
+			obs_data_set_int(settings, "settings_mode", (int)Shared::Same);
+			settle_mode(settings, names);
+			obs_log(LOG_INFO,
+				"Scene Fit '%s': the %zu Fit to Space taken over fit alike: the same settings for all",
+				obs_source_get_name(owner), taken.size());
+		}
+	}
 	obs_source_update(owner, settings);
 	if (top) {
 		pick_list_refresh(top, owner, "entries", false);
+		for (const char *list : {"skip", "share_scenes"})
+			pick_list_refresh(top, owner, (std::string(kGroupLists) + list).c_str(), false);
 		sync_groups(top, owner, settings);
 	}
 	obs_data_release(settings);
@@ -766,6 +932,27 @@ bool chosen_modified(void *data, obs_properties_t *top, obs_property_t *, obs_da
 {
 	auto *self = static_cast<SceneFit *>(data);
 	show_chosen(top, settings, fitted_names(self ? self->source() : nullptr, settings));
+	return true;
+}
+
+// Each its own and the same for all: settled at once (so the window shows
+// the values the sources now go by), the lists' rows made again.
+bool mode_modified(void *data, obs_properties_t *top, obs_property_t *, obs_data_t *settings)
+{
+	auto *self = static_cast<SceneFit *>(data);
+	obs_source_t *owner = self ? self->source() : nullptr;
+	const std::vector<std::string> names = fitted_names(owner, settings);
+	if (settle_mode(settings, names) && owner) {
+		for (const char *list : {"skip", "share_scenes"}) {
+			pick_list_refresh(top, owner, (std::string(kGroupLists) + list).c_str(), false);
+			for (const std::string &name : names)
+				pick_list_refresh(top, owner, (fit_list_prefix(name) + list).c_str(), false);
+		}
+	}
+	if (owner)
+		sync_groups(top, owner, settings);
+	else
+		show_chosen(top, settings, names);
 	return true;
 }
 
@@ -825,6 +1012,18 @@ obs_properties_t *get_properties(void *data)
 	obs_property_t *by_list = obs_properties_add_bool(props, "list_priority", obs_module_text("Fit.ListPriority"));
 	obs_property_set_long_description(by_list, obs_module_text("SceneFit.ListPriority.Tip"));
 	obs_property_set_modified_callback2(by_list, chosen_modified, self);
+	// Each source its own settings, or one set for all of them.
+	obs_property_t *mode = obs_properties_add_list(props, "settings_mode", obs_module_text("SceneFit.Settings"),
+						       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+	obs_property_list_add_int(mode, obs_module_text("SceneFit.Settings.Each"), (int)Shared::Each);
+	obs_property_list_add_int(mode, obs_module_text("SceneFit.Settings.Same"), (int)Shared::Same);
+	obs_property_set_long_description(mode, obs_module_text("SceneFit.Settings.Tip"));
+	{
+		obs_properties_t *content = obs_properties_create();
+		fit_add_controls(content, kGroupPrefix, kGroupLists, owner, parent, true);
+		obs_properties_add_group(props, (std::string(kGroupPrefix) + "g").c_str(),
+					 obs_module_text("SceneFit.Settings.Group"), OBS_GROUP_NORMAL, content);
+	}
 	obs_property_t *chosen = obs_properties_add_list(props, "fit_for", obs_module_text("SceneFit.For"),
 							 OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
 	obs_property_set_long_description(chosen, obs_module_text("SceneFit.For.Tip"));
@@ -834,6 +1033,7 @@ obs_properties_t *get_properties(void *data)
 		obs_data_release(settings);
 	}
 	obs_property_set_modified_callback2(chosen, chosen_modified, self);
+	obs_property_set_modified_callback2(mode, mode_modified, self);
 	return props;
 }
 
@@ -845,6 +1045,9 @@ void get_defaults(obs_data_t *settings)
 	obs_data_set_default_int(settings, "which", (int)Which::Chosen);
 	obs_data_set_default_bool(settings, "skip_fill_on", false);
 	obs_data_set_default_bool(settings, "list_priority", false);
+	obs_data_set_default_int(settings, "settings_mode", (int)Shared::Each);
+	obs_data_set_default_int(settings, "settings_mode_was", (int)Shared::Each);
+	fit_entry_defaults(settings, kGroupPrefix);
 }
 
 // A source is renamed: its entry, its settings and the lists naming it follow.
@@ -949,9 +1152,12 @@ void on_source_rename(void *, calldata_t *cd)
 				changed = true;
 			}
 		}
-		// Every entry's list of ignored sources.
-		for (const std::string &name : fitted_names(owner, settings)) {
-			const std::string setting = fit_list_prefix(name) + "skip";
+		// Every entry's list of ignored sources, and the shared set's.
+		std::vector<std::string> lists;
+		for (const std::string &name : fitted_names(owner, settings))
+			lists.push_back(fit_list_prefix(name) + "skip");
+		lists.push_back(std::string(kGroupLists) + "skip");
+		for (const std::string &setting : lists) {
 			std::vector<std::string> skip = pick_list_read(settings, setting.c_str(), false);
 			bool named = false;
 			for (std::string &one : skip)

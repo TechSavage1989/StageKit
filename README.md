@@ -1300,18 +1300,39 @@ learns where the others are going a frame later, and they could shift a few time
 - **Fitted sources**: the order matters. Put the sources that keep their size (a camera, a chat box) above
   the ones that are resized to fit (the game). With *Priority by list order* ticked, the order is also the
   priority: a source higher in the list takes its space first.
+- **Settings**: *Each source its own* (as it comes: every source has its own settings, chosen under
+  *Settings for*) or *Same for all sources*: one group of settings, *Space priority* included, for every
+  fitted source, and no *Settings for*. Each source still keeps its own place and its own kept size.
+  Switching either way moves nothing: the shared settings start as the first source's, and going back to
+  *Each source its own* gives every source the shared settings.
 - **Space priority**: each source's own (*Takes space first*, *Shares space*, *Makes room*), as in
-  [Fit to Space](#fit-to-space).
+  [Fit to Space](#fit-to-space), or the group's with *Same for all sources*.
 - **Priority by list order**: one switch for every source. Ticked, the sources' *Space priority* is greyed
   out; a source higher in *Fitted sources* takes its space first, and the Scene Fit counts at its place in the
   scene's filter list against any Fit to Space there that has the box ticked too. Towards the others it counts
   as *Shares space*.
 - **Take over Fit to Space**: every Fit to Space switched on in this scene becomes an entry here, with all its
   settings, the place it keeps its source round and the size it keeps. Each filter is switched off, not
-  deleted: switch it on again (and the Scene Fit off) to go back. Nothing moves.
+  deleted: switch it on again (and the Scene Fit off) to go back. Nothing moves. Taken into a Scene Fit with
+  no sources yet, two or more Fit to Space filters with exactly the same settings make *Settings* *Same for
+  all sources*; if their settings differ it stays *Each source its own*. Taken into a Scene Fit that is
+  already *Same for all sources*, they go by its settings.
 - **Overlap only when it fills**: one switch for every entry; each entry's own rules (*Use fill percentage*,
   *Use edge gaps*) say when. A *Fit to Space Overlap* key on the Stream Deck works on a Scene Fit too.
 - **Ignored for this source** and **Sync to scenes** are the entry's own lists, as in Fit to Space.
+
+**Groups of sources.** To give several sources one set of settings, and other sources another, add one Scene
+Fit per group to the scene, each on *Same for all sources* with its own *Fitted sources*. For example:
+
+1. A Scene Fit named *Captures* listing the game and window captures, *Settings* *Same for all sources*,
+   *Space priority* *Takes space first*.
+2. A second Scene Fit named *Camera and chat* listing the camera and the chat box, *Same for all sources*,
+   *Resize to fit* unticked if they keep their size, *Space priority* *Makes room*.
+
+The captures then take their space as if the camera and chat box were not there and never move for them; the
+camera and chat box fit round the captures. Within one group the sources share space with each other. With
+*Priority by list order* ticked on both, the Scene Fit higher in the scene's filter list goes first instead.
+List each source in one group only.
 
 Do not give a listed source a Fit to Space of its own as well. Off screen, Scene Fit (and Fit to Space) look at
 their sources only four times a second and put everything right the moment the scene comes on. A Multiview or

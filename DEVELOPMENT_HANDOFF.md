@@ -13,6 +13,45 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
+## Scene Fit groups: Same for all sources (0.1.0-betaNEXT)
+
+Branch `feat/scene-fit-groups`, on `main` after beta166. Notes: `docs/releases/0.1.0-betaNEXT.md`.
+No Stream Deck file changed. The owner: "I'd like the Fit to scene filter also have the option to
+select one or more sources and specify the priority for all the selected sources together. that
+way i can have multiple fit to filters with similar settings or priorities instead of multiple for
+each source."
+
+- **Scene Fit's *Settings*** (`settings_mode`: 0 *Each source its own*, the default and every saved
+  filter; 1 *Same for all sources*). In 1 the window shows one group, *Settings for all sources*
+  (`group|...`, lists `group_skip` / `group_share_scenes`, the shared `fit_add_controls`), and
+  hides *Settings for*; every entry reads how it fits from that set (`FitEngine`'s new
+  `look_prefix` / `set_look`), and what it writes for itself (home, kept size) stays under
+  `fit|<source>|`. AGENTS, Scene Fit entry.
+- **Switching moves nothing**: to 1 the shared set is the first entry's; back to 0 every entry gets
+  the shared set (`settle_mode`, once per change, marked by `settings_mode_was`; in the window's
+  callback or in `update`, never as OBS loads the filter).
+- **Groups** are several Scene Fits in one scene, each on 1. Nothing new in the claims: each
+  entry's claim already carried its own `Rank`, so a group on *Takes space first* outranks a group
+  on *Makes room* one-way, and *Priority by list order* on both goes by filter position; entries of
+  one group share a rank and solve together in the multi-pass as before. Checked `set_claims_firm`,
+  `above_` and `kPasses`: no change needed.
+- **Take over Fit to Space**: into an empty Scene Fit on 0, two or more Fit to Space filters with
+  the same settings (defaults included, `same_look`) make it 1 (logged); different ones leave it 0.
+  Into a Scene Fit on 1 the sources take its shared set. Chosen over offering a choice: OBS's
+  window has no question box, and the result is the same either way (each entry keeps its own copy).
+- A rename follows into `group_skip` too.
+- Tests: `[scene fit groups: the same settings for all sources]` (`scene_fit_groups_test`, alone:
+  `STAGEKIT_TEST_ONLY_FIT_GROUPS`): three sources and one shared change; switching in the window
+  and from outside; two groups, by level both ways and both filter orders, and by list order both
+  orders; a Scene Fit saved before the setting; Take over, alike and different.
+- **Seen, not new**: "its sources did not settle in 4 passes" is logged for three resized sources
+  sharing space in one Scene Fit with *Each source its own* too (the test's first layout); they
+  still settle a moment later. Within a group sharing, where two sharing sources come to rest after
+  the other group was hidden and shown can differ from before (they go by who looks first), as with
+  two Fit to Space filters that share.
+- **Not proven**: OBS's own window on Windows (the group shown and hidden, the lists' rows rebuilt
+  when the mode changes).
+
 ## Ambient Background's mosaic on Direct3D (0.1.0-beta172)
 
 Branch `fix/scene-blur-off-draw`, from `main` at beta170. Notes: `docs/releases/0.1.0-beta172.md`.

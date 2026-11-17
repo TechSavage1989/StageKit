@@ -1884,6 +1884,30 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   *Take over Fit to Space* (`take_over`) copies each enabled Fit to Space's effective settings
   (defaults included: Fit to Space's gap is 80, Scene Fit's 30) and switches it off. A
   stand-in twin of an entry is not in the way of the others (its item's claim holds that room).
+  **Settings: Same for all sources** (`settings_mode`, by number, append-only: 0 *Each source its
+  own*, as it comes and for every filter saved before; 1 *Same for all sources*; betaNEXT). The
+  owner: "I'd like the Fit to scene filter also have the option to select one or more sources and
+  specify the priority for all the selected sources together. that way i can have multiple fit to
+  filters with similar settings or priorities instead of multiple for each source." In 1 every
+  entry (unlisted ones of All sources too) reads *how* it fits, Space priority included, from one
+  set, `group|<Fit to Space's key>` with the lists `group_skip` and `group_share_scenes`
+  (`FitEngine`'s `look_prefix`, `set_look`); what an entry writes for itself (`kFitKeys`' `own`:
+  anchors, `orig_*`, `keep_*`) stays under `fit|<source>|` either way, so each keeps its home and
+  kept size. The window shows one group, `group|g`, and hides *Settings for* and the entries'
+  groups. A change of mode is *settled* once (`settle_mode`, against `settings_mode_was`, which
+  is not in `kOwnSettings` so a copied filter is not settled again): to 1 the shared set is copied
+  from the first entry (the defaults with none), back to 0 it is copied into every entry, so
+  nothing moves. It is settled in the window's callback (so the window shows the values at once)
+  or, from outside it, in `update`; never as OBS makes or loads the filter (`first_update_`: a
+  mismatch is only written down), so a hand-made or saved filter is read as it is. *Take over*
+  into an empty Scene Fit on 0 sets 1 when two or more filters fit alike (`same_look`, defaults
+  included); into one on 1, the sources take its set (their own copies are kept for 0). Several
+  Scene Fits are the owner's *groups*: their entries' claims carry their own `Rank`, so a group on
+  *Takes space first* outranks one on *Makes room* entry by entry, one-way, whatever the filter
+  order, and with *Priority by list order* on both the higher filter wins; inside one group all
+  entries share one rank and go by each other's claims as before (`kPasses` unchanged).
+  `set_claims_firm` and `above_` needed no change. Tested in `[scene fit groups: ...]`
+  (`scene_fit_groups_test`, alone with `STAGEKIT_TEST_ONLY_FIT_GROUPS`).
   Not done in Scene Fit (each its own change later): dropping `kComingBack`, one glide time for
   all entries during a window switcher's change, a Link Visibility test in both orders, the
   window-switcher sync test, and the cost test against seven Fit to Space filters (it waits for

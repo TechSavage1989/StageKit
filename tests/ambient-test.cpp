@@ -1108,6 +1108,458 @@ static void fit_priority_test()
 	obs_source_release(fp_game);
 }
 
+// ------------------------------------------------- scene fit groups
+// A Scene Fit's Settings: Same for all sources. The owner: "I'd like the Fit
+// to scene filter also have the option to select one or more sources and
+// specify the priority for all the selected sources together. that way i can
+// have multiple fit to filters with similar settings or priorities instead
+// of multiple for each source." On a 640x360 canvas with a gap of 10.
+static void scene_fit_groups_test()
+{
+	printf("\n[scene fit groups: the same settings for all sources]\n");
+	auto sized = [](const char *name, int cw, int ch) {
+		obs_data_t *d = obs_data_create();
+		obs_data_set_int(d, "width", cw);
+		obs_data_set_int(d, "height", ch);
+		obs_source_t *src = obs_source_create("color_source", name, d, nullptr);
+		obs_data_release(d);
+		return src;
+	};
+	obs_source_t *game = sized("FG Game", 1200, 900);
+	obs_source_t *win = sized("FG Window", 800, 450);
+	obs_source_t *cam = sized("FG Cam", 120, 90);
+	obs_source_t *chat = sized("FG Chat", 90, 160);
+	obs_source_t *before = obs_get_output_source(0);
+	struct Pic {
+		double x = 0, y = 0, w = 0, h = 0;
+	};
+	auto pic = [](obs_sceneitem_t *it) {
+		vec2 p, b;
+		obs_sceneitem_get_pos(it, &p);
+		obs_sceneitem_get_bounds(it, &b);
+		obs_source_t *s = obs_sceneitem_get_source(it);
+		const double sw = obs_source_get_width(s), sh = obs_source_get_height(s);
+		if (sw < 1.0 || sh < 1.0 || b.x < 1.0 || b.y < 1.0)
+			return Pic{};
+		const double k = std::min(b.x / sw, b.y / sh), w = sw * k, h = sh * k;
+		const uint32_t a = obs_sceneitem_get_bounds_alignment(it);
+		const double x = p.x + (a & OBS_ALIGN_LEFT ? 0.0 : a & OBS_ALIGN_RIGHT ? b.x - w : (b.x - w) / 2.0);
+		const double y = p.y + (a & OBS_ALIGN_TOP ? 0.0 : a & OBS_ALIGN_BOTTOM ? b.y - h : (b.y - h) / 2.0);
+		return Pic{x, y, w, h};
+	};
+	auto same = [](const Pic &a, const Pic &b, double by) {
+		return std::fabs(a.x - b.x) <= by && std::fabs(a.y - b.y) <= by && std::fabs(a.w - b.w) <= by &&
+		       std::fabs(a.h - b.h) <= by;
+	};
+	// No two overlap, and each is at least `gap` inside the screen.
+	auto apart = [](const std::vector<Pic> &all, double gap) {
+		for (size_t i = 0; i < all.size(); i++) {
+			const Pic &a = all[i];
+			if (a.w < 1.0 || a.x < gap - 0.5 || a.y < gap - 0.5 || a.x + a.w > 640.5 - gap ||
+			    a.y + a.h > 360.5 - gap)
+				return false;
+			for (size_t j = i + 1; j < all.size(); j++) {
+				const Pic &b = all[j];
+				if (a.x < b.x + b.w - 0.5 && b.x < a.x + a.w - 0.5 && a.y < b.y + b.h - 0.5 &&
+				    b.y < a.y + a.h - 0.5)
+					return false;
+			}
+		}
+		return true;
+	};
+	auto list = [](obs_data_t *d, const char *setting, std::vector<std::string> values) {
+		obs_data_array_t *arr = obs_data_array_create();
+		for (const std::string &value : values) {
+			obs_data_t *entry = obs_data_create();
+			obs_data_set_string(entry, "value", value.c_str());
+			obs_data_array_push_back(arr, entry);
+			obs_data_release(entry);
+		}
+		obs_data_set_array(d, setting, arr);
+		obs_data_array_release(arr);
+	};
+	// How a set fits, under `prefix` ("group|" for the shared set).
+	auto look = [](obs_data_t *d, const std::string &prefix, int level, int glide_ms) {
+		obs_data_set_int(d, (prefix + "box").c_str(), 2);
+		obs_data_set_double(d, (prefix + "margin").c_str(), 10);
+		obs_data_set_double(d, (prefix + "tolerance").c_str(), 5);
+		obs_data_set_bool(d, (prefix + "resize").c_str(), true);
+		obs_data_set_int(d, (prefix + "toward").c_str(), 0);
+		obs_data_set_int(d, (prefix + "glide_ms").c_str(), glide_ms);
+		if (level >= 0)
+			obs_data_set_int(d, (prefix + "space_priority").c_str(), level);
+	};
+	int made = 0;
+	struct S {
+		obs_scene_t *scene = nullptr;
+		obs_sceneitem_t *g = nullptr, *w = nullptr, *c = nullptr, *t = nullptr;
+		std::vector<obs_source_t *> filters;
+	};
+	auto make_scene = [&](S &s) {
+		made++;
+		s.scene = obs_scene_create(("FG Scene " + std::to_string(made)).c_str());
+		auto put = [&](obs_source_t *src, float x, float y, float k) {
+			obs_sceneitem_t *it = obs_scene_add(s.scene, src);
+			vec2 at, scale;
+			vec2_set(&at, x, y);
+			vec2_set(&scale, k, k);
+			obs_sceneitem_set_pos(it, &at);
+			obs_sceneitem_set_scale(it, &scale);
+			return it;
+		};
+		s.g = put(game, 10.0f, 10.0f, 0.25f);
+		s.w = put(win, 10.0f, 250.0f, 0.2f);
+		s.c = put(cam, 500.0f, 10.0f, 1.0f);
+		s.t = put(chat, 560.0f, 180.0f, 1.0f);
+		obs_set_output_source(0, obs_scene_get_source(s.scene));
+	};
+	auto wait = [&](S &s, int ms) {
+		for (int i = 0; i < ms / 20; i++) {
+			render(obs_scene_get_source(s.scene), 640, 360);
+			sleep_ms(20);
+		}
+	};
+	auto pics = [&](S &s) {
+		return std::vector<Pic>{pic(s.g), pic(s.w), pic(s.c), pic(s.t)};
+	};
+	auto all_same = [&](const std::vector<Pic> &a, const std::vector<Pic> &b, double by) {
+		for (size_t i = 0; i < a.size(); i++)
+			if (!same(a[i], b[i], by))
+				return false;
+		return true;
+	};
+	// Settled: where each shows, and whether all stayed put for 0.8 s.
+	auto settle = [&](S &s, std::vector<Pic> &out) {
+		wait(s, 1500);
+		out = pics(s);
+		wait(s, 800);
+		return all_same(out, pics(s), 0.1);
+	};
+	auto drop = [&](S &s) {
+		for (obs_source_t *f : s.filters) {
+			obs_source_filter_remove(obs_scene_get_source(s.scene), f);
+			obs_source_release(f);
+		}
+		obs_source_remove(obs_scene_get_source(s.scene));
+		obs_scene_release(s.scene);
+	};
+	// A Scene Fit: Same for all sources (`level` its Space priority) or,
+	// with `same` false, each its own (`levels` per source).
+	auto scene_fit = [&](S &s, std::vector<std::string> entries, bool same_set, int level, bool by_list) {
+		obs_data_t *d = obs_data_create();
+		list(d, "entries", entries);
+		if (same_set) {
+			obs_data_set_int(d, "settings_mode", 1);
+			look(d, "group|", level, 300);
+		} else {
+			for (const std::string &e : entries)
+				look(d, "fit|" + e + "|", level, 300);
+		}
+		obs_data_set_bool(d, "list_priority", by_list);
+		const std::string name =
+			"FG Scene Fit " + std::to_string(made) + "." + std::to_string(s.filters.size());
+		obs_source_t *f = obs_source_create("stagekit_scene_fit", name.c_str(), d, nullptr);
+		obs_data_release(d);
+		obs_source_filter_add(obs_scene_get_source(s.scene), f);
+		s.filters.push_back(f);
+		return f;
+	};
+	auto set_visible = [](std::vector<obs_sceneitem_t *> items, bool on) {
+		for (obs_sceneitem_t *it : items)
+			obs_sceneitem_set_visible(it, on);
+	};
+
+	// 1. One Scene Fit, the same for all of three sources: one change of a
+	// shared setting reaches all three; no source's own settings are written.
+	{
+		S s;
+		make_scene(s);
+		set_visible({s.w}, false);
+		obs_source_t *f = scene_fit(s, {"FG Game", "FG Cam", "FG Chat"}, true, -1, false);
+		std::vector<Pic> p0;
+		const bool still = settle(s, p0);
+		const std::vector<Pic> three0 = {p0[0], p0[2], p0[3]};
+		CHECK(still && apart(three0, 10.0),
+		      "Same for all sources: three sources fitted apart with the shared gap of 10 (game %.0fx%.0f, camera %.0fx%.0f, chat %.0fx%.0f)",
+		      p0[0].w, p0[0].h, p0[2].w, p0[2].h, p0[3].w, p0[3].h);
+		obs_properties_t *props = obs_source_properties(f);
+		obs_property_t *group = obs_properties_get(props, "group|g");
+		obs_property_t *for_box = obs_properties_get(props, "fit_for");
+		obs_property_t *own = obs_properties_get(props, "fit|FG Game|g");
+		const bool window = group && obs_property_visible(group) && for_box && !obs_property_visible(for_box) &&
+				    own && !obs_property_visible(own) &&
+				    obs_properties_get(props, "group|space_priority") != nullptr;
+		obs_properties_destroy(props);
+		CHECK(window,
+		      "the window shows one group, Settings for all sources (Space priority in it), and no Settings for");
+		obs_data_t *d = obs_source_get_settings(f);
+		obs_data_set_double(d, "group|margin", 30.0);
+		obs_source_update(f, d);
+		std::vector<Pic> p1;
+		const bool still1 = settle(s, p1);
+		const std::vector<Pic> three1 = {p1[0], p1[2], p1[3]};
+		const bool all_moved = !same(p0[0], p1[0], 1.0) && !same(p0[2], p1[2], 1.0) && !same(p0[3], p1[3], 1.0);
+		bool own_written = false;
+		for (const char *e : {"FG Game", "FG Cam", "FG Chat"})
+			own_written = own_written ||
+				      obs_data_has_user_value(d, (std::string("fit|") + e + "|margin").c_str()) ||
+				      obs_data_has_user_value(d, (std::string("fit|") + e + "|space_priority").c_str());
+		const bool homes = obs_data_get_bool(d, "fit|FG Game|have_anchor") &&
+				   obs_data_get_bool(d, "fit|FG Cam|have_anchor") &&
+				   !obs_data_has_user_value(d, "group|have_anchor");
+		obs_data_release(d);
+		CHECK(still1 && all_moved && apart(three1, 30.0) && !own_written && homes,
+		      "the shared gap set to 30: all three move to keep 30 clear, no source's own settings are written, and each keeps its own home (game %.0f,%.0f, camera %.0f,%.0f, chat %.0f,%.0f)",
+		      p1[0].x, p1[0].y, p1[2].x, p1[2].y, p1[3].x, p1[3].y);
+		drop(s);
+	}
+
+	// 2. Switching each its own to the same for all and back moves nothing.
+	// The sources fit alike but for their glide times (which move nothing):
+	// the shared set starts as the first source's.
+	{
+		S s;
+		make_scene(s);
+		set_visible({s.w}, false);
+		obs_data_t *d = obs_data_create();
+		list(d, "entries", {"FG Game", "FG Cam", "FG Chat"});
+		look(d, "fit|FG Game|", -1, 300);
+		look(d, "fit|FG Cam|", -1, 400);
+		look(d, "fit|FG Chat|", -1, 500);
+		obs_source_t *f = obs_source_create("stagekit_scene_fit", "FG Switch", d, nullptr);
+		obs_data_release(d);
+		obs_source_filter_add(obs_scene_get_source(s.scene), f);
+		s.filters.push_back(f);
+		std::vector<Pic> p0;
+		settle(s, p0);
+		// Through the window, as the owner would.
+		d = obs_source_get_settings(f);
+		obs_properties_t *props = obs_source_properties(f);
+		obs_data_set_int(d, "settings_mode", 1);
+		obs_property_modified(obs_properties_get(props, "settings_mode"), d);
+		const bool shown = obs_property_visible(obs_properties_get(props, "group|g")) &&
+				   !obs_property_visible(obs_properties_get(props, "fit_for"));
+		obs_properties_destroy(props);
+		obs_source_update(f, d);
+		const bool seeded = obs_data_get_int(d, "group|glide_ms") == 300 &&
+				    obs_data_get_double(d, "group|margin") == 10.0 &&
+				    obs_data_get_int(d, "group|box") == 2;
+		bool still = true;
+		for (int i = 0; i < 50; i++) {
+			wait(s, 20);
+			still = still && all_same(pics(s), p0, 0.1);
+		}
+		CHECK(shown && seeded && still,
+		      "switched to Same for all sources in the window: the shared set is the first source's (glide %lld ms), the window shows it, and nothing moves",
+		      (long long)obs_data_get_int(d, "group|glide_ms"));
+		// A change of the shared set moves them; then back to each its own
+		// (from outside the window, as a Stream Deck or script would).
+		obs_data_set_double(d, "group|margin", 25.0);
+		obs_source_update(f, d);
+		std::vector<Pic> p1;
+		settle(s, p1);
+		obs_data_set_int(d, "settings_mode", 0);
+		obs_source_update(f, d);
+		wait(s, 60);
+		bool given = true;
+		for (const char *e : {"FG Game", "FG Cam", "FG Chat"}) {
+			const std::string pre = std::string("fit|") + e + "|";
+			given = given && obs_data_get_double(d, (pre + "margin").c_str()) == 25.0 &&
+				obs_data_get_int(d, (pre + "glide_ms").c_str()) == 300;
+		}
+		bool still2 = true;
+		for (int i = 0; i < 50; i++) {
+			wait(s, 20);
+			still2 = still2 && all_same(pics(s), p1, 0.1);
+		}
+		CHECK(!all_same(p0, p1, 1.0) && given && still2,
+		      "the shared gap set to 25 moves them; back to Each source its own, every source has the shared settings (gap 25, glide 300) and nothing moves (moved %d, given %d, still %d)",
+		      !all_same(p0, p1, 1.0), given, still2);
+		obs_data_release(d);
+		drop(s);
+	}
+
+	// 3. Two Scene Fit groups in one scene: the game and the window, the
+	// camera and the chat box. The group that takes its space first never
+	// moves for the other, which fits round it; the other does move for it.
+	// Both filter orders, by level and by list order.
+	struct Case {
+		int a_level, b_level;
+		bool by_list, a_above;
+		bool a_wins;
+		const char *what;
+	};
+	const Case cases[] = {
+		{1, 2, false, true, true,
+		 "captures Takes space first, camera and chat Makes room, captures' filter above"},
+		{1, 2, false, false, true,
+		 "captures Takes space first, camera and chat Makes room, captures' filter below"},
+		{2, 1, false, true, false,
+		 "captures Makes room, camera and chat Takes space first, captures' filter above"},
+		{2, 1, false, false, false,
+		 "captures Makes room, camera and chat Takes space first, captures' filter below"},
+		{2, 1, true, true, true, "both by list order (levels not read), captures' filter above"},
+		{2, 1, true, false, false, "both by list order (levels not read), captures' filter below"},
+	};
+	Pic game_wins, game_loses, cam_wins, cam_loses;
+	for (const Case &one : cases) {
+		S s;
+		make_scene(s);
+		if (one.a_above) {
+			scene_fit(s, {"FG Game", "FG Window"}, true, one.a_level, one.by_list);
+			scene_fit(s, {"FG Cam", "FG Chat"}, true, one.b_level, one.by_list);
+		} else {
+			scene_fit(s, {"FG Cam", "FG Chat"}, true, one.b_level, one.by_list);
+			scene_fit(s, {"FG Game", "FG Window"}, true, one.a_level, one.by_list);
+		}
+		std::vector<Pic> p0;
+		const bool still = settle(s, p0);
+		std::vector<obs_sceneitem_t *> win_items = one.a_wins ? std::vector<obs_sceneitem_t *>{s.g, s.w}
+								      : std::vector<obs_sceneitem_t *>{s.c, s.t};
+		std::vector<obs_sceneitem_t *> lose_items = one.a_wins ? std::vector<obs_sceneitem_t *>{s.c, s.t}
+								       : std::vector<obs_sceneitem_t *>{s.g, s.w};
+		auto of = [&](const std::vector<obs_sceneitem_t *> &items) {
+			std::vector<Pic> out;
+			for (obs_sceneitem_t *it : items)
+				out.push_back(pic(it));
+			return out;
+		};
+		const std::vector<Pic> win0 = of(win_items), lose0 = of(lose_items);
+		// The other group hidden and shown: the winners do not move at all.
+		bool win_still = true;
+		set_visible(lose_items, false);
+		for (int i = 0; i < 50; i++) {
+			wait(s, 20);
+			win_still = win_still && all_same(of(win_items), win0, 0.05);
+		}
+		set_visible(lose_items, true);
+		for (int i = 0; i < 75; i++) {
+			wait(s, 20);
+			win_still = win_still && all_same(of(win_items), win0, 0.05);
+		}
+		// The winners hidden and shown: they come back where they were, and
+		// the others fit round them again. (Where two that share settle
+		// depends on which looks first, so the others need not be back
+		// exactly: they share between themselves.)
+		set_visible(win_items, false);
+		wait(s, 1200);
+		set_visible(win_items, true);
+		std::vector<Pic> p1;
+		settle(s, p1);
+		CHECK(still && apart(p0, 10.0) && win_still && all_same(of(win_items), win0, 0.5) && apart(p1, 10.0),
+		      "%s: the %s take their space and never move for the others, which fit round them; all apart, and so again after each group is hidden and shown (game %.0fx%.0f, window %.0fx%.0f, camera %.0fx%.0f, chat %.0fx%.0f)",
+		      one.what, one.a_wins ? "captures" : "camera and chat", p0[0].w, p0[0].h, p0[1].w, p0[1].h,
+		      p0[2].w, p0[2].h, p0[3].w, p0[3].h);
+		// (The game and the camera, for comparing the winners with the losers.)
+		(one.a_wins ? game_wins : game_loses) = p0[0];
+		(one.a_wins ? cam_loses : cam_wins) = p0[2];
+		drop(s);
+	}
+
+	CHECK(game_wins.h > game_loses.h + 50.0 && cam_wins.h > cam_loses.h + 50.0,
+	      "the priority decides: the game is %.0f tall when its group takes its space first and %.0f when it makes room; the camera %.0f and %.0f",
+	      game_wins.h, game_loses.h, cam_wins.h, cam_loses.h);
+
+	// 4. A Scene Fit saved before Settings (each its own): read as each its
+	// own, its window as before, the shared set not read, and nothing written.
+	{
+		S s;
+		make_scene(s);
+		set_visible({s.w, s.t}, false);
+		obs_data_t *d = obs_data_create();
+		list(d, "entries", {"FG Game", "FG Cam"});
+		look(d, "fit|FG Game|", 1, 300);
+		look(d, "fit|FG Cam|", 2, 300);
+		obs_source_t *f = obs_source_create("stagekit_scene_fit", "FG Old", d, nullptr);
+		obs_data_release(d);
+		obs_source_filter_add(obs_scene_get_source(s.scene), f);
+		s.filters.push_back(f);
+		std::vector<Pic> p0;
+		const bool still = settle(s, p0);
+		d = obs_source_get_settings(f);
+		const bool read =
+			obs_data_get_int(d, "settings_mode") == 0 && !obs_data_has_user_value(d, "settings_mode") &&
+			!obs_data_has_user_value(d, "settings_mode_was") && !obs_data_has_user_value(d, "group|margin");
+		obs_properties_t *props = obs_source_properties(f);
+		const bool window = obs_property_visible(obs_properties_get(props, "fit_for")) &&
+				    !obs_property_visible(obs_properties_get(props, "group|g")) &&
+				    obs_property_visible(obs_properties_get(props, "fit|FG Game|g")) !=
+					    obs_property_visible(obs_properties_get(props, "fit|FG Cam|g"));
+		obs_properties_destroy(props);
+		// The shared set, were it read, would make the game make room and
+		// the camera take its space first.
+		obs_data_set_int(d, "group|space_priority", 2);
+		obs_data_set_double(d, "group|margin", 40.0);
+		obs_source_update(f, d);
+		obs_data_release(d);
+		std::vector<Pic> p1;
+		const bool still1 = settle(s, p1);
+		CHECK(still && still1 && read && window && std::fabs(p0[0].h - 340.0) < 1.0 && all_same(p0, p1, 0.1),
+		      "a Scene Fit saved before Settings reads as Each source its own, nothing written; its window as before; its sources go by their own settings (the game, set to take its space first, %.0f tall), the shared set not read (%d%d%d%d)",
+		      p0[0].h, still, still1, read, window);
+		drop(s);
+	}
+
+	// 5. Take over Fit to Space: alike, they become one group; different,
+	// each keeps its own. Nothing moves either way.
+	for (int alike = 1; alike >= 0; alike--) {
+		S s;
+		make_scene(s);
+		set_visible({s.w, s.t}, false);
+		auto fit_to_space = [&](const char *item, int toward) {
+			obs_data_t *d = obs_data_create();
+			obs_data_set_string(d, "item", item);
+			obs_data_set_int(d, "box", 2);
+			obs_data_set_double(d, "margin", 10);
+			obs_data_set_double(d, "tolerance", 5);
+			obs_data_set_bool(d, "resize", true);
+			obs_data_set_int(d, "toward", toward);
+			obs_data_set_int(d, "glide_ms", 300);
+			obs_source_t *f = obs_source_create(
+				"stagekit_fit_item", (std::string("FG Take ") + item + std::to_string(made)).c_str(), d,
+				nullptr);
+			obs_data_release(d);
+			obs_source_filter_add(obs_scene_get_source(s.scene), f);
+			s.filters.push_back(f);
+			return f;
+		};
+		obs_source_t *fg = fit_to_space("FG Game", 0);
+		obs_source_t *fc = fit_to_space("FG Cam", alike ? 0 : 4);
+		obs_source_t *sf = obs_source_create("stagekit_scene_fit", ("FG Taker " + std::to_string(made)).c_str(),
+						     nullptr, nullptr);
+		obs_source_filter_add(obs_scene_get_source(s.scene), sf);
+		s.filters.push_back(sf);
+		std::vector<Pic> p0;
+		settle(s, p0);
+		obs_properties_t *props = obs_source_properties(sf);
+		obs_property_button_clicked(obs_properties_get(props, "take_over"), sf);
+		obs_properties_destroy(props);
+		bool still = true;
+		for (int i = 0; i < 60; i++) {
+			wait(s, 20);
+			still = still && all_same(pics(s), p0, 0.5);
+		}
+		obs_data_t *d = obs_source_get_settings(sf);
+		const long long mode = obs_data_get_int(d, "settings_mode");
+		const bool group_set = obs_data_get_double(d, "group|margin") == 10.0 &&
+				       obs_data_get_int(d, "group|glide_ms") == 300;
+		obs_data_release(d);
+		const bool off = !obs_source_enabled(fg) && !obs_source_enabled(fc);
+		if (alike)
+			CHECK(off && mode == 1 && group_set && still,
+			      "Take over Fit to Space, two alike: Settings becomes Same for all sources with their settings (gap 10), and nothing moves");
+		else
+			CHECK(off && mode == 0 && still,
+			      "Take over Fit to Space, two that differ (Align in the space): Settings stays Each source its own, and nothing moves");
+		drop(s);
+	}
+
+	obs_set_output_source(0, before);
+	obs_source_release(before);
+	for (obs_source_t *src : {game, win, cam, chat})
+		obs_source_release(src);
+}
+
 // Link Visibility's fuller Show/Hide transition, and Morph's Unpaired
 // sources. The owner: "Link visibility scene filter should have additional
 // transition options including a fallback or other items transition for
@@ -2821,6 +3273,13 @@ int main(int argc, char **argv)
 	load_module("/usr/lib/x86_64-linux-gnu/obs-plugins/obs-transitions.so",
 		    "/usr/share/obs/obs-plugins/obs-transitions");
 	obs_post_load_modules();
+	if (getenv("STAGEKIT_TEST_ONLY_FIT_GROUPS")) { // to try that section alone
+		scene_fit_groups_test();
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
 	if (getenv("STAGEKIT_TEST_ONLY_FIT_PRIORITY")) { // to try that section alone
 		fit_priority_test();
 		obs_shutdown();
@@ -17718,6 +18177,8 @@ int main(int argc, char **argv)
 	// Space priority between fitted sources (its own function, so that it can
 	// be run alone: STAGEKIT_TEST_ONLY_FIT_PRIORITY).
 	fit_priority_test();
+	// A Scene Fit's Same for all sources, and groups (STAGEKIT_TEST_ONLY_FIT_GROUPS).
+	scene_fit_groups_test();
 	// ==== end scene-filters:fit ====
 	// ==== scene-filters:all-sources ====
 	// ---------------------------------------- the scene filters' All sources
