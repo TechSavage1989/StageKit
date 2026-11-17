@@ -1436,7 +1436,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     (tested for every function and setting). A new key with a function gets a `*Shown` function,
     a badge per function and a Source type in `SOURCES`; run `make-badges.py` after
     `make-option-icons.py`. Not seen on a Stream Deck.
-  - **Layout** (betaNEXT; `layout`, `layoutList` and `LAYOUTS` in `src/key-types.ts`, `laidOut` in
+  - **Layout** (beta166; `layout`, `layoutList` and `LAYOUTS` in `src/key-types.ts`, `laidOut` in
     `src/pictures.ts`, `src/layouts.json`). The owner: "every icon should have a standalone version,
     live/no chat version, and a component/chat version", then "perhaps have a selector to choose the
     layout and a second selector for the specific type". Every key with a Source type or Scene type
@@ -1451,7 +1451,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     drawing a source type's `base` or a scene type's `picture` is, and those of `GLYPH_OF` (the
     pack's scene pictures by the drawing of what they show): 100 drawings, 202 pictures a palette
     with the frames, status copies by `make-state-icons.py`, SVGs in `svg/keys/<palette>/layouts/`.
-    **One template per layout, for every type** (betaNEXT's second pass; the owner, of the first
+    **One template per layout, for every type** (beta166's second pass; the owner, of the first
     contact sheet: "they should all be consistent. for the live the square camera image should be
     in the same position for all, but the window icon appears to have it moved to the bottom.
     also, App 3D, or any app type should not have a specific letter or anything. it should only be
