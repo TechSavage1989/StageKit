@@ -233,6 +233,7 @@ private:
 	// the clock's time when it began to fade by itself, and how it goes.
 	float alone_from_ = -1.0f;
 	bool alone_zoom_ = false;
+	bool alone_in_ = false; // the item is coming in (shown), not going
 	std::atomic<bool> stale_{false};
 	obs_source_t *told_about_ = nullptr; // the scene whose filter was last written to the log
 
@@ -704,10 +705,14 @@ void Morph::mix_cb(void *data, gs_texture_t *a, gs_texture_t *b, float, uint32_t
 void Morph::alone_cb(void *data, gs_texture_t *a, gs_texture_t *b, float, uint32_t cx, uint32_t cy)
 {
 	auto *self = static_cast<Morph *>(data);
-	gs_texture_t *only = a ? a : b;
+	// (OBS hands a transition a see-through placeholder for the side that
+	// has no source, never nothing: which side is the item's is known from
+	// the transition's sources. Taken as `a ? a : b`, an item being shown
+	// drew the placeholder all the way and appeared at once at the end.)
+	gs_texture_t *only = self->alone_in_ ? b : a;
 	if (!only)
 		return;
-	const float there = a ? 1.0f - self->eased_ : self->eased_; // how much of it is there
+	const float there = self->alone_in_ ? self->eased_ : 1.0f - self->eased_; // how much of it is there
 	self->draw_faded(only, cx, cy, there, self->alone_zoom_ ? 0.8 + 0.2 * (double)there : 1.0);
 }
 
@@ -766,6 +771,7 @@ void Morph::render()
 		const double way = std::clamp((double)(t - alone_from_) / (double)(1.0f - alone_from_), 0.0, 1.0);
 		eased_ = (float)std::clamp(ease(s.curve, s.mode, way), 0.0, 1.0);
 		alone_zoom_ = s.others == Others::Zoom;
+		alone_in_ = to != nullptr;
 		obs_transition_video_render(source_, alone_cb);
 		obs_source_release(from);
 		obs_source_release(to);

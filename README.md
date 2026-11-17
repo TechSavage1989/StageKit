@@ -1070,7 +1070,11 @@ Which two go together follows the Morph transition's rules:
   at all. Untick *Morph the main image* to have only linked sources change into each other.
 
 An item with nothing to change into fades by itself, or fades and zooms if *With nothing to change
-into* (in Show in Scenes; *Other items* in the transition's own settings) says so.
+into* (in Show in Scenes; *Other items* in the transition's own settings) says so. That holds for an
+item being shown as much as for one being hidden: when one item is hidden and two are shown at once
+(a camera hidden, a capture and a square view of the camera shown), the one that pairs with the
+camera changes into it and the other fades in over the same time. (Up to beta154 the one left over
+appeared all at once at the end of the change.)
 
 Things to know:
 

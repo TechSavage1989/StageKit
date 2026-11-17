@@ -880,12 +880,24 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     elsewhere and by the main picture.
   - A comparison of two times taken from the clock at different moments must not be made by
     subtracting unsigned numbers: the first build ended every change in the tick that began it.
+  - **An item shown with nothing to change from fades in** (`alone_in_`). OBS hands a
+    transition's drawing callback a see-through placeholder for the side with no source, never
+    nothing, so which side is the item's is read from `obs_transition_get_source`, never from
+    which texture is there. Up to beta154 `a ? a : b` drew the placeholder: a shown *Alone* item
+    drew nothing for the whole change and appeared at once at its end (a hidden one faded, which
+    is all the tests looked at). The owner saw it when one hide met two shows: "when I switch
+    from DSLR to windows ... the DSLR morphs into the square camera as I intend ... the source
+    just instantly appears", and with the camera linked to a capture instead, "now the square
+    camera just pops in". Their settings were not at fault. Tested in `[a capture shown in the
+    camera's place ...]`, last in the test file (it needs sound, as the layout section does).
 - **Fade and Zoom** (`stagekit_fade_zoom`, `src/transition/fade-zoom.cpp`; the owner: "also add
   fade and zoom as a transition") is a transition like OBS's own, so it is in every list of
   transitions by itself. One side (an item): it fades as it grows or shrinks. Two sides (a change
   of scene): the old scene stays underneath and the new one fades in over it as it grows, so the
   picture is whole all the way. *Smallest size* stays at 100 % or under: larger would be cut off
-  at the item's frame.
+  at the item's frame. Which case it is goes by the transition's sources (`has_a_`, `has_b_`), not
+  by the textures it is handed (a placeholder stands in for a missing side): up to beta154 an item
+  hidden with it was drawn as a change of scene into nothing and stayed whole until it went.
 - **Blur goes to 1000** (`kMaxStrength`; it was 250 and the owner asked for more). A Gaussian or box
   blur set above `kTapLimit` (250) is drawn the Dual Kawase way for its whole ramp, so there is no
   change of look part-way through a ramp. Zoom's pull is still worked out from 250. Ambient
