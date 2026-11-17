@@ -27,32 +27,68 @@
 				<option value="off">Switch off</option>
 			</sdpi-select>
 		</sdpi-item>
-		<sdpi-item label="Image">
-			<sdpi-select setting="picture" datasource="getPictures" default=""></sdpi-select>
-		</sdpi-item>
-		<sdpi-item label="Source type">
-			<sdpi-select setting="sourceType" default="">
-				<option value="">Automatic</option>
-				<option value="game">Game</option>
-				<option value="window">Window</option>
-				<option value="art_app">Art app</option>
-				<option value="code_editor">Code editor</option>
-				<option value="browser">Browser</option>
-				<option value="camera">Camera</option>
-				<option value="capture_card">Capture card</option>
-				<option value="display">Display</option>
-				<option value="phone">Phone</option>
-				<option value="tablet">Tablet</option>
-				<option value="chat">Chat</option>
-				<option value="music">Music</option>
-				<option value="alerts">Alerts</option>
-				<option value="title">Title / text</option>
-				<option value="image">Image</option>
-				<option value="video">Video</option>
-				<option value="starting">Starting</option>
-				<option value="brb">Be right back</option>
-				<option value="intermission">Intermission</option>
-				<option value="ending">Ending</option>
+		<sdpi-item label="Source type" title="What the source is, for the key&#x27;s image. Automatic goes by the source&#x27;s name and kind.">
+			<sdpi-select setting="sourceType" placeholder="Automatic (by the source)">
+				<option value="auto">Automatic (by the source)</option>
+				<optgroup label="Captures &amp; games">
+					<option value="game">Game</option>
+					<option value="retro">Retro game</option>
+					<option value="retro_2">Second retro game</option>
+					<option value="emulator">Emulator</option>
+					<option value="console">Console</option>
+					<option value="handheld">Handheld</option>
+					<option value="capture_card">Capture card</option>
+					<option value="window">Window</option>
+					<option value="browser">Browser</option>
+					<option value="display">Display</option>
+					<option value="second_display">Second display</option>
+					<option value="tablet">Tablet</option>
+					<option value="phone">Phone screen</option>
+				</optgroup>
+				<optgroup label="Apps">
+					<option value="art_app">Art app</option>
+					<option value="app_3d">3D app</option>
+					<option value="sculpting">Sculpting app</option>
+					<option value="cad">CAD app</option>
+					<option value="code_editor">Code editor</option>
+					<option value="office">Office / documents</option>
+					<option value="video_player">Video player</option>
+					<option value="reference">Reference board</option>
+				</optgroup>
+				<optgroup label="Cameras &amp; audio">
+					<option value="camera">Camera / webcam</option>
+					<option value="dslr">DSLR / mirrorless</option>
+					<option value="camcorder">Camcorder</option>
+					<option value="facecam">Facecam</option>
+					<option value="full_camera">Full-screen camera</option>
+					<option value="side_camera">Side camera</option>
+					<option value="phone_camera">Phone camera</option>
+					<option value="workspace_camera">Desk / overhead camera</option>
+					<option value="virtual_camera">Virtual camera</option>
+					<option value="microphone">Microphone</option>
+				</optgroup>
+				<optgroup label="Overlays">
+					<option value="chat">Chat</option>
+					<option value="voice_chat">Voice chat</option>
+					<option value="music">Music</option>
+					<option value="alerts">Alerts</option>
+					<option value="events">Events / goals</option>
+					<option value="countdown">Countdown</option>
+					<option value="title">Title / text</option>
+					<option value="image">Image</option>
+					<option value="video">Video</option>
+					<option value="logo">Logo</option>
+					<option value="standby_image">Standby image</option>
+				</optgroup>
+				<optgroup label="Holding screens">
+					<option value="starting">Starting soon</option>
+					<option value="brb">Be right back</option>
+					<option value="intermission">Intermission</option>
+					<option value="technical">Technical difficulties</option>
+					<option value="ending">Ending</option>
+					<option value="column_chat">Chat column</option>
+					<option value="column_retro">Retro column</option>
+				</optgroup>
 			</sdpi-select>
 		</sdpi-item>
 		<sdpi-item label="Palette">

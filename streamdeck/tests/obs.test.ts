@@ -280,14 +280,20 @@ test("a Scene Mode key lists every mode, turns one on by its id and is lit when 
 	await action.show(key, settings);
 	assert.equal(shown.state, 0);
 
-	// The picture: Source type chosen > the mode's type > its name > the plain mode key.
+	// The picture: Mode type chosen > an image kept from before > the mode's
+	// type > its name > the plain mode key. A type is drawn as a mode: the
+	// owner's scene layout of that kind where there is one.
 	settings = { ...settings, sourceType: "camera" };
 	await action.show(key, settings);
-	assert.ok(shown.images.at(-1)?.endsWith("/options/type-camera-on.png"));
+	assert.ok(shown.images.at(-1)?.endsWith("/scenes/12-camera-only.png"), shown.images.at(-1));
+	settings = { ...settings, sourceType: "title" };
+	await action.show(key, settings);
+	assert.ok(shown.images.at(-1)?.endsWith("/options/type-title-on.png"), "no layout of that kind: the type's own");
 	assert.equal(modePicture(undefined, "", "starting", "Lunch").id, "options/mode-starting", "the mode's own type");
-	assert.equal(modePicture(undefined, "", "", "GBA").id, "options/type-game", "GBA counts as a game");
+	assert.equal(modePicture(undefined, "", "", "GBA").id, "scenes/11-dolphin-gba", "GBA counts as a retro game");
 	assert.equal(modePicture(undefined, "", "", "Lunch").id, "options/mode", "nothing fits: the plain mode key");
-	assert.equal(modePicture("options/browser", "camera", "game", "GBA").id, "options/browser", "an image chosen by hand wins");
+	assert.equal(modePicture("options/browser", "", "game", "GBA").id, "options/browser", "an image kept from before wins over Automatic");
+	assert.equal(modePicture("options/browser", "camera", "game", "GBA").id, "scenes/12-camera-only", "a type chosen wins over it");
 
 	// A mode that is gone, or a press OBS refuses, shows an alert.
 	settings = { target: `Standby${sep}Standby modes${sep}gone`, press: "on" };

@@ -26,32 +26,33 @@
 				<option value="toggle">Toggle</option>
 			</sdpi-select>
 		</sdpi-item>
-		<sdpi-item label="Image">
-			<sdpi-select setting="picture" datasource="getPictures" default=""></sdpi-select>
-		</sdpi-item>
-		<sdpi-item label="Source type">
-			<sdpi-select setting="sourceType" default="">
-				<option value="">Automatic</option>
-				<option value="game">Game</option>
-				<option value="window">Window</option>
-				<option value="art_app">Art app</option>
-				<option value="code_editor">Code editor</option>
-				<option value="browser">Browser</option>
-				<option value="camera">Camera</option>
-				<option value="capture_card">Capture card</option>
-				<option value="display">Display</option>
-				<option value="phone">Phone</option>
-				<option value="tablet">Tablet</option>
-				<option value="chat">Chat</option>
-				<option value="music">Music</option>
-				<option value="alerts">Alerts</option>
-				<option value="title">Title / text</option>
-				<option value="image">Image</option>
-				<option value="video">Video</option>
-				<option value="starting">Starting</option>
-				<option value="brb">Be right back</option>
-				<option value="intermission">Intermission</option>
-				<option value="ending">Ending</option>
+		<sdpi-item label="Mode type" title="What the mode shows, for the key&#x27;s image. Automatic takes the Mode type set in OBS.">
+			<sdpi-select setting="sourceType" placeholder="Automatic (the mode&#x27;s type)">
+				<option value="auto">Automatic (the mode&#x27;s type)</option>
+				<optgroup label="Captures &amp; games">
+					<option value="game">Game</option>
+					<option value="retro">Retro game</option>
+					<option value="console">Console</option>
+					<option value="capture_card">Capture card</option>
+					<option value="window">Window</option>
+					<option value="display">Display</option>
+					<option value="tablet">Tablet</option>
+				</optgroup>
+				<optgroup label="Cameras &amp; audio">
+					<option value="camera">Camera / webcam</option>
+				</optgroup>
+				<optgroup label="Overlays">
+					<option value="countdown">Countdown</option>
+				</optgroup>
+				<optgroup label="Holding screens">
+					<option value="starting">Starting soon</option>
+					<option value="brb">Be right back</option>
+					<option value="intermission">Intermission</option>
+					<option value="technical">Technical difficulties</option>
+					<option value="ending">Ending</option>
+					<option value="column_chat">Chat column</option>
+					<option value="column_retro">Retro column</option>
+				</optgroup>
 			</sdpi-select>
 		</sdpi-item>
 		<sdpi-item label="Palette">

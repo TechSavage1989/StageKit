@@ -1,10 +1,13 @@
 // Which picture a key shows. The pictures are the StageKit icon pack, kept in
 // imgs/pack/<colour>/<group>/<name>.png and listed in pack.json. Left to
 // itself a key takes the picture that fits what its filter is and how it is
-// set; a key can also be given any picture of the pack.
+// set; its type lists (src/key-types.ts) say what it is for instead. An
+// image a key was given in the Image list before beta156 is still shown
+// (`chosen` below) until one of its type lists is changed.
 
 import { isSceneKind } from "./kinds.ts";
 import pack from "./pack.json" with { type: "json" };
+import { BLUR_STYLES, explicit, type Family, lookPicture, sceneTypePicture, sourceTypePicture } from "./key-types.ts";
 import { hookTypePictureId, typeOfInput, typeOfName, typePictureId } from "./source-types.ts";
 
 export type Picture = { id: string; group: string; label: string; on: string; off: string };
@@ -15,7 +18,7 @@ export const PICTURES: Picture[] = pack.pictures;
 
 const BY_ID = new Map(PICTURES.map((p) => [p.id, p]));
 
-const BLUR = ["gaussian", "box", "kawase", "pixelate", "zoom", "motion", "hexagons"];
+const BLUR = BLUR_STYLES;
 const CORNERS = ["round", "cut", "notch", "scoop"];
 const PLACES = [
 	"top-left",
@@ -134,22 +137,36 @@ const SOUND: Record<string, string> = {
 };
 
 /** The picture of a source type ("game", "camera" ...), or undefined for no such type. */
-export function typePicture(sourceType: string | undefined): Picture | undefined {
-	return BY_ID.get(typePictureId(sourceType ?? "") ?? "");
+export function typePicture(sourceType: string | undefined, family?: Family): Picture | undefined {
+	return BY_ID.get((family ? sourceTypePicture(sourceType, family) : typePictureId(sourceType ?? "")) ?? "");
 }
 
 /** The picture of what a source is, by its kind in OBS: a camera, a game, a window, a screen ... */
-export function inputPicture(inputKind: string | undefined): Picture | undefined {
-	return typePicture(typeOfInput(inputKind)) ?? BY_ID.get(SOUND[inputKind ?? ""] ?? "");
+export function inputPicture(inputKind: string | undefined, family?: Family): Picture | undefined {
+	return typePicture(typeOfInput(inputKind), family) ?? BY_ID.get(SOUND[inputKind ?? ""] ?? "");
 }
 
+/** The owner's art a filter kind's keys use for a source type. */
+function familyOf(kind: string): Family | undefined {
+	if (kind === "stagekit_show_in_scenes") return "show";
+	if (kind === "stagekit_shadow_backdrop") return "shadow";
+	if (kind === "stagekit_ramp_blur") return "blur";
+	return undefined;
+}
+
+/** What a key's type lists are set to (src/key-types.ts). */
+export type KeyTypes = { sourceType?: unknown; sceneType?: unknown; look?: unknown };
+
 /**
- * A filter key's picture: the one chosen; else the key's source type (not
- * for a filter on a scene, which is no source); else the pack's own picture
- * of the source it is on, by name; else, for a key that shows and hides a
- * source, the source type its name speaks of ("Be Right Back", "Main
- * Display") and then what OBS says the source is (a camera, a window ...);
- * else the one that fits the filter.
+ * A filter key's picture. In this order: the type chosen in the key's lists
+ * (for a filter on a scene its Scene type, for one on a source its Source
+ * type, drawn for the key's function: a Shadow key's type with its shadow, a
+ * Blur key's blurred in the style); else the image kept from before the
+ * type lists (`chosen`); else the style chosen (Blur style, Corner style,
+ * Position); else the pack's own picture of the source it is on, by name;
+ * else, for a key that shows and hides a source, the source type its name
+ * speaks of ("Be Right Back", "Main Display") and then what OBS says the
+ * source is (a camera, a window ...); else the one that fits the filter.
  *
  * (The source's name comes before its kind in OBS: a text source called
  * "BRB" is a be-right-back key, not a title, and a capture card is a camera
@@ -161,16 +178,29 @@ export function chooseFor(
 	settings: Settings = {},
 	source?: string,
 	inputKind?: string,
-	sourceType?: string,
+	types: KeyTypes | string = {},
 ): Picture | undefined {
+	const t: KeyTypes = typeof types === "string" ? { sourceType: types } : types;
+	const family = familyOf(kind);
+	const look = explicit(t.look);
+	const blur = kind === "stagekit_ramp_blur";
+	const style = blur ? (look && BLUR.includes(look) ? look : (BLUR[whole(settings, "blur_type", 0)] ?? BLUR[0])) : undefined;
+	const scene = isSceneKind(kind);
+	const typed = scene
+		? sceneTypePicture(explicit(t.sceneType))
+		: sourceTypePicture(explicit(t.sourceType), family, style);
+	if (typed && BY_ID.has(typed)) return BY_ID.get(typed);
+	if (chosen && BY_ID.has(chosen)) return BY_ID.get(chosen);
+	if (look && kind === "stagekit_corners") return BY_ID.get(lookPicture("corners", look) ?? "") ?? automatic(kind, settings);
+	if (look && (kind === "stagekit_send_to" || kind === "stagekit_place_item"))
+		return BY_ID.get(lookPicture("position", look) ?? "") ?? automatic(kind, settings);
+	const own = blur ? { ...settings, blur_type: BLUR.indexOf(style!) } : settings;
 	const shows = kind === "stagekit_show_in_scenes";
 	return (
-		(chosen && BY_ID.get(chosen)) ||
-		(isSceneKind(kind) ? undefined : typePicture(sourceType)) ||
-		sourcePictureFor(kind, settings, source) ||
-		(shows ? typePicture(typeOfName(source)) : undefined) ||
-		(shows ? inputPicture(inputKind) : undefined) ||
-		automatic(kind, settings)
+		sourcePictureFor(kind, own, source) ||
+		(shows ? BY_ID.get(sourceTypePicture(typeOfName(source), "show") ?? "") : undefined) ||
+		(shows ? inputPicture(inputKind, "show") : undefined) ||
+		automatic(kind, own)
 	);
 }
 
@@ -180,9 +210,15 @@ export function plain(sort: "switch" | "move" | "tool"): Picture {
 }
 
 /** A Hook key's picture: the kind of capture it hooks. */
-export function hookPicture(chosen: string | undefined, inputKind: string | undefined, sourceType?: string): Picture {
+export function hookPicture(chosen: string | undefined, inputKind: string | undefined, sourceType?: string, look?: unknown): Picture {
 	const fits = inputKind === "window_capture" ? "options/hook-window" : "options/hook-game";
-	return (chosen && BY_ID.get(chosen)) || BY_ID.get(hookTypePictureId(sourceType ?? "") ?? "") || BY_ID.get(fits) || plain("move");
+	return (
+		BY_ID.get(lookPicture("capture", explicit(look)) ?? "") ||
+		(chosen && BY_ID.get(chosen)) ||
+		BY_ID.get(hookTypePictureId(sourceType ?? "") ?? "") ||
+		BY_ID.get(fits) ||
+		plain("move")
+	);
 }
 
 /** The arrange tools the pack has a picture of. */
@@ -242,24 +278,27 @@ export function stepPicture(chosen: string | undefined, step: string | undefined
 }
 
 /**
- * A Scene Mode key's picture: the one chosen; else the key's source type;
- * else the mode's own type (its *Mode type* in OBS); else the type its name
- * speaks of ("Be Right Back", "GBA"); else the plain mode key.
+ * A Scene Mode key's picture: its Mode type; else the image kept from before
+ * the type lists; else the mode's own type (its *Mode type* in OBS); else the
+ * type its name speaks of ("Be Right Back"); else the plain mode key. A type
+ * is drawn as a mode: a holding screen, or the owner's scene layout of that
+ * kind ("mode" in src/key-types.json).
  */
-export function modePicture(chosen: string | undefined, sourceType: string | undefined, modeType?: string, modeName?: string): Picture {
+export function modePicture(chosen: string | undefined, sourceType: unknown, modeType?: string, modeName?: string): Picture {
+	const as = (type: string | undefined) => BY_ID.get(sourceTypePicture(type, "mode") ?? "");
 	return (
+		as(explicit(sourceType)) ||
 		(chosen && BY_ID.get(chosen)) ||
-		typePicture(sourceType) ||
-		typePicture(modeType) ||
-		typePicture(typeOfName(modeName)) ||
+		as(modeType) ||
+		as(typeOfName(modeName)) ||
 		BY_ID.get("options/mode") ||
 		plain("switch")
 	);
 }
 
 /** A Fit to Space Overlap key's picture: a window with a camera over its corner. */
-export function overlapPicture(chosen: string | undefined): Picture {
-	return (chosen && BY_ID.get(chosen)) || BY_ID.get("options/overlap") || plain("switch");
+export function overlapPicture(chosen: string | undefined, sceneType?: unknown): Picture {
+	return BY_ID.get(sceneTypePicture(explicit(sceneType)) ?? "") || (chosen && BY_ID.get(chosen)) || BY_ID.get("options/overlap") || plain("switch");
 }
 
 /** The words of a scene's or a picture's name: lower case, without "scene" and any leading number. */
@@ -299,12 +338,18 @@ export function scenePictureFor(scene: string | undefined): Picture | undefined 
 }
 
 /**
- * A Switch Scene key's picture: the one chosen; else the pack's picture of
- * that scene's layout, when it has one by that name; else a scene with its
- * sources laid out.
+ * A Switch Scene key's picture: its Scene type; else the image kept from
+ * before the type lists; else the pack's picture of that scene's layout,
+ * when it has one by that name; else a scene with its sources laid out.
  */
-export function scenePicture(chosen: string | undefined, scene?: string): Picture {
-	return (chosen && BY_ID.get(chosen)) || scenePictureFor(scene) || BY_ID.get("options/scene") || plain("switch");
+export function scenePicture(chosen: string | undefined, scene?: string, sceneType?: unknown): Picture {
+	return (
+		BY_ID.get(sceneTypePicture(explicit(sceneType)) ?? "") ||
+		(chosen && BY_ID.get(chosen)) ||
+		scenePictureFor(scene) ||
+		BY_ID.get("options/scene") ||
+		plain("switch")
+	);
 }
 
 /** A Set Aspect Ratio key's picture: a frame of that shape. */
@@ -316,6 +361,21 @@ export function shapePicture(chosen: string | undefined, shape: string | undefin
 /** The picture a key was given by name, or the one that fits its filter. */
 export function choose(chosen: string | undefined, kind: string, settings: Settings = {}): Picture | undefined {
 	return (chosen && BY_ID.get(chosen)) || automatic(kind, settings);
+}
+
+/**
+ * A Move Source, Move Scene Item or Apply Layout key's picture: its Position
+ * (or, for a layout, its Scene type); else the image kept from before the
+ * type lists; else where the filter sends the source.
+ */
+export function movePicture(chosen: string | undefined, kind: string, settings: Settings = {}, types: KeyTypes = {}): Picture | undefined {
+	const typed = kind === "stagekit_layout" ? sceneTypePicture(explicit(types.sceneType)) : lookPicture("position", explicit(types.look));
+	return BY_ID.get(typed ?? "") || choose(chosen, kind, settings);
+}
+
+/** A Blur All key's picture: its Blur style; else the image kept from before the type lists; else Gaussian. */
+export function blurAllPicture(chosen: string | undefined, look?: unknown): Picture {
+	return BY_ID.get(lookPicture("blur", explicit(look)) ?? "") || choose(chosen, "stagekit_ramp_blur") || plain("switch");
 }
 
 /**
@@ -331,18 +391,4 @@ export function stateFile(picture: Picture, on: boolean, palette: string | undef
 export function file(picture: Picture, on: boolean, palette: string | undefined): string {
 	const use = palette && COLOURS.includes(palette) ? palette : DEFAULT_COLOUR;
 	return `imgs/pack/${use}/${on ? picture.on : picture.off}.png`;
-}
-
-export type ListItem = { label: string; value: string } | { label: string; children: Array<{ label: string; value: string }> };
-
-/** The pack as a list to choose from: "Automatic" first, then group by group. */
-export function pictureItems(): ListItem[] {
-	const groups = new Map<string, Array<{ label: string; value: string }>>();
-	for (const picture of PICTURES) {
-		if (!groups.has(picture.group)) groups.set(picture.group, []);
-		groups.get(picture.group)!.push({ label: picture.label, value: picture.id });
-	}
-	const out: ListItem[] = [{ label: "Automatic (fits the filter)", value: "" }];
-	for (const [group, children] of groups) out.push({ label: group, children });
-	return out;
 }

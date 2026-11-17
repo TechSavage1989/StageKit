@@ -1250,32 +1250,58 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   `imgs/actions/<key>/icon`); the owner, of a list where all keys showed one of two drawings:
   "I'd like all of the stream deck buttons to get specific icons". A new key gets a drawing there;
   `tests/features.test.ts` fails if two keys share one.
-- **A key's Source type** (`sourceType`, beta155; `streamdeck/src/source-types.ts`). The owner:
-  "instead of assigning a specific icon to my specific sources, ad an option in the key to choose
-  a source type ... that way anyone with any source can pick it accordingly". Every key that acts
-  on a source (the feature keys whose kind is not a scene's, `scene` in `features.json` and
-  `isSceneKind` in `kinds.ts`, which a test keeps the same; *Capture Active Window*; *Manual
-  Window / Source*) and the *Scene Mode* key offer *Source type*: *Automatic*, then twenty types
-  by id (`game` ... `ending`, append-only, the same ids as the Scene Modes filter's *Mode type*
-  in OBS, and as `SOURCE_TYPES` in `make-option-icons.py`, which a test compares). The order is
-  always: an image chosen by hand, then the Source type, then Automatic. A type's picture is
-  `options/type-<id>` (group *source types*; the four holding types reuse `options/mode-*`), on
-  and off; *Capture Active Window* takes `options/hook-type-<id>`, the type inside the hook's
-  corners. On Automatic a key keeps its feature's picture, except Show in Scenes: the pack's
-  picture of the source by name, then the type its name speaks of (`typeOfName`), then its OBS
-  input kind (`typeOfInput`). The coordinator asked for the input kind first; it was put after
-  the name because the input kind made beta154's holding-mode keys (text sources, the owner's
-  request) plain titles and a capture card a camera. A key on a scene's filter never uses a type
-  or an input kind. `seen.ts` also keeps the input kind (Show in Scenes) and a Scene Mode key's
-  mode name and type. Contact sheet: run the tools, then look at the `type-*` pictures.
+- **Every key chooses its image from type lists, not an Image list** (beta156,
+  `streamdeck/src/key-types.ts` and `key-types.json`). The owner: "instead of having an image list
+  on all the streamdeck buttons, have a similar source type, scene type, etc style list relative to
+  the button function"; then "I don't want any of the buttons, or the options specific to my
+  stream scene collection, but I do want the specific icons I had"; and "Dolphin isn't handheld ...
+  make as many scene and source types as possible and provide the proper respective icons". So:
+  - **Generic types, the owner's art.** Every type is a general one (Game, Retro game, Capture
+    card, Facecam, Gameplay + chat, Holding screen ...); a test fails on an owner's scene, source,
+    app or device name in any list (`owners` in `tests/key-types.test.ts`). Each type's picture is
+    the owner's pack art for that type *and the key's function* where there is one (`art` in the
+    JSON, by family: `show` the *show hide* pictures, `shadow` *shadow by source*, `blur` the
+    *blur <style>* pictures in the filter's style, `mode` the *scenes* layouts), otherwise the
+    type's own picture (`base`: a drawing of `make-option-icons.py`'s `TYPES`/`MORE_TYPES`, a
+    `devices` picture, or the pack's `filters/app-*`). Scene types are the owner's *scenes*
+    pictures under generic names (*dolphin gba* is **Retro**, *hd60s* is *Capture card*, the
+    beta154 Live / Chat Live / Standby pictures *On air*, *On air + chat*, *Holding screen*) and
+    `options/scene-type-<id>` drawings (`SCENE_TYPES` in `make-option-icons.py`) for the rest.
+    The pack's *standby by source* pictures are not offered: without the words they carried all
+    nine are the same mountain. Within one list no value, name, picture id or picture file repeats
+    (tested).
+  - **Settings.** `sourceType` (Source type, or *Mode type* on the Scene Mode key; ids append-only,
+    the first twenty those of the Scene Modes filter's *Mode type* in OBS, which has not been given
+    the new ones), `sceneType` (Scene type), `look` (Blur style, Corner style, Position, Capture
+    type). Each list starts with *Automatic*, value `auto`; unset or empty reads the same. The keys
+    whose own list is already the type (Arrange tool, Dock Option, Slide to Edge, Set Aspect Ratio,
+    Manual Window / Source: `OWN_LISTS`) have none. `make-plugin-files.py` writes the lists into
+    the pages from `typeLists()` (it runs node on `key-types.ts`), as static `<optgroup>`s with
+    `placeholder` and the tip as the item's `title`.
+  - **Resolution order:** a type chosen in a list; else the image kept from the old Image list;
+    else Automatic as before (a Show in Scenes key: the pack's picture of the source by name, then
+    the type its name speaks of, `typeOfName`, then its OBS input kind, both drawn as show-key art).
+    Each entry of every list is checked to be what the key itself shows for it.
+  - **Old keys keep their look.** A key's `picture` (the old Image list) is put aside once
+    (`settle` in `actions/shared.ts`, `adoptOld`) as `oldImage` with `oldImageWhile`, the type
+    settings at that moment; `keptPicture` shows it while they are unchanged. Where a type of the
+    key's lists shows that very picture (`typeForKept`, tried with the key's own resolver), the
+    type is set instead so the page says what it is. Choosing anything in a list, Automatic
+    included, drops it. Hook and Manual Window / Source keys' old `sourceType` (beta155) is still
+    read (`hook-type-*`, `options/type-*`), though those pages no longer offer it.
+  - **Stream Deck's own image menu**: titles are documented (setTitle "can only be set by the
+    plugin when the user has not specified a custom title"); for images the SDK's types say only
+    that state images "can be overridden by the user", nothing of setImage against a user's image.
+    It is believed, not proven, that a user's image wins. Not tried on a Stream Deck.
 - **The Scene Mode key** (`src/actions/mode.ts`, UUID `.mode`, beta155) is for the Scene Modes
   filter through its vendor requests: `ListSceneModes` (the key's list, *Scene: Mode*, the
   filter's name only when a scene has two), `GetSceneMode` (lit while `current` is its mode) and
   `SetSceneMode` with `how` *on* or *toggle*; the `SceneModeChanged` event (`obs.on("mode")`)
   makes every Scene Mode key look again. `target` is `scene␟filter␟mode id` (`src/modes.ts`): the
   id, never the name, so a rename keeps the key; a hand-made target with a name still works. Its
-  picture: chosen, Source type, the mode's *Mode type*, the type its name speaks of (*GBA* is a
-  game), then `options/mode`. Tested against a stand-in server in `tests/obs.test.ts`, not
+  picture: its Mode type, an image kept from the old Image list, the mode's *Mode type*, the type
+  its name speaks of (*GBA* is a retro game), then `options/mode`; a type is drawn as a mode (the
+  owner's scene layout of that kind, `art.mode`). Tested against a stand-in server in `tests/obs.test.ts`, not
   against the real filter.
 - **A key that switches something shows which way it is with a mark, not by brightness.** The
   owner: "the options that have an on and an off or toggle must represent that current status on
@@ -1350,7 +1376,8 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   *shadow by source*, *standby by source* and *blur <type>* groups), and a Show in Scenes key then
   the picture of what the source is (its name's source type, then `inputPicture`, by OBS input
   kind; `obs.inputKind` follows a Cropped View to what it shows), before the filter's general
-  picture (`chooseFor`). A key's Source type, when chosen, comes before all of these. The owner:
+  picture (`chooseFor`). A key's type lists, when set, come before all of these (see *Every key
+  chooses its image from type lists*). The owner:
   "the show in scenes key set to square camera should either set to the correct icon relative to
   a camera source, or at least have another option". Matching is by words; still no source names
   in the code. The

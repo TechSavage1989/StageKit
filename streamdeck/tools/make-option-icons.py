@@ -309,6 +309,98 @@ for _type in SOURCE_TYPES:
 DRAWINGS.update(HOOK_TYPES)
 
 
+# More source types, for what no picture of the pack shows on its own (the
+# owner: "make as many scene and source types as possible and provide the
+# proper respective icons"). Generic, as every type is: no one's own sources.
+# Where the owner's own sets have a picture of a type for a key's function
+# (a show key's eye, a shadow, a blur, a scene layout), src/key-types.json
+# gives the key that one; these are what is left. Ids append-only, in
+# src/key-types.json's sourceTypes.
+def _person(cx, cy, r):
+    return [("dot", cx, cy - r * 0.55, r * 0.45), ("arc", cx, cy + r * 0.95, r * 0.9, 180, 360)]
+
+
+MORE_TYPES = {
+    # A cartridge, and two of them (the second one marked).
+    "retro": [("frame", 18, 3, 46, 33), ("box", 22, 8, 42, 20), ("line", 23, 26, 23, 31), ("line", 29, 26, 29, 31),
+              ("line", 35, 26, 35, 31), ("line", 41, 26, 41, 31)],
+    "retro_2": [("frame", 6, 5, 28, 33), ("line", 10, 25, 24, 25), ("box", 36, 5, 58, 33)],
+    # A window with a gamepad in it.
+    "emulator": [("frame", 6, 3, 58, 33), ("box", 6, 3, 58, 9), ("line", 18, 21, 28, 21), ("line", 23, 16, 23, 26),
+                 ("dot", 40, 18, 2.5), ("dot", 46, 24, 2.5)],
+    # A handheld: screen, cross pad and two buttons.
+    "handheld": [("frame", 8, 5, 56, 31), ("frame", 21, 9, 43, 27), ("line", 11, 18, 18, 18), ("line", 14.5, 14.5, 14.5, 21.5),
+                 ("dot", 50, 14, 2.2), ("dot", 50, 22, 2.2)],
+    "second_display": [("frame", 3, 4, 29, 22), ("box", 35, 4, 61, 22), ("line", 16, 22, 16, 28), ("line", 48, 22, 48, 28),
+                       ("line", 9, 30, 23, 30), ("line", 41, 30, 55, 30)],
+    # A page of writing with its corner turned.
+    "office": [("line", 20, 2, 38, 2), ("line", 20, 2, 20, 34), ("line", 20, 34, 44, 34), ("line", 44, 34, 44, 9),
+               ("line", 38, 2, 44, 9), ("line", 25, 13, 39, 13), ("line", 25, 19, 39, 19), ("line", 25, 25, 34, 25)],
+    "video_player": [("frame", 6, 2, 58, 25), ("tri", 27, 7, 27, 20, 38, 13.5), ("line", 6, 31, 58, 31), ("box", 6, 28, 28, 34)],
+    # A board with pictures pinned up.
+    "reference": [("frame", 4, 2, 60, 34), ("box", 9, 7, 25, 18), ("frame", 29, 7, 43, 20), ("box", 47, 7, 55, 16),
+                  ("box", 9, 23, 20, 29), ("box", 25, 25, 55, 29)],
+    # Cameras of several sorts: a face in a corner, the whole screen, at the side, on a phone, over a desk.
+    "facecam": [("frame", 4, 2, 60, 34), ("frame", 38, 16, 58, 32)] + _person(48, 25, 6),
+    "full_camera": [("frame", 4, 2, 60, 34)] + _person(32, 18, 13),
+    "side_camera": [("frame", 4, 2, 60, 34), ("line", 42, 2, 42, 34), ("box", 8, 7, 37, 29)] + _person(51, 16, 7),
+    "phone_camera": [("frame", 22, 1, 42, 35)] + _person(32, 18, 7),
+    "workspace_camera": [("box", 24, 1, 40, 7), ("dot", 32, 9, 2.5), ("line", 4, 33, 60, 33), ("box", 16, 25, 30, 32),
+                         ("frame", 36, 22, 50, 32)] + arrow(32, 12, 32, 20, 4),
+    "virtual_camera": [("ring", 26, 18, 10), ("dot", 26, 18, 4), ("line", 48, 4, 48, 16), ("line", 42, 10, 54, 10),
+                       ("line", 44, 6, 52, 14), ("line", 52, 6, 44, 14), ("dot", 52, 27, 2), ("dot", 44, 31, 1.5)],
+    # A headset.
+    "voice_chat": [("arc", 32, 21, 15, 180, 360), ("box", 14, 19, 22, 31), ("box", 42, 19, 50, 31), ("line", 46, 31, 38, 34),
+                   ("dot", 36, 34, 2)],
+    # A bar filling up to a flag.
+    "events": [("frame", 4, 16, 50, 26), ("box", 4, 16, 32, 26), ("line", 56, 4, 56, 32), ("tri", 56, 4, 63, 8, 56, 12)],
+    # A stopwatch.
+    "countdown": [("ring", 32, 20, 13), ("box", 29, 2, 35, 6), ("line", 32, 20, 32, 11), ("line", 32, 20, 39, 24)],
+    # A badge with a star.
+    "logo": [("ring", 32, 18, 16), ("tri", 32, 6, 42, 26, 22, 26), ("tri", 32, 30, 22, 12, 42, 12)],
+    "technical": [("line", 32, 3, 13, 33), ("line", 13, 33, 51, 33), ("line", 51, 33, 32, 3), ("line", 32, 13, 32, 24),
+                  ("dot", 32, 28.5, 2)],
+}
+for _type, _shapes in MORE_TYPES.items():
+    DRAWINGS[type_name(_type)] = _shapes
+
+# Scene types the owner's scene pictures (the "scenes" group) have nothing
+# for: each a scene of that kind laid out. Ids in src/key-types.json's
+# sceneTypes; the picture is options/scene-type-<id>.
+_BARS = [("box", 40, 7, 58, 11), ("box", 40, 15, 58, 19), ("box", 40, 23, 58, 27)]
+SCENE_TYPES = {
+    "countdown": [("frame", 2, 2, 62, 34), ("ring", 32, 19, 10), ("box", 30, 5, 34, 8), ("line", 32, 19, 32, 12), ("line", 32, 19, 37, 22)],
+    "technical": [("frame", 2, 2, 62, 34), ("line", 32, 6, 18, 30), ("line", 18, 30, 46, 30), ("line", 46, 30, 32, 6),
+                  ("line", 32, 13, 32, 22), ("dot", 32, 26, 1.8)],
+    # A computer game: a monitor with a gamepad, and a keyboard.
+    "pc_game": [("frame", 8, 2, 56, 24), ("line", 20, 13, 28, 13), ("line", 24, 9, 24, 17), ("dot", 38, 11, 2), ("dot", 43, 15, 2),
+                ("box", 12, 28, 46, 33), ("dot", 53, 30.5, 3)],
+    # An old television with a game on it.
+    "classic": [("frame", 6, 7, 48, 34), ("frame", 10, 11, 38, 30), ("dot", 43, 15, 2), ("dot", 43, 22, 2), ("line", 22, 7, 16, 1),
+                ("line", 30, 7, 36, 1), ("line", 17, 20, 23, 20), ("line", 20, 17, 20, 23), ("dot", 30, 19, 1.8)],
+    "emulator": [("frame", 2, 2, 36, 34), ("box", 2, 2, 36, 7), ("line", 9, 20, 17, 20), ("line", 13, 16, 13, 24), ("dot", 25, 18, 2),
+                 ("dot", 30, 22, 2)] + _BARS,
+    "second_screen": [("frame", 2, 6, 30, 28), ("frame", 34, 6, 62, 28), ("box", 6, 10, 26, 24), ("line", 38, 12, 58, 12),
+                      ("line", 38, 18, 54, 18), ("line", 38, 24, 50, 24)],
+    "art": [("frame", 4, 3, 42, 33), ("arc", 15, 20, 6, 180, 360), ("arc", 27, 20, 6, 0, 180), ("line", 47, 31, 60, 5), ("dot", 46, 32, 3)],
+    # A cube, as a 3D model is drawn.
+    "modelling": [("frame", 14, 12, 36, 32), ("frame", 26, 4, 48, 24), ("line", 14, 12, 26, 4), ("line", 36, 12, 48, 4),
+                  ("line", 36, 32, 48, 24), ("line", 14, 32, 26, 24)],
+    "coding": [("frame", 2, 2, 62, 34), ("box", 2, 2, 62, 8), ("line", 22, 13, 14, 21), ("line", 14, 21, 22, 29), ("line", 42, 13, 50, 21),
+               ("line", 50, 21, 42, 29), ("line", 36, 12, 28, 30)],
+    "browsing": [("frame", 2, 2, 62, 34), ("box", 2, 2, 62, 8), ("ring", 32, 21, 9), ("line", 23, 21, 41, 21), ("line", 32, 12, 32, 30),
+                 ("arc", 32, 21, 5, 270, 450)],
+    "just_chatting": _person(18, 20, 13) + _BARS,
+    "interview": _person(17, 19, 11) + _person(47, 19, 11) + [("line", 32, 4, 32, 32)],
+    "podcast": [("frame", 27, 3, 37, 21), ("line", 22, 14, 22, 22), ("line", 42, 14, 42, 22), ("line", 22, 23, 42, 23),
+                ("line", 32, 23, 32, 30), ("line", 24, 32, 40, 32), ("arc", 32, 12, 17, -35, 35), ("arc", 32, 12, 17, 145, 215)],
+    "music": [("box", 6, 22, 12, 34), ("box", 15, 14, 21, 34), ("box", 24, 18, 30, 34), ("box", 33, 9, 39, 34), ("dot", 51, 28, 4.5),
+              ("line", 55, 28, 55, 6), ("line", 55, 6, 61, 10)],
+}
+for _scene, _shapes in SCENE_TYPES.items():
+    DRAWINGS["scene-type-" + _scene.replace("_", "-")] = _shapes
+
+
 def rounded(x0, y0, x1, y1, r):
     """A frame with round corners, as lines and arcs."""
     return [("line", x0 + r, y0, x1 - r, y0), ("line", x0 + r, y1, x1 - r, y1), ("line", x0, y0 + r, x0, y1 - r),
@@ -329,6 +421,7 @@ DRAWINGS["scene-corners"] = [("frame", 2, 2, 62, 34)] + rounded(7, 7, 35, 29, 7)
 SWITCHES = ["scene", "zoom", "fit", "overlap", "source-switcher", "window-switcher", "trigger", "link", "show-hide", "limit", "slide-to-edge", "every-scene", "keep-shape", "snap", "guides", "plain-switch"]
 SWITCHES += list(GROUPED)
 SWITCHES += [type_name(t) for t in TYPES] + ["mode", "scene-fit", "scene-shadow", "scene-corners"]
+SWITCHES += [type_name(t) for t in MORE_TYPES] + ["scene-type-" + s.replace("_", "-") for s in SCENE_TYPES]
 
 
 def drawn(shapes, ink):
@@ -419,6 +512,8 @@ def main():
             group, label = GROUPED[name]
         elif name in DEVICES:
             group, label = "devices", name.replace("-", " ")
+        elif name.startswith("scene-type-"):
+            group, label = "scene types", name[11:].replace("-", " ")
         elif name.startswith("type-"):
             group, label = "source types", name[5:].replace("-", " ")
         elif name in HOOK_TYPES:

@@ -11,7 +11,8 @@ import type { JsonValue } from "@elgato/utils";
 import { obs } from "../obs.ts";
 import { scenePicture } from "../pictures.ts";
 import { sceneTitle } from "../titles.ts";
-import { answerLists, type KeySettings, showOnOff } from "./shared.ts";
+import { keptPicture } from "../key-types.ts";
+import { answerLists, type KeySettings, settle, showOnOff } from "./shared.ts";
 
 /**
  * A key that switches OBS to a scene: on the program (live) or, in Studio
@@ -59,9 +60,11 @@ export class SceneSwitch extends SingletonAction<KeySettings> {
 
 	private async show(key: KeyAction<KeySettings>, settings: KeySettings): Promise<void> {
 		const scene = settings.scene ? String(settings.scene) : "";
+		const pick = (s: KeySettings) => scenePicture(keptPicture(s), scene, s.sceneType);
+		settings = await settle(key, "scene", settings, (s) => pick(s).id);
 		const now = await obs.currentScenes();
 		const live = settings.where === "preview" ? now?.preview : now?.program;
-		await showOnOff(key, scenePicture(settings.picture, scene), scene !== "" && live === scene, settings.palette);
+		await showOnOff(key, pick(settings), scene !== "" && live === scene, settings.palette);
 		await key.setTitle(sceneTitle(scene));
 	}
 

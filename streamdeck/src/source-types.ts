@@ -4,57 +4,36 @@
 // option in the key to choose a source type ... that way anyone with any
 // source can pick it accordingly". No source or scene names are in here.
 //
-// The ids are kept in keys' settings (`sourceType`) and are append-only. They
-// are the same as the Scene Modes filter's *Mode type* in OBS, so a Scene Mode
-// key on Automatic takes the mode's type.
+// The ids are kept in keys' settings (`sourceType`) and are append-only; the
+// list is in src/key-types.json. The first twenty are the same as the Scene
+// Modes filter's *Mode type* in OBS, so a Scene Mode key on Automatic takes
+// the mode's type.
 
-export type SourceType = { id: string; label: string; words: string[][] };
+import { SOURCE_TYPES, sourceTypePicture, typeOfName } from "./key-types.ts";
 
-/** In the order the settings page lists them, after *Automatic*. */
-export const SOURCE_TYPES: SourceType[] = [
-	{ id: "game", label: "Game", words: [["game"], ["games"], ["gaming"], ["gba"], ["console"], ["emulator"]] },
-	{ id: "window", label: "Window", words: [["window"], ["windows"]] },
-	{ id: "art_app", label: "Art app", words: [["art"], ["paint"], ["painting"], ["drawing"], ["sketch"]] },
-	{ id: "code_editor", label: "Code editor", words: [["code"], ["coding"], ["programming"], ["editor"], ["ide"]] },
-	{ id: "browser", label: "Browser", words: [["browser"], ["web"]] },
-	{ id: "camera", label: "Camera", words: [["camera"], ["cam"], ["webcam"], ["dslr"], ["facecam"]] },
-	{ id: "capture_card", label: "Capture card", words: [["capture", "card"], ["card"]] },
-	{ id: "display", label: "Display", words: [["display"], ["screen"], ["monitor"], ["desktop"]] },
-	{ id: "phone", label: "Phone", words: [["phone"], ["mobile"]] },
-	{ id: "tablet", label: "Tablet", words: [["tablet"]] },
-	{ id: "chat", label: "Chat", words: [["chat"]] },
-	{ id: "music", label: "Music", words: [["music"], ["song"], ["now", "playing"]] },
-	{ id: "alerts", label: "Alerts", words: [["alert"], ["alerts"]] },
-	{ id: "title", label: "Title / text", words: [["title"], ["titles"], ["caption"]] },
-	{ id: "image", label: "Image", words: [["image"], ["picture"], ["photo"]] },
-	{ id: "video", label: "Video", words: [["video"], ["clip"], ["replay"]] },
-	{ id: "starting", label: "Starting", words: [["starting"], ["start"], ["soon"]] },
-	{ id: "brb", label: "Be right back", words: [["brb"], ["be", "right", "back"]] },
-	{ id: "intermission", label: "Intermission", words: [["intermission"], ["break"]] },
-	{ id: "ending", label: "Ending", words: [["ending"], ["end"], ["outro"]] },
-];
+export { SOURCE_TYPES, typeOfName };
 
-const BY_ID = new Map(SOURCE_TYPES.map((t) => [t.id, t]));
+/** The first twenty types (beta155): each has a drawing inside a capture's corners too. */
+const HOOKED = new Set([
+	"game", "window", "art_app", "code_editor", "browser", "camera", "capture_card", "display", "phone", "tablet",
+	"chat", "music", "alerts", "title", "image", "video", "starting", "brb", "intermission", "ending",
+]);
 
 export function isSourceType(id: unknown): id is string {
-	return typeof id === "string" && BY_ID.has(id);
+	return typeof id === "string" && SOURCE_TYPES.some((t) => t.id === id);
 }
 
-/** The picture of a source type (tools/make-option-icons.py draws them). */
+/** A source type's own picture, the one for a key with no art of that type for its function. */
 export function typePictureId(id: string): string | undefined {
-	if (!BY_ID.has(id)) return undefined;
-	const reuses: Record<string, string> = {
-		starting: "options/mode-starting",
-		brb: "options/mode-brb",
-		intermission: "options/mode-intermission",
-		ending: "options/mode-ending",
-	};
-	return reuses[id] ?? `options/type-${id.replace(/_/g, "-")}`;
+	return sourceTypePicture(id);
 }
 
-/** A Capture Active Window key's picture for a source type: the type inside a capture's corners. */
+/**
+ * A Capture Active Window key's picture for a source type (chosen before
+ * beta156, still shown): the type inside a capture's corners.
+ */
 export function hookTypePictureId(id: string): string | undefined {
-	return BY_ID.has(id) ? `options/hook-type-${id.replace(/_/g, "-")}` : undefined;
+	return HOOKED.has(id) ? `options/hook-type-${id.replace(/_/g, "-")}` : undefined;
 }
 
 /** What a source is, by its kind in OBS. Undefined for a kind that says nothing of the sort. */
@@ -89,36 +68,3 @@ export function typeOfInput(inputKind: string | undefined): string | undefined {
 	return BY_INPUT[inputKind ?? ""];
 }
 
-/** The words of a name: lower case, letters and digits. */
-function words(name: string): string[] {
-	return name
-		.toLowerCase()
-		.split(/[^a-z0-9]+/)
-		.filter((word) => word !== "");
-}
-
-/**
- * The source type a name speaks of ("Be Right Back", "GBA", "Main Display"):
- * the type with the longest of its phrases all in the name; the first in the
- * list of those as long. Undefined when none is.
- */
-export function typeOfName(name: string | undefined): string | undefined {
-	const have = words(name ?? "");
-	if (have.length === 0) return undefined;
-	let best: string | undefined;
-	let bestLength = 0;
-	for (const type of SOURCE_TYPES) {
-		for (const phrase of type.words) {
-			if (phrase.length > bestLength && phrase.every((word) => have.includes(word))) {
-				best = type.id;
-				bestLength = phrase.length;
-			}
-		}
-	}
-	return best;
-}
-
-/** The list a key's settings page offers: Automatic, then every type. */
-export function sourceTypeItems(): Array<{ label: string; value: string }> {
-	return [{ label: "Automatic", value: "" }, ...SOURCE_TYPES.map((t) => ({ label: t.label, value: t.id }))];
-}

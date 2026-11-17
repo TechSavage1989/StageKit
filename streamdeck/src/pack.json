@@ -2228,6 +2228,237 @@
 			"off": "options/hook-type-ending"
 		},
 		{
+			"id": "options/type-retro",
+			"group": "source types",
+			"label": "retro",
+			"on": "options/type-retro-on",
+			"off": "options/type-retro-off"
+		},
+		{
+			"id": "options/type-retro-2",
+			"group": "source types",
+			"label": "retro 2",
+			"on": "options/type-retro-2-on",
+			"off": "options/type-retro-2-off"
+		},
+		{
+			"id": "options/type-emulator",
+			"group": "source types",
+			"label": "emulator",
+			"on": "options/type-emulator-on",
+			"off": "options/type-emulator-off"
+		},
+		{
+			"id": "options/type-handheld",
+			"group": "source types",
+			"label": "handheld",
+			"on": "options/type-handheld-on",
+			"off": "options/type-handheld-off"
+		},
+		{
+			"id": "options/type-second-display",
+			"group": "source types",
+			"label": "second display",
+			"on": "options/type-second-display-on",
+			"off": "options/type-second-display-off"
+		},
+		{
+			"id": "options/type-office",
+			"group": "source types",
+			"label": "office",
+			"on": "options/type-office-on",
+			"off": "options/type-office-off"
+		},
+		{
+			"id": "options/type-video-player",
+			"group": "source types",
+			"label": "video player",
+			"on": "options/type-video-player-on",
+			"off": "options/type-video-player-off"
+		},
+		{
+			"id": "options/type-reference",
+			"group": "source types",
+			"label": "reference",
+			"on": "options/type-reference-on",
+			"off": "options/type-reference-off"
+		},
+		{
+			"id": "options/type-facecam",
+			"group": "source types",
+			"label": "facecam",
+			"on": "options/type-facecam-on",
+			"off": "options/type-facecam-off"
+		},
+		{
+			"id": "options/type-full-camera",
+			"group": "source types",
+			"label": "full camera",
+			"on": "options/type-full-camera-on",
+			"off": "options/type-full-camera-off"
+		},
+		{
+			"id": "options/type-side-camera",
+			"group": "source types",
+			"label": "side camera",
+			"on": "options/type-side-camera-on",
+			"off": "options/type-side-camera-off"
+		},
+		{
+			"id": "options/type-phone-camera",
+			"group": "source types",
+			"label": "phone camera",
+			"on": "options/type-phone-camera-on",
+			"off": "options/type-phone-camera-off"
+		},
+		{
+			"id": "options/type-workspace-camera",
+			"group": "source types",
+			"label": "workspace camera",
+			"on": "options/type-workspace-camera-on",
+			"off": "options/type-workspace-camera-off"
+		},
+		{
+			"id": "options/type-virtual-camera",
+			"group": "source types",
+			"label": "virtual camera",
+			"on": "options/type-virtual-camera-on",
+			"off": "options/type-virtual-camera-off"
+		},
+		{
+			"id": "options/type-voice-chat",
+			"group": "source types",
+			"label": "voice chat",
+			"on": "options/type-voice-chat-on",
+			"off": "options/type-voice-chat-off"
+		},
+		{
+			"id": "options/type-events",
+			"group": "source types",
+			"label": "events",
+			"on": "options/type-events-on",
+			"off": "options/type-events-off"
+		},
+		{
+			"id": "options/type-countdown",
+			"group": "source types",
+			"label": "countdown",
+			"on": "options/type-countdown-on",
+			"off": "options/type-countdown-off"
+		},
+		{
+			"id": "options/type-logo",
+			"group": "source types",
+			"label": "logo",
+			"on": "options/type-logo-on",
+			"off": "options/type-logo-off"
+		},
+		{
+			"id": "options/type-technical",
+			"group": "source types",
+			"label": "technical",
+			"on": "options/type-technical-on",
+			"off": "options/type-technical-off"
+		},
+		{
+			"id": "options/scene-type-countdown",
+			"group": "scene types",
+			"label": "countdown",
+			"on": "options/scene-type-countdown-on",
+			"off": "options/scene-type-countdown-off"
+		},
+		{
+			"id": "options/scene-type-technical",
+			"group": "scene types",
+			"label": "technical",
+			"on": "options/scene-type-technical-on",
+			"off": "options/scene-type-technical-off"
+		},
+		{
+			"id": "options/scene-type-pc-game",
+			"group": "scene types",
+			"label": "pc game",
+			"on": "options/scene-type-pc-game-on",
+			"off": "options/scene-type-pc-game-off"
+		},
+		{
+			"id": "options/scene-type-classic",
+			"group": "scene types",
+			"label": "classic",
+			"on": "options/scene-type-classic-on",
+			"off": "options/scene-type-classic-off"
+		},
+		{
+			"id": "options/scene-type-emulator",
+			"group": "scene types",
+			"label": "emulator",
+			"on": "options/scene-type-emulator-on",
+			"off": "options/scene-type-emulator-off"
+		},
+		{
+			"id": "options/scene-type-second-screen",
+			"group": "scene types",
+			"label": "second screen",
+			"on": "options/scene-type-second-screen-on",
+			"off": "options/scene-type-second-screen-off"
+		},
+		{
+			"id": "options/scene-type-art",
+			"group": "scene types",
+			"label": "art",
+			"on": "options/scene-type-art-on",
+			"off": "options/scene-type-art-off"
+		},
+		{
+			"id": "options/scene-type-modelling",
+			"group": "scene types",
+			"label": "modelling",
+			"on": "options/scene-type-modelling-on",
+			"off": "options/scene-type-modelling-off"
+		},
+		{
+			"id": "options/scene-type-coding",
+			"group": "scene types",
+			"label": "coding",
+			"on": "options/scene-type-coding-on",
+			"off": "options/scene-type-coding-off"
+		},
+		{
+			"id": "options/scene-type-browsing",
+			"group": "scene types",
+			"label": "browsing",
+			"on": "options/scene-type-browsing-on",
+			"off": "options/scene-type-browsing-off"
+		},
+		{
+			"id": "options/scene-type-just-chatting",
+			"group": "scene types",
+			"label": "just chatting",
+			"on": "options/scene-type-just-chatting-on",
+			"off": "options/scene-type-just-chatting-off"
+		},
+		{
+			"id": "options/scene-type-interview",
+			"group": "scene types",
+			"label": "interview",
+			"on": "options/scene-type-interview-on",
+			"off": "options/scene-type-interview-off"
+		},
+		{
+			"id": "options/scene-type-podcast",
+			"group": "scene types",
+			"label": "podcast",
+			"on": "options/scene-type-podcast-on",
+			"off": "options/scene-type-podcast-off"
+		},
+		{
+			"id": "options/scene-type-music",
+			"group": "scene types",
+			"label": "music",
+			"on": "options/scene-type-music-on",
+			"off": "options/scene-type-music-off"
+		},
+		{
 			"id": "options/mode",
 			"group": "options",
 			"label": "mode",

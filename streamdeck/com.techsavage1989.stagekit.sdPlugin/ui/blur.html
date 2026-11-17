@@ -27,32 +27,38 @@
 				<option value="off">Switch off</option>
 			</sdpi-select>
 		</sdpi-item>
-		<sdpi-item label="Image">
-			<sdpi-select setting="picture" datasource="getPictures" default=""></sdpi-select>
+		<sdpi-item label="Blur style" title="Which blur the image shows. Automatic shows the blur the filter is set to.">
+			<sdpi-select setting="look" placeholder="Automatic">
+				<option value="auto">Automatic</option>
+				<option value="gaussian">Gaussian</option>
+				<option value="box">Box</option>
+				<option value="kawase">Dual Kawase</option>
+				<option value="pixelate">Mosaic</option>
+				<option value="hexagons">Hexagon mosaic</option>
+				<option value="zoom">Zoom blur</option>
+				<option value="motion">Motion blur</option>
+			</sdpi-select>
 		</sdpi-item>
-		<sdpi-item label="Source type">
-			<sdpi-select setting="sourceType" default="">
-				<option value="">Automatic</option>
-				<option value="game">Game</option>
-				<option value="window">Window</option>
-				<option value="art_app">Art app</option>
-				<option value="code_editor">Code editor</option>
-				<option value="browser">Browser</option>
-				<option value="camera">Camera</option>
-				<option value="capture_card">Capture card</option>
-				<option value="display">Display</option>
-				<option value="phone">Phone</option>
-				<option value="tablet">Tablet</option>
-				<option value="chat">Chat</option>
-				<option value="music">Music</option>
-				<option value="alerts">Alerts</option>
-				<option value="title">Title / text</option>
-				<option value="image">Image</option>
-				<option value="video">Video</option>
-				<option value="starting">Starting</option>
-				<option value="brb">Be right back</option>
-				<option value="intermission">Intermission</option>
-				<option value="ending">Ending</option>
+		<sdpi-item label="Source type" title="What is blurred, for the key&#x27;s image, drawn in the blur style.">
+			<sdpi-select setting="sourceType" placeholder="Automatic (by the source)">
+				<option value="auto">Automatic (by the source)</option>
+				<optgroup label="Captures &amp; games">
+					<option value="game">Game</option>
+					<option value="retro">Retro game</option>
+					<option value="retro_2">Second retro game</option>
+					<option value="capture_card">Capture card</option>
+					<option value="window">Window</option>
+					<option value="display">Display</option>
+					<option value="tablet">Tablet</option>
+				</optgroup>
+				<optgroup label="Apps">
+					<option value="app_3d">3D app</option>
+					<option value="sculpting">Sculpting app</option>
+					<option value="cad">CAD app</option>
+				</optgroup>
+				<optgroup label="Cameras &amp; audio">
+					<option value="camera">Camera / webcam</option>
+				</optgroup>
 			</sdpi-select>
 		</sdpi-item>
 		<sdpi-item label="Palette">

@@ -13,6 +13,7 @@ import { file, toolPicture } from "../pictures.ts";
 import { toolTitle } from "../titles.ts";
 import { hotkeyOf } from "../tools.ts";
 import { answerLists, type KeySettings } from "./shared.ts";
+import { keptPicture } from "../key-types.ts";
 
 /**
  * A key for one of StageKit's arrange tools: line up, space out, snap, match
@@ -49,7 +50,7 @@ export class Tool extends SingletonAction<KeySettings> {
 	}
 
 	private async show(key: KeyAction<KeySettings>, settings: KeySettings): Promise<void> {
-		await key.setImage(file(toolPicture(settings.picture, settings.tool), true, settings.palette));
+		await key.setImage(file(toolPicture(keptPicture(settings), settings.tool), true, settings.palette));
 		await key.setTitle(toolTitle(settings.tool));
 	}
 }

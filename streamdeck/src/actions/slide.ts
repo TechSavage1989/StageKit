@@ -12,6 +12,7 @@ import { obs } from "../obs.ts";
 import { file, slidePicture } from "../pictures.ts";
 import { slideTitle } from "../titles.ts";
 import { answerLists, type KeySettings } from "./shared.ts";
+import { keptPicture } from "../key-types.ts";
 
 /** The ways a slide can go, by the names StageKit's Slide request uses. */
 export const DIRECTIONS = ["up-left", "up", "up-right", "left", "centre", "right", "down-left", "down", "down-right"];
@@ -44,7 +45,7 @@ export class Slide extends SingletonAction<KeySettings> {
 	}
 
 	private async show(key: KeyAction<KeySettings>, settings: KeySettings): Promise<void> {
-		await key.setImage(file(slidePicture(settings.picture, settings.direction), true, settings.palette));
+		await key.setImage(file(slidePicture(keptPicture(settings), settings.direction), true, settings.palette));
 		await key.setTitle(slideTitle(settings.direction));
 	}
 }

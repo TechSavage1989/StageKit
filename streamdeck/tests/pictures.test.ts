@@ -7,7 +7,6 @@ import {
 	choose,
 	COLOURS,
 	file,
-	pictureItems,
 	PICTURES,
 	hookPicture,
 	optionPicture,
@@ -94,13 +93,6 @@ test("files are per palette, mono unless another is asked for", () => {
 	assert.equal(file(blur, true, undefined), "imgs/pack/mono/blur-types/gaussian-on.png");
 	assert.equal(file(blur, false, "ocean"), "imgs/pack/ocean/blur-types/gaussian-off.png");
 	assert.equal(file(blur, true, "no-such-colour"), "imgs/pack/mono/blur-types/gaussian-on.png");
-});
-
-test("the list to choose from starts with Automatic and holds every picture once", () => {
-	const items = pictureItems();
-	assert.deepEqual(items[0], { label: "Automatic (fits the filter)", value: "" });
-	const count = items.slice(1).reduce((sum, item) => sum + ("children" in item ? item.children.length : 0), 0);
-	assert.equal(count, PICTURES.length);
 });
 
 test("every option of every key has a picture of its own, and a title", () => {
@@ -191,14 +183,15 @@ test("a filter key's picture fits the source it is on", async () => {
 	assert.equal(sourcePictureFor("stagekit_ramp_blur", { blur_type: 1 }, "Game Capture")?.group, "blur box");
 	assert.equal(sourcePictureFor("stagekit_show_in_scenes", {}, "Something Else"), undefined);
 	assert.equal(sourcePictureFor("stagekit_corners", {}, "Square Camera"), undefined, "only kinds the pack drew by source");
-	// Else what the source is: a camera, a window ...
+	// Else what the source is: a camera, a window ... (on a show key, the
+	// owner's own picture of that type with the eye).
 	assert.equal(inputPicture("dshow_input")?.id, "options/type-camera");
 	assert.equal(inputPicture("wasapi_input_capture")?.id, "options/microphone", "sound sources keep theirs");
-	assert.equal(chooseFor(undefined, "stagekit_show_in_scenes", {}, "Overhead", "dshow_input")?.id, "options/type-camera");
-	assert.equal(chooseFor(undefined, "stagekit_show_in_scenes", {}, "Notes", "window_capture")?.id, "options/type-window");
+	assert.equal(chooseFor(undefined, "stagekit_show_in_scenes", {}, "Studio", "dshow_input")?.id, "show-hide/square-camera");
+	assert.equal(chooseFor(undefined, "stagekit_show_in_scenes", {}, "Notes", "window_capture")?.id, "show-hide/window-capture");
 	// Else the filter's own picture; and a picture chosen by hand always wins.
-	assert.equal(chooseFor(undefined, "stagekit_show_in_scenes", {}, "Overhead", undefined)?.id, "filters/show-in-scenes");
-	assert.equal(chooseFor(undefined, "stagekit_shadow_backdrop", {}, "Overhead", "dshow_input")?.group, "shadow glow outline");
+	assert.equal(chooseFor(undefined, "stagekit_show_in_scenes", {}, "Studio", undefined)?.id, "filters/show-in-scenes");
+	assert.equal(chooseFor(undefined, "stagekit_shadow_backdrop", {}, "Studio", "dshow_input")?.group, "shadow glow outline");
 	assert.equal(chooseFor("options/browser", "stagekit_show_in_scenes", {}, "Square Camera", "dshow_input")?.id, "options/browser");
 });
 

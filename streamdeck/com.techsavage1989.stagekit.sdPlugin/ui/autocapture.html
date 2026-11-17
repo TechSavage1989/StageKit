@@ -27,32 +27,20 @@
 				<option value="off">Switch off</option>
 			</sdpi-select>
 		</sdpi-item>
-		<sdpi-item label="Image">
-			<sdpi-select setting="picture" datasource="getPictures" default=""></sdpi-select>
-		</sdpi-item>
-		<sdpi-item label="Source type">
-			<sdpi-select setting="sourceType" default="">
-				<option value="">Automatic</option>
-				<option value="game">Game</option>
-				<option value="window">Window</option>
-				<option value="art_app">Art app</option>
-				<option value="code_editor">Code editor</option>
-				<option value="browser">Browser</option>
-				<option value="camera">Camera</option>
-				<option value="capture_card">Capture card</option>
-				<option value="display">Display</option>
-				<option value="phone">Phone</option>
-				<option value="tablet">Tablet</option>
-				<option value="chat">Chat</option>
-				<option value="music">Music</option>
-				<option value="alerts">Alerts</option>
-				<option value="title">Title / text</option>
-				<option value="image">Image</option>
-				<option value="video">Video</option>
-				<option value="starting">Starting</option>
-				<option value="brb">Be right back</option>
-				<option value="intermission">Intermission</option>
-				<option value="ending">Ending</option>
+		<sdpi-item label="Source type" title="What the capture takes, for the key&#x27;s image.">
+			<sdpi-select setting="sourceType" placeholder="Automatic (auto capture)">
+				<option value="auto">Automatic (auto capture)</option>
+				<optgroup label="Captures &amp; games">
+					<option value="game">Game</option>
+					<option value="retro">Retro game</option>
+					<option value="emulator">Emulator</option>
+				</optgroup>
+				<optgroup label="Apps">
+					<option value="art_app">Art app</option>
+					<option value="app_3d">3D app</option>
+					<option value="sculpting">Sculpting app</option>
+					<option value="cad">CAD app</option>
+				</optgroup>
 			</sdpi-select>
 		</sdpi-item>
 		<sdpi-item label="Palette">

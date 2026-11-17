@@ -12,7 +12,8 @@ import { afterPress, targetOf } from "../kinds.ts";
 import { obs } from "../obs.ts";
 import { overlapPicture } from "../pictures.ts";
 import { overlapTitle } from "../titles.ts";
-import { answerLists, type KeySettings, showOnOff } from "./shared.ts";
+import { keptPicture } from "../key-types.ts";
+import { answerLists, type KeySettings, settle, showOnOff } from "./shared.ts";
 
 /**
  * A key for one setting of a Fit to Space or a Scene Fit filter (the
@@ -65,7 +66,9 @@ export class FitOverlap extends SingletonAction<KeySettings> {
 	private async show(key: KeyAction<KeySettings>, settings: KeySettings): Promise<void> {
 		const { source, filter } = targetOf(settings);
 		const now = await obs.filter(source, filter);
-		const picture = overlapPicture(settings.picture);
+		const pick = (s: KeySettings) => overlapPicture(keptPicture(s), s.sceneType);
+		settings = await settle(key, "fitoverlap", settings, (s) => pick(s).id);
+		const picture = pick(settings);
 		await showOnOff(key, picture, now?.settings.skip_fill_on === true, settings.palette);
 		await key.setTitle(overlapTitle(settings.press));
 	}
