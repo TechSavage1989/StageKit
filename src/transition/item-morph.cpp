@@ -39,6 +39,8 @@ the Free Software Foundation; either version 2 of the License, or
 // camera instead of fading in by itself.
 
 #include "item-morph.hpp"
+#include "../common/item-transition.hpp"
+#include "../common/loading.hpp"
 #include "../common/scene-util.hpp"
 #include "../common/timing.hpp"
 
@@ -52,6 +54,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <cmath>
 #include <memory>
 #include <mutex>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -75,15 +78,19 @@ constexpr double kMainShare = 0.15;
 // (beta158): "the camera is morphing from the chat box".
 constexpr double kJoinShare = 1.0 / 3.0;
 
-// One change under way.
+// One change under way. It holds what it draws for as long as the change
+// lasts (a second or so), never its scene: a scene held here kept its items,
+// their sources and their transitions alive past a change of collection.
+// Every change is ended, and so let go of, when its scene goes, when the
+// collection changes (`let_go_all`) and when OBS closes.
 struct Job {
-	obs_sceneitem_t *from = nullptr;         // held
-	obs_sceneitem_t *to = nullptr;           // held
+	obs_sceneitem_t *from = nullptr;         // held while the change lasts
+	obs_sceneitem_t *to = nullptr;           // held while the change lasts
 	obs_source_t *from_source = nullptr;     // held, and kept showing
 	obs_source_t *to_source = nullptr;       // held, and kept showing
 	obs_source_t *to_transition = nullptr;   // held: the change goes by its clock
 	obs_source_t *from_transition = nullptr; // compared, never used
-	obs_source_t *scene = nullptr;           // held
+	obs_weak_source_t *scene = nullptr;      // weak: never kept alive from here
 	obs_source_t *layer = nullptr;           // held until the change ends
 	obs_sceneitem_t *layer_item = nullptr;   // held until the change ends
 	uint32_t cx = 0, cy = 0;
@@ -104,7 +111,7 @@ struct Job {
 		obs_source_release(to_transition);
 		obs_sceneitem_release(from);
 		obs_sceneitem_release(to);
-		obs_source_release(scene);
+		obs_weak_source_release(scene);
 	}
 };
 
@@ -187,22 +194,27 @@ void Layer::render()
 	gs_set_linear_srgb(was_linear);
 }
 
-// A Morph transition that is an item's, since it last started.
+// A Morph transition that is an item's, since it last started. The item is
+// known by its id in a weak scene, never held: an item's transition only
+// says it has stopped when it is drawn to its end, which a scene out of view
+// never is, and an entry that held its scene kept that scene (its items,
+// their sources and this very transition) alive until it was given up on,
+// 20 s later. OBS found them still there at a change of collection or at
+// exit ("Double destroy" in the tests). Each tick finds the item afresh.
 struct Entry {
 	ItemMorph state = ItemMorph::Waiting;
 	bool show = false;
 	bool in_group = false;
 	std::atomic<bool> over{false};
-	obs_source_t *scene = nullptr;   // held
-	obs_sceneitem_t *item = nullptr; // held
+	obs_weak_source_t *scene = nullptr; // weak
+	int64_t item_id = 0;
+	const char *edge = nullptr; // the nearest edge, as the change began (a string of OBS's own)
 	uint64_t at_ns = 0;
 
 	void let_go()
 	{
-		obs_source_release(scene);
-		obs_sceneitem_release(item);
+		obs_weak_source_release(scene);
 		scene = nullptr;
-		item = nullptr;
 	}
 };
 
@@ -221,6 +233,11 @@ std::mutex g_tick_mutex; // one tick, or the stop, at a time
 void end_job(const std::shared_ptr<Job> &job)
 {
 	job->done = true;
+	// (The layer lets go of the change now, not when OBS gets round to
+	// destroying it: what the change holds goes with the last of g_jobs.)
+	if (job->layer)
+		if (auto *layer = static_cast<Layer *>(obs_obj_get_data(job->layer)))
+			layer->set(nullptr);
 	if (job->layer_item) {
 		obs_sceneitem_remove(job->layer_item);
 		obs_sceneitem_release(job->layer_item);
@@ -235,10 +252,11 @@ void end_job(const std::shared_ptr<Job> &job)
 // Whose transitions these are: every scene and group is gone through once.
 struct Found {
 	obs_source_t *transition;
-	obs_source_t *scene;   // held
-	obs_sceneitem_t *item; // held
+	obs_source_t *scene;   // held, until made an entry
+	obs_sceneitem_t *item; // held, until made an entry
 	bool show;
 	bool in_group;
+	const char *edge = nullptr;
 };
 
 void find_items(const std::vector<obs_source_t *> &wanted, std::vector<Found> &out)
@@ -290,26 +308,58 @@ double share_of(obs_sceneitem_t *item, obs_source_t *scene)
 
 // One half of a pair that may be. `taken`: in a pair already, from this tick
 // or one just before; only one left over may still change into it.
+// The item and its scene are held for this one tick (`Held`).
 struct Half {
 	obs_source_t *transition;
 	Entry *entry;
 	MorphSaid said;
 	bool taken = false;
+	obs_source_t *scene = nullptr;   // held by the tick
+	obs_sceneitem_t *item = nullptr; // held by the tick
 };
+
+// What a tick holds, let go of as it ends.
+struct Held {
+	std::vector<obs_source_t *> scenes;
+	std::vector<obs_sceneitem_t *> items;
+	~Held()
+	{
+		for (obs_sceneitem_t *item : items)
+			obs_sceneitem_release(item);
+		for (obs_source_t *scene : scenes)
+			obs_source_release(scene);
+	}
+};
+
+// An entry's item and scene, found afresh and held (into `held`); false
+// when either is gone.
+bool reach(const Entry &entry, Held &held, obs_source_t *&scene, obs_sceneitem_t *&item)
+{
+	scene = obs_weak_source_get_source(entry.scene);
+	if (!scene)
+		return false;
+	held.scenes.push_back(scene);
+	item = obs_scene_find_sceneitem_by_id(scene_of(scene), entry.item_id);
+	if (!item)
+		return false;
+	obs_sceneitem_addref(item);
+	held.items.push_back(item);
+	return true;
+}
 
 // `why` is for the log: which rule paired the two.
 void start_job(Half &hide, Half &show, const char *why)
 {
 	// (The transition the change goes by must still be the item's.)
-	obs_source_t *clock = obs_sceneitem_get_transition(show.entry->item, true);
-	obs_scene_t *scene = obs_scene_from_source(show.entry->scene);
+	obs_source_t *clock = obs_sceneitem_get_transition(show.item, true);
+	obs_scene_t *scene = obs_scene_from_source(show.scene);
 	if (clock != show.transition || !scene)
 		return;
 	auto job = std::make_shared<Job>();
 	job->to_transition = obs_source_get_ref(clock);
 	job->from_transition = hide.transition;
-	job->from = hide.entry->item;
-	job->to = show.entry->item;
+	job->from = hide.item;
+	job->to = show.item;
 	obs_sceneitem_addref(job->from);
 	obs_sceneitem_addref(job->to);
 	job->from_source = obs_source_get_ref(obs_sceneitem_get_source(job->from));
@@ -317,9 +367,9 @@ void start_job(Half &hide, Half &show, const char *why)
 	// (A hidden item's capture would stop part-way through.)
 	obs_source_inc_showing(job->from_source);
 	obs_source_inc_showing(job->to_source);
-	job->scene = obs_source_get_ref(show.entry->scene);
-	job->cx = obs_source_get_width(job->scene);
-	job->cy = obs_source_get_height(job->scene);
+	job->scene = obs_source_get_weak_source(show.scene);
+	job->cx = obs_source_get_width(show.scene);
+	job->cy = obs_source_get_height(show.scene);
 	job->curve = show.said.curve;
 	job->seen = show.said.seen;
 	job->no_shadows = show.said.no_shadows;
@@ -328,8 +378,11 @@ void start_job(Half &hide, Half &show, const char *why)
 
 	job->layer = obs_source_create_private(kMorphLayerId, obs_module_text("Morph.Layer"), nullptr);
 	auto *layer = job->layer ? static_cast<Layer *>(obs_obj_get_data(job->layer)) : nullptr;
-	if (!layer)
-		return; // (the job lets go of everything as it goes)
+	if (!layer) {
+		obs_source_release(job->layer);
+		job->layer = nullptr;
+		return; // (the job lets go of everything else as it goes)
+	}
 	layer->set(job);
 	// Into the scene, straight above the upper of the two, and locked so
 	// that a click in the preview goes through it.
@@ -368,7 +421,23 @@ void start_job(Half &hide, Half &show, const char *why)
 	g_jobs.push_back(job);
 	// Once per change, so that a pairing nobody wanted can be told from the log.
 	obs_log(LOG_INFO, "Morph: '%s' changes into '%s' in '%s' (%s)", obs_source_get_name(job->from_source),
-		obs_source_get_name(job->to_source), obs_source_get_name(job->scene), why);
+		obs_source_get_name(job->to_source), obs_source_get_name(show.scene), why);
+}
+
+// Every change ended and everything let go of, with `g_tick_mutex` held: at
+// a change of collection (OBS then looks for sources still held), while one
+// loads, and when OBS closes.
+void let_go_all()
+{
+	for (const std::shared_ptr<Job> &job : g_jobs)
+		end_job(job);
+	g_jobs.clear();
+	std::lock_guard lock(g_mutex);
+	for (auto &pair : g_entries)
+		pair.second.let_go();
+	g_entries.clear();
+	g_started.clear();
+	g_busy = false;
 }
 
 void tick(void *, float)
@@ -378,6 +447,10 @@ void tick(void *, float)
 	std::lock_guard one(g_tick_mutex);
 	if (g_stopped)
 		return;
+	if (!scenes_loaded()) {
+		let_go_all();
+		return;
+	}
 	const uint64_t now = os_gettime_ns();
 	std::vector<obs_source_t *> started;
 	{
@@ -388,6 +461,10 @@ void tick(void *, float)
 	std::vector<Found> found;
 	if (!started.empty())
 		find_items(started, found);
+	// (Worked out here, not by the transition as it draws: it would have to
+	// find the item, and holding it is what this file no longer does.)
+	for (Found &f : found)
+		f.edge = item_off_nearest_edge(f.item, f.scene, f.show);
 	MorphLinks links;
 	std::vector<Half> hides, shows;
 	{
@@ -400,17 +477,15 @@ void tick(void *, float)
 			}
 		}
 		for (Found &f : found) {
-			if (!g_said.count(f.transition) || g_entries.count(f.transition)) {
-				obs_source_release(f.scene);
-				obs_sceneitem_release(f.item);
-				continue;
+			if (g_said.count(f.transition) && !g_entries.count(f.transition)) {
+				Entry &entry = g_entries[f.transition];
+				entry.show = f.show;
+				entry.in_group = f.in_group;
+				entry.scene = obs_source_get_weak_source(f.scene);
+				entry.item_id = obs_sceneitem_get_id(f.item);
+				entry.edge = f.edge;
+				entry.at_ns = now;
 			}
-			Entry &entry = g_entries[f.transition];
-			entry.show = f.show;
-			entry.in_group = f.in_group;
-			entry.scene = f.scene;
-			entry.item = f.item;
-			entry.at_ns = now;
 		}
 		for (const auto &said : g_said)
 			links.insert(links.end(), said.second.links.begin(), said.second.links.end());
@@ -431,6 +506,24 @@ void tick(void *, float)
 						!waiting});
 		}
 	}
+	for (Found &f : found) {
+		obs_source_release(f.scene);
+		obs_sceneitem_release(f.item);
+	}
+	// Each one's item, found afresh and held for this tick only. (Outside
+	// the lock: OBS may call in here holding a scene's lock.) An item that
+	// is gone ends its entry.
+	Held held;
+	for (std::vector<Half> *halves : {&hides, &shows}) {
+		for (auto h = halves->begin(); h != halves->end();) {
+			if (reach(*h->entry, held, h->scene, h->item)) {
+				++h;
+			} else {
+				h->entry->over = true;
+				h = halves->erase(h);
+			}
+		}
+	}
 	// A change that was under way for something that has started again is over.
 	for (const std::shared_ptr<Job> &job : g_jobs)
 		if (std::find(started.begin(), started.end(), job->to_transition) != started.end() ||
@@ -440,16 +533,16 @@ void tick(void *, float)
 	// Pairs: a hide and a show in one scene that is on screen. Linked sources
 	// first, then the largest of each.
 	auto there = [](const Half &h) {
-		return !h.entry->in_group && obs_source_showing(h.entry->scene);
+		return !h.entry->in_group && obs_source_showing(h.scene);
 	};
 	auto can = [&](const Half &h) {
 		return !h.taken && there(h);
 	};
 	auto name = [](const Half &h) {
-		return obs_source_get_name(obs_sceneitem_get_source(h.entry->item));
+		return obs_source_get_name(obs_sceneitem_get_source(h.item));
 	};
 	auto apart = [](const Half &a, const Half &b) {
-		return a.entry->scene == b.entry->scene && a.entry->item != b.entry->item;
+		return a.scene == b.scene && a.item != b.item;
 	};
 	// The largest of `of` in `scene` covering at least `least` of it; with
 	// `taken_too`, ones already in a pair count as well.
@@ -457,9 +550,9 @@ void tick(void *, float)
 		Half *best = nullptr;
 		double best_share = least;
 		for (Half &h : of) {
-			if (!(taken_too ? there(h) : can(h)) || h.entry->scene != scene)
+			if (!(taken_too ? there(h) : can(h)) || h.scene != scene)
 				continue;
-			const double share = share_of(h.entry->item, h.entry->scene);
+			const double share = share_of(h.item, h.scene);
 			if (share >= best_share) {
 				best = &h;
 				best_share = share;
@@ -479,8 +572,7 @@ void tick(void *, float)
 		if (!can(show) || !show.said.pair_main)
 			continue;
 		// (The largest shown in this scene, and it is this one?)
-		Half *main_show = largest(shows, show.entry->scene, false),
-		     *main_hide = largest(hides, show.entry->scene, false);
+		Half *main_show = largest(shows, show.scene, false), *main_hide = largest(hides, show.scene, false);
 		if (main_show == &show && main_hide && apart(*main_hide, show))
 			start_job(*main_hide, show, "main image");
 	}
@@ -490,7 +582,7 @@ void tick(void *, float)
 	// must still be hidden, or shown, as it was then.
 	auto shared = [&](const Half &left, const Half &other) {
 		return can(left) && other.taken && there(other) && apart(left, other) &&
-		       obs_sceneitem_visible(other.entry->item) == other.entry->show;
+		       obs_sceneitem_visible(other.item) == other.entry->show;
 	};
 	auto join = [](Half &left, Half &other, const char *why) {
 		if (left.entry->show)
@@ -513,10 +605,10 @@ void tick(void *, float)
 		// main picture fades by itself.)
 		std::vector<Half *> mains;
 		for (Half &left : lefts)
-			if (can(left) && largest(lefts, left.entry->scene, false, kJoinShare) == &left)
+			if (can(left) && largest(lefts, left.scene, false, kJoinShare) == &left)
 				mains.push_back(&left);
 		for (Half *left : mains) {
-			Half *other = largest(others, left->entry->scene, true, kJoinShare);
+			Half *other = largest(others, left->scene, true, kJoinShare);
 			const Half *show = showing ? left : other;
 			if (other && show->said.pair_main && shared(*left, *other))
 				join(*left, *other, "main image, joining a change under way");
@@ -529,7 +621,7 @@ void tick(void *, float)
 			for (Half &h : *halves) {
 				if (h.taken || h.entry->state != ItemMorph::Waiting)
 					continue;
-				if (h.entry->in_group || !obs_source_showing(h.entry->scene) ||
+				if (h.entry->in_group || !obs_source_showing(h.scene) ||
 				    (now > h.entry->at_ns && now - h.entry->at_ns >= kGraceNs))
 					h.entry->state = ItemMorph::Alone;
 			}
@@ -543,6 +635,11 @@ void tick(void *, float)
 			    !obs_sceneitem_visible(job->to) || !obs_sceneitem_get_scene(job->to) ||
 			    !obs_sceneitem_get_scene(job->from) ||
 			    (now > job->made_ns && now - job->made_ns > kTooLongNs);
+		if (!over) { // (its scene deleted)
+			obs_source_t *scene = obs_weak_source_get_source(job->scene);
+			over = !scene || obs_source_removed(scene);
+			obs_source_release(scene);
+		}
 		if (!over) {
 			std::lock_guard lock(g_mutex);
 			auto entry = g_entries.find(job->to_transition);
@@ -618,16 +715,21 @@ ItemMorph item_morph_now(obs_source_t *transition)
 	return entry->second.state;
 }
 
-obs_sceneitem_t *item_morph_item(obs_source_t *transition, obs_source_t **scene)
+const char *item_morph_edge(obs_source_t *transition)
 {
 	std::lock_guard lock(g_mutex);
 	auto entry = g_entries.find(transition);
-	if (entry == g_entries.end() || entry->second.over || !entry->second.item)
+	if (entry == g_entries.end() || entry->second.over)
 		return nullptr;
-	if (scene)
-		*scene = obs_source_get_ref(entry->second.scene);
-	obs_sceneitem_addref(entry->second.item);
-	return entry->second.item;
+	return entry->second.edge;
+}
+
+void item_morph_let_go()
+{
+	if (g_stopped)
+		return;
+	std::lock_guard one(g_tick_mutex);
+	let_go_all();
 }
 
 void item_morph_stop()
@@ -637,14 +739,7 @@ void item_morph_stop()
 	// (First: OBS calls `tick` holding the lock this waits for.)
 	obs_remove_tick_callback(tick, nullptr);
 	std::lock_guard one(g_tick_mutex);
-	for (const std::shared_ptr<Job> &job : g_jobs)
-		end_job(job);
-	g_jobs.clear();
-	std::lock_guard lock(g_mutex);
-	for (auto &pair : g_entries)
-		pair.second.let_go();
-	g_entries.clear();
-	g_started.clear();
+	let_go_all();
 }
 
 void register_item_morph()
@@ -675,6 +770,17 @@ void register_item_morph()
 	};
 	register_timed(&info);
 	obs_add_tick_callback(tick, nullptr);
+	// For the tests: what is held at this moment.
+	proc_handler_add(
+		obs_get_proc_handler(),
+		"void stagekit_test_item_morph_held(out int entries, out int jobs, out int said)",
+		[](void *, calldata_t *cd) {
+			std::lock_guard lock(g_mutex);
+			calldata_set_int(cd, "entries", (long long)g_entries.size());
+			calldata_set_int(cd, "jobs", (long long)g_jobs.size());
+			calldata_set_int(cd, "said", (long long)g_said.size());
+		},
+		nullptr);
 }
 
 } // namespace stagekit

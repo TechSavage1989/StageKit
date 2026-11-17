@@ -2061,6 +2061,211 @@ static void link_follow_sources_test()
 	obs_source_release(before_out);
 }
 
+// What the item Morph holds now: its entries (transitions of items) and the
+// changes under way.
+static void item_morph_held(long long &entries, long long &jobs)
+{
+	calldata_t cd;
+	calldata_init(&cd);
+	proc_handler_call(obs_get_proc_handler(), "stagekit_test_item_morph_held", &cd);
+	entries = calldata_int(&cd, "entries");
+	jobs = calldata_int(&cd, "jobs");
+	calldata_free(&cd);
+}
+
+// Waits up to 1.5 s for every source of `weak` to be gone and the item Morph
+// to hold nothing; says what is left ("" for nothing). Lets go of `weak`.
+static std::string item_morph_left_over(obs_weak_source_t **weak, size_t n)
+{
+	std::string left;
+	for (int i = 0; i < 150; i++) {
+		left.clear();
+		for (size_t k = 0; k < n; k++) {
+			obs_source_t *src = obs_weak_source_get_source(weak[k]);
+			if (src)
+				left += std::string(left.empty() ? "" : ", ") + obs_source_get_name(src) + " held";
+			obs_source_release(src);
+		}
+		long long entries = 0, jobs = 0;
+		item_morph_held(entries, jobs);
+		if (entries || jobs)
+			left += std::string(left.empty() ? "" : ", ") + std::to_string(entries) + " entries, " +
+				std::to_string(jobs) + " changes";
+		if (left.empty())
+			break;
+		sleep_ms(10);
+	}
+	for (size_t k = 0; k < n; k++)
+		obs_weak_source_release(weak[k]);
+	return left;
+}
+
+// ------------------------------------------- the item Morph lets go
+// Changes between two items with Morph: ended in view, cut off part-way,
+// left part-way when the scene goes out of view, its transition replaced
+// part-way, and a change of collection part-way. After each, once the test
+// lets go of the scene, nothing of it may be left: no scene, source or
+// transition held by StageKit (OBS's "Not all sources were cleared", and
+// "Double destroy" at shutdown, when one was).
+static void item_morph_holds_test(uint32_t w, uint32_t h)
+{
+	printf("\n[the item Morph lets go of scenes and sources]\n");
+	if (!obs_source_get_display_name("stagekit_morph")) {
+		CHECK(false, "the Morph transition is there");
+		return;
+	}
+	obs_source_t *before_out = obs_get_output_source(0);
+	obs_scene_t *elsewhere = obs_scene_create("MH Elsewhere");
+	auto block = [](const char *name, long long abgr, int bw, int bh) {
+		obs_data_t *d = obs_data_create();
+		obs_data_set_int(d, "color", abgr);
+		obs_data_set_int(d, "width", bw);
+		obs_data_set_int(d, "height", bh);
+		obs_source_t *src = obs_source_create("color_source", name, d, nullptr);
+		obs_data_release(d);
+		return src;
+	};
+	auto put = [](obs_scene_t *scene, obs_source_t *src, float x, float y) {
+		obs_sceneitem_t *item = obs_scene_add(scene, src);
+		vec2 p;
+		vec2_set(&p, x, y);
+		obs_sceneitem_set_pos(item, &p);
+		return item;
+	};
+	auto count_items = [](obs_scene_t *scene) {
+		int n = 0;
+		obs_scene_enum_items(
+			scene,
+			[](obs_scene_t *, obs_sceneitem_t *, void *param) {
+				++*static_cast<int *>(param);
+				return true;
+			},
+			&n);
+		return n;
+	};
+	auto loaded = [](bool yes) {
+		calldata_t cd;
+		calldata_init(&cd);
+		calldata_set_bool(&cd, "loaded", yes);
+		proc_handler_call(obs_get_proc_handler(), "stagekit_test_loaded", &cd);
+		calldata_free(&cd);
+	};
+	enum class End { InView, CutOff, OutOfView, Replaced, Collection };
+	struct Case {
+		const char *name;
+		End end;
+	};
+	const Case cases[] = {
+		{"a change seen to its end", End::InView},
+		{"a change cut off part-way (the camera shown again)", End::CutOff},
+		{"a change left part-way, its scene out of view", End::OutOfView},
+		{"a change whose transitions are replaced part-way", End::Replaced},
+		{"a change of collection part-way", End::Collection},
+	};
+	for (const Case &k : cases) {
+		obs_source_t *cam = block("MH Cam", 0xFF0000FF, 300, 200);
+		obs_source_t *grab = block("MH Grab", 0xFFFF0000, 300, 200);
+		obs_source_t *badge = block("MH Badge", 0xFF00FF00, 120, 80);
+		obs_scene_t *scene = obs_scene_create("MH Scene");
+		obs_source_t *scene_src = obs_scene_get_source(scene);
+		obs_sceneitem_t *ci = put(scene, cam, 20, 20);
+		obs_sceneitem_t *gi = put(scene, grab, 300, 20);
+		obs_sceneitem_t *bi = put(scene, badge, 480, 260);
+		obs_sceneitem_set_visible(gi, false);
+		obs_sceneitem_set_visible(bi, false);
+		std::vector<obs_weak_source_t *> weak = {obs_source_get_weak_source(scene_src),
+							 obs_source_get_weak_source(cam),
+							 obs_source_get_weak_source(grab),
+							 obs_source_get_weak_source(badge)};
+		for (obs_sceneitem_t *item : {ci, gi, bi})
+			for (const bool show : {true, false}) {
+				obs_data_t *d = obs_data_create();
+				obs_data_set_int(d, "ease_curve", 0);
+				if (item == bi) // (by itself: another transition, which holds the badge as it goes)
+					obs_data_set_string(d, "unpaired", "stagekit_fade_zoom");
+				obs_source_t *t = obs_source_create_private("stagekit_morph", "MH Item Morph", d);
+				obs_data_release(d);
+				weak.push_back(obs_source_get_weak_source(t));
+				obs_sceneitem_set_transition(item, show, t);
+				obs_sceneitem_set_transition_duration(item, show, 1000);
+				obs_source_release(t);
+			}
+		obs_set_output_source(0, scene_src);
+		sleep_ms(150);
+		const int base = count_items(scene);
+		// The camera hidden, the capture and the badge shown: a pair and one by itself.
+		obs_sceneitem_set_visible(ci, false);
+		obs_sceneitem_set_visible(gi, true);
+		obs_sceneitem_set_visible(bi, true);
+		// (Waited for, not timed: under valgrind a tick takes much longer.)
+		for (int i = 0; i < 300 && count_items(scene) == base; i++)
+			sleep_ms(10);
+		sleep_ms(100);
+		render(scene_src, w, h);
+		const int layers = count_items(scene) - base;
+		long long entries = 0, jobs = 0;
+		item_morph_held(entries, jobs);
+		bool ok = layers == 1 && jobs == 1 && entries >= 3;
+		std::string what;
+		switch (k.end) {
+		case End::InView:
+			sleep_ms(900);
+			render(scene_src, w, h);
+			render(scene_src, w, h);
+			break;
+		case End::CutOff:
+			obs_sceneitem_set_visible(gi, false);
+			obs_sceneitem_set_visible(ci, true);
+			sleep_ms(100);
+			render(scene_src, w, h);
+			break;
+		case End::OutOfView:
+			obs_set_output_source(0, obs_scene_get_source(elsewhere));
+			break;
+		case End::Replaced:
+			for (obs_sceneitem_t *item : {ci, gi, bi})
+				for (const bool show : {true, false}) {
+					obs_source_t *t =
+						obs_source_create_private("fade_transition", "MH Fade", nullptr);
+					obs_sceneitem_set_transition(item, show, t);
+					obs_source_release(t);
+				}
+			sleep_ms(100);
+			break;
+		case End::Collection: {
+			// (In OBS the frontend's event lets go at once; here the next tick
+			// does, seeing the collection is not loaded.)
+			loaded(false);
+			long long e = 0, j = 0;
+			for (int i = 0; i < 300; i++) {
+				item_morph_held(e, j);
+				if (!e && !j)
+					break;
+				sleep_ms(10);
+			}
+			const int layers_now = count_items(scene) - base;
+			ok = ok && e == 0 && j == 0 && layers_now == 0;
+			what = " (while the collection changes: " + std::to_string(e) + " entries, " +
+			       std::to_string(j) + " changes, " + std::to_string(layers_now) + " layers)";
+			break;
+		}
+		}
+		obs_set_output_source(0, obs_scene_get_source(elsewhere));
+		obs_scene_release(scene);
+		for (obs_source_t *src : {cam, grab, badge})
+			obs_source_release(src);
+		const std::string left = item_morph_left_over(weak.data(), weak.size());
+		if (k.end == End::Collection)
+			loaded(true);
+		CHECK(ok && left.empty(),
+		      "%s: once the scene is let go, nothing of it is held (%d layer(s) and %lld change(s) under way, %lld entries%s; %s)",
+		      k.name, layers, jobs, entries, what.c_str(), left.empty() ? "nothing left" : left.c_str());
+	}
+	obs_set_output_source(0, before_out);
+	obs_source_release(before_out);
+	obs_scene_release(elsewhere);
+}
+
 static void link_transitions_test(uint32_t w, uint32_t h)
 {
 	printf("\n[link visibility: show and hide transitions, and Morph's unpaired sources]\n");
@@ -2422,9 +2627,17 @@ static void link_transitions_test(uint32_t w, uint32_t h)
 		obs_source_filter_remove(scene_src, link);
 		obs_source_release(link);
 		sleep_ms(100);
+		// Nothing of the section is kept once it lets go: the item Morph held
+		// the scene (and so everything in it) for 20 s after a change, and
+		// OBS found it all still there at shutdown ("Double destroy").
+		obs_weak_source_t *weak[4] = {obs_source_get_weak_source(scene_src), obs_source_get_weak_source(cam),
+					      obs_source_get_weak_source(grab), obs_source_get_weak_source(badge)};
 		obs_scene_release(scene);
 		for (obs_source_t *src : {cam, grab, badge})
 			obs_source_release(src);
+		std::string left = item_morph_left_over(weak, 4);
+		CHECK(left.empty(), "with Morph on the items, nothing of theirs is held once the scene is let go (%s)",
+		      left.empty() ? "nothing left" : left.c_str());
 	}
 	obs_source_release(before_out);
 }
@@ -2524,6 +2737,14 @@ int main(int argc, char **argv)
 		sound.speakers = SPEAKERS_STEREO;
 		obs_reset_audio(&sound);
 		link_follow_sources_test();
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
+
+	if (getenv("STAGEKIT_TEST_ONLY_MORPH_HOLDS")) { // to try that section alone
+		item_morph_holds_test(w, h);
 		obs_shutdown();
 		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
 		       g_failures == 1 ? "" : "s");
@@ -4292,6 +4513,7 @@ int main(int argc, char **argv)
 		for (obs_source_t *src : {old_back, new_back, game, window, camera})
 			obs_source_release(src);
 		link_transitions_test(w, h);
+		item_morph_holds_test(w, h);
 		if (getenv("STAGEKIT_TEST_ONLY_MORPH")) { // to try this section alone
 			obs_source_release(live);
 			obs_shutdown();

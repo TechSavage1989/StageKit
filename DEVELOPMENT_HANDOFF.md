@@ -13,6 +13,47 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
+## The item Morph lets go of scenes and sources (0.1.0-beta170)
+
+Branch `fix/item-morph-holds`, from `main` at beta167. Notes: `docs/releases/0.1.0-beta170.md`.
+No Stream Deck file changed. Found by a helper writing a Link Visibility test: with Morph on the
+captures, the section's scenes and sources were still there at `obs_shutdown` ("source(s) were
+remaining", "Double destroy"), and not with a fade. The owner uses Morph as the show and hide
+transition of their captures.
+
+- **Cause**: `Entry` in `src/transition/item-morph.cpp` held its scene and item (strong refs),
+  released only when the transition said it stopped, started again or was destroyed, or after
+  `kTooLongNs` (20 s). OBS says a transition stopped only when it is drawn to its end with its
+  sound ended, which a scene out of view never is (and the tests have no sound there). The held
+  scene kept its items, they their sources and their Morph transitions, and the transition's
+  destruction is what would have ended the entry: a cycle broken only by the 20 s. At a change of
+  collection or exit within that time, OBS found them held; `obs_free_data` then destroyed them by
+  force and destroyed them again as the scene let go of its items ("Double destroy").
+  `item_morph_item` handed the held item to the transition as it drew.
+- **Fix**: entries keep a weak scene and the item's id; the tick finds each item afresh outside
+  `g_mutex` and lets go of it at the end of the tick (`Held`, `reach`). The nearest edge is worked
+  out when the entry is made (`item_morph_edge` replaces `item_morph_item`). A `Job` keeps a weak
+  scene (its items and sources are held only while the change is drawn), ends when its scene is
+  removed, and `end_job` clears the layer's hold on it. `let_go_all` ends every change and drops
+  every entry: at `SCENE_COLLECTION_CHANGING` and `SCENE_COLLECTION_CLEANUP`
+  (`item_morph_let_go`), in a tick while `!scenes_loaded()`, and in `item_morph_stop()`.
+- **Counts** (the new section alone): before, every case failed, with each case's scene, its
+  three sources and six transitions still held after the test let go, "12" and "27 source(s)
+  were remaining" and 39 "Double destroy" at shutdown; `STAGEKIT_TEST_ONLY_LINK_TRANS` left its
+  Morph scene and three sources ("2 source(s) were remaining" and 2 "Double destroy"; 3 + 8 and 11
+  in the first run). After: nothing held in any case within 1.5 s, nothing remaining, no "Double
+  destroy" in either.
+- **Tests**: `[the item Morph lets go of scenes and sources]` (`STAGEKIT_TEST_ONLY_MORPH_HOLDS`,
+  also run after the Link Visibility section in the full run): a change seen to its end, cut off
+  part-way, left part-way out of view, its transitions replaced part-way, and a collection change
+  part-way (`stagekit_test_loaded`); the last checks that the layer is gone and nothing is held
+  while the collection changes. The Link Visibility section now checks the same at its end.
+- **Not proven**: the frontend path (`SCENE_COLLECTION_CHANGING`/`CLEANUP` calling
+  `item_morph_let_go`) has not run; the tests stand in with `stagekit_test_loaded`. Not tried on
+  Windows. The Morph transition's own `fallback_` (another transition driving an unpaired item)
+  still holds that item's source until the transition next starts or is destroyed; it is held by
+  the item, so it goes with the scene, and the tests found nothing left from it.
+
 ## Link Visibility: Follow sources (0.1.0-beta169)
 
 Branch `feat/link-follow-sources`, on `main` after beta168. Notes: `docs/releases/0.1.0-beta169.md`.
