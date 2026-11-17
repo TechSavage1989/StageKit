@@ -13,9 +13,9 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
-## Link Visibility: Follow sources (0.1.0-betaNEXT)
+## Link Visibility: Follow sources (0.1.0-beta169)
 
-Branch `feat/link-follow-sources`, on `main` after beta168. Notes: `docs/releases/0.1.0-betaNEXT.md`.
+Branch `feat/link-follow-sources`, on `main` after beta168. Notes: `docs/releases/0.1.0-beta169.md`.
 No Stream Deck file changed. The owner, with a screenshot of Component-Capture-Scene's filters (five
 Link Visibility filters in *Follow the first source*, -ComponentGame, -ComponentWindow,
 -ComponentCapture, -ComponentDesktop, -ComponentTablet, each a capture followed by *Column: Chat*,

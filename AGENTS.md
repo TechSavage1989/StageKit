@@ -565,7 +565,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   keys at once, off screen, nothing hidden left in use).
 - **Link Visibility's *Follow sources*** (mode 2, `LinkMode::Follow`, saved as 2; first *Follow the
   first source*, 2026-11-17, the owner: "can the intermission screen be merged with the other hold
-  scenes? also the GBA scene?"; several leads since betaNEXT, the owner, of five such filters on
+  scenes? also the GBA scene?"; several leads since beta169, the owner, of five such filters on
   Component-Capture-Scene, one per capture, each followed by *Column: Chat*: "I have all these
   filters effectively just to make the Column chat follow all my main live sources. I think the
   follow first source option should be changed to a follow source option, where one or more
