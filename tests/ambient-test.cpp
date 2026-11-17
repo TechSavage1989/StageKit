@@ -8582,6 +8582,72 @@ int main(int argc, char **argv)
 			obs_scene_release(sc);
 		}
 
+		// 11: a Scene Modes change goes the scene's way in view, and is a cut
+		// out of view that leaves nothing hidden in use.
+		printf("\n[scene transitions: scene modes]\n");
+		if (obs_source_get_display_name("swipe_transition")) {
+			obs_source_t *ma = trans_colour("Trans Mode A", 0xFF0000FFLL, 100, 60);
+			obs_source_t *mb = trans_colour("Trans Mode B", 0xFF00FF00LL, 100, 60);
+			obs_scene_t *sc = obs_scene_create("Trans Modes");
+			obs_source_t *src = obs_scene_get_source(sc);
+			obs_sceneitem_t *ia = trans_put(sc, ma, 10, 10);
+			obs_sceneitem_t *ib = trans_put(sc, mb, 200, 10);
+			obs_sceneitem_set_visible(ib, false);
+			obs_source_t *f = trans_make(src, [](obs_data_t *s) {
+				obs_data_set_string(s, "transition", "swipe_transition");
+				obs_data_set_int(s, "transition_ms", 450);
+			});
+			obs_data_t *md = obs_data_create();
+			trans_list(md, "modes", {"m1", "m2"});
+			obs_data_set_string(md, "mode|m1|name", "A");
+			trans_list(md, "mode|m1|sources", {"Trans Mode A"});
+			obs_data_set_string(md, "mode|m2|name", "B");
+			trans_list(md, "mode|m2|sources", {"Trans Mode B"});
+			obs_data_set_string(md, "mode_now", "m1");
+			obs_source_t *modes =
+				obs_source_create("stagekit_scene_modes", "Trans Scene Modes", md, nullptr);
+			obs_data_release(md);
+			obs_source_filter_add(src, modes);
+			auto press = [](const char *mode) {
+				obs_data_t *req = obs_data_create();
+				obs_data_set_string(req, "scene", "Trans Modes");
+				obs_data_set_string(req, "filter", "");
+				obs_data_set_string(req, "mode", mode);
+				obs_data_set_string(req, "how", "on");
+				calldata_t cd = {};
+				calldata_set_string(&cd, "request", "SetSceneMode");
+				calldata_set_string(&cd, "data", obs_data_get_json(req));
+				proc_handler_call(obs_get_proc_handler(), "stagekit_vendor_call", &cd);
+				calldata_free(&cd);
+				obs_data_release(req);
+			};
+			obs_source_inc_showing(src);
+			trans_wait(src, 400);
+			press("m2");
+			trans_wait(src, 200);
+			CHECK(!obs_sceneitem_visible(ia) && obs_sceneitem_visible(ib) &&
+				      trans_kind(ia, false) == "swipe_transition" &&
+				      trans_kind(ib, true) == "swipe_transition" && trans_ms(ib, true) == 450,
+			      "in view, a Scene Modes change on As the scene sets goes the scene's way (%s / %s %d)",
+			      trans_kind(ia, false).c_str(), trans_kind(ib, true).c_str(), trans_ms(ib, true));
+			trans_wait(src, 700);
+			obs_source_dec_showing(src);
+			sleep_ms(200);
+			press("m1");
+			sleep_ms(600);
+			CHECK(obs_sceneitem_visible(ia) && !obs_sceneitem_visible(ib) && !obs_source_showing(mb) &&
+				      !obs_source_active(mb),
+			      "out of view, the change is a cut and the hidden source is not left in use (showing %d, active %d)",
+			      (int)obs_source_showing(mb), (int)obs_source_active(mb));
+			obs_source_filter_remove(src, modes);
+			obs_source_release(modes);
+			obs_source_filter_remove(src, f);
+			obs_source_release(f);
+			obs_scene_release(sc);
+			obs_source_release(ma);
+			obs_source_release(mb);
+		}
+
 		obs_source_release(ta);
 		obs_source_release(tb);
 		obs_source_release(tc);
@@ -8956,7 +9022,51 @@ int main(int argc, char **argv)
 					obs_source_release(screen);
 				}
 			}
-			printf("  SKIP  Scene Modes is not in this build: a mode holding a source hidden is checked with Link Visibility's modes\n");
+			// 11. A Scene Modes mode that is not showing holds the camera
+			// hidden: no stand-in shows for it. Both filter orders.
+			for (int order = 0; order < 2; order++) {
+				sb_list(sd, "hidden", {"SB Camera"});
+				obs_data_set_string(sd, "transition", "none");
+				obs_source_update(scene_sb, sd);
+				obs_sceneitem_set_visible(cam_s, true);
+				obs_data_t *md = obs_data_create();
+				sb_list(md, "modes", {"m1", "m2"});
+				obs_data_set_string(md, "mode|m1|name", "Other");
+				sb_list(md, "mode|m1|sources", {"SB Capture A"});
+				obs_data_set_string(md, "mode|m2|name", "Camera");
+				sb_list(md, "mode|m2|sources", {"SB Camera"});
+				obs_data_set_string(md, "mode_now", "m2");
+				obs_data_set_string(md, "transition", "none");
+				obs_source_t *sb_modes =
+					obs_source_create("stagekit_scene_modes", "SB Modes", md, nullptr);
+				obs_data_release(md);
+				obs_source_filter_add(obs_scene_get_source(s), sb_modes);
+				obs_source_filter_set_order(obs_scene_get_source(s), sb_modes,
+							    order ? OBS_ORDER_MOVE_BOTTOM : OBS_ORDER_MOVE_TOP);
+				sleep_ms(500);
+				const bool cam_first = obs_sceneitem_visible(cam_s);
+				obs_data_t *req = obs_data_create();
+				obs_data_set_string(req, "scene", "SB Scene S");
+				obs_data_set_string(req, "filter", "");
+				obs_data_set_string(req, "mode", "m1");
+				obs_data_set_string(req, "how", "on");
+				calldata_t cd = {};
+				calldata_set_string(&cd, "request", "SetSceneMode");
+				calldata_set_string(&cd, "data", obs_data_get_json(req));
+				proc_handler_call(obs_get_proc_handler(), "stagekit_vendor_call", &cd);
+				calldata_free(&cd);
+				obs_data_release(req);
+				const bool hidden = sb_wait([&] { return !obs_sceneitem_visible(cam_s); }, 2000);
+				sleep_ms(800);
+				const int twins = sb_twins(s, true);
+				CHECK(cam_first && hidden && twins == 0,
+				      "a camera held hidden by a Scene Modes mode not showing gets no standby image in its place (%s order; shown first %d, hidden %d, twins showing %d)",
+				      order ? "modes after" : "modes first", (int)cam_first, (int)hidden, twins);
+				obs_source_filter_remove(obs_scene_get_source(s), sb_modes);
+				obs_source_release(sb_modes);
+				obs_sceneitem_set_visible(cam_s, true);
+				sleep_ms(300);
+			}
 
 			// The README's picture: one capture empty, the camera hidden, both
 			// showing the standby image in their places.
