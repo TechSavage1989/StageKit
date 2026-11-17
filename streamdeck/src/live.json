@@ -1,0 +1,52 @@
+{
+	"_": "Written by tools/make-live-icons.py: the frames of each state of the Stream and Record keys, and each palette's accent.",
+	"group": "live",
+	"frames": {
+		"stream": {
+			"idle": 1,
+			"starting": 8,
+			"live": 8,
+			"reconnecting": 8,
+			"stopping": 8
+		},
+		"record": {
+			"idle": 1,
+			"starting": 8,
+			"recording": 8,
+			"paused": 12,
+			"stopping": 8
+		}
+	},
+	"accents": {
+		"mono": [
+			250,
+			248,
+			254
+		],
+		"violet": [
+			240,
+			76,
+			171
+		],
+		"ocean": [
+			76,
+			199,
+			240
+		],
+		"forest": [
+			178,
+			240,
+			76
+		],
+		"ember": [
+			240,
+			142,
+			76
+		],
+		"neon": [
+			61,
+			240,
+			255
+		]
+	}
+}

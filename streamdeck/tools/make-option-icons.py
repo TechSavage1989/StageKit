@@ -790,7 +790,7 @@ def main():
             # (Not the pictures drawn here, nor the marked copies of
             # tools/make-state-icons.py: their dot and slash are no words.)
             parts = os.path.relpath(folder, os.path.join(PACK, palette)).split(os.sep)
-            if parts[0] in ("options", "status", "layouts", "badges"):
+            if parts[0] in ("options", "status", "layouts", "badges", "live"):
                 continue
             for name in files:
                 if not name.endswith(".png"):

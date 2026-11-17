@@ -262,7 +262,7 @@ const SOURCES: Record<string, { family?: Family; only?: string[]; label?: string
 
 /** The keys whose list is the Scene type: Switch Scene, Blur All, Scene Blur, and keys for a filter on a scene. */
 function sceneKeys(): string[] {
-	const keys = ["scene", "fitoverlap", "layout", "blurall", "sceneblur"];
+	const keys = ["scene", "fitoverlap", "layout", "blurall", "sceneblur", "stream", "record"];
 	for (const f of features.switches) if ((f as { scene?: boolean }).scene) keys.push(f.key);
 	return keys;
 }
@@ -376,10 +376,12 @@ export function typeLists(key: string): TypeList[] {
 			tip:
 				key === "scene"
 					? "What the scene is, for the key's image. Automatic goes by the scene's name."
+					: key === "stream" || key === "record"
+						? `What is ${key === "stream" ? "streamed" : "recorded"}, for the key's image; whether it is ${key === "stream" ? "live" : "recording"} is drawn in its corner, and the image does not move. Automatic shows the moving ${key} image.`
 					: key === "blurall" || key === "sceneblur"
 						? "What is blurred, for the key's image; the blur style is drawn in its corner. Automatic shows the blur style alone."
 						: "What the scene is, for the key's image. Automatic shows the filter's own image.",
-			automatic: key === "scene" ? "Automatic (by the scene's name)" : key === "blurall" || key === "sceneblur" ? "Automatic (the blur's image)" : "Automatic (the filter's image)",
+			automatic: key === "scene" ? "Automatic (by the scene's name)" : key === "stream" || key === "record" ? `Automatic (the moving ${key} image)` : key === "blurall" || key === "sceneblur" ? "Automatic (the blur's image)" : "Automatic (the filter's image)",
 			groups: distinct(groups, " (source)"),
 		});
 	}

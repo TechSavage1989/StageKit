@@ -1536,7 +1536,7 @@ the other scene keys the scene types come first and every source type after them
 | **Show/Hide Animation**, **Link Visibility**, **Automatic Source Switcher**, **Automatic Window Switcher** | Transition | Fade, Cut, Slide, Swipe, Wipe, Zoom, Morph, beside the key's Scene type or Source type (which comes first when both are set) |
 | **Zoom**, **Standby Image**, **Auto Capture**, **Auto Frame**, **Automatic Window Switcher**, **Program Trigger** | Source type | The types that make sense for that feature (captures, devices and cameras for Zoom and Standby Image, games for Auto Capture and Auto Frame, programs for the switcher and the trigger) |
 | **Scene Mode** | Mode type | Status and holding screens, layouts (Game, Console, Linked handheld screen, Capture card, Window, Display, Tablet, Camera: the icon pack's scene image of that layout), apps, the layout markers and activities (Speedrun, Music production, Cooking, IRL / outdoors, Tutorial, Unboxing, Fitness, Reading, Watch party, Charity, Just chatting, Podcast, Interview / guest). *Automatic* takes the mode's *Mode type* in OBS |
-| **Switch Scene**, and the keys for a filter on a scene (Fit to Space, Scene Fit, Link Visibility and the rest), **Fit to Space Overlap**, **Apply Layout** | Scene type | *Holding & status* (Starting soon, Countdown, Be right back, Intermission, Technical difficulties, Ending, Holding screen, Paused, Offline, Camera off, Raid / host), *Games* (Gameplay, Gameplay + chat, PC game, Retro gaming, Classic gaming, Speedrun, Emulator, Console, Console + handheld link, Capture card, Capture card + chat), *Apps & screens* (Window / app, App + chat, Desktop, Second screen, Browsing), *Creative* (Tablet / drawing, Art / design, 3D modelling, Coding, Music production), *Camera & talk* (Just chatting, Camera only, Interview / guest, Podcast, Live music, Tutorial), *IRL & lifestyle* (IRL / outdoors, Cooking, Fitness, Reading, Unboxing, Watch party, Charity), *All in one* (On air, On air + chat). On a Switch Scene key *Automatic* goes by the scene's name; on the others it shows the filter's own image |
+| **Switch Scene**, and the keys for a filter on a scene (Fit to Space, Scene Fit, Link Visibility and the rest), **Fit to Space Overlap**, **Apply Layout**, **Stream**, **Record** | Scene type | *Holding & status* (Starting soon, Countdown, Be right back, Intermission, Technical difficulties, Ending, Holding screen, Paused, Offline, Camera off, Raid / host), *Games* (Gameplay, Gameplay + chat, PC game, Retro gaming, Classic gaming, Speedrun, Emulator, Console, Console + handheld link, Capture card, Capture card + chat), *Apps & screens* (Window / app, App + chat, Desktop, Second screen, Browsing), *Creative* (Tablet / drawing, Art / design, 3D modelling, Coding, Music production), *Camera & talk* (Just chatting, Camera only, Interview / guest, Podcast, Live music, Tutorial), *IRL & lifestyle* (IRL / outdoors, Cooking, Fitness, Reading, Unboxing, Watch party, Charity), *All in one* (On air, On air + chat). On a Switch Scene key *Automatic* goes by the scene's name; on the others it shows the filter's own image |
 | **Move Source**, **Move Scene Item** | Position, Source type | *Position*: every place the filter can send a source: the nine places on the screen, *Saved spot* (the source's own saved place) and *Spot on the screen* (the same spot in every scene, as the dock's slides use; *Automatic*: where the filter sends the source). *Source type*: what is moved (cameras, overlays such as Chat, Alerts, Music, Logo, Title, games, windows, apps) |
 | **Capture Active Window** | Capture type, Source type | *Capture type*: Game, Window (*Automatic*: by the kind of capture chosen); the key's title follows it. *Source type*: what it takes (Game, Retro game, Emulator, Window, Browser, the apps, Chat, Voice chat, Music) |
 | **Manual Window / Source** | Source type, beside *On press* | What the capture or the scene switches between: Window, Browser, Game, Retro game, Emulator, Console, Capture card, Display, Linked handheld screen, the apps, Chat, Voice chat, Music and the cameras |
@@ -1592,7 +1592,7 @@ exist here as PNGs only.
 **Every key that switches something shows which way it is**, whatever switched it (the key, OBS,
 a hotkey, another key): a **green dot** in the corner while it is on, a **red "no" sign** in the
 same corner, the image a little greyed, while it is off. That is every feature key, *Blur All*,
-*Dock Option*, *Fit to Space Overlap*, *Scene Mode*, *Scene Blur*, and *Manual Window / Source* set to *Toggle* (on: a manual window is shown) or *Hide*
+*Dock Option*, *Fit to Space Overlap*, *Scene Mode*, *Scene Blur*, *Stream*, *Record*, and *Manual Window / Source* set to *Toggle* (on: a manual window is shown) or *Hide*
 (on: the capture is shown). Stream Deck no longer flips such a key's image by itself when it is
 pressed, so it never flashes the wrong one.
 
@@ -1611,10 +1611,36 @@ pressed, so it never flashes the wrong one.
 | **Slide to Edge** | Slides the item selected in OBS left, right, up, down or cornerwise to the next edge, or centres it in the free space, with the dock's edge distance and timing. The next press passes that edge |
 | **Blur All** | Switches every Blur on, and the next press switches them all off. It shows on while any is on |
 | **Scene Blur** | Switches a scene's *Scene Blur*. *Blur filter* lists the Scene Blurs by name (with the scene, or how many scenes have one of that name); *Scene* is *All scenes with this filter* (as it comes) or one of the scenes that has it. *On press*: *Toggle* (with all scenes: all off when any is on, else all on), *Switch on* or *Switch off*. Lit (green dot) while it is on (with all scenes, while any is); titled *Scene Blur*. Its image, as on *Blur All*: the *Scene type* chosen with the blur style in its corner, else the *Blur style* chosen (the Blur key's fourteen), else the style the filter is set to |
+| **Stream** | Starts and stops OBS's stream. *On press*: *Toggle (start or stop)* (as it comes), *Start streaming* or *Stop streaming*. **A stream cannot be paused**: OBS can pause a recording but not a stream, and OBS's WebSocket server has no request for it, so this key has no Pause (its tooltip says so). Lit (green dot) while live, reconnecting or stopping. Titled with what a press does and, while live, how long the stream has run (*Show time*: *On* as it comes, or *Off*) |
+| **Record** | Starts, stops, pauses and resumes OBS's recording. *On press*: *Toggle (start or stop)* (as it comes), *Start recording*, *Stop recording*, *Pause / resume* (pauses, or resumes while paused), *Pause* or *Resume*. Lit while recording or paused. Titled as the Stream key, with the recording's time |
 
 A key that cannot reach OBS, or whose target is gone, shows Stream Deck's yellow warning triangle when
 pressed. *Set Aspect Ratio* and *Capture Active Window* need StageKit 0.1.0-beta84 or later in OBS; *Dock Option* and *Slide to Edge* need 0.1.0-beta85; *Scene Mode* and the four scene filter keys need 0.1.0-beta155; *Scene Blur* needs 0.1.0-beta161. Keys made with
 the first versions' *Filter switch* and *Move* keep working; those two are no longer in the list.
+
+**Stream and Record keys.** Both talk to OBS's own WebSocket requests and events, so they work
+with any version of StageKit in OBS. Their images move, in the key's palette, while something is
+happening, and stand still otherwise:
+
+| Key | Stopped | Starting | Running | Also |
+| --- | --- | --- | --- | --- |
+| **Stream** | an antenna | its waves appear one by one | waves pulse out from the tip | reconnecting: the waves flicker; stopping: they go one by one |
+| **Record** | a hollow red dot beside a strip of film | the dot fills, a ring of light turns round it | the red dot pulses, the film runs | paused: pause bars pulse slowly in the dot; stopping: the dot empties |
+
+The record dot is red in every palette; the waves, the ring and the pause bars take the palette's
+colour. *Animate*: *On* (as it comes) or *Off* for a still image. An image moves only while the key
+is on the screen, and a deck full of these keys is never sent more than a dozen images in an
+eighth of a second. With a *Scene type* chosen, the key shows that type with whether it is live or
+recording as a still badge in its corner. While OBS cannot be reached, the key shows what OBS last
+said, still.
+
+*Long press* (both keys): *Nothing* (as it comes: the key acts the moment you press it, as every
+other key does), or any of that key's *On press* choices. Set, a short press does *On press* when
+you let go, and holding the key for *Hold time (ms)* (800 as it comes, 300 to 5000) does the long
+press the moment that time is reached; letting go after it does nothing. A bar in the palette's
+colour fills under the image while you hold. For example *On press* *Start streaming* and *Long
+press* *Stop streaming*, so a stray tap never ends the stream. The title then has a third line,
+*Hold: Stop*.
 
 **Images.** The keys use the StageKit icon pack. Left on *Automatic*, a key takes the image that
 fits its filter and how it is set: a Blur key shows its blur type, a Move Source key the corner it

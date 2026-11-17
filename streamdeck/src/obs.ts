@@ -78,6 +78,10 @@ class ObsLink extends EventEmitter {
 		for (const name of ["CurrentProgramSceneChanged", "CurrentPreviewSceneChanged", "StudioModeStateChanged"] as const) {
 			this.obs.on(name, () => this.emit("scene"));
 		}
+		// The stream or the recording started, stopped, paused ... (the Stream
+		// and Record keys; obs-websocket's own events, nothing of StageKit's).
+		this.obs.on("StreamStateChanged", (ev) => this.emit("output", "stream", ev.outputState, ev.outputActive));
+		this.obs.on("RecordStateChanged", (ev) => this.emit("output", "record", ev.outputState, ev.outputActive));
 		// A filter's settings changed (in OBS's window, or by a key).
 		this.obs.on("SourceFilterSettingsChanged", (ev) => {
 			this.emit("settings", ev.sourceName, ev.filterName);
@@ -413,6 +417,25 @@ class ObsLink extends EventEmitter {
 	async sceneBlur(filter: string, scene: string, how: "on" | "off" | "toggle"): Promise<boolean | undefined> {
 		const answer = await this.stageKit("SceneBlur", { filter, scene, how });
 		return answer ? answer.active === true : undefined;
+	}
+
+	/**
+	 * The stream's or the recording's status (GetStreamStatus,
+	 * GetRecordStatus): whether it runs, is paused or reconnecting, and its
+	 * timecode. Undefined when OBS cannot be asked.
+	 */
+	async outputStatus(output: "stream" | "record"): Promise<Record<string, unknown> | undefined> {
+		if (!this.connected) return undefined;
+		try {
+			return (await this.obs.call(output === "stream" ? "GetStreamStatus" : "GetRecordStatus")) as Record<string, unknown>;
+		} catch {
+			return undefined;
+		}
+	}
+
+	/** Sends one of obs-websocket's stream or record requests (StartStream, TogglePauseRecord ...) by name. */
+	async outputRequest(requestType: string): Promise<void> {
+		await this.obs.call(requestType as "StartStream");
 	}
 
 	/** Changes some of a filter's settings, leaving the rest as they are. */

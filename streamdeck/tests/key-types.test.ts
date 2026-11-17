@@ -27,6 +27,7 @@ import {
 	hookShown,
 	blurAllShown,
 	sceneBlurShown,
+	outputShown,
 } from "../src/pictures.ts";
 
 const plugin = new URL("../com.techsavage1989.stagekit.sdPlugin/", import.meta.url);
@@ -41,6 +42,7 @@ function shown(key: string, setting: string, value: string): string | undefined 
 	// (The keys that draw what they do as a badge: the type's picture is the one under it.)
 	if (key === "hook") return hookShown(undefined, "game_capture", types.sourceType, types.look).picture.id;
 	if (key === "blurall") return blurAllShown(undefined, types.look, types.sceneType).picture.id;
+	if (key === "stream" || key === "record") return outputShown(key, "idle", `live/${key}-idle-0`, types.sceneType).picture.id;
 	if (key === "sceneblur") return sceneBlurShown(undefined, types.look, types.sceneType).picture.id;
 	if (key === "appswitch") return stepShown(undefined, "next", value).picture.id;
 	if (key === "tool") return toolShown(undefined, "left", value).picture.id;

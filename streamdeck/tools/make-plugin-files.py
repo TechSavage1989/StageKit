@@ -19,7 +19,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, "..")
 PLUGIN = os.path.join(ROOT, "com.techsavage1989.stagekit.sdPlugin")
 BASE = "com.techsavage1989.stagekit"
-VERSION = "0.23.1.0"
+VERSION = "0.24.0.0"
 
 # The pack picture each feature's key starts with (its "on" and "off" look).
 PICTURES = {
@@ -183,6 +183,51 @@ def type_list_html(lst):
     )
 
 
+def output_lists():
+    """The Stream and Record keys' On press and Long press lists, from
+    src/live.ts (the one place they are made)."""
+    script = (
+        "import { PRESSES, longPresses } from './src/live.ts';"
+        "console.log(JSON.stringify({ stream: [PRESSES.stream, longPresses('stream')], record: [PRESSES.record, longPresses('record')] }));"
+    )
+    done = subprocess.run(["node", "--input-type=module", "-e", script], cwd=ROOT, capture_output=True, text=True, check=True)
+    return json.loads(done.stdout)
+
+
+def output_page(output, presses, longs):
+    """A Stream or Record key's settings: what a press and a long press do,
+    the hold time, whether the image moves and whether the time shows."""
+    e = lambda t: html.escape(t, quote=True)
+    if output == "stream":
+        tip = ("Toggle starts the stream, or stops it while live. There is no pause for a stream: "
+               "OBS can pause a recording but not a stream, so this key has no Pause.")
+    else:
+        tip = "Toggle starts the recording, or stops it while recording. Pause / resume pauses it, or resumes it while paused."
+
+    def select(label, setting, default, pairs, title):
+        rows = "\n".join(f'				<option value="{v}">{e(t)}</option>' for v, t in pairs)
+        return (
+            f'		<sdpi-item label="{label}" title="{e(title)}">\n'
+            f'			<sdpi-select setting="{setting}" default="{default}">\n{rows}\n			</sdpi-select>\n'
+            f"		</sdpi-item>\n"
+        )
+
+    return (
+        select("On press", "press", "toggle", presses, tip)
+        + select("Long press", "longPress", "none", longs,
+                 "What holding the key does. Nothing (as it comes): the key acts the moment it is pressed. "
+                 "Set, a press acts when the key is let go, and holding it for the hold time does this instead: "
+                 "for example On press Start and Long press Stop, so a stray tap never ends the " + ("stream." if output == "stream" else "recording."))
+        + '		<sdpi-item label="Hold time (ms)" title="How long the key must be held for its long press: 300 to 5000 ms, 800 as it comes.">\n'
+        '			<sdpi-textfield setting="holdMs" placeholder="800" pattern="[0-9]*"></sdpi-textfield>\n'
+        "		</sdpi-item>\n"
+        + select("Animate", "animate", "on", [("on", "On"), ("off", "Off")],
+                 "On: the image moves while " + ("the stream starts, is live, reconnects or stops." if output == "stream" else "the recording starts, records, is paused or stops.") + " Off: it stays still.")
+        + select("Show time", "showTime", "on", [("on", "On"), ("off", "Off")],
+                 "On: the key's title shows how long the " + ("stream has been live." if output == "stream" else "recording has run."))
+    )
+
+
 def page(name, title, body, script="", key=None):
     html = (
         "<!doctype html>\n<html>\n	<head lang=\"en\">\n"
@@ -342,6 +387,19 @@ def main():
             FOLLOW_BLUR,
         )
         add(feature["key"], feature["name"], feature["tip"], feature["key"], "imgs/actions/switch/icon", two(feature["key"]))
+
+    # Stream and Record: obs-websocket's own requests. Their pictures are
+    # tools/make-live-icons.py's frames (the key's own code moves them).
+    lists = output_lists()
+    for output, name, tip in (
+        ("stream", "Stream", "Starts and stops OBS's stream: toggle, start or stop, with a long press of its own if you like. Moves while live. A stream cannot be paused in OBS."),
+        ("record", "Record", "Starts, stops, pauses and resumes OBS's recording, with a long press of its own if you like. Moves while recording."),
+    ):
+        presses, longs = lists[output]
+        on_frame = "live/stream-live-0" if output == "stream" else "live/record-recording-0"
+        key_pictures(output, on_frame, f"live/{output}-idle-0")
+        page(output, f"StageKit {name.lower()}", output_page(output, presses, longs))
+        add(output, name, tip, output, "imgs/actions/switch/icon", two(output))
 
     key_pictures("toolkey", "options/align-left", None)
     page("tool", "StageKit arrange tool", options("Tool", "tool", "left", tools_list()))

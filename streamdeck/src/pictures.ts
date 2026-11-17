@@ -634,3 +634,28 @@ export function moveShown(chosen: string | undefined, kind: string, settings: Se
 	const picture = movePicture(chosen, kind, settings, types);
 	return picture ? { picture } : undefined;
 }
+
+// ------------------------------------------------------ Stream and Record
+// The two keys' pictures are frames of tools/make-live-icons.py (src/live.ts).
+
+/** A picture of the pack by id (a Stream or Record key's frame). */
+export function pictureById(id: string): Picture | undefined {
+	return BY_ID.get(id);
+}
+
+/** A Stream or Record key's badge for OBS's state, over a Scene type's picture. */
+export function outputBadge(output: "stream" | "record", state: string): string {
+	if (output === "record" && state === "paused") return "record-paused";
+	return `${output}-${state !== "idle" && state !== "starting" ? "on" : "off"}`;
+}
+
+/**
+ * A Stream or Record key's still image: with a Scene type, the type's
+ * picture with OBS's state as a badge (it does not move); else the state's
+ * own picture (its first frame).
+ */
+export function outputShown(output: "stream" | "record", state: string, firstFrame: string, sceneType?: unknown): Shown {
+	const typed = BY_ID.get(sceneTypePicture(explicit(sceneType)) ?? "");
+	if (typed) return { picture: typed, badge: outputBadge(output, state) };
+	return { picture: BY_ID.get(firstFrame) ?? plain("switch") };
+}

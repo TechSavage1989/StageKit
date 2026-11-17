@@ -17,6 +17,10 @@ streamdeck/svg/:
                            each type's drawing in the pack's two layouts (live,
                            live + chat), over the pack's layout picture with its
                            gamepad taken out (make-option-icons.py)
+  keys/<palette>/live/<key>-<state>-<n>.svg
+                           every frame of the Stream and Record keys
+                           (tools/make-live-icons.py), with the marks as
+                           layers to show or hide
   marks/on.svg, off.svg    the two marks by themselves
 
 The pictures from the original icon pack came here as PNG only, so they have
@@ -211,6 +215,28 @@ def layout_pictures():
     return made
 
 
+def live_pictures():
+    """Every frame of the Stream and Record keys (make-live-icons.py):
+    keys/<palette>/live/<name>.svg, its drawing as shapes over the key."""
+    live = load("make-live-icons")
+    listed = json.load(open(OPTIONS.LIST, encoding="utf-8"))
+    on_mark, off_mark = marks()
+    made = 0
+    for palette in listed["colours"]:
+        base, ink, acc = live.colours(palette)
+        background = embedded(base)
+        for key, state, f, name in live.names():
+            svg = HEAD.format(w=OPTIONS.SIZE, h=OPTIONS.SIZE, vw=OPTIONS.SIZE, vh=OPTIONS.SIZE)
+            svg += layer("Background (the pack's key)", background)
+            svg += layer("Drawing", live.svg_frame((ink, acc), live.shapes_of(key, state, f)))
+            svg += layer("Mark: on (green dot)", on_mark, False)
+            svg += layer("Mark: off (red no sign)", off_mark, False)
+            svg += "</svg>\n"
+            write(os.path.join(OUT, "keys", palette, "live", name + ".svg"), svg)
+            made += 1
+    return made
+
+
 def main():
     if os.path.isdir(OUT):
         for sub in ("action-icons", "keys", "marks"):
@@ -218,7 +244,8 @@ def main():
     a = action_icons()
     k = key_pictures()
     l_ = layout_pictures()
-    print(f"{a} action icons, {k} key pictures and {l_} layout pictures written as SVG")
+    v = live_pictures()
+    print(f"{a} action icons, {k} key pictures, {l_} layout pictures and {v} Stream and Record frames written as SVG")
 
 
 if __name__ == "__main__":

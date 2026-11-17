@@ -1543,6 +1543,49 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   makes it OBS's current one (obs-websocket has no transition for one switch). Lit while its scene
   is on (`CurrentProgramSceneChanged` and the preview's). The owner asked for "streamdeck key ...
   for scene switching".
+- **The Stream and Record keys** (`src/actions/output.ts`, one `OutputKey` class, UUIDs `.stream`
+  and `.record`, beta168; `src/live.ts`, `src/animate.ts`, `src/hold.ts`). The owner: "Id like
+  animated stream Start buttons and stream Record buttons. both should be able to be set to
+  toggle, start, pause or stop, and have animations that are relevant, and match the existing
+  color themes", then "the new keys also need a long press setting". Like the Switch Scene key
+  they use obs-websocket's own requests and events, nothing of the OBS plugin: `ToggleStream`,
+  `StartStream`, `StopStream`; `ToggleRecord`, `StartRecord`, `StopRecord`, `TogglePauseRecord`,
+  `PauseRecord`, `ResumeRecord` (`requestFor`); state from `GetStreamStatus` / `GetRecordStatus`
+  and `StreamStateChanged` / `RecordStateChanged` (`stateOfEvent`: starting, live or recording,
+  reconnecting, paused, stopping, idle). **A stream cannot be paused** (OBS has no such thing and
+  obs-websocket no request): the Stream key offers no Pause, and its tooltip and the README say
+  why. Do not fake one. Settings: `press`, `longPress` (`none` as it comes, and unset reads the
+  same), `holdMs` (800, 300 to 5000), `animate`, `showTime`, `sceneType` (with its Layout list),
+  `palette`. On (second state, green mark) while the output runs (`isOn`: not idle or starting).
+  `seen.type` keeps the last state; with OBS gone the key shows it still.
+  - **Art**: `tools/make-live-icons.py` draws every frame (`FRAMES`: stream idle 1, starting 8,
+    live 8, reconnecting 8, stopping 8; record idle 1, starting 8, recording 8, paused 12,
+    stopping 8; 70 frames) in the pack's framed screen, in every palette, as
+    `imgs/pack/<palette>/live/<key>-<state>-<n>.png` with marked copies under `status/on|off/live/`
+    (its own call of make-state-icons.py's `marked`), lists them in `src/pack.json` (group `live`)
+    and writes `src/live.json` (the frame counts and each palette's accent, which the TypeScript
+    reads: one source). The record dot is red (`RED`) in every palette; waves, the ring of light
+    and pause bars are the accent (the strongest colour of the pack's key frame; mono's ink).
+    make-option-icons.py's word-stripper skips `live/`. SVGs: make-svgs.py's `live_pictures`.
+    Run it after make-option-icons.py and make-state-icons.py (a later make-state-icons.py
+    re-marks the frames from the 256-colour plain ones: harmless). A Scene type shows the type
+    with a still badge (`stream-on|off`, `record-on|off|paused` in make-badges.py's `OWN`).
+  - **Animation is frames by `setImage`**, not an animated GIF: the SDK's `setImage` documents
+    file paths, base64 data with a mime type "(e.g. PNG, JPEG, etc.)" and SVG; GIF is only named
+    for the manifest's state images, so a GIF through `setImage` is not known to animate. Frames
+    are file paths (a Layout's inset composes data URLs once, cached). One `Animator` timer for
+    every key, a frame each `FRAME_MS` (125 ms), at most 12 keys a tick taken in turn; a key plays
+    only between willAppear and willDisappear and only in a moving state with *Animate* on; a
+    resting key (held for a long press) holds still.
+  - **Long press** (`HoldPress` in `src/hold.ts`, any key may use it; only these two do). With
+    *Long press* on Nothing the press acts on key down at once, as before; set, the choice is made
+    on key up (short) or when the hold time is reached (long, once, and the key up after does
+    nothing). While held a bar fills under the picture (`withHoldBar` in `src/compose.ts`,
+    `HOLD_BAR`, the palette's accent, ten steps, cached) and the animation rests.
+  - Titles (`outputTitle`): the press's name, the state or the time (counted on locally each
+    second and re-read from OBS every ten), and *Hold: Stop* when a long press is set; three
+    lines at most, a two-line name shortened. Tested in `tests/output.test.ts` against a
+    stand-in server that streams and records. Not run on a Stream Deck, nor against a real OBS.
 - **Device pictures and SVGs.** `DEVICES` in `tools/make-option-icons.py` (group `devices`; the
   owner: "icons available for things like generic capture cards, external capture cards"), and
   `tools/make-svgs.py` writes `streamdeck/svg/`: every picture drawn here as editable SVG, through

@@ -1,6 +1,6 @@
 {
 	"Name": "StageKit",
-	"Version": "0.23.1.0",
+	"Version": "0.24.0.0",
 	"Author": "StageKit contributors",
 	"Actions": [
 		{
@@ -606,6 +606,52 @@
 				},
 				{
 					"Image": "imgs/actions/sceneblur/on",
+					"Name": "On",
+					"TitleAlignment": "bottom"
+				}
+			],
+			"DisableAutomaticStates": true
+		},
+		{
+			"Name": "Stream",
+			"UUID": "com.techsavage1989.stagekit.stream",
+			"Icon": "imgs/actions/stream/icon",
+			"Tooltip": "Starts and stops OBS's stream: toggle, start or stop, with a long press of its own if you like. Moves while live. A stream cannot be paused in OBS.",
+			"PropertyInspectorPath": "ui/stream.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/stream/off",
+					"Name": "Off",
+					"TitleAlignment": "bottom"
+				},
+				{
+					"Image": "imgs/actions/stream/on",
+					"Name": "On",
+					"TitleAlignment": "bottom"
+				}
+			],
+			"DisableAutomaticStates": true
+		},
+		{
+			"Name": "Record",
+			"UUID": "com.techsavage1989.stagekit.record",
+			"Icon": "imgs/actions/record/icon",
+			"Tooltip": "Starts, stops, pauses and resumes OBS's recording, with a long press of its own if you like. Moves while recording.",
+			"PropertyInspectorPath": "ui/record.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/record/off",
+					"Name": "Off",
+					"TitleAlignment": "bottom"
+				},
+				{
+					"Image": "imgs/actions/record/on",
 					"Name": "On",
 					"TitleAlignment": "bottom"
 				}

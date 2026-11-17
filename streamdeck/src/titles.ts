@@ -168,3 +168,45 @@ export function sceneBlurTitle(press: string | undefined): string {
 export function shapeTitle(shape: string | undefined): string {
 	return shape && shape !== "auto" ? shape : "Auto\nRatio";
 }
+
+const OUTPUT_NAMES: Record<string, Record<string, string>> = {
+	stream: { toggle: "Stream", start: "Go Live", stop: "End\nStream" },
+	record: { toggle: "Record", start: "Start\nRec", stop: "Stop\nRec", pause: "Pause /\nResume", pauseonly: "Pause\nRec", resume: "Resume\nRec" },
+};
+
+const OUTPUT_STATES: Record<string, string> = {
+	starting: "Starting",
+	stopping: "Stopping",
+	reconnecting: "Reconnect",
+	live: "LIVE",
+	recording: "REC",
+	paused: "Paused",
+};
+
+/** What a long press does, in a word or two, under "Hold:". */
+const HOLD_WORDS: Record<string, string> = {
+	toggle: "Toggle",
+	start: "Start",
+	stop: "Stop",
+	pause: "Pause",
+	pauseonly: "Pause",
+	resume: "Resume",
+};
+
+/**
+ * A Stream or Record key: what a press does, then what OBS is doing (the
+ * time while live or recording, when `time` is given), then what a long
+ * press does ("Hold: Stop"). A key has room for three short lines under its
+ * picture: a two-line name gives way to its first line when all three are
+ * there.
+ */
+export function outputTitle(output: "stream" | "record", press: unknown, state: string, time?: string, hold?: unknown): string {
+	const names = OUTPUT_NAMES[output];
+	let name = names[typeof press === "string" && names[press] ? press : "toggle"];
+	const now = (state === "live" || state === "recording") && time ? time : OUTPUT_STATES[state];
+	const held = typeof hold === "string" && HOLD_WORDS[hold] ? `Hold: ${HOLD_WORDS[hold]}` : undefined;
+	const lines = [now, held].filter(Boolean) as string[];
+	if (name.includes("\n") && lines.length > 0) name = name.replace("\n", " ");
+	if (lines.length === 2 && name.length > 9) name = name.split(" ")[0];
+	return [name, ...lines].join("\n");
+}
