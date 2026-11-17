@@ -10595,6 +10595,94 @@ int main(int argc, char **argv)
 			auto in_use = [](obs_source_t *source) {
 				return obs_source_active(source) || obs_source_showing(source);
 			};
+			// A camera with a stand-in (Standby's Show when source is hidden)
+			// in one mode: its standby image is not shown in the modes that
+			// do not show the camera, only when the camera is hidden in its
+			// own mode. (The owner's DSLR, in the Intermission mode of one
+			// holding scene: its standby image covered the other modes.)
+			{
+				obs_scene_t *ss = obs_scene_create("Stand-in Modes");
+				obs_source_t *ss_src = obs_scene_get_source(ss);
+				obs_data_t *cd = obs_data_create();
+				obs_data_set_int(cd, "color", 0xFF2040C0);
+				obs_data_set_int(cd, "width", 200);
+				obs_data_set_int(cd, "height", 120);
+				obs_source_t *x =
+					obs_source_create("color_source", "Stand-in Mode X", nullptr, nullptr);
+				obs_source_t *y =
+					obs_source_create("color_source", "Stand-in Mode Y", nullptr, nullptr);
+				obs_source_t *cam = obs_source_create("color_source", "Stand-in Mode Cam", cd, nullptr);
+				obs_data_release(cd);
+				obs_data_t *sd = obs_data_create();
+				obs_data_set_bool(sd, "when_hidden", true);
+				obs_data_set_string(sd, "transition", "none");
+				obs_source_t *standby =
+					obs_source_create("stagekit_standby", "Stand-in Mode Standby", sd, nullptr);
+				obs_data_release(sd);
+				obs_source_filter_add(cam, standby);
+				obs_sceneitem_t *ix = obs_scene_add(ss, x);
+				obs_sceneitem_t *iy = obs_scene_add(ss, y);
+				obs_sceneitem_t *icam = obs_scene_add(ss, cam);
+				obs_sceneitem_set_visible(iy, false);
+				auto link = [&](const char *name, int mode, std::vector<std::string> list) {
+					obs_data_t *ld = obs_data_create();
+					set_list(ld, "items", list);
+					obs_data_set_int(ld, "mode", mode);
+					obs_data_set_string(ld, "transition", "none");
+					obs_source_t *l =
+						obs_source_create("stagekit_visibility_link", name, ld, nullptr);
+					obs_data_release(ld);
+					obs_source_filter_add(ss_src, l);
+					return l;
+				};
+				obs_source_t *l0 = link("Stand-in Only One", 0, {"Stand-in Mode X", "Stand-in Mode Y"});
+				obs_source_t *l1 =
+					link("Stand-in Mode X Link", 2, {"Stand-in Mode X", "Stand-in Mode Cam"});
+				obs_source_t *l2 = link("Stand-in Mode Y Link", 2, {"Stand-in Mode Y"});
+				obs_set_output_source(0, ss_src);
+				auto twin_shown = [&] {
+					int found = -1;
+					obs_scene_enum_items(
+						ss,
+						[](obs_scene_t *, obs_sceneitem_t *it, void *p) {
+							if (strcmp(obs_source_get_unversioned_id(
+									   obs_sceneitem_get_source(it)),
+								   "stagekit_stand_in") == 0)
+								*static_cast<int *>(p) = obs_sceneitem_visible(it) ? 1
+														   : 0;
+							return true;
+						},
+						&found);
+					return found;
+				};
+				sleep_ms(900);
+				const int in_x = twin_shown();
+				obs_sceneitem_set_visible(iy, true);
+				sleep_ms(900);
+				const int in_y = twin_shown();
+				const bool cam_hidden_in_y = !obs_sceneitem_visible(icam);
+				obs_sceneitem_set_visible(ix, true);
+				sleep_ms(900);
+				const bool cam_back = obs_sceneitem_visible(icam);
+				obs_sceneitem_set_visible(icam, false);
+				sleep_ms(900);
+				const int cam_off_in_x = twin_shown();
+				CHECK(in_x == 0 && cam_hidden_in_y && in_y == 0 && cam_back && cam_off_in_x == 1,
+				      "a camera with a stand-in, in one mode: no standby image while another mode holds it hidden, and the standby image when it is hidden in its own mode (%d %d %d; %d %d)",
+				      in_x, in_y, cam_off_in_x, (int)cam_hidden_in_y, (int)cam_back);
+				obs_set_output_source(0, nullptr);
+				for (obs_source_t *l : {l0, l1, l2}) {
+					obs_source_filter_remove(ss_src, l);
+					obs_source_release(l);
+				}
+				obs_source_filter_remove(cam, standby);
+				obs_source_release(standby);
+				sleep_ms(300);
+				obs_scene_release(ss);
+				for (obs_source_t *s : {x, y, cam})
+					obs_source_release(s);
+			}
+
 			// Twice: the scene's links added in one order, then the other.
 			for (int order = 0; order < 2; order++) {
 				printf("  (%s)\n", order == 0 ? "the only-one link first" : "the modes' links first");

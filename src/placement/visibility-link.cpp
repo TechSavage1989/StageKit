@@ -152,9 +152,11 @@ public:
 		lock_hidden_ = lock_hidden;
 		elsewhere_ = elsewhere;
 		watch_timer_ = 0.0;
-		mode_ = static_cast<LinkMode>(std::clamp((int)obs_data_get_int(settings, "mode"), 0, 2));
-		if (names != names_)
-			acted_valid_ = false; // another leader, perhaps: look afresh
+		const auto mode = static_cast<LinkMode>(std::clamp((int)obs_data_get_int(settings, "mode"), 0, 2));
+		// Another leader perhaps, or back from another mode: look afresh.
+		if (names != names_ || mode != mode_)
+			acted_valid_ = false;
+		mode_ = mode;
 		transition_ = item_transition_kind(settings);
 		transition_ms_ = item_transition_ms(settings);
 		names_ = names;
@@ -581,6 +583,10 @@ bool link_visibility_holds_hidden(obs_source_t *scene, obs_sceneitem_t *item)
 	// (No lock is held while the leaders are looked up.)
 	for (const FollowLook &look : follow_links_in(scene)) {
 		if (!is_follower(look, name))
+			continue;
+		// (The item the link manages: the first of that source straight in
+		// the scene, not another copy or one inside a group.)
+		if (find_item(scene, name) != item)
 			continue;
 		obs_sceneitem_t *leader = find_item(scene, look.names[0]);
 		if (!leader)
