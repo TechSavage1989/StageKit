@@ -187,8 +187,7 @@ DRAWINGS["mode-ending"] = [("ring", 32, 18, 15), ("box", 25, 11, 39, 25)]
 DRAWINGS["mode-column-chat"] = [("frame", 2, 2, 62, 34), ("box", 6, 6, 30, 30), ("line", 34, 2, 34, 34)] + [
     ("box", 38, 6, 58, 11), ("box", 38, 15.5, 58, 20.5), ("box", 38, 25, 58, 30)]
 DRAWINGS["mode-column-gba"] = [("frame", 2, 2, 62, 34), ("box", 6, 6, 30, 30), ("line", 34, 2, 34, 34),
-                               ("frame", 40, 3, 56, 33), ("box", 43, 6, 53, 16), ("line", 42, 25, 49, 25), ("line", 45.5, 21.5, 45.5, 28.5),
-                               ("dot", 53, 23, 1.8), ("dot", 50.5, 27, 1.8)]
+                               ("frame", 40, 3, 56, 33), ("box", 43, 6, 53, 17), ("dot", 45, 25, 2), ("dot", 51, 25, 2)]
 # The Switch Scene key: a scene, its sources laid out in it.
 DRAWINGS["scene"] = [("frame", 6, 3, 58, 33), ("box", 11, 8, 35, 28), ("box", 39, 8, 53, 16), ("box", 39, 20, 53, 28)]
 SWITCHES_EXTRA = ["scene"]
