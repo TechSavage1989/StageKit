@@ -66,6 +66,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "look/scene-blur.hpp"
 // ==== end scene-filters:blur ====
 // ==== scene-filters:perf ====
+#include "common/timing.hpp"
 // ==== end scene-filters:perf ====
 
 OBS_DECLARE_MODULE()
@@ -169,6 +170,7 @@ bool obs_module_load(void)
 	stagekit::register_scene_blur();
 	// ==== end scene-filters:blur ====
 	// ==== scene-filters:perf ====
+	stagekit::timing_add_procs();
 	// ==== end scene-filters:perf ====
 	// A change from one item to another that is under way ends before OBS
 	// takes its scenes apart.

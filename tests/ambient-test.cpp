@@ -1563,6 +1563,131 @@ int main(int argc, char **argv)
 	obs_data_release(ls);
 
 	// ==== scene-filters:perf ====
+	// ---------------------------------------------- timing: µs and the per-frame line
+	{
+		printf("\n[timing: µs and the per-frame line]\n");
+		auto take = []() {
+			calldata_t cd;
+			calldata_init(&cd);
+			proc_handler_call(obs_get_proc_handler(), "stagekit_timing_take", &cd);
+			const char *json = calldata_string(&cd, "json");
+			obs_data_t *data = obs_data_create_from_json(json ? json : "{}");
+			calldata_free(&cd);
+			return data;
+		};
+		auto kind_in = [](obs_data_t *data, const char *id) -> obs_data_t * {
+			obs_data_array_t *kinds = obs_data_get_array(data, "kinds");
+			obs_data_t *found = nullptr;
+			for (size_t i = 0; i < obs_data_array_count(kinds) && !found; i++) {
+				obs_data_t *k = obs_data_array_item(kinds, i);
+				if (strcmp(obs_data_get_string(k, "id"), id) == 0)
+					found = k;
+				else
+					obs_data_release(k);
+			}
+			obs_data_array_release(kinds);
+			return found;
+		};
+		calldata_t cd;
+		calldata_init(&cd);
+		proc_handler_call(obs_get_proc_handler(), "stagekit_timing_probe", &cd);
+		calldata_free(&cd);
+		const long long wait_us = 400;
+		obs_data_t *ps = obs_data_create();
+		obs_data_set_int(ps, "wait_us", wait_us);
+		obs_source_t *probe = obs_source_create("stagekit_timing_probe", "Timing probe", ps, nullptr);
+		obs_data_release(ps);
+		CHECK(probe != nullptr, "a kind registered through register_timed can be made");
+		sleep_ms(100);
+		obs_data_release(take()); // counting starts here
+		const uint64_t from = obs_get_total_frames();
+		for (int i = 0; i < 600 && obs_get_total_frames() < from + 180; i++)
+			sleep_ms(10);
+		obs_data_t *took = take();
+		const long long frames = obs_data_get_int(took, "frames");
+		obs_data_t *pk = kind_in(took, "stagekit_timing_probe");
+		const long long calls = pk ? obs_data_get_int(pk, "tick_calls") : 0;
+		const double each = calls ? obs_data_get_double(pk, "tick_us") / calls : 0.0;
+		CHECK(frames >= 180 && calls >= frames * 8 / 10 && calls <= frames * 12 / 10 + 2,
+		      "the probe was ticked once a frame (%lld calls over %lld frames)", calls, frames);
+		CHECK(each >= wait_us && each <= wait_us * 1.2, "its tick is timed in µs: %.1f µs each (waits %lld)",
+		      each, wait_us);
+		CHECK(pk && obs_data_get_double(pk, "tick_max_us") >= wait_us, "and its longest tick is kept (%.1f µs)",
+		      pk ? obs_data_get_double(pk, "tick_max_us") : 0.0);
+		obs_data_t *ak = kind_in(took, "stagekit_ambient_background");
+		CHECK(ak != nullptr, "every StageKit kind is in the take");
+		obs_data_release(ak);
+		obs_data_release(pk);
+		obs_data_release(took);
+		// A second take straight after starts afresh.
+		obs_data_t *again = take();
+		obs_data_t *pk2 = kind_in(again, "stagekit_timing_probe");
+		CHECK(pk2 && obs_data_get_int(pk2, "tick_calls") <= 3, "a take starts counting afresh (%lld calls)",
+		      pk2 ? obs_data_get_int(pk2, "tick_calls") : -1);
+		obs_data_release(pk2);
+		obs_data_release(again);
+
+		// The log: the probe's own line in ms with three decimals, and the
+		// line for all of StageKit's ticks a frame.
+		static std::vector<std::string> lines;
+		static std::mutex lines_mutex;
+		log_handler_t was = nullptr;
+		void *was_param = nullptr;
+		base_get_log_handler(&was, &was_param);
+		struct Was {
+			log_handler_t handler;
+			void *param;
+		} prior{was, was_param};
+		base_set_log_handler(
+			[](int level, const char *format, va_list args, void *param) {
+				va_list copy;
+				va_copy(copy, args);
+				char text[2048];
+				vsnprintf(text, sizeof(text), format, copy);
+				va_end(copy);
+				{
+					std::lock_guard lock(lines_mutex);
+					lines.push_back(text);
+				}
+				auto *p = static_cast<Was *>(param);
+				if (p->handler)
+					p->handler(level, format, args, p->param);
+			},
+			&prior);
+		const uint64_t from2 = obs_get_total_frames();
+		for (int i = 0; i < 600 && obs_get_total_frames() < from2 + 120; i++)
+			sleep_ms(10);
+		calldata_init(&cd);
+		proc_handler_call(obs_get_proc_handler(), "stagekit_timing_report", &cd);
+		calldata_free(&cd);
+		base_set_log_handler(was, was_param);
+		std::string kind_line, frame_line;
+		{
+			std::lock_guard lock(lines_mutex);
+			for (const std::string &l : lines) {
+				if (l.find("stagekit_timing_probe: tick") != std::string::npos)
+					kind_line = l;
+				if (l.find("StageKit ticks") != std::string::npos)
+					frame_line = l;
+			}
+		}
+		double ms_each = 0.0;
+		const size_t calls_at = kind_line.find(" calls, ");
+		const size_t each_at = kind_line.find(" ms each");
+		if (calls_at != std::string::npos)
+			ms_each = atof(kind_line.c_str() + calls_at + 8);
+		const bool three = each_at != std::string::npos && each_at >= 4 && kind_line[each_at - 4] == '.';
+		CHECK(!kind_line.empty() && three && ms_each >= 0.4 && ms_each < 0.48,
+		      "the probe's line has µs in it (%.3f ms each): %s", ms_each, kind_line.c_str());
+		double frame_ms = 0.0;
+		const size_t ticks_at = frame_line.find("StageKit ticks ");
+		if (ticks_at != std::string::npos)
+			frame_ms = atof(frame_line.c_str() + ticks_at + 15);
+		CHECK(frame_ms >= 0.4 && frame_line.find("timing_probe 0.4") != std::string::npos,
+		      "the per-frame line adds up the ticks and names the dearest: %s", frame_line.c_str());
+		obs_source_remove(probe);
+		obs_source_release(probe);
+	}
 	// ==== end scene-filters:perf ====
 
 	// ==== scene-filters:blur ====
