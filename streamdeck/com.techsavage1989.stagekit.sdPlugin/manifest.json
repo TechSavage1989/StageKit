@@ -590,6 +590,29 @@
 			"DisableAutomaticStates": true
 		},
 		{
+			"Name": "Scene Blur",
+			"UUID": "com.techsavage1989.stagekit.sceneblur",
+			"Icon": "imgs/actions/sceneblur/icon",
+			"Tooltip": "Blurs a scene's sources with its Scene Blur filter: on one scene, or on every scene that has a Scene Blur of that name. Lit while it is on.",
+			"PropertyInspectorPath": "ui/sceneblur.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/sceneblur/off",
+					"Name": "Off",
+					"TitleAlignment": "bottom"
+				},
+				{
+					"Image": "imgs/actions/sceneblur/on",
+					"Name": "On",
+					"TitleAlignment": "bottom"
+				}
+			],
+			"DisableAutomaticStates": true
+		},
+		{
 			"Name": "Arrange tool",
 			"UUID": "com.techsavage1989.stagekit.tool",
 			"Icon": "imgs/actions/tool/icon",

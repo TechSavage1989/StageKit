@@ -168,6 +168,12 @@ target_sources(
     src/look/scene-shadow.cpp
     src/look/scene-shadow.hpp
     # ==== end scene-filters:shadow ====
+    # ==== scene-filters:blur ====
+    src/blur/blur-pipeline.cpp
+    src/blur/blur-pipeline.hpp
+    src/look/scene-blur.cpp
+    src/look/scene-blur.hpp
+    # ==== end scene-filters:blur ====
     # ==== scene-filters:perf ====
     # ==== end scene-filters:perf ====
     src/third-party/obs-websocket-api.h

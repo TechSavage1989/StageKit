@@ -8,6 +8,7 @@ import streamDeck from "@elgato/streamdeck";
 import OBSWebSocket from "obs-websocket-js/json";
 
 import { type FilterInfo, isStageKit } from "./kinds.ts";
+import { readSceneBlurs, type SceneBlurFilter } from "./scene-blurs.ts";
 
 export type Connection = {
 	host?: string;
@@ -87,6 +88,8 @@ class ObsLink extends EventEmitter {
 			if (ev.vendorName === "StageKit" && ev.eventType === "SwitcherChanged") this.emit("switcher");
 			// A Scene Modes filter changed its mode, or its list of modes.
 			if (ev.vendorName === "StageKit" && ev.eventType === "SceneModeChanged") this.emit("mode", ev.eventData);
+			// A Scene Blur was switched on or off.
+			if (ev.vendorName === "StageKit" && ev.eventType === "SceneBlurChanged") this.emit("sceneblur", ev.eventData);
 		});
 	}
 
@@ -391,6 +394,25 @@ class ObsLink extends EventEmitter {
 	/** Turns a mode on ("on") or toggles it ("toggle"); says whether OBS took it. */
 	async setSceneMode(scene: string, filter: string, mode: string, how: "on" | "toggle"): Promise<boolean> {
 		return (await this.stageKit("SetSceneMode", { scene, filter, mode, how })) !== undefined;
+	}
+
+	/**
+	 * Every Scene Blur by name: its blur's look, whether any is on, and each
+	 * scene it is on. Empty when OBS, or a StageKit with Scene Blur, cannot
+	 * be asked.
+	 */
+	async sceneBlurs(): Promise<SceneBlurFilter[]> {
+		return readSceneBlurs(await this.stageKit("ListSceneBlurs"));
+	}
+
+	/**
+	 * Switches the Scene Blurs of a name: on one scene, or on every scene that
+	 * has one ("" for the scene). Says whether they are on afterwards, or
+	 * undefined when OBS refused (no such blur) or cannot be asked.
+	 */
+	async sceneBlur(filter: string, scene: string, how: "on" | "off" | "toggle"): Promise<boolean | undefined> {
+		const answer = await this.stageKit("SceneBlur", { filter, scene, how });
+		return answer ? answer.active === true : undefined;
 	}
 
 	/** Changes some of a filter's settings, leaving the rest as they are. */

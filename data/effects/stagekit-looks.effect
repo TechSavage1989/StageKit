@@ -24,6 +24,10 @@ uniform float glass;        // mosaic: how much each cell looks like a piece of 
 uniform float glass_style;  // mosaic: 0 a dome, 1 a flat plate with bevelled edges
 uniform float bloom_threshold;  // BloomBright: how bright a part must be to shine, 0..1
 uniform float bloom_amount;     // BloomAdd: how strongly the light is laid over
+uniform texture2d original;     // MaskedComposite: the picture as it was
+uniform texture2d mask;         // MaskedComposite: where the blur goes (red, 0..1)
+uniform float mix_amount;       // MaskedComposite: how much of the blur, 0..1
+uniform float counted;          // MaskPiece: 1 the piece is blurred, 0 it is kept clear
 
 sampler_state linearClamp {
 	Filter   = Linear;
@@ -318,6 +322,50 @@ float4 PSBloomAmplify(VertData v_in) : TARGET
 	float3 rgb = image.Sample(linearClamp, v_in.uv).rgb;
 	float3 light = image2.Sample(linearClamp, v_in.uv).rgb * bloom_amount;
 	return float4(saturate(rgb + light), 1.0);
+}
+
+// -------------------------------------------------------------- Scene Blur
+// One piece of a scene's mask: an item's own picture, drawn over the mask
+// from the top of the scene down ("under" blending), as its coverage in red
+// where it is blurred and as nothing where it is kept clear. What is left in
+// red at the end is how much of each pixel shows a blurred source.
+
+float4 PSMaskPiece(VertData v_in) : TARGET
+{
+	float a = image.Sample(linearClamp, v_in.uv).a;
+	return float4(a * counted, a * counted, a * counted, a);
+}
+
+// The blurred picture (`image`, `image2` mixed by `mix2`, straight alpha, as
+// the blur leaves it) laid over the picture as it was, only where the mask
+// says, times `mix_amount`. Premultiplied while mixing, straight alpha out.
+float4 PSMaskedComposite(VertData v_in) : TARGET
+{
+	float4 o = original.Sample(linearClamp, v_in.uv);
+	float4 b1 = image.Sample(linearClamp, v_in.uv);
+	float4 b2 = image2.Sample(linearClamp, v_in.uv);
+	float4 b = lerp(float4(b1.rgb * b1.a, b1.a), float4(b2.rgb * b2.a, b2.a), mix2);
+	float k = saturate(mask.Sample(linearClamp, v_in.uv).r) * mix_amount;
+	float4 m = lerp(float4(o.rgb * o.a, o.a), b, k);
+	return float4(m.rgb / max(m.a, 0.00001), m.a);
+}
+
+technique MaskPiece
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSMaskPiece(v_in);
+	}
+}
+
+technique MaskedComposite
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSMaskedComposite(v_in);
+	}
 }
 
 technique BloomAmplify

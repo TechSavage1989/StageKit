@@ -47,6 +47,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <util/platform.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cmath>
 #include <cstring>
@@ -89,14 +90,20 @@ bool draws_nothing(obs_source_t *filter)
 	return false;
 }
 
-// A drawing filter Morph still takes a scene apart with (Scene Shadow, once
-// it says so through morph_accept_drawing_filter). Empty until then.
-std::atomic<bool (*)(obs_source_t *)> g_accepts{nullptr};
+// The drawing filters Morph still takes a scene apart with, each asked in
+// turn (Scene Shadow, which Morph carries through the change; Scene Blur,
+// while it blurs nothing). Set once each, at registration.
+constexpr size_t kMaxAccepts = 8;
+std::array<std::atomic<bool (*)(obs_source_t *)>, kMaxAccepts> g_accepts{};
 
 bool accepted(obs_source_t *filter)
 {
-	auto accepts = g_accepts.load();
-	return accepts && accepts(filter);
+	for (const auto &slot : g_accepts) {
+		auto accepts = slot.load();
+		if (accepts && accepts(filter))
+			return true;
+	}
+	return false;
 }
 
 // Whether a scene can be drawn item by item and look as it does drawn whole:
@@ -983,7 +990,19 @@ bool morph_draws_nothing(obs_source_t *filter)
 
 void morph_accept_drawing_filter(bool (*accepts)(obs_source_t *filter))
 {
-	g_accepts.store(accepts);
+	if (!accepts) {
+		for (auto &slot : g_accepts)
+			slot.store(nullptr);
+		return;
+	}
+	for (auto &slot : g_accepts) {
+		if (slot.load() == accepts)
+			return;
+		bool (*empty)(obs_source_t *) = nullptr;
+		if (slot.compare_exchange_strong(empty, accepts))
+			return;
+	}
+	obs_log(LOG_WARNING, "Morph: no room for another drawing filter to accept");
 }
 
 void register_morph()

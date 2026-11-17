@@ -191,57 +191,99 @@ gs_texrender_t *LookPaint::spare()
 	return spares_[spare_++];
 }
 
+// What an item draws now: its source, or the transition it is showing or
+// hiding with. Nothing for a hidden item with none, or one with no size.
+struct ItemDraw {
+	obs_source_t *source = nullptr;
+	obs_source_t *transition = nullptr;
+	uint32_t sw = 0, sh = 0;
+	obs_sceneitem_crop crop = {};
+	int cw = 0, ch = 0;
+};
+
+namespace {
+
+bool item_draw(obs_sceneitem_t *item, ItemDraw &out)
+{
+	out.source = item ? obs_sceneitem_get_source(item) : nullptr;
+	if (!out.source)
+		return false;
+	const bool visible = obs_sceneitem_visible(item);
+	if (item_transition_running(item, visible))
+		out.transition = obs_sceneitem_get_transition(item, visible);
+	else if (!visible)
+		return false;
+	out.sw = obs_source_get_width(out.source);
+	out.sh = obs_source_get_height(out.source);
+	if (!out.sw || !out.sh)
+		return false;
+	obs_sceneitem_get_crop(item, &out.crop);
+	out.cw = (int)out.sw - out.crop.left - out.crop.right;
+	out.ch = (int)out.sh - out.crop.top - out.crop.bottom;
+	return out.cw >= 1 && out.ch >= 1;
+}
+
+void draw_source(const ItemDraw &d)
+{
+	if (d.transition) {
+		obs_transition_set_size(d.transition, d.sw, d.sh);
+		obs_source_video_render(d.transition);
+	} else {
+		obs_source_video_render(d.source);
+	}
+}
+
+} // namespace
+
+gs_texture_t *LookPaint::picture_of(const ItemDraw &d)
+{
+	gs_texrender_t *into = spare();
+	gs_texrender_reset(into);
+	if (!gs_texrender_begin(into, (uint32_t)d.cw, (uint32_t)d.ch))
+		return nullptr;
+	vec4 clear;
+	vec4_zero(&clear);
+	gs_clear(GS_CLEAR_COLOR, &clear, 0.0f, 0);
+	gs_ortho((float)d.crop.left, (float)(d.crop.left + d.cw), (float)d.crop.top, (float)(d.crop.top + d.ch),
+		 -100.0f, 100.0f);
+	gs_blend_state_push();
+	gs_blend_function_separate(GS_BLEND_SRCALPHA, GS_BLEND_INVSRCALPHA, GS_BLEND_ONE, GS_BLEND_INVSRCALPHA);
+	draw_source(d);
+	gs_blend_state_pop();
+	gs_texrender_end(into);
+	return gs_texrender_get_texture(into);
+}
+
+gs_texture_t *LookPaint::item_picture(obs_sceneitem_t *item, matrix4 &m, uint32_t &w, uint32_t &h)
+{
+	ItemDraw d;
+	if (!item_draw(item, d))
+		return nullptr;
+	gs_texture_t *texture = picture_of(d);
+	if (!texture)
+		return nullptr;
+	obs_sceneitem_get_draw_transform(item, &m);
+	w = (uint32_t)d.cw;
+	h = (uint32_t)d.ch;
+	return texture;
+}
+
 void LookPaint::draw_item(obs_sceneitem_t *item)
 {
-	obs_source_t *source = item ? obs_sceneitem_get_source(item) : nullptr;
-	if (!source)
-		return;
-	const bool visible = obs_sceneitem_visible(item);
-	obs_source_t *transition = nullptr;
-	if (item_transition_running(item, visible))
-		transition = obs_sceneitem_get_transition(item, visible);
-	else if (!visible)
-		return;
-	const uint32_t sw = obs_source_get_width(source), sh = obs_source_get_height(source);
-	if (!sw || !sh)
-		return;
-	obs_sceneitem_crop crop;
-	obs_sceneitem_get_crop(item, &crop);
-	const int cw = (int)sw - crop.left - crop.right, ch = (int)sh - crop.top - crop.bottom;
-	if (cw < 1 || ch < 1)
+	ItemDraw d;
+	if (!item_draw(item, d))
 		return;
 	matrix4 m;
 	obs_sceneitem_get_draw_transform(item, &m);
-	auto draw_source = [&] {
-		if (transition) {
-			obs_transition_set_size(transition, sw, sh);
-			obs_source_video_render(transition);
-		} else {
-			obs_source_video_render(source);
-		}
-	};
-	if (!crop.left && !crop.top && !crop.right && !crop.bottom) {
+	if (!d.crop.left && !d.crop.top && !d.crop.right && !d.crop.bottom) {
 		gs_matrix_push();
 		gs_matrix_mul(&m);
-		draw_source();
+		draw_source(d);
 		gs_matrix_pop();
 		return;
 	}
 	// Cropped: by way of a picture of what is left, as OBS draws it.
-	gs_texrender_t *into = spare();
-	gs_texrender_reset(into);
-	if (!gs_texrender_begin(into, (uint32_t)cw, (uint32_t)ch))
-		return;
-	vec4 clear;
-	vec4_zero(&clear);
-	gs_clear(GS_CLEAR_COLOR, &clear, 0.0f, 0);
-	gs_ortho((float)crop.left, (float)(crop.left + cw), (float)crop.top, (float)(crop.top + ch), -100.0f, 100.0f);
-	gs_blend_state_push();
-	gs_blend_function_separate(GS_BLEND_SRCALPHA, GS_BLEND_INVSRCALPHA, GS_BLEND_ONE, GS_BLEND_INVSRCALPHA);
-	draw_source();
-	gs_blend_state_pop();
-	gs_texrender_end(into);
-	gs_texture_t *texture = gs_texrender_get_texture(into);
+	gs_texture_t *texture = picture_of(d);
 	if (!texture)
 		return;
 	gs_effect_t *def = obs_get_base_effect(OBS_EFFECT_DEFAULT);
@@ -251,7 +293,7 @@ void LookPaint::draw_item(obs_sceneitem_t *item)
 	gs_matrix_mul(&m);
 	gs_effect_set_texture(gs_effect_get_param_by_name(def, "image"), texture);
 	while (gs_effect_loop(def, "Draw"))
-		gs_draw_sprite(texture, 0, (uint32_t)cw, (uint32_t)ch);
+		gs_draw_sprite(texture, 0, (uint32_t)d.cw, (uint32_t)d.ch);
 	gs_matrix_pop();
 	gs_blend_state_pop();
 }

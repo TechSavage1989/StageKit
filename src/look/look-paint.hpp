@@ -19,6 +19,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/kawase-blur.hpp"
 
 #include <obs.h>
+#include <graphics/matrix4.h>
 
 #include <cstdint>
 #include <memory>
@@ -62,6 +63,8 @@ ShadowLook lerp_look(const ShadowLook *a, const ShadowLook *b, double t);
 // the transition in the item's place, and only drawing it ends it.
 bool item_transition_running(obs_sceneitem_t *item, bool show);
 
+struct ItemDraw;
+
 class LookPaint {
 public:
 	LookPaint();
@@ -81,6 +84,11 @@ public:
 	// bounding box, the scale filter and the blending mode, which only
 	// change a silhouette's edge.
 	void draw_item(obs_sceneitem_t *item);
+	// The same item drawn into a picture of its own, the size of the part
+	// of its source that shows (`w` by `h`), and `m`, the transform that
+	// puts that picture where the scene draws it. nullptr when it draws
+	// nothing. The picture is borrowed until the next begin_frame.
+	gs_texture_t *item_picture(obs_sceneitem_t *item, matrix4 &m, uint32_t &w, uint32_t &h);
 
 	// A picture of the canvas (cx by cy), cleared, ready to draw items into
 	// with the blending OBS fills a filter's picture with. `end_canvas`
@@ -102,6 +110,7 @@ public:
 
 private:
 	gs_texrender_t *spare();
+	gs_texture_t *picture_of(const ItemDraw &d);
 
 	gs_effect_t *effect_ = nullptr;
 	gs_eparam_t *p_image_ = nullptr;

@@ -44,6 +44,7 @@ PICTURES = {
     "stagekit_scene_shadow": ("options/scene-shadow-on", "options/scene-shadow-off"),
     "stagekit_scene_corners": ("options/scene-corners-on", "options/scene-corners-off"),
     "stagekit_scene_standby": ("filters/standby-picture-on", "filters/standby-picture-off"),
+    "stagekit_scene_blur": ("blur-types/gaussian-on", "blur-types/gaussian-off"),
 }
 
 
@@ -120,6 +121,17 @@ def options(label, setting, default, pairs):
         f"		</sdpi-item>\n"
     )
 
+
+FOLLOW_BLUR = """
+		<script>
+			// The scenes depend on the filter chosen: ask for them again when it
+			// changes (after it has been saved).
+			const filter = document.getElementById("filter");
+			const scene = document.getElementById("scene");
+			filter.addEventListener("valuechange", () => setTimeout(() => scene.refresh(), 200));
+			filter.addEventListener("change", () => setTimeout(() => scene.refresh(), 200));
+		</script>
+"""
 
 PRESS = options("On press", "press", "toggle", [("toggle", "Toggle"), ("on", "Switch on"), ("off", "Switch off")])
 
@@ -306,6 +318,24 @@ def main():
         + options("On press", "press", "on", [("on", "Switch on"), ("toggle", "Toggle")]),
     )
     add("mode", "Scene Mode", "Turns on one mode of a scene's Scene Modes: its sources show, the other modes' sources hide. Lit while that mode is on.", "mode", "imgs/actions/switch/icon", two("mode"))
+
+    # The keys for a filter on a scene that act through StageKit's own requests.
+    for feature in features["scenes"]:
+        on, off = PICTURES[feature["kind"]]
+        key_pictures(feature["key"], on, off)
+        page(
+            feature["key"],
+            f"StageKit {feature['name']}",
+            '		<sdpi-item label="Blur filter">\n'
+            '			<sdpi-select id="filter" setting="filter" datasource="getSceneBlurs" placeholder="Choose a Scene Blur" show-refresh></sdpi-select>\n'
+            "		</sdpi-item>\n"
+            '		<sdpi-item label="Scene">\n'
+            '			<sdpi-select id="scene" setting="scene" datasource="getSceneBlurScenes" default="" show-refresh></sdpi-select>\n'
+            "		</sdpi-item>\n"
+            + PRESS,
+            FOLLOW_BLUR,
+        )
+        add(feature["key"], feature["name"], feature["tip"], feature["key"], "imgs/actions/switch/icon", two(feature["key"]))
 
     key_pictures("toolkey", "options/align-left", None)
     page("tool", "StageKit arrange tool", options("Tool", "tool", "left", tools_list()))

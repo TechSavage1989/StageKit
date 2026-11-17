@@ -23,5 +23,8 @@
 		{ "key": "sendto", "kind": "stagekit_send_to", "name": "Move Source", "tip": "Sends the camera, or any source, to one of its saved places." },
 		{ "key": "placeitem", "kind": "stagekit_place_item", "scene": true, "name": "Move Scene Item", "tip": "Moves a scene's item to its place." },
 		{ "key": "layout", "kind": "stagekit_layout", "scene": true, "name": "Apply Layout", "tip": "Puts a scene's items into a saved layout." }
+	],
+	"scenes": [
+		{ "key": "sceneblur", "kind": "stagekit_scene_blur", "name": "Scene Blur", "tip": "Blurs a scene's sources with its Scene Blur filter: on one scene, or on every scene that has a Scene Blur of that name. Lit while it is on." }
 	]
 }

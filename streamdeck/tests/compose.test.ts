@@ -11,6 +11,7 @@ import {
 	blurAllPicture,
 	blurAllShown,
 	blurBadge,
+	sceneBlurShown,
 	COLOURS,
 	file,
 	hookPicture,
@@ -60,6 +61,7 @@ function everyFunction(type = "camera", scene = "gameplay"): Array<[string, Show
 	for (const sh of SHAPES) out.push([`shape ${sh}`, shapeShown(undefined, sh, "game")]);
 	for (const c of ["auto", "game", "window"]) out.push([`hook ${c}`, hookShown(undefined, "window_capture", "browser", c)]);
 	for (const b of ["auto", ...BLURS]) out.push([`blurall ${b}`, blurAllShown(undefined, b, scene)]);
+	for (const b of ["auto", ...BLURS]) out.push([`sceneblur ${b}`, sceneBlurShown(undefined, b, scene, "mosaic_voronoi")]);
 	for (const p of ["auto", ...PLACES]) out.push([`sendto ${p}`, moveShown(undefined, "stagekit_send_to", {}, { sourceType: type, look: p })!]);
 	for (let d = 0; d <= 10; d++) out.push([`sendto #${d}`, moveShown(undefined, "stagekit_send_to", { destination: d }, { sourceType: type })!]);
 	for (const extra of [{ linked: "Chat" }, { linked: "Chat", flip_linked: false }, { apply_in: 1 }, { apply_in: 2 }])
@@ -106,7 +108,7 @@ test("a composed image is a valid PNG: the type's picture, the badge laid over i
 	const all = everyFunction();
 	for (const colour of COLOURS)
 		for (const [what, shown] of colour === "mono" ? all : all.filter((_, i) => i % 7 === 0)) {
-			const twoState = what.startsWith("appswitch toggle") || what.startsWith("option") || what.startsWith("blurall");
+			const twoState = what.startsWith("appswitch toggle") || what.startsWith("option") || what.startsWith("blurall") || what.startsWith("sceneblur");
 			for (const state of twoState ? [false, true] : [undefined]) {
 				const layers = layersOf(shown, colour, state);
 				const out = fromUrl(composed(layers));

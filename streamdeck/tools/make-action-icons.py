@@ -120,6 +120,8 @@ ICONS = {
     "sceneshadow": lambda d: (box(d, 0.04, 0.14, 0.96, 0.86), box(d, 0.22, 0.36, 0.5, 0.76, r=0.03, fill=True), box(d, 0.14, 0.26, 0.42, 0.66, r=0.03, width=W - 4), box(d, 0.64, 0.36, 0.86, 0.76, r=0.03, fill=True), box(d, 0.56, 0.26, 0.78, 0.66, r=0.03, width=W - 4)),
     "scenecorners": lambda d: (box(d, 0.04, 0.14, 0.96, 0.86), box(d, 0.14, 0.27, 0.52, 0.73, r=0.12, width=W - 3), box(d, 0.6, 0.27, 0.86, 0.73, r=0.1, width=W - 3)),
     "scenestandby": lambda d: (box(d, 0.04, 0.14, 0.96, 0.86), d.arc((*p(0.32, 0.3), *p(0.68, 0.72)), -55, 235, fill=INK, width=W - 2), line(d, 0.5, 0.24, 0.5, 0.5, W - 2)),
+    # The Scene Blur key: a scene's frame with its sources blurred.
+    "sceneblur": blurred(lambda d: (box(d, 0.04, 0.14, 0.96, 0.86, width=W + 2), box(d, 0.16, 0.3, 0.56, 0.7, r=0.04, fill=True), box(d, 0.66, 0.3, 0.84, 0.7, r=0.04, fill=True)), 6),
     # The Scene Mode key: modes stacked, one of them on.
     "mode": lambda d: (box(d, 0.14, 0.06, 0.86, 0.3, r=0.06), box(d, 0.14, 0.38, 0.86, 0.62, r=0.06, fill=True), box(d, 0.14, 0.7, 0.86, 0.94, r=0.06)),
     # Moves.

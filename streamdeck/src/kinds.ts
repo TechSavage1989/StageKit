@@ -33,6 +33,7 @@ const NAMES: Record<string, string> = {
 	stagekit_scene_standby: "Scene Standby",
 	stagekit_scene_corners: "Scene Corners",
 	stagekit_scene_shadow: "Scene Shadow",
+	stagekit_scene_blur: "Scene Blur",
 };
 
 /**
@@ -54,6 +55,7 @@ const SCENE_KINDS = new Set([
 	"stagekit_scene_standby",
 	"stagekit_scene_corners",
 	"stagekit_scene_shadow",
+	"stagekit_scene_blur",
 ]);
 
 export function isSceneKind(kind: string): boolean {

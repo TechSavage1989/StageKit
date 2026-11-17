@@ -22,6 +22,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../capture/auto-capture.hpp"
 #include "../dock/arrange-tools.hpp"
 #include "../frame/auto-frame.hpp"
+#include "../look/scene-blur.hpp"
 #include "../placement/scene-modes.hpp"
 #include "../third-party/obs-websocket-api.h"
 
@@ -45,7 +46,8 @@ std::atomic<obs_websocket_vendor> g_vendor{nullptr};
 const char *const kRequests[] = {"GetVersion",       "ListBlurFilters", "BlurOn",       "BlurOff",
 				 "BlurToggle",       "SetBlur",         "BlurAll",      "HookFront",
 				 "SetPictureShape",  "GetOptions",      "SetOption",    "Slide",
-				 "GetSwitcherState", "ListSceneModes",  "GetSceneMode", "SetSceneMode"};
+				 "GetSwitcherState", "ListSceneModes",  "GetSceneMode", "SetSceneMode",
+				 "ListSceneBlurs",   "SceneBlur"};
 
 void fail(obs_data_t *response, const char *message)
 {
@@ -436,6 +438,92 @@ void req_set_scene_mode(obs_data_t *request, obs_data_t *response, void *)
 		fail(response, why.c_str());
 }
 
+// ---- Scene Blur
+
+void write_blur_state(obs_data_t *into, const SceneBlurState &state)
+{
+	obs_data_set_string(into, "scene", state.scene.c_str());
+	obs_data_set_string(into, "filter", state.filter.c_str());
+	obs_data_set_string(into, "type", state.type.c_str());
+	obs_data_set_bool(into, "active", state.active);
+	obs_data_set_bool(into, "enabled", state.enabled);
+}
+
+// { scene? } -> { filters: [{ filter, type, active, scenes: [{ scene, active }] }],
+// blurs: [{ scene, filter, type, active, enabled }] }: each name once, with
+// the scenes it is on, and each filter.
+void req_list_scene_blurs(obs_data_t *request, obs_data_t *response, void *)
+{
+	const std::vector<SceneBlurState> all = scene_blur_list(obs_data_get_string(request, "scene"), "");
+	obs_data_array_t *blurs = obs_data_array_create();
+	std::vector<std::string> names;
+	for (const SceneBlurState &state : all) {
+		obs_data_t *b = obs_data_create();
+		write_blur_state(b, state);
+		obs_data_array_push_back(blurs, b);
+		obs_data_release(b);
+		if (std::find(names.begin(), names.end(), state.filter) == names.end())
+			names.push_back(state.filter);
+	}
+	std::sort(names.begin(), names.end());
+	obs_data_array_t *filters = obs_data_array_create();
+	for (const std::string &name : names) {
+		obs_data_t *f = obs_data_create();
+		obs_data_set_string(f, "filter", name.c_str());
+		obs_data_array_t *scenes = obs_data_array_create();
+		bool any = false;
+		std::string type;
+		for (const SceneBlurState &state : all) {
+			if (state.filter != name)
+				continue;
+			obs_data_t *s = obs_data_create();
+			obs_data_set_string(s, "scene", state.scene.c_str());
+			obs_data_set_bool(s, "active", state.active);
+			obs_data_array_push_back(scenes, s);
+			obs_data_release(s);
+			any = any || state.active;
+			if (type.empty())
+				type = state.type;
+		}
+		obs_data_set_string(f, "type", type.c_str());
+		obs_data_set_bool(f, "active", any);
+		obs_data_set_array(f, "scenes", scenes);
+		obs_data_array_release(scenes);
+		obs_data_array_push_back(filters, f);
+		obs_data_release(f);
+	}
+	obs_data_set_array(response, "filters", filters);
+	obs_data_set_array(response, "blurs", blurs);
+	obs_data_array_release(filters);
+	obs_data_array_release(blurs);
+	obs_data_set_bool(response, "success", true);
+}
+
+// { filter, scene? ("" or none: every scene with that filter), how?: "on" |
+// "off" | "toggle" (none: only asks) } -> { active, blurs: [...] }
+void req_scene_blur(obs_data_t *request, obs_data_t *response, void *)
+{
+	std::vector<SceneBlurState> out;
+	bool active = false;
+	std::string why;
+	if (!scene_blur_press(obs_data_get_string(request, "scene"), obs_data_get_string(request, "filter"),
+			      obs_data_get_string(request, "how"), out, active, why)) {
+		fail(response, why.c_str());
+		return;
+	}
+	obs_data_array_t *blurs = obs_data_array_create();
+	for (const SceneBlurState &state : out) {
+		obs_data_t *b = obs_data_create();
+		write_blur_state(b, state);
+		obs_data_array_push_back(blurs, b);
+		obs_data_release(b);
+	}
+	obs_data_set_array(response, "blurs", blurs);
+	obs_data_array_release(blurs);
+	obs_data_set_bool(response, "active", active);
+	obs_data_set_bool(response, "success", true);
+}
+
 // What was emitted, for the tests: one JSON object per line.
 std::mutex g_events_mutex;
 std::string g_events;
@@ -492,6 +580,8 @@ void vendor_api_register()
 		{"ListSceneModes", req_list_scene_modes},
 		{"GetSceneMode", req_get_scene_mode},
 		{"SetSceneMode", req_set_scene_mode},
+		{"ListSceneBlurs", req_list_scene_blurs},
+		{"SceneBlur", req_scene_blur},
 	};
 	for (const auto &r : requests) {
 		if (!obs_websocket_vendor_register_request(vendor, r.name, r.fn, nullptr))
@@ -594,6 +684,19 @@ void vendor_emit_scene_mode_changed(obs_source_t *filter, const std::string &mod
 	obs_data_release(data);
 }
 
+void vendor_emit_scene_blur_changed(obs_source_t *filter, bool active)
+{
+	if (!filter)
+		return;
+	obs_source_t *parent = obs_filter_get_parent(filter);
+	obs_data_t *data = obs_data_create();
+	obs_data_set_string(data, "scene", parent && obs_source_get_name(parent) ? obs_source_get_name(parent) : "");
+	obs_data_set_string(data, "filter", obs_source_get_name(filter));
+	obs_data_set_bool(data, "active", active);
+	emit_event("SceneBlurChanged", data);
+	obs_data_release(data);
+}
+
 void vendor_api_add_test_calls()
 {
 	static std::atomic<bool> added{false};
@@ -612,6 +715,8 @@ void vendor_api_add_test_calls()
 				{"ListSceneModes", req_list_scene_modes},
 				{"GetSceneMode", req_get_scene_mode},
 				{"SetSceneMode", req_set_scene_mode},
+				{"ListSceneBlurs", req_list_scene_blurs},
+				{"SceneBlur", req_scene_blur},
 			};
 			obs_data_t *request = json && *json ? obs_data_create_from_json(json) : obs_data_create();
 			if (!request)
