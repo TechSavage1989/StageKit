@@ -10,6 +10,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include "item-transition.hpp"
 #include "pick-list.hpp"
+#include "scene-filter-ids.hpp"
 #include "scene-util.hpp"
 #include "../transition/morph-paint.hpp"
 #include "../transition/morph.hpp"
@@ -30,6 +31,8 @@ bool owned(obs_sceneitem_t *item)
 	auto owns = g_owns.load();
 	return item && owns && owns(item);
 }
+std::atomic<SceneLookup> g_scene_lookup{nullptr};
+void apply_way(obs_sceneitem_t *item, bool show, const ItemWay &way, obs_source_t *scene);
 } // namespace
 
 void item_transitions_owner(bool (*owns)(obs_sceneitem_t *item))
@@ -37,10 +40,52 @@ void item_transitions_owner(bool (*owns)(obs_sceneitem_t *item))
 	g_owns.store(owns);
 }
 
+bool item_transitions_owned(obs_sceneitem_t *item)
+{
+	return owned(item);
+}
+
+void item_transitions_scene(SceneLookup lookup)
+{
+	g_scene_lookup.store(lookup);
+}
+
+ItemChange resolve_item_change(obs_sceneitem_t *item, const ItemChange &change, obs_source_t *scene)
+{
+	const bool show = change.show.kind == kTransitionScene, hide = change.hide.kind == kTransitionScene;
+	if (!show && !hide)
+		return change;
+	ItemChange theirs;
+	bool found = false;
+	if (SceneLookup lookup = g_scene_lookup.load(); lookup && item) {
+		obs_source_t *where = scene ? scene : obs_scene_get_source(obs_sceneitem_get_scene(item));
+		found = where && lookup(where, item, theirs);
+	}
+	ItemChange out = change;
+	// Where no scene's filter covers the item: a fade of the way's own
+	// length, what an untouched filter did before this choice existed.
+	if (show)
+		out.show = found && theirs.show.kind != kTransitionScene ? theirs.show
+									 : ItemWay{kTransitionFade, change.show.ms, {}};
+	if (hide)
+		out.hide = found && theirs.hide.kind != kTransitionScene ? theirs.hide
+									 : ItemWay{kTransitionFade, change.hide.ms, {}};
+	return out;
+}
+
 void set_item_transitions(obs_sceneitem_t *item, const std::string &kind, uint32_t ms)
 {
 	if (!item || kind == kTransitionKeep || owned(item))
 		return;
+	if (kind == kTransitionScene) {
+		ItemChange asked;
+		asked.show = ItemWay{kTransitionScene, ms, {}};
+		asked.hide = asked.show;
+		const ItemChange change = resolve_item_change(item, asked, nullptr);
+		apply_way(item, true, change.show, nullptr);
+		apply_way(item, false, change.hide, nullptr);
+		return;
+	}
 	for (bool show : {true, false}) {
 		obs_source_t *now = obs_sceneitem_get_transition(item, show);
 		if (kind == kTransitionCut) {
@@ -124,6 +169,7 @@ void add_item_transition_properties(obs_properties_t *props)
 	// Any transition OBS has, except the ones that need a file of their own.
 	obs_property_t *transition = obs_properties_add_list(props, "transition", obs_module_text("Change.With"),
 							     OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
+	obs_property_list_add_string(transition, obs_module_text("Change.Scene"), kTransitionScene);
 	obs_property_list_add_string(transition, obs_module_text("Change.Cut"), kTransitionCut);
 	const char *id = nullptr;
 	for (size_t i = 0; obs_enum_transition_types(i, &id); i++) {
@@ -133,7 +179,8 @@ void add_item_transition_properties(obs_properties_t *props)
 		obs_property_list_add_string(transition, shown_as ? shown_as : id, id);
 	}
 	obs_property_list_add_string(transition, obs_module_text("Change.Keep"), kTransitionKeep);
-	obs_property_set_long_description(transition, obs_module_text("Change.Tip"));
+	const std::string tip = std::string(obs_module_text("Change.Tip")) + " " + obs_module_text("Change.Scene.Tip");
+	obs_property_set_long_description(transition, tip.c_str());
 	obs_property_set_modified_callback(transition, [](obs_properties_t *p, obs_property_t *, obs_data_t *settings) {
 		const std::string kind = obs_data_get_string(settings, "transition");
 		obs_property_set_visible(obs_properties_get(p, "transition_ms"),
@@ -143,11 +190,12 @@ void add_item_transition_properties(obs_properties_t *props)
 	obs_property_t *time =
 		obs_properties_add_int_slider(props, "transition_ms", obs_module_text("Change.Time"), 50, 5000, 50);
 	obs_property_int_set_suffix(time, " ms");
+	obs_property_set_long_description(time, obs_module_text("Change.Time.Tip"));
 }
 
 void item_transition_defaults(obs_data_t *settings)
 {
-	obs_data_set_default_string(settings, "transition", kTransitionFade);
+	obs_data_set_default_string(settings, "transition", kTransitionScene);
 	obs_data_set_default_int(settings, "transition_ms", 300);
 }
 
@@ -230,7 +278,8 @@ ItemWay way_read(obs_data_t *settings, const std::string &scope, bool show)
 	way.kind = obs_data_get_string(settings, key(scope, show ? "transition" : "hide_transition").c_str());
 	way.ms = (uint32_t)std::clamp<long long>(
 		obs_data_get_int(settings, key(scope, show ? "transition_ms" : "hide_ms").c_str()), 0, 10000);
-	if (way.kind != kTransitionCut && way.kind != kTransitionKeep && way.kind != kUsual && way.kind != kSame)
+	if (way.kind != kTransitionCut && way.kind != kTransitionKeep && way.kind != kUsual && way.kind != kSame &&
+	    way.kind != kTransitionScene)
 		way.own = own_json(settings, own_prefix(scope, show, way.kind));
 	// A Morph also gets the links made in this filter: which sources change
 	// into each other.
@@ -285,16 +334,10 @@ const char *off_nearest_edge(obs_sceneitem_t *item, obs_source_t *scene, bool sh
 	return show ? "up" : "down";
 }
 
-void apply_way(obs_sceneitem_t *item, bool show, const ItemWay &way, obs_source_t *scene)
+// A way's own settings as they are to be set on this item: "Off the
+// nearest edge" made a direction. Null for none; released by the caller.
+obs_data_t *own_for(obs_sceneitem_t *item, bool show, const ItemWay &way, obs_source_t *scene)
 {
-	if (way.kind == kTransitionKeep || way.kind.empty())
-		return;
-	obs_source_t *now = obs_sceneitem_get_transition(item, show);
-	if (way.kind == kTransitionCut) {
-		if (now)
-			obs_sceneitem_set_transition(item, show, nullptr);
-		return;
-	}
 	obs_data_t *own = way.own.empty() ? nullptr : obs_data_create_from_json(way.own.c_str());
 	if (own && has_direction(way.kind) && strcmp(obs_data_get_string(own, "direction"), kNearest) == 0) {
 		obs_data_set_string(own, "direction", off_nearest_edge(item, scene, show));
@@ -302,6 +345,95 @@ void apply_way(obs_sceneitem_t *item, bool show, const ItemWay &way, obs_source_
 		if (way.kind == "swipe_transition")
 			obs_data_set_bool(own, "swipe_in", show);
 	}
+	return own;
+}
+
+// Whether one value of two settings is the same.
+bool same_value(obs_data_t *a, obs_data_t *b, const char *name)
+{
+	obs_data_item_t *x = obs_data_item_byname(a, name);
+	obs_data_item_t *y = obs_data_item_byname(b, name);
+	bool same = x && y && obs_data_item_gettype(x) == obs_data_item_gettype(y);
+	if (same) {
+		switch (obs_data_item_gettype(x)) {
+		case OBS_DATA_STRING:
+			same = strcmp(obs_data_item_get_string(x), obs_data_item_get_string(y)) == 0;
+			break;
+		case OBS_DATA_BOOLEAN:
+			same = obs_data_item_get_bool(x) == obs_data_item_get_bool(y);
+			break;
+		case OBS_DATA_NUMBER:
+			same = obs_data_item_get_double(x) == obs_data_item_get_double(y);
+			break;
+		default: {
+			// An array or an object: compared written out.
+			obs_data_t *wa = obs_data_create(), *wb = obs_data_create();
+			if (obs_data_item_gettype(x) == OBS_DATA_ARRAY) {
+				obs_data_array_t *ax = obs_data_item_get_array(x), *ay = obs_data_item_get_array(y);
+				obs_data_set_array(wa, "v", ax);
+				obs_data_set_array(wb, "v", ay);
+				obs_data_array_release(ax);
+				obs_data_array_release(ay);
+			} else {
+				obs_data_t *ox = obs_data_item_get_obj(x), *oy = obs_data_item_get_obj(y);
+				obs_data_set_obj(wa, "v", ox);
+				obs_data_set_obj(wb, "v", oy);
+				obs_data_release(ox);
+				obs_data_release(oy);
+			}
+			const char *ja = obs_data_get_json(wa), *jb = obs_data_get_json(wb);
+			same = ja && jb && strcmp(ja, jb) == 0;
+			obs_data_release(wa);
+			obs_data_release(wb);
+			break;
+		}
+		}
+	}
+	obs_data_item_release(&x);
+	obs_data_item_release(&y);
+	return same;
+}
+
+// Whether an item carries a way already: its kind, its length, and exactly
+// the settings the way sets, no more.
+bool way_matches(obs_sceneitem_t *item, bool show, const ItemWay &way, obs_source_t *scene)
+{
+	if (way.kind == kTransitionKeep || way.kind.empty())
+		return true;
+	obs_source_t *now = obs_sceneitem_get_transition(item, show);
+	if (way.kind == kTransitionCut)
+		return !now;
+	const char *now_id = now ? obs_source_get_unversioned_id(now) : nullptr;
+	if (!now_id || way.kind != now_id || obs_sceneitem_get_transition_duration(item, show) != way.ms)
+		return false;
+	obs_data_t *own = own_for(item, show, way, scene);
+	obs_data_t *theirs = obs_source_get_settings(now);
+	bool same = true;
+	obs_data_item_t *it = own ? obs_data_first(own) : nullptr;
+	for (; it && same; obs_data_item_next(&it))
+		same = same_value(own, theirs, obs_data_item_get_name(it));
+	obs_data_item_release(&it);
+	// (and nothing set that the way does not set)
+	for (it = obs_data_first(theirs); it && same; obs_data_item_next(&it))
+		same = !obs_data_item_has_user_value(it) ||
+		       (own && obs_data_has_user_value(own, obs_data_item_get_name(it)));
+	obs_data_item_release(&it);
+	obs_data_release(theirs);
+	obs_data_release(own);
+	return same;
+}
+
+void apply_way(obs_sceneitem_t *item, bool show, const ItemWay &way, obs_source_t *scene)
+{
+	if (way.kind == kTransitionKeep || way.kind.empty() || way.kind == kTransitionScene)
+		return;
+	obs_source_t *now = obs_sceneitem_get_transition(item, show);
+	if (way.kind == kTransitionCut) {
+		if (now)
+			obs_sceneitem_set_transition(item, show, nullptr);
+		return;
+	}
+	obs_data_t *own = own_for(item, show, way, scene);
 	const char *now_id = now ? obs_source_get_unversioned_id(now) : nullptr;
 	if (!now_id || way.kind != now_id) {
 		const char *of = obs_source_get_name(obs_sceneitem_get_source(item));
@@ -320,9 +452,12 @@ void apply_way(obs_sceneitem_t *item, bool show, const ItemWay &way, obs_source_
 		obs_sceneitem_set_transition_duration(item, show, way.ms);
 }
 
-// The kinds of transition there are to choose from.
-void add_kinds(obs_property_t *list)
+// The kinds of transition there are to choose from: As the scene sets
+// first, unless the list is the Scene Transitions filter's own.
+void add_kinds(obs_property_t *list, bool scene_entry)
 {
+	if (scene_entry)
+		obs_property_list_add_string(list, obs_module_text("Change.Scene"), kTransitionScene);
 	obs_property_list_add_string(list, obs_module_text("Change.Cut"), kTransitionCut);
 	const char *id = nullptr;
 	for (size_t i = 0; obs_enum_transition_types(i, &id); i++) {
@@ -496,6 +631,10 @@ void build(obs_properties_t *top, obs_source_t *owner, obs_data_t *settings)
 	for (const std::string &name : old)
 		obs_properties_remove_by_name(content, name.c_str());
 
+	// The Scene Transitions filter is what "As the scene sets" asks; its own
+	// lists do not offer it.
+	const char *owner_id = owner ? obs_source_get_unversioned_id(owner) : nullptr;
+	const bool scene_entry = !owner_id || strcmp(owner_id, kSceneTransitionsId) != 0;
 	const std::string scope = scope_of(chosen.c_str());
 	if (!scope.empty()) {
 		obs_data_set_default_string(settings, key(scope, "transition").c_str(), kUsual);
@@ -513,9 +652,11 @@ void build(obs_properties_t *top, obs_source_t *owner, obs_data_t *settings)
 			obs_property_list_add_string(kinds, obs_module_text("Change.Usual"), kUsual);
 		if (!show)
 			obs_property_list_add_string(kinds, obs_module_text("Change.HideSame"), kSame);
-		add_kinds(kinds);
-		obs_property_set_long_description(kinds, obs_module_text(show ? "Change.ShowWith.Tip"
-									      : "Change.HideWith.Tip"));
+		add_kinds(kinds, scene_entry);
+		std::string tip = obs_module_text(show ? "Change.ShowWith.Tip" : "Change.HideWith.Tip");
+		if (scene_entry)
+			tip += std::string(" ") + obs_module_text("Change.Scene.Tip");
+		obs_property_set_long_description(kinds, tip.c_str());
 		obs_property_set_modified_callback2(kinds, rebuild_cb, owner);
 		const std::string kind = obs_data_get_string(settings, kind_name.c_str());
 		const bool timed = kind != kTransitionCut && kind != kTransitionKeep && kind != kUsual &&
@@ -525,6 +666,10 @@ void build(obs_properties_t *top, obs_source_t *owner, obs_data_t *settings)
 		obs_property_t *time = obs_properties_add_int_slider(content, ms_name.c_str(),
 								     obs_module_text("Change.Time"), 50, 5000, 50);
 		obs_property_int_set_suffix(time, " ms");
+		if (kind == kTransitionScene) {
+			obs_property_set_long_description(time, obs_module_text("Change.Time.Tip"));
+			continue; // (its own settings are the scene's)
+		}
 		add_own(content, settings, own_prefix(scope, show, kind), kind);
 	}
 }
@@ -585,20 +730,30 @@ ItemChange item_change_read(obs_data_t *settings, const char *source)
 	return own;
 }
 
-void apply_item_change(obs_sceneitem_t *item, const ItemChange &change, obs_source_t *scene)
+void apply_item_change(obs_sceneitem_t *item, const ItemChange &asked, obs_source_t *scene)
 {
 	if (!item || owned(item))
 		return;
+	const ItemChange change = resolve_item_change(item, asked, scene);
 	apply_way(item, true, change.show, scene);
 	apply_way(item, false, change.hide, scene);
 }
 
-void apply_item_change_as_owner(obs_sceneitem_t *item, const ItemChange &change, obs_source_t *scene)
+void apply_item_change_as_owner(obs_sceneitem_t *item, const ItemChange &asked, obs_source_t *scene)
 {
 	if (!item)
 		return;
+	const ItemChange change = resolve_item_change(item, asked, scene);
 	apply_way(item, true, change.show, scene);
 	apply_way(item, false, change.hide, scene);
+}
+
+bool item_change_matches(obs_sceneitem_t *item, const ItemChange &asked, obs_source_t *scene)
+{
+	if (!item)
+		return false;
+	const ItemChange change = resolve_item_change(item, asked, scene);
+	return way_matches(item, true, change.show, scene) && way_matches(item, false, change.hide, scene);
 }
 
 void add_item_change_properties(obs_properties_t *props, obs_source_t *owner, const char *list_setting)

@@ -2185,3 +2185,14 @@ callback); `item_transitions_owner` asked per item; `holds-hidden.*` (`mode_hold
 `filter-order.hpp`, `stand-in.hpp`, `is_screen_capture`; the `==== scene-filters:<unit> ====` blocks in
 plugin-main, CMake, the locale file, the tests, the README and AGENTS; `tests/run-tests.sh` stops on a
 repeated locale key and on a failed build. Whole suite: ALL PASSED.
+
+## Scene Transitions (0.1.0-beta155, on `feat/scene-transitions`)
+
+Scene Transitions (`src/placement/scene-transitions.*`): one filter on a scene that writes every source's
+OBS item transitions from its tick, on events, only where they differ; *As the scene sets*
+(`kTransitionScene`) is the new default of every filter's transition, resolved only in
+`resolve_item_change` (fade of the filter's own duration where the scene sets nothing). Owned (Standby),
+private, *Leave these alone*, Show/Hide Animation and grouped items (unless `in_groups`) are passed over; the
+scene's transitions are put back after another filter's own change. Left for others: Standby's one
+`resolve_item_change` call before swapping for its twin (Unit 4), test 11 with Scene Modes (Unit 1), the
+collection's Scene Transitions settings (Collection unit). Whole suite: ALL PASSED.

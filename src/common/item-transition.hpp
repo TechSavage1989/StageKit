@@ -24,6 +24,12 @@ namespace stagekit {
 inline constexpr const char *kTransitionCut = "none";  // at once; the item's transitions are taken off
 inline constexpr const char *kTransitionKeep = "keep"; // whatever is set on the item is left alone
 inline constexpr const char *kTransitionFade = "fade_transition";
+// As the scene sets: the transition a Scene Transitions filter on the item's
+// scene gives it, or, where there is none (or it leaves the item alone), a
+// fade of the way's own duration. The default in every filter since beta155.
+// It is resolved in one place only, `resolve_item_change`, which every call
+// below goes through.
+inline constexpr const char *kTransitionScene = "scene";
 
 // Gives an item the show and hide transition asked for, if it does not have
 // them already. Call it before showing or hiding the item.
@@ -58,7 +64,7 @@ bool end_stale_transition(obs_sceneitem_t *item);
 // Adds the "Change with" list and its "Lasting" time to a properties window.
 void add_item_transition_properties(obs_properties_t *props);
 
-// Fade, 300 ms.
+// As the scene sets, 300 ms (a fade of 300 ms where the scene sets nothing).
 void item_transition_defaults(obs_data_t *settings);
 
 // Reads the two settings.
@@ -112,7 +118,33 @@ void apply_item_change_as_owner(obs_sceneitem_t *item, const ItemChange &change,
 // chooses between the usual change and each listed source's own.
 void add_item_change_properties(obs_properties_t *props, obs_source_t *owner, const char *list_setting);
 
-// Fade, 300 ms, hiding the same way as showing.
+// As the scene sets, 300 ms, hiding the same way as showing.
 void item_change_defaults(obs_data_t *settings);
+
+// ---------------------------------------------------------------------------
+// As the scene sets (`kTransitionScene`).
+
+// Set by the Scene Transitions filter: what a scene's filter says for an
+// item, if one covers it. `scene` is the scene the item is in, or the one
+// holding its group. Must answer with no "As the scene sets" way left in
+// `out`. One for the whole plugin; nullptr clears it.
+using SceneLookup = bool (*)(obs_source_t *scene, obs_sceneitem_t *item, ItemChange &out);
+void item_transitions_scene(SceneLookup lookup);
+
+// `change` with every "As the scene sets" way replaced: by the scene's (show
+// and hide each on its own), or by a fade of the way's own duration. `scene`
+// as for `apply_item_change`; null for the item's own. A Standby filter calls
+// it before it swaps a change for its stand-in, so the stand-in comes the way
+// the source goes in the scene's terms too.
+ItemChange resolve_item_change(obs_sceneitem_t *item, const ItemChange &change, obs_source_t *scene = nullptr);
+
+// Whether the item already carries `change` (resolved first): the same kinds,
+// durations and, for each way, exactly the settings the way sets (a slide
+// "Off the nearest edge" by where the item lies now). Lets a caller write
+// nothing where nothing would change.
+bool item_change_matches(obs_sceneitem_t *item, const ItemChange &change, obs_source_t *scene = nullptr);
+
+// Whether an item's transitions are another filter's (`item_transitions_owner`).
+bool item_transitions_owned(obs_sceneitem_t *item);
 
 } // namespace stagekit

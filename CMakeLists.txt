@@ -143,6 +143,8 @@ target_sources(
     # ==== scene-filters:modes ====
     # ==== end scene-filters:modes ====
     # ==== scene-filters:transitions ====
+    src/placement/scene-transitions.cpp
+    src/placement/scene-transitions.hpp
     # ==== end scene-filters:transitions ====
     # ==== scene-filters:fit ====
     # ==== end scene-filters:fit ====
