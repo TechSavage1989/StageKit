@@ -78,6 +78,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include <obs-module.h>
 #include <graphics/matrix4.h>
+#include <graphics/vec3.h>
 #include <graphics/vec4.h>
 #include <plugin-support.h>
 #include <util/platform.h>
@@ -328,6 +329,7 @@ private:
 	std::unique_ptr<LookPaint> paint_;
 	gs_texrender_t *tr_scene_ = nullptr;
 	gs_texrender_t *tr_under_ = nullptr;
+	gs_texrender_t *tr_kept_ = nullptr; // what is blurred, kept to the mask
 	gs_texrender_t *tr_mask_ = nullptr;
 	gs_texrender_t *tr_out_ = nullptr;
 	gs_texrender_t *tr_boxes_ = nullptr;   // Each source by itself: where the scene changes
@@ -359,6 +361,7 @@ SceneBlur::SceneBlur(obs_data_t *settings, obs_source_t *source) : source_(sourc
 	obs_enter_graphics();
 	tr_scene_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 	tr_under_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
+	tr_kept_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 	tr_mask_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 	tr_out_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 	tr_boxes_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
@@ -393,6 +396,7 @@ SceneBlur::~SceneBlur()
 	gs_texrender_destroy(tr_redrawn_);
 	gs_texrender_destroy(tr_scene_);
 	gs_texrender_destroy(tr_under_);
+	gs_texrender_destroy(tr_kept_);
 	gs_texrender_destroy(tr_mask_);
 	gs_texrender_destroy(tr_out_);
 	obs_leave_graphics();
@@ -408,6 +412,13 @@ void SceneBlur::update(obs_data_t *settings)
 	style_ = ramp.style;
 	cover_ = static_cast<Cover>(std::clamp<long long>(obs_data_get_int(settings, "cover"), 0, 2));
 	area_ = static_cast<Area>(std::clamp<long long>(obs_data_get_int(settings, "blur_area"), 0, 1));
+	// The mosaic's edge is a source's edge: blurring the scene as drawn there
+	// is none, and its control is hidden. Left on Whole cells from "Each
+	// source by itself", it cut the cells along the screen's edge (the owner:
+	// "If whole cells is selected then the mode is switched back to whole
+	// scene as drawn, the whole scene edge retains the border").
+	if (area_ != Area::EachSource)
+		look_.whole_cells = false;
 	chosen_ = pick_list_read(settings, "chosen", false);
 	never_ = pick_list_read(settings, "never", false);
 	settings_changed_ = true;
@@ -776,7 +787,20 @@ void SceneBlur::render()
 		obs_source_skip_video_filter(source_);
 		return;
 	}
-	const BlurPipeline::Result blurred = blur_->run(look, under, cx, cy, strength, mix);
+	// Only what lies where a blurred source shows is taken into the blur:
+	// a blur tap or a mosaic cell along a source's edge takes in nothing of
+	// what is round it (the owner, of a gap between the blurred game and its
+	// outline: "scene as draw, causes a visual gap between the shadow,
+	// outline/glow effect"). The blur passes average colour by alpha, so the
+	// picture's alpha is multiplied by the mask, and the blur then gives
+	// colour only (`keep_alpha`). A mosaic cell that only just reaches in
+	// looks further into the source for its colour.
+	gs_texture_t *kept = blur_->keep_to_mask(tr_kept_, under, mask, cx, cy);
+	if (!kept) {
+		obs_source_skip_video_filter(source_);
+		return;
+	}
+	const BlurPipeline::Result blurred = blur_->run(look, kept, cx, cy, strength, mix, nullptr, true);
 	bool drawn = false;
 	gs_texrender_reset(tr_out_);
 	if (gs_texrender_begin_with_color_space(tr_out_, cx, cy, GS_CS_SRGB)) {
@@ -786,7 +810,7 @@ void SceneBlur::render()
 		gs_ortho(0.0f, (float)cx, 0.0f, (float)cy, -100.0f, 100.0f);
 		gs_blend_state_push();
 		gs_blend_function(GS_BLEND_ONE, GS_BLEND_ZERO);
-		drawn = blur_->composite_masked(scene, blurred, mask, cx, cy, mix);
+		drawn = blur_->composite_masked(scene, blurred, mask, cx, cy, mix, true);
 		gs_blend_state_pop();
 		gs_texrender_end(tr_out_);
 	}
@@ -875,6 +899,31 @@ gs_texture_t *SceneBlur::blurred_item(obs_sceneitem_t *item, matrix4 &m, uint32_
 	gs_texture_t *piece = paint_->item_picture(item, entry.m, iw, ih);
 	if (!piece)
 		return nullptr;
+	// A side of the source at or past the screen's edge is no edge for whole
+	// cells: the screen cuts it there anyway. Cut there too, a full-screen
+	// background lost a row of cells all round the picture (the owner: "Whole
+	// cells blur also blurs the entire scene border").
+	if (look.whole_cells) {
+		obs_source_t *target = obs_filter_get_target(source_);
+		const float cx = target ? (float)obs_source_get_base_width(target) : 0.0f;
+		const float cy = target ? (float)obs_source_get_base_height(target) : 0.0f;
+		vec3 corner[4];
+		const float xs[4] = {0.0f, (float)iw, (float)iw, 0.0f}, ys[4] = {0.0f, 0.0f, (float)ih, (float)ih};
+		for (int i = 0; i < 4; i++) {
+			vec3 at;
+			vec3_set(&at, xs[i], ys[i], 0.0f);
+			vec3_transform(&corner[i], &at, &entry.m);
+		}
+		// Sides: left (corners 3, 0), top (0, 1), right (1, 2), bottom (2, 3).
+		const int ends[4][2] = {{3, 0}, {0, 1}, {1, 2}, {2, 3}};
+		for (int side = 0; side < 4; side++) {
+			const vec3 &a = corner[ends[side][0]], &b = corner[ends[side][1]];
+			const float slack = 0.5f;
+			look.open_edges[side] = (a.x <= slack && b.x <= slack) || (a.y <= slack && b.y <= slack) ||
+						(a.x >= cx - slack && b.x >= cx - slack) ||
+						(a.y >= cy - slack && b.y >= cy - slack);
+		}
+	}
 	gs_texture_t *done = blur_->blur_into(entry.tr, look, piece, iw, ih, strength, mix, &entry.trail);
 	if (!done)
 		return nullptr;

@@ -1025,7 +1025,20 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   follows the cells by itself; a test checks that an outline after it is jagged. The nine taps are
   a loop since then (`PSMosaic`): written out nine times, the Voronoi test made a very long shader,
   and Direct3D compiles every technique of the file when OBS loads the plugin. Not run on
-  Direct3D.
+  Direct3D. **Open sides** (`BlurLook::open_edges`, the `open_edge` uniform, betaNEXT): a side of
+  the picture that is no edge, because the screen cuts the source there anyway; `inside_by` and
+  `voronoi_whole` never reach it. Only Scene Blur's *Each source by itself* knows where a source
+  is on screen and sets them (`blurred_item`: a side whose two corners, through the item's draw
+  transform, are both at or past one screen edge, half a pixel of slack). The owner, of beta165:
+  "Whole cells blur also blurs the entire scene border" (the full-screen Ambient Background lost a
+  row of cells all round, a black notched border). The Blur filter on a source cannot know it
+  (one source, many scenes and places) and still cuts there: the README says to use Scene Blur.
+  Every uniform of the mosaic is set at every run (`whole`, `open_edge`, `fallback`): OBS shares
+  one copy of an effect file between all who load it.
+  **Kept to a mask** (`fallback` uniform, `run`'s `kept_to_mask`): Scene Blur's *The scene as
+  drawn* hands the mosaic a picture whose alpha is the mask, so its taps (weighted by alpha)
+  take in only covered pixels; a cell whose nine taps near its centre all miss looks on a ring at
+  0.42 of a cell, and failing that takes the pixel's own colour, never one from outside.
 - **New shader code goes in `stagekit-looks.effect`, not in the older files.** The mosaic, the
   trail and bloom live there so that, should Direct3D refuse any of it, `stagekit-blur.effect` and
   `stagekit-ambient.effect` still load: both features then log one error and fall back (squares and
@@ -1947,9 +1960,27 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     goes over the scene inside the boxes only (`composite_masked`, mix 1). Outside the boxes the
     scene is OBS's own; inside, the redraw does not follow a crop to bounds, scale filters or
     blending modes (as `tr_under_` before it). Tested equal to a Blur filter on the source: 0.00
-    off in the box and along the edge for hexagons, Gaussian and whole cells (the scene as drawn:
-    40.7 along the top edge). A crop is the edge: the per-source filter blurs the whole source
-    and OBS crops it after, so at a crop the two differ.
+    off in the box and along the edge for hexagons, Gaussian and whole cells. A crop is the edge:
+    the per-source filter blurs the whole source and OBS crops it after, so at a crop the two
+    differ. Whole cells keep the screen's edge (open sides, see the mosaic entry).
+  - **Mosaic edge only with Each source by itself** (betaNEXT): `update` clears
+    `look_.whole_cells` for *The scene as drawn*, where the control is hidden. The owner: "If
+    whole cells is selected then the mode is switched back to whole scene as drawn, the whole
+    scene edge retains the border/blur": the setting was still read and cut the cells along
+    the screen's edge.
+  - **The scene as drawn is kept to the mask** (betaNEXT). The owner: "scene as draw, causes a
+    visual gap between the shadow, outline/glow effect": a mosaic cell or blur tap along a
+    covered source's edge averaged in the background round it (40.7 off along the top edge in
+    the test), a light band between the source and its outline. Now the picture blurred is
+    `keep_to_mask` (`KeepToMask`: its alpha times the mask) and every pass averages colour by
+    alpha, so only covered pixels count (exactly, through the separable Gaussian and Box too);
+    `composite_masked` with `keep_alpha` takes the blur's colour and the scene's own alpha. A
+    mosaic cell that only just reaches in looks further in (the mosaic entry). Tested: a Gaussian
+    along the edge 0.23 off the Blur filter on the source (25.6 before); the hexagon mosaic's edge cells have no
+    background blue in them (most blue 194, the source's own at most 200; 255 before). With *All
+    sources* the background is covered too and nothing changes there: separating sources inside
+    the covered area is *Each source by itself*'s job. No existing scene-blur expectation relied
+    on the bleed.
   - **Scene Shadow takes the blurred shape** of a source blurred by itself: in its render it looks
     for an enabled Scene Blur on the scene and draws each casting or masked item through
     `scene_blur_item_picture` (the same picture, made once a frame by whichever asks first;
@@ -1964,8 +1995,10 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     the match above, nothing of the background in the top cells, drawn twice alike, whole cells
     for every shape and a turned pattern, an outline after a Blur filter and a Scene Shadow's
     outline jagged with whole cells (inside the box too) and straight without, Temporal and
-    Kawase each source by itself. `scene_blur_controls_test` checks *Blur area* and *Mosaic edge*'s
-    visibility and defaults.
+    Kawase each source by itself; and since betaNEXT the scene as drawn kept to the source (mosaic
+    and Gaussian), the screen's edge kept with whole cells (a full-screen background and a source
+    running off the left) and a Mosaic edge left on Whole cells ignored by the scene as drawn.
+    `scene_blur_controls_test` checks *Blur area* and *Mosaic edge*'s visibility and defaults.
   - Tests: `[scene blur]` in `tests/ambient-test.cpp` (stand-in captures of kind `xshm_input`
     drawing a checkerboard, sharpness measured as the mean step between neighbouring pixels),
     `streamdeck/tests/obs.test.ts` (stand-in server). Not run on Windows or Direct3D; the key not

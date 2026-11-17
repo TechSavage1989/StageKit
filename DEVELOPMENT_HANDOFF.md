@@ -13,6 +13,39 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
+## Scene Blur: the screen's edge, Mosaic edge's mode, no gap (0.1.0-betaNEXT)
+
+Branch `fix/blur-edges-2`, from `main` after beta166. Notes: `docs/releases/0.1.0-betaNEXT.md`.
+No Stream Deck file changed. The owner, of beta165, with screenshots of their
+Component-Capture-Scene (a full-screen Ambient Background, a game capture with a Shadow, Glow &
+Outline, a camera, a chat panel, a Scene Shadow; Scene Blur on hexagons, all or live sources):
+"Whole cells blur also blurs the entire scene border. If whole cells is selected then the mode is
+switched back to whole scene as drawn, the whole scene edge retains the border/blur. scene as
+draw, causes a visual gap between the shadow, outline/glow effect."
+
+- **Open sides**: with *Each source by itself*, a side of a source at or past the screen's edge is
+  no edge for whole cells (`BlurLook::open_edges`, `open_edge` uniform, set in `blurred_item` from
+  the item's draw transform). A full-screen background keeps all its cells; a source running off
+  the left keeps its cells there (252 of 252 edge pixels) and its top edge inside the screen is
+  still whole cells (11 rows of spread). Background sources were not left out of whole cells
+  altogether: open sides cover them and also a source that runs off one side only.
+  The Blur filter on a source cannot know where it is on screen and still cuts there (README).
+- **Mosaic edge only with Each source by itself**: `update` clears `whole_cells` otherwise.
+  Tested: *The scene as drawn* with *Whole cells* left on is identical to *Cut at the edge*
+  (0.00 off), nothing see-through.
+- **The scene as drawn is kept to the mask**: the picture blurred has its alpha times the mask
+  (`keep_to_mask`), every pass averages colour by alpha, and the composite takes the blur's
+  colour with the scene's own alpha (`keep_alpha`). A mosaic cell that only just reaches in looks
+  on a ring, then at the pixel itself. Gaussian along the top edge: 25.57 off the Blur filter on
+  the source before, 0.23 now; hexagon edge cells: most blue 255 before, 194 now (the source's
+  own at most 200). The existing `[scene blur]` expectations did not rely on the bleed.
+- **Not changed, and why**: with *All sources* the background is covered, so cells along a
+  source's edge still mix it with the background (as drawn). Keeping each source apart within the
+  covered area would need a per-pixel source id in every pass (not separable for the soft blurs);
+  that is what *Each source by itself* is for. Said in the README and the notes.
+- **Not proven**: Direct3D for all three shader changes; the owner's scene itself (not
+  reproduced here: the test scene stands in for it).
+
 ## Layouts on the Stream Deck keys (0.1.0-beta166, plugin 0.23.1.0)
 
 The owner: "every icon should have a standalone version, live/no chat version, and a

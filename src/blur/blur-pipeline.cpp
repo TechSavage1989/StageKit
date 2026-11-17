@@ -319,6 +319,9 @@ BlurPipeline::BlurPipeline()
 		pl_glass_ = gs_effect_get_param_by_name(looks_, "glass");
 		pl_glass_style_ = gs_effect_get_param_by_name(looks_, "glass_style");
 		pl_whole_ = gs_effect_get_param_by_name(looks_, "whole");
+		pl_open_edge_ = gs_effect_get_param_by_name(looks_, "open_edge");
+		pl_fallback_ = gs_effect_get_param_by_name(looks_, "fallback");
+		pl_keep_alpha_ = gs_effect_get_param_by_name(looks_, "keep_alpha");
 		pl_origin_ = gs_effect_get_param_by_name(looks_, "origin");
 		pl_turn_ = gs_effect_get_param_by_name(looks_, "turn");
 		pl_original_ = gs_effect_get_param_by_name(looks_, "original");
@@ -415,7 +418,7 @@ gs_texture_t *BlurPipeline::kawase_chain(gs_texture_t *input, uint32_t w, uint32
 }
 
 BlurPipeline::Result BlurPipeline::run(const BlurLook &s, gs_texture_t *input, uint32_t w, uint32_t h, double strength,
-				       double &mix, BlurTrail *trail)
+				       double &mix, BlurTrail *trail, bool kept_to_mask)
 {
 	if (!effect_)
 		return {};
@@ -488,8 +491,18 @@ BlurPipeline::Result BlurPipeline::run(const BlurLook &s, gs_texture_t *input, u
 			gs_effect_set_float(pl_glass_, (float)s.pixel_glass);
 		if (pl_glass_style_)
 			gs_effect_set_float(pl_glass_style_, (float)s.pixel_glass_style);
+		// (Set every time: OBS shares one copy of an effect file between
+		// every filter that loads it.)
 		if (pl_whole_)
 			gs_effect_set_float(pl_whole_, s.whole_cells ? 1.0f : 0.0f);
+		if (pl_open_edge_) {
+			vec4 open;
+			vec4_set(&open, s.open_edges[0] ? 1.0f : 0.0f, s.open_edges[1] ? 1.0f : 0.0f,
+				 s.open_edges[2] ? 1.0f : 0.0f, s.open_edges[3] ? 1.0f : 0.0f);
+			gs_effect_set_vec4(pl_open_edge_, &open);
+		}
+		if (pl_fallback_)
+			gs_effect_set_float(pl_fallback_, kept_to_mask ? 1.0f : 0.0f);
 		gs_effect_set_vec2(pl_origin_, &origin);
 		gs_effect_set_vec2(pl_turn_, &turn);
 		pass(tr_a_, input, w, h, "Mosaic", true);
@@ -647,8 +660,35 @@ void BlurPipeline::composite(gs_texture_t *input, const Result &blurred, uint32_
 	gs_enable_framebuffer_srgb(previous);
 }
 
+gs_texture_t *BlurPipeline::keep_to_mask(gs_texrender_t *into, gs_texture_t *picture, gs_texture_t *mask, uint32_t w,
+					 uint32_t h)
+{
+	if (!looks_ || !into || !picture || !mask)
+		return nullptr;
+	gs_texrender_reset(into);
+	if (!gs_texrender_begin(into, w, h))
+		return nullptr;
+	vec4 clear;
+	vec4_zero(&clear);
+	gs_clear(GS_CLEAR_COLOR, &clear, 0.0f, 0);
+	gs_ortho(0.0f, (float)w, 0.0f, (float)h, -100.0f, 100.0f);
+	gs_blend_state_push();
+	gs_blend_function(GS_BLEND_ONE, GS_BLEND_ZERO);
+	// (Raw values in and out: the blur reads it as it reads the scene.)
+	const bool previous = gs_framebuffer_srgb_enabled();
+	gs_enable_framebuffer_srgb(false);
+	gs_effect_set_texture(pl_image_, picture);
+	gs_effect_set_texture(pl_mask_, mask);
+	while (gs_effect_loop(looks_, "KeepToMask"))
+		gs_draw_sprite(picture, 0, w, h);
+	gs_enable_framebuffer_srgb(previous);
+	gs_blend_state_pop();
+	gs_texrender_end(into);
+	return gs_texrender_get_texture(into);
+}
+
 bool BlurPipeline::composite_masked(gs_texture_t *original, const Result &blurred, gs_texture_t *mask, uint32_t w,
-				    uint32_t h, double mix)
+				    uint32_t h, double mix, bool keep_alpha)
 {
 	if (!looks_ || !original || !mask)
 		return false;
@@ -662,6 +702,8 @@ bool BlurPipeline::composite_masked(gs_texture_t *original, const Result &blurre
 	gs_effect_set_texture(pl_mask_, mask);
 	gs_effect_set_float(pl_mix2_, blurred.b ? (float)blurred.b_mix : 0.0f);
 	gs_effect_set_float(pl_mix_, blurred.a ? (float)std::clamp(mix, 0.0, 1.0) : 0.0f);
+	if (pl_keep_alpha_)
+		gs_effect_set_float(pl_keep_alpha_, keep_alpha ? 1.0f : 0.0f);
 	while (gs_effect_loop(looks_, "MaskedComposite"))
 		gs_draw_sprite(original, 0, w, h);
 	gs_enable_framebuffer_srgb(previous);

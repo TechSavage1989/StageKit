@@ -23,6 +23,9 @@ uniform float2 turn;        // mosaic: cos and sin of the pattern's rotation
 uniform float glass;        // mosaic: how much each cell looks like a piece of glass, 0..1
 uniform float glass_style;  // mosaic: 0 a dome, 1 a flat plate with bevelled edges
 uniform float whole;        // mosaic: 1 a cell the picture's edge cuts is left out, so the outline is whole cells
+uniform float4 open_edge;   // mosaic, whole cells: 1 for a side (left, top, right, bottom) that is no edge (the screen's edge cuts it there anyway)
+uniform float fallback;     // mosaic: 1 the picture is kept to a mask (alpha), so a cell reaches further for a colour
+uniform float keep_alpha;   // MaskedComposite: the blur gives colour only; the alpha is the picture's own
 uniform float bloom_threshold;  // BloomBright: how bright a part must be to shine, 0..1
 uniform float bloom_amount;     // BloomAdd: how strongly the light is laid over
 uniform texture2d original;     // MaskedComposite: the picture as it was
@@ -210,7 +213,9 @@ float2 cell_centre(float2 p, float block)
 float inside_by(float2 v)
 {
 	float2 back = float2(v.x * turn.x - v.y * turn.y, v.x * turn.y + v.y * turn.x) + origin;
-	return min(min(back.x, back.y), min(size.x - back.x, size.y - back.y));
+	// (A side that is open is never reached.)
+	float4 d = float4(back.x, back.y, size.x - back.x, size.y - back.y) + open_edge * 1.0e6;
+	return min(min(d.x, d.y), min(d.z, d.w));
 }
 
 // The least of inside_by over the corners of a triangle or a rhomboid of the
@@ -280,7 +285,15 @@ float voronoi_whole(float2 c, float block)
 	for (int k = 0; k < 4; k++) {
 		float2 a = corner_in_cells(float(k), block);
 		float2 b = corner_in_cells(float(k) + 1.0 - step(2.5, float(k)) * 4.0, block);
-		reach = max(reach, voronoi_reaches(s, a, b - a));
+		// Edges 0 to 3: top, right, bottom, left. An open one is no edge.
+		float side_open = open_edge.y;
+		if (k == 1)
+			side_open = open_edge.z;
+		else if (k == 2)
+			side_open = open_edge.w;
+		else if (k == 3)
+			side_open = open_edge.x;
+		reach = max(reach, voronoi_reaches(s, a, b - a) * (1.0 - step(0.5, side_open)));
 	}
 	return 1.0 - reach;
 }
@@ -345,10 +358,11 @@ float cell_whole(float2 c, float block)
 	return step(-0.5, least);
 }
 
-// The colour of the cell that `p + o * smoothing` lies in, read a little
-// off the cell's centre (towards `o`), so that nine of these together are
-// the cell's colour and, with smoothing, a soft edge between cells. A cell
-// left out by "whole cells" gives nothing, so smoothing fades into it.
+// Where to read the colour of the cell that `p + o * smoothing` lies in (a
+// little off the cell's centre, towards `o`, so that nine of these together
+// are the cell's colour and, with smoothing, a soft edge between cells), as
+// a place in the picture (xy, in uv), and whether the cell is kept (z: a cell
+// left out by "whole cells" gives nothing, so smoothing fades into it).
 float4 mosaic_tap(float2 p, float2 o, float block)
 {
 	float2 cell = cell_centre(p + o * smoothing, block);
@@ -357,8 +371,7 @@ float4 mosaic_tap(float2 p, float2 o, float block)
 		keep = cell_whole(cell, block);
 	float2 c = cell + o * block * 0.2;
 	float2 back = float2(c.x * turn.x - c.y * turn.y, c.x * turn.y + c.y * turn.x) + origin;
-	float4 s = tap(back * texel);
-	return float4(s.rgb * s.a, s.a) * keep;
+	return float4(back * texel, keep, 0.0);
 }
 
 float4 PSMosaic(VertData v_in) : TARGET
@@ -373,7 +386,28 @@ float4 PSMosaic(VertData v_in) : TARGET
 	float4 sum = float4(0.0, 0.0, 0.0, 0.0);
 	for (int k = 0; k < 9; k++) {
 		float row = floor(float(k) / 3.0);
-		sum += mosaic_tap(p, float2(float(k) - row * 3.0 - 1.0, row - 1.0), block);
+		float4 at = mosaic_tap(p, float2(float(k) - row * 3.0 - 1.0, row - 1.0), block);
+		float4 s = tap(at.xy);
+		sum += float4(s.rgb * s.a, s.a) * at.z;
+	}
+	// Scene Blur gives a picture whose alpha is kept to the blurred sources
+	// (`fallback`), so a cell only takes in what lies inside them. A cell
+	// whose taps near its centre all lie outside (it only just reaches in)
+	// looks further out, on a ring round its centre, and failing that takes
+	// the pixel's own colour: never anything from outside.
+	if (fallback > 0.5 && sum.a < 0.001) {
+		float2 centre = cell_centre(p, block);
+		for (int r = 0; r < 8; r++) {
+			float ang = float(r) * 0.78539816;
+			float2 c = centre + float2(cos(ang), sin(ang)) * block * 0.42;
+			float2 back = float2(c.x * turn.x - c.y * turn.y, c.x * turn.y + c.y * turn.x) + origin;
+			float4 s = tap(back * texel);
+			sum += float4(s.rgb * s.a, s.a);
+		}
+		if (sum.a < 0.001) {
+			float4 own = tap(v_in.uv);
+			sum = float4(own.rgb * own.a, own.a);
+		}
 	}
 	float4 colour = resolve(sum, 9.0);
 	// Glass: each cell is lit from the upper left like a small pane, brighter
@@ -496,9 +530,32 @@ float4 PSMaskedComposite(VertData v_in) : TARGET
 	float4 b1 = image.Sample(linearClamp, v_in.uv);
 	float4 b2 = image2.Sample(linearClamp, v_in.uv);
 	float4 b = lerp(float4(b1.rgb * b1.a, b1.a), float4(b2.rgb * b2.a, b2.a), mix2);
+	// The blur of a picture kept to the blurred sources: its colour, with
+	// the picture's own alpha (its alpha is how much of them it took in).
+	if (keep_alpha > 0.5) {
+		float3 colour = b.rgb / max(b.a, 0.00001);
+		b = lerp(float4(o.rgb * o.a, o.a), float4(colour * o.a, o.a), step(0.0001, b.a));
+	}
 	float k = saturate(mask.Sample(linearClamp, v_in.uv).r) * mix_amount;
 	float4 m = lerp(float4(o.rgb * o.a, o.a), b, k);
 	return float4(m.rgb / max(m.a, 0.00001), m.a);
+}
+
+// A picture kept to the blurred sources: its colour, and its alpha times the
+// mask (red), so a blur averages only what lies inside them.
+float4 PSKeepToMask(VertData v_in) : TARGET
+{
+	float4 c = image.Sample(linearClamp, v_in.uv);
+	return float4(c.rgb, c.a * saturate(mask.Sample(linearClamp, v_in.uv).r));
+}
+
+technique KeepToMask
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSKeepToMask(v_in);
+	}
 }
 
 technique MaskPiece
