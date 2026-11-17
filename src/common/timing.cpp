@@ -43,6 +43,10 @@ struct Kind {
 	std::atomic<uint64_t> tick_ns{0}, tick_calls{0}, render_ns{0}, render_calls{0};
 	// Longest single call since the last report, and since the last take.
 	std::atomic<uint64_t> tick_max{0}, render_max{0}, take_tick_max{0}, take_render_max{0};
+	// Ticks of a millisecond or more since the last take: headless, where a
+	// read-back in a tick waits for llvmpipe's drawing, these are mostly
+	// that wait; the take gives them apart.
+	std::atomic<uint64_t> take_tick_long_ns{0}, take_tick_long_calls{0};
 	// What the last report and the last take saw (under their own locks).
 	uint64_t rep_tick_ns = 0, rep_tick_calls = 0, rep_render_ns = 0, rep_render_calls = 0;
 	uint64_t took_tick_ns = 0, took_tick_calls = 0, took_render_ns = 0, took_render_calls = 0;
@@ -250,6 +254,10 @@ template<size_t I> void timed_tick(void *data, float seconds)
 	const uint64_t ended = os_gettime_ns();
 	add(k.tick_ns, k.tick_calls, k.tick_max, k.take_tick_max, ended - began);
 	g_tick_spread[I].add(ended - began);
+	if (ended - began >= 1000000) {
+		k.take_tick_long_ns.fetch_add(ended - began, std::memory_order_relaxed);
+		k.take_tick_long_calls.fetch_add(1, std::memory_order_relaxed);
+	}
 	frame_add(ended - began);
 	report(ended);
 }
@@ -297,6 +305,8 @@ std::string take()
 		obs_data_set_int(kind, "tick_calls", (long long)(tc_all - k.took_tick_calls));
 		obs_data_set_double(kind, "tick_us", (tn_all - k.took_tick_ns) / 1000.0);
 		obs_data_set_double(kind, "tick_max_us", k.take_tick_max.exchange(0) / 1000.0);
+		obs_data_set_double(kind, "tick_long_us", k.take_tick_long_ns.exchange(0) / 1000.0);
+		obs_data_set_int(kind, "tick_long_calls", (long long)k.take_tick_long_calls.exchange(0));
 		obs_data_set_int(kind, "render_calls", (long long)(rc_all - k.took_render_calls));
 		obs_data_set_double(kind, "render_us", (rn_all - k.took_render_ns) / 1000.0);
 		obs_data_set_double(kind, "render_max_us", k.take_render_max.exchange(0) / 1000.0);
