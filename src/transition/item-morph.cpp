@@ -28,6 +28,14 @@ the Free Software Foundation; either version 2 of the License, or
 // scenes, and a hide and a show in one scene within `kGrace` of each other
 // are a pair when the two sources are linked (in any Morph's settings) or
 // are the largest of each.
+//
+// One item can be in two changes at once. An item left over, with nothing
+// of its own kind to change into, changes into (or out of) one that is
+// already changing, by the same rules: linked, then the largest. Hiding a
+// full-screen camera to show a capture brings back the camera's corner
+// view too; linked to the camera, the corner view takes the camera, and the
+// capture, left over, still comes out of the camera instead of fading in by
+// itself.
 
 #include "item-morph.hpp"
 #include "../common/scene-util.hpp"
@@ -272,7 +280,8 @@ double share_of(obs_sceneitem_t *item, obs_source_t *scene)
 	return (b.x1 - b.x0) * (b.y1 - b.y0) / screen;
 }
 
-// One half of a pair that may be.
+// One half of a pair that may be. `taken`: in a pair already, from this tick
+// or one just before; only one left over may still change into it.
 struct Half {
 	obs_source_t *transition;
 	Entry *entry;
@@ -395,11 +404,19 @@ void tick(void *, float)
 			links.insert(links.end(), said.second.links.begin(), said.second.links.end());
 		for (auto &pair : g_entries) {
 			Entry &entry = pair.second;
-			if (entry.state != ItemMorph::Waiting || entry.over)
+			if (entry.over)
+				continue;
+			// Still waiting for its other half; or paired a moment ago, so
+			// that one left over may change into it too (see the top).
+			const bool waiting = entry.state == ItemMorph::Waiting;
+			const bool recent = entry.state == ItemMorph::Paired && now >= entry.at_ns &&
+					    now - entry.at_ns < kGraceNs;
+			if (!waiting && !recent)
 				continue;
 			auto said = g_said.find(pair.first);
 			(entry.show ? shows : hides)
-				.push_back(Half{pair.first, &entry, said != g_said.end() ? said->second : MorphSaid()});
+				.push_back(Half{pair.first, &entry, said != g_said.end() ? said->second : MorphSaid(),
+						!waiting});
 		}
 	}
 	// A change that was under way for something that has started again is over.
@@ -410,16 +427,38 @@ void tick(void *, float)
 
 	// Pairs: a hide and a show in one scene that is on screen. Linked sources
 	// first, then the largest of each.
-	auto can = [](const Half &h) {
-		return !h.taken && !h.entry->in_group && obs_source_showing(h.entry->scene);
+	auto there = [](const Half &h) {
+		return !h.entry->in_group && obs_source_showing(h.entry->scene);
+	};
+	auto can = [&](const Half &h) {
+		return !h.taken && there(h);
 	};
 	auto name = [](const Half &h) {
 		return obs_source_get_name(obs_sceneitem_get_source(h.entry->item));
 	};
+	auto apart = [](const Half &a, const Half &b) {
+		return a.entry->scene == b.entry->scene && a.entry->item != b.entry->item;
+	};
+	// The largest of `of` in `scene` covering at least kMainShare of it; with
+	// `taken_too`, ones already in a pair count as well.
+	auto largest = [&](std::vector<Half> &of, obs_source_t *scene, bool taken_too) {
+		Half *best = nullptr;
+		double best_share = kMainShare;
+		for (Half &h : of) {
+			if (!(taken_too ? there(h) : can(h)) || h.entry->scene != scene)
+				continue;
+			const double share = share_of(h.entry->item, h.entry->scene);
+			if (share >= best_share) {
+				best = &h;
+				best_share = share;
+			}
+		}
+		return best;
+	};
 	for (Half &show : shows) {
 		for (Half &hide : hides) {
-			if (!can(show) || !can(hide) || hide.entry->scene != show.entry->scene ||
-			    hide.entry->item == show.entry->item || !morph_linked(links, name(hide), name(show)))
+			if (!can(show) || !can(hide) || !apart(hide, show) ||
+			    !morph_linked(links, name(hide), name(show)))
 				continue;
 			start_job(hide, show);
 		}
@@ -428,23 +467,46 @@ void tick(void *, float)
 		if (!can(show) || !show.said.pair_main)
 			continue;
 		// (The largest shown in this scene, and it is this one?)
-		auto largest = [&](std::vector<Half> &of) {
-			Half *best = nullptr;
-			double best_share = kMainShare;
-			for (Half &h : of) {
-				if (!can(h) || h.entry->scene != show.entry->scene)
-					continue;
-				const double share = share_of(h.entry->item, h.entry->scene);
-				if (share >= best_share) {
-					best = &h;
-					best_share = share;
-				}
-			}
-			return best;
-		};
-		Half *main_show = largest(shows), *main_hide = largest(hides);
-		if (main_show == &show && main_hide && main_hide->entry->item != show.entry->item)
+		Half *main_show = largest(shows, show.entry->scene, false),
+		     *main_hide = largest(hides, show.entry->scene, false);
+		if (main_show == &show && main_hide && apart(*main_hide, show))
 			start_job(*main_hide, show);
+	}
+	// One left over changes into (or out of) one already in a pair: linked
+	// first, then the main image. (See the top: the capture that comes out
+	// of a camera which is going into its corner view.) The one in a pair
+	// must still be hidden, or shown, as it was then.
+	auto shared = [&](const Half &left, const Half &other) {
+		return can(left) && other.taken && there(other) && apart(left, other) &&
+		       obs_sceneitem_visible(other.entry->item) == other.entry->show;
+	};
+	auto join = [](Half &left, Half &other) {
+		if (left.entry->show)
+			start_job(other, left);
+		else
+			start_job(left, other);
+	};
+	for (const bool showing : {true, false}) {
+		std::vector<Half> &lefts = showing ? shows : hides, &others = showing ? hides : shows;
+		for (Half &left : lefts)
+			for (Half &other : others)
+				if (shared(left, other) && morph_linked(links, name(left), name(other)))
+					join(left, other);
+	}
+	for (const bool showing : {true, false}) {
+		std::vector<Half> &lefts = showing ? shows : hides, &others = showing ? hides : shows;
+		// (Only the largest left over in each scene, as it is before any of
+		// them joins: one item goes into two changes, not into every one.)
+		std::vector<Half *> mains;
+		for (Half &left : lefts)
+			if (can(left) && largest(lefts, left.entry->scene, false) == &left)
+				mains.push_back(&left);
+		for (Half *left : mains) {
+			Half *other = largest(others, left->entry->scene, true);
+			const Half *show = showing ? left : other;
+			if (other && show->said.pair_main && shared(*left, *other))
+				join(*left, *other);
+		}
 	}
 	// Whatever has waited long enough, or cannot be paired, goes by itself.
 	{

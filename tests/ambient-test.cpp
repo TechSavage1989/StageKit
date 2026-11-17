@@ -481,6 +481,7 @@ static void capture_pop_in_test(uint32_t w, uint32_t h, const std::string &out)
 		double square_a;  // the same for the square view's
 		double amb_r, amb_g;
 		bool layer; // a Morph layer is in the scene
+		int layers; // how many
 	};
 	auto watch = [&](int for_ms) {
 		std::vector<Sample> samples;
@@ -495,9 +496,10 @@ static void capture_pop_in_test(uint32_t w, uint32_t h, const std::string &out)
 			const std::vector<uint8_t> cap_t = render(obs_sceneitem_get_transition(game_item, true), w, h);
 			const std::vector<uint8_t> sq_t = render(obs_sceneitem_get_transition(square_item, true), w, h);
 			const uint8_t *p = &frame[(size_t(250) * w + 320) * 4];
+			const int layers = count_items() - items_before;
 			samples.push_back(Sample{ms, std::max((int)p[1], (int)p[2]), mean_of(cap_t, 3),
-						 mean_of(sq_t, 3), mean_of(amb, 0), mean_of(amb, 1),
-						 count_items() > items_before});
+						 mean_of(sq_t, 3), mean_of(amb, 0), mean_of(amb, 1), layers > 0,
+						 layers});
 			sleep_ms(10);
 		}
 		return samples;
@@ -559,18 +561,25 @@ static void capture_pop_in_test(uint32_t w, uint32_t h, const std::string &out)
 	};
 
 	// 1. As the owner has it: the camera linked to its square view, the
-	// capture's picture coming only after the change (40 frames).
+	// capture's picture coming only after the change (40 frames). Up to
+	// beta155 the capture appeared at the end of the change, in beta156 and
+	// beta157 it faded in by itself (its own transition drew it); since
+	// beta158 it comes out of the camera as well, drawn by a second layer,
+	// and its own transition draws nothing.
 	{
 		printf("  (the camera linked to its square view; the capture's picture comes after the change)\n");
 		const std::vector<Sample> s = run(40);
-		const PartWay cap = part_way(s, 0, 690, [](const Sample &x) { return (double)x.capture; }, 25, 230);
+		// (The middle of the screen is under the camera shrinking into its
+		// square view for the first half of the change, so the capture is
+		// looked for there once the camera has gone past, well before the end.)
+		const PartWay cap = part_way(s, 0, 600, [](const Sample &x) { return (double)x.capture; }, 25, 256);
 		const PartWay cap_t = part_way(s, 0, 690, [](const Sample &x) { return x.capture_a; }, 5, 250);
-		bool layer = false;
+		int layers = 0;
 		for (const Sample &x : s)
-			layer = layer || x.layer;
-		CHECK(cap.n >= 2 && cap_t.n >= 2 && layer,
-		      "the camera changes into its square view, and the capture, shown with nothing to change from, fades in during the change instead of appearing at its end (part-way on screen in %d of %d samples, its transition part-way in %d, in the first 690 ms)",
-		      cap.n, cap.of, cap_t.n);
+			layers = std::max(layers, x.layers);
+		CHECK(cap.n >= 1 && cap_t.n == 0 && layers == 2,
+		      "the camera changes into its square view, and the capture comes out of the camera, drawn by a second layer, during the change instead of appearing at its end (on screen in %d of %d samples in the first 600 ms; its own transition part-way in %d; %d layers at once)",
+		      cap.n, cap.of, cap_t.n, layers);
 		double red_until = 0.0;
 		for (const Sample &x : s)
 			if (x.amb_r > 200.0)
@@ -1296,6 +1305,111 @@ int main(int argc, char **argv)
 				obs_source_release(zt);
 				obs_data_release(zd);
 				obs_source_release(zoomed);
+			}
+
+			// One item in two changes. The owner's Live scene: hiding the
+			// full-screen camera (DSLR) to show a capture also brings back the
+			// camera's corner view (Square Camera), and the two cameras are
+			// linked. The owner: "when I switch to window or game source from
+			// DSLR by hiding DSLR, it doesn't smoothly morph and transition into
+			// the new source like all the others do". The corner view took the
+			// camera and the capture faded in by itself.
+			{
+				obs_source_t *cam = block("Item Morph Cam", 0xFF0000FF, 300, 200);     // red
+				obs_source_t *grab = block("Item Morph Grab", 0xFF00FF00, 300, 200);   // green
+				obs_source_t *corner = block("Item Morph Corner", 0xFFFF0000, 80, 60); // blue
+				obs_scene_t *ls = obs_scene_create("Item Morph Live");                 // no background
+				obs_sceneitem_t *ci = put(ls, cam, 20, 20); // lowest, as DSLR
+				obs_sceneitem_t *gi = put(ls, grab, 320, 140);
+				obs_sceneitem_t *ki = put(ls, corner, 540, 280); // highest
+				obs_sceneitem_set_visible(gi, false);
+				obs_sceneitem_set_visible(ki, false);
+				for (obs_sceneitem_t *item : {ci, gi, ki}) {
+					as_morph(item, true);
+					as_morph(item, false);
+				}
+				obs_data_t *ld = obs_data_create();
+				obs_data_array_t *ll = obs_data_array_create();
+				obs_data_t *lline = obs_data_create();
+				obs_data_set_string(lline, "value", "Item Morph Cam \xE2\x86\x94 Item Morph Corner");
+				obs_data_array_push_back(ll, lline);
+				obs_data_release(lline);
+				obs_data_set_array(ld, "links", ll);
+				obs_data_array_release(ll);
+				obs_source_t *cam_links =
+					obs_source_create_private("stagekit_morph", "Camera Links", ld);
+				obs_data_release(ld);
+				obs_set_output_source(0, obs_scene_get_source(ls));
+				sleep_ms(300);
+				render(obs_scene_get_source(ls), w, h);
+				// Half-way: what of the capture comes out of the camera (red and
+				// green in one place), and what of the corner view (red and blue).
+				struct Halfway {
+					Mixed grab, corner;
+					int items = 0;
+				};
+				auto halfway = [&]() {
+					sleep_ms(450);
+					const std::vector<uint8_t> mid = render(obs_scene_get_source(ls), w, h);
+					Halfway hw{mixed(mid, 0, 1), mixed(mid, 0, 2), count_items(ls)};
+					sleep_ms(900);
+					render(obs_scene_get_source(ls), w, h);
+					return hw;
+				};
+				obs_sceneitem_set_visible(ci, false);
+				obs_sceneitem_set_visible(gi, true);
+				obs_sceneitem_set_visible(ki, true);
+				const Halfway out_of = halfway();
+				const std::vector<uint8_t> shown = render(obs_scene_get_source(ls), w, h);
+				CHECK(out_of.grab.n > 15000 && out_of.grab.x0 > 60 && out_of.grab.x1 < 600 &&
+					      out_of.corner.n > 4000 && out_of.items == 5,
+				      "a camera hidden as a capture and the camera's linked corner view are shown changes into both: the corner view and the capture each come out of it (half-way: %d px of camera and capture from x %d to %d, %d px of camera and corner view; %d items)",
+				      out_of.grab.n, out_of.grab.x0, out_of.grab.x1, out_of.corner.n, out_of.items);
+				CHECK(count_items(ls) == 3 && px(shown, 470, 240, 1) > 240 &&
+					      px(shown, 470, 240, 0) < 15 && px(shown, 580, 310, 2) > 240 &&
+					      px(shown, 100, 60, 0) < 15,
+				      "and afterwards the capture and the corner view are drawn as they are, and the camera is gone (%d items; green %d, blue %d, red %d where the camera was)",
+				      count_items(ls), px(shown, 470, 240, 1), px(shown, 580, 310, 2),
+				      px(shown, 100, 60, 0));
+				// And back: the capture and the corner view both go into the camera.
+				obs_sceneitem_set_visible(gi, false);
+				obs_sceneitem_set_visible(ki, false);
+				obs_sceneitem_set_visible(ci, true);
+				const Halfway into = halfway();
+				CHECK(into.grab.n > 15000 && into.corner.n > 4000 && into.items == 5,
+				      "and back, the capture and the corner view both change into the camera (half-way: %d px of capture and camera, %d px of corner view and camera; %d items)",
+				      into.grab.n, into.corner.n, into.items);
+				// The capture a moment later than the other two (another filter's
+				// tick): the camera is already on its way into the corner view.
+				obs_sceneitem_set_visible(ci, false);
+				obs_sceneitem_set_visible(ki, true);
+				sleep_ms(40);
+				obs_sceneitem_set_visible(gi, true);
+				const Halfway late = halfway();
+				CHECK(late.grab.n > 15000 && late.corner.n > 4000,
+				      "a capture shown a moment after the camera went into its corner view still comes out of the camera (half-way: %d px of camera and capture, %d px of camera and corner view)",
+				      late.grab.n, late.corner.n);
+				// Two items left over in one pair's change: only the largest goes
+				// with it; a small one with no link fades by itself.
+				obs_source_t *dot = block("Item Morph Dot", 0xFF00FFFF, 40, 40); // yellow
+				obs_sceneitem_t *di = put(ls, dot, 20, 300);
+				obs_sceneitem_set_visible(di, false);
+				as_morph(di, true);
+				as_morph(di, false);
+				sleep_ms(100);
+				obs_sceneitem_set_visible(gi, false);
+				obs_sceneitem_set_visible(ki, false);
+				obs_sceneitem_set_visible(ci, true);
+				obs_sceneitem_set_visible(di, true);
+				const Halfway small = halfway();
+				CHECK(small.items == 6,
+				      "an item too small to be the main image, with no link, is in no change: it fades by itself (%d items half-way)",
+				      small.items);
+				obs_set_output_source(0, obs_scene_get_source(is));
+				obs_source_release(cam_links);
+				obs_scene_release(ls);
+				for (obs_source_t *src : {cam, grab, corner, dot})
+					obs_source_release(src);
 			}
 			obs_set_output_source(0, before_out);
 			obs_source_release(before_out);

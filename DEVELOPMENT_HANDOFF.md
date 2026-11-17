@@ -13,6 +13,36 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
+## A capture comes out of the DSLR (0.1.0-beta158)
+
+The owner, with their collection and four logs: "when I switch to window or game source from DSLR
+by hiding DSLR, it doesn't smoothly morph and transition into the new source like all the others
+do". In their Full-Capture-Scene a capture's key shows the capture; Link Visibility-Captures
+(*Show only one*, Morph) hides DSLR; the capture's *Follow the first* link (Link Visibility-Camera
+Window, Game, ...) shows Square Camera, hidden while DSLR fills the screen. Their Morph links
+include "DSLR ↔ Square Camera", and links are paired first, so DSLR went into Square Camera and the
+capture, with nothing left to change into, faded in by itself. Their log shows one morph layer per
+switch (03:47:43 and 03:47:44). Between two captures only one pair changes, so those morphed.
+
+- `src/transition/item-morph.cpp`: an item left over changes into (or out of) one already paired,
+  in this tick or within `kGraceNs` before, by the same rules (linked, then the largest). So the
+  capture comes out of DSLR while DSLR goes into Square Camera, and back both go into DSLR. The
+  order the three changes arrive in no longer matters.
+- Test: `[morph between items]` gains the owner's case with three blocks (both ways, the capture a
+  moment late, and a small unlinked item that still fades by itself). The new checks fail on the
+  old code (no picture of camera and capture half-way, one layer) and pass now.
+- Not seen on Windows. A workaround for the old build was to take "DSLR ↔ Square Camera" off the
+  Morph (StageKit) links (then DSLR and the capture pair as main images, and Square Camera fades).
+- With beta156 (pull request #173, `Morph::alone_cb`), a source left with nothing to change from
+  fades in during the change instead of popping in at its end; the owner confirmed that on Windows
+  (below). This goes a step further, as asked here: the capture is no longer left over, it morphs
+  out of DSLR. The first case of #173's `[a capture shown in the camera's place ...]` test now
+  expects that (two layers at once, the capture's own transition drawing nothing); its second case
+  (the camera linked to the capture, the square view fading in) is unchanged.
+- Released on its own at the owner's word ("Publish now"). It was put to them as beta155; #171,
+  #173 and #174 were merged as beta155, beta156 and beta157 while it was being tested, so it is
+  beta158. Full suite on the tree before the last merge: 984 checks, ALL PASSED.
+
 ## A source shown with Morph and nothing to change from (0.1.0-beta156)
 
 One item hidden and two shown at once: the hidden one morphs into one of them, and the other went by
