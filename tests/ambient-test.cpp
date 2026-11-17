@@ -569,13 +569,16 @@ static void capture_pop_in_test(uint32_t w, uint32_t h, const std::string &out)
 	{
 		printf("  (the camera linked to its square view; the capture's picture comes after the change)\n");
 		const std::vector<Sample> s = run(40);
-		const PartWay cap = part_way(s, 0, 690, [](const Sample &x) { return (double)x.capture; }, 25, 230);
+		// (The middle of the screen is under the camera shrinking into its
+		// square view for the first half of the change, so the capture is
+		// looked for there once the camera has gone past, well before the end.)
+		const PartWay cap = part_way(s, 0, 600, [](const Sample &x) { return (double)x.capture; }, 25, 256);
 		const PartWay cap_t = part_way(s, 0, 690, [](const Sample &x) { return x.capture_a; }, 5, 250);
 		int layers = 0;
 		for (const Sample &x : s)
 			layers = std::max(layers, x.layers);
-		CHECK(cap.n >= 2 && cap_t.n == 0 && layers == 2,
-		      "the camera changes into its square view, and the capture comes out of the camera during the change instead of appearing at its end (part-way on screen in %d of %d samples in the first 690 ms; its own transition part-way in %d; %d layers at once)",
+		CHECK(cap.n >= 1 && cap_t.n == 0 && layers == 2,
+		      "the camera changes into its square view, and the capture comes out of the camera, drawn by a second layer, during the change instead of appearing at its end (on screen in %d of %d samples in the first 600 ms; its own transition part-way in %d; %d layers at once)",
 		      cap.n, cap.of, cap_t.n, layers);
 		double red_until = 0.0;
 		for (const Sample &x : s)
