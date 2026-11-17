@@ -439,9 +439,12 @@ void SceneFit::tick(float seconds)
 	std::vector<Prep> preps(n);
 	enum class Way { Skip, Place, Hold, Solve };
 	std::vector<Way> way(n, Way::Skip);
-	for (size_t i = 0; i < n; i++)
+	for (size_t i = 0; i < n; i++) {
+		// (Its place in the list, for "Priority by list order".)
+		entries[i]->engine->set_entry_index((int)i);
 		if (entries[i]->engine->prepare(items[i], seconds, preps[i]))
 			way[i] = Way::Place;
+	}
 	// B: whether each in the free space has a space to look for.
 	bool any_solve = false;
 	for (size_t i = 0; i < n; i++) {
@@ -494,7 +497,7 @@ void SceneFit::tick(float seconds)
 				FitEngine &engine = *entries[i]->engine;
 				Prep &p = preps[i];
 				scan_of(p.how).obstacles(parent_, p.item, p.s.skip, p.s.skip_rule, &engine, p.how,
-							 in_way, &ids);
+							 in_way, &ids, &engine.rank());
 				bool rest = false;
 				engine.observe(in_way, engine.arriving(), pass == 0 ? seconds : 0.0f, rest);
 				if (pass == 0)
@@ -649,6 +652,7 @@ const FitKey kFitKeys[] = {
 	{"tolerance", Kind::Double},
 	{"resize", Kind::Bool},
 	{"toward", Kind::Int},
+	{"space_priority", Kind::Int},
 	{"visible_pixels", Kind::Bool},
 	{"no_shadows", Kind::Bool},
 	{"glide_ms", Kind::Int},
@@ -734,8 +738,12 @@ bool take_over(obs_properties_t *top, obs_property_t *, void *data)
 					pick_list_read(theirs, "share_scenes", false));
 			// The overlap switch is the Scene Fit's own, for all: it is
 			// taken from the first one taken over into an empty Scene Fit.
-			if (first && had_none)
+			if (first && had_none) {
 				obs_data_set_bool(settings, "skip_fill_on", obs_data_get_bool(theirs, "skip_fill_on"));
+				// So is "Priority by list order".
+				obs_data_set_bool(settings, "list_priority",
+						  obs_data_get_bool(theirs, "list_priority"));
+			}
 			first = false;
 			obs_source_set_enabled(filter, false);
 			obs_log(LOG_INFO, "Scene Fit '%s': took over Fit to Space '%s' (%s)",
@@ -814,6 +822,9 @@ obs_properties_t *get_properties(void *data)
 	obs_property_t *rule = obs_properties_add_bool(props, "skip_fill_on", obs_module_text("Fit.SkipFillOn"));
 	obs_property_set_long_description(rule, obs_module_text("SceneFit.SkipFillOn.Tip"));
 	obs_property_set_modified_callback2(rule, chosen_modified, self);
+	obs_property_t *by_list = obs_properties_add_bool(props, "list_priority", obs_module_text("Fit.ListPriority"));
+	obs_property_set_long_description(by_list, obs_module_text("SceneFit.ListPriority.Tip"));
+	obs_property_set_modified_callback2(by_list, chosen_modified, self);
 	obs_property_t *chosen = obs_properties_add_list(props, "fit_for", obs_module_text("SceneFit.For"),
 							 OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
 	obs_property_set_long_description(chosen, obs_module_text("SceneFit.For.Tip"));
@@ -833,6 +844,7 @@ void get_defaults(obs_data_t *settings)
 	// change.)
 	obs_data_set_default_int(settings, "which", (int)Which::Chosen);
 	obs_data_set_default_bool(settings, "skip_fill_on", false);
+	obs_data_set_default_bool(settings, "list_priority", false);
 }
 
 // A source is renamed: its entry, its settings and the lists naming it follow.

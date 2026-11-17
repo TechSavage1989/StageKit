@@ -628,6 +628,414 @@ static void capture_pop_in_test(uint32_t w, uint32_t h, const std::string &out)
 	sleep_ms(200);
 }
 
+// ------------------------------------------------- space priority
+// Which fitted source makes room for which: a game (4:3, kept towards
+// the left) and a camera (4:3, kept towards the right) on a 640x360
+// canvas with a gap of 10. The one that takes its space first is as
+// tall as the screen allows (340); the other fits beside it. Sharing,
+// they go by each other's claims as before: where they settle then
+// depends on which looks first, so a tie is compared with two that
+// share in the same filter order.
+static void fit_priority_test()
+{
+	printf("\n[fit priority]\n");
+	auto fp_sized = [](obs_source_t *src, int cw, int ch) {
+		obs_data_t *d = obs_data_create();
+		obs_data_set_int(d, "width", cw);
+		obs_data_set_int(d, "height", ch);
+		obs_source_update(src, d);
+		obs_data_release(d);
+	};
+	obs_source_t *fp_game = obs_source_create("color_source", "FP Game", nullptr, nullptr);
+	fp_sized(fp_game, 1200, 900);
+	obs_source_t *fp_cam = obs_source_create("color_source", "FP Cam", nullptr, nullptr);
+	fp_sized(fp_cam, 120, 90);
+	obs_source_t *before = obs_get_output_source(0);
+	struct Pic {
+		double x = 0, y = 0, w = 0, h = 0;
+	};
+	// Where the image is drawn in its bounding box.
+	auto pic = [](obs_sceneitem_t *it) {
+		vec2 p, b;
+		obs_sceneitem_get_pos(it, &p);
+		obs_sceneitem_get_bounds(it, &b);
+		obs_source_t *s = obs_sceneitem_get_source(it);
+		const double sw = obs_source_get_width(s), sh = obs_source_get_height(s);
+		if (sw < 1.0 || sh < 1.0 || b.x < 1.0 || b.y < 1.0)
+			return Pic{};
+		const double k = std::min(b.x / sw, b.y / sh), w = sw * k, h = sh * k;
+		const uint32_t a = obs_sceneitem_get_bounds_alignment(it);
+		const double x = p.x + (a & OBS_ALIGN_LEFT ? 0.0 : a & OBS_ALIGN_RIGHT ? b.x - w : (b.x - w) / 2.0);
+		const double y = p.y + (a & OBS_ALIGN_TOP ? 0.0 : a & OBS_ALIGN_BOTTOM ? b.y - h : (b.y - h) / 2.0);
+		return Pic{x, y, w, h};
+	};
+	auto same = [](const Pic &a, const Pic &b, double by) {
+		return std::fabs(a.x - b.x) <= by && std::fabs(a.y - b.y) <= by && std::fabs(a.w - b.w) <= by &&
+		       std::fabs(a.h - b.h) <= by;
+	};
+	auto apart = [](const Pic &a, const Pic &b) {
+		const bool overlap = a.x < b.x + b.w - 0.5 && b.x < a.x + a.w - 0.5 && a.y < b.y + b.h - 0.5 &&
+				     b.y < a.y + a.h - 0.5;
+		auto in = [](const Pic &p) {
+			return p.w > 1.0 && p.x >= 9.5 && p.y >= 9.5 && p.x + p.w <= 630.5 && p.y + p.h <= 350.5;
+		};
+		return !overlap && in(a) && in(b);
+	};
+	auto tall = [](const Pic &p) {
+		return std::fabs(p.h - 340.0) < 1.0;
+	};
+	int made = 0;
+	struct FP {
+		obs_scene_t *scene = nullptr;
+		obs_sceneitem_t *g = nullptr, *c = nullptr;
+		obs_source_t *fg = nullptr, *fc = nullptr;
+	};
+	// `level` -1: not set (as a filter saved before the setting).
+	auto fp_filter = [&](obs_scene_t *scene, const char *item, int level, bool by_list, int toward) {
+		obs_data_t *d = obs_data_create();
+		obs_data_set_string(d, "item", item);
+		obs_data_set_int(d, "box", 2);
+		obs_data_set_double(d, "margin", 10);
+		obs_data_set_double(d, "tolerance", 5);
+		obs_data_set_bool(d, "resize", true);
+		obs_data_set_int(d, "toward", toward);
+		obs_data_set_int(d, "glide_ms", 300);
+		if (level >= 0)
+			obs_data_set_int(d, "space_priority", level);
+		if (by_list)
+			obs_data_set_bool(d, "list_priority", true);
+		const std::string name = std::string("FP Fit ") + item + " " + std::to_string(made);
+		obs_source_t *f = obs_source_create("stagekit_fit_item", name.c_str(), d, nullptr);
+		obs_data_release(d);
+		obs_source_filter_add(obs_scene_get_source(scene), f);
+		return f;
+	};
+	auto fp_scene = [&](FP &f) {
+		made++;
+		f.scene = obs_scene_create(("FP Scene " + std::to_string(made)).c_str());
+		f.g = obs_scene_add(f.scene, fp_game);
+		f.c = obs_scene_add(f.scene, fp_cam);
+		vec2 at, k;
+		vec2_set(&at, 10.0f, 10.0f);
+		vec2_set(&k, 0.25f, 0.25f);
+		obs_sceneitem_set_pos(f.g, &at);
+		obs_sceneitem_set_scale(f.g, &k);
+		vec2_set(&at, 500.0f, 10.0f);
+		obs_sceneitem_set_pos(f.c, &at);
+	};
+	// A game and a camera, each with its own Fit to Space; `g_first`:
+	// the game's filter is the higher in the list.
+	auto fp_make = [&](int gl, bool gt, int cl, bool ct, bool g_first) {
+		FP f;
+		fp_scene(f);
+		if (g_first) {
+			f.fg = fp_filter(f.scene, "FP Game", gl, gt, 3);
+			f.fc = fp_filter(f.scene, "FP Cam", cl, ct, 4);
+		} else {
+			f.fc = fp_filter(f.scene, "FP Cam", cl, ct, 4);
+			f.fg = fp_filter(f.scene, "FP Game", gl, gt, 3);
+		}
+		obs_set_output_source(0, obs_scene_get_source(f.scene));
+		return f;
+	};
+	auto fp_wait = [&](FP &f, int ms) {
+		for (int i = 0; i < ms / 20; i++) {
+			render(obs_scene_get_source(f.scene), 640, 360);
+			sleep_ms(20);
+		}
+	};
+	auto fp_drop = [&](FP &f) {
+		for (obs_source_t *filter : {f.fg, f.fc}) {
+			if (!filter)
+				continue;
+			obs_source_filter_remove(obs_scene_get_source(f.scene), filter);
+			obs_source_release(filter);
+		}
+		obs_source_remove(obs_scene_get_source(f.scene));
+		obs_scene_release(f.scene);
+	};
+	// Settled: what each shows, and whether it stayed put for 0.8 s.
+	auto fp_settle = [&](FP &f, Pic &g, Pic &c) {
+		fp_wait(f, 1500);
+		g = pic(f.g);
+		c = pic(f.c);
+		fp_wait(f, 800);
+		return same(g, pic(f.g), 0.1) && same(c, pic(f.c), 0.1);
+	};
+	static const char *const kLevel[] = {"shares space", "takes space first", "makes room"};
+	auto tier = [](int level) {
+		return level == 1 ? 0 : level == 0 ? 1 : 2;
+	};
+
+	// Every level against every other, the game's filter above and below.
+	Pic shared_g, shared_c, tie_g[2], tie_c[2];
+	for (int order = 0; order < 2; order++) {
+		for (int gl = 0; gl < 3; gl++) {
+			for (int cl = 0; cl < 3; cl++) {
+				FP f = fp_make(gl, false, cl, false, order == 0);
+				Pic g, c;
+				const bool still = fp_settle(f, g, c);
+				const int tg = tier(gl), tc = tier(cl);
+				if (gl == 0 && cl == 0) {
+					tie_g[order] = g;
+					tie_c[order] = c;
+				}
+				const bool right = tg < tc   ? tall(g) && !tall(c)
+						   : tc < tg ? tall(c) && !tall(g)
+							     : same(g, tie_g[order], 0.5) && same(c, tie_c[order], 0.5);
+				CHECK(still && apart(g, c) && right,
+				      "the game %s, the camera %s (%s filter above): %s, apart, and still (game %.0f,%.0f %.0fx%.0f; camera %.0f,%.0f %.0fx%.0f)",
+				      kLevel[gl], kLevel[cl], order == 0 ? "game's" : "camera's",
+				      tg < tc   ? "the game takes its space"
+				      : tc < tg ? "the camera takes its space"
+						: "they share, as two that share do",
+				      g.x, g.y, g.w, g.h, c.x, c.y, c.w, c.h);
+				if (gl == 0 && cl == 0 && order == 0) {
+					shared_g = g;
+					shared_c = c;
+				}
+				fp_drop(f);
+			}
+		}
+	}
+
+	// Filters saved before the setting: shares space, not by list order,
+	// and they are placed exactly as two that share.
+	{
+		FP f = fp_make(-1, false, -1, false, true);
+		obs_data_t *gs = obs_source_get_settings(f.fg);
+		const bool read = obs_data_get_int(gs, "space_priority") == 0 &&
+				  !obs_data_get_bool(gs, "list_priority");
+		obs_data_release(gs);
+		Pic g, c;
+		const bool still = fp_settle(f, g, c);
+		CHECK(read && still && same(g, shared_g, 0.5) && same(c, shared_c, 0.5),
+		      "a filter saved before Space priority shares space and is placed as before (game %.0fx%.0f, camera %.0fx%.0f)",
+		      g.w, g.h, c.w, c.h);
+		// A new filter, made with nothing set: shares space too.
+		obs_source_t *fresh = obs_source_create("stagekit_fit_item", "FP Fresh", nullptr, nullptr);
+		obs_data_t *fs = obs_source_get_settings(fresh);
+		CHECK(obs_data_get_int(fs, "space_priority") == 0 && !obs_data_get_bool(fs, "list_priority"),
+		      "a new filter starts as Shares space, list order unticked");
+		obs_data_release(fs);
+		obs_source_release(fresh);
+		fp_drop(f);
+	}
+
+	// Hidden and shown, with the game taking its space first, in both
+	// filter orders: the game never moves for the camera; the camera
+	// takes the room while the game is hidden and makes way again in
+	// one move when it is back.
+	for (int order = 0; order < 2; order++) {
+		FP f = fp_make(1, false, 0, false, order == 0);
+		Pic g0, c0;
+		fp_settle(f, g0, c0);
+		bool game_still = true;
+		obs_sceneitem_set_visible(f.c, false);
+		for (int i = 0; i < 50; i++) {
+			fp_wait(f, 20);
+			game_still = game_still && same(pic(f.g), g0, 0.05);
+		}
+		obs_sceneitem_set_visible(f.c, true);
+		for (int i = 0; i < 75; i++) {
+			fp_wait(f, 20);
+			game_still = game_still && same(pic(f.g), g0, 0.05);
+		}
+		CHECK(game_still && same(pic(f.c), c0, 0.5),
+		      "%s: the camera hidden and shown, the game does not move at all and the camera comes back (%.0f,%.0f)",
+		      order == 0 ? "game's filter above" : "camera's filter above", pic(f.c).x, pic(f.c).y);
+		obs_sceneitem_set_visible(f.g, false);
+		fp_wait(f, 1000);
+		const Pic c_alone = pic(f.c);
+		obs_sceneitem_set_visible(f.g, true);
+		int turns = 0;
+		double last = c_alone.h, last_step = 0.0;
+		for (int i = 0; i < 100; i++) {
+			fp_wait(f, 20);
+			const double h = pic(f.c).h, step = h - last;
+			if (step * last_step < -1e-6)
+				turns++;
+			if (std::fabs(step) > 0.05 && std::fabs(last_step) <= 0.05 && i > 2 &&
+			    std::fabs(last - c_alone.h) > 0.05)
+				turns++;
+			last_step = step;
+			last = h;
+		}
+		CHECK(tall(c_alone) && turns == 0 && same(pic(f.g), g0, 0.5) && same(pic(f.c), c0, 0.5),
+		      "%s: the game hidden, the camera takes the room (%.0f tall); shown, the camera makes way in one move (turns %d) and both are back",
+		      order == 0 ? "game's filter above" : "camera's filter above", c_alone.h, turns);
+		fp_drop(f);
+	}
+
+	// "Priority by list order": the level is not read; the higher filter wins.
+	{
+		// (The game set to make room and the camera to take its space
+		// first: ignored, the game's filter is above.)
+		FP f = fp_make(2, true, 1, true, true);
+		Pic g, c;
+		const bool still = fp_settle(f, g, c);
+		CHECK(still && tall(g) && !tall(c) && apart(g, c),
+		      "by list order, the filter higher in the list takes its space, whatever its level (game %.0f tall, camera %.0f)",
+		      g.h, c.h);
+		// Moved up: the camera wins, gliding there, not jumping.
+		obs_source_filter_set_order(obs_scene_get_source(f.scene), f.fc, OBS_ORDER_MOVE_UP);
+		const double from = pic(f.c).h;
+		bool between = false;
+		for (int i = 0; i < 60; i++) {
+			fp_wait(f, 20);
+			const double h = pic(f.c).h;
+			between = between || (h > from + 2.0 && h < 339.0);
+		}
+		Pic g2, c2;
+		const bool still2 = fp_settle(f, g2, c2);
+		CHECK(still2 && tall(c2) && !tall(g2) && apart(g2, c2) && between,
+		      "the camera's filter moved above it: the camera takes its space, gliding there (camera %.0f tall, game %.0f)",
+		      c2.h, g2.h);
+		obs_source_filter_set_order(obs_scene_get_source(f.scene), f.fc, OBS_ORDER_MOVE_DOWN);
+		Pic g3, c3;
+		const bool still3 = fp_settle(f, g3, c3);
+		CHECK(still3 && same(g3, g, 0.5) && same(c3, c, 0.5),
+		      "moved back down, both go back where they were (game %.0f tall)", g3.h);
+		// The level control is greyed out while the box is ticked.
+		obs_properties_t *props = obs_source_properties(f.fg);
+		obs_property_t *level = obs_properties_get(props, "space_priority");
+		obs_property_t *box = obs_properties_get(props, "list_priority");
+		obs_data_t *gs = obs_source_get_settings(f.fg);
+		obs_property_modified(box, gs);
+		const bool off = level && !obs_property_enabled(level);
+		obs_data_set_bool(gs, "list_priority", false);
+		obs_property_modified(box, gs);
+		const bool on = level && obs_property_enabled(level);
+		obs_data_set_bool(gs, "list_priority", true);
+		obs_data_release(gs);
+		obs_properties_destroy(props);
+		CHECK(box && off && on, "Space priority is greyed out while list order is ticked, and not after");
+		fp_drop(f);
+	}
+	// Ticked against unticked: the ticked one counts as sharing space.
+	{
+		const struct {
+			int cam_level;
+			const char *what;
+		} cases[] = {{0, "shares space: they share"},
+			     {1, "takes space first: the camera wins"},
+			     {2, "makes room: the game wins"}};
+		for (const auto &one : cases) {
+			FP f = fp_make(2, true, one.cam_level, false, true);
+			Pic g, c;
+			const bool still = fp_settle(f, g, c);
+			const bool right = one.cam_level == 0   ? same(g, shared_g, 0.5) && same(c, shared_c, 0.5)
+					   : one.cam_level == 1 ? tall(c) && !tall(g)
+								: tall(g) && !tall(c);
+			CHECK(still && apart(g, c) && right,
+			      "the game by list order (level set to make room, not read), the camera unticked and %s (game %.0f, camera %.0f tall)",
+			      one.what, g.h, c.h);
+			fp_drop(f);
+		}
+	}
+
+	// Scene Fit: its entries by its list's order, or each by its level.
+	auto fp_list = [](obs_data_t *d, const char *setting, std::vector<std::string> values) {
+		obs_data_array_t *list = obs_data_array_create();
+		for (const std::string &value : values) {
+			obs_data_t *entry = obs_data_create();
+			obs_data_set_string(entry, "value", value.c_str());
+			obs_data_array_push_back(list, entry);
+			obs_data_release(entry);
+		}
+		obs_data_set_array(d, setting, list);
+		obs_data_array_release(list);
+	};
+	auto fp_entry = [](obs_data_t *d, const std::string &prefix, int toward, int level) {
+		obs_data_set_int(d, (prefix + "box").c_str(), 2);
+		obs_data_set_double(d, (prefix + "margin").c_str(), 10);
+		obs_data_set_double(d, (prefix + "tolerance").c_str(), 5);
+		obs_data_set_bool(d, (prefix + "resize").c_str(), true);
+		obs_data_set_int(d, (prefix + "toward").c_str(), toward);
+		obs_data_set_int(d, (prefix + "glide_ms").c_str(), 300);
+		if (level >= 0)
+			obs_data_set_int(d, (prefix + "space_priority").c_str(), level);
+	};
+	auto fp_scene_fit = [&](FP &f, std::vector<std::string> entries, bool by_list, int game_level, int cam_level) {
+		obs_data_t *d = obs_data_create();
+		fp_list(d, "entries", entries);
+		fp_entry(d, "fit|FP Game|", 3, game_level);
+		fp_entry(d, "fit|FP Cam|", 4, cam_level);
+		obs_data_set_bool(d, "list_priority", by_list);
+		const std::string name = "FP Scene Fit " + std::to_string(made);
+		obs_source_t *sf = obs_source_create("stagekit_scene_fit", name.c_str(), d, nullptr);
+		obs_data_release(d);
+		obs_source_filter_add(obs_scene_get_source(f.scene), sf);
+		return sf;
+	};
+	{
+		FP f;
+		fp_scene(f);
+		f.fg = fp_scene_fit(f, {"FP Game", "FP Cam"}, true, 2, 1);
+		obs_set_output_source(0, obs_scene_get_source(f.scene));
+		Pic g, c;
+		bool still = fp_settle(f, g, c);
+		CHECK(still && tall(g) && !tall(c) && apart(g, c),
+		      "Scene Fit by list order: the first entry takes its space (game %.0f, camera %.0f tall)", g.h,
+		      c.h);
+		obs_data_t *d = obs_source_get_settings(f.fg);
+		fp_list(d, "entries", {"FP Cam", "FP Game"});
+		obs_source_update(f.fg, d);
+		obs_data_release(d);
+		still = fp_settle(f, g, c);
+		CHECK(still && tall(c) && !tall(g) && apart(g, c),
+		      "the entries swapped: the camera takes its space (camera %.0f, game %.0f tall)", c.h, g.h);
+		// Unticked: each entry's own level.
+		d = obs_source_get_settings(f.fg);
+		obs_data_set_bool(d, "list_priority", false);
+		obs_data_set_int(d, "fit|FP Game|space_priority", 1);
+		obs_data_set_int(d, "fit|FP Cam|space_priority", 0);
+		obs_source_update(f.fg, d);
+		obs_properties_t *props = obs_source_properties(f.fg);
+		obs_property_t *level = obs_properties_get(props, "fit|FP Game|space_priority");
+		obs_property_t *box = obs_properties_get(props, "list_priority");
+		obs_data_set_bool(d, "list_priority", true);
+		obs_property_modified(box, d);
+		const bool off = level && !obs_property_enabled(level);
+		obs_data_set_bool(d, "list_priority", false);
+		obs_property_modified(box, d);
+		const bool on = level && obs_property_enabled(level);
+		obs_properties_destroy(props);
+		obs_data_release(d);
+		CHECK(off && on, "an entry's Space priority is greyed out while the Scene Fit goes by list order");
+		still = fp_settle(f, g, c);
+		CHECK(still && tall(g) && !tall(c) && apart(g, c),
+		      "Scene Fit unticked: the game's entry, set to take its space first, wins although listed second (game %.0f tall)",
+		      g.h);
+		fp_drop(f);
+	}
+	// A Scene Fit and a Fit to Space on one scene, both by list order:
+	// the Scene Fit's entries count at its place in the filter list.
+	{
+		FP f;
+		fp_scene(f);
+		f.fc = fp_scene_fit(f, {"FP Cam"}, true, -1, 2);
+		f.fg = fp_filter(f.scene, "FP Game", 1, true, 3);
+		obs_set_output_source(0, obs_scene_get_source(f.scene));
+		Pic g, c;
+		bool still = fp_settle(f, g, c);
+		CHECK(still && tall(c) && !tall(g) && apart(g, c),
+		      "a Scene Fit above a Fit to Space: its entry takes its space (camera %.0f, game %.0f tall)", c.h,
+		      g.h);
+		obs_source_filter_set_order(obs_scene_get_source(f.scene), f.fg, OBS_ORDER_MOVE_UP);
+		still = fp_settle(f, g, c);
+		CHECK(still && tall(g) && !tall(c) && apart(g, c),
+		      "the Fit to Space moved above it: the game takes its space (game %.0f, camera %.0f tall)", g.h,
+		      c.h);
+		fp_drop(f);
+	}
+
+	obs_set_output_source(0, before);
+	obs_source_release(before);
+	obs_source_release(fp_cam);
+	obs_source_release(fp_game);
+}
+
 int main(int argc, char **argv)
 {
 	if (argc < 7) {
@@ -679,6 +1087,13 @@ int main(int argc, char **argv)
 	load_module("/usr/lib/x86_64-linux-gnu/obs-plugins/obs-transitions.so",
 		    "/usr/share/obs/obs-plugins/obs-transitions");
 	obs_post_load_modules();
+	if (getenv("STAGEKIT_TEST_ONLY_FIT_PRIORITY")) { // to try that section alone
+		fit_priority_test();
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
 	if (getenv("STAGEKIT_TEST_ONLY_POP_IN")) { // to try that section alone
 		obs_audio_info sound = {};
 		sound.samples_per_sec = 48000;
@@ -15243,6 +15658,9 @@ int main(int argc, char **argv)
 		for (obs_source_t *src : {game, cam, chat, bg})
 			obs_source_release(src);
 	}
+	// Space priority between fitted sources (its own function, so that it can
+	// be run alone: STAGEKIT_TEST_ONLY_FIT_PRIORITY).
+	fit_priority_test();
 	// ==== end scene-filters:fit ====
 	// ==== scene-filters:all-sources ====
 	// ---------------------------------------- the scene filters' All sources

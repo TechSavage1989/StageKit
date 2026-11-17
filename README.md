@@ -394,6 +394,24 @@ nearest.
   item, so they settle in one move. An item that keeps its size, with a resized item on one side
   and the screen's edge or a fixed item on the other, sits against the fixed side; the resized item
   takes the rest.
+- **Space priority** (in the free space) says which source gets the room when two want it:
+  - *Takes space first*: the source takes the space it would have if the sources that share space
+    or make room were not there, and never moves or shrinks for them; they fit around it. Use it for
+    the main capture, so the camera and chat box fit beside it.
+  - *Shares space* (as it comes, and what every filter made before this setting does): the sources
+    make room for each other, as above.
+  - *Makes room*: the source always fits around every source that shares space or takes space
+    first.
+
+  Two sources with the same setting share. A source set to take space first may cover the place a
+  lower one was kept round; that one then fits beside it, and goes back to its place when the first
+  is hidden.
+- **Priority by list order** (unticked as it comes): ticked, *Space priority* is greyed out and not
+  used. Among the fitted sources of the scene that have it ticked, the one whose filter is higher in
+  the scene's filter list takes its space first, and the ones below fit around it. Move a filter up
+  or down and the sources glide to their new places. A Scene Fit with it ticked counts at its own
+  place in the list, its sources in its own order. Towards a fitted source without it ticked, a
+  source with it ticked counts as *Shares space*.
 - An item is never put past the screen's edges: it stays the gap inside them whatever is beside it.
 - **Resize to fit** (ticked as it comes). Unticked, the item keeps the size it has and is only
   moved, to the middle of its space, so the room left over is the same on both sides and above and
@@ -626,7 +644,7 @@ it to *Manual sources*, and hide it. Then:
 
 It acts only when one of those things happens, so a capture you show by hand stays until then. A
 minimised window counts as closed. The top line says what is showing. Switch the filter off to pause it.
-Each capture can have its own [Fit to Space](#fit-item), shadow and blur; they follow the capture.
+Each capture can have its own [Fit to Space](#fit-to-space), shadow and blur; they follow the capture.
 
 ### Program Trigger
 
@@ -1242,7 +1260,14 @@ learns where the others are going a frame later, and they could shift a few time
   fitted to. A source added on top of a fitted one is fitted once that one has made room for it.
   Switching back to *Chosen sources* leaves the others where they are.
 - **Fitted sources**: the order matters. Put the sources that keep their size (a camera, a chat box) above
-  the ones that are resized to fit (the game).
+  the ones that are resized to fit (the game). With *Priority by list order* ticked, the order is also the
+  priority: a source higher in the list takes its space first.
+- **Space priority**: each source's own (*Takes space first*, *Shares space*, *Makes room*), as in
+  [Fit to Space](#fit-to-space).
+- **Priority by list order**: one switch for every source. Ticked, the sources' *Space priority* is greyed
+  out; a source higher in *Fitted sources* takes its space first, and the Scene Fit counts at its place in the
+  scene's filter list against any Fit to Space there that has the box ticked too. Towards the others it counts
+  as *Shares space*.
 - **Take over Fit to Space**: every Fit to Space switched on in this scene becomes an entry here, with all its
   settings, the place it keeps its source round and the size it keeps. Each filter is switched off, not
   deleted: switch it on again (and the Scene Fit off) to go back. Nothing moves.

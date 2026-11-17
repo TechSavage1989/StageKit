@@ -125,6 +125,51 @@ Chosen sources solve as before. Tests: `[all sources: scene corners]`, `[... sce
 standby]`, `[... scene shadow]`, `[... scene fit]` in their own `scene-filters:all-sources` block. Not
 proven on Windows: Scene Fit's window with many unlisted entries (one group each under *Settings for*),
 and how All sources settles in the owner's real scenes (in the test four sources settle and stay still).
+## Space priority for Fit to Space and Scene Fit (not released; branch `feat/fit-priority`)
+
+The owner, with a screenshot of a scene with many Fit to Space filters: "fit to filter priority of
+the source to override another source size or placement should be based on filter position ...
+if I want my primary capture or live sources to always grab space before and override the camera,
+it would go higher in the list". Then: "make it configurable. maybe a selector to set source as
+dominant, equal, and less", and "a tickbox that would disable the selector and make list order the
+priority".
+
+- **What the user sees.** *Space priority* on every Fit to Space and on every Scene Fit entry
+  (*Takes space first*, *Shares space*, *Makes room*), and *Priority by list order* on every Fit to
+  Space and once on Scene Fit. A source that takes space first fits as if the sources that share or
+  make room were not there and never moves for them; they fit around it. One that makes room fits
+  around all the others. The same level shares, as every fit did before. With the box ticked the
+  selector is greyed out, and among the ticked fits of a scene the one higher in the filter list
+  wins (a Scene Fit at its place, its entries in their order). A ticked fit counts as *Shares
+  space* towards an unticked one. Only the free space takes part.
+- **Default: *Shares space*, box unticked, for saved and new filters alike.** Saved filters must
+  not change by themselves: the owner's layout scenes were built on sharing (the Live scene's game
+  fitted beside the camera and chat column), and a dominant capture there would take the whole
+  height and leave the camera and chat box over it. For new filters *Shares space* too, not list
+  order: a new filter is most often added to a scene that already has sharing filters, and it then
+  behaves like them; with list order on by default, the order filters happened to be added in would
+  quietly decide who wins, and the selector would be greyed out for no reason the user chose. The
+  owner ticks the box, or picks a level, where they want it.
+- **How the claims changed.** A claim carries its fit's rank (`Rank`), looked up at every tick. A
+  fit does not see the claim of one it outranks at all; a claim that outranks it is a firm side,
+  never one that gives way. Between fits of different standing the dependence is therefore one-way
+  and nothing can chase. The same standing keeps today's two-way claims and their anti-chasing rules
+  untouched. A higher fit that covers a lower one's home point no longer lets the lower one sit on
+  top of it: the space is looked for just off the higher one's sides (`free_space`'s `firm`), the
+  home point is kept. A filter moved up or down is followed at the next tick, with a glide.
+- **Tests:** `[fit priority]` (`fit_priority_test`; run alone with
+  `STAGEKIT_TEST_ONLY_FIT_PRIORITY=1`): every level against every other in both filter orders,
+  ties compared with two that share, a filter saved before the setting, the camera and the game
+  each hidden and shown in both orders (the dominant game never moves; the camera makes way in one
+  move), list order with a filter moved up (glides) and back, ticked against unticked, the
+  selector greyed out, Scene Fit entries in order and swapped, Scene Fit by levels, and a Scene Fit
+  and a Fit to Space ranked by their places in one scene. The existing fit tests are unchanged:
+  their filters read as *Shares space*.
+- **Not done or not proven.** Not seen on Windows. Kept-size items in a priority pair are not in
+  the new tests (the old pair tests still cover them sharing). A lower fit with no room at all
+  keeps its last claim and its item stays where it was, under or over the higher one. A fit outside
+  the free space (whole scene, an area) has no rank and is an ordinary item to the others. The
+  merge scripts write no `space_priority`, so the generated collections share as before.
 
 ## A capture comes out of the DSLR (0.1.0-beta158)
 

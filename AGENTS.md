@@ -728,6 +728,30 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   shifted "a number of times" after a scene switch or a camera being hidden. Which side gives way
   is judged by which side of the space's middle it lies on, never by whether it touches the space:
   judged by touching, the two filters chased each other without end.
+- **Space priority decides which fit makes room for which** (`space_priority`, `SpacePriority`,
+  saved by number, append-only: 0 *Shares space*, 1 *Takes space first*, 2 *Makes room*; and
+  `list_priority`, *Priority by list order*, a Fit to Space's own and a Scene Fit's for all its
+  entries; `Rank`, `outranks` in `src/placement/fit-engine.hpp`). The owner: "fit to higher in the
+  list would have higher priority", then "a selector to set source as dominant, equal, and less",
+  then "a tickbox that would disable the selector and make list order the priority". Each claim
+  carries its fit's `Rank`, found afresh at every `prepare` (the filter's `applied_index`, a Scene
+  Fit entry's place in *Fitted sources*), so moving a filter up or down counts at the next tick and
+  is followed with a glide (`observe` sees the obstacles change; nothing listens to
+  `reorder_filters`). `FitScan::obstacles` with `mine`: a claim `mine` outranks is **not in the way
+  at all**, wherever it is; a claim that outranks `mine` is firm (`gives` false, `above`). Two
+  ranks neither outranking the other go by each other's claims exactly as before. So between two
+  fits of different standing the dependence is one-way and there is nothing to chase. Rules: both
+  `list_priority`: the higher in the filter list (then the entry order) wins; otherwise a ticked
+  one counts as *Shares space* and the levels decide. An outranking fit that covers a lower fit's
+  anchor would otherwise be ignored by it (a box holding the anchor is not in the way):
+  `free_space`'s `firm` list makes such a box count and looks for the space just off each of its
+  sides, for that answer only; the anchor itself is not moved, so the lower item goes home when
+  the higher is hidden. "Honouring a lower fit when it costs nothing" was tried on paper and left
+  out: a higher fit that looks at a lower one's claim at all depends on it again, and a centred
+  picture then crept towards the wall one glide at a time. The default is *Shares space*, list
+  order unticked, for new and saved filters alike, so no layout changes by itself. Only the free
+  space claims; a fit in the whole scene or an area takes no part. Tested in `[fit priority]`
+  (`fit_priority_test`, run alone with `STAGEKIT_TEST_ONLY_FIT_PRIORITY`).
 - **Fit to Space does nothing to a hidden item** (`hidden_` in `src/placement/fit-item.cpp`): no
   placing, anchor and kept size untouched, so the other filters take its room. Its room stays on
   record (`holds_room`, beta147): nothing goes by it while the item is hidden (claims are only asked
@@ -1619,7 +1643,10 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   order the old `FitItem::tick` did: change them there, never in one host only. Scene Fit
   works its entries out in the order of *Fitted sources*, top first, and again (up to four
   passes, `kPasses`) while one entry's new claim moves another's goal, before any glide
-  starts: each entry sets off once per change, all in one tick. An entry's settings are
+  starts: each entry sets off once per change, all in one tick. The list's order is a priority
+  only with the Scene Fit's *Priority by list order* (`set_entry_index`; see *Space priority*);
+  *Take over Fit to Space* copies `space_priority` per entry and the first filter's
+  `list_priority`. An entry's settings are
   `fit|<source>|<Fit to Space's key>` (the self-written ones too: anchors, `keep_k`, `orig_k`;
   `kOwnSettings` matches on the last `|` part), but its two lists are `fit_<the name in hex>_skip`
   and `..._share_scenes` (`fit_list_prefix`): a PickList's setting cannot hold a bar and a
