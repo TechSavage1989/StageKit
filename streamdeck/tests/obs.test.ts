@@ -290,7 +290,8 @@ test("a Scene Mode key lists every mode, turns one on by its id and is lit when 
 	await action.show(key, settings);
 	assert.ok(shown.images.at(-1)?.endsWith("/options/type-title-on.png"), "no layout of that kind: the type's own");
 	assert.equal(modePicture(undefined, "", "starting", "Lunch").id, "options/mode-starting", "the mode's own type");
-	assert.equal(modePicture(undefined, "", "", "GBA").id, "scenes/11-dolphin-gba", "GBA counts as a retro game");
+	assert.equal(modePicture(undefined, "", "", "GBA").id, "options/type-handheld", "GBA counts as a handheld");
+	assert.equal(modePicture(undefined, "", "", "GBA Link").id, "scenes/11-dolphin-gba", "a linked handheld: the console-and-handheld layout");
 	assert.equal(modePicture(undefined, "", "", "Lunch").id, "options/mode", "nothing fits: the plain mode key");
 	assert.equal(modePicture("options/browser", "", "game", "GBA").id, "options/browser", "an image kept from before wins over Automatic");
 	assert.equal(modePicture("options/browser", "camera", "game", "GBA").id, "scenes/12-camera-only", "a type chosen wins over it");

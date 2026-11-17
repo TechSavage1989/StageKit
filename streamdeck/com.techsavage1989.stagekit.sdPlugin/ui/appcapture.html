@@ -27,6 +27,18 @@
 				<option value="off">Switch off</option>
 			</sdpi-select>
 		</sdpi-item>
+		<sdpi-item label="Transition" title="Which change the image shows. Automatic shows the filter&#x27;s own image.">
+			<sdpi-select setting="look" placeholder="Automatic">
+				<option value="auto">Automatic</option>
+				<option value="fade">Fade</option>
+				<option value="cut">Cut</option>
+				<option value="slide">Slide</option>
+				<option value="swipe">Swipe</option>
+				<option value="wipe">Wipe</option>
+				<option value="zoom">Zoom</option>
+				<option value="morph">Morph</option>
+			</sdpi-select>
+		</sdpi-item>
 		<sdpi-item label="Source type" title="What the capture switches between, for the key&#x27;s image.">
 			<sdpi-select setting="sourceType" placeholder="Automatic (window switcher)">
 				<option value="auto">Automatic (window switcher)</option>
@@ -34,6 +46,7 @@
 					<option value="game">Game</option>
 					<option value="retro">Retro game</option>
 					<option value="emulator">Emulator</option>
+					<option value="linked_handheld">Linked handheld screen</option>
 					<option value="window">Window</option>
 					<option value="browser">Browser</option>
 				</optgroup>

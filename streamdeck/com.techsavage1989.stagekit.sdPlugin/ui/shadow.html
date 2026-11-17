@@ -27,14 +27,30 @@
 				<option value="off">Switch off</option>
 			</sdpi-select>
 		</sdpi-item>
-		<sdpi-item label="Source type" title="What the shadow is on, for the key&#x27;s image. Automatic shows the shadow, glow or outline the filter is set to.">
-			<sdpi-select setting="sourceType" placeholder="Automatic (the shadow&#x27;s look)">
-				<option value="auto">Automatic (the shadow&#x27;s look)</option>
+		<sdpi-item label="Shadow style" title="Which look the image shows. Automatic shows the shadow, glow or outline the filter is set to.">
+			<sdpi-select setting="look" placeholder="Automatic">
+				<option value="auto">Automatic</option>
+				<optgroup label="Shadows">
+					<option value="soft">Soft shadow</option>
+					<option value="hard">Hard shadow</option>
+					<option value="long">Long shadow</option>
+				</optgroup>
+				<optgroup label="Glows &amp; outlines">
+					<option value="glow">Glow</option>
+					<option value="neon">Neon</option>
+					<option value="outline">Outline</option>
+					<option value="panel">Panel</option>
+				</optgroup>
+			</sdpi-select>
+		</sdpi-item>
+		<sdpi-item label="Source type" title="What the shadow is on, for the key&#x27;s image.">
+			<sdpi-select setting="sourceType" placeholder="Automatic (by the source)">
+				<option value="auto">Automatic (by the source)</option>
 				<optgroup label="Captures &amp; games">
 					<option value="game">Game</option>
-					<option value="retro">Retro game</option>
-					<option value="retro_2">Second retro game</option>
-					<option value="capture_card">Capture card</option>
+					<option value="linked_handheld">Linked handheld screen</option>
+					<option value="linked_handheld_2">Second linked handheld screen</option>
+					<option value="capture_card">Capture card (internal)</option>
 					<option value="window">Window</option>
 				</optgroup>
 				<optgroup label="Apps">
@@ -42,7 +58,7 @@
 					<option value="sculpting">Sculpting app</option>
 					<option value="cad">CAD app</option>
 				</optgroup>
-				<optgroup label="Cameras &amp; audio">
+				<optgroup label="Cameras">
 					<option value="camera">Camera / webcam</option>
 					<option value="side_camera">Side camera</option>
 				</optgroup>

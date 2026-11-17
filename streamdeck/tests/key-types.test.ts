@@ -75,7 +75,7 @@ test("no list offers a type twice, or two types with the same image", () => {
 });
 
 test("every type is generic: nothing named after one person's scenes, sources, apps or devices", () => {
-	const owners = /\b(dolphin|hd60s?|blender|zbrush|fusion|elgato|gba|pureref|discord|square|printer|dslr component|live|component)\b/i;
+	const owners = /\b(dolphin|hd60s?|blender|zbrush|fusion|elgato|gba|game ?cube|game boy|pureref|discord|square camera|printer|component|chat live|stream ?deck)\b|^(live|standby)$/i;
 	for (const key of keysWithLists())
 		for (const list of typeLists(key)) {
 			assert.ok(!owners.test(list.label) && !owners.test(list.automatic), list.label);
@@ -95,12 +95,14 @@ test("the Scene type list is the owner's scene pictures under generic names, and
 	const all = list.groups.flatMap((g) => g.entries);
 	assert.ok(all.length >= 30, `${all.length}`);
 	const by = new Map(all.map((e) => [e.value, e.picture]));
-	assert.equal(by.get("retro"), "scenes/11-dolphin-gba", "the owner's handheld-link scene is a retro one");
+	assert.equal(by.get("console_link"), "scenes/11-dolphin-gba", "the owner's console-and-handheld layout, by what it is");
+	assert.equal(by.get("retro"), "options/scene-type-retro", "retro gaming has a drawing of its own");
+	assert.notEqual(by.get("classic"), by.get("retro"));
 	assert.equal(by.get("capture_card"), "scenes/05-game-hd60s");
 	assert.equal(by.get("gameplay_chat"), "scenes/03-game-component");
 	assert.equal(by.get("holding"), "options/scene-standby");
 	for (const p of PICTURES.filter((p) => p.group === "scenes")) assert.ok([...by.values()].includes(p.id), `${p.id} is offered`);
-	assert.deepEqual(list.groups.map((g) => g.label), ["Holding screens", "Games", "Apps & screens", "Camera & talk", "All in one"]);
+	assert.deepEqual(list.groups.map((g) => g.label), ["Holding & status", "Games", "Apps & screens", "Creative", "Camera & talk", "IRL & lifestyle", "All in one"]);
 });
 
 test("every settings page has its type lists and no Image list", () => {
@@ -137,7 +139,7 @@ test("an image chosen in the old Image list is still shown, and set as its type 
 
 	// Where a type of the key's lists shows that very image, it is set.
 	const resolve = (s: Record<string, unknown>) => chooseFor(keptPicture(s), "stagekit_show_in_scenes", {}, "Cam", undefined, s)?.id;
-	assert.deepEqual(typeForKept("showinscenes", old, resolve), { target: "Cam\nShow", sourceType: "retro" });
+	assert.deepEqual(typeForKept("showinscenes", old, resolve), { target: "Cam\nShow", sourceType: "linked_handheld" });
 	const blur = (s: Record<string, unknown>) => chooseFor(keptPicture(s), "stagekit_ramp_blur", { blur_type: 1 }, "Cam", undefined, s)?.id;
 	assert.equal(typeForKept("blur", { picture: "blur-box/hd60s" }, blur)?.sourceType, "capture_card");
 	assert.equal(typeForKept("blur", { picture: "blur-types/box" }, blur)?.look, "box");
@@ -162,4 +164,39 @@ test("a key's title follows its Capture type", async () => {
 	assert.equal(hookTitle("game_capture", "window"), "Capture\nWindow");
 	assert.equal(hookTitle("window_capture", "auto"), "Capture\nWindow");
 	assert.equal(hookTitle(undefined, "game"), "Capture\nGame");
+});
+
+test("devices, status, styles and activities are in the lists they belong to", () => {
+	const groupsOf = (key: string, setting: string) => typeLists(key).find((l) => l.setting === setting)!.groups;
+	const values = (key: string, setting: string) => groupsOf(key, setting).flatMap((g) => g.entries.map((e) => e.value));
+	// Show in Scenes: what a source can be, devices and status included; no activities.
+	const show = groupsOf("showinscenes", "sourceType").map((g) => g.label);
+	for (const g of ["Captures & games", "Apps", "Cameras", "Devices & audio", "Overlays", "Status & holding screens", "Layout markers"]) assert.ok(show.includes(g), g);
+	assert.ok(!show.includes("Activities"));
+	for (const v of ["pc", "controller", "stream_deck", "pen_display", "vr_headset", "action_cam", "ptz_camera", "headset", "muted", "privacy", "live"])
+		assert.ok(values("showinscenes", "sourceType").includes(v), v);
+	// Scene and Mode types: status and activities.
+	for (const v of ["paused", "offline", "privacy", "raid", "speedrun", "cooking", "irl", "fitness", "watch_party", "tutorial", "console_link"])
+		assert.ok(values("scene", "sceneType").includes(v), v);
+	for (const v of ["live", "muted", "speedrun", "cooking", "podcast", "column_handheld", "linked_handheld"]) assert.ok(values("mode", "sourceType").includes(v), v);
+	// Styles.
+	assert.deepEqual(groupsOf("blur", "look").map((g) => g.label), ["Blurs", "Mosaics"]);
+	assert.ok(values("blur", "look").length >= 14);
+	assert.equal(values("corners", "look").length, 7);
+	assert.equal(values("shadow", "look").length, 7);
+	for (const key of ["showhide", "visibilitylink", "activeapp", "appcapture"])
+		assert.deepEqual(values(key, "look"), ["fade", "cut", "slide", "swipe", "wipe", "zoom", "morph"], key);
+	// Lists stay to their job: no device in a Blur source list without the pack's blurred image of it, no activity on a capture key.
+	for (const key of ["zoom", "standby", "autoframe", "autocapture", "appcapture", "programtrigger"])
+		assert.ok(!groupsOf(key, "sourceType").some((g) => g.label === "Activities"), key);
+});
+
+test("a Blur style the pack has no pictures of: its drawing, or the source in the nearest of the pack's styles", () => {
+	assert.equal(chooseFor(undefined, "stagekit_ramp_blur", {}, "", undefined, { look: "mosaic_circle" })?.id, "options/style-mosaic-circle");
+	assert.equal(chooseFor(undefined, "stagekit_ramp_blur", {}, "", undefined, { look: "mosaic_circle", sourceType: "game" })?.id, "blur-hexagons/game-capture");
+	assert.equal(chooseFor(undefined, "stagekit_ramp_blur", {}, "", undefined, { look: "trail", sourceType: "window" })?.id, "blur-motion/window-capture");
+	assert.equal(chooseFor(undefined, "stagekit_ramp_blur", { blur_type: 4 }, "", undefined, {})?.id, "blur-types/zoom", "Automatic: the filter's own");
+	assert.equal(chooseFor(undefined, "stagekit_shadow_backdrop", {}, "", undefined, { look: "neon" })?.id, "options/style-shadow-neon");
+	assert.equal(chooseFor(undefined, "stagekit_show_hide", {}, "", undefined, { look: "morph" })?.id, "options/style-morph");
+	assert.equal(chooseFor(undefined, "stagekit_show_hide", {}, "", undefined, { look: "morph", sceneType: "cooking" })?.id, "options/scene-type-cooking", "the scene first");
 });

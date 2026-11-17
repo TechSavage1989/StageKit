@@ -91,8 +91,10 @@ test("a name speaks of a type by its words, the longest phrase first", () => {
 	assert.equal(typeOfName("Be Right Back"), "brb");
 	assert.equal(typeOfName("BRB Text"), "brb", "brb before text");
 	assert.equal(typeOfName("Stream Starting Soon"), "starting");
-	assert.equal(typeOfName("GBA"), "retro");
-	assert.equal(typeOfName("Column: GBA"), "column_retro", "two words before one");
+	assert.equal(typeOfName("GBA"), "handheld");
+	assert.equal(typeOfName("GBA Link 2"), "linked_handheld_2", "three words before two");
+	assert.equal(typeOfName("Column: GBA"), "column_handheld", "two words before one");
+	assert.equal(typeOfName("Green Screen"), "green_screen", "not a display");
 	assert.equal(typeOfName("Side Camera"), "side_camera");
 	assert.equal(typeOfName("Second Monitor"), "second_display");
 	assert.equal(typeOfName("Capture Card"), "capture_card");
@@ -142,7 +144,8 @@ test("scene filters' keys are marked as such, and only keys on a source offer a 
 	for (const page of ["showinscenes", "shadow", "standby", "blur", "zoom", "mode"]) assert.ok(offered(page), page);
 	for (const page of ["scene", "tool", "option", "slide", "fitoverlap", "blur-all", "shape", "hook", "appswitch"]) assert.ok(!offered(page), page);
 	const page = readFileSync(new URL("ui/showinscenes.html", plugin), "utf8");
-	for (const type of SOURCE_TYPES) assert.ok(page.includes(`<option value="${type.id}">${type.label.replace(/&/g, "&amp;")}</option>`), type.id);
+	for (const type of SOURCE_TYPES)
+		assert.equal(page.includes(`<option value="${type.id}">${type.label.replace(/&/g, "&amp;")}</option>`), type.group !== "Activities", type.id);
 });
 
 test("a key remembers the kind of source and the mode its image depends on", async () => {

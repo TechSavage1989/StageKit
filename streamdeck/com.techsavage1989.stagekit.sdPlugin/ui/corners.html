@@ -27,13 +27,20 @@
 				<option value="off">Switch off</option>
 			</sdpi-select>
 		</sdpi-item>
-		<sdpi-item label="Corner style" title="Which corners the image shows. Automatic shows the style the filter is set to.">
+		<sdpi-item label="Corner style" title="Which corners or edges the image shows. Automatic shows the style the filter is set to.">
 			<sdpi-select setting="look" placeholder="Automatic">
 				<option value="auto">Automatic</option>
-				<option value="round">Rounded</option>
-				<option value="cut">Cut</option>
-				<option value="notch">Notched</option>
-				<option value="scoop">Scooped</option>
+				<optgroup label="Corners">
+					<option value="round">Rounded</option>
+					<option value="cut">Cut</option>
+					<option value="notch">Notched</option>
+					<option value="scoop">Scooped</option>
+				</optgroup>
+				<optgroup label="Edges">
+					<option value="soft">Soft edges</option>
+					<option value="outline">Outlined edges</option>
+					<option value="trim">Trimmed edges</option>
+				</optgroup>
 			</sdpi-select>
 		</sdpi-item>
 		<sdpi-item label="Palette">

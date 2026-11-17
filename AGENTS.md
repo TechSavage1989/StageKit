@@ -1257,23 +1257,36 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   stream scene collection, but I do want the specific icons I had"; and "Dolphin isn't handheld ...
   make as many scene and source types as possible and provide the proper respective icons". So:
   - **Generic types, the owner's art.** Every type is a general one (Game, Retro game, Capture
-    card, Facecam, Gameplay + chat, Holding screen ...); a test fails on an owner's scene, source,
+    card, Facecam, Gameplay + chat, Holding screen ...; no product names either: "Stream
+    controller", not the brand); a test fails on an owner's scene, source,
     app or device name in any list (`owners` in `tests/key-types.test.ts`). Each type's picture is
     the owner's pack art for that type *and the key's function* where there is one (`art` in the
     JSON, by family: `show` the *show hide* pictures, `shadow` *shadow by source*, `blur` the
     *blur <style>* pictures in the filter's style, `mode` the *scenes* layouts), otherwise the
     type's own picture (`base`: a drawing of `make-option-icons.py`'s `TYPES`/`MORE_TYPES`, a
     `devices` picture, or the pack's `filters/app-*`). Scene types are the owner's *scenes*
-    pictures under generic names (*dolphin gba* is **Retro**, *hd60s* is *Capture card*, the
+    pictures under generic names (*dolphin gba* is **Console + handheld link**, and its source
+    pictures *gba link 1/2* are *Linked handheld screen* and *Second linked handheld screen*: the
+    owner, "Retro icon should be specific to GC+GBA"; *Retro gaming*, *Classic gaming* and *Retro
+    game* have drawings of their own; *hd60s* is *Capture card*, the
     beta154 Live / Chat Live / Standby pictures *On air*, *On air + chat*, *Holding screen*) and
     `options/scene-type-<id>` drawings (`SCENE_TYPES` in `make-option-icons.py`) for the rest.
-    The pack's *standby by source* pictures are not offered: without the words they carried all
+    Four families of drawings were added at the owner's word ("create as many device, status,
+    style, activity icons as possible for every key that it's relevant to"): devices
+    (`MORE_TYPES`, as source types in *Devices & audio* and *Cameras*), status (source types in
+    *Status & holding screens*, reused as scene types), styles (`STYLES`, `options/style-*`: blur
+    and mosaic looks, edges, shadow looks, transitions) and activities (`SCENE_TYPES`, also source
+    types in *Activities*, offered only by the Scene Mode key). Show in Scenes offers every source
+    type but the activities; each other key only what fits its job (`SOURCES`, `LOOK_KEYS`).
+    A Blur style the pack has no blurred pictures of draws a source in the nearest one
+    (`packBlurStyle`). The pack's *standby by source* pictures are not offered: without the words they carried all
     nine are the same mountain. Within one list no value, name, picture id or picture file repeats
     (tested).
   - **Settings.** `sourceType` (Source type, or *Mode type* on the Scene Mode key; ids append-only,
     the first twenty those of the Scene Modes filter's *Mode type* in OBS, which has not been given
-    the new ones), `sceneType` (Scene type), `look` (Blur style, Corner style, Position, Capture
-    type). Each list starts with *Automatic*, value `auto`; unset or empty reads the same. The keys
+    the new ones), `sceneType` (Scene type), `look` (Blur style, Corner style, Shadow style,
+    Transition, Position, Capture type). Where a key has both, the source or scene type comes
+    first and the look after. Each list starts with *Automatic*, value `auto`; unset or empty reads the same. The keys
     whose own list is already the type (Arrange tool, Dock Option, Slide to Edge, Set Aspect Ratio,
     Manual Window / Source: `OWN_LISTS`) have none. `make-plugin-files.py` writes the lists into
     the pages from `typeLists()` (it runs node on `key-types.ts`), as static `<optgroup>`s with
@@ -1300,7 +1313,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   makes every Scene Mode key look again. `target` is `scene␟filter␟mode id` (`src/modes.ts`): the
   id, never the name, so a rename keeps the key; a hand-made target with a name still works. Its
   picture: its Mode type, an image kept from the old Image list, the mode's *Mode type*, the type
-  its name speaks of (*GBA* is a retro game), then `options/mode`; a type is drawn as a mode (the
+  its name speaks of (*GBA* is a handheld), then `options/mode`; a type is drawn as a mode (the
   owner's scene layout of that kind, `art.mode`). Tested against a stand-in server in `tests/obs.test.ts`, not
   against the real filter.
 - **A key that switches something shows which way it is with a mark, not by brightness.** The

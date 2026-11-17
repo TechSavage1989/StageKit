@@ -1,140 +1,1984 @@
 {
 	"_": "What each key's type lists offer. Generic types only: no one's own scene, source, app or device names. The pictures are the owner's own artwork where one fits the type and the key's function (art), otherwise a drawing of tools/make-option-icons.py (base). Ids are kept in keys' settings and are append-only; a type's place in a list is by its group here.",
-	"sourceGroups": ["Captures & games", "Apps", "Cameras & audio", "Overlays", "Holding screens"],
+	"sourceGroups": [
+		"Captures & games",
+		"Apps",
+		"Cameras",
+		"Devices & audio",
+		"Overlays",
+		"Status & holding screens",
+		"Layout markers",
+		"Activities"
+	],
 	"sourceTypes": [
-		{ "id": "game", "label": "Game", "group": "Captures & games", "base": "options/type-game", "words": [["game"], ["games"], ["gaming"]] },
-		{ "id": "retro", "label": "Retro game", "group": "Captures & games", "base": "options/type-retro", "words": [["retro"], ["classic"], ["gba"], ["snes"], ["nes"], ["n64"]] },
-		{ "id": "retro_2", "label": "Second retro game", "group": "Captures & games", "base": "options/type-retro-2", "words": [["retro", "2"]] },
-		{ "id": "emulator", "label": "Emulator", "group": "Captures & games", "base": "options/type-emulator", "words": [["emulator"], ["emu"]] },
-		{ "id": "console", "label": "Console", "group": "Captures & games", "base": "options/console", "words": [["console"]] },
-		{ "id": "handheld", "label": "Handheld", "group": "Captures & games", "base": "options/type-handheld", "words": [["handheld"]] },
-		{ "id": "capture_card", "label": "Capture card", "group": "Captures & games", "base": "options/type-capture-card", "words": [["capture", "card"], ["card"]] },
-		{ "id": "window", "label": "Window", "group": "Captures & games", "base": "options/type-window", "words": [["window"], ["windows"]] },
-		{ "id": "browser", "label": "Browser", "group": "Captures & games", "base": "options/type-browser", "words": [["browser"], ["web"]] },
-		{ "id": "display", "label": "Display", "group": "Captures & games", "base": "options/type-display", "words": [["display"], ["screen"], ["monitor"], ["desktop"]] },
-		{ "id": "second_display", "label": "Second display", "group": "Captures & games", "base": "options/type-second-display", "words": [["second", "display"], ["second", "screen"], ["second", "monitor"]] },
-		{ "id": "tablet", "label": "Tablet", "group": "Captures & games", "base": "options/type-tablet", "words": [["tablet"]] },
-		{ "id": "phone", "label": "Phone screen", "group": "Captures & games", "base": "options/type-phone", "words": [["phone"], ["mobile"]] },
-		{ "id": "art_app", "label": "Art app", "group": "Apps", "base": "options/type-art-app", "words": [["art"], ["paint"], ["painting"], ["drawing"], ["sketch"]] },
-		{ "id": "app_3d", "label": "3D app", "group": "Apps", "base": "filters/app-blender", "words": [["3d"], ["modelling"], ["modeling"], ["blender"]] },
-		{ "id": "sculpting", "label": "Sculpting app", "group": "Apps", "base": "filters/app-zbrush", "words": [["sculpt"], ["sculpting"], ["zbrush"]] },
-		{ "id": "cad", "label": "CAD app", "group": "Apps", "base": "filters/app-fusion-360", "words": [["cad"], ["fusion"]] },
-		{ "id": "code_editor", "label": "Code editor", "group": "Apps", "base": "options/type-code-editor", "words": [["code"], ["coding"], ["programming"], ["editor"], ["ide"]] },
-		{ "id": "office", "label": "Office / documents", "group": "Apps", "base": "options/type-office", "words": [["office"], ["document"], ["documents"], ["docs"], ["spreadsheet"]] },
-		{ "id": "video_player", "label": "Video player", "group": "Apps", "base": "options/type-video-player", "words": [["video", "player"], ["player"]] },
-		{ "id": "reference", "label": "Reference board", "group": "Apps", "base": "options/type-reference", "words": [["reference"], ["references"], ["moodboard"]] },
-		{ "id": "camera", "label": "Camera / webcam", "group": "Cameras & audio", "base": "options/type-camera", "words": [["camera"], ["cam"], ["webcam"]] },
-		{ "id": "dslr", "label": "DSLR / mirrorless", "group": "Cameras & audio", "base": "options/dslr", "words": [["dslr"], ["mirrorless"]] },
-		{ "id": "camcorder", "label": "Camcorder", "group": "Cameras & audio", "base": "options/camcorder", "words": [["camcorder"]] },
-		{ "id": "facecam", "label": "Facecam", "group": "Cameras & audio", "base": "options/type-facecam", "words": [["facecam"], ["face", "cam"]] },
-		{ "id": "full_camera", "label": "Full-screen camera", "group": "Cameras & audio", "base": "options/type-full-camera", "words": [["full", "camera"], ["full", "cam"]] },
-		{ "id": "side_camera", "label": "Side camera", "group": "Cameras & audio", "base": "options/type-side-camera", "words": [["side", "camera"], ["side", "cam"]] },
-		{ "id": "phone_camera", "label": "Phone camera", "group": "Cameras & audio", "base": "options/type-phone-camera", "words": [["phone", "camera"], ["phone", "cam"]] },
-		{ "id": "workspace_camera", "label": "Desk / overhead camera", "group": "Cameras & audio", "base": "options/type-workspace-camera", "words": [["overhead"], ["desk", "camera"], ["desk", "cam"], ["workspace", "camera"]] },
-		{ "id": "virtual_camera", "label": "Virtual camera", "group": "Cameras & audio", "base": "options/type-virtual-camera", "words": [["virtual", "camera"], ["virtual", "cam"]] },
-		{ "id": "microphone", "label": "Microphone", "group": "Cameras & audio", "base": "options/microphone", "words": [["mic"], ["microphone"]] },
-		{ "id": "chat", "label": "Chat", "group": "Overlays", "base": "options/type-chat", "words": [["chat"]] },
-		{ "id": "voice_chat", "label": "Voice chat", "group": "Overlays", "base": "options/type-voice-chat", "words": [["voice"], ["discord"]] },
-		{ "id": "music", "label": "Music", "group": "Overlays", "base": "options/type-music", "words": [["music"], ["song"], ["now", "playing"]] },
-		{ "id": "alerts", "label": "Alerts", "group": "Overlays", "base": "options/type-alerts", "words": [["alert"], ["alerts"]] },
-		{ "id": "events", "label": "Events / goals", "group": "Overlays", "base": "options/type-events", "words": [["events"], ["goal"], ["goals"]] },
-		{ "id": "countdown", "label": "Countdown", "group": "Overlays", "base": "options/type-countdown", "words": [["countdown"], ["timer"]] },
-		{ "id": "title", "label": "Title / text", "group": "Overlays", "base": "options/type-title", "words": [["title"], ["titles"], ["caption"]] },
-		{ "id": "image", "label": "Image", "group": "Overlays", "base": "options/type-image", "words": [["image"], ["picture"], ["photo"]] },
-		{ "id": "video", "label": "Video", "group": "Overlays", "base": "options/type-video", "words": [["video"], ["clip"], ["replay"]] },
-		{ "id": "logo", "label": "Logo", "group": "Overlays", "base": "options/type-logo", "words": [["logo"]] },
-		{ "id": "standby_image", "label": "Standby image", "group": "Overlays", "base": "filters/standby-picture", "words": [["standby", "image"], ["start", "image"]] },
-		{ "id": "starting", "label": "Starting soon", "group": "Holding screens", "base": "options/mode-starting", "words": [["starting"], ["start"], ["soon"]] },
-		{ "id": "brb", "label": "Be right back", "group": "Holding screens", "base": "options/mode-brb", "words": [["brb"], ["be", "right", "back"]] },
-		{ "id": "intermission", "label": "Intermission", "group": "Holding screens", "base": "options/mode-intermission", "words": [["intermission"], ["break"]] },
-		{ "id": "technical", "label": "Technical difficulties", "group": "Holding screens", "base": "options/type-technical", "words": [["technical"], ["difficulties"]] },
-		{ "id": "ending", "label": "Ending", "group": "Holding screens", "base": "options/mode-ending", "words": [["ending"], ["end"], ["outro"]] },
-		{ "id": "column_chat", "label": "Chat column", "group": "Holding screens", "base": "options/mode-column-chat", "words": [["column", "chat"]] },
-		{ "id": "column_retro", "label": "Retro column", "group": "Holding screens", "base": "options/mode-column-gba", "words": [["column", "gba"], ["column", "retro"], ["column", "handheld"]] }
+		{
+			"id": "game",
+			"label": "Game",
+			"group": "Captures & games",
+			"base": "options/type-game",
+			"words": [
+				[
+					"game"
+				],
+				[
+					"games"
+				],
+				[
+					"gaming"
+				]
+			]
+		},
+		{
+			"id": "retro",
+			"label": "Retro game",
+			"group": "Captures & games",
+			"base": "options/type-retro",
+			"words": [
+				[
+					"retro"
+				],
+				[
+					"classic"
+				],
+				[
+					"snes"
+				],
+				[
+					"nes"
+				],
+				[
+					"n64"
+				],
+				[
+					"cartridge"
+				]
+			]
+		},
+		{
+			"id": "emulator",
+			"label": "Emulator",
+			"group": "Captures & games",
+			"base": "options/type-emulator",
+			"words": [
+				[
+					"emulator"
+				],
+				[
+					"emu"
+				]
+			]
+		},
+		{
+			"id": "console",
+			"label": "Console",
+			"group": "Captures & games",
+			"base": "options/console",
+			"words": [
+				[
+					"console"
+				]
+			]
+		},
+		{
+			"id": "handheld",
+			"label": "Handheld",
+			"group": "Captures & games",
+			"base": "options/type-handheld",
+			"words": [
+				[
+					"handheld"
+				],
+				[
+					"portable"
+				],
+				[
+					"gba"
+				]
+			]
+		},
+		{
+			"id": "linked_handheld",
+			"label": "Linked handheld screen",
+			"group": "Captures & games",
+			"base": "options/type-linked-handheld",
+			"words": [
+				[
+					"handheld",
+					"link"
+				],
+				[
+					"linked",
+					"handheld"
+				],
+				[
+					"gba",
+					"link"
+				]
+			]
+		},
+		{
+			"id": "linked_handheld_2",
+			"label": "Second linked handheld screen",
+			"group": "Captures & games",
+			"base": "options/type-linked-handheld-2",
+			"words": [
+				[
+					"handheld",
+					"link",
+					"2"
+				],
+				[
+					"gba",
+					"link",
+					"2"
+				]
+			]
+		},
+		{
+			"id": "capture_card",
+			"label": "Capture card (internal)",
+			"group": "Captures & games",
+			"base": "options/type-capture-card",
+			"words": [
+				[
+					"capture",
+					"card"
+				],
+				[
+					"card"
+				]
+			]
+		},
+		{
+			"id": "capture_box",
+			"label": "Capture card (external)",
+			"group": "Captures & games",
+			"base": "options/capture-box",
+			"words": [
+				[
+					"capture",
+					"box"
+				],
+				[
+					"external",
+					"capture"
+				]
+			]
+		},
+		{
+			"id": "hdmi_source",
+			"label": "HDMI source",
+			"group": "Captures & games",
+			"base": "options/hdmi",
+			"words": [
+				[
+					"hdmi"
+				]
+			]
+		},
+		{
+			"id": "window",
+			"label": "Window",
+			"group": "Captures & games",
+			"base": "options/type-window",
+			"words": [
+				[
+					"window"
+				],
+				[
+					"windows"
+				]
+			]
+		},
+		{
+			"id": "browser",
+			"label": "Browser",
+			"group": "Captures & games",
+			"base": "options/type-browser",
+			"words": [
+				[
+					"browser"
+				],
+				[
+					"web"
+				]
+			]
+		},
+		{
+			"id": "display",
+			"label": "Display",
+			"group": "Captures & games",
+			"base": "options/type-display",
+			"words": [
+				[
+					"display"
+				],
+				[
+					"screen"
+				],
+				[
+					"monitor"
+				],
+				[
+					"desktop"
+				]
+			]
+		},
+		{
+			"id": "second_display",
+			"label": "Second display",
+			"group": "Captures & games",
+			"base": "options/type-second-display",
+			"words": [
+				[
+					"second",
+					"display"
+				],
+				[
+					"second",
+					"screen"
+				],
+				[
+					"second",
+					"monitor"
+				]
+			]
+		},
+		{
+			"id": "tablet",
+			"label": "Tablet",
+			"group": "Captures & games",
+			"base": "options/type-tablet",
+			"words": [
+				[
+					"tablet"
+				]
+			]
+		},
+		{
+			"id": "phone",
+			"label": "Phone screen",
+			"group": "Captures & games",
+			"base": "options/type-phone",
+			"words": [
+				[
+					"phone"
+				],
+				[
+					"mobile"
+				]
+			]
+		},
+		{
+			"id": "art_app",
+			"label": "Art app",
+			"group": "Apps",
+			"base": "options/type-art-app",
+			"words": [
+				[
+					"art"
+				],
+				[
+					"paint"
+				],
+				[
+					"painting"
+				],
+				[
+					"drawing"
+				],
+				[
+					"sketch"
+				]
+			]
+		},
+		{
+			"id": "app_3d",
+			"label": "3D app",
+			"group": "Apps",
+			"base": "filters/app-blender",
+			"words": [
+				[
+					"3d"
+				],
+				[
+					"blender"
+				]
+			]
+		},
+		{
+			"id": "sculpting",
+			"label": "Sculpting app",
+			"group": "Apps",
+			"base": "filters/app-zbrush",
+			"words": [
+				[
+					"sculpt"
+				],
+				[
+					"sculpting"
+				],
+				[
+					"zbrush"
+				]
+			]
+		},
+		{
+			"id": "cad",
+			"label": "CAD app",
+			"group": "Apps",
+			"base": "filters/app-fusion-360",
+			"words": [
+				[
+					"cad"
+				],
+				[
+					"fusion"
+				]
+			]
+		},
+		{
+			"id": "code_editor",
+			"label": "Code editor",
+			"group": "Apps",
+			"base": "options/type-code-editor",
+			"words": [
+				[
+					"code"
+				],
+				[
+					"coding"
+				],
+				[
+					"programming"
+				],
+				[
+					"editor"
+				],
+				[
+					"ide"
+				]
+			]
+		},
+		{
+			"id": "office",
+			"label": "Office / documents",
+			"group": "Apps",
+			"base": "options/type-office",
+			"words": [
+				[
+					"office"
+				],
+				[
+					"document"
+				],
+				[
+					"documents"
+				],
+				[
+					"docs"
+				],
+				[
+					"spreadsheet"
+				]
+			]
+		},
+		{
+			"id": "video_player",
+			"label": "Video player",
+			"group": "Apps",
+			"base": "options/type-video-player",
+			"words": [
+				[
+					"video",
+					"player"
+				],
+				[
+					"player"
+				]
+			]
+		},
+		{
+			"id": "reference",
+			"label": "Reference board",
+			"group": "Apps",
+			"base": "options/type-reference",
+			"words": [
+				[
+					"reference"
+				],
+				[
+					"references"
+				],
+				[
+					"moodboard"
+				]
+			]
+		},
+		{
+			"id": "camera",
+			"label": "Camera / webcam",
+			"group": "Cameras",
+			"base": "options/type-camera",
+			"words": [
+				[
+					"camera"
+				],
+				[
+					"cam"
+				],
+				[
+					"webcam"
+				]
+			]
+		},
+		{
+			"id": "dslr",
+			"label": "DSLR / mirrorless",
+			"group": "Cameras",
+			"base": "options/dslr",
+			"words": [
+				[
+					"dslr"
+				],
+				[
+					"mirrorless"
+				]
+			]
+		},
+		{
+			"id": "camcorder",
+			"label": "Camcorder",
+			"group": "Cameras",
+			"base": "options/camcorder",
+			"words": [
+				[
+					"camcorder"
+				]
+			]
+		},
+		{
+			"id": "action_cam",
+			"label": "Action camera",
+			"group": "Cameras",
+			"base": "options/type-action-cam",
+			"words": [
+				[
+					"action",
+					"cam"
+				],
+				[
+					"action",
+					"camera"
+				]
+			]
+		},
+		{
+			"id": "ptz_camera",
+			"label": "PTZ camera",
+			"group": "Cameras",
+			"base": "options/type-ptz-camera",
+			"words": [
+				[
+					"ptz"
+				]
+			]
+		},
+		{
+			"id": "facecam",
+			"label": "Facecam",
+			"group": "Cameras",
+			"base": "options/type-facecam",
+			"words": [
+				[
+					"facecam"
+				],
+				[
+					"face",
+					"cam"
+				]
+			]
+		},
+		{
+			"id": "full_camera",
+			"label": "Full-screen camera",
+			"group": "Cameras",
+			"base": "options/type-full-camera",
+			"words": [
+				[
+					"full",
+					"camera"
+				],
+				[
+					"full",
+					"cam"
+				]
+			]
+		},
+		{
+			"id": "side_camera",
+			"label": "Side camera",
+			"group": "Cameras",
+			"base": "options/type-side-camera",
+			"words": [
+				[
+					"side",
+					"camera"
+				],
+				[
+					"side",
+					"cam"
+				]
+			]
+		},
+		{
+			"id": "phone_camera",
+			"label": "Phone camera",
+			"group": "Cameras",
+			"base": "options/type-phone-camera",
+			"words": [
+				[
+					"phone",
+					"camera"
+				],
+				[
+					"phone",
+					"cam"
+				]
+			]
+		},
+		{
+			"id": "workspace_camera",
+			"label": "Desk / overhead camera",
+			"group": "Cameras",
+			"base": "options/type-workspace-camera",
+			"words": [
+				[
+					"overhead"
+				],
+				[
+					"desk",
+					"camera"
+				],
+				[
+					"desk",
+					"cam"
+				],
+				[
+					"workspace",
+					"camera"
+				]
+			]
+		},
+		{
+			"id": "virtual_camera",
+			"label": "Virtual camera",
+			"group": "Cameras",
+			"base": "options/type-virtual-camera",
+			"words": [
+				[
+					"virtual",
+					"camera"
+				],
+				[
+					"virtual",
+					"cam"
+				]
+			]
+		},
+		{
+			"id": "pc",
+			"label": "Gaming PC",
+			"group": "Devices & audio",
+			"base": "options/type-pc",
+			"words": [
+				[
+					"pc"
+				],
+				[
+					"computer"
+				],
+				[
+					"tower"
+				]
+			]
+		},
+		{
+			"id": "laptop",
+			"label": "Laptop",
+			"group": "Devices & audio",
+			"base": "options/laptop",
+			"words": [
+				[
+					"laptop"
+				]
+			]
+		},
+		{
+			"id": "retro_console",
+			"label": "Retro console",
+			"group": "Devices & audio",
+			"base": "options/type-retro-console",
+			"words": [
+				[
+					"retro",
+					"console"
+				]
+			]
+		},
+		{
+			"id": "controller",
+			"label": "Controller",
+			"group": "Devices & audio",
+			"base": "options/type-controller",
+			"words": [
+				[
+					"controller"
+				],
+				[
+					"gamepad"
+				]
+			]
+		},
+		{
+			"id": "stream_deck",
+			"label": "Stream controller",
+			"group": "Devices & audio",
+			"base": "options/type-stream-deck",
+			"words": [
+				[
+					"stream",
+					"deck"
+				],
+				[
+					"macro",
+					"pad"
+				]
+			]
+		},
+		{
+			"id": "pen_display",
+			"label": "Pen display",
+			"group": "Devices & audio",
+			"base": "options/type-pen-display",
+			"words": [
+				[
+					"pen",
+					"display"
+				]
+			]
+		},
+		{
+			"id": "vr_headset",
+			"label": "VR headset",
+			"group": "Devices & audio",
+			"base": "options/type-vr-headset",
+			"words": [
+				[
+					"vr"
+				]
+			]
+		},
+		{
+			"id": "headset",
+			"label": "Headset",
+			"group": "Devices & audio",
+			"base": "options/type-headset",
+			"words": [
+				[
+					"headset"
+				],
+				[
+					"headphones"
+				]
+			]
+		},
+		{
+			"id": "microphone",
+			"label": "Microphone",
+			"group": "Devices & audio",
+			"base": "options/microphone",
+			"words": [
+				[
+					"mic"
+				],
+				[
+					"microphone"
+				]
+			]
+		},
+		{
+			"id": "speaker",
+			"label": "Speakers",
+			"group": "Devices & audio",
+			"base": "options/speaker",
+			"words": [
+				[
+					"speaker"
+				],
+				[
+					"speakers"
+				]
+			]
+		},
+		{
+			"id": "mixer",
+			"label": "Audio mixer",
+			"group": "Devices & audio",
+			"base": "options/type-mixer",
+			"words": [
+				[
+					"mixer"
+				]
+			]
+		},
+		{
+			"id": "key_light",
+			"label": "Key light",
+			"group": "Devices & audio",
+			"base": "options/type-key-light",
+			"words": [
+				[
+					"light"
+				],
+				[
+					"lights"
+				]
+			]
+		},
+		{
+			"id": "green_screen",
+			"label": "Green screen",
+			"group": "Devices & audio",
+			"base": "options/type-green-screen",
+			"words": [
+				[
+					"green",
+					"screen"
+				],
+				[
+					"chroma"
+				]
+			]
+		},
+		{
+			"id": "chat",
+			"label": "Chat",
+			"group": "Overlays",
+			"base": "options/type-chat",
+			"words": [
+				[
+					"chat"
+				]
+			]
+		},
+		{
+			"id": "voice_chat",
+			"label": "Voice chat",
+			"group": "Overlays",
+			"base": "options/type-voice-chat",
+			"words": [
+				[
+					"voice"
+				],
+				[
+					"discord"
+				]
+			]
+		},
+		{
+			"id": "music",
+			"label": "Music",
+			"group": "Overlays",
+			"base": "options/type-music",
+			"words": [
+				[
+					"music"
+				],
+				[
+					"song"
+				],
+				[
+					"now",
+					"playing"
+				]
+			]
+		},
+		{
+			"id": "alerts",
+			"label": "Alerts",
+			"group": "Overlays",
+			"base": "options/type-alerts",
+			"words": [
+				[
+					"alert"
+				],
+				[
+					"alerts"
+				]
+			]
+		},
+		{
+			"id": "events",
+			"label": "Events / goals",
+			"group": "Overlays",
+			"base": "options/type-events",
+			"words": [
+				[
+					"events"
+				],
+				[
+					"goal"
+				],
+				[
+					"goals"
+				]
+			]
+		},
+		{
+			"id": "countdown",
+			"label": "Countdown",
+			"group": "Overlays",
+			"base": "options/type-countdown",
+			"words": [
+				[
+					"countdown"
+				],
+				[
+					"timer"
+				]
+			]
+		},
+		{
+			"id": "title",
+			"label": "Title / text",
+			"group": "Overlays",
+			"base": "options/type-title",
+			"words": [
+				[
+					"title"
+				],
+				[
+					"titles"
+				],
+				[
+					"caption"
+				]
+			]
+		},
+		{
+			"id": "image",
+			"label": "Image",
+			"group": "Overlays",
+			"base": "options/type-image",
+			"words": [
+				[
+					"image"
+				],
+				[
+					"picture"
+				],
+				[
+					"photo"
+				]
+			]
+		},
+		{
+			"id": "video",
+			"label": "Video",
+			"group": "Overlays",
+			"base": "options/type-video",
+			"words": [
+				[
+					"video"
+				],
+				[
+					"clip"
+				],
+				[
+					"replay"
+				]
+			]
+		},
+		{
+			"id": "logo",
+			"label": "Logo",
+			"group": "Overlays",
+			"base": "options/type-logo",
+			"words": [
+				[
+					"logo"
+				]
+			]
+		},
+		{
+			"id": "standby_image",
+			"label": "Standby image",
+			"group": "Overlays",
+			"base": "filters/standby-picture",
+			"words": [
+				[
+					"standby",
+					"image"
+				],
+				[
+					"start",
+					"image"
+				]
+			]
+		},
+		{
+			"id": "live",
+			"label": "Live / on air",
+			"group": "Status & holding screens",
+			"base": "options/type-live",
+			"words": [
+				[
+					"live"
+				],
+				[
+					"on",
+					"air"
+				]
+			]
+		},
+		{
+			"id": "recording",
+			"label": "Recording",
+			"group": "Status & holding screens",
+			"base": "options/type-recording",
+			"words": [
+				[
+					"recording"
+				],
+				[
+					"rec"
+				]
+			]
+		},
+		{
+			"id": "paused",
+			"label": "Paused",
+			"group": "Status & holding screens",
+			"base": "options/type-paused",
+			"words": [
+				[
+					"paused"
+				],
+				[
+					"pause"
+				]
+			]
+		},
+		{
+			"id": "muted",
+			"label": "Muted",
+			"group": "Status & holding screens",
+			"base": "options/type-muted",
+			"words": [
+				[
+					"muted"
+				],
+				[
+					"mute"
+				]
+			]
+		},
+		{
+			"id": "offline",
+			"label": "Offline",
+			"group": "Status & holding screens",
+			"base": "options/type-offline",
+			"words": [
+				[
+					"offline"
+				]
+			]
+		},
+		{
+			"id": "privacy",
+			"label": "Camera off",
+			"group": "Status & holding screens",
+			"base": "options/type-privacy",
+			"words": [
+				[
+					"privacy"
+				],
+				[
+					"camera",
+					"off"
+				]
+			]
+		},
+		{
+			"id": "raid",
+			"label": "Raid / host",
+			"group": "Status & holding screens",
+			"base": "options/type-raid",
+			"words": [
+				[
+					"raid"
+				],
+				[
+					"host"
+				]
+			]
+		},
+		{
+			"id": "starting",
+			"label": "Starting soon",
+			"group": "Status & holding screens",
+			"base": "options/mode-starting",
+			"words": [
+				[
+					"starting"
+				],
+				[
+					"start"
+				],
+				[
+					"soon"
+				]
+			]
+		},
+		{
+			"id": "brb",
+			"label": "Be right back",
+			"group": "Status & holding screens",
+			"base": "options/mode-brb",
+			"words": [
+				[
+					"brb"
+				],
+				[
+					"be",
+					"right",
+					"back"
+				]
+			]
+		},
+		{
+			"id": "intermission",
+			"label": "Intermission",
+			"group": "Status & holding screens",
+			"base": "options/mode-intermission",
+			"words": [
+				[
+					"intermission"
+				],
+				[
+					"break"
+				]
+			]
+		},
+		{
+			"id": "technical",
+			"label": "Technical difficulties",
+			"group": "Status & holding screens",
+			"base": "options/type-technical",
+			"words": [
+				[
+					"technical"
+				],
+				[
+					"difficulties"
+				]
+			]
+		},
+		{
+			"id": "ending",
+			"label": "Ending",
+			"group": "Status & holding screens",
+			"base": "options/mode-ending",
+			"words": [
+				[
+					"ending"
+				],
+				[
+					"end"
+				],
+				[
+					"outro"
+				]
+			]
+		},
+		{
+			"id": "column_chat",
+			"label": "Chat column",
+			"group": "Layout markers",
+			"base": "options/mode-column-chat",
+			"words": [
+				[
+					"column",
+					"chat"
+				]
+			]
+		},
+		{
+			"id": "column_handheld",
+			"label": "Handheld column",
+			"group": "Layout markers",
+			"base": "options/mode-column-gba",
+			"words": [
+				[
+					"column",
+					"gba"
+				],
+				[
+					"column",
+					"handheld"
+				]
+			]
+		},
+		{
+			"id": "speedrun",
+			"label": "Speedrun",
+			"group": "Activities",
+			"base": "options/scene-type-speedrun",
+			"words": [
+				[
+					"speedrun"
+				],
+				[
+					"splits"
+				]
+			]
+		},
+		{
+			"id": "music_production",
+			"label": "Music production",
+			"group": "Activities",
+			"base": "options/scene-type-music-production",
+			"words": [
+				[
+					"production"
+				],
+				[
+					"daw"
+				]
+			]
+		},
+		{
+			"id": "cooking",
+			"label": "Cooking",
+			"group": "Activities",
+			"base": "options/scene-type-cooking",
+			"words": [
+				[
+					"cooking"
+				],
+				[
+					"kitchen"
+				]
+			]
+		},
+		{
+			"id": "irl",
+			"label": "IRL / outdoors",
+			"group": "Activities",
+			"base": "options/scene-type-irl",
+			"words": [
+				[
+					"irl"
+				],
+				[
+					"outdoors"
+				]
+			]
+		},
+		{
+			"id": "tutorial",
+			"label": "Tutorial",
+			"group": "Activities",
+			"base": "options/scene-type-tutorial",
+			"words": [
+				[
+					"tutorial"
+				],
+				[
+					"lesson"
+				]
+			]
+		},
+		{
+			"id": "unboxing",
+			"label": "Unboxing",
+			"group": "Activities",
+			"base": "options/scene-type-unboxing",
+			"words": [
+				[
+					"unboxing"
+				]
+			]
+		},
+		{
+			"id": "fitness",
+			"label": "Fitness",
+			"group": "Activities",
+			"base": "options/scene-type-fitness",
+			"words": [
+				[
+					"fitness"
+				],
+				[
+					"workout"
+				]
+			]
+		},
+		{
+			"id": "reading",
+			"label": "Reading",
+			"group": "Activities",
+			"base": "options/scene-type-reading",
+			"words": [
+				[
+					"reading"
+				],
+				[
+					"book"
+				]
+			]
+		},
+		{
+			"id": "watch_party",
+			"label": "Watch party",
+			"group": "Activities",
+			"base": "options/scene-type-watch-party",
+			"words": [
+				[
+					"watch",
+					"party"
+				]
+			]
+		},
+		{
+			"id": "charity",
+			"label": "Charity",
+			"group": "Activities",
+			"base": "options/scene-type-charity",
+			"words": [
+				[
+					"charity"
+				],
+				[
+					"fundraiser"
+				]
+			]
+		},
+		{
+			"id": "just_chatting",
+			"label": "Just chatting",
+			"group": "Activities",
+			"base": "options/scene-type-just-chatting",
+			"words": [
+				[
+					"just",
+					"chatting"
+				]
+			]
+		},
+		{
+			"id": "podcast",
+			"label": "Podcast",
+			"group": "Activities",
+			"base": "options/scene-type-podcast",
+			"words": [
+				[
+					"podcast"
+				]
+			]
+		},
+		{
+			"id": "interview",
+			"label": "Interview / guest",
+			"group": "Activities",
+			"base": "options/scene-type-interview",
+			"words": [
+				[
+					"interview"
+				],
+				[
+					"guest"
+				]
+			]
+		}
 	],
 	"art": {
 		"show": {
-			"game": "show-hide/game-capture", "retro": "show-hide/gba-link-1", "retro_2": "show-hide/gba-link-2", "console": "show-hide/console",
-			"capture_card": "show-hide/hd60s", "window": "show-hide/window-capture", "browser": "show-hide/browser", "display": "show-hide/main-display",
-			"tablet": "show-hide/tablet", "app_3d": "show-hide/blender", "sculpting": "show-hide/zbrush", "cad": "show-hide/fusion-360",
-			"reference": "show-hide/pureref", "camera": "show-hide/square-camera", "full_camera": "show-hide/full-camera", "side_camera": "show-hide/side-camera",
-			"phone_camera": "show-hide/phone-camera", "workspace_camera": "show-hide/printer-camera", "virtual_camera": "show-hide/virtual-camera",
-			"chat": "show-hide/chat", "voice_chat": "show-hide/discord", "music": "show-hide/music", "alerts": "show-hide/alerts",
-			"countdown": "show-hide/countdown", "standby_image": "show-hide/start-image"
+			"game": "show-hide/game-capture",
+			"console": "show-hide/console",
+			"capture_card": "show-hide/hd60s",
+			"window": "show-hide/window-capture",
+			"browser": "show-hide/browser",
+			"display": "show-hide/main-display",
+			"tablet": "show-hide/tablet",
+			"app_3d": "show-hide/blender",
+			"sculpting": "show-hide/zbrush",
+			"cad": "show-hide/fusion-360",
+			"reference": "show-hide/pureref",
+			"camera": "show-hide/square-camera",
+			"full_camera": "show-hide/full-camera",
+			"side_camera": "show-hide/side-camera",
+			"phone_camera": "show-hide/phone-camera",
+			"workspace_camera": "show-hide/printer-camera",
+			"virtual_camera": "show-hide/virtual-camera",
+			"chat": "show-hide/chat",
+			"voice_chat": "show-hide/discord",
+			"music": "show-hide/music",
+			"alerts": "show-hide/alerts",
+			"countdown": "show-hide/countdown",
+			"standby_image": "show-hide/start-image",
+			"linked_handheld": "show-hide/gba-link-1",
+			"linked_handheld_2": "show-hide/gba-link-2"
 		},
 		"shadow": {
-			"game": "shadow-by-source/game-capture", "retro": "shadow-by-source/gba-link-1", "retro_2": "shadow-by-source/gba-link-2",
-			"capture_card": "shadow-by-source/hd60s", "window": "shadow-by-source/window-capture", "app_3d": "shadow-by-source/blender",
-			"sculpting": "shadow-by-source/zbrush", "cad": "shadow-by-source/fusion-360", "camera": "shadow-by-source/square-camera",
-			"side_camera": "shadow-by-source/side-camera", "chat": "shadow-by-source/chat", "countdown": "shadow-by-source/countdown",
-			"standby_image": "shadow-by-source/start-image"
+			"game": "shadow-by-source/game-capture",
+			"capture_card": "shadow-by-source/hd60s",
+			"window": "shadow-by-source/window-capture",
+			"app_3d": "shadow-by-source/blender",
+			"sculpting": "shadow-by-source/zbrush",
+			"cad": "shadow-by-source/fusion-360",
+			"camera": "shadow-by-source/square-camera",
+			"side_camera": "shadow-by-source/side-camera",
+			"chat": "shadow-by-source/chat",
+			"countdown": "shadow-by-source/countdown",
+			"standby_image": "shadow-by-source/start-image",
+			"linked_handheld": "shadow-by-source/gba-link-1",
+			"linked_handheld_2": "shadow-by-source/gba-link-2"
 		},
 		"blur": {
-			"game": "game-capture", "retro": "gba-link-1", "retro_2": "gba-link-2", "capture_card": "hd60s", "window": "window-capture",
-			"display": "main-display", "tablet": "tablet", "app_3d": "blender", "sculpting": "zbrush", "cad": "fusion-360", "camera": "camera-elgato"
+			"game": "game-capture",
+			"capture_card": "hd60s",
+			"window": "window-capture",
+			"display": "main-display",
+			"tablet": "tablet",
+			"app_3d": "blender",
+			"sculpting": "zbrush",
+			"cad": "fusion-360",
+			"camera": "camera-elgato",
+			"linked_handheld": "gba-link-1",
+			"linked_handheld_2": "gba-link-2"
 		},
 		"mode": {
-			"game": "scenes/02-game-capture", "retro": "scenes/11-dolphin-gba", "console": "scenes/04-console", "capture_card": "scenes/05-game-hd60s",
-			"window": "scenes/07-window-capture", "display": "scenes/09-main-display", "tablet": "scenes/10-tablet", "camera": "scenes/12-camera-only"
+			"game": "scenes/02-game-capture",
+			"console": "scenes/04-console",
+			"capture_card": "scenes/05-game-hd60s",
+			"window": "scenes/07-window-capture",
+			"display": "scenes/09-main-display",
+			"tablet": "scenes/10-tablet",
+			"camera": "scenes/12-camera-only",
+			"linked_handheld": "scenes/11-dolphin-gba"
 		}
 	},
-	"sceneGroups": ["Holding screens", "Games", "Apps & screens", "Camera & talk", "All in one"],
+	"sceneGroups": [
+		"Holding & status",
+		"Games",
+		"Apps & screens",
+		"Creative",
+		"Camera & talk",
+		"IRL & lifestyle",
+		"All in one"
+	],
 	"sceneTypes": [
-		{ "id": "starting", "label": "Starting soon", "group": "Holding screens", "picture": "scenes/01-stream-start" },
-		{ "id": "countdown", "label": "Countdown", "group": "Holding screens", "picture": "options/scene-type-countdown" },
-		{ "id": "brb", "label": "Be right back", "group": "Holding screens", "picture": "scenes/14-be-right-back" },
-		{ "id": "intermission", "label": "Intermission", "group": "Holding screens", "picture": "scenes/13-intermission" },
-		{ "id": "technical", "label": "Technical difficulties", "group": "Holding screens", "picture": "options/scene-type-technical" },
-		{ "id": "ending", "label": "Ending", "group": "Holding screens", "picture": "scenes/15-stream-ending" },
-		{ "id": "holding", "label": "Holding screen", "group": "Holding screens", "picture": "options/scene-standby" },
-		{ "id": "gameplay", "label": "Gameplay", "group": "Games", "picture": "scenes/02-game-capture" },
-		{ "id": "gameplay_chat", "label": "Gameplay + chat", "group": "Games", "picture": "scenes/03-game-component" },
-		{ "id": "pc_game", "label": "PC game", "group": "Games", "picture": "options/scene-type-pc-game" },
-		{ "id": "retro", "label": "Retro", "group": "Games", "picture": "scenes/11-dolphin-gba" },
-		{ "id": "classic", "label": "Classic", "group": "Games", "picture": "options/scene-type-classic" },
-		{ "id": "emulator", "label": "Emulator", "group": "Games", "picture": "options/scene-type-emulator" },
-		{ "id": "console", "label": "Console", "group": "Games", "picture": "scenes/04-console" },
-		{ "id": "capture_card", "label": "Capture card", "group": "Games", "picture": "scenes/05-game-hd60s" },
-		{ "id": "capture_card_chat", "label": "Capture card + chat", "group": "Games", "picture": "scenes/06-game-component-hd60s" },
-		{ "id": "app", "label": "Window / app", "group": "Apps & screens", "picture": "scenes/07-window-capture" },
-		{ "id": "app_chat", "label": "App + chat", "group": "Apps & screens", "picture": "scenes/08-window-component" },
-		{ "id": "desktop", "label": "Desktop", "group": "Apps & screens", "picture": "scenes/09-main-display" },
-		{ "id": "second_screen", "label": "Second screen", "group": "Apps & screens", "picture": "options/scene-type-second-screen" },
-		{ "id": "tablet", "label": "Tablet / drawing", "group": "Apps & screens", "picture": "scenes/10-tablet" },
-		{ "id": "art", "label": "Art / design", "group": "Apps & screens", "picture": "options/scene-type-art" },
-		{ "id": "modelling", "label": "3D modelling", "group": "Apps & screens", "picture": "options/scene-type-modelling" },
-		{ "id": "coding", "label": "Coding", "group": "Apps & screens", "picture": "options/scene-type-coding" },
-		{ "id": "browsing", "label": "Browsing", "group": "Apps & screens", "picture": "options/scene-type-browsing" },
-		{ "id": "just_chatting", "label": "Just chatting", "group": "Camera & talk", "picture": "options/scene-type-just-chatting" },
-		{ "id": "camera_only", "label": "Camera only", "group": "Camera & talk", "picture": "scenes/12-camera-only" },
-		{ "id": "interview", "label": "Interview / guest", "group": "Camera & talk", "picture": "options/scene-type-interview" },
-		{ "id": "podcast", "label": "Podcast", "group": "Camera & talk", "picture": "options/scene-type-podcast" },
-		{ "id": "music", "label": "Music", "group": "Camera & talk", "picture": "options/scene-type-music" },
-		{ "id": "on_air", "label": "On air", "group": "All in one", "picture": "options/scene-live" },
-		{ "id": "on_air_chat", "label": "On air + chat", "group": "All in one", "picture": "options/scene-chat-live" }
+		{
+			"id": "starting",
+			"label": "Starting soon",
+			"group": "Holding & status",
+			"picture": "scenes/01-stream-start"
+		},
+		{
+			"id": "countdown",
+			"label": "Countdown",
+			"group": "Holding & status",
+			"picture": "options/scene-type-countdown"
+		},
+		{
+			"id": "brb",
+			"label": "Be right back",
+			"group": "Holding & status",
+			"picture": "scenes/14-be-right-back"
+		},
+		{
+			"id": "intermission",
+			"label": "Intermission",
+			"group": "Holding & status",
+			"picture": "scenes/13-intermission"
+		},
+		{
+			"id": "technical",
+			"label": "Technical difficulties",
+			"group": "Holding & status",
+			"picture": "options/scene-type-technical"
+		},
+		{
+			"id": "ending",
+			"label": "Ending",
+			"group": "Holding & status",
+			"picture": "scenes/15-stream-ending"
+		},
+		{
+			"id": "holding",
+			"label": "Holding screen",
+			"group": "Holding & status",
+			"picture": "options/scene-standby"
+		},
+		{
+			"id": "paused",
+			"label": "Paused",
+			"group": "Holding & status",
+			"picture": "options/type-paused"
+		},
+		{
+			"id": "offline",
+			"label": "Offline",
+			"group": "Holding & status",
+			"picture": "options/type-offline"
+		},
+		{
+			"id": "privacy",
+			"label": "Camera off",
+			"group": "Holding & status",
+			"picture": "options/type-privacy"
+		},
+		{
+			"id": "raid",
+			"label": "Raid / host",
+			"group": "Holding & status",
+			"picture": "options/type-raid"
+		},
+		{
+			"id": "gameplay",
+			"label": "Gameplay",
+			"group": "Games",
+			"picture": "scenes/02-game-capture"
+		},
+		{
+			"id": "gameplay_chat",
+			"label": "Gameplay + chat",
+			"group": "Games",
+			"picture": "scenes/03-game-component"
+		},
+		{
+			"id": "pc_game",
+			"label": "PC game",
+			"group": "Games",
+			"picture": "options/scene-type-pc-game"
+		},
+		{
+			"id": "retro",
+			"label": "Retro gaming",
+			"group": "Games",
+			"picture": "options/scene-type-retro"
+		},
+		{
+			"id": "classic",
+			"label": "Classic gaming",
+			"group": "Games",
+			"picture": "options/scene-type-classic"
+		},
+		{
+			"id": "speedrun",
+			"label": "Speedrun",
+			"group": "Games",
+			"picture": "options/scene-type-speedrun"
+		},
+		{
+			"id": "emulator",
+			"label": "Emulator",
+			"group": "Games",
+			"picture": "options/scene-type-emulator"
+		},
+		{
+			"id": "console",
+			"label": "Console",
+			"group": "Games",
+			"picture": "scenes/04-console"
+		},
+		{
+			"id": "console_link",
+			"label": "Console + handheld link",
+			"group": "Games",
+			"picture": "scenes/11-dolphin-gba"
+		},
+		{
+			"id": "capture_card",
+			"label": "Capture card",
+			"group": "Games",
+			"picture": "scenes/05-game-hd60s"
+		},
+		{
+			"id": "capture_card_chat",
+			"label": "Capture card + chat",
+			"group": "Games",
+			"picture": "scenes/06-game-component-hd60s"
+		},
+		{
+			"id": "app",
+			"label": "Window / app",
+			"group": "Apps & screens",
+			"picture": "scenes/07-window-capture"
+		},
+		{
+			"id": "app_chat",
+			"label": "App + chat",
+			"group": "Apps & screens",
+			"picture": "scenes/08-window-component"
+		},
+		{
+			"id": "desktop",
+			"label": "Desktop",
+			"group": "Apps & screens",
+			"picture": "scenes/09-main-display"
+		},
+		{
+			"id": "second_screen",
+			"label": "Second screen",
+			"group": "Apps & screens",
+			"picture": "options/scene-type-second-screen"
+		},
+		{
+			"id": "browsing",
+			"label": "Browsing",
+			"group": "Apps & screens",
+			"picture": "options/scene-type-browsing"
+		},
+		{
+			"id": "tablet",
+			"label": "Tablet / drawing",
+			"group": "Creative",
+			"picture": "scenes/10-tablet"
+		},
+		{
+			"id": "art",
+			"label": "Art / design",
+			"group": "Creative",
+			"picture": "options/scene-type-art"
+		},
+		{
+			"id": "modelling",
+			"label": "3D modelling",
+			"group": "Creative",
+			"picture": "options/scene-type-modelling"
+		},
+		{
+			"id": "coding",
+			"label": "Coding",
+			"group": "Creative",
+			"picture": "options/scene-type-coding"
+		},
+		{
+			"id": "music_production",
+			"label": "Music production",
+			"group": "Creative",
+			"picture": "options/scene-type-music-production"
+		},
+		{
+			"id": "just_chatting",
+			"label": "Just chatting",
+			"group": "Camera & talk",
+			"picture": "options/scene-type-just-chatting"
+		},
+		{
+			"id": "camera_only",
+			"label": "Camera only",
+			"group": "Camera & talk",
+			"picture": "scenes/12-camera-only"
+		},
+		{
+			"id": "interview",
+			"label": "Interview / guest",
+			"group": "Camera & talk",
+			"picture": "options/scene-type-interview"
+		},
+		{
+			"id": "podcast",
+			"label": "Podcast",
+			"group": "Camera & talk",
+			"picture": "options/scene-type-podcast"
+		},
+		{
+			"id": "music",
+			"label": "Live music",
+			"group": "Camera & talk",
+			"picture": "options/scene-type-music"
+		},
+		{
+			"id": "tutorial",
+			"label": "Tutorial",
+			"group": "Camera & talk",
+			"picture": "options/scene-type-tutorial"
+		},
+		{
+			"id": "irl",
+			"label": "IRL / outdoors",
+			"group": "IRL & lifestyle",
+			"picture": "options/scene-type-irl"
+		},
+		{
+			"id": "cooking",
+			"label": "Cooking",
+			"group": "IRL & lifestyle",
+			"picture": "options/scene-type-cooking"
+		},
+		{
+			"id": "fitness",
+			"label": "Fitness",
+			"group": "IRL & lifestyle",
+			"picture": "options/scene-type-fitness"
+		},
+		{
+			"id": "reading",
+			"label": "Reading",
+			"group": "IRL & lifestyle",
+			"picture": "options/scene-type-reading"
+		},
+		{
+			"id": "unboxing",
+			"label": "Unboxing",
+			"group": "IRL & lifestyle",
+			"picture": "options/scene-type-unboxing"
+		},
+		{
+			"id": "watch_party",
+			"label": "Watch party",
+			"group": "IRL & lifestyle",
+			"picture": "options/scene-type-watch-party"
+		},
+		{
+			"id": "charity",
+			"label": "Charity",
+			"group": "IRL & lifestyle",
+			"picture": "options/scene-type-charity"
+		},
+		{
+			"id": "on_air",
+			"label": "On air",
+			"group": "All in one",
+			"picture": "options/scene-live"
+		},
+		{
+			"id": "on_air_chat",
+			"label": "On air + chat",
+			"group": "All in one",
+			"picture": "options/scene-chat-live"
+		}
 	],
 	"looks": {
 		"blur": {
-			"label": "Blur style", "tip": "Which blur the image shows. Automatic shows the blur the filter is set to.",
-			"entries": [["gaussian", "Gaussian", "blur-types/gaussian"], ["box", "Box", "blur-types/box"], ["kawase", "Dual Kawase", "blur-types/kawase"],
-				["pixelate", "Mosaic", "blur-types/pixelate"], ["hexagons", "Hexagon mosaic", "blur-types/hexagons"], ["zoom", "Zoom blur", "blur-types/zoom"],
-				["motion", "Motion blur", "blur-types/motion"]]
+			"label": "Blur style",
+			"tip": "Which blur the image shows. Automatic shows the blur the filter is set to.",
+			"groups": [
+				{
+					"label": "Blurs",
+					"entries": [
+						[
+							"gaussian",
+							"Gaussian",
+							"blur-types/gaussian"
+						],
+						[
+							"box",
+							"Box",
+							"blur-types/box"
+						],
+						[
+							"kawase",
+							"Dual Kawase",
+							"blur-types/kawase"
+						],
+						[
+							"zoom",
+							"Zoom blur",
+							"blur-types/zoom"
+						],
+						[
+							"motion",
+							"Motion blur",
+							"blur-types/motion"
+						],
+						[
+							"trail",
+							"Trail",
+							"options/style-trail"
+						]
+					]
+				},
+				{
+					"label": "Mosaics",
+					"entries": [
+						[
+							"pixelate",
+							"Square mosaic",
+							"blur-types/pixelate"
+						],
+						[
+							"hexagons",
+							"Hexagon mosaic",
+							"blur-types/hexagons"
+						],
+						[
+							"mosaic_circle",
+							"Circle mosaic",
+							"options/style-mosaic-circle"
+						],
+						[
+							"mosaic_triangle",
+							"Triangle mosaic",
+							"options/style-mosaic-triangle"
+						],
+						[
+							"mosaic_voronoi",
+							"Voronoi mosaic",
+							"options/style-mosaic-voronoi"
+						],
+						[
+							"mosaic_rhomboid",
+							"Rhomboid mosaic",
+							"options/style-mosaic-rhomboid"
+						],
+						[
+							"mosaic_triakis",
+							"Triakis mosaic",
+							"options/style-mosaic-triakis"
+						],
+						[
+							"glass",
+							"Glass mosaic",
+							"options/style-glass"
+						]
+					]
+				}
+			]
 		},
 		"corners": {
-			"label": "Corner style", "tip": "Which corners the image shows. Automatic shows the style the filter is set to.",
-			"entries": [["round", "Rounded", "corners/round"], ["cut", "Cut", "corners/cut"], ["notch", "Notched", "corners/notch"], ["scoop", "Scooped", "corners/scoop"]]
+			"label": "Corner style",
+			"tip": "Which corners or edges the image shows. Automatic shows the style the filter is set to.",
+			"groups": [
+				{
+					"label": "Corners",
+					"entries": [
+						[
+							"round",
+							"Rounded",
+							"corners/round"
+						],
+						[
+							"cut",
+							"Cut",
+							"corners/cut"
+						],
+						[
+							"notch",
+							"Notched",
+							"corners/notch"
+						],
+						[
+							"scoop",
+							"Scooped",
+							"corners/scoop"
+						]
+					]
+				},
+				{
+					"label": "Edges",
+					"entries": [
+						[
+							"soft",
+							"Soft edges",
+							"options/style-edge-soft"
+						],
+						[
+							"outline",
+							"Outlined edges",
+							"options/style-edge-outline"
+						],
+						[
+							"trim",
+							"Trimmed edges",
+							"options/style-edge-trim"
+						]
+					]
+				}
+			]
+		},
+		"shadow": {
+			"label": "Shadow style",
+			"tip": "Which look the image shows. Automatic shows the shadow, glow or outline the filter is set to.",
+			"groups": [
+				{
+					"label": "Shadows",
+					"entries": [
+						[
+							"soft",
+							"Soft shadow",
+							"shadow-glow-outline/soft"
+						],
+						[
+							"hard",
+							"Hard shadow",
+							"options/style-shadow-hard"
+						],
+						[
+							"long",
+							"Long shadow",
+							"options/style-shadow-long"
+						]
+					]
+				},
+				{
+					"label": "Glows & outlines",
+					"entries": [
+						[
+							"glow",
+							"Glow",
+							"shadow-glow-outline/glow"
+						],
+						[
+							"neon",
+							"Neon",
+							"options/style-shadow-neon"
+						],
+						[
+							"outline",
+							"Outline",
+							"shadow-glow-outline/outline"
+						],
+						[
+							"panel",
+							"Panel",
+							"shadow-glow-outline/panel"
+						]
+					]
+				}
+			]
+		},
+		"transition": {
+			"label": "Transition",
+			"tip": "Which change the image shows. Automatic shows the filter's own image.",
+			"groups": [
+				{
+					"label": "",
+					"entries": [
+						[
+							"fade",
+							"Fade",
+							"options/style-fade"
+						],
+						[
+							"cut",
+							"Cut",
+							"options/style-cut"
+						],
+						[
+							"slide",
+							"Slide",
+							"options/style-slide"
+						],
+						[
+							"swipe",
+							"Swipe",
+							"options/style-swipe"
+						],
+						[
+							"wipe",
+							"Wipe",
+							"options/style-wipe"
+						],
+						[
+							"zoom",
+							"Zoom",
+							"options/style-zoom"
+						],
+						[
+							"morph",
+							"Morph",
+							"options/style-morph"
+						]
+					]
+				}
+			]
 		},
 		"position": {
-			"label": "Position", "tip": "Which place on the screen the image shows. Automatic shows where the filter sends the source.",
-			"entries": [["top-left", "Top left", "options/camera-top-left"], ["top-centre", "Top centre", "options/camera-top-centre"],
-				["top-right", "Top right", "options/camera-top-right"], ["middle-left", "Middle left", "options/camera-middle-left"],
-				["centre", "Centre", "options/camera-centre"], ["middle-right", "Middle right", "options/camera-middle-right"],
-				["bottom-left", "Bottom left", "options/camera-bottom-left"], ["bottom-centre", "Bottom centre", "options/camera-bottom-centre"],
-				["bottom-right", "Bottom right", "options/camera-bottom-right"], ["spot", "Saved spot", "options/spot"]]
+			"label": "Position",
+			"tip": "Which place on the screen the image shows. Automatic shows where the filter sends the source.",
+			"groups": [
+				{
+					"label": "",
+					"entries": [
+						[
+							"top-left",
+							"Top left",
+							"options/camera-top-left"
+						],
+						[
+							"top-centre",
+							"Top centre",
+							"options/camera-top-centre"
+						],
+						[
+							"top-right",
+							"Top right",
+							"options/camera-top-right"
+						],
+						[
+							"middle-left",
+							"Middle left",
+							"options/camera-middle-left"
+						],
+						[
+							"centre",
+							"Centre",
+							"options/camera-centre"
+						],
+						[
+							"middle-right",
+							"Middle right",
+							"options/camera-middle-right"
+						],
+						[
+							"bottom-left",
+							"Bottom left",
+							"options/camera-bottom-left"
+						],
+						[
+							"bottom-centre",
+							"Bottom centre",
+							"options/camera-bottom-centre"
+						],
+						[
+							"bottom-right",
+							"Bottom right",
+							"options/camera-bottom-right"
+						],
+						[
+							"spot",
+							"Saved spot",
+							"options/spot"
+						]
+					]
+				}
+			]
 		},
 		"capture": {
-			"label": "Capture type", "tip": "What the image shows the key capturing. Automatic goes by the kind of capture chosen.",
-			"entries": [["game", "Game", "options/hook-game"], ["window", "Window", "options/hook-window"]]
+			"label": "Capture type",
+			"tip": "What the image shows the key capturing. Automatic goes by the kind of capture chosen.",
+			"groups": [
+				{
+					"label": "",
+					"entries": [
+						[
+							"game",
+							"Game",
+							"options/hook-game"
+						],
+						[
+							"window",
+							"Window",
+							"options/hook-window"
+						]
+					]
+				}
+			]
 		}
 	}
 }

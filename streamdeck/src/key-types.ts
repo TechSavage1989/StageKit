@@ -16,7 +16,7 @@ import data from "./key-types.json" with { type: "json" };
 import features from "./features.json" with { type: "json" };
 
 export type Family = "show" | "shadow" | "blur" | "mode";
-export type Look = "blur" | "corners" | "position" | "capture";
+export type Look = "blur" | "corners" | "shadow" | "transition" | "position" | "capture";
 
 export type Entry = { value: string; label: string; picture: string };
 export type Group = { label: string; entries: Entry[] };
@@ -27,10 +27,21 @@ type SourceType = { id: string; label: string; group: string; base: string; word
 export const SOURCE_TYPES: SourceType[] = data.sourceTypes;
 export const SCENE_TYPES: Array<{ id: string; label: string; group: string; picture: string }> = data.sceneTypes;
 const ART = data.art as Record<Family, Record<string, string>>;
-const LOOKS = data.looks as Record<Look, { label: string; tip: string; entries: string[][] }>;
+const LOOKS = data.looks as Record<Look, { label: string; tip: string; groups: Array<{ label: string; entries: string[][] }> }>;
 
 /** The blur styles by the filter's number (`blur_type`, append-only). */
 export const BLUR_STYLES = ["gaussian", "box", "kawase", "pixelate", "zoom", "motion", "hexagons"];
+
+/**
+ * The pack's blur style nearest a Blur style it has no pictures of (the
+ * mosaic's other cells, glass, the trail), for a source drawn in that style.
+ */
+export function packBlurStyle(style: string): string {
+	if (BLUR_STYLES.includes(style)) return style;
+	if (style === "trail") return "motion";
+	if (style === "mosaic_circle") return "hexagons";
+	return "pixelate";
+}
 
 /**
  * A type setting's value when it names a type. Empty (never set, or
@@ -103,7 +114,7 @@ export function sourceTypePicture(type: string | undefined, family?: Family, blu
 	const t = SOURCE_TYPES.find((s) => s.id === type);
 	if (!t) return undefined;
 	const art = family ? ART[family][t.id] : undefined;
-	if (art) return family === "blur" ? `blur-${BLUR_STYLES.includes(blurStyle) ? blurStyle : "gaussian"}/${art}` : art;
+	if (art) return family === "blur" ? `blur-${packBlurStyle(blurStyle)}/${art}` : art;
 	return t.base;
 }
 
@@ -112,7 +123,11 @@ export function sceneTypePicture(type: string | undefined): string | undefined {
 }
 
 export function lookPicture(look: Look, value: string | undefined): string | undefined {
-	return LOOKS[look].entries.find((e) => e[0] === value)?.[2];
+	for (const group of LOOKS[look].groups) {
+		const found = group.entries.find((e) => e[0] === value);
+		if (found) return found[2];
+	}
+	return undefined;
 }
 
 /** The types with art of their own in a family (the only ones a Shadow, Standby or Blur key offers). */
@@ -120,45 +135,64 @@ function withArt(family: Family): string[] {
 	return SOURCE_TYPES.filter((t) => ART[family][t.id]).map((t) => t.id);
 }
 
+/** The source types of some groups of src/key-types.json, in its order. */
+function inGroups(...groups: string[]): string[] {
+	return SOURCE_TYPES.filter((t) => groups.includes(t.group)).map((t) => t.id);
+}
+
+const CAPTURES = ["game", "retro", "emulator", "console", "handheld", "linked_handheld", "linked_handheld_2", "capture_card", "capture_box", "hdmi_source",
+	"window", "browser", "display", "second_display", "tablet", "phone", "pc", "laptop", "retro_console", "pen_display", "vr_headset"];
+const APPS = inGroups("Apps");
+const CAMERAS = inGroups("Cameras");
+
 /** What a source key's list offers, for the keys that act on a source. */
 const SOURCES: Record<string, { family?: Family; only?: string[]; label?: string; automatic: string; tip: string }> = {
-	showinscenes: { family: "show", automatic: "Automatic (by the source)", tip: "What the source is, for the key's image. Automatic goes by the source's name and kind." },
-	shadow: { family: "shadow", only: withArt("shadow"), automatic: "Automatic (the shadow's look)", tip: "What the shadow is on, for the key's image. Automatic shows the shadow, glow or outline the filter is set to." },
+	// Everything a source can be: not the activities, which are what a scene or a mode is for.
+	showinscenes: {
+		family: "show",
+		only: SOURCE_TYPES.filter((t) => t.group !== "Activities").map((t) => t.id),
+		automatic: "Automatic (by the source)",
+		tip: "What the source is, for the key's image. Automatic goes by the source's name and kind.",
+	},
+	shadow: { family: "shadow", only: withArt("shadow"), automatic: "Automatic (by the source)", tip: "What the shadow is on, for the key's image." },
 	// (Not the pack's standby-by-source pictures: without the words they
 	// carried, all nine are the same mountain. Old keys that chose one keep it.)
-	standby: {
-		automatic: "Automatic (standby image)",
-		tip: "What the standby image stands in for, for the key's image.",
-		only: ["game", "retro", "emulator", "console", "handheld", "capture_card", "window", "browser", "display", "second_display", "tablet", "phone",
-			"art_app", "app_3d", "sculpting", "cad", "camera", "dslr", "camcorder", "facecam", "phone_camera", "virtual_camera"],
-	},
+	standby: { automatic: "Automatic (standby image)", tip: "What the standby image stands in for, for the key's image.", only: [...CAPTURES, ...APPS, ...CAMERAS] },
 	blur: { family: "blur", only: withArt("blur"), automatic: "Automatic (by the source)", tip: "What is blurred, for the key's image, drawn in the blur style." },
-	zoom: {
-		automatic: "Automatic (zoom)",
-		tip: "What is zoomed, for the key's image.",
-		only: ["game", "retro", "emulator", "console", "handheld", "capture_card", "window", "browser", "display", "second_display", "tablet", "phone",
-			"art_app", "app_3d", "sculpting", "cad", "code_editor", "office", "video_player", "reference",
-			"camera", "dslr", "camcorder", "facecam", "full_camera", "side_camera", "phone_camera", "workspace_camera", "virtual_camera", "image", "video"],
+	zoom: { automatic: "Automatic (zoom)", tip: "What is zoomed, for the key's image.", only: [...CAPTURES, ...APPS, ...CAMERAS, "image", "video", "green_screen"] },
+	autocapture: {
+		automatic: "Automatic (auto capture)",
+		tip: "What the capture takes, for the key's image.",
+		only: ["game", "retro", "emulator", "pc", "vr_headset", "app_3d", "sculpting", "cad", "art_app"],
 	},
-	autocapture: { automatic: "Automatic (auto capture)", tip: "What the capture takes, for the key's image.", only: ["game", "retro", "emulator", "app_3d", "sculpting", "cad", "art_app"] },
-	autoframe: { automatic: "Automatic (auto frame)", tip: "What is framed, for the key's image.", only: ["game", "retro", "retro_2", "emulator", "console", "handheld", "capture_card", "window", "display"] },
+	autoframe: {
+		automatic: "Automatic (auto frame)",
+		tip: "What is framed, for the key's image.",
+		only: ["game", "retro", "emulator", "console", "handheld", "linked_handheld", "linked_handheld_2", "capture_card", "capture_box", "hdmi_source",
+			"retro_console", "window", "display"],
+	},
 	appcapture: {
 		automatic: "Automatic (window switcher)",
 		tip: "What the capture switches between, for the key's image.",
-		only: ["window", "browser", "game", "retro", "emulator", "art_app", "app_3d", "sculpting", "cad", "code_editor", "office", "video_player", "reference", "chat", "voice_chat", "music"],
+		only: ["window", "browser", "game", "retro", "emulator", "linked_handheld", ...APPS, "chat", "voice_chat", "music"],
 	},
 	programtrigger: {
 		automatic: "Automatic (program trigger)",
 		tip: "Which program the trigger waits for, for the key's image.",
-		only: ["game", "retro", "emulator", "window", "browser", "art_app", "app_3d", "sculpting", "cad", "code_editor", "office", "video_player", "reference", "voice_chat", "music"],
+		only: ["game", "retro", "emulator", "window", "browser", ...APPS, "voice_chat", "music", "recording", "live"],
 	},
 	mode: {
 		family: "mode",
 		label: "Mode type",
 		automatic: "Automatic (the mode's type)",
 		tip: "What the mode shows, for the key's image. Automatic takes the Mode type set in OBS.",
-		only: ["starting", "brb", "intermission", "technical", "ending", "countdown", "game", "retro", "console", "capture_card", "window", "display", "tablet",
-			"camera", "column_chat", "column_retro"],
+		only: [
+			...inGroups("Status & holding screens"),
+			"countdown",
+			"game", "retro", "emulator", "console", "handheld", "linked_handheld", "capture_card", "window", "display", "tablet", "camera",
+			...APPS,
+			...inGroups("Layout markers", "Activities"),
+		],
 	},
 };
 
@@ -169,7 +203,20 @@ function sceneKeys(): string[] {
 	return keys;
 }
 
-const LOOK_KEYS: Record<string, Look> = { blur: "blur", blurall: "blur", corners: "corners", sendto: "position", placeitem: "position", hook: "capture" };
+const LOOK_KEYS: Record<string, Look> = {
+	blur: "blur",
+	blurall: "blur",
+	corners: "corners",
+	shadow: "shadow",
+	sendto: "position",
+	placeitem: "position",
+	hook: "capture",
+	// Keys for filters whose job is a change: its transition.
+	showhide: "transition",
+	visibilitylink: "transition",
+	activeapp: "transition",
+	appcapture: "transition",
+};
 
 /**
  * The keys whose type is the thing the key does: a tool, an option, a way to
@@ -202,7 +249,7 @@ export function typeLists(key: string): TypeList[] {
 			label: l.label,
 			tip: l.tip,
 			automatic: "Automatic",
-			groups: [{ label: "", entries: l.entries.map(([value, label, picture]) => ({ value, label, picture })) }],
+			groups: l.groups.map((g) => ({ label: g.label, entries: g.entries.map(([value, label, picture]) => ({ value, label, picture })) })),
 		});
 	}
 	const source = SOURCES[key];

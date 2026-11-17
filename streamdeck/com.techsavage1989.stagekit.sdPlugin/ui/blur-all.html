@@ -20,13 +20,24 @@
 		<sdpi-item label="Blur style" title="Which blur the image shows. Automatic shows the blur the filter is set to.">
 			<sdpi-select setting="look" placeholder="Automatic">
 				<option value="auto">Automatic</option>
-				<option value="gaussian">Gaussian</option>
-				<option value="box">Box</option>
-				<option value="kawase">Dual Kawase</option>
-				<option value="pixelate">Mosaic</option>
-				<option value="hexagons">Hexagon mosaic</option>
-				<option value="zoom">Zoom blur</option>
-				<option value="motion">Motion blur</option>
+				<optgroup label="Blurs">
+					<option value="gaussian">Gaussian</option>
+					<option value="box">Box</option>
+					<option value="kawase">Dual Kawase</option>
+					<option value="zoom">Zoom blur</option>
+					<option value="motion">Motion blur</option>
+					<option value="trail">Trail</option>
+				</optgroup>
+				<optgroup label="Mosaics">
+					<option value="pixelate">Square mosaic</option>
+					<option value="hexagons">Hexagon mosaic</option>
+					<option value="mosaic_circle">Circle mosaic</option>
+					<option value="mosaic_triangle">Triangle mosaic</option>
+					<option value="mosaic_voronoi">Voronoi mosaic</option>
+					<option value="mosaic_rhomboid">Rhomboid mosaic</option>
+					<option value="mosaic_triakis">Triakis mosaic</option>
+					<option value="glass">Glass mosaic</option>
+				</optgroup>
 			</sdpi-select>
 		</sdpi-item>
 		<sdpi-item label="Palette">

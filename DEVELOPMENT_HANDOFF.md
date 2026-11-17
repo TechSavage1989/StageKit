@@ -13,7 +13,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
-## Stream Deck: type lists in place of the Image list (plugin 0.19.0.0, branch `feat/streamdeck-types`)
+## Stream Deck: type lists in place of the Image list (plugin 0.20.0.0, branch `feat/streamdeck-types`)
 
 The owner: "instead of having an image list on all the streamdeck buttons, have a similar source
 type, scene type, etc style list relative to the button function ... every single stream deck
@@ -23,15 +23,26 @@ options specific to my stream scene collection, but I do want the specific icons
 types as possible and provide the proper respective icons".
 
 - `streamdeck/src/key-types.json` / `key-types.ts`: 49 source types in five groups, 32 scene types in
-  five groups, and the looks (Blur style, Corner style, Position, Capture type). Every key but the
+  five groups, and the looks (Blur style, Corner style, Position, Capture type); see the second round below. Every key but the
   two old hidden ones has a type list, or its own function list as its type. The Image list is gone
   from every page; an old Image choice is kept (or set as the type that shows it) so no key changes
   look. See AGENTS.md, *Every key chooses its image from type lists*.
 - 18 source-type and 14 scene-type drawings added to `make-option-icons.py` (every palette, on/off,
   marked; SVGs written). The rest are the owner's pack art.
+- Second round, after the owner saw the sheets ("Retro icon should be specific to GC+GBA. create as
+  many device, status, style, activity icons as possible for every key that it's relevant to"): the
+  console-and-handheld scene is *Console + handheld link*, its source pictures *Linked handheld
+  screen* (1 and 2); *Retro gaming* (scene) has a pixel-sprite drawing; *Second retro game* and
+  *Retro column* are gone (*Handheld column* in their place, under *Layout markers*). 51 more
+  drawings: 13 devices, 7 status, 20 styles (7 blur and mosaic, 3 edges, 3 shadows, 7
+  transitions), 11 activities and retro, 2 linked-handheld, plus a new Voice chat drawing (the old
+  one is *Headset*). Now 86 source types in 8 groups, 47 scene types in 7 groups; looks: Blur
+  style 14, Corner style 7, Shadow style 7 (new list on the Shadow key), Transition 7 (new, on
+  Show/Hide Animation, Link Visibility and both switchers). `npm test` 48 pass. This branch was
+  built on by `feat/scene-blur` from 470c394; these are later commits on top.
 - Tests: `streamdeck/tests/key-types.test.ts` (every entry is what the key shows, files exist in every
   palette, no repeats in a list, generic names only, pages have the lists and no Image list, old
-  images kept). `npm run build`, `npm test` (46 pass), `npm run validate` pass.
+  images kept). `npm run build`, `npm test`, `npm run validate` pass.
 - Changed look on Automatic (deliberate): a Show in Scenes key that went by its source's name or OBS
   kind to a type now shows the owner's show-key art for it (a camera: the camera with the eye), and
   a Scene Mode key's layout types the owner's scene layouts. Keys with a type chosen in beta155 show

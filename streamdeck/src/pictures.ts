@@ -7,7 +7,7 @@
 
 import { isSceneKind } from "./kinds.ts";
 import pack from "./pack.json" with { type: "json" };
-import { BLUR_STYLES, explicit, type Family, lookPicture, sceneTypePicture, sourceTypePicture } from "./key-types.ts";
+import { BLUR_STYLES, explicit, type Family, lookPicture, packBlurStyle, sceneTypePicture, sourceTypePicture } from "./key-types.ts";
 import { hookTypePictureId, typeOfInput, typeOfName, typePictureId } from "./source-types.ts";
 
 export type Picture = { id: string; group: string; label: string; on: string; off: string };
@@ -184,7 +184,7 @@ export function chooseFor(
 	const family = familyOf(kind);
 	const look = explicit(t.look);
 	const blur = kind === "stagekit_ramp_blur";
-	const style = blur ? (look && BLUR.includes(look) ? look : (BLUR[whole(settings, "blur_type", 0)] ?? BLUR[0])) : undefined;
+	const style = blur ? (look ?? BLUR[whole(settings, "blur_type", 0)] ?? BLUR[0]) : undefined;
 	const scene = isSceneKind(kind);
 	const typed = scene
 		? sceneTypePicture(explicit(t.sceneType))
@@ -194,12 +194,18 @@ export function chooseFor(
 	if (look && kind === "stagekit_corners") return BY_ID.get(lookPicture("corners", look) ?? "") ?? automatic(kind, settings);
 	if (look && (kind === "stagekit_send_to" || kind === "stagekit_place_item"))
 		return BY_ID.get(lookPicture("position", look) ?? "") ?? automatic(kind, settings);
-	const own = blur ? { ...settings, blur_type: BLUR.indexOf(style!) } : settings;
+	if (look && kind === "stagekit_shadow_backdrop") return BY_ID.get(lookPicture("shadow", look) ?? "") ?? automatic(kind, settings);
+	const changes = ["stagekit_show_hide", "stagekit_visibility_link", "stagekit_active_app", "stagekit_app_capture"];
+	if (look && changes.includes(kind)) return BY_ID.get(lookPicture("transition", look) ?? "") ?? automatic(kind, settings);
+	const own = blur ? { ...settings, blur_type: BLUR.indexOf(packBlurStyle(style!)) } : settings;
+	// (A Blur style the pack has no pictures of is its own drawing, unless the source has one in the nearest style.)
+	const styled = blur && look ? BY_ID.get(lookPicture("blur", look) ?? "") : undefined;
 	const shows = kind === "stagekit_show_in_scenes";
 	return (
 		sourcePictureFor(kind, own, source) ||
 		(shows ? BY_ID.get(sourceTypePicture(typeOfName(source), "show") ?? "") : undefined) ||
 		(shows ? inputPicture(inputKind, "show") : undefined) ||
+		styled ||
 		automatic(kind, own)
 	);
 }

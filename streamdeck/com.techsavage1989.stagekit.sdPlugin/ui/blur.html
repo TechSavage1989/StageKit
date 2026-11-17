@@ -30,13 +30,24 @@
 		<sdpi-item label="Blur style" title="Which blur the image shows. Automatic shows the blur the filter is set to.">
 			<sdpi-select setting="look" placeholder="Automatic">
 				<option value="auto">Automatic</option>
-				<option value="gaussian">Gaussian</option>
-				<option value="box">Box</option>
-				<option value="kawase">Dual Kawase</option>
-				<option value="pixelate">Mosaic</option>
-				<option value="hexagons">Hexagon mosaic</option>
-				<option value="zoom">Zoom blur</option>
-				<option value="motion">Motion blur</option>
+				<optgroup label="Blurs">
+					<option value="gaussian">Gaussian</option>
+					<option value="box">Box</option>
+					<option value="kawase">Dual Kawase</option>
+					<option value="zoom">Zoom blur</option>
+					<option value="motion">Motion blur</option>
+					<option value="trail">Trail</option>
+				</optgroup>
+				<optgroup label="Mosaics">
+					<option value="pixelate">Square mosaic</option>
+					<option value="hexagons">Hexagon mosaic</option>
+					<option value="mosaic_circle">Circle mosaic</option>
+					<option value="mosaic_triangle">Triangle mosaic</option>
+					<option value="mosaic_voronoi">Voronoi mosaic</option>
+					<option value="mosaic_rhomboid">Rhomboid mosaic</option>
+					<option value="mosaic_triakis">Triakis mosaic</option>
+					<option value="glass">Glass mosaic</option>
+				</optgroup>
 			</sdpi-select>
 		</sdpi-item>
 		<sdpi-item label="Source type" title="What is blurred, for the key&#x27;s image, drawn in the blur style.">
@@ -44,9 +55,9 @@
 				<option value="auto">Automatic (by the source)</option>
 				<optgroup label="Captures &amp; games">
 					<option value="game">Game</option>
-					<option value="retro">Retro game</option>
-					<option value="retro_2">Second retro game</option>
-					<option value="capture_card">Capture card</option>
+					<option value="linked_handheld">Linked handheld screen</option>
+					<option value="linked_handheld_2">Second linked handheld screen</option>
+					<option value="capture_card">Capture card (internal)</option>
 					<option value="window">Window</option>
 					<option value="display">Display</option>
 					<option value="tablet">Tablet</option>
@@ -56,7 +67,7 @@
 					<option value="sculpting">Sculpting app</option>
 					<option value="cad">CAD app</option>
 				</optgroup>
-				<optgroup label="Cameras &amp; audio">
+				<optgroup label="Cameras">
 					<option value="camera">Camera / webcam</option>
 				</optgroup>
 			</sdpi-select>
