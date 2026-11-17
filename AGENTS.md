@@ -1380,7 +1380,35 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   `tests/ambient-test.cpp`, `README.md` and here; write only inside your own. `tests/run-tests.sh`
   stops on a locale key used twice and on a failed build.
 <!-- ==== scene-filters:modes ==== -->
-- **Scene Modes**: to come.
+- **Scene Modes** (`stagekit_scene_modes`, `src/placement/scene-modes.*`; beta155). The owner:
+  "scene modes should not have specific names built in. instead scene modes should be able to be
+  made manually and customized", with templates to start from. A mode is known by an **id**
+  (`m1`, `m2`, ..., from `mode_seq`; never reused, never renamed): settings `modes` (the ids in
+  order), `mode|<id>|name`, `mode|<id>|type` (a string id, the Stream Deck Source type's: `game`,
+  `window`, `art_app`, `code_editor`, `browser`, `camera`, `capture_card`, `display`, `phone`,
+  `tablet`, `chat`, `music`, `alerts`, `title`, `image`, `video`, `starting`, `brb`,
+  `intermission`, `ending`; "" Automatic; append only), `mode|<id>|go_to`, `mode|<id>|sources`;
+  `mode_now` and `mode_before` (ids, written by the filter under its lock, in `kOwnSettings`).
+  Hotkeys `stagekit.mode.<filter>.<id>`, `.next`, `.none` (shown with the mode's name), and the
+  vendor requests `ListSceneModes`, `GetSceneMode`, `SetSceneMode` (an id, or a name) and the event
+  `SceneModeChanged`, so a rename breaks no key. The rules: hides before shows in one tick; a
+  source in the old and the new mode is not touched; a source in no mode never; a press is queued
+  and acted on in the tick; nothing is polled (it listens to `item_visible` on its scene and on
+  *Same modes in scenes*, and hides again a member of a mode not on that something else showed);
+  a show is passed over when `show_in_scenes_holds_off`, `link_visibility_holds_hidden` or another
+  Scene Modes covering that scene holds it; registered with `holds_hidden_register`, so Show in
+  Scenes and Standby's `stands_in` ask it. At the first look after `scenes_loaded()` a scene that
+  disagrees with `mode_now` is put right with a cut (and logged); presses made before are kept.
+  "Mode now" in the window is a press that never changes scene; *Switch to scene* goes through
+  `go_to_scene` with `stay_in` = its own scene and *Same modes in scenes*. Items inside groups are
+  shown and hidden, but a group's own `item_visible` is not listened to (an inner item shown by
+  hand is not put back). The window's mode groups and everything below them are taken off and
+  added again in place (`rebuild`) on *Add mode*, *Add from template*, *Move up* and *Remove
+  mode*; a rename only changes the heading and the *Mode now* list. A mode's PickList is nested in
+  its group, and its setting has bars in it: `pick-list.cpp`'s `parse` takes the last bar
+  followed by `a`/`t` and a part (`list`, `pick`, `none`, `row|n`), not the first bar. The tests
+  reach the vendor requests through the `stagekit_vendor_call` and `stagekit_vendor_events` procs
+  (`vendor_api_add_test_calls`); obs-websocket is not there.
 <!-- ==== end scene-filters:modes ==== -->
 <!-- ==== scene-filters:transitions ==== -->
 - **Scene Transitions** (`src/placement/scene-transitions.*`, `stagekit_scene_transitions`; the owner

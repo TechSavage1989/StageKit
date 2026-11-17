@@ -39,8 +39,17 @@ Parsed parse(const char *property_name)
 {
 	Parsed out;
 	const std::string name = property_name ? property_name : "";
-	const size_t bar = name.find('|');
-	if (bar == std::string::npos || bar + 1 >= name.size())
+	// The setting's own name may have bars in it ("mode|m1|sources"): the
+	// last bar followed by 'a' or 't' and one of the parts is the one.
+	size_t bar = std::string::npos;
+	for (size_t at = name.find('|'); at != std::string::npos; at = name.find('|', at + 1)) {
+		if (at + 1 >= name.size() || (name[at + 1] != 'a' && name[at + 1] != 't'))
+			continue;
+		const std::string part = name.substr(at + 2);
+		if (part == "list" || part == "pick" || part == "none" || part.rfind("row|", 0) == 0)
+			bar = at;
+	}
+	if (bar == std::string::npos)
 		return out;
 	out.setting = name.substr(0, bar);
 	out.as_text = name[bar + 1] == 't';

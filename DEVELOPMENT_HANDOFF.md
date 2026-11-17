@@ -2212,3 +2212,16 @@ transition), and the transitions owner is per (scene, source). `Standby::update`
 when `picture`, `file` or `source` change. Since the integration, `sync_stand_ins` resolves *As the scene sets* with
 `resolve_item_change` before swapping the change for the twin. Not built: the Stream Deck entries and the collection's adoption of existing filters (units SD
 and C), and test 11 (Scene Modes holding the camera hidden) until Scene Modes is merged.
+
+## Scene Modes (0.1.0-beta155, in progress on `feat/scene-modes`)
+
+Scene Modes (StageKit), a scene filter: modes made by hand or from a template (Starting, Game,
+Display / Screen, Window, Camera, Chat, Intermission, Be right back, Ending), each known by an id
+(`mode|<id>|name/type/go_to/sources`, `mode_now`, `mode_before`); one on at a time, hides before
+shows, a source in both not touched; *Allow no mode*, *Same modes in scenes*, *Lock hidden sources*,
+the fuller Show/Hide transition; hotkeys per mode, next and none; vendor requests `ListSceneModes`,
+`GetSceneMode`, `SetSceneMode` and the `SceneModeChanged` event; registered with `holds-hidden`.
+Also on this branch: Morph's `draws_nothing` lists the five non-drawing scene filter ids (the
+groundwork commit said so but had not), and PickList's `parse` copes with a setting name that has
+bars in it. Tests: the `[scene modes: ...]` sections (16 of the design's, the out-of-view one in the
+sound section). Whole suite: see the unit's report.

@@ -141,6 +141,8 @@ target_sources(
     src/common/scene-filter-ids.hpp
     src/common/stand-in.hpp
     # ==== scene-filters:modes ====
+    src/placement/scene-modes.cpp
+    src/placement/scene-modes.hpp
     # ==== end scene-filters:modes ====
     # ==== scene-filters:transitions ====
     src/placement/scene-transitions.cpp

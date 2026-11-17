@@ -1098,6 +1098,57 @@ place of one per source. Add one from the scene's own Filters window (right-clic
 #### Scene Modes
 
 <!-- ==== scene-filters:modes (Scene Modes) ==== -->
+**Scene Modes (StageKit)** names a scene's modes and the sources of each: *Game*, *Window* and
+*Display* in a live scene, say, or *Starting*, *Be right back*, *Intermission* and *Ending* in a holding
+scene. One mode is on at a time. Turning a mode on hides the other modes' sources and shows its own.
+A source in both the old and the new mode is left as it is (an image shown in Starting and Be right
+back stays up), and a source in no mode is never touched.
+
+- **Making modes:** type a name under *New mode name* and press *Add mode*, or choose one under *From
+  template* (Starting, Game, Display / Screen, Window, Camera, Chat, Intermission, Be right back,
+  Ending) and press *Add from template*. A template only fills in the name and the type; both can be
+  changed afterwards. No mode name is built in, and two modes may have the same name.
+- **Each mode** has a group of its own, headed *Mode: <name>*:
+  - **Name**: renaming a mode keeps its sources, its hotkey and its Stream Deck keys.
+  - **Mode type**: what it shows (Game, Window, Camera, Chat, Starting and so on). A Stream Deck
+    *Scene Mode* key left on *Automatic* takes its image from this.
+  - **Switch to scene**: a key or hotkey turning this mode on also changes OBS to that scene, unless
+    the scene on screen is this filter's own scene or one under *Same modes in scenes*.
+  - **Sources**: the sources shown while this mode is on. Sources inside groups, and groups, can be
+    chosen.
+  - **Move up** and **Remove mode**. The order is the order of *next*. A mode removed leaves its
+    sources as they are.
+- **Mode now**: the mode that is on. Choosing another here turns it on, but never changes scene.
+- **Allow no mode**: a *Toggle* key pressed on the mode that is on hides every mode's sources. Unticked
+  (as it comes), it goes back to the mode before instead.
+- **Same modes in scenes**: other scenes that follow this filter's mode, so one key works in two
+  layouts alike. A key pressed while one of them is on screen stays in that scene.
+- **Lock hidden sources**: each mode's source is locked while hidden, so a click in OBS's preview
+  cannot pick a source stacked under the one you see.
+- **Show/Hide transition**: how the sources come and go. With *Morph (StageKit)*, the capture of the
+  mode going changes into the capture of the mode coming.
+
+A source of a mode that is not on, shown some other way (the eye, an old *Source* key), is hidden
+again at once. A source of the mode on that you hide stays hidden: a camera switched off stays off.
+A camera switch (Show in Scenes) and a Standby filter's *Show when source is hidden* go by the modes:
+the camera shows only in its own mode, and its standby image never covers another mode. When a scene
+has two Scene Modes filters, a source in both shows only while both have it on. In a scene that is
+not on screen a change is a cut, so a hidden capture card is never opened for a moment when the scene
+comes on.
+
+**Keys:** the scene gets a hotkey for each mode (*StageKit: <filter>: <mode>*), one for the next mode,
+and one for no mode while that is allowed. The Stream Deck *Scene Mode* key, and anything else that
+speaks obs-websocket, uses these vendor requests:
+
+| requestType | requestData | Response |
+| --- | --- | --- |
+| `ListSceneModes` | `scene?` | `filters: [{scene, filter, enabled, current, currentName, allowNone, modes: [{id, name, type}], scenes: [{name}]}]` |
+| `GetSceneMode` | `scene`, `filter?` | `current`, `currentName`, `previous`, `previousName`, `enabled`, `allowNone`, `modes` |
+| `SetSceneMode` | `scene`, `filter?`, `mode` (its id, or its name), `how?`: `on` (as it comes), `toggle`, `next` or `none` | none. It fails, with the reason, when the scene, the filter or the mode is not there, the filter is off, or no mode is not allowed |
+
+A `SceneModeChanged` event (`scene`, `filter`, `mode`, `modeName`, `previous`, `previousName`) follows
+every change of mode, and every change to the list of modes. A mode is known by an id that never
+changes (`m1`, `m2`, ...), so renaming it breaks no key.
 <!-- ==== end scene-filters:modes (Scene Modes) ==== -->
 
 #### Scene Transitions
