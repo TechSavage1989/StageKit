@@ -857,7 +857,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     when their sources are linked in *any* Morph's settings (`g_said`), or are the largest of each
     at 15 % of the screen or more (`pair_main`). Only in a scene that is showing and for items
     straight in it: a group would grow to the layer's size.
-  - **One item can be in two changes** (the fix after beta154). An item left over after the pairing
+  - **One item can be in two changes** (beta155). An item left over after the pairing
     changes into (or out of) one already paired, in this tick or within `kGraceNs` before (a
     `Paired` entry is offered again with `taken` set, while its item is still hidden or shown as it
     was), by the same two rules: linked, then the largest left over with the largest of the other

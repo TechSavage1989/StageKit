@@ -13,7 +13,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
-## Fix: a capture comes out of the DSLR again (item Morph, one item in two changes)
+## A capture comes out of the DSLR again (0.1.0-beta155)
 
 The owner, with their collection and four logs: "when I switch to window or game source from DSLR
 by hiding DSLR, it doesn't smoothly morph and transition into the new source like all the others
@@ -33,6 +33,9 @@ switch (03:47:43 and 03:47:44). Between two captures only one pair changes, so t
   old code (no picture of camera and capture half-way, one layer) and pass now.
 - Not seen on Windows. A workaround for the old build was to take "DSLR ↔ Square Camera" off the
   Morph (StageKit) links (then DSLR and the capture pair as main images, and Square Camera fades).
+- Released on its own as beta155 at the owner's word ("Publish now as beta155"), ahead of the
+  Scene filters pull request #171, which had planned to be beta155: that one becomes beta156 (its
+  notes file must be renamed) and the frame-time work after it beta157.
 
 
 ## Live, Chat Live and Standby; Switch to scene (0.1.0-beta154)
