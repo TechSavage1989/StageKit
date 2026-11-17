@@ -81,7 +81,7 @@ notice and the confirmation are what there is. This is recorded in the handoff.
 | `src/shape/` | Corners & Edges filter (rounds, cuts, notches or scoops corners; trims, softens and outlines edges; never changes the source's size) |
 | `src/view/` | Cropped View source (part of another source as a source, so filters follow the crop) |
 | `src/placement/` | Scene filters: Move Scene Item, Show/Hide Animation, Link Visibility, Match Item, Layout, Fit to Space (keeps one item fitted in a box, filling it or floating centred by shape); Move Source, Move Scene Item's code as a filter on the source it moves; and Show in Scenes (`show-in-scenes.*`), a filter on any source that is a switch for showing and hiding sources across scenes |
-| `src/dock/` | `window-layout.*` keeps OBS's window layout. One dock (Qt widgets, no `Q_OBJECT`): StageKit follows the item selected in OBS and drives Move Source filters on that item's source; its Background tab (`BackgroundDock`, a dock of its own up to beta151) holds the start image thumbnail. `arrange-tools.*` is the one set of line-up actions and options behind the dock, the hotkeys and the preview's right-click menu |
+| `src/dock/` | `window-layout.*` keeps OBS's window layout. One dock (Qt widgets, no `Q_OBJECT`): StageKit follows the item selected in OBS and drives Move Source filters on that item's source; its Standby & Ambient tab (`BackgroundDock`, `pageBackground`; a dock of its own up to beta151, called Background in beta152) holds the start image thumbnail. `arrange-tools.*` is the one set of line-up actions and options behind the dock, the hotkeys and the preview's right-click menu |
 | `src/common/` | Shared helpers: `timing` (registers every kind and logs what is slow), easing and `Tween`, `SwitchRamp`, `KawaseBlur`, scene utilities, `item-transition` (the *Change with* control for filters that show and hide items), and the start image (global path + Start Image source) |
 | `src/frame/` | Auto Frame filter and the Aspect Ratio Preset filter |
 | `src/capture/` | Auto Capture filter (aims a Game Capture at the game in front), Program Trigger filter (shows items and switches filters while a program is open) and Show Source in Use scene filter (shows the one of several captures whose app is in use). Capture App in Use (`app-capture.*`), a filter on one Window Capture that aims it at whichever of several listed apps is in use. All use the Win32 window list in `auto-capture.cpp`; compiled but idle elsewhere. Also Standby Picture (`standby.*`), a filter that shows a picture in a capture's place while it has nothing; it works everywhere |
@@ -184,7 +184,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   first table said 64:49 and cropped the picture. `kKnownPrograms` only seeds the held shape; what is
   seen on screen corrects it. Only a shape the owner saved, or an Aspect Ratio Preset, is obeyed blindly.
 - **The StageKit dock is five tabs** (`stagekitTabs`: Place, Arrange, Copy, Effects, and since
-  beta152 Background, which was the separate StageKit Background dock; the owner: "id like the
+  beta152 a fifth tab (*Standby & Ambient* since beta153, the owner's choice of name; *Background* in beta152), which was the separate StageKit Background dock; the owner: "id like the
   stagekit Background dock to be added to the primary stagekit dock as a new tab") under the
   *Scene* and *Item* rows, with the status line below them. It was one column 1,460 px tall; the
   owner called it "ugly and messy" and asked for it "organized, and made visually appealing".
@@ -524,14 +524,41 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   at most 0.2 px. A new test that changes visibility between frames should try both orders.
   **One holding scene** the same way (2026-11-17; the owner: "The start screen, Intermission,
   BRB, and Stream ending are all affectively the same design. Can this also be combine into a
-  single scene"): `Holding-Scene` holds Stream Start, Be Right Back and Stream Ending as modes,
-  each a title group plus extras; Link Visibility-Titles (only one) over the titles, one Link
-  Visibility *Together* per mode for its extras, a Show in Scenes-Mode (`follow`) on each title.
+  single scene"): `Holding-Scene` holds Stream Start, Be Right Back, Stream Ending and (since beta153)
+  Intermission as modes, each a title group plus extras; Link Visibility-Titles (only one) over
+  the titles, one Link Visibility *Follow the first source* per mode (first a *Together*, which a
+  camera switch showing one member would flip), a Show in Scenes-Mode (`follow`) on each title.
   One Link Visibility reacts to another's change because each passes over only what it does on
-  its own thread while acting (`applying_`). Intermission stays a scene: the camera switch acts
-  in every scene and would show the camera in every mode. Written by
-  `scripts/merge-holding-scenes.py`, driven headless with the plugin (all modes, two keys at
-  once, off screen, nothing hidden left in use); no plugin change was needed.
+  its own thread while acting (`applying_`). Written by `scripts/merge-holding-scenes.py`; the GBA
+  layout is a second column mode of Component-Capture-Scene, written by
+  `scripts/merge-columns.py`, switched by two transparent marker sources (*Column: Chat*,
+  *Column: GBA*) because every visible item of a column is worked by the camera or chat switch.
+  Both driven headless with the plugin (every mode and column, camera and chat off and on, two
+  keys at once, off screen, nothing hidden left in use).
+- **Link Visibility's *Follow the first source*** (mode 2, `LinkMode::Follow`; 2026-11-17, the
+  owner: "can the intermission screen be merged with the other hold scenes? also the GBA scene?").
+  The first entry of `items` leads: when its state changes (the tick compares it with the state
+  last followed, `acted_lead_`; the state found at the first look after start, enable or loading
+  is taken as it is) the others are shown with it, except one a Show in Scenes holds off
+  (`show_in_scenes_holds_off`: a switch covering that source in that scene whose state means
+  hidden, the same rule as `apply()`, bring-along items counted), or hidden with it. While the
+  leader is hidden, every tick, a listed item shown by anything else is hidden again. A change to
+  another item moves nothing; changes from *Also in other scenes* are not followed in this mode,
+  only the leader's state is sent there. Show in Scenes asks `link_visibility_holds_hidden` (every
+  enabled mode-2 link of that scene that lists the source after its first entry has its leader
+  hidden) and passes over such an item when showing, never when hiding, and leaves it out of
+  *Follow what is shown*; `link_visibility_settling` (a leader not yet followed) makes that look
+  wait, or a camera switch read off for the tick between a mode change and its extras. Both
+  filters keep a registry of live instances (`g_links`, `g_switches`) and copy what they need out
+  under it: no lock is held while the other filter is asked, which both do from their ticks.
+  This is what lets the camera switch (every scene) live with modes holding camera views. Tested
+  in `[modes in one scene: follow the first source, and a camera switch]`, both filter orders,
+  off screen too. **Any** Show in Scenes covering a source counts, even one with `follow` off and
+  a stale state: the owner's old *Show in Scenes (StageKit)* on DSLR Component lists DSLR, and if
+  it is ever off no mode shows the camera. A Standby stand-in is not shown for an item a mode holds
+  hidden (`stands_in` in `standby.cpp`): the owner's DSLR, in the Intermission mode, had its
+  standby image over every other mode in the first build. A link that changes mode looks afresh
+  (`acted_valid_`).
 - **Anything that changes over time lets the user choose how.** The owner: "Any filter or
   feature/effect that would do a transition or transform should have those ... be customizable, and
   not only offer fade. fade should be the default". A filter that shows and hides scene items offers

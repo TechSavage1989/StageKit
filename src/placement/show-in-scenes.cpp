@@ -24,11 +24,16 @@ the Free Software Foundation; either version 2 of the License, or
 // by what is shown in its scenes, so a key's light stays true when something
 // else (a Link Visibility, the eye) shows or hides its sources. Correcting
 // the switch never shows or hides anything.
+//
+// An item that a Link Visibility set to "Follow the first" holds hidden (it
+// belongs to a mode of its scene that is not showing) is passed over when
+// the switch shows things, and does not count for "Follow what is shown".
 
 #include "show-in-scenes.hpp"
 #include "../common/timing.hpp"
 
 #include "place-item.hpp"
+#include "visibility-link.hpp"
 
 #include "../common/item-transition.hpp"
 #include "../common/loading.hpp"
@@ -104,17 +109,113 @@ void each_item(const std::vector<std::string> &sources, const std::vector<std::s
 		&work);
 }
 
+// Adds to `sources` the items their Send To filters bring along, and those
+// Place Item filters that move them bring along.
+void add_linked(std::vector<std::string> &sources)
+{
+	const std::vector<std::string> leaders = sources;
+	auto add = [&sources](const char *name) {
+		if (name && *name && std::find(sources.begin(), sources.end(), name) == sources.end())
+			sources.push_back(name);
+	};
+	for (const std::string &leader : leaders) {
+		obs_source_t *found = obs_get_source_by_name(leader.c_str());
+		if (!found)
+			continue;
+		std::vector<std::string> linked;
+		obs_source_enum_filters(
+			found,
+			[](obs_source_t *, obs_source_t *filter, void *param) {
+				const char *id = obs_source_get_unversioned_id(filter);
+				if (!id || strcmp(id, kSendToId) != 0)
+					return;
+				obs_data_t *settings = obs_source_get_settings(filter);
+				static_cast<std::vector<std::string> *>(param)->push_back(
+					obs_data_get_string(settings, "linked"));
+				obs_data_release(settings);
+			},
+			&linked);
+		obs_source_release(found);
+		for (const std::string &name : linked)
+			add(name.c_str());
+	}
+	struct Scan {
+		const std::vector<std::string> *leaders;
+		std::vector<std::string> linked;
+	} scan{&leaders, {}};
+	obs_enum_scenes(
+		[](void *param, obs_source_t *scene) {
+			obs_source_enum_filters(
+				scene,
+				[](obs_source_t *, obs_source_t *filter, void *p) {
+					auto *sc = static_cast<Scan *>(p);
+					const char *id = obs_source_get_unversioned_id(filter);
+					if (!id || strcmp(id, kPlaceItemId) != 0)
+						return;
+					obs_data_t *settings = obs_source_get_settings(filter);
+					const char *moved = obs_data_get_string(settings, "item");
+					if (std::find(sc->leaders->begin(), sc->leaders->end(), moved) !=
+					    sc->leaders->end())
+						sc->linked.push_back(obs_data_get_string(settings, "linked"));
+					obs_data_release(settings);
+				},
+				param);
+			return true;
+		},
+		&scan);
+	for (const std::string &name : scan.linked)
+		add(name.c_str());
+}
+
+class ShowInScenes;
+
+// Every Show in Scenes there is, for show_in_scenes_holds_off. Only pointers
+// are kept, under this lock; a filter takes itself out in its destructor.
+std::mutex g_switches_mutex;
+std::vector<ShowInScenes *> g_switches;
+
+// What a switch covers and whether it now means hidden, copied out.
+struct SwitchLook {
+	std::vector<std::string> sources, scenes;
+	bool every = true, with_linked = false, hides = false;
+};
+
 class ShowInScenes {
 public:
 	ShowInScenes(obs_data_t *settings, obs_source_t *source) : source_(source)
 	{
 		update(settings);
 		signal_handler_connect(obs_source_get_signal_handler(source_), "enable", enabled_cb, this);
+		std::lock_guard lock(g_switches_mutex);
+		g_switches.push_back(this);
 	}
 
 	~ShowInScenes()
 	{
+		{
+			std::lock_guard lock(g_switches_mutex);
+			g_switches.erase(std::remove(g_switches.begin(), g_switches.end(), this), g_switches.end());
+		}
 		signal_handler_disconnect(obs_source_get_signal_handler(source_), "enable", enabled_cb, this);
+	}
+
+	// For show_in_scenes_holds_off: called with g_switches_mutex held. The
+	// state is the switch's own: on or off, and what "on" means.
+	SwitchLook look()
+	{
+		SwitchLook look;
+		obs_source_t *parent = obs_filter_get_parent(source_);
+		const char *own = parent ? obs_source_get_name(parent) : nullptr;
+		const bool enabled = obs_source_enabled(source_);
+		std::lock_guard lock(mutex_);
+		look.sources = sources_;
+		if (look.sources.empty() && own && *own)
+			look.sources.push_back(own);
+		look.scenes = scenes_;
+		look.every = where_ == Where::Every;
+		look.with_linked = with_linked_;
+		look.hides = enabled == on_hides_; // the same rule as apply()
+		return look;
 	}
 
 	void update(obs_data_t *settings)
@@ -177,13 +278,21 @@ public:
 		if (sources.empty() && parent && obs_source_get_name(parent))
 			sources.push_back(obs_source_get_name(parent));
 		int found = 0, shown = 0;
+		bool settling = false;
 		each_item(sources, scenes, where == Where::Every,
-			  [&](obs_sceneitem_t *item, const char *, obs_source_t *) {
+			  [&](obs_sceneitem_t *item, const char *, obs_source_t *scene) {
+				  // A mode on its way in or out is not read yet, and an item
+				  // a mode not showing holds hidden is one a press would
+				  // not show either.
+				  if (link_visibility_settling(scene, item))
+					  settling = true;
+				  if (link_visibility_holds_hidden(scene, item))
+					  return;
 				  found++;
 				  if (obs_sceneitem_visible(item))
 					  shown++;
 			  });
-		if (!found)
+		if (settling || !found)
 			return; // in none of its scenes: nothing to go by
 		const bool on = (shown == found) != on_hides;
 		if (obs_source_enabled(source_) == on)
@@ -221,65 +330,17 @@ public:
 			sources.push_back(obs_source_get_name(parent));
 		// "Bring-along items too": whatever the sources' Send To keys, and
 		// Place Item filters that move them, are set to bring along.
-		if (with_linked) {
-			const std::vector<std::string> leaders = sources;
-			auto add = [&sources](const char *name) {
-				if (name && *name && std::find(sources.begin(), sources.end(), name) == sources.end())
-					sources.push_back(name);
-			};
-			for (const std::string &leader : leaders) {
-				obs_source_t *found = obs_get_source_by_name(leader.c_str());
-				if (!found)
-					continue;
-				std::vector<std::string> linked;
-				obs_source_enum_filters(
-					found,
-					[](obs_source_t *, obs_source_t *filter, void *param) {
-						const char *id = obs_source_get_unversioned_id(filter);
-						if (!id || strcmp(id, kSendToId) != 0)
-							return;
-						obs_data_t *settings = obs_source_get_settings(filter);
-						static_cast<std::vector<std::string> *>(param)->push_back(
-							obs_data_get_string(settings, "linked"));
-						obs_data_release(settings);
-					},
-					&linked);
-				obs_source_release(found);
-				for (const std::string &name : linked)
-					add(name.c_str());
-			}
-			struct Scan {
-				const std::vector<std::string> *leaders;
-				std::vector<std::string> linked;
-			} scan{&leaders, {}};
-			obs_enum_scenes(
-				[](void *param, obs_source_t *scene) {
-					obs_source_enum_filters(
-						scene,
-						[](obs_source_t *, obs_source_t *filter, void *p) {
-							auto *sc = static_cast<Scan *>(p);
-							const char *id = obs_source_get_unversioned_id(filter);
-							if (!id || strcmp(id, kPlaceItemId) != 0)
-								return;
-							obs_data_t *settings = obs_source_get_settings(filter);
-							const char *moved = obs_data_get_string(settings, "item");
-							if (std::find(sc->leaders->begin(), sc->leaders->end(),
-								      moved) != sc->leaders->end())
-								sc->linked.push_back(
-									obs_data_get_string(settings, "linked"));
-							obs_data_release(settings);
-						},
-						param);
-					return true;
-				},
-				&scan);
-			for (const std::string &name : scan.linked)
-				add(name.c_str());
-		}
+		if (with_linked)
+			add_linked(sources);
 		int changed = 0;
 		each_item(sources, scenes, where == Where::Every,
 			  [&](obs_sceneitem_t *item, const char *name, obs_source_t *scene) {
 				  if (obs_sceneitem_visible(item) == show)
+					  return;
+				  // Not shown in a mode of its scene that is not showing
+				  // (Link Visibility's "Follow the first"); hiding is never
+				  // passed over.
+				  if (show && link_visibility_holds_hidden(scene, item))
 					  return;
 				  // A listed source's own change, or the usual one.
 				  const auto own = own_change.find(name);
@@ -428,6 +489,32 @@ obs_properties_t *get_properties(void *data)
 }
 
 } // namespace
+
+bool show_in_scenes_holds_off(obs_source_t *scene, obs_source_t *source)
+{
+	const char *name = source ? obs_source_get_name(source) : nullptr;
+	const char *scene_name = scene ? obs_source_get_name(scene) : nullptr;
+	if (!name || !*name || !scene_name)
+		return false;
+	std::vector<SwitchLook> looks;
+	{
+		std::lock_guard lock(g_switches_mutex);
+		for (ShowInScenes *sw : g_switches)
+			looks.push_back(sw->look());
+	}
+	// (Bring-along items are looked up with no lock held.)
+	for (SwitchLook &look : looks) {
+		if (!look.hides)
+			continue;
+		if (!look.every && std::find(look.scenes.begin(), look.scenes.end(), scene_name) == look.scenes.end())
+			continue;
+		if (look.with_linked)
+			add_linked(look.sources);
+		if (std::find(look.sources.begin(), look.sources.end(), name) != look.sources.end())
+			return true;
+	}
+	return false;
+}
 
 void register_show_in_scenes()
 {

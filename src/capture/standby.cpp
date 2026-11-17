@@ -29,6 +29,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/item-transition.hpp"
 #include "../common/loading.hpp"
 #include "../common/start-image.hpp"
+#include "../placement/visibility-link.hpp"
 #include "../frame/auto-frame.hpp"
 #include "../transition/morph-paint.hpp"
 #include "../transition/morph.hpp"
@@ -335,9 +336,9 @@ public:
 			obs_sceneitem_t *item = scene ? obs_scene_find_sceneitem_by_id(scene, pair.item) : nullptr;
 			obs_sceneitem_t *twin = scene ? obs_scene_find_sceneitem_by_id(scene, pair.twin) : nullptr;
 			if (item && twin) {
-				const bool shown = obs_sceneitem_visible(item);
-				if (obs_sceneitem_visible(twin) == shown)
-					obs_sceneitem_set_visible(twin, !shown);
+				const bool want = stands_in(scene_source, item);
+				if (obs_sceneitem_visible(twin) != want)
+					obs_sceneitem_set_visible(twin, want);
 			}
 			obs_source_release(scene_source);
 		}
@@ -709,7 +710,7 @@ public:
 				obs_sceneitem_set_locked(twin, true);
 				// (As it should be from the first moment, without a
 				// transition: it is not something that just appeared.)
-				obs_sceneitem_set_visible(twin, !shown);
+				obs_sceneitem_set_visible(twin, stands_in(obs_scene_get_source(real.scene), real.item));
 				place_like(twin, real.item);
 			}
 			// Where the item is, while that can be seen; a hidden item is
@@ -771,8 +772,9 @@ public:
 				if (!fits)
 					apply_item_change_as_owner(each, its, obs_scene_get_source(real.scene));
 			}
-			if (obs_sceneitem_visible(twin) == shown)
-				obs_sceneitem_set_visible(twin, !shown);
+			const bool want = stands_in(obs_scene_get_source(real.scene), real.item);
+			if (obs_sceneitem_visible(twin) != want)
+				obs_sceneitem_set_visible(twin, want);
 			pairs_.push_back({obs_source_get_weak_source(obs_scene_get_source(real.scene)),
 					  obs_sceneitem_get_id(real.item), obs_sceneitem_get_id(twin)});
 		}
@@ -1120,6 +1122,16 @@ private:
 	// holding them kept the source alive for good once its scenes were
 	// cleared, and OBS would not change scene collection or close cleanly
 	// ("Not all sources were cleared ... - DSLR", beta139 to beta147).
+	// Whether an item's stand-in shows: while the item is hidden, but not
+	// when it is hidden because a mode of its scene that is not showing
+	// holds it hidden (Link Visibility's Follow the first source). The
+	// owner's camera belongs to the Intermission mode of one holding scene;
+	// its standby image stood in its place in every other mode.
+	static bool stands_in(obs_source_t *scene, obs_sceneitem_t *item)
+	{
+		return !obs_sceneitem_visible(item) && !link_visibility_holds_hidden(scene, item);
+	}
+
 	struct Held {
 		obs_weak_source_t *scene;
 		int64_t item, twin;

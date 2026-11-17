@@ -10377,7 +10377,7 @@ int main(int argc, char **argv)
 				      "the dock no longer has a picture of the scene");
 			}
 
-			// The start image and background: the dock's Background tab, also
+			// The start image and background: the dock's Standby & Ambient tab, also
 			// made on its own here to look at it. A very long file name must not
 			// widen it, and it shows a small picture.
 			{
@@ -10394,7 +10394,7 @@ int main(int argc, char **argv)
 				calldata_free(&bd);
 				CHECK(background_dock && dock->findChild<QLabel *>("startThumb") != nullptr &&
 					      dock->findChild<QWidget *>("pageBackground") != nullptr,
-				      "the start image and background are the dock's Background tab (they had a dock of their own up to beta151)");
+				      "the start image and background are the dock's Standby & Ambient tab (they had a dock of their own up to beta151)");
 				if (!background_dock)
 					background_dock = new QWidget();
 				background_dock->resize(340, 320);
@@ -10532,9 +10532,10 @@ int main(int argc, char **argv)
 			{
 				auto *tabs = dock->findChild<QTabWidget *>("stagekitTabs");
 				CHECK(tabs && tabs->count() == 5 && tabs->widget(4)->objectName() == "pageBackground" &&
+					      tabs->tabText(4) == "Standby && Ambient" &&
 					      tabs->widget(4)->findChild<QLabel *>("startThumb") &&
 					      tabs->widget(4)->findChild<QPushButton *>("chooseStartImage"),
-				      "the dock has five tabs: Place, Arrange, Copy, Effects, and Background with the standby image and the moving background");
+				      "the dock has five tabs: Place, Arrange, Copy, Effects, and Standby & Ambient with the standby image and the moving background");
 				std::vector<QPixmap> pages;
 				int height = 0;
 				for (int i = 0; tabs && i < tabs->count(); i++) {
@@ -10575,6 +10576,331 @@ int main(int argc, char **argv)
 		obs_source_release(widget);
 		obs_source_release(badge);
 		obs_scene_release(scene);
+	}
+
+	{
+		// One scene with two modes, each a leader with its extras, and a
+		// camera switch that acts in every scene: Link Visibility's "Follow
+		// the first source" keeps a camera view of a mode that is not
+		// showing hidden, and the switch passes over it.
+		printf("\n[modes in one scene: follow the first source, and a camera switch]\n");
+		if (obs_source_get_display_name("fade_transition")) {
+			obs_source_t *before_out = obs_get_output_source(0);
+			auto set_list = [](obs_data_t *settings, const char *list, std::vector<std::string> names) {
+				obs_data_array_t *rows = obs_data_array_create();
+				for (const std::string &name : names) {
+					obs_data_t *row = obs_data_create();
+					obs_data_set_string(row, "value", name.c_str());
+					obs_data_array_push_back(rows, row);
+					obs_data_release(row);
+				}
+				obs_data_set_array(settings, list, rows);
+				obs_data_array_release(rows);
+			};
+			auto in_use = [](obs_source_t *source) {
+				return obs_source_active(source) || obs_source_showing(source);
+			};
+			// A camera with a stand-in (Standby's Show when source is hidden)
+			// in one mode: its standby image is not shown in the modes that
+			// do not show the camera, only when the camera is hidden in its
+			// own mode. (The owner's DSLR, in the Intermission mode of one
+			// holding scene: its standby image covered the other modes.)
+			{
+				obs_scene_t *ss = obs_scene_create("Stand-in Modes");
+				obs_source_t *ss_src = obs_scene_get_source(ss);
+				obs_data_t *cd = obs_data_create();
+				obs_data_set_int(cd, "color", 0xFF2040C0);
+				obs_data_set_int(cd, "width", 200);
+				obs_data_set_int(cd, "height", 120);
+				obs_source_t *x =
+					obs_source_create("color_source", "Stand-in Mode X", nullptr, nullptr);
+				obs_source_t *y =
+					obs_source_create("color_source", "Stand-in Mode Y", nullptr, nullptr);
+				obs_source_t *cam = obs_source_create("color_source", "Stand-in Mode Cam", cd, nullptr);
+				obs_data_release(cd);
+				obs_data_t *sd = obs_data_create();
+				obs_data_set_bool(sd, "when_hidden", true);
+				obs_data_set_string(sd, "transition", "none");
+				obs_source_t *standby =
+					obs_source_create("stagekit_standby", "Stand-in Mode Standby", sd, nullptr);
+				obs_data_release(sd);
+				obs_source_filter_add(cam, standby);
+				obs_sceneitem_t *ix = obs_scene_add(ss, x);
+				obs_sceneitem_t *iy = obs_scene_add(ss, y);
+				obs_sceneitem_t *icam = obs_scene_add(ss, cam);
+				obs_sceneitem_set_visible(iy, false);
+				auto link = [&](const char *name, int mode, std::vector<std::string> list) {
+					obs_data_t *ld = obs_data_create();
+					set_list(ld, "items", list);
+					obs_data_set_int(ld, "mode", mode);
+					obs_data_set_string(ld, "transition", "none");
+					obs_source_t *l =
+						obs_source_create("stagekit_visibility_link", name, ld, nullptr);
+					obs_data_release(ld);
+					obs_source_filter_add(ss_src, l);
+					return l;
+				};
+				obs_source_t *l0 = link("Stand-in Only One", 0, {"Stand-in Mode X", "Stand-in Mode Y"});
+				obs_source_t *l1 =
+					link("Stand-in Mode X Link", 2, {"Stand-in Mode X", "Stand-in Mode Cam"});
+				obs_source_t *l2 = link("Stand-in Mode Y Link", 2, {"Stand-in Mode Y"});
+				obs_set_output_source(0, ss_src);
+				auto twin_shown = [&] {
+					int found = -1;
+					obs_scene_enum_items(
+						ss,
+						[](obs_scene_t *, obs_sceneitem_t *it, void *p) {
+							if (strcmp(obs_source_get_unversioned_id(
+									   obs_sceneitem_get_source(it)),
+								   "stagekit_stand_in") == 0)
+								*static_cast<int *>(p) = obs_sceneitem_visible(it) ? 1
+														   : 0;
+							return true;
+						},
+						&found);
+					return found;
+				};
+				sleep_ms(900);
+				const int in_x = twin_shown();
+				obs_sceneitem_set_visible(iy, true);
+				sleep_ms(900);
+				const int in_y = twin_shown();
+				const bool cam_hidden_in_y = !obs_sceneitem_visible(icam);
+				obs_sceneitem_set_visible(ix, true);
+				sleep_ms(900);
+				const bool cam_back = obs_sceneitem_visible(icam);
+				obs_sceneitem_set_visible(icam, false);
+				sleep_ms(900);
+				const int cam_off_in_x = twin_shown();
+				CHECK(in_x == 0 && cam_hidden_in_y && in_y == 0 && cam_back && cam_off_in_x == 1,
+				      "a camera with a stand-in, in one mode: no standby image while another mode holds it hidden, and the standby image when it is hidden in its own mode (%d %d %d; %d %d)",
+				      in_x, in_y, cam_off_in_x, (int)cam_hidden_in_y, (int)cam_back);
+				obs_set_output_source(0, nullptr);
+				for (obs_source_t *l : {l0, l1, l2}) {
+					obs_source_filter_remove(ss_src, l);
+					obs_source_release(l);
+				}
+				obs_source_filter_remove(cam, standby);
+				obs_source_release(standby);
+				sleep_ms(300);
+				obs_scene_release(ss);
+				for (obs_source_t *s : {x, y, cam})
+					obs_source_release(s);
+			}
+
+			// Twice: the scene's links added in one order, then the other.
+			for (int order = 0; order < 2; order++) {
+				printf("  (%s)\n", order == 0 ? "the only-one link first" : "the modes' links first");
+				const std::string tag = order == 0 ? " 1" : " 2";
+				const std::string scene_name = "Modes Scene" + tag;
+				obs_scene_t *scene = obs_scene_create(scene_name.c_str());
+				obs_source_t *scene_src = obs_scene_get_source(scene);
+				obs_scene_t *elsewhere = obs_scene_create(("Modes Elsewhere" + tag).c_str());
+				enum { A, ACam, AText, B, BCam, Count };
+				const char *base[Count] = {"Mode A", "Mode A Cam", "Mode A Text", "Mode B",
+							   "Mode B Cam"};
+				std::string names[Count];
+				obs_source_t *src[Count];
+				obs_sceneitem_t *item[Count];
+				for (int i = 0; i < Count; i++) {
+					names[i] = base[i] + tag;
+					src[i] = obs_source_create("color_source", names[i].c_str(), nullptr, nullptr);
+					item[i] = obs_scene_add(scene, src[i]);
+				}
+				// The camera views are in another scene too, which is not on
+				// screen: the camera switch acts in every scene.
+				obs_sceneitem_t *cam_away = obs_scene_add(elsewhere, src[ACam]);
+				obs_sceneitem_set_visible(item[B], false);
+				obs_sceneitem_set_visible(item[BCam], false);
+				obs_set_output_source(0, scene_src);
+				auto shown = [&] {
+					std::string s;
+					for (int i = 0; i < Count; i++)
+						s += obs_sceneitem_visible(item[i]) ? "1" : "0";
+					return s;
+				};
+
+				auto make_link = [&](const char *name, int mode, std::vector<std::string> list) {
+					obs_data_t *ld = obs_data_create();
+					set_list(ld, "items", list);
+					obs_data_set_int(ld, "mode", mode);
+					obs_data_set_string(ld, "transition", "none");
+					obs_source_t *link = obs_source_create("stagekit_visibility_link",
+									       (name + tag).c_str(), ld, nullptr);
+					obs_data_release(ld);
+					return link;
+				};
+				obs_source_t *only = make_link("Modes Only One", 0, {names[A], names[B]});
+				obs_source_t *link_a =
+					make_link("Mode A Link", 2, {names[A], names[ACam], names[AText]});
+				obs_source_t *link_b = make_link("Mode B Link", 2, {names[B], names[BCam]});
+				if (order == 0) {
+					obs_source_filter_add(scene_src, only);
+					obs_source_filter_add(scene_src, link_a);
+					obs_source_filter_add(scene_src, link_b);
+				} else {
+					obs_source_filter_add(scene_src, link_b);
+					obs_source_filter_add(scene_src, link_a);
+					obs_source_filter_add(scene_src, only);
+				}
+				if (order == 0) {
+					obs_properties_t *lp = obs_source_properties(link_a);
+					obs_property_t *mode = obs_properties_get(lp, "mode");
+					bool listed = false;
+					for (size_t i = 0; mode && i < obs_property_list_item_count(mode); i++)
+						if (obs_property_list_item_int(mode, i) == 2)
+							listed = strlen(obs_property_list_item_name(mode, i)) <= 26;
+					CHECK(listed && obs_property_long_description(mode),
+					      "Link Visibility offers 'Follow the first source' (mode 2), short, with a tooltip");
+					obs_properties_destroy(lp);
+				}
+
+				// The camera switch: on one camera view, listing both, in
+				// every scene, following what is shown.
+				obs_data_t *cd = obs_data_create();
+				set_list(cd, "sources", {names[ACam], names[BCam]});
+				obs_data_set_string(cd, "transition", "none");
+				obs_data_set_bool(cd, "follow", true);
+				obs_source_t *cam_sw = obs_source_create("stagekit_show_in_scenes",
+									 ("Modes Camera" + tag).c_str(), cd, nullptr);
+				obs_data_release(cd);
+				obs_source_filter_add(src[ACam], cam_sw);
+				// A switch per mode, on its leader, in this scene only.
+				obs_source_t *mode_sw[2];
+				for (int m = 0; m < 2; m++) {
+					obs_data_t *md = obs_data_create();
+					set_list(md, "scenes", {scene_name});
+					obs_data_set_int(md, "where", 1);
+					obs_data_set_string(md, "transition", "none");
+					obs_data_set_bool(md, "follow", true);
+					mode_sw[m] = obs_source_create(
+						"stagekit_show_in_scenes",
+						((m ? "Modes Switch B" : "Modes Switch A") + tag).c_str(), md, nullptr);
+					obs_data_release(md);
+					obs_source_filter_add(src[m ? B : A], mode_sw[m]);
+				}
+				obs_source_set_enabled(mode_sw[1], false);
+				sleep_ms(700);
+				CHECK(shown() == "11100" && obs_source_enabled(cam_sw) &&
+					      obs_source_enabled(mode_sw[0]) && !obs_source_enabled(mode_sw[1]),
+				      "mode A showing: its camera view and text shown, mode B and its camera view hidden, and the camera switch reads on (%s %d)",
+				      shown().c_str(), obs_source_enabled(cam_sw));
+
+				obs_source_set_enabled(cam_sw, false);
+				sleep_ms(600);
+				CHECK(shown() == "10100" && !obs_source_enabled(cam_sw) &&
+					      obs_source_enabled(mode_sw[0]) && !obs_sceneitem_visible(cam_away),
+				      "the camera switched off: mode A's camera view is hidden here and elsewhere, and the mode stays A (%s)",
+				      shown().c_str());
+
+				obs_source_set_enabled(mode_sw[1], true);
+				sleep_ms(600);
+				CHECK(shown() == "00010" && !obs_source_enabled(mode_sw[0]) &&
+					      obs_source_enabled(mode_sw[1]) && !obs_source_enabled(cam_sw),
+				      "mode B: its leader shown, its camera view left hidden as the camera is off, mode A's sources all hidden (%s)",
+				      shown().c_str());
+
+				// The camera switched on in mode B, read all the while.
+				obs_source_set_enabled(cam_sw, true);
+				sleep_ms(150);
+				bool stayed_on = true;
+				for (int i = 0; i < 12; i++) {
+					stayed_on = stayed_on && obs_source_enabled(cam_sw);
+					sleep_ms(50);
+				}
+				CHECK(shown() == "00011" && stayed_on && obs_sceneitem_visible(cam_away),
+				      "the camera switched on: mode B's camera view shown, mode A's left hidden here (the other scene has no mode), and the switch reads on throughout (%s %d)",
+				      shown().c_str(), stayed_on);
+
+				// Something else shows a member of the mode not showing.
+				obs_sceneitem_set_visible(item[ACam], true);
+				sleep_ms(120);
+				CHECK(shown() == "00011",
+				      "mode A's camera view shown with its eye while B is the mode: hidden again at once (%s)",
+				      shown().c_str());
+				obs_sceneitem_set_visible(item[AText], true);
+				sleep_ms(120);
+				CHECK(shown() == "00011" && obs_source_enabled(cam_sw),
+				      "and so is its text, and the camera switch still reads on (%s)", shown().c_str());
+
+				// A member hidden in the mode showing moves nothing else.
+				obs_sceneitem_set_visible(item[BCam], false);
+				sleep_ms(600);
+				CHECK(shown() == "00010" && obs_source_enabled(mode_sw[1]) &&
+					      !obs_source_enabled(cam_sw),
+				      "mode B's camera view hidden with its eye: the mode stays B, and the camera switch reads off (%s)",
+				      shown().c_str());
+				obs_sceneitem_set_visible(item[BCam], true);
+				sleep_ms(600);
+				CHECK(shown() == "00011" && obs_source_enabled(cam_sw),
+				      "shown again: the switch reads on (%s)", shown().c_str());
+
+				// Back to mode A with the camera on: the switch never reads off.
+				obs_source_set_enabled(mode_sw[0], true);
+				stayed_on = true;
+				for (int i = 0; i < 20; i++) {
+					stayed_on = stayed_on && obs_source_enabled(cam_sw);
+					sleep_ms(50);
+				}
+				CHECK(shown() == "11100" && stayed_on && obs_source_enabled(mode_sw[0]) &&
+					      !obs_source_enabled(mode_sw[1]),
+				      "back to mode A with the camera on: A's camera view and text shown, B's hidden, the camera switch on throughout (%s %d)",
+				      shown().c_str(), stayed_on);
+
+				// The scene out of view: changes there are cuts, and nothing
+				// hidden there is in use when it comes on.
+				for (obs_source_t *link : {only, link_a, link_b}) {
+					obs_data_t *now = obs_source_get_settings(link);
+					obs_data_set_string(now, "transition", "fade_transition");
+					obs_data_set_int(now, "transition_ms", 600);
+					obs_source_update(link, now);
+					obs_data_release(now);
+				}
+				for (obs_source_t *sw : mode_sw) {
+					obs_data_t *now = obs_source_get_settings(sw);
+					obs_data_set_string(now, "transition", "fade_transition");
+					obs_data_set_int(now, "transition_ms", 600);
+					obs_source_update(sw, now);
+					obs_data_release(now);
+				}
+				obs_set_output_source(0, obs_scene_get_source(elsewhere));
+				sleep_ms(150);
+				obs_source_set_enabled(mode_sw[1], true);
+				sleep_ms(400);
+				const std::string away = shown();
+				obs_set_output_source(0, scene_src);
+				const bool at_once = in_use(src[A]) || in_use(src[AText]);
+				sleep_ms(300);
+				CHECK(away == "00011" && !at_once && !in_use(src[A]) && !in_use(src[AText]) &&
+					      in_use(src[B]) && in_use(src[BCam]),
+				      "mode B chosen while the scene is out of view: changed there, and mode A's sources are not in use when it comes on (%s %d)",
+				      away.c_str(), at_once);
+				// And in view, the leader's fade is used by the link for its extras.
+				obs_source_set_enabled(mode_sw[0], true);
+				sleep_ms(250);
+				CHECK(shown() == "11100" && in_use(src[BCam]),
+				      "in view, mode B's camera view fades out (still in use part-way) (%s)",
+				      shown().c_str());
+				sleep_ms(700);
+
+				obs_set_output_source(0, before_out);
+				for (int m = 0; m < 2; m++) {
+					obs_source_filter_remove(src[m ? B : A], mode_sw[m]);
+					obs_source_release(mode_sw[m]);
+				}
+				obs_source_filter_remove(src[ACam], cam_sw);
+				obs_source_release(cam_sw);
+				for (obs_source_t *link : {only, link_a, link_b}) {
+					obs_source_filter_remove(scene_src, link);
+					obs_source_release(link);
+				}
+				for (obs_source_t *source : src)
+					obs_source_release(source);
+				obs_scene_release(elsewhere);
+				obs_scene_release(scene);
+			}
+			obs_source_release(before_out);
+		}
 	}
 
 	{
