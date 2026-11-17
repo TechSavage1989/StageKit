@@ -1741,7 +1741,8 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   - **Stream Deck key** *Scene Blur* (`.sceneblur`, `src/actions/scene-blur.ts`,
     `src/scene-blurs.ts`): features.json's new `scenes` list (make-plugin-files.py writes its
     page from it: *Blur filter* `getSceneBlurs`, *Scene* `getSceneBlurScenes` refreshed when the
-    filter changes, *On press*), *Blur style* type list (`LOOK_KEYS`), `sceneBlurPicture`,
+    filter changes, *On press*), *Blur style* and *Scene type* lists as Blur All (`LOOK_KEYS`,
+    `sceneKeys`; `sceneBlurShown`: the scene type with the blur style's badge, else `sceneBlurPicture`),
     `sceneBlurTitle`, `showOnOff`, `remembered` with the filter's look as `type`. Plugin 0.21.0.0
     (beta161). The OBS side reports `style` (`blur_style_name`), an entry of key-types.json's
     Blur style list (fourteen: the blurs, `trail`, the mosaic shapes, `glass` for any mosaic with

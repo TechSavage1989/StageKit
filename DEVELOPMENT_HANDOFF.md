@@ -39,7 +39,8 @@ blur for a specific scene, or all scenes with the blur filter of the same name."
   `stagekit.sceneblur.toggle|on|off.<filter name>` on the scene.
 - **Stream Deck key** *Scene Blur* (`com.techsavage1989.stagekit.sceneblur`, new; no existing UUID changed):
   *Blur filter*, *Scene* (*All scenes with this filter* first), *On press*, *Blur style* (the Blur key's
-  fourteen), *Palette*. Through features.json's new `scenes` list and make-plugin-files.py; VERSION
+  fourteen) and *Scene type* with the style as a corner badge (`sceneBlurShown`, as Blur All's
+  `blurAllShown`), *Palette*. Through features.json's new `scenes` list and make-plugin-files.py; VERSION
   0.21.0.0; action icon drawn (`make-action-icons.py`, SVG written).
 - Tests: `[scene blur]` in `tests/ambient-test.cpp` (33 checks), contact sheet `docs/images/scene-blur.png`
   (`tests/run-tests.sh` makes it), a stand-in-server test in `streamdeck/tests/obs.test.ts` and the Blur
