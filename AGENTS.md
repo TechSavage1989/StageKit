@@ -530,6 +530,25 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   in every scene and would show the camera in every mode. Written by
   `scripts/merge-holding-scenes.py`, driven headless with the plugin (all modes, two keys at
   once, off screen, nothing hidden left in use); no plugin change was needed.
+- **Link Visibility's *Follow the first source*** (mode 2, `LinkMode::Follow`; 2026-11-17, the
+  owner: "can the intermission screen be merged with the other hold scenes? also the GBA scene?").
+  The first entry of `items` leads: when its state changes (the tick compares it with the state
+  last followed, `acted_lead_`; the state found at the first look after start, enable or loading
+  is taken as it is) the others are shown with it, except one a Show in Scenes holds off
+  (`show_in_scenes_holds_off`: a switch covering that source in that scene whose state means
+  hidden, the same rule as `apply()`, bring-along items counted), or hidden with it. While the
+  leader is hidden, every tick, a listed item shown by anything else is hidden again. A change to
+  another item moves nothing; changes from *Also in other scenes* are not followed in this mode,
+  only the leader's state is sent there. Show in Scenes asks `link_visibility_holds_hidden` (every
+  enabled mode-2 link of that scene that lists the source after its first entry has its leader
+  hidden) and passes over such an item when showing, never when hiding, and leaves it out of
+  *Follow what is shown*; `link_visibility_settling` (a leader not yet followed) makes that look
+  wait, or a camera switch read off for the tick between a mode change and its extras. Both
+  filters keep a registry of live instances (`g_links`, `g_switches`) and copy what they need out
+  under it: no lock is held while the other filter is asked, which both do from their ticks.
+  This is what lets the camera switch (every scene) live with modes holding camera views. Tested
+  in `[modes in one scene: follow the first source, and a camera switch]`, both filter orders,
+  off screen too.
 - **Anything that changes over time lets the user choose how.** The owner: "Any filter or
   feature/effect that would do a transition or transform should have those ... be customizable, and
   not only offer fade. fade should be the default". A filter that shows and hides scene items offers

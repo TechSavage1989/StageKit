@@ -52,8 +52,8 @@ from hotkeys, or from the Stream Deck OBS Studio plugin's *Filter* and *Source* 
   the camera to a corner or to a spot you saved, in every scene the camera is in.
 - **Move Scene Item** (scene filter): the same move, set up on a scene instead of on the source.
 - **Show/Hide Animation** (scene filter): slides or pops an item in and out when it is shown or hidden.
-- **Link Visibility** (scene filter): ties eye icons together. Show only one of a set of items, or show
-  and hide a set together.
+- **Link Visibility** (scene filter): ties eye icons together. Show only one of a set of items, show
+  and hide a set together, or have a set follow its first item.
 - **Match Item** (scene filter): keeps an item lined up with an item in another scene, so titles sit in
   the same place in every scene.
 - **Apply Layout** (scene filter): saves an arrangement of a scene's items and glides back to it.
@@ -886,11 +886,23 @@ life for a moment when that scene comes on). The transitions stay set for the ne
 
 Add **Link Visibility (StageKit)** as a filter on a *scene*, once per set of items.
 
-1. Choose *Show only one at a time* or *Show and hide together*.
+1. Choose *Show only one at a time*, *Show and hide together* or *Follow the first source*.
 2. Pick each item from the list and press *Add it to the list*.
 
 With *Show only one at a time*, showing one item hides the others in the set. With *Show and hide
-together*, showing or hiding one does the same to the rest. It follows whatever shows or hides an item:
+together*, showing or hiding one does the same to the rest. With *Follow the first source*, the first
+item in the list leads: when it is shown the others are shown with it, and when it is hidden they are
+hidden. Showing or hiding any of the others moves nothing else, so a camera switched off in that set
+stays off. Two rules make it suit several modes in one scene:
+
+- While the first item is hidden, the others stay hidden: one shown by anything else (the eye icon,
+  a key) is hidden again at once, and a [Show in Scenes](#show-in-scenes) switch that shows sources
+  in every scene passes over them.
+- When the first item is shown, an item that a Show in Scenes switch has off (its switch is off, or
+  on, set so that on means hidden) is left hidden. So a camera switch acting in every scene shows the
+  camera only in the mode showing, and switching modes with the camera off leaves it off.
+
+It follows whatever shows or hides an item:
 the eye icon, a Stream Deck *Source* key, a hotkey. Switch the filter off to pause it. *Transition*
 and *Duration* choose how the items it shows and hides appear and disappear: a fade to begin with, any
 other transition OBS has, a cut, or whatever is set on each item.
@@ -942,16 +954,21 @@ title and a few extras. They can be one scene with one mode showing:
 1. Put every mode's title and extras in the scene with the shared items, each where it was. Make
    each title a group, so a mode is one title plus the items that come with it.
 2. Add a **Link Visibility** to the scene with *Show only one at a time* and the titles listed.
-3. Add one more **Link Visibility** per mode, set to *Together*, listing that mode's title and its
-   extras. Showing a title then shows its extras, and hiding it hides them.
+3. Add one more **Link Visibility** per mode, set to *Follow the first source*, listing that mode's
+   title first and then its extras. Showing a title then shows its extras, and hiding it hides them
+   and keeps them hidden.
 4. On each title add a **Show in Scenes** named alike on every title (say *Show in Scenes-Mode*):
    *The scenes listed below* with the holding scene only, a fade, and *Follow what is shown*
    ticked.
 
 A Stream Deck *Show in Scenes* key per mode, set to *Switch on* (not *Toggle*, which would leave no
 title), then chooses the mode: the other title and its extras fade out, and only the key of the
-mode showing is lit. A scene that shows the camera full size is better left a scene of its own: a
-camera switch that acts in every scene would show the camera in every mode.
+mode showing is lit.
+
+A mode can hold a camera view too (the full-size camera of an intermission, or the camera beside a
+handheld game). A camera switch that acts in every scene then shows that view only while its mode
+is showing: the other modes' views stay hidden, the switch still reads on, and switching modes with
+the camera off leaves it off.
 
 ### Match Item
 
@@ -1229,9 +1246,12 @@ tests/run-tests.sh
 ```
 
 `scripts/merge-capture-scenes.py` turns a collection with a scene per capture into one with two
-layout scenes added beside the old ones, and `scripts/merge-holding-scenes.py` adds one holding
-scene beside Stream Start, Be Right Back and Stream Ending, each for a side-by-side trial (see the
-scripts' headers). Each reads one file and writes another, with a report.
+layout scenes added beside the old ones, `scripts/merge-holding-scenes.py` adds one holding
+scene beside Stream Start, Be Right Back, Intermission and Stream Ending (and brings a holding
+scene it made before up to date), and `scripts/merge-columns.py` gives the Component layout scene
+a second column (the GBA windows of Dolphin-GBA-Scene) beside the chat column, each for a
+side-by-side trial (see the scripts' headers). Each reads one file and writes another, with a
+report.
 
 Windows and macOS builds come from GitHub Actions, based on the official
 [obs-plugintemplate](https://github.com/obsproject/obs-plugintemplate).
