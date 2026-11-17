@@ -45,6 +45,13 @@ blur filter doesn't seem to go all the way to the edges".
   in *Each source by itself* (the redraw does not follow a crop to bounds, scale filters or
   blending modes, as Scene Blur's redraw before it).
 
+**Seen once:** the first full run on `main` after beta164 failed `a scene left with a cut part-way
+through a change: back on it, the capture whose change was cut off is not in use` (the capture still
+in use 1.5 s after Link Visibility logged ending its transition, an item Morph between the same
+captures under way), while another helper's image build loaded the machine. The next full run
+passed. Nothing in this branch touches that path; if it comes back, look at the item Morph's layer
+holding the source while Link Visibility ends the stale transition.
+
 ## Any image on any key (0.1.0-beta164)
 
 The owner, with a screenshot of their holding-screen keys: "I need all my original Scene type icons
