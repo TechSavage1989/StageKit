@@ -551,7 +551,7 @@ static void capture_pop_in_test(uint32_t w, uint32_t h, const std::string &out)
 		// The switch: the capture's key; the links hide the camera and show
 		// the square view.
 		obs_source_set_enabled(game_switch, true);
-		const std::vector<Sample> samples = watch(2000);
+		const std::vector<Sample> samples = watch(3000);
 		print(samples);
 		return samples;
 	};
