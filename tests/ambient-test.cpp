@@ -7296,6 +7296,865 @@ int main(int argc, char **argv)
 	}
 
 	// ==== scene-filters:modes ====
+	// ---- modes
+	{
+		// Scene Modes: one filter on a scene, modes made by hand or from a
+		// template, one on at a time. Its presses go through the vendor
+		// requests (as a Stream Deck key's do) and are acted on in a tick.
+		printf("\n[scene modes: one mode at a time]\n");
+		obs_source_t *modes_before_out = obs_get_output_source(0);
+		auto modes_colour = [](const char *name, int cw = 0, int ch = 0, long long abgr = 0) {
+			obs_data_t *d = obs_data_create();
+			if (cw) {
+				obs_data_set_int(d, "width", cw);
+				obs_data_set_int(d, "height", ch);
+			}
+			if (abgr)
+				obs_data_set_int(d, "color", abgr);
+			obs_source_t *src = obs_source_create("color_source", name, d, nullptr);
+			obs_data_release(d);
+			return src;
+		};
+		auto modes_list = [](obs_data_t *settings, const std::string &list,
+				     const std::vector<std::string> &names) {
+			obs_data_array_t *rows = obs_data_array_create();
+			for (const std::string &name : names) {
+				obs_data_t *row = obs_data_create();
+				obs_data_set_string(row, "value", name.c_str());
+				obs_data_array_push_back(rows, row);
+				obs_data_release(row);
+			}
+			obs_data_set_array(settings, list.c_str(), rows);
+			obs_data_array_release(rows);
+		};
+		struct ModesMode {
+			std::string id, name;
+			std::vector<std::string> sources;
+			std::string go_to;
+		};
+		// The settings of a Scene Modes, as the collection script writes them.
+		auto modes_settings = [&](const std::vector<ModesMode> &modes, const char *now) {
+			obs_data_t *d = obs_data_create();
+			std::vector<std::string> ids;
+			for (const ModesMode &m : modes) {
+				ids.push_back(m.id);
+				obs_data_set_string(d, ("mode|" + m.id + "|name").c_str(), m.name.c_str());
+				modes_list(d, "mode|" + m.id + "|sources", m.sources);
+				obs_data_set_string(d, ("mode|" + m.id + "|go_to").c_str(), m.go_to.c_str());
+			}
+			modes_list(d, "modes", ids);
+			obs_data_set_string(d, "mode_now", now);
+			obs_data_set_string(d, "transition", "none");
+			return d;
+		};
+		auto modes_filter = [&](obs_scene_t *scene, const char *name, const std::vector<ModesMode> &modes,
+					const char *now) {
+			obs_data_t *d = modes_settings(modes, now);
+			obs_source_t *f = obs_source_create("stagekit_scene_modes", name, d, nullptr);
+			obs_data_release(d);
+			obs_source_filter_add(obs_scene_get_source(scene), f);
+			return f;
+		};
+		auto modes_unfilter = [](obs_scene_t *scene, obs_source_t *f) {
+			obs_source_filter_remove(obs_scene_get_source(scene), f);
+			obs_source_release(f);
+		};
+		// A vendor request, with its data and its answer as JSON.
+		auto modes_call = [](const char *request, obs_data_t *data) {
+			calldata_t cd = {};
+			calldata_set_string(&cd, "request", request);
+			calldata_set_string(&cd, "data", obs_data_get_json(data));
+			proc_handler_call(obs_get_proc_handler(), "stagekit_vendor_call", &cd);
+			const char *json = calldata_string(&cd, "response");
+			obs_data_t *answer = obs_data_create_from_json(json && *json ? json : "{}");
+			calldata_free(&cd);
+			return answer;
+		};
+		std::string modes_why;
+		auto modes_press = [&](const char *scene, const char *mode, const char *how = "on",
+				       const char *filter = "") {
+			obs_data_t *req = obs_data_create();
+			obs_data_set_string(req, "scene", scene);
+			obs_data_set_string(req, "filter", filter);
+			obs_data_set_string(req, "mode", mode);
+			obs_data_set_string(req, "how", how);
+			obs_data_t *answer = modes_call("SetSceneMode", req);
+			const bool ok = obs_data_get_bool(answer, "success");
+			modes_why = obs_data_get_string(answer, "error");
+			obs_data_release(answer);
+			obs_data_release(req);
+			sleep_ms(150);
+			return ok;
+		};
+		auto modes_events = [] {
+			calldata_t cd = {};
+			proc_handler_call(obs_get_proc_handler(), "stagekit_vendor_events", &cd);
+			const char *events = calldata_string(&cd, "events");
+			std::string out_events = events ? events : "";
+			calldata_free(&cd);
+			return out_events;
+		};
+		auto modes_now = [](obs_source_t *f) {
+			obs_data_t *s = obs_source_get_settings(f);
+			std::string now = obs_data_get_string(s, "mode_now");
+			obs_data_release(s);
+			return now;
+		};
+		auto modes_shown = [](const std::vector<obs_sceneitem_t *> &items) {
+			std::string s;
+			for (obs_sceneitem_t *item : items)
+				s += obs_sceneitem_visible(item) ? "1" : "0";
+			return s;
+		};
+		auto modes_set = [](obs_source_t *f, const std::function<void(obs_data_t *)> &change) {
+			obs_data_t *s = obs_source_get_settings(f);
+			change(s);
+			obs_source_update(f, s);
+			obs_data_release(s);
+			sleep_ms(150);
+		};
+		auto modes_count_items = [](obs_scene_t *scene, const char *id) {
+			struct Count {
+				const char *id;
+				int n = 0;
+			} count{id};
+			obs_scene_enum_items(
+				scene,
+				[](obs_scene_t *, obs_sceneitem_t *it, void *p) {
+					auto *c = static_cast<Count *>(p);
+					if (strcmp(obs_source_get_unversioned_id(obs_sceneitem_get_source(it)),
+						   c->id) == 0)
+						c->n++;
+					return true;
+				},
+				&count);
+			return count.n;
+		};
+
+		// --- One scene: A, B in the first mode, C in the second, X in both, D in none.
+		obs_scene_t *one = obs_scene_create("SM One");
+		const char *one_names[5] = {"SM A", "SM B", "SM C", "SM D", "SM X"};
+		obs_source_t *one_src[5];
+		obs_sceneitem_t *one_item[5];
+		for (int i = 0; i < 5; i++) {
+			one_src[i] = modes_colour(one_names[i]);
+			one_item[i] = obs_scene_add(one, one_src[i]);
+		}
+		obs_sceneitem_set_visible(one_item[2], false);
+		const std::vector<obs_sceneitem_t *> abcdx(one_item, one_item + 5);
+		obs_source_t *one_filter = modes_filter(
+			one, "SM Modes",
+			{{"m1", "First", {"SM A", "SM B", "SM X"}, ""}, {"m2", "Second", {"SM C", "SM X"}, ""}}, "m1");
+		sleep_ms(200);
+		modes_events(); // from here on, what is emitted is noted
+		CHECK(modes_shown(abcdx) == "11011",
+		      "as loaded, the scene shows the saved mode and nothing is changed (%s)",
+		      modes_shown(abcdx).c_str());
+		const bool pressed = modes_press("SM One", "m2");
+		const std::string events = modes_events();
+		CHECK(pressed && modes_shown(abcdx) == "00111" && modes_now(one_filter) == "m2",
+		      "a press turns the second mode on: the first mode's sources hide, its own show, a source in both and one in no mode are left alone, and the mode on is saved (%s, %s)",
+		      modes_shown(abcdx).c_str(), modes_now(one_filter).c_str());
+		CHECK(events.find("SceneModeChanged") != std::string::npos &&
+			      events.find("\"mode\":\"m2\"") != std::string::npos &&
+			      events.find("\"modeName\":\"Second\"") != std::string::npos,
+		      "and it says so: a SceneModeChanged event with the mode's id and name (%s)", events.c_str());
+
+		printf("\n[scene modes: a source in two modes is not touched]\n");
+		static int modes_x_signals = 0;
+		static obs_sceneitem_t *modes_x_item = nullptr;
+		modes_x_item = one_item[4];
+		modes_x_signals = 0;
+		const auto modes_count_x = [](void *, calldata_t *cd) {
+			if (calldata_ptr(cd, "item") == modes_x_item)
+				modes_x_signals++;
+		};
+		signal_handler_connect(obs_source_get_signal_handler(obs_scene_get_source(one)), "item_visible",
+				       modes_count_x, nullptr);
+		modes_press("SM One", "m1");
+		modes_press("SM One", "m2");
+		signal_handler_disconnect(obs_source_get_signal_handler(obs_scene_get_source(one)), "item_visible",
+					  modes_count_x, nullptr);
+		CHECK(modes_x_signals == 0 && obs_sceneitem_visible(one_item[4]) && modes_shown(abcdx) == "00111",
+		      "changing between two modes that both have a source never shows or hides it (%d signals)",
+		      modes_x_signals);
+
+		printf("\n[scene modes: shown by something else]\n");
+		obs_sceneitem_set_visible(one_item[0], true);
+		sleep_ms(200);
+		CHECK(!obs_sceneitem_visible(one_item[0]),
+		      "a source of a mode that is not on, shown with the eye, is hidden again");
+		obs_sceneitem_set_visible(one_item[2], false);
+		sleep_ms(300);
+		CHECK(!obs_sceneitem_visible(one_item[2]),
+		      "a source of the mode on, hidden with the eye, stays hidden (a camera switched off stays off)");
+		obs_sceneitem_set_visible(one_item[2], true);
+		sleep_ms(200);
+		CHECK(obs_sceneitem_visible(one_item[2]), "and shown again it stays shown");
+
+		printf("\n[scene modes: no mode]\n");
+		CHECK(!modes_press("SM One", "", "none"), "no mode is refused while it is not allowed (%s)",
+		      modes_why.c_str());
+		modes_press("SM One", "m2", "toggle");
+		CHECK(modes_shown(abcdx) == "11011" && modes_now(one_filter) == "m1",
+		      "Toggle on the mode on goes back to the mode before when no mode is not allowed (%s)",
+		      modes_shown(abcdx).c_str());
+		modes_set(one_filter, [](obs_data_t *s) { obs_data_set_bool(s, "allow_none", true); });
+		modes_press("SM One", "m1", "toggle");
+		CHECK(modes_shown(abcdx) == "00010" && modes_now(one_filter).empty(),
+		      "with 'Allow no mode', Toggle on the mode on hides every mode's sources and leaves the rest (%s)",
+		      modes_shown(abcdx).c_str());
+		modes_press("SM One", "m2", "toggle");
+		CHECK(modes_shown(abcdx) == "00111" && modes_now(one_filter) == "m2",
+		      "and Toggle on another mode turns that one on (%s)", modes_shown(abcdx).c_str());
+
+		printf("\n[scene modes: the vendor requests]\n");
+		{
+			obs_data_t *req = obs_data_create();
+			obs_data_set_string(req, "scene", "SM One");
+			obs_data_t *list = modes_call("ListSceneModes", req);
+			obs_data_array_t *filters = obs_data_get_array(list, "filters");
+			obs_data_t *first = obs_data_array_count(filters) == 1 ? obs_data_array_item(filters, 0)
+									       : nullptr;
+			obs_data_array_t *modes = first ? obs_data_get_array(first, "modes") : nullptr;
+			obs_data_t *m0 = obs_data_array_count(modes) == 2 ? obs_data_array_item(modes, 0) : nullptr;
+			CHECK(first && m0 && strcmp(obs_data_get_string(first, "filter"), "SM Modes") == 0 &&
+				      strcmp(obs_data_get_string(first, "current"), "m2") == 0 &&
+				      strcmp(obs_data_get_string(first, "currentName"), "Second") == 0 &&
+				      strcmp(obs_data_get_string(m0, "id"), "m1") == 0 &&
+				      strcmp(obs_data_get_string(m0, "name"), "First") == 0 &&
+				      obs_data_get_bool(first, "allowNone"),
+			      "ListSceneModes gives the scene's filter, its modes by id and name, and the mode on");
+			obs_data_release(m0);
+			obs_data_array_release(modes);
+			obs_data_release(first);
+			obs_data_array_release(filters);
+			obs_data_release(list);
+			obs_data_t *got = modes_call("GetSceneMode", req);
+			CHECK(obs_data_get_bool(got, "success") &&
+				      strcmp(obs_data_get_string(got, "current"), "m2") == 0 &&
+				      strcmp(obs_data_get_string(got, "previous"), "m1") == 0,
+			      "GetSceneMode gives the mode on and the one before");
+			obs_data_release(got);
+			obs_data_release(req);
+		}
+		CHECK(modes_press("SM One", "First") && modes_now(one_filter) == "m1",
+		      "SetSceneMode takes a mode's name as well as its id");
+		modes_press("SM One", "", "next");
+		const std::string after_next = modes_now(one_filter);
+		modes_press("SM One", "", "next");
+		CHECK(after_next == "m2" && modes_now(one_filter) == "m1", "'next' goes down the list and round again");
+		CHECK(!modes_press("SM Nowhere", "m1") && !modes_press("SM One", "Nope") &&
+			      !modes_press("SM One", "m1", "sideways") &&
+			      !modes_press("SM One", "m1", "on", "Not There"),
+		      "a scene, a filter, a mode or a 'how' that is not there is refused with a reason (%s)",
+		      modes_why.c_str());
+		obs_source_set_enabled(one_filter, false);
+		const bool while_off = modes_press("SM One", "m2");
+		obs_source_set_enabled(one_filter, true);
+		sleep_ms(150);
+		CHECK(!while_off && modes_why.find("off") != std::string::npos && modes_now(one_filter) == "m1",
+		      "a filter switched off refuses a press (%s)", modes_why.c_str());
+
+		printf("\n[scene modes: hotkeys]\n");
+		{
+			struct Keys {
+				obs_hotkey_id m1 = OBS_INVALID_HOTKEY_ID, m2 = OBS_INVALID_HOTKEY_ID,
+					      next = OBS_INVALID_HOTKEY_ID, none = OBS_INVALID_HOTKEY_ID;
+				std::string m1_text;
+			};
+			auto keys = [] {
+				Keys k;
+				obs_enum_hotkeys(
+					[](void *param, obs_hotkey_id id, obs_hotkey_t *key) {
+						auto *k = static_cast<Keys *>(param);
+						const std::string name = obs_hotkey_get_name(key);
+						if (name == "stagekit.mode.SM Modes.m1") {
+							k->m1 = id;
+							k->m1_text = obs_hotkey_get_description(key);
+						}
+						if (name == "stagekit.mode.SM Modes.m2")
+							k->m2 = id;
+						if (name == "stagekit.mode.SM Modes.next")
+							k->next = id;
+						if (name == "stagekit.mode.SM Modes.none")
+							k->none = id;
+						return true;
+					},
+					&k);
+				return k;
+			};
+			Keys k = keys();
+			CHECK(k.m1 != OBS_INVALID_HOTKEY_ID && k.m2 != OBS_INVALID_HOTKEY_ID &&
+				      k.next != OBS_INVALID_HOTKEY_ID && k.none != OBS_INVALID_HOTKEY_ID &&
+				      k.m1_text.find("First") != std::string::npos,
+			      "the scene has a hotkey per mode, named by the mode's id and shown with its name, one for 'next' and, while allowed, one for no mode (%s)",
+			      k.m1_text.c_str());
+			obs_hotkey_enable_callback_rerouting(true);
+			obs_hotkey_trigger_routed_callback(k.m2, true);
+			obs_hotkey_trigger_routed_callback(k.m2, false);
+			sleep_ms(150);
+			CHECK(modes_now(one_filter) == "m2" && modes_shown(abcdx) == "00111",
+			      "pressing a mode's hotkey turns it on");
+			modes_set(one_filter, [](obs_data_t *s) { obs_data_set_string(s, "mode|m1|name", "Primary"); });
+			Keys renamed = keys();
+			obs_hotkey_trigger_routed_callback(renamed.m1, true);
+			obs_hotkey_trigger_routed_callback(renamed.m1, false);
+			sleep_ms(150);
+			CHECK(renamed.m1 == k.m1 && renamed.m1_text.find("Primary") != std::string::npos &&
+				      modes_now(one_filter) == "m1" && modes_shown(abcdx) == "11011",
+			      "renamed, a mode keeps its hotkey (shown with the new name), its sources and its place (%s)",
+			      renamed.m1_text.c_str());
+			obs_hotkey_enable_callback_rerouting(false);
+			modes_set(one_filter, [](obs_data_t *s) { obs_data_set_bool(s, "allow_none", false); });
+			CHECK(keys().none == OBS_INVALID_HOTKEY_ID,
+			      "and the no-mode hotkey goes when no mode is not allowed");
+		}
+
+		printf("\n[scene modes: made in the window]\n");
+		{
+			obs_properties_t *props = obs_source_properties(one_filter);
+			auto click = [&](const std::string &name) {
+				obs_property_t *p = obs_properties_get(props, name.c_str());
+				const bool there = p != nullptr;
+				if (p)
+					obs_property_button_clicked(p, one_filter);
+				sleep_ms(100);
+				return there;
+			};
+			auto ids = [&] {
+				obs_data_t *s = obs_source_get_settings(one_filter);
+				std::string out_ids;
+				obs_data_array_t *rows = obs_data_get_array(s, "modes");
+				for (size_t i = 0; i < obs_data_array_count(rows); i++) {
+					obs_data_t *row = obs_data_array_item(rows, i);
+					out_ids += std::string(i ? "," : "") + obs_data_get_string(row, "value");
+					obs_data_release(row);
+				}
+				obs_data_array_release(rows);
+				obs_data_release(s);
+				return out_ids;
+			};
+			auto setting = [&](const std::string &name) {
+				obs_data_t *s = obs_source_get_settings(one_filter);
+				std::string v = obs_data_get_string(s, name.c_str());
+				obs_data_release(s);
+				return v;
+			};
+			bool labels_short = true;
+			for (const char *name : {"mode_now", "new_mode", "template", "allow_none", "lock_hidden",
+						 "mode|m2|name", "mode|m2|type", "mode|m2|go_to"}) {
+				obs_property_t *p = obs_properties_get(props, name);
+				if (!p || strlen(obs_property_description(p)) >= 26 ||
+				    !obs_property_long_description(p))
+					labels_short = false;
+			}
+			obs_property_t *heading = obs_properties_get(props, "mode|m2|g");
+			CHECK(labels_short && heading &&
+				      strcmp(obs_property_description(heading), "Mode: Second") == 0 &&
+				      obs_properties_get(props, "mode|m2|sources|apick") &&
+				      obs_properties_get(props, "mode|m2|type") &&
+				      obs_properties_get(props, "mode|m2|go_to"),
+			      "each mode has a group of its own, headed with its name: its name, type, scene to switch to and sources, and every label is short");
+			modes_set(one_filter, [](obs_data_t *s) { obs_data_set_string(s, "new_mode", "Third"); });
+			click("add_mode");
+			CHECK(ids() == "m1,m2,m3" && setting("mode|m3|name") == "Third" &&
+				      obs_properties_get(props, "mode|m3|g"),
+			      "a mode typed by hand is added with an id of its own (%s)", ids().c_str());
+			modes_set(one_filter, [](obs_data_t *s) { obs_data_set_int(s, "template", 6); });
+			click("add_template");
+			CHECK(ids() == "m1,m2,m3,m4" && setting("mode|m4|name") == "Intermission" &&
+				      setting("mode|m4|type") == "intermission",
+			      "a mode from a template starts with the template's name and type (%s, %s)",
+			      setting("mode|m4|name").c_str(), setting("mode|m4|type").c_str());
+			modes_set(one_filter, [](obs_data_t *s) { obs_data_set_string(s, "new_mode", "Third"); });
+			click("add_mode");
+			CHECK(ids() == "m1,m2,m3,m4,m5" && setting("mode|m5|name") == "Third",
+			      "two modes may have the same name: their ids differ (%s)", ids().c_str());
+			const bool picked = pick_into_list(one_filter, props, "mode|m3|sources|a", "SM D");
+			sleep_ms(150);
+			CHECK(picked && list_rows(props, "mode|m3|sources|a") == 1,
+			      "a mode's list of sources is filled from its box like any list");
+			click("mode|m3|up");
+			CHECK(ids() == "m1,m3,m2,m4,m5", "'Move up' moves a mode up the list (%s)", ids().c_str());
+			modes_press("SM One", "", "next");
+			CHECK(modes_now(one_filter) == "m3" && obs_sceneitem_visible(one_item[3]) &&
+				      modes_shown(abcdx) == "00010",
+			      "and 'next' follows the new order (%s, %s)", modes_now(one_filter).c_str(),
+			      modes_shown(abcdx).c_str());
+			click("mode|m3|remove");
+			click("mode|m4|remove");
+			click("mode|m5|remove");
+			CHECK(ids() == "m1,m2" && setting("mode|m3|name").empty() &&
+				      !obs_properties_get(props, "mode|m3|g") && modes_now(one_filter).empty() &&
+				      obs_sceneitem_visible(one_item[3]),
+			      "'Remove mode' takes a mode off and leaves its sources as they are (%s)", ids().c_str());
+			obs_properties_destroy(props);
+			modes_set(one_filter, [](obs_data_t *s) { obs_data_set_string(s, "mode_now", "m1"); });
+			CHECK(modes_now(one_filter) == "m1" && modes_shown(abcdx) == "11011",
+			      "choosing a mode in 'Mode now' turns it on (%s)", modes_shown(abcdx).c_str());
+		}
+
+		printf("\n[scene modes: rename]\n");
+		obs_source_set_name(one_src[0], "SM A Renamed");
+		sleep_ms(100);
+		modes_press("SM One", "m2");
+		{
+			obs_data_t *s = obs_source_get_settings(one_filter);
+			obs_data_array_t *rows = obs_data_get_array(s, "mode|m1|sources");
+			obs_data_t *row = obs_data_array_count(rows) ? obs_data_array_item(rows, 0) : nullptr;
+			CHECK(row && strcmp(obs_data_get_string(row, "value"), "SM A Renamed") == 0 &&
+				      !obs_sceneitem_visible(one_item[0]),
+			      "a source renamed stays in its mode under its new name");
+			obs_data_release(row);
+			obs_data_array_release(rows);
+			obs_data_release(s);
+		}
+		modes_unfilter(one, one_filter);
+		for (obs_source_t *src : one_src)
+			obs_source_release(src);
+		obs_scene_release(one);
+
+		// --- A camera switch (Show in Scenes, every scene) and a mode holding the camera.
+		for (int order = 0; order < 2; order++) {
+			printf("\n[scene modes: camera switch] (%s)\n",
+			       order == 0 ? "the switch made first" : "the modes made first");
+			const std::string tag = order == 0 ? " 1" : " 2";
+			const std::string scene_name = "SM Cam Scene" + tag, cam_name = "SM Cam" + tag,
+					  y_name = "SM Y" + tag;
+			obs_scene_t *scene = obs_scene_create(scene_name.c_str());
+			obs_source_t *cam = modes_colour(cam_name.c_str());
+			obs_source_t *y = modes_colour(y_name.c_str());
+			obs_sceneitem_t *icam = obs_scene_add(scene, cam);
+			obs_sceneitem_t *iy = obs_scene_add(scene, y);
+			obs_sceneitem_set_visible(icam, false);
+			obs_source_t *sw = nullptr, *f = nullptr;
+			auto make_switch = [&] {
+				obs_data_t *sd = obs_data_create();
+				obs_data_set_string(sd, "transition", "none");
+				sw = obs_source_create("stagekit_show_in_scenes", ("SM Cam Switch" + tag).c_str(), sd,
+						       nullptr);
+				obs_data_release(sd);
+				obs_source_filter_add(cam, sw);
+			};
+			auto make_modes = [&] {
+				f = modes_filter(scene, "SM Cam Modes",
+						 {{"m1", "Plain", {y_name}, ""}, {"m2", "With camera", {cam_name}, ""}},
+						 "m1");
+			};
+			if (order == 0) {
+				make_switch();
+				make_modes();
+			} else {
+				make_modes();
+				make_switch();
+			}
+			sleep_ms(200);
+			obs_source_set_enabled(sw, false);
+			sleep_ms(150);
+			modes_press(scene_name.c_str(), "m2");
+			const bool held = !obs_sceneitem_visible(icam) && !obs_sceneitem_visible(iy);
+			obs_source_set_enabled(sw, true);
+			sleep_ms(150);
+			const bool shown_by_switch = obs_sceneitem_visible(icam);
+			modes_press(scene_name.c_str(), "m1");
+			const bool gone = !obs_sceneitem_visible(icam) && obs_sceneitem_visible(iy);
+			obs_source_set_enabled(sw, false);
+			sleep_ms(150);
+			obs_source_set_enabled(sw, true);
+			sleep_ms(300);
+			CHECK(held && shown_by_switch && gone && !obs_sceneitem_visible(icam),
+			      "the mode holding a camera switched off does not show it; switched on, the camera shows in its mode, and the switch never shows it in another mode (%d %d %d %d)",
+			      held, shown_by_switch, gone, obs_sceneitem_visible(icam));
+			obs_source_filter_remove(cam, sw);
+			obs_source_release(sw);
+			modes_unfilter(scene, f);
+			obs_source_release(cam);
+			obs_source_release(y);
+			obs_scene_release(scene);
+		}
+
+		// --- A Standby stand-in for a camera in a mode.
+		{
+			printf("\n[scene modes: standby stand-in]\n");
+			obs_scene_t *ss = obs_scene_create("SM Stand-in Scene");
+			obs_source_t *z = modes_colour("SM Stand-in Z");
+			obs_source_t *cam = modes_colour("SM Stand-in Cam", 200, 120, 0xFF2040C0);
+			obs_data_t *sd = obs_data_create();
+			obs_data_set_bool(sd, "when_hidden", true);
+			obs_data_set_string(sd, "transition", "none");
+			obs_source_t *standby =
+				obs_source_create("stagekit_standby", "SM Stand-in Standby", sd, nullptr);
+			obs_data_release(sd);
+			obs_source_filter_add(cam, standby);
+			obs_scene_add(ss, z);
+			obs_sceneitem_t *icam = obs_scene_add(ss, cam);
+			obs_sceneitem_set_visible(icam, false);
+			obs_source_t *f = modes_filter(
+				ss, "SM Stand-in Modes",
+				{{"m1", "Z", {"SM Stand-in Z"}, ""}, {"m2", "Cam", {"SM Stand-in Cam"}, ""}}, "m1");
+			obs_set_output_source(0, obs_scene_get_source(ss));
+			auto twin_shown = [&] {
+				int found = -1;
+				obs_scene_enum_items(
+					ss,
+					[](obs_scene_t *, obs_sceneitem_t *it, void *p) {
+						if (strcmp(obs_source_get_unversioned_id(obs_sceneitem_get_source(it)),
+							   "stagekit_stand_in") == 0)
+							*static_cast<int *>(p) = obs_sceneitem_visible(it) ? 1 : 0;
+						return true;
+					},
+					&found);
+				return found;
+			};
+			sleep_ms(900);
+			const int other_mode = twin_shown();
+			modes_press("SM Stand-in Scene", "m2");
+			sleep_ms(750);
+			const int own_mode = twin_shown();
+			const bool cam_on = obs_sceneitem_visible(icam);
+			obs_sceneitem_set_visible(icam, false);
+			sleep_ms(900);
+			const int cam_off = twin_shown();
+			CHECK(other_mode == 0 && cam_on && own_mode == 0 && cam_off == 1,
+			      "no standby image for a camera while another mode is on; in its own mode, the standby image when the camera is hidden (%d %d %d %d)",
+			      other_mode, (int)cam_on, own_mode, cam_off);
+			obs_set_output_source(0, nullptr);
+			modes_unfilter(ss, f);
+			obs_source_filter_remove(cam, standby);
+			obs_source_release(standby);
+			sleep_ms(300);
+			obs_scene_release(ss);
+			obs_source_release(z);
+			obs_source_release(cam);
+		}
+
+		// --- Sources inside groups, and a group as a member.
+		{
+			printf("\n[scene modes: items in groups]\n");
+			obs_scene_t *gs = obs_scene_create("SM Group Scene");
+			obs_source_t *e = modes_colour("SM Group E");
+			obs_source_t *fsrc = modes_colour("SM Group F");
+			obs_sceneitem_t *g = obs_scene_add_group(gs, "SM Group G");
+			obs_sceneitem_t *ie = obs_scene_add(gs, e);
+			obs_sceneitem_group_add_item(g, ie);
+			obs_sceneitem_t *hgroup = obs_scene_add_group(gs, "SM Group H");
+			obs_sceneitem_t *ifs = obs_scene_add(gs, fsrc);
+			obs_sceneitem_group_add_item(hgroup, ifs);
+			obs_sceneitem_set_visible(ie, false);
+			obs_source_t *f = modes_filter(
+				gs, "SM Group Modes",
+				{{"m1", "Group", {"SM Group H"}, ""}, {"m2", "Inner", {"SM Group E"}, ""}}, "m1");
+			sleep_ms(200);
+			modes_press("SM Group Scene", "m2");
+			const bool inner_on = obs_sceneitem_visible(ie) && !obs_sceneitem_visible(hgroup);
+			modes_press("SM Group Scene", "m1");
+			CHECK(inner_on && !obs_sceneitem_visible(ie) && obs_sceneitem_visible(hgroup) &&
+				      obs_sceneitem_visible(g),
+			      "a source inside a group is shown and hidden with its mode, and so is a group listed itself");
+			modes_unfilter(gs, f);
+			obs_scene_release(gs);
+			obs_source_release(e);
+			obs_source_release(fsrc);
+		}
+
+		// --- Same modes in another scene, and "Switch to scene".
+		{
+			printf("\n[scene modes: same modes in another scene]\n");
+			obs_scene_t *sa = obs_scene_create("SM Share A");
+			obs_scene_t *sb = obs_scene_create("SM Share B");
+			obs_scene_t *sc = obs_scene_create("SM Share C");
+			obs_source_t *p = modes_colour("SM Share P");
+			obs_source_t *q = modes_colour("SM Share Q");
+			obs_sceneitem_t *pa = obs_scene_add(sa, p);
+			obs_sceneitem_t *qa = obs_scene_add(sa, q);
+			obs_sceneitem_t *qb = obs_scene_add(sb, q);
+			obs_sceneitem_t *qc = obs_scene_add(sc, q);
+			obs_sceneitem_set_visible(qa, false);
+			obs_sceneitem_set_visible(qb, false);
+			obs_sceneitem_set_visible(qc, false);
+			obs_data_t *d = modes_settings({{"m1", "P", {"SM Share P"}, "SM Share A"},
+							{"m2", "Q", {"SM Share Q"}, "SM Share A"}},
+						       "m1");
+			modes_list(d, "share_scenes", {"SM Share B"});
+			obs_source_t *f = obs_source_create("stagekit_scene_modes", "SM Share Modes", d, nullptr);
+			obs_data_release(d);
+			obs_source_filter_add(obs_scene_get_source(sa), f);
+			sleep_ms(300);
+			const auto program = [](const char *name) {
+				calldata_t cd = {};
+				calldata_set_string(&cd, "program", name);
+				proc_handler_call(obs_get_proc_handler(), "stagekit_test_scene_switch", &cd);
+				calldata_free(&cd);
+			};
+			const auto switched = []() {
+				calldata_t cd = {};
+				proc_handler_call(obs_get_proc_handler(), "stagekit_test_scene_switched", &cd);
+				const char *s = calldata_string(&cd, "scenes");
+				std::string got = s ? s : "";
+				calldata_free(&cd);
+				return got;
+			};
+			program("SM Share B");
+			switched();
+			modes_press("SM Share A", "m2");
+			const std::string from_b = switched();
+			CHECK(!obs_sceneitem_visible(pa) && obs_sceneitem_visible(qa) && obs_sceneitem_visible(qb) &&
+				      !obs_sceneitem_visible(qc) && from_b.empty(),
+			      "one press changes the mode in both scenes, a scene not listed is left alone, and pressed while a listed scene is on screen it stays there ('%s')",
+			      from_b.c_str());
+			obs_sceneitem_set_visible(qb, false);
+			obs_sceneitem_set_visible(pa, true);
+			sleep_ms(250);
+			CHECK(!obs_sceneitem_visible(qb) && !obs_sceneitem_visible(pa),
+			      "a source of the mode on hidden in the shared scene stays hidden; one of another mode shown is hidden again");
+			program("SM Share C");
+			modes_press("SM Share A", "m2");
+			const std::string from_c = switched();
+			modes_press("SM Share A", "", "next");
+			const std::string by_next = switched();
+			CHECK(from_c == "SM Share A" && by_next == "SM Share A",
+			      "pressed while another scene is on screen, OBS goes to the mode's scene ('%s', '%s')",
+			      from_c.c_str(), by_next.c_str());
+			obs_data_t *s = obs_source_get_settings(f);
+			obs_data_set_string(s, "mode_now", "m2");
+			obs_source_update(f, s);
+			obs_data_release(s);
+			sleep_ms(150);
+			CHECK(switched().empty() && obs_sceneitem_visible(qa),
+			      "'Mode now' in the window never changes scene");
+			modes_unfilter(sa, f);
+			obs_scene_release(sa);
+			obs_scene_release(sb);
+			obs_scene_release(sc);
+			obs_source_release(p);
+			obs_source_release(q);
+		}
+
+		// --- Two filters on one scene: a source in both shows only when both allow it.
+		for (int order = 0; order < 2; order++) {
+			printf("\n[scene modes: two filters on one scene] (%s)\n",
+			       order == 0 ? "captures first" : "columns first");
+			const std::string tag = order == 0 ? " 1" : " 2";
+			const std::string scene_name = "SM Two" + tag;
+			obs_scene_t *scene = obs_scene_create(scene_name.c_str());
+			const std::string n[4] = {"SM Two P" + tag, "SM Two Q" + tag, "SM Two R" + tag,
+						  "SM Two S" + tag};
+			obs_source_t *src[4];
+			std::vector<obs_sceneitem_t *> it;
+			for (int i = 0; i < 4; i++) {
+				src[i] = modes_colour(n[i].c_str());
+				it.push_back(obs_scene_add(scene, src[i]));
+			}
+			obs_sceneitem_set_visible(it[1], false);
+			obs_sceneitem_set_visible(it[3], false);
+			obs_source_t *caps = nullptr, *cols = nullptr;
+			auto make_caps = [&] {
+				caps = modes_filter(scene, "SM Captures",
+						    {{"m1", "P", {n[0]}, ""}, {"m2", "Q", {n[1]}, ""}}, "m1");
+			};
+			auto make_cols = [&] {
+				cols = modes_filter(scene, "SM Columns",
+						    {{"c1", "PR", {n[0], n[2]}, ""}, {"c2", "S", {n[3]}, ""}}, "c1");
+			};
+			if (order == 0) {
+				make_caps();
+				make_cols();
+			} else {
+				make_cols();
+				make_caps();
+			}
+			sleep_ms(200);
+			modes_press(scene_name.c_str(), "c2", "on", "SM Columns");
+			const std::string a = modes_shown(it);
+			modes_press(scene_name.c_str(), "m2", "on", "SM Captures");
+			modes_press(scene_name.c_str(), "m1", "on", "SM Captures");
+			const std::string b = modes_shown(it);
+			modes_press(scene_name.c_str(), "c1", "on", "SM Columns");
+			const std::string c = modes_shown(it);
+			CHECK(a == "0001" && b == "0001" && c == "1010",
+			      "a source in two filters' modes shows only while both have it on (%s %s %s)", a.c_str(),
+			      b.c_str(), c.c_str());
+			modes_unfilter(scene, caps);
+			modes_unfilter(scene, cols);
+			for (obs_source_t *s : src)
+				obs_source_release(s);
+			obs_scene_release(scene);
+		}
+
+		// --- Loading: nothing is done until OBS has its scenes.
+		if (obs_source_get_display_name("fade_transition")) {
+			printf("\n[scene modes: loading]\n");
+			auto loaded = [](bool yes) {
+				calldata_t cd = {};
+				calldata_set_bool(&cd, "loaded", yes);
+				proc_handler_call(obs_get_proc_handler(), "stagekit_test_loaded", &cd);
+				calldata_free(&cd);
+			};
+			obs_scene_t *la = obs_scene_create("SM Load A"); // agrees with its saved mode
+			obs_scene_t *lb = obs_scene_create("SM Load B"); // does not
+			obs_source_t *l1 = modes_colour("SM Load 1"), *l2 = modes_colour("SM Load 2");
+			obs_source_t *k1 = modes_colour("SM Load K1"), *k2 = modes_colour("SM Load K2");
+			obs_sceneitem_t *a1 = obs_scene_add(la, l1), *a2 = obs_scene_add(la, l2);
+			obs_sceneitem_t *b1 = obs_scene_add(lb, k1), *b2 = obs_scene_add(lb, k2);
+			obs_sceneitem_set_visible(a2, false);
+			obs_sceneitem_set_visible(b1, false); // saved mode: K1, but K2 shows
+			obs_set_output_source(0, obs_scene_get_source(lb));
+			sleep_ms(100);
+			static int modes_load_signals = 0;
+			modes_load_signals = 0;
+			const auto count = [](void *, calldata_t *) {
+				modes_load_signals++;
+			};
+			signal_handler_connect(obs_source_get_signal_handler(obs_scene_get_source(la)), "item_visible",
+					       count, nullptr);
+			loaded(false);
+			auto faded = [&](const std::vector<ModesMode> &modes) {
+				obs_data_t *d = modes_settings(modes, "m1");
+				obs_data_set_string(d, "transition", "fade_transition");
+				obs_data_set_int(d, "transition_ms", 600);
+				return d;
+			};
+			obs_data_t *da = faded({{"m1", "One", {"SM Load 1"}, ""}, {"m2", "Two", {"SM Load 2"}, ""}});
+			obs_data_t *db = faded({{"m1", "One", {"SM Load K1"}, ""}, {"m2", "Two", {"SM Load K2"}, ""}});
+			obs_source_t *fa = obs_source_create("stagekit_scene_modes", "SM Load Modes A", da, nullptr);
+			obs_source_t *fb = obs_source_create("stagekit_scene_modes", "SM Load Modes B", db, nullptr);
+			obs_data_release(da);
+			obs_data_release(db);
+			obs_source_filter_add(obs_scene_get_source(la), fa);
+			obs_source_filter_add(obs_scene_get_source(lb), fb);
+			sleep_ms(200);
+			const bool kept = modes_press("SM Load A", "m2");
+			sleep_ms(200);
+			const bool waited = obs_sceneitem_visible(a1) && !obs_sceneitem_visible(a2) &&
+					    !obs_sceneitem_visible(b1) && obs_sceneitem_visible(b2);
+			loaded(true);
+			sleep_ms(400);
+			CHECK(kept && waited && !obs_sceneitem_visible(a1) && obs_sceneitem_visible(a2),
+			      "while OBS loads, nothing is shown or hidden; a press made then is acted on once it has loaded");
+			obs_source_t *hide_way = obs_sceneitem_get_transition(b2, false);
+			CHECK(obs_sceneitem_visible(b1) && !obs_sceneitem_visible(b2) && !obs_source_active(k2) &&
+				      hide_way &&
+				      strcmp(obs_source_get_unversioned_id(hide_way), "fade_transition") == 0,
+			      "a scene that does not show its saved mode is put right after loading with a cut (the source hidden is out of use at once), and keeps its fade for the next change");
+			signal_handler_disconnect(obs_source_get_signal_handler(obs_scene_get_source(la)),
+						  "item_visible", count, nullptr);
+			obs_set_output_source(0, nullptr);
+			modes_unfilter(la, fa);
+			modes_unfilter(lb, fb);
+			// A third: saved and shown alike. Nothing at all happens when it loads.
+			obs_scene_t *lc = obs_scene_create("SM Load C");
+			obs_source_t *c1 = modes_colour("SM Load C1"), *c2 = modes_colour("SM Load C2");
+			obs_scene_add(lc, c1);
+			obs_sceneitem_t *ic2 = obs_scene_add(lc, c2);
+			obs_sceneitem_set_visible(ic2, false);
+			modes_load_signals = 0;
+			signal_handler_connect(obs_source_get_signal_handler(obs_scene_get_source(lc)), "item_visible",
+					       count, nullptr);
+			loaded(false);
+			obs_source_t *fc = modes_filter(
+				lc, "SM Load Modes C",
+				{{"m1", "One", {"SM Load C1"}, ""}, {"m2", "Two", {"SM Load C2"}, ""}}, "m1");
+			sleep_ms(150);
+			loaded(true);
+			sleep_ms(300);
+			signal_handler_disconnect(obs_source_get_signal_handler(obs_scene_get_source(lc)),
+						  "item_visible", count, nullptr);
+			CHECK(modes_load_signals == 0,
+			      "a scene that shows its saved mode is not touched when it loads (%d signals)",
+			      modes_load_signals);
+			modes_unfilter(lc, fc);
+			for (obs_source_t *s : {l1, l2, k1, k2, c1, c2})
+				obs_source_release(s);
+			obs_scene_release(la);
+			obs_scene_release(lb);
+			obs_scene_release(lc);
+		}
+
+		// --- Morph between two modes' captures, and a scene carrying Scene Modes still morphs.
+		if (obs_source_get_display_name("stagekit_morph")) {
+			printf("\n[scene modes: item morph between modes]\n");
+			obs_scene_t *ms = obs_scene_create("SM Morph Scene");
+			obs_source_t *back = modes_colour("SM Morph Back", 640, 360, 0xFFFF0000);
+			obs_source_t *m1 = modes_colour("SM Morph One", 300, 200, 0xFF0000FF);
+			obs_source_t *m2 = modes_colour("SM Morph Two", 300, 200, 0xFF00FF00);
+			obs_scene_add(ms, back);
+			obs_sceneitem_t *i1 = obs_scene_add(ms, m1);
+			obs_sceneitem_t *i2 = obs_scene_add(ms, m2);
+			vec2 at;
+			vec2_set(&at, 320, 140);
+			obs_sceneitem_set_pos(i2, &at);
+			obs_sceneitem_set_visible(i2, false);
+			obs_data_t *d = modes_settings(
+				{{"m1", "One", {"SM Morph One"}, ""}, {"m2", "Two", {"SM Morph Two"}, ""}}, "m1");
+			obs_data_set_string(d, "transition", "stagekit_morph");
+			obs_data_set_int(d, "transition_ms", 1000);
+			obs_source_t *f = obs_source_create("stagekit_scene_modes", "SM Morph Modes", d, nullptr);
+			obs_data_release(d);
+			obs_source_filter_add(obs_scene_get_source(ms), f);
+			obs_set_output_source(0, obs_scene_get_source(ms));
+			sleep_ms(300);
+			obs_data_t *req = obs_data_create();
+			obs_data_set_string(req, "scene", "SM Morph Scene");
+			obs_data_set_string(req, "mode", "m2");
+			obs_data_release(modes_call("SetSceneMode", req));
+			obs_data_release(req);
+			sleep_ms(450);
+			render(obs_scene_get_source(ms), w, h);
+			const int during = modes_count_items(ms, "stagekit_morph_layer");
+			sleep_ms(1300);
+			render(obs_scene_get_source(ms), w, h);
+			const int after = modes_count_items(ms, "stagekit_morph_layer");
+			CHECK(during == 1 && after == 0 && !obs_sceneitem_visible(i1) && obs_sceneitem_visible(i2),
+			      "with Morph as the transition, the capture of the mode going changes into the one coming, drawn by a layer only while the change lasts (%d during, %d after)",
+			      during, after);
+			obs_set_output_source(0, nullptr);
+			modes_unfilter(ms, f);
+
+			printf("\n[scene modes: a scene with Scene Modes still morphs]\n");
+			obs_scene_t *ta = obs_scene_create("SM Morph From");
+			obs_scene_t *tb = obs_scene_create("SM Morph To");
+			obs_source_t *cam = modes_colour("SM Morph Cam", 100, 60, 0xFF0000FF);
+			obs_source_t *green = modes_colour("SM Morph Green", 640, 360, 0xFF00FF00);
+			obs_scene_add(ta, green);
+			obs_scene_add(tb, green);
+			obs_sceneitem_t *ca = obs_scene_add(ta, cam);
+			obs_sceneitem_t *cb = obs_scene_add(tb, cam);
+			vec2_set(&at, 20, 20);
+			obs_sceneitem_set_pos(ca, &at);
+			vec2_set(&at, 520, 280);
+			obs_sceneitem_set_pos(cb, &at);
+			obs_source_t *tf =
+				modes_filter(ta, "SM Morph From Modes", {{"m1", "Cam", {"SM Morph Cam"}, ""}}, "m1");
+			obs_data_t *mset = obs_data_create();
+			obs_data_set_int(mset, "ease_curve", 0);
+			obs_source_t *morph = obs_source_create_private("stagekit_morph", "SM Morph", mset);
+			obs_data_release(mset);
+			obs_transition_set(morph, obs_scene_get_source(ta));
+			obs_transition_start(morph, OBS_TRANSITION_MODE_MANUAL, 0, obs_scene_get_source(tb));
+			obs_transition_set_manual_time(morph, 0.5f);
+			sleep_ms(150);
+			const std::vector<uint8_t> half = render(morph, w, h);
+			auto red = [&](int x, int y) {
+				return (int)half[(size_t(y) * w + x) * 4];
+			};
+			CHECK(red(300, 170) > 240 && red(50, 40) < 15,
+			      "a Morph from a scene carrying Scene Modes takes it apart: the camera is half-way between its places (red %d there, %d at its first place)",
+			      red(300, 170), red(50, 40));
+			obs_source_release(morph);
+			modes_unfilter(ta, tf);
+			obs_scene_release(ta);
+			obs_scene_release(tb);
+			obs_source_release(cam);
+			obs_source_release(green);
+			sleep_ms(200);
+			obs_scene_release(ms);
+			for (obs_source_t *s : {back, m1, m2})
+				obs_source_release(s);
+		}
+		obs_set_output_source(0, modes_before_out);
+		obs_source_release(modes_before_out);
+	}
 	// ==== end scene-filters:modes ====
 	// ==== scene-filters:transitions ====
 	// ==== end scene-filters:transitions ====
@@ -11724,6 +12583,94 @@ int main(int argc, char **argv)
 	}
 
 	// ==== scene-filters:sound ====
+	// ---- modes
+	if (obs_source_get_display_name("fade_transition")) {
+		// Scene Modes in a scene that is not on screen, with sound running
+		// (the layout section above turned it on): a press there is a cut, so
+		// when the scene comes on no hidden source counts as in use.
+		printf("\n[scene modes: out of view]\n");
+		obs_source_t *modes_was_out = obs_get_output_source(0);
+		obs_scene_t *view = obs_scene_create("SM View");
+		obs_scene_t *away = obs_scene_create("SM Away");
+		obs_source_t *a = obs_source_create("color_source", "SM Away A", nullptr, nullptr);
+		obs_source_t *b = obs_source_create("color_source", "SM Away B", nullptr, nullptr);
+		obs_sceneitem_t *ia = obs_scene_add(away, a);
+		obs_sceneitem_t *ib = obs_scene_add(away, b);
+		obs_sceneitem_set_visible(ib, false);
+		auto row_list = [](obs_data_t *d, const char *list, const char *value) {
+			obs_data_array_t *rows = obs_data_array_create();
+			obs_data_t *row = obs_data_create();
+			obs_data_set_string(row, "value", value);
+			obs_data_array_push_back(rows, row);
+			obs_data_release(row);
+			obs_data_set_array(d, list, rows);
+			obs_data_array_release(rows);
+		};
+		obs_data_t *d = obs_data_create();
+		obs_data_array_t *ids = obs_data_array_create();
+		for (const char *id : {"m1", "m2"}) {
+			obs_data_t *row = obs_data_create();
+			obs_data_set_string(row, "value", id);
+			obs_data_array_push_back(ids, row);
+			obs_data_release(row);
+		}
+		obs_data_set_array(d, "modes", ids);
+		obs_data_array_release(ids);
+		obs_data_set_string(d, "mode|m1|name", "A");
+		obs_data_set_string(d, "mode|m2|name", "B");
+		row_list(d, "mode|m1|sources", "SM Away A");
+		row_list(d, "mode|m2|sources", "SM Away B");
+		obs_data_set_string(d, "mode_now", "m1");
+		obs_data_set_string(d, "transition", "fade_transition");
+		obs_data_set_int(d, "transition_ms", 600);
+		obs_source_t *f = obs_source_create("stagekit_scene_modes", "SM Away Modes", d, nullptr);
+		obs_data_release(d);
+		obs_source_filter_add(obs_scene_get_source(away), f);
+		obs_set_output_source(0, obs_scene_get_source(view));
+		sleep_ms(200);
+		auto in_use = [](obs_source_t *source) {
+			return obs_source_active(source) || obs_source_showing(source);
+		};
+		static int modes_opened = 0;
+		const auto count_opened = [](void *, calldata_t *) {
+			modes_opened++;
+		};
+		signal_handler_connect(obs_source_get_signal_handler(a), "activate", count_opened, nullptr);
+		modes_opened = 0;
+		auto press = [](const char *mode) {
+			calldata_t cd = {};
+			calldata_set_string(&cd, "request", "SetSceneMode");
+			const std::string json = std::string("{\"scene\":\"SM Away\",\"mode\":\"") + mode + "\"}";
+			calldata_set_string(&cd, "data", json.c_str());
+			proc_handler_call(obs_get_proc_handler(), "stagekit_vendor_call", &cd);
+			calldata_free(&cd);
+		};
+		press("m2");
+		sleep_ms(200);
+		obs_set_output_source(0, obs_scene_get_source(away));
+		const bool at_once = in_use(a);
+		sleep_ms(300);
+		CHECK(!obs_sceneitem_visible(ia) && obs_sceneitem_visible(ib) && !at_once && !in_use(a) &&
+			      modes_opened == 0 && in_use(b),
+		      "a mode changed in a scene out of view: when the scene comes on, the source hidden there is not taken into use, not even for a moment (%d %d)",
+		      at_once, modes_opened);
+		// In view, the fade is used: the source hidden is still in use part-way.
+		press("m1");
+		sleep_ms(250);
+		const bool fading = in_use(b);
+		sleep_ms(900);
+		CHECK(obs_sceneitem_visible(ia) && !obs_sceneitem_visible(ib) && fading && !in_use(b),
+		      "in view, the source hidden fades out and is out of use once the fade is over (%d)", fading);
+		signal_handler_disconnect(obs_source_get_signal_handler(a), "activate", count_opened, nullptr);
+		obs_set_output_source(0, modes_was_out);
+		obs_source_release(modes_was_out);
+		obs_source_filter_remove(obs_scene_get_source(away), f);
+		obs_source_release(f);
+		obs_source_release(a);
+		obs_source_release(b);
+		obs_scene_release(away);
+		obs_scene_release(view);
+	}
 	// ==== end scene-filters:sound ====
 
 	obs_source_dec_showing(bg);

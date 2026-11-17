@@ -80,6 +80,10 @@ bool draws_nothing(obs_source_t *filter)
 	      "move_transition_override_filter"})
 		if (id && std::strcmp(id, known) == 0)
 			return true;
+	// The scene filters that only show, hide, fit and add filters.
+	for (const char *known : {kSceneModesId, kSceneTransitionsId, kSceneFitId, kSceneStandbyId, kSceneCornersId})
+		if (id && std::strcmp(id, known) == 0)
+			return true;
 	return false;
 }
 

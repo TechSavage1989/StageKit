@@ -47,6 +47,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "view/cropped-view.hpp"
 #include "zoom/ramp-zoom.hpp"
 // ==== scene-filters:modes ====
+#include "placement/scene-modes.hpp"
 // ==== end scene-filters:modes ====
 // ==== scene-filters:transitions ====
 // ==== end scene-filters:transitions ====
@@ -140,6 +141,8 @@ bool obs_module_load(void)
 	stagekit::register_item_morph();
 	stagekit::register_fade_zoom();
 	// ==== scene-filters:modes ====
+	stagekit::register_scene_modes();
+	stagekit::vendor_api_add_test_calls();
 	// ==== end scene-filters:modes ====
 	// ==== scene-filters:transitions ====
 	// ==== end scene-filters:transitions ====

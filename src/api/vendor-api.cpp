@@ -22,10 +22,12 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../capture/auto-capture.hpp"
 #include "../dock/arrange-tools.hpp"
 #include "../frame/auto-frame.hpp"
+#include "../placement/scene-modes.hpp"
 #include "../third-party/obs-websocket-api.h"
 
 #include <obs-module.h>
 #include <plugin-support.h>
+#include <callback/proc.h>
 
 #include <algorithm>
 #include <atomic>
@@ -40,9 +42,10 @@ namespace {
 
 std::atomic<obs_websocket_vendor> g_vendor{nullptr};
 
-const char *const kRequests[] = {"GetVersion", "ListBlurFilters", "BlurOn",          "BlurOff",         "BlurToggle",
-				 "SetBlur",    "BlurAll",         "HookFront",       "SetPictureShape", "GetOptions",
-				 "SetOption",  "Slide",           "GetSwitcherState"};
+const char *const kRequests[] = {"GetVersion",       "ListBlurFilters", "BlurOn",       "BlurOff",
+				 "BlurToggle",       "SetBlur",         "BlurAll",      "HookFront",
+				 "SetPictureShape",  "GetOptions",      "SetOption",    "Slide",
+				 "GetSwitcherState", "ListSceneModes",  "GetSceneMode", "SetSceneMode"};
 
 void fail(obs_data_t *response, const char *message)
 {
@@ -339,6 +342,122 @@ void req_slide(obs_data_t *request, obs_data_t *response, void *)
 	fail(response, "direction must be up, down, left, right, up-left, up-right, down-left, down-right or centre");
 }
 
+// ---- Scene Modes
+
+void write_mode_list(obs_data_t *into, const SceneModesLook &look)
+{
+	obs_data_array_t *modes = obs_data_array_create();
+	for (const SceneModeLook &mode : look.modes) {
+		obs_data_t *m = obs_data_create();
+		obs_data_set_string(m, "id", mode.id.c_str());
+		obs_data_set_string(m, "name", mode.name.c_str());
+		obs_data_set_string(m, "type", mode.type.c_str());
+		obs_data_array_push_back(modes, m);
+		obs_data_release(m);
+	}
+	obs_data_set_array(into, "modes", modes);
+	obs_data_array_release(modes);
+}
+
+std::string mode_name(const SceneModesLook &look, const std::string &id)
+{
+	for (const SceneModeLook &mode : look.modes)
+		if (mode.id == id)
+			return mode.name;
+	return {};
+}
+
+// { scene? } -> { filters: [{ scene, filter, enabled, current, currentName,
+// allowNone, modes: [{ id, name, type }], scenes: [...] }] }
+void req_list_scene_modes(obs_data_t *request, obs_data_t *response, void *)
+{
+	obs_data_array_t *filters = obs_data_array_create();
+	for (const SceneModesLook &look : scene_modes_list(obs_data_get_string(request, "scene"))) {
+		obs_data_t *f = obs_data_create();
+		obs_data_set_string(f, "scene", look.scene.c_str());
+		obs_data_set_string(f, "filter", look.filter.c_str());
+		obs_data_set_bool(f, "enabled", look.enabled);
+		obs_data_set_string(f, "current", look.current.c_str());
+		obs_data_set_string(f, "currentName", mode_name(look, look.current).c_str());
+		obs_data_set_bool(f, "allowNone", look.allow_none);
+		write_mode_list(f, look);
+		obs_data_array_t *scenes = obs_data_array_create();
+		for (const std::string &name : look.scenes) {
+			obs_data_t *s = obs_data_create();
+			obs_data_set_string(s, "name", name.c_str());
+			obs_data_array_push_back(scenes, s);
+			obs_data_release(s);
+		}
+		obs_data_set_array(f, "scenes", scenes);
+		obs_data_array_release(scenes);
+		obs_data_array_push_back(filters, f);
+		obs_data_release(f);
+	}
+	obs_data_set_array(response, "filters", filters);
+	obs_data_array_release(filters);
+	obs_data_set_bool(response, "success", true);
+}
+
+// { scene, filter? } -> { current, currentName, previous, previousName,
+// enabled, allowNone, modes }
+void req_get_scene_mode(obs_data_t *request, obs_data_t *response, void *)
+{
+	const std::string scene = obs_data_get_string(request, "scene");
+	const std::string filter = obs_data_get_string(request, "filter");
+	if (scene.empty()) {
+		fail(response, "scene is required");
+		return;
+	}
+	for (const SceneModesLook &look : scene_modes_list(scene.c_str())) {
+		if (!filter.empty() && look.filter != filter)
+			continue;
+		obs_data_set_string(response, "filter", look.filter.c_str());
+		obs_data_set_string(response, "current", look.current.c_str());
+		obs_data_set_string(response, "currentName", mode_name(look, look.current).c_str());
+		obs_data_set_string(response, "previous", look.previous.c_str());
+		obs_data_set_string(response, "previousName", mode_name(look, look.previous).c_str());
+		obs_data_set_bool(response, "enabled", look.enabled);
+		obs_data_set_bool(response, "allowNone", look.allow_none);
+		write_mode_list(response, look);
+		obs_data_set_bool(response, "success", true);
+		return;
+	}
+	fail(response, filter.empty() ? "No Scene Modes on that scene" : "No Scene Modes with that name on that scene");
+}
+
+// { scene, filter?, mode (an id, or a name), how?: "on" | "toggle" | "next" | "none" }
+void req_set_scene_mode(obs_data_t *request, obs_data_t *response, void *)
+{
+	std::string why;
+	if (scene_modes_press(obs_data_get_string(request, "scene"), obs_data_get_string(request, "filter"),
+			      obs_data_get_string(request, "mode"), obs_data_get_string(request, "how"), why))
+		obs_data_set_bool(response, "success", true);
+	else
+		fail(response, why.c_str());
+}
+
+// What was emitted, for the tests: one JSON object per line.
+std::mutex g_events_mutex;
+std::string g_events;
+bool g_noting_events = false;
+
+void emit_event(const char *name, obs_data_t *data)
+{
+	{
+		std::lock_guard lock(g_events_mutex);
+		if (g_noting_events) {
+			obs_data_t *line = obs_data_create();
+			obs_data_set_string(line, "event", name);
+			obs_data_set_obj(line, "data", data);
+			g_events += obs_data_get_json(line);
+			g_events += "\n";
+			obs_data_release(line);
+		}
+	}
+	if (obs_websocket_vendor vendor = g_vendor.load())
+		obs_websocket_vendor_emit_event(vendor, name, data);
+}
+
 } // namespace
 
 void vendor_api_register()
@@ -370,6 +489,9 @@ void vendor_api_register()
 		{"SetOption", req_set_option},
 		{"Slide", req_slide},
 		{"GetSwitcherState", req_get_switcher_state},
+		{"ListSceneModes", req_list_scene_modes},
+		{"GetSceneMode", req_get_scene_mode},
+		{"SetSceneMode", req_set_scene_mode},
 	};
 	for (const auto &r : requests) {
 		if (!obs_websocket_vendor_register_request(vendor, r.name, r.fn, nullptr))
@@ -443,6 +565,80 @@ void vendor_emit_options_changed()
 	write_options(data);
 	obs_websocket_vendor_emit_event(vendor, "OptionsChanged", data);
 	obs_data_release(data);
+}
+
+} // namespace stagekit
+
+namespace stagekit {
+
+void vendor_emit_scene_mode_changed(obs_source_t *filter, const std::string &mode, const std::string &previous)
+{
+	if (!filter)
+		return;
+	obs_source_t *parent = obs_filter_get_parent(filter);
+	const std::string scene = parent && obs_source_get_name(parent) ? obs_source_get_name(parent) : "";
+	std::string mode_text, previous_text;
+	for (const SceneModesLook &look : scene_modes_list(scene.c_str()))
+		if (look.filter == obs_source_get_name(filter)) {
+			mode_text = mode_name(look, mode);
+			previous_text = mode_name(look, previous);
+		}
+	obs_data_t *data = obs_data_create();
+	obs_data_set_string(data, "scene", scene.c_str());
+	obs_data_set_string(data, "filter", obs_source_get_name(filter));
+	obs_data_set_string(data, "mode", mode.c_str());
+	obs_data_set_string(data, "modeName", mode_text.c_str());
+	obs_data_set_string(data, "previous", previous.c_str());
+	obs_data_set_string(data, "previousName", previous_text.c_str());
+	emit_event("SceneModeChanged", data);
+	obs_data_release(data);
+}
+
+void vendor_api_add_test_calls()
+{
+	static std::atomic<bool> added{false};
+	if (added.exchange(true))
+		return;
+	proc_handler_add(
+		obs_get_proc_handler(),
+		"void stagekit_vendor_call(in string request, in string data, out string response)",
+		[](void *, calldata_t *cd) {
+			const char *name = calldata_string(cd, "request");
+			const char *json = calldata_string(cd, "data");
+			static const struct {
+				const char *name;
+				obs_websocket_request_callback_function fn;
+			} kKnown[] = {
+				{"ListSceneModes", req_list_scene_modes},
+				{"GetSceneMode", req_get_scene_mode},
+				{"SetSceneMode", req_set_scene_mode},
+			};
+			obs_data_t *request = json && *json ? obs_data_create_from_json(json) : obs_data_create();
+			if (!request)
+				request = obs_data_create();
+			obs_data_t *response = obs_data_create();
+			bool known = false;
+			for (const auto &k : kKnown)
+				if (name && strcmp(name, k.name) == 0) {
+					k.fn(request, response, nullptr);
+					known = true;
+				}
+			if (!known)
+				fail(response, "No such request here");
+			calldata_set_string(cd, "response", obs_data_get_json(response));
+			obs_data_release(response);
+			obs_data_release(request);
+		},
+		nullptr);
+	proc_handler_add(
+		obs_get_proc_handler(), "void stagekit_vendor_events(out string events)",
+		[](void *, calldata_t *cd) {
+			std::lock_guard lock(g_events_mutex);
+			g_noting_events = true;
+			calldata_set_string(cd, "events", g_events.c_str());
+			g_events.clear();
+		},
+		nullptr);
 }
 
 } // namespace stagekit
