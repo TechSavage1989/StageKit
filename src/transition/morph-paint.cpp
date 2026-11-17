@@ -376,7 +376,7 @@ void set_quad(const Quad &q)
 }
 
 // One picture, or two mixed (`amount` of the second), laid onto a quad.
-void MorphPaint::draw_texture(gs_texture_t *first, gs_texture_t *second, const Quad &quad, float amount)
+void MorphPaint::draw_texture(gs_texture_t *first, gs_texture_t *second, const Quad &quad, float amount, float opacity)
 {
 	if (!effect_ || !first)
 		return;
@@ -392,7 +392,7 @@ void MorphPaint::draw_texture(gs_texture_t *first, gs_texture_t *second, const Q
 	set(p_image_, first);
 	if (second)
 		set(p_image2_, second);
-	gs_effect_set_float(p_opacity_, 1.0f);
+	gs_effect_set_float(p_opacity_, opacity);
 	gs_effect_set_float(p_amount_, amount);
 	gs_matrix_push();
 	set_quad(quad);

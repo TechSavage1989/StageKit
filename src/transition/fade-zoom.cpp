@@ -42,13 +42,27 @@ public:
 		mode_ = static_cast<EaseMode>(obs_data_get_int(settings, "ease_mode"));
 		small_ = std::clamp(obs_data_get_double(settings, "zoom"), 10.0, 100.0) / 100.0;
 	}
-	void render() { obs_transition_video_render(source_, draw_cb); }
+	void render()
+	{
+		// Which sides have a source. OBS hands the callback a see-through
+		// placeholder for a side without one, never nothing, so an item
+		// being hidden looked like a change of scene into nothing: it stayed
+		// whole and went at once at the end.
+		obs_source_t *a = obs_transition_get_source(source_, OBS_TRANSITION_SOURCE_A);
+		obs_source_t *b = obs_transition_get_source(source_, OBS_TRANSITION_SOURCE_B);
+		has_a_ = a != nullptr;
+		has_b_ = b != nullptr;
+		obs_source_release(a);
+		obs_source_release(b);
+		obs_transition_video_render(source_, draw_cb);
+	}
 	obs_source_t *source() const { return source_; }
 
 private:
 	static void draw_cb(void *data, gs_texture_t *a, gs_texture_t *b, float t, uint32_t cx, uint32_t cy)
 	{
-		static_cast<FadeZoom *>(data)->draw(a, b, t, cx, cy);
+		auto *self = static_cast<FadeZoom *>(data);
+		self->draw(self->has_a_ ? a : nullptr, self->has_b_ ? b : nullptr, t, cx, cy);
 	}
 	void draw(gs_texture_t *a, gs_texture_t *b, float t, uint32_t cx, uint32_t cy);
 
@@ -56,7 +70,8 @@ private:
 	std::mutex mutex_;
 	EaseCurve curve_ = EaseCurve::Cubic;
 	EaseMode mode_ = EaseMode::InOut;
-	double small_ = 0.8; // the size of a picture when it is all but gone
+	double small_ = 0.8;                 // the size of a picture when it is all but gone
+	bool has_a_ = false, has_b_ = false; // drawing thread only
 };
 
 void FadeZoom::draw(gs_texture_t *a, gs_texture_t *b, float t, uint32_t cx, uint32_t cy)

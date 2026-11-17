@@ -121,8 +121,10 @@ protected:
 	// that shows nothing.
 	Crop seen_crop(obs_sceneitem_t *item, const Shown &shown);
 	void forget_seen();
-	// One picture, or two mixed (`amount` of the second), laid onto a quad.
-	void draw_texture(gs_texture_t *first, gs_texture_t *second, const Quad &quad, float amount);
+	// One picture, or two mixed (`amount` of the second), laid onto a quad,
+	// at a strength (`opacity`, for a silhouette a part counts in only partly).
+	void draw_texture(gs_texture_t *first, gs_texture_t *second, const Quad &quad, float amount,
+			  float opacity = 1.0f);
 	// An item's source on a quad, with a crop.
 	void draw_item(const Shown &shown, const Quad &quad, const Crop &crop);
 	// A picture of cx by cy at a strength, `zoom` times its size round its

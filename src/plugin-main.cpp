@@ -46,6 +46,24 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "transition/morph.hpp"
 #include "view/cropped-view.hpp"
 #include "zoom/ramp-zoom.hpp"
+// ==== scene-filters:modes ====
+#include "placement/scene-modes.hpp"
+// ==== end scene-filters:modes ====
+// ==== scene-filters:transitions ====
+#include "placement/scene-transitions.hpp"
+// ==== end scene-filters:transitions ====
+// ==== scene-filters:fit ====
+#include "placement/scene-fit.hpp"
+// ==== end scene-filters:fit ====
+// ==== scene-filters:standby-corners ====
+#include "placement/scene-corners.hpp"
+#include "placement/scene-standby.hpp"
+// ==== end scene-filters:standby-corners ====
+// ==== scene-filters:shadow ====
+#include "look/scene-shadow.hpp"
+// ==== end scene-filters:shadow ====
+// ==== scene-filters:perf ====
+// ==== end scene-filters:perf ====
 
 OBS_DECLARE_MODULE()
 OBS_MODULE_USE_DEFAULT_LOCALE(PLUGIN_NAME, "en-US")
@@ -127,6 +145,25 @@ bool obs_module_load(void)
 	stagekit::register_morph();
 	stagekit::register_item_morph();
 	stagekit::register_fade_zoom();
+	// ==== scene-filters:modes ====
+	stagekit::register_scene_modes();
+	stagekit::vendor_api_add_test_calls();
+	// ==== end scene-filters:modes ====
+	// ==== scene-filters:transitions ====
+	stagekit::register_scene_transitions();
+	// ==== end scene-filters:transitions ====
+	// ==== scene-filters:fit ====
+	stagekit::register_scene_fit();
+	// ==== end scene-filters:fit ====
+	// ==== scene-filters:standby-corners ====
+	stagekit::register_scene_standby();
+	stagekit::register_scene_corners();
+	// ==== end scene-filters:standby-corners ====
+	// ==== scene-filters:shadow ====
+	stagekit::register_scene_shadow();
+	// ==== end scene-filters:shadow ====
+	// ==== scene-filters:perf ====
+	// ==== end scene-filters:perf ====
 	// A change from one item to another that is under way ends before OBS
 	// takes its scenes apart.
 	obs_frontend_add_event_callback(
@@ -162,6 +199,7 @@ void obs_module_unload(void)
 	stagekit::item_morph_stop();
 	stagekit::loading_watch_stop();
 	stagekit::fit_item_stop();
+	stagekit::scene_transitions_stop();
 	stagekit::stop_window_watch();
 	stagekit::stop_updater();
 	obs_log(LOG_INFO, "plugin unloaded");

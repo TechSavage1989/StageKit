@@ -27,7 +27,38 @@ const NAMES: Record<string, string> = {
 	stagekit_show_in_scenes: "Show in Scenes",
 	stagekit_standby: "Standby Image",
 	stagekit_visibility_link: "Link Visibility",
+	stagekit_scene_modes: "Scene Modes",
+	stagekit_scene_transitions: "Scene Transitions",
+	stagekit_scene_fit: "Scene Fit",
+	stagekit_scene_standby: "Scene Standby",
+	stagekit_scene_corners: "Scene Corners",
+	stagekit_scene_shadow: "Scene Shadow",
 };
+
+/**
+ * Filter kinds that only go on a scene: a key for one of them has no source
+ * to picture, so its Source type is not offered or used, and no input kind
+ * is looked for.
+ */
+const SCENE_KINDS = new Set([
+	"stagekit_fit_item",
+	"stagekit_active_app",
+	"stagekit_visibility_link",
+	"stagekit_show_hide",
+	"stagekit_layout",
+	"stagekit_place_item",
+	"stagekit_match_item",
+	"stagekit_scene_modes",
+	"stagekit_scene_transitions",
+	"stagekit_scene_fit",
+	"stagekit_scene_standby",
+	"stagekit_scene_corners",
+	"stagekit_scene_shadow",
+]);
+
+export function isSceneKind(kind: string): boolean {
+	return SCENE_KINDS.has(kind);
+}
 
 export type FilterInfo = {
 	source: string;

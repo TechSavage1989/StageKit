@@ -12,6 +12,8 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include <obs.h>
 
+#include <string>
+
 namespace stagekit {
 
 // Registers the "StageKit" vendor with obs-websocket so external tools
@@ -35,5 +37,18 @@ void vendor_emit_options_changed();
 void vendor_switch_state(obs_source_t *filter, bool manual, bool hidden);
 // Forgets a filter that is going away.
 void vendor_switch_forget(obs_source_t *filter);
+
+// A Scene Modes filter changed its mode (ids; "" for none), or its list of
+// modes changed (then `mode` and `previous` are both the mode on). Emits
+// "SceneModeChanged" { scene, filter, mode, modeName, previous,
+// previousName }. Safe from any thread.
+void vendor_emit_scene_mode_changed(obs_source_t *filter, const std::string &mode, const std::string &previous);
+
+// For the tests, which have no obs-websocket: "stagekit_vendor_call" (in
+// string request, in string data, out string response) runs one of the
+// vendor requests with its data and answer as JSON, and
+// "stagekit_vendor_events" (out string events) gives the events emitted
+// since it was last called, one JSON object per line. Adds them once.
+void vendor_api_add_test_calls();
 
 } // namespace stagekit

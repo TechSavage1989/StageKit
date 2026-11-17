@@ -115,6 +115,13 @@ ICONS = {
     "programtrigger": lambda d: (box(d, 0.06, 0.16, 0.6, 0.84), line(d, 0.06, 0.32, 0.6, 0.32), d.polygon([p(0.68, 0.3), p(0.68, 0.7), p(0.96, 0.5)], fill=INK)),
     "visibilitylink": lambda d: (box(d, 0.04, 0.32, 0.56, 0.68, r=0.18), box(d, 0.44, 0.32, 0.96, 0.68, r=0.18)),
     "showhide": lambda d: (eye(d, 0.5, 0.4, 0.42, 0.24), arrow(d, 0.22, 0.86, 0.78, 0.86, 0.12, W - 3)),
+    # The scene filters: a scene's frame, and what the filter does to all its sources.
+    "scenefit": lambda d: (box(d, 0.04, 0.14, 0.96, 0.86), box(d, 0.14, 0.26, 0.58, 0.74, r=0.03, fill=True), box(d, 0.7, 0.26, 0.86, 0.74, r=0.03, fill=True), arrow(d, 0.6, 0.5, 0.68, 0.5, 0.07, W - 5)),
+    "sceneshadow": lambda d: (box(d, 0.04, 0.14, 0.96, 0.86), box(d, 0.22, 0.36, 0.5, 0.76, r=0.03, fill=True), box(d, 0.14, 0.26, 0.42, 0.66, r=0.03, width=W - 4), box(d, 0.64, 0.36, 0.86, 0.76, r=0.03, fill=True), box(d, 0.56, 0.26, 0.78, 0.66, r=0.03, width=W - 4)),
+    "scenecorners": lambda d: (box(d, 0.04, 0.14, 0.96, 0.86), box(d, 0.14, 0.27, 0.52, 0.73, r=0.12, width=W - 3), box(d, 0.6, 0.27, 0.86, 0.73, r=0.1, width=W - 3)),
+    "scenestandby": lambda d: (box(d, 0.04, 0.14, 0.96, 0.86), d.arc((*p(0.32, 0.3), *p(0.68, 0.72)), -55, 235, fill=INK, width=W - 2), line(d, 0.5, 0.24, 0.5, 0.5, W - 2)),
+    # The Scene Mode key: modes stacked, one of them on.
+    "mode": lambda d: (box(d, 0.14, 0.06, 0.86, 0.3, r=0.06), box(d, 0.14, 0.38, 0.86, 0.62, r=0.06, fill=True), box(d, 0.14, 0.7, 0.86, 0.94, r=0.06)),
     # Moves.
     "sendto": lambda d: (person(d, 0.06, 0.4, 0.42, 0.88), arrow(d, 0.42, 0.42, 0.88, 0.12, 0.14)),
     "placeitem": lambda d: (box(d, 0.36, 0.36, 0.64, 0.64, r=0.03, fill=True), arrow(d, 0.5, 0.3, 0.5, 0.06, 0.12, W - 3), arrow(d, 0.5, 0.7, 0.5, 0.94, 0.12, W - 3), arrow(d, 0.3, 0.5, 0.06, 0.5, 0.12, W - 3), arrow(d, 0.7, 0.5, 0.94, 0.5, 0.12, W - 3)),

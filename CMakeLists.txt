@@ -133,6 +133,43 @@ target_sources(
     src/blur/ramp-blur.hpp
     src/api/vendor-api.cpp
     src/api/vendor-api.hpp
+    src/common/filter-order.hpp
+    src/common/go-to-scene.cpp
+    src/common/go-to-scene.hpp
+    src/common/holds-hidden.cpp
+    src/common/holds-hidden.hpp
+    src/common/scene-filter-ids.hpp
+    src/common/stand-in.hpp
+    # ==== scene-filters:modes ====
+    src/placement/scene-modes.cpp
+    src/placement/scene-modes.hpp
+    # ==== end scene-filters:modes ====
+    # ==== scene-filters:transitions ====
+    src/placement/scene-transitions.cpp
+    src/placement/scene-transitions.hpp
+    # ==== end scene-filters:transitions ====
+    # ==== scene-filters:fit ====
+    src/placement/fit-engine.cpp
+    src/placement/fit-engine.hpp
+    src/placement/scene-fit.cpp
+    src/placement/scene-fit.hpp
+    # ==== end scene-filters:fit ====
+    # ==== scene-filters:standby-corners ====
+    src/common/managed-filter.cpp
+    src/common/managed-filter.hpp
+    src/placement/scene-corners.cpp
+    src/placement/scene-corners.hpp
+    src/placement/scene-standby.cpp
+    src/placement/scene-standby.hpp
+    # ==== end scene-filters:standby-corners ====
+    # ==== scene-filters:shadow ====
+    src/look/look-paint.cpp
+    src/look/look-paint.hpp
+    src/look/scene-shadow.cpp
+    src/look/scene-shadow.hpp
+    # ==== end scene-filters:shadow ====
+    # ==== scene-filters:perf ====
+    # ==== end scene-filters:perf ====
     src/third-party/obs-websocket-api.h
 )
 
