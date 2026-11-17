@@ -12,7 +12,8 @@ import { modeItems, modeTarget } from "../modes.ts";
 import { obs } from "../obs.ts";
 import { modePicture } from "../pictures.ts";
 import { modeTitle } from "../titles.ts";
-import { answerLists, type KeySettings, remembered, showOnOff } from "./shared.ts";
+import { keptPicture } from "../key-types.ts";
+import { answerLists, type KeySettings, remembered, settle, showOnOff } from "./shared.ts";
 
 /**
  * A key that turns on one mode of a Scene Modes filter: that mode's sources
@@ -73,7 +74,9 @@ export class SceneModeKey extends SingletonAction<KeySettings> {
 		const fresh = now && found ? { kind: "stagekit_scene_modes", enabled: now.current === found.id, name: found.name, type: found.type } : undefined;
 		// (While OBS cannot say, the key goes by what it last learned.)
 		const seen = await remembered(key, settings, settings.target ?? "", fresh);
-		const picture = modePicture(settings.picture, settings.sourceType, seen?.type, seen?.name);
+		const pick = (s: KeySettings) => modePicture(keptPicture(s), s.sourceType, seen?.type, seen?.name);
+		settings = await settle(key, "mode", seen ? { ...settings, seen } : settings, (s) => pick(s).id);
+		const picture = pick(settings);
 		await showOnOff(key, picture, seen?.enabled === true, settings.palette);
 		await key.setTitle(modeTitle(seen?.name));
 	}

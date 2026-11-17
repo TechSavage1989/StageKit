@@ -20,8 +20,20 @@
 		<sdpi-item label="Move">
 			<sdpi-select setting="target" datasource="getTargets" placeholder="Choose" show-refresh></sdpi-select>
 		</sdpi-item>
-		<sdpi-item label="Image">
-			<sdpi-select setting="picture" datasource="getPictures" default=""></sdpi-select>
+		<sdpi-item label="Position" title="Which place on the screen the image shows. Automatic shows where the filter sends the source.">
+			<sdpi-select setting="look" placeholder="Automatic">
+				<option value="auto">Automatic</option>
+				<option value="top-left">Top left</option>
+				<option value="top-centre">Top centre</option>
+				<option value="top-right">Top right</option>
+				<option value="middle-left">Middle left</option>
+				<option value="centre">Centre</option>
+				<option value="middle-right">Middle right</option>
+				<option value="bottom-left">Bottom left</option>
+				<option value="bottom-centre">Bottom centre</option>
+				<option value="bottom-right">Bottom right</option>
+				<option value="spot">Saved spot</option>
+			</sdpi-select>
 		</sdpi-item>
 		<sdpi-item label="Palette">
 			<sdpi-select setting="palette" default="mono">

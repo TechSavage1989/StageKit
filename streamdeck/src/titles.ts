@@ -148,7 +148,9 @@ export function modeTitle(mode: string | undefined): string {
 	return fitted(mode, "Mode");
 }
 
-export function hookTitle(inputKind: string | undefined): string {
+/** A Capture Active Window key: its Capture type when one is chosen, else the kind of capture. */
+export function hookTitle(inputKind: string | undefined, captureType?: string): string {
+	if (captureType === "window" || captureType === "game") return captureType === "window" ? "Capture\nWindow" : "Capture\nGame";
 	return inputKind === "window_capture" ? "Capture\nWindow" : "Capture\nGame";
 }
 

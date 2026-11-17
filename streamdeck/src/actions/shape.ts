@@ -13,6 +13,7 @@ import { obs } from "../obs.ts";
 import { file, shapePicture } from "../pictures.ts";
 import { shapeTitle } from "../titles.ts";
 import { answerLists, type KeySettings } from "./shared.ts";
+import { keptPicture } from "../key-types.ts";
 
 /**
  * A key that sets a game's picture shape by hand, for when Auto Frame's own
@@ -54,7 +55,7 @@ export class PictureShape extends SingletonAction<KeySettings> {
 
 	/** The shape is the key's title unless the user wrote their own; the picture is Auto Frame's. */
 	private async show(key: KeyAction<KeySettings>, settings: KeySettings): Promise<void> {
-		await key.setImage(file(shapePicture(settings.picture, settings.shape), true, settings.palette));
+		await key.setImage(file(shapePicture(keptPicture(settings), settings.shape), true, settings.palette));
 		await key.setTitle(shapeTitle(settings.shape));
 	}
 }

@@ -309,6 +309,199 @@ for _type in SOURCE_TYPES:
 DRAWINGS.update(HOOK_TYPES)
 
 
+# More source types, for what no picture of the pack shows on its own (the
+# owner: "make as many scene and source types as possible and provide the
+# proper respective icons"). Generic, as every type is: no one's own sources.
+# Where the owner's own sets have a picture of a type for a key's function
+# (a show key's eye, a shadow, a blur, a scene layout), src/key-types.json
+# gives the key that one; these are what is left. Ids append-only, in
+# src/key-types.json's sourceTypes.
+def _person(cx, cy, r):
+    return [("dot", cx, cy - r * 0.55, r * 0.45), ("arc", cx, cy + r * 0.95, r * 0.9, 180, 360)]
+
+
+MORE_TYPES = {
+    # A cartridge.
+    "retro": [("frame", 18, 3, 46, 33), ("box", 22, 8, 42, 20), ("line", 23, 26, 23, 31), ("line", 29, 26, 29, 31),
+              ("line", 35, 26, 35, 31), ("line", 41, 26, 41, 31)],
+    # A handheld's screen linked to a console's picture by its cable, and the
+    # second of two such screens (the owner's console-plus-handheld layout).
+    "linked_handheld": [("frame", 4, 4, 34, 26), ("frame", 42, 8, 60, 30), ("box", 45, 11, 57, 20), ("dot", 48, 25, 1.6),
+                        ("dot", 54, 25, 1.6), ("line", 34, 20, 42, 20)],
+    "linked_handheld_2": [("frame", 4, 2, 22, 17), ("box", 7, 5, 19, 12), ("frame", 4, 19, 22, 34), ("box", 7, 22, 19, 29),
+                          ("frame", 30, 19, 48, 34), ("box", 30, 19, 48, 34), ("line", 22, 26, 30, 26)],
+    # A window with a gamepad in it.
+    "emulator": [("frame", 6, 3, 58, 33), ("box", 6, 3, 58, 9), ("line", 18, 21, 28, 21), ("line", 23, 16, 23, 26),
+                 ("dot", 40, 18, 2.5), ("dot", 46, 24, 2.5)],
+    # A handheld: screen, cross pad and two buttons.
+    "handheld": [("frame", 8, 5, 56, 31), ("frame", 21, 9, 43, 27), ("line", 11, 18, 18, 18), ("line", 14.5, 14.5, 14.5, 21.5),
+                 ("dot", 50, 14, 2.2), ("dot", 50, 22, 2.2)],
+    "second_display": [("frame", 3, 4, 29, 22), ("box", 35, 4, 61, 22), ("line", 16, 22, 16, 28), ("line", 48, 22, 48, 28),
+                       ("line", 9, 30, 23, 30), ("line", 41, 30, 55, 30)],
+    # A page of writing with its corner turned.
+    "office": [("line", 20, 2, 38, 2), ("line", 20, 2, 20, 34), ("line", 20, 34, 44, 34), ("line", 44, 34, 44, 9),
+               ("line", 38, 2, 44, 9), ("line", 25, 13, 39, 13), ("line", 25, 19, 39, 19), ("line", 25, 25, 34, 25)],
+    "video_player": [("frame", 6, 2, 58, 25), ("tri", 27, 7, 27, 20, 38, 13.5), ("line", 6, 31, 58, 31), ("box", 6, 28, 28, 34)],
+    # A board with pictures pinned up.
+    "reference": [("frame", 4, 2, 60, 34), ("box", 9, 7, 25, 18), ("frame", 29, 7, 43, 20), ("box", 47, 7, 55, 16),
+                  ("box", 9, 23, 20, 29), ("box", 25, 25, 55, 29)],
+    # Cameras of several sorts: a face in a corner, the whole screen, at the side, on a phone, over a desk.
+    "facecam": [("frame", 4, 2, 60, 34), ("frame", 38, 16, 58, 32)] + _person(48, 25, 6),
+    "full_camera": [("frame", 4, 2, 60, 34)] + _person(32, 18, 13),
+    "side_camera": [("frame", 4, 2, 60, 34), ("line", 42, 2, 42, 34), ("box", 8, 7, 37, 29)] + _person(51, 16, 7),
+    "phone_camera": [("frame", 22, 1, 42, 35)] + _person(32, 18, 7),
+    "workspace_camera": [("box", 24, 1, 40, 7), ("dot", 32, 9, 2.5), ("line", 4, 33, 60, 33), ("box", 16, 25, 30, 32),
+                         ("frame", 36, 22, 50, 32)] + arrow(32, 12, 32, 20, 4),
+    "virtual_camera": [("ring", 26, 18, 10), ("dot", 26, 18, 4), ("line", 48, 4, 48, 16), ("line", 42, 10, 54, 10),
+                       ("line", 44, 6, 52, 14), ("line", 52, 6, 44, 14), ("dot", 52, 27, 2), ("dot", 44, 31, 1.5)],
+    # A speech bubble with a voice in it.
+    "voice_chat": [("frame", 8, 3, 50, 26), ("tri", 14, 26, 24, 26, 11, 34), ("line", 17, 11, 17, 18), ("line", 23, 8, 23, 21),
+                   ("line", 29, 12, 29, 17), ("line", 35, 9, 35, 20), ("line", 41, 12, 41, 17)],
+    # Devices.
+    "headset": [("arc", 32, 21, 15, 180, 360), ("box", 14, 19, 22, 31), ("box", 42, 19, 50, 31), ("line", 46, 31, 38, 34),
+                ("dot", 36, 34, 2)],
+    "pc": [("frame", 4, 4, 34, 24), ("line", 19, 24, 19, 30), ("line", 11, 31, 27, 31), ("frame", 42, 2, 58, 34), ("dot", 50, 9, 2),
+           ("line", 46, 16, 54, 16), ("line", 46, 21, 54, 21)],
+    "retro_console": [("frame", 6, 14, 58, 32), ("frame", 22, 3, 42, 14), ("line", 26, 8, 38, 8), ("dot", 13, 23, 2.5),
+                      ("box", 44, 21, 52, 25), ("line", 6, 18, 58, 18)],
+    "controller": [("frame", 12, 10, 52, 25), ("tri", 12, 25, 22, 25, 10, 33), ("tri", 52, 25, 42, 25, 54, 33), ("line", 18, 17.5, 26, 17.5),
+                   ("line", 22, 13.5, 22, 21.5), ("dot", 41, 15, 2), ("dot", 46, 20, 2), ("line", 32, 10, 32, 2)],
+    "stream_deck": [("frame", 8, 4, 56, 32), ("box", 13, 9, 23, 17), ("box", 27, 9, 37, 17), ("box", 41, 9, 51, 17),
+                    ("box", 13, 20, 23, 28), ("box", 27, 20, 37, 28), ("box", 41, 20, 51, 28)],
+    "pen_display": [("frame", 4, 4, 44, 28), ("line", 8, 33, 40, 33), ("line", 24, 28, 24, 33), ("line", 47, 31, 60, 6),
+                    ("tri", 47, 31, 45, 35, 50, 33), ("arc", 18, 16, 6, 180, 360), ("arc", 30, 16, 6, 0, 180)],
+    "vr_headset": [("frame", 12, 9, 52, 27), ("ring", 23, 18, 5), ("ring", 41, 18, 5), ("line", 4, 14, 12, 14), ("line", 52, 14, 60, 14),
+                   ("tri", 28, 27, 36, 27, 32, 22)],
+    "action_cam": [("frame", 18, 8, 46, 30), ("ring", 30, 19, 7), ("dot", 30, 19, 2.5), ("box", 38, 4, 44, 8), ("dot", 41, 13, 1.6)],
+    "ptz_camera": [("box", 22, 29, 42, 33), ("line", 32, 23, 32, 29), ("ring", 32, 14, 9), ("dot", 32, 14, 3.5),
+                   ("arc", 32, 14, 15, 200, 250), ("arc", 32, 14, 15, 290, 340)],
+    "mixer": [("frame", 4, 3, 60, 33), ("line", 14, 8, 14, 28), ("line", 26, 8, 26, 28), ("line", 38, 8, 38, 28), ("line", 50, 8, 50, 28),
+              ("box", 10, 20, 18, 24), ("box", 22, 11, 30, 15), ("box", 34, 17, 42, 21), ("box", 46, 13, 54, 17)],
+    "key_light": [("box", 16, 3, 48, 17), ("line", 32, 17, 32, 30), ("line", 22, 33, 42, 33), ("line", 12, 22, 18, 19),
+                  ("line", 52, 22, 46, 19), ("line", 24, 23, 26, 20), ("line", 40, 23, 38, 20)],
+    "green_screen": [("box", 8, 3, 56, 27), ("line", 12, 27, 6, 34), ("line", 52, 27, 58, 34), ("line", 32, 27, 32, 34)],
+    # Status.
+    "live": [("dot", 32, 18, 6), ("arc", 32, 18, 12, -45, 45), ("arc", 32, 18, 19, -45, 45), ("arc", 32, 18, 12, 135, 225),
+             ("arc", 32, 18, 19, 135, 225)],
+    "recording": [("line", 6, 4, 13, 4), ("line", 6, 4, 6, 10), ("line", 51, 4, 58, 4), ("line", 58, 4, 58, 10),
+                  ("line", 6, 32, 13, 32), ("line", 6, 26, 6, 32), ("line", 51, 32, 58, 32), ("line", 58, 26, 58, 32), ("dot", 32, 18, 9)],
+    "paused": [("ring", 32, 18, 15), ("box", 25, 10, 30, 26), ("box", 34, 10, 39, 26)],
+    "muted": [("frame", 27, 3, 37, 20), ("line", 22, 13, 22, 21), ("line", 42, 13, 42, 21), ("line", 22, 22, 42, 22),
+              ("line", 32, 22, 32, 29), ("line", 24, 31, 40, 31), ("line", 16, 33, 48, 3)],
+    "offline": [("frame", 10, 3, 54, 25), ("line", 32, 25, 32, 30), ("line", 22, 31, 42, 31), ("ring", 32, 14, 7), ("line", 27, 9, 37, 19)],
+    "privacy": [("ring", 32, 15, 10), ("dot", 32, 15, 4), ("line", 32, 25, 32, 30), ("line", 22, 31, 42, 31), ("line", 16, 33, 48, 2)],
+    "raid": [("dot", 9, 18, 3.5), ("dot", 19, 18, 3.5), ("dot", 29, 18, 3.5)] + arrow(36, 18, 58, 18, 6),
+    # A bar filling up to a flag.
+    "events": [("frame", 4, 16, 50, 26), ("box", 4, 16, 32, 26), ("line", 56, 4, 56, 32), ("tri", 56, 4, 63, 8, 56, 12)],
+    # A stopwatch.
+    "countdown": [("ring", 32, 20, 13), ("box", 29, 2, 35, 6), ("line", 32, 20, 32, 11), ("line", 32, 20, 39, 24)],
+    # A badge with a star.
+    "logo": [("ring", 32, 18, 16), ("tri", 32, 6, 42, 26, 22, 26), ("tri", 32, 30, 22, 12, 42, 12)],
+    "technical": [("line", 32, 3, 13, 33), ("line", 13, 33, 51, 33), ("line", 51, 33, 32, 3), ("line", 32, 13, 32, 24),
+                  ("dot", 32, 28.5, 2)],
+}
+for _type, _shapes in MORE_TYPES.items():
+    DRAWINGS[type_name(_type)] = _shapes
+
+# Scene types the owner's scene pictures (the "scenes" group) have nothing
+# for: each a scene of that kind laid out. Ids in src/key-types.json's
+# sceneTypes; the picture is options/scene-type-<id>.
+_BARS = [("box", 40, 7, 58, 11), ("box", 40, 15, 58, 19), ("box", 40, 23, 58, 27)]
+SCENE_TYPES = {
+    "countdown": [("frame", 2, 2, 62, 34), ("ring", 32, 19, 10), ("box", 30, 5, 34, 8), ("line", 32, 19, 32, 12), ("line", 32, 19, 37, 22)],
+    "technical": [("frame", 2, 2, 62, 34), ("line", 32, 6, 18, 30), ("line", 18, 30, 46, 30), ("line", 46, 30, 32, 6),
+                  ("line", 32, 13, 32, 22), ("dot", 32, 26, 1.8)],
+    # A computer game: a monitor with a gamepad, and a keyboard.
+    "pc_game": [("frame", 8, 2, 56, 24), ("line", 20, 13, 28, 13), ("line", 24, 9, 24, 17), ("dot", 38, 11, 2), ("dot", 43, 15, 2),
+                ("box", 12, 28, 46, 33), ("dot", 53, 30.5, 3)],
+    # Retro gaming: a sprite of big square pixels.
+    "retro": [("box", 22, 4, 28, 9), ("box", 36, 4, 42, 9), ("box", 18, 9, 46, 15), ("box", 14, 15, 22, 21), ("box", 28, 15, 36, 21),
+              ("box", 42, 15, 50, 21), ("box", 14, 21, 50, 27), ("box", 18, 27, 24, 33), ("box", 40, 27, 46, 33)],
+    # Activities.
+    "speedrun": [("ring", 24, 20, 12), ("box", 21, 3, 27, 6), ("line", 24, 20, 24, 12), ("line", 24, 20, 30, 24),
+                 ("line", 46, 4, 46, 33), ("box", 46, 4, 52, 9), ("box", 52, 9, 58, 14), ("frame", 46, 4, 58, 14)],
+    "music_production": [("frame", 4, 6, 60, 32), ("line", 12, 6, 12, 32), ("line", 20, 6, 20, 32), ("line", 28, 6, 28, 32),
+                         ("line", 36, 6, 36, 32), ("line", 44, 6, 44, 32), ("line", 52, 6, 52, 32), ("box", 9, 6, 15, 20),
+                         ("box", 17, 6, 23, 20), ("box", 33, 6, 39, 20), ("box", 41, 6, 47, 20), ("box", 49, 6, 55, 20)],
+    "cooking": [("ring", 26, 23, 11), ("line", 37, 23, 60, 23), ("line", 20, 4, 22, 8), ("line", 22, 8, 20, 11),
+                ("line", 27, 3, 29, 7), ("line", 29, 7, 27, 10), ("line", 32, 4, 34, 8)],
+    "irl": [("ring", 32, 12, 8), ("dot", 32, 12, 3), ("tri", 25, 16, 39, 16, 32, 30), ("line", 12, 33, 52, 33)],
+    "tutorial": [("frame", 4, 3, 44, 27), ("line", 10, 10, 30, 10), ("line", 10, 16, 36, 16), ("line", 10, 22, 26, 22),
+                 ("line", 38, 33, 30, 18)] + _person(53, 22, 9),
+    "unboxing": [("frame", 14, 16, 50, 33), ("line", 14, 16, 6, 8), ("line", 50, 16, 58, 8), ("line", 22, 16, 28, 6), ("line", 42, 16, 36, 6)],
+    "fitness": [("line", 14, 18, 50, 18), ("box", 8, 8, 14, 28), ("box", 50, 8, 56, 28), ("box", 3, 12, 8, 24), ("box", 56, 12, 61, 24)],
+    "reading": [("line", 32, 6, 32, 32), ("line", 32, 6, 8, 3), ("line", 8, 3, 8, 29), ("line", 8, 29, 32, 32), ("line", 32, 6, 56, 3),
+                ("line", 56, 3, 56, 29), ("line", 56, 29, 32, 32), ("line", 13, 12, 27, 13), ("line", 37, 13, 51, 12)],
+    "watch_party": [("frame", 10, 2, 54, 20), ("tri", 28, 6, 28, 16, 37, 11)] + _person(17, 30, 6) + _person(32, 30, 6) + _person(47, 30, 6),
+    "charity": [("dot", 24, 14, 9), ("dot", 40, 14, 9), ("tri", 15.5, 17, 48.5, 17, 32, 33)],
+    # The owner's console-and-handheld layout has its own picture; this is
+    # a classic one.
+    # An old television with a game on it.
+    "classic": [("frame", 6, 7, 48, 34), ("frame", 10, 11, 38, 30), ("dot", 43, 15, 2), ("dot", 43, 22, 2), ("line", 22, 7, 16, 1),
+                ("line", 30, 7, 36, 1), ("line", 17, 20, 23, 20), ("line", 20, 17, 20, 23), ("dot", 30, 19, 1.8)],
+    "emulator": [("frame", 2, 2, 36, 34), ("box", 2, 2, 36, 7), ("line", 9, 20, 17, 20), ("line", 13, 16, 13, 24), ("dot", 25, 18, 2),
+                 ("dot", 30, 22, 2)] + _BARS,
+    "second_screen": [("frame", 2, 6, 30, 28), ("frame", 34, 6, 62, 28), ("box", 6, 10, 26, 24), ("line", 38, 12, 58, 12),
+                      ("line", 38, 18, 54, 18), ("line", 38, 24, 50, 24)],
+    "art": [("frame", 4, 3, 42, 33), ("arc", 15, 20, 6, 180, 360), ("arc", 27, 20, 6, 0, 180), ("line", 47, 31, 60, 5), ("dot", 46, 32, 3)],
+    # A cube, as a 3D model is drawn.
+    "modelling": [("frame", 14, 12, 36, 32), ("frame", 26, 4, 48, 24), ("line", 14, 12, 26, 4), ("line", 36, 12, 48, 4),
+                  ("line", 36, 32, 48, 24), ("line", 14, 32, 26, 24)],
+    "coding": [("frame", 2, 2, 62, 34), ("box", 2, 2, 62, 8), ("line", 22, 13, 14, 21), ("line", 14, 21, 22, 29), ("line", 42, 13, 50, 21),
+               ("line", 50, 21, 42, 29), ("line", 36, 12, 28, 30)],
+    "browsing": [("frame", 2, 2, 62, 34), ("box", 2, 2, 62, 8), ("ring", 32, 21, 9), ("line", 23, 21, 41, 21), ("line", 32, 12, 32, 30),
+                 ("arc", 32, 21, 5, 270, 450)],
+    "just_chatting": _person(18, 20, 13) + _BARS,
+    "interview": _person(17, 19, 11) + _person(47, 19, 11) + [("line", 32, 4, 32, 32)],
+    "podcast": [("frame", 27, 3, 37, 21), ("line", 22, 14, 22, 22), ("line", 42, 14, 42, 22), ("line", 22, 23, 42, 23),
+                ("line", 32, 23, 32, 30), ("line", 24, 32, 40, 32), ("arc", 32, 12, 17, -35, 35), ("arc", 32, 12, 17, 145, 215)],
+    "music": [("box", 6, 22, 12, 34), ("box", 15, 14, 21, 34), ("box", 24, 18, 30, 34), ("box", 33, 9, 39, 34), ("dot", 51, 28, 4.5),
+              ("line", 55, 28, 55, 6), ("line", 55, 6, 61, 10)],
+}
+for _scene, _shapes in SCENE_TYPES.items():
+    DRAWINGS["scene-type-" + _scene.replace("_", "-")] = _shapes
+
+# Styles a key's image can show (src/key-types.json's looks): more blurs and
+# mosaic cells than the pack's own, corner and edge looks, shadow looks and
+# transitions. Each is options/style-<name>, in the "styles" group.
+_GRID = [("frame", 4, 2, 60, 34)]
+STYLES = {
+    "mosaic-circle": _GRID + [("dot", x, y, 4.2) for x in (12, 24, 36, 48) for y in (10, 26)] + [("dot", x, 18, 4.2) for x in (18, 30, 42, 54)],
+    "mosaic-triangle": _GRID + [("tri", x, 6, x + 12, 6, x + 6, 17) for x in (8, 22, 36)] + [("tri", x + 7, 19, x, 30, x + 14, 30) for x in (8, 22, 36)],
+    "mosaic-voronoi": _GRID + [("line", 4, 14, 20, 10), ("line", 20, 10, 28, 2), ("line", 20, 10, 26, 22), ("line", 26, 22, 14, 34),
+                               ("line", 26, 22, 42, 20), ("line", 42, 20, 46, 2), ("line", 42, 20, 50, 34), ("line", 42, 20, 60, 16)],
+    "mosaic-rhomboid": _GRID + [("line", 4, 2, 36, 34), ("line", 22, 2, 54, 34), ("line", 40, 2, 60, 22), ("line", 4, 20, 18, 34),
+                                ("line", 28, 2, 4, 26), ("line", 46, 2, 14, 34), ("line", 60, 6, 32, 34), ("line", 60, 24, 50, 34)],
+    "mosaic-triakis": _GRID + [("line", 20, 2, 12, 18), ("line", 12, 18, 20, 34), ("line", 44, 2, 52, 18), ("line", 52, 18, 44, 34),
+                               ("line", 20, 2, 44, 2), ("line", 20, 34, 44, 34), ("line", 12, 18, 52, 18), ("line", 20, 2, 44, 34),
+                               ("line", 44, 2, 20, 34), ("dot", 32, 18, 2.5)],
+    "glass": [("frame", 6, 3, 30, 17), ("frame", 34, 3, 58, 17), ("frame", 6, 19, 30, 33), ("frame", 34, 19, 58, 33),
+              ("line", 10, 7, 16, 7), ("line", 38, 7, 44, 7), ("line", 10, 23, 16, 23), ("line", 38, 23, 44, 23)],
+    "trail": [("frame", 6, 12, 18, 24), ("frame", 16, 10, 30, 26), ("box", 30, 7, 50, 29)] + arrow(52, 18, 60, 18, 3),
+    # Corners & Edges
+    "edge-soft": [("box", 22, 11, 42, 25), ("frame", 17, 7, 47, 29), ("frame", 12, 3, 52, 33)],
+    "edge-outline": [("box", 16, 9, 48, 27), ("frame", 10, 4, 54, 32)],
+    "edge-trim": [("box", 16, 9, 48, 27), ("line", 4, 9, 12, 9), ("line", 16, 1, 16, 5), ("line", 52, 9, 60, 9), ("line", 48, 1, 48, 5),
+                  ("line", 4, 27, 12, 27), ("line", 16, 31, 16, 35), ("line", 52, 27, 60, 27), ("line", 48, 31, 48, 35)],
+    # Shadow, Glow & Outline
+    "shadow-hard": [("box", 22, 11, 52, 33), ("frame", 12, 3, 44, 25), ("box", 14, 5, 42, 23)],
+    "shadow-long": [("frame", 10, 4, 32, 22), ("line", 32, 4, 56, 28), ("line", 32, 22, 46, 34), ("line", 10, 22, 22, 34),
+                    ("line", 56, 28, 50, 34)],
+    "shadow-neon": [("frame", 18, 10, 46, 26), ("frame", 12, 5, 52, 31), ("line", 6, 18, 10, 18), ("line", 54, 18, 58, 18),
+                    ("line", 32, 1, 32, 3), ("line", 32, 33, 32, 35)],
+    # Transitions
+    "fade": [("frame", 6, 4, 38, 26), ("box", 26, 10, 58, 32)],
+    "cut": [("frame", 4, 8, 26, 28), ("box", 38, 8, 60, 28), ("line", 32, 2, 32, 34)],
+    "slide": [("frame", 4, 6, 60, 30), ("box", 4, 6, 26, 30)] + arrow(30, 18, 54, 18, 4),
+    "swipe": [("frame", 4, 6, 60, 30), ("arc", 32, 34, 18, 210, 330)] + arrow(46, 23, 49, 26, 4),
+    "wipe": [("frame", 4, 4, 60, 32), ("tri", 4, 4, 40, 4, 4, 32), ("line", 40, 4, 22, 32)],
+    "zoom": [("frame", 24, 12, 40, 24), ("frame", 6, 2, 58, 34)] + arrow(22, 10, 12, 5, 4) + arrow(42, 26, 52, 31, 4),
+    "morph": [("box", 6, 9, 24, 27), ("ring", 49, 18, 9)] + arrow(27, 18, 37, 18, 4),
+}
+for _style, _shapes in STYLES.items():
+    DRAWINGS["style-" + _style] = _shapes
+
+
 def rounded(x0, y0, x1, y1, r):
     """A frame with round corners, as lines and arcs."""
     return [("line", x0 + r, y0, x1 - r, y0), ("line", x0 + r, y1, x1 - r, y1), ("line", x0, y0 + r, x0, y1 - r),
@@ -329,6 +522,8 @@ DRAWINGS["scene-corners"] = [("frame", 2, 2, 62, 34)] + rounded(7, 7, 35, 29, 7)
 SWITCHES = ["scene", "zoom", "fit", "overlap", "source-switcher", "window-switcher", "trigger", "link", "show-hide", "limit", "slide-to-edge", "every-scene", "keep-shape", "snap", "guides", "plain-switch"]
 SWITCHES += list(GROUPED)
 SWITCHES += [type_name(t) for t in TYPES] + ["mode", "scene-fit", "scene-shadow", "scene-corners"]
+SWITCHES += [type_name(t) for t in MORE_TYPES] + ["scene-type-" + s.replace("_", "-") for s in SCENE_TYPES]
+SWITCHES += ["style-" + s for s in STYLES]
 
 
 def drawn(shapes, ink):
@@ -419,6 +614,10 @@ def main():
             group, label = GROUPED[name]
         elif name in DEVICES:
             group, label = "devices", name.replace("-", " ")
+        elif name.startswith("style-"):
+            group, label = "styles", name[6:].replace("-", " ")
+        elif name.startswith("scene-type-"):
+            group, label = "scene types", name[11:].replace("-", " ")
         elif name.startswith("type-"):
             group, label = "source types", name[5:].replace("-", " ")
         elif name in HOOK_TYPES:

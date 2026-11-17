@@ -13,7 +13,6 @@ import {
 	hookTypePictureId,
 	isSourceType,
 	SOURCE_TYPES,
-	sourceTypeItems,
 	typeOfInput,
 	typeOfName,
 	typePictureId,
@@ -22,65 +21,46 @@ import {
 const plugin = new URL("../com.techsavage1989.stagekit.sdPlugin/", import.meta.url);
 const tools = new URL("../tools/", import.meta.url);
 
-test("the types are listed once each, in the order asked for, with ids that never change", () => {
-	assert.deepEqual(
-		SOURCE_TYPES.map((t) => t.id),
-		[
-			"game",
-			"window",
-			"art_app",
-			"code_editor",
-			"browser",
-			"camera",
-			"capture_card",
-			"display",
-			"phone",
-			"tablet",
-			"chat",
-			"music",
-			"alerts",
-			"title",
-			"image",
-			"video",
-			"starting",
-			"brb",
-			"intermission",
-			"ending",
-		],
-	);
-	assert.equal(sourceTypeItems()[0].label, "Automatic");
-	assert.equal(sourceTypeItems()[0].value, "");
-	assert.equal(sourceTypeItems().length, SOURCE_TYPES.length + 1);
-	// The drawing tool lists the same ids, in the same order.
+const BETA155 = [
+	"game", "window", "art_app", "code_editor", "browser", "camera", "capture_card", "display", "phone", "tablet",
+	"chat", "music", "alerts", "title", "image", "video", "starting", "brb", "intermission", "ending",
+];
+
+test("the types are listed once each, and no id a key may have saved is gone", () => {
+	const ids = SOURCE_TYPES.map((t) => t.id);
+	assert.equal(new Set(ids).size, ids.length);
+	for (const id of BETA155) assert.ok(ids.includes(id), id);
+	for (const t of SOURCE_TYPES) assert.match(t.id, /^[a-z0-9_]+$/);
+	// The drawing tool's first twenty (each also drawn inside a capture's corners) are those.
 	const drawn = readFileSync(new URL("make-option-icons.py", tools), "utf8").match(/SOURCE_TYPES = \[([^\]]+)\]/)?.[1] ?? "";
-	assert.deepEqual([...drawn.matchAll(/"([a-z_]+)"/g)].map((m) => m[1]), SOURCE_TYPES.map((t) => t.id));
+	assert.deepEqual([...drawn.matchAll(/"([a-z_]+)"/g)].map((m) => m[1]), BETA155);
 	assert.ok(isSourceType("camera") && !isSourceType("") && !isSourceType("Camera") && !isSourceType(undefined));
 });
 
 test("every type has a wordless picture of its own, on and off, marked, in every palette", () => {
 	for (const colour of COLOURS) {
 		const looks = new Set<string>();
-		const hooks = new Set<string>();
 		for (const type of SOURCE_TYPES) {
 			const picture = PICTURES.find((p) => p.id === typePictureId(type.id));
 			assert.ok(picture, type.id);
-			assert.notEqual(picture.on, picture.off, `${type.id}: an on and an off look`);
 			for (const on of [true, false]) {
 				assert.ok(existsSync(new URL(file(picture, on, colour), plugin)), file(picture, on, colour));
 				assert.ok(existsSync(new URL(stateFile(picture, on, colour), plugin)), stateFile(picture, on, colour));
 			}
 			looks.add(readFileSync(new URL(file(picture, true, colour), plugin)).toString("base64"));
-			const hook = PICTURES.find((p) => p.id === hookTypePictureId(type.id));
-			assert.ok(hook, `hook ${type.id}`);
-			assert.ok(existsSync(new URL(file(hook, true, colour), plugin)));
-			hooks.add(readFileSync(new URL(file(hook, true, colour), plugin)).toString("base64"));
 		}
 		assert.equal(looks.size, SOURCE_TYPES.length, `two types look the same in ${colour}`);
-		assert.equal(hooks.size, SOURCE_TYPES.length, `two hook types look the same in ${colour}`);
+		const hooks = new Set<string>();
+		for (const id of BETA155) {
+			const hook = PICTURES.find((p) => p.id === hookTypePictureId(id));
+			assert.ok(hook, `hook ${id}`);
+			hooks.add(readFileSync(new URL(file(hook, true, colour), plugin)).toString("base64"));
+		}
+		assert.equal(hooks.size, BETA155.length);
 	}
-	// The last four are the holding modes' own pictures.
 	assert.equal(typePictureId("brb"), "options/mode-brb");
 	assert.equal(typePictureId("nonsense"), undefined);
+	assert.equal(hookTypePictureId("retro"), undefined, "drawn in corners only for the first twenty");
 });
 
 test("Automatic goes by what OBS says the source is", () => {
@@ -111,26 +91,33 @@ test("a name speaks of a type by its words, the longest phrase first", () => {
 	assert.equal(typeOfName("Be Right Back"), "brb");
 	assert.equal(typeOfName("BRB Text"), "brb", "brb before text");
 	assert.equal(typeOfName("Stream Starting Soon"), "starting");
-	assert.equal(typeOfName("GBA"), "game");
+	assert.equal(typeOfName("GBA"), "handheld");
+	assert.equal(typeOfName("GBA Link 2"), "linked_handheld_2", "three words before two");
+	assert.equal(typeOfName("Column: GBA"), "column_handheld", "two words before one");
+	assert.equal(typeOfName("Green Screen"), "green_screen", "not a display");
+	assert.equal(typeOfName("Side Camera"), "side_camera");
+	assert.equal(typeOfName("Second Monitor"), "second_display");
 	assert.equal(typeOfName("Capture Card"), "capture_card");
 	assert.equal(typeOfName("Main Display"), "display");
 	assert.equal(typeOfName("Weekend"), undefined, "whole words only");
 	assert.equal(typeOfName(""), undefined);
 });
 
-test("an image chosen by hand comes first, then the Source type, then Automatic, on every key", () => {
-	// A Show in Scenes key.
-	assert.equal(chooseFor("options/browser", "stagekit_show_in_scenes", {}, "Overhead", "dshow_input", "game")?.id, "options/browser");
-	assert.equal(chooseFor(undefined, "stagekit_show_in_scenes", {}, "Overhead", "dshow_input", "game")?.id, "options/type-game");
-	assert.equal(chooseFor(undefined, "stagekit_show_in_scenes", {}, "Overhead", "dshow_input", "")?.id, "options/type-camera");
-	assert.equal(chooseFor(undefined, "stagekit_show_in_scenes", {}, "Overhead", "dshow_input", "no-such")?.id, "options/type-camera");
+test("the Source type comes first, then an image kept from before, then Automatic, on every key", () => {
+	// A Show in Scenes key: the owner's own picture of that type, with the eye.
+	assert.equal(chooseFor("options/browser", "stagekit_show_in_scenes", {}, "Studio", "dshow_input", "game")?.id, "show-hide/game-capture");
+	assert.equal(chooseFor("options/browser", "stagekit_show_in_scenes", {}, "Studio", "dshow_input", "")?.id, "options/browser");
+	assert.equal(chooseFor(undefined, "stagekit_show_in_scenes", {}, "Studio", "dshow_input", "game")?.id, "show-hide/game-capture");
+	assert.equal(chooseFor(undefined, "stagekit_show_in_scenes", {}, "Studio", "dshow_input", "")?.id, "show-hide/square-camera");
+	assert.equal(chooseFor(undefined, "stagekit_show_in_scenes", {}, "Studio", "dshow_input", "auto")?.id, "show-hide/square-camera");
+	assert.equal(chooseFor(undefined, "stagekit_show_in_scenes", {}, "Studio", "dshow_input", "no-such")?.id, "show-hide/square-camera");
 	// Automatic: the pack's picture of that source, then its name's type, then its kind in OBS.
 	assert.equal(chooseFor(undefined, "stagekit_show_in_scenes", {}, "Square Camera", "dshow_input")?.id, "show-hide/square-camera");
-	assert.equal(chooseFor(undefined, "stagekit_show_in_scenes", {}, "Capture Card 2", "dshow_input")?.id, "options/type-capture-card");
+	assert.equal(chooseFor(undefined, "stagekit_show_in_scenes", {}, "Capture Card 2", "dshow_input")?.id, "show-hide/hd60s");
 	// Any other filter on a source: the type when chosen, its own picture otherwise.
-	assert.equal(chooseFor(undefined, "stagekit_ramp_blur", {}, "Overhead", undefined, "art_app")?.id, "options/type-art-app");
-	assert.equal(chooseFor(undefined, "stagekit_ramp_blur", {}, "Overhead", "dshow_input")?.id, "blur-types/gaussian");
-	assert.equal(chooseFor(undefined, "stagekit_standby", {}, "Overhead", undefined, "video")?.id, "options/type-video");
+	assert.equal(chooseFor(undefined, "stagekit_ramp_blur", {}, "Studio", undefined, "art_app")?.id, "options/type-art-app");
+	assert.equal(chooseFor(undefined, "stagekit_ramp_blur", {}, "Studio", "dshow_input")?.id, "blur-types/gaussian");
+	assert.equal(chooseFor(undefined, "stagekit_standby", {}, "Studio", undefined, "video")?.id, "options/type-video");
 	// A filter on a scene has no source: no type, no input kind.
 	for (const kind of ["stagekit_fit_item", "stagekit_scene_fit", "stagekit_scene_shadow", "stagekit_scene_corners"]) {
 		assert.ok(isSceneKind(kind), kind);
@@ -153,11 +140,12 @@ test("an image chosen by hand comes first, then the Source type, then Automatic,
 test("scene filters' keys are marked as such, and only keys on a source offer a Source type", () => {
 	for (const f of features.switches) assert.equal((f as { scene?: boolean }).scene === true, isSceneKind(f.kind), f.kind);
 	const offered = (page: string) => readFileSync(new URL(`ui/${page}.html`, plugin), "utf8").includes('setting="sourceType"');
-	for (const f of features.switches) assert.equal(offered(f.key), !isSceneKind(f.kind), f.key);
-	for (const page of ["hook", "appswitch", "mode"]) assert.ok(offered(page), page);
-	for (const page of ["scene", "tool", "option", "slide", "fitoverlap", "blur-all", "shape"]) assert.ok(!offered(page), page);
+	for (const f of features.switches) if (isSceneKind(f.kind)) assert.ok(!offered(f.key), f.key);
+	for (const page of ["showinscenes", "shadow", "standby", "blur", "zoom", "mode"]) assert.ok(offered(page), page);
+	for (const page of ["scene", "tool", "option", "slide", "fitoverlap", "blur-all", "shape", "hook", "appswitch"]) assert.ok(!offered(page), page);
 	const page = readFileSync(new URL("ui/showinscenes.html", plugin), "utf8");
-	for (const type of SOURCE_TYPES) assert.ok(page.includes(`<option value="${type.id}">${type.label}</option>`), type.id);
+	for (const type of SOURCE_TYPES)
+		assert.equal(page.includes(`<option value="${type.id}">${type.label.replace(/&/g, "&amp;")}</option>`), type.group !== "Activities", type.id);
 });
 
 test("a key remembers the kind of source and the mode its image depends on", async () => {

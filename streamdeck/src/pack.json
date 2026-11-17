@@ -2228,6 +2228,594 @@
 			"off": "options/hook-type-ending"
 		},
 		{
+			"id": "options/type-retro",
+			"group": "source types",
+			"label": "retro",
+			"on": "options/type-retro-on",
+			"off": "options/type-retro-off"
+		},
+		{
+			"id": "options/type-linked-handheld",
+			"group": "source types",
+			"label": "linked handheld",
+			"on": "options/type-linked-handheld-on",
+			"off": "options/type-linked-handheld-off"
+		},
+		{
+			"id": "options/type-linked-handheld-2",
+			"group": "source types",
+			"label": "linked handheld 2",
+			"on": "options/type-linked-handheld-2-on",
+			"off": "options/type-linked-handheld-2-off"
+		},
+		{
+			"id": "options/type-emulator",
+			"group": "source types",
+			"label": "emulator",
+			"on": "options/type-emulator-on",
+			"off": "options/type-emulator-off"
+		},
+		{
+			"id": "options/type-handheld",
+			"group": "source types",
+			"label": "handheld",
+			"on": "options/type-handheld-on",
+			"off": "options/type-handheld-off"
+		},
+		{
+			"id": "options/type-second-display",
+			"group": "source types",
+			"label": "second display",
+			"on": "options/type-second-display-on",
+			"off": "options/type-second-display-off"
+		},
+		{
+			"id": "options/type-office",
+			"group": "source types",
+			"label": "office",
+			"on": "options/type-office-on",
+			"off": "options/type-office-off"
+		},
+		{
+			"id": "options/type-video-player",
+			"group": "source types",
+			"label": "video player",
+			"on": "options/type-video-player-on",
+			"off": "options/type-video-player-off"
+		},
+		{
+			"id": "options/type-reference",
+			"group": "source types",
+			"label": "reference",
+			"on": "options/type-reference-on",
+			"off": "options/type-reference-off"
+		},
+		{
+			"id": "options/type-facecam",
+			"group": "source types",
+			"label": "facecam",
+			"on": "options/type-facecam-on",
+			"off": "options/type-facecam-off"
+		},
+		{
+			"id": "options/type-full-camera",
+			"group": "source types",
+			"label": "full camera",
+			"on": "options/type-full-camera-on",
+			"off": "options/type-full-camera-off"
+		},
+		{
+			"id": "options/type-side-camera",
+			"group": "source types",
+			"label": "side camera",
+			"on": "options/type-side-camera-on",
+			"off": "options/type-side-camera-off"
+		},
+		{
+			"id": "options/type-phone-camera",
+			"group": "source types",
+			"label": "phone camera",
+			"on": "options/type-phone-camera-on",
+			"off": "options/type-phone-camera-off"
+		},
+		{
+			"id": "options/type-workspace-camera",
+			"group": "source types",
+			"label": "workspace camera",
+			"on": "options/type-workspace-camera-on",
+			"off": "options/type-workspace-camera-off"
+		},
+		{
+			"id": "options/type-virtual-camera",
+			"group": "source types",
+			"label": "virtual camera",
+			"on": "options/type-virtual-camera-on",
+			"off": "options/type-virtual-camera-off"
+		},
+		{
+			"id": "options/type-voice-chat",
+			"group": "source types",
+			"label": "voice chat",
+			"on": "options/type-voice-chat-on",
+			"off": "options/type-voice-chat-off"
+		},
+		{
+			"id": "options/type-headset",
+			"group": "source types",
+			"label": "headset",
+			"on": "options/type-headset-on",
+			"off": "options/type-headset-off"
+		},
+		{
+			"id": "options/type-pc",
+			"group": "source types",
+			"label": "pc",
+			"on": "options/type-pc-on",
+			"off": "options/type-pc-off"
+		},
+		{
+			"id": "options/type-retro-console",
+			"group": "source types",
+			"label": "retro console",
+			"on": "options/type-retro-console-on",
+			"off": "options/type-retro-console-off"
+		},
+		{
+			"id": "options/type-controller",
+			"group": "source types",
+			"label": "controller",
+			"on": "options/type-controller-on",
+			"off": "options/type-controller-off"
+		},
+		{
+			"id": "options/type-stream-deck",
+			"group": "source types",
+			"label": "stream deck",
+			"on": "options/type-stream-deck-on",
+			"off": "options/type-stream-deck-off"
+		},
+		{
+			"id": "options/type-pen-display",
+			"group": "source types",
+			"label": "pen display",
+			"on": "options/type-pen-display-on",
+			"off": "options/type-pen-display-off"
+		},
+		{
+			"id": "options/type-vr-headset",
+			"group": "source types",
+			"label": "vr headset",
+			"on": "options/type-vr-headset-on",
+			"off": "options/type-vr-headset-off"
+		},
+		{
+			"id": "options/type-action-cam",
+			"group": "source types",
+			"label": "action cam",
+			"on": "options/type-action-cam-on",
+			"off": "options/type-action-cam-off"
+		},
+		{
+			"id": "options/type-ptz-camera",
+			"group": "source types",
+			"label": "ptz camera",
+			"on": "options/type-ptz-camera-on",
+			"off": "options/type-ptz-camera-off"
+		},
+		{
+			"id": "options/type-mixer",
+			"group": "source types",
+			"label": "mixer",
+			"on": "options/type-mixer-on",
+			"off": "options/type-mixer-off"
+		},
+		{
+			"id": "options/type-key-light",
+			"group": "source types",
+			"label": "key light",
+			"on": "options/type-key-light-on",
+			"off": "options/type-key-light-off"
+		},
+		{
+			"id": "options/type-green-screen",
+			"group": "source types",
+			"label": "green screen",
+			"on": "options/type-green-screen-on",
+			"off": "options/type-green-screen-off"
+		},
+		{
+			"id": "options/type-live",
+			"group": "source types",
+			"label": "live",
+			"on": "options/type-live-on",
+			"off": "options/type-live-off"
+		},
+		{
+			"id": "options/type-recording",
+			"group": "source types",
+			"label": "recording",
+			"on": "options/type-recording-on",
+			"off": "options/type-recording-off"
+		},
+		{
+			"id": "options/type-paused",
+			"group": "source types",
+			"label": "paused",
+			"on": "options/type-paused-on",
+			"off": "options/type-paused-off"
+		},
+		{
+			"id": "options/type-muted",
+			"group": "source types",
+			"label": "muted",
+			"on": "options/type-muted-on",
+			"off": "options/type-muted-off"
+		},
+		{
+			"id": "options/type-offline",
+			"group": "source types",
+			"label": "offline",
+			"on": "options/type-offline-on",
+			"off": "options/type-offline-off"
+		},
+		{
+			"id": "options/type-privacy",
+			"group": "source types",
+			"label": "privacy",
+			"on": "options/type-privacy-on",
+			"off": "options/type-privacy-off"
+		},
+		{
+			"id": "options/type-raid",
+			"group": "source types",
+			"label": "raid",
+			"on": "options/type-raid-on",
+			"off": "options/type-raid-off"
+		},
+		{
+			"id": "options/type-events",
+			"group": "source types",
+			"label": "events",
+			"on": "options/type-events-on",
+			"off": "options/type-events-off"
+		},
+		{
+			"id": "options/type-countdown",
+			"group": "source types",
+			"label": "countdown",
+			"on": "options/type-countdown-on",
+			"off": "options/type-countdown-off"
+		},
+		{
+			"id": "options/type-logo",
+			"group": "source types",
+			"label": "logo",
+			"on": "options/type-logo-on",
+			"off": "options/type-logo-off"
+		},
+		{
+			"id": "options/type-technical",
+			"group": "source types",
+			"label": "technical",
+			"on": "options/type-technical-on",
+			"off": "options/type-technical-off"
+		},
+		{
+			"id": "options/scene-type-countdown",
+			"group": "scene types",
+			"label": "countdown",
+			"on": "options/scene-type-countdown-on",
+			"off": "options/scene-type-countdown-off"
+		},
+		{
+			"id": "options/scene-type-technical",
+			"group": "scene types",
+			"label": "technical",
+			"on": "options/scene-type-technical-on",
+			"off": "options/scene-type-technical-off"
+		},
+		{
+			"id": "options/scene-type-pc-game",
+			"group": "scene types",
+			"label": "pc game",
+			"on": "options/scene-type-pc-game-on",
+			"off": "options/scene-type-pc-game-off"
+		},
+		{
+			"id": "options/scene-type-retro",
+			"group": "scene types",
+			"label": "retro",
+			"on": "options/scene-type-retro-on",
+			"off": "options/scene-type-retro-off"
+		},
+		{
+			"id": "options/scene-type-speedrun",
+			"group": "scene types",
+			"label": "speedrun",
+			"on": "options/scene-type-speedrun-on",
+			"off": "options/scene-type-speedrun-off"
+		},
+		{
+			"id": "options/scene-type-music-production",
+			"group": "scene types",
+			"label": "music production",
+			"on": "options/scene-type-music-production-on",
+			"off": "options/scene-type-music-production-off"
+		},
+		{
+			"id": "options/scene-type-cooking",
+			"group": "scene types",
+			"label": "cooking",
+			"on": "options/scene-type-cooking-on",
+			"off": "options/scene-type-cooking-off"
+		},
+		{
+			"id": "options/scene-type-irl",
+			"group": "scene types",
+			"label": "irl",
+			"on": "options/scene-type-irl-on",
+			"off": "options/scene-type-irl-off"
+		},
+		{
+			"id": "options/scene-type-tutorial",
+			"group": "scene types",
+			"label": "tutorial",
+			"on": "options/scene-type-tutorial-on",
+			"off": "options/scene-type-tutorial-off"
+		},
+		{
+			"id": "options/scene-type-unboxing",
+			"group": "scene types",
+			"label": "unboxing",
+			"on": "options/scene-type-unboxing-on",
+			"off": "options/scene-type-unboxing-off"
+		},
+		{
+			"id": "options/scene-type-fitness",
+			"group": "scene types",
+			"label": "fitness",
+			"on": "options/scene-type-fitness-on",
+			"off": "options/scene-type-fitness-off"
+		},
+		{
+			"id": "options/scene-type-reading",
+			"group": "scene types",
+			"label": "reading",
+			"on": "options/scene-type-reading-on",
+			"off": "options/scene-type-reading-off"
+		},
+		{
+			"id": "options/scene-type-watch-party",
+			"group": "scene types",
+			"label": "watch party",
+			"on": "options/scene-type-watch-party-on",
+			"off": "options/scene-type-watch-party-off"
+		},
+		{
+			"id": "options/scene-type-charity",
+			"group": "scene types",
+			"label": "charity",
+			"on": "options/scene-type-charity-on",
+			"off": "options/scene-type-charity-off"
+		},
+		{
+			"id": "options/scene-type-classic",
+			"group": "scene types",
+			"label": "classic",
+			"on": "options/scene-type-classic-on",
+			"off": "options/scene-type-classic-off"
+		},
+		{
+			"id": "options/scene-type-emulator",
+			"group": "scene types",
+			"label": "emulator",
+			"on": "options/scene-type-emulator-on",
+			"off": "options/scene-type-emulator-off"
+		},
+		{
+			"id": "options/scene-type-second-screen",
+			"group": "scene types",
+			"label": "second screen",
+			"on": "options/scene-type-second-screen-on",
+			"off": "options/scene-type-second-screen-off"
+		},
+		{
+			"id": "options/scene-type-art",
+			"group": "scene types",
+			"label": "art",
+			"on": "options/scene-type-art-on",
+			"off": "options/scene-type-art-off"
+		},
+		{
+			"id": "options/scene-type-modelling",
+			"group": "scene types",
+			"label": "modelling",
+			"on": "options/scene-type-modelling-on",
+			"off": "options/scene-type-modelling-off"
+		},
+		{
+			"id": "options/scene-type-coding",
+			"group": "scene types",
+			"label": "coding",
+			"on": "options/scene-type-coding-on",
+			"off": "options/scene-type-coding-off"
+		},
+		{
+			"id": "options/scene-type-browsing",
+			"group": "scene types",
+			"label": "browsing",
+			"on": "options/scene-type-browsing-on",
+			"off": "options/scene-type-browsing-off"
+		},
+		{
+			"id": "options/scene-type-just-chatting",
+			"group": "scene types",
+			"label": "just chatting",
+			"on": "options/scene-type-just-chatting-on",
+			"off": "options/scene-type-just-chatting-off"
+		},
+		{
+			"id": "options/scene-type-interview",
+			"group": "scene types",
+			"label": "interview",
+			"on": "options/scene-type-interview-on",
+			"off": "options/scene-type-interview-off"
+		},
+		{
+			"id": "options/scene-type-podcast",
+			"group": "scene types",
+			"label": "podcast",
+			"on": "options/scene-type-podcast-on",
+			"off": "options/scene-type-podcast-off"
+		},
+		{
+			"id": "options/scene-type-music",
+			"group": "scene types",
+			"label": "music",
+			"on": "options/scene-type-music-on",
+			"off": "options/scene-type-music-off"
+		},
+		{
+			"id": "options/style-mosaic-circle",
+			"group": "styles",
+			"label": "mosaic circle",
+			"on": "options/style-mosaic-circle-on",
+			"off": "options/style-mosaic-circle-off"
+		},
+		{
+			"id": "options/style-mosaic-triangle",
+			"group": "styles",
+			"label": "mosaic triangle",
+			"on": "options/style-mosaic-triangle-on",
+			"off": "options/style-mosaic-triangle-off"
+		},
+		{
+			"id": "options/style-mosaic-voronoi",
+			"group": "styles",
+			"label": "mosaic voronoi",
+			"on": "options/style-mosaic-voronoi-on",
+			"off": "options/style-mosaic-voronoi-off"
+		},
+		{
+			"id": "options/style-mosaic-rhomboid",
+			"group": "styles",
+			"label": "mosaic rhomboid",
+			"on": "options/style-mosaic-rhomboid-on",
+			"off": "options/style-mosaic-rhomboid-off"
+		},
+		{
+			"id": "options/style-mosaic-triakis",
+			"group": "styles",
+			"label": "mosaic triakis",
+			"on": "options/style-mosaic-triakis-on",
+			"off": "options/style-mosaic-triakis-off"
+		},
+		{
+			"id": "options/style-glass",
+			"group": "styles",
+			"label": "glass",
+			"on": "options/style-glass-on",
+			"off": "options/style-glass-off"
+		},
+		{
+			"id": "options/style-trail",
+			"group": "styles",
+			"label": "trail",
+			"on": "options/style-trail-on",
+			"off": "options/style-trail-off"
+		},
+		{
+			"id": "options/style-edge-soft",
+			"group": "styles",
+			"label": "edge soft",
+			"on": "options/style-edge-soft-on",
+			"off": "options/style-edge-soft-off"
+		},
+		{
+			"id": "options/style-edge-outline",
+			"group": "styles",
+			"label": "edge outline",
+			"on": "options/style-edge-outline-on",
+			"off": "options/style-edge-outline-off"
+		},
+		{
+			"id": "options/style-edge-trim",
+			"group": "styles",
+			"label": "edge trim",
+			"on": "options/style-edge-trim-on",
+			"off": "options/style-edge-trim-off"
+		},
+		{
+			"id": "options/style-shadow-hard",
+			"group": "styles",
+			"label": "shadow hard",
+			"on": "options/style-shadow-hard-on",
+			"off": "options/style-shadow-hard-off"
+		},
+		{
+			"id": "options/style-shadow-long",
+			"group": "styles",
+			"label": "shadow long",
+			"on": "options/style-shadow-long-on",
+			"off": "options/style-shadow-long-off"
+		},
+		{
+			"id": "options/style-shadow-neon",
+			"group": "styles",
+			"label": "shadow neon",
+			"on": "options/style-shadow-neon-on",
+			"off": "options/style-shadow-neon-off"
+		},
+		{
+			"id": "options/style-fade",
+			"group": "styles",
+			"label": "fade",
+			"on": "options/style-fade-on",
+			"off": "options/style-fade-off"
+		},
+		{
+			"id": "options/style-cut",
+			"group": "styles",
+			"label": "cut",
+			"on": "options/style-cut-on",
+			"off": "options/style-cut-off"
+		},
+		{
+			"id": "options/style-slide",
+			"group": "styles",
+			"label": "slide",
+			"on": "options/style-slide-on",
+			"off": "options/style-slide-off"
+		},
+		{
+			"id": "options/style-swipe",
+			"group": "styles",
+			"label": "swipe",
+			"on": "options/style-swipe-on",
+			"off": "options/style-swipe-off"
+		},
+		{
+			"id": "options/style-wipe",
+			"group": "styles",
+			"label": "wipe",
+			"on": "options/style-wipe-on",
+			"off": "options/style-wipe-off"
+		},
+		{
+			"id": "options/style-zoom",
+			"group": "styles",
+			"label": "zoom",
+			"on": "options/style-zoom-on",
+			"off": "options/style-zoom-off"
+		},
+		{
+			"id": "options/style-morph",
+			"group": "styles",
+			"label": "morph",
+			"on": "options/style-morph-on",
+			"off": "options/style-morph-off"
+		},
+		{
 			"id": "options/mode",
 			"group": "options",
 			"label": "mode",

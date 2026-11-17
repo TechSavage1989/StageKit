@@ -27,32 +27,62 @@
 				<option value="off">Switch off</option>
 			</sdpi-select>
 		</sdpi-item>
-		<sdpi-item label="Image">
-			<sdpi-select setting="picture" datasource="getPictures" default=""></sdpi-select>
-		</sdpi-item>
-		<sdpi-item label="Source type">
-			<sdpi-select setting="sourceType" default="">
-				<option value="">Automatic</option>
-				<option value="game">Game</option>
-				<option value="window">Window</option>
-				<option value="art_app">Art app</option>
-				<option value="code_editor">Code editor</option>
-				<option value="browser">Browser</option>
-				<option value="camera">Camera</option>
-				<option value="capture_card">Capture card</option>
-				<option value="display">Display</option>
-				<option value="phone">Phone</option>
-				<option value="tablet">Tablet</option>
-				<option value="chat">Chat</option>
-				<option value="music">Music</option>
-				<option value="alerts">Alerts</option>
-				<option value="title">Title / text</option>
-				<option value="image">Image</option>
-				<option value="video">Video</option>
-				<option value="starting">Starting</option>
-				<option value="brb">Be right back</option>
-				<option value="intermission">Intermission</option>
-				<option value="ending">Ending</option>
+		<sdpi-item label="Source type" title="What is zoomed, for the key&#x27;s image.">
+			<sdpi-select setting="sourceType" placeholder="Automatic (zoom)">
+				<option value="auto">Automatic (zoom)</option>
+				<optgroup label="Captures &amp; games">
+					<option value="game">Game</option>
+					<option value="retro">Retro game</option>
+					<option value="emulator">Emulator</option>
+					<option value="console">Console</option>
+					<option value="handheld">Handheld</option>
+					<option value="linked_handheld">Linked handheld screen</option>
+					<option value="linked_handheld_2">Second linked handheld screen</option>
+					<option value="capture_card">Capture card (internal)</option>
+					<option value="capture_box">Capture card (external)</option>
+					<option value="hdmi_source">HDMI source</option>
+					<option value="window">Window</option>
+					<option value="browser">Browser</option>
+					<option value="display">Display</option>
+					<option value="second_display">Second display</option>
+					<option value="tablet">Tablet</option>
+					<option value="phone">Phone screen</option>
+				</optgroup>
+				<optgroup label="Apps">
+					<option value="art_app">Art app</option>
+					<option value="app_3d">3D app</option>
+					<option value="sculpting">Sculpting app</option>
+					<option value="cad">CAD app</option>
+					<option value="code_editor">Code editor</option>
+					<option value="office">Office / documents</option>
+					<option value="video_player">Video player</option>
+					<option value="reference">Reference board</option>
+				</optgroup>
+				<optgroup label="Cameras">
+					<option value="camera">Camera / webcam</option>
+					<option value="dslr">DSLR / mirrorless</option>
+					<option value="camcorder">Camcorder</option>
+					<option value="action_cam">Action camera</option>
+					<option value="ptz_camera">PTZ camera</option>
+					<option value="facecam">Facecam</option>
+					<option value="full_camera">Full-screen camera</option>
+					<option value="side_camera">Side camera</option>
+					<option value="phone_camera">Phone camera</option>
+					<option value="workspace_camera">Desk / overhead camera</option>
+					<option value="virtual_camera">Virtual camera</option>
+				</optgroup>
+				<optgroup label="Devices &amp; audio">
+					<option value="pc">Gaming PC</option>
+					<option value="laptop">Laptop</option>
+					<option value="retro_console">Retro console</option>
+					<option value="pen_display">Pen display</option>
+					<option value="vr_headset">VR headset</option>
+					<option value="green_screen">Green screen</option>
+				</optgroup>
+				<optgroup label="Overlays">
+					<option value="image">Image</option>
+					<option value="video">Video</option>
+				</optgroup>
 			</sdpi-select>
 		</sdpi-item>
 		<sdpi-item label="Palette">

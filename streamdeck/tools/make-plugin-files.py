@@ -8,7 +8,9 @@ Run from the streamdeck folder:  python3 tools/make-plugin-files.py
 """
 import json
 import os
+import html
 import re
+import subprocess
 import sys
 
 from PIL import Image
@@ -17,7 +19,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, "..")
 PLUGIN = os.path.join(ROOT, "com.techsavage1989.stagekit.sdPlugin")
 BASE = "com.techsavage1989.stagekit"
-VERSION = "0.18.0.0"
+VERSION = "0.20.0.0"
 
 # The pack picture each feature's key starts with (its "on" and "off" look).
 PICTURES = {
@@ -44,10 +46,6 @@ PICTURES = {
     "stagekit_scene_standby": ("filters/standby-picture-on", "filters/standby-picture-off"),
 }
 
-IMAGE = """		<sdpi-item label="Image">
-			<sdpi-select setting="picture" datasource="getPictures" default=""></sdpi-select>
-		</sdpi-item>
-"""
 
 PALETTE = """		<sdpi-item label="Palette">
 			<sdpi-select setting="palette" default="mono">
@@ -126,27 +124,55 @@ def options(label, setting, default, pairs):
 PRESS = options("On press", "press", "toggle", [("toggle", "Toggle"), ("on", "Switch on"), ("off", "Switch off")])
 
 
-def source_types():
-    """The source types, in src/source-types.ts's order: (id, label)."""
-    text = open(os.path.join(ROOT, "src", "source-types.ts"), encoding="utf-8").read()
-    return re.findall(r'\{ id: "([a-z_]+)", label: "([^"]+)",', text)
+_LISTS = None
 
 
-def source_type_list():
-    """A key's *Source type*: what the source it acts on is, for its image
-    (the owner asked for "the source/app type ... a selectable option in the
-    key config"). Automatic goes by what OBS says the source is."""
-    return options("Source type", "sourceType", "", [("", "Automatic")] + source_types())
+def type_lists(key):
+    """A key's type lists (src/key-types.ts, the one place they are made):
+    what its image shows, in place of the Image list there was up to
+    beta155. The owner: "have a similar source type, scene type, etc style
+    list relative to the button function"."""
+    global _LISTS
+    if _LISTS is None:
+        script = (
+            "import { keysWithLists, typeLists } from './src/key-types.ts';"
+            "const out = {}; for (const k of keysWithLists()) out[k] = typeLists(k);"
+            "console.log(JSON.stringify(out));"
+        )
+        done = subprocess.run(["node", "--input-type=module", "-e", script], cwd=ROOT, capture_output=True, text=True, check=True)
+        _LISTS = json.loads(done.stdout)
+    return _LISTS.get(key, [])
 
 
-def page(name, title, body, script="", types=False):
+def type_list_html(lst):
+    """One type list: Automatic first, then the types in their groups. Left
+    unset it shows Automatic (and keeps an image chosen before beta156)."""
+    e = lambda t: html.escape(t, quote=True)
+    rows = [f'				<option value="auto">{e(lst["automatic"])}</option>']
+    for group in lst["groups"]:
+        options = [f'					<option value="{e(x["value"])}">{e(x["label"])}</option>' for x in group["entries"]]
+        if group["label"]:
+            rows.append(f'				<optgroup label="{e(group["label"])}">')
+            rows += options
+            rows.append("				</optgroup>")
+        else:
+            rows += [o[1:] for o in options]
+    return (
+        f'		<sdpi-item label="{e(lst["label"])}" title="{e(lst["tip"])}">\n'
+        f'			<sdpi-select setting="{lst["setting"]}" placeholder="{e(lst["automatic"])}">\n'
+        + "\n".join(rows)
+        + "\n			</sdpi-select>\n		</sdpi-item>\n"
+    )
+
+
+def page(name, title, body, script="", key=None):
     html = (
         "<!doctype html>\n<html>\n	<head lang=\"en\">\n"
         f"		<title>{title}</title>\n"
         '		<meta charset="utf-8" />\n'
         '		<script src="https://sdpi-components.dev/releases/v4/sdpi-components.js"></script>\n'
         + STYLE +
-        "	</head>\n\n	<body>\n" + body + IMAGE + (source_type_list() if types else "") + PALETTE + "\n" + CONNECTION + script + "	</body>\n</html>\n"
+        "	</head>\n\n	<body>\n" + body + "".join(type_list_html(l) for l in type_lists(key or name)) + PALETTE + "\n" + CONNECTION + script + "	</body>\n</html>\n"
     )
     with open(os.path.join(PLUGIN, "ui", name + ".html"), "w", encoding="utf-8") as out:
         out.write(html)
@@ -212,7 +238,7 @@ def main():
         on, off = PICTURES.get(feature["kind"], ("options/plain-switch-on", "options/plain-switch-off"))
         key_pictures(feature["key"], on, off)
         scene = feature.get("scene", False)
-        page(feature["key"], f"StageKit {feature['name']}", one_list("Scene" if scene else "Source") + PRESS, types=not scene)
+        page(feature["key"], f"StageKit {feature['name']}", one_list("Scene" if scene else "Source") + PRESS)
         add(feature["key"], feature["name"], feature["tip"], feature["key"], "imgs/actions/switch/icon", two(feature["key"]))
     for feature in features["moves"]:
         on, _ = PICTURES.get(feature["kind"], ("options/plain-move", None))
@@ -242,7 +268,6 @@ def main():
         '		<sdpi-item label="Duration (ms)">\n'
         '			<sdpi-textfield setting="lasting" placeholder="300" pattern="[0-9]*"></sdpi-textfield>\n'
         "		</sdpi-item>\n",
-        types=True,
     )
     add("hook", "Capture Active Window", "Makes a Game Capture or a Window Capture take the active window or game. An Automatic Window Switcher on it holds that window as its manual window.", "hook", "imgs/actions/hook/icon", one("hookgame"))
 
@@ -251,7 +276,6 @@ def main():
         "appswitch",
         "StageKit next manual capture",
         one_list("Scene or capture") + options("On press", "step", "next", [("toggle", "Toggle manual / automatic"), ("next", "Next manual window or source"), ("back", "Return to automatic"), ("hide", "Hide or show the capture"), ("clear", "Clear picked windows")]),
-        types=True,
     )
     add("appswitch", "Manual Window / Source", "For an Automatic Window Switcher or an Automatic Source Switcher: toggles between the manual window and automatic, steps to the next manual one, returns to automatic, hides and shows the capture, or clears the windows picked by hand.", "appswitch", "imgs/actions/move/icon", two("appswitch"))
 
@@ -280,7 +304,6 @@ def main():
         "StageKit scene mode",
         one_list("Mode", "getModes", "target", "Choose a mode")
         + options("On press", "press", "on", [("on", "Switch on"), ("toggle", "Toggle")]),
-        types=True,
     )
     add("mode", "Scene Mode", "Turns on one mode of a scene's Scene Modes: its sources show, the other modes' sources hide. Lit while that mode is on.", "mode", "imgs/actions/switch/icon", two("mode"))
 
@@ -289,7 +312,7 @@ def main():
     add("tool", "Arrange tool", "Lines up, spaces out, snaps or resizes the items selected in OBS, or copies a transform to other scenes.", "tool", "imgs/actions/tool/icon", one("toolkey"))
 
     key_pictures("blurall", "blur-types/gaussian-on", "blur-types/gaussian-off")
-    page("blur-all", "StageKit blur all", "")
+    page("blur-all", "StageKit blur all", "", key="blurall")
     add("blurall", "Blur All", "Switches every Blur on, or all of them off again. Shows on while any is on.", "blur-all", "imgs/actions/blur/icon", two("blurall"))
 
     key_pictures("option", "options/snap-on", "options/snap-off")
