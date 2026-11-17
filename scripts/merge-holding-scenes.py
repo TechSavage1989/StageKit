@@ -655,7 +655,8 @@ head = [
     f"Holding scene, side-by-side trial: {read.get('name', '')}  ->  {data['name']}",
     f"Read: {SRC}",
     (f"Written: {OUT}" if ok else "NO COLLECTION WAS WRITTEN: see the problems below."),
-    f"{len(scene_names)} scenes kept as they are, {NEW_SCENE} added after '{AFTER_SCENE}'.",
+    f"{len(scene_names)} scenes kept as they are, {NEW_SCENE} {'made again' if earlier else 'added'} after "
+    f"'{AFTER_SCENE}'.",
     "Checked by the script: every source, scene, group, transition and module entry that was in the collection is "
     "equal before and after, apart from one new last filter on each of the four titles: "
     + ("yes." if not problems else "NO: " + "; ".join(problems) + "."),
