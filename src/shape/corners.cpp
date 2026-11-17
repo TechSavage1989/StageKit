@@ -17,6 +17,9 @@ the Free Software Foundation; either version 2 of the License, or
 #include "corners.hpp"
 #include "../common/timing.hpp"
 
+#include "../common/filter-order.hpp"
+#include "../common/managed-filter.hpp"
+#include "../common/scene-filter-ids.hpp"
 #include "../common/shown-scale.hpp"
 #include "../frame/auto-frame.hpp"
 #include "../shadow/shadow-backdrop.hpp"
@@ -30,6 +33,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <cmath>
 #include <cstring>
 #include <mutex>
+#include <string>
 
 namespace stagekit {
 
@@ -49,44 +53,6 @@ struct Settings {
 	double border_opacity = 1.0;
 	bool screen_px = true;
 };
-
-// Where a filter comes in the order its source applies them, or -1.
-int applied_index(obs_source_t *parent, obs_source_t *filter)
-{
-	struct Find {
-		obs_source_t *wanted;
-		int at, found;
-	} find{filter, 0, -1};
-	obs_source_enum_filters(
-		parent,
-		[](obs_source_t *, obs_source_t *f, void *param) {
-			auto *x = static_cast<Find *>(param);
-			if (f == x->wanted)
-				x->found = x->at;
-			x->at++;
-		},
-		&find);
-	return find.found;
-}
-
-// The first enabled filter of a kind on a source, in applied order. Not a new reference.
-obs_source_t *first_filter(obs_source_t *parent, const char *id)
-{
-	struct Find {
-		const char *id;
-		obs_source_t *found;
-	} find{id, nullptr};
-	obs_source_enum_filters(
-		parent,
-		[](obs_source_t *, obs_source_t *f, void *param) {
-			auto *x = static_cast<Find *>(param);
-			const char *fid = obs_source_get_unversioned_id(f);
-			if (!x->found && fid && strcmp(fid, x->id) == 0 && obs_source_enabled(f))
-				x->found = f;
-		},
-		&find);
-	return find.found;
-}
 
 class Corners {
 public:
@@ -143,7 +109,18 @@ public:
 		std::lock_guard lock(mutex_);
 		settings_ = s;
 		placed_ = obs_data_get_bool(settings, "placed");
+		managed_ = obs_data_get_bool(settings, "managed");
+		managed_by_ = obs_data_get_string(settings, "managed_by");
 	}
+
+	// Made by a Scene Corners: the scene it names. False for one made by hand.
+	bool managed(std::string &by)
+	{
+		std::lock_guard lock(mutex_);
+		by = managed_by_;
+		return managed_;
+	}
+	obs_source_t *source() const { return source_; }
 
 	void tick()
 	{
@@ -293,6 +270,8 @@ private:
 	std::mutex mutex_;
 	Settings settings_;
 	bool placed_ = false;
+	bool managed_ = false; // made by a Scene Corners, which pushes its look
+	std::string managed_by_;
 	double shown_sx_ = 1.0, shown_sy_ = 1.0;
 	int scale_countdown_ = 0;
 
@@ -309,9 +288,33 @@ private:
 	gs_texrender_t *tr_out_ = nullptr;
 };
 
-obs_properties_t *get_properties(void *)
+obs_properties_t *get_properties(void *data)
 {
+	auto *self = static_cast<Corners *>(data);
 	obs_properties_t *props = obs_properties_create();
+	// Made by a Scene Corners: it says so, and the look is set there.
+	// Without one any more it works as one made by hand.
+	std::string by;
+	if (self && self->managed(by)) {
+		obs_source_t *parent = obs_filter_get_parent(self->source());
+		const ManagedState state = managed_state(kSceneCornersId, parent, by.c_str());
+		obs_property_t *status = obs_properties_add_text(
+			props, "status",
+			state.owner_found ? text_with("Corners.Status.Managed", state.owner_scene).c_str()
+					  : obs_module_text("Corners.Status.Orphan"),
+			OBS_TEXT_INFO);
+		obs_property_text_set_info_word_wrap(status, true);
+		if (state.owner_found)
+			return props;
+	}
+	corners_add_look_properties(props);
+	return props;
+}
+
+} // namespace
+
+void corners_add_look_properties(obs_properties_t *props)
+{
 	obs_property_t *style = obs_properties_add_list(props, "style", obs_module_text("Corners.Style"),
 							OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(style, obs_module_text("Corners.Style.Round"), (int)Style::Round);
@@ -352,10 +355,9 @@ obs_properties_t *get_properties(void *)
 
 	obs_property_t *screen = obs_properties_add_bool(props, "screen_px", obs_module_text("Corners.ScreenPx"));
 	obs_property_set_long_description(screen, obs_module_text("Corners.ScreenPx.Tip"));
-	return props;
 }
 
-void get_defaults(obs_data_t *settings)
+void corners_look_defaults(obs_data_t *settings)
 {
 	obs_data_set_default_int(settings, "style", (int)Style::Round);
 	obs_data_set_default_double(settings, "size", 40.0);
@@ -369,7 +371,16 @@ void get_defaults(obs_data_t *settings)
 	obs_data_set_default_int(settings, "border_color", 0xFFFFFFFF);
 	obs_data_set_default_double(settings, "border_opacity", 100.0);
 	obs_data_set_default_bool(settings, "screen_px", true);
+}
+
+namespace {
+
+void get_defaults(obs_data_t *settings)
+{
+	corners_look_defaults(settings);
 	obs_data_set_default_bool(settings, "placed", false);
+	obs_data_set_default_bool(settings, "managed", false);
+	obs_data_set_default_string(settings, "managed_by", "");
 }
 
 } // namespace

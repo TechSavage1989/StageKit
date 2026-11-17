@@ -87,8 +87,9 @@ notice and the confirmation are what there is. This is recorded in the handoff.
 | `src/shape/` | Corners & Edges filter (rounds, cuts, notches or scoops corners; trims, softens and outlines edges; never changes the source's size) |
 | `src/view/` | Cropped View source (part of another source as a source, so filters follow the crop) |
 | `src/placement/` | Scene filters: Move Scene Item, Show/Hide Animation, Link Visibility, Match Item, Layout, Fit to Space (keeps one item fitted in a box, filling it or floating centred by shape); Move Source, Move Scene Item's code as a filter on the source it moves; and Show in Scenes (`show-in-scenes.*`), a filter on any source that is a switch for showing and hiding sources across scenes |
+| `src/placement/scene-*`, `src/look/` | The scene filters: Scene Modes, Scene Transitions, Scene Fit, Scene Standby, Scene Corners and Scene Shadow, each a filter on a scene that looks after its sources together. Each one's files are listed in its entry at the end of *Things that will bite you* |
 | `src/dock/` | `window-layout.*` keeps OBS's window layout. One dock (Qt widgets, no `Q_OBJECT`): StageKit follows the item selected in OBS and drives Move Source filters on that item's source; its Standby & Ambient tab (`BackgroundDock`, `pageBackground`; a dock of its own up to beta151, called Background in beta152) holds the start image thumbnail. `arrange-tools.*` is the one set of line-up actions and options behind the dock, the hotkeys and the preview's right-click menu |
-| `src/common/` | Shared helpers: `timing` (registers every kind and logs what is slow), easing and `Tween`, `SwitchRamp`, `KawaseBlur`, scene utilities, `item-transition` (the *Change with* control for filters that show and hide items), and the start image (global path + Start Image source) |
+| `src/common/` | Shared helpers: `timing` (registers every kind and logs what is slow), easing and `Tween`, `SwitchRamp`, `KawaseBlur`, scene utilities, `item-transition` (the *Change with* control for filters that show and hide items), and the start image (global path + Start Image source). For the scene filters: `scene-filter-ids.hpp` (their ids), `holds-hidden` (is an item held hidden by a mode not showing), `go-to-scene` (*Switch to scene*), `filter-order.hpp` (`applied_index`, `first_filter`, `first_filter_of_kind`), `stand-in.hpp` (a Standby twin and the item it stands for) |
 | `src/frame/` | Auto Frame filter and the Aspect Ratio Preset filter |
 | `src/capture/` | Auto Capture filter (aims a Game Capture at the game in front), Program Trigger filter (shows items and switches filters while a program is open) and Show Source in Use scene filter (shows the one of several captures whose app is in use). Capture App in Use (`app-capture.*`), a filter on one Window Capture that aims it at whichever of several listed apps is in use. All use the Win32 window list in `auto-capture.cpp`; compiled but idle elsewhere. Also Standby Picture (`standby.*`), a filter that shows a picture in a capture's place while it has nothing; it works everywhere |
 | `src/api/` | obs-websocket vendor requests (`StageKit` vendor) |
@@ -438,7 +439,8 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   ("Source Cleanup Error"). A filter must never keep a reference to an item of its own source
   past one call. The tests can say a collection is changing (`stagekit_test_loaded`, a global
   proc). And while it is ticked
-  nothing else sets those items' transitions: `item_transitions_owner` (`g_stood_in`) makes
+  nothing else sets those items' transitions: `item_transitions_owner` (`g_stood_in`; asked per
+  item since the scene filters' groundwork, so an owner can own an item in one scene only) makes
   `set_item_transitions` and `apply_item_change` pass them over. A new filter that sets item
   transitions must go through those two calls. Seen in the tests with a fade and by the
   transitions set; a Morph between the two on screen has not been looked at on Windows.
@@ -523,9 +525,12 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   scene is left with a cut is never ended either: Link Visibility ends one left on a listed item
   twice a second (`end_stale_transition`: a show transition on a hidden item, or a hide on a shown
   one; only one that still holds a source: OBS can count a finished one as in use for good, and beta147 to beta153 ended that one twice a second all session). Found by driving the generated collection headless with the new build; the tests had
-  waited for every change to end before the next step. Items a Standby filter owns are passed over. Link Visibility and Show
-  in Scenes go through it; Program Trigger, the two switchers, Auto Capture's hide, Show/Hide
-  Animation and the stand-ins do not yet. A source with sound is finished hiding in the scene's
+  waited for every change to end before the next step. Items a Standby filter owns are passed over. Link Visibility, Show
+  in Scenes and Scene Modes go through it; Program Trigger, the two switchers, Auto Capture's hide,
+  Show/Hide Animation and the stand-ins do not yet (the stand-ins through it broke the Standby
+  transition tests, which draw a scene that is not on the output: to it, out of view). A Standby filter forgets the
+  items it owns when it is taken off its source (`filter_remove`): kept by address, they made a
+  source created later at the same address "owned", so its hides were never cuts. A source with sound is finished hiding in the scene's
   audio mix, so it may still be in use for one audio tick when the scene comes on; not measured.
   The tests had no sound until the layout section (`obs_reset_audio`), so no item transition ended
   in them: test that a fade is used by the source still being in use part-way.
@@ -567,10 +572,12 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   hidden, the same rule as `apply()`, bring-along items counted), or hidden with it. While the
   leader is hidden, every tick, a listed item shown by anything else is hidden again. A change to
   another item moves nothing; changes from *Also in other scenes* are not followed in this mode,
-  only the leader's state is sent there. Show in Scenes asks `link_visibility_holds_hidden` (every
+  only the leader's state is sent there. Show in Scenes asks `mode_holds_hidden`
+  (`src/common/holds-hidden.*`, which asks every registered kind; this one registers
+  `link_visibility_holds_hidden`: every
   enabled mode-2 link of that scene that lists the source after its first entry has its leader
   hidden) and passes over such an item when showing, never when hiding, and leaves it out of
-  *Follow what is shown*; `link_visibility_settling` (a leader not yet followed) makes that look
+  *Follow what is shown*; `mode_settling` (here `link_visibility_settling`: a leader not yet followed) makes that look
   wait, or a camera switch read off for the tick between a mode change and its extras. Both
   filters keep a registry of live instances (`g_links`, `g_switches`) and copy what they need out
   under it: no lock is held while the other filter is asked, which both do from their ticks.
@@ -806,8 +813,10 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     `for_change` gives the settings for the change going on (`active_`), the most exact rule
     first. Style 1 is a cross-fade, 2 a cut. The owner: "specific overrides for transitions for
     specific scenes transitioning between specific scenes". The duration is OBS's and is not
-    overridden. `pick_list_on_change` has one slot for the whole plugin and is Show in Scenes':
-    do not take it for a second rebuilt-in-place control.
+    overridden. `pick_list_on_change` is a chain, not one slot: the fuller *Change with*
+    installs its rebuild there each time a window is built, and a kind that needs a control
+    rebuilt in place registers `pick_list_on_change_for(<its id>, ...)`, which runs after it.
+    Never replace the first: *Settings for* stops rebuilding.
   - An item's place is worked out by Morph, not by OBS, while it draws (`look`): OBS does it when
     a scene is drawn, from the size the source has then, and neither scene is drawn during a
     morph. `look` does it when an item is first met and again whenever its source changes size.
@@ -1229,6 +1238,33 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   `imgs/actions/<key>/icon`); the owner, of a list where all keys showed one of two drawings:
   "I'd like all of the stream deck buttons to get specific icons". A new key gets a drawing there;
   `tests/features.test.ts` fails if two keys share one.
+- **A key's Source type** (`sourceType`, beta155; `streamdeck/src/source-types.ts`). The owner:
+  "instead of assigning a specific icon to my specific sources, ad an option in the key to choose
+  a source type ... that way anyone with any source can pick it accordingly". Every key that acts
+  on a source (the feature keys whose kind is not a scene's, `scene` in `features.json` and
+  `isSceneKind` in `kinds.ts`, which a test keeps the same; *Capture Active Window*; *Manual
+  Window / Source*) and the *Scene Mode* key offer *Source type*: *Automatic*, then twenty types
+  by id (`game` ... `ending`, append-only, the same ids as the Scene Modes filter's *Mode type*
+  in OBS, and as `SOURCE_TYPES` in `make-option-icons.py`, which a test compares). The order is
+  always: an image chosen by hand, then the Source type, then Automatic. A type's picture is
+  `options/type-<id>` (group *source types*; the four holding types reuse `options/mode-*`), on
+  and off; *Capture Active Window* takes `options/hook-type-<id>`, the type inside the hook's
+  corners. On Automatic a key keeps its feature's picture, except Show in Scenes: the pack's
+  picture of the source by name, then the type its name speaks of (`typeOfName`), then its OBS
+  input kind (`typeOfInput`). The coordinator asked for the input kind first; it was put after
+  the name because the input kind made beta154's holding-mode keys (text sources, the owner's
+  request) plain titles and a capture card a camera. A key on a scene's filter never uses a type
+  or an input kind. `seen.ts` also keeps the input kind (Show in Scenes) and a Scene Mode key's
+  mode name and type. Contact sheet: run the tools, then look at the `type-*` pictures.
+- **The Scene Mode key** (`src/actions/mode.ts`, UUID `.mode`, beta155) is for the Scene Modes
+  filter through its vendor requests: `ListSceneModes` (the key's list, *Scene: Mode*, the
+  filter's name only when a scene has two), `GetSceneMode` (lit while `current` is its mode) and
+  `SetSceneMode` with `how` *on* or *toggle*; the `SceneModeChanged` event (`obs.on("mode")`)
+  makes every Scene Mode key look again. `target` is `scene␟filter␟mode id` (`src/modes.ts`): the
+  id, never the name, so a rename keeps the key; a hand-made target with a name still works. Its
+  picture: chosen, Source type, the mode's *Mode type*, the type its name speaks of (*GBA* is a
+  game), then `options/mode`. Tested against a stand-in server in `tests/obs.test.ts`, not
+  against the real filter.
 - **A key that switches something shows which way it is with a mark, not by brightness.** The
   owner: "the options that have an on and an off or toggle must represent that current status on
   the key with the image ... right now, the stagekit blur button just flashed". The pack's own on
@@ -1300,8 +1336,9 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   beta134 a filter key first takes the pack's own picture of the source it is on, where the words
   of a picture's label are all in the source's name (`sourcePictureFor`: the pack's *show hide*,
   *shadow by source*, *standby by source* and *blur <type>* groups), and a Show in Scenes key then
-  the picture of what the source is (`inputPicture`, by OBS input kind; `obs.inputKind` follows a
-  Cropped View to what it shows), before the filter's general picture (`chooseFor`). The owner:
+  the picture of what the source is (its name's source type, then `inputPicture`, by OBS input
+  kind; `obs.inputKind` follows a Cropped View to what it shows), before the filter's general
+  picture (`chooseFor`). A key's Source type, when chosen, comes before all of these. The owner:
   "the show in scenes key set to square camera should either set to the correct icon relative to
   a camera source, or at least have another option". Matching is by words; still no source names
   in the code. The
@@ -1357,6 +1394,201 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   that in the Filters window, on a standard display with HDR off, for Shadow, Glow & Outline and
   Auto Frame, the two that lacked the flag. The tests draw each filter onto such a surface
   (`render_shown`); add a new filter to that list.
+- **The scene filters share a groundwork; use it, do not copy it.** Their ids are in
+  `src/common/scene-filter-ids.hpp`, so Morph (`draws_nothing`, which lists the five that draw
+  nothing) and the copy tools never wait for a filter's own files. A drawing scene filter Morph
+  should still take apart says so with `morph_accept_drawing_filter`. `kOwnSettings` goes by the
+  last `|`-separated part of a setting's name (`fit|Cam|anchor_x` is `anchor_x`), and lists
+  `mode_now`, `mode_before`, `managed` and `managed_by`. A PickList's heading can be made at run
+  time (`title_text`). `pick_list_on_change` stays the fuller *Change with*'s, rebuilt into it
+  each time a window is built; a kind's own callback is `pick_list_on_change_for`, called after
+  it. `item_transitions_owner` is asked per item. Whether a mode not showing holds an item hidden
+  is `mode_holds_hidden` / `mode_settling` (`holds_hidden_register` adds a kind's answers; Link
+  Visibility's and Scene Modes' are there); Show in Scenes, Standby and Scene Modes ask it. *Switch to scene* is
+  `go_to_scene` (`src/common/go-to-scene.*`, with `stay_in`; Show in Scenes passes none), and its
+  test procs are added by `go_to_scene_add_test_calls`. Each scene filter has a block of its own,
+  between `==== scene-filters:<unit> ====` and `==== end scene-filters:<unit> ====` lines, in
+  `src/plugin-main.cpp` (includes and registration), `CMakeLists.txt`, `data/locale/en-US.ini`,
+  `tests/ambient-test.cpp`, `README.md` and here; write only inside your own. `tests/run-tests.sh`
+  stops on a locale key used twice and on a failed build.
+<!-- ==== scene-filters:modes ==== -->
+- **Scene Modes** (`stagekit_scene_modes`, `src/placement/scene-modes.*`; beta155). The owner:
+  "scene modes should not have specific names built in. instead scene modes should be able to be
+  made manually and customized", with templates to start from. A mode is known by an **id**
+  (`m1`, `m2`, ..., from `mode_seq`; never reused, never renamed): settings `modes` (the ids in
+  order), `mode|<id>|name`, `mode|<id>|type` (a string id, the Stream Deck Source type's: `game`,
+  `window`, `art_app`, `code_editor`, `browser`, `camera`, `capture_card`, `display`, `phone`,
+  `tablet`, `chat`, `music`, `alerts`, `title`, `image`, `video`, `starting`, `brb`,
+  `intermission`, `ending`; "" Automatic; append only), `mode|<id>|go_to`, `mode|<id>|sources`;
+  `mode_now` and `mode_before` (ids, written by the filter under its lock, in `kOwnSettings`).
+  Hotkeys `stagekit.mode.<filter>.<id>`, `.next`, `.none` (shown with the mode's name), and the
+  vendor requests `ListSceneModes`, `GetSceneMode`, `SetSceneMode` (an id, or a name) and the event
+  `SceneModeChanged`, so a rename breaks no key. The rules: hides before shows in one tick; a
+  source in the old and the new mode is not touched; a source in no mode never; a press is queued
+  and acted on in the tick; nothing is polled (it listens to `item_visible` on its scene and on
+  *Same modes in scenes*, and hides again a member of a mode not on that something else showed);
+  a show is passed over when `show_in_scenes_holds_off`, `link_visibility_holds_hidden` or another
+  Scene Modes covering that scene holds it; registered with `holds_hidden_register`, so Show in
+  Scenes and Standby's `stands_in` ask it. At the first look after `scenes_loaded()` a scene that
+  disagrees with `mode_now` is put right with a cut (and logged); presses made before are kept.
+  "Mode now" in the window is a press that never changes scene; *Switch to scene* goes through
+  `go_to_scene` with `stay_in` = its own scene and *Same modes in scenes*. Items inside groups are
+  shown and hidden, but a group's own `item_visible` is not listened to (an inner item shown by
+  hand is not put back). The window's mode groups and everything below them are taken off and
+  added again in place (`rebuild`) on *Add mode*, *Add from template*, *Move up* and *Remove
+  mode*; a rename only changes the heading and the *Mode now* list. A mode's PickList is nested in
+  its group, and its setting has bars in it: `pick-list.cpp`'s `parse` takes the last bar
+  followed by `a`/`t` and a part (`list`, `pick`, `none`, `row|n`), not the first bar. The tests
+  reach the vendor requests through the `stagekit_vendor_call` and `stagekit_vendor_events` procs
+  (`vendor_api_add_test_calls`); obs-websocket is not there.
+<!-- ==== end scene-filters:modes ==== -->
+<!-- ==== scene-filters:transitions ==== -->
+- **Scene Transitions** (`src/placement/scene-transitions.*`, `stagekit_scene_transitions`; the owner
+  was promised "one place to set how every source in the scene shows and hides, instead of a
+  transition setting inside each filter") writes OBS's own item transitions, **only from its tick,
+  only on events** (created, switched on, settings changed, `item_add`, a covered item's
+  `item_visible`, a nearest-edge item still for 0.25 s after `item_transform`), only once
+  `scenes_loaded()`, and only where `item_change_matches` says the item differs: a collection
+  loaded again writes nothing (a test saves and loads a scene and counts writes through the
+  `stagekit_scene_transitions_writes` proc). It passes over owned items
+  (`item_transitions_owned`), private sources (stand-ins, the item Morph's layer), *Leave these
+  alone*, items an enabled Show/Hide Animation names and, unless `in_groups`, items in groups.
+  Items are known by id in their scene or group (`Key`), never held. The first enabled one in a
+  scene's filter list is the one used. **`kTransitionScene` ("As the scene sets") is resolved
+  only in `resolve_item_change`** (`src/common/item-transition.*`), through the lookup the filter
+  registers (`item_transitions_scene`); `set_item_transitions`, `apply_item_change` and
+  `apply_item_change_as_owner` all go through it, so a filter that sets item transitions through
+  them gets the choice for free, with a fade of the way's own duration where the scene sets
+  nothing. It is the default of `item_transition_defaults` and `item_change_defaults` since
+  beta155: settings left on the old default (fade) read it, which changes nothing in a scene
+  without a Scene Transitions. After another filter's own choice the scene's transitions are put
+  back once that change's duration + 100 ms has passed (from `item_visible`), never part-way; a
+  full pass skips an item with such a wait pending. A Standby must resolve *before* it swaps a
+  change for its twin (the twin, a private source, is never covered and would get the fallback).
+  Never write item transitions into a generated collection: this filter writes them at the first
+  load. A mode change of Scene Modes is tested here on *As the scene sets* (the scene's way in
+  view, a cut out of view); pairing two captures in the item Morph on a mode change is not tested.
+  **A scene being destroyed cannot be reached through a weak reference**, yet it signals every item
+  it removes after its filters are gone: `filter_remove` lets go by the pointer it was given
+  (`detach(parent)`), and each signal handler checks under `g_mutex` that its filter is still in
+  `g_all` (`live`). Before the integration a removed scene's `item_remove` reached a freed filter
+  and OBS hung at shutdown (seen in the tests). A new filter that listens to its scene's or groups'
+  signals must do the same.
+<!-- ==== end scene-filters:transitions ==== -->
+<!-- ==== scene-filters:fit ==== -->
+- **Scene Fit and Fit to Space share one engine** (`src/placement/fit-engine.*`, beta155). A Fit
+  to Space is one `FitEngine` and one `FitScan` (`fit-item.cpp` keeps only its window and
+  registration); a Scene Fit (`stagekit_scene_fit`, `src/placement/scene-fit.*`) is one
+  `FitEngine` per entry and one `FitScan` per way of measuring. The engine's tick is cut into
+  steps, `prepare` (hidden, coming back, kept size, own visible-pixel cut), `motion` (off
+  screen, dragged by hand, anchor), `observe` + `solve` (what is in the way, the goal),
+  `publish_claim`, `advance` (the glide) and `apply`, and `FitEngine::tick` calls them in the
+  order the old `FitItem::tick` did: change them there, never in one host only. Scene Fit
+  works its entries out in the order of *Fitted sources*, top first, and again (up to four
+  passes, `kPasses`) while one entry's new claim moves another's goal, before any glide
+  starts: each entry sets off once per change, all in one tick. An entry's settings are
+  `fit|<source>|<Fit to Space's key>` (the self-written ones too: anchors, `keep_k`, `orig_k`;
+  `kOwnSettings` matches on the last `|` part), but its two lists are `fit_<the name in hex>_skip`
+  and `..._share_scenes` (`fit_list_prefix`): a PickList's setting cannot hold a bar and a
+  source's name may. The overlap switch `skip_fill_on` is one for the whole Scene Fit, so the
+  *Fit to Space Overlap* key works on it. Every entry always carries its own settings (seeded by
+  `fit_entry_defaults`, gap 30); there is no "every source" set. The window has a group per entry
+  (`fit|<source>|g`, controls from the shared `fit_add_controls`), only the one chosen in
+  *Settings for* (`fit_for`) shown, kept in step with the list by `pick_list_on_change_for`.
+  *Take over Fit to Space* (`take_over`) copies each enabled Fit to Space's effective settings
+  (defaults included: Fit to Space's gap is 80, Scene Fit's 30) and switches it off. A
+  stand-in twin of an entry is not in the way of the others (its item's claim holds that room).
+  Not done in Scene Fit (each its own change later): dropping `kComingBack`, one glide time for
+  all entries during a window switcher's change, a Link Visibility test in both orders, the
+  window-switcher sync test, and the cost test against seven Fit to Space filters (it waits for
+  `stagekit_timing_take`).
+- **Fit to Space is idle off screen** (`FitEngine::idle`, perf cut 1): with its scene not
+  showing and nothing asked of it (`dirty_`, `placed_`, `shared_in_`, `new_item_`) its tick is
+  skipped but every fifteenth, each engine on a frame of its own, and the time skipped is added
+  to the next full tick (`idle_s_`), so a kept size waiting to be read and a hidden item's room
+  carry on as before. The tick the scene comes on is a full one (`kArriving`: no glide). The
+  room a shadow takes is read again only when `shadow_room_revision()` changes (perf cut 2),
+  raised in `ShadowBackdrop::update` and `settle_items`: anything else that changes the room
+  must raise it too. `stagekit_test_fit_counts` (a global proc) gives a fit filter's full ticks
+  and glides, for the tests.
+<!-- ==== end scene-filters:fit ==== -->
+<!-- ==== scene-filters:standby-corners ==== -->
+- **Scene Standby and Scene Corners keep a filter on each source; neither draws**
+  (`src/placement/scene-standby.*`, `src/placement/scene-corners.*`, both through
+  `src/common/managed-filter.*`, `ManagedSet`). Each adds a `stagekit_standby` or `stagekit_corners`
+  to each source it covers, with `managed` and `managed_by` (the scene's name) in its settings, and
+  pushes only the look keys that differ, from its own tick (once a second on screen, three off it, at
+  once after a change; never before `scenes_loaded()`). A filter takes its look only from the scene
+  filter in the scene it names; when that one is gone the first other one covering the source (by
+  scene name) rewrites `managed_by` and takes it over: no last-edited-wins. A filter of the kind the
+  user made (no `managed`) is left alone and no second one is added. One is taken off only from a
+  scene filter's tick, after `kManagedGraceS` (3 s) covered by none, **never from `destroy`**, which
+  also runs at a change of collection and at shutdown. Scene Corners is the switch for its filters
+  (`mirror_enabled`, on an edge of its own state); Scene Standby never switches its filters on again.
+  The registry (`g_entries`, and Scene Standby's `g_hidden`) holds no item and no strong reference:
+  copied out under its lock, nothing held while OBS is asked.
+- **A managed Standby filter goes idle, never away by itself**: not covered for 2 s by an enabled
+  Scene Standby with *Show when no image* (`check_managed`, `idle_`), it draws straight through and
+  takes the size of what comes before it. `Standby::update` makes the image again only when
+  `picture`, `file` or `source` change (`made_`, the `test_state` proc): a pushed duration made it flash.
+- **Stand-ins are per scene since Scene Standby** (`sync_stand_ins`): a scene has them when the
+  filter's own `when_hidden` is ticked (every scene) or its Scene Standby lists the source under
+  *Show when hidden* (`scene_standby_hidden`, that scene's change, per source). `g_stood_in` is
+  (scene, source) pairs, so the transitions owner is per item: in a scene without stand-ins the item
+  is free for Show in Scenes and Scene Transitions. An item in a group was owned before and is not
+  now (it never had a stand-in). The change given to each scene is remembered as text (`applied_`) so
+  a change made in the Scene Standby is applied again. `sync_stand_ins` resolves *As the scene sets*
+  (`resolve_item_change`, in the item's scene) before the change is swapped for the twin.
+- **Scene Corners leaves the background out by size alone** (`screen_share`: bounds, or source size
+  times scale less crop; no `refresh_item`, which would mark the scene changed every second): items
+  from the bottom while each covers 90 % of the canvas. Corners & Edges' look controls and defaults are
+  shared (`corners_add_look_properties`, `corners_look_defaults`), so the keys are the same.
+<!-- ==== end scene-filters:standby-corners ==== -->
+<!-- ==== scene-filters:shadow ==== -->
+- **Scene Shadow** (`src/look/scene-shadow.*`, `src/look/look-paint.*`,
+  `data/effects/stagekit-scene-shadow.effect`; beta155): a scene filter that draws, over
+  OBS's own picture of the scene. A filter that drew every item itself (the first design, with
+  corners in it) would have had to repeat OBS's item drawing with public calls only (crop to
+  bounds, scale filters, blending, groups, nested scenes, item transitions to their last frame):
+  each a way to break the owner's main scenes. So corners are Scene Corners' Corners & Edges per
+  source, and only a mask is drawn here, where a mistake shows as a slightly wrong shadow edge. The scene draws itself (`draw_filter_input`); the filter then draws the scene's items
+  again with `LookPaint::draw_item` as two silhouettes, S (the casting sources) and M (every
+  source not background; skipped when it would equal S), and lays the Kawase-blurred S over the
+  picture **off M** (`MaskedShadow`, `Ring` for the outline). That pass works **in linear light**
+  (`to_linear`/`to_srgb` in the effect): OBS lays a source over what is under it in linear
+  light, and done on raw values the shadow came out darker than the per-source filter's (52
+  against 84 on grey 128). It never moves or resizes anything. An item whose show or hide
+  transition runs is drawn through the transition (`item_transition_running`: a show's second
+  side, a hide's first side, is the item's source), so its shadow fades with it; drawing it a
+  second time after the scene has drawn it does not keep it from ending (tested by the
+  transition's `transition_video_stop`: the tests have no sound until the layout section, so the
+  sound half never ends there). Flags by item id (`ShadowFlag`: background, casts, masked) are
+  worked out in the tick (`classify`), four times a second while the scene shows or was drawn or
+  asked for by Morph in the last second, at once on coming into view or a settings change, never
+  before `scenes_loaded()`; an item not yet looked at is masked and casts nothing. Background:
+  listed, or the unbroken run of bottom items covering nine tenths of the canvas (groups only if
+  listed); the Morph layer casts and is never background; a stand-in twin takes its owner's
+  flags; a source with an enabled Shadow, Glow & Outline casts nothing. Drawn **once a frame**
+  (`last_frame_`, with size and linear-light state): later draws in that frame reuse the picture.
+  Skips itself with a drawing filter before it (`morph_draws_nothing`, logged once), on a group,
+  on an HDR canvas, before loading, and with nothing to draw. Its sizes are canvas pixels; it
+  has no `shown_scale` and no room.
+  **Morph carries it** (without it every change between Live and Chat Live would be a
+  cross-fade; `morph_accept_drawing_filter(is_scene_shadow)` in `register_scene_shadow`, so
+  `plain_scene` takes such a scene apart): when either scene has one
+  (`scene_shadow_now`, a copy of the look faded by its switch and the flags, taken each frame),
+  `Morph::draw_shadowed` draws `draw_morph` three times into canvas pictures, `pass_` Picture,
+  Cast and Mask (only when some item is masked but does not cast), each part weighted by what
+  it does in the old and the new scene mixed by eased t (`weight`, `flags_of`; a part drawn
+  part-way goes through `draw_part`/`draw_texture`'s new `opacity`), and composes them with
+  `LookPaint` and `lerp_look` (a missing side, or a part switched off, is the other side's at
+  opacity 0). A scene with no Scene Shadow gets the flags one would give it as it comes
+  (`scene_shadow_default_flags`, worked out with the plan), so the shadow fades over its
+  background. The item Morph needs nothing: its layer item casts.
+<!-- ==== end scene-filters:shadow ==== -->
+<!-- ==== scene-filters:perf ==== -->
+- **Frame time**: to come.
+<!-- ==== end scene-filters:perf ==== -->
 
 ## Conventions
 

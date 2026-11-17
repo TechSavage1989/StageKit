@@ -3,7 +3,9 @@
 // itself a key takes the picture that fits what its filter is and how it is
 // set; a key can also be given any picture of the pack.
 
+import { isSceneKind } from "./kinds.ts";
 import pack from "./pack.json" with { type: "json" };
+import { hookTypePictureId, typeOfInput, typeOfName, typePictureId } from "./source-types.ts";
 
 export type Picture = { id: string; group: string; label: string; on: string; off: string };
 
@@ -40,6 +42,11 @@ const PLAIN: Record<string, string> = {
 	stagekit_visibility_link: "options/link",
 	stagekit_show_hide: "options/show-hide",
 	stagekit_layout: "options/layout",
+	stagekit_scene_fit: "options/scene-fit",
+	stagekit_scene_shadow: "options/scene-shadow",
+	stagekit_scene_corners: "options/scene-corners",
+	stagekit_scene_standby: "filters/standby-picture",
+	stagekit_scene_modes: "options/mode",
 };
 
 type Settings = Record<string, unknown>;
@@ -116,34 +123,37 @@ export function sourcePictureFor(kind: string, settings: Settings, source: strin
 	return best;
 }
 
-/** The picture of what a source is, by its kind in OBS: a camera, a game, a window, a screen ... */
-const BY_INPUT: Record<string, string> = {
-	dshow_input: "options/webcam",
-	av_capture_input: "options/webcam",
-	av_capture_input_v2: "options/webcam",
-	"macos-avcapture": "options/webcam",
-	v4l2_input: "options/webcam",
-	game_capture: "capture/game",
-	window_capture: "capture/window",
-	xcomposite_input: "capture/window",
-	monitor_capture: "options/display",
-	display_capture: "options/display",
-	screen_capture: "options/display",
-	xshm_input: "options/display",
-	browser_source: "options/browser",
+/** Kinds of sound source: they have pictures of their own, not a source type. */
+const SOUND: Record<string, string> = {
 	wasapi_input_capture: "options/microphone",
 	wasapi_output_capture: "options/speaker",
+	coreaudio_input_capture: "options/microphone",
+	coreaudio_output_capture: "options/speaker",
+	pulse_input_capture: "options/microphone",
+	pulse_output_capture: "options/speaker",
 };
 
+/** The picture of a source type ("game", "camera" ...), or undefined for no such type. */
+export function typePicture(sourceType: string | undefined): Picture | undefined {
+	return BY_ID.get(typePictureId(sourceType ?? "") ?? "");
+}
+
+/** The picture of what a source is, by its kind in OBS: a camera, a game, a window, a screen ... */
 export function inputPicture(inputKind: string | undefined): Picture | undefined {
-	return BY_ID.get(BY_INPUT[inputKind ?? ""] ?? "");
+	return typePicture(typeOfInput(inputKind)) ?? BY_ID.get(SOUND[inputKind ?? ""] ?? "");
 }
 
 /**
- * A filter key's picture: the one chosen; else the pack's own picture of the
- * source it is on, by name; else, for a key that shows and hides a source,
- * the picture of what that source is (a camera, a window ...); else the one
- * that fits the filter.
+ * A filter key's picture: the one chosen; else the key's source type (not
+ * for a filter on a scene, which is no source); else the pack's own picture
+ * of the source it is on, by name; else, for a key that shows and hides a
+ * source, the source type its name speaks of ("Be Right Back", "Main
+ * Display") and then what OBS says the source is (a camera, a window ...);
+ * else the one that fits the filter.
+ *
+ * (The source's name comes before its kind in OBS: a text source called
+ * "BRB" is a be-right-back key, not a title, and a capture card is a camera
+ * to OBS.)
  */
 export function chooseFor(
 	chosen: string | undefined,
@@ -151,11 +161,15 @@ export function chooseFor(
 	settings: Settings = {},
 	source?: string,
 	inputKind?: string,
+	sourceType?: string,
 ): Picture | undefined {
+	const shows = kind === "stagekit_show_in_scenes";
 	return (
 		(chosen && BY_ID.get(chosen)) ||
+		(isSceneKind(kind) ? undefined : typePicture(sourceType)) ||
 		sourcePictureFor(kind, settings, source) ||
-		(kind === "stagekit_show_in_scenes" ? inputPicture(inputKind) : undefined) ||
+		(shows ? typePicture(typeOfName(source)) : undefined) ||
+		(shows ? inputPicture(inputKind) : undefined) ||
 		automatic(kind, settings)
 	);
 }
@@ -166,9 +180,9 @@ export function plain(sort: "switch" | "move" | "tool"): Picture {
 }
 
 /** A Hook key's picture: the kind of capture it hooks. */
-export function hookPicture(chosen: string | undefined, inputKind: string | undefined): Picture {
+export function hookPicture(chosen: string | undefined, inputKind: string | undefined, sourceType?: string): Picture {
 	const fits = inputKind === "window_capture" ? "options/hook-window" : "options/hook-game";
-	return (chosen && BY_ID.get(chosen)) || BY_ID.get(fits) || plain("move");
+	return (chosen && BY_ID.get(chosen)) || BY_ID.get(hookTypePictureId(sourceType ?? "") ?? "") || BY_ID.get(fits) || plain("move");
 }
 
 /** The arrange tools the pack has a picture of. */
@@ -213,7 +227,7 @@ export function slidePicture(chosen: string | undefined, direction: string | und
 }
 
 /** A Manual Window / Source key's picture: one for each thing it can do. */
-export function stepPicture(chosen: string | undefined, step: string | undefined): Picture {
+export function stepPicture(chosen: string | undefined, step: string | undefined, sourceType?: string): Picture {
 	const fits =
 		step === "clear"
 			? "options/clear"
@@ -224,7 +238,23 @@ export function stepPicture(chosen: string | undefined, step: string | undefined
 				: step === "back"
 					? "filters/back-to-apps"
 					: "filters/next-capture";
-	return (chosen && BY_ID.get(chosen)) || BY_ID.get(fits) || plain("move");
+	return (chosen && BY_ID.get(chosen)) || typePicture(sourceType) || BY_ID.get(fits) || plain("move");
+}
+
+/**
+ * A Scene Mode key's picture: the one chosen; else the key's source type;
+ * else the mode's own type (its *Mode type* in OBS); else the type its name
+ * speaks of ("Be Right Back", "GBA"); else the plain mode key.
+ */
+export function modePicture(chosen: string | undefined, sourceType: string | undefined, modeType?: string, modeName?: string): Picture {
+	return (
+		(chosen && BY_ID.get(chosen)) ||
+		typePicture(sourceType) ||
+		typePicture(modeType) ||
+		typePicture(typeOfName(modeName)) ||
+		BY_ID.get("options/mode") ||
+		plain("switch")
+	);
 }
 
 /** A Fit to Space Overlap key's picture: a window with a camera over its corner. */

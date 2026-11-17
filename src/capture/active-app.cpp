@@ -604,7 +604,7 @@ private:
 	obs_hotkey_id next_hotkey_ = OBS_INVALID_HOTKEY_ID, back_hotkey_ = OBS_INVALID_HOTKEY_ID;
 	obs_hotkey_id toggle_hotkey_ = OBS_INVALID_HOTKEY_ID;
 	bool follow_ = true;
-	std::string transition_ = "fade_transition";
+	std::string transition_ = kTransitionScene;
 	uint32_t transition_ms_ = 250;
 	bool ready_wanted_ = true;
 	std::mutex ready_mutex_;
@@ -692,7 +692,7 @@ void register_active_app()
 	};
 	info.get_defaults = [](obs_data_t *settings) {
 		obs_data_set_default_bool(settings, "follow", true);
-		obs_data_set_default_string(settings, "transition", "fade_transition");
+		obs_data_set_default_string(settings, "transition", kTransitionScene);
 		obs_data_set_default_int(settings, "transition_ms", 250);
 		obs_data_set_default_bool(settings, "ready", true);
 	};

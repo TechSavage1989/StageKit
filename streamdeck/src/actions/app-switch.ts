@@ -63,7 +63,7 @@ export class AppSwitch extends SingletonAction<KeySettings> {
 	}
 
 	private async show(key: KeyAction<KeySettings>, settings: KeySettings): Promise<void> {
-		const picture = stepPicture(settings.picture, settings.step);
+		const picture = stepPicture(settings.picture, settings.step, settings.sourceType);
 		await key.setTitle(stepTitle(settings.step));
 		if (settings.step === "toggle" || settings.step === "hide") {
 			// Which way it is: on a manual window (Toggle), or the capture

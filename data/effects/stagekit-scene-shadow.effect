@@ -1,0 +1,143 @@
+// StageKit Scene Shadow
+//
+// MaskedShadow  lays a (blurred) silhouette of the casting sources over the
+//               scene's finished picture as a shadow or glow, kept off every
+//               source that is not background (the mask), and writes
+//               straight alpha for the rest of OBS.
+// Ring          the same, then a line round the casting sources, also kept
+//               off the mask.
+//
+// A file of its own on purpose: should Direct3D refuse it, the per-source
+// shadow (stagekit-shadow.effect) still loads, and Scene Shadow passes the
+// scene through. Constant loop bounds, float(i), SampleLevel in the loop, no
+// inout: what both OpenGL and Direct3D accept.
+
+uniform float4x4 ViewProj;
+uniform texture2d image;        // the scene as OBS drew it, premultiplied
+uniform texture2d shadow;       // the casting sources' silhouette, softened (straight alpha)
+uniform texture2d silhouette;   // the casting sources' silhouette, sharp
+uniform texture2d mask;         // every source that is not background
+
+uniform float2 out_size;        // the canvas in pixels
+uniform float2 shadow_offset;   // pixels
+uniform float4 shadow_color;    // straight alpha; a = opacity
+uniform float shadow_gain;      // > 1 spreads the shadow outwards
+uniform float shadow_picture;   // 1 = the shadow takes the sources' own colours
+uniform float shadow_boost;     // extra colour and brightness for those colours
+uniform float outline_width;    // pixels
+uniform float4 outline_color;   // straight alpha; a = opacity
+
+sampler_state linearClamp {
+	Filter   = Linear;
+	AddressU = Clamp;
+	AddressV = Clamp;
+};
+
+struct VertData {
+	float4 pos : POSITION;
+	float2 uv  : TEXCOORD0;
+};
+
+VertData VSDefault(VertData v_in)
+{
+	VertData vert_out;
+	vert_out.pos = mul(float4(v_in.pos.xyz, 1.0), ViewProj);
+	vert_out.uv  = v_in.uv;
+	return vert_out;
+}
+
+float3 picture_color(float3 c, float boost)
+{
+	float gray = dot(c, float3(0.299, 0.587, 0.114));
+	return saturate(lerp(float3(gray, gray, gray), c, 1.0 + boost) * (1.0 + boost * 0.5));
+}
+
+// OBS lays a source over what is under it in linear light, so the shadow is
+// laid on the same way, or it would come out darker than the shadow the
+// per-source filter draws. The pictures hold ordinary (sRGB) values.
+float3 to_linear(float3 c)
+{
+	return lerp(c / 12.92, pow(max((c + 0.055) / 1.055, float3(0.0, 0.0, 0.0)), float3(2.4, 2.4, 2.4)),
+		    step(float3(0.04045, 0.04045, 0.04045), c));
+}
+
+float3 to_srgb(float3 c)
+{
+	return lerp(c * 12.92,
+		    1.055 * pow(max(c, float3(0.0, 0.0, 0.0)), float3(1.0 / 2.4, 1.0 / 2.4, 1.0 / 2.4)) - 0.055,
+		    step(float3(0.0031308, 0.0031308, 0.0031308), c));
+}
+
+// The scene in linear light, premultiplied.
+float4 scene_linear(float2 uv)
+{
+	float4 scene = image.Sample(linearClamp, uv);
+	float3 straight_rgb = scene.rgb / max(scene.a, 0.00001);
+	return float4(to_linear(straight_rgb) * scene.a, scene.a);
+}
+
+// `c` (linear light, premultiplied) with a colour laid over it.
+float4 laid_over(float4 c, float3 color_srgb, float amount)
+{
+	return float4(c.rgb * (1.0 - amount) + to_linear(color_srgb) * amount, c.a * (1.0 - amount) + amount);
+}
+
+// The scene with the shadow laid on it: linear light, premultiplied.
+float4 shadowed(float2 uv, float free_of_mask)
+{
+	float2 suv = uv - shadow_offset / out_size;
+	float inside = step(0.0, suv.x) * step(suv.x, 1.0) * step(0.0, suv.y) * step(suv.y, 1.0);
+	float4 thrown = shadow.Sample(linearClamp, suv);
+	float sa = saturate(thrown.a * shadow_gain) * shadow_color.a * inside * free_of_mask;
+	float3 shade = lerp(shadow_color.rgb, picture_color(thrown.rgb, shadow_boost), shadow_picture);
+	return laid_over(scene_linear(uv), shade, sa);
+}
+
+// Back to ordinary values, with straight alpha, for the rest of OBS.
+float4 finished(float4 c)
+{
+	return float4(to_srgb(c.rgb / max(c.a, 0.00001)), c.a);
+}
+
+float4 PSMaskedShadow(VertData v_in) : TARGET
+{
+	float free_of_mask = 1.0 - mask.Sample(linearClamp, v_in.uv).a;
+	return finished(shadowed(v_in.uv, free_of_mask));
+}
+
+float4 PSRing(VertData v_in) : TARGET
+{
+	float free_of_mask = 1.0 - mask.Sample(linearClamp, v_in.uv).a;
+	float4 c = shadowed(v_in.uv, free_of_mask);
+	// How close a casting source is: the most solid one within the width.
+	float reach = silhouette.Sample(linearClamp, v_in.uv).a;
+	float2 step_uv = float2(outline_width, outline_width) / out_size;
+	for (int i = 0; i < 24; i++) {
+		float angle = float(i) * 0.26179939;
+		float2 dir = float2(cos(angle), sin(angle)) * step_uv;
+		float a = silhouette.SampleLevel(linearClamp, v_in.uv + dir, 0).a;
+		float b = silhouette.SampleLevel(linearClamp, v_in.uv + dir * 0.75, 0).a;
+		float e = silhouette.SampleLevel(linearClamp, v_in.uv + dir * 0.5, 0).a;
+		float d = silhouette.SampleLevel(linearClamp, v_in.uv + dir * 0.25, 0).a;
+		reach = max(reach, max(max(a, b), max(e, d)));
+	}
+	return finished(laid_over(c, outline_color.rgb, reach * outline_color.a * free_of_mask));
+}
+
+technique MaskedShadow
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSMaskedShadow(v_in);
+	}
+}
+
+technique Ring
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSRing(v_in);
+	}
+}

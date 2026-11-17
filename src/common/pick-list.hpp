@@ -30,6 +30,9 @@ struct PickList {
 	const char *tip = nullptr; // locale key: a longer explanation, shown on the heading's rows
 	// Fills the box with what can be chosen. Entries already in the list are left out for you.
 	std::function<void(std::vector<std::string> &choices)> choices;
+	// The heading as it is to be shown, when it is made up at run time
+	// ("Mode: Game"). Wins over `title` when not empty.
+	std::string title_text;
 };
 
 // The entries of a list, in order.
@@ -42,9 +45,16 @@ void pick_list_add(obs_properties_t *props, obs_source_t *owner, const PickList 
 
 // Something to call whenever a list in a properties window has had an entry
 // added or taken off, for a control beside it that shows the list's entries.
-// One for the whole plugin; it gets the window's properties, the list's owner
-// and the owner's settings.
+// One for the whole plugin (the fuller Show/Hide transition's rebuild puts
+// itself there every time a window is built); it gets the window's
+// properties, the list's owner and the owner's settings.
 void pick_list_on_change(void (*changed)(obs_properties_t *top, obs_source_t *owner, obs_data_t *settings));
+
+// The same, for one kind of owner only (its unversioned id). Called after the
+// one above, never instead of it, so a kind that also has the fuller
+// Show/Hide transition keeps that control's rebuild. One per kind.
+void pick_list_on_change_for(const char *kind,
+			     void (*changed)(obs_properties_t *top, obs_source_t *owner, obs_data_t *settings));
 
 // Rebuilds a list's rows after something other than the list itself changed it.
 void pick_list_refresh(obs_properties_t *top, obs_source_t *owner, const char *setting, bool as_text);

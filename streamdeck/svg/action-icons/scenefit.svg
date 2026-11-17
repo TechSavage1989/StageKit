@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" width="40" height="40" viewBox="0 0 160 160">
+<g id="icon" inkscape:groupmode="layer" inkscape:label="Icon">
+<rect x="12.9" y="28.9" width="134.2" height="102.2" rx="3.1" fill="none" stroke="#ffffff" stroke-width="13"/>
+<rect x="22.4" y="41.6" width="70.4" height="76.8" rx="4.8" fill="#ffffff"/>
+<rect x="112" y="41.6" width="25.6" height="76.8" rx="4.8" fill="#ffffff"/>
+<polyline points="96,80 102.08,80" fill="none" stroke="#ffffff" stroke-width="8"/>
+<ellipse cx="96" cy="80" rx="4" ry="4" fill="#ffffff"/>
+<ellipse cx="102.08" cy="80" rx="4" ry="4" fill="#ffffff"/>
+<polygon points="108.8,80 99.25,85.85 99.25,74.15" fill="#ffffff"/>
+</g>
+</svg>

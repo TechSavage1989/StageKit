@@ -17,6 +17,22 @@ export type Connection = {
 
 export type FilterNow = { enabled: boolean; kind: string; settings: Record<string, unknown> };
 
+/** A mode of a Scene Modes filter: its id (what keys keep), its name and its type. */
+export type SceneMode = { id: string; name: string; type: string };
+export type SceneModes = { scene: string; filter: string; enabled: boolean; current: string; modes: SceneMode[] };
+
+/** The modes as the vendor requests give them: { id, name, type } each (a bare name is taken as both id and name). */
+function modeList(modes: unknown): SceneMode[] {
+	if (!Array.isArray(modes)) return [];
+	return modes
+		.map((m) =>
+			typeof m === "string"
+				? { id: m, name: m, type: "" }
+				: { id: String((m as Record<string, unknown>)?.id ?? ""), name: String((m as Record<string, unknown>)?.name ?? ""), type: String((m as Record<string, unknown>)?.type ?? "") },
+		)
+		.filter((m) => m.id !== "");
+}
+
 const RETRY_MS = 3000;
 
 class ObsLink extends EventEmitter {
@@ -69,6 +85,8 @@ class ObsLink extends EventEmitter {
 			if (ev.vendorName === "StageKit" && ev.eventType === "BlurChanged") this.emit("blur");
 			if (ev.vendorName === "StageKit" && ev.eventType === "OptionsChanged") this.emit("options");
 			if (ev.vendorName === "StageKit" && ev.eventType === "SwitcherChanged") this.emit("switcher");
+			// A Scene Modes filter changed its mode, or its list of modes.
+			if (ev.vendorName === "StageKit" && ev.eventType === "SceneModeChanged") this.emit("mode", ev.eventData);
 		});
 	}
 
@@ -336,6 +354,43 @@ class ObsLink extends EventEmitter {
 		const answer = await this.stageKit("GetSwitcherState", { sourceName, filterName });
 		if (!answer) return undefined;
 		return { manual: answer.manual === true, hidden: answer.hidden === true };
+	}
+
+	/**
+	 * Every Scene Modes filter (on the scene named, or all): its scene, its
+	 * name, whether it is on, the mode on now (an id) and its modes. Empty
+	 * when OBS, or a StageKit with Scene Modes, cannot be asked.
+	 */
+	async sceneModes(scene = ""): Promise<SceneModes[]> {
+		const answer = await this.stageKit("ListSceneModes", scene ? { scene } : {});
+		const filters = answer?.filters;
+		if (!Array.isArray(filters)) return [];
+		return filters.map((f: Record<string, unknown>) => ({
+			scene: String(f.scene ?? ""),
+			filter: String(f.filter ?? ""),
+			enabled: f.enabled !== false,
+			current: String(f.current ?? ""),
+			modes: modeList(f.modes),
+		}));
+	}
+
+	/** One Scene Modes filter as it is now, or undefined when it cannot be asked. */
+	async sceneMode(scene: string, filter: string): Promise<SceneModes | undefined> {
+		if (!scene) return undefined;
+		const answer = await this.stageKit("GetSceneMode", filter ? { scene, filter } : { scene });
+		if (!answer) return undefined;
+		return {
+			scene,
+			filter: String(answer.filter ?? filter),
+			enabled: answer.enabled !== false,
+			current: String(answer.current ?? ""),
+			modes: modeList(answer.modes),
+		};
+	}
+
+	/** Turns a mode on ("on") or toggles it ("toggle"); says whether OBS took it. */
+	async setSceneMode(scene: string, filter: string, mode: string, how: "on" | "toggle"): Promise<boolean> {
+		return (await this.stageKit("SetSceneMode", { scene, filter, mode, how })) !== undefined;
 	}
 
 	/** Changes some of a filter's settings, leaving the rest as they are. */

@@ -35,6 +35,11 @@ export type KeySettings = {
 	press?: "toggle" | "on" | "off";
 	/** A picture of the pack by name; empty for the one that fits the filter. */
 	picture?: string;
+	/**
+	 * What the source the key acts on is ("game", "camera" ...; src/source-types.ts),
+	 * for its picture; empty for Automatic.
+	 */
+	sourceType?: string;
 	/** The palette of this key's picture: mono unless another is chosen. */
 	palette?: string;
 	/** An arrange tool, for a Tool key. */

@@ -241,9 +241,94 @@ DRAWINGS["plain-switch"] = [("frame", 14, 10, 50, 26), ("dot", 41, 18, 5)]
 DRAWINGS["plain-move"] = [("frame", 6, 3, 58, 33), ("box", 12, 9, 24, 19)] + arrow(26, 21, 48, 27, 4)
 DRAWINGS["plain-tool"] = [("line", 8, 3, 8, 33), ("box", 12, 7, 50, 15), ("box", 12, 21, 34, 29)]
 
+# Source types: what a source is, for any key that acts on one, chosen in the
+# key's settings (the owner: "instead of assigning a specific icon to my
+# specific sources, ad an option in the key to choose a source type ... that
+# way anyone with any source can pick it accordingly"). The ids are kept in
+# keys' settings and are append-only; they are the same as the Scene Modes
+# filter's *Mode type* in OBS. The last four are the holding modes' drawings.
+SOURCE_TYPES = [
+    "game", "window", "art_app", "code_editor", "browser", "camera", "capture_card", "display", "phone", "tablet",
+    "chat", "music", "alerts", "title", "image", "video", "starting", "brb", "intermission", "ending",
+]
+TYPE_REUSES = {"starting": "mode-starting", "brb": "mode-brb", "intermission": "mode-intermission", "ending": "mode-ending"}
+TYPES = {
+    "game": [("frame", 10, 9, 54, 27), ("line", 17, 18, 27, 18), ("line", 22, 13, 22, 23), ("dot", 41, 15, 2.5),
+             ("dot", 47, 21, 2.5)],
+    "window": [("frame", 8, 4, 56, 32), ("box", 8, 4, 56, 10), ("frame", 14, 15, 30, 27), ("line", 36, 17, 50, 17),
+               ("line", 36, 24, 46, 24)],
+    "art_app": [("ring", 25, 18, 14), ("dot", 19, 12, 2.5), ("dot", 27, 10, 2.5), ("dot", 33, 15, 2.5), ("dot", 18, 21, 2.5),
+                ("line", 43, 29, 57, 5), ("dot", 41, 31, 3.5)],
+    "code_editor": [("line", 22, 9, 12, 18), ("line", 12, 18, 22, 27), ("line", 42, 9, 52, 18), ("line", 52, 18, 42, 27),
+                    ("line", 36, 5, 28, 31)],
+    "browser": [("frame", 8, 4, 56, 32), ("box", 8, 4, 56, 10), ("ring", 32, 21, 7), ("line", 25, 21, 39, 21),
+                ("line", 32, 14, 32, 28)],
+    "camera": DEVICES["webcam"],
+    "capture_card": DEVICES["capture-card"],
+    "display": DEVICES["display"],
+    "phone": DEVICES["phone"],
+    "tablet": [("frame", 8, 4, 56, 32), ("frame", 13, 8, 46, 28), ("dot", 51.5, 18, 2)],
+    "chat": [("box", 6, 4, 40, 16), ("tri", 10, 16, 18, 16, 9, 22), ("frame", 24, 19, 58, 31), ("tri", 48, 31, 54, 31, 55, 35)],
+    "music": [("dot", 20, 28, 5), ("dot", 44, 25, 5), ("line", 24, 28, 24, 7), ("line", 48, 25, 48, 4), ("line", 24, 7, 48, 4),
+              ("line", 24, 12, 48, 9)],
+    "alerts": [("arc", 32, 17, 11, 180, 360), ("line", 21, 17, 21, 26), ("line", 43, 17, 43, 26), ("line", 16, 27, 48, 27),
+               ("dot", 32, 31, 3), ("line", 32, 3, 32, 6)],
+    "title": [("box", 10, 7, 54, 14), ("line", 10, 21, 48, 21), ("line", 10, 28, 36, 28)],
+    "image": [("frame", 8, 4, 56, 32), ("tri", 12, 30, 26, 13, 40, 30), ("tri", 32, 30, 43, 19, 53, 30), ("dot", 46, 11, 3)],
+    "video": [("frame", 6, 4, 58, 32), ("line", 6, 9, 58, 9), ("line", 6, 27, 58, 27), ("tri", 27, 12, 27, 24, 38, 18)],
+}
+
+
+def type_name(type_id):
+    """The picture's name (options/<name>) for a source type."""
+    return TYPE_REUSES.get(type_id) or "type-" + type_id.replace("_", "-")
+
+
+def scaled(shapes, k, cx=32, cy=18):
+    """A drawing made smaller about a point of the field."""
+    out = []
+    for shape in shapes:
+        kind, v = shape[0], list(shape[1:])
+        if kind in ("ring", "dot"):
+            v = [cx + (v[0] - cx) * k, cy + (v[1] - cy) * k, v[2] * k]
+        elif kind == "arc":
+            v = [cx + (v[0] - cx) * k, cy + (v[1] - cy) * k, v[2] * k, v[3], v[4]]
+        elif kind != "text":
+            v = [(cx + (c - cx) * k) if i % 2 == 0 else (cy + (c - cy) * k) for i, c in enumerate(v)]
+        out.append((kind, *v))
+    return out
+
+
+for _type, _shapes in TYPES.items():
+    DRAWINGS[type_name(_type)] = _shapes
+# Capture Active Window with a source type: the type inside the hook keys'
+# corners of a capture, as hook-game has its game.
+HOOK_TYPES = {}
+for _type in SOURCE_TYPES:
+    HOOK_TYPES["hook-type-" + _type.replace("_", "-")] = _CORNERS + scaled(DRAWINGS[type_name(_type)], 0.7)
+DRAWINGS.update(HOOK_TYPES)
+
+
+def rounded(x0, y0, x1, y1, r):
+    """A frame with round corners, as lines and arcs."""
+    return [("line", x0 + r, y0, x1 - r, y0), ("line", x0 + r, y1, x1 - r, y1), ("line", x0, y0 + r, x0, y1 - r),
+            ("line", x1, y0 + r, x1, y1 - r), ("arc", x0 + r, y0 + r, r, 180, 270), ("arc", x1 - r, y0 + r, r, 270, 360),
+            ("arc", x1 - r, y1 - r, r, 0, 90), ("arc", x0 + r, y1 - r, r, 90, 180)]
+
+
+# The Scene Mode key: modes stacked, one of them on.
+DRAWINGS["mode"] = [("frame", 14, 2, 50, 10), ("box", 14, 14, 50, 22), ("frame", 14, 26, 50, 34)]
+# The scene filters' keys: a scene with its sources, and what the filter does
+# to all of them at once.
+DRAWINGS["scene-fit"] = [("frame", 4, 2, 60, 34), ("box", 9, 7, 38, 29), ("box", 46, 7, 55, 29)] + arrow(39, 18, 44, 18, 3)
+DRAWINGS["scene-shadow"] = [("frame", 2, 2, 62, 34), ("box", 12, 11, 31, 29), ("frame", 8, 7, 27, 25), ("box", 39, 11, 58, 29),
+                            ("frame", 35, 7, 54, 25)]
+DRAWINGS["scene-corners"] = [("frame", 2, 2, 62, 34)] + rounded(7, 7, 35, 29, 7) + rounded(39, 7, 57, 29, 5)
+
 # The ones that are a filter's key, with an "on" and an "off" look.
 SWITCHES = ["scene", "zoom", "fit", "overlap", "source-switcher", "window-switcher", "trigger", "link", "show-hide", "limit", "slide-to-edge", "every-scene", "keep-shape", "snap", "guides", "plain-switch"]
 SWITCHES += list(GROUPED)
+SWITCHES += [type_name(t) for t in TYPES] + ["mode", "scene-fit", "scene-shadow", "scene-corners"]
 
 
 def drawn(shapes, ink):
@@ -330,11 +415,23 @@ def main():
     pictures = [p for p in listed["pictures"] if not p["id"].startswith("options/")]
     for name in DRAWINGS:
         two = name in SWITCHES
+        if name in GROUPED:
+            group, label = GROUPED[name]
+        elif name in DEVICES:
+            group, label = "devices", name.replace("-", " ")
+        elif name.startswith("type-"):
+            group, label = "source types", name[5:].replace("-", " ")
+        elif name in HOOK_TYPES:
+            group, label = "capture by type", name[10:].replace("-", " ")
+        elif name.startswith("ratio-"):
+            group, label = "options", name.replace("-", " ").replace("x", ":")
+        else:
+            group, label = "options", name.replace("-", " ")
         pictures.append(
             {
                 "id": "options/" + name,
-                "group": GROUPED[name][0] if name in GROUPED else "devices" if name in DEVICES else "options",
-                "label": GROUPED[name][1] if name in GROUPED else name.replace("-", " ").replace("ratio ", "ratio ").replace("x", ":") if name.startswith("ratio-") else name.replace("-", " "),
+                "group": group,
+                "label": label,
                 "on": f"options/{name}-on" if two else f"options/{name}",
                 "off": f"options/{name}-off" if two else f"options/{name}",
             }

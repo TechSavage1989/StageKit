@@ -40,6 +40,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "show-in-scenes.hpp"
 #include "../common/timing.hpp"
 
+#include "../common/holds-hidden.hpp"
 #include "../common/item-transition.hpp"
 #include "../common/loading.hpp"
 #include "../common/pick-list.hpp"
@@ -651,6 +652,9 @@ void register_visibility_link()
 		static_cast<VisibilityLink *>(data)->detach();
 	};
 	register_timed(&info);
+	// Its "Follow the first source" modes hold the sources of the modes not
+	// showing hidden, for every filter that shows things.
+	holds_hidden_register(link_visibility_holds_hidden, link_visibility_settling);
 }
 
 } // namespace stagekit

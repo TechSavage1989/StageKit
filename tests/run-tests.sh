@@ -6,7 +6,20 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 out="${1:-$root/build-tests/out}"
 cmake -S "$root" -B "$root/build-tests" -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
   -DSTAGEKIT_BUILD_TESTS=ON -DCMAKE_COMPILE_WARNING_AS_ERROR=ON >/dev/null
-cmake --build "$root/build-tests"
+# Every key of the locale file once: OBS keeps one text for a key used twice.
+dupes="$(grep -E '^[A-Za-z]' "$root/data/locale/en-US.ini" | cut -d= -f1 | sort | uniq -d)"
+if [ -n "$dupes" ]; then
+  echo "data/locale/en-US.ini has keys more than once:" >&2
+  echo "$dupes" >&2
+  exit 1
+fi
+# A failed build must stop here, or the tests would run an older build.
+build_exit=0
+cmake --build "$root/build-tests" || build_exit=$?
+if [ "$build_exit" -ne 0 ]; then
+  echo "The build failed (exit code $build_exit); no tests were run." >&2
+  exit "$build_exit"
+fi
 mkdir -p "$out/game" "$out/title"
 python3 "$root/tests/make-test-image.py" "$out"
 export QT_QPA_PLATFORM=offscreen
@@ -33,3 +46,8 @@ python3 "$root/tests/make-sheet.py" "$out/corners" "$out/corners-edges.png" 3 li
 python3 "$root/tests/make-sheet.py" "$out/glow" "$out/glow-outline.png" 3 light
 python3 "$root/tests/make-sheet.py" "$out/morph" "$out/morph-transition.png" 5
 python3 "$root/tests/make-sheet.py" "$out/item-morph" "$out/morph-items.png" 3
+# ==== scene-filters:shadow ====
+python3 "$root/tests/make-sheet.py" "$out/scene-shadow" "$out/scene-shadow.png" 2
+# ==== end scene-filters:shadow ====
+# ==== scene-filters:collection ====
+# ==== end scene-filters:collection ====
