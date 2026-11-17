@@ -1025,7 +1025,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   follows the cells by itself; a test checks that an outline after it is jagged. The nine taps are
   a loop since then (`PSMosaic`): written out nine times, the Voronoi test made a very long shader,
   and Direct3D compiles every technique of the file when OBS loads the plugin. Not run on
-  Direct3D. **Open sides** (`BlurLook::open_edges`, the `open_edge` uniform, betaNEXT): a side of
+  Direct3D. **Open sides** (`BlurLook::open_edges`, the `open_edge` uniform, beta167): a side of
   the picture that is no edge, because the screen cuts the source there anyway; `inside_by` and
   `voronoi_whole` never reach it. Only Scene Blur's *Each source by itself* knows where a source
   is on screen and sets them (`blurred_item`: a side whose two corners, through the item's draw
@@ -1963,12 +1963,12 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     off in the box and along the edge for hexagons, Gaussian and whole cells. A crop is the edge:
     the per-source filter blurs the whole source and OBS crops it after, so at a crop the two
     differ. Whole cells keep the screen's edge (open sides, see the mosaic entry).
-  - **Mosaic edge only with Each source by itself** (betaNEXT): `update` clears
+  - **Mosaic edge only with Each source by itself** (beta167): `update` clears
     `look_.whole_cells` for *The scene as drawn*, where the control is hidden. The owner: "If
     whole cells is selected then the mode is switched back to whole scene as drawn, the whole
     scene edge retains the border/blur": the setting was still read and cut the cells along
     the screen's edge.
-  - **The scene as drawn is kept to the mask** (betaNEXT). The owner: "scene as draw, causes a
+  - **The scene as drawn is kept to the mask** (beta167). The owner: "scene as draw, causes a
     visual gap between the shadow, outline/glow effect": a mosaic cell or blur tap along a
     covered source's edge averaged in the background round it (40.7 off along the top edge in
     the test), a light band between the source and its outline. Now the picture blurred is
@@ -1995,7 +1995,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     the match above, nothing of the background in the top cells, drawn twice alike, whole cells
     for every shape and a turned pattern, an outline after a Blur filter and a Scene Shadow's
     outline jagged with whole cells (inside the box too) and straight without, Temporal and
-    Kawase each source by itself; and since betaNEXT the scene as drawn kept to the source (mosaic
+    Kawase each source by itself; and since beta167 the scene as drawn kept to the source (mosaic
     and Gaussian), the screen's edge kept with whole cells (a full-screen background and a source
     running off the left) and a Mosaic edge left on Whole cells ignored by the scene as drawn.
     `scene_blur_controls_test` checks *Blur area* and *Mosaic edge*'s visibility and defaults.

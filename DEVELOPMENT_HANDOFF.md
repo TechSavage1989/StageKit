@@ -13,9 +13,9 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
-## Scene Blur: the screen's edge, Mosaic edge's mode, no gap (0.1.0-betaNEXT)
+## Scene Blur: the screen's edge, Mosaic edge's mode, no gap (0.1.0-beta167)
 
-Branch `fix/blur-edges-2`, from `main` after beta166. Notes: `docs/releases/0.1.0-betaNEXT.md`.
+Branch `fix/blur-edges-2`, from `main` after beta166. Notes: `docs/releases/0.1.0-beta167.md`.
 No Stream Deck file changed. The owner, of beta165, with screenshots of their
 Component-Capture-Scene (a full-screen Ambient Background, a game capture with a Shadow, Glow &
 Outline, a camera, a chat panel, a Scene Shadow; Scene Blur on hexagons, all or live sources):
