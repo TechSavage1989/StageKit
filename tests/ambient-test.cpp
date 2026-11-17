@@ -5,6 +5,7 @@
 
 #include <obs.h>
 #include <obs-module.h>
+#include <obs-frontend-api.h>
 #include <obs-nix-platform.h>
 #include <graphics/matrix4.h>
 #include <graphics/vec4.h>
@@ -7061,6 +7062,16 @@ int main(int argc, char **argv)
 		obs_data_set_int(d, "ease_curve", 0);
 		obs_source_t *layout = add_filter(scene, "stagekit_layout", "Default Layout", d);
 		sleep_ms(60);
+		{
+			// Its button has its own words, not the window layout menu's
+			// (the two once shared a name in the strings file).
+			obs_properties_t *lp = obs_source_properties(layout);
+			obs_property_t *save = obs_properties_get(lp, "save");
+			CHECK(save && strcmp(obs_property_description(save), "Save where everything is now") == 0,
+			      "Apply Layout's button says what it does (%s)",
+			      save ? obs_property_description(save) : "-");
+			obs_properties_destroy(lp);
+		}
 		calldata_t cd = {};
 		proc_handler_call(obs_source_get_proc_handler(layout), "save", &cd);
 		sleep_ms(60);
@@ -8436,6 +8447,31 @@ int main(int argc, char **argv)
 						      !two_dock->isFloating(),
 					      "a saved window layout comes back: each dock where it was, docked again (saved %d, restored %d)",
 					      (int)saved, (int)restored);
+					// When it comes back by itself: OBS started, and every
+					// change of scene collection (OBS puts the collection's
+					// docks up again); nothing else.
+					auto after = [](int event) {
+						calldata_t cd = {};
+						calldata_set_int(&cd, "event", event);
+						proc_handler_call(obs_get_proc_handler(),
+								  "stagekit_window_layout_after", &cd);
+						const bool yes = calldata_bool(&cd, "restores");
+						calldata_free(&cd);
+						return yes;
+					};
+					CHECK(after(OBS_FRONTEND_EVENT_FINISHED_LOADING) &&
+						      after(OBS_FRONTEND_EVENT_SCENE_COLLECTION_CHANGED) &&
+						      !after(OBS_FRONTEND_EVENT_SCENE_CHANGED) &&
+						      !after(OBS_FRONTEND_EVENT_SCENE_COLLECTION_CHANGING),
+					      "the saved window layout comes back by itself when OBS starts and after every change of scene collection");
+					QAction *at_start = updates->findChild<QAction *>("layoutAtStart");
+					CHECK(at_start &&
+						      at_start->text() ==
+							      QString("Restore it when a collection loads") &&
+						      updates->findChild<QAction *>("layoutSave")->text() ==
+							      QString("Save window layout"),
+					      "and the menu says so (%s)",
+					      at_start ? at_start->text().toUtf8().constData() : "-");
 				}
 				// Pictures of the two busiest tabs, to look at.
 				dock->resize(380, dock->sizeHint().height());

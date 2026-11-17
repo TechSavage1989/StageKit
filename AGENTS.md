@@ -204,7 +204,10 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   `saveState` as base64 in `window-layout.json` in the module's config folder, with *Restore it
   when OBS starts* (`at_start`, on) and *Save it when OBS closes* (`at_exit`, off), all in the
   Tools menu's StageKit entry. It is brought back `kAfterLoadingMs` (1.5 s) after
-  `OBS_FRONTEND_EVENT_FINISHED_LOADING`, and saved at `SCRIPTING_SHUTDOWN`, before OBS takes its
+  `OBS_FRONTEND_EVENT_FINISHED_LOADING` and after every `SCENE_COLLECTION_CHANGED`
+  (`window_layout_restores_after`, beta149: OBS puts a collection's docks up again, and the owner
+  found the layout "doesn't automatically restore after saving and switching to another
+  collection"), and saved at `SCRIPTING_SHUTDOWN`, before OBS takes its
   window apart. The owner had dock-layout plugins and still lost the layout at every start: "I'd
   like stagekit to also have a tool to store my OBS dock and layout, and also auto load it at
   startup". **Why OBS lost their layout was not found**; this restores it afterwards whatever the
@@ -1258,6 +1261,10 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   dock's buttons. Move Source exists for that; keep its controls complete without the dock.
 - **Deprecated libobs calls fail CI** (warnings are errors). Avoid `obs_sceneitem_get_info`; use the
   individual position, scale, rotation and bounds calls.
+- **A key of `data/locale/en-US.ini` is used once.** The window layout's menu and Apply Layout
+  both used `Layout.Save` (up to beta148), and OBS keeps one of the two texts for both. The
+  window layout's strings are `WindowLayout.*` since beta149. Check for a repeated key when adding
+  one.
 - **`.gitignore` is an allowlist.** A new top-level file or folder is ignored until it is added there
   and to `scripts/root-allowlist.txt`.
 - Colour is handled as raw (non-linear) values inside multi-pass pipelines; the final draw follows

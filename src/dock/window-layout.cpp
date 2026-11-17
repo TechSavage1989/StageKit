@@ -133,38 +133,49 @@ void window_layout_menu(QMenu *menu)
 	if (!menu)
 		return;
 	menu->addSeparator();
-	QAction *save = menu->addAction(text("Layout.Save"));
+	QAction *save = menu->addAction(text("WindowLayout.Save"));
 	save->setObjectName("layoutSave");
 	QObject::connect(save, &QAction::triggered, menu, [] {
 		QMainWindow *window = main_window();
 		const bool saved = window_layout_save(window);
 		if (window)
-			QMessageBox::information(window, text("Layout.Title"),
-						 text(saved ? "Layout.Saved" : "Layout.NotSaved"));
+			QMessageBox::information(window, text("WindowLayout.Title"),
+						 text(saved ? "WindowLayout.Saved" : "WindowLayout.NotSaved"));
 	});
-	QAction *restore = menu->addAction(text("Layout.Restore"));
+	QAction *restore = menu->addAction(text("WindowLayout.Restore"));
 	restore->setObjectName("layoutRestore");
 	QObject::connect(restore, &QAction::triggered, menu, [] {
 		QMainWindow *window = main_window();
 		if (!window_layout_restore(window) && window)
-			QMessageBox::information(window, text("Layout.Title"),
-						 text(window_layout_saved() ? "Layout.NoFit" : "Layout.None"));
+			QMessageBox::information(window, text("WindowLayout.Title"),
+						 text(window_layout_saved() ? "WindowLayout.NoFit"
+									    : "WindowLayout.None"));
 	});
-	QAction *at_start = menu->addAction(text("Layout.AtStart"));
+	QAction *at_start = menu->addAction(text("WindowLayout.AtStart"));
 	at_start->setObjectName("layoutAtStart");
 	at_start->setCheckable(true);
 	at_start->setChecked(choice("at_start"));
 	QObject::connect(at_start, &QAction::toggled, menu, [](bool on) { set_choice("at_start", on); });
-	QAction *at_exit = menu->addAction(text("Layout.AtExit"));
+	QAction *at_exit = menu->addAction(text("WindowLayout.AtExit"));
 	at_exit->setObjectName("layoutAtExit");
 	at_exit->setCheckable(true);
 	at_exit->setChecked(choice("at_exit"));
 	QObject::connect(at_exit, &QAction::toggled, menu, [](bool on) { set_choice("at_exit", on); });
 }
 
+bool window_layout_restores_after(enum obs_frontend_event event)
+{
+	// When OBS starts, and after every change of scene collection: OBS takes
+	// down and puts up again the docks that belong to a collection (a
+	// source's dock, a browser dock), and the layout came back only once,
+	// at start-up. The owner: "Dock/windows layout doesn't automatically
+	// restore after saving and switching to another collection".
+	return event == OBS_FRONTEND_EVENT_FINISHED_LOADING || event == OBS_FRONTEND_EVENT_SCENE_COLLECTION_CHANGED;
+}
+
 void window_layout_event(enum obs_frontend_event event)
 {
-	if (event == OBS_FRONTEND_EVENT_FINISHED_LOADING) {
+	if (window_layout_restores_after(event)) {
 		if (!choice("at_start") || !window_layout_saved())
 			return;
 		QPointer<QMainWindow> window(main_window());
