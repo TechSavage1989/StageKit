@@ -9,11 +9,20 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | `feat/scene-filters`: beta155 (the six scene filters and the Stream Deck side), merged and tested, not yet on `main`. `feat/frame-time` (beta156) is unfinished and not in it |
+| Working branch | `feat/streamdeck-types` (beta157, the Stream Deck type lists). Next: `feat/scene-all-sources` (*All sources* on the scene filters), `feat/scene-blur` (Scene Blur and its key, built on this branch), then `feat/frame-time` and the new collection |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
-## Stream Deck: type lists in place of the Image list (plugin 0.20.0.0, branch `feat/streamdeck-types`)
+## A source shown with Morph and nothing to change from (0.1.0-beta156)
+
+One item hidden and two shown at once: the hidden one morphs into one of them, and the other went by
+Morph's *Alone* path, which drew OBS's see-through placeholder for the empty side (`a ? a : b`) and
+popped in at the end. `alone_in_` picks the side from the transition's own sources; Fade and Zoom
+had the mirror fault on hiding. **Confirmed on the owner's Windows machine (2026-11-17)**: the
+DSLR to capture switch now fades the capture in while the DSLR morphs into the square camera, and
+the beta155 scene filters "are working well" so far.
+
+## Stream Deck: type lists in place of the Image list (0.1.0-beta157, plugin 0.20.0.0)
 
 The owner: "instead of having an image list on all the streamdeck buttons, have a similar source
 type, scene type, etc style list relative to the button function ... every single stream deck
