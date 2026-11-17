@@ -73,6 +73,10 @@ bool draws_nothing(obs_source_t *filter)
 	if (!(obs_source_get_output_flags(filter) & OBS_SOURCE_VIDEO))
 		return true;
 	const char *id = obs_source_get_unversioned_id(filter);
+	// The scene filters that draw nothing (scene-filter-ids.hpp).
+	for (const char *known : {kSceneModesId, kSceneTransitionsId, kSceneFitId, kSceneStandbyId, kSceneCornersId})
+		if (id && std::strcmp(id, known) == 0)
+			return true;
 	for (const char *known :
 	     {kFitItemId, kPlaceItemId, kShowHideId, kMatchItemId, kLayoutId, kVisibilityLinkId, kShowInScenesId,
 	      kActiveAppId, kProgramTriggerId, "move_source_filter", "move_value_filter", "move_audio_value_filter",
