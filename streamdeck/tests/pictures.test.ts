@@ -200,3 +200,72 @@ test("a filter key's picture fits the source it is on", async () => {
 	assert.equal(chooseFor(undefined, "stagekit_shadow_backdrop", {}, "Overhead", "dshow_input")?.group, "shadow glow outline");
 	assert.equal(chooseFor("options/browser", "stagekit_show_in_scenes", {}, "Square Camera", "dshow_input")?.id, "options/browser");
 });
+
+test("the Live, Chat Live and Standby scenes have pictures of their own, the one with the most words first", async () => {
+	const { scenePicture, scenePictureFor } = await import("../src/pictures.ts");
+	assert.equal(scenePictureFor("Live")?.id, "options/scene-live");
+	assert.equal(scenePictureFor("Chat Live")?.id, "options/scene-chat-live", "not the Live picture");
+	assert.equal(scenePictureFor("Chat-Live-Scene")?.id, "options/scene-chat-live");
+	assert.equal(scenePictureFor("Live Chat")?.id, "options/scene-chat-live", "words in any order");
+	assert.equal(scenePictureFor("Standby")?.id, "options/scene-standby");
+	assert.equal(scenePictureFor("Standby-Scene")?.id, "options/scene-standby");
+	for (const id of ["options/scene-live", "options/scene-chat-live", "options/scene-standby"]) {
+		const picture = scenePicture(id, "Anything");
+		assert.equal(picture.group, "scenes");
+		assert.notEqual(picture.on, picture.off, "an on and an off look");
+	}
+	assert.equal(scenePicture("options/scene", "Live").id, "options/scene", "a picture chosen by hand wins");
+	assert.equal(scenePicture("options/scene-standby", "Chat Live").id, "options/scene-standby");
+});
+
+test("the holding modes' and the columns' show keys have pictures of their own", async () => {
+	const { chooseFor, sourcePictureFor } = await import("../src/pictures.ts");
+	const fits: Record<string, string> = {
+		"Stream Starting Group": "options/mode-starting",
+		"BRB Text": "options/mode-brb",
+		"Intermission Text": "options/mode-intermission",
+		"Ending Text": "options/mode-ending",
+		"Column: Chat": "options/mode-column-chat",
+		"Column: GBA": "options/mode-column-gba",
+	};
+	for (const [source, id] of Object.entries(fits)) {
+		assert.equal(sourcePictureFor("stagekit_show_in_scenes", {}, source)?.id, id, source);
+		assert.equal(chooseFor(undefined, "stagekit_show_in_scenes", {}, source, "text_gdiplus_v3")?.id, id, source);
+	}
+	// A plain chat source keeps the pack's own chat picture; the column takes its own.
+	assert.equal(sourcePictureFor("stagekit_show_in_scenes", {}, "Chat")?.id, "show-hide/chat");
+	// Only Show in Scenes keys go by these.
+	assert.equal(sourcePictureFor("stagekit_shadow_backdrop", {}, "BRB Text"), undefined);
+	// A picture chosen by hand wins.
+	assert.equal(chooseFor("options/browser", "stagekit_show_in_scenes", {}, "BRB Text")?.id, "options/browser");
+	assert.equal(chooseFor("options/mode-ending", "stagekit_show_in_scenes", {}, "Column: Chat")?.id, "options/mode-ending");
+});
+
+test("the new scene and mode pictures are all different, and marked on and off in every colour", async () => {
+	const { readFileSync } = await import("node:fs");
+	const { stateFile } = await import("../src/pictures.ts");
+	const ids = [
+		"options/scene-live",
+		"options/scene-chat-live",
+		"options/scene-standby",
+		"options/mode-starting",
+		"options/mode-brb",
+		"options/mode-intermission",
+		"options/mode-ending",
+		"options/mode-column-chat",
+		"options/mode-column-gba",
+	];
+	for (const colour of COLOURS) {
+		const seen = new Set<string>();
+		for (const id of ids) {
+			const picture = PICTURES.find((p) => p.id === id);
+			assert.ok(picture, id);
+			for (const on of [true, false]) {
+				const path = new URL(stateFile(picture, on, colour), plugin);
+				assert.ok(existsSync(path), stateFile(picture, on, colour));
+			}
+			seen.add(readFileSync(new URL(file(picture, true, colour), plugin)).toString("base64"));
+		}
+		assert.equal(seen.size, ids.length, `two of the new pictures are the same in ${colour}`);
+	}
+});

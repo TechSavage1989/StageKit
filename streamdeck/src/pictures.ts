@@ -93,7 +93,9 @@ function sourceGroup(kind: string, settings: Settings): string | undefined {
 /**
  * The pack's picture of one source for a filter kind, by the source's name:
  * the pack has "show hide", shadow, standby and blur pictures drawn for
- * single sources ("square camera", "window capture" ...). It fits when all
+ * single sources ("square camera", "window capture" ...), and
+ * tools/make-option-icons.py adds show keys for holding modes and columns
+ * ("starting", "brb", "column chat" ...). It fits when all
  * the words of its label are in the source's name; of several, the one with
  * the most words. No source names are in this code.
  */
@@ -240,7 +242,8 @@ function nameWords(name: string): string[] {
 
 /**
  * The pack's own scene picture for a scene, by name: the pack has one drawn
- * from each scene's layout ("game component", "window capture" ...). It fits
+ * from each scene's layout ("game component", "window capture" ...), and
+ * tools/make-option-icons.py adds "live", "chat live" and "standby". It fits
  * when all its words are in the scene's name; of several, the one with the
  * most words, and then the one that follows the name furthest from its start
  * ("Game-Component-Capture" is "game component" before "game capture").
