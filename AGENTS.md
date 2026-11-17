@@ -1148,6 +1148,12 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   drawing in it), listing them in `src/pack.json`. `src/titles.ts` is what each key calls itself
   (`setTitle` in every action's `show`); a title typed in Stream Deck wins. A new option gets a
   drawing in `DRAWINGS`, a line in `src/pictures.ts` and a title, or it shows the plain key.
+  **Every key's picture is the pack's framed screen with a drawing in it** (the owner: "all keys
+  for the plugin must be of consistent design language and styling"): since beta150 the arrange
+  tools, slides, camera places, hook keys and plain keys are drawn there too (`copy-all`,
+  `slide-*`, `camera-*`, `hook-*`, `plain-*`), not taken from the pack's older `tools`,
+  `camera`, `capture` and `plain` groups, which stay listed only so a picture a key was given by
+  hand still loads.
   Each key offered also has its own small icon in Stream Deck's list of actions
   (`tools/make-action-icons.py`, `ICONS`, white lines, 20 and 40 px, into
   `imgs/actions/<key>/icon`); the owner, of a list where all keys showed one of two drawings:
@@ -1157,8 +1163,10 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   owner: "the options that have an on and an off or toggle must represent that current status on
   the key with the image ... right now, the stagekit blur button just flashed". The pack's own on
   and off pictures differ only in brightness; `tools/make-state-icons.py` writes marked copies
-  (`imgs/pack/<palette>/status/on|off/`, a green dot on, dimmed with a red slash off, 256
-  colours) and `stateFile`/`showOnOff` (`src/actions/shared.ts`) set both states' pictures and
+  (`imgs/pack/<palette>/status/on|off/`, a green dot on, a red "no" sign in the same corner
+  off, 256 colours; the off picture is brought to most of the on picture's brightness,
+  `OFF_BRIGHTNESS`, and partly greyed: dimmed with a red slash across it, up to beta149, the
+  owner found the off keys "very dark and virtually impossible to recognize") and `stateFile`/`showOnOff` (`src/actions/shared.ts`) set both states' pictures and
   the state. Every two-state action has `DisableAutomaticStates` in the manifest
   (`make-plugin-files.py`): Stream Deck flipped the key on each press before the plugin put it
   back, the flash. *Manual Window / Source* has two states and asks OBS with the
