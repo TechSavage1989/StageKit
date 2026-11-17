@@ -1185,12 +1185,12 @@ hotkeys, a Stream Deck *Source Visibility* key or obs-websocket.
   sources, and Morph links. Fade, 300 ms, as it comes.
 
 **As the scene sets** is a new choice in every StageKit filter that shows and hides sources (Show in
-Scenes, Link Visibility, Program Trigger, the two switchers, Auto Capture's hide, Standby Image), and the
-one they start with. With a Scene Transitions on the source's scene, the change is the one set there; where
-the scene has none, it is a fade of the filter's own duration, which is what those filters did before. A
-filter set to a transition of its own uses it for the changes it makes, and afterwards the source carries
-the scene's transitions again. A Standby Image that stands in for a source sets that source's transitions
-itself.
+Scenes, Link Visibility, Program Trigger, the two switchers, Standby Image), and the one they start with.
+(Auto Capture's hide sets no transition: it uses the one the source carries.) With a Scene Transitions on
+the source's scene, the change is the one set there; where the scene has none, it is a fade of the filter's
+own duration, which is what those filters did before. A filter set to a transition of its own uses it for
+the changes it makes, and afterwards the source carries the scene's transitions again. A Standby Image that
+stands in for a source sets that source's transitions itself.
 
 Switching the filter off or removing it leaves each source the transitions it has. It writes only when a
 source differs from what it should carry, so nothing is written at each start. For a source set to *Off the

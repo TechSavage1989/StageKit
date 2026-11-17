@@ -199,6 +199,7 @@ void obs_module_unload(void)
 	stagekit::item_morph_stop();
 	stagekit::loading_watch_stop();
 	stagekit::fit_item_stop();
+	stagekit::scene_transitions_stop();
 	stagekit::stop_window_watch();
 	stagekit::stop_updater();
 	obs_log(LOG_INFO, "plugin unloaded");

@@ -40,6 +40,13 @@ merged tree found two faults, fixed here:
 Seen while testing and not changed: in a scene that was on screen, a source whose item transition finished
 there can stay counted as in use after the scene goes off (OBS's own counting, as AGENTS says under
 `set_item_visible`); Transitions' Scene Modes test therefore changes the mode out of view first.
+The review before release fixed four small things: the Automatic Source Switcher (`active-app.cpp`) still
+set its own default of a fade, so it did not start on *As the scene sets* as the notes say (Transitions'
+test 5 now checks the default of every filter named there); Scene Shadow's "asked for lately" check
+subtracted two clock readings taken on different threads the unsigned way; `scene_transitions_stop()` is
+also called at unload; and Morph's `draws_nothing` listed the scene filters twice. The notes and README no
+longer name Auto Capture's hide among the filters with the choice: it sets no transition at all and uses
+the one the source carries.
 
 **Not in beta155, next (beta156):** the frame-time work (`feat/frame-time`: per-frame timing in µs,
 `stagekit_timing_take`, the shadow scale check, the measurement harness) and the new collection

@@ -293,7 +293,10 @@ void SceneShadow::tick(float seconds)
 		return;
 	}
 	const uint64_t now = os_gettime_ns();
-	const bool showing = obs_source_showing(parent) || now - wanted_ns_.load() < kWantedNs;
+	// (Taken from the clock on the drawing thread, maybe after `now`: never
+	// subtracted the wrong way round.)
+	const uint64_t wanted = wanted_ns_.load();
+	const bool showing = obs_source_showing(parent) || (wanted && (wanted >= now || now - wanted < kWantedNs));
 	countdown_ -= seconds;
 	// At once when it comes into view or its settings change; then a few
 	// times a second while it is seen. Off screen it does nothing.

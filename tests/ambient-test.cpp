@@ -8407,6 +8407,16 @@ int main(int argc, char **argv)
 			obs_data_release(defaults);
 			CHECK(link_default == "scene", "a filter's transition is As the scene sets as it comes (%s)",
 			      link_default.c_str());
+			// Every filter the release notes name starts with it, the two
+			// switchers included.
+			for (const char *kind : {"stagekit_show_in_scenes", "stagekit_program_trigger",
+						 "stagekit_active_app", "stagekit_app_capture", "stagekit_standby"}) {
+				obs_data_t *d = obs_get_source_defaults(kind);
+				const std::string kind_default = d ? obs_data_get_string(d, "transition") : "";
+				obs_data_release(d);
+				CHECK(kind_default == "scene", "%s starts with As the scene sets (%s)", kind,
+				      kind_default.c_str());
+			}
 			trans_wait(src, 300);
 			obs_sceneitem_set_visible(ib, true); // the link hides A
 			trans_wait(src, 150);
