@@ -13,6 +13,7 @@ the Free Software Foundation; either version 2 of the License, or
 // the claims two fits go by, and the glances that notice a widget change.
 
 #include "fit-engine.hpp"
+#include "../common/stand-in.hpp"
 
 #include "../common/timing.hpp"
 
@@ -382,15 +383,43 @@ Box free_space(const Box &within, double ax, double ay, const std::vector<Box> &
 	return best;
 }
 
-FitEngine::FitEngine(obs_data_t *settings, obs_source_t *source) : source_(source)
+namespace {
+// Off screen, with nothing to do, an engine's tick is skipped but four times a
+// second (at 60 frames a second), each engine on a frame of its own.
+constexpr uint32_t kIdleEvery = 15;
+std::atomic<uint64_t> g_full_ticks{0};
+} // namespace
+
+uint64_t engine_full_ticks()
 {
+	return g_full_ticks.load();
+}
+
+std::string fit_list_prefix(const std::string &entry)
+{
+	static const char *const kHex = "0123456789abcdef";
+	std::string out = "fit_";
+	for (unsigned char c : entry) {
+		out += kHex[c >> 4];
+		out += kHex[c & 15];
+	}
+	return out + "_";
+}
+
+FitEngine::FitEngine(obs_data_t *settings, obs_source_t *owner, std::string prefix, std::string entry)
+	: source_(owner),
+	  prefix_(std::move(prefix)),
+	  entry_(std::move(entry)),
+	  list_prefix_(entry_.empty() ? std::string() : fit_list_prefix(entry_))
+{
+	idle_phase_ = (double)((reinterpret_cast<uintptr_t>(this) >> 4) % kIdleEvery);
 	update(settings);
 	std::lock_guard lock(g_filters_mutex);
 	g_filters.push_back(this);
 }
+
 FitEngine::~FitEngine()
 {
-
 	claim_clear(this);
 	bool last;
 	{
@@ -400,6 +429,27 @@ FitEngine::~FitEngine()
 	}
 	if (last)
 		glance_free();
+}
+
+void FitEngine::store_bool(const char *key, bool v)
+{
+	obs_data_t *settings = obs_source_get_settings(source_);
+	obs_data_set_bool(settings, (prefix_ + key).c_str(), v);
+	obs_data_release(settings);
+}
+
+void FitEngine::store_double(const char *key, double v)
+{
+	obs_data_t *settings = obs_source_get_settings(source_);
+	obs_data_set_double(settings, (prefix_ + key).c_str(), v);
+	obs_data_release(settings);
+}
+
+void FitEngine::store_string(const char *key, const char *v)
+{
+	obs_data_t *settings = obs_source_get_settings(source_);
+	obs_data_set_string(settings, (prefix_ + key).c_str(), v);
+	obs_data_release(settings);
 }
 
 // See fit_item_placed.
@@ -426,41 +476,49 @@ void FitEngine::shared(obs_source_t *scene, const char *item_name, const double 
 
 void FitEngine::update(obs_data_t *settings)
 {
+	auto k = [this](const char *name) {
+		return prefix_ + name;
+	};
+	auto num = [&](const char *name) {
+		return obs_data_get_double(settings, k(name).c_str());
+	};
 	FitSettings s;
-	s.item = obs_data_get_string(settings, "item");
-	s.box = obs_data_get_int(settings, "box") == 1 ? BoxKind::Custom : BoxKind::WholeScene;
-	s.x = obs_data_get_double(settings, "box_x");
-	s.y = obs_data_get_double(settings, "box_y");
-	s.w = std::max(2.0, obs_data_get_double(settings, "box_width"));
-	s.h = std::max(2.0, obs_data_get_double(settings, "box_height"));
-	s.margin = std::clamp(obs_data_get_double(settings, "margin"), 0.0, 2000.0);
-	s.tolerance = std::clamp(obs_data_get_double(settings, "tolerance"), 0.0, 200.0);
+	s.item = entry_.empty() ? obs_data_get_string(settings, k("item").c_str()) : entry_;
+	s.box = obs_data_get_int(settings, k("box").c_str()) == 1 ? BoxKind::Custom : BoxKind::WholeScene;
+	s.x = num("box_x");
+	s.y = num("box_y");
+	s.w = std::max(2.0, num("box_width"));
+	s.h = std::max(2.0, num("box_height"));
+	s.margin = std::clamp(num("margin"), 0.0, 2000.0);
+	s.tolerance = std::clamp(num("tolerance"), 0.0, 200.0);
 	// (A switch of its own since beta122; a share set before that
-	// counts as switched on, and is written down as such.)
-	if (!obs_data_has_user_value(settings, "skip_fill_on") && obs_data_has_user_value(settings, "skip_fill") &&
-	    obs_data_get_double(settings, "skip_fill") > 0.0)
+	// counts as switched on, and is written down as such.) For an entry
+	// of a Scene Fit the switch is the Scene Fit's own, for all entries.
+	if (entry_.empty() && !obs_data_has_user_value(settings, "skip_fill_on") &&
+	    obs_data_has_user_value(settings, "skip_fill") && obs_data_get_double(settings, "skip_fill") > 0.0)
 		obs_data_set_bool(settings, "skip_fill_on", true);
-	s.skip_rule = obs_data_get_bool(settings, "skip_fill_on");
-	s.skip_pct = obs_data_get_bool(settings, "skip_use_pct");
-	s.skip_fill = std::clamp(obs_data_get_double(settings, "skip_fill") / 100.0, 0.0, 1.0);
-	s.skip_px = obs_data_get_bool(settings, "skip_use_px");
-	s.px_top = std::max(0.0, obs_data_get_double(settings, "skip_px_top"));
-	s.px_bottom = std::max(0.0, obs_data_get_double(settings, "skip_px_bottom"));
-	s.px_left = std::max(0.0, obs_data_get_double(settings, "skip_px_left"));
-	s.px_right = std::max(0.0, obs_data_get_double(settings, "skip_px_right"));
-	s.resize = obs_data_get_bool(settings, "resize");
+	s.skip_rule = obs_data_get_bool(settings, entry_.empty() ? k("skip_fill_on").c_str() : "skip_fill_on");
+	s.skip_pct = obs_data_get_bool(settings, k("skip_use_pct").c_str());
+	s.skip_fill = std::clamp(num("skip_fill") / 100.0, 0.0, 1.0);
+	s.skip_px = obs_data_get_bool(settings, k("skip_use_px").c_str());
+	s.px_top = std::max(0.0, num("skip_px_top"));
+	s.px_bottom = std::max(0.0, num("skip_px_bottom"));
+	s.px_left = std::max(0.0, num("skip_px_left"));
+	s.px_right = std::max(0.0, num("skip_px_right"));
+	s.resize = obs_data_get_bool(settings, k("resize").c_str());
 	// 0 the middle, then top, bottom, left, right, and the four corners.
 	static const int kTowardX[] = {0, 0, 0, -1, 1, -1, 1, -1, 1};
 	static const int kTowardY[] = {0, -1, 1, 0, 0, -1, -1, 1, 1};
-	const long long toward = std::clamp<long long>(obs_data_get_int(settings, "toward"), 0, 8);
+	const long long toward = std::clamp<long long>(obs_data_get_int(settings, k("toward").c_str()), 0, 8);
 	s.toward_x = kTowardX[toward];
 	s.toward_y = kTowardY[toward];
-	s.share_scenes = pick_list_read(settings, "share_scenes", false);
-	s.orig_item = obs_data_get_string(settings, "orig_item");
-	s.orig_k = obs_data_get_double(settings, "orig_k");
+	s.share_scenes = pick_list_read(settings, (list_prefix_ + "share_scenes").c_str(), false);
+	s.orig_item = obs_data_get_string(settings, k("orig_item").c_str());
+	s.orig_k = num("orig_k");
 	own_seen_ = false; // what shows of the item is looked at again
 	{
 		std::lock_guard lock(mutex_);
+		dirty_ = true;
 		// The size kept is only read afresh when the filter is given
 		// another item or told to stop resizing: any other change of
 		// settings (and OBS sends them for many reasons) leaves it.
@@ -484,45 +542,48 @@ void FitEngine::update(obs_data_t *settings)
 		if (first_update_) {
 			first_update_ = false;
 			back_to_original_ = false;
-			saved_keep_item_ = obs_data_get_string(settings, "keep_item");
-			saved_keep_k_ = obs_data_get_double(settings, "keep_k");
+			saved_keep_item_ = obs_data_get_string(settings, k("keep_item").c_str());
+			saved_keep_k_ = num("keep_k");
 			if (!s.resize && !s.item.empty() && saved_keep_item_ == s.item && saved_keep_k_ > 0.0) {
 				keep_k_ = saved_keep_k_;
 				have_keep_ = true;
 			}
 		}
 	}
-	const long long kind = obs_data_get_int(settings, "box");
+	const long long kind = obs_data_get_int(settings, k("box").c_str());
 	if (kind == 2)
 		s.box = BoxKind::FreeSpace;
 	// The filter's own two measuring options. Before they existed there
 	// was one tick box that followed the dock; unticked, it meant boxes.
-	s.visible_pixels = obs_data_get_bool(settings, "visible_pixels");
-	s.no_shadows = obs_data_get_bool(settings, "no_shadows");
-	if (obs_data_has_user_value(settings, "as_arranged") && !obs_data_get_bool(settings, "as_arranged") &&
-	    !obs_data_has_user_value(settings, "visible_pixels"))
+	s.visible_pixels = obs_data_get_bool(settings, k("visible_pixels").c_str());
+	s.no_shadows = obs_data_get_bool(settings, k("no_shadows").c_str());
+	if (prefix_.empty() && obs_data_has_user_value(settings, "as_arranged") &&
+	    !obs_data_get_bool(settings, "as_arranged") && !obs_data_has_user_value(settings, "visible_pixels"))
 		s.visible_pixels = false;
-	s.skip = pick_list_read(settings, "skip", false);
-	s.have_anchor = obs_data_get_bool(settings, "have_anchor");
-	s.anchor_x = obs_data_get_double(settings, "anchor_x");
-	s.anchor_y = obs_data_get_double(settings, "anchor_y");
-	s.glide_s = std::clamp((double)obs_data_get_int(settings, "glide_ms"), 0.0, 10000.0) / 1000.0;
-	s.curve = static_cast<EaseCurve>(obs_data_get_int(settings, "ease_curve"));
-	s.mode = static_cast<EaseMode>(obs_data_get_int(settings, "ease_mode"));
+	s.skip = pick_list_read(settings, (list_prefix_ + "skip").c_str(), false);
+	s.have_anchor = obs_data_get_bool(settings, k("have_anchor").c_str());
+	s.anchor_x = num("anchor_x");
+	s.anchor_y = num("anchor_y");
+	s.glide_s = std::clamp((double)obs_data_get_int(settings, k("glide_ms").c_str()), 0.0, 10000.0) / 1000.0;
+	s.curve = static_cast<EaseCurve>(obs_data_get_int(settings, k("ease_curve").c_str()));
+	s.mode = static_cast<EaseMode>(obs_data_get_int(settings, k("ease_mode").c_str()));
 	look_again_ = true;
 	std::lock_guard lock(mutex_);
 	settings_ = s;
 }
 
-void FitEngine::attach(obs_source_t *parent)
+void FitEngine::attach(obs_source_t *parent, bool forget)
 {
 	parent_ = parent;
-	glance_forget(parent);
-	looked_.clear();
+	if (forget)
+		glance_forget(parent);
+	own_looked_have_ = false;
 }
-void FitEngine::detach()
+
+void FitEngine::detach(bool forget)
 {
-	glance_forget(parent_);
+	if (forget)
+		glance_forget(parent_);
 	parent_ = nullptr;
 }
 
@@ -546,20 +607,41 @@ bool FitEngine::holds_room(obs_sceneitem_t *item, const FitSettings &s)
 	return have_claim_;
 }
 
-void FitEngine::tick(float seconds)
+// Its scene not on screen, and nothing asked of it: nobody sees the item,
+// so the tick is skipped, all but four times a second, when it is done in
+// full with the time skipped added (a hidden item's room stays on record,
+// a kept size is still read). The tick the scene comes into view is a full
+// one, and puts the item right without a glide. Anything asked of it (a
+// tool's placing, another scene's sharing, new settings) is done at once.
+bool FitEngine::idle(float seconds)
 {
-	if (!parent_ || !obs_source_enabled(source_)) {
-		claim_clear(this);
-		return;
+	if (!parent_ || obs_source_showing(parent_))
+		return false;
+	{
+		std::lock_guard lock(mutex_);
+		if (dirty_ || placed_ || shared_in_ || new_item_)
+			return false;
 	}
-	// Not on a group: its size is whatever is in it, so there is no
-	// space to fit into, and moving an item inside it moves the space.
-	if (obs_source_is_group(parent_))
-		return;
-	FitSettings s;
+	idle_s_ += seconds;
+	idle_phase_ += 1.0;
+	if (idle_phase_ >= (double)kIdleEvery) {
+		idle_phase_ = 0.0;
+		return false;
+	}
+	return true;
+}
+
+bool FitEngine::prepare(obs_sceneitem_t *item, float tick_seconds, Prep &p)
+{
+	g_full_ticks++;
+	full_ticks_++;
+	// (With the time of the ticks skipped while off screen.)
+	const float seconds = tick_seconds + (float)std::exchange(idle_s_, 0.0);
+	FitSettings &s = p.s;
 	bool placed_now = false, shared_now = false, new_home = false;
 	{
 		std::lock_guard lock(mutex_);
+		dirty_ = false;
 		// Given its place by another scene's filter: it stays there
 		// until this scene comes into view, and the size it was given
 		// is the one kept. The point its space is looked for around
@@ -597,25 +679,11 @@ void FitEngine::tick(float seconds)
 		placed_by_tool_ = true;
 	}
 	if (new_home) {
-		obs_data_t *settings = obs_source_get_settings(source_);
-		obs_data_set_bool(settings, "have_anchor", true);
-		obs_data_set_double(settings, "anchor_x", s.anchor_x);
-		obs_data_set_double(settings, "anchor_y", s.anchor_y);
-		obs_data_release(settings);
+		store_bool("have_anchor", true);
+		store_double("anchor_x", s.anchor_x);
+		store_double("anchor_y", s.anchor_y);
 	}
-	// Held for the length of this tick: OBS's window may remove the item
-	// at any moment from its own thread.
-	struct Held {
-		obs_sceneitem_t *item;
-		~Held()
-		{
-			if (item)
-				obs_sceneitem_release(item);
-		}
-	} held{find_item(parent_, s.item)};
-	obs_sceneitem_t *item = held.item;
-	if (item)
-		obs_sceneitem_addref(item);
+	p.item = item;
 	// A hidden item is left exactly as it is and holds no space: the
 	// others take its room, and it is found where it was when it is
 	// shown again. (Fitted while hidden, the owner's camera was put in
@@ -636,7 +704,7 @@ void FitEngine::tick(float seconds)
 		else
 			claim_clear(this);
 		hidden_ = true;
-		return;
+		return false;
 	}
 	// Shown again: for a moment it only says where it is, so that
 	// whatever took its room goes by that and makes way first. Looking
@@ -651,7 +719,7 @@ void FitEngine::tick(float seconds)
 	if (coming_back_) {
 		if ((back_for_ += seconds) < kComingBack && item) {
 			claim_set(parent_, obs_sceneitem_get_id(item), this, last_claim_);
-			return;
+			return false;
 		}
 		coming_back_ = false;
 	}
@@ -667,13 +735,21 @@ void FitEngine::tick(float seconds)
 		// there, and the display was fitted smaller in what was left.
 		if (item && holds_room(item, s))
 			claim_set(parent_, obs_sceneitem_get_id(item), this, last_claim_);
-		return;
+		return false;
 	}
 
 	// What is fitted is the picture, without the room a shadow takes
-	// around it and without what the item crops away.
-	double room[4];
-	shadow_room(shown, room);
+	// around it and without what the item crops away. (The room is read
+	// again only when a shadow's room has changed, or another source is
+	// shown.)
+	const uint64_t rev = shadow_room_revision();
+	if (shown != room_src_ || rev != room_rev_) {
+		room_src_ = shown;
+		room_rev_ = rev;
+		shadow_room(shown, room_c_);
+		in_view_c_ = shadow_kept_in_view(shown);
+	}
+	double room[4] = {room_c_[0], room_c_[1], room_c_[2], room_c_[3]};
 	obs_sceneitem_crop crop;
 	obs_sceneitem_get_crop(item, &crop);
 	// With shadows counted as part of an item (its own tick box), the
@@ -681,7 +757,7 @@ void FitEngine::tick(float seconds)
 	const Measure how{s.visible_pixels, s.no_shadows};
 	// So is one asked to stay on screen ("Keep it on screen" in its
 	// shadow filter): a picture that fills the box makes room for it.
-	const bool shadow_in_view = shadow_kept_in_view(shown);
+	const bool shadow_in_view = in_view_c_;
 	const double bare_w = sw - std::max(room[0], (double)crop.left) - std::max(room[2], (double)crop.right);
 	const double bare_h = sh - std::max(room[1], (double)crop.top) - std::max(room[3], (double)crop.bottom);
 	if (!s.no_shadows || shadow_in_view)
@@ -690,7 +766,7 @@ void FitEngine::tick(float seconds)
 	double right = std::max(room[2], (double)crop.right), bottom = std::max(room[3], (double)crop.bottom);
 	double pw = sw - left - right, ph = sh - top - bottom;
 	if (pw < 2.0 || ph < 2.0)
-		return;
+		return false;
 	// "Use visible pixels" is about the fitted item too: what is fitted
 	// and kept clear is the part of it that shows, not its box. A group
 	// or a widget is often larger than what it draws; the owner: "only
@@ -720,20 +796,14 @@ void FitEngine::tick(float seconds)
 			if (s.box != BoxKind::FreeSpace)
 				glance_step(this, parent_, {item});
 			Glance glance;
-			if (glance_of(parent_, own_id, glance)) {
-				const auto was = looked_.find(own_id);
-				own_changed = was == looked_.end() || glance_differs(glance, was->second);
-			}
+			if (glance_of(parent_, own_id, glance))
+				own_changed = !own_looked_have_ || glance_differs(glance, own_looked_);
 		}
 		const bool due = (!own_seen_ && own_for_ >= 0.5) || (own_changed && own_for_ >= 0.5);
 		if (due && obs_source_showing(parent_) && !measuring_stopped()) {
 			own_for_ = 0.0;
 			own_seen_ = true;
-			Glance own_glance;
-			if (glance_of(parent_, own_id, own_glance))
-				looked_[own_id] = own_glance;
-			else
-				looked_.erase(own_id);
+			own_looked_have_ = glance_of(parent_, own_id, own_looked_);
 			// (Measured first: that also brings the item's box up to date.)
 			Box shows;
 			const bool any = measure_seen(parent_, item, how, shows);
@@ -796,7 +866,7 @@ void FitEngine::tick(float seconds)
 		ph = sh - top - bottom;
 	}
 	if (pw < 2.0 || ph < 2.0)
-		return;
+		return false;
 
 	double bx = 0.0, by = 0.0, bw = obs_source_get_width(parent_), bh = obs_source_get_height(parent_);
 	if (s.box == BoxKind::Custom) {
@@ -806,7 +876,7 @@ void FitEngine::tick(float seconds)
 		bh = s.h;
 	}
 	if (bw < 2.0 || bh < 2.0)
-		return;
+		return false;
 	// "Resize it to fit" unticked: the picture keeps the size it has in
 	// the scene and is only moved, to the middle of its space. That size
 	// is read from the item once, and again after it is resized by hand.
@@ -838,10 +908,8 @@ void FitEngine::tick(float seconds)
 		if (drawn_now(k0)) {
 			s.orig_item = s.item;
 			s.orig_k = k0;
-			obs_data_t *settings = obs_source_get_settings(source_);
-			obs_data_set_string(settings, "orig_item", s.orig_item.c_str());
-			obs_data_set_double(settings, "orig_k", k0);
-			obs_data_release(settings);
+			store_string("orig_item", s.orig_item.c_str());
+			store_double("orig_k", k0);
 			std::lock_guard lock(mutex_);
 			settings_.orig_item = s.orig_item;
 			settings_.orig_k = k0;
@@ -879,7 +947,7 @@ void FitEngine::tick(float seconds)
 		// (Read only from an item whose source has kept its size for
 		// half a second: one that is still loading says a wrong size.)
 		if (!have_keep_ && !resized_by_hand_ && steady_for_ < 0.5)
-			return;
+			return false;
 		if (!have_keep_) {
 			const double was = keep_k_;
 			have_keep_ = drawn_now(keep_k_);
@@ -887,8 +955,9 @@ void FitEngine::tick(float seconds)
 			// traced: when the kept size was read, and why.
 			if (have_keep_ && was > 0.0 && std::fabs(keep_k_ - was) > 0.001 * was)
 				obs_log(LOG_INFO,
-					"Fit to Space '%s': the size kept for '%s' went from %.4f to %.4f of its source (%s)",
-					obs_source_get_name(source_), s.item.c_str(), was, keep_k_,
+					"%s '%s': the size kept for '%s' went from %.4f to %.4f of its source (%s)",
+					prefix_.empty() ? "Fit to Space" : "Scene Fit", obs_source_get_name(source_),
+					s.item.c_str(), was, keep_k_,
 					resized_by_hand_  ? "resized in the preview"
 					: placed_by_tool_ ? "placed by a copy tool"
 							  : "settings changed");
@@ -899,30 +968,403 @@ void FitEngine::tick(float seconds)
 		if (have_keep_ && (saved_keep_item_ != s.item || std::fabs(saved_keep_k_ - keep_k_) > 1e-9 * keep_k_)) {
 			saved_keep_item_ = s.item;
 			saved_keep_k_ = keep_k_;
-			obs_data_t *settings = obs_source_get_settings(source_);
-			obs_data_set_string(settings, "keep_item", s.item.c_str());
-			obs_data_set_double(settings, "keep_k", keep_k_);
-			obs_data_release(settings);
+			store_string("keep_item", s.item.c_str());
+			store_double("keep_k", keep_k_);
 		}
 	}
+	p.sw = sw;
+	p.sh = sh;
+	p.crop = crop;
+	p.how = how;
+	p.bare_w = bare_w;
+	p.bare_h = bare_h;
+	p.left = left;
+	p.top = top;
+	p.right = right;
+	p.bottom = bottom;
+	p.pw = pw;
+	p.ph = ph;
+	p.bx = bx;
+	p.by = by;
+	p.bw = bw;
+	p.bh = bh;
 	// The size kept is the size of what shows of it.
-	const double keep_w_ = pw * keep_k_, keep_h_ = ph * keep_k_;
-	const double picture = pw / ph;
+	p.keep_w = pw * keep_k_;
+	p.keep_h = ph * keep_k_;
+	p.picture = pw / ph;
+	p.free = s.box == BoxKind::FreeSpace;
+	return true;
+}
+
+// The free space round the item's place: whether there is anything to do
+// this tick (`Hold`: off screen, the place it has is kept).
+FitEngine::Motion FitEngine::motion(Prep &p, float seconds)
+{
+	if (measuring_stopped())
+		return Motion::Stop;
+	FitSettings &s = p.s;
+	obs_sceneitem_t *item = p.item;
+	// Only for a scene that is being shown somewhere. Every scene's
+	// filters run all the time, and looking at the items of scenes nobody
+	// sees would cost the picture on screen its smoothness for nothing.
+	if (!obs_source_showing(parent_)) {
+		was_showing_ = false;
+		return have_cur_ ? Motion::Hold : Motion::Stop;
+	}
+	// A scene that has only just come into view is put right at once
+	// and without a glide: nobody has seen it as it was.
+	if (!was_showing_) {
+		was_showing_ = true;
+		shown_for_ = 0.0;
+	} else {
+		shown_for_ += seconds;
+	}
+	// Moved by something else (dragged in the preview, sent somewhere by
+	// a key): left alone while it moves, then its new place is where the
+	// free space is looked for.
+	vec2 pos;
+	obs_sceneitem_get_pos(item, &pos);
+	if (have_set_ && !moving_ && (std::fabs(pos.x - set_x_) > 0.5 || std::fabs(pos.y - set_y_) > 0.5)) {
+		moving_ = true;
+		still_for_ = 0.0;
+	}
+	if (moving_) {
+		if (std::fabs(pos.x - seen_x_) > 0.05 || std::fabs(pos.y - seen_y_) > 0.05)
+			still_for_ = 0.0;
+		else
+			still_for_ += seconds;
+		seen_x_ = pos.x;
+		seen_y_ = pos.y;
+		if (still_for_ < 0.4)
+			return Motion::Stop;
+		moving_ = false;
+		s.have_anchor = false; // taken afresh below
+		have_cur_ = false;     // and no glide from where it was let go
+	}
+	if (!s.have_anchor) {
+		const Box at = item_box(item);
+		s.anchor_x = at.x + at.w / 2.0;
+		s.anchor_y = at.y + at.h / 2.0;
+		s.have_anchor = true;
+		store_bool("have_anchor", true);
+		store_double("anchor_x", s.anchor_x);
+		store_double("anchor_y", s.anchor_y);
+		std::lock_guard lock(mutex_);
+		settings_.have_anchor = true;
+		settings_.anchor_x = s.anchor_x;
+		settings_.anchor_y = s.anchor_y;
+		look_again_ = true;
+	}
+	return Motion::Solve;
+}
+
+// What is in the way, now against before.
+void FitEngine::observe(const std::vector<Obstacle> &in_way, bool arriving, float seconds, bool &at_rest)
+{
+	at_rest = false;
+	std::vector<Box> boxes;
+	std::vector<bool> gives;
+	std::vector<int64_t> ids; // which item each is, and whether its
+	std::vector<bool> said;   // filter said where it is going
+	std::vector<bool> passed; // one of the items never in the way
+	for (const Obstacle &o : in_way) {
+		boxes.push_back(o.box);
+		gives.push_back(o.gives);
+		ids.push_back(o.id);
+		said.push_back(o.said);
+		passed.push_back(o.passed);
+	}
+	auto differs = [](const Box &a, const Box &b) {
+		return std::fabs(a.x - b.x) > 0.25 || std::fabs(a.y - b.y) > 0.25 || std::fabs(a.w - b.w) > 0.25 ||
+		       std::fabs(a.h - b.h) > 0.25;
+	};
+	// What changed since the last look: `moved`, an item that is on its
+	// way somewhere (gliding, being dragged, a window growing), or
+	// `stepped`, a change made in one go: an item shown or hidden, or
+	// another filter saying where its item is going.
+	bool moved = false, stepped = ids != ids_ || said != said_ || passed != passed_;
+	if (!stepped)
+		for (size_t i = 0; i < boxes.size(); i++)
+			if (differs(boxes[i], boxes_[i]))
+				(said[i] ? stepped : moved) = true;
+	if (moved && arriving) {
+		moved = false;
+		stepped = true;
+	}
+	// Which of them give way can change while nothing moves (another
+	// filter has just said where its item is going).
+	if (gives != gives_ && !moved && !stepped) {
+		gives_ = gives;
+		changed_ = true;
+	}
+	if (moved) {
+		// Something is moving. The fitted item waits for it to come to
+		// rest and then takes its new space in one glide: chasing a
+		// moving item would resize the picture (and redo its shadow)
+		// on every frame of the move. No looking meanwhile either.
+		boxes_ = boxes;
+		gives_ = gives;
+		ids_ = ids;
+		said_ = said;
+		passed_ = passed;
+		unsettled_ = true;
+		calm_for_ = 0.0;
+	} else if (stepped) {
+		// Nothing to wait for: the new space is taken at once, in the
+		// one glide. (Waiting here as for a moving item, two filters
+		// answered each other a moment apart, and the owner's items
+		// "adjust multiple times before settling".)
+		boxes_ = boxes;
+		gives_ = gives;
+		ids_ = ids;
+		said_ = said;
+		passed_ = passed;
+		if (!unsettled_)
+			changed_ = true;
+	} else if (unsettled_) {
+		if ((calm_for_ += seconds) >= 0.15) {
+			unsettled_ = false;
+			changed_ = true;
+		}
+	} else if (glide_ >= 1.0) {
+		// At rest: the items are glanced at, which costs next to
+		// nothing, and one is looked at properly only when a glance
+		// shows it drawing another part of itself than at the last
+		// look (a widget that begins to show something, or stops).
+		at_rest = true;
+	}
+}
+
+bool FitEngine::solve(Prep &p, float seconds, bool first_pass, bool &moved)
+{
+	moved = false;
+	FitSettings &s = p.s;
+	const double shape = p.picture;
+	const Box within{p.bx, p.by, p.bw, p.bh};
+	const bool kept = !s.resize && have_keep_;
+	const double kept_w = kept ? p.keep_w : 0.0, kept_h = kept ? p.keep_h : 0.0;
+	// An Automatic Window Switcher on the fitted item is changing to
+	// another window: the shape it is on its way to is taken now, and
+	// the space for it is glided to over the switcher's own time and
+	// easing, so the two move as one. (Left to notice the shape by
+	// itself, the fit waited for it to stop changing and only then set
+	// off: the owner saw the window switch "but then it's like the auto
+	// fit has to catch up".)
+	if (first_pass) {
+		with_switch_ = false;
+		AppCaptureChange change;
+		if (app_capture_change(obs_sceneitem_get_source(p.item), change) && change.id != switch_id_ &&
+		    change.now_w > 0.0 && change.now_h > 0.0 && change.to_w > 0.0 && change.to_h > 0.0) {
+			switch_id_ = change.id;
+			// (By how much the picture's shape will change: what comes
+			// after the switcher, a shadow say, is carried along.)
+			const double target = shape * (change.to_w / change.to_h) / (change.now_w / change.now_h);
+			if (target > 0.0) {
+				shape_used_ = target;
+				shape_seen_ = shape;
+				shape_for_ = 0.0;
+				changed_ = true;
+				with_switch_ = true;
+				sync_s_ = change.total_s * std::clamp(1.0 - change.done, 0.0, 1.0);
+				sync_curve_ = static_cast<EaseCurve>(change.curve);
+				sync_mode_ = static_cast<EaseMode>(change.mode);
+			}
+		}
+		// The shape counts once it has stopped changing.
+		if (std::fabs(shape - shape_seen_) > 0.01 * shape) {
+			shape_seen_ = shape;
+			shape_for_ = 0.0;
+		} else if (shape_for_ < 0.5 && (shape_for_ += seconds) >= 0.5 &&
+			   std::fabs(shape - shape_used_) > 0.01 * shape) {
+			changed_ = true;
+		}
+	}
+	// The gap or the tolerance set anew: the space is worked out again.
+	const std::array<double, 8> rule{s.skip_rule ? 1.0 : 0.0,
+					 s.skip_pct ? 1.0 : 0.0,
+					 s.skip_fill,
+					 s.skip_px ? 1.0 : 0.0,
+					 s.px_top,
+					 s.px_bottom,
+					 s.px_left,
+					 s.px_right};
+	if (s.margin != used_margin_ || s.tolerance != used_tolerance_ || rule != used_rule_) {
+		used_rule_ = rule;
+		used_margin_ = s.margin;
+		used_tolerance_ = s.tolerance;
+		changed_ = true;
+	}
+	if (changed_ || !have_goal_) {
+		changed_ = false;
+		if (!with_switch_ && (!have_goal_ || shape_for_ >= 0.5 || shape_used_ <= 0.0))
+			shape_used_ = shape;
+		// First without the items never in the way. Should the picture
+		// then leave too much of its space empty (a narrow window on a
+		// wide screen), they count after all: the picture goes beside
+		// the camera rather than under it. Both spaces come from the
+		// picture's shape alone, not from where it is now, so the
+		// choice does not flip once the picture has moved.
+		std::vector<Box> firm;
+		for (size_t i = 0; i < boxes_.size(); i++)
+			if (i >= passed_.size() || !passed_[i])
+				firm.push_back(boxes_[i]);
+		Box goal = free_space(within, s.anchor_x, s.anchor_y, firm, s.margin, shape_used_, s.tolerance);
+		avoiding_ = false;
+		if (s.skip_rule && firm.size() != boxes_.size() && goal.w >= 2.0 && goal.h >= 2.0) {
+			double fw = kept_w, fh = kept_h;
+			if (fw <= 0.0 || fh <= 0.0) {
+				fw = std::min(goal.w, goal.h * shape_used_);
+				fh = fw / shape_used_;
+			}
+			// Either rule that is ticked may say the picture fills its
+			// space: by the share it takes up, or by the empty room at
+			// each edge, the picture lying where it is kept towards.
+			// With neither ticked nothing says so.
+			const double fill = std::min(1.0, fw / goal.w) * std::min(1.0, fh / goal.h);
+			const double spare_w = std::max(0.0, goal.w - fw), spare_h = std::max(0.0, goal.h - fh);
+			const double left = spare_w * (s.toward_x + 1) / 2.0, top = spare_h * (s.toward_y + 1) / 2.0;
+			const bool fills = (s.skip_pct && fill >= s.skip_fill) ||
+					   (s.skip_px && left <= s.px_left + 0.05 &&
+					    spare_w - left <= s.px_right + 0.05 && top <= s.px_top + 0.05 &&
+					    spare_h - top <= s.px_bottom + 0.05);
+			if (!fills) {
+				const Box beside = free_space(within, s.anchor_x, s.anchor_y, boxes_, s.margin,
+							      shape_used_, s.tolerance);
+				if (beside.w >= 2.0 && beside.h >= 2.0) {
+					goal = beside;
+					avoiding_ = true;
+				}
+			}
+		}
+		if (goal.w < 2.0 || goal.h < 2.0)
+			return false;
+		if (!have_goal_ || std::fabs(goal.x - goal_.x) > 0.05 || std::fabs(goal.y - goal_.y) > 0.05 ||
+		    std::fabs(goal.w - goal_.w) > 0.05 || std::fabs(goal.h - goal_.h) > 0.05) {
+			from_ = have_cur_ ? cur_ : goal;
+			goal_ = goal;
+			// (With a window switcher's change: over its time, not this
+			// filter's own.)
+			synced_ = with_switch_;
+			glide_ = have_cur_ && (synced_ ? sync_s_ : s.glide_s) > 0.0 && !arriving() ? 0.0 : 1.0;
+			have_goal_ = true;
+			moved = true;
+		}
+	}
+	return true;
+}
+
+Box FitEngine::advance(const Prep &p, float seconds)
+{
+	const FitSettings &s = p.s;
+	if (glide_ < 1.0) {
+		const double over = synced_ ? sync_s_ : s.glide_s;
+		glide_ = over > 0.0 ? std::min(1.0, glide_ + seconds / over) : 1.0;
+		const double t = synced_ ? ease(sync_curve_, sync_mode_, glide_) : ease(s.curve, s.mode, glide_);
+		cur_ = Box{from_.x + (goal_.x - from_.x) * t, from_.y + (goal_.y - from_.y) * t,
+			   std::max(2.0, from_.w + (goal_.w - from_.w) * t),
+			   std::max(2.0, from_.h + (goal_.h - from_.h) * t)};
+	} else {
+		cur_ = goal_;
+	}
+	have_cur_ = true;
+	return cur_;
+}
+
+// Which sides of the free space end at something another filter resizes
+// to make room (a game fitted beside it). Centring between such a thing and
+// a wall never comes to rest: it makes room, the middle moves, it makes room
+// again. So against one of those the item goes to the other side at once,
+// and stays.
+void FitEngine::soft_sides(bool &soft_l, bool &soft_r, bool &soft_t, bool &soft_b) const
+{
+	soft_l = soft_r = soft_t = soft_b = false;
+	if (!have_goal_)
+		return;
+	for (size_t i = 0; i < boxes_.size() && i < gives_.size(); i++) {
+		if (!gives_[i])
+			continue;
+		const Box &o = boxes_[i];
+		const bool beside = o.y < goal_.y + goal_.h && o.y + o.h > goal_.y;
+		const bool above_below = o.x < goal_.x + goal_.w && o.x + o.w > goal_.x;
+		// By which side of the space's middle it lies on, not by
+		// whether it touches the space: it may have grown into
+		// the space since that was worked out, and judged by
+		// touching, the two filters chased each other for good.
+		const double mid_x = goal_.x + goal_.w / 2.0, mid_y = goal_.y + goal_.h / 2.0;
+		soft_l = soft_l || (beside && o.x + o.w <= mid_x);
+		soft_r = soft_r || (beside && o.x >= mid_x);
+		soft_t = soft_t || (above_below && !beside && o.y + o.h <= mid_y);
+		soft_b = soft_b || (above_below && !beside && o.y >= mid_y);
+	}
+}
+
+// Where a kept-size picture goes in a space.
+Box FitEngine::kept_in(const Prep &p, const Box &room, double kw, double kh) const
+{
+	bool soft_l = false, soft_r = false, soft_t = false, soft_b = false;
+	if (p.free)
+		soft_sides(soft_l, soft_r, soft_t, soft_b);
+	// (A side it is to be kept towards counts unless that side is
+	// the one that gives way: the two would close in for good.)
+	auto along = [](double from, double size, double own, bool soft_near, bool soft_far, int toward) {
+		if (soft_near && !soft_far)
+			return from + size - own; // against the far, firm side
+		if (soft_far && !soft_near)
+			return from;
+		if (toward != 0)
+			return toward < 0 ? from : from + size - own;
+		return from + (size - own) / 2.0;
+	};
+	return Box{along(room.x, room.w, kw, soft_l, soft_r, p.s.toward_x),
+		   along(room.y, room.h, kh, soft_t, soft_b, p.s.toward_y), kw, kh};
+}
+
+// What will show of it once it is where it is going, for any other Fit
+// to Space in this scene to go by.
+void FitEngine::publish_claim(const Prep &p)
+{
+	const FitSettings &s = p.s;
+	const Box outer{p.bx, p.by, p.bw, p.bh};
+	if (p.free && have_goal_) {
+		Claim claim;
+		claim.resizes = s.resize;
+		if (!s.resize && have_keep_) {
+			claim.box = kept_in(p, goal_, p.keep_w, p.keep_h);
+			const double gap = std::min({s.margin, outer.w / 2.0 - 1.0, outer.h / 2.0 - 1.0});
+			if (outer.w - 2.0 * gap >= p.keep_w)
+				claim.box.x =
+					std::clamp(claim.box.x, outer.x + gap, outer.x + outer.w - gap - p.keep_w);
+			if (outer.h - 2.0 * gap >= p.keep_h)
+				claim.box.y =
+					std::clamp(claim.box.y, outer.y + gap, outer.y + outer.h - gap - p.keep_h);
+		} else {
+			const double kg = std::min(goal_.w / p.pw, goal_.h / p.ph);
+			claim.box = Box{goal_.x + (goal_.w - p.pw * kg) * (s.toward_x + 1) / 2.0,
+					goal_.y + (goal_.h - p.ph * kg) * (s.toward_y + 1) / 2.0, p.pw * kg, p.ph * kg};
+		}
+		claim_set(parent_, obs_sceneitem_get_id(p.item), this, claim);
+		last_claim_ = claim;
+		have_claim_ = true;
+	} else {
+		claim_clear(this);
+		have_claim_ = false;
+	}
+}
+
+void FitEngine::apply(const Prep &p, Box space)
+{
+	const FitSettings &s = p.s;
+	obs_sceneitem_t *item = p.item;
+	const obs_sceneitem_crop &crop = p.crop;
+	double bx = p.bx, by = p.by, bw = p.bw, bh = p.bh;
 	// The screen (or the box) itself, before a free space is taken in it.
 	const Box outer{bx, by, bw, bh};
-	bool free = s.box == BoxKind::FreeSpace;
+	const bool free = p.free;
 	if (free) {
-		Box space;
-		const bool kept = !s.resize && have_keep_;
-		if (!free_box(item, s, how, Box{bx, by, bw, bh}, picture, kept ? keep_w_ : 0.0, kept ? keep_h_ : 0.0,
-			      seconds, space))
-			return; // being moved by hand, or no room at all
 		bx = space.x;
 		by = space.y;
 		bw = space.w;
 		bh = space.h;
-	} else {
-		have_cur_ = false;
 	}
 	// The same shape as the box fills it; any other shape keeps clear of
 	// its edges by the margin. The free space already has the margin
@@ -932,54 +1374,14 @@ void FitEngine::tick(float seconds)
 	// fitted with it.)
 	// (Or, when only part of the item shows, the shape of that part.)
 	const bool cut_down = s.visible_pixels && own_cut_[0] + own_cut_[1] + own_cut_[2] + own_cut_[3] > 0.0;
-	const double bare = !cut_down && bare_w >= 2.0 && bare_h >= 2.0 ? bare_w / bare_h : picture;
+	const double bare = !cut_down && p.bare_w >= 2.0 && p.bare_h >= 2.0 ? p.bare_w / p.bare_h : p.picture;
 	const bool fills = !free && std::fabs(bare - box) / box < 0.01;
 	double margin = fills || free ? 0.0 : std::min({s.margin, bw / 2.0 - 1.0, bh / 2.0 - 1.0});
-	// Which sides of the free space end at something another filter
-	// resizes to make room (a game fitted beside it). Centring between
-	// such a thing and a wall never comes to rest: it makes room, the
-	// middle moves, it makes room again. So against one of those the
-	// item goes to the other side at once, and stays.
-	bool soft_l = false, soft_r = false, soft_t = false, soft_b = false;
-	if (free && have_goal_) {
-		for (size_t i = 0; i < boxes_.size() && i < gives_.size(); i++) {
-			if (!gives_[i])
-				continue;
-			const Box &o = boxes_[i];
-			const bool beside = o.y < goal_.y + goal_.h && o.y + o.h > goal_.y;
-			const bool above_below = o.x < goal_.x + goal_.w && o.x + o.w > goal_.x;
-			// By which side of the space's middle it lies on, not by
-			// whether it touches the space: it may have grown into
-			// the space since that was worked out, and judged by
-			// touching, the two filters chased each other for good.
-			const double mid_x = goal_.x + goal_.w / 2.0, mid_y = goal_.y + goal_.h / 2.0;
-			soft_l = soft_l || (beside && o.x + o.w <= mid_x);
-			soft_r = soft_r || (beside && o.x >= mid_x);
-			soft_t = soft_t || (above_below && !beside && o.y + o.h <= mid_y);
-			soft_b = soft_b || (above_below && !beside && o.y >= mid_y);
-		}
-	}
-	// Where a kept-size picture goes in a space.
-	auto kept_in = [&](const Box &room, double kw, double kh) {
-		// (A side it is to be kept towards counts unless that side is
-		// the one that gives way: the two would close in for good.)
-		auto along = [](double from, double size, double own, bool soft_near, bool soft_far, int toward) {
-			if (soft_near && !soft_far)
-				return from + size - own; // against the far, firm side
-			if (soft_far && !soft_near)
-				return from;
-			if (toward != 0)
-				return toward < 0 ? from : from + size - own;
-			return from + (size - own) / 2.0;
-		};
-		return Box{along(room.x, room.w, kw, soft_l, soft_r, s.toward_x),
-			   along(room.y, room.h, kh, soft_t, soft_b, s.toward_y), kw, kh};
-	};
 	if (!s.resize && have_keep_) {
 		// Its own size, in the middle of the room it has: the gaps are
 		// balanced, left with right and top with bottom.
-		const Box put =
-			kept_in(Box{bx + margin, by + margin, bw - 2.0 * margin, bh - 2.0 * margin}, keep_w_, keep_h_);
+		const Box put = kept_in(p, Box{bx + margin, by + margin, bw - 2.0 * margin, bh - 2.0 * margin},
+					p.keep_w, p.keep_h);
 		bx = put.x;
 		by = put.y;
 		// A space smaller than the item cannot hold it, and its
@@ -991,38 +1393,14 @@ void FitEngine::tick(float seconds)
 		auto inside = [](double at, double size, double from, double room) {
 			return room >= size ? std::clamp(at, from, from + room - size) : from + (room - size) / 2.0;
 		};
-		bx = inside(bx, keep_w_, outer.x + gap, outer.w - 2.0 * gap);
-		by = inside(by, keep_h_, outer.y + gap, outer.h - 2.0 * gap);
-		bw = keep_w_;
-		bh = keep_h_;
+		bx = inside(bx, p.keep_w, outer.x + gap, outer.w - 2.0 * gap);
+		by = inside(by, p.keep_h, outer.y + gap, outer.h - 2.0 * gap);
+		bw = p.keep_w;
+		bh = p.keep_h;
 		margin = 0.0;
 	}
 	const double aw = bw - 2.0 * margin, ah = bh - 2.0 * margin;
-	const double k = std::min(aw / pw, ah / ph);
-	// What will show of it once it is where it is going, for any other
-	// Fit to Space in this scene to go by.
-	if (free && have_goal_) {
-		Claim claim;
-		claim.resizes = s.resize;
-		if (!s.resize && have_keep_) {
-			claim.box = kept_in(goal_, keep_w_, keep_h_);
-			const double gap = std::min({s.margin, outer.w / 2.0 - 1.0, outer.h / 2.0 - 1.0});
-			if (outer.w - 2.0 * gap >= keep_w_)
-				claim.box.x = std::clamp(claim.box.x, outer.x + gap, outer.x + outer.w - gap - keep_w_);
-			if (outer.h - 2.0 * gap >= keep_h_)
-				claim.box.y = std::clamp(claim.box.y, outer.y + gap, outer.y + outer.h - gap - keep_h_);
-		} else {
-			const double kg = std::min(goal_.w / pw, goal_.h / ph);
-			claim.box = Box{goal_.x + (goal_.w - pw * kg) * (s.toward_x + 1) / 2.0,
-					goal_.y + (goal_.h - ph * kg) * (s.toward_y + 1) / 2.0, pw * kg, ph * kg};
-		}
-		claim_set(parent_, obs_sceneitem_get_id(item), this, claim);
-		last_claim_ = claim;
-		have_claim_ = true;
-	} else {
-		claim_clear(this);
-		have_claim_ = false;
-	}
+	const double k = std::min(aw / p.pw, ah / p.ph);
 	// The fit itself is left to OBS's bounding box, which OBS works out
 	// afresh for every frame it draws. The box is the space the picture
 	// may take, grown by whatever the item draws round the picture (a
@@ -1031,8 +1409,8 @@ void FitEngine::tick(float seconds)
 	// picture only changes size, as a window does while it is dragged
 	// larger, the box stays as it is and OBS keeps the picture fitted on
 	// every frame: nothing here has to catch up a frame later.
-	const double room_l = left - crop.left, room_t = top - crop.top;
-	const double room_r = right - crop.right, room_b = bottom - crop.bottom;
+	const double room_l = p.left - crop.left, room_t = p.top - crop.top;
+	const double room_r = p.right - crop.right, room_b = p.bottom - crop.bottom;
 	const double want_w = aw + (room_l + room_r) * k, want_h = ah + (room_t + room_b) * k;
 	const double x = bx + margin - room_l * k;
 	const double y = by + margin - room_t * k;
@@ -1099,382 +1477,212 @@ void FitEngine::tick(float seconds)
 	obs_sceneitem_defer_update_end(item);
 }
 
-// The free space round the item's place, gliding to it when it changes.
-// False while there is nothing to do this tick.
-// (`kept_w` by `kept_h`: the size the picture keeps when it is not resized.)
-bool FitEngine::free_box(obs_sceneitem_t *item, FitSettings &s, const Measure &how, const Box &within, double shape,
-			 double kept_w, double kept_h, float seconds, Box &space)
+void FitEngine::tick(float seconds, FitScan &scan)
 {
-	if (measuring_stopped())
-		return false;
-	// Only for a scene that is being shown somewhere. Every scene's
-	// filters run all the time, and looking at the items of scenes nobody
-	// sees would cost the picture on screen its smoothness for nothing.
-	if (!obs_source_showing(parent_)) {
-		was_showing_ = false;
-		if (!have_cur_)
-			return false;
-		space = cur_;
-		return true;
+	if (!parent_ || !obs_source_enabled(source_)) {
+		claim_clear(this);
+		return;
 	}
-	// A scene that has only just come into view is put right at once
-	// and without a glide: nobody has seen it as it was.
-	if (!was_showing_) {
-		was_showing_ = true;
-		shown_for_ = 0.0;
+	// Not on a group: its size is whatever is in it, so there is no
+	// space to fit into, and moving an item inside it moves the space.
+	if (obs_source_is_group(parent_))
+		return;
+	if (idle(seconds))
+		return;
+	// Held for the length of this tick: OBS's window may remove the item
+	// at any moment from its own thread.
+	struct Held {
+		obs_sceneitem_t *item;
+		~Held()
+		{
+			if (item)
+				obs_sceneitem_release(item);
+		}
+	} held{find_item(parent_, item_name())};
+	if (held.item)
+		obs_sceneitem_addref(held.item);
+	Prep p;
+	if (!prepare(held.item, seconds, p))
+		return;
+	Box space;
+	if (p.free) {
+		const Motion m = motion(p, seconds);
+		if (m == Motion::Stop)
+			return; // being moved by hand, or no room at all
+		if (m == Motion::Solve) {
+			// What is in the way. Drawing an item to see what shows in
+			// it is costly (it stalls the picture for a moment), so it
+			// is done as seldom as can be: once for each item when it
+			// is first met, and after that only when a glance shows it
+			// has changed. An item that only moves or changes size is
+			// followed by its box, which costs nothing: what shows in
+			// it keeps its place in the box.
+			if (look_again())
+				scan.forget();
+			scan.gather(parent_, p.item, this);
+			std::vector<Obstacle> in_way;
+			scan.obstacles(parent_, p.item, p.s.skip, p.s.skip_rule, this, p.how, in_way);
+			bool at_rest = false;
+			observe(in_way, arriving(), seconds, at_rest);
+			if (at_rest)
+				scan.at_rest(parent_, {p.item}, this, p.how);
+			bool moved = false;
+			if (!solve(p, seconds, true, moved))
+				return;
+			if (moved)
+				glides_++;
+			space = advance(p, seconds);
+		} else {
+			space = cur_;
+		}
 	} else {
-		shown_for_ += seconds;
+		have_cur_ = false;
 	}
-	const bool arriving = shown_for_ < kArriving;
-	// Moved by something else (dragged in the preview, sent somewhere by
-	// a key): left alone while it moves, then its new place is where the
-	// free space is looked for.
-	vec2 pos;
-	obs_sceneitem_get_pos(item, &pos);
-	if (have_set_ && !moving_ && (std::fabs(pos.x - set_x_) > 0.5 || std::fabs(pos.y - set_y_) > 0.5)) {
-		moving_ = true;
-		still_for_ = 0.0;
-	}
-	if (moving_) {
-		if (std::fabs(pos.x - seen_x_) > 0.05 || std::fabs(pos.y - seen_y_) > 0.05)
-			still_for_ = 0.0;
-		else
-			still_for_ += seconds;
-		seen_x_ = pos.x;
-		seen_y_ = pos.y;
-		if (still_for_ < 0.4)
-			return false;
-		moving_ = false;
-		s.have_anchor = false; // taken afresh below
-		have_cur_ = false;     // and no glide from where it was let go
-	}
-	if (!s.have_anchor) {
-		const Box at = item_box(item);
-		s.anchor_x = at.x + at.w / 2.0;
-		s.anchor_y = at.y + at.h / 2.0;
-		s.have_anchor = true;
-		obs_data_t *settings = obs_source_get_settings(source_);
-		obs_data_set_bool(settings, "have_anchor", true);
-		obs_data_set_double(settings, "anchor_x", s.anchor_x);
-		obs_data_set_double(settings, "anchor_y", s.anchor_y);
-		obs_data_release(settings);
-		std::lock_guard lock(mutex_);
-		settings_.have_anchor = true;
-		settings_.anchor_x = s.anchor_x;
-		settings_.anchor_y = s.anchor_y;
-		look_again_ = true;
-	}
+	publish_claim(p);
+	apply(p, space);
+}
 
-	// What is in the way. Drawing an item to see what shows in it is
-	// costly (it stalls the picture for a moment), so it is done as
-	// seldom as can be: once for each item when it is first met, and
-	// after that one item a second, in turn, while nothing is moving,
-	// which is how a widget that begins to show something is noticed.
-	// An item that only moves or changes size is followed by its box,
-	// which costs nothing: what shows in it keeps its place in the box.
-	std::vector<obs_sceneitem_t *> others;
+// ---------------------------------------------------------------- the scan
+
+void FitScan::gather(obs_source_t *scene, obs_sceneitem_t *self, const void *asking)
+{
+	gathered_.clear();
+	used_.clear();
 	struct Gather {
-		std::vector<obs_sceneitem_t *> *out;
+		std::vector<Gathered> *out;
 		obs_sceneitem_t *self;
-		const std::vector<std::string> *skip;
 		obs_source_t *scene;
 		const void *asking;
-		// The items never in the way are passed over, or, when they
-		// may count after all, kept and marked.
-		std::set<obs_sceneitem_t *> *passed;
-	} gather{&others, item, &s.skip, parent_, this, nullptr};
-	std::set<obs_sceneitem_t *> passed_over;
-	if (s.skip_rule)
-		gather.passed = &passed_over;
+		obs_sceneitem_t *top;
+	} gather{&gathered_, self, scene, asking, nullptr};
 	static const auto add = [](obs_scene_t *, obs_sceneitem_t *other, void *param) {
 		auto *g = static_cast<Gather *>(param);
 		if (other == g->self || !obs_sceneitem_visible(other) || obs_sceneitem_is_group(other) ||
 		    is_morph_layer(other))
 			return true;
-		const char *name = obs_source_get_name(obs_sceneitem_get_source(other));
-		if (name && std::find(g->skip->begin(), g->skip->end(), name) != g->skip->end()) {
-			if (!g->passed)
-				return true;
-			g->passed->insert(other);
-		}
-		g->out->push_back(other);
+		g->out->push_back(Gathered{other, g->top ? g->top : other, false});
 		return true;
 	};
 	obs_scene_enum_items(
-		obs_scene_from_source(parent_),
+		obs_scene_from_source(scene),
 		[](obs_scene_t *sc, obs_sceneitem_t *other, void *param) {
 			auto *g = static_cast<Gather *>(param);
 			if (other == g->self)
 				return true;
 			if (obs_sceneitem_is_group(other) && obs_sceneitem_visible(other)) {
-				// A group another Fit to Space is placing counts as
-				// one thing, where that filter is taking it.
+				// A group another fit is placing counts as one thing,
+				// where that fit is taking it.
 				Claim claim;
-				if (claim_of(g->scene, obs_sceneitem_get_id(other), g->asking, claim))
-					g->out->push_back(other);
-				else
+				if (claim_of(g->scene, obs_sceneitem_get_id(other), g->asking, claim)) {
+					g->out->push_back(Gathered{other, other, true});
+				} else {
+					g->top = other;
 					obs_sceneitem_group_enum_items(other, add, param);
+					g->top = nullptr;
+				}
 			}
 			add(sc, other, param);
 			return true;
 		},
 		&gather);
-	const Measure by = how;
-	auto look = [&](obs_sceneitem_t *other) {
-		Seen seen;
-		seen.there = measure_seen(parent_, other, by, seen.box);
-		seen.item_at = scene_box(parent_, other);
-		seen_[obs_sceneitem_get_id(other)] = seen;
-		// What a glance last said of it goes with this look: another
-		// look is due when a glance says otherwise.
-		Glance glance;
-		if (glance_of(parent_, obs_sceneitem_get_id(other), glance))
-			looked_[obs_sceneitem_get_id(other)] = glance;
-		else
-			looked_.erase(obs_sceneitem_get_id(other));
-	};
+}
+
+void FitScan::look(obs_source_t *scene, obs_sceneitem_t *other, const Measure &how)
+{
+	Seen seen;
+	seen.there = measure_seen(scene, other, how, seen.box);
+	seen.item_at = scene_box(scene, other);
+	seen_[obs_sceneitem_get_id(other)] = seen;
+	// What a glance last said of it goes with this look: another
+	// look is due when a glance says otherwise.
+	Glance glance;
+	if (glance_of(scene, obs_sceneitem_get_id(other), glance))
+		looked_[obs_sceneitem_get_id(other)] = glance;
+	else
+		looked_.erase(obs_sceneitem_get_id(other));
+}
+
+void FitScan::obstacles(obs_source_t *scene, obs_sceneitem_t *self, const std::vector<std::string> &skip,
+			bool keep_skipped, const void *asking, const Measure &how, std::vector<Obstacle> &out,
+			const std::vector<int64_t> *twins_of)
+{
+	out.clear();
 	if (look_again_) {
 		look_again_ = false;
 		seen_.clear();
-		turn_ = 0;
-		since_look_ = 0.0;
 	}
-	// Where each is now: what was seen in it, carried along with its box.
-	std::vector<Box> boxes;
-	std::vector<bool> gives;
-	std::vector<int64_t> ids; // which item each is, and whether its
-	std::vector<bool> said;   // filter said where it is going
-	std::vector<bool> passed; // one of the items never in the way
-	for (obs_sceneitem_t *other : others) {
+	for (const Gathered &g : gathered_) {
+		if (g.item == self || g.top == self)
+			continue;
+		bool passed = false;
+		if (!g.claimed) {
+			const char *name = obs_source_get_name(obs_sceneitem_get_source(g.item));
+			if (name && std::find(skip.begin(), skip.end(), name) != skip.end()) {
+				if (!keep_skipped)
+					continue;
+				passed = true;
+			}
+			// (A stand-in for one of the host's own items holds that
+			// item's room, which the item's claim already says.)
+			if (twins_of) {
+				const int64_t of = stand_in_for_item(g.item);
+				if (of && std::find(twins_of->begin(), twins_of->end(), of) != twins_of->end())
+					continue;
+			}
+		}
+		if (std::find(used_.begin(), used_.end(), g.item) == used_.end())
+			used_.push_back(g.item);
+		const int64_t id = obs_sceneitem_get_id(g.item);
 		Claim claim;
-		if (claim_of(parent_, obs_sceneitem_get_id(other), this, claim)) {
-			boxes.push_back(claim.box);
-			passed.push_back(passed_over.count(other) > 0);
-			gives.push_back(claim.resizes);
-			ids.push_back(obs_sceneitem_get_id(other));
-			said.push_back(true);
+		if (claim_of(scene, id, asking, claim)) {
+			out.push_back(Obstacle{claim.box, id, true, claim.resizes, passed});
 			continue;
 		}
-		auto found = seen_.find(obs_sceneitem_get_id(other));
+		auto found = seen_.find(id);
 		if (found == seen_.end()) {
-			look(other);
-			found = seen_.find(obs_sceneitem_get_id(other));
+			look(scene, g.item, how);
+			found = seen_.find(id);
 		}
 		const Seen &seen = found->second;
 		if (!seen.there)
 			continue;
-		gives.push_back(false);
-		passed.push_back(passed_over.count(other) > 0);
-		ids.push_back(obs_sceneitem_get_id(other));
-		said.push_back(false);
-		const Box now = scene_box(parent_, other);
+		const Box now = scene_box(scene, g.item);
 		if (seen.item_at.w < 1.0 || seen.item_at.h < 1.0 || now.w < 1.0 || now.h < 1.0) {
-			boxes.push_back(seen.box);
+			out.push_back(Obstacle{seen.box, id, false, false, passed});
 			continue;
 		}
 		const double kx = now.w / seen.item_at.w, ky = now.h / seen.item_at.h;
-		boxes.push_back(Box{now.x + (seen.box.x - seen.item_at.x) * kx,
-				    now.y + (seen.box.y - seen.item_at.y) * ky, seen.box.w * kx, seen.box.h * ky});
+		out.push_back(
+			Obstacle{Box{now.x + (seen.box.x - seen.item_at.x) * kx,
+				     now.y + (seen.box.y - seen.item_at.y) * ky, seen.box.w * kx, seen.box.h * ky},
+				 id, false, false, passed});
 	}
-	auto differs = [](const Box &a, const Box &b) {
-		return std::fabs(a.x - b.x) > 0.25 || std::fabs(a.y - b.y) > 0.25 || std::fabs(a.w - b.w) > 0.25 ||
-		       std::fabs(a.h - b.h) > 0.25;
-	};
-	// What changed since the last look: `moved`, an item that is on its
-	// way somewhere (gliding, being dragged, a window growing), or
-	// `stepped`, a change made in one go: an item shown or hidden, or
-	// another filter saying where its item is going.
-	bool moved = false, stepped = ids != ids_ || said != said_ || passed != passed_;
-	if (!stepped)
-		for (size_t i = 0; i < boxes.size(); i++)
-			if (differs(boxes[i], boxes_[i]))
-				(said[i] ? stepped : moved) = true;
-	if (moved && arriving) {
-		moved = false;
-		stepped = true;
-	}
-	// Which of them give way can change while nothing moves (another
-	// filter has just said where its item is going).
-	if (gives != gives_ && !moved && !stepped) {
-		gives_ = gives;
-		changed_ = true;
-	}
-	if (moved) {
-		// Something is moving. The fitted item waits for it to come to
-		// rest and then takes its new space in one glide: chasing a
-		// moving item would resize the picture (and redo its shadow)
-		// on every frame of the move. No looking meanwhile either.
-		boxes_ = boxes;
-		gives_ = gives;
-		ids_ = ids;
-		said_ = said;
-		passed_ = passed;
-		unsettled_ = true;
-		calm_for_ = 0.0;
-		since_look_ = 0.0;
-	} else if (stepped) {
-		// Nothing to wait for: the new space is taken at once, in the
-		// one glide. (Waiting here as for a moving item, two filters
-		// answered each other a moment apart, and the owner's items
-		// "adjust multiple times before settling".)
-		boxes_ = boxes;
-		gives_ = gives;
-		ids_ = ids;
-		said_ = said;
-		passed_ = passed;
-		since_look_ = 0.0;
-		if (!unsettled_)
-			changed_ = true;
-	} else if (unsettled_) {
-		if ((calm_for_ += seconds) >= 0.15) {
-			unsettled_ = false;
-			changed_ = true;
-		}
-	} else if (glide_ >= 1.0) {
-		// At rest: the items are glanced at, which costs next to
-		// nothing, and one is looked at properly only when a glance
-		// shows it drawing another part of itself than at the last
-		// look (a widget that begins to show something, or stops).
-		std::vector<obs_sceneitem_t *> watched = others;
-		watched.push_back(item);
-		glance_step(this, parent_, watched);
-		for (obs_sceneitem_t *other : others) {
-			const int64_t id = obs_sceneitem_get_id(other);
-			Claim claim;
-			Glance glance;
-			if (claim_of(parent_, id, this, claim) || !glance_of(parent_, id, glance))
-				continue;
-			// (Its first glance since it was looked at is no measure
-			// of that look: the item may have changed in between,
-			// seconds apart as they can be. It is looked at once
-			// more, and the two go together from then on.)
-			const auto was = looked_.find(id);
-			if (was == looked_.end() || glance_differs(glance, was->second)) {
-				look(other);
-				break; // one look a tick is enough
-			}
-		}
-	}
+}
 
-	// An Automatic Window Switcher on the fitted item is changing to
-	// another window: the shape it is on its way to is taken now, and
-	// the space for it is glided to over the switcher's own time and
-	// easing, so the two move as one. (Left to notice the shape by
-	// itself, the fit waited for it to stop changing and only then set
-	// off: the owner saw the window switch "but then it's like the auto
-	// fit has to catch up".)
-	bool with_switch = false;
-	{
-		AppCaptureChange change;
-		if (app_capture_change(obs_sceneitem_get_source(item), change) && change.id != switch_id_ &&
-		    change.now_w > 0.0 && change.now_h > 0.0 && change.to_w > 0.0 && change.to_h > 0.0) {
-			switch_id_ = change.id;
-			// (By how much the picture's shape will change: what comes
-			// after the switcher, a shadow say, is carried along.)
-			const double target = shape * (change.to_w / change.to_h) / (change.now_w / change.now_h);
-			if (target > 0.0) {
-				shape_used_ = target;
-				shape_seen_ = shape;
-				shape_for_ = 0.0;
-				changed_ = true;
-				with_switch = true;
-				sync_s_ = change.total_s * std::clamp(1.0 - change.done, 0.0, 1.0);
-				sync_curve_ = static_cast<EaseCurve>(change.curve);
-				sync_mode_ = static_cast<EaseMode>(change.mode);
-			}
+void FitScan::at_rest(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &extra, const void *asking,
+		      const Measure &how)
+{
+	std::vector<obs_sceneitem_t *> watched = used_;
+	for (obs_sceneitem_t *item : extra)
+		if (std::find(watched.begin(), watched.end(), item) == watched.end())
+			watched.push_back(item);
+	glance_step(asking, scene, watched);
+	for (obs_sceneitem_t *other : used_) {
+		const int64_t id = obs_sceneitem_get_id(other);
+		Claim claim;
+		Glance glance;
+		if (claim_of(scene, id, asking, claim) || !glance_of(scene, id, glance))
+			continue;
+		// (Its first glance since it was looked at is no measure
+		// of that look: the item may have changed in between,
+		// seconds apart as they can be. It is looked at once
+		// more, and the two go together from then on.)
+		const auto was = looked_.find(id);
+		if (was == looked_.end() || glance_differs(glance, was->second)) {
+			look(scene, other, how);
+			break; // one look a tick is enough
 		}
 	}
-	// The shape counts once it has stopped changing.
-	if (std::fabs(shape - shape_seen_) > 0.01 * shape) {
-		shape_seen_ = shape;
-		shape_for_ = 0.0;
-	} else if (shape_for_ < 0.5 && (shape_for_ += seconds) >= 0.5 &&
-		   std::fabs(shape - shape_used_) > 0.01 * shape) {
-		changed_ = true;
-	}
-	// The gap or the tolerance set anew: the space is worked out again.
-	const std::array<double, 8> rule{s.skip_rule ? 1.0 : 0.0,
-					 s.skip_pct ? 1.0 : 0.0,
-					 s.skip_fill,
-					 s.skip_px ? 1.0 : 0.0,
-					 s.px_top,
-					 s.px_bottom,
-					 s.px_left,
-					 s.px_right};
-	if (s.margin != used_margin_ || s.tolerance != used_tolerance_ || rule != used_rule_) {
-		used_rule_ = rule;
-		used_margin_ = s.margin;
-		used_tolerance_ = s.tolerance;
-		changed_ = true;
-	}
-	if (changed_ || !have_goal_) {
-		changed_ = false;
-		if (!with_switch && (!have_goal_ || shape_for_ >= 0.5 || shape_used_ <= 0.0))
-			shape_used_ = shape;
-		// First without the items never in the way. Should the picture
-		// then leave too much of its space empty (a narrow window on a
-		// wide screen), they count after all: the picture goes beside
-		// the camera rather than under it. Both spaces come from the
-		// picture's shape alone, not from where it is now, so the
-		// choice does not flip once the picture has moved.
-		std::vector<Box> firm;
-		for (size_t i = 0; i < boxes_.size(); i++)
-			if (i >= passed_.size() || !passed_[i])
-				firm.push_back(boxes_[i]);
-		Box goal = free_space(within, s.anchor_x, s.anchor_y, firm, s.margin, shape_used_, s.tolerance);
-		avoiding_ = false;
-		if (s.skip_rule && firm.size() != boxes_.size() && goal.w >= 2.0 && goal.h >= 2.0) {
-			double fw = kept_w, fh = kept_h;
-			if (fw <= 0.0 || fh <= 0.0) {
-				fw = std::min(goal.w, goal.h * shape_used_);
-				fh = fw / shape_used_;
-			}
-			// Either rule that is ticked may say the picture fills its
-			// space: by the share it takes up, or by the empty room at
-			// each edge, the picture lying where it is kept towards.
-			// With neither ticked nothing says so.
-			const double fill = std::min(1.0, fw / goal.w) * std::min(1.0, fh / goal.h);
-			const double spare_w = std::max(0.0, goal.w - fw), spare_h = std::max(0.0, goal.h - fh);
-			const double left = spare_w * (s.toward_x + 1) / 2.0, top = spare_h * (s.toward_y + 1) / 2.0;
-			const bool fills = (s.skip_pct && fill >= s.skip_fill) ||
-					   (s.skip_px && left <= s.px_left + 0.05 &&
-					    spare_w - left <= s.px_right + 0.05 && top <= s.px_top + 0.05 &&
-					    spare_h - top <= s.px_bottom + 0.05);
-			if (!fills) {
-				const Box beside = free_space(within, s.anchor_x, s.anchor_y, boxes_, s.margin,
-							      shape_used_, s.tolerance);
-				if (beside.w >= 2.0 && beside.h >= 2.0) {
-					goal = beside;
-					avoiding_ = true;
-				}
-			}
-		}
-		if (goal.w < 2.0 || goal.h < 2.0)
-			return false;
-		if (!have_goal_ || std::fabs(goal.x - goal_.x) > 0.05 || std::fabs(goal.y - goal_.y) > 0.05 ||
-		    std::fabs(goal.w - goal_.w) > 0.05 || std::fabs(goal.h - goal_.h) > 0.05) {
-			from_ = have_cur_ ? cur_ : goal;
-			goal_ = goal;
-			// (With a window switcher's change: over its time, not this
-			// filter's own.)
-			synced_ = with_switch;
-			glide_ = have_cur_ && (synced_ ? sync_s_ : s.glide_s) > 0.0 && !arriving ? 0.0 : 1.0;
-			have_goal_ = true;
-		}
-	}
-	if (glide_ < 1.0) {
-		const double over = synced_ ? sync_s_ : s.glide_s;
-		glide_ = over > 0.0 ? std::min(1.0, glide_ + seconds / over) : 1.0;
-		const double t = synced_ ? ease(sync_curve_, sync_mode_, glide_) : ease(s.curve, s.mode, glide_);
-		cur_ = Box{from_.x + (goal_.x - from_.x) * t, from_.y + (goal_.y - from_.y) * t,
-			   std::max(2.0, from_.w + (goal_.w - from_.w) * t),
-			   std::max(2.0, from_.h + (goal_.h - from_.h) * t)};
-	} else {
-		cur_ = goal_;
-	}
-	have_cur_ = true;
-	space = cur_;
-	return true;
 }
 
 namespace {
@@ -1507,13 +1715,28 @@ void engines_shared(obs_source_t *scene, const char *item_name, const double *ho
 		filter->shared(scene, item_name, home);
 }
 
+void engine_counts(obs_source_t *owner, const char *item, uint64_t &ticks, uint64_t &glides)
+{
+	ticks = glides = 0;
+	std::lock_guard lock(g_filters_mutex);
+	for (FitEngine *each : g_filters) {
+		if (each->source() != owner || (item && *item && each->item_name() != item))
+			continue;
+		ticks += each->full_ticks();
+		glides += each->glides();
+	}
+}
+
 std::vector<obs_source_t *> engine_owners()
 {
 	std::vector<obs_source_t *> owners;
 	std::lock_guard lock(g_filters_mutex);
-	for (FitEngine *each : g_filters)
+	for (FitEngine *each : g_filters) {
+		if (!each->prefix().empty())
+			continue; // a Scene Fit follows a rename itself
 		if (obs_source_t *held = obs_source_get_ref(each->source()))
 			owners.push_back(held);
+	}
 	return owners;
 }
 

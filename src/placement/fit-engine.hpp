@@ -19,10 +19,19 @@ the Free Software Foundation; either version 2 of the License, or
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <algorithm>
 #include <map>
 #include <mutex>
 #include <string>
+#include <utility>
 #include <vector>
+
+namespace stagekit {
+// The revision of every shadow's room: raised whenever a Shadow, Glow &
+// Outline filter changes the room it takes, so a fit reads the room again
+// only then (kept in shadow-backdrop.cpp).
+uint64_t shadow_room_revision();
+} // namespace stagekit
 
 namespace stagekit::fit {
 
@@ -83,10 +92,83 @@ void glance_free();
 Box free_space(const Box &within, double ax, double ay, const std::vector<Box> &others, double gap, double shape,
 	       double tolerance);
 
-// One fitted item: the whole of a Fit to Space filter but its window.
+// What a fit has found out about its item in one tick, before its space is
+// looked for. `item` is valid for that tick only: the host holds it.
+struct Prep {
+	obs_sceneitem_t *item = nullptr;
+	FitSettings s;
+	double sw = 0.0, sh = 0.0; // the size of the item's source
+	obs_sceneitem_crop crop{}; // what the item crops away
+	Measure how;               // how other items are measured
+	double bare_w = 0.0, bare_h = 0.0;
+	double left = 0.0, top = 0.0, right = 0.0, bottom = 0.0; // what is not fitted, on each side
+	double pw = 0.0, ph = 0.0;                               // the size of what is fitted
+	double bx = 0.0, by = 0.0, bw = 0.0, bh = 0.0;           // the screen, or the box
+	double keep_w = 0.0, keep_h = 0.0;                       // the size kept, when it is not resized
+	double picture = 1.0;                                    // the shape fitted
+	bool free = false;                                       // in the free space round it
+};
+
+// One thing in the way of a fitted item: what shows of it, or where another
+// fit is taking it (`said`), whether that fit resizes it (`gives`), and
+// whether it is one of the items never in the way (`passed`).
+struct Obstacle {
+	Box box;
+	int64_t id = 0;
+	bool said = false, gives = false, passed = false;
+};
+
+// What is in the way: the items of a scene, each looked at (drawn and read
+// back) when first met and afterwards followed by its box. One per host: a
+// Fit to Space has its own; a Scene Fit has one for all its entries.
+class FitScan {
+public:
+	// Goes through the scene's visible items (into groups, but for a group
+	// another fit places). `self` is left out, and so is what is in it.
+	void gather(obs_source_t *scene, obs_sceneitem_t *self, const void *asking);
+	// The things in the way of `self`, from what was gathered: items another
+	// fit (not `asking`) places by where it is taking them, the rest by what
+	// shows of them. Items in `skip` are left out, or marked when `keep_skipped`.
+	void obstacles(obs_source_t *scene, obs_sceneitem_t *self, const std::vector<std::string> &skip,
+		       bool keep_skipped, const void *asking, const Measure &how, std::vector<Obstacle> &out,
+		       const std::vector<int64_t> *twins_of = nullptr);
+	// At rest: one glance a tick at the gathered items and `extra`, and one
+	// proper look at an item a glance shows to have changed.
+	void at_rest(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &extra, const void *glance_owner,
+		     const Measure &how);
+	// Everything is looked at again.
+	void forget() { look_again_ = true; }
+	// What was gathered, for a host that also wants other items left out.
+	struct Gathered {
+		obs_sceneitem_t *item; // valid for the tick
+		obs_sceneitem_t *top;  // the item of the scene it is in, or itself
+		bool claimed;          // a group placed by a fit: one thing
+	};
+	std::vector<Gathered> &gathered() { return gathered_; }
+
+private:
+	struct Seen {
+		Box box;     // what shows in it, on the canvas, when it was looked at
+		Box item_at; // and where its box was then
+		bool there = false;
+	};
+	void look(obs_source_t *scene, obs_sceneitem_t *other, const Measure &how);
+	std::vector<Gathered> gathered_;
+	std::vector<obs_sceneitem_t *> used_; // what the last obstacles were taken from
+	std::map<int64_t, Seen> seen_;
+	std::map<int64_t, Glance> looked_; // what a glance said of each item when it was last looked at
+	bool look_again_ = true;
+};
+
+// One fitted item: the whole of a Fit to Space filter but its window. A Fit
+// to Space has one, kept in its own settings (`prefix` empty); a Scene Fit
+// has one per entry, kept under "fit|<source>|" in the Scene Fit's settings.
 class FitEngine {
 public:
-	FitEngine(obs_data_t *settings, obs_source_t *source);
+	// `entry`: the source's name for an entry of a Scene Fit; empty for a
+	// Fit to Space, whose settings name the item.
+	FitEngine(obs_data_t *settings, obs_source_t *owner, std::string prefix = std::string(),
+		  std::string entry = std::string());
 	~FitEngine();
 	void placed(obs_source_t *scene, const char *item_name);
 	// Whether this filter, looking after the item of that name, lists the
@@ -101,27 +183,88 @@ public:
 	const char *scene_name() const { return parent_ ? obs_source_get_name(parent_) : nullptr; }
 	void shared(obs_source_t *scene, const char *item_name, const double *home);
 	void update(obs_data_t *settings);
-	void attach(obs_source_t *parent);
-	void detach();
+	// `forget`: what was seen of the scene's items is let go (a Fit to
+	// Space joining or leaving; a Scene Fit does it once for all entries).
+	void attach(obs_source_t *parent, bool forget = true);
+	void detach(bool forget = true);
 	obs_source_t *source() const { return source_; }
 	obs_source_t *parent() const { return parent_; }
+	const std::string &prefix() const { return prefix_; }
+	std::string item_name()
+	{
+		std::lock_guard lock(mutex_);
+		return settings_.item;
+	}
 	bool holds_room(obs_sceneitem_t *item, const FitSettings &s);
-	void tick(float seconds);
+	// A Fit to Space's tick: the steps below, in order, with its own scan.
+	void tick(float seconds, FitScan &scan);
+
+	// ---- the steps, for a host that fits several items together
+	// Off screen with nothing to do: true, and the tick is skipped (four
+	// times a second it is not, so a hidden item's room stays on record).
+	bool idle(float seconds);
+	// Everything about the item before its space is looked for. False when
+	// there is nothing more to do this tick (hidden, coming back, no picture).
+	bool prepare(obs_sceneitem_t *item, float seconds, Prep &p);
+	enum class Motion { Stop, Hold, Solve };
+	// Off screen, moved by hand, its place taken: whether to look for a space.
+	Motion motion(Prep &p, float seconds);
+	bool arriving() const { return shown_for_ < kArriving; }
+	// What is in the way changed? (`seconds` 0 on a second pass of one tick.)
+	// Says whether it is at rest, for the host's glances.
+	void observe(const std::vector<Obstacle> &in_way, bool arriving, float seconds, bool &at_rest);
+	// The goal: false when there is no room at all. `moved` says whether it changed.
+	bool solve(Prep &p, float seconds, bool first_pass, bool &moved);
+	// What it will show once it has got there, for the other fits.
+	void publish_claim(const Prep &p);
+	// Along the glide, then the item is put there.
+	Box advance(const Prep &p, float seconds);
+	void apply(const Prep &p, Box space);
+	bool gliding() const { return glide_ < 1.0; }
+	bool hidden() const { return hidden_; }
+	const Box &goal() const { return goal_; }
+	bool has_goal() const { return have_goal_; }
+	bool look_again() { return std::exchange(look_again_, false); }
+	// For the tests: full ticks had, and glides set off.
+	uint64_t full_ticks() const { return full_ticks_; }
+	uint64_t glides() const { return glides_; }
+	void count_glide() { glides_++; }
+	// Off screen with nothing asked of it, for a host that decides that
+	// itself: whether anything is asked, and the time skipped.
+	bool pending()
+	{
+		std::lock_guard lock(mutex_);
+		return dirty_ || placed_ || shared_in_ || new_item_;
+	}
+	void skip_time(float seconds) { idle_s_ += seconds; }
+	void not_free() { have_cur_ = false; }
+	Box current() const { return cur_; }
 
 private:
-	bool free_box(obs_sceneitem_t *item, FitSettings &s, const Measure &how, const Box &within, double shape,
-		      double kept_w, double kept_h, float seconds, Box &space);
+	void store_bool(const char *key, bool v);
+	void store_double(const char *key, double v);
+	void store_string(const char *key, const char *v);
+	void soft_sides(bool &l, bool &r, bool &t, bool &b) const;
+	Box kept_in(const Prep &p, const Box &room, double kw, double kh) const;
 
 	obs_source_t *source_;
+	std::string prefix_, entry_, list_prefix_;
 	obs_source_t *parent_ = nullptr;
 	std::mutex mutex_;
 	FitSettings settings_;
-	// The free space: used on the tick only, but for the two flags.
-	struct Seen {
-		Box box;     // what shows in it, on the canvas, when it was looked at
-		Box item_at; // and where its box was then
-		bool there = false;
-	};
+	bool dirty_ = true; // under mutex_: settings changed since the last full tick
+	double idle_s_ = 0.0, idle_phase_ = 0.0;
+	std::atomic<uint64_t> full_ticks_{0}, glides_{0};
+	// The room shadows take round the item's source, read again only when it
+	// changes (`shadow_room_revision`) or the source does.
+	obs_source_t *room_src_ = nullptr;
+	uint64_t room_rev_ = 0;
+	double room_c_[4] = {0.0, 0.0, 0.0, 0.0};
+	bool in_view_c_ = false;
+	// A window switcher's change answered in this tick, on every pass.
+	bool with_switch_ = false;
+	Glance own_looked_; // what a glance said of the item itself at its last look
+	bool own_looked_have_ = false;
 	std::vector<Box> boxes_;  // what is in the way now
 	std::vector<bool> gives_; // and which of them another filter resizes to make room
 	std::vector<int64_t> ids_;
@@ -132,12 +275,8 @@ private:
 	static constexpr double kArriving = 0.25;
 	bool was_showing_ = false;
 	double shown_for_ = 0.0;
-	std::map<int64_t, Seen> seen_;
 	bool look_again_ = true, changed_ = false, unsettled_ = false;
 	double calm_for_ = 0.0;
-	double since_look_ = 0.0;
-	size_t turn_ = 0;
-	std::map<int64_t, Glance> looked_; // what a glance said of each item when it was last looked at
 	double shape_seen_ = 0.0, shape_used_ = 0.0, shape_for_ = 0.0;
 	double used_margin_ = -1.0, used_tolerance_ = -1.0;
 	double set_bw_ = 0.0, set_bh_ = 0.0; // the bounding box last given to the item
@@ -159,9 +298,8 @@ private:
 	// Under mutex_: the item was just given its place by another scene's filter.
 	bool shared_in_ = false, shared_home_ = false;
 	double shared_home_x_ = 0.0, shared_home_y_ = 0.0;
-	double steady_sw_ = 0.0, steady_sh_ = 0.0,
-	       steady_for_ =
-		       0.0; // the item's source has kept its size this long // just unticked: keep the size from before the filter
+	// The item's source has kept its size this long.
+	double steady_sw_ = 0.0, steady_sh_ = 0.0, steady_for_ = 0.0;
 	Box goal_, from_, cur_;
 	bool have_goal_ = false, have_cur_ = false;
 	double glide_ = 1.0;
@@ -193,5 +331,14 @@ private:
 void engines_placed(obs_source_t *scene, const char *item_name);
 void engines_shared(obs_source_t *scene, const char *item_name, const double *home);
 std::vector<obs_source_t *> engine_owners();
+// Where a Scene Fit entry's two lists are kept: "fit_<the name's bytes in
+// hex>_" then "skip" or "share_scenes". (A list's setting cannot have a bar
+// in it, and a source's name may.)
+std::string fit_list_prefix(const std::string &entry);
+// For the tests: the full ticks and glides of the engines `owner` has (of
+// the item of that name only, when one is given).
+void engine_counts(obs_source_t *owner, const char *item, uint64_t &ticks, uint64_t &glides);
+// How many full ticks the engines have had (off screen, most are skipped).
+uint64_t engine_full_ticks();
 
 } // namespace stagekit::fit

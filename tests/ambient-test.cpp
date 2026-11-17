@@ -10757,6 +10757,118 @@ int main(int argc, char **argv)
 	}
 
 	// ==== scene-filters:fit ====
+	// ------------------------------------------ fit to space: off-screen idle
+	{
+		printf("\n[fit to space: off-screen idle]\n");
+		auto fit_sized = [](obs_source_t *src, int cw, int ch) {
+			obs_data_t *d = obs_data_create();
+			obs_data_set_int(d, "width", cw);
+			obs_data_set_int(d, "height", ch);
+			obs_source_update(src, d);
+			obs_data_release(d);
+		};
+		// The full ticks a fit filter's engines have had, and the glides set off.
+		auto fit_counts = [](const char *filter, const char *item, long long &ticks, long long &glides) {
+			calldata_t cd;
+			calldata_init(&cd);
+			calldata_set_string(&cd, "filter", filter);
+			calldata_set_string(&cd, "item", item ? item : "");
+			proc_handler_call(obs_get_proc_handler(), "stagekit_test_fit_counts", &cd);
+			ticks = calldata_int(&cd, "ticks");
+			glides = calldata_int(&cd, "glides");
+			calldata_free(&cd);
+		};
+		obs_source_t *game = obs_source_create("color_source", "Idle Game", nullptr, nullptr);
+		fit_sized(game, 400, 300);
+		obs_source_t *cam = obs_source_create("color_source", "Idle Cam", nullptr, nullptr);
+		fit_sized(cam, 100, 100);
+		obs_scene_t *away = obs_scene_create("Fit Idle Away");
+		obs_scene_t *other = obs_scene_create("Fit Idle Other");
+		obs_sceneitem_t *gi = obs_scene_add(away, game);
+		obs_sceneitem_t *ci = obs_scene_add(away, cam);
+		vec2 at;
+		vec2_set(&at, 100.0f, 50.0f);
+		obs_sceneitem_set_pos(gi, &at);
+		vec2_set(&at, 520.0f, 240.0f);
+		obs_sceneitem_set_pos(ci, &at);
+		obs_data_t *d = obs_data_create();
+		obs_data_set_string(d, "item", "Idle Game");
+		obs_data_set_int(d, "box", 2);
+		obs_data_set_double(d, "margin", 20);
+		obs_data_set_int(d, "glide_ms", 0);
+		obs_source_t *fit = obs_source_create("stagekit_fit_item", "Fit Idle", d, nullptr);
+		obs_data_release(d);
+		obs_source_filter_add(obs_scene_get_source(away), fit);
+		obs_source_t *before = obs_get_output_source(0);
+		auto show = [&](obs_scene_t *scene, int ms) {
+			obs_set_output_source(0, obs_scene_get_source(scene));
+			for (int i = 0; i < ms / 20; i++) {
+				render(obs_scene_get_source(scene), 640, 360);
+				sleep_ms(20);
+			}
+		};
+		auto game_at = [&]() {
+			vec2 p, b;
+			obs_sceneitem_get_pos(gi, &p);
+			obs_sceneitem_get_bounds(gi, &b);
+			struct {
+				double v[4];
+				double operator[](int i) const { return v[i]; }
+			} out{{p.x, p.y, b.x, b.y}};
+			return out;
+		};
+		show(away, 600);
+		auto g = game_at();
+		CHECK(std::fabs(g[0] - 20) < 0.6 && std::fabs(g[2] - 480) < 0.6,
+		      "on screen it is fitted as before (%.0f, %.0f %.0fx%.0f)", g[0], g[1], g[2], g[3]);
+		long long t0 = 0, t1 = 0, glides = 0;
+		fit_counts("Fit Idle", nullptr, t0, glides);
+		show(away, 1000);
+		fit_counts("Fit Idle", nullptr, t1, glides);
+		const long long shown_ticks = t1 - t0;
+		show(other, 300);
+		fit_counts("Fit Idle", nullptr, t0, glides);
+		show(other, 1000);
+		fit_counts("Fit Idle", nullptr, t1, glides);
+		const long long idle_ticks = t1 - t0;
+		CHECK(shown_ticks >= 30 && idle_ticks * 5 <= shown_ticks,
+		      "off screen with nothing to do, its full ticks fall by 80 %% or more (%lld a second on screen, %lld off)",
+		      shown_ticks, idle_ticks);
+		// Something changes while the scene is away: the item beside it is
+		// moved over the game's place.
+		vec2_set(&at, 20.0f, 20.0f);
+		obs_sceneitem_set_pos(ci, &at);
+		show(other, 300);
+		g = game_at();
+		CHECK(std::fabs(g[0] - 20) < 0.6, "and nothing is done to the item while its scene is away (%.0f)",
+		      g[0]);
+		obs_set_output_source(0, obs_scene_get_source(away));
+		sleep_ms(60); // three or four frames
+		g = game_at();
+		CHECK(std::fabs(g[0] - 140) < 0.6 && std::fabs(g[2] - 480) < 0.6,
+		      "the scene shown again, it is put right at once, without a glide (%.0f, %.0f %.0fx%.0f)", g[0],
+		      g[1], g[2], g[3]);
+		// New settings while away are taken at once, not four times a second.
+		show(other, 300);
+		obs_data_t *again = obs_source_get_settings(fit);
+		obs_data_set_double(again, "margin", 10);
+		obs_source_update(fit, again);
+		obs_data_release(again);
+		fit_counts("Fit Idle", nullptr, t0, glides);
+		sleep_ms(50);
+		fit_counts("Fit Idle", nullptr, t1, glides);
+		CHECK(t1 > t0, "new settings while away are taken in full at once (%lld full ticks)", t1 - t0);
+		obs_set_output_source(0, before);
+		obs_source_release(before);
+		obs_source_filter_remove(obs_scene_get_source(away), fit);
+		obs_source_release(fit);
+		for (obs_scene_t *scene : {away, other}) {
+			obs_source_remove(obs_scene_get_source(scene));
+			obs_scene_release(scene);
+		}
+		obs_source_release(game);
+		obs_source_release(cam);
+	}
 	// ==== end scene-filters:fit ====
 
 	{

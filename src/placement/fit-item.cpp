@@ -45,6 +45,15 @@ using namespace fit;
 
 namespace {
 
+// A Fit to Space: one engine, and its own look at what is in the way.
+struct FitItem {
+	FitItem(obs_data_t *settings, obs_source_t *source) : engine(settings, source) {}
+	FitEngine engine;
+	FitScan scan;
+	obs_source_t *parent() const { return engine.parent(); }
+	obs_source_t *source() const { return engine.source(); }
+};
+
 bool box_modified(obs_properties_t *props, obs_property_t *, obs_data_t *settings)
 {
 	const long long kind = obs_data_get_int(settings, "box");
@@ -70,7 +79,7 @@ bool box_modified(obs_properties_t *props, obs_property_t *, obs_data_t *setting
 
 obs_properties_t *get_properties(void *data)
 {
-	auto *self = static_cast<FitEngine *>(data);
+	auto *self = static_cast<FitItem *>(data);
 	obs_properties_t *props = obs_properties_create();
 	// On a group it has nothing to go by (a group is only as large as what
 	// is in it) and does nothing; said here, where it will be looked for.
@@ -267,6 +276,36 @@ void fit_item_stop()
 
 void register_fit_item()
 {
+	// For the tests: how many full ticks a fit filter's engines have had
+	// (off screen most are skipped), and how many glides they set off.
+	proc_handler_add(
+		obs_get_proc_handler(),
+		"void stagekit_test_fit_counts(in string filter, in string item, out int ticks, out int glides)",
+		[](void *, calldata_t *cd) {
+			obs_source_t *owner = nullptr;
+			const char *name = calldata_string(cd, "filter");
+			// A filter is not found by name: it is looked for on every scene.
+			struct Find {
+				const char *name;
+				obs_source_t *found;
+			} find{name, nullptr};
+			obs_enum_scenes(
+				[](void *param, obs_source_t *scene) {
+					auto *f = static_cast<Find *>(param);
+					if (!f->found)
+						f->found = obs_source_get_filter_by_name(scene, f->name);
+					return !f->found;
+				},
+				&find);
+			owner = find.found;
+			uint64_t ticks = 0, glides = 0;
+			if (owner)
+				engine_counts(owner, calldata_string(cd, "item"), ticks, glides);
+			obs_source_release(owner);
+			calldata_set_int(cd, "ticks", (long long)ticks);
+			calldata_set_int(cd, "glides", (long long)glides);
+		},
+		nullptr);
 	signal_handler_connect(obs_get_signal_handler(), "source_rename", on_source_rename, nullptr);
 	obs_source_info info = {};
 	info.id = kFitItemId;
@@ -276,28 +315,29 @@ void register_fit_item()
 		return obs_module_text("Fit.Name");
 	};
 	info.create = [](obs_data_t *settings, obs_source_t *source) -> void * {
-		return new FitEngine(settings, source);
+		return new FitItem(settings, source);
 	};
 	info.destroy = [](void *data) {
-		delete static_cast<FitEngine *>(data);
+		delete static_cast<FitItem *>(data);
 	};
 	info.update = [](void *data, obs_data_t *settings) {
-		static_cast<FitEngine *>(data)->update(settings);
+		static_cast<FitItem *>(data)->engine.update(settings);
 	};
 	info.get_defaults = get_defaults;
 	info.get_properties = get_properties;
 	info.video_tick = [](void *data, float seconds) {
-		static_cast<FitEngine *>(data)->tick(seconds);
+		auto *self = static_cast<FitItem *>(data);
+		self->engine.tick(seconds, self->scan);
 	};
 	// A controller: it never changes the picture.
 	info.video_render = [](void *data, gs_effect_t *) {
-		obs_source_skip_video_filter(static_cast<FitEngine *>(data)->source());
+		obs_source_skip_video_filter(static_cast<FitItem *>(data)->source());
 	};
 	info.filter_add = [](void *data, obs_source_t *parent) {
-		static_cast<FitEngine *>(data)->attach(parent);
+		static_cast<FitItem *>(data)->engine.attach(parent);
 	};
 	info.filter_remove = [](void *data, obs_source_t *) {
-		static_cast<FitEngine *>(data)->detach();
+		static_cast<FitItem *>(data)->engine.detach();
 	};
 	register_timed(&info);
 }
