@@ -1113,11 +1113,54 @@ place of one per source. Add one from the scene's own Filters window (right-clic
 #### Scene Standby
 
 <!-- ==== scene-filters:standby-corners (Scene Standby) ==== -->
+**Scene Standby (StageKit)** sets the standby image once for the sources of a scene: any empty capture shows
+the image, and any source you list shows it in its place while it is hidden, without setting up a filter on
+each capture by hand.
+
+![An empty capture and a hidden camera, both showing the standby image](docs/images/scene-standby.png)
+
+It does not draw anything itself. It adds a **Standby Image** filter to each source it covers and sets it from
+the scene filter. That filter says *Set by Scene Standby in <scene>* and leaves out the image controls,
+which are set in the Scene Standby.
+
+- **Sources covered**: *Every capture* (each game, window and camera capture in the scene, groups included)
+  or *Chosen sources*. Screen captures always have an image, so they are left out unless you tick *Include
+  screen captures*. *Ignored sources* are left out too.
+- **Show when no image**: an empty capture (no game or window attached, no camera signal) shows the image.
+  The image goes with the source into every scene it is in, as a Standby Image filter of its own would.
+- **Show when hidden**: the sources whose place the image takes **in this scene only** while they are
+  hidden, with the *Show/Hide transition* below as the one change between the source and the image (with
+  Morph, the one changes into the other). Leave out captures that are hidden on purpose, such as the
+  stacked captures of a layout scene.
+- **Image**, **No-signal transition**, the two durations, **Easing**, **Keep image's aspect ratio** and
+  **Animate the size change** are the Standby Image filter's own controls.
+
+A source that already has a Standby Image filter you made keeps it, and Scene Standby leaves it alone. To go
+without the image on one source, switch its filter off with the eye: Scene Standby does not switch it on
+again. When a source stops being covered, its filter is taken off a few seconds later. If no Scene Standby
+uses a filter any more (the scene filter was deleted), the filter shows nothing and says so; you can remove it.
+When two scenes' Scene Standby filters cover the same source, its filter follows the one it names, and the
+other takes it over if that one is removed.
 <!-- ==== end scene-filters:standby-corners (Scene Standby) ==== -->
 
 #### Scene Corners
 
 <!-- ==== scene-filters:standby-corners (Scene Corners) ==== -->
+**Scene Corners (StageKit)** puts the same corners and edges on the sources of a scene, set once. It adds a
+**Corners & Edges** filter to each source it covers and sets it from the scene filter; that filter says *Set by
+Scene Corners in <scene>*. Corners & Edges never changes a source's size, so nothing in the scene moves and
+Morph still morphs the scene.
+
+- **Sources covered**: *All but the background* (every source in the scene, a group counting as one) or
+  *Chosen sources*. With **Full-screen = background**, sources at the bottom of the scene that cover 90 % of
+  the screen or more are left out. *Ignored sources* are left out too.
+- The look (**Style**, **Size**, the four corners, **Inset**, **Softness**, the line, **Sizes in screen
+  pixels**) is the Corners & Edges filter's own.
+- Switching Scene Corners off switches its filters off, and on again.
+
+A source with a Corners & Edges you made keeps it and is left alone. A filter whose source is no longer covered
+is taken off a few seconds later. If its Scene Corners is deleted, the filter keeps working as one of your own,
+and says so.
 <!-- ==== end scene-filters:standby-corners (Scene Corners) ==== -->
 
 #### Scene Shadow

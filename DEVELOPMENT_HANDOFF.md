@@ -2185,3 +2185,19 @@ callback); `item_transitions_owner` asked per item; `holds-hidden.*` (`mode_hold
 `filter-order.hpp`, `stand-in.hpp`, `is_screen_capture`; the `==== scene-filters:<unit> ====` blocks in
 plugin-main, CMake, the locale file, the tests, the README and AGENTS; `tests/run-tests.sh` stops on a
 repeated locale key and on a failed build. Whole suite: ALL PASSED.
+
+## Scene Standby and Scene Corners (0.1.0-beta155, on `feat/scene-standby-corners`)
+
+Two scene filters that draw nothing and keep a filter on each source they cover, through one helper
+(`src/common/managed-filter.*`, `ManagedSet`): Scene Standby (`stagekit_scene_standby`) a Standby Image
+filter on each capture (or chosen source), Scene Corners (`stagekit_scene_corners`) a Corners & Edges on
+each source but the full-screen background. Managed filters carry `managed` / `managed_by`, follow only the
+scene filter they name (taken over by the next one when it is gone), are taken off 3 s after no scene
+filter covers them, only from a scene filter's tick, never from `destroy`; a filter made by hand is left
+alone. A managed Standby filter with no covering Scene Standby goes idle (draws straight through); a
+Scene Corners switches its filters off and on with itself. Stand-ins are now per scene (the filter's own
+*Show when source is hidden* in every scene, a Scene Standby's *Show when hidden* in its own scene with its
+transition), and the transitions owner is per (scene, source). `Standby::update` makes the image again only
+when `picture`, `file` or `source` change. `TODO(resolve_item_change)` in `standby.cpp` waits for Scene
+Transitions. Not built: the Stream Deck entries and the collection's adoption of existing filters (units SD
+and C), and test 11 (Scene Modes holding the camera hidden) until Scene Modes is merged.
