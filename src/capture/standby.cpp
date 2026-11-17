@@ -1463,6 +1463,12 @@ void register_standby()
 	info.destroy = [](void *data) {
 		delete static_cast<Standby *>(data);
 	};
+	// Taken off its source (or the source going): that source's items are
+	// no longer this filter's, whatever comes later at the same address.
+	// (In `destroy` the filter has no parent any more.)
+	info.filter_remove = [](void *, obs_source_t *parent) {
+		stood_in_forget(parent);
+	};
 	info.update = [](void *data, obs_data_t *settings) {
 		static_cast<Standby *>(data)->update(settings);
 	};

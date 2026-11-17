@@ -26,7 +26,20 @@ Built as a groundwork commit and six branches, merged on `feat/scene-filters` in
 handoff. The Morph fix (the five non-drawing scene filters in `draws_nothing`, which the groundwork commit
 had meant to include) came on two branches as the same change and is in once. Added at integration:
 Standby's `sync_stand_ins` resolves *As the scene sets* before swapping a change for its twin, and the two
-tests that needed Scene Modes (Standby's test 11, Transitions' test 11 reduced).
+tests that needed Scene Modes (Standby's test 11, Transitions' test 11 reduced). The first whole run of the
+merged tree found two faults, fixed here:
+- Scene Transitions' scene signals reached a freed filter when its scene was destroyed (the weak reference
+  no longer reached the scene to disconnect it): OBS hung in `obs_shutdown` in the tests, and could have
+  crashed or hung on a change of collection. `detach(parent)` from `filter_remove`, and a `live` check in
+  every handler.
+- A Standby filter taken off its source left that source's address in its list of owned items
+  (`g_stood_in`, now per scene and source), so a source created later at the same address had its hides
+  passed over by `set_item_visible`: hidden captures stayed in use in the layout scenes' out-of-view test.
+  `filter_remove` forgets them (Scene Modes' a30c71b had only worked round it in its tests). Scene
+  Standby's test 9 (a covered source let go of with its scene) failed in the same run and passed after.
+Seen while testing and not changed: in a scene that was on screen, a source whose item transition finished
+there can stay counted as in use after the scene goes off (OBS's own counting, as AGENTS says under
+`set_item_visible`); Transitions' Scene Modes test therefore changes the mode out of view first.
 
 **Not in beta155, next (beta156):** the frame-time work (`feat/frame-time`: per-frame timing in µs,
 `stagekit_timing_take`, the shadow scale check, the measurement harness) and the new collection

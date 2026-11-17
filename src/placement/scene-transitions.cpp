@@ -332,12 +332,18 @@ public:
 		}
 	}
 
-	void detach()
+	// `parent`: the scene it is being taken off, from `filter_remove`. A scene
+	// being destroyed has no references left, so the weak one cannot reach it
+	// any more, yet it still signals each item it removes after this filter
+	// is gone: it must be let go of by the pointer it came with.
+	void detach(obs_source_t *parent = nullptr)
 	{
 		std::lock_guard lock(conn_mutex_);
 		if (obs_source_t *scene = obs_weak_source_get_source(scene_)) {
 			disconnect(scene);
 			obs_source_release(scene);
+		} else if (parent && parent == connected_.load()) {
+			disconnect(parent);
 		}
 		obs_weak_source_release(scene_);
 		scene_ = nullptr;
@@ -470,13 +476,27 @@ private:
 		return static_cast<obs_sceneitem_t *>(calldata_ptr(cd, "item"));
 	}
 
+	// Whether a signal still reaches a live filter (with g_mutex held): a
+	// group or scene being destroyed signals its items' removal after the
+	// filter that listened may be gone, and can no longer be let go of.
+	static bool live(void *data)
+	{
+		return std::find(g_all.begin(), g_all.end(), static_cast<SceneTransitions *>(data)) != g_all.end();
+	}
+
 	static void on_item_add(void *data, calldata_t *cd)
 	{
+		std::lock_guard alive(g_mutex);
+		if (!live(data))
+			return;
 		static_cast<SceneTransitions *>(data)->due_at(item_of(cd), 0, false);
 	}
 
 	static void on_item_remove(void *data, calldata_t *cd)
 	{
+		std::lock_guard alive(g_mutex);
+		if (!live(data))
+			return;
 		auto *self = static_cast<SceneTransitions *>(data);
 		obs_sceneitem_t *item = item_of(cd);
 		if (!item)
@@ -492,6 +512,9 @@ private:
 	// the change), and a nearest-edge way is turned for the next change.
 	static void on_item_visible(void *data, calldata_t *cd)
 	{
+		std::lock_guard alive(g_mutex);
+		if (!live(data))
+			return;
 		obs_sceneitem_t *item = item_of(cd);
 		if (!item)
 			return;
@@ -507,6 +530,9 @@ private:
 	// item has been still a moment.
 	static void on_item_transform(void *data, calldata_t *cd)
 	{
+		std::lock_guard alive(g_mutex);
+		if (!live(data))
+			return;
 		auto *self = static_cast<SceneTransitions *>(data);
 		if (!self->look()->any_nearest)
 			return;
@@ -817,8 +843,8 @@ void register_scene_transitions()
 	info.video_render = [](void *data, gs_effect_t *) {
 		obs_source_skip_video_filter(static_cast<SceneTransitions *>(data)->source());
 	};
-	info.filter_remove = [](void *data, obs_source_t *) {
-		static_cast<SceneTransitions *>(data)->detach();
+	info.filter_remove = [](void *data, obs_source_t *parent) {
+		static_cast<SceneTransitions *>(data)->detach(parent);
 	};
 	register_timed(&info);
 }

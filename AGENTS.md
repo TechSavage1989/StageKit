@@ -525,9 +525,12 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   scene is left with a cut is never ended either: Link Visibility ends one left on a listed item
   twice a second (`end_stale_transition`: a show transition on a hidden item, or a hide on a shown
   one; only one that still holds a source: OBS can count a finished one as in use for good, and beta147 to beta153 ended that one twice a second all session). Found by driving the generated collection headless with the new build; the tests had
-  waited for every change to end before the next step. Items a Standby filter owns are passed over. Link Visibility and Show
-  in Scenes go through it; Program Trigger, the two switchers, Auto Capture's hide, Show/Hide
-  Animation and the stand-ins do not yet. A source with sound is finished hiding in the scene's
+  waited for every change to end before the next step. Items a Standby filter owns are passed over. Link Visibility, Show
+  in Scenes and Scene Modes go through it; Program Trigger, the two switchers, Auto Capture's hide,
+  Show/Hide Animation and the stand-ins do not yet (the stand-ins through it broke the Standby
+  transition tests, which draw a scene that is not on the output: to it, out of view). A Standby filter forgets the
+  items it owns when it is taken off its source (`filter_remove`): kept by address, they made a
+  source created later at the same address "owned", so its hides were never cuts. A source with sound is finished hiding in the scene's
   audio mix, so it may still be in use for one audio tick when the scene comes on; not measured.
   The tests had no sound until the layout section (`obs_reset_audio`), so no item transition ended
   in them: test that a fade is used by the source still being in use part-way.
@@ -1463,8 +1466,14 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   full pass skips an item with such a wait pending. A Standby must resolve *before* it swaps a
   change for its twin (the twin, a private source, is never covered and would get the fallback).
   Never write item transitions into a generated collection: this filter writes them at the first
-  load. Test 11 of `transitions.md` (a mode change pairs captures in the item Morph) belongs with
-  Scene Modes' section.
+  load. A mode change of Scene Modes is tested here on *As the scene sets* (the scene's way in
+  view, a cut out of view); pairing two captures in the item Morph on a mode change is not tested.
+  **A scene being destroyed cannot be reached through a weak reference**, yet it signals every item
+  it removes after its filters are gone: `filter_remove` lets go by the pointer it was given
+  (`detach(parent)`), and each signal handler checks under `g_mutex` that its filter is still in
+  `g_all` (`live`). Before the integration a removed scene's `item_remove` reached a freed filter
+  and OBS hung at shutdown (seen in the tests). A new filter that listens to its scene's or groups'
+  signals must do the same.
 <!-- ==== end scene-filters:transitions ==== -->
 <!-- ==== scene-filters:fit ==== -->
 - **Scene Fit and Fit to Space share one engine** (`src/placement/fit-engine.*`, beta155). A Fit

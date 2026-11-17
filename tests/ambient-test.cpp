@@ -8621,24 +8621,36 @@ int main(int argc, char **argv)
 				calldata_free(&cd);
 				obs_data_release(req);
 			};
-			obs_source_inc_showing(src);
-			trans_wait(src, 400);
+			obs_source_t *was_out = obs_get_output_source(0);
+			obs_scene_t *elsewhere = obs_scene_create("Trans Modes Elsewhere");
+			// Out of view first (a scene once on screen can keep a source its
+			// finished item transition used counted as in use, OBS's own
+			// doing): the change is a cut, and the source hidden there is not
+			// in use when the scene comes on.
+			obs_set_output_source(0, obs_scene_get_source(elsewhere));
+			sleep_ms(300);
 			press("m2");
-			trans_wait(src, 200);
-			CHECK(!obs_sceneitem_visible(ia) && obs_sceneitem_visible(ib) &&
-				      trans_kind(ia, false) == "swipe_transition" &&
-				      trans_kind(ib, true) == "swipe_transition" && trans_ms(ib, true) == 450,
-			      "in view, a Scene Modes change on As the scene sets goes the scene's way (%s / %s %d)",
-			      trans_kind(ia, false).c_str(), trans_kind(ib, true).c_str(), trans_ms(ib, true));
-			trans_wait(src, 700);
-			obs_source_dec_showing(src);
-			sleep_ms(200);
+			sleep_ms(300);
+			obs_set_output_source(0, src);
+			const bool at_once = obs_source_active(ma) || obs_source_showing(ma);
+			sleep_ms(300);
+			const bool later = obs_source_active(ma) || obs_source_showing(ma);
+			CHECK(!obs_sceneitem_visible(ia) && obs_sceneitem_visible(ib) && !at_once && !later,
+			      "out of view, a Scene Modes change is a cut: when the scene comes on the hidden source is not in use (%d %d)",
+			      (int)at_once, (int)later);
+			// In view, the scene's way.
+			trans_wait(src, 300);
 			press("m1");
-			sleep_ms(600);
-			CHECK(obs_sceneitem_visible(ia) && !obs_sceneitem_visible(ib) && !obs_source_showing(mb) &&
-				      !obs_source_active(mb),
-			      "out of view, the change is a cut and the hidden source is not left in use (showing %d, active %d)",
-			      (int)obs_source_showing(mb), (int)obs_source_active(mb));
+			trans_wait(src, 200);
+			CHECK(obs_sceneitem_visible(ia) && !obs_sceneitem_visible(ib) &&
+				      trans_kind(ib, false) == "swipe_transition" &&
+				      trans_kind(ia, true) == "swipe_transition" && trans_ms(ia, true) == 450,
+			      "in view, a Scene Modes change on As the scene sets goes the scene's way (%s / %s %d)",
+			      trans_kind(ib, false).c_str(), trans_kind(ia, true).c_str(), trans_ms(ia, true));
+			trans_wait(src, 700);
+			obs_set_output_source(0, was_out);
+			obs_source_release(was_out);
+			obs_scene_release(elsewhere);
 			obs_source_filter_remove(src, modes);
 			obs_source_release(modes);
 			obs_source_filter_remove(src, f);
