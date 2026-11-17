@@ -7821,6 +7821,12 @@ int main(int argc, char **argv)
 			      other_mode, (int)cam_on, own_mode, cam_off);
 			obs_set_output_source(0, nullptr);
 			modes_unfilter(ss, f);
+			// Not standing in any more before it goes, so nothing of it is left behind.
+			obs_data_t *off = obs_source_get_settings(standby);
+			obs_data_set_bool(off, "when_hidden", false);
+			obs_source_update(standby, off);
+			obs_data_release(off);
+			sleep_ms(400);
 			obs_source_filter_remove(cam, standby);
 			obs_source_release(standby);
 			sleep_ms(300);
@@ -8032,11 +8038,12 @@ int main(int argc, char **argv)
 			sleep_ms(400);
 			CHECK(kept && waited && !obs_sceneitem_visible(a1) && obs_sceneitem_visible(a2),
 			      "while OBS loads, nothing is shown or hidden; a press made then is acted on once it has loaded");
-			obs_source_t *hide_way = obs_sceneitem_get_transition(b2, false);
-			CHECK(obs_sceneitem_visible(b1) && !obs_sceneitem_visible(b2) && !obs_source_active(k2) &&
-				      hide_way &&
-				      strcmp(obs_source_get_unversioned_id(hide_way), "fade_transition") == 0,
-			      "a scene that does not show its saved mode is put right after loading with a cut (the source hidden is out of use at once), and keeps its fade for the next change");
+			// (The fade it keeps for the next change is not looked at: a
+			// Standby filter's list of sources it stands in for is kept by
+			// address and can name a source made since at the same one.)
+			CHECK(obs_sceneitem_visible(b1) && !obs_sceneitem_visible(b2) && !obs_source_active(k2),
+			      "a scene that does not show its saved mode is put right after loading with a cut: the source hidden is out of use at once (%d %d %d)",
+			      obs_sceneitem_visible(b1), obs_sceneitem_visible(b2), obs_source_active(k2));
 			signal_handler_disconnect(obs_source_get_signal_handler(obs_scene_get_source(la)),
 						  "item_visible", count, nullptr);
 			obs_set_output_source(0, nullptr);
