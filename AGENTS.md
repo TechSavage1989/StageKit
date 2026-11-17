@@ -974,6 +974,26 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     drawing. Do not time it any other way, or there is a frame with both or with neither.
   - Scene items are added and removed from a tick callback, never from inside a signal or while
     drawing. Everything stops at `item_morph_stop()` (OBS closing, unload).
+  - **Nothing here holds a scene, and an item only while its change is drawn** (betaNEXT). An
+    item's Morph transition is known (`Entry`) from its start until OBS says it stopped, and OBS
+    says that only when the transition is drawn to its end with its sound ended: never for a
+    scene out of view, never in the tests before they turn sound on. Up to beta167 each entry
+    held its scene and item, so a scene held its items, they their sources and transitions, and
+    each transition kept the entry that held the scene: all of it stayed until the entry was
+    given up on, 20 s later. A change of collection or exit in that time found them held (OBS's
+    "Not all sources were cleared"; in the tests "N source(s) were remaining" and "Double
+    destroy" at shutdown, 39 lines in the new section). Now an entry keeps a weak scene and the
+    item's id, and each tick finds the item afresh and lets go of it as the tick ends (`Held`,
+    `reach`, outside `g_mutex`: OBS calls in here holding a scene's lock). The nearest edge a
+    transition needs is worked out in the tick when the entry is made (`item_morph_edge`); the
+    item is never handed out. A change (`Job`) holds its two items and sources while it is drawn,
+    and a weak scene; it ends when its scene is removed, and the layer lets go of it in
+    `end_job`, not when OBS destroys the layer. Everything is let go of (`let_go_all`) at
+    `SCENE_COLLECTION_CHANGING` and `CLEANUP` (`item_morph_let_go`, from the frontend callback in
+    `plugin-main.cpp`: OBS clears the collection at once, no tick comes between), in a tick while
+    `!scenes_loaded()`, and at `item_morph_stop()`. Tested in `[the item Morph lets go of scenes
+    and sources]` (`STAGEKIT_TEST_ONLY_MORPH_HOLDS`; `stagekit_test_item_morph_held`, a global
+    proc, gives the entries and changes held) and at the end of the Link Visibility section.
   - Anything that goes through a scene's items to fit round them, line up with them or snap to
     them must pass the layer over (`is_morph_layer` in `src/common/scene-util.hpp`): Fit to Space,
     the arrange tools' obstacles and the Morph transition's own plan do.

@@ -793,13 +793,7 @@ void Morph::start_alone(const Settings &s, obs_source_t *from, obs_source_t *to,
 	const bool slide = s.unpaired == kUnpairedSlide;
 	const bool other = item_transition_is_fallback_kind(s.unpaired.c_str());
 	// Off the nearest edge: of the item's own scene, as the item lies in it.
-	const char *edge = nullptr;
-	obs_source_t *scene = nullptr;
-	obs_sceneitem_t *item = slide || other ? item_morph_item(source_, &scene) : nullptr;
-	if (item)
-		edge = item_off_nearest_edge(item, scene, alone_in_);
-	obs_sceneitem_release(item);
-	obs_source_release(scene);
+	const char *edge = slide || other ? item_morph_edge(source_) : nullptr;
 	if (slide) {
 		const std::string way = edge ? edge : (alone_in_ ? "right" : "left");
 		// (Shown, it comes in moving that way: from the other side.)

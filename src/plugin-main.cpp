@@ -174,11 +174,15 @@ bool obs_module_load(void)
 	stagekit::timing_add_procs();
 	// ==== end scene-filters:perf ====
 	// A change from one item to another that is under way ends before OBS
-	// takes its scenes apart.
+	// takes its scenes apart, and lets go of everything it holds before OBS
+	// clears a collection and looks for sources left over.
 	obs_frontend_add_event_callback(
 		[](enum obs_frontend_event event, void *) {
 			if (event == OBS_FRONTEND_EVENT_SCRIPTING_SHUTDOWN || event == OBS_FRONTEND_EVENT_EXIT)
 				stagekit::item_morph_stop();
+			else if (event == OBS_FRONTEND_EVENT_SCENE_COLLECTION_CHANGING ||
+				 event == OBS_FRONTEND_EVENT_SCENE_COLLECTION_CLEANUP)
+				stagekit::item_morph_let_go();
 		},
 		nullptr);
 	stagekit::register_layout();

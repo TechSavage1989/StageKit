@@ -49,13 +49,18 @@ enum class ItemMorph {
 };
 ItemMorph item_morph_now(obs_source_t *transition);
 
-// The item a Morph transition is the show or hide transition of, held, and
-// the scene it was found in (held, into `scene`); null when not known.
-obs_sceneitem_t *item_morph_item(obs_source_t *transition, obs_source_t **scene);
+// The nearest edge of its scene, as the change began, of the item a Morph
+// transition is the show or hide transition of ("left", "right", "up" or
+// "down", the way it goes); null when not known. Nothing is held: the item
+// is never handed out (see item-morph.cpp, Entry).
+const char *item_morph_edge(obs_source_t *transition);
 
 void register_item_morph();
-// OBS is closing, or the plugin is being unloaded: every change under way is
-// ended and nothing more is started.
+// The scene collection is changing: every change under way is ended and
+// everything held is let go of, before OBS looks for sources left over.
+void item_morph_let_go();
+// OBS is closing, or the plugin is being unloaded: the same, and nothing
+// more is started.
 void item_morph_stop();
 
 } // namespace stagekit
