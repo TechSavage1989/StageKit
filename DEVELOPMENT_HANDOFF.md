@@ -9,9 +9,67 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | `release/beta162` (All sources, Space priority, Link Visibility's transitions; built on `feat/scene-blur`, beta161). Next: `feat/frame-time` and the new collection |
+| Working branch | `feat/frame-time-2` (frame time; notes `docs/releases/0.1.0-betaNEXT.md`, to be numbered), on `main` after beta162 (#178). Next: the new collection |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
+
+## Frame time (branch `feat/frame-time-2`, release number to come)
+
+The owner: OBS's *Average time to render frame* about 1.1 ms with StageKit, under 1 ms before; their
+logs had `tick_sources` median 0.25 to 0.45 ms with `render_video` unchanged (0.33 ms). Started again
+from `release/beta162`; from the stopped `feat/frame-time` (beta155) the timing work (µs, the per-frame
+line, `stagekit_timing_take`, `stagger_phase`, its test) and the harness were taken; the shadow's
+scale check was taken with its own scene watch replaced by the shared `scene_revision()`; the WIP
+`run-perf.sh` / `perf-compare.py` (old/trial/new collections side by side) were rewritten for the
+synthetic collection. AGENTS' *Frame time* entry has the rules.
+
+**Measured** (`tests/run-perf.sh`, synthetic collection at a quarter canvas, 900 frames a scene,
+headless llvmpipe; StageKit's ticks in µs a frame without ticks of 1 ms or more, which are Fit to
+Space's read-backs waiting for llvmpipe; before = `release/beta162` plus the timing only):
+
+| Scene | before | after | change | OBS `tick_sources` median (ms) |
+| --- | --- | --- | --- | --- |
+| Live | 169.5 | 98.6 | −42 % | 0.230 → 0.194 |
+| Chat Live | 163.3 | 106.8 | −35 % | 0.231 → 0.202 |
+| Standby | 137.3 | 98.4 | −28 % | 0.202 → 0.195 |
+| nothing on screen | 138.4 | 77.0 | −44 % | 0.186 → 0.158 |
+
+Per kind, µs a tick (mean, Live): Link Visibility 2.87 → 0.72, Shadow, Glow & Outline 2.24 → 0.93,
+Ambient Background 13.0 → 3.5, Show in Scenes 0.61 → 0.31, Standby 3.15 → 2.76; Fit to Space (not
+changed) 0.97 → 0.9 without its read-backs, now the largest share (about a third). Per-frame p95 with
+nothing on screen 623 → 127 µs (the staggering). These are llvmpipe's numbers on this machine: what
+the owner's log shows is the measure that counts; ask for the `timing` lines and OBS's
+`obs_graphics_thread` / `tick_sources` lines after they update.
+
+**Cut, and why it is safe:** see AGENTS (*Frame time*): `scene_revision()` (every scene signal),
+looks skipped when it has not moved, each with a slow look anyway; `scene_revision_bump()` from a
+Link Visibility taking another state or switched off and from a Show in Scenes switch turned;
+`refresh_item` no longer counts as a change unless the box changed; `shown_scale` measures only what
+it needs; Link Visibility's settings shared, not copied each tick; Standby's strings copied only when
+the image is made; `stagger_phase` for the timers touched.
+
+**Found and fixed on the way (a behaviour change, called out in the notes):** a source with a shadow
+in a bounding box (the synthetic captures in Live; most likely the owner's too) had its shadow's room
+alternate between two sizes every scale check (34 and 35 px), moving every item showing it by a
+pixel and back three times a second, in `release/beta162` as well (checked with that build). The
+scale is no longer taken when it goes straight back to the one before by under 2 %.
+
+**Tests:** `[frame time: looks only when something changed]` in the `scene-filters:perf` block (the
+four looks counted through `stagekit_test_looks`, and that hiding, showing, a press and a move are
+still followed at once); `[timing: µs and the per-frame line]` from the old branch.
+
+**Seen once each and not again:** in the first two runs of the ambient test with these changes, one
+failed `a scene loaded again with its transitions saved is written nothing (1)` and one crashed
+(SIGSEGV, no core) in `[show in scenes]` right after the *Off the nearest edge* flips. Neither came
+back in five more full runs (two under gdb); the build before the cuts passed three of three. The
+nearest-edge path goes through `refresh_item`, which this branch changed (quiet signals, a box
+compared), and the test reads item transitions from its own thread while the filter's tick sets
+them; cause not found. If either comes back, start there.
+
+**Not done:** Fit to Space (its idle and glance rules stand; at rest its off-screen tick is 0.2 µs and
+one full tick in fifteen), Standby's 4 Hz stand-in look (a Scene Standby's list changes without a scene
+signal), the window switchers, the new collection's own measurement (the generator does not exist
+yet: `run-perf.sh` takes `label=file.json` for it). Not run on Windows.
 
 ## All sources, Space priority, Link Visibility's transitions (0.1.0-beta162)
 

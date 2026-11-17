@@ -1855,7 +1855,64 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     on a real Stream Deck.
 <!-- ==== end scene-filters:blur ==== -->
 <!-- ==== scene-filters:perf ==== -->
-- **Frame time**: to come.
+- **Frame time** (`src/common/timing.*`, `src/common/scene-rev.*`; the harness `tests/collection-perf.cpp`,
+  `tests/make-perf-collection.py`, `tests/run-perf.sh`, `tests/perf-compare.py`). The owner's
+  *Average time to render frame* went from under 1 ms to 1.1 ms: all of it `tick_sources` (0.25 to
+  0.45 ms median), none of it drawing. What was established:
+  - **Measure before claiming a saving, with the harness, and give its numbers.** `run-perf.sh
+    <build dir>` writes the synthetic collection (18 scenes, 36 Fit to Space, 23 shadows, 14 Show in
+    Scenes, 10 Link Visibility, 4 Standby: the shape of the owner's, nobody's sources) **on a quarter
+    canvas** (`--scale 0.25`), shows Live, Chat Live, Standby and then nothing (`(off)`), and prints
+    per kind: instances, µs a frame, µs a frame without ticks of 1 ms or more, and per call mean,
+    p50, p95 and max. At 2560x1440 llvmpipe draws a frame in 0.3 s, and every timer (4 Hz, 10 Hz)
+    then fires at every tick: the first baseline said Ambient Background cost 40 µs a tick, which
+    was its 10 Hz look running every frame. Fit to Space's read-backs wait for llvmpipe (the ticks
+    of 1 ms or more); compare the "without" column. `PLUGIN=` measures another build the same way.
+    The frontend's "Tried to call ... with no callbacks" lines are dropped before formatting, or
+    every `scene_on_screen()` cost a formatted log line OBS does not have.
+  - **`stagekit_timing_take(out string json)`** gives per kind the calls, µs, p50 and p95 per call
+    (`Spread`: eight buckets per doubling), the longest, the ticks of 1 ms or more apart
+    (`tick_long_us`), and StageKit's ticks per frame (p50, p95, max: `frame_add`, keyed by
+    `obs_get_video_frame_time`). The 30 s log lines are ms with three decimals, plus one line for all
+    of StageKit's ticks a frame when over 0.1 ms. `stagekit_test_looks` counts the periodic looks
+    below that were not skipped, and every scene signal by name (what keeps changing at rest).
+  - **`scene_revision()`** goes up on every `item_add`, `item_remove`, `item_visible`,
+    `item_transform`, `reorder` and `refresh` of every scene and group (connected at the first call
+    and at `source_create`; the signal only counts). A periodic look that depends only on what is in
+    the scenes compares it and is skipped when nothing changed, with a slow look anyway:
+    Show in Scenes' *Follow what is shown* (still on its quarter second, skipped unless the revision,
+    a press, its settings or loading changed, or the last look found a mode settling; a look every
+    2 s anyway), Link Visibility's *Follow the first source* (every tick as before when one of its
+    items changed or no state is followed yet, else every fifteenth tick), a shadow's scale check
+    (every 20 ticks only when the revision, the scene on screen, the source's size or its settings
+    changed, else every 120) and its *Keep it on screen* (also while an item has not been still for
+    0.4 s yet), and Ambient Background's sources (10 Hz only on a change of revision, scene on
+    screen or settings, else 2 Hz). **Anything that changes what those go by without a scene signal
+    must call `scene_revision_bump()`**: a Link Visibility that takes another state or is switched
+    off, a Show in Scenes switch turned (`enabled_cb`) do. A size change of a source in a scene that
+    is not drawn sends no signal (OBS signals it in `scene_video_render`), so a look that depends on
+    sizes compares the size itself.
+  - **`refresh_item` is quiet** (`scene_signals_quiet`): setting an item's position to itself made
+    OBS signal `item_transform` at every measure, twice a second in a shown layout scene, and every
+    look above ran as if something had moved. It counts a change only when the box did change.
+  - **A shadow's scale is not taken when it goes straight back** (`prev_sx_`): in a bounding box the
+    scale read depends on the room the shadow takes, and the room on the scale. Rounded to pixels
+    the two took turns between two values for good (34 and 35 px on the synthetic captures; also in
+    beta162), moving every item showing the source by a pixel and back three times a second. A
+    scale that returns to the one before, by under 2 %, is that cycle and is kept as it is.
+  - `shown_scale` measures only the item wanted and groups and nested scenes on the way: a source's
+    size goes through all its filters, and measuring every item cost 26 µs a look.
+  - Settings a tick needs are kept behind a `shared_ptr<const ...>` made in `update` (Link
+    Visibility's `Config`), never copied each tick; Standby copies its image's strings only when it
+    makes the image again.
+  - **Periodic jobs start at `stagger_phase(source, period)`** (the source's uuid), so a dozen
+    filters with one period do not all work in one frame (p95). Not done: Fit to Space's own ticks
+    (its idle and glance rules above stand), Standby's 4 Hz stand-in look (a Scene Standby's list is
+    not a scene signal), the window switchers.
+  - Before and after on the synthetic collection (µs a frame of StageKit's ticks, without those of
+    1 ms or more): Live 169.5 to 98.6, Chat Live 163.3 to 106.8, Standby 137.3 to 98.4, nothing on
+    screen 138.4 to 77.0. Link Visibility 2.9 to 0.7 µs a tick, Shadow 2.2 to 0.9, Ambient
+    Background 13 to 3.5, Show in Scenes 0.6 to 0.3. Fit to Space, untouched, is now the largest.
 <!-- ==== end scene-filters:perf ==== -->
 
 ## Conventions
