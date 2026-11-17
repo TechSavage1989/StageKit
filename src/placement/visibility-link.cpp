@@ -17,14 +17,15 @@ the Free Software Foundation; either version 2 of the License, or
 //                   camera with its frame and its label)
 //   Follow sources  one or more lead sources lead the listed items (the
 //                   followers): while any lead is shown (or, by choice, all
-//                   of them) the followers are shown (but not one a Show in
-//                   Scenes switch holds off: a camera switched off); once the
-//                   leads say hidden, they are hidden and kept hidden. A
-//                   change to a follower moves nothing else. One scene with
-//                   several modes (a title and its extras each) uses this, so
-//                   a camera switch that acts in every scene shows the camera
-//                   only in the mode showing; so does a chat column that
-//                   follows every capture of a layout scene. Saved without
+//                   of them) the followers are shown (a Show in Scenes
+//                   switch that is off does not stop it: a switch is a
+//                   command, not a hold); once the leads say hidden, they
+//                   are hidden and kept hidden. A change to a follower moves
+//                   nothing else. One scene with several modes (a title and
+//                   its extras each) uses this, so a camera switch that acts
+//                   in every scene shows the camera only in the mode
+//                   showing; so does a chat column that follows every
+//                   capture of a layout scene. Saved without
 //                   lead sources (the first build, "Follow the first
 //                   source"), the first listed item is the one lead.
 //
@@ -42,7 +43,6 @@ the Free Software Foundation; either version 2 of the License, or
 // watched one item and switched the others.
 
 #include "visibility-link.hpp"
-#include "show-in-scenes.hpp"
 #include "../common/timing.hpp"
 
 #include "../common/holds-hidden.hpp"
@@ -545,8 +545,11 @@ public:
 			const bool shown = obs_sceneitem_visible(item);
 			bool want = shown;
 			if (act && lead_on)
-				// Shown with the leads, unless a switch holds it off.
-				want = shown || !show_in_scenes_holds_off(parent_, obs_sceneitem_get_source(item));
+				// Shown with the leads, whatever a Show in Scenes switch
+				// on it says: a switch is a command, not a hold (the
+				// owner: "show in scenes should not prevent any other
+				// filter from turning on or off a source later").
+				want = true;
 			else if (!lead_on && shown)
 				// Hidden with the leads, and hidden again if something
 				// shows it meanwhile; unless another mode showing has it.

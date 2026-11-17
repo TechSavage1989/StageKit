@@ -9,9 +9,39 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | `feat/link-follow-sources` (Link Visibility's Follow sources, betaNEXT), on `main` after beta168 (#184). Next: the new collection |
+| Working branch | `feat/switch-is-command` (Show in Scenes is a command, not a hold, betaNEXT), on `main` after beta169 (#185). Next: the new collection |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
+
+## Show in Scenes: a switch is a command, not a hold (0.1.0-betaNEXT)
+
+Branch `feat/switch-is-command`, on `main` after beta169. Notes: `docs/releases/0.1.0-betaNEXT.md`.
+No Stream Deck file changed. The owner's DSLR has a Show in Scenes capture switch (`Show in
+Scenes-Capture`, every scene, *Follow what is shown* on) that reads off whenever another capture is
+the main one. In Holding-Scene a Link Visibility in *Follow sources* (lead Intermission Text,
+follower DSLR) would not show DSLR, because `show_in_scenes_holds_off` said the switch held it off.
+The owner: "show in scenes should not prevent any other filter from turning on or off a source
+later, at least thats how my logic works. for me the show in scenes was more of a control to turn a
+source on or off, not lock it down and prevent anything else from doing it".
+
+- **Removed:** `show_in_scenes_holds_off` (`src/placement/show-in-scenes.*`), with the registry of
+  switches it read (`g_switches`, `g_switches_mutex`, `SwitchLook`, `ShowInScenes::look`), and
+  its two callers: Link Visibility's *Follow sources* show (`visibility-link.cpp`, a follower is
+  now always shown when the leads come on) and Scene Modes' `held_elsewhere` (a mode's show).
+  Standby's `stands_in` never asked it. Nothing else did.
+- **Kept:** a press shows or hides its sources in the scenes it covers; *Follow what is shown*;
+  Show in Scenes passing over an item `mode_holds_hidden` holds, and waiting on `mode_settling`.
+  That is a mode holding a source hidden, not a switch holding it, and the owner's rule is about
+  the switch; a press still never shows a camera view in a mode not showing.
+- **Consequence:** a camera switched off with its switch comes back when a mode or a link shows it.
+  To keep it off there it must be taken out of that mode or link, or the switch pressed off again.
+- Tests: `[scene modes: camera switch]` (both orders) and `[modes in one scene: follow the first
+  source, and a camera switch]` now expect the mode to show the camera with the switch off (the
+  owner quoted beside each); new `[show in scenes: a switch is a command, not a hold]`
+  (`switch_is_command_test`, alone: `STAGEKIT_TEST_ONLY_SWITCH_COMMAND`; also run at the end of
+  `STAGEKIT_TEST_ONLY_LINK_FOLLOW`): the owner's case, then the switch pressed on and off as a
+  command, then the lead hidden with the follower hidden again when shown by hand.
+- **Not proven:** Windows; the owner's own collection.
 
 ## Scene Fit groups: Same for all sources (0.1.0-beta173)
 

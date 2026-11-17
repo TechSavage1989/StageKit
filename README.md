@@ -901,11 +901,16 @@ the side of that frame, not across the screen. To have an item travel in from th
 Show/Hide Animation below.
 
 It acts when it is switched, not all the time, so something you show or hide by hand stays until the
-next press. It acts on the next frame after the press; of several presses in one frame, the last
-counts. Items inside groups are included. OBS's own show and hide transitions on each item apply,
-except in a scene that is not on screen: there the change is made at once, without a transition (a
-transition only runs while its scene is drawn, and one left waiting would bring a hidden capture to
-life for a moment when that scene comes on). The transitions stay set for the next change you see.
+next press. A switch is a command, not a lock: once it has shown or hidden its sources, anything
+else may change them again. A switch that is off does not stop a [Link Visibility](#link-visibility)
+filter or a [Scene Modes](#scene-modes) mode from showing its source, so a camera you switched off
+comes back when a mode or a link that includes it shows it. To keep it off there, take it out of
+that mode or link. It acts on the next frame after the press; of several presses in one frame, the
+last counts. Items inside groups are included. OBS's own show and hide transitions on each item
+apply, except in a scene that is not on screen: there the change is made at once, without a
+transition (a transition only runs while its scene is drawn, and one left waiting would bring a
+hidden capture to life for a moment when that scene comes on). The transitions stay set for the next
+change you see.
 
 ### Link Visibility
 
@@ -922,16 +927,16 @@ sources go with the lead sources: while a lead source is shown they are shown, a
 source is hidden they are hidden. Changing from one lead to another (one capture to the next) never
 hides them in between. **Followers show when** (*Any lead is shown* as it comes) can be set to *All
 leads are shown*: then they show only while every lead source is shown. Showing or hiding a
-following source moves nothing else, so a camera switched off in that set stays off. Two rules make
-it suit several modes in one scene:
+following source moves nothing else, so a camera hidden in that set stays hidden until the lead
+sources change. Two rules make it suit several modes in one scene:
 
 - While the lead sources say hidden, the following sources stay hidden: one shown by anything else
   (the eye icon, a key) is hidden again at once, and a [Show in Scenes](#show-in-scenes) switch that
   shows sources in every scene passes over them.
-- When the lead sources say shown, a following source that a Show in Scenes switch has off (its
-  switch is off, or on, set so that on means hidden) is left hidden. So a camera switch acting in
-  every scene shows the camera only in the mode showing, and switching modes with the camera off
-  leaves it off.
+- When the lead sources say shown, every following source is shown, even one whose Show in Scenes
+  switch is off: a switch is a command, not a lock. So a camera switch acting in every scene shows
+  the camera only in the mode showing, and a mode that includes the camera brings it back even if
+  you switched it off. Pressing the switch off afterwards hides it again.
 
 When the filter is switched on or OBS starts, the sources are taken as they are; only a change of
 the lead sources moves the following ones.
@@ -1026,8 +1031,8 @@ mode showing is lit.
 
 A mode can hold a camera view too (the full-size camera of an intermission, or the camera beside a
 handheld game). A camera switch that acts in every scene then shows that view only while its mode
-is showing: the other modes' views stay hidden, the switch still reads on, and switching modes with
-the camera off leaves it off.
+is showing: the other modes' views stay hidden and the switch still reads on. A mode that includes
+the camera view shows it even when the camera switch is off; press the switch off again to hide it.
 
 ### Match Item
 
@@ -1219,7 +1224,9 @@ back stays up), and a source in no mode is never touched.
 A source of a mode that is not on, shown some other way (the eye, an old *Source* key), is hidden
 again at once. A source of the mode on that you hide stays hidden: a camera switched off stays off.
 A camera switch (Show in Scenes) and a Standby filter's *Show when source is hidden* go by the modes:
-the camera shows only in its own mode, and its standby image never covers another mode. When a scene
+the camera shows only in its own mode, and its standby image never covers another mode. The other
+way round, a camera switch that is off does not stop a mode from showing the camera: a switch is a
+command, not a lock. When a scene
 has two Scene Modes filters, a source in both shows only while both have it on. In a scene that is
 not on screen a change is a cut, so a hidden capture card is never opened for a moment when the scene
 comes on.
