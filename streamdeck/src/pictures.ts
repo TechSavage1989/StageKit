@@ -76,7 +76,7 @@ export function automatic(kind: string, settings: Settings = {}): Picture | unde
 		// One of the nine places on the screen (top right is where a new one
 		// starts); a saved spot has no picture of its own.
 		const place = PLACES[whole(settings, "destination", 2)];
-		id = place ? `camera/camera-${place}` : "options/spot";
+		id = place ? `options/camera-${place}` : "options/spot";
 	}
 	return id ? BY_ID.get(id) : undefined;
 }
@@ -160,20 +160,20 @@ export function chooseFor(
 
 /** The plain key for what the pack has no picture of. */
 export function plain(sort: "switch" | "move" | "tool"): Picture {
-	return BY_ID.get(`plain/${sort}`)!;
+	return BY_ID.get(`options/plain-${sort}`)!;
 }
 
 /** A Hook key's picture: the kind of capture it hooks. */
 export function hookPicture(chosen: string | undefined, inputKind: string | undefined): Picture {
-	const fits = inputKind === "window_capture" ? "capture/window" : "capture/game";
+	const fits = inputKind === "window_capture" ? "options/hook-window" : "options/hook-game";
 	return (chosen && BY_ID.get(chosen)) || BY_ID.get(fits) || plain("move");
 }
 
 /** The arrange tools the pack has a picture of. */
 const TOOLS: Record<string, string> = {
-	same_everywhere: "tools/copy-transform-all",
-	same_chosen: "tools/copy-transform-chosen",
-	snap_now: "tools/snap",
+	same_everywhere: "options/copy-all",
+	same_chosen: "options/copy-chosen",
+	snap_now: "options/snap-now",
 	left: "options/align-left",
 	center: "options/align-center",
 	right: "options/align-right",
@@ -193,8 +193,8 @@ export function toolPicture(chosen: string | undefined, tool: string | undefined
 
 /** The dock's switches the pack has a picture of. */
 const OPTION_PICTURES: Record<string, string> = {
-	snap: "tools/snap",
-	guides: "tools/guides",
+	snap: "options/snap",
+	guides: "options/guides",
 	limit: "options/limit",
 	slide: "options/slide-to-edge",
 	everyScene: "options/every-scene",
@@ -206,7 +206,7 @@ export function optionPicture(chosen: string | undefined, option: string | undef
 }
 
 export function slidePicture(chosen: string | undefined, direction: string | undefined): Picture {
-	const fits = direction === "centre" ? "options/slide-centre" : `tools/slide-${direction ?? "left"}`;
+	const fits = direction === "centre" ? "options/slide-centre" : `options/slide-${direction ?? "left"}`;
 	return (chosen && BY_ID.get(chosen)) || BY_ID.get(fits) || plain("move");
 }
 

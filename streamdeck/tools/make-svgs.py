@@ -95,11 +95,12 @@ def marks(size=144):
     r_, _ = colour((228, 64, 64, 255))
     e, _ = colour((12, 12, 14, 255))
     on = f'<circle cx="19" cy="19" r="16" fill="{e}"/>\n<circle cx="19" cy="19" r="13" fill="{g}"/>'
-    m = 14
+    k = round(9 * 0.72, 2)
     off = (
-        f'<rect width="{size}" height="{size}" fill="#000000" fill-opacity="0.45"/>\n'
-        f'<line x1="{m}" y1="{m}" x2="{size - m}" y2="{size - m}" stroke="{e}" stroke-width="17" stroke-linecap="butt"/>\n'
-        f'<line x1="{m}" y1="{m}" x2="{size - m}" y2="{size - m}" stroke="{r_}" stroke-width="11"/>'
+        f'<circle cx="19" cy="19" r="16" fill="{e}"/>\n'
+        f'<circle cx="19" cy="19" r="13" fill="{r_}"/>\n'
+        f'<circle cx="19" cy="19" r="9" fill="{e}"/>\n'
+        f'<line x1="{19 - k}" y1="{19 - k}" x2="{19 + k}" y2="{19 + k}" stroke="{r_}" stroke-width="4"/>'
     )
     return on, off
 
@@ -158,9 +159,9 @@ def key_pictures():
             svg += layer("Background (the pack's key)", background)
             svg += layer("Drawing", drawing(shapes, ink))
             if name in OPTIONS.SWITCHES:
-                svg += layer("Off look (show for the off picture)", f'<rect width="{OPTIONS.SIZE}" height="{OPTIONS.SIZE}" fill="{gc}" fill-opacity="0.6"/>', False)
+                svg += layer("Off look (show for the off picture)", f'<rect width="{OPTIONS.SIZE}" height="{OPTIONS.SIZE}" fill="{gc}" fill-opacity="0.2"/>', False)
             svg += layer("Mark: on (green dot)", on_mark, False)
-            svg += layer("Mark: off (dimmed, red slash)", off_mark, False)
+            svg += layer("Mark: off (red no sign)", off_mark, False)
             svg += "</svg>\n"
             write(os.path.join(OUT, "keys", palette, groups.get(name, "options"), name + ".svg"), svg)
             made += 1

@@ -14,6 +14,15 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
 
+## Stream Deck keys: legible off images, one style (0.1.0-beta150)
+
+The owner, with a photo of their deck: "the current 'off' keys are very dark and virtually
+impossible to recognize ... these need to be legible even when off", then "all keys for the
+plugin must be of consistent design language and styling". Off images are now bright with a red
+"no" sign in the corner (`make-state-icons.py`), and the keys that took pictures from the pack's
+older groups are drawn in the framed-screen style (`make-option-icons.py`). Stream Deck plugin
+0.17.2.0. Not seen on a deck yet.
+
 ## Window layout after a change of collection (0.1.0-beta149)
 
 The owner confirmed beta148 ("collection switching works now, no error") and reported that the
