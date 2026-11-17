@@ -1275,6 +1275,16 @@ to (the two update choices are kept with the plugin instead). Replacing the plug
   typical. It can be set for single programs under *Program Settings* instead.
 - **Items inside a group are missing from a scene filter's item list.** Add the filter to the group
   itself instead.
+<!-- ==== scene-filters:perf (Frame time) ==== -->
+- **OBS's *Average time to render frame* went up.** Every 30 seconds StageKit writes to the OBS log
+  what its own work cost, when it was noticeable: a line per filter that was slow (`timing, last 30
+  s: stagekit_...: tick ... calls, 0.012 ms each ...`), and one line for all of StageKit together,
+  `timing, last 30 s: StageKit ticks 0.123 ms a frame (fit_item 0.081, shadow_backdrop 0.012, ...)`,
+  naming the filters that cost most. Send the log (*Help → Log Files → Upload Current Log File*) with
+  the problem; the end of it also has OBS's own figures (`obs_graphics_thread`, `tick_sources`). Most
+  StageKit filters do less while their scene is not on screen; a Multiview or a projector shows
+  every scene, so with one open they all count as on screen.
+<!-- ==== end scene-filters:perf (Frame time) ==== -->
 
 ## Development
 
@@ -1296,6 +1306,15 @@ the captures' to Live, the titles' to Standby, the column markers' to Chat Live.
 file and writes another, with a report. A collection merged before 0.1.0-beta154 (scenes called
 Full-Capture-Scene, Component-Capture-Scene, Holding-Scene) is refused: merge again from the file
 before it.
+
+<!-- ==== scene-filters:perf (Measuring) ==== -->
+`tests/run-perf.sh <build dir> <old.json> <trial.json> [<new.json>]` measures what scene collections
+cost a frame, headless (`tests/collection-perf`, built with the tests), and prints them side by side
+(`tests/perf-compare.py`): OBS's own `tick_sources` and graphics-thread times and StageKit's ticks,
+at rest, with the captures shown in turn and with the scenes changed in turn. Sources this machine
+cannot load (captures, browsers) are replaced by coloured stand-ins of the same size, so compare the
+collections with each other, not the times with a real OBS. It is not part of `run-tests.sh`.
+<!-- ==== end scene-filters:perf (Measuring) ==== -->
 
 Windows and macOS builds come from GitHub Actions, based on the official
 [obs-plugintemplate](https://github.com/obsproject/obs-plugintemplate).

@@ -1395,7 +1395,33 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
 - **Scene Shadow**: to come.
 <!-- ==== end scene-filters:shadow ==== -->
 <!-- ==== scene-filters:perf ==== -->
-- **Frame time**: to come.
+- **Frame time** (`src/common/timing.*`, cut 4 in `src/shadow/shadow-backdrop.cpp`, the harness in
+  `tests/collection-perf.cpp`, `tests/run-perf.sh`, `tests/perf-compare.py`; beta155). The timing
+  lines give ms with three decimals (a cheap tick read 0.00 before), and a second line, `timing, last
+  30 s: StageKit ticks 0.123 ms a frame (fit_item 0.081, ...)`, is written when all of StageKit's
+  ticks together pass 0.1 ms a frame: many cheap filters add up there while none has a line of its
+  own. Frames are the ones OBS ticked (total minus lagged). The sums only grow; the report and the
+  global proc `stagekit_timing_take(out string json)` each keep what they saw last, so the harness
+  and the tests can take without disturbing the log. `stagekit_timing_probe()` registers a kind whose
+  tick waits its `wait_us` (the tests time it) and `stagekit_timing_report()` writes the lines now.
+  **A periodic job starts at `stagger_phase(source, period)`** (by the uuid; a double for seconds,
+  an int for ticks), so fifteen filters with one period do not all work in one frame.
+  - Shadow, Glow & Outline's scale and on-screen check (`scale_check_due`) runs every 20 ticks only
+    when something it depends on changed: `g_scene_rev`, raised by every scene's and group's
+    `item_add`, `item_remove`, `item_visible`, `item_transform`, `reorder` and `refresh` (connected
+    once per scene from the first shadow filter on, and at `source_create` after that; the signal
+    only counts), the scene on screen (compared by pointer, never held), the source's size, or its
+    settings; otherwise every 120 ticks. Anything new that changes how big a source is drawn
+    without one of those signals is seen up to two seconds late.
+  - **Measure with `tests/run-perf.sh` before claiming a saving**, and give its numbers, not an
+    estimate. It loads a collection in headless libobs with the profiler on, replaces the sources
+    this machine cannot load by coloured stand-ins of the size they are shown at (keeping their
+    filters), and compares collections by OBS's own `tick_sources` and StageKit's take. Under
+    llvmpipe a frame takes 0.1 to 0.2 s at 2560x1440 and anything that reads the picture back in a
+    tick (Fit to Space's glances and looks) waits for that drawing: its µs per tick are far above a
+    real graphics card's. Compare `tick_sources` medians between collections; read the per-kind
+    table for which filter, not for how much. The owner's collections and the results never go in
+    the repository (`python3 -I`, results in the scratchpad, numbers in the handoff).
 <!-- ==== end scene-filters:perf ==== -->
 
 ## Conventions
