@@ -1140,9 +1140,437 @@ static void scene_blur_controls_test()
 	CHECK(mosaic && !shown(1, "pixel_shape") && shown(5, "angle") && shown(4, "center_x") && shown(3, "strength") &&
 		      shown(1, "ramp_style"),
 	      "a Scene Blur offers the Blur filter's controls for each blur type: cell shape, smoothing, glass, origin and rotation for Pixelate, angle for Motion, centre for Zoom");
+	// Blur area, and the mosaic's edge only where each source is blurred by
+	// itself (blurring the finished scene, there is no source's edge).
+	auto area = [&](int value) {
+		obs_data_t *s = obs_source_get_settings(filter);
+		obs_data_set_int(s, "blur_area", value);
+		obs_data_release(s);
+	};
+	area(0);
+	const bool area_offered = shown(0, "blur_area") && shown(3, "blur_area");
+	const bool edge_scene = shown(3, "pixel_edge");
+	area(1);
+	const bool edge_each = shown(3, "pixel_edge");
+	const bool edge_gauss = shown(0, "pixel_edge");
+	obs_data_t *fresh = obs_data_create();
+	obs_source_t *defaults = obs_source_create("stagekit_scene_blur", "SBC Defaults", fresh, nullptr);
+	obs_data_release(fresh);
+	obs_data_t *ds = obs_source_get_settings(defaults);
+	const long long default_area = obs_data_get_int(ds, "blur_area");
+	const long long default_edge = obs_data_get_int(ds, "pixel_edge");
+	obs_data_release(ds);
+	obs_source_release(defaults);
+	CHECK(area_offered && !edge_scene && edge_each && !edge_gauss && default_area == 0 && default_edge == 0,
+	      "'Blur area' is offered for every type, 'Mosaic edge' only for Pixelate with 'Each source by itself'; a new filter blurs the scene as drawn, cells cut at the edge (area %lld, edge %lld)",
+	      default_area, default_edge);
+	// The Blur filter on a source shows the mosaic's edge for Pixelate.
+	obs_source_t *own = obs_source_create("stagekit_ramp_blur", "SBC Own Blur", nullptr, nullptr);
+	auto own_shown = [&](int type) {
+		obs_data_t *s = obs_source_get_settings(own);
+		obs_data_set_int(s, "blur_type", type);
+		obs_data_release(s);
+		obs_properties_t *props = obs_source_properties(own);
+		obs_property_t *p = obs_properties_get(props, "pixel_edge");
+		const bool visible = p && obs_property_visible(p);
+		obs_properties_destroy(props);
+		return visible;
+	};
+	CHECK(own_shown(3) && !own_shown(0) && !own_shown(5),
+	      "the Blur filter offers 'Mosaic edge' with Pixelate only");
+	obs_source_release(own);
 	obs_source_filter_remove(scene, filter);
 	obs_source_release(filter);
 	obs_source_release(scene);
+}
+
+// The owner: "I'd like if there was a configuration to have the shadows or
+// other applied strokes, glows or filters in general take on the visible
+// pixel shape, so when a screen is blurred it can take on the pixel shape for
+// example. also, i want a configuration option to keep scene filters within
+// the bounds of a source ... the scene blur filter doesn't seem to go all the
+// way to the edges". Scene Blur's "Each source by itself" against a Blur
+// filter on the source, and the mosaic's whole cells followed by a shadow
+// after it and by a Scene Shadow.
+static gs_texture_t *g_photo_texture = nullptr;
+
+static void register_photo_kind()
+{
+	static bool registered = false;
+	if (registered)
+		return;
+	registered = true;
+	obs_source_info k = {};
+	k.id = "stagekit_test_photo";
+	k.type = OBS_SOURCE_TYPE_INPUT;
+	k.output_flags = OBS_SOURCE_VIDEO | OBS_SOURCE_CUSTOM_DRAW;
+	k.get_name = [](void *) {
+		return "Photo (stand-in)";
+	};
+	k.create = [](obs_data_t *, obs_source_t *) -> void * {
+		return new int(0);
+	};
+	k.destroy = [](void *data) {
+		delete static_cast<int *>(data);
+	};
+	k.get_width = [](void *) -> uint32_t {
+		return 200;
+	};
+	k.get_height = [](void *) -> uint32_t {
+		return 150;
+	};
+	k.video_render = [](void *, gs_effect_t *) {
+		if (!g_photo_texture) {
+			// Colours that run across and down it, and a checkerboard in blue:
+			// never white, never the light blue of the background.
+			std::vector<uint8_t> px(200 * 150 * 4);
+			for (int y = 0; y < 150; y++)
+				for (int x = 0; x < 200; x++) {
+					uint8_t *p = &px[(size_t(y) * 200 + x) * 4];
+					p[0] = (uint8_t)(30 + x * 9 / 10);
+					p[1] = (uint8_t)(40 + y);
+					p[2] = ((x / 10) + (y / 10)) % 2 ? 200 : 20;
+					p[3] = 255;
+				}
+			const uint8_t *planes[] = {px.data()};
+			g_photo_texture = gs_texture_create(200, 150, GS_RGBA, 1, planes, 0);
+		}
+		gs_effect_t *def = obs_get_base_effect(OBS_EFFECT_DEFAULT);
+		gs_effect_set_texture(gs_effect_get_param_by_name(def, "image"), g_photo_texture);
+		while (gs_effect_loop(def, "Draw"))
+			gs_draw_sprite(g_photo_texture, 0, 200, 150);
+	};
+	obs_register_source(&k);
+}
+
+static void blur_edges_test(uint32_t w, uint32_t h, const std::string &out)
+{
+	printf("\n[blur edges: each source by itself, and whole cells]\n");
+	register_photo_kind();
+	const std::string dir = out + "/../blur-edges";
+	if (std::system(("rm -rf '" + dir + "' && mkdir -p '" + dir + "'").c_str()) != 0)
+		printf("  (could not make %s)\n", dir.c_str());
+	auto block = [](const char *name, long long abgr, int bw, int bh) {
+		obs_data_t *d = obs_data_create();
+		obs_data_set_int(d, "color", abgr);
+		obs_data_set_int(d, "width", bw);
+		obs_data_set_int(d, "height", bh);
+		obs_source_t *src = obs_source_create("color_source", name, d, nullptr);
+		obs_data_release(d);
+		return src;
+	};
+	auto put = [](obs_scene_t *scene, obs_source_t *src, float x, float y) {
+		obs_sceneitem_t *item = obs_scene_add(scene, src);
+		vec2 p;
+		vec2_set(&p, x, y);
+		obs_sceneitem_set_pos(item, &p);
+		return item;
+	};
+	auto set = [](obs_source_t *f, const std::function<void(obs_data_t *)> &change) {
+		obs_data_t *s = obs_source_get_settings(f);
+		change(s);
+		obs_source_update(f, s);
+		obs_data_release(s);
+	};
+	auto chosen = [](obs_data_t *s, const char *name) {
+		obs_data_array_t *list = obs_data_array_create();
+		obs_data_t *entry = obs_data_create();
+		obs_data_set_string(entry, "value", name);
+		obs_data_array_push_back(list, entry);
+		obs_data_release(entry);
+		obs_data_set_array(s, "chosen", list);
+		obs_data_array_release(list);
+	};
+	auto look = [](obs_data_t *s, int type, double strength, int edge) {
+		obs_data_set_int(s, "blur_type", type);
+		obs_data_set_int(s, "pixel_shape", 1); // hexagons
+		obs_data_set_double(s, "strength", strength);
+		obs_data_set_int(s, "pixel_edge", edge);
+	};
+	auto shot = [&](obs_source_t *src) {
+		sleep_ms(250);
+		render(src, w, h);
+		return render(src, w, h);
+	};
+	auto px = [&](const std::vector<uint8_t> &f, int x, int y, int c) {
+		return (int)f[(size_t(y) * w + x) * 4 + c];
+	};
+	// The background: light blue (128, 192, 255), what the owner saw bleed in.
+	auto is_back = [&](const std::vector<uint8_t> &f, int x, int y) {
+		return std::abs(px(f, x, y, 0) - 128) < 8 && std::abs(px(f, x, y, 1) - 192) < 8 &&
+		       std::abs(px(f, x, y, 2) - 255) < 8;
+	};
+	// The mean difference of two frames over a part of them, in colour.
+	auto diff_in = [&](const std::vector<uint8_t> &a, const std::vector<uint8_t> &b, int x0, int y0, int x1,
+			   int y1) {
+		double sum = 0.0;
+		int n = 0;
+		for (int y = y0; y < y1; y++)
+			for (int x = x0; x < x1; x++)
+				for (int c = 0; c < 3; c++, n++)
+					sum += std::abs(px(a, x, y, c) - px(b, x, y, c));
+		return n ? sum / n : 0.0;
+	};
+	// Down each column from `y0`: the first row where `hit` is true (or y1).
+	auto first_rows = [&](const std::vector<uint8_t> &f, int x0, int x1, int y0, int y1,
+			      const std::function<bool(const std::vector<uint8_t> &, int, int)> &hit) {
+		std::vector<int> rows;
+		for (int x = x0; x < x1; x++) {
+			int y = y0;
+			while (y < y1 && !hit(f, x, y))
+				y++;
+			rows.push_back(y);
+		}
+		return rows;
+	};
+	auto spread = [](const std::vector<int> &rows) {
+		return *std::max_element(rows.begin(), rows.end()) - *std::min_element(rows.begin(), rows.end());
+	};
+	// A part of the frame round the source, twice as large, for the README.
+	auto keep = [&](const std::string &name, const std::vector<uint8_t> &f) {
+		const int x0 = 80, y0 = 60, cw = 240, ch = 190;
+		std::vector<uint8_t> big(size_t(cw) * 2 * ch * 2 * 4);
+		for (int y = 0; y < ch * 2; y++)
+			for (int x = 0; x < cw * 2; x++)
+				for (int c = 0; c < 4; c++)
+					big[(size_t(y) * cw * 2 + x) * 4 + c] =
+						f[(size_t(y0 + y / 2) * w + x0 + x / 2) * 4 + c];
+		write_frame(dir + "/" + name + ".rgba", big, cw * 2, ch * 2);
+	};
+
+	obs_source_t *back = block("BE Back", 0xFFFFC080, 640, 360);
+	obs_source_t *photo_a = obs_source_create("stagekit_test_photo", "BE Photo A", nullptr, nullptr);
+	obs_source_t *photo_b = obs_source_create("stagekit_test_photo", "BE Photo B", nullptr, nullptr);
+	obs_scene_t *own_scene = obs_scene_create("BE Own Blur");
+	obs_scene_t *each_scene = obs_scene_create("BE Scene Blur");
+	put(own_scene, back, 0, 0);
+	put(own_scene, photo_a, 100, 80);
+	put(each_scene, back, 0, 0);
+	put(each_scene, photo_b, 100, 80);
+	obs_source_t *own_src = obs_scene_get_source(own_scene), *each_src = obs_scene_get_source(each_scene);
+	obs_source_t *before_out = obs_get_output_source(0);
+	obs_set_output_source(0, each_src);
+
+	obs_data_t *od = obs_data_create();
+	obs_data_set_int(od, "start_state", 1);
+	obs_data_set_int(od, "ramp_in_ms", 0);
+	look(od, 3, 20.0, 0);
+	obs_source_t *own_blur = obs_source_create("stagekit_ramp_blur", "BE Own", od, nullptr);
+	obs_data_release(od);
+	obs_source_filter_add(photo_a, own_blur);
+	obs_data_t *sd = obs_data_create();
+	obs_data_set_int(sd, "ramp_in_ms", 0);
+	obs_data_set_int(sd, "ramp_out_ms", 0);
+	obs_data_set_int(sd, "cover", 2);
+	chosen(sd, "BE Photo B");
+	look(sd, 3, 20.0, 0);
+	obs_source_t *scene_blur = obs_source_create("stagekit_scene_blur", "BE Blur", sd, nullptr);
+	obs_data_release(sd);
+	obs_source_filter_add(each_src, scene_blur);
+
+	// The box is 100..300 by 80..230; its top rows are where the scene as
+	// drawn took in the background.
+	const std::vector<uint8_t> own_hex = shot(own_src);
+	const std::vector<uint8_t> scene_hex = shot(each_src);
+	set(scene_blur, [](obs_data_t *s) { obs_data_set_int(s, "blur_area", 1); });
+	const std::vector<uint8_t> each_hex = shot(each_src);
+	const double scene_edge = diff_in(scene_hex, own_hex, 100, 80, 300, 90);
+	const double each_edge = diff_in(each_hex, own_hex, 100, 80, 300, 90);
+	const double each_box = diff_in(each_hex, own_hex, 100, 80, 300, 230);
+	const double each_around = diff_in(each_hex, own_hex, 0, 0, 640, 360);
+	CHECK(each_box < 1.0 && each_edge < 1.5 && each_around < 0.5 && scene_edge > each_edge + 5.0,
+	      "with 'Each source by itself' a hexagon mosaic matches the Blur filter on the source, edges included (off by %.2f in the box, %.2f along its top edge, %.2f overall; the scene as drawn is off by %.2f along that edge)",
+	      each_box, each_edge, each_around, scene_edge);
+	int bled = 0;
+	for (int x = 100; x < 300; x++)
+		bled += std::abs(px(each_hex, x, 81, 2) - 255) < 20 && std::abs(px(each_hex, x, 81, 0) - 128) < 20;
+	CHECK(bled == 0, "and none of the light-blue background is taken into the cells along the top (%d columns)",
+	      bled);
+	keep("1 Blur filter", own_hex);
+	keep("2 Scene Blur, scene as drawn", scene_hex);
+	keep("3 Scene Blur, each source", each_hex);
+
+	// A soft blur too: the edge is the source's own.
+	set(own_blur, [&](obs_data_t *s) { look(s, 0, 8.0, 0); });
+	set(scene_blur, [&](obs_data_t *s) { look(s, 0, 8.0, 0); });
+	const std::vector<uint8_t> own_soft = shot(own_src);
+	const std::vector<uint8_t> each_soft = shot(each_src);
+	const double soft_box = diff_in(each_soft, own_soft, 100, 80, 300, 230);
+	CHECK(soft_box < 1.0, "a Gaussian blur matches it too (off by %.2f in the box)", soft_box);
+	{
+		const std::vector<uint8_t> a = render(each_src, w, h);
+		const std::vector<uint8_t> b = render(each_src, w, h);
+		CHECK(mean_abs_diff(a, b) == 0.0, "drawn twice in a frame, it looks the same both times");
+	}
+
+	// Whole cells: a cell the edge cuts is left out, never drawn past it.
+	set(own_blur, [&](obs_data_t *s) { look(s, 3, 20.0, 1); });
+	set(scene_blur, [&](obs_data_t *s) { look(s, 3, 20.0, 1); });
+	const std::vector<uint8_t> own_whole = shot(own_src);
+	const std::vector<uint8_t> each_whole = shot(each_src);
+	auto not_back = [&](const std::vector<uint8_t> &f, int x, int y) {
+		return !is_back(f, x, y);
+	};
+	const std::vector<int> own_rows = first_rows(own_whole, 130, 270, 60, 230, not_back);
+	const std::vector<int> cut_rows = first_rows(own_hex, 130, 270, 60, 230, not_back);
+	const int own_top = *std::min_element(own_rows.begin(), own_rows.end());
+	bool nothing_past = true;
+	for (int x = 90; x < 310; x++)
+		for (int y : {70, 75, 79, 231, 235})
+			nothing_past = nothing_past && is_back(own_whole, x, y);
+	for (int y = 70; y < 240; y++)
+		for (int x : {95, 99, 300, 305})
+			nothing_past = nothing_past && is_back(own_whole, x, y);
+	CHECK(spread(own_rows) >= 4 && own_top >= 80 && spread(cut_rows) <= 1 && nothing_past &&
+		      is_back(own_whole, 101, 81),
+	      "the Blur filter with whole cells leaves out the cells its edge cuts: its top edge is hexagons (rows %d to %d, cut straight %d to %d), nothing past the edge, the corner is background",
+	      own_top, *std::max_element(own_rows.begin(), own_rows.end()),
+	      *std::min_element(cut_rows.begin(), cut_rows.end()), *std::max_element(cut_rows.begin(), cut_rows.end()));
+	const double whole_box = diff_in(each_whole, own_whole, 90, 70, 310, 240);
+	CHECK(whole_box < 1.0, "Scene Blur's whole cells, each source by itself, match the Blur filter's (off by %.2f)",
+	      whole_box);
+	// Every cell shape, and a turned pattern: the cells the edge cuts go
+	// (the top edge is broken, or moved in by a row of cells), the middle
+	// stays.
+	{
+		std::string said;
+		bool all = true;
+		for (int shape = 0; shape <= 7; shape++) {
+			set(own_blur, [&](obs_data_t *s) {
+				obs_data_set_int(s, "pixel_shape", shape == 7 ? 0 : shape);
+				obs_data_set_double(s, "rotation", shape == 7 ? 30.0 : 0.0);
+			});
+			const std::vector<uint8_t> f = shot(own_src);
+			const std::vector<int> rows = first_rows(f, 130, 270, 60, 230, not_back);
+			const int top = *std::min_element(rows.begin(), rows.end());
+			bool past = false;
+			for (int x = 90; x < 310; x++)
+				past = past || !is_back(f, x, 78) || !is_back(f, x, 232);
+			const bool ok = !is_back(f, 200, 155) && (top > 82 || spread(rows) >= 3) && !past;
+			all = all && ok;
+			said += " " + std::to_string(shape) + (ok ? ":ok" : ":NO") + "(" + std::to_string(top) + "+" +
+				std::to_string(spread(rows)) + ")";
+		}
+		CHECK(all,
+		      "whole cells for every cell shape and a turned pattern leave the cut cells out and keep the rest:%s",
+		      said.c_str());
+		set(own_blur, [&](obs_data_t *s) {
+			obs_data_set_int(s, "pixel_shape", 1);
+			obs_data_set_double(s, "rotation", 0.0);
+		});
+	}
+	keep("4 Blur filter, whole cells", own_whole);
+	keep("5 Scene Blur, whole cells", each_whole);
+
+	// A shadow, glow or outline after the Blur filter reads its alpha, so
+	// it follows the cells.
+	{
+		obs_source_t *photo_c = obs_source_create("stagekit_test_photo", "BE Photo C", nullptr, nullptr);
+		obs_data_t *cd = obs_data_create();
+		obs_data_set_int(cd, "start_state", 1);
+		obs_data_set_int(cd, "ramp_in_ms", 0);
+		look(cd, 3, 20.0, 1);
+		obs_source_t *c_blur = obs_source_create("stagekit_ramp_blur", "BE C Blur", cd, nullptr);
+		obs_data_release(cd);
+		obs_data_t *gd = obs_data_create();
+		obs_data_set_bool(gd, "shadow", false);
+		obs_data_set_bool(gd, "outline", true);
+		obs_data_set_double(gd, "outline_width", 4.0);
+		obs_data_set_bool(gd, "screen_px", false);
+		obs_source_t *c_glow = obs_source_create("stagekit_shadow_backdrop", "BE C Outline", gd, nullptr);
+		obs_data_release(gd);
+		obs_source_filter_add(photo_c, c_blur);
+		obs_source_filter_add(photo_c, c_glow);
+		auto alone = [&]() {
+			sleep_ms(250);
+			const uint32_t sw = obs_source_get_width(photo_c), sh = obs_source_get_height(photo_c);
+			render(photo_c, sw, sh);
+			std::vector<uint8_t> f = render(photo_c, sw, sh);
+			std::vector<int> rows;
+			for (uint32_t x = sw / 4; x < sw * 3 / 4; x++) {
+				uint32_t y = 0;
+				while (y < sh && f[(size_t(y) * sw + x) * 4 + 3] < 128)
+					y++;
+				rows.push_back((int)y);
+			}
+			return rows;
+		};
+		const std::vector<int> whole_rows = alone();
+		set(c_blur, [&](obs_data_t *s) { obs_data_set_int(s, "pixel_edge", 0); });
+		const std::vector<int> straight_rows = alone();
+		CHECK(spread(whole_rows) >= 4 && spread(straight_rows) <= 1,
+		      "an outline after a Blur filter with whole cells follows the cells (its top edge spans %d rows; cut straight, %d)",
+		      spread(whole_rows), spread(straight_rows));
+		obs_source_filter_remove(photo_c, c_glow);
+		obs_source_filter_remove(photo_c, c_blur);
+		obs_source_release(c_glow);
+		obs_source_release(c_blur);
+		obs_source_release(photo_c);
+	}
+
+	// A Scene Shadow casts from what Scene Blur draws of each source by
+	// itself: its outline follows the whole cells, inside the source's box too.
+	{
+		obs_data_t *hd = obs_data_create();
+		obs_data_set_bool(hd, "shadow", false);
+		obs_data_set_bool(hd, "outline", true);
+		obs_data_set_double(hd, "outline_width", 4.0);
+		obs_data_set_int(hd, "ramp_ms", 0);
+		obs_source_t *scene_shadow = obs_source_create("stagekit_scene_shadow", "BE Shadow", hd, nullptr);
+		obs_data_release(hd);
+		obs_source_filter_add(each_src, scene_shadow);
+		sleep_ms(700); // (Scene Blur moves itself after the shadow.)
+		auto white = [&](const std::vector<uint8_t> &f, int x, int y) {
+			return px(f, x, y, 0) > 235 && px(f, x, y, 1) > 235 && px(f, x, y, 2) > 235;
+		};
+		const std::vector<uint8_t> shadow_whole = shot(each_src);
+		const std::vector<int> whole_rows = first_rows(shadow_whole, 130, 270, 60, 230, white);
+		set(scene_blur, [](obs_data_t *s) { obs_data_set_int(s, "pixel_edge", 0); });
+		const std::vector<uint8_t> shadow_cut = shot(each_src);
+		const std::vector<int> cut_rows2 = first_rows(shadow_cut, 130, 270, 60, 230, white);
+		const int whole_low = *std::max_element(whole_rows.begin(), whole_rows.end());
+		const int cut_top = *std::min_element(cut_rows2.begin(), cut_rows2.end());
+		CHECK(spread(whole_rows) >= 4 && whole_low > 82 && whole_low < 120 && spread(cut_rows2) <= 1 &&
+			      cut_top >= 74 && cut_top <= 78,
+		      "a Scene Shadow's outline follows Scene Blur's whole cells, inside the source's box too (rows %d to %d; cut straight, at row %d)",
+		      *std::min_element(whole_rows.begin(), whole_rows.end()), whole_low, cut_top);
+		keep("6 and a Scene Shadow", shadow_whole);
+		// The scene as drawn: the outline is the source's own shape again.
+		set(scene_blur, [](obs_data_t *s) {
+			obs_data_set_int(s, "pixel_edge", 1);
+			obs_data_set_int(s, "blur_area", 0);
+		});
+		const std::vector<uint8_t> shadow_scene = shot(each_src);
+		const std::vector<int> scene_rows = first_rows(shadow_scene, 130, 270, 60, 230, white);
+		CHECK(spread(scene_rows) <= 1,
+		      "blurring the scene as drawn, the outline keeps the source's own shape (%d rows)",
+		      spread(scene_rows));
+		set(scene_blur, [](obs_data_t *s) { obs_data_set_int(s, "blur_area", 1); });
+		// A trail and a Kawase blur, each source by itself.
+		for (int type : {7, 2}) {
+			set(scene_blur, [&](obs_data_t *s) { look(s, type, 40.0, 0); });
+			const std::vector<uint8_t> f = shot(each_src);
+			CHECK(opaque(f) && is_back(f, 20, 20),
+			      "type %d draws, each source by itself, and leaves the rest of the scene as it was", type);
+		}
+		obs_source_filter_remove(each_src, scene_shadow);
+		obs_source_release(scene_shadow);
+	}
+
+	obs_set_output_source(0, before_out);
+	obs_source_release(before_out);
+	obs_source_filter_remove(each_src, scene_blur);
+	obs_source_release(scene_blur);
+	obs_source_filter_remove(photo_a, own_blur);
+	obs_source_release(own_blur);
+	obs_scene_release(own_scene);
+	obs_scene_release(each_scene);
+	for (obs_source_t *src : {back, photo_a, photo_b})
+		obs_source_release(src);
+	obs_enter_graphics();
+	gs_texture_destroy(g_photo_texture);
+	g_photo_texture = nullptr;
+	obs_leave_graphics();
 }
 
 static void link_transitions_test(uint32_t w, uint32_t h)
@@ -1591,6 +2019,15 @@ int main(int argc, char **argv)
 		return g_failures ? 1 : 0;
 	}
 
+	if (getenv("STAGEKIT_TEST_ONLY_BLUR_EDGES")) { // to try that section alone
+		scene_blur_controls_test();
+		blur_edges_test(w, h, out);
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
+
 	if (getenv("STAGEKIT_TEST_ONLY_LINK_TRANS")) { // to try that section alone
 		link_transitions_test(w, h);
 		obs_shutdown();
@@ -1874,6 +2311,7 @@ int main(int argc, char **argv)
 	// the ones chosen, never the ones listed, and in that scene only.
 	{
 		scene_blur_controls_test();
+		blur_edges_test(w, h, out);
 		printf("\n[scene blur]\n");
 		const std::string blur_dir = out + "/../scene-blur";
 		if (std::system(("mkdir -p '" + blur_dir + "'").c_str()) != 0)

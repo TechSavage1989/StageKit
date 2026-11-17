@@ -30,18 +30,26 @@ constexpr double kTapLimit = 250.0;
 
 bool type_modified(obs_properties_t *props, obs_property_t *, obs_data_t *settings)
 {
+	blur_look_visibility(props, settings);
+	return true;
+}
+
+} // namespace
+
+void blur_look_visibility(obs_properties_t *props, obs_data_t *settings)
+{
 	const auto type = static_cast<BlurType>(obs_data_get_int(settings, "blur_type"));
+	const bool mosaic = type == BlurType::Pixelate || type == BlurType::Hexagon;
 	obs_property_set_visible(obs_properties_get(props, "angle"), type == BlurType::Motion);
 	obs_property_set_visible(obs_properties_get(props, "center_x"), type == BlurType::Zoom);
 	obs_property_set_visible(obs_properties_get(props, "center_y"), type == BlurType::Zoom);
 	for (const char *name :
 	     {"pixel_shape", "pixel_smooth", "pixel_glass", "pixel_glass_style", "origin_x", "origin_y", "rotation"})
-		obs_property_set_visible(obs_properties_get(props, name),
-					 type == BlurType::Pixelate || type == BlurType::Hexagon);
-	return true;
+		obs_property_set_visible(obs_properties_get(props, name), mosaic);
+	// (Scene Blur: only where each source is blurred by itself.)
+	const bool scene_wide = obs_properties_get(props, "blur_area") && obs_data_get_int(settings, "blur_area") == 0;
+	obs_property_set_visible(obs_properties_get(props, "pixel_edge"), mosaic && !scene_wide);
 }
-
-} // namespace
 
 // ------------------------------------------------------------------ settings
 
@@ -60,6 +68,7 @@ BlurLook read_blur_look(obs_data_t *settings)
 	s.origin_x = obs_data_get_double(settings, "origin_x") / 100.0;
 	s.origin_y = obs_data_get_double(settings, "origin_y") / 100.0;
 	s.rotation_deg = obs_data_get_double(settings, "rotation");
+	s.whole_cells = obs_data_get_int(settings, "pixel_edge") == (int)MosaicEdge::Whole;
 	// "Hexagons" was a blur type of its own before the mosaic had shapes.
 	if (s.type == BlurType::Hexagon) {
 		s.type = BlurType::Pixelate;
@@ -139,6 +148,11 @@ void add_blur_look_properties(obs_properties_t *props)
 	obs_property_t *rotation = obs_properties_add_float_slider(look, "rotation", obs_module_text("Mosaic.Rotation"),
 								   -180.0, 180.0, 1.0);
 	obs_property_float_set_suffix(rotation, "°");
+	obs_property_t *edge = obs_properties_add_list(look, "pixel_edge", obs_module_text("Mosaic.Edge"),
+						       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+	obs_property_list_add_int(edge, obs_module_text("Mosaic.Edge.Cut"), (int)MosaicEdge::Cut);
+	obs_property_list_add_int(edge, obs_module_text("Mosaic.Edge.Whole"), (int)MosaicEdge::Whole);
+	obs_property_set_long_description(edge, obs_module_text("Mosaic.Edge.Tip"));
 
 	obs_properties_add_group(props, "look_group", obs_module_text("RampBlur.LookGroup"), OBS_GROUP_NORMAL, look);
 }
@@ -174,6 +188,7 @@ void blur_look_defaults(obs_data_t *settings)
 	obs_data_set_default_double(settings, "origin_x", 50.0);
 	obs_data_set_default_double(settings, "origin_y", 50.0);
 	obs_data_set_default_double(settings, "rotation", 0.0);
+	obs_data_set_default_int(settings, "pixel_edge", (int)MosaicEdge::Cut);
 	obs_data_set_default_int(settings, "ramp_style", (int)RampStyle::Grow);
 	obs_data_set_default_int(settings, "ramp_in_ms", 400);
 	obs_data_set_default_int(settings, "ramp_out_ms", 400);
@@ -303,6 +318,7 @@ BlurPipeline::BlurPipeline()
 		pl_smoothing_ = gs_effect_get_param_by_name(looks_, "smoothing");
 		pl_glass_ = gs_effect_get_param_by_name(looks_, "glass");
 		pl_glass_style_ = gs_effect_get_param_by_name(looks_, "glass_style");
+		pl_whole_ = gs_effect_get_param_by_name(looks_, "whole");
 		pl_origin_ = gs_effect_get_param_by_name(looks_, "origin");
 		pl_turn_ = gs_effect_get_param_by_name(looks_, "turn");
 		pl_original_ = gs_effect_get_param_by_name(looks_, "original");
@@ -399,7 +415,7 @@ gs_texture_t *BlurPipeline::kawase_chain(gs_texture_t *input, uint32_t w, uint32
 }
 
 BlurPipeline::Result BlurPipeline::run(const BlurLook &s, gs_texture_t *input, uint32_t w, uint32_t h, double strength,
-				       double &mix)
+				       double &mix, BlurTrail *trail)
 {
 	if (!effect_)
 		return {};
@@ -472,6 +488,8 @@ BlurPipeline::Result BlurPipeline::run(const BlurLook &s, gs_texture_t *input, u
 			gs_effect_set_float(pl_glass_, (float)s.pixel_glass);
 		if (pl_glass_style_)
 			gs_effect_set_float(pl_glass_style_, (float)s.pixel_glass_style);
+		if (pl_whole_)
+			gs_effect_set_float(pl_whole_, s.whole_cells ? 1.0f : 0.0f);
 		gs_effect_set_vec2(pl_origin_, &origin);
 		gs_effect_set_vec2(pl_turn_, &turn);
 		pass(tr_a_, input, w, h, "Mosaic", true);
@@ -484,6 +502,8 @@ BlurPipeline::Result BlurPipeline::run(const BlurLook &s, gs_texture_t *input, u
 		// hundredth of a second for each point, whatever the frame rate.
 		if (!looks_)
 			return {};
+		if (trail)
+			return own_trail(*trail, input, w, h, strength);
 		if (w != past_w_ || h != past_h_) {
 			past_w_ = w;
 			past_h_ = h;
@@ -551,6 +571,63 @@ BlurPipeline::Result BlurPipeline::run(const BlurLook &s, gs_texture_t *input, u
 	}
 	}
 	return {};
+}
+
+BlurPipeline::Result BlurPipeline::own_trail(BlurTrail &t, gs_texture_t *input, uint32_t w, uint32_t h, double strength)
+{
+	for (gs_texrender_t *&tr : t.past)
+		if (!tr)
+			tr = gs_texrender_create(GS_RGBA16F, GS_ZS_NONE);
+	if (w != t.w || h != t.h) {
+		t.w = w;
+		t.h = h;
+		t.valid = false;
+	}
+	const uint64_t now = obs_get_video_frame_time();
+	gs_texture_t *past = t.valid ? gs_texrender_get_texture(t.past[t.index]) : nullptr;
+	if (past && now == t.frame)
+		return {past}; // drawn again in the same frame
+	// (The frame's own time: never subtracted the wrong way round.)
+	const double seconds = past && now > t.frame ? std::min((double)(now - t.frame) / 1e9, 1.0) : 0.0;
+	t.frame = now;
+	const double lasts = std::max(strength / 100.0, 0.001);
+	const double keep = past ? std::exp(-seconds / lasts) : 0.0;
+	gs_effect_set_texture_srgb(pl_image2_, past ? past : input);
+	gs_effect_set_float(pl_mix2_, (float)std::clamp(keep, 0.0, 0.999));
+	pass(t.past[1 - t.index], input, w, h, "Temporal", true);
+	t.index = 1 - t.index;
+	t.valid = true;
+	return {gs_texrender_get_texture(t.past[t.index])};
+}
+
+gs_texture_t *BlurPipeline::blur_into(gs_texrender_t *into, const BlurLook &look, gs_texture_t *input, uint32_t w,
+				      uint32_t h, double strength, double mix, BlurTrail *trail)
+{
+	if (!into || !input || !w || !h || !effect_)
+		return nullptr;
+	const Result blurred = run(look, input, w, h, strength, mix, trail);
+	gs_texrender_reset(into);
+	if (!gs_texrender_begin_with_color_space(into, w, h, GS_CS_SRGB))
+		return nullptr;
+	vec4 clear;
+	vec4_zero(&clear);
+	gs_clear(GS_CLEAR_COLOR, &clear, 0.0f, 0);
+	gs_ortho(0.0f, (float)w, 0.0f, (float)h, -100.0f, 100.0f);
+	gs_blend_state_push();
+	gs_blend_function(GS_BLEND_ONE, GS_BLEND_ZERO);
+	composite(input, blurred, w, h, mix);
+	gs_blend_state_pop();
+	gs_texrender_end(into);
+	return gs_texrender_get_texture(into);
+}
+
+void forget_trail_pictures(BlurTrail &trail)
+{
+	for (gs_texrender_t *&tr : trail.past) {
+		gs_texrender_destroy(tr);
+		tr = nullptr;
+	}
+	trail.valid = false;
 }
 
 void BlurPipeline::composite(gs_texture_t *input, const Result &blurred, uint32_t w, uint32_t h, double mix)

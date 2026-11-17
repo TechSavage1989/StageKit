@@ -141,6 +141,7 @@ off, so it costs nothing while off.
 | Smoothing | For Pixelate: how far each cell's colour runs into its neighbours. 0 gives hard edges |
 | Glass / Glass style | For Pixelate: lights each cell like a small piece of glass. *Dome*: curved like a bead, with a glint and a darker rim. *Flat plate*: a flat face with sharp bevelled edges (straight facets on squares and hexagons). 0 gives plain cells. Ambient Background's mosaic has the same two controls |
 | Origin X / Y, Rotation | For Pixelate: the point of the image the pattern is laid out from and turned around, and by how much it is turned |
+| Mosaic edge | For Pixelate: *Cut at the edge* (as it comes) cuts the cells along the source's edge straight. *Whole cells* leaves out every cell the edge would cut, so the blurred source's outline is made of whole cells (hexagons, circles ...) and its see-through parts follow them. A Shadow, Glow & Outline or Corners & Edges after the Blur filter then follows that outline. The image never grows past its own edge: cells are only left out, never added |
 | Strength | 0–1000. Gaussian, Kawase and Box look alike at the same number; above 250, Gaussian and Box are drawn the Kawase way, which stays smooth |
 | Blur transition | Grow the blur strength, or cross-fade a fully blurred image in |
 | Ramp in / out time | 0–5000 ms each. 0 is instant |
@@ -1406,6 +1407,8 @@ over the game, say, and the same game in your other scenes stays sharp.
 
 <p align="center"><img src="docs/images/scene-blur.png" width="900" alt="The same scene five times: as OBS draws it (a game capture, a dark panel, a camera and a patterned background); with all sources blurred; with only the live sources (the game and the camera) blurred; with all sources blurred except the camera; and with only the background blurred, as a mosaic of glass hexagons"></p>
 
+<p align="center"><img src="docs/images/blur-edges.png" width="900" alt="One source over a light-blue background, blurred as a hexagon mosaic six ways: by a Blur filter on the source; by Scene Blur blurring the scene as drawn, where the cells along the source's edge take in the light blue; by Scene Blur blurring each source by itself, the same as the Blur filter; by the Blur filter with whole cells, the outline made of hexagons; the same by Scene Blur; and with a Scene Shadow outline that follows the hexagons"></p>
+
 - **Sources to blur**: *All sources* (as it comes), *Live and capture sources* (game, window, display and
   camera captures, capture cards and media: what the Blur filter's *And live captures on screen* counts as
   live, also by way of a Cropped View, a group or a nested scene), or *Chosen sources*, with **Blur these**
@@ -1414,15 +1417,24 @@ over the game, say, and the same game in your other scenes stays sharp.
   listed source stays sharp too.
 - A source above a blurred one that is not blurred stays sharp, and the blur under it does not smear its
   colours: the camera over a blurred game stays a clean camera.
+- **Blur area**: *The scene as drawn* (as it comes) blurs the finished scene and keeps the blur to where the
+  chosen sources show; a blurred source's edge takes in what is around it, and a mosaic's cells are laid out
+  over the whole screen. *Each source by itself* blurs every chosen source from its own image only, as a Blur
+  filter on that source would: its edges take in nothing around it, a mosaic is laid out over that source,
+  and *Mosaic edge* is offered (*Whole cells*: the source's outline is made of whole cells). With the same
+  settings it looks the same as the Blur filter on the source, edges included.
 - **Blur** and **Timing**: the Blur filter's own settings: Gaussian, Dual Kawase, Box, Pixelate (seven cell
-  shapes, smoothing, glass), Zoom, Motion and Temporal; strength up to 1000; *Blur transition* (grow the
-  strength, or fade the blurred image in), *Blur-in duration*, *Blur-out duration* and *Easing*.
+  shapes, smoothing, glass, and with *Each source by itself* the mosaic's edge), Zoom, Motion and Temporal;
+  strength up to 1000; *Blur transition* (grow the strength, or fade the blurred image in), *Blur-in
+  duration*, *Blur-out duration* and *Easing*.
 - Switched on and off like any filter: the eye, a Stream Deck key, and three hotkeys on the scene,
   *StageKit: Scene Blur Toggle / On / Off (filter name)* (Settings, Hotkeys, under the scene). It blurs in and
   out over its durations. A Scene Blur that was on when OBS closed is on again at start, without blurring in.
 - **Nothing is moved, resized or added**: the scene is drawn as OBS draws it and the blur is laid over it where
   a chosen source shows. Switched off, it costs nothing; on, it draws the scene's sources once or twice more
-  each frame and blurs the picture, and it reads nothing back from the graphics card.
+  each frame and blurs the picture, and it reads nothing back from the graphics card. With *Each source by
+  itself* it blurs each chosen source's own image (smaller than the screen, so often cheaper) and draws the
+  scene's sources once more, inside the chosen sources' boxes only where it is laid over the scene.
 - **Morph**: a change of scene from or to a scene while its Scene Blur blurs is a cross-fade, so the blur stays
   on screen all the way. With the blur off (or with nothing in the scene to blur), the scene is morphed source
   by source as before.
@@ -1438,7 +1450,9 @@ What to know:
 - The blur stays inside the shape of what shows of a blurred source; a Blur filter on the source itself
   spreads past a see-through edge. A group or nested scene is blurred, or kept sharp, as one source.
 - With a Scene Shadow on the same scene, in whichever order you add them, Scene Blur puts itself after the
-  shadow by itself, and the shadows are blurred with what they fall on. With another filter that draws before
+  shadow by itself. Blurring *the scene as drawn*, the shadows are blurred with what they fall on. Blurring
+  *each source by itself*, the shadows stay sharp, and a blurred source's shadow, glow and outline take the
+  blurred image's shape: with *Whole cells*, the shadow's edge is made of the same cells. With another filter that draws before
   it (a colour correction), it draws nothing and says so once in the log: put Scene Blur after such filters.
   It also stands aside while a scene collection loads, on a group, and on a canvas in a wide colour space
   (HDR).

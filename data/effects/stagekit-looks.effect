@@ -22,6 +22,7 @@ uniform float2 origin;      // mosaic: the point the pattern is laid out from, i
 uniform float2 turn;        // mosaic: cos and sin of the pattern's rotation
 uniform float glass;        // mosaic: how much each cell looks like a piece of glass, 0..1
 uniform float glass_style;  // mosaic: 0 a dome, 1 a flat plate with bevelled edges
+uniform float whole;        // mosaic: 1 a cell the picture's edge cuts is left out, so the outline is whole cells
 uniform float bloom_threshold;  // BloomBright: how bright a part must be to shine, 0..1
 uniform float bloom_amount;     // BloomAdd: how strongly the light is laid over
 uniform texture2d original;     // MaskedComposite: the picture as it was
@@ -198,15 +199,166 @@ float2 cell_centre(float2 p, float block)
 	return c;
 }
 
+// ------------------------------------------------------------ whole cells
+// "Whole cells": a cell that the picture's edge cuts is left out, so that
+// what is left is made of whole cells and its outline (the image's alpha)
+// follows them. A cell can only be left out, never drawn past the edge: the
+// picture cannot grow. A point of the pattern (`v`, in the pattern's own
+// turned space, as `p` is) is judged by how far inside the picture's edges it
+// lies once turned back: below 0 it is outside.
+
+float inside_by(float2 v)
+{
+	float2 back = float2(v.x * turn.x - v.y * turn.y, v.x * turn.y + v.y * turn.x) + origin;
+	return min(min(back.x, back.y), min(size.x - back.x, size.y - back.y));
+}
+
+// The least of inside_by over the corners of a triangle or a rhomboid of the
+// slanted grid (`side` long), given in slanted units.
+float inside_slanted(float2 a, float2 b, float2 c, float side)
+{
+	return min(inside_by(from_slanted(a, side)), min(inside_by(from_slanted(b, side)), inside_by(from_slanted(c, side))));
+}
+
+// A picture corner (in pixels, `k` 0..3 round it, half a pixel outside) in
+// the pattern's turned space, in cells.
+float2 corner_in_cells(float k, float block)
+{
+	float2 at = float2(-0.5, -0.5);
+	if (k > 2.5)
+		at = float2(-0.5, size.y + 0.5);
+	else if (k > 1.5)
+		at = size + float2(0.5, 0.5);
+	else if (k > 0.5)
+		at = float2(size.x + 0.5, -0.5);
+	float2 d = at - origin;
+	return float2(d.x * turn.x + d.y * turn.y, d.y * turn.x - d.x * turn.y) / block;
+}
+
+// Whether the Voronoi cell of the point `s` (in cells) reaches the line
+// through `a` along `u`: the points of the line nearer `s` than every other
+// point near it (the 24 round it, as voronoi_centre places them) are a
+// stretch of it, worked out side by side. 1 when that stretch is not empty.
+float voronoi_reaches(float2 s, float2 a, float2 u)
+{
+	float2 i = floor(s);
+	float lo = -1.0e20;
+	float hi = 1.0e20;
+	float none = 0.0;
+	for (int y = 0; y < 5; y++) {
+		for (int x = 0; x < 5; x++) {
+			float2 n = i + float2(float(x) - 2.0, float(y) - 2.0);
+			float2 other = n + hash2(n);
+			float2 e = other - s;
+			if (dot(e, e) > 0.000001) {
+				// Nearer `s` than `other` where t * k1 <= k0.
+				float k1 = 2.0 * dot(u, e);
+				float k0 = dot(other, other) - dot(s, s) - 2.0 * dot(a, e);
+				if (k1 > 0.000001)
+					hi = min(hi, k0 / k1);
+				else if (k1 < -0.000001)
+					lo = max(lo, k0 / k1);
+				else if (k0 < 0.0)
+					none = 1.0;
+			}
+		}
+	}
+	return (1.0 - none) * step(lo, hi);
+}
+
+// 1 when the Voronoi cell of `c` (in pixels) lies wholly on the picture:
+// its point is on it and the cell reaches none of its four edges' lines.
+// Only a cell near an edge is worked out.
+float voronoi_whole(float2 c, float block)
+{
+	if (inside_by(c) < -0.5)
+		return 0.0;
+	if (inside_by(c) > block * 1.4143)
+		return 1.0;
+	float2 s = c / block;
+	float reach = 0.0;
+	for (int k = 0; k < 4; k++) {
+		float2 a = corner_in_cells(float(k), block);
+		float2 b = corner_in_cells(float(k) + 1.0 - step(2.5, float(k)) * 4.0, block);
+		reach = max(reach, voronoi_reaches(s, a, b - a));
+	}
+	return 1.0 - reach;
+}
+
+// 1 when the cell whose centre is `c` (from cell_centre) lies wholly on the
+// picture, else 0. Each shape is judged by its own corners, a circle by its
+// radius, a Voronoi cell by its neighbours.
+float cell_whole(float2 c, float block)
+{
+	float least = 0.0;
+	if (shape > 5.5) {
+		float side = block * 2.63;
+		float2 l = to_slanted(c, side);
+		float2 i = floor(l);
+		float2 f = l - i;
+		float upper = step(1.0, f.x + f.y);
+		float2 v0 = i + float2(upper, upper);
+		float2 v1 = i + lerp(float2(1.0, 0.0), float2(0.0, 1.0), upper);
+		float2 v2 = i + lerp(float2(0.0, 1.0), float2(1.0, 0.0), upper);
+		float2 middle = (v0 + v1 + v2) / 3.0;
+		// The third is the middle and the two corners nearer its centre.
+		float d0 = dot(l - v0, l - v0);
+		float d1 = dot(l - v1, l - v1);
+		float d2 = dot(l - v2, l - v2);
+		least = inside_slanted(middle, v1, v2, side);
+		if (d1 > d0 && d1 >= d2)
+			least = inside_slanted(middle, v0, v2, side);
+		if (d2 > d0 && d2 > d1)
+			least = inside_slanted(middle, v0, v1, side);
+	} else if (shape > 4.5) {
+		float side = block * 1.075;
+		float2 i = floor(to_slanted(c, side));
+		least = min(inside_slanted(i, i + float2(1.0, 0.0), i + float2(0.0, 1.0), side),
+			    inside_by(from_slanted(i + float2(1.0, 1.0), side)));
+	} else if (shape > 3.5) {
+		least = voronoi_whole(c, block) - 0.75;
+	} else if (shape > 2.5) {
+		float side = block * 1.52;
+		float2 l = to_slanted(c, side);
+		float2 i = floor(l);
+		float2 f = l - i;
+		float upper = step(1.0, f.x + f.y);
+		least = inside_slanted(i + float2(upper, upper), i + float2(1.0, 0.0), i + float2(0.0, 1.0), side);
+	} else if (shape > 1.5) {
+		// A circle (its centre a hexagon's) or the gap between three.
+		float2 h = hex_centre(c, block);
+		float is_round = step(length(c - h), block * 0.1);
+		least = inside_by(c) - lerp(0.29, 0.5, is_round) * block;
+	} else if (shape > 0.5) {
+		float r = block * 0.57735027;
+		float x = r * 0.5;
+		float y = r * 0.8660254;
+		least = min(min(inside_by(c + float2(r, 0.0)), inside_by(c - float2(r, 0.0))),
+			    min(min(inside_by(c + float2(x, y)), inside_by(c + float2(x, -y))),
+				min(inside_by(c + float2(-x, y)), inside_by(c - float2(x, y)))));
+	} else {
+		float e = block * 0.5;
+		least = min(min(inside_by(c + float2(e, e)), inside_by(c + float2(e, -e))),
+			    min(inside_by(c + float2(-e, e)), inside_by(c - float2(e, e))));
+	}
+	// (Half a pixel of slack: a cell flush with the edge is whole.)
+	return step(-0.5, least);
+}
+
 // The colour of the cell that `p + o * smoothing` lies in, read a little
 // off the cell's centre (towards `o`), so that nine of these together are
-// the cell's colour and, with smoothing, a soft edge between cells.
+// the cell's colour and, with smoothing, a soft edge between cells. A cell
+// left out by "whole cells" gives nothing, so smoothing fades into it.
 float4 mosaic_tap(float2 p, float2 o, float block)
 {
-	float2 c = cell_centre(p + o * smoothing, block) + o * block * 0.2;
+	float2 cell = cell_centre(p + o * smoothing, block);
+	float keep = 1.0;
+	if (whole > 0.5)
+		keep = cell_whole(cell, block);
+	float2 c = cell + o * block * 0.2;
 	float2 back = float2(c.x * turn.x - c.y * turn.y, c.x * turn.y + c.y * turn.x) + origin;
 	float4 s = tap(back * texel);
-	return float4(s.rgb * s.a, s.a);
+	return float4(s.rgb * s.a, s.a) * keep;
 }
 
 float4 PSMosaic(VertData v_in) : TARGET
@@ -215,15 +367,14 @@ float4 PSMosaic(VertData v_in) : TARGET
 	float2 d = v_in.uv * size - origin;
 	float2 p = float2(d.x * turn.x + d.y * turn.y, d.y * turn.x - d.x * turn.y);
 
-	float4 sum = mosaic_tap(p, float2(0.0, 0.0), block);
-	sum += mosaic_tap(p, float2(-1.0, -1.0), block);
-	sum += mosaic_tap(p, float2(0.0, -1.0), block);
-	sum += mosaic_tap(p, float2(1.0, -1.0), block);
-	sum += mosaic_tap(p, float2(-1.0, 0.0), block);
-	sum += mosaic_tap(p, float2(1.0, 0.0), block);
-	sum += mosaic_tap(p, float2(-1.0, 1.0), block);
-	sum += mosaic_tap(p, float2(0.0, 1.0), block);
-	sum += mosaic_tap(p, float2(1.0, 1.0), block);
+	// The cell's centre and the eight round it, in one loop (written out
+	// nine times, the whole-cells test made the shader too long to compile
+	// comfortably).
+	float4 sum = float4(0.0, 0.0, 0.0, 0.0);
+	for (int k = 0; k < 9; k++) {
+		float row = floor(float(k) / 3.0);
+		sum += mosaic_tap(p, float2(float(k) - row * 3.0 - 1.0, row - 1.0), block);
+	}
 	float4 colour = resolve(sum, 9.0);
 	// Glass: each cell is lit from the upper left like a small pane, brighter
 	// towards the light, darker away from it, with a glint and a dark rim.

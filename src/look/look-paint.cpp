@@ -298,6 +298,23 @@ void LookPaint::draw_item(obs_sceneitem_t *item)
 	gs_blend_state_pop();
 }
 
+void LookPaint::draw_picture(gs_texture_t *texture, const matrix4 &m, uint32_t w, uint32_t h)
+{
+	if (!texture || !w || !h)
+		return;
+	// (Raw values in, raw values out, as the canvases hold them.)
+	gs_effect_t *def = obs_get_base_effect(OBS_EFFECT_DEFAULT);
+	const bool previous = gs_framebuffer_srgb_enabled();
+	gs_enable_framebuffer_srgb(false);
+	gs_matrix_push();
+	gs_matrix_mul(&m);
+	gs_effect_set_texture(gs_effect_get_param_by_name(def, "image"), texture);
+	while (gs_effect_loop(def, "Draw"))
+		gs_draw_sprite(texture, 0, w, h);
+	gs_matrix_pop();
+	gs_enable_framebuffer_srgb(previous);
+}
+
 bool LookPaint::begin_canvas(gs_texrender_t *into, uint32_t cx, uint32_t cy)
 {
 	gs_texrender_reset(into);
@@ -333,8 +350,9 @@ void LookPaint::copy_onto(gs_texture_t *texture, uint32_t cx, uint32_t cy)
 }
 
 bool LookPaint::compose(gs_texture_t *scene, gs_texture_t *cast, gs_texture_t *mask, const ShadowLook &look,
-			uint32_t cx, uint32_t cy)
+			uint32_t cx, uint32_t cy, gs_texrender_t *into)
 {
+	gs_texrender_t *out = into ? into : out_;
 	if (!effect_ || !scene || !cast || !cx || !cy)
 		return false;
 	// The passes work on raw colour values, as Shadow, Glow & Outline's do.
@@ -343,9 +361,9 @@ bool LookPaint::compose(gs_texture_t *scene, gs_texture_t *cast, gs_texture_t *m
 	gs_texture_t *softened = cast;
 	if (look.shadow && look.softness > 0.0)
 		softened = blur_->blur(cast, cx, cy, look.softness);
-	gs_texrender_reset(out_);
+	gs_texrender_reset(out);
 	bool drawn = false;
-	if (gs_texrender_begin(out_, cx, cy)) {
+	if (gs_texrender_begin(out, cx, cy)) {
 		vec4 clear;
 		vec4_zero(&clear);
 		gs_clear(GS_CLEAR_COLOR, &clear, 0.0f, 0);
@@ -376,7 +394,7 @@ bool LookPaint::compose(gs_texture_t *scene, gs_texture_t *cast, gs_texture_t *m
 		while (gs_effect_loop(effect_, ring ? "Ring" : "MaskedShadow"))
 			gs_draw_sprite(scene, 0, cx, cy);
 		gs_blend_state_pop();
-		gs_texrender_end(out_);
+		gs_texrender_end(out);
 		drawn = true;
 	}
 	gs_enable_framebuffer_srgb(previous_srgb);

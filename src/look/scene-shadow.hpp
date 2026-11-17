@@ -49,4 +49,11 @@ void scene_shadow_default_flags(obs_source_t *scene, ShadowFlags &out);
 // Whether a filter is a Scene Shadow.
 bool is_scene_shadow(obs_source_t *filter);
 
+// For Scene Blur's "Each source by itself", on the drawing thread: the shadow
+// the Scene Shadow `filter` drew this frame laid again over `picture` (the
+// scene drawn again, cx by cy), the same shadow from the same shapes. Its
+// picture, kept until the next call, or nullptr when it drew nothing this
+// frame.
+gs_texture_t *scene_shadow_lay_over(obs_source_t *filter, gs_texture_t *picture, uint32_t cx, uint32_t cy);
+
 } // namespace stagekit
