@@ -9,9 +9,45 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | `feat/sd-layouts` (a Layout list on every key, beta166), on `main` after beta165 (#181). Next: the new collection |
+| Working branch | `feat/link-follow-sources` (Link Visibility's Follow sources, betaNEXT), on `main` after beta168 (#184). Next: the new collection |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
+
+## Link Visibility: Follow sources (0.1.0-betaNEXT)
+
+Branch `feat/link-follow-sources`, on `main` after beta168. Notes: `docs/releases/0.1.0-betaNEXT.md`.
+No Stream Deck file changed. The owner, with a screenshot of Component-Capture-Scene's filters (five
+Link Visibility filters in *Follow the first source*, -ComponentGame, -ComponentWindow,
+-ComponentCapture, -ComponentDesktop, -ComponentTablet, each a capture followed by *Column: Chat*,
+Morph): "I have all these filters effectively just to make the Column chat follow all my main live
+sources. I think the follow first source option should be changed to a follow source option, where
+one or more sources can be added, then the linked sources can be added."
+
+- Mode 2 is shown as **Follow sources** (still saved as 2). New settings: `leads` (PickList, *Lead
+  sources*, empty as it comes) and `lead_rule` (0 *Any lead is shown*, default; 1 *All leads are
+  shown*; append-only). In mode 2 `items` is shown as *Following sources*. The lead controls show in
+  mode 2 only. AGENTS, *Link Visibility's Follow sources*, has the rules.
+- **Old filters:** `leads` empty means the first entry of `items` leads the rest, as before; nothing
+  is rewritten. *Make the first a lead* (`take_first`, shown only for such a filter) moves it on a
+  press.
+- `link_visibility_holds_hidden` / `link_visibility_settling` go by `leads_say_shown`: a follower is
+  held hidden when every link listing it as a follower has its leads saying hidden.
+- **For the owner, five filters to one**: add a Link Visibility to Component-Capture-Scene, *Follow
+  sources*, the five captures under *Lead sources*, *Column: Chat* under *Following sources*,
+  Morph as before; switch the five old filters off, try every capture key, then remove them. The
+  release notes give the steps in plain words. The merge scripts still write the one-filter-per-mode
+  form, which keeps working.
+- Tests: `[link visibility: follow sources, several leads and their followers]` (alone:
+  `STAGEKIT_TEST_ONLY_LINK_FOLLOW`), last in the full run because it turns sound on: the window,
+  then both filter orders on and off screen (five leads and a chat follower, three capture changes
+  by Show in Scenes key with *Show only one* and Morph, two changes in one frame both ways, every
+  lead hidden, a Show in Scenes press passed over, *All leads are shown*), and a filter saved
+  without leads, with *Make the first a lead*. valgrind clean on the section.
+- **Seen in the tests, not changed:** with Morph as the captures' transition, scenes and sources of
+  the section are still held when OBS shuts down (18 and 36 remaining, "Double destroy" lines);
+  with a fade nothing is left. The same shows on `STAGEKIT_TEST_ONLY_LINK_TRANS`. It points at the
+  item Morph holding its scenes; not looked into further.
+- **Not proven:** Windows; the owner's own collection.
 
 ## Stream and Record keys (0.1.0-beta168, plugin 0.24.0.0)
 

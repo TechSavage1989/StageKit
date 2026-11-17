@@ -34,6 +34,7 @@
 #include <QPushButton>
 #include <QWidget>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -1656,6 +1657,410 @@ static void blur_edges_test(uint32_t w, uint32_t h, const std::string &out)
 	obs_leave_graphics();
 }
 
+// Link Visibility's "Follow sources": several lead sources (the captures of a
+// layout scene) and the sources that follow them (its chat column). The
+// owner had one "Follow the first source" filter per capture for that.
+struct FollowRecord {
+	std::mutex lock;
+	std::string watched;      // the follower's source name
+	std::vector<bool> events; // each show (true) or hide (false) of it
+};
+
+static void follow_record_cb(void *data, calldata_t *cd)
+{
+	auto *rec = static_cast<FollowRecord *>(data);
+	auto *item = static_cast<obs_sceneitem_t *>(calldata_ptr(cd, "item"));
+	const char *name = item ? obs_source_get_name(obs_sceneitem_get_source(item)) : nullptr;
+	std::lock_guard hold(rec->lock);
+	if (name && rec->watched == name)
+		rec->events.push_back(calldata_bool(cd, "visible"));
+}
+
+// Work done inside one OBS tick, before any filter is ticked: two changes
+// that must land in the same frame.
+struct InOneTick {
+	std::function<void()> work;
+	std::atomic<bool> done{false};
+};
+
+static void in_one_tick_cb(void *data, float)
+{
+	auto *job = static_cast<InOneTick *>(data);
+	if (job->done.load())
+		return;
+	job->work();
+	job->done = true;
+}
+
+static void in_one_tick(std::function<void()> work)
+{
+	InOneTick job;
+	job.work = std::move(work);
+	obs_add_tick_callback(in_one_tick_cb, &job);
+	for (int i = 0; i < 100 && !job.done.load(); i++)
+		sleep_ms(10);
+	obs_remove_tick_callback(in_one_tick_cb, &job);
+}
+
+static void link_follow_sources_test()
+{
+	printf("\n[link visibility: follow sources, several leads and their followers]\n");
+	const char *morph = obs_source_get_display_name("stagekit_morph") ? "stagekit_morph" : "fade_transition";
+	auto block = [](const std::string &name, long long abgr) {
+		obs_data_t *d = obs_data_create();
+		obs_data_set_int(d, "color", abgr);
+		obs_data_set_int(d, "width", 160);
+		obs_data_set_int(d, "height", 90);
+		obs_source_t *src = obs_source_create("color_source", name.c_str(), d, nullptr);
+		obs_data_release(d);
+		return src;
+	};
+	auto set_list = [](obs_data_t *settings, const char *list, const std::vector<std::string> &names) {
+		obs_data_array_t *rows = obs_data_array_create();
+		for (const std::string &name : names) {
+			obs_data_t *row = obs_data_create();
+			obs_data_set_string(row, "value", name.c_str());
+			obs_data_array_push_back(rows, row);
+			obs_data_release(row);
+		}
+		obs_data_set_array(settings, list, rows);
+		obs_data_array_release(rows);
+	};
+	auto read_list = [](obs_source_t *filter, const char *list) {
+		std::string out;
+		obs_data_t *s = obs_source_get_settings(filter);
+		obs_data_array_t *rows = obs_data_get_array(s, list);
+		for (size_t i = 0; i < obs_data_array_count(rows); i++) {
+			obs_data_t *row = obs_data_array_item(rows, i);
+			out += (out.empty() ? "" : "|") + std::string(obs_data_get_string(row, "value"));
+			obs_data_release(row);
+		}
+		obs_data_array_release(rows);
+		obs_data_release(s);
+		return out;
+	};
+	obs_source_t *before_out = obs_get_output_source(0);
+
+	// ------------------------------------------------ the window
+	{
+		obs_source_t *a = block("LF Win A", 0xFF0000FF), *b = block("LF Win B", 0xFF00FF00);
+		obs_scene_t *scene = obs_scene_create("LF Win Scene");
+		obs_scene_add(scene, a);
+		obs_scene_add(scene, b);
+		obs_data_t *ld = obs_data_create();
+		obs_data_set_int(ld, "mode", 0);
+		obs_source_t *link = obs_source_create("stagekit_visibility_link", "LF Win Link", ld, nullptr);
+		obs_data_release(ld);
+		obs_source_filter_add(obs_scene_get_source(scene), link);
+		obs_properties_t *props = obs_source_properties(link);
+		const bool hidden_in_0 = !obs_property_visible(obs_properties_get(props, "leads|alist")) &&
+					 !obs_property_visible(obs_properties_get(props, "lead_rule"));
+		obs_properties_destroy(props);
+		obs_data_t *now = obs_source_get_settings(link);
+		obs_data_set_int(now, "mode", 2);
+		obs_source_update(link, now);
+		obs_data_release(now);
+		props = obs_source_properties(link);
+		obs_property_t *mode = obs_properties_get(props, "mode");
+		std::string label;
+		for (size_t i = 0; mode && i < obs_property_list_item_count(mode); i++)
+			if (obs_property_list_item_int(mode, i) == 2)
+				label = obs_property_list_item_name(mode, i);
+		obs_property_t *leads = obs_properties_get(props, "leads|alist");
+		obs_property_t *rule = obs_properties_get(props, "lead_rule");
+		obs_property_t *items = obs_properties_get(props, "items|alist");
+		const bool shown_in_2 = leads && rule && obs_property_visible(leads) && obs_property_visible(rule) &&
+					obs_property_long_description(rule) && obs_property_list_item_count(rule) == 2;
+		const std::string items_label = items ? obs_property_description(items) : "";
+		const bool short_labels = label.size() <= 26 && items_label.size() <= 26 &&
+					  strlen(obs_property_description(leads)) <= 26 &&
+					  strlen(obs_property_description(rule)) <= 26;
+		obs_properties_destroy(props);
+		CHECK(hidden_in_0 && shown_in_2 && label == "Follow sources" && items_label == "Following sources" &&
+			      short_labels,
+		      "Link Visibility's mode 2 is 'Follow sources' (%s): Lead sources and Followers show when are shown in it only, the linked list is called '%s', every label short, with tooltips",
+		      label.c_str(), items_label.c_str());
+		obs_source_filter_remove(obs_scene_get_source(scene), link);
+		obs_source_release(link);
+		obs_scene_release(scene);
+		obs_source_release(a);
+		obs_source_release(b);
+	}
+
+	// Twice: the Show only one link before the follow link, then after; on
+	// screen and then off it.
+	for (int order = 0; order < 2; order++) {
+		for (int on_screen = 1; on_screen >= 0; on_screen--) {
+			printf("  (%s, %s)\n", order == 0 ? "show only one first" : "follow sources first",
+			       on_screen ? "on screen" : "off screen");
+			const std::string tag = " " + std::to_string(order) + std::to_string(on_screen);
+			obs_scene_t *scene = obs_scene_create(("LF Scene" + tag).c_str());
+			obs_source_t *scene_src = obs_scene_get_source(scene);
+			obs_scene_t *away = obs_scene_create(("LF Away" + tag).c_str());
+			enum { Captures = 5 };
+			std::vector<std::string> caps;
+			obs_source_t *cap[Captures];
+			obs_sceneitem_t *ci[Captures];
+			for (int i = 0; i < Captures; i++) {
+				caps.push_back("LF Capture " + std::to_string(i) + tag);
+				cap[i] = block(caps[i], 0xFF000000 | (0x30 * (i + 1)));
+				ci[i] = obs_scene_add(scene, cap[i]);
+				obs_sceneitem_set_visible(ci[i], i == 0);
+			}
+			const std::string chat_name = "LF Column Chat" + tag;
+			obs_source_t *chat = block(chat_name, 0xFFFFFFFF);
+			obs_sceneitem_t *chat_i = obs_scene_add(scene, chat);
+			obs_set_output_source(0, on_screen ? scene_src : obs_scene_get_source(away));
+			auto shown = [&] {
+				std::string s;
+				for (int i = 0; i < Captures; i++)
+					s += obs_sceneitem_visible(ci[i]) ? "1" : "0";
+				return s + (obs_sceneitem_visible(chat_i) ? " chat" : " no chat");
+			};
+			FollowRecord rec;
+			rec.watched = chat_name;
+			signal_handler_connect(obs_source_get_signal_handler(scene_src), "item_visible",
+					       follow_record_cb, &rec);
+			auto hides = [&] {
+				std::lock_guard hold(rec.lock);
+				return (int)std::count(rec.events.begin(), rec.events.end(), false);
+			};
+			auto shows = [&] {
+				std::lock_guard hold(rec.lock);
+				return (int)std::count(rec.events.begin(), rec.events.end(), true);
+			};
+			auto forget = [&] {
+				std::lock_guard hold(rec.lock);
+				rec.events.clear();
+			};
+
+			obs_data_t *od = obs_data_create();
+			set_list(od, "items", caps);
+			obs_data_set_int(od, "mode", 0);
+			obs_data_set_string(od, "transition", morph);
+			obs_data_set_int(od, "transition_ms", 300);
+			obs_source_t *only =
+				obs_source_create("stagekit_visibility_link", ("LF Only" + tag).c_str(), od, nullptr);
+			obs_data_release(od);
+			obs_data_t *fd = obs_data_create();
+			set_list(fd, "leads", caps);
+			set_list(fd, "items", {chat_name});
+			obs_data_set_int(fd, "mode", 2);
+			obs_data_set_string(fd, "transition", morph);
+			obs_data_set_int(fd, "transition_ms", 300);
+			obs_source_t *follow =
+				obs_source_create("stagekit_visibility_link", ("LF Follow" + tag).c_str(), fd, nullptr);
+			obs_data_release(fd);
+			for (obs_source_t *f : order == 0 ? std::vector<obs_source_t *>{only, follow}
+							  : std::vector<obs_source_t *>{follow, only})
+				obs_source_filter_add(scene_src, f);
+			// A Show in Scenes switch per capture, in this scene, as the
+			// owner's layout scenes have; and one on the chat column that
+			// follows what is shown.
+			obs_source_t *sw[Captures];
+			for (int i = 0; i < Captures; i++) {
+				obs_data_t *sd = obs_data_create();
+				set_list(sd, "scenes", {"LF Scene" + tag});
+				obs_data_set_int(sd, "where", 1);
+				obs_data_set_string(sd, "transition", morph);
+				obs_data_set_int(sd, "transition_ms", 300);
+				obs_data_set_bool(sd, "follow", true);
+				sw[i] = obs_source_create("stagekit_show_in_scenes",
+							  ("LF Switch " + std::to_string(i) + tag).c_str(), sd,
+							  nullptr);
+				obs_data_release(sd);
+				obs_source_filter_add(cap[i], sw[i]);
+			}
+			obs_data_t *cd = obs_data_create();
+			set_list(cd, "scenes", {"LF Scene" + tag});
+			obs_data_set_int(cd, "where", 1);
+			obs_data_set_string(cd, "transition", "none");
+			obs_data_set_bool(cd, "follow", true);
+			obs_source_t *chat_sw = obs_source_create("stagekit_show_in_scenes",
+								  ("LF Chat Switch" + tag).c_str(), cd, nullptr);
+			obs_data_release(cd);
+			obs_source_filter_add(chat, chat_sw);
+			sleep_ms(700);
+			CHECK(shown() == "10000 chat" && hides() == 0 && obs_source_enabled(chat_sw),
+			      "one Follow sources filter, five lead sources, one follower: the first capture shows and the chat column with it (%s)",
+			      shown().c_str());
+
+			// A capture switched to with its Show in Scenes key: Show only
+			// one hides the old one (a Morph between the two captures),
+			// and the chat column never goes in between.
+			bool chat_on_throughout = true;
+			int step = 0;
+			for (int to : {2, 4, 1}) {
+				obs_source_set_enabled(sw[to], true);
+				for (int i = 0; i < 12; i++) {
+					chat_on_throughout = chat_on_throughout && obs_sceneitem_visible(chat_i) &&
+							     obs_source_enabled(chat_sw);
+					sleep_ms(50);
+				}
+				step++;
+			}
+			obs_source_t *hid_with = obs_sceneitem_get_transition(ci[4], false);
+			const std::string hid_kind = hid_with ? obs_source_get_unversioned_id(hid_with) : "(none)";
+			CHECK(shown() == "01000 chat" && chat_on_throughout && hides() == 0 && hid_kind == morph,
+			      "switching from one capture to another with its key three times (the old one hidden by Show only one with %s): the chat column is never hidden in between, nor its switch read off (%s, %d hides)",
+			      hid_kind.c_str(), shown().c_str(), hides());
+
+			// Both orders inside one frame: hide then show, and show then
+			// hide.
+			in_one_tick([&] {
+				obs_sceneitem_set_visible(ci[1], false);
+				obs_sceneitem_set_visible(ci[3], true);
+			});
+			sleep_ms(400);
+			const std::string after_hide_show = shown();
+			in_one_tick([&] {
+				obs_sceneitem_set_visible(ci[0], true);
+				obs_sceneitem_set_visible(ci[3], false);
+			});
+			sleep_ms(400);
+			CHECK(after_hide_show == "00010 chat" && shown() == "10000 chat" && hides() == 0,
+			      "in one frame, one capture hidden and then another shown, or shown and then the other hidden: no flicker of the chat column (%s, then %s; %d hides)",
+			      after_hide_show.c_str(), shown().c_str(), hides());
+
+			// Every lead hidden: the follower goes, and stays hidden.
+			forget();
+			obs_sceneitem_set_visible(ci[0], false);
+			sleep_ms(400);
+			const std::string all_off = shown();
+			const bool switch_left_on = obs_source_enabled(chat_sw);
+			obs_sceneitem_set_visible(chat_i, true);
+			sleep_ms(300);
+			CHECK(all_off == "00000 no chat" && shown() == "00000 no chat" && switch_left_on,
+			      "every lead hidden: the chat column hidden, hidden again when shown by hand, and its switch (following what is shown) is left on: the link holds it hidden (%s, then %s)",
+			      all_off.c_str(), shown().c_str());
+			// The holds-hidden answer: the chat column's own switch passes
+			// over it while the leads say hidden.
+			forget();
+			obs_source_set_enabled(chat_sw, false);
+			sleep_ms(200);
+			obs_source_set_enabled(chat_sw, true);
+			sleep_ms(400);
+			CHECK(shows() == 0 && shown() == "00000 no chat",
+			      "and a Show in Scenes press on the chat column passes over it while every lead is hidden (%d shows)",
+			      shows());
+			obs_source_set_enabled(sw[3], true);
+			sleep_ms(400);
+			CHECK(shown() == "00010 chat" && obs_source_enabled(chat_sw),
+			      "a lead shown again: the chat column comes back (%s)", shown().c_str());
+
+			// All leads shown, by choice: the followers show only while
+			// every lead shows.
+			obs_data_t *now = obs_source_get_settings(follow);
+			set_list(now, "leads", {caps[3], caps[4]});
+			obs_data_set_int(now, "lead_rule", 1);
+			obs_source_update(follow, now);
+			obs_data_release(now);
+			obs_source_set_enabled(only, false);
+			sleep_ms(300);
+			const std::string one_of_two = shown();
+			obs_sceneitem_set_visible(ci[4], true);
+			sleep_ms(300);
+			const std::string both = shown();
+			obs_sceneitem_set_visible(ci[3], false);
+			sleep_ms(300);
+			CHECK(one_of_two == "00010 no chat" && both == "00011 chat" && shown() == "00001 no chat",
+			      "with All leads are shown: one lead of two shown says hidden (%s), the chat column shows with both leads (%s) and goes when one is hidden (%s)",
+			      one_of_two.c_str(), both.c_str(), shown().c_str());
+
+			signal_handler_disconnect(obs_source_get_signal_handler(scene_src), "item_visible",
+						  follow_record_cb, &rec);
+			obs_set_output_source(0, nullptr);
+			for (int i = 0; i < Captures; i++) {
+				obs_source_filter_remove(cap[i], sw[i]);
+				obs_source_release(sw[i]);
+			}
+			obs_source_filter_remove(chat, chat_sw);
+			obs_source_release(chat_sw);
+			for (obs_source_t *f : {only, follow}) {
+				obs_source_filter_remove(scene_src, f);
+				obs_source_release(f);
+			}
+			sleep_ms(200);
+			obs_source_remove(scene_src);
+			obs_source_remove(obs_scene_get_source(away));
+			obs_scene_release(scene);
+			obs_scene_release(away);
+			for (obs_source_t *s : cap) {
+				obs_source_remove(s);
+				obs_source_release(s);
+			}
+			obs_source_remove(chat);
+			obs_source_release(chat);
+		}
+	}
+
+	// ------------------------------------------------ saved before Lead sources
+	{
+		obs_source_t *a = block("LF Old Lead", 0xFF0000FF), *b = block("LF Old Other", 0xFF00FF00);
+		obs_source_t *c = block("LF Old Chat", 0xFFFFFFFF);
+		obs_scene_t *scene = obs_scene_create("LF Old Scene");
+		obs_source_t *scene_src = obs_scene_get_source(scene);
+		obs_sceneitem_t *ai = obs_scene_add(scene, a);
+		obs_sceneitem_t *bi = obs_scene_add(scene, b);
+		obs_sceneitem_t *chi = obs_scene_add(scene, c);
+		obs_sceneitem_set_visible(bi, false);
+		obs_set_output_source(0, scene_src);
+		// One of the owner's five: the capture first, then Column: Chat.
+		obs_data_t *ld = obs_data_create();
+		set_list(ld, "items", {"LF Old Lead", "LF Old Chat"});
+		obs_data_set_int(ld, "mode", 2);
+		obs_data_set_string(ld, "transition", "none");
+		obs_source_t *link = obs_source_create("stagekit_visibility_link", "LF Old Link", ld, nullptr);
+		obs_data_release(ld);
+		obs_source_filter_add(scene_src, link);
+		auto state = [&] {
+			return std::string(obs_sceneitem_visible(ai) ? "1" : "0") +
+			       (obs_sceneitem_visible(bi) ? "1" : "0") + (obs_sceneitem_visible(chi) ? "1" : "0");
+		};
+		sleep_ms(400);
+		const std::string start = state();
+		obs_sceneitem_set_visible(ai, false);
+		sleep_ms(300);
+		const std::string lead_off = state();
+		obs_sceneitem_set_visible(bi, true); // not a lead of this filter
+		sleep_ms(300);
+		const std::string other_on = state();
+		obs_sceneitem_set_visible(ai, true);
+		sleep_ms(300);
+		CHECK(start == "101" && lead_off == "000" && other_on == "010" && state() == "111" &&
+			      read_list(link, "leads").empty(),
+		      "a filter saved before Lead sources (the first listed leads) behaves as before, and its settings are not rewritten (%s %s %s %s)",
+		      start.c_str(), lead_off.c_str(), other_on.c_str(), state().c_str());
+		// The window offers to make the first a lead source; pressed, it
+		// moves and nothing else changes.
+		obs_properties_t *props = obs_source_properties(link);
+		obs_property_t *take = obs_properties_get(props, "take_first");
+		const bool offered = take && obs_property_visible(take) && obs_property_long_description(take);
+		if (take)
+			obs_property_button_clicked(take, link);
+		obs_properties_destroy(props);
+		const std::string leads = read_list(link, "leads"), items = read_list(link, "items");
+		obs_sceneitem_set_visible(ai, false);
+		sleep_ms(300);
+		const std::string moved_off = state();
+		obs_sceneitem_set_visible(ai, true);
+		sleep_ms(300);
+		CHECK(offered && leads == "LF Old Lead" && items == "LF Old Chat" && moved_off == "010" &&
+			      state() == "111",
+		      "its window offers 'Make the first a lead'; pressed, the first source moves to Lead sources (%s / %s) and it follows as before (%s %s)",
+		      leads.c_str(), items.c_str(), moved_off.c_str(), state().c_str());
+		obs_set_output_source(0, nullptr);
+		obs_source_filter_remove(scene_src, link);
+		obs_source_release(link);
+		sleep_ms(100);
+		obs_scene_release(scene);
+		for (obs_source_t *s : {a, b, c})
+			obs_source_release(s);
+	}
+	obs_set_output_source(0, before_out);
+	obs_source_release(before_out);
+}
+
 static void link_transitions_test(uint32_t w, uint32_t h)
 {
 	printf("\n[link visibility: show and hide transitions, and Morph's unpaired sources]\n");
@@ -2105,6 +2510,20 @@ int main(int argc, char **argv)
 	if (getenv("STAGEKIT_TEST_ONLY_BLUR_EDGES")) { // to try that section alone
 		scene_blur_controls_test();
 		blur_edges_test(w, h, out);
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
+
+	if (getenv("STAGEKIT_TEST_ONLY_LINK_FOLLOW")) { // to try that section alone
+		// With sound, as at the end of a full run: the item Morph's
+		// changes end only then.
+		obs_audio_info sound = {};
+		sound.samples_per_sec = 48000;
+		sound.speakers = SPEAKERS_STEREO;
+		obs_reset_audio(&sound);
+		link_follow_sources_test();
 		obs_shutdown();
 		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
 		       g_failures == 1 ? "" : "s");
@@ -18459,6 +18878,7 @@ int main(int argc, char **argv)
 	// (With sound, which the layout scenes turned on: OBS ends an item's
 	// show and hide transitions only then.)
 	capture_pop_in_test(w, h, out);
+	link_follow_sources_test();
 
 	obs_source_dec_showing(bg);
 	obs_data_release(s);

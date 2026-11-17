@@ -53,7 +53,7 @@ from hotkeys, or from the Stream Deck OBS Studio plugin's *Filter* and *Source* 
 - **Move Scene Item** (scene filter): the same move, set up on a scene instead of on the source.
 - **Show/Hide Animation** (scene filter): slides or pops an item in and out when it is shown or hidden.
 - **Link Visibility** (scene filter): ties eye icons together. Show only one of a set of items, show
-  and hide a set together, or have a set follow its first item.
+  and hide a set together, or have a set follow one or more lead items.
 - **Match Item** (scene filter): keeps an item lined up with an item in another scene, so titles sit in
   the same place in every scene.
 - **Apply Layout** (scene filter): saves an arrangement of a scene's items and glides back to it.
@@ -911,21 +911,44 @@ life for a moment when that scene comes on). The transitions stay set for the ne
 
 Add **Link Visibility (StageKit)** as a filter on a *scene*, once per set of items.
 
-1. Choose *Show only one at a time*, *Show and hide together* or *Follow the first source*.
+1. Choose *Show only one at a time*, *Show and hide together* or *Follow sources*.
 2. Pick each item from the list and press *Add it to the list*.
 
 With *Show only one at a time*, showing one item hides the others in the set. With *Show and hide
-together*, showing or hiding one does the same to the rest. With *Follow the first source*, the first
-item in the list leads: when it is shown the others are shown with it, and when it is hidden they are
-hidden. Showing or hiding any of the others moves nothing else, so a camera switched off in that set
-stays off. Two rules make it suit several modes in one scene:
+together*, showing or hiding one does the same to the rest.
 
-- While the first item is hidden, the others stay hidden: one shown by anything else (the eye icon,
-  a key) is hidden again at once, and a [Show in Scenes](#show-in-scenes) switch that shows sources
-  in every scene passes over them.
-- When the first item is shown, an item that a Show in Scenes switch has off (its switch is off, or
-  on, set so that on means hidden) is left hidden. So a camera switch acting in every scene shows the
-  camera only in the mode showing, and switching modes with the camera off leaves it off.
+With *Follow sources*, two lists appear: **Lead sources** and **Following sources**. The following
+sources go with the lead sources: while a lead source is shown they are shown, and once every lead
+source is hidden they are hidden. Changing from one lead to another (one capture to the next) never
+hides them in between. **Followers show when** (*Any lead is shown* as it comes) can be set to *All
+leads are shown*: then they show only while every lead source is shown. Showing or hiding a
+following source moves nothing else, so a camera switched off in that set stays off. Two rules make
+it suit several modes in one scene:
+
+- While the lead sources say hidden, the following sources stay hidden: one shown by anything else
+  (the eye icon, a key) is hidden again at once, and a [Show in Scenes](#show-in-scenes) switch that
+  shows sources in every scene passes over them.
+- When the lead sources say shown, a following source that a Show in Scenes switch has off (its
+  switch is off, or on, set so that on means hidden) is left hidden. So a camera switch acting in
+  every scene shows the camera only in the mode showing, and switching modes with the camera off
+  leaves it off.
+
+When the filter is switched on or OBS starts, the sources are taken as they are; only a change of
+the lead sources moves the following ones.
+
+A filter made before *Lead sources* existed (*Follow the first source*) has that list empty, and its
+first linked source leads the rest exactly as before. Its window offers **Make the first a lead**,
+which moves that source into *Lead sources*; nothing changes until you press it.
+
+For example, a chat column that goes with every capture of a layout scene: one Link Visibility set
+to *Follow sources*, every capture under *Lead sources*, the chat column under *Following sources*.
+To replace one filter per capture with that one:
+
+1. Add a **Link Visibility** to the scene and set it to *Follow sources*.
+2. Under *Lead sources*, add each capture the old filters led (the first source of each).
+3. Under *Following sources*, add what they followed (the chat column).
+4. Choose the same *Show/Hide transition* as the old filters (*Morph (StageKit)*, say).
+5. Switch the old filters off and try every capture key; when all is well, remove them.
 
 It follows whatever shows or hides an item:
 the eye icon, a Stream Deck *Source* key, a hotkey. Switch the filter off to pause it.
@@ -934,8 +957,8 @@ Under *Show/Hide transition*, *Show transition* and *Hide transition* choose how
 and hides appear and disappear: *As the scene sets* to begin with, any other transition OBS has (with
 its own settings, such as the way a slide goes, right under it), a cut, or whatever is set on each
 item. *Hide transition* is *The same as showing* until you choose another, and each has its own
-*Duration*. *Settings for* switches the controls to one listed source (from *Linked items* or *Also in
-other scenes*), so that source can come and go its own way; the rest keep the usual settings. With
+*Duration*. *Settings for* switches the controls to one listed source (from *Linked items*, *Lead
+sources* or *Also in other scenes*), so that source can come and go its own way; the rest keep the usual settings. With
 *Morph (StageKit)* chosen, *Unpaired sources* says how a source with nothing to change into comes and
 goes ([below](#morph-between-items)). A filter set up before this keeps its *Transition* and *Duration*
 as they were, for showing and hiding alike.
@@ -989,9 +1012,9 @@ title and a few extras. They can be one scene with one mode showing:
 1. Put every mode's title and extras in the scene with the shared items, each where it was. Make
    each title a group, so a mode is one title plus the items that come with it.
 2. Add a **Link Visibility** to the scene with *Show only one at a time* and the titles listed.
-3. Add one more **Link Visibility** per mode, set to *Follow the first source*, listing that mode's
-   title first and then its extras. Showing a title then shows its extras, and hiding it hides them
-   and keeps them hidden.
+3. Add one more **Link Visibility** per mode, set to *Follow sources*, with that mode's title under
+   *Lead sources* and its extras under *Following sources*. Showing a title then shows its extras,
+   and hiding it hides them and keeps them hidden.
 4. On each title add a **Show in Scenes** named alike on every title (say *Show in Scenes-Mode*):
    *The scenes listed below* with the holding scene only, a fade, and *Follow what is shown*
    ticked. With *Switch to scene* set to the holding scene, a mode's key also brings that scene up
@@ -1724,7 +1747,7 @@ to (the two update choices are kept with the plugin instead). Replacing the plug
   naming the filters that cost most. Send the log (*Help → Log Files → Upload Current Log File*) with
   the problem; the end of it also has OBS's own figures (`obs_graphics_thread`, `tick_sources`). Most
   StageKit filters do less while their scene is not on screen, and the ones that watch your scenes
-  (Show in Scenes' *Follow what is shown*, Link Visibility's *Follow the first source*, a shadow's
+  (Show in Scenes' *Follow what is shown*, Link Visibility's *Follow sources*, a shadow's
   size in screen pixels, Ambient Background's live capture) look again when something in a scene
   changes rather than many times a second. A Multiview or a projector shows every scene, so with
   one open they all count as on screen.
