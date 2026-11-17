@@ -41,6 +41,18 @@ the Free Software Foundation; either version 2 of the License, or
 #include <string>
 #include <vector>
 
+// ==== scene-filters:fit ====
+#include <atomic>
+namespace stagekit {
+// Raised whenever a shadow's room may have changed, so a fit reads it again.
+static std::atomic<uint64_t> g_room_rev{1};
+uint64_t shadow_room_revision()
+{
+	return g_room_rev.load();
+}
+} // namespace stagekit
+// ==== end scene-filters:fit ====
+
 namespace stagekit {
 
 namespace {
@@ -428,6 +440,9 @@ ShadowBackdrop::~ShadowBackdrop()
 
 void ShadowBackdrop::update(obs_data_t *settings)
 {
+	// ==== scene-filters:fit ====
+	g_room_rev++;
+	// ==== end scene-filters:fit ====
 	// 0.1.0-beta38 kept this list as a tick box per scene, by the scene's id.
 	{
 		std::vector<std::string> old_keys;
@@ -542,6 +557,9 @@ void ShadowBackdrop::settle_items(obs_source_t *parent, const Padding &wanted)
 	obs_data_set_int(settings, "adjusted_right", wanted.right);
 	obs_data_set_int(settings, "adjusted_bottom", wanted.bottom);
 	obs_data_release(settings);
+	// ==== scene-filters:fit ====
+	g_room_rev++;
+	// ==== end scene-filters:fit ====
 }
 
 // "Keep it on screen": an item whose picture is on the canvas but whose

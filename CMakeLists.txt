@@ -149,6 +149,10 @@ target_sources(
     src/placement/scene-transitions.hpp
     # ==== end scene-filters:transitions ====
     # ==== scene-filters:fit ====
+    src/placement/fit-engine.cpp
+    src/placement/fit-engine.hpp
+    src/placement/scene-fit.cpp
+    src/placement/scene-fit.hpp
     # ==== end scene-filters:fit ====
     # ==== scene-filters:standby-corners ====
     src/common/managed-filter.cpp

@@ -1438,7 +1438,41 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   Scene Modes' section.
 <!-- ==== end scene-filters:transitions ==== -->
 <!-- ==== scene-filters:fit ==== -->
-- **Scene Fit**: to come.
+- **Scene Fit and Fit to Space share one engine** (`src/placement/fit-engine.*`, beta155). A Fit
+  to Space is one `FitEngine` and one `FitScan` (`fit-item.cpp` keeps only its window and
+  registration); a Scene Fit (`stagekit_scene_fit`, `src/placement/scene-fit.*`) is one
+  `FitEngine` per entry and one `FitScan` per way of measuring. The engine's tick is cut into
+  steps, `prepare` (hidden, coming back, kept size, own visible-pixel cut), `motion` (off
+  screen, dragged by hand, anchor), `observe` + `solve` (what is in the way, the goal),
+  `publish_claim`, `advance` (the glide) and `apply`, and `FitEngine::tick` calls them in the
+  order the old `FitItem::tick` did: change them there, never in one host only. Scene Fit
+  works its entries out in the order of *Fitted sources*, top first, and again (up to four
+  passes, `kPasses`) while one entry's new claim moves another's goal, before any glide
+  starts: each entry sets off once per change, all in one tick. An entry's settings are
+  `fit|<source>|<Fit to Space's key>` (the self-written ones too: anchors, `keep_k`, `orig_k`;
+  `kOwnSettings` matches on the last `|` part), but its two lists are `fit_<the name in hex>_skip`
+  and `..._share_scenes` (`fit_list_prefix`): a PickList's setting cannot hold a bar and a
+  source's name may. The overlap switch `skip_fill_on` is one for the whole Scene Fit, so the
+  *Fit to Space Overlap* key works on it. Every entry always carries its own settings (seeded by
+  `fit_entry_defaults`, gap 30); there is no "every source" set. The window has a group per entry
+  (`fit|<source>|g`, controls from the shared `fit_add_controls`), only the one chosen in
+  *Settings for* (`fit_for`) shown, kept in step with the list by `pick_list_on_change_for`.
+  *Take over Fit to Space* (`take_over`) copies each enabled Fit to Space's effective settings
+  (defaults included: Fit to Space's gap is 80, Scene Fit's 30) and switches it off. A
+  stand-in twin of an entry is not in the way of the others (its item's claim holds that room).
+  Not done in Scene Fit (each its own change later): dropping `kComingBack`, one glide time for
+  all entries during a window switcher's change, a Link Visibility test in both orders, the
+  window-switcher sync test, and the cost test against seven Fit to Space filters (it waits for
+  `stagekit_timing_take`).
+- **Fit to Space is idle off screen** (`FitEngine::idle`, perf cut 1): with its scene not
+  showing and nothing asked of it (`dirty_`, `placed_`, `shared_in_`, `new_item_`) its tick is
+  skipped but every fifteenth, each engine on a frame of its own, and the time skipped is added
+  to the next full tick (`idle_s_`), so a kept size waiting to be read and a hidden item's room
+  carry on as before. The tick the scene comes on is a full one (`kArriving`: no glide). The
+  room a shadow takes is read again only when `shadow_room_revision()` changes (perf cut 2),
+  raised in `ShadowBackdrop::update` and `settle_items`: anything else that changes the room
+  must raise it too. `stagekit_test_fit_counts` (a global proc) gives a fit filter's full ticks
+  and glides, for the tests.
 <!-- ==== end scene-filters:fit ==== -->
 <!-- ==== scene-filters:standby-corners ==== -->
 - **Scene Standby and Scene Corners keep a filter on each source; neither draws**

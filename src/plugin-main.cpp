@@ -53,6 +53,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "placement/scene-transitions.hpp"
 // ==== end scene-filters:transitions ====
 // ==== scene-filters:fit ====
+#include "placement/scene-fit.hpp"
 // ==== end scene-filters:fit ====
 // ==== scene-filters:standby-corners ====
 #include "placement/scene-corners.hpp"
@@ -151,6 +152,7 @@ bool obs_module_load(void)
 	stagekit::register_scene_transitions();
 	// ==== end scene-filters:transitions ====
 	// ==== scene-filters:fit ====
+	stagekit::register_scene_fit();
 	// ==== end scene-filters:fit ====
 	// ==== scene-filters:standby-corners ====
 	stagekit::register_scene_standby();

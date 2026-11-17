@@ -12750,6 +12750,567 @@ int main(int argc, char **argv)
 	}
 
 	// ==== scene-filters:fit ====
+	// ------------------------------------------ fit to space: off-screen idle
+	{
+		printf("\n[fit to space: off-screen idle]\n");
+		auto fit_sized = [](obs_source_t *src, int cw, int ch) {
+			obs_data_t *d = obs_data_create();
+			obs_data_set_int(d, "width", cw);
+			obs_data_set_int(d, "height", ch);
+			obs_source_update(src, d);
+			obs_data_release(d);
+		};
+		// The full ticks a fit filter's engines have had, and the glides set off.
+		auto fit_counts = [](const char *filter, const char *item, long long &ticks, long long &glides) {
+			calldata_t cd;
+			calldata_init(&cd);
+			calldata_set_string(&cd, "filter", filter);
+			calldata_set_string(&cd, "item", item ? item : "");
+			proc_handler_call(obs_get_proc_handler(), "stagekit_test_fit_counts", &cd);
+			ticks = calldata_int(&cd, "ticks");
+			glides = calldata_int(&cd, "glides");
+			calldata_free(&cd);
+		};
+		obs_source_t *game = obs_source_create("color_source", "Idle Game", nullptr, nullptr);
+		fit_sized(game, 400, 300);
+		obs_source_t *cam = obs_source_create("color_source", "Idle Cam", nullptr, nullptr);
+		fit_sized(cam, 100, 100);
+		obs_scene_t *away = obs_scene_create("Fit Idle Away");
+		obs_scene_t *other = obs_scene_create("Fit Idle Other");
+		obs_sceneitem_t *gi = obs_scene_add(away, game);
+		obs_sceneitem_t *ci = obs_scene_add(away, cam);
+		vec2 at;
+		vec2_set(&at, 100.0f, 50.0f);
+		obs_sceneitem_set_pos(gi, &at);
+		vec2_set(&at, 520.0f, 240.0f);
+		obs_sceneitem_set_pos(ci, &at);
+		obs_data_t *d = obs_data_create();
+		obs_data_set_string(d, "item", "Idle Game");
+		obs_data_set_int(d, "box", 2);
+		obs_data_set_double(d, "margin", 20);
+		obs_data_set_int(d, "glide_ms", 0);
+		obs_source_t *fit = obs_source_create("stagekit_fit_item", "Fit Idle", d, nullptr);
+		obs_data_release(d);
+		obs_source_filter_add(obs_scene_get_source(away), fit);
+		obs_source_t *before = obs_get_output_source(0);
+		auto show = [&](obs_scene_t *scene, int ms) {
+			obs_set_output_source(0, obs_scene_get_source(scene));
+			for (int i = 0; i < ms / 20; i++) {
+				render(obs_scene_get_source(scene), 640, 360);
+				sleep_ms(20);
+			}
+		};
+		auto game_at = [&]() {
+			vec2 p, b;
+			obs_sceneitem_get_pos(gi, &p);
+			obs_sceneitem_get_bounds(gi, &b);
+			struct {
+				double v[4];
+				double operator[](int i) const { return v[i]; }
+			} out{{p.x, p.y, b.x, b.y}};
+			return out;
+		};
+		show(away, 600);
+		auto g = game_at();
+		CHECK(std::fabs(g[0] - 20) < 0.6 && std::fabs(g[2] - 480) < 0.6,
+		      "on screen it is fitted as before (%.0f, %.0f %.0fx%.0f)", g[0], g[1], g[2], g[3]);
+		long long t0 = 0, t1 = 0, glides = 0;
+		fit_counts("Fit Idle", nullptr, t0, glides);
+		show(away, 1000);
+		fit_counts("Fit Idle", nullptr, t1, glides);
+		const long long shown_ticks = t1 - t0;
+		show(other, 300);
+		fit_counts("Fit Idle", nullptr, t0, glides);
+		show(other, 1000);
+		fit_counts("Fit Idle", nullptr, t1, glides);
+		const long long idle_ticks = t1 - t0;
+		CHECK(shown_ticks >= 30 && idle_ticks * 5 <= shown_ticks,
+		      "off screen with nothing to do, its full ticks fall by 80 %% or more (%lld a second on screen, %lld off)",
+		      shown_ticks, idle_ticks);
+		// Something changes while the scene is away: the item beside it is
+		// moved over the game's place.
+		vec2_set(&at, 20.0f, 20.0f);
+		obs_sceneitem_set_pos(ci, &at);
+		show(other, 300);
+		g = game_at();
+		CHECK(std::fabs(g[0] - 20) < 0.6, "and nothing is done to the item while its scene is away (%.0f)",
+		      g[0]);
+		obs_set_output_source(0, obs_scene_get_source(away));
+		sleep_ms(60); // three or four frames
+		g = game_at();
+		CHECK(std::fabs(g[0] - 140) < 0.6 && std::fabs(g[2] - 480) < 0.6,
+		      "the scene shown again, it is put right at once, without a glide (%.0f, %.0f %.0fx%.0f)", g[0],
+		      g[1], g[2], g[3]);
+		// New settings while away are taken at once, not four times a second.
+		show(other, 300);
+		obs_data_t *again = obs_source_get_settings(fit);
+		obs_data_set_double(again, "margin", 10);
+		obs_source_update(fit, again);
+		obs_data_release(again);
+		fit_counts("Fit Idle", nullptr, t0, glides);
+		sleep_ms(50);
+		fit_counts("Fit Idle", nullptr, t1, glides);
+		CHECK(t1 > t0, "new settings while away are taken in full at once (%lld full ticks)", t1 - t0);
+		obs_set_output_source(0, before);
+		obs_source_release(before);
+		obs_source_filter_remove(obs_scene_get_source(away), fit);
+		obs_source_release(fit);
+		for (obs_scene_t *scene : {away, other}) {
+			obs_source_remove(obs_scene_get_source(scene));
+			obs_scene_release(scene);
+		}
+		obs_source_release(game);
+		obs_source_release(cam);
+	}
+	// ---------------------------------------------------------- scene fit
+	{
+		printf("\n[scene fit]\n");
+		auto fit_sized = [](obs_source_t *src, int cw, int ch) {
+			obs_data_t *d = obs_data_create();
+			obs_data_set_int(d, "width", cw);
+			obs_data_set_int(d, "height", ch);
+			obs_source_update(src, d);
+			obs_data_release(d);
+		};
+		auto fit_counts = [](const char *filter, const char *item, long long &ticks, long long &glides) {
+			calldata_t cd;
+			calldata_init(&cd);
+			calldata_set_string(&cd, "filter", filter);
+			calldata_set_string(&cd, "item", item ? item : "");
+			proc_handler_call(obs_get_proc_handler(), "stagekit_test_fit_counts", &cd);
+			ticks = calldata_int(&cd, "ticks");
+			glides = calldata_int(&cd, "glides");
+			calldata_free(&cd);
+		};
+		auto fit_list = [](obs_data_t *d, const char *setting, std::vector<std::string> values) {
+			obs_data_array_t *list = obs_data_array_create();
+			for (const std::string &value : values) {
+				obs_data_t *entry = obs_data_create();
+				obs_data_set_string(entry, "value", value.c_str());
+				obs_data_array_push_back(list, entry);
+				obs_data_release(entry);
+			}
+			obs_data_set_array(d, setting, list);
+			obs_data_array_release(list);
+		};
+		struct FitBox {
+			double x = 0, y = 0, w = 0, h = 0;
+		};
+		auto fit_box = [](obs_sceneitem_t *item) {
+			vec2 p, b;
+			obs_sceneitem_get_pos(item, &p);
+			obs_sceneitem_get_bounds(item, &b);
+			return FitBox{p.x, p.y, b.x, b.y};
+		};
+		auto fit_near = [](const FitBox &a, const FitBox &b, double by) {
+			return std::fabs(a.x - b.x) <= by && std::fabs(a.y - b.y) <= by && std::fabs(a.w - b.w) <= by &&
+			       std::fabs(a.h - b.h) <= by;
+		};
+		auto fit_overlap = [](const FitBox &a, const FitBox &b) {
+			return a.x < b.x + b.w - 0.5 && b.x < a.x + a.w - 0.5 && a.y < b.y + b.h - 0.5 &&
+			       b.y < a.y + a.h - 0.5;
+		};
+		// The owner's layout, small: a game that is fitted to what is left, a
+		// camera and a chat box that keep their size, over a background.
+		obs_source_t *game = obs_source_create("color_source", "SF Game", nullptr, nullptr);
+		fit_sized(game, 1600, 900);
+		obs_source_t *cam = obs_source_create("color_source", "SF Cam", nullptr, nullptr);
+		fit_sized(cam, 120, 68);
+		obs_source_t *chat = obs_source_create("color_source", "SF Chat", nullptr, nullptr);
+		fit_sized(chat, 120, 150);
+		obs_source_t *bg = obs_source_create("color_source", "SF Back", nullptr, nullptr);
+		fit_sized(bg, 640, 360);
+		auto fit_scene = [&](const char *name, obs_sceneitem_t **gi, obs_sceneitem_t **ci,
+				     obs_sceneitem_t **hi) {
+			obs_scene_t *scene = obs_scene_create(name);
+			obs_scene_add(scene, bg);
+			*gi = obs_scene_add(scene, game);
+			*ci = obs_scene_add(scene, cam);
+			*hi = obs_scene_add(scene, chat);
+			vec2 at, k;
+			vec2_set(&at, 10.0f, 10.0f);
+			vec2_set(&k, 0.25f, 0.25f);
+			obs_sceneitem_set_pos(*gi, &at);
+			obs_sceneitem_set_scale(*gi, &k);
+			vec2_set(&at, 510.0f, 10.0f);
+			obs_sceneitem_set_pos(*ci, &at);
+			vec2_set(&at, 510.0f, 100.0f);
+			obs_sceneitem_set_pos(*hi, &at);
+			return scene;
+		};
+		// One entry's (or one Fit to Space's) settings.
+		auto fit_settings = [](obs_data_t *d, const std::string &prefix, bool resize, int toward) {
+			obs_data_set_int(d, (prefix + "box").c_str(), 2);
+			obs_data_set_double(d, (prefix + "margin").c_str(), 10);
+			obs_data_set_double(d, (prefix + "tolerance").c_str(), 5);
+			obs_data_set_bool(d, (prefix + "resize").c_str(), resize);
+			obs_data_set_int(d, (prefix + "toward").c_str(), toward);
+			obs_data_set_int(d, (prefix + "glide_ms").c_str(), 200);
+		};
+		obs_source_t *before = obs_get_output_source(0);
+		auto show = [&](obs_scene_t *scene, int ms) {
+			obs_set_output_source(0, obs_scene_get_source(scene));
+			for (int i = 0; i < ms / 20; i++) {
+				render(obs_scene_get_source(scene), 640, 360);
+				sleep_ms(20);
+			}
+		};
+
+		// The same layout by three Fit to Space filters...
+		obs_sceneitem_t *g1, *c1, *h1;
+		obs_scene_t *alone = fit_scene("SF Three Filters", &g1, &c1, &h1);
+		std::vector<obs_source_t *> filters;
+		for (const char *item : {"SF Cam", "SF Chat", "SF Game"}) {
+			obs_data_t *d = obs_data_create();
+			obs_data_set_string(d, "item", item);
+			fit_settings(d, "", std::strcmp(item, "SF Game") == 0,
+				     std::strcmp(item, "SF Cam") == 0 ? 6 : 0);
+			const std::string name = std::string("SF Fit ") + item;
+			obs_source_t *f = obs_source_create("stagekit_fit_item", name.c_str(), d, nullptr);
+			obs_data_release(d);
+			obs_source_filter_add(obs_scene_get_source(alone), f);
+			filters.push_back(f);
+		}
+		show(alone, 1500);
+		const FitBox a_game = fit_box(g1), a_cam = fit_box(c1), a_chat = fit_box(h1);
+		// ... and by one Scene Fit with three entries.
+		obs_sceneitem_t *g2, *c2, *h2;
+		obs_scene_t *together = fit_scene("SF One Filter", &g2, &c2, &h2);
+		obs_data_t *sd = obs_data_create();
+		fit_list(sd, "entries", {"SF Cam", "SF Chat", "SF Game"});
+		fit_settings(sd, "fit|SF Cam|", false, 6);
+		fit_settings(sd, "fit|SF Chat|", false, 0);
+		fit_settings(sd, "fit|SF Game|", true, 0);
+		obs_source_t *sf = obs_source_create("stagekit_scene_fit", "SF Scene Fit", sd, nullptr);
+		obs_data_release(sd);
+		obs_source_filter_add(obs_scene_get_source(together), sf);
+		show(together, 1500);
+		const FitBox b_game = fit_box(g2), b_cam = fit_box(c2), b_chat = fit_box(h2);
+		CHECK(fit_near(a_game, b_game, 0.5) && fit_near(a_cam, b_cam, 0.5) && fit_near(a_chat, b_chat, 0.5),
+		      "Scene Fit puts its sources where three Fit to Space filters do (game %.0f,%.0f %.0fx%.0f / %.0f,%.0f %.0fx%.0f; camera %.0f,%.0f / %.0f,%.0f; chat %.0f,%.0f / %.0f,%.0f)",
+		      a_game.x, a_game.y, a_game.w, a_game.h, b_game.x, b_game.y, b_game.w, b_game.h, a_cam.x, a_cam.y,
+		      b_cam.x, b_cam.y, a_chat.x, a_chat.y, b_chat.x, b_chat.y);
+		{
+			obs_data_t *own = obs_source_get_settings(sf);
+			CHECK(obs_data_get_bool(own, "fit|SF Cam|have_anchor") &&
+				      std::fabs(obs_data_get_double(own, "fit|SF Chat|keep_k") - 1.0) < 0.001 &&
+				      !obs_data_has_user_value(own, "have_anchor"),
+			      "each entry keeps what it writes down under its own name (anchor, kept size)");
+			obs_data_release(own);
+		}
+
+		// Events, each followed by a check that every entry set off at most
+		// once and that nothing overlaps once the glides are over.
+		// (`filter` empty: each source's own Fit to Space.)
+		auto fit_glides = [&](const char *filter, std::vector<long long> &out) {
+			out.clear();
+			for (const char *item : {"SF Cam", "SF Chat", "SF Game"}) {
+				long long ticks = 0, glides = 0;
+				const std::string by = *filter ? std::string(filter) : std::string("SF Fit ") + item;
+				fit_counts(by.c_str(), item, ticks, glides);
+				out.push_back(glides);
+			}
+		};
+		auto fit_clear = [&](obs_sceneitem_t *gi, obs_sceneitem_t *ci, obs_sceneitem_t *hi) {
+			std::vector<FitBox> shown;
+			for (obs_sceneitem_t *item : {gi, ci, hi})
+				if (obs_sceneitem_visible(item))
+					shown.push_back(fit_box(item));
+			for (size_t i = 0; i < shown.size(); i++) {
+				const FitBox &a = shown[i];
+				if (a.x < 9.5 || a.y < 9.5 || a.x + a.w > 630.5 || a.y + a.h > 350.5)
+					return false;
+				for (size_t j = i + 1; j < shown.size(); j++)
+					if (fit_overlap(a, shown[j]))
+						return false;
+			}
+			return true;
+		};
+		struct Event {
+			const char *what;
+			std::function<void()> act;
+		};
+		auto fit_events = [&](const char *filter, obs_scene_t *scene, obs_sceneitem_t *gi, obs_sceneitem_t *ci,
+				      obs_sceneitem_t *hi, bool check) {
+			std::vector<Event> events = {
+				{"the camera hidden",
+				 [&] {
+					 obs_sceneitem_set_visible(ci, false);
+				 }},
+				{"the camera shown",
+				 [&] {
+					 obs_sceneitem_set_visible(ci, true);
+				 }},
+				{"the game 4:3",
+				 [&] {
+					 fit_sized(game, 1200, 900);
+				 }},
+				{"the game 16:9 again",
+				 [&] {
+					 fit_sized(game, 1600, 900);
+				 }},
+				{"the chat box moved by hand",
+				 [&] {
+					 vec2 at;
+					 vec2_set(&at, 500.0f, 200.0f);
+					 obs_sceneitem_set_pos(hi, &at);
+				 }},
+			};
+			std::string counts;
+			for (const Event &event : events) {
+				std::vector<long long> was, now;
+				fit_glides(filter, was);
+				event.act();
+				bool clear = true;
+				for (int i = 0; i < 60; i++) {
+					render(obs_scene_get_source(scene), 640, 360);
+					sleep_ms(25);
+					// From when the glides are over (they last 0.2 s,
+					// a change of shape waits half a second first).
+					if (i >= 45)
+						clear = clear && fit_clear(gi, ci, hi);
+				}
+				fit_glides(filter, now);
+				long long most = 0;
+				for (size_t i = 0; i < now.size(); i++)
+					most = std::max(most, now[i] - was[i]);
+				char line[160];
+				snprintf(line, sizeof(line), " %s: %lld %lld %lld;", event.what, now[0] - was[0],
+					 now[1] - was[1], now[2] - was[2]);
+				counts += line;
+				if (check) {
+					CHECK(most <= 1, "%s: each entry sets off at most once (%lld, %lld, %lld)",
+					      event.what, now[0] - was[0], now[1] - was[1], now[2] - was[2]);
+					CHECK(clear, "%s: nothing overlaps, all inside the gap", event.what);
+				}
+			}
+			if (!check)
+				printf("  (for comparison, three Fit to Space filters set off:%s)\n", counts.c_str());
+		};
+		show(alone, 200);
+		fit_events("", alone, g1, c1, h1, false);
+		show(together, 300);
+		fit_events("SF Scene Fit", together, g2, c2, h2, true);
+
+		// Hidden and back: the chat box takes the camera's room, the camera
+		// comes back where it was and the chat box makes way.
+		const FitBox cam_was = fit_box(c2), game_was = fit_box(g2), chat_was = fit_box(h2);
+		obs_sceneitem_set_visible(c2, false);
+		show(together, 900);
+		const FitBox chat_alone = fit_box(h2);
+		CHECK(chat_alone.y < chat_was.y - 1.0 && fit_clear(g2, c2, h2),
+		      "a hidden entry's room is taken by the others (the chat box at %.0f, was %.0f)", chat_alone.y,
+		      chat_was.y);
+		obs_sceneitem_set_visible(c2, true);
+		show(together, 900);
+		CHECK(fit_near(fit_box(c2), cam_was, 0.5) && fit_near(fit_box(g2), game_was, 0.5) &&
+			      fit_near(fit_box(h2), chat_was, 0.5) && fit_clear(g2, c2, h2),
+		      "shown again, it is back where it was and the others made way (camera %.0f,%.0f)", fit_box(c2).x,
+		      fit_box(c2).y);
+
+		// Off screen: nothing is looked at or moved; shown again, put right at once.
+		obs_scene_t *elsewhere = obs_scene_create("SF Elsewhere");
+		show(elsewhere, 200);
+		long long t0 = 0, t1 = 0, gl = 0;
+		fit_counts("SF Scene Fit", nullptr, t0, gl);
+		show(elsewhere, 1000);
+		fit_counts("SF Scene Fit", nullptr, t1, gl);
+		CHECK(t1 - t0 <= 3 * 6,
+		      "off screen, its entries have about four full ticks a second (%lld for three in a second)",
+		      t1 - t0);
+		const FitBox chat_here = fit_box(h2);
+		obs_sceneitem_set_visible(c2, false);
+		show(elsewhere, 300);
+		CHECK(fit_near(fit_box(h2), chat_here, 0.01), "nothing is moved while the scene is away");
+		obs_set_output_source(0, obs_scene_get_source(together));
+		sleep_ms(80);
+		CHECK(fit_box(h2).y < chat_was.y - 1.0,
+		      "shown again, the chat box has the camera's room at once, without a glide (at %.0f)",
+		      fit_box(h2).y);
+		obs_sceneitem_set_visible(c2, true);
+		show(together, 900);
+
+		// Sync to scenes: an entry's place is given to the same source in a
+		// listed scene that is not on screen.
+		obs_sceneitem_t *g3, *c3, *h3;
+		obs_scene_t *synced = fit_scene("SF Synced", &g3, &c3, &h3);
+		{
+			obs_data_t *own = obs_source_get_settings(sf);
+			// (A Scene Fit's lists are kept by the source's name in hex.)
+			std::string hex = "fit_";
+			for (unsigned char ch : std::string("SF Chat")) {
+				static const char *const digits = "0123456789abcdef";
+				hex += digits[ch >> 4];
+				hex += digits[ch & 15];
+			}
+			fit_list(own, (hex + "_share_scenes").c_str(), {"SF Synced"});
+			obs_source_update(sf, own);
+			obs_data_release(own);
+		}
+		show(together, 600);
+		CHECK(fit_near(fit_box(h3), fit_box(h2), 0.5),
+		      "'Sync to scenes' gives the entry's place to its copy in the listed scene (%.0f,%.0f / %.0f,%.0f)",
+		      fit_box(h3).x, fit_box(h3).y, fit_box(h2).x, fit_box(h2).y);
+
+		// Rename: the entry, its settings and its kept size follow.
+		obs_source_set_name(cam, "SF Camera");
+		show(together, 600);
+		{
+			obs_data_t *own = obs_source_get_settings(sf);
+			obs_data_array_t *list = obs_data_get_array(own, "entries");
+			obs_data_t *first = obs_data_array_item(list, 0);
+			CHECK(std::strcmp(obs_data_get_string(first, "value"), "SF Camera") == 0 &&
+				      obs_data_get_bool(own, "fit|SF Camera|have_anchor") &&
+				      !obs_data_has_user_value(own, "fit|SF Cam|have_anchor") &&
+				      std::strcmp(obs_data_get_string(own, "fit|SF Camera|keep_item"), "SF Camera") ==
+					      0,
+			      "a renamed source keeps its entry and settings (%s)",
+			      obs_data_get_string(first, "value"));
+			obs_data_release(first);
+			obs_data_array_release(list);
+			obs_data_release(own);
+		}
+		CHECK(fit_near(fit_box(c2), cam_was, 0.5) && fit_clear(g2, c2, h2),
+		      "and it is still fitted where it was (%.0f,%.0f)", fit_box(c2).x, fit_box(c2).y);
+		obs_source_set_name(cam, "SF Cam");
+		show(together, 300);
+
+		// Take over: the three Fit to Space filters become one Scene Fit's
+		// entries, and nothing moves.
+		show(alone, 1200);
+		const FitBox t_game = fit_box(g1), t_cam = fit_box(c1), t_chat = fit_box(h1);
+		obs_source_t *taker = obs_source_create("stagekit_scene_fit", "SF Taker", nullptr, nullptr);
+		obs_source_filter_add(obs_scene_get_source(alone), taker);
+		{
+			obs_properties_t *props = obs_source_properties(taker);
+			obs_property_t *button = obs_properties_get(props, "take_over");
+			CHECK(button && obs_property_button_clicked(button, taker),
+			      "'Take over Fit to Space' can be pressed");
+			CHECK(obs_properties_get(props, "fit|SF Game|g") != nullptr,
+			      "and the window has a group for each entry taken");
+			obs_properties_destroy(props);
+		}
+		bool all_off = true;
+		for (obs_source_t *f : filters)
+			all_off = all_off && !obs_source_enabled(f);
+		double worst = 0.0;
+		for (int i = 0; i < 60; i++) {
+			render(obs_scene_get_source(alone), 640, 360);
+			sleep_ms(17);
+			for (auto pair :
+			     {std::make_pair(g1, t_game), std::make_pair(c1, t_cam), std::make_pair(h1, t_chat)}) {
+				const FitBox now = fit_box(pair.first);
+				worst = std::max({worst, std::fabs(now.x - pair.second.x),
+						  std::fabs(now.y - pair.second.y), std::fabs(now.w - pair.second.w),
+						  std::fabs(now.h - pair.second.h)});
+			}
+		}
+		{
+			obs_data_t *own = obs_source_get_settings(taker);
+			CHECK(all_off && obs_data_get_bool(own, "fit|SF Cam|have_anchor") &&
+				      obs_data_get_double(own, "fit|SF Chat|keep_k") > 0.0,
+			      "the filters are switched off and the entries carry their anchors and kept sizes");
+			obs_data_release(own);
+		}
+		CHECK(worst <= 0.5, "nothing moves more than half a pixel over 60 frames (%.2f px)", worst);
+		long long ticks = 0;
+		fit_counts("SF Taker", "SF Game", ticks, gl);
+		CHECK(ticks > 0, "the taken entries are fitted by the Scene Fit (%lld full ticks)", ticks);
+
+		// Nothing is done while a collection is changing.
+		auto fit_loaded = [](bool loaded) {
+			calldata_t ld;
+			calldata_init(&ld);
+			calldata_set_bool(&ld, "loaded", loaded);
+			proc_handler_call(obs_get_proc_handler(), "stagekit_test_loaded", &ld);
+			calldata_free(&ld);
+		};
+		show(together, 300);
+		const FitBox chat_loaded = fit_box(h2);
+		fit_loaded(false);
+		obs_sceneitem_set_visible(c2, false);
+		show(together, 500);
+		CHECK(fit_near(fit_box(h2), chat_loaded, 0.01), "nothing is moved while a collection is changing");
+		fit_loaded(true);
+		show(together, 900);
+		CHECK(fit_box(h2).y < chat_loaded.y - 1.0, "and it fits again once loaded (the chat box at %.0f)",
+		      fit_box(h2).y);
+		obs_sceneitem_set_visible(c2, true);
+		show(together, 900);
+
+		// On a group: it does nothing.
+		{
+			obs_scene_t *holder = obs_scene_create("SF Holder");
+			obs_sceneitem_t *inner = obs_scene_add(holder, chat);
+			vec2 at;
+			vec2_set(&at, 30.0f, 30.0f);
+			obs_sceneitem_set_pos(inner, &at);
+			obs_sceneitem_t *group = obs_scene_insert_group(holder, "SF Group", nullptr, 0);
+			obs_sceneitem_group_add_item(group, inner);
+			obs_data_t *gd = obs_data_create();
+			fit_list(gd, "entries", {"SF Chat"});
+			fit_settings(gd, "fit|SF Chat|", true, 0);
+			obs_source_t *on_group = obs_source_create("stagekit_scene_fit", "SF On Group", gd, nullptr);
+			obs_data_release(gd);
+			obs_source_filter_add(obs_sceneitem_get_source(group), on_group);
+			const FitBox inner_was = fit_box(inner);
+			show(holder, 500);
+			CHECK(fit_near(fit_box(inner), inner_was, 0.01), "on a group it does nothing");
+			obs_properties_t *props = obs_source_properties(on_group);
+			CHECK(obs_properties_get(props, "on_group") != nullptr, "and says so in its window");
+			obs_properties_destroy(props);
+			obs_source_filter_remove(obs_sceneitem_get_source(group), on_group);
+			obs_source_release(on_group);
+			obs_source_remove(obs_scene_get_source(holder));
+			obs_scene_release(holder);
+		}
+
+		// The window: a group per entry, only the chosen one shown, and one
+		// added when an entry is added.
+		{
+			obs_properties_t *props = obs_source_properties(sf);
+			obs_property_t *cam_group = obs_properties_get(props, "fit|SF Cam|g");
+			obs_property_t *game_group = obs_properties_get(props, "fit|SF Game|g");
+			CHECK(cam_group && game_group &&
+				      obs_property_visible(cam_group) != obs_property_visible(game_group),
+			      "the window has a group of settings per entry, one shown at a time");
+			obs_property_t *chosen = obs_properties_get(props, "fit_for");
+			obs_data_t *own = obs_source_get_settings(sf);
+			obs_data_set_string(own, "fit_for", "SF Game");
+			obs_property_modified(chosen, own);
+			CHECK(obs_property_visible(game_group) && !obs_property_visible(cam_group),
+			      "'Settings for' shows the chosen entry's settings");
+			CHECK(pick_into_list(sf, props, "entries|a", "SF Back") &&
+				      obs_properties_get(props, "fit|SF Back|g") != nullptr,
+			      "a source added to the list gets its own settings at once");
+			CHECK(std::fabs(obs_data_get_double(own, "fit|SF Back|margin") - 30.0) < 0.01,
+			      "starting from the filter's own (a gap of 30)");
+			obs_data_release(own);
+			obs_properties_destroy(props);
+			// (Taken off again: a background filling the screen has no room.)
+			obs_data_t *back = obs_source_get_settings(sf);
+			fit_list(back, "entries", {"SF Cam", "SF Chat", "SF Game"});
+			obs_source_update(sf, back);
+			obs_data_release(back);
+		}
+
+		obs_set_output_source(0, before);
+		obs_source_release(before);
+		obs_source_filter_remove(obs_scene_get_source(together), sf);
+		obs_source_release(sf);
+		obs_source_filter_remove(obs_scene_get_source(alone), taker);
+		obs_source_release(taker);
+		for (obs_source_t *f : filters) {
+			obs_source_filter_remove(obs_scene_get_source(alone), f);
+			obs_source_release(f);
+		}
+		for (obs_scene_t *scene : {alone, together, elsewhere, synced}) {
+			obs_source_remove(obs_scene_get_source(scene));
+			obs_scene_release(scene);
+		}
+		for (obs_source_t *src : {game, cam, chat, bg})
+			obs_source_release(src);
+	}
 	// ==== end scene-filters:fit ====
 
 	{
