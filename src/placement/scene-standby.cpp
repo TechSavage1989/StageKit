@@ -46,8 +46,10 @@ namespace stagekit {
 
 namespace {
 
-// Sources covered. Saved by number: append only.
-enum class Which : int { AllCaptures = 0, Chosen = 1 };
+// Sources covered. Saved by number: append only. A filter left on the
+// default has no number saved and reads as Every capture, the default it
+// had before All sources was added and still has.
+enum class Which : int { AllCaptures = 0, Chosen = 1, AllSources = 2 };
 
 // The Standby Image settings the scene filter sets on each source's filter.
 // The same names and numbers as the Standby Image filter's own.
@@ -83,6 +85,7 @@ std::map<obs_source_t *, HiddenEntry> g_hidden;
 struct Config {
 	Which which = Which::AllCaptures;
 	std::vector<std::string> sources, skip, hidden;
+	std::string image_source; // the source shown as the image, never covered itself
 	bool screens = false, when_empty = true;
 	std::string look_json;
 	ItemChange change;
@@ -112,7 +115,9 @@ public:
 	void update(obs_data_t *settings)
 	{
 		auto config = std::make_shared<Config>();
-		config->which = static_cast<Which>(std::clamp((int)obs_data_get_int(settings, "which"), 0, 1));
+		config->which = static_cast<Which>(std::clamp((int)obs_data_get_int(settings, "which"), 0, 2));
+		if (obs_data_get_int(settings, "picture") == 2)
+			config->image_source = obs_data_get_string(settings, "source");
 		config->sources = pick_list_read(settings, "sources", false);
 		config->skip = pick_list_read(settings, "skip", false);
 		config->hidden = pick_list_read(settings, "hidden", false);
@@ -206,8 +211,8 @@ private:
 			dirty_ = false;
 			was_enabled_ = enabled;
 		}
-		// Which sources: the captures of the scene (groups opened), or the
-		// ones chosen.
+		// Which sources: the captures of the scene (groups opened), every
+		// source of it (groups opened too), or the ones chosen.
 		std::set<std::string> covered;
 		if (config->which == Which::Chosen) {
 			covered.insert(config->sources.begin(), config->sources.end());
@@ -221,10 +226,22 @@ private:
 				obs_source_t *source = obs_sceneitem_get_source(item);
 				const char *name = obs_source_get_name(source);
 				if (!name || !*name || is_morph_layer(item) || is_stand_in(source) ||
-				    !is_capture_source(source) || (!w->config->screens && is_screen_capture(source)) ||
 				    std::find(w->config->skip.begin(), w->config->skip.end(), name) !=
 					    w->config->skip.end())
 					return true;
+				if (w->config->which == Which::AllSources) {
+					// Every source with an image of its own: not a group or a
+					// nested scene (never empty: a scene is the canvas's
+					// size), not a private one, not the standby image itself.
+					if (obs_obj_is_private(source) || obs_scene_from_source(source) ||
+					    obs_group_from_source(source) ||
+					    !(obs_source_get_output_flags(source) & OBS_SOURCE_VIDEO) ||
+					    w->config->image_source == name)
+						return true;
+				} else if (!is_capture_source(source) ||
+					   (!w->config->screens && is_screen_capture(source))) {
+					return true;
+				}
 				w->covered->insert(name);
 				return true;
 			};
@@ -305,11 +322,11 @@ private:
 
 bool which_modified(obs_properties_t *props, obs_property_t *, obs_data_t *settings)
 {
-	const bool chosen = obs_data_get_int(settings, "which") == (int)Which::Chosen;
-	for (const char *name : {"sources|alist"})
-		obs_property_set_visible(obs_properties_get(props, name), chosen);
-	for (const char *name : {"skip|alist", "screens"})
-		obs_property_set_visible(obs_properties_get(props, name), !chosen);
+	const int which = (int)obs_data_get_int(settings, "which");
+	const bool chosen = which == (int)Which::Chosen;
+	obs_property_set_visible(obs_properties_get(props, "sources|alist"), chosen);
+	obs_property_set_visible(obs_properties_get(props, "skip|alist"), !chosen);
+	obs_property_set_visible(obs_properties_get(props, "screens"), which == (int)Which::AllCaptures);
 	return true;
 }
 
@@ -342,6 +359,8 @@ obs_properties_t *get_properties(void *data)
 
 	obs_property_t *which = obs_properties_add_list(props, "which", obs_module_text("SceneStandby.Which"),
 							OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+	// All sources first, as in every scene filter; the numbers stay as saved.
+	obs_property_list_add_int(which, obs_module_text("SceneStandby.Which.Every"), (int)Which::AllSources);
 	obs_property_list_add_int(which, obs_module_text("SceneStandby.Which.All"), (int)Which::AllCaptures);
 	obs_property_list_add_int(which, obs_module_text("SceneStandby.Which.Chosen"), (int)Which::Chosen);
 	obs_property_set_long_description(which, obs_module_text("SceneStandby.Which.Tip"));
@@ -520,6 +539,9 @@ void register_scene_standby()
 		static_cast<SceneStandby *>(data)->update(settings);
 	};
 	info.get_defaults = [](obs_data_t *settings) {
+		// (Not All sources: a text with no words or a stopped video would
+		// show the image, and every filter saved with the default would
+		// change.)
 		obs_data_set_default_int(settings, "which", (int)Which::AllCaptures);
 		obs_data_set_default_bool(settings, "screens", false);
 		obs_data_set_default_bool(settings, "when_empty", true);

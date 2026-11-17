@@ -15244,6 +15244,468 @@ int main(int argc, char **argv)
 			obs_source_release(src);
 	}
 	// ==== end scene-filters:fit ====
+	// ==== scene-filters:all-sources ====
+	// ---------------------------------------- the scene filters' All sources
+	// Each scene filter with a "Sources covered" list: All sources covers a
+	// source added later, leaves an ignored one alone, and a filter saved
+	// before the choice (no "which") does what it did then.
+	{
+		auto as_wait = [](const std::function<bool()> &done, int ms) {
+			for (int waited = 0; waited < ms; waited += 50) {
+				if (done())
+					return true;
+				sleep_ms(50);
+			}
+			return done();
+		};
+		auto as_count = [](obs_source_t *source, const char *kind) {
+			struct Find {
+				const char *kind;
+				int n;
+			} find{kind, 0};
+			obs_source_enum_filters(
+				source,
+				[](obs_source_t *, obs_source_t *f, void *param) {
+					auto *x = static_cast<Find *>(param);
+					if (strcmp(obs_source_get_unversioned_id(f), x->kind) == 0)
+						x->n++;
+				},
+				&find);
+			return find.n;
+		};
+		auto as_list = [](obs_data_t *settings, const char *key, std::vector<const char *> names) {
+			obs_data_array_t *array = obs_data_array_create();
+			for (const char *name : names) {
+				obs_data_t *entry = obs_data_create();
+				obs_data_set_string(entry, "value", name);
+				obs_data_array_push_back(array, entry);
+				obs_data_release(entry);
+			}
+			obs_data_set_array(settings, key, array);
+			obs_data_array_release(array);
+		};
+		auto as_colour = [](const char *name, long long abgr, int cw, int ch) {
+			obs_data_t *d = obs_data_create();
+			obs_data_set_int(d, "color", abgr);
+			obs_data_set_int(d, "width", cw);
+			obs_data_set_int(d, "height", ch);
+			obs_source_t *made = obs_source_create("color_source", name, d, nullptr);
+			obs_data_release(d);
+			return made;
+		};
+		auto as_put = [](obs_scene_t *scene, obs_source_t *src, float x, float y) {
+			obs_sceneitem_t *item = obs_scene_add(scene, src);
+			vec2 p;
+			vec2_set(&p, x, y);
+			obs_sceneitem_set_pos(item, &p);
+			return item;
+		};
+		obs_source_t *as_was_out = obs_get_output_source(0);
+		std::vector<obs_source_t *> as_sources;
+		std::vector<obs_scene_t *> as_scenes;
+		auto as_filter = [](obs_scene_t *scene, const char *kind, const char *name, obs_data_t *d) {
+			obs_source_t *f = obs_source_create(kind, name, d, nullptr);
+			obs_source_filter_add(obs_scene_get_source(scene), f);
+			return f;
+		};
+		std::vector<std::pair<obs_scene_t *, obs_source_t *>> as_filters;
+
+		printf("\n[all sources: scene corners]\n");
+		{
+			obs_source_t *back = as_colour("AS Corners Back", 0xFF404040LL, 640, 360);
+			obs_source_t *panel = as_colour("AS Corners Panel", 0xFF0000FFLL, 200, 100);
+			obs_source_t *inner = as_colour("AS Corners Inner", 0xFF00FF00LL, 80, 80);
+			obs_source_t *ignored = as_colour("AS Corners Ignored", 0xFFFF0000LL, 80, 80);
+			obs_source_t *later = as_colour("AS Corners Later", 0xFFFFFF00LL, 80, 80);
+			obs_scene_t *scene = obs_scene_create("AS Corners Scene");
+			as_put(scene, back, 0, 0);
+			as_put(scene, panel, 40, 40);
+			as_put(scene, ignored, 400, 40);
+			obs_sceneitem_t *group = obs_scene_add_group(scene, "AS Corners Group");
+			obs_sceneitem_group_add_item(group, as_put(scene, inner, 300, 200));
+			obs_source_t *group_src = obs_sceneitem_get_source(group);
+			obs_data_t *d = obs_data_create();
+			obs_data_set_int(d, "which", 2);
+			as_list(d, "skip", {"AS Corners Ignored"});
+			obs_data_set_double(d, "size", 20);
+			as_filters.push_back({scene, as_filter(scene, "stagekit_scene_corners", "AS Corners All", d)});
+			obs_data_release(d);
+			const bool covered = as_wait(
+				[&] {
+					return as_count(panel, "stagekit_corners") == 1 &&
+					       as_count(back, "stagekit_corners") == 1 &&
+					       as_count(group_src, "stagekit_corners") == 1;
+				},
+				3000);
+			CHECK(covered && as_count(inner, "stagekit_corners") == 0,
+			      "All sources gives every source of the scene corners, the full-screen background too, a group counting as one (panel %d, background %d, group %d, inside the group %d)",
+			      as_count(panel, "stagekit_corners"), as_count(back, "stagekit_corners"),
+			      as_count(group_src, "stagekit_corners"), as_count(inner, "stagekit_corners"));
+			as_put(scene, later, 300, 40);
+			const bool picked_up = as_wait([&] { return as_count(later, "stagekit_corners") == 1; }, 3000);
+			CHECK(picked_up && as_count(ignored, "stagekit_corners") == 0,
+			      "a source added later is covered, and an ignored source is left alone (later %d, ignored %d)",
+			      as_count(later, "stagekit_corners"), as_count(ignored, "stagekit_corners"));
+
+			// Saved before the choice: no "which", All but the background.
+			obs_source_t *old_back = as_colour("AS Corners Old Back", 0xFF404040LL, 640, 360);
+			obs_source_t *old_panel = as_colour("AS Corners Old Panel", 0xFF0000FFLL, 200, 100);
+			obs_scene_t *old_scene = obs_scene_create("AS Corners Old Scene");
+			as_put(old_scene, old_back, 0, 0);
+			as_put(old_scene, old_panel, 40, 40);
+			obs_data_t *od = obs_data_create();
+			obs_data_set_double(od, "size", 20);
+			as_filters.push_back(
+				{old_scene, as_filter(old_scene, "stagekit_scene_corners", "AS Corners Old", od)});
+			obs_data_release(od);
+			const bool old_panel_done =
+				as_wait([&] { return as_count(old_panel, "stagekit_corners") == 1; }, 3000);
+			sleep_ms(500);
+			CHECK(old_panel_done && as_count(old_back, "stagekit_corners") == 0,
+			      "a Scene Corners saved without the choice reads as All but the background (panel %d, background %d)",
+			      as_count(old_panel, "stagekit_corners"), as_count(old_back, "stagekit_corners"));
+			for (obs_source_t *src : {back, panel, inner, ignored, later, old_back, old_panel})
+				as_sources.push_back(src);
+			as_scenes.push_back(scene);
+			as_scenes.push_back(old_scene);
+		}
+
+		printf("\n[all sources: scene standby]\n");
+		{
+			// Sources with no image (an image source with no file, as a
+			// capture before its first frame), none of them a capture kind.
+			obs_source_t *empty = obs_source_create("image_source", "AS Standby Empty", nullptr, nullptr);
+			obs_source_t *inner = obs_source_create("image_source", "AS Standby Inner", nullptr, nullptr);
+			obs_source_t *ignored =
+				obs_source_create("image_source", "AS Standby Ignored", nullptr, nullptr);
+			obs_source_t *later = obs_source_create("image_source", "AS Standby Later", nullptr, nullptr);
+			obs_source_t *panel = as_colour("AS Standby Panel", 0xFF00FF00LL, 200, 100);
+			obs_scene_t *scene = obs_scene_create("AS Standby Scene");
+			as_put(scene, empty, 20, 20);
+			as_put(scene, ignored, 300, 20);
+			obs_sceneitem_t *panel_item = as_put(scene, panel, 100, 200);
+			obs_sceneitem_t *group = obs_scene_add_group(scene, "AS Standby Group");
+			obs_sceneitem_group_add_item(group, as_put(scene, inner, 400, 200));
+			obs_source_t *group_src = obs_sceneitem_get_source(group);
+			obs_set_output_source(0, obs_scene_get_source(scene));
+			obs_data_t *d = obs_data_create();
+			obs_data_set_int(d, "which", 2);
+			as_list(d, "skip", {"AS Standby Ignored"});
+			as_list(d, "hidden", {"AS Standby Panel"});
+			obs_data_set_int(d, "picture", 1);
+			obs_data_set_string(d, "file", base_image);
+			obs_data_set_int(d, "fade_ms", 0);
+			obs_data_set_int(d, "back_ms", 0);
+			obs_data_set_string(d, "transition", "none");
+			as_filters.push_back({scene, as_filter(scene, "stagekit_scene_standby", "AS Standby All", d)});
+			obs_data_release(d);
+			const bool covered = as_wait(
+				[&] {
+					return as_count(empty, "stagekit_standby") == 1 &&
+					       as_count(inner, "stagekit_standby") == 1 &&
+					       as_count(panel, "stagekit_standby") == 1;
+				},
+				3000);
+			const bool shows = as_wait([&] { return obs_source_get_width(empty) > 0; }, 2000);
+			CHECK(covered && shows && as_count(group_src, "stagekit_standby") == 0,
+			      "All sources gives every source a standby image, not only captures, the ones in groups too and not the group itself; an empty one shows the image (empty %d, in the group %d, panel %d, group %d; %u wide)",
+			      as_count(empty, "stagekit_standby"), as_count(inner, "stagekit_standby"),
+			      as_count(panel, "stagekit_standby"), as_count(group_src, "stagekit_standby"),
+			      obs_source_get_width(empty));
+			as_put(scene, later, 20, 200);
+			const bool picked_up = as_wait(
+				[&] {
+					return as_count(later, "stagekit_standby") == 1 &&
+					       obs_source_get_width(later) > 0;
+				},
+				3000);
+			sleep_ms(300);
+			CHECK(picked_up && as_count(ignored, "stagekit_standby") == 0 &&
+				      obs_source_get_width(ignored) == 0,
+			      "a source added later is covered and shows the image, and an ignored source is left alone (later %d, %u wide; ignored %d, %u wide)",
+			      as_count(later, "stagekit_standby"), obs_source_get_width(later),
+			      as_count(ignored, "stagekit_standby"), obs_source_get_width(ignored));
+			// Show when hidden still goes by its own list.
+			obs_sceneitem_set_visible(panel_item, false);
+			const bool twin = as_wait(
+				[&] {
+					int n = 0;
+					obs_scene_enum_items(
+						scene,
+						[](obs_scene_t *, obs_sceneitem_t *item, void *param) {
+							if (strcmp(obs_source_get_unversioned_id(
+									   obs_sceneitem_get_source(item)),
+								   "stagekit_stand_in") == 0 &&
+							    obs_sceneitem_visible(item))
+								(*static_cast<int *>(param))++;
+							return true;
+						},
+						&n);
+					return n == 1;
+				},
+				3000);
+			CHECK(twin,
+			      "with All sources, a source listed under Show when hidden has the image in its place");
+			obs_sceneitem_set_visible(panel_item, true);
+
+			// Saved before the choice: no "which", Every capture, so an
+			// empty source that is not a capture gets nothing.
+			obs_source_t *old_empty = obs_source_create("image_source", "AS Standby Old", nullptr, nullptr);
+			obs_scene_t *old_scene = obs_scene_create("AS Standby Old Scene");
+			as_put(old_scene, old_empty, 20, 20);
+			obs_data_t *od = obs_data_create();
+			obs_data_set_int(od, "picture", 1);
+			obs_data_set_string(od, "file", base_image);
+			as_filters.push_back(
+				{old_scene, as_filter(old_scene, "stagekit_scene_standby", "AS Standby Old", od)});
+			obs_data_release(od);
+			sleep_ms(2000);
+			CHECK(as_count(old_empty, "stagekit_standby") == 0 && obs_source_get_width(old_empty) == 0,
+			      "a Scene Standby saved without the choice reads as Every capture: a source that is not a capture gets nothing (%d)",
+			      as_count(old_empty, "stagekit_standby"));
+			for (obs_source_t *src : {empty, inner, ignored, later, panel, old_empty})
+				as_sources.push_back(src);
+			as_scenes.push_back(scene);
+			as_scenes.push_back(old_scene);
+		}
+
+		printf("\n[all sources: scene shadow]\n");
+		{
+			// Grey background; white squares. A square that casts darkens the
+			// background just past its bottom-right corner.
+			obs_source_t *back = as_colour("AS Shadow Back", 0xFF808080LL, 640, 360);
+			obs_source_t *a = as_colour("AS Shadow A", 0xFFFFFFFFLL, 80, 80);
+			obs_source_t *b = as_colour("AS Shadow B", 0xFFFFFFFFLL, 80, 80);
+			obs_source_t *ignored = as_colour("AS Shadow Ignored", 0xFFFFFFFFLL, 80, 80);
+			obs_source_t *later = as_colour("AS Shadow Later", 0xFFFFFFFFLL, 80, 80);
+			obs_scene_t *scene = obs_scene_create("AS Shadow Scene");
+			as_put(scene, back, 0, 0);
+			as_put(scene, a, 40, 40);
+			as_put(scene, b, 200, 40);
+			as_put(scene, ignored, 360, 40);
+			obs_source_t *scene_src = obs_scene_get_source(scene);
+			obs_set_output_source(0, scene_src);
+			auto casts = [&](int x, int y) {
+				std::vector<uint8_t> frame;
+				for (int i = 0; i < 3; i++) {
+					frame = render(scene_src, w, h);
+					sleep_ms(40);
+				}
+				// Just past the square's bottom-right corner, in its shadow.
+				return (int)frame[(size_t(y + 86) * w + (x + 86)) * 4 + 0];
+			};
+			// Saved before the choice: no "which", every source casts.
+			obs_data_t *d = obs_data_create();
+			as_list(d, "shadow_skip", {"AS Shadow Ignored"});
+			obs_source_t *sh = as_filter(scene, "stagekit_scene_shadow", "AS Shadow", d);
+			as_filters.push_back({scene, sh});
+			sleep_ms(500);
+			const int on_a = casts(40, 40), on_b = casts(200, 40), on_ignored = casts(360, 40);
+			CHECK(on_a < 115 && on_b < 115 && on_ignored >= 124,
+			      "a Scene Shadow saved without the choice reads as All sources: every source casts but the ignored one (red past A %d, B %d, ignored %d)",
+			      on_a, on_b, on_ignored);
+			as_put(scene, later, 40, 200);
+			sleep_ms(600);
+			const int on_later = casts(40, 200);
+			CHECK(on_later < 115, "a source added later casts the shadow too (red past it %d)", on_later);
+			obs_data_set_int(d, "which", 1);
+			as_list(d, "shadow_sources", {"AS Shadow A"});
+			obs_source_update(sh, d);
+			sleep_ms(600);
+			const int chosen_a = casts(40, 40), chosen_b = casts(200, 40);
+			CHECK(chosen_a < 115 && chosen_b >= 124,
+			      "with Chosen sources, only the sources listed cast (red past A %d, B %d)", chosen_a,
+			      chosen_b);
+			obs_data_release(d);
+			for (obs_source_t *src : {back, a, b, ignored, later})
+				as_sources.push_back(src);
+			as_scenes.push_back(scene);
+		}
+
+		printf("\n[all sources: scene fit]\n");
+		{
+			auto sized = [](const char *name, int cw, int ch) {
+				obs_data_t *d = obs_data_create();
+				obs_data_set_int(d, "width", cw);
+				obs_data_set_int(d, "height", ch);
+				obs_source_t *made = obs_source_create("color_source", name, d, nullptr);
+				obs_data_release(d);
+				return made;
+			};
+			auto counts = [](const char *filter, const char *item, long long &ticks, long long &glides) {
+				calldata_t cd;
+				calldata_init(&cd);
+				calldata_set_string(&cd, "filter", filter);
+				calldata_set_string(&cd, "item", item ? item : "");
+				proc_handler_call(obs_get_proc_handler(), "stagekit_test_fit_counts", &cd);
+				ticks = calldata_int(&cd, "ticks");
+				glides = calldata_int(&cd, "glides");
+				calldata_free(&cd);
+			};
+			struct At {
+				double x = 0, y = 0, w = 0, h = 0;
+				bool fitted = false;
+			};
+			auto at = [](obs_sceneitem_t *item) {
+				vec2 p, b;
+				obs_sceneitem_get_pos(item, &p);
+				obs_sceneitem_get_bounds(item, &b);
+				const bool fitted = obs_sceneitem_get_bounds_type(item) != OBS_BOUNDS_NONE;
+				return At{p.x, p.y, fitted ? b.x : 0.0, fitted ? b.y : 0.0, fitted};
+			};
+			auto same = [](const At &a, const At &b) {
+				return std::fabs(a.x - b.x) <= 0.5 && std::fabs(a.y - b.y) <= 0.5 &&
+				       std::fabs(a.w - b.w) <= 0.5 && std::fabs(a.h - b.h) <= 0.5 &&
+				       a.fitted == b.fitted;
+			};
+			auto overlap = [](const At &a, const At &b) {
+				return a.x < b.x + b.w - 0.5 && b.x < a.x + a.w - 0.5 && a.y < b.y + b.h - 0.5 &&
+				       b.y < a.y + a.h - 0.5;
+			};
+			auto show = [&](obs_scene_t *scene, int ms) {
+				obs_set_output_source(0, obs_scene_get_source(scene));
+				for (int i = 0; i < ms / 20; i++) {
+					render(obs_scene_get_source(scene), w, h);
+					sleep_ms(20);
+				}
+			};
+			obs_source_t *back = sized("AS Fit Back", 640, 360);
+			obs_source_t *game = sized("AS Fit Game", 1600, 900);
+			obs_source_t *cam = sized("AS Fit Cam", 120, 68);
+			obs_source_t *chat = sized("AS Fit Chat", 120, 150);
+			obs_source_t *logo = sized("AS Fit Logo", 60, 30);
+			obs_source_t *later = sized("AS Fit Later", 100, 60);
+			obs_scene_t *scene = obs_scene_create("AS Fit Scene");
+			obs_sceneitem_t *back_i = as_put(scene, back, 0, 0);
+			obs_sceneitem_t *game_i = as_put(scene, game, 10, 10);
+			vec2 k;
+			vec2_set(&k, 0.25f, 0.25f);
+			obs_sceneitem_set_scale(game_i, &k);
+			obs_sceneitem_t *cam_i = as_put(scene, cam, 510, 10);
+			obs_sceneitem_t *chat_i = as_put(scene, chat, 510, 100);
+			obs_sceneitem_t *logo_i = as_put(scene, logo, 20, 300);
+			const At logo_was = at(logo_i);
+			obs_data_t *d = obs_data_create();
+			obs_data_set_int(d, "which", 1);
+			as_list(d, "entries", {"AS Fit Cam"});
+			as_list(d, "skip", {"AS Fit Logo"});
+			// The listed camera keeps its size; the rest start as they come.
+			obs_data_set_bool(d, "fit|AS Fit Cam|resize", false);
+			as_filters.push_back({scene, as_filter(scene, "stagekit_scene_fit", "AS Fit All", d)});
+			obs_data_release(d);
+			show(scene, 2500);
+			const At g1 = at(game_i), c1 = at(cam_i), h1 = at(chat_i), b1 = at(back_i), l1 = at(logo_i);
+			CHECK(g1.fitted && c1.fitted && h1.fitted && !b1.fitted && b1.x == 0.0 && b1.y == 0.0,
+			      "All sources fits every source, listed or not, and not the full-screen background (game %d, camera %d, chat %d, background %d)",
+			      (int)g1.fitted, (int)c1.fitted, (int)h1.fitted, (int)b1.fitted);
+			CHECK(!l1.fitted && same(l1, logo_was), "an ignored source is left where it was (%.0f, %.0f)",
+			      l1.x, l1.y);
+			// Nothing fights: no two fitted sources overlap, and over another
+			// second and a half nothing moves and no glide sets off.
+			long long t0 = 0, glides0 = 0, t1 = 0, glides1 = 0, total0 = 0, total1 = 0;
+			for (const char *item : {"AS Fit Game", "AS Fit Cam", "AS Fit Chat"}) {
+				counts("AS Fit All", item, t0, glides0);
+				total0 += glides0;
+			}
+			show(scene, 1500);
+			for (const char *item : {"AS Fit Game", "AS Fit Cam", "AS Fit Chat"}) {
+				counts("AS Fit All", item, t1, glides1);
+				total1 += glides1;
+			}
+			const At g2 = at(game_i), c2 = at(cam_i), h2 = at(chat_i);
+			const bool apart = !overlap(g2, c2) && !overlap(g2, h2) && !overlap(c2, h2);
+			CHECK(apart && same(g1, g2) && same(c1, c2) && same(h1, h2) && total1 == total0,
+			      "nothing fights: the fitted sources do not overlap, and stay still (glides %lld then %lld; game %.0f,%.0f %.0fx%.0f, camera %.0f,%.0f, chat %.0f,%.0f %.0fx%.0f)",
+			      total0, total1, g2.x, g2.y, g2.w, g2.h, c2.x, c2.y, h2.x, h2.y, h2.w, h2.h);
+			// A source added later is fitted, and they settle again. It is put
+			// down inside the chat box's space: the chat box makes room for
+			// it first, then it is fitted into that room.
+			// (Added and placed in one step, as OBS's window does it.)
+			struct Add {
+				obs_source_t *source;
+				obs_sceneitem_t *item;
+			} add{later, nullptr};
+			obs_scene_atomic_update(
+				scene,
+				[](void *param, obs_scene_t *sc) {
+					auto *a = static_cast<Add *>(param);
+					a->item = obs_scene_add(sc, a->source);
+					vec2 p;
+					vec2_set(&p, 420.0f, 280.0f);
+					obs_sceneitem_set_pos(a->item, &p);
+				},
+				&add);
+			obs_sceneitem_t *later_i = add.item;
+			show(scene, 3500);
+			const At n1 = at(later_i), g3 = at(game_i), c3 = at(cam_i), h3 = at(chat_i);
+			show(scene, 1000);
+			const At n2 = at(later_i), g4 = at(game_i), c4 = at(cam_i), h4 = at(chat_i);
+			CHECK(n1.fitted && same(n1, n2) && same(g3, g4) && same(c3, c4) && same(h3, h4) &&
+				      !overlap(n2, g4) && !overlap(n2, c4) && !overlap(n2, h4),
+			      "a source added later is fitted too, and everything settles again (%.0f,%.0f %.0fx%.0f; chat %.0f,%.0f %.0fx%.0f; game %.0f,%.0f %.0fx%.0f)",
+			      n2.x, n2.y, n2.w, n2.h, h4.x, h4.y, h4.w, h4.h, g4.x, g4.y, g4.w, g4.h);
+
+			// Saved before the choice: no "which", only the listed source.
+			obs_source_t *old_game = sized("AS Fit Old Game", 400, 225);
+			obs_source_t *old_cam = sized("AS Fit Old Cam", 120, 68);
+			obs_scene_t *old_scene = obs_scene_create("AS Fit Old Scene");
+			obs_sceneitem_t *old_game_i = as_put(old_scene, old_game, 10, 10);
+			obs_sceneitem_t *old_cam_i = as_put(old_scene, old_cam, 510, 10);
+			obs_data_t *od = obs_data_create();
+			as_list(od, "entries", {"AS Fit Old Cam"});
+			as_filters.push_back({old_scene, as_filter(old_scene, "stagekit_scene_fit", "AS Fit Old", od)});
+			obs_data_release(od);
+			show(old_scene, 1500);
+			CHECK(at(old_cam_i).fitted && !at(old_game_i).fitted,
+			      "a Scene Fit saved without the choice fits only its listed sources (camera %d, game %d)",
+			      (int)at(old_cam_i).fitted, (int)at(old_game_i).fitted);
+			// A source with a Fit to Space of its own is left to it.
+			obs_data_t *wd = obs_data_create();
+			obs_data_set_int(wd, "which", 1);
+			obs_source_t *old_fit = nullptr;
+			for (auto &[s, f] : as_filters)
+				if (s == old_scene)
+					old_fit = f;
+			obs_data_t *fd = obs_data_create();
+			obs_data_set_string(fd, "item", "AS Fit Old Game");
+			obs_data_set_int(fd, "box", 0);
+			obs_source_t *own = obs_source_create("stagekit_fit_item", "AS Fit Own", fd, nullptr);
+			obs_data_release(fd);
+			obs_source_filter_add(obs_scene_get_source(old_scene), own);
+			obs_source_update(old_fit, wd);
+			obs_data_release(wd);
+			show(old_scene, 1500);
+			long long own_ticks = 0, own_glides = 0;
+			counts("AS Fit Old", "AS Fit Old Game", own_ticks, own_glides);
+			CHECK(own_ticks == 0 && at(old_game_i).fitted,
+			      "with All sources, a source with a Fit to Space of its own is left to that filter (Scene Fit ticks for it %lld)",
+			      own_ticks);
+			obs_source_filter_remove(obs_scene_get_source(old_scene), own);
+			obs_source_release(own);
+			for (obs_source_t *src : {back, game, cam, chat, logo, later, old_game, old_cam})
+				as_sources.push_back(src);
+			as_scenes.push_back(scene);
+			as_scenes.push_back(old_scene);
+		}
+
+		obs_set_output_source(0, as_was_out);
+		obs_source_release(as_was_out);
+		for (auto &[scene, filter] : as_filters) {
+			obs_source_filter_remove(obs_scene_get_source(scene), filter);
+			obs_source_release(filter);
+		}
+		sleep_ms(200);
+		for (obs_scene_t *scene : as_scenes) {
+			obs_source_remove(obs_scene_get_source(scene));
+			obs_scene_release(scene);
+		}
+		for (obs_source_t *src : as_sources) {
+			obs_source_remove(src);
+			obs_source_release(src);
+		}
+		sleep_ms(200);
+	}
+	// ==== end scene-filters:all-sources ====
 
 	{
 		// One scene with two modes, each a leader with its extras, and a

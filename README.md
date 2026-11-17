@@ -1121,6 +1121,12 @@ Outline you put on a source yourself is left as it is. Five of them draw nothing
 built to keep Morph working, so a scene carrying any of them still morphs. In a scene that is not on screen
 they do as little as they can, and nothing at all while a scene collection loads.
 
+Scene Transitions, Scene Fit, Scene Standby, Scene Corners and Scene Shadow each have a **Sources covered**
+list that starts with **All sources**: every source in the scene, a group counting as one, and sources you add
+later too, except the ones under **Ignored sources**. The Morph layer and Standby stand-ins are never counted.
+Each filter starts on what it did before there was a choice (see each one below), so a filter you already
+have keeps doing what it did.
+
 #### Scene Modes
 
 <!-- ==== scene-filters:modes (Scene Modes) ==== -->
@@ -1185,10 +1191,10 @@ a transition setting inside each filter. It sets OBS's own show and hide transit
 in a source's right-click menu), so they also hold when a source is shown or hidden with the eye, its
 hotkeys, a Stream Deck *Source Visibility* key or obs-websocket.
 
-- **Applies to**: *All sources in the scene*, or *Only listed sources*.
+- **Sources covered**: *All sources* (as it comes), or *Chosen sources*.
 - **Sources**: with *All sources*, a source listed here can have settings of its own: choose it under
-  *Settings for* in *Show/Hide transition*. With *Only listed sources*, only these are set.
-- **Leave these alone**: sources this filter never sets, such as one another tool animates. A source a
+  *Settings for* in *Show/Hide transition*. With *Chosen sources*, only these are set.
+- **Ignored sources**: sources this filter never sets, such as one another tool animates. A source a
   Show/Hide Animation animates, and one a Standby Image stands in for, are always left to those filters.
 - **Sources in groups**: also set the sources inside groups (off as it comes: a group is then one source
   like any other). OBS plays an inner source's transitions whenever its group is shown or hidden too, so a
@@ -1223,6 +1229,18 @@ them moves. When the camera is hidden or shown, a game changes shape or a widget
 that has to make way sets off once, all at the same moment. With a Fit to Space per source each filter only
 learns where the others are going a frame later, and they could shift a few times before settling.
 
+- **Sources covered**: *Chosen sources* (as it comes: the sources under *Fitted sources*) or *All sources*.
+  With *All sources* every source of the scene is fitted, a group counting as one and sources added later
+  too: first the ones under *Fitted sources*, in their order, then the rest from the top of the scene down,
+  each starting from the usual entry settings (in the free space round its place, a gap of 30 px, resized to
+  fit). Each one is under *Settings for* like a listed one; untick *Resize to fit* for a source that keeps
+  its size. Left out: **Ignored sources** (they stay where they are, and the fitted sources keep clear of
+  them), a source a Fit to Space of its own already fits, a source another Scene Fit of the scene lists (or
+  every source, when an earlier Scene Fit has *All sources* too), and a source that fills nine tenths of the
+  screen or more when it is first met, such as the background: it could only be made smaller, and the free
+  space round a place inside it is never in its way. A source fitted once stays fitted however large it is
+  fitted to. A source added on top of a fitted one is fitted once that one has made room for it.
+  Switching back to *Chosen sources* leaves the others where they are.
 - **Fitted sources**: the order matters. Put the sources that keep their size (a camera, a chat box) above
   the ones that are resized to fit (the game).
 - **Take over Fit to Space**: every Fit to Space switched on in this scene becomes an entry here, with all its
@@ -1250,9 +1268,12 @@ It does not draw anything itself. It adds a **Standby Image** filter to each sou
 the scene filter. That filter says *Set by Scene Standby in <scene>* and leaves out the image controls,
 which are set in the Scene Standby.
 
-- **Sources covered**: *Every capture* (each game, window and camera capture in the scene, groups included)
-  or *Chosen sources*. Screen captures always have an image, so they are left out unless you tick *Include
-  screen captures*. *Ignored sources* are left out too.
+- **Sources covered**: *All sources*, *Every capture* (as it comes: each game, window and camera capture in
+  the scene, groups included) or *Chosen sources*. With *Every capture*, screen captures (which always have
+  an image) are left out unless you tick *Include screen captures*. *All sources* covers every source with
+  an image of its own, the ones inside groups too, sources added later and screen captures included; an
+  empty one (a capture with nothing attached, a stopped video, a text with no words) shows the image. Groups,
+  nested scenes and the source used as the image are not covered. *Ignored sources* are left out of both.
 - **Show when no image**: an empty capture (no game or window attached, no camera signal) shows the image.
   The image goes with the source into every scene it is in, as a Standby Image filter of its own would.
 - **Show when hidden**: the sources whose place the image takes **in this scene only** while they are
@@ -1278,9 +1299,10 @@ other takes it over if that one is removed.
 Scene Corners in <scene>*. Corners & Edges never changes a source's size, so nothing in the scene moves and
 Morph still morphs the scene.
 
-- **Sources covered**: *All but the background* (every source in the scene, a group counting as one) or
-  *Chosen sources*. With **Full-screen = background**, sources at the bottom of the scene that cover 90 % of
-  the screen or more are left out. *Ignored sources* are left out too.
+- **Sources covered**: *All sources*, *All but the background* (as it comes) or *Chosen sources*. *All
+  sources* is every source in the scene, a group counting as one, the background too. *All but the
+  background* is the same with **Full-screen = background**: sources at the bottom of the scene that cover
+  90 % of the screen or more are left out. *Ignored sources* are left out of both.
 - The look (**Style**, **Size**, the four corners, **Inset**, **Softness**, the line, **Sizes in screen
   pixels**) is the Corners & Edges filter's own.
 - Switching Scene Corners off switches its filters off, and on again.
@@ -1307,7 +1329,10 @@ Shadow, Glow & Outline on each source.
 - **Background sources**: drawn underneath as they are; they cast nothing and the shadow falls on them.
   **Full-screen = background** (on as it comes) counts the sources at the bottom of the scene that cover nine
   tenths of it as background, so the scene's picture or colour needs no listing.
-- **No shadow for**: sources that cast nothing (the shadow is still kept off them). A source with a Shadow,
+- **Sources covered**: *All sources* (as it comes: every source that is not background casts, sources added
+  later too) or *Chosen sources*: only the sources listed cast. Either way the shadow is kept off every source
+  that is not background.
+- **Ignored sources**: sources that cast nothing (the shadow is still kept off them). A source with a Shadow,
   Glow & Outline filter of its own keeps that one and casts nothing here, so no source gets two.
 - A source fading in or out with its show or hide transition takes its shadow with it. A Standby stand-in has
   the shadow of the source it stands in for.

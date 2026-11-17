@@ -102,6 +102,29 @@ change as well. Going back, the chat box came out of the camera.
   capture as the camera goes or comes): 2 layers on beta158, 1 now. The beta158 blocks there grew
   from 26 % to 56 % of the screen to stay over the new bar, as the owner's camera and captures are.
 - There is no setting for it: a panel is only pulled into another item's change through a link.
+## All sources in the scene filters (`feat/scene-all-sources`, not released)
+
+The owner: "the scene filters must have an all sources option." Each scene filter that chooses sources
+now has one **Sources covered** list with **All sources** first (AGENTS has the numbers and the rules):
+
+| Filter | Sources covered offers | A new filter starts on | A filter saved before reads as |
+| --- | --- | --- | --- |
+| Scene Transitions | All sources, Chosen sources (was *All sources in the scene* / *Only listed sources*; *Leave these alone* is *Ignored sources*) | All sources | unchanged |
+| Scene Fit | All sources, Chosen sources (its *Fitted sources*), plus *Ignored sources* | Chosen sources | Chosen sources |
+| Scene Standby | All sources, Every capture, Chosen sources | Every capture | Every capture |
+| Scene Corners | All sources, All but the background, Chosen sources | All but the background | All but the background |
+| Scene Shadow | All sources, Chosen sources (*No shadow for* is *Ignored sources*) | All sources | All sources |
+
+No default changed: OBS saves no value left on its default, so changing one would have changed every
+filter saved with it. Scene Modes has no All sources, on purpose (AGENTS says why). `screen_share` moved
+from Scene Corners to `src/common/scene-util.hpp`. Scene Fit's unlisted sources: a source put down inside a fitted
+source's space waits until that one has made room, and with All sources a place inside another fit's claim is
+moved clear of it before the space is looked for (`set_claims_firm`, `FitEngine::solve`; without both, a source
+added later and the chat box took the same space for good, found by the test). Fit to Space and a Scene Fit on
+Chosen sources solve as before. Tests: `[all sources: scene corners]`, `[... scene
+standby]`, `[... scene shadow]`, `[... scene fit]` in their own `scene-filters:all-sources` block. Not
+proven on Windows: Scene Fit's window with many unlisted entries (one group each under *Settings for*),
+and how All sources settles in the owner's real scenes (in the test four sources settle and stay still).
 
 ## A capture comes out of the DSLR (0.1.0-beta158)
 
