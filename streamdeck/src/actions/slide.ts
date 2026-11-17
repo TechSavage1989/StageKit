@@ -9,9 +9,9 @@ import {
 import type { JsonValue } from "@elgato/utils";
 
 import { obs } from "../obs.ts";
-import { file, slidePicture } from "../pictures.ts";
+import { shownId, slideShown } from "../pictures.ts";
 import { slideTitle } from "../titles.ts";
-import { answerLists, type KeySettings } from "./shared.ts";
+import { answerLists, imageOf, type KeySettings, settle } from "./shared.ts";
 import { keptPicture } from "../key-types.ts";
 
 /** The ways a slide can go, by the names StageKit's Slide request uses. */
@@ -45,7 +45,9 @@ export class Slide extends SingletonAction<KeySettings> {
 	}
 
 	private async show(key: KeyAction<KeySettings>, settings: KeySettings): Promise<void> {
-		await key.setImage(file(slidePicture(keptPicture(settings), settings.direction), true, settings.palette));
+		const pick = (s: KeySettings) => slideShown(keptPicture(s), s.direction, s.sourceType);
+		settings = await settle(key, "slide", settings, (s) => shownId(pick(s)));
+		await key.setImage(imageOf(pick(settings), settings.palette));
 		await key.setTitle(slideTitle(settings.direction));
 	}
 }

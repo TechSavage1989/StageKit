@@ -13,6 +13,38 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
+## Stream Deck: a type list on every key, its function as a corner badge (0.1.0-beta160, plugin 0.20.1.0)
+
+Branch `feat/streamdeck-every-key`. The owner, of the Manual Window / Source key: "no types
+selection for manual window/source? all keys must have the options"; and of Move Source: "Move
+source needs plenty of relevant custom icons for all the potential options".
+
+- Every key a user can add has a type list now (tested against the manifest). New: *Source type*
+  on Manual Window / Source, Arrange tool, Dock Option, Slide to Edge, Set Aspect Ratio, Capture
+  Active Window (beside Capture type), Move Source and Move Scene Item (beside Position); *Scene
+  type* on Blur All (beside Blur style). Lists in `SOURCES` / `sceneKeys()` of
+  `streamdeck/src/key-types.ts`.
+- With a type chosen, the image is the type's picture with what the key does as a badge in the top
+  right corner; Move keys carry a second badge top left (linked source, flipped or not; this scene
+  or a chosen scene only). 78 badges per palette by `tools/make-badges.py` (PNG + SVG); laid
+  together at run time by `src/compose.ts` (PNG data URL, plain Node, no native modules). See
+  AGENTS.md, *A type and a function on one image*.
+- Position covers every Destination of `place-item.cpp`: nine places, *Saved spot* (9) and the new
+  *Spot on the screen* (10, drawing `options/screen-spot`). There is no slide, flip or swap
+  destination in the filter; *flip* is the linked source's `flip_linked`, shown as a badge.
+  `moveTitle` says *Screen Spot* for 10 (it said *Saved Spot*).
+- Automatic is unchanged: no type, no badge, the same file path (tested for every function and
+  setting). Keys given a Source type in beta155 (Capture Active Window, Manual Window / Source) now
+  show that type with their capture kind or step as a badge; hook keys no longer show the
+  `hook-type-*` pictures.
+- Tests: `streamdeck/tests/compose.test.ts` (every badge drawn in every palette; every composed
+  image a valid 144 px PNG equal to the base outside the badges and to the badge inside; on/off
+  mark kept; PNG reader/writer round trip on 256-colour and RGBA files; Automatic and old
+  settings unchanged) and the updated `key-types.test.ts` / `source-types.test.ts`. `npm run build`,
+  `npm test` (52 pass), `npm run validate` pass.
+- Not run on a Stream Deck: whether `setImage` with a PNG data URL looks as the file does (it is
+  documented to take base64 images), and how legible a 54 x 36 badge is on a 72 px key.
+
 ## The chat box no longer joins the camera's morph (0.1.0-beta159)
 
 The owner, on beta158: "the camera is morphing from the chat box. how do i change that", with their

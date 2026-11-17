@@ -9,10 +9,10 @@ import {
 import type { JsonValue } from "@elgato/utils";
 
 import { obs } from "../obs.ts";
-import { file, toolPicture } from "../pictures.ts";
+import { shownId, toolShown } from "../pictures.ts";
 import { toolTitle } from "../titles.ts";
 import { hotkeyOf } from "../tools.ts";
-import { answerLists, type KeySettings } from "./shared.ts";
+import { answerLists, imageOf, type KeySettings, settle } from "./shared.ts";
 import { keptPicture } from "../key-types.ts";
 
 /**
@@ -50,7 +50,9 @@ export class Tool extends SingletonAction<KeySettings> {
 	}
 
 	private async show(key: KeyAction<KeySettings>, settings: KeySettings): Promise<void> {
-		await key.setImage(file(toolPicture(keptPicture(settings), settings.tool), true, settings.palette));
+		const pick = (s: KeySettings) => toolShown(keptPicture(s), s.tool, s.sourceType);
+		settings = await settle(key, "tool", settings, (s) => shownId(pick(s)));
+		await key.setImage(imageOf(pick(settings), settings.palette));
 		await key.setTitle(toolTitle(settings.tool));
 	}
 }

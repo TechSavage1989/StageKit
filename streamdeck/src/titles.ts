@@ -92,7 +92,8 @@ export function moveTitle(kind: string | undefined, settings: Record<string, unk
 	if (kind === "stagekit_send_to" || kind === "stagekit_place_item") {
 		const place = settings.destination;
 		const at = typeof place === "number" ? PLACES[Math.trunc(place)] : PLACES[2];
-		return at ?? "Saved\nSpot";
+		// (10 is a spot on the screen, the dock's slides' way; 9 the item's own saved place.)
+		return at ?? (place === 10 ? "Screen\nSpot" : "Saved\nSpot");
 	}
 	return KINDS[kind ?? ""] ?? "Move";
 }

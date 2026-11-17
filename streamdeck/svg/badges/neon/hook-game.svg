@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="54" height="36" viewBox="0 0 54 36">
+<rect x="0" y="0" width="53" height="35" rx="7" fill="#0c0c0e"/>
+<rect x="3" y="3" width="47" height="29" rx="5" fill="#1c1c1c" stroke="#faf9fe" stroke-width="2"/>
+<polyline points="9.32,8.48 12.72,8.48" fill="none" stroke="#faf9fe" stroke-width="2.4"/>
+<polyline points="9.32,8.48 9.32,11.88" fill="none" stroke="#faf9fe" stroke-width="2.4"/>
+<polyline points="41.28,8.48 44.68,8.48" fill="none" stroke="#faf9fe" stroke-width="2.4"/>
+<polyline points="44.68,8.48 44.68,11.88" fill="none" stroke="#faf9fe" stroke-width="2.4"/>
+<polyline points="9.32,27.52 12.72,27.52" fill="none" stroke="#faf9fe" stroke-width="2.4"/>
+<polyline points="9.32,24.12 9.32,27.52" fill="none" stroke="#faf9fe" stroke-width="2.4"/>
+<polyline points="41.28,27.52 44.68,27.52" fill="none" stroke="#faf9fe" stroke-width="2.4"/>
+<polyline points="44.68,24.12 44.68,27.52" fill="none" stroke="#faf9fe" stroke-width="2.4"/>
+<rect x="17.32" y="13.76" width="19.36" height="8.48" fill="none" stroke="#faf9fe" stroke-width="2.4"/>
+<polyline points="20.2,18 25.64,18" fill="none" stroke="#faf9fe" stroke-width="2.4"/>
+<polyline points="22.92,15.28 22.92,20.72" fill="none" stroke="#faf9fe" stroke-width="2.4"/>
+<ellipse cx="31.76" cy="15.96" rx="1.36" ry="1.36" fill="#faf9fe"/>
+<ellipse cx="34.48" cy="19.36" rx="1.36" ry="1.36" fill="#faf9fe"/>
+</svg>

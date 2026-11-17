@@ -398,3 +398,143 @@ export function file(picture: Picture, on: boolean, palette: string | undefined)
 	const use = palette && COLOURS.includes(palette) ? palette : DEFAULT_COLOUR;
 	return `imgs/pack/${use}/${on ? picture.on : picture.off}.png`;
 }
+
+// ------------------------------------------------- a type with its function
+// The owner, of the Manual Window / Source key: "no types selection for
+// manual window/source? all keys must have the options". A key whose own
+// list is what it does (a step, a tool, a slide, an aspect ratio, a dock
+// option) or whose look is (a kind of capture, a blur style, a destination)
+// also has a type list for what it acts on. With a type chosen, the key shows
+// the type's picture with what it does drawn as a badge in the top right
+// corner (tools/make-badges.py, laid over it by src/compose.ts). With none
+// (Automatic) it shows exactly what it showed before.
+
+/** A key's image: a picture, and the badges laid over it (none: the picture as it is). */
+export type Shown = { picture: Picture; badge?: string; extra?: string };
+
+/** One string for what a key shows, for comparing (`settle`'s resolvers). */
+export function shownId(shown: Shown): string {
+	return [shown.picture.id, shown.badge, shown.extra].filter(Boolean).join("+");
+}
+
+function palette(of: string | undefined): string {
+	return of && COLOURS.includes(of) ? of : DEFAULT_COLOUR;
+}
+
+/** What src/compose.ts lays together for a key: the picture's file (marked on or off for a key with two states) and its badges. */
+export function layersOf(shown: Shown, colour: string | undefined, state?: boolean): { base: string; palette: string; right?: string; left?: string } {
+	const base = state === undefined ? file(shown.picture, true, colour) : stateFile(shown.picture, state, colour);
+	return { base, palette: palette(colour), right: shown.badge, left: shown.extra };
+}
+
+/** The picture of a source type chosen in a key's list, or undefined for Automatic. */
+function typedPicture(sourceType: unknown): Picture | undefined {
+	return typePicture(explicit(sourceType));
+}
+
+/** The badge of a picture of options/ drawn by make-option-icons.py (the same drawing). */
+function badgeOf(picture: Picture): string {
+	return picture.id.replace(/^options\//, "");
+}
+
+const STEP_BADGES: Record<string, string> = { toggle: "step-toggle", next: "step-next", back: "step-back", hide: "hide", clear: "clear" };
+
+/** A Manual Window / Source key: its Source type with its step, else its picture as before. */
+export function stepShown(chosen: string | undefined, step: string | undefined, sourceType?: unknown): Shown {
+	const typed = typedPicture(sourceType);
+	if (typed) return { picture: typed, badge: STEP_BADGES[step ?? "next"] ?? "step-next" };
+	return { picture: stepPicture(chosen, step, typeof sourceType === "string" ? sourceType : undefined) };
+}
+
+/** An Arrange tool key: its Source type with its tool, else the tool. */
+export function toolShown(chosen: string | undefined, tool: string | undefined, sourceType?: unknown): Shown {
+	const typed = typedPicture(sourceType);
+	if (typed) return { picture: typed, badge: badgeOf(toolPicture(undefined, tool)) };
+	return { picture: toolPicture(chosen, tool) };
+}
+
+/** A Dock Option key: its Source type with its option, else the option. */
+export function optionShown(chosen: string | undefined, option: string | undefined, sourceType?: unknown): Shown {
+	const typed = typedPicture(sourceType);
+	if (typed) return { picture: typed, badge: badgeOf(optionPicture(undefined, option)) };
+	return { picture: optionPicture(chosen, option) };
+}
+
+/** A Slide to Edge key: its Source type with an arrow to the edge, else the slide. */
+export function slideShown(chosen: string | undefined, direction: string | undefined, sourceType?: unknown): Shown {
+	const typed = typedPicture(sourceType);
+	if (typed) return { picture: typed, badge: badgeOf(slidePicture(undefined, direction)) };
+	return { picture: slidePicture(chosen, direction) };
+}
+
+/** A Set Aspect Ratio key: its Source type with a frame of the ratio, else the ratio. */
+export function shapeShown(chosen: string | undefined, shape: string | undefined, sourceType?: unknown): Shown {
+	const typed = typedPicture(sourceType);
+	if (typed) return { picture: typed, badge: badgeOf(shapePicture(undefined, shape)) };
+	return { picture: shapePicture(chosen, shape) };
+}
+
+/**
+ * A Capture Active Window key: its Source type with the kind of capture (its
+ * Capture type, else what OBS says the capture is); else as before.
+ */
+export function hookShown(chosen: string | undefined, inputKind: string | undefined, sourceType?: unknown, look?: unknown): Shown {
+	const typed = typedPicture(sourceType);
+	if (typed) {
+		const capture = explicit(look) ?? (inputKind === "window_capture" ? "window" : "game");
+		return { picture: typed, badge: capture === "window" ? "hook-window" : "hook-game" };
+	}
+	return { picture: hookPicture(chosen, inputKind, typeof sourceType === "string" ? sourceType : undefined, look) };
+}
+
+/** The badge of a Blur style (the filter's numbers' names and the Blur style list's). */
+export function blurBadge(style: string): string {
+	return BLUR_STYLES.includes(style) ? `blur-${style}` : `style-${style.replace(/_/g, "-")}`;
+}
+
+/** A Blur All key: its Scene type with its Blur style (Gaussian on Automatic), else as before. */
+export function blurAllShown(chosen: string | undefined, look?: unknown, sceneType?: unknown): Shown {
+	const typed = BY_ID.get(sceneTypePicture(explicit(sceneType)) ?? "");
+	if (typed) return { picture: typed, badge: blurBadge(explicit(look) ?? "gaussian") };
+	return { picture: blurAllPicture(chosen, look) };
+}
+
+/** The badge of a destination: by the Position list's value, or the filter's number. */
+export function placeBadge(place: string | number | undefined): string {
+	if (typeof place === "number") {
+		const at = PLACES[Math.trunc(place)];
+		return at ? `camera-${at}` : Math.trunc(place) === 10 ? "screen-spot" : "spot";
+	}
+	if (place === "spot") return "spot";
+	if (place === "screen") return "screen-spot";
+	return PLACES.includes(place ?? "") ? `camera-${place}` : "camera-top-right";
+}
+
+/**
+ * A Move Source or Move Scene Item key's second badge, from how its filter is
+ * set: a linked source brought along (flipped round the moved one or not),
+ * else the move made in this scene or a chosen one only. Nothing for the
+ * usual: every scene, nothing brought along.
+ */
+export function moveExtra(settings: Settings = {}): string | undefined {
+	if (typeof settings.linked === "string" && settings.linked !== "") return settings.flip_linked === false ? "move-linked" : "move-flip";
+	const where = whole(settings, "apply_in", 0);
+	return where === 1 ? "scene-this" : where === 2 ? "scene-chosen" : undefined;
+}
+
+/**
+ * A Move Source or Move Scene Item key: its Source type with its destination
+ * (its Position, else where the filter sends the source) top right and the
+ * move's extra option top left; else as before (movePicture). Apply Layout
+ * has no Source type.
+ */
+export function moveShown(chosen: string | undefined, kind: string, settings: Settings = {}, types: KeyTypes = {}): Shown | undefined {
+	const typed = kind === "stagekit_layout" ? undefined : typedPicture(types.sourceType);
+	if (typed) {
+		const look = explicit(types.look);
+		const place = look ?? (typeof settings.destination === "number" ? settings.destination : 2);
+		return { picture: typed, badge: placeBadge(place), extra: moveExtra(settings) };
+	}
+	const picture = movePicture(chosen, kind, settings, types);
+	return picture ? { picture } : undefined;
+}

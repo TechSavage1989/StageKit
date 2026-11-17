@@ -10,9 +10,9 @@ import type { JsonValue } from "@elgato/utils";
 
 import { targetOf } from "../kinds.ts";
 import { obs } from "../obs.ts";
-import { file, shapePicture } from "../pictures.ts";
+import { shapeShown, shownId } from "../pictures.ts";
 import { shapeTitle } from "../titles.ts";
-import { answerLists, type KeySettings } from "./shared.ts";
+import { answerLists, imageOf, type KeySettings, settle } from "./shared.ts";
 import { keptPicture } from "../key-types.ts";
 
 /**
@@ -55,7 +55,9 @@ export class PictureShape extends SingletonAction<KeySettings> {
 
 	/** The shape is the key's title unless the user wrote their own; the picture is Auto Frame's. */
 	private async show(key: KeyAction<KeySettings>, settings: KeySettings): Promise<void> {
-		await key.setImage(file(shapePicture(keptPicture(settings), settings.shape), true, settings.palette));
+		const pick = (s: KeySettings) => shapeShown(keptPicture(s), s.shape, s.sourceType);
+		settings = await settle(key, "shape", settings, (s) => shownId(pick(s)));
+		await key.setImage(imageOf(pick(settings), settings.palette));
 		await key.setTitle(shapeTitle(settings.shape));
 	}
 }

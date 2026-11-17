@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="54" height="36" viewBox="0 0 54 36">
+<rect x="0" y="0" width="53" height="35" rx="7" fill="#0c0c0e"/>
+<rect x="3" y="3" width="47" height="29" rx="5" fill="#1c1c1c" stroke="#e7d6f4" stroke-width="2"/>
+<polyline points="9.32,8.48 12.72,8.48" fill="none" stroke="#e7d6f4" stroke-width="2.4"/>
+<polyline points="9.32,8.48 9.32,11.88" fill="none" stroke="#e7d6f4" stroke-width="2.4"/>
+<polyline points="41.28,8.48 44.68,8.48" fill="none" stroke="#e7d6f4" stroke-width="2.4"/>
+<polyline points="44.68,8.48 44.68,11.88" fill="none" stroke="#e7d6f4" stroke-width="2.4"/>
+<polyline points="9.32,27.52 12.72,27.52" fill="none" stroke="#e7d6f4" stroke-width="2.4"/>
+<polyline points="9.32,24.12 9.32,27.52" fill="none" stroke="#e7d6f4" stroke-width="2.4"/>
+<polyline points="41.28,27.52 44.68,27.52" fill="none" stroke="#e7d6f4" stroke-width="2.4"/>
+<polyline points="44.68,24.12 44.68,27.52" fill="none" stroke="#e7d6f4" stroke-width="2.4"/>
+<rect x="17.32" y="13.08" width="19.36" height="9.84" fill="none" stroke="#e7d6f4" stroke-width="2.4"/>
+<rect x="16.12" y="11.88" width="21.76" height="3.4" fill="#e7d6f4"/>
+</svg>

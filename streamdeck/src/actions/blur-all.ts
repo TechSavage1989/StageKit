@@ -10,7 +10,7 @@ import type { JsonValue } from "@elgato/utils";
 
 import { obs } from "../obs.ts";
 import { keptPicture } from "../key-types.ts";
-import { blurAllPicture } from "../pictures.ts";
+import { blurAllShown, shownId } from "../pictures.ts";
 import { blurAllTitle } from "../titles.ts";
 import { answerLists, type KeySettings, settle, showOnOff } from "./shared.ts";
 
@@ -54,8 +54,8 @@ export class BlurAll extends SingletonAction<KeySettings> {
 	}
 
 	private async show(key: KeyAction<KeySettings>, settings: KeySettings): Promise<void> {
-		const pick = (s: KeySettings) => blurAllPicture(keptPicture(s), s.look);
-		settings = await settle(key, "blurall", settings, (s) => pick(s).id);
+		const pick = (s: KeySettings) => blurAllShown(keptPicture(s), s.look, s.sceneType);
+		settings = await settle(key, "blurall", settings, (s) => shownId(pick(s)));
 		const picture = pick(settings);
 		await showOnOff(key, picture, await this.anyOn(), settings.palette);
 		await key.setTitle(blurAllTitle(settings.press));

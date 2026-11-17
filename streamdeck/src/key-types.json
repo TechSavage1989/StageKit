@@ -1900,7 +1900,7 @@
 		},
 		"position": {
 			"label": "Position",
-			"tip": "Which place on the screen the image shows. Automatic shows where the filter sends the source.",
+			"tip": "Where the image shows the source sent (with a Source type, in its corner). Automatic shows where the filter sends it.",
 			"groups": [
 				{
 					"label": "",
@@ -1954,6 +1954,11 @@
 							"spot",
 							"Saved spot",
 							"options/spot"
+						],
+						[
+							"screen",
+							"Spot on the screen",
+							"options/screen-spot"
 						]
 					]
 				}
@@ -1961,7 +1966,7 @@
 		},
 		"capture": {
 			"label": "Capture type",
-			"tip": "What the image shows the key capturing. Automatic goes by the kind of capture chosen.",
+			"tip": "What the image shows the key capturing (with a Source type, in its corner). Automatic goes by the kind of capture chosen.",
 			"groups": [
 				{
 					"label": "",

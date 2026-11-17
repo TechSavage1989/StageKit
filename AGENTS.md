@@ -1307,10 +1307,12 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   - **Settings.** `sourceType` (Source type, or *Mode type* on the Scene Mode key; ids append-only,
     the first twenty those of the Scene Modes filter's *Mode type* in OBS, which has not been given
     the new ones), `sceneType` (Scene type), `look` (Blur style, Corner style, Shadow style,
-    Transition, Position, Capture type). Where a key has both, the source or scene type comes
-    first and the look after. Each list starts with *Automatic*, value `auto`; unset or empty reads the same. The keys
-    whose own list is already the type (Arrange tool, Dock Option, Slide to Edge, Set Aspect Ratio,
-    Manual Window / Source: `OWN_LISTS`) have none. `make-plugin-files.py` writes the lists into
+    Transition, Position, Capture type). Each list starts with *Automatic*, value `auto`; unset or empty reads the same. Since beta160
+    every key a user can add has one (tested from the manifest): the keys whose own list is what
+    they do (Arrange tool, Dock Option, Slide to Edge, Set Aspect Ratio, Manual Window / Source:
+    `OWN_LISTS`) have a Source type too, Capture Active Window and Move Source / Move Scene Item a
+    Source type beside their look, Blur All a Scene type beside its Blur style (the owner: "no
+    types selection for manual window/source? all keys must have the options"). `make-plugin-files.py` writes the lists into
     the pages from `typeLists()` (it runs node on `key-types.ts`), as static `<optgroup>`s with
     `placeholder` and the tip as the item's `title`.
   - **Resolution order:** a type chosen in a list; else the image kept from the old Image list;
@@ -1322,8 +1324,27 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     settings at that moment; `keptPicture` shows it while they are unchanged. Where a type of the
     key's lists shows that very picture (`typeForKept`, tried with the key's own resolver), the
     type is set instead so the page says what it is. Choosing anything in a list, Automatic
-    included, drops it. Hook and Manual Window / Source keys' old `sourceType` (beta155) is still
-    read (`hook-type-*`, `options/type-*`), though those pages no longer offer it.
+    included, drops it. Hook and Manual Window / Source keys' old `sourceType` (beta155) is the
+    value of their new Source type list (since beta160 drawn as the type with a badge, no longer as
+    `hook-type-*`).
+  - **A type and a function on one image** (beta160; `*Shown` in `src/pictures.ts`,
+    `src/compose.ts`, `tools/make-badges.py`). With a type chosen on a key that also does
+    something of its own (step, tool, option, slide, ratio, capture kind, blur style, destination),
+    the image is the type's picture with that function as a badge, 54 x 36 px, top right
+    (`BADGE_AT`); a Move Source / Move Scene Item key has a second badge top left for its filter's
+    `linked` (flipped or not) or `apply_in` (this scene, a chosen scene), which `seen` keeps. The
+    on/off mark stays top left on two-state keys: the badge goes over the marked file
+    (`layersOf`). Badges are drawn beforehand in every palette (`imgs/pack/<palette>/badges/`,
+    listed in `src/badges.json`, SVGs in `svg/badges/`), from make-option-icons.py's drawings or
+    their own (`OWN`); the combinations (types x functions x palettes x on/off) are too many to
+    draw, so the plugin lays them together when a key is shown: plain Node (`node:zlib`) PNG
+    reading and writing, a `data:image/png;base64` URL to `setImage`, cached per combination. A
+    PNG, not an SVG with the PNG inside: Stream Deck takes PNG data URLs as it takes files, and
+    whether its SVG renderer draws an embedded raster was not something to find out on the
+    owner's deck. **Automatic is unchanged**: no type, no badge, the same file path as before
+    (tested for every function and setting). A new key with a function gets a `*Shown` function,
+    a badge per function and a Source type in `SOURCES`; run `make-badges.py` after
+    `make-option-icons.py`. Not seen on a Stream Deck.
   - **Stream Deck's own image menu**: titles are documented (setTitle "can only be set by the
     plugin when the user has not specified a custom title"); for images the SDK's types say only
     that state images "can be overridden by the user", nothing of setImage against a user's image.

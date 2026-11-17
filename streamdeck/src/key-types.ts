@@ -145,7 +145,12 @@ const CAPTURES = ["game", "retro", "emulator", "console", "handheld", "linked_ha
 const APPS = inGroups("Apps");
 const CAMERAS = inGroups("Cameras");
 
-/** What a source key's list offers, for the keys that act on a source. */
+/** What is moved or lined up: a source in a layout (the Move, Slide, Arrange tool and Dock Option keys). */
+const MOVED = [...CAMERAS, ...inGroups("Overlays"),
+	"game", "retro", "emulator", "console", "handheld", "linked_handheld", "linked_handheld_2", "capture_card", "window", "browser", "display", "tablet", "phone",
+	...APPS];
+
+/** What a key's list offers, for the keys that act on a source or whose image shows one. */
 const SOURCES: Record<string, { family?: Family; only?: string[]; label?: string; automatic: string; tip: string }> = {
 	// Everything a source can be: not the activities, which are what a scene or a mode is for.
 	showinscenes: {
@@ -181,6 +186,51 @@ const SOURCES: Record<string, { family?: Family; only?: string[]; label?: string
 		tip: "Which program the trigger waits for, for the key's image.",
 		only: ["game", "retro", "emulator", "window", "browser", ...APPS, "voice_chat", "music", "recording", "live"],
 	},
+	// The keys whose own list is what they do (OWN_LISTS) and the ones with a
+	// look only: the type is the image, what they do is its corner badge
+	// (pictures.ts, `stepShown` and the rest). The owner: "no types
+	// selection for manual window/source? all keys must have the options".
+	appswitch: {
+		automatic: "Automatic (the step's image)",
+		tip: "What the capture switches between, for the key's image; the step is drawn in its corner. Automatic shows the step alone.",
+		only: ["window", "browser", "game", "retro", "emulator", "console", "capture_card", "display", "linked_handheld", ...APPS, "chat", "voice_chat", "music", ...CAMERAS],
+	},
+	tool: {
+		automatic: "Automatic (the tool's image)",
+		tip: "What the tool lines up or resizes, for the key's image; the tool is drawn in its corner. Automatic shows the tool alone.",
+		only: MOVED,
+	},
+	slide: {
+		automatic: "Automatic (the slide's image)",
+		tip: "What is slid, for the key's image; an arrow to the edge is drawn in its corner. Automatic shows the slide alone.",
+		only: MOVED,
+	},
+	option: {
+		automatic: "Automatic (the option's image)",
+		tip: "What the option is for, for the key's image; the option is drawn in its corner. Automatic shows the option alone.",
+		only: MOVED,
+	},
+	shape: {
+		automatic: "Automatic (the ratio's image)",
+		tip: "What is framed, for the key's image; the ratio is drawn in its corner. Automatic shows the ratio alone.",
+		only: ["game", "retro", "emulator", "console", "retro_console", "handheld", "linked_handheld", "linked_handheld_2", "capture_card", "capture_box", "hdmi_source",
+			"window", "display", "pc", "vr_headset"],
+	},
+	hook: {
+		automatic: "Automatic (the capture's image)",
+		tip: "What the capture takes, for the key's image; the kind of capture is drawn in its corner. Automatic shows the capture alone.",
+		only: ["game", "retro", "emulator", "window", "browser", ...APPS, "chat", "voice_chat", "music"],
+	},
+	sendto: {
+		automatic: "Automatic (the place's image)",
+		tip: "What is moved, for the key's image; where it goes is drawn in its corner. Automatic shows the place alone.",
+		only: MOVED,
+	},
+	placeitem: {
+		automatic: "Automatic (the place's image)",
+		tip: "What is moved, for the key's image; where it goes is drawn in its corner. Automatic shows the place alone.",
+		only: MOVED,
+	},
 	mode: {
 		family: "mode",
 		label: "Mode type",
@@ -196,9 +246,9 @@ const SOURCES: Record<string, { family?: Family; only?: string[]; label?: string
 	},
 };
 
-/** The keys whose list is the Scene type: Switch Scene, and keys for a filter on a scene. */
+/** The keys whose list is the Scene type: Switch Scene, Blur All, and keys for a filter on a scene. */
 function sceneKeys(): string[] {
-	const keys = ["scene", "fitoverlap", "layout"];
+	const keys = ["scene", "fitoverlap", "layout", "blurall"];
 	for (const f of features.switches) if ((f as { scene?: boolean }).scene) keys.push(f.key);
 	return keys;
 }
@@ -219,9 +269,10 @@ const LOOK_KEYS: Record<string, Look> = {
 };
 
 /**
- * The keys whose type is the thing the key does: a tool, an option, a way to
- * slide, an aspect ratio, a step. Their settings page's list of that is
- * their type list; it has a picture for every entry already.
+ * The keys whose own list is the thing the key does: a tool, an option, a
+ * way to slide, an aspect ratio, a step. Since beta159 each also has a Source
+ * type list; with a type chosen, what the key does is drawn as a badge in the
+ * corner of the type's picture.
  */
 export const OWN_LISTS: Record<string, string> = { tool: "tool", option: "option", slide: "direction", shape: "shape", appswitch: "step" };
 
@@ -266,8 +317,13 @@ export function typeLists(key: string): TypeList[] {
 		lists.push({
 			setting: "sceneType",
 			label: "Scene type",
-			tip: key === "scene" ? "What the scene is, for the key's image. Automatic goes by the scene's name." : "What the scene is, for the key's image. Automatic shows the filter's own image.",
-			automatic: key === "scene" ? "Automatic (by the scene's name)" : "Automatic (the filter's image)",
+			tip:
+				key === "scene"
+					? "What the scene is, for the key's image. Automatic goes by the scene's name."
+					: key === "blurall"
+						? "What is blurred, for the key's image; the blur style is drawn in its corner. Automatic shows the blur style alone."
+						: "What the scene is, for the key's image. Automatic shows the filter's own image.",
+			automatic: key === "scene" ? "Automatic (by the scene's name)" : key === "blurall" ? "Automatic (the blur's image)" : "Automatic (the filter's image)",
 			groups,
 		});
 	}

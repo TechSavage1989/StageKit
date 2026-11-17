@@ -1941,6 +1941,13 @@
 			"off": "options/camera-bottom-right"
 		},
 		{
+			"id": "options/screen-spot",
+			"group": "options",
+			"label": "screen spot",
+			"on": "options/screen-spot",
+			"off": "options/screen-spot"
+		},
+		{
 			"id": "options/hook-game",
 			"group": "options",
 			"label": "hook game",

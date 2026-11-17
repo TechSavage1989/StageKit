@@ -230,6 +230,13 @@ for _row, _y in (("top", 4), ("middle", 13), ("bottom", 22)):
     for _col, _x in (("left", 9), ("centre", 26), ("right", 43)):
         _place = "centre" if (_row, _col) == ("middle", "centre") else f"{_row}-{_col}"
         DRAWINGS["camera-" + _place] = [("frame", 6, 2, 58, 34), ("box", _x, _y, _x + 12, _y + 10)]
+# Move Source's tenth way, a spot on the screen (Destination::Spot, the same
+# spot in every scene): the screen with a box at a point measured from its
+# corner, its two measures drawn to the edges. (The ninth, the item's own
+# saved place, is "spot", a target.) The owner: "Move source needs plenty of
+# relevant custom icons for all the potential options".
+DRAWINGS["screen-spot"] = [("frame", 6, 2, 58, 34), ("box", 30, 16, 42, 26), ("line", 6, 12, 30, 12), ("line", 24, 2, 24, 16),
+                           ("tri", 30, 12, 26, 9.5, 26, 14.5), ("tri", 24, 16, 21.5, 12, 26.5, 12)]
 # The hook keys: a game, a window, inside the corners of a capture.
 _CORNERS = [("line", 6, 4, 11, 4), ("line", 6, 4, 6, 9), ("line", 53, 4, 58, 4), ("line", 58, 4, 58, 9),
             ("line", 6, 32, 11, 32), ("line", 6, 27, 6, 32), ("line", 53, 32, 58, 32), ("line", 58, 27, 58, 32)]
