@@ -1036,6 +1036,378 @@ static void fit_priority_test()
 	obs_source_release(fp_game);
 }
 
+// Link Visibility's fuller Show/Hide transition, and Morph's Unpaired
+// sources. The owner: "Link visibility scene filter should have additional
+// transition options including a fallback or other items transition for
+// items that don't have partners".
+static void link_transitions_test(uint32_t w, uint32_t h)
+{
+	printf("\n[link visibility: show and hide transitions, and Morph's unpaired sources]\n");
+	for (const char *kind :
+	     {"stagekit_morph", "fade_transition", "slide_transition", "swipe_transition", "stagekit_fade_zoom"})
+		if (!obs_source_get_display_name(kind)) {
+			CHECK(false, "the transition %s is there", kind);
+			return;
+		}
+	auto block = [](const char *name, long long abgr, int bw, int bh) {
+		obs_data_t *d = obs_data_create();
+		obs_data_set_int(d, "color", abgr);
+		obs_data_set_int(d, "width", bw);
+		obs_data_set_int(d, "height", bh);
+		obs_source_t *src = obs_source_create("color_source", name, d, nullptr);
+		obs_data_release(d);
+		return src;
+	};
+	auto put = [](obs_scene_t *scene, obs_source_t *src, float x, float y) {
+		obs_sceneitem_t *item = obs_scene_add(scene, src);
+		vec2 p;
+		vec2_set(&p, x, y);
+		obs_sceneitem_set_pos(item, &p);
+		return item;
+	};
+	auto set_list = [](obs_data_t *settings, const char *list, std::vector<const char *> names) {
+		obs_data_array_t *rows = obs_data_array_create();
+		for (const char *name : names) {
+			obs_data_t *row = obs_data_create();
+			obs_data_set_string(row, "value", name);
+			obs_data_array_push_back(rows, row);
+			obs_data_release(row);
+		}
+		obs_data_set_array(settings, list, rows);
+		obs_data_array_release(rows);
+	};
+	auto kind_of = [](obs_sceneitem_t *item, bool show) {
+		obs_source_t *t = obs_sceneitem_get_transition(item, show);
+		const char *id = t ? obs_source_get_unversioned_id(t) : nullptr;
+		return std::string(id ? id : "(none)");
+	};
+	auto ms_of = [](obs_sceneitem_t *item, bool show) {
+		return (int)obs_sceneitem_get_transition_duration(item, show);
+	};
+	auto setting_of = [](obs_sceneitem_t *item, bool show, const char *name) {
+		obs_source_t *t = obs_sceneitem_get_transition(item, show);
+		obs_data_t *d = t ? obs_source_get_settings(t) : nullptr;
+		const std::string v = d ? obs_data_get_string(d, name) : "";
+		obs_data_release(d);
+		return v;
+	};
+	auto count_items = [](obs_scene_t *scene) {
+		int n = 0;
+		obs_scene_enum_items(
+			scene,
+			[](obs_scene_t *, obs_sceneitem_t *, void *param) {
+				++*static_cast<int *>(param);
+				return true;
+			},
+			&n);
+		return n;
+	};
+	obs_source_t *before_out = obs_get_output_source(0);
+
+	// ------------------------------------------------ the filter's controls
+	{
+		obs_source_t *a = block("LT A", 0xFF0000FF, 100, 60);
+		obs_source_t *b = block("LT B", 0xFF00FF00, 100, 60);
+		obs_source_t *c = block("LT C", 0xFFFF0000, 100, 60);
+		obs_scene_t *scene = obs_scene_create("LT Scene");
+		obs_source_t *scene_src = obs_scene_get_source(scene);
+		obs_sceneitem_t *ai = put(scene, a, 20, 20);
+		obs_sceneitem_t *bi = put(scene, b, 220, 20);
+		obs_sceneitem_t *ci = put(scene, c, 420, 20);
+		obs_set_output_source(0, scene_src);
+
+		// 1. Saved before: the plain two controls, a slide of 400 ms. They
+		// read as they did: showing and hiding both a slide of 400 ms.
+		obs_data_t *ld = obs_data_create();
+		set_list(ld, "items", {"LT A", "LT B"});
+		obs_data_set_int(ld, "mode", 0); // only one
+		obs_data_set_string(ld, "transition", "slide_transition");
+		obs_data_set_int(ld, "transition_ms", 400);
+		obs_source_t *old_link = obs_source_create("stagekit_visibility_link", "LT Old Link", ld, nullptr);
+		obs_data_release(ld);
+		obs_source_filter_add(scene_src, old_link);
+		obs_sceneitem_set_visible(bi, false);
+		sleep_ms(300);
+		obs_sceneitem_set_visible(bi, true); // shows B: A goes
+		sleep_ms(200);
+		obs_properties_t *props = obs_source_properties(old_link);
+		obs_data_t *now = obs_source_get_settings(old_link);
+		CHECK(!obs_sceneitem_visible(ai) && kind_of(ai, false) == "slide_transition" &&
+			      ms_of(ai, false) == 400 && kind_of(ai, true) == "slide_transition" &&
+			      ms_of(ai, true) == 400 && setting_of(ai, false, "direction").empty() &&
+			      strcmp(obs_data_get_string(now, "hide_transition"), "same") == 0 &&
+			      obs_properties_get(props, "transition") && obs_properties_get(props, "hide_transition") &&
+			      obs_properties_get(props, "transition_ms") && obs_properties_get(props, "change|for"),
+		      "a Link Visibility saved with the plain Transition and Duration reads as before: the source it hides gets a slide of 400 ms to show and to hide, nothing else set, and its window has the fuller controls with Hide transition the same as showing (hide %s %d ms, show %s %d ms)",
+		      kind_of(ai, false).c_str(), ms_of(ai, false), kind_of(ai, true).c_str(), ms_of(ai, true));
+		obs_data_release(now);
+		obs_properties_destroy(props);
+		// Kept as it is set on each item: left alone.
+		now = obs_source_get_settings(old_link);
+		obs_data_set_string(now, "transition", "keep");
+		obs_source_update(old_link, now);
+		obs_data_release(now);
+		obs_sceneitem_set_transition(bi, false, nullptr);
+		obs_sceneitem_set_visible(ai, true); // shows A: B goes
+		sleep_ms(200);
+		CHECK(!obs_sceneitem_visible(bi) && kind_of(bi, false) == "(none)",
+		      "and one saved as What is set on each item leaves the items' own transitions alone (%s)",
+		      kind_of(bi, false).c_str());
+		obs_source_filter_remove(scene_src, old_link);
+		obs_source_release(old_link);
+		for (obs_sceneitem_t *item : {ai, bi, ci}) {
+			obs_sceneitem_set_visible(item, true);
+			obs_sceneitem_set_transition(item, true, nullptr);
+			obs_sceneitem_set_transition(item, false, nullptr);
+		}
+		sleep_ms(200);
+
+		// 2. Showing and hiding apart, with a transition's own settings, and
+		// one source with settings of its own.
+		ld = obs_data_create();
+		set_list(ld, "items", {"LT A", "LT B", "LT C"});
+		obs_data_set_int(ld, "mode", 1); // together
+		obs_data_set_string(ld, "transition", "fade_transition");
+		obs_data_set_int(ld, "transition_ms", 300);
+		obs_data_set_string(ld, "hide_transition", "slide_transition");
+		obs_data_set_int(ld, "hide_ms", 500);
+		obs_data_set_string(ld, "hide|slide_transition|direction", "down");
+		obs_data_set_string(ld, "for|LT B|transition", "swipe_transition");
+		obs_data_set_int(ld, "for|LT B|transition_ms", 250);
+		obs_data_set_string(ld, "for|LT B|show|swipe_transition|direction", "up");
+		obs_source_t *link = obs_source_create("stagekit_visibility_link", "LT Link", ld, nullptr);
+		obs_data_release(ld);
+		obs_source_filter_add(scene_src, link);
+		sleep_ms(200);
+		obs_sceneitem_set_visible(ai, false); // hides B and C
+		sleep_ms(200);
+		CHECK(!obs_sceneitem_visible(bi) && !obs_sceneitem_visible(ci) &&
+			      kind_of(ci, true) == "fade_transition" && ms_of(ci, true) == 300 &&
+			      kind_of(ci, false) == "slide_transition" && ms_of(ci, false) == 500 &&
+			      setting_of(ci, false, "direction") == "down",
+		      "Link Visibility shows and hides each its own way: a fade of 300 ms to show, a slide down of 500 ms to hide (C: show %s %d ms, hide %s %d ms %s)",
+		      kind_of(ci, true).c_str(), ms_of(ci, true), kind_of(ci, false).c_str(), ms_of(ci, false),
+		      setting_of(ci, false, "direction").c_str());
+		CHECK(kind_of(bi, true) == "swipe_transition" && ms_of(bi, true) == 250 &&
+			      setting_of(bi, true, "direction") == "up" && kind_of(bi, false) == "swipe_transition" &&
+			      ms_of(bi, false) == 250,
+		      "and a source with settings of its own (Settings for) gets those, hiding the same as it shows (B: show %s %d ms %s, hide %s %d ms)",
+		      kind_of(bi, true).c_str(), ms_of(bi, true), setting_of(bi, true, "direction").c_str(),
+		      kind_of(bi, false).c_str(), ms_of(bi, false));
+		// The window: Settings for lists the sources; a source chosen shows
+		// its own controls.
+		props = obs_source_properties(link);
+		obs_property_t *for_box = obs_properties_get(props, "change|for");
+		const size_t listed = for_box ? obs_property_list_item_count(for_box) : 0;
+		obs_properties_destroy(props);
+		now = obs_source_get_settings(link);
+		obs_data_set_string(now, "change|for", "LT B");
+		props = obs_source_properties(link);
+		const bool own_shown = obs_properties_get(props, "for|LT B|transition") &&
+				       obs_properties_get(props, "for|LT B|show|swipe_transition|direction");
+		obs_properties_destroy(props);
+		obs_data_set_string(now, "change|for", "");
+		obs_data_release(now);
+		CHECK(listed == 4 && own_shown,
+		      "its window offers Settings for each listed source (%zu entries with All sources) and shows a source's own transition and its settings when chosen",
+		      listed);
+		obs_source_filter_remove(scene_src, link);
+		obs_source_release(link);
+		obs_set_output_source(0, before_out);
+		obs_scene_release(scene);
+		for (obs_source_t *src : {a, b, c})
+			obs_source_release(src);
+	}
+
+	// ------------------------------------------------ Morph's controls
+	{
+		obs_data_t *md = obs_data_create();
+		obs_data_set_int(md, "others", 1); // fade and zoom, saved before Unpaired sources
+		obs_source_t *old_morph = obs_source_create_private("stagekit_morph", "LT Old Morph", md);
+		obs_data_release(md);
+		obs_data_t *ms = obs_source_get_settings(old_morph);
+		const std::string read = obs_data_get_string(ms, "unpaired");
+		obs_data_set_string(ms, "unpaired", "slide_transition");
+		obs_properties_t *mp = obs_source_properties(old_morph);
+		const bool own = obs_properties_get(mp, "unpaired") &&
+				 obs_properties_get(mp, "unpaired|slide_transition|direction");
+		obs_properties_destroy(mp);
+		obs_data_release(ms);
+		obs_source_release(old_morph);
+		CHECK(read == "morph_zoom" && own,
+		      "a Morph saved with Other items on Fade and zoom reads Unpaired sources as Fade and zoom (%s), and another transition chosen there shows its own settings",
+		      read.c_str());
+		// In a filter's window, the same control under the Morph chosen, and
+		// an old filter's "With nothing to change into" read the same way.
+		obs_data_t *sd = obs_data_create();
+		obs_data_set_string(sd, "transition", "stagekit_morph");
+		obs_data_set_int(sd, "show|stagekit_morph|others", 1);
+		obs_source_t *sw = obs_source_create("stagekit_show_in_scenes", "LT Switch", sd, nullptr);
+		obs_data_release(sd);
+		obs_properties_t *sp = obs_source_properties(sw);
+		obs_data_t *ss = obs_source_get_settings(sw);
+		const std::string filter_read = obs_data_get_string(ss, "show|stagekit_morph|unpaired");
+		const bool no_others = !obs_properties_get(sp, "show|stagekit_morph|others");
+		obs_properties_destroy(sp);
+		obs_data_set_string(ss, "show|stagekit_morph|unpaired", "slide_transition");
+		sp = obs_source_properties(sw);
+		const bool nested = obs_properties_get(sp, "show|stagekit_morph|unpaired|slide_transition|direction");
+		obs_properties_destroy(sp);
+		obs_data_release(ss);
+		obs_source_release(sw);
+		CHECK(filter_read == "morph_zoom" && no_others && nested,
+		      "Show in Scenes offers Unpaired sources under Morph in place of With nothing to change into (an old Fade and zoom reads %s) and the chosen transition's own settings under it",
+		      filter_read.c_str());
+	}
+
+	// ------------------------------------------------ the fallback drawn
+	// A camera hidden as a capture is shown (the two change into each
+	// other) and a small source the Link Visibility shows with the capture,
+	// with nothing to change into: it comes in by its Unpaired sources, and
+	// goes out the same way when the capture is hidden and the camera shown.
+	{
+		obs_source_t *cam = block("LT Cam", 0xFF0000FF, 300, 200);    // red
+		obs_source_t *grab = block("LT Grab", 0xFFFF0000, 300, 200);  // blue
+		obs_source_t *badge = block("LT Badge", 0xFF00FF00, 120, 80); // green
+		obs_scene_t *scene = obs_scene_create("LT Morph Scene");
+		obs_source_t *scene_src = obs_scene_get_source(scene);
+		obs_sceneitem_t *ci = put(scene, cam, 20, 20);
+		obs_sceneitem_t *gi = put(scene, grab, 300, 20);
+		obs_sceneitem_t *bi = put(scene, badge, 480, 260);
+		obs_sceneitem_set_visible(gi, false);
+		obs_sceneitem_set_visible(bi, false);
+		for (obs_sceneitem_t *item : {ci, gi})
+			for (const bool show : {true, false}) {
+				obs_data_t *d = obs_data_create();
+				obs_data_set_int(d, "ease_curve", 0);
+				obs_source_t *t = obs_source_create_private("stagekit_morph", "LT Item Morph", d);
+				obs_data_release(d);
+				obs_sceneitem_set_transition(item, show, t);
+				obs_sceneitem_set_transition_duration(item, show, 1000);
+				obs_source_release(t);
+			}
+		// The badge goes with the capture; Morph for both, the badge with
+		// its own fallback (Settings for).
+		obs_data_t *ld = obs_data_create();
+		set_list(ld, "items", {"LT Grab", "LT Badge"});
+		obs_data_set_int(ld, "mode", 1); // together
+		obs_data_set_string(ld, "transition", "stagekit_morph");
+		obs_data_set_int(ld, "transition_ms", 1000);
+		obs_data_set_string(ld, "for|LT Badge|transition", "stagekit_morph");
+		obs_data_set_int(ld, "for|LT Badge|transition_ms", 1000);
+		obs_source_t *link = obs_source_create("stagekit_visibility_link", "LT Morph Link", ld, nullptr);
+		obs_data_release(ld);
+		obs_source_filter_add(scene_src, link);
+		obs_set_output_source(0, scene_src);
+		sleep_ms(300);
+		const int base = count_items(scene);
+		// The badge's frame: 480..600, 260..340.
+		struct Fill {
+			int full = 0, empty = 0, part = 0, of = 0;
+			int centre = 0, corner = 0;
+		};
+		auto fill = [&](const std::vector<uint8_t> &f) {
+			Fill out;
+			for (int y = 262; y < 338; y++)
+				for (int x = 482; x < 598; x++) {
+					const int g = f[(size_t(y) * w + x) * 4 + 1];
+					out.of++;
+					out.full += g >= 240;
+					out.empty += g < 15;
+					out.part += g >= 15 && g < 240;
+				}
+			out.centre = f[(size_t(300) * w + 540) * 4 + 1];
+			out.corner = f[(size_t(262) * w + 482) * 4 + 1];
+			return out;
+		};
+		struct Case {
+			const char *name, *unpaired;
+			const char *own_name, *own_value; // one of the transition's own settings
+			int kind;                         // 0 fades, 1 fades and shrinks, 2 slides, 3 cut
+		};
+		const Case cases[] = {
+			{"Fade", "morph_fade", nullptr, nullptr, 0},
+			{"Fade and zoom", "morph_zoom", nullptr, nullptr, 1},
+			{"Slide off the nearest edge", "morph_slide", nullptr, nullptr, 2},
+			{"Fade and Zoom (another transition)", "stagekit_fade_zoom", "zoom", nullptr, 1},
+			{"OBS's Slide, off the nearest edge", "slide_transition", "direction", "nearest", 2},
+			{"a cut", "none", nullptr, nullptr, 3},
+		};
+		for (const Case &k : cases) {
+			obs_data_t *now = obs_source_get_settings(link);
+			obs_data_set_string(now, "for|LT Badge|show|stagekit_morph|unpaired", k.unpaired);
+			obs_data_set_int(now, "for|LT Badge|show|stagekit_morph|ease_curve", 0);
+			if (k.own_name && k.own_value)
+				obs_data_set_string(now,
+						    (std::string("for|LT Badge|show|stagekit_morph|unpaired|") +
+						     k.unpaired + "|" + k.own_name)
+							    .c_str(),
+						    k.own_value);
+			else if (k.own_name) // Fade and Zoom's smallest size
+				obs_data_set_double(now,
+						    (std::string("for|LT Badge|show|stagekit_morph|unpaired|") +
+						     k.unpaired + "|" + k.own_name)
+							    .c_str(),
+						    50.0);
+			obs_source_update(link, now);
+			obs_data_release(now);
+			sleep_ms(100);
+			// In: the camera hidden, the capture shown (the badge with it).
+			obs_sceneitem_set_visible(ci, false);
+			obs_sceneitem_set_visible(gi, true);
+			sleep_ms(250);
+			const Fill early = fill(render(scene_src, w, h));
+			sleep_ms(200);
+			const std::vector<uint8_t> mid = render(scene_src, w, h);
+			const Fill in = fill(mid);
+			const int layers_in = count_items(scene) - base;
+			int pair_px = 0; // red and blue in one place: the camera changing into the capture
+			for (size_t i = 0; i < mid.size(); i += 4)
+				pair_px += mid[i] > 90 && mid[i + 2] > 90;
+			sleep_ms(900);
+			render(scene_src, w, h);
+			const Fill end_in = fill(render(scene_src, w, h));
+			// Out: the capture hidden (the badge with it), the camera shown.
+			obs_sceneitem_set_visible(gi, false);
+			obs_sceneitem_set_visible(ci, true);
+			sleep_ms(450);
+			const Fill out = fill(render(scene_src, w, h));
+			sleep_ms(900);
+			render(scene_src, w, h);
+			const Fill end_out = fill(render(scene_src, w, h));
+			auto on_the_way = [&](const Fill &f) {
+				switch (k.kind) {
+				case 0:
+					return f.centre > 30 && f.centre < 225 && f.part > f.of / 2;
+				case 1: // (a transition of its own eases by itself: part-way may be near either end)
+					return f.centre > 30 && f.centre < 245 && f.corner < 15 && f.part > f.of / 5;
+				case 2:
+					return f.full > f.of / 10 && f.empty > f.of / 10;
+				default:
+					return false;
+				}
+			};
+			const bool came = k.kind == 3 ? early.full > early.of * 9 / 10 : on_the_way(in);
+			const bool went = k.kind == 3 ? out.empty > out.of * 9 / 10 : on_the_way(out);
+			CHECK(came && went && end_in.full > end_in.of * 9 / 10 && end_out.empty > end_out.of * 9 / 10 &&
+				      layers_in == 1 && pair_px > 3000,
+			      "Unpaired sources, %s: a source shown with nothing to change into %s, and hidden %s; the camera and the capture still morph into each other by a layer (in: centre %d, corner %d, %d full / %d empty / %d part-way of %d; at %d ms: %d full; out: centre %d, %d full / %d empty / %d part-way; afterwards %d full shown, %d empty hidden; %d layer(s), %d px of camera and capture)",
+			      k.name, k.kind == 3 ? "is there at once" : "comes in part-way",
+			      k.kind == 3 ? "is gone at once" : "goes out part-way", in.centre, in.corner, in.full,
+			      in.empty, in.part, in.of, 250, early.full, out.centre, out.full, out.empty, out.part,
+			      end_in.full, end_out.empty, layers_in, pair_px);
+		}
+		obs_set_output_source(0, before_out);
+		obs_source_filter_remove(scene_src, link);
+		obs_source_release(link);
+		sleep_ms(100);
+		obs_scene_release(scene);
+		for (obs_source_t *src : {cam, grab, badge})
+			obs_source_release(src);
+	}
+	obs_source_release(before_out);
+}
+
 int main(int argc, char **argv)
 {
 	if (argc < 7) {
@@ -1100,6 +1472,14 @@ int main(int argc, char **argv)
 		sound.speakers = SPEAKERS_STEREO;
 		obs_reset_audio(&sound);
 		capture_pop_in_test(w, h, out);
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
+
+	if (getenv("STAGEKIT_TEST_ONLY_LINK_TRANS")) { // to try that section alone
+		link_transitions_test(w, h);
 		obs_shutdown();
 		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
 		       g_failures == 1 ? "" : "s");
@@ -2596,6 +2976,7 @@ int main(int argc, char **argv)
 		obs_scene_release(mc);
 		for (obs_source_t *src : {old_back, new_back, game, window, camera})
 			obs_source_release(src);
+		link_transitions_test(w, h);
 		if (getenv("STAGEKIT_TEST_ONLY_MORPH")) { // to try this section alone
 			obs_source_release(live);
 			obs_shutdown();
@@ -3756,7 +4137,7 @@ int main(int argc, char **argv)
 					obs_properties_t *mp = obs_source_properties(sw);
 					obs_property_t *add = obs_properties_get(mp, "morph_link_add");
 					const bool offered = add && obs_property_visible(add) &&
-							     obs_properties_get(mp, "show|stagekit_morph|others") &&
+							     obs_properties_get(mp, "show|stagekit_morph|unpaired") &&
 							     obs_properties_get(mp, "show|stagekit_morph|ease_curve") &&
 							     !obs_properties_get(mp, "show|stagekit_morph|link_a");
 					const bool pressed = add && obs_property_button_clicked(add, sw);

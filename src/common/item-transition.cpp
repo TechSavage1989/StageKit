@@ -484,12 +484,13 @@ void add_own(obs_properties_t *into, obs_data_t *settings, const std::string &pr
 		if (!their_name || !obs_property_visible(p))
 			continue;
 		// Morph's links are made once for the whole filter, further down;
-		// and what it calls "Other items" is here the item by itself.
+		// and what it calls "Other items" (items in one scene only, in a
+		// change of scene) never happens to an item: *Unpaired sources* is
+		// its way here.
 		const bool morph = kind == kMorphId;
-		if (morph && (strcmp(their_name, "link_a") == 0 || strcmp(their_name, "link_b") == 0))
+		if (morph && (strcmp(their_name, "link_a") == 0 || strcmp(their_name, "link_b") == 0 ||
+			      strcmp(their_name, "others") == 0))
 			continue;
-		if (morph && strcmp(their_name, "others") == 0)
-			text = obs_module_text("Morph.Alone");
 		const std::string name = prefix + their_name;
 		obs_property_t *made = nullptr;
 		switch (obs_property_get_type(p)) {
@@ -571,15 +572,21 @@ void add_own(obs_properties_t *into, obs_data_t *settings, const std::string &pr
 		default:
 			break; // a file, a font, a button: not offered here
 		}
-		if (made && morph && strcmp(their_name, "others") == 0)
-			obs_property_set_long_description(made, obs_module_text("Morph.Alone.Tip"));
-		else if (made && morph && strcmp(their_name, "pair_main") == 0)
+		if (made && morph && strcmp(their_name, "pair_main") == 0)
 			obs_property_set_long_description(made, obs_module_text("Morph.Item.Tip"));
 		else if (made && obs_property_long_description(p))
 			obs_property_set_long_description(made, obs_property_long_description(p));
 	}
 	obs_data_release(defaults);
 	obs_properties_destroy(theirs);
+	// A filter made before *Unpaired sources* had "Other items" (shown as
+	// "With nothing to change into") in its place: Fade and zoom there reads
+	// as Fade and zoom here, as Morph itself reads it.
+	if (kind == kMorphId && obs_data_has_user_value(settings, (prefix + "others").c_str()) &&
+	    !obs_data_has_user_value(settings, (prefix + "unpaired").c_str()))
+		obs_data_set_default_string(
+			settings, (prefix + "unpaired").c_str(),
+			obs_data_get_int(settings, (prefix + "others").c_str()) == 1 ? "morph_zoom" : "morph_fade");
 }
 
 // Property names: "change|g|<list setting>" is the group, "change|for" the
@@ -610,9 +617,19 @@ void build(obs_properties_t *top, obs_source_t *owner, obs_data_t *settings)
 	if (!content || !settings)
 		return;
 	// The listed sources, in the "Settings for" box.
+	// (`list_setting` may name several lists, with commas between: Link
+	// Visibility's own items and its sources in other scenes.)
 	std::vector<std::string> listed;
-	if (!list_setting.empty())
-		listed = pick_list_read(settings, list_setting.c_str(), false);
+	for (size_t start = 0; start < list_setting.size();) {
+		size_t comma = list_setting.find(',', start);
+		if (comma == std::string::npos)
+			comma = list_setting.size();
+		for (const std::string &name :
+		     pick_list_read(settings, list_setting.substr(start, comma - start).c_str(), false))
+			if (std::find(listed.begin(), listed.end(), name) == listed.end())
+				listed.push_back(name);
+		start = comma + 1;
+	}
 	std::string chosen = obs_data_get_string(settings, kForName);
 	if (std::find(listed.begin(), listed.end(), chosen) == listed.end())
 		chosen.clear();
@@ -623,6 +640,31 @@ void build(obs_properties_t *top, obs_source_t *owner, obs_data_t *settings)
 			obs_property_list_add_string(for_box, name.c_str(), name.c_str());
 		obs_property_set_visible(for_box, !listed.empty());
 	}
+	const std::string scope = scope_of(chosen.c_str());
+	if (!scope.empty()) {
+		obs_data_set_default_string(settings, key(scope, "transition").c_str(), kUsual);
+		obs_data_set_default_int(settings, key(scope, "transition_ms").c_str(), 300);
+		obs_data_set_default_string(settings, key(scope, "hide_transition").c_str(), kSame);
+		obs_data_set_default_int(settings, key(scope, "hide_ms").c_str(), 300);
+	}
+	// What the controls are made for: the source chosen, the two kinds and,
+	// under Morph, the transition chosen for Unpaired sources. Already made
+	// for exactly that, nothing is made again. (OBS calls every control's
+	// callback once whenever it builds a window, from a list it took
+	// beforehand: a control taken off by an earlier callback would be called
+	// after it was gone.)
+	std::string sig = chosen;
+	for (const bool show : {true, false}) {
+		const std::string kind =
+			obs_data_get_string(settings, key(scope, show ? "transition" : "hide_transition").c_str());
+		sig += "|" + kind;
+		if (kind == kMorphId)
+			sig += "|" + std::string(obs_data_get_string(
+					     settings, (own_prefix(scope, show, kind) + "unpaired").c_str()));
+	}
+	const std::string sig_name = std::string("change|sig|") + sig;
+	if (obs_properties_get(content, sig_name.c_str()))
+		return;
 	// Everything but that box goes, and is made again for what is chosen.
 	std::vector<std::string> old;
 	for (obs_property_t *p = obs_properties_first(content); p; obs_property_next(&p))
@@ -635,13 +677,8 @@ void build(obs_properties_t *top, obs_source_t *owner, obs_data_t *settings)
 	// lists do not offer it.
 	const char *owner_id = owner ? obs_source_get_unversioned_id(owner) : nullptr;
 	const bool scene_entry = !owner_id || strcmp(owner_id, kSceneTransitionsId) != 0;
-	const std::string scope = scope_of(chosen.c_str());
-	if (!scope.empty()) {
-		obs_data_set_default_string(settings, key(scope, "transition").c_str(), kUsual);
-		obs_data_set_default_int(settings, key(scope, "transition_ms").c_str(), 300);
-		obs_data_set_default_string(settings, key(scope, "hide_transition").c_str(), kSame);
-		obs_data_set_default_int(settings, key(scope, "hide_ms").c_str(), 300);
-	}
+	// (A control of no kind that shows nothing: the mark of what was made.)
+	obs_property_set_visible(obs_properties_add_text(content, sig_name.c_str(), "", OBS_TEXT_INFO), false);
 	for (const bool show : {true, false}) {
 		const std::string kind_name = key(scope, show ? "transition" : "hide_transition");
 		const std::string ms_name = key(scope, show ? "transition_ms" : "hide_ms");
@@ -670,7 +707,18 @@ void build(obs_properties_t *top, obs_source_t *owner, obs_data_t *settings)
 			obs_property_set_long_description(time, obs_module_text("Change.Time.Tip"));
 			continue; // (its own settings are the scene's)
 		}
-		add_own(content, settings, own_prefix(scope, show, kind), kind);
+		const std::string prefix = own_prefix(scope, show, kind);
+		add_own(content, settings, prefix, kind);
+		if (kind != kMorphId)
+			continue;
+		// Morph's *Unpaired sources*: another transition, with its own
+		// settings under it, rebuilt in place when it changes.
+		const std::string unpaired_name = prefix + "unpaired";
+		if (obs_property_t *unpaired = obs_properties_get(content, unpaired_name.c_str()))
+			obs_property_set_modified_callback2(unpaired, rebuild_cb, owner);
+		const std::string fallback = obs_data_get_string(settings, unpaired_name.c_str());
+		if (item_transition_is_fallback_kind(fallback.c_str()))
+			add_own(content, settings, prefix + "unpaired|" + fallback + "|", fallback);
 	}
 }
 
@@ -777,6 +825,31 @@ void add_item_change_properties(obs_properties_t *props, obs_source_t *owner, co
 	if (settings)
 		show_links(props, settings);
 	obs_data_release(settings);
+}
+
+void item_transition_add_own(obs_properties_t *into, obs_data_t *settings, const std::string &prefix,
+			     const std::string &kind)
+{
+	add_own(into, settings, prefix, kind);
+}
+
+std::string item_transition_own_json(obs_data_t *settings, const std::string &prefix)
+{
+	return own_json(settings, prefix);
+}
+
+const char *item_off_nearest_edge(obs_sceneitem_t *item, obs_source_t *scene, bool show)
+{
+	return off_nearest_edge(item, scene, show);
+}
+
+bool item_transition_is_fallback_kind(const char *kind)
+{
+	if (!kind || !*kind || strcmp(kind, kTransitionCut) == 0 || strcmp(kind, kTransitionKeep) == 0 ||
+	    strcmp(kind, kTransitionScene) == 0 || strcmp(kind, kMorphId) == 0 || strcmp(kind, "cut_transition") == 0 ||
+	    strcmp(kind, "obs_stinger_transition") == 0 || strncmp(kind, "morph_", 6) == 0)
+		return false;
+	return obs_source_get_display_name(kind) != nullptr;
 }
 
 void item_change_defaults(obs_data_t *settings)

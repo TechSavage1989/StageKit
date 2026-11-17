@@ -147,4 +147,27 @@ bool item_change_matches(obs_sceneitem_t *item, const ItemChange &change, obs_so
 // Whether an item's transitions are another filter's (`item_transitions_owner`).
 bool item_transitions_owned(obs_sceneitem_t *item);
 
+// ---------------------------------------------------------------------------
+// For Morph's *Unpaired sources* (`unpaired`): any other transition, with
+// its own settings kept under a prefix ("unpaired|<kind>|<its setting>").
+
+// A kind's own settings copied into a properties window under `prefix`, with
+// the kind's own defaults set in `settings` under the same names.
+void item_transition_add_own(obs_properties_t *into, obs_data_t *settings, const std::string &prefix,
+			     const std::string &kind);
+
+// The settings under `prefix` that were set, as JSON under their own names;
+// empty for none.
+std::string item_transition_own_json(obs_data_t *settings, const std::string &prefix);
+
+// Which way an item goes off the nearest edge of `scene` (null: the item's
+// own), in a slide's words ("left", "right", "up", "down"): to hide it moves
+// towards that edge, to show it comes in from it.
+const char *item_off_nearest_edge(obs_sceneitem_t *item, obs_source_t *scene, bool show);
+
+// Whether a transition kind may be Morph's fallback: a real transition of
+// OBS's (or another plugin's), not a cut, not Morph itself, not one that
+// needs a file of its own.
+bool item_transition_is_fallback_kind(const char *kind);
+
 } // namespace stagekit
