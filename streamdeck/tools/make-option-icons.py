@@ -70,7 +70,8 @@ def without_words(image):
 # ---------------------------------------------------------------- drawings
 # Each is a list of shapes on a 64 x 36 field: ("box", x0, y0, x1, y1) filled,
 # ("frame", ...) an outline, ("line", x0, y0, x1, y1), ("ring", cx, cy, r),
-# ("dot", cx, cy, r), ("tri", x0, y0, x1, y1, x2, y2), ("text", words).
+# ("dot", cx, cy, r), ("arc", cx, cy, r, start, end) (degrees, clockwise from
+# the right), ("tri", x0, y0, x1, y1, x2, y2), ("text", words).
 def arrow(x0, y0, x1, y1, head=5):
     """A line with a head at its second end."""
     import math
@@ -148,6 +149,46 @@ DEVICES = {
                 ("line", 39, 18, 45, 18)],
 }
 DRAWINGS.update(DEVICES)
+# Pictures for groups of the pack's own, found by the words of their label
+# (src/pictures.ts): a Switch Scene key's scene ("scenes", by the scene's
+# name) and a Show in Scenes key's source ("show hide", by the source's
+# name). The owner asked for the Standby, Live and Chat Live scenes and for
+# the holding modes' and the columns' show buttons to have pictures "that are
+# representative of their function". Name: (group, label); each has an on and
+# an off look.
+GROUPED = {
+    "scene-live": ("scenes", "live"),
+    "scene-chat-live": ("scenes", "chat live"),
+    "scene-standby": ("scenes", "standby"),
+    "mode-starting": ("show hide", "starting"),
+    "mode-brb": ("show hide", "brb"),
+    "mode-intermission": ("show hide", "intermission"),
+    "mode-ending": ("show hide", "ending"),
+    "mode-column-chat": ("show hide", "column chat"),
+    "mode-column-gba": ("show hide", "column gba"),
+}
+_BUBBLES = [("box", 38, 5, 58, 11), ("tri", 40, 11, 45, 11, 39, 15), ("box", 38, 16, 58, 22), ("tri", 40, 22, 45, 22, 39, 26),
+            ("box", 38, 27, 58, 33)]
+# Live: a screen with a record button filling it.
+DRAWINGS["scene-live"] = [("frame", 4, 2, 60, 34), ("ring", 32, 18, 11), ("dot", 32, 18, 6)]
+# Chat Live: the record button beside a column of chat bubbles.
+DRAWINGS["scene-chat-live"] = [("frame", 2, 2, 34, 34), ("ring", 18, 18, 10), ("dot", 18, 18, 5)] + _BUBBLES
+# Standby: the standby (power) sign on a screen.
+DRAWINGS["scene-standby"] = [("frame", 4, 2, 60, 34), ("arc", 32, 19, 11, -55, 235), ("line", 32, 5, 32, 18)]
+# The holding modes: starting (play), be right back (a cup), intermission (an
+# hourglass), ending (stop).
+DRAWINGS["mode-starting"] = [("ring", 32, 18, 15), ("tri", 27, 9, 27, 27, 42, 18)]
+DRAWINGS["mode-brb"] = [("frame", 18, 13, 38, 31), ("arc", 39, 21, 6, -90, 90), ("line", 12, 34, 46, 34),
+                        ("line", 23, 3, 23, 9), ("line", 28, 2, 28, 9), ("line", 33, 3, 33, 9)]
+DRAWINGS["mode-intermission"] = [("line", 20, 2, 44, 2), ("line", 20, 34, 44, 34), ("line", 22, 3, 42, 33), ("line", 42, 3, 22, 33),
+                                 ("tri", 27, 9, 37, 9, 32, 16), ("tri", 32, 24, 24, 31, 40, 31)]
+DRAWINGS["mode-ending"] = [("ring", 32, 18, 15), ("box", 25, 11, 39, 25)]
+# The columns: a game with a chat column, or with a handheld's column.
+DRAWINGS["mode-column-chat"] = [("frame", 2, 2, 62, 34), ("box", 6, 6, 30, 30), ("line", 34, 2, 34, 34)] + [
+    ("box", 38, 6, 58, 11), ("box", 38, 15.5, 58, 20.5), ("box", 38, 25, 58, 30)]
+DRAWINGS["mode-column-gba"] = [("frame", 2, 2, 62, 34), ("box", 6, 6, 30, 30), ("line", 34, 2, 34, 34),
+                               ("frame", 40, 3, 56, 33), ("box", 43, 6, 53, 16), ("line", 42, 25, 49, 25), ("line", 45.5, 21.5, 45.5, 28.5),
+                               ("dot", 53, 23, 1.8), ("dot", 50.5, 27, 1.8)]
 # The Switch Scene key: a scene, its sources laid out in it.
 DRAWINGS["scene"] = [("frame", 6, 3, 58, 33), ("box", 11, 8, 35, 28), ("box", 39, 8, 53, 16), ("box", 39, 20, 53, 28)]
 SWITCHES_EXTRA = ["scene"]
@@ -203,6 +244,7 @@ DRAWINGS["plain-tool"] = [("line", 8, 3, 8, 33), ("box", 12, 7, 50, 15), ("box",
 
 # The ones that are a filter's key, with an "on" and an "off" look.
 SWITCHES = ["scene", "zoom", "fit", "overlap", "source-switcher", "window-switcher", "trigger", "link", "show-hide", "limit", "slide-to-edge", "every-scene", "keep-shape", "snap", "guides", "plain-switch"]
+SWITCHES += list(GROUPED)
 
 
 def drawn(shapes, ink):
@@ -232,6 +274,9 @@ def drawn(shapes, ink):
         elif kind == "dot":
             cx, cy, r = shape[1:]
             draw.ellipse((at(cx - r, cy - r), at(cx + r, cy + r)), fill=ink)
+        elif kind == "arc":
+            cx, cy, r, start, end = shape[1:]
+            draw.arc((at(cx - r, cy - r), at(cx + r, cy + r)), start, end, fill=ink, width=pen)
         elif kind == "tri":
             draw.polygon((at(shape[1], shape[2]), at(shape[3], shape[4]), at(shape[5], shape[6])), fill=ink)
         elif kind == "text":
@@ -289,8 +334,8 @@ def main():
         pictures.append(
             {
                 "id": "options/" + name,
-                "group": "devices" if name in DEVICES else "options",
-                "label": name.replace("-", " ").replace("ratio ", "ratio ").replace("x", ":") if name.startswith("ratio-") else name.replace("-", " "),
+                "group": GROUPED[name][0] if name in GROUPED else "devices" if name in DEVICES else "options",
+                "label": GROUPED[name][1] if name in GROUPED else name.replace("-", " ").replace("ratio ", "ratio ").replace("x", ":") if name.startswith("ratio-") else name.replace("-", " "),
                 "on": f"options/{name}-on" if two else f"options/{name}",
                 "off": f"options/{name}-off" if two else f"options/{name}",
             }

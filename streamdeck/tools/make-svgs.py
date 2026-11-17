@@ -129,6 +129,9 @@ def drawing(shapes, ink):
         elif kind == "dot":
             cx, cy, r = shape[1:]
             d.ellipse((*at(cx - r, cy - r), *at(cx + r, cy + r)), fill=ink)
+        elif kind == "arc":
+            cx, cy, r, start, end = shape[1:]
+            d.arc((*at(cx - r, cy - r), *at(cx + r, cy + r)), start, end, fill=ink, width=pen)
         elif kind == "tri":
             d.polygon([at(shape[1], shape[2]), at(shape[3], shape[4]), at(shape[5], shape[6])], fill=ink)
         elif kind == "text":
@@ -163,7 +166,7 @@ def key_pictures():
             svg += layer("Mark: on (green dot)", on_mark, False)
             svg += layer("Mark: off (red no sign)", off_mark, False)
             svg += "</svg>\n"
-            write(os.path.join(OUT, "keys", palette, groups.get(name, "options"), name + ".svg"), svg)
+            write(os.path.join(OUT, "keys", palette, groups.get(name, "options").replace(" ", "-"), name + ".svg"), svg)
             made += 1
     head = HEAD.format(w=144, h=144, vw=144, vh=144)
     write(os.path.join(OUT, "marks", "on.svg"), head + layer("Mark: on", on_mark) + "</svg>\n")

@@ -1647,6 +1647,69 @@
 			"off": "options/speaker"
 		},
 		{
+			"id": "options/scene-live",
+			"group": "scenes",
+			"label": "live",
+			"on": "options/scene-live-on",
+			"off": "options/scene-live-off"
+		},
+		{
+			"id": "options/scene-chat-live",
+			"group": "scenes",
+			"label": "chat live",
+			"on": "options/scene-chat-live-on",
+			"off": "options/scene-chat-live-off"
+		},
+		{
+			"id": "options/scene-standby",
+			"group": "scenes",
+			"label": "standby",
+			"on": "options/scene-standby-on",
+			"off": "options/scene-standby-off"
+		},
+		{
+			"id": "options/mode-starting",
+			"group": "show hide",
+			"label": "starting",
+			"on": "options/mode-starting-on",
+			"off": "options/mode-starting-off"
+		},
+		{
+			"id": "options/mode-brb",
+			"group": "show hide",
+			"label": "brb",
+			"on": "options/mode-brb-on",
+			"off": "options/mode-brb-off"
+		},
+		{
+			"id": "options/mode-intermission",
+			"group": "show hide",
+			"label": "intermission",
+			"on": "options/mode-intermission-on",
+			"off": "options/mode-intermission-off"
+		},
+		{
+			"id": "options/mode-ending",
+			"group": "show hide",
+			"label": "ending",
+			"on": "options/mode-ending-on",
+			"off": "options/mode-ending-off"
+		},
+		{
+			"id": "options/mode-column-chat",
+			"group": "show hide",
+			"label": "column chat",
+			"on": "options/mode-column-chat-on",
+			"off": "options/mode-column-chat-off"
+		},
+		{
+			"id": "options/mode-column-gba",
+			"group": "show hide",
+			"label": "column gba",
+			"on": "options/mode-column-gba-on",
+			"off": "options/mode-column-gba-off"
+		},
+		{
 			"id": "options/scene",
 			"group": "options",
 			"label": "scene",

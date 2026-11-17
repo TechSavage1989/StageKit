@@ -5695,6 +5695,116 @@ int main(int argc, char **argv)
 				obs_scene_release(other);
 			}
 
+			// --- Show in Scenes: "Switch to scene".
+			{
+				printf("\n[Show in Scenes: switch to scene]\n");
+				obs_scene_t *live = obs_scene_create("GoTo Live");
+				obs_scene_t *standby = obs_scene_create("GoTo Standby");
+				obs_scene_t *elsewhere = obs_scene_create("GoTo Elsewhere");
+				obs_source_t *cam = colour("GoTo Camera");
+				obs_sceneitem_t *cam_live = obs_scene_add(live, cam);
+				obs_sceneitem_t *cam_standby = obs_scene_add(standby, cam);
+				obs_sceneitem_set_visible(cam_live, false);
+				obs_sceneitem_set_visible(cam_standby, false);
+				const auto program = [](const char *name) {
+					calldata_t cd = {};
+					calldata_set_string(&cd, "program", name);
+					proc_handler_call(obs_get_proc_handler(), "stagekit_test_scene_switch", &cd);
+					calldata_free(&cd);
+				};
+				const auto switched = []() {
+					calldata_t cd = {};
+					proc_handler_call(obs_get_proc_handler(), "stagekit_test_scene_switched", &cd);
+					const char *got = calldata_string(&cd, "scenes");
+					std::string out = got ? got : "";
+					calldata_free(&cd);
+					return out;
+				};
+				program("GoTo Elsewhere");
+				obs_data_t *sd = obs_data_create();
+				set_list(sd, "scenes", {"GoTo Live", "GoTo Standby"});
+				obs_data_set_int(sd, "where", 1);
+				obs_data_set_string(sd, "transition", "none");
+				obs_data_set_string(sd, "go_to", "GoTo Live");
+				obs_source_t *sw =
+					obs_source_create("stagekit_show_in_scenes", "GoTo Switch", sd, nullptr);
+				obs_source_set_enabled(sw, false);
+				obs_source_filter_add(cam, sw);
+				sleep_ms(150);
+				switched();
+				obs_properties_t *sp = obs_source_properties(sw);
+				obs_property_t *box = obs_properties_get(sp, "go_to");
+				bool lists = false;
+				for (size_t i = 0; box && i < obs_property_list_item_count(box); i++)
+					lists = lists ||
+						strcmp(obs_property_list_item_string(box, i), "GoTo Live") == 0;
+				CHECK(box && obs_property_long_description(box) &&
+					      strlen(obs_property_description(box)) <= 26 &&
+					      obs_property_list_item_count(box) > 0 &&
+					      !*obs_property_list_item_string(box, 0) && lists,
+				      "Show in Scenes has a 'Switch to scene' list of scenes, (none) first, with a tooltip");
+				obs_properties_destroy(sp);
+				obs_source_set_enabled(sw, true);
+				sleep_ms(150);
+				std::string got = switched();
+				CHECK(got == "GoTo Live" && obs_sceneitem_visible(cam_live),
+				      "a press turning it on shows the source and asks for the scene chosen (%s)",
+				      got.c_str());
+				obs_source_set_enabled(sw, false);
+				sleep_ms(150);
+				got = switched();
+				CHECK(got.empty() && !obs_sceneitem_visible(cam_live),
+				      "a press turning it off changes no scene (%s)", got.c_str());
+				program("GoTo Standby");
+				obs_source_set_enabled(sw, true);
+				sleep_ms(150);
+				got = switched();
+				CHECK(got.empty() && obs_sceneitem_visible(cam_standby),
+				      "with a scene on screen that has the source already, no scene change (%s)",
+				      got.c_str());
+				program("GoTo Live");
+				obs_source_set_enabled(sw, false);
+				sleep_ms(100);
+				obs_source_set_enabled(sw, true);
+				sleep_ms(150);
+				got = switched();
+				CHECK(got.empty(), "with the chosen scene on screen, no scene change (%s)",
+				      got.c_str());
+				// "Follow what is shown" putting the switch right is not a press.
+				program("GoTo Elsewhere");
+				obs_data_t *now = obs_source_get_settings(sw);
+				obs_data_set_bool(now, "follow", true);
+				obs_source_update(sw, now);
+				obs_sceneitem_set_visible(cam_live, false);
+				sleep_ms(500);
+				const bool off = !obs_source_enabled(sw);
+				obs_sceneitem_set_visible(cam_live, true);
+				sleep_ms(500);
+				got = switched();
+				CHECK(off && obs_source_enabled(sw) && got.empty(),
+				      "the switch turned on by 'Follow what is shown' changes no scene (%s)",
+				      got.c_str());
+				// Off as it comes.
+				obs_data_set_bool(now, "follow", false);
+				obs_data_set_string(now, "go_to", "");
+				obs_source_update(sw, now);
+				obs_data_release(now);
+				obs_source_set_enabled(sw, false);
+				sleep_ms(100);
+				obs_source_set_enabled(sw, true);
+				sleep_ms(150);
+				got = switched();
+				CHECK(got.empty() && obs_sceneitem_visible(cam_live),
+				      "with no scene chosen, a press changes no scene (%s)", got.c_str());
+				obs_source_filter_remove(cam, sw);
+				obs_source_release(sw);
+				obs_data_release(sd);
+				obs_source_release(cam);
+				obs_scene_release(live);
+				obs_scene_release(standby);
+				obs_scene_release(elsewhere);
+			}
+
 			// --- The whole chain: two scenes, each holding three captures of
 			// which one is shown, and a switch on each capture.
 			{
