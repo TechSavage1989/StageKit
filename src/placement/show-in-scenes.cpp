@@ -28,6 +28,15 @@ the Free Software Foundation; either version 2 of the License, or
 // An item that a Link Visibility set to "Follow the first" holds hidden (it
 // belongs to a mode of its scene that is not showing) is passed over when
 // the switch shows things, and does not count for "Follow what is shown".
+//
+// "Switch to scene" (`go_to`, empty as it comes): a press that shows the
+// sources (turns the switch on, or off when "On means" is hidden), once they
+// are shown, also changes OBS to that scene with OBS's current transition
+// (the preview in Studio Mode), unless the scene on screen already has one
+// of the sources. It goes by the scene's name, so it works with any
+// collection. Not on a press hiding them, not for "Do it now", not when
+// "Follow what is shown" corrects the switch, not for the state restored at
+// load.
 
 #include "show-in-scenes.hpp"
 #include "../common/timing.hpp"
@@ -39,8 +48,10 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/loading.hpp"
 #include "../common/pick-list.hpp"
 
+#include <obs-frontend-api.h>
 #include <obs-module.h>
 #include <plugin-support.h>
+#include <callback/proc.h>
 
 #include <algorithm>
 #include <atomic>
@@ -167,6 +178,118 @@ void add_linked(std::vector<std::string> &sources)
 		add(name.c_str());
 }
 
+// --- "Switch to scene".
+
+// For the tests, which have no OBS window: "stagekit_test_scene_switch"
+// (string program) stands in for the scene on screen, and from then on a
+// change is noted instead of made; "stagekit_test_scene_switched" (out
+// string scenes) gives the scenes asked for since it was last called,
+// separated by '|', and forgets them.
+std::mutex g_test_mutex;
+bool g_test_switching = false;
+std::string g_test_program, g_test_switched;
+
+// True when `scene` holds an item of one of `sources`, straight in it or in
+// one of its groups.
+bool scene_has_any(obs_source_t *scene, const std::vector<std::string> &sources)
+{
+	obs_scene_t *s = scene ? obs_scene_from_source(scene) : nullptr;
+	if (!s)
+		return false;
+	struct Look {
+		const std::vector<std::string> *sources;
+		bool found = false;
+		void at(obs_sceneitem_t *item)
+		{
+			const char *name = obs_source_get_name(obs_sceneitem_get_source(item));
+			if (name && std::find(sources->begin(), sources->end(), name) != sources->end())
+				found = true;
+		}
+	} look{&sources};
+	obs_scene_enum_items(
+		s,
+		[](obs_scene_t *, obs_sceneitem_t *item, void *param) {
+			auto *l = static_cast<Look *>(param);
+			l->at(item);
+			if (!l->found && obs_sceneitem_is_group(item))
+				obs_sceneitem_group_enum_items(
+					item,
+					[](obs_scene_t *, obs_sceneitem_t *inner, void *p) {
+						static_cast<Look *>(p)->at(inner);
+						return !static_cast<Look *>(p)->found;
+					},
+					param);
+			return !l->found;
+		},
+		&look);
+	return look.found;
+}
+
+// Whether to change from `current` to the scene named `target`: it must be a
+// scene (not a group), not the one on screen, and the one on screen must not
+// have any of `sources` already. Gives the target, with a reference, or null.
+obs_source_t *scene_to_go_to(obs_source_t *current, const std::string &target, const std::vector<std::string> &sources)
+{
+	obs_source_t *scene = obs_get_source_by_name(target.c_str());
+	if (!scene)
+		return nullptr;
+	if (!obs_scene_from_source(scene) || obs_source_is_group(scene) || scene == current ||
+	    scene_has_any(current, sources)) {
+		obs_source_release(scene);
+		return nullptr;
+	}
+	return scene;
+}
+
+struct GoTo {
+	std::string filter, target;
+	std::vector<std::string> sources;
+};
+
+// Changes scene for a press, on the window's thread (OBS's frontend calls
+// belong there), or notes it in the tests.
+void go_to_scene(GoTo go)
+{
+	{
+		std::lock_guard lock(g_test_mutex);
+		if (g_test_switching) {
+			obs_source_t *current = obs_get_source_by_name(g_test_program.c_str());
+			obs_source_t *scene = scene_to_go_to(current, go.target, go.sources);
+			if (scene) {
+				if (!g_test_switched.empty())
+					g_test_switched += "|";
+				g_test_switched += go.target;
+				obs_source_release(scene);
+			}
+			obs_source_release(current);
+			return;
+		}
+	}
+	if (!obs_frontend_get_main_window())
+		return;
+	obs_queue_task(
+		OBS_TASK_UI,
+		[](void *param) {
+			GoTo *go = static_cast<GoTo *>(param);
+			const bool studio = obs_frontend_preview_program_mode_active();
+			obs_source_t *current = studio ? obs_frontend_get_current_preview_scene()
+						       : obs_frontend_get_current_scene();
+			obs_source_t *scene = scene_to_go_to(current, go->target, go->sources);
+			if (scene) {
+				if (studio)
+					obs_frontend_set_current_preview_scene(scene);
+				else
+					obs_frontend_set_current_scene(scene);
+				obs_log(LOG_INFO, "Show in Scenes '%s': switched to scene '%s'", go->filter.c_str(),
+					go->target.c_str());
+				obs_source_release(scene);
+			}
+			obs_source_release(current);
+			delete go;
+		},
+		new GoTo(std::move(go)), false);
+}
+
 class ShowInScenes;
 
 // Every Show in Scenes there is, for show_in_scenes_holds_off. Only pointers
@@ -229,6 +352,7 @@ public:
 		on_hides_ = obs_data_get_int(settings, "on_means") == 1;
 		with_linked_ = obs_data_get_bool(settings, "with_linked");
 		follow_ = obs_data_get_bool(settings, "follow");
+		go_to_ = obs_data_get_string(settings, "go_to");
 		// How items change: the usual way, and each listed source's own.
 		change_ = item_change_read(settings);
 		own_change_.clear();
@@ -247,7 +371,10 @@ public:
 		ready_ = true;
 		const int press = press_.exchange(-1);
 		if (press >= 0)
-			apply(press == 1);
+			apply((press & kPressOn) != 0);
+		// A press that showed the sources also changes scene, when set to.
+		if (press >= 0 && !(press & kPressStay) && scenes_loaded())
+			switch_scene((press & kPressOn) != 0);
 		if ((follow_timer_ -= seconds) > 0.0)
 			return;
 		follow_timer_ = 0.25;
@@ -353,6 +480,27 @@ public:
 		return changed;
 	}
 
+	// "Switch to scene", after a press that showed the sources (turned the
+	// switch on, or off when "On means" is hidden).
+	void switch_scene(bool enabled)
+	{
+		GoTo go;
+		{
+			std::lock_guard lock(mutex_);
+			if (enabled == on_hides_)
+				return; // that press hid them
+			go.target = go_to_;
+			go.sources = sources_;
+		}
+		if (go.target.empty())
+			return;
+		obs_source_t *parent = obs_filter_get_parent(source_);
+		if (go.sources.empty() && parent && obs_source_get_name(parent))
+			go.sources.push_back(obs_source_get_name(parent));
+		go.filter = obs_source_get_name(source_);
+		go_to_scene(std::move(go));
+	}
+
 	obs_source_t *source() const { return source_; }
 	bool hides_when_on()
 	{
@@ -371,7 +519,9 @@ private:
 
 public:
 	// Acted on at the next tick; of several presses in one frame, the last.
-	void press(bool enabled) { press_ = enabled ? 1 : 0; }
+	// "Do it now" in the filter's window (`by_key` false) never changes scene.
+	static constexpr int kPressOn = 1, kPressStay = 2;
+	void press(bool enabled, bool by_key = true) { press_ = (enabled ? kPressOn : 0) | (by_key ? 0 : kPressStay); }
 
 private:
 	obs_source_t *source_;
@@ -384,9 +534,10 @@ private:
 	std::map<std::string, ItemChange> own_change_; // and for each listed source
 	std::atomic<bool> ready_{false};
 	bool follow_ = false;                       // the switch goes by what is shown
+	std::string go_to_;                         // the scene a press turning it on goes to
 	double follow_timer_ = 0.0;                 // until the next look, in seconds
 	std::atomic<std::thread::id> correcting_{}; // the thread putting the switch right, if any
-	std::atomic<int> press_{-1};                // a press to act on: 1 on, 0 off, -1 none
+	std::atomic<int> press_{-1};                // a press (kPressOn, kPressStay), or -1 for none
 };
 
 bool where_modified(obs_properties_t *props, obs_property_t *, obs_data_t *settings)
@@ -471,6 +622,32 @@ obs_properties_t *get_properties(void *data)
 	obs_property_t *follow = obs_properties_add_bool(props, "follow", obs_module_text("ShowIn.Follow"));
 	obs_property_set_long_description(follow, obs_module_text("ShowIn.Follow.Tip"));
 
+	obs_property_t *go_to = obs_properties_add_list(props, "go_to", obs_module_text("ShowIn.GoTo"),
+							OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
+	obs_property_list_add_string(go_to, obs_module_text("ShowIn.GoTo.None"), "");
+	{
+		std::vector<std::string> names;
+		obs_enum_scenes(
+			[](void *param, obs_source_t *scene) {
+				const char *name = obs_source_get_name(scene);
+				if (name && *name && !obs_source_is_group(scene))
+					static_cast<std::vector<std::string> *>(param)->push_back(name);
+				return true;
+			},
+			&names);
+		// A scene chosen before and gone since stays chosen, by name.
+		if (self) {
+			obs_data_t *settings = obs_source_get_settings(self->source());
+			const std::string chosen = obs_data_get_string(settings, "go_to");
+			obs_data_release(settings);
+			if (!chosen.empty() && std::find(names.begin(), names.end(), chosen) == names.end())
+				names.push_back(chosen);
+		}
+		for (const std::string &name : names)
+			obs_property_list_add_string(go_to, name.c_str(), name.c_str());
+	}
+	obs_property_set_long_description(go_to, obs_module_text("ShowIn.GoTo.Tip"));
+
 	add_item_change_properties(props, self ? self->source() : nullptr, "sources");
 
 	obs_properties_add_button2(
@@ -478,7 +655,7 @@ obs_properties_t *get_properties(void *data)
 		[](obs_properties_t *, obs_property_t *, void *d) {
 			auto *filter = static_cast<ShowInScenes *>(d);
 			if (filter)
-				filter->press(obs_source_enabled(filter->source()));
+				filter->press(obs_source_enabled(filter->source()), false);
 			return false;
 		},
 		self);
@@ -538,6 +715,7 @@ void register_show_in_scenes()
 		obs_data_set_default_int(settings, "where", (int)Where::Every);
 		obs_data_set_default_int(settings, "on_means", 0);
 		obs_data_set_default_bool(settings, "follow", false);
+		obs_data_set_default_string(settings, "go_to", "");
 		item_change_defaults(settings);
 	};
 	info.get_properties = get_properties;
@@ -549,6 +727,28 @@ void register_show_in_scenes()
 		obs_source_skip_video_filter(static_cast<ShowInScenes *>(data)->source());
 	};
 	register_timed(&info);
+
+	static bool test_calls = false;
+	if (!test_calls) {
+		test_calls = true;
+		proc_handler_add(
+			obs_get_proc_handler(), "void stagekit_test_scene_switch(in string program)",
+			[](void *, calldata_t *cd) {
+				const char *program = calldata_string(cd, "program");
+				std::lock_guard lock(g_test_mutex);
+				g_test_switching = true;
+				g_test_program = program ? program : "";
+			},
+			nullptr);
+		proc_handler_add(
+			obs_get_proc_handler(), "void stagekit_test_scene_switched(out string scenes)",
+			[](void *, calldata_t *cd) {
+				std::lock_guard lock(g_test_mutex);
+				calldata_set_string(cd, "scenes", g_test_switched.c_str());
+				g_test_switched.clear();
+			},
+			nullptr);
+	}
 }
 
 } // namespace stagekit

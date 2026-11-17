@@ -61,6 +61,12 @@ Ids (`stagekit_standby`, `stagekit_start_image`, `SetPictureShape`), settings, p
 the code are unchanged, and **the rest of this file still says picture and start image**. Write
 *image* in any new string.
 
+The trial scenes were renamed at the owner's word (2026-11-17, beta154: "Full capture should be
+called Live / Holding should be called standby / Component should be called Chat Live"):
+Full-Capture-Scene is *Live*, Component-Capture-Scene *Chat Live*, Holding-Scene *Standby*. Those
+are scene names the three merge scripts write, not ids; the scripts refuse a collection that still
+has the old names.
+
 ## What StageKit is not
 
 It is an OBS plugin, not a standalone desktop app: it has no window or executable of its own. It
@@ -93,7 +99,7 @@ notice and the confirmation are what there is. This is recorded in the handoff.
 | `data/locale/en-US.ini` | Every user-visible string |
 | `tests/` | Headless libobs tests, test-image generators, `run-tests.sh` |
 | `streamdeck/` | The Stream Deck plugin (TypeScript, Elgato's SDK 3, Node): `src/` (the link to OBS over obs-websocket, the key types), `com.techsavage1989.stagekit.sdPlugin/` (manifest, settings pages, icons), `tests/`, `tools/make-icons.py`. It has its own `package.json`; nothing in the OBS plugin depends on it |
-| `scripts/` | Repository checks (`check-root.sh`, `root-allowlist.txt`); `rebuild-collection.py` writes a StageKit collection from an old one and `upgrade-collection.py` brings a StageKit collection up to date; `merge-capture-scenes.py` adds the two layout scenes and `merge-holding-scenes.py` the holding scene to a StageKit collection for a side-by-side trial. All four read one file and write another; the owner's collections are private and never committed |
+| `scripts/` | Repository checks (`check-root.sh`, `root-allowlist.txt`); `rebuild-collection.py` writes a StageKit collection from an old one and `upgrade-collection.py` brings a StageKit collection up to date; `merge-capture-scenes.py` adds the two layout scenes (Live, Chat Live) and `merge-holding-scenes.py` the holding scene (Standby) to a StageKit collection for a side-by-side trial. All four read one file and write another; the owner's collections are private and never committed |
 | `docs/images/` | README imagery, produced by the tests |
 | `cmake/`, `build-aux/`, `.github/` | From the official obs-plugintemplate; change only when needed |
 
@@ -474,6 +480,22 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   Since beta147 a press is acted on in the filter's next tick (`press_`, the last of a frame), not
   on the thread that pressed: a Link Visibility acts on the same items from its tick, and two
   threads setting one item's transitions at once can each let go of the other's.
+- **Show in Scenes' *Switch to scene*** (`go_to`, a scene name, empty as it comes; beta154). The
+  owner: "Pressing the show button for any source that belongs to a specific scene automatically
+  switches to that scene ... it must be universal to work with future scene collection designs".
+  So it is a setting on any switch, naming any scene, not a rule about the trial scenes. It fires
+  only on a press that shows the sources (turns the switch on, or off with *On means* hidden), in
+  the tick after `apply()`, once `scenes_loaded()`; never on a press that hides them, a *Follow
+  what is shown* correction (`correcting_`), the state restored at load (`ready_`), or *Do it now*
+  (`kPressStay` in `press_`). It is skipped when
+  the scene is gone, is a group, is already on screen, or when the scene on screen already holds
+  one of the listed sources (or the filter's own source), in a group or hidden. The change is
+  `obs_frontend_set_current_scene` (the preview in Studio Mode) from an `OBS_TASK_UI` task, which
+  checks again there; the log says `switched to scene`. Test seam: the global procs
+  `stagekit_test_scene_switch` (test mode, stands in for the scene on screen) and
+  `stagekit_test_scene_switched` (the scenes asked for since the last call, `|`-joined). The real
+  frontend path and Studio Mode have not run. The merge scripts set it: captures to Live, holding
+  titles to Standby, column markers to Chat Live.
 - **Show in Scenes' *Follow what is shown*** (`follow`, off as it comes; beta147): four times a
   second the switch is put the way its items are (`each_item`, the same items `apply` acts on,
   without bring-along items): on when all are shown, with `on_means` respected, left alone when
@@ -500,14 +522,15 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   first way, a Morph could not end the next change made in view.) And a change under way when its
   scene is left with a cut is never ended either: Link Visibility ends one left on a listed item
   twice a second (`end_stale_transition`: a show transition on a hidden item, or a hide on a shown
-  one). Found by driving the generated collection headless with the new build; the tests had
+  one; only one that still holds a source: OBS can count a finished one as in use for good, and beta147 to beta153 ended that one twice a second all session). Found by driving the generated collection headless with the new build; the tests had
   waited for every change to end before the next step. Items a Standby filter owns are passed over. Link Visibility and Show
   in Scenes go through it; Program Trigger, the two switchers, Auto Capture's hide, Show/Hide
   Animation and the stand-ins do not yet. A source with sound is finished hiding in the scene's
   audio mix, so it may still be in use for one audio tick when the scene comes on; not measured.
   The tests had no sound until the layout section (`obs_reset_audio`), so no item transition ended
   in them: test that a fade is used by the source still being in use part-way.
-- **One scene per layout** (beta147; the owner, 2026-11-16: "having two primary scenes for both
+- **One scene per layout** (Live and Chat Live; Full-Capture-Scene and Component-Capture-Scene
+  until beta154) (beta147; the owner, 2026-11-16: "having two primary scenes for both
   component and full layouts that contain all the live sources is fine"). Each layout scene holds
   every capture, stacked, one shown, each with its own Fit to Space; a Link Visibility (only one,
   `lock_hidden`, Morph) per scene and a Show in Scenes (`follow`, the layout scenes listed, Morph)
@@ -524,13 +547,13 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   at most 0.2 px. A new test that changes visibility between frames should try both orders.
   **One holding scene** the same way (2026-11-17; the owner: "The start screen, Intermission,
   BRB, and Stream ending are all affectively the same design. Can this also be combine into a
-  single scene"): `Holding-Scene` holds Stream Start, Be Right Back, Stream Ending and (since beta153)
+  single scene"): `Standby` (Holding-Scene until beta154) holds Stream Start, Be Right Back, Stream Ending and (since beta153)
   Intermission as modes, each a title group plus extras; Link Visibility-Titles (only one) over
   the titles, one Link Visibility *Follow the first source* per mode (first a *Together*, which a
   camera switch showing one member would flip), a Show in Scenes-Mode (`follow`) on each title.
   One Link Visibility reacts to another's change because each passes over only what it does on
   its own thread while acting (`applying_`). Written by `scripts/merge-holding-scenes.py`; the GBA
-  layout is a second column mode of Component-Capture-Scene, written by
+  layout is a second column mode of Chat Live, written by
   `scripts/merge-columns.py`, switched by two transparent marker sources (*Column: Chat*,
   *Column: GBA*) because every visible item of a column is worked by the camera or chat switch.
   Both driven headless with the plugin (every mode and column, camera and chat off and on, two
@@ -1144,7 +1167,15 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   `streamdeck/src/pictures.ts`): the pack's `scenes` group was drawn from the owner's layouts, and
   the owner asked that "the scene keys should be based off the original scene key designs". A
   picture fits when all the words of its label are in the scene's name; no scene names are in the
-  code.
+  code. Since beta154 `make-option-icons.py` adds scene pictures labelled *live*, *chat live* and
+  *standby* (group `scenes`) and show-key pictures for the holding modes and columns, *starting*,
+  *brb*, *intermission*, *ending*, *column chat*, *column gba* (group `show hide`, found by
+  `sourcePictureFor`; `GROUPED` gives each its group and label). The owner: "the standby scene,
+  live scene and Chat Live scenes should have icons that are representative of their function as
+  should each of the show in scene buttons. of course allow manual icon changes still". No
+  matching changed: of several labels that fit, the one with the most words wins (so *Chat Live*
+  is *chat live*, not *live*), and a picture chosen by hand is still looked at first. Labels match
+  whole words: a source must be called *BRB*, not *Be Right Back*, for the brb picture.
 - **A Standby Picture can be shown over a running capture** (`cover_`, the `cover` proc,
   `standby_cover_toggle`, hotkey `stagekit.standby.cover.` + filter name). The Automatic Window
   Switcher's hide does that when the capture has an enabled Standby Picture (`hide_standby`, on

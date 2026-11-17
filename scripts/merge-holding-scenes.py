@@ -1,23 +1,27 @@
 #!/usr/bin/env python3
-"""Adds one holding scene to an OBS scene collection that uses StageKit, for a side-by-side trial.
+"""Adds one holding scene, Standby, to an OBS scene collection that uses StageKit, for a side-by-side trial.
 
 Today the scenes shown before, between and after the game (Stream Start, Be Right Back, Intermission,
 Stream Ending) are one design: the same background, chat box, widget and alerts, with a different title
 and a few extras. This writes a copy of the collection with one more scene that holds all four, one
 shown at a time:
 
-    Holding-Scene    in time replaces Stream Start, Be Right Back, Intermission and Stream Ending
+    Standby    in time replaces Stream Start, Be Right Back, Intermission and Stream Ending
+
+It was first called Holding-Scene; the owner renamed it (2026-11-17: "Holding should be called
+standby").
 
 It reads one collection and writes another; the one it reads is never changed. Everything already in
 the collection is kept exactly as it is, with two exceptions: each mode's title (a group) gets one more
-filter at the end of its list ("Show in Scenes-Mode"), and the collection's name gets " + Holding"
+filter at the end of its list ("Show in Scenes-Mode"), and the collection's name gets " + Standby"
 added. The script checks that itself before it writes anything. It does not depend on the layout
 scenes of merge-capture-scenes.py: it works on a collection with or without them.
 
 A collection this script has already merged (with three modes, before Intermission was one) is brought
 up to date: what that run added (the scene, the switches, the name's suffix) is taken out, recognised by
 the ids this script gives it, and made again. The uuids come out the same, and the items of the first
-three modes keep their ids. Anything else called Holding-Scene stops the script.
+three modes keep their ids. Anything else called Standby stops the script, and so does a scene called
+Holding-Scene (merged by an earlier version, under the old name: merge from the collection before it).
 
 What the new scene is made of:
 
@@ -37,8 +41,9 @@ What the new scene is made of:
   and "-Intermission" each follow their title (Follow the first source): the title shown, its extras
   are shown (a camera view a camera switch has off stays hidden); the title hidden, they are hidden and
   kept hidden. An extra of two modes shows while either is shown. "Show in Scenes-Mode" on each title
-  is that mode's switch, for the holding scene only, following what is shown. All change with a fade,
-  500 ms.
+  is that mode's switch, for the Standby scene only, following what is shown, and set to go to Standby
+  when it is pressed on (go_to): OBS changes to Standby unless the scene on screen already shows that
+  title. All change with a fade, 500 ms.
 - No show or hide transition is written on any new item: the filters set them when OBS runs. The
   camera's stand-in item ("DSLR (standby)") is made by its Standby filter when OBS runs, never here.
 
@@ -57,9 +62,13 @@ import sys
 import uuid
 
 # ---------------------------------------------------------------------------------------------- plan
-NEW_SCENE = "Holding-Scene"
+NEW_SCENE = "Standby"
+OLD_NAME = "Holding-Scene"  # what the scene was called before the owner renamed it
+# The scene a mode's switch goes to when it is pressed on (Show in Scenes' go_to): OBS changes to it
+# unless the scene on screen already shows the title.
+GO_TO = NEW_SCENE
 AFTER_SCENE = "Stream Start"  # the new scene goes straight after this one in the scene list
-NAME_SUFFIX = " + Holding"
+NAME_SUFFIX = " + Standby"
 SWITCH_NAME = "Show in Scenes-Mode"
 TITLES_LINK = "Link Visibility-Titles"
 TRANSITION = "fade_transition"
@@ -172,6 +181,9 @@ if set(PLAN_ORDER) != set(FROM) or len(PLAN_ORDER) != len(FROM) or sorted(ID_ORD
     missing.append("the plan's orders do not name every planned item once (a fault in the script)")
 if NEW_SCENE in by_name:
     missing.append(f"there is still something called '{NEW_SCENE}'")
+if OLD_NAME in by_name:
+    missing.append(f"there is already a scene called '{OLD_NAME}': this collection was merged before, by an earlier "
+                   f"version of this script (the scene is called {NEW_SCENE} now); merge from the collection before it")
 if AFTER_SCENE not in scene_names:
     missing.append(f"the scene '{AFTER_SCENE}' is not in the scene list")
 for scene_name in SCENES:
@@ -460,12 +472,13 @@ report.append(f"\n'{SWITCH_NAME}' (Show in Scenes), added last on each mode's ti
 switch_template = a_stagekit_filter(SHOW_IN_SCENES)
 for mode, scene_name, title, extras in MODES:
     settings = {"sources|apick": "", "scenes|apick": "", "where": 1, "scenes": entries([NEW_SCENE]), "on_means": 0,
-                "transition": TRANSITION, "transition_ms": CHANGE_MS, "follow": True}
+                "transition": TRANSITION, "transition_ms": CHANGE_MS, "follow": True, "go_to": GO_TO}
     on = mode == shown_mode
     by_name[title].setdefault("filters", []).append(
         make_filter(switch_template, SHOW_IN_SCENES, SWITCH_NAME, settings, on, f"{title}|filter|{SWITCH_NAME}"))
     report.append(f"  {title} (mode {mode}): {'on' if on else 'off'}; this source, in {NEW_SCENE} only; on means "
-                  f"shown; Fade, {CHANGE_MS} ms; follows what is shown (follow)")
+                  f"shown; Fade, {CHANGE_MS} ms; follows what is shown (follow); pressed on, goes to {GO_TO} unless "
+                  f"the scene on screen already shows it (go_to)")
 
 if earlier is not None:
     data["sources"].insert(earlier_at, scene)
@@ -652,7 +665,7 @@ if earlier is not None:
 # ------------------------------------------------------------------------------------ write
 ok = not problems and not unexplained
 head = [
-    f"Holding scene, side-by-side trial: {read.get('name', '')}  ->  {data['name']}",
+    f"Holding scene ({NEW_SCENE}), side-by-side trial: {read.get('name', '')}  ->  {data['name']}",
     f"Read: {SRC}",
     (f"Written: {OUT}" if ok else "NO COLLECTION WAS WRITTEN: see the problems below."),
     f"{len(scene_names)} scenes kept as they are, {NEW_SCENE} {'made again' if earlier else 'added'} after "
@@ -673,11 +686,13 @@ tail += ["", "Choices between differing copies"] + [f"  {c}" for c in choices or
 tail += ["", "Transitions left off the new items (the filters set them when OBS runs; a generated file with "
          "item transitions once crashed OBS on import)"] + [f"  {s}" for s in stripped or ["none"]]
 tail += ["", "Not copied to the new scene: the old scenes' private settings (Be Right Back's transition override).",
-         "Be Right Back also has a Transition Table rule (any scene to it); Holding-Scene has none, so going to it uses",
-         "OBS's current transition. Add a rule for Holding-Scene in the Transition Table if you want one.",
+         f"Be Right Back also has a Transition Table rule (any scene to it); {NEW_SCENE} has none, so going to it uses",
+         f"OBS's current transition. Add a rule for {NEW_SCENE} in the Transition Table if you want one.",
          "The scene's notes are copied from Stream Start.",
          "Set each mode's Stream Deck key to On press: Switch on. A Toggle key pressed on the mode showing hides it,",
          "and no title is left showing.",
+         f"Pressing a mode's key also goes to {GO_TO}, unless the scene on screen already shows that title. The scene",
+         "to go to is in the switch's own settings and can be changed or cleared there.",
          "Showing an extra with the eye while its mode is not shown is undone at once; hiding one while its mode is",
          "shown leaves it hidden (a camera switched off). Only a title changes the mode."]
 tail += ["", "Fidelity: each of today's scenes against the new scene with only that mode shown",

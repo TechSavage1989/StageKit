@@ -97,6 +97,19 @@ bool end_stale_transition(obs_sceneitem_t *item)
 	obs_source_t *other = obs_sceneitem_get_transition(item, !obs_sceneitem_visible(item));
 	if (!other || !obs_source_active(other))
 		return false;
+	// Only one that still holds a source is under way. OBS can leave a
+	// finished item transition counted as in use for good (a scene counts its
+	// item transitions in when it comes on only while they run, and out when
+	// it goes only while they still run), so "in use" alone made this end the
+	// same finished transition twice a second for the rest of the session
+	// (the owner's log, Ending Text, 2,526 times).
+	obs_source_t *a = obs_transition_get_source(other, OBS_TRANSITION_SOURCE_A);
+	obs_source_t *b = obs_transition_get_source(other, OBS_TRANSITION_SOURCE_B);
+	const bool holds = a || b;
+	obs_source_release(a);
+	obs_source_release(b);
+	if (!holds)
+		return false;
 	// Stopping it says so to OBS, which takes it off the scene's list of
 	// what is in use; clearing it lets go of the source it held.
 	obs_transition_force_stop(other);

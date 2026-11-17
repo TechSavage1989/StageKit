@@ -866,6 +866,7 @@ off, and the sources are shown or hidden to match.
 | Hide transition / Duration | How each item disappears: *The same as showing* (the default), or a transition of its own with its own settings, so an item can slide down into view and slide up out of it |
 | Settings for | With sources on the list: *All sources (the usual)*, or one of the listed sources. Choose a source and the controls below are that source's own: it can show and hide with another transition, another duration and other settings than the rest, or be left *As for all sources* |
 | Follow what is shown | Unticked as it comes. Ticked, the switch also goes by what is shown: when something else shows or hides its sources (a Link Visibility filter, the eye icon, another key), the switch turns on or off to match, so a Stream Deck key's light stays true. It reads *shown* only while every one of its sources is shown in the scenes it covers. Matching the switch never shows or hides anything, and pressing a switch that is already on still shows its sources. Best left unticked on a switch whose source is hidden on purpose in some scene: it would read off for good there |
+| Switch to scene | *(none)* as it comes. Choose a scene, and a press that shows the sources (turning the switch on, or off when *On means* is hidden) also changes OBS to that scene, with OBS's current transition, once the sources are shown (in Studio Mode, the preview changes). Nothing changes when the scene on screen already has one of the sources (shown or hidden, in a group too), or when that scene is already on screen. A press that hides them never changes scene, nor does *Do it now*, nor the switch turning itself on under *Follow what is shown*. Any scene can be chosen, so it suits any layout: a capture's key that also brings up the game layout, a title's key that also brings up the holding scene |
 | Link this source / With this source / Add this link / Linked sources | Shown while *Morph (StageKit)* is chosen above: two sources that change into each other when one is hidden as the other is shown. See [Morph between items](#morph-between-items) |
 | Do it now | Shows or hides them to match how the filter is switched now |
 
@@ -936,7 +937,9 @@ with one shown:
 3. On each capture add a **Show in Scenes** named alike on every capture (say *Show in Scenes-Capture*):
    *The scenes listed below* with the layout scenes, *Morph (StageKit)*, and *Follow what is shown*
    ticked. A Stream Deck *Show in Scenes* key per capture, set to *Switch on*, then chooses the capture
-   in every layout scene at once, and only the key of the capture showing is lit.
+   in every layout scene at once, and only the key of the capture showing is lit. Set its
+   *Switch to scene* to the layout you want a capture's key to bring up: from any other scene the
+   key then goes there, and from a layout scene it only changes the capture.
 4. Changing layout stays a change of scene, with the Morph transition: the capture showing is the
    same source in both scenes, so it glides to its place in the other layout.
 
@@ -957,7 +960,8 @@ title and a few extras. They can be one scene with one mode showing:
    and keeps them hidden.
 4. On each title add a **Show in Scenes** named alike on every title (say *Show in Scenes-Mode*):
    *The scenes listed below* with the holding scene only, a fade, and *Follow what is shown*
-   ticked.
+   ticked. With *Switch to scene* set to the holding scene, a mode's key also brings that scene up
+   from a game scene.
 
 A Stream Deck *Show in Scenes* key per mode, set to *Switch on* (not *Toggle*, which would leave no
 title), then chooses the mode: the other title and its extras fade out, and only the key of the
@@ -1152,7 +1156,7 @@ pressed, so it never flashes the wrong one.
 | **Set Aspect Ratio** | Sets a game's aspect ratio by hand, for when Auto Frame's own reading is not what you want: 4:3, 8:7, 3:2, 10:9, 16:9 and more, or *Automatic* to hand it back. *Keep ratio*: *This game only* (the shape lasts while that game is captured and goes back to automatic when it ends; set before the game starts, it waits for it) or *Until changed*. The key shows its ratio |
 | **Capture Active Window** | Makes a Game Capture or a Window Capture take whatever window or game is in front when you press it. *Transition* and *Duration* choose how the capture changes over: a fade (as it comes), a cut, or any other transition OBS has. An Auto Capture on that capture is switched off so it stays where you put it; the **Auto Capture** key, set to *Switches it on*, hands it back |
 | **Fit to Space Overlap** | Switches a Fit to Space filter's *Overlap only when it fills* on and off, and shows which way it is. On: the fitted window goes under the camera only while it fills its space, and beside it otherwise |
-| **Switch Scene** | Switches OBS to the scene chosen: on the program (live), or on the preview in Studio Mode. *Transition* and *Duration* can be chosen (*As set in OBS* as it comes); a transition chosen here becomes OBS's current one. Lit (green dot) while that scene is the one on the program or preview, however it got there; titled with the scene's name. Left on *Automatic*, its image is the icon pack's own image of that scene's layout when the pack has one by the scene's name, and a generic scene otherwise |
+| **Switch Scene** | Switches OBS to the scene chosen: on the program (live), or on the preview in Studio Mode. *Transition* and *Duration* can be chosen (*As set in OBS* as it comes); a transition chosen here becomes OBS's current one. Lit (green dot) while that scene is the one on the program or preview, however it got there; titled with the scene's name. Left on *Automatic*, its image is the icon pack's own image of that scene's layout when the pack has one by the scene's name, and a generic scene otherwise. A scene called *Live*, *Chat Live* or *Standby* has an image of its own: a screen with a record button, a record button beside chat bubbles, and a screen with the standby sign |
 | **Manual Window / Source** | Also for a Window Capture with a Automatic Window Switcher filter: the next of its *Manual windows*, back to following the apps, or the capture hidden and shown. For a scene with a Automatic Source Switcher filter: shows the next of its *Manual sources*, or goes back to following the apps. Set to *Toggle* it shows whether a manual window is on; set to *Hide*, whether the capture is shown. Also lists Auto Capture filters, for *Hide* |
 | **Arrange tool** | One of the dock's arrange tools on a key: line up an edge or centre, space out evenly, snap, make the same width, height or size, or copy a transform to all or to the chosen scenes. It works on the items selected in OBS's preview |
 | **Dock Option** | One of the dock's switches on a key: *Snap on release*, *Guides*, *Stop resizing at edges*, *Slide to the next edge*, *In every scene* or *Keep shape*. It shows which way the switch is, also when you change it in the dock |
@@ -1170,7 +1174,11 @@ keys have an "on" and an "off" look. Where the pack has an image drawn for one s
 hide*, shadow, standby and blur images) and that image's name is in the source's name, a Show
 in Scenes, Shadow, Standby Image or Blur key on that source takes it. Failing that, a Show in
 Scenes key shows what its source is: a camera, a game, a window, a display or a browser (a Cropped
-View counts as what it shows). A filter the pack has no image for gets a plain key in the same
+View counts as what it shows). The holding scene's titles and the column markers have show-key
+images of their own, by the source's name: *starting* (a play sign), *BRB* (a cup), *intermission*
+(an hourglass), *ending* (a stop sign), *column chat* and *column GBA*. When several images fit a
+name, the one whose label has the most words wins, so *Chat Live* gets its own image, not *Live*'s.
+A filter the pack has no image for gets a plain key in the same
 style. **Image** lets you give a key any other image of the pack (the ones drawn for a particular
 source, for instance). **Palette** is each key's own colour: mono (as it comes), violet, ocean,
 forest, ember or neon. You can still set your own image on a key in Stream Deck.
@@ -1244,12 +1252,15 @@ tests/run-tests.sh
 ```
 
 `scripts/merge-capture-scenes.py` turns a collection with a scene per capture into one with two
-layout scenes added beside the old ones, `scripts/merge-holding-scenes.py` adds one holding
-scene beside Stream Start, Be Right Back, Intermission and Stream Ending (and brings a holding
-scene it made before up to date), and `scripts/merge-columns.py` gives the Component layout scene
+layout scenes, *Live* and *Chat Live*, added beside the old ones,
+`scripts/merge-holding-scenes.py` adds one holding scene, *Standby*, beside Stream Start, Be Right Back, Intermission and Stream Ending (and brings a holding
+scene it made before up to date), and `scripts/merge-columns.py` gives the Chat Live scene
 a second column (the GBA windows of Dolphin-GBA-Scene) beside the chat column, each for a
-side-by-side trial (see the scripts' headers). Each reads one file and writes another, with a
-report.
+side-by-side trial (see the scripts' headers). Each switch they make has *Switch to scene* set:
+the captures' to Live, the titles' to Standby, the column markers' to Chat Live. Each reads one
+file and writes another, with a report. A collection merged before 0.1.0-beta154 (scenes called
+Full-Capture-Scene, Component-Capture-Scene, Holding-Scene) is refused: merge again from the file
+before it.
 
 Windows and macOS builds come from GitHub Actions, based on the official
 [obs-plugintemplate](https://github.com/obsproject/obs-plugintemplate).

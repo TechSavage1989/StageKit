@@ -5,8 +5,12 @@ Today each capture (game, capture card, window, two displays) has a scene of its
 This writes a copy of the collection with two more scenes that each hold every capture, one shown at
 a time:
 
-    Full-Capture-Scene        in time replaces the five full-screen capture scenes
-    Component-Capture-Scene   in time replaces the three component capture scenes
+    Live         in time replaces the five full-screen capture scenes
+    Chat Live    in time replaces the three component capture scenes (the capture with the chat box,
+                 camera and widget beside it)
+
+Both were first called Full-Capture-Scene and Component-Capture-Scene; the owner renamed them
+(2026-11-17: "Full capture should be called Live ... Component should be called Chat Live").
 
 It reads one collection and writes another; the one it reads is never changed. Everything already in
 the collection is kept exactly as it is, with two exceptions: each capture source gets one more filter
@@ -22,7 +26,8 @@ What the new scenes are made of:
 - The Fit to Space filters of today's scenes are copied over, one per capture.
 - "Link Visibility-Captures" on each new scene shows only one capture at a time, and
   "Show in Scenes-Capture" on each capture is its switch for both scenes. Both change with
-  Morph (StageKit), 700 ms.
+  Morph (StageKit), 700 ms. Each switch is set to go to Live when it is pressed on (go_to): OBS
+  changes to Live unless the scene on screen already shows that capture (Chat Live does).
 - No show or hide transition is written on any new item: the filters set them when OBS runs.
 
 The report lists both scenes item by item and filter by filter, every choice made, and a fidelity
@@ -34,11 +39,11 @@ Usage:
     python3 -I scripts/merge-capture-scenes.py <in.json> <out.json> <report.txt> [options]
 
 Options:
-    --alerts-full centred|off        Alerts in the Full scene: centred as in the window and display
+    --alerts-full centred|off        Alerts in Live: centred as in the window and display
                                      scenes (default), or off the canvas as in the two game scenes
     --widget under|over              Amuse Square Camera under (default) or over Square Camera
-    --pureref-full hidden|shown      Pureref in the Full scene (default hidden)
-    --displays-in-component yes|no   the two displays in the Component scene too (default yes)
+    --pureref-full hidden|shown      Pureref in Live (default hidden)
+    --displays-in-component yes|no   the two displays in Chat Live too (default yes)
     --shown NAME                     the capture shown in both scenes (default "Game Capture")
 """
 import argparse
@@ -55,6 +60,13 @@ AFTER_SCENE = "Stream Start"  # the new scenes go straight after this one in the
 NAME_SUFFIX = " - Layout Scenes"
 SWITCH_NAME = "Show in Scenes-Capture"
 LINK_NAME = "Link Visibility-Captures"
+FULL_NAME, COMPONENT_NAME = "Live", "Chat Live"
+# What the two scenes were called before the owner renamed them: a collection holding one of these
+# was merged by an earlier version of this script.
+OLD_NAMES = ["Full-Capture-Scene", "Component-Capture-Scene"]
+# The scene a capture's switch goes to when it is pressed on (Show in Scenes' go_to): OBS changes to
+# it unless the scene on screen already shows the capture.
+GO_TO = FULL_NAME
 MORPH = "stagekit_morph"
 CHANGE_MS = 700
 FIT = "stagekit_fit_item"
@@ -72,7 +84,7 @@ LOOK = ["pos", "scale", "rot", "align", "bounds_type", "bounds_align", "bounds",
         "crop_top", "crop_right", "crop_bottom", "scale_filter", "blend_method", "blend_type"]
 
 FULL = {
-    "name": "Full-Capture-Scene",
+    "name": FULL_NAME,
     # Today's scenes and the capture each is for.
     "members": [("Game-Capture-Scene", "Game Capture"), ("Game-Capture-HD60S-Scene", "HD60S"),
                 ("Window-Capture-Scene", "Window Capture"), ("Main Display Scene", "Main Display"),
@@ -88,7 +100,7 @@ FULL = {
     "like": {},
 }
 COMPONENT = {
-    "name": "Component-Capture-Scene",
+    "name": COMPONENT_NAME,
     "members": [("Game-Component-Capture-Scene", "Game Capture"), ("Game-Component-HD60S-Capture-Scene", "HD60S"),
                 ("Window-Component-Capture-Scene", "Window Capture")],
     "items": [("Ambient Background", "Game-Component-Capture-Scene"), ("Game Capture", "Game-Component-Capture-Scene"),
@@ -167,6 +179,10 @@ for name in CAPTURES:
         missing.append(f"'{name}' already has a filter called '{SWITCH_NAME}': this collection was merged before")
 if AFTER_SCENE not in scene_names:
     missing.append(f"the scene '{AFTER_SCENE}' is not in the scene list")
+for old_name in OLD_NAMES:
+    if old_name in by_name:
+        missing.append(f"there is already a scene called '{old_name}': this collection was merged before, by an "
+                       f"earlier version of this script")
 for plan in PLANS:
     if plan["name"] in by_name:
         missing.append(f"there is already something called '{plan['name']}'")
@@ -367,7 +383,7 @@ for plan in PLANS:
         report.append(f"  {item['id']:>2}. {name}: {'shown' if item['visible'] else 'hidden'}"
                       f"{', locked' if item.get('locked') else ''}; at {say(item['pos'])}, {box}; {note}")
         if like:
-            choices.append(f"{new_name}: '{name}' is in no Component scene today. It was given a copy of {like}'s "
+            choices.append(f"{new_name}: '{name}' is in no component scene today. It was given a copy of {like}'s "
                            f"item from {from_scene}, and a Fit to Space like {like}'s.")
 
     # Fit to Space: each capture's own from its own scene; the others' once, from the first scene that has one.
@@ -457,11 +473,12 @@ switch_template = a_stagekit_filter(SHOW_IN_SCENES)
 for name in CAPTURES:
     scenes = [p["name"] for p in PLANS if name in p["order"]]
     settings = {"sources|apick": "", "scenes|apick": "", "where": 1, "scenes": entries(scenes), "on_means": 0,
-                "transition": MORPH, "transition_ms": CHANGE_MS, "follow": True}
+                "transition": MORPH, "transition_ms": CHANGE_MS, "follow": True, "go_to": GO_TO}
     by_name[name].setdefault("filters", []).append(
         make_filter(switch_template, SHOW_IN_SCENES, SWITCH_NAME, settings, name == opt.shown, f"{name}|filter|{SWITCH_NAME}"))
     report.append(f"  {name}: {'on' if name == opt.shown else 'off'}; this source, in {' and '.join(scenes)}; on means "
-                  f"shown; Morph (StageKit), {CHANGE_MS} ms; follows what is shown (follow)")
+                  f"shown; Morph (StageKit), {CHANGE_MS} ms; follows what is shown (follow); pressed on, goes to "
+                  f"{GO_TO} unless the scene on screen already shows it (go_to)")
 
 data["sources"].extend(new_scenes)
 at = scene_names.index(AFTER_SCENE) + 1
@@ -637,15 +654,19 @@ head = [
     + ("yes." if not problems else "NO: " + "; ".join(problems) + "."),
     "",
     "Options in force",
-    f"  --alerts-full {opt.alerts_full}: Alerts in the Full scene is copied from "
+    f"  --alerts-full {opt.alerts_full}: Alerts in {FULL_NAME} is copied from "
     + ("Window-Capture-Scene (centred, as in the window and display scenes today)." if opt.alerts_full == "centred"
        else "Game-Capture-Scene (off the canvas, as in the two game scenes today).")
-    + " In the Component scene it stays off the canvas, as in all three Component scenes today.",
-    f"  --widget {opt.widget}: Amuse Square Camera lies {opt.widget} Square Camera in the Full scene.",
-    f"  --pureref-full {opt.pureref_full}: Pureref is {opt.pureref_full} in the Full scene.",
+    + f" In {COMPONENT_NAME} it stays off the canvas, as in all three component scenes today.",
+    f"  --widget {opt.widget}: Amuse Square Camera lies {opt.widget} Square Camera in {FULL_NAME}.",
+    f"  --pureref-full {opt.pureref_full}: Pureref is {opt.pureref_full} in {FULL_NAME}.",
     f"  --displays-in-component {opt.displays_in_component}: Main Display and Tablet Display Capture are "
-    + ("in the Component scene too." if opt.displays_in_component == "yes" else "left out of the Component scene."),
+    + (f"in {COMPONENT_NAME} too." if opt.displays_in_component == "yes" else f"left out of {COMPONENT_NAME}."),
     f"  --shown \"{opt.shown}\": the capture shown in both new scenes; the others are hidden and locked.",
+    "",
+    f"Pressing a capture's Stream Deck key (Show in Scenes-Capture, On press: Switch on) goes to {GO_TO} as well, "
+    f"unless the scene on screen already shows that capture: in {COMPONENT_NAME} the capture changes and the scene "
+    "stays. The scene to go to is in the switch's own settings and can be changed or cleared there.",
 ]
 tail = ["", "Choices between differing copies"] + [f"  {c}" for c in choices or ["none"]]
 tail += ["", "Transitions left off the new items (the filters set them when OBS runs; a generated file with "
