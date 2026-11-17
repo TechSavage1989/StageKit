@@ -35,6 +35,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <cmath>
 #include <cstring>
 #include <map>
+#include <memory>
 #include <set>
 #include <mutex>
 #include <string>
@@ -1738,6 +1739,219 @@ std::vector<obs_source_t *> engine_owners()
 			owners.push_back(held);
 	}
 	return owners;
+}
+
+// ------------------------------------------------------------ the controls
+
+namespace {
+
+// What a control's callback needs to know about the fit it belongs to, kept
+// for as long as the plugin is loaded (OBS holds the pointer).
+struct Keys {
+	std::string prefix, list_prefix;
+	bool entry = false;
+};
+
+const Keys *keys_for(const std::string &prefix, const std::string &list_prefix, bool entry)
+{
+	static std::mutex lock;
+	static std::map<std::string, std::unique_ptr<Keys>> all;
+	std::lock_guard hold(lock);
+	auto &slot = all[prefix + '\x1f' + list_prefix +
+			 (entry ? "\x1f"
+				  "1"
+				: "\x1f"
+				  "0")];
+	if (!slot)
+		slot = std::make_unique<Keys>(Keys{prefix, list_prefix, entry});
+	return slot.get();
+}
+
+bool box_modified(void *priv, obs_properties_t *props, obs_property_t *, obs_data_t *settings)
+{
+	const auto *keys = static_cast<const Keys *>(priv);
+	fit_controls_shown(props, settings, keys->prefix, keys->list_prefix, keys->entry);
+	return true;
+}
+
+} // namespace
+
+void fit_controls_shown(obs_properties_t *props, obs_data_t *settings, const std::string &prefix,
+			const std::string &list_prefix, bool entry)
+{
+	auto get = [&](const char *name) {
+		return obs_properties_get(props, (prefix + name).c_str());
+	};
+	auto shown = [](obs_property_t *p, bool visible) {
+		if (p)
+			obs_property_set_visible(p, visible);
+	};
+	const long long kind = obs_data_get_int(settings, (prefix + "box").c_str());
+	for (const char *name : {"box_x", "box_y", "box_width", "box_height"})
+		shown(get(name), kind == 1);
+	shown(obs_properties_get(props, (list_prefix + "skip|alist").c_str()), kind == 2);
+	for (const char *name : {"glide_ms", "ease_curve", "ease_mode", "visible_pixels", "tolerance"})
+		shown(get(name), kind == 2);
+	// (For a Scene Fit's entry the switch is the Scene Fit's own, for all.)
+	if (!entry)
+		shown(get("skip_fill_on"), kind == 2);
+	const bool rule = kind == 2 &&
+			  obs_data_get_bool(settings, entry ? "skip_fill_on" : (prefix + "skip_fill_on").c_str());
+	for (const char *name : {"skip_use_pct", "skip_use_px"})
+		shown(get(name), rule);
+	shown(get("skip_fill"), rule && obs_data_get_bool(settings, (prefix + "skip_use_pct").c_str()));
+	for (const char *name : {"skip_px_top", "skip_px_bottom", "skip_px_left", "skip_px_right"})
+		shown(get(name), rule && obs_data_get_bool(settings, (prefix + "skip_use_px").c_str()));
+	if (obs_property_t *margin = get("margin"))
+		obs_property_set_description(margin, obs_module_text(kind == 2 ? "Fit.Gap" : "Fit.Margin"));
+}
+
+void fit_add_controls(obs_properties_t *props, const std::string &prefix, const std::string &list_prefix,
+		      obs_source_t *owner, obs_source_t *parent, bool entry)
+{
+	const Keys *keys = keys_for(prefix, list_prefix, entry);
+	auto key = [&](const char *name) {
+		return prefix + name;
+	};
+	obs_property_t *box = obs_properties_add_list(props, key("box").c_str(), obs_module_text("Fit.Box"),
+						      OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+	obs_property_list_add_int(box, obs_module_text("Fit.Box.Scene"), (int)BoxKind::WholeScene);
+	obs_property_list_add_int(box, obs_module_text("Fit.Box.Custom"), (int)BoxKind::Custom);
+	obs_property_list_add_int(box, obs_module_text("Fit.Box.Free"), (int)BoxKind::FreeSpace);
+	obs_property_set_long_description(box, obs_module_text("Fit.Box.Tip"));
+	auto number = [&](const char *name, const char *text) {
+		obs_property_t *p = obs_properties_add_float(props, key(name).c_str(), obs_module_text(text), -16384.0,
+							     16384.0, 1.0);
+		obs_property_float_set_suffix(p, " px");
+	};
+	number("box_x", "Fit.BoxX");
+	number("box_y", "Fit.BoxY");
+	number("box_width", "Fit.BoxWidth");
+	number("box_height", "Fit.BoxHeight");
+
+	obs_property_t *margin = obs_properties_add_float_slider(props, key("margin").c_str(),
+								 obs_module_text("Fit.Margin"), 0.0, 400.0, 1.0);
+	obs_property_float_set_suffix(margin, " px");
+	obs_property_set_long_description(margin, obs_module_text("Fit.Margin.Tip"));
+	obs_property_t *resize = obs_properties_add_bool(props, key("resize").c_str(), obs_module_text("Fit.Resize"));
+	obs_property_set_long_description(resize, obs_module_text("Fit.Resize.Tip"));
+	obs_property_t *toward = obs_properties_add_list(props, key("toward").c_str(), obs_module_text("Fit.Toward"),
+							 OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+	// Saved by number: new ones go at the end.
+	int toward_value = 0;
+	for (const char *name :
+	     {"Fit.Toward.Middle", "Fit.Toward.Top", "Fit.Toward.Bottom", "Fit.Toward.Left", "Fit.Toward.Right",
+	      "Fit.Toward.TopLeft", "Fit.Toward.TopRight", "Fit.Toward.BottomLeft", "Fit.Toward.BottomRight"})
+		obs_property_list_add_int(toward, obs_module_text(name), toward_value++);
+	obs_property_set_long_description(toward, obs_module_text("Fit.Toward.Tip"));
+	obs_property_t *tolerance = obs_properties_add_float_slider(props, key("tolerance").c_str(),
+								    obs_module_text("Fit.Tolerance"), 0.0, 100.0, 1.0);
+	obs_property_float_set_suffix(tolerance, " px");
+	obs_property_set_long_description(tolerance, obs_module_text("Fit.Tolerance.Tip"));
+	obs_property_t *visible_pixels =
+		obs_properties_add_bool(props, key("visible_pixels").c_str(), obs_module_text("Measure.Visible"));
+	obs_property_set_long_description(visible_pixels, obs_module_text("Fit.Visible.Tip"));
+	obs_property_t *no_shadows =
+		obs_properties_add_bool(props, key("no_shadows").c_str(), obs_module_text("Measure.NoShadows"));
+	obs_property_set_long_description(no_shadows, obs_module_text("Fit.NoShadows.Tip"));
+	obs_property_t *glide =
+		obs_properties_add_int(props, key("glide_ms").c_str(), obs_module_text("Fit.Glide"), 0, 10000, 50);
+	obs_property_int_set_suffix(glide, " ms");
+	obs_property_set_long_description(glide, obs_module_text("Fit.Glide.Tip"));
+	add_easing_properties(props, prefix.c_str());
+
+	PickList skip;
+	const std::string skip_setting = list_prefix + "skip";
+	skip.setting = skip_setting.c_str();
+	skip.title = entry ? "SceneFit.SkipFor" : "Fit.Skip";
+	skip.add = entry ? "SceneFit.AddSource" : "List.AddItem";
+	skip.tip = "Fit.Skip.Tip";
+	skip.choices = [parent](std::vector<std::string> &names) {
+		scene_item_names(parent, names);
+	};
+	pick_list_add(props, owner, skip);
+	if (!entry) {
+		obs_property_t *skip_fill_on =
+			obs_properties_add_bool(props, key("skip_fill_on").c_str(), obs_module_text("Fit.SkipFillOn"));
+		obs_property_set_long_description(skip_fill_on, obs_module_text("Fit.SkipFillOn.Tip"));
+		obs_property_set_modified_callback2(skip_fill_on, box_modified, (void *)keys);
+	}
+	obs_property_t *use_pct =
+		obs_properties_add_bool(props, key("skip_use_pct").c_str(), obs_module_text("Fit.SkipUsePct"));
+	obs_property_set_long_description(use_pct, obs_module_text("Fit.SkipUsePct.Tip"));
+	obs_property_set_modified_callback2(use_pct, box_modified, (void *)keys);
+	obs_property_t *skip_fill = obs_properties_add_float_slider(props, key("skip_fill").c_str(),
+								    obs_module_text("Fit.SkipFill"), 0.0, 100.0, 1.0);
+	obs_property_float_set_suffix(skip_fill, "%");
+	obs_property_set_long_description(skip_fill, obs_module_text("Fit.SkipFill.Tip"));
+	obs_property_t *use_px =
+		obs_properties_add_bool(props, key("skip_use_px").c_str(), obs_module_text("Fit.SkipUsePx"));
+	obs_property_set_long_description(use_px, obs_module_text("Fit.SkipUsePx.Tip"));
+	obs_property_set_modified_callback2(use_px, box_modified, (void *)keys);
+	static const char *const kEdges[][2] = {{"skip_px_top", "Fit.SkipPxTop"},
+						{"skip_px_bottom", "Fit.SkipPxBottom"},
+						{"skip_px_left", "Fit.SkipPxLeft"},
+						{"skip_px_right", "Fit.SkipPxRight"}};
+	for (const auto &edge : kEdges) {
+		obs_property_t *px = obs_properties_add_float_slider(props, key(edge[0]).c_str(),
+								     obs_module_text(edge[1]), 0.0, 2000.0, 1.0);
+		obs_property_float_set_suffix(px, " px");
+		obs_property_set_long_description(px, obs_module_text("Fit.SkipPx.Tip"));
+	}
+	PickList share;
+	const std::string share_setting = list_prefix + "share_scenes";
+	share.setting = share_setting.c_str();
+	share.title = entry ? "SceneFit.ShareFor" : "Fit.Share";
+	share.add = "List.AddScene";
+	share.tip = "Fit.Share.Tip";
+	share.choices = [parent](std::vector<std::string> &names) {
+		struct Other {
+			std::vector<std::string> *names;
+			obs_source_t *self;
+		} other{&names, parent};
+		obs_enum_scenes(
+			[](void *param, obs_source_t *scene) {
+				auto *o = static_cast<Other *>(param);
+				const char *name = obs_source_get_name(scene);
+				if (name && *name && !obs_source_is_group(scene) && scene != o->self)
+					o->names->push_back(name);
+				return true;
+			},
+			&other);
+	};
+	pick_list_add(props, owner, share);
+	// Last, so that everything it shows and hides is there.
+	obs_property_set_modified_callback2(box, box_modified, (void *)keys);
+}
+
+void fit_entry_defaults(obs_data_t *settings, const std::string &prefix)
+{
+	obs_video_info ovi;
+	const bool have = obs_get_video_info(&ovi);
+	auto key = [&](const char *name) {
+		return prefix + name;
+	};
+	obs_data_set_default_int(settings, key("box").c_str(), (int)BoxKind::FreeSpace);
+	obs_data_set_default_double(settings, key("box_x").c_str(), 0.0);
+	obs_data_set_default_double(settings, key("box_y").c_str(), 0.0);
+	obs_data_set_default_double(settings, key("box_width").c_str(), have ? ovi.base_width : 1920);
+	obs_data_set_default_double(settings, key("box_height").c_str(), have ? ovi.base_height : 1080);
+	// (A gap of 30, not Fit to Space's 80: a Scene Fit is made for layouts
+	// in the free space.)
+	obs_data_set_default_double(settings, key("margin").c_str(), 30.0);
+	obs_data_set_default_double(settings, key("tolerance").c_str(), 8.0);
+	obs_data_set_default_double(settings, key("skip_fill").c_str(), 95.0);
+	obs_data_set_default_bool(settings, key("skip_use_pct").c_str(), true);
+	obs_data_set_default_bool(settings, key("skip_use_px").c_str(), false);
+	for (const char *name : {"skip_px_top", "skip_px_bottom", "skip_px_left", "skip_px_right"})
+		obs_data_set_default_double(settings, key(name).c_str(), 50.0);
+	obs_data_set_default_bool(settings, key("resize").c_str(), true);
+	obs_data_set_default_int(settings, key("toward").c_str(), 0);
+	obs_data_set_default_bool(settings, key("visible_pixels").c_str(), true);
+	obs_data_set_default_bool(settings, key("no_shadows").c_str(), true);
+	obs_data_set_default_int(settings, key("glide_ms").c_str(), 300);
+	obs_data_set_default_int(settings, key("ease_curve").c_str(), (int)EaseCurve::Cubic);
+	obs_data_set_default_int(settings, key("ease_mode").c_str(), (int)EaseMode::InOut);
 }
 
 } // namespace stagekit::fit

@@ -2185,3 +2185,20 @@ callback); `item_transitions_owner` asked per item; `holds-hidden.*` (`mode_hold
 `filter-order.hpp`, `stand-in.hpp`, `is_screen_capture`; the `==== scene-filters:<unit> ====` blocks in
 plugin-main, CMake, the locale file, the tests, the README and AGENTS; `tests/run-tests.sh` stops on a
 repeated locale key and on a failed build. Whole suite: ALL PASSED.
+
+## Scene Fit and Fit to Space off screen (0.1.0-beta155, in progress on `feat/scene-fit`)
+
+Three commits, the whole suite passing after each. (1) Fit to Space's engine moved as it was into
+`src/placement/fit-engine.*`. (2) The engine's tick cut into steps (`prepare`, `motion`, `observe`,
+`solve`, `publish_claim`, `advance`, `apply`) with what is in the way in a `FitScan` of its own, Fit to Space
+calling them in the old order; off screen with nothing asked of it a fit's tick is skipped but four times a
+second (perf cut 1); the shadow room is read again only when `shadow_room_revision()` changes (perf cut 2,
+three anchored lines in `shadow-backdrop.cpp`). (3) Scene Fit (`stagekit_scene_fit`): one entry per source
+with Fit to Space's settings under `fit|<source>|` (lists under `fit_<hex>_`), all worked out in one tick in
+list order with up to four passes, one glance a tick, *Take over Fit to Space*, renames followed. Gate D4:
+GO. Not done (next work): `kComingBack` inside Scene Fit, one glide time for every entry during a window
+switcher's change, the both-orders Link Visibility test, the window-switcher sync test, and the cost test
+against seven Fit to Space filters, which waits for `stagekit_timing_take` (perf unit). The Stream Deck key
+and *Fit to Space Overlap* accepting `stagekit_scene_fit` belong to the Stream Deck unit; the collection
+script's `fit_for` must write the keys *Take over* writes (effective values, Scene Fit's own gap default is
+30, the lists under `fit_list_prefix`).

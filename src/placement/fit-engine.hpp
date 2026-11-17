@@ -335,6 +335,18 @@ std::vector<obs_source_t *> engine_owners();
 // hex>_" then "skip" or "share_scenes". (A list's setting cannot have a bar
 // in it, and a source's name may.)
 std::string fit_list_prefix(const std::string &entry);
+// The controls of one fit (a Fit to Space's own, or a Scene Fit entry's)
+// added to `props`: settings `prefix` + name, the two lists `list_prefix` +
+// "skip" / "share_scenes". For an entry (`entry`) the overlap switch is the
+// Scene Fit's own, not added here.
+void fit_add_controls(obs_properties_t *props, const std::string &prefix, const std::string &list_prefix,
+		      obs_source_t *owner, obs_source_t *parent, bool entry);
+// Shows the controls that apply to the kind of box and the overlap rules.
+void fit_controls_shown(obs_properties_t *top, obs_data_t *settings, const std::string &prefix,
+			const std::string &list_prefix, bool entry);
+// A Scene Fit entry's defaults, under its prefix: Fit to Space's, but in the
+// free space with a gap of 30.
+void fit_entry_defaults(obs_data_t *settings, const std::string &prefix);
 // For the tests: the full ticks and glides of the engines `owner` has (of
 // the item of that name only, when one is given).
 void engine_counts(obs_source_t *owner, const char *item, uint64_t &ticks, uint64_t &glides);

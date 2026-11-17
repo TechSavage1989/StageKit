@@ -1108,6 +1108,27 @@ place of one per source. Add one from the scene's own Filters window (right-clic
 #### Scene Fit
 
 <!-- ==== scene-filters:fit (Scene Fit) ==== -->
+Scene Fit does what a Fit to Space filter does, for several sources of the scene at once. Each source in
+*Fitted sources* has the whole set of Fit to Space settings of its own (choose it under *Settings for*), and
+starts from a gap of 30 px in the free space round its place.
+
+Where it differs is the timing: the sources are worked out together, in the order of the list, before any of
+them moves. When the camera is hidden or shown, a game changes shape or a widget starts to draw, every source
+that has to make way sets off once, all at the same moment. With a Fit to Space per source each filter only
+learns where the others are going a frame later, and they could shift a few times before settling.
+
+- **Fitted sources**: the order matters. Put the sources that keep their size (a camera, a chat box) above
+  the ones that are resized to fit (the game).
+- **Take over Fit to Space**: every Fit to Space switched on in this scene becomes an entry here, with all its
+  settings, the place it keeps its source round and the size it keeps. Each filter is switched off, not
+  deleted: switch it on again (and the Scene Fit off) to go back. Nothing moves.
+- **Overlap only when it fills**: one switch for every entry; each entry's own rules (*Use fill percentage*,
+  *Use edge gaps*) say when. A *Fit to Space Overlap* key on the Stream Deck works on a Scene Fit too.
+- **Ignored for this source** and **Sync to scenes** are the entry's own lists, as in Fit to Space.
+
+Do not give a listed source a Fit to Space of its own as well. Off screen, Scene Fit (and Fit to Space) look at
+their sources only four times a second and put everything right the moment the scene comes on. A Multiview or
+a projector counts as on screen.
 <!-- ==== end scene-filters:fit (Scene Fit) ==== -->
 
 #### Scene Standby

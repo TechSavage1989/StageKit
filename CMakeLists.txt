@@ -147,6 +147,8 @@ target_sources(
     # ==== scene-filters:fit ====
     src/placement/fit-engine.cpp
     src/placement/fit-engine.hpp
+    src/placement/scene-fit.cpp
+    src/placement/scene-fit.hpp
     # ==== end scene-filters:fit ====
     # ==== scene-filters:standby-corners ====
     # ==== end scene-filters:standby-corners ====
