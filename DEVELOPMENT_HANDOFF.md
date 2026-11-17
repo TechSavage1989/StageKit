@@ -2173,3 +2173,15 @@ xvfb-run -a /tmp/loadcheck build-tests/stagekit.so data <rebuilt.json> "<scene t
 
   On Linux the capture, browser and text sources are missing plugins, so it proves the file loads and
   the StageKit filters are created, not that the picture is right.
+
+## Scene filters: groundwork (0.1.0-beta155, in progress on `feat/scene-filters`)
+
+The shared pieces the six scene filters build on, with no change of behaviour: their ids
+(`src/common/scene-filter-ids.hpp`) and Morph's `draws_nothing` for the five that draw nothing,
+`morph_accept_drawing_filter`; `kOwnSettings` by the last `|` part, plus `mode_now`, `mode_before`,
+`managed`, `managed_by`; PickList `title_text` and `pick_list_on_change_for` (called after the plugin-wide
+callback); `item_transitions_owner` asked per item; `holds-hidden.*` (`mode_holds_hidden`,
+`mode_settling`, Link Visibility registered); `go-to-scene.*` moved out of Show in Scenes with `stay_in`;
+`filter-order.hpp`, `stand-in.hpp`, `is_screen_capture`; the `==== scene-filters:<unit> ====` blocks in
+plugin-main, CMake, the locale file, the tests, the README and AGENTS; `tests/run-tests.sh` stops on a
+repeated locale key and on a failed build. Whole suite: ALL PASSED.

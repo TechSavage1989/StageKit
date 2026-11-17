@@ -28,6 +28,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "morph-paint.hpp"
 #include "../common/easing.hpp"
 #include "../common/pick-list.hpp"
+#include "../common/scene-filter-ids.hpp"
 #include "../common/scene-util.hpp"
 #include "../common/timing.hpp"
 #include "../placement/fit-item.hpp"
@@ -82,6 +83,16 @@ bool draws_nothing(obs_source_t *filter)
 	return false;
 }
 
+// A drawing filter Morph still takes a scene apart with (Scene Shadow, once
+// it says so through morph_accept_drawing_filter). Empty until then.
+std::atomic<bool (*)(obs_source_t *)> g_accepts{nullptr};
+
+bool accepted(obs_source_t *filter)
+{
+	auto accepts = g_accepts.load();
+	return accepts && accepts(filter);
+}
+
 // Whether a scene can be drawn item by item and look as it does drawn whole:
 // it must be a scene (not a group), with no filter that draws. `why` gets
 // the name of the filter in the way, if that is what it is.
@@ -93,7 +104,7 @@ bool plain_scene(obs_source_t *source, const char **why = nullptr)
 	obs_source_enum_filters(
 		source,
 		[](obs_source_t *, obs_source_t *filter, void *param) {
-			if (obs_source_enabled(filter) && !draws_nothing(filter))
+			if (obs_source_enabled(filter) && !draws_nothing(filter) && !accepted(filter))
 				*static_cast<const char **>(param) = obs_source_get_name(filter);
 		},
 		&in_the_way);
@@ -825,6 +836,11 @@ void get_defaults(obs_data_t *settings)
 }
 
 } // namespace
+
+void morph_accept_drawing_filter(bool (*accepts)(obs_source_t *filter))
+{
+	g_accepts.store(accepts);
+}
 
 void register_morph()
 {

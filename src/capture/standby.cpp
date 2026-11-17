@@ -26,10 +26,12 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/timing.hpp"
 
 #include "../common/easing.hpp"
+#include "../common/filter-order.hpp"
+#include "../common/holds-hidden.hpp"
 #include "../common/item-transition.hpp"
 #include "../common/loading.hpp"
+#include "../common/stand-in.hpp"
 #include "../common/start-image.hpp"
-#include "../placement/visibility-link.hpp"
 #include "../frame/auto-frame.hpp"
 #include "../transition/morph-paint.hpp"
 #include "../transition/morph.hpp"
@@ -73,43 +75,6 @@ enum class Picture : int {
 	Source = 2,
 };
 
-// Where a filter comes in the order its source applies them, or -1.
-int applied_index(obs_source_t *parent, obs_source_t *filter)
-{
-	struct Find {
-		obs_source_t *wanted;
-		int at, found;
-	} find{filter, 0, -1};
-	obs_source_enum_filters(
-		parent,
-		[](obs_source_t *, obs_source_t *f, void *param) {
-			auto *x = static_cast<Find *>(param);
-			if (f == x->wanted)
-				x->found = x->at;
-			x->at++;
-		},
-		&find);
-	return find.found;
-}
-
-obs_source_t *filter_of_kind(obs_source_t *parent, const char *id)
-{
-	struct Find {
-		const char *id;
-		obs_source_t *found;
-	} find{id, nullptr};
-	obs_source_enum_filters(
-		parent,
-		[](obs_source_t *, obs_source_t *f, void *param) {
-			auto *x = static_cast<Find *>(param);
-			const char *fid = obs_source_get_unversioned_id(f);
-			if (!x->found && fid && strcmp(fid, x->id) == 0)
-				x->found = f;
-		},
-		&find);
-	return find.found;
-}
-
 bool is_video_file(const std::string &path)
 {
 	const size_t dot = path.rfind('.');
@@ -150,9 +115,8 @@ uint32_t before_height(obs_source_t *filter)
 // picture gets the source's size and every filter after this one, its shadow
 // and corners included.
 thread_local bool t_stand_in = false;
-constexpr const char *kStandInId = "stagekit_stand_in";
-// On a stand-in's scene item: the id of the item it stands in for.
-constexpr const char *kStandInFor = "stagekit_stand_in_for";
+// The stand-in's kind and the key naming its item's item (kStandInId,
+// kStandInFor) are in stand-in.hpp, for the scene filters.
 
 // The sources a Standby filter stands in for while they are hidden: their
 // items' transitions are that filter's to set (see `item_transitions_owner`).
@@ -360,7 +324,7 @@ public:
 		// Auto Frame, so the picture fills the frame, and otherwise first, so
 		// corners, shadows and the rest are put on the picture too.
 		if (!placed) {
-			obs_source_t *frame = filter_of_kind(parent, kAutoFrameId);
+			obs_source_t *frame = first_filter_of_kind(parent, kAutoFrameId);
 			for (int i = 0; i < 32; i++) {
 				const int mine = applied_index(parent, source_);
 				const int wanted = frame ? applied_index(parent, frame) + 1 : 0;
@@ -382,7 +346,7 @@ public:
 		order_check_ += seconds;
 		if (order_check_ >= 0.5) {
 			order_check_ = 0.0;
-			if (obs_source_t *frame = filter_of_kind(parent, kAutoFrameId)) {
+			if (obs_source_t *frame = first_filter_of_kind(parent, kAutoFrameId)) {
 				for (int i = 0; i < 32; i++) {
 					const int mine = applied_index(parent, source_);
 					if (mine < 0 || mine > applied_index(parent, frame))
@@ -1129,7 +1093,7 @@ private:
 	// its standby image stood in its place in every other mode.
 	static bool stands_in(obs_source_t *scene, obs_sceneitem_t *item)
 	{
-		return !obs_sceneitem_visible(item) && !link_visibility_holds_hidden(scene, item);
+		return !obs_sceneitem_visible(item) && !mode_holds_hidden(scene, item);
 	}
 
 	struct Held {
@@ -1421,7 +1385,10 @@ void register_standby()
 	};
 	register_timed(&stand_in);
 	// Their items' transitions are the Standby filter's to set.
-	item_transitions_owner([](obs_source_t *source) {
+	// Every item of a source stood in for is the Standby filter's, in
+	// every scene.
+	item_transitions_owner([](obs_sceneitem_t *item) {
+		obs_source_t *source = obs_sceneitem_get_source(item);
 		std::lock_guard lock(g_stood_in_mutex);
 		return g_stood_in.count(source) > 0;
 	});

@@ -17,22 +17,24 @@ the Free Software Foundation; either version 2 of the License, or
 #include <obs-module.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cstring>
 #include <vector>
 
 namespace stagekit {
 
 namespace {
-bool (*g_owns)(obs_source_t *) = nullptr;
+std::atomic<bool (*)(obs_sceneitem_t *)> g_owns{nullptr};
 bool owned(obs_sceneitem_t *item)
 {
-	return item && g_owns && g_owns(obs_sceneitem_get_source(item));
+	auto owns = g_owns.load();
+	return item && owns && owns(item);
 }
 } // namespace
 
-void item_transitions_owner(bool (*owns)(obs_source_t *source))
+void item_transitions_owner(bool (*owns)(obs_sceneitem_t *item))
 {
-	g_owns = owns;
+	g_owns.store(owns);
 }
 
 void set_item_transitions(obs_sceneitem_t *item, const std::string &kind, uint32_t ms)

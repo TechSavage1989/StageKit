@@ -168,6 +168,22 @@ inline bool is_capture_source(obs_source_t *source)
 	return false;
 }
 
+// Whether a source is a capture of a whole screen (a display), as opposed to
+// a game, a window or a camera.
+inline bool is_screen_capture(obs_source_t *source)
+{
+	static const char *const kScreenIds[] = {
+		"monitor_capture", "xshm_input", "pipewire-desktop-capture-source", "screen_capture", "display_capture",
+	};
+	const char *id = source ? obs_source_get_unversioned_id(source) : nullptr;
+	if (!id)
+		return false;
+	for (const char *screen : kScreenIds)
+		if (strcmp(id, screen) == 0)
+			return true;
+	return false;
+}
+
 // The names of the items in a scene, including the items inside its groups.
 inline void scene_item_names(obs_source_t *scene_source, std::vector<std::string> &names)
 {

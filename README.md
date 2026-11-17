@@ -1090,6 +1090,41 @@ A transition for single items and for scenes: **Fade and Zoom (StageKit)**.
 - **Smallest size**: how small the image is when it is all but gone (80 % as it comes; 100 % is a
   plain fade). **Easing**: the same curves as everywhere else.
 
+### Scene filters
+
+A scene filter sits on a scene, not on a source, and looks after the scene's sources together: one filter in
+place of one per source. Add one from the scene's own Filters window (right-click the scene, *Filters*).
+
+#### Scene Modes
+
+<!-- ==== scene-filters:modes (Scene Modes) ==== -->
+<!-- ==== end scene-filters:modes (Scene Modes) ==== -->
+
+#### Scene Transitions
+
+<!-- ==== scene-filters:transitions (Scene Transitions) ==== -->
+<!-- ==== end scene-filters:transitions (Scene Transitions) ==== -->
+
+#### Scene Fit
+
+<!-- ==== scene-filters:fit (Scene Fit) ==== -->
+<!-- ==== end scene-filters:fit (Scene Fit) ==== -->
+
+#### Scene Standby
+
+<!-- ==== scene-filters:standby-corners (Scene Standby) ==== -->
+<!-- ==== end scene-filters:standby-corners (Scene Standby) ==== -->
+
+#### Scene Corners
+
+<!-- ==== scene-filters:standby-corners (Scene Corners) ==== -->
+<!-- ==== end scene-filters:standby-corners (Scene Corners) ==== -->
+
+#### Scene Shadow
+
+<!-- ==== scene-filters:shadow (Scene Shadow) ==== -->
+<!-- ==== end scene-filters:shadow (Scene Shadow) ==== -->
+
 ### Remote control
 
 With obs-websocket, send `CallVendorRequest` with `vendorName: "StageKit"`:

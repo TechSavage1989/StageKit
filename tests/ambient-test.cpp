@@ -278,6 +278,9 @@ int main(int argc, char **argv)
 	obs_source_t *live = obs_source_create("image_source", "Live Capture", ls, nullptr);
 	obs_data_release(ls);
 
+	// ==== scene-filters:perf ====
+	// ==== end scene-filters:perf ====
+
 	// ---------------------------------------------------- morph transition
 	{
 		printf("\n[morph transition]\n");
@@ -7292,6 +7295,15 @@ int main(int argc, char **argv)
 		obs_scene_release(scene);
 	}
 
+	// ==== scene-filters:modes ====
+	// ==== end scene-filters:modes ====
+	// ==== scene-filters:transitions ====
+	// ==== end scene-filters:transitions ====
+	// ==== scene-filters:standby-corners ====
+	// ==== end scene-filters:standby-corners ====
+	// ==== scene-filters:shadow ====
+	// ==== end scene-filters:shadow ====
+
 	// ------------------------------------------------------------ auto frame
 	{
 		printf("\n[auto frame]\n");
@@ -10744,6 +10756,9 @@ int main(int argc, char **argv)
 		obs_scene_release(scene);
 	}
 
+	// ==== scene-filters:fit ====
+	// ==== end scene-filters:fit ====
+
 	{
 		// One scene with two modes, each a leader with its extras, and a
 		// camera switch that acts in every scene: Link Visibility's "Follow
@@ -11707,6 +11722,9 @@ int main(int argc, char **argv)
 			obs_source_release(before_out);
 		}
 	}
+
+	// ==== scene-filters:sound ====
+	// ==== end scene-filters:sound ====
 
 	obs_source_dec_showing(bg);
 	obs_data_release(s);

@@ -87,8 +87,9 @@ notice and the confirmation are what there is. This is recorded in the handoff.
 | `src/shape/` | Corners & Edges filter (rounds, cuts, notches or scoops corners; trims, softens and outlines edges; never changes the source's size) |
 | `src/view/` | Cropped View source (part of another source as a source, so filters follow the crop) |
 | `src/placement/` | Scene filters: Move Scene Item, Show/Hide Animation, Link Visibility, Match Item, Layout, Fit to Space (keeps one item fitted in a box, filling it or floating centred by shape); Move Source, Move Scene Item's code as a filter on the source it moves; and Show in Scenes (`show-in-scenes.*`), a filter on any source that is a switch for showing and hiding sources across scenes |
+| `src/placement/scene-*`, `src/look/` | The scene filters: Scene Modes, Scene Transitions, Scene Fit, Scene Standby, Scene Corners and Scene Shadow, each a filter on a scene that looks after its sources together. Each one's files are listed in its entry at the end of *Things that will bite you* |
 | `src/dock/` | `window-layout.*` keeps OBS's window layout. One dock (Qt widgets, no `Q_OBJECT`): StageKit follows the item selected in OBS and drives Move Source filters on that item's source; its Standby & Ambient tab (`BackgroundDock`, `pageBackground`; a dock of its own up to beta151, called Background in beta152) holds the start image thumbnail. `arrange-tools.*` is the one set of line-up actions and options behind the dock, the hotkeys and the preview's right-click menu |
-| `src/common/` | Shared helpers: `timing` (registers every kind and logs what is slow), easing and `Tween`, `SwitchRamp`, `KawaseBlur`, scene utilities, `item-transition` (the *Change with* control for filters that show and hide items), and the start image (global path + Start Image source) |
+| `src/common/` | Shared helpers: `timing` (registers every kind and logs what is slow), easing and `Tween`, `SwitchRamp`, `KawaseBlur`, scene utilities, `item-transition` (the *Change with* control for filters that show and hide items), and the start image (global path + Start Image source). For the scene filters: `scene-filter-ids.hpp` (their ids), `holds-hidden` (is an item held hidden by a mode not showing), `go-to-scene` (*Switch to scene*), `filter-order.hpp` (`applied_index`, `first_filter`, `first_filter_of_kind`), `stand-in.hpp` (a Standby twin and the item it stands for) |
 | `src/frame/` | Auto Frame filter and the Aspect Ratio Preset filter |
 | `src/capture/` | Auto Capture filter (aims a Game Capture at the game in front), Program Trigger filter (shows items and switches filters while a program is open) and Show Source in Use scene filter (shows the one of several captures whose app is in use). Capture App in Use (`app-capture.*`), a filter on one Window Capture that aims it at whichever of several listed apps is in use. All use the Win32 window list in `auto-capture.cpp`; compiled but idle elsewhere. Also Standby Picture (`standby.*`), a filter that shows a picture in a capture's place while it has nothing; it works everywhere |
 | `src/api/` | obs-websocket vendor requests (`StageKit` vendor) |
@@ -438,7 +439,8 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   ("Source Cleanup Error"). A filter must never keep a reference to an item of its own source
   past one call. The tests can say a collection is changing (`stagekit_test_loaded`, a global
   proc). And while it is ticked
-  nothing else sets those items' transitions: `item_transitions_owner` (`g_stood_in`) makes
+  nothing else sets those items' transitions: `item_transitions_owner` (`g_stood_in`; asked per
+  item since the scene filters' groundwork, so an owner can own an item in one scene only) makes
   `set_item_transitions` and `apply_item_change` pass them over. A new filter that sets item
   transitions must go through those two calls. Seen in the tests with a fade and by the
   transitions set; a Morph between the two on screen has not been looked at on Windows.
@@ -567,10 +569,12 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   hidden, the same rule as `apply()`, bring-along items counted), or hidden with it. While the
   leader is hidden, every tick, a listed item shown by anything else is hidden again. A change to
   another item moves nothing; changes from *Also in other scenes* are not followed in this mode,
-  only the leader's state is sent there. Show in Scenes asks `link_visibility_holds_hidden` (every
+  only the leader's state is sent there. Show in Scenes asks `mode_holds_hidden`
+  (`src/common/holds-hidden.*`, which asks every registered kind; this one registers
+  `link_visibility_holds_hidden`: every
   enabled mode-2 link of that scene that lists the source after its first entry has its leader
   hidden) and passes over such an item when showing, never when hiding, and leaves it out of
-  *Follow what is shown*; `link_visibility_settling` (a leader not yet followed) makes that look
+  *Follow what is shown*; `mode_settling` (here `link_visibility_settling`: a leader not yet followed) makes that look
   wait, or a camera switch read off for the tick between a mode change and its extras. Both
   filters keep a registry of live instances (`g_links`, `g_switches`) and copy what they need out
   under it: no lock is held while the other filter is asked, which both do from their ticks.
@@ -806,8 +810,9 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     `for_change` gives the settings for the change going on (`active_`), the most exact rule
     first. Style 1 is a cross-fade, 2 a cut. The owner: "specific overrides for transitions for
     specific scenes transitioning between specific scenes". The duration is OBS's and is not
-    overridden. `pick_list_on_change` has one slot for the whole plugin and is Show in Scenes':
-    do not take it for a second rebuilt-in-place control.
+    overridden. `pick_list_on_change` has one slot for the whole plugin and is the fuller
+    *Change with*'s: do not take it for a second rebuilt-in-place control; a kind that needs
+    one registers `pick_list_on_change_for(<its id>, ...)`, called after it.
   - An item's place is worked out by Morph, not by OBS, while it draws (`look`): OBS does it when
     a scene is drawn, from the size the source has then, and neither scene is drawn during a
     morph. `look` does it when an item is first met and again whenever its source changes size.
@@ -1357,6 +1362,41 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   that in the Filters window, on a standard display with HDR off, for Shadow, Glow & Outline and
   Auto Frame, the two that lacked the flag. The tests draw each filter onto such a surface
   (`render_shown`); add a new filter to that list.
+- **The scene filters share a groundwork; use it, do not copy it.** Their ids are in
+  `src/common/scene-filter-ids.hpp`, so Morph (`draws_nothing`, which lists the five that draw
+  nothing) and the copy tools never wait for a filter's own files. A drawing scene filter Morph
+  should still take apart says so with `morph_accept_drawing_filter`. `kOwnSettings` goes by the
+  last `|`-separated part of a setting's name (`fit|Cam|anchor_x` is `anchor_x`), and lists
+  `mode_now`, `mode_before`, `managed` and `managed_by`. A PickList's heading can be made at run
+  time (`title_text`). `pick_list_on_change` stays the fuller *Change with*'s, rebuilt into it
+  each time a window is built; a kind's own callback is `pick_list_on_change_for`, called after
+  it. `item_transitions_owner` is asked per item. Whether a mode not showing holds an item hidden
+  is `mode_holds_hidden` / `mode_settling` (`holds_hidden_register` adds a kind's answers; Link
+  Visibility's are there); Show in Scenes and Standby ask it. *Switch to scene* is
+  `go_to_scene` (`src/common/go-to-scene.*`, with `stay_in`; Show in Scenes passes none), and its
+  test procs are added by `go_to_scene_add_test_calls`. Each scene filter has a block of its own,
+  between `==== scene-filters:<unit> ====` and `==== end scene-filters:<unit> ====` lines, in
+  `src/plugin-main.cpp` (includes and registration), `CMakeLists.txt`, `data/locale/en-US.ini`,
+  `tests/ambient-test.cpp`, `README.md` and here; write only inside your own. `tests/run-tests.sh`
+  stops on a locale key used twice and on a failed build.
+<!-- ==== scene-filters:modes ==== -->
+- **Scene Modes**: to come.
+<!-- ==== end scene-filters:modes ==== -->
+<!-- ==== scene-filters:transitions ==== -->
+- **Scene Transitions**: to come.
+<!-- ==== end scene-filters:transitions ==== -->
+<!-- ==== scene-filters:fit ==== -->
+- **Scene Fit**: to come.
+<!-- ==== end scene-filters:fit ==== -->
+<!-- ==== scene-filters:standby-corners ==== -->
+- **Scene Standby and Scene Corners**: to come.
+<!-- ==== end scene-filters:standby-corners ==== -->
+<!-- ==== scene-filters:shadow ==== -->
+- **Scene Shadow**: to come.
+<!-- ==== end scene-filters:shadow ==== -->
+<!-- ==== scene-filters:perf ==== -->
+- **Frame time**: to come.
+<!-- ==== end scene-filters:perf ==== -->
 
 ## Conventions
 

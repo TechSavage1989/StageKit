@@ -13,6 +13,8 @@ the Free Software Foundation; either version 2 of the License, or
 #include <obs-module.h>
 
 #include <algorithm>
+#include <map>
+#include <mutex>
 #include <cstdlib>
 
 namespace stagekit {
@@ -59,7 +61,32 @@ std::string trimmed(const std::string &text)
 
 bool remove_row(obs_properties_t *top, obs_property_t *property, void *data);
 
-void (*g_changed)(obs_properties_t *top, obs_source_t *owner, obs_data_t *settings) = nullptr;
+using Changed = void (*)(obs_properties_t *top, obs_source_t *owner, obs_data_t *settings);
+
+Changed g_changed = nullptr;
+
+std::mutex g_kinds_lock;
+std::map<std::string, Changed> g_kinds;
+
+// Tells whoever wants to know that a list of `owner`'s has changed: the
+// plugin-wide callback first, then the one for the owner's kind.
+void changed(obs_properties_t *top, obs_source_t *owner, obs_data_t *settings)
+{
+	if (g_changed)
+		g_changed(top, owner, settings);
+	const char *kind = owner ? obs_source_get_unversioned_id(owner) : nullptr;
+	if (!kind)
+		return;
+	Changed own = nullptr;
+	{
+		std::lock_guard<std::mutex> hold(g_kinds_lock);
+		auto found = g_kinds.find(kind);
+		if (found != g_kinds.end())
+			own = found->second;
+	}
+	if (own)
+		own(top, owner, settings);
+}
 
 // Puts one row per entry under the heading, replacing whatever rows were there.
 void build_rows(obs_properties_t *top, obs_source_t *owner, obs_data_t *settings, const char *setting, bool as_text)
@@ -109,8 +136,7 @@ bool remove_row(obs_properties_t *top, obs_property_t *property, void *data)
 		obs_source_update(owner, settings);
 	}
 	build_rows(top, owner, settings, which.setting.c_str(), which.as_text);
-	if (g_changed)
-		g_changed(top, owner, settings);
+	changed(top, owner, settings);
 	obs_data_release(settings);
 	return true;
 }
@@ -131,16 +157,27 @@ bool picked(void *priv, obs_properties_t *top, obs_property_t *property, obs_dat
 	}
 	obs_data_set_string(settings, pick_name.c_str(), "");
 	build_rows(top, owner, settings, which.setting.c_str(), which.as_text);
-	if (g_changed)
-		g_changed(top, owner, settings);
+	changed(top, owner, settings);
 	return true;
 }
 
 } // namespace
 
-void pick_list_on_change(void (*changed)(obs_properties_t *top, obs_source_t *owner, obs_data_t *settings))
+void pick_list_on_change(void (*on_change)(obs_properties_t *top, obs_source_t *owner, obs_data_t *settings))
 {
-	g_changed = changed;
+	g_changed = on_change;
+}
+
+void pick_list_on_change_for(const char *kind,
+			     void (*on_change)(obs_properties_t *top, obs_source_t *owner, obs_data_t *settings))
+{
+	if (!kind)
+		return;
+	std::lock_guard<std::mutex> hold(g_kinds_lock);
+	if (on_change)
+		g_kinds[kind] = on_change;
+	else
+		g_kinds.erase(kind);
 }
 
 std::vector<std::string> pick_list_read(obs_data_t *settings, const char *setting, bool as_text)
@@ -222,7 +259,8 @@ void pick_list_add(obs_properties_t *props, obs_source_t *owner, const PickList 
 			obs_data_set_string(settings, pick_name.c_str(), "");
 	}
 	obs_properties_add_group(props, name_of(list.setting, list.as_text, "list").c_str(),
-				 obs_module_text(list.title), OBS_GROUP_NORMAL, content);
+				 list.title_text.empty() ? obs_module_text(list.title) : list.title_text.c_str(),
+				 OBS_GROUP_NORMAL, content);
 	if (settings) {
 		build_rows(props, owner, settings, list.setting, list.as_text);
 		obs_data_release(settings);

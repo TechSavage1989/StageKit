@@ -46,6 +46,18 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "transition/morph.hpp"
 #include "view/cropped-view.hpp"
 #include "zoom/ramp-zoom.hpp"
+// ==== scene-filters:modes ====
+// ==== end scene-filters:modes ====
+// ==== scene-filters:transitions ====
+// ==== end scene-filters:transitions ====
+// ==== scene-filters:fit ====
+// ==== end scene-filters:fit ====
+// ==== scene-filters:standby-corners ====
+// ==== end scene-filters:standby-corners ====
+// ==== scene-filters:shadow ====
+// ==== end scene-filters:shadow ====
+// ==== scene-filters:perf ====
+// ==== end scene-filters:perf ====
 
 OBS_DECLARE_MODULE()
 OBS_MODULE_USE_DEFAULT_LOCALE(PLUGIN_NAME, "en-US")
@@ -127,6 +139,18 @@ bool obs_module_load(void)
 	stagekit::register_morph();
 	stagekit::register_item_morph();
 	stagekit::register_fade_zoom();
+	// ==== scene-filters:modes ====
+	// ==== end scene-filters:modes ====
+	// ==== scene-filters:transitions ====
+	// ==== end scene-filters:transitions ====
+	// ==== scene-filters:fit ====
+	// ==== end scene-filters:fit ====
+	// ==== scene-filters:standby-corners ====
+	// ==== end scene-filters:standby-corners ====
+	// ==== scene-filters:shadow ====
+	// ==== end scene-filters:shadow ====
+	// ==== scene-filters:perf ====
+	// ==== end scene-filters:perf ====
 	// A change from one item to another that is under way ends before OBS
 	// takes its scenes apart.
 	obs_frontend_add_event_callback(

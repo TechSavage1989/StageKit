@@ -17,6 +17,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "corners.hpp"
 #include "../common/timing.hpp"
 
+#include "../common/filter-order.hpp"
 #include "../common/shown-scale.hpp"
 #include "../frame/auto-frame.hpp"
 #include "../shadow/shadow-backdrop.hpp"
@@ -49,44 +50,6 @@ struct Settings {
 	double border_opacity = 1.0;
 	bool screen_px = true;
 };
-
-// Where a filter comes in the order its source applies them, or -1.
-int applied_index(obs_source_t *parent, obs_source_t *filter)
-{
-	struct Find {
-		obs_source_t *wanted;
-		int at, found;
-	} find{filter, 0, -1};
-	obs_source_enum_filters(
-		parent,
-		[](obs_source_t *, obs_source_t *f, void *param) {
-			auto *x = static_cast<Find *>(param);
-			if (f == x->wanted)
-				x->found = x->at;
-			x->at++;
-		},
-		&find);
-	return find.found;
-}
-
-// The first enabled filter of a kind on a source, in applied order. Not a new reference.
-obs_source_t *first_filter(obs_source_t *parent, const char *id)
-{
-	struct Find {
-		const char *id;
-		obs_source_t *found;
-	} find{id, nullptr};
-	obs_source_enum_filters(
-		parent,
-		[](obs_source_t *, obs_source_t *f, void *param) {
-			auto *x = static_cast<Find *>(param);
-			const char *fid = obs_source_get_unversioned_id(f);
-			if (!x->found && fid && strcmp(fid, x->id) == 0 && obs_source_enabled(f))
-				x->found = f;
-		},
-		&find);
-	return find.found;
-}
 
 class Corners {
 public:

@@ -133,6 +133,25 @@ target_sources(
     src/blur/ramp-blur.hpp
     src/api/vendor-api.cpp
     src/api/vendor-api.hpp
+    src/common/filter-order.hpp
+    src/common/go-to-scene.cpp
+    src/common/go-to-scene.hpp
+    src/common/holds-hidden.cpp
+    src/common/holds-hidden.hpp
+    src/common/scene-filter-ids.hpp
+    src/common/stand-in.hpp
+    # ==== scene-filters:modes ====
+    # ==== end scene-filters:modes ====
+    # ==== scene-filters:transitions ====
+    # ==== end scene-filters:transitions ====
+    # ==== scene-filters:fit ====
+    # ==== end scene-filters:fit ====
+    # ==== scene-filters:standby-corners ====
+    # ==== end scene-filters:standby-corners ====
+    # ==== scene-filters:shadow ====
+    # ==== end scene-filters:shadow ====
+    # ==== scene-filters:perf ====
+    # ==== end scene-filters:perf ====
     src/third-party/obs-websocket-api.h
 )
 

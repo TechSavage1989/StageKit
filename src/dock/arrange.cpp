@@ -1199,7 +1199,34 @@ const char *const kOwnSettings[] = {
 	"learned",        "last_width",      "last_height",      "rule_program",
 	"rule_browse",    "force_ratio",     "force_until_gone", "orig_item",
 	"orig_k",         "share_scenes",    "keep_item",        "keep_k",
+	"mode_now",       "mode_before",     "managed",          "managed_by",
 };
+
+// Whether a setting is one of those. A setting kept per source or per mode
+// ("fit|Cam|anchor_x") goes by the last part of its name.
+bool own_setting(const char *name)
+{
+	if (!name)
+		return false;
+	const char *bar = std::strrchr(name, '|');
+	const char *last = bar ? bar + 1 : name;
+	for (const char *keep : kOwnSettings)
+		if (std::strcmp(last, keep) == 0)
+			return true;
+	return false;
+}
+
+// The names of the settings in `data` that are a source's own.
+std::vector<std::string> own_names(obs_data_t *data)
+{
+	std::vector<std::string> names;
+	for (obs_data_item_t *item = obs_data_first(data); item; obs_data_item_next(&item)) {
+		const char *name = obs_data_item_get_name(item);
+		if (own_setting(name))
+			names.emplace_back(name);
+	}
+	return names;
+}
 
 // Copies one setting, whatever it holds, by way of its JSON.
 void keep_setting(obs_data_t *into, obs_data_t *from, const char *name)
@@ -1290,8 +1317,11 @@ int copy_filter_settings(obs_source_t *from, const char *filter_name, const std:
 			obs_data_t *merged = obs_data_create();
 			obs_data_apply(merged, w->settings);
 			obs_data_t *own = obs_source_get_settings(one);
-			for (const char *keep : kOwnSettings)
-				keep_setting(merged, own, keep);
+			std::vector<std::string> keep = own_names(merged);
+			for (std::string &name : own_names(own))
+				keep.push_back(std::move(name));
+			for (const std::string &name : keep)
+				keep_setting(merged, own, name.c_str());
 			obs_data_release(own);
 			obs_source_reset_settings(one, merged);
 			obs_data_release(merged);
@@ -1307,8 +1337,8 @@ int copy_filter_settings(obs_source_t *from, const char *filter_name, const std:
 		    (obs_source_get_output_flags(target) & needs) == needs) {
 			obs_data_t *fresh = obs_data_create();
 			obs_data_apply(fresh, w->settings);
-			for (const char *keep : kOwnSettings)
-				obs_data_erase(fresh, keep);
+			for (const std::string &name : own_names(fresh))
+				obs_data_erase(fresh, name.c_str());
 			obs_source_t *made = obs_source_create(w->kind.c_str(), w->name.c_str(), fresh, nullptr);
 			obs_data_release(fresh);
 			if (made) {

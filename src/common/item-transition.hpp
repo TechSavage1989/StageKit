@@ -96,13 +96,15 @@ ItemChange item_change_read(obs_data_t *settings, const char *source = nullptr);
 // the item lies in it.
 void apply_item_change(obs_sceneitem_t *item, const ItemChange &change, obs_source_t *scene = nullptr);
 
-// Some sources have their items' transitions set for them by one filter of
-// their own (a Standby filter standing in for the source while it is hidden:
-// the source's way out and its stand-in's way in are one change). `owns` says
-// which; for those, `set_item_transitions` and `apply_item_change` leave the
-// item alone, so that whatever hides the item (Show in Scenes, a switcher)
-// does it that filter's way. The owner itself sets them with this.
-void item_transitions_owner(bool (*owns)(obs_source_t *source));
+// Some items have their transitions set for them by one filter of their
+// source's own (a Standby filter standing in for the source while it is
+// hidden: the source's way out and its stand-in's way in are one change).
+// `owns` says which, item by item, so a filter can own a source's item in one
+// scene and not in another; for those, `set_item_transitions` and
+// `apply_item_change` leave the item alone, so that whatever hides the item
+// (Show in Scenes, a switcher) does it that filter's way. The owner itself
+// sets them with this. One for the whole plugin.
+void item_transitions_owner(bool (*owns)(obs_sceneitem_t *item));
 void apply_item_change_as_owner(obs_sceneitem_t *item, const ItemChange &change, obs_source_t *scene = nullptr);
 
 // Adds the control. `list_setting` names the PickList of sources the filter
