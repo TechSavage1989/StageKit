@@ -1974,6 +1974,286 @@
 			"label": "plain tool",
 			"on": "options/plain-tool",
 			"off": "options/plain-tool"
+		},
+		{
+			"id": "options/type-game",
+			"group": "source types",
+			"label": "game",
+			"on": "options/type-game-on",
+			"off": "options/type-game-off"
+		},
+		{
+			"id": "options/type-window",
+			"group": "source types",
+			"label": "window",
+			"on": "options/type-window-on",
+			"off": "options/type-window-off"
+		},
+		{
+			"id": "options/type-art-app",
+			"group": "source types",
+			"label": "art app",
+			"on": "options/type-art-app-on",
+			"off": "options/type-art-app-off"
+		},
+		{
+			"id": "options/type-code-editor",
+			"group": "source types",
+			"label": "code editor",
+			"on": "options/type-code-editor-on",
+			"off": "options/type-code-editor-off"
+		},
+		{
+			"id": "options/type-browser",
+			"group": "source types",
+			"label": "browser",
+			"on": "options/type-browser-on",
+			"off": "options/type-browser-off"
+		},
+		{
+			"id": "options/type-camera",
+			"group": "source types",
+			"label": "camera",
+			"on": "options/type-camera-on",
+			"off": "options/type-camera-off"
+		},
+		{
+			"id": "options/type-capture-card",
+			"group": "source types",
+			"label": "capture card",
+			"on": "options/type-capture-card-on",
+			"off": "options/type-capture-card-off"
+		},
+		{
+			"id": "options/type-display",
+			"group": "source types",
+			"label": "display",
+			"on": "options/type-display-on",
+			"off": "options/type-display-off"
+		},
+		{
+			"id": "options/type-phone",
+			"group": "source types",
+			"label": "phone",
+			"on": "options/type-phone-on",
+			"off": "options/type-phone-off"
+		},
+		{
+			"id": "options/type-tablet",
+			"group": "source types",
+			"label": "tablet",
+			"on": "options/type-tablet-on",
+			"off": "options/type-tablet-off"
+		},
+		{
+			"id": "options/type-chat",
+			"group": "source types",
+			"label": "chat",
+			"on": "options/type-chat-on",
+			"off": "options/type-chat-off"
+		},
+		{
+			"id": "options/type-music",
+			"group": "source types",
+			"label": "music",
+			"on": "options/type-music-on",
+			"off": "options/type-music-off"
+		},
+		{
+			"id": "options/type-alerts",
+			"group": "source types",
+			"label": "alerts",
+			"on": "options/type-alerts-on",
+			"off": "options/type-alerts-off"
+		},
+		{
+			"id": "options/type-title",
+			"group": "source types",
+			"label": "title",
+			"on": "options/type-title-on",
+			"off": "options/type-title-off"
+		},
+		{
+			"id": "options/type-image",
+			"group": "source types",
+			"label": "image",
+			"on": "options/type-image-on",
+			"off": "options/type-image-off"
+		},
+		{
+			"id": "options/type-video",
+			"group": "source types",
+			"label": "video",
+			"on": "options/type-video-on",
+			"off": "options/type-video-off"
+		},
+		{
+			"id": "options/hook-type-game",
+			"group": "capture by type",
+			"label": "game",
+			"on": "options/hook-type-game",
+			"off": "options/hook-type-game"
+		},
+		{
+			"id": "options/hook-type-window",
+			"group": "capture by type",
+			"label": "window",
+			"on": "options/hook-type-window",
+			"off": "options/hook-type-window"
+		},
+		{
+			"id": "options/hook-type-art-app",
+			"group": "capture by type",
+			"label": "art app",
+			"on": "options/hook-type-art-app",
+			"off": "options/hook-type-art-app"
+		},
+		{
+			"id": "options/hook-type-code-editor",
+			"group": "capture by type",
+			"label": "code editor",
+			"on": "options/hook-type-code-editor",
+			"off": "options/hook-type-code-editor"
+		},
+		{
+			"id": "options/hook-type-browser",
+			"group": "capture by type",
+			"label": "browser",
+			"on": "options/hook-type-browser",
+			"off": "options/hook-type-browser"
+		},
+		{
+			"id": "options/hook-type-camera",
+			"group": "capture by type",
+			"label": "camera",
+			"on": "options/hook-type-camera",
+			"off": "options/hook-type-camera"
+		},
+		{
+			"id": "options/hook-type-capture-card",
+			"group": "capture by type",
+			"label": "capture card",
+			"on": "options/hook-type-capture-card",
+			"off": "options/hook-type-capture-card"
+		},
+		{
+			"id": "options/hook-type-display",
+			"group": "capture by type",
+			"label": "display",
+			"on": "options/hook-type-display",
+			"off": "options/hook-type-display"
+		},
+		{
+			"id": "options/hook-type-phone",
+			"group": "capture by type",
+			"label": "phone",
+			"on": "options/hook-type-phone",
+			"off": "options/hook-type-phone"
+		},
+		{
+			"id": "options/hook-type-tablet",
+			"group": "capture by type",
+			"label": "tablet",
+			"on": "options/hook-type-tablet",
+			"off": "options/hook-type-tablet"
+		},
+		{
+			"id": "options/hook-type-chat",
+			"group": "capture by type",
+			"label": "chat",
+			"on": "options/hook-type-chat",
+			"off": "options/hook-type-chat"
+		},
+		{
+			"id": "options/hook-type-music",
+			"group": "capture by type",
+			"label": "music",
+			"on": "options/hook-type-music",
+			"off": "options/hook-type-music"
+		},
+		{
+			"id": "options/hook-type-alerts",
+			"group": "capture by type",
+			"label": "alerts",
+			"on": "options/hook-type-alerts",
+			"off": "options/hook-type-alerts"
+		},
+		{
+			"id": "options/hook-type-title",
+			"group": "capture by type",
+			"label": "title",
+			"on": "options/hook-type-title",
+			"off": "options/hook-type-title"
+		},
+		{
+			"id": "options/hook-type-image",
+			"group": "capture by type",
+			"label": "image",
+			"on": "options/hook-type-image",
+			"off": "options/hook-type-image"
+		},
+		{
+			"id": "options/hook-type-video",
+			"group": "capture by type",
+			"label": "video",
+			"on": "options/hook-type-video",
+			"off": "options/hook-type-video"
+		},
+		{
+			"id": "options/hook-type-starting",
+			"group": "capture by type",
+			"label": "starting",
+			"on": "options/hook-type-starting",
+			"off": "options/hook-type-starting"
+		},
+		{
+			"id": "options/hook-type-brb",
+			"group": "capture by type",
+			"label": "brb",
+			"on": "options/hook-type-brb",
+			"off": "options/hook-type-brb"
+		},
+		{
+			"id": "options/hook-type-intermission",
+			"group": "capture by type",
+			"label": "intermission",
+			"on": "options/hook-type-intermission",
+			"off": "options/hook-type-intermission"
+		},
+		{
+			"id": "options/hook-type-ending",
+			"group": "capture by type",
+			"label": "ending",
+			"on": "options/hook-type-ending",
+			"off": "options/hook-type-ending"
+		},
+		{
+			"id": "options/mode",
+			"group": "options",
+			"label": "mode",
+			"on": "options/mode-on",
+			"off": "options/mode-off"
+		},
+		{
+			"id": "options/scene-fit",
+			"group": "options",
+			"label": "scene fit",
+			"on": "options/scene-fit-on",
+			"off": "options/scene-fit-off"
+		},
+		{
+			"id": "options/scene-shadow",
+			"group": "options",
+			"label": "scene shadow",
+			"on": "options/scene-shadow-on",
+			"off": "options/scene-shadow-off"
+		},
+		{
+			"id": "options/scene-corners",
+			"group": "options",
+			"label": "scene corners",
+			"on": "options/scene-corners-on",
+			"off": "options/scene-corners-off"
 		}
 	]
 }

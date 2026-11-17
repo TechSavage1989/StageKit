@@ -192,9 +192,10 @@ test("a filter key's picture fits the source it is on", async () => {
 	assert.equal(sourcePictureFor("stagekit_show_in_scenes", {}, "Something Else"), undefined);
 	assert.equal(sourcePictureFor("stagekit_corners", {}, "Square Camera"), undefined, "only kinds the pack drew by source");
 	// Else what the source is: a camera, a window ...
-	assert.equal(inputPicture("dshow_input")?.id, "options/webcam");
-	assert.equal(chooseFor(undefined, "stagekit_show_in_scenes", {}, "Overhead", "dshow_input")?.id, "options/webcam");
-	assert.equal(chooseFor(undefined, "stagekit_show_in_scenes", {}, "Notes", "window_capture")?.id, "capture/window");
+	assert.equal(inputPicture("dshow_input")?.id, "options/type-camera");
+	assert.equal(inputPicture("wasapi_input_capture")?.id, "options/microphone", "sound sources keep theirs");
+	assert.equal(chooseFor(undefined, "stagekit_show_in_scenes", {}, "Overhead", "dshow_input")?.id, "options/type-camera");
+	assert.equal(chooseFor(undefined, "stagekit_show_in_scenes", {}, "Notes", "window_capture")?.id, "options/type-window");
 	// Else the filter's own picture; and a picture chosen by hand always wins.
 	assert.equal(chooseFor(undefined, "stagekit_show_in_scenes", {}, "Overhead", undefined)?.id, "filters/show-in-scenes");
 	assert.equal(chooseFor(undefined, "stagekit_shadow_backdrop", {}, "Overhead", "dshow_input")?.group, "shadow glow outline");

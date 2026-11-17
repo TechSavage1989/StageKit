@@ -75,7 +75,7 @@ export class Hook extends SingletonAction<KeySettings> {
 		// (While OBS cannot say which kind of capture it is, the key goes by
 		// what it last learned: it used to turn into "Capture Game".)
 		const seen = await remembered(key, settings, settings.source ?? "", kind ? { kind } : undefined);
-		await key.setImage(file(hookPicture(settings.picture, seen?.kind), true, settings.palette));
+		await key.setImage(file(hookPicture(settings.picture, seen?.kind, settings.sourceType), true, settings.palette));
 		await key.setTitle(hookTitle(seen?.kind));
 	}
 

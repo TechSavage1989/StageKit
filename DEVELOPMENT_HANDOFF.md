@@ -2185,3 +2185,14 @@ callback); `item_transitions_owner` asked per item; `holds-hidden.*` (`mode_hold
 `filter-order.hpp`, `stand-in.hpp`, `is_screen_capture`; the `==== scene-filters:<unit> ====` blocks in
 plugin-main, CMake, the locale file, the tests, the README and AGENTS; `tests/run-tests.sh` stops on a
 repeated locale key and on a failed build. Whole suite: ALL PASSED.
+
+## Stream Deck: Source type and the Scene Mode key (0.1.0-beta155, `feat/streamdeck-scene`)
+
+Stream Deck plugin 0.18.0.0. A *Source type* list (Automatic and twenty types, ids shared with the
+Scene Modes filter's *Mode type*) on every key that acts on a source and on the new *Scene Mode* key
+(`com.techsavage1989.stagekit.mode`, vendor requests `ListSceneModes`, `GetSceneMode`,
+`SetSceneMode`, event `SceneModeChanged`); keys for Scene Fit, Scene Shadow, Scene Corners and
+Scene Standby; *Fit to Space Overlap* takes a Scene Fit. On Automatic a Show in Scenes key goes by
+the source's name before its OBS input kind (not the other way, as first asked: that undid
+beta154's holding-mode key images). `npm test`, `npm run build`, `npm run validate` and `npm run
+pack` pass. Not run on a Stream Deck, and the Scene Mode key not run against the real filter.

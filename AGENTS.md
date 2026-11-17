@@ -1234,6 +1234,33 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   `imgs/actions/<key>/icon`); the owner, of a list where all keys showed one of two drawings:
   "I'd like all of the stream deck buttons to get specific icons". A new key gets a drawing there;
   `tests/features.test.ts` fails if two keys share one.
+- **A key's Source type** (`sourceType`, beta155; `streamdeck/src/source-types.ts`). The owner:
+  "instead of assigning a specific icon to my specific sources, ad an option in the key to choose
+  a source type ... that way anyone with any source can pick it accordingly". Every key that acts
+  on a source (the feature keys whose kind is not a scene's, `scene` in `features.json` and
+  `isSceneKind` in `kinds.ts`, which a test keeps the same; *Capture Active Window*; *Manual
+  Window / Source*) and the *Scene Mode* key offer *Source type*: *Automatic*, then twenty types
+  by id (`game` ... `ending`, append-only, the same ids as the Scene Modes filter's *Mode type*
+  in OBS, and as `SOURCE_TYPES` in `make-option-icons.py`, which a test compares). The order is
+  always: an image chosen by hand, then the Source type, then Automatic. A type's picture is
+  `options/type-<id>` (group *source types*; the four holding types reuse `options/mode-*`), on
+  and off; *Capture Active Window* takes `options/hook-type-<id>`, the type inside the hook's
+  corners. On Automatic a key keeps its feature's picture, except Show in Scenes: the pack's
+  picture of the source by name, then the type its name speaks of (`typeOfName`), then its OBS
+  input kind (`typeOfInput`). The coordinator asked for the input kind first; it was put after
+  the name because the input kind made beta154's holding-mode keys (text sources, the owner's
+  request) plain titles and a capture card a camera. A key on a scene's filter never uses a type
+  or an input kind. `seen.ts` also keeps the input kind (Show in Scenes) and a Scene Mode key's
+  mode name and type. Contact sheet: run the tools, then look at the `type-*` pictures.
+- **The Scene Mode key** (`src/actions/mode.ts`, UUID `.mode`, beta155) is for the Scene Modes
+  filter through its vendor requests: `ListSceneModes` (the key's list, *Scene: Mode*, the
+  filter's name only when a scene has two), `GetSceneMode` (lit while `current` is its mode) and
+  `SetSceneMode` with `how` *on* or *toggle*; the `SceneModeChanged` event (`obs.on("mode")`)
+  makes every Scene Mode key look again. `target` is `scene␟filter␟mode id` (`src/modes.ts`): the
+  id, never the name, so a rename keeps the key; a hand-made target with a name still works. Its
+  picture: chosen, Source type, the mode's *Mode type*, the type its name speaks of (*GBA* is a
+  game), then `options/mode`. Tested against a stand-in server in `tests/obs.test.ts`, not
+  against the real filter.
 - **A key that switches something shows which way it is with a mark, not by brightness.** The
   owner: "the options that have an on and an off or toggle must represent that current status on
   the key with the image ... right now, the stagekit blur button just flashed". The pack's own on
@@ -1305,8 +1332,9 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   beta134 a filter key first takes the pack's own picture of the source it is on, where the words
   of a picture's label are all in the source's name (`sourcePictureFor`: the pack's *show hide*,
   *shadow by source*, *standby by source* and *blur <type>* groups), and a Show in Scenes key then
-  the picture of what the source is (`inputPicture`, by OBS input kind; `obs.inputKind` follows a
-  Cropped View to what it shows), before the filter's general picture (`chooseFor`). The owner:
+  the picture of what the source is (its name's source type, then `inputPicture`, by OBS input
+  kind; `obs.inputKind` follows a Cropped View to what it shows), before the filter's general
+  picture (`chooseFor`). A key's Source type, when chosen, comes before all of these. The owner:
   "the show in scenes key set to square camera should either set to the correct icon relative to
   a camera source, or at least have another option". Matching is by words; still no source names
   in the code. The

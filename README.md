@@ -1169,6 +1169,21 @@ choose (*Manual / Auto*, *Blur Off*, *Slide Up Left*), and a title you type in S
 place. Left on *Automatic*, a key's image is the one for its filter and its options; every
 option has one.
 
+**Source type:** every key that acts on a source (the feature keys on a source, *Capture Active
+Window*, *Manual Window / Source*) and the *Scene Mode* key has a **Source type** list under
+*Image*: *Automatic* (as it comes), then *Game*, *Window*, *Art app*, *Code editor*, *Browser*,
+*Camera*, *Capture card*, *Display*, *Phone*, *Tablet*, *Chat*, *Music*, *Alerts*, *Title / text*,
+*Image*, *Video*, *Starting*, *Be right back*, *Intermission* and *Ending*. Choose what your source
+is, whatever it is called, and the key shows that image: a feature key the image by itself, with its
+on and off marks; *Capture Active Window* the image inside the corners of a capture. An image chosen
+under *Image* still comes first. On *Automatic* a key keeps the image of its feature, except a *Show
+in Scenes* key, which shows what its source is: the icon pack's image of a source by that name if
+there is one, else the type the source's name speaks of (*BRB Text* is *Be right back*, *GBA* a
+game), else what OBS says the source is (a Game Capture is a game, a Window Capture a window, a
+Display Capture a display, a video capture device a camera, a browser source a browser, text a
+title, an image or slide show an image, a media source a video). Keys on a scene's own filters
+(*Fit to Space*, *Scene Fit* and the like) have no source, so no Source type.
+
 **Images for devices:** besides each key's own, the *Image* list has a *devices* group for any
 key: internal capture card, external capture box, HDMI, console, webcam, camcorder, DSLR,
 microphone, phone, display, laptop, browser and speaker, in every palette.
@@ -1178,19 +1193,20 @@ drawing as shapes in a layer of its own (see its README). The original icon pack
 exist here as PNGs only.
 
 **Every key that switches something shows which way it is**, whatever switched it (the key, OBS,
-a hotkey, another key): a **green dot** in the corner while it is on, the image **dimmed with a
-red slash** while it is off. That is every feature key, *Blur All*, *Dock Option*, *Fit to Space
-Overlap*, and *Manual Window / Source* set to *Toggle* (on: a manual window is shown) or *Hide*
+a hotkey, another key): a **green dot** in the corner while it is on, a **red "no" sign** in the
+same corner, the image a little greyed, while it is off. That is every feature key, *Blur All*,
+*Dock Option*, *Fit to Space Overlap*, *Scene Mode*, and *Manual Window / Source* set to *Toggle* (on: a manual window is shown) or *Hide*
 (on: the capture is shown). Stream Deck no longer flips such a key's image by itself when it is
 pressed, so it never flashes the wrong one.
 
 | Key | What it does |
 | --- | --- |
-| **Blur**, **Shadow, Glow & Outline**, **Corners & Edges**, **Zoom**, **Auto Capture**, **Auto Frame**, **Standby Image**, **Show in Scenes**, **Fit to Space**, **Automatic Source Switcher**, **Automatic Window Switcher**, **Program Trigger**, **Link Visibility**, **Show/Hide Animation** | Switches that feature on a source (or scene) on and off, and the key shows which way it is, also when it is switched some other way. *On press* can be *Toggle*, *Switch on* or *Switch off* |
+| **Blur**, **Shadow, Glow & Outline**, **Corners & Edges**, **Zoom**, **Auto Capture**, **Auto Frame**, **Standby Image**, **Show in Scenes**, **Fit to Space**, **Automatic Source Switcher**, **Automatic Window Switcher**, **Program Trigger**, **Link Visibility**, **Show/Hide Animation**, **Scene Fit**, **Scene Shadow**, **Scene Corners**, **Scene Standby** | Switches that feature on a source (or scene) on and off, and the key shows which way it is, also when it is switched some other way. *On press* can be *Toggle*, *Switch on* or *Switch off* |
+| **Scene Mode** | Turns on one mode of a scene's *Scene Modes* filter: that mode's sources show, the other modes' sources hide. *Mode* lists every mode of every scene (*Standby: Intermission*, *Chat Live: GBA*; the filter's name too where a scene has two). *On press*: *Switch on* (as it comes) or *Toggle* (pressed while its mode is on, it goes to no mode where the filter allows that, else back to the mode before). Lit (green dot) while its mode is on, however it was turned on; titled with the mode's name. The key keeps the mode itself, not its name, so renaming the mode in OBS does not break it. Its image: the *Source type* chosen; on *Automatic*, the mode's own *Mode type* in OBS, else the type its name speaks of (*Be Right Back*, *GBA* is a game), else a stack of modes |
 | **Move Source**, **Move Scene Item**, **Apply Layout** | Runs that move. A tick shows on the key when OBS has taken it |
 | **Set Aspect Ratio** | Sets a game's aspect ratio by hand, for when Auto Frame's own reading is not what you want: 4:3, 8:7, 3:2, 10:9, 16:9 and more, or *Automatic* to hand it back. *Keep ratio*: *This game only* (the shape lasts while that game is captured and goes back to automatic when it ends; set before the game starts, it waits for it) or *Until changed*. The key shows its ratio |
 | **Capture Active Window** | Makes a Game Capture or a Window Capture take whatever window or game is in front when you press it. *Transition* and *Duration* choose how the capture changes over: a fade (as it comes), a cut, or any other transition OBS has. An Auto Capture on that capture is switched off so it stays where you put it; the **Auto Capture** key, set to *Switches it on*, hands it back |
-| **Fit to Space Overlap** | Switches a Fit to Space filter's *Overlap only when it fills* on and off, and shows which way it is. On: the fitted window goes under the camera only while it fills its space, and beside it otherwise |
+| **Fit to Space Overlap** | Switches a Fit to Space filter's, or a Scene Fit's, *Overlap only when it fills* on and off, and shows which way it is. On: the fitted window goes under the camera only while it fills its space, and beside it otherwise |
 | **Switch Scene** | Switches OBS to the scene chosen: on the program (live), or on the preview in Studio Mode. *Transition* and *Duration* can be chosen (*As set in OBS* as it comes); a transition chosen here becomes OBS's current one. Lit (green dot) while that scene is the one on the program or preview, however it got there; titled with the scene's name. Left on *Automatic*, its image is the icon pack's own image of that scene's layout when the pack has one by the scene's name, and a generic scene otherwise. A scene called *Live*, *Chat Live* or *Standby* has an image of its own: a screen with a record button, a record button beside chat bubbles, and a screen with the standby sign |
 | **Manual Window / Source** | Also for a Window Capture with a Automatic Window Switcher filter: the next of its *Manual windows*, back to following the apps, or the capture hidden and shown. For a scene with a Automatic Source Switcher filter: shows the next of its *Manual sources*, or goes back to following the apps. Set to *Toggle* it shows whether a manual window is on; set to *Hide*, whether the capture is shown. Also lists Auto Capture filters, for *Hide* |
 | **Arrange tool** | One of the dock's arrange tools on a key: line up an edge or centre, space out evenly, snap, make the same width, height or size, or copy a transform to all or to the chosen scenes. It works on the items selected in OBS's preview |
@@ -1199,7 +1215,7 @@ pressed, so it never flashes the wrong one.
 | **Blur All** | Switches every Blur on, and the next press switches them all off. It shows on while any is on |
 
 A key that cannot reach OBS, or whose target is gone, shows Stream Deck's yellow warning triangle when
-pressed. *Set Aspect Ratio* and *Capture Active Window* need StageKit 0.1.0-beta84 or later in OBS; *Dock Option* and *Slide to Edge* need 0.1.0-beta85. Keys made with
+pressed. *Set Aspect Ratio* and *Capture Active Window* need StageKit 0.1.0-beta84 or later in OBS; *Dock Option* and *Slide to Edge* need 0.1.0-beta85; *Scene Mode* and the four scene filter keys need 0.1.0-beta155. Keys made with
 the first versions' *Filter switch* and *Move* keep working; those two are no longer in the list.
 
 **Images.** The keys use the StageKit icon pack. Left on *Automatic*, a key takes the image that
@@ -1208,8 +1224,8 @@ sends the camera to, Shadow, Glow & Outline its look, Corners & Edges its corner
 keys have an "on" and an "off" look. Where the pack has an image drawn for one source (its *show
 hide*, shadow, standby and blur images) and that image's name is in the source's name, a Show
 in Scenes, Shadow, Standby Image or Blur key on that source takes it. Failing that, a Show in
-Scenes key shows what its source is: a camera, a game, a window, a display or a browser (a Cropped
-View counts as what it shows). The holding scene's titles and the column markers have show-key
+Scenes key shows what its source is, as under *Source type* above (a Cropped View counts as what
+it shows). The holding scene's titles and the column markers have show-key
 images of their own, by the source's name: *starting* (a play sign), *BRB* (a cup), *intermission*
 (an hourglass), *ending* (a stop sign), *column chat* and *column GBA*. When several images fit a
 name, the one whose label has the most words wins, so *Chat Live* gets its own image, not *Live*'s.
