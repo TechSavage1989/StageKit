@@ -17,6 +17,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <graphics/vec3.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -47,6 +48,33 @@ inline Box item_box(obs_sceneitem_t *item)
 		max_y = std::max(max_y, (double)out.y);
 	}
 	return {min_x, min_y, max_x - min_x, max_y - min_y};
+}
+
+// How much of the screen an item covers, from its size and scale (or its
+// bounding box), without asking OBS to work out its box afresh: 0 while
+// neither is known (a capture before its first frame).
+inline double screen_share(obs_sceneitem_t *item)
+{
+	obs_video_info ovi = {};
+	if (!obs_get_video_info(&ovi) || !ovi.base_width || !ovi.base_height)
+		return 0.0;
+	obs_source_t *source = obs_sceneitem_get_source(item);
+	double w, h;
+	if (obs_sceneitem_get_bounds_type(item) != OBS_BOUNDS_NONE) {
+		vec2 bounds;
+		obs_sceneitem_get_bounds(item, &bounds);
+		w = bounds.x;
+		h = bounds.y;
+	} else {
+		obs_sceneitem_crop crop;
+		obs_sceneitem_get_crop(item, &crop);
+		vec2 scale;
+		obs_sceneitem_get_scale(item, &scale);
+		w = std::max(0.0, (double)obs_source_get_width(source) - crop.left - crop.right) * std::fabs(scale.x);
+		h = std::max(0.0, (double)obs_source_get_height(source) - crop.top - crop.bottom) * std::fabs(scale.y);
+	}
+	return std::min(w, (double)ovi.base_width) * std::min(h, (double)ovi.base_height) /
+	       ((double)ovi.base_width * (double)ovi.base_height);
 }
 
 // Makes OBS work out an item's box now. An item that has never been moved

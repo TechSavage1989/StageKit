@@ -394,6 +394,24 @@ nearest.
   item, so they settle in one move. An item that keeps its size, with a resized item on one side
   and the screen's edge or a fixed item on the other, sits against the fixed side; the resized item
   takes the rest.
+- **Space priority** (in the free space) says which source gets the room when two want it:
+  - *Takes space first*: the source takes the space it would have if the sources that share space
+    or make room were not there, and never moves or shrinks for them; they fit around it. Use it for
+    the main capture, so the camera and chat box fit beside it.
+  - *Shares space* (as it comes, and what every filter made before this setting does): the sources
+    make room for each other, as above.
+  - *Makes room*: the source always fits around every source that shares space or takes space
+    first.
+
+  Two sources with the same setting share. A source set to take space first may cover the place a
+  lower one was kept round; that one then fits beside it, and goes back to its place when the first
+  is hidden.
+- **Priority by list order** (unticked as it comes): ticked, *Space priority* is greyed out and not
+  used. Among the fitted sources of the scene that have it ticked, the one whose filter is higher in
+  the scene's filter list takes its space first, and the ones below fit around it. Move a filter up
+  or down and the sources glide to their new places. A Scene Fit with it ticked counts at its own
+  place in the list, its sources in its own order. Towards a fitted source without it ticked, a
+  source with it ticked counts as *Shares space*.
 - An item is never put past the screen's edges: it stays the gap inside them whatever is beside it.
 - **Resize to fit** (ticked as it comes). Unticked, the item keeps the size it has and is only
   moved, to the middle of its space, so the room left over is the same on both sides and above and
@@ -626,7 +644,7 @@ it to *Manual sources*, and hide it. Then:
 
 It acts only when one of those things happens, so a capture you show by hand stays until then. A
 minimised window counts as closed. The top line says what is showing. Switch the filter off to pause it.
-Each capture can have its own [Fit to Space](#fit-item), shadow and blur; they follow the capture.
+Each capture can have its own [Fit to Space](#fit-to-space), shadow and blur; they follow the capture.
 
 ### Program Trigger
 
@@ -909,9 +927,17 @@ stays off. Two rules make it suit several modes in one scene:
   camera only in the mode showing, and switching modes with the camera off leaves it off.
 
 It follows whatever shows or hides an item:
-the eye icon, a Stream Deck *Source* key, a hotkey. Switch the filter off to pause it. *Transition*
-and *Duration* choose how the items it shows and hides appear and disappear: a fade to begin with, any
-other transition OBS has, a cut, or whatever is set on each item.
+the eye icon, a Stream Deck *Source* key, a hotkey. Switch the filter off to pause it.
+
+Under *Show/Hide transition*, *Show transition* and *Hide transition* choose how the items it shows
+and hides appear and disappear: *As the scene sets* to begin with, any other transition OBS has (with
+its own settings, such as the way a slide goes, right under it), a cut, or whatever is set on each
+item. *Hide transition* is *The same as showing* until you choose another, and each has its own
+*Duration*. *Settings for* switches the controls to one listed source (from *Linked items* or *Also in
+other scenes*), so that source can come and go its own way; the rest keep the usual settings. With
+*Morph (StageKit)* chosen, *Unpaired sources* says how a source with nothing to change into comes and
+goes ([below](#morph-between-items)). A filter set up before this keeps its *Transition* and *Duration*
+as they were, for showing and hiding alike.
 
 **Lock hidden sources** (unticked as it comes): each linked source is locked while it is hidden and
 unlocked when it is shown, whatever shows or hides it. OBS's preview lets a click select a hidden
@@ -1078,8 +1104,14 @@ Which two go together follows the Morph transition's rules:
 OBS's log says which two items changed into each other and why, one line per change:
 `Morph: 'DSLR' changes into 'Window Capture' in 'Live' (main image)`.
 
-An item with nothing to change into fades by itself, or fades and zooms if *With nothing to change
-into* (in Show in Scenes; *Other items* in the transition's own settings) says so. That holds for an
+An item with nothing to change into goes by **Unpaired sources**, under Morph in the filter's
+settings (Show in Scenes, Link Visibility, Scene Transitions and the rest; per source with *Settings
+for*) and in the Morph transition's own settings: *Fade* (as it comes), *Fade and zoom*, *Slide off
+the nearest edge*, *A cut* (at once), or any other transition you have, such as *Fade and Zoom
+(StageKit)*, *Swipe* or *Slide*, with that transition's own settings right under it (a slide or swipe
+can go *Off the nearest edge* too). Every way stays inside the item's own frame, as OBS's show and
+hide transitions do. Settings made before this read as before: *Fade and zoom* under *With nothing to
+change into* (or *Other items*) is *Fade and zoom* here, and anything else a fade. That holds for an
 item being shown as much as for one being hidden, over the same time as the change. (Up to beta155 an
 item left over and being shown appeared all at once at the end of the change; in beta156 and beta157
 the capture in the camera example above faded in where it is, and since beta158 it comes out of the
@@ -1120,6 +1152,12 @@ Fit** (where they go), **Scene Standby** (the standby image in a capture's place
 Outline you put on a source yourself is left as it is. Five of them draw nothing, and Scene Shadow is
 built to keep Morph working, so a scene carrying any of them still morphs. In a scene that is not on screen
 they do as little as they can, and nothing at all while a scene collection loads.
+
+Scene Transitions, Scene Fit, Scene Standby, Scene Corners and Scene Shadow each have a **Sources covered**
+list that starts with **All sources**: every source in the scene, a group counting as one, and sources you add
+later too, except the ones under **Ignored sources**. The Morph layer and Standby stand-ins are never counted.
+Each filter starts on what it did before there was a choice (see each one below), so a filter you already
+have keeps doing what it did.
 
 #### Scene Modes
 
@@ -1185,10 +1223,10 @@ a transition setting inside each filter. It sets OBS's own show and hide transit
 in a source's right-click menu), so they also hold when a source is shown or hidden with the eye, its
 hotkeys, a Stream Deck *Source Visibility* key or obs-websocket.
 
-- **Applies to**: *All sources in the scene*, or *Only listed sources*.
+- **Sources covered**: *All sources* (as it comes), or *Chosen sources*.
 - **Sources**: with *All sources*, a source listed here can have settings of its own: choose it under
-  *Settings for* in *Show/Hide transition*. With *Only listed sources*, only these are set.
-- **Leave these alone**: sources this filter never sets, such as one another tool animates. A source a
+  *Settings for* in *Show/Hide transition*. With *Chosen sources*, only these are set.
+- **Ignored sources**: sources this filter never sets, such as one another tool animates. A source a
   Show/Hide Animation animates, and one a Standby Image stands in for, are always left to those filters.
 - **Sources in groups**: also set the sources inside groups (off as it comes: a group is then one source
   like any other). OBS plays an inner source's transitions whenever its group is shown or hidden too, so a
@@ -1223,8 +1261,27 @@ them moves. When the camera is hidden or shown, a game changes shape or a widget
 that has to make way sets off once, all at the same moment. With a Fit to Space per source each filter only
 learns where the others are going a frame later, and they could shift a few times before settling.
 
+- **Sources covered**: *Chosen sources* (as it comes: the sources under *Fitted sources*) or *All sources*.
+  With *All sources* every source of the scene is fitted, a group counting as one and sources added later
+  too: first the ones under *Fitted sources*, in their order, then the rest from the top of the scene down,
+  each starting from the usual entry settings (in the free space round its place, a gap of 30 px, resized to
+  fit, *Shares space*). Each one is under *Settings for* like a listed one, with its own *Space
+  priority*; untick *Resize to fit* for a source that keeps its size. Left out: **Ignored sources** (they stay where they are, and the fitted sources keep clear of
+  them), a source a Fit to Space of its own already fits, a source another Scene Fit of the scene lists (or
+  every source, when an earlier Scene Fit has *All sources* too), and a source that fills nine tenths of the
+  screen or more when it is first met, such as the background: it could only be made smaller, and the free
+  space round a place inside it is never in its way. A source fitted once stays fitted however large it is
+  fitted to. A source added on top of a fitted one is fitted once that one has made room for it.
+  Switching back to *Chosen sources* leaves the others where they are.
 - **Fitted sources**: the order matters. Put the sources that keep their size (a camera, a chat box) above
-  the ones that are resized to fit (the game).
+  the ones that are resized to fit (the game). With *Priority by list order* ticked, the order is also the
+  priority: a source higher in the list takes its space first.
+- **Space priority**: each source's own (*Takes space first*, *Shares space*, *Makes room*), as in
+  [Fit to Space](#fit-to-space).
+- **Priority by list order**: one switch for every source. Ticked, the sources' *Space priority* is greyed
+  out; a source higher in *Fitted sources* takes its space first, and the Scene Fit counts at its place in the
+  scene's filter list against any Fit to Space there that has the box ticked too. Towards the others it counts
+  as *Shares space*.
 - **Take over Fit to Space**: every Fit to Space switched on in this scene becomes an entry here, with all its
   settings, the place it keeps its source round and the size it keeps. Each filter is switched off, not
   deleted: switch it on again (and the Scene Fit off) to go back. Nothing moves.
@@ -1250,9 +1307,12 @@ It does not draw anything itself. It adds a **Standby Image** filter to each sou
 the scene filter. That filter says *Set by Scene Standby in <scene>* and leaves out the image controls,
 which are set in the Scene Standby.
 
-- **Sources covered**: *Every capture* (each game, window and camera capture in the scene, groups included)
-  or *Chosen sources*. Screen captures always have an image, so they are left out unless you tick *Include
-  screen captures*. *Ignored sources* are left out too.
+- **Sources covered**: *All sources*, *Every capture* (as it comes: each game, window and camera capture in
+  the scene, groups included) or *Chosen sources*. With *Every capture*, screen captures (which always have
+  an image) are left out unless you tick *Include screen captures*. *All sources* covers every source with
+  an image of its own, the ones inside groups too, sources added later and screen captures included; an
+  empty one (a capture with nothing attached, a stopped video, a text with no words) shows the image. Groups,
+  nested scenes and the source used as the image are not covered. *Ignored sources* are left out of both.
 - **Show when no image**: an empty capture (no game or window attached, no camera signal) shows the image.
   The image goes with the source into every scene it is in, as a Standby Image filter of its own would.
 - **Show when hidden**: the sources whose place the image takes **in this scene only** while they are
@@ -1278,9 +1338,10 @@ other takes it over if that one is removed.
 Scene Corners in <scene>*. Corners & Edges never changes a source's size, so nothing in the scene moves and
 Morph still morphs the scene.
 
-- **Sources covered**: *All but the background* (every source in the scene, a group counting as one) or
-  *Chosen sources*. With **Full-screen = background**, sources at the bottom of the scene that cover 90 % of
-  the screen or more are left out. *Ignored sources* are left out too.
+- **Sources covered**: *All sources*, *All but the background* (as it comes) or *Chosen sources*. *All
+  sources* is every source in the scene, a group counting as one, the background too. *All but the
+  background* is the same with **Full-screen = background**: sources at the bottom of the scene that cover
+  90 % of the screen or more are left out. *Ignored sources* are left out of both.
 - The look (**Style**, **Size**, the four corners, **Inset**, **Softness**, the line, **Sizes in screen
   pixels**) is the Corners & Edges filter's own.
 - Switching Scene Corners off switches its filters off, and on again.
@@ -1307,7 +1368,10 @@ Shadow, Glow & Outline on each source.
 - **Background sources**: drawn underneath as they are; they cast nothing and the shadow falls on them.
   **Full-screen = background** (on as it comes) counts the sources at the bottom of the scene that cover nine
   tenths of it as background, so the scene's picture or colour needs no listing.
-- **No shadow for**: sources that cast nothing (the shadow is still kept off them). A source with a Shadow,
+- **Sources covered**: *All sources* (as it comes: every source that is not background casts, sources added
+  later too) or *Chosen sources*: only the sources listed cast. Either way the shadow is kept off every source
+  that is not background.
+- **Ignored sources**: sources that cast nothing (the shadow is still kept off them). A source with a Shadow,
   Glow & Outline filter of its own keeps that one and casts nothing here, so no source gets two.
 - A source fading in or out with its show or hide transition takes its shadow with it. A Standby stand-in has
   the shadow of the source it stands in for.

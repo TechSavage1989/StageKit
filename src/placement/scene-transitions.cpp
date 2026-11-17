@@ -24,7 +24,7 @@ the Free Software Foundation; either version 2 of the License, or
 // - Items are known by their id in their scene or group, never held past one
 //   call.
 // - It passes over items another filter owns (a Standby standing in), private
-//   sources (stand-ins, the item Morph's layer), "Leave these alone", items a
+//   sources (stand-ins, the item Morph's layer), "Ignored sources", items a
 //   Show/Hide Animation animates, and items in groups unless asked.
 // - After another filter's own choice, the scene's transitions are put back
 //   once that change has had time to end, never part-way through it.

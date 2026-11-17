@@ -610,9 +610,20 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   or down for each item when it is applied, `off_nearest_edge`; a swipe is also told whether it
   is coming in): the owner asked for it by Morph's name for the same thing. OBS's item
   transitions move the picture inside the item's own frame, not across the screen; the owner was
-  told so, and that Show/Hide Animation is the one that travels. Show Source in Use, Program Trigger and
-  Link Visibility still have the plain two controls; give them this one when it is asked for,
-  not a third kind.
+  told so, and that Show/Hide Animation is the one that travels. **Link Visibility has it too**
+  (the owner: "Link visibility scene filter should have additional transition options including
+  a fallback or other items transition for items that don't have partners"): *Settings for*
+  lists the sources of both its lists (`add_item_change_properties(..., "items,elsewhere")`; the
+  list setting may name several, comma-separated). A filter saved with the plain two controls
+  reads as before: they are the same `transition` and `transition_ms`, and `hide_transition`
+  is *The same as showing* as it comes. Under Morph the filter's window offers Morph's
+  *Unpaired sources* (`unpaired`) in place of *Other items* (`others`, which only means
+  something in a change of scene and is not copied), and, for another transition there, that
+  transition's own settings, kept as `show|stagekit_morph|unpaired|<kind>|<its setting>` and
+  handed to the item's Morph inside its own settings like `links`. An old filter's `others` of
+  Fade and zoom reads as *Unpaired sources* Fade and zoom. Show Source in Use and Program
+  Trigger still have the plain two controls; give them this one when it is asked for, not a
+  third kind.
 - **Move Source moves the source in every scene it is in, by default** (`apply_in`). The owner asked for
   that: the camera sent to a spot is there in every scene. The older `where` setting is not read.
 - **Shadow sizes are in screen pixels by default.** The owner's old shadows sat on full-canvas scenes,
@@ -728,6 +739,35 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   shifted "a number of times" after a scene switch or a camera being hidden. Which side gives way
   is judged by which side of the space's middle it lies on, never by whether it touches the space:
   judged by touching, the two filters chased each other without end.
+- **Space priority decides which fit makes room for which** (`space_priority`, `SpacePriority`,
+  saved by number, append-only: 0 *Shares space*, 1 *Takes space first*, 2 *Makes room*; and
+  `list_priority`, *Priority by list order*, a Fit to Space's own and a Scene Fit's for all its
+  entries; `Rank`, `outranks` in `src/placement/fit-engine.hpp`). The owner: "fit to higher in the
+  list would have higher priority", then "a selector to set source as dominant, equal, and less",
+  then "a tickbox that would disable the selector and make list order the priority". Each claim
+  carries its fit's `Rank`, found afresh at every `prepare` (the filter's `applied_index`, a Scene
+  Fit entry's place in *Fitted sources*), so moving a filter up or down counts at the next tick and
+  is followed with a glide (`observe` sees the obstacles change; nothing listens to
+  `reorder_filters`). `FitScan::obstacles` with `mine`: a claim `mine` outranks is **not in the way
+  at all**, wherever it is; a claim that outranks `mine` is firm (`gives` false, `above`). Two
+  ranks neither outranking the other go by each other's claims exactly as before. So between two
+  fits of different standing the dependence is one-way and there is nothing to chase. Rules: both
+  `list_priority`: the higher in the filter list (then the entry order) wins; otherwise a ticked
+  one counts as *Shares space* and the levels decide. An outranking fit that covers a lower fit's
+  anchor would otherwise be ignored by it (a box holding the anchor is not in the way):
+  `free_space`'s `firm` list makes such a box count and looks for the space just off each of its
+  sides, for that answer only; the anchor itself is not moved, so the lower item goes home when
+  the higher is hidden. "Honouring a lower fit when it costs nothing" was tried on paper and left
+  out: a higher fit that looks at a lower one's claim at all depends on it again, and a centred
+  picture then crept towards the wall one glide at a time. The default is *Shares space*, list
+  order unticked, for new and saved filters alike, so no layout changes by itself. Only the free
+  space claims; a fit in the whole scene or an area takes no part. Tested in `[fit priority]`
+  (`fit_priority_test`, run alone with `STAGEKIT_TEST_ONLY_FIT_PRIORITY`).
+  **With All sources** (beta162) each unlisted entry of a Scene Fit has its own *Space priority*
+  (`fit|<source>|space_priority`) and, by list order, comes after the listed ones, from the top of
+  the scene down. `set_claims_firm`'s step out of a claim passes over an `above_` claim and leaves
+  it to `free_space`'s `firm` sides; an outranked claim is not in `boxes_` at all. Tested at the end
+  of `[fit priority]`: All sources, the game taking its space first, a source put down inside it.
 - **Fit to Space does nothing to a hidden item** (`hidden_` in `src/placement/fit-item.cpp`): no
   placing, anchor and kept size untouched, so the other filters take its room. Its room stays on
   record (`holds_room`, beta147): nothing goes by it while the item is hidden (claims are only asked
@@ -858,8 +898,25 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     and taken out after. It draws the pair as the Morph transition does.
   - The two items are hidden and shown for OBS and everything else from the first moment. Their
     own transitions are the Morph transition as an item's (`ItemMorph`): *Paired* draws nothing,
-    *Alone* fades (or fades and zooms, `others`), *Waiting* is a hiding item left as it is and a
+    *Alone* goes by *Unpaired sources* (below), *Waiting* is a hiding item left as it is and a
     showing one not drawn yet.
+  - **Unpaired sources** (`unpaired`, a string, `morph_fade` as it comes; in Morph's own window
+    and, copied, under Morph in every fuller *Change with*): how an *Alone* item comes or goes.
+    `morph_fade`, `morph_zoom` and `morph_slide` are drawn by `alone_cb` (the slide off the
+    nearest edge of the item's scene, `item_morph_item` + `item_off_nearest_edge`, inside the
+    item's own frame: `gs_draw_sprite_subregion`); `none` is a cut (shown whole, or gone, once
+    *Alone*); any other transition id (`item_transition_is_fallback_kind`: not Morph, not a
+    stinger) is a private transition of that kind (`fallback_`) with its settings from
+    `unpaired|<kind>|...` (a slide's or swipe's *Off the nearest edge* made a direction), set up
+    in `start_alone` as a scene starts an item's own (nothing to the item when shown, the item to
+    nothing when hidden) and driven in `OBS_TRANSITION_MODE_MANUAL` by the change's own clock,
+    not eased (it eases itself). It is never driven to 1: at its end OBS's transition draws its
+    first side again, which for a hide is the item, so the last frames are drawn by Morph itself;
+    it lets go of the item at the next start or stop (`let_go_fallback`). A Morph saved before
+    reads `others` (Fade and zoom stays so; Slide, then a fade for an item, stays a fade). Which
+    side is the item's is still read from the transition's sources (`alone_in_`). Tested in
+    `[link visibility: show and hide transitions, and Morph's unpaired sources]`, each way in and
+    out while a pair morphs beside it; not seen on Windows.
   - Pairs are found whoever hid and showed the items. Every Morph says when it starts
     (`item_morph_started`); on the next tick the ones that are an item's are looked up in the
     scenes (`find_items`), and a hide and a show in one scene within `kGraceNs` (0.1 s) pair up
@@ -1506,6 +1563,45 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   `src/plugin-main.cpp` (includes and registration), `CMakeLists.txt`, `data/locale/en-US.ini`,
   `tests/ambient-test.cpp`, `README.md` and here; write only inside your own. `tests/run-tests.sh`
   stops on a locale key used twice and on a failed build.
+<!-- ==== scene-filters:all-sources ==== -->
+- **Every scene filter's *Sources covered* starts with *All sources*** (2026-11-17; the owner: "the
+  scene filters must have an all sources option"). The saved numbers are append-only and the list
+  shows *All sources* first whatever its number: Scene Transitions `cover` (0 All sources, 1 Chosen
+  sources), Scene Fit `which` (0 Chosen sources, its *Fitted sources*; 1 All sources), Scene Standby
+  `which` (0 Every capture, 1 Chosen sources, 2 All sources), Scene Corners `which` (0 All but the
+  background, 1 Chosen sources, 2 All sources), Scene Shadow `which` (0 All sources, 1 Chosen
+  sources, listed in `shadow_sources`). **No default was changed**: OBS saves no value left on its
+  default, so a filter saved before reads the default, and a new default would change it. A new
+  filter therefore starts where an old one was: All sources for Transitions and Shadow, Every
+  capture, All but the background, and Chosen sources for Fit (fitting every source the moment the
+  filter is added would move and resize the whole scene). *All sources* is the items straight in
+  the scene, a group counting as one (Standby opens groups instead and covers no group or nested
+  scene: a scene is never empty), never the Morph layer, a stand-in or a private source, less
+  *Ignored sources* (`skip`; Transitions' `except`, Shadow's `shadow_skip`), counted afresh at each
+  look so a source added later joins. Scene Fit's unlisted entries (`unlisted_sources`, the window
+  and the tick both use it; counted every `kLookForSources`, 0.5 s) come after the listed ones,
+  top of the scene first, with `fit_entry_defaults` and a group under *Settings for* like a listed
+  one. Left out there: `skip`, a source an enabled Fit to Space or another enabled Scene Fit lists,
+  everything when an earlier enabled Scene Fit of the scene has All sources (two would fight), a
+  source with no size yet (until it has one), and one covering nine tenths of the canvas
+  (`screen_share`) unless `fit|<name>|orig_item` names it: fitted once, it stays (the key is saved,
+  so it holds over a restart; a game fitted to the screen less a 30 px gap covers 0.91 of it and
+  would otherwise drop out at the next load). A source not fitted yet whose box centre lies inside
+  a fitted entry's box (`pos` + bounds) waits too: its place inside that space would make the
+  engine take the same space for it (what the place lies inside is not in the way) and the two
+  overlapped for good; meanwhile it is an obstacle, the other makes room, and it joins once its
+  place is clear. And with All sources every entry is `set_claims_firm`: in `FitEngine::solve` a
+  place lying inside another fit's claim (`said_`) is first moved to the nearest point clear of
+  it (the gap beyond its edge, on the screen) before `free_space` is asked. Without it a newcomer
+  and the chat box in the test, each resized, ended in one shared space for good, each place
+  inside the other's claim. Only an All-sources Scene Fit sets it, so Fit to Space and a Scene
+  Fit on Chosen sources solve as before. A claim of a fit ranked above this one (Space priority,
+  `above_`) is passed over by that step and left to `free_space`'s `firm` sides. A full-screen source is no obstacle anyway
+  (`free_space` passes over what the place lies inside). A rename moves an unlisted source's
+  `fit|<name>|` keys too. **Scene Modes has no All sources, on purpose**: a source in no mode is
+  never touched, and a mode of every source (or of every source in no other mode) would hide the
+  background, the overlays and every source added later whenever another mode came on.
+<!-- ==== end scene-filters:all-sources ==== -->
 <!-- ==== scene-filters:modes ==== -->
 - **Scene Modes** (`stagekit_scene_modes`, `src/placement/scene-modes.*`; beta155). The owner:
   "scene modes should not have specific names built in. instead scene modes should be able to be
@@ -1546,8 +1642,8 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   `scenes_loaded()`, and only where `item_change_matches` says the item differs: a collection
   loaded again writes nothing (a test saves and loads a scene and counts writes through the
   `stagekit_scene_transitions_writes` proc). It passes over owned items
-  (`item_transitions_owned`), private sources (stand-ins, the item Morph's layer), *Leave these
-  alone*, items an enabled Show/Hide Animation names and, unless `in_groups`, items in groups.
+  (`item_transitions_owned`), private sources (stand-ins, the item Morph's layer), *Ignored
+  sources* (`except`; *Leave these alone* before), items an enabled Show/Hide Animation names and, unless `in_groups`, items in groups.
   Items are known by id in their scene or group (`Key`), never held. The first enabled one in a
   scene's filter list is the one used. **`kTransitionScene` ("As the scene sets") is resolved
   only in `resolve_item_change`** (`src/common/item-transition.*`), through the lookup the filter
@@ -1581,13 +1677,17 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   order the old `FitItem::tick` did: change them there, never in one host only. Scene Fit
   works its entries out in the order of *Fitted sources*, top first, and again (up to four
   passes, `kPasses`) while one entry's new claim moves another's goal, before any glide
-  starts: each entry sets off once per change, all in one tick. An entry's settings are
+  starts: each entry sets off once per change, all in one tick. The list's order is a priority
+  only with the Scene Fit's *Priority by list order* (`set_entry_index`; see *Space priority*);
+  *Take over Fit to Space* copies `space_priority` per entry and the first filter's
+  `list_priority`. An entry's settings are
   `fit|<source>|<Fit to Space's key>` (the self-written ones too: anchors, `keep_k`, `orig_k`;
   `kOwnSettings` matches on the last `|` part), but its two lists are `fit_<the name in hex>_skip`
   and `..._share_scenes` (`fit_list_prefix`): a PickList's setting cannot hold a bar and a
   source's name may. The overlap switch `skip_fill_on` is one for the whole Scene Fit, so the
   *Fit to Space Overlap* key works on it. Every entry always carries its own settings (seeded by
-  `fit_entry_defaults`, gap 30); there is no "every source" set. The window has a group per entry
+  `fit_entry_defaults`, gap 30); with *All sources* the unlisted sources are entries of the same
+  kind (see the all-sources entry above). The window has a group per entry
   (`fit|<source>|g`, controls from the shared `fit_add_controls`), only the one chosen in
   *Settings for* (`fit_for`) shown, kept in step with the list by `pick_list_on_change_for`.
   *Take over Fit to Space* (`take_over`) copies each enabled Fit to Space's effective settings
@@ -1634,9 +1734,11 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   now (it never had a stand-in). The change given to each scene is remembered as text (`applied_`) so
   a change made in the Scene Standby is applied again. `sync_stand_ins` resolves *As the scene sets*
   (`resolve_item_change`, in the item's scene) before the change is swapped for the twin.
-- **Scene Corners leaves the background out by size alone** (`screen_share`: bounds, or source size
+- **Scene Corners leaves the background out by size alone** (`screen_share` in
+  `src/common/scene-util.hpp`, which Scene Fit uses too: bounds, or source size
   times scale less crop; no `refresh_item`, which would mark the scene changed every second): items
-  from the bottom while each covers 90 % of the canvas. Corners & Edges' look controls and defaults are
+  from the bottom while each covers 90 % of the canvas, with *All but the background* only (*All
+  sources* covers the background too). Corners & Edges' look controls and defaults are
   shared (`corners_add_look_properties`, `corners_look_defaults`), so the keys are the same.
 <!-- ==== end scene-filters:standby-corners ==== -->
 <!-- ==== scene-filters:shadow ==== -->

@@ -14,6 +14,19 @@ the Free Software Foundation; either version 2 of the License, or
 // (up to four times) while one entry's new place moves another's: so after
 // a change every entry sets off once, all at the same moment, instead of one
 // filter answering another a tick later.
+//
+// With All sources, every source of the scene is an entry too, after the
+// listed ones and from the top of the scene down, with the entry settings a
+// new entry starts with (each can be changed under Settings for). Left out:
+// Ignored sources, the Morph layer, Standby stand-ins, what a Fit to Space
+// or another Scene Fit of the scene already fits, and a source that fills
+// the screen (nine tenths of it or more) when first met, such as the
+// background: it has nowhere to go but smaller, and the free space round a
+// place inside it is not in its way anyway. A source put down inside a
+// fitted source's space waits until that one has made room, and no entry's
+// space is looked for round a place inside another's claim. Once fitted (its size noted
+// before the first fit, `orig_item`, is saved) a source stays an entry
+// however large it is fitted to.
 
 #include "scene-fit.hpp"
 #include "fit-engine.hpp"
@@ -23,6 +36,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/pick-list.hpp"
 #include "../common/scene-filter-ids.hpp"
 #include "../common/scene-util.hpp"
+#include "../common/stand-in.hpp"
 #include "../common/timing.hpp"
 
 #include <obs-module.h>
@@ -31,6 +45,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <cstring>
 #include <map>
 #include <memory>
@@ -44,12 +59,162 @@ using namespace fit;
 
 namespace {
 
-constexpr int kPasses = 4;          // the most times the entries are worked out in one tick
-constexpr uint32_t kIdleEvery = 15; // off screen, a full tick four times a second
+constexpr int kPasses = 4;              // the most times the entries are worked out in one tick
+constexpr uint32_t kIdleEvery = 15;     // off screen, a full tick four times a second
+constexpr double kLookForSources = 0.5; // with All sources, how often the scene's sources are counted
+constexpr double kFillsScreen = 0.9;    // a source this much of the screen is never fitted unasked
+
+// Sources fitted. Saved by number: append only. A filter saved before there
+// was a choice has no number and reads as Chosen sources, its list, which is
+// all it fitted then.
+enum class Which : int { Chosen = 0, AllSources = 1 };
 
 std::string prefix_of(const std::string &entry)
 {
 	return "fit|" + entry + "|";
+}
+
+bool has(const std::vector<std::string> &list, const std::string &name)
+{
+	return std::find(list.begin(), list.end(), name) != list.end();
+}
+
+// With All sources, the sources of the scene fitted besides the listed ones,
+// from the top of the scene down; empty otherwise. `self` is the Scene Fit's
+// own filter. Read from the scene as it is, so the window and the tick agree.
+std::vector<std::string> unlisted_sources(obs_source_t *self, obs_source_t *scene, obs_data_t *settings)
+{
+	std::vector<std::string> out;
+	obs_scene_t *s = scene && !obs_source_is_group(scene) ? obs_scene_from_source(scene) : nullptr;
+	if (!s || obs_data_get_int(settings, "which") != (int)Which::AllSources)
+		return out;
+	const std::vector<std::string> listed = pick_list_read(settings, "entries", false);
+	const std::vector<std::string> skip = pick_list_read(settings, "skip", false);
+	// What another fit of the scene looks after, and whether a Scene Fit
+	// with All sources comes before this one (that one fits the rest).
+	struct Others {
+		obs_source_t *self;
+		bool reached = false, first = true;
+		std::vector<std::string> taken;
+	} others{self};
+	obs_source_enum_filters(
+		scene,
+		[](obs_source_t *, obs_source_t *f, void *param) {
+			auto *o = static_cast<Others *>(param);
+			if (f == o->self) {
+				o->reached = true;
+				return;
+			}
+			const char *id = obs_source_get_unversioned_id(f);
+			if (!id || !obs_source_enabled(f))
+				return;
+			obs_data_t *theirs = nullptr;
+			if (std::strcmp(id, kFitItemId) == 0) {
+				theirs = obs_source_get_settings(f);
+				o->taken.push_back(obs_data_get_string(theirs, "item"));
+			} else if (std::strcmp(id, kSceneFitId) == 0) {
+				theirs = obs_source_get_settings(f);
+				for (const std::string &name : pick_list_read(theirs, "entries", false))
+					o->taken.push_back(name);
+				if (!o->reached && obs_data_get_int(theirs, "which") == (int)Which::AllSources)
+					o->first = false;
+			}
+			obs_data_release(theirs);
+		},
+		&others);
+	if (!others.first)
+		return out;
+	std::vector<obs_sceneitem_t *> items;
+	obs_scene_enum_items(
+		s,
+		[](obs_scene_t *, obs_sceneitem_t *item, void *param) {
+			obs_sceneitem_addref(item);
+			static_cast<std::vector<obs_sceneitem_t *> *>(param)->push_back(item);
+			return true;
+		},
+		&items);
+	// Fitted before: its size before the first fit is on record.
+	auto fitted_before = [settings](const std::string &name) {
+		return name == obs_data_get_string(settings, (prefix_of(name) + "orig_item").c_str());
+	};
+	// Where the sources already fitted are (a fitted item is kept by its
+	// top-left corner and its bounding box).
+	std::vector<Box> fitted_boxes;
+	for (obs_sceneitem_t *item : items) {
+		const char *name = obs_source_get_name(obs_sceneitem_get_source(item));
+		if (!name || obs_sceneitem_get_bounds_type(item) == OBS_BOUNDS_NONE ||
+		    !(has(listed, name) || fitted_before(name)))
+			continue;
+		vec2 pos, bounds;
+		obs_sceneitem_get_pos(item, &pos);
+		obs_sceneitem_get_bounds(item, &bounds);
+		fitted_boxes.push_back({pos.x, pos.y, bounds.x, bounds.y});
+	}
+	for (auto at = items.rbegin(); at != items.rend(); ++at) {
+		obs_sceneitem_t *item = *at;
+		obs_source_t *source = obs_sceneitem_get_source(item);
+		const char *name_c = obs_source_get_name(source);
+		if (!name_c || !*name_c || is_morph_layer(item) || is_stand_in(source) || obs_obj_is_private(source) ||
+		    !(obs_source_get_output_flags(source) & OBS_SOURCE_VIDEO))
+			continue;
+		const std::string name = name_c;
+		if (has(listed, name) || has(skip, name) || has(others.taken, name) || has(out, name))
+			continue;
+		if (!fitted_before(name)) {
+			const double share = screen_share(item);
+			if (share <= 0.0 || share >= kFillsScreen)
+				continue; // no size yet (looked at again later), or fills the screen
+			// Put down inside a fitted source's space: not fitted yet. Its
+			// place lies inside that space, so the fit would take the
+			// same space for it (what a place lies inside is not in its
+			// way) and the two would overlap for good. Meanwhile it is in
+			// the other's way: that one makes room, and this one is
+			// fitted into the room once its place is clear.
+			// (Its middle from its position, size and alignment: an item
+			// just added has a box of 1x1 until its scene is drawn.)
+			vec2 pos, scale;
+			obs_sceneitem_get_pos(item, &pos);
+			obs_sceneitem_get_scale(item, &scale);
+			obs_sceneitem_crop crop;
+			obs_sceneitem_get_crop(item, &crop);
+			double w = std::max(0.0, (double)obs_source_get_width(source) - crop.left - crop.right) *
+				   std::fabs(scale.x);
+			double h = std::max(0.0, (double)obs_source_get_height(source) - crop.top - crop.bottom) *
+				   std::fabs(scale.y);
+			if (obs_sceneitem_get_bounds_type(item) != OBS_BOUNDS_NONE) {
+				vec2 bounds;
+				obs_sceneitem_get_bounds(item, &bounds);
+				w = bounds.x;
+				h = bounds.y;
+			}
+			const uint32_t align = obs_sceneitem_get_alignment(item);
+			const double cx = pos.x + ((align & OBS_ALIGN_LEFT)    ? w / 2.0
+						   : (align & OBS_ALIGN_RIGHT) ? -w / 2.0
+									       : 0.0);
+			const double cy = pos.y + ((align & OBS_ALIGN_TOP)      ? h / 2.0
+						   : (align & OBS_ALIGN_BOTTOM) ? -h / 2.0
+										: 0.0);
+			bool inside = false;
+			for (const Box &b : fitted_boxes)
+				inside = inside || (cx > b.x && cx < b.x + b.w && cy > b.y && cy < b.y + b.h);
+			if (inside)
+				continue;
+		}
+		out.push_back(name);
+	}
+	for (obs_sceneitem_t *item : items)
+		obs_sceneitem_release(item);
+	return out;
+}
+
+// Every source fitted: the listed ones, then (with All sources) the rest.
+std::vector<std::string> fitted_names(obs_source_t *self, obs_data_t *settings)
+{
+	std::vector<std::string> names = pick_list_read(settings, "entries", false);
+	obs_source_t *scene = self ? obs_filter_get_parent(self) : nullptr;
+	for (const std::string &name : unlisted_sources(self, scene, settings))
+		names.push_back(name);
+	return names;
 }
 
 class SceneFit;
@@ -76,7 +241,36 @@ public:
 
 	void update(obs_data_t *settings)
 	{
-		const std::vector<std::string> names = pick_list_read(settings, "entries", false);
+		std::vector<std::string> names = pick_list_read(settings, "entries", false);
+		const bool all = obs_data_get_int(settings, "which") == (int)Which::AllSources;
+		{
+			// The unlisted sources as last counted, less any now listed or
+			// ignored; counted again in the next tick.
+			const std::vector<std::string> skip = pick_list_read(settings, "skip", false);
+			std::lock_guard lock(mutex_);
+			all_ = all;
+			if (!all)
+				unlisted_.clear();
+			std::vector<std::string> kept;
+			for (const std::string &name : unlisted_)
+				if (!has(names, name) && !has(skip, name))
+					kept.push_back(name);
+			unlisted_ = kept;
+			for (const std::string &name : kept)
+				names.push_back(name);
+			count_now_ = true;
+		}
+		build(settings, names);
+	}
+
+	void tick(float seconds);
+
+private:
+	// The entries for these names, in this order: a new one is made, and one
+	// kept is given the settings again when `again` (new settings, not a
+	// source come or gone).
+	void build(obs_data_t *settings, const std::vector<std::string> &names, bool again = true)
+	{
 		for (const std::string &name : names)
 			fit_entry_defaults(settings, prefix_of(name));
 		std::vector<std::shared_ptr<Entry>> was;
@@ -91,7 +285,8 @@ public:
 				if (old->name == name)
 					entry = old;
 			if (entry) {
-				entry->engine->update(settings);
+				if (again)
+					entry->engine->update(settings);
 			} else {
 				entry = std::make_shared<Entry>();
 				entry->name = name;
@@ -105,6 +300,39 @@ public:
 		entries_ = now;
 	}
 
+	// With All sources: the scene's sources counted again, twice a second
+	// (at once after new settings), and the entries made again when they
+	// changed.
+	void count_sources(float seconds)
+	{
+		bool all, now;
+		{
+			std::lock_guard lock(mutex_);
+			all = all_;
+			now = std::exchange(count_now_, false);
+		}
+		count_s_ += seconds;
+		if (!all || (!now && count_s_ < kLookForSources))
+			return;
+		count_s_ = 0.0;
+		obs_data_t *settings = obs_source_get_settings(source_);
+		const std::vector<std::string> found = unlisted_sources(source_, parent_, settings);
+		bool changed;
+		{
+			std::lock_guard lock(mutex_);
+			changed = found != unlisted_;
+			if (changed)
+				unlisted_ = found;
+		}
+		if (changed) {
+			std::vector<std::string> names = pick_list_read(settings, "entries", false);
+			names.insert(names.end(), found.begin(), found.end());
+			build(settings, names, false);
+		}
+		obs_data_release(settings);
+	}
+
+public:
 	void attach(obs_source_t *parent)
 	{
 		parent_ = parent;
@@ -123,8 +351,6 @@ public:
 		parent_ = nullptr;
 	}
 
-	void tick(float seconds);
-
 private:
 	struct Entry {
 		std::string name;
@@ -134,6 +360,10 @@ private:
 	obs_source_t *parent_ = nullptr;
 	std::mutex mutex_;
 	std::vector<std::shared_ptr<Entry>> entries_; // under mutex_
+	bool all_ = false;                            // All sources (under mutex_)
+	std::vector<std::string> unlisted_;           // the sources fitted besides the listed ones (under mutex_)
+	bool count_now_ = true;                       // (under mutex_)
+	double count_s_ = 0.0;                        // on the tick only
 	// One look at what is in the way for each way of measuring the
 	// entries use (normally one): by visible pixels, without shadows.
 	std::map<int, FitScan> scans_;
@@ -156,6 +386,18 @@ void SceneFit::tick(float seconds)
 			claim_clear(entry->engine.get());
 		return;
 	}
+	count_sources(seconds);
+	bool all;
+	{
+		std::lock_guard lock(mutex_);
+		entries = entries_;
+		all = all_;
+	}
+	// With All sources, every source is fitted: another entry's claim is
+	// in the way even where an entry's place lies inside it (FitEngine::
+	// solve), or two resized entries could take one space for good.
+	for (const auto &entry : entries)
+		entry->engine->set_claims_firm(all);
 	if (forget_.exchange(false))
 		scans_.clear();
 	// Off screen with nothing asked of any entry: four times a second only.
@@ -197,9 +439,12 @@ void SceneFit::tick(float seconds)
 	std::vector<Prep> preps(n);
 	enum class Way { Skip, Place, Hold, Solve };
 	std::vector<Way> way(n, Way::Skip);
-	for (size_t i = 0; i < n; i++)
+	for (size_t i = 0; i < n; i++) {
+		// (Its place in the list, for "Priority by list order".)
+		entries[i]->engine->set_entry_index((int)i);
 		if (entries[i]->engine->prepare(items[i], seconds, preps[i]))
 			way[i] = Way::Place;
+	}
 	// B: whether each in the free space has a space to look for.
 	bool any_solve = false;
 	for (size_t i = 0; i < n; i++) {
@@ -252,7 +497,7 @@ void SceneFit::tick(float seconds)
 				FitEngine &engine = *entries[i]->engine;
 				Prep &p = preps[i];
 				scan_of(p.how).obstacles(parent_, p.item, p.s.skip, p.s.skip_rule, &engine, p.how,
-							 in_way, &ids);
+							 in_way, &ids, &engine.rank());
 				bool rest = false;
 				engine.observe(in_way, engine.arriving(), pass == 0 ? seconds : 0.0f, rest);
 				if (pass == 0)
@@ -330,11 +575,11 @@ void SceneFit::tick(float seconds)
 
 // ---------------------------------------------------------------- the window
 
-// The entries' groups follow the list: one is added for an entry just added,
-// and the one of an entry taken off goes. Only the chosen entry's shows.
-void show_chosen(obs_properties_t *top, obs_data_t *settings)
+// The entries' groups follow the list (and, with All sources, the scene): one
+// is added for an entry just added, and the one of an entry taken off goes.
+// Only the chosen entry's shows.
+void show_chosen(obs_properties_t *top, obs_data_t *settings, const std::vector<std::string> &names)
 {
-	const std::vector<std::string> names = pick_list_read(settings, "entries", false);
 	std::string chosen = obs_data_get_string(settings, "fit_for");
 	if (std::find(names.begin(), names.end(), chosen) == names.end())
 		chosen = names.empty() ? std::string() : names.front();
@@ -345,6 +590,9 @@ void show_chosen(obs_properties_t *top, obs_data_t *settings)
 		}
 	if (obs_property_t *box = obs_properties_get(top, "fit_for"))
 		obs_property_set_visible(box, !names.empty());
+	const bool all = obs_data_get_int(settings, "which") == (int)Which::AllSources;
+	if (obs_property_t *skip = obs_properties_get(top, "skip|alist"))
+		obs_property_set_visible(skip, all);
 }
 
 void add_entry_group(obs_properties_t *top, obs_source_t *owner, obs_data_t *settings, const std::string &name)
@@ -361,7 +609,7 @@ void add_entry_group(obs_properties_t *top, obs_source_t *owner, obs_data_t *set
 
 void sync_groups(obs_properties_t *top, obs_source_t *owner, obs_data_t *settings)
 {
-	const std::vector<std::string> names = pick_list_read(settings, "entries", false);
+	const std::vector<std::string> names = fitted_names(owner, settings);
 	// Groups of entries no longer listed.
 	std::vector<std::string> gone;
 	for (obs_property_t *p = obs_properties_first(top); p; obs_property_next(&p)) {
@@ -385,7 +633,7 @@ void sync_groups(obs_properties_t *top, obs_source_t *owner, obs_data_t *setting
 		if (!names.empty() && std::find(names.begin(), names.end(), was) == names.end())
 			obs_data_set_string(settings, "fit_for", names.back().c_str());
 	}
-	show_chosen(top, settings);
+	show_chosen(top, settings, names);
 }
 
 // The names of the fit keys a Fit to Space keeps, with what kind each is.
@@ -404,6 +652,7 @@ const FitKey kFitKeys[] = {
 	{"tolerance", Kind::Double},
 	{"resize", Kind::Bool},
 	{"toward", Kind::Int},
+	{"space_priority", Kind::Int},
 	{"visible_pixels", Kind::Bool},
 	{"no_shadows", Kind::Bool},
 	{"glide_ms", Kind::Int},
@@ -489,8 +738,12 @@ bool take_over(obs_properties_t *top, obs_property_t *, void *data)
 					pick_list_read(theirs, "share_scenes", false));
 			// The overlap switch is the Scene Fit's own, for all: it is
 			// taken from the first one taken over into an empty Scene Fit.
-			if (first && had_none)
+			if (first && had_none) {
 				obs_data_set_bool(settings, "skip_fill_on", obs_data_get_bool(theirs, "skip_fill_on"));
+				// So is "Priority by list order".
+				obs_data_set_bool(settings, "list_priority",
+						  obs_data_get_bool(theirs, "list_priority"));
+			}
 			first = false;
 			obs_source_set_enabled(filter, false);
 			obs_log(LOG_INFO, "Scene Fit '%s': took over Fit to Space '%s' (%s)",
@@ -509,9 +762,21 @@ bool take_over(obs_properties_t *top, obs_property_t *, void *data)
 	return true;
 }
 
-bool chosen_modified(obs_properties_t *top, obs_property_t *, obs_data_t *settings)
+bool chosen_modified(void *data, obs_properties_t *top, obs_property_t *, obs_data_t *settings)
 {
-	show_chosen(top, settings);
+	auto *self = static_cast<SceneFit *>(data);
+	show_chosen(top, settings, fitted_names(self ? self->source() : nullptr, settings));
+	return true;
+}
+
+// All sources and back: the entries' groups follow.
+bool which_modified(void *data, obs_properties_t *top, obs_property_t *, obs_data_t *settings)
+{
+	auto *self = static_cast<SceneFit *>(data);
+	if (self)
+		sync_groups(top, self->source(), settings);
+	else
+		show_chosen(top, settings, pick_list_read(settings, "entries", false));
 	return true;
 }
 
@@ -527,6 +792,12 @@ obs_properties_t *get_properties(void *data)
 		obs_property_text_set_info_type(wrong, OBS_TEXT_INFO_WARNING);
 		obs_property_text_set_info_word_wrap(wrong, true);
 	}
+	obs_property_t *which = obs_properties_add_list(props, "which", obs_module_text("SceneFit.Which"),
+							OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+	obs_property_list_add_int(which, obs_module_text("SceneFit.Which.All"), (int)Which::AllSources);
+	obs_property_list_add_int(which, obs_module_text("SceneFit.Which.Listed"), (int)Which::Chosen);
+	obs_property_set_long_description(which, obs_module_text("SceneFit.Which.Tip"));
+	obs_property_set_modified_callback2(which, which_modified, self);
 	PickList entries;
 	entries.setting = "entries";
 	entries.title = "SceneFit.Entries";
@@ -536,12 +807,24 @@ obs_properties_t *get_properties(void *data)
 		scene_item_names(parent, names);
 	};
 	pick_list_add(props, owner, entries);
+	PickList skip;
+	skip.setting = "skip";
+	skip.title = "SceneFit.Skip";
+	skip.add = "SceneFit.AddSource";
+	skip.tip = "SceneFit.Skip.Tip";
+	skip.choices = [parent](std::vector<std::string> &names) {
+		scene_item_names(parent, names);
+	};
+	pick_list_add(props, owner, skip);
 	obs_property_t *take =
 		obs_properties_add_button2(props, "take_over", obs_module_text("SceneFit.TakeOver"), take_over, self);
 	obs_property_set_long_description(take, obs_module_text("SceneFit.TakeOver.Tip"));
 	obs_property_t *rule = obs_properties_add_bool(props, "skip_fill_on", obs_module_text("Fit.SkipFillOn"));
 	obs_property_set_long_description(rule, obs_module_text("SceneFit.SkipFillOn.Tip"));
-	obs_property_set_modified_callback(rule, chosen_modified);
+	obs_property_set_modified_callback2(rule, chosen_modified, self);
+	obs_property_t *by_list = obs_properties_add_bool(props, "list_priority", obs_module_text("Fit.ListPriority"));
+	obs_property_set_long_description(by_list, obs_module_text("SceneFit.ListPriority.Tip"));
+	obs_property_set_modified_callback2(by_list, chosen_modified, self);
 	obs_property_t *chosen = obs_properties_add_list(props, "fit_for", obs_module_text("SceneFit.For"),
 							 OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
 	obs_property_set_long_description(chosen, obs_module_text("SceneFit.For.Tip"));
@@ -550,13 +833,18 @@ obs_properties_t *get_properties(void *data)
 		sync_groups(props, owner, settings);
 		obs_data_release(settings);
 	}
-	obs_property_set_modified_callback(chosen, chosen_modified);
+	obs_property_set_modified_callback2(chosen, chosen_modified, self);
 	return props;
 }
 
 void get_defaults(obs_data_t *settings)
 {
+	// (Not All sources: every source of a scene would be moved and resized
+	// the moment the filter was added, and every filter saved before would
+	// change.)
+	obs_data_set_default_int(settings, "which", (int)Which::Chosen);
 	obs_data_set_default_bool(settings, "skip_fill_on", false);
+	obs_data_set_default_bool(settings, "list_priority", false);
 }
 
 // A source is renamed: its entry, its settings and the lists naming it follow.
@@ -574,7 +862,7 @@ void on_source_rename(void *, calldata_t *cd)
 			if (obs_source_t *held = obs_source_get_ref(each->source()))
 				owners.push_back(held);
 	}
-	auto move = [](obs_data_t *settings, const std::string &from, const std::string &to) {
+	auto move = [](obs_data_t *settings, const std::string &from, const std::string &to) -> bool {
 		std::vector<std::string> keys;
 		for (obs_data_item_t *item = obs_data_first(settings); item; obs_data_item_next(&item)) {
 			const char *name = obs_data_item_get_name(item);
@@ -616,6 +904,7 @@ void on_source_rename(void *, calldata_t *cd)
 			obs_data_item_release(&item);
 			obs_data_erase(settings, key.c_str());
 		}
+		return !keys.empty();
 	};
 	for (obs_source_t *owner : owners) {
 		obs_data_t *settings = obs_source_get_settings(owner);
@@ -627,20 +916,41 @@ void on_source_rename(void *, calldata_t *cd)
 				changed = true;
 			}
 		}
-		if (changed) {
-			move(settings, prefix_of(was), prefix_of(now));
-			move(settings, fit_list_prefix(was), fit_list_prefix(now));
+		const bool all = obs_data_get_int(settings, "which") == (int)Which::AllSources;
+		if (changed || all) {
+			// (With All sources an unlisted source has its settings there
+			// too; nothing is moved for a source that has none.)
+			bool moved = move(settings, prefix_of(was), prefix_of(now));
+			moved = move(settings, fit_list_prefix(was), fit_list_prefix(now)) || moved;
+			changed = changed || moved;
 			for (const char *key : {"keep_item", "orig_item"}) {
 				const std::string full = prefix_of(now) + key;
 				if (obs_data_get_string(settings, full.c_str()) == was)
 					obs_data_set_string(settings, full.c_str(), now.c_str());
 			}
-			pick_list_write(settings, "entries", false, names);
-			if (obs_data_get_string(settings, "fit_for") == was)
+			if (changed)
+				pick_list_write(settings, "entries", false, names);
+			if (obs_data_get_string(settings, "fit_for") == was) {
 				obs_data_set_string(settings, "fit_for", now.c_str());
+				changed = true;
+			}
+		}
+		// The ignored sources.
+		{
+			std::vector<std::string> skip = pick_list_read(settings, "skip", false);
+			bool named = false;
+			for (std::string &one : skip)
+				if (one == was) {
+					one = now;
+					named = true;
+				}
+			if (named) {
+				pick_list_write(settings, "skip", false, skip);
+				changed = true;
+			}
 		}
 		// Every entry's list of ignored sources.
-		for (const std::string &name : names) {
+		for (const std::string &name : fitted_names(owner, settings)) {
 			const std::string setting = fit_list_prefix(name) + "skip";
 			std::vector<std::string> skip = pick_list_read(settings, setting.c_str(), false);
 			bool named = false;

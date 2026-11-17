@@ -14,6 +14,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include "fit-engine.hpp"
 #include "../common/stand-in.hpp"
+#include "../common/filter-order.hpp"
 
 #include "../common/timing.hpp"
 
@@ -315,17 +316,18 @@ void share_partners(FitEngine *asking, const std::string &item, std::vector<std:
 // height) that holds the point (ax, ay): inside `within` less the gap, and
 // the gap away from everything in `others`. Something the point is inside (a
 // background, a frame round the picture) is not in the way.
-Box free_space(const Box &within, double ax, double ay, const std::vector<Box> &others, double gap, double shape,
-	       double tolerance)
+namespace {
+Box free_space_round(const Box &within, double ax, double ay, const std::vector<Box> &others, double gap, double shape,
+		     double tolerance, const std::vector<bool> *firm)
 {
 	const double l0 = within.x + gap, t0 = within.y + gap;
 	const double r0 = within.x + within.w - gap, b0 = within.y + within.h - gap;
-	ax = std::clamp(ax, l0, std::max(l0, r0));
-	ay = std::clamp(ay, t0, std::max(t0, b0));
 	std::vector<Box> in_way;
 	std::vector<double> lefts{l0}, rights{r0}, tops{t0}, bottoms{b0};
-	for (const Box &o : others) {
-		if (ax > o.x && ax < o.x + o.w && ay > o.y && ay < o.y + o.h)
+	for (size_t i = 0; i < others.size(); i++) {
+		const Box &o = others[i];
+		const bool must = firm && i < firm->size() && (*firm)[i];
+		if (!must && ax > o.x && ax < o.x + o.w && ay > o.y && ay < o.y + o.h)
 			continue;
 		const Box grown{o.x - gap, o.y - gap, o.w + 2.0 * gap, o.h + 2.0 * gap};
 		if (grown.x >= r0 || grown.x + grown.w <= l0 || grown.y >= b0 || grown.y + grown.h <= t0)
@@ -381,6 +383,56 @@ Box free_space(const Box &within, double ax, double ay, const std::vector<Box> &
 			best = one.box;
 			best_area = one.area;
 		}
+	return best;
+}
+} // namespace
+
+Box free_space(const Box &within, double ax, double ay, const std::vector<Box> &others, double gap, double shape,
+	       double tolerance, const std::vector<bool> *firm)
+{
+	const double l0 = within.x + gap, t0 = within.y + gap;
+	const double r0 = within.x + within.w - gap, b0 = within.y + within.h - gap;
+	ax = std::clamp(ax, l0, std::max(l0, r0));
+	ay = std::clamp(ay, t0, std::max(t0, b0));
+	// A fit that takes its space first may have taken the very point this
+	// one's space is looked for round (its home). That one is in the way
+	// all the same, and the space is looked for just off each of its sides
+	// in turn, the one holding the biggest picture taken. The point itself
+	// is not changed: once the other has gone, the space is round it again.
+	auto inside_firm = [&](double x, double y) -> int {
+		for (size_t i = 0; firm && i < others.size() && i < firm->size(); i++) {
+			if (!(*firm)[i])
+				continue;
+			const Box &o = others[i];
+			if (x > o.x - gap && x < o.x + o.w + gap && y > o.y - gap && y < o.y + o.h + gap)
+				return (int)i;
+		}
+		return -1;
+	};
+	const int in = inside_firm(ax, ay);
+	if (in < 0)
+		return free_space_round(within, ax, ay, others, gap, shape, tolerance, firm);
+	const Box &o = others[(size_t)in];
+	const double off = 0.01;
+	const double tries[4][2] = {{o.x - gap - off, ay},
+				    {o.x + o.w + gap + off, ay},
+				    {ax, o.y - gap - off},
+				    {ax, o.y + o.h + gap + off}};
+	Box best{};
+	double best_k = -1.0;
+	for (const auto &at : tries) {
+		const double x = at[0], y = at[1];
+		if (x < l0 || x > r0 || y < t0 || y > b0 || inside_firm(x, y) >= 0)
+			continue;
+		const Box one = free_space_round(within, x, y, others, gap, shape, tolerance, firm);
+		if (one.w < 2.0 || one.h < 2.0)
+			continue;
+		const double k = shape > 0.0 ? std::min(one.w / shape, one.h) : one.w * one.h;
+		if (k > best_k + 0.01) {
+			best = one;
+			best_k = k;
+		}
+	}
 	return best;
 }
 
@@ -514,6 +566,13 @@ void FitEngine::update(obs_data_t *settings)
 	s.toward_x = kTowardX[toward];
 	s.toward_y = kTowardY[toward];
 	s.share_scenes = pick_list_read(settings, (list_prefix_ + "share_scenes").c_str(), false);
+	// Which fits make room for which. The level is each fit's own (an
+	// entry's under its prefix); the list order switch is a Fit to Space's
+	// own, or the Scene Fit's for all its entries. Neither saved (a filter
+	// from before they existed): sharing, as every fit did then.
+	const long long level = obs_data_get_int(settings, k("space_priority").c_str());
+	s.priority = level == 1 ? SpacePriority::First : level == 2 ? SpacePriority::MakesRoom : SpacePriority::Shares;
+	s.by_list = obs_data_get_bool(settings, "list_priority");
 	s.orig_item = obs_data_get_string(settings, k("orig_item").c_str());
 	s.orig_k = num("orig_k");
 	own_seen_ = false; // what shows of the item is looked at again
@@ -670,6 +729,12 @@ bool FitEngine::prepare(obs_sceneitem_t *item, float tick_seconds, Prep &p)
 		}
 		s = settings_;
 	}
+	// Where it stands: its filter's place in the scene's list is looked up
+	// at every tick, so moving the filter up or down counts at once.
+	{
+		const int at = parent_ ? applied_index(parent_, source_) : -1;
+		rank_ = Rank{s.by_list && at >= 0, s.priority, std::max(0, at), entry_index_};
+	}
 	if (placed_now || shared_now) {
 		// The room it held is not where it is now.
 		have_claim_ = box_asked_ = false;
@@ -701,7 +766,7 @@ bool FitEngine::prepare(obs_sceneitem_t *item, float tick_seconds, Prep &p)
 		if (!hidden_)
 			box_asked_ = false;
 		if (holds_room(item, s))
-			claim_set(parent_, obs_sceneitem_get_id(item), this, last_claim_);
+			say(obs_sceneitem_get_id(item), last_claim_);
 		else
 			claim_clear(this);
 		hidden_ = true;
@@ -719,7 +784,7 @@ bool FitEngine::prepare(obs_sceneitem_t *item, float tick_seconds, Prep &p)
 	}
 	if (coming_back_) {
 		if ((back_for_ += seconds) < kComingBack && item) {
-			claim_set(parent_, obs_sceneitem_get_id(item), this, last_claim_);
+			say(obs_sceneitem_get_id(item), last_claim_);
 			return false;
 		}
 		coming_back_ = false;
@@ -735,7 +800,7 @@ bool FitEngine::prepare(obs_sceneitem_t *item, float tick_seconds, Prep &p)
 		// beside it glided to the middle of the screen and stayed
 		// there, and the display was fitted smaller in what was left.
 		if (item && holds_room(item, s))
-			claim_set(parent_, obs_sceneitem_get_id(item), this, last_claim_);
+			say(obs_sceneitem_get_id(item), last_claim_);
 		return false;
 	}
 
@@ -1068,7 +1133,9 @@ void FitEngine::observe(const std::vector<Obstacle> &in_way, bool arriving, floa
 	std::vector<int64_t> ids; // which item each is, and whether its
 	std::vector<bool> said;   // filter said where it is going
 	std::vector<bool> passed; // one of the items never in the way
+	std::vector<bool> above;  // placed by a fit that takes its space first
 	for (const Obstacle &o : in_way) {
+		above.push_back(o.above);
 		boxes.push_back(o.box);
 		gives.push_back(o.gives);
 		ids.push_back(o.id);
@@ -1083,7 +1150,7 @@ void FitEngine::observe(const std::vector<Obstacle> &in_way, bool arriving, floa
 	// way somewhere (gliding, being dragged, a window growing), or
 	// `stepped`, a change made in one go: an item shown or hidden, or
 	// another filter saying where its item is going.
-	bool moved = false, stepped = ids != ids_ || said != said_ || passed != passed_;
+	bool moved = false, stepped = ids != ids_ || said != said_ || passed != passed_ || above != above_;
 	if (!stepped)
 		for (size_t i = 0; i < boxes.size(); i++)
 			if (differs(boxes[i], boxes_[i]))
@@ -1108,6 +1175,7 @@ void FitEngine::observe(const std::vector<Obstacle> &in_way, bool arriving, floa
 		ids_ = ids;
 		said_ = said;
 		passed_ = passed;
+		above_ = above;
 		unsettled_ = true;
 		calm_for_ = 0.0;
 	} else if (stepped) {
@@ -1120,6 +1188,7 @@ void FitEngine::observe(const std::vector<Obstacle> &in_way, bool arriving, floa
 		ids_ = ids;
 		said_ = said;
 		passed_ = passed;
+		above_ = above;
 		if (!unsettled_)
 			changed_ = true;
 	} else if (unsettled_) {
@@ -1206,10 +1275,57 @@ bool FitEngine::solve(Prep &p, float seconds, bool first_pass, bool &moved)
 		// picture's shape alone, not from where it is now, so the
 		// choice does not flip once the picture has moved.
 		std::vector<Box> firm;
+		std::vector<bool> firm_above;
 		for (size_t i = 0; i < boxes_.size(); i++)
-			if (i >= passed_.size() || !passed_[i])
+			if (i >= passed_.size() || !passed_[i]) {
 				firm.push_back(boxes_[i]);
-		Box goal = free_space(within, s.anchor_x, s.anchor_y, firm, s.margin, shape_used_, s.tolerance);
+				firm_above.push_back(i < above_.size() && above_[i]);
+			}
+		// Where the space is looked for round. What the place lies inside
+		// is not in the way (a background, a frame). With All sources in a
+		// Scene Fit every source is fitted, and two resized ones whose
+		// places lay inside each other's claims took the same space for
+		// good: there the place is first taken out of any other fit's
+		// claim, to the nearest point clear of it. A claim of a fit that
+		// takes its space before this one (Space priority) is left to
+		// `free_space`, which looks off each of its sides for the biggest
+		// picture; one this fit outranks is not in `boxes_` at all.
+		double ax = s.anchor_x, ay = s.anchor_y;
+		if (claims_firm_) {
+			for (int round = 0; round < 4; round++) {
+				bool inside = false;
+				for (size_t i = 0; i < boxes_.size() && i < said_.size(); i++) {
+					const Box &b = boxes_[i];
+					if (!said_[i] || (i < above_.size() && above_[i]) ||
+					    !(ax > b.x && ax < b.x + b.w && ay > b.y && ay < b.y + b.h))
+						continue;
+					inside = true;
+					const double out = s.margin + 1.0;
+					const double l = b.x - out, r = b.x + b.w + out, t = b.y - out,
+						     d = b.y + b.h + out;
+					struct Way {
+						double x, y;
+					};
+					const Way ways[] = {{l, ay}, {r, ay}, {ax, t}, {ax, d}};
+					double best = 1e18;
+					Way to = ways[0];
+					for (const Way &w : ways) {
+						const bool on = w.x >= within.x && w.x <= within.x + within.w &&
+								w.y >= within.y && w.y <= within.y + within.h;
+						const double far = std::fabs(w.x - ax) + std::fabs(w.y - ay);
+						if (on && far < best) {
+							best = far;
+							to = w;
+						}
+					}
+					ax = to.x;
+					ay = to.y;
+				}
+				if (!inside)
+					break;
+			}
+		}
+		Box goal = free_space(within, ax, ay, firm, s.margin, shape_used_, s.tolerance, &firm_above);
 		avoiding_ = false;
 		if (s.skip_rule && firm.size() != boxes_.size() && goal.w >= 2.0 && goal.h >= 2.0) {
 			double fw = kept_w, fh = kept_h;
@@ -1229,8 +1345,8 @@ bool FitEngine::solve(Prep &p, float seconds, bool first_pass, bool &moved)
 					    spare_w - left <= s.px_right + 0.05 && top <= s.px_top + 0.05 &&
 					    spare_h - top <= s.px_bottom + 0.05);
 			if (!fills) {
-				const Box beside = free_space(within, s.anchor_x, s.anchor_y, boxes_, s.margin,
-							      shape_used_, s.tolerance);
+				const Box beside =
+					free_space(within, ax, ay, boxes_, s.margin, shape_used_, s.tolerance, &above_);
 				if (beside.w >= 2.0 && beside.h >= 2.0) {
 					goal = beside;
 					avoiding_ = true;
@@ -1320,6 +1436,12 @@ Box FitEngine::kept_in(const Prep &p, const Box &room, double kw, double kh) con
 		   along(room.y, room.h, kh, soft_t, soft_b, p.s.toward_y), kw, kh};
 }
 
+void FitEngine::say(int64_t item, Claim claim)
+{
+	claim.rank = rank_;
+	claim_set(parent_, item, this, claim);
+}
+
 // What will show of it once it is where it is going, for any other Fit
 // to Space in this scene to go by.
 void FitEngine::publish_claim(const Prep &p)
@@ -1343,7 +1465,7 @@ void FitEngine::publish_claim(const Prep &p)
 			claim.box = Box{goal_.x + (goal_.w - p.pw * kg) * (s.toward_x + 1) / 2.0,
 					goal_.y + (goal_.h - p.ph * kg) * (s.toward_y + 1) / 2.0, p.pw * kg, p.ph * kg};
 		}
-		claim_set(parent_, obs_sceneitem_get_id(p.item), this, claim);
+		say(obs_sceneitem_get_id(p.item), claim);
 		last_claim_ = claim;
 		have_claim_ = true;
 	} else {
@@ -1522,7 +1644,7 @@ void FitEngine::tick(float seconds, FitScan &scan)
 				scan.forget();
 			scan.gather(parent_, p.item, this);
 			std::vector<Obstacle> in_way;
-			scan.obstacles(parent_, p.item, p.s.skip, p.s.skip_rule, this, p.how, in_way);
+			scan.obstacles(parent_, p.item, p.s.skip, p.s.skip_rule, this, p.how, in_way, nullptr, &rank_);
 			bool at_rest = false;
 			observe(in_way, arriving(), seconds, at_rest);
 			if (at_rest)
@@ -1605,7 +1727,7 @@ void FitScan::look(obs_source_t *scene, obs_sceneitem_t *other, const Measure &h
 
 void FitScan::obstacles(obs_source_t *scene, obs_sceneitem_t *self, const std::vector<std::string> &skip,
 			bool keep_skipped, const void *asking, const Measure &how, std::vector<Obstacle> &out,
-			const std::vector<int64_t> *twins_of)
+			const std::vector<int64_t> *twins_of, const Rank *mine)
 {
 	out.clear();
 	if (look_again_) {
@@ -1614,6 +1736,14 @@ void FitScan::obstacles(obs_source_t *scene, obs_sceneitem_t *self, const std::v
 	}
 	for (const Gathered &g : gathered_) {
 		if (g.item == self || g.top == self)
+			continue;
+		const int64_t id = obs_sceneitem_get_id(g.item);
+		Claim claim;
+		const bool claimed = claim_of(scene, id, asking, claim);
+		// Placed by a fit that makes room for this one: not in its way at
+		// all, wherever it is or is going. It goes by this one; this one
+		// never goes by it, so the two cannot chase each other.
+		if (claimed && mine && outranks(*mine, claim.rank))
 			continue;
 		bool passed = false;
 		if (!g.claimed) {
@@ -1633,10 +1763,11 @@ void FitScan::obstacles(obs_source_t *scene, obs_sceneitem_t *self, const std::v
 		}
 		if (std::find(used_.begin(), used_.end(), g.item) == used_.end())
 			used_.push_back(g.item);
-		const int64_t id = obs_sceneitem_get_id(g.item);
-		Claim claim;
-		if (claim_of(scene, id, asking, claim)) {
-			out.push_back(Obstacle{claim.box, id, true, claim.resizes, passed});
+		if (claimed) {
+			// (One that takes its space first never gives way: it is a
+			// firm side, not one that makes room.)
+			const bool above = mine && outranks(claim.rank, *mine);
+			out.push_back(Obstacle{claim.box, id, true, claim.resizes && !above, passed, above});
 			continue;
 		}
 		auto found = seen_.find(id);
@@ -1790,8 +1921,15 @@ void fit_controls_shown(obs_properties_t *props, obs_data_t *settings, const std
 	for (const char *name : {"box_x", "box_y", "box_width", "box_height"})
 		shown(get(name), kind == 1);
 	shown(obs_properties_get(props, (list_prefix + "skip|alist").c_str()), kind == 2);
-	for (const char *name : {"glide_ms", "ease_curve", "ease_mode", "visible_pixels", "tolerance"})
+	for (const char *name :
+	     {"glide_ms", "ease_curve", "ease_mode", "visible_pixels", "tolerance", "space_priority"})
 		shown(get(name), kind == 2);
+	// The level is not read while the list order decides (the Scene Fit's
+	// own switch, for an entry).
+	if (!entry)
+		shown(get("list_priority"), kind == 2);
+	if (obs_property_t *level = get("space_priority"))
+		obs_property_set_enabled(level, !obs_data_get_bool(settings, "list_priority"));
 	// (For a Scene Fit's entry the switch is the Scene Fit's own, for all.)
 	if (!entry)
 		shown(get("skip_fill_on"), kind == 2);
@@ -1835,6 +1973,20 @@ void fit_add_controls(obs_properties_t *props, const std::string &prefix, const 
 	obs_property_set_long_description(margin, obs_module_text("Fit.Margin.Tip"));
 	obs_property_t *resize = obs_properties_add_bool(props, key("resize").c_str(), obs_module_text("Fit.Resize"));
 	obs_property_set_long_description(resize, obs_module_text("Fit.Resize.Tip"));
+	// Which fits make room for which: saved by number, new ones at the end.
+	obs_property_t *level = obs_properties_add_list(props, key("space_priority").c_str(),
+							obs_module_text("Fit.Priority"), OBS_COMBO_TYPE_LIST,
+							OBS_COMBO_FORMAT_INT);
+	obs_property_list_add_int(level, obs_module_text("Fit.Priority.Shares"), (int)SpacePriority::Shares);
+	obs_property_list_add_int(level, obs_module_text("Fit.Priority.First"), (int)SpacePriority::First);
+	obs_property_list_add_int(level, obs_module_text("Fit.Priority.MakesRoom"), (int)SpacePriority::MakesRoom);
+	obs_property_set_long_description(level, obs_module_text("Fit.Priority.Tip"));
+	if (!entry) {
+		obs_property_t *by_list =
+			obs_properties_add_bool(props, "list_priority", obs_module_text("Fit.ListPriority"));
+		obs_property_set_long_description(by_list, obs_module_text("Fit.ListPriority.Tip"));
+		obs_property_set_modified_callback2(by_list, box_modified, (void *)keys);
+	}
 	obs_property_t *toward = obs_properties_add_list(props, key("toward").c_str(), obs_module_text("Fit.Toward"),
 							 OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	// Saved by number: new ones go at the end.
@@ -1947,6 +2099,7 @@ void fit_entry_defaults(obs_data_t *settings, const std::string &prefix)
 		obs_data_set_default_double(settings, key(name).c_str(), 50.0);
 	obs_data_set_default_bool(settings, key("resize").c_str(), true);
 	obs_data_set_default_int(settings, key("toward").c_str(), 0);
+	obs_data_set_default_int(settings, key("space_priority").c_str(), (int)SpacePriority::Shares);
 	obs_data_set_default_bool(settings, key("visible_pixels").c_str(), true);
 	obs_data_set_default_bool(settings, key("no_shadows").c_str(), true);
 	obs_data_set_default_int(settings, key("glide_ms").c_str(), 300);

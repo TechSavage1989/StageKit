@@ -9,9 +9,158 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | `feat/streamdeck-types` (beta157, the Stream Deck type lists). Next: `feat/scene-all-sources` (*All sources* on the scene filters), `feat/scene-blur` (Scene Blur and its key, built on this branch), then `feat/frame-time` and the new collection |
+| Working branch | `release/beta162` (All sources, Space priority, Link Visibility's transitions; built on `feat/scene-blur`, beta161). Next: `feat/frame-time` and the new collection |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
+
+## All sources, Space priority, Link Visibility's transitions (0.1.0-beta162)
+
+Branch `release/beta162`, made from `feat/scene-blur` (beta161) with the three finished branches
+below merged in this order, each a signed merge commit. Notes: `docs/releases/0.1.0-beta162.md`.
+No Stream Deck file changed (plugin stays 0.21.0.0).
+
+### How the three were put together
+
+- **All sources and Space priority share the fit engine.** In `FitEngine::solve` All sources'
+  `set_claims_firm` steps the place a space is looked for round out of another fit's claim; Space
+  priority marks the claims of fits that take their space before this one (`above_`) and lets
+  `free_space` look off each side of those (`firm`), keeping the biggest picture. Together: the
+  firm-claims step passes over a claim that is `above_` and leaves it to `free_space`; a claim of a
+  fit this one outranks is not in `boxes_` at all (`FitScan::obstacles` drops it), so neither step
+  sees it. Between fits of the same standing All sources works exactly as it did on its branch.
+- **An All sources entry has a Space priority.** The scene's sources that are not listed are
+  entries like the listed ones (`fit|<source>|`), so each has its own *Space priority* under
+  *Settings for* (default *Shares space*). With *Priority by list order* they come after the listed
+  ones, from the top of the scene down (`unlisted_sources`, `set_entry_index`).
+- Scene Fit's *Priority by list order* box uses the self-aware callback All sources gave the
+  overlap switch (`obs_property_set_modified_callback2(..., chosen_modified, self)`), so the
+  window shows the unlisted entries' groups too.
+- Morph: Scene Blur's `morph_accept_drawing_filter` and the Unpaired sources' `start_alone` /
+  `draw_alone` are apart in `morph.cpp` and merged without a conflict. The fallback is drawn only
+  for an item `item-morph.cpp` marks `ItemMorph::Alone`, which is set after the linked, main-image
+  and beta158/159 joining rules (`kJoinShare`) have all had their turn, so a left-over item that
+  joins a change is still morphed, not faded.
+- Test added: `[fit priority]` ends with a Scene Fit on All sources (nothing listed) whose game
+  entry takes its space first: the game is as tall as the screen and the camera beside it, both
+  entries have a *Space priority* control, both sharing behave as before, and a source put down
+  inside the game's space is fitted round it while the game does not move.
+- Conflicts were in the handoff, `fit-engine.cpp` (`solve`), `scene-fit.cpp` (properties) and two
+  new test functions written at one place in `tests/ambient-test.cpp` (both kept).
+- **Not tried on Windows**: any of it. In particular Scene Fit's window with many unlisted entries
+  and a *Space priority* in each, another plugin's transition as Morph's unpaired fallback, and how
+  the owner's real layout scenes settle with All sources.
+
+### All sources in the scene filters (branch `feat/scene-all-sources`)
+
+The owner: "the scene filters must have an all sources option." Each scene filter that chooses sources
+now has one **Sources covered** list with **All sources** first (AGENTS has the numbers and the rules):
+
+| Filter | Sources covered offers | A new filter starts on | A filter saved before reads as |
+| --- | --- | --- | --- |
+| Scene Transitions | All sources, Chosen sources (was *All sources in the scene* / *Only listed sources*; *Leave these alone* is *Ignored sources*) | All sources | unchanged |
+| Scene Fit | All sources, Chosen sources (its *Fitted sources*), plus *Ignored sources* | Chosen sources | Chosen sources |
+| Scene Standby | All sources, Every capture, Chosen sources | Every capture | Every capture |
+| Scene Corners | All sources, All but the background, Chosen sources | All but the background | All but the background |
+| Scene Shadow | All sources, Chosen sources (*No shadow for* is *Ignored sources*) | All sources | All sources |
+
+No default changed: OBS saves no value left on its default, so changing one would have changed every
+filter saved with it. Scene Modes has no All sources, on purpose (AGENTS says why). `screen_share` moved
+from Scene Corners to `src/common/scene-util.hpp`. Scene Fit's unlisted sources: a source put down inside a fitted
+source's space waits until that one has made room, and with All sources a place inside another fit's claim is
+moved clear of it before the space is looked for (`set_claims_firm`, `FitEngine::solve`; without both, a source
+added later and the chat box took the same space for good, found by the test). Fit to Space and a Scene Fit on
+Chosen sources solve as before. Tests: `[all sources: scene corners]`, `[... scene
+standby]`, `[... scene shadow]`, `[... scene fit]` in their own `scene-filters:all-sources` block. Not
+proven on Windows: Scene Fit's window with many unlisted entries (one group each under *Settings for*),
+and how All sources settles in the owner's real scenes (in the test four sources settle and stay still).
+
+### Space priority for Fit to Space and Scene Fit (branch `feat/fit-priority`)
+
+The owner, with a screenshot of a scene with many Fit to Space filters: "fit to filter priority of
+the source to override another source size or placement should be based on filter position ...
+if I want my primary capture or live sources to always grab space before and override the camera,
+it would go higher in the list". Then: "make it configurable. maybe a selector to set source as
+dominant, equal, and less", and "a tickbox that would disable the selector and make list order the
+priority".
+
+- **What the user sees.** *Space priority* on every Fit to Space and on every Scene Fit entry
+  (*Takes space first*, *Shares space*, *Makes room*), and *Priority by list order* on every Fit to
+  Space and once on Scene Fit. A source that takes space first fits as if the sources that share or
+  make room were not there and never moves for them; they fit around it. One that makes room fits
+  around all the others. The same level shares, as every fit did before. With the box ticked the
+  selector is greyed out, and among the ticked fits of a scene the one higher in the filter list
+  wins (a Scene Fit at its place, its entries in their order). A ticked fit counts as *Shares
+  space* towards an unticked one. Only the free space takes part.
+- **Default: *Shares space*, box unticked, for saved and new filters alike.** Saved filters must
+  not change by themselves: the owner's layout scenes were built on sharing (the Live scene's game
+  fitted beside the camera and chat column), and a dominant capture there would take the whole
+  height and leave the camera and chat box over it. For new filters *Shares space* too, not list
+  order: a new filter is most often added to a scene that already has sharing filters, and it then
+  behaves like them; with list order on by default, the order filters happened to be added in would
+  quietly decide who wins, and the selector would be greyed out for no reason the user chose. The
+  owner ticks the box, or picks a level, where they want it.
+- **How the claims changed.** A claim carries its fit's rank (`Rank`), looked up at every tick. A
+  fit does not see the claim of one it outranks at all; a claim that outranks it is a firm side,
+  never one that gives way. Between fits of different standing the dependence is therefore one-way
+  and nothing can chase. The same standing keeps today's two-way claims and their anti-chasing rules
+  untouched. A higher fit that covers a lower one's home point no longer lets the lower one sit on
+  top of it: the space is looked for just off the higher one's sides (`free_space`'s `firm`), the
+  home point is kept. A filter moved up or down is followed at the next tick, with a glide.
+- **Tests:** `[fit priority]` (`fit_priority_test`; run alone with
+  `STAGEKIT_TEST_ONLY_FIT_PRIORITY=1`): every level against every other in both filter orders,
+  ties compared with two that share, a filter saved before the setting, the camera and the game
+  each hidden and shown in both orders (the dominant game never moves; the camera makes way in one
+  move), list order with a filter moved up (glides) and back, ticked against unticked, the
+  selector greyed out, Scene Fit entries in order and swapped, Scene Fit by levels, and a Scene Fit
+  and a Fit to Space ranked by their places in one scene. The existing fit tests are unchanged:
+  their filters read as *Shares space*.
+- **Not done or not proven.** Not seen on Windows. Kept-size items in a priority pair are not in
+  the new tests (the old pair tests still cover them sharing). A lower fit with no room at all
+  keeps its last claim and its item stays where it was, under or over the higher one. A fit outside
+  the free space (whole scene, an area) has no rank and is an ordinary item to the others. The
+  merge scripts write no `space_priority`, so the generated collections share as before.
+
+### Link Visibility's show and hide transitions; Morph's Unpaired sources (branch `feat/link-visibility-transitions`)
+
+Branch `feat/link-visibility-transitions`. The owner, with a screenshot of a Link Visibility
+(*Follow the first source*, Game Capture and Column: Chat, *Also in other scenes*, Morph, 500 ms,
+*Lock hidden sources*): "Link visibility scene filter should have additional transition options
+including a fallback or other items transition for items that don't have partners".
+
+- `src/placement/visibility-link.cpp`: the fuller *Show/Hide transition*, the one Show in Scenes
+  has (`add_item_change_properties`, `item_change_read`, `apply_item_change`), not a third kind.
+  *Settings for* lists the sources of both lists (the list setting is now `"items,elsewhere"`;
+  `build` in `src/common/item-transition.cpp` reads comma-separated lists). Old filters keep the
+  same `transition` / `transition_ms` keys and `hide_transition` defaults to *The same as
+  showing*, so they read as before (tested: the kinds and durations set on the items, and *What is
+  set on each item* left alone).
+- `src/transition/morph.cpp`: *Unpaired sources* (`unpaired`, text; `morph_fade` as it comes):
+  Fade, Fade and zoom, Slide off the nearest edge (new for an item by itself: it was a fade), a cut,
+  or any other transition with its own settings (`unpaired|<kind>|...`). Another transition is a
+  private one (`fallback_`) set up in `start_alone` as a scene starts an item's own and driven by
+  hand from the change's clock; never to its end (it would draw the hidden item again), Morph
+  draws the last frames. Shown in Morph's own window (with the chosen kind's settings in a group
+  `unpaired|g`, rebuilt by `unpaired_own_cb`) and, copied, under Morph in every fuller *Change
+  with* in place of *With nothing to change into* (`others` is not copied: it only means something
+  in a change of scene). Old settings: `others` Fade and zoom reads as Fade and zoom, anything else
+  a fade, as before.
+- `build` in `item-transition.cpp` now makes nothing again when the controls are already made for
+  what is chosen (a hidden mark, `change|sig|...`). OBS calls every control's callback once when it
+  builds a window, from a list taken beforehand; one more callback that rebuilt (Unpaired sources)
+  made a callback run on a control already taken off, and a test window crashed in
+  `obs_properties_apply_settings`. The same was true before for the two kind lists and went unseen.
+- `item_morph_item` (`item-morph.*`) gives the item a Morph is the transition of, for the nearest
+  edge.
+- Test `[link visibility: show and hide transitions, and Morph's unpaired sources]` (run alone with
+  `STAGEKIT_TEST_ONLY_LINK_TRANS=1`): old settings, separate show and hide with a transition's own
+  settings, a source's own settings, the window; Morph's and Show in Scenes' controls and old
+  `others`; and a camera hidden as a capture is shown with a small source shown by the Link
+  Visibility, for each fallback (Morph's fade, zoom and slide, Fade and Zoom (StageKit), OBS's Slide
+  off the nearest edge, a cut): part-way in and out (or at once for the cut), whole or gone after,
+  with the camera and capture still morphing by one layer. `[show in scenes]` now looks for
+  `show|stagekit_morph|unpaired` where it looked for `...|others`.
+- Not seen on Windows; another plugin's transition used as the fallback has only been tried with
+  OBS's Slide and StageKit's Fade and Zoom.
 
 ## Scene Blur and its Stream Deck key (0.1.0-beta161, plugin 0.21.0.0)
 
@@ -102,7 +251,6 @@ change as well. Going back, the chat box came out of the camera.
   capture as the camera goes or comes): 2 layers on beta158, 1 now. The beta158 blocks there grew
   from 26 % to 56 % of the screen to stay over the new bar, as the owner's camera and captures are.
 - There is no setting for it: a panel is only pulled into another item's change through a link.
-
 ## A capture comes out of the DSLR (0.1.0-beta158)
 
 The owner, with their collection and four logs: "when I switch to window or game source from DSLR

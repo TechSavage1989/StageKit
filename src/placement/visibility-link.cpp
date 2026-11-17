@@ -52,6 +52,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <algorithm>
 #include <atomic>
 #include <functional>
+#include <map>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -99,6 +100,17 @@ std::vector<std::string> names_in(obs_data_t *settings)
 	obs_data_array_release(list);
 	return names;
 }
+
+// How the filter's items change: the usual way, and a listed source's own.
+struct Changes {
+	ItemChange usual;
+	std::map<std::string, ItemChange> own;
+	const ItemChange &of(const std::string &name) const
+	{
+		const auto found = own.find(name);
+		return found == own.end() ? usual : found->second;
+	}
+};
 
 class VisibilityLink {
 	// An item that was shown or hidden: its source's name, which of the two,
@@ -158,8 +170,14 @@ public:
 		if (names != names_ || mode != mode_)
 			acted_valid_ = false;
 		mode_ = mode;
-		transition_ = item_transition_kind(settings);
-		transition_ms_ = item_transition_ms(settings);
+		// How items change: the usual way, and each listed source's own
+		// (*Settings for*). A filter saved with the plain two controls
+		// keeps them under the same names: it reads as it did.
+		change_.usual = item_change_read(settings);
+		change_.own.clear();
+		for (const std::vector<std::string> *list : {&names, &elsewhere})
+			for (const std::string &name : *list)
+				change_.own[name] = item_change_read(settings, name.c_str());
 		names_ = names;
 	}
 
@@ -227,8 +245,7 @@ public:
 		LinkMode mode;
 		std::vector<std::string> names, elsewhere;
 		bool look_for_scenes = false;
-		std::string transition;
-		uint32_t transition_ms = 0;
+		Changes how;
 		bool lock_hidden = false;
 		{
 			std::lock_guard lock(mutex_);
@@ -244,8 +261,7 @@ public:
 				watch_timer_ = 2.0;
 				look_for_scenes = true;
 			}
-			transition = transition_;
-			transition_ms = transition_ms_;
+			how = change_;
 		}
 		if (look_for_scenes && parent_) {
 			if (elsewhere.empty())
@@ -296,7 +312,7 @@ public:
 		};
 		if (mode == LinkMode::Follow) {
 			applying_ = std::this_thread::get_id();
-			follow_first(names, elsewhere, changes, transition, transition_ms, lock_as_shown);
+			follow_first(names, elsewhere, changes, how, lock_as_shown);
 			applying_ = std::thread::id();
 			return;
 		}
@@ -335,15 +351,14 @@ public:
 				obs_sceneitem_t *item = find_item(parent_, name);
 				const bool want = mode == LinkMode::Together ? visible : false;
 				if (item && obs_sceneitem_visible(item) != want) {
-					set_item_transitions(item, transition, transition_ms);
+					apply_item_change(item, how.of(name), parent_);
 					set_item_visible(item, want);
 					lock_as_shown(name);
 				}
 			}
 			// And the sources followed into the other scenes, groups included.
 			if (!elsewhere.empty())
-				follow_elsewhere(elsewhere, changed, transition, transition_ms,
-						 mode == LinkMode::OnlyOne, visible);
+				follow_elsewhere(elsewhere, changed, how, mode == LinkMode::OnlyOne, visible);
 		}
 		applying_ = std::thread::id();
 	}
@@ -352,14 +367,15 @@ public:
 	// included: as `changed` was (Together, Follow the first), or, for
 	// Show only one, all but the one shown.
 	void follow_elsewhere(const std::vector<std::string> &elsewhere, const std::string &changed,
-			      const std::string &transition, uint32_t transition_ms, bool only_one, bool visible)
+			      const Changes &change, bool only_one, bool visible)
 	{
 		struct Work {
 			const std::vector<std::string> *sources;
-			const std::string *changed, *transition;
-			uint32_t transition_ms;
+			const std::string *changed;
+			const Changes *change;
 			bool only_one, visible;
-		} work{&elsewhere, &changed, &transition, transition_ms, only_one, visible};
+			obs_source_t *scene; // the scene gone through (null for a group)
+		} work{&elsewhere, &changed, &change, only_one, visible, nullptr};
 		static const auto each = [](obs_scene_t *, obs_sceneitem_t *item, void *param) {
 			auto *w = static_cast<Work *>(param);
 			const char *name = obs_source_get_name(obs_sceneitem_get_source(item));
@@ -370,7 +386,7 @@ public:
 			const bool act = listed && !(w->only_one && *w->changed == name);
 			const bool want = w->only_one ? false : w->visible;
 			if (act && obs_sceneitem_visible(item) != want) {
-				set_item_transitions(item, *w->transition, w->transition_ms);
+				apply_item_change(item, w->change->of(name), w->scene);
 				set_item_visible(item, want);
 			}
 			return true;
@@ -383,6 +399,9 @@ public:
 			[](void *param, obs_source_t *scene) {
 				auto *s = static_cast<Scenes *>(param);
 				// Groups are listed as scenes too, so their items are reached.
+				// (An item in a group goes by its own group's scene: none
+				// is named, and the group's is looked up.)
+				s->work->scene = obs_source_is_group(scene) ? nullptr : scene;
 				if (scene != s->own)
 					obs_scene_enum_items(obs_scene_from_source(scene), each, s->work);
 				return true;
@@ -393,7 +412,7 @@ public:
 	// Follow the first: the leader's state is followed once each time it
 	// changes, and while it is hidden none of the others may show.
 	void follow_first(const std::vector<std::string> &names, const std::vector<std::string> &elsewhere,
-			  const std::vector<Change> &changes, const std::string &transition, uint32_t transition_ms,
+			  const std::vector<Change> &changes, const Changes &change,
 			  const std::function<void(const std::string &)> &lock_as_shown)
 	{
 		for (const Change &c : changes)
@@ -431,12 +450,12 @@ public:
 				want = !link_visibility_holds_hidden(parent_, item);
 			if (want == shown)
 				continue;
-			set_item_transitions(item, transition, transition_ms);
+			apply_item_change(item, change.of(names[i]), parent_);
 			set_item_visible(item, want);
 			lock_as_shown(names[i]);
 		}
 		if (act && !elsewhere.empty())
-			follow_elsewhere(elsewhere, names[0], transition, transition_ms, false, lead_on);
+			follow_elsewhere(elsewhere, names[0], change, false, lead_on);
 		std::lock_guard lock(mutex_);
 		acted_valid_ = true;
 		acted_lead_ = lead_on;
@@ -492,8 +511,7 @@ private:
 	obs_source_t *source_;
 	obs_source_t *parent_ = nullptr;
 	std::mutex mutex_;
-	std::string transition_ = kTransitionFade;
-	uint32_t transition_ms_ = 300;
+	Changes change_;
 	LinkMode mode_ = LinkMode::OnlyOne;
 	std::vector<std::string> names_, elsewhere_;
 	std::vector<obs_weak_source_t *> watched_; // the other scenes listened to
@@ -548,7 +566,9 @@ obs_properties_t *get_properties(void *data)
 	};
 	pick_list_add(props, self ? self->source() : nullptr, elsewhere);
 
-	add_item_transition_properties(props);
+	// The fuller Show/Hide transition, with Settings for each source of
+	// both lists.
+	add_item_change_properties(props, self ? self->source() : nullptr, "items,elsewhere");
 	obs_property_t *lock_hidden = obs_properties_add_bool(props, "lock_hidden", obs_module_text("Link.LockHidden"));
 	obs_property_set_long_description(lock_hidden, obs_module_text("Link.LockHidden.Tip"));
 	obs_property_t *help = obs_properties_add_text(props, "help", obs_module_text("Link.Help"), OBS_TEXT_INFO);
@@ -635,7 +655,7 @@ void register_visibility_link()
 	info.get_defaults = [](obs_data_t *settings) {
 		obs_data_set_default_int(settings, "mode", (int)LinkMode::OnlyOne);
 		obs_data_set_default_bool(settings, "lock_hidden", false);
-		item_transition_defaults(settings);
+		item_change_defaults(settings);
 	};
 	info.get_properties = get_properties;
 	info.video_tick = [](void *data, float seconds) {
