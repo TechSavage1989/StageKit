@@ -34,6 +34,7 @@
 #include <QPushButton>
 #include <QWidget>
 
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -221,6 +222,403 @@ static bool opaque(const std::vector<uint8_t> &a)
 	return true;
 }
 
+// A stand-in for a capture: one colour, and, like a Game or Window Capture
+// on the owner's machine, no picture (no size) while nothing shows it; its
+// picture comes a little after it is shown again. Registered under a
+// capture's kind, so Ambient Background takes it for one.
+struct StandInCapture {
+	obs_source_t *source;
+	uint32_t colour = 0xFF00FF00;
+	uint32_t cx = 640, cy = 360;
+	bool lazy = true;
+	int frames_shown = 0;
+	std::atomic<int> start_frames{3};
+	std::atomic<bool> live{false};
+};
+
+static void register_stand_in_capture(const char *id)
+{
+	obs_source_info info = {};
+	info.id = id;
+	info.type = OBS_SOURCE_TYPE_INPUT;
+	info.output_flags = OBS_SOURCE_VIDEO | OBS_SOURCE_CUSTOM_DRAW;
+	info.get_name = [](void *) {
+		return "Capture (stand-in that starts when shown)";
+	};
+	info.create = [](obs_data_t *settings, obs_source_t *source) -> void * {
+		auto *c = new StandInCapture();
+		c->source = source;
+		c->colour = (uint32_t)obs_data_get_int(settings, "color");
+		c->cx = (uint32_t)obs_data_get_int(settings, "width");
+		c->cy = (uint32_t)obs_data_get_int(settings, "height");
+		c->lazy = !obs_data_get_bool(settings, "always");
+		c->live = !c->lazy;
+		return c;
+	};
+	info.update = [](void *data, obs_data_t *settings) {
+		auto *c = static_cast<StandInCapture *>(data);
+		if (obs_data_has_user_value(settings, "start_frames"))
+			c->start_frames = (int)obs_data_get_int(settings, "start_frames");
+	};
+	info.destroy = [](void *data) {
+		delete static_cast<StandInCapture *>(data);
+	};
+	info.video_tick = [](void *data, float) {
+		auto *c = static_cast<StandInCapture *>(data);
+		if (!c->lazy)
+			return;
+		// Its picture comes a few frames after it is first shown, and goes
+		// the moment nothing shows it.
+		c->frames_shown = obs_source_showing(c->source) ? c->frames_shown + 1 : 0;
+		c->live = c->frames_shown >= c->start_frames;
+	};
+	info.get_width = [](void *data) -> uint32_t {
+		auto *c = static_cast<StandInCapture *>(data);
+		return c->live ? c->cx : 0;
+	};
+	info.get_height = [](void *data) -> uint32_t {
+		auto *c = static_cast<StandInCapture *>(data);
+		return c->live ? c->cy : 0;
+	};
+	info.video_render = [](void *data, gs_effect_t *) {
+		auto *c = static_cast<StandInCapture *>(data);
+		if (!c->live)
+			return;
+		gs_effect_t *solid = obs_get_base_effect(OBS_EFFECT_SOLID);
+		vec4 colour;
+		vec4_from_rgba(&colour, c->colour);
+		gs_effect_set_vec4(gs_effect_get_param_by_name(solid, "color"), &colour);
+		while (gs_effect_loop(solid, "Solid"))
+			gs_draw_sprite(nullptr, 0, c->cx, c->cy);
+	};
+	obs_register_source(&info);
+}
+
+// The owner's switch from the camera to a capture in their full-capture
+// scene (beta154): the DSLR shown full-screen; a capture shown in its place,
+// the DSLR hidden by a Link Visibility (Show only one), the Square Camera (a
+// Cropped View of the DSLR) shown with the capture. Every item changes with
+// Morph over 700 ms, the DSLR and the Square Camera are linked in the Morph
+// transition's settings, and the capture has a Standby Picture and starts
+// only when shown. Ambient Background follows the capture on screen. The
+// owner: "the ambient background changes to the next source before the
+// source appears, and the source just instantly appears without morph or
+// fade or anything".
+static void capture_pop_in_test(uint32_t w, uint32_t h, const std::string &out)
+{
+	printf("\n[a capture shown in the camera's place comes in with the change, and the background after it]\n");
+	if (!obs_source_get_display_name("stagekit_morph")) {
+		CHECK(false, "the Morph transition is there");
+		return;
+	}
+	register_stand_in_capture("game_capture");
+	register_stand_in_capture("v4l2_input");
+	auto set_list = [](obs_data_t *settings, const char *list, std::vector<const char *> names) {
+		obs_data_array_t *rows = obs_data_array_create();
+		for (const char *name : names) {
+			obs_data_t *row = obs_data_create();
+			obs_data_set_string(row, "value", name);
+			obs_data_array_push_back(rows, row);
+			obs_data_release(row);
+		}
+		obs_data_set_array(settings, list, rows);
+		obs_data_array_release(rows);
+	};
+	// A start image of its own colour (blue), so the Standby Picture shows
+	// apart from the capture (green) and the camera (red).
+	const std::string blue_path = out + "/../pop-in-standby.png";
+	{
+		QImage blue(160, 90, QImage::Format_RGB32);
+		blue.fill(QColor(0, 0, 255));
+		blue.save(QString::fromStdString(blue_path));
+		calldata_t cd = {};
+		calldata_set_string(&cd, "path", blue_path.c_str());
+		proc_handler_call(obs_get_proc_handler(), "stagekit_set_start_image", &cd);
+		calldata_free(&cd);
+	}
+	auto capture = [](const char *kind, const char *name, uint32_t colour, bool always) {
+		obs_data_t *d = obs_data_create();
+		obs_data_set_int(d, "color", colour);
+		obs_data_set_int(d, "width", 640);
+		obs_data_set_int(d, "height", 360);
+		obs_data_set_bool(d, "always", always);
+		obs_source_t *src = obs_source_create(kind, name, d, nullptr);
+		obs_data_release(d);
+		return src;
+	};
+	obs_source_t *dslr = capture("v4l2_input", "Pop DSLR", 0xFF0000FF, true);      // red
+	obs_source_t *game = capture("game_capture", "Pop Game", 0xFF00FF00, false);   // green
+	obs_source_t *other = capture("game_capture", "Pop Other", 0xFFFFFFFF, false); // white
+	obs_data_t *vd = obs_data_create();
+	obs_data_set_string(vd, "source", "Pop DSLR");
+	obs_data_set_int(vd, "left", 140);
+	obs_data_set_int(vd, "right", 140);
+	obs_source_t *square = obs_source_create("stagekit_cropped_view", "Pop Square Camera", vd, nullptr);
+	obs_data_release(vd);
+
+	// The capture's Standby Picture, as the owner has it. (Their Shadow, Glow
+	// & Outline after it is left out: the capture popped in without it too,
+	// and with it this test could only draw a few frames a second.)
+	obs_data_t *sd = obs_data_create();
+	obs_data_set_int(sd, "picture", 0); // the start image
+	obs_data_set_int(sd, "style", 11);  // Morph
+	obs_data_set_bool(sd, "own_shape", true);
+	obs_source_t *standby = obs_source_create("stagekit_standby", "Pop Standby", sd, nullptr);
+	obs_data_release(sd);
+	obs_source_filter_add(game, standby);
+
+	obs_data_t *ad = obs_data_create();
+	obs_data_set_int(ad, "base_type", 0);
+	obs_data_set_int(ad, "live_mode", 1); // the capture on screen
+	obs_data_set_double(ad, "blur", 0);
+	obs_data_set_double(ad, "speed_x", 0);
+	obs_data_set_double(ad, "speed_y", 0);
+	obs_data_set_int(ad, "live_delay_ms", 700); // as the owner set it
+	obs_source_t *ambient = obs_source_create("stagekit_ambient_background", "Pop Ambient", ad, nullptr);
+	obs_data_release(ad);
+
+	obs_scene_t *scene = obs_scene_create("Pop Full Capture");
+	obs_source_t *scene_src = obs_scene_get_source(scene);
+	// (The background is drawn by itself here, not under the items, so
+	// what the screen shows of the capture is the capture alone.)
+	obs_source_inc_showing(ambient);
+	auto full = [&](obs_source_t *src, bool shown) {
+		obs_sceneitem_t *item = obs_scene_add(scene, src);
+		vec2 box;
+		vec2_set(&box, (float)w, (float)h);
+		obs_sceneitem_set_bounds_type(item, OBS_BOUNDS_SCALE_INNER);
+		obs_sceneitem_set_bounds(item, &box);
+		obs_sceneitem_set_visible(item, shown);
+		return item;
+	};
+	obs_sceneitem_t *dslr_item = full(dslr, true);
+	obs_sceneitem_t *other_item = full(other, false);
+	obs_sceneitem_t *game_item = full(game, false);
+	obs_sceneitem_t *square_item = obs_scene_add(scene, square);
+	{
+		vec2 at, k;
+		vec2_set(&at, 520.0f, 20.0f);
+		vec2_set(&k, 0.3f, 0.3f);
+		obs_sceneitem_set_pos(square_item, &at);
+		obs_sceneitem_set_scale(square_item, &k);
+		obs_sceneitem_set_visible(square_item, false);
+	}
+	// The Morph a change of scene uses, with the owner's links: the camera
+	// and its square view, and the captures among themselves.
+	obs_data_t *gd = obs_data_create();
+	obs_data_set_int(gd, "others", 2);
+	set_list(gd, "links", {"Pop DSLR \xE2\x86\x94 Pop Square Camera", "Pop Game \xE2\x86\x94 Pop Other"});
+	obs_source_t *global = obs_source_create_private("stagekit_morph", "Pop Scene Morph", gd);
+	obs_data_release(gd);
+	// Every item's show and hide transition is a Morph of 700 ms, as saved in
+	// the owner's collection.
+	for (obs_sceneitem_t *item : {dslr_item, other_item, game_item, square_item})
+		for (const bool show : {true, false}) {
+			obs_source_t *t = obs_source_create_private("stagekit_morph", "Pop Item Morph", nullptr);
+			obs_sceneitem_set_transition(item, show, t);
+			obs_sceneitem_set_transition_duration(item, show, 700);
+			obs_source_release(t);
+		}
+	auto link = [&](const char *name, int mode, std::vector<const char *> items) {
+		obs_data_t *ld = obs_data_create();
+		set_list(ld, "items", items);
+		obs_data_set_int(ld, "mode", mode);
+		obs_data_set_string(ld, "transition", "stagekit_morph");
+		obs_data_set_int(ld, "transition_ms", 700);
+		obs_data_set_bool(ld, "lock_hidden", true);
+		obs_source_t *f = obs_source_create("stagekit_visibility_link", name, ld, nullptr);
+		obs_data_release(ld);
+		obs_source_filter_add(scene_src, f);
+		return f;
+	};
+	obs_source_t *captures_link = link("Pop Link Captures", 0, {"Pop Game", "Pop Other", "Pop DSLR"});
+	obs_source_t *camera_link = link("Pop Link Camera Game", 1, {"Pop Game", "Pop Square Camera"});
+
+	obs_source_t *before_out = obs_get_output_source(0);
+	obs_set_output_source(0, scene_src);
+	sleep_ms(2500); // the capture's Standby Picture has long stood in for it
+
+	auto mean_of = [](const std::vector<uint8_t> &px, int channel) {
+		double sum = 0.0;
+		for (size_t i = channel; i < px.size(); i += 4)
+			sum += px[i];
+		return sum / (double)(px.size() / 4);
+	};
+	auto waiting = [&] {
+		calldata_t cd = {};
+		bool out_waiting = false;
+		if (proc_handler_call(obs_source_get_proc_handler(standby), "get_standing", &cd))
+			out_waiting = calldata_bool(&cd, "waiting");
+		calldata_free(&cd);
+		return out_waiting;
+	};
+	auto count_items = [&] {
+		int n = 0;
+		obs_scene_enum_items(
+			scene,
+			[](obs_scene_t *, obs_sceneitem_t *, void *param) {
+				++*static_cast<int *>(param);
+				return true;
+			},
+			&n);
+		return n;
+	};
+	const int items_before = count_items();
+	const std::vector<uint8_t> amb_before = render(ambient, w, h);
+	CHECK(obs_sceneitem_visible(dslr_item) && !obs_sceneitem_visible(game_item) && waiting() &&
+		      mean_of(amb_before, 0) > mean_of(amb_before, 1) + 40,
+	      "to begin with the camera fills the screen, the capture is hidden with its Standby Picture standing in, and the background follows the camera (ambient red %.0f, green %.0f)",
+	      mean_of(amb_before, 0), mean_of(amb_before, 1));
+
+	// What is drawn, sampled as often as the test can draw: the middle of
+	// the screen (the capture, or its Standby Picture, over nothing), how
+	// much of the capture's and the square view's show transitions is
+	// drawn, and the background by itself.
+	struct Sample {
+		double ms;
+		int capture;      // the middle of the screen: green (the capture) or blue (its Standby Picture)
+		double capture_a; // what the capture's show transition draws (alpha, 0 to 255)
+		double square_a;  // the same for the square view's
+		double amb_r, amb_g;
+		bool layer; // a Morph layer is in the scene
+	};
+	auto watch = [&](int for_ms) {
+		std::vector<Sample> samples;
+		const auto t0 = std::chrono::steady_clock::now();
+		for (;;) {
+			const double ms =
+				std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+			if (ms > for_ms)
+				break;
+			const std::vector<uint8_t> frame = render(scene_src, w, h);
+			const std::vector<uint8_t> amb = render(ambient, w, h);
+			const std::vector<uint8_t> cap_t = render(obs_sceneitem_get_transition(game_item, true), w, h);
+			const std::vector<uint8_t> sq_t = render(obs_sceneitem_get_transition(square_item, true), w, h);
+			const uint8_t *p = &frame[(size_t(250) * w + 320) * 4];
+			samples.push_back(Sample{ms, std::max((int)p[1], (int)p[2]), mean_of(cap_t, 3),
+						 mean_of(sq_t, 3), mean_of(amb, 0), mean_of(amb, 1),
+						 count_items() > items_before});
+			sleep_ms(10);
+		}
+		return samples;
+	};
+	auto print = [](const std::vector<Sample> &samples) {
+		for (const Sample &s : samples)
+			if (s.ms < 1500)
+				printf("    %5.0f ms  capture on screen %3d  its transition %5.1f  square view's %5.1f  background red %5.1f green %5.1f%s\n",
+				       s.ms, s.capture, s.capture_a, s.square_a, s.amb_r, s.amb_g,
+				       s.layer ? "  (layer)" : "");
+	};
+	// The highest value part-way (neither nothing nor all) of a measure
+	// between two times, and how many samples were part-way.
+	struct PartWay {
+		int n = 0, of = 0;
+	};
+	auto part_way = [](const std::vector<Sample> &samples, double from, double to, auto measure, double lo,
+			   double hi) {
+		PartWay out;
+		for (const Sample &s : samples) {
+			if (s.ms < from || s.ms > to)
+				continue;
+			out.of++;
+			const double v = measure(s);
+			out.n += v > lo && v < hi;
+		}
+		return out;
+	};
+
+	// The owner's key: a Show in Scenes on the capture.
+	obs_data_t *swd = obs_data_create();
+	set_list(swd, "scenes", {"Pop Full Capture"});
+	obs_data_set_int(swd, "where", 1);
+	obs_data_set_string(swd, "transition", "stagekit_morph");
+	obs_data_set_int(swd, "transition_ms", 700);
+	obs_data_set_bool(swd, "follow", true);
+	obs_source_t *game_switch =
+		obs_source_create("stagekit_show_in_scenes", "Pop Show in Scenes-Capture", swd, nullptr);
+	obs_data_release(swd);
+	obs_source_set_enabled(game_switch, false);
+	obs_source_filter_add(game, game_switch);
+	sleep_ms(500);
+
+	auto run = [&](int start_frames) {
+		obs_data_t *gs = obs_source_get_settings(game);
+		obs_data_set_int(gs, "start_frames", start_frames);
+		obs_source_update(game, gs);
+		obs_data_release(gs);
+		// The switch: the capture's key; the links hide the camera and show
+		// the square view.
+		obs_source_set_enabled(game_switch, true);
+		const std::vector<Sample> samples = watch(2000);
+		print(samples);
+		return samples;
+	};
+	auto back_to_camera = [&] {
+		obs_sceneitem_set_visible(dslr_item, true);
+		sleep_ms(2500);
+	};
+
+	// 1. As the owner has it: the camera linked to its square view, the
+	// capture's picture coming only after the change (40 frames).
+	{
+		printf("  (the camera linked to its square view; the capture's picture comes after the change)\n");
+		const std::vector<Sample> s = run(40);
+		const PartWay cap = part_way(s, 0, 690, [](const Sample &x) { return (double)x.capture; }, 25, 230);
+		const PartWay cap_t = part_way(s, 0, 690, [](const Sample &x) { return x.capture_a; }, 5, 250);
+		bool layer = false;
+		for (const Sample &x : s)
+			layer = layer || x.layer;
+		CHECK(cap.n >= 2 && cap_t.n >= 2 && layer,
+		      "the camera changes into its square view, and the capture, shown with nothing to change from, fades in during the change instead of appearing at its end (part-way on screen in %d of %d samples, its transition part-way in %d, in the first 690 ms)",
+		      cap.n, cap.of, cap_t.n);
+		double red_until = 0.0;
+		for (const Sample &x : s)
+			if (x.amb_r > 200.0)
+				red_until = x.ms;
+		CHECK(red_until >= 650.0 && s.back().amb_g > s.back().amb_r,
+		      "the background keeps the camera's picture for its Capture delay (700 ms) and then follows the capture (the camera's red until %.0f ms; at the end red %.0f, green %.0f)",
+		      red_until, s.back().amb_r, s.back().amb_g);
+		back_to_camera();
+	}
+	// 2. The owner's other try: the camera linked to the capture instead.
+	// The capture changes with the camera; the square view, with nothing to
+	// change from, must fade in.
+	{
+		printf("  (the camera linked to the capture; the capture's picture comes 3 frames after it is shown)\n");
+		obs_data_t *gd2 = obs_source_get_settings(global);
+		set_list(gd2, "links", {"Pop DSLR \xE2\x86\x94 Pop Game", "Pop Game \xE2\x86\x94 Pop Other"});
+		obs_source_update(global, gd2);
+		obs_data_release(gd2);
+		const std::vector<Sample> s = run(3);
+		const PartWay sq = part_way(s, 0, 690, [](const Sample &x) { return x.square_a; }, 3.0, 140.0);
+		bool layer = false;
+		for (const Sample &x : s)
+			layer = layer || x.layer;
+		CHECK(sq.n >= 2 && layer && obs_sceneitem_visible(square_item),
+		      "with the camera linked to the capture instead, the two change into each other and the square view fades in during the change instead of appearing at its end (its transition part-way in %d of %d samples in the first 690 ms)",
+		      sq.n, sq.of);
+		back_to_camera();
+	}
+
+	obs_set_output_source(0, before_out);
+	obs_source_release(before_out);
+	obs_source_filter_remove(scene_src, captures_link);
+	obs_source_filter_remove(scene_src, camera_link);
+	obs_source_release(captures_link);
+	obs_source_release(camera_link);
+	obs_source_release(global);
+	sleep_ms(100);
+	obs_scene_release(scene);
+	obs_source_filter_remove(game, game_switch);
+	obs_source_release(game_switch);
+	obs_source_filter_remove(game, standby);
+	obs_source_release(standby);
+	obs_source_dec_showing(ambient);
+	for (obs_source_t *src : {dslr, game, other, square, ambient})
+		obs_source_release(src);
+	sleep_ms(200);
+}
+
 int main(int argc, char **argv)
 {
 	if (argc < 7) {
@@ -272,6 +670,17 @@ int main(int argc, char **argv)
 	load_module("/usr/lib/x86_64-linux-gnu/obs-plugins/obs-transitions.so",
 		    "/usr/share/obs/obs-plugins/obs-transitions");
 	obs_post_load_modules();
+	if (getenv("STAGEKIT_TEST_ONLY_POP_IN")) { // to try that section alone
+		obs_audio_info sound = {};
+		sound.samples_per_sec = 48000;
+		sound.speakers = SPEAKERS_STEREO;
+		obs_reset_audio(&sound);
+		capture_pop_in_test(w, h, out);
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
 
 	obs_data_t *ls = obs_data_create();
 	obs_data_set_string(ls, "file", live_image);
@@ -868,6 +1277,20 @@ int main(int argc, char **argv)
 					      from_a, from_b, (int)opaque(zscene));
 					obs_transition_clear(zs);
 					obs_source_release(zs);
+					// And hidden with it: it fades as it shrinks. (OBS hands a
+					// transition a see-through placeholder for the side with
+					// no source; taken for a change of scene into nothing, the
+					// item stayed whole and went at once at the end.)
+					obs_sceneitem_set_transition(zi, false, zt);
+					obs_sceneitem_set_transition_duration(zi, false, 1000);
+					obs_sceneitem_set_visible(zi, false);
+					sleep_ms(450);
+					const std::vector<uint8_t> zout = render(obs_scene_get_source(is), w, h);
+					CHECK(px(zout, 120, 290, 0) > 40 && px(zout, 120, 290, 0) < 235 &&
+						      px(zout, 25, 244, 0) < 15,
+					      "an item hidden with Fade and Zoom is part-way gone and smaller than its frame on the way (red %d in the middle and %d in the corner part-way)",
+					      px(zout, 120, 290, 0), px(zout, 25, 244, 0));
+					obs_sceneitem_set_transition(zi, false, nullptr);
 				}
 				obs_sceneitem_set_transition(zi, true, nullptr);
 				obs_source_release(zt);
@@ -15005,6 +15428,9 @@ int main(int argc, char **argv)
 		obs_scene_release(view);
 	}
 	// ==== end scene-filters:sound ====
+	// (With sound, which the layout scenes turned on: OBS ends an item's
+	// show and hide transitions only then.)
+	capture_pop_in_test(w, h, out);
 
 	obs_source_dec_showing(bg);
 	obs_data_release(s);
