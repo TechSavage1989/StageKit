@@ -47,6 +47,7 @@ python3 "$root/tests/make-sheet.py" "$out/glow" "$out/glow-outline.png" 3 light
 python3 "$root/tests/make-sheet.py" "$out/morph" "$out/morph-transition.png" 5
 python3 "$root/tests/make-sheet.py" "$out/item-morph" "$out/morph-items.png" 3
 # ==== scene-filters:shadow ====
+python3 "$root/tests/make-sheet.py" "$out/scene-shadow" "$out/scene-shadow.png" 2
 # ==== end scene-filters:shadow ====
 # ==== scene-filters:collection ====
 # ==== end scene-filters:collection ====

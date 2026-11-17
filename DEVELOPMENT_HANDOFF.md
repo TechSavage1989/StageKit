@@ -2242,3 +2242,20 @@ against seven Fit to Space filters, which waits for `stagekit_timing_take` (perf
 and *Fit to Space Overlap* accepting `stagekit_scene_fit` belong to the Stream Deck unit; the collection
 script's `fit_for` must write the keys *Take over* writes (effective values, Scene Fit's own gap default is
 30, the lists under `fit_list_prefix`).
+
+## Scene Shadow (0.1.0-beta155, on `feat/scene-shadow`)
+
+Scene Shadow (`stagekit_scene_shadow`, `src/look/`): one shadow, glow or outline for a scene, laid over the
+scene's own picture and kept off every source that is not background (silhouettes drawn from the items with
+`LookPaint`), in linear light so it matches Shadow, Glow & Outline (off by at most 1/255 on an opaque square).
+Nothing is moved or resized. Tested in `[scene shadow]`: unchanged where there is no shadow, the per-source
+match, background, *No shadow for*, own shadows, sizes, once a frame, a hide transition still ends and its
+shadow fades, the switch fades, nothing before loading, linear light, the outline off the mask. Shader proven
+on OpenGL only. Whole suite: ALL PASSED.
+
+Scene Shadow phase 2 (Morph, gate D4: GO): a scene whose only drawing filter is a Scene Shadow is still morphed
+item by item (`morph_accept_drawing_filter`), and Morph carries the shadow: the morph is drawn as a picture and two
+silhouettes (each part weighted between its two scenes' flags by eased t) and composed with the look part-way
+between the scenes' (`lerp_look`). Tested: no cross-fade logged, the square half-way, the shadow at about half
+strength half-way to a plain scene (111 against 111 expected), run by the clock, and the item Morph's layer
+casting. Not on Windows yet.

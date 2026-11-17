@@ -60,6 +60,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "placement/scene-standby.hpp"
 // ==== end scene-filters:standby-corners ====
 // ==== scene-filters:shadow ====
+#include "look/scene-shadow.hpp"
 // ==== end scene-filters:shadow ====
 // ==== scene-filters:perf ====
 // ==== end scene-filters:perf ====
@@ -159,6 +160,7 @@ bool obs_module_load(void)
 	stagekit::register_scene_corners();
 	// ==== end scene-filters:standby-corners ====
 	// ==== scene-filters:shadow ====
+	stagekit::register_scene_shadow();
 	// ==== end scene-filters:shadow ====
 	// ==== scene-filters:perf ====
 	// ==== end scene-filters:perf ====

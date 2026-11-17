@@ -25,4 +25,8 @@ void register_morph();
 // morphed item by item (Scene Shadow). One at a time; nullptr clears it.
 void morph_accept_drawing_filter(bool (*accepts)(obs_source_t *filter));
 
+// Whether a filter on a scene draws nothing (it only moves, shows and hides
+// items, or handles sound), so the scene still looks as its items do.
+bool morph_draws_nothing(obs_source_t *filter);
+
 } // namespace stagekit

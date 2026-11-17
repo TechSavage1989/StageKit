@@ -9295,6 +9295,622 @@ int main(int argc, char **argv)
 	}
 	// ==== end scene-filters:standby-corners ====
 	// ==== scene-filters:shadow ====
+	// ---------------------------------------------------------- scene shadow
+	// One shadow for the whole scene: laid over the finished scene, kept off
+	// every source that is not background, and the sources keep their size.
+	{
+		printf("\n[scene shadow]\n");
+		const std::string shadow_dir = out + "/../scene-shadow";
+		if (std::system(("mkdir -p '" + shadow_dir + "'").c_str()) != 0)
+			printf("  (could not make %s)\n", shadow_dir.c_str());
+		auto shadow_block = [](const char *name, long long abgr, int bw, int bh) {
+			obs_data_t *d = obs_data_create();
+			obs_data_set_int(d, "color", abgr);
+			obs_data_set_int(d, "width", bw);
+			obs_data_set_int(d, "height", bh);
+			obs_source_t *src = obs_source_create("color_source", name, d, nullptr);
+			obs_data_release(d);
+			return src;
+		};
+		auto shadow_put = [](obs_scene_t *scene, obs_source_t *src, float x, float y) {
+			obs_sceneitem_t *item = obs_scene_add(scene, src);
+			vec2 p;
+			vec2_set(&p, x, y);
+			obs_sceneitem_set_pos(item, &p);
+			return item;
+		};
+		auto shadow_px = [&](const std::vector<uint8_t> &frame, int x, int y, int c) {
+			return (int)frame[(size_t(y) * w + x) * 4 + c];
+		};
+		// The largest difference of any channel inside (or outside) a box.
+		auto shadow_most = [&](const std::vector<uint8_t> &a, const std::vector<uint8_t> &b, int x0, int y0,
+				       int x1, int y1, bool inside) {
+			int most = 0;
+			for (int y = 0; y < (int)h; y++)
+				for (int x = 0; x < (int)w; x++) {
+					const bool in = x >= x0 && x < x1 && y >= y0 && y < y1;
+					if (in != inside)
+						continue;
+					for (int c = 0; c < 4; c++)
+						most = std::max(
+							most, std::abs(shadow_px(a, x, y, c) - shadow_px(b, x, y, c)));
+				}
+			return most;
+		};
+		auto shadow_set_loaded = [](bool loaded) {
+			calldata_t ld;
+			calldata_init(&ld);
+			calldata_set_bool(&ld, "loaded", loaded);
+			proc_handler_call(obs_get_proc_handler(), "stagekit_test_loaded", &ld);
+			calldata_free(&ld);
+		};
+		obs_source_t *bg = shadow_block("Shadow Back", 0xFF808080, 640, 360);     // grey, the whole canvas
+		obs_source_t *sq_a = shadow_block("Shadow Square", 0xFFFFFFFF, 100, 100); // white
+		obs_source_t *sq_b = shadow_block("Shadow Skipped", 0xFFFF0000, 60, 60);  // blue
+		obs_source_t *sq_c = shadow_block("Shadow Own", 0xFF0000FF, 80, 80); // red, with a shadow of its own
+		obs_source_t *sq_r =
+			shadow_block("Shadow Reference", 0xFFFFFFFF, 100, 100); // white, for the per-source shadow
+		{
+			obs_data_t *od = obs_data_create();
+			obs_data_set_double(od, "offset_x", -10.0);
+			obs_data_set_double(od, "offset_y", 10.0);
+			obs_source_t *own = obs_source_create("stagekit_shadow_backdrop", "Own Shadow", od, nullptr);
+			obs_data_release(od);
+			obs_source_filter_add(sq_c, own);
+			obs_source_release(own);
+		}
+		obs_scene_t *ss = obs_scene_create("Shadow Scene");
+		obs_scene_t *sp = obs_scene_create("Shadow Plain");
+		obs_scene_t *sr = obs_scene_create("Shadow Per Source");
+		obs_sceneitem_t *item_a = nullptr;
+		for (obs_scene_t *scene : {ss, sp}) {
+			shadow_put(scene, bg, 0, 0);
+			obs_sceneitem_t *a = shadow_put(scene, sq_a, 100, 100);
+			if (scene == ss)
+				item_a = a;
+			shadow_put(scene, sq_b, 190, 190);
+			shadow_put(scene, sq_c, 420, 100);
+		}
+		shadow_put(sr, bg, 0, 0);
+		shadow_put(sr, sq_r, 100, 100);
+		{
+			// (Added as a person adds it: with the source already in its
+			// scene, whose item is moved to keep the image where it is.)
+			// (A new filter: the room it takes has not been given yet.)
+			obs_data_t *pd = obs_data_create();
+			obs_data_set_int(pd, "adjusted_left", 0);
+			obs_source_t *per =
+				obs_source_create("stagekit_shadow_backdrop", "Reference Shadow", pd, nullptr);
+			obs_data_release(pd);
+			obs_source_filter_add(sq_r, per);
+			obs_source_release(per);
+		}
+		obs_source_t *ss_src = obs_scene_get_source(ss);
+		obs_data_t *fd = obs_data_create();
+		obs_data_array_t *skipped = obs_data_array_create();
+		obs_data_t *entry = obs_data_create();
+		obs_data_set_string(entry, "value", "Shadow Skipped");
+		obs_data_array_push_back(skipped, entry);
+		obs_data_release(entry);
+		obs_data_set_array(fd, "shadow_skip", skipped);
+		obs_data_array_release(skipped);
+		obs_source_t *scene_shadow = obs_source_create("stagekit_scene_shadow", "Scene Shadow", fd, nullptr);
+		obs_data_release(fd);
+		CHECK(scene_shadow != nullptr, "Scene Shadow is registered and can be created");
+		obs_source_filter_add(ss_src, scene_shadow);
+		vec2 a_pos_before, a_scale_before;
+		obs_sceneitem_get_pos(item_a, &a_pos_before);
+		obs_sceneitem_get_scale(item_a, &a_scale_before);
+		sleep_ms(400);
+		for (int i = 0; i < 3; i++) {
+			render(ss_src, w, h);
+			sleep_ms(40);
+		}
+		const std::vector<uint8_t> plain = render(obs_scene_get_source(sp), w, h);
+		const std::vector<uint8_t> shadowed = render(ss_src, w, h);
+		const std::vector<uint8_t> per_source = render(obs_scene_get_source(sr), w, h);
+
+		// The square's shadow reaches from about 80 to 245 across and down.
+		CHECK(shadow_most(shadowed, plain, 70, 70, 250, 250, false) <= 1 &&
+			      shadow_most(shadowed, plain, 100, 100, 200, 200, true) <= 1,
+		      "the scene is unchanged where there is no shadow, and on the source itself (off by %d outside, %d on it)",
+		      shadow_most(shadowed, plain, 70, 70, 250, 250, false),
+		      shadow_most(shadowed, plain, 100, 100, 200, 200, true));
+		// Where the blue square is not: the shadow is the per-source filter's.
+		const int against = std::max(shadow_most(shadowed, per_source, 70, 70, 186, 250, true),
+					     shadow_most(shadowed, per_source, 186, 70, 250, 186, true));
+		CHECK(against <= 4 && shadow_px(shadowed, 206, 150, 0) < 110,
+		      "the shadow is the one Shadow, Glow & Outline draws under the same square (off by %d; %d beside it)",
+		      against, shadow_px(shadowed, 206, 150, 0));
+		CHECK(shadow_most(shadowed, plain, 0, 0, 640, 360, true) > 20 &&
+			      shadow_px(shadowed, 636, 180, 0) == shadow_px(plain, 636, 180, 0) &&
+			      shadow_px(shadowed, 320, 356, 0) == shadow_px(plain, 320, 356, 0),
+		      "the full-screen background casts nothing: no shadow along the canvas's edges");
+		CHECK(shadow_most(shadowed, plain, 190, 190, 250, 250, true) <= 1 &&
+			      shadow_px(shadowed, 258, 258, 0) == shadow_px(plain, 258, 258, 0),
+		      "a source under 'No shadow for' casts nothing and the square's shadow is kept off it (off by %d on it)",
+		      shadow_most(shadowed, plain, 190, 190, 250, 250, true));
+		CHECK(shadow_most(shadowed, plain, 380, 60, 540, 230, true) <= 1,
+		      "a source with a shadow of its own keeps that one and gets none from the scene (off by %d)",
+		      shadow_most(shadowed, plain, 380, 60, 540, 230, true));
+		vec2 a_pos_after, a_scale_after;
+		obs_sceneitem_get_pos(item_a, &a_pos_after);
+		obs_sceneitem_get_scale(item_a, &a_scale_after);
+		CHECK(a_pos_after.x == a_pos_before.x && a_pos_after.y == a_pos_before.y &&
+			      a_scale_after.x == a_scale_before.x && obs_source_get_width(ss_src) == 640 &&
+			      obs_source_get_height(ss_src) == 360,
+		      "nothing is moved or resized: the sources and the scene keep their size");
+		CHECK(shadow_most(render(ss_src, w, h), render(ss_src, w, h), 0, 0, 640, 360, true) == 0,
+		      "drawn twice, the scene looks the same both times");
+		{
+			const std::vector<uint8_t> in_scene = render(ss_src, w, h);
+			const std::vector<uint8_t> in_window = render_shown(ss_src, w, h);
+			const std::vector<uint8_t> plain_window = render_shown(obs_scene_get_source(sp), w, h);
+			double sum = 0.0, plain_sum = 0.0;
+			int count = 0;
+			for (int y = 60; y < 300; y += 3)
+				for (int x = 60; x < 600; x += 3)
+					for (int c = 0; c < 3; c++) {
+						sum += std::abs(shadow_px(in_scene, x, y, c) -
+								shadow_px(in_window, x, y, c));
+						plain_sum += std::abs(shadow_px(plain, x, y, c) -
+								      shadow_px(plain_window, x, y, c));
+						count++;
+					}
+			(void)plain_sum;
+			CHECK(sum / count < 1.5,
+			      "drawn in a window with linear light (the Filters window) it looks the same (off by %.2f; %.2f without it)",
+			      sum / count, plain_sum / count);
+		}
+		obs_properties_t *props = obs_source_properties(scene_shadow);
+		CHECK(props && obs_properties_get(props, "shadow") && obs_properties_get(props, "outline") &&
+			      obs_properties_get(props, "offset_x") && obs_properties_get(props, "auto_background") &&
+			      obs_properties_get(props, "ramp_ms") && obs_properties_get(props, "ramp_ease_curve") &&
+			      list_rows(props, "shadow_skip|a") == 1,
+		      "its settings have the shadow, the outline, the two lists, Full-screen = background and the switch's duration");
+		obs_properties_destroy(props);
+
+		// The background listed off: it is a source like any other, so the
+		// square's shadow, which falls on it, is kept off it.
+		{
+			obs_data_t *sd = obs_source_get_settings(scene_shadow);
+			obs_data_set_bool(sd, "auto_background", false);
+			obs_source_update(scene_shadow, sd);
+			sleep_ms(400);
+			const std::vector<uint8_t> no_back = render(ss_src, w, h);
+			CHECK(shadow_most(no_back, plain, 0, 0, 640, 360, true) <= 1,
+			      "with Full-screen = background unticked the background is one more source, and no shadow lands on it (off by %d)",
+			      shadow_most(no_back, plain, 0, 0, 640, 360, true));
+			obs_data_set_bool(sd, "auto_background", true);
+			obs_source_update(scene_shadow, sd);
+			obs_data_release(sd);
+			sleep_ms(400);
+		}
+
+		// The outline, only outside every source that is not background.
+		{
+			obs_data_t *sd = obs_source_get_settings(scene_shadow);
+			obs_data_set_bool(sd, "shadow", false);
+			obs_data_set_bool(sd, "outline", true);
+			obs_data_set_double(sd, "outline_width", 6.0);
+			obs_data_set_int(sd, "outline_color", 0xFF0000FF); // red
+			obs_source_update(scene_shadow, sd);
+			sleep_ms(400);
+			const std::vector<uint8_t> ring = render(ss_src, w, h);
+			CHECK(shadow_px(ring, 97, 150, 0) > 240 && shadow_px(ring, 97, 150, 1) < 15 &&
+				      shadow_px(ring, 150, 150, 1) > 240 && shadow_px(ring, 203, 195, 2) > 240 &&
+				      shadow_px(ring, 203, 195, 0) < 15 && shadow_px(ring, 120, 120, 1) > 240,
+			      "the outline goes round the casting sources and stays off every source (red %d beside the square; on the square green %d; on the blue square blue %d)",
+			      shadow_px(ring, 97, 150, 0), shadow_px(ring, 150, 150, 1), shadow_px(ring, 203, 195, 2));
+			// For the README: a glow and an outline.
+			obs_data_set_bool(sd, "shadow", true);
+			obs_data_set_int(sd, "shadow_type", 1);
+			obs_data_set_int(sd, "shadow_color", 0xFF00D0FF); // amber
+			obs_data_set_double(sd, "shadow_opacity", 90.0);
+			obs_data_set_double(sd, "softness", 40.0);
+			obs_data_set_int(sd, "outline_color", 0xFFFFFFFF);
+			obs_data_set_double(sd, "outline_width", 4.0);
+			obs_source_update(scene_shadow, sd);
+			sleep_ms(400);
+			obs_data_unset_user_value(sd, "shadow_type");
+			obs_data_unset_user_value(sd, "shadow_color");
+			obs_data_unset_user_value(sd, "shadow_opacity");
+			obs_data_unset_user_value(sd, "softness");
+			obs_data_unset_user_value(sd, "outline_color");
+			obs_data_unset_user_value(sd, "outline_width");
+			obs_data_set_bool(sd, "outline", false);
+			obs_source_update(scene_shadow, sd);
+			obs_data_release(sd);
+			sleep_ms(400);
+		}
+
+		// On the output, as OBS draws a scene: once a frame, however often
+		// it is drawn; and a hide transition still ends, its shadow fading
+		// with it.
+		obs_source_t *before_out = obs_get_output_source(0);
+		obs_set_output_source(0, ss_src);
+		sleep_ms(300);
+		{
+			auto draws = [&] {
+				calldata_t cd;
+				calldata_init(&cd);
+				proc_handler_call(obs_source_get_proc_handler(scene_shadow), "draws", &cd);
+				const long long n = calldata_int(&cd, "count");
+				calldata_free(&cd);
+				return n;
+			};
+			const long long d0 = draws();
+			const uint64_t t0 = obs_get_video_frame_time();
+			for (int i = 0; i < 25; i++) {
+				render(ss_src, w, h);
+				sleep_ms(20);
+			}
+			const long long d1 = draws();
+			const uint64_t t1 = obs_get_video_frame_time();
+			const long long frames = (long long)((t1 - t0) / 16666667ULL);
+			CHECK(d1 - d0 <= frames + 2 && d1 - d0 >= frames / 2,
+			      "drawn by OBS and 25 more times, the shadow is made once a frame (%lld times in %lld frames)",
+			      d1 - d0, frames);
+		}
+		{
+			const std::vector<uint8_t> before = render(ss_src, w, h);
+			obs_source_t *fade = obs_source_create_private("fade_transition", "Shadow Hide", nullptr);
+			CHECK(fade != nullptr, "OBS's fade transition is there for the hide test");
+			// (Sound is off in this part of the tests, so OBS never ends the
+			// sound half of an item transition here: what is watched is
+			// the picture half, which only drawing ends.)
+			static bool video_ended = false;
+			video_ended = false;
+			signal_handler_connect(
+				obs_source_get_signal_handler(fade), "transition_video_stop",
+				[](void *, calldata_t *) { video_ended = true; }, nullptr);
+			obs_sceneitem_set_transition(item_a, false, fade);
+			obs_sceneitem_set_transition_duration(item_a, false, 600);
+			obs_source_release(fade);
+			sleep_ms(100);
+			obs_sceneitem_set_visible(item_a, false);
+			std::vector<int> beside;
+			const auto started = std::chrono::steady_clock::now();
+			while (std::chrono::steady_clock::now() - started < std::chrono::milliseconds(560)) {
+				beside.push_back(shadow_px(render(ss_src, w, h), 206, 150, 0));
+				sleep_ms(30);
+			}
+			const int full = shadow_px(before, 206, 150, 0), none = shadow_px(plain, 206, 150, 0);
+			bool between = false;
+			for (int v : beside)
+				between = between || (v > full + 8 && v < none - 8);
+			sleep_ms(600 + 3 * 17 - 560);
+			const bool ended = video_ended;
+			const std::vector<uint8_t> gone = render(ss_src, w, h);
+			CHECK(between,
+			      "a source fading out takes its shadow with it part-way (%d with its shadow, %d without)",
+			      full, none);
+			CHECK(ended && shadow_px(gone, 206, 150, 0) == none && shadow_px(gone, 150, 150, 0) == none,
+			      "and the hide transition ends (its picture within its duration and three frames), with no shadow left (ended %d)",
+			      (int)ended);
+			obs_sceneitem_set_transition(item_a, false, nullptr);
+			obs_sceneitem_set_visible(item_a, true);
+			sleep_ms(200);
+		}
+		obs_set_output_source(0, before_out);
+		obs_source_release(before_out);
+
+		// Switched off, the shadow fades over the switch's duration.
+		{
+			obs_data_t *sd = obs_source_get_settings(scene_shadow);
+			obs_data_set_int(sd, "ramp_ms", 600);
+			obs_data_set_int(sd, "ramp_ease_curve", 0);
+			obs_source_update(scene_shadow, sd);
+			obs_data_release(sd);
+			sleep_ms(100);
+			const int full = shadow_px(render(ss_src, w, h), 206, 150, 0);
+			obs_source_set_enabled(scene_shadow, false);
+			sleep_ms(300);
+			const int part = shadow_px(render(ss_src, w, h), 206, 150, 0);
+			sleep_ms(500);
+			const int off = shadow_px(render(ss_src, w, h), 206, 150, 0);
+			CHECK(part > full + 8 && part < off - 8 && off == shadow_px(plain, 206, 150, 0) &&
+				      !obs_source_enabled(scene_shadow),
+			      "switched off it fades out over its duration, then is off (%d, %d part-way, %d)", full,
+			      part, off);
+			obs_source_set_enabled(scene_shadow, true);
+			sleep_ms(800);
+		}
+
+		// Nothing while a collection is loading or changing.
+		{
+			shadow_set_loaded(false);
+			sleep_ms(200);
+			const std::vector<uint8_t> loading = render(ss_src, w, h);
+			shadow_set_loaded(true);
+			sleep_ms(400);
+			const std::vector<uint8_t> loaded = render(ss_src, w, h);
+			CHECK(shadow_most(loading, plain, 0, 0, 640, 360, true) <= 1 &&
+				      shadow_most(loaded, plain, 0, 0, 640, 360, true) > 20,
+			      "while a collection loads or changes it draws nothing, and afterwards the shadow is back");
+		}
+
+		// For the README: a scene with a game, a camera and a chat box on a
+		// picture, as OBS draws it, with a Scene Shadow, and with a glow
+		// and an outline.
+		obs_scene_t *demo = obs_scene_create("Shadow Demo");
+		obs_source_t *demo_src = obs_scene_get_source(demo);
+		obs_source_t *demo_back = nullptr, *demo_cam = nullptr, *demo_chat = nullptr;
+		obs_source_t *demo_shadow = nullptr;
+		{
+			obs_data_t *bd = obs_data_create();
+			obs_data_set_string(bd, "file", texture_image);
+			demo_back = obs_source_create("image_source", "Shadow Demo Back", bd, nullptr);
+			obs_data_release(bd);
+			demo_cam = shadow_block("Shadow Demo Camera", 0xFF3080E0, 170, 128);
+			demo_chat = shadow_block("Shadow Demo Chat", 0xFF5A3A2A, 190, 120);
+			auto boxed = [&](obs_source_t *src, float x, float y, float bw, float bh) {
+				obs_sceneitem_t *item = shadow_put(demo, src, x, y);
+				vec2 b;
+				vec2_set(&b, bw, bh);
+				obs_sceneitem_set_bounds_type(item, OBS_BOUNDS_SCALE_INNER);
+				obs_sceneitem_set_bounds(item, &b);
+				return item;
+			};
+			obs_sceneitem_set_bounds_type(boxed(demo_back, 0, 0, 640, 360), OBS_BOUNDS_STRETCH);
+			boxed(live, 36, 44, 352, 198);
+			shadow_put(demo, demo_chat, 420, 44);
+			shadow_put(demo, demo_cam, 430, 196);
+			obs_data_t *dd = obs_data_create();
+			obs_data_set_double(dd, "shadow_opacity", 75.0);
+			obs_data_set_double(dd, "offset_x", 14.0);
+			obs_data_set_double(dd, "offset_y", 14.0);
+			obs_data_set_double(dd, "softness", 24.0);
+			demo_shadow = obs_source_create("stagekit_scene_shadow", "Demo Shadow", dd, nullptr);
+			obs_data_release(dd);
+			obs_source_set_enabled(demo_shadow, false);
+			obs_source_filter_add(demo_src, demo_shadow);
+			sleep_ms(500);
+			write_frame(shadow_dir + "/1 the scene as OBS draws it.rgba", render(demo_src, w, h), w, h);
+			obs_data_t *quick = obs_source_get_settings(demo_shadow);
+			obs_data_set_int(quick, "ramp_ms", 0);
+			obs_source_update(demo_shadow, quick);
+			obs_data_release(quick);
+			obs_source_set_enabled(demo_shadow, true);
+			sleep_ms(500);
+			write_frame(shadow_dir + "/2 Scene Shadow.rgba", render(demo_src, w, h), w, h);
+			obs_data_t *gd = obs_source_get_settings(demo_shadow);
+			obs_data_set_int(gd, "shadow_type", 1);
+			obs_data_set_int(gd, "shadow_color", 0xFF30C0FF); // amber
+			obs_data_set_double(gd, "shadow_opacity", 90.0);
+			obs_data_set_double(gd, "softness", 36.0);
+			obs_data_set_double(gd, "spread", 30.0);
+			obs_data_set_bool(gd, "outline", true);
+			obs_data_set_double(gd, "outline_width", 3.0);
+			obs_source_update(demo_shadow, gd);
+			obs_data_release(gd);
+			sleep_ms(500);
+			write_frame(shadow_dir + "/3 glow and outline.rgba", render(demo_src, w, h), w, h);
+		}
+
+		// Morph keeps morphing a scene with a Scene Shadow, and carries the
+		// shadow through the change: part-way, the shadow is part-way
+		// between the two scenes' (a scene with none counts as one at no
+		// strength).
+		{
+			static bool shadow_crossfade_logged = false;
+			static log_handler_t shadow_prev_log = nullptr;
+			static void *shadow_prev_param = nullptr;
+			base_get_log_handler(&shadow_prev_log, &shadow_prev_param);
+			shadow_crossfade_logged = false;
+			base_set_log_handler(
+				[](int level, const char *format, va_list args, void *) {
+					char line[2048];
+					va_list copy;
+					va_copy(copy, args);
+					vsnprintf(line, sizeof(line), format, copy);
+					va_end(copy);
+					if (strstr(line, "cross-fade"))
+						shadow_crossfade_logged = true;
+					if (shadow_prev_log)
+						shadow_prev_log(level, format, args, shadow_prev_param);
+				},
+				nullptr);
+			obs_scene_t *mfrom = obs_scene_create("Shadow Morph From");
+			obs_scene_t *mto = obs_scene_create("Shadow Morph To");
+			shadow_put(mfrom, bg, 0, 0);
+			shadow_put(mfrom, sq_a, 100, 100);
+			shadow_put(mto, bg, 0, 0);
+			shadow_put(mto, sq_a, 400, 150);
+			obs_source_t *from_src = obs_scene_get_source(mfrom), *to_src = obs_scene_get_source(mto);
+			obs_source_t *mshadow =
+				obs_source_create("stagekit_scene_shadow", "Morph Scene Shadow", nullptr, nullptr);
+			obs_source_filter_add(from_src, mshadow);
+			obs_data_t *md = obs_data_create();
+			obs_data_set_int(md, "ease_curve", 0); // linear
+			obs_source_t *morph = obs_source_create_private("stagekit_morph", "Shadow Morph", md);
+			obs_data_release(md);
+			sleep_ms(400);
+			const std::vector<uint8_t> whole = render(from_src, w, h);
+			const std::vector<uint8_t> last = render(to_src, w, h);
+			obs_transition_set(morph, from_src);
+			obs_transition_start(morph, OBS_TRANSITION_MODE_MANUAL, 0, to_src);
+			obs_transition_set_manual_time(morph, 0.5f);
+			sleep_ms(150);
+			render(morph, w, h);
+			const std::vector<uint8_t> half = render(morph, w, h);
+			// The square half-way: 250..350 across, 125..225 down. Its shadow
+			// 6 px to its right, as at 206,150 in the first scene.
+			auto lin = [](double v) {
+				v /= 255.0;
+				return v <= 0.04045 ? v / 12.92 : std::pow((v + 0.055) / 1.055, 2.4);
+			};
+			auto srgb = [](double v) {
+				return 255.0 * (v <= 0.0031308 ? v * 12.92 : 1.055 * std::pow(v, 1.0 / 2.4) - 0.055);
+			};
+			const int full = shadow_px(whole, 206, 150, 0), back = shadow_px(whole, 600, 20, 0);
+			const double expected = srgb(lin(back) * (1.0 - 0.5 * (1.0 - lin(full) / lin(back))));
+			const int got = shadow_px(half, 356, 175, 0);
+			CHECK(shadow_px(half, 300, 175, 1) > 240 && shadow_px(half, 150, 150, 0) < 140 &&
+				      shadow_px(half, 450, 200, 0) < 140 && !shadow_crossfade_logged,
+			      "a scene with a Scene Shadow is still morphed: the square is half-way, at neither end, and no cross-fade is logged (white %d half-way)",
+			      shadow_px(half, 300, 175, 1));
+			CHECK(std::abs(got - expected) <= 6 && got < back - 8,
+			      "half-way to a scene without one, the shadow is there at about half its strength (%d; %.0f expected, %d at full strength, %d none)",
+			      got, expected, full, back);
+			// Run by the clock as OBS's window runs it.
+			obs_transition_set_manual_time(morph, 1.0f);
+			sleep_ms(120);
+			render(morph, w, h);
+			obs_transition_set(morph, from_src);
+			sleep_ms(100);
+			obs_transition_start(morph, OBS_TRANSITION_MODE_AUTO, 1000, to_src);
+			sleep_ms(450);
+			const std::vector<uint8_t> timed = render(morph, w, h);
+			sleep_ms(900);
+			render(morph, w, h);
+			const std::vector<uint8_t> timed_done = render(morph, w, h);
+			int shaded = 0;
+			for (int y = 100; y < 260; y++)
+				for (int x = 150; x < 450; x++)
+					if (shadow_px(timed, x, y, 0) < back - 15 && shadow_px(timed, x, y, 0) > 10)
+						shaded++;
+			CHECK(shaded > 300 && mean_abs_diff(timed, whole) > 2.0 &&
+				      mean_abs_diff(timed_done, last) < 0.01 && !shadow_crossfade_logged,
+			      "run by the clock it morphs with the shadow on the way (%d px shaded), and ends on the new scene (%.2f)",
+			      shaded, mean_abs_diff(timed_done, last));
+			base_set_log_handler(shadow_prev_log, shadow_prev_param);
+
+			// For the README: the demo scene half-way to a plain one.
+			{
+				obs_data_t *gd = obs_source_get_settings(demo_shadow);
+				obs_data_unset_user_value(gd, "shadow_type");
+				obs_data_unset_user_value(gd, "shadow_color");
+				obs_data_set_double(gd, "shadow_opacity", 75.0);
+				obs_data_set_double(gd, "softness", 24.0);
+				obs_data_unset_user_value(gd, "spread");
+				obs_data_set_bool(gd, "outline", false);
+				obs_source_update(demo_shadow, gd);
+				obs_data_release(gd);
+				obs_scene_t *plain_demo = obs_scene_create("Shadow Demo Plain");
+				shadow_put(plain_demo, demo_back, 0, 0);
+				{
+					obs_sceneitem_t *back_item =
+						obs_scene_find_source(plain_demo, "Shadow Demo Back");
+					vec2 b;
+					vec2_set(&b, 640, 360);
+					obs_sceneitem_set_bounds_type(back_item, OBS_BOUNDS_STRETCH);
+					obs_sceneitem_set_bounds(back_item, &b);
+					obs_sceneitem_t *game_item = shadow_put(plain_demo, live, 140, 20);
+					vec2_set(&b, 480, 270);
+					obs_sceneitem_set_bounds_type(game_item, OBS_BOUNDS_SCALE_INNER);
+					obs_sceneitem_set_bounds(game_item, &b);
+				}
+				shadow_put(plain_demo, demo_cam, 20, 220);
+				sleep_ms(400);
+				obs_transition_set(morph, demo_src);
+				obs_transition_start(morph, OBS_TRANSITION_MODE_MANUAL, 0,
+						     obs_scene_get_source(plain_demo));
+				obs_transition_set_manual_time(morph, 0.5f);
+				sleep_ms(150);
+				render(morph, w, h);
+				write_frame(shadow_dir + "/4 Morph half-way.rgba", render(morph, w, h), w, h);
+				obs_transition_set_manual_time(morph, 1.0f);
+				sleep_ms(120);
+				render(morph, w, h);
+				obs_scene_release(plain_demo);
+			}
+			obs_source_release(morph);
+			obs_source_filter_remove(from_src, mshadow);
+			obs_source_release(mshadow);
+			obs_scene_release(mfrom);
+			obs_scene_release(mto);
+		}
+
+		// One item changing into another under a Scene Shadow: the layer
+		// Morph draws the pair with casts, so the pair has its shadow on the
+		// way.
+		{
+			obs_source_t *one = shadow_block("Shadow Morph One", 0xFFFFFFFF, 100, 60);
+			obs_source_t *two = shadow_block("Shadow Morph Two", 0xFFFFFFFF, 200, 120);
+			obs_scene_t *ims = obs_scene_create("Shadow Item Morph");
+			obs_source_t *ims_src = obs_scene_get_source(ims);
+			shadow_put(ims, bg, 0, 0);
+			obs_sceneitem_t *one_item = shadow_put(ims, one, 40, 150);
+			obs_sceneitem_t *two_item = shadow_put(ims, two, 380, 120);
+			obs_sceneitem_set_visible(two_item, false);
+			obs_source_t *ishadow =
+				obs_source_create("stagekit_scene_shadow", "Item Morph Shadow", nullptr, nullptr);
+			obs_source_filter_add(ims_src, ishadow);
+			obs_data_t *gd = obs_data_create();
+			obs_data_array_t *links = obs_data_array_create();
+			obs_data_t *line = obs_data_create();
+			obs_data_set_string(line, "value", "Shadow Morph One \xE2\x86\x94 Shadow Morph Two");
+			obs_data_array_push_back(links, line);
+			obs_data_release(line);
+			obs_data_set_array(gd, "links", links);
+			obs_data_array_release(links);
+			obs_source_t *linker = obs_source_create_private("stagekit_morph", "Shadow Links", gd);
+			obs_data_release(gd);
+			for (obs_sceneitem_t *item : {one_item, two_item})
+				for (bool show : {true, false}) {
+					obs_data_t *d = obs_data_create();
+					obs_data_set_int(d, "ease_curve", 0);
+					obs_source_t *t =
+						obs_source_create_private("stagekit_morph", "Shadow Item Morph", d);
+					obs_data_release(d);
+					obs_sceneitem_set_transition(item, show, t);
+					obs_sceneitem_set_transition_duration(item, show, 1000);
+					obs_source_release(t);
+				}
+			obs_source_t *before_morph_out = obs_get_output_source(0);
+			obs_set_output_source(0, ims_src);
+			sleep_ms(400);
+			auto shaded_middle = [&](const std::vector<uint8_t> &frame) {
+				int n = 0;
+				for (int y = 0; y < (int)h; y++)
+					for (int x = 200; x < 400; x++)
+						if (shadow_px(frame, x, y, 0) < 113 && shadow_px(frame, x, y, 0) > 10)
+							n++;
+				return n;
+			};
+			const int before = shaded_middle(render(ims_src, w, h));
+			obs_sceneitem_set_visible(one_item, false);
+			obs_sceneitem_set_visible(two_item, true);
+			sleep_ms(450);
+			int items = 0;
+			obs_scene_enum_items(
+				ims,
+				[](obs_scene_t *, obs_sceneitem_t *, void *param) {
+					++*static_cast<int *>(param);
+					return true;
+				},
+				&items);
+			const std::vector<uint8_t> mid = render(ims_src, w, h);
+			const int during = shaded_middle(mid);
+			CHECK(items == 4 && before == 0 && during > 300,
+			      "one item changing into another under a Scene Shadow: Morph's layer casts, so the pair has its shadow on the way (%d px shaded part-way, %d before; %d items)",
+			      during, before, items);
+			sleep_ms(900);
+			render(ims_src, w, h);
+			obs_set_output_source(0, before_morph_out);
+			obs_source_release(before_morph_out);
+			obs_source_filter_remove(ims_src, ishadow);
+			obs_source_release(ishadow);
+			obs_source_release(linker);
+			obs_scene_release(ims);
+			obs_source_release(one);
+			obs_source_release(two);
+		}
+
+		obs_source_filter_remove(demo_src, demo_shadow);
+		obs_source_release(demo_shadow);
+		obs_scene_release(demo);
+		for (obs_source_t *src : {demo_back, demo_cam, demo_chat})
+			obs_source_release(src);
+		obs_source_filter_remove(ss_src, scene_shadow);
+		obs_source_release(scene_shadow);
+		obs_scene_release(ss);
+		obs_scene_release(sp);
+		obs_scene_release(sr);
+		for (obs_source_t *src : {bg, sq_a, sq_b, sq_c, sq_r})
+			obs_source_release(src);
+	}
 	// ==== end scene-filters:shadow ====
 
 	// ------------------------------------------------------------ auto frame

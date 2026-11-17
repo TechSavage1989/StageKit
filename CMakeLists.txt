@@ -163,6 +163,10 @@ target_sources(
     src/placement/scene-standby.hpp
     # ==== end scene-filters:standby-corners ====
     # ==== scene-filters:shadow ====
+    src/look/look-paint.cpp
+    src/look/look-paint.hpp
+    src/look/scene-shadow.cpp
+    src/look/scene-shadow.hpp
     # ==== end scene-filters:shadow ====
     # ==== scene-filters:perf ====
     # ==== end scene-filters:perf ====
