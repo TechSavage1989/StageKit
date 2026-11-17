@@ -1123,6 +1123,40 @@ place of one per source. Add one from the scene's own Filters window (right-clic
 #### Scene Shadow
 
 <!-- ==== scene-filters:shadow (Scene Shadow) ==== -->
+One shadow, glow or outline for every source of a scene, set once. Add **Scene Shadow (StageKit)** to the scene
+(right-click the scene, *Filters*) instead of a Shadow, Glow & Outline on each source.
+
+<p align="center"><img src="docs/images/scene-shadow.png" width="900" alt="The same scene three times: as OBS draws it, with one drop shadow under the game, the chat box and the camera, and with an amber glow and a white outline round them"></p>
+
+- The scene is drawn as OBS draws it, and the shadow is laid over it, falling on the background and never on a
+  source. **Nothing is resized or moved**: the sources keep their size, so Fit to Space, the arrange tools and
+  Morph work as they do without it.
+- **Shadow or glow** and **Outline** have the same settings as Shadow, Glow & Outline (type, colour or the
+  image's own colours, opacity, offsets, softness, strength, colour boost; outline width, colour and opacity).
+  Sizes are in canvas pixels.
+- **Background sources**: drawn underneath as they are; they cast nothing and the shadow falls on them.
+  **Full-screen = background** (on as it comes) counts the sources at the bottom of the scene that cover nine
+  tenths of it as background, so the scene's picture or colour needs no listing.
+- **No shadow for**: sources that cast nothing (the shadow is still kept off them). A source with a Shadow,
+  Glow & Outline filter of its own keeps that one and casts nothing here, so no source gets two.
+- A source fading in or out with its show or hide transition takes its shadow with it. A Standby stand-in has
+  the shadow of the source it stands in for.
+- **Switch duration** and **Easing**: switched on or off (the eye, a hotkey, a Stream Deck filter key), the
+  shadow fades in or out.
+
+What to know:
+
+- Sources that overlap make one shape: one does not shadow another. Where a shadow must fall on another source
+  (a camera over a game), keep a Shadow, Glow & Outline on that source; it casts its own and Scene Shadow leaves
+  it alone.
+- At a see-through edge of a source the background under it is darkened very slightly differently from a
+  shadow drawn under that source alone. A crop to the item's bounding box is not followed by the shape (as in
+  Morph).
+- Put Scene Shadow last in the scene's filter list. With a filter that draws (a blur, a colour correction)
+  before it, it draws nothing and says so once in the log. It also stands aside while a scene collection loads,
+  on a group, and on a canvas in a wide colour space (HDR).
+- Its shader has only been run on OpenGL here. If the log has an error about `stagekit-scene-shadow.effect`
+  on Windows, the scene is drawn without the shadow; please send the log.
 <!-- ==== end scene-filters:shadow (Scene Shadow) ==== -->
 
 ### Remote control

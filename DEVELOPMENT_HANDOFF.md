@@ -2185,3 +2185,13 @@ callback); `item_transitions_owner` asked per item; `holds-hidden.*` (`mode_hold
 `filter-order.hpp`, `stand-in.hpp`, `is_screen_capture`; the `==== scene-filters:<unit> ====` blocks in
 plugin-main, CMake, the locale file, the tests, the README and AGENTS; `tests/run-tests.sh` stops on a
 repeated locale key and on a failed build. Whole suite: ALL PASSED.
+
+## Scene Shadow (0.1.0-beta155, on `feat/scene-shadow`)
+
+Scene Shadow (`stagekit_scene_shadow`, `src/look/`): one shadow, glow or outline for a scene, laid over the
+scene's own picture and kept off every source that is not background (silhouettes drawn from the items with
+`LookPaint`), in linear light so it matches Shadow, Glow & Outline (off by at most 1/255 on an opaque square).
+Nothing is moved or resized. Tested in `[scene shadow]`: unchanged where there is no shadow, the per-source
+match, background, *No shadow for*, own shadows, sizes, once a frame, a hide transition still ends and its
+shadow fades, the switch fades, nothing before loading, linear light, the outline off the mask. Shader proven
+on OpenGL only. Whole suite: ALL PASSED.

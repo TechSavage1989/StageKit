@@ -1392,7 +1392,30 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
 - **Scene Standby and Scene Corners**: to come.
 <!-- ==== end scene-filters:standby-corners ==== -->
 <!-- ==== scene-filters:shadow ==== -->
-- **Scene Shadow**: to come.
+- **Scene Shadow** (`src/look/scene-shadow.*`, `src/look/look-paint.*`,
+  `data/effects/stagekit-scene-shadow.effect`; D1/D2 of the beta155 plan): a scene filter that
+  draws. The scene draws itself (`draw_filter_input`); the filter then draws the scene's items
+  again with `LookPaint::draw_item` as two silhouettes, S (the casting sources) and M (every
+  source not background; skipped when it would equal S), and lays the Kawase-blurred S over the
+  picture **off M** (`MaskedShadow`, `Ring` for the outline). That pass works **in linear light**
+  (`to_linear`/`to_srgb` in the effect): OBS lays a source over what is under it in linear
+  light, and done on raw values the shadow came out darker than the per-source filter's (52
+  against 84 on grey 128). It never moves or resizes anything. An item whose show or hide
+  transition runs is drawn through the transition (`item_transition_running`: a show's second
+  side, a hide's first side, is the item's source), so its shadow fades with it; drawing it a
+  second time after the scene has drawn it does not keep it from ending (tested by the
+  transition's `transition_video_stop`: the tests have no sound until the layout section, so the
+  sound half never ends there). Flags by item id (`ShadowFlag`: background, casts, masked) are
+  worked out in the tick (`classify`), four times a second while the scene shows or was drawn or
+  asked for by Morph in the last second, at once on coming into view or a settings change, never
+  before `scenes_loaded()`; an item not yet looked at is masked and casts nothing. Background:
+  listed, or the unbroken run of bottom items covering nine tenths of the canvas (groups only if
+  listed); the Morph layer casts and is never background; a stand-in twin takes its owner's
+  flags; a source with an enabled Shadow, Glow & Outline casts nothing. Drawn **once a frame**
+  (`last_frame_`, with size and linear-light state): later draws in that frame reuse the picture.
+  Skips itself with a drawing filter before it (`morph_draws_nothing`, logged once), on a group,
+  on an HDR canvas, before loading, and with nothing to draw. Its sizes are canvas pixels; it
+  has no `shown_scale` and no room.
 <!-- ==== end scene-filters:shadow ==== -->
 <!-- ==== scene-filters:perf ==== -->
 - **Frame time**: to come.

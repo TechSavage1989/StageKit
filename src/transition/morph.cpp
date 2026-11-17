@@ -837,6 +837,11 @@ void get_defaults(obs_data_t *settings)
 
 } // namespace
 
+bool morph_draws_nothing(obs_source_t *filter)
+{
+	return filter && draws_nothing(filter);
+}
+
 void morph_accept_drawing_filter(bool (*accepts)(obs_source_t *filter))
 {
 	g_accepts.store(accepts);
