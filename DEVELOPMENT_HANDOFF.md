@@ -13,6 +13,15 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
+
+## Scene Transitions: no write while a scene's sources load (0.1.0-betaNEXT)
+
+The check *a scene loaded again with its transitions saved is written nothing* failed now and then
+(one write; seen in the frame-time work and on `feat/scene-fit-groups`). Scene Transitions acted on
+`item_add` and on a scene first met at its next tick, while OBS was still setting the saved
+transitions of the items it had just added. Both now wait `kAddedNs` (0.1 s). During OBS's own
+start `scenes_loaded()` already held it off; it mattered for a scene loaded by itself.
+
 ## The item Morph lets go of scenes and sources (0.1.0-beta170)
 
 Branch `fix/item-morph-holds`, from `main` at beta167. Notes: `docs/releases/0.1.0-beta170.md`.
