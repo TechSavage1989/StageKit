@@ -24,9 +24,9 @@ Chat Live scenes should have icons that are representative of their function as 
 the show in scene buttons. of course allow manual icon changes still."
 
 - Show in Scenes has *Switch to scene* (`go_to`, a scene name, *(none)* as it comes): a press that
-  turns the switch on also changes OBS to that scene (the preview in Studio Mode) after the sources
+  shows the sources (turns the switch on, or off with *On means* hidden) also changes OBS to that scene (the preview in Studio Mode) after the sources
   are shown, unless the scene on screen already holds one of the sources or is that scene. Never on
-  a press off, a *Follow what is shown* correction, the state restored at load, or *Do it now*
+  a press that hides them, a *Follow what is shown* correction, the state restored at load, or *Do it now*
   (a choice made here, not asked for: one line to change if the owner wants *Do it now* to switch
   too). A test section `[Show in Scenes: switch to scene]` with a test seam for the frontend; the
   real `obs_frontend_set_current_scene` path and Studio Mode have not run.

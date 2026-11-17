@@ -5796,6 +5796,34 @@ int main(int argc, char **argv)
 				got = switched();
 				CHECK(got.empty() && obs_sceneitem_visible(cam_live),
 				      "with no scene chosen, a press changes no scene (%s)", got.c_str());
+				// "On means hidden": the press that shows (switching it off)
+				// changes scene, the one that hides does not, nor "Do it now".
+				now = obs_source_get_settings(sw);
+				obs_data_set_string(now, "go_to", "GoTo Live");
+				obs_data_set_int(now, "on_means", 1);
+				obs_source_update(sw, now);
+				obs_data_release(now);
+				sleep_ms(100);
+				obs_source_set_enabled(sw, false);
+				sleep_ms(150);
+				got = switched();
+				CHECK(got == "GoTo Live" && obs_sceneitem_visible(cam_live),
+				      "on means hidden: a press that shows the source changes scene (%s)", got.c_str());
+				obs_source_set_enabled(sw, true);
+				sleep_ms(150);
+				got = switched();
+				CHECK(got.empty() && !obs_sceneitem_visible(cam_live),
+				      "on means hidden: a press that hides the source changes no scene (%s)",
+				      got.c_str());
+				obs_source_set_enabled(sw, false);
+				sleep_ms(150);
+				switched();
+				sp = obs_source_properties(sw);
+				obs_property_button_clicked(obs_properties_get(sp, "apply_now"), sw);
+				obs_properties_destroy(sp);
+				sleep_ms(150);
+				got = switched();
+				CHECK(got.empty(), "'Do it now' changes no scene (%s)", got.c_str());
 				obs_source_filter_remove(cam, sw);
 				obs_source_release(sw);
 				obs_data_release(sd);
@@ -5967,6 +5995,34 @@ int main(int argc, char **argv)
 				CHECK(state() == "001/001 locked 110/110 on 001" && !in_use(src[1]) && in_use(src[2]),
 				      "a scene left with a cut part-way through a change: back on it, the capture whose change was cut off is not in use (%s; %d %d)",
 				      state().c_str(), (int)in_use(src[1]), (int)in_use(src[2]));
+				// OBS can leave a finished item transition counted as in use
+				// for good. One that holds no source is not under way and is
+				// not ended again and again (the owner's log: twice a second
+				// for the rest of the session).
+				{
+					obs_sceneitem_t *shown =
+						obs_scene_find_source(scene[0], obs_source_get_name(src[2]));
+					obs_source_t *hide = shown ? obs_sceneitem_get_transition(shown, false)
+								   : nullptr;
+					int stops = 0;
+					signal_handler_t *sh = hide ? obs_source_get_signal_handler(hide) : nullptr;
+					const auto count = [](void *data, calldata_t *) {
+						++*static_cast<int *>(data);
+					};
+					if (hide) {
+						obs_transition_clear(hide);
+						obs_source_inc_active(hide);
+						signal_handler_connect(sh, "transition_stop", count, &stops);
+					}
+					sleep_ms(1500);
+					if (hide) {
+						signal_handler_disconnect(sh, "transition_stop", count, &stops);
+						obs_source_dec_active(hide);
+					}
+					CHECK(hide && stops == 0,
+					      "a finished transition OBS still counts as in use is left alone, not ended twice a second (%d ends)",
+					      stops);
+				}
 
 				obs_set_output_source(0, before_out);
 				for (int i = 0; i < 3; i++) {

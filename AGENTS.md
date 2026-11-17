@@ -484,9 +484,10 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   owner: "Pressing the show button for any source that belongs to a specific scene automatically
   switches to that scene ... it must be universal to work with future scene collection designs".
   So it is a setting on any switch, naming any scene, not a rule about the trial scenes. It fires
-  only on a press that turns the switch on, in the tick after `apply()`, once `scenes_loaded()`;
-  never on a press turning it off, a *Follow what is shown* correction (`correcting_`), the state
-  restored at load (`ready_`), or *Do it now* (`press_` 2: on, no scene change). It is skipped when
+  only on a press that shows the sources (turns the switch on, or off with *On means* hidden), in
+  the tick after `apply()`, once `scenes_loaded()`; never on a press that hides them, a *Follow
+  what is shown* correction (`correcting_`), the state restored at load (`ready_`), or *Do it now*
+  (`kPressStay` in `press_`). It is skipped when
   the scene is gone, is a group, is already on screen, or when the scene on screen already holds
   one of the listed sources (or the filter's own source), in a group or hidden. The change is
   `obs_frontend_set_current_scene` (the preview in Studio Mode) from an `OBS_TASK_UI` task, which
@@ -521,7 +522,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   first way, a Morph could not end the next change made in view.) And a change under way when its
   scene is left with a cut is never ended either: Link Visibility ends one left on a listed item
   twice a second (`end_stale_transition`: a show transition on a hidden item, or a hide on a shown
-  one). Found by driving the generated collection headless with the new build; the tests had
+  one; only one that still holds a source: OBS can count a finished one as in use for good, and beta147 to beta153 ended that one twice a second all session). Found by driving the generated collection headless with the new build; the tests had
   waited for every change to end before the next step. Items a Standby filter owns are passed over. Link Visibility and Show
   in Scenes go through it; Program Trigger, the two switchers, Auto Capture's hide, Show/Hide
   Animation and the stand-ins do not yet. A source with sound is finished hiding in the scene's
