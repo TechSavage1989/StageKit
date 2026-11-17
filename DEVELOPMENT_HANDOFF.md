@@ -9,11 +9,11 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | `feat/frame-time-2` (frame time; notes `docs/releases/0.1.0-betaNEXT.md`, to be numbered), on `main` after beta162 (#178). Next: the new collection |
+| Working branch | `feat/frame-time-2` (frame time, beta163), on `main` after beta162 (#178). Next: the new collection |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
-## Frame time (branch `feat/frame-time-2`, release number to come)
+## Frame time, and a settings-window crash (0.1.0-beta163)
 
 The owner: OBS's *Average time to render frame* about 1.1 ms with StageKit, under 1 ms before; their
 logs had `tick_sources` median 0.25 to 0.45 ms with `render_video` unchanged (0.33 ms). Started again
@@ -58,13 +58,21 @@ scale is no longer taken when it goes straight back to the one before by under 2
 four looks counted through `stagekit_test_looks`, and that hiding, showing, a press and a move are
 still followed at once); `[timing: µs and the per-frame line]` from the old branch.
 
-**Seen once each and not again:** in the first two runs of the ambient test with these changes, one
-failed `a scene loaded again with its transitions saved is written nothing (1)` and one crashed
-(SIGSEGV, no core) in `[show in scenes]` right after the *Off the nearest edge* flips. Neither came
-back in five more full runs (two under gdb); the build before the cuts passed three of three. The
-nearest-edge path goes through `refresh_item`, which this branch changed (quiet signals, a box
-compared), and the test reads item transitions from its own thread while the filter's tick sets
-them; cause not found. If either comes back, start there.
+**The crash was beta162's, not the cuts'.** Two more full runs here crashed again, and three
+worker runs under gdb crashed twice: each time in `obs_source_properties` →
+`obs_properties_apply_settings`, once in `[link visibility: ...]` (the Show in Scenes window with
+Morph's *Unpaired sources* on a transition), and the first ones at the nearest-edge flips in `[show
+in scenes]`, which open the same window. valgrind (`STAGEKIT_TEST_ONLY_LINK_TRANS=1`) showed it on
+every run: `build` in `src/common/item-transition.cpp` took the window's controls off from inside
+OBS's first round of modified callbacks, which then read the freed controls. The mark of what was
+made (`change|sig|...`) was taken before the controls were made, and making them sets defaults
+(Morph's own, an old Morph's *Unpaired sources*), so the mark did not match at the first callback.
+The mark is now taken after everything is made. valgrind is clean on that section, on
+`STAGEKIT_TEST_ONLY_FIT_PRIORITY` (Scene Fit's rebuild) and on `STAGEKIT_TEST_ONLY_MORPH`. In OBS
+it could crash on opening the settings of a Show in Scenes or Link Visibility using Morph (more
+likely with *Unpaired sources* set). Not seen on Windows; no report from the owner.
+**A window that rebuilds its controls in place: run its section under valgrind.** A use-after-free
+there crashes in one run of four or five.
 
 **Not done:** Fit to Space (its idle and glance rules stand; at rest its off-screen tick is 0.2 µs and
 one full tick in fifteen), Standby's 4 Hz stand-in look (a Scene Standby's list changes without a scene

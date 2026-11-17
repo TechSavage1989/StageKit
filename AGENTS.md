@@ -623,7 +623,13 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   handed to the item's Morph inside its own settings like `links`. An old filter's `others` of
   Fade and zoom reads as *Unpaired sources* Fade and zoom. Show Source in Use and Program
   Trigger still have the plain two controls; give them this one when it is asked for, not a
-  third kind.
+  third kind. The controls are rebuilt only when their mark (`change|sig|...`: the source chosen,
+  the kinds, Morph's *Unpaired sources*) is missing, and the mark is added **after** the controls
+  are made (beta163): making them sets defaults, and a mark taken before did not match at OBS's
+  first round of callbacks, which then took the controls off while OBS went through them (a
+  use-after-free that crashed one run in four or five; valgrind shows it every time). A window
+  that rebuilds its controls from a modified callback must match at that first round; run its
+  test section under valgrind.
 - **Move Source moves the source in every scene it is in, by default** (`apply_in`). The owner asked for
   that: the camera sent to a spot is there in every scene. The older `where` setting is not read.
 - **Shadow sizes are in screen pixels by default.** The owner's old shadows sat on full-canvas scenes,

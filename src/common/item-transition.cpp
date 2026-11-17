@@ -653,17 +653,23 @@ void build(obs_properties_t *top, obs_source_t *owner, obs_data_t *settings)
 	// callback once whenever it builds a window, from a list it took
 	// beforehand: a control taken off by an earlier callback would be called
 	// after it was gone.)
-	std::string sig = chosen;
-	for (const bool show : {true, false}) {
-		const std::string kind =
-			obs_data_get_string(settings, key(scope, show ? "transition" : "hide_transition").c_str());
-		sig += "|" + kind;
-		if (kind == kMorphId)
-			sig += "|" + std::string(obs_data_get_string(
-					     settings, (own_prefix(scope, show, kind) + "unpaired").c_str()));
-	}
-	const std::string sig_name = std::string("change|sig|") + sig;
-	if (obs_properties_get(content, sig_name.c_str()))
+	// The mark is added once everything is made: making the controls sets
+	// defaults, and a mark taken before them could fail to match at OBS's
+	// first round of callbacks, which then took the controls off while it
+	// was still going through them (a crash, beta162).
+	auto signature = [&]() {
+		std::string sig = "change|sig|" + chosen;
+		for (const bool show : {true, false}) {
+			const std::string kind = obs_data_get_string(
+				settings, key(scope, show ? "transition" : "hide_transition").c_str());
+			sig += "|" + kind;
+			if (kind == kMorphId)
+				sig += "|" + std::string(obs_data_get_string(
+						     settings, (own_prefix(scope, show, kind) + "unpaired").c_str()));
+		}
+		return sig;
+	};
+	if (obs_properties_get(content, signature().c_str()))
 		return;
 	// Everything but that box goes, and is made again for what is chosen.
 	std::vector<std::string> old;
@@ -677,8 +683,6 @@ void build(obs_properties_t *top, obs_source_t *owner, obs_data_t *settings)
 	// lists do not offer it.
 	const char *owner_id = owner ? obs_source_get_unversioned_id(owner) : nullptr;
 	const bool scene_entry = !owner_id || strcmp(owner_id, kSceneTransitionsId) != 0;
-	// (A control of no kind that shows nothing: the mark of what was made.)
-	obs_property_set_visible(obs_properties_add_text(content, sig_name.c_str(), "", OBS_TEXT_INFO), false);
 	for (const bool show : {true, false}) {
 		const std::string kind_name = key(scope, show ? "transition" : "hide_transition");
 		const std::string ms_name = key(scope, show ? "transition_ms" : "hide_ms");
@@ -720,6 +724,8 @@ void build(obs_properties_t *top, obs_source_t *owner, obs_data_t *settings)
 		if (item_transition_is_fallback_kind(fallback.c_str()))
 			add_own(content, settings, prefix + "unpaired|" + fallback + "|", fallback);
 	}
+	// (A control of no kind that shows nothing: the mark of what was made.)
+	obs_property_set_visible(obs_properties_add_text(content, signature().c_str(), "", OBS_TEXT_INFO), false);
 }
 
 // The boxes and the list that Morph's links are made with show only while
