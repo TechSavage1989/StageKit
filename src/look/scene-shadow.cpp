@@ -240,8 +240,11 @@ void SceneShadow::look_again(obs_source_t *parent)
 				x->reached = true;
 				return;
 			}
-			// (Filters come in the order they are applied: those before this one first.)
-			if (!x->reached && x->in_the_way->empty() && obs_source_enabled(f) && !morph_draws_nothing(f))
+			// (Filters come in the order they are applied: those before this one first.
+			// A Scene Blur moves itself after this one within half a second.)
+			const char *id = obs_source_get_unversioned_id(f);
+			if (!x->reached && x->in_the_way->empty() && obs_source_enabled(f) && !morph_draws_nothing(f) &&
+			    !(id && std::strcmp(id, kSceneBlurId) == 0))
 				*x->in_the_way = obs_source_get_name(f) ? obs_source_get_name(f) : "?";
 		},
 		&find);

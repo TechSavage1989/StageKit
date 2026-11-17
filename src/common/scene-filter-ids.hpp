@@ -23,6 +23,7 @@ inline constexpr const char *kSceneFitId = "stagekit_scene_fit";
 inline constexpr const char *kSceneStandbyId = "stagekit_scene_standby";
 inline constexpr const char *kSceneCornersId = "stagekit_scene_corners";
 inline constexpr const char *kSceneShadowId = "stagekit_scene_shadow";
+inline constexpr const char *kSceneBlurId = "stagekit_scene_blur";
 
 // The per-source filters that Scene Standby and Scene Corners add and keep.
 inline constexpr const char *kStandbyFilterId = "stagekit_standby";

@@ -25,6 +25,7 @@ const KINDS: Record<string, string> = {
 	stagekit_scene_shadow: "Scene\nShadow",
 	stagekit_scene_corners: "Scene\nCorners",
 	stagekit_scene_standby: "Scene\nStandby",
+	stagekit_scene_blur: "Scene\nBlur",
 };
 
 const PLACES = [
@@ -157,6 +158,11 @@ export function hookTitle(inputKind: string | undefined, captureType?: string): 
 
 export function blurAllTitle(press: string | undefined): string {
 	return pressed("Blur All", press);
+}
+
+/** A Scene Blur key: "Scene Blur", and "On" or "Off" under it for a key that only switches one way. */
+export function sceneBlurTitle(press: string | undefined): string {
+	return pressed(KINDS.stagekit_scene_blur, press);
 }
 
 export function shapeTitle(shape: string | undefined): string {

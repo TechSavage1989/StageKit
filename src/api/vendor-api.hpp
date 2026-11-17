@@ -44,6 +44,11 @@ void vendor_switch_forget(obs_source_t *filter);
 // previousName }. Safe from any thread.
 void vendor_emit_scene_mode_changed(obs_source_t *filter, const std::string &mode, const std::string &previous);
 
+// A Scene Blur was switched on or off (by anything: its eye, a hotkey, a
+// key). Emits "SceneBlurChanged" { scene, filter, active }. Safe from any
+// thread.
+void vendor_emit_scene_blur_changed(obs_source_t *filter, bool active);
+
 // For the tests, which have no obs-websocket: "stagekit_vendor_call" (in
 // string request, in string data, out string response) runs one of the
 // vendor requests with its data and answer as JSON, and

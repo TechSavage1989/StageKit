@@ -13,6 +13,45 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
+## Scene Blur and its Stream Deck key (0.1.0-beta161, plugin 0.21.0.0)
+
+The owner: "also make another scene filter. The filter is a blur filter. The blur filter should be able to
+blur all sources, live and capture sources only, specific sources, and also never blur or ignore specific
+sources. Also, there should be a companion stream deck key. the stream deck key must be able to activate the
+blur for a specific scene, or all scenes with the blur filter of the same name."
+
+- **Scene Blur** (`stagekit_scene_blur`, `src/look/scene-blur.*`): *Sources to blur* (All sources / Live and
+  capture sources / Chosen sources with *Blur these*), *Never blur these*, then the Blur filter's own *Blur*
+  and *Timing* groups. Per scene by drawing over the finished scene with a mask of the covered sources (see
+  AGENTS.md, *Scene Blur*); nothing is added to any source, so the same source in another scene stays sharp.
+  Off it is disabled and costs nothing; on, per frame: the scene once into a texture, each item from the
+  lowest covered one up drawn again into its own picture for the mask, the scene drawn once more without
+  the sharp sources above covered ones only when there are some, the blur passes, one composite. No
+  read-backs. Classification four times a second while on and showing.
+- **Blur's code moved** into `src/blur/blur-pipeline.*` (look, ramp, controls, passes); Blur and Scene Blur
+  both use it. Blur's render-test images were byte-identical to `main`'s before the move was committed.
+- **With Scene Shadow**: Scene Blur keeps itself after every Scene Shadow (twice a second), and Scene Shadow
+  passes over a Scene Blur before it meanwhile; both add orders are tested.
+- **Morph**: `morph_accept_drawing_filter` keeps up to eight predicates now. A scene whose Scene Blur blurs
+  changes by cross-fade (blur kept on screen); off, or blurring nothing, it is morphed as before.
+- **Requests**: `ListSceneBlurs`, `SceneBlur` {filter, scene or "", how on|off|toggle or none}, event
+  `SceneBlurChanged` {scene, filter, active}; `style` in the answers is the keys' Blur style entry. Hotkeys
+  `stagekit.sceneblur.toggle|on|off.<filter name>` on the scene.
+- **Stream Deck key** *Scene Blur* (`com.techsavage1989.stagekit.sceneblur`, new; no existing UUID changed):
+  *Blur filter*, *Scene* (*All scenes with this filter* first), *On press*, *Blur style* (the Blur key's
+  fourteen) and *Scene type* with the style as a corner badge (`sceneBlurShown`, as Blur All's
+  `blurAllShown`), *Palette*. Through features.json's new `scenes` list and make-plugin-files.py; VERSION
+  0.21.0.0; action icon drawn (`make-action-icons.py`, SVG written).
+- Tests: `[scene blur]` in `tests/ambient-test.cpp` (33 checks), contact sheet `docs/images/scene-blur.png`
+  (`tests/run-tests.sh` makes it), a stand-in-server test in `streamdeck/tests/obs.test.ts` and the Blur
+  style list check in `key-types.test.ts`.
+- Shared text outside the blocks, kept small: README's scene-filter intro (*seven*), the Remote control
+  table, the Stream Deck key tables; AGENTS.md's folder map rows for `src/blur/` and the scene filters;
+  one condition in Scene Shadow's `look_again`.
+- **Not proven**: Direct3D (the two new techniques in `stagekit-looks.effect` follow the rules but have only
+  run on OpenGL); Windows; the key on a real Stream Deck (the *Scene* list with an empty value for *All
+  scenes*, and its refresh when the filter changes).
+
 ## Stream Deck: a type list on every key, its function as a corner badge (0.1.0-beta160, plugin 0.20.1.0)
 
 Branch `feat/streamdeck-every-key`. The owner, of the Manual Window / Source key: "no types

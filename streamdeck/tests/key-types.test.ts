@@ -26,6 +26,7 @@ import {
 	toolShown,
 	hookShown,
 	blurAllShown,
+	sceneBlurShown,
 } from "../src/pictures.ts";
 
 const plugin = new URL("../com.techsavage1989.stagekit.sdPlugin/", import.meta.url);
@@ -40,6 +41,7 @@ function shown(key: string, setting: string, value: string): string | undefined 
 	// (The keys that draw what they do as a badge: the type's picture is the one under it.)
 	if (key === "hook") return hookShown(undefined, "game_capture", types.sourceType, types.look).picture.id;
 	if (key === "blurall") return blurAllShown(undefined, types.look, types.sceneType).picture.id;
+	if (key === "sceneblur") return sceneBlurShown(undefined, types.look, types.sceneType).picture.id;
 	if (key === "appswitch") return stepShown(undefined, "next", value).picture.id;
 	if (key === "tool") return toolShown(undefined, "left", value).picture.id;
 	if (key === "slide") return slideShown(undefined, "left", value).picture.id;
@@ -233,4 +235,11 @@ test("a Blur style the pack has no pictures of: its drawing, or the source in th
 	assert.equal(chooseFor(undefined, "stagekit_shadow_backdrop", {}, "", undefined, { look: "neon" })?.id, "options/style-shadow-neon");
 	assert.equal(chooseFor(undefined, "stagekit_show_hide", {}, "", undefined, { look: "morph" })?.id, "options/style-morph");
 	assert.equal(chooseFor(undefined, "stagekit_show_hide", {}, "", undefined, { look: "morph", sceneType: "cooking" })?.id, "options/scene-type-cooking", "the scene first");
+});
+
+test("the Scene Blur key's Blur style list is the Blur key's, all fourteen", () => {
+	const look = (key: string) => typeLists(key).find((l) => l.setting === "look");
+	const values = (key: string) => look(key)!.groups.flatMap((g) => g.entries.map((e) => e.value));
+	assert.equal(values("sceneblur").length, 14);
+	assert.deepEqual(look("sceneblur"), look("blur"));
 });

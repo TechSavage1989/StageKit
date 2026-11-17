@@ -1114,9 +1114,9 @@ A transition for single items and for scenes: **Fade and Zoom (StageKit)**.
 
 A scene filter sits on a scene, not on a source, and looks after the scene's sources together: one filter in
 place of one per source. Add one from the scene's own Filters window (right-click the scene, *Filters*).
-There are six: **Scene Modes** (which sources show), **Scene Transitions** (how they show and hide), **Scene
-Fit** (where they go), **Scene Standby** (the standby image in a capture's place), **Scene Corners** and
-**Scene Shadow** (how they look). They work together, and a Standby Image, Corners & Edges or Shadow, Glow &
+There are seven: **Scene Modes** (which sources show), **Scene Transitions** (how they show and hide), **Scene
+Fit** (where they go), **Scene Standby** (the standby image in a capture's place), **Scene Corners**,
+**Scene Shadow** and **Scene Blur** (how they look). They work together, and a Standby Image, Corners & Edges or Shadow, Glow &
 Outline you put on a source yourself is left as it is. Five of them draw nothing, and Scene Shadow is
 built to keep Morph working, so a scene carrying any of them still morphs. In a scene that is not on screen
 they do as little as they can, and nothing at all while a scene collection loads.
@@ -1334,6 +1334,54 @@ What to know:
   on Windows, the scene is drawn without the shadow; please send the log.
 <!-- ==== end scene-filters:shadow (Scene Shadow) ==== -->
 
+#### Scene Blur
+
+<!-- ==== scene-filters:blur (Scene Blur) ==== -->
+**Scene Blur (StageKit)** blurs a scene's sources, in that scene only: switch it on for a "be right back"
+over the game, say, and the same game in your other scenes stays sharp.
+
+<p align="center"><img src="docs/images/scene-blur.png" width="900" alt="The same scene five times: as OBS draws it (a game capture, a dark panel, a camera and a patterned background); with all sources blurred; with only the live sources (the game and the camera) blurred; with all sources blurred except the camera; and with only the background blurred, as a mosaic of glass hexagons"></p>
+
+- **Sources to blur**: *All sources* (as it comes), *Live and capture sources* (game, window, display and
+  camera captures, capture cards and media: what the Blur filter's *And live captures on screen* counts as
+  live, also by way of a Cropped View, a group or a nested scene), or *Chosen sources*, with **Blur these**
+  listing them.
+- **Never blur these**: sources that stay sharp whatever is chosen above (your camera). A Cropped View of a
+  listed source stays sharp too.
+- A source above a blurred one that is not blurred stays sharp, and the blur under it does not smear its
+  colours: the camera over a blurred game stays a clean camera.
+- **Blur** and **Timing**: the Blur filter's own settings: Gaussian, Dual Kawase, Box, Pixelate (seven cell
+  shapes, smoothing, glass), Zoom, Motion and Temporal; strength up to 1000; *Blur transition* (grow the
+  strength, or fade the blurred image in), *Blur-in duration*, *Blur-out duration* and *Easing*.
+- Switched on and off like any filter: the eye, a Stream Deck key, and three hotkeys on the scene,
+  *StageKit: Scene Blur Toggle / On / Off (filter name)* (Settings, Hotkeys, under the scene). It blurs in and
+  out over its durations. A Scene Blur that was on when OBS closed is on again at start, without blurring in.
+- **Nothing is moved, resized or added**: the scene is drawn as OBS draws it and the blur is laid over it where
+  a chosen source shows. Switched off, it costs nothing; on, it draws the scene's sources once or twice more
+  each frame and blurs the picture, and it reads nothing back from the graphics card.
+- **Morph**: a change of scene from or to a scene while its Scene Blur blurs is a cross-fade, so the blur stays
+  on screen all the way. With the blur off (or with nothing in the scene to blur), the scene is morphed source
+  by source as before.
+- **Stream Deck**: the *Scene Blur* key switches the Scene Blurs of one name, on one scene or on every scene
+  that has one. See [Stream Deck plugin](#stream-deck-plugin).
+- **Remote control**: `ListSceneBlurs` lists them by name, with their scenes; `SceneBlur` with `filter`,
+  `scene` (empty: every scene with that name) and `how` (`on`, `off`, `toggle`; none: only asks) switches them
+  and answers `active` and each one's state; a `SceneBlurChanged` event (`scene`, `filter`, `active`) follows
+  every change. See [Remote control](#remote-control).
+
+What to know:
+
+- The blur stays inside the shape of what shows of a blurred source; a Blur filter on the source itself
+  spreads past a see-through edge. A group or nested scene is blurred, or kept sharp, as one source.
+- With a Scene Shadow on the same scene, in whichever order you add them, Scene Blur puts itself after the
+  shadow by itself, and the shadows are blurred with what they fall on. With another filter that draws before
+  it (a colour correction), it draws nothing and says so once in the log: put Scene Blur after such filters.
+  It also stands aside while a scene collection loads, on a group, and on a canvas in a wide colour space
+  (HDR).
+- Its shaders have only been run on OpenGL here. If the log has an error about `stagekit-looks.effect` on
+  Windows, Scene Blur draws nothing; please send the log.
+<!-- ==== end scene-filters:blur (Scene Blur) ==== -->
+
 ### Remote control
 
 With obs-websocket, send `CallVendorRequest` with `vendorName: "StageKit"`:
@@ -1350,6 +1398,8 @@ With obs-websocket, send `CallVendorRequest` with `vendorName: "StageKit"`:
 | `GetOptions` | none | The dock's switches: `snap`, `guides`, `limit`, `slide`, `everyScene`, `keepShape` |
 | `SetOption` | `option`: one of those names; `mode?`: `toggle` (unless given), `on` or `off` | `on`: which way it is now. An `OptionsChanged` event with all six follows every change |
 | `Slide` | `direction`: `left`, `right`, `up`, `down`, `up-left`, `up-right`, `down-left`, `down-right` or `centre` | none. Slides the item the dock is on, as its arrows do |
+| `ListSceneBlurs` | `scene?` | `filters: [{filter, type, style, active, scenes: [{scene, active}]}]`, each name once (`style`: the Stream Deck Blur style entry, such as `gaussian`, `trail`, `mosaic_circle`, `glass`); `blurs: [{scene, filter, type, style, active, enabled}]` |
+| `SceneBlur` | `filter`; `scene?` (empty or none: every scene with a Scene Blur of that name); `how?`: `on`, `off` or `toggle` (all off when any is on, else all on); none only asks | `active`, `blurs: [{scene, filter, type, active, enabled}]`. A `SceneBlurChanged` event (`scene`, `filter`, `active`) follows each change, however it was made |
 
 Every response has `success` and, on failure, `error`. A `BlurChanged` event is sent when a blur turns
 on or off. The other tools are filters, so the standard `SetSourceFilterEnabled` request triggers them.
@@ -1392,6 +1442,7 @@ key's gameplay-with-chat layout), and drawings in the same style for the rest.
 | **Shadow, Glow & Outline** | Shadow style, Source type | *Shadow style*: Soft, Hard and Long shadow; Glow, Neon, Outline, Panel (*Automatic*: the filter's own look). *Source type*: the types the pack has a shadow image of |
 | **Blur** | Blur style, Source type | *Blur style*: *Blurs* (Gaussian, Box, Dual Kawase, Zoom blur, Motion blur, Trail) and *Mosaics* (Square, Hexagon, Circle, Triangle, Voronoi, Rhomboid, Triakis, Glass). *Source type*: the types the pack has a blurred image of, drawn in that style (or the nearest style the pack has) |
 | **Blur All** | Blur style, Scene type | *Blur style* as on the Blur key. *Scene type*: what is blurred, as on Switch Scene; with one chosen, the blur style is drawn in its corner |
+| **Scene Blur** | Blur style, Scene type | As on Blur All. On *Automatic*, the blur style is the one the filter is set to |
 | **Corners & Edges** | Corner style | *Corners*: Rounded, Cut, Notched, Scooped. *Edges*: Soft, Outlined, Trimmed |
 | **Show/Hide Animation**, **Link Visibility**, **Automatic Source Switcher**, **Automatic Window Switcher** | Transition | Fade, Cut, Slide, Swipe, Wipe, Zoom, Morph, beside the key's Scene type or Source type (which comes first when both are set) |
 | **Zoom**, **Standby Image**, **Auto Capture**, **Auto Frame**, **Automatic Window Switcher**, **Program Trigger** | Source type | The types that make sense for that feature (captures, devices and cameras for Zoom and Standby Image, games for Auto Capture and Auto Frame, programs for the switcher and the trigger) |
@@ -1432,7 +1483,7 @@ exist here as PNGs only.
 **Every key that switches something shows which way it is**, whatever switched it (the key, OBS,
 a hotkey, another key): a **green dot** in the corner while it is on, a **red "no" sign** in the
 same corner, the image a little greyed, while it is off. That is every feature key, *Blur All*,
-*Dock Option*, *Fit to Space Overlap*, *Scene Mode*, and *Manual Window / Source* set to *Toggle* (on: a manual window is shown) or *Hide*
+*Dock Option*, *Fit to Space Overlap*, *Scene Mode*, *Scene Blur*, and *Manual Window / Source* set to *Toggle* (on: a manual window is shown) or *Hide*
 (on: the capture is shown). Stream Deck no longer flips such a key's image by itself when it is
 pressed, so it never flashes the wrong one.
 
@@ -1450,9 +1501,10 @@ pressed, so it never flashes the wrong one.
 | **Dock Option** | One of the dock's switches on a key: *Snap on release*, *Guides*, *Stop resizing at edges*, *Slide to the next edge*, *In every scene* or *Keep shape*. It shows which way the switch is, also when you change it in the dock |
 | **Slide to Edge** | Slides the item selected in OBS left, right, up, down or cornerwise to the next edge, or centres it in the free space, with the dock's edge distance and timing. The next press passes that edge |
 | **Blur All** | Switches every Blur on, and the next press switches them all off. It shows on while any is on |
+| **Scene Blur** | Switches a scene's *Scene Blur*. *Blur filter* lists the Scene Blurs by name (with the scene, or how many scenes have one of that name); *Scene* is *All scenes with this filter* (as it comes) or one of the scenes that has it. *On press*: *Toggle* (with all scenes: all off when any is on, else all on), *Switch on* or *Switch off*. Lit (green dot) while it is on (with all scenes, while any is); titled *Scene Blur*. Its image, as on *Blur All*: the *Scene type* chosen with the blur style in its corner, else the *Blur style* chosen (the Blur key's fourteen), else the style the filter is set to |
 
 A key that cannot reach OBS, or whose target is gone, shows Stream Deck's yellow warning triangle when
-pressed. *Set Aspect Ratio* and *Capture Active Window* need StageKit 0.1.0-beta84 or later in OBS; *Dock Option* and *Slide to Edge* need 0.1.0-beta85; *Scene Mode* and the four scene filter keys need 0.1.0-beta155. Keys made with
+pressed. *Set Aspect Ratio* and *Capture Active Window* need StageKit 0.1.0-beta84 or later in OBS; *Dock Option* and *Slide to Edge* need 0.1.0-beta85; *Scene Mode* and the four scene filter keys need 0.1.0-beta155; *Scene Blur* needs 0.1.0-beta161. Keys made with
 the first versions' *Filter switch* and *Move* keep working; those two are no longer in the list.
 
 **Images.** The keys use the StageKit icon pack. Left on *Automatic*, a key takes the image that

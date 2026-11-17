@@ -60,6 +60,40 @@ function sceneModes(request: string, data: Record<string, unknown>): Record<stri
 	return { success: true };
 }
 
+// Scene Blurs, as the StageKit plugin answers for them: one name on two
+// scenes, another on one.
+const sceneBlurs = [
+	{ scene: "Live", filter: "Blur", type: "gaussian", style: "gaussian", active: false },
+	{ scene: "Chat Live", filter: "Blur", type: "gaussian", style: "gaussian", active: false },
+	{ scene: "Standby", filter: "Mosaic", type: "pixelate", style: "mosaic_voronoi", active: false },
+];
+const blurRequests: Array<Record<string, unknown>> = [];
+const blurEvents: Array<Record<string, unknown>> = [];
+
+function sceneBlur(request: string, data: Record<string, unknown>): Record<string, unknown> {
+	if (request === "ListSceneBlurs") {
+		const names = [...new Set(sceneBlurs.map((b) => b.filter))];
+		return {
+			success: true,
+			filters: names.map((filter) => {
+				const mine = sceneBlurs.filter((b) => b.filter === filter);
+				return { filter, type: mine[0].type, style: mine[0].style, active: mine.some((b) => b.active), scenes: mine.map((b) => ({ scene: b.scene, active: b.active })) };
+			}),
+			blurs: sceneBlurs,
+		};
+	}
+	blurRequests.push(data);
+	const mine = sceneBlurs.filter((b) => b.filter === data.filter && (!data.scene || b.scene === data.scene));
+	if (mine.length === 0) return { success: false, error: "No scene has a Scene Blur with that name" };
+	const anyOn = mine.some((b) => b.active);
+	const active = data.how === "on" || (data.how === "toggle" && !anyOn);
+	for (const b of mine) {
+		if (b.active !== active) blurEvents.push({ scene: b.scene, filter: b.filter, active });
+		b.active = active;
+	}
+	return { success: true, active, blurs: mine };
+}
+
 function answer(requestType: string, data: Record<string, unknown> = {}): { ok: boolean; data?: unknown } {
 	const list = filters[String(data.sourceName)];
 	switch (requestType) {
@@ -97,6 +131,10 @@ function answer(requestType: string, data: Record<string, unknown> = {}): { ok: 
 			return { ok: true };
 		case "CallVendorRequest": {
 			if (data.vendorName !== "StageKit") return { ok: false };
+			if (data.requestType === "ListSceneBlurs" || data.requestType === "SceneBlur") {
+				const responseData = sceneBlur(String(data.requestType), (data.requestData ?? {}) as Record<string, unknown>);
+				return { ok: true, data: { vendorName: "StageKit", requestType: data.requestType, responseData } };
+			}
 			if (String(data.requestType).includes("SceneMode")) {
 				const responseData = sceneModes(String(data.requestType), (data.requestData ?? {}) as Record<string, unknown>);
 				return { ok: true, data: { vendorName: "StageKit", requestType: data.requestType, responseData } };
@@ -136,6 +174,11 @@ before(async () => {
 				});
 				if (got.ok && d.requestType === "SetSourceFilterEnabled")
 					send(5, { eventType: "SourceFilterEnableStateChanged", eventIntent: 32, eventData: d.requestData });
+				for (const event of blurEvents.splice(0)) {
+					// As each filter says it from its next tick.
+					const eventData = { vendorName: "StageKit", eventType: "SceneBlurChanged", eventData: event };
+					setTimeout(() => send(5, { eventType: "VendorEvent", eventIntent: 512, eventData }), 5);
+				}
 				if (modeEvent) {
 					// As the filter says it from its next tick.
 					const eventData = { vendorName: "StageKit", eventType: "SceneModeChanged", eventData: modeEvent };
@@ -307,4 +350,113 @@ test("a Scene Mode key lists every mode, turns one on by its id and is lit when 
 	await action.show(key, settings);
 	assert.equal(shown.state, 1);
 	assert.equal(shown.title, modeTitle("Be Right Back"));
+});
+
+test("a Scene Blur key lists the blurs and their scenes, switches one scene or all, and is lit by the filter's event", async () => {
+	const { blurFilterItems, blurSceneItems, readSceneBlurs, sceneBlurOn } = await import("../src/scene-blurs.ts");
+	const { sceneBlurPicture } = await import("../src/pictures.ts");
+	const { sceneBlurTitle } = await import("../src/titles.ts");
+	const { SceneBlurKey } = await import("../src/actions/scene-blur.ts");
+	obs.use({ host: "127.0.0.1", port });
+	while (!obs.isConnected) await once(obs, "connection");
+
+	// The two lists: each name once; every scene with it first, then each scene.
+	const filters = await obs.sceneBlurs();
+	assert.deepEqual(blurFilterItems(filters), [
+		{ label: "Blur (2 scenes)", value: "Blur" },
+		{ label: "Mosaic (Standby)", value: "Mosaic" },
+	]);
+	assert.deepEqual(blurSceneItems(filters, "Blur"), [
+		{ label: "All scenes with this filter", value: "" },
+		{ label: "Live", value: "Live" },
+		{ label: "Chat Live", value: "Chat Live" },
+	]);
+	assert.deepEqual(blurSceneItems(filters, "Gone"), [{ label: "All scenes with this filter", value: "" }]);
+	assert.deepEqual(readSceneBlurs(undefined), []);
+	assert.equal(sceneBlurOn(filters, "Gone", ""), undefined, "a name OBS does not have is not known to be on or off");
+
+	// A key, as Stream Deck gives one to an action.
+	let settings: Record<string, unknown> = { filter: "Blur", scene: "Live", press: "toggle" };
+	const shown: { state?: number; title?: string; images: string[]; alerts: number } = { images: [], alerts: 0 };
+	const key = {
+		isKey: () => true,
+		getSettings: async () => settings,
+		setSettings: async (next: Record<string, unknown>) => {
+			settings = next;
+		},
+		setImage: async (image?: string) => {
+			shown.images.push(String(image));
+		},
+		setState: async (state: number) => {
+			shown.state = state;
+		},
+		setTitle: async (title: string) => {
+			shown.title = title;
+		},
+		showAlert: async () => {
+			shown.alerts++;
+		},
+	};
+	const action = new SceneBlurKey() as unknown as {
+		show(key: unknown, settings: Record<string, unknown>): Promise<void>;
+		onKeyDown(ev: unknown): Promise<void>;
+	};
+	await action.show(key, settings);
+	assert.equal(shown.state, 0, "off");
+	assert.equal(shown.title, sceneBlurTitle("toggle"));
+	assert.equal(shown.title, "Scene\nBlur");
+	assert.ok(shown.images.at(-1)?.endsWith("/status/on/blur-types/gaussian-on.png"), shown.images.at(-1));
+
+	// One scene: only that scene's blur is switched; the filter's event lights the key.
+	const heard = once(obs, "sceneblur");
+	await action.onKeyDown({ action: key, payload: { settings } });
+	assert.deepEqual(blurRequests.at(-1), { filter: "Blur", scene: "Live", how: "toggle" });
+	const [event] = (await heard) as [Record<string, unknown>];
+	assert.deepEqual(event, { scene: "Live", filter: "Blur", active: true });
+	assert.deepEqual(
+		sceneBlurs.map((b) => b.active),
+		[true, false, false],
+		"the same name on another scene is left alone",
+	);
+	await action.show(key, settings);
+	assert.equal(shown.state, 1, "lit while that scene's blur is on");
+
+	// All scenes with the name: lit while any is on; a toggle then clears them all.
+	settings = { filter: "Blur", scene: "", press: "toggle" };
+	await action.show(key, settings);
+	assert.equal(shown.state, 1, "lit while any of them is on");
+	await action.onKeyDown({ action: key, payload: { settings } });
+	assert.deepEqual(blurRequests.at(-1), { filter: "Blur", scene: "", how: "toggle" });
+	assert.deepEqual(sceneBlurs.map((b) => b.active), [false, false, false]);
+	await action.show(key, settings);
+	assert.equal(shown.state, 0);
+	settings = { ...settings, press: "on" };
+	await action.onKeyDown({ action: key, payload: { settings } });
+	assert.deepEqual(sceneBlurs.map((b) => b.active), [true, true, false], "switch on: every scene with it");
+	assert.equal(shown.title, "Scene\nBlur\nOn");
+	settings = { ...settings, press: "off" };
+	await action.onKeyDown({ action: key, payload: { settings } });
+	assert.deepEqual(sceneBlurs.map((b) => b.active), [false, false, false]);
+	assert.equal(shown.alerts, 0);
+
+	// The picture: the Blur style chosen > the style the filter is set to.
+	settings = { filter: "Mosaic", scene: "Standby", press: "toggle" };
+	await action.show(key, settings);
+	assert.ok(shown.images.at(-1)?.endsWith("/options/style-mosaic-voronoi-on.png"), `the filter's own look: ${shown.images.at(-1)}`);
+	settings = { ...settings, look: "motion" };
+	await action.show(key, settings);
+	assert.ok(shown.images.at(-1)?.endsWith("/blur-types/motion-on.png"), "a Blur style chosen wins");
+	assert.equal(sceneBlurPicture(undefined, undefined, "trail").id, "options/style-trail", "a trail");
+	assert.equal(sceneBlurPicture(undefined, undefined, "").id, "blur-types/gaussian", "a look not said: Gaussian");
+
+	// A name no scene has: an alert. OBS gone: the key keeps what it learned last.
+	settings = { filter: "Gone", scene: "", press: "on" };
+	await action.onKeyDown({ action: key, payload: { settings } });
+	assert.equal(shown.alerts, 1);
+	settings = { filter: "Blur", scene: "Live", seen: { for: "Blur\u001fLive", kind: "stagekit_scene_blur", enabled: true, settings: {}, type: "box" } };
+	server.clients.forEach((c) => c.terminate());
+	await once(obs, "connection");
+	await action.show(key, settings);
+	assert.equal(shown.state, 1);
+	assert.ok(shown.images.at(-1)?.endsWith("/blur-types/box-on.png"), shown.images.at(-1));
 });

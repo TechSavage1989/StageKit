@@ -80,14 +80,14 @@ notice and the confirmation are what there is. This is recorded in the handoff.
 | Path | What lives there |
 | --- | --- |
 | `src/plugin-main.cpp` | Module entry: registers every filter and source, global hotkeys, the obs-websocket vendor |
-| `src/blur/` | Blur filter (owns its own multi-type blur pipeline: soft blurs, a mosaic in seven cell shapes, zoom, motion and a trail over time) |
+| `src/blur/` | Blur filter, and its multi-type blur pipeline (`blur-pipeline.*`, shared with Scene Blur: soft blurs, a mosaic in seven cell shapes, zoom, motion and a trail over time) |
 | `src/ambient/` | Ambient Background source |
 | `src/shadow/` | Shadow, Glow & Outline filter (id `stagekit_shadow_backdrop`, its first name): shadow or glow in a colour or the picture's own colours, outline, panel, rounded corners |
 | `src/zoom/` | Zoom filter |
 | `src/shape/` | Corners & Edges filter (rounds, cuts, notches or scoops corners; trims, softens and outlines edges; never changes the source's size) |
 | `src/view/` | Cropped View source (part of another source as a source, so filters follow the crop) |
 | `src/placement/` | Scene filters: Move Scene Item, Show/Hide Animation, Link Visibility, Match Item, Layout, Fit to Space (keeps one item fitted in a box, filling it or floating centred by shape); Move Source, Move Scene Item's code as a filter on the source it moves; and Show in Scenes (`show-in-scenes.*`), a filter on any source that is a switch for showing and hiding sources across scenes |
-| `src/placement/scene-*`, `src/look/` | The scene filters: Scene Modes, Scene Transitions, Scene Fit, Scene Standby, Scene Corners and Scene Shadow, each a filter on a scene that looks after its sources together. Each one's files are listed in its entry at the end of *Things that will bite you* |
+| `src/placement/scene-*`, `src/look/` | The scene filters: Scene Modes, Scene Transitions, Scene Fit, Scene Standby, Scene Corners, Scene Shadow and Scene Blur, each a filter on a scene that looks after its sources together. Each one's files are listed in its entry at the end of *Things that will bite you* |
 | `src/dock/` | `window-layout.*` keeps OBS's window layout. One dock (Qt widgets, no `Q_OBJECT`): StageKit follows the item selected in OBS and drives Move Source filters on that item's source; its Standby & Ambient tab (`BackgroundDock`, `pageBackground`; a dock of its own up to beta151, called Background in beta152) holds the start image thumbnail. `arrange-tools.*` is the one set of line-up actions and options behind the dock, the hotkeys and the preview's right-click menu |
 | `src/common/` | Shared helpers: `timing` (registers every kind and logs what is slow), easing and `Tween`, `SwitchRamp`, `KawaseBlur`, scene utilities, `item-transition` (the *Change with* control for filters that show and hide items), and the start image (global path + Start Image source). For the scene filters: `scene-filter-ids.hpp` (their ids), `holds-hidden` (is an item held hidden by a mode not showing), `go-to-scene` (*Switch to scene*), `filter-order.hpp` (`applied_index`, `first_filter`, `first_filter_of_kind`), `stand-in.hpp` (a Standby twin and the item it stands for) |
 | `src/frame/` | Auto Frame filter and the Aspect Ratio Preset filter |
@@ -1681,6 +1681,77 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   (`scene_shadow_default_flags`, worked out with the plan), so the shadow fades over its
   background. The item Morph needs nothing: its layer item casts.
 <!-- ==== end scene-filters:shadow ==== -->
+<!-- ==== scene-filters:blur ==== -->
+- **Scene Blur** (`stagekit_scene_blur`, `src/look/scene-blur.*`; the shared blur in
+  `src/blur/blur-pipeline.*`; two techniques, `MaskPiece` and `MaskedComposite`, in
+  `stagekit-looks.effect`; 2026-11-17, the owner: "also make another scene filter. The filter is
+  a blur filter ... blur all sources, live and capture sources only, specific sources, and also
+  never blur or ignore specific sources. Also, there should be a companion stream deck key").
+  - **Per scene by drawing over the scene**, as Scene Shadow does, never by Blur filters on the
+    sources: a source's filters go with it into every scene, and the owner asked for the blur in
+    one scene only. The scene draws itself (`draw_filter_input`); then a **mask** is drawn from
+    the top item down, each item by way of a picture of its own (`LookPaint::item_picture`, new:
+    its source, crop and running show or hide transition at the source's size, and the draw
+    transform), with "under" blending (`GS_BLEND_INVDSTALPHA, GS_BLEND_ONE`) so its coverage
+    counts only where nothing above it covers, red where it is blurred and nothing where it is
+    kept clear. Blending a source over the mask could not be trusted: nested scenes and groups
+    set their own blend state, which is why each item goes through its own picture. Items under
+    the lowest covered one are skipped. The **picture blurred** is the scene, or, when a sharp
+    item lies above a covered one (`sharp_above`), the scene drawn again without such items
+    (`tr_under_`), or the sharp camera's colours smeared into the blurred game round it (the test
+    *the sharp badge is not smeared* fails without it, by 57 levels). Then `BlurPipeline::run`
+    and `composite_masked` into `tr_out_`, drawn out following `gs_get_linear_srgb()`. Once a
+    frame (`last_frame_`), as Scene Shadow.
+  - **Coverage** (`cover`, by number, append-only: 0 *All sources*, 1 *Live and capture
+    sources*, 2 *Chosen sources*), worked out in the tick four times a second while on and
+    showing (`classify`, per item id, `covered_`); nothing while off. Live is Blur's rule,
+    shared as `live_captures_in` (`src/blur/ramp-blur.*`: `find_live` split into
+    `collect_live`), plus media (`ffmpeg_source`, `vlc_source`), which the owner named.
+    *Never blur these* (`never`) wins over all three, also for a Cropped View of a listed source;
+    a group or nested scene counts as live only by a live capture in it that is not listed. A group or
+    nested scene is one item: blurred or sharp whole. A Standby stand-in follows its item; the
+    item Morph's layer is covered only with *All sources*. An item added since the last look
+    stays sharp until looked at.
+  - **The Blur filter's code was moved, not copied**: `BlurLook`, `BlurRamp`, the enums, the
+    controls (`add_blur_look_properties`, `add_blur_ramp_properties`, same names and numbers),
+    `blur_at_level` and every pass are in `blur-pipeline.*`; `RampBlur` holds a `BlurPipeline`.
+    Its log line on a missing `stagekit-blur.effect` still says *Ramp Blur*. Scene Blur needs
+    `stagekit-looks.effect` (the mask): without it it draws nothing.
+  - **SwitchRamp** for on and off (`ramp_in_ms`, `ramp_out_ms`, `ease_*`); *Blur transition*
+    (`ramp_style`) chooses grow or fade as in Blur. A state restored at load is taken as it is
+    (SwitchRamp's first tick). Hotkeys on the scene: `stagekit.sceneblur.toggle.` / `.on.` /
+    `.off.` + the filter's name, made again on a rename keeping their keys.
+  - **Morph**: `morph_accept_drawing_filter` now keeps up to eight predicates (it held one,
+    Scene Shadow's). Scene Blur is accepted only while it blurs nothing (`blurs_nothing`: level
+    0, or no covered item showing at the last look); while it blurs, `plain_scene` refuses the
+    scene and the change is Morph's cross-fade, which keeps the blur on screen all the way.
+    Carrying the blur through a morph (masks per pass, as Morph carries Scene Shadow) was
+    looked at and not built: not asked for, and the picture blurred would have to be the
+    morph's own. Tested: cross-fade logged while blurring, morphed when off or blurring nothing.
+  - **Filter order**: anything enabled before it that draws, other than a Scene Shadow, makes it
+    stand aside (logged once). It keeps itself after every Scene Shadow (`keep_after_shadow`,
+    from the tick twice a second, on or off, once `scenes_loaded()`, as Standby keeps itself after
+    an Auto Frame), so either add order works; and Scene Shadow passes over a Scene Blur before
+    it (`kSceneBlurId` in its `look_again`) for that half second instead of standing aside.
+    Tested both ways (`... first: Scene Blur is kept after Scene Shadow and both draw`).
+  - **Vendor**: `ListSceneBlurs` and `SceneBlur` (`scene_blur_list`, `scene_blur_press`; a toggle
+    over several is all off when any is on, else all on), and `SceneBlurChanged` from the tick
+    when `ramp_.active()` changes (not at the first tick), through `emit_event` so the tests see
+    it. Both requests are in `stagekit_vendor_call` for the tests.
+  - **Stream Deck key** *Scene Blur* (`.sceneblur`, `src/actions/scene-blur.ts`,
+    `src/scene-blurs.ts`): features.json's new `scenes` list (make-plugin-files.py writes its
+    page from it: *Blur filter* `getSceneBlurs`, *Scene* `getSceneBlurScenes` refreshed when the
+    filter changes, *On press*), *Blur style* and *Scene type* lists as Blur All (`LOOK_KEYS`,
+    `sceneKeys`; `sceneBlurShown`: the scene type with the blur style's badge, else `sceneBlurPicture`),
+    `sceneBlurTitle`, `showOnOff`, `remembered` with the filter's look as `type`. Plugin 0.21.0.0
+    (beta161). The OBS side reports `style` (`blur_style_name`), an entry of key-types.json's
+    Blur style list (fourteen: the blurs, `trail`, the mosaic shapes, `glass` for any mosaic with
+    glass), which is what the key shows on *Automatic*; keep the two in step.
+  - Tests: `[scene blur]` in `tests/ambient-test.cpp` (stand-in captures of kind `xshm_input`
+    drawing a checkerboard, sharpness measured as the mean step between neighbouring pixels),
+    `streamdeck/tests/obs.test.ts` (stand-in server). Not run on Windows or Direct3D; the key not
+    on a real Stream Deck.
+<!-- ==== end scene-filters:blur ==== -->
 <!-- ==== scene-filters:perf ==== -->
 - **Frame time**: to come.
 <!-- ==== end scene-filters:perf ==== -->

@@ -551,7 +551,7 @@ static void capture_pop_in_test(uint32_t w, uint32_t h, const std::string &out)
 		// The switch: the capture's key; the links hide the camera and show
 		// the square view.
 		obs_source_set_enabled(game_switch, true);
-		const std::vector<Sample> samples = watch(2000);
+		const std::vector<Sample> samples = watch(3000);
 		print(samples);
 		return samples;
 	};
@@ -698,6 +698,737 @@ int main(int argc, char **argv)
 
 	// ==== scene-filters:perf ====
 	// ==== end scene-filters:perf ====
+
+	// ==== scene-filters:blur ====
+	// ------------------------------------------------------------ scene blur
+	// A blur on a scene: all its sources, its live and capture sources or
+	// the ones chosen, never the ones listed, and in that scene only.
+	{
+		printf("\n[scene blur]\n");
+		const std::string blur_dir = out + "/../scene-blur";
+		if (std::system(("mkdir -p '" + blur_dir + "'").c_str()) != 0)
+			printf("  (could not make %s)\n", blur_dir.c_str());
+		// Stand-ins with a fine checkerboard (8 px squares), or the source
+		// named in their "child" setting: one counted as a capture
+		// ("xshm_input", not loaded here) and one that is not.
+		struct Checker {
+			obs_source_t *child = nullptr;
+			uint32_t cw = 160, ch = 120;
+		};
+		static gs_texture_t *checker_texture = nullptr;
+		auto checker_kind = [](const char *id, const char *name) {
+			obs_source_info k = {};
+			k.id = id;
+			k.type = OBS_SOURCE_TYPE_INPUT;
+			k.output_flags = OBS_SOURCE_VIDEO | OBS_SOURCE_CUSTOM_DRAW;
+			k.get_name = [](void *) {
+				return "Checker (stand-in)";
+			};
+			(void)name;
+			k.create = [](obs_data_t *settings, obs_source_t *) -> void * {
+				auto *c = new Checker;
+				const char *child = obs_data_get_string(settings, "child");
+				c->child = child && *child ? obs_get_source_by_name(child) : nullptr;
+				return c;
+			};
+			k.destroy = [](void *data) {
+				auto *c = static_cast<Checker *>(data);
+				obs_source_release(c->child);
+				delete c;
+			};
+			k.get_width = [](void *data) -> uint32_t {
+				auto *c = static_cast<Checker *>(data);
+				return c->child ? obs_source_get_width(c->child) : c->cw;
+			};
+			k.get_height = [](void *data) -> uint32_t {
+				auto *c = static_cast<Checker *>(data);
+				return c->child ? obs_source_get_height(c->child) : c->ch;
+			};
+			k.video_render = [](void *data, gs_effect_t *) {
+				auto *c = static_cast<Checker *>(data);
+				if (c->child) {
+					obs_source_video_render(c->child);
+					return;
+				}
+				if (!checker_texture) {
+					std::vector<uint8_t> px(160 * 120 * 4);
+					for (int y = 0; y < 120; y++)
+						for (int x = 0; x < 160; x++) {
+							const bool white = ((x / 8) + (y / 8)) % 2 == 0;
+							uint8_t *p = &px[(size_t(y) * 160 + x) * 4];
+							p[0] = p[1] = p[2] = white ? 255 : 0;
+							p[3] = 255;
+						}
+					const uint8_t *planes[] = {px.data()};
+					checker_texture = gs_texture_create(160, 120, GS_RGBA, 1, planes, 0);
+				}
+				gs_effect_t *def = obs_get_base_effect(OBS_EFFECT_DEFAULT);
+				gs_effect_set_texture(gs_effect_get_param_by_name(def, "image"), checker_texture);
+				while (gs_effect_loop(def, "Draw"))
+					gs_draw_sprite(checker_texture, 0, 160, 120);
+			};
+			obs_register_source(&k);
+		};
+		checker_kind("xshm_input", "capture");
+		checker_kind("stagekit_test_checker", "picture");
+		auto sb_block = [](const char *name, long long abgr, int bw, int bh) {
+			obs_data_t *d = obs_data_create();
+			obs_data_set_int(d, "color", abgr);
+			obs_data_set_int(d, "width", bw);
+			obs_data_set_int(d, "height", bh);
+			obs_source_t *src = obs_source_create("color_source", name, d, nullptr);
+			obs_data_release(d);
+			return src;
+		};
+		auto sb_put = [](obs_scene_t *scene, obs_source_t *src, float x, float y) {
+			obs_sceneitem_t *item = obs_scene_add(scene, src);
+			vec2 p;
+			vec2_set(&p, x, y);
+			obs_sceneitem_set_pos(item, &p);
+			return item;
+		};
+		// How sharp a part of a frame is: the mean step in red between
+		// neighbouring pixels (the checkerboard's is about 60; blurred, near 0).
+		auto sharpness = [&](const std::vector<uint8_t> &f, int x0, int y0, int x1, int y1) {
+			double sum = 0.0;
+			int n = 0;
+			for (int y = y0; y < y1; y++)
+				for (int x = x0; x < x1; x++) {
+					const int here = f[(size_t(y) * w + x) * 4];
+					sum += std::abs(here - (int)f[(size_t(y) * w + x + 1) * 4]) +
+					       std::abs(here - (int)f[(size_t(y + 1) * w + x) * 4]);
+					n++;
+				}
+			return n ? sum / n : 0.0;
+		};
+		auto sb_px = [&](const std::vector<uint8_t> &f, int x, int y, int c) {
+			return (int)f[(size_t(y) * w + x) * 4 + c];
+		};
+		auto sb_set = [](obs_source_t *f, const std::function<void(obs_data_t *)> &change) {
+			obs_data_t *s = obs_source_get_settings(f);
+			change(s);
+			obs_source_update(f, s);
+			obs_data_release(s);
+		};
+		auto sb_list = [](obs_data_t *s, const char *setting, std::vector<const char *> names) {
+			obs_data_array_t *list = obs_data_array_create();
+			for (const char *name : names) {
+				obs_data_t *entry = obs_data_create();
+				obs_data_set_string(entry, "value", name);
+				obs_data_array_push_back(list, entry);
+				obs_data_release(entry);
+			}
+			obs_data_set_array(s, setting, list);
+			obs_data_array_release(list);
+		};
+		auto sb_level = [](obs_source_t *f) {
+			calldata_t cd = {};
+			proc_handler_call(obs_source_get_proc_handler(f), "draws", &cd);
+			const double level = calldata_float(&cd, "level");
+			calldata_free(&cd);
+			return level;
+		};
+		auto sb_draws = [](obs_source_t *f) {
+			calldata_t cd = {};
+			proc_handler_call(obs_source_get_proc_handler(f), "draws", &cd);
+			const long long count = calldata_int(&cd, "count");
+			calldata_free(&cd);
+			return count;
+		};
+		auto sb_call = [](const char *request, const std::function<void(obs_data_t *)> &fill) {
+			obs_data_t *data = obs_data_create();
+			fill(data);
+			calldata_t cd = {};
+			calldata_set_string(&cd, "request", request);
+			calldata_set_string(&cd, "data", obs_data_get_json(data));
+			proc_handler_call(obs_get_proc_handler(), "stagekit_vendor_call", &cd);
+			const char *json = calldata_string(&cd, "response");
+			obs_data_t *answer = obs_data_create_from_json(json && *json ? json : "{}");
+			calldata_free(&cd);
+			obs_data_release(data);
+			return answer;
+		};
+		auto sb_events = [] {
+			calldata_t cd = {};
+			proc_handler_call(obs_get_proc_handler(), "stagekit_vendor_events", &cd);
+			const char *events = calldata_string(&cd, "events");
+			std::string got = events ? events : "";
+			calldata_free(&cd);
+			return got;
+		};
+		sb_events(); // (from here on the events are noted)
+
+		obs_source_t *bg = sb_block("SB Back", 0xFF606060, 640, 360);
+		obs_source_t *badge = sb_block("SB Badge", 0xFF0000FF, 40, 30); // red
+		obs_source_t *game = obs_source_create("xshm_input", "SB Game", nullptr, nullptr);
+		obs_source_t *camera = obs_source_create("xshm_input", "SB Camera", nullptr, nullptr);
+		obs_source_t *picture = obs_source_create("stagekit_test_checker", "SB Picture", nullptr, nullptr);
+		obs_scene_t *sbs = obs_scene_create("SB Scene");
+		obs_scene_t *sbo = obs_scene_create("SB Other");
+		for (obs_scene_t *scene : {sbs, sbo}) {
+			sb_put(scene, bg, 0, 0);
+			sb_put(scene, game, 40, 40);
+			sb_put(scene, picture, 240, 40);
+			sb_put(scene, camera, 440, 40);
+			sb_put(scene, badge, 100, 100); // over the game
+		}
+		obs_source_t *sbs_src = obs_scene_get_source(sbs), *sbo_src = obs_scene_get_source(sbo);
+		obs_source_t *before_out = obs_get_output_source(0);
+		obs_set_output_source(0, sbs_src);
+		obs_data_t *fd = obs_data_create();
+		obs_data_set_int(fd, "ramp_in_ms", 0);
+		obs_data_set_int(fd, "ramp_out_ms", 0);
+		obs_source_t *sblur = obs_source_create("stagekit_scene_blur", "Scene Blur", fd, nullptr);
+		obs_data_release(fd);
+		CHECK(sblur != nullptr, "Scene Blur is registered and can be created");
+		obs_source_set_enabled(sblur, false);
+		obs_source_filter_add(sbs_src, sblur);
+		sleep_ms(300);
+		// The four parts: the game (away from the badge), the picture, the
+		// camera, and the red badge over the game.
+		struct Part {
+			const char *name;
+			int x0, y0, x1, y1;
+		};
+		const Part p_game{"game", 50, 50, 94, 94}, p_picture{"picture", 250, 50, 390, 150},
+			p_camera{"camera", 450, 50, 590, 150};
+		auto sharp = [&](const std::vector<uint8_t> &f, const Part &p) {
+			return sharpness(f, p.x0, p.y0, p.x1, p.y1) > 30.0;
+		};
+		auto blurred = [&](const std::vector<uint8_t> &f, const Part &p) {
+			return sharpness(f, p.x0, p.y0, p.x1, p.y1) < 6.0;
+		};
+		auto badge_sharp = [&](const std::vector<uint8_t> &f) {
+			return sb_px(f, 120, 115, 0) > 240 && sb_px(f, 120, 115, 1) < 15 && sb_px(f, 120, 115, 2) < 15;
+		};
+		const std::vector<uint8_t> plain = render(sbs_src, w, h);
+		CHECK(sharp(plain, p_game) && sharp(plain, p_picture) && sharp(plain, p_camera) && badge_sharp(plain) &&
+			      mean_abs_diff(plain, render(sbo_src, w, h)) < 0.01,
+		      "switched off, the scene is drawn as it is (game %.1f, picture %.1f, camera %.1f)",
+		      sharpness(plain, 50, 50, 94, 94), sharpness(plain, 250, 50, 390, 150),
+		      sharpness(plain, 450, 50, 590, 150));
+		CHECK(sb_draws(sblur) == 0, "and off, it draws nothing at all");
+
+		// All sources.
+		obs_source_set_enabled(sblur, true);
+		sleep_ms(300);
+		render(sbs_src, w, h);
+		const std::vector<uint8_t> all = render(sbs_src, w, h);
+		CHECK(blurred(all, p_game) && blurred(all, p_picture) && blurred(all, p_camera) && !badge_sharp(all),
+		      "'All sources' blurs every source of the scene (game %.1f, picture %.1f, camera %.1f)",
+		      sharpness(all, 50, 50, 94, 94), sharpness(all, 250, 50, 390, 150),
+		      sharpness(all, 450, 50, 590, 150));
+		obs_set_output_source(0, sbo_src);
+		sleep_ms(150);
+		const std::vector<uint8_t> other = render(sbo_src, w, h);
+		CHECK(sharp(other, p_game) && sharp(other, p_picture) && sharp(other, p_camera) && badge_sharp(other) &&
+			      mean_abs_diff(other, plain) < 0.01,
+		      "the same sources in another scene, on screen, stay sharp: the blur is this scene's only");
+		obs_set_output_source(0, sbs_src);
+		sleep_ms(150);
+
+		// Live and capture sources: the badge over the game stays sharp, and
+		// none of its red is smeared into the game's blur.
+		sb_set(sblur, [](obs_data_t *s) { obs_data_set_int(s, "cover", 1); });
+		sleep_ms(300);
+		render(sbs_src, w, h);
+		const std::vector<uint8_t> live_only = render(sbs_src, w, h);
+		int smear = 0;
+		for (int y = 104; y < 126; y++)
+			for (int x = 88; x < 98; x++)
+				smear = std::max(smear, sb_px(live_only, x, y, 0) - sb_px(live_only, x, y, 1));
+		CHECK(blurred(live_only, p_game) && blurred(live_only, p_camera) && sharp(live_only, p_picture) &&
+			      badge_sharp(live_only),
+		      "'Live and capture sources' blurs the two captures and leaves the picture and the badge over the game sharp (picture %.1f)",
+		      sharpness(live_only, 250, 50, 390, 150));
+		CHECK(smear < 12,
+		      "and the sharp badge is not smeared into the game's blur beside it (red over green by %d)",
+		      smear);
+
+		// Chosen sources.
+		sb_set(sblur, [&](obs_data_t *s) {
+			obs_data_set_int(s, "cover", 2);
+			sb_list(s, "chosen", {"SB Picture"});
+		});
+		sleep_ms(300);
+		render(sbs_src, w, h);
+		const std::vector<uint8_t> chosen = render(sbs_src, w, h);
+		CHECK(blurred(chosen, p_picture) && sharp(chosen, p_game) && sharp(chosen, p_camera) &&
+			      badge_sharp(chosen),
+		      "'Chosen sources' blurs the one listed and nothing else");
+		{
+			obs_properties_t *props = obs_source_properties(sblur);
+			obs_property_t *list = obs_properties_get(props, "chosen|alist");
+			obs_data_t *s = obs_source_get_settings(sblur);
+			obs_data_set_int(s, "cover", 0);
+			obs_property_modified(obs_properties_get(props, "cover"), s);
+			const bool hidden = list && !obs_property_visible(list);
+			obs_data_set_int(s, "cover", 2);
+			obs_property_modified(obs_properties_get(props, "cover"), s);
+			const bool shown = list && obs_property_visible(list);
+			obs_data_release(s);
+			size_t offered = 0;
+			bool offers_game = false;
+			if (obs_property_t *pick = obs_properties_get(props, "never|apick")) {
+				offered = obs_property_list_item_count(pick);
+				for (size_t i = 0; i < offered; i++)
+					offers_game = offers_game ||
+						      strcmp(obs_property_list_item_string(pick, i), "SB Game") == 0;
+			}
+			obs_properties_destroy(props);
+			CHECK(hidden && shown && offers_game,
+			      "the chosen list shows only with 'Chosen sources', and the lists offer the scene's sources");
+		}
+
+		// Never blur these: honoured over every choice.
+		sb_set(sblur, [&](obs_data_t *s) {
+			obs_data_set_int(s, "cover", 0);
+			sb_list(s, "never", {"SB Camera"});
+		});
+		sleep_ms(300);
+		render(sbs_src, w, h);
+		const std::vector<uint8_t> never_all = render(sbs_src, w, h);
+		sb_set(sblur, [&](obs_data_t *s) { obs_data_set_int(s, "cover", 1); });
+		sleep_ms(300);
+		render(sbs_src, w, h);
+		const std::vector<uint8_t> never_live = render(sbs_src, w, h);
+		sb_set(sblur, [&](obs_data_t *s) {
+			obs_data_set_int(s, "cover", 2);
+			sb_list(s, "chosen", {"SB Picture", "SB Camera"});
+		});
+		sleep_ms(300);
+		render(sbs_src, w, h);
+		const std::vector<uint8_t> never_chosen = render(sbs_src, w, h);
+		CHECK(sharp(never_all, p_camera) && blurred(never_all, p_game) && blurred(never_all, p_picture) &&
+			      sharp(never_live, p_camera) && blurred(never_live, p_game) &&
+			      sharp(never_chosen, p_camera) && blurred(never_chosen, p_picture),
+		      "'Never blur these' keeps the camera sharp with all sources, live sources and when it is chosen too");
+
+		// Drawn once a frame, and the same in a window of its own.
+		{
+			const std::vector<uint8_t> a = render(sbs_src, w, h);
+			const std::vector<uint8_t> b = render(sbs_src, w, h);
+			CHECK(mean_abs_diff(a, b) == 0.0, "drawn twice, the scene looks the same both times");
+			const std::vector<uint8_t> in_window = render_shown(sbs_src, w, h);
+			CHECK(mean_abs_diff(in_window, a) < 1.5,
+			      "in a window with a wide-colour surface it looks as it does in the scene (off by %.2f)",
+			      mean_abs_diff(in_window, a));
+		}
+
+		// With a Scene Shadow, whichever was added first: Scene Blur keeps
+		// itself after the shadow, so that both draw.
+		for (int shadow_first = 1; shadow_first >= 0; shadow_first--) {
+			obs_scene_t *os = obs_scene_create(shadow_first ? "SB Order 1" : "SB Order 2");
+			sb_put(os, bg, 0, 0);
+			sb_put(os, picture, 240, 40);
+			sb_put(os, badge, 60, 200);
+			obs_source_t *os_src = obs_scene_get_source(os);
+			obs_data_t *od = obs_data_create();
+			obs_data_set_int(od, "ramp_in_ms", 0);
+			obs_data_set_int(od, "cover", 2);
+			sb_list(od, "chosen", {"SB Picture"});
+			obs_source_t *ob = obs_source_create("stagekit_scene_blur", "SB Order Blur", od, nullptr);
+			obs_data_release(od);
+			obs_source_t *osh =
+				obs_source_create("stagekit_scene_shadow", "SB Order Shadow", nullptr, nullptr);
+			obs_source_filter_add(os_src, shadow_first ? osh : ob);
+			sleep_ms(200);
+			obs_source_filter_add(os_src, shadow_first ? ob : osh);
+			sleep_ms(900);
+			for (int i = 0; i < 3; i++) {
+				render(os_src, w, h);
+				sleep_ms(40);
+			}
+			const long long blur_before = sb_draws(ob), shadow_before = sb_draws(osh);
+			std::vector<uint8_t> frame;
+			for (int i = 0; i < 3; i++) {
+				frame = render(os_src, w, h);
+				sleep_ms(40);
+			}
+			std::vector<std::string> order;
+			obs_source_enum_filters(
+				os_src,
+				[](obs_source_t *, obs_source_t *f, void *param) {
+					static_cast<std::vector<std::string> *>(param)->push_back(
+						obs_source_get_name(f));
+				},
+				&order);
+			// The badge's shadow: 12 px right and down of it, on the grey back.
+			const int under = sb_px(frame, 105, 236, 1), back = sb_px(frame, 600, 340, 1);
+			CHECK(order.size() == 2 && order[0] == "SB Order Shadow" && order[1] == "SB Order Blur" &&
+				      sb_draws(ob) > blur_before && sb_draws(osh) > shadow_before &&
+				      blurred(frame, p_picture) && under < back - 15,
+			      "%s first: Scene Blur is kept after Scene Shadow and both draw (shadow %d against %d, picture %.1f)",
+			      shadow_first ? "Scene Shadow added" : "Scene Blur added", under, back,
+			      sharpness(frame, 250, 50, 390, 150));
+			obs_source_filter_remove(os_src, ob);
+			obs_source_filter_remove(os_src, osh);
+			obs_source_release(ob);
+			obs_source_release(osh);
+			obs_scene_release(os);
+		}
+
+		// The ramp: in and out over the switch's duration, and a state
+		// restored at load is taken as it is.
+		{
+			sb_set(sblur, [&](obs_data_t *s) {
+				obs_data_set_int(s, "cover", 0);
+				sb_list(s, "never", {});
+				obs_data_set_int(s, "ramp_in_ms", 1000);
+				obs_data_set_int(s, "ramp_out_ms", 1000);
+				obs_data_set_int(s, "ease_curve", 0); // linear
+				obs_data_set_double(s, "strength", 8.0);
+			});
+			obs_source_set_enabled(sblur, false);
+			sleep_ms(1200);
+			CHECK(!obs_source_enabled(sblur) && sb_level(sblur) <= 0.0001,
+			      "switched off, it ramps out and then really switches off");
+			obs_source_set_enabled(sblur, true);
+			sleep_ms(450);
+			const double mid = sb_level(sblur);
+			render(sbs_src, w, h);
+			const double part = sharpness(render(sbs_src, w, h), 50, 50, 94, 94);
+			sleep_ms(800);
+			render(sbs_src, w, h);
+			const double full = sharpness(render(sbs_src, w, h), 50, 50, 94, 94);
+			CHECK(mid > 0.25 && mid < 0.75 && part > full + 2.0 &&
+				      part < sharpness(plain, 50, 50, 94, 94) && sb_level(sblur) == 1.0,
+			      "switched on, it ramps in: part-way (level %.2f) it is part blurred (%.1f; %.1f at the end)",
+			      mid, part, full);
+			obs_source_set_enabled(sblur, false);
+			sleep_ms(400);
+			CHECK(obs_source_enabled(sblur) && sb_level(sblur) < 1.0 && sb_level(sblur) > 0.0,
+			      "switched off, it stays drawn while it ramps out (level %.2f)", sb_level(sblur));
+			sleep_ms(900);
+			CHECK(!obs_source_enabled(sblur), "and is off once the ramp has ended");
+			obs_data_t *ld = obs_data_create();
+			obs_data_set_int(ld, "ramp_in_ms", 1000);
+			obs_source_t *loaded = obs_source_create("stagekit_scene_blur", "SB Loaded", ld, nullptr);
+			obs_data_release(ld);
+			obs_source_set_enabled(loaded, true); // as OBS restores it
+			obs_source_filter_add(sbo_src, loaded);
+			sleep_ms(120);
+			CHECK(sb_level(loaded) == 1.0, "a Scene Blur on at load is on at once, without ramping in");
+			obs_source_filter_remove(sbo_src, loaded);
+			obs_source_release(loaded);
+			sb_set(sblur, [&](obs_data_t *s) {
+				obs_data_set_int(s, "ramp_in_ms", 0);
+				obs_data_set_int(s, "ramp_out_ms", 0);
+				obs_data_unset_user_value(s, "strength");
+			});
+		}
+
+		// The key's requests: one scene, or every scene with a Scene Blur of
+		// that name; a state event when one changes; and the hotkeys.
+		{
+			obs_data_t *od = obs_data_create();
+			obs_data_set_int(od, "ramp_in_ms", 0);
+			obs_data_set_int(od, "ramp_out_ms", 0);
+			obs_source_t *other_blur = obs_source_create("stagekit_scene_blur", "Scene Blur", od, nullptr);
+			obs_data_release(od);
+			obs_source_set_enabled(other_blur, false);
+			obs_source_filter_add(sbo_src, other_blur);
+			sleep_ms(150);
+			sb_events();
+			obs_data_t *list = sb_call("ListSceneBlurs", [](obs_data_t *) {});
+			obs_data_array_t *filters = obs_data_get_array(list, "filters");
+			bool both = false;
+			for (size_t i = 0; i < obs_data_array_count(filters); i++) {
+				obs_data_t *f = obs_data_array_item(filters, i);
+				obs_data_array_t *scenes = obs_data_get_array(f, "scenes");
+				if (strcmp(obs_data_get_string(f, "filter"), "Scene Blur") == 0 &&
+				    obs_data_array_count(scenes) == 2 &&
+				    strcmp(obs_data_get_string(f, "type"), "gaussian") == 0 &&
+				    strcmp(obs_data_get_string(f, "style"), "gaussian") == 0)
+					both = true;
+				obs_data_array_release(scenes);
+				obs_data_release(f);
+			}
+			obs_data_array_release(filters);
+			CHECK(obs_data_get_bool(list, "success") && both,
+			      "ListSceneBlurs lists the name once with the two scenes it is in, and its blur's look");
+			obs_data_release(list);
+
+			obs_data_t *one = sb_call("SceneBlur", [](obs_data_t *d) {
+				obs_data_set_string(d, "filter", "Scene Blur");
+				obs_data_set_string(d, "scene", "SB Scene");
+				obs_data_set_string(d, "how", "on");
+			});
+			sleep_ms(150);
+			CHECK(obs_data_get_bool(one, "success") && obs_data_get_bool(one, "active") &&
+				      obs_source_enabled(sblur) && !obs_source_enabled(other_blur),
+			      "SceneBlur with a scene switches on that scene's blur only");
+			obs_data_release(one);
+			const std::string said = sb_events();
+			CHECK(said.find("\"SceneBlurChanged\"") != std::string::npos &&
+				      said.find("\"SB Scene\"") != std::string::npos &&
+				      said.find("\"SB Other\"") == std::string::npos,
+			      "and says so with a SceneBlurChanged event for that scene");
+			obs_data_t *toggled = sb_call("SceneBlur", [](obs_data_t *d) {
+				obs_data_set_string(d, "filter", "Scene Blur");
+				obs_data_set_string(d, "how", "toggle");
+			});
+			sleep_ms(150);
+			obs_data_array_t *blurs = obs_data_get_array(toggled, "blurs");
+			CHECK(obs_data_get_bool(toggled, "success") && !obs_data_get_bool(toggled, "active") &&
+				      obs_data_array_count(blurs) == 2 && !obs_source_enabled(sblur) &&
+				      !obs_source_enabled(other_blur),
+			      "SceneBlur for every scene toggles them all: one was on, so all go off");
+			obs_data_array_release(blurs);
+			obs_data_release(toggled);
+			obs_data_t *again = sb_call("SceneBlur", [](obs_data_t *d) {
+				obs_data_set_string(d, "filter", "Scene Blur");
+				obs_data_set_string(d, "scene", "");
+				obs_data_set_string(d, "how", "toggle");
+			});
+			sleep_ms(150);
+			CHECK(obs_data_get_bool(again, "active") && obs_source_enabled(sblur) &&
+				      obs_source_enabled(other_blur),
+			      "and the next toggle switches them all on");
+			obs_data_release(again);
+			const std::string said_all = sb_events();
+			CHECK(said_all.find("\"SB Scene\"") != std::string::npos &&
+				      said_all.find("\"SB Other\"") != std::string::npos,
+			      "each one that changes says so");
+			obs_data_t *asked = sb_call("SceneBlur", [](obs_data_t *d) {
+				obs_data_set_string(d, "filter", "Scene Blur");
+				obs_data_set_string(d, "scene", "SB Other");
+			});
+			obs_data_t *missing = sb_call("SceneBlur", [](obs_data_t *d) {
+				obs_data_set_string(d, "filter", "No Such Blur");
+				obs_data_set_string(d, "how", "on");
+			});
+			CHECK(obs_data_get_bool(asked, "success") && obs_data_get_bool(asked, "active") &&
+				      !obs_data_get_bool(missing, "success"),
+			      "without 'how' it only says how they are; a name nothing has is refused (%s)",
+			      obs_data_get_string(missing, "error"));
+			obs_data_release(asked);
+			obs_data_release(missing);
+			sb_call("SceneBlur", [](obs_data_t *d) {
+				obs_data_set_string(d, "filter", "Scene Blur");
+				obs_data_set_string(d, "how", "off");
+			});
+			sleep_ms(150);
+
+			// The hotkeys, on the scene, named by the filter.
+			obs_hotkey_id toggle_key = OBS_INVALID_HOTKEY_ID;
+			int named = 0;
+			struct Find {
+				obs_hotkey_id *toggle;
+				int *named;
+				obs_source_t *scene;
+			} find{&toggle_key, &named, sbs_src};
+			obs_enum_hotkeys(
+				[](void *param, obs_hotkey_id id, obs_hotkey_t *key) {
+					auto *f = static_cast<Find *>(param);
+					const std::string name = obs_hotkey_get_name(key);
+					if (name.rfind("stagekit.sceneblur.", 0) == 0 && name.size() > 11 &&
+					    name.substr(name.size() - 11) == ".Scene Blur")
+						(*f->named)++;
+					obs_weak_source_t *weak = (obs_weak_source_t *)obs_hotkey_get_registerer(key);
+					obs_source_t *owner = obs_hotkey_get_registerer_type(key) ==
+									      OBS_HOTKEY_REGISTERER_SOURCE
+								      ? obs_weak_source_get_source(weak)
+								      : nullptr;
+					if (name == "stagekit.sceneblur.toggle.Scene Blur" && owner == f->scene)
+						*f->toggle = id;
+					obs_source_release(owner);
+					return true;
+				},
+				&find);
+			CHECK(toggle_key != OBS_INVALID_HOTKEY_ID && named == 6,
+			      "each Scene Blur has toggle, on and off hotkeys on its scene, named by the filter (%d)",
+			      named);
+			if (toggle_key != OBS_INVALID_HOTKEY_ID) {
+				obs_hotkey_enable_callback_rerouting(true);
+				obs_hotkey_trigger_routed_callback(toggle_key, true);
+				obs_hotkey_trigger_routed_callback(toggle_key, false);
+				sleep_ms(150);
+				CHECK(obs_source_enabled(sblur) && !obs_source_enabled(other_blur),
+				      "the toggle hotkey switches that scene's blur on, and no other");
+				obs_hotkey_trigger_routed_callback(toggle_key, true);
+				obs_hotkey_trigger_routed_callback(toggle_key, false);
+				sleep_ms(150);
+				CHECK(!obs_source_enabled(sblur), "and off again");
+			}
+			obs_source_filter_remove(sbo_src, other_blur);
+			obs_source_release(other_blur);
+		}
+
+		// For the README: a scene with a game capture, a camera, a panel
+		// and a background, as each choice blurs it.
+		{
+			obs_data_t *bd = obs_data_create();
+			obs_data_set_string(bd, "file", texture_image);
+			obs_source_t *demo_back = obs_source_create("image_source", "SB Demo Back", bd, nullptr);
+			obs_data_release(bd);
+			obs_data_t *gd = obs_data_create();
+			obs_data_set_string(gd, "child", "Live Capture");
+			obs_source_t *demo_game = obs_source_create("xshm_input", "SB Demo Game", gd, nullptr);
+			obs_data_release(gd);
+			obs_source_t *demo_cam = obs_source_create("xshm_input", "SB Demo Camera", nullptr, nullptr);
+			obs_source_t *demo_panel = sb_block("SB Demo Panel", 0xE0302020, 170, 200);
+			obs_scene_t *demo = obs_scene_create("SB Demo");
+			obs_sceneitem_t *back_item = sb_put(demo, demo_back, 0, 0);
+			vec2 b;
+			vec2_set(&b, 640, 360);
+			obs_sceneitem_set_bounds_type(back_item, OBS_BOUNDS_STRETCH);
+			obs_sceneitem_set_bounds(back_item, &b);
+			obs_sceneitem_t *game_item = sb_put(demo, demo_game, 20, 20);
+			vec2_set(&b, 420, 236);
+			obs_sceneitem_set_bounds_type(game_item, OBS_BOUNDS_SCALE_INNER);
+			obs_sceneitem_set_bounds(game_item, &b);
+			sb_put(demo, demo_panel, 455, 20);
+			sb_put(demo, demo_cam, 465, 225);
+			obs_source_t *demo_src = obs_scene_get_source(demo);
+			obs_data_t *dd = obs_data_create();
+			obs_data_set_int(dd, "ramp_in_ms", 0);
+			obs_data_set_int(dd, "ramp_out_ms", 0);
+			obs_data_set_double(dd, "strength", 24.0);
+			obs_source_t *demo_blur = obs_source_create("stagekit_scene_blur", "SB Demo Blur", dd, nullptr);
+			obs_data_release(dd);
+			obs_source_set_enabled(demo_blur, false);
+			obs_source_filter_add(demo_src, demo_blur);
+			sleep_ms(400);
+			write_frame(blur_dir + "/1 the scene.rgba", render(demo_src, w, h), w, h);
+			auto shot = [&](const char *name, const std::function<void(obs_data_t *)> &change) {
+				sb_set(demo_blur, change);
+				obs_source_set_enabled(demo_blur, true);
+				sleep_ms(400);
+				render(demo_src, w, h);
+				write_frame(blur_dir + "/" + name + ".rgba", render(demo_src, w, h), w, h);
+			};
+			shot("2 all sources", [](obs_data_t *) {});
+			shot("3 live and capture sources", [](obs_data_t *s) { obs_data_set_int(s, "cover", 1); });
+			shot("4 all, never the camera", [&](obs_data_t *s) {
+				obs_data_set_int(s, "cover", 0);
+				sb_list(s, "never", {"SB Demo Camera"});
+			});
+			shot("5 chosen - the background, as a mosaic", [&](obs_data_t *s) {
+				obs_data_set_int(s, "cover", 2);
+				sb_list(s, "never", {});
+				sb_list(s, "chosen", {"SB Demo Back"});
+				obs_data_set_int(s, "blur_type", 3);
+				obs_data_set_int(s, "pixel_shape", 1);
+				obs_data_set_double(s, "pixel_glass", 60.0);
+			});
+			obs_source_filter_remove(demo_src, demo_blur);
+			obs_source_release(demo_blur);
+			obs_scene_release(demo);
+			for (obs_source_t *src : {demo_back, demo_game, demo_cam, demo_panel})
+				obs_source_release(src);
+		}
+
+		// Morph: a change from a scene that is blurring is a cross-fade,
+		// which keeps the blur on screen all the way; with the blur off, or
+		// blurring nothing, the scene is morphed item by item as before.
+		{
+			static bool blur_crossfade_logged = false;
+			static log_handler_t blur_prev_log = nullptr;
+			static void *blur_prev_param = nullptr;
+			base_get_log_handler(&blur_prev_log, &blur_prev_param);
+			blur_crossfade_logged = false;
+			base_set_log_handler(
+				[](int level, const char *format, va_list args, void *) {
+					char line[2048];
+					va_list copy;
+					va_copy(copy, args);
+					vsnprintf(line, sizeof(line), format, copy);
+					va_end(copy);
+					if (strstr(line, "cross-fade") && strstr(line, "SB Morph From"))
+						blur_crossfade_logged = true;
+					if (blur_prev_log)
+						blur_prev_log(level, format, args, blur_prev_param);
+				},
+				nullptr);
+			obs_scene_t *mfrom = obs_scene_create("SB Morph From");
+			obs_scene_t *mto = obs_scene_create("SB Morph To");
+			sb_put(mfrom, bg, 0, 0);
+			sb_put(mfrom, game, 40, 40);
+			sb_put(mto, bg, 0, 0);
+			sb_put(mto, game, 400, 200);
+			obs_source_t *from_src = obs_scene_get_source(mfrom), *to_src = obs_scene_get_source(mto);
+			obs_data_t *bd = obs_data_create();
+			obs_data_set_int(bd, "ramp_in_ms", 0);
+			obs_data_set_int(bd, "ramp_out_ms", 0);
+			obs_source_t *mblur = obs_source_create("stagekit_scene_blur", "SB Morph Blur", bd, nullptr);
+			obs_data_release(bd);
+			obs_source_filter_add(from_src, mblur);
+			obs_data_t *md = obs_data_create();
+			obs_data_set_int(md, "ease_curve", 0); // linear
+			obs_source_t *morph = obs_source_create_private("stagekit_morph", "SB Morph", md);
+			obs_data_release(md);
+			sleep_ms(400);
+			const std::vector<uint8_t> first = render(from_src, w, h);
+			const std::vector<uint8_t> last = render(to_src, w, h);
+			auto run_half = [&]() {
+				obs_transition_set(morph, from_src);
+				obs_transition_start(morph, OBS_TRANSITION_MODE_MANUAL, 0, to_src);
+				obs_transition_set_manual_time(morph, 0.5f);
+				sleep_ms(150);
+				render(morph, w, h);
+				std::vector<uint8_t> half = render(morph, w, h);
+				obs_transition_set_manual_time(morph, 1.0f);
+				sleep_ms(120);
+				render(morph, w, h);
+				return half;
+			};
+			const std::vector<uint8_t> half = run_half();
+			// Cross-faded: the game is at both ends, half-strength, and the
+			// one at the start is still blurred.
+			CHECK(blurred(first, p_game) && blur_crossfade_logged &&
+				      sharpness(half, 50, 50, 94, 94) < 6.0 &&
+				      std::abs(sb_px(half, 120, 80, 0) -
+					       (sb_px(first, 120, 80, 0) + sb_px(last, 120, 80, 0)) / 2) < 12,
+			      "a change from a scene while it blurs is a cross-fade, the blur kept all the way (logged %d)",
+			      (int)blur_crossfade_logged);
+			obs_transition_set(morph, from_src);
+			sleep_ms(100);
+			obs_transition_start(morph, OBS_TRANSITION_MODE_AUTO, 600, to_src);
+			sleep_ms(900);
+			render(morph, w, h);
+			const std::vector<uint8_t> done = render(morph, w, h);
+			CHECK(mean_abs_diff(done, last) < 0.01,
+			      "run by the clock, the change ends on the new scene (%.2f)", mean_abs_diff(done, last));
+			// Switched off: morphed as a plain scene.
+			obs_source_set_enabled(mblur, false);
+			sleep_ms(200);
+			blur_crossfade_logged = false;
+			const std::vector<uint8_t> half_off = run_half();
+			CHECK(!blur_crossfade_logged && sharpness(half_off, 222, 122, 340, 220) > 30.0,
+			      "with the blur off, the scene is morphed: the game is half-way, sharp (%.1f)",
+			      sharpness(half_off, 222, 122, 340, 220));
+			// On, but with nothing chosen to blur: still morphed.
+			sb_set(mblur, [](obs_data_t *s) { obs_data_set_int(s, "cover", 2); });
+			obs_source_set_enabled(mblur, true);
+			sleep_ms(300);
+			render(from_src, w, h);
+			blur_crossfade_logged = false;
+			const std::vector<uint8_t> half_none = run_half();
+			CHECK(!blur_crossfade_logged && sharpness(half_none, 222, 122, 340, 220) > 30.0,
+			      "on but blurring nothing, it does not stand in Morph's way");
+			base_set_log_handler(blur_prev_log, blur_prev_param);
+			obs_source_release(morph);
+			obs_source_filter_remove(from_src, mblur);
+			obs_source_release(mblur);
+			obs_scene_release(mfrom);
+			obs_scene_release(mto);
+		}
+
+		obs_set_output_source(0, before_out);
+		obs_source_release(before_out);
+		obs_source_filter_remove(sbs_src, sblur);
+		obs_source_release(sblur);
+		obs_scene_release(sbs);
+		obs_scene_release(sbo);
+		for (obs_source_t *src : {bg, badge, game, camera, picture})
+			obs_source_release(src);
+		obs_enter_graphics();
+		gs_texture_destroy(checker_texture);
+		checker_texture = nullptr;
+		obs_leave_graphics();
+	}
+	// ==== end scene-filters:blur ====
 
 	// ---------------------------------------------------- morph transition
 	{

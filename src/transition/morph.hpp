@@ -22,7 +22,8 @@ inline constexpr const char *kMorphId = "stagekit_morph";
 void register_morph();
 
 // Lets a scene with a drawing filter that `accepts` answers yes for still be
-// morphed item by item (Scene Shadow). One at a time; nullptr clears it.
+// morphed item by item (Scene Shadow, and Scene Blur while it blurs
+// nothing). Several may; each is asked. nullptr clears them all.
 void morph_accept_drawing_filter(bool (*accepts)(obs_source_t *filter));
 
 // Whether a filter on a scene draws nothing (it only moves, shows and hides

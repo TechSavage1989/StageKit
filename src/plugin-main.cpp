@@ -62,6 +62,9 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 // ==== scene-filters:shadow ====
 #include "look/scene-shadow.hpp"
 // ==== end scene-filters:shadow ====
+// ==== scene-filters:blur ====
+#include "look/scene-blur.hpp"
+// ==== end scene-filters:blur ====
 // ==== scene-filters:perf ====
 // ==== end scene-filters:perf ====
 
@@ -162,6 +165,9 @@ bool obs_module_load(void)
 	// ==== scene-filters:shadow ====
 	stagekit::register_scene_shadow();
 	// ==== end scene-filters:shadow ====
+	// ==== scene-filters:blur ====
+	stagekit::register_scene_blur();
+	// ==== end scene-filters:blur ====
 	// ==== scene-filters:perf ====
 	// ==== end scene-filters:perf ====
 	// A change from one item to another that is under way ends before OBS

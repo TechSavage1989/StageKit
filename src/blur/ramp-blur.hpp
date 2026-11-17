@@ -13,6 +13,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <obs.h>
 
 #include <functional>
+#include <vector>
 
 namespace stagekit {
 
@@ -21,6 +22,13 @@ inline constexpr const char *kRampBlurId = "stagekit_ramp_blur";
 class RampBlur;
 
 void register_ramp_blur();
+
+// The live captures a source shows, as "And live captures on screen" counts
+// them: the source itself when it is a game, window, display or camera
+// capture with an image; the capture a Cropped View shows; and those a scene
+// or group shows (its visible items, looking inside). Added to `found` once
+// each, not as new references: held by what shows them.
+void live_captures_in(obs_source_t *source, std::vector<obs_source_t *> &found);
 
 // Returns the RampBlur behind a filter source, or nullptr if the source is
 // not a StageKit Ramp Blur.

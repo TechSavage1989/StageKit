@@ -50,6 +50,7 @@ const PLAIN: Record<string, string> = {
 	stagekit_scene_corners: "options/scene-corners",
 	stagekit_scene_standby: "filters/standby-picture",
 	stagekit_scene_modes: "options/mode",
+	stagekit_scene_blur: "blur-types/gaussian",
 };
 
 type Settings = Record<string, unknown>;
@@ -382,6 +383,32 @@ export function movePicture(chosen: string | undefined, kind: string, settings: 
 /** A Blur All key's picture: its Blur style; else the image kept from before the type lists; else Gaussian. */
 export function blurAllPicture(chosen: string | undefined, look?: unknown): Picture {
 	return BY_ID.get(lookPicture("blur", explicit(look)) ?? "") || choose(chosen, "stagekit_ramp_blur") || plain("switch");
+}
+
+/**
+ * A Scene Blur key's picture: its Blur style; else the image kept from before
+ * the type lists; else the entry of the Blur style list the filter is set to
+ * (its `style` as ListSceneBlurs says it); else Gaussian.
+ */
+export function sceneBlurPicture(chosen: string | undefined, look?: unknown, style?: string): Picture {
+	return (
+		BY_ID.get(lookPicture("blur", explicit(look)) ?? "") ||
+		(chosen && BY_ID.get(chosen)) ||
+		BY_ID.get(lookPicture("blur", style) ?? "") ||
+		BY_ID.get("blur-types/gaussian") ||
+		plain("switch")
+	);
+}
+
+/**
+ * A Scene Blur key, as Blur All: its Scene type with its Blur style in the
+ * corner (on Automatic, the style the filter is set to, else Gaussian); with
+ * no Scene type, the blur style's own picture.
+ */
+export function sceneBlurShown(chosen: string | undefined, look?: unknown, sceneType?: unknown, style?: string): Shown {
+	const typed = BY_ID.get(sceneTypePicture(explicit(sceneType)) ?? "");
+	if (typed) return { picture: typed, badge: blurBadge(explicit(look) ?? (style || "gaussian")) };
+	return { picture: sceneBlurPicture(chosen, look, style) };
 }
 
 /**
