@@ -19,7 +19,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, "..")
 PLUGIN = os.path.join(ROOT, "com.techsavage1989.stagekit.sdPlugin")
 BASE = "com.techsavage1989.stagekit"
-VERSION = "0.21.0.0"
+VERSION = "0.22.0.0"
 
 # The pack picture each feature's key starts with (its "on" and "off" look).
 PICTURES = {

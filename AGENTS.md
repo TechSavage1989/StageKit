@@ -1341,6 +1341,16 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   the button function"; then "I don't want any of the buttons, or the options specific to my
   stream scene collection, but I do want the specific icons I had"; and "Dolphin isn't handheld ...
   make as many scene and source types as possible and provide the proper respective icons". So:
+  - **Any combination** (beta164; the owner: "I need all my original Scene type icons to exist in
+    the types lists ... I want to be able to set any combination"). A Source type list offers its
+    key's types first, then every other source type (`More: <group>`) and every scene type as
+    `scene:<id>` (`Scenes: <group>`); a Scene type list offers every source type as
+    `source:<id>` (`Sources: <group>`) after the scene types. `sourceTypePicture` and
+    `sceneTypePicture` follow the prefix, so every resolver gets it; `distinct` drops a picture
+    already offered higher in the list and marks a repeated name (*Console (scene)*). The
+    Corners & Edges key, which had a look list only, has a Source type list too. The `only`
+    lists are now what comes first, not all there is. Tested: every key offers every scene
+    picture and every source type.
   - **Generic types, the owner's art.** Every type is a general one (Game, Retro game, Capture
     card, Facecam, Gameplay + chat, Holding screen ...; no product names either: "Stream
     controller", not the brand); a test fails on an owner's scene, source,

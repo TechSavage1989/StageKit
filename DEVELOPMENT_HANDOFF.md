@@ -9,9 +9,20 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | `feat/frame-time-2` (frame time, beta163), on `main` after beta162 (#178). Next: the new collection |
+| Working branch | `feat/sd-scene-art` (any image on any key, beta164), on `main` after beta163 (#179). Next: `feat/blur-edges`, then the new collection |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
+
+## Any image on any key (0.1.0-beta164)
+
+The owner, with a screenshot of their holding-screen keys: "I need all my original Scene type icons
+to exist in the types lists. for example, i can set my holding scenes to icons that match my
+original icons layouts, but i can't set my original icon sets to any of the show in scenes or
+others", then "I want to be able to set any combination". Every key's Source type list now offers
+every source type and every scene type (`scene:<id>`), and every Scene type list every source type
+(`source:<id>`), the key's own types first (AGENTS, *Any combination*). Corners & Edges got a Source
+type list. Stream Deck plugin `VERSION` 0.22.0.0. Tests: `npm test` 55 of 55, `npm run validate`.
+Not tried on a Stream Deck.
 
 ## Frame time, and a settings-window crash (0.1.0-beta163)
 

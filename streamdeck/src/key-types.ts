@@ -109,8 +109,19 @@ export function typeForKept(key: string, settings: Record<string, unknown>, reso
 	return undefined;
 }
 
+/**
+ * Every key offers every image (the owner: "I need all my original Scene type
+ * icons to exist in the types lists ... I want to be able to set any
+ * combination"): a Source type list offers the scene types too, as
+ * "scene:<id>", and a Scene type list the source types, as "source:<id>".
+ */
+export const SCENE_PREFIX = "scene:";
+export const SOURCE_PREFIX = "source:";
+
 /** A source type's picture for a key's function: the owner's art for it, else the type's own. */
 export function sourceTypePicture(type: string | undefined, family?: Family, blurStyle = "gaussian"): string | undefined {
+	// (A scene type offered in a Source type list: its picture as it is.)
+	if (type?.startsWith(SCENE_PREFIX)) return sceneTypePicture(type.slice(SCENE_PREFIX.length));
 	const t = SOURCE_TYPES.find((s) => s.id === type);
 	if (!t) return undefined;
 	const art = family ? ART[family][t.id] : undefined;
@@ -119,6 +130,8 @@ export function sourceTypePicture(type: string | undefined, family?: Family, blu
 }
 
 export function sceneTypePicture(type: string | undefined): string | undefined {
+	// (A source type offered in a Scene type list: its own picture.)
+	if (type?.startsWith(SOURCE_PREFIX)) return sourceTypePicture(type.slice(SOURCE_PREFIX.length));
 	return SCENE_TYPES.find((s) => s.id === type)?.picture;
 }
 
@@ -164,6 +177,7 @@ const SOURCES: Record<string, { family?: Family; only?: string[]; label?: string
 	// carried, all nine are the same mountain. Old keys that chose one keep it.)
 	standby: { automatic: "Automatic (standby image)", tip: "What the standby image stands in for, for the key's image.", only: [...CAPTURES, ...APPS, ...CAMERAS] },
 	blur: { family: "blur", only: withArt("blur"), automatic: "Automatic (by the source)", tip: "What is blurred, for the key's image, drawn in the blur style." },
+	corners: { automatic: "Automatic (the corner style's image)", tip: "What the corners are on, for the key's image.", only: [...CAMERAS, ...CAPTURES, ...APPS, "image", "video"] },
 	zoom: { automatic: "Automatic (zoom)", tip: "What is zoomed, for the key's image.", only: [...CAPTURES, ...APPS, ...CAMERAS, "image", "video", "green_screen"] },
 	autocapture: {
 		automatic: "Automatic (auto capture)",
@@ -290,6 +304,39 @@ function grouped(ids: string[], family: Family | undefined): Group[] {
 	return groups;
 }
 
+/** The scene types in their groups, their values after `prefix`. */
+function sceneGroups(prefix: string): Group[] {
+	const groups: Group[] = [];
+	for (const label of data.sceneGroups) {
+		const entries = SCENE_TYPES.filter((t) => t.group === label).map((t) => ({ value: prefix + t.id, label: t.label, picture: t.picture }));
+		if (entries.length) groups.push({ label, entries });
+	}
+	return groups;
+}
+
+/**
+ * One list's groups with each picture offered once (the first, the key's own
+ * kind, wins) and each name once: a later entry of the same name is told
+ * apart by `mark` ("Console (scene)").
+ */
+function distinct(groups: Group[], mark: string): Group[] {
+	const pictures = new Set<string>();
+	const labels = new Set<string>();
+	const out: Group[] = [];
+	for (const g of groups) {
+		const entries: Entry[] = [];
+		for (const e of g.entries) {
+			if (pictures.has(e.picture)) continue;
+			pictures.add(e.picture);
+			const label = labels.has(e.label) ? e.label + mark : e.label;
+			labels.add(label);
+			entries.push({ ...e, label });
+		}
+		if (entries.length) out.push({ label: g.label, entries });
+	}
+	return out;
+}
+
 /** A key's type lists, by its key name (features.json's `key`, or the page name of the others). */
 export function typeLists(key: string): TypeList[] {
 	const lists: TypeList[] = [];
@@ -307,14 +354,22 @@ export function typeLists(key: string): TypeList[] {
 	const source = SOURCES[key];
 	if (source) {
 		const ids = source.only ?? SOURCE_TYPES.map((t) => t.id);
-		lists.push({ setting: "sourceType", label: source.label ?? "Source type", tip: source.tip, automatic: source.automatic, groups: grouped(ids, source.family) });
+		const rest = SOURCE_TYPES.map((t) => t.id).filter((id) => !ids.includes(id));
+		const groups = [
+			...grouped(ids, source.family),
+			...grouped(rest, source.family).map((g) => ({ label: `More: ${g.label}`, entries: g.entries })),
+			...sceneGroups(SCENE_PREFIX).map((g) => ({ label: `Scenes: ${g.label}`, entries: g.entries })),
+		];
+		lists.push({ setting: "sourceType", label: source.label ?? "Source type", tip: source.tip, automatic: source.automatic, groups: distinct(groups, " (scene)") });
 	}
 	if (sceneKeys().includes(key)) {
-		const groups: Group[] = [];
-		for (const label of data.sceneGroups) {
-			const entries = SCENE_TYPES.filter((t) => t.group === label).map((t) => ({ value: t.id, label: t.label, picture: t.picture }));
-			if (entries.length) groups.push({ label, entries });
-		}
+		const groups = [
+			...sceneGroups(""),
+			...grouped(SOURCE_TYPES.map((t) => t.id), undefined).map((g) => ({
+				label: `Sources: ${g.label}`,
+				entries: g.entries.map((e) => ({ ...e, value: SOURCE_PREFIX + e.value })),
+			})),
+		];
 		lists.push({
 			setting: "sceneType",
 			label: "Scene type",
@@ -325,7 +380,7 @@ export function typeLists(key: string): TypeList[] {
 						? "What is blurred, for the key's image; the blur style is drawn in its corner. Automatic shows the blur style alone."
 						: "What the scene is, for the key's image. Automatic shows the filter's own image.",
 			automatic: key === "scene" ? "Automatic (by the scene's name)" : key === "blurall" || key === "sceneblur" ? "Automatic (the blur's image)" : "Automatic (the filter's image)",
-			groups,
+			groups: distinct(groups, " (source)"),
 		});
 	}
 	return lists;
