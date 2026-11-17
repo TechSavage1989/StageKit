@@ -933,6 +933,26 @@ with one shown:
 The camera, chat box and widgets beside the captures stay where they are when the capture changes.
 A capture that is showing but has no image yet keeps its room meanwhile.
 
+### One holding scene
+
+The scenes shown before, between and after the game (stream starting, be right back, stream
+ending) often share one design: the same background, image, chat box and alerts, with another
+title and a few extras. They can be one scene with one mode showing:
+
+1. Put every mode's title and extras in the scene with the shared items, each where it was. Make
+   each title a group, so a mode is one title plus the items that come with it.
+2. Add a **Link Visibility** to the scene with *Show only one at a time* and the titles listed.
+3. Add one more **Link Visibility** per mode, set to *Together*, listing that mode's title and its
+   extras. Showing a title then shows its extras, and hiding it hides them.
+4. On each title add a **Show in Scenes** named alike on every title (say *Show in Scenes-Mode*):
+   *The scenes listed below* with the holding scene only, a fade, and *Follow what is shown*
+   ticked.
+
+A Stream Deck *Show in Scenes* key per mode, set to *Switch on* (not *Toggle*, which would leave no
+title), then chooses the mode: the other title and its extras fade out, and only the key of the
+mode showing is lit. A scene that shows the camera full size is better left a scene of its own: a
+camera switch that acts in every scene would show the camera in every mode.
+
 ### Match Item
 
 Add **Match Item (StageKit)** as a filter on a scene and leave it on. Choose an item in this scene, and
@@ -1209,8 +1229,9 @@ tests/run-tests.sh
 ```
 
 `scripts/merge-capture-scenes.py` turns a collection with a scene per capture into one with two
-layout scenes added beside the old ones, for a side-by-side trial (see the script's header). It reads
-one file and writes another, with a report.
+layout scenes added beside the old ones, and `scripts/merge-holding-scenes.py` adds one holding
+scene beside Stream Start, Be Right Back and Stream Ending, each for a side-by-side trial (see the
+scripts' headers). Each reads one file and writes another, with a report.
 
 Windows and macOS builds come from GitHub Actions, based on the official
 [obs-plugintemplate](https://github.com/obsproject/obs-plugintemplate).

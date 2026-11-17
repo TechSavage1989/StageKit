@@ -14,6 +14,16 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
 
+## One holding scene (trial, 2026-11-17)
+
+The owner asked to combine Stream Start, Intermission, Be Right Back and Stream Ending.
+`scripts/merge-holding-scenes.py` adds `Holding-Scene` with the first, third and fourth as modes
+(keys: Show in Scenes-Mode on Stream Starting Group, BRB Text, Ending Text, *Switch on*);
+Intermission stays a scene because of the camera switch. The trial file sent to the owner has the
+layout scenes and the holding scene beside all fifteen old scenes. Not seen on Windows: the fades
+between modes, the text and browser sources in them, Be Right Back's own transition (a Transition
+Table rule and a scene override) which Holding-Scene does not have.
+
 ## Stream Deck keys: legible off images, one style (0.1.0-beta150)
 
 The owner, with a photo of their deck: "the current 'off' keys are very dark and virtually
