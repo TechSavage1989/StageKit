@@ -2018,6 +2018,13 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   reaches `main` (steps in the handoff). The release appears as soon as the Windows files are built
   and the macOS and Linux files are added after; tell the owner at that first moment. Never ask the
   owner to create tags by hand.
+- **Several AI sessions may work and release at the same time** (the owner, 2026-11-17: "i ... don't
+  mind having multiple working in tandem if it can allow faster work and not cause issues"). Name
+  release notes `0.1.0-betaNEXT.md` while working; number them only just before pushing, from
+  `git fetch origin` and the highest `docs/releases/` on `origin/main` plus one, and check again
+  right before the merge. If another session took the number, rebase, renumber and keep both
+  handoff sections. Never merge a branch whose notes are not the newest number on `main`, and
+  never force-push or rewrite another session's branch.
 
 ## Talking to the owner
 
