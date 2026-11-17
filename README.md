@@ -1500,6 +1500,12 @@ that fits the type and what the key does (a Show in Scenes key's camera with the
 Shadow key's game with its shadow, a Blur key's window blurred in the blur's style, a Switch Scene
 key's gameplay-with-chat layout), and drawings in the same style for the rest.
 
+**Any image on any key.** The types that fit the key come first; after them every other source
+type (*More: ...*) and every scene image, the pack's scene layouts included (*Scenes: ...*), so a
+Show in Scenes key for a start screen can show the *Starting soon* scene image. On Switch Scene and
+the other scene keys the scene types come first and every source type after them (*Sources:
+...*). An image already offered higher up is not repeated.
+
 | Key | List | What it offers |
 | --- | --- | --- |
 | **Show in Scenes** | Source type | What a source can be, in seven groups: *Captures & games* (Game, Retro game, Emulator, Console, Handheld, Linked handheld screen, Second linked handheld screen, Capture card internal and external, HDMI source, Window, Browser, Display, Second display, Tablet, Phone screen), *Apps* (Art app, 3D app, Sculpting app, CAD app, Code editor, Office / documents, Video player, Reference board), *Cameras* (Camera / webcam, DSLR / mirrorless, Camcorder, Action camera, PTZ camera, Facecam, Full-screen, Side, Phone, Desk / overhead and Virtual camera), *Devices & audio* (Gaming PC, Laptop, Retro console, Controller, Stream controller, Pen display, VR headset, Headset, Microphone, Speakers, Audio mixer, Key light, Green screen), *Overlays* (Chat, Voice chat, Music, Alerts, Events / goals, Countdown, Title / text, Image, Video, Logo, Standby image), *Status & holding screens* (Live / on air, Recording, Paused, Muted, Offline, Camera off, Raid / host, Starting soon, Be right back, Intermission, Technical difficulties, Ending) and *Layout markers* (Chat column, Handheld column) |

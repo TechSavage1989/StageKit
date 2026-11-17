@@ -146,7 +146,8 @@ test("scene filters' keys are marked as such, and only keys on a source offer a 
 	for (const page of ["scene", "fitoverlap", "blur-all", "layout"]) assert.ok(!offered(page), page);
 	const page = readFileSync(new URL("ui/showinscenes.html", plugin), "utf8");
 	for (const type of SOURCE_TYPES)
-		assert.equal(page.includes(`<option value="${type.id}">${type.label.replace(/&/g, "&amp;")}</option>`), type.group !== "Activities", type.id);
+		// Every type, in any combination (the owner); the activities after the rest.
+		assert.ok(page.includes(`<option value="${type.id}">`), type.id);
 });
 
 test("a key remembers the kind of source and the mode its image depends on", async () => {

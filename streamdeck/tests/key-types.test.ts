@@ -5,7 +5,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import features from "../src/features.json" with { type: "json" };
-import { adoptOld, keptPicture, keysWithLists, OWN_LISTS, SCENE_TYPES, SOURCE_TYPES, typeForKept, typeLists } from "../src/key-types.ts";
+import { adoptOld, keptPicture, keysWithLists, OWN_LISTS, SCENE_TYPES, sceneTypePicture, SOURCE_TYPES, sourceTypePicture, typeForKept, typeLists } from "../src/key-types.ts";
 import {
 	blurAllPicture,
 	chooseFor,
@@ -138,7 +138,33 @@ test("the Scene type list is the owner's scene pictures under generic names, and
 	assert.equal(by.get("gameplay_chat"), "scenes/03-game-component");
 	assert.equal(by.get("holding"), "options/scene-standby");
 	for (const p of PICTURES.filter((p) => p.group === "scenes")) assert.ok([...by.values()].includes(p.id), `${p.id} is offered`);
-	assert.deepEqual(list.groups.map((g) => g.label), ["Holding & status", "Games", "Apps & screens", "Creative", "Camera & talk", "IRL & lifestyle", "All in one"]);
+	assert.deepEqual(list.groups.map((g) => g.label).slice(0, 7), ["Holding & status", "Games", "Apps & screens", "Creative", "Camera & talk", "IRL & lifestyle", "All in one"]);
+	assert.ok(list.groups.slice(7).every((g) => g.label.startsWith("Sources: ")), "then the source types");
+});
+
+test("every key offers every scene image and every source type, in any combination", () => {
+	// The owner: "I need all my original Scene type icons to exist in the
+	// types lists ... I want to be able to set any combination".
+	const scenePictures = new Set(SCENE_TYPES.map((t) => t.picture));
+	for (const key of keysWithLists()) {
+		const lists = typeLists(key).filter((l) => l.setting !== "look");
+		assert.ok(lists.length, `${key}: a Source or Scene type list`);
+		for (const list of lists) {
+			const entries = list.groups.flatMap((g) => g.entries);
+			const pictures = new Set(entries.map((e) => e.picture));
+			for (const p of scenePictures) assert.ok(pictures.has(p), `${key} ${list.setting}: ${p}`);
+			const values = new Set(entries.map((e) => e.value.replace(/^(scene|source):/, "")));
+			for (const t of SOURCE_TYPES) {
+				const own = list.setting === "sourceType" ? t.id : `source:${t.id}`;
+				assert.ok(values.has(t.id) || pictures.has(sourceTypePicture(t.id)!), `${key} ${list.setting}: ${own}`);
+			}
+		}
+	}
+	// A scene type chosen on a source key, and a source type on a scene key,
+	// show their own pictures.
+	assert.equal(sourceTypePicture("scene:brb", "show"), "scenes/14-be-right-back");
+	assert.equal(sceneTypePicture("source:camera"), sourceTypePicture("camera"));
+	assert.equal(chooseFor(undefined, "stagekit_show_in_scenes", {}, "Starting", undefined, { sourceType: "scene:starting" })?.id, "scenes/01-stream-start");
 });
 
 test("every settings page has its type lists and no Image list", () => {
