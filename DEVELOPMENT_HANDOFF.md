@@ -14,22 +14,56 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
 
+## Live, Chat Live and Standby; Switch to scene (0.1.0-beta154)
+
+The owner: "Full capture should be called Live / Holding should be called standby / Component
+should be called Chat Live / there should be a configurable option that Pressing the show button
+for any source that belongs to a specific scene automatically switches to that scene ... it must
+be universal to work with future scene collection designs. also the standby scene, live scene and
+Chat Live scenes should have icons that are representative of their function as should each of
+the show in scene buttons. of course allow manual icon changes still."
+
+- Show in Scenes has *Switch to scene* (`go_to`, a scene name, *(none)* as it comes): a press that
+  turns the switch on also changes OBS to that scene (the preview in Studio Mode) after the sources
+  are shown, unless the scene on screen already holds one of the sources or is that scene. Never on
+  a press off, a *Follow what is shown* correction, the state restored at load, or *Do it now*
+  (a choice made here, not asked for: one line to change if the owner wants *Do it now* to switch
+  too). A test section `[Show in Scenes: switch to scene]` with a test seam for the frontend; the
+  real `obs_frontend_set_current_scene` path and Studio Mode have not run.
+- The merge scripts write *Live* (was Full-Capture-Scene), *Chat Live* (was
+  Component-Capture-Scene) and *Standby* (was Holding-Scene), and set `go_to` on every switch they
+  make: captures to Live, titles to Standby, column markers to Chat Live. They refuse a collection
+  with the old names (merge again from the file before). The collection's suffix is *+ Standby*.
+  The trial file "StageKit Live, Chat Live and Standby (trial)" is the earlier "Five Scenes" file
+  with only the names and `go_to` changed (compared), and loads in libobs with 151 StageKit sources
+  and filters, none unknown. It is made from the owner's private collection and never committed.
+- Stream Deck plugin 0.17.4.0: nine new key images (on and off, every palette): scenes *live*,
+  *chat live*, *standby*; show keys *starting*, *brb*, *intermission*, *ending*, *column chat*,
+  *column gba*. Matching unchanged (most words wins, a hand-picked image first). Not seen on a deck.
+- To tell the owner: a capture key pressed in a game scene other than Live now goes to Live; set a
+  switch's *Switch to scene* to *(none)* or another scene to change that. A title source must be
+  named with the label's words (*BRB*, not *Be Right Back*) for its own image.
+- Carried over: the Windows-only open points of beta147 and beta153 below (Morph between captures,
+  fades between modes, GBA windows in Chat Live, the two free-space fits in Standby side by side;
+  Alerts place, widget order, Pureref, one key per look, Studio Mode).
+
 ## One holding scene (trial, 2026-11-17)
 
 The owner asked to combine Stream Start, Intermission, Be Right Back and Stream Ending.
-`scripts/merge-holding-scenes.py` adds `Holding-Scene` with the first, third and fourth as modes
+`scripts/merge-holding-scenes.py` adds `Standby` (`Holding-Scene` until beta154) with the first, third and fourth as modes
 (keys: Show in Scenes-Mode on Stream Starting Group, BRB Text, Ending Text, *Switch on*);
 Intermission stays a scene because of the camera switch. The trial file sent to the owner has the
 layout scenes and the holding scene beside all fifteen old scenes. Not seen on Windows: the fades
 between modes, the text and browser sources in them, Be Right Back's own transition (a Transition
-Table rule and a scene override) which Holding-Scene does not have.
+Table rule and a scene override) which Standby does not have.
 
 ## Five scenes: Intermission and GBA join (0.1.0-beta153)
 
 The owner: "can the intermission screen be merged with the other hold scenes? also the GBA scene?"
 Link Visibility gained *Follow the first source* (mode 2) and Show in Scenes and Link Visibility
 now respect each other: a source shows only when its mode says so and no switch holds it off.
-Holding-Scene has four modes (Intermission added); Component-Capture-Scene has two columns (Chat,
+Holding-Scene (now Standby) has four modes (Intermission added); Component-Capture-Scene (now
+Chat Live) has two columns (Chat,
 GBA) switched by transparent marker sources. The trial file "StageKit Five Scenes (trial)" keeps
 all old scenes beside the new ones. A first build put DSLR's standby image over every holding mode
 but Intermission (its stand-in); fixed before release. The beta152 tab is renamed *Standby &
@@ -87,7 +121,7 @@ test only), and offered one scene per layout instead. The owner: "having two pri
 both component and full layouts that contain all the live sources is fine".
 
 - `scripts/merge-capture-scenes.py` writes the trial collection: all fifteen scenes kept, plus
-  Full-Capture-Scene and Component-Capture-Scene, each with the five captures (Game Capture shown,
+  Full-Capture-Scene and Component-Capture-Scene (Live and Chat Live since beta154), each with the five captures (Game Capture shown,
   the rest hidden and locked), a Link Visibility each, a Show in Scenes-Capture on each capture.
   Its fidelity table: every old scene is matched by the new one with that capture shown, apart from
   the options (Alerts centred in Full, widget under the camera, Pureref hidden) and one copy taken

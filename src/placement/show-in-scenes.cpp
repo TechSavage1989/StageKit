@@ -29,12 +29,14 @@ the Free Software Foundation; either version 2 of the License, or
 // belongs to a mode of its scene that is not showing) is passed over when
 // the switch shows things, and does not count for "Follow what is shown".
 //
-// "Switch to scene" (`go_to`, empty as it comes): a press that turns the
-// switch on, once its sources are shown, also changes OBS to that scene with
-// OBS's current transition (the preview in Studio Mode), unless the scene on
-// screen already has one of the sources. It goes by the scene's name, so it
-// works with any collection. Not on a press turning it off, not when "Follow
-// what is shown" corrects the switch, not for the state restored at load.
+// "Switch to scene" (`go_to`, empty as it comes): a press that shows the
+// sources (turns the switch on, or off when "On means" is hidden), once they
+// are shown, also changes OBS to that scene with OBS's current transition
+// (the preview in Studio Mode), unless the scene on screen already has one
+// of the sources. It goes by the scene's name, so it works with any
+// collection. Not on a press hiding them, not for "Do it now", not when
+// "Follow what is shown" corrects the switch, not for the state restored at
+// load.
 
 #include "show-in-scenes.hpp"
 #include "../common/timing.hpp"
@@ -369,10 +371,10 @@ public:
 		ready_ = true;
 		const int press = press_.exchange(-1);
 		if (press >= 0)
-			apply(press != 0);
-		// A press that turned it on also changes scene, when set to.
-		if (press == 1 && scenes_loaded())
-			switch_scene();
+			apply((press & kPressOn) != 0);
+		// A press that showed the sources also changes scene, when set to.
+		if (press >= 0 && !(press & kPressStay) && scenes_loaded())
+			switch_scene((press & kPressOn) != 0);
 		if ((follow_timer_ -= seconds) > 0.0)
 			return;
 		follow_timer_ = 0.25;
@@ -478,12 +480,15 @@ public:
 		return changed;
 	}
 
-	// "Switch to scene", after a press turned the switch on.
-	void switch_scene()
+	// "Switch to scene", after a press that showed the sources (turned the
+	// switch on, or off when "On means" is hidden).
+	void switch_scene(bool enabled)
 	{
 		GoTo go;
 		{
 			std::lock_guard lock(mutex_);
+			if (enabled == on_hides_)
+				return; // that press hid them
 			go.target = go_to_;
 			go.sources = sources_;
 		}
@@ -515,7 +520,8 @@ private:
 public:
 	// Acted on at the next tick; of several presses in one frame, the last.
 	// "Do it now" in the filter's window (`by_key` false) never changes scene.
-	void press(bool enabled, bool by_key = true) { press_ = enabled ? (by_key ? 1 : 2) : 0; }
+	static constexpr int kPressOn = 1, kPressStay = 2;
+	void press(bool enabled, bool by_key = true) { press_ = (enabled ? kPressOn : 0) | (by_key ? 0 : kPressStay); }
 
 private:
 	obs_source_t *source_;
@@ -531,7 +537,7 @@ private:
 	std::string go_to_;                         // the scene a press turning it on goes to
 	double follow_timer_ = 0.0;                 // until the next look, in seconds
 	std::atomic<std::thread::id> correcting_{}; // the thread putting the switch right, if any
-	std::atomic<int> press_{-1};                // a press: 1 on, 2 on (no scene change), 0 off, -1 none
+	std::atomic<int> press_{-1};                // a press (kPressOn, kPressStay), or -1 for none
 };
 
 bool where_modified(obs_properties_t *props, obs_property_t *, obs_data_t *settings)
