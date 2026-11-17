@@ -95,6 +95,14 @@ OWN = {
     + arrow(23, 13, 41, 13, 4) + arrow(41, 23, 23, 23, 4),
     "scene-this": [("frame", 10, 4, 54, 32), ("dot", 32, 18, 6)],
     "scene-chosen": [("frame", 6, 3, 40, 21), ("box", 15, 9, 49, 27), ("frame", 24, 15, 58, 33)],
+    # The Stream and Record keys with a Scene type: what OBS is doing, still
+    # (the key's own animated pictures are tools/make-live-icons.py's).
+    "stream-off": [("line", 32, 15, 32, 33), ("line", 25, 34, 39, 34), ("ring", 32, 11, 4)],
+    "stream-on": [("line", 32, 15, 32, 33), ("line", 25, 34, 39, 34), ("dot", 32, 11, 4), ("arc", 32, 11, 10, -45, 45),
+                  ("arc", 32, 11, 10, 135, 225), ("arc", 32, 11, 17, -45, 45), ("arc", 32, 11, 17, 135, 225)],
+    "record-off": [("ring", 32, 18, 14)],
+    "record-on": [("ring", 32, 18, 15), ("dot", 32, 18, 10)],
+    "record-paused": [("ring", 32, 18, 15), ("box", 25, 10, 30, 26), ("box", 34, 10, 39, 26)],
 }
 
 # The badges taken from the key pictures' own drawings: what a key's picture

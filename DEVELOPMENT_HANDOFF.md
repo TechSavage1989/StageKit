@@ -13,6 +13,34 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
+## Stream and Record keys (0.1.0-beta168, plugin 0.24.0.0)
+
+Branch `feat/sd-stream-record`, on `main` after beta166. Stream Deck only; no OBS plugin file
+changed. The owner: "Id like animated stream Start buttons and stream Record buttons. both should
+be able to be set to toggle, start, pause or stop, and have animations that are relevant, and
+match the existing color themes", and then "the new keys also need a long press setting".
+
+- **Two keys** (`.stream`, `.record`; `src/actions/output.ts`), on obs-websocket's own requests
+  and events, as the Switch Scene key. Stream: Toggle / Start / Stop. Record: Toggle / Start /
+  Stop / Pause / resume / Pause / Resume. **A stream cannot be paused**: OBS and obs-websocket
+  have no such thing, so the Stream key has no Pause (tooltip, README). Tell the owner.
+- **Animated** by cycling frames with `setImage` (not a GIF: the SDK documents PNG, JPEG and SVG
+  for `setImage`, GIF only for the manifest). 70 frames a palette by `tools/make-live-icons.py`
+  (stream: idle 1, starting 8, live 8, reconnecting 8, stopping 8; record: idle 1, starting 8,
+  recording 8, paused 12, stopping 8), 8 a second, one shared timer, at most 12 keys a tick,
+  only while the key is on the deck and only in moving states; *Animate* Off for still images.
+  The record dot is red in every palette; the rest follows the palette.
+- **Long press** (`src/hold.ts`, reusable): *Long press* Nothing (as it comes, acts on key down)
+  or any *On press* choice; *Hold time* 800 ms as it comes. A bar in the palette's accent fills
+  while held; the title says *Hold: Stop*.
+- Titles follow the press and the state, with the running time (*Show time*). A Scene type list
+  (with its Layout list), as every key has: with a type, the type with a still state badge.
+- Tests: `npm test` 73 of 73 (9 new in `tests/output.test.ts`: the requests, the events, the
+  frames in every palette, the animator, the long press, the titles), `npm run validate`.
+- **Not proven**: on a real Stream Deck (frame rate, how the bar and the animation look, whether
+  a hand-set image wins over the frames) and against a real OBS (the exact order of its state
+  events; the stand-in sends STARTING then STARTED).
+
 ## Scene Blur: the screen's edge, Mosaic edge's mode, no gap (0.1.0-beta167)
 
 Branch `fix/blur-edges-2`, from `main` after beta166. Notes: `docs/releases/0.1.0-beta167.md`.

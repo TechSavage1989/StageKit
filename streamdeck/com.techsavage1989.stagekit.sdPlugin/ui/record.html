@@ -1,0 +1,241 @@
+<!doctype html>
+<html>
+	<head lang="en">
+		<title>StageKit record</title>
+		<meta charset="utf-8" />
+		<script src="https://sdpi-components.dev/releases/v4/sdpi-components.js"></script>
+		<style>
+			body, summary, p {
+				font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+				font-size: 9pt;
+			}
+			details { margin-top: 10px; border-top: 1px solid rgba(255, 255, 255, 0.08); padding-top: 8px; }
+			summary { color: #969696; cursor: pointer; padding: 2px 0 8px 2px; outline: none; }
+			summary:hover { color: #d8d8d8; }
+			details p { color: #8a8a8a; line-height: 1.45; margin: 8px 4px 4px 4px; }
+		</style>
+	</head>
+
+	<body>
+		<sdpi-item label="On press" title="Toggle starts the recording, or stops it while recording. Pause / resume pauses it, or resumes it while paused.">
+			<sdpi-select setting="press" default="toggle">
+				<option value="toggle">Toggle (start or stop)</option>
+				<option value="start">Start recording</option>
+				<option value="stop">Stop recording</option>
+				<option value="pause">Pause / resume</option>
+				<option value="pauseonly">Pause</option>
+				<option value="resume">Resume</option>
+			</sdpi-select>
+		</sdpi-item>
+		<sdpi-item label="Long press" title="What holding the key does. Nothing (as it comes): the key acts the moment it is pressed. Set, a press acts when the key is let go, and holding it for the hold time does this instead: for example On press Start and Long press Stop, so a stray tap never ends the recording.">
+			<sdpi-select setting="longPress" default="none">
+				<option value="none">Nothing</option>
+				<option value="toggle">Toggle (start or stop)</option>
+				<option value="start">Start recording</option>
+				<option value="stop">Stop recording</option>
+				<option value="pause">Pause / resume</option>
+				<option value="pauseonly">Pause</option>
+				<option value="resume">Resume</option>
+			</sdpi-select>
+		</sdpi-item>
+		<sdpi-item label="Hold time (ms)" title="How long the key must be held for its long press: 300 to 5000 ms, 800 as it comes.">
+			<sdpi-textfield setting="holdMs" placeholder="800" pattern="[0-9]*"></sdpi-textfield>
+		</sdpi-item>
+		<sdpi-item label="Animate" title="On: the image moves while the recording starts, records, is paused or stops. Off: it stays still.">
+			<sdpi-select setting="animate" default="on">
+				<option value="on">On</option>
+				<option value="off">Off</option>
+			</sdpi-select>
+		</sdpi-item>
+		<sdpi-item label="Show time" title="On: the key&#x27;s title shows how long the recording has run.">
+			<sdpi-select setting="showTime" default="on">
+				<option value="on">On</option>
+				<option value="off">Off</option>
+			</sdpi-select>
+		</sdpi-item>
+		<sdpi-item label="Layout" title="How the key&#x27;s image is laid out: the type alone, in the live layout with a camera in its corner, or in the live layout with a camera and chat column. Automatic keeps the image as it is.">
+			<sdpi-select setting="layout" placeholder="Automatic">
+				<option value="auto">Automatic</option>
+				<option value="standalone">Standalone</option>
+				<option value="live">Live (no chat)</option>
+				<option value="chat">Live + chat</option>
+			</sdpi-select>
+		</sdpi-item>
+		<sdpi-item label="Scene type" title="What is recorded, for the key&#x27;s image; whether it is recording is drawn in its corner, and the image does not move. Automatic shows the moving record image.">
+			<sdpi-select setting="sceneType" placeholder="Automatic (the moving record image)">
+				<option value="auto">Automatic (the moving record image)</option>
+				<optgroup label="Holding &amp; status">
+					<option value="starting">Starting soon</option>
+					<option value="countdown">Countdown</option>
+					<option value="brb">Be right back</option>
+					<option value="intermission">Intermission</option>
+					<option value="technical">Technical difficulties</option>
+					<option value="ending">Ending</option>
+					<option value="holding">Holding screen</option>
+					<option value="paused">Paused</option>
+					<option value="offline">Offline</option>
+					<option value="privacy">Camera off</option>
+					<option value="raid">Raid / host</option>
+				</optgroup>
+				<optgroup label="Games">
+					<option value="gameplay">Gameplay</option>
+					<option value="gameplay_chat">Gameplay + chat</option>
+					<option value="pc_game">PC game</option>
+					<option value="retro">Retro gaming</option>
+					<option value="classic">Classic gaming</option>
+					<option value="speedrun">Speedrun</option>
+					<option value="emulator">Emulator</option>
+					<option value="console">Console</option>
+					<option value="console_link">Console + handheld link</option>
+					<option value="capture_card">Capture card</option>
+					<option value="capture_card_chat">Capture card + chat</option>
+				</optgroup>
+				<optgroup label="Apps &amp; screens">
+					<option value="app">Window / app</option>
+					<option value="app_chat">App + chat</option>
+					<option value="desktop">Desktop</option>
+					<option value="second_screen">Second screen</option>
+					<option value="browsing">Browsing</option>
+				</optgroup>
+				<optgroup label="Creative">
+					<option value="tablet">Tablet / drawing</option>
+					<option value="art">Art / design</option>
+					<option value="modelling">3D modelling</option>
+					<option value="coding">Coding</option>
+					<option value="music_production">Music production</option>
+				</optgroup>
+				<optgroup label="Camera &amp; talk">
+					<option value="just_chatting">Just chatting</option>
+					<option value="camera_only">Camera only</option>
+					<option value="interview">Interview / guest</option>
+					<option value="podcast">Podcast</option>
+					<option value="music">Live music</option>
+					<option value="tutorial">Tutorial</option>
+				</optgroup>
+				<optgroup label="IRL &amp; lifestyle">
+					<option value="irl">IRL / outdoors</option>
+					<option value="cooking">Cooking</option>
+					<option value="fitness">Fitness</option>
+					<option value="reading">Reading</option>
+					<option value="unboxing">Unboxing</option>
+					<option value="watch_party">Watch party</option>
+					<option value="charity">Charity</option>
+				</optgroup>
+				<optgroup label="All in one">
+					<option value="on_air">On air</option>
+					<option value="on_air_chat">On air + chat</option>
+				</optgroup>
+				<optgroup label="Sources: Captures &amp; games">
+					<option value="source:game">Game</option>
+					<option value="source:retro">Retro game</option>
+					<option value="source:emulator">Emulator (source)</option>
+					<option value="source:console">Console (source)</option>
+					<option value="source:handheld">Handheld</option>
+					<option value="source:linked_handheld">Linked handheld screen</option>
+					<option value="source:linked_handheld_2">Second linked handheld screen</option>
+					<option value="source:capture_card">Capture card (internal)</option>
+					<option value="source:capture_box">Capture card (external)</option>
+					<option value="source:hdmi_source">HDMI source</option>
+					<option value="source:window">Window</option>
+					<option value="source:browser">Browser</option>
+					<option value="source:display">Display</option>
+					<option value="source:second_display">Second display</option>
+					<option value="source:tablet">Tablet</option>
+					<option value="source:phone">Phone screen</option>
+				</optgroup>
+				<optgroup label="Sources: Apps">
+					<option value="source:art_app">Art app</option>
+					<option value="source:app_3d">3D app</option>
+					<option value="source:sculpting">Sculpting app</option>
+					<option value="source:cad">CAD app</option>
+					<option value="source:code_editor">Code editor</option>
+					<option value="source:office">Office / documents</option>
+					<option value="source:video_player">Video player</option>
+					<option value="source:reference">Reference board</option>
+				</optgroup>
+				<optgroup label="Sources: Cameras">
+					<option value="source:camera">Camera / webcam</option>
+					<option value="source:dslr">DSLR / mirrorless</option>
+					<option value="source:camcorder">Camcorder</option>
+					<option value="source:action_cam">Action camera</option>
+					<option value="source:ptz_camera">PTZ camera</option>
+					<option value="source:facecam">Facecam</option>
+					<option value="source:full_camera">Full-screen camera</option>
+					<option value="source:side_camera">Side camera</option>
+					<option value="source:phone_camera">Phone camera</option>
+					<option value="source:workspace_camera">Desk / overhead camera</option>
+					<option value="source:virtual_camera">Virtual camera</option>
+				</optgroup>
+				<optgroup label="Sources: Devices &amp; audio">
+					<option value="source:pc">Gaming PC</option>
+					<option value="source:laptop">Laptop</option>
+					<option value="source:retro_console">Retro console</option>
+					<option value="source:controller">Controller</option>
+					<option value="source:stream_deck">Stream controller</option>
+					<option value="source:pen_display">Pen display</option>
+					<option value="source:vr_headset">VR headset</option>
+					<option value="source:headset">Headset</option>
+					<option value="source:microphone">Microphone</option>
+					<option value="source:speaker">Speakers</option>
+					<option value="source:mixer">Audio mixer</option>
+					<option value="source:key_light">Key light</option>
+					<option value="source:green_screen">Green screen</option>
+				</optgroup>
+				<optgroup label="Sources: Overlays">
+					<option value="source:chat">Chat</option>
+					<option value="source:voice_chat">Voice chat</option>
+					<option value="source:music">Music</option>
+					<option value="source:alerts">Alerts</option>
+					<option value="source:events">Events / goals</option>
+					<option value="source:countdown">Countdown (source)</option>
+					<option value="source:title">Title / text</option>
+					<option value="source:image">Image</option>
+					<option value="source:video">Video</option>
+					<option value="source:logo">Logo</option>
+					<option value="source:standby_image">Standby image</option>
+				</optgroup>
+				<optgroup label="Sources: Status &amp; holding screens">
+					<option value="source:live">Live / on air</option>
+					<option value="source:recording">Recording</option>
+					<option value="source:muted">Muted</option>
+					<option value="source:starting">Starting soon (source)</option>
+					<option value="source:brb">Be right back (source)</option>
+					<option value="source:intermission">Intermission (source)</option>
+					<option value="source:technical">Technical difficulties (source)</option>
+					<option value="source:ending">Ending (source)</option>
+				</optgroup>
+				<optgroup label="Sources: Layout markers">
+					<option value="source:column_chat">Chat column</option>
+					<option value="source:column_handheld">Handheld column</option>
+				</optgroup>
+			</sdpi-select>
+		</sdpi-item>
+		<sdpi-item label="Palette">
+			<sdpi-select setting="palette" default="mono">
+				<option value="mono">Mono</option>
+				<option value="violet">Violet</option>
+				<option value="ocean">Ocean</option>
+				<option value="forest">Forest</option>
+				<option value="ember">Ember</option>
+				<option value="neon">Neon</option>
+			</sdpi-select>
+		</sdpi-item>
+
+		<details>
+			<summary>OBS connection</summary>
+			<sdpi-item label="Address">
+				<sdpi-textfield setting="host" global placeholder="127.0.0.1"></sdpi-textfield>
+			</sdpi-item>
+			<sdpi-item label="Port">
+				<sdpi-textfield setting="port" global placeholder="4455"></sdpi-textfield>
+			</sdpi-item>
+			<sdpi-item label="Password">
+				<sdpi-password setting="password" global></sdpi-password>
+			</sdpi-item>
+			<p>
+				In OBS: Tools &rarr; WebSocket Server Settings. Tick &ldquo;Enable WebSocket server&rdquo;, then
+				&ldquo;Show Connect Info&rdquo; for the port and password. One connection serves every StageKit key.
+			</p>
+		</details>
+	</body>
+</html>

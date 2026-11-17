@@ -343,3 +343,46 @@ export function composed(layers: Layers): string {
 	made.set(id, url);
 	return url;
 }
+
+/** Where a long press's bar goes on a 144 px key: under the picture's little screen, above the title. */
+export const HOLD_BAR = { x0: 16, x1: 128, y0: 86, y1: 92 } as const;
+/** How many steps the bar fills in (each made once per image and colour). */
+export const HOLD_STEPS = 10;
+
+const held = new Map<string, string>();
+
+/**
+ * A key's image with a bar filling towards a long press (`fraction` 0 to 1,
+ * taken to the nearest of HOLD_STEPS), in `colour` ([r, g, b], the
+ * palette's accent) on a dark track. `image` is a file of the plugin's or a
+ * PNG data URL, as a key is given.
+ */
+export function withHoldBar(image: string, fraction: number, colour: number[]): string {
+	const step = Math.max(0, Math.min(HOLD_STEPS, Math.round(fraction * HOLD_STEPS)));
+	const id = `${image}|${step}|${colour.join(",")}`;
+	const done = held.get(id);
+	if (done) return done;
+	const prefix = "data:image/png;base64,";
+	const base = image.startsWith(prefix) ? decodePng(Buffer.from(image.slice(prefix.length), "base64")) : read(image);
+	const out: Raster = { width: base.width, height: base.height, data: new Uint8Array(base.data) };
+	const k = out.width / SIZE;
+	const x0 = Math.round(HOLD_BAR.x0 * k),
+		x1 = Math.round(HOLD_BAR.x1 * k),
+		y0 = Math.round(HOLD_BAR.y0 * k),
+		y1 = Math.round(HOLD_BAR.y1 * k);
+	const fill = x0 + Math.round(((x1 - x0) * step) / HOLD_STEPS);
+	for (let y = y0 - 1; y < y1 + 1; y++)
+		for (let x = x0 - 1; x < x1 + 1; x++) {
+			const o = (y * out.width + x) * 4;
+			const edge = y < y0 || y >= y1 || x < x0 || x >= x1;
+			const c = edge ? [12, 12, 14] : x < fill ? colour : [48, 48, 52];
+			out.data[o] = c[0];
+			out.data[o + 1] = c[1];
+			out.data[o + 2] = c[2];
+			out.data[o + 3] = 255;
+		}
+	const url = `${prefix}${encodePng(out).toString("base64")}`;
+	if (held.size > 400) held.clear();
+	held.set(id, url);
+	return url;
+}

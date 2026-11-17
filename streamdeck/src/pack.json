@@ -4284,6 +4284,496 @@
 			"label": "live chat scene chat live",
 			"on": "layouts/chat-scene-chat-live",
 			"off": "layouts/chat-scene-chat-live"
+		},
+		{
+			"id": "live/stream-idle-0",
+			"group": "live",
+			"label": "stream idle 0",
+			"on": "live/stream-idle-0",
+			"off": "live/stream-idle-0"
+		},
+		{
+			"id": "live/stream-starting-0",
+			"group": "live",
+			"label": "stream starting 0",
+			"on": "live/stream-starting-0",
+			"off": "live/stream-starting-0"
+		},
+		{
+			"id": "live/stream-starting-1",
+			"group": "live",
+			"label": "stream starting 1",
+			"on": "live/stream-starting-1",
+			"off": "live/stream-starting-1"
+		},
+		{
+			"id": "live/stream-starting-2",
+			"group": "live",
+			"label": "stream starting 2",
+			"on": "live/stream-starting-2",
+			"off": "live/stream-starting-2"
+		},
+		{
+			"id": "live/stream-starting-3",
+			"group": "live",
+			"label": "stream starting 3",
+			"on": "live/stream-starting-3",
+			"off": "live/stream-starting-3"
+		},
+		{
+			"id": "live/stream-starting-4",
+			"group": "live",
+			"label": "stream starting 4",
+			"on": "live/stream-starting-4",
+			"off": "live/stream-starting-4"
+		},
+		{
+			"id": "live/stream-starting-5",
+			"group": "live",
+			"label": "stream starting 5",
+			"on": "live/stream-starting-5",
+			"off": "live/stream-starting-5"
+		},
+		{
+			"id": "live/stream-starting-6",
+			"group": "live",
+			"label": "stream starting 6",
+			"on": "live/stream-starting-6",
+			"off": "live/stream-starting-6"
+		},
+		{
+			"id": "live/stream-starting-7",
+			"group": "live",
+			"label": "stream starting 7",
+			"on": "live/stream-starting-7",
+			"off": "live/stream-starting-7"
+		},
+		{
+			"id": "live/stream-live-0",
+			"group": "live",
+			"label": "stream live 0",
+			"on": "live/stream-live-0",
+			"off": "live/stream-live-0"
+		},
+		{
+			"id": "live/stream-live-1",
+			"group": "live",
+			"label": "stream live 1",
+			"on": "live/stream-live-1",
+			"off": "live/stream-live-1"
+		},
+		{
+			"id": "live/stream-live-2",
+			"group": "live",
+			"label": "stream live 2",
+			"on": "live/stream-live-2",
+			"off": "live/stream-live-2"
+		},
+		{
+			"id": "live/stream-live-3",
+			"group": "live",
+			"label": "stream live 3",
+			"on": "live/stream-live-3",
+			"off": "live/stream-live-3"
+		},
+		{
+			"id": "live/stream-live-4",
+			"group": "live",
+			"label": "stream live 4",
+			"on": "live/stream-live-4",
+			"off": "live/stream-live-4"
+		},
+		{
+			"id": "live/stream-live-5",
+			"group": "live",
+			"label": "stream live 5",
+			"on": "live/stream-live-5",
+			"off": "live/stream-live-5"
+		},
+		{
+			"id": "live/stream-live-6",
+			"group": "live",
+			"label": "stream live 6",
+			"on": "live/stream-live-6",
+			"off": "live/stream-live-6"
+		},
+		{
+			"id": "live/stream-live-7",
+			"group": "live",
+			"label": "stream live 7",
+			"on": "live/stream-live-7",
+			"off": "live/stream-live-7"
+		},
+		{
+			"id": "live/stream-reconnecting-0",
+			"group": "live",
+			"label": "stream reconnecting 0",
+			"on": "live/stream-reconnecting-0",
+			"off": "live/stream-reconnecting-0"
+		},
+		{
+			"id": "live/stream-reconnecting-1",
+			"group": "live",
+			"label": "stream reconnecting 1",
+			"on": "live/stream-reconnecting-1",
+			"off": "live/stream-reconnecting-1"
+		},
+		{
+			"id": "live/stream-reconnecting-2",
+			"group": "live",
+			"label": "stream reconnecting 2",
+			"on": "live/stream-reconnecting-2",
+			"off": "live/stream-reconnecting-2"
+		},
+		{
+			"id": "live/stream-reconnecting-3",
+			"group": "live",
+			"label": "stream reconnecting 3",
+			"on": "live/stream-reconnecting-3",
+			"off": "live/stream-reconnecting-3"
+		},
+		{
+			"id": "live/stream-reconnecting-4",
+			"group": "live",
+			"label": "stream reconnecting 4",
+			"on": "live/stream-reconnecting-4",
+			"off": "live/stream-reconnecting-4"
+		},
+		{
+			"id": "live/stream-reconnecting-5",
+			"group": "live",
+			"label": "stream reconnecting 5",
+			"on": "live/stream-reconnecting-5",
+			"off": "live/stream-reconnecting-5"
+		},
+		{
+			"id": "live/stream-reconnecting-6",
+			"group": "live",
+			"label": "stream reconnecting 6",
+			"on": "live/stream-reconnecting-6",
+			"off": "live/stream-reconnecting-6"
+		},
+		{
+			"id": "live/stream-reconnecting-7",
+			"group": "live",
+			"label": "stream reconnecting 7",
+			"on": "live/stream-reconnecting-7",
+			"off": "live/stream-reconnecting-7"
+		},
+		{
+			"id": "live/stream-stopping-0",
+			"group": "live",
+			"label": "stream stopping 0",
+			"on": "live/stream-stopping-0",
+			"off": "live/stream-stopping-0"
+		},
+		{
+			"id": "live/stream-stopping-1",
+			"group": "live",
+			"label": "stream stopping 1",
+			"on": "live/stream-stopping-1",
+			"off": "live/stream-stopping-1"
+		},
+		{
+			"id": "live/stream-stopping-2",
+			"group": "live",
+			"label": "stream stopping 2",
+			"on": "live/stream-stopping-2",
+			"off": "live/stream-stopping-2"
+		},
+		{
+			"id": "live/stream-stopping-3",
+			"group": "live",
+			"label": "stream stopping 3",
+			"on": "live/stream-stopping-3",
+			"off": "live/stream-stopping-3"
+		},
+		{
+			"id": "live/stream-stopping-4",
+			"group": "live",
+			"label": "stream stopping 4",
+			"on": "live/stream-stopping-4",
+			"off": "live/stream-stopping-4"
+		},
+		{
+			"id": "live/stream-stopping-5",
+			"group": "live",
+			"label": "stream stopping 5",
+			"on": "live/stream-stopping-5",
+			"off": "live/stream-stopping-5"
+		},
+		{
+			"id": "live/stream-stopping-6",
+			"group": "live",
+			"label": "stream stopping 6",
+			"on": "live/stream-stopping-6",
+			"off": "live/stream-stopping-6"
+		},
+		{
+			"id": "live/stream-stopping-7",
+			"group": "live",
+			"label": "stream stopping 7",
+			"on": "live/stream-stopping-7",
+			"off": "live/stream-stopping-7"
+		},
+		{
+			"id": "live/record-idle-0",
+			"group": "live",
+			"label": "record idle 0",
+			"on": "live/record-idle-0",
+			"off": "live/record-idle-0"
+		},
+		{
+			"id": "live/record-starting-0",
+			"group": "live",
+			"label": "record starting 0",
+			"on": "live/record-starting-0",
+			"off": "live/record-starting-0"
+		},
+		{
+			"id": "live/record-starting-1",
+			"group": "live",
+			"label": "record starting 1",
+			"on": "live/record-starting-1",
+			"off": "live/record-starting-1"
+		},
+		{
+			"id": "live/record-starting-2",
+			"group": "live",
+			"label": "record starting 2",
+			"on": "live/record-starting-2",
+			"off": "live/record-starting-2"
+		},
+		{
+			"id": "live/record-starting-3",
+			"group": "live",
+			"label": "record starting 3",
+			"on": "live/record-starting-3",
+			"off": "live/record-starting-3"
+		},
+		{
+			"id": "live/record-starting-4",
+			"group": "live",
+			"label": "record starting 4",
+			"on": "live/record-starting-4",
+			"off": "live/record-starting-4"
+		},
+		{
+			"id": "live/record-starting-5",
+			"group": "live",
+			"label": "record starting 5",
+			"on": "live/record-starting-5",
+			"off": "live/record-starting-5"
+		},
+		{
+			"id": "live/record-starting-6",
+			"group": "live",
+			"label": "record starting 6",
+			"on": "live/record-starting-6",
+			"off": "live/record-starting-6"
+		},
+		{
+			"id": "live/record-starting-7",
+			"group": "live",
+			"label": "record starting 7",
+			"on": "live/record-starting-7",
+			"off": "live/record-starting-7"
+		},
+		{
+			"id": "live/record-recording-0",
+			"group": "live",
+			"label": "record recording 0",
+			"on": "live/record-recording-0",
+			"off": "live/record-recording-0"
+		},
+		{
+			"id": "live/record-recording-1",
+			"group": "live",
+			"label": "record recording 1",
+			"on": "live/record-recording-1",
+			"off": "live/record-recording-1"
+		},
+		{
+			"id": "live/record-recording-2",
+			"group": "live",
+			"label": "record recording 2",
+			"on": "live/record-recording-2",
+			"off": "live/record-recording-2"
+		},
+		{
+			"id": "live/record-recording-3",
+			"group": "live",
+			"label": "record recording 3",
+			"on": "live/record-recording-3",
+			"off": "live/record-recording-3"
+		},
+		{
+			"id": "live/record-recording-4",
+			"group": "live",
+			"label": "record recording 4",
+			"on": "live/record-recording-4",
+			"off": "live/record-recording-4"
+		},
+		{
+			"id": "live/record-recording-5",
+			"group": "live",
+			"label": "record recording 5",
+			"on": "live/record-recording-5",
+			"off": "live/record-recording-5"
+		},
+		{
+			"id": "live/record-recording-6",
+			"group": "live",
+			"label": "record recording 6",
+			"on": "live/record-recording-6",
+			"off": "live/record-recording-6"
+		},
+		{
+			"id": "live/record-recording-7",
+			"group": "live",
+			"label": "record recording 7",
+			"on": "live/record-recording-7",
+			"off": "live/record-recording-7"
+		},
+		{
+			"id": "live/record-paused-0",
+			"group": "live",
+			"label": "record paused 0",
+			"on": "live/record-paused-0",
+			"off": "live/record-paused-0"
+		},
+		{
+			"id": "live/record-paused-1",
+			"group": "live",
+			"label": "record paused 1",
+			"on": "live/record-paused-1",
+			"off": "live/record-paused-1"
+		},
+		{
+			"id": "live/record-paused-2",
+			"group": "live",
+			"label": "record paused 2",
+			"on": "live/record-paused-2",
+			"off": "live/record-paused-2"
+		},
+		{
+			"id": "live/record-paused-3",
+			"group": "live",
+			"label": "record paused 3",
+			"on": "live/record-paused-3",
+			"off": "live/record-paused-3"
+		},
+		{
+			"id": "live/record-paused-4",
+			"group": "live",
+			"label": "record paused 4",
+			"on": "live/record-paused-4",
+			"off": "live/record-paused-4"
+		},
+		{
+			"id": "live/record-paused-5",
+			"group": "live",
+			"label": "record paused 5",
+			"on": "live/record-paused-5",
+			"off": "live/record-paused-5"
+		},
+		{
+			"id": "live/record-paused-6",
+			"group": "live",
+			"label": "record paused 6",
+			"on": "live/record-paused-6",
+			"off": "live/record-paused-6"
+		},
+		{
+			"id": "live/record-paused-7",
+			"group": "live",
+			"label": "record paused 7",
+			"on": "live/record-paused-7",
+			"off": "live/record-paused-7"
+		},
+		{
+			"id": "live/record-paused-8",
+			"group": "live",
+			"label": "record paused 8",
+			"on": "live/record-paused-8",
+			"off": "live/record-paused-8"
+		},
+		{
+			"id": "live/record-paused-9",
+			"group": "live",
+			"label": "record paused 9",
+			"on": "live/record-paused-9",
+			"off": "live/record-paused-9"
+		},
+		{
+			"id": "live/record-paused-10",
+			"group": "live",
+			"label": "record paused 10",
+			"on": "live/record-paused-10",
+			"off": "live/record-paused-10"
+		},
+		{
+			"id": "live/record-paused-11",
+			"group": "live",
+			"label": "record paused 11",
+			"on": "live/record-paused-11",
+			"off": "live/record-paused-11"
+		},
+		{
+			"id": "live/record-stopping-0",
+			"group": "live",
+			"label": "record stopping 0",
+			"on": "live/record-stopping-0",
+			"off": "live/record-stopping-0"
+		},
+		{
+			"id": "live/record-stopping-1",
+			"group": "live",
+			"label": "record stopping 1",
+			"on": "live/record-stopping-1",
+			"off": "live/record-stopping-1"
+		},
+		{
+			"id": "live/record-stopping-2",
+			"group": "live",
+			"label": "record stopping 2",
+			"on": "live/record-stopping-2",
+			"off": "live/record-stopping-2"
+		},
+		{
+			"id": "live/record-stopping-3",
+			"group": "live",
+			"label": "record stopping 3",
+			"on": "live/record-stopping-3",
+			"off": "live/record-stopping-3"
+		},
+		{
+			"id": "live/record-stopping-4",
+			"group": "live",
+			"label": "record stopping 4",
+			"on": "live/record-stopping-4",
+			"off": "live/record-stopping-4"
+		},
+		{
+			"id": "live/record-stopping-5",
+			"group": "live",
+			"label": "record stopping 5",
+			"on": "live/record-stopping-5",
+			"off": "live/record-stopping-5"
+		},
+		{
+			"id": "live/record-stopping-6",
+			"group": "live",
+			"label": "record stopping 6",
+			"on": "live/record-stopping-6",
+			"off": "live/record-stopping-6"
+		},
+		{
+			"id": "live/record-stopping-7",
+			"group": "live",
+			"label": "record stopping 7",
+			"on": "live/record-stopping-7",
+			"off": "live/record-stopping-7"
 		}
 	]
 }

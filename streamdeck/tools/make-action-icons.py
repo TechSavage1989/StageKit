@@ -137,6 +137,9 @@ ICONS = {
     "blurall": blurred(lambda d: (ring(d, 0.26, 0.34, 0.16, fill=True), ring(d, 0.74, 0.34, 0.16, fill=True), ring(d, 0.5, 0.72, 0.16, fill=True)), 7),
     "option": lambda d: (box(d, 0.06, 0.28, 0.94, 0.72, r=0.22), ring(d, 0.72, 0.5, 0.15, fill=True)),
     "scene": lambda d: (box(d, 0.04, 0.12, 0.96, 0.88), box(d, 0.14, 0.26, 0.56, 0.74, r=0.03, fill=True), box(d, 0.64, 0.26, 0.86, 0.46, r=0.03, fill=True), box(d, 0.64, 0.54, 0.86, 0.74, r=0.03, fill=True)),
+    # Stream: an antenna sending; Record: a record dot in a ring.
+    "stream": lambda d: (line(d, 0.5, 0.42, 0.5, 0.9), line(d, 0.34, 0.92, 0.66, 0.92), ring(d, 0.5, 0.34, 0.07, fill=True), d.arc((*p(0.28, 0.12), *p(0.72, 0.56)), -45, 45, fill=INK, width=W), d.arc((*p(0.28, 0.12), *p(0.72, 0.56)), 135, 225, fill=INK, width=W), d.arc((*p(0.08, -0.08), *p(0.92, 0.76)), -40, 40, fill=INK, width=W), d.arc((*p(0.08, -0.08), *p(0.92, 0.76)), 140, 220, fill=INK, width=W)),
+    "record": lambda d: (ring(d, 0.5, 0.5, 0.4), ring(d, 0.5, 0.5, 0.24, fill=True)),
     "slide": lambda d: (line(d, 0.9, 0.08, 0.9, 0.92), box(d, 0.06, 0.34, 0.34, 0.66, r=0.03, fill=True), arrow(d, 0.42, 0.5, 0.8, 0.5, 0.15)),
 }
 
