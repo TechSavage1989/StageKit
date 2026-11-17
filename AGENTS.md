@@ -1176,7 +1176,11 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   (`imgs/pack/<palette>/status/on|off/`, a green dot on, a red "no" sign in the same corner
   off, 256 colours; the off picture is brought to most of the on picture's brightness,
   `OFF_BRIGHTNESS`, and partly greyed: dimmed with a red slash across it, up to beta149, the
-  owner found the off keys "very dark and virtually impossible to recognize") and `stateFile`/`showOnOff` (`src/actions/shared.ts`) set both states' pictures and
+  owner found the off keys "very dark and virtually impossible to recognize"). Since beta151 an
+  off picture used by one key picture only is drawn from that key's *on* picture: the pack's own
+  off picture of a hidden source is an empty screen, and the owner's capture keys "all look
+  virtually identical ... how can i know which is which to turn on". Only an off picture several
+  on pictures share (the blur types') is kept as drawn) and `stateFile`/`showOnOff` (`src/actions/shared.ts`) set both states' pictures and
   the state. Every two-state action has `DisableAutomaticStates` in the manifest
   (`make-plugin-files.py`): Stream Deck flipped the key on each press before the plugin put it
   back, the flash. *Manual Window / Source* has two states and asks OBS with the

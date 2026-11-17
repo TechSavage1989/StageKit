@@ -24,6 +24,13 @@ layout scenes and the holding scene beside all fifteen old scenes. Not seen on W
 between modes, the text and browser sources in them, Be Right Back's own transition (a Transition
 Table rule and a scene override) which Holding-Scene does not have.
 
+## Off keys show what they control (0.1.0-beta151)
+
+The owner, with a photo of their capture keys all off: "these all look virtually identical. how
+would i tell them apart by picture alone?" The pack's "hidden" picture of a source is an empty
+screen. Off images are now drawn from the key's own on picture (greyed, red sign), except the
+blur types' shared off pictures. Stream Deck plugin 0.17.3.0.
+
 ## Stream Deck keys: legible off images, one style (0.1.0-beta150)
 
 The owner, with a photo of their deck: "the current 'off' keys are very dark and virtually

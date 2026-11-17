@@ -75,13 +75,26 @@ def marked(image, on, on_light=None):
 
 def main():
     pack = json.load(open(os.path.join(ROOT, "src", "pack.json"), encoding="utf-8"))
+    # An off picture used by one key picture only is drawn from that key's
+    # on picture: the pack's own off picture of a source that is hidden (the
+    # "show hide" group) is an empty screen, and with the off mark on it the
+    # captures' keys all looked the same (the owner: "these all look
+    # virtually identical. how would i tell them apart by picture alone?").
+    # An off picture several on pictures share (one per blur type) is kept:
+    # it is the source without its blur.
+    users = {}
+    for picture in pack["pictures"]:
+        users.setdefault(picture["off"], set()).add(picture["on"])
     made = 0
     for palette in pack["colours"]:
         for picture in pack["pictures"]:
             on_source = os.path.join(PACK, palette, picture["on"] + ".png")
             on_light = mean_light(Image.open(on_source)) if os.path.exists(on_source) else None
             for name, on in ((picture["on"], True), (picture["off"], False)):
-                source = os.path.join(PACK, palette, name + ".png")
+                drawn_from = name
+                if not on and name != picture["on"] and len(users[name]) == 1:
+                    drawn_from = picture["on"]
+                source = os.path.join(PACK, palette, drawn_from + ".png")
                 if not os.path.exists(source):
                     continue
                 target = os.path.join(PACK, palette, "status", "on" if on else "off", name + ".png")
