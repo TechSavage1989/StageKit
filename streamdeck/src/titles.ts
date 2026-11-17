@@ -21,6 +21,10 @@ const KINDS: Record<string, string> = {
 	stagekit_show_in_scenes: "Show in\nScenes",
 	stagekit_standby: "Standby",
 	stagekit_visibility_link: "Link",
+	stagekit_scene_fit: "Scene\nFit",
+	stagekit_scene_shadow: "Scene\nShadow",
+	stagekit_scene_corners: "Scene\nCorners",
+	stagekit_scene_standby: "Scene\nStandby",
 };
 
 const PLACES = [
@@ -121,10 +125,10 @@ export function overlapTitle(press: string | undefined): string {
 	return pressed("Overlap\nIf Fills", press);
 }
 
-/** A Switch Scene key: the scene's name, over two lines if it is long. */
-export function sceneTitle(scene: string | undefined): string {
-	const name = (scene ?? "").trim();
-	if (!name) return "Scene";
+/** A name on a key: as it is, or over two lines of about ten letters if it is long. */
+function fitted(text: string | undefined, none: string): string {
+	const name = (text ?? "").trim();
+	if (!name) return none;
 	if (name.length <= 10) return name;
 	const words = name.split(/[\s_-]+/).filter(Boolean);
 	let first = "";
@@ -132,6 +136,16 @@ export function sceneTitle(scene: string | undefined): string {
 	const rest = words.join(" ");
 	if (!first) return name.slice(0, 10) + "\n" + name.slice(10, 20);
 	return rest ? `${first}\n${rest.length > 10 ? rest.slice(0, 9) + "…" : rest}` : first;
+}
+
+/** A Switch Scene key: the scene's name, over two lines if it is long. */
+export function sceneTitle(scene: string | undefined): string {
+	return fitted(scene, "Scene");
+}
+
+/** A Scene Mode key: the mode's name, over two lines if it is long. */
+export function modeTitle(mode: string | undefined): string {
+	return fitted(mode, "Mode");
 }
 
 export function hookTitle(inputKind: string | undefined): string {

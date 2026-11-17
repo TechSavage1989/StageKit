@@ -2259,3 +2259,14 @@ silhouettes (each part weighted between its two scenes' flags by eased t) and co
 between the scenes' (`lerp_look`). Tested: no cross-fade logged, the square half-way, the shadow at about half
 strength half-way to a plain scene (111 against 111 expected), run by the clock, and the item Morph's layer
 casting. Not on Windows yet.
+
+## Stream Deck: Source type and the Scene Mode key (0.1.0-beta155, `feat/streamdeck-scene`)
+
+Stream Deck plugin 0.18.0.0. A *Source type* list (Automatic and twenty types, ids shared with the
+Scene Modes filter's *Mode type*) on every key that acts on a source and on the new *Scene Mode* key
+(`com.techsavage1989.stagekit.mode`, vendor requests `ListSceneModes`, `GetSceneMode`,
+`SetSceneMode`, event `SceneModeChanged`); keys for Scene Fit, Scene Shadow, Scene Corners and
+Scene Standby; *Fit to Space Overlap* takes a Scene Fit. On Automatic a Show in Scenes key goes by
+the source's name before its OBS input kind (not the other way, as first asked: that undid
+beta154's holding-mode key images). `npm test`, `npm run build`, `npm run validate` and `npm run
+pack` pass. Not run on a Stream Deck, and the Scene Mode key not run against the real filter.

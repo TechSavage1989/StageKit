@@ -15,7 +15,8 @@ import { overlapTitle } from "../titles.ts";
 import { answerLists, type KeySettings, showOnOff } from "./shared.ts";
 
 /**
- * A key for one setting of a Fit to Space filter: "Overlap only when it
+ * A key for one setting of a Fit to Space or a Scene Fit filter (the
+ * filter-wide setting of a Scene Fit): "Overlap only when it
  * fills". On, the fitted item goes under the items never in the way (a
  * camera, say) only while it fills its space, and beside them otherwise.
  * The key shows which way the setting is, also when it is changed in OBS.
@@ -58,7 +59,7 @@ export class FitOverlap extends SingletonAction<KeySettings> {
 	override onSendToPlugin(ev: SendToPluginEvent<JsonValue, KeySettings>): Promise<void> {
 		return ev.action
 			.getSettings()
-			.then((settings) => answerLists(ev.payload, settings, (kind) => kind === "stagekit_fit_item"));
+			.then((settings) => answerLists(ev.payload, settings, (kind) => kind === "stagekit_fit_item" || kind === "stagekit_scene_fit"));
 	}
 
 	private async show(key: KeyAction<KeySettings>, settings: KeySettings): Promise<void> {

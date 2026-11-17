@@ -1,6 +1,6 @@
 {
 	"Name": "StageKit",
-	"Version": "0.17.4.0",
+	"Version": "0.18.0.0",
 	"Author": "StageKit contributors",
 	"Actions": [
 		{
@@ -326,6 +326,98 @@
 			"DisableAutomaticStates": true
 		},
 		{
+			"Name": "Scene Fit",
+			"UUID": "com.techsavage1989.stagekit.scenefit",
+			"Icon": "imgs/actions/scenefit/icon",
+			"Tooltip": "Switches a scene's Scene Fit on and off: the fitting of its sources into the free space.",
+			"PropertyInspectorPath": "ui/scenefit.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/scenefit/off",
+					"Name": "Off",
+					"TitleAlignment": "bottom"
+				},
+				{
+					"Image": "imgs/actions/scenefit/on",
+					"Name": "On",
+					"TitleAlignment": "bottom"
+				}
+			],
+			"DisableAutomaticStates": true
+		},
+		{
+			"Name": "Scene Shadow",
+			"UUID": "com.techsavage1989.stagekit.sceneshadow",
+			"Icon": "imgs/actions/sceneshadow/icon",
+			"Tooltip": "Switches a scene's one shadow, glow or outline round its sources on and off.",
+			"PropertyInspectorPath": "ui/sceneshadow.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/sceneshadow/off",
+					"Name": "Off",
+					"TitleAlignment": "bottom"
+				},
+				{
+					"Image": "imgs/actions/sceneshadow/on",
+					"Name": "On",
+					"TitleAlignment": "bottom"
+				}
+			],
+			"DisableAutomaticStates": true
+		},
+		{
+			"Name": "Scene Corners",
+			"UUID": "com.techsavage1989.stagekit.scenecorners",
+			"Icon": "imgs/actions/scenecorners/icon",
+			"Tooltip": "Switches the corners and edges a Scene Corners gives a scene's sources on and off.",
+			"PropertyInspectorPath": "ui/scenecorners.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/scenecorners/off",
+					"Name": "Off",
+					"TitleAlignment": "bottom"
+				},
+				{
+					"Image": "imgs/actions/scenecorners/on",
+					"Name": "On",
+					"TitleAlignment": "bottom"
+				}
+			],
+			"DisableAutomaticStates": true
+		},
+		{
+			"Name": "Scene Standby",
+			"UUID": "com.techsavage1989.stagekit.scenestandby",
+			"Icon": "imgs/actions/scenestandby/icon",
+			"Tooltip": "Switches a scene's Scene Standby on and off: the standby image for every empty capture in it.",
+			"PropertyInspectorPath": "ui/scenestandby.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/scenestandby/off",
+					"Name": "Off",
+					"TitleAlignment": "bottom"
+				},
+				{
+					"Image": "imgs/actions/scenestandby/on",
+					"Name": "On",
+					"TitleAlignment": "bottom"
+				}
+			],
+			"DisableAutomaticStates": true
+		},
+		{
 			"Name": "Move Source",
 			"UUID": "com.techsavage1989.stagekit.sendto",
 			"Icon": "imgs/actions/sendto/icon",
@@ -468,6 +560,29 @@
 				},
 				{
 					"Image": "imgs/actions/scene/on",
+					"Name": "On",
+					"TitleAlignment": "bottom"
+				}
+			],
+			"DisableAutomaticStates": true
+		},
+		{
+			"Name": "Scene Mode",
+			"UUID": "com.techsavage1989.stagekit.mode",
+			"Icon": "imgs/actions/mode/icon",
+			"Tooltip": "Turns on one mode of a scene's Scene Modes: its sources show, the other modes' sources hide. Lit while that mode is on.",
+			"PropertyInspectorPath": "ui/mode.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/mode/off",
+					"Name": "Off",
+					"TitleAlignment": "bottom"
+				},
+				{
+					"Image": "imgs/actions/mode/on",
 					"Name": "On",
 					"TitleAlignment": "bottom"
 				}

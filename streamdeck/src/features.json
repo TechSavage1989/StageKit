@@ -8,16 +8,20 @@
 		{ "key": "autoframe", "kind": "stagekit_auto_frame", "name": "Auto Frame", "tip": "Switches a capture's automatic framing on and off." },
 		{ "key": "standby", "kind": "stagekit_standby", "name": "Standby Image", "tip": "Switches the image shown while nothing is captured on and off." },
 		{ "key": "showinscenes", "kind": "stagekit_show_in_scenes", "name": "Show in Scenes", "tip": "Shows and hides sources across scenes with one switch." },
-		{ "key": "fititem", "kind": "stagekit_fit_item", "name": "Fit to Space", "tip": "Switches a scene's fitting of its game or window on and off." },
-		{ "key": "activeapp", "kind": "stagekit_active_app", "name": "Automatic Source Switcher", "tip": "Switches a scene's automatic switching between sources on and off." },
+		{ "key": "fititem", "kind": "stagekit_fit_item", "scene": true, "name": "Fit to Space", "tip": "Switches a scene's fitting of its game or window on and off." },
+		{ "key": "activeapp", "kind": "stagekit_active_app", "scene": true, "name": "Automatic Source Switcher", "tip": "Switches a scene's automatic switching between sources on and off." },
 		{ "key": "appcapture", "kind": "stagekit_app_capture", "name": "Automatic Window Switcher", "tip": "Switches a Window Capture's automatic switching between windows on and off." },
 		{ "key": "programtrigger", "kind": "stagekit_program_trigger", "name": "Program Trigger", "tip": "Switches a program trigger on and off." },
-		{ "key": "visibilitylink", "kind": "stagekit_visibility_link", "name": "Link Visibility", "tip": "Switches a link between items' visibility on and off." },
-		{ "key": "showhide", "kind": "stagekit_show_hide", "name": "Show/Hide Animation", "tip": "Switches a scene's show and hide animations on and off." }
+		{ "key": "visibilitylink", "kind": "stagekit_visibility_link", "scene": true, "name": "Link Visibility", "tip": "Switches a link between items' visibility on and off." },
+		{ "key": "showhide", "kind": "stagekit_show_hide", "scene": true, "name": "Show/Hide Animation", "tip": "Switches a scene's show and hide animations on and off." },
+		{ "key": "scenefit", "kind": "stagekit_scene_fit", "scene": true, "name": "Scene Fit", "tip": "Switches a scene's Scene Fit on and off: the fitting of its sources into the free space." },
+		{ "key": "sceneshadow", "kind": "stagekit_scene_shadow", "scene": true, "name": "Scene Shadow", "tip": "Switches a scene's one shadow, glow or outline round its sources on and off." },
+		{ "key": "scenecorners", "kind": "stagekit_scene_corners", "scene": true, "name": "Scene Corners", "tip": "Switches the corners and edges a Scene Corners gives a scene's sources on and off." },
+		{ "key": "scenestandby", "kind": "stagekit_scene_standby", "scene": true, "name": "Scene Standby", "tip": "Switches a scene's Scene Standby on and off: the standby image for every empty capture in it." }
 	],
 	"moves": [
 		{ "key": "sendto", "kind": "stagekit_send_to", "name": "Move Source", "tip": "Sends the camera, or any source, to one of its saved places." },
-		{ "key": "placeitem", "kind": "stagekit_place_item", "name": "Move Scene Item", "tip": "Moves a scene's item to its place." },
-		{ "key": "layout", "kind": "stagekit_layout", "name": "Apply Layout", "tip": "Puts a scene's items into a saved layout." }
+		{ "key": "placeitem", "kind": "stagekit_place_item", "scene": true, "name": "Move Scene Item", "tip": "Moves a scene's item to its place." },
+		{ "key": "layout", "kind": "stagekit_layout", "scene": true, "name": "Apply Layout", "tip": "Puts a scene's items into a saved layout." }
 	]
 }

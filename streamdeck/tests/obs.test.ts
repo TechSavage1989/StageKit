@@ -23,6 +23,43 @@ const filters: Record<string, Filter[]> = {
 const pressed: string[] = [];
 let blurred = false;
 
+// Scene Modes filters, as the StageKit plugin answers for them (modes.md §7).
+type ModeFilter = { scene: string; filter: string; enabled: boolean; current: string; previous: string; modes: Array<{ id: string; name: string; type: string }> };
+const modeFilters: ModeFilter[] = [
+	{
+		scene: "Standby",
+		filter: "Standby modes",
+		enabled: true,
+		current: "m1",
+		previous: "",
+		modes: [
+			{ id: "m1", name: "Starting", type: "starting" },
+			{ id: "m2", name: "Be Right Back", type: "" },
+			{ id: "m3", name: "Lunch", type: "" },
+		],
+	},
+	{ scene: "Chat Live", filter: "Captures", enabled: true, current: "", previous: "", modes: [{ id: "c1", name: "Game", type: "game" }] },
+	{ scene: "Chat Live", filter: "Column", enabled: true, current: "", previous: "", modes: [{ id: "k1", name: "GBA", type: "" }] },
+];
+const modeRequests: Array<Record<string, unknown>> = [];
+let modeEvent: Record<string, unknown> | undefined;
+
+function sceneModes(request: string, data: Record<string, unknown>): Record<string, unknown> {
+	if (request === "ListSceneModes")
+		return { success: true, filters: modeFilters.filter((f) => !data.scene || f.scene === data.scene) };
+	const f = modeFilters.find((m) => m.scene === data.scene && (!data.filter || m.filter === data.filter));
+	if (!f) return { success: false, error: "No Scene Modes on that scene" };
+	if (request === "GetSceneMode") return { success: true, ...f };
+	modeRequests.push(data);
+	const mode = f.modes.find((m) => m.id === data.mode || m.name === data.mode);
+	if (!mode) return { success: false, error: "No such mode" };
+	const was = f.current;
+	f.current = data.how === "toggle" && was === mode.id ? f.previous : mode.id;
+	f.previous = was;
+	modeEvent = { scene: f.scene, filter: f.filter, mode: f.current, previous: was };
+	return { success: true };
+}
+
 function answer(requestType: string, data: Record<string, unknown> = {}): { ok: boolean; data?: unknown } {
 	const list = filters[String(data.sourceName)];
 	switch (requestType) {
@@ -60,6 +97,10 @@ function answer(requestType: string, data: Record<string, unknown> = {}): { ok: 
 			return { ok: true };
 		case "CallVendorRequest": {
 			if (data.vendorName !== "StageKit") return { ok: false };
+			if (String(data.requestType).includes("SceneMode")) {
+				const responseData = sceneModes(String(data.requestType), (data.requestData ?? {}) as Record<string, unknown>);
+				return { ok: true, data: { vendorName: "StageKit", requestType: data.requestType, responseData } };
+			}
 			if (data.requestType === "BlurAll") {
 				blurred = !blurred;
 				return { ok: true, data: { vendorName: "StageKit", requestType: "BlurAll", responseData: { success: true, active: blurred } } };
@@ -95,6 +136,12 @@ before(async () => {
 				});
 				if (got.ok && d.requestType === "SetSourceFilterEnabled")
 					send(5, { eventType: "SourceFilterEnableStateChanged", eventIntent: 32, eventData: d.requestData });
+				if (modeEvent) {
+					// As the filter says it from its next tick.
+					const eventData = { vendorName: "StageKit", eventType: "SceneModeChanged", eventData: modeEvent };
+					modeEvent = undefined;
+					setTimeout(() => send(5, { eventType: "VendorEvent", eventIntent: 512, eventData }), 5);
+				}
 			}
 			if (op === 8)
 				send(9, {
@@ -160,4 +207,97 @@ test("it connects, lists only StageKit's filters, switches one and hears of it",
 	);
 	assert.deepEqual(await obs.transitionKinds(), ["cut_transition", "fade_transition", "swipe_transition"]);
 	assert.equal(await obs.stageKit("NoSuchRequest"), undefined, "and one it refuses comes back as nothing");
+});
+
+test("a Scene Mode key lists every mode, turns one on by its id and is lit when the filter says so", async () => {
+	const { modeItems, modeTarget } = await import("../src/modes.ts");
+	const { modePicture } = await import("../src/pictures.ts");
+	const { modeTitle } = await import("../src/titles.ts");
+	const { SceneModeKey } = await import("../src/actions/mode.ts");
+	if (!obs.isConnected) {
+		const connected = once(obs, "connection");
+		obs.use({ host: "127.0.0.1", port });
+		await connected;
+	}
+	const sep = "\u001f";
+	const items = modeItems(await obs.sceneModes());
+	assert.deepEqual(
+		items.map((i) => i.label),
+		["Chat Live \u2014 Captures: Game", "Chat Live \u2014 Column: GBA", "Standby: Starting", "Standby: Be Right Back", "Standby: Lunch"],
+		"the filter's name only where a scene has two",
+	);
+	const brb = items.find((i) => i.label === "Standby: Be Right Back")!.value;
+	assert.equal(brb, `Standby${sep}Standby modes${sep}m2`, "the key keeps the mode's id, not its name");
+	assert.deepEqual(modeTarget(brb), { scene: "Standby", filter: "Standby modes", mode: "m2" });
+	assert.deepEqual(modeTarget("half"), { scene: "", filter: "", mode: "" });
+
+	// A key, as Stream Deck gives one to an action.
+	let settings: Record<string, unknown> = { target: brb, press: "on" };
+	const shown: { state?: number; title?: string; images: string[]; alerts: number } = { images: [], alerts: 0 };
+	const key = {
+		isKey: () => true,
+		getSettings: async () => settings,
+		setSettings: async (next: Record<string, unknown>) => {
+			settings = next;
+		},
+		setImage: async (image?: string) => {
+			shown.images.push(String(image));
+		},
+		setState: async (state: number) => {
+			shown.state = state;
+		},
+		setTitle: async (title: string) => {
+			shown.title = title;
+		},
+		showAlert: async () => {
+			shown.alerts++;
+		},
+	};
+	const action = new SceneModeKey() as unknown as {
+		show(key: unknown, settings: Record<string, unknown>): Promise<void>;
+		onKeyDown(ev: unknown): Promise<void>;
+	};
+	await action.show(key, settings);
+	assert.equal(shown.state, 0, "off: another mode is on");
+	assert.equal(shown.title, modeTitle("Be Right Back"));
+	assert.ok(shown.images.at(-1)?.endsWith("/status/on/options/mode-brb-on.png"), "no type set in OBS: the name says be right back");
+	assert.equal((settings.seen as { name?: string })?.name, "Be Right Back", "remembered for while OBS cannot be asked");
+
+	// A press sends SetSceneMode with the mode's id; the filter's event lights the key.
+	const heard = once(obs, "mode");
+	await action.onKeyDown({ action: key, payload: { settings } });
+	assert.deepEqual(modeRequests.at(-1), { scene: "Standby", filter: "Standby modes", mode: "m2", how: "on" });
+	const [event] = (await heard) as [Record<string, unknown>];
+	assert.equal(event.mode, "m2");
+	await action.show(key, settings);
+	assert.equal(shown.state, 1, "lit while its mode is on");
+	assert.equal(shown.alerts, 0);
+
+	// Toggle on the mode that is on goes back to the one before.
+	settings = { ...settings, press: "toggle" };
+	await action.onKeyDown({ action: key, payload: { settings } });
+	assert.equal(modeRequests.at(-1)?.how, "toggle");
+	await action.show(key, settings);
+	assert.equal(shown.state, 0);
+
+	// The picture: Source type chosen > the mode's type > its name > the plain mode key.
+	settings = { ...settings, sourceType: "camera" };
+	await action.show(key, settings);
+	assert.ok(shown.images.at(-1)?.endsWith("/options/type-camera-on.png"));
+	assert.equal(modePicture(undefined, "", "starting", "Lunch").id, "options/mode-starting", "the mode's own type");
+	assert.equal(modePicture(undefined, "", "", "GBA").id, "options/type-game", "GBA counts as a game");
+	assert.equal(modePicture(undefined, "", "", "Lunch").id, "options/mode", "nothing fits: the plain mode key");
+	assert.equal(modePicture("options/browser", "camera", "game", "GBA").id, "options/browser", "an image chosen by hand wins");
+
+	// A mode that is gone, or a press OBS refuses, shows an alert.
+	settings = { target: `Standby${sep}Standby modes${sep}gone`, press: "on" };
+	await action.onKeyDown({ action: key, payload: { settings } });
+	assert.equal(shown.alerts, 1);
+	// OBS gone: the key keeps what it learned last.
+	settings = { target: brb, seen: { for: brb, kind: "stagekit_scene_modes", enabled: true, settings: {}, name: "Be Right Back" } };
+	server.clients.forEach((c) => c.terminate());
+	await once(obs, "connection");
+	await action.show(key, settings);
+	assert.equal(shown.state, 1);
+	assert.equal(shown.title, modeTitle("Be Right Back"));
 });

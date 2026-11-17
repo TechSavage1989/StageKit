@@ -17,7 +17,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, "..")
 PLUGIN = os.path.join(ROOT, "com.techsavage1989.stagekit.sdPlugin")
 BASE = "com.techsavage1989.stagekit"
-VERSION = "0.17.4.0"
+VERSION = "0.18.0.0"
 
 # The pack picture each feature's key starts with (its "on" and "off" look).
 PICTURES = {
@@ -38,12 +38,18 @@ PICTURES = {
     "stagekit_visibility_link": ("options/link-on", "options/link-off"),
     "stagekit_show_hide": ("options/show-hide-on", "options/show-hide-off"),
     "stagekit_layout": ("options/layout", None),
+    "stagekit_scene_fit": ("options/scene-fit-on", "options/scene-fit-off"),
+    "stagekit_scene_shadow": ("options/scene-shadow-on", "options/scene-shadow-off"),
+    "stagekit_scene_corners": ("options/scene-corners-on", "options/scene-corners-off"),
+    "stagekit_scene_standby": ("filters/standby-picture-on", "filters/standby-picture-off"),
 }
 
-PICTURE_AND_PALETTE = """		<sdpi-item label="Image">
+IMAGE = """		<sdpi-item label="Image">
 			<sdpi-select setting="picture" datasource="getPictures" default=""></sdpi-select>
 		</sdpi-item>
-		<sdpi-item label="Palette">
+"""
+
+PALETTE = """		<sdpi-item label="Palette">
 			<sdpi-select setting="palette" default="mono">
 				<option value="mono">Mono</option>
 				<option value="violet">Violet</option>
@@ -120,14 +126,27 @@ def options(label, setting, default, pairs):
 PRESS = options("On press", "press", "toggle", [("toggle", "Toggle"), ("on", "Switch on"), ("off", "Switch off")])
 
 
-def page(name, title, body, script=""):
+def source_types():
+    """The source types, in src/source-types.ts's order: (id, label)."""
+    text = open(os.path.join(ROOT, "src", "source-types.ts"), encoding="utf-8").read()
+    return re.findall(r'\{ id: "([a-z_]+)", label: "([^"]+)",', text)
+
+
+def source_type_list():
+    """A key's *Source type*: what the source it acts on is, for its image
+    (the owner asked for "the source/app type ... a selectable option in the
+    key config"). Automatic goes by what OBS says the source is."""
+    return options("Source type", "sourceType", "", [("", "Automatic")] + source_types())
+
+
+def page(name, title, body, script="", types=False):
     html = (
         "<!doctype html>\n<html>\n	<head lang=\"en\">\n"
         f"		<title>{title}</title>\n"
         '		<meta charset="utf-8" />\n'
         '		<script src="https://sdpi-components.dev/releases/v4/sdpi-components.js"></script>\n'
         + STYLE +
-        "	</head>\n\n	<body>\n" + body + PICTURE_AND_PALETTE + "\n" + CONNECTION + script + "	</body>\n</html>\n"
+        "	</head>\n\n	<body>\n" + body + IMAGE + (source_type_list() if types else "") + PALETTE + "\n" + CONNECTION + script + "	</body>\n</html>\n"
     )
     with open(os.path.join(PLUGIN, "ui", name + ".html"), "w", encoding="utf-8") as out:
         out.write(html)
@@ -192,7 +211,8 @@ def main():
     for feature in features["switches"]:
         on, off = PICTURES.get(feature["kind"], ("options/plain-switch-on", "options/plain-switch-off"))
         key_pictures(feature["key"], on, off)
-        page(feature["key"], f"StageKit {feature['name']}", one_list("Source") + PRESS)
+        scene = feature.get("scene", False)
+        page(feature["key"], f"StageKit {feature['name']}", one_list("Scene" if scene else "Source") + PRESS, types=not scene)
         add(feature["key"], feature["name"], feature["tip"], feature["key"], "imgs/actions/switch/icon", two(feature["key"]))
     for feature in features["moves"]:
         on, _ = PICTURES.get(feature["kind"], ("options/plain-move", None))
@@ -222,6 +242,7 @@ def main():
         '		<sdpi-item label="Duration (ms)">\n'
         '			<sdpi-textfield setting="lasting" placeholder="300" pattern="[0-9]*"></sdpi-textfield>\n'
         "		</sdpi-item>\n",
+        types=True,
     )
     add("hook", "Capture Active Window", "Makes a Game Capture or a Window Capture take the active window or game. An Automatic Window Switcher on it holds that window as its manual window.", "hook", "imgs/actions/hook/icon", one("hookgame"))
 
@@ -230,6 +251,7 @@ def main():
         "appswitch",
         "StageKit next manual capture",
         one_list("Scene or capture") + options("On press", "step", "next", [("toggle", "Toggle manual / automatic"), ("next", "Next manual window or source"), ("back", "Return to automatic"), ("hide", "Hide or show the capture"), ("clear", "Clear picked windows")]),
+        types=True,
     )
     add("appswitch", "Manual Window / Source", "For an Automatic Window Switcher or an Automatic Source Switcher: toggles between the manual window and automatic, steps to the next manual one, returns to automatic, hides and shows the capture, or clears the windows picked by hand.", "appswitch", "imgs/actions/move/icon", two("appswitch"))
 
@@ -251,6 +273,16 @@ def main():
         "		</sdpi-item>\n",
     )
     add("scene", "Switch Scene", "Switches OBS to a scene, on the program or (Studio Mode) the preview, with a transition if you choose one. Lit while that scene is on.", "scene", "imgs/actions/switch/icon", two("scene"))
+
+    key_pictures("mode", "options/mode-on", "options/mode-off")
+    page(
+        "mode",
+        "StageKit scene mode",
+        one_list("Mode", "getModes", "target", "Choose a mode")
+        + options("On press", "press", "on", [("on", "Switch on"), ("toggle", "Toggle")]),
+        types=True,
+    )
+    add("mode", "Scene Mode", "Turns on one mode of a scene's Scene Modes: its sources show, the other modes' sources hide. Lit while that mode is on.", "mode", "imgs/actions/switch/icon", two("mode"))
 
     key_pictures("toolkey", "options/align-left", None)
     page("tool", "StageKit arrange tool", options("Tool", "tool", "left", tools_list()))
