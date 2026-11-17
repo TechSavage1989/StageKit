@@ -7695,7 +7695,215 @@ int main(int argc, char **argv)
 			write_frame(shadow_dir + "/3 glow and outline.rgba", render(demo_src, w, h), w, h);
 		}
 
-		// ==== shadow: morph ====
+		// Morph keeps morphing a scene with a Scene Shadow, and carries the
+		// shadow through the change: part-way, the shadow is part-way
+		// between the two scenes' (a scene with none counts as one at no
+		// strength).
+		{
+			static bool shadow_crossfade_logged = false;
+			static log_handler_t shadow_prev_log = nullptr;
+			static void *shadow_prev_param = nullptr;
+			base_get_log_handler(&shadow_prev_log, &shadow_prev_param);
+			shadow_crossfade_logged = false;
+			base_set_log_handler(
+				[](int level, const char *format, va_list args, void *) {
+					char line[2048];
+					va_list copy;
+					va_copy(copy, args);
+					vsnprintf(line, sizeof(line), format, copy);
+					va_end(copy);
+					if (strstr(line, "cross-fade"))
+						shadow_crossfade_logged = true;
+					if (shadow_prev_log)
+						shadow_prev_log(level, format, args, shadow_prev_param);
+				},
+				nullptr);
+			obs_scene_t *mfrom = obs_scene_create("Shadow Morph From");
+			obs_scene_t *mto = obs_scene_create("Shadow Morph To");
+			shadow_put(mfrom, bg, 0, 0);
+			shadow_put(mfrom, sq_a, 100, 100);
+			shadow_put(mto, bg, 0, 0);
+			shadow_put(mto, sq_a, 400, 150);
+			obs_source_t *from_src = obs_scene_get_source(mfrom), *to_src = obs_scene_get_source(mto);
+			obs_source_t *mshadow =
+				obs_source_create("stagekit_scene_shadow", "Morph Scene Shadow", nullptr, nullptr);
+			obs_source_filter_add(from_src, mshadow);
+			obs_data_t *md = obs_data_create();
+			obs_data_set_int(md, "ease_curve", 0); // linear
+			obs_source_t *morph = obs_source_create_private("stagekit_morph", "Shadow Morph", md);
+			obs_data_release(md);
+			sleep_ms(400);
+			const std::vector<uint8_t> whole = render(from_src, w, h);
+			const std::vector<uint8_t> last = render(to_src, w, h);
+			obs_transition_set(morph, from_src);
+			obs_transition_start(morph, OBS_TRANSITION_MODE_MANUAL, 0, to_src);
+			obs_transition_set_manual_time(morph, 0.5f);
+			sleep_ms(150);
+			render(morph, w, h);
+			const std::vector<uint8_t> half = render(morph, w, h);
+			// The square half-way: 250..350 across, 125..225 down. Its shadow
+			// 6 px to its right, as at 206,150 in the first scene.
+			auto lin = [](double v) {
+				v /= 255.0;
+				return v <= 0.04045 ? v / 12.92 : std::pow((v + 0.055) / 1.055, 2.4);
+			};
+			auto srgb = [](double v) {
+				return 255.0 * (v <= 0.0031308 ? v * 12.92 : 1.055 * std::pow(v, 1.0 / 2.4) - 0.055);
+			};
+			const int full = shadow_px(whole, 206, 150, 0), back = shadow_px(whole, 600, 20, 0);
+			const double expected = srgb(lin(back) * (1.0 - 0.5 * (1.0 - lin(full) / lin(back))));
+			const int got = shadow_px(half, 356, 175, 0);
+			CHECK(shadow_px(half, 300, 175, 1) > 240 && shadow_px(half, 150, 150, 0) < 140 &&
+				      shadow_px(half, 450, 200, 0) < 140 && !shadow_crossfade_logged,
+			      "a scene with a Scene Shadow is still morphed: the square is half-way, at neither end, and no cross-fade is logged (white %d half-way)",
+			      shadow_px(half, 300, 175, 1));
+			CHECK(std::abs(got - expected) <= 6 && got < back - 8,
+			      "half-way to a scene without one, the shadow is there at about half its strength (%d; %.0f expected, %d at full strength, %d none)",
+			      got, expected, full, back);
+			// Run by the clock as OBS's window runs it.
+			obs_transition_set_manual_time(morph, 1.0f);
+			sleep_ms(120);
+			render(morph, w, h);
+			obs_transition_set(morph, from_src);
+			sleep_ms(100);
+			obs_transition_start(morph, OBS_TRANSITION_MODE_AUTO, 1000, to_src);
+			sleep_ms(450);
+			const std::vector<uint8_t> timed = render(morph, w, h);
+			sleep_ms(900);
+			render(morph, w, h);
+			const std::vector<uint8_t> timed_done = render(morph, w, h);
+			int shaded = 0;
+			for (int y = 100; y < 260; y++)
+				for (int x = 150; x < 450; x++)
+					if (shadow_px(timed, x, y, 0) < back - 15 && shadow_px(timed, x, y, 0) > 10)
+						shaded++;
+			CHECK(shaded > 300 && mean_abs_diff(timed, whole) > 2.0 &&
+				      mean_abs_diff(timed_done, last) < 0.01 && !shadow_crossfade_logged,
+			      "run by the clock it morphs with the shadow on the way (%d px shaded), and ends on the new scene (%.2f)",
+			      shaded, mean_abs_diff(timed_done, last));
+			base_set_log_handler(shadow_prev_log, shadow_prev_param);
+
+			// For the README: the demo scene half-way to a plain one.
+			{
+				obs_data_t *gd = obs_source_get_settings(demo_shadow);
+				obs_data_unset_user_value(gd, "shadow_type");
+				obs_data_unset_user_value(gd, "shadow_color");
+				obs_data_set_double(gd, "shadow_opacity", 75.0);
+				obs_data_set_double(gd, "softness", 24.0);
+				obs_data_unset_user_value(gd, "spread");
+				obs_data_set_bool(gd, "outline", false);
+				obs_source_update(demo_shadow, gd);
+				obs_data_release(gd);
+				obs_scene_t *plain_demo = obs_scene_create("Shadow Demo Plain");
+				shadow_put(plain_demo, demo_back, 0, 0);
+				{
+					obs_sceneitem_t *back_item =
+						obs_scene_find_source(plain_demo, "Shadow Demo Back");
+					vec2 b;
+					vec2_set(&b, 640, 360);
+					obs_sceneitem_set_bounds_type(back_item, OBS_BOUNDS_STRETCH);
+					obs_sceneitem_set_bounds(back_item, &b);
+					obs_sceneitem_t *game_item = shadow_put(plain_demo, live, 140, 20);
+					vec2_set(&b, 480, 270);
+					obs_sceneitem_set_bounds_type(game_item, OBS_BOUNDS_SCALE_INNER);
+					obs_sceneitem_set_bounds(game_item, &b);
+				}
+				shadow_put(plain_demo, demo_cam, 20, 220);
+				sleep_ms(400);
+				obs_transition_set(morph, demo_src);
+				obs_transition_start(morph, OBS_TRANSITION_MODE_MANUAL, 0,
+						     obs_scene_get_source(plain_demo));
+				obs_transition_set_manual_time(morph, 0.5f);
+				sleep_ms(150);
+				render(morph, w, h);
+				write_frame(shadow_dir + "/4 Morph half-way.rgba", render(morph, w, h), w, h);
+				obs_transition_set_manual_time(morph, 1.0f);
+				sleep_ms(120);
+				render(morph, w, h);
+				obs_scene_release(plain_demo);
+			}
+			obs_source_release(morph);
+			obs_source_filter_remove(from_src, mshadow);
+			obs_source_release(mshadow);
+			obs_scene_release(mfrom);
+			obs_scene_release(mto);
+		}
+
+		// One item changing into another under a Scene Shadow: the layer
+		// Morph draws the pair with casts, so the pair has its shadow on the
+		// way.
+		{
+			obs_source_t *one = shadow_block("Shadow Morph One", 0xFFFFFFFF, 100, 60);
+			obs_source_t *two = shadow_block("Shadow Morph Two", 0xFFFFFFFF, 200, 120);
+			obs_scene_t *ims = obs_scene_create("Shadow Item Morph");
+			obs_source_t *ims_src = obs_scene_get_source(ims);
+			shadow_put(ims, bg, 0, 0);
+			obs_sceneitem_t *one_item = shadow_put(ims, one, 40, 150);
+			obs_sceneitem_t *two_item = shadow_put(ims, two, 380, 120);
+			obs_sceneitem_set_visible(two_item, false);
+			obs_source_t *ishadow =
+				obs_source_create("stagekit_scene_shadow", "Item Morph Shadow", nullptr, nullptr);
+			obs_source_filter_add(ims_src, ishadow);
+			obs_data_t *gd = obs_data_create();
+			obs_data_array_t *links = obs_data_array_create();
+			obs_data_t *line = obs_data_create();
+			obs_data_set_string(line, "value", "Shadow Morph One \xE2\x86\x94 Shadow Morph Two");
+			obs_data_array_push_back(links, line);
+			obs_data_release(line);
+			obs_data_set_array(gd, "links", links);
+			obs_data_array_release(links);
+			obs_source_t *linker = obs_source_create_private("stagekit_morph", "Shadow Links", gd);
+			obs_data_release(gd);
+			for (obs_sceneitem_t *item : {one_item, two_item})
+				for (bool show : {true, false}) {
+					obs_data_t *d = obs_data_create();
+					obs_data_set_int(d, "ease_curve", 0);
+					obs_source_t *t =
+						obs_source_create_private("stagekit_morph", "Shadow Item Morph", d);
+					obs_data_release(d);
+					obs_sceneitem_set_transition(item, show, t);
+					obs_sceneitem_set_transition_duration(item, show, 1000);
+					obs_source_release(t);
+				}
+			obs_source_t *before_morph_out = obs_get_output_source(0);
+			obs_set_output_source(0, ims_src);
+			sleep_ms(400);
+			auto shaded_middle = [&](const std::vector<uint8_t> &frame) {
+				int n = 0;
+				for (int y = 0; y < (int)h; y++)
+					for (int x = 200; x < 400; x++)
+						if (shadow_px(frame, x, y, 0) < 113 && shadow_px(frame, x, y, 0) > 10)
+							n++;
+				return n;
+			};
+			const int before = shaded_middle(render(ims_src, w, h));
+			obs_sceneitem_set_visible(one_item, false);
+			obs_sceneitem_set_visible(two_item, true);
+			sleep_ms(450);
+			int items = 0;
+			obs_scene_enum_items(
+				ims,
+				[](obs_scene_t *, obs_sceneitem_t *, void *param) {
+					++*static_cast<int *>(param);
+					return true;
+				},
+				&items);
+			const std::vector<uint8_t> mid = render(ims_src, w, h);
+			const int during = shaded_middle(mid);
+			CHECK(items == 4 && before == 0 && during > 300,
+			      "one item changing into another under a Scene Shadow: Morph's layer casts, so the pair has its shadow on the way (%d px shaded part-way, %d before; %d items)",
+			      during, before, items);
+			sleep_ms(900);
+			render(ims_src, w, h);
+			obs_set_output_source(0, before_morph_out);
+			obs_source_release(before_morph_out);
+			obs_source_filter_remove(ims_src, ishadow);
+			obs_source_release(ishadow);
+			obs_source_release(linker);
+			obs_scene_release(ims);
+			obs_source_release(one);
+			obs_source_release(two);
+		}
 
 		obs_source_filter_remove(demo_src, demo_shadow);
 		obs_source_release(demo_shadow);

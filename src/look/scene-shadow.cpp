@@ -608,6 +608,9 @@ void register_scene_shadow()
 		static_cast<SceneShadow *>(data)->attached();
 	};
 	register_timed(&info);
+	// A scene whose only filter that draws is a Scene Shadow is still morphed
+	// item by item; Morph carries the shadow through the change.
+	morph_accept_drawing_filter(is_scene_shadow);
 }
 
 } // namespace stagekit

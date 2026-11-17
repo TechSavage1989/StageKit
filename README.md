@@ -1126,7 +1126,7 @@ place of one per source. Add one from the scene's own Filters window (right-clic
 One shadow, glow or outline for every source of a scene, set once. Add **Scene Shadow (StageKit)** to the scene
 (right-click the scene, *Filters*) instead of a Shadow, Glow & Outline on each source.
 
-<p align="center"><img src="docs/images/scene-shadow.png" width="900" alt="The same scene three times: as OBS draws it, with one drop shadow under the game, the chat box and the camera, and with an amber glow and a white outline round them"></p>
+<p align="center"><img src="docs/images/scene-shadow.png" width="900" alt="The same scene as OBS draws it, with one drop shadow under the game, the chat box and the camera, with an amber glow and a white outline round them, and half-way through a Morph to a scene without a shadow, the shadow at half strength"></p>
 
 - The scene is drawn as OBS draws it, and the shadow is laid over it, falling on the background and never on a
   source. **Nothing is resized or moved**: the sources keep their size, so Fit to Space, the arrange tools and
@@ -1143,6 +1143,11 @@ One shadow, glow or outline for every source of a scene, set once. Add **Scene S
   the shadow of the source it stands in for.
 - **Switch duration** and **Easing**: switched on or off (the eye, a hotkey, a Stream Deck filter key), the
   shadow fades in or out.
+- **Morph keeps morphing.** A scene whose only filter that draws is a Scene Shadow is still morphed source by
+  source, and the shadow goes with the change: part-way, it is part-way between the two scenes' shadows (to a
+  scene without one, it fades out), and a source that casts in one scene and not in the other gains or loses
+  its shadow on the way. One source changing into another inside the scene (Morph as a show or hide
+  transition) has its shadow too.
 
 What to know:
 

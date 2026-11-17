@@ -31,6 +31,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/scene-filter-ids.hpp"
 #include "../common/scene-util.hpp"
 #include "../common/timing.hpp"
+#include "../look/scene-shadow.hpp"
 #include "../placement/fit-item.hpp"
 #include "../placement/place-item.hpp"
 #include "../placement/scene-tools.hpp"
@@ -49,6 +50,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <atomic>
 #include <cmath>
 #include <cstring>
+#include <memory>
 #include <mutex>
 #include <unordered_map>
 #include <vector>
@@ -201,6 +203,10 @@ private:
 	void forget();
 	void plan(obs_source_t *from, obs_source_t *to);
 	void draw_morph(double t, uint32_t cx, uint32_t cy);
+	void draw_part(const Shown &shown, const Quad &quad, const Crop &crop, float strength);
+	void draw_shadowed(double t, uint32_t cx, uint32_t cy, const SceneShadowNow *from, const SceneShadowNow *to);
+	uint8_t flags_of(obs_sceneitem_t *item, bool old_side) const;
+	double weight(const Part &part, double t) const;
 	void draw_run(const std::vector<const Part *> &run, double t, uint32_t cx, uint32_t cy);
 	void draw_side(gs_texrender_t *into, const std::vector<const Part *> &run, bool leaving, double t, uint32_t cx,
 		       uint32_t cy);
@@ -225,6 +231,19 @@ private:
 	bool alone_zoom_ = false;
 	std::atomic<bool> stale_{false};
 	obs_source_t *told_about_ = nullptr; // the scene whose filter was last written to the log
+
+	// A Scene Shadow on either scene is carried through the change: the
+	// morph is drawn three times (the picture, the casting parts and the
+	// parts the shadow is kept off), and the shadow, part-way between the
+	// two scenes', is laid over the picture as the filter lays it.
+	enum class Pass { Picture, Cast, Mask };
+	Pass pass_ = Pass::Picture;
+	ShadowFlags flags_from_, flags_to_; // what each item does, this frame
+	ShadowFlags plain_from_, plain_to_; // for a scene with none, worked out with the plan
+	std::unique_ptr<LookPaint> look_;
+	gs_texrender_t *tr_pic_ = nullptr;
+	gs_texrender_t *tr_cast_ = nullptr;
+	gs_texrender_t *tr_mask_ = nullptr;
 };
 
 Morph::Morph(obs_data_t *settings, obs_source_t *source) : source_(source)
@@ -232,6 +251,9 @@ Morph::Morph(obs_data_t *settings, obs_source_t *source) : source_(source)
 	obs_enter_graphics();
 	tr_from_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 	tr_to_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
+	tr_pic_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
+	tr_cast_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
+	tr_mask_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 	obs_leave_graphics();
 	update(settings);
 }
@@ -243,7 +265,11 @@ Morph::~Morph()
 	obs_enter_graphics();
 	gs_texrender_destroy(tr_from_);
 	gs_texrender_destroy(tr_to_);
+	gs_texrender_destroy(tr_pic_);
+	gs_texrender_destroy(tr_cast_);
+	gs_texrender_destroy(tr_mask_);
 	obs_leave_graphics();
+	look_.reset();
 }
 
 void Morph::update(obs_data_t *settings)
@@ -303,6 +329,10 @@ void Morph::plan(obs_source_t *from, obs_source_t *to)
 	forget();
 	planned_from_ = from;
 	planned_to_ = to;
+	// (For a scene without a Scene Shadow, what its items would do under
+	// one: the shadow fades out over its background, not over everything.)
+	scene_shadow_default_flags(from, plain_from_);
+	scene_shadow_default_flags(to, plain_to_);
 	const Settings s = active_;
 	// The items each scene shows, from the back, each held.
 	auto gather = [](obs_source_t *scene, std::vector<obs_sceneitem_t *> &out) {
@@ -418,9 +448,13 @@ void Morph::draw_side(gs_texrender_t *into, const std::vector<const Part *> &run
 	gs_ortho(0.0f, (float)cx, 0.0f, (float)cy, -100.0f, 100.0f);
 	// How far gone: 0 in place, 1 all the way out.
 	const double gone = std::clamp(leaving ? t : 1.0 - t, 0.0, 1.0);
+	const uint8_t wanted = pass_ == Pass::Cast ? kShadowCasts : kShadowMasked;
 	for (const Part *part : run) {
 		Shown shown;
-		if (!look(leaving ? part->from : part->to, shown))
+		obs_sceneitem_t *item = leaving ? part->from : part->to;
+		if (!item || (pass_ != Pass::Picture && !(flags_of(item, leaving) & wanted)))
+			continue;
+		if (!look(item, shown))
 			continue;
 		Quad quad = shown.quad;
 		const Bounds b = bounds_of(quad);
@@ -510,6 +544,11 @@ void Morph::draw_morph(double t, uint32_t cx, uint32_t cy)
 			continue;
 		}
 		end_run();
+		// (In a silhouette, how much of it counts: part-way between what
+		// it does in the one scene and in the other.)
+		const float strength = (float)weight(part, t);
+		if (strength <= 0.001f)
+			continue;
 		Shown was, will;
 		const bool had = look(part.from, was), has = look(part.to, will);
 		if (!had && !has)
@@ -538,18 +577,101 @@ void Morph::draw_morph(double t, uint32_t cx, uint32_t cy)
 					was.crop.t + (will.crop.t - was.crop.t) * k,
 					was.crop.r + (will.crop.r - was.crop.r) * k,
 					was.crop.b + (will.crop.b - was.crop.b) * k};
-			draw_item(will, quad, crop);
+			draw_part(will, quad, crop, strength);
 		} else if (had && has) {
 			// Two sources that change into each other: both, mixed.
 			gs_texture_t *first = cropped(was, from_part);
 			gs_texture_t *second = cropped(will, to_part);
 			if (first && second)
-				draw_texture(first, second, quad, (float)std::clamp(t, 0.0, 1.0));
+				draw_texture(first, second, quad, (float)std::clamp(t, 0.0, 1.0), strength);
 		} else {
-			draw_item(had ? was : will, quad, had ? was.crop : will.crop);
+			draw_part(had ? was : will, quad, had ? was.crop : will.crop, strength);
 		}
 	}
 	end_run();
+	gs_blend_state_pop();
+}
+
+// An item's source on a quad, at a strength: as a scene draws it when whole.
+void Morph::draw_part(const Shown &shown, const Quad &quad, const Crop &crop, float strength)
+{
+	if (strength >= 0.999f) {
+		draw_item(shown, quad, crop);
+		return;
+	}
+	if (gs_texture_t *texture = cropped(shown, crop))
+		draw_texture(texture, nullptr, quad, 0.0f, strength);
+}
+
+// What an item does under its scene's Scene Shadow (or under one as it
+// comes, for a scene with none); one not looked at yet is kept clear.
+uint8_t Morph::flags_of(obs_sceneitem_t *item, bool old_side) const
+{
+	const ShadowFlags &flags = old_side ? flags_from_ : flags_to_;
+	const auto found = item ? flags.find(obs_sceneitem_get_id(item)) : flags.end();
+	return found != flags.end() ? found->second : (uint8_t)kShadowMasked;
+}
+
+// How much of a part counts in the silhouette being drawn: all of it in the
+// picture; else what it does in the old scene and in the new, mixed by how
+// far the change has gone.
+double Morph::weight(const Part &part, double t) const
+{
+	if (pass_ == Pass::Picture)
+		return 1.0;
+	const uint8_t wanted = pass_ == Pass::Cast ? kShadowCasts : kShadowMasked;
+	const double from = part.from && (flags_of(part.from, true) & wanted) ? 1.0 : 0.0;
+	const double to = part.to && (flags_of(part.to, false) & wanted) ? 1.0 : 0.0;
+	if (!part.from)
+		return to;
+	if (!part.to)
+		return from;
+	const double k = std::clamp(t, 0.0, 1.0);
+	return from + (to - from) * k;
+}
+
+// The morph with the scenes' shadow: the shadow's settings part-way between
+// the two scenes' (a scene with none counts as one at no strength), and each
+// part throwing it as far as it does in each scene, so a source that only
+// casts in the old scene stops casting on the way.
+void Morph::draw_shadowed(double t, uint32_t cx, uint32_t cy, const SceneShadowNow *from, const SceneShadowNow *to)
+{
+	flags_from_ = from ? from->flags : plain_from_;
+	flags_to_ = to ? to->flags : plain_to_;
+	const ShadowLook look = lerp_look(from ? &from->look : nullptr, to ? &to->look : nullptr, t);
+	// The mask is only drawn when it differs from the casting parts.
+	bool needs_mask = false;
+	for (const ShadowFlags *flags : {&flags_from_, &flags_to_})
+		for (const auto &[id, f] : *flags)
+			needs_mask = needs_mask || ((f & kShadowMasked) && !(f & kShadowCasts));
+	// (Made the first time a change of scene has a shadow: a Morph is also
+	// every item transition set to it, and most never need one.)
+	if (!look_)
+		look_ = std::make_unique<LookPaint>();
+	auto into = [&](gs_texrender_t *tr, Pass pass) -> gs_texture_t * {
+		pass_ = pass;
+		gs_texrender_reset(tr);
+		if (!gs_texrender_begin_with_color_space(tr, cx, cy, GS_CS_SRGB))
+			return nullptr;
+		vec4 clear;
+		vec4_zero(&clear);
+		gs_clear(GS_CLEAR_COLOR, &clear, 0.0f, 0);
+		gs_ortho(0.0f, (float)cx, 0.0f, (float)cy, -100.0f, 100.0f);
+		draw_morph(t, cx, cy);
+		gs_texrender_end(tr);
+		return gs_texrender_get_texture(tr);
+	};
+	gs_texture_t *picture = look.any() && look_->ready() ? into(tr_pic_, Pass::Picture) : nullptr;
+	gs_texture_t *cast = picture ? into(tr_cast_, Pass::Cast) : nullptr;
+	gs_texture_t *mask = cast && needs_mask ? into(tr_mask_, Pass::Mask) : nullptr;
+	pass_ = Pass::Picture;
+	if (!cast || !look_->compose(picture, cast, mask, look, cx, cy)) {
+		draw_morph(t, cx, cy);
+		return;
+	}
+	gs_blend_state_push();
+	gs_blend_function_separate(GS_BLEND_SRCALPHA, GS_BLEND_INVSRCALPHA, GS_BLEND_ONE, GS_BLEND_INVSRCALPHA);
+	look_->draw_out(cx, cy);
 	gs_blend_state_pop();
 }
 
@@ -656,7 +778,14 @@ void Morph::render()
 	} else if (between_scenes && plain_scene(from, &filter_from) && plain_scene(to, &filter_to)) {
 		if (from != planned_from_ || to != planned_to_)
 			plan(from, to);
-		draw_morph(eased, cx, cy);
+		SceneShadowNow shadow_from, shadow_to;
+		const bool from_shadowed = scene_shadow_now(from, shadow_from);
+		const bool to_shadowed = scene_shadow_now(to, shadow_to);
+		if (from_shadowed || to_shadowed)
+			draw_shadowed(eased, cx, cy, from_shadowed ? &shadow_from : nullptr,
+				      to_shadowed ? &shadow_to : nullptr);
+		else
+			draw_morph(eased, cx, cy);
 	} else if (between_scenes) {
 		// A scene with a filter that draws cannot be taken apart: said once
 		// in the log, so that a plain fade where a morph was expected can

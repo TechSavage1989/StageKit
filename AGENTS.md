@@ -1416,6 +1416,17 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   Skips itself with a drawing filter before it (`morph_draws_nothing`, logged once), on a group,
   on an HDR canvas, before loading, and with nothing to draw. Its sizes are canvas pixels; it
   has no `shown_scale` and no room.
+  **Morph carries it** (D3; `morph_accept_drawing_filter(is_scene_shadow)` in
+  `register_scene_shadow`, so `plain_scene` takes such a scene apart): when either scene has one
+  (`scene_shadow_now`, a copy of the look faded by its switch and the flags, taken each frame),
+  `Morph::draw_shadowed` draws `draw_morph` three times into canvas pictures, `pass_` Picture,
+  Cast and Mask (only when some item is masked but does not cast), each part weighted by what
+  it does in the old and the new scene mixed by eased t (`weight`, `flags_of`; a part drawn
+  part-way goes through `draw_part`/`draw_texture`'s new `opacity`), and composes them with
+  `LookPaint` and `lerp_look` (a missing side, or a part switched off, is the other side's at
+  opacity 0). A scene with no Scene Shadow gets the flags one would give it as it comes
+  (`scene_shadow_default_flags`, worked out with the plan), so the shadow fades over its
+  background. The item Morph needs nothing: its layer item casts.
 <!-- ==== end scene-filters:shadow ==== -->
 <!-- ==== scene-filters:perf ==== -->
 - **Frame time**: to come.

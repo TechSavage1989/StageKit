@@ -2195,3 +2195,10 @@ Nothing is moved or resized. Tested in `[scene shadow]`: unchanged where there i
 match, background, *No shadow for*, own shadows, sizes, once a frame, a hide transition still ends and its
 shadow fades, the switch fades, nothing before loading, linear light, the outline off the mask. Shader proven
 on OpenGL only. Whole suite: ALL PASSED.
+
+Scene Shadow phase 2 (Morph, gate D4: GO): a scene whose only drawing filter is a Scene Shadow is still morphed
+item by item (`morph_accept_drawing_filter`), and Morph carries the shadow: the morph is drawn as a picture and two
+silhouettes (each part weighted between its two scenes' flags by eased t) and composed with the look part-way
+between the scenes' (`lerp_look`). Tested: no cross-fade logged, the square half-way, the shadow at about half
+strength half-way to a plain scene (111 against 111 expected), run by the clock, and the item Morph's layer
+casting. Not on Windows yet.
