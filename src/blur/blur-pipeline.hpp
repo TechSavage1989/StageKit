@@ -75,6 +75,10 @@ struct BlurLook {
 	// cuts is left out, so the outline is made of whole cells and the
 	// image's alpha follows it. Never drawn past the edge.
 	bool whole_cells = false;
+	// Not a setting: the sides of the picture (left, top, right, bottom)
+	// that are no edge for whole cells, because the screen's edge cuts the
+	// source there anyway (Scene Blur, each source by itself).
+	std::array<bool, 4> open_edges{};
 };
 
 // How a mosaic's edge is drawn (`pixel_edge`). Kept by number: new ones go
@@ -160,8 +164,15 @@ public:
 	// thread.
 	// `trail`: a trail of the caller's own for Temporal (nullptr: the
 	// pipeline's, moved on by frame_passed).
+	// `kept_to_mask`: `input`'s alpha is kept to a mask (keep_to_mask), so a
+	// mosaic cell that finds nothing near its centre looks further out in
+	// it, never outside it.
 	Result run(const BlurLook &look, gs_texture_t *input, uint32_t w, uint32_t h, double strength, double &mix,
-		   BlurTrail *trail = nullptr);
+		   BlurTrail *trail = nullptr, bool kept_to_mask = false);
+	// `picture` with its alpha times `mask` (red), into `into` (w by h): a
+	// blur of it averages only what lies where the mask is.
+	gs_texture_t *keep_to_mask(gs_texrender_t *into, gs_texture_t *picture, gs_texture_t *mask, uint32_t w,
+				   uint32_t h);
 	// `input` blurred and laid over itself by `mix`, as the Blur filter
 	// draws it, into `into` (w by h, straight alpha). Its picture, or
 	// nullptr.
@@ -171,8 +182,10 @@ public:
 	void composite(gs_texture_t *input, const Result &blurred, uint32_t w, uint32_t h, double mix);
 	// The blur laid over `original` by `mix` only where `mask` (red) says,
 	// onto what is being drawn. False without the newer shader file.
+	// `keep_alpha`: the blur gives colour only, the alpha is `original`'s
+	// (a blur of a picture kept to the mask).
 	bool composite_masked(gs_texture_t *original, const Result &blurred, gs_texture_t *mask, uint32_t w, uint32_t h,
-			      double mix);
+			      double mix, bool keep_alpha = false);
 	// One piece of a mask: `texture` (w by h) drawn where the matrix puts
 	// it, its coverage counted (blurred) or held clear. The caller sets the
 	// blending (see MaskPiece in stagekit-looks.effect).
@@ -224,6 +237,9 @@ private:
 	gs_eparam_t *pl_glass_ = nullptr;
 	gs_eparam_t *pl_glass_style_ = nullptr;
 	gs_eparam_t *pl_whole_ = nullptr;
+	gs_eparam_t *pl_open_edge_ = nullptr;
+	gs_eparam_t *pl_fallback_ = nullptr;
+	gs_eparam_t *pl_keep_alpha_ = nullptr;
 	gs_eparam_t *pl_origin_ = nullptr;
 	gs_eparam_t *pl_turn_ = nullptr;
 	gs_eparam_t *pl_original_ = nullptr;

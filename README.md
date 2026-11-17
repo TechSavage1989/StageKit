@@ -141,7 +141,7 @@ off, so it costs nothing while off.
 | Smoothing | For Pixelate: how far each cell's colour runs into its neighbours. 0 gives hard edges |
 | Glass / Glass style | For Pixelate: lights each cell like a small piece of glass. *Dome*: curved like a bead, with a glint and a darker rim. *Flat plate*: a flat face with sharp bevelled edges (straight facets on squares and hexagons). 0 gives plain cells. Ambient Background's mosaic has the same two controls |
 | Origin X / Y, Rotation | For Pixelate: the point of the image the pattern is laid out from and turned around, and by how much it is turned |
-| Mosaic edge | For Pixelate: *Cut at the edge* (as it comes) cuts the cells along the source's edge straight. *Whole cells* leaves out every cell the edge would cut, so the blurred source's outline is made of whole cells (hexagons, circles ...) and its see-through parts follow them. A Shadow, Glow & Outline or Corners & Edges after the Blur filter then follows that outline. The image never grows past its own edge: cells are only left out, never added |
+| Mosaic edge | For Pixelate: *Cut at the edge* (as it comes) cuts the cells along the source's edge straight. *Whole cells* leaves out every cell the edge would cut, so the blurred source's outline is made of whole cells (hexagons, circles ...) and its see-through parts follow them. A Shadow, Glow & Outline or Corners & Edges after the Blur filter then follows that outline. The image never grows past its own edge: cells are only left out, never added. The Blur filter cannot know where its source sits on screen, so on a full-screen source it leaves out the cells along the screen's edge too: there, use Scene Blur with *Each source by itself*, which keeps them |
 | Strength | 0–1000. Gaussian, Kawase and Box look alike at the same number; above 250, Gaussian and Box are drawn the Kawase way, which stays smooth |
 | Blur transition | Grow the blur strength, or cross-fade a fully blurred image in |
 | Ramp in / out time | 0–5000 ms each. 0 is instant |
@@ -1418,11 +1418,16 @@ over the game, say, and the same game in your other scenes stays sharp.
 - A source above a blurred one that is not blurred stays sharp, and the blur under it does not smear its
   colours: the camera over a blurred game stays a clean camera.
 - **Blur area**: *The scene as drawn* (as it comes) blurs the finished scene and keeps the blur to where the
-  chosen sources show; a blurred source's edge takes in what is around it, and a mosaic's cells are laid out
-  over the whole screen. *Each source by itself* blurs every chosen source from its own image only, as a Blur
+  chosen sources show, and the blur takes in only what lies where they show: a blurred source's edge takes in
+  nothing of an unblurred background round it, so its shadow or outline sits right against it. A mosaic's
+  cells are laid out over the whole screen. With *All sources* the background is blurred too, so along a
+  source's edge the blur mixes it with the background as the scene shows them. *Each source by itself* blurs every chosen source from its own image only, as a Blur
   filter on that source would: its edges take in nothing around it, a mosaic is laid out over that source,
   and *Mosaic edge* is offered (*Whole cells*: the source's outline is made of whole cells). With the same
-  settings it looks the same as the Blur filter on the source, edges included.
+  settings it looks the same as the Blur filter on the source, edges included. *Whole cells* leaves the screen's
+  edge alone: where a source reaches or runs past the screen's edge (a full-screen background, say) its cells
+  there are kept, since the screen cuts them anyway. *Mosaic edge* is only used with *Each source by itself*:
+  left on *Whole cells* and switched back to *The scene as drawn*, it changes nothing.
 - **Blur** and **Timing**: the Blur filter's own settings: Gaussian, Dual Kawase, Box, Pixelate (seven cell
   shapes, smoothing, glass, and with *Each source by itself* the mosaic's edge), Zoom, Motion and Temporal;
   strength up to 1000; *Blur transition* (grow the strength, or fade the blurred image in), *Blur-in

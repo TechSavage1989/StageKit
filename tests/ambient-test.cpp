@@ -1327,8 +1327,8 @@ static void blur_edges_test(uint32_t w, uint32_t h, const std::string &out)
 		return *std::max_element(rows.begin(), rows.end()) - *std::min_element(rows.begin(), rows.end());
 	};
 	// A part of the frame round the source, twice as large, for the README.
-	auto keep = [&](const std::string &name, const std::vector<uint8_t> &f) {
-		const int x0 = 80, y0 = 60, cw = 240, ch = 190;
+	auto keep = [&](const std::string &name, const std::vector<uint8_t> &f, int x0 = 80, int y0 = 60) {
+		const int cw = 240, ch = 190;
 		std::vector<uint8_t> big(size_t(cw) * 2 * ch * 2 * 4);
 		for (int y = 0; y < ch * 2; y++)
 			for (int x = 0; x < cw * 2; x++)
@@ -1378,9 +1378,20 @@ static void blur_edges_test(uint32_t w, uint32_t h, const std::string &out)
 	const double each_edge = diff_in(each_hex, own_hex, 100, 80, 300, 90);
 	const double each_box = diff_in(each_hex, own_hex, 100, 80, 300, 230);
 	const double each_around = diff_in(each_hex, own_hex, 0, 0, 640, 360);
-	CHECK(each_box < 1.0 && each_edge < 1.5 && each_around < 0.5 && scene_edge > each_edge + 5.0,
-	      "with 'Each source by itself' a hexagon mosaic matches the Blur filter on the source, edges included (off by %.2f in the box, %.2f along its top edge, %.2f overall; the scene as drawn is off by %.2f along that edge)",
+	CHECK(each_box < 1.0 && each_edge < 1.5 && each_around < 0.5,
+	      "with 'Each source by itself' a hexagon mosaic matches the Blur filter on the source, edges included (off by %.2f in the box, %.2f along its top edge, %.2f overall; the scene as drawn, its cells laid out over the screen, is off by %.2f along that edge)",
 	      each_box, each_edge, each_around, scene_edge);
+	// The scene as drawn takes in only what lies inside the blurred source:
+	// no cell along its edge is lightened by the light-blue background (blue
+	// 255; the source's own blue is 20 or 200). Up to beta166 it was, and a
+	// shadow or outline round the source stood apart from it by that band.
+	int scene_blue = 0;
+	for (int y = 80; y < 90; y++)
+		for (int x = 100; x < 300; x++)
+			scene_blue = std::max(scene_blue, px(scene_hex, x, y, 2));
+	CHECK(scene_blue <= 205,
+	      "blurring the scene as drawn, the cells along the source's edge take in nothing of the background round it (most blue %d, the source's own at most 200)",
+	      scene_blue);
 	int bled = 0;
 	for (int x = 100; x < 300; x++)
 		bled += std::abs(px(each_hex, x, 81, 2) - 255) < 20 && std::abs(px(each_hex, x, 81, 0) - 128) < 20;
@@ -1397,6 +1408,20 @@ static void blur_edges_test(uint32_t w, uint32_t h, const std::string &out)
 	const std::vector<uint8_t> each_soft = shot(each_src);
 	const double soft_box = diff_in(each_soft, own_soft, 100, 80, 300, 230);
 	CHECK(soft_box < 1.0, "a Gaussian blur matches it too (off by %.2f in the box)", soft_box);
+	{
+		// The scene as drawn, a soft blur: along the edge, the source's own
+		// colours, as the Blur filter on it gives them.
+		set(scene_blur, [](obs_data_t *s) { obs_data_set_int(s, "blur_area", 0); });
+		const std::vector<uint8_t> scene_soft = shot(each_src);
+		const double soft_edge = diff_in(scene_soft, own_soft, 100, 80, 300, 88);
+		const double soft_all = diff_in(scene_soft, own_soft, 100, 80, 300, 230);
+		const double soft_out = diff_in(scene_soft, own_soft, 0, 0, 640, 78);
+		CHECK(soft_edge < 4.0 && soft_all < 2.0 && soft_out < 0.5,
+		      "blurring the scene as drawn, a Gaussian blur along the source's edge is the source's own (off from the Blur filter on it by %.2f along the top edge, %.2f in the box, %.2f outside)",
+		      soft_edge, soft_all, soft_out);
+		set(scene_blur, [](obs_data_t *s) { obs_data_set_int(s, "blur_area", 1); });
+		shot(each_src);
+	}
 	{
 		const std::vector<uint8_t> a = render(each_src, w, h);
 		const std::vector<uint8_t> b = render(each_src, w, h);
@@ -1555,6 +1580,64 @@ static void blur_edges_test(uint32_t w, uint32_t h, const std::string &out)
 		}
 		obs_source_filter_remove(each_src, scene_shadow);
 		obs_source_release(scene_shadow);
+	}
+
+	// Whole cells and the screen's edge. The owner: "Whole cells blur also
+	// blurs the entire scene border. If whole cells is selected then the mode
+	// is switched back to whole scene as drawn, the whole scene edge retains
+	// the border/blur." A full-screen background keeps its cells along the
+	// screen's edge, and so does a source where it runs off the screen; the
+	// edge a source has inside the screen is still whole cells.
+	{
+		obs_scene_t *border = obs_scene_create("BE Border");
+		put(border, back, 0, 0);
+		put(border, photo_b, -60, 100); // its left side off the screen
+		obs_source_t *border_src = obs_scene_get_source(border);
+		obs_set_output_source(0, border_src);
+		obs_data_t *bd = obs_data_create();
+		obs_data_set_int(bd, "ramp_in_ms", 0);
+		obs_data_set_int(bd, "blur_area", 1);
+		look(bd, 3, 20.0, 1);
+		obs_source_t *border_blur = obs_source_create("stagekit_scene_blur", "BE Border Blur", bd, nullptr);
+		obs_data_release(bd);
+		obs_source_filter_add(border_src, border_blur);
+		const std::vector<uint8_t> each_border = shot(border_src);
+		// Round the screen: the background's own colour, never see-through,
+		// except where the source runs off the left: its own cells there.
+		int bad = 0, source_at_left = 0;
+		for (int x = 0; x < 640; x++)
+			for (int y : {0, 1, 358, 359})
+				bad += !is_back(each_border, x, y) || px(each_border, x, y, 3) != 255;
+		for (int y = 0; y < 360; y++)
+			for (int x : {0, 1, 638, 639}) {
+				const bool on_source = x < 2 && y >= 112 && y < 238;
+				if (on_source)
+					source_at_left += !is_back(each_border, x, y) &&
+							  px(each_border, x, y, 3) == 255;
+				else if (x >= 2 || y < 100 || y >= 250)
+					bad += !is_back(each_border, x, y) || px(each_border, x, y, 3) != 255;
+			}
+		const std::vector<int> top = first_rows(each_border, 20, 120, 80, 250, not_back);
+		CHECK(bad == 0 && source_at_left >= 200 && spread(top) >= 4 && opaque(each_border),
+		      "with whole cells, each source by itself, nothing is cut along the screen's edge (%d pixels off), the source keeps its cells where it runs off the screen (%d of 252 pixels), and its top edge inside the screen is whole cells (%d rows)",
+		      bad, source_at_left, spread(top));
+		keep("7 whole cells, screen edge", each_border, 0, 80);
+		// Back to the scene as drawn: Whole cells (its control hidden there)
+		// is not used, the screen's edge is whole.
+		set(border_blur, [](obs_data_t *s) {
+			obs_data_set_int(s, "blur_area", 0);
+			obs_data_set_int(s, "cover", 0);
+		});
+		const std::vector<uint8_t> scene_whole = shot(border_src);
+		set(border_blur, [](obs_data_t *s) { obs_data_set_int(s, "pixel_edge", 0); });
+		const std::vector<uint8_t> scene_cut = shot(border_src);
+		CHECK(opaque(scene_whole) && mean_abs_diff(scene_whole, scene_cut) == 0.0,
+		      "blurring the scene as drawn, a Mosaic edge left on Whole cells changes nothing (off by %.2f), and nothing round the screen is see-through",
+		      mean_abs_diff(scene_whole, scene_cut));
+		obs_set_output_source(0, each_src);
+		obs_source_filter_remove(border_src, border_blur);
+		obs_source_release(border_blur);
+		obs_scene_release(border);
 	}
 
 	obs_set_output_source(0, before_out);
