@@ -250,7 +250,7 @@ private:
 
 PreviewMenu *g_preview_menu = nullptr;
 
-// The start image and the moving background: the dock's Background tab.
+// The start image and the moving background: the dock's Standby & Ambient tab.
 class BackgroundDock : public QWidget {
 public:
 	explicit BackgroundDock(QWidget *parent = nullptr) : QWidget(parent)
@@ -534,7 +534,8 @@ public:
 			auto *background = new BackgroundDock(tabs);
 			background->setObjectName("pageBackground");
 			background->layout()->setContentsMargins(0, 10, 0, 0);
-			tabs->addTab(background, tr_text("Dock.Tab.Background"));
+			// ("&" in a tab's name marks a shortcut letter; "&&" shows one.)
+			tabs->addTab(background, tr_text("Dock.Tab.Background").replace("&", "&&"));
 		}
 		layout->addWidget(tabs, 1);
 		// A tab set is as tall as its tallest page, so the dock scrolled on

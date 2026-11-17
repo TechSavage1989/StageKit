@@ -24,6 +24,18 @@ layout scenes and the holding scene beside all fifteen old scenes. Not seen on W
 between modes, the text and browser sources in them, Be Right Back's own transition (a Transition
 Table rule and a scene override) which Holding-Scene does not have.
 
+## Five scenes: Intermission and GBA join (0.1.0-beta153)
+
+The owner: "can the intermission screen be merged with the other hold scenes? also the GBA scene?"
+Link Visibility gained *Follow the first source* (mode 2) and Show in Scenes and Link Visibility
+now respect each other: a source shows only when its mode says so and no switch holds it off.
+Holding-Scene has four modes (Intermission added); Component-Capture-Scene has two columns (Chat,
+GBA) switched by transparent marker sources. The trial file "StageKit Five Scenes (trial)" keeps
+all old scenes beside the new ones. A first build put DSLR's standby image over every holding mode
+but Intermission (its stand-in); fixed before release. The beta152 tab is renamed *Standby &
+Ambient* at the owner's word. Not seen on Windows: the fades between modes, the GBA windows in the
+Component scene, the two free-space fits in Holding-Scene side by side.
+
 ## Background dock becomes a tab (0.1.0-beta152)
 
 The owner: "id like the stagekit Background dock to be added to the primary stagekit dock as a new
