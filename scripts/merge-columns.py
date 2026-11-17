@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Adds a second column to the Component layout scene of a StageKit collection, for a side-by-side trial.
+"""Adds a second column to the Chat Live layout scene of a StageKit collection, for a side-by-side trial.
 
-merge-capture-scenes.py made Component-Capture-Scene: every capture on the left, the chat box, camera
-and widget in a column on the right. Dolphin-GBA-Scene is the same layout with another column: the two
+merge-capture-scenes.py made Chat Live (first called Component-Capture-Scene; the owner renamed it on
+2026-11-17): every capture on the left, the chat box, camera and widget in a column on the right. Dolphin-GBA-Scene is the same layout with another column: the two
 GBA windows of Dolphin and a camera view between them. This writes a copy of the collection in which
-Component-Capture-Scene holds both columns, one shown at a time:
+Chat Live holds both columns, one shown at a time:
 
     Chat   (as today)  Chat Box Group, DSLR Component, Amuse Component
     GBA                Dolphin-GBA-Link  1, Dolphin-ABG-Link 2, DSLR GBA Link
@@ -12,7 +12,7 @@ Component-Capture-Scene holds both columns, one shown at a time:
 A column is a mode, as in the holding scene: a marker source leads it and Link Visibility follows it.
 
 It reads one collection and writes another; the one it reads is never changed. Everything already in
-the collection is kept exactly as it is, except Component-Capture-Scene, which gets the items and
+the collection is kept exactly as it is, except Chat Live, which gets the items and
 filters below (its own items and filters are untouched), two new sources, and " + Columns" added to
 the collection's name. The script checks that itself before it writes anything. Dolphin-GBA-Scene and
 every other old scene stay as they are.
@@ -20,7 +20,7 @@ every other old scene stay as they are.
 What is added:
 
 - Two marker sources, "Column: Chat" and "Column: GBA": colour sources of 2x2 pixels, fully
-  transparent, so they draw nothing. Each is an item of Component-Capture-Scene at 0,0, just above
+  transparent, so they draw nothing. Each is an item of Chat Live at 0,0, just above
   the background, locked; Chat's is shown, GBA's hidden. Showing a marker is choosing its column.
 - The GBA column's items, copied from Dolphin-GBA-Scene with their places and bounding boxes, hidden:
   the two windows just under the captures (as in Dolphin-GBA-Scene, where they are under the game) and
@@ -32,12 +32,14 @@ What is added:
   per column ("Link Visibility-Column Chat", "-Column GBA") set to Follow the first source, the marker
   first. A camera view a camera switch has off stays hidden when its column is chosen, and a column
   not chosen is kept hidden whatever else shows its items.
-- "Show in Scenes-Mode" on each marker source: its column's switch, for Component-Capture-Scene only,
-  following what is shown; Chat's is on. All change with a fade, 500 ms.
+- "Show in Scenes-Mode" on each marker source: its column's switch, for Chat Live only, following
+  what is shown; Chat's is on. Each is set to go to Chat Live when it is pressed on (go_to): OBS
+  changes to Chat Live unless the scene on screen already shows that marker. All change with a fade,
+  500 ms.
 - No show or hide transition is written on any new item: the filters set them when OBS runs.
 
 The report lists what was added, every choice made and a fidelity table: Dolphin-GBA-Scene against
-Component-Capture-Scene with the GBA column and Game Capture shown, and Component-Capture-Scene as it
+Chat Live with the GBA column and Game Capture shown, and Chat Live as it
 was read against the new one with the Chat column shown. A difference the report does not explain
 stops the script: it writes the report, writes no collection and exits with an error.
 
@@ -51,7 +53,11 @@ import sys
 import uuid
 
 # ---------------------------------------------------------------------------------------------- plan
-SCENE = "Component-Capture-Scene"
+SCENE = "Chat Live"  # made by merge-capture-scenes.py
+OLD_SCENE = "Component-Capture-Scene"  # what it was called before the owner renamed it
+# The scene a column's switch goes to when it is pressed on (Show in Scenes' go_to): OBS changes to it
+# unless the scene on screen already shows the marker.
+GO_TO = SCENE
 FROM_SCENE = "Dolphin-GBA-Scene"
 NAME_SUFFIX = " + Columns"
 SWITCH_NAME = "Show in Scenes-Mode"
@@ -111,6 +117,9 @@ def item_of(scene_name, name):
 
 # ------------------------------------------------------------------------- is everything there?
 missing = []
+if SCENE not in by_name and OLD_SCENE in by_name:
+    missing.append(f"the collection has '{OLD_SCENE}', the old name of {SCENE}: make it again with the current "
+                   "merge-capture-scenes.py first")
 for scene_name in (SCENE, FROM_SCENE):
     if scene_name not in by_name or by_name[scene_name].get("id") != "scene":
         missing.append(f"the scene '{scene_name}' is not in the collection")
@@ -207,7 +216,8 @@ for i, (column, marker, names, _from) in enumerate(COLUMNS):
     src = copy.deepcopy(color_like)
     switch = make_filter(switch_like, SHOW_IN_SCENES, SWITCH_NAME,
                          {"sources|apick": "", "scenes|apick": "", "where": 1, "scenes": entries([SCENE]),
-                          "on_means": 0, "transition": TRANSITION, "transition_ms": CHANGE_MS, "follow": True},
+                          "on_means": 0, "transition": TRANSITION, "transition_ms": CHANGE_MS, "follow": True,
+                          "go_to": GO_TO},
                          on, f"{marker}|filter|{SWITCH_NAME}")
     src.update({"name": marker, "uuid": uid(f"{marker}|source"),
                 "settings": {"color": 0, "width": MARKER_SIZE, "height": MARKER_SIZE},
@@ -215,7 +225,8 @@ for i, (column, marker, names, _from) in enumerate(COLUMNS):
     markers.append(src)
     report.append(f"  '{marker}': colour source, {MARKER_SIZE}x{MARKER_SIZE}, fully transparent; filter "
                   f"'{SWITCH_NAME}' (Show in Scenes, {'on' if on else 'off'}): this source, in {SCENE} only; on means "
-                  f"shown; Fade, {CHANGE_MS} ms; follows what is shown")
+                  f"shown; Fade, {CHANGE_MS} ms; follows what is shown; pressed on, goes to {GO_TO} unless the "
+                  f"scene on screen already shows it (go_to)")
     like = copy.deepcopy(item_of(SCENE, "Ambient Background"))  # an item at 0,0, scale 1, no box, no crop
     for k, v in {"rot": 0.0, "align": 5, "bounds_type": 0, "bounds_align": 0, "bounds_crop": False, "crop_left": 0,
                  "crop_top": 0, "crop_right": 0, "crop_bottom": 0}.items():
@@ -481,7 +492,7 @@ if len(uuids) != len(set(uuids)):
 # ------------------------------------------------------------------------------------ write
 ok = not problems and not unexplained
 head = [
-    f"Columns in the Component layout scene, side-by-side trial: {before.get('name', '')}  ->  {data['name']}",
+    f"Columns in the {SCENE} layout scene, side-by-side trial: {before.get('name', '')}  ->  {data['name']}",
     f"Read: {SRC}",
     (f"Written: {OUT}" if ok else "NO COLLECTION WAS WRITTEN: see the problems below."),
     f"Checked by the script: everything that was in the collection is equal before and after, apart from {SCENE}'s "
@@ -496,6 +507,8 @@ tail += ["", "Transitions left off the new items (the filters set them when OBS 
 tail += [f"  {s}" for s in stripped or ["none"]]
 tail += ["", "Set each column's Stream Deck key to On press: Switch on. A Toggle key pressed on the column showing",
          "hides it, and no column is left showing.",
+         f"Pressing a column's key also goes to {GO_TO}, unless the scene on screen already shows that marker. The",
+         "scene to go to is in the switch's own settings and can be changed or cleared there.",
          "Showing a column's item with the eye while its column is not shown is undone at once; hiding one while its",
          "column is shown leaves it hidden. Only a marker changes the column."]
 tail += ["", "Fidelity",
