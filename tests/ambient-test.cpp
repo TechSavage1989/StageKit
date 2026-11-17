@@ -2154,7 +2154,7 @@ static void in_one_tick(std::function<void()> work)
 	obs_remove_tick_callback(in_one_tick_cb, &job);
 }
 
-// A Show in Scenes switch is a command, not a hold (betaNEXT): a switch that is
+// A Show in Scenes switch is a command, not a hold: a switch that is
 // off does not keep its source hidden from a Link Visibility that shows it.
 // Run at the end of the follow-sources section, and alone with
 // STAGEKIT_TEST_ONLY_SWITCH_COMMAND.
