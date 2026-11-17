@@ -1345,8 +1345,8 @@ bool FitEngine::solve(Prep &p, float seconds, bool first_pass, bool &moved)
 					    spare_w - left <= s.px_right + 0.05 && top <= s.px_top + 0.05 &&
 					    spare_h - top <= s.px_bottom + 0.05);
 			if (!fills) {
-				const Box beside = free_space(within, ax, ay, boxes_, s.margin, shape_used_,
-							      s.tolerance, &above_);
+				const Box beside =
+					free_space(within, ax, ay, boxes_, s.margin, shape_used_, s.tolerance, &above_);
 				if (beside.w >= 2.0 && beside.h >= 2.0) {
 					goal = beside;
 					avoiding_ = true;

@@ -763,6 +763,11 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   order unticked, for new and saved filters alike, so no layout changes by itself. Only the free
   space claims; a fit in the whole scene or an area takes no part. Tested in `[fit priority]`
   (`fit_priority_test`, run alone with `STAGEKIT_TEST_ONLY_FIT_PRIORITY`).
+  **With All sources** (beta162) each unlisted entry of a Scene Fit has its own *Space priority*
+  (`fit|<source>|space_priority`) and, by list order, comes after the listed ones, from the top of
+  the scene down. `set_claims_firm`'s step out of a claim passes over an `above_` claim and leaves
+  it to `free_space`'s `firm` sides; an outranked claim is not in `boxes_` at all. Tested at the end
+  of `[fit priority]`: All sources, the game taking its space first, a source put down inside it.
 - **Fit to Space does nothing to a hidden item** (`hidden_` in `src/placement/fit-item.cpp`): no
   placing, anchor and kept size untouched, so the other filters take its room. Its room stays on
   record (`holds_room`, beta147): nothing goes by it while the item is hidden (claims are only asked
@@ -1590,7 +1595,8 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   it (the gap beyond its edge, on the screen) before `free_space` is asked. Without it a newcomer
   and the chat box in the test, each resized, ended in one shared space for good, each place
   inside the other's claim. Only an All-sources Scene Fit sets it, so Fit to Space and a Scene
-  Fit on Chosen sources solve as before. A full-screen source is no obstacle anyway
+  Fit on Chosen sources solve as before. A claim of a fit ranked above this one (Space priority,
+  `above_`) is passed over by that step and left to `free_space`'s `firm` sides. A full-screen source is no obstacle anyway
   (`free_space` passes over what the place lies inside). A rename moves an unlisted source's
   `fit|<name>|` keys too. **Scene Modes has no All sources, on purpose**: a source in no mode is
   never touched, and a mode of every source (or of every source in no other mode) would hide the

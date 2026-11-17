@@ -1029,6 +1029,77 @@ static void fit_priority_test()
 		      c.h);
 		fp_drop(f);
 	}
+	// A Scene Fit on All sources with Space priority (beta162: the two
+	// features together). Nothing is listed: the game and the camera are
+	// fitted as the scene's sources, and the game's entry, unlisted, is set
+	// to take its space first. A source put down later inside the game's
+	// space is fitted round it, and the game does not move for it.
+	{
+		FP f;
+		fp_scene(f);
+		obs_data_t *d = obs_data_create();
+		obs_data_set_int(d, "which", 1); // All sources
+		fp_entry(d, "fit|FP Game|", 3, 1);
+		fp_entry(d, "fit|FP Cam|", 4, 0);
+		const std::string name = "FP Scene Fit All " + std::to_string(made);
+		f.fg = obs_source_create("stagekit_scene_fit", name.c_str(), d, nullptr);
+		obs_data_release(d);
+		obs_source_filter_add(obs_scene_get_source(f.scene), f.fg);
+		obs_set_output_source(0, obs_scene_get_source(f.scene));
+		Pic g, c;
+		bool still = fp_settle(f, g, c);
+		CHECK(still && tall(g) && !tall(c) && apart(g, c) && c.w > 1.0,
+		      "All sources with Space priority: the unlisted game, set to take its space first, is as tall as the screen and the camera fits beside it (game %.0f, camera %.0f tall)",
+		      g.h, c.h);
+		obs_properties_t *props = obs_source_properties(f.fg);
+		const bool has_level = obs_properties_get(props, "fit|FP Game|space_priority") != nullptr &&
+				       obs_properties_get(props, "fit|FP Cam|space_priority") != nullptr;
+		obs_properties_destroy(props);
+		CHECK(has_level, "an All sources entry has its own Space priority");
+		// Both sharing: they go by each other's claims as before, and still
+		// settle apart (from where they are, nothing need move).
+		d = obs_source_get_settings(f.fg);
+		obs_data_set_int(d, "fit|FP Game|space_priority", 0);
+		obs_source_update(f.fg, d);
+		obs_data_release(d);
+		Pic gs, cs;
+		still = fp_settle(f, gs, cs);
+		CHECK(still && apart(gs, cs), "both sharing, they settle apart as before (game %.0f, camera %.0f tall)",
+		      gs.h, cs.h);
+		d = obs_source_get_settings(f.fg);
+		obs_data_set_int(d, "fit|FP Game|space_priority", 1);
+		obs_source_update(f.fg, d);
+		obs_data_release(d);
+		still = fp_settle(f, g, c);
+		obs_data_t *ld = obs_data_create();
+		obs_data_set_int(ld, "width", 160);
+		obs_data_set_int(ld, "height", 90);
+		obs_source_t *later = obs_source_create("color_source", "FP Later", ld, nullptr);
+		obs_data_release(ld);
+		struct Add {
+			obs_source_t *source;
+			obs_sceneitem_t *item;
+		} add{later, nullptr};
+		obs_scene_atomic_update(
+			f.scene,
+			[](void *param, obs_scene_t *sc) {
+				auto *a = static_cast<Add *>(param);
+				a->item = obs_scene_add(sc, a->source);
+				vec2 p;
+				vec2_set(&p, 150.0f, 150.0f); // inside the game's space
+				obs_sceneitem_set_pos(a->item, &p);
+			},
+			&add);
+		fp_wait(f, 3000);
+		const Pic g2 = pic(f.g), c2 = pic(f.c), n2 = pic(add.item);
+		fp_wait(f, 800);
+		const bool stays = same(g2, pic(f.g), 0.1) && same(c2, pic(f.c), 0.1) && same(n2, pic(add.item), 0.1);
+		CHECK(still && stays && same(g, g2, 0.5) && tall(g2) && apart(g2, n2) && apart(c2, n2) && apart(g2, c2),
+		      "a source put down inside the game's space is fitted round it, and the game, taking its space first, does not move (new %.0f,%.0f %.0fx%.0f; game %.0f,%.0f %.0fx%.0f)",
+		      n2.x, n2.y, n2.w, n2.h, g2.x, g2.y, g2.w, g2.h);
+		fp_drop(f);
+		obs_source_release(later);
+	}
 
 	obs_set_output_source(0, before);
 	obs_source_release(before);

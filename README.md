@@ -1265,8 +1265,8 @@ learns where the others are going a frame later, and they could shift a few time
   With *All sources* every source of the scene is fitted, a group counting as one and sources added later
   too: first the ones under *Fitted sources*, in their order, then the rest from the top of the scene down,
   each starting from the usual entry settings (in the free space round its place, a gap of 30 px, resized to
-  fit). Each one is under *Settings for* like a listed one; untick *Resize to fit* for a source that keeps
-  its size. Left out: **Ignored sources** (they stay where they are, and the fitted sources keep clear of
+  fit, *Shares space*). Each one is under *Settings for* like a listed one, with its own *Space
+  priority*; untick *Resize to fit* for a source that keeps its size. Left out: **Ignored sources** (they stay where they are, and the fitted sources keep clear of
   them), a source a Fit to Space of its own already fits, a source another Scene Fit of the scene lists (or
   every source, when an earlier Scene Fit has *All sources* too), and a source that fills nine tenths of the
   screen or more when it is first met, such as the background: it could only be made smaller, and the free
