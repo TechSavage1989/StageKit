@@ -1436,6 +1436,32 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     (tested for every function and setting). A new key with a function gets a `*Shown` function,
     a badge per function and a Source type in `SOURCES`; run `make-badges.py` after
     `make-option-icons.py`. Not seen on a Stream Deck.
+  - **Layout** (betaNEXT; `layout`, `layoutList` and `LAYOUTS` in `src/key-types.ts`, `laidOut` in
+    `src/pictures.ts`, `src/layouts.json`). The owner: "every icon should have a standalone version,
+    live/no chat version, and a component/chat version", then "perhaps have a selector to choose the
+    layout and a second selector for the specific type". Every key with a Source type or Scene type
+    list has a *Layout* list just before it (`make-plugin-files.py` puts it there): `auto`
+    *Automatic*, `standalone`, `live` *Live (no chat)*, `chat` *Live + chat* (append-only). It is
+    **not** one of `typeLists` (so `typeForKept` never sets it) and not in `snapshot` (choosing a
+    layout keeps an image from the old Image list, laid out). Automatic is unchanged: `laidOut`
+    returns the very `Shown` it was given (tested). The layouts are the pack's game capture and
+    game component scenes (02/03): `make-option-icons.py`'s `layout_pictures` takes the gamepad out
+    of them (`GLYPH`, the frames `layouts/live-frame`, `layouts/chat-frame`) and draws each type's
+    drawing in the panel (`PANEL`, `LAYOUT_SIZE` 1.1) as `layouts/<live|chat>-<drawing>`, for every
+    drawing a source type's `base` or a scene type's `picture` is, and those of `GLYPH_OF` (the
+    pack's scene pictures by the drawing of what they show): 94 drawings, 190 pictures a palette
+    with the frames, status copies by `make-state-icons.py`, SVGs in `svg/keys/<palette>/layouts/`.
+    Game, capture card and window use the pack's own 02/03, 05/06, 07/08 (`PACK_LAYOUTS`).
+    `laidOut` goes by the picture the key would show: a Source type's function art (eye, shadow,
+    blur, mode) is taken back to the type's `base` (`typeBehind`), then `byPicture`, then
+    `glyphOf`; a picture with neither (an app's logo, a key on Automatic, a kept image) is laid,
+    smaller, into the frame's panel when the key is shown (`inset`; `laidIn`/`shrink` in
+    `src/compose.ts`, the key's whole picture, `crop`), and the on/off mark is put on that whole
+    (`imgs/marks/on|off.png`, the off look as `make-state-icons.py` makes it). *Standalone* changes
+    only the six pack scenes that are layouts themselves (`standalone`): their drawing alone.
+    Every action goes through `imageOf`/`showOnOff` with the key's settings (not its palette
+    alone), so there is no per-action code. Badges and marks are laid as before. Not seen on a
+    Stream Deck.
   - **Stream Deck's own image menu**: titles are documented (setTitle "can only be set by the
     plugin when the user has not specified a custom title"); for images the SDK's types say only
     that state images "can be overridden by the user", nothing of setImage against a user's image.

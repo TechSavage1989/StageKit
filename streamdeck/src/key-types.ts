@@ -21,7 +21,7 @@ export type Look = "blur" | "corners" | "shadow" | "transition" | "position" | "
 export type Entry = { value: string; label: string; picture: string };
 export type Group = { label: string; entries: Entry[] };
 /** One list on a key's settings page. Automatic is its first entry (value "auto"). */
-export type TypeList = { setting: "sourceType" | "sceneType" | "look"; label: string; tip: string; automatic: string; groups: Group[] };
+export type TypeList = { setting: "sourceType" | "sceneType" | "look" | "layout"; label: string; tip: string; automatic: string; groups: Group[] };
 
 type SourceType = { id: string; label: string; group: string; base: string; words: string[][] };
 export const SOURCE_TYPES: SourceType[] = data.sourceTypes;
@@ -408,4 +408,63 @@ export function typeOfName(name: string | undefined): string | undefined {
 				bestLength = phrase.length;
 			}
 	return best;
+}
+
+// ------------------------------------------------------------------ layouts
+// The owner: "every icon should have a standalone version, live/no chat
+// version, and a component/chat version", and then "perhaps have a selector
+// to choose the layout and a second selector for the specific type". So every
+// key with a Source type or Scene type list has a Layout list just before it
+// (setting `layout`): Automatic (what the key showed before, so no key
+// changes), Standalone, Live (no chat), Live + chat. src/pictures.ts
+// (`laidOut`) chooses the picture; tools/make-option-icons.py draws them.
+
+/** The Layout list's values, after Automatic ("auto"); kept in keys' settings, append-only. */
+export const LAYOUTS = ["standalone", "live", "chat"] as const;
+export type Layout = (typeof LAYOUTS)[number];
+
+/** A key's Layout as set, or undefined for Automatic (unset, empty, "auto" or anything else). */
+export function layoutOf(value: unknown): Layout | undefined {
+	return (LAYOUTS as readonly string[]).includes(value as string) ? (value as Layout) : undefined;
+}
+
+/** The Layout list of a key that has a Source type or Scene type list; undefined for any other key. */
+export function layoutList(key: string): TypeList | undefined {
+	if (!typeLists(key).some((l) => l.setting === "sourceType" || l.setting === "sceneType")) return undefined;
+	return {
+		setting: "layout",
+		label: "Layout",
+		tip: "How the key's image is laid out: the type alone, in the live layout with a camera in its corner, or in the live layout with a camera and chat column. Automatic keeps the image as it is.",
+		automatic: "Automatic",
+		groups: [
+			{
+				label: "",
+				entries: [
+					{ value: "standalone", label: "Standalone", picture: "" },
+					{ value: "live", label: "Live (no chat)", picture: "layouts/live-frame" },
+					{ value: "chat", label: "Live + chat", picture: "layouts/chat-frame" },
+				],
+			},
+		],
+	};
+}
+
+/**
+ * The picture a key's chosen Source type stands for when the key shows it
+ * with the owner's art for the key's function (an eye over it, its shadow,
+ * blurred, as a mode): the type's own picture, which is what has a picture in
+ * each layout. Undefined when the key does not show its Source type's art.
+ */
+export function typeBehind(settings: Record<string, unknown>, shown: string): string | undefined {
+	const id = explicit(settings.sourceType);
+	const t = id ? SOURCE_TYPES.find((s) => s.id === id) : undefined;
+	if (!t) return undefined;
+	if (shown === t.base) return t.base;
+	for (const family of Object.keys(ART) as Family[]) {
+		const art = ART[family][t.id];
+		if (!art) continue;
+		if (shown === art) return t.base;
+		if (family === "blur" && BLUR_STYLES.some((style) => shown === `blur-${style}/${art}`)) return t.base;
+	}
+	return undefined;
 }

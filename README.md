@@ -1553,6 +1553,24 @@ the moved one), or the move made in the scene on screen or a chosen scene only. 
 whether it is on, the green dot or red sign stays in the top left corner. Left on *Automatic*, the
 type list changes nothing: the key shows exactly the image it showed before.
 
+**Layout: the image alone, live, or live with chat.** Every key with a *Source type* or *Scene
+type* list has a *Layout* list just above it, so the layout is chosen first and the type second:
+
+| Layout | The key's image |
+| --- | --- |
+| *Automatic* (as it comes) | Exactly what the key showed before: nothing changes on a key you already have |
+| *Standalone* | The type's image by itself. A scene type that is a layout already (Gameplay, Gameplay + chat, Capture card, Capture card + chat, Window / app, App + chat) shows its drawing alone: the gamepad, the capture card, the window |
+| *Live (no chat)* | The icon pack's live layout: the hexagon frame, the type's drawing in the big panel and a small camera in the top right corner |
+| *Live + chat* | The icon pack's layout with chat: the type's drawing in the panel on the left, a camera over a chat column on the right |
+
+Game, Window and Capture card use the icon pack's own scene images for the two layouts; every other
+source type and scene type with a drawing has its own pair, drawn in the same style, in all six
+palettes. A key showing the type with its function (a Show in Scenes key's eye, a Shadow key's
+shadow, a Blur key's blur) shows the type's drawing in the layout. An image with no drawing of its
+own (an app's logo, a key left on *Automatic* type, an image kept from the old *Image* list) is
+shown smaller inside the layout's panel. The corner badge and the green dot or red sign stay on
+top, as on any key.
+
 **Keys made before (Stream Deck plugin 0.18 and earlier)** keep their look. An image chosen in the
 old *Image* list is set as the type that shows that same image where there is one, and is otherwise
 kept as it is, until you choose something in one of the key's lists (*Automatic* included). An old

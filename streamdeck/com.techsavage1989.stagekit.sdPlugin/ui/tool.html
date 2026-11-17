@@ -35,6 +35,14 @@
 				<option value="same_chosen">Copy transform to chosen scenes</option>
 			</sdpi-select>
 		</sdpi-item>
+		<sdpi-item label="Layout" title="How the key&#x27;s image is laid out: the type alone, in the live layout with a camera in its corner, or in the live layout with a camera and chat column. Automatic keeps the image as it is.">
+			<sdpi-select setting="layout" placeholder="Automatic">
+				<option value="auto">Automatic</option>
+				<option value="standalone">Standalone</option>
+				<option value="live">Live (no chat)</option>
+				<option value="chat">Live + chat</option>
+			</sdpi-select>
+		</sdpi-item>
 		<sdpi-item label="Source type" title="What the tool lines up or resizes, for the key&#x27;s image; the tool is drawn in its corner. Automatic shows the tool alone.">
 			<sdpi-select setting="sourceType" placeholder="Automatic (the tool&#x27;s image)">
 				<option value="auto">Automatic (the tool&#x27;s image)</option>

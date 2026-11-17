@@ -8,16 +8,24 @@ import { filterItems, sourceItems, targetItems } from "../kinds.ts";
 import { obs } from "../obs.ts";
 import { adoptOld, typeForKept } from "../key-types.ts";
 import { composed } from "../compose.ts";
-import { layersOf, type Picture, type Shown } from "../pictures.ts";
+import { laidOut, layersOf, type LayoutSettings, type Picture, type Shown } from "../pictures.ts";
+
+/** What a key's image depends on besides the picture: its palette and its Layout (with the type lists it goes by). */
+export type Look = LayoutSettings & { palette?: string };
 
 /**
  * A key's image as Stream Deck takes it: the picture's file, or, with a
  * badge (a type chosen with a function), the picture and its badges laid
- * together (src/compose.ts). `state` is on or off for a key with two states
- * (the marked pictures), undefined for one.
+ * together (src/compose.ts). `look` is the key's settings (its palette and
+ * its Layout: the picture in the live or live + chat layout, src/pictures.ts
+ * `laidOut`), or a palette alone. `state` is on or off for a key with two
+ * states (the marked pictures), undefined for one.
  */
-export function imageOf(shown: Picture | Shown, palette: string | undefined, state?: boolean): string {
-	const s: Shown = "picture" in shown ? shown : { picture: shown };
+export function imageOf(shown: Picture | Shown, look: Look | string | undefined, state?: boolean): string {
+	const plainShown: Shown = "picture" in shown ? shown : { picture: shown };
+	const settings: Look = typeof look === "object" ? look : { palette: look };
+	const s = laidOut(plainShown, settings);
+	const palette = settings.palette;
 	const layers = layersOf(s, palette, state);
 	try {
 		return composed(layers);
@@ -38,10 +46,10 @@ export async function showOnOff(
 	key: { setImage(image?: string, options?: { state?: 0 | 1 }): Promise<void>; setState(state: 0 | 1): Promise<void> },
 	picture: Picture | Shown,
 	on: boolean,
-	palette: string | undefined,
+	look: Look | string | undefined,
 ): Promise<void> {
-	await key.setImage(imageOf(picture, palette, false), { state: 0 });
-	await key.setImage(imageOf(picture, palette, true), { state: 1 });
+	await key.setImage(imageOf(picture, look, false), { state: 0 });
+	await key.setImage(imageOf(picture, look, true), { state: 1 });
 	await key.setState(on ? 1 : 0);
 }
 
@@ -89,6 +97,8 @@ export type KeySettings = {
 	look?: string;
 	/** The palette of this key's picture: mono unless another is chosen. */
 	palette?: string;
+	/** How the image is laid out (src/key-types.ts `LAYOUTS`): "standalone", "live", "chat"; empty or "auto" for Automatic. */
+	layout?: string;
 	/** An arrange tool, for a Tool key. */
 	tool?: string;
 	/** A Hook key's change: an OBS transition's kind, or "none", and how long it lasts. */

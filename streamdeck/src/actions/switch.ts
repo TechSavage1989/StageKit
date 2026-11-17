@@ -98,7 +98,7 @@ export class FilterSwitch extends SingletonAction<KeySettings> {
 		// (An image chosen before the type lists becomes the type that shows it.)
 		settings = await settle(key, this.name, seen ? { ...settings, seen } : settings, (s) => pick(s).id);
 		const picture = pick(settings);
-		await showOnOff(key, picture, seen?.enabled === true, settings.palette);
+		await showOnOff(key, picture, seen?.enabled === true, settings);
 		await key.setTitle(switchTitle(seen?.kind, settings.press));
 	}
 

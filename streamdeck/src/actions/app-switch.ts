@@ -74,12 +74,12 @@ export class AppSwitch extends SingletonAction<KeySettings> {
 			const { source, filter } = targetOf(settings);
 			const now = await obs.switcherState(source, filter);
 			const on = settings.step === "toggle" ? now?.manual === true : now !== undefined && !now.hidden;
-			await showOnOff(key, picture, on, settings.palette);
+			await showOnOff(key, picture, on, settings);
 			return;
 		}
 		// One look for a key that only does something.
-		await key.setImage(imageOf(picture, settings.palette), { state: 0 });
-		await key.setImage(imageOf(picture, settings.palette), { state: 1 });
+		await key.setImage(imageOf(picture, settings), { state: 0 });
+		await key.setImage(imageOf(picture, settings), { state: 1 });
 		await key.setState(0);
 	}
 

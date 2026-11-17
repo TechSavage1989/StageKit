@@ -73,7 +73,18 @@ def marked(image, on, on_light=None):
     return big.resize((w, h), Image.LANCZOS)
 
 
+def write_marks():
+    """The two marks by themselves on a see-through key, for an image laid
+    together when a key is shown (src/compose.ts: a picture laid into a
+    layout has no marked copy of its own)."""
+    out = os.path.join(ROOT, "com.techsavage1989.stagekit.sdPlugin", "imgs", "marks")
+    os.makedirs(out, exist_ok=True)
+    for name, on in (("on", True), ("off", False)):
+        marked(Image.new("RGBA", (144, 144), (0, 0, 0, 0)), on).save(os.path.join(out, name + ".png"), optimize=True)
+
+
 def main():
+    write_marks()
     pack = json.load(open(os.path.join(ROOT, "src", "pack.json"), encoding="utf-8"))
     # An off picture used by one key picture only is drawn from that key's
     # on picture: the pack's own off picture of a source that is hidden (the

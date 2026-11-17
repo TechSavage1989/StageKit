@@ -69,7 +69,7 @@ export class FitOverlap extends SingletonAction<KeySettings> {
 		const pick = (s: KeySettings) => overlapPicture(keptPicture(s), s.sceneType);
 		settings = await settle(key, "fitoverlap", settings, (s) => pick(s).id);
 		const picture = pick(settings);
-		await showOnOff(key, picture, now?.settings.skip_fill_on === true, settings.palette);
+		await showOnOff(key, picture, now?.settings.skip_fill_on === true, settings);
 		await key.setTitle(overlapTitle(settings.press));
 	}
 

@@ -57,7 +57,7 @@ export class BlurAll extends SingletonAction<KeySettings> {
 		const pick = (s: KeySettings) => blurAllShown(keptPicture(s), s.look, s.sceneType);
 		settings = await settle(key, "blurall", settings, (s) => shownId(pick(s)));
 		const picture = pick(settings);
-		await showOnOff(key, picture, await this.anyOn(), settings.palette);
+		await showOnOff(key, picture, await this.anyOn(), settings);
 		await key.setTitle(blurAllTitle(settings.press));
 	}
 

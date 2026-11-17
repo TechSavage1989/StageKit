@@ -212,7 +212,102 @@ export function badgeFile(name: string, palette: string): string {
 }
 
 /** What a key shows: a picture's file, and the badges laid over it. */
-export type Layers = { base: string; palette: string; right?: string; left?: string };
+export type Layers = {
+	base: string;
+	palette: string;
+	right?: string;
+	left?: string;
+	/** A picture laid, made smaller, into the base's panel (a key's Layout, src/pictures.ts `laidOut`): its file, the panel and the part of the picture taken. */
+	inset?: { file: string; panel: number[]; crop: number[] };
+	/** The on/off mark put on the whole (tools/make-state-icons.py's, for a base that has no marked copy). */
+	mark?: boolean;
+};
+
+/** The two marks by themselves, 144 px, see-through round them (tools/make-state-icons.py). */
+export function markFile(on: boolean): string {
+	return `imgs/marks/${on ? "on" : "off"}.png`;
+}
+
+/** How tools/make-state-icons.py makes a picture "off": most of its brightness, half its colour. */
+const OFF_BRIGHTNESS = 0.95;
+const OFF_COLOUR = 0.5;
+
+function switchedOff(image: Raster): void {
+	const d = image.data;
+	for (let i = 0; i < d.length; i += 4) {
+		const r = d[i] * OFF_BRIGHTNESS,
+			g = d[i + 1] * OFF_BRIGHTNESS,
+			b = d[i + 2] * OFF_BRIGHTNESS;
+		const grey = r * 0.299 + g * 0.587 + b * 0.114;
+		d[i] = Math.round(grey + (r - grey) * OFF_COLOUR);
+		d[i + 1] = Math.round(grey + (g - grey) * OFF_COLOUR);
+		d[i + 2] = Math.round(grey + (b - grey) * OFF_COLOUR);
+	}
+}
+
+/**
+ * Part of an image (`crop`: x0, y0, x1, y1, the end not included) made
+ * smaller to w x h, each new pixel the mean of what it covers (with its
+ * see-through parts weighed by how see-through they are).
+ */
+export function shrink(image: Raster, crop: number[], w: number, h: number): Raster {
+	const [cx0, cy0, cx1, cy1] = crop;
+	const sx = (cx1 - cx0) / w;
+	const sy = (cy1 - cy0) / h;
+	const out = new Uint8Array(w * h * 4);
+	for (let y = 0; y < h; y++) {
+		const fy0 = cy0 + y * sy,
+			fy1 = fy0 + sy;
+		for (let x = 0; x < w; x++) {
+			const fx0 = cx0 + x * sx,
+				fx1 = fx0 + sx;
+			let r = 0,
+				g = 0,
+				b = 0,
+				a = 0,
+				area = 0;
+			for (let py = Math.floor(fy0); py < Math.ceil(fy1); py++) {
+				const wy = Math.min(fy1, py + 1) - Math.max(fy0, py);
+				if (wy <= 0 || py < 0 || py >= image.height) continue;
+				for (let px = Math.floor(fx0); px < Math.ceil(fx1); px++) {
+					const wx = Math.min(fx1, px + 1) - Math.max(fx0, px);
+					if (wx <= 0 || px < 0 || px >= image.width) continue;
+					const weight = wx * wy;
+					const o = (py * image.width + px) * 4;
+					const pa = (image.data[o + 3] / 255) * weight;
+					r += image.data[o] * pa;
+					g += image.data[o + 1] * pa;
+					b += image.data[o + 2] * pa;
+					a += pa;
+					area += weight;
+				}
+			}
+			const o = (y * w + x) * 4;
+			if (a > 0) {
+				out[o] = Math.round(r / a);
+				out[o + 1] = Math.round(g / a);
+				out[o + 2] = Math.round(b / a);
+			}
+			out[o + 3] = area > 0 ? Math.round((a / area) * 255) : 0;
+		}
+	}
+	return { width: w, height: h, data: out };
+}
+
+/** Lays `inset`'s picture into the panel of `out` (a 144 px layout), as large as fits with a margin, in the middle. */
+function laidIn(out: Raster, inset: NonNullable<Layers["inset"]>): void {
+	const picture = read(inset.file);
+	const k = out.width / SIZE;
+	const pk = picture.width / SIZE;
+	const crop = inset.crop.map((v) => v * pk);
+	const [x0, y0, x1, y1] = inset.panel.map((v) => v * k);
+	const margin = 4 * k;
+	const room = { w: x1 - x0 - 2 * margin, h: y1 - y0 - 2 * margin };
+	const scale = Math.min(room.w / (crop[2] - crop[0]), room.h / (crop[3] - crop[1]));
+	const w = Math.max(1, Math.round((crop[2] - crop[0]) * scale));
+	const h = Math.max(1, Math.round((crop[3] - crop[1]) * scale));
+	over(out, shrink(picture, crop, w, h), Math.round(x0 + (x1 - x0 - w) / 2), Math.round(y0 + (y1 - y0 - h) / 2));
+}
 
 const made = new Map<string, string>();
 
@@ -222,14 +317,21 @@ const made = new Map<string, string>();
  * each combination.
  */
 export function composed(layers: Layers): string {
-	if (!layers.right && !layers.left) return layers.base;
-	const id = `${layers.base}|${layers.palette}|${layers.right ?? ""}|${layers.left ?? ""}`;
+	if (!layers.right && !layers.left && !layers.inset && layers.mark === undefined) return layers.base;
+	const id = `${layers.base}|${layers.palette}|${layers.right ?? ""}|${layers.left ?? ""}|${layers.inset?.file ?? ""}|${layers.mark ?? ""}`;
 	let url = made.get(id);
 	if (url) return url;
 	const base = read(layers.base);
 	// (A picture of another size is drawn at 144 by Stream Deck; badges are placed for 144.)
 	const out: Raster = { width: base.width, height: base.height, data: new Uint8Array(base.data) };
 	const k = base.width / SIZE;
+	if (layers.inset) laidIn(out, layers.inset);
+	if (layers.mark !== undefined) {
+		// (As tools/make-state-icons.py marks a picture: off is greyed a little first.)
+		if (!layers.mark) switchedOff(out);
+		const mark = read(markFile(layers.mark));
+		over(out, mark.width === out.width ? mark : shrink(mark, [0, 0, mark.width, mark.height], out.width, out.height), 0, 0);
+	}
 	for (const side of ["right", "left"] as const) {
 		const name = layers[side];
 		if (!name) continue;

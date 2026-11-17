@@ -533,15 +533,18 @@ SWITCHES += [type_name(t) for t in MORE_TYPES] + ["scene-type-" + s.replace("_",
 SWITCHES += ["style-" + s for s in STYLES]
 
 
-def drawn(shapes, ink):
+def drawn(shapes, ink, box=SCREEN, size=1.0):
+    """A drawing on a transparent layer the size of `box` (the key's little
+    screen, or a layout's main panel), its 64 x 36 field in the middle of it
+    at `size` times its own units."""
     s = SCALE
-    w, h = (SCREEN[2] - SCREEN[0]) * s, (SCREEN[3] - SCREEN[1]) * s
+    w, h = (box[2] - box[0]) * s, (box[3] - box[1]) * s
     layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     draw = ImageDraw.Draw(layer)
     # The field of 64 x 36 in the middle of the screen.
-    ox, oy = (w - 64 * s) / 2, (h - 36 * s) / 2
-    k = s
-    pen = int(2.6 * s)
+    k = s * size
+    ox, oy = (w - 64 * k) / 2, (h - 36 * k) / 2
+    pen = int(2.6 * k)
 
     def at(x, y):
         return (ox + x * k, oy + y * k)
@@ -566,10 +569,140 @@ def drawn(shapes, ink):
         elif kind == "tri":
             draw.polygon((at(shape[1], shape[2]), at(shape[3], shape[4]), at(shape[5], shape[6])), fill=ink)
         elif kind == "text":
-            font = ImageFont.truetype(FONT, 22 * s)
-            box = draw.textbbox((0, 0), shape[1], font=font)
-            draw.text(((w - box[2] - box[0]) / 2, (h - box[3] - box[1]) / 2), shape[1], font=font, fill=ink)
-    return layer.resize((SCREEN[2] - SCREEN[0], SCREEN[3] - SCREEN[1]), Image.LANCZOS)
+            font = ImageFont.truetype(FONT, int(22 * k))
+            tb = draw.textbbox((0, 0), shape[1], font=font)
+            draw.text(((w - tb[2] - tb[0]) / 2, (h - tb[3] - tb[1]) / 2), shape[1], font=font, fill=ink)
+    return layer.resize((box[2] - box[0], box[3] - box[1]), Image.LANCZOS)
+
+# ---------------------------------------------------------------- layouts
+# Every type in the pack's two scene layouts (the owner: "every icon should
+# have a standalone version, live/no chat version, and a component/chat
+# version", and "perhaps have a selector to choose the layout and a second
+# selector for the specific type"). The layouts are the pack's own: Live (no
+# chat) is its game capture scene (a hexagon frame, the big panel, a small
+# camera top right), Live + chat its game component scene (the panel on the
+# left, a column of camera over chat on the right). Each is taken from the
+# pack's picture in that palette with its gamepad taken out of the panel
+# (the "frame"), and each type's drawing is put in the panel where the
+# gamepad was. Where the pack already has the very picture (game, window,
+# capture card), it is used as it is. src/layouts.json says which picture is
+# which; src/pictures.ts (`laidOut`) chooses from it.
+LAYOUTS = ("live", "chat")
+LAYOUT_FROM = {"live": "scenes/02-game-capture", "chat": "scenes/03-game-component"}
+# The main panel of each (the same in every palette), and the part of it the
+# pack's gamepad (with its soft edge) takes.
+PANEL = {"live": (27, 17, 117, 82), "chat": (8, 17, 98, 83)}
+GLYPH = {"live": (45, 31, 99, 68), "chat": (25, 31, 80, 68)}
+# A drawing in a panel is this much larger than on a key's little screen.
+LAYOUT_SIZE = 1.1
+# The pack's own pictures of a type in each layout.
+PACK_LAYOUTS = {
+    "options/type-game": {"live": "scenes/02-game-capture", "chat": "scenes/03-game-component"},
+    "options/type-capture-card": {"live": "scenes/05-game-hd60s", "chat": "scenes/06-game-component-hd60s"},
+    "options/type-window": {"live": "scenes/07-window-capture", "chat": "scenes/08-window-component"},
+}
+# The pack's scene pictures, each by the drawing of what it shows: what goes
+# in a layout's panel for that scene. Those that are a layout themselves are
+# also that drawing alone when Standalone is chosen (STANDALONE).
+GLYPH_OF = {
+    "scenes/01-stream-start": "options/mode-starting",
+    "scenes/02-game-capture": "options/type-game",
+    "scenes/03-game-component": "options/type-game",
+    "scenes/04-console": "options/console",
+    "scenes/05-game-hd60s": "options/type-capture-card",
+    "scenes/06-game-component-hd60s": "options/type-capture-card",
+    "scenes/07-window-capture": "options/type-window",
+    "scenes/08-window-component": "options/type-window",
+    "scenes/09-main-display": "options/type-display",
+    "scenes/10-tablet": "options/type-tablet",
+    "scenes/11-dolphin-gba": "options/type-linked-handheld",
+    "scenes/12-camera-only": "options/type-full-camera",
+    "scenes/13-intermission": "options/mode-intermission",
+    "scenes/14-be-right-back": "options/mode-brb",
+    "scenes/15-stream-ending": "options/mode-ending",
+}
+STANDALONE = ["scenes/02-game-capture", "scenes/03-game-component", "scenes/05-game-hd60s", "scenes/06-game-component-hd60s",
+              "scenes/07-window-capture", "scenes/08-window-component"]
+# Where a key's whole picture is (every picture of the pack is drawn there):
+# what is laid into a layout's panel, made smaller, for a picture with no
+# layout of its own (src/compose.ts).
+CROP = (3, 11, 141, 88)
+TYPES_LIST = os.path.join(ROOT, "src", "key-types.json")
+LAYOUT_LIST = os.path.join(ROOT, "src", "layouts.json")
+
+
+def layout_drawings():
+    """The drawings that get a picture in each layout, by picture id
+    (options/<name>): every source type's and scene type's that is a drawing
+    here, and the drawings of the pack's scene pictures; not those the pack
+    has the layouts of already."""
+    types = json.load(open(TYPES_LIST, encoding="utf-8"))
+    ids = [t["base"] for t in types["sourceTypes"]] + [t["picture"] for t in types["sceneTypes"]] + list(GLYPH_OF.values())
+    out = []
+    for pid in ids:
+        name = pid[len("options/"):] if pid.startswith("options/") else None
+        if name and name in DRAWINGS and pid not in PACK_LAYOUTS and name not in out:
+            out.append(name)
+    return out
+
+
+def layout_frame(palette, layout):
+    """The pack's layout picture in a palette with its gamepad taken out, the
+    colour of the panel and the colour the gamepad was drawn in."""
+    image = Image.open(os.path.join(PACK, palette, LAYOUT_FROM[layout] + ".png")).convert("RGBA")
+    x0, y0, x1, y1 = GLYPH[layout]
+    ink = max((image.getpixel((x, y)) for x in range(x0, x1) for y in range(y0, y1)), key=lambda c: sum(c[:3]))
+    panel = image.getpixel((PANEL[layout][0] + 3, PANEL[layout][1] + 3))
+    ImageDraw.Draw(image).rectangle((x0, y0, x1 - 1, y1 - 1), fill=panel)
+    return image, ink
+
+
+def layout_pictures(palettes):
+    """Draws imgs/pack/<palette>/layouts/: the two frames, and each drawing in
+    each layout. Returns the pictures to list in src/pack.json and writes
+    src/layouts.json."""
+    names = layout_drawings()
+    made = 0
+    for palette in palettes:
+        out = os.path.join(PACK, palette, "layouts")
+        os.makedirs(out, exist_ok=True)
+        for layout in LAYOUTS:
+            frame, ink = layout_frame(palette, layout)
+            frame.save(os.path.join(out, f"{layout}-frame.png"))
+            box = PANEL[layout]
+            for name in names:
+                picture = frame.copy()
+                picture.alpha_composite(drawn(DRAWINGS[name], ink, box, LAYOUT_SIZE), (box[0], box[1]))
+                picture.save(os.path.join(out, f"{layout}-{name}.png"))
+                made += 1
+    pictures = []
+    for layout in LAYOUTS:
+        word = "live" if layout == "live" else "live chat"
+        pictures.append({"id": f"layouts/{layout}-frame", "group": "layouts", "label": f"{word} frame",
+                         "on": f"layouts/{layout}-frame", "off": f"layouts/{layout}-frame"})
+        for name in names:
+            pid = f"layouts/{layout}-{name}"
+            pictures.append({"id": pid, "group": "layouts", "label": f"{word} {name.replace('-', ' ')}", "on": pid, "off": pid})
+    by_picture = {pid: dict(pair) for pid, pair in PACK_LAYOUTS.items()}
+    for name in names:
+        by_picture["options/" + name] = {layout: f"layouts/{layout}-{name}" for layout in LAYOUTS}
+    listed = {
+        "_": "Written by tools/make-option-icons.py. Each picture's place in the two layouts (live: no chat, chat: live + chat), "
+             "by the picture a key shows alone (byPicture); the drawing a scene picture of the pack shows (glyphOf); the scene pictures "
+             "that are a layout themselves and are their drawing alone when Standalone is chosen (standalone); and, for a picture with "
+             "no layout of its own, the empty layout (frames), its panel and the part of a key's picture laid into it (panel, crop).",
+        "layouts": list(LAYOUTS),
+        "frames": {layout: f"layouts/{layout}-frame" for layout in LAYOUTS},
+        "panel": {layout: list(PANEL[layout]) for layout in LAYOUTS},
+        "crop": list(CROP),
+        "byPicture": by_picture,
+        "glyphOf": GLYPH_OF,
+        "standalone": STANDALONE,
+    }
+    with open(LAYOUT_LIST, "w", encoding="utf-8") as f:
+        json.dump(listed, f, indent="\t", ensure_ascii=False)
+        f.write("\n")
+    return pictures, made
 
 
 def main():
@@ -581,7 +714,7 @@ def main():
             # (Not the pictures drawn here, nor the marked copies of
             # tools/make-state-icons.py: their dot and slash are no words.)
             parts = os.path.relpath(folder, os.path.join(PACK, palette)).split(os.sep)
-            if parts[0] in ("options", "status"):
+            if parts[0] in ("options", "status", "layouts", "badges"):
                 continue
             for name in files:
                 if not name.endswith(".png"):
@@ -614,7 +747,7 @@ def main():
             else:
                 picture.save(os.path.join(out, name + ".png"))
                 made += 1
-    pictures = [p for p in listed["pictures"] if not p["id"].startswith("options/")]
+    pictures = [p for p in listed["pictures"] if not p["id"].startswith(("options/", "layouts/"))]
     for name in DRAWINGS:
         two = name in SWITCHES
         if name in GROUPED:
@@ -642,6 +775,9 @@ def main():
                 "off": f"options/{name}-off" if two else f"options/{name}",
             }
         )
+    laid, drawn_in_layouts = layout_pictures(palettes)
+    pictures += laid
+    made += drawn_in_layouts
     listed["pictures"] = pictures
     with open(LIST, "w", encoding="utf-8") as f:
         json.dump(listed, f, indent="\t", ensure_ascii=False)

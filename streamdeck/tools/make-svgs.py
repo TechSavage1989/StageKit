@@ -13,6 +13,10 @@ streamdeck/svg/:
                            pack's key background, with the off look and the on
                            and off marks (tools/make-state-icons.py) as layers
                            to show or hide
+  keys/<palette>/layouts/<layout>-<name>.svg
+                           each type's drawing in the pack's two layouts (live,
+                           live + chat), over the pack's layout picture with its
+                           gamepad taken out (make-option-icons.py)
   marks/on.svg, off.svg    the two marks by themselves
 
 The pictures from the original icon pack came here as PNG only, so they have
@@ -105,15 +109,17 @@ def marks(size=144):
     return on, off
 
 
-def drawing(shapes, ink):
-    """A drawing of make-option-icons.py, as shapes, where it sits on the key."""
-    sx0, sy0, sx1, sy1 = OPTIONS.SCREEN
-    ox, oy = sx0 + ((sx1 - sx0) - 64) / 2, sy0 + ((sy1 - sy0) - 36) / 2
-    pen = int(2.6 * OPTIONS.SCALE) / OPTIONS.SCALE
+def drawing(shapes, ink, box=None, size=1.0):
+    """A drawing of make-option-icons.py, as shapes, where it sits on the key
+    (or in a layout's panel, `box`, at `size`)."""
+    sx0, sy0, sx1, sy1 = box or OPTIONS.SCREEN
+    k = size
+    ox, oy = sx0 + ((sx1 - sx0) - 64 * k) / 2, sy0 + ((sy1 - sy0) - 36 * k) / 2
+    pen = int(2.6 * OPTIONS.SCALE * k) / OPTIONS.SCALE
     d = SvgDraw()
 
     def at(x, y):
-        return (ox + x, oy + y)
+        return (ox + x * k, oy + y * k)
 
     for shape in shapes:
         kind = shape[0]
@@ -135,7 +141,7 @@ def drawing(shapes, ink):
         elif kind == "tri":
             d.polygon([at(shape[1], shape[2]), at(shape[3], shape[4]), at(shape[5], shape[6])], fill=ink)
         elif kind == "text":
-            d.text(((sx0 + sx1) / 2, (sy0 + sy1) / 2), shape[1], fill=ink, size=22)
+            d.text(((sx0 + sx1) / 2, (sy0 + sy1) / 2), shape[1], fill=ink, size=22 * k)
     return d.body()
 
 
@@ -174,13 +180,45 @@ def key_pictures():
     return made
 
 
+def embedded(image):
+    buf = io.BytesIO()
+    image.save(buf, format="PNG", optimize=True)
+    href = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+    return f'<image width="{OPTIONS.SIZE}" height="{OPTIONS.SIZE}" xlink:href="{href}" href="{href}"/>'
+
+
+def layout_pictures():
+    """Each drawing in the two layouts (make-option-icons.py's layout_pictures):
+    keys/<palette>/layouts/<layout>-<name>.svg, the pack's layout with its
+    gamepad taken out as the background and the drawing in its panel."""
+    listed = json.load(open(OPTIONS.LIST, encoding="utf-8"))
+    names = OPTIONS.layout_drawings()
+    on_mark, off_mark = marks()
+    made = 0
+    for palette in listed["colours"]:
+        for layout in OPTIONS.LAYOUTS:
+            frame, ink = OPTIONS.layout_frame(palette, layout)
+            background = embedded(frame)
+            for name in names:
+                svg = HEAD.format(w=OPTIONS.SIZE, h=OPTIONS.SIZE, vw=OPTIONS.SIZE, vh=OPTIONS.SIZE)
+                svg += layer("Background (the pack's layout, its gamepad taken out)", background)
+                svg += layer("Drawing", drawing(OPTIONS.DRAWINGS[name], ink, OPTIONS.PANEL[layout], OPTIONS.LAYOUT_SIZE))
+                svg += layer("Mark: on (green dot)", on_mark, False)
+                svg += layer("Mark: off (red no sign)", off_mark, False)
+                svg += "</svg>\n"
+                write(os.path.join(OUT, "keys", palette, "layouts", f"{layout}-{name}.svg"), svg)
+                made += 1
+    return made
+
+
 def main():
     if os.path.isdir(OUT):
         for sub in ("action-icons", "keys", "marks"):
             shutil.rmtree(os.path.join(OUT, sub), ignore_errors=True)
     a = action_icons()
     k = key_pictures()
-    print(f"{a} action icons and {k} key pictures written as SVG")
+    l_ = layout_pictures()
+    print(f"{a} action icons, {k} key pictures and {l_} layout pictures written as SVG")
 
 
 if __name__ == "__main__":
