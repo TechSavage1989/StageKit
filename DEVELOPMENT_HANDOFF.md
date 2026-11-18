@@ -13,9 +13,9 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
-## The Scene Mode key's page: a mode, then its settings (0.1.0-betaNEXT, plugin 0.28.0.0)
+## The Scene Mode key's page: a mode, then its settings (0.1.0-beta181, plugin 0.28.0.0)
 
-Branch `feat/sd-mode-key-page`, on `main` after beta179. Notes: `docs/releases/0.1.0-betaNEXT.md`.
+Branch `feat/sd-mode-key-page`, on `main` after beta179. Notes: `docs/releases/0.1.0-beta181.md`.
 Stream Deck only; nothing in the OBS plugin changed (it was not built here). The owner
 (2026-11-18): "the scene modes key is very long in the configuration when the different modes are
 stacked. allow the mode to configure to be selected from another selector under the scene modes
