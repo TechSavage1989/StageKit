@@ -2429,6 +2429,8 @@ static void capture_chain_test()
 // off does not keep its source hidden from a Link Visibility that shows it.
 // Run at the end of the follow-sources section, and alone with
 // STAGEKIT_TEST_ONLY_SWITCH_COMMAND.
+static void capture_hide_restores_test(); // (after the item Morph's helpers)
+
 static void switch_is_command_test()
 {
 	auto block = [](const std::string &name, long long abgr) {
@@ -3211,8 +3213,217 @@ static void link_follow_sources_test()
 	}
 
 	switch_is_command_test();
+	capture_hide_restores_test();
 	obs_set_output_source(0, before_out);
 	obs_source_release(before_out);
+}
+
+// The capture filters' "Hide or show the capture" without a Standby Image:
+// the show brings back only what the hide hid. The owner's DSLR had a
+// leftover Auto Capture; its key showed DSLR in every scene, over the modes
+// and the capture a Link Visibility had on. Run after the switch test, and
+// alone with STAGEKIT_TEST_ONLY_CAPTURE_HIDE.
+static void capture_hide_restores_test()
+{
+	printf("\n[capture hide: the show brings back only what the hide hid]\n");
+	auto block = [](const std::string &name, long long abgr) {
+		obs_data_t *d = obs_data_create();
+		obs_data_set_int(d, "color", abgr);
+		obs_data_set_int(d, "width", 160);
+		obs_data_set_int(d, "height", 90);
+		obs_source_t *src = obs_source_create("color_source", name.c_str(), d, nullptr);
+		obs_data_release(d);
+		return src;
+	};
+	auto set_list = [](obs_data_t *settings, const char *list, const std::vector<std::string> &names) {
+		obs_data_array_t *rows = obs_data_array_create();
+		for (const std::string &name : names) {
+			obs_data_t *row = obs_data_create();
+			obs_data_set_string(row, "value", name.c_str());
+			obs_data_array_push_back(rows, row);
+			obs_data_release(row);
+		}
+		obs_data_set_array(settings, list, rows);
+		obs_data_array_release(rows);
+	};
+	obs_source_t *before_out = obs_get_output_source(0);
+	obs_source_t *dslr = block("CH DSLR", 0xFFFFFFFF);
+	obs_source_t *window = block("CH Window Capture", 0xFF00FF00);
+	obs_source_t *text = block("CH Intermission Text", 0xFF0000FF);
+	// Live: DSLR shown. Chat Live: DSLR hidden on purpose, the window shown,
+	// a Link Visibility showing only one of the two. Standby: DSLR follows
+	// the intermission text (a mode).
+	obs_scene_t *live = obs_scene_create("CH Live");
+	obs_scene_t *chat = obs_scene_create("CH Chat Live");
+	obs_scene_t *standby = obs_scene_create("CH Standby");
+	obs_sceneitem_t *dl = obs_scene_add(live, dslr);
+	obs_sceneitem_t *dc = obs_scene_add(chat, dslr);
+	obs_sceneitem_t *wc = obs_scene_add(chat, window);
+	obs_sceneitem_t *ts = obs_scene_add(standby, text);
+	obs_sceneitem_t *ds = obs_scene_add(standby, dslr);
+	obs_sceneitem_set_visible(dc, false);
+	obs_set_output_source(0, obs_scene_get_source(live));
+	obs_data_t *od = obs_data_create();
+	set_list(od, "items", {"CH DSLR", "CH Window Capture"});
+	obs_data_set_int(od, "mode", 0); // only one
+	obs_data_set_string(od, "transition", "none");
+	obs_source_t *only = obs_source_create("stagekit_visibility_link", "CH Only One", od, nullptr);
+	obs_data_release(od);
+	obs_source_filter_add(obs_scene_get_source(chat), only);
+	obs_data_t *fd = obs_data_create();
+	set_list(fd, "leads", {"CH Intermission Text"});
+	set_list(fd, "items", {"CH DSLR"});
+	obs_data_set_int(fd, "mode", 2); // follow
+	obs_data_set_string(fd, "transition", "none");
+	obs_source_t *mode = obs_source_create("stagekit_visibility_link", "CH Mode", fd, nullptr);
+	obs_data_release(fd);
+	obs_source_filter_add(obs_scene_get_source(standby), mode);
+	sleep_ms(300);
+	auto state = [&] {
+		return std::string(obs_sceneitem_visible(dl) ? "1" : "0") + (obs_sceneitem_visible(dc) ? "1" : "0") +
+		       (obs_sceneitem_visible(wc) ? "1" : "0") + (obs_sceneitem_visible(ds) ? "1" : "0");
+	};
+	auto recorded = [](obs_source_t *f) {
+		obs_data_t *settings = obs_source_get_settings(f);
+		obs_data_array_t *rows = obs_data_get_array(settings, "hid_items");
+		const size_t n = rows ? obs_data_array_count(rows) : 0;
+		obs_data_array_release(rows);
+		obs_data_release(settings);
+		return (int)n;
+	};
+	auto said_hidden = [](const char *source, const char *filter) {
+		obs_data_t *data = obs_data_create();
+		obs_data_set_string(data, "sourceName", source);
+		obs_data_set_string(data, "filterName", filter);
+		calldata_t cd = {};
+		calldata_set_string(&cd, "request", "GetSwitcherState");
+		calldata_set_string(&cd, "data", obs_data_get_json(data));
+		proc_handler_call(obs_get_proc_handler(), "stagekit_vendor_call", &cd);
+		const char *json = calldata_string(&cd, "response");
+		obs_data_t *answer = obs_data_create_from_json(json && *json ? json : "{}");
+		const bool hidden = obs_data_get_bool(answer, "hidden");
+		obs_data_release(answer);
+		calldata_free(&cd);
+		obs_data_release(data);
+		return hidden;
+	};
+	const std::string start = state();
+
+	// An Auto Capture on DSLR, with no Standby Image.
+	auto make_auto = [&](obs_data_t *from) {
+		obs_source_t *ac = obs_source_create("stagekit_auto_capture", "CH Auto Capture", from, nullptr);
+		obs_source_filter_add(dslr, ac);
+		calldata_t cd = {};
+		calldata_set_string(&cd, "windows", "");
+		proc_handler_call(obs_source_get_proc_handler(ac), "set_test_windows", &cd);
+		calldata_free(&cd);
+		return ac;
+	};
+	obs_source_t *ac = make_auto(nullptr);
+	auto press = [](obs_source_t *f) {
+		proc_handler_call(obs_source_get_proc_handler(f), "hide", nullptr);
+		sleep_ms(500);
+	};
+	sleep_ms(300);
+	press(ac);
+	const std::string hid = state();
+	const int hid_n = recorded(ac);
+	const bool hid_said = said_hidden("CH DSLR", "CH Auto Capture");
+	// Meanwhile the intermission ends: the mode hides DSLR in Standby.
+	obs_sceneitem_set_visible(ts, false);
+	sleep_ms(300);
+	press(ac);
+	const std::string back = state();
+	const bool back_said = said_hidden("CH DSLR", "CH Auto Capture");
+	CHECK(start == "1011" && hid == "0010" && hid_n == 2 && hid_said,
+	      "Auto Capture's hide hides DSLR where it was shown and writes down the two places (%s, then %s, %d written down, %s)",
+	      start.c_str(), hid.c_str(), hid_n, hid_said ? "reads hidden" : "reads shown");
+	CHECK(back == "1010" && recorded(ac) == 0 && !back_said,
+	      "the show brings DSLR back in Live only: not in Chat Live, where it was hidden on purpose and the window capture stays shown, nor in Standby, whose mode holds it hidden (%s, %s)",
+	      back.c_str(), back_said ? "reads hidden" : "reads shown");
+
+	// With nothing written down, a show does nothing.
+	obs_sceneitem_set_visible(dl, false);
+	sleep_ms(200);
+	press(ac);
+	const std::string nothing = state();
+	CHECK(nothing == "0010" && recorded(ac) == 0,
+	      "with DSLR shown nowhere and nothing written down, a press shows nothing (%s)", nothing.c_str());
+	obs_sceneitem_set_visible(dl, true);
+	sleep_ms(200);
+
+	// The record is kept in the filter's settings: a filter made again from
+	// them (as after a restart) shows only what was hidden.
+	press(ac);
+	obs_data_t *kept = obs_source_get_settings(ac);
+	obs_source_filter_remove(dslr, ac);
+	obs_source_release(ac);
+	obs_data_t *copy = obs_data_create_from_json(obs_data_get_json(kept));
+	obs_data_release(kept);
+	ac = make_auto(copy);
+	obs_data_release(copy);
+	sleep_ms(300);
+	const std::string reloaded_hid = state();
+	const bool reloaded_said = said_hidden("CH DSLR", "CH Auto Capture");
+	press(ac);
+	CHECK(reloaded_hid == "0010" && reloaded_said && state() == "1010",
+	      "made again from its settings, it still reads hidden and the show brings back Live only (%s, %s, then %s)",
+	      reloaded_hid.c_str(), reloaded_said ? "reads hidden" : "reads shown", state().c_str());
+	obs_source_filter_remove(dslr, ac);
+	obs_source_release(ac);
+
+	// The same with an Automatic Window Switcher on the capture.
+	obs_data_t *sd = obs_data_create();
+	obs_data_set_string(sd, "transition", "none");
+	obs_source_t *sw = obs_source_create("stagekit_app_capture", "CH Switcher", sd, nullptr);
+	obs_data_release(sd);
+	obs_source_filter_add(dslr, sw);
+	{
+		calldata_t cd = {};
+		calldata_set_string(&cd, "windows", "");
+		proc_handler_call(obs_source_get_proc_handler(sw), "set_test_windows", &cd);
+		calldata_free(&cd);
+	}
+	obs_sceneitem_set_visible(ts, true);
+	sleep_ms(300);
+	auto command = [&](const char *what) {
+		calldata_t cd = {};
+		calldata_set_string(&cd, "what", what);
+		proc_handler_call(obs_source_get_proc_handler(sw), "command", &cd);
+		calldata_free(&cd);
+		sleep_ms(500);
+	};
+	const std::string sw_start = state();
+	command("hide");
+	const std::string sw_hid = state();
+	const int sw_n = recorded(sw);
+	obs_sceneitem_set_visible(ts, false);
+	sleep_ms(300);
+	command("hide");
+	const std::string sw_back = state();
+	obs_sceneitem_set_visible(dl, false);
+	sleep_ms(200);
+	command("hide");
+	const std::string sw_nothing = state();
+	CHECK(sw_start == "1011" && sw_hid == "0010" && sw_n == 2 && sw_back == "1010" && recorded(sw) == 0 &&
+		      sw_nothing == "0010",
+	      "the window switcher's hide and show do the same: back in Live only, and nothing shown with nothing written down (%s, %s, %d, %s, %s)",
+	      sw_start.c_str(), sw_hid.c_str(), sw_n, sw_back.c_str(), sw_nothing.c_str());
+	obs_source_filter_remove(dslr, sw);
+	obs_source_release(sw);
+
+	obs_set_output_source(0, before_out);
+	obs_source_release(before_out);
+	obs_source_filter_remove(obs_scene_get_source(chat), only);
+	obs_source_release(only);
+	obs_source_filter_remove(obs_scene_get_source(standby), mode);
+	obs_source_release(mode);
+	sleep_ms(100);
+	obs_scene_release(live);
+	obs_scene_release(chat);
+	obs_scene_release(standby);
+	for (obs_source_t *s : {dslr, window, text})
+		obs_source_release(s);
 }
 
 // What the item Morph holds now: its entries (transitions of items) and the
@@ -5381,6 +5592,14 @@ int main(int argc, char **argv)
 
 	if (getenv("STAGEKIT_TEST_ONLY_CAPTURE_CHAIN")) { // to try that section alone
 		capture_chain_test();
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
+
+	if (getenv("STAGEKIT_TEST_ONLY_CAPTURE_HIDE")) { // to try that section alone
+		capture_hide_restores_test();
 		obs_shutdown();
 		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
 		       g_failures == 1 ? "" : "s");

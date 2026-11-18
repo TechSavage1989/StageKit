@@ -52,10 +52,10 @@ void cut_item_transitions(obs_sceneitem_t *item);
 // item keeps its transitions for the next change made in view. Items whose
 // transitions are another filter's (`item_transitions_owner`) are passed over
 // here too: they are shown and hidden as OBS does it.
-// Link Visibility and Show in Scenes go through this, after
-// `set_item_transitions` or `apply_item_change`. Program Trigger, the two
-// switchers, Auto Capture's hide, Show/Hide Animation and Standby's stand-ins
-// do not yet. A group's inner items, whose transitions OBS starts when the
+// Link Visibility, Show in Scenes and the capture filters' hide
+// (`hid_items_press`) go through this, after `set_item_transitions` or
+// `apply_item_change`. Program Trigger, the two switchers' following,
+// Show/Hide Animation and Standby's stand-ins do not yet. A group's inner items, whose transitions OBS starts when the
 // group itself is shown or hidden, are not stopped.
 bool set_item_visible(obs_sceneitem_t *item, bool visible);
 
