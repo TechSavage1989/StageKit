@@ -24,6 +24,9 @@ the Free Software Foundation; either version 2 of the License, or
 //   mode|<id>|type      string          what it shows, for a Stream Deck key's image
 //   mode|<id>|go_to     string          a scene to change to on a key's press, "" to stay
 //   mode|<id>|sources   array {value}   its sources, by name
+//   mode|<id>|hide      array {value}   other sources hidden when it comes on (never shown again by it)
+//   mode|<id>|leave_on  array {value}   sources that, shown while it is on, make it leave
+//   mode|<id>|leave_to  string          where it leaves to: "" the mode before, "none" no mode, or an id
 //   mode_now            string          the id of the mode on now (written by the filter)
 //   mode_before         string          the one before, for Toggle (written by the filter)
 //   allow_none, share_scenes, lock_hidden, and the fuller Show/Hide transition.
@@ -132,9 +135,16 @@ bool has(const std::vector<std::string> &list, const char *name)
 	return name && std::find(list.begin(), list.end(), name) != list.end();
 }
 
+// "Leave to": the mode before (as it comes), no mode, or a mode's id. Ids
+// always start with "m", so "none" is never one.
+const char kLeaveNone[] = "none";
+
 struct Mode {
 	std::string id, name, type, go_to;
 	std::vector<std::string> sources;
+	std::vector<std::string> hide;     // hidden when this mode comes on; not members
+	std::vector<std::string> leave_on; // shown while this mode is on: leave it
+	std::string leave_to;              // "" the mode before, kLeaveNone, or an id
 };
 
 std::vector<Mode> read_modes(obs_data_t *settings)
@@ -149,6 +159,9 @@ std::vector<Mode> read_modes(obs_data_t *settings)
 		mode.type = obs_data_get_string(settings, key(id, "type").c_str());
 		mode.go_to = obs_data_get_string(settings, key(id, "go_to").c_str());
 		mode.sources = pick_list_read(settings, key(id, "sources").c_str(), false);
+		mode.hide = pick_list_read(settings, key(id, "hide").c_str(), false);
+		mode.leave_on = pick_list_read(settings, key(id, "leave_on").c_str(), false);
+		mode.leave_to = obs_data_get_string(settings, key(id, "leave_to").c_str());
 		modes.push_back(std::move(mode));
 	}
 	return modes;
@@ -254,11 +267,14 @@ bool held_elsewhere(obs_source_t *scene, obs_sceneitem_t *item, const void *self
 	return false;
 }
 
-enum class How { On, Toggle, Next, None, Window };
+enum class How { On, Toggle, Next, None, Window, Leave };
 
 struct Press {
 	std::string mode; // an id
 	How how = How::On;
+	// Leave: the mode that was on when the source was shown, and that
+	// source, which the change never hides again.
+	std::string from, spare;
 };
 
 // An item shown or hidden by something else, in a scene the filter covers.
@@ -584,6 +600,7 @@ private:
 		obs_sceneitem_t *item;
 		obs_source_t *scene;
 		bool show;
+		bool extra = false; // from "Hide when on": not a member, never locked
 	};
 
 	void apply(std::vector<Work> &work, const Snap &s, bool cut)
@@ -602,7 +619,7 @@ private:
 			// The way the next change is made, after a change made as a cut.
 			if (cut)
 				apply_item_change(w.item, s.change, w.scene);
-			if (s.lock_hidden)
+			if (s.lock_hidden && !w.extra)
 				lock_as_shown(w.item);
 		}
 		applying_ = std::thread::id();
@@ -612,18 +629,38 @@ private:
 	}
 
 	// What changing from mode `from` to mode `to` shows and hides, in every
-	// scene covered.
+	// scene covered. The new mode's "Hide when on" sources are hidden with
+	// its own hides. `spare` (the source that made a mode leave) is never
+	// hidden by this change; `spared` says it would have been.
 	std::vector<Work> plan(const Snap &s, const std::string &from, const std::string &to,
-			       std::vector<obs_source_t *> &scenes)
+			       std::vector<obs_source_t *> &scenes, const std::string &spare = std::string(),
+			       bool *spared = nullptr)
 	{
 		const Mode *was = find_mode(s.modes, from);
 		const Mode *now = find_mode(s.modes, to);
 		std::vector<Work> work;
 		for (obs_source_t *scene : scenes)
 			each_item(scene, [&](obs_sceneitem_t *item, const char *name) {
-				if (!member(s.modes, name))
-					return;
 				const bool in_now = now && has(now->sources, name);
+				if (!member(s.modes, name)) {
+					// "Hide when on": hidden now, never shown again by
+					// this filter. A mode's own sources win over it.
+					if (!now || in_now || !has(now->hide, name) || !obs_sceneitem_visible(item))
+						return;
+					if (!spare.empty() && spare == name) {
+						if (spared)
+							*spared = true;
+						return;
+					}
+					obs_sceneitem_addref(item);
+					work.push_back({item, scene, false, true});
+					return;
+				}
+				if (!in_now && !spare.empty() && spare == name && obs_sceneitem_visible(item)) {
+					if (spared)
+						*spared = true;
+					return;
+				}
 				// In both: not touched (a camera switched off stays off).
 				if (in_now && was && has(was->sources, name))
 					return;
@@ -679,12 +716,54 @@ private:
 				return;
 			}
 			break;
+		case How::Leave: {
+			// "Leave when shown": only while the mode that saw it is on.
+			by_key = false;
+			const Mode *was = find_mode(s.modes, s.current);
+			if (press.from.empty() || press.from != s.current || !was ||
+			    !has(was->leave_on, press.spare.c_str()))
+				return;
+			const char *refused = nullptr;
+			if (was->leave_to == kLeaveNone) {
+				if (s.allow_none)
+					to.clear();
+				else
+					refused = "no mode is not allowed";
+			} else if (was->leave_to.empty()) {
+				if (find_mode(s.modes, s.previous) && s.previous != s.current)
+					to = s.previous;
+				else if (s.allow_none)
+					to.clear();
+				else
+					refused = "there is no mode before it";
+			} else if (find_mode(s.modes, was->leave_to) && was->leave_to != s.current) {
+				to = was->leave_to;
+			} else {
+				refused = "the mode to go to is not there";
+			}
+			if (refused) {
+				obs_log(LOG_INFO, "Scene Modes '%s': '%s' shown, but mode '%s' stays on: %s",
+					obs_source_get_name(source_), press.spare.c_str(), was->name.c_str(), refused);
+				return;
+			}
+			const Mode *next = find_mode(s.modes, to);
+			obs_log(LOG_INFO, "Scene Modes '%s': '%s' shown, so mode '%s' leaves for '%s'",
+				obs_source_get_name(source_), press.spare.c_str(), was->name.c_str(),
+				next ? next->name.c_str() : "(none)");
+			break;
+		}
 		}
 		if (!to.empty() && !find_mode(s.modes, to))
 			return;
 		if (to != s.current) {
 			std::vector<obs_source_t *> scenes = covered(s.share);
-			std::vector<Work> work = plan(s, s.current, to, scenes);
+			const std::string spare = press.how == How::Leave ? press.spare : std::string();
+			bool spared = false;
+			std::vector<Work> work = plan(s, s.current, to, scenes, spare, &spared);
+			if (spared)
+				obs_log(LOG_INFO,
+					"Scene Modes '%s': '%s' left shown: it made the mode change, so it is not hidden again by it",
+					obs_source_get_name(source_), spare.c_str());
 			const size_t count = work.size();
 			apply(work, s, false);
 			release_all(scenes);
@@ -883,10 +962,21 @@ private:
 		const char *scene_name = scene ? obs_source_get_name(obs_scene_get_source(scene)) : nullptr;
 		if (!name || !scene_name)
 			return;
+		const bool visible = calldata_bool(cd, "visible");
 		std::lock_guard lock(self->mutex_);
+		// "Leave when shown": acted on in the tick, like a press. While OBS
+		// loads, an eye restored is not a source being shown.
+		const Mode *now = find_mode(self->modes_, self->current_);
+		if (visible && now && has(now->leave_on, name) && scenes_loaded()) {
+			Press press;
+			press.how = How::Leave;
+			press.from = now->id;
+			press.spare = name;
+			self->presses_.push_back(std::move(press));
+			return; // the change leaves it shown; it is not put back
+		}
 		if (member(self->modes_, name))
-			self->pending_.push_back(
-				{scene_name, obs_sceneitem_get_id(item), calldata_bool(cd, "visible")});
+			self->pending_.push_back({scene_name, obs_sceneitem_get_id(item), visible});
 	}
 
 	// ---- hotkeys: one per mode, "next", and "no mode" while allowed. On
@@ -1050,7 +1140,8 @@ void on_source_rename(void *, calldata_t *cd)
 		bool changed = false;
 		std::vector<std::string> lists;
 		for (const std::string &id : pick_list_read(settings, "modes", false))
-			lists.push_back(key(id, "sources"));
+			for (const char *part : {"sources", "hide", "leave_on"})
+				lists.push_back(key(id, part));
 		lists.push_back("share_scenes");
 		for (const std::string &list : lists) {
 			std::vector<std::string> names = pick_list_read(settings, list.c_str(), false);
@@ -1113,6 +1204,17 @@ void fill_mode_now(obs_property_t *list, obs_data_t *settings)
 }
 
 void add_modes_and_rest(obs_properties_t *props, obs_source_t *owner, obs_data_t *settings);
+
+// "Leave to": the mode before, no mode, and every other mode by name.
+void fill_leave_to(obs_property_t *list, obs_data_t *settings, const std::string &own)
+{
+	obs_property_list_clear(list);
+	obs_property_list_add_string(list, obs_module_text("Modes.LeaveTo.Before"), "");
+	obs_property_list_add_string(list, obs_module_text("Modes.LeaveTo.None"), kLeaveNone);
+	for (const Mode &mode : read_modes(settings))
+		if (mode.id != own)
+			obs_property_list_add_string(list, mode.name.c_str(), mode.id.c_str());
+}
 
 // Takes off everything after the template button, and adds it again: the
 // modes' groups, then the controls under them.
@@ -1230,8 +1332,12 @@ bool remove_cb(obs_properties_t *props, obs_property_t *property, void *data)
 	std::vector<std::string> ids = pick_list_read(settings, "modes", false);
 	ids.erase(std::remove(ids.begin(), ids.end(), id), ids.end());
 	pick_list_write(settings, "modes", false, ids);
-	for (const char *part : {"name", "type", "go_to", "sources"})
+	for (const char *part : {"name", "type", "go_to", "sources", "hide", "leave_on", "leave_to"})
 		obs_data_erase(settings, key(id, part).c_str());
+	// A mode that left to it goes to the mode before instead.
+	for (const std::string &other : ids)
+		if (id == obs_data_get_string(settings, key(other, "leave_to").c_str()))
+			obs_data_set_string(settings, key(other, "leave_to").c_str(), "");
 	// Its sources are left as they are, no longer looked after.
 	if (id == obs_data_get_string(settings, "mode_now"))
 		obs_data_set_string(settings, "mode_now", "");
@@ -1257,6 +1363,9 @@ bool renamed_cb(void *priv, obs_properties_t *props, obs_property_t *property, o
 		obs_property_set_description(group, group_title(name).c_str());
 	if (obs_property_t *now = obs_properties_get(props, "mode_now"))
 		fill_mode_now(now, settings);
+	for (const Mode &mode : read_modes(settings))
+		if (obs_property_t *to = obs_properties_get(props, key(mode.id, "leave_to").c_str()))
+			fill_leave_to(to, settings, mode.id);
 	return true;
 }
 
@@ -1311,6 +1420,34 @@ void add_modes_and_rest(obs_properties_t *props, obs_source_t *owner, obs_data_t
 			scene_item_names(parent, names);
 		};
 		pick_list_add(content, owner, sources);
+
+		const std::string hide_setting = key(mode.id, "hide");
+		PickList hide;
+		hide.setting = hide_setting.c_str();
+		hide.title = "Modes.Hide";
+		hide.add = "Modes.Sources.Add";
+		hide.tip = "Modes.Hide.Tip";
+		hide.choices = [parent](std::vector<std::string> &names) {
+			scene_item_names(parent, names);
+		};
+		pick_list_add(content, owner, hide);
+
+		const std::string leave_setting = key(mode.id, "leave_on");
+		PickList leave;
+		leave.setting = leave_setting.c_str();
+		leave.title = "Modes.LeaveOn";
+		leave.add = "Modes.Sources.Add";
+		leave.tip = "Modes.LeaveOn.Tip";
+		leave.choices = [parent](std::vector<std::string> &names) {
+			scene_item_names(parent, names);
+		};
+		pick_list_add(content, owner, leave);
+
+		obs_property_t *leave_to = obs_properties_add_list(content, key(mode.id, "leave_to").c_str(),
+								   obs_module_text("Modes.LeaveTo"),
+								   OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
+		fill_leave_to(leave_to, settings, mode.id);
+		obs_property_set_long_description(leave_to, obs_module_text("Modes.LeaveTo.Tip"));
 
 		if (i > 0)
 			obs_properties_add_button2(content, key(mode.id, "up").c_str(), obs_module_text("Modes.MoveUp"),

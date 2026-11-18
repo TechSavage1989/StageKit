@@ -1257,6 +1257,13 @@ back stays up), and a source in no mode is never touched.
     the scene on screen is this filter's own scene or one under *Same modes in scenes*.
   - **Sources**: the sources shown while this mode is on. Sources inside groups, and groups, can be
     chosen.
+  - **Hide when on**: other sources hidden in this scene when this mode comes on, with the mode's
+    transition. They are not part of the mode: when another mode comes on they are not shown again,
+    and nothing else is done to them.
+  - **Leave when shown** and **Leave to**: while this mode is on, showing one of these sources (a
+    Show in Scenes key, a Link Visibility, the eye) turns the mode under *Leave to* on: *The mode
+    before* (as it comes), *No mode* (only with *Allow no mode*) or another mode. The source that
+    was shown stays shown, even when the next mode's *Hide when on* lists it (the log says so).
   - **Move up** and **Remove mode**. The order is the order of *next*. A mode removed leaves its
     sources as they are.
 - **Mode now**: the mode that is on. Choosing another here turns it on, but never changes scene.
@@ -1278,6 +1285,15 @@ command, not a lock. When a scene
 has two Scene Modes filters, a source in both shows only while both have it on. In a scene that is
 not on screen a change is a cut, so a hidden capture card is never opened for a moment when the scene
 comes on.
+
+**Two columns without marker sources.** A layout scene with a *Chat* mode (chat box, a small
+camera) and a *GBA* mode (two handheld windows, a camera beside them), and a full-screen camera
+(*DSLR*) that must never cover the GBA column: in the GBA mode set *Hide when on*: DSLR, *Leave when
+shown*: DSLR and *Leave to*: Chat. GBA coming on hides DSLR; DSLR shown while GBA is on brings Chat
+back, and DSLR stays shown. If you had kept the two apart with a Link Visibility (*Show only one*
+between DSLR and a transparent *Column: GBA* marker), remove that Link Visibility, take *Column:
+Chat* and *Column: GBA* out of the modes and out of the following sources of any other Link
+Visibility (*Link Visibility-CaptureChat*, say), then delete the two marker sources.
 
 **Keys:** the scene gets a hotkey for each mode (*StageKit: <filter>: <mode>*), one for the next mode,
 and one for no mode while that is allowed. The Stream Deck *Scene Mode* key, and anything else that

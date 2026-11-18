@@ -1877,6 +1877,26 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   followed by `a`/`t` and a part (`list`, `pick`, `none`, `row|n`), not the first bar. The tests
   reach the vendor requests through the `stagekit_vendor_call` and `stagekit_vendor_events` procs
   (`vendor_api_add_test_calls`); obs-websocket is not there.
+  **Hide when on and Leave when shown** (beta177; the owner's two transparent markers *Column:
+  Chat* and *Column: GBA* existed only for a Link Visibility *Show only one* between the
+  full-screen DSLR and the GBA column; offered a per-mode rule: "option 2 please", then "showing
+  DSLR switch back to the Chat mode"). `mode|<id>|hide` (a PickList): when the mode comes on (any
+  press, and only on a change of mode, never at the look after loading), these sources are hidden
+  in the covered scenes in `plan`, with the mode's own hides (`Work::extra`: through
+  `apply_item_change` + `set_item_visible`, never locked by *Lock hidden sources*). They are not
+  members: never shown again, never put back, nothing else. A mode's own sources win over its
+  hide list. `mode|<id>|leave_on` (a PickList) and `mode|<id>|leave_to` ("" the mode before, as it
+  comes; `none` (`kLeaveNone`), only with `allow_none`; or a mode id): `visible_cb` (not while
+  loading, never for the filter's own changes, `applying_`) queues a `How::Leave` press carrying
+  the mode on (`from`) and the source (`spare`) when a source of the current mode's `leave_on` is
+  shown, and does not queue it for `put_back`. `act` drops it unless `from` is still the mode on;
+  the change never hides `spare` (not by the new mode's hide list, not as a member of a mode not
+  on) and logs that it was spared. A leave changes no scene. Both lists follow a rename; *Remove
+  mode* points a `leave_to` naming it back at the mode before. Tested in `[scene modes: hide when
+  on, leave when shown]` (`modes_hide_test`, at the end of the Scene Modes section; alone with
+  `STAGEKIT_TEST_ONLY_MODES_HIDE`): on and off screen, a Link Visibility before and after, by
+  hand, the loop case, a filter saved without the keys, the window (rebuild, rename, *The mode
+  before*).
 <!-- ==== end scene-filters:modes ==== -->
 <!-- ==== scene-filters:transitions ==== -->
 - **Scene Transitions** (`src/placement/scene-transitions.*`, `stagekit_scene_transitions`; the owner

@@ -13,6 +13,28 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
+## Scene Modes: Hide when on, Leave when shown (0.1.0-beta177)
+
+Branch `feat/scene-modes-hide`, from `main` at beta175. Notes: `docs/releases/0.1.0-beta177.md`. No
+Stream Deck file changed. The owner's Component-Capture-Scene has Scene Modes *Chat* and *GBA* and
+two transparent markers, *Column: Chat* and *Column: GBA*, kept only for Link Visibility-GBA (*Show
+only one* between the full-screen DSLR and Column: GBA). Asked to get rid of them and offered a
+per-mode rule: "option 2 please"; then "showing DSLR switch back to the Chat mode".
+
+- **Hide when on** (`mode|<id>|hide`, a PickList per mode): hidden when the mode comes on, in the
+  same tick and with the mode's transition (`plan`, `Work::extra`). Not members: never shown again.
+- **Leave when shown** (`mode|<id>|leave_on`) and **Leave to** (`mode|<id>|leave_to`: "" the mode
+  before, as it comes; `none`; a mode id): a source of the mode on shown by anything turns
+  `leave_to` on, queued from `visible_cb` as `How::Leave`, acted on in the tick only while that
+  mode is still on. The source that triggered it is never hidden by that change (logged).
+- Both lists are in each mode's group, follow renames, survive `rebuild`.
+- The owner's recipe (README, release notes): GBA mode, *Hide when on*: DSLR; *Leave when shown*:
+  DSLR; *Leave to*: Chat; then remove Link Visibility-GBA, take the two Column markers out of the
+  modes and out of Link Visibility-CaptureChat's following sources, and delete them.
+- Tests: `[scene modes: hide when on, leave when shown]` and the two after it (`modes_hide_test`,
+  alone: `STAGEKIT_TEST_ONLY_MODES_HIDE`).
+- **Not proven:** Windows; the owner's collection (the merge scripts still write the markers).
+
 ## Scene Shadow from each source, Scene Corners on the whole scene (0.1.0-beta176)
 
 Branch `feat/scene-shadow-corners`, on `main` after beta168 (#184). Notes: `docs/releases/0.1.0-beta176.md`.
