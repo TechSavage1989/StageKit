@@ -1,6 +1,6 @@
 {
 	"Name": "StageKit",
-	"Version": "0.24.0.0",
+	"Version": "0.25.0.0",
 	"Author": "StageKit contributors",
 	"Actions": [
 		{
@@ -570,7 +570,7 @@
 			"Name": "Scene Mode",
 			"UUID": "com.techsavage1989.stagekit.mode",
 			"Icon": "imgs/actions/mode/icon",
-			"Tooltip": "Turns on one mode of a scene's Scene Modes: its sources show, the other modes' sources hide. Lit while that mode is on.",
+			"Tooltip": "Works one scene's Scene Modes: switches a mode on, off, toggles it or goes to the next mode. Shows the mode that is on.",
 			"PropertyInspectorPath": "ui/mode.html",
 			"Controllers": [
 				"Keypad"

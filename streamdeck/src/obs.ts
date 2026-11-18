@@ -395,9 +395,10 @@ class ObsLink extends EventEmitter {
 		};
 	}
 
-	/** Turns a mode on ("on") or toggles it ("toggle"); says whether OBS took it. */
-	async setSceneMode(scene: string, filter: string, mode: string, how: "on" | "toggle"): Promise<boolean> {
-		return (await this.stageKit("SetSceneMode", { scene, filter, mode, how })) !== undefined;
+	/** Turns a mode on ("on"), toggles it ("toggle"), steps to the next ("next") or turns every mode off ("none"); says whether OBS took it. */
+	async setSceneMode(scene: string, filter: string, mode: string, how: "on" | "toggle" | "next" | "none"): Promise<boolean> {
+		// (Next and none need no mode.)
+		return (await this.stageKit("SetSceneMode", how === "next" || how === "none" ? { scene, filter, how } : { scene, filter, mode, how })) !== undefined;
 	}
 
 	/**

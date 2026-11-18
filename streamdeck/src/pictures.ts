@@ -304,6 +304,33 @@ export function modePicture(chosen: string | undefined, sourceType: unknown, mod
 	);
 }
 
+/**
+ * A Scene Mode key's image: `on` is the mode it shows (src/modes.ts
+ * `shownMode`: the mode that is on, or a Switch on key's own mode) (its id, its Mode type in OBS and its name), or
+ * undefined for none. Its picture: the one chosen for that mode on the key
+ * (`perMode`, by id); for the key's own mode (`own`), the key's Mode type
+ * and then an image kept from before the type lists; then the mode's own type,
+ * the type its name speaks of, the plain mode key, as `modePicture`. With no
+ * mode on, the plain mode key. Returns the picture and the look to lay it out
+ * with: the mode's own Layout where one is chosen, else the key's.
+ */
+export function followedModePicture(
+	settings: { sourceType?: unknown; layout?: unknown; palette?: unknown; perMode?: unknown },
+	own: string,
+	kept: string | undefined,
+	on: { id: string; type?: string; name?: string } | undefined,
+): { picture: Picture; look: LayoutSettings & { palette?: string } } {
+	const palette = typeof settings.palette === "string" ? settings.palette : undefined;
+	if (!on || !on.id) return { picture: modePicture(undefined, undefined), look: { palette, layout: settings.layout } };
+	const all = settings.perMode && typeof settings.perMode === "object" ? (settings.perMode as Record<string, { type?: unknown; layout?: unknown }>) : {};
+	const mine = all[on.id] ?? {};
+	const isOwn = on.id === own;
+	const type = explicit(mine.type) ?? (isOwn ? explicit(settings.sourceType) : undefined);
+	const picture = modePicture(isOwn ? kept : undefined, type, on.type, on.name);
+	const layout = explicit(mine.layout) ?? settings.layout;
+	return { picture, look: { palette, layout, sourceType: type } };
+}
+
 /** A Fit to Space Overlap key's picture: a window with a camera over its corner. */
 export function overlapPicture(chosen: string | undefined, sceneType?: unknown): Picture {
 	return BY_ID.get(sceneTypePicture(explicit(sceneType)) ?? "") || (chosen && BY_ID.get(chosen)) || BY_ID.get("options/overlap") || plain("switch");

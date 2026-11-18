@@ -17,14 +17,34 @@
 	</head>
 
 	<body>
-		<sdpi-item label="Mode">
-			<sdpi-select setting="target" datasource="getModes" placeholder="Choose a mode" show-refresh></sdpi-select>
+		<sdpi-item label="Scene Modes" title="The Scene Modes filter this key works with, by its scene (and its name where a scene has two).">
+			<sdpi-select id="modeFilter" setting="modeFilter" datasource="getModeFilters" placeholder="Choose a Scene Modes" show-refresh></sdpi-select>
 		</sdpi-item>
-		<sdpi-item label="On press">
+		<sdpi-item label="On press" title="Switch on: its mode. Switch off: no mode (the filter must allow no mode). Toggle: its mode, or back to the mode before. Next mode: the next of the modes used, in the filter&#x27;s order, round again after the last.">
 			<sdpi-select setting="press" default="on">
 				<option value="on">Switch on</option>
+				<option value="off">Switch off</option>
 				<option value="toggle">Toggle</option>
+				<option value="next">Next mode</option>
 			</sdpi-select>
+		</sdpi-item>
+		<sdpi-item label="Mode" title="The mode Switch on and Toggle act on.">
+			<sdpi-select id="mode" setting="mode" datasource="getFilterModes" placeholder="Choose a mode" show-refresh></sdpi-select>
+		</sdpi-item>
+		<sdpi-item label="Long press" title="What holding the key does. Nothing (as it comes): the key acts the moment it is pressed. Set, a press acts when the key is let go, and holding it for the hold time does this instead.">
+			<sdpi-select setting="longPress" default="none">
+				<option value="none">Nothing</option>
+				<option value="on">Switch on</option>
+				<option value="off">Switch off</option>
+				<option value="toggle">Toggle</option>
+				<option value="next">Next mode</option>
+			</sdpi-select>
+		</sdpi-item>
+		<sdpi-item label="Long press mode" title="The mode a long press&#x27;s Switch on or Toggle acts on. Unset: the Mode above.">
+			<sdpi-select id="longMode" setting="longMode" datasource="getFilterModes" placeholder="As the Mode above" show-refresh></sdpi-select>
+		</sdpi-item>
+		<sdpi-item label="Hold time (ms)" title="How long the key must be held for its long press: 300 to 5000 ms, 800 as it comes.">
+			<sdpi-textfield setting="holdMs" placeholder="800" pattern="[0-9]*"></sdpi-textfield>
 		</sdpi-item>
 		<sdpi-item label="Layout" title="How the key&#x27;s image is laid out: the type alone, in the live layout with a camera in its corner, or in the live layout with a camera and chat column. Automatic keeps the image as it is.">
 			<sdpi-select setting="layout" placeholder="Automatic">
@@ -34,8 +54,172 @@
 				<option value="chat">Live + chat</option>
 			</sdpi-select>
 		</sdpi-item>
-		<sdpi-item label="Mode type" title="What the mode shows, for the key&#x27;s image. Automatic takes the Mode type set in OBS.">
+		<sdpi-item label="Mode type" title="What the key&#x27;s own mode (its Mode) shows, for the key&#x27;s image. Automatic takes the Mode type set in OBS. Each mode&#x27;s own image is under Settings for.">
 			<sdpi-select setting="sourceType" placeholder="Automatic (the mode&#x27;s type)">
+				<option value="auto">Automatic (the mode&#x27;s type)</option>
+				<optgroup label="Captures &amp; games">
+					<option value="game">Game</option>
+					<option value="retro">Retro game</option>
+					<option value="emulator">Emulator</option>
+					<option value="console">Console</option>
+					<option value="handheld">Handheld</option>
+					<option value="linked_handheld">Linked handheld screen</option>
+					<option value="capture_card">Capture card (internal)</option>
+					<option value="window">Window</option>
+					<option value="display">Display</option>
+					<option value="tablet">Tablet</option>
+				</optgroup>
+				<optgroup label="Apps">
+					<option value="art_app">Art app</option>
+					<option value="app_3d">3D app</option>
+					<option value="sculpting">Sculpting app</option>
+					<option value="cad">CAD app</option>
+					<option value="code_editor">Code editor</option>
+					<option value="office">Office / documents</option>
+					<option value="video_player">Video player</option>
+					<option value="reference">Reference board</option>
+				</optgroup>
+				<optgroup label="Cameras">
+					<option value="camera">Camera / webcam</option>
+				</optgroup>
+				<optgroup label="Overlays">
+					<option value="countdown">Countdown</option>
+				</optgroup>
+				<optgroup label="Status &amp; holding screens">
+					<option value="live">Live / on air</option>
+					<option value="recording">Recording</option>
+					<option value="paused">Paused</option>
+					<option value="muted">Muted</option>
+					<option value="offline">Offline</option>
+					<option value="privacy">Camera off</option>
+					<option value="raid">Raid / host</option>
+					<option value="starting">Starting soon</option>
+					<option value="brb">Be right back</option>
+					<option value="intermission">Intermission</option>
+					<option value="technical">Technical difficulties</option>
+					<option value="ending">Ending</option>
+				</optgroup>
+				<optgroup label="Layout markers">
+					<option value="column_chat">Chat column</option>
+					<option value="column_handheld">Handheld column</option>
+				</optgroup>
+				<optgroup label="Activities">
+					<option value="speedrun">Speedrun</option>
+					<option value="music_production">Music production</option>
+					<option value="cooking">Cooking</option>
+					<option value="irl">IRL / outdoors</option>
+					<option value="tutorial">Tutorial</option>
+					<option value="unboxing">Unboxing</option>
+					<option value="fitness">Fitness</option>
+					<option value="reading">Reading</option>
+					<option value="watch_party">Watch party</option>
+					<option value="charity">Charity</option>
+					<option value="just_chatting">Just chatting</option>
+					<option value="podcast">Podcast</option>
+					<option value="interview">Interview / guest</option>
+				</optgroup>
+				<optgroup label="More: Captures &amp; games">
+					<option value="linked_handheld_2">Second linked handheld screen</option>
+					<option value="capture_box">Capture card (external)</option>
+					<option value="hdmi_source">HDMI source</option>
+					<option value="browser">Browser</option>
+					<option value="second_display">Second display</option>
+					<option value="phone">Phone screen</option>
+				</optgroup>
+				<optgroup label="More: Cameras">
+					<option value="dslr">DSLR / mirrorless</option>
+					<option value="camcorder">Camcorder</option>
+					<option value="action_cam">Action camera</option>
+					<option value="ptz_camera">PTZ camera</option>
+					<option value="facecam">Facecam</option>
+					<option value="full_camera">Full-screen camera</option>
+					<option value="side_camera">Side camera</option>
+					<option value="phone_camera">Phone camera</option>
+					<option value="workspace_camera">Desk / overhead camera</option>
+					<option value="virtual_camera">Virtual camera</option>
+				</optgroup>
+				<optgroup label="More: Devices &amp; audio">
+					<option value="pc">Gaming PC</option>
+					<option value="laptop">Laptop</option>
+					<option value="retro_console">Retro console</option>
+					<option value="controller">Controller</option>
+					<option value="stream_deck">Stream controller</option>
+					<option value="pen_display">Pen display</option>
+					<option value="vr_headset">VR headset</option>
+					<option value="headset">Headset</option>
+					<option value="microphone">Microphone</option>
+					<option value="speaker">Speakers</option>
+					<option value="mixer">Audio mixer</option>
+					<option value="key_light">Key light</option>
+					<option value="green_screen">Green screen</option>
+				</optgroup>
+				<optgroup label="More: Overlays">
+					<option value="chat">Chat</option>
+					<option value="voice_chat">Voice chat</option>
+					<option value="music">Music</option>
+					<option value="alerts">Alerts</option>
+					<option value="events">Events / goals</option>
+					<option value="title">Title / text</option>
+					<option value="image">Image</option>
+					<option value="video">Video</option>
+					<option value="logo">Logo</option>
+					<option value="standby_image">Standby image</option>
+				</optgroup>
+				<optgroup label="Scenes: Holding &amp; status">
+					<option value="scene:starting">Starting soon (scene)</option>
+					<option value="scene:countdown">Countdown (scene)</option>
+					<option value="scene:brb">Be right back (scene)</option>
+					<option value="scene:intermission">Intermission (scene)</option>
+					<option value="scene:technical">Technical difficulties (scene)</option>
+					<option value="scene:ending">Ending (scene)</option>
+					<option value="scene:holding">Holding screen</option>
+				</optgroup>
+				<optgroup label="Scenes: Games">
+					<option value="scene:gameplay_chat">Gameplay + chat</option>
+					<option value="scene:pc_game">PC game</option>
+					<option value="scene:retro">Retro gaming</option>
+					<option value="scene:classic">Classic gaming</option>
+					<option value="scene:emulator">Emulator (scene)</option>
+					<option value="scene:capture_card_chat">Capture card + chat</option>
+				</optgroup>
+				<optgroup label="Scenes: Apps &amp; screens">
+					<option value="scene:app_chat">App + chat</option>
+					<option value="scene:second_screen">Second screen</option>
+					<option value="scene:browsing">Browsing</option>
+				</optgroup>
+				<optgroup label="Scenes: Creative">
+					<option value="scene:art">Art / design</option>
+					<option value="scene:modelling">3D modelling</option>
+					<option value="scene:coding">Coding</option>
+				</optgroup>
+				<optgroup label="Scenes: Camera &amp; talk">
+					<option value="scene:music">Live music</option>
+				</optgroup>
+				<optgroup label="Scenes: All in one">
+					<option value="scene:on_air">On air</option>
+					<option value="scene:on_air_chat">On air + chat</option>
+				</optgroup>
+			</sdpi-select>
+		</sdpi-item>
+		<sdpi-item label="Settings for" title="A mode of the Scene Modes: choose one, then whether the key uses it and its image. Each mode keeps its own. The key shows the mode that is on.">
+			<sdpi-select id="modeFor" setting="modeFor" datasource="getFilterModes" placeholder="Choose a mode" show-refresh></sdpi-select>
+		</sdpi-item>
+		<sdpi-item label="Use" title="Whether Next mode goes to this mode. Every mode is used as it comes.">
+			<sdpi-select setting="modeUse" default="use">
+				<option value="use">Used</option>
+				<option value="skip">Left out of Next mode</option>
+			</sdpi-select>
+		</sdpi-item>
+		<sdpi-item label="Its layout" title="The Layout of the image while the mode chosen in Settings for is on. Automatic: the key&#x27;s own Layout.">
+			<sdpi-select setting="modeLayout" placeholder="Automatic (the key&#x27;s)">
+				<option value="auto">Automatic (the key&#x27;s)</option>
+				<option value="standalone">Standalone</option>
+				<option value="live">Live (no chat)</option>
+				<option value="chat">Live + chat</option>
+			</sdpi-select>
+		</sdpi-item>
+		<sdpi-item label="Its image" title="The image the key shows while the mode chosen in Settings for is on. Automatic: for the key&#x27;s own mode its Mode type above, then the mode&#x27;s Mode type set in OBS, then the type its name speaks of.">
+			<sdpi-select setting="modeType" placeholder="Automatic (the mode&#x27;s type)">
 				<option value="auto">Automatic (the mode&#x27;s type)</option>
 				<optgroup label="Captures &amp; games">
 					<option value="game">Game</option>
@@ -208,5 +392,15 @@
 				&ldquo;Show Connect Info&rdquo; for the port and password. One connection serves every StageKit key.
 			</p>
 		</details>
+
+		<script>
+			// The modes offered are the chosen filter's: ask for them again when
+			// the Scene Modes changes (after it has been saved).
+			const modeFilter = document.getElementById("modeFilter");
+			const lists = ["mode", "longMode", "modeFor"].map((id) => document.getElementById(id));
+			const again = () => setTimeout(() => lists.forEach((l) => l.refresh()), 300);
+			modeFilter.addEventListener("valuechange", again);
+			modeFilter.addEventListener("change", again);
+		</script>
 	</body>
 </html>

@@ -21,7 +21,7 @@ export type Look = "blur" | "corners" | "shadow" | "transition" | "position" | "
 export type Entry = { value: string; label: string; picture: string };
 export type Group = { label: string; entries: Entry[] };
 /** One list on a key's settings page. Automatic is its first entry (value "auto"). */
-export type TypeList = { setting: "sourceType" | "sceneType" | "look" | "layout"; label: string; tip: string; automatic: string; groups: Group[] };
+export type TypeList = { setting: "sourceType" | "sceneType" | "look" | "layout" | "modeType" | "modeLayout"; label: string; tip: string; automatic: string; groups: Group[] };
 
 type SourceType = { id: string; label: string; group: string; base: string; words: string[][] };
 export const SOURCE_TYPES: SourceType[] = data.sourceTypes;
@@ -249,7 +249,7 @@ const SOURCES: Record<string, { family?: Family; only?: string[]; label?: string
 		family: "mode",
 		label: "Mode type",
 		automatic: "Automatic (the mode's type)",
-		tip: "What the mode shows, for the key's image. Automatic takes the Mode type set in OBS.",
+		tip: "What the key's own mode (its Mode) shows, for the key's image. Automatic takes the Mode type set in OBS. Each mode's own image is under Settings for.",
 		only: [
 			...inGroups("Status & holding screens"),
 			"countdown",
@@ -449,6 +449,35 @@ export function layoutList(key: string): TypeList | undefined {
 			},
 		],
 	};
+}
+
+/**
+ * A Scene Mode key's lists for one mode's own picture (src/modes.ts
+ * `editModeSettings`): the key's Layout and Mode type lists, the same entries,
+ * under the settings the page edits a mode's picture with. Not among
+ * `typeLists`: they are not the key's own type and an old image is never set
+ * as one of them.
+ */
+export function modePictureLists(): TypeList[] {
+	const type = typeLists("mode").find((l) => l.setting === "sourceType");
+	const layout = layoutList("mode");
+	if (!type || !layout) return [];
+	return [
+		{
+			...layout,
+			setting: "modeLayout",
+			label: "Its layout",
+			tip: "The Layout of the image while the mode chosen in Settings for is on. Automatic: the key's own Layout.",
+			automatic: "Automatic (the key's)",
+		},
+		{
+			...type,
+			setting: "modeType",
+			label: "Its image",
+			tip: "The image the key shows while the mode chosen in Settings for is on. Automatic: for the key's own mode its Mode type above, then the mode's Mode type set in OBS, then the type its name speaks of.",
+			automatic: "Automatic (the mode's type)",
+		},
+	];
 }
 
 /**
