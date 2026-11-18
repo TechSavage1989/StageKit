@@ -34,6 +34,9 @@ from hotkeys, or from the Stream Deck OBS Studio plugin's *Filter* and *Source* 
   an item hidden and another shown at the same moment change into each other the same way.
 - **Fade and Zoom** (transition): what appears grows to its size as it fades in, what disappears
   shrinks as it fades out. For a change of scene and for single items.
+- **Make Room** (transition): Morph, with everything that has no partner sliding off the screen by
+  the nearest edge that lies away from what morphs in. As a single item's transition, the item slides
+  off (or in) away from whatever else is shown or hidden beside it.
 - **Fit to Space** (scene filter): one capture for every shape. An image with the screen's shape fills it;
   an emulator's squarer image floats centred inside a margin.
 - **Automatic Window Switcher** (filter): one Window Capture follows several apps, taking whichever of
@@ -1080,9 +1083,12 @@ A scene transition, chosen like any other: in OBS's *Scene Transitions* box pres
   for the change back as well, and press *Save this rule*. Rules are listed under *Rules for
   scenes*, each with its remove button; choosing two scenes that have a rule shows it again. The
   duration stays the one set for the transition in OBS.
-- **Other items**, which are in only one of the scenes, fade (as it comes), fade and zoom, or slide
-  off the nearest edge of the screen. Something that fills the screen is a background and always
-  fades; two backgrounds changing over stay a whole image all the way.
+- **Other items**, which are in only one of the scenes, fade (as it comes), fade and zoom, slide
+  off the nearest edge of the screen, or **make room** (see [Make Room](#make-room-transition)).
+  Something that fills the screen is a background and always fades; two backgrounds changing over
+  stay a whole image all the way.
+- **Make room by** and **Fade while moving**: the two settings of *Make room*, under *Other items*
+  and under *Unpaired sources* alike (see [Make Room](#make-room-transition)).
 - **Easing**: the same eleven curves as everywhere else, eased in, out or both.
 
 Things to know:
@@ -1136,10 +1142,11 @@ OBS's log says which two items changed into each other and why, one line per cha
 An item with nothing to change into goes by **Unpaired sources**, under Morph in the filter's
 settings (Show in Scenes, Link Visibility, Scene Transitions and the rest; per source with *Settings
 for*) and in the Morph transition's own settings: *Fade* (as it comes), *Fade and zoom*, *Slide off
-the nearest edge*, *A cut* (at once), or any other transition you have, such as *Fade and Zoom
-(StageKit)*, *Swipe* or *Slide*, with that transition's own settings right under it (a slide or swipe
-can go *Off the nearest edge* too). Every way stays inside the item's own frame, as OBS's show and
-hide transitions do. Settings made before this read as before: *Fade and zoom* under *With nothing to
+the nearest edge*, *Make room*, *A cut* (at once), or any other transition you have, such as *Fade and
+Zoom (StageKit)*, *Swipe* or *Slide*, with that transition's own settings right under it (a slide or
+swipe can go *Off the nearest edge* too). Every way but *Make room* stays inside the item's own frame,
+as OBS's show and hide transitions do. *Make room* moves the item right off the screen, away from the
+change under way in its scene ([Make Room](#make-room-transition)). Settings made before this read as before: *Fade and zoom* under *With nothing to
 change into* (or *Other items*) is *Fade and zoom* here, and anything else a fade. That holds for an
 item being shown as much as for one being hidden, over the same time as the change. (Up to beta155 an
 item left over and being shown appeared all at once at the end of the change; in beta156 and beta157
@@ -1170,6 +1177,47 @@ A transition for single items and for scenes: **Fade and Zoom (StageKit)**.
   is underneath and the new one fades in over it as it grows.
 - **Smallest size**: how small the image is when it is all but gone (80 % as it comes; 100 % is a
   plain fade). **Easing**: the same curves as everywhere else.
+
+### Make Room transition
+
+**Make Room (StageKit)** is the Morph transition with everything that has no partner making room for
+what morphs in: each slides right off the screen, by the nearest edge away from the morph. It
+is also a choice in Morph itself: *Make room* under *Other items* (a change of scene) and under
+*Unpaired sources* (an item's own Morph).
+
+Which edge a source leaves by:
+
+1. Take the middle of what morphs in: the places the paired sources go to in the new scene, each
+   counted by its size. A pair that neither moves nor resizes is not morphing and does not count,
+   nor does a background (nine tenths of the screen or more).
+2. Draw a line from that middle to the source's middle. Of the screen's four edges, only those
+   that lie the way the line points are candidates: left of the morph, the left edge; above and to
+   the right of it, the top and the right edge; never the edge towards the morph.
+3. Of those, the source takes the one it has least far to go to be all off the screen.
+4. With nothing morphing in, it simply takes the nearest edge.
+
+A source that is only in the new scene comes in the same way the other way round: from the edge that
+lies away from where the morph comes from in the old scene. A background only fades, as always.
+
+As a **scene transition**, add it with the plus in *Scene Transitions*. Its settings are Morph's
+pairing (*Morph the main image*, *Use visible pixels*, *Ignore shadows & outlines*, *Linked
+sources*), the easing, and:
+
+- **Make room by**: *Nearest edge away from the morph* (as it comes) or *Nearest edge only*, which
+  takes the nearest edge whatever morphs.
+- **Fade while moving** (unticked as it comes): ticked, a source fades as it slides; unticked, it
+  stays whole until it is off the screen.
+
+As an **item's own show or hide transition** (in Show in Scenes, Link Visibility, Scene Transitions,
+the switchers, or an item's own *Show Transition* and *Hide Transition*) it never pairs with another
+item: the item slides off the screen when hidden and in from it when shown, away from whatever else
+is shown or hidden in its scene at that moment (with any transition, within a tenth of a second),
+or by its nearest edge when nothing else changes. Like Morph between items, a locked *Morph
+(StageKit, in progress)* item draws it while it moves; in a scene that is not showing, or inside a
+group, the item slides off its nearest edge inside its own frame instead. OBS's log has one line per
+item: `Morph: 'Chat' makes room in 'Live', by the right edge (away from the change under way)`.
+
+<p align="center"><img src="docs/images/make-room.png" width="900" alt="A change of scene with Make Room in five steps: a yellow game grows from the lower right into the middle, a tall red panel to its left slides off the left edge, and a small magenta square at the top right slides off the top edge, while the blue background cross-fades to green"></p>
 
 ### Scene filters
 

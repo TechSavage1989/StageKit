@@ -37,12 +37,19 @@ the Free Software Foundation; either version 2 of the License, or
 // back the camera's corner view too; linked to the camera, the corner view
 // takes the camera, and the capture, left over, still comes out of the
 // camera instead of fading in by itself.
+//
+// Make Room: an item left by itself whose Morph says Make Room, and every
+// item hidden or shown with the Make Room transition (which never pairs), is
+// moved off an edge of the screen by a layer of its own, a job with one side
+// (`solo`): the edge nearest to it of those that lie away from the other
+// changes in its scene at that moment (`room_edge`), or simply the nearest.
 
 #include "item-morph.hpp"
 #include "../common/item-transition.hpp"
 #include "../common/loading.hpp"
 #include "../common/scene-util.hpp"
 #include "../common/timing.hpp"
+#include "../look/look-paint.hpp"
 
 #include <obs-module.h>
 #include <graphics/vec4.h>
@@ -96,16 +103,23 @@ struct Job {
 	uint32_t cx = 0, cy = 0;
 	EaseCurve curve = EaseCurve::Cubic;
 	EaseMode mode = EaseMode::InOut;
-	bool seen = true;             // by what shows of the two, not their boxes
-	bool no_shadows = true;       // and without their shadows, glows and outlines
+	bool seen = true;       // by what shows of the two, not their boxes
+	bool no_shadows = true; // and without their shadows, glows and outlines
+	// Make Room: one item by itself (`from` hidden, or `to` shown), moved
+	// off, or in from, `edge`.
+	bool solo = false;
+	RoomEdge edge = RoomEdge::Left;
+	bool fade = false;
 	std::atomic<float> t0{-1.0f}; // the clock's time when the change was first drawn
 	std::atomic<bool> done{false};
 	uint64_t made_ns = 0;
 
 	~Job()
 	{
-		obs_source_dec_showing(from_source);
-		obs_source_dec_showing(to_source);
+		if (from_source)
+			obs_source_dec_showing(from_source);
+		if (to_source)
+			obs_source_dec_showing(to_source);
 		obs_source_release(from_source);
 		obs_source_release(to_source);
 		obs_source_release(to_transition);
@@ -161,8 +175,22 @@ void Layer::render()
 	gs_blend_state_push();
 	gs_blend_function_separate(GS_BLEND_ONE, GS_BLEND_INVSRCALPHA, GS_BLEND_ONE, GS_BLEND_INVSRCALPHA);
 	Shown was, will;
-	const bool had = look(job->from, was), has = look(job->to, will);
-	if (had && has) {
+	const bool had = job->from && look(job->from, was), has = job->to && look(job->to, will);
+	if (job->solo) {
+		// Make Room: the one item, on its way off (or in from) its edge.
+		const Shown &only = had ? was : will;
+		if (had || has) {
+			const double gone = had ? t : 1.0 - t;
+			const Quad quad = room_moved(only.quad, bounds_of(only.quad), job->edge, gone, (double)job->cx,
+						     (double)job->cy);
+			const float opacity = job->fade ? (float)std::clamp(1.0 - gone, 0.0, 1.0) : 1.0f;
+			if (opacity >= 0.999f) {
+				draw_item(only, quad, only.crop);
+			} else if (gs_texture_t *texture = cropped(only, only.crop)) {
+				draw_texture(texture, nullptr, quad, 0.0f, opacity);
+			}
+		}
+	} else if (had && has) {
 		// By what shows of each, looked at once as the change begins.
 		const Crop from_whole = job->seen ? seen_crop(job->from, was) : was.crop;
 		const Crop to_whole = job->seen ? seen_crop(job->to, will) : will.crop;
@@ -347,6 +375,48 @@ bool reach(const Entry &entry, Held &held, obs_source_t *&scene, obs_sceneitem_t
 	return true;
 }
 
+// Into the scene, straight above the upper of its items, and locked so that
+// a click in the preview goes through it: the layer that draws the change.
+// False when it could not be made (the job lets go of everything as it goes).
+bool place_layer(const std::shared_ptr<Job> &job, obs_scene_t *scene)
+{
+	job->layer = obs_source_create_private(kMorphLayerId, obs_module_text("Morph.Layer"), nullptr);
+	auto *layer = job->layer ? static_cast<Layer *>(obs_obj_get_data(job->layer)) : nullptr;
+	if (!layer) {
+		obs_source_release(job->layer);
+		job->layer = nullptr;
+		return false; // (the job lets go of everything else as it goes)
+	}
+	layer->set(job);
+	struct Order {
+		obs_sceneitem_t *a, *b;
+		int at = 0, upper = -1;
+	} order{job->from, job->to};
+	obs_scene_enum_items(
+		scene,
+		[](obs_scene_t *, obs_sceneitem_t *item, void *param) {
+			auto *o = static_cast<Order *>(param);
+			if (item == o->a || item == o->b)
+				o->upper = o->at;
+			o->at++;
+			return true;
+		},
+		&order);
+	obs_sceneitem_t *item = obs_scene_add(scene, job->layer);
+	if (!item) {
+		layer->set(nullptr);
+		obs_source_release(job->layer);
+		job->layer = nullptr;
+		return false;
+	}
+	obs_sceneitem_addref(item);
+	job->layer_item = item;
+	obs_sceneitem_set_locked(item, true);
+	if (order.upper >= 0)
+		obs_sceneitem_set_order_position(item, order.upper + 1);
+	return true;
+}
+
 // `why` is for the log: which rule paired the two.
 void start_job(Half &hide, Half &show, const char *why)
 {
@@ -375,43 +445,8 @@ void start_job(Half &hide, Half &show, const char *why)
 	job->no_shadows = show.said.no_shadows;
 	job->mode = show.said.mode;
 	job->made_ns = os_gettime_ns();
-
-	job->layer = obs_source_create_private(kMorphLayerId, obs_module_text("Morph.Layer"), nullptr);
-	auto *layer = job->layer ? static_cast<Layer *>(obs_obj_get_data(job->layer)) : nullptr;
-	if (!layer) {
-		obs_source_release(job->layer);
-		job->layer = nullptr;
-		return; // (the job lets go of everything else as it goes)
-	}
-	layer->set(job);
-	// Into the scene, straight above the upper of the two, and locked so
-	// that a click in the preview goes through it.
-	struct Order {
-		obs_sceneitem_t *a, *b;
-		int at = 0, upper = -1;
-	} order{job->from, job->to};
-	obs_scene_enum_items(
-		scene,
-		[](obs_scene_t *, obs_sceneitem_t *item, void *param) {
-			auto *o = static_cast<Order *>(param);
-			if (item == o->a || item == o->b)
-				o->upper = o->at;
-			o->at++;
-			return true;
-		},
-		&order);
-	obs_sceneitem_t *item = obs_scene_add(scene, job->layer);
-	if (!item) {
-		layer->set(nullptr);
-		obs_source_release(job->layer);
-		job->layer = nullptr;
+	if (!place_layer(job, scene))
 		return;
-	}
-	obs_sceneitem_addref(item);
-	job->layer_item = item;
-	obs_sceneitem_set_locked(item, true);
-	if (order.upper >= 0)
-		obs_sceneitem_set_order_position(item, order.upper + 1);
 	{
 		std::lock_guard lock(g_mutex);
 		hide.entry->state = ItemMorph::Paired;
@@ -438,6 +473,92 @@ void let_go_all()
 	g_entries.clear();
 	g_started.clear();
 	g_busy = false;
+}
+
+// Make Room: the middle of what else changes in the item's scene as it goes
+// (or comes). For an item going, where the changes under way are going to
+// and the items coming in (with Morph, Make Room or any other transition of
+// their own); for one coming, where they come from and the items going.
+// Each counts by its area; a background (nine tenths of the screen) not at
+// all. `opposite` are the items of the other kind that started near it.
+RoomCentre room_centre(const Half &self, const std::vector<Half> &opposite)
+{
+	RoomCentre centre;
+	obs_source_t *scene = self.scene;
+	const bool leaving = !self.entry->show;
+	const double screen = (double)obs_source_get_width(scene) * (double)obs_source_get_height(scene);
+	std::vector<obs_sceneitem_t *> counted{self.item};
+	auto count = [&](obs_sceneitem_t *item) {
+		if (!item || std::find(counted.begin(), counted.end(), item) != counted.end())
+			return;
+		counted.push_back(item);
+		refresh_item(item);
+		Shown shown;
+		if (!shown_of(item, shown))
+			return;
+		const Bounds b = bounds_of(shown.quad);
+		if ((b.x1 - b.x0) * (b.y1 - b.y0) < 0.9 * screen)
+			centre.add(b);
+	};
+	for (const std::shared_ptr<Job> &job : g_jobs)
+		if (!job->done && obs_weak_source_references_source(job->scene, scene))
+			count(leaving ? job->to : job->from);
+	for (const Half &h : opposite)
+		if (h.scene == scene && h.entry->state != ItemMorph::Paired)
+			count(h.item);
+	struct Look {
+		decltype(count) *add;
+		bool leaving;
+	} look{&count, leaving};
+	obs_scene_enum_items(
+		obs_scene_from_source(scene),
+		[](obs_scene_t *, obs_sceneitem_t *item, void *param) {
+			auto *l = static_cast<Look *>(param);
+			if (!is_morph_layer(item) && item_transition_running(item, l->leaving))
+				(*l->add)(item);
+			return true;
+		},
+		&look);
+	return centre;
+}
+
+// Make Room: one item by itself, moved off (or in from) `edge` by a layer.
+void start_solo(Half &h, RoomEdge edge, bool pushed)
+{
+	obs_source_t *clock = obs_sceneitem_get_transition(h.item, h.entry->show);
+	obs_scene_t *scene = obs_scene_from_source(h.scene);
+	if (clock != h.transition || !scene)
+		return;
+	auto job = std::make_shared<Job>();
+	job->solo = true;
+	job->edge = edge;
+	job->fade = h.said.room_fade;
+	job->to_transition = obs_source_get_ref(clock);
+	job->from_transition = clock;
+	obs_sceneitem_t *&item = h.entry->show ? job->to : job->from;
+	obs_source_t *&source = h.entry->show ? job->to_source : job->from_source;
+	item = h.item;
+	obs_sceneitem_addref(item);
+	source = obs_source_get_ref(obs_sceneitem_get_source(item));
+	obs_source_inc_showing(source);
+	job->scene = obs_source_get_weak_source(h.scene);
+	job->cx = obs_source_get_width(h.scene);
+	job->cy = obs_source_get_height(h.scene);
+	job->curve = h.said.curve;
+	job->mode = h.said.mode;
+	job->made_ns = os_gettime_ns();
+	if (!place_layer(job, scene))
+		return;
+	{
+		std::lock_guard lock(g_mutex);
+		h.entry->state = ItemMorph::Paired; // (its own transition draws nothing)
+	}
+	h.taken = true;
+	g_jobs.push_back(job);
+	static const char *const kEdges[] = {"left", "right", "top", "bottom"};
+	obs_log(LOG_INFO, "Morph: '%s' %s '%s', by the %s edge (%s)", obs_source_get_name(source),
+		h.entry->show ? "comes into" : "makes room in", obs_source_get_name(h.scene), kEdges[(int)edge],
+		pushed ? "away from the change under way" : "the nearest edge");
 }
 
 void tick(void *, float)
@@ -536,7 +657,7 @@ void tick(void *, float)
 		return !h.entry->in_group && obs_source_showing(h.scene);
 	};
 	auto can = [&](const Half &h) {
-		return !h.taken && there(h);
+		return !h.taken && h.said.pairs && there(h);
 	};
 	auto name = [](const Half &h) {
 		return obs_source_get_name(obs_sceneitem_get_source(h.item));
@@ -550,7 +671,7 @@ void tick(void *, float)
 		Half *best = nullptr;
 		double best_share = least;
 		for (Half &h : of) {
-			if (!(taken_too ? there(h) : can(h)) || h.scene != scene)
+			if (!(taken_too ? there(h) && h.said.pairs : can(h)) || h.scene != scene)
 				continue;
 			const double share = share_of(h.item, h.scene);
 			if (share >= best_share) {
@@ -615,6 +736,7 @@ void tick(void *, float)
 		}
 	}
 	// Whatever has waited long enough, or cannot be paired, goes by itself.
+	std::vector<Half *> rooms; // and of those, the ones that make room
 	{
 		std::lock_guard lock(g_mutex);
 		for (std::vector<Half> *halves : {&hides, &shows}) {
@@ -622,19 +744,46 @@ void tick(void *, float)
 				if (h.taken || h.entry->state != ItemMorph::Waiting)
 					continue;
 				if (h.entry->in_group || !obs_source_showing(h.scene) ||
-				    (now > h.entry->at_ns && now - h.entry->at_ns >= kGraceNs))
+				    (now > h.entry->at_ns && now - h.entry->at_ns >= kGraceNs)) {
 					h.entry->state = ItemMorph::Alone;
+					if (h.said.room && there(h))
+						rooms.push_back(&h);
+				}
 			}
 		}
 	}
+	// Make Room: each edge is chosen before any of them moves, so the order
+	// they are gone through in changes nothing. (Not in a scene off screen,
+	// nor in a group: there it goes off its own frame's edge, as a slide.)
+	std::vector<std::pair<RoomEdge, bool>> edges;
+	for (Half *h : rooms) {
+		const RoomCentre centre = h->said.room_push ? room_centre(*h, h->entry->show ? hides : shows)
+							    : RoomCentre();
+		refresh_item(h->item);
+		Shown shown;
+		const double cw = obs_source_get_width(h->scene), ch = obs_source_get_height(h->scene);
+		const RoomEdge edge = shown_of(h->item, shown) ? room_edge(bounds_of(shown.quad), cw, ch,
+									   centre.any() ? &centre : nullptr)
+							       : RoomEdge::Left;
+		edges.emplace_back(edge, centre.any());
+	}
+	for (size_t i = 0; i < rooms.size(); i++)
+		start_solo(*rooms[i], edges[i].first, edges[i].second);
 	// Changes that are over: the clock has run out, the item was hidden
 	// again or taken out, or something went wrong.
 	for (size_t i = 0; i < g_jobs.size();) {
 		const std::shared_ptr<Job> &job = g_jobs[i];
 		bool over = job->done || obs_transition_get_time(job->to_transition) >= 1.0f ||
-			    !obs_sceneitem_visible(job->to) || !obs_sceneitem_get_scene(job->to) ||
-			    !obs_sceneitem_get_scene(job->from) ||
 			    (now > job->made_ns && now - job->made_ns > kTooLongNs);
+		if (job->solo) {
+			// (Shown again while going, hidden again while coming, or taken out.)
+			obs_sceneitem_t *item = job->to ? job->to : job->from;
+			over = over || obs_sceneitem_visible(item) != (job->to != nullptr) ||
+			       !obs_sceneitem_get_scene(item);
+		} else {
+			over = over || !obs_sceneitem_visible(job->to) || !obs_sceneitem_get_scene(job->to) ||
+			       !obs_sceneitem_get_scene(job->from);
+		}
 		if (!over) { // (its scene deleted)
 			obs_source_t *scene = obs_weak_source_get_source(job->scene);
 			over = !scene || obs_source_removed(scene);

@@ -491,6 +491,13 @@ void add_own(obs_properties_t *into, obs_data_t *settings, const std::string &pr
 		if (morph && (strcmp(their_name, "link_a") == 0 || strcmp(their_name, "link_b") == 0 ||
 			      strcmp(their_name, "others") == 0))
 			continue;
+		// Make Room, as an item's own, never pairs: its pairing and links
+		// are for a change of scene only.
+		if (kind == kMakeRoomId &&
+		    (strcmp(their_name, "link_a") == 0 || strcmp(their_name, "link_b") == 0 ||
+		     strcmp(their_name, "pair_main") == 0 || strcmp(their_name, "visible_pixels") == 0 ||
+		     strcmp(their_name, "no_shadows") == 0))
+			continue;
 		const std::string name = prefix + their_name;
 		obs_property_t *made = nullptr;
 		switch (obs_property_get_type(p)) {
@@ -852,8 +859,9 @@ const char *item_off_nearest_edge(obs_sceneitem_t *item, obs_source_t *scene, bo
 bool item_transition_is_fallback_kind(const char *kind)
 {
 	if (!kind || !*kind || strcmp(kind, kTransitionCut) == 0 || strcmp(kind, kTransitionKeep) == 0 ||
-	    strcmp(kind, kTransitionScene) == 0 || strcmp(kind, kMorphId) == 0 || strcmp(kind, "cut_transition") == 0 ||
-	    strcmp(kind, "obs_stinger_transition") == 0 || strncmp(kind, "morph_", 6) == 0)
+	    strcmp(kind, kTransitionScene) == 0 || strcmp(kind, kMorphId) == 0 || strcmp(kind, kMakeRoomId) == 0 ||
+	    strcmp(kind, "cut_transition") == 0 || strcmp(kind, "obs_stinger_transition") == 0 ||
+	    strncmp(kind, "morph_", 6) == 0)
 		return false;
 	return obs_source_get_display_name(kind) != nullptr;
 }

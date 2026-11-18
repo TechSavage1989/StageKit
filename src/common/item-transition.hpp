@@ -166,8 +166,8 @@ std::string item_transition_own_json(obs_data_t *settings, const std::string &pr
 const char *item_off_nearest_edge(obs_sceneitem_t *item, obs_source_t *scene, bool show);
 
 // Whether a transition kind may be Morph's fallback: a real transition of
-// OBS's (or another plugin's), not a cut, not Morph itself, not one that
-// needs a file of its own.
+// OBS's (or another plugin's), not a cut, not Morph itself or Make Room (which
+// is one of Morph's own ways), not one that needs a file of its own.
 bool item_transition_is_fallback_kind(const char *kind);
 
 } // namespace stagekit

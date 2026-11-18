@@ -61,6 +61,60 @@ Bounds bounds_of(const Quad &q)
 		      *std::max_element(ys, ys + 4)};
 }
 
+void RoomCentre::add(const Bounds &b)
+{
+	const double area = std::max(0.0, b.x1 - b.x0) * std::max(0.0, b.y1 - b.y0);
+	x += area * (b.x0 + b.x1) / 2.0;
+	y += area * (b.y0 + b.y1) / 2.0;
+	weight += area;
+}
+
+RoomEdge room_edge(const Bounds &b, double w, double h, const RoomCentre *from)
+{
+	// How far each way until it is all off the screen.
+	const double far[4] = {b.x1, w - b.x0, b.y1, h - b.y0};
+	bool away[4] = {true, true, true, true};
+	if (from && from->any()) {
+		const double dx = (b.x0 + b.x1) / 2.0 - from->cx(), dy = (b.y0 + b.y1) / 2.0 - from->cy();
+		const double len = std::hypot(dx, dy);
+		// (Under a hundredth of the screen's diagonal: no way to speak of.
+		// Each way must hold more than a fiftieth of the line, so a source
+		// a pixel off straight above goes up, not sideways.)
+		if (len > 0.01 * std::hypot(w, h)) {
+			const double hair = 0.02 * len;
+			away[0] = -dx > hair;
+			away[1] = dx > hair;
+			away[2] = -dy > hair;
+			away[3] = dy > hair;
+		}
+	}
+	int best = -1;
+	for (int i = 0; i < 4; i++)
+		if (away[i] && (best < 0 || far[i] < far[best]))
+			best = i;
+	return static_cast<RoomEdge>(best < 0 ? 0 : best);
+}
+
+Quad room_moved(const Quad &q, const Bounds &b, RoomEdge edge, double gone, double w, double h)
+{
+	Quad out = q;
+	switch (edge) {
+	case RoomEdge::Left:
+		out.tx -= b.x1 * gone;
+		break;
+	case RoomEdge::Right:
+		out.tx += (w - b.x0) * gone;
+		break;
+	case RoomEdge::Up:
+		out.ty -= b.y1 * gone;
+		break;
+	case RoomEdge::Down:
+		out.ty += (h - b.y0) * gone;
+		break;
+	}
+	return out;
+}
+
 MorphLinks morph_links_read(obs_data_t *settings, const char *setting)
 {
 	MorphLinks links;
