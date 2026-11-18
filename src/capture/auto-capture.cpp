@@ -49,6 +49,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include "../common/item-transition.hpp"
 #include "../common/pick-list.hpp"
+#include "../common/tooltip.hpp"
 
 #include <obs-module.h>
 #include <util/platform.h>
@@ -1038,17 +1039,17 @@ obs_properties_t *get_properties(void *data)
 	obs_property_list_add_int(mode, obs_module_text("Capture.Mode.ListedOnly"), (int)Mode::ListedOnly);
 	obs_properties_add_bool(lists, "fallback_fullscreen", obs_module_text("Capture.Fallback"));
 	obs_property_t *keep_ready = obs_properties_add_bool(lists, "keep_ready", obs_module_text("Capture.KeepReady"));
-	obs_property_set_long_description(keep_ready, obs_module_text("Capture.KeepReady.Tip"));
+	set_tip(keep_ready, obs_module_text("Capture.KeepReady.Tip"));
 	obs_property_t *no_game =
 		obs_properties_add_bool(lists, "no_game_standby", obs_module_text("Capture.NoGameStandby"));
-	obs_property_set_long_description(no_game, obs_module_text("Capture.NoGameStandby.Tip"));
+	set_tip(no_game, obs_module_text("Capture.NoGameStandby.Tip"));
 	obs_properties_add_group(props, "lists", obs_module_text("Capture.Lists"), OBS_GROUP_NORMAL, lists);
 
 	// The Standby Picture over the capture: hiding it, and the transition.
 	obs_properties_t *standby = obs_properties_create();
 	obs_property_t *hide_standby =
 		obs_properties_add_bool(standby, "hide_standby", obs_module_text("AppCapture.HideStandby"));
-	obs_property_set_long_description(hide_standby, obs_module_text("Capture.HideStandby.Tip"));
+	set_tip(hide_standby, obs_module_text("Capture.HideStandby.Tip"));
 	obs_property_t *style = obs_properties_add_list(standby, "standby_style", obs_module_text("Change.With"),
 							OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	{
@@ -1065,7 +1066,7 @@ obs_properties_t *get_properties(void *data)
 		for (const auto &one : styles)
 			obs_property_list_add_int(style, obs_module_text(one.text), one.value);
 	}
-	obs_property_set_long_description(style, obs_module_text("Capture.StandbyStyle.Tip"));
+	set_tip(style, obs_module_text("Capture.StandbyStyle.Tip"));
 	obs_property_t *ms =
 		obs_properties_add_int_slider(standby, "standby_ms", obs_module_text("Change.Time"), 0, 5000, 50);
 	obs_property_int_set_suffix(ms, " ms");

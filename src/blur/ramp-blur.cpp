@@ -23,6 +23,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/easing.hpp"
 #include "../common/pick-list.hpp"
 #include "../common/scene-util.hpp"
+#include "../common/tooltip.hpp"
 
 #include <obs-module.h>
 #include <graphics/vec2.h>
@@ -692,7 +693,7 @@ obs_properties_t *get_properties(void *data)
 	pick_list_add(props, own_filter, also);
 	obs_property_t *live =
 		obs_properties_add_bool(props, "also_captures", obs_module_text("RampBlur.AlsoCaptures"));
-	obs_property_set_long_description(live, obs_module_text("RampBlur.AlsoCaptures.Tip"));
+	set_tip(live, obs_module_text("RampBlur.AlsoCaptures.Tip"));
 	// The captures that tick box is to leave alone.
 	PickList never;
 	never.setting = "never";
@@ -725,7 +726,7 @@ obs_properties_t *get_properties(void *data)
 	obs_properties_t *keys = obs_properties_create();
 	obs_property_t *in_all =
 		obs_properties_add_bool(keys, "include_in_all", obs_module_text("RampBlur.IncludeInAll"));
-	obs_property_set_long_description(in_all, obs_module_text("RampBlur.Help"));
+	set_tip(in_all, obs_module_text("RampBlur.Help"));
 	obs_properties_add_button2(
 		keys, "btn_toggle", obs_module_text("RampBlur.Button.Toggle"),
 		[](obs_properties_t *, obs_property_t *, void *d) {

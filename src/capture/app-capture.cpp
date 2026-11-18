@@ -50,6 +50,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/timing.hpp"
 #include "../api/vendor-api.hpp"
 #include "../transition/morph-paint.hpp"
+#include "../common/tooltip.hpp"
 
 #include <obs-module.h>
 #include <graphics/vec4.h>
@@ -1748,23 +1749,23 @@ obs_properties_t *get_properties(void *data)
 			return true;
 		},
 		self);
-	obs_property_set_long_description(clear_now, obs_module_text("AppCapture.ByHand.Clear.Tip"));
+	set_tip(clear_now, obs_module_text("AppCapture.ByHand.Clear.Tip"));
 	obs_property_t *clear_on_start =
 		obs_properties_add_bool(props, "clear_picked", obs_module_text("AppCapture.ClearPicked"));
-	obs_property_set_long_description(clear_on_start, obs_module_text("AppCapture.ClearPicked.Tip"));
+	set_tip(clear_on_start, obs_module_text("AppCapture.ClearPicked.Tip"));
 
 	obs_property_t *follow = obs_properties_add_bool(props, "follow", obs_module_text("AppCapture.Follow"));
-	obs_property_set_long_description(follow, obs_module_text("AppCapture.Follow.Tip"));
+	set_tip(follow, obs_module_text("AppCapture.Follow.Tip"));
 	obs_property_t *ready = obs_properties_add_bool(props, "ready", obs_module_text("AppCapture.Ready"));
-	obs_property_set_long_description(ready, obs_module_text("AppCapture.Ready.Tip"));
+	set_tip(ready, obs_module_text("AppCapture.Ready.Tip"));
 	obs_property_t *picked = obs_properties_add_list(props, "picked", obs_module_text("AppCapture.Picked"),
 							 OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(picked, obs_module_text("AppCapture.Picked.Wait"), 0);
 	obs_property_list_add_int(picked, obs_module_text("AppCapture.Picked.Now"), 1);
-	obs_property_set_long_description(picked, obs_module_text("AppCapture.Picked.Tip"));
+	set_tip(picked, obs_module_text("AppCapture.Picked.Tip"));
 	obs_property_t *hand_follow =
 		obs_properties_add_bool(props, "hand_follow", obs_module_text("AppCapture.HandFollow"));
-	obs_property_set_long_description(hand_follow, obs_module_text("AppCapture.HandFollow.Tip"));
+	set_tip(hand_follow, obs_module_text("AppCapture.HandFollow.Tip"));
 
 	obs_property_t *change = obs_properties_add_list(props, "change", obs_module_text("AppCapture.Change"),
 							 OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
@@ -1776,7 +1777,7 @@ obs_properties_t *get_properties(void *data)
 	obs_property_list_add_int(change, obs_module_text("AppCapture.Change.FromRight"), (int)Style::FromRight);
 	obs_property_list_add_int(change, obs_module_text("AppCapture.Change.FromTop"), (int)Style::FromTop);
 	obs_property_list_add_int(change, obs_module_text("AppCapture.Change.FromBottom"), (int)Style::FromBottom);
-	obs_property_set_long_description(change, obs_module_text("AppCapture.Change.Tip"));
+	set_tip(change, obs_module_text("AppCapture.Change.Tip"));
 	obs_property_set_modified_callback(change, [](obs_properties_t *p, obs_property_t *, obs_data_t *settings) {
 		const bool timed = obs_data_get_int(settings, "change") != (int)Style::Cut;
 		for (const char *name : {"change_ms", "ease_curve", "ease_mode"})
@@ -1794,7 +1795,7 @@ obs_properties_t *get_properties(void *data)
 	add_item_transition_properties(hiding);
 	obs_property_t *to_standby =
 		obs_properties_add_bool(hiding, "hide_standby", obs_module_text("AppCapture.HideStandby"));
-	obs_property_set_long_description(to_standby, obs_module_text("AppCapture.HideStandby.Tip"));
+	set_tip(to_standby, obs_module_text("AppCapture.HideStandby.Tip"));
 	obs_properties_add_button2(
 		hiding, "hide_now", obs_module_text("AppCapture.Hide.Now"),
 		[](obs_properties_t *, obs_property_t *, void *data) {

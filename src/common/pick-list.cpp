@@ -9,6 +9,7 @@ the Free Software Foundation; either version 2 of the License, or
 */
 
 #include "pick-list.hpp"
+#include "tooltip.hpp"
 
 #include <obs-module.h>
 
@@ -127,7 +128,7 @@ void build_rows(obs_properties_t *top, obs_source_t *owner, obs_data_t *settings
 		const std::string text = std::string("\xE2\x9C\x95   ") + entries[i];
 		obs_property_t *row =
 			obs_properties_add_button2(content, name.c_str(), text.c_str(), remove_row, owner);
-		obs_property_set_long_description(row, obs_module_text("List.Remove.Tip"));
+		set_tip(row, obs_module_text("List.Remove.Tip"));
 	}
 }
 
@@ -262,7 +263,7 @@ void pick_list_add(obs_properties_t *props, obs_source_t *owner, const PickList 
 				obs_property_list_add_string(pick, choice.c_str(), choice.c_str());
 		}
 		if (list.tip)
-			obs_property_set_long_description(pick, obs_module_text(list.tip));
+			set_tip(pick, obs_module_text(list.tip));
 		obs_property_set_modified_callback2(pick, picked, owner);
 		if (settings)
 			obs_data_set_string(settings, pick_name.c_str(), "");

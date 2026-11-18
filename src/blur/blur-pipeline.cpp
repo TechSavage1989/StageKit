@@ -9,6 +9,7 @@ the Free Software Foundation; either version 2 of the License, or
 */
 
 #include "blur-pipeline.hpp"
+#include "../common/tooltip.hpp"
 
 #include <obs-module.h>
 #include <graphics/vec2.h>
@@ -103,7 +104,7 @@ void add_blur_look_properties(obs_properties_t *props)
 	obs_property_list_add_int(type, obs_module_text("RampBlur.Type.Zoom"), (int)BlurType::Zoom);
 	obs_property_list_add_int(type, obs_module_text("RampBlur.Type.Motion"), (int)BlurType::Motion);
 	obs_property_list_add_int(type, obs_module_text("RampBlur.Type.Temporal"), (int)BlurType::Temporal);
-	obs_property_set_long_description(type, obs_module_text("RampBlur.Type.Tip"));
+	set_tip(type, obs_module_text("RampBlur.Type.Tip"));
 	obs_property_set_modified_callback(type, type_modified);
 
 	obs_properties_add_float_slider(look, "strength", obs_module_text("RampBlur.Strength"), 0.0, kMaxBlurStrength,
@@ -126,25 +127,25 @@ void add_blur_look_properties(obs_properties_t *props)
 	obs_property_t *smooth = obs_properties_add_float_slider(look, "pixel_smooth", obs_module_text("Mosaic.Smooth"),
 								 0.0, 100.0, 1.0);
 	obs_property_float_set_suffix(smooth, "%");
-	obs_property_set_long_description(smooth, obs_module_text("Mosaic.Smooth.Tip"));
+	set_tip(smooth, obs_module_text("Mosaic.Smooth.Tip"));
 	obs_property_t *glass =
 		obs_properties_add_float_slider(look, "pixel_glass", obs_module_text("Mosaic.Glass"), 0.0, 100.0, 1.0);
 	obs_property_float_set_suffix(glass, "%");
-	obs_property_set_long_description(glass, obs_module_text("Mosaic.Glass.Tip"));
+	set_tip(glass, obs_module_text("Mosaic.Glass.Tip"));
 	obs_property_t *glass_style = obs_properties_add_list(look, "pixel_glass_style",
 							      obs_module_text("Mosaic.GlassStyle"), OBS_COMBO_TYPE_LIST,
 							      OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(glass_style, obs_module_text("Mosaic.GlassStyle.Rounded"), 0);
 	obs_property_list_add_int(glass_style, obs_module_text("Mosaic.GlassStyle.Edges"), 1);
-	obs_property_set_long_description(glass_style, obs_module_text("Mosaic.GlassStyle.Tip"));
+	set_tip(glass_style, obs_module_text("Mosaic.GlassStyle.Tip"));
 	obs_property_t *ox =
 		obs_properties_add_float_slider(look, "origin_x", obs_module_text("Mosaic.OriginX"), 0.0, 100.0, 0.5);
 	obs_property_float_set_suffix(ox, "%");
-	obs_property_set_long_description(ox, obs_module_text("Mosaic.Origin.Tip"));
+	set_tip(ox, obs_module_text("Mosaic.Origin.Tip"));
 	obs_property_t *oy =
 		obs_properties_add_float_slider(look, "origin_y", obs_module_text("Mosaic.OriginY"), 0.0, 100.0, 0.5);
 	obs_property_float_set_suffix(oy, "%");
-	obs_property_set_long_description(oy, obs_module_text("Mosaic.Origin.Tip"));
+	set_tip(oy, obs_module_text("Mosaic.Origin.Tip"));
 	obs_property_t *rotation = obs_properties_add_float_slider(look, "rotation", obs_module_text("Mosaic.Rotation"),
 								   -180.0, 180.0, 1.0);
 	obs_property_float_set_suffix(rotation, "°");
@@ -152,7 +153,7 @@ void add_blur_look_properties(obs_properties_t *props)
 						       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(edge, obs_module_text("Mosaic.Edge.Cut"), (int)MosaicEdge::Cut);
 	obs_property_list_add_int(edge, obs_module_text("Mosaic.Edge.Whole"), (int)MosaicEdge::Whole);
-	obs_property_set_long_description(edge, obs_module_text("Mosaic.Edge.Tip"));
+	set_tip(edge, obs_module_text("Mosaic.Edge.Tip"));
 
 	obs_properties_add_group(props, "look_group", obs_module_text("RampBlur.LookGroup"), OBS_GROUP_NORMAL, look);
 }

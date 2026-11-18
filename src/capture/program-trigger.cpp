@@ -26,6 +26,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/item-transition.hpp"
 #include "../common/pick-list.hpp"
 #include "../common/scene-util.hpp"
+#include "../common/tooltip.hpp"
 
 #include <obs-module.h>
 #include <plugin-support.h>
@@ -290,7 +291,7 @@ obs_properties_t *get_properties(void *data)
 	});
 	obs_property_t *title =
 		obs_properties_add_text(watch, "title", obs_module_text("Trigger.Title"), OBS_TEXT_DEFAULT);
-	obs_property_set_long_description(title, obs_module_text("Trigger.Title.Tip"));
+	set_tip(title, obs_module_text("Trigger.Title.Tip"));
 	obs_property_t *when = obs_properties_add_list(watch, "when", obs_module_text("Trigger.When"),
 						       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(when, obs_module_text("Trigger.When.Open"), (int)When::Open);
@@ -333,7 +334,7 @@ obs_properties_t *get_properties(void *data)
 	pick_list_add(props, own, filters);
 	add_item_transition_properties(props);
 	obs_property_t *opposite = obs_properties_add_bool(props, "opposite", obs_module_text("Trigger.Opposite"));
-	obs_property_set_long_description(opposite, obs_module_text("Trigger.Opposite.Tip"));
+	set_tip(opposite, obs_module_text("Trigger.Opposite.Tip"));
 
 	obs_property_t *help = obs_properties_add_text(props, "help", obs_module_text("Trigger.Help"), OBS_TEXT_INFO);
 	obs_property_text_set_info_word_wrap(help, true);

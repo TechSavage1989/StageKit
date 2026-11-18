@@ -32,6 +32,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/scene-util.hpp"
 #include "../common/start-image.hpp"
 #include "../frame/auto-frame.hpp"
+#include "../common/tooltip.hpp"
 
 #include <obs-module.h>
 #include <obs-frontend-api.h>
@@ -1296,10 +1297,10 @@ obs_properties_t *get_properties(void *)
 		obs_properties_add_bool(picture, "live_replace", obs_module_text("Ambient.LiveReplace"));
 	obs_property_t *skip_standby =
 		obs_properties_add_bool(picture, "live_skip_standby", obs_module_text("Ambient.LiveSkipStandby"));
-	obs_property_set_long_description(skip_standby, obs_module_text("Ambient.LiveSkipStandby.Tip"));
+	set_tip(skip_standby, obs_module_text("Ambient.LiveSkipStandby.Tip"));
 	obs_property_t *ready = obs_properties_add_bool(picture, "live_ready", obs_module_text("Ambient.LiveReady"));
-	obs_property_set_long_description(ready, obs_module_text("Ambient.LiveReady.Tip"));
-	obs_property_set_long_description(replace, obs_module_text("Ambient.LiveReplace.Tip"));
+	set_tip(ready, obs_module_text("Ambient.LiveReady.Tip"));
+	set_tip(replace, obs_module_text("Ambient.LiveReplace.Tip"));
 	// How the background follows when the capture changes.
 	obs_property_t *live_change = obs_properties_add_list(picture, "live_change",
 							      obs_module_text("Ambient.LiveChange"),
@@ -1310,12 +1311,12 @@ obs_properties_t *get_properties(void *)
 	obs_property_list_add_int(live_change, obs_module_text("Standby.Style.SlideRight"), 3);
 	obs_property_list_add_int(live_change, obs_module_text("Standby.Style.SlideUp"), 4);
 	obs_property_list_add_int(live_change, obs_module_text("Standby.Style.SlideDown"), 5);
-	obs_property_set_long_description(live_change, obs_module_text("Ambient.LiveChange.Tip"));
+	set_tip(live_change, obs_module_text("Ambient.LiveChange.Tip"));
 	obs_property_set_modified_callback(live_change, visibility_modified);
 	obs_property_t *live_delay = obs_properties_add_int_slider(picture, "live_delay_ms",
 								   obs_module_text("Ambient.LiveDelay"), 0, 5000, 50);
 	obs_property_int_set_suffix(live_delay, " ms");
-	obs_property_set_long_description(live_delay, obs_module_text("Ambient.LiveDelay.Tip"));
+	set_tip(live_delay, obs_module_text("Ambient.LiveDelay.Tip"));
 	obs_property_t *live_time =
 		obs_properties_add_int_slider(picture, "live_change_ms", obs_module_text("Change.Time"), 50, 5000, 50);
 	obs_property_int_set_suffix(live_time, " ms");
@@ -1344,7 +1345,7 @@ obs_properties_t *get_properties(void *)
 	obs_property_list_add_int(blur_type, obs_module_text("RampBlur.Type.Gaussian"), (int)BlurKind::Gaussian);
 	obs_property_list_add_int(blur_type, obs_module_text("RampBlur.Type.Box"), (int)BlurKind::Box);
 	obs_property_list_add_int(blur_type, obs_module_text("RampBlur.Type.Temporal"), (int)BlurKind::Temporal);
-	obs_property_set_long_description(blur_type, obs_module_text("Ambient.BlurType.Tip"));
+	set_tip(blur_type, obs_module_text("Ambient.BlurType.Tip"));
 	obs_properties_add_float_slider(look, "blur", obs_module_text("Ambient.Blur"), 0.0, 1000.0, 1.0);
 	obs_property_t *pixel = obs_properties_add_list(look, "pixel_style", obs_module_text("Ambient.Pixel"),
 							OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
@@ -1363,25 +1364,25 @@ obs_properties_t *get_properties(void *)
 	obs_property_t *smooth = obs_properties_add_float_slider(look, "pixel_smooth", obs_module_text("Mosaic.Smooth"),
 								 0.0, 100.0, 1.0);
 	obs_property_float_set_suffix(smooth, "%");
-	obs_property_set_long_description(smooth, obs_module_text("Mosaic.Smooth.Tip"));
+	set_tip(smooth, obs_module_text("Mosaic.Smooth.Tip"));
 	obs_property_t *glass =
 		obs_properties_add_float_slider(look, "pixel_glass", obs_module_text("Mosaic.Glass"), 0.0, 100.0, 1.0);
 	obs_property_float_set_suffix(glass, "%");
-	obs_property_set_long_description(glass, obs_module_text("Mosaic.Glass.Tip"));
+	set_tip(glass, obs_module_text("Mosaic.Glass.Tip"));
 	obs_property_t *glass_style = obs_properties_add_list(look, "pixel_glass_style",
 							      obs_module_text("Mosaic.GlassStyle"), OBS_COMBO_TYPE_LIST,
 							      OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(glass_style, obs_module_text("Mosaic.GlassStyle.Rounded"), 0);
 	obs_property_list_add_int(glass_style, obs_module_text("Mosaic.GlassStyle.Edges"), 1);
-	obs_property_set_long_description(glass_style, obs_module_text("Mosaic.GlassStyle.Tip"));
+	set_tip(glass_style, obs_module_text("Mosaic.GlassStyle.Tip"));
 	obs_property_t *origin_x = obs_properties_add_float_slider(look, "pixel_origin_x",
 								   obs_module_text("Mosaic.OriginX"), 0.0, 100.0, 0.5);
 	obs_property_float_set_suffix(origin_x, "%");
-	obs_property_set_long_description(origin_x, obs_module_text("Mosaic.Origin.Tip"));
+	set_tip(origin_x, obs_module_text("Mosaic.Origin.Tip"));
 	obs_property_t *origin_y = obs_properties_add_float_slider(look, "pixel_origin_y",
 								   obs_module_text("Mosaic.OriginY"), 0.0, 100.0, 0.5);
 	obs_property_float_set_suffix(origin_y, "%");
-	obs_property_set_long_description(origin_y, obs_module_text("Mosaic.Origin.Tip"));
+	set_tip(origin_y, obs_module_text("Mosaic.Origin.Tip"));
 	obs_property_t *rotation = obs_properties_add_float_slider(
 		look, "pixel_rotation", obs_module_text("Mosaic.Rotation"), -180.0, 180.0, 1.0);
 	obs_property_float_set_suffix(rotation, "°");
@@ -1390,20 +1391,20 @@ obs_properties_t *get_properties(void *)
 	obs_property_t *bloom =
 		obs_properties_add_float_slider(look, "bloom", obs_module_text("Ambient.Bloom"), 0.0, 1000.0, 1.0);
 	obs_property_float_set_suffix(bloom, "%");
-	obs_property_set_long_description(bloom, obs_module_text("Ambient.Bloom.Tip"));
+	set_tip(bloom, obs_module_text("Ambient.Bloom.Tip"));
 	obs_property_t *bloom_style = obs_properties_add_list(
 		look, "bloom_style", obs_module_text("Ambient.BloomStyle"), OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(bloom_style, obs_module_text("Ambient.BloomStyle.Shine"), 0);
 	obs_property_list_add_int(bloom_style, obs_module_text("Ambient.BloomStyle.Amplify"), 1);
-	obs_property_set_long_description(bloom_style, obs_module_text("Ambient.BloomStyle.Tip"));
+	set_tip(bloom_style, obs_module_text("Ambient.BloomStyle.Tip"));
 	obs_property_set_modified_callback(bloom_style, visibility_modified);
 	obs_property_t *bloom_from = obs_properties_add_float_slider(
 		look, "bloom_threshold", obs_module_text("Ambient.BloomThreshold"), 0.0, 100.0, 1.0);
 	obs_property_float_set_suffix(bloom_from, "%");
-	obs_property_set_long_description(bloom_from, obs_module_text("Ambient.BloomThreshold.Tip"));
+	set_tip(bloom_from, obs_module_text("Ambient.BloomThreshold.Tip"));
 	obs_property_t *bloom_size = obs_properties_add_float_slider(
 		look, "bloom_size", obs_module_text("Ambient.BloomSize"), 0.0, 1000.0, 1.0);
-	obs_property_set_long_description(bloom_size, obs_module_text("Ambient.BloomSize.Tip"));
+	set_tip(bloom_size, obs_module_text("Ambient.BloomSize.Tip"));
 	percent_slider(look, "brightness", "Ambient.Brightness", 0.0, 200.0);
 	percent_slider(look, "vignette", "Ambient.Vignette", 0.0, 100.0);
 	obs_properties_add_group(props, "look_group", obs_module_text("Ambient.Group.Look"), OBS_GROUP_NORMAL, look);

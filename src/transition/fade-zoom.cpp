@@ -21,6 +21,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "morph-paint.hpp"
 #include "../common/easing.hpp"
 #include "../common/timing.hpp"
+#include "../common/tooltip.hpp"
 
 #include <obs-module.h>
 #include <graphics/vec4.h>
@@ -149,7 +150,7 @@ void register_fade_zoom()
 		obs_property_t *zoom = obs_properties_add_float_slider(props, "zoom", obs_module_text("FadeZoom.Zoom"),
 								       10.0, 100.0, 1.0);
 		obs_property_float_set_suffix(zoom, " %");
-		obs_property_set_long_description(zoom, obs_module_text("FadeZoom.Zoom.Tip"));
+		set_tip(zoom, obs_module_text("FadeZoom.Zoom.Tip"));
 		add_easing_properties(props, "");
 		return props;
 	};

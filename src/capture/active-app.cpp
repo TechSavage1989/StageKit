@@ -41,6 +41,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/pick-list.hpp"
 #include "../common/scene-util.hpp"
 #include "../api/vendor-api.hpp"
+#include "../common/tooltip.hpp"
 
 #include <obs-module.h>
 #include <plugin-support.h>
@@ -658,12 +659,12 @@ obs_properties_t *get_properties(void *data)
 	pick_list_add(props, self ? self->source() : nullptr, by_hand);
 
 	obs_property_t *follow = obs_properties_add_bool(props, "follow", obs_module_text("Active.Follow"));
-	obs_property_set_long_description(follow, obs_module_text("Active.Follow.Tip"));
+	set_tip(follow, obs_module_text("Active.Follow.Tip"));
 
 	// How the change looks.
 	add_item_transition_properties(props);
 	obs_property_t *ready = obs_properties_add_bool(props, "ready", obs_module_text("Active.Ready"));
-	obs_property_set_long_description(ready, obs_module_text("Active.Ready.Tip"));
+	set_tip(ready, obs_module_text("Active.Ready.Tip"));
 
 	obs_property_t *help = obs_properties_add_text(props, "help", obs_module_text("Active.Help"), OBS_TEXT_INFO);
 	obs_property_text_set_info_word_wrap(help, true);

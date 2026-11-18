@@ -10,6 +10,8 @@
 #include <graphics/matrix4.h>
 #include <graphics/vec4.h>
 
+#include "../src/common/tooltip.hpp"
+
 #include <dlfcn.h>
 
 #include <QApplication>
@@ -3518,7 +3520,7 @@ static void scene_trans_override_test()
 		obs_data_release(s);
 		obs_properties_t *props = obs_source_properties(f);
 		const std::string all_title = description(props, "sources|alist");
-		const std::string all_tip = tip(props, "sources|apick");
+		std::string all_tip = tip(props, "sources|apick");
 		const bool has_box = obs_properties_get(props, "override_others") != nullptr;
 		const std::string box = description(props, "override_others");
 		// Chosen in the window: the callback changes the heading in place.
@@ -3526,8 +3528,13 @@ static void scene_trans_override_test()
 		obs_data_set_int(s, "cover", 1);
 		obs_property_modified(obs_properties_get(props, "cover"), s);
 		const std::string chosen_title = description(props, "sources|alist");
-		const std::string chosen_tip = tip(props, "sources|apick");
+		std::string chosen_tip = tip(props, "sources|apick");
 		obs_properties_destroy(props);
+		// (Tooltips are wrapped to short lines: compare the words, not the breaks.)
+		for (std::string *t : {&all_tip, &chosen_tip})
+			for (char &c : *t)
+				if (c == '\n')
+					c = ' ';
 		// A window opened on Chosen sources has it from the start.
 		obs_source_update(f, s);
 		props = obs_source_properties(f);
@@ -5102,6 +5109,137 @@ static void scene_corners_whole_test(uint32_t w, uint32_t h, const std::string &
 }
 // ==== end scene-filters:standby-corners ====
 
+// Tooltips are broken into lines (src/common/tooltip.hpp): the owner found
+// every tooltip "just one really long line of text". The wrapping itself, and
+// every tooltip of every StageKit kind's window. Alone with
+// STAGEKIT_TEST_ONLY_TOOLTIPS.
+static bool tip_lines_fit(const std::string &tip, std::string &bad)
+{
+	size_t start = 0;
+	for (;;) {
+		const size_t end = tip.find('\n', start);
+		const std::string line = tip.substr(start, end == std::string::npos ? std::string::npos : end - start);
+		const bool one_word = line.find(' ', line.find_first_not_of(' ')) == std::string::npos;
+		if (stagekit::tip_chars(line) > stagekit::kTipWidth && !one_word) {
+			bad = line;
+			return false;
+		}
+		if (end == std::string::npos)
+			return true;
+		start = end + 1;
+	}
+}
+
+static std::vector<std::string> tip_words(const std::string &text)
+{
+	std::vector<std::string> words;
+	std::string cur;
+	for (char c : text) {
+		if (c == ' ' || c == '\n') {
+			if (!cur.empty())
+				words.push_back(cur);
+			cur.clear();
+		} else {
+			cur += c;
+		}
+	}
+	if (!cur.empty())
+		words.push_back(cur);
+	return words;
+}
+
+static void tooltips_test()
+{
+	printf("\n[tooltips: broken into lines]\n");
+	using stagekit::wrap_tip;
+	const std::string long_text =
+		"Shows the standby image in the capture's place while the capture has nothing to show, "
+		"and glides between the two sizes over the time set below. Hidden sources too.";
+	const std::string wrapped = wrap_tip(long_text);
+	std::string bad;
+	CHECK(tip_lines_fit(wrapped, bad), "a long line is broken to %zu characters (%s)", stagekit::kTipWidth,
+	      bad.c_str());
+	CHECK(wrapped.find('\n') != std::string::npos, "the long line was broken");
+	CHECK(tip_words(wrapped) == tip_words(long_text), "no word is lost, split or moved");
+	CHECK(wrapped.find(" \n") == std::string::npos && wrapped.find("\n ") == std::string::npos,
+	      "no space is left at a break");
+
+	const std::string with_breaks = "First line.\nAutomatic: the key goes by the mode's name, then by its first "
+					"source, and then by the plain picture of a mode.\n\nLast.";
+	const std::string kept = wrap_tip(with_breaks);
+	CHECK(kept.rfind("First line.\n", 0) == 0 && kept.find("\n\nLast.") != std::string::npos,
+	      "breaks already in the text are kept, blank lines too");
+	CHECK(tip_words(kept) == tip_words(with_breaks) && tip_lines_fit(kept, bad), "and the rest is broken to fit");
+
+	const std::string url = "See https://example.com/" + std::string(80, 'a') + " for more.";
+	const std::string long_word = wrap_tip(url);
+	CHECK(long_word == "See\nhttps://example.com/" + std::string(80, 'a') + "\nfor more.",
+	      "a word longer than a line is a line of its own, never split");
+
+	// 70 two-byte characters with a space after every ten: broken by
+	// characters, never inside one.
+	std::string accents;
+	for (int i = 0; i < 70; i++)
+		accents += (i % 10 == 9) ? "\xC3\xA9 " : "\xC3\xA9";
+	const std::string acc = wrap_tip(accents);
+	bool whole = true;
+	for (size_t i = 0; i < acc.size(); i++)
+		if (acc[i] == '\n' && i > 0 && (unsigned char)acc[i - 1] == 0xC3)
+			whole = false;
+	CHECK(whole && tip_lines_fit(acc, bad) && tip_words(acc) == tip_words(accents),
+	      "lines are counted in characters and a UTF-8 character is never cut");
+	CHECK(wrap_tip("Short.") == "Short." && wrap_tip("") == "", "a short tip is left as it is");
+	CHECK(wrap_tip("  - indented item") == "  - indented item", "spaces at the start of a line are kept");
+
+	printf("\n[tooltips: every StageKit window]\n");
+	int kinds = 0, tips = 0, too_long = 0;
+	std::string first_bad;
+	std::function<void(obs_properties_t *, const char *)> walk = [&](obs_properties_t *props, const char *id) {
+		for (obs_property_t *p = obs_properties_first(props); p; obs_property_next(&p)) {
+			const char *tip = obs_property_long_description(p);
+			if (tip && *tip) {
+				tips++;
+				std::string line;
+				if (!tip_lines_fit(tip, line)) {
+					too_long++;
+					if (first_bad.empty())
+						first_bad =
+							std::string(id) + " / " + obs_property_name(p) + ": " + line;
+				}
+			}
+			if (obs_property_get_type(p) == OBS_PROPERTY_GROUP)
+				walk(obs_property_group_content(p), id);
+		}
+	};
+	auto look = [&](const char *id) {
+		if (!id || strncmp(id, "stagekit_", 9) != 0)
+			return;
+		obs_source_t *src = obs_source_create_private(id, "tooltip check", nullptr);
+		if (!src)
+			return;
+		kinds++;
+		obs_properties_t *props = obs_source_properties(src);
+		if (props) {
+			obs_data_t *settings = obs_source_get_settings(src);
+			obs_properties_apply_settings(props, settings);
+			obs_data_release(settings);
+			walk(props, id);
+			obs_properties_destroy(props);
+		}
+		obs_source_release(src);
+	};
+	const char *id = nullptr;
+	for (size_t i = 0; obs_enum_filter_types(i, &id); i++)
+		look(id);
+	for (size_t i = 0; obs_enum_input_types(i, &id); i++)
+		look(id);
+	for (size_t i = 0; obs_enum_transition_types(i, &id); i++)
+		look(id);
+	CHECK(kinds >= 30 && tips >= 100, "%d StageKit kinds looked at, %d tooltips", kinds, tips);
+	CHECK(too_long == 0, "no tooltip line is over %zu characters (%d are; first: %s)", stagekit::kTipWidth,
+	      too_long, first_bad.c_str());
+}
+
 int main(int argc, char **argv)
 {
 	if (argc < 7) {
@@ -5153,6 +5291,13 @@ int main(int argc, char **argv)
 	load_module("/usr/lib/x86_64-linux-gnu/obs-plugins/obs-transitions.so",
 		    "/usr/share/obs/obs-plugins/obs-transitions");
 	obs_post_load_modules();
+	if (getenv("STAGEKIT_TEST_ONLY_TOOLTIPS")) { // to try that section alone
+		tooltips_test();
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
 	if (getenv("STAGEKIT_TEST_ONLY_FIT_GROUPS")) { // to try that section alone
 		scene_fit_groups_test();
 		obs_shutdown();

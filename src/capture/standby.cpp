@@ -36,6 +36,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../placement/scene-standby.hpp"
 #include "../transition/morph-paint.hpp"
 #include "../transition/morph.hpp"
+#include "../common/tooltip.hpp"
 
 #include <obs-module.h>
 #include <plugin-support.h>
@@ -1278,7 +1279,7 @@ obs_properties_t *get_properties(void *data)
 						       : text_with("Standby.Status.Managed", by).c_str(),
 						OBS_TEXT_INFO);
 		obs_property_text_set_info_word_wrap(status, true);
-		obs_property_set_long_description(status, obs_module_text("Standby.Status.Managed.Tip"));
+		set_tip(status, obs_module_text("Standby.Status.Managed.Tip"));
 	} else {
 		obs_properties_add_text(props, "status",
 					obs_module_text(self && self->showing() ? "Standby.Status.Showing"
@@ -1293,7 +1294,7 @@ obs_properties_t *get_properties(void *data)
 			return false;
 		},
 		self);
-	obs_property_set_long_description(cover, obs_module_text("Standby.Cover.Tip"));
+	set_tip(cover, obs_module_text("Standby.Cover.Tip"));
 	if (managed) {
 		obs_property_t *help =
 			obs_properties_add_text(props, "help", obs_module_text("Standby.Help"), OBS_TEXT_INFO);
@@ -1306,7 +1307,7 @@ obs_properties_t *get_properties(void *data)
 	obs_property_list_add_int(picture, obs_module_text("Standby.Picture.Start"), (int)Picture::StartImage);
 	obs_property_list_add_int(picture, obs_module_text("Standby.Picture.File"), (int)Picture::File);
 	obs_property_list_add_int(picture, obs_module_text("Standby.Picture.Source"), (int)Picture::Source);
-	obs_property_set_long_description(picture, obs_module_text("Standby.Picture.Tip"));
+	set_tip(picture, obs_module_text("Standby.Picture.Tip"));
 	obs_property_set_modified_callback(picture, picture_modified);
 
 	obs_properties_add_path(props, "file", obs_module_text("Standby.File"), OBS_PATH_FILE,
@@ -1330,7 +1331,7 @@ obs_properties_t *get_properties(void *data)
 		&fill);
 
 	obs_property_t *own_shape = obs_properties_add_bool(props, "own_shape", obs_module_text("Standby.OwnShape"));
-	obs_property_set_long_description(own_shape, obs_module_text("Standby.OwnShape.Tip"));
+	set_tip(own_shape, obs_module_text("Standby.OwnShape.Tip"));
 
 	// How the picture gives way to the capture and comes back.
 	obs_property_t *style = obs_properties_add_list(props, "style", obs_module_text("Standby.Style"),
@@ -1346,7 +1347,7 @@ obs_properties_t *get_properties(void *data)
 		      {Style::Zoom, "Standby.Style.Zoom"},           {Style::Morph, "Standby.Style.Morph"}};
 	for (const auto &entry : styles)
 		obs_property_list_add_int(style, obs_module_text(entry.text), (int)entry.value);
-	obs_property_set_long_description(style, obs_module_text("Standby.Style.Tip"));
+	set_tip(style, obs_module_text("Standby.Style.Tip"));
 	obs_property_set_modified_callback(style, [](obs_properties_t *p, obs_property_t *, obs_data_t *settings) {
 		const bool timed = obs_data_get_int(settings, "style") != (int)Style::Cut;
 		for (const char *name : {"fade_ms", "back_ms", "ease_curve", "ease_mode", "glide_size"})
@@ -1356,19 +1357,19 @@ obs_properties_t *get_properties(void *data)
 	obs_property_t *fade =
 		obs_properties_add_int_slider(props, "fade_ms", obs_module_text("Standby.Fade"), 0, 5000, 50);
 	obs_property_int_set_suffix(fade, " ms");
-	obs_property_set_long_description(fade, obs_module_text("Standby.Fade.Tip"));
+	set_tip(fade, obs_module_text("Standby.Fade.Tip"));
 	obs_property_t *back =
 		obs_properties_add_int_slider(props, "back_ms", obs_module_text("Standby.Back"), 0, 5000, 50);
 	obs_property_int_set_suffix(back, " ms");
-	obs_property_set_long_description(back, obs_module_text("Standby.Back.Tip"));
+	set_tip(back, obs_module_text("Standby.Back.Tip"));
 	add_easing_properties(props, "");
 	obs_property_t *glide = obs_properties_add_bool(props, "glide_size", obs_module_text("Standby.GlideSize"));
-	obs_property_set_long_description(glide, obs_module_text("Standby.GlideSize.Tip"));
+	set_tip(glide, obs_module_text("Standby.GlideSize.Tip"));
 
 	// In the source's place while the source is hidden.
 	obs_property_t *when_hidden =
 		obs_properties_add_bool(props, "when_hidden", obs_module_text("Standby.WhenHidden"));
-	obs_property_set_long_description(when_hidden, obs_module_text("Standby.WhenHidden.Tip"));
+	set_tip(when_hidden, obs_module_text("Standby.WhenHidden.Tip"));
 	add_item_change_properties(props, self ? self->source() : nullptr, nullptr);
 
 	obs_property_t *help = obs_properties_add_text(props, "help", obs_module_text("Standby.Help"), OBS_TEXT_INFO);
