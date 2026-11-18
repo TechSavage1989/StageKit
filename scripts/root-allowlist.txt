@@ -2,6 +2,7 @@
 # scripts/check-root.sh fails when anything else is tracked there.
 # To add an entry: explain why the toolchain needs it at the root in the pull
 # request, add it here and to the folder map in AGENTS.md.
+.claude
 .clang-format
 .gersemirc
 .github
