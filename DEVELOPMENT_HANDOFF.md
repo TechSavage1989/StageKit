@@ -13,9 +13,9 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
-## Scene Fit groups: Same for all sources (0.1.0-betaNEXT)
+## Scene Fit groups: Same for all sources (0.1.0-beta173)
 
-Branch `feat/scene-fit-groups`, on `main` after beta166. Notes: `docs/releases/0.1.0-betaNEXT.md`.
+Branch `feat/scene-fit-groups`, on `main` after beta166. Notes: `docs/releases/0.1.0-beta173.md`.
 No Stream Deck file changed. The owner: "I'd like the Fit to scene filter also have the option to
 select one or more sources and specify the priority for all the selected sources together. that
 way i can have multiple fit to filters with similar settings or priorities instead of multiple for

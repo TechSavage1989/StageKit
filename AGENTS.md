@@ -1885,7 +1885,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   (defaults included: Fit to Space's gap is 80, Scene Fit's 30) and switches it off. A
   stand-in twin of an entry is not in the way of the others (its item's claim holds that room).
   **Settings: Same for all sources** (`settings_mode`, by number, append-only: 0 *Each source its
-  own*, as it comes and for every filter saved before; 1 *Same for all sources*; betaNEXT). The
+  own*, as it comes and for every filter saved before; 1 *Same for all sources*; beta173). The
   owner: "I'd like the Fit to scene filter also have the option to select one or more sources and
   specify the priority for all the selected sources together. that way i can have multiple fit to
   filters with similar settings or priorities instead of multiple for each source." In 1 every
