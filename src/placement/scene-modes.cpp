@@ -612,7 +612,7 @@ private:
 		applying_ = std::this_thread::get_id();
 		for (Work &w : work) {
 			if (cut)
-				set_item_transitions(w.item, kTransitionCut, 0);
+				cut_item_transitions(w.item); // (never overridden: a put-right)
 			else
 				apply_item_change(w.item, s.change, w.scene);
 			set_item_visible(w.item, w.show);

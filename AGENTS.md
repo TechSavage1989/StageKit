@@ -1972,6 +1972,29 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   `g_all` (`live`). Before the integration a removed scene's `item_remove` reached a freed filter
   and OBS hung at shutdown (seen in the tests). A new filter that listens to its scene's or groups'
   signals must do the same.
+  **Override other filters** (`override_others`, a bool, off as it comes; beta179). The owner, with
+  Link Visibility and Show in Scenes set to Morph of their own: "none of the other transitions seem
+  to do anything. only morph works at all". Those filters' own choice wins for their change, and
+  the scene's is only put back after; they can be set to *As the scene sets*, or this is ticked.
+  Then the scene's choice (the usual one, or a listed source's own) replaces whatever was asked,
+  in the one place every filter goes through: `resolve_item_change` (and so `apply_item_change`,
+  `item_change_matches`) and `set_item_transitions` (`overridden` in
+  `src/common/item-transition.cpp`). The lookup (`SceneLookup`) says `overrides` beside its answer;
+  `covers` already leaves out private sources, the item Morph's layer, ignored and animated
+  sources and, without *Sources in groups*, grouped ones; an owned item (Standby,
+  `item_transitions_owner`) is never overridden. While no filter has it ticked
+  (`item_transitions_scene_overrides`, a count) a change with no *As the scene sets* in it is not
+  looked up at all, as before. The put-back finds the item as it should be and writes nothing.
+  Scene Modes' put-right after loading is a cut through `cut_item_transitions`, which is never
+  overridden. **The list's heading follows *Sources covered*** (`title_text`, `cover_changed`):
+  *Sources with own settings* with All sources, *Chosen sources* with Chosen sources, each with
+  its own tip; the owner, of the one tip for both: "this tooltip makes no sense." **Morph's own
+  choices** (*Unpaired sources* and its transition's settings, *Morph the main image*, *Use
+  visible pixels*, *Ignore shadows & outlines*, easing, *Linked sources*) were already in its
+  window through the fuller *Change with*; a test now shows them there and their values on the
+  items' Morph transitions. Tested in `[scene transitions: override other filters, the list's
+  wording, Morph's choices]` (`scene_trans_override_test`, alone:
+  `STAGEKIT_TEST_ONLY_SCENE_TRANS_OVERRIDE`).
 <!-- ==== end scene-filters:transitions ==== -->
 <!-- ==== scene-filters:fit ==== -->
 - **Scene Fit and Fit to Space share one engine** (`src/placement/fit-engine.*`, beta155). A Fit

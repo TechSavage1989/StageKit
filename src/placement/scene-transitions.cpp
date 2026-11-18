@@ -28,6 +28,11 @@ the Free Software Foundation; either version 2 of the License, or
 //   Show/Hide Animation animates, and items in groups unless asked.
 // - After another filter's own choice, the scene's transitions are put back
 //   once that change has had time to end, never part-way through it.
+// - With "Override other filters" there is no other filter's choice: every
+//   call that sets an item's transitions (`resolve_item_change`,
+//   `set_item_transitions`) asks this filter first and takes its choice for
+//   a covered item, so the put-back finds the item as it should be and
+//   writes nothing.
 
 #include "scene-transitions.hpp"
 #include "scene-tools.hpp"
@@ -80,6 +85,7 @@ struct Look {
 	ItemChange usual;
 	std::map<std::string, ItemChange> own;
 	bool any_nearest = false; // a way off the nearest edge: positions matter
+	bool overrides = false;   // "Override other filters"
 };
 
 // "As the scene sets" cannot be the scene's own answer: a fade of that way's
@@ -102,6 +108,13 @@ bool off_nearest(const ItemWay &way)
 }
 
 std::atomic<long long> g_writes{0}; // items written, for the tests
+// Counts the filters with "Override other filters" ticked: while none has,
+// the other filters' changes are not looked up at all.
+void count_override(bool was, bool now)
+{
+	if (was != now)
+		item_transitions_scene_overrides(now ? 1 : -1);
+}
 
 struct Key {
 	uintptr_t holder; // the scene or group the item is straight in
@@ -130,6 +143,7 @@ public:
 			std::lock_guard lock(g_mutex);
 			g_all.erase(std::remove(g_all.begin(), g_all.end(), this), g_all.end());
 		}
+		count_override(look()->overrides, false);
 		signal_handler_disconnect(obs_source_get_signal_handler(source_), "enable", on_enable, this);
 		detach();
 	}
@@ -157,6 +171,7 @@ public:
 		for (const std::string &name : pick_list_read(settings, "except", false))
 			look->except.insert(name);
 		look->in_groups = obs_data_get_bool(settings, "in_groups");
+		look->overrides = obs_data_get_bool(settings, "override_others");
 		look->usual = item_change_read(settings);
 		no_scene_kind(look->usual);
 		for (const std::string &name : look->listed) {
@@ -169,6 +184,7 @@ public:
 			look->any_nearest = look->any_nearest || off_nearest(own.show) || off_nearest(own.hide);
 		{
 			std::lock_guard lock(mutex_);
+			count_override(look_ && look_->overrides, look->overrides);
 			look_ = std::move(look);
 		}
 		all_due_ = true;
@@ -568,8 +584,9 @@ private:
 	std::map<Key, uint64_t> due_; // item -> when to look at it
 };
 
-bool lookup(obs_source_t *scene, obs_sceneitem_t *item, ItemChange &out)
+bool lookup(obs_source_t *scene, obs_sceneitem_t *item, ItemChange &out, bool &overrides)
 {
+	overrides = false;
 	if (!scene || !item)
 		return false;
 	obs_source_t *holder = obs_scene_get_source(obs_sceneitem_get_scene(item));
@@ -622,6 +639,7 @@ bool lookup(obs_source_t *scene, obs_sceneitem_t *item, ItemChange &out)
 		}
 	}
 	const bool found = used && SceneTransitions::covers(*used->look, used->animated, item, in_group, out);
+	overrides = found && used->look->overrides;
 	for (const Candidate &c : candidates)
 		obs_source_release(c.filter);
 	return found;
@@ -734,6 +752,32 @@ void scene_source_names(obs_source_t *parent, std::vector<std::string> &names)
 		&ctx);
 }
 
+// The list's heading and tip say what it is for under each choice of
+// "Sources covered": with All sources it only gives sources settings of
+// their own; with Chosen sources it is what is covered. The owner, of the
+// one wording for both: "this tooltip makes no sense."
+const char *sources_title(Cover cover)
+{
+	return obs_module_text(cover == Cover::Listed ? "SceneTrans.Chosen" : "SceneTrans.Sources");
+}
+
+const char *sources_tip(Cover cover)
+{
+	return obs_module_text(cover == Cover::Listed ? "SceneTrans.Chosen.Tip" : "SceneTrans.Sources.Tip");
+}
+
+// "Sources covered" changed: the list's heading and tip follow. Only text
+// changes, so nothing is taken off while OBS goes through the controls.
+bool cover_changed(obs_properties_t *props, obs_property_t *, obs_data_t *settings)
+{
+	const Cover cover = (Cover)obs_data_get_int(settings, "cover");
+	if (obs_property_t *group = obs_properties_get(props, "sources|alist"))
+		obs_property_set_description(group, sources_title(cover));
+	if (obs_property_t *pick = obs_properties_get(props, "sources|apick"))
+		obs_property_set_long_description(pick, sources_tip(cover));
+	return true;
+}
+
 obs_properties_t *get_properties(void *data)
 {
 	auto *self = static_cast<SceneTransitions *>(data);
@@ -757,12 +801,17 @@ obs_properties_t *get_properties(void *data)
 	obs_property_list_add_int(cover, obs_module_text("SceneTrans.Cover.All"), (int)Cover::All);
 	obs_property_list_add_int(cover, obs_module_text("SceneTrans.Cover.Listed"), (int)Cover::Listed);
 	obs_property_set_long_description(cover, obs_module_text("SceneTrans.Cover.Tip"));
+	obs_property_set_modified_callback(cover, cover_changed);
 
+	obs_data_t *now = source ? obs_source_get_settings(source) : nullptr;
+	const Cover covered = now ? (Cover)obs_data_get_int(now, "cover") : Cover::All;
+	obs_data_release(now);
 	PickList sources;
 	sources.setting = "sources";
-	sources.title = "SceneTrans.Sources";
+	sources.title = covered == Cover::Listed ? "SceneTrans.Chosen" : "SceneTrans.Sources";
+	sources.title_text = sources_title(covered);
 	sources.add = "SceneTrans.AddSource";
-	sources.tip = "SceneTrans.Sources.Tip";
+	sources.tip = covered == Cover::Listed ? "SceneTrans.Chosen.Tip" : "SceneTrans.Sources.Tip";
 	sources.choices = [parent](std::vector<std::string> &names) {
 		scene_source_names(parent, names);
 	};
@@ -781,6 +830,10 @@ obs_properties_t *get_properties(void *data)
 	obs_property_t *in_groups = obs_properties_add_bool(props, "in_groups", obs_module_text("SceneTrans.InGroups"));
 	obs_property_set_long_description(in_groups, obs_module_text("SceneTrans.InGroups.Tip"));
 
+	obs_property_t *overrides =
+		obs_properties_add_bool(props, "override_others", obs_module_text("SceneTrans.Override"));
+	obs_property_set_long_description(overrides, obs_module_text("SceneTrans.Override.Tip"));
+
 	add_item_change_properties(props, source, "sources");
 	return props;
 }
@@ -789,7 +842,8 @@ obs_properties_t *get_properties(void *data)
 
 bool scene_transition_for(obs_source_t *scene, obs_sceneitem_t *item, ItemChange &out)
 {
-	return lookup(scene, item, out);
+	bool overrides = false;
+	return lookup(scene, item, out, overrides);
 }
 
 void scene_transitions_stop()
@@ -837,6 +891,7 @@ void register_scene_transitions()
 	info.get_defaults = [](obs_data_t *settings) {
 		obs_data_set_default_int(settings, "cover", (int)Cover::All);
 		obs_data_set_default_bool(settings, "in_groups", false);
+		obs_data_set_default_bool(settings, "override_others", false);
 		item_change_defaults(settings);
 		// Its own lists have no "As the scene sets": it is what that asks.
 		obs_data_set_default_string(settings, "transition", kTransitionFade);

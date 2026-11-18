@@ -9,39 +9,47 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | `feat/sd-mode-key` (the Scene Mode key tied to one filter, betaNEXT), on `main` after beta174. Next: the new collection |
+| Working branch | `feat/scene-transitions-override` (Scene Transitions: Override other filters, betaNEXT), on `main` after beta174 (#190). Next: the new collection |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
-## Stream Deck: the Scene Mode key works one filter (0.1.0-beta178)
+## Scene Transitions: Override other filters (0.1.0-beta179)
 
-Branch `feat/sd-mode-key`, on `main` after beta174. Notes: `docs/releases/0.1.0-beta178.md`.
-Stream Deck only (plugin 0.25.0.0); no OBS file changed. The owner: "the scene mode button when set
-to toggle needs to actually have icons that change to the respective mode icon. Also how does
-toggle work with more than two scene modes?", then "allow for the mode key to have a layout/mode
-type selection for each associated mode. Also, the key should connect to the selected scene mode
-filter, not individual modes in all filters, and it should allow configuration of the specific
-modes as desired, whether it's on, off, toggle, or next".
+Branch `feat/scene-transitions-override`, on `main` after beta174. Notes:
+`docs/releases/0.1.0-beta179.md`. No Stream Deck file changed. The owner, with a screenshot of
+Scene Transitions on *All sources*: of the list's tip, "this tooltip makes no sense", and "none of
+the other transitions seem to do anything. only morph works at all, and even then there is no
+choice as to what it determines for morphing by default". Cause: their Link Visibility filters and
+Show in Scenes switches have their own *Show transition* set to Morph, which wins for every change
+they make; the scene's transition is only put back afterwards. The owner chose both remedies: they
+set those filters to *As the scene sets* (step A, told in the README), and this build adds:
 
-- **The key is tied to one Scene Modes filter** (`modeFilter`), with *On press* *Switch on*,
-  *Switch off*, *Toggle* or *Next mode*, a *Mode* for on and toggle, and a *Long press*
-  (`HoldPress`) with its own mode and hold time. An old key (`target`, one mode) is moved once
-  (`migrateModeKey`) and keeps its press. AGENTS, *The Scene Mode key*.
-- **Each mode's own settings**: *Settings for* (a mode of the filter) with *Use*, *Its layout*,
-  *Its image* under it, kept per mode in `perMode` by `editModeSettings`. One set of lists edited
-  through a selector, not rows built by a page script: the page stays plain generated
-  sdpi-components.
-- **The image and title follow the mode on** for Switch off, Toggle and Next mode; Switch on is
-  unchanged. No mode: the plain mode key and *No mode*.
-- **Next mode** is the filter's `next` with every mode used; with modes left out the plugin works
-  out the next used mode from `GetSceneMode` and sends `on`. OBS side checked, nothing to change:
-  `How::Next` steps in order and wraps, from none to the first, never to none. `How::Toggle` goes
-  between its mode and the one before (or none with *Allow no mode*), which is the answer to the
-  owner's question: with more than two modes, use Next mode.
-- Tests: `tests/obs.test.ts` (the new case, and the old one, which still drives a key saved with
-  `target`), `tests/key-types.test.ts`.
-- **Not proven**: a Stream Deck (the page writing back what the plugin sets when *Settings for*
-  changes is believed, not seen); the real filter.
+- **Override other filters** (`override_others`, off as it comes and for every saved filter). With
+  it, the scene's choice (usual or a listed source's own) is every show and hide of a covered item
+  in that scene, whatever Link Visibility, Show in Scenes, Scene Modes, Program Trigger or the
+  switchers ask. Applied in `src/common/item-transition.cpp`: `overridden` / `scene_says`, used by
+  `resolve_item_change` (so `apply_item_change`, `item_change_matches`) and by
+  `set_item_transitions`; the lookup (`SceneLookup`) now answers `overrides` too. Never for an item
+  a Standby owns, the item Morph's layer, private sources, ignored or animated sources. A count of
+  ticked filters (`item_transitions_scene_overrides`) keeps the old early return while none is.
+  Scene Modes' after-loading put-right cut goes through the new `cut_item_transitions`, never
+  overridden. The put-back after a change finds nothing to write (tested: 0 writes).
+- **The list's wording**: *Sources with own settings* with All sources, *Chosen sources* with Chosen
+  sources, each with its own tip, changed in place when *Sources covered* changes (`cover_changed`,
+  PickList `title_text`). Locale: `SceneTrans.Sources*` reworded, `SceneTrans.Chosen*`,
+  `SceneTrans.Override*` added; *Sources covered*'s tip says "listed below".
+- **Morph's own choices**: checked, already there. With Morph chosen, the window shows *Unpaired
+  sources* (and the chosen transition's own settings under it), *Morph the main image*, *Use visible
+  pixels*, *Ignore shadows & outlines*, easing curve and direction, and the *Linked sources* boxes;
+  values reach the items' Morph transitions. Now tested. Nothing was added in code: the owner may
+  have been looking at a filter with Morph set elsewhere, or expected these under *Sources covered*.
+- Tests: `[scene transitions: override other filters, the list's wording, Morph's choices]`
+  (`scene_trans_override_test`, alone: `STAGEKIT_TEST_ONLY_SCENE_TRANS_OVERRIDE`; also run at the
+  end of the Scene Transitions block): the wording both ways, Morph's controls and values, a Link
+  Visibility on Morph overridden to the scene's fade with nothing put back, a Standby's own slide
+  kept, and with override off the link's Morph as before.
+- **Not proven:** Windows; the owner's collection; `set_item_transitions`' override (Program
+  Trigger, switchers) is not driven by a test (it goes through the same `overridden`).
 
 ## Make Room, a transition and a way for unpaired sources (0.1.0-beta175)
 

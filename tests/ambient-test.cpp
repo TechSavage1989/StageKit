@@ -3149,6 +3149,285 @@ static void item_morph_holds_test(uint32_t w, uint32_t h)
 	obs_scene_release(elsewhere);
 }
 
+// ==== scene-filters:transitions ====
+// Scene Transitions' *Override other filters*, the list's wording under each
+// *Sources covered*, and Morph's own choices in its window reaching the
+// items' Morph transitions (alone: STAGEKIT_TEST_ONLY_SCENE_TRANS_OVERRIDE).
+// The owner: "none of the other transitions seem to do anything. only morph
+// works at all, and even then there is no choice as to what it determines
+// for morphing by default"; of the list's tip: "this tooltip makes no sense."
+static void scene_trans_override_test()
+{
+	printf("\n[scene transitions: override other filters, the list's wording, Morph's choices]\n");
+	for (const char *kind : {"stagekit_morph", "fade_transition", "slide_transition"})
+		if (!obs_source_get_display_name(kind)) {
+			CHECK(false, "the transition %s is there", kind);
+			return;
+		}
+	auto block = [](const char *name, long long abgr) {
+		obs_data_t *d = obs_data_create();
+		obs_data_set_int(d, "color", abgr);
+		obs_data_set_int(d, "width", 100);
+		obs_data_set_int(d, "height", 60);
+		obs_source_t *src = obs_source_create("color_source", name, d, nullptr);
+		obs_data_release(d);
+		return src;
+	};
+	auto put = [](obs_scene_t *scene, obs_source_t *src, float x, float y) {
+		obs_sceneitem_t *item = obs_scene_add(scene, src);
+		vec2 p;
+		vec2_set(&p, x, y);
+		obs_sceneitem_set_pos(item, &p);
+		return item;
+	};
+	auto list = [](obs_data_t *settings, const char *name, std::vector<const char *> values) {
+		obs_data_array_t *array = obs_data_array_create();
+		for (const char *v : values) {
+			obs_data_t *row = obs_data_create();
+			obs_data_set_string(row, "value", v);
+			obs_data_array_push_back(array, row);
+			obs_data_release(row);
+		}
+		obs_data_set_array(settings, name, array);
+		obs_data_array_release(array);
+	};
+	auto kind_of = [](obs_sceneitem_t *item, bool show) {
+		obs_source_t *t = obs_sceneitem_get_transition(item, show);
+		const char *id = t ? obs_source_get_unversioned_id(t) : nullptr;
+		return std::string(id ? id : "");
+	};
+	auto change = [](obs_source_t *filter, const std::function<void(obs_data_t *)> &edit) {
+		obs_data_t *s = obs_source_get_settings(filter);
+		edit(s);
+		obs_source_update(filter, s);
+		obs_data_release(s);
+	};
+	auto wait = [](obs_source_t *scene, int ms) {
+		for (int i = 0; i < ms / 50; i++) {
+			render(scene, 640, 360);
+			sleep_ms(50);
+		}
+	};
+	auto writes = [] {
+		calldata_t cd;
+		calldata_init(&cd);
+		proc_handler_call(obs_get_proc_handler(), "stagekit_scene_transitions_writes", &cd);
+		const long long n = calldata_int(&cd, "writes");
+		calldata_free(&cd);
+		return n;
+	};
+	auto description = [](obs_properties_t *props, const char *name) {
+		obs_property_t *p = obs_properties_get(props, name);
+		const char *text = p ? obs_property_description(p) : nullptr;
+		return std::string(text ? text : "");
+	};
+	auto tip = [](obs_properties_t *props, const char *name) {
+		obs_property_t *p = obs_properties_get(props, name);
+		const char *text = p ? obs_property_long_description(p) : nullptr;
+		return std::string(text ? text : "");
+	};
+
+	obs_source_t *sa = block("OV A", 0xFF0000FFLL);
+	obs_source_t *sb = block("OV B", 0xFF00FF00LL);
+	obs_scene_t *sc = obs_scene_create("OV Scene");
+	obs_source_t *src = obs_scene_get_source(sc);
+	obs_source_inc_showing(src);
+	obs_sceneitem_t *ia = put(sc, sa, 10, 10);
+	obs_sceneitem_t *ib = put(sc, sb, 300, 10);
+	obs_sceneitem_set_visible(ib, false);
+
+	// ---- the window: the list's heading and tip under each Sources covered
+	obs_data_t *fs = obs_data_create();
+	obs_data_set_string(fs, "transition", "fade_transition");
+	obs_data_set_int(fs, "transition_ms", 400);
+	obs_source_t *f = obs_source_create("stagekit_scene_transitions", "OV Transitions", fs, nullptr);
+	obs_data_release(fs);
+	obs_source_filter_add(src, f);
+	{
+		obs_data_t *s = obs_source_get_settings(f);
+		const bool off = !obs_data_get_bool(s, "override_others");
+		obs_data_release(s);
+		obs_properties_t *props = obs_source_properties(f);
+		const std::string all_title = description(props, "sources|alist");
+		const std::string all_tip = tip(props, "sources|apick");
+		const bool has_box = obs_properties_get(props, "override_others") != nullptr;
+		const std::string box = description(props, "override_others");
+		// Chosen in the window: the callback changes the heading in place.
+		s = obs_source_get_settings(f);
+		obs_data_set_int(s, "cover", 1);
+		obs_property_modified(obs_properties_get(props, "cover"), s);
+		const std::string chosen_title = description(props, "sources|alist");
+		const std::string chosen_tip = tip(props, "sources|apick");
+		obs_properties_destroy(props);
+		// A window opened on Chosen sources has it from the start.
+		obs_source_update(f, s);
+		props = obs_source_properties(f);
+		const std::string opened = description(props, "sources|alist");
+		obs_properties_destroy(props);
+		obs_data_set_int(s, "cover", 0);
+		obs_source_update(f, s);
+		obs_data_release(s);
+		CHECK(off && has_box && box == "Override other filters" && box.size() < 26,
+		      "Override other filters is there, unticked as it comes (%s)", box.c_str());
+		CHECK(all_title == "Sources with own settings" &&
+			      all_tip.find("transition of its own") != std::string::npos &&
+			      all_tip.find("Every other source uses the scene's transition") != std::string::npos,
+		      "with All sources the list is Sources with own settings, and its tip says what it is for (%s: %s)",
+		      all_title.c_str(), all_tip.c_str());
+		CHECK(chosen_title == "Chosen sources" && opened == "Chosen sources" &&
+			      chosen_tip.find("Only these sources get the scene's transition") == 0,
+		      "with Chosen sources it is Chosen sources, changed in place and in a new window (%s / %s: %s)",
+		      chosen_title.c_str(), opened.c_str(), chosen_tip.c_str());
+	}
+
+	// ---- Morph's own choices in the window
+	{
+		change(f, [](obs_data_t *s) { obs_data_set_string(s, "transition", "stagekit_morph"); });
+		obs_properties_t *props = obs_source_properties(f);
+		std::vector<std::string> missing;
+		for (const char *name : {"show|stagekit_morph|unpaired", "show|stagekit_morph|pair_main",
+					 "show|stagekit_morph|visible_pixels", "show|stagekit_morph|no_shadows",
+					 "show|stagekit_morph|ease_curve", "show|stagekit_morph|ease_mode",
+					 "morph_link_a", "morph_link_b", "morph_link_add", "morph_links|alist"}) {
+			obs_property_t *p = obs_properties_get(props, name);
+			if (!p || !obs_property_visible(p))
+				missing.push_back(name);
+		}
+		const bool no_others = !obs_properties_get(props, "show|stagekit_morph|others") &&
+				       !obs_properties_get(props, "show|stagekit_morph|link_a");
+		obs_properties_destroy(props);
+		change(f, [](obs_data_t *s) {
+			obs_data_set_string(s, "show|stagekit_morph|unpaired", "slide_transition");
+		});
+		props = obs_source_properties(f);
+		const bool nested =
+			obs_properties_get(props, "show|stagekit_morph|unpaired|slide_transition|direction");
+		obs_properties_destroy(props);
+		std::string gone;
+		for (const std::string &name : missing)
+			gone += name + " ";
+		CHECK(missing.empty() && no_others && nested,
+		      "with Morph chosen the window offers Unpaired sources (its transition's own settings under it), Morph the main image, Use visible pixels, Ignore shadows & outlines, easing and Morph's links (missing: %s)",
+		      gone.c_str());
+
+		// What is chosen reaches the items' Morph transitions.
+		change(f, [&](obs_data_t *s) {
+			obs_data_set_bool(s, "show|stagekit_morph|pair_main", false);
+			obs_data_set_bool(s, "show|stagekit_morph|visible_pixels", false);
+			obs_data_set_bool(s, "show|stagekit_morph|no_shadows", false);
+			obs_data_set_int(s, "show|stagekit_morph|ease_curve", 0);
+			obs_data_set_string(s, "show|stagekit_morph|unpaired|slide_transition|direction", "up");
+			list(s, "morph_links", {"OV A \xE2\x86\x94 OV B"});
+		});
+		wait(src, 300);
+		obs_source_t *t = obs_sceneitem_get_transition(ia, true);
+		obs_data_t *ts = t ? obs_source_get_settings(t) : nullptr;
+		obs_data_array_t *links = ts ? obs_data_get_array(ts, "links") : nullptr;
+		obs_data_t *first = links && obs_data_array_count(links) ? obs_data_array_item(links, 0) : nullptr;
+		const std::string link = first ? obs_data_get_string(first, "value") : "";
+		const bool reached =
+			ts && kind_of(ia, true) == "stagekit_morph" && kind_of(ia, false) == "stagekit_morph" &&
+			!obs_data_get_bool(ts, "pair_main") && !obs_data_get_bool(ts, "visible_pixels") &&
+			!obs_data_get_bool(ts, "no_shadows") && obs_data_get_int(ts, "ease_curve") == 0 &&
+			strcmp(obs_data_get_string(ts, "unpaired"), "slide_transition") == 0 &&
+			strcmp(obs_data_get_string(ts, "unpaired|slide_transition|direction"), "up") == 0 &&
+			link == "OV A \xE2\x86\x94 OV B";
+		CHECK(reached,
+		      "Morph's choices made in Scene Transitions are the items' Morph settings (%s; unpaired %s %s; link %s)",
+		      kind_of(ia, true).c_str(), ts ? obs_data_get_string(ts, "unpaired") : "",
+		      ts ? obs_data_get_string(ts, "unpaired|slide_transition|direction") : "", link.c_str());
+		obs_data_release(first);
+		obs_data_array_release(links);
+		obs_data_release(ts);
+		// Back to a fade for the rest.
+		change(f, [](obs_data_t *s) { obs_data_set_string(s, "transition", "fade_transition"); });
+		wait(src, 300);
+	}
+
+	// ---- Override other filters
+	obs_data_t *ls = obs_data_create();
+	list(ls, "items", {"OV A", "OV B"});
+	obs_data_set_string(ls, "transition", "stagekit_morph");
+	obs_data_set_int(ls, "transition_ms", 600);
+	obs_source_t *link = obs_source_create("stagekit_visibility_link", "OV Link", ls, nullptr);
+	obs_data_release(ls);
+	obs_source_filter_add(src, link);
+	change(f, [](obs_data_t *s) { obs_data_set_bool(s, "override_others", true); });
+	wait(src, 400);
+	{
+		const long long w0 = writes();
+		obs_sceneitem_set_visible(ib, true); // the link hides A
+		wait(src, 150);
+		const std::string hid = kind_of(ia, false);
+		const int ms = (int)obs_sceneitem_get_transition_duration(ia, false);
+		wait(src, 1200);
+		const long long put_back = writes() - w0;
+		obs_data_t *s = obs_source_get_settings(link);
+		const std::string link_kind = obs_data_get_string(s, "transition");
+		obs_data_release(s);
+		CHECK(!obs_sceneitem_visible(ia) && hid == "fade_transition" && ms == 400,
+		      "with Override other filters, a Link Visibility set to Morph hides a source the scene's way, a fade (%s %d)",
+		      hid.c_str(), ms);
+		CHECK(put_back == 0 && link_kind == "stagekit_morph" && kind_of(ia, false) == "fade_transition",
+		      "nothing is put back afterwards (%lld written), and the link keeps its own setting (%s)",
+		      put_back, link_kind.c_str());
+	}
+	{
+		// A Standby standing in for a source keeps its own way.
+		obs_source_t *stand = block("OV Standby Picture", 0xFFFF00FFLL);
+		obs_data_t *hd = obs_data_create();
+		obs_data_set_int(hd, "picture", 2);
+		obs_data_set_string(hd, "source", "OV Standby Picture");
+		obs_data_set_bool(hd, "when_hidden", true);
+		obs_data_set_string(hd, "transition", "slide_transition");
+		obs_data_set_int(hd, "transition_ms", 450);
+		obs_source_t *standby = obs_source_create("stagekit_standby", "OV Standby", hd, nullptr);
+		obs_data_release(hd);
+		obs_source_filter_add(sb, standby);
+		wait(src, 900);
+		const std::string owned = kind_of(ib, false);
+		const long long w0 = writes();
+		obs_sceneitem_set_visible(ia, true); // the link hides B, which the Standby owns
+		wait(src, 150);
+		const std::string during = kind_of(ib, false);
+		wait(src, 900);
+		CHECK(owned == "slide_transition" && during == "slide_transition" && writes() == w0 &&
+			      kind_of(ia, true) == "fade_transition",
+		      "a source a Standby stands in for is not overridden: it goes the Standby's way (%s, %s), the other the scene's",
+		      owned.c_str(), during.c_str());
+		obs_source_filter_remove(sb, standby);
+		obs_source_release(standby);
+		wait(src, 400);
+		obs_source_release(stand);
+	}
+	{
+		// Override off: the link's own choice, as before.
+		change(f, [](obs_data_t *s) { obs_data_set_bool(s, "override_others", false); });
+		wait(src, 400);
+		if (obs_sceneitem_visible(ib)) {
+			obs_sceneitem_set_visible(ia, true);
+			wait(src, 1200);
+		}
+		obs_sceneitem_set_visible(ib, true); // the link hides A with its Morph
+		wait(src, 150);
+		const std::string hid = kind_of(ia, false);
+		CHECK(!obs_sceneitem_visible(ia) && hid == "stagekit_morph",
+		      "with Override other filters off, the link's Morph is used for its change, as before (%s)",
+		      hid.c_str());
+		wait(src, 1200);
+	}
+	obs_source_filter_remove(src, link);
+	obs_source_release(link);
+	obs_source_filter_remove(src, f);
+	obs_source_release(f);
+	wait(src, 300);
+	obs_source_dec_showing(src);
+	obs_scene_release(sc);
+	obs_source_release(sa);
+	obs_source_release(sb);
+}
+// ==== end scene-filters:transitions ====
+
 static void link_transitions_test(uint32_t w, uint32_t h)
 {
 	printf("\n[link visibility: show and hide transitions, and Morph's unpaired sources]\n");
@@ -4701,6 +4980,15 @@ int main(int argc, char **argv)
 		       g_failures == 1 ? "" : "s");
 		return g_failures ? 1 : 0;
 	}
+	// ==== scene-filters:transitions ====
+	if (getenv("STAGEKIT_TEST_ONLY_SCENE_TRANS_OVERRIDE")) { // to try that section alone
+		scene_trans_override_test();
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
+	// ==== end scene-filters:transitions ====
 
 	if (getenv("STAGEKIT_TEST_ONLY_SHADOW_EACH")) { // to try that section alone
 		scene_shadow_each_test(w, h, out);
@@ -14281,6 +14569,7 @@ int main(int argc, char **argv)
 		obs_source_release(tb);
 		obs_source_release(tc);
 		obs_source_release(td);
+		scene_trans_override_test(); // (alone: STAGEKIT_TEST_ONLY_SCENE_TRANS_OVERRIDE)
 	}
 	// ==== end scene-filters:transitions ====
 	// ==== scene-filters:standby-corners ====

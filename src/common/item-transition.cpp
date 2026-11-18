@@ -32,6 +32,7 @@ bool owned(obs_sceneitem_t *item)
 	return item && owns && owns(item);
 }
 std::atomic<SceneLookup> g_scene_lookup{nullptr};
+std::atomic<int> g_overriding{0}; // filters with "Override other filters" ticked
 void apply_way(obs_sceneitem_t *item, bool show, const ItemWay &way, obs_source_t *scene);
 } // namespace
 
@@ -50,17 +51,47 @@ void item_transitions_scene(SceneLookup lookup)
 	g_scene_lookup.store(lookup);
 }
 
+void item_transitions_scene_overrides(int change)
+{
+	g_overriding += change;
+}
+
+namespace {
+// What the item's scene's Scene Transitions says for it, and whether it
+// overrides other filters.
+bool scene_says(obs_sceneitem_t *item, obs_source_t *scene, ItemChange &theirs, bool &overrides)
+{
+	overrides = false;
+	SceneLookup lookup = g_scene_lookup.load();
+	if (!lookup || !item)
+		return false;
+	obs_source_t *where = scene ? scene : obs_scene_get_source(obs_sceneitem_get_scene(item));
+	return where && lookup(where, item, theirs, overrides);
+}
+
+// The scene overrides other filters for this item: its choice is the change,
+// whatever was asked; never for an item a Standby owns. (The lookup has
+// already passed over private sources, the item Morph's layer, ignored
+// sources and the rest the scene does not cover.)
+bool overridden(obs_sceneitem_t *item, obs_source_t *scene, ItemChange &theirs)
+{
+	bool overrides = false;
+	return g_overriding.load() > 0 && !owned(item) && scene_says(item, scene, theirs, overrides) && overrides;
+}
+} // namespace
+
 ItemChange resolve_item_change(obs_sceneitem_t *item, const ItemChange &change, obs_source_t *scene)
 {
 	const bool show = change.show.kind == kTransitionScene, hide = change.hide.kind == kTransitionScene;
-	if (!show && !hide)
+	if (!show && !hide && g_overriding.load() <= 0)
 		return change;
 	ItemChange theirs;
-	bool found = false;
-	if (SceneLookup lookup = g_scene_lookup.load(); lookup && item) {
-		obs_source_t *where = scene ? scene : obs_scene_get_source(obs_sceneitem_get_scene(item));
-		found = where && lookup(where, item, theirs);
-	}
+	bool overrides = false;
+	const bool found = scene_says(item, scene, theirs, overrides);
+	if (found && overrides && !owned(item))
+		return theirs;
+	if (!show && !hide)
+		return change;
 	ItemChange out = change;
 	// Where no scene's filter covers the item: a fade of the way's own
 	// length, what an untouched filter did before this choice existed.
@@ -73,9 +104,27 @@ ItemChange resolve_item_change(obs_sceneitem_t *item, const ItemChange &change, 
 	return out;
 }
 
+void cut_item_transitions(obs_sceneitem_t *item)
+{
+	if (!item || owned(item))
+		return;
+	for (bool show : {true, false})
+		if (obs_sceneitem_get_transition(item, show))
+			obs_sceneitem_set_transition(item, show, nullptr);
+}
+
 void set_item_transitions(obs_sceneitem_t *item, const std::string &kind, uint32_t ms)
 {
-	if (!item || kind == kTransitionKeep || owned(item))
+	if (!item || owned(item))
+		return;
+	// Whatever kind was asked, a scene that overrides other filters gives
+	// its own.
+	if (ItemChange theirs; overridden(item, nullptr, theirs)) {
+		apply_way(item, true, theirs.show, nullptr);
+		apply_way(item, false, theirs.hide, nullptr);
+		return;
+	}
+	if (kind == kTransitionKeep)
 		return;
 	if (kind == kTransitionScene) {
 		ItemChange asked;
