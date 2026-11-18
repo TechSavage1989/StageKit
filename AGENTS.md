@@ -1876,7 +1876,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   followed by `a`/`t` and a part (`list`, `pick`, `none`, `row|n`), not the first bar. The tests
   reach the vendor requests through the `stagekit_vendor_call` and `stagekit_vendor_events` procs
   (`vendor_api_add_test_calls`); obs-websocket is not there.
-  **Hide when on and Leave when shown** (betaNEXT; the owner's two transparent markers *Column:
+  **Hide when on and Leave when shown** (beta177; the owner's two transparent markers *Column:
   Chat* and *Column: GBA* existed only for a Link Visibility *Show only one* between the
   full-screen DSLR and the GBA column; offered a per-mode rule: "option 2 please", then "showing
   DSLR switch back to the Chat mode"). `mode|<id>|hide` (a PickList): when the mode comes on (any

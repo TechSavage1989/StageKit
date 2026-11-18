@@ -13,9 +13,9 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
-## Scene Modes: Hide when on, Leave when shown (0.1.0-betaNEXT)
+## Scene Modes: Hide when on, Leave when shown (0.1.0-beta177)
 
-Branch `feat/scene-modes-hide`, from `main` at beta175. Notes: `docs/releases/0.1.0-betaNEXT.md`. No
+Branch `feat/scene-modes-hide`, from `main` at beta175. Notes: `docs/releases/0.1.0-beta177.md`. No
 Stream Deck file changed. The owner's Component-Capture-Scene has Scene Modes *Chat* and *GBA* and
 two transparent markers, *Column: Chat* and *Column: GBA*, kept only for Link Visibility-GBA (*Show
 only one* between the full-screen DSLR and Column: GBA). Asked to get rid of them and offered a
