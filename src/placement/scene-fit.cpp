@@ -717,7 +717,8 @@ void SceneFit::tick(float seconds)
 				scan_of(p.how).obstacles(parent_, p.item, p.s.skip, p.s.skip_rule, &engine, p.how,
 							 in_way, &ids, &engine.rank());
 				bool rest = false;
-				engine.observe(in_way, engine.arriving(), pass == 0 ? seconds : 0.0f, rest);
+				engine.observe(in_way, engine.arriving(), pass == 0 ? seconds : 0.0f, rest,
+					       &scan_of(p.how).visible_ids());
 				if (pass == 0)
 					at_rest[i] = rest;
 				bool changed = false;

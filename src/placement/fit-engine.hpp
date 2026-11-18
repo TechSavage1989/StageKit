@@ -149,6 +149,110 @@ void glance_free();
 Box free_space(const Box &within, double ax, double ay, const std::vector<Box> &others, double gap, double shape,
 	       double tolerance, const std::vector<bool> *firm = nullptr);
 
+// A home's space found again within this of the one taken, and its gap kept
+// within this: what measuring on a small copy can be off by (px).
+constexpr double kHomeSlack = 3.0;
+
+// What a fit's goal is worked out from: the screen (or its box), the point
+// it is looked for round, the rules, what is in the way (what shows of each
+// item, or where another fit is taking it; with `said`, `passed` and
+// `above` as in `Obstacle`), and its home. `space_from` is the very working
+// out a fit does each time something changes (`FitEngine::solve`), so a
+// tool can ask what a fit would do were something else in its way (the
+// dock's Fit to space: it must never make another fit give up room).
+struct SpaceInputs {
+	Box within;
+	double ax = 0.0, ay = 0.0;
+	double margin = 0.0, tolerance = 8.0;
+	double shape = 1.0;                // the shape its space is found for, width over height
+	double pw = 0.0, ph = 0.0;         // the size of what is fitted (its shape now)
+	double kept_w = 0.0, kept_h = 0.0; // the size kept, with Resize to fit off
+	int toward_x = 0, toward_y = 0;    // Align in the space
+	bool skip_rule = false, skip_pct = false, skip_px = false;
+	double skip_fill = 0.0, px_top = 0.0, px_bottom = 0.0, px_left = 0.0, px_right = 0.0;
+	bool claims_firm = false; // a Scene Fit with All sources
+	bool with_switch = false; // a window switcher's change is under way
+	std::vector<Box> boxes;
+	std::vector<int64_t> ids;
+	std::vector<bool> said, passed, above;
+	// Whether another fit resizes each to make room (`Obstacle::gives`),
+	// which way it would grow (1 across, 2 down) and which way a kept-size
+	// one leans (`Obstacle::leans`).
+	std::vector<bool> gives;
+	std::vector<int> grows, leans;
+	// Each other fit's item at its home (`Obstacle::home`).
+	std::vector<Box> homes;
+	std::vector<bool> has_homes;
+	// Each one's item's box in the scene when it was looked at (what shows
+	// of it is that part of its box).
+	std::vector<Box> at;
+	// Every visible item of the scene then, in the way or not: an item not
+	// among them was hidden, or not there, when this was worked out.
+	std::vector<int64_t> visible;
+	// Its own home (the layout made by hand): where its picture lies there
+	// as it shows now (`FitEngine::home_box`), the space found round it with
+	// the other fits' items at their homes, and whether that space is still
+	// being found (just taken: it is at home whatever the space).
+	bool has_home = false;
+	Box home;
+	bool home_settling = false, have_home_space = false;
+	Box home_space;
+	// Whether it has a home at all, matching or not: placed on purpose, it
+	// takes its home where it is put (`FitEngine::prepare`), which then
+	// matches. (`has_home` is false while the home does not match the item
+	// now: a window of another shape, another size kept.)
+	bool takes_home = false;
+};
+// What a fit does from them.
+struct SpaceOut {
+	Box goal;               // where it takes its picture (w or h under 2: no room at all)
+	Box room;               // the space before it is cut to the picture
+	bool avoiding = false;  // the items never in the way counted after all
+	bool at_home = false;   // its goal is its home
+	bool took_home = false; // its home's space was still being found: `home_space` is it now
+	Box home_space;
+	bool have_home_space = false;
+	bool grows_set = false; // for a resized picture: whether more width or height would grow it
+	bool grows_x = true, grows_y = true;
+};
+// The goal (`out`: the rest).
+Box space_from(const SpaceInputs &in, SpaceOut *out = nullptr);
+// What a fit says it will show of its item once it is in `goal` (its claim,
+// `FitEngine::publish_claim`): `kept`, its kept size against the side it is
+// kept towards (or away from a side that gives way, or packed towards the
+// top beside a picture that would not grow that way), on the screen unless
+// `at_home`; otherwise a picture of the shape `pw` by `ph` fitted into the
+// space (`room` while it is `reshaping`, else `goal`). `lean_y`: whether a
+// kept-size one leans towards the top (`Claim::leans_y`).
+Box claim_box(const Box &goal, const Box &room, const Box &within, double margin, bool kept, double kept_w,
+	      double kept_h, int toward_x, int toward_y, const std::vector<Box> &boxes, const std::vector<bool> &gives,
+	      const std::vector<int> &grows, bool at_home, bool reshaping, double pw, double ph,
+	      bool *lean_y = nullptr);
+// The same from a fit's inputs (`out`: what `space_from` gives for them,
+// worked out when not given).
+Box claim_from(const SpaceInputs &in, const SpaceOut *out = nullptr);
+// Every fit of the free space in a scene whose item is there: the item it
+// fits (its id, its source's name), whether that item shows, and, once the
+// fit has worked its space out (`worked`), that space (`space`: the whole
+// space it holds, before it is cut to the picture), its goal and what it was
+// worked out from. A hidden item's fit keeps what it last worked out while
+// it showed, and works it out again when it shows. Not worked out yet (its
+// scene not shown since OBS started, or just given the item): `space` is
+// the room it claims, if any. Only enabled fits.
+struct HeldSpace {
+	int64_t item = 0;
+	std::string name;
+	bool shown = true;
+	bool worked = false;
+	Box space, goal;
+	bool resizes = true;
+	SpaceInputs in;
+};
+std::vector<HeldSpace> held_spaces(obs_source_t *scene);
+// For the tests: `stagekit_test_fit_predicts`, whether what `held_spaces`
+// says of each fit gives, worked out again, the claim that fit makes.
+void fit_engine_add_test_calls();
+
 // What a fit has found out about its item in one tick, before its space is
 // looked for. `item` is valid for that tick only: the host holds it.
 struct Prep {
@@ -185,6 +289,7 @@ struct Obstacle {
 	// Another fit's item: where it lies in the layout as made by hand.
 	Box home;
 	bool has_home = false;
+	Box at; // its item's box in the scene now (none for where another fit takes it)
 };
 
 // What is in the way: the items of a scene, each looked at (drawn and read
@@ -217,6 +322,8 @@ public:
 		bool claimed;          // a group placed by a fit: one thing
 	};
 	std::vector<Gathered> &gathered() { return gathered_; }
+	// Every item the last `obstacles` went through, in the way or not.
+	const std::vector<int64_t> &visible_ids() const { return visible_; }
 
 private:
 	struct Seen {
@@ -227,6 +334,7 @@ private:
 	void look(obs_source_t *scene, obs_sceneitem_t *other, const Measure &how);
 	std::vector<Gathered> gathered_;
 	std::vector<obs_sceneitem_t *> used_; // what the last obstacles were taken from
+	std::vector<int64_t> visible_;
 	std::map<int64_t, Seen> seen_;
 	std::map<int64_t, Glance> looked_; // what a glance said of each item when it was last looked at
 	bool look_again_ = true;
@@ -296,8 +404,10 @@ public:
 	Motion motion(Prep &p, float seconds);
 	bool arriving() const { return shown_for_ < kArriving; }
 	// What is in the way changed? (`seconds` 0 on a second pass of one tick.)
-	// Says whether it is at rest, for the host's glances.
-	void observe(const std::vector<Obstacle> &in_way, bool arriving, float seconds, bool &at_rest);
+	// Says whether it is at rest, for the host's glances. `visible`: every
+	// item the obstacles were taken from (`FitScan::visible_ids`).
+	void observe(const std::vector<Obstacle> &in_way, bool arriving, float seconds, bool &at_rest,
+		     const std::vector<int64_t> *visible = nullptr);
 	// The goal: false when there is no room at all. `moved` says whether it changed.
 	bool solve(Prep &p, float seconds, bool first_pass, bool &moved);
 	// What it will show once it has got there, for the other fits.
@@ -337,14 +447,8 @@ private:
 	// fit's picture above or below it would not grow into more height,
 	// and nothing else decides it (`x` is always false).
 	void lean_axes(const Prep &p, bool &x, bool &y) const;
-	// A resized picture that leaves its space empty above and below, with
-	// a kept-size fit above or below it that leans: the space is cut down
-	// to the picture, at the top.
-	void trim_for_kept(const Prep &p, Box &goal) const;
-	// A resized picture that leaves its space empty along one axis, with
-	// another fit's item beyond it along that axis: the space is cut to the
-	// picture where it lies in it, so the item's box is what shows.
-	void trim_to_picture(const Prep &p, Box &goal) const;
+	// (A resized picture's space cut to it: `space_from`, with
+	// `trim_for_kept_in` and `trim_to_picture_in` in fit-engine.cpp.)
 	// The picture is of another shape than its space was cut for: OBS is
 	// given the space before the cut, so the picture is fitted at once.
 	bool reshaping(const Prep &p) const;
@@ -385,6 +489,8 @@ private:
 	std::vector<int> grows_;  // of those, 1: it would take more width, 2: more height
 	std::vector<int> leans_;  // of the kept-size fits' of the same standing, which lean (Obstacle::leans)
 	std::vector<int64_t> ids_;
+	std::vector<Box> at_;          // each one's item's box when it was looked at
+	std::vector<int64_t> visible_; // every item they were taken from
 	std::vector<bool> said_;
 	bool claims_firm_ = false; // on the tick only
 	std::vector<bool> passed_; // which are items never in the way, counted only when the picture leaves room
@@ -434,7 +540,7 @@ private:
 	// The item's source has kept its size this long.
 	double steady_sw_ = 0.0, steady_sh_ = 0.0, steady_for_ = 0.0;
 	Box goal_, from_, cur_;
-	// The space before `trim_to_picture` cut it, glided with the goal, and
+	// The space before `trim_to_picture_in` cut it, glided with the goal, and
 	// whether it was what OBS was given last (the picture of another shape).
 	Box room_goal_, room_from_, room_cur_;
 	bool handed_room_ = false;
@@ -456,6 +562,32 @@ private:
 	// A hidden item is left alone; shown again, it first says where it is.
 	static constexpr double kComingBack = 0.1;
 	bool hidden_ = false, coming_back_ = false, have_claim_ = false;
+	// What the goal was last worked out from, for `held_spaces` (under
+	// held_mutex_: asked from the window's thread). Kept while the item is
+	// hidden; let go when the fit is given another item or leaves the free
+	// space.
+	std::mutex held_mutex_;
+	bool have_held_ = false;
+	int64_t held_item_ = 0;
+	std::string held_name_;
+	bool held_resizes_ = true;
+	SpaceInputs held_in_;
+	Box held_space_, held_goal_;
+
+public:
+	// What `held_spaces` gives of this engine: false when it has worked
+	// nothing out (and then `name` is the item it is given, if any).
+	bool held(HeldSpace &out);
+	// In the free space? (`resizes`: whether it resizes its item.)
+	bool in_free_space(bool *resizes = nullptr)
+	{
+		std::lock_guard lock(mutex_);
+		if (resizes)
+			*resizes = settings_.resize;
+		return settings_.box == BoxKind::FreeSpace;
+	}
+
+private:
 	bool box_asked_ = false; // its bounding box was asked for, for want of a room it was given
 	bool new_item_ = false;  // the filter was given another item (set under mutex_)
 	double back_for_ = 0.0;
@@ -477,8 +609,7 @@ private:
 	bool home_settling_ = false; // the space round the home is still being found
 	double home_settle_ = 0.0;
 	static constexpr double kHomeSettle = 0.5;
-	static constexpr double kHomeSlack = 3.0; // px: what measuring on a small copy can be off by
-	std::vector<Box> homes_;                  // of what is in the way: where each lies at home
+	std::vector<Box> homes_; // of what is in the way: where each lies at home (slack: kHomeSlack)
 	std::vector<bool> has_homes_;
 	// Under mutex_: the home as saved, to be taken up at the next prepare.
 	bool home_loaded_ = false;

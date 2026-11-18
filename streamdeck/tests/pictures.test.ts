@@ -81,7 +81,9 @@ test("what the pack has no picture of gets a plain key, and tools get theirs", (
 	assert.equal(hotkeyOf("left"), "stagekit.arrange.left");
 	assert.equal(hotkeyOf("nonsense"), undefined);
 	assert.equal(hotkeyOf(undefined), undefined);
-	assert.equal(TOOLS.length, 14);
+	assert.equal(TOOLS.length, 15);
+	assert.equal(toolPicture(undefined, "fit_space").id, "options/fit-space", "Fit to space has its own");
+	assert.equal(hotkeyOf("fit_space"), "stagekit.arrange.fit_space");
 	assert.equal(hookPicture(undefined, "game_capture").id, "options/hook-game");
 	assert.equal(hookPicture(undefined, "window_capture").id, "options/hook-window");
 	assert.equal(hookPicture(undefined, undefined).id, "options/hook-game", "until OBS says which kind it is");

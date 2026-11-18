@@ -9,9 +9,136 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | `feat/streamdeck-works-with` (Stream Deck: every key says what it works with, betaNEXT), on `main` after beta193. Next: the new collection |
+| Working branch | `feat/dock-fit-tool` (the dock's Fit to space and Edit transform; betaNEXT), rebased on `main` after beta194. Next: the new collection |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
+
+## Dock: Fit to space and Edit transform (0.1.0-betaNEXT, plugin 0.33.0.0)
+
+Branch `feat/dock-fit-tool`, rebased on `main` after beta194. Notes: `docs/releases/0.1.0-betaNEXT.md`.
+The owner (2026-11-18), with screenshots of a layout of a game and a column of two handheld screens
+and a capture card: "i'd like a new arrange or place option to "fit" an object to the available
+space respecting existing rules like margins and gaps and use visible pixels, etc. I'd also like a
+shortcut button in the relevant tab to edit transform of the selected source."
+
+- **Fit to space** (`ArrangeAction::FitSpace`, `kInfo` name `fit_space`: so also the hotkey
+  `stagekit.arrange.fit_space`, the preview menu's entry and the Stream Deck Arrange tool's option)
+  runs `fit_to_space` in `src/dock/arrange.*`: per item, top-most first, the obstacles are a
+  `fit::FitScan` (one for the press, so each other item is looked at once and followed by its box
+  after that, and claims of the scene's fits count where they take their items), the space is
+  `fit::free_space` (Tolerance 8, as Fit to Space's default) round the centre of what shows, with
+  every obstacle marked firm except one the item lies wholly on (a background): an item it overlaps
+  is stepped off, never covered. The item is scaled (or its bounding box) by the one factor that
+  fits, and shifted so what shows is centred. A shadow sized in screen pixels that counts (*Ignore
+  shadows* off) is allowed for as in `match_size`, with one more measure for the place. The gap is
+  the Place tab's *Edge distance*, which is now an arrange option (`place_margin`, saved as
+  `stagekit.place.margin`), so the hotkey and the key have it without the dock. Each changed item
+  goes to `fit_item_placed` once it is where it is going: `run_arrange` gives the items' old
+  transforms to the dock's glide handler (`set_arrange_glide`, `ArrangeStart`, owned by one dock),
+  which puts them back and glides them over the *Duration* and *Motion* (`glide_back`, the same
+  as snap on release, which now uses it too) and hands each over when its glide ends (at once
+  without a glide or a dock). The copy tools' hand-over is now per copy's scene, so *In every
+  scene* does not hand the gliding item over early. An item with a screen-pixel shadow does not
+  glide (its filter's shift depends on the size when it looks); each glide step adds what moved
+  the item since the last step (`Glide::last`). A screen-pixel shadow that
+  counts is allowed for by the picture's place, also when measuring by boxes; a *maximum size
+  only* box has its scale scaled too.
+- **It never makes another fit give up room** (the owner, after trying it: "the fit to space
+  option/tool cannot force other objects to resize"). Built as: every fit of the free space in the
+  scene (Fit to Space or a Scene Fit entry, enabled, its item shown or hidden) is known by
+  `fit::held_spaces` (from `FitEngine::held`, written in `solve` each time the goal is worked out,
+  kept while the item is hidden, cleared when the fit gets another item or publishes no claim;
+  the item looked up by name, in groups too, and its id checked). Its item is an obstacle by the
+  whole space it holds, firm, unless that space reaches what shows of the item (that fit then
+  ignores the item or lies on it, and its claim counts as before: a camera on a capture that
+  ignores it still grows over it); a hidden item's space counts the same. The result is then
+  checked against every such fit (`spaces_kept`): the fit's last inputs (`fit::SpaceInputs`),
+  with the moved item first followed from where it was when the fit looked (`at`) to where it is
+  now, then to where it would be, both worked out by `fit::space_from`, the code `solve` itself
+  calls (moved out of `solve`, no copy), must give the same space within 0.5 px. A shadow in
+  screen pixels keeps its size in that mapping (`keeps_outside`). An item that fit did not see
+  (hidden when it last worked its space out: `visible`) makes the check unknown, and the item is
+  left as it is. Failing the check, the largest of twenty smaller sizes (down to its size now) in
+  ten places in the space (centred, part of the way, four sides, four corners; the full size
+  against sides and corners too) that changes nobody; none, and the item is left as it is. The
+  status line names the source given way to, also when fitted spaces leave no room at all. An
+  item whose own fit resizes it is left to that fit (status: "its own fit filter sizes ..."); one
+  whose fit keeps its size goes where that fit will put it once handed over (`fit::claim_from`,
+  what `publish_claim` now calls), and the others are checked against that claim. An item in a
+  group a fit looks after is left as it is. Items changed earlier in the press are in the way
+  where they now are. *In every scene*: a scene where the copy would change a fit (its own fit
+  taking it where it would) is skipped (the copy is put back as it was; `copy_keeps_fits`,
+  `copy_to_every_scene`'s `allow`), and named; chosen over shrinking there so the copies stay the
+  same transform as the item. A scene with a shown fit not worked out yet (not shown since OBS
+  started) is skipped and named too. Tested in `fit_tool_test`: case 11, the column's bottom item
+  fitted by a Fit to Space (*Resize to fit* on, then off) and by a Scene Fit entry, its space
+  ending 30 px under the small item: after the press its position, scale and bounds move at most
+  0.5 px over 3 s of ticks (0.00 measured), the item grows to the gap above it only; with the
+  dock's edge distance 10 against the filter's 30 it is kept smaller, against the top (0.12 px),
+  and the status line says "Kept smaller so FT Column Bottom keeps its space."; with *In every
+  scene* a second scene whose Fit to Space would lose room is not copied to and named, and that
+  fitted source, shown for 2 s after, moves 0.00 px; a third scene never shown is not copied to
+  and named. Case 12: the bottom item hidden, its space kept for it (not "kept smaller"), and
+  shown again it moves 0.00 px. Case 13: an item its own resizing Fit to Space looks after is
+  left to it. Case 14: an item in a fitted group is left as it is, the group named; a camera on a
+  fitted capture that ignores it (hidden and shown once first) grows and the capture moves 0.00
+  px. Case 15 (after the rebase on beta194): the bottom item laid out by hand with its fit off and
+  then switched on (kept size, resized, Scene Fit entry) stays at its home before and for 3 s
+  after the press (0.00 px), and `stagekit_test_fit_predicts` says the one fit's claim worked out
+  again from `held_spaces` is the claim it makes (415, 248, 180 x 80), at home. The earlier cases
+  (no fit filters, and an item a Fit to Space keeps the size of) are unchanged. Not done: an item a fit outranks or ignores is never in its way whatever happens, so
+  that fit is not asked; item ids inside groups can repeat a scene's own ids, which the check
+  does not tell apart.
+- **Rebased on beta194** (homes, `switched_on`, fair column sharing, priority never overlaps, the
+  gap from what shows of a letterboxed source). `FitEngine::solve` keeps beta194's working out
+  exactly, now in `fit::space_from` with everything it reads in `SpaceInputs` (as before, plus the
+  picture's size, `grows`, `leans`, the other fits' `homes`, and the fit's own home: `home_box`,
+  `home_settling_`, `home_space_`) and what it decides in `SpaceOut` (goal, room before the cut,
+  `avoiding`, `at_home`, the home's space when still being found, `space_grows_*`). beta194's
+  `space_among` lambda, `trim_for_kept` and `trim_to_picture` became free functions
+  (`space_among`, `trim_for_kept_in`, `trim_to_picture_in`), and `soft_sides`, `lean_axes` and
+  `kept_in` wrap `soft_sides_of`, `lean_y_of` and `kept_in_room`; `kHomeSlack` is `fit::kHomeSlack`.
+  `publish_claim` calls `fit::claim_box` (the kept size placed and clamped unless at home, or the
+  picture in the room while reshaping), which `claim_from` calls with `reshaping` worked out from
+  the inputs; `least`, `home`, `grows_*` and `leans_y` are set as in beta194. `held_spaces`' `space`
+  is the room (before the cut), `goal` the goal. The dock's check (`spaces_kept`,
+  `same_outcome`) compares goal, room, claim and at-home, each fit's inputs taken as settled
+  (`settled`: a home still being found is worked out as it will be); an item's own fit with a
+  home takes its home where the item is put (`handed_over`), also one whose home does not match
+  the item now (`SpaceInputs::takes_home`, the engine's `has_home_`: `home_box` is false then, but
+  `prepare` takes a new home on a placing), and in the others' inputs the moved item's home is
+  that home where it is put (`MovedBox::home`, `home_after` in `with_moved`), not its claim,
+  which is elsewhere when it does not keep the gap there. No beta194 test changed.
+- **Edit transform** (`editTransform`) triggers the main window's `actionEditTransform` 50 ms after
+  selecting the dock's item alone when it is in the scene being edited, switching the action on
+  for the press (OBS switches it off when its Edit menu opened with nothing selected). Missing
+  action: the button is off, its tooltip says so, and the log says so once. The real OBS path has not
+  run here.
+- **Why the Place tab**: both act on the one item the Place tab moves, and Fit to space uses its
+  *Edge distance* and *Duration*; the Arrange tab's block is a full three by four. They are two
+  drawings (`tool_icon` `fit_space`, `edit_transform`) under the Place tab's tick boxes.
+- **Stream Deck**: `fit_space` in `src/tools.ts`, `titles.ts`, `pictures.ts`; drawing `fit-space`
+  in `make-option-icons.py`, its badge in `make-badges.py`; files regenerated
+  (make-option-icons, make-state-icons, make-live-icons, make-badges, make-svgs, make-plugin-files).
+  Plugin 0.33.0.0 (main has 0.30.0.0; 0.32.0.0 is a queued branch's).
+- **Test**: `[dock: fit to space and edit transform]` (`fit_tool_test`, alone:
+  `STAGEKIT_TEST_ONLY_FIT_TOOL`; in the full run after the filter-removal test, before any sound):
+  by visible pixels to the gap with exactly the edge distance, centred, shape kept, gliding, Undo
+  and Redo, a second press changes nothing, by box, a bounding box, a shadow ignored, In every
+  scene, locked, the hotkey, an overlapped item stepped off clear of all three others, two selected
+  sharing a gap the edge distance apart, a shadow counted by what shows and by boxes, a glide time
+  with a screen-pixel shadow, an item a Fit to Space (*Resize to fit* off) keeps the size it
+  glided to; the Edit transform button off with its tooltip. Not run on Windows.
+- **Done elsewhere**: the owner's other report in the same message (a layout set by hand changes
+  size when its Fit to Space filters are switched on) was beta194's (homes); this branch now goes by
+  those homes.
+- **Tests run here after the rebase** (gated sections only, machine limits; the full run was not
+  run): `FIT_TOOL` 49 pass (40 before the rebase, 9 new in case 15), `FIT_ENABLE` 17, `FIT_OWNER`
+  15, `FIT_VISIBLE` 16, `FIT_PRIORITY` 41, `FIT_GROUPS` 15, `LAYOUT` 40, `MAKE_ROOM` 15, `TOOLTIPS`
+  12; Stream Deck `npm test` and `npx tsc --noEmit`. Run `tests/run-tests.sh` before merging.
+
+## Scene Fit: the gap from what shows of a letterboxed source (0.1.0-beta194)
+
 
 ## Every Stream Deck key says what it works with (0.1.0-beta195, plugin 0.32.0.0)
 

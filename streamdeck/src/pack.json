@@ -1521,6 +1521,13 @@
 			"off": "options/same-size"
 		},
 		{
+			"id": "options/fit-space",
+			"group": "options",
+			"label": "fit space",
+			"on": "options/fit-space",
+			"off": "options/fit-space"
+		},
+		{
 			"id": "options/limit",
 			"group": "options",
 			"label": "limit",

@@ -10,6 +10,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include "arrange.hpp"
 
+#include "../placement/fit-engine.hpp"
 #include "../placement/fit-item.hpp"
 
 #include "../common/filter-input.hpp"
@@ -629,13 +630,58 @@ void copy_transform(obs_source_t *from_scene, obs_sceneitem_t *from, obs_source_
 
 int copy_to_every_scene(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items,
 			const std::vector<std::string> *only, const std::vector<std::string> *to_sources,
-			bool even_locked)
+			bool even_locked, const CopyAllowed &allow)
 {
 	int changed = 0;
+	// The copy given the model's transform; false when `allow` refused it,
+	// and it was put back as it was.
+	const auto copy_onto = [&allow](obs_source_t *from_scene, obs_sceneitem_t *model, const Copy &copy) {
+		if (!allow) {
+			copy_transform(from_scene, model, copy.scene, copy.item);
+			return true;
+		}
+		struct Was {
+			vec2 pos, scale, bounds;
+			uint32_t align, bounds_align;
+			obs_bounds_type bounds_type;
+			float rot;
+			obs_sceneitem_crop crop;
+		} was;
+		obs_sceneitem_t *to = copy.item;
+		obs_sceneitem_get_pos(to, &was.pos);
+		obs_sceneitem_get_scale(to, &was.scale);
+		obs_sceneitem_get_bounds(to, &was.bounds);
+		was.align = obs_sceneitem_get_alignment(to);
+		was.bounds_align = obs_sceneitem_get_bounds_alignment(to);
+		was.bounds_type = obs_sceneitem_get_bounds_type(to);
+		was.rot = obs_sceneitem_get_rot(to);
+		obs_sceneitem_get_crop(to, &was.crop);
+		refresh_item(to);
+		const Box before = scene_box(copy.scene, to);
+		copy_transform(from_scene, model, copy.scene, to);
+		refresh_item(to);
+		const Box after = scene_box(copy.scene, to);
+		if (allow(copy.scene, to, before, after))
+			return true;
+		obs_sceneitem_defer_update_begin(to);
+		obs_sceneitem_set_alignment(to, was.align);
+		obs_sceneitem_set_bounds_type(to, was.bounds_type);
+		obs_sceneitem_set_bounds_alignment(to, was.bounds_align);
+		obs_sceneitem_set_bounds(to, &was.bounds);
+		obs_sceneitem_set_scale(to, &was.scale);
+		obs_sceneitem_set_rot(to, was.rot);
+		obs_sceneitem_set_crop(to, &was.crop);
+		obs_sceneitem_set_pos(to, &was.pos);
+		obs_sceneitem_defer_update_end(to);
+		refresh_item(to);
+		return false;
+	};
 	// A copy that a Fit to Space looks after is handed over to it as placed
 	// on purpose, or the filter would put it straight back where it was.
+	// (In the copy's own scene only: the item copied from may still be
+	// gliding to its place, and is handed over when it gets there.)
 	const auto placed = [](const Copy &copy) {
-		fit_item_placed(nullptr, obs_source_get_name(obs_sceneitem_get_source(copy.item)));
+		fit_item_placed(copy.scene, obs_source_get_name(obs_sceneitem_get_source(copy.item)));
 	};
 	const auto wanted_scene = [only](obs_source_t *in) {
 		if (!only)
@@ -657,7 +703,8 @@ int copy_to_every_scene(obs_source_t *scene, const std::vector<obs_sceneitem_t *
 				if (copy.item == model || (!even_locked && obs_sceneitem_locked(copy.item)) ||
 				    !wanted_scene(copy.scene))
 					continue;
-				copy_transform(scene, model, copy.scene, copy.item);
+				if (!copy_onto(scene, model, copy))
+					continue;
 				placed(copy);
 				changed++;
 			}
@@ -681,7 +728,8 @@ int copy_to_every_scene(obs_source_t *scene, const std::vector<obs_sceneitem_t *
 				continue;
 			if (!wanted_scene(copy.scene))
 				continue;
-			copy_transform(scene, item, copy.scene, copy.item);
+			if (!copy_onto(scene, item, copy))
+				continue;
 			placed(copy);
 			changed++;
 		}
@@ -1396,6 +1444,725 @@ std::vector<std::string> sources_in_scenes(const std::vector<std::string> &scene
 		obs_source_release(scene);
 	}
 	return names;
+}
+
+namespace {
+
+// Every item of a scene, groups' items after their group, bottom-most first.
+std::vector<obs_sceneitem_t *> stacking_order(obs_source_t *scene)
+{
+	std::vector<obs_sceneitem_t *> out;
+	obs_scene_t *s = scene_of(scene);
+	if (!s)
+		return out;
+	static const auto add = [](obs_scene_t *, obs_sceneitem_t *item, void *param) {
+		static_cast<std::vector<obs_sceneitem_t *> *>(param)->push_back(item);
+		return true;
+	};
+	obs_scene_enum_items(
+		s,
+		[](obs_scene_t *sc, obs_sceneitem_t *item, void *param) {
+			add(sc, item, param);
+			if (obs_sceneitem_is_group(item))
+				obs_sceneitem_group_enum_items(item, add, param);
+			return true;
+		},
+		&out);
+	return out;
+}
+
+// Scales an item by `k` about nothing in particular: its scale, or its
+// bounding box when it has one. A box that only limits the size (OBS's
+// "maximum size only") draws its source at the item's own scale while that
+// fits in it, so both are scaled: the picture grows by `k` either way.
+void scale_item_by(obs_sceneitem_t *item, double k)
+{
+	const obs_bounds_type type = obs_sceneitem_get_bounds_type(item);
+	if (type != OBS_BOUNDS_NONE) {
+		vec2 bounds;
+		obs_sceneitem_get_bounds(item, &bounds);
+		bounds.x *= (float)k;
+		bounds.y *= (float)k;
+		obs_sceneitem_set_bounds(item, &bounds);
+	}
+	if (type == OBS_BOUNDS_NONE || type == OBS_BOUNDS_MAX_ONLY) {
+		vec2 scale;
+		obs_sceneitem_get_scale(item, &scale);
+		scale.x *= (float)k;
+		scale.y *= (float)k;
+		obs_sceneitem_set_scale(item, &scale);
+	}
+}
+
+// (What a one-press fit says it is, to the claims of the scene's fits: no
+// fit, so every claim counts.)
+const char kFitTool = 0;
+
+} // namespace
+
+namespace {
+
+// One coordinate of a moved item's part, from before (`p0`, `len`) to after
+// (`q0`, `qlen`): inside the part it scales with it; outside, with
+// `keeps_outside`, it keeps its distance from the part (a shadow sized in
+// screen pixels), else it scales too.
+double moved_coord(double v, double p0, double len, double q0, double qlen, bool keeps_outside)
+{
+	if (len < 1e-9)
+		return q0 + (v - p0);
+	if (keeps_outside) {
+		if (v <= p0)
+			return q0 - (p0 - v);
+		if (v >= p0 + len)
+			return q0 + qlen + (v - p0 - len);
+	}
+	return q0 + (v - p0) * qlen / len;
+}
+
+// What another fit sees of a moved item (`o`), where the item goes.
+Box moved_box(const Box &o, const MovedBox &m)
+{
+	const double x0 = moved_coord(o.x, m.from.x, m.from.w, m.to.x, m.to.w, m.keeps_outside);
+	const double x1 = moved_coord(o.x + o.w, m.from.x, m.from.w, m.to.x, m.to.w, m.keeps_outside);
+	const double y0 = moved_coord(o.y, m.from.y, m.from.h, m.to.y, m.to.h, m.keeps_outside);
+	const double y1 = moved_coord(o.y + o.h, m.from.y, m.from.h, m.to.y, m.to.h, m.keeps_outside);
+	return Box{x0, y0, x1 - x0, y1 - y0};
+}
+
+// What was seen of an item when its box was `at`, now that its box is
+// `now`: the same part of its box (as FitScan follows an item by its box).
+Box follow_box(const Box &o, const Box &at, const Box &now)
+{
+	if (at.w < 1.0 || at.h < 1.0 || now.w < 1.0 || now.h < 1.0)
+		return o;
+	const double kx = now.w / at.w, ky = now.h / at.h;
+	return Box{now.x + (o.x - at.x) * kx, now.y + (o.y - at.y) * ky, o.w * kx, o.h * ky};
+}
+
+bool same_space(const Box &a, const Box &b)
+{
+	const bool had = a.w >= 2.0 && a.h >= 2.0, has = b.w >= 2.0 && b.h >= 2.0;
+	return had == has && (!had || (std::fabs(a.x - b.x) <= 0.5 && std::fabs(a.y - b.y) <= 0.5 &&
+				       std::fabs(a.w - b.w) <= 0.5 && std::fabs(a.h - b.h) <= 0.5));
+}
+
+// The home of moved item `i` of a fit's inputs once it is moved (`m`): with
+// its own fit known, that fit's home where the item is put (it takes its
+// home there, FitEngine::placed, also when its home did not match the item
+// before, and then goes elsewhere when it does not keep the gap there), so
+// the others look for their own home spaces with it there; else its home
+// moved with it.
+void home_after(fit::SpaceInputs &in, size_t i, const MovedBox &m)
+{
+	if (i >= in.has_homes.size() || i >= in.homes.size())
+		return;
+	if (m.has_claim) {
+		in.has_homes[i] = m.has_home;
+		if (m.has_home)
+			in.homes[i] = m.home;
+	} else if (in.has_homes[i]) {
+		in.homes[i] = moved_box(in.homes[i], m);
+	}
+}
+
+// A fit's inputs with the moved items where they are now (not `after`) or
+// where they would be (`after`): each where it is now, not where it was when
+// the fit last looked (out of view, something else may have moved it since).
+// `touched`: one of them is in its way. `unknown`: one of them was not
+// visible then, so how the fit goes by it is not known.
+fit::SpaceInputs with_moved(const fit::SpaceInputs &in, const std::vector<MovedBox> &moved, bool after, bool *touched,
+			    bool *unknown)
+{
+	fit::SpaceInputs out = in;
+	for (const MovedBox &m : moved) {
+		bool found = false;
+		for (size_t i = 0; i < out.ids.size() && i < out.boxes.size(); i++) {
+			if (out.ids[i] != m.id)
+				continue;
+			found = true;
+			Box &o = out.boxes[i];
+			const bool said = i < out.said.size() && out.said[i];
+			if (said) {
+				// Where its own fit takes it: where that will take it.
+				if (after) {
+					o = m.has_claim ? m.claim : moved_box(o, m);
+					home_after(out, i, m);
+				}
+				continue;
+			}
+			const Box here = i < out.at.size() ? follow_box(o, out.at[i], m.now) : o;
+			if (!after) {
+				o = here;
+			} else if (m.has_claim) {
+				o = m.claim;
+				if (i < out.said.size())
+					out.said[i] = true;
+				home_after(out, i, m);
+			} else {
+				o = moved_box(here, m);
+			}
+		}
+		if (found) {
+			if (touched)
+				*touched = true;
+		} else if (unknown && std::find(out.visible.begin(), out.visible.end(), m.id) == out.visible.end()) {
+			*unknown = true;
+		}
+	}
+	return out;
+}
+
+// A fit's inputs once a home it has just taken has settled (FitEngine::motion):
+// the space found round it then is its home's space, and from then on it is
+// at home only while that space is found again and it keeps the gap there.
+// What a fit will do for good is worked out from these.
+fit::SpaceInputs settled(fit::SpaceInputs in)
+{
+	if (in.has_home && in.home_settling) {
+		fit::SpaceOut out;
+		fit::space_from(in, &out);
+		in.home_settling = false;
+		in.home_space = out.home_space;
+		in.have_home_space = out.have_home_space;
+	}
+	return in;
+}
+
+// Whether a fit does the same from both: the same goal (its home, when it is
+// at home), the same space round it, and the same claim (a kept size goes
+// to one side or the other of its space by what lies round it).
+bool same_outcome(const fit::SpaceInputs &a, const fit::SpaceInputs &b)
+{
+	fit::SpaceOut x, y;
+	fit::space_from(a, &x);
+	fit::space_from(b, &y);
+	return x.at_home == y.at_home && same_space(x.goal, y.goal) && same_space(x.room, y.room) &&
+	       same_space(fit::claim_from(a, &x), fit::claim_from(b, &y));
+}
+
+// An item's own fit once it is handed the item where it is put (`m`: the
+// item's box, or a part of it, before and after): it looks for its space
+// round there and keeps the size it is given (`kx`, `ky` times the size it
+// kept), and, with a home, takes its home there too (a home is where an item
+// placed on purpose is put, FitEngine::placed), which then settles. (Also
+// one whose home does not match the item now, a window of another shape say
+// (`takes_home`): the home taken where it is put matches it.)
+// `own_claim`: where it shows the item now.
+fit::SpaceInputs handed_over(fit::SpaceInputs in, const MovedBox &m, const Box &own_claim, double kx, double ky)
+{
+	const Box box_to = moved_box(m.now, m);
+	in.ax = box_to.x + box_to.w / 2.0;
+	in.ay = box_to.y + box_to.h / 2.0;
+	in.kept_w *= kx;
+	in.kept_h *= ky;
+	if (in.has_home || in.takes_home) {
+		in.has_home = true;
+		in.home = moved_box(own_claim, m);
+		in.home_settling = true;
+	}
+	return settled(std::move(in));
+}
+
+// Whether every fit that has worked its space out (but the moved items' own)
+// does the same with the moved items where they would be: the same space,
+// and the same goal (so one at its home stays there).
+FitCheck spaces_kept(const std::vector<fit::HeldSpace> &spaces, const std::vector<MovedBox> &moved, std::string *who)
+{
+	for (const fit::HeldSpace &held : spaces) {
+		if (!held.worked)
+			continue;
+		if (std::any_of(moved.begin(), moved.end(), [&](const MovedBox &m) { return m.id == held.item; }))
+			continue; // a moved item's own fit: asked about by the caller
+		bool touched = false, unknown = false;
+		const fit::SpaceInputs before = settled(with_moved(held.in, moved, false, &touched, &unknown));
+		if (unknown) {
+			if (who)
+				*who = held.name;
+			return FitCheck::Unknown;
+		}
+		if (!touched)
+			continue; // the moved items are not in its way at all
+		// Worked out both ways by the fit's own working out, so the two
+		// are alike in everything but the moved items.
+		const fit::SpaceInputs after = settled(with_moved(held.in, moved, true, nullptr, nullptr));
+		if (!same_outcome(before, after)) {
+			if (who)
+				*who = held.name;
+			return FitCheck::Changes;
+		}
+	}
+	return FitCheck::Kept;
+}
+
+const fit::HeldSpace *own_fit_of(const std::vector<fit::HeldSpace> &held, obs_sceneitem_t *item)
+{
+	const char *name = obs_source_get_name(obs_sceneitem_get_source(item));
+	const int64_t id = obs_sceneitem_get_id(item);
+	for (const fit::HeldSpace &h : held)
+		if (h.item == id && name && h.name == name)
+			return &h;
+	return nullptr;
+}
+
+// The fit that looks after the group an item is in, if one does.
+const fit::HeldSpace *group_fit_of(const std::vector<fit::HeldSpace> &held, obs_source_t *scene, obs_sceneitem_t *item)
+{
+	obs_scene_t *s = scene_of(scene);
+	obs_sceneitem_t *group = s ? obs_sceneitem_get_group(s, item) : nullptr;
+	return group ? own_fit_of(held, group) : nullptr;
+}
+
+} // namespace
+
+FitCheck copy_keeps_fits(obs_source_t *scene, obs_sceneitem_t *copy, const Box &from, const Box &to, std::string *who)
+{
+	if (!scene || !copy)
+		return FitCheck::Kept;
+	const std::vector<fit::HeldSpace> held = fit::held_spaces(scene);
+	// In a group a fit looks after: the group changes with it, and that fit
+	// fits it again.
+	if (const fit::HeldSpace *group = group_fit_of(held, scene, copy)) {
+		if (who)
+			*who = group->name;
+		return FitCheck::Changes;
+	}
+	const fit::HeldSpace *own = own_fit_of(held, copy);
+	MovedBox m{obs_sceneitem_get_id(copy), from, to, false, from, false, Box{}};
+	for (const fit::HeldSpace &h : held) {
+		if (&h == own || h.worked || !h.shown)
+			continue;
+		// A fit there that has not worked its space out yet (its scene not
+		// shown since OBS started): what it would do is not known.
+		if (who)
+			*who = h.name;
+		return FitCheck::Unknown;
+	}
+	if (own) {
+		if (!own->worked) {
+			if (who)
+				*who = own->name;
+			return FitCheck::Unknown;
+		}
+		// Handed over, its own fit looks for its space round where it is put
+		// and keeps the size it is given (or fills that space), or stays
+		// there, at its home: the others then go by where it takes it.
+		const bool scaled = !own->resizes && from.w >= 1.0 && from.h >= 1.0;
+		const fit::SpaceInputs in = handed_over(own->in, m, fit::claim_from(own->in),
+							scaled ? to.w / from.w : 1.0, scaled ? to.h / from.h : 1.0);
+		fit::SpaceOut out;
+		const Box goal = fit::space_from(in, &out);
+		if (goal.w < 2.0 || goal.h < 2.0) {
+			if (who)
+				*who = own->name;
+			return FitCheck::Changes;
+		}
+		m.has_claim = true;
+		m.claim = fit::claim_from(in, &out);
+		// (Its home where it is put, whether or not it stays at home.)
+		m.has_home = in.has_home;
+		m.home = in.home;
+	}
+	return spaces_kept(held, {m}, who);
+}
+
+int fit_to_space(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items, double gap, const Measure &how,
+		 std::vector<obs_sceneitem_t *> *fitted, FitToSpaceNote *note)
+{
+	if (!scene || items.empty())
+		return 0;
+	const double canvas_w = obs_source_get_width(scene), canvas_h = obs_source_get_height(scene);
+	if (canvas_w < 2.0 || canvas_h < 2.0)
+		return 0;
+	gap = std::max(0.0, gap);
+	// Top-most first, so the item in front has the first say.
+	const std::vector<obs_sceneitem_t *> stack = stacking_order(scene);
+	std::vector<obs_sceneitem_t *> order = items;
+	auto height_of = [&](obs_sceneitem_t *item) {
+		const auto found = std::find(stack.begin(), stack.end(), item);
+		return found == stack.end() ? (long)stack.size() : (long)(found - stack.begin());
+	};
+	std::stable_sort(order.begin(), order.end(),
+			 [&](obs_sceneitem_t *a, obs_sceneitem_t *b) { return height_of(a) > height_of(b); });
+	// One scan for the whole press: every other item is looked at once, when
+	// first met, and followed by its box after that, so an item fitted here
+	// is where it now is for the next.
+	fit::FitScan scan;
+	// The spaces the scene's fits hold, asked once for the press.
+	const std::vector<fit::HeldSpace> held = fit::held_spaces(scene);
+	// The items changed so far in this press, for the check, and where what
+	// shows of each now is (another fit's claim on one is from before).
+	std::vector<MovedBox> moved;
+	std::vector<std::pair<int64_t, Box>> placed_at;
+	const Box canvas{0.0, 0.0, canvas_w, canvas_h};
+	int changed = 0;
+	auto add_name = [](std::vector<std::string> &list, const std::string &name) {
+		if (!name.empty() && std::find(list.begin(), list.end(), name) == list.end())
+			list.push_back(name);
+	};
+	auto gave_way = [&](const std::string &who) {
+		if (note)
+			add_name(note->gave_way_to, who);
+	};
+	for (obs_sceneitem_t *item : order) {
+		if (!item || obs_sceneitem_locked(item) || !obs_sceneitem_visible(item))
+			continue;
+		refresh_item(item);
+		const Box now = scene_box(scene, item);
+		const Box seen = measure_item(scene, item, how);
+		if (now.w < 1.0 || now.h < 1.0 || seen.w < 1.0 || seen.h < 1.0)
+			continue;
+		const int64_t id = obs_sceneitem_get_id(item);
+		const char *item_name = obs_source_get_name(obs_sceneitem_get_source(item));
+		// In a group a fit looks after: changing it changes the group, and
+		// that fit would fit the group again. Left as it is.
+		if (const fit::HeldSpace *group = group_fit_of(held, scene, item)) {
+			if (note)
+				note->refused++;
+			gave_way(group->name);
+			continue;
+		}
+		obs_scene_t *in_scene = scene_of(scene);
+		obs_sceneitem_t *group_item = in_scene ? obs_sceneitem_get_group(in_scene, item) : nullptr;
+		const int64_t group_id = group_item ? obs_sceneitem_get_id(group_item) : 0;
+		// A fit of its own that resizes it decides its size: left to it. One
+		// that keeps its size is worked out below.
+		const fit::HeldSpace *own = own_fit_of(held, item);
+		if (own && (own->resizes || !own->worked || own->in.kept_w <= 0.0 || own->in.kept_h <= 0.0)) {
+			if (note)
+				add_name(note->own_fit, item_name ? item_name : "");
+			continue;
+		}
+		// What is in the way, by the same rules as Fit to Space: what shows
+		// of each visible item (or where another fit is taking it), less
+		// the Morph layer and this item's own stand-in.
+		scan.gather(scene, item, &kFitTool);
+		const std::vector<int64_t> self{id};
+		std::vector<fit::Obstacle> in_way;
+		scan.obstacles(scene, item, {}, false, &kFitTool, how, in_way, &self);
+		// Something the item lies wholly on (a background, a panel behind
+		// it) is not in the way; anything that only overlaps it is, all of
+		// it: the space is looked for just off its sides. An item a fit of
+		// the free space looks after, shown or hidden, is in the way by the
+		// whole space that fit holds, whatever shows of it: taking any of it
+		// would make that fit move or resize its item. (Unless that space
+		// reaches the item: then that fit does not count the item at all,
+		// and the check below has the last word.)
+		const double sx0 = std::max(seen.x, 0.0), sy0 = std::max(seen.y, 0.0);
+		const double sx1 = std::min(seen.x + seen.w, canvas_w), sy1 = std::min(seen.y + seen.h, canvas_h);
+		const auto meets = [&](const Box &b) {
+			return b.x < sx1 - 0.5 && b.x + b.w > sx0 + 0.5 && b.y < sy1 - 0.5 && b.y + b.h > sy0 + 0.5;
+		};
+		const auto held_by = [&](int64_t other) -> const fit::HeldSpace * {
+			for (const fit::HeldSpace &h : held)
+				if (h.item == other && &h != own)
+					return &h;
+			return nullptr;
+		};
+		std::vector<Box> boxes;
+		std::vector<bool> firm, of_fit;
+		std::vector<std::string> fitted_by; // whose spaces are in the way
+		for (const fit::Obstacle &o : in_way) {
+			if (group_item && o.id == group_id)
+				continue; // its own group: what it lies in
+			// Changed earlier in this press: where it now is.
+			const auto was = std::find_if(placed_at.begin(), placed_at.end(),
+						      [&](const auto &p) { return p.first == o.id; });
+			if (was != placed_at.end()) {
+				boxes.push_back(was->second);
+				firm.push_back(true);
+				of_fit.push_back(false);
+				continue;
+			}
+			const fit::HeldSpace *h = held_by(o.id);
+			if (h && h->space.w >= 2.0 && h->space.h >= 2.0 && !meets(h->space)) {
+				boxes.push_back(h->space);
+				firm.push_back(true);
+				of_fit.push_back(true);
+				add_name(fitted_by, h->name);
+				continue;
+			}
+			if (o.box.w < 1.0 || o.box.h < 1.0)
+				continue;
+			const bool under = o.box.x <= sx0 + 0.5 && o.box.y <= sy0 + 0.5 &&
+					   o.box.x + o.box.w >= sx1 - 0.5 && o.box.y + o.box.h >= sy1 - 0.5;
+			if (under)
+				continue;
+			boxes.push_back(o.box);
+			firm.push_back(true);
+			of_fit.push_back(false);
+		}
+		// A hidden item's fit takes its space back when the item is shown.
+		for (const fit::HeldSpace &h : held) {
+			if (h.shown || &h == own || h.space.w < 2.0 || h.space.h < 2.0 || meets(h.space))
+				continue;
+			boxes.push_back(h.space);
+			firm.push_back(true);
+			of_fit.push_back(true);
+			add_name(fitted_by, h.name);
+		}
+		const double cx = seen.x + seen.w / 2.0, cy = seen.y + seen.h / 2.0;
+		const Box space = fit::free_space(canvas, cx, cy, boxes, gap, seen.w / seen.h, 8.0, &firm);
+		// No room for it: when there would be but for the spaces of fitted
+		// sources, it is left as it is for them, and the status line says so.
+		const auto left_for_fits = [&] {
+			if (fitted_by.empty())
+				return;
+			std::vector<Box> rest;
+			std::vector<bool> rest_firm;
+			for (size_t i = 0; i < boxes.size(); i++)
+				if (!of_fit[i]) {
+					rest.push_back(boxes[i]);
+					rest_firm.push_back(firm[i]);
+				}
+			const Box without =
+				fit::free_space(canvas, cx, cy, rest, gap, seen.w / seen.h, 8.0, &rest_firm);
+			if (without.w < 2.0 || without.h < 2.0)
+				return;
+			if (note)
+				note->refused++;
+			for (const std::string &name : fitted_by)
+				gave_way(name);
+		};
+		if (space.w < 2.0 || space.h < 2.0) {
+			left_for_fits();
+			continue;
+		}
+		// A shadow sized in screen pixels keeps its size whatever the item's:
+		// when it counts, only the picture grows into what is left. Its
+		// filter keeps the picture where it is when its room changes, a
+		// tick later, so the place is set by the picture's: `rl`, `rt` is
+		// where the picture starts in what is measured, on the screen.
+		double room_w = 0.0, room_h = 0.0, rl = 0.0, rt = 0.0;
+		bool fixed_room = false;
+		// (With such a shadow, whether it counts here or not, the image in
+		// the item's box, for the check: what lies round it keeps its size.)
+		bool screen_room = false;
+		Box image = now;
+		Measure picture_only = how;
+		picture_only.leave_out_shadows = true;
+		ShadowFree free;
+		if (shadow_free(obs_sceneitem_get_source(item), free)) {
+			obs_source_release(free.draw);
+			obs_source_t *source = obs_sceneitem_get_source(item);
+			const double src_w = obs_source_get_width(source), src_h = obs_source_get_height(source);
+			if (free.fixed_on_screen && src_w >= 1.0 && src_h >= 1.0) {
+				const double fl = free.left * now.w / src_w, fr = free.right * now.w / src_w;
+				const double ft = free.top * now.h / src_h, fb = free.bottom * now.h / src_h;
+				if (fl + fr < now.w - 1.0 && ft + fb < now.h - 1.0) {
+					screen_room = true;
+					image = Box{now.x + fl, now.y + ft, now.w - fl - fr, now.h - ft - fb};
+				}
+			}
+			if (free.fixed_on_screen && how.visible_pixels && !how.leave_out_shadows) {
+				const Box picture = measure_item(scene, item, picture_only);
+				if (picture.w >= 1.0 && picture.h >= 1.0 && picture.w < seen.w && picture.h < seen.h) {
+					room_w = seen.w - picture.w;
+					room_h = seen.h - picture.h;
+					rl = picture.x - seen.x;
+					rt = picture.y - seen.y;
+					fixed_room = true;
+				}
+			} else if (free.fixed_on_screen && !how.visible_pixels && src_w >= 1.0 && src_h >= 1.0) {
+				// By boxes, the box is measured with the room in it
+				// whatever "Ignore shadows" says.
+				room_w = (free.left + free.right) * now.w / src_w;
+				room_h = (free.top + free.bottom) * now.h / src_h;
+				rl = free.left * now.w / src_w;
+				rt = free.top * now.h / src_h;
+				fixed_room = room_w > 0.0 && room_h > 0.0 && room_w < seen.w && room_h < seen.h;
+				if (!fixed_room)
+					room_w = room_h = rl = rt = 0.0;
+			}
+		}
+		// The full result: as large as the space lets it be, centred in it.
+		const double full_k =
+			std::min((space.w - room_w) / (seen.w - room_w), (space.h - room_h) / (seen.h - room_h));
+		if (!(full_k > 0.0)) {
+			left_for_fits();
+			continue;
+		}
+		const double full_w = (seen.w - room_w) * full_k + room_w, full_h = (seen.h - room_h) * full_k + room_h;
+		const Box full{space.x + (space.w - full_w) / 2.0, space.y + (space.h - full_h) / 2.0, full_w, full_h};
+		// A smaller result: `k` the scale (no larger than the space lets it
+		// be), at (x, y) or, without a place, where `ax`, `ay` put it in the
+		// space (-1, 0 or 1 a side: 0 the middle), kept in the space.
+		struct Step {
+			Box at;
+			double k;
+		};
+		const auto step = [&](double k, int ax, int ay, const double *at) {
+			k = std::min(k, full_k);
+			Box b{0.0, 0.0, (seen.w - room_w) * k + room_w, (seen.h - room_h) * k + room_h};
+			b.x = at ? at[0] : space.x + (space.w - b.w) * (ax + 1) / 2.0;
+			b.y = at ? at[1] : space.y + (space.h - b.h) * (ay + 1) / 2.0;
+			b.x = std::clamp(b.x, space.x, std::max(space.x, space.x + space.w - b.w));
+			b.y = std::clamp(b.y, space.y, std::max(space.y, space.y + space.h - b.h));
+			return Step{b, k};
+		};
+		const auto nothing_to_do = [&](const Step &st) {
+			return std::fabs(st.k - 1.0) < 1e-4 && std::fabs(st.at.x - seen.x) < 0.25 &&
+			       std::fabs(st.at.y - seen.y) < 0.25;
+		};
+		// The item put as a try says, for the check: the part of it that
+		// scales (with a shadow in screen pixels, the image), before and
+		// after.
+		const auto moved_for = [&](const Step &st) {
+			MovedBox m{id, seen, st.at, false, now, false, Box{}};
+			if (screen_room) {
+				// (`rl`, `rt` place the image's measured part in what is
+				// measured, when the room counts; else they are 0.)
+				const double vx = seen.x + rl, vy = seen.y + rt;
+				m.keeps_outside = true;
+				m.from = image;
+				m.to = Box{st.at.x + rl - (vx - image.x) * st.k, st.at.y + rt - (vy - image.y) * st.k,
+					   image.w * st.k, image.h * st.k};
+			}
+			return m;
+		};
+		// With a fit of its own that keeps its size: handed over, that fit
+		// keeps the new size and looks for its space round where the item
+		// is put, and puts it there (its claim). A try is taken where that
+		// fit will put it, when that fit then finds the same space round it,
+		// and it stays inside the space found here.
+		const Box own_claim = own ? fit::claim_from(own->in) : Box{};
+		struct Outcome {
+			Step st;
+			MovedBox m;
+		};
+		const auto outcome = [&](const Step &st, Outcome &out) {
+			const MovedBox m = moved_for(st);
+			if (!own) {
+				out = Outcome{st, m};
+				return true;
+			}
+			// (With a home, that fit takes its home where the item is put, and
+			// keeps it there while the gap is kept.)
+			fit::SpaceInputs in = handed_over(with_moved(own->in, moved, true, nullptr, nullptr), m,
+							  own_claim, st.k, st.k);
+			fit::SpaceOut found;
+			const Box goal = fit::space_from(in, &found);
+			if (goal.w < 2.0 || goal.h < 2.0 || own_claim.w < 1.0 || own_claim.h < 1.0)
+				return false;
+			const Box claim = fit::claim_from(in, &found);
+			// (Put where it claims, its home, when it has one, is there.)
+			const MovedBox by{id, own_claim, claim, screen_room, now, true, claim, in.has_home, claim};
+			const Step put{moved_box(seen, by), st.k};
+			const Box box_put = moved_box(now, by);
+			in.ax = box_put.x + box_put.w / 2.0;
+			in.ay = box_put.y + box_put.h / 2.0;
+			if (!same_space(fit::space_from(in), goal))
+				return false;
+			if (put.at.x < space.x - 0.5 || put.at.y < space.y - 0.5 ||
+			    put.at.x + put.at.w > space.x + space.w + 0.5 ||
+			    put.at.y + put.at.h > space.y + space.h + 0.5)
+				return false;
+			out = Outcome{put, by};
+			return true;
+		};
+		// The largest that changes no other fit's space: the full result
+		// when it can be, else a twentieth of the way to its size now less
+		// at a time (to half the full size when that is no larger), each
+		// size centred, then part of the way from where it is, then against
+		// each side and corner of the space. Measured once for the press;
+		// each try only works the fits' spaces out again.
+		{
+			Outcome first;
+			if (outcome(step(full_k, 0, 0, nullptr), first) && nothing_to_do(first.st))
+				continue; // already fitted
+		}
+		const double k_low = full_k > 1.0 ? 1.0 : full_k * 0.5;
+		std::string who, not_known;
+		bool found = false, shrunk = false;
+		Outcome chosen{};
+		static const int kSides[8][2] = {{0, -1}, {0, 1}, {-1, 0}, {1, 0}, {-1, -1}, {1, -1}, {-1, 1}, {1, 1}};
+		for (int n = 20; n >= 1 && !found && not_known.empty(); n--) {
+			const double k = k_low + (full_k - k_low) * n / 20.0;
+			std::vector<Step> tries{step(k, 0, 0, nullptr)};
+			if (n < 20) {
+				const double t = std::fabs(full_k - 1.0) > 1e-6 ? (k - 1.0) / (full_k - 1.0) : 1.0;
+				const double at[2] = {seen.x + (full.x - seen.x) * t, seen.y + (full.y - seen.y) * t};
+				tries.push_back(step(k, 0, 0, at));
+			}
+			for (const auto &side : kSides)
+				tries.push_back(step(k, side[0], side[1], nullptr));
+			for (const Step &st : tries) {
+				Outcome oc;
+				if (!outcome(st, oc) || nothing_to_do(oc.st))
+					continue;
+				std::vector<MovedBox> with = moved;
+				with.push_back(oc.m);
+				std::string blocked;
+				const FitCheck check = spaces_kept(held, with, &blocked);
+				if (check == FitCheck::Kept) {
+					chosen = oc;
+					found = true;
+					shrunk = n < 20;
+					break;
+				}
+				if (check == FitCheck::Unknown) {
+					not_known = blocked; // the same for every try
+					break;
+				}
+				if (who.empty())
+					who = blocked;
+			}
+		}
+		if (!found) {
+			// (Already as large as it can be: nothing to say.)
+			if (!not_known.empty()) {
+				if (note) {
+					note->refused++;
+					add_name(note->unknown, not_known);
+				}
+			} else if (!who.empty()) {
+				if (note)
+					note->refused++;
+				gave_way(who);
+			} else if (own && note) {
+				add_name(note->own_fit, item_name ? item_name : "");
+			}
+			continue;
+		}
+		if (shrunk) {
+			if (note)
+				note->shrunk++;
+			gave_way(who);
+		}
+		const double k = chosen.st.k, to_x = chosen.st.at.x, to_y = chosen.st.at.y;
+		obs_sceneitem_defer_update_begin(item);
+		scale_item_by(item, k);
+		obs_sceneitem_defer_update_end(item);
+		refresh_item(item);
+		double at_x = 0.0, at_y = 0.0;
+		const Box resized = scene_box(scene, item);
+		if (fixed_room && how.visible_pixels) {
+			// Where the picture now is: measured again, once. (Its room
+			// is still the old one; the picture is where it will stay.)
+			const Box after = measure_item(scene, item, picture_only);
+			at_x = after.x - rl;
+			at_y = after.y - rt;
+		} else if (fixed_room) {
+			// The picture's place in the box grows with the box (the
+			// room in source pixels is still the old one).
+			at_x = resized.x + rl * resized.w / now.w - rl;
+			at_y = resized.y + rt * resized.h / now.h - rt;
+		} else {
+			// What shows is the same part of the box at any size.
+			const double rx = resized.w / now.w, ry = resized.h / now.h;
+			at_x = resized.x + (seen.x - now.x) * rx;
+			at_y = resized.y + (seen.y - now.y) * ry;
+		}
+		shift_item(scene, item, to_x - at_x, to_y - at_y);
+		refresh_item(item);
+		moved.push_back(chosen.m);
+		placed_at.emplace_back(id, chosen.st.at);
+		// An item a Fit to Space looks after is told it was placed on
+		// purpose by the caller, once it is there (it may glide).
+		if (fitted)
+			fitted->push_back(item);
+		changed++;
+	}
+	return changed;
 }
 
 } // namespace stagekit
