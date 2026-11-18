@@ -633,6 +633,171 @@ static void capture_pop_in_test(uint32_t w, uint32_t h, const std::string &out)
 	sleep_ms(200);
 }
 
+// ------------------------------------------------- updates: what changed
+// What the Update button lists: each release's summary and the leads of its
+// New, Changed and Fixed bullets, for every release after the installed one.
+static std::string json_text(const std::string &text)
+{
+	std::string out;
+	for (char c : text) {
+		if (c == '"' || c == '\\')
+			out += std::string("\\") + c;
+		else if (c == '\n')
+			out += "\\n";
+		else if (c == '\r')
+			out += "\\r";
+		else
+			out += c;
+	}
+	return out;
+}
+
+static void update_changes_test(const std::string &data_dir)
+{
+	printf("\n[updates: what changed since your version]\n");
+	auto notes = [](const std::string &body, std::string &summary, std::string &points) {
+		calldata_t cd = {};
+		calldata_set_string(&cd, "body", body.c_str());
+		proc_handler_call(obs_get_proc_handler(), "stagekit_update_notes", &cd);
+		summary = calldata_string(&cd, "summary") ? calldata_string(&cd, "summary") : "";
+		points = calldata_string(&cd, "points") ? calldata_string(&cd, "points") : "";
+		const long long count = calldata_int(&cd, "count");
+		calldata_free(&cd);
+		return count;
+	};
+	const std::string sha(64, 'a');
+	// As GitHub has it: the notes from their second line, then the checksums.
+	const std::string body =
+		"\r\nThe dock's **Update** button says what `changed`.\r\n"
+		"It is shorter now.\r\n\r\n"
+		"## New\r\n\r\n"
+		"- **Release notes in the dock.** Pressing *Update* lists them,\r\n"
+		"  newest first.\r\n"
+		"  - a bullet under a bullet is not a point\r\n"
+		"- **Stream Deck: the Scene Mode key's page** (plugin 0.28.0.0). More.\r\n"
+		"- A bullet with no lead: its first sentence. And the rest.\r\n\r\n"
+		"## Changed\r\n\r\n"
+		"- **_Fit to Space_ keeps `skip_fill_on`:** more words.\r\n"
+		"- **A [link](https://example.invalid) is its text.**\r\n\r\n"
+		"## Fixed\r\n\r\n"
+		"- **Never shown: a fifth point.**\r\n\r\n"
+		"## Good to know\r\n\r\n"
+		"- **Not a point.**\r\n\r\n"
+		"_The macOS files are still being built and are added here as soon as they are ready._\r\n\r\n"
+		"### Checksums (SHA-256)\r\n"
+		"    stagekit-windows-x64-Installer.exe: " +
+		sha + "\r\n";
+	std::string summary, points;
+	const long long count = notes(body, summary, points);
+	CHECK(summary == "The dock's Update button says what changed. It is shorter now.",
+	      "the summary is the first paragraph, made plain (%s)", summary.c_str());
+	CHECK(count == 4 && points == "Release notes in the dock\nStream Deck: the Scene Mode key's page\n"
+				      "A bullet with no lead: its first sentence\nFit to Space keeps skip_fill_on\n",
+	      "the points are the bold leads of New, Changed and Fixed (else the first sentence), plain, at most four, never Good to know (%s)",
+	      points.c_str());
+	CHECK(points.find("aaaa") == std::string::npos && summary.find("aaaa") == std::string::npos &&
+		      points.find("Not a point") == std::string::npos,
+	      "no checksum and nothing from Good to know is shown");
+	{
+		std::string s, p;
+		const long long n = notes("\nJust a line of summary,\nwrapped over two.\n\nMore text, not a section.\n"
+					  "\n### Checksums\n    x.exe: " +
+						  sha + "\n",
+					  s, p);
+		CHECK(n == 0 && s == "Just a line of summary, wrapped over two.",
+		      "notes without those sections give the summary alone (%s)", s.c_str());
+		const long long none = notes("", s, p);
+		CHECK(none == 0 && s.empty(), "empty notes give nothing");
+		notes("# StageKit 0.1.0-beta9\n\nA whole file as the body.\n\n## Fixed\n\n- **One fix.** Words.\n", s,
+		      p);
+		CHECK(s == "A whole file as the body." && p == "One fix\n",
+		      "a body that starts with its title still gives its summary and points (%s / %s)", s.c_str(),
+		      p.c_str());
+		notes("\nOlder headings.\n\n## What's new\n\n- **One.** a\n\n## Added\n\n- **Two.** b\n\n"
+		      "## What's fixed\n\n- **Three.** c\n",
+		      s, p);
+		CHECK(p == "One\nTwo\nThree\n", "older headings (What's new, Added, What's fixed) still count (%s)",
+		      p.c_str());
+	}
+
+	// A list of releases, out of order, with a draft among them.
+	auto release = [&](int n, bool draft, const std::string &notes_body) {
+		return std::string("{\"tag_name\":\"0.1.0-beta") + std::to_string(n) +
+		       "\",\"prerelease\":true,\"draft\":" + (draft ? "true" : "false") + ",\"body\":\"" +
+		       json_text(notes_body) + "\",\"assets\":[]}";
+	};
+	std::string list = "[";
+	const int order[] = {12, 3, 40, 7, 25, 41, 30, 9, 11, 35, 20, 15, 38, 10, 33, 8, 28, 5, 18, 39};
+	for (int n : order) {
+		if (list.size() > 1)
+			list += ",";
+		list += release(n, n == 39,
+				"\nRelease " + std::to_string(n) + ".\n\n## Fixed\n\n- **Fix " + std::to_string(n) +
+					".** Words.\n");
+	}
+	list += "]";
+	auto changes = [&](const char *installed, const char *upto, int most, long long &count, long long &earlier) {
+		calldata_t cd = {};
+		calldata_set_string(&cd, "json", list.c_str());
+		calldata_set_string(&cd, "installed", installed);
+		calldata_set_string(&cd, "upto", upto);
+		calldata_set_int(&cd, "most", most);
+		proc_handler_call(obs_get_proc_handler(), "stagekit_update_changes", &cd);
+		std::string text = calldata_string(&cd, "text") ? calldata_string(&cd, "text") : "";
+		count = calldata_int(&cd, "count");
+		earlier = calldata_int(&cd, "earlier");
+		calldata_free(&cd);
+		return text;
+	};
+	long long count2 = 0, earlier = 0;
+	std::string text = changes("0.1.0-beta9", "0.1.0-beta40", 15, count2, earlier);
+	// Newer than beta9, up to beta40, not the draft (39) nor beta41: 10 11 12
+	// 15 18 20 25 28 30 33 35 38 40 = 13.
+	CHECK(count2 == 13 && earlier == 0 &&
+		      text.rfind("0.1.0-beta40: Release 40.\n  - Fix 40\n0.1.0-beta38", 0) == 0 &&
+		      text.find("beta41") == std::string::npos && text.find("beta39") == std::string::npos &&
+		      text.find("beta9:") == std::string::npos &&
+		      text.find("0.1.0-beta11: Release 11.\n  - Fix 11\n0.1.0-beta10: Release 10.") !=
+			      std::string::npos,
+	      "every release after the installed one up to the one offered, newest first, drafts left out (%lld)",
+	      count2);
+	text = changes("0.1.0-beta2", "0.1.0-beta41", 15, count2, earlier);
+	CHECK(count2 == 15 && earlier == 4 && text.rfind("0.1.0-beta41:", 0) == 0 &&
+		      text.find("0.1.0-beta9:") != std::string::npos &&
+		      text.find("0.1.0-beta8:") == std::string::npos && text.find("and 4 earlier") != std::string::npos,
+	      "at most fifteen, then how many earlier ones were left out (%lld, %lld earlier)", count2, earlier);
+	text = changes("0.1.0-beta50", "0.1.0-beta41", 15, count2, earlier);
+	CHECK(count2 == 0 && earlier == 0 && text.empty(), "an installed version newer than all lists nothing");
+
+	// The real notes of the last three releases, as the updater would show them.
+	std::string real = "[";
+	for (int n : {179, 181, 180}) {
+		const std::string file = data_dir + "/../docs/releases/0.1.0-beta" + std::to_string(n) + ".md";
+		std::string md;
+		if (FILE *f = fopen(file.c_str(), "rb")) {
+			char buf[4096];
+			size_t got;
+			while ((got = fread(buf, 1, sizeof(buf), f)) > 0)
+				md.append(buf, got);
+			fclose(f);
+		}
+		const size_t first = md.find('\n');
+		const std::string from_second = first == std::string::npos ? md : md.substr(first + 1);
+		if (real.size() > 1)
+			real += ",";
+		real += "{\"tag_name\":\"0.1.0-beta" + std::to_string(n) + "\",\"draft\":false,\"body\":\"" +
+			json_text(from_second +
+				  "\n### Checksums (SHA-256)\n    stagekit-windows-x64-Installer.exe: " + sha + "\n") +
+			"\"}";
+	}
+	real += "]";
+	list = real;
+	text = changes("0.1.0-beta178", "0.1.0-beta181", 15, count2, earlier);
+	printf("%s", text.c_str());
+	CHECK(count2 == 3 && text.rfind("0.1.0-beta181:", 0) == 0 && text.find("aaaa") == std::string::npos,
+	      "the notes of beta179 to beta181 read as a list, newest first");
+}
+
 // ------------------------------------------------- space priority
 // Which fitted source makes room for which: a game (4:3, kept towards
 // the left) and a camera (4:3, kept towards the right) on a 640x360
@@ -5673,6 +5838,14 @@ int main(int argc, char **argv)
 		       g_failures == 1 ? "" : "s");
 		return g_failures ? 1 : 0;
 	}
+
+	if (getenv("STAGEKIT_TEST_ONLY_UPDATES")) { // to try that section alone
+		update_changes_test(argv[2]);
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
 	if (getenv("STAGEKIT_TEST_ONLY_FIT_GROUPS")) { // to try that section alone
 		scene_fit_groups_test();
 		obs_shutdown();
@@ -8413,6 +8586,7 @@ int main(int argc, char **argv)
 				      "the install helper downloads and checks before it closes OBS, then installs, then starts OBS again, with quotes in names kept safe");
 			}
 		}
+		update_changes_test(argv[2]);
 
 		// A capture hooked onto the window in front, by hand (the Stream Deck
 		// plugin's Hook key asks for this through obs-websocket).

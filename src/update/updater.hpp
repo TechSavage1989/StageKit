@@ -12,6 +12,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include <functional>
 #include <string>
+#include <vector>
 
 namespace stagekit {
 
@@ -21,6 +22,15 @@ namespace stagekit {
 // Looking works wherever the plugin can reach the web; installing is for
 // Windows, where there is an installer to run.
 
+// What one release changed, at a glance, read from its notes: the one-line
+// summary at their top and the bold leads of the bullets under "New",
+// "Changed" and "Fixed" (never "Good to know", never the checksums).
+struct ReleaseNotes {
+	std::string version;
+	std::string summary;
+	std::vector<std::string> points;
+};
+
 struct Release {
 	std::string version;       // "0.1.0-beta82"
 	std::string page;          // the release's page, for "What's new"
@@ -28,7 +38,31 @@ struct Release {
 	std::string installer_sha; // its SHA-256, from the release notes
 	std::string deck_url;      // the Stream Deck plugin's file, if the release has one
 	std::string deck_sha;
+	// Every release after this build's, up to this one, newest first (at
+	// most kMostChanges), and how many earlier ones were left out.
+	std::vector<ReleaseNotes> changes;
+	int earlier = 0;
 };
+
+// How many releases the Update button lists, and how many points of each.
+constexpr size_t kMostChanges = 15;
+constexpr size_t kMostPoints = 4;
+
+// A release's notes (its body on GitHub) read for the list above. Markdown
+// marks are taken out; a body without those sections gives the summary only.
+ReleaseNotes notes_of(const std::string &version, const std::string &body);
+
+// Adds the notes of every release in GitHub's list (its answer, as text) that
+// is newer than `installed`, drafts left out. Pre-releases count whatever the
+// betas setting: what they changed is in any later release.
+void read_changes(const std::string &json, const std::string &installed, std::vector<ReleaseNotes> &out);
+
+// Keeps those up to `upto` and once each, newest first, at most `most`, and
+// says how many older ones were left out.
+int order_changes(std::vector<ReleaseNotes> &changes, const std::string &upto, size_t most);
+
+// The list as plain text, for the log and the tests.
+std::string changes_text(const std::vector<ReleaseNotes> &changes, int earlier);
 
 // The release this build is: the newest notes file there was when it was built.
 const char *current_release();

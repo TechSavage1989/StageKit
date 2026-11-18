@@ -9,11 +9,42 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | `fix/auto-capture-hook-loop` (Auto Capture rests a program for real, betaNEXT), on `main` after beta180. Next: the new collection |
+| Working branch | `feat/updater-whats-new` (the Update button lists what changed, betaNEXT), on `main` after beta181. Next: the new collection |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
-## Auto Capture rests a program for real (0.1.0-beta184)
+## The Update button lists what changed since your version (0.1.0-beta185)
+
+Branch `feat/updater-whats-new`, on `main` after beta181. Notes: `docs/releases/0.1.0-beta185.md`.
+The owner (2026-11-18): "id like future updaters to show the recent changes clearly at a high level
+when pressing the update button".
+
+- **What it shows.** The dock's *Update* and the Tools menu's *Update to … now* open a dialog
+  (`show_changes(true)` in `src/dock/stagekit-dock.cpp`, object `updateChanges`): a heading with
+  the installed and the offered version, a scrolling list (`QTextBrowser`, `updateChangesList`),
+  the old *Update.Confirm* question, and *Release page*, Yes, No. *What's new* opens the same list
+  with Close (it used to open the browser). Each release: version in bold, its summary, the bold
+  leads of New / Changed / Fixed as a list.
+- **Where it comes from.** `check_for_update` already read every page of releases; each page now
+  also goes through `read_changes` (every release newer than `STAGEKIT_RELEASE`, drafts out,
+  pre-releases in regardless of the betas setting), and once the newest is known `order_changes`
+  keeps those up to it, newest first, once each, at most 15, and counts the rest (`Release::changes`,
+  `Release::earlier`). No extra request.
+- **Parsing** (`notes_of`): lines split on `\n` with `\r` dropped; stops at `### Checksums` or the
+  *still being built* line; a leading `# StageKit …` is skipped; the first paragraph is the summary
+  (joined, made plain, cut at 300 characters); under a `##`/`###` heading starting New, Changed or
+  Fixed, top-level `- `/`* ` bullets with their indented continuation lines are points, each its
+  bold lead or else its first sentence, cut at 110 characters, at most four per release.
+  `plain` drops `*`, backticks, `_` at a word's edge (not in snake_case) and link targets.
+- **Rule from now on:** line 3 of every notes file is a one-line summary (AGENTS.md, *Conventions*
+  and the updater's entry; *Releasing* below).
+- Tests: `[updates: what changed since your version]` (`update_changes_test`, also at the end of
+  `[updates]` in a full run; alone with `STAGEKIT_TEST_ONLY_UPDATES`), through the procs
+  `stagekit_update_notes` and `stagekit_update_changes`. The dialog itself has not been opened in
+  a test or on Windows; the installed build only gets the list once a release with this code is the
+  one installed (the release that brings it is offered by an older updater, without the list).
+
+## The Scene Mode key's page: a mode, then its settings (0.1.0-beta181, plugin 0.28.0.0)
 
 Branch `fix/auto-capture-hook-loop`, on `main` after beta180. Notes:
 `docs/releases/0.1.0-beta184.md`. No Stream Deck file changed.
@@ -1270,7 +1301,9 @@ writes no files of its own.
 Releases publish themselves; nobody pushes a tag by hand.
 
 1. On a branch, add `docs/releases/<version>.md` (for example `0.2.0.md` or `0.2.0-beta1.md`). Bump
-   `version` in `buildspec.json` when the base version changes. Merge the pull request.
+   `version` in `buildspec.json` when the base version changes. Merge the pull request. Line 3 of
+   the notes must be a one-line summary and each bullet of *New*, *Changed* and *Fixed* must start
+   with a short bold lead: the dock's Update button shows exactly those (see AGENTS.md).
 2. On that push to `main`, `.github/workflows/push.yaml` builds every platform. Its *Find Unpublished
    Release* job takes the newest notes file by version; if no tag of that name exists, *Publish Release*
    (`.github/scripts/publish-release.sh`) creates the tag on that commit and the release **as soon as the
