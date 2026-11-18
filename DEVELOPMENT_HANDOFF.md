@@ -13,9 +13,9 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
-## Scene Shadow from each source, Scene Corners on the whole scene (0.1.0-betaNEXT)
+## Scene Shadow from each source, Scene Corners on the whole scene (0.1.0-beta176)
 
-Branch `feat/scene-shadow-corners`, on `main` after beta168 (#184). Notes: `docs/releases/0.1.0-betaNEXT.md`.
+Branch `feat/scene-shadow-corners`, on `main` after beta168 (#184). Notes: `docs/releases/0.1.0-beta176.md`.
 No Stream Deck file changed. Proposed to the owner, who answered "yes to both": Scene Shadow drawing
 each source's shadow by itself, falling onto what lies under it and covered by what lies above, as
 separate Shadow, Glow & Outline filters would; and Scene Corners giving the scene's own image the
