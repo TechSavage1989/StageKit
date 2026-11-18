@@ -102,6 +102,7 @@ notice and the confirmation are what there is. This is recorded in the handoff.
 | `streamdeck/` | The Stream Deck plugin (TypeScript, Elgato's SDK 3, Node): `src/` (the link to OBS over obs-websocket, the key types), `com.techsavage1989.stagekit.sdPlugin/` (manifest, settings pages, icons), `tests/`, `tools/make-icons.py`. It has its own `package.json`; nothing in the OBS plugin depends on it |
 | `scripts/` | Repository checks (`check-root.sh`, `root-allowlist.txt`); `rebuild-collection.py` writes a StageKit collection from an old one and `upgrade-collection.py` brings a StageKit collection up to date; `merge-capture-scenes.py` adds the two layout scenes (Live, Chat Live) and `merge-holding-scenes.py` the holding scene (Standby) to a StageKit collection for a side-by-side trial. All four read one file and write another; the owner's collections are private and never committed |
 | `docs/images/` | README imagery, produced by the tests |
+| `.claude/settings.json` | Claude Code's project settings: allows the Workflow tool without a prompt (the owner, 2026-11-18). Only this file is tracked; `settings.local.json` stays ignored |
 | `cmake/`, `build-aux/`, `.github/` | From the official obs-plugintemplate; change only when needed |
 
 Root files are limited to `scripts/root-allowlist.txt`. `buildspec.json`, `CMakeLists.txt`,

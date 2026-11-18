@@ -3,6 +3,9 @@
 
 # Except for default project files
 !/.github
+!/.claude
+/.claude/*
+!/.claude/settings.json
 !/build-aux
 !/cmake
 !/data
