@@ -13,10 +13,10 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
-## Auto Capture: let go when the game's window closes (0.1.0-betaNEXT)
+## Auto Capture: let go when the game's window closes (0.1.0-beta190)
 
 Branch `fix/auto-capture-window-closed`, on `main` after beta186. Notes:
-`docs/releases/0.1.0-betaNEXT.md`. No Stream Deck file changed. The owner (2026-11-18): "if the
+`docs/releases/0.1.0-beta190.md`. No Stream Deck file changed. The owner (2026-11-18): "if the
 captured game closes but the emulator stays open in the menu/game list, the last captured frame
 of the game remains in the OBS capture, and it doesn't morph into the standby as intended".
 `fix/auto-capture-quick-pickup` changes the rest logic in the same file at the same time; this

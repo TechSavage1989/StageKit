@@ -1445,7 +1445,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   `capture stopped` in a tight loop, or `vulkan capture freed` many times a second, before
   changing Auto Capture; the README's Troubleshooting has the fix.
 - **Auto Capture lets go when the game's window closes and its program stays open**
-  (`watch_captured`, `captured_`, `spent_` in `src/capture/auto-capture.cpp`, betaNEXT). The
+  (`watch_captured`, `captured_`, `spent_` in `src/capture/auto-capture.cpp`, beta190). The
   owner (2026-11-18): "when using game capture with some emulators like dolphin where the dolphin
   menu and game screen are separate windows, if the captured game closes but the emulator stays
   open in the menu/game list, the last captured frame of the game remains in the OBS capture, and
