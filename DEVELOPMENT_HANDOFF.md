@@ -13,10 +13,10 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
-## Keys name their filter; a Standby Image over any source (0.1.0-betaNEXT, plugin 0.30.0.0)
+## Keys name their filter; a Standby Image over any source (0.1.0-beta189, plugin 0.30.0.0)
 
 Branch `feat/key-filter-names-standby-cover`, on `main` after beta182. Notes:
-`docs/releases/0.1.0-betaNEXT.md`. The owner: "'Set its source to Square Camera and its filter to
+`docs/releases/0.1.0-beta189.md`. The owner: "'Set its source to Square Camera and its filter to
 Show in Scenes-Camera.' - i can't set a filter for show in scenes. there is no option. The stream
 deck keys don't really say what filters they are associated with ... also, The Hide shows standby
 image I think should have its own filter, or be separate from that automatic window switcher

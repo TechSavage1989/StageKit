@@ -1535,7 +1535,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   Capture, came up full-screen over the capture a Link Visibility had on. A pending record reads
   hidden to the Stream Deck key. Not an option: a show of an item the command never hid is the
   bug. Tested in `[capture hide: ...]` (`STAGEKIT_TEST_ONLY_CAPTURE_HIDE`).
-- **A Standby Image covers any source on purpose, and keys can ask for it** (betaNEXT). The owner:
+- **A Standby Image covers any source on purpose, and keys can ask for it** (beta189). The owner:
   "The Hide shows standby image I think should have its own filter, or be separate from that
   automatic window switcher somehow. Automatic window switcher doesn't even apply to capture sources
   other than window". So: the vendor requests `StandbyCover` (`how` on, off, toggle; none asks) and
@@ -1559,7 +1559,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   key's *On press* gains `cover`, `coveron`, `coveroff` (append-only, `coverHow`), lit while
   covered; the Show in Scenes key's *When hiding* (`hideAs`, `hideAsOf`). Not run on Windows or a
   Stream Deck.
-- **Show in Scenes' *Show only what it hid*** (`restore_hidden`, off as it comes; betaNEXT). The
+- **Show in Scenes' *Show only what it hid*** (`restore_hidden`, off as it comes; beta189). The
   owner's camera switch lists DSLR Component, DSLR GBA Link, Square Camera and DSLR (full-screen,
   hidden in the component scene); with *Follow what is shown* the switch read off, a press showed
   DSLR, and the captures' Only one link hid Game Capture and DSLR Component. Ticked: a hide press
@@ -1576,7 +1576,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   hid]` (`restore_hidden_test`, alone: `STAGEKIT_TEST_ONLY_RESTORE_HIDDEN`; the owner's scene with
   both links, the press and its restore, a show with nothing noted, an item shown and hidden by
   hand meanwhile, a filter made again from its settings, a key set to Cover).
-- **Every key's list names its filter** (betaNEXT; the owner: "The stream deck keys don't really
+- **Every key's list names its filter** (beta189; the owner: "The stream deck keys don't really
   say what filters they are associated with which makes it difficult for me to find the associated
   filters"). `targetItems` labels every entry "<source> — <filter>" (`filterLabel`: the kind in
   brackets where the name is not the kind's own, `isOwnName`, which knows the old names too); up to beta175 a source with one such filter was listed
