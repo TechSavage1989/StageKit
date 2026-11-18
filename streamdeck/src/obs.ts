@@ -94,6 +94,8 @@ class ObsLink extends EventEmitter {
 			if (ev.vendorName === "StageKit" && ev.eventType === "SceneModeChanged") this.emit("mode", ev.eventData);
 			// A Scene Blur was switched on or off.
 			if (ev.vendorName === "StageKit" && ev.eventType === "SceneBlurChanged") this.emit("sceneblur", ev.eventData);
+			// A Standby Image was shown over its source on purpose, or taken away.
+			if (ev.vendorName === "StageKit" && ev.eventType === "StandbyCoverChanged") this.emit("standbycover", ev.eventData);
 		});
 	}
 
@@ -361,6 +363,37 @@ class ObsLink extends EventEmitter {
 		const answer = await this.stageKit("GetSwitcherState", { sourceName, filterName });
 		if (!answer) return undefined;
 		return { manual: answer.manual === true, hidden: answer.hidden === true };
+	}
+
+	/**
+	 * A Standby Image filter's image over its source on purpose: shown ("on"),
+	 * taken away ("off") or the other way ("toggle"), with that filter's own
+	 * transition. Says whether it covers afterwards, or undefined when OBS
+	 * refused (no such filter, or it is switched off) or cannot be asked.
+	 */
+	async standbyCover(sourceName: string, filterName: string, how: "on" | "off" | "toggle"): Promise<boolean | undefined> {
+		if (!sourceName) return undefined;
+		const answer = await this.stageKit("StandbyCover", { sourceName, filterName, how });
+		return answer ? answer.covered === true : undefined;
+	}
+
+	/** Whether a Standby Image filter's image is over its source on purpose; undefined when it cannot be asked. */
+	async standbyCovered(sourceName: string, filterName: string): Promise<boolean | undefined> {
+		if (!sourceName) return undefined;
+		const answer = await this.stageKit("GetStandbyCover", { sourceName, filterName });
+		return answer ? answer.covered === true : undefined;
+	}
+
+	/**
+	 * A Show in Scenes key's press with its own way of hiding ("hide", or
+	 * "cover" with each source's Standby Image): the filter is switched as
+	 * any key switches it, and that press hides that way. Says whether the
+	 * filter is on afterwards, or undefined when OBS refused or cannot be asked.
+	 */
+	async showInScenesPress(sourceName: string, filterName: string, how: "on" | "off" | "toggle", hideAs: "hide" | "cover"): Promise<boolean | undefined> {
+		if (!sourceName || !filterName) return undefined;
+		const answer = await this.stageKit("ShowInScenesPress", { sourceName, filterName, how, hideAs });
+		return answer ? answer.enabled === true : undefined;
 	}
 
 	/**

@@ -64,14 +64,13 @@ export function migrateModeKey<T extends Record<string, unknown>>(settings: T): 
 
 /**
  * The key's Scene Modes list: every Scene Modes filter with modes, by its
- * scene ("Standby"), and the filter's name too where a scene has two.
+ * scene and the filter's name ("Standby — Holding modes"), as every key's
+ * list names its filter.
  */
 export function modeFilterItems(filters: ModeFilter[]): Array<{ label: string; value: string }> {
-	const count = new Map<string, number>();
-	for (const f of filters) count.set(f.scene, (count.get(f.scene) ?? 0) + 1);
 	return [...filters]
 		.sort((a, b) => a.scene.localeCompare(b.scene, undefined, { sensitivity: "base" }))
-		.map((f) => ({ label: (count.get(f.scene) ?? 0) > 1 ? `${f.scene} — ${f.filter}` : f.scene, value: modeFilterValue(f.scene, f.filter) }));
+		.map((f) => ({ label: `${f.scene} — ${f.filter}`, value: modeFilterValue(f.scene, f.filter) }));
 }
 
 /** The modes of the key's filter, in OBS's order: the Mode, Long press mode and Settings for lists. */

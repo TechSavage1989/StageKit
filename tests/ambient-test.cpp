@@ -3185,6 +3185,236 @@ static void modes_hide_test()
 	obs_source_release(before_out);
 }
 
+// Is a Standby Image filter showing its image over its source on purpose?
+static bool standby_is_covering(obs_source_t *standby)
+{
+	calldata_t cd = {};
+	const bool asked = proc_handler_call(obs_source_get_proc_handler(standby), "covering", &cd);
+	const bool covering = asked && calldata_bool(&cd, "covering");
+	calldata_free(&cd);
+	return covering;
+}
+
+// A Standby Image over any source, on purpose: the "StandbyCover" and
+// "GetStandbyCover" requests, the "StandbyCoverChanged" event, and Show in
+// Scenes' "Hide shows Standby Image". The owner: "The Hide shows standby
+// image I think should have its own filter, or be separate from that
+// automatic window switcher somehow". Run after the switch-command section,
+// and alone with STAGEKIT_TEST_ONLY_STANDBY_COVER.
+static void standby_cover_test()
+{
+	printf("\n[standby image over any source: cover requests and Show in Scenes' hide]\n");
+	auto block = [](const std::string &name, long long abgr) {
+		obs_data_t *d = obs_data_create();
+		obs_data_set_int(d, "color", abgr);
+		obs_data_set_int(d, "width", 160);
+		obs_data_set_int(d, "height", 90);
+		obs_source_t *src = obs_source_create("color_source", name.c_str(), d, nullptr);
+		obs_data_release(d);
+		return src;
+	};
+	auto call = [](const char *request, const std::string &json) {
+		calldata_t cd = {};
+		calldata_set_string(&cd, "request", request);
+		calldata_set_string(&cd, "data", json.c_str());
+		proc_handler_call(obs_get_proc_handler(), "stagekit_vendor_call", &cd);
+		const char *answer = calldata_string(&cd, "response");
+		obs_data_t *out = obs_data_create_from_json(answer && *answer ? answer : "{}");
+		calldata_free(&cd);
+		return out;
+	};
+	auto events = [] {
+		calldata_t cd = {};
+		proc_handler_call(obs_get_proc_handler(), "stagekit_vendor_events", &cd);
+		const char *got = calldata_string(&cd, "events");
+		std::string text = got ? got : "";
+		calldata_free(&cd);
+		return text;
+	};
+	auto count = [](const std::string &text, const std::string &what) {
+		int n = 0;
+		for (size_t at = text.find(what); at != std::string::npos; at = text.find(what, at + 1))
+			n++;
+		return n;
+	};
+	obs_source_t *before_out = obs_get_output_source(0);
+	events(); // (noted from here on)
+
+	obs_source_t *camera = block("SC Camera", 0xFF0000FF); // red
+	obs_source_t *image = block("SC Image", 0xFF00FF00);   // green
+	obs_source_t *plain = block("SC Plain", 0xFFFF0000);   // blue, no Standby Image
+	obs_scene_t *scene = obs_scene_create("SC Scene");
+	obs_source_t *scene_src = obs_scene_get_source(scene);
+	obs_sceneitem_t *ci = obs_scene_add(scene, camera);
+	obs_sceneitem_t *pi = obs_scene_add(scene, plain);
+	obs_set_output_source(0, scene_src);
+	obs_data_t *sd = obs_data_create();
+	obs_data_set_int(sd, "picture", 2); // another source
+	obs_data_set_string(sd, "source", "SC Image");
+	obs_data_set_int(sd, "style", 1); // a cut
+	obs_source_t *standby = obs_source_create("stagekit_standby", "SC Standby", sd, nullptr);
+	obs_data_release(sd);
+	obs_source_filter_add(camera, standby);
+	auto centre = [&] {
+		std::vector<uint8_t> px;
+		for (int i = 0; i < 6; i++) {
+			sleep_ms(50);
+			px = render(camera, 160, 90);
+		}
+		const uint8_t *p = &px[(size_t(45) * 160 + 80) * 4];
+		return std::string(p[1] > 200 && p[0] < 60 ? "image" : p[0] > 200 && p[1] < 60 ? "camera" : "other");
+	};
+	const std::string at_first = centre();
+
+	obs_data_t *asked = call("GetStandbyCover", R"({"sourceName":"SC Camera"})");
+	CHECK(obs_data_get_bool(asked, "success") && !obs_data_get_bool(asked, "covered") &&
+		      obs_data_get_bool(asked, "enabled") &&
+		      std::string(obs_data_get_string(asked, "filterName")) == "SC Standby" && at_first == "camera",
+	      "GetStandbyCover names the camera's Standby Image, not covering, and the camera shows (%s, %s)",
+	      obs_data_get_json(asked), at_first.c_str());
+	obs_data_release(asked);
+
+	obs_data_t *on = call("StandbyCover", R"({"sourceName":"SC Camera","how":"toggle"})");
+	const std::string covered_look = centre();
+	const std::string said_on = events();
+	CHECK(obs_data_get_bool(on, "success") && obs_data_get_bool(on, "covered") && covered_look == "image" &&
+		      count(said_on, "StandbyCoverChanged") == 1 && count(said_on, "\"covered\":true") == 1 &&
+		      count(said_on, "\"sourceName\":\"SC Camera\"") == 1,
+	      "StandbyCover toggle covers a camera (not a capture) with its image, and StandbyCoverChanged says so (%s, %s, %s)",
+	      obs_data_get_json(on), covered_look.c_str(), said_on.c_str());
+	obs_data_release(on);
+
+	obs_data_t *again = call("StandbyCover", R"({"sourceName":"SC Camera","filterName":"SC Standby","how":"on"})");
+	const std::string said_again = events();
+	obs_data_t *off = call("StandbyCover", R"({"sourceName":"SC Camera","how":"off"})");
+	const std::string uncovered_look = centre();
+	const std::string said_off = events();
+	CHECK(obs_data_get_bool(again, "covered") && count(said_again, "StandbyCoverChanged") == 0 &&
+		      obs_data_get_bool(off, "success") && !obs_data_get_bool(off, "covered") &&
+		      uncovered_look == "camera" && count(said_off, "\"covered\":false") == 1,
+	      "'on' while covered changes nothing and says nothing; 'off' takes the image away and says so (%s / %s, %s)",
+	      said_again.c_str(), said_off.c_str(), uncovered_look.c_str());
+	obs_data_release(again);
+	obs_data_release(off);
+
+	obs_data_t *none = call("StandbyCover", R"({"sourceName":"SC Plain","how":"on"})");
+	obs_data_t *wrong = call("StandbyCover", R"({"sourceName":"SC Camera","filterName":"Nope","how":"on"})");
+	obs_data_t *bad = call("StandbyCover", R"({"sourceName":"SC Camera","how":"sideways"})");
+	obs_source_set_enabled(standby, false);
+	obs_data_t *switched_off = call("StandbyCover", R"({"sourceName":"SC Camera","how":"on"})");
+	obs_data_t *asked_off = call("GetStandbyCover", R"({"sourceName":"SC Camera"})");
+	obs_source_set_enabled(standby, true);
+	CHECK(!obs_data_get_bool(none, "success") && !obs_data_get_bool(wrong, "success") &&
+		      !obs_data_get_bool(bad, "success") && !obs_data_get_bool(switched_off, "success") &&
+		      obs_data_get_bool(asked_off, "success") && !obs_data_get_bool(asked_off, "enabled"),
+	      "refused: a source with no Standby Image, a filter of another name, an unknown 'how', a Standby Image that is switched off (which can still be asked: %s)",
+	      obs_data_get_json(asked_off));
+	for (obs_data_t *d : {none, wrong, bad, switched_off, asked_off})
+		obs_data_release(d);
+	events();
+
+	// Show in Scenes with "Hide shows Standby Image": the camera is covered,
+	// the source without a Standby Image is hidden as usual.
+	obs_data_t *wd = obs_data_create();
+	obs_data_array_t *rows = obs_data_array_create();
+	for (const char *name : {"SC Camera", "SC Plain"}) {
+		obs_data_t *row = obs_data_create();
+		obs_data_set_string(row, "value", name);
+		obs_data_array_push_back(rows, row);
+		obs_data_release(row);
+	}
+	obs_data_set_array(wd, "sources", rows);
+	obs_data_array_release(rows);
+	obs_data_set_string(wd, "transition", "none");
+	obs_data_set_bool(wd, "hide_standby", true);
+	obs_data_set_bool(wd, "follow", true);
+	obs_source_t *sw = obs_source_create("stagekit_show_in_scenes", "SC Camera Switch", wd, nullptr);
+	obs_data_release(wd);
+	obs_source_filter_add(camera, sw);
+	sleep_ms(300);
+	auto state = [&] {
+		return std::string(obs_sceneitem_visible(ci) ? "1" : "0") + (obs_sceneitem_visible(pi) ? "1" : "0") +
+		       (standby_is_covering(standby) ? " covered" : " clear") +
+		       (obs_source_enabled(sw) ? " on" : " off");
+	};
+	const std::string start = state();
+	obs_source_set_enabled(sw, false);
+	sleep_ms(700); // (and "Follow what is shown" has looked at least twice)
+	const std::string hidden = state();
+	const std::string hidden_look = centre();
+	const std::string said_hide = events();
+	obs_source_set_enabled(sw, true);
+	sleep_ms(400);
+	const std::string shown = state();
+	const std::string shown_look = centre();
+	CHECK(start == "11 clear on" && hidden == "10 covered off" && hidden_look == "image" &&
+		      count(said_hide, "StandbyCoverChanged") == 1 && shown == "11 clear on" && shown_look == "camera",
+	      "a press hiding them covers the camera with its Standby Image (its item stays shown) and hides the other; 'Follow what is shown' counts the covered camera as hidden; a press showing them takes the image away (%s, %s %s, %s %s)",
+	      start.c_str(), hidden.c_str(), hidden_look.c_str(), shown.c_str(), shown_look.c_str());
+
+	// Unticked, the camera is hidden as before.
+	obs_data_t *ws = obs_source_get_settings(sw);
+	obs_data_set_bool(ws, "hide_standby", false);
+	obs_source_update(sw, ws);
+	obs_data_release(ws);
+	sleep_ms(100);
+	obs_source_set_enabled(sw, false);
+	sleep_ms(400);
+	const std::string unticked = state();
+	CHECK(unticked == "00 clear off", "unticked, a press hides the camera as usual (%s)", unticked.c_str());
+
+	// One filter, each key its own way: "ShowInScenesPress" with hideAs.
+	auto press = [&](const char *how, const char *as) {
+		obs_data_t *answer =
+			call("ShowInScenesPress",
+			     std::string(R"({"sourceName":"SC Camera","filterName":"SC Camera Switch","how":")") + how +
+				     R"(","hideAs":")" + as + "\"}");
+		const bool ok = obs_data_get_bool(answer, "success");
+		obs_data_release(answer);
+		sleep_ms(400);
+		return ok;
+	};
+	const bool p1 = press("on", "filter");
+	const std::string key_shown = state();
+	const bool p2 = press("off", "cover"); // the filter's box is unticked
+	const std::string key_covered = state();
+	const bool p3 = press("toggle", "filter"); // a show undoes the cover
+	const std::string key_back = state();
+	obs_data_t *tick = obs_source_get_settings(sw);
+	obs_data_set_bool(tick, "hide_standby", true);
+	obs_source_update(sw, tick);
+	obs_data_release(tick);
+	sleep_ms(100);
+	const bool p4 = press("off", "hide"); // the filter's box is ticked
+	const std::string key_hidden = state();
+	const bool p5 = press("on", "hide");
+	const std::string key_again = state();
+	obs_data_t *refused =
+		call("ShowInScenesPress", R"({"sourceName":"SC Camera","filterName":"SC Standby","how":"on"})");
+	const bool refused_ok = obs_data_get_bool(refused, "success");
+	obs_data_release(refused);
+	CHECK(p1 && p2 && p3 && p4 && p5 && !refused_ok && key_shown == "11 clear on" &&
+		      key_covered == "10 covered off" && key_back == "11 clear on" && key_hidden == "00 clear off" &&
+		      key_again == "11 clear on",
+	      "ShowInScenesPress: a key set to Cover covers the camera though the filter's box is unticked, the next show takes the image away; a key set to Hide hides it though the box is ticked; a filter of another kind is refused (%s, %s, %s, %s, %s)",
+	      key_shown.c_str(), key_covered.c_str(), key_back.c_str(), key_hidden.c_str(), key_again.c_str());
+
+	obs_set_output_source(0, nullptr);
+	obs_source_filter_remove(camera, sw);
+	obs_source_release(sw);
+	obs_source_filter_remove(camera, standby);
+	obs_source_release(standby);
+	sleep_ms(100);
+	obs_source_remove(scene_src);
+	obs_scene_release(scene);
+	for (obs_source_t *s : {camera, image, plain}) {
+		obs_source_remove(s);
+		obs_source_release(s);
+	}
+	obs_set_output_source(0, before_out);
+	obs_source_release(before_out);
+}
+
 static void link_follow_sources_test()
 {
 	printf("\n[link visibility: follow sources, several leads and their followers]\n");
@@ -3543,6 +3773,7 @@ static void link_follow_sources_test()
 
 	switch_is_command_test();
 	capture_hide_restores_test();
+	standby_cover_test();
 	obs_set_output_source(0, before_out);
 	obs_source_release(before_out);
 }
@@ -6929,6 +7160,14 @@ int main(int argc, char **argv)
 
 	if (getenv("STAGEKIT_TEST_ONLY_SWITCH_COMMAND")) { // to try that section alone
 		switch_is_command_test();
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
+
+	if (getenv("STAGEKIT_TEST_ONLY_STANDBY_COVER")) { // to try that section alone
+		standby_cover_test();
 		obs_shutdown();
 		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
 		       g_failures == 1 ? "" : "s");

@@ -79,7 +79,9 @@ export type KeySettings = {
 	target?: string;
 	source?: string;
 	filter?: string;
-	press?: "toggle" | "on" | "off";
+	press?: "toggle" | "on" | "off" | "cover" | "coveron" | "coveroff";
+	/** A Show in Scenes key's way of hiding: "filter" (as the filter says; unset reads the same), "hide", "cover". */
+	hideAs?: string;
 	/**
 	 * A picture of the pack by name, from the Image list before beta156: put
 	 * aside as `oldImage` (with `oldImageWhile`) and shown until a type list

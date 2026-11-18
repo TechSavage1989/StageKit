@@ -13,13 +13,15 @@
 			summary { color: #969696; cursor: pointer; padding: 2px 0 8px 2px; outline: none; }
 			summary:hover { color: #d8d8d8; }
 			details p { color: #8a8a8a; line-height: 1.45; margin: 8px 4px 4px 4px; }
+			p.which { color: #8a8a8a; line-height: 1.4; margin: 0 4px 10px 4px; }
 		</style>
 	</head>
 
 	<body>
-		<sdpi-item label="Scene or capture">
+		<sdpi-item label="Switcher filter" title="Each entry is a source or scene and, after the dash, the name of its “Source Filter: Automatic Window Switcher (StageKit)”, “Scene Filter: Automatic Source Switcher (StageKit)” or “Source Filter: Auto Capture (StageKit)”. In OBS: right-click the source or scene and choose Filters to find that filter by its name.">
 			<sdpi-select setting="target" datasource="getTargets" placeholder="Choose" show-refresh></sdpi-select>
 		</sdpi-item>
+		<p class="which">Works the filter named after the dash, a “Source Filter: Automatic Window Switcher (StageKit)”, “Scene Filter: Automatic Source Switcher (StageKit)” or “Source Filter: Auto Capture (StageKit)”. In OBS: right-click the source or scene, Filters.</p>
 		<sdpi-item label="On press">
 			<sdpi-select setting="step" default="next">
 				<option value="toggle">Toggle manual / automatic</option>

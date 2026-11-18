@@ -20,9 +20,11 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include "../blur/ramp-blur.hpp"
 #include "../capture/auto-capture.hpp"
+#include "../capture/standby.hpp"
 #include "../dock/arrange-tools.hpp"
 #include "../frame/auto-frame.hpp"
 #include "../look/scene-blur.hpp"
+#include "../placement/show-in-scenes.hpp"
 #include "../placement/scene-modes.hpp"
 #include "../third-party/obs-websocket-api.h"
 
@@ -47,7 +49,8 @@ const char *const kRequests[] = {"GetVersion",       "ListBlurFilters", "BlurOn"
 				 "BlurToggle",       "SetBlur",         "BlurAll",      "HookFront",
 				 "SetPictureShape",  "GetOptions",      "SetOption",    "Slide",
 				 "GetSwitcherState", "ListSceneModes",  "GetSceneMode", "SetSceneMode",
-				 "ListSceneBlurs",   "SceneBlur"};
+				 "ListSceneBlurs",   "SceneBlur",       "StandbyCover", "GetStandbyCover",
+				 "ShowInScenesPress"};
 
 void fail(obs_data_t *response, const char *message)
 {
@@ -528,6 +531,59 @@ void req_scene_blur(obs_data_t *request, obs_data_t *response, void *)
 	obs_data_set_bool(response, "success", true);
 }
 
+// { sourceName, filterName? (none: the first enabled Standby Image), how?:
+// "on" | "off" | "toggle" (none: only asks) } -> { filterName, covered,
+// enabled }: the Standby Image shown over the source on purpose, or taken
+// away, with that filter's own transition. For any source: a camera, a
+// capture card, a display capture.
+void standby_cover_request(obs_data_t *request, obs_data_t *response, const std::string &how)
+{
+	obs_source_t *source = obs_get_source_by_name(obs_data_get_string(request, "sourceName"));
+	std::string name, why;
+	bool covering = false, enabled = false;
+	const bool ok = standby_cover_press(source, obs_data_get_string(request, "filterName"), how, name, covering,
+					    enabled, why);
+	obs_source_release(source);
+	if (!ok) {
+		fail(response, why.c_str());
+		return;
+	}
+	obs_data_set_string(response, "filterName", name.c_str());
+	obs_data_set_bool(response, "covered", covering);
+	obs_data_set_bool(response, "enabled", enabled);
+	obs_data_set_bool(response, "success", true);
+}
+
+void req_standby_cover(obs_data_t *request, obs_data_t *response, void *)
+{
+	standby_cover_request(request, response, obs_data_get_string(request, "how"));
+}
+
+void req_get_standby_cover(obs_data_t *request, obs_data_t *response, void *)
+{
+	standby_cover_request(request, response, "");
+}
+
+// { sourceName, filterName, how: "toggle" | "on" | "off", hideAs?: "filter"
+// (none) | "hide" | "cover" } -> { enabled }: a Show in Scenes switched as a
+// key switches it, that press hiding its sources the way the key says.
+void req_show_in_scenes_press(obs_data_t *request, obs_data_t *response, void *)
+{
+	obs_source_t *source = obs_get_source_by_name(obs_data_get_string(request, "sourceName"));
+	bool enabled = false;
+	std::string why;
+	const bool ok = show_in_scenes_press(source, obs_data_get_string(request, "filterName"),
+					     obs_data_get_string(request, "how"),
+					     obs_data_get_string(request, "hideAs"), enabled, why);
+	obs_source_release(source);
+	if (!ok) {
+		fail(response, why.c_str());
+		return;
+	}
+	obs_data_set_bool(response, "enabled", enabled);
+	obs_data_set_bool(response, "success", true);
+}
+
 // What was emitted, for the tests: one JSON object per line.
 std::mutex g_events_mutex;
 std::string g_events;
@@ -586,6 +642,9 @@ void vendor_api_register()
 		{"SetSceneMode", req_set_scene_mode},
 		{"ListSceneBlurs", req_list_scene_blurs},
 		{"SceneBlur", req_scene_blur},
+		{"StandbyCover", req_standby_cover},
+		{"GetStandbyCover", req_get_standby_cover},
+		{"ShowInScenesPress", req_show_in_scenes_press},
 	};
 	for (const auto &r : requests) {
 		if (!obs_websocket_vendor_register_request(vendor, r.name, r.fn, nullptr))
@@ -701,6 +760,20 @@ void vendor_emit_scene_blur_changed(obs_source_t *filter, bool active)
 	obs_data_release(data);
 }
 
+void vendor_emit_standby_cover_changed(obs_source_t *filter, bool covered)
+{
+	if (!filter)
+		return;
+	obs_source_t *parent = obs_filter_get_parent(filter);
+	obs_data_t *data = obs_data_create();
+	obs_data_set_string(data, "sourceName",
+			    parent && obs_source_get_name(parent) ? obs_source_get_name(parent) : "");
+	obs_data_set_string(data, "filterName", obs_source_get_name(filter));
+	obs_data_set_bool(data, "covered", covered);
+	emit_event("StandbyCoverChanged", data);
+	obs_data_release(data);
+}
+
 void vendor_api_add_test_calls()
 {
 	static std::atomic<bool> added{false};
@@ -722,6 +795,9 @@ void vendor_api_add_test_calls()
 				{"ListSceneBlurs", req_list_scene_blurs},
 				{"SceneBlur", req_scene_blur},
 				{"GetSwitcherState", req_get_switcher_state},
+				{"StandbyCover", req_standby_cover},
+				{"GetStandbyCover", req_get_standby_cover},
+				{"ShowInScenesPress", req_show_in_scenes_press},
 			};
 			obs_data_t *request = json && *json ? obs_data_create_from_json(json) : obs_data_create();
 			if (!request)

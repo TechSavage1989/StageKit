@@ -37,12 +37,25 @@ the Free Software Foundation; either version 2 of the License, or
 // collection. Not on a press hiding them, not for "Do it now", not when
 // "Follow what is shown" corrects the switch, not for the state restored at
 // load.
+//
+// "Hide shows Standby Image" (`hide_standby`, off as it comes): a press that
+// hides the sources covers each listed source that has an enabled Standby
+// Image filter with its image instead (that filter's own transition; the
+// items stay shown, so nothing round them moves), and a press that shows
+// them takes the image away. A covered source counts as hidden for "Follow
+// what is shown". The cover is the source's, so it shows in every scene.
+// A Stream Deck key can choose for its own presses ("ShowInScenesPress",
+// `hide_as`: as the filter says, hide, or cover); a show undoes what the
+// hide did, whichever way that was (`covered_`: the sources this filter
+// covered).
 
 #include "show-in-scenes.hpp"
 #include "../common/filter-input.hpp"
 #include "../common/timing.hpp"
 
 #include "place-item.hpp"
+
+#include "../capture/standby.hpp"
 
 #include "../common/go-to-scene.hpp"
 #include "../common/holds-hidden.hpp"
@@ -63,6 +76,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <functional>
 #include <map>
 #include <mutex>
+#include <set>
 #include <string>
 #include <thread>
 #include <vector>
@@ -70,6 +84,10 @@ the Free Software Foundation; either version 2 of the License, or
 namespace stagekit {
 
 namespace {
+
+// How a press hides the sources: as the filter's "Hide shows Standby Image"
+// says, or, for one key's presses, by hiding them or covering them.
+enum class HideAs { Filter, Hide, Cover };
 
 enum class Where : int {
 	Every = 0, // saved: append only
@@ -206,6 +224,7 @@ public:
 		on_hides_ = obs_data_get_int(settings, "on_means") == 1;
 		with_linked_ = obs_data_get_bool(settings, "with_linked");
 		follow_ = obs_data_get_bool(settings, "follow");
+		hide_standby_ = obs_data_get_bool(settings, "hide_standby");
 		go_to_ = obs_data_get_string(settings, "go_to");
 		look_again_ = true;
 		// How items change: the usual way, and each listed source's own.
@@ -226,7 +245,9 @@ public:
 		ready_ = true;
 		const int press = press_.exchange(-1);
 		if (press >= 0)
-			apply((press & kPressOn) != 0);
+			apply((press & kPressOn) != 0, (press & kPressHide)    ? HideAs::Hide
+						       : (press & kPressCover) ? HideAs::Cover
+									       : HideAs::Filter);
 		// A press that showed the sources also changes scene, when set to.
 		if (press >= 0 && !(press & kPressStay) && scenes_loaded())
 			switch_scene((press & kPressOn) != 0);
@@ -265,7 +286,7 @@ public:
 	{
 		std::vector<std::string> sources, scenes;
 		Where where;
-		bool on_hides;
+		bool on_hides, hide_standby;
 		{
 			std::lock_guard lock(mutex_);
 			if (!follow_)
@@ -274,6 +295,7 @@ public:
 			scenes = scenes_;
 			where = where_;
 			on_hides = on_hides_;
+			hide_standby = hide_standby_;
 		}
 		count_look(Look::SwitchFollow);
 		// (Not while OBS loads its scenes: only some have their items yet.)
@@ -282,10 +304,18 @@ public:
 		obs_source_t *parent = obs_filter_get_parent(source_);
 		if (sources.empty() && parent && obs_source_get_name(parent))
 			sources.push_back(obs_source_get_name(parent));
+		// (A source covered with its Standby Image is hidden, as a press sees it.)
+		// (Those this filter covered too, still covered now.)
+		std::vector<std::string> candidates = hide_standby ? sources : std::vector<std::string>();
+		{
+			std::lock_guard lock(mutex_);
+			candidates.insert(candidates.end(), covered_.begin(), covered_.end());
+		}
+		const std::set<std::string> covered = with_standby(candidates, true);
 		int found = 0, shown = 0;
 		bool settling = false;
 		each_item(sources, scenes, where == Where::Every,
-			  [&](obs_sceneitem_t *item, const char *, obs_source_t *scene) {
+			  [&](obs_sceneitem_t *item, const char *name, obs_source_t *scene) {
 				  // A mode on its way in or out is not read yet, and an item
 				  // a mode not showing holds hidden is one a press would
 				  // not show either.
@@ -294,7 +324,7 @@ public:
 				  if (mode_holds_hidden(scene, item))
 					  return;
 				  found++;
-				  if (obs_sceneitem_visible(item))
+				  if (obs_sceneitem_visible(item) && !covered.count(name))
 					  shown++;
 			  });
 		if (settling)
@@ -314,12 +344,13 @@ public:
 			obs_source_get_name(source_), on ? "on" : "off", shown, found);
 	}
 
-	// Shows or hides every item it is set to, and says how many.
-	int apply(bool enabled)
+	// Shows or hides every item it is set to, and says how many. `as`: how
+	// a hide is done for this press (a key's choice), or as the filter says.
+	int apply(bool enabled, HideAs as = HideAs::Filter)
 	{
 		std::vector<std::string> sources, scenes;
 		Where where;
-		bool show, with_linked;
+		bool show, with_linked, hide_standby;
 		ItemChange change;
 		std::map<std::string, ItemChange> own_change;
 		{
@@ -331,6 +362,7 @@ public:
 			where = where_;
 			show = enabled != on_hides_;
 			with_linked = with_linked_;
+			hide_standby = as == HideAs::Filter ? hide_standby_ : as == HideAs::Cover;
 		}
 		obs_source_t *parent = obs_filter_get_parent(source_);
 		if (sources.empty() && parent && obs_source_get_name(parent))
@@ -339,10 +371,35 @@ public:
 		// Place Item filters that move them, are set to bring along.
 		if (with_linked)
 			add_linked(sources);
+		// "Hide shows Standby Image": a source with an enabled Standby Image
+		// is covered with it instead of hidden, and uncovered by a show.
+		// (A show also takes away what an earlier hide covered, whichever
+		// way that press was set.)
+		std::set<std::string> standby = hide_standby ? with_standby(sources, false) : std::set<std::string>();
+		if (show) {
+			std::lock_guard lock(mutex_);
+			standby.insert(covered_.begin(), covered_.end());
+			covered_.clear();
+		}
+		int covered = 0;
+		for (const std::string &name : standby) {
+			obs_source_t *found = obs_get_source_by_name(name.c_str());
+			if (found && standby_cover_set(found, !show, -1, 0, 0, 0)) {
+				covered++;
+				if (!show) {
+					std::lock_guard lock(mutex_);
+					covered_.insert(name);
+				}
+			}
+			obs_source_release(found);
+		}
 		int changed = 0;
 		each_item(sources, scenes, where == Where::Every,
 			  [&](obs_sceneitem_t *item, const char *name, obs_source_t *scene) {
 				  if (obs_sceneitem_visible(item) == show)
+					  return;
+				  // Covered with its Standby Image instead (above).
+				  if (!show && standby.count(name))
 					  return;
 				  // Not shown in a mode of its scene that is not showing
 				  // (Link Visibility's "Follow the first"); hiding is never
@@ -357,6 +414,9 @@ public:
 			  });
 		obs_log(LOG_INFO, "Show in Scenes '%s': %s %d item(s)", obs_source_get_name(source_),
 			show ? "showed" : "hid", changed);
+		if (covered)
+			obs_log(LOG_INFO, "Show in Scenes '%s': %s the Standby Image of %d source(s)",
+				obs_source_get_name(source_), show ? "took away" : "showed", covered);
 		return changed;
 	}
 
@@ -381,6 +441,20 @@ public:
 		go_to_scene(std::move(go));
 	}
 
+	// Of `sources`, those with an enabled Standby Image filter (with
+	// `covered_only`, only those it is covering now).
+	static std::set<std::string> with_standby(const std::vector<std::string> &sources, bool covered_only)
+	{
+		std::set<std::string> out;
+		for (const std::string &name : sources) {
+			obs_source_t *found = obs_get_source_by_name(name.c_str());
+			if (found && (covered_only ? standby_covered(found) : standby_present(found)))
+				out.insert(name);
+			obs_source_release(found);
+		}
+		return out;
+	}
+
 	obs_source_t *source() const { return source_; }
 	bool hides_when_on()
 	{
@@ -394,16 +468,31 @@ private:
 		auto *self = static_cast<ShowInScenes *>(data);
 		// The switch's state has changed: whatever goes by the scenes looks again.
 		scene_revision_bump();
+		// A key's own way of hiding for this press ("ShowInScenesPress"),
+		// set on this thread just before it switched the filter.
+		const int as = self->pressing_thread_.load() == std::this_thread::get_id() ? self->pressing_as_.load()
+											   : 0;
 		// (Its own correction of the switch is not a press.)
 		if (self->ready_ && self->correcting_.load() != std::this_thread::get_id())
-			self->press(calldata_bool(cd, "enabled"));
+			self->press_ = (calldata_bool(cd, "enabled") ? kPressOn : 0) | as;
 	}
 
 public:
 	// Acted on at the next tick; of several presses in one frame, the last.
 	// "Do it now" in the filter's window (`by_key` false) never changes scene.
-	static constexpr int kPressOn = 1, kPressStay = 2;
+	// kPressHide and kPressCover: a key's own way of hiding for that press.
+	static constexpr int kPressOn = 1, kPressStay = 2, kPressHide = 4, kPressCover = 8;
 	void press(bool enabled, bool by_key = true) { press_ = (enabled ? kPressOn : 0) | (by_key ? 0 : kPressStay); }
+
+	// A key's press with its own way of hiding: the filter is switched as
+	// any key switches it, and that press hides as `as` says.
+	void press_as(bool enabled, HideAs as)
+	{
+		pressing_as_ = as == HideAs::Hide ? kPressHide : as == HideAs::Cover ? kPressCover : 0;
+		pressing_thread_ = std::this_thread::get_id();
+		obs_source_set_enabled(source_, enabled);
+		pressing_thread_ = std::thread::id();
+	}
 
 private:
 	obs_source_t *source_;
@@ -416,15 +505,19 @@ private:
 	std::map<std::string, ItemChange> own_change_; // and for each listed source
 	std::atomic<bool> ready_{false};
 	bool follow_ = false;       // the switch goes by what is shown
+	bool hide_standby_ = false; // a hide covers a source with its Standby Image instead
 	std::string go_to_;         // the scene a press turning it on goes to
 	double follow_timer_ = 0.0; // until the next look, in seconds
 	bool follow_staggered_ = false;
 	std::atomic<bool> look_again_{true}; // the next look is not skipped
 	uint64_t follow_rev_ = 0;            // scene_revision() at the last look
 	bool follow_loaded_ = false;
-	double follow_safety_ = 0.0;                // until a look comes whatever changed
-	std::atomic<std::thread::id> correcting_{}; // the thread putting the switch right, if any
-	std::atomic<int> press_{-1};                // a press (kPressOn, kPressStay), or -1 for none
+	double follow_safety_ = 0.0;                     // until a look comes whatever changed
+	std::atomic<std::thread::id> correcting_{};      // the thread putting the switch right, if any
+	std::atomic<int> press_{-1};                     // a press (kPressOn, kPressStay), or -1 for none
+	std::set<std::string> covered_;                  // the sources this filter covered with their Standby Image
+	std::atomic<std::thread::id> pressing_thread_{}; // a key's press with its own way of hiding, on this thread
+	std::atomic<int> pressing_as_{0};                // and that way (kPressHide, kPressCover)
 };
 
 bool where_modified(obs_properties_t *props, obs_property_t *, obs_data_t *settings)
@@ -506,6 +599,10 @@ obs_properties_t *get_properties(void *data)
 		obs_properties_add_bool(props, "with_linked", obs_module_text("ShowIn.WithLinked"));
 	set_tip(with_linked, obs_module_text("ShowIn.WithLinked.Tip"));
 
+	obs_property_t *hide_standby =
+		obs_properties_add_bool(props, "hide_standby", obs_module_text("ShowIn.HideStandby"));
+	set_tip(hide_standby, obs_module_text("ShowIn.HideStandby.Tip"));
+
 	obs_property_t *follow = obs_properties_add_bool(props, "follow", obs_module_text("ShowIn.Follow"));
 	set_tip(follow, obs_module_text("ShowIn.Follow.Tip"));
 
@@ -554,6 +651,33 @@ obs_properties_t *get_properties(void *data)
 
 } // namespace
 
+bool show_in_scenes_press(obs_source_t *source, const std::string &filter_name, const std::string &how,
+			  const std::string &hide_as, bool &enabled, std::string &why)
+{
+	obs_source_t *filter = source ? obs_source_get_filter_by_name(source, filter_name.c_str()) : nullptr;
+	const char *id = filter ? obs_source_get_unversioned_id(filter) : nullptr;
+	if (!filter || !id || strcmp(id, kShowInScenesId) != 0) {
+		why = "No Show in Scenes filter of that name on the source";
+		obs_source_release(filter);
+		return false;
+	}
+	const HideAs as = hide_as == "hide" ? HideAs::Hide : hide_as == "cover" ? HideAs::Cover : HideAs::Filter;
+	if (how != "toggle" && how != "on" && how != "off") {
+		why = "'how' is on, off or toggle";
+		obs_source_release(filter);
+		return false;
+	}
+	const bool now = obs_source_enabled(filter);
+	enabled = how == "toggle" ? !now : how == "on";
+	auto *self = static_cast<ShowInScenes *>(obs_obj_get_data(filter));
+	if (self)
+		self->press_as(enabled, as);
+	else
+		obs_source_set_enabled(filter, enabled);
+	obs_source_release(filter);
+	return true;
+}
+
 void register_show_in_scenes()
 {
 	obs_source_info info = {};
@@ -576,6 +700,7 @@ void register_show_in_scenes()
 		obs_data_set_default_int(settings, "where", (int)Where::Every);
 		obs_data_set_default_int(settings, "on_means", 0);
 		obs_data_set_default_bool(settings, "follow", false);
+		obs_data_set_default_bool(settings, "hide_standby", false);
 		obs_data_set_default_string(settings, "go_to", "");
 		item_change_defaults(settings);
 	};
