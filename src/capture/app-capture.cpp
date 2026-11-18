@@ -131,9 +131,16 @@ std::string decoded(const std::string &part)
 // "<program> — <its title when picked>". Two windows of one program (two
 // browser profiles) are then never taken for each other.
 const char *const kPinMark = " \xE2\x80\x94 "; // " — "
+// Only when what comes before the mark is a program's file name: Firefox
+// writes its titles with the same dash ("Page — Profile — Mozilla
+// Firefox"), and such a title chosen from a list is a title entry, not a
+// picked window (up to beta186 it was taken for one and answered nothing).
 bool is_pinned(const std::string &entry)
 {
-	return entry.find(kPinMark) != std::string::npos;
+	const size_t at = entry.find(kPinMark);
+	if (at == std::string::npos || at < 5)
+		return false;
+	return lowered(entry.substr(at - 4, 4)) == ".exe";
 }
 std::string pinned_program(const std::string &entry)
 {
@@ -154,6 +161,27 @@ std::string pinned_name(const OpenWindow &w)
 		title.resize(cut);
 	}
 	return w.executable + kPinMark + title;
+}
+
+// The windows picked by hand taken off both lists, the automatic one
+// ("apps") and the manual one ("by_hand"), and written back to the
+// settings; programs and titles named there stay. How many went.
+size_t clear_picked_in(obs_data_t *settings, std::vector<std::string> &apps, std::vector<std::string> &by_hand)
+{
+	size_t gone = 0;
+	for (auto [list, name] : {std::pair{&apps, "apps"}, std::pair{&by_hand, "by_hand"}}) {
+		std::vector<std::string> keep;
+		for (const std::string &entry : *list)
+			if (!is_pinned(entry))
+				keep.push_back(entry);
+		if (keep.size() == list->size())
+			continue;
+		gone += list->size() - keep.size();
+		*list = keep;
+		if (settings)
+			pick_list_write(settings, name, false, *list);
+	}
+	return gone;
 }
 
 // How well a window answers to an entry of the list: 2 by its program's
@@ -300,31 +328,26 @@ public:
 
 	void update(obs_data_t *settings)
 	{
-		const std::vector<std::string> apps = pick_list_read(settings, "apps", false);
+		std::vector<std::string> apps = pick_list_read(settings, "apps", false);
 		std::vector<std::string> by_hand = pick_list_read(settings, "by_hand", false);
 		// "Clear picked windows on exit": the windows picked by hand in the
-		// last session are not kept into this one. (Done when the filter is
-		// loaded, which also covers an OBS that did not close cleanly.)
+		// last session are not kept into this one, on either list. (Done
+		// when the filter is loaded, which also covers an OBS that did not
+		// close cleanly.)
 		if (!loaded_) {
 			loaded_ = true;
 			if (obs_data_get_bool(settings, "clear_picked")) {
-				std::vector<std::string> keep;
-				for (const std::string &entry : by_hand)
-					if (!is_pinned(entry))
-						keep.push_back(entry);
-				if (keep.size() != by_hand.size()) {
+				const size_t gone = clear_picked_in(settings, apps, by_hand);
+				if (gone)
 					obs_log(LOG_INFO,
-						"Capture App in Use: %zu window(s) picked last session cleared",
-						by_hand.size() - keep.size());
-					by_hand = keep;
-					pick_list_write(settings, "by_hand", false, by_hand);
-				}
+						"Capture App in Use: %zu window(s) picked last session cleared", gone);
 			}
 		}
 		{
 			std::vector<std::string> all;
 			for (const std::vector<std::string> *list :
-			     {&apps, static_cast<const std::vector<std::string> *>(&by_hand)})
+			     {static_cast<const std::vector<std::string> *>(&apps),
+			      static_cast<const std::vector<std::string> *>(&by_hand)})
 				for (const std::string &entry : *list)
 					all.push_back(lowered(is_pinned(entry) ? pinned_program(entry) : entry));
 			std::lock_guard lock(g_listed_mutex);
@@ -416,6 +439,11 @@ public:
 	}
 
 	// The app held by hand, if any.
+	bool lists_something()
+	{
+		std::lock_guard lock(mutex_);
+		return !apps_.empty() || !by_hand_.empty();
+	}
 	std::string held()
 	{
 		std::lock_guard lock(mutex_);
@@ -509,6 +537,8 @@ private:
 	};
 
 	void follow(obs_source_t *parent);
+	void settle_aim(obs_source_t *parent, const std::vector<std::string> &apps,
+			const std::vector<std::string> &by_hand, const std::vector<std::string> &ignored);
 	void aim(obs_source_t *parent, const OpenWindow &window, const std::string &entry, bool by_title,
 		 bool remember);
 	void keep_ready(const std::vector<std::pair<std::string, const OpenWindow *>> &wanted,
@@ -867,26 +897,44 @@ void AppCapture::follow(obs_source_t *parent)
 	// The windows picked by hand taken off the list (the button, its hotkey,
 	// a Stream Deck key). One that is being shown is let go of: back to the
 	// automatic windows. Programs put on the list by name stay.
+	// Both lists: a picked window on the automatic list ("Windows to switch
+	// between") is cleared too. One shown from that list is let go of as
+	// when its window closes: nothing of it is drawn again, and the capture
+	// goes on to the next automatic window, if one is open.
+	bool no_adopt = false;
 	if (clear) {
-		std::vector<std::string> keep;
-		for (const std::string &entry : by_hand)
-			if (!is_pinned(entry))
-				keep.push_back(entry);
-		if (keep.size() != by_hand.size()) {
-			by_hand = keep;
-			obs_data_t *settings = obs_source_get_settings(source_);
-			pick_list_write(settings, "by_hand", false, by_hand);
-			obs_data_release(settings);
-		}
+		obs_data_t *settings = obs_source_get_settings(source_);
+		clear_picked_in(settings, apps, by_hand);
+		obs_data_release(settings);
 		if (is_pinned(held))
 			back = true;
 		if (is_pinned(last_held))
 			last_held.clear();
-		std::lock_guard lock(mutex_);
-		by_hand_ = by_hand;
-		pins_.clear();
-		if (is_pinned(last_held_))
-			last_held_.clear();
+		const bool drop_shown = held.empty() && is_pinned(current);
+		if (drop_shown) {
+			current.clear();
+			first = true;    // (what to show is worked out afresh,
+			no_adopt = true; // never from where the capture is aimed)
+		}
+		{
+			std::lock_guard lock(mutex_);
+			apps_ = apps;
+			by_hand_ = by_hand;
+			pins_.clear();
+			if (is_pinned(last_held_))
+				last_held_.clear();
+			if (drop_shown) {
+				current_.clear();
+				shown_handle_ = 0;
+				unsafe_ = true;
+				own_ok_ = false;
+				// (Nor is its last picture kept for a moment.)
+				phase_ = Phase::Idle;
+				kept_w_ = kept_h_ = 0;
+			}
+		}
+		if (drop_shown)
+			set_bridge(nullptr);
 		obs_log(LOG_INFO, "Capture App in Use: '%s': the windows picked by hand were cleared",
 			obs_source_get_name(parent));
 	}
@@ -1214,12 +1262,14 @@ void AppCapture::follow(obs_source_t *parent)
 			}
 			aim(parent, *hand[(size_t)target].window, held, hand[(size_t)target].how == 1, false);
 			remember_hand(held);
+			settle_aim(parent, apps, by_hand, ignored);
 			ready_for(held);
 			return;
 		}
 		// It stays until it is let go, or its window closes.
 		if (open) {
 			remember_hand(held);
+			settle_aim(parent, apps, by_hand, ignored);
 			ready_for(held);
 			return;
 		}
@@ -1257,7 +1307,7 @@ void AppCapture::follow(obs_source_t *parent)
 	// (Not on the way back from a manual window: what the capture itself is
 	// aimed at is not what is showing then, and taking it for that put its
 	// picture up at a stroke.)
-	if (first && now < 0 && !released) {
+	if (first && now < 0 && !released && !no_adopt) {
 		// What the capture is aimed at already, if that is one of the apps.
 		obs_data_t *settings = obs_source_get_settings(parent);
 		const std::string window = obs_data_get_string(settings, "window");
@@ -1303,6 +1353,7 @@ void AppCapture::follow(obs_source_t *parent)
 	if (target < 0 && now >= 0 && !slots[(size_t)now].window) {
 		target = fallback();
 		if (target < 0) {
+			current.clear();
 			std::lock_guard lock(mutex_);
 			current_.clear();
 		}
@@ -1319,7 +1370,76 @@ void AppCapture::follow(obs_source_t *parent)
 		aim(parent, *slots[(size_t)target].window, apps[(size_t)target], slots[(size_t)target].how == 1, true);
 		current = apps[(size_t)target];
 	}
+	// Nothing listed is open (or it is ignored): nothing is shown. The
+	// capture itself is aimed wherever it was last, perhaps by its program,
+	// and OBS's Window Capture takes any window of that program by itself;
+	// its picture is not believed until a window chosen here is aimed at,
+	// and the Standby Image stands in, if there is one. The owner, after a
+	// restart with only two closed apps listed: "window capture is
+	// capturing a window i've not manually selected and i can't clear it".
+	if (current.empty()) {
+		bool was;
+		{
+			std::lock_guard lock(mutex_);
+			was = unsafe_ && !own_ok_ && !bridge_;
+			shown_handle_ = 0;
+			unsafe_ = true;
+			own_ok_ = false;
+		}
+		set_bridge(nullptr);
+		if (!was)
+			obs_log(LOG_INFO,
+				"Capture App in Use: '%s': none of the listed windows is open; nothing is shown",
+				obs_source_get_name(parent));
+	}
+	settle_aim(parent, apps, by_hand, ignored);
 	ready_for(current);
+}
+
+// The capture itself is never left aimed where it could take a window that
+// is not on the lists: by its program at a program not listed by name, by a
+// title no entry answers, or at an ignored window. It is then aimed at no
+// window at all. (Picked windows and titles are aimed by title, which OBS
+// only finds by the whole title; a program aimed by name takes any window
+// of it, another browser profile too.)
+void AppCapture::settle_aim(obs_source_t *parent, const std::vector<std::string> &apps,
+			    const std::vector<std::string> &by_hand, const std::vector<std::string> &ignored)
+{
+	if (capture_aimed_at_nothing(parent))
+		return;
+	obs_data_t *own = obs_source_get_settings(parent);
+	const std::string window = obs_data_get_string(own, "window");
+	const bool by_title = obs_data_get_int(own, "priority") == 1;
+	obs_data_release(own);
+	const size_t colon = window.rfind(':');
+	OpenWindow aimed;
+	aimed.title = decoded(window.substr(0, window.find(':')));
+	aimed.executable = colon == std::string::npos ? std::string() : decoded(window.substr(colon + 1));
+	if (aimed.executable.empty())
+		return;
+	bool bad = std::any_of(ignored.begin(), ignored.end(),
+			       [&](const std::string &not_this) { return answers(not_this, aimed) != 0; });
+	if (!bad) {
+		bool ok = false;
+		for (const std::vector<std::string> *list : {&apps, &by_hand})
+			for (const std::string &entry : *list) {
+				if (is_pinned(entry))
+					// (Its window's title may have changed since it was picked.)
+					ok = ok ||
+					     (by_title && lowered(pinned_program(entry)) == lowered(aimed.executable));
+				else if (by_title)
+					ok = ok || answers(entry, aimed) != 0;
+				else
+					ok = ok || lowered(entry) == lowered(aimed.executable);
+			}
+		bad = !ok;
+	}
+	if (!bad)
+		return;
+	aim_capture_at_nothing(parent);
+	obs_log(LOG_INFO,
+		"Capture App in Use: '%s' was aimed at %s (%s), which is not on its lists; now aimed at no window",
+		obs_source_get_name(parent), aimed.executable.c_str(), by_title ? "by title" : "by program");
 }
 
 void AppCapture::tick(float seconds)
@@ -1619,14 +1739,19 @@ obs_properties_t *get_properties(void *data)
 		if (colon != std::string::npos)
 			now = decoded(window.substr(colon + 1));
 	}
-	// (What this filter is showing says more, when it knows: the capture
-	// itself is left where it was while another one is drawn for it.)
-	if (self && !self->current().empty())
+	// (What this filter is showing is what counts: the capture itself is
+	// left where it was while another one is drawn for it, and with
+	// nothing listed open its own picture is not shown at all.)
+	bool nothing = false;
+	if (self && obs_source_enabled(self->source())) {
 		now = self->current();
+		nothing = now.empty() && self->lists_something();
+	}
 	const bool by_hand = self && !self->held().empty();
-	std::string status = obs_module_text(now.empty() ? "AppCapture.Status.None"
-					     : by_hand   ? "AppCapture.Status.Held"
-							 : "AppCapture.Status.Now");
+	std::string status = obs_module_text(nothing       ? "AppCapture.Status.Nothing"
+					     : now.empty() ? "AppCapture.Status.None"
+					     : by_hand     ? "AppCapture.Status.Held"
+							   : "AppCapture.Status.Now");
 	const size_t at = status.find("%1");
 	if (at != std::string::npos)
 		status.replace(at, 2, now);
@@ -1706,12 +1831,11 @@ obs_properties_t *get_properties(void *data)
 			// The list shown here at once (the filter takes them off on its
 			// next look as well).
 			obs_data_t *settings = obs_source_get_settings(self->source());
-			std::vector<std::string> keep;
-			for (const std::string &entry : pick_list_read(settings, "by_hand", false))
-				if (!is_pinned(entry))
-					keep.push_back(entry);
-			pick_list_write(settings, "by_hand", false, keep);
+			std::vector<std::string> apps = pick_list_read(settings, "apps", false);
+			std::vector<std::string> by_hand = pick_list_read(settings, "by_hand", false);
+			clear_picked_in(settings, apps, by_hand);
 			obs_data_release(settings);
+			pick_list_refresh(p, self->source(), "apps", false);
 			pick_list_refresh(p, self->source(), "by_hand", false);
 			return true;
 		},

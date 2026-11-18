@@ -596,11 +596,18 @@ capture for each app.
 - **Picked windows are cleared.** *Clear picked windows on exit* (ticked as it comes): windows
   picked with *Capture Active Window* last only for this OBS session. *Clear picked windows* (a
   button, a hotkey under the capture, and the Stream Deck *Manual Window / Source* key's *Clear
-  picked windows*) takes them off the list at any time; a picked window being shown goes back to
-  the automatic windows. Programs you added to the list yourself stay.
+  picked windows*) takes them off both lists at any time, *Windows to switch between* and
+  *Manual windows*. A picked window being shown is let go of: the capture goes on to the next
+  automatic window, or shows the Standby Image if none is open. Programs and titles you added
+  yourself stay, Firefox titles too (they have the same dash in them as a picked window).
 - **The window shown is watched.** When it closes, OBS's Window Capture looks for another window
   of the same program by itself. StageKit does not show that image: it keeps the last frame of
   the window that closed until it has chosen and aimed at the next one.
+- **Only listed windows are shown.** When none of the windows on the lists is open, nothing of
+  the capture is shown, whatever it is aimed at: the Standby Image stands in if the capture has
+  one, and the status line says *Capturing nothing*. The capture is never left aimed where OBS
+  could find a window by itself: aimed at a program not on the lists by name, at a title no entry
+  answers, or at an ignored window, it is aimed at no window instead.
 - **Captured window**: what happens to a window picked with *Capture Active Window*.
   *Wait until switched to* (as it comes): it becomes the manual window and is captured in the
   background while your automatic windows go on showing; it is shown when you switch to it with

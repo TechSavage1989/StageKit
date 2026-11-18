@@ -1231,6 +1231,30 @@ void aim_capture_at(obs_source_t *capture, const OpenWindow &window, bool by_tit
 	obs_data_release(settings);
 }
 
+void aim_capture_at_nothing(obs_source_t *capture)
+{
+	const char *id = capture ? obs_source_get_unversioned_id(capture) : nullptr;
+	if (!id)
+		return;
+	obs_data_t *settings = obs_source_get_settings(capture);
+	obs_data_set_string(settings, "window", kNoWindow);
+	obs_data_set_int(settings, "priority", 2); // by a program no window has
+	if (strcmp(id, "game_capture") == 0)
+		obs_data_set_string(settings, "capture_mode", "window");
+	obs_source_update(capture, settings);
+	obs_data_release(settings);
+}
+
+bool capture_aimed_at_nothing(obs_source_t *capture)
+{
+	if (!capture)
+		return false;
+	obs_data_t *settings = obs_source_get_settings(capture);
+	const bool nothing = strcmp(obs_data_get_string(settings, "window"), kNoWindow) == 0;
+	obs_data_release(settings);
+	return nothing;
+}
+
 bool hook_front_window(obs_source_t *capture, std::string &what, std::string &error, const std::string &transition,
 		       uint32_t transition_ms)
 {
