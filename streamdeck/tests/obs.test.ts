@@ -51,9 +51,17 @@ function sceneModes(request: string, data: Record<string, unknown>): Record<stri
 	if (!f) return { success: false, error: "No Scene Modes on that scene" };
 	if (request === "GetSceneMode") return { success: true, ...f };
 	modeRequests.push(data);
+	const was = f.current;
+	if (data.how === "next" || data.how === "none") {
+		// (As the filter's How::Next: the mode after the one on, round again; from none, the first.)
+		const at = f.modes.findIndex((m) => m.id === was);
+		f.current = data.how === "none" ? "" : f.modes[(at + 1) % f.modes.length].id;
+		f.previous = was;
+		modeEvent = { scene: f.scene, filter: f.filter, mode: f.current, previous: was };
+		return { success: true };
+	}
 	const mode = f.modes.find((m) => m.id === data.mode || m.name === data.mode);
 	if (!mode) return { success: false, error: "No such mode" };
-	const was = f.current;
 	f.current = data.how === "toggle" && was === mode.id ? f.previous : mode.id;
 	f.previous = was;
 	modeEvent = { scene: f.scene, filter: f.filter, mode: f.current, previous: was };
@@ -253,7 +261,7 @@ test("it connects, lists only StageKit's filters, switches one and hears of it",
 });
 
 test("a Scene Mode key lists every mode, turns one on by its id and is lit when the filter says so", async () => {
-	const { modeItems, modeTarget } = await import("../src/modes.ts");
+	const { modeFilterItems, modeChoiceItems, modeTarget } = await import("../src/modes.ts");
 	const { modePicture } = await import("../src/pictures.ts");
 	const { modeTitle } = await import("../src/titles.ts");
 	const { SceneModeKey } = await import("../src/actions/mode.ts");
@@ -263,14 +271,27 @@ test("a Scene Mode key lists every mode, turns one on by its id and is lit when 
 		await connected;
 	}
 	const sep = "\u001f";
-	const items = modeItems(await obs.sceneModes());
+	const filtersFound = await obs.sceneModes();
 	assert.deepEqual(
-		items.map((i) => i.label),
-		["Chat Live \u2014 Captures: Game", "Chat Live \u2014 Column: GBA", "Standby: Starting", "Standby: Be Right Back", "Standby: Lunch"],
-		"the filter's name only where a scene has two",
+		modeFilterItems(filtersFound),
+		[
+			{ label: "Chat Live \u2014 Captures", value: `Chat Live${sep}Captures` },
+			{ label: "Chat Live \u2014 Column", value: `Chat Live${sep}Column` },
+			{ label: "Standby", value: `Standby${sep}Standby modes` },
+		],
+		"the key chooses a filter, by its scene; the filter's name only where a scene has two",
 	);
-	const brb = items.find((i) => i.label === "Standby: Be Right Back")!.value;
-	assert.equal(brb, `Standby${sep}Standby modes${sep}m2`, "the key keeps the mode's id, not its name");
+	assert.deepEqual(
+		modeChoiceItems(filtersFound.find((f) => f.scene === "Standby")!.modes),
+		[
+			{ label: "Starting", value: "m1" },
+			{ label: "Be Right Back", value: "m2" },
+			{ label: "Lunch", value: "m3" },
+		],
+		"then a mode of that filter, kept by its id",
+	);
+	// (A key saved before beta175: one setting, a mode of one filter.)
+	const brb = `Standby${sep}Standby modes${sep}m2`;
 	assert.deepEqual(modeTarget(brb), { scene: "Standby", filter: "Standby modes", mode: "m2" });
 	assert.deepEqual(modeTarget("half"), { scene: "", filter: "", mode: "" });
 
@@ -278,6 +299,7 @@ test("a Scene Mode key lists every mode, turns one on by its id and is lit when 
 	let settings: Record<string, unknown> = { target: brb, press: "on" };
 	const shown: { state?: number; title?: string; images: string[]; alerts: number } = { images: [], alerts: 0 };
 	const key = {
+		id: "mode-key-1",
 		isKey: () => true,
 		getSettings: async () => settings,
 		setSettings: async (next: Record<string, unknown>) => {
@@ -323,6 +345,8 @@ test("a Scene Mode key lists every mode, turns one on by its id and is lit when 
 	await action.show(key, settings);
 	assert.equal(shown.state, 0);
 
+	// (Back to Switch on: the key's own mode, lit or dimmed.)
+	settings = { ...settings, press: "on" };
 	// The picture: Mode type chosen > an image kept from before > the mode's
 	// type > its name > the plain mode key. A type is drawn as a mode: the
 	// owner's scene layout of that kind where there is one.
@@ -350,6 +374,196 @@ test("a Scene Mode key lists every mode, turns one on by its id and is lit when 
 	await action.show(key, settings);
 	assert.equal(shown.state, 1);
 	assert.equal(shown.title, modeTitle("Be Right Back"));
+});
+
+test("a Scene Mode key is tied to one filter: Switch on, Switch off, Toggle, Next mode over the modes used, and the image of the mode that is on", async () => {
+	const { editModeSettings, migrateModeKey, modeRequest, shownMode } = await import("../src/modes.ts");
+	const { SceneModeKey } = await import("../src/actions/mode.ts");
+	const { modeTitle } = await import("../src/titles.ts");
+	obs.use({ host: "127.0.0.1", port });
+	while (!obs.isConnected) await once(obs, "connection");
+	const sep = "\u001f";
+	const standby = `Standby${sep}Standby modes`;
+	const f = modeFilters.find((m) => m.scene === "Standby")!;
+	f.current = "m1";
+	f.previous = "";
+
+	// A key saved before beta175 (a mode of one filter) is the same filter, that mode as its Mode, its press as it was.
+	assert.deepEqual(migrateModeKey({ target: `${standby}${sep}m2`, press: "toggle" }), {
+		target: `${standby}${sep}m2`,
+		press: "toggle",
+		modeFilter: standby,
+		modeFilterWas: standby,
+		mode: "m2",
+	});
+	assert.equal(migrateModeKey({ modeFilter: standby, mode: "m1" }), undefined, "a key already on a filter is left as it is");
+
+	// What a press sends.
+	const modes = { current: "m2", modes: [{ id: "m1" }, { id: "m2" }, { id: "m3" }] };
+	assert.deepEqual(modeRequest("on", "m2", {}), { how: "on", mode: "m2" });
+	assert.deepEqual(modeRequest("toggle", "m2", {}), { how: "toggle", mode: "m2" });
+	assert.equal(modeRequest("on", "", {}), undefined, "no mode chosen: nothing to send");
+	assert.deepEqual(modeRequest("off", "", {}), { how: "none" });
+	assert.deepEqual(modeRequest("next", "", {}), { how: "next" }, "every mode used: the filter's own next");
+	assert.deepEqual(modeRequest("next", "", { m3: { skip: true } }, modes), { how: "on", mode: "m1" }, "m3 left out: from m2 round to m1");
+	assert.deepEqual(modeRequest("next", "", { m2: { skip: true } }, { ...modes, current: "m1" }), { how: "on", mode: "m3" });
+	assert.deepEqual(modeRequest("next", "", { m1: { skip: true } }, { ...modes, current: "" }), { how: "on", mode: "m2" }, "none on: the first used");
+	assert.equal(modeRequest("next", "", { m1: { skip: true }, m2: { skip: true }, m3: { skip: true } }, modes), undefined);
+	assert.deepEqual(shownMode("on", "m2", "m1"), { shows: "m2", lit: false }, "Switch on: its own mode, dimmed");
+	assert.deepEqual(shownMode("toggle", "m2", "m1"), { shows: "m1", lit: false }, "Toggle: the mode that is on");
+	assert.deepEqual(shownMode("next", "", "m3"), { shows: "m3", lit: true });
+	assert.deepEqual(shownMode("off", "", ""), { shows: "", lit: false });
+
+	// The page's Settings for: one set of lists, kept per mode.
+	let page: Record<string, unknown> = { modeFilter: standby, modeFilterWas: standby, modeFor: "m1" };
+	page = editModeSettings(page)!;
+	assert.deepEqual([page.modeUse, page.modeType, page.modeLayout], ["use", "auto", "auto"], "a mode chosen: its settings shown");
+	page = editModeSettings({ ...page, modeType: "camera", modeLayout: "chat" })!;
+	assert.deepEqual(page.perMode, { m1: { type: "camera", layout: "chat" } });
+	page = editModeSettings({ ...page, modeFor: "m3" })!;
+	assert.equal(page.modeType, "auto", "another mode: its own, Automatic");
+	page = editModeSettings({ ...page, modeUse: "skip" })!;
+	assert.deepEqual(page.perMode, { m1: { type: "camera", layout: "chat" }, m3: { skip: true } });
+	page = editModeSettings({ ...page, modeFor: "m1" })!;
+	assert.deepEqual([page.modeUse, page.modeType, page.modeLayout], ["use", "camera", "chat"], "back to the first: what it was given");
+	assert.equal(editModeSettings(page), undefined, "nothing changed: nothing written");
+	const other = editModeSettings({ ...page, modeFilter: `Chat Live${sep}Column` })!;
+	assert.deepEqual([other.perMode, other.modeFor, other.mode], [{}, "", ""], "another filter: the old filter's modes are forgotten");
+
+	// A key, as Stream Deck gives one to an action.
+	let settings: Record<string, unknown> = {};
+	const shown: { state?: number; title?: string; images: string[]; alerts: number } = { images: [], alerts: 0 };
+	const key = {
+		id: "mode-key-2",
+		isKey: () => true,
+		getSettings: async () => settings,
+		setSettings: async (next: Record<string, unknown>) => {
+			settings = next;
+		},
+		setImage: async (image?: string) => {
+			shown.images.push(String(image));
+		},
+		setState: async (state: number) => {
+			shown.state = state;
+		},
+		setTitle: async (title: string) => {
+			shown.title = title;
+		},
+		showAlert: async () => {
+			shown.alerts++;
+		},
+	};
+	const action = new SceneModeKey() as unknown as {
+		show(key: unknown, settings: Record<string, unknown>): Promise<void>;
+		onKeyDown(ev: unknown): Promise<void>;
+		onKeyUp(ev: unknown): void;
+		onDidReceiveSettings(ev: unknown): Promise<void>;
+	};
+	const image = () => shown.images.at(-1) ?? "";
+	const press = async () => {
+		const heard = once(obs, "mode");
+		await action.onKeyDown({ action: key, payload: { settings } });
+		action.onKeyUp({ action: key });
+		await heard;
+		await action.show(key, settings);
+	};
+
+	// Next mode, every mode used: the filter's own next; the image and title follow the mode on.
+	settings = { modeFilter: standby, press: "next" };
+	await action.show(key, settings);
+	assert.equal(shown.title, "Starting");
+	assert.ok(image().includes("options/mode-starting"), image());
+	assert.equal(shown.state, 1, "lit while a mode is on");
+	await press();
+	assert.deepEqual(modeRequests.at(-1), { scene: "Standby", filter: "Standby modes", how: "next" });
+	assert.equal(f.current, "m2");
+	assert.equal(shown.title, modeTitle("Be Right Back"));
+	assert.ok(image().includes("options/mode-brb"), "Automatic: no type in OBS, the name says be right back");
+
+	// Next mode with Lunch left out: from Be Right Back round to Starting, as "on".
+	settings = { ...settings, perMode: { m3: { skip: true } } };
+	await press();
+	assert.deepEqual(modeRequests.at(-1), { scene: "Standby", filter: "Standby modes", mode: "m1", how: "on" });
+	assert.equal(shown.title, "Starting");
+
+	// A mode's own picture: its Mode type and Layout on the key.
+	settings = { ...settings, perMode: { m1: { type: "camera" } } };
+	await action.show(key, settings);
+	assert.ok(image().endsWith("/scenes/12-camera-only.png") || image().includes("scenes/12-camera-only"), image());
+	settings = { ...settings, perMode: { m1: { type: "game", layout: "chat" } } };
+	await action.show(key, settings);
+	assert.ok(image().includes("layouts/chat-type-game"), image());
+	// Automatic: Lunch has no type and its name says nothing: the plain mode key.
+	settings = { ...settings, perMode: {} };
+	f.current = "m2";
+	await press();
+	assert.equal(f.current, "m3");
+	assert.equal(shown.title, "Lunch");
+	assert.ok(/options\/mode-on\.png$/.test(image()), image());
+
+	// Switch off: no mode; the filter's picture and "No mode".
+	settings = { modeFilter: standby, press: "off" };
+	await press();
+	assert.deepEqual(modeRequests.at(-1), { scene: "Standby", filter: "Standby modes", how: "none" });
+	assert.equal(f.current, "");
+	assert.equal(shown.title, "No mode");
+	assert.ok(/options\/mode-off\.png$/.test(shown.images.at(-2) ?? ""), "dimmed: no mode on");
+	assert.equal(shown.state, 0);
+
+	// Toggle: its own mode on, the image follows; the key's Mode type is its own mode's.
+	settings = { modeFilter: standby, mode: "m2", press: "toggle", sourceType: "camera" };
+	await press();
+	assert.deepEqual(modeRequests.at(-1), { scene: "Standby", filter: "Standby modes", mode: "m2", how: "toggle" });
+	assert.equal(shown.state, 1);
+	assert.ok(image().includes("scenes/12-camera-only"), "its own mode: the key's Mode type");
+	await press();
+	assert.equal(f.current, "", "back to the one before: none");
+	assert.equal(shown.title, "No mode");
+	f.current = "m1";
+	await action.show(key, settings);
+	assert.equal(shown.title, "Starting", "another mode on: its name");
+	assert.ok(image().includes("options/mode-starting"), "and its own picture, not the key's Mode type");
+	assert.equal(shown.state, 0, "dimmed: its own mode is not on");
+
+	// Switch on is as before: its own mode, lit or dimmed.
+	settings = { modeFilter: standby, mode: "m2", press: "on" };
+	await action.show(key, settings);
+	assert.equal(shown.title, modeTitle("Be Right Back"));
+	assert.ok(image().includes("options/mode-brb"));
+	assert.equal(shown.state, 0);
+
+	// An old key's settings are moved when they arrive.
+	settings = { target: `${standby}${sep}m2`, press: "toggle" };
+	await action.onDidReceiveSettings({ action: key, payload: { settings } });
+	assert.equal(settings.modeFilter, standby);
+	assert.equal(settings.mode, "m2");
+
+	// A long press: Switch off when held, Next mode when tapped.
+	settings = { modeFilter: standby, press: "next", longPress: "off", holdMs: 300 };
+	f.current = "m1";
+	let heard = once(obs, "mode");
+	await action.onKeyDown({ action: key, payload: { settings } });
+	await heard;
+	action.onKeyUp({ action: key });
+	assert.equal(modeRequests.at(-1)?.how, "none", "held: the long press");
+	heard = once(obs, "mode");
+	await action.onKeyDown({ action: key, payload: { settings } });
+	action.onKeyUp({ action: key });
+	await heard;
+	assert.equal(modeRequests.at(-1)?.how, "next", "tapped: the press");
+
+	// OBS gone: a Next mode key shows the mode it last saw on.
+	f.current = "m2";
+	settings = { modeFilter: standby, press: "next" };
+	await action.show(key, settings);
+	assert.equal(shown.title, modeTitle("Be Right Back"));
+	server.clients.forEach((c) => c.terminate());
+	await once(obs, "connection");
+	const kept = settings;
+	await action.show(key, kept);
+	assert.equal(shown.title, modeTitle("Be Right Back"), "remembered while OBS cannot be asked");
+	assert.equal(shown.state, 1);
+	assert.equal(shown.alerts, 0);
 });
 
 test("a Scene Blur key lists the blurs and their scenes, switches one scene or all, and is lit by the filter's event", async () => {

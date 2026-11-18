@@ -150,6 +150,12 @@ export function modeTitle(mode: string | undefined): string {
 	return fitted(mode, "Mode");
 }
 
+/** A Scene Mode key on Toggle or Next mode: the name of the mode that is on, or "No mode". */
+export function followedModeTitle(on: { id: string; name?: string } | undefined): string {
+	if (!on || !on.id) return "No mode";
+	return fitted(on.name || on.id, "Mode");
+}
+
 /** A Capture Active Window key: its Capture type when one is chosen, else the kind of capture. */
 export function hookTitle(inputKind: string | undefined, captureType?: string): string {
 	if (captureType === "window" || captureType === "game") return captureType === "window" ? "Capture\nWindow" : "Capture\nGame";

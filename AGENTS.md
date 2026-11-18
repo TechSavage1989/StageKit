@@ -1608,16 +1608,55 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     plugin when the user has not specified a custom title"); for images the SDK's types say only
     that state images "can be overridden by the user", nothing of setImage against a user's image.
     It is believed, not proven, that a user's image wins. Not tried on a Stream Deck.
-- **The Scene Mode key** (`src/actions/mode.ts`, UUID `.mode`, beta155) is for the Scene Modes
-  filter through its vendor requests: `ListSceneModes` (the key's list, *Scene: Mode*, the
-  filter's name only when a scene has two), `GetSceneMode` (lit while `current` is its mode) and
-  `SetSceneMode` with `how` *on* or *toggle*; the `SceneModeChanged` event (`obs.on("mode")`)
-  makes every Scene Mode key look again. `target` is `scene␟filter␟mode id` (`src/modes.ts`): the
-  id, never the name, so a rename keeps the key; a hand-made target with a name still works. Its
-  picture: its Mode type, an image kept from the old Image list, the mode's *Mode type*, the type
-  its name speaks of (*GBA* is a handheld), then `options/mode`; a type is drawn as a mode (the
-  owner's scene layout of that kind, `art.mode`). Tested against a stand-in server in `tests/obs.test.ts`, not
-  against the real filter.
+- **The Scene Mode key** (`src/actions/mode.ts`, UUID `.mode`, beta155; tied to one filter since
+  betaNEXT) is for the Scene Modes filter through its vendor requests: `ListSceneModes`,
+  `GetSceneMode` and `SetSceneMode` with `how` `on`, `toggle`, `next` or `none`; the
+  `SceneModeChanged` event (`obs.on("mode")`) makes every Scene Mode key look again. The owner,
+  of beta174: "the scene mode button when set to toggle needs to actually have icons that change
+  to the respective mode icon. Also how does toggle work with more than two scene modes?", then
+  "allow for the mode key to have a layout/mode type selection for each associated mode. Also,
+  the key should connect to the selected scene mode filter, not individual modes in all filters,
+  and it should allow configuration of the specific modes as desired, whether it's on, off,
+  toggle, or next". So (`src/modes.ts`, all pure):
+  - **Settings**: `modeFilter` (`scene␟filter`, the *Scene Modes* list, `getModeFilters`),
+    `press` (`on` as it comes, `off`, `toggle`, `next`), `mode` (a mode id, for on and toggle;
+    the *Mode* list, `getFilterModes`, refreshed by the page's script when `modeFilter` changes),
+    `longPress` (`none` as it comes, or the same four), `longMode` (unset: `mode`), `holdMs`
+    (`HoldPress` in `src/hold.ts` and `withHoldBar`, as the Stream and Record keys), and
+    `perMode` (`{ <id>: { type?, layout?, skip? } }`). A key saved before (`target`
+    `scene␟filter␟mode id`) is moved once by `migrateModeKey` (its press stays). Ids are a
+    filter's own (`m1` in two filters are two modes): choosing another filter clears `perMode`,
+    `mode`, `longMode` and `modeFor` (`modeFilterWas`).
+  - **Each mode's settings on a generated page**: one *Settings for* list (`modeFor`, the
+    filter's modes) and, under it, *Use* (`modeUse`), *Its layout* (`modeLayout`) and *Its image*
+    (`modeType`): `modePictureLists()` in `src/key-types.ts`, the key's own Layout and Mode type
+    lists under those settings, kept out of `typeLists` so `typeForKept` never sets them.
+    `editModeSettings` (on willAppear and every didReceiveSettings) loads the chosen mode's entry
+    into the three lists when `modeFor` changes (`modeForWas`) and stores them back when they
+    change. Chosen over rows built by a page script (sdpi-components' API would have had to be
+    driven by hand, untried) or a fixed number of slots; Scene Fit's *Settings for* in OBS works
+    the same way. That the page shows the values the plugin writes back (`setSettings` →
+    didReceiveSettings in the page) is believed, not seen on a Stream Deck.
+  - **Next mode** sends the filter's own `next` while every mode is used (`How::Next` in
+    `scene-modes.cpp`: the mode after the one on, in order, round again; from none, the first;
+    never to none). With a mode left out (`skip`) the plugin reads `GetSceneMode` and sends `on`
+    with the next used mode after the one on (`modeRequest`): two presses inside one round trip
+    can then land on the same mode. *Toggle* with more than two modes goes only between its mode
+    and the one before (`How::Toggle`); the README says to use Next mode to go through them.
+  - **Image and title** (`shownMode`, `followedModePicture` in `src/pictures.ts`,
+    `followedModeTitle`): *Switch on* shows its own mode, lit while on, titled with its name, as
+    before. The others show the mode that is on, titled with its name, or the plain mode key and
+    *No mode*; lit: Toggle while its own mode is on, Switch off and Next mode while any is. A
+    mode's picture: `perMode[id].type`; for the key's own mode the key's Mode type, then the
+    image kept from the old Image list; then the mode's *Mode type* in OBS, the type its name
+    speaks of (*GBA* is a handheld), then `options/mode`; drawn as a mode (`art.mode`). Its
+    Layout: `perMode[id].layout`, else the key's. `remembered` keeps, for the three that follow,
+    the mode that was on (`Seen.id`, under `for` = the target + `|follows`); a Switch on key keeps
+    what it kept before.
+  - Tested against a stand-in server in `tests/obs.test.ts` (an old key, Next with every mode
+    and with one left out, Switch off, Toggle, per-mode pictures and layouts, Automatic, a long
+    press, OBS gone) and `tests/key-types.test.ts` (the per-mode lists), not against the real
+    filter or on a Stream Deck.
 - **A key that switches something shows which way it is with a mark, not by brightness.** The
   owner: "the options that have an on and an off or toggle must represent that current status on
   the key with the image ... right now, the stagekit blur button just flashed". The pack's own on

@@ -5,7 +5,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import features from "../src/features.json" with { type: "json" };
-import { adoptOld, keptPicture, keysWithLists, OWN_LISTS, SCENE_TYPES, sceneTypePicture, SOURCE_TYPES, sourceTypePicture, typeForKept, typeLists } from "../src/key-types.ts";
+import { adoptOld, keptPicture, keysWithLists, layoutList, modePictureLists, OWN_LISTS, SCENE_TYPES, sceneTypePicture, SOURCE_TYPES, sourceTypePicture, typeForKept, typeLists } from "../src/key-types.ts";
 import {
 	blurAllPicture,
 	chooseFor,
@@ -270,4 +270,17 @@ test("the Scene Blur key's Blur style list is the Blur key's, all fourteen", () 
 	const values = (key: string) => look(key)!.groups.flatMap((g) => g.entries.map((e) => e.value));
 	assert.equal(values("sceneblur").length, 14);
 	assert.deepEqual(look("sceneblur"), look("blur"));
+});
+
+test("a Scene Mode key's lists for each mode are its own Layout and Mode type lists, under their own settings", () => {
+	const [layout, type] = modePictureLists();
+	assert.equal(layout.setting, "modeLayout");
+	assert.equal(type.setting, "modeType");
+	assert.deepEqual(layout.groups, layoutList("mode")!.groups);
+	assert.deepEqual(type.groups, typeLists("mode").find((l) => l.setting === "sourceType")!.groups, "any combination, as the key's own");
+	assert.ok(!typeLists("mode").some((l) => l.setting === "modeType" || l.setting === "modeLayout"), "not among the key's own type lists");
+	const page = readFileSync(new URL("../com.techsavage1989.stagekit.sdPlugin/ui/mode.html", import.meta.url), "utf8");
+	for (const setting of ["modeFilter", "press", "mode", "longPress", "longMode", "holdMs", "modeFor", "modeUse", "modeLayout", "modeType", "layout", "sourceType"])
+		assert.ok(page.includes(`setting="${setting}"`), setting);
+	assert.ok(page.includes('<option value="next">Next mode</option>') && page.includes('<option value="off">Switch off</option>'));
 });

@@ -9,63 +9,39 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | `feat/scene-shadow-corners` (Scene Shadow from each source, Scene Corners on the whole scene, betaNEXT), on `main` after beta168 (#184). Next: the new collection |
+| Working branch | `feat/sd-mode-key` (the Scene Mode key tied to one filter, betaNEXT), on `main` after beta174. Next: the new collection |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
-## Scene Modes: Hide when on, Leave when shown (0.1.0-beta177)
+## Stream Deck: the Scene Mode key works one filter (0.1.0-betaNEXT)
 
-Branch `feat/scene-modes-hide`, from `main` at beta175. Notes: `docs/releases/0.1.0-beta177.md`. No
-Stream Deck file changed. The owner's Component-Capture-Scene has Scene Modes *Chat* and *GBA* and
-two transparent markers, *Column: Chat* and *Column: GBA*, kept only for Link Visibility-GBA (*Show
-only one* between the full-screen DSLR and Column: GBA). Asked to get rid of them and offered a
-per-mode rule: "option 2 please"; then "showing DSLR switch back to the Chat mode".
+Branch `feat/sd-mode-key`, on `main` after beta174. Notes: `docs/releases/0.1.0-betaNEXT.md`.
+Stream Deck only (plugin 0.25.0.0); no OBS file changed. The owner: "the scene mode button when set
+to toggle needs to actually have icons that change to the respective mode icon. Also how does
+toggle work with more than two scene modes?", then "allow for the mode key to have a layout/mode
+type selection for each associated mode. Also, the key should connect to the selected scene mode
+filter, not individual modes in all filters, and it should allow configuration of the specific
+modes as desired, whether it's on, off, toggle, or next".
 
-- **Hide when on** (`mode|<id>|hide`, a PickList per mode): hidden when the mode comes on, in the
-  same tick and with the mode's transition (`plan`, `Work::extra`). Not members: never shown again.
-- **Leave when shown** (`mode|<id>|leave_on`) and **Leave to** (`mode|<id>|leave_to`: "" the mode
-  before, as it comes; `none`; a mode id): a source of the mode on shown by anything turns
-  `leave_to` on, queued from `visible_cb` as `How::Leave`, acted on in the tick only while that
-  mode is still on. The source that triggered it is never hidden by that change (logged).
-- Both lists are in each mode's group, follow renames, survive `rebuild`.
-- The owner's recipe (README, release notes): GBA mode, *Hide when on*: DSLR; *Leave when shown*:
-  DSLR; *Leave to*: Chat; then remove Link Visibility-GBA, take the two Column markers out of the
-  modes and out of Link Visibility-CaptureChat's following sources, and delete them.
-- Tests: `[scene modes: hide when on, leave when shown]` and the two after it (`modes_hide_test`,
-  alone: `STAGEKIT_TEST_ONLY_MODES_HIDE`).
-- **Not proven:** Windows; the owner's collection (the merge scripts still write the markers).
-
-## Scene Shadow from each source, Scene Corners on the whole scene (0.1.0-beta176)
-
-Branch `feat/scene-shadow-corners`, on `main` after beta168 (#184). Notes: `docs/releases/0.1.0-beta176.md`.
-No Stream Deck file changed. Proposed to the owner, who answered "yes to both": Scene Shadow drawing
-each source's shadow by itself, falling onto what lies under it and covered by what lies above, as
-separate Shadow, Glow & Outline filters would; and Scene Corners giving the scene's own image the
-Corners & Edges look at the canvas edges, as one shape.
-
-- **Scene Shadow's *Shadow from*** (`shadow_from`: 0 *The scene as drawn*, as before and the
-  default; 1 *Each source by itself*). Drawn in layers of sources whose shadows cannot reach one
-  another (`shadow_layers`, `LookPaint::compose_layers`): one layer while nothing overlaps, so the
-  same cost as before; a layer more per overlap. Tested against two per-source Shadow, Glow &
-  Outline filters: at most 1 level off, 0.036 on average. Scene Blur's *Each source by itself*
-  still draws the shadow over its redraw (`lay_over` chains the layers). Morph carries it
-  (`draw_layers`); a change between the two modes is a cross-fade, logged.
-- **Scene Corners' *Corners on*** (`corners_area`: 0 *Each source*, as before and the default; 1
-  *The whole scene*). In 1 the scene filter draws (`CornersPaint`, now shared with Corners & Edges),
-  once a frame, keeps itself after Scene Shadow and Scene Blur, and adds no per-source filter (its
-  own go after the grace). Morph accepts it and cuts the change to the two scenes' shapes part-way
-  (`draw_rounded`, `lerp_corner_shape`).
-- Fixed on the way: Scene Corners' window had no *Which corners* tick boxes (Corners & Edges'
-  group was named `which`, as Scene Corners' list is; OBS refused it). It is `corners_which` now;
-  found by valgrind (a leaked property group).
-- Tests: `[scene shadow: each source by itself]` (`STAGEKIT_TEST_ONLY_SHADOW_EACH`) and `[scene
-  corners: the whole scene]` (`STAGEKIT_TEST_ONLY_CORNERS_WHOLE`); contact sheets
-  `docs/images/scene-shadow.png` (frames 5 to 8 new) and `docs/images/scene-corners.png` (new).
-  AGENTS, *Scene Shadow's Shadow from* and *Scene Corners' Corners on*.
-- Not proven: Direct3D (the scene-shadow effect gained one uniform, `image_straight`); a Morph
-  between two scenes that overlap in layers on Windows; Scene Blur's own log line when a Scene
-  Corners on the whole scene sits before it for the half second before it moves (scene-blur.cpp
-  was not touched).
+- **The key is tied to one Scene Modes filter** (`modeFilter`), with *On press* *Switch on*,
+  *Switch off*, *Toggle* or *Next mode*, a *Mode* for on and toggle, and a *Long press*
+  (`HoldPress`) with its own mode and hold time. An old key (`target`, one mode) is moved once
+  (`migrateModeKey`) and keeps its press. AGENTS, *The Scene Mode key*.
+- **Each mode's own settings**: *Settings for* (a mode of the filter) with *Use*, *Its layout*,
+  *Its image* under it, kept per mode in `perMode` by `editModeSettings`. One set of lists edited
+  through a selector, not rows built by a page script: the page stays plain generated
+  sdpi-components.
+- **The image and title follow the mode on** for Switch off, Toggle and Next mode; Switch on is
+  unchanged. No mode: the plain mode key and *No mode*.
+- **Next mode** is the filter's `next` with every mode used; with modes left out the plugin works
+  out the next used mode from `GetSceneMode` and sends `on`. OBS side checked, nothing to change:
+  `How::Next` steps in order and wraps, from none to the first, never to none. `How::Toggle` goes
+  between its mode and the one before (or none with *Allow no mode*), which is the answer to the
+  owner's question: with more than two modes, use Next mode.
+- Tests: `tests/obs.test.ts` (the new case, and the old one, which still drives a key saved with
+  `target`), `tests/key-types.test.ts`.
+- **Not proven**: a Stream Deck (the page writing back what the plugin sets when *Settings for*
+  changes is believed, not seen); the real filter.
 
 ## Make Room, a transition and a way for unpaired sources (0.1.0-beta175)
 

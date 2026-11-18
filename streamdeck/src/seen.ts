@@ -7,7 +7,7 @@ import type { JsonValue } from "@elgato/utils";
  * What a key last learned from OBS about its filter: enough for its image and
  * name. Also, where the image depends on them, the kind of source the key
  * acts on (`inputKind`, "dshow_input" ...) and, for a Scene Mode key, the
- * mode's name and type.
+ * mode's name and type (and, on Toggle or Next mode, which mode was on).
  */
 export type Seen = {
 	for: string;
@@ -17,6 +17,8 @@ export type Seen = {
 	inputKind?: string;
 	name?: string;
 	type?: string;
+	/** A Scene Mode key on Toggle or Next mode: the id of the mode that was on ("" for none). */
+	id?: string;
 };
 
 export type Fresh = {
@@ -26,6 +28,7 @@ export type Fresh = {
 	inputKind?: string;
 	name?: string;
 	type?: string;
+	id?: string;
 };
 
 /** The filter settings a key's image or name can depend on. */
@@ -58,6 +61,7 @@ export async function remembered(
 	if (fresh.inputKind) now.inputKind = fresh.inputKind;
 	if (fresh.name !== undefined) now.name = fresh.name;
 	if (fresh.type !== undefined) now.type = fresh.type;
+	if (fresh.id !== undefined) now.id = fresh.id;
 	if (JSON.stringify(now) !== JSON.stringify(before)) await key.setSettings({ ...settings, seen: now });
 	return now;
 }
