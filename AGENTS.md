@@ -1515,6 +1515,28 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   (obs-shaderfilter's `bloom.shader`, Angle_Steps 1, Radius_Steps 20, ampFactor 4 to 10; 100 %
   here is its ampFactor of 1). The owner: "the bloom effect ... is not the effect i intended. I
   like the bloom effect from my old scene collection".
+- **Ambient Background's Darkest level** (`darkest_level`, 0 to 100 %, 0 as it comes: off, and
+  no pass is drawn; `darkest_fill`, by number, append-only: 0 *The background image*, 1 *A
+  colour*; `darkest_color`, a mid grey, shown only for a colour; betaNEXT). The owner: "is there
+  a way I can prevent the background from ever becoming completely black, even when the ambient
+  background is capturing a live feed that has completely black content?", then "add darkest
+  level as a configurable option". The last pass (`Lift` in `stagekit-looks.effect`, full size,
+  raw values like `Final`, before the hand-off that follows `gs_get_linear_srgb()`): toward the
+  image a part becomes the fill as far as it is dark (`1 - smoothstep(0, 1.5 x level, luma)`);
+  then, with either fill, the floor `luma + level x (1 - smoothstep(0, 1.5 x level, luma))`,
+  which never falls under the level, is made up by adding the fill's colour scaled to unit
+  luminance (grey for what a saturated colour cannot give). From 1.5 x the level up nothing
+  changes. The image fill is the picture before `Final` itself while the scene holds the image
+  alone (no capture, no change under way: no cost), else the image drawn alone into `tr_fill_`
+  and blurred by a `KawaseBlur` of its own (`fill_blur_`) at *Blur* (not for Temporal), with no
+  mosaic or bloom; `Lift` gives it `Final`'s brightness and vignette. No image under *Background
+  from*: the colour. A black capture counts as no capture after two seconds
+  (`live_shows_something`), so this is for a capture that is dark but not empty. Every uniform
+  of `Lift` (`lift_*`, `image`, `image2`) is set at each run; the test gives the shader other
+  values first for each fill, a new colour each time (a colour left in the shader by the first
+  would hide an unset `lift_color` in the second). Tested in `[ambient background:
+  darkest level]` (`ambient_darkest_test`, alone `STAGEKIT_TEST_ONLY_AMBIENT_DARKEST`; sheet
+  `docs/images/ambient-darkest.png` from `$out/darkest`). Not run on Direct3D.
 - **Auto Capture keeps its capture shown** (`keep_ready`, on by default, `obs_source_inc_showing` on
   the capture). OBS stops a Game Capture about 0.3 s after the last scene showing it is left and
   hooks it again on the way back; the owner's log showed that at every scene switch.

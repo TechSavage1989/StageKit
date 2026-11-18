@@ -4620,6 +4620,264 @@ static void link_transitions_test(uint32_t w, uint32_t h)
 	obs_source_release(before_out);
 }
 
+// Ambient Background's Darkest level. The owner (2026-11-18): "is there a
+// way I can prevent the background from ever becoming completely black,
+// even when the ambient background is capturing a live feed that has
+// completely black content?", then "add darkest level as a configurable
+// option". A capture that is black but for a small white patch (all black,
+// it would count as no capture after two seconds and the image would show
+// anyway) is the whole background. Off, the background is black; with a
+// colour, nothing is darker than the level; toward the image, the black
+// shows the usual background and the white patch is left as it is. Frames
+// go to `sheet` when it is given (docs/images/ambient-darkest.png). Run
+// alone with STAGEKIT_TEST_ONLY_AMBIENT_DARKEST.
+static void ambient_darkest_test(uint32_t w, uint32_t h, const char *base_image, const std::string &sheet)
+{
+	printf("\n[ambient background: darkest level]\n");
+	// The controls: off as it comes, the colour only for "A colour".
+	{
+		obs_data_t *fresh = obs_data_create();
+		obs_source_t *bg = obs_source_create("stagekit_ambient_background", "DL Controls", fresh, nullptr);
+		obs_data_release(fresh);
+		obs_data_t *ds = obs_source_get_settings(bg);
+		const double level = obs_data_get_double(ds, "darkest_level");
+		const long long fill = obs_data_get_int(ds, "darkest_fill");
+		const long long colour = obs_data_get_int(ds, "darkest_color");
+		obs_data_release(ds);
+		auto shown = [&](int fill_to, const char *name) {
+			obs_data_t *s = obs_source_get_settings(bg);
+			obs_data_set_int(s, "darkest_fill", fill_to);
+			obs_data_release(s);
+			obs_properties_t *props = obs_source_properties(bg);
+			obs_property_t *p = obs_properties_get(props, name);
+			const bool visible = p && obs_property_visible(p);
+			obs_properties_destroy(props);
+			return visible;
+		};
+		const bool on_image = shown(0, "darkest_color");
+		const bool on_colour = shown(1, "darkest_color");
+		const bool level_shown = shown(0, "darkest_level") && shown(0, "darkest_fill");
+		CHECK(level == 0.0 && fill == 0 && colour == (long long)0xFF808080 && level_shown && !on_image &&
+			      on_colour,
+		      "'Darkest level' is off as it comes, lifting toward the background image; 'Lift colour' (a mid grey) shows only for 'A colour' (level %.0f, fill %lld, colour %08llx)",
+		      level, fill, colour);
+		obs_source_release(bg);
+	}
+
+	// The capture: black, and a white patch in the top left quarter.
+	obs_scene_t *cap = obs_scene_create("DL Capture");
+	auto colour_source = [&](const char *name, uint32_t colour, uint32_t cw, uint32_t ch) {
+		obs_data_t *d = obs_data_create();
+		obs_data_set_int(d, "color", colour);
+		obs_data_set_int(d, "width", cw);
+		obs_data_set_int(d, "height", ch);
+		obs_source_t *src = obs_source_create("color_source", name, d, nullptr);
+		obs_data_release(d);
+		obs_scene_add(cap, src);
+		obs_source_release(src);
+	};
+	colour_source("DL Black", 0xFF000000, w, h);
+	colour_source("DL Patch", 0xFFFFFFFF, w / 4, h / 4);
+
+	obs_data_t *s = obs_data_create();
+	obs_data_set_int(s, "base_type", 0);
+	obs_data_set_string(s, "image", base_image);
+	obs_data_set_double(s, "speed_x", 0);
+	obs_data_set_double(s, "speed_y", 0);
+	obs_data_set_double(s, "blur", 12);
+	obs_data_set_int(s, "live_mode", 2);
+	obs_data_set_string(s, "live_source", "DL Capture");
+	obs_data_set_bool(s, "live_replace", true);
+	obs_data_set_int(s, "live_change", 1);
+	obs_source_t *bg = obs_source_create("stagekit_ambient_background", "DL Background", s, nullptr);
+	obs_source_inc_showing(bg);
+	auto shot = [&](const char *name, const std::function<void(obs_data_t *)> &change) {
+		change(s);
+		obs_source_update(bg, s);
+		sleep_ms(700);
+		std::vector<uint8_t> px = render(bg, w, h);
+		if (!sheet.empty())
+			write_frame(sheet + "/" + name + ".rgba", px, w, h);
+		return px;
+	};
+	auto luma = [&](const std::vector<uint8_t> &px, size_t i) {
+		return 0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2];
+	};
+	// Inside the patch, well clear of the blur round its edge; and the
+	// black part, well clear of the patch.
+	auto in_patch = [&](uint32_t x, uint32_t y) {
+		return x < w / 8 && y < h / 8;
+	};
+	auto in_black = [&](uint32_t x, uint32_t y) {
+		return x > w / 2 || y > h / 2;
+	};
+	auto region_mean = [&](const std::vector<uint8_t> &px, bool patch) {
+		double sum = 0.0;
+		size_t n = 0;
+		for (uint32_t y = 0; y < h; y++)
+			for (uint32_t x = 0; x < w; x++)
+				if (patch ? in_patch(x, y) : in_black(x, y)) {
+					sum += luma(px, (size_t(y) * w + x) * 4);
+					n++;
+				}
+		return n ? sum / double(n) : 0.0;
+	};
+	auto region_diff = [&](const std::vector<uint8_t> &a, const std::vector<uint8_t> &b, bool patch) {
+		double sum = 0.0;
+		size_t n = 0;
+		for (uint32_t y = 0; y < h; y++)
+			for (uint32_t x = 0; x < w; x++)
+				if (patch ? in_patch(x, y) : in_black(x, y)) {
+					const size_t i = (size_t(y) * w + x) * 4;
+					for (int c = 0; c < 3; c++)
+						sum += std::abs(int(a[i + c]) - int(b[i + c]));
+					n += 3;
+				}
+		return n ? sum / double(n) : 0.0;
+	};
+
+	const std::vector<uint8_t> off = shot("1 a dark capture, off", [](obs_data_t *) {});
+	CHECK(opaque(off) && region_mean(off, false) < 2.0 && region_mean(off, true) > 200.0,
+	      "off, a black capture makes the background black, as before (black part %.1f, patch %.1f)",
+	      region_mean(off, false), region_mean(off, true));
+
+	const std::vector<uint8_t> grey = shot("2 toward a grey, 30 %", [](obs_data_t *d) {
+		obs_data_set_double(d, "darkest_level", 30);
+		obs_data_set_int(d, "darkest_fill", 1);
+	});
+	double darkest = 255.0;
+	for (size_t i = 0; i < grey.size(); i += 4)
+		darkest = std::min(darkest, luma(grey, i));
+	CHECK(opaque(grey) && darkest >= 0.29 * 255.0 && region_mean(grey, false) < 0.33 * 255.0 &&
+		      region_diff(grey, off, true) < 0.5,
+	      "at 30 %% toward a colour no pixel is darker than the level (darkest %.1f of 255; the black part %.1f), and the white patch is left as it is (%.2f)",
+	      darkest, region_mean(grey, false), region_diff(grey, off, true));
+
+	const std::vector<uint8_t> red = shot("3 toward a red, 30 %", [](obs_data_t *d) {
+		obs_data_set_int(d, "darkest_color", 0xFF2020E0); // 0xAABBGGRR: a red
+	});
+	double red_darkest = 255.0, r = 0.0, g = 0.0;
+	for (size_t i = 0; i < red.size(); i += 4) {
+		red_darkest = std::min(red_darkest, luma(red, i));
+		r += red[i];
+		g += red[i + 1];
+	}
+	CHECK(red_darkest >= 0.29 * 255.0 && r > g * 1.3,
+	      "a red lifts as bright, and red (darkest %.1f; red %.0f against green %.0f)", red_darkest, r / 1e3,
+	      g / 1e3);
+
+	// What the image looks like by itself, lifted the same (its own dark
+	// parts are lifted too, the same way).
+	const std::vector<uint8_t> image_alone = shot("x image alone", [](obs_data_t *d) {
+		obs_data_set_int(d, "darkest_fill", 0);
+		obs_data_set_int(d, "live_mode", 0);
+	});
+	const std::vector<uint8_t> toward_image =
+		shot("4 toward the background image", [](obs_data_t *d) { obs_data_set_int(d, "live_mode", 2); });
+	CHECK(opaque(toward_image) && region_diff(toward_image, image_alone, false) < 4.0 &&
+		      region_diff(toward_image, off, true) < 1.0 && region_mean(toward_image, false) > 40.0,
+	      "toward the background image the black shows the image's own look (%.2f off it; black part %.1f) and the white patch is left as it is (%.2f)",
+	      region_diff(toward_image, image_alone, false), region_mean(toward_image, false),
+	      region_diff(toward_image, off, true));
+
+	// No background from at all: the colour.
+	const std::vector<uint8_t> no_image = shot("x no image", [](obs_data_t *d) {
+		obs_data_set_string(d, "image", "");
+		obs_data_set_int(d, "darkest_color", 0xFF808080);
+	});
+	double no_image_darkest = 255.0;
+	for (size_t i = 0; i < no_image.size(); i += 4)
+		no_image_darkest = std::min(no_image_darkest, luma(no_image, i));
+	CHECK(no_image_darkest >= 0.29 * 255.0 && region_mean(no_image, false) < 0.33 * 255.0,
+	      "with no background image to lift toward, the colour is used (darkest %.1f; black part %.1f)",
+	      no_image_darkest, region_mean(no_image, false));
+	obs_data_set_string(s, "image", base_image);
+
+	// Every uniform of the Lift technique is set at every run: drawn after
+	// another user of the shared effect has given them other values, the
+	// background looks the same. Once lifting toward the image and once
+	// toward a colour: with the image, the colour has no part in the result,
+	// so a colour left unset would only show the second time. Each time the
+	// other user's colour is new, or the first time's would still be in the
+	// shader and a colour left unset would look the same before and after.
+	auto same_after_other_user = [&](const char *name, const char *what, float r, float g, float b,
+					 const std::function<void(obs_data_t *)> &change) {
+		const std::vector<uint8_t> own = shot(name, change);
+		obs_module_t *module = obs_get_module("stagekit");
+		char *path = module ? obs_find_module_file(module, "effects/stagekit-looks.effect") : nullptr;
+		obs_enter_graphics();
+		gs_effect_t *looks = path ? gs_effect_create_from_file(path, nullptr) : nullptr;
+		if (looks) {
+			gs_texrender_t *tr = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
+			gs_texrender_t *src = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
+			if (gs_texrender_begin(src, 64, 64)) {
+				vec4 blue;
+				vec4_set(&blue, 0.0f, 0.0f, 1.0f, 1.0f);
+				gs_clear(GS_CLEAR_COLOR, &blue, 0.0f, 0);
+				gs_texrender_end(src);
+			}
+			auto f1 = [&](const char *n, float v) {
+				gs_effect_set_float(gs_effect_get_param_by_name(looks, n), v);
+			};
+			if (gs_texrender_begin(tr, 64, 64)) {
+				gs_ortho(0.0f, 64.0f, 0.0f, 64.0f, -100.0f, 100.0f);
+				gs_texture_t *tex = gs_texrender_get_texture(src);
+				gs_effect_set_texture(gs_effect_get_param_by_name(looks, "image"), tex);
+				gs_effect_set_texture(gs_effect_get_param_by_name(looks, "image2"), tex);
+				f1("lift_level", 0.9f);
+				f1("lift_image", 0.0f);
+				f1("lift_brightness", 0.2f);
+				f1("lift_vignette", 1.0f);
+				vec4 other;
+				vec4_set(&other, r, g, b, 1.0f);
+				gs_effect_set_vec4(gs_effect_get_param_by_name(looks, "lift_color"), &other);
+				while (gs_effect_loop(looks, "Lift"))
+					gs_draw_sprite(tex, 0, 64, 64);
+				gs_texrender_end(tr);
+			}
+			gs_texrender_destroy(src);
+			gs_texrender_destroy(tr);
+		}
+		obs_leave_graphics();
+		bfree(path);
+		sleep_ms(100);
+		const std::vector<uint8_t> after = render(bg, w, h);
+		CHECK(looks && mean_abs_diff(own, after) < 0.001,
+		      "drawn after another user of the Lift technique, the background lifted toward %s looks the same (%.3f)",
+		      what, mean_abs_diff(own, after));
+	};
+	same_after_other_user("x own", "the image", 0.0f, 1.0f, 0.0f, [](obs_data_t *) {});
+	same_after_other_user("x own colour", "a colour", 1.0f, 0.0f, 1.0f,
+			      [](obs_data_t *d) { obs_data_set_int(d, "darkest_fill", 1); });
+	shot("x own image again", [](obs_data_t *d) { obs_data_set_int(d, "darkest_fill", 0); });
+
+	// A bright capture is not touched.
+	{
+		obs_source_t *patch = obs_get_source_by_name("DL Black");
+		obs_data_t *d = obs_data_create();
+		obs_data_set_int(d, "color", 0xFFC8C8C8);
+		obs_source_update(patch, d);
+		obs_data_release(d);
+		obs_source_release(patch);
+		const std::vector<uint8_t> bright_on = shot("x bright on", [](obs_data_t *) {});
+		const std::vector<uint8_t> bright_off =
+			shot("x bright off", [](obs_data_t *dd) { obs_data_set_double(dd, "darkest_level", 0); });
+		CHECK(mean_abs_diff(bright_on, bright_off) < 0.3,
+		      "a capture brighter than the level is left as it is (%.2f)",
+		      mean_abs_diff(bright_on, bright_off));
+	}
+	if (!sheet.empty())
+		for (const char *name : {"x image alone", "x no image", "x own", "x own colour", "x own image again",
+					 "x bright on", "x bright off"})
+			remove((sheet + "/" + name + ".rgba").c_str());
+
+	obs_source_dec_showing(bg);
+	obs_source_release(bg);
+	obs_data_release(s);
+	obs_scene_release(cap);
+	sleep_ms(50);
+}
+
 // The owner (beta170): "ambient background does not show unless i turn on
 // scene blur. it remains visible after turning blur off"; then, with Scene
 // Blur removed and Scene Shadow off, still black after a restart, and
@@ -6494,6 +6752,14 @@ int main(int argc, char **argv)
 		return g_failures ? 1 : 0;
 	}
 
+	if (getenv("STAGEKIT_TEST_ONLY_AMBIENT_DARKEST")) { // to try that section alone
+		ambient_darkest_test(w, h, base_image, out + "/../darkest");
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
+
 	if (getenv("STAGEKIT_TEST_ONLY_BLUR_OFF_DRAW")) { // to try that section alone
 		blur_off_draw_test(w, h, base_image);
 		obs_shutdown();
@@ -6887,7 +7153,8 @@ int main(int argc, char **argv)
 	// ==== end scene-filters:perf ====
 
 	// (After the timing checks: its frames would count in their per-frame line.)
-	blur_off_draw_test(w, h, base_image); // (alone: STAGEKIT_TEST_ONLY_BLUR_OFF_DRAW)
+	blur_off_draw_test(w, h, base_image);                        // (alone: STAGEKIT_TEST_ONLY_BLUR_OFF_DRAW)
+	ambient_darkest_test(w, h, base_image, out + "/../darkest"); // (alone: STAGEKIT_TEST_ONLY_AMBIENT_DARKEST)
 
 	// ==== scene-filters:blur ====
 	// ------------------------------------------------------------ scene blur
