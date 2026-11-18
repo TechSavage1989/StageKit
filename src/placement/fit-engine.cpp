@@ -459,12 +459,14 @@ std::string fit_list_prefix(const std::string &entry)
 	return out + "_";
 }
 
-FitEngine::FitEngine(obs_data_t *settings, obs_source_t *owner, std::string prefix, std::string entry)
+FitEngine::FitEngine(obs_data_t *settings, obs_source_t *owner, std::string prefix, std::string entry,
+		     std::string look_prefix, std::string look_list_prefix)
 	: source_(owner),
 	  prefix_(std::move(prefix)),
 	  entry_(std::move(entry)),
 	  list_prefix_(entry_.empty() ? std::string() : fit_list_prefix(entry_))
 {
+	set_look(std::move(look_prefix), std::move(look_list_prefix));
 	idle_phase_ = (double)((reinterpret_cast<uintptr_t>(this) >> 4) % kIdleEvery);
 	update(settings);
 	std::lock_guard lock(g_filters_mutex);
@@ -527,23 +529,46 @@ void FitEngine::shared(obs_source_t *scene, const char *item_name, const double 
 	}
 }
 
+void FitEngine::set_look(std::string look_prefix, std::string look_list_prefix)
+{
+	std::lock_guard lock(mutex_);
+	look_prefix_ = look_prefix.empty() ? prefix_ : std::move(look_prefix);
+	look_list_prefix_ = look_prefix_ == prefix_ ? list_prefix_ : std::move(look_list_prefix);
+}
+
 void FitEngine::update(obs_data_t *settings)
 {
+	// What the fit writes for itself (its home, the size it keeps) is
+	// always its own; how it fits (`l`, the two lists `look_lists`) may be
+	// a set shared by several entries of a Scene Fit (its Same for all
+	// sources).
+	std::string look, look_lists;
+	{
+		std::lock_guard lock(mutex_);
+		look = look_prefix_;
+		look_lists = look_list_prefix_;
+	}
 	auto k = [this](const char *name) {
 		return prefix_ + name;
+	};
+	auto l = [&look](const char *name) {
+		return look + name;
 	};
 	auto num = [&](const char *name) {
 		return obs_data_get_double(settings, k(name).c_str());
 	};
+	auto lnum = [&](const char *name) {
+		return obs_data_get_double(settings, l(name).c_str());
+	};
 	FitSettings s;
 	s.item = entry_.empty() ? obs_data_get_string(settings, k("item").c_str()) : entry_;
-	s.box = obs_data_get_int(settings, k("box").c_str()) == 1 ? BoxKind::Custom : BoxKind::WholeScene;
-	s.x = num("box_x");
-	s.y = num("box_y");
-	s.w = std::max(2.0, num("box_width"));
-	s.h = std::max(2.0, num("box_height"));
-	s.margin = std::clamp(num("margin"), 0.0, 2000.0);
-	s.tolerance = std::clamp(num("tolerance"), 0.0, 200.0);
+	s.box = obs_data_get_int(settings, l("box").c_str()) == 1 ? BoxKind::Custom : BoxKind::WholeScene;
+	s.x = lnum("box_x");
+	s.y = lnum("box_y");
+	s.w = std::max(2.0, lnum("box_width"));
+	s.h = std::max(2.0, lnum("box_height"));
+	s.margin = std::clamp(lnum("margin"), 0.0, 2000.0);
+	s.tolerance = std::clamp(lnum("tolerance"), 0.0, 200.0);
 	// (A switch of its own since beta122; a share set before that
 	// counts as switched on, and is written down as such.) For an entry
 	// of a Scene Fit the switch is the Scene Fit's own, for all entries.
@@ -551,26 +576,26 @@ void FitEngine::update(obs_data_t *settings)
 	    obs_data_has_user_value(settings, "skip_fill") && obs_data_get_double(settings, "skip_fill") > 0.0)
 		obs_data_set_bool(settings, "skip_fill_on", true);
 	s.skip_rule = obs_data_get_bool(settings, entry_.empty() ? k("skip_fill_on").c_str() : "skip_fill_on");
-	s.skip_pct = obs_data_get_bool(settings, k("skip_use_pct").c_str());
-	s.skip_fill = std::clamp(num("skip_fill") / 100.0, 0.0, 1.0);
-	s.skip_px = obs_data_get_bool(settings, k("skip_use_px").c_str());
-	s.px_top = std::max(0.0, num("skip_px_top"));
-	s.px_bottom = std::max(0.0, num("skip_px_bottom"));
-	s.px_left = std::max(0.0, num("skip_px_left"));
-	s.px_right = std::max(0.0, num("skip_px_right"));
-	s.resize = obs_data_get_bool(settings, k("resize").c_str());
+	s.skip_pct = obs_data_get_bool(settings, l("skip_use_pct").c_str());
+	s.skip_fill = std::clamp(lnum("skip_fill") / 100.0, 0.0, 1.0);
+	s.skip_px = obs_data_get_bool(settings, l("skip_use_px").c_str());
+	s.px_top = std::max(0.0, lnum("skip_px_top"));
+	s.px_bottom = std::max(0.0, lnum("skip_px_bottom"));
+	s.px_left = std::max(0.0, lnum("skip_px_left"));
+	s.px_right = std::max(0.0, lnum("skip_px_right"));
+	s.resize = obs_data_get_bool(settings, l("resize").c_str());
 	// 0 the middle, then top, bottom, left, right, and the four corners.
 	static const int kTowardX[] = {0, 0, 0, -1, 1, -1, 1, -1, 1};
 	static const int kTowardY[] = {0, -1, 1, 0, 0, -1, -1, 1, 1};
-	const long long toward = std::clamp<long long>(obs_data_get_int(settings, k("toward").c_str()), 0, 8);
+	const long long toward = std::clamp<long long>(obs_data_get_int(settings, l("toward").c_str()), 0, 8);
 	s.toward_x = kTowardX[toward];
 	s.toward_y = kTowardY[toward];
-	s.share_scenes = pick_list_read(settings, (list_prefix_ + "share_scenes").c_str(), false);
+	s.share_scenes = pick_list_read(settings, (look_lists + "share_scenes").c_str(), false);
 	// Which fits make room for which. The level is each fit's own (an
 	// entry's under its prefix); the list order switch is a Fit to Space's
 	// own, or the Scene Fit's for all its entries. Neither saved (a filter
 	// from before they existed): sharing, as every fit did then.
-	const long long level = obs_data_get_int(settings, k("space_priority").c_str());
+	const long long level = obs_data_get_int(settings, l("space_priority").c_str());
 	s.priority = level == 1 ? SpacePriority::First : level == 2 ? SpacePriority::MakesRoom : SpacePriority::Shares;
 	s.by_list = obs_data_get_bool(settings, "list_priority");
 	s.orig_item = obs_data_get_string(settings, k("orig_item").c_str());
@@ -610,23 +635,23 @@ void FitEngine::update(obs_data_t *settings)
 			}
 		}
 	}
-	const long long kind = obs_data_get_int(settings, k("box").c_str());
+	const long long kind = obs_data_get_int(settings, l("box").c_str());
 	if (kind == 2)
 		s.box = BoxKind::FreeSpace;
 	// The filter's own two measuring options. Before they existed there
 	// was one tick box that followed the dock; unticked, it meant boxes.
-	s.visible_pixels = obs_data_get_bool(settings, k("visible_pixels").c_str());
-	s.no_shadows = obs_data_get_bool(settings, k("no_shadows").c_str());
+	s.visible_pixels = obs_data_get_bool(settings, l("visible_pixels").c_str());
+	s.no_shadows = obs_data_get_bool(settings, l("no_shadows").c_str());
 	if (prefix_.empty() && obs_data_has_user_value(settings, "as_arranged") &&
 	    !obs_data_get_bool(settings, "as_arranged") && !obs_data_has_user_value(settings, "visible_pixels"))
 		s.visible_pixels = false;
-	s.skip = pick_list_read(settings, (list_prefix_ + "skip").c_str(), false);
+	s.skip = pick_list_read(settings, (look_lists + "skip").c_str(), false);
 	s.have_anchor = obs_data_get_bool(settings, k("have_anchor").c_str());
 	s.anchor_x = num("anchor_x");
 	s.anchor_y = num("anchor_y");
-	s.glide_s = std::clamp((double)obs_data_get_int(settings, k("glide_ms").c_str()), 0.0, 10000.0) / 1000.0;
-	s.curve = static_cast<EaseCurve>(obs_data_get_int(settings, k("ease_curve").c_str()));
-	s.mode = static_cast<EaseMode>(obs_data_get_int(settings, k("ease_mode").c_str()));
+	s.glide_s = std::clamp((double)obs_data_get_int(settings, l("glide_ms").c_str()), 0.0, 10000.0) / 1000.0;
+	s.curve = static_cast<EaseCurve>(obs_data_get_int(settings, l("ease_curve").c_str()));
+	s.mode = static_cast<EaseMode>(obs_data_get_int(settings, l("ease_mode").c_str()));
 	look_again_ = true;
 	std::lock_guard lock(mutex_);
 	settings_ = s;

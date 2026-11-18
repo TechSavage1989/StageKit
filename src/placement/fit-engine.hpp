@@ -203,9 +203,13 @@ private:
 class FitEngine {
 public:
 	// `entry`: the source's name for an entry of a Scene Fit; empty for a
-	// Fit to Space, whose settings name the item.
+	// Fit to Space, whose settings name the item. `look_prefix` and
+	// `look_list_prefix`: where how it fits is read from, when that is not
+	// its own (a Scene Fit's settings shared by all its entries); what it
+	// writes for itself (home, kept size) stays under `prefix`.
 	FitEngine(obs_data_t *settings, obs_source_t *owner, std::string prefix = std::string(),
-		  std::string entry = std::string());
+		  std::string entry = std::string(), std::string look_prefix = std::string(),
+		  std::string look_list_prefix = std::string());
 	~FitEngine();
 	void placed(obs_source_t *scene, const char *item_name);
 	// Whether this filter, looking after the item of that name, lists the
@@ -220,6 +224,8 @@ public:
 	const char *scene_name() const { return parent_ ? obs_source_get_name(parent_) : nullptr; }
 	void shared(obs_source_t *scene, const char *item_name, const double *home);
 	void update(obs_data_t *settings);
+	// Where how it fits is read from at the next `update` (empty: its own).
+	void set_look(std::string look_prefix, std::string look_list_prefix);
 	// `forget`: what was seen of the scene's items is let go (a Fit to
 	// Space joining or leaving; a Scene Fit does it once for all entries).
 	void attach(obs_source_t *parent, bool forget = true);
@@ -295,6 +301,7 @@ private:
 
 	obs_source_t *source_;
 	std::string prefix_, entry_, list_prefix_;
+	std::string look_prefix_, look_list_prefix_; // under mutex_: where how it fits is read from
 	obs_source_t *parent_ = nullptr;
 	int entry_index_ = 0;
 	Rank rank_;
