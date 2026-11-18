@@ -50,7 +50,7 @@ export class PictureShape extends SingletonAction<KeySettings> {
 	override onSendToPlugin(ev: SendToPluginEvent<JsonValue, KeySettings>): Promise<void> {
 		return ev.action
 			.getSettings()
-			.then((settings) => answerLists(ev.payload, settings, (kind) => kind === "stagekit_auto_frame"));
+			.then((settings) => answerLists(ev.payload, settings, (kind) => kind === "stagekit_auto_frame", this.manifestId));
 	}
 
 	/** The shape is the key's title unless the user wrote their own; the picture is Auto Frame's. */

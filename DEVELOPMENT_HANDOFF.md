@@ -9,11 +9,38 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | `fix/scene-fit-enable-keeps-layout`, on `fix/scene-fit-visible-pixels` (the gap from a letterboxed source; Scene Fit round 2: column sharing, hand sizes, priority without overlap; round 3: switching a fit on keeps a hand layout; betaNEXT), on `main` after beta191. Next: the new collection |
+| Working branch | `feat/streamdeck-works-with` (Stream Deck: every key says what it works with, betaNEXT), on `main` after beta193. Next: the new collection |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
-## Scene Fit: the gap from what shows of a letterboxed source (0.1.0-beta194)
+## Every Stream Deck key says what it works with (0.1.0-betaNEXT, plugin 0.32.0.0)
+
+Branch `feat/streamdeck-works-with`, on `main` after beta193. Notes:
+`docs/releases/0.1.0-betaNEXT.md`. Stream Deck plugin only; no C++ changed. The owner
+(2026-11-18): "I want the stream deck keys to show the filter or feature they work with somewhere
+outside its [list]. somewhere in the configuration area at the top for all keys."
+
+- **The row**: *Works with*, first on all 36 pages (the two hidden older keys too), written by
+  `make-plugin-files.py` (`works_row`, `WORKS_SCRIPT`) from one table, `streamdeck/src/works-with.ts`
+  (`WORKS_WITH`); see AGENTS, *Every key's page starts with Works with*. Line one: the filter's kind
+  exactly as OBS names it, or the feature. Line two: what the key is set to, answered by the plugin
+  (`getWorksWith` in `answerLists`, `worksWithNow`), with the chosen filter's own kind on line one
+  and "(not found in OBS)" while OBS can be asked.
+- **The beta189 line under the list is gone**: it said the kind a second time, now on line one; the
+  list keeps its tooltip. `SCENE_NAMES` and `obs_name` in the generator are gone too (the kinds come
+  from `shownName` through the table).
+- **Every action passes its UUID** to `answerLists` (a fourth argument) so the answer is the key's own.
+- VERSION 0.32.0.0 (0.31.0.0 is taken by an unreleased branch).
+- **Tests**: `streamdeck/tests/works-with.test.ts` (7) and one more in `tests/obs.test.ts`; the
+  whole Stream Deck suite 89 of 89, `tsc --noEmit` clean, `streamdeck validate` successful (offline:
+  Elgato's remote schemas could not be loaded). No C++ build or OBS test was needed.
+- **Not proven**: a real Stream Deck. The page script was checked against sdpi-components 4.0.1's
+  own script (`window.SDPIComponents.streamDeckClient`, `send`, `sendToPropertyInspector.subscribe`,
+  the `valuechange` event) and run in a `vm` with a stand-in client, not in Stream Deck's browser.
+  How the two lines wrap in the 241 px content column is not seen: Manual Window / Source's first
+  line names three kinds until one is chosen with OBS connected.
+
+## Window switcher: Game area only (0.1.0-beta193)
 
 Branch `fix/scene-fit-visible-pixels`, rebased on `main` after beta191. Notes:
 `docs/releases/0.1.0-beta194.md`. The owner (2026-11-18, Component-Capture-Scene, a Scene Fit on

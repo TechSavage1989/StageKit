@@ -1832,9 +1832,39 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   Mode key's *Scene and filter* entries (`modeFilterItems`, beta181's filter list; the mode is
   chosen under it) are "<scene> — <filter>" always. Values are unchanged, so saved keys
   keep working. The list is called *Source and filter* / *Scene and filter* (*Capture and filter*,
-  *Switcher filter*), and `target_list` in `make-plugin-files.py` gives it a tooltip and a line
-  under it naming the kind as OBS lists it ("Works the filter named after the dash, a “Source Filter:
-  Show in Scenes (StageKit)”", by `obs_name`: Scene Filter or Source Filter as beta182 names them). A new key that picks a filter uses `target_list`.
+  *Switcher filter*), and `target_list` in `make-plugin-files.py` gives it a tooltip naming the
+  kind as OBS lists it (Scene Filter or Source Filter as beta182 names them, now from the table
+  below). The line under it that said the kind again (beta189) is gone: the page's first row says
+  it (next entry). A new key that picks a filter uses `target_list`.
+- **Every key's page starts with *Works with*** (betaNEXT, plugin 0.32.0.0; the owner, 2026-11-18:
+  "I want the stream deck keys to show the filter or feature they work with somewhere outside its
+  [list]. somewhere in the configuration area at the top for all keys"). One table,
+  `streamdeck/src/works-with.ts` (`WORKS_WITH`, every action in the manifest by the last part of
+  its UUID: the feature keys from `features.json`, the rest in `OTHERS`): the kinds of filter a key
+  works (`kinds`, said by `shownName`, exactly as OBS's Filters window names them), or the feature
+  for a key that works none (`feature`: *OBS scenes*, *OBS streaming*, *StageKit dock: Arrange
+  tools* ...), a fixed second line (`note`), what the key is set to (`chosen`: `target`,
+  `capture`, `scene`, `modeFilter`, `sceneBlur`) and a tooltip. Each entry was read off what the
+  key's action really sends; keep it so when a key changes what it drives. `make-plugin-files.py`
+  writes the row first on every page (`works_row`, through node as the type lists: a key missing
+  from the table stops the build) as an `sdpi-item` *Works with* holding two plain lines
+  (`#worksWith`, `.works-kind`, `.works-chosen`, light text, no control), and one script
+  (`WORKS_SCRIPT`, the same on every page) that asks the plugin `getWorksWith` through
+  sdpi-components' own client (`SDPIComponents.streamDeckClient.send("sendToPlugin", ...)`, the
+  answer on `sendToPropertyInspector`, the very messages a list's datasource uses; checked against
+  sdpi-components 4.0.1's script) when the page opens and 200 ms after a list it follows changes
+  (`data-follow`, `FOLLOWS`). Every action passes its UUID to `answerLists`, which answers with
+  `worksWithNow` (`src/actions/shared.ts`): the second line from the key's settings alone
+  (`chosenLine`: "Square Camera — Show in Scenes-Camera", or `NOT_CHOSEN`), then, while OBS can
+  be asked (`foundInObs`), the chosen filter's own kind on the first line (so Manual Window /
+  Source and the older keys say which of their kinds it is), what a capture is ("Game (Game
+  Capture)") and "(not found in OBS)" for a filter, Scene Modes, Scene Blur, capture or scene OBS
+  does not have. With OBS closed: the kind and the saved choice; with no answer at all, the row as
+  written. A new key gets an entry in the table, or the generator and `tests/works-with.test.ts`
+  fail. Tested there (the row first and alone on every page, its text the table's, no control in
+  it, the kinds among `data/locale/en-US.ini`'s `*.Name` values, every case of `worksWithRow`, the
+  page script run in a `vm` with a stand-in client) and in `tests/obs.test.ts` against the
+  stand-in server. Not seen on a Stream Deck.
 - **Auto Capture can show the capture's Standby Picture** (`no_game_standby`, *No game: Standby
   Picture*, off as it comes; `hide_standby`, *Hide shows Standby Picture*, on; hotkey
   `stagekit.active.hide.` + filter name, the window switchers' beginning, so the Stream Deck
@@ -2054,8 +2084,9 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   - **The page: a mode, then its settings** (2026-11-18; the owner: "the scene modes key is very
     long in the configuration when the different modes are stacked. allow the mode to configure
     to be selected from another selector under the scene modes selector, and have it's
-    configurations configurable"). In order: *Scene Modes*; *Mode settings* (`modeFor`, the
-    filter's modes; *Settings for* up to beta179) and right under it that mode's *Use in Next*
+    configurations configurable"). In order: *Works with* (as on every page); *Scene Modes*;
+    *Mode settings* (`modeFor`, the filter's modes; *Settings for* up to beta179) and right
+    under it that mode's *Use in Next*
     (`modeUse`), *Layout* (`modeLayout`) and *Image* (`modeType`); then an open *Key* fold-out
     with *On press*, *Switch to mode* (`mode`; *Mode* before), *Long press*, *Long press mode*,
     *Hold time* and *Palette*. The key-wide *Layout* (`layout`) and *Mode type* (`sourceType`)

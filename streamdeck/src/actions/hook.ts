@@ -55,7 +55,7 @@ export class Hook extends SingletonAction<KeySettings> {
 	}
 
 	override onSendToPlugin(ev: SendToPluginEvent<JsonValue, KeySettings>): Promise<void> {
-		return ev.action.getSettings().then((settings) => answerLists(ev.payload, settings, () => false));
+		return ev.action.getSettings().then((settings) => answerLists(ev.payload, settings, () => false, this.manifestId));
 	}
 
 	/** A game or a window, by the kind of capture the key is for. */
