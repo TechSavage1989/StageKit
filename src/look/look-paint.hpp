@@ -63,6 +63,28 @@ ShadowLook lerp_look(const ShadowLook *a, const ShadowLook *b, double t);
 // the transition in the item's place, and only drawing it ends it.
 bool item_transition_running(obs_sceneitem_t *item, bool show);
 
+// How far a source's shadow, glow or outline can reach past it, in canvas
+// pixels (generously: the softened edge, the offset and the line).
+double shadow_reach(const ShadowLook &look);
+
+// A source's place on the canvas, for shadow_layers.
+struct LayerBox {
+	bool present = false; // in the stack: drawn and not background
+	double x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+};
+
+// Each source by itself: the sources (bottom first) in runs whose shadows
+// cannot reach each other, so each run can be drawn as one layer: a source
+// starts a new run where its box, grown by `reach`, meets the grown box of
+// one already in the run. The first index of each run; at most `most` runs
+// (the last takes the rest). Empty when no source is present.
+std::vector<size_t> shadow_layers(const std::vector<LayerBox> &boxes, double reach, size_t most);
+
+// Where an item is drawn on its scene's canvas now (its box under the draw
+// transform, crop left out), on the drawing thread. False when it draws
+// nothing (hidden with no transition running, no size).
+bool item_drawn_box(obs_sceneitem_t *item, LayerBox &out);
+
 struct ItemDraw;
 
 class LookPaint {
@@ -108,8 +130,18 @@ public:
 	// until the next call; false when nothing could be drawn.
 	// (`into`: a picture of the caller's instead, left as it is for
 	// draw_out.)
+	// (`scene_straight`: `scene` holds straight alpha, as compose's own
+	// pictures do, instead of OBS's premultiplied scene.)
 	bool compose(gs_texture_t *scene, gs_texture_t *cast, gs_texture_t *mask, const ShadowLook &look, uint32_t cx,
-		     uint32_t cy, gs_texrender_t *into = nullptr);
+		     uint32_t cy, gs_texrender_t *into = nullptr, bool scene_straight = false);
+	// Each source by itself: one shadow per layer of sources, from the
+	// bottom, each laid over the picture the one below it made. `casts[i]`
+	// is layer i's casting sources (nullptr: it casts nothing) and
+	// `masks[i]` every source of layer i and above, which its shadow is kept
+	// off. Where to (`into`) and false as compose.
+	bool compose_layers(gs_texture_t *scene, const std::vector<gs_texture_t *> &casts,
+			    const std::vector<gs_texture_t *> &masks, const ShadowLook &look, uint32_t cx, uint32_t cy,
+			    gs_texrender_t *into = nullptr);
 	// What `compose` made, onto what is being drawn, following OBS's
 	// linear-light setting.
 	void draw_out(uint32_t cx, uint32_t cy);
@@ -131,8 +163,10 @@ private:
 	gs_eparam_t *p_boost_ = nullptr;
 	gs_eparam_t *p_outline_width_ = nullptr;
 	gs_eparam_t *p_outline_color_ = nullptr;
+	gs_eparam_t *p_straight_ = nullptr;
 	std::unique_ptr<KawaseBlur> blur_;
 	gs_texrender_t *out_ = nullptr;
+	gs_texrender_t *between_[2] = {nullptr, nullptr}; // compose_layers' pictures on the way
 	std::vector<gs_texrender_t *> spares_;
 	size_t spare_ = 0;
 };

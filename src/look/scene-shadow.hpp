@@ -14,6 +14,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include <obs.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <unordered_map>
 
@@ -32,10 +33,17 @@ using ShadowFlags = std::unordered_map<int64_t, uint8_t>;
 
 // A scene's shadow as it is now: the look (faded by its switch) and what
 // each item does. A copy, for Morph to draw a change of scene with.
+// (`each`: *Shadow from* is *Each source by itself*: each casting source
+// throws its own shadow onto what lies under it, others included.)
 struct SceneShadowNow {
 	ShadowLook look;
 	ShadowFlags flags;
+	bool each = false;
 };
+
+// The most layers *Each source by itself* draws a scene in; past that the
+// topmost layer takes the rest, which then share one shape.
+inline constexpr size_t kShadowMostLayers = 12;
 
 // False when the scene has no Scene Shadow drawing now (none, switched off,
 // or standing aside).

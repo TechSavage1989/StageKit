@@ -44,6 +44,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/timing.hpp"
 #include "../look/scene-shadow.hpp"
 #include "../placement/fit-item.hpp"
+#include "../placement/scene-corners.hpp"
 #include "../placement/place-item.hpp"
 #include "../placement/scene-tools.hpp"
 #include "../placement/show-in-scenes.hpp"
@@ -61,7 +62,9 @@ the Free Software Foundation; either version 2 of the License, or
 #include <array>
 #include <atomic>
 #include <cmath>
+#include <cstdint>
 #include <cstring>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <unordered_map>
@@ -104,8 +107,11 @@ bool draws_nothing(obs_source_t *filter)
 	if (!(obs_source_get_output_flags(filter) & OBS_SOURCE_VIDEO))
 		return true;
 	const char *id = obs_source_get_unversioned_id(filter);
+	// Scene Corners draws only when it shapes the whole scene.
+	if (id && std::strcmp(id, kSceneCornersId) == 0)
+		return !scene_corners_draws(filter);
 	// The scene filters that draw nothing (scene-filter-ids.hpp).
-	for (const char *known : {kSceneModesId, kSceneTransitionsId, kSceneFitId, kSceneStandbyId, kSceneCornersId})
+	for (const char *known : {kSceneModesId, kSceneTransitionsId, kSceneFitId, kSceneStandbyId})
 		if (id && std::strcmp(id, known) == 0)
 			return true;
 	for (const char *known :
@@ -253,6 +259,10 @@ private:
 	void draw_morph(double t, uint32_t cx, uint32_t cy);
 	void draw_part(const Shown &shown, const Quad &quad, const Crop &crop, float strength);
 	void draw_shadowed(double t, uint32_t cx, uint32_t cy, const SceneShadowNow *from, const SceneShadowNow *to);
+	bool draw_layers(double t, uint32_t cx, uint32_t cy, gs_texture_t *picture, const ShadowLook &shade);
+	bool in_layer(const Part &part) const;
+	bool draw_rounded(double t, uint32_t cx, uint32_t cy, const CornerShape *from, const CornerShape *to,
+			  const std::function<void()> &inner);
 	uint8_t flags_of(obs_sceneitem_t *item, bool old_side) const;
 	double weight(const Part &part, double t) const;
 	void draw_run(const std::vector<const Part *> &run, double t, uint32_t cx, uint32_t cy);
@@ -316,6 +326,15 @@ private:
 	gs_texrender_t *tr_pic_ = nullptr;
 	gs_texrender_t *tr_cast_ = nullptr;
 	gs_texrender_t *tr_mask_ = nullptr;
+	// *Shadow from: Each source by itself*: the casting parts and the mask
+	// a layer at a time (the parts from layer_lo_ up to layer_hi_).
+	size_t layer_lo_ = 0, layer_hi_ = SIZE_MAX;
+	std::vector<gs_texrender_t *> tr_layer_cast_, tr_layer_mask_;
+	obs_source_t *told_mixed_ = nullptr; // the scene last logged for two ways of shadowing
+	// A Scene Corners shaping a whole scene: the morph drawn into a picture
+	// and cut to the shape, part-way between the two scenes'.
+	std::unique_ptr<CornersPaint> round_;
+	gs_texrender_t *tr_round_ = nullptr;
 };
 
 Morph::Morph(obs_data_t *settings, obs_source_t *source, bool room) : source_(source), room_(room)
@@ -342,8 +361,13 @@ Morph::~Morph()
 	gs_texrender_destroy(tr_pic_);
 	gs_texrender_destroy(tr_cast_);
 	gs_texrender_destroy(tr_mask_);
+	gs_texrender_destroy(tr_round_);
+	for (auto *list : {&tr_layer_cast_, &tr_layer_mask_})
+		for (gs_texrender_t *tr : *list)
+			gs_texrender_destroy(tr);
 	obs_leave_graphics();
 	look_.reset();
+	round_.reset();
 }
 
 void Morph::update(obs_data_t *settings)
@@ -554,7 +578,7 @@ void Morph::draw_side_items(const std::vector<const Part *> &run, bool leaving, 
 	for (const Part *part : run) {
 		Shown shown;
 		obs_sceneitem_t *item = leaving ? part->from : part->to;
-		if (!item || (pass_ != Pass::Picture && !(flags_of(item, leaving) & wanted)))
+		if (!item || (pass_ != Pass::Picture && (!(flags_of(item, leaving) & wanted) || !in_layer(*part))))
 			continue;
 		if (!look(item, shown))
 			continue;
@@ -760,6 +784,8 @@ double Morph::weight(const Part &part, double t) const
 {
 	if (pass_ == Pass::Picture)
 		return 1.0;
+	if (!in_layer(part))
+		return 0.0;
 	const uint8_t wanted = pass_ == Pass::Cast ? kShadowCasts : kShadowMasked;
 	const double from = part.from && (flags_of(part.from, true) & wanted) ? 1.0 : 0.0;
 	const double to = part.to && (flags_of(part.to, false) & wanted) ? 1.0 : 0.0;
@@ -803,6 +829,18 @@ void Morph::draw_shadowed(double t, uint32_t cx, uint32_t cy, const SceneShadowN
 		return gs_texrender_get_texture(tr);
 	};
 	gs_texture_t *picture = look.any() && look_->ready() ? into(tr_pic_, Pass::Picture) : nullptr;
+	if (picture && ((from && from->each) || (to && to->each))) {
+		pass_ = Pass::Picture;
+		if (!draw_layers(t, cx, cy, picture, look)) {
+			draw_morph(t, cx, cy);
+			return;
+		}
+		gs_blend_state_push();
+		gs_blend_function_separate(GS_BLEND_SRCALPHA, GS_BLEND_INVSRCALPHA, GS_BLEND_ONE, GS_BLEND_INVSRCALPHA);
+		look_->draw_out(cx, cy);
+		gs_blend_state_pop();
+		return;
+	}
 	gs_texture_t *cast = picture ? into(tr_cast_, Pass::Cast) : nullptr;
 	gs_texture_t *mask = cast && needs_mask ? into(tr_mask_, Pass::Mask) : nullptr;
 	pass_ = Pass::Picture;
@@ -814,6 +852,130 @@ void Morph::draw_shadowed(double t, uint32_t cx, uint32_t cy, const SceneShadowN
 	gs_blend_function_separate(GS_BLEND_SRCALPHA, GS_BLEND_INVSRCALPHA, GS_BLEND_ONE, GS_BLEND_INVSRCALPHA);
 	look_->draw_out(cx, cy);
 	gs_blend_state_pop();
+}
+
+// Whether a part counts in the layer being drawn (every part outside the
+// layered passes).
+bool Morph::in_layer(const Part &part) const
+{
+	const size_t at = (size_t)(&part - parts_.data());
+	return at >= layer_lo_ && at < layer_hi_;
+}
+
+// The morph's shadow with *Each source by itself*: the parts, from the back,
+// in layers whose shadows cannot reach one another (each part's place in
+// both scenes counted, so it holds all the way), and each layer's shadow laid
+// over the picture so far, kept off that layer and every one above it, as
+// the Scene Shadow does it. Into look_'s picture; false when nothing could be
+// drawn.
+bool Morph::draw_layers(double t, uint32_t cx, uint32_t cy, gs_texture_t *picture, const ShadowLook &shade)
+{
+	std::vector<LayerBox> boxes(parts_.size());
+	for (size_t i = 0; i < parts_.size(); i++) {
+		const Part &part = parts_[i];
+		const bool stacked = (part.from && (flags_of(part.from, true) & kShadowMasked)) ||
+				     (part.to && (flags_of(part.to, false) & kShadowMasked));
+		if (!stacked)
+			continue;
+		LayerBox &b = boxes[i];
+		for (int side = 0; side < 2; side++) {
+			obs_sceneitem_t *item = side ? part.to : part.from;
+			Shown shown;
+			if (!item || !look(item, shown))
+				continue;
+			const Bounds q = bounds_of(shown.quad);
+			b.x0 = b.present ? std::min(b.x0, q.x0) : q.x0;
+			b.y0 = b.present ? std::min(b.y0, q.y0) : q.y0;
+			b.x1 = b.present ? std::max(b.x1, q.x1) : q.x1;
+			b.y1 = b.present ? std::max(b.y1, q.y1) : q.y1;
+			b.present = true;
+		}
+	}
+	// (A curve that overshoots carries a part a little past its two places.)
+	const double reach = shadow_reach(shade) + 0.05 * std::max(cx, cy);
+	const std::vector<size_t> starts = shadow_layers(boxes, reach, kShadowMostLayers);
+	const size_t n = starts.size();
+	if (!n)
+		return false;
+	while (tr_layer_cast_.size() < n) {
+		tr_layer_cast_.push_back(gs_texrender_create(GS_RGBA, GS_ZS_NONE));
+		tr_layer_mask_.push_back(gs_texrender_create(GS_RGBA, GS_ZS_NONE));
+	}
+	auto end_of = [&](size_t l) {
+		return l + 1 < n ? starts[l + 1] : parts_.size();
+	};
+	// One pass of the morph into a canvas picture, for the layer set now,
+	// over a copy of `under` if there is one.
+	auto into = [&](gs_texrender_t *tr, Pass pass, gs_texture_t *under) -> gs_texture_t * {
+		pass_ = pass;
+		gs_texrender_reset(tr);
+		if (!gs_texrender_begin_with_color_space(tr, cx, cy, GS_CS_SRGB))
+			return nullptr;
+		vec4 clear;
+		vec4_zero(&clear);
+		gs_clear(GS_CLEAR_COLOR, &clear, 0.0f, 0);
+		gs_ortho(0.0f, (float)cx, 0.0f, (float)cy, -100.0f, 100.0f);
+		if (under)
+			look_->copy_onto(under, cx, cy);
+		draw_morph(t, cx, cy);
+		gs_texrender_end(tr);
+		return gs_texrender_get_texture(tr);
+	};
+	std::vector<gs_texture_t *> casts(n, nullptr), masks(n, nullptr);
+	for (size_t l = 0; l < n; l++) {
+		bool casts_any = false;
+		for (size_t i = starts[l]; i < end_of(l); i++) {
+			const Part &part = parts_[i];
+			casts_any = casts_any || (part.from && (flags_of(part.from, true) & kShadowCasts)) ||
+				    (part.to && (flags_of(part.to, false) & kShadowCasts));
+		}
+		if (!casts_any)
+			continue;
+		layer_lo_ = starts[l];
+		layer_hi_ = end_of(l);
+		casts[l] = into(tr_layer_cast_[l], Pass::Cast, nullptr);
+	}
+	for (size_t k = n; k-- > 0;) {
+		layer_lo_ = starts[k];
+		layer_hi_ = end_of(k);
+		masks[k] = into(tr_layer_mask_[k], Pass::Mask, k + 1 < n ? masks[k + 1] : nullptr);
+	}
+	layer_lo_ = 0;
+	layer_hi_ = SIZE_MAX;
+	pass_ = Pass::Picture;
+	return look_->compose_layers(picture, casts, masks, shade, cx, cy);
+}
+
+// A Scene Corners on either scene shaping the whole scene: the change drawn
+// (by `inner`) into a picture of the screen and cut to the shape part-way
+// between the two scenes' (a scene with none counts as one with no
+// corners). False when that could not be done; nothing is drawn then.
+bool Morph::draw_rounded(double t, uint32_t cx, uint32_t cy, const CornerShape *from, const CornerShape *to,
+			 const std::function<void()> &inner)
+{
+	if (!round_) {
+		round_ = std::make_unique<CornersPaint>();
+		tr_round_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
+	}
+	if (!round_->ready())
+		return false;
+	gs_texrender_reset(tr_round_);
+	if (!gs_texrender_begin_with_color_space(tr_round_, cx, cy, GS_CS_SRGB))
+		return false;
+	vec4 clear;
+	vec4_zero(&clear);
+	gs_clear(GS_CLEAR_COLOR, &clear, 0.0f, 0);
+	gs_ortho(0.0f, (float)cx, 0.0f, (float)cy, -100.0f, 100.0f);
+	inner();
+	gs_texrender_end(tr_round_);
+	const CornerShape shape = lerp_corner_shape(from, to, t);
+	if (!round_->shape(gs_texrender_get_texture(tr_round_), cx, cy, 0.0, 0.0, cx, cy, 1.0, 1.0, shape))
+		return false;
+	gs_blend_state_push();
+	gs_blend_function_separate(GS_BLEND_SRCALPHA, GS_BLEND_INVSRCALPHA, GS_BLEND_ONE, GS_BLEND_INVSRCALPHA);
+	round_->draw_out(cx, cy);
+	gs_blend_state_pop();
+	return true;
 }
 
 // Two scenes that cannot be drawn item by item: a plain cross-fade.
@@ -1050,11 +1212,32 @@ void Morph::render()
 		SceneShadowNow shadow_from, shadow_to;
 		const bool from_shadowed = scene_shadow_now(from, shadow_from);
 		const bool to_shadowed = scene_shadow_now(to, shadow_to);
-		if (from_shadowed || to_shadowed)
-			draw_shadowed(eased, cx, cy, from_shadowed ? &shadow_from : nullptr,
-				      to_shadowed ? &shadow_to : nullptr);
-		else
-			draw_morph(eased, cx, cy);
+		CornerShape round_from, round_to;
+		const bool from_round = scene_corners_now(from, round_from);
+		const bool to_round = scene_corners_now(to, round_to);
+		auto inner = [&] {
+			if (from_shadowed || to_shadowed)
+				draw_shadowed(eased, cx, cy, from_shadowed ? &shadow_from : nullptr,
+					      to_shadowed ? &shadow_to : nullptr);
+			else
+				draw_morph(eased, cx, cy);
+		};
+		if (from_shadowed && to_shadowed && shadow_from.each != shadow_to.each && shadow_from.look.any() &&
+		    shadow_to.look.any()) {
+			// The two scenes shadow two different ways: either way all along
+			// would jump at one end, so the two scenes are cross-faded, each
+			// with its own shadow.
+			if (to != told_mixed_) {
+				told_mixed_ = to;
+				obs_log(LOG_INFO,
+					"Morph: '%s' and '%s' have Scene Shadows with a different Shadow from; this change of scene is a cross-fade",
+					obs_source_get_name(from), obs_source_get_name(to));
+			}
+			obs_transition_video_render(source_, mix_cb);
+		} else if (!(from_round || to_round) || !draw_rounded(eased, cx, cy, from_round ? &round_from : nullptr,
+								      to_round ? &round_to : nullptr, inner)) {
+			inner();
+		}
 	} else if (between_scenes) {
 		// A scene with a filter that draws cannot be taken apart: said once
 		// in the log, so that a plain fade where a morph was expected can

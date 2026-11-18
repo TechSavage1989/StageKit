@@ -3689,6 +3689,561 @@ static void make_room_test(uint32_t w, uint32_t h, const std::string &out)
 		obs_source_release(src);
 }
 
+// ==== scene-filters:shadow ====
+// The owner, asked whether Scene Shadow should also draw each source's shadow
+// by itself and Scene Corners also shape a whole scene: "yes to both". Scene
+// Shadow's "Shadow from: Each source by itself" against two per-source
+// Shadow, Glow & Outline filters, and carried by Morph.
+static void scene_shadow_each_test(uint32_t w, uint32_t h, const std::string &out)
+{
+	printf("\n[scene shadow: each source by itself]\n");
+	const std::string dir = out + "/../scene-shadow";
+	if (std::system(("mkdir -p '" + dir + "'").c_str()) != 0)
+		printf("  (could not make %s)\n", dir.c_str());
+	auto block = [](const char *name, long long abgr, int bw, int bh) {
+		obs_data_t *d = obs_data_create();
+		obs_data_set_int(d, "color", abgr);
+		obs_data_set_int(d, "width", bw);
+		obs_data_set_int(d, "height", bh);
+		obs_source_t *src = obs_source_create("color_source", name, d, nullptr);
+		obs_data_release(d);
+		return src;
+	};
+	auto put = [](obs_scene_t *scene, obs_source_t *src, float x, float y) {
+		obs_sceneitem_t *item = obs_scene_add(scene, src);
+		vec2 p;
+		vec2_set(&p, x, y);
+		obs_sceneitem_set_pos(item, &p);
+		return item;
+	};
+	auto px = [&](const std::vector<uint8_t> &f, int x, int y, int c) {
+		return (int)f[(size_t(y) * w + x) * 4 + c];
+	};
+	auto most = [&](const std::vector<uint8_t> &a, const std::vector<uint8_t> &b, int x0, int y0, int x1, int y1) {
+		int m = 0;
+		for (int y = y0; y < y1; y++)
+			for (int x = x0; x < x1; x++)
+				for (int c = 0; c < 3; c++)
+					m = std::max(m, std::abs(px(a, x, y, c) - px(b, x, y, c)));
+		return m;
+	};
+	auto mean_in = [&](const std::vector<uint8_t> &a, const std::vector<uint8_t> &b, int x0, int y0, int x1,
+			   int y1) {
+		double sum = 0.0;
+		int n = 0;
+		for (int y = y0; y < y1; y++)
+			for (int x = x0; x < x1; x++)
+				for (int c = 0; c < 3; c++, n++)
+					sum += std::abs(px(a, x, y, c) - px(b, x, y, c));
+		return n ? sum / n : 0.0;
+	};
+	auto shot = [&](obs_source_t *src) {
+		sleep_ms(350);
+		render(src, w, h);
+		return render(src, w, h);
+	};
+	auto set = [](obs_source_t *f, const std::function<void(obs_data_t *)> &change) {
+		obs_data_t *s = obs_source_get_settings(f);
+		change(s);
+		obs_source_update(f, s);
+		obs_data_release(s);
+	};
+	auto layers = [](obs_source_t *f) {
+		calldata_t cd;
+		calldata_init(&cd);
+		proc_handler_call(obs_source_get_proc_handler(f), "layers", &cd);
+		const long long n = calldata_int(&cd, "count");
+		calldata_free(&cd);
+		return n;
+	};
+	// A grey background, a white lower source (100..300 by 80..230) and a
+	// red upper source over its top-left corner (60..180 by 40..140). The
+	// shadow goes 12 px right and down: the red source's falls on the white
+	// one just right of it and below it, the white one's lies partly under
+	// the red one.
+	obs_source_t *bg = block("SE Back", 0xFF808080, 640, 360);
+	obs_source_t *low = block("SE Lower", 0xFFFFFFFF, 200, 150);
+	obs_source_t *up = block("SE Upper", 0xFF2020E0, 120, 100);
+	obs_source_t *low_r = block("SE Lower Ref", 0xFFFFFFFF, 200, 150);
+	obs_source_t *up_r = block("SE Upper Ref", 0xFF2020E0, 120, 100);
+	obs_scene_t *plain = obs_scene_create("SE Plain");
+	obs_scene_t *as_drawn = obs_scene_create("SE As Drawn");
+	obs_scene_t *each = obs_scene_create("SE Each");
+	obs_scene_t *ref = obs_scene_create("SE Per Source");
+	for (obs_scene_t *scene : {plain, as_drawn, each}) {
+		put(scene, bg, 0, 0);
+		put(scene, low, 100, 80);
+		put(scene, up, 60, 40);
+	}
+	put(ref, bg, 0, 0);
+	put(ref, low_r, 100, 80);
+	put(ref, up_r, 60, 40);
+	for (obs_source_t *src : {low_r, up_r}) {
+		// (A new filter: the room it takes has not been given yet.)
+		obs_data_t *pd = obs_data_create();
+		obs_data_set_int(pd, "adjusted_left", 0);
+		obs_source_t *per = obs_source_create("stagekit_shadow_backdrop", "SE Own Shadow", pd, nullptr);
+		obs_data_release(pd);
+		obs_source_filter_add(src, per);
+		obs_source_release(per);
+	}
+	// (Each its own settings: a source keeps the very settings it is made with.)
+	obs_data_t *zd = obs_data_create();
+	obs_data_set_int(zd, "ramp_ms", 0);
+	obs_source_t *shadow0 = obs_source_create("stagekit_scene_shadow", "SE Shadow As Drawn", zd, nullptr);
+	obs_data_release(zd);
+	obs_data_t *ed = obs_data_create();
+	obs_data_set_int(ed, "ramp_ms", 0);
+	obs_data_set_int(ed, "shadow_from", 1);
+	obs_source_t *shadow1 = obs_source_create("stagekit_scene_shadow", "SE Shadow Each", ed, nullptr);
+	obs_data_release(ed);
+	obs_source_filter_add(obs_scene_get_source(as_drawn), shadow0);
+	obs_source_filter_add(obs_scene_get_source(each), shadow1);
+	{
+		obs_data_t *fresh = obs_data_create();
+		obs_source_t *d = obs_source_create("stagekit_scene_shadow", "SE Defaults", fresh, nullptr);
+		obs_data_release(fresh);
+		obs_data_t *ds = obs_source_get_settings(d);
+		const long long from = obs_data_get_int(ds, "shadow_from");
+		obs_data_release(ds);
+		obs_properties_t *props = obs_source_properties(d);
+		obs_property_t *p = props ? obs_properties_get(props, "shadow_from") : nullptr;
+		const size_t count = p ? obs_property_list_item_count(p) : 0;
+		const std::string label = p && obs_property_description(p) ? obs_property_description(p) : "";
+		obs_properties_destroy(props);
+		obs_source_release(d);
+		CHECK(from == 0 && count == 2 && label.size() < 26,
+		      "'Shadow from' is offered with two choices, under 26 characters, and a new filter shadows the scene as drawn (%lld, %zu, '%s')",
+		      from, count, label.c_str());
+	}
+	const std::vector<uint8_t> f_plain = shot(obs_scene_get_source(plain));
+	const std::vector<uint8_t> f_drawn = shot(obs_scene_get_source(as_drawn));
+	const std::vector<uint8_t> f_each = shot(obs_scene_get_source(each));
+	const std::vector<uint8_t> f_ref = shot(obs_scene_get_source(ref));
+	write_frame(dir + "/5 shadow from the scene as drawn.rgba", f_drawn, w, h);
+	write_frame(dir + "/6 shadow from each source by itself.rgba", f_each, w, h);
+	// On the white source, right of the red one and in its shadow; and below it.
+	const int beside_plain = px(f_plain, 186, 110, 0), beside_drawn = px(f_drawn, 186, 110, 0);
+	const int beside_each = px(f_each, 186, 110, 0), beside_ref = px(f_ref, 186, 110, 0);
+	const int below_each = px(f_each, 120, 146, 0), below_drawn = px(f_drawn, 120, 146, 0);
+	CHECK(beside_drawn == beside_plain && below_drawn == px(f_plain, 120, 146, 0),
+	      "the scene as drawn: nothing falls on the lower source, as before (%d beside the upper one, %d plain)",
+	      beside_drawn, beside_plain);
+	CHECK(beside_each < beside_plain - 40 && below_each < px(f_plain, 120, 146, 0) - 40 &&
+		      std::abs(beside_each - beside_ref) <= 6,
+	      "each source by itself: the upper source's shadow darkens the lower source where it falls (%d beside it, %d below; %d with two Shadow, Glow & Outline filters)",
+	      beside_each, below_each, beside_ref);
+	CHECK(most(f_each, f_plain, 62, 42, 178, 138) <= 1 && most(f_drawn, f_plain, 62, 42, 178, 138) <= 1,
+	      "the lower source's shadow under the upper one is covered by it (off by %d)",
+	      most(f_each, f_plain, 62, 42, 178, 138));
+	const int against = most(f_each, f_ref, 40, 20, 360, 300);
+	const double against_mean = mean_in(f_each, f_ref, 40, 20, 360, 300);
+	CHECK(against <= 8 && against_mean < 0.5,
+	      "it looks as two Shadow, Glow & Outline filters with the same look would (at most %d off, %.3f on average)",
+	      against, against_mean);
+	CHECK(layers(shadow1) == 2 && layers(shadow0) == 1,
+	      "the two overlapping sources are drawn in two layers (%lld), the scene as drawn in one (%lld)",
+	      layers(shadow1), layers(shadow0));
+	CHECK(mean_abs_diff(render(obs_scene_get_source(each), w, h), render(obs_scene_get_source(each), w, h)) == 0.0,
+	      "drawn twice, it looks the same both times");
+	// Side by side, the two cost one layer and look as the scene as drawn.
+	{
+		obs_sceneitem_t *u_each = obs_scene_find_source(each, "SE Upper");
+		obs_sceneitem_t *u_drawn = obs_scene_find_source(as_drawn, "SE Upper");
+		vec2 p;
+		vec2_set(&p, 420.0f, 200.0f);
+		obs_sceneitem_set_pos(u_each, &p);
+		obs_sceneitem_set_pos(u_drawn, &p);
+		const std::vector<uint8_t> a = shot(obs_scene_get_source(each));
+		const std::vector<uint8_t> b = shot(obs_scene_get_source(as_drawn));
+		CHECK(layers(shadow1) == 1 && most(a, b, 0, 0, (int)w, (int)h) <= 1,
+		      "sources apart are one layer, and look as with the scene as drawn (%lld layers, off by %d)",
+		      layers(shadow1), most(a, b, 0, 0, (int)w, (int)h));
+		vec2_set(&p, 60.0f, 40.0f);
+		obs_sceneitem_set_pos(u_each, &p);
+		obs_sceneitem_set_pos(u_drawn, &p);
+	}
+	// The outline: each source's own, the upper one's on the lower source.
+	{
+		auto ring = [](obs_data_t *s) {
+			obs_data_set_bool(s, "shadow", false);
+			obs_data_set_bool(s, "outline", true);
+			obs_data_set_double(s, "outline_width", 6.0);
+			obs_data_set_int(s, "outline_color", 0xFF00C000); // green
+		};
+		set(shadow0, ring);
+		set(shadow1, ring);
+		const std::vector<uint8_t> r_drawn = shot(obs_scene_get_source(as_drawn));
+		const std::vector<uint8_t> r_each = shot(obs_scene_get_source(each));
+		write_frame(dir + "/7 outline from each source by itself.rgba", r_each, w, h);
+		CHECK(px(r_each, 183, 110, 1) > 150 && px(r_each, 183, 110, 0) < 60 && px(r_drawn, 183, 110, 0) > 240 &&
+			      px(r_each, 97, 180, 1) > 150 && px(r_drawn, 97, 180, 1) > 150,
+		      "the outline goes round each source, the upper one's over the lower source (green %d there; the scene as drawn keeps it off: red %d)",
+		      px(r_each, 183, 110, 1), px(r_drawn, 183, 110, 0));
+		for (obs_source_t *f : {shadow0, shadow1})
+			set(f, [](obs_data_t *s) {
+				obs_data_set_bool(s, "shadow", true);
+				obs_data_set_bool(s, "outline", false);
+			});
+	}
+	// With a Scene Blur blurring the lower source by itself: its shadow and
+	// the upper source's shadow on it are still there.
+	{
+		obs_data_t *sd = obs_data_create();
+		obs_data_set_int(sd, "ramp_in_ms", 0);
+		obs_data_set_int(sd, "ramp_out_ms", 0);
+		obs_data_set_int(sd, "cover", 2);
+		obs_data_array_t *list = obs_data_array_create();
+		obs_data_t *entry = obs_data_create();
+		obs_data_set_string(entry, "value", "SE Lower");
+		obs_data_array_push_back(list, entry);
+		obs_data_release(entry);
+		obs_data_set_array(sd, "chosen", list);
+		obs_data_array_release(list);
+		obs_data_set_int(sd, "blur_type", 3);
+		obs_data_set_double(sd, "strength", 20.0);
+		obs_data_set_int(sd, "blur_area", 1);
+		obs_source_t *blur = obs_source_create("stagekit_scene_blur", "SE Blur", sd, nullptr);
+		obs_data_release(sd);
+		obs_source_filter_add(obs_scene_get_source(each), blur);
+		sleep_ms(700); // (Scene Blur keeps itself after the shadow.)
+		const std::vector<uint8_t> b_each = shot(obs_scene_get_source(each));
+		CHECK(std::abs(px(b_each, 186, 110, 0) - beside_each) <= 8 &&
+			      std::abs(px(b_each, 260, 236, 0) - px(f_each, 260, 236, 0)) <= 8 &&
+			      px(b_each, 260, 236, 0) < px(f_plain, 260, 236, 0) - 15,
+		      "with a Scene Blur blurring the lower source by itself, the shadow on it and its own shadow stay (%d and %d; %d and %d without the blur)",
+		      px(b_each, 186, 110, 0), px(b_each, 260, 236, 0), beside_each, px(f_each, 260, 236, 0));
+		obs_source_filter_remove(obs_scene_get_source(each), blur);
+		obs_source_release(blur);
+	}
+	// Morph carries it: half-way between two scenes shadowed each source by
+	// itself, the upper source's shadow falls on the lower one; between
+	// the two ways of shadowing, the change is a cross-fade.
+	{
+		static bool crossfade_logged = false;
+		static log_handler_t prev_log = nullptr;
+		static void *prev_param = nullptr;
+		base_get_log_handler(&prev_log, &prev_param);
+		crossfade_logged = false;
+		base_set_log_handler(
+			[](int level, const char *format, va_list args, void *) {
+				char line[2048];
+				va_list copy;
+				va_copy(copy, args);
+				vsnprintf(line, sizeof(line), format, copy);
+				va_end(copy);
+				if (strstr(line, "cross-fade"))
+					crossfade_logged = true;
+				if (prev_log)
+					prev_log(level, format, args, prev_param);
+			},
+			nullptr);
+		obs_scene_t *moved = obs_scene_create("SE Each Moved");
+		put(moved, bg, 0, 0);
+		put(moved, low, 300, 140);
+		put(moved, up, 260, 100);
+		obs_data_t *zd2 = obs_data_create();
+		obs_data_set_int(zd2, "ramp_ms", 0);
+		obs_data_set_int(zd2, "shadow_from", 1);
+		obs_source_t *shadow2 = obs_source_create("stagekit_scene_shadow", "SE Shadow Moved", zd2, nullptr);
+		obs_data_release(zd2);
+		obs_source_filter_add(obs_scene_get_source(moved), shadow2);
+		obs_data_t *md = obs_data_create();
+		obs_data_set_int(md, "ease_curve", 0); // linear
+		obs_source_t *morph = obs_source_create_private("stagekit_morph", "SE Morph", md);
+		obs_data_release(md);
+		sleep_ms(400);
+		const std::vector<uint8_t> end_frame = shot(obs_scene_get_source(moved));
+		obs_transition_set(morph, obs_scene_get_source(each));
+		obs_transition_start(morph, OBS_TRANSITION_MODE_MANUAL, 0, obs_scene_get_source(moved));
+		obs_transition_set_manual_time(morph, 0.5f);
+		sleep_ms(150);
+		render(morph, w, h);
+		const std::vector<uint8_t> half = render(morph, w, h);
+		write_frame(dir + "/8 Morph half-way, each source by itself.rgba", half, w, h);
+		// Half-way the white source is at 200..400 by 110..260 and the red
+		// one at 160..280 by 70..170: beside it on the white, at 286, 140.
+		const int half_beside = px(half, 286, 140, 0);
+		CHECK(!crossfade_logged && px(half, 230, 120, 0) > 180 && px(half, 330, 230, 1) > 240 &&
+			      half_beside < 255 - 40 && std::abs(half_beside - beside_each) <= 8,
+		      "Morph morphs two scenes shadowed each source by itself, and half-way the upper source's shadow falls on the lower one (%d; %d in the scene; no cross-fade logged: %d)",
+		      half_beside, beside_each, (int)!crossfade_logged);
+		obs_transition_set_manual_time(morph, 1.0f);
+		sleep_ms(120);
+		render(morph, w, h);
+		const std::vector<uint8_t> done = render(morph, w, h);
+		CHECK(mean_abs_diff(done, end_frame) < 0.05, "and it ends on the new scene as it draws itself (%.3f)",
+		      mean_abs_diff(done, end_frame));
+		obs_transition_force_stop(morph);
+		obs_transition_clear(morph);
+		// The other way of shadowing on one side: a cross-fade, said in the log.
+		obs_transition_set(morph, obs_scene_get_source(as_drawn));
+		obs_transition_start(morph, OBS_TRANSITION_MODE_MANUAL, 0, obs_scene_get_source(moved));
+		obs_transition_set_manual_time(morph, 0.5f);
+		sleep_ms(150);
+		render(morph, w, h);
+		render(morph, w, h);
+		CHECK(crossfade_logged,
+		      "between a scene shadowed as drawn and one shadowed each source by itself the change is a cross-fade, and the log says so");
+		obs_transition_force_stop(morph);
+		obs_transition_clear(morph);
+		base_set_log_handler(prev_log, prev_param);
+		obs_source_release(morph);
+		obs_source_filter_remove(obs_scene_get_source(moved), shadow2);
+		obs_source_release(shadow2);
+		obs_scene_release(moved);
+	}
+	obs_source_filter_remove(obs_scene_get_source(as_drawn), shadow0);
+	obs_source_filter_remove(obs_scene_get_source(each), shadow1);
+	obs_source_release(shadow0);
+	obs_source_release(shadow1);
+	for (obs_scene_t *scene : {plain, as_drawn, each, ref})
+		obs_scene_release(scene);
+	for (obs_source_t *src : {bg, low, up, low_r, up_r})
+		obs_source_release(src);
+	// (OBS takes released sources apart on a thread of its own: done before
+	// the section ends, so obs_shutdown finds nothing of them.)
+	sleep_ms(500);
+}
+// ==== end scene-filters:shadow ====
+
+// ==== scene-filters:standby-corners ====
+// Scene Corners' "Corners on: The whole scene": the scene's own image cut at
+// the screen's edges as one shape, no filter on its sources, and a change of
+// scene still morphed with the shape carried along.
+static void scene_corners_whole_test(uint32_t w, uint32_t h, const std::string &out)
+{
+	printf("\n[scene corners: the whole scene]\n");
+	const std::string dir = out + "/../scene-corners";
+	if (std::system(("rm -rf '" + dir + "' && mkdir -p '" + dir + "'").c_str()) != 0)
+		printf("  (could not make %s)\n", dir.c_str());
+	auto block = [](const char *name, long long abgr, int bw, int bh) {
+		obs_data_t *d = obs_data_create();
+		obs_data_set_int(d, "color", abgr);
+		obs_data_set_int(d, "width", bw);
+		obs_data_set_int(d, "height", bh);
+		obs_source_t *src = obs_source_create("color_source", name, d, nullptr);
+		obs_data_release(d);
+		return src;
+	};
+	auto put = [](obs_scene_t *scene, obs_source_t *src, float x, float y) {
+		obs_sceneitem_t *item = obs_scene_add(scene, src);
+		vec2 p;
+		vec2_set(&p, x, y);
+		obs_sceneitem_set_pos(item, &p);
+		return item;
+	};
+	auto px = [&](const std::vector<uint8_t> &f, int x, int y, int c) {
+		return (int)f[(size_t(y) * w + x) * 4 + c];
+	};
+	auto filters_of = [](obs_source_t *src) {
+		int n = 0;
+		obs_source_enum_filters(
+			src,
+			[](obs_source_t *, obs_source_t *f, void *param) {
+				const char *id = obs_source_get_unversioned_id(f);
+				if (id && strcmp(id, "stagekit_corners") == 0)
+					++*static_cast<int *>(param);
+			},
+			&n);
+		return n;
+	};
+	auto wait_for = [](const std::function<bool()> &done, int ms) {
+		for (int waited = 0; waited < ms; waited += 50) {
+			if (done())
+				return true;
+			sleep_ms(50);
+		}
+		return done();
+	};
+	auto set = [](obs_source_t *f, const std::function<void(obs_data_t *)> &change) {
+		obs_data_t *s = obs_source_get_settings(f);
+		change(s);
+		obs_source_update(f, s);
+		obs_data_release(s);
+	};
+	auto shot = [&](obs_source_t *src) {
+		sleep_ms(250);
+		render(src, w, h);
+		return render(src, w, h);
+	};
+	obs_source_t *back = block("SW Back", 0xFF60A060, 640, 360); // green, the whole canvas
+	obs_source_t *panel = block("SW Panel", 0xFF0000FF, 200, 100);
+	obs_scene_t *scene = obs_scene_create("SW Scene");
+	obs_scene_t *plain = obs_scene_create("SW Plain");
+	for (obs_scene_t *s : {scene, plain}) {
+		put(s, back, 0, 0);
+		put(s, panel, 40, 40);
+	}
+	obs_source_t *scene_src = obs_scene_get_source(scene);
+	obs_source_t *before_out = obs_get_output_source(0);
+	obs_set_output_source(0, scene_src);
+	{
+		obs_data_t *fresh = obs_data_create();
+		obs_source_t *d = obs_source_create("stagekit_scene_corners", "SW Defaults", fresh, nullptr);
+		obs_data_release(fresh);
+		obs_data_t *ds = obs_source_get_settings(d);
+		const long long area = obs_data_get_int(ds, "corners_area");
+		obs_data_release(ds);
+		obs_properties_t *props = obs_source_properties(d);
+		obs_property_t *p = props ? obs_properties_get(props, "corners_area") : nullptr;
+		const std::string label = p && obs_property_description(p) ? obs_property_description(p) : "";
+		const bool which_shown = obs_property_visible(obs_properties_get(props, "which"));
+		// (The four corners' tick boxes, in a group of Corners & Edges' look:
+		// up to now refused for having the name of the list of sources.)
+		const bool four = obs_properties_get(props, "top_left") && obs_properties_get(props, "bottom_right");
+		obs_data_t *wd = obs_data_create();
+		obs_data_set_int(wd, "corners_area", 1);
+		obs_property_modified(p, wd);
+		obs_data_release(wd);
+		const bool which_hidden = !obs_property_visible(obs_properties_get(props, "which"));
+		obs_properties_destroy(props);
+		obs_source_release(d);
+		CHECK(area == 0 && p && label.size() < 26 && which_shown && which_hidden,
+		      "'Corners on' is offered (under 26 characters), each source as it comes, and the whole scene hides the list of sources covered ('%s', %lld)",
+		      label.c_str(), area);
+		CHECK(four, "Scene Corners' window offers the four corners' tick boxes");
+	}
+	obs_data_t *cd = obs_data_create();
+	obs_data_set_double(cd, "size", 40);
+	obs_data_set_int(cd, "which", 2); // All sources: the background too
+	obs_source_t *corners = obs_source_create("stagekit_scene_corners", "SW Scene Corners", cd, nullptr);
+	obs_data_release(cd);
+	obs_source_filter_add(scene_src, corners);
+	const bool added = wait_for([&] { return filters_of(back) == 1 && filters_of(panel) == 1; }, 3000);
+	CHECK(added, "each source: every source gets a Corners & Edges, as before (%d, %d)", filters_of(back),
+	      filters_of(panel));
+	const std::vector<uint8_t> f_each = shot(scene_src);
+	write_frame(dir + "/1 each source.rgba", f_each, w, h);
+	set(corners, [](obs_data_t *s) { obs_data_set_int(s, "corners_area", 1); });
+	const bool removed = wait_for([&] { return filters_of(back) == 0 && filters_of(panel) == 0; }, 6000);
+	CHECK(removed, "the whole scene: the filters it added go once the grace is over (%d, %d left)",
+	      filters_of(back), filters_of(panel));
+	const std::vector<uint8_t> f_whole = shot(scene_src);
+	// (The same sources with no filter now.)
+	const std::vector<uint8_t> f_plain = shot(obs_scene_get_source(plain));
+	write_frame(dir + "/2 the whole scene, rounded.rgba", f_whole, w, h);
+	// The panel's own corner (40, 40) is no longer rounded; the screen's are.
+	int inside = 0;
+	for (int y = 45; y < 315; y++)
+		for (int x = 45; x < 595; x++)
+			for (int c = 0; c < 4; c++)
+				inside = std::max(inside, std::abs(px(f_whole, x, y, c) - px(f_plain, x, y, c)));
+	CHECK(px(f_whole, 2, 2, 3) < 10 && px(f_whole, 637, 2, 3) < 10 && px(f_whole, 2, 357, 3) < 10 &&
+		      px(f_whole, 637, 357, 3) < 10 && px(f_whole, 320, 1, 3) > 245 && px(f_whole, 1, 180, 3) > 245,
+	      "the screen's four corners are cut away and its edges between them are kept (corner alpha %d, edge %d)",
+	      px(f_whole, 2, 2, 3), px(f_whole, 320, 1, 3));
+	CHECK(inside <= 1 && px(f_each, 41, 41, 0) < 128 && px(f_whole, 41, 41, 0) > 240,
+	      "inside, the scene is untouched: the panel's own corner is square again (off by %d; red %d at its corner, %d before)",
+	      inside, px(f_whole, 41, 41, 0), px(f_each, 41, 41, 0));
+	// Cut corners and a line, for the README's sheet.
+	set(corners, [](obs_data_t *s) {
+		obs_data_set_int(s, "style", 1);
+		obs_data_set_double(s, "border", 6.0);
+	});
+	const std::vector<uint8_t> f_cut = shot(scene_src);
+	CHECK(px(f_cut, 3, 3, 3) < 10 && px(f_cut, 3, 180, 0) > 240 && px(f_cut, 3, 180, 1) > 240,
+	      "cut corners and an outline go round the screen's edge (white %d on the left edge)",
+	      px(f_cut, 3, 180, 1));
+	write_frame(dir + "/3 the whole scene, cut, with a line.rgba", f_cut, w, h);
+	set(corners, [](obs_data_t *s) {
+		obs_data_unset_user_value(s, "style");
+		obs_data_unset_user_value(s, "border");
+	});
+	// Morph: a scene shaped as a whole is still morphed, with the shape
+	// carried; to a scene without it, the corners grow back half-way.
+	{
+		obs_scene_t *other = obs_scene_create("SW Other");
+		put(other, back, 0, 0);
+		put(other, panel, 400, 240);
+		obs_data_t *ms = obs_data_create();
+		obs_data_set_int(ms, "ease_curve", 0);
+		obs_source_t *morph = obs_source_create_private("stagekit_morph", "SW Morph", ms);
+		obs_data_release(ms);
+		sleep_ms(300);
+		obs_transition_set(morph, scene_src);
+		obs_transition_start(morph, OBS_TRANSITION_MODE_MANUAL, 0, obs_scene_get_source(other));
+		obs_transition_set_manual_time(morph, 0.5f);
+		sleep_ms(150);
+		render(morph, w, h);
+		const std::vector<uint8_t> half = render(morph, w, h);
+		write_frame(dir + "/4 Morph half-way to a scene without it.rgba", half, w, h);
+		// The panel half-way: 220..420 by 140..240.
+		CHECK(px(half, 320, 190, 0) > 240 && px(half, 140, 90, 0) < 120,
+		      "a scene shaped as a whole is still morphed item by item: the panel is half-way (red %d there)",
+		      px(half, 320, 190, 0));
+		// (8, 8) is cut by a corner of 40 px, not by one of 20.
+		CHECK(px(half, 2, 2, 3) < 10 && px(f_whole, 8, 8, 3) < 10 && px(half, 8, 8, 3) > 245 &&
+			      px(half, 320, 1, 3) > 245,
+		      "half-way to a scene without the shape, the screen's corners are half their size (alpha %d at 8, 8; %d in the scene)",
+		      px(half, 8, 8, 3), px(f_whole, 8, 8, 3));
+		obs_transition_force_stop(morph);
+		obs_transition_clear(morph);
+		obs_source_release(morph);
+		obs_scene_release(other);
+	}
+	// With a Scene Shadow added after it: it moves itself after the shadow,
+	// and both draw.
+	{
+		obs_data_t *hd = obs_data_create();
+		obs_data_set_int(hd, "ramp_ms", 0);
+		obs_source_t *shadow = obs_source_create("stagekit_scene_shadow", "SW Shadow", hd, nullptr);
+		obs_data_release(hd);
+		obs_source_filter_add(scene_src, shadow);
+		const bool after = wait_for(
+			[&] {
+				int at_corners = -1, at_shadow = -1, i = 0;
+				struct Find {
+					obs_source_t *corners, *shadow;
+					int *a, *b, *i;
+				} find{corners, shadow, &at_corners, &at_shadow, &i};
+				obs_source_enum_filters(
+					scene_src,
+					[](obs_source_t *, obs_source_t *f, void *param) {
+						auto *x = static_cast<Find *>(param);
+						if (f == x->corners)
+							*x->a = *x->i;
+						if (f == x->shadow)
+							*x->b = *x->i;
+						++*x->i;
+					},
+					&find);
+				return at_corners >= 0 && at_shadow >= 0 && at_corners > at_shadow;
+			},
+			2000);
+		const std::vector<uint8_t> both = shot(scene_src);
+		CHECK(after && px(both, 2, 2, 3) < 10 && px(both, 246, 100, 1) < px(f_whole, 246, 100, 1) - 15,
+		      "added after a Scene Shadow is, it moves itself after the shadow and both draw (moved %d; shadow %d beside the panel, %d without)",
+		      (int)after, px(both, 246, 100, 1), px(f_whole, 246, 100, 1));
+		// (Taken off the output first: the test's thread would take the
+		// filter apart while OBS's drawing thread draws the scene through it.)
+		obs_set_output_source(0, nullptr);
+		sleep_ms(100);
+		obs_source_filter_remove(scene_src, shadow);
+		obs_source_release(shadow);
+		obs_set_output_source(0, scene_src);
+	}
+	// Back to each source: the filters come back.
+	set(corners, [](obs_data_t *s) { obs_data_set_int(s, "corners_area", 0); });
+	const bool back_again = wait_for([&] { return filters_of(back) == 1 && filters_of(panel) == 1; }, 3000);
+	const std::vector<uint8_t> f_again = shot(scene_src);
+	CHECK(back_again && px(f_again, 2, 180, 3) > 245 && px(f_again, 41, 41, 0) < 128,
+	      "back to each source, every source gets its filter again and the scene is not cut as a whole (%d, %d)",
+	      filters_of(back), filters_of(panel));
+	obs_set_output_source(0, before_out);
+	obs_source_release(before_out);
+	obs_source_filter_remove(scene_src, corners);
+	obs_source_release(corners);
+	obs_scene_release(scene);
+	obs_scene_release(plain);
+	obs_source_release(back);
+	obs_source_release(panel);
+	// (OBS takes released sources apart on a thread of its own: done before
+	// the section ends, so obs_shutdown finds nothing of them.)
+	sleep_ms(500);
+}
+// ==== end scene-filters:standby-corners ====
+
 int main(int argc, char **argv)
 {
 	if (argc < 7) {
@@ -3823,6 +4378,21 @@ int main(int argc, char **argv)
 
 	if (getenv("STAGEKIT_TEST_ONLY_MAKE_ROOM")) { // to try that section alone
 		make_room_test(w, h, out);
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
+
+	if (getenv("STAGEKIT_TEST_ONLY_SHADOW_EACH")) { // to try that section alone
+		scene_shadow_each_test(w, h, out);
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
+	if (getenv("STAGEKIT_TEST_ONLY_CORNERS_WHOLE")) { // to try that section alone
+		scene_corners_whole_test(w, h, out);
 		obs_shutdown();
 		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
 		       g_failures == 1 ? "" : "s");
@@ -14032,6 +14602,7 @@ int main(int argc, char **argv)
 			obs_source_release(q);
 		}
 	}
+	scene_corners_whole_test(w, h, out);
 	// ==== end scene-filters:standby-corners ====
 	// ==== scene-filters:shadow ====
 	// ---------------------------------------------------------- scene shadow
@@ -14650,6 +15221,7 @@ int main(int argc, char **argv)
 		for (obs_source_t *src : {bg, sq_a, sq_b, sq_c, sq_r})
 			obs_source_release(src);
 	}
+	scene_shadow_each_test(w, h, out);
 	// ==== end scene-filters:shadow ====
 
 	// ------------------------------------------------------------ auto frame

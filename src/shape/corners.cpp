@@ -32,6 +32,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <memory>
 #include <mutex>
 #include <string>
 
@@ -43,14 +44,7 @@ namespace {
 enum class Style { Round = 0, Cut = 1, Notch = 2, Scoop = 3 };
 
 struct Settings {
-	Style style = Style::Round;
-	double size = 40.0;
-	bool corner[4] = {true, true, true, true}; // top-left, top-right, bottom-right, bottom-left
-	double inset = 0.0;
-	double soft = 0.0;
-	double border = 0.0;
-	uint32_t border_color = 0xFFFFFFFF;
-	double border_opacity = 1.0;
+	CornerShape shape;
 	bool screen_px = true;
 };
 
@@ -58,53 +52,25 @@ class Corners {
 public:
 	Corners(obs_data_t *settings, obs_source_t *source) : source_(source)
 	{
-		char *path = obs_module_file("effects/stagekit-corners.effect");
+		paint_ = std::make_unique<CornersPaint>();
 		obs_enter_graphics();
-		char *errors = nullptr;
-		effect_ = path ? gs_effect_create_from_file(path, &errors) : nullptr;
-		if (!effect_)
-			obs_log(LOG_ERROR, "Corners & Edges: failed to load effect: %s", errors ? errors : "not found");
-		bfree(errors);
-		if (effect_) {
-			p_image_ = gs_effect_get_param_by_name(effect_, "image");
-			p_size_ = gs_effect_get_param_by_name(effect_, "size");
-			p_rect_ = gs_effect_get_param_by_name(effect_, "rect");
-			p_radii_ = gs_effect_get_param_by_name(effect_, "radii");
-			p_style_ = gs_effect_get_param_by_name(effect_, "style");
-			p_soft_ = gs_effect_get_param_by_name(effect_, "soft");
-			p_border_ = gs_effect_get_param_by_name(effect_, "border");
-			p_border_color_ = gs_effect_get_param_by_name(effect_, "border_color");
-		}
 		tr_input_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
-		tr_out_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 		obs_leave_graphics();
-		bfree(path);
 		update(settings);
 	}
 
 	~Corners()
 	{
+		paint_.reset();
 		obs_enter_graphics();
-		gs_effect_destroy(effect_);
 		gs_texrender_destroy(tr_input_);
-		gs_texrender_destroy(tr_out_);
 		obs_leave_graphics();
 	}
 
 	void update(obs_data_t *settings)
 	{
 		Settings s;
-		s.style = static_cast<Style>(std::clamp((int)obs_data_get_int(settings, "style"), 0, 3));
-		s.size = std::clamp(obs_data_get_double(settings, "size"), 0.0, 2000.0);
-		s.corner[0] = obs_data_get_bool(settings, "top_left");
-		s.corner[1] = obs_data_get_bool(settings, "top_right");
-		s.corner[2] = obs_data_get_bool(settings, "bottom_right");
-		s.corner[3] = obs_data_get_bool(settings, "bottom_left");
-		s.inset = std::clamp(obs_data_get_double(settings, "inset"), 0.0, 2000.0);
-		s.soft = std::clamp(obs_data_get_double(settings, "soft"), 0.0, 500.0);
-		s.border = std::clamp(obs_data_get_double(settings, "border"), 0.0, 500.0);
-		s.border_color = (uint32_t)obs_data_get_int(settings, "border_color");
-		s.border_opacity = std::clamp(obs_data_get_double(settings, "border_opacity") / 100.0, 0.0, 1.0);
+		s.shape = read_corner_shape(settings);
 		s.screen_px = obs_data_get_bool(settings, "screen_px");
 		std::lock_guard lock(mutex_);
 		settings_ = s;
@@ -168,7 +134,7 @@ public:
 		obs_source_t *parent = obs_filter_get_parent(source_);
 		const uint32_t w = target ? obs_source_get_base_width(target) : 0;
 		const uint32_t h = target ? obs_source_get_base_height(target) : 0;
-		if (!effect_ || !parent || !w || !h) {
+		if (!paint_->ready() || !parent || !w || !h) {
 			obs_source_skip_video_filter(source_);
 			return;
 		}
@@ -211,58 +177,8 @@ public:
 
 		// Sizes are in pixels as they look on screen, so the shape is worked
 		// out in a space scaled like the item is drawn.
-		vec2 size;
-		vec2_set(&size, (float)(w * kx), (float)(h * ky));
-		const double inset = std::min({s.inset, rw * kx / 2.0 - 0.5, rh * ky / 2.0 - 0.5});
-		vec4 rect;
-		vec4_set(&rect, (float)(rx * kx + inset), (float)(ry * ky + inset), (float)(rw * kx - 2.0 * inset),
-			 (float)(rh * ky - 2.0 * inset));
-		vec4 radii;
-		vec4_set(&radii, s.corner[0] ? (float)s.size : 0.0f, s.corner[1] ? (float)s.size : 0.0f,
-			 s.corner[2] ? (float)s.size : 0.0f, s.corner[3] ? (float)s.size : 0.0f);
-		vec4 border_color;
-		vec4_from_rgba(&border_color, s.border_color);
-		border_color.w = (float)s.border_opacity;
-
-		// The shaping pass works on raw colour values.
-		const bool previous_srgb = gs_framebuffer_srgb_enabled();
-		gs_enable_framebuffer_srgb(false);
-		gs_texrender_reset(tr_out_);
-		bool drawn = false;
-		if (gs_texrender_begin(tr_out_, w, h)) {
-			gs_blend_state_push();
-			gs_blend_function(GS_BLEND_ONE, GS_BLEND_ZERO);
-			gs_ortho(0.0f, (float)w, 0.0f, (float)h, -100.0f, 100.0f);
-			gs_effect_set_texture(p_image_, input);
-			gs_effect_set_vec2(p_size_, &size);
-			gs_effect_set_vec4(p_rect_, &rect);
-			gs_effect_set_vec4(p_radii_, &radii);
-			gs_effect_set_float(p_style_, (float)(int)s.style);
-			gs_effect_set_float(p_soft_, (float)s.soft);
-			gs_effect_set_float(p_border_, (float)s.border);
-			gs_effect_set_vec4(p_border_color_, &border_color);
-			while (gs_effect_loop(effect_, "Shape"))
-				gs_draw_sprite(input, 0, w, h);
-			gs_blend_state_pop();
-			gs_texrender_end(tr_out_);
-			drawn = true;
-		}
-		gs_enable_framebuffer_srgb(previous_srgb);
-
-		if (gs_texture_t *out = drawn ? gs_texrender_get_texture(tr_out_) : nullptr) {
-			gs_effect_t *def = obs_get_base_effect(OBS_EFFECT_DEFAULT);
-			gs_eparam_t *image = gs_effect_get_param_by_name(def, "image");
-			const bool linear = gs_get_linear_srgb();
-			const bool previous = gs_framebuffer_srgb_enabled();
-			gs_enable_framebuffer_srgb(linear);
-			if (linear)
-				gs_effect_set_texture_srgb(image, out);
-			else
-				gs_effect_set_texture(image, out);
-			while (gs_effect_loop(def, "Draw"))
-				gs_draw_sprite(out, 0, w, h);
-			gs_enable_framebuffer_srgb(previous);
-		}
+		if (paint_->shape(input, w, h, rx, ry, rw, rh, kx, ky, s.shape))
+			paint_->draw_out(w, h);
 	}
 
 private:
@@ -275,17 +191,8 @@ private:
 	double shown_sx_ = 1.0, shown_sy_ = 1.0;
 	int scale_countdown_ = 0;
 
-	gs_effect_t *effect_ = nullptr;
-	gs_eparam_t *p_image_ = nullptr;
-	gs_eparam_t *p_size_ = nullptr;
-	gs_eparam_t *p_rect_ = nullptr;
-	gs_eparam_t *p_radii_ = nullptr;
-	gs_eparam_t *p_style_ = nullptr;
-	gs_eparam_t *p_soft_ = nullptr;
-	gs_eparam_t *p_border_ = nullptr;
-	gs_eparam_t *p_border_color_ = nullptr;
+	std::unique_ptr<CornersPaint> paint_;
 	gs_texrender_t *tr_input_ = nullptr;
-	gs_texrender_t *tr_out_ = nullptr;
 };
 
 obs_properties_t *get_properties(void *data)
@@ -330,7 +237,9 @@ void corners_add_look_properties(obs_properties_t *props)
 	obs_properties_add_bool(which, "top_right", obs_module_text("Corners.TopRight"));
 	obs_properties_add_bool(which, "bottom_left", obs_module_text("Corners.BottomLeft"));
 	obs_properties_add_bool(which, "bottom_right", obs_module_text("Corners.BottomRight"));
-	obs_properties_add_group(props, "which", obs_module_text("Corners.Which"), OBS_GROUP_NORMAL, which);
+	// (Not "which": Scene Corners has a list of that name, and OBS refuses a
+	// second property of one name, dropping the four tick boxes with it.)
+	obs_properties_add_group(props, "corners_which", obs_module_text("Corners.Which"), OBS_GROUP_NORMAL, which);
 
 	obs_properties_t *edges = obs_properties_create();
 	obs_property_t *inset =
@@ -371,6 +280,152 @@ void corners_look_defaults(obs_data_t *settings)
 	obs_data_set_default_int(settings, "border_color", 0xFFFFFFFF);
 	obs_data_set_default_double(settings, "border_opacity", 100.0);
 	obs_data_set_default_bool(settings, "screen_px", true);
+}
+
+CornerShape read_corner_shape(obs_data_t *settings)
+{
+	CornerShape s;
+	s.style = std::clamp((int)obs_data_get_int(settings, "style"), 0, 3);
+	const double size = std::clamp(obs_data_get_double(settings, "size"), 0.0, 2000.0);
+	const char *keys[4] = {"top_left", "top_right", "bottom_right", "bottom_left"};
+	for (int i = 0; i < 4; i++)
+		s.radii[i] = obs_data_get_bool(settings, keys[i]) ? size : 0.0;
+	s.inset = std::clamp(obs_data_get_double(settings, "inset"), 0.0, 2000.0);
+	s.soft = std::clamp(obs_data_get_double(settings, "soft"), 0.0, 500.0);
+	s.border = std::clamp(obs_data_get_double(settings, "border"), 0.0, 500.0);
+	s.border_color = (uint32_t)obs_data_get_int(settings, "border_color");
+	s.border_opacity = std::clamp(obs_data_get_double(settings, "border_opacity") / 100.0, 0.0, 1.0);
+	return s;
+}
+
+CornerShape lerp_corner_shape(const CornerShape *a, const CornerShape *b, double t)
+{
+	t = std::clamp(t, 0.0, 1.0);
+	if (!a && !b)
+		return CornerShape();
+	// A missing side: the other side's shape at no size.
+	auto none = [](CornerShape x) {
+		for (double &r : x.radii)
+			r = 0.0;
+		x.inset = x.soft = x.border = 0.0;
+		return x;
+	};
+	const CornerShape from = a ? *a : none(*b), to = b ? *b : none(*a);
+	auto mix = [t](double x, double y) {
+		return x + (y - x) * t;
+	};
+	CornerShape out;
+	out.style = !a ? to.style : !b ? from.style : t < 0.5 ? from.style : to.style;
+	for (int i = 0; i < 4; i++)
+		out.radii[i] = mix(from.radii[i], to.radii[i]);
+	out.inset = mix(from.inset, to.inset);
+	out.soft = mix(from.soft, to.soft);
+	out.border = mix(from.border, to.border);
+	// (A line that is not there on one side keeps the other's colour.)
+	const uint32_t ca = from.border > 0.0 || !(to.border > 0.0) ? from.border_color : to.border_color;
+	const uint32_t cb = to.border > 0.0 || !(from.border > 0.0) ? to.border_color : from.border_color;
+	out.border_color = 0;
+	for (int shift = 0; shift < 32; shift += 8) {
+		const double x = (double)((ca >> shift) & 0xFF), y = (double)((cb >> shift) & 0xFF);
+		out.border_color |= (uint32_t)std::lround(std::clamp(mix(x, y), 0.0, 255.0)) << shift;
+	}
+	out.border_opacity = mix(from.border_opacity, to.border_opacity);
+	return out;
+}
+
+CornersPaint::CornersPaint()
+{
+	char *path = obs_module_file("effects/stagekit-corners.effect");
+	obs_enter_graphics();
+	char *errors = nullptr;
+	effect_ = path ? gs_effect_create_from_file(path, &errors) : nullptr;
+	if (!effect_)
+		obs_log(LOG_ERROR, "Corners & Edges: failed to load effect: %s", errors ? errors : "not found");
+	bfree(errors);
+	if (effect_) {
+		p_image_ = gs_effect_get_param_by_name(effect_, "image");
+		p_size_ = gs_effect_get_param_by_name(effect_, "size");
+		p_rect_ = gs_effect_get_param_by_name(effect_, "rect");
+		p_radii_ = gs_effect_get_param_by_name(effect_, "radii");
+		p_style_ = gs_effect_get_param_by_name(effect_, "style");
+		p_soft_ = gs_effect_get_param_by_name(effect_, "soft");
+		p_border_ = gs_effect_get_param_by_name(effect_, "border");
+		p_border_color_ = gs_effect_get_param_by_name(effect_, "border_color");
+	}
+	out_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
+	obs_leave_graphics();
+	bfree(path);
+}
+
+CornersPaint::~CornersPaint()
+{
+	obs_enter_graphics();
+	gs_effect_destroy(effect_);
+	gs_texrender_destroy(out_);
+	obs_leave_graphics();
+}
+
+bool CornersPaint::shape(gs_texture_t *input, uint32_t w, uint32_t h, double rx, double ry, double rw, double rh,
+			 double kx, double ky, const CornerShape &s)
+{
+	drawn_ = false;
+	if (!effect_ || !input || !w || !h)
+		return false;
+	vec2 size;
+	vec2_set(&size, (float)(w * kx), (float)(h * ky));
+	const double inset = std::max(0.0, std::min({s.inset, rw * kx / 2.0 - 0.5, rh * ky / 2.0 - 0.5}));
+	vec4 rect;
+	vec4_set(&rect, (float)(rx * kx + inset), (float)(ry * ky + inset), (float)(rw * kx - 2.0 * inset),
+		 (float)(rh * ky - 2.0 * inset));
+	vec4 radii;
+	vec4_set(&radii, (float)s.radii[0], (float)s.radii[1], (float)s.radii[2], (float)s.radii[3]);
+	vec4 border_color;
+	vec4_from_rgba(&border_color, s.border_color);
+	border_color.w = (float)s.border_opacity;
+
+	// The shaping pass works on raw colour values.
+	const bool previous_srgb = gs_framebuffer_srgb_enabled();
+	gs_enable_framebuffer_srgb(false);
+	gs_texrender_reset(out_);
+	if (gs_texrender_begin(out_, w, h)) {
+		gs_blend_state_push();
+		gs_blend_function(GS_BLEND_ONE, GS_BLEND_ZERO);
+		gs_ortho(0.0f, (float)w, 0.0f, (float)h, -100.0f, 100.0f);
+		gs_effect_set_texture(p_image_, input);
+		gs_effect_set_vec2(p_size_, &size);
+		gs_effect_set_vec4(p_rect_, &rect);
+		gs_effect_set_vec4(p_radii_, &radii);
+		gs_effect_set_float(p_style_, (float)s.style);
+		gs_effect_set_float(p_soft_, (float)s.soft);
+		gs_effect_set_float(p_border_, (float)s.border);
+		gs_effect_set_vec4(p_border_color_, &border_color);
+		while (gs_effect_loop(effect_, "Shape"))
+			gs_draw_sprite(input, 0, w, h);
+		gs_blend_state_pop();
+		gs_texrender_end(out_);
+		drawn_ = true;
+	}
+	gs_enable_framebuffer_srgb(previous_srgb);
+	return drawn_;
+}
+
+void CornersPaint::draw_out(uint32_t w, uint32_t h)
+{
+	gs_texture_t *out = drawn_ ? gs_texrender_get_texture(out_) : nullptr;
+	if (!out)
+		return;
+	gs_effect_t *def = obs_get_base_effect(OBS_EFFECT_DEFAULT);
+	gs_eparam_t *image = gs_effect_get_param_by_name(def, "image");
+	const bool linear = gs_get_linear_srgb();
+	const bool previous = gs_framebuffer_srgb_enabled();
+	gs_enable_framebuffer_srgb(linear);
+	if (linear)
+		gs_effect_set_texture_srgb(image, out);
+	else
+		gs_effect_set_texture(image, out);
+	while (gs_effect_loop(def, "Draw"))
+		gs_draw_sprite(out, 0, w, h);
+	gs_enable_framebuffer_srgb(previous);
 }
 
 namespace {

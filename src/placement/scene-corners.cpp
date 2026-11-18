@@ -20,23 +20,37 @@ the Free Software Foundation; either version 2 of the License, or
 //
 // Switched off, its filters are switched off; on, on again: here the scene
 // filter is the switch. A Corners & Edges made by hand is left alone.
-
+//
+// *Corners on: The whole scene* (`corners_area` 1): the scene's own image is
+// cut to the shape at the edges of the screen, as one shape, by this filter
+// (CornersPaint, what Corners & Edges draws with), once a frame. Its sources
+// get no filter, and the ones it had added go after the usual grace. Then it
+// draws: it keeps itself after every Scene Shadow and Scene Blur so that they
+// still draw and the shape is cut last, and Morph carries the shape through a
+// change of scene (scene_corners_now).
 #include "scene-corners.hpp"
 
+#include "../common/filter-input.hpp"
+#include "../common/filter-order.hpp"
 #include "../common/loading.hpp"
 #include "../common/managed-filter.hpp"
 #include "../common/pick-list.hpp"
 #include "../common/scene-util.hpp"
 #include "../common/stand-in.hpp"
 #include "../common/timing.hpp"
+#include "../look/scene-blur.hpp"
+#include "../look/scene-shadow.hpp"
 #include "../shape/corners.hpp"
+#include "../transition/morph.hpp"
 
 #include <obs-module.h>
 #include <plugin-support.h>
 #include <util/platform.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
+#include <cstring>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -50,6 +64,10 @@ namespace {
 // default has no number saved and reads as All but the background, the
 // default it had before All sources was added and still has.
 enum class Which : int { AllButBackground = 0, Chosen = 1, AllSources = 2 };
+
+// Corners on. Saved by number: append only. 0 is what every filter saved
+// before it did.
+enum class Area : int { Each = 0, Whole = 1 };
 
 // The Corners & Edges settings set on each source's filter: the same names
 // and numbers.
@@ -73,6 +91,7 @@ const ManagedSpec kSpec = {kSceneCornersId,
 constexpr double kBackgroundShare = 0.9;
 
 struct Config {
+	Area area = Area::Each;
 	Which which = Which::AllButBackground;
 	std::vector<std::string> sources, skip;
 	bool auto_background = true;
@@ -94,13 +113,33 @@ public:
 	SceneCorners(obs_data_t *settings, obs_source_t *source) : source_(source), managed_(kSpec, source)
 	{
 		timer_ = phase_of(source);
+		order_timer_ = timer_ / 2.0;
 		update(settings);
 	}
-	~SceneCorners() { managed_.withdraw(); }
+	~SceneCorners()
+	{
+		managed_.withdraw();
+		paint_.reset();
+		if (tr_input_) {
+			obs_enter_graphics();
+			gs_texrender_destroy(tr_input_);
+			obs_leave_graphics();
+		}
+	}
+
+	// The whole scene's shape, while this filter draws it.
+	bool whole() const { return whole_.load(); }
+	CornerShape shape()
+	{
+		std::lock_guard lock(mutex_);
+		return shape_;
+	}
+	void render();
 
 	void update(obs_data_t *settings)
 	{
 		auto config = std::make_shared<Config>();
+		config->area = static_cast<Area>(std::clamp((int)obs_data_get_int(settings, "corners_area"), 0, 1));
 		config->which = static_cast<Which>(std::clamp((int)obs_data_get_int(settings, "which"), 0, 2));
 		config->sources = pick_list_read(settings, "sources", false);
 		config->skip = pick_list_read(settings, "skip", false);
@@ -124,8 +163,11 @@ public:
 		}
 		config->look_json = obs_data_get_json(look);
 		obs_data_release(look);
+		const CornerShape shape = read_corner_shape(settings);
 		std::lock_guard lock(mutex_);
 		config_ = config;
+		shape_ = shape;
+		whole_ = config->area == Area::Whole;
 		dirty_ = true;
 	}
 
@@ -141,6 +183,11 @@ public:
 			dirty = dirty_ || enabled != was_enabled_;
 		}
 		timer_ += seconds;
+		order_timer_ += seconds;
+		if (whole_ && enabled && order_timer_ >= 0.5 && scenes_loaded()) {
+			order_timer_ = 0.0;
+			keep_last(parent);
+		}
 		const double every = obs_source_showing(parent) ? 1.0 : 3.0;
 		if (!dirty && timer_ < every)
 			return;
@@ -177,7 +224,9 @@ private:
 			was_enabled_ = enabled;
 		}
 		std::set<std::string> covered;
-		if (config->which == Which::Chosen) {
+		if (config->area == Area::Whole) {
+			// The scene is shaped as a whole: no source keeps a filter.
+		} else if (config->which == Which::Chosen) {
 			covered.insert(config->sources.begin(), config->sources.end());
 		} else {
 			// Every item straight in the scene (a group counts as one
@@ -223,32 +272,128 @@ private:
 			std::string &into = managed_.own_ones().count(name) ? own : made;
 			into += (into.empty() ? "" : ", ") + name;
 		}
-		std::string text = made.empty() ? obs_module_text("SceneCorners.Status.None")
-						: text_with("SceneCorners.Status.Covers", made);
+		std::string text = config->area == Area::Whole ? obs_module_text("SceneCorners.Status.Whole")
+				   : made.empty()              ? obs_module_text("SceneCorners.Status.None")
+							       : text_with("SceneCorners.Status.Covers", made);
 		if (!own.empty())
 			text += " " + text_with("SceneCorners.Status.Own", own);
 		std::lock_guard lock(mutex_);
 		status_ = text;
 	}
 
+	// The whole scene's shape goes on last: after every Scene Shadow and
+	// Scene Blur, which stand aside when a filter that draws comes before
+	// them (as Scene Blur keeps itself after a Scene Shadow).
+	void keep_last(obs_source_t *parent)
+	{
+		struct Last {
+			obs_source_t *found = nullptr;
+		} last;
+		obs_source_enum_filters(
+			parent,
+			[](obs_source_t *, obs_source_t *f, void *param) {
+				if (is_scene_shadow(f) || is_scene_blur(f))
+					static_cast<Last *>(param)->found = f;
+			},
+			&last);
+		if (!last.found || applied_index(parent, source_) > applied_index(parent, last.found))
+			return;
+		for (int i = 0; i < 64; i++) {
+			const int mine = applied_index(parent, source_);
+			if (mine < 0 || mine > applied_index(parent, last.found))
+				break;
+			obs_source_filter_set_order(parent, source_, OBS_ORDER_MOVE_DOWN);
+			if (applied_index(parent, source_) == mine)
+				break;
+		}
+		obs_log(LOG_INFO, "Scene Corners '%s': moved after the filter '%s', so that both draw",
+			obs_source_get_name(source_), obs_source_get_name(last.found));
+	}
+
 	obs_source_t *source_;
 	ManagedSet managed_;
 	std::mutex mutex_;
 	std::shared_ptr<const Config> config_;
+	CornerShape shape_;
+	std::atomic<bool> whole_{false};
 	bool dirty_ = true;
 	bool was_enabled_ = false;
 	double timer_ = 0.0;
+	double order_timer_ = 0.0;
 	std::string status_;
+
+	// On the drawing thread only.
+	std::unique_ptr<CornersPaint> paint_;
+	gs_texrender_t *tr_input_ = nullptr;
+	bool have_out_ = false;
+	uint64_t last_frame_ = 0;
+	uint32_t last_cx_ = 0, last_cy_ = 0;
+	bool last_linear_ = false;
 };
 
-bool which_modified(obs_properties_t *props, obs_property_t *, obs_data_t *settings)
+void SceneCorners::render()
 {
+	obs_source_t *parent = obs_filter_get_parent(source_);
+	obs_source_t *target = obs_filter_get_target(source_);
+	const uint32_t cx = target ? obs_source_get_base_width(target) : 0;
+	const uint32_t cy = target ? obs_source_get_base_height(target) : 0;
+	if (!whole_ || !parent || obs_source_is_group(parent) || !obs_scene_from_source(parent) || !cx || !cy) {
+		have_out_ = false;
+		obs_source_skip_video_filter(source_);
+		return;
+	}
+	if (!paint_) {
+		paint_ = std::make_unique<CornersPaint>();
+		tr_input_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
+	}
+	if (!paint_->ready()) {
+		obs_source_skip_video_filter(source_);
+		return;
+	}
+	// Once a frame: the multiview, a projector and Studio Mode draw a scene
+	// again in the same frame, as it was.
+	const uint64_t frame = obs_get_video_frame_time();
+	const bool linear = gs_get_linear_srgb();
+	if (have_out_ && frame == last_frame_ && cx == last_cx_ && cy == last_cy_ && linear == last_linear_) {
+		paint_->draw_out(cx, cy);
+		return;
+	}
+	have_out_ = false;
+	if (!draw_filter_input(source_, tr_input_, cx, cy)) {
+		obs_source_skip_video_filter(source_);
+		return;
+	}
+	const CornerShape s = shape();
+	// Sizes in screen pixels: the scene is the screen.
+	if (!paint_->shape(gs_texrender_get_texture(tr_input_), cx, cy, 0.0, 0.0, cx, cy, 1.0, 1.0, s)) {
+		obs_source_skip_video_filter(source_);
+		return;
+	}
+	paint_->draw_out(cx, cy);
+	have_out_ = true;
+	last_frame_ = frame;
+	last_cx_ = cx;
+	last_cy_ = cy;
+	last_linear_ = linear;
+}
+
+bool area_modified(obs_properties_t *props, obs_property_t *, obs_data_t *settings)
+{
+	const bool whole = obs_data_get_int(settings, "corners_area") == (int)Area::Whole;
 	const int which = (int)obs_data_get_int(settings, "which");
 	const bool chosen = which == (int)Which::Chosen;
-	obs_property_set_visible(obs_properties_get(props, "sources|alist"), chosen);
-	obs_property_set_visible(obs_properties_get(props, "skip|alist"), !chosen);
-	obs_property_set_visible(obs_properties_get(props, "auto_background"), which == (int)Which::AllButBackground);
+	obs_property_set_visible(obs_properties_get(props, "which"), !whole);
+	obs_property_set_visible(obs_properties_get(props, "sources|alist"), !whole && chosen);
+	obs_property_set_visible(obs_properties_get(props, "skip|alist"), !whole && !chosen);
+	obs_property_set_visible(obs_properties_get(props, "auto_background"),
+				 !whole && which == (int)Which::AllButBackground);
+	obs_property_set_visible(obs_properties_get(props, "screen_px"), !whole);
 	return true;
+}
+
+bool which_modified(obs_properties_t *props, obs_property_t *p, obs_data_t *settings)
+{
+	return area_modified(props, p, settings);
 }
 
 obs_properties_t *get_properties(void *data)
@@ -268,6 +413,13 @@ obs_properties_t *get_properties(void *data)
 		props, "status", now.empty() ? obs_module_text("SceneCorners.Status.None") : now.c_str(),
 		OBS_TEXT_INFO);
 	obs_property_text_set_info_word_wrap(status, true);
+
+	obs_property_t *area = obs_properties_add_list(props, "corners_area", obs_module_text("SceneCorners.Area"),
+						       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+	obs_property_list_add_int(area, obs_module_text("SceneCorners.Area.Each"), (int)Area::Each);
+	obs_property_list_add_int(area, obs_module_text("SceneCorners.Area.Whole"), (int)Area::Whole);
+	obs_property_set_long_description(area, obs_module_text("SceneCorners.Area.Tip"));
+	obs_property_set_modified_callback(area, area_modified);
 
 	obs_property_t *which = obs_properties_add_list(props, "which", obs_module_text("SceneCorners.Which"),
 							OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
@@ -321,12 +473,42 @@ obs_properties_t *get_properties(void *data)
 
 } // namespace
 
+bool scene_corners_draws(obs_source_t *filter)
+{
+	const char *id = filter ? obs_source_get_unversioned_id(filter) : nullptr;
+	if (!id || std::strcmp(id, kSceneCornersId) != 0)
+		return false;
+	auto *self = static_cast<SceneCorners *>(obs_obj_get_data(filter));
+	return self && self->whole();
+}
+
+bool scene_corners_now(obs_source_t *scene, CornerShape &out)
+{
+	struct Find {
+		CornerShape *out;
+		bool found = false;
+	} find{&out};
+	obs_source_enum_filters(
+		scene,
+		[](obs_source_t *, obs_source_t *f, void *param) {
+			auto *x = static_cast<Find *>(param);
+			if (x->found || !obs_source_enabled(f) || !scene_corners_draws(f))
+				return;
+			*x->out = static_cast<SceneCorners *>(obs_obj_get_data(f))->shape();
+			x->found = true;
+		},
+		&find);
+	return find.found;
+}
+
 void register_scene_corners()
 {
 	obs_source_info info = {};
 	info.id = kSceneCornersId;
 	info.type = OBS_SOURCE_TYPE_FILTER;
-	info.output_flags = OBS_SOURCE_VIDEO;
+	// (Colour-aware, like every StageKit filter that draws: it does with
+	// *The whole scene*.)
+	info.output_flags = OBS_SOURCE_VIDEO | OBS_SOURCE_SRGB;
 	info.get_name = [](void *) {
 		return obs_module_text("SceneCorners.Name");
 	};
@@ -346,20 +528,25 @@ void register_scene_corners()
 		// corners, and change every filter saved with the default.)
 		obs_data_set_default_int(settings, "which", (int)Which::AllButBackground);
 		obs_data_set_default_bool(settings, "auto_background", true);
+		obs_data_set_default_int(settings, "corners_area", (int)Area::Each);
 		corners_look_defaults(settings);
 	};
 	info.get_properties = get_properties;
 	info.video_tick = [](void *data, float seconds) {
 		static_cast<SceneCorners *>(data)->tick(seconds);
 	};
-	// It never changes the picture: its filters on the sources do.
+	// With Each source it never changes the picture: its filters on the
+	// sources do. With The whole scene it cuts the scene's image.
 	info.video_render = [](void *data, gs_effect_t *) {
-		obs_source_skip_video_filter(static_cast<SceneCorners *>(data)->source());
+		static_cast<SceneCorners *>(data)->render();
 	};
 	info.filter_remove = [](void *data, obs_source_t *) {
 		static_cast<SceneCorners *>(data)->detach();
 	};
 	register_timed(&info);
+	// A scene shaped as a whole is still morphed item by item; Morph cuts
+	// the change to the shape (scene_corners_now).
+	morph_accept_drawing_filter(scene_corners_draws);
 }
 
 } // namespace stagekit
