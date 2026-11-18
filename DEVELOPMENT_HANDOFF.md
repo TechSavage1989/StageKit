@@ -13,10 +13,10 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
-## Auto Capture rests a program for real (0.1.0-betaNEXT)
+## Auto Capture rests a program for real (0.1.0-beta184)
 
 Branch `fix/auto-capture-hook-loop`, on `main` after beta180. Notes:
-`docs/releases/0.1.0-betaNEXT.md`. No Stream Deck file changed.
+`docs/releases/0.1.0-beta184.md`. No Stream Deck file changed.
 
 - **Evidence (the owner's logs, 2026-11-18):** Auto Capture aimed a Game Capture at Dolphin.exe;
   OBS printed `attempting to hook process: Dolphin.exe` / `capture stopped` about every 0.42 s

@@ -1371,7 +1371,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   given up on three times running and they reported "auto capture is not capturing a game". Its
   log also showed OBS hooking it the moment a game drew: an emulator's menu gives no picture.) The
   status says *Aimed at ..., which shows no image yet* (`waiting_for_picture`) instead of *Now
-  capturing* over an empty capture. **A rest is a rest** (2026-11-18, betaNEXT; the owner's logs:
+  capturing* over an empty capture. **A rest is a rest** (2026-11-18, beta184; the owner's logs:
   `attempting to hook process: Dolphin.exe` / `capture stopped` about every 0.42 s, 78 times in
   90 s, and every rest of Dolphin ended 0.27 s after it began, "its window's title changed"). Two
   faults: the capture stayed aimed at the resting program whenever nothing else was chosen (with
