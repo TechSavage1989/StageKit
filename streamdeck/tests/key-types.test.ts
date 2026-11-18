@@ -178,7 +178,8 @@ test("every settings page has its type lists and no Image list", () => {
 	const pageOf = (key: string) => (key === "blurall" ? "blur-all" : key);
 	for (const key of keysWithLists()) {
 		const page = readFileSync(new URL(`ui/${pageOf(key)}.html`, plugin), "utf8");
-		for (const list of typeLists(key)) {
+		// (The Scene Mode key's lists are per mode, under Mode settings: its own test below.)
+		for (const list of key === "mode" ? modePictureLists() : typeLists(key)) {
 			assert.ok(page.includes(`label="${list.label}"`), `${key}: ${list.label}`);
 			assert.ok(page.includes(`setting="${list.setting}" placeholder=`), `${key}: ${list.setting}`);
 			assert.ok(page.includes('<option value="auto">'), `${key}: Automatic`);
@@ -280,7 +281,41 @@ test("a Scene Mode key's lists for each mode are its own Layout and Mode type li
 	assert.deepEqual(type.groups, typeLists("mode").find((l) => l.setting === "sourceType")!.groups, "any combination, as the key's own");
 	assert.ok(!typeLists("mode").some((l) => l.setting === "modeType" || l.setting === "modeLayout"), "not among the key's own type lists");
 	const page = readFileSync(new URL("../com.techsavage1989.stagekit.sdPlugin/ui/mode.html", import.meta.url), "utf8");
-	for (const setting of ["modeFilter", "press", "mode", "longPress", "longMode", "holdMs", "modeFor", "modeUse", "modeLayout", "modeType", "layout", "sourceType"])
-		assert.ok(page.includes(`setting="${setting}"`), setting);
 	assert.ok(page.includes('<option value="next">Next mode</option>') && page.includes('<option value="off">Switch off</option>'));
+});
+
+test("the Scene Mode key's page: the filter, a mode and its own settings, then the key in a fold-out", () => {
+	// The owner (2026-11-18): "the scene modes key is very long in the configuration when the different
+	// modes are stacked. allow the mode to configure to be selected from another selector under the
+	// scene modes selector, and have it's configurations configurable".
+	const page = readFileSync(new URL("../com.techsavage1989.stagekit.sdPlugin/ui/mode.html", import.meta.url), "utf8");
+	const order: Array<[string, string]> = [
+		["modeFilter", "Scene Modes"],
+		["modeFor", "Mode settings"],
+		["modeUse", "Use in Next"],
+		["modeLayout", "Layout"],
+		["modeType", "Image"],
+		["press", "On press"],
+		["mode", "Switch to mode"],
+		["longPress", "Long press"],
+		["longMode", "Long press mode"],
+		["holdMs", "Hold time (ms)"],
+		["palette", "Palette"],
+	];
+	let at = 0;
+	for (const [setting, label] of order) {
+		const here = page.indexOf(`setting="${setting}"`);
+		assert.ok(here > at, `${setting} after the one before`);
+		const item = page.lastIndexOf("<sdpi-item ", here);
+		assert.ok(page.slice(item, here).includes(`label="${label}"`), `${setting}: ${label}`);
+		assert.ok(label.length < 26, label);
+		at = here;
+	}
+	const key = page.indexOf("<summary>Key</summary>");
+	assert.ok(key > page.indexOf('setting="modeType"') && key < page.indexOf('setting="press"'), "the key's behaviour under its own heading");
+	assert.ok(page.lastIndexOf("<details open>", key) > page.indexOf('setting="modeType"'), "open as it comes");
+	// The key-wide Layout and Mode type are no longer on the page (still read for keys saved with them).
+	for (const gone of ["layout", "sourceType"]) assert.ok(!page.includes(`setting="${gone}"`), gone);
+	assert.equal(page.split('setting="palette"').length, 2, "one Palette");
+	assert.equal(page.split("<optgroup").length - 1, modePictureLists()[1].groups.filter((g) => g.label).length, "one long type list");
 });

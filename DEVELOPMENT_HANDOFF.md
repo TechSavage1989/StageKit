@@ -9,11 +9,47 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | `fix/stale-transition-flake` (a capture left in use after a cut part-way through a change, betaNEXT), on `main` after beta174. Next: the new collection |
+| Working branch | `feat/sd-mode-key-page` (the Scene Mode key's page, betaNEXT), on `main` after beta179. Next: the new collection |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
-## A capture left in use after a cut part-way through a change (0.1.0-beta180)
+## The Scene Mode key's page: a mode, then its settings (0.1.0-beta181, plugin 0.28.0.0)
+
+Branch `feat/sd-mode-key-page`, on `main` after beta179. Notes: `docs/releases/0.1.0-beta181.md`.
+Stream Deck only; nothing in the OBS plugin changed (it was not built here). The owner
+(2026-11-18): "the scene modes key is very long in the configuration when the different modes are
+stacked. allow the mode to configure to be selected from another selector under the scene modes
+selector, and have it's configurations configurable".
+
+- **The page** (`mode_page_html` in `streamdeck/tools/make-plugin-files.py`, written to
+  `ui/mode.html`): *Scene Modes*; *Mode settings* (`modeFor`, was *Settings for*) with that mode's
+  *Use in Next* (`modeUse`), *Layout* (`modeLayout`) and *Image* (`modeType`) right under it; then
+  an open *Key* fold-out with *On press*, *Switch to mode* (`mode`, was *Mode*), *Long press*,
+  *Long press mode*, *Hold time* and *Palette*. The key-wide *Layout* and *Mode type* rows are gone
+  (`page(..., lists=False, palette=False)`), so the page has one long type list instead of two. No
+  setting id changed.
+- **Keys saved before**: `layout` and `sourceType` are still read with the old precedence
+  (`followedModePicture`, unchanged): `layout` behind every mode without its own Layout,
+  `sourceType` behind the key's own mode only. Extending `sourceType` to every mode, as first
+  asked, would have changed what Toggle and Next mode keys show for the other modes, so it was not.
+  The own mode's *Image* list loads `sourceType` (the page shows what the key shows); editing it
+  replaces it (`sourceType` set to `auto`). Which mode it was loaded for is kept
+  (`modeTypeKeyWide`): changing *Switch to mode* reloads the lists, never counts as an edit of
+  the Image (a review found it wrote the old mode an image of its own, or erased `sourceType`). `layout` can no longer be changed on the page; each
+  mode's own Layout wins over it.
+- **Mode settings chosen for you** (`editModeSettings(settings, firstMode)`, `upToDate` in
+  `src/actions/mode.ts`): empty, it takes the key's `mode`, else the filter's first mode (read from
+  OBS), also after another Scene Modes is chosen.
+- Tests (`npm test`, 76 pass; `tsc --noEmit`; `streamdeck validate`): the page's order and
+  labels, the old key-wide rows gone, one Palette; `editModeSettings`' defaulting and the key-wide
+  Mode type loaded and replaced; an old key with `layout` / `sourceType` and no `perMode` shows the
+  same image, title and state before and after its page is brought up to date, for its own mode,
+  another mode and none. The tests that went through every key's type lists know `mode` as the key
+  whose lists are per mode.
+- **Not proven:** on a Stream Deck (that sdpi-components shows the values the plugin writes back,
+  and the `<details open>` fold-out's look).
+
+## Scene Transitions: Override other filters (0.1.0-beta179)
 
 Branch `fix/stale-transition-flake`, on `main` after beta174. Notes:
 `docs/releases/0.1.0-beta180.md`. No Stream Deck file changed. The check *a scene left with a cut

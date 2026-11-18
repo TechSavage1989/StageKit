@@ -137,15 +137,37 @@ export function shownMode(press: ModePress, own: string, current: string): { sho
 }
 
 /**
- * The page has one "Settings for" list (a mode of the key's filter) and, under
- * it, Use, Its layout and Its image for that mode; what they say is kept per
- * mode in `perMode`. Given the settings the page sent, returns them brought
- * into line, or undefined when nothing needs writing: choosing another mode
- * loads its settings into the lists; changing the lists stores them for the
- * mode chosen; choosing another Scene Modes filter forgets the old filter's
- * modes (ids are only one filter's).
+ * The page has one *Mode settings* list (`modeFor`, a mode of the key's
+ * filter; "Settings for" up to beta179) and, under it, *Use in Next*, *Layout*
+ * and *Image* for that mode; what they say is kept per mode in `perMode`. The
+ * owner (2026-11-18): "the scene modes key is very long in the configuration
+ * when the different modes are stacked. allow the mode to configure to be
+ * selected from another selector under the scene modes selector, and have it's
+ * configurations configurable".
+ *
+ * Given the settings the page sent, returns them brought into line, or
+ * undefined when nothing needs writing: with no mode chosen in Mode settings
+ * (a new key, or after another Scene Modes was chosen) it is set to the key's
+ * own mode (`mode`, *Switch to mode*), else to `firstMode`, the filter's first
+ * mode when the caller knows it; choosing another mode loads its settings into
+ * the lists; changing the lists stores them for the mode chosen; choosing
+ * another Scene Modes filter forgets the old filter's modes (ids are only one
+ * filter's).
+ *
+ * Keys saved up to beta179 may carry the key-wide *Layout* (`layout`) and
+ * *Mode type* (`sourceType`) the page no longer shows. They are still read
+ * exactly as before (src/pictures.ts `followedModePicture`): `layout` for every
+ * mode without a Layout of its own, `sourceType` for the key's own mode
+ * without an Image of its own. So the page shows the truth, the key's own mode
+ * loads `sourceType` into its Image list, and a change to that mode's Image
+ * then takes the key-wide value's place (it is set to Automatic): choosing
+ * Automatic there afterwards means the mode's own type.
+ * Which mode the key-wide value was loaded for is kept (`modeTypeKeyWide`):
+ * changing *Switch to mode* loads the lists again and is never taken for an
+ * edit of the Image (it neither writes the old mode an image nor erases the
+ * key-wide one).
  */
-export function editModeSettings<T extends Record<string, unknown>>(settings: T): T | undefined {
+export function editModeSettings<T extends Record<string, unknown>>(settings: T, firstMode?: string): T | undefined {
 	let s: Record<string, unknown> = settings;
 	let changed = false;
 	const filter = str(s.modeFilter);
@@ -156,23 +178,50 @@ export function editModeSettings<T extends Record<string, unknown>>(settings: T)
 			: { ...s, modeFilterWas: filter, perMode: {}, mode: "", longMode: "", modeFor: "", modeForWas: "" };
 		changed = true;
 	}
-	const forId = str(s.modeFor);
+	let forId = str(s.modeFor);
+	if (!forId) {
+		const fallback = str(s.mode) || (firstMode ?? "");
+		if (fallback) {
+			s = { ...s, modeFor: fallback };
+			forId = fallback;
+			changed = true;
+		}
+	}
 	const map: Record<string, PerMode> = { ...perModeOf(s) };
-	if (forId !== str(s.modeForWas)) {
+	// (The key-wide Mode type of a key saved up to beta179 stands for the key's own mode while that mode has
+	// no image of its own. `modeTypeKeyWide` names the mode it was loaded into the Image list for, so a later
+	// change of *Switch to mode* is never taken for an edit of the Image: the lists are loaded again instead.)
+	const keyWideNow = forId !== "" && forId === str(s.mode) && !isAuto(s.sourceType) ? forId : "";
+	if (forId !== str(s.modeForWas) || keyWideNow !== str(s.modeTypeKeyWide)) {
 		const mine = map[forId] ?? {};
-		s = { ...s, modeForWas: forId, modeUse: mine.skip ? "skip" : "use", modeType: mine.type ?? "auto", modeLayout: mine.layout ?? "auto" };
+		const keyWideType = keyWideNow ? (s.sourceType as string) : undefined;
+		s = {
+			...s,
+			modeForWas: forId,
+			modeTypeKeyWide: keyWideNow,
+			modeUse: mine.skip ? "skip" : "use",
+			modeType: mine.type ?? keyWideType ?? "auto",
+			modeLayout: mine.layout ?? "auto",
+		};
 		return s as T;
 	}
+	const keyWide = str(s.modeTypeKeyWide) === forId && forId !== "" && !isAuto(s.sourceType) ? (s.sourceType as string) : undefined;
 	if (forId) {
 		const now: PerMode = {};
 		if (!isAuto(s.modeType)) now.type = s.modeType as string;
 		if (!isAuto(s.modeLayout)) now.layout = s.modeLayout as string;
 		if (s.modeUse === "skip") now.skip = true;
 		const before = map[forId] ?? {};
-		if (before.type !== now.type || before.layout !== now.layout || (before.skip === true) !== (now.skip === true)) {
+		const typeBefore = before.type ?? keyWide;
+		if (typeBefore !== now.type || before.layout !== now.layout || (before.skip === true) !== (now.skip === true)) {
 			if (now.type === undefined && now.layout === undefined && !now.skip) delete map[forId];
 			else map[forId] = now;
 			s = { ...s, perMode: map };
+			// (Edited, the mode's Image is its own: the key-wide one no longer stands behind it.)
+			if (keyWide !== undefined && typeBefore !== now.type) {
+				s.sourceType = "auto";
+				s.modeTypeKeyWide = "";
+			}
 			changed = true;
 		}
 	}

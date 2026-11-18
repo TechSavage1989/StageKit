@@ -139,7 +139,8 @@ test("the Source type comes first, then an image kept from before, then Automati
 
 test("scene filters' keys are marked as such, and only keys on a source offer a Source type", () => {
 	for (const f of features.switches) assert.equal((f as { scene?: boolean }).scene === true, isSceneKind(f.kind), f.kind);
-	const offered = (page: string) => readFileSync(new URL(`ui/${page}.html`, plugin), "utf8").includes('setting="sourceType"');
+	// (The Scene Mode key offers its Source type per mode, as each mode's Image.)
+	const offered = (page: string) => readFileSync(new URL(`ui/${page}.html`, plugin), "utf8").includes(page === "mode" ? 'setting="modeType"' : 'setting="sourceType"');
 	for (const f of features.switches) if (isSceneKind(f.kind)) assert.ok(!offered(f.key), f.key);
 	for (const page of ["showinscenes", "shadow", "standby", "blur", "zoom", "mode", "tool", "option", "slide", "shape", "hook", "appswitch", "sendto", "placeitem"])
 		assert.ok(offered(page), page);
