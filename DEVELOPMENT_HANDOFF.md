@@ -13,10 +13,10 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
-## Ambient Background: Darkest level, so it never goes black (0.1.0-betaNEXT)
+## Ambient Background: Darkest level, so it never goes black (0.1.0-beta187)
 
 Branch `feat/ambient-darkest-level`, on `main` after beta185. Notes:
-`docs/releases/0.1.0-betaNEXT.md`. The owner (2026-11-18): "is there a way I can prevent the
+`docs/releases/0.1.0-beta187.md`. The owner (2026-11-18): "is there a way I can prevent the
 background from ever becoming completely black, even when the ambient background is capturing a
 live feed that has completely black content?", then "add darkest level as a configurable option".
 
