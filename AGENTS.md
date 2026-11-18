@@ -1371,8 +1371,27 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   given up on three times running and they reported "auto capture is not capturing a game". Its
   log also showed OBS hooking it the moment a game drew: an emulator's menu gives no picture.) The
   status says *Aimed at ..., which shows no image yet* (`waiting_for_picture`) instead of *Now
-  capturing* over an empty capture. **Do not write to the user's
-  lists from the tick again.** What follows is why the giving up exists at all: aimed at a
+  capturing* over an empty capture. **A rest is a rest** (2026-11-18, betaNEXT; the owner's logs:
+  `attempting to hook process: Dolphin.exe` / `capture stopped` about every 0.42 s, 78 times in
+  90 s, and every rest of Dolphin ended 0.27 s after it began, "its window's title changed"). Two
+  faults: the capture stayed aimed at the resting program whenever nothing else was chosen (with
+  *any full-screen application* as the fallback it would hook a full-screen emulator too), and any
+  window of the program with another title ended the rest at once (Dolphin's frame rate, a GBA
+  window's "Volume 100%" / "Muted", the GBA windows' titles against the main one's). Now, with
+  nothing else to capture while a program rests, a Game Capture is aimed at no window
+  (`kNoWindow`, window mode, key `kRestKey`; logged once a rest), and aimed at the program again
+  when the rest ends. A rest keeps the titles of all the program's windows (`titles`, by
+  `title_shape`: lower case, digits out) and every title seen in its first `give_up_s_`; only a
+  title not among them after that ends it, `kTitleTries` (3) times while the program stays open
+  (`title_tries`, kept until it closes or gives a picture). Clicking back in counts only when no
+  window of the program was in front (`rest_in_front`), also not in that first stretch. Tested in
+  `[auto capture: a program rests for real ...]` (`auto_rest_test`, alone with
+  `STAGEKIT_TEST_ONLY_AUTO_REST`; the Ryujinx case, a picture at 0.7 of the patience after a rest,
+  too). `set_test_windows` looks at once, and each look moves the filter's clock on 0.25 s: a test
+  that sets windows often passes `keep_clock`. A program put on *Never capture* while it rests
+  is no longer rested (`rest_.erase`), so the full-screen fallback comes back. The Windows side
+  (whether OBS's Game Capture really logs nothing for a window that is not there) is believed
+  from OBS's source, not seen. **Do not write to the user's lists from the tick again.** What follows is why the giving up exists at all: aimed at a
   program for that long with no picture, the program was given up on and the log says so. OBS's Game Capture tries to hook about
   five times a second for as long as it is aimed, each try some 20 ms on the drawing thread. The
   owner's 3D modelling program had been taken for a game (it loads a graphics engine): 3,404

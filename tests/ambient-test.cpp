@@ -241,6 +241,8 @@ struct StandInCapture {
 
 static void register_stand_in_capture(const char *id)
 {
+	if (obs_source_get_display_name(id))
+		return; // (registered by an earlier section)
 	obs_source_info info = {};
 	info.id = id;
 	info.type = OBS_SOURCE_TYPE_INPUT;
@@ -2154,6 +2156,168 @@ static void in_one_tick(std::function<void()> work)
 	for (int i = 0; i < 100 && !job.done.load(); i++)
 		sleep_ms(10);
 	obs_remove_tick_callback(in_one_tick_cb, &job);
+}
+
+// Auto Capture rests a program it gets no picture from for real: the Game
+// Capture is aimed at no window meanwhile, so OBS stops trying to hook it,
+// and titles that change all the time (a frame rate, a GBA window's
+// volume) do not end the rest at once. The owner's log (2026-11-18): a
+// rest of Dolphin ended 0.27 s after it began, hundreds of hooking tries a
+// session. Run after the auto capture section, and alone with
+// STAGEKIT_TEST_ONLY_AUTO_REST.
+static void auto_rest_test()
+{
+	printf("\n[auto capture: a program rests for real, and is aimed at again after]\n");
+	register_stand_in_capture("game_capture");
+	const std::string none = "window :StageKitNoWindow:stagekit-no-window.exe";
+	struct Rig {
+		obs_source_t *capture, *filter;
+	};
+	auto make = [](const char *name, int give_up_ms) {
+		obs_data_t *cd = obs_data_create();
+		obs_data_set_int(cd, "width", 320);
+		obs_data_set_int(cd, "height", 180);
+		obs_data_set_int(cd, "start_frames", 100000000); // no picture
+		obs_source_t *capture = obs_source_create("game_capture", name, cd, nullptr);
+		obs_data_release(cd);
+		obs_data_t *fd = obs_data_create();
+		obs_data_set_int(fd, "give_up_ms", give_up_ms);
+		obs_source_t *filter =
+			obs_source_create("stagekit_auto_capture", (std::string(name) + " AC").c_str(), fd, nullptr);
+		obs_data_release(fd);
+		obs_source_filter_add(capture, filter);
+		return Rig{capture, filter};
+	};
+	auto show = [](const Rig &r, const std::string &windows) {
+		calldata_t cd = {};
+		calldata_set_string(&cd, "windows", windows.c_str());
+		calldata_set_bool(&cd, "keep_clock", true); // (or every call moves its clock on)
+		proc_handler_call(obs_source_get_proc_handler(r.filter), "set_test_windows", &cd);
+		calldata_free(&cd);
+	};
+	auto aim = [](const Rig &r) {
+		obs_data_t *d = obs_source_get_settings(r.capture);
+		const std::string got =
+			std::string(obs_data_get_string(d, "capture_mode")) + " " + obs_data_get_string(d, "window");
+		obs_data_release(d);
+		return got;
+	};
+	using clock = std::chrono::steady_clock;
+	auto since = [](clock::time_point t) {
+		return std::chrono::duration<double>(clock::now() - t).count();
+	};
+	// Shows the windows `titles(i)` gives, a new set every 50 ms, until
+	// `until` says stop; returns the seconds it took.
+	auto run = [&](const Rig &r, const std::function<std::string(int)> &titles,
+		       const std::function<bool(const std::string &)> &until, double limit_s) {
+		const auto t0 = clock::now();
+		for (int i = 0; since(t0) < limit_s; i++) {
+			show(r, titles(i));
+			sleep_ms(50);
+			if (until(aim(r)))
+				return since(t0);
+		}
+		return -1.0;
+	};
+	auto is_none = [&](const std::string &a) {
+		return a == none;
+	};
+	auto is_dolphin = [](const std::string &a) {
+		return a.find("Dolphin.exe") != std::string::npos;
+	};
+
+	// Dolphin with no game: a main window whose title has a frame rate in
+	// it, and a GBA window going between "Volume 100%" and "Muted".
+	Rig dolphin = make("Rest Game Capture", 1000);
+	auto noisy = [](int i) {
+		// (The stand-in windows' own separator is '|', so " - " here.)
+		return "Dolphin 2506a - FPS: " + std::to_string(50 + i % 11) + "|DolphinWnd|Dolphin.exe|front|game\n" +
+		       (i % 2 ? std::string("GBA1 - Muted") : "GBA1 - Volume " + std::to_string(10 * (i % 10)) + "%") +
+		       "|DolphinWnd|Dolphin.exe||";
+	};
+	double t = run(dolphin, noisy, is_dolphin, 1.0);
+	CHECK(t >= 0.0, "Dolphin is aimed at (%s)", aim(dolphin).c_str());
+	t = run(dolphin, noisy, is_none, 2.5);
+	CHECK(t >= 0.5, "with no picture it is rested after the patience, the capture aimed at no window (%.2f s; %s)",
+	      t, aim(dolphin).c_str());
+	// The rest lasts its whole wait (2 s) however the titles change.
+	double held = run(dolphin, noisy, [&](const std::string &a) { return !is_none(a); }, 3.5);
+	CHECK(held >= 1.6, "titles changing every tick do not end the rest early (it lasted %.2f s; then %s)", held,
+	      aim(dolphin).c_str());
+	CHECK(is_dolphin(aim(dolphin)), "after the rest the program is aimed at again (%s)", aim(dolphin).c_str());
+
+	// A title not seen before, every tick: each rest may end early once,
+	// never before the patience, and three times at most while the program
+	// stays open.
+	auto games = [](int i) {
+		std::string name = "Dolphin 2506a - ";
+		for (int k = i; k > 0 || name.size() < 18; k /= 26)
+			name += (char)('a' + k % 26);
+		return name + "|DolphinWnd|Dolphin.exe|front|game";
+	};
+	std::vector<double> rests;
+	for (int n = 0; n < 4; n++) {
+		if (run(dolphin, games, is_none, 2.0) < 0.0)
+			break;
+		rests.push_back(run(dolphin, games, [&](const std::string &a) { return !is_none(a); }, 2.6));
+	}
+	std::string said;
+	for (double r : rests)
+		said += std::to_string(r).substr(0, 4) + " ";
+	// (Seen a tick after the rest began, so the patience less a tick.)
+	CHECK(rests.size() == 4 && rests[0] >= 0.6 && rests[1] >= 0.6 && rests[2] >= 0.6 && rests[0] < 2.0 &&
+		      rests[1] < 2.0 && rests[2] < 2.0 && rests[3] < 0.0,
+	      "a new title ends a rest no sooner than the patience, and only three rests (rests: %s)", said.c_str());
+	obs_data_t *fs = obs_source_get_settings(dolphin.filter);
+	CHECK(std::string(obs_data_get_string(fs, "never")).empty(), "nothing is written to the Never list (%s)",
+	      obs_data_get_string(fs, "never"));
+	obs_data_release(fs);
+	// Put on Never capture while it rests: the rest is over, and the
+	// capture goes back to any full-screen application.
+	if (run(dolphin, games, is_none, 3.0) >= 0.0) {
+		obs_data_t *nd = obs_data_create();
+		obs_data_set_string(nd, "never", "dolphin.exe");
+		obs_source_update(dolphin.filter, nd);
+		obs_data_release(nd);
+		auto is_fullscreen = [](const std::string &a) {
+			return a.rfind("any_fullscreen", 0) == 0;
+		};
+		t = run(dolphin, noisy, is_fullscreen, 1.5);
+		CHECK(t >= 0.0, "a resting program put on Never capture gives the full-screen fallback back (%s)",
+		      aim(dolphin).c_str());
+	} else {
+		CHECK(false, "Dolphin rested again before being put on Never capture (%s)", aim(dolphin).c_str());
+	}
+	obs_source_filter_remove(dolphin.capture, dolphin.filter);
+	obs_source_release(dolphin.filter);
+	obs_source_release(dolphin.capture);
+
+	// Ryujinx: its first picture comes seven seconds into a ten-second
+	// patience. After a rest it gets the whole patience again.
+	Rig ryu = make("Ryujinx Game Capture", 2000);
+	auto ryu_win = [](int) {
+		return std::string("Ryujinx 1.2.3|RyuWnd|Ryujinx.exe|front|game");
+	};
+	auto is_ryu = [](const std::string &a) {
+		return a.find("Ryujinx.exe") != std::string::npos;
+	};
+	run(ryu, ryu_win, is_ryu, 1.0);
+	t = run(ryu, ryu_win, is_none, 3.5);
+	CHECK(t >= 1.5, "Ryujinx with no picture yet is rested (%.2f s)", t);
+	t = run(ryu, ryu_win, is_ryu, 5.0);
+	CHECK(t >= 3.2, "and aimed at again after its wait (%.2f s)", t);
+	sleep_ms(1400);
+	obs_data_t *rd = obs_data_create();
+	obs_data_set_int(rd, "start_frames", 0); // the picture comes
+	obs_source_update(ryu.capture, rd);
+	obs_data_release(rd);
+	held = run(ryu, ryu_win, [&](const std::string &a) { return !is_ryu(a); }, 3.0);
+	CHECK(held < 0.0 && obs_source_get_base_width(ryu.capture) > 0,
+	      "a picture 0.7 of the patience after aiming keeps it captured (%s, %u px)", aim(ryu).c_str(),
+	      obs_source_get_base_width(ryu.capture));
+	obs_source_filter_remove(ryu.capture, ryu.filter);
+	obs_source_release(ryu.filter);
+	obs_source_release(ryu.capture);
 }
 
 // The whole chain of the capture scenes section (Link Visibility, Show in
@@ -5606,6 +5770,14 @@ int main(int argc, char **argv)
 		return g_failures ? 1 : 0;
 	}
 
+	if (getenv("STAGEKIT_TEST_ONLY_AUTO_REST")) { // to try that section alone
+		auto_rest_test();
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
+
 	if (getenv("STAGEKIT_TEST_ONLY_SWITCH_COMMAND")) { // to try that section alone
 		switch_is_command_test();
 		obs_shutdown();
@@ -7805,7 +7977,7 @@ int main(int argc, char **argv)
 			const std::string again = aimed_at();
 			CHECK(taken.find("sculpt3d.exe") != std::string::npos &&
 				      never_now.find("sculpt3d.exe") == std::string::npos &&
-				      rested.rfind("any_fullscreen", 0) == 0 &&
+				      rested == "window :StageKitNoWindow:stagekit-no-window.exe" &&
 				      again.find("sculpt3d.exe") != std::string::npos,
 			      "a program that gives the capture no picture is left alone for a while, not put on the Never capture list, and tried again when its window's title changes (%s; never: '%s'; then %s; then %s)",
 			      taken.c_str(), never_now.c_str(), rested.c_str(), again.c_str());
@@ -7813,6 +7985,8 @@ int main(int argc, char **argv)
 			obs_source_release(giver);
 			obs_source_release(stuck);
 		}
+
+		auto_rest_test();
 
 		// The controls: say what is captured, undo a wrong pick in one
 		// press, and choose from open programs instead of typing names.

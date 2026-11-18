@@ -9,73 +9,40 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | `chore/filter-names-tooltips` (filter names, wrapped tooltips, more Mode types, betaNEXT), on `main` after beta176 (#192). Next: the new collection |
+| Working branch | `fix/auto-capture-hook-loop` (Auto Capture rests a program for real, betaNEXT), on `main` after beta180. Next: the new collection |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
-## The capture hide shows only what it hid (0.1.0-beta183)
+## Auto Capture rests a program for real (0.1.0-betaNEXT)
 
-Branch `fix/switcher-hide-restores`, on `main` after beta176. Notes:
-`docs/releases/0.1.0-beta183.md`. No Stream Deck file changed. The owner's DSLR camera had a
-leftover Auto Capture; its *Manual Window / Source* key on *Hide or show the capture*, with no
-Standby Image on the camera, showed DSLR in every scene at the second press, full-screen over the
-mode and the capture a Link Visibility (*Show only one*) had on.
+Branch `fix/auto-capture-hook-loop`, on `main` after beta180. Notes:
+`docs/releases/0.1.0-betaNEXT.md`. No Stream Deck file changed.
 
-- **`hid_items_press`** (`src/common/hid-items.*`), used by Auto Capture (`standby_step`, its old
-  `hide_items` removed) and the Automatic Window Switcher (`toggle_hidden`, its `items_showing`
-  removed): the hide hides every shown item of the capture (scenes and their groups) and writes
-  down scene, containing scene or group and item id in the filter's own settings (`hid_items`,
-  in `kOwnSettings`); the show shows those still hidden, passes over one `mode_holds_hidden`
-  holds, and clears the record. No record and nothing shown: nothing, logged. Always on, not an
-  option. The Standby cover path is as before, but a press with a record pending always shows
-  (it never covers then). `SwitcherChanged` / `GetSwitcherState` read hidden while a record is
-  pending (`hid_pending_`, read in `update`). Same rule as Show in Scenes' *Show only what it
-  hid* on another branch; nothing shared with it.
-- Show Source in Use (Automatic Source Switcher) has no hide command (next, toggle, back only), so
-  it is unchanged.
-- `GetSwitcherState` added to the tests' `stagekit_vendor_call`.
-- Tests: `[capture hide: the show brings back only what the hide hid]`
-  (`capture_hide_restores_test`, after the switch test in the follow-sources section; alone with
-  `STAGEKIT_TEST_ONLY_CAPTURE_HIDE`): Live / Chat Live (Link Visibility only-one with a window
-  capture) / Standby (a Follow link), Auto Capture and a switcher, a press with nothing recorded,
-  and a filter made again from its saved settings. AGENTS, *The capture hide shows only what it
-  hid*.
-- Not proven: on Windows; the Auto Capture and switcher hide checks in the full run (not run here:
-  the machine's release queue uses `run-tests.sh`).
+- **Evidence (the owner's logs, 2026-11-18):** Auto Capture aimed a Game Capture at Dolphin.exe;
+  OBS printed `attempting to hook process: Dolphin.exe` / `capture stopped` about every 0.42 s
+  (78 times in 90 s, hundreds a session). The rest logged *got no picture ... leaving it alone*
+  and, 0.27 s later, *trying Dolphin.exe again (its window's title changed)*.
+- **Causes, `src/capture/auto-capture.cpp`:** with nothing else chosen the capture was left aimed
+  at the resting program (or at *any full-screen application*, which hooks a full-screen emulator
+  too); and the rest ended as soon as any window of the program had a title other than the one
+  given up on (a frame rate, a GBA window's volume, the GBA windows themselves).
+- **Fix:** while a program rests and nothing else is chosen, the Game Capture is aimed at no
+  window (`kNoWindow`, `capture_mode` window, a class and executable nothing has) and aimed back
+  when the rest ends. A rest ignores titles seen at its start and in its first `give_up_s_`
+  (`titles`, `title_shape`: digits out); a new title after that ends it, three times at most while
+  the program stays open. Clicking back in counts only when no window of the program was in front,
+  and not in that first stretch. A program put on *Never capture* while it rests is no longer
+  rested (`rest_.erase`), so the full-screen fallback comes back (a review finding). Nothing is
+  written to the user's lists; *Always capture* programs are never rested.
+- **Tests:** `[auto capture: a program rests for real, and is aimed at again after]`
+  (`auto_rest_test`, alone with `STAGEKIT_TEST_ONLY_AUTO_REST`, also run inside the auto capture
+  section; the older check of that section now expects no window, not any full-screen, during a
+  rest). `register_stand_in_capture` registers a kind once only.
+- **Not seen on Windows:** that OBS's Game Capture, aimed at a window that does not exist, only
+  looks for it and logs nothing (believed from OBS's `try_hook`, which returns when no window is
+  found).
 
-## Filter names, tooltips, Mode types (0.1.0-beta182)
-
-Branch `chore/filter-names-tooltips`, on `main` after beta176 (#192). Notes:
-`docs/releases/0.1.0-beta182.md`. Three things the owner asked for:
-
-- **Filter names say where the filter goes** (the owner: "I want all scene filters in the plugin
-  referred to as scene filters, and likewise for source filters so they are easily
-  distinguishable in the list", in the form *Scene Filter: Fit to Space (StageKit)* / *Source
-  Filter: Blur (StageKit)*). Only the `*.Name` values of `data/locale/en-US.ini` changed; the list
-  is AGENTS.md's fifth Names entry. Program Trigger is a source filter (it goes on any source, a
-  scene included). Filters already in a collection keep their names. The dock's *Add effect*
-  names what it adds without the prefix, as before. The Stream Deck plugin's `kinds.ts` gained
-  `shownName` and `isOwnName` (now and earlier names, `OLD_NAMES`), so a key's list treats
-  *Source Filter: Blur (StageKit)* and *Ramp Blur (StageKit)* alike as a kind's own name. Old
-  names count only whole ("Layout" or "Layout (StageKit)"), never as a part: some are plain words,
-  and a user's "Chat Layout" must still be labelled "Chat Layout (Apply Layout)". `targetItems`'
-  labelling is otherwise unchanged. Stream Deck plugin `VERSION` 0.29.0.0 (a file under
-  `streamdeck/` changed).
-- **Tooltips are broken into lines** (the owner: "all tooltips in the plugin are hard to read
-  because they are just one really long line of text"): `set_tip` / `wrap_tip` in
-  `src/common/tooltip.hpp`, 64 characters a line, used for all 157 calls that set a long
-  description. `[tooltips: ...]` (`STAGEKIT_TEST_ONLY_TOOLTIPS`) tests the wrapping and opens
-  every StageKit kind's window to check every tooltip line.
-- **Scene Modes' *Mode type* offers every type the Stream Deck Scene Mode key does** (the owner:
-  "handheld is not an option"): 86 types, the key's ids in the key's order; the 20 there were keep
-  their ids and wording, but *Capture card* reads *Capture card (internal)*, as on the Stream Deck,
-  beside the new *Capture card (external)*. `streamdeck/tests/mode-types.test.ts` checks the two
-  lists agree and that every type gives the key a picture.
-
-Not seen on Windows: how OBS's tooltips look with the breaks (Qt shows a plain-text tooltip's
-line breaks as they are).
-
-## Scene Shadow from each source, Scene Corners on the whole scene (0.1.0-beta176)
+## A capture left in use after a cut part-way through a change (0.1.0-beta180)
 
 Branch `fix/stale-transition-flake`, on `main` after beta174. Notes:
 `docs/releases/0.1.0-beta180.md`. No Stream Deck file changed. The check *a scene left with a cut
