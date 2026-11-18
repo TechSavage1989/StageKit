@@ -16,6 +16,7 @@ the Free Software Foundation; either version 2 of the License, or
 #pragma once
 
 #include "../common/easing.hpp"
+#include "../common/mosaic-uniforms.hpp"
 
 #include <obs.h>
 
@@ -229,19 +230,8 @@ private:
 	gs_eparam_t *pl_image_ = nullptr;
 	gs_eparam_t *pl_image2_ = nullptr;
 	gs_eparam_t *pl_mix2_ = nullptr;
-	gs_eparam_t *pl_texel_ = nullptr;
-	gs_eparam_t *pl_size_ = nullptr;
-	gs_eparam_t *pl_strength_ = nullptr;
-	gs_eparam_t *pl_shape_ = nullptr;
-	gs_eparam_t *pl_smoothing_ = nullptr;
-	gs_eparam_t *pl_glass_ = nullptr;
-	gs_eparam_t *pl_glass_style_ = nullptr;
-	gs_eparam_t *pl_whole_ = nullptr;
-	gs_eparam_t *pl_open_edge_ = nullptr;
-	gs_eparam_t *pl_fallback_ = nullptr;
 	gs_eparam_t *pl_keep_alpha_ = nullptr;
-	gs_eparam_t *pl_origin_ = nullptr;
-	gs_eparam_t *pl_turn_ = nullptr;
+	MosaicUniforms mosaic_; // every uniform of the Mosaic technique
 	gs_eparam_t *pl_original_ = nullptr;
 	gs_eparam_t *pl_mask_ = nullptr;
 	gs_eparam_t *pl_mix_ = nullptr;
