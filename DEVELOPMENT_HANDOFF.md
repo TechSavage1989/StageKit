@@ -13,10 +13,10 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
-## A capture left in use after a cut part-way through a change (0.1.0-betaNEXT)
+## A capture left in use after a cut part-way through a change (0.1.0-beta180)
 
 Branch `fix/stale-transition-flake`, on `main` after beta174. Notes:
-`docs/releases/0.1.0-betaNEXT.md`. No Stream Deck file changed. The check *a scene left with a cut
+`docs/releases/0.1.0-beta180.md`. No Stream Deck file changed. The check *a scene left with a cut
 part-way through a change: back on it, the capture whose change was cut off is not in use* (capture
 scenes section, the chain of two scenes) failed in about one full run in twenty, only under load.
 

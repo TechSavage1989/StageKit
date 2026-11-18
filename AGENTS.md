@@ -537,7 +537,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   scene is left with a cut is never ended either: Link Visibility ends one left on a listed item
   twice a second (`end_stale_transition`: a show transition on a hidden item, or a hide on a shown
   one; only one that still holds a source: OBS can count a finished one as in use for good, and beta147 to beta153 ended that one twice a second all session). **Every change `set_item_visible` makes also ends the other way's
-  transition if it still holds the source** (`end_held_change`, betaNEXT): OBS stops it at a
+  transition if it still holds the source** (`end_held_change`, beta180): OBS stops it at a
   change but only says so. Shown and hidden again while away, an item carried a hide transition
   cut off earlier as one under way on a hidden item, which the scene counts in when it comes on
   and `end_stale_transition` takes for a change being made now. Link Visibility's half-second
