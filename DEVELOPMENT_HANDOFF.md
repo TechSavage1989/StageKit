@@ -13,10 +13,10 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
-## The capture hide shows only what it hid (0.1.0-betaNEXT)
+## The capture hide shows only what it hid (0.1.0-beta183)
 
 Branch `fix/switcher-hide-restores`, on `main` after beta176. Notes:
-`docs/releases/0.1.0-betaNEXT.md`. No Stream Deck file changed. The owner's DSLR camera had a
+`docs/releases/0.1.0-beta183.md`. No Stream Deck file changed. The owner's DSLR camera had a
 leftover Auto Capture; its *Manual Window / Source* key on *Hide or show the capture*, with no
 Standby Image on the camera, showed DSLR in every scene at the second press, full-screen over the
 mode and the capture a Link Visibility (*Show only one*) had on.

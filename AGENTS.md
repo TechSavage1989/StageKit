@@ -1472,7 +1472,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   capture, over ... ms (transition n)` is there to tell. `Style::Morph` (11) stretches both
   pictures over the gliding frame, as the window switcher's Morph does.
 - **The capture hide shows only what it hid** (`hid_items_press` in `src/common/hid-items.*`;
-  Auto Capture and the Automatic Window Switcher, betaNEXT). Without a Standby Picture to cover
+  Auto Capture and the Automatic Window Switcher, beta183). Without a Standby Picture to cover
   with, the hide hides the capture's shown items in every scene and group and writes down which
   (scene, containing scene or group, item id; `hid_items` in the filter's own settings, in
   `kOwnSettings`, never an item held); the show shows only those still hidden, passing over what
