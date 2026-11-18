@@ -2273,6 +2273,316 @@ static void switch_is_command_test()
 	obs_source_release(before_out);
 }
 
+// Scene Modes' "Hide when on" and "Leave when shown": the owner's
+// Component-Capture-Scene without its two column markers. GBA mode hides the
+// full-screen DSLR when it comes on, and DSLR shown while GBA is on (by a
+// Link Visibility, by hand) brings Chat back. The owner: "showing DSLR switch
+// back to the Chat mode". Run at the end of the Scene Modes section, and
+// alone with STAGEKIT_TEST_ONLY_MODES_HIDE.
+static void modes_hide_test()
+{
+	auto block = [](const std::string &name, long long abgr) {
+		obs_data_t *d = obs_data_create();
+		obs_data_set_int(d, "color", abgr);
+		obs_data_set_int(d, "width", 160);
+		obs_data_set_int(d, "height", 90);
+		obs_source_t *src = obs_source_create("color_source", name.c_str(), d, nullptr);
+		obs_data_release(d);
+		return src;
+	};
+	auto set_list = [](obs_data_t *settings, const std::string &list, const std::vector<std::string> &names) {
+		obs_data_array_t *rows = obs_data_array_create();
+		for (const std::string &name : names) {
+			obs_data_t *row = obs_data_create();
+			obs_data_set_string(row, "value", name.c_str());
+			obs_data_array_push_back(rows, row);
+			obs_data_release(row);
+		}
+		obs_data_set_array(settings, list.c_str(), rows);
+		obs_data_array_release(rows);
+	};
+	auto read_list = [](obs_source_t *filter, const char *list) {
+		std::string out;
+		obs_data_t *s = obs_source_get_settings(filter);
+		obs_data_array_t *rows = obs_data_get_array(s, list);
+		for (size_t i = 0; i < obs_data_array_count(rows); i++) {
+			obs_data_t *row = obs_data_array_item(rows, i);
+			out += (out.empty() ? "" : "|") + std::string(obs_data_get_string(row, "value"));
+			obs_data_release(row);
+		}
+		obs_data_array_release(rows);
+		obs_data_release(s);
+		return out;
+	};
+	auto now_of = [](obs_source_t *f) {
+		obs_data_t *s = obs_source_get_settings(f);
+		std::string now = obs_data_get_string(s, "mode_now");
+		obs_data_release(s);
+		return now;
+	};
+	auto press = [](const char *scene, const char *mode) {
+		std::string why;
+		obs_data_t *req = obs_data_create();
+		obs_data_set_string(req, "scene", scene);
+		obs_data_set_string(req, "mode", mode);
+		obs_data_set_string(req, "how", "on");
+		calldata_t cd = {};
+		calldata_set_string(&cd, "request", "SetSceneMode");
+		calldata_set_string(&cd, "data", obs_data_get_json(req));
+		proc_handler_call(obs_get_proc_handler(), "stagekit_vendor_call", &cd);
+		calldata_free(&cd);
+		obs_data_release(req);
+		sleep_ms(200);
+	};
+	obs_source_t *before_out = obs_get_output_source(0);
+
+	// The owner's layout, on screen and off it, with the Link Visibility
+	// that shows DSLR before and after the Scene Modes in the filter list.
+	for (int run = 0; run < 4; run++) {
+		const bool on_screen = run < 2;
+		const bool link_first = run % 2 == 1;
+		printf("\n[scene modes: hide when on, leave when shown] (%s, %s)\n",
+		       on_screen ? "on screen" : "off screen",
+		       link_first ? "link before the modes" : "link after the modes");
+		const std::string p = "MH" + std::to_string(run) + " ";
+		obs_source_t *dslr = block(p + "DSLR", 0xFFFFFFFF);
+		obs_source_t *lead = block(p + "Lead", 0xFF0000FF);
+		obs_source_t *chat = block(p + "Chat Box", 0xFF00FF00);
+		obs_source_t *dcomp = block(p + "DSLR Component", 0xFFFF0000);
+		obs_source_t *gba1 = block(p + "GBA 1", 0xFF00FFFF);
+		obs_source_t *gba2 = block(p + "GBA 2", 0xFFFF00FF);
+		const std::string scene_name = p + "Component";
+		obs_scene_t *scene = obs_scene_create(scene_name.c_str());
+		obs_source_t *scene_src = obs_scene_get_source(scene);
+		obs_sceneitem_t *di = obs_scene_add(scene, dslr);
+		obs_sceneitem_t *li = obs_scene_add(scene, lead);
+		obs_sceneitem_t *ci = obs_scene_add(scene, chat);
+		obs_sceneitem_t *dci = obs_scene_add(scene, dcomp);
+		obs_sceneitem_t *g1 = obs_scene_add(scene, gba1);
+		obs_sceneitem_t *g2 = obs_scene_add(scene, gba2);
+		obs_sceneitem_set_visible(g1, false);
+		obs_sceneitem_set_visible(g2, false);
+		obs_set_output_source(0, on_screen ? scene_src : nullptr);
+
+		obs_data_t *md = obs_data_create();
+		set_list(md, "modes", {"m1", "m2"});
+		obs_data_set_string(md, "mode|m1|name", "Chat");
+		set_list(md, "mode|m1|sources", {p + "Chat Box", p + "DSLR Component"});
+		obs_data_set_string(md, "mode|m2|name", "GBA");
+		set_list(md, "mode|m2|sources", {p + "GBA 1", p + "GBA 2"});
+		set_list(md, "mode|m2|hide", {p + "DSLR"});
+		set_list(md, "mode|m2|leave_on", {p + "DSLR"});
+		obs_data_set_string(md, "mode|m2|leave_to", "m1");
+		obs_data_set_string(md, "mode_now", "m1");
+		obs_data_set_string(md, "mode_before", "");
+		obs_data_set_string(md, "transition", "none");
+		obs_source_t *modes = obs_source_create("stagekit_scene_modes", (p + "Modes").c_str(), md, nullptr);
+		obs_data_release(md);
+		// A link: DSLR follows the lead (a key's source, say).
+		obs_data_t *ld = obs_data_create();
+		set_list(ld, "leads", {p + "Lead"});
+		set_list(ld, "items", {p + "DSLR"});
+		obs_data_set_int(ld, "mode", 2);
+		obs_data_set_string(ld, "transition", "none");
+		obs_source_t *link = obs_source_create("stagekit_visibility_link", (p + "Link").c_str(), ld, nullptr);
+		obs_data_release(ld);
+		if (link_first) {
+			obs_source_filter_add(scene_src, link);
+			obs_source_filter_add(scene_src, modes);
+		} else {
+			obs_source_filter_add(scene_src, modes);
+			obs_source_filter_add(scene_src, link);
+		}
+		sleep_ms(400);
+		auto state = [&] {
+			std::string s;
+			for (obs_sceneitem_t *it : {di, li, ci, dci, g1, g2})
+				s += obs_sceneitem_visible(it) ? "1" : "0";
+			return s + " " + now_of(modes);
+		};
+		const std::string start = state();
+
+		// GBA comes on: DSLR is hidden with Chat's sources.
+		press(scene_name.c_str(), "m2");
+		const std::string gba_on = state();
+		CHECK(start == "111100 m1" && gba_on == "010011 m2",
+		      "GBA mode coming on hides DSLR (Hide when on) with the Chat mode's sources (%s, then %s)",
+		      start.c_str(), gba_on.c_str());
+		// Back to Chat: DSLR is not a member, so it is not shown again.
+		press(scene_name.c_str(), "m1");
+		const std::string chat_on = state();
+		CHECK(chat_on == "011100 m1", "going back to Chat does not show DSLR again (%s)", chat_on.c_str());
+
+		// The leave rule only acts while its mode is on.
+		obs_sceneitem_set_visible(di, true);
+		sleep_ms(300);
+		const std::string by_hand_chat = state();
+		CHECK(by_hand_chat == "111100 m1",
+		      "DSLR shown by hand while Chat is on changes no mode: the leave rule is GBA's (%s)",
+		      by_hand_chat.c_str());
+
+		// GBA again, then DSLR shown by the link (its lead shown): back to Chat.
+		press(scene_name.c_str(), "m2");
+		obs_sceneitem_set_visible(li, false);
+		sleep_ms(300);
+		const std::string gba_lead_off = state();
+		obs_sceneitem_set_visible(li, true);
+		sleep_ms(400);
+		const std::string by_link = state();
+		CHECK(gba_lead_off == "000011 m2" && by_link == "111100 m1",
+		      "DSLR shown by a Link Visibility while GBA is on: the filter switches to Chat and DSLR stays shown (%s, then %s)",
+		      gba_lead_off.c_str(), by_link.c_str());
+
+		// And shown by hand, the owner's case: GBA on, DSLR shown, Chat back.
+		press(scene_name.c_str(), "m2");
+		obs_sceneitem_set_visible(di, true);
+		sleep_ms(400);
+		const std::string by_hand = state();
+		CHECK(by_hand == "111100 m1",
+		      "DSLR shown by hand while GBA is on: Chat comes back and DSLR stays shown (%s)", by_hand.c_str());
+
+		// No loop: DSLR in Chat's hide list as well. Shown while GBA is on,
+		// it brings Chat on and is not hidden by Chat's hide list.
+		obs_data_t *s = obs_source_get_settings(modes);
+		set_list(s, "mode|m1|hide", {p + "DSLR"});
+		set_list(s, "mode|m1|leave_on", {p + "GBA 1"});
+		obs_data_set_string(s, "mode|m1|leave_to", "");
+		obs_source_update(modes, s);
+		obs_data_release(s);
+		sleep_ms(200);
+		press(scene_name.c_str(), "m2");
+		const std::string gba_again = state();
+		obs_sceneitem_set_visible(di, true);
+		sleep_ms(600);
+		const std::string no_loop = state();
+		sleep_ms(400);
+		CHECK(gba_again == "010011 m2" && no_loop == "111100 m1" && state() == no_loop,
+		      "with DSLR in both GBA's 'Leave when shown' and Chat's 'Hide when on', DSLR shown brings Chat on, stays shown, and nothing flips back (%s, then %s, then %s)",
+		      gba_again.c_str(), no_loop.c_str(), state().c_str());
+
+		obs_set_output_source(0, nullptr);
+		obs_source_filter_remove(scene_src, modes);
+		obs_source_filter_remove(scene_src, link);
+		obs_source_release(modes);
+		obs_source_release(link);
+		sleep_ms(100);
+		obs_source_remove(scene_src);
+		obs_scene_release(scene);
+		for (obs_source_t *src : {dslr, lead, chat, dcomp, gba1, gba2}) {
+			obs_source_remove(src);
+			obs_source_release(src);
+		}
+	}
+
+	// A filter saved before: no hide or leave keys. DSLR is left alone.
+	{
+		printf("\n[scene modes: saved without hide and leave]\n");
+		obs_source_t *dslr = block("MHS DSLR", 0xFFFFFFFF);
+		obs_source_t *chat = block("MHS Chat", 0xFF00FF00);
+		obs_source_t *gba = block("MHS GBA", 0xFF00FFFF);
+		obs_scene_t *scene = obs_scene_create("MHS Scene");
+		obs_source_t *scene_src = obs_scene_get_source(scene);
+		obs_sceneitem_t *di = obs_scene_add(scene, dslr);
+		obs_sceneitem_t *ci = obs_scene_add(scene, chat);
+		obs_sceneitem_t *gi = obs_scene_add(scene, gba);
+		obs_sceneitem_set_visible(gi, false);
+		obs_set_output_source(0, scene_src);
+		obs_data_t *md = obs_data_create();
+		set_list(md, "modes", {"m1", "m2"});
+		obs_data_set_string(md, "mode|m1|name", "Chat");
+		set_list(md, "mode|m1|sources", {"MHS Chat"});
+		obs_data_set_string(md, "mode|m2|name", "GBA");
+		set_list(md, "mode|m2|sources", {"MHS GBA"});
+		obs_data_set_string(md, "mode_now", "m1");
+		obs_data_set_string(md, "transition", "none");
+		obs_source_t *modes = obs_source_create("stagekit_scene_modes", "MHS Modes", md, nullptr);
+		obs_data_release(md);
+		obs_source_filter_add(scene_src, modes);
+		sleep_ms(300);
+		auto state = [&] {
+			std::string s;
+			for (obs_sceneitem_t *it : {di, ci, gi})
+				s += obs_sceneitem_visible(it) ? "1" : "0";
+			return s + " " + now_of(modes);
+		};
+		press("MHS Scene", "m2");
+		const std::string gba_on = state();
+		obs_sceneitem_set_visible(di, false);
+		sleep_ms(200);
+		obs_sceneitem_set_visible(di, true);
+		sleep_ms(300);
+		CHECK(gba_on == "101 m2" && state() == "101 m2",
+		      "a filter saved without the new settings changes modes as before: DSLR, in no mode, is neither hidden nor makes a mode leave (%s, then %s)",
+		      gba_on.c_str(), state().c_str());
+
+		// The window: both lists and 'Leave to' in each mode's group, kept
+		// through a rebuild, and both lists follow a rename.
+		printf("\n[scene modes: hide and leave in the window]\n");
+		obs_properties_t *props = obs_source_properties(modes);
+		bool short_labels = true;
+		for (const char *name : {"mode|m2|hide|alist", "mode|m2|leave_on|alist", "mode|m2|leave_to"}) {
+			obs_property_t *pr = obs_properties_get(props, name);
+			if (!pr || strlen(obs_property_description(pr)) >= 26)
+				short_labels = false;
+		}
+		obs_property_t *to = obs_properties_get(props, "mode|m2|leave_to");
+		const bool to_entries = to && obs_property_list_item_count(to) == 3 &&
+					strcmp(obs_property_list_item_string(to, 0), "") == 0 &&
+					strcmp(obs_property_list_item_string(to, 1), "none") == 0 &&
+					strcmp(obs_property_list_item_string(to, 2), "m1") == 0;
+		const bool hide_pick = pick_into_list(modes, props, "mode|m2|hide|a", "MHS DSLR");
+		sleep_ms(150);
+		const bool leave_pick = pick_into_list(modes, props, "mode|m2|leave_on|a", "MHS DSLR");
+		sleep_ms(150);
+		CHECK(short_labels && to_entries && hide_pick && leave_pick &&
+			      read_list(modes, "mode|m2|hide") == "MHS DSLR" &&
+			      read_list(modes, "mode|m2|leave_on") == "MHS DSLR",
+		      "each mode's group has 'Hide when on', 'Leave when shown' (filled from their boxes) and 'Leave to' (the mode before, no mode, the other modes), with short labels");
+		obs_data_t *s = obs_source_get_settings(modes);
+		obs_data_set_string(s, "new_mode", "Third");
+		obs_source_update(modes, s);
+		obs_data_release(s);
+		sleep_ms(100);
+		obs_property_t *add = obs_properties_get(props, "add_mode");
+		if (add)
+			obs_property_button_clicked(add, modes);
+		sleep_ms(150);
+		CHECK(obs_properties_get(props, "mode|m2|hide|alist") &&
+			      obs_properties_get(props, "mode|m3|leave_on|alist") &&
+			      list_rows(props, "mode|m2|hide|a") == 1 && list_rows(props, "mode|m2|leave_on|a") == 1 &&
+			      obs_property_list_item_count(obs_properties_get(props, "mode|m2|leave_to")) == 4,
+		      "after a rebuild of the window (a mode added) the lists are there with their rows, and 'Leave to' offers the new mode");
+		obs_properties_destroy(props);
+		obs_source_set_name(dslr, "MHS DSLR Renamed");
+		sleep_ms(150);
+		CHECK(read_list(modes, "mode|m2|hide") == "MHS DSLR Renamed" &&
+			      read_list(modes, "mode|m2|leave_on") == "MHS DSLR Renamed",
+		      "both lists follow a renamed source (%s, %s)", read_list(modes, "mode|m2|hide").c_str(),
+		      read_list(modes, "mode|m2|leave_on").c_str());
+		// Leave to the mode before: with GBA on after Chat, DSLR shown brings Chat back.
+		obs_sceneitem_set_visible(di, false);
+		press("MHS Scene", "m1");
+		press("MHS Scene", "m2");
+		obs_sceneitem_set_visible(di, true);
+		sleep_ms(400);
+		CHECK(state() == "110 m1", "'Leave to: The mode before' goes back to the mode that was on before (%s)",
+		      state().c_str());
+
+		obs_set_output_source(0, nullptr);
+		obs_source_filter_remove(scene_src, modes);
+		obs_source_release(modes);
+		sleep_ms(100);
+		obs_source_remove(scene_src);
+		obs_scene_release(scene);
+		for (obs_source_t *src : {dslr, chat, gba}) {
+			obs_source_remove(src);
+			obs_source_release(src);
+		}
+	}
+	obs_set_output_source(0, before_out);
+	obs_source_release(before_out);
+}
+
 static void link_follow_sources_test()
 {
 	printf("\n[link visibility: follow sources, several leads and their followers]\n");
@@ -4362,6 +4672,14 @@ int main(int argc, char **argv)
 
 	if (getenv("STAGEKIT_TEST_ONLY_MORPH_HOLDS")) { // to try that section alone
 		item_morph_holds_test(w, h);
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
+
+	if (getenv("STAGEKIT_TEST_ONLY_MODES_HIDE")) { // to try that section alone
+		modes_hide_test();
 		obs_shutdown();
 		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
 		       g_failures == 1 ? "" : "s");
@@ -13448,6 +13766,8 @@ int main(int argc, char **argv)
 		}
 		obs_set_output_source(0, modes_before_out);
 		obs_source_release(modes_before_out);
+		// Hide when on, and Leave when shown (alone: STAGEKIT_TEST_ONLY_MODES_HIDE).
+		modes_hide_test();
 	}
 	// ==== end scene-filters:modes ====
 	// ==== scene-filters:transitions ====
