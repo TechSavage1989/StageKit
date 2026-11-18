@@ -1319,16 +1319,31 @@ in a source's right-click menu), so they also hold when a source is shown or hid
 hotkeys, a Stream Deck *Source Visibility* key or obs-websocket.
 
 - **Sources covered**: *All sources* (as it comes), or *Chosen sources*.
-- **Sources**: with *All sources*, a source listed here can have settings of its own: choose it under
-  *Settings for* in *Show/Hide transition*. With *Chosen sources*, only these are set.
+- **Sources with own settings** (with *All sources*): add a source here to give it a transition of its
+  own, then choose it under *Settings for* in *Show/Hide transition*. Every other source uses the scene's
+  transition. With *Chosen sources* the same list is called **Chosen sources**: only these sources get the
+  scene's transition (and each can still have its own under *Settings for*).
 - **Ignored sources**: sources this filter never sets, such as one another tool animates. A source a
   Show/Hide Animation animates, and one a Standby Image stands in for, are always left to those filters.
 - **Sources in groups**: also set the sources inside groups (off as it comes: a group is then one source
   like any other). OBS plays an inner source's transitions whenever its group is shown or hidden too, so a
   fade on both fades twice.
+- **Override other filters** (off as it comes): every show and hide of a source this filter covers uses the
+  scene's transition (or the source's own, under *Settings for*), whatever Link Visibility, Show in Scenes,
+  Scene Modes, Program Trigger or a window switcher is set to. A source a Standby Image stands in for keeps
+  the Standby's transition; ignored sources and sources a Show/Hide Animation animates are left alone.
 - **Show/Hide transition**: the same control as Show in Scenes': a show and a hide transition, each with its
   own duration and settings (the way a slide goes, *Off the nearest edge*), settings of their own for listed
-  sources, and Morph links. Fade, 300 ms, as it comes.
+  sources, and Morph links. Fade, 300 ms, as it comes. With *Morph* chosen, Morph's own choices appear under
+  it: *Unpaired sources* (how a source with nothing to change into comes and goes, with that transition's
+  own settings), *Morph the main image*, *Use visible pixels*, *Ignore shadows & outlines* and the easing;
+  and *Linked sources* below the group says which sources change into each other. They are handed to each
+  source's Morph transition.
+
+**If the scene's transitions seem to do nothing**: another filter is set to a transition of its own. A Link
+Visibility or Show in Scenes set to Morph, say, uses Morph for every change it makes, and the scene's
+transition only comes back afterwards. Either set those filters' *Show transition* to *As the scene sets*,
+or tick *Override other filters* here.
 
 **As the scene sets** is a new choice in every StageKit filter that shows and hides sources (Show in
 Scenes, Link Visibility, Program Trigger, the two switchers, Standby Image), and the one they start with.

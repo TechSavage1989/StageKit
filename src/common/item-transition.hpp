@@ -32,8 +32,14 @@ inline constexpr const char *kTransitionFade = "fade_transition";
 inline constexpr const char *kTransitionScene = "scene";
 
 // Gives an item the show and hide transition asked for, if it does not have
-// them already. Call it before showing or hiding the item.
+// them already. Call it before showing or hiding the item. A scene that
+// overrides other filters (`resolve_item_change`) gives its own instead.
 void set_item_transitions(obs_sceneitem_t *item, const std::string &kind, uint32_t ms);
+
+// Takes an item's show and hide transitions off for a change the plugin
+// itself makes as a cut (Scene Modes putting a scene right after loading),
+// which no scene's *Override other filters* turns into anything else.
+void cut_item_transitions(obs_sceneitem_t *item);
 
 // Shows or hides an item, and says whether that changed anything. In a scene
 // (or group) that is being shown this is OBS's own call and nothing more: the
@@ -127,15 +133,26 @@ void item_change_defaults(obs_data_t *settings);
 // Set by the Scene Transitions filter: what a scene's filter says for an
 // item, if one covers it. `scene` is the scene the item is in, or the one
 // holding its group. Must answer with no "As the scene sets" way left in
-// `out`. One for the whole plugin; nullptr clears it.
-using SceneLookup = bool (*)(obs_source_t *scene, obs_sceneitem_t *item, ItemChange &out);
+// `out`, and say in `overrides` whether that filter's *Override other
+// filters* is ticked. One for the whole plugin; nullptr clears it.
+using SceneLookup = bool (*)(obs_source_t *scene, obs_sceneitem_t *item, ItemChange &out, bool &overrides);
 void item_transitions_scene(SceneLookup lookup);
+
+// A Scene Transitions has ticked (+1) or unticked (-1) *Override other
+// filters*, or gone with it ticked (-1). While none has it ticked, a change
+// that asks for no "As the scene sets" is not looked up at all, as before the
+// override existed.
+void item_transitions_scene_overrides(int change);
 
 // `change` with every "As the scene sets" way replaced: by the scene's (show
 // and hide each on its own), or by a fade of the way's own duration. `scene`
 // as for `apply_item_change`; null for the item's own. A Standby filter calls
 // it before it swaps a change for its stand-in, so the stand-in comes the way
 // the source goes in the scene's terms too.
+// Where the item's scene has a Scene Transitions with *Override other
+// filters* that covers the item, its choice replaces the whole of `change`,
+// whatever was asked. Never for an item another filter owns
+// (`item_transitions_owner`): a Standby's change stays the Standby's.
 ItemChange resolve_item_change(obs_sceneitem_t *item, const ItemChange &change, obs_source_t *scene = nullptr);
 
 // Whether the item already carries `change` (resolved first): the same kinds,
