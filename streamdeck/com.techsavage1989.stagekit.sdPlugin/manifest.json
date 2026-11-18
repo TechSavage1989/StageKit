@@ -1,6 +1,6 @@
 {
 	"Name": "StageKit",
-	"Version": "0.29.0.0",
+	"Version": "0.30.0.0",
 	"Author": "StageKit contributors",
 	"Actions": [
 		{
@@ -145,7 +145,7 @@
 			"Name": "Standby Image",
 			"UUID": "com.techsavage1989.stagekit.standby",
 			"Icon": "imgs/actions/standby/icon",
-			"Tooltip": "Switches the image shown while nothing is captured on and off.",
+			"Tooltip": "Switches the image shown while nothing is captured on and off, or (On press: Cover) shows that image over any source now, a camera too, and takes it away.",
 			"PropertyInspectorPath": "ui/standby.html",
 			"Controllers": [
 				"Keypad"
@@ -168,7 +168,7 @@
 			"Name": "Show in Scenes",
 			"UUID": "com.techsavage1989.stagekit.showinscenes",
 			"Icon": "imgs/actions/showinscenes/icon",
-			"Tooltip": "Shows and hides sources across scenes with one switch.",
+			"Tooltip": "Shows and hides sources across scenes with one switch. Each key can hide them, or cover them with their Standby Image.",
 			"PropertyInspectorPath": "ui/showinscenes.html",
 			"Controllers": [
 				"Keypad"

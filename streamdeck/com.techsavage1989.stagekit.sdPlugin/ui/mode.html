@@ -13,13 +13,15 @@
 			summary { color: #969696; cursor: pointer; padding: 2px 0 8px 2px; outline: none; }
 			summary:hover { color: #d8d8d8; }
 			details p { color: #8a8a8a; line-height: 1.45; margin: 8px 4px 4px 4px; }
+			p.which { color: #8a8a8a; line-height: 1.4; margin: 0 4px 10px 4px; }
 		</style>
 	</head>
 
 	<body>
-		<sdpi-item label="Scene Modes" title="The Scene Modes filter this key works with, by its scene (and its name where a scene has two).">
+		<sdpi-item label="Scene and filter" title="Each entry is a scene and, after the dash, the name of its “Scene Filter: Scene Modes (StageKit)”. In OBS: right-click the scene and choose Filters to find that filter by its name.">
 			<sdpi-select id="modeFilter" setting="modeFilter" datasource="getModeFilters" placeholder="Choose a Scene Modes" show-refresh></sdpi-select>
 		</sdpi-item>
+		<p class="which">Works the filter named after the dash, a “Scene Filter: Scene Modes (StageKit)”. In OBS: right-click the scene, Filters.</p>
 		<sdpi-item label="Mode settings" title="A mode of the Scene Modes: choose one to set, just below, whether Next mode uses it and the key&#x27;s layout and image while it is on. Each mode keeps its own. Chosen for you: the key&#x27;s Switch to mode, else the first mode.">
 			<sdpi-select id="modeFor" setting="modeFor" datasource="getFilterModes" placeholder="Choose a mode" show-refresh></sdpi-select>
 		</sdpi-item>

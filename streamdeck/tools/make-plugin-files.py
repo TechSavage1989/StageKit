@@ -19,7 +19,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, "..")
 PLUGIN = os.path.join(ROOT, "com.techsavage1989.stagekit.sdPlugin")
 BASE = "com.techsavage1989.stagekit"
-VERSION = "0.29.0.0"
+VERSION = "0.30.0.0"
 
 # The pack picture each feature's key starts with (its "on" and "off" look).
 PICTURES = {
@@ -90,6 +90,7 @@ STYLE = """		<style>
 			summary { color: #969696; cursor: pointer; padding: 2px 0 8px 2px; outline: none; }
 			summary:hover { color: #d8d8d8; }
 			details p { color: #8a8a8a; line-height: 1.45; margin: 8px 4px 4px 4px; }
+			p.which { color: #8a8a8a; line-height: 1.4; margin: 0 4px 10px 4px; }
 		</style>
 """
 
@@ -105,12 +106,53 @@ FOLLOW = """
 """
 
 
-def one_list(label, source="getTargets", setting="target", placeholder="Choose"):
+def one_list(label, source="getTargets", setting="target", placeholder="Choose", tip=None):
+    title = f' title="{html.escape(tip, quote=True)}"' if tip else ""
     return (
-        f'		<sdpi-item label="{label}">\n'
+        f'		<sdpi-item label="{label}"{title}>\n'
         f'			<sdpi-select setting="{setting}" datasource="{source}" placeholder="{placeholder}" show-refresh></sdpi-select>\n'
         f"		</sdpi-item>\n"
     )
+
+
+# The kinds of filter that go on a scene (src/kinds.ts SCENE_KINDS), by name:
+# OBS lists them as "Scene Filter: <name> (StageKit)", the rest as "Source
+# Filter: <name> (StageKit)" (beta182).
+SCENE_NAMES = {
+    "Fit to Space", "Automatic Source Switcher", "Link Visibility", "Show/Hide Animation", "Apply Layout",
+    "Move Scene Item", "Match Item", "Scene Modes", "Scene Transitions", "Scene Fit", "Scene Standby",
+    "Scene Corners", "Scene Shadow", "Scene Blur",
+}
+
+
+def obs_name(name):
+    """A kind of filter as OBS's list of filters shows it."""
+    return f"{'Scene Filter' if name in SCENE_NAMES else 'Source Filter'}: {name} (StageKit)"
+
+
+def obs_names(names):
+    """The kinds of filter as OBS's Filters window lists them, quoted:
+    "Source Filter: Blur (StageKit)", and "A or B" for a key that works
+    several kinds."""
+    quoted = [f"\u201c{obs_name(n)}\u201d" for n in names]
+    return quoted[0] if len(quoted) == 1 else ", ".join(quoted[:-1]) + " or " + quoted[-1]
+
+
+def target_list(names, scene=False, label=None):
+    """The list that picks the filter a key works, with the kind of filter to
+    look for in OBS said in its tooltip and in a line under it. The owner:
+    "The stream deck keys don't really say what filters they are associated
+    with which makes it difficult for me to find the associated filters".
+    Each entry reads "<source> \u2014 <filter>" (src/kinds.ts targetItems)."""
+    where = "scene" if scene else "source"
+    if not scene and any(n in SCENE_NAMES for n in names):
+        where = "source or scene"
+    kinds = obs_names(names)
+    label = label or ("Scene and filter" if scene else "Source and filter")
+    tip = (f"Each entry is a {where} and, after the dash, the name of its {kinds}. "
+           f"In OBS: right-click the {where} and choose Filters to find that filter by its name.")
+    note = f'\t\t<p class="which">Works the filter named after the dash, a {kinds}. In OBS: right-click the {where}, Filters.</p>\n'
+    return one_list(label, tip=tip) + note
 
 
 def options(label, setting, default, pairs):
@@ -183,9 +225,11 @@ def mode_page_html():
     lists = json.loads(done.stdout)
     palette = "".join("	" + line + "\n" for line in PALETTE.rstrip("\n").split("\n"))
     return (
-        '		<sdpi-item label="Scene Modes" title="The Scene Modes filter this key works with, by its scene (and its name where a scene has two).">\n'
+        '		<sdpi-item label="Scene and filter" title="Each entry is a scene and, after the dash, the name of its \u201cScene Filter: Scene Modes (StageKit)\u201d. '
+        'In OBS: right-click the scene and choose Filters to find that filter by its name.">\n'
         '			<sdpi-select id="modeFilter" setting="modeFilter" datasource="getModeFilters" placeholder="Choose a Scene Modes" show-refresh></sdpi-select>\n'
         "		</sdpi-item>\n"
+        '		<p class="which">Works the filter named after the dash, a \u201cScene Filter: Scene Modes (StageKit)\u201d. In OBS: right-click the scene, Filters.</p>\n'
         + modes("Mode settings", "modeFor",
                 "A mode of the Scene Modes: choose one to set, just below, whether Next mode uses it and the key's layout and image while it is on. "
                 "Each mode keeps its own. Chosen for you: the key's Switch to mode, else the first mode.", indent="		")
@@ -215,6 +259,37 @@ def mode_page_html():
 
 
 PRESS = options("On press", "press", "toggle", [("toggle", "Toggle"), ("on", "Switch on"), ("off", "Switch off")])
+
+# The Standby Image key: the filter switched, or (append-only, after them)
+# its image shown over the source on purpose and taken away, for a camera,
+# a capture card or a display capture ("StandbyCover"). The owner: "The Hide
+# shows standby image I think should have its own filter, or be separate
+# from that automatic window switcher somehow".
+STANDBY_PRESS = (
+    '		<sdpi-item label="On press" title="Toggle, Switch on and Switch off switch the Standby Image filter itself '
+    '(off: no image at all). Cover: toggle, Cover with image and Uncover show its image over the source now, '
+    'whatever the source shows, and take it away again, the way the filter is set to change; '
+    'the key is then lit while the image covers the source.">\n'
+    '			<sdpi-select setting="press" default="toggle">\n'
+    + "\n".join(f'				<option value="{v}">{t}</option>' for v, t in (
+        ("toggle", "Toggle"), ("on", "Switch on"), ("off", "Switch off"),
+        ("cover", "Cover: toggle"), ("coveron", "Cover with image"), ("coveroff", "Uncover")))
+    + "\n			</sdpi-select>\n		</sdpi-item>\n"
+)
+
+# The Show in Scenes key's own way of hiding (append-only), for one filter
+# that several keys share: the owner prefers "ONE Show in Scenes filter
+# where each Stream Deck key chooses".
+HIDE_AS = (
+    '		<sdpi-item label="When hiding" title="As the filter says: as its Hide shows Standby Image box is set. '
+    'Hide the sources: they are hidden, whatever that box says. Cover with Standby Image: each source with a '
+    'Source Filter: Standby Image (StageKit) is covered with its image instead, the others are hidden. '
+    'The press that shows them again undoes it.">\n'
+    '			<sdpi-select setting="hideAs" default="filter">\n'
+    + "\n".join(f'				<option value="{v}">{t}</option>' for v, t in (
+        ("filter", "As the filter says"), ("hide", "Hide the sources"), ("cover", "Cover with Standby Image")))
+    + "\n			</sdpi-select>\n		</sdpi-item>\n"
+)
 
 
 _LISTS = None
@@ -382,12 +457,19 @@ def main():
         on, off = PICTURES.get(feature["kind"], ("options/plain-switch-on", "options/plain-switch-off"))
         key_pictures(feature["key"], on, off)
         scene = feature.get("scene", False)
-        page(feature["key"], f"StageKit {feature['name']}", one_list("Scene" if scene else "Source") + PRESS)
+        body = target_list([feature["name"]], scene)
+        if feature["kind"] == "stagekit_standby":
+            body += STANDBY_PRESS
+        else:
+            body += PRESS
+        if feature["kind"] == "stagekit_show_in_scenes":
+            body += HIDE_AS
+        page(feature["key"], f"StageKit {feature['name']}", body)
         add(feature["key"], feature["name"], feature["tip"], feature["key"], "imgs/actions/switch/icon", two(feature["key"]))
     for feature in features["moves"]:
         on, _ = PICTURES.get(feature["kind"], ("options/plain-move", None))
         key_pictures(feature["key"], on, None)
-        page(feature["key"], f"StageKit {feature['name']}", one_list("Move"))
+        page(feature["key"], f"StageKit {feature['name']}", target_list([feature["name"]], feature.get("scene", False)))
         add(feature["key"], feature["name"], feature["tip"], feature["key"], "imgs/actions/move/icon", one(feature["key"]))
 
     key_pictures("shape", "filters/auto-frame-on", None)
@@ -395,7 +477,7 @@ def main():
     page(
         "shape",
         "StageKit set aspect ratio",
-        one_list("Capture")
+        target_list(["Auto Frame"], label="Capture and filter")
         + options("Ratio", "shape", "4:3", shapes)
         + options("Keep ratio", "keep", "game", [("game", "This game only"), ("always", "Until changed")]),
     )
@@ -419,12 +501,13 @@ def main():
     page(
         "appswitch",
         "StageKit next manual capture",
-        one_list("Scene or capture") + options("On press", "step", "next", [("toggle", "Toggle manual / automatic"), ("next", "Next manual window or source"), ("back", "Return to automatic"), ("hide", "Hide or show the capture"), ("clear", "Clear picked windows")]),
+        target_list(["Automatic Window Switcher", "Automatic Source Switcher", "Auto Capture"], label="Switcher filter")
+        + options("On press", "step", "next", [("toggle", "Toggle manual / automatic"), ("next", "Next manual window or source"), ("back", "Return to automatic"), ("hide", "Hide or show the capture"), ("clear", "Clear picked windows")]),
     )
     add("appswitch", "Manual Window / Source", "For an Automatic Window Switcher or an Automatic Source Switcher: toggles between the manual window and automatic, steps to the next manual one, returns to automatic, hides and shows the capture, or clears the windows picked by hand.", "appswitch", "imgs/actions/move/icon", two("appswitch"))
 
     key_pictures("fitoverlap", "options/overlap-on", "options/overlap-off")
-    page("fitoverlap", "StageKit Fit to Space overlap", one_list("Scene") + PRESS)
+    page("fitoverlap", "StageKit Fit to Space overlap", target_list(["Fit to Space", "Scene Fit"], True) + PRESS)
     add("fitoverlap", "Fit to Space Overlap", "Switches a Fit to Space filter's 'Overlap only when it fills': on, the fitted window goes under the camera only while it fills its space, and beside it otherwise.", "fitoverlap", "imgs/actions/switch/icon", two("fitoverlap"))
 
     key_pictures("scene", "options/scene-on", "options/scene-off")
@@ -457,6 +540,7 @@ def main():
             '		<sdpi-item label="Blur filter">\n'
             '			<sdpi-select id="filter" setting="filter" datasource="getSceneBlurs" placeholder="Choose a Scene Blur" show-refresh></sdpi-select>\n'
             "		</sdpi-item>\n"
+            '		<p class="which">Works the \u201cScene Filter: Scene Blur (StageKit)\u201d filters of that name. In OBS: right-click the scene, Filters.</p>\n'
             '		<sdpi-item label="Scene">\n'
             '			<sdpi-select id="scene" setting="scene" datasource="getSceneBlurScenes" default="" show-refresh></sdpi-select>\n'
             "		</sdpi-item>\n"

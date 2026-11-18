@@ -33,6 +33,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/loading.hpp"
 #include "../common/stand-in.hpp"
 #include "../common/start-image.hpp"
+#include "../api/vendor-api.hpp"
 #include "../frame/auto-frame.hpp"
 #include "../placement/scene-standby.hpp"
 #include "../transition/morph-paint.hpp"
@@ -199,14 +200,35 @@ public:
 					self->use(lent);
 				}
 				if (calldata_bool(cd, "toggle"))
-					self->cover_ = !self->cover_;
+					self->toggle_cover();
 				else
-					self->cover_ = calldata_bool(cd, "on");
+					self->set_cover(calldata_bool(cd, "on"));
 				calldata_set_bool(cd, "covering", self->cover_);
 			},
 			this);
+		// Whether the picture is shown over the capture on purpose, for the
+		// "GetStandbyCover" request and Show in Scenes' "Follow what is shown".
+		proc_handler_add(
+			obs_source_get_proc_handler(source_), "void covering(out bool covering)",
+			[](void *data, calldata_t *cd) {
+				calldata_set_bool(cd, "covering", static_cast<Standby *>(data)->cover_.load());
+			},
+			this);
 	}
-	void toggle_cover() { cover_ = !cover_; }
+	void toggle_cover()
+	{
+		bool was = cover_.load();
+		while (!cover_.compare_exchange_weak(was, !was)) {
+		}
+		vendor_emit_standby_cover_changed(source_, !was);
+	}
+	// Shown over the capture (on) or not; a Stream Deck key showing it is
+	// told when that changes ("StandbyCoverChanged").
+	void set_cover(bool on)
+	{
+		if (cover_.exchange(on) != on)
+			vendor_emit_standby_cover_changed(source_, on);
+	}
 
 	// How the picture comes and goes: the filter's own settings, or ones
 	// lent by another filter for the change it asked for.
@@ -1431,6 +1453,124 @@ bool standby_cover_set(obs_source_t *source, bool on, int style, int ms, int cur
 		},
 		&ask);
 	return ask.found;
+}
+
+namespace {
+
+bool is_standby(obs_source_t *filter)
+{
+	const char *id = filter ? obs_source_get_unversioned_id(filter) : nullptr;
+	return id && strcmp(id, kStandbyId) == 0;
+}
+
+// The Standby Image filter named, or the first enabled one (the first of
+// any when none is enabled). A strong reference, or nullptr.
+obs_source_t *find_standby(obs_source_t *source, const std::string &name)
+{
+	if (!name.empty()) {
+		obs_source_t *filter = obs_source_get_filter_by_name(source, name.c_str());
+		if (filter && !is_standby(filter)) {
+			obs_source_release(filter);
+			return nullptr;
+		}
+		return filter;
+	}
+	struct Find {
+		obs_source_t *enabled = nullptr, *any = nullptr;
+	} find;
+	obs_source_enum_filters(
+		source,
+		[](obs_source_t *, obs_source_t *filter, void *param) {
+			auto *f = static_cast<Find *>(param);
+			if (!is_standby(filter))
+				return;
+			if (!f->any)
+				f->any = filter;
+			if (!f->enabled && obs_source_enabled(filter))
+				f->enabled = filter;
+		},
+		&find);
+	obs_source_t *found = find.enabled ? find.enabled : find.any;
+	return found ? obs_source_get_ref(found) : nullptr;
+}
+
+} // namespace
+
+bool standby_cover_press(obs_source_t *source, const std::string &filter_name, const std::string &how,
+			 std::string &name, bool &covering, bool &enabled, std::string &why)
+{
+	if (!source) {
+		why = "No such source";
+		return false;
+	}
+	obs_source_t *filter = find_standby(source, filter_name);
+	if (!filter) {
+		why = filter_name.empty() ? "The source has no Standby Image filter"
+					  : "No Standby Image filter of that name on the source";
+		return false;
+	}
+	name = obs_source_get_name(filter) ? obs_source_get_name(filter) : "";
+	enabled = obs_source_enabled(filter);
+	proc_handler_t *procs = obs_source_get_proc_handler(filter);
+	calldata_t cd = {};
+	bool ok = true;
+	if (how.empty()) {
+		ok = proc_handler_call(procs, "covering", &cd);
+	} else if (!enabled) {
+		// (A filter that is switched off draws nothing: covering would show nothing.)
+		why = "The Standby Image filter is switched off";
+		ok = false;
+	} else if (how == "on" || how == "off" || how == "toggle") {
+		calldata_set_bool(&cd, "toggle", how == "toggle");
+		calldata_set_bool(&cd, "on", how == "on");
+		// Its own transition (no style lent).
+		calldata_set_int(&cd, "style", -1);
+		ok = proc_handler_call(procs, "cover", &cd);
+	} else {
+		why = "'how' is on, off or toggle";
+		ok = false;
+	}
+	covering = ok && calldata_bool(&cd, "covering");
+	if (!ok && why.empty())
+		why = "The Standby Image filter did not answer";
+	calldata_free(&cd);
+	obs_source_release(filter);
+	return ok;
+}
+
+bool standby_covered(obs_source_t *source)
+{
+	bool covered = false;
+	if (!source)
+		return false;
+	obs_source_enum_filters(
+		source,
+		[](obs_source_t *, obs_source_t *filter, void *param) {
+			if (!is_standby(filter) || !obs_source_enabled(filter))
+				return;
+			calldata_t cd = {};
+			if (proc_handler_call(obs_source_get_proc_handler(filter), "covering", &cd) &&
+			    calldata_bool(&cd, "covering"))
+				*static_cast<bool *>(param) = true;
+			calldata_free(&cd);
+		},
+		&covered);
+	return covered;
+}
+
+bool standby_present(obs_source_t *source)
+{
+	bool found = false;
+	if (!source)
+		return false;
+	obs_source_enum_filters(
+		source,
+		[](obs_source_t *, obs_source_t *filter, void *param) {
+			if (is_standby(filter) && obs_source_enabled(filter))
+				*static_cast<bool *>(param) = true;
+		},
+		&found);
+	return found;
 }
 
 bool standby_waiting(obs_source_t *source)

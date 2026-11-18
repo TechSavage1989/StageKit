@@ -13,13 +13,15 @@
 			summary { color: #969696; cursor: pointer; padding: 2px 0 8px 2px; outline: none; }
 			summary:hover { color: #d8d8d8; }
 			details p { color: #8a8a8a; line-height: 1.45; margin: 8px 4px 4px 4px; }
+			p.which { color: #8a8a8a; line-height: 1.4; margin: 0 4px 10px 4px; }
 		</style>
 	</head>
 
 	<body>
-		<sdpi-item label="Scene">
+		<sdpi-item label="Scene and filter" title="Each entry is a scene and, after the dash, the name of its “Scene Filter: Scene Fit (StageKit)”. In OBS: right-click the scene and choose Filters to find that filter by its name.">
 			<sdpi-select setting="target" datasource="getTargets" placeholder="Choose" show-refresh></sdpi-select>
 		</sdpi-item>
+		<p class="which">Works the filter named after the dash, a “Scene Filter: Scene Fit (StageKit)”. In OBS: right-click the scene, Filters.</p>
 		<sdpi-item label="On press">
 			<sdpi-select setting="press" default="toggle">
 				<option value="toggle">Toggle</option>

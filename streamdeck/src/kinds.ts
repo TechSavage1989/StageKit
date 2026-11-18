@@ -144,31 +144,34 @@ export function sourceItems(filters: FilterInfo[], wanted: (kind: string) => boo
 export function filterItems(filters: FilterInfo[], source: string, wanted: (kind: string) => boolean): Item[] {
 	return filters
 		.filter((f) => f.source === source && wanted(f.kind))
-		.map((f) => {
-			const kind = kindName(f.kind);
-			const label = isOwnName(f.name, f.kind) ? f.name : `${f.name} (${kind})`;
-			return { label, value: f.name };
-		});
+		.map((f) => ({ label: filterLabel(f), value: f.name }));
 }
 
 /** What separates a source from its filter in a key's one "target" setting. */
 export const TARGET_SEP = "\u001f";
 
 /**
- * Every filter of the wanted sort as one list to choose from. A source with
- * one such filter is listed by its own name; where a source has several, or
- * the filter was renamed, the filter's name is said too.
+ * Every filter of the wanted sort as one list to choose from: always
+ * "<source> — <filter>", the filter as it is named in OBS's Filters window,
+ * and what kind it is where its name does not say. The owner: "The stream
+ * deck keys don't really say what filters they are associated with which
+ * makes it difficult for me to find the associated filters". (Up to
+ * beta175 a source with one such filter was listed by its name alone.) The
+ * value is unchanged, so saved keys keep working.
  */
 export function targetItems(filters: FilterInfo[], wanted: (kind: string) => boolean): Item[] {
-	const mine = filters.filter((f) => wanted(f.kind));
-	const count = new Map<string, number>();
-	for (const f of mine) count.set(f.source, (count.get(f.source) ?? 0) + 1);
-	return mine
-		.map((f) => {
-			const plain = (count.get(f.source) ?? 0) === 1 && isOwnName(f.name, f.kind);
-			return { label: plain ? f.source : `${f.source} \u2014 ${f.name}`, value: `${f.source}${TARGET_SEP}${f.name}` };
-		})
+	return filters
+		.filter((f) => wanted(f.kind))
+		.map((f) => ({ label: `${f.source} \u2014 ${filterLabel(f)}`, value: `${f.source}${TARGET_SEP}${f.name}` }))
 		.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" }));
+}
+
+/**
+ * A filter's name, and its kind in brackets where the name is not its
+ * kind's own (`isOwnName`: the name OBS gives it now, or one from before).
+ */
+export function filterLabel(f: { name: string; kind: string }): string {
+	return isOwnName(f.name, f.kind) ? f.name : `${f.name} (${kindName(f.kind)})`;
 }
 
 /** The source and filter a key acts on: its one "target", or the two older settings. */
@@ -178,11 +181,31 @@ export function targetOf(settings: { target?: string; source?: string; filter?: 
 	return { source: settings.source ?? "", filter: settings.filter ?? "" };
 }
 
-/** What a switch key does when pressed. Saved in the key's settings. */
-export type Press = "toggle" | "on" | "off";
+/**
+ * What a switch key does when pressed. Saved in the key's settings
+ * (append-only). The three "cover" ones are the Standby Image key's: its
+ * image shown over the source on purpose, or taken away ("StandbyCover"),
+ * not the filter switched on or off.
+ */
+export type Press = "toggle" | "on" | "off" | "cover" | "coveron" | "coveroff";
 
 export function afterPress(press: Press | undefined, enabled: boolean): boolean {
 	if (press === "on") return true;
 	if (press === "off") return false;
 	return !enabled;
+}
+
+/** A Standby Image key's cover press as the request's "how", or undefined for a press that switches the filter. */
+export function coverHow(press: string | undefined): "toggle" | "on" | "off" | undefined {
+	return press === "cover" ? "toggle" : press === "coveron" ? "on" : press === "coveroff" ? "off" : undefined;
+}
+
+/**
+ * How a Show in Scenes key's press hides its sources (`hideAs`,
+ * append-only): as the filter's "Hide shows Standby Image" says (unset
+ * reads the same), by hiding them, or by covering each with its Standby
+ * Image. Undefined: the key switches the filter as any key does.
+ */
+export function hideAsOf(hideAs: unknown): "hide" | "cover" | undefined {
+	return hideAs === "hide" || hideAs === "cover" ? hideAs : undefined;
 }

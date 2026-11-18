@@ -18,7 +18,36 @@ const filters: Record<string, Filter[]> = {
 	],
 	"Game Scene": [{ filterName: "Fit the game", filterKind: "stagekit_fit_item", filterEnabled: true }],
 	"A Group": [],
+	// Not an input of the stand-in's list, so not in the filter lists above.
+	DSLR: [
+		{ filterName: "Standby Image", filterKind: "stagekit_standby", filterEnabled: true },
+		{ filterName: "Show in Scenes-Camera", filterKind: "stagekit_show_in_scenes", filterEnabled: true },
+	],
 };
+
+// The DSLR's Standby Image over it on purpose, and the presses StageKit was asked for.
+let dslrCovered = false;
+const coverRequests: Array<Record<string, unknown>> = [];
+const coverEvents: Array<Record<string, unknown>> = [];
+const showPresses: Array<Record<string, unknown>> = [];
+
+function standbyAndShow(request: string, data: Record<string, unknown>): Record<string, unknown> {
+	if (request === "ShowInScenesPress") {
+		showPresses.push(data);
+		const found = filters[String(data.sourceName)]?.find((f) => f.filterName === data.filterName && f.filterKind === "stagekit_show_in_scenes");
+		if (!found) return { success: false, error: "No Show in Scenes filter of that name on the source" };
+		found.filterEnabled = data.how === "toggle" ? !found.filterEnabled : data.how === "on";
+		return { success: true, enabled: found.filterEnabled };
+	}
+	if (data.sourceName !== "DSLR") return { success: false, error: "The source has no Standby Image filter" };
+	if (request === "StandbyCover") {
+		coverRequests.push(data);
+		const next = data.how === "toggle" ? !dslrCovered : data.how === "on";
+		if (next !== dslrCovered) coverEvents.push({ sourceName: "DSLR", filterName: "Standby Image", covered: next });
+		dslrCovered = next;
+	}
+	return { success: true, filterName: "Standby Image", covered: dslrCovered, enabled: true };
+}
 
 const pressed: string[] = [];
 let blurred = false;
@@ -147,6 +176,10 @@ function answer(requestType: string, data: Record<string, unknown> = {}): { ok: 
 				const responseData = sceneModes(String(data.requestType), (data.requestData ?? {}) as Record<string, unknown>);
 				return { ok: true, data: { vendorName: "StageKit", requestType: data.requestType, responseData } };
 			}
+			if (["StandbyCover", "GetStandbyCover", "ShowInScenesPress"].includes(String(data.requestType))) {
+				const responseData = standbyAndShow(String(data.requestType), (data.requestData ?? {}) as Record<string, unknown>);
+				return { ok: true, data: { vendorName: "StageKit", requestType: data.requestType, responseData } };
+			}
 			if (data.requestType === "BlurAll") {
 				blurred = !blurred;
 				return { ok: true, data: { vendorName: "StageKit", requestType: "BlurAll", responseData: { success: true, active: blurred } } };
@@ -182,6 +215,10 @@ before(async () => {
 				});
 				if (got.ok && d.requestType === "SetSourceFilterEnabled")
 					send(5, { eventType: "SourceFilterEnableStateChanged", eventIntent: 32, eventData: d.requestData });
+				for (const event of coverEvents.splice(0)) {
+					const eventData = { vendorName: "StageKit", eventType: "StandbyCoverChanged", eventData: event };
+					setTimeout(() => send(5, { eventType: "VendorEvent", eventIntent: 512, eventData }), 5);
+				}
 				for (const event of blurEvents.splice(0)) {
 					// As each filter says it from its next tick.
 					const eventData = { vendorName: "StageKit", eventType: "SceneBlurChanged", eventData: event };
@@ -277,9 +314,9 @@ test("a Scene Mode key lists every mode, turns one on by its id and is lit when 
 		[
 			{ label: "Chat Live \u2014 Captures", value: `Chat Live${sep}Captures` },
 			{ label: "Chat Live \u2014 Column", value: `Chat Live${sep}Column` },
-			{ label: "Standby", value: `Standby${sep}Standby modes` },
+			{ label: "Standby \u2014 Standby modes", value: `Standby${sep}Standby modes` },
 		],
-		"the key chooses a filter, by its scene; the filter's name only where a scene has two",
+		"the key chooses a filter, by its scene and the filter's name always, so it can be found in OBS",
 	);
 	assert.deepEqual(
 		modeChoiceItems(filtersFound.find((f) => f.scene === "Standby")!.modes),
@@ -738,4 +775,87 @@ test("a Scene Blur key lists the blurs and their scenes, switches one scene or a
 	await action.show(key, settings);
 	assert.equal(shown.state, 1);
 	assert.ok(shown.images.at(-1)?.endsWith("/blur-types/box-on.png"), shown.images.at(-1));
+});
+
+test("a Standby Image key covers its source with the image and is lit while covered; a Show in Scenes key hides its own way", async () => {
+	const { FilterSwitch } = await import("../src/actions/switch.ts");
+	const { switchTitle } = await import("../src/titles.ts");
+	obs.use({ host: "127.0.0.1", port });
+	while (!obs.isConnected) await once(obs, "connection");
+	const sep = "\u001f";
+	let settings: Record<string, unknown> = { target: `DSLR${sep}Standby Image`, press: "cover" };
+	const shown: { state?: number; title?: string; alerts: number } = { alerts: 0 };
+	const key = {
+		isKey: () => true,
+		getSettings: async () => settings,
+		setSettings: async (next: Record<string, unknown>) => {
+			settings = next;
+		},
+		setImage: async () => {},
+		setState: async (state: number) => {
+			shown.state = state;
+		},
+		setTitle: async (title: string) => {
+			shown.title = title;
+		},
+		showAlert: async () => {
+			shown.alerts++;
+		},
+	};
+	const standby = new FilterSwitch("com.techsavage1989.stagekit.standby", (kind) => kind === "stagekit_standby") as unknown as {
+		show(key: unknown, settings: Record<string, unknown>): Promise<void>;
+		onKeyDown(ev: unknown): Promise<void>;
+	};
+	await standby.show(key, settings);
+	assert.equal(shown.state, 0, "not covered: not lit (although the filter is on)");
+	assert.equal(shown.title, "Cover /\nUncover");
+
+	// Cover: toggle, through StageKit's request; the filter is not switched.
+	const heard = once(obs, "standbycover");
+	await standby.onKeyDown({ action: key, payload: { settings } });
+	assert.deepEqual(coverRequests.at(-1), { sourceName: "DSLR", filterName: "Standby Image", how: "toggle" });
+	assert.equal(dslrCovered, true);
+	assert.equal(shown.state, 1, "lit while covered");
+	assert.deepEqual((await heard)[0], { sourceName: "DSLR", filterName: "Standby Image", covered: true });
+	assert.equal(filters.DSLR[0].filterEnabled, true, "the filter itself stays on");
+	settings = { ...settings, press: "coveroff" };
+	await standby.onKeyDown({ action: key, payload: { settings } });
+	assert.equal(coverRequests.at(-1)?.how, "off");
+	assert.equal(shown.state, 0);
+	assert.equal(shown.title, switchTitle("stagekit_standby", "coveroff"));
+	settings = { ...settings, press: "coveron" };
+	await standby.onKeyDown({ action: key, payload: { settings } });
+	assert.equal(dslrCovered, true);
+	// A source without one: an alert.
+	settings = { target: `camera${sep}Ramp Blur`, press: "coveron" };
+	await standby.onKeyDown({ action: key, payload: { settings } });
+	assert.equal(shown.alerts, 1);
+	// Its filter's own presses still switch the filter.
+	settings = { target: `DSLR${sep}Standby Image`, press: "off" };
+	await standby.onKeyDown({ action: key, payload: { settings } });
+	assert.equal(filters.DSLR[0].filterEnabled, false);
+	filters.DSLR[0].filterEnabled = true;
+
+	// Show in Scenes: "As the filter says" switches the filter as any key;
+	// Hide or Cover press through ShowInScenesPress with that way.
+	const sw = new FilterSwitch("com.techsavage1989.stagekit.showinscenes", (kind) => kind === "stagekit_show_in_scenes") as unknown as {
+		onKeyDown(ev: unknown): Promise<void>;
+	};
+	settings = { target: `DSLR${sep}Show in Scenes-Camera`, press: "toggle" };
+	await sw.onKeyDown({ action: key, payload: { settings } });
+	assert.equal(showPresses.length, 0, "as the filter says (unset): no StageKit request");
+	assert.equal(filters.DSLR[1].filterEnabled, false);
+	settings = { ...settings, hideAs: "filter" };
+	await sw.onKeyDown({ action: key, payload: { settings } });
+	assert.equal(showPresses.length, 0);
+	assert.equal(filters.DSLR[1].filterEnabled, true);
+	settings = { ...settings, hideAs: "cover" };
+	await sw.onKeyDown({ action: key, payload: { settings } });
+	assert.deepEqual(showPresses.at(-1), { sourceName: "DSLR", filterName: "Show in Scenes-Camera", how: "toggle", hideAs: "cover" });
+	assert.equal(filters.DSLR[1].filterEnabled, false);
+	settings = { ...settings, hideAs: "hide", press: "on" };
+	await sw.onKeyDown({ action: key, payload: { settings } });
+	assert.deepEqual(showPresses.at(-1), { sourceName: "DSLR", filterName: "Show in Scenes-Camera", how: "on", hideAs: "hide" });
+	assert.equal(filters.DSLR[1].filterEnabled, true);
+	assert.equal(shown.alerts, 1);
 });

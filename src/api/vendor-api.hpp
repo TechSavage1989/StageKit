@@ -49,6 +49,12 @@ void vendor_emit_scene_mode_changed(obs_source_t *filter, const std::string &mod
 // thread.
 void vendor_emit_scene_blur_changed(obs_source_t *filter, bool active);
 
+// A Standby Image filter's image was shown over its source on purpose, or
+// taken away (its hotkey, its button, a window switcher's or Show in
+// Scenes' hide, a key). Emits "StandbyCoverChanged" { sourceName,
+// filterName, covered }. Safe from any thread.
+void vendor_emit_standby_cover_changed(obs_source_t *filter, bool covered);
+
 // For the tests, which have no obs-websocket: "stagekit_vendor_call" (in
 // string request, in string data, out string response) runs one of the
 // vendor requests with its data and answer as JSON, and

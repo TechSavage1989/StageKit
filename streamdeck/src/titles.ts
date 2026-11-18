@@ -83,8 +83,11 @@ function pressed(name: string, press: string | undefined): string {
 	return press === "on" ? `${name}\nOn` : press === "off" ? `${name}\nOff` : name;
 }
 
-/** A key that switches a filter. */
+/** A key that switches a filter (or, a Standby Image key, covers its source). */
 export function switchTitle(kind: string | undefined, press: string | undefined): string {
+	if (press === "cover") return "Cover /\nUncover";
+	if (press === "coveron") return "Cover";
+	if (press === "coveroff") return "Uncover";
 	return pressed(KINDS[kind ?? ""] ?? "Switch", press);
 }
 

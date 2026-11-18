@@ -3,6 +3,8 @@ import { test } from "node:test";
 
 import {
 	afterPress,
+	coverHow,
+	hideAsOf,
 	filterItems,
 	isMove,
 	isOwnName,
@@ -52,6 +54,18 @@ test("the filter list is one source's, and a renamed filter says what it is", ()
 	assert.deepEqual(filterItems(filters, "nobody", isSwitch), []);
 });
 
+test("a Standby Image key's cover presses, and a Show in Scenes key's way of hiding", () => {
+	assert.equal(coverHow("cover"), "toggle");
+	assert.equal(coverHow("coveron"), "on");
+	assert.equal(coverHow("coveroff"), "off");
+	assert.equal(coverHow("toggle"), undefined, "the filter's own presses switch the filter");
+	assert.equal(coverHow(undefined), undefined);
+	assert.equal(hideAsOf("hide"), "hide");
+	assert.equal(hideAsOf("cover"), "cover");
+	assert.equal(hideAsOf("filter"), undefined, "as the filter says: switched as any key switches it");
+	assert.equal(hideAsOf(undefined), undefined, "unset reads the same");
+});
+
 test("a press switches over, or only on, or only off", () => {
 	assert.equal(afterPress(undefined, false), true);
 	assert.equal(afterPress("toggle", true), false);
@@ -59,14 +73,29 @@ test("a press switches over, or only on, or only off", () => {
 	assert.equal(afterPress("off", false), false);
 });
 
-test("a feature's key chooses from one list: a source by its name, or with the filter's where that is needed", () => {
+test("a feature's key chooses from one list, each entry naming its source and its filter, always", () => {
 	const blur = (kind: string) => kind === "stagekit_ramp_blur";
 	assert.deepEqual(targetItems(filters, blur), [
-		{ label: "camera \u2014 Soft", value: `camera${TARGET_SEP}Soft` },
-		{ label: "Game", value: `Game${TARGET_SEP}Ramp Blur` },
+		{ label: "camera \u2014 Soft (Blur)", value: `camera${TARGET_SEP}Soft` },
+		{ label: "Game \u2014 Ramp Blur", value: `Game${TARGET_SEP}Ramp Blur` },
 	]);
+	// The owner's camera, one Show in Scenes on it: up to beta175 listed as
+	// "Square Camera" alone, so the filter could not be found.
+	const camera: FilterInfo[] = [{ source: "Square Camera", name: "Show in Scenes-Camera", kind: "stagekit_show_in_scenes", enabled: true }];
+	assert.deepEqual(targetItems(camera, (kind) => kind === "stagekit_show_in_scenes"), [
+		{ label: "Square Camera \u2014 Show in Scenes-Camera", value: `Square Camera${TARGET_SEP}Show in Scenes-Camera` },
+	]);
+	// The Manual Window / Source key works three kinds: each says which.
+	const switchers: FilterInfo[] = [
+		{ source: "Window Capture", name: "Apps", kind: "stagekit_app_capture", enabled: true },
+		{ source: "Game Capture", name: "Auto Capture", kind: "stagekit_auto_capture", enabled: true },
+	];
+	assert.deepEqual(
+		targetItems(switchers, () => true).map((i) => i.label),
+		["Game Capture \u2014 Auto Capture", "Window Capture \u2014 Apps (Automatic Window Switcher)"],
+	);
 	assert.deepEqual(targetItems(filters, (kind) => kind === "stagekit_fit_item"), [
-		{ label: "Scene \u2014 Fit the game", value: `Scene${TARGET_SEP}Fit the game` },
+		{ label: "Scene \u2014 Fit the game (Fit to Space)", value: `Scene${TARGET_SEP}Fit the game` },
 	]);
 	assert.deepEqual(targetItems(filters, (kind) => kind === "stagekit_standby"), []);
 });
@@ -98,7 +127,7 @@ test("a filter's own name is the one OBS shows now, or one it was given under an
 		{ source: "Cam", name: "Standby Picture (StageKit)", kind: "stagekit_standby", enabled: true },
 	];
 	assert.deepEqual(targetItems(named, (kind) => kind === "stagekit_ramp_blur"), [
-		{ label: "Game", value: `Game${TARGET_SEP}Source Filter: Blur (StageKit)` },
+		{ label: "Game \u2014 Source Filter: Blur (StageKit)", value: `Game${TARGET_SEP}Source Filter: Blur (StageKit)` },
 	]);
 	assert.deepEqual(filterItems(named, "Cam", isSwitch), [
 		{ label: "Standby Picture (StageKit)", value: "Standby Picture (StageKit)" },

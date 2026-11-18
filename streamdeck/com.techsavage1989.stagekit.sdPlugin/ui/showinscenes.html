@@ -13,18 +13,27 @@
 			summary { color: #969696; cursor: pointer; padding: 2px 0 8px 2px; outline: none; }
 			summary:hover { color: #d8d8d8; }
 			details p { color: #8a8a8a; line-height: 1.45; margin: 8px 4px 4px 4px; }
+			p.which { color: #8a8a8a; line-height: 1.4; margin: 0 4px 10px 4px; }
 		</style>
 	</head>
 
 	<body>
-		<sdpi-item label="Source">
+		<sdpi-item label="Source and filter" title="Each entry is a source and, after the dash, the name of its “Source Filter: Show in Scenes (StageKit)”. In OBS: right-click the source and choose Filters to find that filter by its name.">
 			<sdpi-select setting="target" datasource="getTargets" placeholder="Choose" show-refresh></sdpi-select>
 		</sdpi-item>
+		<p class="which">Works the filter named after the dash, a “Source Filter: Show in Scenes (StageKit)”. In OBS: right-click the source, Filters.</p>
 		<sdpi-item label="On press">
 			<sdpi-select setting="press" default="toggle">
 				<option value="toggle">Toggle</option>
 				<option value="on">Switch on</option>
 				<option value="off">Switch off</option>
+			</sdpi-select>
+		</sdpi-item>
+		<sdpi-item label="When hiding" title="As the filter says: as its Hide shows Standby Image box is set. Hide the sources: they are hidden, whatever that box says. Cover with Standby Image: each source with a Source Filter: Standby Image (StageKit) is covered with its image instead, the others are hidden. The press that shows them again undoes it.">
+			<sdpi-select setting="hideAs" default="filter">
+				<option value="filter">As the filter says</option>
+				<option value="hide">Hide the sources</option>
+				<option value="cover">Cover with Standby Image</option>
 			</sdpi-select>
 		</sdpi-item>
 		<sdpi-item label="Layout" title="How the key&#x27;s image is laid out: the type alone, in the live layout with a camera in its corner, or in the live layout with a camera and chat column. Automatic keeps the image as it is.">

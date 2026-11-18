@@ -112,6 +112,9 @@ test("every option of every key has a picture of its own, and a title", () => {
 	assert.equal(switchTitle("stagekit_ramp_blur", "toggle"), "Blur");
 	assert.equal(switchTitle("stagekit_ramp_blur", "off"), "Blur\nOff");
 	assert.equal(switchTitle("stagekit_app_capture", undefined), "Window\nSwitcher");
+	assert.equal(switchTitle("stagekit_standby", "cover"), "Cover /\nUncover");
+	assert.equal(switchTitle("stagekit_standby", "coveron"), "Cover");
+	assert.equal(switchTitle("stagekit_standby", "coveroff"), "Uncover");
 	assert.equal(moveTitle("stagekit_send_to", { destination: 6 }), "Bottom\nLeft");
 	assert.equal(moveTitle("stagekit_send_to"), "Top\nRight", "where a new one starts");
 	assert.equal(moveTitle("stagekit_send_to", { destination: 9 }), "Saved\nSpot");

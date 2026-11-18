@@ -13,6 +13,7 @@
 			summary { color: #969696; cursor: pointer; padding: 2px 0 8px 2px; outline: none; }
 			summary:hover { color: #d8d8d8; }
 			details p { color: #8a8a8a; line-height: 1.45; margin: 8px 4px 4px 4px; }
+			p.which { color: #8a8a8a; line-height: 1.4; margin: 0 4px 10px 4px; }
 		</style>
 	</head>
 
@@ -20,6 +21,7 @@
 		<sdpi-item label="Blur filter">
 			<sdpi-select id="filter" setting="filter" datasource="getSceneBlurs" placeholder="Choose a Scene Blur" show-refresh></sdpi-select>
 		</sdpi-item>
+		<p class="which">Works the “Scene Filter: Scene Blur (StageKit)” filters of that name. In OBS: right-click the scene, Filters.</p>
 		<sdpi-item label="Scene">
 			<sdpi-select id="scene" setting="scene" datasource="getSceneBlurScenes" default="" show-refresh></sdpi-select>
 		</sdpi-item>

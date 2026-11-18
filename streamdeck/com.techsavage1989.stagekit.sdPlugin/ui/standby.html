@@ -13,18 +13,23 @@
 			summary { color: #969696; cursor: pointer; padding: 2px 0 8px 2px; outline: none; }
 			summary:hover { color: #d8d8d8; }
 			details p { color: #8a8a8a; line-height: 1.45; margin: 8px 4px 4px 4px; }
+			p.which { color: #8a8a8a; line-height: 1.4; margin: 0 4px 10px 4px; }
 		</style>
 	</head>
 
 	<body>
-		<sdpi-item label="Source">
+		<sdpi-item label="Source and filter" title="Each entry is a source and, after the dash, the name of its “Source Filter: Standby Image (StageKit)”. In OBS: right-click the source and choose Filters to find that filter by its name.">
 			<sdpi-select setting="target" datasource="getTargets" placeholder="Choose" show-refresh></sdpi-select>
 		</sdpi-item>
-		<sdpi-item label="On press">
+		<p class="which">Works the filter named after the dash, a “Source Filter: Standby Image (StageKit)”. In OBS: right-click the source, Filters.</p>
+		<sdpi-item label="On press" title="Toggle, Switch on and Switch off switch the Standby Image filter itself (off: no image at all). Cover: toggle, Cover with image and Uncover show its image over the source now, whatever the source shows, and take it away again, the way the filter is set to change; the key is then lit while the image covers the source.">
 			<sdpi-select setting="press" default="toggle">
 				<option value="toggle">Toggle</option>
 				<option value="on">Switch on</option>
 				<option value="off">Switch off</option>
+				<option value="cover">Cover: toggle</option>
+				<option value="coveron">Cover with image</option>
+				<option value="coveroff">Uncover</option>
 			</sdpi-select>
 		</sdpi-item>
 		<sdpi-item label="Layout" title="How the key&#x27;s image is laid out: the type alone, in the live layout with a camera in its corner, or in the live layout with a camera and chat column. Automatic keeps the image as it is.">

@@ -1535,6 +1535,58 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   Capture, came up full-screen over the capture a Link Visibility had on. A pending record reads
   hidden to the Stream Deck key. Not an option: a show of an item the command never hid is the
   bug. Tested in `[capture hide: ...]` (`STAGEKIT_TEST_ONLY_CAPTURE_HIDE`).
+- **A Standby Image covers any source on purpose, and keys can ask for it** (beta189). The owner:
+  "The Hide shows standby image I think should have its own filter, or be separate from that
+  automatic window switcher somehow. Automatic window switcher doesn't even apply to capture sources
+  other than window". So: the vendor requests `StandbyCover` (`how` on, off, toggle; none asks) and
+  `GetStandbyCover` (`standby_cover_press` in `standby.cpp`: the filter named, or the first enabled
+  one; a press refused while it is switched off; its own transition, `style` -1), and the event
+  `StandbyCoverChanged` from every change of `cover_` (`set_cover` / `toggle_cover`, so the hotkey,
+  the button, the switchers' and Show in Scenes' hides all tell; `vendor_emit_standby_cover_changed`;
+  the `covering` proc answers for it). Show in Scenes' *Hide shows Standby Image* (`hide_standby`,
+  off as it comes): a hide covers each listed source with an enabled Standby Image instead
+  (`standby_present`), its items left shown; a show uncovers them and whatever this filter covered
+  before (`covered_`), whichever way that hide was made; *Follow what is shown* counts a covered
+  source as hidden (`standby_covered`). The owner then preferred "ONE Show in Scenes filter where
+  each Stream Deck key chooses": `ShowInScenesPress` (`show_in_scenes_press`, `hideAs` filter, hide,
+  cover) switches the filter on the request's thread with the way noted for that thread
+  (`press_as`, `pressing_thread_`, `pressing_as_`, read in `enabled_cb` into `press_`'s
+  `kPressHide` / `kPressCover`); a key on *As the filter says* still uses
+  `SetSourceFilterEnabled`. The cover is the source's: every scene and every Cropped View of it
+  shows the image (to cover one view, the filter goes on the view). Tested in `[standby image over
+  any source: ...]` (`standby_cover_test`, alone: `STAGEKIT_TEST_ONLY_STANDBY_COVER`, also after
+  the switch-command section) with a colour source as the camera. Stream Deck: the Standby Image
+  key's *On press* gains `cover`, `coveron`, `coveroff` (append-only, `coverHow`), lit while
+  covered; the Show in Scenes key's *When hiding* (`hideAs`, `hideAsOf`). Not run on Windows or a
+  Stream Deck.
+- **Show in Scenes' *Show only what it hid*** (`restore_hidden`, off as it comes; beta189). The
+  owner's camera switch lists DSLR Component, DSLR GBA Link, Square Camera and DSLR (full-screen,
+  hidden in the component scene); with *Follow what is shown* the switch read off, a press showed
+  DSLR, and the captures' Only one link hid Game Capture and DSLR Component. Ticked: a hide press
+  notes each item it actually hid as (scene name, name of the scene or group holding it, item id;
+  `Noted`, never a reference) and each source it covered (`Record::covers`, only one not covered
+  before), added to what earlier hides noted and is still held, written to the filter's own
+  settings (`hidden_record`, in `kOwnSettings`; lines `i\tscene\towner\tid`, `c\tsource`). A show
+  press (`restore_record`) brings back only those still hidden and not held hidden by a mode, then
+  forgets all; with nothing noted it does nothing and logs it. **The rule**: the switch means "has
+  hidden things": `follow()` with it ticked puts the switch on (with *When this is on* shown) while
+  nothing noted is still held (`prune_record`, which forgets an item something else has shown or
+  that is gone, and a cover taken away), so a toggle key always hides and then restores. Works with
+  *Hide shows Standby Image* and `ShowInScenesPress`. Tested in `[show in scenes: show only what it
+  hid]` (`restore_hidden_test`, alone: `STAGEKIT_TEST_ONLY_RESTORE_HIDDEN`; the owner's scene with
+  both links, the press and its restore, a show with nothing noted, an item shown and hidden by
+  hand meanwhile, a filter made again from its settings, a key set to Cover).
+- **Every key's list names its filter** (beta189; the owner: "The stream deck keys don't really
+  say what filters they are associated with which makes it difficult for me to find the associated
+  filters"). `targetItems` labels every entry "<source> — <filter>" (`filterLabel`: the kind in
+  brackets where the name is not the kind's own, `isOwnName`, which knows the old names too); up to beta175 a source with one such filter was listed
+  by its name alone, so the owner's *Square Camera* hid its *Show in Scenes-Camera*. The Scene
+  Mode key's *Scene and filter* entries (`modeFilterItems`, beta181's filter list; the mode is
+  chosen under it) are "<scene> — <filter>" always. Values are unchanged, so saved keys
+  keep working. The list is called *Source and filter* / *Scene and filter* (*Capture and filter*,
+  *Switcher filter*), and `target_list` in `make-plugin-files.py` gives it a tooltip and a line
+  under it naming the kind as OBS lists it ("Works the filter named after the dash, a “Source Filter:
+  Show in Scenes (StageKit)”", by `obs_name`: Scene Filter or Source Filter as beta182 names them). A new key that picks a filter uses `target_list`.
 - **Auto Capture can show the capture's Standby Picture** (`no_game_standby`, *No game: Standby
   Picture*, off as it comes; `hide_standby`, *Hide shows Standby Picture*, on; hotkey
   `stagekit.active.hide.` + filter name, the window switchers' beginning, so the Stream Deck

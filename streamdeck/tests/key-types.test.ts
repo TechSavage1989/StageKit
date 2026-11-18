@@ -290,7 +290,7 @@ test("the Scene Mode key's page: the filter, a mode and its own settings, then t
 	// scene modes selector, and have it's configurations configurable".
 	const page = readFileSync(new URL("../com.techsavage1989.stagekit.sdPlugin/ui/mode.html", import.meta.url), "utf8");
 	const order: Array<[string, string]> = [
-		["modeFilter", "Scene Modes"],
+		["modeFilter", "Scene and filter"],
 		["modeFor", "Mode settings"],
 		["modeUse", "Use in Next"],
 		["modeLayout", "Layout"],

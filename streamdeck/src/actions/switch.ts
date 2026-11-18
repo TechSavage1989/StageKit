@@ -8,7 +8,7 @@ import {
 } from "@elgato/streamdeck";
 import type { JsonValue } from "@elgato/utils";
 
-import { afterPress, targetOf } from "../kinds.ts";
+import { afterPress, coverHow, hideAsOf, targetOf } from "../kinds.ts";
 import { obs } from "../obs.ts";
 import { chooseFor, plain } from "../pictures.ts";
 import { explicit, keptPicture } from "../key-types.ts";
@@ -25,12 +25,12 @@ export class FilterSwitch extends SingletonAction<KeySettings> {
 	override readonly manifestId: string;
 	/** The key's name in features.json ("blur", "shadow" ...), for its type lists. */
 	private readonly name: string;
+	/** Which filter kinds this key is for. */
+	private readonly wanted: (kind: string) => boolean;
 
-	constructor(
-		uuid: string,
-		private readonly wanted: (kind: string) => boolean,
-	) {
+	constructor(uuid: string, wanted: (kind: string) => boolean) {
 		super();
+		this.wanted = wanted;
 		this.manifestId = uuid;
 		this.name = uuid.slice(uuid.lastIndexOf(".") + 1);
 		// OBS says when a filter is switched, by this key or any other way.
@@ -39,7 +39,19 @@ export class FilterSwitch extends SingletonAction<KeySettings> {
 				if (!key.isKey()) continue;
 				void key.getSettings().then((settings) => {
 					const mine = targetOf(settings);
-					if (mine.source === source && mine.filter === filter) void key.setState(enabled ? 1 : 0);
+					// (A Standby Image key set to cover is lit by the cover, below.)
+					if (mine.source === source && mine.filter === filter && !coverHow(settings.press)) void key.setState(enabled ? 1 : 0);
+				});
+			}
+		});
+		// A Standby Image shown over its source, or taken away, by anything.
+		obs.on("standbycover", (data: { sourceName?: string; filterName?: string; covered?: boolean }) => {
+			for (const key of this.actions) {
+				if (!key.isKey()) continue;
+				void key.getSettings().then((settings) => {
+					const mine = targetOf(settings);
+					if (coverHow(settings.press) && mine.source === data?.sourceName && mine.filter === data?.filterName)
+						void key.setState(data.covered === true ? 1 : 0);
 				});
 			}
 		});
@@ -58,6 +70,14 @@ export class FilterSwitch extends SingletonAction<KeySettings> {
 	override async onKeyDown(ev: KeyDownEvent<KeySettings>): Promise<void> {
 		const { source, filter } = targetOf(ev.payload.settings);
 		const { press } = ev.payload.settings;
+		// A Standby Image key set to cover: the image over the source, or
+		// taken away, through StageKit's own request.
+		const cover = coverHow(press);
+		if (cover) {
+			if ((await obs.standbyCover(source, filter, cover)) === undefined) await ev.action.showAlert();
+			await this.show(ev.action, ev.payload.settings);
+			return;
+		}
 		const now = await obs.filterEnabled(source, filter);
 		if (now === undefined) {
 			// Not set up, OBS closed, or the filter is gone.
@@ -65,7 +85,13 @@ export class FilterSwitch extends SingletonAction<KeySettings> {
 			return;
 		}
 		try {
-			await obs.setFilter(source, filter, afterPress(press, now));
+			// A Show in Scenes key with its own way of hiding presses through
+			// StageKit's request; left on "As the filter says", as any key.
+			const hideAs = this.name === "showinscenes" ? hideAsOf(ev.payload.settings.hideAs) : undefined;
+			if (hideAs) {
+				const how = press === "on" || press === "off" ? press : "toggle";
+				if ((await obs.showInScenesPress(source, filter, how, hideAs)) === undefined) await ev.action.showAlert();
+			} else await obs.setFilter(source, filter, afterPress(press, now));
 		} catch {
 			await ev.action.showAlert();
 		}
@@ -98,7 +124,9 @@ export class FilterSwitch extends SingletonAction<KeySettings> {
 		// (An image chosen before the type lists becomes the type that shows it.)
 		settings = await settle(key, this.name, seen ? { ...settings, seen } : settings, (s) => pick(s).id);
 		const picture = pick(settings);
-		await showOnOff(key, picture, seen?.enabled === true, settings);
+		// (Set to cover, the key is lit while the image covers the source.)
+		const lit = coverHow(settings.press) ? (await obs.standbyCovered(source, filter)) === true : seen?.enabled === true;
+		await showOnOff(key, picture, lit, settings);
 		await key.setTitle(switchTitle(seen?.kind, settings.press));
 	}
 
