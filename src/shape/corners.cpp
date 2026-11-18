@@ -136,7 +136,7 @@ public:
 		const uint32_t w = target ? obs_source_get_base_width(target) : 0;
 		const uint32_t h = target ? obs_source_get_base_height(target) : 0;
 		if (!paint_->ready() || !parent || !w || !h) {
-			obs_source_skip_video_filter(source_);
+			skip_filter_input(source_);
 			return;
 		}
 		Settings s;

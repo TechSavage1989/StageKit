@@ -23,6 +23,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include "standby.hpp"
 #include "app-capture.hpp"
+#include "../common/filter-input.hpp"
 #include "../common/timing.hpp"
 
 #include "../common/easing.hpp"
@@ -560,7 +561,7 @@ public:
 		}
 		// Idle with nothing left to show: as if it were not there.
 		if (idle && !t_stand_in) {
-			obs_source_skip_video_filter(source_);
+			skip_filter_input(source_);
 			return;
 		}
 		const uint32_t w = width(), h = height();
@@ -575,7 +576,7 @@ public:
 			bfree(path);
 			if (!effect_) {
 				if (live_w && live_h && !t_stand_in)
-					obs_source_skip_video_filter(source_);
+					skip_filter_input(source_);
 				return;
 			}
 		}
@@ -601,7 +602,7 @@ public:
 		}
 		if (!w || !h) {
 			if (live)
-				obs_source_skip_video_filter(source_);
+				skip_filter_input(source_);
 			return;
 		}
 		// The capture is always drawn by way of a copy, which is kept: when
@@ -977,7 +978,7 @@ private:
 			if (source)
 				obs_source_video_render(source);
 			else
-				obs_source_skip_video_filter(source_);
+				skip_filter_input(source_);
 			gs_matrix_pop();
 			gs_blend_state_pop();
 			gs_texrender_end(into);

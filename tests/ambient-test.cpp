@@ -4636,6 +4636,116 @@ static void link_transitions_test(uint32_t w, uint32_t h)
 // the first half cannot be seen here; the second can: the shader is given
 // other values first (whole cells, a mask, as Scene Blur gives it), and the
 // background must look the same as it did before.
+// A filter taken off its source while it is being drawn loses its parent
+// part-way through the drawing. libobs 30's obs_source_skip_video_filter
+// reads the parent's flags without looking, so a filter that gave up after
+// that crashed OBS (Scene Shadow, found with gdb). Here every drawing filter
+// is added and removed again and again from another thread, as the Filters
+// window does, while its scene is the output and is also drawn here.
+static void filter_remove_while_drawn_test(uint32_t w, uint32_t h)
+{
+	printf("\n[filters removed while they are drawn]\n");
+	auto block = [](const char *name, long long abgr, int bw, int bh) {
+		obs_data_t *d = obs_data_create();
+		obs_data_set_int(d, "color", abgr);
+		obs_data_set_int(d, "width", bw);
+		obs_data_set_int(d, "height", bh);
+		obs_source_t *src = obs_source_create("color_source", name, d, nullptr);
+		obs_data_release(d);
+		return src;
+	};
+	obs_scene_t *scene = obs_scene_create("FR Scene");
+	obs_source_t *scene_src = obs_scene_get_source(scene);
+	obs_source_t *back = block("FR Back", 0xFFFFC080, (int)w, (int)h);
+	obs_source_t *front = block("FR Front", 0xFF2040E0, (int)w / 3, (int)h / 3);
+	obs_scene_add(scene, back);
+	obs_sceneitem_t *item = obs_scene_add(scene, front);
+	vec2 p;
+	vec2_set(&p, (float)w / 4, (float)h / 4);
+	obs_sceneitem_set_pos(item, &p);
+	obs_source_t *before_out = obs_get_output_source(0);
+	obs_set_output_source(0, scene_src);
+
+	struct Kind {
+		const char *id;
+		bool on_scene;
+		std::function<void(obs_data_t *)> settings;
+	};
+	const Kind kinds[] = {
+		{"stagekit_scene_shadow", true,
+		 [](obs_data_t *s) {
+			 obs_data_set_int(s, "ramp_ms", 0);
+		 }},
+		{"stagekit_scene_blur", true,
+		 [](obs_data_t *s) {
+			 obs_data_set_int(s, "ramp_in_ms", 0);
+			 obs_data_set_int(s, "ramp_out_ms", 0);
+			 obs_data_set_int(s, "cover", 0);
+			 obs_data_set_double(s, "strength", 20.0);
+		 }},
+		{"stagekit_scene_blur", true,
+		 [](obs_data_t *s) {
+			 obs_data_set_int(s, "ramp_in_ms", 0);
+			 obs_data_set_int(s, "ramp_out_ms", 0);
+			 obs_data_set_int(s, "cover", 0);
+			 obs_data_set_int(s, "blur_area", 1);
+			 obs_data_set_double(s, "strength", 20.0);
+		 }},
+		{"stagekit_scene_corners", true,
+		 [](obs_data_t *s) {
+			 obs_data_set_int(s, "corners_area", 1);
+		 }},
+		{"stagekit_ramp_blur", false,
+		 [](obs_data_t *s) {
+			 obs_data_set_int(s, "start_state", 1);
+			 obs_data_set_int(s, "ramp_in_ms", 0);
+			 obs_data_set_double(s, "strength", 20.0);
+		 }},
+		{"stagekit_corners", false,
+		 [](obs_data_t *) {
+		 }},
+		{"stagekit_auto_frame", false,
+		 [](obs_data_t *) {
+		 }},
+		{"stagekit_shadow_backdrop", false,
+		 [](obs_data_t *) {
+		 }},
+		{"stagekit_ramp_zoom", false,
+		 [](obs_data_t *) {
+		 }},
+	};
+	const int rounds = getenv("STAGEKIT_TEST_REMOVE_ROUNDS") ? atoi(getenv("STAGEKIT_TEST_REMOVE_ROUNDS")) : 60;
+	for (const Kind &k : kinds) {
+		obs_source_t *parent = k.on_scene ? scene_src : front;
+		std::atomic<bool> done{false};
+		// Taken on and off from a thread of its own, at uneven moments.
+		std::thread remover([&] {
+			for (int i = 0; i < rounds; i++) {
+				obs_data_t *d = obs_data_create();
+				k.settings(d);
+				obs_source_t *f = obs_source_create(k.id, "FR Filter", d, nullptr);
+				obs_data_release(d);
+				obs_source_filter_add(parent, f);
+				std::this_thread::sleep_for(std::chrono::microseconds(2000 + (i * 7919) % 30000));
+				obs_source_filter_remove(parent, f);
+				obs_source_release(f);
+				std::this_thread::sleep_for(std::chrono::microseconds((i * 104729) % 3000));
+			}
+			done = true;
+		});
+		while (!done)
+			render(scene_src, w, h);
+		remover.join();
+		CHECK(true, "%s on %s, taken off %d times while drawn: no crash", k.id,
+		      k.on_scene ? "a scene" : "a source", rounds);
+	}
+	obs_set_output_source(0, before_out);
+	obs_source_release(before_out);
+	obs_source_release(back);
+	obs_source_release(front);
+	obs_scene_release(scene);
+}
+
 static void blur_off_draw_test(uint32_t w, uint32_t h, const char *base_image)
 {
 	printf("\n[Ambient Background's mosaic sets every uniform of the shared effect]\n");
@@ -5889,6 +5999,14 @@ int main(int argc, char **argv)
 		return g_failures ? 1 : 0;
 	}
 
+	if (getenv("STAGEKIT_TEST_ONLY_FILTER_REMOVE")) { // to try that section alone
+		filter_remove_while_drawn_test(w, h);
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
+
 	if (getenv("STAGEKIT_TEST_ONLY_BLUR_OFF_DRAW")) { // to try that section alone
 		blur_off_draw_test(w, h, base_image);
 		obs_shutdown();
@@ -6270,6 +6388,7 @@ int main(int argc, char **argv)
 
 	// (After the timing checks: its frames would count in their per-frame line.)
 	blur_off_draw_test(w, h, base_image); // (alone: STAGEKIT_TEST_ONLY_BLUR_OFF_DRAW)
+	filter_remove_while_drawn_test(w, h); // (alone: STAGEKIT_TEST_ONLY_FILTER_REMOVE)
 
 	// ==== scene-filters:blur ====
 	// ------------------------------------------------------------ scene blur

@@ -15,6 +15,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "fit-item.hpp"
 #include "fit-engine.hpp"
 #include "scene-fit.hpp"
+#include "../common/filter-input.hpp"
 #include "../common/timing.hpp"
 
 #include "../common/easing.hpp"
@@ -211,7 +212,7 @@ void register_fit_item()
 	};
 	// A controller: it never changes the picture.
 	info.video_render = [](void *data, gs_effect_t *) {
-		obs_source_skip_video_filter(static_cast<FitItem *>(data)->source());
+		skip_filter_input(static_cast<FitItem *>(data)->source());
 	};
 	info.filter_add = [](void *data, obs_source_t *parent) {
 		static_cast<FitItem *>(data)->engine.attach(parent);

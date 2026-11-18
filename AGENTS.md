@@ -490,6 +490,17 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   and its errors were filtered away: **check the build's exit code before a run.** The
   first of the two transition lists is called *No-signal transition* since then (the owner: "no
   signal transition is ok").
+- **A filter skips with `skip_filter_input`, never `obs_source_skip_video_filter`**
+  (`src/common/filter-input.hpp`, 2026-11-18). A filter taken off its source (the Filters window,
+  on the window's thread) while the video thread draws it loses its parent part-way through the
+  drawing, and libobs 30's skip reads `parent->info.output_flags` without looking: OBS crashed
+  in Scene Shadow's and Scene Blur's render after they had already drawn and then gave up. The
+  helper skips only while the filter still has a parent and a target, and otherwise draws
+  nothing for that frame. It narrows the window to the moment between its check and OBS's read;
+  it cannot close it (the parent is cleared without a lock a plugin can take). Tested in
+  `[filters removed while they are drawn]` (`filter_remove_while_drawn_test`, alone:
+  `STAGEKIT_TEST_ONLY_FILTER_REMOVE`, rounds per kind `STAGEKIT_TEST_REMOVE_ROUNDS`, 60 as it
+  comes). `render_bare` in `src/dock/arrange.cpp` skips the same way.
 - **Show in Scenes can take bring-along items with it** (`with_linked`, off by default): the
   `linked` item of every Move Source filter on a listed source, and of Move Scene Item filters that move it.
   The owner asked for it.

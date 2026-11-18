@@ -402,7 +402,7 @@ void SceneShadow::render()
 	}
 	look = scaled_look(look, ramp_.level());
 	if (!usable || !paint_->ready() || !scenes_loaded() || !look.any() || !cx || !cy) {
-		obs_source_skip_video_filter(source_);
+		skip_filter_input(source_);
 		have_out_ = false;
 		return;
 	}
@@ -419,7 +419,7 @@ void SceneShadow::render()
 	}
 	have_out_ = false;
 	if (!draw_filter_input(source_, tr_scene_, cx, cy)) {
-		obs_source_skip_video_filter(source_);
+		skip_filter_input(source_);
 		return;
 	}
 	ShadowFlags flags;
@@ -474,7 +474,7 @@ void SceneShadow::render()
 		for (obs_sceneitem_t *item : items)
 			obs_sceneitem_release(item);
 		if (!drawn) {
-			obs_source_skip_video_filter(source_);
+			skip_filter_input(source_);
 			return;
 		}
 		finish(look, frame, cx, cy, linear, true);
@@ -509,7 +509,7 @@ void SceneShadow::render()
 		obs_sceneitem_release(item);
 	mask_used_ = mask != nullptr;
 	if (!paint_->compose(gs_texrender_get_texture(tr_scene_), cast, mask, look, cx, cy)) {
-		obs_source_skip_video_filter(source_);
+		skip_filter_input(source_);
 		return;
 	}
 	finish(look, frame, cx, cy, linear, false);

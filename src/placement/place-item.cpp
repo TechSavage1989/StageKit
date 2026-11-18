@@ -24,6 +24,7 @@ the Free Software Foundation; either version 2 of the License, or
 // or in every scene, so there is no scene or item to choose.
 
 #include "place-item.hpp"
+#include "../common/filter-input.hpp"
 #include "../common/timing.hpp"
 
 #include "../common/easing.hpp"
@@ -824,7 +825,7 @@ void register_place_item()
 	};
 	// Purely a controller: it never changes the picture.
 	info.video_render = [](void *data, gs_effect_t *) {
-		obs_source_skip_video_filter(static_cast<PlaceItem *>(data)->source());
+		skip_filter_input(static_cast<PlaceItem *>(data)->source());
 	};
 	info.filter_add = [](void *data, obs_source_t *parent) {
 		static_cast<PlaceItem *>(data)->attach(parent);

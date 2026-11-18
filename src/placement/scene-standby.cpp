@@ -24,6 +24,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "scene-standby.hpp"
 
 #include "../capture/standby.hpp"
+#include "../common/filter-input.hpp"
 #include "../common/easing.hpp"
 #include "../common/loading.hpp"
 #include "../common/pick-list.hpp"
@@ -562,7 +563,7 @@ void register_scene_standby()
 	};
 	// It never changes the picture.
 	info.video_render = [](void *data, gs_effect_t *) {
-		obs_source_skip_video_filter(static_cast<SceneStandby *>(data)->source());
+		skip_filter_input(static_cast<SceneStandby *>(data)->source());
 	};
 	info.filter_remove = [](void *data, obs_source_t *) {
 		static_cast<SceneStandby *>(data)->detach();

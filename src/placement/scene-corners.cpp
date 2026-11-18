@@ -340,7 +340,7 @@ void SceneCorners::render()
 	const uint32_t cy = target ? obs_source_get_base_height(target) : 0;
 	if (!whole_ || !parent || obs_source_is_group(parent) || !obs_scene_from_source(parent) || !cx || !cy) {
 		have_out_ = false;
-		obs_source_skip_video_filter(source_);
+		skip_filter_input(source_);
 		return;
 	}
 	if (!paint_) {
@@ -348,7 +348,7 @@ void SceneCorners::render()
 		tr_input_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 	}
 	if (!paint_->ready()) {
-		obs_source_skip_video_filter(source_);
+		skip_filter_input(source_);
 		return;
 	}
 	// Once a frame: the multiview, a projector and Studio Mode draw a scene
@@ -361,13 +361,13 @@ void SceneCorners::render()
 	}
 	have_out_ = false;
 	if (!draw_filter_input(source_, tr_input_, cx, cy)) {
-		obs_source_skip_video_filter(source_);
+		skip_filter_input(source_);
 		return;
 	}
 	const CornerShape s = shape();
 	// Sizes in screen pixels: the scene is the screen.
 	if (!paint_->shape(gs_texrender_get_texture(tr_input_), cx, cy, 0.0, 0.0, cx, cy, 1.0, 1.0, s)) {
-		obs_source_skip_video_filter(source_);
+		skip_filter_input(source_);
 		return;
 	}
 	paint_->draw_out(cx, cy);

@@ -43,6 +43,7 @@ the Free Software Foundation; either version 2 of the License, or
 // watched one item and switched the others.
 
 #include "visibility-link.hpp"
+#include "../common/filter-input.hpp"
 #include "../common/timing.hpp"
 
 #include "../common/holds-hidden.hpp"
@@ -863,7 +864,7 @@ void register_visibility_link()
 	};
 	// A controller: it never changes the picture.
 	info.video_render = [](void *data, gs_effect_t *) {
-		obs_source_skip_video_filter(static_cast<VisibilityLink *>(data)->source());
+		skip_filter_input(static_cast<VisibilityLink *>(data)->source());
 	};
 	info.filter_add = [](void *data, obs_source_t *parent) {
 		static_cast<VisibilityLink *>(data)->attach(parent);

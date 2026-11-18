@@ -2119,7 +2119,7 @@ void register_auto_frame()
 		static_cast<PictureShape *>(data)->tick();
 	};
 	shape.video_render = [](void *data, gs_effect_t *) {
-		obs_source_skip_video_filter(static_cast<PictureShape *>(data)->source());
+		skip_filter_input(static_cast<PictureShape *>(data)->source());
 	};
 	shape.filter_add = [](void *data, obs_source_t *parent) {
 		static_cast<PictureShape *>(data)->attach(parent);
