@@ -34,6 +34,27 @@ bool owned(obs_sceneitem_t *item)
 std::atomic<SceneLookup> g_scene_lookup{nullptr};
 std::atomic<int> g_overriding{0}; // filters with "Override other filters" ticked
 void apply_way(obs_sceneitem_t *item, bool show, const ItemWay &way, obs_source_t *scene);
+
+// An item transition that still holds a source has a change under way, or
+// one OBS never finished: ended here. Stopping it says so to OBS, which takes
+// it off the scene's list of what is in use; clearing it lets go of the
+// source it held. One that holds nothing is left alone (see
+// end_stale_transition).
+bool end_held_change(obs_source_t *transition)
+{
+	if (!transition)
+		return false;
+	obs_source_t *a = obs_transition_get_source(transition, OBS_TRANSITION_SOURCE_A);
+	obs_source_t *b = obs_transition_get_source(transition, OBS_TRANSITION_SOURCE_B);
+	const bool holds = a || b;
+	obs_source_release(a);
+	obs_source_release(b);
+	if (!holds)
+		return false;
+	obs_transition_force_stop(transition);
+	obs_transition_clear(transition);
+	return true;
+}
 } // namespace
 
 void item_transitions_owner(bool (*owns)(obs_sceneitem_t *item))
@@ -166,8 +187,29 @@ bool set_item_visible(obs_sceneitem_t *item, bool visible)
 	// A group is shown while a scene that shows it is.
 	obs_source_t *holder = obs_scene_get_source(obs_sceneitem_get_scene(item));
 	const bool in_view = holder && obs_source_showing(holder);
-	if (in_view || owned(item) || obs_sceneitem_visible(item) == visible)
+	if (owned(item) || obs_sceneitem_visible(item) == visible)
 		return obs_sceneitem_set_visible(item, visible);
+	// The change made here is the item's change now, so its other way's
+	// transition holds nothing any more. OBS stops that one at a change but
+	// only says so: one cut off when its scene was left part-way keeps the
+	// source. Left there, it is a hide transition under way on a hidden
+	// item once the item is hidden again, which OBS counts in when the scene
+	// comes on (and end_stale_transition takes for a change made now): the
+	// source was in use until that transition was drawn to its end; in the
+	// tests, which have no sound, for good. Link Visibility's half-second
+	// look caught it only while the item was shown in between (one run in
+	// twenty under load). (This way's transition is not ended out of view
+	// while it is off the item: done so, OBS's counts of what is in use went
+	// wrong and the source stayed in use for good.)
+	const auto end_other = [&] {
+		end_held_change(obs_sceneitem_get_transition(item, !visible));
+	};
+	if (in_view) {
+		const bool changed = obs_sceneitem_set_visible(item, visible);
+		if (changed)
+			end_other();
+		return changed;
+	}
 	// Out of view: the item's transition for this change is taken off for
 	// the change and put back after it, so OBS starts none. One started and
 	// then stopped from outside (the first way, during beta147's making)
@@ -178,6 +220,8 @@ bool set_item_visible(obs_sceneitem_t *item, bool visible)
 	if (held)
 		obs_sceneitem_set_transition(item, visible, nullptr);
 	const bool changed = obs_sceneitem_set_visible(item, visible);
+	if (changed)
+		end_other();
 	if (held) {
 		obs_sceneitem_set_transition(item, visible, held);
 		obs_sceneitem_set_transition_duration(item, visible, ms);
@@ -199,18 +243,7 @@ bool end_stale_transition(obs_sceneitem_t *item)
 	// it goes only while they still run), so "in use" alone made this end the
 	// same finished transition twice a second for the rest of the session
 	// (the owner's log, Ending Text, 2,526 times).
-	obs_source_t *a = obs_transition_get_source(other, OBS_TRANSITION_SOURCE_A);
-	obs_source_t *b = obs_transition_get_source(other, OBS_TRANSITION_SOURCE_B);
-	const bool holds = a || b;
-	obs_source_release(a);
-	obs_source_release(b);
-	if (!holds)
-		return false;
-	// Stopping it says so to OBS, which takes it off the scene's list of
-	// what is in use; clearing it lets go of the source it held.
-	obs_transition_force_stop(other);
-	obs_transition_clear(other);
-	return true;
+	return end_held_change(other);
 }
 
 void add_item_transition_properties(obs_properties_t *props)

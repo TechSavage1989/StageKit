@@ -9,80 +9,51 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | `feat/scene-transitions-override` (Scene Transitions: Override other filters, betaNEXT), on `main` after beta174 (#190). Next: the new collection |
+| Working branch | `fix/stale-transition-flake` (a capture left in use after a cut part-way through a change, betaNEXT), on `main` after beta174. Next: the new collection |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
-## Scene Transitions: Override other filters (0.1.0-beta179)
+## A capture left in use after a cut part-way through a change (0.1.0-beta180)
 
-Branch `feat/scene-transitions-override`, on `main` after beta174. Notes:
-`docs/releases/0.1.0-beta179.md`. No Stream Deck file changed. The owner, with a screenshot of
-Scene Transitions on *All sources*: of the list's tip, "this tooltip makes no sense", and "none of
-the other transitions seem to do anything. only morph works at all, and even then there is no
-choice as to what it determines for morphing by default". Cause: their Link Visibility filters and
-Show in Scenes switches have their own *Show transition* set to Morph, which wins for every change
-they make; the scene's transition is only put back afterwards. The owner chose both remedies: they
-set those filters to *As the scene sets* (step A, told in the README), and this build adds:
+Branch `fix/stale-transition-flake`, on `main` after beta174. Notes:
+`docs/releases/0.1.0-beta180.md`. No Stream Deck file changed. The check *a scene left with a cut
+part-way through a change: back on it, the capture whose change was cut off is not in use* (capture
+scenes section, the chain of two scenes) failed in about one full run in twenty, only under load.
 
-- **Override other filters** (`override_others`, off as it comes and for every saved filter). With
-  it, the scene's choice (usual or a listed source's own) is every show and hide of a covered item
-  in that scene, whatever Link Visibility, Show in Scenes, Scene Modes, Program Trigger or the
-  switchers ask. Applied in `src/common/item-transition.cpp`: `overridden` / `scene_says`, used by
-  `resolve_item_change` (so `apply_item_change`, `item_change_matches`) and by
-  `set_item_transitions`; the lookup (`SceneLookup`) now answers `overrides` too. Never for an item
-  a Standby owns, the item Morph's layer, private sources, ignored or animated sources. A count of
-  ticked filters (`item_transitions_scene_overrides`) keeps the old early return while none is.
-  Scene Modes' after-loading put-right cut goes through the new `cut_item_transitions`, never
-  overridden. The put-back after a change finds nothing to write (tested: 0 writes).
-- **The list's wording**: *Sources with own settings* with All sources, *Chosen sources* with Chosen
-  sources, each with its own tip, changed in place when *Sources covered* changes (`cover_changed`,
-  PickList `title_text`). Locale: `SceneTrans.Sources*` reworded, `SceneTrans.Chosen*`,
-  `SceneTrans.Override*` added; *Sources covered*'s tip says "listed below".
-- **Morph's own choices**: checked, already there. With Morph chosen, the window shows *Unpaired
-  sources* (and the chosen transition's own settings under it), *Morph the main image*, *Use visible
-  pixels*, *Ignore shadows & outlines*, easing curve and direction, and the *Linked sources* boxes;
-  values reach the items' Morph transitions. Now tested. Nothing was added in code: the owner may
-  have been looking at a filter with Morph set elsewhere, or expected these under *Sources covered*.
-- Tests: `[scene transitions: override other filters, the list's wording, Morph's choices]`
-  (`scene_trans_override_test`, alone: `STAGEKIT_TEST_ONLY_SCENE_TRANS_OVERRIDE`; also run at the
-  end of the Scene Transitions block): the wording both ways, Morph's controls and values, a Link
-  Visibility on Morph overridden to the scene's fade with nothing put back, a Standby's own slide
-  kept, and with override off the link's Morph as before.
-- **Not proven:** Windows; the owner's collection; `set_item_transitions`' override (Program
-  Trigger, switchers) is not driven by a test (it goes through the same `overridden`).
-
-## Make Room, a transition and a way for unpaired sources (0.1.0-beta175)
-
-Branch `feat/make-room`, rebased on `main` after beta172. Notes: `docs/releases/0.1.0-beta175.md`. No
-Stream Deck file changed. The owner: "can we make a new transition called something like "make
-room" which would be a transition in which sources move off screen on the closed side of the screen
-based on other objects morphing into the scene? can it be its own transition, but also an "other"
-transition to be used for objects with no link set up in morph? ... the sources would move off
-screen, on the closest screen edge but away based on the incoming morph."
-
-- **Morph's *Make room***: `Others::MakeRoom` (3) under *Other items* (and in rules) and
-  `morph_make_room` under *Unpaired sources*, both appended; `room_way` (0 away from the morph,
-  1 nearest edge only) and `room_fade` (off).
-- **Make Room (StageKit)**, `stagekit_make_room`: the Morph class with `room_` set, registered in
-  `register_morph`'s loop; Morph's pairing and links, no *Other items*, *Unpaired sources* or
-  rules. As an item's own transition it never pairs.
-- **The direction rule** (`room_edge`, `morph-paint.*`): the area-weighted middle of what morphs
-  (the paired parts' boxes in the new scene for a source going, in the old for one coming; pairs
-  that do not move or resize, and backgrounds, left out); of the edges the line from that middle
-  to the source points to (each component over 2 % of the line), the one with the least travel
-  to be off the screen; no middle, or a line under 1 % of the diagonal: the nearest edge.
-- **Items**: an *Alone* item with Make Room, in a scene on screen and not in a group, is moved by
-  the item Morph's layer (`Job::solo`, `start_solo`), away from the jobs, the items of the other
-  kind started with it and any item whose own show (or hide) transition runs in its scene
-  (`room_centre`). Out of view or in a group it slides inside its own frame.
-  Under beta170's rules: a solo job keeps a weak scene and holds its one item and source only
-  while the change lasts (`Job`), works from the tick's `Half::scene` / `Half::item`, and is ended
-  with the rest by `let_go_all` and when its scene is removed.
-- Tests: `[make room: ...]` (alone: `STAGEKIT_TEST_ONLY_MAKE_ROOM`), 15 checks; contact sheet
-  `docs/images/make-room.png`. AGENTS, *Make Room*.
-- **Not proven**: Windows (no new shader: it reuses Morph's drawing); the owner's scenes. Under
-  valgrind the two item checks that look at 550 ms miss the moving item (the run is too slow for
-  the clock); the log lines show the right edge chosen.
+- **Cause (plugin side), `set_item_visible` in `src/common/item-transition.cpp`:** the second
+  capture (Chain B) had a hide transition in Chain Full left under way, still holding the capture,
+  from the threads loop just before (no item transition ends in the tests before they turn sound
+  on). OBS stops an item's other-way transition at a change but only signals it, so the transition
+  kept the capture. Shown and then hidden again out of view, the item carried that transition as a
+  hide transition under way on a hidden item. OBS counts that in when the scene comes on, and
+  `end_stale_transition` takes it for a change being made now. Link Visibility's half-second look
+  (`stale_timer_`) ended it only if it fell in the roughly 480 ms the capture was shown in between.
+  Evidence: the failing log lacks `ended a transition left under way on 'Chain B'` in Chain Full,
+  which every passing log has (40 of 40). The diagnosis showed the hide transition `active 1` holding
+  `Chain B`. With the press 60 ms after the scene is left, 8 runs in 10 failed, and the 2 passes
+  were the 2 runs whose look fell in the window.
+- **Fix:** after every change `set_item_visible` makes (in view and out of view, not for an owned
+  item), the other way's transition is ended if it still holds a source (`end_held_change`, the old
+  tail of `end_stale_transition`, which now calls it). This way's transition is *not* ended while
+  it is off the item out of view. That was tried first, and OBS's counts then went wrong for good.
+- **libobs 30.0.2 (the test machine) miscounts by itself.** Its `scene_enum_sources` is
+  `if / else if / else if`: while an item's transition runs, the item's own source is left out when
+  the scene is switched on or off, but `set_visibility` and `add/remove_active_child` count it in and
+  out. A scene left part-way through a change leaves its source counted in use for good, and in the
+  old runs that was cancelled by whichever leftover transitions Link Visibility happened to end. 31.1.1
+  (`buildspec.json`) and later enumerate both. So the test now checks what the plugin leaves behind
+  (no item transition of the capture counted in and holding it) on every version. It checks
+  `in_use` only from libobs 31 (`obs_get_version()`). The press now comes 60 ms after the scene is
+  left (it was 400 ms), so the old fault fails 8 runs in 10, no longer 1 in 20.
+- **Test:** the chain is a function (`capture_chain_test`), run where it was and alone with
+  `STAGEKIT_TEST_ONLY_CAPTURE_CHAIN`. Under load (two busy loops on four cores): old plugin with the
+  old test 19 of 20 passed; old plugin with the new test 2 of 10; fixed plugin with the new test
+  20 of 20. The sections `STAGEKIT_TEST_ONLY_MORPH_HOLDS`, `_LINK_TRANS`, `_LINK_FOLLOW`,
+  `_SWITCH_COMMAND`, `_POP_IN` and `_MORPH` pass. The full run was not made here (the release queue
+  was using the machine): the rest of the capture scenes section and the layout section have no gate.
+- Link Visibility's log line now names the scene: `ended a transition left under way on '<source>'
+  in '<scene>'`.
+- Not seen on Windows.
 
 ## Show in Scenes: a switch is a command, not a hold (0.1.0-beta174)
 

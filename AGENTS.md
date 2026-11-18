@@ -536,7 +536,20 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   first way, a Morph could not end the next change made in view.) And a change under way when its
   scene is left with a cut is never ended either: Link Visibility ends one left on a listed item
   twice a second (`end_stale_transition`: a show transition on a hidden item, or a hide on a shown
-  one; only one that still holds a source: OBS can count a finished one as in use for good, and beta147 to beta153 ended that one twice a second all session). Found by driving the generated collection headless with the new build; the tests had
+  one; only one that still holds a source: OBS can count a finished one as in use for good, and beta147 to beta153 ended that one twice a second all session). **Every change `set_item_visible` makes also ends the other way's
+  transition if it still holds the source** (`end_held_change`, beta180): OBS stops it at a
+  change but only says so. Shown and hidden again while away, an item carried a hide transition
+  cut off earlier as one under way on a hidden item, which the scene counts in when it comes on
+  and `end_stale_transition` takes for a change being made now. Link Visibility's half-second
+  look caught it only while the item was shown in between (the chain test failed one run in
+  twenty under load). This way's transition is never ended while it is off the item out of
+  view: done so, OBS's counts went wrong for good. **libobs 30.0.2, on the test machine,
+  miscounts by itself**: its `scene_enum_sources` leaves an item's own source out (`else if`)
+  while the item's transition runs, but shows and hides count it, so a scene left part-way through
+  a change leaves the source counted in use for good. 31.1.1 enumerates both. A test of "in use"
+  after such a cut checks what the plugin leaves behind (an item transition counted in and holding
+  the source) and `in_use` only from libobs 31 (`[capture scenes ...]`'s chain,
+  `capture_chain_test`, alone with `STAGEKIT_TEST_ONLY_CAPTURE_CHAIN`). Found by driving the generated collection headless with the new build; the tests had
   waited for every change to end before the next step. Items a Standby filter owns are passed over. Link Visibility, Show
   in Scenes and Scene Modes go through it; Program Trigger, the two switchers, Auto Capture's hide,
   Show/Hide Animation and the stand-ins do not yet (the stand-ins through it broke the Standby
