@@ -9,46 +9,39 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | `feat/ambient-darkest-level` (Ambient Background's Darkest level, betaNEXT), on `main` after beta191. Next: the new collection |
+| Working branch | `feat/switcher-game-area` (Window switcher: Game area only, betaNEXT), rebased on `main` after beta191. Next: the new collection |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
-## Ambient Background: Darkest level, so it never goes black (0.1.0-beta192)
+## Window switcher: Game area only (0.1.0-beta193)
 
-Branch `feat/ambient-darkest-level`, on `main` after beta191. Notes:
-`docs/releases/0.1.0-beta192.md`. The owner (2026-11-18): "is there a way I can prevent the
-background from ever becoming completely black, even when the ambient background is capturing a
-live feed that has completely black content?", then "add darkest level as a configurable option".
+Branch `feat/switcher-game-area`, rebased on `main` after beta191 (first made on beta186). Notes:
+`docs/releases/0.1.0-beta193.md`. No Stream Deck file changed. The owner (2026-11-18), of
+Ryujinx, eden, nxemu and Dolphin in a Window Capture: "I don't want it to grab the window toolbars
+and such of the game window", and "i'm not manually cropping anything. the whole point of these
+new plugins and such is to avoid manual work. client area is already ticked".
 
-- **Controls** (Look group, after Vignette): *Darkest level* (`darkest_level`, 0 to 100 %, 0 as
-  it comes: off, so every background saved before is unchanged), *Lift toward* (`darkest_fill`,
-  append-only: 0 *The background image*, 1 *A colour*), *Lift colour* (`darkest_color`, 0xFF808080,
-  shown only for a colour). The two do not come and go with the level (a slider's callback
-  rebuilds the window; see Bloom).
-- **How it lifts** (`PSLift`, technique `Lift` in `stagekit-looks.effect`, one full-size pass after
-  `Final`, raw values; the hand-off to OBS still follows `gs_get_linear_srgb()`). Luminance `L`,
-  `top` = 1.5 x level. Toward the image, the pixel becomes the fill by `1 - smoothstep(0, top, L)`
-  (all of it where black). Then the floor, for both fills: `want = L + level x (1 - smoothstep(0,
-  top, L))`, at or above the level everywhere and equal to `L` from `top` up, made up by adding the
-  fill's colour scaled to unit luminance (grey makes up what a saturated colour cannot). So a black
-  pixel is the colour at the level's brightness, or the image (at least as bright as the level).
-- **Cost.** Level 0: nothing. On: one full-size pass. Toward the image while the scene is the image
-  alone (no capture, no capture change): the picture before `Final` is the fill, nothing more.
-  While a capture is in: the image drawn alone at half size (`tr_fill_`) and a Dual Kawase blur of
-  its own (`fill_blur_`) at *Blur* (none for Temporal); no mosaic, bloom or overlay on the fill.
-  Not measured with the perf harness.
-- **Good to know.** A capture black all over for two seconds already counts as no capture
-  (`live_shows_something`), so the image showed then before; this is for a dark capture with
-  something in it. With nothing under *Background from*, the colour is used.
-- Tests: `[ambient background: darkest level]` (`ambient_darkest_test`, after the mosaic uniforms
-  test in a full run; alone with `STAGEKIT_TEST_ONLY_AMBIENT_DARKEST`): the controls; a capture
-  (a scene: black with a white patch) replacing the image: black when off; at 30 % toward grey and
-  toward red nothing under 29 % luminance and the patch untouched; toward the image the black part
-  within a few levels of the image alone, lifted the same; no image: the colour; Lift's uniforms
-  given other values by another user first, toward the image and toward a colour, a new colour
-  each time: the same picture (checked to fail with `lift_color` left unset); a bright capture untouched. Sheet
-  `docs/images/ambient-darkest.png` (`$out/darkest`, also in `run-tests.sh`). Not run on Direct3D
-  or Windows.
+- **Setting:** *Game area only* (`game_area`) on the Automatic Window Switcher, off as it comes
+  (saved collections unchanged); the owner will tick it.
+- **Finding:** `find_game_area` in `src/capture/auto-capture.cpp`, on the window watch's thread
+  (never a tick), for windows asked for with `game_area_want`: the largest visible
+  non-control child window of at least 40 % of the client area that is smaller than it.
+  Published as `OpenWindow::game_area`. Single-surface apps: shown whole, logged once.
+- **Applying:** `live_box` / `copy_live` in `src/capture/app-capture.cpp`: only the cut part is
+  drawn and reported as the filter's size; a switch takes the new cut at once (the Mix glide
+  carries the size), a change within a window waits 0.3 s, ignores 3 px, and glides, with
+  Fit to Space going along (`app_capture_change`); unticking glides back. A picture of another
+  shape than the client area keeps the cut for a second (a window resized) before being shown
+  whole. Browsers and Electron apps (Chromium's page window) are left whole.
+- **Tests:** `[window switcher: game area only]`, alone with `STAGEKIT_TEST_ONLY_GAME_AREA`
+  (8 checks, all passed; also run: `CAPTURE_HIDE`, `TOOLTIPS`). The full run was not made
+  here (machine limits). After the rebase onto beta191 (beta188's switcher never drawing an
+  unlisted or ignored window, aiming the capture at no window instead: with nothing shown the
+  live picture is empty, so no cut applies, and the next window aimed at takes its own cut at
+  once), `GAME_AREA`, `CLEAR_PICKED`, `CAPTURE_HIDE` and `TOOLTIPS` were run again: all passed.
+- **Not proven:** the Win32 side compiles only in CI and has not run; which child each
+  emulator really has is not known. The log line `game area of <program>: child <class>, ...`
+  (or `no game area found in <program>`) is what to ask the owner for.
 
 ## Auto Capture picks a game up within seconds while it rests (0.1.0-beta191)
 

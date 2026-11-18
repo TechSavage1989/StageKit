@@ -2588,6 +2588,284 @@ static void auto_rest_test()
 	obs_source_release(ryu.capture);
 }
 
+// The Automatic Window Switcher's Game area only. The owner (2026-11-18),
+// of emulators in a Window Capture: "I don't want it to grab the window
+// toolbars and such of the game window", and "i'm not manually cropping
+// anything". A stand-in window capture draws a red band (the menus) round a
+// green middle (the game), by the program it is aimed at; the stand-in
+// windows say where each one's game area is. Alone with
+// STAGEKIT_TEST_ONLY_GAME_AREA.
+struct GameAreaWindow {
+	int w = 400, h = 300;                    // the client area
+	int ax = 0, ay = 20, aw = 400, ah = 270; // the game in it
+};
+// The second program's window made larger, and of another shape, before the
+// window watch has looked at it again: 600x400, the game the same share of
+// it. (For every capture aimed at it, the switcher's ready ones too.)
+static std::atomic<bool> g_game_area_resized{false};
+static GameAreaWindow game_area_as_now(const GameAreaWindow *w)
+{
+	if (g_game_area_resized && w->w == 320)
+		return GameAreaWindow{600, 400, 0, 50, 600, 350};
+	return *w;
+}
+
+static void register_game_area_window_kind()
+{
+	static bool registered = false;
+	if (registered)
+		return;
+	registered = true;
+	obs_source_info k = {};
+	k.id = "stagekit_test_window";
+	k.type = OBS_SOURCE_TYPE_INPUT;
+	k.output_flags = OBS_SOURCE_VIDEO | OBS_SOURCE_CUSTOM_DRAW;
+	k.get_name = [](void *) {
+		return "Window (stand-in)";
+	};
+	k.create = [](obs_data_t *settings, obs_source_t *) -> void * {
+		auto *w = new GameAreaWindow();
+		const std::string window = obs_data_get_string(settings, "window");
+		if (window.find("emu_b.exe") != std::string::npos)
+			*w = GameAreaWindow{320, 240, 0, 30, 320, 210};
+		return w;
+	};
+	k.destroy = [](void *data) {
+		delete static_cast<GameAreaWindow *>(data);
+	};
+	k.update = [](void *data, obs_data_t *settings) {
+		auto *w = static_cast<GameAreaWindow *>(data);
+		const std::string window = obs_data_get_string(settings, "window");
+		*w = window.find("emu_b.exe") != std::string::npos ? GameAreaWindow{320, 240, 0, 30, 320, 210}
+								   : GameAreaWindow();
+	};
+	k.get_width = [](void *data) -> uint32_t {
+		return (uint32_t)game_area_as_now(static_cast<GameAreaWindow *>(data)).w;
+	};
+	k.get_height = [](void *data) -> uint32_t {
+		return (uint32_t)game_area_as_now(static_cast<GameAreaWindow *>(data)).h;
+	};
+	k.video_render = [](void *data, gs_effect_t *) {
+		const GameAreaWindow now = game_area_as_now(static_cast<GameAreaWindow *>(data));
+		const GameAreaWindow *w = &now;
+		gs_effect_t *solid = obs_get_base_effect(OBS_EFFECT_SOLID);
+		gs_eparam_t *colour = gs_effect_get_param_by_name(solid, "color");
+		auto rect = [&](int x, int y, int rw, int rh, float r, float g) {
+			vec4 c;
+			vec4_set(&c, r, g, 0.0f, 1.0f);
+			gs_effect_set_vec4(colour, &c);
+			gs_matrix_push();
+			gs_matrix_translate3f((float)x, (float)y, 0.0f);
+			while (gs_effect_loop(solid, "Solid"))
+				gs_draw_sprite(nullptr, 0, (uint32_t)rw, (uint32_t)rh);
+			gs_matrix_pop();
+		};
+		rect(0, 0, w->w, w->h, 1.0f, 0.0f);           // the menus, red
+		rect(w->ax, w->ay, w->aw, w->ah, 0.0f, 1.0f); // the game, green
+	};
+	obs_register_source(&k);
+}
+
+static void game_area_test()
+{
+	printf("\n[window switcher: game area only]\n");
+	register_game_area_window_kind();
+	obs_data_t *cd_settings = obs_data_create();
+	obs_data_set_string(cd_settings, "window", "Emu A:Wnd:emu_a.exe");
+	obs_source_t *capture = obs_source_create("stagekit_test_window", "GA Capture", cd_settings, nullptr);
+	obs_data_release(cd_settings);
+	obs_source_inc_showing(capture);
+
+	obs_data_t *fd = obs_data_create();
+	{
+		obs_data_array_t *rows = obs_data_array_create();
+		for (const char *name : {"emu_a.exe", "emu_b.exe"}) {
+			obs_data_t *row = obs_data_create();
+			obs_data_set_string(row, "value", name);
+			obs_data_array_push_back(rows, row);
+			obs_data_release(row);
+		}
+		obs_data_set_array(fd, "apps", rows);
+		obs_data_array_release(rows);
+	}
+	obs_data_set_int(fd, "change", 0); // a fade
+	obs_data_set_int(fd, "change_ms", 300);
+	obs_data_set_string(fd, "transition", "none");
+	obs_source_t *sw = obs_source_create("stagekit_app_capture", "GA Switcher", fd, nullptr);
+	obs_data_release(fd);
+	obs_source_filter_add(capture, sw);
+	auto windows = [&](const char *area_a, const char *area_b, bool b_front) {
+		const std::string text = std::string("Emu A|emu_a.exe|") + (b_front ? "" : "front") + "|1|" + area_a +
+					 "\nEmu B|emu_b.exe|" + (b_front ? "front" : "") + "|2|" + area_b;
+		calldata_t cd = {};
+		calldata_set_string(&cd, "windows", text.c_str());
+		proc_handler_call(obs_source_get_proc_handler(sw), "set_test_windows", &cd);
+		calldata_free(&cd);
+	};
+	auto set_on = [&](bool on) {
+		obs_data_t *s = obs_source_get_settings(sw);
+		obs_data_set_bool(s, "game_area", on);
+		obs_source_update(sw, s);
+		obs_data_release(s);
+	};
+	auto size = [&] {
+		return std::to_string(obs_source_get_width(capture)) + "x" +
+		       std::to_string(obs_source_get_height(capture));
+	};
+	// The share of red (menu) pixels in what the capture draws now.
+	auto red_share = [&] {
+		const uint32_t w = obs_source_get_width(capture), h = obs_source_get_height(capture);
+		if (!w || !h)
+			return 1.0;
+		const std::vector<uint8_t> px = render(capture, w, h);
+		size_t red = 0;
+		for (size_t i = 0; i < size_t(w) * h; i++)
+			if (px[i * 4] > 128 && px[i * 4 + 1] < 128)
+				red++;
+		return (double)red / (double(w) * h);
+	};
+	const char *a_area = "0,20,400,270,400,300", *b_area = "0,30,320,210,320,240";
+
+	windows(a_area, b_area, false);
+	sleep_ms(600);
+	const std::string off = size();
+	const double off_red = red_share();
+	CHECK(off == "400x300" && off_red > 0.05,
+	      "with Game area only off (as it comes) the window is shown whole, menus and all (%s, %.2f red)",
+	      off.c_str(), off_red);
+
+	set_on(true);
+	sleep_ms(120);
+	const std::string soon = size();
+	sleep_ms(1100);
+	const std::string on = size();
+	const double on_red = red_share();
+	CHECK(soon == "400x300" && on == "400x270" && on_red < 0.005,
+	      "ticked, only the game area is drawn and the switcher reports its size, taken once it has stayed (%s, then %s, %.3f red)",
+	      soon.c_str(), on.c_str(), on_red);
+
+	// A menu that opens over the picture for a moment: the area found
+	// changes for 0.15 s and comes back. Nothing moves.
+	windows("0,40,400,250,400,300", b_area, false);
+	bool moved = false;
+	for (int i = 0; i < 4; i++) {
+		sleep_ms(40);
+		moved = moved || size() != "400x270";
+	}
+	windows(a_area, b_area, false);
+	for (int i = 0; i < 16; i++) {
+		sleep_ms(50);
+		moved = moved || size() != "400x270";
+	}
+	// And one of two pixels: not followed.
+	windows("0,22,400,268,400,300", b_area, false);
+	for (int i = 0; i < 16; i++) {
+		sleep_ms(50);
+		moved = moved || size() != "400x270";
+	}
+	CHECK(!moved, "an area that changes for a moment, or by a pixel or two, changes nothing (%s)", size().c_str());
+
+	// The area changes and stays: the size glides to it.
+	windows("0,40,400,250,400,300", b_area, false);
+	std::vector<uint32_t> heights;
+	for (int i = 0; i < 40; i++) {
+		sleep_ms(30);
+		heights.push_back(obs_source_get_height(capture));
+	}
+	bool part_way = false, one_way = true;
+	for (size_t i = 0; i < heights.size(); i++) {
+		part_way = part_way || (heights[i] > 250 && heights[i] < 270);
+		if (i && heights[i] > heights[i - 1])
+			one_way = false;
+	}
+	const std::string kept = size();
+	CHECK(kept == "400x250" && part_way && one_way && red_share() < 0.005,
+	      "a game area that changes and stays is glided to (%s, part-way %d, one way %d)", kept.c_str(), part_way,
+	      one_way);
+
+	// To the other program, whose game area is another: one glide, from the
+	// one game area's size to the other's.
+	windows("0,40,400,250,400,300", b_area, true);
+	std::vector<std::string> sizes;
+	for (int i = 0; i < 50; i++) {
+		sleep_ms(30);
+		sizes.push_back(size());
+	}
+	int changes = 0, settled_at = -1;
+	bool between = false;
+	for (size_t i = 1; i < sizes.size(); i++) {
+		if (sizes[i] != sizes[i - 1]) {
+			changes++;
+			if (settled_at >= 0)
+				settled_at = -2; // changed again after settling
+		}
+		if (sizes[i] != "400x250" && sizes[i] != "320x210")
+			between = true;
+		if (sizes[i] == "320x210" && settled_at == -1)
+			settled_at = (int)i;
+	}
+	const bool stayed = settled_at >= 0 && sizes.back() == "320x210";
+	const double b_red = red_share();
+	CHECK(stayed && between && changes >= 2 && b_red < 0.005,
+	      "switching to another program glides once to its own game area (%s, part-way %d, %d steps, %.3f red)",
+	      sizes.back().c_str(), between, changes, b_red);
+
+	// One where none was found: shown whole.
+	windows("0,40,400,250,400,300", "none", true);
+	sleep_ms(1200);
+	const std::string none = size();
+	CHECK(none == "320x240", "a window with no game area found is shown whole (%s)", none.c_str());
+
+	windows("0,40,400,250,400,300", b_area, true);
+	sleep_ms(1200);
+
+	// The window resized to another shape: the capture's image has the new
+	// size before the window watch says the new client size. The cut, a
+	// share of the client area, still holds meanwhile (no jump to the whole
+	// picture and back); only lasting a second is the picture shown whole.
+	auto resize = [&](bool on) {
+		g_game_area_resized = on;
+	};
+	resize(true);
+	bool whole_soon = false;
+	for (int i = 0; i < 12; i++) {
+		sleep_ms(50);
+		whole_soon = whole_soon || size() == "600x400";
+	}
+	const std::string resized = size();
+	sleep_ms(800);
+	const std::string lasting = size();
+	windows("0,40,400,250,400,300", "0,50,600,350,600,400", true);
+	sleep_ms(700);
+	const std::string looked = size();
+	CHECK(!whole_soon && resized == "600x350" && lasting == "600x400" && looked == "600x350",
+	      "a window resized keeps its game area while the window watch catches up, and is shown whole only if the image stays another shape (%s, %s, then %s)",
+	      resized.c_str(), lasting.c_str(), looked.c_str());
+	resize(false);
+	windows("0,40,400,250,400,300", b_area, true);
+	sleep_ms(1500);
+
+	// Unticked: the size glides back to the whole window, as ticking it
+	// glides to the game area.
+	set_on(false);
+	std::vector<uint32_t> back_h;
+	for (int i = 0; i < 25; i++) {
+		sleep_ms(30);
+		back_h.push_back(obs_source_get_height(capture));
+	}
+	bool back_part = false;
+	for (uint32_t bh : back_h)
+		back_part = back_part || (bh > 210 && bh < 240);
+	const std::string back = size();
+	CHECK(back == "320x240" && back_part && red_share() > 0.05,
+	      "unticked, the window is shown whole again, glided to (%s, part-way %d)", back.c_str(), back_part);
+
+	obs_source_filter_remove(capture, sw);
+	obs_source_release(sw);
+	obs_source_dec_showing(capture);
+	obs_source_release(capture);
+}
+
 // The whole chain of the capture scenes section (Link Visibility, Show in
 // Scenes and an item transition, two scenes): run inside that section, and
 // alone with STAGEKIT_TEST_ONLY_CAPTURE_CHAIN.
@@ -7921,6 +8199,14 @@ int main(int argc, char **argv)
 		return g_failures ? 1 : 0;
 	}
 
+	if (getenv("STAGEKIT_TEST_ONLY_GAME_AREA")) { // to try that section alone
+		game_area_test();
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
+
 	if (getenv("STAGEKIT_TEST_ONLY_AUTO_REST")) { // to try that section alone
 		auto_rest_test();
 		obs_shutdown();
@@ -10186,6 +10472,7 @@ int main(int argc, char **argv)
 
 		auto_rest_test();
 		auto_window_closed_test(out);
+		game_area_test();
 
 		// The controls: say what is captured, undo a wrong pick in one
 		// press, and choose from open programs instead of typing names.

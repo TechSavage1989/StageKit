@@ -56,15 +56,18 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include <obs-module.h>
 #include <graphics/vec4.h>
+#include <util/platform.h>
 #include <plugin-support.h>
 
 #include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <atomic>
+#include <cstdio>
 #include <cstring>
 #include <map>
 #include <mutex>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -232,6 +235,51 @@ int applied_index(obs_source_t *parent, obs_source_t *filter)
 	return find.found;
 }
 
+// Game area only: what is cut off each side of the picture so that only the
+// part of the window the program draws its picture in is shown (an
+// emulator's menu bar, tool bar and status bar left out), as shares of the
+// client area, so that it holds at any size the capture's picture has.
+struct Cut {
+	double l = 0.0, t = 0.0, r = 0.0, b = 0.0;
+	bool none() const { return l <= 0.0 && t <= 0.0 && r <= 0.0 && b <= 0.0; }
+};
+Cut cut_of(const GameArea &area)
+{
+	if (!area.found())
+		return Cut();
+	const double cw = area.client_w, ch = area.client_h;
+	auto share = [](double v) {
+		return std::clamp(v, 0.0, 0.45);
+	};
+	return Cut{share(area.x / cw), share(area.y / ch), share((cw - area.x - area.w) / cw),
+		   share((ch - area.y - area.h) / ch)};
+}
+// Whether two cuts are the same to within a few pixels of the client area: a
+// change smaller than that is not followed.
+bool near_cut(const Cut &a, const Cut &b, int client_w, int client_h)
+{
+	const double w = client_w > 0 ? client_w : 1920.0, h = client_h > 0 ? client_h : 1080.0;
+	constexpr double kPixels = 3.0;
+	return std::fabs(a.l - b.l) * w <= kPixels && std::fabs(a.r - b.r) * w <= kPixels &&
+	       std::fabs(a.t - b.t) * h <= kPixels && std::fabs(a.b - b.b) * h <= kPixels;
+}
+Cut between(const Cut &a, const Cut &b, double t)
+{
+	return Cut{a.l + (b.l - a.l) * t, a.t + (b.t - a.t) * t, a.r + (b.r - a.r) * t, a.b + (b.b - a.b) * t};
+}
+// A new game area is taken once it has stayed the same this long: a menu
+// that opens over the picture for a moment changes nothing.
+constexpr uint64_t kAreaSteadyNs = 300000000ULL;
+// A picture not of the client area's shape for this long is shown whole;
+// shorter, it is a window being resized and the cut still holds.
+constexpr uint64_t kMismatchNs = 1000000000ULL;
+
+// The part of the live picture that is drawn: all of it, or the game area.
+struct LiveBox {
+	uint32_t w = 0, h = 0;   // the size drawn (and reported)
+	double x = 0.0, y = 0.0; // where in the whole picture it begins
+};
+
 // What every enabled switcher lists, for Auto Capture to leave alone.
 std::mutex g_listed_mutex;
 std::map<const void *, std::vector<std::string>> g_listed;
@@ -245,8 +293,10 @@ public:
 		next_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 		obs_leave_graphics();
 		update(settings);
-		// For the tests: stand-in windows, one per line, "title|exe|front|id"
-		// (the id, which window it is, may be left out).
+		// For the tests: stand-in windows, one per line,
+		// "title|exe|front|id|area" (the id, which window it is, may be
+		// left out; the area, its game area, is "x,y,w,h,client w,client h"
+		// or "none" for one looked for and not found, and may be left out).
 		proc_handler_add(
 			obs_source_get_proc_handler(source_), "void set_test_windows(in string windows)",
 			[](void *data, calldata_t *cd) {
@@ -255,10 +305,20 @@ public:
 				std::vector<OpenWindow> windows;
 				std::vector<std::string> fields(1);
 				auto flush = [&] {
-					fields.resize(4);
-					if (!fields[1].empty())
-						windows.push_back({fields[0], fields[1], fields[2] == "front", "",
-								   fields[3].empty() ? 0 : std::stoull(fields[3])});
+					fields.resize(5);
+					if (!fields[1].empty()) {
+						OpenWindow w{fields[0], fields[1], fields[2] == "front", "",
+							     fields[3].empty() ? 0 : std::stoull(fields[3])};
+						GameArea &a = w.game_area;
+						a.looked = !fields[4].empty();
+						if (a.looked && fields[4] != "none" &&
+						    sscanf(fields[4].c_str(), "%d,%d,%d,%d,%d,%d", &a.x, &a.y, &a.w,
+							   &a.h, &a.client_w, &a.client_h) == 6)
+							a.child_class = "stand-in";
+						else
+							a.x = a.y = a.w = a.h = 0;
+						windows.push_back(w);
+					}
 					fields.assign(1, std::string());
 				};
 				for (const char *p = text ? text : ""; *p; p++) {
@@ -365,6 +425,25 @@ public:
 		hand_follow_ = obs_data_get_bool(settings, "hand_follow");
 		hide_standby_ = obs_data_get_bool(settings, "hide_standby");
 		hid_pending_ = !hid_items_read(settings).empty();
+		const bool game_area = obs_data_get_bool(settings, "game_area");
+		if (game_area != game_area_) {
+			// Switched on or off: from the whole picture (on, the game area
+			// is taken at the next looks and glided to), or back to the
+			// whole picture with a glide from the cut as it is now.
+			if (game_area) {
+				cut_from_ = cut_to_ = pend_ = Cut();
+				cut_t_ = 1.0;
+			} else {
+				cut_from_ = cut_now_locked();
+				cut_to_ = pend_ = Cut();
+				cut_t_ = cut_from_.none() ? 1.0 : 0.0;
+				if (!cut_from_.none())
+					cut_seq_++;
+			}
+			game_area_ = game_area;
+			pend_since_ = 0;
+			area_entry_ = current_;
+		}
 		style_ = static_cast<Style>(std::clamp<long long>(obs_data_get_int(settings, "change"), 0, 7));
 		change_s_ = std::clamp<long long>(obs_data_get_int(settings, "change_ms"), 0, 10000) / 1000.0;
 		curve_ = static_cast<EaseCurve>(obs_data_get_int(settings, "ease_curve"));
@@ -413,21 +492,48 @@ public:
 	bool change(AppCaptureChange &out)
 	{
 		obs_source_t *bridge = bridge_ref();
-		const uint32_t bw = live_size(bridge, true), bh = live_size(bridge, false);
+		const LiveBox box = live_box(bridge);
+		const uint32_t bw = box.w, bh = box.h;
 		obs_source_release(bridge);
 		const uint32_t w = size(true), h = size(false);
-		std::lock_guard lock(mutex_);
-		if (phase_ != Phase::Mix || !bw || !bh || !w || !h)
+		Cut to;
+		{
+			std::lock_guard lock(mutex_);
+			if (!bw || !bh || !w || !h)
+				return false;
+			if (phase_ == Phase::Mix) {
+				out.id = changes_.load();
+				out.now_w = w;
+				out.now_h = h;
+				out.to_w = bw;
+				out.to_h = bh;
+				out.total_s = style_ == Style::Cut ? 0.0 : change_s_;
+				out.done = mix_;
+				out.curve = (int)curve_;
+				out.mode = (int)mode_;
+				return true;
+			}
+			// Within one window, the game area gliding to a new one: the
+			// size is on its way to that area's (a count of its own, so
+			// that what plays a change of window at `changes_` plays none).
+			if (phase_ != Phase::Idle || cut_t_ >= 1.0)
+				return false;
+			to = cut_to_;
+			out.id = changes_.load() | (cut_seq_ << 40);
+			out.total_s = style_ == Style::Cut ? 0.0 : change_s_;
+			out.done = cut_t_;
+			out.curve = (int)curve_;
+			out.mode = (int)mode_;
+		}
+		bridge = bridge_ref();
+		const LiveBox end = live_box(bridge, &to);
+		obs_source_release(bridge);
+		if (!end.w || !end.h)
 			return false;
-		out.id = changes_.load();
-		out.now_w = w;
-		out.now_h = h;
-		out.to_w = bw;
-		out.to_h = bh;
-		out.total_s = style_ == Style::Cut ? 0.0 : change_s_;
-		out.done = mix_;
-		out.curve = (int)curve_;
-		out.mode = (int)mode_;
+		out.now_w = bw;
+		out.now_h = bh;
+		out.to_w = end.w;
+		out.to_h = end.h;
 		return true;
 	}
 
@@ -459,7 +565,8 @@ public:
 	uint32_t size(bool across)
 	{
 		obs_source_t *bridge = bridge_ref();
-		const uint32_t live = live_size(bridge, across);
+		const LiveBox box = live_box(bridge);
+		const uint32_t live = across ? box.w : box.h;
 		obs_source_release(bridge);
 		std::lock_guard lock(mutex_);
 		const uint32_t kept = across ? kept_w_ : kept_h_;
@@ -545,7 +652,28 @@ private:
 			obs_source_t *parent = nullptr);
 	void toggle_hidden(obs_source_t *parent);
 	void keep_first(obs_source_t *parent);
-	bool copy_live(obs_source_t *bridge, gs_texrender_t *into, uint32_t w, uint32_t h);
+	bool copy_live(obs_source_t *bridge, gs_texrender_t *into, const LiveBox &box);
+	void observe_area(const std::string &entry, const OpenWindow *window);
+	// The cut as it is now, part-way through a glide to a new one (under the lock).
+	Cut cut_now_locked() const
+	{
+		return between(cut_from_, cut_to_, std::clamp(ease(curve_, mode_, cut_t_), 0.0, 1.0));
+	}
+	// The cut for a window switched to, at once: the change between the two
+	// windows' pictures carries the size (under the lock).
+	void cut_at_once_locked(const std::string &entry, const GameArea &area)
+	{
+		cut_from_ = cut_to_ = pend_ = game_area_ ? cut_of(area) : Cut();
+		cut_t_ = 1.0;
+		pend_since_ = 0;
+		area_entry_ = entry;
+		mismatch_logged_ = false; // (each window switched to can say so once)
+		mismatch_since_ = 0;
+		if (area.looked && area.client_w > 0 && area.client_h > 0) {
+			area_cw_ = area.client_w;
+			area_ch_ = area.client_h;
+		}
+	}
 	void put(gs_texture_t *texture, double x, double y, double w, double h, float strength);
 
 	obs_source_t *bridge_ref()
@@ -578,6 +706,70 @@ private:
 				return 0;
 		}
 		return before_size(source_, across);
+	}
+	// The part of the live picture drawn: with Game area only, the game area
+	// of the window shown, as long as the picture is that window's client
+	// area (Window Capture's Client area ticked: the picture has the client
+	// area's shape). Otherwise all of it.
+	// (`use`: that cut instead of the one now, for the size a glide is going to.)
+	LiveBox live_box(obs_source_t *bridge, const Cut *use = nullptr)
+	{
+		LiveBox box;
+		const uint32_t fw = live_size(bridge, true), fh = live_size(bridge, false);
+		box.w = fw;
+		box.h = fh;
+		if (!fw || !fh)
+			return box;
+		Cut cut;
+		int cw, ch;
+		{
+			// (Off, the cut is none unless it is gliding back to the
+			// whole picture after being switched off.)
+			std::lock_guard lock(mutex_);
+			cut = use ? *use : cut_now_locked();
+			cw = area_cw_;
+			ch = area_ch_;
+		}
+		if (cut.none() || cw <= 0 || ch <= 0)
+			return box;
+		const double k = (double)fw / cw;
+		const bool matches = std::fabs((double)fh - ch * k) <= std::max(3.0, 0.01 * fh);
+		if (!use) {
+			// The picture is not the client area's shape. For a moment
+			// that is a window resized or maximised (the capture's image
+			// takes the new size before the window watch's next look says
+			// the new client size): the cut, a share of the client area,
+			// still holds. Only lasting a second is it something else
+			// (Client area unticked), and the picture is shown whole.
+			std::lock_guard lock(mutex_);
+			if (matches) {
+				mismatch_since_ = 0;
+			} else {
+				const uint64_t now = os_gettime_ns();
+				if (!mismatch_since_)
+					mismatch_since_ = now;
+				if (now - mismatch_since_ >= kMismatchNs) {
+					if (!mismatch_logged_) {
+						mismatch_logged_ = true;
+						obs_log(LOG_INFO,
+							"Automatic Window Switcher '%s': the capture's image (%ux%u) is not the window's client area (%dx%d); shown whole",
+							obs_source_get_name(source_), fw, fh, cw, ch);
+					}
+					return box;
+				}
+			}
+		} else if (!matches) {
+			return box;
+		}
+		const double x0 = std::round(cut.l * fw), y0 = std::round(cut.t * fh);
+		const double x1 = std::round(fw * (1.0 - cut.r)), y1 = std::round(fh * (1.0 - cut.b));
+		if (x1 - x0 < 16.0 || y1 - y0 < 16.0)
+			return box;
+		box.x = x0;
+		box.y = y0;
+		box.w = (uint32_t)(x1 - x0);
+		box.h = (uint32_t)(y1 - y0);
+		return box;
 	}
 
 	enum class Phase {
@@ -657,6 +849,18 @@ private:
 	double drawn_ago_ = 10.0;          // seconds since this filter last drew
 	gs_texrender_t *last_ = nullptr;   // the last picture
 	gs_texrender_t *next_ = nullptr;   // the new one, while it comes in
+	// Game area only: the cut gliding from one to the next, the client size
+	// it was found in, the window it is for, and a new one waiting to stay.
+	bool game_area_ = false;
+	Cut cut_from_, cut_to_, pend_;
+	double cut_t_ = 1.0;
+	uint64_t pend_since_ = 0; // when `pend_` was first seen (0: none waiting)
+	int area_cw_ = 0, area_ch_ = 0;
+	std::string area_entry_;
+	std::set<std::string> area_logged_; // programs whose game area was logged, and how
+	bool mismatch_logged_ = false;      // the picture shown whole was logged (for the window shown)
+	uint64_t mismatch_since_ = 0;       // since when the picture has not been the client area's shape (0: it is)
+	uint64_t cut_seq_ = 0;              // how many glides of the game area within a window have begun
 };
 
 // The captures to keep running: one for each entry given, none for the rest.
@@ -789,6 +993,7 @@ void AppCapture::aim(obs_source_t *parent, const OpenWindow &window, const std::
 		}
 	} release{old_bridge, &lock};
 	current_ = entry;
+	cut_at_once_locked(entry, window.game_area);
 	if (remember) {
 		recent_.erase(std::remove(recent_.begin(), recent_.end(), entry), recent_.end());
 		recent_.insert(recent_.begin(), entry);
@@ -1096,6 +1301,30 @@ void AppCapture::follow(obs_source_t *parent)
 	// The other open apps' captures keep running while this one is on
 	// show, so whichever is switched to has its picture at once.
 	auto ready_for = [&](const std::string &shown) {
+		// Game area only: the window shown and the others that could be
+		// switched to have theirs looked for (on the window list's own
+		// thread), and the one shown is followed.
+		bool areas;
+		{
+			std::lock_guard lock(mutex_);
+			areas = game_area_;
+		}
+		if (areas) {
+			const OpenWindow *shown_window = nullptr;
+			for (size_t i = 0; i < apps.size(); i++)
+				if (slots[i].window) {
+					game_area_want(slots[i].window->handle);
+					if (apps[i] == shown)
+						shown_window = slots[i].window;
+				}
+			for (size_t i = 0; i < by_hand.size(); i++)
+				if (hand[i].window) {
+					game_area_want(hand[i].window->handle);
+					if (by_hand[i] == shown && !shown_window)
+						shown_window = hand[i].window;
+				}
+			observe_area(shown, shown_window);
+		}
 		// The capture itself follows a window named by part of its title
 		// when the rest of the title changes, where it is aimed at it.
 		{
@@ -1442,6 +1671,64 @@ void AppCapture::settle_aim(obs_source_t *parent, const std::vector<std::string>
 		obs_source_get_name(parent), aimed.executable.c_str(), by_title ? "by title" : "by program");
 }
 
+// Game area only: the window shown's game area, followed. A window switched
+// to takes its own at once (the change between the two pictures glides);
+// within one window a new area is taken once it has stayed for
+// `kAreaSteadyNs`, and glided to; one a few pixels off is not followed.
+void AppCapture::observe_area(const std::string &entry, const OpenWindow *window)
+{
+	if (entry.empty())
+		return;
+	const GameArea area = window ? window->game_area : GameArea();
+	std::string said;
+	{
+		std::lock_guard lock(mutex_);
+		if (!game_area_)
+			return;
+		const Cut target = cut_of(area);
+		if (area_entry_ != entry) {
+			cut_at_once_locked(entry, area);
+		} else {
+			if (area.looked && area.client_w > 0 && area.client_h > 0) {
+				area_cw_ = area.client_w;
+				area_ch_ = area.client_h;
+			}
+			if (near_cut(target, cut_to_, area_cw_, area_ch_)) {
+				pend_ = cut_to_;
+				pend_since_ = 0;
+			} else if (!pend_since_ || !near_cut(target, pend_, area_cw_, area_ch_)) {
+				pend_ = target;
+				pend_since_ = os_gettime_ns();
+			} else if (os_gettime_ns() - pend_since_ >= kAreaSteadyNs) {
+				cut_from_ = cut_now_locked();
+				cut_to_ = target;
+				cut_t_ = 0.0;
+				pend_since_ = 0;
+				cut_seq_++;
+			}
+		}
+		// What was found, once per program (and once more should that turn
+		// out otherwise later).
+		if (window && area.looked) {
+			const std::string key = lowered(window->executable) + (area.found() ? "|found" : "|none");
+			if (area_logged_.insert(key).second) {
+				char text[512];
+				if (area.found())
+					snprintf(text, sizeof(text),
+						 "game area of %s: child %s, %dx%d at %d,%d in a %dx%d client",
+						 window->executable.c_str(), area.child_class.c_str(), area.w, area.h,
+						 area.x, area.y, area.client_w, area.client_h);
+				else
+					snprintf(text, sizeof(text), "no game area found in %s: shown whole",
+						 window->executable.c_str());
+				said = text;
+			}
+		}
+	}
+	if (!said.empty())
+		obs_log(LOG_INFO, "Automatic Window Switcher '%s': %s", obs_source_get_name(source_), said.c_str());
+}
+
 void AppCapture::tick(float seconds)
 {
 	obs_source_t *parent = obs_filter_get_parent(source_);
@@ -1473,6 +1760,8 @@ void AppCapture::tick(float seconds)
 		const double change_s = style_ == Style::Cut ? 0.0 : change_s_;
 		phase_s_ += seconds;
 		settle_s_ += seconds;
+		if (cut_t_ < 1.0)
+			cut_t_ = change_s > 0.0 ? std::min(1.0, cut_t_ + seconds / change_s) : 1.0;
 		seen_empty_ = seen_empty_ || !own;
 		own_s_ = own ? own_s_ + seconds : 0.0;
 		switch (phase_) {
@@ -1575,8 +1864,9 @@ void AppCapture::tick(float seconds)
 
 // The live picture into a picture of its own, as it is: what comes before
 // this filter, or the capture kept ready that stands in for it.
-bool AppCapture::copy_live(obs_source_t *bridge, gs_texrender_t *into, uint32_t w, uint32_t h)
+bool AppCapture::copy_live(obs_source_t *bridge, gs_texrender_t *into, const LiveBox &box)
 {
+	const uint32_t w = box.w, h = box.h;
 	gs_texrender_reset(into);
 	const bool was_linear = gs_set_linear_srgb(false);
 	const bool was_srgb = gs_framebuffer_srgb_enabled();
@@ -1586,7 +1876,8 @@ bool AppCapture::copy_live(obs_source_t *bridge, gs_texrender_t *into, uint32_t 
 		vec4 clear;
 		vec4_zero(&clear);
 		gs_clear(GS_CLEAR_COLOR, &clear, 0.0f, 0);
-		gs_ortho(0.0f, (float)w, 0.0f, (float)h, -100.0f, 100.0f);
+		// (Only the part wanted of the whole picture: the game area.)
+		gs_ortho((float)box.x, (float)(box.x + w), (float)box.y, (float)(box.y + h), -100.0f, 100.0f);
 		gs_blend_state_push();
 		gs_blend_function(GS_BLEND_ONE, GS_BLEND_INVSRCALPHA);
 		if (bridge)
@@ -1632,7 +1923,8 @@ void AppCapture::render()
 		return;
 	}
 	obs_source_t *bridge = bridge_ref();
-	const uint32_t bw = live_size(bridge, true), bh = live_size(bridge, false);
+	const LiveBox box = live_box(bridge);
+	const uint32_t bw = box.w, bh = box.h;
 	const bool has = bw && bh;
 	Phase phase;
 	Style style;
@@ -1659,7 +1951,7 @@ void AppCapture::render()
 	}
 	gs_texture_t *last = gs_texrender_get_texture(last_);
 	if (phase == Phase::Idle) {
-		if (has && copy_live(bridge, last_, bw, bh)) {
+		if (has && copy_live(bridge, last_, box)) {
 			{
 				std::lock_guard lock(mutex_);
 				kept_w_ = bw;
@@ -1669,7 +1961,7 @@ void AppCapture::render()
 		} else if (has) {
 			skip_filter_input(source_);
 		}
-	} else if (phase != Phase::Mix || !has || !copy_live(bridge, next_, bw, bh)) {
+	} else if (phase != Phase::Mix || !has || !copy_live(bridge, next_, box)) {
 		put(last, 0.0, 0.0, kw, kh, 1.0f);
 	} else {
 		const double t = std::clamp(ease(curve, mode, mix), 0.0, 1.0);
@@ -1849,6 +2141,8 @@ obs_properties_t *get_properties(void *data)
 	set_tip(follow, obs_module_text("AppCapture.Follow.Tip"));
 	obs_property_t *ready = obs_properties_add_bool(props, "ready", obs_module_text("AppCapture.Ready"));
 	set_tip(ready, obs_module_text("AppCapture.Ready.Tip"));
+	obs_property_t *game_area = obs_properties_add_bool(props, "game_area", obs_module_text("AppCapture.GameArea"));
+	set_tip(game_area, obs_module_text("AppCapture.GameArea.Tip"));
 	obs_property_t *picked = obs_properties_add_list(props, "picked", obs_module_text("AppCapture.Picked"),
 							 OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(picked, obs_module_text("AppCapture.Picked.Wait"), 0);
@@ -1903,6 +2197,7 @@ void get_defaults(obs_data_t *settings)
 {
 	obs_data_set_default_bool(settings, "follow", true);
 	obs_data_set_default_bool(settings, "ready", true);
+	obs_data_set_default_bool(settings, "game_area", false);
 	obs_data_set_default_int(settings, "picked", 0);
 	obs_data_set_default_bool(settings, "hand_follow", true);
 	obs_data_set_default_bool(settings, "clear_picked", true);
