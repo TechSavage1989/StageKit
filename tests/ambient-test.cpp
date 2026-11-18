@@ -6495,6 +6495,251 @@ static void tooltips_test()
 	      too_long, first_bad.c_str());
 }
 
+// The window switcher's picked windows cleared from both lists, and nothing
+// drawn that is not on them. The owner (2026-11-18): "window capture is
+// capturing a window i've not manually selected and i can't clear it": a
+// window of one Firefox profile had been picked, the capture was left aimed
+// by program at firefox.exe, and after a restart OBS's Window Capture found
+// the other profile's window by itself, which was on the Ignored list. Run
+// after the switcher's section, and alone with STAGEKIT_TEST_ONLY_CLEAR_PICKED.
+static void clear_picked_test()
+{
+	printf("\n[window switcher: picked windows cleared from both lists, nothing unlisted drawn]\n");
+	const char *dash = " \xE2\x80\x94 "; // " — "
+	auto set_list = [](obs_data_t *d, const char *name, const std::vector<std::string> &values) {
+		obs_data_array_t *rows = obs_data_array_create();
+		for (const std::string &v : values) {
+			obs_data_t *e = obs_data_create();
+			obs_data_set_string(e, "value", v.c_str());
+			obs_data_array_push_back(rows, e);
+			obs_data_release(e);
+		}
+		obs_data_set_array(d, name, rows);
+		obs_data_array_release(rows);
+	};
+	auto get_list = [](obs_source_t *f, const char *name) {
+		std::vector<std::string> out;
+		obs_data_t *d = obs_source_get_settings(f);
+		obs_data_array_t *rows = obs_data_get_array(d, name);
+		for (size_t i = 0; rows && i < obs_data_array_count(rows); i++) {
+			obs_data_t *e = obs_data_array_item(rows, i);
+			out.push_back(obs_data_get_string(e, "value"));
+			obs_data_release(e);
+		}
+		obs_data_array_release(rows);
+		obs_data_release(d);
+		return out;
+	};
+	auto joined = [](const std::vector<std::string> &v) {
+		std::string out;
+		for (const std::string &e : v)
+			out += (out.empty() ? "" : ", ") + e;
+		return out;
+	};
+	auto colour = [](obs_source_t *src, long long abgr) {
+		obs_data_t *d = obs_source_get_settings(src);
+		obs_data_set_int(d, "color", abgr);
+		obs_data_set_int(d, "width", 200);
+		obs_data_set_int(d, "height", 100);
+		obs_source_update(src, d);
+		obs_data_release(d);
+	};
+	// The capture: red, aimed by program at firefox.exe, as the owner's
+	// Window Capture was at the start of OBS.
+	obs_data_t *capd = obs_data_create();
+	obs_data_set_string(capd, "window", "Profile A:MozillaWindowClass:firefox.exe");
+	obs_data_set_int(capd, "priority", 2);
+	obs_source_t *cap = obs_source_create("color_source", "CP Capture", capd, nullptr);
+	obs_data_release(capd);
+	colour(cap, 0xFF0000FFLL); // red
+	obs_source_t *image = obs_source_create("color_source", "CP Standby Image", nullptr, nullptr);
+	colour(image, 0xFFFF0000LL); // blue
+	const std::string work_title = std::string("Manage: Project Ticket") + dash + "Work" + dash + "Mozilla Firefox";
+	// Saved last session: two closed apps, a window of profile A picked by
+	// hand, and the Work profile's window ignored by its title (Firefox's
+	// titles have the dash of a picked window in them).
+	obs_data_t *fd = obs_data_create();
+	set_list(fd, "apps", {"blender.exe", "ZBrush.exe"});
+	set_list(fd, "by_hand", {std::string("firefox.exe") + dash + "Profile A"});
+	set_list(fd, "ignore", {work_title});
+	obs_data_set_bool(fd, "ready", false);
+	obs_data_set_int(fd, "change", 1); // a cut
+	obs_source_t *sw = obs_source_create("stagekit_app_capture", "CP Switcher", fd, nullptr);
+	obs_data_release(fd);
+	const std::vector<std::string> loaded_hand = get_list(sw, "by_hand");
+	obs_source_filter_add(cap, sw);
+	obs_data_t *sd = obs_data_create();
+	obs_data_set_int(sd, "picture", 2); // a source
+	obs_data_set_string(sd, "source", "CP Standby Image");
+	obs_data_set_int(sd, "style", 1); // a cut
+	obs_data_set_int(sd, "back_ms", 0);
+	obs_data_set_int(sd, "fade_ms", 0);
+	obs_source_t *standby = obs_source_create("stagekit_standby", "CP Standby", sd, nullptr);
+	obs_data_release(sd);
+	obs_source_filter_add(cap, standby);
+	obs_source_inc_showing(cap);
+	auto windows = [&](const std::string &text) {
+		calldata_t cd = {};
+		calldata_set_string(&cd, "windows", text.c_str());
+		proc_handler_call(obs_source_get_proc_handler(sw), "set_test_windows", &cd);
+		calldata_free(&cd);
+	};
+	auto command = [&](const char *what) {
+		calldata_t cd = {};
+		calldata_set_string(&cd, "what", what);
+		proc_handler_call(obs_source_get_proc_handler(sw), "command", &cd);
+		calldata_free(&cd);
+	};
+	// The most red and the most blue drawn over a while.
+	int most_red = 0, blue = 0, orange = 0;
+	auto draw_for = [&](int ms) {
+		most_red = 0;
+		orange = 0;
+		for (int waited = 0; waited < ms; waited += 50) {
+			const uint32_t w = obs_source_get_width(cap), h = obs_source_get_height(cap);
+			if (w && h) {
+				const std::vector<uint8_t> px = render(cap, w, h);
+				for (size_t i = 0; i + 3 < px.size(); i += 4)
+					if (px[i + 2] < 100) {
+						most_red = std::max<int>(most_red, px[i]);
+						if (px[i] > 200 && px[i + 1] > 90 && px[i + 1] < 170)
+							orange++;
+					}
+				blue = px[(size_t(h / 2) * w + w / 2) * 4 + 2];
+			}
+			sleep_ms(50);
+		}
+	};
+	auto aimed = [&](long long &priority) {
+		obs_data_t *d = obs_source_get_settings(cap);
+		const std::string window = obs_data_get_string(d, "window");
+		priority = obs_data_get_int(d, "priority");
+		obs_data_release(d);
+		const size_t colon = window.rfind(':');
+		return colon == std::string::npos ? std::string() : window.substr(colon + 1);
+	};
+	auto status = [&] {
+		obs_properties_t *props = obs_source_properties(sw);
+		const std::string text = obs_property_description(obs_properties_get(props, "status"));
+		obs_properties_destroy(props);
+		return text;
+	};
+	long long priority = 0;
+	// Profile A is gone; the Work profile's window is open, and in front.
+	windows(work_title + "|firefox.exe|front|31\nNotes|notes.exe||32");
+	draw_for(1200);
+	const std::string parked = aimed(priority);
+	const std::string said = status();
+	CHECK(loaded_hand.empty() && most_red < 15 && blue > 240 && parked == "stagekit-no-window.exe",
+	      "loaded with picked windows cleared and none of its apps open, nothing of the capture's own window is drawn: the Standby Image shows, and the capture is aimed at no window (%zu manual left; red %d, blue %d; aimed at %s)",
+	      loaded_hand.size(), most_red, blue, parked.c_str());
+	CHECK(said.find("none of the listed windows") != std::string::npos,
+	      "the status says that nothing listed is open ('%s')", said.c_str());
+	// A listed app opens: it is captured.
+	windows(work_title + "|firefox.exe||31\nBlender scene|blender.exe|front|33");
+	draw_for(300);
+	colour(cap, 0xFF00FF00LL); // green: the new window's picture
+	draw_for(900);
+	const std::string opened = aimed(priority);
+	CHECK(opened == "blender.exe" && blue < 15 && status().find("blender.exe") != std::string::npos,
+	      "a listed app that opens is captured and shown (aimed at %s, blue %d, '%s')", opened.c_str(), blue,
+	      status().c_str());
+
+	// Clear picked windows: off both lists. A picked window on the automatic
+	// list, being shown, is let go of; titles and programs stay, a title
+	// with Firefox's dash in it too.
+	const std::string pinned_auto = std::string("firefox.exe") + dash + "Stream profile";
+	const std::string pinned_hand = std::string("notes.exe") + dash + "Notes";
+	const std::string dashed_title = std::string("Docs") + dash + "Mozilla Firefox";
+	obs_data_t *ls = obs_source_get_settings(sw);
+	set_list(ls, "apps", {"blender.exe", pinned_auto, dashed_title});
+	set_list(ls, "by_hand", {"browser.exe", pinned_hand});
+	obs_source_update(sw, ls);
+	obs_data_release(ls);
+	windows("Stream profile|firefox.exe|front|41\nNotes|notes.exe||32\nBlender scene|blender.exe||33");
+	draw_for(300);
+	colour(cap, 0xFF0000FFLL); // red: the picked window
+	draw_for(600);
+	const std::string picked_aim = aimed(priority);
+	const long long picked_priority = priority;
+	command("clear");
+	draw_for(300);
+	colour(cap, 0xFF00FF00LL); // green: blender's again
+	draw_for(600);
+	const std::vector<std::string> apps_left = get_list(sw, "apps"), hand_left = get_list(sw, "by_hand");
+	CHECK(picked_aim == "firefox.exe" && picked_priority == 1 && aimed(priority) == "blender.exe",
+	      "a picked window on the automatic list is captured by its title, and once cleared the capture goes on to the next automatic window (%s, priority %lld; then %s)",
+	      picked_aim.c_str(), picked_priority, aimed(priority).c_str());
+	CHECK(apps_left == std::vector<std::string>({"blender.exe", dashed_title}) &&
+		      hand_left == std::vector<std::string>({"browser.exe"}),
+	      "clearing takes picked windows off both lists and keeps programs and titles (%s | %s)",
+	      joined(apps_left).c_str(), joined(hand_left).c_str());
+
+	// Cleared while shown with no other listed window open: nothing of it
+	// is drawn, and the capture is aimed at no window.
+	ls = obs_source_get_settings(sw);
+	set_list(ls, "apps", {"blender.exe", pinned_auto});
+	obs_source_update(sw, ls);
+	obs_data_release(ls);
+	windows("Stream profile|firefox.exe|front|41\nOther profile|firefox.exe||42");
+	draw_for(300);
+	colour(cap, 0xFF0000FFLL); // red
+	draw_for(600);
+	const std::string shown_before = aimed(priority);
+	command("clear");
+	draw_for(200); // (until its next look)
+	draw_for(1300);
+	CHECK(shown_before == "firefox.exe" && aimed(priority) == "stagekit-no-window.exe" && most_red < 15 &&
+		      blue > 240 && get_list(sw, "apps") == std::vector<std::string>({"blender.exe"}),
+	      "cleared while shown with nothing else open, it is let go of: the Standby Image shows and the capture is aimed at no window (%s, then %s; red %d, blue %d)",
+	      shown_before.c_str(), aimed(priority).c_str(), most_red, blue);
+
+	// The owner's chain within one session: a window of profile A picked
+	// and shown; it closes while the Work profile's window, ignored, is open.
+	// Nothing of that one is drawn, and the capture is not left aimed where
+	// OBS would find it.
+	ls = obs_source_get_settings(sw);
+	set_list(ls, "apps", {"blender.exe", "ZBrush.exe"});
+	set_list(ls, "by_hand", {});
+	obs_data_set_int(ls, "picked", 1); // switch at selection
+	obs_source_update(sw, ls);
+	obs_data_release(ls);
+	windows("Profile A|firefox.exe|front|51\n" + work_title + "|firefox.exe||31");
+	draw_for(300);
+	{
+		calldata_t cd = {};
+		calldata_set_string(&cd, "title", "Profile A");
+		calldata_set_string(&cd, "executable", "firefox.exe");
+		calldata_set_int(&cd, "id", 51);
+		proc_handler_call(obs_source_get_proc_handler(sw), "hold", &cd);
+		calldata_free(&cd);
+	}
+	draw_for(300);
+	colour(cap, 0xFF0000FFLL); // red: profile A
+	draw_for(600);
+	const std::string held_aim = aimed(priority);
+	const long long held_priority = priority;
+	const size_t held_listed = get_list(sw, "by_hand").size();
+	windows(work_title + "|firefox.exe|front|31");
+	// (What the capture would show if OBS took the Work window by itself:
+	// orange. Profile A's last image may stay for a moment.)
+	colour(cap, 0xFF0080FFLL);
+	draw_for(1500);
+	CHECK(held_aim == "firefox.exe" && held_priority == 1 && held_listed == 1 &&
+		      aimed(priority) == "stagekit-no-window.exe" && orange == 0 && blue > 240 &&
+		      get_list(sw, "by_hand").empty(),
+	      "a picked window that closes, with another window of its program open and ignored: nothing of that one is drawn, and the capture is aimed at no window (%s by title %lld; then %s; %d orange pixels, blue %d)",
+	      held_aim.c_str(), held_priority, aimed(priority).c_str(), orange, blue);
+
+	obs_source_dec_showing(cap);
+	obs_source_filter_remove(cap, standby);
+	obs_source_filter_remove(cap, sw);
+	obs_source_release(standby);
+	obs_source_release(sw);
+	obs_source_release(cap);
+	obs_source_release(image);
+}
+
 int main(int argc, char **argv)
 {
 	if (argc < 7) {
@@ -6668,6 +6913,14 @@ int main(int argc, char **argv)
 
 	if (getenv("STAGEKIT_TEST_ONLY_AUTO_REST")) { // to try that section alone
 		auto_rest_test();
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
+
+	if (getenv("STAGEKIT_TEST_ONLY_CLEAR_PICKED")) { // to try that section alone
+		clear_picked_test();
 		obs_shutdown();
 		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
 		       g_failures == 1 ? "" : "s");
@@ -14225,6 +14478,7 @@ int main(int argc, char **argv)
 			obs_source_release(one);
 			obs_source_release(cap);
 		}
+		clear_picked_test();
 
 		// Active App: one of several captures shows, the one whose app is in use.
 		printf("\n[active app]\n");

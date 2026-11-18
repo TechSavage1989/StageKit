@@ -1351,6 +1351,30 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     Picked windows are cleared (`clear` command, hotkey `stagekit.active.clear.` + name, the
     Stream Deck step `clear`; `clear_picked`, on as it comes, drops them when the filter is
     first loaded, `loaded_`): the owner did not want them "retained in the next session".
+    **Clearing goes through both lists** (`clear_picked_in`: `apps` and `by_hand`, all four
+    paths; betaNEXT), and a picked automatic entry being shown is let go of as a closed window
+    is (`drop_shown`: no last frame kept, the next automatic window or the Standby Image).
+    `is_pinned` needs a program's file name (`.exe`) before the dash: Firefox's titles have the
+    same " — " in them ("Page — Profile — Mozilla Firefox"), and up to beta186 such a title
+    chosen from a list was taken for a picked window (it answered nothing, so an ignored
+    Firefox title ignored nothing, and Clear would have removed it).
+  - **Nothing unlisted is drawn, and the capture is never left aimed where OBS could wander**
+    (betaNEXT). The owner, 2026-11-18: "window capture is capturing a window i've not manually
+    selected and i can't clear it": their lists held two closed apps and an ignored Firefox
+    title, and the Window Capture, last aimed by executable at firefox.exe (a window of another
+    profile had been picked), took the Work profile's window by itself at the next start; the
+    switcher drew it. Now, whenever nothing is shown (`current` empty after a look), the
+    capture's own picture and bridge are not believed (`unsafe_`, `own_ok_` false, Standby
+    cover); and after every look `settle_aim` aims the capture at no window
+    (`aim_capture_at_nothing`, Auto Capture's `kNoWindow`) when its own aim is by program at a
+    program not listed by name, by title at a title no entry answers (a picked entry: its
+    program), or at an ignored window. A window of a listed program is aimed as before. The
+    status line says *Capturing nothing* (`AppCapture.Status.Nothing`) and goes by what the
+    filter shows, not where the capture is aimed. With both lists empty the filter still does
+    nothing at all. Tested in `[window switcher: picked windows cleared from both lists, nothing
+    unlisted drawn]` (`clear_picked_test`, alone: `STAGEKIT_TEST_ONLY_CLEAR_PICKED`), the
+    owner's chain at load and within a session. A capture parked at no window while a ready
+    capture is drawn reads `stagekit-no-window.exe` as its program (Auto Frame goes by that).
   - *Auto-switch manual windows* (`hand_follow`, on as it comes): while one is held, the same
     rules as automatic mode among `by_hand` only (clicked into, just opened via
     `hand_was_open_`, the one before via `hand_recent_` when the held one closes); without it a

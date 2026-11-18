@@ -57,6 +57,12 @@ bool hook_front_window(obs_source_t *capture, std::string &what, std::string &er
 // two programs that share a file name.
 void aim_capture_at(obs_source_t *capture, const OpenWindow &window, bool by_title);
 
+// Aims a Window Capture (or a Game Capture) at no window: a program no
+// window has, so OBS's capture takes nothing, not even another window of the
+// program it was aimed at last. And whether a capture is aimed so.
+void aim_capture_at_nothing(obs_source_t *capture);
+bool capture_aimed_at_nothing(obs_source_t *capture);
+
 // For the tests: the window to take as the one in front (an empty
 // executable goes back to the real ones).
 void set_front_window_for_tests(const std::string &title, const std::string &window_class,

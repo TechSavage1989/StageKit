@@ -9,37 +9,43 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | `claude/fervent-knuth-cvsmaj` (a filter removed while drawn no longer crashes, beta187), on `main` after beta186. Next: the new collection |
+| Working branch | `fix/clear-picked-both-lists` (Window switcher: Clear picked windows clears both lists, nothing unlisted drawn, betaNEXT), on `main` after beta186 |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
-## A filter removed while it is drawn no longer crashes OBS (0.1.0-beta187)
+## Window switcher: Clear picked windows clears both lists, nothing unlisted drawn (0.1.0-betaNEXT)
 
-Branch `claude/fervent-knuth-cvsmaj`, on `main` after beta186. Notes: `docs/releases/0.1.0-beta187.md`.
-Beta186 (`fix/scene-shadow-flicker`, below) brought the same `skip_filter_input` for Scene Shadow
-while this was being done; the two were merged into one copy, which also checks for a null filter.
+Branch `fix/clear-picked-both-lists`, on `main` after beta186. Notes:
+`docs/releases/0.1.0-betaNEXT.md`. No Stream Deck file changed. The owner (2026-11-18, two
+screenshots and the log): "window capture is capturing a window i've not manually selected and i
+can't clear it". *Windows to switch between* held blender.exe and ZBrush.exe (neither open),
+*Manual windows* was empty, *Ignored windows* held the Work profile's Firefox title, and the
+filter said *Capturing: firefox.exe* over a Firefox window. They had never picked that window;
+one of another profile, earlier.
 
-- **Cause.** `obs_filter_get_parent` goes to NULL when `obs_source_filter_remove` runs on the
-  window's thread while the video thread draws the filter. libobs 30's
-  `obs_source_skip_video_filter` reads `parent->info.output_flags` without a check. A filter that
-  had done real drawing work and then gave up (Scene Blur's `render_each` or `draw_filter_input`
-  failing because the parent had gone) skipped into a NULL parent. Found in Scene Shadow with gdb
-  (`SceneShadow::render` -> `obs_source_skip_video_filter`, after `obs_source_enum_filters: Null
-  'source' parameter` in the log); reproduced here in Scene Blur (`scene-blur.cpp`, the skip after
-  `render_each`).
-- **Fix.** `skip_filter_input(filter)` in `src/common/filter-input.hpp` skips only while the filter
-  has a parent and a target. Every `obs_source_skip_video_filter` in `src/` now goes through it:
-  Scene Blur (seven), Scene Shadow, Scene Corners, Blur, Corners & Edges, Shadow, Glow & Outline,
-  Zoom, Standby, the window switchers, Auto Capture, Program Trigger, the placement filters that
-  skip as their whole render (for consistency), Aspect Ratio Preset, and the dock's `render_bare`.
-  The window between the helper's check and OBS's read is not closed, only narrowed.
-- **Test.** `[filters removed while they are drawn]` (`filter_remove_while_drawn_test`, alone:
-  `STAGEKIT_TEST_ONLY_FILTER_REMOVE`): Scene Shadow, Scene Blur (as drawn and each source by
-  itself), Scene Corners (whole scene), Blur, Corners & Edges, Auto Frame, Shadow and Zoom are each
-  added and removed 60 times from a thread of their own while their scene is the output and is
-  drawn by the test thread. With the helper made a plain pass-through the run crashed in the Scene
-  Blur round (gdb: `SceneBlur::render`, scene-blur.cpp:709); with it, three runs of 150 rounds a
-  kind passed. Only on OpenGL and libobs 30.0.2; not seen on Windows.
+- **Cause:** the Window Capture's own settings were last aimed by executable at firefox.exe.
+  OBS's Window Capture aimed that way takes any window of the program by itself, and at the next
+  start it found the Work window. With nothing listed open the switcher drew the capture's own
+  picture, and the status line read the capture's aim. Clearing took entries off `by_hand` only
+  and never touched the capture's aim.
+- **Also:** Firefox titles have the picked-window dash " — " in them, so a Firefox title chosen
+  for any list was read as a picked window (`is_pinned`): it answered no window (the ignored
+  title ignored nothing) and Clear would have removed it. `is_pinned` now needs `.exe` before
+  the dash. A pinned entry cannot be put on the automatic list from the window's lists (they
+  offer programs and titles); the "pinned" entries in the screenshot were such titles.
+- **Fix** (`src/capture/app-capture.cpp`): `clear_picked_in` for both lists on all four paths;
+  `drop_shown` lets go of a picked automatic entry being shown; a look that ends with nothing
+  shown sets `unsafe_`/`own_ok_` false and drops the bridge (Standby cover through the existing
+  `guard_cover_`); `settle_aim` after every look parks the capture at no window
+  (`aim_capture_at_nothing` in `auto-capture.cpp`) when its aim is unlisted or ignored; status
+  `AppCapture.Status.Nothing`. Settings are written from the tick, as the clear already did.
+- **Tests:** `[window switcher: picked windows cleared from both lists, nothing unlisted drawn]`,
+  7 checks, all pass (`STAGEKIT_TEST_ONLY_CLEAR_PICKED`; also in the full run after the
+  switcher's section). The switcher's own section (34 checks), run on its own by a temporary
+  gate not committed, passes; so do `STAGEKIT_TEST_ONLY_CAPTURE_HIDE` and `_TOOLTIPS`. The full
+  `tests/run-tests.sh` was not run (machine limits). Not seen on Windows: whether OBS's Window
+  Capture takes `:StageKitNoWindow:stagekit-no-window.exe` quietly is known only from Auto
+  Capture, which has used it for a Game Capture.
 
 ## Scene Shadow: no flicker when items change, no gap at smoothed edges (0.1.0-beta186)
 
