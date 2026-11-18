@@ -20,6 +20,7 @@ the Free Software Foundation; either version 2 of the License, or
 // systems the filter loads and does nothing.
 
 #include "program-trigger.hpp"
+#include "../common/filter-input.hpp"
 #include "../common/timing.hpp"
 
 #include "auto-capture.hpp"
@@ -372,7 +373,7 @@ void register_program_trigger()
 	};
 	// A controller: it never changes the picture.
 	info.video_render = [](void *data, gs_effect_t *) {
-		obs_source_skip_video_filter(static_cast<ProgramTrigger *>(data)->source());
+		skip_filter_input(static_cast<ProgramTrigger *>(data)->source());
 	};
 	info.filter_add = [](void *data, obs_source_t *parent) {
 		static_cast<ProgramTrigger *>(data)->attach(parent);

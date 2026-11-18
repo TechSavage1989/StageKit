@@ -685,7 +685,7 @@ void SceneBlur::render()
 	    level <= 0.0005 || strength <= 0.01 || mix <= 0.0005 || !cx || !cy) {
 		blur_->forget_trail(); // a trail starts afresh when the blur comes back
 		forget_items(true);
-		obs_source_skip_video_filter(source_);
+		skip_filter_input(source_);
 		have_out_ = false;
 		return;
 	}
@@ -706,7 +706,7 @@ void SceneBlur::render()
 	}
 	if (area == Area::EachSource) {
 		if (!render_each(parent, cx, cy)) {
-			obs_source_skip_video_filter(source_);
+			skip_filter_input(source_);
 			return;
 		}
 		forget_items(false);
@@ -737,7 +737,7 @@ void SceneBlur::render()
 		}
 	if (lowest == items.size()) {
 		release_items(items);
-		obs_source_skip_video_filter(source_);
+		skip_filter_input(source_);
 		return;
 	}
 	// A sharp source above a covered one: the picture to blur is drawn
@@ -748,7 +748,7 @@ void SceneBlur::render()
 
 	if (!draw_filter_input(source_, tr_scene_, cx, cy)) {
 		release_items(items);
-		obs_source_skip_video_filter(source_);
+		skip_filter_input(source_);
 		return;
 	}
 	gs_texture_t *scene = gs_texrender_get_texture(tr_scene_);
@@ -785,7 +785,7 @@ void SceneBlur::render()
 	}
 	release_items(items);
 	if (!scene || !mask || !under) {
-		obs_source_skip_video_filter(source_);
+		skip_filter_input(source_);
 		return;
 	}
 	// Only what lies where a blurred source shows is taken into the blur:
@@ -798,7 +798,7 @@ void SceneBlur::render()
 	// looks further into the source for its colour.
 	gs_texture_t *kept = blur_->keep_to_mask(tr_kept_, under, mask, cx, cy);
 	if (!kept) {
-		obs_source_skip_video_filter(source_);
+		skip_filter_input(source_);
 		return;
 	}
 	const BlurPipeline::Result blurred = blur_->run(look, kept, cx, cy, strength, mix, nullptr, true);
@@ -816,7 +816,7 @@ void SceneBlur::render()
 		gs_texrender_end(tr_out_);
 	}
 	if (!drawn) {
-		obs_source_skip_video_filter(source_);
+		skip_filter_input(source_);
 		return;
 	}
 	draw_out(cx, cy);

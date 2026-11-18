@@ -938,7 +938,7 @@ void ShadowBackdrop::render()
 		off_here = off_here_;
 	}
 	if (!effect_ || !parent || !w || !h || off_here) {
-		obs_source_skip_video_filter(source_);
+		skip_filter_input(source_);
 		return;
 	}
 

@@ -12,6 +12,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include "../placement/fit-item.hpp"
 
+#include "../common/filter-input.hpp"
 #include "../common/shown-scale.hpp"
 #include "../shadow/shadow-backdrop.hpp"
 
@@ -62,7 +63,7 @@ void render_bare(obs_source_t *source)
 		},
 		&find);
 	if (find.lowest)
-		obs_source_skip_video_filter(find.lowest);
+		skip_filter_input(find.lowest);
 	else
 		obs_source_video_render(source);
 }

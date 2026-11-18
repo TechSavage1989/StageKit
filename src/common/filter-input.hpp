@@ -56,15 +56,19 @@ inline bool draw_filter_input(obs_source_t *filter, gs_texrender_t *into, uint32
 	return true;
 }
 
-// obs_source_skip_video_filter, unless the filter has been taken off its
-// source meanwhile: OBS takes a filter off (from another thread, the
-// window's) while the video thread may be drawing it, and its skip then
-// reads the parent it no longer has. A filter that draws for long (Scene
-// Shadow) and then gives up must skip through this; nothing is drawn then.
+// Hands drawing straight on to what comes after `filter`, as OBS's
+// obs_source_skip_video_filter does, but only while the filter still has a
+// parent and a target. A filter taken off its source (from the Filters
+// window, on another thread) while it is being drawn loses its parent part-
+// way through the drawing, and libobs 30's skip reads the parent's flags
+// without looking: OBS crashed in Scene Shadow's render that way. With no
+// parent the filter draws nothing for that one frame; it is going anyway.
+// Use this, never obs_source_skip_video_filter, in a filter's render.
 inline void skip_filter_input(obs_source_t *filter)
 {
-	if (obs_filter_get_parent(filter) && obs_filter_get_target(filter))
-		obs_source_skip_video_filter(filter);
+	if (!filter || !obs_filter_get_parent(filter) || !obs_filter_get_target(filter))
+		return;
+	obs_source_skip_video_filter(filter);
 }
 
 } // namespace stagekit

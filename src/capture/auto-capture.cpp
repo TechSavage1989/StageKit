@@ -43,6 +43,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "app-capture.hpp"
 #include "standby.hpp"
 #include "../api/vendor-api.hpp"
+#include "../common/filter-input.hpp"
 #include "../common/scene-util.hpp"
 #include "../common/easing.hpp"
 #include "../common/timing.hpp"
@@ -1394,7 +1395,7 @@ void register_auto_capture()
 	};
 	// A controller: it never changes the picture.
 	info.video_render = [](void *data, gs_effect_t *) {
-		obs_source_skip_video_filter(static_cast<AutoCapture *>(data)->source());
+		skip_filter_input(static_cast<AutoCapture *>(data)->source());
 	};
 	info.filter_add = [](void *data, obs_source_t *parent) {
 		static_cast<AutoCapture *>(data)->attach(parent);

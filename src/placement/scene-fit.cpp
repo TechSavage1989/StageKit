@@ -32,6 +32,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "fit-engine.hpp"
 #include "fit-item.hpp"
 
+#include "../common/filter-input.hpp"
 #include "../common/loading.hpp"
 #include "../common/pick-list.hpp"
 #include "../common/scene-filter-ids.hpp"
@@ -1212,7 +1213,7 @@ void register_scene_fit()
 	};
 	// A controller: it never changes the picture.
 	info.video_render = [](void *data, gs_effect_t *) {
-		obs_source_skip_video_filter(static_cast<SceneFit *>(data)->source());
+		skip_filter_input(static_cast<SceneFit *>(data)->source());
 	};
 	info.filter_add = [](void *data, obs_source_t *parent) {
 		static_cast<SceneFit *>(data)->attach(parent);

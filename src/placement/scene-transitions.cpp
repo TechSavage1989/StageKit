@@ -36,6 +36,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include "scene-transitions.hpp"
 #include "scene-tools.hpp"
+#include "../common/filter-input.hpp"
 #include "../common/loading.hpp"
 #include "../common/pick-list.hpp"
 #include "../common/scene-util.hpp"
@@ -903,7 +904,7 @@ void register_scene_transitions()
 	};
 	// It only sets how sources show and hide: it never changes the picture.
 	info.video_render = [](void *data, gs_effect_t *) {
-		obs_source_skip_video_filter(static_cast<SceneTransitions *>(data)->source());
+		skip_filter_input(static_cast<SceneTransitions *>(data)->source());
 	};
 	info.filter_remove = [](void *data, obs_source_t *parent) {
 		static_cast<SceneTransitions *>(data)->detach(parent);

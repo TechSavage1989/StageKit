@@ -9,9 +9,37 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | `fix/scene-shadow-flicker` (Scene Shadow: no flicker when items change, no gap at smoothed edges, betaNEXT), on `main` after beta176 |
+| Working branch | `claude/fervent-knuth-cvsmaj` (a filter removed while drawn no longer crashes, beta187), on `main` after beta186. Next: the new collection |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
+
+## A filter removed while it is drawn no longer crashes OBS (0.1.0-beta187)
+
+Branch `claude/fervent-knuth-cvsmaj`, on `main` after beta186. Notes: `docs/releases/0.1.0-beta187.md`.
+Beta186 (`fix/scene-shadow-flicker`, below) brought the same `skip_filter_input` for Scene Shadow
+while this was being done; the two were merged into one copy, which also checks for a null filter.
+
+- **Cause.** `obs_filter_get_parent` goes to NULL when `obs_source_filter_remove` runs on the
+  window's thread while the video thread draws the filter. libobs 30's
+  `obs_source_skip_video_filter` reads `parent->info.output_flags` without a check. A filter that
+  had done real drawing work and then gave up (Scene Blur's `render_each` or `draw_filter_input`
+  failing because the parent had gone) skipped into a NULL parent. Found in Scene Shadow with gdb
+  (`SceneShadow::render` -> `obs_source_skip_video_filter`, after `obs_source_enum_filters: Null
+  'source' parameter` in the log); reproduced here in Scene Blur (`scene-blur.cpp`, the skip after
+  `render_each`).
+- **Fix.** `skip_filter_input(filter)` in `src/common/filter-input.hpp` skips only while the filter
+  has a parent and a target. Every `obs_source_skip_video_filter` in `src/` now goes through it:
+  Scene Blur (seven), Scene Shadow, Scene Corners, Blur, Corners & Edges, Shadow, Glow & Outline,
+  Zoom, Standby, the window switchers, Auto Capture, Program Trigger, the placement filters that
+  skip as their whole render (for consistency), Aspect Ratio Preset, and the dock's `render_bare`.
+  The window between the helper's check and OBS's read is not closed, only narrowed.
+- **Test.** `[filters removed while they are drawn]` (`filter_remove_while_drawn_test`, alone:
+  `STAGEKIT_TEST_ONLY_FILTER_REMOVE`): Scene Shadow, Scene Blur (as drawn and each source by
+  itself), Scene Corners (whole scene), Blur, Corners & Edges, Auto Frame, Shadow and Zoom are each
+  added and removed 60 times from a thread of their own while their scene is the output and is
+  drawn by the test thread. With the helper made a plain pass-through the run crashed in the Scene
+  Blur round (gdb: `SceneBlur::render`, scene-blur.cpp:709); with it, three runs of 150 rounds a
+  kind passed. Only on OpenGL and libobs 30.0.2; not seen on Windows.
 
 ## Scene Shadow: no flicker when items change, no gap at smoothed edges (0.1.0-beta186)
 

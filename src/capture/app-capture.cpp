@@ -42,6 +42,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "app-capture.hpp"
 #include "auto-capture.hpp"
 #include "standby.hpp"
+#include "../common/filter-input.hpp"
 #include "../common/item-transition.hpp"
 #include "../common/hid-items.hpp"
 #include "../frame/auto-frame.hpp"
@@ -1471,7 +1472,7 @@ bool AppCapture::copy_live(obs_source_t *bridge, gs_texrender_t *into, uint32_t 
 		if (bridge)
 			obs_source_video_render(bridge);
 		else
-			obs_source_skip_video_filter(source_);
+			skip_filter_input(source_);
 		gs_blend_state_pop();
 		gs_texrender_end(into);
 		drawn = true;
@@ -1507,7 +1508,7 @@ void AppCapture::put(gs_texture_t *texture, double x, double y, double w, double
 void AppCapture::render()
 {
 	if (!effect_ || !obs_source_enabled(source_)) {
-		obs_source_skip_video_filter(source_);
+		skip_filter_input(source_);
 		return;
 	}
 	obs_source_t *bridge = bridge_ref();
@@ -1546,7 +1547,7 @@ void AppCapture::render()
 			}
 			put(gs_texrender_get_texture(last_), 0.0, 0.0, bw, bh, 1.0f);
 		} else if (has) {
-			obs_source_skip_video_filter(source_);
+			skip_filter_input(source_);
 		}
 	} else if (phase != Phase::Mix || !has || !copy_live(bridge, next_, bw, bh)) {
 		put(last, 0.0, 0.0, kw, kh, 1.0f);

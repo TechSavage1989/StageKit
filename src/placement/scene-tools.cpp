@@ -11,6 +11,7 @@ the Free Software Foundation; either version 2 of the License, or
 // Three small filters for scenes. See scene-tools.hpp.
 
 #include "scene-tools.hpp"
+#include "../common/filter-input.hpp"
 #include "../common/timing.hpp"
 
 #include "../common/easing.hpp"
@@ -779,7 +780,7 @@ obs_properties_t *layout_properties(void *data)
 // A controller filter never changes the picture.
 template<typename T> void pass_through(void *data, gs_effect_t *)
 {
-	obs_source_skip_video_filter(static_cast<T *>(data)->source());
+	skip_filter_input(static_cast<T *>(data)->source());
 }
 
 } // namespace

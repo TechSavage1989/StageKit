@@ -41,6 +41,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "visibility-link.hpp"
 
 #include "../api/vendor-api.hpp"
+#include "../common/filter-input.hpp"
 #include "../common/go-to-scene.hpp"
 #include "../common/holds-hidden.hpp"
 #include "../common/item-transition.hpp"
@@ -1716,7 +1717,7 @@ void register_scene_modes()
 		static_cast<SceneModes *>(data)->tick(seconds);
 	};
 	info.video_render = [](void *data, gs_effect_t *) {
-		obs_source_skip_video_filter(static_cast<SceneModes *>(data)->source());
+		skip_filter_input(static_cast<SceneModes *>(data)->source());
 	};
 	info.filter_add = [](void *data, obs_source_t *parent) {
 		// On a group it does nothing: its place is the scene holding the group.

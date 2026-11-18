@@ -636,7 +636,7 @@ void RampBlur::render()
 	// Fully off costs nothing: hand rendering straight back to OBS.
 	if (!blur_->ready() || level <= 0.0005 || strength <= 0.01 || mix <= 0.0005) {
 		blur_->forget_trail(); // a trail starts afresh when the blur comes back
-		obs_source_skip_video_filter(source_);
+		skip_filter_input(source_);
 		return;
 	}
 
@@ -645,7 +645,7 @@ void RampBlur::render()
 	const uint32_t w = target ? obs_source_get_base_width(target) : 0;
 	const uint32_t h = target ? obs_source_get_base_height(target) : 0;
 	if (!parent || !w || !h) {
-		obs_source_skip_video_filter(source_);
+		skip_filter_input(source_);
 		return;
 	}
 
