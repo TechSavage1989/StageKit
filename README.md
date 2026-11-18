@@ -470,6 +470,15 @@ nearest.
   without a glide); where the scenes are laid out alike that is the same place.
 - With *Resize to fit* unticked, the size the item keeps is saved with the scene collection and
   is the size it has the next time OBS starts.
+- **Switching the filter on keeps a layout made by hand.** Lay things out with the filter off,
+  then switch it on: every item stays exactly where it is and the size it is, *Resize to fit* or
+  not, as long as it keeps the gap. That is its home. When the room around it changes (something
+  is shown, hidden, moved or resized), it is fitted as usual; when the change is undone it goes
+  back to its home. Move or resize it yourself and that is its new home. The homes are saved with
+  the scene collection. A filter that was never switched off fits as it always did. A source that
+  takes its space first may still grow out of its home into room that frees up; the others then
+  make room for it and come home with it. With *All sources*, a source added while the filter is
+  off gets a home too.
 - **Size tolerance** (8 px as it comes): when something sticks a little way into the space, the image
   may be made up to this many pixels smaller to keep the whole space, instead of keeping its size and
   losing the part of the space beside that thing. At 0 the biggest image always wins, even by one

@@ -1201,7 +1201,10 @@ const char *const kOwnSettings[] = {
 	"rule_browse",    "force_ratio",     "force_until_gone", "orig_item",
 	"orig_k",         "share_scenes",    "keep_item",        "keep_k",
 	"mode_now",       "mode_before",     "managed",          "managed_by",
-	"hid_items",      "hidden_record",
+	"hid_items",      "hidden_record",   "home_item",        "home_x",
+	"home_y",         "home_w",          "home_h",           "home_space_x",
+	"home_space_y",   "home_space_w",    "home_space_h",     "home_cut_l",
+	"home_cut_t",     "home_cut_r",      "home_cut_b",
 };
 
 // Whether a setting is one of those. A setting kept per source or per mode

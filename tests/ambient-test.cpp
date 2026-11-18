@@ -2275,6 +2275,546 @@ static void fit_owner_test()
 	base_set_log_handler(g_fo_prev.handler, g_fo_prev.param);
 }
 
+// ------------------------------------------- fit: switched on over a hand layout
+// The owner, 2026-11-18: "when I set up some layouts as desired, for example
+// my Dolphin-GBA Link layout, manually positioning and sizing things with the
+// fit to filter disabled, then enable the filter, even with resize to fit
+// enabled, everything changes size." A stand-in of that scene at a quarter of
+// their canvas (640x360, their gap of 30 as 7.5): a 4:3 game with a shadow on
+// the left; on the right a column of a 3:2 window letterboxed in a source with
+// transparent margins (larger than the gap, so its box hangs off the screen),
+// a 3:2 Cropped View of a camera, and a second letterboxed window that keeps
+// its size, aligned to the bottom right. The fit has run on another layout
+// first (its anchors and kept sizes are stale), is switched off, the bottom
+// window told to keep its size, and everything moved and sized by hand.
+// Switched on, nothing moves; the middle hidden, the others may make use of
+// the room; shown again, the hand layout is back. The same for a filter saved
+// and loaded, for four Fit to Space filters, for a game set to take its space
+// first (the column makes room while it grows, and comes home with it), for
+// All sources with a source added while the filter is off, and for filters
+// made switched off (nothing measured before they are switched on) with a
+// shadow in screen pixels on the top window. Run alone with
+// STAGEKIT_TEST_ONLY_FIT_ENABLE.
+namespace {
+struct FeLetterbox {
+	uint32_t w = 0, h = 0, mx = 0, my = 0, colour = 0;
+};
+void register_fe_letterbox()
+{
+	static bool registered = false;
+	if (std::exchange(registered, true))
+		return;
+	obs_source_info info = {};
+	info.id = "stagekit_test_fe_letterbox";
+	info.type = OBS_SOURCE_TYPE_INPUT;
+	info.output_flags = OBS_SOURCE_VIDEO | OBS_SOURCE_CUSTOM_DRAW;
+	info.get_name = [](void *) {
+		return "Letterboxed window (stand-in)";
+	};
+	info.create = [](obs_data_t *settings, obs_source_t *) -> void * {
+		auto *l = new FeLetterbox();
+		l->w = (uint32_t)obs_data_get_int(settings, "width");
+		l->h = (uint32_t)obs_data_get_int(settings, "height");
+		l->mx = (uint32_t)obs_data_get_int(settings, "margin_x");
+		l->my = (uint32_t)obs_data_get_int(settings, "margin_y");
+		l->colour = (uint32_t)obs_data_get_int(settings, "color");
+		return l;
+	};
+	info.destroy = [](void *data) {
+		delete static_cast<FeLetterbox *>(data);
+	};
+	info.get_width = [](void *data) {
+		return static_cast<FeLetterbox *>(data)->w;
+	};
+	info.get_height = [](void *data) {
+		return static_cast<FeLetterbox *>(data)->h;
+	};
+	info.video_render = [](void *data, gs_effect_t *) {
+		auto *l = static_cast<FeLetterbox *>(data);
+		gs_effect_t *solid = obs_get_base_effect(OBS_EFFECT_SOLID);
+		vec4 c;
+		vec4_from_rgba(&c, l->colour);
+		gs_effect_set_vec4(gs_effect_get_param_by_name(solid, "color"), &c);
+		gs_matrix_push();
+		gs_matrix_translate3f((float)l->mx, (float)l->my, 0.0f);
+		while (gs_effect_loop(solid, "Solid"))
+			gs_draw_sprite(nullptr, 0, l->w - 2 * l->mx, l->h - 2 * l->my);
+		gs_matrix_pop();
+	};
+	obs_register_source(&info);
+}
+} // namespace
+
+static void fit_enable_test()
+{
+	printf("\n[fit: switching it on keeps a hand-made layout]\n");
+	register_fv_camera();
+	register_fe_letterbox();
+	constexpr uint32_t W = 640, H = 360;
+	constexpr double kGap = 7.5;
+	auto colour = [](const char *kind, const char *name, int cw, int ch, uint32_t c) {
+		obs_data_t *d = obs_data_create();
+		obs_data_set_int(d, "width", cw);
+		obs_data_set_int(d, "height", ch);
+		obs_data_set_int(d, "color", c);
+		obs_source_t *src = obs_source_create(kind, name, d, nullptr);
+		obs_data_release(d);
+		return src;
+	};
+	auto letterbox = [](const char *name, uint32_t c) {
+		obs_data_t *d = obs_data_create();
+		obs_data_set_int(d, "width", 200);
+		obs_data_set_int(d, "height", 150);
+		obs_data_set_int(d, "margin_x", 10);
+		obs_data_set_int(d, "margin_y", 15); // a 180x120 window inside
+		obs_data_set_int(d, "color", c);
+		obs_source_t *src = obs_source_create("stagekit_test_fe_letterbox", name, d, nullptr);
+		obs_data_release(d);
+		return src;
+	};
+	const uint32_t kBlue = 0xFFFF0000, kRed = 0xFF0000FF, kYellow = 0xFF00FFFF, kCyan = 0xFFFFFF00,
+		       kGreen = 0xFF00FF00;
+	obs_source_t *bg = colour("color_source", "FE Background", W, H, 0xFF202020);
+	obs_source_t *game = colour("color_source", "FE Game", 320, 240, kBlue);
+	obs_source_t *shadow = obs_source_create("stagekit_shadow_backdrop", "FE Shadow", nullptr, nullptr);
+	obs_source_filter_add(game, shadow);
+	obs_source_t *camera = colour("stagekit_test_fv_camera", "FE Camera", 480, 270, kRed);
+	obs_data_t *vd = obs_data_create();
+	obs_data_set_string(vd, "source", "FE Camera");
+	obs_data_set_int(vd, "left", 37);
+	obs_data_set_int(vd, "right", 38); // 405x270, 3:2
+	obs_source_t *mid = obs_source_create("stagekit_cropped_view", "FE Mid", vd, nullptr);
+	obs_data_release(vd);
+	obs_source_t *top = letterbox("FE Top", kYellow);
+	obs_source_t *bottom = letterbox("FE Bottom", kCyan);
+	obs_source_t *before = obs_get_output_source(0);
+	struct Rect {
+		double x = 0, y = 0, w = 0, h = 0;
+		bool any = false;
+	};
+	// Where each colour shows, read back.
+	auto shows_all = [&](obs_source_t *scene) {
+		const std::vector<uint8_t> px = render(scene, W, H);
+		std::vector<Rect> out;
+		for (uint32_t rgb : {kBlue, kYellow, kRed, kCyan, kGreen}) {
+			int x0 = W, y0 = H, x1 = -1, y1 = -1;
+			const int r = rgb & 0xFF, g = (rgb >> 8) & 0xFF, b = (rgb >> 16) & 0xFF;
+			for (uint32_t y = 0; y < H; y++)
+				for (uint32_t x = 0; x < W; x++) {
+					const uint8_t *p = &px[(size_t(y) * W + x) * 4];
+					if (std::abs(p[0] - r) < 40 && std::abs(p[1] - g) < 40 &&
+					    std::abs(p[2] - b) < 40 && p[3] > 128) {
+						x0 = std::min<int>(x0, x);
+						y0 = std::min<int>(y0, y);
+						x1 = std::max<int>(x1, x);
+						y1 = std::max<int>(y1, y);
+					}
+				}
+			Rect one;
+			if (x1 >= 0)
+				one = Rect{(double)x0, (double)y0, double(x1 - x0 + 1), double(y1 - y0 + 1), true};
+			out.push_back(one);
+		}
+		return out;
+	};
+	const char *names[] = {"game", "top", "middle", "bottom", "square"};
+	auto worst_of = [&](const std::vector<Rect> &a, const std::vector<Rect> &b, bool skip_mid = false) {
+		double worst = 0.0;
+		for (size_t i = 0; i < a.size() && i < b.size(); i++) {
+			if (skip_mid && i == 2)
+				continue;
+			if (a[i].any != b[i].any)
+				return 1e9;
+			worst = std::max({worst, std::fabs(a[i].x - b[i].x), std::fabs(a[i].y - b[i].y),
+					  std::fabs(a[i].x + a[i].w - b[i].x - b[i].w),
+					  std::fabs(a[i].y + a[i].h - b[i].y - b[i].h)});
+		}
+		return worst;
+	};
+	auto print = [&](const char *when, const std::vector<Rect> &v) {
+		printf("    %-26s", when);
+		for (size_t i = 0; i < v.size(); i++)
+			printf(" %s %.0f,%.0f %.0fx%.0f%s", names[i], v[i].x, v[i].y, v[i].w, v[i].h,
+			       i + 1 < v.size() ? ";" : "\n");
+	};
+	auto list = [](obs_data_t *d, const char *setting, std::vector<std::string> values) {
+		obs_data_array_t *arr = obs_data_array_create();
+		for (const std::string &value : values) {
+			obs_data_t *entry = obs_data_create();
+			obs_data_set_string(entry, "value", value.c_str());
+			obs_data_array_push_back(arr, entry);
+			obs_data_release(entry);
+		}
+		obs_data_set_array(d, setting, arr);
+		obs_data_array_release(arr);
+	};
+	auto place = [](obs_sceneitem_t *it, double x, double y, double bw, double bh) {
+		vec2 v;
+		obs_sceneitem_set_alignment(it, OBS_ALIGN_LEFT | OBS_ALIGN_TOP);
+		obs_sceneitem_set_bounds_type(it, OBS_BOUNDS_SCALE_INNER);
+		obs_sceneitem_set_bounds_alignment(it, OBS_ALIGN_CENTER);
+		vec2_set(&v, (float)bw, (float)bh);
+		obs_sceneitem_set_bounds(it, &v);
+		vec2_set(&v, (float)x, (float)y);
+		obs_sceneitem_set_pos(it, &v);
+	};
+	// A layout: the game's box, and the column's pictures `ph` high at `cx`
+	// (top, middle and bottom, `ph` apart by the gap, from the top down; the
+	// bottom `drop` px nearer the screen's edge than the gap).
+	auto lay_out = [&](obs_sceneitem_t *const its[4], double game_w, double cx, double ph, double mid_y,
+			   double drop) {
+		place(its[0], kGap, kGap, game_w, game_w * 0.75);
+		const double pw = ph * 1.5, k = pw / 180.0;
+		place(its[1], cx - 10 * k, kGap - 15 * k, 200 * k, 150 * k);
+		place(its[2], cx, mid_y, pw, ph);
+		place(its[3], cx - 10 * k, H - kGap - ph - 15 * k + drop, 200 * k, 150 * k);
+	};
+	auto frames = [&](obs_source_t *ss, int n) {
+		for (int i = 0; i < n; i++) {
+			render(ss, W, H);
+			sleep_ms(20);
+		}
+	};
+	// The owner's settings: Free space, the gap, visible pixels and no
+	// shadows; the game kept to the left, the top window to the top right,
+	// the camera in the middle, the bottom window to the bottom right.
+	struct Entry {
+		const char *name;
+		bool resize;
+		int toward;
+	};
+	const Entry entries[] = {{"FE Game", true, 3}, {"FE Top", true, 6}, {"FE Mid", true, 0}, {"FE Bottom", true, 8}};
+	auto look = [&](obs_data_t *d, const std::string &prefix, const Entry &e) {
+		obs_data_set_int(d, (prefix + "box").c_str(), 2);
+		obs_data_set_double(d, (prefix + "margin").c_str(), kGap);
+		obs_data_set_bool(d, (prefix + "resize").c_str(), e.resize);
+		obs_data_set_int(d, (prefix + "toward").c_str(), e.toward);
+		obs_data_set_int(d, (prefix + "glide_ms").c_str(), 200);
+		obs_data_set_bool(d, (prefix + "visible_pixels").c_str(), true);
+		obs_data_set_bool(d, (prefix + "no_shadows").c_str(), true);
+	};
+	auto make_scene = [&](const char *name, obs_sceneitem_t *its[4]) {
+		obs_scene_t *scene = obs_scene_create(name);
+		obs_scene_add(scene, bg);
+		its[3] = obs_scene_add(scene, bottom);
+		its[2] = obs_scene_add(scene, mid);
+		its[1] = obs_scene_add(scene, top);
+		its[0] = obs_scene_add(scene, game);
+		obs_set_output_source(0, obs_scene_get_source(scene));
+		return scene;
+	};
+	// The hand layout: the game smaller than its space would make it, the
+	// column off the right edge by 4.5 px (a fit would put the windows
+	// against it and centre the camera), each picture 165x110, the gap
+	// between them all, and the bottom window (which keeps its size) a pixel
+	// nearer the screen's bottom edge than the gap: what measuring on a small
+	// copy can be off by, which is still at home and must not be pulled in.
+	const double hand_cx = W - kGap - 165.0 - 4.5;
+	// One run: the fit (`filters`, switched on and off together) over the
+	// hand layout. `keep_bottom`: how the bottom window is told to keep its
+	// size while the filter is off. `ran_before`: the fit ran on another
+	// layout first; otherwise it was made switched off and has never ticked
+	// while on (OBS started with it off): what shows of each source is
+	// measured only after it is switched on.
+	auto run = [&](const char *label, obs_source_t *ss, obs_sceneitem_t *its[4],
+		       const std::vector<obs_source_t *> &filters, const std::function<void()> &keep_bottom,
+		       bool ran_before) {
+		if (ran_before) {
+			// First on another layout, so that what it noted is stale.
+			lay_out(its, 400.0, 460.0, 80.0, 140.0, 0.0);
+			frames(ss, 100);
+			print((std::string(label) + ", ran on before").c_str(), shows_all(ss));
+			for (obs_source_t *f : filters)
+				obs_source_set_enabled(f, false);
+		}
+		frames(ss, 10);
+		keep_bottom();
+		lay_out(its, 430.0, hand_cx, 110.0, kGap + 110.0 + kGap, 1.0);
+		frames(ss, 20);
+		const std::vector<Rect> hand = shows_all(ss);
+		print("hand layout, filter off", hand);
+		for (obs_source_t *f : filters)
+			obs_source_set_enabled(f, true);
+		double worst = 0.0;
+		for (int t = 0; t < 6; t++) {
+			frames(ss, 25);
+			const std::vector<Rect> now = shows_all(ss);
+			worst = std::max(worst, worst_of(hand, now));
+			if (t == 0 || t == 5)
+				print(t == 0 ? "switched on, +0.5 s" : "switched on, +3 s", now);
+		}
+		CHECK(worst <= 0.5, "%s: switched on over the hand layout, nothing moves for 3 s (worst %.1f px)",
+		      label, worst);
+		// The middle hidden: the others may make use of its room.
+		obs_sceneitem_set_visible(its[2], false);
+		frames(ss, 75);
+		print("middle hidden", shows_all(ss));
+		obs_sceneitem_set_visible(its[2], true);
+		frames(ss, 100);
+		const std::vector<Rect> back = shows_all(ss);
+		print("middle shown again", back);
+		const double back_worst = worst_of(hand, back);
+		CHECK(back_worst <= 0.5,
+		      "%s: the middle hidden and shown again, the hand layout is back (worst %.1f px)", label,
+		      back_worst);
+		return hand;
+	};
+	auto stores_home = [](obs_source_t *f, const char *key) {
+		obs_data_t *d = obs_source_get_settings(f);
+		const bool has = *obs_data_get_string(d, key) != '\0';
+		obs_data_release(d);
+		return has;
+	};
+
+	// ---- a Scene Fit
+	{
+		obs_sceneitem_t *its[4] = {};
+		obs_scene_t *scene = make_scene("FE Scene Fit", its);
+		obs_source_t *ss = obs_scene_get_source(scene);
+		obs_data_t *d = obs_data_create();
+		list(d, "entries", {"FE Game", "FE Top", "FE Mid", "FE Bottom"});
+		for (const Entry &e : entries)
+			look(d, std::string("fit|") + e.name + "|", e);
+		obs_source_t *fit = obs_source_create("stagekit_scene_fit", "FE Fit", d, nullptr);
+		obs_data_release(d);
+		obs_source_filter_add(ss, fit);
+		const std::vector<Rect> hand = run(
+			"Scene Fit", ss, its, {fit},
+			[&] {
+				// Unticked while the filter is off, as the owner did.
+				obs_data_t *u = obs_data_create();
+				obs_data_set_bool(u, "fit|FE Bottom|resize", false);
+				obs_source_update(fit, u);
+				obs_data_release(u);
+			},
+			true);
+		CHECK(stores_home(fit, "fit|FE Bottom|home_item") && stores_home(fit, "fit|FE Game|home_item"),
+		      "Scene Fit: the homes are saved with the filter");
+		// Saved and loaded on: the homes as they were saved.
+		obs_data_t *saved = obs_source_get_settings(fit);
+		obs_data_t *copy = obs_data_create_from_json(obs_data_get_json(saved));
+		obs_data_release(saved);
+		obs_source_filter_remove(ss, fit);
+		obs_source_release(fit);
+		frames(ss, 10);
+		obs_source_t *loaded = obs_source_create("stagekit_scene_fit", "FE Fit Loaded", copy, nullptr);
+		obs_data_release(copy);
+		obs_source_filter_add(ss, loaded);
+		double worst = 0.0;
+		for (int t = 0; t < 4; t++) {
+			frames(ss, 25);
+			worst = std::max(worst, worst_of(hand, shows_all(ss)));
+		}
+		print("loaded on", shows_all(ss));
+		CHECK(worst <= 0.5, "Scene Fit: loaded on with its homes, nothing moves for 2 s (worst %.1f px)",
+		      worst);
+		// The game set to take its space first (switched off, set, laid out
+		// by hand, switched on: nothing moves), then the bottom window (which
+		// keeps its size, so it holds its room against the game) hidden: the
+		// game leaves its home and grows over where the column's resized
+		// pictures are (they are not in its way). They go by where it is, not
+		// by its home, so they make room and keep the gap; with the bottom
+		// shown again, everything is home again.
+		obs_source_set_enabled(loaded, false);
+		frames(ss, 10);
+		obs_data_t *first_d = obs_data_create();
+		obs_data_set_int(first_d, "fit|FE Game|space_priority", 1);
+		obs_source_update(loaded, first_d);
+		obs_data_release(first_d);
+		lay_out(its, 430.0, hand_cx, 110.0, kGap + 110.0 + kGap, 1.0);
+		frames(ss, 20);
+		const std::vector<Rect> hand_first = shows_all(ss);
+		obs_source_set_enabled(loaded, true);
+		worst = 0.0;
+		for (int t = 0; t < 4; t++) {
+			frames(ss, 25);
+			worst = std::max(worst, worst_of(hand_first, shows_all(ss)));
+		}
+		print("the game takes space first", shows_all(ss));
+		CHECK(worst <= 0.5,
+		      "Scene Fit: switched on with the game taking its space first, nothing moves for 2 s (worst %.1f px)",
+		      worst);
+		obs_sceneitem_set_visible(its[3], false);
+		frames(ss, 100);
+		const std::vector<Rect> first = shows_all(ss);
+		print("and the bottom hidden", first);
+		double least_gap = 1e9;
+		for (size_t i = 1; i < first.size(); i++)
+			if (first[i].any && first[0].any && first[i].y < first[0].y + first[0].h &&
+			    first[i].y + first[i].h > first[0].y)
+				least_gap = std::min(least_gap, first[i].x - first[0].x - first[0].w);
+		CHECK(first[0].w > hand_first[0].w + 5.0 && least_gap >= kGap - 1.5,
+		      "Scene Fit: a game that takes its space first grows (%.0f wide, %.0f by hand), and the column beside it keeps the gap (%.1f px)",
+		      first[0].w, hand_first[0].w, least_gap);
+		obs_sceneitem_set_visible(its[3], true);
+		frames(ss, 100);
+		const std::vector<Rect> shared = shows_all(ss);
+		print("the bottom shown again", shared);
+		const double shared_worst = worst_of(hand_first, shared);
+		CHECK(shared_worst <= 0.5,
+		      "Scene Fit: the bottom shown again, the hand layout is back around the game (worst %.1f px)",
+		      shared_worst);
+		// A filter that never had a home fits as it always did: the game
+		// grows into its space.
+		obs_source_filter_remove(ss, loaded);
+		obs_source_release(loaded);
+		obs_data_t *fresh_d = obs_data_create();
+		list(fresh_d, "entries", {"FE Game", "FE Top", "FE Mid", "FE Bottom"});
+		for (const Entry &e : entries)
+			look(fresh_d, std::string("fit|") + e.name + "|", e);
+		obs_source_t *fresh = obs_source_create("stagekit_scene_fit", "FE Fit Fresh", fresh_d, nullptr);
+		obs_data_release(fresh_d);
+		obs_source_filter_add(ss, fresh);
+		frames(ss, 100);
+		const std::vector<Rect> fitted = shows_all(ss);
+		print("a new filter, never off", fitted);
+		CHECK(fitted[0].w > hand[0].w + 5.0,
+		      "a filter never switched off fits as before: the game fills its space (%.0f wide, %.0f by hand)",
+		      fitted[0].w, hand[0].w);
+		obs_source_filter_remove(ss, fresh);
+		obs_source_release(fresh);
+		obs_source_remove(ss);
+		obs_scene_release(scene);
+	}
+	// ---- four Fit to Space filters
+	{
+		obs_sceneitem_t *its[4] = {};
+		obs_scene_t *scene = make_scene("FE Fit to Space", its);
+		obs_source_t *ss = obs_scene_get_source(scene);
+		std::vector<obs_source_t *> filters;
+		for (const Entry &e : entries) {
+			obs_data_t *d = obs_data_create();
+			obs_data_set_string(d, "item", e.name);
+			look(d, "", e);
+			obs_data_set_double(d, "tolerance", 8.0);
+			obs_source_t *f = obs_source_create("stagekit_fit_item", (std::string(e.name) + " Fit").c_str(),
+							    d, nullptr);
+			obs_data_release(d);
+			obs_source_filter_add(ss, f);
+			filters.push_back(f);
+		}
+		run(
+			"Fit to Space", ss, its, filters,
+			[&] {
+				obs_data_t *u = obs_data_create();
+				obs_data_set_bool(u, "resize", false);
+				obs_source_update(filters[3], u);
+				obs_data_release(u);
+			},
+			true);
+		CHECK(stores_home(filters[3], "home_item"), "Fit to Space: the home is saved with the filter");
+		for (obs_source_t *f : filters) {
+			obs_source_filter_remove(ss, f);
+			obs_source_release(f);
+		}
+		obs_source_remove(ss);
+		obs_scene_release(scene);
+	}
+	// ---- All sources, and a source added while the filter is off
+	// Every source of the scene is fitted. A small one is put down by hand
+	// below the game while the filter is off: switched on, it is one of the
+	// sources with a home at once, not one fitted half a second later whose
+	// new room moves the others off theirs.
+	obs_source_t *square = colour("color_source", "FE Square", 60, 40, kGreen);
+	{
+		obs_sceneitem_t *its[4] = {};
+		obs_scene_t *scene = make_scene("FE All Sources", its);
+		obs_source_t *ss = obs_scene_get_source(scene);
+		obs_data_t *d = obs_data_create();
+		obs_data_set_int(d, "which", 1); // All sources
+		for (const Entry &e : entries)
+			look(d, std::string("fit|") + e.name + "|", e);
+		look(d, "fit|FE Square|", Entry{"FE Square", true, 0});
+		obs_data_set_bool(d, "fit|FE Bottom|resize", false);
+		obs_source_t *fit = obs_source_create("stagekit_scene_fit", "FE Fit All", d, nullptr);
+		obs_data_release(d);
+		obs_source_filter_add(ss, fit);
+		// (No settings changed while it is off: new settings have the
+		// sources counted again anyway.)
+		run(
+			"Scene Fit, all sources", ss, its, {fit},
+			[&] {
+				obs_sceneitem_t *sq = obs_scene_add(scene, square);
+				place(sq, 20.0, 332.0, 30.0, 20.0);
+			},
+			true);
+		obs_source_filter_remove(ss, fit);
+		obs_source_release(fit);
+		obs_source_remove(ss);
+		obs_scene_release(scene);
+	}
+	obs_source_release(square);
+	// ---- never on before, and a shadow on the top window
+	// Made switched off (as when OBS starts with the filter off), so nothing
+	// is known of what shows of each source when it is switched on: the
+	// space round each home must be found once that has been measured. And
+	// the top window has a shadow sized in screen pixels: when it grows into
+	// the hidden middle's room the shadow's room changes, and the shadow
+	// filter moves the item to keep the picture in place, which is not a
+	// move by hand (the home stays the hand layout).
+	obs_data_t *top_sd = obs_data_create();
+	obs_data_set_double(top_sd, "softness", 4.0);
+	obs_data_set_double(top_sd, "offset_x", 2.0);
+	obs_data_set_double(top_sd, "offset_y", 2.0);
+	obs_source_t *top_shadow = obs_source_create("stagekit_shadow_backdrop", "FE Top Shadow", top_sd, nullptr);
+	obs_data_release(top_sd);
+	obs_source_filter_add(top, top_shadow);
+	{
+		obs_sceneitem_t *its[4] = {};
+		obs_scene_t *scene = make_scene("FE Scene Fit Never On", its);
+		obs_source_t *ss = obs_scene_get_source(scene);
+		obs_data_t *d = obs_data_create();
+		list(d, "entries", {"FE Game", "FE Top", "FE Mid", "FE Bottom"});
+		for (const Entry &e : entries)
+			look(d, std::string("fit|") + e.name + "|", e);
+		obs_data_set_bool(d, "fit|FE Bottom|resize", false);
+		obs_source_t *fit = obs_source_create("stagekit_scene_fit", "FE Fit Never On", d, nullptr);
+		obs_data_release(d);
+		obs_source_set_enabled(fit, false);
+		obs_source_filter_add(ss, fit);
+		run("Scene Fit, never on before", ss, its, {fit}, [] {}, false);
+		obs_source_filter_remove(ss, fit);
+		obs_source_release(fit);
+		obs_source_remove(ss);
+		obs_scene_release(scene);
+	}
+	{
+		obs_sceneitem_t *its[4] = {};
+		obs_scene_t *scene = make_scene("FE Fit to Space Never On", its);
+		obs_source_t *ss = obs_scene_get_source(scene);
+		std::vector<obs_source_t *> filters;
+		for (const Entry &e : entries) {
+			obs_data_t *d = obs_data_create();
+			obs_data_set_string(d, "item", e.name);
+			look(d, "", e);
+			obs_data_set_double(d, "tolerance", 8.0);
+			if (strcmp(e.name, "FE Bottom") == 0)
+				obs_data_set_bool(d, "resize", false);
+			obs_source_t *f = obs_source_create(
+				"stagekit_fit_item", (std::string(e.name) + " Fit Never On").c_str(), d, nullptr);
+			obs_data_release(d);
+			obs_source_set_enabled(f, false);
+			obs_source_filter_add(ss, f);
+			filters.push_back(f);
+		}
+		run("Fit to Space, never on before", ss, its, filters, [] {}, false);
+		for (obs_source_t *f : filters) {
+			obs_source_filter_remove(ss, f);
+			obs_source_release(f);
+		}
+		obs_source_remove(ss);
+		obs_scene_release(scene);
+	}
+	obs_source_filter_remove(top, top_shadow);
+	obs_source_release(top_shadow);
+	obs_set_output_source(0, before);
+	obs_source_release(before);
+	obs_source_filter_remove(game, shadow);
+	obs_source_release(shadow);
+	for (obs_source_t *s : {bg, game, camera, mid, top, bottom})
+		obs_source_release(s);
+}
+
 // ------------------------------------------------- scene fit groups
 // A Scene Fit's Settings: Same for all sources. The owner: "I'd like the Fit
 // to scene filter also have the option to select one or more sources and
@@ -9688,6 +10228,13 @@ int main(int argc, char **argv)
 
 	if (getenv("STAGEKIT_TEST_ONLY_UPDATES")) { // to try that section alone
 		update_changes_test(argv[2]);
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
+	if (getenv("STAGEKIT_TEST_ONLY_FIT_ENABLE")) { // to try that section alone
+		fit_enable_test();
 		obs_shutdown();
 		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
 		       g_failures == 1 ? "" : "s");
@@ -24584,6 +25131,8 @@ int main(int argc, char **argv)
 	fit_visible_test();
 	// The owner's layout scene, G1 to G5 (STAGEKIT_TEST_ONLY_FIT_OWNER).
 	fit_owner_test();
+	// Switched on over a layout made by hand (STAGEKIT_TEST_ONLY_FIT_ENABLE).
+	fit_enable_test();
 	// ==== end scene-filters:fit ====
 	// ==== scene-filters:all-sources ====
 	// ---------------------------------------- the scene filters' All sources

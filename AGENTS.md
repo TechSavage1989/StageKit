@@ -825,10 +825,14 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   `src/placement/fit-item.cpp`): the part of the item's picture that shows is what is fitted, kept
   and held clear, not its box. The owner, of a group wider than its grey panel: "only the visible
   pixels in the group, or any other item should be counted. otherwise, what's the point of that
-  setting?" It is looked at when first met, half a second after its source last changed size, and
-  every three seconds while it sits where it was put; only while it is wholly on the screen; and a
-  cut under a fiftieth of the picture is taken for measuring error. Sizes kept (`keep_k_`,
-  `orig_k`) are scales of the source, so they hold whatever part shows.
+  setting?" It is looked at when first met, half a second after its picture last changed size, and
+  every three seconds while it sits where it was put; also while its box hangs past the screen's
+  edge (betaNEXT: the source is drawn by itself to be measured); and a cut under a fiftieth of the
+  picture is taken for measuring error. The picture is the source less its crop and, with *Ignore
+  shadows & outlines*, the shadow's room (`own_sw_`), so a change of a shadow's room alone keeps
+  what was seen (betaNEXT: sized in screen pixels, the room changes at every resize, and for half
+  a second each time a letterboxed window was fitted with its empty margins). Sizes kept
+  (`keep_k_`, `orig_k`) are scales of the source, so they hold whatever part shows.
 - **Two Fit to Space filters in one scene go by each other's destinations** (`Claim`, `claim_set`,
   `claim_of` in `src/placement/fit-item.cpp`): each says where its item will be once it has got
   there and whether it resizes it, and the other takes that for the obstacle, a claimed group as
@@ -1000,6 +1004,58 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   the camera's width, was "slightly larger" after every restart. A size is also only read off an
   item whose source has kept its size for half a second: while OBS loads, a group or a shadowed
   source is not yet the size it will be.
+- **A fit switched on takes the layout as it is: its home** (`FitEngine::switched_on`, `home_`,
+  `home_space_`, `home_box`, `home_from_item`, `at_home_`; betaNEXT). The owner, 2026-11-18:
+  "when I set up some layouts as desired, for example my Dolphin-GBA Link layout, manually
+  positioning and sizing things with the fit to filter disabled, then enable the filter, even with
+  resize to fit enabled, everything changes size." Causes: the first tick on went on from the
+  last session (`have_keep_`, `keep_k_` from before, the round-2 untick restoring a stale `keep_k`
+  or `orig_k` when *Resize to fit* was unticked while off, anchors and claims from the old
+  layout; a filter loaded off read its saved `keep_k` and anchor), and a resized item was always
+  given the largest picture its space holds, never the size it had. Now an off-to-on edge seen by
+  the tick (`was_off_`, Fit to Space in `FitEngine::tick`, Scene Fit for all entries in its
+  tick; never `!scenes_loaded()`) drops all that: anchor from the item with no wait, the kept size
+  read off the item, no glide, and a **home**: the box the whole picture has now (before
+  *Use visible pixels* cuts it, so a shadow's room or a later look changes nothing) and, found
+  over the next 0.5 s on screen (`home_settling_`), the free space round its place with every
+  other fit's item at *its* home (`Claim::home`, `Obstacle::home`). In `solve`, while that space
+  is the same again (3 px, `kHomeSlack`) and the picture at home keeps the gap (same slack) to
+  what counts and the screen's edges, the goal is the home box exactly, no trims, home to home
+  without a glide; otherwise it fits as it always did, and comes back when the change is undone.
+  Comparing against the others' homes, not where they are now, is what makes a column return:
+  each entry decides alone and the departed ones do not hold each other off. A resized item
+  grows beyond its hand size only while the space round it differs (a neighbour hidden), as
+  before. Retaken on a move by something else, a resize by hand (now watched for resized items
+  with a home too) and a copy tool's placing; dropped for another item; unticking *Resize to
+  fit* with a home keeps the home's size. Saved as own settings (`home_item`, `home_x/y/w/h`,
+  `home_space_*`, `home_cut_*`, in `kOwnSettings` and Scene Fit's `kFitKeys`, renamed with the
+  source), so a filter loaded on goes by them; `home_cut_*` stands for what shows until the item
+  is looked at (else a window's empty margins were its home for half a second and the column
+  left home). A filter that was never off has no home and fits as before. Also: what shows of
+  the fitted item is now measured when its box hangs past the screen's edge (the source is drawn
+  by itself; it was never looked at, and a window letterboxed beyond the gap kept its margins).
+  The review of it found more, fixed before release: the space round a home is found only once
+  what shows of the item has been looked at and its shape counted, and again from the start while
+  another fit's home changes (`home_settle_`, `ready` in `motion`, `homes_changed` in `observe`:
+  switched on with nothing measured yet, after OBS started with the filter off, every home space
+  came out a window's margins too small and every item left home); a fit that takes its space
+  first counts where it is, not at its home (`above_`: else it grew over the lower fits at their
+  homes); the home is read off OBS's own drawing transform (`home_from_item`: OBS places a picture
+  in its bounding box by whole pixels, and the item moved by up to a pixel the first time its box
+  became the picture's); a kept-size item at home is not pulled the full gap in (`apply`,
+  `publish_claim`: a home within the 3 px slack of the edge moved); during a window switcher's
+  change `home_box` goes by the shape it is changing to (`switching_`: the new window was squeezed
+  into the old one's home box); at home a picture of another shape is handed the space round it as
+  away from home (`found`, `reshaping`: only when it no longer fits its home, so what shows of it
+  being measured again changes nothing on screen); the shadow filter's own move of an item when its
+  room changes is not taken for a move by hand (`set_k_`: the shift and box growth are added to
+  `set_x_`, `set_bw_` and the rest, else an item grown into a hidden neighbour's room took the
+  grown place for its home); and a Scene Fit with *All sources* counts its sources at the first
+  tick on (`count_now_` while off), so a source added meanwhile gets a home with the rest. Tested
+  in `[fit: switching it on keeps a hand-made layout]` (`fit_enable_test`, alone with
+  `STAGEKIT_TEST_ONLY_FIT_ENABLE`): also a filter made switched off (never ticked on), a shadow in
+  screen pixels on a column window, a bottom window a pixel inside the gap, a game set to *Takes
+  space first* growing as a neighbour is hidden, and *All sources* with a source added while off.
 - **Morph draws the scenes' items itself** (`src/transition/morph.cpp`). OBS gives a transition
   its two scenes as finished pictures; Morph instead draws each item the way a scene does
   (`obs_sceneitem_get_draw_transform`, the source drawn straight on, or through a picture of its own
