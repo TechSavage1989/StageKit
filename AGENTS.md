@@ -475,7 +475,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   owner: "The link visibility filter only works with sources in the same scene ... one streamdeck
   button to affect them together". Show in Scenes does the same job as a switch on a key; this one
   follows whatever shows or hides an item.
-- **Show in Scenes is a switch, not a trigger, and a command, not a hold** (betaNEXT). Its on and
+- **Show in Scenes is a switch, not a trigger, and a command, not a hold** (beta174). Its on and
   off state is the shown and hidden state, so one Stream Deck Filter key toggles and shows which
   way it is. It acts when pressed and holds nothing afterwards: a switch that is off never stops
   Link Visibility (*Follow sources*) or Scene Modes from showing its source (a Standby stand-in

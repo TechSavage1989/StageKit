@@ -13,9 +13,9 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
-## Show in Scenes: a switch is a command, not a hold (0.1.0-betaNEXT)
+## Show in Scenes: a switch is a command, not a hold (0.1.0-beta174)
 
-Branch `feat/switch-is-command`, on `main` after beta169. Notes: `docs/releases/0.1.0-betaNEXT.md`.
+Branch `feat/switch-is-command`, on `main` after beta169. Notes: `docs/releases/0.1.0-beta174.md`.
 No Stream Deck file changed. The owner's DSLR has a Show in Scenes capture switch (`Show in
 Scenes-Capture`, every scene, *Follow what is shown* on) that reads off whenever another capture is
 the main one. In Holding-Scene a Link Visibility in *Follow sources* (lead Intermission Text,
