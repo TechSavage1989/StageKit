@@ -2154,6 +2154,275 @@ static void in_one_tick(std::function<void()> work)
 	obs_remove_tick_callback(in_one_tick_cb, &job);
 }
 
+// The whole chain of the capture scenes section (Link Visibility, Show in
+// Scenes and an item transition, two scenes): run inside that section, and
+// alone with STAGEKIT_TEST_ONLY_CAPTURE_CHAIN.
+static void capture_chain_test()
+{
+	if (!obs_source_get_display_name("fade_transition"))
+		return;
+	obs_source_t *before_out = obs_get_output_source(0);
+	auto colour = [](const char *name) {
+		return obs_source_create("color_source", name, nullptr, nullptr);
+	};
+	auto set_list = [](obs_data_t *settings, const char *list, std::vector<const char *> names) {
+		obs_data_array_t *rows = obs_data_array_create();
+		for (const char *name : names) {
+			obs_data_t *row = obs_data_create();
+			obs_data_set_string(row, "value", name);
+			obs_data_array_push_back(rows, row);
+			obs_data_release(row);
+		}
+		obs_data_set_array(settings, list, rows);
+		obs_data_array_release(rows);
+	};
+	auto in_use = [](obs_source_t *source) {
+		return obs_source_active(source) || obs_source_showing(source);
+	};
+	static int opened = 0;
+	const auto count_opened = [](void *, calldata_t *) {
+		opened++;
+	};
+
+	// --- The whole chain: two scenes, each holding three captures of
+	// which one is shown, and a switch on each capture.
+	{
+		const char *scene_names[2] = {"Chain Full", "Chain Component"};
+		const char *names[3] = {"Chain A", "Chain B", "Chain C"};
+		const char *kind = obs_source_get_display_name("stagekit_morph") ? "stagekit_morph" : "fade_transition";
+		obs_scene_t *scene[2];
+		obs_source_t *src[3], *sw[3], *link[2];
+		obs_sceneitem_t *item[2][3];
+		for (int i = 0; i < 3; i++)
+			src[i] = colour(names[i]);
+		for (int s = 0; s < 2; s++) {
+			scene[s] = obs_scene_create(scene_names[s]);
+			for (int i = 0; i < 3; i++) {
+				item[s][i] = obs_scene_add(scene[s], src[i]);
+				if (i)
+					obs_sceneitem_set_visible(item[s][i], false);
+			}
+		}
+		// The first is on screen, the second is not.
+		obs_set_output_source(0, obs_scene_get_source(scene[0]));
+		sleep_ms(100);
+		for (int s = 0; s < 2; s++) {
+			obs_data_t *ld = obs_data_create();
+			set_list(ld, "items", {names[0], names[1], names[2]});
+			obs_data_set_string(ld, "transition", kind);
+			obs_data_set_int(ld, "transition_ms", 300);
+			obs_data_set_bool(ld, "lock_hidden", true);
+			link[s] =
+				obs_source_create("stagekit_visibility_link", "Link Visibility-Captures", ld, nullptr);
+			obs_source_filter_add(obs_scene_get_source(scene[s]), link[s]);
+			obs_data_release(ld);
+		}
+		for (int i = 0; i < 3; i++) {
+			obs_data_t *sd = obs_data_create();
+			set_list(sd, "scenes", {scene_names[0], scene_names[1]});
+			obs_data_set_int(sd, "where", 1);
+			obs_data_set_string(sd, "transition", kind);
+			obs_data_set_int(sd, "transition_ms", 300);
+			obs_data_set_bool(sd, "follow", true);
+			sw[i] = obs_source_create("stagekit_show_in_scenes", "Show in Scenes-Capture", sd, nullptr);
+			obs_source_filter_add(src[i], sw[i]);
+			obs_data_release(sd);
+		}
+		// As many letters as captures: which are shown in the two
+		// scenes, which are locked, which switches are on.
+		auto state = [&] {
+			std::string text;
+			for (int s = 0; s < 2; s++) {
+				for (int i = 0; i < 3; i++)
+					text += obs_sceneitem_visible(item[s][i]) ? "1" : "0";
+				text += s ? " locked " : "/";
+			}
+			for (int s = 0; s < 2; s++) {
+				for (int i = 0; i < 3; i++)
+					text += obs_sceneitem_locked(item[s][i]) ? "1" : "0";
+				text += s ? " on " : "/";
+			}
+			for (int i = 0; i < 3; i++)
+				text += obs_source_enabled(sw[i]) ? "1" : "0";
+			return text;
+		};
+		sleep_ms(700);
+		CHECK(state() == "100/100 locked 011/011 on 100",
+		      "to begin with the first capture is shown in both scenes, the hidden ones are locked and only its switch reads on (%s)",
+		      state().c_str());
+		obs_source_set_enabled(sw[1], true);
+		sleep_ms(1000);
+		CHECK(state() == "010/010 locked 101/101 on 010",
+		      "switching the second capture on shows only it in both scenes, locks the other two, unlocks it, and only its switch is on (%s)",
+		      state().c_str());
+		obs_source_set_enabled(sw[2], true);
+		sleep_ms(1000);
+		CHECK(state() == "001/001 locked 110/110 on 001", "then the third (%s)", state().c_str());
+		obs_source_set_enabled(sw[0], true);
+		sleep_ms(1000);
+		CHECK(state() == "100/100 locked 011/011 on 100", "then the first again (%s)", state().c_str());
+		// The other scene comes on: nothing hidden there is opened.
+		for (int i = 1; i < 3; i++)
+			signal_handler_connect(obs_source_get_signal_handler(src[i]), "activate", count_opened,
+					       nullptr);
+		opened = 0;
+		obs_set_output_source(0, obs_scene_get_source(scene[1]));
+		sleep_ms(400);
+		CHECK(opened == 0 && !in_use(src[1]) && !in_use(src[2]) && in_use(src[0]),
+		      "and when the scene that was out of view comes on, the captures hidden in it are not taken into use (%d)",
+		      opened);
+		for (int i = 1; i < 3; i++)
+			signal_handler_disconnect(obs_source_get_signal_handler(src[i]), "activate", count_opened,
+						  nullptr);
+		// Shown by the eye instead of a key: the switches follow.
+		obs_sceneitem_set_visible(item[1][2], true);
+		sleep_ms(1000);
+		CHECK(state() == "100/001 locked 011/110 on 000",
+		      "a capture shown by hand in one scene only: each scene shows one, and no switch reads on, as none is shown in both (%s)",
+		      state().c_str());
+		obs_source_set_enabled(sw[2], true);
+		sleep_ms(1000);
+		CHECK(state() == "001/001 locked 110/110 on 001",
+		      "and a press on its switch brings the two scenes together again (%s)", state().c_str());
+		// Two keys pressed one straight after the other: the last
+		// counts, and no press is lost on the way.
+		obs_source_set_enabled(sw[0], true);
+		obs_source_set_enabled(sw[1], true);
+		sleep_ms(1000);
+		CHECK(state() == "010/010 locked 101/101 on 010",
+		      "two keys pressed one straight after the other: the second capture is the one shown, alone and unlocked, in both scenes (%s)",
+		      state().c_str());
+		// Keys pressed from two threads at once, as obs-websocket and
+		// a hotkey can, while the filters act: always one capture,
+		// the same in both scenes, unlocked, and only its switch on.
+		auto settled = [&] {
+			const std::string st = state();
+			int one = -1;
+			for (int i = 0; i < 3; i++)
+				if (st[i] == '1')
+					one = one < 0 ? i : 9;
+			if (one < 0 || one > 2)
+				return false;
+			std::string want = "000/000 locked 111/111 on 000";
+			want[one] = want[4 + one] = '1';
+			want[15 + one] = want[19 + one] = '0';
+			want[26 + one] = '1';
+			return st == want;
+		};
+		int wrong = 0;
+		for (int round = 0; round < 12; round++) {
+			std::thread other([&] { obs_source_set_enabled(sw[round % 3], true); });
+			obs_source_set_enabled(sw[(round + 1) % 3], true);
+			other.join();
+			sleep_ms(round % 2 ? 40 : 600);
+			if (round % 2 == 0 && !settled())
+				wrong++;
+		}
+		sleep_ms(1000);
+		CHECK(wrong == 0 && settled(),
+		      "keys pressed from two threads at once, again and again: each time one capture ends up shown in both scenes, unlocked, with only its switch on (%d wrong; %s)",
+		      wrong, state().c_str());
+		// A scene left with a cut while a capture's change is still
+		// under way there: OBS never ends that change, and the
+		// capture would stay in use whenever the scene is on. The
+		// second capture also has a hide transition left over in the
+		// first scene from the keys above (no item transition ends
+		// without sound): shown and hidden again, the item must not
+		// carry it, or the scene counts it in when it comes back. Link
+		// Visibility's half-second look ended it only when it fell in
+		// the moment the capture was shown in between (one run in
+		// twenty failed under load); the press 60 ms after the scene is
+		// left makes that moment too short for the look.
+		obs_set_output_source(0, obs_scene_get_source(scene[0]));
+		sleep_ms(300);
+		obs_source_set_enabled(sw[1], true);
+		sleep_ms(80);
+		obs_set_output_source(0, obs_scene_get_source(scene[1]));
+		sleep_ms(60);
+		obs_source_set_enabled(sw[2], true);
+		sleep_ms(400);
+		obs_set_output_source(0, obs_scene_get_source(scene[0]));
+		sleep_ms(1500);
+		// Is one of the second capture's item transitions still counted
+		// in, holding the capture? What the plugin answers for.
+		const auto held_under_way = [&](obs_source_t *source) {
+			int found = 0;
+			for (int s = 0; s < 2; s++)
+				for (bool show : {true, false}) {
+					obs_source_t *t = obs_sceneitem_get_transition(item[s][1], show);
+					obs_source_t *a = t ? obs_transition_get_source(t, OBS_TRANSITION_SOURCE_A)
+							    : nullptr;
+					obs_source_t *b = t ? obs_transition_get_source(t, OBS_TRANSITION_SOURCE_B)
+							    : nullptr;
+					if (t && obs_source_active(t) && (a == source || b == source))
+						found++;
+					obs_source_release(a);
+					obs_source_release(b);
+				}
+			return found;
+		};
+		// libobs before 31 leaves an item's own source out when its scene
+		// is switched on or off while the item's transition runs
+		// (scene_enum_sources: "else if"), yet counts it in and out when
+		// the item is shown or hidden: a scene left part-way through a
+		// change leaves its source counted in use for good, whatever any
+		// plugin does. So "in use" itself is only looked at from 31 on;
+		// before, only what the plugin can leave behind. (Only the second
+		// capture is looked at: without sound in these tests no item
+		// transition ends by itself, so the first, hidden earlier with
+		// one, is still in use either way.)
+		const bool counts_right = obs_get_version() >= MAKE_SEMANTIC_VERSION(31, 0, 0);
+		const int left_over = held_under_way(src[1]);
+		CHECK(state() == "001/001 locked 110/110 on 001" && left_over == 0 &&
+			      (!counts_right || !in_use(src[1])) && in_use(src[2]),
+		      "a scene left with a cut part-way through a change: back on it, the capture whose change was cut off is not in use (%s; %d left over; %d %d%s)",
+		      state().c_str(), left_over, (int)in_use(src[1]), (int)in_use(src[2]),
+		      counts_right ? "" : "; in use not looked at before libobs 31");
+		// OBS can leave a finished item transition counted as in use
+		// for good. One that holds no source is not under way and is
+		// not ended again and again (the owner's log: twice a second
+		// for the rest of the session).
+		{
+			obs_sceneitem_t *shown = obs_scene_find_source(scene[0], obs_source_get_name(src[2]));
+			obs_source_t *hide = shown ? obs_sceneitem_get_transition(shown, false) : nullptr;
+			int stops = 0;
+			signal_handler_t *sh = hide ? obs_source_get_signal_handler(hide) : nullptr;
+			const auto count = [](void *data, calldata_t *) {
+				++*static_cast<int *>(data);
+			};
+			if (hide) {
+				obs_transition_clear(hide);
+				obs_source_inc_active(hide);
+				signal_handler_connect(sh, "transition_stop", count, &stops);
+			}
+			sleep_ms(1500);
+			if (hide) {
+				signal_handler_disconnect(sh, "transition_stop", count, &stops);
+				obs_source_dec_active(hide);
+			}
+			CHECK(hide && stops == 0,
+			      "a finished transition OBS still counts as in use is left alone, not ended twice a second (%d ends)",
+			      stops);
+		}
+
+		obs_set_output_source(0, before_out);
+		for (int i = 0; i < 3; i++) {
+			obs_source_filter_remove(src[i], sw[i]);
+			obs_source_release(sw[i]);
+		}
+		for (int s = 0; s < 2; s++) {
+			obs_source_filter_remove(obs_scene_get_source(scene[s]), link[s]);
+			obs_source_release(link[s]);
+		}
+		sleep_ms(100);
+		for (obs_source_t *source : src)
+			obs_source_release(source);
+		for (obs_scene_t *each : scene)
+			obs_scene_release(each);
+	}
+	obs_source_release(before_out);
+}
+
 // A Show in Scenes switch is a command, not a hold: a switch that is
 // off does not keep its source hidden from a Link Visibility that shows it.
 // Run at the end of the follow-sources section, and alone with
@@ -4959,6 +5228,14 @@ int main(int argc, char **argv)
 
 	if (getenv("STAGEKIT_TEST_ONLY_MODES_HIDE")) { // to try that section alone
 		modes_hide_test();
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
+
+	if (getenv("STAGEKIT_TEST_ONLY_CAPTURE_CHAIN")) { // to try that section alone
+		capture_chain_test();
 		obs_shutdown();
 		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
 		       g_failures == 1 ? "" : "s");
@@ -11721,212 +11998,7 @@ int main(int argc, char **argv)
 				obs_scene_release(elsewhere);
 			}
 
-			// --- The whole chain: two scenes, each holding three captures of
-			// which one is shown, and a switch on each capture.
-			{
-				const char *scene_names[2] = {"Chain Full", "Chain Component"};
-				const char *names[3] = {"Chain A", "Chain B", "Chain C"};
-				const char *kind = obs_source_get_display_name("stagekit_morph") ? "stagekit_morph"
-												 : "fade_transition";
-				obs_scene_t *scene[2];
-				obs_source_t *src[3], *sw[3], *link[2];
-				obs_sceneitem_t *item[2][3];
-				for (int i = 0; i < 3; i++)
-					src[i] = colour(names[i]);
-				for (int s = 0; s < 2; s++) {
-					scene[s] = obs_scene_create(scene_names[s]);
-					for (int i = 0; i < 3; i++) {
-						item[s][i] = obs_scene_add(scene[s], src[i]);
-						if (i)
-							obs_sceneitem_set_visible(item[s][i], false);
-					}
-				}
-				// The first is on screen, the second is not.
-				obs_set_output_source(0, obs_scene_get_source(scene[0]));
-				sleep_ms(100);
-				for (int s = 0; s < 2; s++) {
-					obs_data_t *ld = obs_data_create();
-					set_list(ld, "items", {names[0], names[1], names[2]});
-					obs_data_set_string(ld, "transition", kind);
-					obs_data_set_int(ld, "transition_ms", 300);
-					obs_data_set_bool(ld, "lock_hidden", true);
-					link[s] = obs_source_create("stagekit_visibility_link",
-								    "Link Visibility-Captures", ld, nullptr);
-					obs_source_filter_add(obs_scene_get_source(scene[s]), link[s]);
-					obs_data_release(ld);
-				}
-				for (int i = 0; i < 3; i++) {
-					obs_data_t *sd = obs_data_create();
-					set_list(sd, "scenes", {scene_names[0], scene_names[1]});
-					obs_data_set_int(sd, "where", 1);
-					obs_data_set_string(sd, "transition", kind);
-					obs_data_set_int(sd, "transition_ms", 300);
-					obs_data_set_bool(sd, "follow", true);
-					sw[i] = obs_source_create("stagekit_show_in_scenes", "Show in Scenes-Capture",
-								  sd, nullptr);
-					obs_source_filter_add(src[i], sw[i]);
-					obs_data_release(sd);
-				}
-				// As many letters as captures: which are shown in the two
-				// scenes, which are locked, which switches are on.
-				auto state = [&] {
-					std::string text;
-					for (int s = 0; s < 2; s++) {
-						for (int i = 0; i < 3; i++)
-							text += obs_sceneitem_visible(item[s][i]) ? "1" : "0";
-						text += s ? " locked " : "/";
-					}
-					for (int s = 0; s < 2; s++) {
-						for (int i = 0; i < 3; i++)
-							text += obs_sceneitem_locked(item[s][i]) ? "1" : "0";
-						text += s ? " on " : "/";
-					}
-					for (int i = 0; i < 3; i++)
-						text += obs_source_enabled(sw[i]) ? "1" : "0";
-					return text;
-				};
-				sleep_ms(700);
-				CHECK(state() == "100/100 locked 011/011 on 100",
-				      "to begin with the first capture is shown in both scenes, the hidden ones are locked and only its switch reads on (%s)",
-				      state().c_str());
-				obs_source_set_enabled(sw[1], true);
-				sleep_ms(1000);
-				CHECK(state() == "010/010 locked 101/101 on 010",
-				      "switching the second capture on shows only it in both scenes, locks the other two, unlocks it, and only its switch is on (%s)",
-				      state().c_str());
-				obs_source_set_enabled(sw[2], true);
-				sleep_ms(1000);
-				CHECK(state() == "001/001 locked 110/110 on 001", "then the third (%s)",
-				      state().c_str());
-				obs_source_set_enabled(sw[0], true);
-				sleep_ms(1000);
-				CHECK(state() == "100/100 locked 011/011 on 100", "then the first again (%s)",
-				      state().c_str());
-				// The other scene comes on: nothing hidden there is opened.
-				for (int i = 1; i < 3; i++)
-					signal_handler_connect(obs_source_get_signal_handler(src[i]), "activate",
-							       count_opened, nullptr);
-				opened = 0;
-				obs_set_output_source(0, obs_scene_get_source(scene[1]));
-				sleep_ms(400);
-				CHECK(opened == 0 && !in_use(src[1]) && !in_use(src[2]) && in_use(src[0]),
-				      "and when the scene that was out of view comes on, the captures hidden in it are not taken into use (%d)",
-				      opened);
-				for (int i = 1; i < 3; i++)
-					signal_handler_disconnect(obs_source_get_signal_handler(src[i]), "activate",
-								  count_opened, nullptr);
-				// Shown by the eye instead of a key: the switches follow.
-				obs_sceneitem_set_visible(item[1][2], true);
-				sleep_ms(1000);
-				CHECK(state() == "100/001 locked 011/110 on 000",
-				      "a capture shown by hand in one scene only: each scene shows one, and no switch reads on, as none is shown in both (%s)",
-				      state().c_str());
-				obs_source_set_enabled(sw[2], true);
-				sleep_ms(1000);
-				CHECK(state() == "001/001 locked 110/110 on 001",
-				      "and a press on its switch brings the two scenes together again (%s)",
-				      state().c_str());
-				// Two keys pressed one straight after the other: the last
-				// counts, and no press is lost on the way.
-				obs_source_set_enabled(sw[0], true);
-				obs_source_set_enabled(sw[1], true);
-				sleep_ms(1000);
-				CHECK(state() == "010/010 locked 101/101 on 010",
-				      "two keys pressed one straight after the other: the second capture is the one shown, alone and unlocked, in both scenes (%s)",
-				      state().c_str());
-				// Keys pressed from two threads at once, as obs-websocket and
-				// a hotkey can, while the filters act: always one capture,
-				// the same in both scenes, unlocked, and only its switch on.
-				auto settled = [&] {
-					const std::string st = state();
-					int one = -1;
-					for (int i = 0; i < 3; i++)
-						if (st[i] == '1')
-							one = one < 0 ? i : 9;
-					if (one < 0 || one > 2)
-						return false;
-					std::string want = "000/000 locked 111/111 on 000";
-					want[one] = want[4 + one] = '1';
-					want[15 + one] = want[19 + one] = '0';
-					want[26 + one] = '1';
-					return st == want;
-				};
-				int wrong = 0;
-				for (int round = 0; round < 12; round++) {
-					std::thread other([&] { obs_source_set_enabled(sw[round % 3], true); });
-					obs_source_set_enabled(sw[(round + 1) % 3], true);
-					other.join();
-					sleep_ms(round % 2 ? 40 : 600);
-					if (round % 2 == 0 && !settled())
-						wrong++;
-				}
-				sleep_ms(1000);
-				CHECK(wrong == 0 && settled(),
-				      "keys pressed from two threads at once, again and again: each time one capture ends up shown in both scenes, unlocked, with only its switch on (%d wrong; %s)",
-				      wrong, state().c_str());
-				// A scene left with a cut while a capture's change is still
-				// under way there: OBS never ends that change, and the
-				// capture would stay in use whenever the scene is on.
-				obs_set_output_source(0, obs_scene_get_source(scene[0]));
-				sleep_ms(300);
-				obs_source_set_enabled(sw[1], true);
-				sleep_ms(80);
-				obs_set_output_source(0, obs_scene_get_source(scene[1]));
-				sleep_ms(400);
-				obs_source_set_enabled(sw[2], true);
-				sleep_ms(400);
-				obs_set_output_source(0, obs_scene_get_source(scene[0]));
-				sleep_ms(1500);
-				// (Only the second is looked at: without sound in these tests
-				// no item transition ends by itself, so the first, hidden
-				// earlier with one, is still in use either way.)
-				CHECK(state() == "001/001 locked 110/110 on 001" && !in_use(src[1]) && in_use(src[2]),
-				      "a scene left with a cut part-way through a change: back on it, the capture whose change was cut off is not in use (%s; %d %d)",
-				      state().c_str(), (int)in_use(src[1]), (int)in_use(src[2]));
-				// OBS can leave a finished item transition counted as in use
-				// for good. One that holds no source is not under way and is
-				// not ended again and again (the owner's log: twice a second
-				// for the rest of the session).
-				{
-					obs_sceneitem_t *shown =
-						obs_scene_find_source(scene[0], obs_source_get_name(src[2]));
-					obs_source_t *hide = shown ? obs_sceneitem_get_transition(shown, false)
-								   : nullptr;
-					int stops = 0;
-					signal_handler_t *sh = hide ? obs_source_get_signal_handler(hide) : nullptr;
-					const auto count = [](void *data, calldata_t *) {
-						++*static_cast<int *>(data);
-					};
-					if (hide) {
-						obs_transition_clear(hide);
-						obs_source_inc_active(hide);
-						signal_handler_connect(sh, "transition_stop", count, &stops);
-					}
-					sleep_ms(1500);
-					if (hide) {
-						signal_handler_disconnect(sh, "transition_stop", count, &stops);
-						obs_source_dec_active(hide);
-					}
-					CHECK(hide && stops == 0,
-					      "a finished transition OBS still counts as in use is left alone, not ended twice a second (%d ends)",
-					      stops);
-				}
-
-				obs_set_output_source(0, before_out);
-				for (int i = 0; i < 3; i++) {
-					obs_source_filter_remove(src[i], sw[i]);
-					obs_source_release(sw[i]);
-				}
-				for (int s = 0; s < 2; s++) {
-					obs_source_filter_remove(obs_scene_get_source(scene[s]), link[s]);
-					obs_source_release(link[s]);
-				}
-				sleep_ms(100);
-				for (obs_source_t *source : src)
-					obs_source_release(source);
-				for (obs_scene_t *each : scene)
-					obs_scene_release(each);
-			}
+			capture_chain_test();
 			obs_source_release(before_out);
 		}
 

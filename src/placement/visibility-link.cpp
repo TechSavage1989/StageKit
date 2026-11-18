@@ -379,8 +379,9 @@ public:
 			for (const std::string &name : names)
 				if (end_stale_transition(find_item(parent_, name)))
 					obs_log(LOG_INFO,
-						"Link Visibility '%s': ended a transition left under way on '%s'",
-						obs_source_get_name(source_), name.c_str());
+						"Link Visibility '%s': ended a transition left under way on '%s' in '%s'",
+						obs_source_get_name(source_), name.c_str(),
+						obs_source_get_name(parent_));
 		}
 		if (sweep_due_ && locking) {
 			for (const std::string &name : names) {
