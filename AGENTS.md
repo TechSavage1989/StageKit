@@ -1883,7 +1883,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   `com.techsavage1989.stagekit` and the action UUIDs under it must never change once
   the owner has keys on their decks: Stream Deck ties saved keys to them.
 - **The Update button lists what changed** (`notes_of`, `read_changes`, `order_changes` in
-  `src/update/updater.*`; `show_changes` in the dock; betaNEXT). The owner: "id like future
+  `src/update/updater.*`; `show_changes` in the dock; beta185). The owner: "id like future
   updaters to show the recent changes clearly at a high level when pressing the update button".
   The release bodies come with the list of releases the updater already reads (every page, no
   request per release); every release after `STAGEKIT_RELEASE` up to the one offered, drafts

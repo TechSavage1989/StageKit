@@ -13,9 +13,9 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
-## The Update button lists what changed since your version (0.1.0-betaNEXT)
+## The Update button lists what changed since your version (0.1.0-beta185)
 
-Branch `feat/updater-whats-new`, on `main` after beta181. Notes: `docs/releases/0.1.0-betaNEXT.md`.
+Branch `feat/updater-whats-new`, on `main` after beta181. Notes: `docs/releases/0.1.0-beta185.md`.
 The owner (2026-11-18): "id like future updaters to show the recent changes clearly at a high level
 when pressing the update button".
 
