@@ -13,9 +13,9 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
-## Scene Shadow: no flicker when items change, no gap at smoothed edges (0.1.0-betaNEXT)
+## Scene Shadow: no flicker when items change, no gap at smoothed edges (0.1.0-beta186)
 
-Branch `fix/scene-shadow-flicker`, rebased on `main` after beta176. Notes: `docs/releases/0.1.0-betaNEXT.md`.
+Branch `fix/scene-shadow-flicker`, rebased on `main` after beta176. Notes: `docs/releases/0.1.0-beta186.md`.
 No Stream Deck file changed. The owner: "shadows flicker when transitions happen" ("scene
 shadow. none of the sources have their own shadow"; "when i switch/show or hide sources inside a
 scene"), and "text with the scene shadow has a noticeable separation from the shadow".

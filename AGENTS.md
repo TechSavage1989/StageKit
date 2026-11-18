@@ -2241,7 +2241,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   (`to_linear`/`to_srgb` in the effect): OBS lays a source over what is under it in linear
   light, and done on raw values the shadow came out darker than the per-source filter's (52
   against 84 on grey 128). **Only the part of a pixel no source covers is shadowed** (`split_at`
-  in the effect, betaNEXT): M holds the sources as drawn (premultiplied), so a pixel splits into
+  in the effect, beta186): M holds the sources as drawn (premultiplied), so a pixel splits into
   their part and what is under them, and the shadow and the outline go on the second only
   (`laid_under`). Shadowing the whole pixel by the uncovered share, as before, left most of what
   is under a smoothed edge unshadowed: the owner's "text with the scene shadow has a noticeable
@@ -2257,7 +2257,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   worked out in the tick (`classify`), four times a second while the scene shows or was drawn or
   asked for by Morph in the last second, at once on coming into view or a settings change, never
   before `scenes_loaded()`; **and in the very tick an item is added to a scene in view**
-  (`has_new_items`, betaNEXT: when `scene_revision()` has changed, the scene's item ids are
+  (`has_new_items`, beta186: when `scene_revision()` has changed, the scene's item ids are
   compared with the flags', and a new one makes the look due at once). OBS calls tick callbacks
   before it ticks sources, so the item Morph's layer, added from its tick callback, is looked at
   before the frame that first draws it. Up to beta174 an item not yet looked at was masked and
