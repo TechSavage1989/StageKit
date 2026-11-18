@@ -9,9 +9,46 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | `fix/auto-capture-quick-pickup` (Auto Capture looks in on a resting program, betaNEXT), on `main` after beta185. Next: the new collection |
+| Working branch | `feat/ambient-darkest-level` (Ambient Background's Darkest level, betaNEXT), on `main` after beta191. Next: the new collection |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
+
+## Ambient Background: Darkest level, so it never goes black (0.1.0-beta192)
+
+Branch `feat/ambient-darkest-level`, on `main` after beta191. Notes:
+`docs/releases/0.1.0-beta192.md`. The owner (2026-11-18): "is there a way I can prevent the
+background from ever becoming completely black, even when the ambient background is capturing a
+live feed that has completely black content?", then "add darkest level as a configurable option".
+
+- **Controls** (Look group, after Vignette): *Darkest level* (`darkest_level`, 0 to 100 %, 0 as
+  it comes: off, so every background saved before is unchanged), *Lift toward* (`darkest_fill`,
+  append-only: 0 *The background image*, 1 *A colour*), *Lift colour* (`darkest_color`, 0xFF808080,
+  shown only for a colour). The two do not come and go with the level (a slider's callback
+  rebuilds the window; see Bloom).
+- **How it lifts** (`PSLift`, technique `Lift` in `stagekit-looks.effect`, one full-size pass after
+  `Final`, raw values; the hand-off to OBS still follows `gs_get_linear_srgb()`). Luminance `L`,
+  `top` = 1.5 x level. Toward the image, the pixel becomes the fill by `1 - smoothstep(0, top, L)`
+  (all of it where black). Then the floor, for both fills: `want = L + level x (1 - smoothstep(0,
+  top, L))`, at or above the level everywhere and equal to `L` from `top` up, made up by adding the
+  fill's colour scaled to unit luminance (grey makes up what a saturated colour cannot). So a black
+  pixel is the colour at the level's brightness, or the image (at least as bright as the level).
+- **Cost.** Level 0: nothing. On: one full-size pass. Toward the image while the scene is the image
+  alone (no capture, no capture change): the picture before `Final` is the fill, nothing more.
+  While a capture is in: the image drawn alone at half size (`tr_fill_`) and a Dual Kawase blur of
+  its own (`fill_blur_`) at *Blur* (none for Temporal); no mosaic, bloom or overlay on the fill.
+  Not measured with the perf harness.
+- **Good to know.** A capture black all over for two seconds already counts as no capture
+  (`live_shows_something`), so the image showed then before; this is for a dark capture with
+  something in it. With nothing under *Background from*, the colour is used.
+- Tests: `[ambient background: darkest level]` (`ambient_darkest_test`, after the mosaic uniforms
+  test in a full run; alone with `STAGEKIT_TEST_ONLY_AMBIENT_DARKEST`): the controls; a capture
+  (a scene: black with a white patch) replacing the image: black when off; at 30 % toward grey and
+  toward red nothing under 29 % luminance and the patch untouched; toward the image the black part
+  within a few levels of the image alone, lifted the same; no image: the colour; Lift's uniforms
+  given other values by another user first, toward the image and toward a colour, a new colour
+  each time: the same picture (checked to fail with `lift_color` left unset); a bright capture untouched. Sheet
+  `docs/images/ambient-darkest.png` (`$out/darkest`, also in `run-tests.sh`). Not run on Direct3D
+  or Windows.
 
 ## Auto Capture picks a game up within seconds while it rests (0.1.0-beta191)
 

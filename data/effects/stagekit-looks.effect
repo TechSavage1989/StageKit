@@ -1,4 +1,5 @@
-// StageKit looks: the mosaic's cell shapes, the trail over time and bloom.
+// StageKit looks: the mosaic's cell shapes, the trail over time, bloom and
+// Ambient Background's darkest level (Lift).
 //
 // These are used by the Blur filter and by Ambient Background. They are a
 // file of their own so that, should a graphics system refuse any of it, the
@@ -32,6 +33,11 @@ uniform texture2d original;     // MaskedComposite: the picture as it was
 uniform texture2d mask;         // MaskedComposite: where the blur goes (red, 0..1)
 uniform float mix_amount;       // MaskedComposite: how much of the blur, 0..1
 uniform float counted;          // MaskPiece: 1 the piece is blurred, 0 it is kept clear
+uniform float lift_level;       // Lift: the darkest the picture may be (luminance, 0..1)
+uniform float4 lift_color;      // Lift: the colour a dark part is lifted toward
+uniform float lift_image;       // Lift: 1 lift toward image2 (the background image), 0 toward lift_color
+uniform float lift_brightness;  // Lift: image2's brightness, as the Final pass gives the picture
+uniform float lift_vignette;    // Lift: image2's vignette, the same
 
 sampler_state linearClamp {
 	Filter   = Linear;
@@ -509,6 +515,50 @@ float4 PSBloomAmplify(VertData v_in) : TARGET
 	return float4(saturate(rgb + light), 1.0);
 }
 
+// -------------------------------------------------------------------- Lift
+// Ambient Background's Darkest level: no part of the finished picture is
+// darker than lift_level. Where a part is dark it is lifted toward a fill:
+// the background image (image2, styled as the picture is, so a black
+// capture shows the usual background) or a colour. Smooth all the way: a
+// part at or above one and a half times the level is left as it is, and the
+// lift grows as a part gets darker. Raw (non-linear) values, opaque, like
+// the Final pass before it.
+
+float lift_luma(float3 c)
+{
+	return dot(c, float3(0.2126, 0.7152, 0.0722));
+}
+
+float4 PSLift(VertData v_in) : TARGET
+{
+	float3 rgb = image.Sample(linearClamp, v_in.uv).rgb;
+	float top = max(lift_level * 1.5, 0.0001);
+
+	// The background image as the Final pass would give it.
+	float2 v = v_in.uv - float2(0.5, 0.5);
+	float edge = saturate(dot(v, v) * 2.0);
+	float3 styled = image2.Sample(linearClamp, v_in.uv).rgb;
+	styled = saturate(styled * (1.0 - lift_vignette * edge * edge * 1.5) * lift_brightness);
+	float3 fill = lerp(lift_color.rgb, styled, lift_image);
+
+	// With the image: a dark part becomes the image, all of it where black.
+	float under = 1.0 - smoothstep(0.0, top, lift_luma(rgb));
+	float3 c = lerp(rgb, fill, under * lift_image);
+
+	// The floor: as bright as the level at least, made of the fill's colour.
+	// want stays at or above the level, rises smoothly into the part's own
+	// brightness and is that from top on.
+	float l = lift_luma(c);
+	float want = l + lift_level * (1.0 - smoothstep(0.0, top, l));
+	float need = max(want - l, 0.0);
+	float fl = lift_luma(fill);
+	float3 tint = fl > 0.004 ? fill / fl : float3(1.0, 1.0, 1.0);
+	float3 r = saturate(c + tint * need);
+	// (A very saturated colour runs into its channel's top: grey makes up the rest.)
+	r = saturate(r + float3(1.0, 1.0, 1.0) * max(want - lift_luma(r), 0.0));
+	return float4(r, 1.0);
+}
+
 // -------------------------------------------------------------- Scene Blur
 // One piece of a scene's mask: an item's own picture, drawn over the mask
 // from the top of the scene down ("under" blending), as its coverage in red
@@ -618,5 +668,14 @@ technique BloomAdd
 	{
 		vertex_shader = VSDefault(v_in);
 		pixel_shader  = PSBloomAdd(v_in);
+	}
+}
+
+technique Lift
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSLift(v_in);
 	}
 }

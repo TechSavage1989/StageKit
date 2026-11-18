@@ -18,7 +18,7 @@ the Free Software Foundation; either version 2 of the License, or
 //   base image/source --scroll, saturation, glow--> scene
 //   live capture      --cover, opacity------------> scene
 //   scene -> dual-Kawase blur -> square/hex mosaic -> texture overlay,
-//   vignette, brightness -> output
+//   vignette, brightness -> darkest level (only when set) -> output
 
 #include "ambient-background.hpp"
 #include "../common/timing.hpp"
@@ -73,6 +73,9 @@ enum class PixelStyle : int {
 // How the picture is blurred. Temporal blurs over time, not across the picture.
 enum class BlurKind : int { Kawase = 0, Gaussian = 1, Box = 2, Temporal = 3 };
 enum class OverlayMode : int { Multiply = 0, Screen = 1 };
+// What a part darker than the Darkest level is lifted toward. Saved by
+// number: new ones go at the end.
+enum class DarkestFill : int { Image = 0, Colour = 1 };
 
 // Enough halvings for the strongest blur the slider offers (1000).
 constexpr int kBlurLevels = 8;
@@ -121,6 +124,11 @@ struct Settings {
 	double glow = 0.0;
 	double brightness = 1.0;
 	double vignette = 0.0;
+	// No part of the background darker than this (luminance, 0..1). 0: off,
+	// and no pass is drawn.
+	double darkest_level = 0.0;
+	DarkestFill darkest_fill = DarkestFill::Image;
+	uint32_t darkest_color = 0xFF808080; // as OBS keeps a colour: 0xAABBGGRR
 	std::string overlay;
 	OverlayMode overlay_mode = OverlayMode::Multiply;
 	double overlay_strength = 1.0;
@@ -196,6 +204,7 @@ private:
 	void draw_layer(gs_texture_t *tex, uint32_t w, uint32_t h, double scroll_x, double scroll_y, double zoom,
 			double opacity, const Settings &s, LiveFit fit = LiveFit::Fill, bool clip = false,
 			double focus_x = 0.5, double focus_y = 0.5, bool as_is = false);
+	void draw_base(gs_texture_t *base, uint32_t w, uint32_t h, const Settings &s);
 	void pass(gs_effect_t *effect, gs_eparam_t *image, gs_texrender_t *dst, gs_texture_t *src, uint32_t w,
 		  uint32_t h, const char *technique);
 	gs_texture_t *blur(gs_texture_t *input, uint32_t w, uint32_t h, double strength);
@@ -264,6 +273,17 @@ private:
 	MosaicUniforms mosaic_; // every uniform of the Mosaic technique
 	gs_eparam_t *pl_bloom_threshold_ = nullptr;
 	gs_eparam_t *pl_bloom_amount_ = nullptr;
+	// Darkest level: the Lift technique's own uniforms.
+	gs_eparam_t *pl_lift_level_ = nullptr;
+	gs_eparam_t *pl_lift_color_ = nullptr;
+	gs_eparam_t *pl_lift_image_ = nullptr;
+	gs_eparam_t *pl_lift_brightness_ = nullptr;
+	gs_eparam_t *pl_lift_vignette_ = nullptr;
+	// The finished picture, lifted; and the background image alone, blurred,
+	// for a lift toward the image while a capture covers it.
+	gs_texrender_t *tr_lift_ = nullptr;
+	gs_texrender_t *tr_fill_ = nullptr;
+	std::unique_ptr<KawaseBlur> fill_blur_;
 	// Bloom: the bright parts, and those spread out.
 	gs_texrender_t *tr_bright_ = nullptr;
 	gs_texrender_t *tr_bloom_ = nullptr;
@@ -358,15 +378,21 @@ AmbientBackground::AmbientBackground(obs_data_t *settings, obs_source_t *source)
 		pl_mix2_ = gs_effect_get_param_by_name(looks_, "mix2");
 		pl_bloom_threshold_ = gs_effect_get_param_by_name(looks_, "bloom_threshold");
 		pl_bloom_amount_ = gs_effect_get_param_by_name(looks_, "bloom_amount");
+		pl_lift_level_ = gs_effect_get_param_by_name(looks_, "lift_level");
+		pl_lift_color_ = gs_effect_get_param_by_name(looks_, "lift_color");
+		pl_lift_image_ = gs_effect_get_param_by_name(looks_, "lift_image");
+		pl_lift_brightness_ = gs_effect_get_param_by_name(looks_, "lift_brightness");
+		pl_lift_vignette_ = gs_effect_get_param_by_name(looks_, "lift_vignette");
 	} else {
 		obs_log(LOG_ERROR,
 			"Ambient Background: cell shapes other than squares and hexagons, the Temporal blur type and Bloom are not available.");
 	}
 	bloom_blur_ = std::make_unique<KawaseBlur>();
+	fill_blur_ = std::make_unique<KawaseBlur>();
 	for (gs_texrender_t *&tr : tr_past_)
 		tr = gs_texrender_create(GS_RGBA16F, GS_ZS_NONE);
 	for (gs_texrender_t **tr : {&tr_base_, &tr_live_, &tr_scene_, &tr_blur_, &tr_pixel_, &tr_final_, &tr_bright_,
-				    &tr_bloom_, &tr_taps_, &tr_was_})
+				    &tr_bloom_, &tr_taps_, &tr_was_, &tr_lift_, &tr_fill_})
 		*tr = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 	for (auto &tr : tr_down_)
 		tr = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
@@ -394,9 +420,10 @@ AmbientBackground::~AmbientBackground()
 	gs_stagesurface_destroy(probe_stage_);
 	gs_texrender_destroy(tr_was_);
 	for (gs_texrender_t *tr : {tr_base_, tr_live_, tr_scene_, tr_blur_, tr_pixel_, tr_final_, tr_bright_, tr_bloom_,
-				   tr_taps_, tr_past_[0], tr_past_[1]})
+				   tr_taps_, tr_past_[0], tr_past_[1], tr_lift_, tr_fill_})
 		gs_texrender_destroy(tr);
 	bloom_blur_.reset();
+	fill_blur_.reset();
 	for (auto *tr : tr_down_)
 		gs_texrender_destroy(tr);
 	for (auto *tr : tr_up_)
@@ -465,6 +492,10 @@ void AmbientBackground::update(obs_data_t *settings)
 	s.glow = std::clamp(obs_data_get_double(settings, "glow") / 100.0, 0.0, 1.0);
 	s.brightness = std::clamp(obs_data_get_double(settings, "brightness") / 100.0, 0.0, 2.0);
 	s.vignette = std::clamp(obs_data_get_double(settings, "vignette") / 100.0, 0.0, 1.0);
+	s.darkest_level = std::clamp(obs_data_get_double(settings, "darkest_level") / 100.0, 0.0, 1.0);
+	s.darkest_fill =
+		static_cast<DarkestFill>(std::clamp<long long>(obs_data_get_int(settings, "darkest_fill"), 0, 1));
+	s.darkest_color = (uint32_t)obs_data_get_int(settings, "darkest_color");
 	s.overlay = obs_data_get_string(settings, "overlay");
 	s.overlay_mode = static_cast<OverlayMode>(obs_data_get_int(settings, "overlay_mode"));
 	s.overlay_strength = std::clamp(obs_data_get_double(settings, "overlay_strength") / 100.0, 0.0, 1.0);
@@ -819,6 +850,18 @@ void AmbientBackground::draw_layer(gs_texture_t *tex, uint32_t out_w, uint32_t o
 		gs_draw_sprite(tex, 0, out_w, out_h);
 }
 
+// The background image, scrolled and zoomed, as the scene has it under any
+// capture.
+void AmbientBackground::draw_base(gs_texture_t *base, uint32_t w, uint32_t h, const Settings &s)
+{
+	// The collection-wide framing applies to the shared picture only.
+	AmbientView view;
+	if (s.base_type == BaseType::StartImage)
+		view = ambient_view();
+	draw_layer(base, w, h, s.speed_x * time_ * kInternalScale, s.speed_y * time_ * kInternalScale,
+		   s.zoom * view.zoom, 1.0, s, LiveFit::Fill, false, view.focus_x, view.focus_y);
+}
+
 void AmbientBackground::pass(gs_effect_t *effect, gs_eparam_t *image, gs_texrender_t *dst, gs_texture_t *src,
 			     uint32_t w, uint32_t h, const char *technique)
 {
@@ -1039,14 +1082,8 @@ void AmbientBackground::render()
 		// "Replace": while there is a capture it is the whole background;
 		// the moment there is none, the usual picture is back.
 		const bool replace = live && s.live_replace;
-		if (base && !replace) {
-			// The collection-wide framing applies to the shared picture only.
-			AmbientView view;
-			if (s.base_type == BaseType::StartImage)
-				view = ambient_view();
-			draw_layer(base, iw, ih, s.speed_x * time_ * kInternalScale, s.speed_y * time_ * kInternalScale,
-				   s.zoom * view.zoom, 1.0, s, LiveFit::Fill, false, view.focus_x, view.focus_y);
-		}
+		if (base && !replace)
+			draw_base(base, iw, ih, s);
 		if (live) {
 			// Blended over the picture, a capture that does not cover the
 			// screen leaves the picture showing around it. As the whole
@@ -1072,6 +1109,11 @@ void AmbientBackground::render()
 		gs_texrender_end(tr_scene_);
 		was_valid_ = true;
 	}
+
+	// What the scene above holds besides the background image: with nothing
+	// else, the picture as it is styled is also what the Darkest level
+	// lifts toward, and no copy of the image is needed.
+	const bool image_only = base && !live && !was;
 
 	gs_texture_t *const scene = gs_texrender_get_texture(tr_scene_);
 	gs_texture_t *cur = scene;
@@ -1170,13 +1212,63 @@ void AmbientBackground::render()
 		gs_effect_set_float(p_vignette_, (float)s.vignette);
 		pass(effect_, p_image_, tr_final_, cur, w, h, "Final");
 	}
+	gs_texture_t *final_tex = cur ? gs_texrender_get_texture(tr_final_) : nullptr;
+
+	// Darkest level: the finished picture lifted where it is darker than the
+	// level, toward the background image or a colour. Off (0), nothing is
+	// drawn. The owner (2026-11-18): "is there a way I can prevent the
+	// background from ever becoming completely black, even when the ambient
+	// background is capturing a live feed that has completely black
+	// content?"
+	if (final_tex && s.darkest_level > 0.0005 && looks_) {
+		// The background image, styled as the picture is (before the Final
+		// pass, whose brightness and vignette the Lift pass gives it): the
+		// picture itself while it is nothing else; otherwise the image alone,
+		// blurred as the background is, made only now.
+		gs_texture_t *fill = nullptr;
+		if (s.darkest_fill == DarkestFill::Image && base) {
+			if (image_only) {
+				fill = cur;
+			} else {
+				gs_texrender_reset(tr_fill_);
+				if (gs_texrender_begin(tr_fill_, iw, ih)) {
+					vec4 black;
+					vec4_set(&black, 0.0f, 0.0f, 0.0f, 1.0f);
+					gs_clear(GS_CLEAR_COLOR, &black, 0.0f, 0);
+					gs_ortho(0.0f, (float)iw, 0.0f, (float)ih, -100.0f, 100.0f);
+					gs_blend_state_push();
+					gs_blend_function(GS_BLEND_ONE, GS_BLEND_INVSRCALPHA);
+					draw_base(base, iw, ih, s);
+					gs_blend_state_pop();
+					gs_texrender_end(tr_fill_);
+					fill = gs_texrender_get_texture(tr_fill_);
+					// (Temporal blurs over time, not across: the image is still.)
+					if (fill && fill_blur_ && s.blur_kind != BlurKind::Temporal)
+						fill = fill_blur_->blur(fill, iw, ih, s.blur * kInternalScale);
+				}
+			}
+		}
+		// Every uniform the Lift pass reads, at every run (the effect file is
+		// shared; see mosaic-uniforms.hpp). With no image, the colour.
+		vec4 colour;
+		vec4_from_rgba(&colour, s.darkest_color | 0xFF000000u);
+		gs_effect_set_float(pl_lift_level_, (float)s.darkest_level);
+		gs_effect_set_vec4(pl_lift_color_, &colour);
+		gs_effect_set_float(pl_lift_image_, fill ? 1.0f : 0.0f);
+		gs_effect_set_float(pl_lift_brightness_, (float)s.brightness);
+		gs_effect_set_float(pl_lift_vignette_, (float)s.vignette);
+		gs_effect_set_texture(pl_image2_, fill ? fill : final_tex);
+		pass(looks_, pl_image_, tr_lift_, final_tex, w, h, "Lift");
+		if (gs_texture_t *lifted = gs_texrender_get_texture(tr_lift_))
+			final_tex = lifted;
+	}
 
 	gs_enable_framebuffer_srgb(previous_srgb);
 	obs_source_release(base_source);
 	obs_source_release(live_source);
 
 	// Hand the finished picture to OBS the standard way.
-	if (gs_texture_t *final_tex = cur ? gs_texrender_get_texture(tr_final_) : nullptr) {
+	if (final_tex) {
 		gs_effect_t *draw = obs_get_base_effect(OBS_EFFECT_DEFAULT);
 		gs_eparam_t *image = gs_effect_get_param_by_name(draw, "image");
 		const bool linear = gs_get_linear_srgb();
@@ -1235,6 +1327,8 @@ bool visibility_modified(obs_properties_t *props, obs_property_t *, obs_data_t *
 	// then could not be dragged.)
 	obs_property_set_visible(obs_properties_get(props, "bloom_threshold"),
 				 obs_data_get_int(settings, "bloom_style") == 0);
+	obs_property_set_visible(obs_properties_get(props, "darkest_color"),
+				 obs_data_get_int(settings, "darkest_fill") == (int)DarkestFill::Colour);
 	for (const char *name : {"live_change", "live_delay_ms"})
 		obs_property_set_visible(obs_properties_get(props, name), live != LiveMode::None);
 	const bool live_timed = live != LiveMode::None && obs_data_get_int(settings, "live_change") != 1;
@@ -1407,6 +1501,20 @@ obs_properties_t *get_properties(void *)
 	set_tip(bloom_size, obs_module_text("Ambient.BloomSize.Tip"));
 	percent_slider(look, "brightness", "Ambient.Brightness", 0.0, 200.0);
 	percent_slider(look, "vignette", "Ambient.Vignette", 0.0, 100.0);
+	// (Its two controls below do not come and go with the level: see Bloom.)
+	obs_property_t *darkest = percent_slider(look, "darkest_level", "Ambient.Darkest", 0.0, 100.0);
+	set_tip(darkest, obs_module_text("Ambient.Darkest.Tip"));
+	obs_property_t *darkest_fill = obs_properties_add_list(look, "darkest_fill",
+							       obs_module_text("Ambient.DarkestFill"),
+							       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+	obs_property_list_add_int(darkest_fill, obs_module_text("Ambient.DarkestFill.Image"), (int)DarkestFill::Image);
+	obs_property_list_add_int(darkest_fill, obs_module_text("Ambient.DarkestFill.Colour"),
+				  (int)DarkestFill::Colour);
+	set_tip(darkest_fill, obs_module_text("Ambient.DarkestFill.Tip"));
+	obs_property_set_modified_callback(darkest_fill, visibility_modified);
+	obs_property_t *darkest_color =
+		obs_properties_add_color(look, "darkest_color", obs_module_text("Ambient.DarkestColour"));
+	set_tip(darkest_color, obs_module_text("Ambient.DarkestColour.Tip"));
 	obs_properties_add_group(props, "look_group", obs_module_text("Ambient.Group.Look"), OBS_GROUP_NORMAL, look);
 
 	// Texture overlay
@@ -1463,6 +1571,9 @@ void get_defaults(obs_data_t *settings)
 	obs_data_set_default_double(settings, "glow", 0.0);
 	obs_data_set_default_double(settings, "brightness", 100.0);
 	obs_data_set_default_double(settings, "vignette", 0.0);
+	obs_data_set_default_double(settings, "darkest_level", 0.0);
+	obs_data_set_default_int(settings, "darkest_fill", (int)DarkestFill::Image);
+	obs_data_set_default_int(settings, "darkest_color", 0xFF808080);
 	obs_data_set_default_int(settings, "overlay_mode", (int)OverlayMode::Multiply);
 	obs_data_set_default_double(settings, "overlay_strength", 100.0);
 	obs_data_set_default_bool(settings, "overlay_gray", true);
