@@ -13,9 +13,9 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
-## Ambient Background's mosaic on Direct3D (0.1.0-betaNEXT)
+## Ambient Background's mosaic on Direct3D (0.1.0-beta172)
 
-Branch `fix/scene-blur-off-draw`, from `main` at beta170. Notes: `docs/releases/0.1.0-betaNEXT.md`.
+Branch `fix/scene-blur-off-draw`, from `main` at beta170. Notes: `docs/releases/0.1.0-beta172.md`.
 No Stream Deck file changed. The owner, with screenshots of Full-Capture-Scene and
 Component-Capture-Scene (black background, no shadows): "ambient background does not show unless
 i turn on scene blur. it remains visible after turning blur off"; then, Scene Blur removed and
