@@ -63,6 +63,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <cctype>
 #include <chrono>
 #include <condition_variable>
+#include <cstdlib>
 #include <cstring>
 #include <map>
 #include <mutex>
@@ -402,6 +403,25 @@ std::string encode_part(const std::string &text)
 	return out;
 }
 
+// The title part of what OBS writes as a window, unescaped.
+std::string window_title_of(const std::string &window)
+{
+	const std::string part = window.substr(0, window.find(':'));
+	std::string out;
+	for (size_t i = 0; i < part.size(); i++) {
+		if (part.compare(i, 3, "#22") == 0) {
+			out += '#';
+			i += 2;
+		} else if (part.compare(i, 3, "#3A") == 0) {
+			out += ':';
+			i += 2;
+		} else {
+			out += part[i];
+		}
+	}
+	return out;
+}
+
 // A list of program names. 0.1.0-beta8 stored these as arrays; they are
 // still read, and the one-line text is what the controls edit now.
 std::vector<std::string> read_list(obs_data_t *settings, const char *name, const char *text_name)
@@ -474,7 +494,8 @@ public:
 	{
 		update(settings);
 		// For the tests: stand-in windows, one per line,
-		// "title|class|exe|front|game" (the last two may be left empty);
+		// "title|class|exe|front|game|id" (the last three may be left
+		// empty; the id stands for the window's handle);
 		// `keep_clock`, when set, leaves the next look where it was.
 		proc_handler_add(
 			obs_source_get_proc_handler(source_), "void set_test_windows(in string windows)",
@@ -494,12 +515,13 @@ public:
 						else
 							fields.back() += c;
 					}
-					fields.resize(5);
+					fields.resize(6);
 					w.title = fields[0];
 					w.window_class = fields[1];
 					w.executable = fields[2];
 					w.foreground = fields[3] == "front";
 					w.looks_like_game = fields[4] == "game";
+					w.handle = strtoull(fields[5].c_str(), nullptr, 10);
 					windows.push_back(w);
 					line.clear();
 				};
@@ -591,6 +613,9 @@ public:
 				standby_cover_set(parent_, false, cover_style_, cover_ms_, cover_curve_, cover_mode_);
 			}
 			covered_ = hidden_ = false;
+			// (What it watched may be aimed elsewhere by the time it is
+			// switched on again: a capture hooked by hand.)
+			captured_ = Captured{};
 			return;
 		}
 		Mode mode;
@@ -621,6 +646,9 @@ public:
 
 		const char *parent_id = obs_source_get_unversioned_id(parent_);
 		const bool game_capture = parent_id && strcmp(parent_id, "game_capture") == 0;
+		// The game's own window closing while its program stays open.
+		if (game_capture)
+			watch_captured(windows, use_test);
 
 		// 1. A game in front wins.  2. Otherwise stay on the game already
 		// being captured while its window exists.  3. Otherwise any program
@@ -705,14 +733,20 @@ public:
 					exe.c_str());
 			}
 			const bool known = mode == Mode::AnyGame && known_games_.count(exe) > 0;
-			const bool candidate = listed || known;
+			// (Nor a window that was open when the game's window of its
+			// program closed: the emulator's menu is no game to hook.)
+			const bool spent = is_spent(exe, w.handle);
+			const bool candidate = (listed || known) && !spent;
 			if (w.foreground && candidate)
 				in_front = &w;
-			if (!applied_key_.empty() && key_of(w) == applied_key_)
+			// (While the game's window may only be being made again, the
+			// capture stays where it is.)
+			if ((!spent || captured_.gone_since >= 0.0) && !applied_key_.empty() &&
+			    key_of(w) == applied_key_)
 				current = &w;
-			if (listed && !listed_open)
+			if (listed && !spent && !listed_open)
 				listed_open = &w;
-			if (known && !known_open)
+			if (known && !spent && !known_open)
 				known_open = &w;
 		}
 		const Window *chosen = in_front ? in_front : current ? current : listed_open ? listed_open : known_open;
@@ -734,7 +768,11 @@ public:
 		// trying to hook it about twice a second (the owner's Dolphin, 78
 		// tries in 90 s), and "any full-screen application" would hook it
 		// too, emulators being full-screen.
-		std::string resting;
+		// (A program whose game's window has closed is aimed away from the
+		// same way: hooked again, it would keep its last frame.)
+		std::string resting = !chosen && game_capture && !spent_.empty() ? spent_.begin()->first
+										 : std::string();
+		const std::string closed = resting;
 		if (!chosen && game_capture)
 			for (const auto &[exe, rest] : rest_)
 				if (rest.resting) {
@@ -791,6 +829,19 @@ public:
 		}
 		aimed_once_ = true;
 		unhooked_s_ = 0.0;
+		if (!chosen && key == kRestKey && !closed.empty()) {
+			// No window, as for a rest, but not one.
+			obs_data_t *settings = obs_source_get_settings(parent_);
+			obs_data_set_string(settings, "capture_mode", "window");
+			obs_data_set_string(settings, "window", kNoWindow);
+			obs_data_set_int(settings, "priority", 2);
+			obs_log(LOG_INFO, "Auto Capture: '%s' aimed at no window while %s shows no game window",
+				obs_source_get_name(parent_), closed.c_str());
+			obs_source_update(parent_, settings);
+			obs_data_release(settings);
+			applied_key_ = key;
+			return;
+		}
 
 		obs_data_t *settings = obs_source_get_settings(parent_);
 		bool changed = false;
@@ -847,6 +898,8 @@ public:
 		// Whatever the source is aimed at now is not something we chose.
 		aimed_once_ = false;
 		applied_key_.clear();
+		captured_ = Captured{};
+		spent_.clear();
 	}
 	void detach()
 	{
@@ -919,6 +972,174 @@ public:
 	}
 
 private:
+	// Whether a window was open when the game's window of its program
+	// closed (and is no game to aim at while the program stays open).
+	bool is_spent(const std::string &exe, uint64_t handle) const
+	{
+		const auto it = spent_.find(exe);
+		return it != spent_.end() && handle && it->second.count(handle);
+	}
+
+	// The windows the capture got its picture from. OBS's Game Capture hooks
+	// the program, not the window: when an emulator's game window closes
+	// and its menu stays open, the hook keeps the last frame and the capture
+	// its size, so a Standby Picture never sees nothing. The owner
+	// (2026-11-18): "if the captured game closes but the emulator stays open
+	// in the menu/game list, the last captured frame of the game remains in
+	// the OBS capture, and it doesn't morph into the standby as intended".
+	// The game's windows are those of the program that were not open when
+	// the capture was aimed at it (`before_`: the menu was), Dolphin's GBA
+	// windows among them; failing any, the program's window in front or the
+	// one aimed at by title. Once every one has been gone for `kLetGoAfter`
+	// with the program open, the capture lets go (aimed at no window, below)
+	// and the program's windows seen meanwhile are no game until it closes.
+	// A window that opens in that time is followed instead (a switch to full
+	// screen makes the window again; a game started at once makes a new
+	// one), and any other new window is chosen as usual.
+	void watch_captured(const std::vector<Window> &windows, bool use_test)
+	{
+		constexpr double kLetGoAfter = 0.5;
+		// (A picture can come before the window list shows the game's
+		// window: a moment to see it.)
+		constexpr double kPickAfter = 0.5;
+		for (auto it = spent_.begin(); it != spent_.end();) {
+			bool open = std::any_of(windows.begin(), windows.end(),
+						[&](const Window &w) { return lower(w.executable) == it->first; });
+#ifdef _WIN32
+			// (Minimised, the program's windows are left out of the list.)
+			if (!open && !use_test)
+				open = std::any_of(it->second.begin(), it->second.end(),
+						   [](uint64_t h) { return IsWindow((HWND)(uintptr_t)h) != FALSE; });
+#endif
+			it = open ? std::next(it) : spent_.erase(it);
+		}
+		const size_t colon = applied_key_.rfind(':');
+		const std::string aimed = applied_key_.empty() || applied_key_ == kRestKey || colon == std::string::npos
+						  ? std::string()
+						  : lower(applied_key_.substr(colon + 1));
+		auto of_it = [&](const Window &w) {
+			return w.handle && lower(w.executable) == aimed;
+		};
+		if (aimed != before_exe_) {
+			before_.clear();
+			before_exe_ = aimed;
+			picture_since_ = -1.0;
+			for (const Window &w : windows)
+				if (of_it(w))
+					before_.insert(w.handle);
+		}
+		if (!captured_.handles.empty() && captured_.exe != aimed)
+			captured_ = Captured{};
+		if (captured_.handles.empty()) {
+			if (aimed.empty() || obs_source_get_base_width(parent_) == 0) {
+				picture_since_ = -1.0;
+				return;
+			}
+			if (picture_since_ < 0.0)
+				picture_since_ = clock_s_;
+			Captured found;
+			for (const Window &w : windows)
+				if (of_it(w) && !before_.count(w.handle) && !is_spent(aimed, w.handle))
+					found.handles.insert(w.handle);
+			if (found.handles.empty()) {
+				if (clock_s_ - picture_since_ < kPickAfter - 1e-6)
+					return;
+				// The game was open when the capture was aimed at it.
+				obs_data_t *settings = obs_source_get_settings(parent_);
+				const std::string title = window_title_of(obs_data_get_string(settings, "window"));
+				obs_data_release(settings);
+				const Window *pick = nullptr;
+				for (const Window &w : windows) {
+					if (!of_it(w))
+						continue;
+					if (w.foreground) {
+						pick = &w;
+						break;
+					}
+					if (!pick || (w.title == title && pick->title != title))
+						pick = &w;
+				}
+				if (!pick)
+					return;
+				found.handles.insert(pick->handle);
+			}
+			found.exe = aimed;
+			for (const Window &w : windows)
+				if (of_it(w)) {
+					found.seen.insert(w.handle);
+					if (found.handles.count(w.handle))
+						found.shapes.insert(title_shape(w.title));
+				}
+			captured_ = found;
+			return;
+		}
+		bool open = false;
+		std::set<uint64_t> there;
+		for (const Window &w : windows) {
+			if (lower(w.executable) != captured_.exe)
+				continue;
+			open = true;
+			if (captured_.handles.count(w.handle))
+				there.insert(w.handle);
+		}
+		if (!open) {
+			captured_ = Captured{}; // the program closed: the usual way
+			return;
+		}
+#ifdef _WIN32
+		// Minimised it is left out of the list of windows, and still there.
+		if (!use_test)
+			for (uint64_t h : captured_.handles) {
+				const HWND window = (HWND)(uintptr_t)h;
+				if (IsWindow(window) && IsWindowVisible(window))
+					there.insert(h);
+			}
+#else
+		(void)use_test;
+#endif
+		if (!there.empty()) {
+			// (One of several closing, a GBA window, is not the game.)
+			captured_.handles = there;
+			for (const Window &w : windows)
+				if (w.handle && lower(w.executable) == captured_.exe)
+					captured_.seen.insert(w.handle);
+			captured_.gone_since = -1.0;
+			return;
+		}
+		// A new window meanwhile: under the same title first.
+		const Window *again = nullptr;
+		for (const Window &w : windows) {
+			if (!w.handle || lower(w.executable) != captured_.exe || captured_.seen.count(w.handle))
+				continue;
+			if (!again || (captured_.shapes.count(title_shape(w.title)) &&
+				       !captured_.shapes.count(title_shape(again->title))))
+				again = &w;
+		}
+		if (again) {
+			obs_log(LOG_INFO,
+				"Auto Capture: '%s': the window it captured in %s was made again; following it",
+				obs_source_get_name(parent_), captured_.exe.c_str());
+			captured_.handles = {again->handle};
+			captured_.shapes = {title_shape(again->title)};
+			captured_.seen.insert(again->handle);
+			captured_.gone_since = -1.0;
+			return;
+		}
+		if (captured_.gone_since < 0.0)
+			captured_.gone_since = clock_s_;
+		if (clock_s_ - captured_.gone_since < kLetGoAfter - 1e-6)
+			return;
+		obs_log(LOG_INFO, "Auto Capture: '%s': the window it captured in %s has closed; letting go",
+			obs_source_get_name(parent_), captured_.exe.c_str());
+		// (Only windows seen while the game was: one opened since is no
+		// menu.)
+		std::set<uint64_t> &left = spent_[captured_.exe];
+		for (const Window &w : windows)
+			if (w.handle && lower(w.executable) == captured_.exe && captured_.seen.count(w.handle))
+				left.insert(w.handle);
+		captured_ = Captured{};
+	}
+
 	// The Standby Picture over the capture: while it is hidden, and (asked
 	// for) while there is no game. Through the Standby Picture filter on the
 	// capture, with this filter's transition.
@@ -992,6 +1213,24 @@ private:
 	std::set<std::string> known_games_;
 	bool known_loaded_ = false;
 	std::string current_;
+	// The window the capture got its picture from (`watch_captured`). Only
+	// the tick uses it.
+	struct Captured {
+		std::set<uint64_t> handles;   // the game's windows
+		std::string exe;              // lower case
+		std::set<std::string> shapes; // their titles, `title_shape`
+		std::set<uint64_t> seen;      // the program's windows while they were there
+		double gone_since = -1.0;     // by clock_s_
+	};
+	Captured captured_;
+	// The program's windows when the capture was first aimed at it (the
+	// menu), and since when it has had a picture with no game window known.
+	std::set<uint64_t> before_;
+	std::string before_exe_;
+	double picture_since_ = -1.0;
+	// Programs whose game's window closed, still open: the windows open
+	// then, which are no game. Only the tick uses it.
+	std::map<std::string, std::set<uint64_t>> spent_;
 	bool aimed_once_ = false;
 	double unhooked_s_ = 0.0; // how long the capture has been aimed with no picture
 	double give_up_s_ = 10.0; // and how long that may last

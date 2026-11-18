@@ -509,7 +509,15 @@ The filter's controls show what it is capturing now.
   there only, never in a scene where the capture was hidden already (a Link Visibility's other
   capture, a mode that is not on). With nothing remembered, the press shows nothing. What is
   remembered is kept over a restart.
-- With no game open, the Game Capture goes back to *Capture any fullscreen application*.
+- **A game's window closing lets go of it.** When the game's own window closes and its program
+  stays open (Dolphin back in its game list, with the menu in a window of its own), the capture
+  lets go within about half a second, so it no longer keeps the game's last frame: a Standby
+  Image after it comes in with its own transition, or, with *No game: Standby Image*, Auto
+  Capture's. The program's next game window is picked up as usual. A window that is only made
+  again (going full-screen) or minimised, or one of several closing (a GBA window), is not let go
+  of.
+- With no game open, the Game Capture goes back to *Capture any fullscreen application* (while an
+  emulator whose game window closed is still open, it stays aimed at nothing instead).
 
 A game is recognised by what the program has loaded: a graphics engine together with something only
 games have (controller support, a game store's library, a game engine's player, game audio or video),

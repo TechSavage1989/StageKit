@@ -37,6 +37,7 @@
 #include <QWidget>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -2752,6 +2753,219 @@ static void capture_chain_test()
 			obs_scene_release(each);
 	}
 	obs_source_release(before_out);
+}
+
+// Auto Capture lets go of a game whose window closes while its program
+// stays open: an emulator's game window closes and its menu stays. OBS's
+// Game Capture keeps the last frame then (the hook is in the program), so a
+// Standby Picture after it never stood in. The owner (2026-11-18): "the
+// last captured frame of the game remains in the OBS capture, and it
+// doesn't morph into the standby as intended". The stand-in capture loses
+// its picture when it is aimed at no window, as OBS frees the hook. Alone
+// with STAGEKIT_TEST_ONLY_AUTO_WINCLOSE.
+static void auto_window_closed_test(const std::string &out)
+{
+	printf("\n[auto capture: the game's window closes, its program stays open]\n");
+	register_stand_in_capture("game_capture");
+	const std::string none = "window :StageKitNoWindow:stagekit-no-window.exe";
+	const std::string red_path = out + "/../winclose-standby.png";
+	{
+		QImage red(320, 180, QImage::Format_RGB32);
+		red.fill(QColor(255, 0, 0));
+		red.save(QString::fromStdString(red_path));
+	}
+	obs_data_t *cd = obs_data_create();
+	obs_data_set_int(cd, "color", 0xFF00FF00); // green
+	obs_data_set_int(cd, "width", 320);
+	obs_data_set_int(cd, "height", 180);
+	obs_data_set_int(cd, "start_frames", 100000000); // no picture until a game is hooked
+	obs_source_t *capture = obs_source_create("game_capture", "WC Game Capture", cd, nullptr);
+	obs_data_release(cd);
+	obs_source_t *filter = obs_source_create("stagekit_auto_capture", "WC Auto Capture", nullptr, nullptr);
+	obs_source_filter_add(capture, filter);
+	obs_data_t *sd = obs_data_create();
+	obs_data_set_int(sd, "picture", 1); // a file
+	obs_data_set_string(sd, "file", red_path.c_str());
+	obs_data_set_int(sd, "style", 0); // a fade, not a cut
+	obs_data_set_int(sd, "fade_ms", 800);
+	obs_data_set_int(sd, "back_ms", 200);
+	obs_data_set_int(sd, "ease_curve", 0); // linear
+	obs_source_t *standby = obs_source_create("stagekit_standby", "WC Standby", sd, nullptr);
+	obs_data_release(sd);
+	obs_source_filter_add(capture, standby);
+
+	auto show = [&](const std::string &windows) {
+		calldata_t c = {};
+		calldata_set_string(&c, "windows", windows.c_str());
+		calldata_set_bool(&c, "keep_clock", true);
+		proc_handler_call(obs_source_get_proc_handler(filter), "set_test_windows", &c);
+		calldata_free(&c);
+	};
+	auto aim = [&] {
+		obs_data_t *d = obs_source_get_settings(capture);
+		const std::string got =
+			std::string(obs_data_get_string(d, "capture_mode")) + " " + obs_data_get_string(d, "window");
+		obs_data_release(d);
+		return got;
+	};
+	// As OBS: a picture while hooked to the program, none aimed at no window.
+	auto hooked = [&](bool yes) {
+		obs_data_t *d = obs_data_create();
+		obs_data_set_int(d, "start_frames", yes ? 0 : 100000000);
+		obs_source_update(capture, d);
+		obs_data_release(d);
+	};
+	auto centre = [&] {
+		const uint32_t w = obs_source_get_width(capture), h = obs_source_get_height(capture);
+		if (!w || !h)
+			return std::array<int, 2>{-1, -1};
+		const std::vector<uint8_t> px = render(capture, w, h);
+		const uint8_t *p = &px[(size_t(h / 2) * w + w / 2) * 4];
+		return std::array<int, 2>{p[0], p[1]};
+	};
+	auto is_dolphin = [](const std::string &a) {
+		return a.find("Dolphin.exe") != std::string::npos;
+	};
+	using clock = std::chrono::steady_clock;
+	auto since = [](clock::time_point t) {
+		return std::chrono::duration<double>(clock::now() - t).count();
+	};
+	// Polls the windows given until `until` says stop; the seconds it took.
+	auto run = [&](const std::string &windows, const std::function<bool()> &until, double limit_s) {
+		const auto t0 = clock::now();
+		while (since(t0) < limit_s) {
+			show(windows);
+			sleep_ms(50);
+			if (until())
+				return since(t0);
+		}
+		return -1.0;
+	};
+
+	const std::string menu = "Dolphin 2506a|QtWnd|Dolphin.exe|||1\n";
+	const std::string game = menu + "Dolphin 2506a - Wind Waker - FPS: 60|QtWnd|Dolphin.exe|front|game|2";
+	const std::string menu_front = "Dolphin 2506a|QtWnd|Dolphin.exe|front||1";
+	double t = run(game, [&] { return is_dolphin(aim()); }, 1.5);
+	CHECK(t >= 0.0, "the game is aimed at (%s)", aim().c_str());
+	hooked(true);
+	run(game, [] { return false; }, 1.2);
+	std::array<int, 2> c = centre();
+	CHECK(c[1] > 240 && c[0] < 15, "the capture shows the game (centre %d, %d)", c[0], c[1]);
+
+	// The game's window closes, the menu stays: let go of within ~0.6 s.
+	t = run(menu_front, [&] { return aim() == none; }, 1.5);
+	CHECK(t >= 0.35 && t <= 0.9,
+	      "the capture is aimed at no window soon after the game's window closes (%.2f s; %s)", t, aim().c_str());
+	hooked(false); // (OBS frees the hook)
+	bool part_way = false;
+	const auto t0 = clock::now();
+	while (since(t0) < 0.7 && !part_way) {
+		show(menu_front);
+		sleep_ms(50);
+		c = centre();
+		part_way = c[0] > 40 && c[0] < 215 && c[1] > 40 && c[1] < 215;
+	}
+	CHECK(part_way, "the Standby Picture comes in with its fade, part-way soon after (centre %d, %d)", c[0], c[1]);
+	run(menu_front, [] { return false; }, 1.2);
+	c = centre();
+	CHECK(c[0] > 240 && c[1] < 15 && aim() == none,
+	      "and then is the picture alone, the menu not aimed at (centre %d, %d; %s)", c[0], c[1], aim().c_str());
+
+	// The next game's window: aimed at as usual.
+	const std::string next = menu + "Dolphin 2506a - Twilight - FPS: 30|QtWnd|Dolphin.exe|front|game|3";
+	t = run(next, [&] { return is_dolphin(aim()); }, 1.5);
+	CHECK(t >= 0.0, "a new game window of the program is aimed at (%.2f s; %s)", t, aim().c_str());
+	hooked(true);
+	run(next, [] { return false; }, 1.2);
+	c = centre();
+	CHECK(c[1] > 240 && c[0] < 15, "and shows its game (centre %d, %d)", c[0], c[1]);
+
+	// Its window made again under the same title (full screen): not let go.
+	const std::string again = menu + "Dolphin 2506a - Twilight - FPS: 30|QtWnd|Dolphin.exe|front|game|4";
+	bool let_go = false, covered = false;
+	const auto t1 = clock::now();
+	while (since(t1) < 1.5) {
+		show(again);
+		sleep_ms(50);
+		let_go = let_go || aim() == none;
+		c = centre();
+		covered = covered || c[0] > 15;
+	}
+	CHECK(!let_go && !covered, "a window made again under its title is the same game (let go %d, covered %d)",
+	      let_go, covered);
+	// Gone for a quarter of a second first, then made again: still the same.
+	const std::string later = menu + "Dolphin 2506a - Twilight - FPS: 30|QtWnd|Dolphin.exe|front|game|5";
+	let_go = covered = false;
+	const auto t2 = clock::now();
+	while (since(t2) < 1.5) {
+		show(since(t2) < 0.25 ? menu_front : later);
+		sleep_ms(50);
+		let_go = let_go || aim() == none;
+		c = centre();
+		covered = covered || c[0] > 15;
+	}
+	CHECK(!let_go && !covered && is_dolphin(aim()),
+	      "nor one gone for a moment before it is made again (let go %d, covered %d; %s)", let_go, covered,
+	      aim().c_str());
+	// And that one closing is let go of too.
+	t = run(menu_front, [&] { return aim() == none; }, 1.5);
+	CHECK(t >= 0.35 && t <= 0.9, "the window made again is let go of when it closes (%.2f s)", t);
+
+	// Aimed at the program while only its menu was open, and no window in
+	// front when the picture came: the game's windows are the ones opened
+	// since (a GBA window too), not the menu the capture was aimed at.
+	hooked(false);
+	t = run("", [&] { return aim() != none; }, 1.5);
+	CHECK(t >= 0.0, "the program closing ends its let-go (%s)", aim().c_str());
+	const std::string menu2 = "Dolphin 2506a|QtWnd|Dolphin.exe|||11\n";
+	t = run(menu2, [&] { return is_dolphin(aim()); }, 1.5);
+	CHECK(t >= 0.0 && aim().find("window Dolphin 2506a:") == 0, "the menu is aimed at, as a known game (%s)",
+	      aim().c_str());
+	run(menu2, [] { return false; }, 0.5);
+	const std::string game2 = "Dolphin 2506a - Melee - FPS: 60|QtWnd|Dolphin.exe|||12\n";
+	const std::string gba2 = "GBA1 | Muted|QtWnd|Dolphin.exe|||13\n";
+	run(menu2 + game2 + gba2, [] { return false; }, 0.6);
+	hooked(true);
+	run(menu2 + game2 + gba2, [] { return false; }, 1.2);
+	let_go = false;
+	const auto t3 = clock::now();
+	while (since(t3) < 1.0) {
+		show(menu2 + game2);
+		sleep_ms(50);
+		let_go = let_go || aim() == none;
+	}
+	CHECK(!let_go && is_dolphin(aim()), "a GBA window closing is not the game closing (let go %d; %s)", let_go,
+	      aim().c_str());
+	t = run(menu2, [&] { return aim() == none; }, 1.5);
+	CHECK(t >= 0.35 && t <= 0.9, "the game's window closing is let go of, not the menu watched (%.2f s; %s)", t,
+	      aim().c_str());
+
+	// A game started again at once, under another title: followed, not
+	// shut out with the menu.
+	hooked(false);
+	const std::string game3 = "Dolphin 2506a - Pikmin - FPS: 30|QtWnd|Dolphin.exe|front|game|14";
+	t = run(menu2 + game3, [&] { return is_dolphin(aim()); }, 1.5);
+	CHECK(t >= 0.0, "the next game is aimed at (%s)", aim().c_str());
+	hooked(true);
+	run(menu2 + game3, [] { return false; }, 1.2);
+	const std::string game4 = "Dolphin 2506a - Mario Kart - FPS: 60|QtWnd|Dolphin.exe|front|game|15";
+	let_go = false;
+	const auto t4 = clock::now();
+	while (since(t4) < 1.5) {
+		show(since(t4) < 0.3 ? menu2 : menu2 + game4);
+		sleep_ms(50);
+		let_go = let_go || aim() == none;
+	}
+	CHECK(!let_go && is_dolphin(aim()), "a new game's window opened in the wait is followed (let go %d; %s)",
+	      let_go, aim().c_str());
+	t = run(menu2, [&] { return aim() == none; }, 1.5);
+	CHECK(t >= 0.35 && t <= 0.9, "and let go of when it closes (%.2f s)", t);
+
+	obs_source_filter_remove(capture, standby);
+	obs_source_filter_remove(capture, filter);
+	obs_source_release(standby);
+	obs_source_release(filter);
+	obs_source_release(capture);
 }
 
 // A Show in Scenes switch is a command, not a hold: a switch that is
@@ -7355,6 +7569,14 @@ int main(int argc, char **argv)
 		return g_failures ? 1 : 0;
 	}
 
+	if (getenv("STAGEKIT_TEST_ONLY_AUTO_WINCLOSE")) { // to try that section alone
+		auto_window_closed_test(out);
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
+
 	if (getenv("STAGEKIT_TEST_ONLY_SWITCH_COMMAND")) { // to try that section alone
 		switch_is_command_test();
 		obs_shutdown();
@@ -9594,6 +9816,7 @@ int main(int argc, char **argv)
 		}
 
 		auto_rest_test();
+		auto_window_closed_test(out);
 
 		// The controls: say what is captured, undo a wrong pick in one
 		// press, and choose from open programs instead of typing names.
