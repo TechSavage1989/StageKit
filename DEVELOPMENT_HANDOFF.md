@@ -13,6 +13,36 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
+## Ambient Background's mosaic on Direct3D (0.1.0-betaNEXT)
+
+Branch `fix/scene-blur-off-draw`, from `main` at beta170. Notes: `docs/releases/0.1.0-betaNEXT.md`.
+No Stream Deck file changed. The owner, with screenshots of Full-Capture-Scene and
+Component-Capture-Scene (black background, no shadows): "ambient background does not show unless
+i turn on scene blur. it remains visible after turning blur off"; then, Scene Blur removed and
+Scene Shadow off, still black after a restart; then "turning off mosaic brought it back".
+
+- **Cause**: `AmbientBackground::render` (`src/ambient/ambient-background.cpp`, the `Mosaic`
+  pass) set every uniform of `stagekit-looks.effect`'s Mosaic technique but `whole`,
+  `open_edge` and `fallback`, added for Scene Blur in beta165 (`whole`) and beta167 (the other
+  two). Direct3D refuses a draw while a uniform of its shader has never had a value ("Not all
+  shader parameters were set", in OBS's log as `device_draw (D3D11)`), so the mosaic drew
+  nothing. OBS loads the effect file once for everyone and keeps the last value given to each
+  shader uniform; once a Blur or Scene Blur had drawn a mosaic, the values were there and the
+  background drew from then on, with whatever values the blur had left. Scene Shadow was not at
+  fault: its shadows fall on the background and do not show on black. Not seen on Windows
+  here; the reasoning comes from libobs's effect code and the owner's reports, and their log
+  should hold the `Not all shader parameters were set` lines.
+- **Fix**: `src/common/mosaic-uniforms.hpp` (`MosaicLook`, `MosaicUniforms`) sets every uniform
+  the Mosaic technique reads; `BlurPipeline::run` and Ambient Background both go through it.
+- **Test**: `[Ambient Background's mosaic sets every uniform of the shared effect]`
+  (`STAGEKIT_TEST_ONLY_BLUR_OFF_DRAW`, also in the full run): the shared effect is drawn with
+  other values first (whole cells, a mask, open sides), then the background must look as it did.
+  Before the fix the hexagon case was 0.061 off, after 0.000. The square case passed both ways
+  (its cells meet the edges evenly). OpenGL starts uniforms at zero, so the black itself cannot
+  be shown headless.
+- **Not done**: the row of dots along the game's bottom edge in the owner's Scene Blur
+  screenshot (*The scene as drawn*, hexagons) is a separate matter, not looked into here.
+
 
 ## Scene Transitions: no write while a scene's sources load (0.1.0-beta171)
 

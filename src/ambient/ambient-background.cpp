@@ -27,6 +27,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../capture/standby.hpp"
 #include "../common/easing.hpp"
 #include "../common/kawase-blur.hpp"
+#include "../common/mosaic-uniforms.hpp"
 #include "../common/scene-rev.hpp"
 #include "../common/scene-util.hpp"
 #include "../common/start-image.hpp"
@@ -259,15 +260,7 @@ private:
 	gs_eparam_t *pl_image_ = nullptr;
 	gs_eparam_t *pl_image2_ = nullptr;
 	gs_eparam_t *pl_mix2_ = nullptr;
-	gs_eparam_t *pl_texel_ = nullptr;
-	gs_eparam_t *pl_size_ = nullptr;
-	gs_eparam_t *pl_strength_ = nullptr;
-	gs_eparam_t *pl_shape_ = nullptr;
-	gs_eparam_t *pl_smoothing_ = nullptr;
-	gs_eparam_t *pl_glass_ = nullptr;
-	gs_eparam_t *pl_glass_style_ = nullptr;
-	gs_eparam_t *pl_origin_ = nullptr;
-	gs_eparam_t *pl_turn_ = nullptr;
+	MosaicUniforms mosaic_; // every uniform of the Mosaic technique
 	gs_eparam_t *pl_bloom_threshold_ = nullptr;
 	gs_eparam_t *pl_bloom_amount_ = nullptr;
 	// Bloom: the bright parts, and those spread out.
@@ -359,17 +352,9 @@ AmbientBackground::AmbientBackground(obs_data_t *settings, obs_source_t *source)
 	looks_ = load_effect("effects/stagekit-looks.effect");
 	if (looks_) {
 		pl_image_ = gs_effect_get_param_by_name(looks_, "image");
+		mosaic_.find(looks_);
 		pl_image2_ = gs_effect_get_param_by_name(looks_, "image2");
 		pl_mix2_ = gs_effect_get_param_by_name(looks_, "mix2");
-		pl_texel_ = gs_effect_get_param_by_name(looks_, "texel");
-		pl_size_ = gs_effect_get_param_by_name(looks_, "size");
-		pl_strength_ = gs_effect_get_param_by_name(looks_, "strength");
-		pl_shape_ = gs_effect_get_param_by_name(looks_, "shape");
-		pl_smoothing_ = gs_effect_get_param_by_name(looks_, "smoothing");
-		pl_glass_ = gs_effect_get_param_by_name(looks_, "glass");
-		pl_glass_style_ = gs_effect_get_param_by_name(looks_, "glass_style");
-		pl_origin_ = gs_effect_get_param_by_name(looks_, "origin");
-		pl_turn_ = gs_effect_get_param_by_name(looks_, "turn");
 		pl_bloom_threshold_ = gs_effect_get_param_by_name(looks_, "bloom_threshold");
 		pl_bloom_amount_ = gs_effect_get_param_by_name(looks_, "bloom_amount");
 	} else {
@@ -1129,27 +1114,26 @@ void AmbientBackground::render()
 
 	if (cur && s.pixel_style != PixelStyle::None && looks_) {
 		const double cell = std::max(1.0, s.pixel_size * kInternalScale);
-		const double rad = s.pixel_rotation * 3.14159265358979323846 / 180.0;
-		vec2 size, texel, origin, turn;
-		vec2_set(&size, (float)iw, (float)ih);
-		vec2_set(&texel, 1.0f / (float)iw, 1.0f / (float)ih);
-		vec2_set(&origin, (float)(s.pixel_origin_x * iw), (float)(s.pixel_origin_y * ih));
-		vec2_set(&turn, (float)std::cos(rad), (float)std::sin(rad));
-		gs_effect_set_vec2(pl_size_, &size);
-		gs_effect_set_vec2(pl_texel_, &texel);
-		gs_effect_set_float(pl_strength_, (float)cell);
+		// Every uniform the mosaic reads, at every run, those this
+		// background has no use for too (whole cells, open sides, a mask):
+		// the effect file is one copy shared with the Blur filter and Scene
+		// Blur, and Direct3D draws nothing with a uniform never set. See
+		// mosaic-uniforms.hpp.
+		MosaicLook m;
+		m.width = iw;
+		m.height = ih;
+		m.cell = cell;
 		// The shader's shapes start at squares, the list here at "none".
-		const int shape = s.pixel_style == PixelStyle::Square ? 0
-				  : s.pixel_style == PixelStyle::Hex  ? 1
-								      : (int)s.pixel_style - 1;
-		gs_effect_set_float(pl_shape_, (float)shape);
-		gs_effect_set_float(pl_smoothing_, (float)(s.pixel_smooth * cell * 0.2));
-		if (pl_glass_)
-			gs_effect_set_float(pl_glass_, (float)s.pixel_glass);
-		if (pl_glass_style_)
-			gs_effect_set_float(pl_glass_style_, (float)s.pixel_glass_style);
-		gs_effect_set_vec2(pl_origin_, &origin);
-		gs_effect_set_vec2(pl_turn_, &turn);
+		m.shape = s.pixel_style == PixelStyle::Square ? 0
+			  : s.pixel_style == PixelStyle::Hex  ? 1
+							      : (int)s.pixel_style - 1;
+		m.smoothing = s.pixel_smooth * cell * 0.2;
+		m.glass = s.pixel_glass;
+		m.glass_style = s.pixel_glass_style;
+		m.origin_x = s.pixel_origin_x * iw;
+		m.origin_y = s.pixel_origin_y * ih;
+		m.rotation_deg = s.pixel_rotation;
+		mosaic_.set(m);
 		pass(looks_, pl_image_, tr_pixel_, cur, iw, ih, "Mosaic");
 		cur = gs_texrender_get_texture(tr_pixel_);
 	} else if (cur && s.pixel_style != PixelStyle::None) {

@@ -2642,6 +2642,134 @@ static void link_transitions_test(uint32_t w, uint32_t h)
 	obs_source_release(before_out);
 }
 
+// The owner (beta170): "ambient background does not show unless i turn on
+// scene blur. it remains visible after turning blur off"; then, with Scene
+// Blur removed and Scene Shadow off, still black after a restart, and
+// "turning off mosaic brought it back". The mosaic is in stagekit-looks.effect,
+// which OBS loads once and shares between all who load it. OBS empties an
+// effect's values at the end of every technique and passes a uniform with no
+// value over when it hands the values to the shader, so a uniform a user
+// does not set keeps whatever the shader was last given, by anyone. On
+// Direct3D a uniform never given a value at all makes the draw fail ("Not
+// all shader parameters were set"): Ambient Background set none of `whole`,
+// `open_edge` and `fallback` (added for Scene Blur in beta165 and beta167), so
+// its mosaic drew nothing until a Blur or Scene Blur had set them, and from
+// then on it drew with their values. OpenGL starts every uniform at zero, so
+// the first half cannot be seen here; the second can: the shader is given
+// other values first (whole cells, a mask, as Scene Blur gives it), and the
+// background must look the same as it did before.
+static void blur_off_draw_test(uint32_t w, uint32_t h, const char *base_image)
+{
+	printf("\n[Ambient Background's mosaic sets every uniform of the shared effect]\n");
+	obs_module_t *module = obs_get_module("stagekit");
+	char *path = module ? obs_find_module_file(module, "effects/stagekit-looks.effect") : nullptr;
+	obs_enter_graphics();
+	gs_effect_t *looks = path ? gs_effect_create_from_file(path, nullptr) : nullptr; // the shared copy
+	obs_leave_graphics();
+	bfree(path);
+	CHECK(looks != nullptr, "the looks effect is found");
+	if (!looks)
+		return;
+	// The mosaic drawn by someone else: every uniform it reads given a value
+	// none of the background's would have.
+	auto someone_else = [&] {
+		obs_enter_graphics();
+		gs_texrender_t *tr = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
+		gs_texrender_t *src = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
+		if (gs_texrender_begin(src, 64, 64)) {
+			vec4 grey;
+			vec4_set(&grey, 0.5f, 0.5f, 0.5f, 1.0f);
+			gs_clear(GS_CLEAR_COLOR, &grey, 0.0f, 0);
+			gs_texrender_end(src);
+		}
+		auto f1 = [&](const char *n, float v) {
+			gs_effect_set_float(gs_effect_get_param_by_name(looks, n), v);
+		};
+		auto f2 = [&](const char *n, float x, float y) {
+			vec2 v;
+			vec2_set(&v, x, y);
+			gs_effect_set_vec2(gs_effect_get_param_by_name(looks, n), &v);
+		};
+		if (gs_texrender_begin(tr, 64, 64)) {
+			gs_ortho(0.0f, 64.0f, 0.0f, 64.0f, -100.0f, 100.0f);
+			gs_texture_t *tex = gs_texrender_get_texture(src);
+			gs_effect_set_texture(gs_effect_get_param_by_name(looks, "image"), tex);
+			f2("texel", 1.0f / 64.0f, 1.0f / 64.0f);
+			f2("size", 64.0f, 64.0f);
+			f1("strength", 7.0f);
+			f1("shape", 3.0f);
+			f1("smoothing", 2.0f);
+			f1("glass", 1.0f);
+			f1("glass_style", 1.0f);
+			f2("origin", 13.0f, 29.0f);
+			f2("turn", 0.6f, 0.8f);
+			f1("whole", 1.0f);
+			f1("fallback", 1.0f);
+			vec4 open;
+			vec4_set(&open, 0.0f, 0.0f, 0.0f, 0.0f);
+			gs_effect_set_vec4(gs_effect_get_param_by_name(looks, "open_edge"), &open);
+			while (gs_effect_loop(looks, "Mosaic"))
+				gs_draw_sprite(tex, 0, 64, 64);
+			gs_texrender_end(tr);
+		}
+		gs_texrender_destroy(src);
+		gs_texrender_destroy(tr);
+		obs_leave_graphics();
+	};
+	struct Case {
+		const char *what;
+		std::function<void(obs_data_t *)> settings;
+	};
+	const Case cases[] = {
+		{"a hexagon mosaic, as the owner has it",
+		 [](obs_data_t *s) {
+			 obs_data_set_int(s, "pixel_style", 2);
+			 obs_data_set_double(s, "pixel_size", 24.0);
+		 }},
+		{"a square mosaic with glass and bloom",
+		 [](obs_data_t *s) {
+			 obs_data_set_int(s, "pixel_style", 1);
+			 obs_data_set_double(s, "pixel_size", 36.0);
+			 obs_data_set_double(s, "pixel_glass", 50.0);
+			 obs_data_set_double(s, "bloom", 60.0);
+		 }},
+	};
+	for (const Case &c : cases) {
+		// Loaded from saved settings, as OBS loads a collection.
+		obs_data_t *sd = obs_data_create();
+		obs_data_set_int(sd, "base_type", 0); // an image
+		obs_data_set_string(sd, "image", base_image);
+		obs_data_set_int(sd, "live_mode", 0);
+		obs_data_set_double(sd, "blur", 20.0);
+		obs_data_set_double(sd, "speed_x", 0);
+		obs_data_set_double(sd, "speed_y", 0);
+		c.settings(sd);
+		obs_data_t *saved = obs_data_create();
+		obs_data_set_string(saved, "id", "stagekit_ambient_background");
+		obs_data_set_string(saved, "name", "UV Ambient");
+		obs_data_set_obj(saved, "settings", sd);
+		obs_data_release(sd);
+		obs_source_t *ambient = obs_load_source(saved);
+		obs_data_release(saved);
+		if (!ambient) {
+			CHECK(false, "%s: the background loads", c.what);
+			continue;
+		}
+		obs_source_inc_showing(ambient);
+		sleep_ms(300);
+		const std::vector<uint8_t> own = render(ambient, w, h);
+		someone_else();
+		sleep_ms(100);
+		const std::vector<uint8_t> after = render(ambient, w, h);
+		CHECK(opaque(own) && mean_rgb(own) > 20.0 && mean_abs_diff(own, after) < 0.001,
+		      "%s: drawn after another user of the mosaic, it looks the same (%.3f; mean %.1f, then %.1f)",
+		      c.what, mean_abs_diff(own, after), mean_rgb(own), mean_rgb(after));
+		obs_source_dec_showing(ambient);
+		obs_source_release(ambient);
+		sleep_ms(50);
+	}
+}
+
 int main(int argc, char **argv)
 {
 	if (argc < 7) {
@@ -2723,6 +2851,14 @@ int main(int argc, char **argv)
 	if (getenv("STAGEKIT_TEST_ONLY_BLUR_EDGES")) { // to try that section alone
 		scene_blur_controls_test();
 		blur_edges_test(w, h, out);
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
+
+	if (getenv("STAGEKIT_TEST_ONLY_BLUR_OFF_DRAW")) { // to try that section alone
+		blur_off_draw_test(w, h, base_image);
 		obs_shutdown();
 		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
 		       g_failures == 1 ? "" : "s");
@@ -3027,6 +3163,9 @@ int main(int argc, char **argv)
 		obs_scene_release(scene);
 	}
 	// ==== end scene-filters:perf ====
+
+	// (After the timing checks: its frames would count in their per-frame line.)
+	blur_off_draw_test(w, h, base_image); // (alone: STAGEKIT_TEST_ONLY_BLUR_OFF_DRAW)
 
 	// ==== scene-filters:blur ====
 	// ------------------------------------------------------------ scene blur

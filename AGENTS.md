@@ -1071,8 +1071,24 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   "Whole cells blur also blurs the entire scene border" (the full-screen Ambient Background lost a
   row of cells all round, a black notched border). The Blur filter on a source cannot know it
   (one source, many scenes and places) and still cuts there: the README says to use Scene Blur.
-  Every uniform of the mosaic is set at every run (`whole`, `open_edge`, `fallback`): OBS shares
-  one copy of an effect file between all who load it.
+  **Every uniform of the mosaic is set at every run, by every user, through one helper**
+  (`MosaicUniforms` / `MosaicLook` in `src/common/mosaic-uniforms.hpp`, used by `BlurPipeline`
+  and Ambient Background, after beta170). OBS shares one copy of an effect file between all who
+  load it, empties an effect's values at the end of each technique and passes over a uniform with no
+  value when it hands values to the shader, so a uniform a user leaves out keeps whatever the
+  shader was last given by anyone; and **Direct3D draws nothing while a uniform has never been
+  given a value** ("Not all shader parameters were set"; OpenGL takes zeros, so the tests never
+  saw it). Ambient Background set none of `whole`, `open_edge` and `fallback` (added for Scene
+  Blur in beta165 and beta167): on Windows its mosaic drew nothing, a black background, until a
+  Blur or Scene Blur had run once in the session, and kept working after. The owner: "ambient
+  background does not show unless i turn on scene blur. it remains visible after turning blur
+  off", then "turning off mosaic brought it back". With a black background Scene Shadow's
+  shadows did not show either; nothing was wrong with it. A new uniform of the mosaic goes in
+  `MosaicLook` and `MosaicUniforms::set`, never in one caller; a new uniform of any shared
+  effect file must be set by every user of every technique that reads it. Tested in
+  `[Ambient Background's mosaic sets every uniform of the shared effect]`
+  (`STAGEKIT_TEST_ONLY_BLUR_OFF_DRAW`): the shader is given other values first, as another user
+  would, and the background must look the same (only the hexagon case tells the two apart).
   **Kept to a mask** (`fallback` uniform, `run`'s `kept_to_mask`): Scene Blur's *The scene as
   drawn* hands the mosaic a picture whose alpha is the mask, so its taps (weighted by alpha)
   take in only covered pixels; a cell whose nine taps near its centre all miss looks on a ring at

@@ -309,21 +309,10 @@ BlurPipeline::BlurPipeline()
 	bfree(looks_path);
 	if (looks_) {
 		pl_image_ = gs_effect_get_param_by_name(looks_, "image");
+		mosaic_.find(looks_);
 		pl_image2_ = gs_effect_get_param_by_name(looks_, "image2");
 		pl_mix2_ = gs_effect_get_param_by_name(looks_, "mix2");
-		pl_texel_ = gs_effect_get_param_by_name(looks_, "texel");
-		pl_size_ = gs_effect_get_param_by_name(looks_, "size");
-		pl_strength_ = gs_effect_get_param_by_name(looks_, "strength");
-		pl_shape_ = gs_effect_get_param_by_name(looks_, "shape");
-		pl_smoothing_ = gs_effect_get_param_by_name(looks_, "smoothing");
-		pl_glass_ = gs_effect_get_param_by_name(looks_, "glass");
-		pl_glass_style_ = gs_effect_get_param_by_name(looks_, "glass_style");
-		pl_whole_ = gs_effect_get_param_by_name(looks_, "whole");
-		pl_open_edge_ = gs_effect_get_param_by_name(looks_, "open_edge");
-		pl_fallback_ = gs_effect_get_param_by_name(looks_, "fallback");
 		pl_keep_alpha_ = gs_effect_get_param_by_name(looks_, "keep_alpha");
-		pl_origin_ = gs_effect_get_param_by_name(looks_, "origin");
-		pl_turn_ = gs_effect_get_param_by_name(looks_, "turn");
 		pl_original_ = gs_effect_get_param_by_name(looks_, "original");
 		pl_mask_ = gs_effect_get_param_by_name(looks_, "mask");
 		pl_mix_ = gs_effect_get_param_by_name(looks_, "mix_amount");
@@ -478,33 +467,24 @@ BlurPipeline::Result BlurPipeline::run(const BlurLook &s, gs_texture_t *input, u
 			pass(tr_a_, input, w, h, s.pixel_shape == PixelShape::Hexagon ? "Hexagon" : "Pixelate");
 			return {gs_texrender_get_texture(tr_a_)};
 		}
-		const double rad = s.rotation_deg * 3.14159265358979323846 / 180.0;
-		vec2 origin, turn;
-		vec2_set(&origin, (float)(s.origin_x * w), (float)(s.origin_y * h));
-		vec2_set(&turn, (float)std::cos(rad), (float)std::sin(rad));
-		gs_effect_set_vec2(pl_texel_, &texel);
-		gs_effect_set_vec2(pl_size_, &size);
-		gs_effect_set_float(pl_strength_, (float)block);
-		gs_effect_set_float(pl_shape_, (float)(int)s.pixel_shape);
-		gs_effect_set_float(pl_smoothing_, (float)(s.pixel_smooth * block * 0.2));
-		if (pl_glass_)
-			gs_effect_set_float(pl_glass_, (float)s.pixel_glass);
-		if (pl_glass_style_)
-			gs_effect_set_float(pl_glass_style_, (float)s.pixel_glass_style);
-		// (Set every time: OBS shares one copy of an effect file between
-		// every filter that loads it.)
-		if (pl_whole_)
-			gs_effect_set_float(pl_whole_, s.whole_cells ? 1.0f : 0.0f);
-		if (pl_open_edge_) {
-			vec4 open;
-			vec4_set(&open, s.open_edges[0] ? 1.0f : 0.0f, s.open_edges[1] ? 1.0f : 0.0f,
-				 s.open_edges[2] ? 1.0f : 0.0f, s.open_edges[3] ? 1.0f : 0.0f);
-			gs_effect_set_vec4(pl_open_edge_, &open);
-		}
-		if (pl_fallback_)
-			gs_effect_set_float(pl_fallback_, kept_to_mask ? 1.0f : 0.0f);
-		gs_effect_set_vec2(pl_origin_, &origin);
-		gs_effect_set_vec2(pl_turn_, &turn);
+		// Every uniform the mosaic reads, set at every run (see
+		// mosaic-uniforms.hpp).
+		MosaicLook m;
+		m.width = w;
+		m.height = h;
+		m.cell = block;
+		m.shape = (int)s.pixel_shape;
+		m.smoothing = s.pixel_smooth * block * 0.2;
+		m.glass = s.pixel_glass;
+		m.glass_style = s.pixel_glass_style;
+		m.origin_x = s.origin_x * w;
+		m.origin_y = s.origin_y * h;
+		m.rotation_deg = s.rotation_deg;
+		m.whole_cells = s.whole_cells;
+		for (int i = 0; i < 4; i++)
+			m.open_edges[i] = s.open_edges[i];
+		m.kept_to_mask = kept_to_mask;
+		mosaic_.set(m);
 		pass(tr_a_, input, w, h, "Mosaic", true);
 		return {gs_texrender_get_texture(tr_a_)};
 	}
