@@ -26,6 +26,7 @@ uniform float shadow_picture;   // 1 = the shadow takes the sources' own colours
 uniform float shadow_boost;     // extra colour and brightness for those colours
 uniform float outline_width;    // pixels
 uniform float4 outline_color;   // straight alpha; a = opacity
+uniform float image_straight;   // 1: `image` holds straight alpha (a picture this file made)
 
 sampler_state linearClamp {
 	Filter   = Linear;
@@ -72,7 +73,7 @@ float3 to_srgb(float3 c)
 float4 scene_linear(float2 uv)
 {
 	float4 scene = image.Sample(linearClamp, uv);
-	float3 straight_rgb = scene.rgb / max(scene.a, 0.00001);
+	float3 straight_rgb = lerp(scene.rgb / max(scene.a, 0.00001), scene.rgb, image_straight);
 	return float4(to_linear(straight_rgb) * scene.a, scene.a);
 }
 

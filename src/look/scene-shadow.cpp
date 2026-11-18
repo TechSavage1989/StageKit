@@ -25,6 +25,16 @@ the Free Software Foundation; either version 2 of the License, or
 // make one shape and do not shadow each other, and at a see-through edge of a
 // source the background under it is darkened very slightly differently. The
 // silhouette also leaves out a crop to the bounding box (as Morph does).
+//
+// *Shadow from: Each source by itself* (`shadow_from` 1) is the shadow drawn
+// under each source: a source's shadow falls on whatever lies under it, other
+// sources too, and the sources above it cover it. The sources are drawn in
+// layers (`shadow_layers`): a run of sources, bottom first, whose shadows
+// cannot reach one another is one layer, so sources side by side cost what
+// one shape costs and only sources that overlap (shadows included) take a
+// layer more. Layer by layer from the bottom, its casting sources' shadow is
+// laid over the picture so far, kept off every source of that layer and
+// above (`LookPaint::compose_layers`).
 
 #include "scene-shadow.hpp"
 
@@ -71,6 +81,10 @@ constexpr uint64_t kWantedNs = 1000000000ULL;
 // there was a choice has no number and reads as All sources, which is what
 // it did then.
 enum class Which : int { AllSources = 0, Chosen = 1 };
+
+// Shadow from. Saved by number: append only. 0 is what every filter saved
+// before it did.
+enum class From : int { Scene = 0, Each = 1 };
 
 bool listed(const std::vector<std::string> &list, const char *name)
 {
@@ -151,9 +165,15 @@ public:
 	gs_texture_t *lay_over(gs_texture_t *picture, uint32_t cx, uint32_t cy);
 	void attached() { ramp_.attached(); }
 	int draws() const { return draws_.load(); }
+	int layers() const { return layers_.load(); }
 
 private:
 	void look_again(obs_source_t *parent);
+	bool render_layers(const std::vector<obs_sceneitem_t *> &items,
+			   const std::function<uint8_t(obs_sceneitem_t *)> &flags_of,
+			   const std::function<void(obs_sceneitem_t *)> &draw, const ShadowLook &look, uint32_t cx,
+			   uint32_t cy);
+	void finish(const ShadowLook &look, uint64_t frame, uint32_t cx, uint32_t cy, bool linear, bool each);
 
 	obs_source_t *source_;
 	SwitchRamp ramp_;
@@ -162,6 +182,7 @@ private:
 	ShadowLook look_;
 	std::vector<std::string> background_, skip_, chosen_;
 	Which which_ = Which::AllSources;
+	From from_ = From::Scene;
 	bool auto_background_ = true;
 	ShadowFlags flags_;
 	bool classified_ = false;
@@ -183,12 +204,18 @@ private:
 	gs_texrender_t *tr_mask_ = nullptr;
 	gs_texrender_t *tr_over_ = nullptr; // lay_over's picture
 	bool mask_used_ = false;            // tr_mask_ was drawn for the last frame
+	// Each source by itself: a cast and a mask per layer (the cast left out
+	// of the frame's list where the layer casts nothing).
+	std::vector<gs_texrender_t *> tr_layer_cast_, tr_layer_mask_;
+	std::vector<gs_texture_t *> layer_casts_, layer_masks_; // the last frame's
+	bool last_each_ = false;
 	ShadowLook last_look_;
 	uint64_t last_frame_ = 0;
 	uint32_t last_cx_ = 0, last_cy_ = 0;
 	bool last_linear_ = false;
 	bool have_out_ = false;
 	std::atomic<int> draws_{0};
+	std::atomic<int> layers_{0}; // the layers the last frame was drawn in
 };
 
 SceneShadow::SceneShadow(obs_data_t *settings, obs_source_t *source) : source_(source), ramp_(source)
@@ -208,6 +235,13 @@ SceneShadow::SceneShadow(obs_data_t *settings, obs_source_t *source) : source_(s
 			calldata_set_int(cd, "count", static_cast<SceneShadow *>(data)->draws());
 		},
 		this);
+	// And in how many layers the last one was drawn (1 for The scene as drawn).
+	proc_handler_add(
+		obs_source_get_proc_handler(source), "void layers(out int count)",
+		[](void *data, calldata_t *cd) {
+			calldata_set_int(cd, "count", static_cast<SceneShadow *>(data)->layers());
+		},
+		this);
 	update(settings);
 }
 
@@ -219,6 +253,9 @@ SceneShadow::~SceneShadow()
 	gs_texrender_destroy(tr_cast_);
 	gs_texrender_destroy(tr_mask_);
 	gs_texrender_destroy(tr_over_);
+	for (auto *list : {&tr_layer_cast_, &tr_layer_mask_})
+		for (gs_texrender_t *tr : *list)
+			gs_texrender_destroy(tr);
 	obs_leave_graphics();
 }
 
@@ -233,6 +270,7 @@ void SceneShadow::update(obs_data_t *settings)
 	background_ = pick_list_read(settings, "background", false);
 	skip_ = pick_list_read(settings, "shadow_skip", false);
 	which_ = static_cast<Which>(std::clamp((int)obs_data_get_int(settings, "which"), 0, 1));
+	from_ = static_cast<From>(std::clamp((int)obs_data_get_int(settings, "shadow_from"), 0, 1));
 	chosen_ = pick_list_read(settings, "shadow_sources", false);
 	auto_background_ = obs_data_get_bool(settings, "auto_background");
 	settings_changed_ = true;
@@ -259,10 +297,11 @@ void SceneShadow::look_again(obs_source_t *parent)
 				return;
 			}
 			// (Filters come in the order they are applied: those before this one first.
-			// A Scene Blur moves itself after this one within half a second.)
+			// A Scene Blur, and a Scene Corners on the whole scene, move
+			// themselves after this one within half a second.)
 			const char *id = obs_source_get_unversioned_id(f);
 			if (!x->reached && x->in_the_way->empty() && obs_source_enabled(f) && !morph_draws_nothing(f) &&
-			    !(id && std::strcmp(id, kSceneBlurId) == 0))
+			    !(id && (std::strcmp(id, kSceneBlurId) == 0 || std::strcmp(id, kSceneCornersId) == 0)))
 				*x->in_the_way = obs_source_get_name(f) ? obs_source_get_name(f) : "?";
 		},
 		&find);
@@ -342,6 +381,7 @@ bool SceneShadow::now(SceneShadowNow &out)
 		return false;
 	out.look = scaled_look(look_, ramp_.level());
 	out.flags = flags_;
+	out.each = from_ == From::Each;
 	return true;
 }
 
@@ -352,11 +392,12 @@ void SceneShadow::render()
 	const uint32_t cy = target ? obs_source_get_base_height(target) : 0;
 	wanted_ns_ = os_gettime_ns();
 	ShadowLook look;
-	bool usable;
+	bool usable, each;
 	{
 		std::lock_guard lock(mutex_);
 		look = look_;
 		usable = classified_ && !blocked_ && !wide_ && !on_group_;
+		each = from_ == From::Each;
 	}
 	look = scaled_look(look, ramp_.level());
 	if (!usable || !paint_->ready() || !scenes_loaded() || !look.any() || !cx || !cy) {
@@ -426,6 +467,19 @@ void SceneShadow::render()
 			paint_->draw_item(item);
 	};
 	paint_->begin_frame();
+	if (each) {
+		const bool drawn = render_layers(items, flags_of, draw, look, cx, cy);
+		obs_source_release(find_blur.blur);
+		for (obs_sceneitem_t *item : items)
+			obs_sceneitem_release(item);
+		if (!drawn) {
+			obs_source_skip_video_filter(source_);
+			return;
+		}
+		finish(look, frame, cx, cy, linear, true);
+		return;
+	}
+	layers_ = 1;
 	bool masked_only = false;
 	if (paint_->begin_canvas(tr_cast_, cx, cy)) {
 		for (obs_sceneitem_t *item : items) {
@@ -453,26 +507,98 @@ void SceneShadow::render()
 	for (obs_sceneitem_t *item : items)
 		obs_sceneitem_release(item);
 	mask_used_ = mask != nullptr;
-	last_look_ = look;
 	if (!paint_->compose(gs_texrender_get_texture(tr_scene_), cast, mask, look, cx, cy)) {
 		obs_source_skip_video_filter(source_);
 		return;
 	}
+	finish(look, frame, cx, cy, linear, false);
+}
+
+void SceneShadow::finish(const ShadowLook &look, uint64_t frame, uint32_t cx, uint32_t cy, bool linear, bool each)
+{
 	paint_->draw_out(cx, cy);
 	draws_++;
 	have_out_ = true;
+	last_look_ = look;
+	last_each_ = each;
 	last_frame_ = frame;
 	last_cx_ = cx;
 	last_cy_ = cy;
 	last_linear_ = linear;
 }
 
+// Each source by itself: the items in layers whose shadows cannot reach one
+// another, each layer's shadow laid over the picture from the bottom up and
+// kept off that layer and every one above it.
+bool SceneShadow::render_layers(const std::vector<obs_sceneitem_t *> &items,
+				const std::function<uint8_t(obs_sceneitem_t *)> &flags_of,
+				const std::function<void(obs_sceneitem_t *)> &draw, const ShadowLook &look, uint32_t cx,
+				uint32_t cy)
+{
+	// Only the sources that are not background are in the stack: the
+	// background lies under every one of them and takes every shadow.
+	std::vector<LayerBox> boxes(items.size());
+	for (size_t i = 0; i < items.size(); i++)
+		if (flags_of(items[i]) & kShadowMasked)
+			item_drawn_box(items[i], boxes[i]);
+	const std::vector<size_t> starts = shadow_layers(boxes, shadow_reach(look), kShadowMostLayers);
+	const size_t n = starts.size();
+	layers_ = (int)n;
+	layer_casts_.assign(n, nullptr);
+	layer_masks_.assign(n, nullptr);
+	if (!n)
+		return false;
+	while (tr_layer_cast_.size() < n) {
+		tr_layer_cast_.push_back(gs_texrender_create(GS_RGBA, GS_ZS_NONE));
+		tr_layer_mask_.push_back(gs_texrender_create(GS_RGBA, GS_ZS_NONE));
+	}
+	auto end_of = [&](size_t l) {
+		return l + 1 < n ? starts[l + 1] : items.size();
+	};
+	for (size_t l = 0; l < n; l++) {
+		bool casts = false;
+		for (size_t i = starts[l]; i < end_of(l); i++)
+			casts = casts || (boxes[i].present && (flags_of(items[i]) & kShadowCasts));
+		if (!casts || !paint_->begin_canvas(tr_layer_cast_[l], cx, cy))
+			continue;
+		for (size_t i = starts[l]; i < end_of(l); i++)
+			if (boxes[i].present && (flags_of(items[i]) & kShadowCasts))
+				draw(items[i]);
+		paint_->end_canvas(tr_layer_cast_[l]);
+		layer_casts_[l] = gs_texrender_get_texture(tr_layer_cast_[l]);
+	}
+	// The masks from the top down: each is the one above it and its own
+	// layer's sources.
+	for (size_t k = n; k-- > 0;) {
+		if (!paint_->begin_canvas(tr_layer_mask_[k], cx, cy))
+			return false;
+		if (k + 1 < n)
+			paint_->copy_onto(layer_masks_[k + 1], cx, cy);
+		for (size_t i = starts[k]; i < end_of(k); i++)
+			if (boxes[i].present)
+				draw(items[i]);
+		paint_->end_canvas(tr_layer_mask_[k]);
+		layer_masks_[k] = gs_texrender_get_texture(tr_layer_mask_[k]);
+	}
+	return paint_->compose_layers(gs_texrender_get_texture(tr_scene_), layer_casts_, layer_masks_, look, cx, cy);
+}
+
 // The shadow drawn this frame, from the same shapes, over another picture of
 // the scene.
 gs_texture_t *SceneShadow::lay_over(gs_texture_t *picture, uint32_t cx, uint32_t cy)
 {
-	if (!picture || !have_out_ || last_frame_ != obs_get_video_frame_time() || cx != last_cx_ || cy != last_cy_)
+	// (Asked from inside the same drawing as the shadow's own, just after it.
+	// A drawing outside OBS's video thread can see the video frame's time
+	// move on between the two: up to two frames on is taken for the same.)
+	const uint64_t now = obs_get_video_frame_time();
+	const uint64_t two_frames = 2 * obs_get_frame_interval_ns();
+	if (!picture || !have_out_ || !obs_source_enabled(source_) || now < last_frame_ ||
+	    now - last_frame_ > two_frames || cx != last_cx_ || cy != last_cy_)
 		return nullptr;
+	if (last_each_)
+		return paint_->compose_layers(picture, layer_casts_, layer_masks_, last_look_, cx, cy, tr_over_)
+			       ? gs_texrender_get_texture(tr_over_)
+			       : nullptr;
 	gs_texture_t *cast = gs_texrender_get_texture(tr_cast_);
 	gs_texture_t *mask = mask_used_ ? gs_texrender_get_texture(tr_mask_) : nullptr;
 	if (!cast || !paint_->compose(picture, cast, mask, last_look_, cx, cy, tr_over_))
@@ -568,6 +694,11 @@ obs_properties_t *get_properties(void *data)
 			},
 			&names);
 	};
+	obs_property_t *from = obs_properties_add_list(props, "shadow_from", obs_module_text("SceneShadow.From"),
+						       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+	obs_property_list_add_int(from, obs_module_text("SceneShadow.From.Scene"), (int)From::Scene);
+	obs_property_list_add_int(from, obs_module_text("SceneShadow.From.Each"), (int)From::Each);
+	obs_property_set_long_description(from, obs_module_text("SceneShadow.From.Tip"));
 	obs_property_t *which = obs_properties_add_list(props, "which", obs_module_text("SceneShadow.Which"),
 							OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(which, obs_module_text("SceneShadow.Which.All"), (int)Which::AllSources);
@@ -625,6 +756,7 @@ void get_defaults(obs_data_t *settings)
 	obs_data_set_default_double(settings, "outline_opacity", 100.0);
 	obs_data_set_default_bool(settings, "auto_background", true);
 	obs_data_set_default_int(settings, "which", (int)Which::AllSources);
+	obs_data_set_default_int(settings, "shadow_from", (int)From::Scene);
 	obs_data_set_default_int(settings, "ramp_ms", 300);
 	obs_data_set_default_int(settings, "ramp_ease_curve", (int)EaseCurve::Cubic);
 	obs_data_set_default_int(settings, "ramp_ease_mode", (int)EaseMode::InOut);

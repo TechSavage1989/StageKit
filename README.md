@@ -1438,13 +1438,24 @@ other takes it over if that one is removed.
 Scene Corners in <scene>*. Corners & Edges never changes a source's size, so nothing in the scene moves and
 Morph still morphs the scene.
 
+<p align="center"><img src="docs/images/scene-corners.png" width="900" alt="A green scene with a red panel four ways: each source with rounded corners; the whole scene with rounded corners at the screen's edges and the panel square; the whole scene with cut corners and a white line round the screen; and half-way through a Morph to a scene without Scene Corners, the panel half-way and the screen's corners half their size"></p>
+
+- **Corners on**: *Each source* (as it comes, and what every Scene Corners saved before does) or *The whole
+  scene*. With *The whole scene* the scene's own image gets the look at the edges of the screen, as one
+  shape: rounded or cut corners, softened edges, a line round it. The sources inside are left exactly as they
+  are and get no filter; any filters Scene Corners had added are taken off a few seconds later (and come back
+  if you go back to *Each source*). Sizes are screen pixels. Scene Corners then draws, so it keeps itself after
+  a Scene Shadow and a Scene Blur in the filter list (it moves itself there within half a second), and Morph
+  still morphs the scene: the shape goes with the change, part-way between the two scenes' shapes (to a scene
+  without it, the corners shrink away).
 - **Sources covered**: *All sources*, *All but the background* (as it comes) or *Chosen sources*. *All
   sources* is every source in the scene, a group counting as one, the background too. *All but the
   background* is the same with **Full-screen = background**: sources at the bottom of the scene that cover
   90 % of the screen or more are left out. *Ignored sources* are left out of both.
 - The look (**Style**, **Size**, the four corners, **Inset**, **Softness**, the line, **Sizes in screen
   pixels**) is the Corners & Edges filter's own.
-- Switching Scene Corners off switches its filters off, and on again.
+- Switching Scene Corners off switches its filters off, and on again (with *The whole scene*, the shape goes
+  at once).
 
 A source with a Corners & Edges you made keeps it and is left alone. A filter whose source is no longer covered
 is taken off a few seconds later. If its Scene Corners is deleted, the filter keeps working as one of your own,
@@ -1457,11 +1468,20 @@ and says so.
 **Scene Shadow (StageKit)** gives every source of a scene one shadow, glow or outline, set once, instead of a
 Shadow, Glow & Outline on each source.
 
-<p align="center"><img src="docs/images/scene-shadow.png" width="900" alt="The same scene as OBS draws it, with one drop shadow under the game, the chat box and the camera, with an amber glow and a white outline round them, and half-way through a Morph to a scene without a shadow, the shadow at half strength"></p>
+<p align="center"><img src="docs/images/scene-shadow.png" width="900" alt="The same scene as OBS draws it, with one drop shadow under the game, the chat box and the camera, with an amber glow and a white outline round them, and half-way through a Morph to a scene without a shadow, the shadow at half strength; then a red source over a white one with Shadow from: The scene as drawn, where nothing falls on the white source, and with Each source by itself, where the red source's shadow falls on it; the outline round each source; and half-way through a Morph between two scenes shadowed each source by itself"></p>
 
-- The scene is drawn as OBS draws it, and the shadow is laid over it, falling on the background and never on a
-  source. **Nothing is resized or moved**: the sources keep their size, so Fit to Space, the arrange tools and
-  Morph work as they do without it.
+- The scene is drawn as OBS draws it, and the shadow is laid over it. **Nothing is resized or moved**: the
+  sources keep their size, so Fit to Space, the arrange tools and Morph work as they do without it.
+- **Shadow from**: *The scene as drawn* (as it comes, and what every Scene Shadow saved before does) or *Each
+  source by itself*.
+  - *The scene as drawn*: sources that overlap make one shape with one shadow and one outline round it, and the
+    shadow falls on the background, never on a source.
+  - *Each source by itself*: every source gets its own shadow, glow and outline, as a Shadow, Glow & Outline
+    on each source would give it. A source's shadow falls on whatever lies under it, other sources included
+    (a camera's shadow on the game under it), and the sources above it cover it. Sources side by side cost no
+    more than with *The scene as drawn*; each pile of overlapping sources is drawn in a few more passes.
+    Morph carries it too; a change between a scene shadowed one way and a scene shadowed the other way is a
+    cross-fade (the log says so).
 - **Shadow or glow** and **Outline** have the same settings as Shadow, Glow & Outline (type, colour or the
   image's own colours, opacity, offsets, softness, strength, colour boost; outline width, colour and opacity).
   Sizes are in canvas pixels.
@@ -1469,10 +1489,11 @@ Shadow, Glow & Outline on each source.
   **Full-screen = background** (on as it comes) counts the sources at the bottom of the scene that cover nine
   tenths of it as background, so the scene's picture or colour needs no listing.
 - **Sources covered**: *All sources* (as it comes: every source that is not background casts, sources added
-  later too) or *Chosen sources*: only the sources listed cast. Either way the shadow is kept off every source
-  that is not background.
-- **Ignored sources**: sources that cast nothing (the shadow is still kept off them). A source with a Shadow,
-  Glow & Outline filter of its own keeps that one and casts nothing here, so no source gets two.
+  later too) or *Chosen sources*: only the sources listed cast. With *The scene as drawn* the shadow is kept
+  off every source that is not background.
+- **Ignored sources**: sources that cast nothing (with *The scene as drawn* the shadow is still kept off them).
+  A source with a Shadow, Glow & Outline filter of its own keeps that one and casts nothing here, so no source
+  gets two.
 - A source fading in or out with its show or hide transition takes its shadow with it. A Standby stand-in has
   the shadow of the source it stands in for.
 - **Switch duration** and **Easing**: switched on or off (the eye, a hotkey, a Stream Deck filter key), the
@@ -1485,9 +1506,8 @@ Shadow, Glow & Outline on each source.
 
 What to know:
 
-- Sources that overlap make one shape: one does not shadow another. Where a shadow must fall on another source
-  (a camera over a game), keep a Shadow, Glow & Outline on that source; it casts its own and Scene Shadow leaves
-  it alone.
+- With *The scene as drawn*, sources that overlap make one shape: one does not shadow another. Where a shadow
+  must fall on another source (a camera over a game), choose *Each source by itself*.
 - At a see-through edge of a source the background under it is darkened very slightly differently from a
   shadow drawn under that source alone. A crop to the item's bounding box is not followed by the shape (as in
   Morph).

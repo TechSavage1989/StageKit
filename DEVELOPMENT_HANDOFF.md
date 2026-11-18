@@ -9,9 +9,41 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | `feat/switch-is-command` (Show in Scenes is a command, not a hold, betaNEXT), on `main` after beta169 (#185). Next: the new collection |
+| Working branch | `feat/scene-shadow-corners` (Scene Shadow from each source, Scene Corners on the whole scene, betaNEXT), on `main` after beta168 (#184). Next: the new collection |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
+
+## Scene Shadow from each source, Scene Corners on the whole scene (0.1.0-betaNEXT)
+
+Branch `feat/scene-shadow-corners`, on `main` after beta168 (#184). Notes: `docs/releases/0.1.0-betaNEXT.md`.
+No Stream Deck file changed. Proposed to the owner, who answered "yes to both": Scene Shadow drawing
+each source's shadow by itself, falling onto what lies under it and covered by what lies above, as
+separate Shadow, Glow & Outline filters would; and Scene Corners giving the scene's own image the
+Corners & Edges look at the canvas edges, as one shape.
+
+- **Scene Shadow's *Shadow from*** (`shadow_from`: 0 *The scene as drawn*, as before and the
+  default; 1 *Each source by itself*). Drawn in layers of sources whose shadows cannot reach one
+  another (`shadow_layers`, `LookPaint::compose_layers`): one layer while nothing overlaps, so the
+  same cost as before; a layer more per overlap. Tested against two per-source Shadow, Glow &
+  Outline filters: at most 1 level off, 0.036 on average. Scene Blur's *Each source by itself*
+  still draws the shadow over its redraw (`lay_over` chains the layers). Morph carries it
+  (`draw_layers`); a change between the two modes is a cross-fade, logged.
+- **Scene Corners' *Corners on*** (`corners_area`: 0 *Each source*, as before and the default; 1
+  *The whole scene*). In 1 the scene filter draws (`CornersPaint`, now shared with Corners & Edges),
+  once a frame, keeps itself after Scene Shadow and Scene Blur, and adds no per-source filter (its
+  own go after the grace). Morph accepts it and cuts the change to the two scenes' shapes part-way
+  (`draw_rounded`, `lerp_corner_shape`).
+- Fixed on the way: Scene Corners' window had no *Which corners* tick boxes (Corners & Edges'
+  group was named `which`, as Scene Corners' list is; OBS refused it). It is `corners_which` now;
+  found by valgrind (a leaked property group).
+- Tests: `[scene shadow: each source by itself]` (`STAGEKIT_TEST_ONLY_SHADOW_EACH`) and `[scene
+  corners: the whole scene]` (`STAGEKIT_TEST_ONLY_CORNERS_WHOLE`); contact sheets
+  `docs/images/scene-shadow.png` (frames 5 to 8 new) and `docs/images/scene-corners.png` (new).
+  AGENTS, *Scene Shadow's Shadow from* and *Scene Corners' Corners on*.
+- Not proven: Direct3D (the scene-shadow effect gained one uniform, `image_straight`); a Morph
+  between two scenes that overlap in layers on Windows; Scene Blur's own log line when a Scene
+  Corners on the whole scene sits before it for the half second before it moves (scene-blur.cpp
+  was not touched).
 
 ## Make Room, a transition and a way for unpaired sources (0.1.0-beta175)
 

@@ -1979,7 +1979,8 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   and glides, for the tests.
 <!-- ==== end scene-filters:fit ==== -->
 <!-- ==== scene-filters:standby-corners ==== -->
-- **Scene Standby and Scene Corners keep a filter on each source; neither draws**
+- **Scene Standby and Scene Corners keep a filter on each source; neither draws** (Scene Corners
+  except with *Corners on: The whole scene*, below)
   (`src/placement/scene-standby.*`, `src/placement/scene-corners.*`, both through
   `src/common/managed-filter.*`, `ManagedSet`). Each adds a `stagekit_standby` or `stagekit_corners`
   to each source it covers, with `managed` and `managed_by` (the scene's name) in its settings, and
@@ -2011,6 +2012,30 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   from the bottom while each covers 90 % of the canvas, with *All but the background* only (*All
   sources* covers the background too). Corners & Edges' look controls and defaults are
   shared (`corners_add_look_properties`, `corners_look_defaults`), so the keys are the same.
+- **Scene Corners' *Corners on*** (`corners_area`, by number, append-only: 0 *Each source*, as it
+  comes and as every filter saved before reads; 1 *The whole scene*; 2026-11-17). Proposed to the
+  owner with Scene Shadow's *Shadow from* ("a whole-scene option ... the scene's picture itself gets
+  Corners & Edges' look at the canvas edges, as one shape"); the owner: "yes to both". With 1 the
+  scene filter **draws**: the scene (`draw_filter_input`) cut by `CornersPaint` (moved out of
+  `src/shape/corners.cpp`, which Corners & Edges now draws with too; `CornerShape`,
+  `read_corner_shape`) over the whole canvas, sizes in canvas pixels (`screen_px` hidden), once a
+  frame (`last_frame_`, as Scene Shadow). It publishes no source, so the managed filters go by the
+  usual grace and come back on 0. It keeps itself after every Scene Shadow and Scene Blur
+  (`keep_last`, twice a second once `scenes_loaded()`, logged), so the shape is cut last; Scene
+  Shadow passes over a Scene Corners before it, as it does a Scene Blur; Scene Blur (its file not
+  touched here) may say once in the log that a filter draws before it, for the half second until
+  it moves. `draws_nothing` in Morph asks `scene_corners_draws` for Scene Corners (no longer by id
+  alone), and `morph_accept_drawing_filter(scene_corners_draws)`: **Morph carries the shape**
+  (`scene_corners_now`, `Morph::draw_rounded`): the change (morph, shadow and all) is drawn into a
+  canvas picture and cut to `lerp_corner_shape` of the two scenes' shapes (a scene without one is
+  the other's at no size; the style changes half-way). Tested in `[scene corners: the whole scene]`
+  (`scene_corners_whole_test`, alone with `STAGEKIT_TEST_ONLY_CORNERS_WHOLE`; contact sheet
+  `docs/images/scene-corners.png` from `$out/scene-corners`): corners cut, edges and inside
+  untouched (0 off), filters off after the grace and back, outline, morphed half-way with corners
+  at half size, moved after a Scene Shadow and both drawing. Only OpenGL.
+  Corners & Edges' *Which corners* group is named `corners_which` (it was `which`, which Scene
+  Corners' list of sources already had: OBS refused the group, leaked it, and Scene Corners' window
+  had no corner tick boxes until then). A plain group holds no setting, so nothing saved changes.
 <!-- ==== end scene-filters:standby-corners ==== -->
 <!-- ==== scene-filters:shadow ==== -->
 - **Scene Shadow** (`src/look/scene-shadow.*`, `src/look/look-paint.*`,
@@ -2053,6 +2078,36 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   opacity 0). A scene with no Scene Shadow gets the flags one would give it as it comes
   (`scene_shadow_default_flags`, worked out with the plan), so the shadow fades over its
   background. The item Morph needs nothing: its layer item casts.
+- **Scene Shadow's *Shadow from*** (`shadow_from`, by number, append-only: 0 *The scene as drawn*,
+  as it comes and as every filter saved before reads; 1 *Each source by itself*; 2026-11-17). Put to
+  the owner with Scene Corners' *Corners on* ("every casting source gets its own shadow ... falls
+  onto whatever lies under that source, other sources included, and is covered by the sources
+  above it, the way separate per-source Shadow, Glow & Outline filters would look"); the owner:
+  "yes to both". Drawn in **layers**, not a pass per item: `shadow_layers` (in `look-paint.*`)
+  cuts the stacked items (not background, drawn: `item_drawn_box`, from the draw transform on the
+  drawing thread, never `item_box`) bottom first into runs whose boxes grown by `shadow_reach`
+  (offset, twice the softness, the line) do not meet; a run is one layer, at most
+  `kShadowMostLayers` (12, the last takes the rest). Per layer a cast (its casting items) and a
+  mask (its items and every layer above, made top-down by `copy_onto` the mask above);
+  `LookPaint::compose_layers` lays layer by layer from the bottom over the picture so far
+  (`between_` ping-pong; the effect's `image_straight` says the input is compose's own straight
+  alpha). Exact for opaque sources: a pixel takes the shadows of the layers above its topmost
+  source. Sources apart are one layer, the same cost and picture as mode 0 (tested 0 off). Once a
+  frame as before; `lay_over` (Scene Blur's *Each source by itself*) chains the same layers over
+  its redraw, and each layer draws Scene Blur's blurred pictures as before. `lay_over` now takes
+  a shadow up to two frames old and only from an enabled filter: a drawing from outside OBS's
+  video thread (the tests' `render`) could see the frame's time move on between the shadow's
+  drawing and Scene Blur's, and lost the shadow on the blurred source (seen once in a full run). The `layers` proc
+  gives the last frame's count. **Morph** (`draw_layers`): when either side is *Each*, the parts
+  are layered the same way by the union of their quads in both scenes plus 5 % of the canvas for
+  an overshooting curve, `in_layer` (parts `layer_lo_`..`layer_hi_`) limits the Cast and Mask
+  passes (`weight`, `draw_side`), and `compose_layers` composes. Both sides shadowed and drawing,
+  with different *Shadow from*: a cross-fade (`mix_cb`), logged once per scene (either way all
+  along would jump at one end). Tested in `[scene shadow: each source by itself]`
+  (`scene_shadow_each_test`, alone with `STAGEKIT_TEST_ONLY_SHADOW_EACH`; frames 5 to 8 of
+  `docs/images/scene-shadow.png`): against two per-source Shadow, Glow & Outline filters at most
+  1 level off (0.036 mean), 2 layers and 1 apart, outlines, with Scene Blur on the lower source,
+  morphed half-way with the shadow falling, the mixed cross-fade. Only OpenGL.
 <!-- ==== end scene-filters:shadow ==== -->
 <!-- ==== scene-filters:blur ==== -->
 - **Scene Blur** (`stagekit_scene_blur`, `src/look/scene-blur.*`; the shared blur in

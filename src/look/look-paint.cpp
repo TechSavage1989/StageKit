@@ -13,6 +13,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <obs-module.h>
 #include <graphics/matrix4.h>
 #include <graphics/vec2.h>
+#include <graphics/vec3.h>
 #include <graphics/vec4.h>
 #include <plugin-support.h>
 
@@ -166,6 +167,7 @@ LookPaint::LookPaint()
 		p_boost_ = gs_effect_get_param_by_name(effect_, "shadow_boost");
 		p_outline_width_ = gs_effect_get_param_by_name(effect_, "outline_width");
 		p_outline_color_ = gs_effect_get_param_by_name(effect_, "outline_color");
+		p_straight_ = gs_effect_get_param_by_name(effect_, "image_straight");
 	}
 	blur_ = std::make_unique<KawaseBlur>();
 	out_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
@@ -179,6 +181,8 @@ LookPaint::~LookPaint()
 	blur_.reset();
 	gs_effect_destroy(effect_);
 	gs_texrender_destroy(out_);
+	for (gs_texrender_t *tr : between_)
+		gs_texrender_destroy(tr);
 	for (gs_texrender_t *tr : spares_)
 		gs_texrender_destroy(tr);
 	obs_leave_graphics();
@@ -234,6 +238,63 @@ void draw_source(const ItemDraw &d)
 }
 
 } // namespace
+
+bool item_drawn_box(obs_sceneitem_t *item, LayerBox &out)
+{
+	out = LayerBox();
+	ItemDraw d;
+	if (!item_draw(item, d))
+		return false;
+	matrix4 m;
+	obs_sceneitem_get_draw_transform(item, &m);
+	double x0 = 1e18, y0 = 1e18, x1 = -1e18, y1 = -1e18;
+	for (int i = 0; i < 4; i++) {
+		vec3 corner, at;
+		vec3_set(&corner, (i & 1) ? (float)d.cw : 0.0f, (i & 2) ? (float)d.ch : 0.0f, 0.0f);
+		vec3_transform(&at, &corner, &m);
+		x0 = std::min(x0, (double)at.x);
+		y0 = std::min(y0, (double)at.y);
+		x1 = std::max(x1, (double)at.x);
+		y1 = std::max(y1, (double)at.y);
+	}
+	out.present = true;
+	out.x0 = x0;
+	out.y0 = y0;
+	out.x1 = x1;
+	out.y1 = y1;
+	return true;
+}
+
+double shadow_reach(const ShadowLook &look)
+{
+	double reach = 2.0;
+	if (look.shadow)
+		reach += std::max(std::abs(look.offset_x), std::abs(look.offset_y)) + 2.0 * look.softness;
+	if (look.outline)
+		reach = std::max(reach, look.outline_width + 2.0);
+	return reach;
+}
+
+std::vector<size_t> shadow_layers(const std::vector<LayerBox> &boxes, double reach, size_t most)
+{
+	std::vector<size_t> starts;
+	std::vector<const LayerBox *> run; // the present boxes of the run being made
+	for (size_t i = 0; i < boxes.size(); i++) {
+		const LayerBox &b = boxes[i];
+		if (!b.present)
+			continue;
+		bool meets = false;
+		for (const LayerBox *o : run)
+			meets = meets || (b.x0 - reach < o->x1 + reach && o->x0 - reach < b.x1 + reach &&
+					  b.y0 - reach < o->y1 + reach && o->y0 - reach < b.y1 + reach);
+		if (starts.empty() || (meets && starts.size() < std::max<size_t>(most, 1))) {
+			starts.push_back(starts.empty() ? 0 : i);
+			run.clear();
+		}
+		run.push_back(&b);
+	}
+	return starts;
+}
 
 gs_texture_t *LookPaint::picture_of(const ItemDraw &d)
 {
@@ -350,7 +411,7 @@ void LookPaint::copy_onto(gs_texture_t *texture, uint32_t cx, uint32_t cy)
 }
 
 bool LookPaint::compose(gs_texture_t *scene, gs_texture_t *cast, gs_texture_t *mask, const ShadowLook &look,
-			uint32_t cx, uint32_t cy, gs_texrender_t *into)
+			uint32_t cx, uint32_t cy, gs_texrender_t *into, bool scene_straight)
 {
 	gs_texrender_t *out = into ? into : out_;
 	if (!effect_ || !scene || !cast || !cx || !cy)
@@ -390,6 +451,7 @@ bool LookPaint::compose(gs_texture_t *scene, gs_texture_t *cast, gs_texture_t *m
 		gs_effect_set_float(p_boost_, (float)look.boost);
 		gs_effect_set_float(p_outline_width_, (float)look.outline_width);
 		gs_effect_set_vec4(p_outline_color_, &line);
+		gs_effect_set_float(p_straight_, scene_straight ? 1.0f : 0.0f);
 		const bool ring = look.outline && look.outline_width >= 0.5 && look.outline_opacity > 0.001;
 		while (gs_effect_loop(effect_, ring ? "Ring" : "MaskedShadow"))
 			gs_draw_sprite(scene, 0, cx, cy);
@@ -399,6 +461,37 @@ bool LookPaint::compose(gs_texture_t *scene, gs_texture_t *cast, gs_texture_t *m
 	}
 	gs_enable_framebuffer_srgb(previous_srgb);
 	return drawn;
+}
+
+bool LookPaint::compose_layers(gs_texture_t *scene, const std::vector<gs_texture_t *> &casts,
+			       const std::vector<gs_texture_t *> &masks, const ShadowLook &look, uint32_t cx,
+			       uint32_t cy, gs_texrender_t *into)
+{
+	size_t last = casts.size();
+	for (size_t i = 0; i < casts.size(); i++)
+		if (casts[i] && i < masks.size() && masks[i])
+			last = i;
+	if (!scene || last == casts.size())
+		return false;
+	gs_texture_t *under = scene;
+	bool straight = false;
+	int turn = 0;
+	for (size_t i = 0; i <= last; i++) {
+		if (!casts[i] || i >= masks.size() || !masks[i])
+			continue;
+		gs_texrender_t *to = into ? into : out_;
+		if (i != last) {
+			if (!between_[turn])
+				between_[turn] = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
+			to = between_[turn];
+			turn ^= 1;
+		}
+		if (!compose(under, casts[i], masks[i], look, cx, cy, to, straight))
+			return false;
+		under = gs_texrender_get_texture(to);
+		straight = true;
+	}
+	return true;
 }
 
 void LookPaint::draw_out(uint32_t cx, uint32_t cy)
