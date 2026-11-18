@@ -1661,7 +1661,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   like the bloom effect from my old scene collection".
 - **Ambient Background's Darkest level** (`darkest_level`, 0 to 100 %, 0 as it comes: off, and
   no pass is drawn; `darkest_fill`, by number, append-only: 0 *The background image*, 1 *A
-  colour*; `darkest_color`, a mid grey, shown only for a colour; betaNEXT). The owner: "is there
+  colour*; `darkest_color`, a mid grey, shown only for a colour; beta192). The owner: "is there
   a way I can prevent the background from ever becoming completely black, even when the ambient
   background is capturing a live feed that has completely black content?", then "add darkest
   level as a configurable option". The last pass (`Lift` in `stagekit-looks.effect`, full size,
