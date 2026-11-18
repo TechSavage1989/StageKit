@@ -412,21 +412,28 @@ nearest.
   and the screen's edge or a fixed item on the other, sits against the fixed side; the resized item
   takes the rest. When the resized item is above or below it and could not use more height (a
   camera held by the column's width), the two are packed together towards the top instead, so the
-  item keeps the gap from the image you see, not from the empty part of the camera's box. Side by
+  item keeps the gap from the image you see, not from the empty part of the camera's box.
+  Where another resized source is above, below or beside a resized one, the resized one's box is
+  just its image (a source that keeps its size there changes nothing: a capture keeps its whole
+  space beside a camera and chat column), so several resized sources share a column (two handheld windows and a camera,
+  say) without one box taking the room the others' images need. Side by
   side this does not happen: a 4:3 game beside a chat column stays as described above. That needs *Align in the space* set to the middle on both; the same goes for a
   Scene Fit's sources.
 - **Space priority** (in the free space) says which source gets the room when two want it:
   - *Takes space first*: the source takes the space it would have if the sources that share space
-    or make room were not there, and never moves or shrinks for them; they fit around it. Use it for
-    the main capture, so the camera and chat box fit beside it.
+    or make room were not there, and never shrinks for them; they fit around it. It never covers
+    a source that keeps its size (*Resize to fit* unticked): it stops the gap short of that size
+    at the place the source is kept round. Use it for the main capture, so the camera and chat box
+    fit beside it.
   - *Shares space* (as it comes, and what every filter made before this setting does): the sources
     make room for each other, as above.
   - *Makes room*: the source always fits around every source that shares space or takes space
     first.
 
-  Two sources with the same setting share. A source set to take space first may cover the place a
-  lower one was kept round; that one then fits beside it, and goes back to its place when the first
-  is hidden.
+  Two sources with the same setting share. Priority decides who gives way, never that one covers
+  another; only *Overlap only when it fills* lets sources overlap. A resized source you put down inside the
+  space of one that takes space first fits beside it, and goes back to its place when the first is
+  hidden.
 - **Priority by list order** (unticked as it comes): ticked, *Space priority* is greyed out and not
   used. Among the fitted sources of the scene that have it ticked, the one whose filter is higher in
   the scene's filter list takes its space first, and the ones below fit around it. Move a filter up
@@ -437,8 +444,10 @@ nearest.
 - **Resize to fit** (ticked as it comes). Unticked, the item keeps the size it has and is only
   moved, to the middle of its space, so the room left over is the same on both sides and above and
   below; when the space changes (a camera above it is hidden, say) it moves to the new middle.
-  If the filter had already resized the item (a new filter starts ticked), unticking gives it back
-  the size it had before. Resize it yourself in the preview and that is the size it keeps. This works for the whole screen
+  Unticking gives the item back the size it last kept: the one you gave it in the preview, or, if it
+  never kept one (a new filter starts ticked), the size it had before the filter. Resize it
+  yourself in the preview and that is the size it keeps, once you let go and it has stayed that
+  size for a moment (the dock's snap and resize glide are taken as one resize). This works for the whole screen
   and a box as well as the free space.
 - **Align in the space** (*The middle* as it comes): where the item lies in its space when it does not
   fill it, which is an image of another shape than the space, or an item that keeps its size. A
@@ -1467,8 +1476,8 @@ Fit per group to the scene, each on *Same for all sources* with its own *Fitted 
 2. A second Scene Fit named *Camera and chat* listing the camera and the chat box, *Same for all sources*,
    *Resize to fit* unticked if they keep their size, *Space priority* *Makes room*.
 
-The captures then take their space as if the camera and chat box were not there and never move for them; the
-camera and chat box fit round the captures. Within one group the sources share space with each other. With
+The captures then take their space as if the camera and chat box were not there and never shrink for them; the
+camera and chat box fit round the captures, and the captures never cover one that keeps its size. Within one group the sources share space with each other. With
 *Priority by list order* ticked on both, the Scene Fit higher in the scene's filter list goes first instead.
 List each source in one group only.
 

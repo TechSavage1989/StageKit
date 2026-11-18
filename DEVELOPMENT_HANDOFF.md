@@ -9,7 +9,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | `fix/scene-fit-visible-pixels` (the gap from a letterboxed source, betaNEXT), on `main` after beta191. Next: the new collection |
+| Working branch | `fix/scene-fit-visible-pixels` (the gap from a letterboxed source; Scene Fit round 2: column sharing, hand sizes, priority without overlap; betaNEXT), on `main` after beta191. Next: the new collection |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
@@ -50,6 +50,59 @@ each edge". With Scene Fit off the dock's tools placed it right.
 - **Left as it is:** with both resized, a picture that does not fill its space sideways still sits
   in the middle of it (the camera 40 px from the right edge with a gap of 20); that is *Align in
   the space*, and no one else's gap depends on it.
+
+**Round 2 (same branch, second commit): the owner's five open Scene Fit problems in
+Component-Capture-Scene** (2026-11-18, from their collection and three logs; kept outside the
+repository). All reproduced in `fit_owner_test` (`STAGEKIT_TEST_ONLY_FIT_OWNER`, also in the full
+run's fit block): a quarter-scale stand-in (640x360, gap 7.5 for their 30), their entries'
+resize, alignment, tolerance, anchors, kept and original sizes, the GBA items starting in their
+saved slivers, modes switched as cuts.
+
+- **G1, a resized letterboxed camera's box took the column** (cause: the goal was the roomiest
+  of the near-equal spaces, `free_space_round`, and the box was the goal; the claim was always
+  the picture). Fix: `trim_to_picture` cuts the goal to the picture along an axis it does not
+  fill when the claim of another fit that resizes its item lies beyond it on that axis (a
+  kept-size item there does not count: against the camera and chat column a layout scene's 4:3
+  capture lost 53 px of the capture's space, five layout-scene checks in both orders; the
+  section runs alone with `STAGEKIT_TEST_ONLY_LAYOUT`). Camera box 120.0 high for an 88 px
+  picture (27 % empty) before; 88.4 after. The owner's sliver state was not reproduced (it
+  recovered within a tick here); a source with no image yet holds its saved bounding box
+  (`holds_room`), which is now the picture rather than the whole space, which may have been it.
+  Review fix: the cut box is used only while the picture keeps the shape it was cut for; another
+  shape is given the uncut space at once (`reshaping`), or a capture changing shape beside the
+  column was squeezed into the old box for 0.5 s and a glide. Tested: 120 px high four frames
+  after turning taller, 88 without the fix.
+- **G2, unticking Resize to fit went back to `orig_k`** (cause: `back_to_original_` read only
+  `orig_k`). Fix: the saved `keep_k` first, `orig_k` only if none. 0.4765 set by hand came back as
+  0.4899; now 0.4765. Review fix: the saved size is read at every update, so a rename of the
+  source in between (Fit to Space rewrites `keep_item`) keeps it.
+- **G3, Takes space first covered the camera and chat** (cause: `FitScan::obstacles` skipped an
+  outranked claim, and a kept-size item cannot shrink to make room). Fix: an outranked kept-size
+  claim is in the way by `Claim::least` (its kept size round its home), independent of how it
+  reacts, so the dependence stays one-way; a resizing one is still not in the way (it shrinks).
+  Tried and removed: a resizing lower's home as a point (two higher fits sharing a column then
+  crept, `[scene fit groups]` cases 3 and 4), and passing over a home inside the higher's claim
+  (hysteresis). Game over camera 576 px², over chat 1278 px² before; 0 and 0 after, in both modes,
+  0 moves in 5 s.
+- **G4, "did not settle in 4 passes"** (causes: goals chasing space edges, fixed by G1; and the
+  camera, between two windows, listed before one of them, waited a pass for it each time). Fix:
+  passes alternate direction, `kPasses` 8. From the slivers: the log line on entering GBA mode
+  before; settles at the sixth pass after, no line anywhere in the section, 1 glide per change of
+  mode, 0 moves at rest in every scenario.
+- **G5, a hand resize read every frame** (cause: the detection compared the bounds with the last
+  ones set on every tick, waiting only for the source's size). Fix: `hand_on_`, counted once the
+  box has kept still 0.3 s, item left alone meanwhile, followed to the end if deselected. A 36-frame
+  drag and the dock's 27-frame glide: 53 reads before, 1 after; the dock's final size is kept.
+  Review fix: a change of the source's size during the 0.3 s starts the wait again, so the size
+  is never read off a source still settling (a shadow's room catching up).
+- **Changed behaviour, documented:** a *Takes space first* fit now stops short of a lower fit
+  that keeps its size and moves when such an item is hidden or shown (its home comes and goes).
+  No existing test expectation changed. On the owner's 2560 canvas a 16:9 game on *Takes space
+  first* in GBA mode still leaves the resized column a sliver (they make room, nothing overlaps):
+  that is what the setting means for sources that resize.
+- **Tests run here:** `STAGEKIT_TEST_ONLY_FIT_OWNER` 15 pass, `FIT_VISIBLE` 16, `FIT_PRIORITY`
+  41, `FIT_GROUPS` 15, `MAKE_ROOM` 15, no existing expectation changed. The full run was not run (machine limits): run
+  `tests/run-tests.sh` before merging. Not seen on Windows.
 
 ## Auto Capture picks a game up within seconds while it rests (0.1.0-beta191)
 

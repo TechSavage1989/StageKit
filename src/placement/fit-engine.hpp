@@ -113,6 +113,14 @@ struct Claim {
 	// for more height (see `lean_axes`). `leans_x` is never set: side by
 	// side, placing is as it was.
 	bool leans_x = false, leans_y = false;
+	// What it holds whatever the fits it makes room for do (`has_least`):
+	// for one keeping its size, that size at its home (its anchor), on the
+	// screen (one that resizes holds nothing: it shrinks to make room). A
+	// fit that takes its space before this one goes by that, never by
+	// `box`: `box` follows that fit's own claim, `least` does not, so the
+	// dependence stays one-way (see FitScan::obstacles).
+	Box least;
+	bool has_least = false;
 	Rank rank;
 };
 void claim_set(obs_source_t *scene, int64_t item, const void *owner, const Claim &claim);
@@ -179,8 +187,9 @@ public:
 	// The things in the way of `self`, from what was gathered: items another
 	// fit (not `asking`) places by where it is taking them, the rest by what
 	// shows of them. Items in `skip` are left out, or marked when `keep_skipped`.
-	// With `mine`: an item placed by a fit `mine` outranks is not in the way
-	// at all, and one placed by a fit that outranks `mine` is firm.
+	// With `mine`: an item placed by a fit `mine` outranks is in the way
+	// only by what that fit holds whatever happens (`Claim::least`, for one
+	// keeping its size), not by where it is going, and one placed by a fit that outranks `mine` is firm.
 	void obstacles(obs_source_t *scene, obs_sceneitem_t *self, const std::vector<std::string> &skip,
 		       bool keep_skipped, const void *asking, const Measure &how, std::vector<Obstacle> &out,
 		       const std::vector<int64_t> *twins_of = nullptr, const Rank *mine = nullptr);
@@ -318,6 +327,13 @@ private:
 	// a kept-size fit above or below it that leans: the space is cut down
 	// to the picture, at the top.
 	void trim_for_kept(const Prep &p, Box &goal) const;
+	// A resized picture that leaves its space empty along one axis, with
+	// another fit's item beyond it along that axis: the space is cut to the
+	// picture where it lies in it, so the item's box is what shows.
+	void trim_to_picture(const Prep &p, Box &goal) const;
+	// The picture is of another shape than its space was cut for: OBS is
+	// given the space before the cut, so the picture is fitted at once.
+	bool reshaping(const Prep &p) const;
 	// Says where the item will be, with where this fit stands.
 	void say(int64_t item, Claim claim);
 	Box kept_in(const Prep &p, const Box &room, double kw, double kh) const;
@@ -362,7 +378,15 @@ private:
 	double shape_seen_ = 0.0, shape_used_ = 0.0, shape_for_ = 0.0;
 	double used_margin_ = -1.0, used_tolerance_ = -1.0;
 	double set_bw_ = 0.0, set_bh_ = 0.0; // the bounding box last given to the item
-	double keep_k_ = 0.0;                // "Resize it to fit" off: how large the picture is kept, as a scale
+	// A resize by hand under way: the box it has, and how long it has kept
+	// it. It counts once the box has stopped changing (`kHandStill`).
+	static constexpr double kHandStill = 0.3;
+	bool hand_on_ = false;
+	double hand_bw_ = 0.0, hand_bh_ = 0.0, hand_still_ = 0.0;
+	// Whether more width or height would grow the resized picture, from the
+	// space it was given before that was cut to the picture.
+	bool space_grows_x_ = true, space_grows_y_ = true;
+	double keep_k_ = 0.0; // "Resize it to fit" off: how large the picture is kept, as a scale
 	// What shows of the fitted item itself: the part of its picture cut off
 	// on the left, top, right and bottom, when it was last looked at.
 	double own_cut_[4] = {0.0, 0.0, 0.0, 0.0};
@@ -383,6 +407,10 @@ private:
 	// The item's source has kept its size this long.
 	double steady_sw_ = 0.0, steady_sh_ = 0.0, steady_for_ = 0.0;
 	Box goal_, from_, cur_;
+	// The space before `trim_to_picture` cut it, glided with the goal, and
+	// whether it was what OBS was given last (the picture of another shape).
+	Box room_goal_, room_from_, room_cur_;
+	bool handed_room_ = false;
 	bool have_goal_ = false, have_cur_ = false;
 	double glide_ = 1.0;
 	// A glide that goes with a window switcher's change of window: its time

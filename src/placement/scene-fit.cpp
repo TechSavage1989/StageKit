@@ -61,8 +61,8 @@ using namespace fit;
 
 namespace {
 
-constexpr int kPasses = 4;              // the most times the entries are worked out in one tick
-constexpr uint32_t kIdleEvery = 15;     // off screen, a full tick four times a second
+constexpr int kPasses = 8;          // the most times the entries are worked out in one tick (each way round in turn)
+constexpr uint32_t kIdleEvery = 15; // off screen, a full tick four times a second
 constexpr double kLookForSources = 0.5; // with All sources, how often the scene's sources are counted
 constexpr double kFillsScreen = 0.9;    // a source this much of the screen is never fitted unasked
 
@@ -670,7 +670,15 @@ void SceneFit::tick(float seconds)
 		int pass = 0;
 		for (; pass < kPasses && moved; pass++) {
 			moved = false;
-			for (size_t i = 0; i < n; i++) {
+			// Down the list, then back up it, and so on: an entry whose
+			// space ends at one listed after it (a camera between two
+			// handheld windows) waited a pass for that one's new place,
+			// and a column of three needed more passes than there are,
+			// "its sources did not settle in 4 passes" in the owner's
+			// logs (2026-11-18). Each way round, what an entry goes by on
+			// either side was worked out just before it.
+			for (size_t k = 0; k < n; k++) {
+				const size_t i = pass % 2 == 0 ? k : n - 1 - k;
 				if (way[i] != Way::Solve)
 					continue;
 				FitEngine &engine = *entries[i]->engine;
