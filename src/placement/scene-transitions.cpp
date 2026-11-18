@@ -66,7 +66,11 @@ enum class Cover : int {
 
 constexpr uint64_t kAfterChangeNs = 100'000'000; // a change is over its length plus this
 constexpr uint64_t kAtRestNs = 250'000'000;      // a nearest-edge source still for this long
-constexpr float kGroupsEvery = 2.0f;             // with "Sources in groups": groups found again
+// A source just added, or a scene just met, is looked at only after this:
+// OBS adds a scene's items first and sets each item's saved transitions after,
+// so acting at once could write a transition that was about to be loaded.
+constexpr uint64_t kAddedNs = 100'000'000;
+constexpr float kGroupsEvery = 2.0f; // with "Sources in groups": groups found again
 
 // What the settings say, read once in update and swapped whole.
 struct Look {
@@ -197,6 +201,7 @@ public:
 		if (parent != connected_) {
 			attach(parent);
 			all_due_ = true;
+			settle_until_ = os_gettime_ns() + kAddedNs;
 		}
 		const std::shared_ptr<const Look> look = this->look();
 		if (look->in_groups) {
@@ -245,7 +250,7 @@ public:
 		for (obs_source_t *group : groups)
 			holders[reinterpret_cast<uintptr_t>(group)] = group;
 
-		if (all_due_.exchange(false))
+		if (now >= settle_until_ && all_due_.exchange(false))
 			full_pass(parent, *look, waiting);
 		const std::set<std::string> animated = this->animated();
 		for (const Key &key : ready) {
@@ -489,7 +494,7 @@ private:
 		std::lock_guard alive(g_mutex);
 		if (!live(data))
 			return;
-		static_cast<SceneTransitions *>(data)->due_at(item_of(cd), 0, false);
+		static_cast<SceneTransitions *>(data)->due_at(item_of(cd), os_gettime_ns() + kAddedNs, false);
 	}
 
 	static void on_item_remove(void *data, calldata_t *cd)
@@ -557,6 +562,7 @@ private:
 	float phase_ = 0.0f;
 
 	std::atomic<bool> all_due_{true};
+	uint64_t settle_until_ = 0; // no full pass before this (a scene just met), tick thread only
 	std::atomic<bool> any_due_{false};
 	std::mutex due_mutex_;
 	std::map<Key, uint64_t> due_; // item -> when to look at it

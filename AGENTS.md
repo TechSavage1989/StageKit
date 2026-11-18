@@ -1813,7 +1813,10 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   `item_visible`, a nearest-edge item still for 0.25 s after `item_transform`), only once
   `scenes_loaded()`, and only where `item_change_matches` says the item differs: a collection
   loaded again writes nothing (a test saves and loads a scene and counts writes through the
-  `stagekit_scene_transitions_writes` proc). It passes over owned items
+  `stagekit_scene_transitions_writes` proc). A source just added, and a scene just met, are looked
+  at only `kAddedNs` (0.1 s) later (beta: the next after 169): OBS adds a scene's items and sets each
+  item's saved transitions after, so acting at once now and then wrote one it was about to load (the
+  test *a scene loaded again ... is written nothing* failed about one run in five). It passes over owned items
   (`item_transitions_owned`), private sources (stand-ins, the item Morph's layer), *Ignored
   sources* (`except`; *Leave these alone* before), items an enabled Show/Hide Animation names and, unless `in_groups`, items in groups.
   Items are known by id in their scene or group (`Key`), never held. The first enabled one in a
