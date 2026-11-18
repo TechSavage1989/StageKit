@@ -183,7 +183,7 @@ Add **Ambient Background (StageKit)** as a source. It fills the canvas.
 | --- | --- |
 | Image | The standby image, an image file, or any existing source or scene. Optionally blend in a live capture: a chosen source, or *Automatic*, which uses the largest visible capture in the current scene. The capture can fill the screen, fit inside it, match its width or height, or stretch, with its own zoom. *Live capture replaces the image* makes the capture the whole background while there is one; the moment there is none, the usual image is back. A capture with an Auto Frame is used as the trimmed game image, without the empty frame around it. A capture showing nothing, or black all over for two seconds, counts as no capture. *Keep the capture ready* keeps it running in scenes that do not show it, so it is there at once in the next scene that does |
 | Motion | Drift speed in each direction, zoom, and mirroring at the edges so the drift never shows a seam |
-| Look | Blur type (Dual Kawase, Gaussian, Box, or Temporal, which blurs over time and leaves trails) and blur; a mosaic in the Blur filter's seven cell shapes, with the same smoothing, origin and rotation; saturation; glow; **Bloom**, where the bright parts of the image shine over what is around them (how strongly, from what brightness, and how far the light spreads); brightness; vignette |
+| Look | Blur type (Dual Kawase, Gaussian, Box, or Temporal, which blurs over time and leaves trails) and blur; a mosaic in the Blur filter's seven cell shapes, with the same smoothing, origin and rotation; saturation; glow; **Bloom**, where the bright parts of the image shine over what is around them (how strongly, from what brightness, and how far the light spreads); brightness; vignette; **Darkest level** (below) |
 | Texture overlay | An image multiplied or screened over the result, optionally in black and white |
 
 Two more things about the capture blended in and the bloom:
@@ -198,6 +198,16 @@ Two more things about the capture blended in and the bloom:
   everything and lets colours run into white: the look of obs-shaderfilter's bloom shader, with
   100 % its strength of 1). Bloom now goes to 1000 %. The light always spreads at least as far as
   *Blur*, so bloom never makes the background sharper.
+- **Darkest level** (0 %, off, as it comes): the background never gets darker than this, even
+  while the capture blended in is dark. Parts darker than the level are lifted smoothly; parts
+  brighter than one and a half times the level are left as they are. **Lift toward**: *The
+  background image* (the image or source the background is made from, blurred and coloured as
+  the background is, so a dark capture shows the usual background; with nothing under
+  *Background from*, the colour is used) or *A colour* (**Lift colour**, a mid grey as it comes:
+  dark parts take on that colour, as bright as the level). A capture that is black all over for
+  two seconds already counts as no capture; this is for one that is dark but not empty.
+
+![Darkest level: off, toward a grey, toward a red, toward the background image](docs/images/ambient-darkest.png)
 
 Put it in one shared scene and nest that scene wherever you need the background.
 
