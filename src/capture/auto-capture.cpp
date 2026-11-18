@@ -485,8 +485,24 @@ std::string title_shape(const std::string &title)
 constexpr const char *kNoWindow = ":StageKitNoWindow:stagekit-no-window.exe";
 // The key a capture aimed at no window is known by (no window's key).
 constexpr const char *kRestKey = "\x01rest";
-// How many rests a new title may end while the program stays open.
-constexpr int kTitleTries = 3;
+// How many rests a new title may end while the program stays open: a
+// title is only new once (`Tried`), and this is the backstop for a title
+// whose words keep changing.
+constexpr int kTitleTries = 8;
+// While a program rests, the capture looks in on it: aimed at it for
+// `kProbeFor`, every `kProbeEvery` (from the end of the last look), so a
+// game started in an emulator's menu is picked up within seconds. OBS's
+// Game Capture tries to hook about every 0.42 s (the owner's log), so a
+// look is two or three tries. After `kQuickProbes` empty looks the gap
+// grows by half each time to `kProbeEveryMost`. The owner (2026-11-18):
+// "game capture is taking quite a while to hook windowed games and
+// emulators, but i don't want the overhead processing of OBS to go up".
+constexpr double kProbeEvery = 5.0;
+constexpr double kProbeFor = 1.0;
+constexpr int kQuickProbes = 12;
+constexpr double kProbeEveryMost = 15.0;
+// (A bound on the titles remembered for one program.)
+constexpr size_t kTriedMost = 64;
 
 class AutoCapture {
 public:
@@ -663,16 +679,29 @@ public:
 		// emulator has several (Dolphin's GBA windows), and one of them
 		// behind another is not the program having been left.
 		std::set<std::string> rest_in_front;
+		// And whether one of its windows shows a title not tried before.
+		std::set<std::string> rest_retitled;
 		for (auto it = rest_.begin(); it != rest_.end();) {
 			bool open = false;
+			const Tried *tried = nullptr;
+			if (auto t = tried_.find(it->first); t != tried_.end())
+				tried = &t->second;
 			for (const Window &w : windows) {
 				if (lower(w.executable) != it->first)
 					continue;
 				open = true;
 				if (w.foreground)
 					rest_in_front.insert(it->first);
+				if (!tried || !tried->shapes.count(title_shape(w.title)))
+					rest_retitled.insert(it->first);
 			}
 			it = open ? std::next(it) : rest_.erase(it);
+		}
+		for (auto it = tried_.begin(); it != tried_.end();) {
+			const bool open = std::any_of(windows.begin(), windows.end(), [&](const Window &w) {
+				return lower(w.executable) == it->first;
+			});
+			it = open ? std::next(it) : tried_.erase(it);
 		}
 		for (const Window &w : windows) {
 			const std::string exe = lower(w.executable);
@@ -689,42 +718,51 @@ public:
 				rest_.erase(exe);
 				continue;
 			}
+			// Always capture never rests, also when put there during a look.
+			if (listed)
+				rest_.erase(exe);
 			// A program the capture got no picture from is left alone for a
 			// while, not for good: an emulator with no game running gives
-			// none either. It is tried again when one of its windows shows a
-			// title not seen before (a game was started) and, failing that,
-			// after a wait that grows each time.
+			// none either. It is looked in on every few seconds (`probe_at`),
+			// and tried again at once, for the whole patience, when one of
+			// its windows shows a title it was never aimed at with (a game was
+			// started) or it is clicked into again.
 			if (auto rest = rest_.find(exe); !listed && rest != rest_.end() && rest->second.resting) {
 				Rest &r = rest->second;
-				// Nothing ends a rest early in its first stretch (as long as
-				// the patience), and titles seen then are taken for noise.
-				// The owner's Dolphin (2026-11-18): its titles change all the
-				// time (frame rate, a GBA window's "Volume 100%" or "Muted"),
-				// and every rest ended 0.27 s after it began, hundreds of
-				// hooking tries a session. Digits never count.
-				const bool quiet = clock_s_ - r.since < give_up_s_;
-				const std::string shape = title_shape(w.title);
+				Tried &tried = tried_[exe];
+				// A title only counts once: every title the program showed
+				// while the capture was aimed at it is in `tried`, digits
+				// taken out. The owner's Dolphin (2026-11-18): its titles
+				// change all the time (frame rate, a GBA window's "Volume
+				// 100%" or "Muted"), and every rest ended 0.27 s after it
+				// began, hundreds of hooking tries a session.
 				bool retitled = false;
-				if (!r.titles.count(shape)) {
-					if (quiet || r.title_tries >= kTitleTries)
-						r.titles.insert(shape);
-					else
+				if (rest_retitled.count(exe)) {
+					if (tried.title_ends < kTitleTries)
 						retitled = true;
+					for (const Window &o : windows)
+						if (lower(o.executable) == exe && tried.shapes.size() < kTriedMost)
+							tried.shapes.insert(title_shape(o.title));
 				}
 				// (Or it has been clicked into again: what one does to start
 				// a game in an emulator whose title stays as it is.)
 				const bool front = rest_in_front.count(exe) > 0;
 				r.away = r.away || !front;
-				const bool came_back = !quiet && front && r.away;
-				if (!retitled && !came_back && clock_s_ - r.since < r.wait)
+				const bool came_back = front && r.away;
+				const bool look = clock_s_ >= r.probe_at;
+				if (!retitled && !came_back && !look)
 					continue;
 				r.resting = false;
+				r.probing = !retitled && !came_back;
 				if (retitled)
-					r.title_tries++;
-				obs_log(LOG_INFO, "Auto Capture: trying %s again (%s)", w.executable.c_str(),
-					retitled    ? "its window's title changed"
-					: came_back ? "it is in front again"
-						    : "after a wait");
+					tried.title_ends++;
+				if (!r.probing) {
+					// (Something was done: quick looks again after this try.)
+					r.probes = 0;
+					r.gap = kProbeEvery;
+					obs_log(LOG_INFO, "Auto Capture: trying %s again (%s)", w.executable.c_str(),
+						retitled ? "its window's title changed" : "it is in front again");
+				}
 			}
 			if (mode == Mode::AnyGame && w.looks_like_game && known_games_.insert(exe).second) {
 				learned_something = true;
@@ -750,6 +788,32 @@ public:
 				known_open = &w;
 		}
 		const Window *chosen = in_front ? in_front : current ? current : listed_open ? listed_open : known_open;
+		// Every title the chosen program shows while the capture is aimed at
+		// it has been tried: none of them ends a rest later.
+		if (chosen && game_capture) {
+			const std::string exe = lower(chosen->executable);
+			Tried &tried = tried_[exe];
+			for (const Window &w : windows)
+				if (lower(w.executable) == exe && tried.shapes.size() < kTriedMost)
+					tried.shapes.insert(title_shape(w.title));
+		}
+		// A quick look in on a resting program is not a game being there
+		// (for the Standby Picture): it would come and go every few seconds.
+		bool probing = false;
+		const std::string chosen_exe = chosen ? lower(chosen->executable) : std::string();
+		for (auto &[exe, r] : rest_) {
+			if (!r.probing)
+				continue;
+			if (exe == chosen_exe) {
+				probing = true;
+			} else {
+				// Its look came while another game is captured: no look
+				// now, the next one a gap later.
+				r.probing = false;
+				r.resting = true;
+				r.probe_at = clock_s_ + r.gap;
+			}
+		}
 		if (learned_something) {
 			std::string text;
 			for (const std::string &exe : known_games_)
@@ -759,7 +823,7 @@ public:
 			obs_data_release(own);
 		}
 
-		standby_step(chosen != nullptr);
+		standby_step(chosen != nullptr && !probing);
 
 		// Emulators put the frame rate in their title, so what counts as
 		// "a different window" is the program and window class only.
@@ -779,7 +843,7 @@ public:
 					resting = exe;
 					break;
 				}
-		const std::string key = chosen ? key_of(*chosen) : !resting.empty() ? kRestKey : std::string();
+		std::string key = chosen ? key_of(*chosen) : !resting.empty() ? kRestKey : std::string();
 		{
 			std::lock_guard lock(mutex_);
 			current_ = chosen ? chosen->executable : std::string();
@@ -797,35 +861,55 @@ public:
 			const bool mine = chosen && game_capture && !matches(lower(chosen->executable), always) &&
 					  !matches(lower(chosen->title), always);
 			const std::string exe = chosen ? lower(chosen->executable) : std::string();
-			// (As long each time: the owner's Ryujinx gave its first picture
-			// seven seconds after being aimed at, and tried again for five
-			// it was given up on three times running.)
-			const double patience = give_up_s_;
+			// A try gets the whole patience (the owner's Ryujinx gave its
+			// first picture seven seconds after being aimed at, and tried
+			// again for five it was given up on three times running); a
+			// look in during a rest gets `kProbeFor`.
+			auto rest_it = rest_.find(exe);
+			const bool look = rest_it != rest_.end() && rest_it->second.probing;
+			const double patience = look ? probe_for_s_ : give_up_s_;
+			bool rested_now = false;
 			if (!mine || obs_source_get_base_width(parent_) > 0) {
 				unhooked_s_ = 0.0;
-				if (chosen && obs_source_get_base_width(parent_) > 0)
-					rest_.erase(exe); // it can be hooked after all
-			} else if ((!use_test || give_up_in_tests_) && (unhooked_s_ += 0.25) >= patience) {
+				if (chosen && obs_source_get_base_width(parent_) > 0 && rest_it != rest_.end()) {
+					if (look)
+						obs_log(LOG_INFO,
+							"Auto Capture: '%s' has a picture from %s, looked in on while it rested",
+							obs_source_get_name(parent_), chosen->executable.c_str());
+					rest_.erase(rest_it); // it can be hooked after all
+					rest_said_ = false;
+				}
+			} else if ((!use_test || give_up_in_tests_) && (unhooked_s_ += 0.25) >= patience - 1e-6) {
 				unhooked_s_ = 0.0;
 				Rest &rest = rest_[exe];
-				rest.titles.clear();
-				for (const Window &w : windows)
-					if (lower(w.executable) == exe)
-						rest.titles.insert(title_shape(w.title));
-				rest.since = clock_s_;
-				// (Twice the patience, then half as long again each time up
-				// to a minute: an emulator with no game running gives no
-				// picture, and one whose title never changes is only found
-				// again by trying. Up to beta136 the wait grew to five
-				// minutes.)
-				rest.wait = rest.wait > 0.0 ? std::min(rest.wait * 1.5, 60.0) : give_up_s_ * 2.0;
+				if (look) {
+					// Nothing yet: the next look a gap later, a longer gap
+					// once many have come to nothing.
+					if (++rest.probes > kQuickProbes)
+						rest.gap = std::min(rest.gap * 1.5, probe_most_s_);
+				} else {
+					rest.probes = 0;
+					rest.gap = probe_every_s_;
+					rest.away = false;
+					obs_log(LOG_INFO,
+						"Auto Capture: '%s' got no picture from %s in %.0f s; leaving it alone, looking in for %.1f s every %.0f s, and trying again when its window's title changes or it is clicked into",
+						obs_source_get_name(parent_), chosen->executable.c_str(), patience,
+						probe_for_s_, probe_every_s_);
+				}
+				rest.gap = std::max(rest.gap, probe_every_s_);
+				rest.probe_at = clock_s_ + rest.gap;
 				rest.resting = true;
-				rest.away = false;
-				obs_log(LOG_INFO,
-					"Auto Capture: '%s' got no picture from %s in %.0f s; leaving it alone until its window's title changes, or for %.0f s",
-					obs_source_get_name(parent_), chosen->executable.c_str(), patience, rest.wait);
+				rest.probing = false;
+				rested_now = true;
 			}
-			return;
+			if (!rested_now)
+				return;
+			// Rested: aimed away in this very tick, not the next.
+			chosen = nullptr;
+			resting = exe;
+			key = kRestKey;
+			std::lock_guard lock(mutex_);
+			current_.clear();
 		}
 		aimed_once_ = true;
 		unhooked_s_ = 0.0;
@@ -846,6 +930,12 @@ public:
 		obs_data_t *settings = obs_source_get_settings(parent_);
 		bool changed = false;
 		if (chosen) {
+			// (A look in during a rest is not news for the log, nor the end
+			// of the rest's one line.)
+			const auto r = rest_.find(lower(chosen->executable));
+			const bool look = r != rest_.end() && r->second.probing;
+			if (!look)
+				rest_said_ = false;
 			const std::string window = encode_part(chosen->title) + ":" +
 						   encode_part(chosen->window_class) + ":" +
 						   encode_part(chosen->executable);
@@ -853,15 +943,21 @@ public:
 			obs_data_set_int(settings, "priority", 2); // match by executable
 			if (game_capture)
 				obs_data_set_string(settings, "capture_mode", "window");
-			obs_log(LOG_INFO, "Auto Capture: '%s' now follows %s", obs_source_get_name(parent_),
-				chosen->executable.c_str());
+			if (!look)
+				obs_log(LOG_INFO, "Auto Capture: '%s' now follows %s", obs_source_get_name(parent_),
+					chosen->executable.c_str());
 			changed = true;
 		} else if (!resting.empty()) {
 			obs_data_set_string(settings, "capture_mode", "window");
 			obs_data_set_string(settings, "window", kNoWindow);
 			obs_data_set_int(settings, "priority", 2);
-			obs_log(LOG_INFO, "Auto Capture: '%s' aimed at no window while %s rests, so nothing is hooked",
-				obs_source_get_name(parent_), resting.c_str());
+			// (Once a rest: the looks in on it come and go without a word.)
+			if (!rest_said_) {
+				obs_log(LOG_INFO,
+					"Auto Capture: '%s' aimed at no window while %s rests, so nothing is hooked",
+					obs_source_get_name(parent_), resting.c_str());
+				rest_said_ = true;
+			}
 			changed = true;
 		} else if (game_capture && fallback) {
 			obs_data_set_string(settings, "capture_mode", "any_fullscreen");
@@ -1237,16 +1333,24 @@ private:
 	// Programs the capture got no picture from, by executable in lower case,
 	// left alone for now. Never saved. Only the tick uses it.
 	struct Rest {
-		// Its windows' titles (`title_shape`) when it was given up on and
-		// in the first stretch of the rest: none of them ends the rest.
-		std::set<std::string> titles;
-		double since = 0.0;  // by clock_s_
-		double wait = 0.0;   // how long before it is tried again whatever its title
-		int title_tries = 0; // rests ended by a new title, while the program stays open
+		double probe_at = 0.0; // by clock_s_: when it is next looked in on
+		double gap = 0.0;      // between the end of one look and the next
+		int probes = 0;        // looks that came to nothing since the last try
 		bool resting = false;
-		bool away = false; // seen behind another window since it was given up on
+		bool probing = false; // aimed at for a look in, not a whole try
+		bool away = false;    // seen behind another window since it was given up on
 	};
 	std::map<std::string, Rest> rest_;
+	// Per program while it is open: the titles (`title_shape`) it showed
+	// while the capture was aimed at it, and how many rests a new title
+	// ended. Kept until it closes, a picture or not.
+	struct Tried {
+		std::set<std::string> shapes;
+		int title_ends = 0;
+	};
+	std::map<std::string, Tried> tried_;
+	bool rest_said_ = false; // "aimed at no window" logged for this rest
+	double probe_every_s_ = kProbeEvery, probe_for_s_ = kProbeFor, probe_most_s_ = kProbeEveryMost;
 	double clock_s_ = 0.0;
 	bool give_up_in_tests_ = false; // (the tests' stand-in capture never has a picture)
 };

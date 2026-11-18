@@ -9,11 +9,44 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | `feat/key-filter-names-standby-cover` (keys name their filter; Standby Image over any source, betaNEXT), on `main` after beta182 (#199) |
+| Working branch | `fix/auto-capture-quick-pickup` (Auto Capture looks in on a resting program, betaNEXT), on `main` after beta185. Next: the new collection |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
-## Auto Capture: let go when the game's window closes (0.1.0-beta190)
+## Auto Capture picks a game up within seconds while it rests (0.1.0-beta191)
+
+Branch `fix/auto-capture-quick-pickup`, on `main` after beta185. Notes:
+`docs/releases/0.1.0-beta191.md`. No Stream Deck file changed. The owner (2026-11-18, after
+beta184): "game capture is taking quite a while to hook windowed games and emulators, but i don't
+want the overhead processing of OBS to go up".
+
+- **Cause.** Beta184 made a rest real (the capture aimed at no window), but a rest was 20 to 60 s
+  of nothing, title changes did not count in its first 10 s and ended three rests at most, so a game
+  started in an emulator's menu (no image until a game draws) waited for the rest to run out.
+- **Looks in** (`src/capture/auto-capture.cpp`, `Rest::probe_at`, `gap`, `probes`, `probing`):
+  while a program rests the capture is aimed at it for `kProbeFor` (1 s) every `kProbeEvery` (5 s
+  after the last look ended); after `kQuickProbes` (12) empty looks the gap grows by half each time
+  to `kProbeEveryMost` (15 s). An empty look goes back to no window in the same tick (`rested_now`,
+  no extra quarter second). A picture during a look ends the rest. Looks are not logged; the rest's
+  two lines are logged once a rest (`rest_said_`). A look is not a game for *No game: Standby
+  Image*. A look that comes while another game is chosen is put off a gap.
+- **Ends at once:** a title the program never showed while the capture was aimed at it (`Tried`,
+  per program while open, `title_shape`, at most `kTriedMost` 64 kept; `kTitleTries` 8 rests ended
+  so while it is open), or a click back in (`away`), at any moment of the rest. That try gets the
+  whole patience (10 s), as the first does.
+- **Measured** (`[auto capture: a program rests for real ...]`, `STAGEKIT_TEST_ONLY_AUTO_REST`,
+  about two minutes, all passed): aimed at the resting program 9.6 s in a minute, 9 looks (beta183:
+  60 s; beta184: 0); a look 1.05 to 1.1 s; a game started 1.7 s into a rest picked up after 3.7 s,
+  just after a look after 5.4 s (the stand-in capture's `needs`: a picture only while aimed at the
+  program); a new title 0.3 s into a rest tried at once and for the whole patience; a title tried
+  before held the rest 5.3 s (to the next look); a stream of new titles ended eight rests in all,
+  then held; the Ryujinx case (a picture at 0.7 of the patience) kept on the first try; nothing
+  written to *Never capture*; *Never capture* ends a rest. Only that section was run here, not the
+  full suite; the `[auto capture]` section's own rest check (a new title tried at once) was not run.
+- **Not known:** how many hook tries OBS's Game Capture makes in a 1 s look at the owner's hook
+  rate (their log showed one every 0.42 s); not tried on Windows.
+
+## The Update button lists what changed since your version (0.1.0-beta185)
 
 Branch `fix/auto-capture-window-closed`, on `main` after beta186. Notes:
 `docs/releases/0.1.0-beta190.md`. No Stream Deck file changed. The owner (2026-11-18): "if the
