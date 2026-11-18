@@ -1609,7 +1609,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     that state images "can be overridden by the user", nothing of setImage against a user's image.
     It is believed, not proven, that a user's image wins. Not tried on a Stream Deck.
 - **The Scene Mode key** (`src/actions/mode.ts`, UUID `.mode`, beta155; tied to one filter since
-  betaNEXT) is for the Scene Modes filter through its vendor requests: `ListSceneModes`,
+  beta178) is for the Scene Modes filter through its vendor requests: `ListSceneModes`,
   `GetSceneMode` and `SetSceneMode` with `how` `on`, `toggle`, `next` or `none`; the
   `SceneModeChanged` event (`obs.on("mode")`) makes every Scene Mode key look again. The owner,
   of beta174: "the scene mode button when set to toggle needs to actually have icons that change

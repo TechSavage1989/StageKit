@@ -13,9 +13,9 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
-## Stream Deck: the Scene Mode key works one filter (0.1.0-betaNEXT)
+## Stream Deck: the Scene Mode key works one filter (0.1.0-beta178)
 
-Branch `feat/sd-mode-key`, on `main` after beta174. Notes: `docs/releases/0.1.0-betaNEXT.md`.
+Branch `feat/sd-mode-key`, on `main` after beta174. Notes: `docs/releases/0.1.0-beta178.md`.
 Stream Deck only (plugin 0.25.0.0); no OBS file changed. The owner: "the scene mode button when set
 to toggle needs to actually have icons that change to the respective mode icon. Also how does
 toggle work with more than two scene modes?", then "allow for the mode key to have a layout/mode
