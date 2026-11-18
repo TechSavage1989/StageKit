@@ -483,12 +483,13 @@ The filter's controls show what it is capturing now.
   the capture no image for ten seconds is left alone (OBS's log says so): left aimed at it, OBS
   goes on trying several times a second, and each try stalls the image for a moment. While it is
   left alone the capture is aimed at no window at all (or at another game), so OBS stops trying.
-  It is tried again when one of its windows shows a title not seen before, as when a game is
-  started in an emulator, or when you click back into it, but never sooner than ten seconds into
-  the wait, and by a new title three times at most while the program stays open: a frame rate or a
-  volume in the title changing does not count. Otherwise it is tried after a wait that grows from
-  20 seconds to a minute, and each try gets the full ten seconds. Nothing is added to *Never
-  capture* by itself. Programs listed in an Automatic Window Switcher are never taken at all.
+  Every five seconds it looks in on the program for one second, so a game started meanwhile is
+  picked up within a few seconds (after a minute of looks that find nothing, they come up to 15
+  seconds apart); that is about a sixth of the hooking OBS would do if it stayed aimed at it. It is
+  tried again at once, for the full ten seconds, when one of its windows shows a title not seen
+  before, as when a game is started in an emulator, or when you click back into it. A frame rate or
+  a volume in the title changing does not count, and a title counts only once. Nothing is added to
+  *Never capture* by itself. Programs listed in an Automatic Window Switcher are never taken at all.
 - **Not a game? Never capture this program**: one press when it picks up the wrong thing.
 - **Pick from the programs that are open**: choose a program and press *Always capture it* (for a game
   it misses) or *Never capture it*. There are no file names to type.

@@ -238,6 +238,11 @@ struct StandInCapture {
 	int frames_shown = 0;
 	std::atomic<int> start_frames{3};
 	std::atomic<bool> live{false};
+	// With `needs` set (part of the window it is aimed at): a picture only
+	// while aimed at that, `start_frames` after it was aimed there.
+	std::string needs;
+	std::atomic<bool> aimed{false};
+	int frames_aimed = 0;
 };
 
 static void register_stand_in_capture(const char *id)
@@ -265,6 +270,11 @@ static void register_stand_in_capture(const char *id)
 		auto *c = static_cast<StandInCapture *>(data);
 		if (obs_data_has_user_value(settings, "start_frames"))
 			c->start_frames = (int)obs_data_get_int(settings, "start_frames");
+		if (obs_data_has_user_value(settings, "needs")) {
+			c->needs = obs_data_get_string(settings, "needs");
+			const std::string window = obs_data_get_string(settings, "window");
+			c->aimed = !c->needs.empty() && window.find(c->needs) != std::string::npos;
+		}
 	};
 	info.destroy = [](void *data) {
 		delete static_cast<StandInCapture *>(data);
@@ -276,6 +286,11 @@ static void register_stand_in_capture(const char *id)
 		// Its picture comes a few frames after it is first shown, and goes
 		// the moment nothing shows it.
 		c->frames_shown = obs_source_showing(c->source) ? c->frames_shown + 1 : 0;
+		if (!c->needs.empty()) {
+			c->frames_aimed = c->aimed && c->frames_shown > 0 ? c->frames_aimed + 1 : 0;
+			c->live = c->frames_aimed > c->start_frames;
+			return;
+		}
 		c->live = c->frames_shown >= c->start_frames;
 	};
 	info.get_width = [](void *data) -> uint32_t {
@@ -2329,8 +2344,11 @@ static void in_one_tick(std::function<void()> work)
 // and titles that change all the time (a frame rate, a GBA window's
 // volume) do not end the rest at once. The owner's log (2026-11-18): a
 // rest of Dolphin ended 0.27 s after it began, hundreds of hooking tries a
-// session. Run after the auto capture section, and alone with
-// STAGEKIT_TEST_ONLY_AUTO_REST.
+// session. And it is looked in on every few seconds, so a game started
+// meanwhile is picked up soon (the owner, the same day: "game capture is
+// taking quite a while to hook windowed games and emulators, but i don't
+// want the overhead processing of OBS to go up"). Run after the auto
+// capture section, and alone with STAGEKIT_TEST_ONLY_AUTO_REST.
 static void auto_rest_test()
 {
 	printf("\n[auto capture: a program rests for real, and is aimed at again after]\n");
@@ -2394,53 +2412,106 @@ static void auto_rest_test()
 
 	// Dolphin with no game: a main window whose title has a frame rate in
 	// it, and a GBA window going between "Volume 100%" and "Muted".
-	Rig dolphin = make("Rest Game Capture", 1000);
+	Rig dolphin = make("Rest Game Capture", 2000);
 	auto noisy = [](int i) {
 		// (The stand-in windows' own separator is '|', so " - " here.)
 		return "Dolphin 2506a - FPS: " + std::to_string(50 + i % 11) + "|DolphinWnd|Dolphin.exe|front|game\n" +
 		       (i % 2 ? std::string("GBA1 - Muted") : "GBA1 - Volume " + std::to_string(10 * (i % 10)) + "%") +
 		       "|DolphinWnd|Dolphin.exe||";
 	};
+	auto not_none = [&](const std::string &a) {
+		return !is_none(a);
+	};
 	double t = run(dolphin, noisy, is_dolphin, 1.0);
 	CHECK(t >= 0.0, "Dolphin is aimed at (%s)", aim(dolphin).c_str());
-	t = run(dolphin, noisy, is_none, 2.5);
-	CHECK(t >= 0.5, "with no picture it is rested after the patience, the capture aimed at no window (%.2f s; %s)",
+	t = run(dolphin, noisy, is_none, 3.5);
+	CHECK(t >= 1.5, "with no picture it is rested after the patience, the capture aimed at no window (%.2f s; %s)",
 	      t, aim(dolphin).c_str());
-	// The rest lasts its whole wait (2 s) however the titles change.
-	double held = run(dolphin, noisy, [&](const std::string &a) { return !is_none(a); }, 3.5);
-	CHECK(held >= 1.6, "titles changing every tick do not end the rest early (it lasted %.2f s; then %s)", held,
-	      aim(dolphin).c_str());
-	CHECK(is_dolphin(aim(dolphin)), "after the rest the program is aimed at again (%s)", aim(dolphin).c_str());
+	// Titles changing only in their numbers do not end the rest: the first
+	// look in on it comes after kProbeEvery (5 s), and lasts kProbeFor (1 s).
+	double held = run(dolphin, noisy, not_none, 7.0);
+	CHECK(held >= 4.5 && held <= 6.0 && is_dolphin(aim(dolphin)),
+	      "numbers changing in its titles do not end the rest; it is looked in on after 5 s (%.2f s; then %s)",
+	      held, aim(dolphin).c_str());
+	double look = run(dolphin, noisy, is_none, 3.0);
+	CHECK(look >= 0.7 && look <= 1.5, "a look in lasts about a second (%.2f s)", look);
 
-	// A title not seen before, every tick: each rest may end early once,
-	// never before the patience, and three times at most while the program
-	// stays open.
-	auto games = [](int i) {
+	// The cost: how long the capture is aimed at the resting program in a
+	// minute (it was all of it up to beta183, none of it in beta184).
+	{
+		const auto t0 = clock::now();
+		auto last = t0;
+		double aimed_s = 0.0;
+		int looks = 0;
+		bool was = false;
+		for (int i = 0; since(t0) < 60.0; i++) {
+			show(dolphin, noisy(i));
+			sleep_ms(50);
+			const bool now = is_dolphin(aim(dolphin));
+			const double dt = std::chrono::duration<double>(clock::now() - last).count();
+			last = clock::now();
+			if (now)
+				aimed_s += dt;
+			if (now && !was)
+				looks++;
+			was = now;
+		}
+		printf("  (a minute of rest: aimed at the program for %.1f s, %d looks in)\n", aimed_s, looks);
+		CHECK(aimed_s <= 12.0 && looks >= 8,
+		      "a minute of rest has the program aimed at for 12 s at most, in looks a few seconds apart (%.1f s, %d looks)",
+		      aimed_s, looks);
+	}
+
+	// A game started (a title it was never aimed at with) ends the rest at
+	// once, in its first moments too, and that try gets the whole patience.
+	run(dolphin, noisy, is_dolphin, 7.0);
+	run(dolphin, noisy, is_none, 3.0);
+	auto mario = [](int i) {
+		return "Dolphin 2506a - FPS: " + std::to_string(50 + i % 11) +
+		       " - Mario Kart|DolphinWnd|Dolphin.exe|front|game";
+	};
+	t = run(dolphin, mario, is_dolphin, 3.0);
+	CHECK(t >= 0.0 && t <= 0.6, "a new title in the first moments of a rest is tried at once (%.2f s)", t);
+	t = run(dolphin, mario, is_none, 3.5);
+	CHECK(t >= 1.5, "and that try gets the whole patience, not a look in (%.2f s)", t);
+	// The same title again, whatever its numbers, does not end the next rest.
+	held = run(dolphin, mario, not_none, 7.0);
+	CHECK(held >= 4.5, "a title tried before does not end a rest (it lasted %.2f s)", held);
+
+	// A title not seen before, every tick: each ends a rest at once, eight
+	// times at most while the program stays open (one was used above).
+	// (Counted across calls: `run` starts each call from 0.)
+	int game_no = 0;
+	auto games = [&](int) {
 		std::string name = "Dolphin 2506a - ";
-		for (int k = i; k > 0 || name.size() < 18; k /= 26)
+		for (int k = ++game_no; k > 0 || name.size() < 18; k /= 26)
 			name += (char)('a' + k % 26);
 		return name + "|DolphinWnd|Dolphin.exe|front|game";
 	};
-	std::vector<double> rests;
-	for (int n = 0; n < 4; n++) {
-		if (run(dolphin, games, is_none, 2.0) < 0.0)
-			break;
-		rests.push_back(run(dolphin, games, [&](const std::string &a) { return !is_none(a); }, 2.6));
-	}
+	int quick = 0;
+	bool held_at_last = false;
 	std::string said;
-	for (double r : rests)
+	for (int n = 0; n < 10; n++) {
+		if (run(dolphin, games, is_none, 3.5) < 0.0)
+			break;
+		const double r = run(dolphin, games, not_none, 3.0);
 		said += std::to_string(r).substr(0, 4) + " ";
-	// (Seen a tick after the rest began, so the patience less a tick.)
-	CHECK(rests.size() == 4 && rests[0] >= 0.6 && rests[1] >= 0.6 && rests[2] >= 0.6 && rests[0] < 2.0 &&
-		      rests[1] < 2.0 && rests[2] < 2.0 && rests[3] < 0.0,
-	      "a new title ends a rest no sooner than the patience, and only three rests (rests: %s)", said.c_str());
+		if (r >= 0.0 && r < 0.6) {
+			quick++;
+		} else {
+			held_at_last = r < 0.0;
+			break;
+		}
+	}
+	CHECK(quick == 7 && held_at_last, "new titles end eight rests in all, then they hold (rests: %s)",
+	      said.c_str());
 	obs_data_t *fs = obs_source_get_settings(dolphin.filter);
 	CHECK(std::string(obs_data_get_string(fs, "never")).empty(), "nothing is written to the Never list (%s)",
 	      obs_data_get_string(fs, "never"));
 	obs_data_release(fs);
 	// Put on Never capture while it rests: the rest is over, and the
 	// capture goes back to any full-screen application.
-	if (run(dolphin, games, is_none, 3.0) >= 0.0) {
+	if (run(dolphin, games, is_none, 7.0) >= 0.0) {
 		obs_data_t *nd = obs_data_create();
 		obs_data_set_string(nd, "never", "dolphin.exe");
 		obs_source_update(dolphin.filter, nd);
@@ -2458,29 +2529,60 @@ static void auto_rest_test()
 	obs_source_release(dolphin.filter);
 	obs_source_release(dolphin.capture);
 
-	// Ryujinx: its first picture comes seven seconds into a ten-second
-	// patience. After a rest it gets the whole patience again.
+	// Ryujinx: its title never changes, and its picture comes only while the
+	// capture is aimed at it (`needs`). First: a picture seven seconds into
+	// a ten-second patience (here 1.4 s of 2 s) keeps it captured.
 	Rig ryu = make("Ryujinx Game Capture", 2000);
+	auto frames = [&](int n) {
+		obs_data_t *rd = obs_data_create();
+		obs_data_set_int(rd, "start_frames", n);
+		obs_data_set_string(rd, "needs", "Ryujinx.exe");
+		obs_source_update(ryu.capture, rd);
+		obs_data_release(rd);
+	};
+	frames(100000000);
 	auto ryu_win = [](int) {
 		return std::string("Ryujinx 1.2.3|RyuWnd|Ryujinx.exe|front|game");
 	};
 	auto is_ryu = [](const std::string &a) {
 		return a.find("Ryujinx.exe") != std::string::npos;
 	};
-	run(ryu, ryu_win, is_ryu, 1.0);
-	t = run(ryu, ryu_win, is_none, 3.5);
-	CHECK(t >= 1.5, "Ryujinx with no picture yet is rested (%.2f s)", t);
-	t = run(ryu, ryu_win, is_ryu, 5.0);
-	CHECK(t >= 3.2, "and aimed at again after its wait (%.2f s)", t);
-	sleep_ms(1400);
-	obs_data_t *rd = obs_data_create();
-	obs_data_set_int(rd, "start_frames", 0); // the picture comes
-	obs_source_update(ryu.capture, rd);
-	obs_data_release(rd);
+	auto has_picture = [&](const std::string &a) {
+		return is_ryu(a) && obs_source_get_base_width(ryu.capture) > 0;
+	};
+	auto never = [](const std::string &) {
+		return false;
+	};
+	t = run(ryu, ryu_win, is_ryu, 1.0);
+	CHECK(t >= 0.0, "Ryujinx is aimed at (%s)", aim(ryu).c_str());
+	run(ryu, ryu_win, never, 1.4);
+	frames(2);
 	held = run(ryu, ryu_win, [&](const std::string &a) { return !is_ryu(a); }, 3.0);
 	CHECK(held < 0.0 && obs_source_get_base_width(ryu.capture) > 0,
 	      "a picture 0.7 of the patience after aiming keeps it captured (%s, %u px)", aim(ryu).c_str(),
 	      obs_source_get_base_width(ryu.capture));
+	// Back to its menu: no picture, rested; a game started at some moment
+	// of the rest, its title as it was, is picked up by a look in.
+	frames(100000000);
+	t = run(ryu, ryu_win, is_none, 3.5);
+	CHECK(t >= 1.5, "Ryujinx with no picture is rested (%.2f s)", t);
+	run(ryu, ryu_win, never, 1.7);
+	frames(2);
+	t = run(ryu, ryu_win, has_picture, 10.0);
+	printf("  (a game started 1.7 s into a rest: picked up after %.2f s)\n", t);
+	CHECK(t >= 0.0 && t <= 6.0, "a game started during a rest is picked up within 6 s (%.2f s)", t);
+	held = run(ryu, ryu_win, [&](const std::string &a) { return !is_ryu(a); }, 3.0);
+	CHECK(held < 0.0, "and stays captured (%s)", aim(ryu).c_str());
+	// The worst moment: a game started just as a look in has ended.
+	frames(100000000);
+	run(ryu, ryu_win, is_none, 3.5);
+	run(ryu, ryu_win, is_ryu, 7.0);
+	t = run(ryu, ryu_win, is_none, 3.0);
+	CHECK(t >= 0.0, "a look in that finds nothing ends (%.2f s)", t);
+	frames(2);
+	t = run(ryu, ryu_win, has_picture, 10.0);
+	printf("  (a game started just after a look in: picked up after %.2f s)\n", t);
+	CHECK(t >= 0.0 && t <= 6.0, "a game started just after a look in is picked up within 6 s (%.2f s)", t);
 	obs_source_filter_remove(ryu.capture, ryu.filter);
 	obs_source_release(ryu.filter);
 	obs_source_release(ryu.capture);

@@ -1400,7 +1400,8 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   session, each time after they had taken it off ("Dolphin keeps getting added to the never
   capture"). Now it is rested in memory only: tried again when its window's title changes (a game
   was started; three such tries at most), when it is clicked into again (`away`), or after a wait
-  of 20 s that grows by half each time to a minute at most, for the full time each try; a picture
+  of 20 s that grows by half each time to a minute at most, for the full time each try (until
+  betaNEXT; now looks, below); a picture
   or the program closing ends it. (Beta135 and 136 tried for half the time, 5 s, with waits up to
   5 minutes: the owner's Ryujinx, whose title never changes and whose first picture took 7 s, was
   given up on three times running and they reported "auto capture is not capturing a game". Its
@@ -1415,18 +1416,39 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   window's "Volume 100%" / "Muted", the GBA windows' titles against the main one's). Now, with
   nothing else to capture while a program rests, a Game Capture is aimed at no window
   (`kNoWindow`, window mode, key `kRestKey`; logged once a rest), and aimed at the program again
-  when the rest ends. A rest keeps the titles of all the program's windows (`titles`, by
+  when the rest ends. In beta184 a rest kept the titles of all the program's windows (`titles`, by
   `title_shape`: lower case, digits out) and every title seen in its first `give_up_s_`; only a
-  title not among them after that ends it, `kTitleTries` (3) times while the program stays open
-  (`title_tries`, kept until it closes or gives a picture). Clicking back in counts only when no
-  window of the program was in front (`rest_in_front`), also not in that first stretch. Tested in
+  title not among them after that ended it, 3 times while the program stayed open
+  (`title_tries`; replaced in betaNEXT, below). Clicking back in counts only when no
+  window of the program was in front (`rest_in_front`; in beta184 also not in that first
+  stretch). Tested in
   `[auto capture: a program rests for real ...]` (`auto_rest_test`, alone with
-  `STAGEKIT_TEST_ONLY_AUTO_REST`; the Ryujinx case, a picture at 0.7 of the patience after a rest,
-  too). `set_test_windows` looks at once, and each look moves the filter's clock on 0.25 s: a test
+  `STAGEKIT_TEST_ONLY_AUTO_REST`; the Ryujinx case, a picture at 0.7 of the patience on the first
+  try, and a game started during a rest picked up by a look). `set_test_windows` looks at once, and each look moves the filter's clock on 0.25 s: a test
   that sets windows often passes `keep_clock`. A program put on *Never capture* while it rests
   is no longer rested (`rest_.erase`), so the full-screen fallback comes back. The Windows side
   (whether OBS's Game Capture really logs nothing for a window that is not there) is believed
-  from OBS's source, not seen. **Do not write to the user's lists from the tick again.** What follows is why the giving up exists at all: aimed at a
+  from OBS's source, not seen. **A rest looks in on the program** (betaNEXT; the owner, the same
+  day: "game capture is taking quite a while to hook windowed games and emulators, but i don't
+  want the overhead processing of OBS to go up"). Beta184's rests were 20 to 60 s of nothing, and
+  a game started in an emulator's menu waited for the end of one. Now a rest aims the capture at
+  the program for `kProbeFor` (1 s, two or three of OBS's hook tries at the 0.42 s the owner's log
+  showed) every `kProbeEvery` (5 s from the end of the last look; `probe_at`, `gap`; after
+  `kQuickProbes` (12) empty looks the gap grows by half each time to `kProbeEveryMost`, 15 s), then
+  back to no window in the same tick. A picture during a look ends the rest and the capture stays
+  (logged `has a picture ... looked in on while it rested`); looks are not logged, and *aimed at no
+  window* is logged once a rest (`rest_said_`). A look is not a game for *No game: Standby Image*
+  (`probing`), or the image would come and go every few seconds. A title change or a click back
+  in ends a rest at once, at any moment of it (beta184's quiet first `give_up_s_` is gone), and that
+  try gets the whole patience, so the Ryujinx case (a picture 7 s after aiming) still holds on a
+  first try; a look's 1 s does not. A title counts only once (`Tried`, per program while it is
+  open, a picture or not): every `title_shape` the program showed while the capture was aimed at
+  it, so Dolphin's frame rate and its GBA window's *Volume* / *Muted* end a rest once at most, and
+  `kTitleTries` (8) rests ended by a title while it stays open is the backstop. Measured in
+  `auto_rest_test`: aimed at the resting program 9.6 s in a minute (beta183: all of it; beta184:
+  none), a game started 1.7 s into a rest picked up after 3.7 s, just after a look after 5.4 s.
+  How many hook tries OBS really makes in a 1 s look, at the owner's hook rate, is not seen.
+  **Do not write to the user's lists from the tick again.** What follows is why the giving up exists at all: aimed at a
   program for that long with no picture, the program was given up on and the log says so. OBS's Game Capture tries to hook about
   five times a second for as long as it is aimed, each try some 20 ms on the drawing thread. The
   owner's 3D modelling program had been taken for a game (it loads a graphics engine): 3,404
