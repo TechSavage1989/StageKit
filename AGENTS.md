@@ -1318,7 +1318,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     the scene they showed places the two windows apart.
   - The Capture Front Window key switches it off, as it does an Auto Capture; switching it on
     hands the capture back (it takes the app in front or the last one used).
-  - **Game area only** (`game_area`, off as it comes; betaNEXT). The owner, of emulators
+  - **Game area only** (`game_area`, off as it comes; beta193). The owner, of emulators
     (Ryujinx, eden, nxemu, Dolphin) in a Window Capture with *Client area* ticked: "I don't want
     it to grab the window toolbars and such of the game window", "i'm not manually cropping
     anything". The emulator's own menu, tool and status bars are inside the client area. **How

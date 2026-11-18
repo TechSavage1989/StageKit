@@ -13,10 +13,10 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
-## Window switcher: Game area only (0.1.0-betaNEXT)
+## Window switcher: Game area only (0.1.0-beta193)
 
 Branch `feat/switcher-game-area`, rebased on `main` after beta191 (first made on beta186). Notes:
-`docs/releases/0.1.0-betaNEXT.md`. No Stream Deck file changed. The owner (2026-11-18), of
+`docs/releases/0.1.0-beta193.md`. No Stream Deck file changed. The owner (2026-11-18), of
 Ryujinx, eden, nxemu and Dolphin in a Window Capture: "I don't want it to grab the window toolbars
 and such of the game window", and "i'm not manually cropping anything. the whole point of these
 new plugins and such is to avoid manual work. client area is already ticked".
