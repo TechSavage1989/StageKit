@@ -38,6 +38,11 @@ somehow". Then: "ONE Show in Scenes filter where each Stream Deck key chooses".
   a Standby Image key and a Show in Scenes key against the stand-in server). The full
   `tests/run-tests.sh` was not run in this session (machine limit); `STAGEKIT_TEST_ONLY_SWITCH_COMMAND`
   was run as a neighbour.
+- **Show only what it hid** (second commit, after the owner's camera switch showed the hidden DSLR
+  and the Only one link then hid Game Capture): `restore_hidden`, `hidden_record` (in
+  `kOwnSettings`); see AGENTS, *Show in Scenes' Show only what it hid*. Test
+  `STAGEKIT_TEST_ONLY_RESTORE_HIDDEN`, 5 checks, also in the full run after the standby-cover
+  section.
 - **Not proven**: Windows; a real Stream Deck (the line under the list is plain HTML in the
   settings page, not seen in Stream Deck); a real camera (the test's camera is a colour source).
 

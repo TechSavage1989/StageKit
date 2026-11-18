@@ -1559,6 +1559,23 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   key's *On press* gains `cover`, `coveron`, `coveroff` (append-only, `coverHow`), lit while
   covered; the Show in Scenes key's *When hiding* (`hideAs`, `hideAsOf`). Not run on Windows or a
   Stream Deck.
+- **Show in Scenes' *Show only what it hid*** (`restore_hidden`, off as it comes; betaNEXT). The
+  owner's camera switch lists DSLR Component, DSLR GBA Link, Square Camera and DSLR (full-screen,
+  hidden in the component scene); with *Follow what is shown* the switch read off, a press showed
+  DSLR, and the captures' Only one link hid Game Capture and DSLR Component. Ticked: a hide press
+  notes each item it actually hid as (scene name, name of the scene or group holding it, item id;
+  `Noted`, never a reference) and each source it covered (`Record::covers`, only one not covered
+  before), added to what earlier hides noted and is still held, written to the filter's own
+  settings (`hidden_record`, in `kOwnSettings`; lines `i\tscene\towner\tid`, `c\tsource`). A show
+  press (`restore_record`) brings back only those still hidden and not held hidden by a mode, then
+  forgets all; with nothing noted it does nothing and logs it. **The rule**: the switch means "has
+  hidden things": `follow()` with it ticked puts the switch on (with *When this is on* shown) while
+  nothing noted is still held (`prune_record`, which forgets an item something else has shown or
+  that is gone, and a cover taken away), so a toggle key always hides and then restores. Works with
+  *Hide shows Standby Image* and `ShowInScenesPress`. Tested in `[show in scenes: show only what it
+  hid]` (`restore_hidden_test`, alone: `STAGEKIT_TEST_ONLY_RESTORE_HIDDEN`; the owner's scene with
+  both links, the press and its restore, a show with nothing noted, an item shown and hidden by
+  hand meanwhile, a filter made again from its settings, a key set to Cover).
 - **Every key's list names its filter** (betaNEXT; the owner: "The stream deck keys don't really
   say what filters they are associated with which makes it difficult for me to find the associated
   filters"). `targetItems` labels every entry "<source> — <filter>" (`filterLabel`: the kind in

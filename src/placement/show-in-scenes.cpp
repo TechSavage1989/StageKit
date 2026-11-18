@@ -48,6 +48,18 @@ the Free Software Foundation; either version 2 of the License, or
 // `hide_as`: as the filter says, hide, or cover); a show undoes what the
 // hide did, whichever way that was (`covered_`: the sources this filter
 // covered).
+//
+// "Show only what it hid" (`restore_hidden`, off as it comes): a press that
+// hides notes each item it actually hid (its scene's name, the name of the
+// scene or group holding it and its id, never the item itself) and each
+// source it covered, in its own settings (`hidden_record`, kept over a
+// restart), and a press that shows brings back only those, and only while
+// they are still hidden; with nothing noted it does nothing. Nothing hidden
+// by anything else is ever shown by it. The switch then means "has hidden
+// things": on (with "When this is on" shown) while nothing it hid is still
+// hidden, so a toggle key always hides and then restores. "Follow what is
+// shown" puts the switch that way, and forgets a noted item once something
+// else has shown it (or it is gone).
 
 #include "show-in-scenes.hpp"
 #include "../common/filter-input.hpp"
@@ -71,6 +83,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <callback/proc.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <atomic>
 #include <cstring>
 #include <functional>
@@ -225,6 +238,8 @@ public:
 		with_linked_ = obs_data_get_bool(settings, "with_linked");
 		follow_ = obs_data_get_bool(settings, "follow");
 		hide_standby_ = obs_data_get_bool(settings, "hide_standby");
+		restore_ = obs_data_get_bool(settings, "restore_hidden");
+		record_ = read_record(obs_data_get_string(settings, "hidden_record"));
 		go_to_ = obs_data_get_string(settings, "go_to");
 		look_again_ = true;
 		// How items change: the usual way, and each listed source's own.
@@ -301,6 +316,25 @@ public:
 		// (Not while OBS loads its scenes: only some have their items yet.)
 		if (!scenes_loaded())
 			return;
+		bool restore;
+		{
+			std::lock_guard lock(mutex_);
+			restore = restore_;
+		}
+		if (restore) {
+			// "Show only what it hid": on while nothing it hid is still
+			// hidden (what something else has shown since is forgotten).
+			const size_t held = prune_record();
+			const bool on = (held == 0) != on_hides;
+			if (obs_source_enabled(source_) == on)
+				return;
+			correcting_ = std::this_thread::get_id();
+			obs_source_set_enabled(source_, on);
+			correcting_ = std::thread::id();
+			obs_log(LOG_INFO, "Show in Scenes '%s': now reads %s, as %zu item(s) it hid are still hidden",
+				obs_source_get_name(source_), on ? "on" : "off", held);
+			return;
+		}
 		obs_source_t *parent = obs_filter_get_parent(source_);
 		if (sources.empty() && parent && obs_source_get_name(parent))
 			sources.push_back(obs_source_get_name(parent));
@@ -350,7 +384,7 @@ public:
 	{
 		std::vector<std::string> sources, scenes;
 		Where where;
-		bool show, with_linked, hide_standby;
+		bool show, with_linked, hide_standby, restore = false;
 		ItemChange change;
 		std::map<std::string, ItemChange> own_change;
 		{
@@ -363,7 +397,12 @@ public:
 			show = enabled != on_hides_;
 			with_linked = with_linked_;
 			hide_standby = as == HideAs::Filter ? hide_standby_ : as == HideAs::Cover;
+			restore = restore_;
 		}
+		// "Show only what it hid": a show brings back what the last hides
+		// noted, nothing else.
+		if (restore && show)
+			return restore_record(change, own_change);
 		obs_source_t *parent = obs_filter_get_parent(source_);
 		if (sources.empty() && parent && obs_source_get_name(parent))
 			sources.push_back(obs_source_get_name(parent));
@@ -382,8 +421,11 @@ public:
 			covered_.clear();
 		}
 		int covered = 0;
+		Record noted; // what this hide did, for "Show only what it hid"
 		for (const std::string &name : standby) {
 			obs_source_t *found = obs_get_source_by_name(name.c_str());
+			if (restore && !show && found && !standby_covered(found) && standby_present(found))
+				noted.covers.insert(name);
 			if (found && standby_cover_set(found, !show, -1, 0, 0, 0)) {
 				covered++;
 				if (!show) {
@@ -411,7 +453,24 @@ public:
 				  apply_item_change(item, own == own_change.end() ? change : own->second, scene);
 				  set_item_visible(item, show);
 				  changed++;
+				  if (restore && !show) {
+					  obs_source_t *owner = obs_scene_get_source(obs_sceneitem_get_scene(item));
+					  noted.items.push_back(
+						  {obs_source_get_name(scene) ? obs_source_get_name(scene) : "",
+						   owner && obs_source_get_name(owner) ? obs_source_get_name(owner)
+										       : "",
+						   obs_sceneitem_get_id(item)});
+				  }
 			  });
+		if (restore && !show) {
+			// Added to what earlier hides noted and is still hidden.
+			prune_record();
+			std::lock_guard lock(mutex_);
+			for (const Noted &n : noted.items)
+				record_.items.push_back(n);
+			record_.covers.insert(noted.covers.begin(), noted.covers.end());
+			save_record();
+		}
 		obs_log(LOG_INFO, "Show in Scenes '%s': %s %d item(s)", obs_source_get_name(source_),
 			show ? "showed" : "hid", changed);
 		if (covered)
@@ -439,6 +498,142 @@ public:
 			go.sources.push_back(obs_source_get_name(parent));
 		go.filter = obs_source_get_name(source_);
 		go_to_scene(std::move(go));
+	}
+
+	// "Show only what it hid": an item by its scene's name, the name of the
+	// scene or group that holds it and its id; and the sources covered.
+	struct Noted {
+		std::string scene, owner;
+		int64_t id = 0;
+	};
+	struct Record {
+		std::vector<Noted> items;
+		std::set<std::string> covers;
+		bool empty() const { return items.empty() && covers.empty(); }
+	};
+
+	// One line each: "i<TAB>scene<TAB>owner<TAB>id" or "c<TAB>source".
+	static Record read_record(const char *text)
+	{
+		Record out;
+		std::string all = text ? text : "";
+		size_t at = 0;
+		while (at < all.size()) {
+			size_t end = all.find('\n', at);
+			if (end == std::string::npos)
+				end = all.size();
+			std::vector<std::string> parts;
+			size_t from = at;
+			for (size_t tab; (tab = all.find('\t', from)) != std::string::npos && tab < end; from = tab + 1)
+				parts.push_back(all.substr(from, tab - from));
+			parts.push_back(all.substr(from, end - from));
+			if (parts.size() == 4 && parts[0] == "i")
+				out.items.push_back({parts[1], parts[2], std::strtoll(parts[3].c_str(), nullptr, 10)});
+			else if (parts.size() == 2 && parts[0] == "c")
+				out.covers.insert(parts[1]);
+			at = end + 1;
+		}
+		return out;
+	}
+
+	// Writes the record into the filter's own settings (with mutex_ held).
+	void save_record()
+	{
+		std::string text;
+		for (const Noted &n : record_.items)
+			text += "i\t" + n.scene + "\t" + n.owner + "\t" + std::to_string(n.id) + "\n";
+		for (const std::string &c : record_.covers)
+			text += "c\t" + c + "\n";
+		obs_data_t *settings = obs_source_get_settings(source_);
+		obs_data_set_string(settings, "hidden_record", text.c_str());
+		obs_data_release(settings);
+	}
+
+	// The item noted, with a reference the caller lets go of, or nullptr.
+	static obs_sceneitem_t *find_noted(const Noted &n)
+	{
+		obs_source_t *owner = obs_get_source_by_name(n.owner.c_str());
+		obs_scene_t *scene = owner ? obs_group_or_scene_from_source(owner) : nullptr;
+		obs_sceneitem_t *item = scene ? obs_scene_find_sceneitem_by_id(scene, n.id) : nullptr;
+		if (item)
+			obs_sceneitem_addref(item);
+		obs_source_release(owner);
+		return item;
+	}
+
+	// Forgets what is no longer hidden (shown by something else, or gone)
+	// or no longer covered; says how much is still held.
+	size_t prune_record()
+	{
+		Record record;
+		{
+			std::lock_guard lock(mutex_);
+			record = record_;
+		}
+		Record kept;
+		for (const Noted &n : record.items) {
+			obs_sceneitem_t *item = find_noted(n);
+			if (item && !obs_sceneitem_visible(item))
+				kept.items.push_back(n);
+			obs_sceneitem_release(item);
+		}
+		for (const std::string &name : record.covers) {
+			obs_source_t *found = obs_get_source_by_name(name.c_str());
+			if (found && standby_covered(found))
+				kept.covers.insert(name);
+			obs_source_release(found);
+		}
+		std::lock_guard lock(mutex_);
+		const bool changed = kept.items.size() != record_.items.size() || kept.covers != record_.covers;
+		if (changed) {
+			record_ = kept;
+			save_record();
+		}
+		return record_.items.size() + record_.covers.size();
+	}
+
+	// A show press with "Show only what it hid": brings back what was noted
+	// and is still hidden, then forgets it all.
+	int restore_record(const ItemChange &change, const std::map<std::string, ItemChange> &own_change)
+	{
+		Record record;
+		{
+			std::lock_guard lock(mutex_);
+			record = record_;
+			record_ = Record();
+			save_record();
+		}
+		if (record.empty()) {
+			obs_log(LOG_INFO, "Show in Scenes '%s': nothing it hid to show again, so nothing is shown",
+				obs_source_get_name(source_));
+			return 0;
+		}
+		int shown = 0, uncovered = 0;
+		for (const Noted &n : record.items) {
+			obs_sceneitem_t *item = find_noted(n);
+			obs_source_t *scene = obs_get_source_by_name(n.scene.c_str());
+			if (item && scene && !obs_sceneitem_visible(item) && !mode_holds_hidden(scene, item)) {
+				const char *name = obs_source_get_name(obs_sceneitem_get_source(item));
+				const auto own = own_change.find(name ? name : "");
+				apply_item_change(item, own == own_change.end() ? change : own->second, scene);
+				set_item_visible(item, true);
+				shown++;
+			}
+			obs_source_release(scene);
+			obs_sceneitem_release(item);
+		}
+		for (const std::string &name : record.covers) {
+			obs_source_t *found = obs_get_source_by_name(name.c_str());
+			if (found && standby_covered(found) && standby_cover_set(found, false, -1, 0, 0, 0))
+				uncovered++;
+			obs_source_release(found);
+			std::lock_guard lock(mutex_);
+			covered_.erase(name);
+		}
+		obs_log(LOG_INFO,
+			"Show in Scenes '%s': showed again %d item(s) and took away %d Standby Image(s) it had hidden them with",
+			obs_source_get_name(source_), shown, uncovered);
+		return shown;
 	}
 
 	// Of `sources`, those with an enabled Standby Image filter (with
@@ -506,6 +701,8 @@ private:
 	std::atomic<bool> ready_{false};
 	bool follow_ = false;       // the switch goes by what is shown
 	bool hide_standby_ = false; // a hide covers a source with its Standby Image instead
+	bool restore_ = false;      // a show brings back only what the hides noted
+	Record record_;             // what they noted (also in the settings, `hidden_record`)
 	std::string go_to_;         // the scene a press turning it on goes to
 	double follow_timer_ = 0.0; // until the next look, in seconds
 	bool follow_staggered_ = false;
@@ -602,6 +799,9 @@ obs_properties_t *get_properties(void *data)
 	obs_property_t *hide_standby =
 		obs_properties_add_bool(props, "hide_standby", obs_module_text("ShowIn.HideStandby"));
 	set_tip(hide_standby, obs_module_text("ShowIn.HideStandby.Tip"));
+
+	obs_property_t *restore = obs_properties_add_bool(props, "restore_hidden", obs_module_text("ShowIn.Restore"));
+	set_tip(restore, obs_module_text("ShowIn.Restore.Tip"));
 
 	obs_property_t *follow = obs_properties_add_bool(props, "follow", obs_module_text("ShowIn.Follow"));
 	set_tip(follow, obs_module_text("ShowIn.Follow.Tip"));
@@ -701,6 +901,7 @@ void register_show_in_scenes()
 		obs_data_set_default_int(settings, "on_means", 0);
 		obs_data_set_default_bool(settings, "follow", false);
 		obs_data_set_default_bool(settings, "hide_standby", false);
+		obs_data_set_default_bool(settings, "restore_hidden", false);
 		obs_data_set_default_string(settings, "go_to", "");
 		item_change_defaults(settings);
 	};

@@ -3415,6 +3415,202 @@ static void standby_cover_test()
 	obs_source_release(before_out);
 }
 
+// Show in Scenes' "Show only what it hid", in the owner's Component scene:
+// the camera switch lists DSLR Component, DSLR GBA Link, Square Camera and
+// DSLR (the full-screen camera, hidden there). Without it, a switch that
+// read off showed DSLR, and the captures' Only one link then hid Game
+// Capture and DSLR Component. Run after the standby-cover section, and
+// alone with STAGEKIT_TEST_ONLY_RESTORE_HIDDEN.
+static void restore_hidden_test()
+{
+	printf("\n[show in scenes: show only what it hid]\n");
+	auto block = [](const std::string &name, long long abgr) {
+		obs_data_t *d = obs_data_create();
+		obs_data_set_int(d, "color", abgr);
+		obs_data_set_int(d, "width", 160);
+		obs_data_set_int(d, "height", 90);
+		obs_source_t *src = obs_source_create("color_source", name.c_str(), d, nullptr);
+		obs_data_release(d);
+		return src;
+	};
+	auto set_list = [](obs_data_t *settings, const char *list, const std::vector<std::string> &names) {
+		obs_data_array_t *rows = obs_data_array_create();
+		for (const std::string &name : names) {
+			obs_data_t *row = obs_data_create();
+			obs_data_set_string(row, "value", name.c_str());
+			obs_data_array_push_back(rows, row);
+			obs_data_release(row);
+		}
+		obs_data_set_array(settings, list, rows);
+		obs_data_array_release(rows);
+	};
+	auto call = [](const char *request, const std::string &json) {
+		calldata_t cd = {};
+		calldata_set_string(&cd, "request", request);
+		calldata_set_string(&cd, "data", json.c_str());
+		proc_handler_call(obs_get_proc_handler(), "stagekit_vendor_call", &cd);
+		const char *answer = calldata_string(&cd, "response");
+		obs_data_t *out = obs_data_create_from_json(answer && *answer ? answer : "{}");
+		calldata_free(&cd);
+		return out;
+	};
+	obs_source_t *before_out = obs_get_output_source(0);
+	const std::vector<std::string> names = {"RH Game Capture",  "RH Window Capture", "RH DSLR Component",
+						"RH DSLR GBA Link", "RH Square Camera",  "RH DSLR"};
+	std::vector<obs_source_t *> srcs;
+	std::vector<obs_sceneitem_t *> items;
+	obs_scene_t *scene = obs_scene_create("RH Component-Capture-Scene");
+	obs_source_t *scene_src = obs_scene_get_source(scene);
+	for (size_t i = 0; i < names.size(); i++) {
+		srcs.push_back(block(names[i], 0xFF000000 | (long long)(0x203040 * (i + 1))));
+		items.push_back(obs_scene_add(scene, srcs.back()));
+	}
+	// Shown: Game Capture, DSLR Component (its follower), Square Camera.
+	const bool first[] = {true, false, true, false, true, false};
+	for (size_t i = 0; i < items.size(); i++)
+		obs_sceneitem_set_visible(items[i], first[i]);
+	obs_set_output_source(0, scene_src);
+	obs_data_t *od = obs_data_create();
+	set_list(od, "items", {"RH Game Capture", "RH Window Capture", "RH DSLR"});
+	obs_data_set_int(od, "mode", 0); // Only one
+	obs_data_set_string(od, "transition", "none");
+	obs_source_t *only = obs_source_create("stagekit_visibility_link", "RH Captures", od, nullptr);
+	obs_data_release(od);
+	obs_source_filter_add(scene_src, only);
+	obs_data_t *fd = obs_data_create();
+	set_list(fd, "leads", {"RH Game Capture", "RH Window Capture"});
+	set_list(fd, "items", {"RH DSLR Component"});
+	obs_data_set_int(fd, "mode", 2); // Follow sources
+	obs_data_set_string(fd, "transition", "none");
+	obs_source_t *follow = obs_source_create("stagekit_visibility_link", "RH Component Follows", fd, nullptr);
+	obs_data_release(fd);
+	obs_source_filter_add(scene_src, follow);
+	obs_data_t *sd = obs_data_create();
+	set_list(sd, "sources", {"RH DSLR Component", "RH DSLR GBA Link", "RH Square Camera", "RH DSLR"});
+	obs_data_set_string(sd, "transition", "none");
+	obs_data_set_bool(sd, "follow", true);
+	obs_data_set_bool(sd, "restore_hidden", true);
+	obs_source_t *sw = obs_source_create("stagekit_show_in_scenes", "RH Show in Scenes-Camera", sd, nullptr);
+	obs_data_release(sd);
+	obs_source_t *square = srcs[4];
+	obs_source_filter_add(square, sw);
+	sleep_ms(600);
+	auto state = [&] {
+		std::string out;
+		for (obs_sceneitem_t *item : items)
+			out += obs_sceneitem_visible(item) ? "1" : "0";
+		return out + (obs_source_enabled(sw) ? " on" : " off");
+	};
+	auto record = [&] {
+		obs_data_t *settings = obs_source_get_settings(sw);
+		std::string text = obs_data_get_string(settings, "hidden_record");
+		obs_data_release(settings);
+		return text;
+	};
+	const std::string start = state();
+	obs_source_set_enabled(sw, false);
+	sleep_ms(700);
+	const std::string hid = state();
+	const std::string noted = record();
+	obs_source_set_enabled(sw, true);
+	sleep_ms(700);
+	const std::string back = state();
+	CHECK(start == "101010 on" && hid == "100000 off" && back == "101010 on" && !noted.empty() && record().empty(),
+	      "nothing hidden by it: the switch reads on; a press hides only the camera views that showed, Game Capture and the hidden DSLR left alone, and the switch stays off; the next press shows exactly them again (%s, %s, %s; noted '%s')",
+	      start.c_str(), hid.c_str(), back.c_str(), noted.c_str());
+
+	// The owner's fault: a show with nothing noted does nothing (unticked,
+	// it showed DSLR, and the Only one link hid Game Capture).
+	obs_source_set_enabled(sw, true);
+	sleep_ms(500);
+	const std::string nothing = state();
+	CHECK(nothing == "101010 on",
+	      "a press that shows with nothing noted shows nothing: DSLR stays hidden, Game Capture shown (%s)",
+	      nothing.c_str());
+
+	// Something else shows and hides a noted item meanwhile: it is not its to show.
+	obs_source_set_enabled(sw, false);
+	sleep_ms(500);
+	obs_sceneitem_set_visible(items[4], true); // Square Camera, by hand
+	sleep_ms(500);
+	obs_sceneitem_set_visible(items[4], false);
+	sleep_ms(500);
+	obs_source_set_enabled(sw, true);
+	sleep_ms(600);
+	const std::string other = state();
+	CHECK(other == "101000 on",
+	      "an item shown and hidden by something else after the press is forgotten: only DSLR Component comes back (%s)",
+	      other.c_str());
+	obs_sceneitem_set_visible(items[4], true);
+	sleep_ms(400);
+
+	// Kept over a restart: a filter made again from the settings restores.
+	obs_source_set_enabled(sw, false);
+	sleep_ms(600);
+	obs_data_t *saved = obs_source_get_settings(sw);
+	obs_data_t *copy = obs_data_create_from_json(obs_data_get_json(saved));
+	obs_data_release(saved);
+	obs_source_filter_remove(square, sw);
+	obs_source_release(sw);
+	sw = obs_source_create("stagekit_show_in_scenes", "RH Show in Scenes-Camera", copy, nullptr);
+	obs_data_release(copy);
+	obs_source_set_enabled(sw, false); // (as OBS restores it: not a press)
+	obs_source_filter_add(square, sw);
+	sleep_ms(600);
+	const std::string reloaded = state();
+	obs_source_set_enabled(sw, true);
+	sleep_ms(600);
+	const std::string restored = state();
+	CHECK(reloaded == "100000 off" && restored == "101010 on",
+	      "what it hid is kept in its settings: made again, the filter reads off and its press restores them (%s, %s)",
+	      reloaded.c_str(), restored.c_str());
+
+	// With a Standby Image on Square Camera and a key set to Cover.
+	obs_data_t *bd = obs_data_create();
+	obs_data_set_int(bd, "style", 1);
+	obs_source_t *standby = obs_source_create("stagekit_standby", "RH Standby", bd, nullptr);
+	obs_data_release(bd);
+	obs_source_filter_add(square, standby);
+	sleep_ms(200);
+	auto covering = [&] {
+		calldata_t cd = {};
+		proc_handler_call(obs_source_get_proc_handler(standby), "covering", &cd);
+		const bool on = calldata_bool(&cd, "covering");
+		calldata_free(&cd);
+		return on;
+	};
+	const std::string press_json =
+		R"({"sourceName":"RH Square Camera","filterName":"RH Show in Scenes-Camera","how":"toggle","hideAs":"cover"})";
+	obs_data_release(call("ShowInScenesPress", press_json));
+	sleep_ms(600);
+	const std::string covered = state() + (covering() ? " covered" : " clear");
+	obs_data_release(call("ShowInScenesPress", press_json));
+	sleep_ms(600);
+	const std::string uncovered = state() + (covering() ? " covered" : " clear");
+	CHECK(covered == "100010 off covered" && uncovered == "101010 on clear",
+	      "a key set to Cover: Square Camera covered (shown), DSLR Component hidden, both noted; the next press takes the image away and shows DSLR Component (%s, %s)",
+	      covered.c_str(), uncovered.c_str());
+
+	obs_set_output_source(0, nullptr);
+	obs_source_filter_remove(square, standby);
+	obs_source_release(standby);
+	obs_source_filter_remove(square, sw);
+	obs_source_release(sw);
+	obs_source_filter_remove(scene_src, only);
+	obs_source_release(only);
+	obs_source_filter_remove(scene_src, follow);
+	obs_source_release(follow);
+	sleep_ms(100);
+	obs_source_remove(scene_src);
+	obs_scene_release(scene);
+	for (obs_source_t *src : srcs) {
+		obs_source_remove(src);
+		obs_source_release(src);
+	}
+	obs_set_output_source(0, before_out);
+	obs_source_release(before_out);
+}
+
 static void link_follow_sources_test()
 {
 	printf("\n[link visibility: follow sources, several leads and their followers]\n");
@@ -3774,6 +3970,7 @@ static void link_follow_sources_test()
 	switch_is_command_test();
 	capture_hide_restores_test();
 	standby_cover_test();
+	restore_hidden_test();
 	obs_set_output_source(0, before_out);
 	obs_source_release(before_out);
 }
@@ -7168,6 +7365,14 @@ int main(int argc, char **argv)
 
 	if (getenv("STAGEKIT_TEST_ONLY_STANDBY_COVER")) { // to try that section alone
 		standby_cover_test();
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
+
+	if (getenv("STAGEKIT_TEST_ONLY_RESTORE_HIDDEN")) { // to try that section alone
+		restore_hidden_test();
 		obs_shutdown();
 		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
 		       g_failures == 1 ? "" : "s");
