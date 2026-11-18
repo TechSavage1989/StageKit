@@ -13,10 +13,10 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
-## Window switcher: Clear picked windows clears both lists, nothing unlisted drawn (0.1.0-betaNEXT)
+## Window switcher: Clear picked windows clears both lists, nothing unlisted drawn (0.1.0-beta188)
 
 Branch `fix/clear-picked-both-lists`, on `main` after beta186. Notes:
-`docs/releases/0.1.0-betaNEXT.md`. No Stream Deck file changed. The owner (2026-11-18, two
+`docs/releases/0.1.0-beta188.md`. No Stream Deck file changed. The owner (2026-11-18, two
 screenshots and the log): "window capture is capturing a window i've not manually selected and i
 can't clear it". *Windows to switch between* held blender.exe and ZBrush.exe (neither open),
 *Manual windows* was empty, *Ignored windows* held the Work profile's Firefox title, and the

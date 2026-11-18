@@ -1352,14 +1352,14 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     Stream Deck step `clear`; `clear_picked`, on as it comes, drops them when the filter is
     first loaded, `loaded_`): the owner did not want them "retained in the next session".
     **Clearing goes through both lists** (`clear_picked_in`: `apps` and `by_hand`, all four
-    paths; betaNEXT), and a picked automatic entry being shown is let go of as a closed window
+    paths; beta188), and a picked automatic entry being shown is let go of as a closed window
     is (`drop_shown`: no last frame kept, the next automatic window or the Standby Image).
     `is_pinned` needs a program's file name (`.exe`) before the dash: Firefox's titles have the
     same " — " in them ("Page — Profile — Mozilla Firefox"), and up to beta186 such a title
     chosen from a list was taken for a picked window (it answered nothing, so an ignored
     Firefox title ignored nothing, and Clear would have removed it).
   - **Nothing unlisted is drawn, and the capture is never left aimed where OBS could wander**
-    (betaNEXT). The owner, 2026-11-18: "window capture is capturing a window i've not manually
+    (beta188). The owner, 2026-11-18: "window capture is capturing a window i've not manually
     selected and i can't clear it": their lists held two closed apps and an ignored Firefox
     title, and the Window Capture, last aimed by executable at firefox.exe (a window of another
     profile had been picked), took the Work profile's window by itself at the next start; the
