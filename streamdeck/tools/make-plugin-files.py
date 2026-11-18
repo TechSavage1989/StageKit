@@ -19,7 +19,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, "..")
 PLUGIN = os.path.join(ROOT, "com.techsavage1989.stagekit.sdPlugin")
 BASE = "com.techsavage1989.stagekit"
-VERSION = "0.25.0.0"
+VERSION = "0.28.0.0"
 
 # The pack picture each feature's key starts with (its "on" and "off" look).
 PICTURES = {
@@ -149,66 +149,68 @@ MODE_PRESSES = [("on", "Switch on"), ("off", "Switch off"), ("toggle", "Toggle")
 
 
 def mode_page_html():
-    """A Scene Mode key's settings (the owner: "the key should connect to the
-    selected scene mode filter ... and it should allow configuration of the
-    specific modes as desired, whether it's on, off, toggle, or next"): the
-    filter, what a press and a long press do and the mode they act on."""
+    """A Scene Mode key's settings. First the filter, then one *Mode settings*
+    list (the modes of the key's filter) with that mode's own Use in Next,
+    Layout and Image right under it, then the key's behaviour in a *Key*
+    fold-out. The owner (2026-11-18): "the scene modes key is very long in the
+    configuration when the different modes are stacked. allow the mode to
+    configure to be selected from another selector under the scene modes
+    selector, and have it's configurations configurable". One set of lists,
+    not one per mode: the page is plain sdpi-components bound to settings, and
+    the plugin keeps what they say per mode (src/modes.ts `editModeSettings`),
+    as Scene Fit's Settings for does in OBS. The key-wide Layout and Mode type
+    rows are gone; keys saved with them still read them behind every mode's
+    own (src/pictures.ts `followedModePicture`)."""
     e = lambda t: html.escape(t, quote=True)
 
     def select(label, setting, default, pairs, title):
-        rows = "\n".join(f'				<option value="{v}">{e(t)}</option>' for v, t in pairs)
+        rows = "\n".join(f'					<option value="{v}">{e(t)}</option>' for v, t in pairs)
         return (
-            f'		<sdpi-item label="{label}" title="{e(title)}">\n'
-            f'			<sdpi-select setting="{setting}" default="{default}">\n{rows}\n			</sdpi-select>\n'
-            f"		</sdpi-item>\n"
+            f'			<sdpi-item label="{label}" title="{e(title)}">\n'
+            f'				<sdpi-select setting="{setting}" default="{default}">\n{rows}\n				</sdpi-select>\n'
+            f"			</sdpi-item>\n"
         )
 
-    def modes(label, setting, title, placeholder="Choose a mode"):
+    def modes(label, setting, title, placeholder="Choose a mode", indent="			"):
         return (
-            f'		<sdpi-item label="{label}" title="{e(title)}">\n'
-            f'			<sdpi-select id="{setting}" setting="{setting}" datasource="getFilterModes" placeholder="{placeholder}" show-refresh></sdpi-select>\n'
-            "		</sdpi-item>\n"
+            f'{indent}<sdpi-item label="{label}" title="{e(title)}">\n'
+            f'{indent}	<sdpi-select id="{setting}" setting="{setting}" datasource="getFilterModes" placeholder="{placeholder}" show-refresh></sdpi-select>\n'
+            f"{indent}</sdpi-item>\n"
         )
 
+    script = "import { modePictureLists } from './src/key-types.ts'; console.log(JSON.stringify(modePictureLists()));"
+    done = subprocess.run(["node", "--input-type=module", "-e", script], cwd=ROOT, capture_output=True, text=True, check=True)
+    lists = json.loads(done.stdout)
+    palette = "".join("	" + line + "\n" for line in PALETTE.rstrip("\n").split("\n"))
     return (
         '		<sdpi-item label="Scene Modes" title="The Scene Modes filter this key works with, by its scene (and its name where a scene has two).">\n'
         '			<sdpi-select id="modeFilter" setting="modeFilter" datasource="getModeFilters" placeholder="Choose a Scene Modes" show-refresh></sdpi-select>\n'
         "		</sdpi-item>\n"
-        + select("On press", "press", "on", MODE_PRESSES,
-                 "Switch on: its mode. Switch off: no mode (the filter must allow no mode). Toggle: its mode, or back to the mode before. "
-                 "Next mode: the next of the modes used, in the filter's order, round again after the last.")
-        + modes("Mode", "mode", "The mode Switch on and Toggle act on.")
-        + select("Long press", "longPress", "none", [("none", "Nothing")] + MODE_PRESSES,
-                 "What holding the key does. Nothing (as it comes): the key acts the moment it is pressed. "
-                 "Set, a press acts when the key is let go, and holding it for the hold time does this instead.")
-        + modes("Long press mode", "longMode", "The mode a long press's Switch on or Toggle acts on. Unset: the Mode above.", "As the Mode above")
-        + '		<sdpi-item label="Hold time (ms)" title="How long the key must be held for its long press: 300 to 5000 ms, 800 as it comes.">\n'
-        '			<sdpi-textfield setting="holdMs" placeholder="800" pattern="[0-9]*"></sdpi-textfield>\n'
-        "		</sdpi-item>\n"
-    )
-
-
-def mode_settings_html():
-    """Each mode's own settings on the key: one Settings for list (the modes
-    of the key's filter) and, for the mode chosen there, Use, Its layout and
-    Its image. One set of lists, not one per mode: the page is plain
-    sdpi-components bound to settings, and the plugin keeps what they say per
-    mode (src/modes.ts `editModeSettings`), as Scene Fit's Settings for does in
-    OBS."""
-    script = "import { modePictureLists } from './src/key-types.ts'; console.log(JSON.stringify(modePictureLists()));"
-    done = subprocess.run(["node", "--input-type=module", "-e", script], cwd=ROOT, capture_output=True, text=True, check=True)
-    lists = json.loads(done.stdout)
-    return (
-        '		<sdpi-item label="Settings for" title="A mode of the Scene Modes: choose one, then whether the key uses it and its image. Each mode keeps its own. The key shows the mode that is on.">\n'
-        '			<sdpi-select id="modeFor" setting="modeFor" datasource="getFilterModes" placeholder="Choose a mode" show-refresh></sdpi-select>\n'
-        "		</sdpi-item>\n"
-        '		<sdpi-item label="Use" title="Whether Next mode goes to this mode. Every mode is used as it comes.">\n'
+        + modes("Mode settings", "modeFor",
+                "A mode of the Scene Modes: choose one to set, just below, whether Next mode uses it and the key's layout and image while it is on. "
+                "Each mode keeps its own. Chosen for you: the key's Switch to mode, else the first mode.", indent="		")
+        + '		<sdpi-item label="Use in Next" title="Whether Next mode goes to this mode. Every mode is used as it comes.">\n'
         '			<sdpi-select setting="modeUse" default="use">\n'
         '				<option value="use">Used</option>\n'
         '				<option value="skip">Left out of Next mode</option>\n'
         "			</sdpi-select>\n"
         "		</sdpi-item>\n"
         + "".join(type_list_html(l) for l in lists)
+        + "		<details open>\n"
+        "			<summary>Key</summary>\n"
+        + select("On press", "press", "on", MODE_PRESSES,
+                 "Switch on: its mode. Switch off: no mode (the filter must allow no mode). Toggle: its mode, or back to the mode before. "
+                 "Next mode: the next of the modes used, in the filter's order, round again after the last.")
+        + modes("Switch to mode", "mode", "The mode Switch on and Toggle act on. The key shows the mode that is on.")
+        + select("Long press", "longPress", "none", [("none", "Nothing")] + MODE_PRESSES,
+                 "What holding the key does. Nothing (as it comes): the key acts the moment it is pressed. "
+                 "Set, a press acts when the key is let go, and holding it for the hold time does this instead.")
+        + modes("Long press mode", "longMode", "The mode a long press's Switch on or Toggle acts on. Unset: Switch to mode.", "As Switch to mode")
+        + '			<sdpi-item label="Hold time (ms)" title="How long the key must be held for its long press: 300 to 5000 ms, 800 as it comes.">\n'
+        '				<sdpi-textfield setting="holdMs" placeholder="800" pattern="[0-9]*"></sdpi-textfield>\n'
+        "			</sdpi-item>\n"
+        + palette
+        + "		</details>\n"
     )
 
 
@@ -307,14 +309,14 @@ def output_page(output, presses, longs):
     )
 
 
-def page(name, title, body, script="", key=None, after=""):
+def page(name, title, body, script="", key=None, after="", lists=True, palette=True):
     html = (
         "<!doctype html>\n<html>\n	<head lang=\"en\">\n"
         f"		<title>{title}</title>\n"
         '		<meta charset="utf-8" />\n'
         '		<script src="https://sdpi-components.dev/releases/v4/sdpi-components.js"></script>\n'
         + STYLE +
-        "	</head>\n\n	<body>\n" + body + "".join(type_list_html(l) for l in type_lists(key or name)) + after + PALETTE + "\n" + CONNECTION + script + "	</body>\n</html>\n"
+        "	</head>\n\n	<body>\n" + body + ("".join(type_list_html(l) for l in type_lists(key or name)) if lists else "") + after + (PALETTE if palette else "") + "\n" + CONNECTION + script + "	</body>\n</html>\n"
     )
     with open(os.path.join(PLUGIN, "ui", name + ".html"), "w", encoding="utf-8") as out:
         out.write(html)
@@ -441,7 +443,8 @@ def main():
     add("scene", "Switch Scene", "Switches OBS to a scene, on the program or (Studio Mode) the preview, with a transition if you choose one. Lit while that scene is on.", "scene", "imgs/actions/switch/icon", two("scene"))
 
     key_pictures("mode", "options/mode-on", "options/mode-off")
-    page("mode", "StageKit scene mode", mode_page_html(), FOLLOW_MODE, after=mode_settings_html())
+    # (Its lists are per mode, inside the body; its Palette is in the body's Key fold-out.)
+    page("mode", "StageKit scene mode", mode_page_html(), FOLLOW_MODE, lists=False, palette=False)
     add("mode", "Scene Mode", "Works one scene's Scene Modes: switches a mode on, off, toggles it or goes to the next mode. Shows the mode that is on.", "mode", "imgs/actions/switch/icon", two("mode"))
 
     # The keys for a filter on a scene that act through StageKit's own requests.

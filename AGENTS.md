@@ -1633,15 +1633,38 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   toggle, or next". So (`src/modes.ts`, all pure):
   - **Settings**: `modeFilter` (`scene␟filter`, the *Scene Modes* list, `getModeFilters`),
     `press` (`on` as it comes, `off`, `toggle`, `next`), `mode` (a mode id, for on and toggle;
-    the *Mode* list, `getFilterModes`, refreshed by the page's script when `modeFilter` changes),
+    the *Switch to mode* list (*Mode* up to beta179), `getFilterModes`, refreshed by the page's script when `modeFilter` changes),
     `longPress` (`none` as it comes, or the same four), `longMode` (unset: `mode`), `holdMs`
     (`HoldPress` in `src/hold.ts` and `withHoldBar`, as the Stream and Record keys), and
     `perMode` (`{ <id>: { type?, layout?, skip? } }`). A key saved before (`target`
     `scene␟filter␟mode id`) is moved once by `migrateModeKey` (its press stays). Ids are a
     filter's own (`m1` in two filters are two modes): choosing another filter clears `perMode`,
     `mode`, `longMode` and `modeFor` (`modeFilterWas`).
-  - **Each mode's settings on a generated page**: one *Settings for* list (`modeFor`, the
-    filter's modes) and, under it, *Use* (`modeUse`), *Its layout* (`modeLayout`) and *Its image*
+  - **The page: a mode, then its settings** (2026-11-18; the owner: "the scene modes key is very
+    long in the configuration when the different modes are stacked. allow the mode to configure
+    to be selected from another selector under the scene modes selector, and have it's
+    configurations configurable"). In order: *Scene Modes*; *Mode settings* (`modeFor`, the
+    filter's modes; *Settings for* up to beta179) and right under it that mode's *Use in Next*
+    (`modeUse`), *Layout* (`modeLayout`) and *Image* (`modeType`); then an open *Key* fold-out
+    with *On press*, *Switch to mode* (`mode`; *Mode* before), *Long press*, *Long press mode*,
+    *Hold time* and *Palette*. The key-wide *Layout* (`layout`) and *Mode type* (`sourceType`)
+    rows are gone from the page (`page(..., lists=False, palette=False)` in
+    `make-plugin-files.py`; the tests know `mode` as the key whose type lists are per mode) but
+    are still read for keys saved with them, with exactly the old precedence: `layout` behind
+    every mode without its own Layout, `sourceType` behind the key's own mode only (extended to
+    every mode it would change what Toggle and Next mode keys show for the other modes). The
+    own mode's *Image* list loads `sourceType` so the page shows what the key shows; an edit
+    there takes its place (`sourceType` set to `auto`). Which mode it was loaded for is kept
+    (`modeTypeKeyWide`), so changing *Switch to mode* reloads the lists and is never read as an
+    edit of the Image (it neither writes the old mode an image nor erases `sourceType`; tested).
+    *Mode settings* is chosen for the user
+    when empty: the key's `mode`, else the filter's first mode (`editModeSettings`' `firstMode`,
+    read in `upToDate`). Tested: an old key with `layout`/`sourceType` and no `perMode` shows
+    the same image, title and state after its page is brought up to date, for its own mode, another
+    mode and none (`tests/obs.test.ts`); the page's order and labels (`tests/key-types.test.ts`).
+    Plugin 0.28.0.0.
+  - **Each mode's settings on a generated page**: one *Mode settings* list (`modeFor`, the
+    filter's modes) and, under it, *Use in Next* (`modeUse`), *Layout* (`modeLayout`) and *Image*
     (`modeType`): `modePictureLists()` in `src/key-types.ts`, the key's own Layout and Mode type
     lists under those settings, kept out of `typeLists` so `typeForKept` never sets them.
     `editModeSettings` (on willAppear and every didReceiveSettings) loads the chosen mode's entry

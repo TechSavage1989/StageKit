@@ -38,9 +38,10 @@ import { answerLists, imageOf, type KeySettings, remembered, settle, showOnOff }
  * *Long press*, src/hold.ts as the Stream and Record keys): *Switch on* or
  * *Toggle* a mode of the filter (`mode`, `longMode`), *Switch off* (no mode),
  * or *Next mode*, through the modes the key uses in the filter's order. Each
- * mode has its own settings on the key (`perMode`: Use, Layout, Mode type),
- * edited through the page's *Settings for* list (src/modes.ts
- * `editModeSettings`). The image and title are the mode that is on; a Switch
+ * mode has its own settings on the key (`perMode`: Use in Next, Layout,
+ * Image), edited through the page's *Mode settings* list (src/modes.ts
+ * `editModeSettings`); the key-wide Layout and Mode type of a key saved up to
+ * beta179 are still read behind them. The image and title are the mode that is on; a Switch
  * on key shows its own mode, lit or dimmed, as before. Modes are kept by id,
  * so renaming one in OBS breaks no key.
  */
@@ -107,7 +108,7 @@ export class SceneModeKey extends SingletonAction<KeySettings> {
 			return;
 		}
 		if (event === "getFilterModes") {
-			// The modes of the key's filter: the Mode, Long press mode and Settings for lists.
+			// The modes of the key's filter: the Mode settings, Switch to mode and Long press mode lists.
 			const { scene, filter } = modeKeyFilter(await ev.action.getSettings());
 			const now = scene ? await obs.sceneMode(scene, filter) : undefined;
 			let items = now ? modeChoiceItems(now.modes) : [];
@@ -120,10 +121,19 @@ export class SceneModeKey extends SingletonAction<KeySettings> {
 		await answerLists(ev.payload, await ev.action.getSettings(), () => false);
 	}
 
-	/** A key from before beta175 moved to its filter, and the page's per-mode lists kept per mode; written back when changed. */
+	/**
+	 * A key from before beta175 moved to its filter, and the page's per-mode
+	 * lists kept per mode; written back when changed. With no mode in *Mode
+	 * settings* and none to switch to, the filter's first mode is chosen there.
+	 */
 	private async upToDate(key: KeyAction<KeySettings>, settings: KeySettings): Promise<KeySettings> {
 		const moved = migrateModeKey(settings) ?? settings;
-		const edited = editModeSettings(moved) ?? moved;
+		let edited = editModeSettings(moved) ?? moved;
+		const { scene, filter } = modeKeyFilter(edited);
+		if (scene && !edited.modeFor) {
+			const first = (await obs.sceneMode(scene, filter))?.modes[0]?.id;
+			if (first) edited = editModeSettings(edited, first) ?? edited;
+		}
 		if (edited !== settings) await key.setSettings(edited);
 		return edited;
 	}

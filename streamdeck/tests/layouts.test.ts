@@ -79,9 +79,11 @@ test("every key with a Source type or Scene type list has a Layout list, just be
 		// (Not one of the type lists: an image kept from the old Image list is not taken for a layout.)
 		assert.ok(!lists.some((l) => l.setting === "layout"), key);
 		const page = readFileSync(new URL(`ui/${pageOf(key)}.html`, plugin), "utf8");
-		const at = page.indexOf('setting="layout"');
+		// (The Scene Mode key's Layout and image are each mode's own, under Mode settings.)
+		const [layoutSetting, typedSetting] = key === "mode" ? ["modeLayout", "modeType"] : ["layout", typed.setting];
+		const at = page.indexOf(`setting="${layoutSetting}"`);
 		assert.ok(at > 0, `${key}: the Layout list on its page`);
-		assert.ok(at < page.indexOf(`setting="${typed.setting}"`), `${key}: Layout before ${typed.setting}`);
+		assert.ok(at < page.indexOf(`setting="${typedSetting}"`), `${key}: Layout before ${typedSetting}`);
 		assert.ok(page.includes('<sdpi-item label="Layout"'), key);
 		for (const [value, label] of [
 			["auto", "Automatic"],

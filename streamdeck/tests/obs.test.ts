@@ -430,6 +430,42 @@ test("a Scene Mode key is tied to one filter: Switch on, Switch off, Toggle, Nex
 	const other = editModeSettings({ ...page, modeFilter: `Chat Live${sep}Column` })!;
 	assert.deepEqual([other.perMode, other.modeFor, other.mode], [{}, "", ""], "another filter: the old filter's modes are forgotten");
 
+	// Mode settings is chosen for you (2026-11-18): the key's Switch to mode, else the first mode.
+	page = editModeSettings({ modeFilter: standby, modeFilterWas: standby, mode: "m2" })!;
+	assert.deepEqual([page.modeFor, page.modeForWas, page.modeType], ["m2", "m2", "auto"], "the key's own mode");
+	page = editModeSettings({ modeFilter: standby, modeFilterWas: standby }, "m1")!;
+	assert.equal(page.modeFor, "m1", "none to switch to: the filter's first mode");
+	assert.equal(editModeSettings({ modeFilter: standby, modeFilterWas: standby }), undefined, "the first mode not known: left empty");
+	page = editModeSettings({ modeFilter: `Chat Live${sep}Column`, modeFilterWas: standby, mode: "m2", modeFor: "m2", modeForWas: "m2" }, "k1")!;
+	assert.deepEqual([page.mode, page.modeFor], ["", "k1"], "another filter: its first mode");
+
+	// A key saved up to beta179 with the key-wide Layout and Mode type the page no longer shows: its own mode's
+	// Image list shows that Mode type, nothing is written for looking, and editing that Image takes its place.
+	const old = { modeFilter: standby, modeFilterWas: standby, mode: "m2", press: "toggle", layout: "chat", sourceType: "camera" };
+	page = editModeSettings(old)!;
+	assert.deepEqual([page.modeFor, page.modeType, page.modeLayout, page.perMode], ["m2", "camera", "auto", undefined], "shown as it is");
+	assert.equal(editModeSettings(page), undefined, "looked at: nothing written");
+	page = editModeSettings({ ...page, modeFor: "m1" })!;
+	assert.equal(page.modeType, "auto", "another mode: the key-wide Mode type was never its image");
+	page = editModeSettings({ ...page, modeFor: "m2" })!;
+	page = editModeSettings({ ...page, modeType: "auto" })!;
+	assert.deepEqual([page.sourceType, page.perMode, page.layout], ["auto", {}, "chat"], "Automatic chosen: the mode's own type from now on; the Layout untouched");
+	page = editModeSettings({ ...old, modeFor: "m2", modeForWas: "m2", modeTypeKeyWide: "m2", modeType: "game", modeLayout: "auto", modeUse: "use" })!;
+	assert.deepEqual([page.sourceType, page.perMode], ["auto", { m2: { type: "game" } }], "another image: the mode's own");
+
+	// Switch to mode changed on such a key is no edit of the Image: the lists are loaded again for the new rule.
+	page = editModeSettings({ ...old, modeFor: "m1" })!;
+	assert.deepEqual([page.modeType, page.modeTypeKeyWide], ["auto", ""], "Mode settings on m1: not the key's mode");
+	let moved = editModeSettings({ ...old, modeFor: "m2" }) ?? old;
+	moved = editModeSettings(moved) ?? moved;
+	assert.deepEqual([moved.modeType, moved.modeTypeKeyWide], ["camera", "m2"], "loaded for m2");
+	moved = editModeSettings({ ...moved, mode: "m1" })!;
+	assert.deepEqual([moved.perMode, moved.sourceType, moved.modeType], [undefined, "camera", "auto"], "Mode settings on the old mode, Switch to mode changed: nothing written, the list shows m2's own");
+	assert.equal(editModeSettings(moved), undefined, "and then settled");
+	moved = editModeSettings({ ...page, mode: "m1" })!;
+	assert.deepEqual([moved.perMode, moved.sourceType, moved.modeType, moved.modeTypeKeyWide], [undefined, "camera", "camera", "m1"], "Mode settings already on the new mode: the key-wide image shown for it, nothing erased");
+	assert.equal(editModeSettings(moved), undefined, "and then settled");
+
 	// A key, as Stream Deck gives one to an action.
 	let settings: Record<string, unknown> = {};
 	const shown: { state?: number; title?: string; images: string[]; alerts: number } = { images: [], alerts: 0 };
@@ -531,6 +567,35 @@ test("a Scene Mode key is tied to one filter: Switch on, Switch off, Toggle, Nex
 	assert.equal(shown.title, modeTitle("Be Right Back"));
 	assert.ok(image().includes("options/mode-brb"));
 	assert.equal(shown.state, 0);
+
+	// A key saved up to beta179 with the key-wide Layout and Mode type and no per-mode settings looks exactly as
+	// before once its page has been brought up to date (Mode settings chosen, the lists filled), for its own mode
+	// and for another mode on.
+	for (const current of ["m2", "m1", ""]) {
+		f.current = current;
+		for (const keyWide of [
+			{ layout: "chat", sourceType: "camera" },
+			{ layout: "live" },
+			{ sourceType: "game" },
+		]) {
+			const before = { modeFilter: standby, modeFilterWas: standby, mode: "m2", press: "toggle", ...keyWide };
+			await action.show(key, before);
+			const was = [image(), shown.title, shown.state];
+			settings = { ...before };
+			await action.onDidReceiveSettings({ action: key, payload: { settings } });
+			assert.equal(settings.modeFor, "m2", "Mode settings: the key's own mode");
+			assert.deepEqual([settings.layout, settings.sourceType, settings.perMode], [before.layout, before.sourceType, undefined], "the key-wide values kept");
+			await action.show(key, settings);
+			assert.deepEqual([image(), shown.title, shown.state], was, `${JSON.stringify(keyWide)}, ${current || "none"} on`);
+		}
+	}
+	// (What that is: the key-wide Layout for every mode, the Mode type for its own mode only.)
+	f.current = "m2";
+	await action.show(key, { modeFilter: standby, mode: "m2", press: "toggle", layout: "chat", sourceType: "camera" });
+	assert.ok(image().includes("layouts/chat-"), image());
+	f.current = "m1";
+	await action.show(key, { modeFilter: standby, mode: "m2", press: "toggle", layout: "chat", sourceType: "camera" });
+	assert.ok(image().includes("layouts/chat-") && !image().includes("camera"), image());
 
 	// An old key's settings are moved when they arrive.
 	settings = { target: `${standby}${sep}m2`, press: "toggle" };
