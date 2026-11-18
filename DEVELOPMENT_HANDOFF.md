@@ -13,10 +13,10 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
-## Filter names, tooltips, Mode types (0.1.0-betaNEXT)
+## Filter names, tooltips, Mode types (0.1.0-beta182)
 
 Branch `chore/filter-names-tooltips`, on `main` after beta176 (#192). Notes:
-`docs/releases/0.1.0-betaNEXT.md`. Three things the owner asked for:
+`docs/releases/0.1.0-beta182.md`. Three things the owner asked for:
 
 - **Filter names say where the filter goes** (the owner: "I want all scene filters in the plugin
   referred to as scene filters, and likewise for source filters so they are easily

@@ -61,7 +61,7 @@ Ids (`stagekit_standby`, `stagekit_start_image`, `SetPictureShape`), settings, p
 the code are unchanged, and **the rest of this file still says picture and start image**. Write
 *image* in any new string.
 
-A fifth, at the owner's word (2026-11-18, betaNEXT): "I want all scene filters in the plugin
+A fifth, at the owner's word (2026-11-18, beta182): "I want all scene filters in the plugin
 referred to as scene filters, and likewise for source filters so they are easily distinguishable in
 the list", in the form they chose, *Scene Filter: Fit to Space (StageKit)* and *Source Filter: Blur
 (StageKit)*. Every StageKit filter's `*.Name` in `data/locale/en-US.ini` says one or the other
@@ -194,7 +194,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
 - **Long control labels push every control to the right** in OBS's filter window, which the owner
   rejected. Keep a label under about 26 characters and put the rest in a tooltip
   (`set_tip`, below).
-- **Every tooltip goes through `set_tip`** (`src/common/tooltip.hpp`, betaNEXT), never
+- **Every tooltip goes through `set_tip`** (`src/common/tooltip.hpp`, beta182), never
   `obs_property_set_long_description` itself: OBS shows a long description as one line as wide as
   its text, and the owner found "all tooltips in the plugin are hard to read because they are just
   one really long line of text". `wrap_tip` breaks it at spaces to `kTipWidth` (64) characters,
@@ -1558,7 +1558,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     (tested).
   - **Settings.** `sourceType` (Source type, or *Mode type* on the Scene Mode key; ids append-only,
     the Scene Modes filter's *Mode type* in OBS offers every source type of the Scene Mode key's
-    list, the same ids in the same order since betaNEXT: `tests/mode-types.test.ts` reads
+    list, the same ids in the same order since beta182: `tests/mode-types.test.ts` reads
     `kTypes` in `scene-modes.cpp` and fails when the two differ), `sceneType` (Scene type), `look` (Blur style, Corner style, Shadow style,
     Transition, Position, Capture type). Each list starts with *Automatic*, value `auto`; unset or empty reads the same. Since beta160
     every key a user can add has one (tested from the manifest): the keys whose own list is what
@@ -1955,7 +1955,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   order), `mode|<id>|name`, `mode|<id>|type` (a string id, the Stream Deck Source type's: up to
   beta176 `game`, `window`, `art_app`, `code_editor`, `browser`, `camera`, `capture_card`,
   `display`, `phone`, `tablet`, `chat`, `music`, `alerts`, `title`, `image`, `video`, `starting`,
-  `brb`, `intermission`, `ending`; since betaNEXT every source type of the Scene Mode key's list,
+  `brb`, `intermission`, `ending`; since beta182 every source type of the Scene Mode key's list,
   `handheld` and the rest, in the key's order (the owner: "handheld is not an option"); ""
   Automatic; ids never change or go), `mode|<id>|go_to`, `mode|<id>|sources`;
   `mode_now` and `mode_before` (ids, written by the filter under its lock, in `kOwnSettings`).
