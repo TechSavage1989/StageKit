@@ -1972,7 +1972,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   `g_all` (`live`). Before the integration a removed scene's `item_remove` reached a freed filter
   and OBS hung at shutdown (seen in the tests). A new filter that listens to its scene's or groups'
   signals must do the same.
-  **Override other filters** (`override_others`, a bool, off as it comes; betaNEXT). The owner, with
+  **Override other filters** (`override_others`, a bool, off as it comes; beta179). The owner, with
   Link Visibility and Show in Scenes set to Morph of their own: "none of the other transitions seem
   to do anything. only morph works at all". Those filters' own choice wins for their change, and
   the scene's is only put back after; they can be set to *As the scene sets*, or this is ticked.

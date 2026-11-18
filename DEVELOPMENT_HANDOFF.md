@@ -13,10 +13,10 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
-## Scene Transitions: Override other filters (0.1.0-betaNEXT)
+## Scene Transitions: Override other filters (0.1.0-beta179)
 
 Branch `feat/scene-transitions-override`, on `main` after beta174. Notes:
-`docs/releases/0.1.0-betaNEXT.md`. No Stream Deck file changed. The owner, with a screenshot of
+`docs/releases/0.1.0-beta179.md`. No Stream Deck file changed. The owner, with a screenshot of
 Scene Transitions on *All sources*: of the list's tip, "this tooltip makes no sense", and "none of
 the other transitions seem to do anything. only morph works at all, and even then there is no
 choice as to what it determines for morphing by default". Cause: their Link Visibility filters and
