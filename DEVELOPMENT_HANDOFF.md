@@ -13,10 +13,10 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
-## Auto Capture picks a game up within seconds while it rests (0.1.0-betaNEXT)
+## Auto Capture picks a game up within seconds while it rests (0.1.0-beta191)
 
 Branch `fix/auto-capture-quick-pickup`, on `main` after beta185. Notes:
-`docs/releases/0.1.0-betaNEXT.md`. No Stream Deck file changed. The owner (2026-11-18, after
+`docs/releases/0.1.0-beta191.md`. No Stream Deck file changed. The owner (2026-11-18, after
 beta184): "game capture is taking quite a while to hook windowed games and emulators, but i don't
 want the overhead processing of OBS to go up".
 

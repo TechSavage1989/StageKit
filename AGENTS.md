@@ -1401,7 +1401,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   capture"). Now it is rested in memory only: tried again when its window's title changes (a game
   was started; three such tries at most), when it is clicked into again (`away`), or after a wait
   of 20 s that grows by half each time to a minute at most, for the full time each try (until
-  betaNEXT; now looks, below); a picture
+  beta191; now looks, below); a picture
   or the program closing ends it. (Beta135 and 136 tried for half the time, 5 s, with waits up to
   5 minutes: the owner's Ryujinx, whose title never changes and whose first picture took 7 s, was
   given up on three times running and they reported "auto capture is not capturing a game". Its
@@ -1419,7 +1419,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   when the rest ends. In beta184 a rest kept the titles of all the program's windows (`titles`, by
   `title_shape`: lower case, digits out) and every title seen in its first `give_up_s_`; only a
   title not among them after that ended it, 3 times while the program stayed open
-  (`title_tries`; replaced in betaNEXT, below). Clicking back in counts only when no
+  (`title_tries`; replaced in beta191, below). Clicking back in counts only when no
   window of the program was in front (`rest_in_front`; in beta184 also not in that first
   stretch). Tested in
   `[auto capture: a program rests for real ...]` (`auto_rest_test`, alone with
@@ -1428,7 +1428,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   that sets windows often passes `keep_clock`. A program put on *Never capture* while it rests
   is no longer rested (`rest_.erase`), so the full-screen fallback comes back. The Windows side
   (whether OBS's Game Capture really logs nothing for a window that is not there) is believed
-  from OBS's source, not seen. **A rest looks in on the program** (betaNEXT; the owner, the same
+  from OBS's source, not seen. **A rest looks in on the program** (beta191; the owner, the same
   day: "game capture is taking quite a while to hook windowed games and emulators, but i don't
   want the overhead processing of OBS to go up"). Beta184's rests were 20 to 60 s of nothing, and
   a game started in an emulator's menu waited for the end of one. Now a rest aims the capture at
