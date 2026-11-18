@@ -13,9 +13,9 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
-## Make Room, a transition and a way for unpaired sources (0.1.0-betaNEXT)
+## Make Room, a transition and a way for unpaired sources (0.1.0-beta175)
 
-Branch `feat/make-room`, rebased on `main` after beta172. Notes: `docs/releases/0.1.0-betaNEXT.md`. No
+Branch `feat/make-room`, rebased on `main` after beta172. Notes: `docs/releases/0.1.0-beta175.md`. No
 Stream Deck file changed. The owner: "can we make a new transition called something like "make
 room" which would be a transition in which sources move off screen on the closed side of the screen
 based on other objects morphing into the scene? can it be its own transition, but also an "other"

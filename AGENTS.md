@@ -1034,7 +1034,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   at the item's frame. Which case it is goes by the transition's sources (`has_a_`, `has_b_`), not
   by the textures it is handed (a placeholder stands in for a missing side): up to beta154 an item
   hidden with it was drawn as a change of scene into nothing and stayed whole until it went.
-- **Make Room** (betaNEXT; the owner: "a transition in which sources move off screen on the closed
+- **Make Room** (beta175; the owner: "a transition in which sources move off screen on the closed
   side of the screen based on other objects morphing into the scene? can it be its own transition,
   but also an "other" transition to be used for objects with no link set up in morph? ... the
   sources would move off screen, on the closest screen edge but away based on the incoming morph").
