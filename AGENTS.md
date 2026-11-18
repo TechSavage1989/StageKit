@@ -825,6 +825,32 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   shifted "a number of times" after a scene switch or a camera being hidden. Which side gives way
   is judged by which side of the space's middle it lies on, never by whether it touches the space:
   judged by touching, the two filters chased each other without end.
+- **A resized picture that has no use for more height is packed with a kept-size item above or
+  below it, top first** (`grows_x`/`grows_y` and `leans_x`/`leans_y` on `Claim`, `lean_axes`, `trim_for_kept` in
+  `src/placement/fit-engine.cpp`; betaNEXT, 2026-11-18). The owner, of a Scene Fit with their camera
+  (resized, held by the column's width) above the chat box (keeping its size): "I don't think use
+  visible pixels is working as intended. the chat box is more than 30px from the visible border of
+  the camera box, but the bounding box of the camera box is exactly 30 from each edge". Measuring
+  was right (a claim is the picture, not the box); the chat box went to the far side (the canvas's
+  bottom) because the camera resizes, and the camera's space then reached down to it, its picture
+  centred with 22 and 24 px empty above and below (test canvas). Now a resizing fit's claim says
+  whether more width or more height would make its picture larger (it leaves room the other way);
+  only along an axis it would grow in is it a side that gives way (`soft_sides`). Along an axis it
+  would not grow in, a kept-size item lies at the top of its space and says so in its
+  claim, and the resized fit cuts its space down to its picture at the top: whichever of
+  the two is above stays against its edge and the other comes up the gap from it, in one move, and
+  nothing answers anything after (5 s watched). Packing towards the item's side instead crept, one
+  glide at a time. Only with *Align in the space* in the middle along that axis on both; a side
+  that does give way still decides as before. Same in Scene Fit and Fit to Space, with *Use visible
+  pixels* or without. Tested in `[fit visible pixels: ...]` (`fit_visible_test`, alone:
+  `STAGEKIT_TEST_ONLY_FIT_VISIBLE`; a Cropped View of an async camera). The owner's flashing chat
+  box in the same scene was not reproduced. **Vertically only**: side by side nothing leans and
+  nothing is trimmed (`leans_x` is never set, `soft_sides`' `beside` ignores `grows_x`), so a 4:3
+  game held by its height beside a kept-size chat column still counts as giving way, the column
+  stays against the screen's edge and the game centred in the rest, exactly as at beta181. The
+  first build packed side by side too and moved that layout (column 73 px off the right edge on
+  the test canvas); tested since in the same section. Horizontal packing would be a new layout
+  rule: only at the owner's word.
 - **Space priority decides which fit makes room for which** (`space_priority`, `SpacePriority`,
   saved by number, append-only: 0 *Shares space*, 1 *Takes space first*, 2 *Makes room*; and
   `list_priority`, *Priority by list order*, a Fit to Space's own and a Scene Fit's for all its

@@ -103,6 +103,16 @@ inline bool outranks(const Rank &a, const Rank &b)
 struct Claim {
 	Box box;
 	bool resizes = true;
+	// For one that resizes: whether more room across (`grows_x`) or
+	// down (`grows_y`) would make its picture larger. A picture held by
+	// its width (empty room above and below it in its space) has no use
+	// for more height, and the other way round.
+	bool grows_x = true, grows_y = true;
+	// For one that keeps its size: it lies at the top of its space
+	// (`leans_y`) because a resized picture above or below it has no use
+	// for more height (see `lean_axes`). `leans_x` is never set: side by
+	// side, placing is as it was.
+	bool leans_x = false, leans_y = false;
 	Rank rank;
 };
 void claim_set(obs_source_t *scene, int64_t item, const void *owner, const Claim &claim);
@@ -151,6 +161,11 @@ struct Obstacle {
 	Box box;
 	int64_t id = 0;
 	bool said = false, gives = false, passed = false, above = false;
+	// (For one that gives way: whether it would take more room across or
+	// down. For a kept-size fit's of the same standing: 1, it lies to the
+	// left of its space, 2, at its top, for a resized picture's sake.)
+	bool grows_x = true, grows_y = true;
+	int leans = 0;
 };
 
 // What is in the way: the items of a scene, each looked at (drawn and read
@@ -295,6 +310,14 @@ private:
 	void store_double(const char *key, double v);
 	void store_string(const char *key, const char *v);
 	void soft_sides(bool &l, bool &r, bool &t, bool &b) const;
+	// Whether a kept-size item lies at the top of its space: a resizing
+	// fit's picture above or below it would not grow into more height,
+	// and nothing else decides it (`x` is always false).
+	void lean_axes(const Prep &p, bool &x, bool &y) const;
+	// A resized picture that leaves its space empty above and below, with
+	// a kept-size fit above or below it that leans: the space is cut down
+	// to the picture, at the top.
+	void trim_for_kept(const Prep &p, Box &goal) const;
 	// Says where the item will be, with where this fit stands.
 	void say(int64_t item, Claim claim);
 	Box kept_in(const Prep &p, const Box &room, double kw, double kh) const;
@@ -322,6 +345,8 @@ private:
 	bool own_looked_have_ = false;
 	std::vector<Box> boxes_;  // what is in the way now
 	std::vector<bool> gives_; // and which of them another filter resizes to make room
+	std::vector<int> grows_;  // of those, 1: it would take more width, 2: more height
+	std::vector<int> leans_;  // of the kept-size fits' of the same standing, which lean (Obstacle::leans)
 	std::vector<int64_t> ids_;
 	std::vector<bool> said_;
 	bool claims_firm_ = false; // on the tick only

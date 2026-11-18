@@ -9,6 +9,7 @@
 #include <obs-nix-platform.h>
 #include <graphics/matrix4.h>
 #include <graphics/vec4.h>
+#include <util/platform.h>
 
 #include "../src/common/tooltip.hpp"
 
@@ -1291,6 +1292,382 @@ static void fit_priority_test()
 	obs_source_release(before);
 	obs_source_release(fp_cam);
 	obs_source_release(fp_game);
+}
+
+// ------------------------------------------------- fit visible pixels
+// The owner, 2026-11-18, of a Scene Fit on Component-Capture-Scene: "the chat
+// box is more than 30px from the visible border of the camera box, but the
+// bounding box of the camera box is exactly 30 from each edge". The camera is
+// a Cropped View of a DirectShow camera (async video); its picture is of
+// another shape than the space it gets, so OBS letterboxes it in its bounding
+// box. The chat box, a group, is fitted below it. The gap is to be measured
+// from the camera's visible picture. On a 640x360 canvas with a gap of 20: a
+// wall (not fitted) on the left leaves a column on the right. Run alone with
+// STAGEKIT_TEST_ONLY_FIT_VISIBLE.
+namespace {
+// A camera: async video, one frame of one colour, pushed once.
+struct FvCamera {
+	obs_source_t *source = nullptr;
+};
+void register_fv_camera()
+{
+	obs_source_info info = {};
+	info.id = "stagekit_test_fv_camera";
+	info.type = OBS_SOURCE_TYPE_INPUT;
+	info.output_flags = OBS_SOURCE_ASYNC_VIDEO;
+	info.get_name = [](void *) {
+		return "Camera (stand-in, async video)";
+	};
+	info.create = [](obs_data_t *settings, obs_source_t *source) -> void * {
+		auto *c = new FvCamera();
+		c->source = source;
+		const uint32_t cw = (uint32_t)obs_data_get_int(settings, "width");
+		const uint32_t ch = (uint32_t)obs_data_get_int(settings, "height");
+		const uint32_t colour = (uint32_t)obs_data_get_int(settings, "color"); // ABGR, as colour sources
+		std::vector<uint32_t> px(size_t(cw) * ch, colour);
+		obs_source_set_async_unbuffered(source, true);
+		obs_source_frame frame = {};
+		frame.data[0] = reinterpret_cast<uint8_t *>(px.data());
+		frame.linesize[0] = cw * 4;
+		frame.width = cw;
+		frame.height = ch;
+		frame.format = VIDEO_FORMAT_RGBA;
+		frame.full_range = true;
+		frame.timestamp = os_gettime_ns();
+		obs_source_output_video(source, &frame);
+		return c;
+	};
+	info.destroy = [](void *data) {
+		delete static_cast<FvCamera *>(data);
+	};
+	obs_register_source(&info);
+}
+} // namespace
+
+static void fit_visible_test()
+{
+	printf("\n[fit visible pixels: a letterboxed camera and the chat box below it]\n");
+	register_fv_camera();
+	constexpr uint32_t W = 640, H = 360;
+	constexpr double kGap = 20.0;
+	auto colour = [](const char *kind, const char *name, int cw, int ch, uint32_t c) {
+		obs_data_t *d = obs_data_create();
+		obs_data_set_int(d, "width", cw);
+		obs_data_set_int(d, "height", ch);
+		obs_data_set_int(d, "color", c);
+		obs_source_t *src = obs_source_create(kind, name, d, nullptr);
+		obs_data_release(d);
+		return src;
+	};
+	// Red camera, 320x180; its Cropped View cuts 20 off each side: 280x180.
+	obs_source_t *dslr = colour("stagekit_test_fv_camera", "FV DSLR", 320, 180, 0xFF0000FF);
+	obs_data_t *vd = obs_data_create();
+	obs_data_set_string(vd, "source", "FV DSLR");
+	obs_data_set_int(vd, "left", 20);
+	obs_data_set_int(vd, "right", 20);
+	obs_source_t *view = obs_source_create("stagekit_cropped_view", "FV DSLR Component", vd, nullptr);
+	obs_data_release(vd);
+	obs_source_t *wall = colour("color_source", "FV Wall", 360, 360, 0xFF808080); // grey
+	obs_source_t *chat = colour("color_source", "FV Chat", 120, 200, 0xFF00FF00); // green
+	// (A wide one, for a resized picture held by the column's width.)
+	obs_source_t *banner = colour("color_source", "FV Banner", 300, 100, 0xFF00FF00);
+	obs_source_t *before = obs_get_output_source(0);
+	struct Rect {
+		double x = 0, y = 0, w = 0, h = 0;
+		bool any = false;
+	};
+	// Where a colour shows on the scene, read back.
+	auto shows = [&](obs_source_t *scene, uint32_t rgb) {
+		const std::vector<uint8_t> px = render(scene, W, H);
+		int x0 = W, y0 = H, x1 = -1, y1 = -1;
+		const int r = rgb & 0xFF, g = (rgb >> 8) & 0xFF, b = (rgb >> 16) & 0xFF;
+		for (uint32_t y = 0; y < H; y++)
+			for (uint32_t x = 0; x < W; x++) {
+				const uint8_t *p = &px[(size_t(y) * W + x) * 4];
+				if (std::abs(p[0] - r) < 40 && std::abs(p[1] - g) < 40 && std::abs(p[2] - b) < 40 &&
+				    p[3] > 128) {
+					x0 = std::min<int>(x0, x);
+					y0 = std::min<int>(y0, y);
+					x1 = std::max<int>(x1, x);
+					y1 = std::max<int>(y1, y);
+				}
+			}
+		Rect out;
+		if (x1 >= 0)
+			out = Rect{(double)x0, (double)y0, double(x1 - x0 + 1), double(y1 - y0 + 1), true};
+		return out;
+	};
+	auto box = [](obs_sceneitem_t *it) {
+		vec2 p, b;
+		obs_sceneitem_get_pos(it, &p);
+		obs_sceneitem_get_bounds(it, &b);
+		return Rect{p.x, p.y, b.x, b.y, true};
+	};
+	auto list = [](obs_data_t *d, const char *setting, std::vector<std::string> values) {
+		obs_data_array_t *arr = obs_data_array_create();
+		for (const std::string &value : values) {
+			obs_data_t *entry = obs_data_create();
+			obs_data_set_string(entry, "value", value.c_str());
+			obs_data_array_push_back(arr, entry);
+			obs_data_release(entry);
+		}
+		obs_data_set_array(d, setting, arr);
+		obs_data_array_release(arr);
+	};
+	enum class Visible { On, Defaults, Off };
+	// How one fit is set: the owner's (Free space, gap, Resize to fit, Shares
+	// space, The middle), the measuring options as `vis` says.
+	auto look = [&](obs_data_t *d, const std::string &prefix, Visible vis, bool resize, int toward) {
+		obs_data_set_int(d, (prefix + "box").c_str(), 2);
+		obs_data_set_double(d, (prefix + "margin").c_str(), kGap);
+		obs_data_set_bool(d, (prefix + "resize").c_str(), resize);
+		obs_data_set_int(d, (prefix + "toward").c_str(), toward);
+		obs_data_set_int(d, (prefix + "space_priority").c_str(), 0);
+		obs_data_set_int(d, (prefix + "glide_ms").c_str(), 200);
+		if (vis != Visible::Defaults) {
+			obs_data_set_bool(d, (prefix + "visible_pixels").c_str(), vis == Visible::On);
+			obs_data_set_bool(d, (prefix + "no_shadows").c_str(), vis == Visible::On);
+		}
+	};
+	int made = 0;
+	struct Extra {
+		bool cam_keeps = false;        // the camera keeps its size (and the chat box resizes)
+		obs_source_t *inner = nullptr; // in the chat box group, instead of FV Chat
+		int chat_toward = 0;           // the chat box's Align in the space
+		bool gap = true;               // the gap is checked, not only that nothing moves
+	};
+	// One case: `scene_fit` a Scene Fit with both entries, else two Fit to
+	// Space filters. Returns the visible gap and prints what was seen.
+	auto run = [&](const char *label, bool scene_fit, Visible vis, bool chat_first, bool chat_keeps,
+		       Extra x = Extra{}) {
+		made++;
+		obs_scene_t *scene = obs_scene_create(("FV Scene " + std::to_string(made)).c_str());
+		obs_source_t *ss = obs_scene_get_source(scene);
+		obs_sceneitem_t *w_it = obs_scene_add(scene, wall);
+		(void)w_it;
+		obs_sceneitem_t *cam = obs_scene_add(scene, view);
+		vec2 at, k;
+		vec2_set(&at, 400.0f, 20.0f);
+		vec2_set(&k, 0.6f, 0.6f);
+		obs_sceneitem_set_pos(cam, &at);
+		obs_sceneitem_set_scale(cam, &k);
+		const std::string gname = "FV Chat Box Group " + std::to_string(made);
+		obs_sceneitem_t *grp = obs_scene_add_group(scene, gname.c_str());
+		obs_sceneitem_t *inner = obs_scene_add(scene, x.inner ? x.inner : chat);
+		obs_sceneitem_group_add_item(grp, inner);
+		vec2_set(&at, 460.0f, 170.0f);
+		vec2_set(&k, chat_keeps ? 0.5f : 0.8f, chat_keeps ? 0.5f : 0.8f);
+		obs_sceneitem_set_pos(grp, &at);
+		obs_sceneitem_set_scale(grp, &k);
+		obs_set_output_source(0, ss);
+		std::vector<obs_source_t *> filters;
+		std::vector<std::string> names = {"FV DSLR Component", gname};
+		if (chat_first)
+			std::swap(names[0], names[1]);
+		if (scene_fit) {
+			obs_data_t *d = obs_data_create();
+			list(d, "entries", names);
+			for (const std::string &e : names)
+				look(d, "fit|" + e + "|", vis, e == gname ? !chat_keeps : !x.cam_keeps,
+				     e == gname ? x.chat_toward : 0);
+			obs_source_t *f = obs_source_create(
+				"stagekit_scene_fit", ("FV Scene Fit " + std::to_string(made)).c_str(), d, nullptr);
+			obs_data_release(d);
+			obs_source_filter_add(ss, f);
+			filters.push_back(f);
+		} else {
+			for (const std::string &e : names) {
+				obs_data_t *d = obs_data_create();
+				obs_data_set_string(d, "item", e.c_str());
+				look(d, "", vis, e == gname ? !chat_keeps : !x.cam_keeps,
+				     e == gname ? x.chat_toward : 0);
+				obs_source_t *f = obs_source_create(
+					"stagekit_fit_item", ("FV Fit " + e + " " + std::to_string(made)).c_str(), d,
+					nullptr);
+				obs_data_release(d);
+				obs_source_filter_add(ss, f);
+				filters.push_back(f);
+			}
+		}
+		// Settle, then watch for 5 s how often anything moves (two fits that
+		// answer each other would go back and forth for good).
+		for (int i = 0; i < 150; i++) {
+			render(ss, W, H);
+			sleep_ms(20);
+		}
+		int changes = 0;
+		Rect last_c = box(cam), last_g = box(grp);
+		double min_cy = 1e9, max_cy = -1e9, min_gy = 1e9, max_gy = -1e9;
+		for (int i = 0; i < 250; i++) {
+			render(ss, W, H);
+			sleep_ms(20);
+			const Rect c = box(cam), g = box(grp);
+			if (std::fabs(c.y - last_c.y) > 0.05 || std::fabs(c.h - last_c.h) > 0.05 ||
+			    std::fabs(g.y - last_g.y) > 0.05 || std::fabs(g.h - last_g.h) > 0.05)
+				changes++;
+			min_cy = std::min(min_cy, c.y);
+			max_cy = std::max(max_cy, c.y);
+			min_gy = std::min(min_gy, g.y);
+			max_gy = std::max(max_gy, g.y);
+			last_c = c;
+			last_g = g;
+		}
+		const Rect cb = box(cam), gb = box(grp);
+		const Rect cv = shows(ss, 0xFF0000FF), gv = shows(ss, 0xFF00FF00);
+		const double visible_gap = gv.y - (cv.y + cv.h);
+		const double box_gap = gv.y - (cb.y + cb.h);
+		printf("    %s:\n      camera box %.1f,%.1f %.1fx%.1f, picture %.0f,%.0f %.0fx%.0f (letterbox %.1f above, %.1f below; %.1f left, %.1f right)\n"
+		       "      chat box %.1f,%.1f %.1fx%.1f, shows %.0f,%.0f %.0fx%.0f\n"
+		       "      gap from the camera's picture %.1f, from its box %.1f; picture to top %.1f, to right %.1f; moves in 5 s: %d (camera y %.1f..%.1f, chat y %.1f..%.1f)\n",
+		       label, cb.x, cb.y, cb.w, cb.h, cv.x, cv.y, cv.w, cv.h, cv.y - cb.y, cb.y + cb.h - cv.y - cv.h,
+		       cv.x - cb.x, cb.x + cb.w - cv.x - cv.w, gb.x, gb.y, gb.w, gb.h, gv.x, gv.y, gv.w, gv.h,
+		       visible_gap, box_gap, cv.y, W - cv.x - cv.w, changes, min_cy, max_cy, min_gy, max_gy);
+		CHECK(cv.any && gv.any && (!x.gap || std::fabs(visible_gap - kGap) <= 1.5) && changes == 0,
+		      "%s: the chat box is %.1f below the camera's visible picture (%s %.0f; %.1f from its box), and nothing moves in 5 s at rest (%d)",
+		      label, visible_gap, x.gap ? "the gap," : "not checked, the gap is", kGap, box_gap, changes);
+		for (obs_source_t *f : filters) {
+			obs_source_filter_remove(ss, f);
+			obs_source_release(f);
+		}
+		obs_source_remove(ss);
+		obs_scene_release(scene);
+	};
+	// Both resized to fit.
+	run("Scene Fit, both resize, Use visible pixels ticked", true, Visible::On, false, false);
+	run("Scene Fit, both resize, entry defaults", true, Visible::Defaults, false, false);
+	run("Scene Fit, both resize, chat listed first", true, Visible::On, true, false);
+	run("two Fit to Space, both resize", false, Visible::On, false, false);
+	// The chat box keeping its size (Resize to fit unticked), as the owner's
+	// has been: the camera's space reaches down to it.
+	run("Scene Fit, chat keeps its size, Use visible pixels ticked", true, Visible::On, false, true);
+	run("Scene Fit, chat keeps its size, entry defaults", true, Visible::Defaults, false, true);
+	run("Scene Fit, chat keeps its size, chat listed first", true, Visible::On, true, true);
+	run("two Fit to Space, chat keeps its size", false, Visible::On, false, true);
+	run("two Fit to Space, chat keeps its size, defaults", false, Visible::Defaults, false, true);
+	run("Scene Fit, chat keeps its size, Use visible pixels unticked", true, Visible::Off, false, true);
+	// The other way round: the camera keeps its size and a wide picture
+	// below it is resized, held by the column's width. The two are packed
+	// to the top as well: the camera stays at the top, the picture comes up
+	// to it.
+	{
+		Extra x;
+		x.cam_keeps = true;
+		x.inner = banner;
+		run("Scene Fit, the camera keeps its size, a wide picture below resized", true, Visible::On, false,
+		    false, x);
+		run("two Fit to Space, the camera keeps its size, a wide picture below resized", false, Visible::On,
+		    false, false, x);
+	}
+	// A chat box kept towards the bottom goes there, as before, and the two
+	// still do not answer each other.
+	{
+		Extra x;
+		x.chat_toward = 2;
+		x.gap = false;
+		run("Scene Fit, chat keeps its size, kept towards the bottom", true, Visible::On, false, true, x);
+		run("two Fit to Space, chat keeps its size, kept towards the bottom", false, Visible::On, false, true,
+		    x);
+	}
+	// Side by side nothing is packed: a 4:3 game resized to fit, held by its
+	// height, beside a chat column that keeps its size (both in the middle),
+	// leaves the column against the screen's right edge and the game centred
+	// in the rest, as before this change. (Packing the two to the left moved
+	// the owner's emulator layouts.)
+	{
+		obs_source_t *game43 = colour("color_source", "FV Game 4:3", 400, 300, 0xFFFF0000); // blue
+		obs_source_t *column = colour("color_source", "FV Column", 100, 200, 0xFF00FF00);   // green
+		for (int scene_fit = 1; scene_fit >= 0; scene_fit--) {
+			made++;
+			obs_scene_t *scene = obs_scene_create(("FV Scene " + std::to_string(made)).c_str());
+			obs_source_t *ss = obs_scene_get_source(scene);
+			obs_sceneitem_t *g_it = obs_scene_add(scene, game43);
+			obs_sceneitem_t *c_it = obs_scene_add(scene, column);
+			vec2 at, k;
+			vec2_set(&at, 20.0f, 20.0f);
+			vec2_set(&k, 0.5f, 0.5f);
+			obs_sceneitem_set_pos(g_it, &at);
+			obs_sceneitem_set_scale(g_it, &k);
+			vec2_set(&at, 480.0f, 80.0f);
+			vec2_set(&k, 1.0f, 1.0f);
+			obs_sceneitem_set_pos(c_it, &at);
+			obs_sceneitem_set_scale(c_it, &k);
+			obs_set_output_source(0, ss);
+			std::vector<obs_source_t *> filters;
+			const std::vector<std::string> names = {"FV Game 4:3", "FV Column"};
+			if (scene_fit) {
+				obs_data_t *d = obs_data_create();
+				list(d, "entries", names);
+				for (const std::string &e : names)
+					look(d, "fit|" + e + "|", Visible::On, e == names[0], 0);
+				obs_source_t *f = obs_source_create("stagekit_scene_fit",
+								    ("FV Scene Fit " + std::to_string(made)).c_str(), d,
+								    nullptr);
+				obs_data_release(d);
+				obs_source_filter_add(ss, f);
+				filters.push_back(f);
+			} else {
+				for (const std::string &e : names) {
+					obs_data_t *d = obs_data_create();
+					obs_data_set_string(d, "item", e.c_str());
+					look(d, "", Visible::On, e == names[0], 0);
+					obs_source_t *f = obs_source_create(
+						"stagekit_fit_item",
+						("FV Fit " + e + " " + std::to_string(made)).c_str(), d, nullptr);
+					obs_data_release(d);
+					obs_source_filter_add(ss, f);
+					filters.push_back(f);
+				}
+			}
+			for (int i = 0; i < 150; i++) {
+				render(ss, W, H);
+				sleep_ms(20);
+			}
+			Rect last_g = box(g_it);
+			vec2 last_cp;
+			obs_sceneitem_get_pos(c_it, &last_cp);
+			int changes = 0;
+			for (int i = 0; i < 250; i++) {
+				render(ss, W, H);
+				sleep_ms(20);
+				const Rect g = box(g_it);
+				vec2 cp;
+				obs_sceneitem_get_pos(c_it, &cp);
+				if (std::fabs(g.x - last_g.x) > 0.05 || std::fabs(g.w - last_g.w) > 0.05 ||
+				    std::fabs(cp.x - last_cp.x) > 0.05 || std::fabs(cp.y - last_cp.y) > 0.05)
+					changes++;
+				last_g = g;
+				last_cp = cp;
+			}
+			const Rect gv = shows(ss, 0xFFFF0000), cv = shows(ss, 0xFF00FF00);
+			const double to_right = W - (cv.x + cv.w);
+			const double left = gv.x, right = cv.x - (gv.x + gv.w);
+			const char *label =
+				scene_fit ? "Scene Fit, a 4:3 game beside a chat column that keeps its size"
+					  : "two Fit to Space, a 4:3 game beside a chat column that keeps its size";
+			printf("    %s:\n      game shows %.0f,%.0f %.0fx%.0f, column shows %.0f,%.0f %.0fx%.0f; column to the right edge %.1f, game %.1f from the left and %.1f from the column; moves in 5 s: %d\n",
+			       label, gv.x, gv.y, gv.w, gv.h, cv.x, cv.y, cv.w, cv.h, to_right, left, right, changes);
+			CHECK(gv.any && cv.any && std::fabs(to_right - kGap) <= 1.5 && std::fabs(left - right) <= 1.5 &&
+				      changes == 0,
+			      "%s: the column stays the gap from the right edge (%.1f), the game centred in the rest (%.1f and %.1f), and nothing moves in 5 s (%d)",
+			      label, to_right, left, right, changes);
+			for (obs_source_t *f : filters) {
+				obs_source_filter_remove(ss, f);
+				obs_source_release(f);
+			}
+			obs_source_remove(ss);
+			obs_scene_release(scene);
+		}
+		obs_source_release(game43);
+		obs_source_release(column);
+	}
+
+	obs_set_output_source(0, before);
+	obs_source_release(before);
+	obs_source_release(chat);
+	obs_source_release(banner);
+	obs_source_release(wall);
+	obs_source_release(view);
+	obs_source_release(dslr);
 }
 
 // ------------------------------------------------- scene fit groups
@@ -8081,6 +8458,13 @@ int main(int argc, char **argv)
 
 	if (getenv("STAGEKIT_TEST_ONLY_UPDATES")) { // to try that section alone
 		update_changes_test(argv[2]);
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
+	if (getenv("STAGEKIT_TEST_ONLY_FIT_VISIBLE")) { // to try that section alone
+		fit_visible_test();
 		obs_shutdown();
 		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
 		       g_failures == 1 ? "" : "s");
@@ -22950,6 +23334,9 @@ int main(int argc, char **argv)
 	fit_priority_test();
 	// A Scene Fit's Same for all sources, and groups (STAGEKIT_TEST_ONLY_FIT_GROUPS).
 	scene_fit_groups_test();
+	// A letterboxed camera and a chat box keeping its size below it
+	// (STAGEKIT_TEST_ONLY_FIT_VISIBLE).
+	fit_visible_test();
 	// ==== end scene-filters:fit ====
 	// ==== scene-filters:all-sources ====
 	// ---------------------------------------- the scene filters' All sources

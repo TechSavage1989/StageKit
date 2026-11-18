@@ -410,7 +410,11 @@ nearest.
 - Two Fit to Space filters in one scene work together: each goes by where the other is taking its
   item, so they settle in one move. An item that keeps its size, with a resized item on one side
   and the screen's edge or a fixed item on the other, sits against the fixed side; the resized item
-  takes the rest.
+  takes the rest. When the resized item is above or below it and could not use more height (a
+  camera held by the column's width), the two are packed together towards the top instead, so the
+  item keeps the gap from the image you see, not from the empty part of the camera's box. Side by
+  side this does not happen: a 4:3 game beside a chat column stays as described above. That needs *Align in the space* set to the middle on both; the same goes for a
+  Scene Fit's sources.
 - **Space priority** (in the free space) says which source gets the room when two want it:
   - *Takes space first*: the source takes the space it would have if the sources that share space
     or make room were not there, and never moves or shrinks for them; they fit around it. Use it for

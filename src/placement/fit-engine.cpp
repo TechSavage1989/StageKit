@@ -1156,6 +1156,8 @@ void FitEngine::observe(const std::vector<Obstacle> &in_way, bool arriving, floa
 	at_rest = false;
 	std::vector<Box> boxes;
 	std::vector<bool> gives;
+	std::vector<int> grows;
+	std::vector<int> leans;
 	std::vector<int64_t> ids; // which item each is, and whether its
 	std::vector<bool> said;   // filter said where it is going
 	std::vector<bool> passed; // one of the items never in the way
@@ -1164,6 +1166,8 @@ void FitEngine::observe(const std::vector<Obstacle> &in_way, bool arriving, floa
 		above.push_back(o.above);
 		boxes.push_back(o.box);
 		gives.push_back(o.gives);
+		grows.push_back((o.grows_x ? 1 : 0) | (o.grows_y ? 2 : 0));
+		leans.push_back(o.leans);
 		ids.push_back(o.id);
 		said.push_back(o.said);
 		passed.push_back(o.passed);
@@ -1187,8 +1191,10 @@ void FitEngine::observe(const std::vector<Obstacle> &in_way, bool arriving, floa
 	}
 	// Which of them give way can change while nothing moves (another
 	// filter has just said where its item is going).
-	if (gives != gives_ && !moved && !stepped) {
+	if ((gives != gives_ || grows != grows_ || leans != leans_) && !moved && !stepped) {
 		gives_ = gives;
+		grows_ = grows;
+		leans_ = leans;
 		changed_ = true;
 	}
 	if (moved) {
@@ -1198,6 +1204,8 @@ void FitEngine::observe(const std::vector<Obstacle> &in_way, bool arriving, floa
 		// on every frame of the move. No looking meanwhile either.
 		boxes_ = boxes;
 		gives_ = gives;
+		grows_ = grows;
+		leans_ = leans;
 		ids_ = ids;
 		said_ = said;
 		passed_ = passed;
@@ -1211,6 +1219,8 @@ void FitEngine::observe(const std::vector<Obstacle> &in_way, bool arriving, floa
 		// "adjust multiple times before settling".)
 		boxes_ = boxes;
 		gives_ = gives;
+		grows_ = grows;
+		leans_ = leans;
 		ids_ = ids;
 		said_ = said;
 		passed_ = passed;
@@ -1381,6 +1391,8 @@ bool FitEngine::solve(Prep &p, float seconds, bool first_pass, bool &moved)
 		}
 		if (goal.w < 2.0 || goal.h < 2.0)
 			return false;
+		if (!kept)
+			trim_for_kept(p, goal);
 		if (!have_goal_ || std::fabs(goal.x - goal_.x) > 0.05 || std::fabs(goal.y - goal_.y) > 0.05 ||
 		    std::fabs(goal.w - goal_.w) > 0.05 || std::fabs(goal.h - goal_.h) > 0.05) {
 			from_ = have_cur_ ? cur_ : goal;
@@ -1426,9 +1438,13 @@ void FitEngine::soft_sides(bool &soft_l, bool &soft_r, bool &soft_t, bool &soft_
 	for (size_t i = 0; i < boxes_.size() && i < gives_.size(); i++) {
 		if (!gives_[i])
 			continue;
+		// (Above or below, only one that would grow in height: see
+		// `lean_axes`. Beside it, as before, whatever its shape.)
+		const int grows = i < grows_.size() ? grows_[i] : 3;
 		const Box &o = boxes_[i];
 		const bool beside = o.y < goal_.y + goal_.h && o.y + o.h > goal_.y;
-		const bool above_below = o.x < goal_.x + goal_.w && o.x + o.w > goal_.x;
+		const bool above_below = (grows & 2) && o.x < goal_.x + goal_.w && o.x + o.w > goal_.x;
+		const bool across = o.y < goal_.y + goal_.h && o.y + o.h > goal_.y;
 		// By which side of the space's middle it lies on, not by
 		// whether it touches the space: it may have grown into
 		// the space since that was worked out, and judged by
@@ -1436,30 +1452,90 @@ void FitEngine::soft_sides(bool &soft_l, bool &soft_r, bool &soft_t, bool &soft_
 		const double mid_x = goal_.x + goal_.w / 2.0, mid_y = goal_.y + goal_.h / 2.0;
 		soft_l = soft_l || (beside && o.x + o.w <= mid_x);
 		soft_r = soft_r || (beside && o.x >= mid_x);
-		soft_t = soft_t || (above_below && !beside && o.y + o.h <= mid_y);
-		soft_b = soft_b || (above_below && !beside && o.y >= mid_y);
+		soft_t = soft_t || (above_below && !across && o.y + o.h <= mid_y);
+		soft_b = soft_b || (above_below && !across && o.y >= mid_y);
 	}
+}
+
+// A kept-size item beside the picture of a resizing fit that would not grow
+// towards it: a camera held by the column's width, with room above and below
+// its picture that it has no use for. Going to the far side of such a thing
+// (as from one that does grow) left that room as empty space inside the
+// camera's box, and the item more than the gap from what shows of the camera:
+// the owner's chat box (2026-11-18, "the chat box is more than 30px from the
+// visible border of the camera box"). Above and below, the two are packed
+// towards the top instead: the item lies at the top of its space, and the
+// resized picture at the top of its own (`trim_for_kept`),
+// whichever of the two is above, so the item is the gap from the picture and
+// neither moves again. (Packing towards whichever lies above, not towards the
+// item's side: a centred picture and an item going against it crept to the
+// wall one glide at a time.) Only with the item in the middle of its space
+// along that axis: kept towards a side, it goes there as before. Side by
+// side nothing leans: a 4:3 game held by its height beside a kept-size chat
+// column gives way sideways as it always did, and the column stays against
+// the screen's edge (packing the two to the left moved saved layouts).
+void FitEngine::lean_axes(const Prep &p, bool &lean_x, bool &lean_y) const
+{
+	lean_x = lean_y = false;
+	if (!p.free || !have_goal_)
+		return;
+	bool soft_l = false, soft_r = false, soft_t = false, soft_b = false;
+	soft_sides(soft_l, soft_r, soft_t, soft_b);
+	for (size_t i = 0; i < boxes_.size() && i < gives_.size() && i < grows_.size(); i++) {
+		if (!gives_[i])
+			continue;
+		const Box &o = boxes_[i];
+		const bool across = o.y < goal_.y + goal_.h && o.y + o.h > goal_.y;
+		const bool above_below = o.x < goal_.x + goal_.w && o.x + o.w > goal_.x;
+		lean_y = lean_y || (above_below && !across && !(grows_[i] & 2));
+	}
+	// (A side that does give way decides, as it did.)
+	lean_y = lean_y && p.s.toward_y == 0 && soft_t == soft_b;
+}
+
+void FitEngine::trim_for_kept(const Prep &p, Box &goal) const
+{
+	if (!p.free || p.pw <= 0.0 || p.ph <= 0.0)
+		return;
+	const double kg = std::min(goal.w / p.pw, goal.h / p.ph);
+	const double h = p.ph * kg;
+	bool ky = false;
+	for (size_t i = 0; i < boxes_.size() && i < leans_.size(); i++) {
+		const Box &o = boxes_[i];
+		const bool across = o.y < goal.y + goal.h && o.y + o.h > goal.y;
+		const bool above_below = o.x < goal.x + goal.w && o.x + o.w > goal.x;
+		ky = ky || (above_below && !across && (leans_[i] & 2));
+	}
+	// (Only with the picture in the middle along that axis: kept towards a
+	// side, it already lies against one.)
+	if (ky && p.s.toward_y == 0 && goal.h - h > 0.5)
+		goal.h = h;
 }
 
 // Where a kept-size picture goes in a space.
 Box FitEngine::kept_in(const Prep &p, const Box &room, double kw, double kh) const
 {
 	bool soft_l = false, soft_r = false, soft_t = false, soft_b = false;
-	if (p.free)
+	bool lean_x = false, lean_y = false;
+	if (p.free) {
 		soft_sides(soft_l, soft_r, soft_t, soft_b);
+		lean_axes(p, lean_x, lean_y);
+	}
 	// (A side it is to be kept towards counts unless that side is
 	// the one that gives way: the two would close in for good.)
-	auto along = [](double from, double size, double own, bool soft_near, bool soft_far, int toward) {
+	auto along = [](double from, double size, double own, bool soft_near, bool soft_far, bool lean, int toward) {
 		if (soft_near && !soft_far)
 			return from + size - own; // against the far, firm side
 		if (soft_far && !soft_near)
 			return from;
+		if (lean)
+			return from; // packed with a picture that will not grow this way
 		if (toward != 0)
 			return toward < 0 ? from : from + size - own;
 		return from + (size - own) / 2.0;
 	};
-	return Box{along(room.x, room.w, kw, soft_l, soft_r, p.s.toward_x),
-		   along(room.y, room.h, kh, soft_t, soft_b, p.s.toward_y), kw, kh};
+	return Box{along(room.x, room.w, kw, soft_l, soft_r, lean_x, p.s.toward_x),
+		   along(room.y, room.h, kh, soft_t, soft_b, lean_y, p.s.toward_y), kw, kh};
 }
 
 void FitEngine::say(int64_t item, Claim claim)
@@ -1479,6 +1555,7 @@ void FitEngine::publish_claim(const Prep &p)
 		claim.resizes = s.resize;
 		if (!s.resize && have_keep_) {
 			claim.box = kept_in(p, goal_, p.keep_w, p.keep_h);
+			lean_axes(p, claim.leans_x, claim.leans_y);
 			const double gap = std::min({s.margin, outer.w / 2.0 - 1.0, outer.h / 2.0 - 1.0});
 			if (outer.w - 2.0 * gap >= p.keep_w)
 				claim.box.x =
@@ -1490,6 +1567,12 @@ void FitEngine::publish_claim(const Prep &p)
 			const double kg = std::min(goal_.w / p.pw, goal_.h / p.ph);
 			claim.box = Box{goal_.x + (goal_.w - p.pw * kg) * (s.toward_x + 1) / 2.0,
 					goal_.y + (goal_.h - p.ph * kg) * (s.toward_y + 1) / 2.0, p.pw * kg, p.ph * kg};
+			// More width helps a picture that leaves room above or
+			// below it, more height one that leaves room at its sides;
+			// one that fills its space both ways (or is held by its
+			// width and given more height) has no use for either.
+			claim.grows_x = claim.box.h < goal_.h - 0.5;
+			claim.grows_y = claim.box.w < goal_.w - 0.5;
 		}
 		say(obs_sceneitem_get_id(p.item), claim);
 		last_claim_ = claim;
@@ -1793,7 +1876,10 @@ void FitScan::obstacles(obs_source_t *scene, obs_sceneitem_t *self, const std::v
 			// (One that takes its space first never gives way: it is a
 			// firm side, not one that makes room.)
 			const bool above = mine && outranks(claim.rank, *mine);
-			out.push_back(Obstacle{claim.box, id, true, claim.resizes && !above, passed, above});
+			out.push_back(Obstacle{
+				claim.box, id, true, claim.resizes && !above, passed, above, claim.grows_x,
+				claim.grows_y,
+				!claim.resizes && !above ? (claim.leans_x ? 1 : 0) | (claim.leans_y ? 2 : 0) : 0});
 			continue;
 		}
 		auto found = seen_.find(id);
