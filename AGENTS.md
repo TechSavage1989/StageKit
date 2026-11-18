@@ -475,8 +475,19 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   owner: "The link visibility filter only works with sources in the same scene ... one streamdeck
   button to affect them together". Show in Scenes does the same job as a switch on a key; this one
   follows whatever shows or hides an item.
-- **Show in Scenes is a switch, not a trigger.** Its on and off state is the shown and hidden
-  state, so one Stream Deck Filter key toggles and shows which way it is. It acts on the `enable`
+- **Show in Scenes is a switch, not a trigger, and a command, not a hold** (beta174). Its on and
+  off state is the shown and hidden state, so one Stream Deck Filter key toggles and shows which
+  way it is. It acts when pressed and holds nothing afterwards: a switch that is off never stops
+  Link Visibility (*Follow sources*) or Scene Modes from showing its source (a Standby stand-in
+  never asked the switch; it still goes by `mode_holds_hidden` only).
+  The owner: "show in scenes should not prevent any other filter from turning on or off a source
+  later, at least thats how my logic works. for me the show in scenes was more of a control to
+  turn a source on or off, not lock it down and prevent anything else from doing it". So a camera
+  switched off with its switch comes back when a mode or a link shows it; to keep it off, hide it
+  in that mode or take it out of the link. The other way round is unchanged: a press passes over
+  an item a mode holds hidden (`mode_holds_hidden`), and *Follow what is shown* leaves such items
+  out. Tested in `[show in scenes: a switch is a command, not a hold]`
+  (`switch_is_command_test`, alone: `STAGEKIT_TEST_ONLY_SWITCH_COMMAND`). It acts on the `enable`
   signal only (never each tick, so a change by hand is kept) and ignores the state restored at load
   (`ready_`). The owner had a multi-action with a Source Visibility step per scene for this.
   Since beta147 a press is acted on in the filter's next tick (`press_`, the last of a frame), not
@@ -580,9 +591,8 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   in the scene. Leads not in the scene are passed over; none there leads nothing. When that state
   changes (the tick compares it with the state last followed, `acted_lead_`; the state found at
   the first look after start, enable, loading or a change of the lists or the rule is taken as it
-  is) the followers are shown, except one a Show in Scenes holds off
-  (`show_in_scenes_holds_off`: a switch covering that source in that scene whose state means
-  hidden, the same rule as `apply()`, bring-along items counted), or hidden. While the leads say
+  is) the followers are shown, whatever a Show in Scenes switch on them says (a switch is a
+  command, not a hold; see *Show in Scenes is a switch*), or hidden. While the leads say
   hidden, every tick, a follower shown by anything else is hidden again. A change to a follower
   moves nothing; changes from *Also in other scenes* are not followed in this mode, only the
   leads' state is sent there. Every listed source, leads too, is watched, locked by *Lock hidden
@@ -592,18 +602,21 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   enabled mode-2 link of that scene that has the source among its followers has its leads saying
   hidden) and passes over such an item when showing, never when hiding, and leaves it out of
   *Follow what is shown*; `mode_settling` (here `link_visibility_settling`: a leads' state not yet followed) makes that look
-  wait, or a camera switch read off for the tick between a mode change and its extras. Both
-  filters keep a registry of live instances (`g_links`, `g_switches`) and copy what they need out
-  under it: no lock is held while the other filter is asked, which both do from their ticks.
-  This is what lets the camera switch (every scene) live with modes holding camera views. Tested
+  wait, or a camera switch read off for the tick between a mode change and its extras. Link
+  Visibility keeps a registry of live instances (`g_links`) and copies what it needs out under
+  it: no lock is held while another filter is asked. This is what lets the camera switch (every
+  scene) live with modes holding camera views: the switch never shows a camera view a mode holds
+  hidden. Tested
   in `[modes in one scene: follow the first source, and a camera switch]` (filters saved the old
   way), both filter orders, off screen too, and in `[link visibility: follow sources, several leads
   and their followers]` (alone: `STAGEKIT_TEST_ONLY_LINK_FOLLOW`; five leads, a chat follower, a
   capture changed by its Show in Scenes key with *Show only one* and Morph, two changes in one
   frame both ways through a tick callback, *All leads are shown*, a filter saved without leads, the
-  window; both orders, on and off screen, with sound as in OBS, so it runs last). **Any** Show in Scenes covering a source counts, even one with `follow` off and
-  a stale state: the owner's old *Show in Scenes (StageKit)* on DSLR Component lists DSLR, and if
-  it is ever off no mode shows the camera. A Standby stand-in is not shown for an item a mode holds
+  window; both orders, on and off screen, with sound as in OBS, so it runs last). Up to beta169
+  a follower a Show in Scenes switch had off (`show_in_scenes_holds_off`) was left hidden when
+  the leads came on; the owner's DSLR, whose capture switch reads off while another capture is the
+  main one, never came back with Intermission Text. Removed at the owner's word (see *Show in
+  Scenes is a switch*). A Standby stand-in is not shown for an item a mode holds
   hidden (`stands_in` in `standby.cpp`): the owner's DSLR, in the Intermission mode, had its
   standby image over every other mode in the first build. A link that changes mode looks afresh
   (`acted_valid_`).
@@ -1806,8 +1819,8 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   source in the old and the new mode is not touched; a source in no mode never; a press is queued
   and acted on in the tick; nothing is polled (it listens to `item_visible` on its scene and on
   *Same modes in scenes*, and hides again a member of a mode not on that something else showed);
-  a show is passed over when `show_in_scenes_holds_off`, `link_visibility_holds_hidden` or another
-  Scene Modes covering that scene holds it; registered with `holds_hidden_register`, so Show in
+  a show is passed over when `link_visibility_holds_hidden` or another Scene Modes covering that
+  scene holds it (never for a Show in Scenes switch that is off: a switch is a command); registered with `holds_hidden_register`, so Show in
   Scenes and Standby's `stands_in` ask it. At the first look after `scenes_loaded()` a scene that
   disagrees with `mode_now` is put right with a cut (and logged); presses made before are kept.
   "Mode now" in the window is a press that never changes scene; *Switch to scene* goes through

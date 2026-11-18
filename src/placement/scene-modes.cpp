@@ -35,7 +35,6 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include "scene-modes.hpp"
 
-#include "show-in-scenes.hpp"
 #include "visibility-link.hpp"
 
 #include "../api/vendor-api.hpp"
@@ -240,14 +239,15 @@ bool look_holds(const ModesLook &look, const char *name)
 std::vector<ModesLook> looks_of_enabled(const void *except);
 
 // Is the item held hidden for a reason other than this filter's own mode:
-// a Show in Scenes switch that has it off (a camera switched off), a Link
-// Visibility mode that is not showing, or another Scene Modes of the scene?
+// a Link Visibility mode that is not showing, or another Scene Modes of the
+// scene? A Show in Scenes switch that is off is not a hold: it is a command,
+// acted on when pressed (the owner: "show in scenes should not prevent any
+// other filter from turning on or off a source later").
 bool held_elsewhere(obs_source_t *scene, obs_sceneitem_t *item, const void *self)
 {
-	obs_source_t *source = obs_sceneitem_get_source(item);
-	if (show_in_scenes_holds_off(scene, source) || link_visibility_holds_hidden(scene, item))
+	if (link_visibility_holds_hidden(scene, item))
 		return true;
-	const char *name = obs_source_get_name(source);
+	const char *name = obs_source_get_name(obs_sceneitem_get_source(item));
 	for (const ModesLook &look : looks_of_enabled(self))
 		if (covers(look, scene) && look_holds(look, name))
 			return true;

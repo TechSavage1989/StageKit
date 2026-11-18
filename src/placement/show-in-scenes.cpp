@@ -180,55 +180,17 @@ void add_linked(std::vector<std::string> &sources)
 		add(name.c_str());
 }
 
-class ShowInScenes;
-
-// Every Show in Scenes there is, for show_in_scenes_holds_off. Only pointers
-// are kept, under this lock; a filter takes itself out in its destructor.
-std::mutex g_switches_mutex;
-std::vector<ShowInScenes *> g_switches;
-
-// What a switch covers and whether it now means hidden, copied out.
-struct SwitchLook {
-	std::vector<std::string> sources, scenes;
-	bool every = true, with_linked = false, hides = false;
-};
-
 class ShowInScenes {
 public:
 	ShowInScenes(obs_data_t *settings, obs_source_t *source) : source_(source)
 	{
 		update(settings);
 		signal_handler_connect(obs_source_get_signal_handler(source_), "enable", enabled_cb, this);
-		std::lock_guard lock(g_switches_mutex);
-		g_switches.push_back(this);
 	}
 
 	~ShowInScenes()
 	{
-		{
-			std::lock_guard lock(g_switches_mutex);
-			g_switches.erase(std::remove(g_switches.begin(), g_switches.end(), this), g_switches.end());
-		}
 		signal_handler_disconnect(obs_source_get_signal_handler(source_), "enable", enabled_cb, this);
-	}
-
-	// For show_in_scenes_holds_off: called with g_switches_mutex held. The
-	// state is the switch's own: on or off, and what "on" means.
-	SwitchLook look()
-	{
-		SwitchLook look;
-		obs_source_t *parent = obs_filter_get_parent(source_);
-		const char *own = parent ? obs_source_get_name(parent) : nullptr;
-		const bool enabled = obs_source_enabled(source_);
-		std::lock_guard lock(mutex_);
-		look.sources = sources_;
-		if (look.sources.empty() && own && *own)
-			look.sources.push_back(own);
-		look.scenes = scenes_;
-		look.every = where_ == Where::Every;
-		look.with_linked = with_linked_;
-		look.hides = enabled == on_hides_; // the same rule as apply()
-		return look;
 	}
 
 	void update(obs_data_t *settings)
@@ -428,7 +390,7 @@ private:
 	static void enabled_cb(void *data, calldata_t *cd)
 	{
 		auto *self = static_cast<ShowInScenes *>(data);
-		// What a switch holds off has changed: whatever asks looks again.
+		// The switch's state has changed: whatever goes by the scenes looks again.
 		scene_revision_bump();
 		// (Its own correction of the switch is not a press.)
 		if (self->ready_ && self->correcting_.load() != std::this_thread::get_id())
@@ -589,32 +551,6 @@ obs_properties_t *get_properties(void *data)
 }
 
 } // namespace
-
-bool show_in_scenes_holds_off(obs_source_t *scene, obs_source_t *source)
-{
-	const char *name = source ? obs_source_get_name(source) : nullptr;
-	const char *scene_name = scene ? obs_source_get_name(scene) : nullptr;
-	if (!name || !*name || !scene_name)
-		return false;
-	std::vector<SwitchLook> looks;
-	{
-		std::lock_guard lock(g_switches_mutex);
-		for (ShowInScenes *sw : g_switches)
-			looks.push_back(sw->look());
-	}
-	// (Bring-along items are looked up with no lock held.)
-	for (SwitchLook &look : looks) {
-		if (!look.hides)
-			continue;
-		if (!look.every && std::find(look.scenes.begin(), look.scenes.end(), scene_name) == look.scenes.end())
-			continue;
-		if (look.with_linked)
-			add_linked(look.sources);
-		if (std::find(look.sources.begin(), look.sources.end(), name) != look.sources.end())
-			return true;
-	}
-	return false;
-}
 
 void register_show_in_scenes()
 {

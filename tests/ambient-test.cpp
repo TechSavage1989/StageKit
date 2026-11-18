@@ -2154,6 +2154,125 @@ static void in_one_tick(std::function<void()> work)
 	obs_remove_tick_callback(in_one_tick_cb, &job);
 }
 
+// A Show in Scenes switch is a command, not a hold: a switch that is
+// off does not keep its source hidden from a Link Visibility that shows it.
+// Run at the end of the follow-sources section, and alone with
+// STAGEKIT_TEST_ONLY_SWITCH_COMMAND.
+static void switch_is_command_test()
+{
+	auto block = [](const std::string &name, long long abgr) {
+		obs_data_t *d = obs_data_create();
+		obs_data_set_int(d, "color", abgr);
+		obs_data_set_int(d, "width", 160);
+		obs_data_set_int(d, "height", 90);
+		obs_source_t *src = obs_source_create("color_source", name.c_str(), d, nullptr);
+		obs_data_release(d);
+		return src;
+	};
+	auto set_list = [](obs_data_t *settings, const char *list, const std::vector<std::string> &names) {
+		obs_data_array_t *rows = obs_data_array_create();
+		for (const std::string &name : names) {
+			obs_data_t *row = obs_data_create();
+			obs_data_set_string(row, "value", name.c_str());
+			obs_data_array_push_back(rows, row);
+			obs_data_release(row);
+		}
+		obs_data_set_array(settings, list, rows);
+		obs_data_array_release(rows);
+	};
+	obs_source_t *before_out = obs_get_output_source(0);
+	// The owner's holding scene: Intermission Text leads, DSLR follows, and
+	// DSLR's capture switch (every scene, following what is shown) reads off
+	// because another capture is the main one. The owner: "show in scenes
+	// should not prevent any other filter from turning on or off a source
+	// later ... for me the show in scenes was more of a control to turn a
+	// source on or off, not lock it down and prevent anything else from
+	// doing it".
+	{
+		printf("\n[show in scenes: a switch is a command, not a hold]\n");
+		obs_source_t *text = block("LF Intermission Text", 0xFF0000FF);
+		obs_source_t *start = block("LF Stream Start", 0xFF00FF00);
+		obs_source_t *dslr = block("LF DSLR", 0xFFFFFFFF);
+		obs_scene_t *holding = obs_scene_create("LF Holding Scene");
+		obs_scene_t *live = obs_scene_create("LF Live Scene");
+		obs_source_t *holding_src = obs_scene_get_source(holding);
+		obs_sceneitem_t *ti = obs_scene_add(holding, text);
+		obs_scene_add(holding, start);
+		obs_sceneitem_t *di = obs_scene_add(holding, dslr);
+		obs_sceneitem_t *dl = obs_scene_add(live, dslr);
+		obs_sceneitem_set_visible(ti, false);
+		obs_sceneitem_set_visible(di, false);
+		obs_sceneitem_set_visible(dl, false);
+		obs_set_output_source(0, holding_src);
+		obs_data_t *ld = obs_data_create();
+		set_list(ld, "leads", {"LF Intermission Text"});
+		set_list(ld, "items", {"LF DSLR"});
+		obs_data_set_int(ld, "mode", 2);
+		obs_data_set_string(ld, "transition", "none");
+		obs_source_t *link = obs_source_create("stagekit_visibility_link", "LF Intermission Link", ld, nullptr);
+		obs_data_release(ld);
+		obs_source_filter_add(holding_src, link);
+		obs_data_t *sd = obs_data_create();
+		obs_data_set_string(sd, "transition", "none");
+		obs_data_set_bool(sd, "follow", true);
+		obs_source_t *sw = obs_source_create("stagekit_show_in_scenes", "LF DSLR Capture Switch", sd, nullptr);
+		obs_data_release(sd);
+		obs_source_filter_add(dslr, sw);
+		sleep_ms(300);
+		obs_source_set_enabled(sw, false);
+		sleep_ms(400);
+		auto state = [&] {
+			return std::string(obs_sceneitem_visible(ti) ? "1" : "0") +
+			       (obs_sceneitem_visible(di) ? "1" : "0") + (obs_sceneitem_visible(dl) ? "1" : "0") +
+			       (obs_source_enabled(sw) ? " on" : " off");
+		};
+		const std::string before = state();
+		obs_sceneitem_set_visible(ti, true);
+		sleep_ms(400);
+		const std::string lead_on = state();
+		CHECK(before == "000 off" && lead_on == "110 off",
+		      "the lead shown: the link shows DSLR although DSLR's switch is off (a switch is a command, not a hold), and the switch still reads off: DSLR is hidden in the other scene (%s, then %s)",
+		      before.c_str(), lead_on.c_str());
+		// The switch still works as a command, both ways.
+		obs_source_set_enabled(sw, true);
+		sleep_ms(300);
+		const std::string pressed_on = state();
+		obs_source_set_enabled(sw, false);
+		sleep_ms(400);
+		const std::string pressed_off = state();
+		CHECK(pressed_on == "111 on" && pressed_off == "100 off",
+		      "pressed on, the switch shows DSLR in every scene; pressed off, it hides it everywhere, the link's scene too, and the link does not show it again while its lead stays shown (%s, then %s)",
+		      pressed_on.c_str(), pressed_off.c_str());
+		// The lead hidden: DSLR is kept hidden, as before.
+		obs_source_set_enabled(sw, true);
+		sleep_ms(300);
+		obs_sceneitem_set_visible(ti, false);
+		sleep_ms(400);
+		const std::string lead_off = state();
+		obs_sceneitem_set_visible(di, true);
+		sleep_ms(300);
+		CHECK(lead_off == "001 on" && state() == "001 on",
+		      "the lead hidden: DSLR hidden with it, and hidden again when shown by hand while the lead says hidden (%s, then %s)",
+		      lead_off.c_str(), state().c_str());
+		obs_set_output_source(0, nullptr);
+		obs_source_filter_remove(dslr, sw);
+		obs_source_release(sw);
+		obs_source_filter_remove(holding_src, link);
+		obs_source_release(link);
+		sleep_ms(100);
+		obs_source_remove(holding_src);
+		obs_source_remove(obs_scene_get_source(live));
+		obs_scene_release(holding);
+		obs_scene_release(live);
+		for (obs_source_t *s : {text, start, dslr}) {
+			obs_source_remove(s);
+			obs_source_release(s);
+		}
+	}
+	obs_set_output_source(0, before_out);
+	obs_source_release(before_out);
+}
+
 static void link_follow_sources_test()
 {
 	printf("\n[link visibility: follow sources, several leads and their followers]\n");
@@ -2509,6 +2628,8 @@ static void link_follow_sources_test()
 		for (obs_source_t *s : {a, b, c})
 			obs_source_release(s);
 	}
+
+	switch_is_command_test();
 	obs_set_output_source(0, before_out);
 	obs_source_release(before_out);
 }
@@ -3340,6 +3461,14 @@ int main(int argc, char **argv)
 
 	if (getenv("STAGEKIT_TEST_ONLY_MORPH_HOLDS")) { // to try that section alone
 		item_morph_holds_test(w, h);
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
+
+	if (getenv("STAGEKIT_TEST_ONLY_SWITCH_COMMAND")) { // to try that section alone
+		switch_is_command_test();
 		obs_shutdown();
 		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
 		       g_failures == 1 ? "" : "s");
@@ -11977,20 +12106,28 @@ int main(int argc, char **argv)
 			sleep_ms(200);
 			obs_source_set_enabled(sw, false);
 			sleep_ms(150);
+			// A switch is a command, not a hold. The owner: "show in scenes
+			// should not prevent any other filter from turning on or off a
+			// source later". (Up to beta169 the mode left the camera hidden.)
 			modes_press(scene_name.c_str(), "m2");
-			const bool held = !obs_sceneitem_visible(icam) && !obs_sceneitem_visible(iy);
+			const bool shown_by_mode = obs_sceneitem_visible(icam) && !obs_sceneitem_visible(iy);
 			obs_source_set_enabled(sw, true);
 			sleep_ms(150);
-			const bool shown_by_switch = obs_sceneitem_visible(icam);
+			const bool still_shown = obs_sceneitem_visible(icam);
+			obs_source_set_enabled(sw, false);
+			sleep_ms(150);
+			const bool hidden_by_switch = !obs_sceneitem_visible(icam);
+			obs_source_set_enabled(sw, true);
+			sleep_ms(150);
 			modes_press(scene_name.c_str(), "m1");
 			const bool gone = !obs_sceneitem_visible(icam) && obs_sceneitem_visible(iy);
 			obs_source_set_enabled(sw, false);
 			sleep_ms(150);
 			obs_source_set_enabled(sw, true);
 			sleep_ms(300);
-			CHECK(held && shown_by_switch && gone && !obs_sceneitem_visible(icam),
-			      "the mode holding a camera switched off does not show it; switched on, the camera shows in its mode, and the switch never shows it in another mode (%d %d %d %d)",
-			      held, shown_by_switch, gone, obs_sceneitem_visible(icam));
+			CHECK(shown_by_mode && still_shown && hidden_by_switch && gone && !obs_sceneitem_visible(icam),
+			      "a mode shows its camera although the camera's switch is off (a switch is a command), the switch still hides it when pressed off, and never shows it in another mode (%d %d %d %d %d)",
+			      shown_by_mode, still_shown, hidden_by_switch, gone, obs_sceneitem_visible(icam));
 			obs_source_filter_remove(cam, sw);
 			obs_source_release(sw);
 			modes_unfilter(scene, f);
@@ -18860,9 +18997,16 @@ int main(int argc, char **argv)
 
 				obs_source_set_enabled(mode_sw[1], true);
 				sleep_ms(600);
-				CHECK(shown() == "00010" && !obs_source_enabled(mode_sw[0]) &&
-					      obs_source_enabled(mode_sw[1]) && !obs_source_enabled(cam_sw),
-				      "mode B: its leader shown, its camera view left hidden as the camera is off, mode A's sources all hidden (%s)",
+				// A switch is a command, not a hold: mode B shows its camera
+				// view although the camera switch is off. The owner: "show in
+				// scenes should not prevent any other filter from turning on or
+				// off a source later". (Up to beta169 it was left hidden.) The
+				// switch, following what is shown, still reads off: the camera
+				// is hidden in the other scene.
+				CHECK(shown() == "00011" && !obs_source_enabled(mode_sw[0]) &&
+					      obs_source_enabled(mode_sw[1]) && !obs_source_enabled(cam_sw) &&
+					      !obs_sceneitem_visible(cam_away),
+				      "mode B: its leader and camera view shown although the camera switch is off, mode A's sources all hidden, and the switch reads off (the camera is hidden elsewhere) (%s)",
 				      shown().c_str());
 
 				// The camera switched on in mode B, read all the while.
