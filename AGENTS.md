@@ -1444,6 +1444,41 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   immediately now" (the owner, 2026-11-16). In a log, look for `attempting to hook process` /
   `capture stopped` in a tight loop, or `vulkan capture freed` many times a second, before
   changing Auto Capture; the README's Troubleshooting has the fix.
+- **Auto Capture lets go when the game's window closes and its program stays open**
+  (`watch_captured`, `captured_`, `spent_` in `src/capture/auto-capture.cpp`, betaNEXT). The
+  owner (2026-11-18): "when using game capture with some emulators like dolphin where the dolphin
+  menu and game screen are separate windows, if the captured game closes but the emulator stays
+  open in the menu/game list, the last captured frame of the game remains in the OBS capture, and
+  it doesn't morph into the standby as intended". OBS's Game Capture hooks the program, not the
+  window, so the hook keeps the last frame and the capture its size, and a Standby Picture (which
+  goes by the capture's own size) never sees nothing. So the game's windows are remembered by
+  their handles (`OpenWindow`'s `Window::handle`, from the window watch's copy): the program's
+  windows that were not open when the capture was first aimed at it (`before_`, the menu was;
+  Dolphin's GBA windows count as the game's), and only when there are none (the game was open
+  already), the window in front or the one aimed at by title, `kPickAfter` (0.5 s) after the
+  picture came, since the list can lag. Picking by focus alone watched the menu whenever the
+  capture had been aimed at the menu and OBS was in front. When every one has been out of the
+  list for `kLetGoAfter` (0.5 s, two looks) while the program is open, the capture is aimed at no
+  window (`kNoWindow`, as for a rest; logged as `aimed at no window while <program> shows no game
+  window`), the log says `the window it captured in <program> has closed; letting go`, and the
+  program's windows seen while the game was open (`seen`: the menu) are no game (`is_spent`)
+  until it closes; a window opened later is chosen as usual. One of several closing (a GBA
+  window) is not the game closing. Any window not seen before that appears within the wait is
+  followed (one of the same title shape first: a switch to full screen makes the window again; a
+  game started at once makes a new one), nothing re-aimed, and while the old one may be coming
+  back the capture stays aimed where it was (`current` ignores `is_spent` while `gone_since` is
+  set). A minimised window is left out of the window watch's list but is still there (`IsWindow`
+  and `IsWindowVisible` on Windows, in the tick: no list of windows is made there); a spent
+  program minimised whole stays spent while `IsWindow` finds one of its windows. Switched off
+  (a capture hooked by hand) the filter forgets what it watched. Always capture programs go the
+  same way. A window with no handle (the older tests' stand-ins) is never watched. Tested in
+  `[auto capture: the game's window closes, its program stays open]`
+  (`auto_window_closed_test`, alone: `STAGEKIT_TEST_ONLY_AUTO_WINCLOSE`): let go of in 0.6 to
+  0.8 s, the Standby Picture's fade part-way after it and whole later, the menu not aimed at, a
+  new game window aimed at, a window made again (at once, or after a quarter second) not let go
+  of, the menu aimed at first and the game watched all the same, a GBA window closing not let
+  go of, a game under another title opened within the wait followed. The stand-in windows have a sixth field, an id for the handle. Whether OBS's Game Capture
+  really drops the hook's last frame when aimed at no window is not seen on Windows.
 - **Ambient Background follows a change of capture with a transition** (`live_change`,
   `live_change_ms`, `live_delay_ms`, `live_ease_*`): when the capture blended in changes (another
   source, none, or `app_capture_changes` says the switcher took another window) the scene as last

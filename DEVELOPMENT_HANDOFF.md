@@ -13,6 +13,39 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
+## Auto Capture: let go when the game's window closes (0.1.0-betaNEXT)
+
+Branch `fix/auto-capture-window-closed`, on `main` after beta186. Notes:
+`docs/releases/0.1.0-betaNEXT.md`. No Stream Deck file changed. The owner (2026-11-18): "if the
+captured game closes but the emulator stays open in the menu/game list, the last captured frame
+of the game remains in the OBS capture, and it doesn't morph into the standby as intended".
+`fix/auto-capture-quick-pickup` changes the rest logic in the same file at the same time; this
+change keeps to its own lines (a method of its own, `watch_captured`, the candidate lines, the
+first line of `resting`), so the two should merge with only the notes and this file to sort out.
+
+- **Cause:** OBS's Game Capture hooks the program; when Dolphin's game window closes and the menu
+  stays, the hook keeps the last texture, the capture keeps its size, and the Standby Picture,
+  which goes by the capture's own size, never stands in.
+- **Fix:** Auto Capture remembers the game's windows (handles): those of the program opened
+  since the capture was aimed at it (else the one in front or aimed at by title). All gone from
+  the window watch's list for 0.5 s with the program open (and on Windows not merely minimised),
+  the capture is aimed at no window and the program's windows seen meanwhile are no game until
+  it closes; a window opened later is aimed at as usual. A window that opens within that time
+  is followed, with no re-aim. See AGENTS.md's entry.
+- **Review fixes (same commit):** only windows seen while the game was open are spent (a game
+  restarted within the wait was shut out); the game's windows are found by what opened since the
+  aim, not by focus (the menu was watched when OBS was in front; a GBA window closing let go);
+  the watch is forgotten while the filter is off; a minimised spent emulator stays spent; its
+  own log line; the README's fall-back line.
+- **Tests:** `[auto capture: the game's window closes, its program stays open]`
+  (`STAGEKIT_TEST_ONLY_AUTO_WINCLOSE`, also run after the rest section in the full run), passed
+  twice; `STAGEKIT_TEST_ONLY_AUTO_REST` and `STAGEKIT_TEST_ONLY_CAPTURE_HIDE` still pass. The
+  full `tests/run-tests.sh` was not run (machine limits).
+- **Not proven:** that OBS frees the hook's last frame when the capture is aimed at no window
+  (it does stop the capture on a change of window); nothing here has run on Windows.
+
+## Scene Shadow: no flicker when items change, no gap at smoothed edges (0.1.0-beta186)
+
 ## Keys name their filter; a Standby Image over any source (0.1.0-beta189, plugin 0.30.0.0)
 
 Branch `feat/key-filter-names-standby-cover`, on `main` after beta182. Notes:
