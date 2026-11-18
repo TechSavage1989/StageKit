@@ -14,7 +14,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
 
-## Scene Transitions: no write while a scene's sources load (0.1.0-betaNEXT)
+## Scene Transitions: no write while a scene's sources load (0.1.0-beta171)
 
 The check *a scene loaded again with its transitions saved is written nothing* failed now and then
 (one write; seen in the frame-time work and on `feat/scene-fit-groups`). Scene Transitions acted on
