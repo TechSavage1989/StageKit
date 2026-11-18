@@ -49,6 +49,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/loading.hpp"
 #include "../common/pick-list.hpp"
 #include "../common/scene-rev.hpp"
+#include "../common/tooltip.hpp"
 
 #include <obs-frontend-api.h>
 #include <obs-module.h>
@@ -474,7 +475,7 @@ obs_properties_t *get_properties(void *data)
 							OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(where, obs_module_text("ShowIn.Where.Every"), (int)Where::Every);
 	obs_property_list_add_int(where, obs_module_text("ShowIn.Where.Listed"), (int)Where::Listed);
-	obs_property_set_long_description(where, obs_module_text("ShowIn.Where.Tip"));
+	set_tip(where, obs_module_text("ShowIn.Where.Tip"));
 	obs_property_set_modified_callback(where, where_modified);
 
 	PickList scenes;
@@ -498,14 +499,14 @@ obs_properties_t *get_properties(void *data)
 							OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(means, obs_module_text("ShowIn.OnMeans.Shown"), 0);
 	obs_property_list_add_int(means, obs_module_text("ShowIn.OnMeans.Hidden"), 1);
-	obs_property_set_long_description(means, obs_module_text("ShowIn.OnMeans.Tip"));
+	set_tip(means, obs_module_text("ShowIn.OnMeans.Tip"));
 
 	obs_property_t *with_linked =
 		obs_properties_add_bool(props, "with_linked", obs_module_text("ShowIn.WithLinked"));
-	obs_property_set_long_description(with_linked, obs_module_text("ShowIn.WithLinked.Tip"));
+	set_tip(with_linked, obs_module_text("ShowIn.WithLinked.Tip"));
 
 	obs_property_t *follow = obs_properties_add_bool(props, "follow", obs_module_text("ShowIn.Follow"));
-	obs_property_set_long_description(follow, obs_module_text("ShowIn.Follow.Tip"));
+	set_tip(follow, obs_module_text("ShowIn.Follow.Tip"));
 
 	obs_property_t *go_to = obs_properties_add_list(props, "go_to", obs_module_text("ShowIn.GoTo"),
 							OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
@@ -531,7 +532,7 @@ obs_properties_t *get_properties(void *data)
 		for (const std::string &name : names)
 			obs_property_list_add_string(go_to, name.c_str(), name.c_str());
 	}
-	obs_property_set_long_description(go_to, obs_module_text("ShowIn.GoTo.Tip"));
+	set_tip(go_to, obs_module_text("ShowIn.GoTo.Tip"));
 
 	add_item_change_properties(props, self ? self->source() : nullptr, "sources");
 

@@ -32,6 +32,15 @@ done
 python3 "$root/tests/make-contact-sheet.py" "$out/game" "$out/blur-types-game.png" checker
 python3 "$root/tests/make-contact-sheet.py" "$out/title" "$out/blur-types-title.png" dark
 
+echo "=== tooltips ==="
+# Its own run: it opens a window of every StageKit kind, which the other
+# sections need not share.
+mkdir -p "$out/tooltips"
+STAGEKIT_TEST_ONLY_TOOLTIPS=1 xvfb-run -a -s "-screen 0 1280x720x24" \
+  "$root/build-tests/tests/stagekit-ambient-test" "$root/build-tests/stagekit.so" "$root/data" \
+  "$out/test-art.png" "$out/test-texture.png" "$out/test-game.png" "$out/tooltips" \
+  "$out/test-title.png" "$out/tooltips" "$out/test-pillarbox.png" "$out/test-black.png" "$out/test-dark-game.png"
+
 echo "=== ambient background, shadow & backdrop ==="
 rm -rf "$out/ambient" "$out/shadow" "$out/corners" "$out/glow" "$out/morph" "$out/item-morph" "$out/make-room"
 mkdir -p "$out/ambient" "$out/shadow" "$out/corners" "$out/glow" "$out/morph" "$out/item-morph" "$out/make-room"

@@ -6,7 +6,10 @@
 /** Filter kinds that run once and switch themselves off. */
 const MOVES = new Set(["stagekit_send_to", "stagekit_place_item", "stagekit_layout", "stagekit_picture_shape"]);
 
-/** What each kind is called in OBS's own list of filters. */
+/**
+ * What each kind is called, the name inside OBS's "Scene Filter: <name>
+ * (StageKit)" or "Source Filter: <name> (StageKit)" (see `shownName`).
+ */
 const NAMES: Record<string, string> = {
 	stagekit_active_app: "Automatic Source Switcher",
 	stagekit_app_capture: "Automatic Window Switcher",
@@ -34,6 +37,26 @@ const NAMES: Record<string, string> = {
 	stagekit_scene_corners: "Scene Corners",
 	stagekit_scene_shadow: "Scene Shadow",
 	stagekit_scene_blur: "Scene Blur",
+};
+
+/**
+ * What each kind was called before (AGENTS.md, *Names*). A filter keeps the
+ * name it was given when it was added, so a filter added under an old name
+ * still carries it and is still that kind's own name.
+ */
+const OLD_NAMES: Record<string, string[]> = {
+	stagekit_active_app: ["Show Source in Use", "Follow Active App", "Active App"],
+	stagekit_app_capture: ["Capture App in Use"],
+	stagekit_fit_item: ["Fit Item"],
+	stagekit_layout: ["Layout"],
+	stagekit_picture_shape: ["Picture Shape key", "Picture Shape"],
+	stagekit_place_item: ["Place Item"],
+	stagekit_ramp_blur: ["Ramp Blur"],
+	stagekit_ramp_zoom: ["Ramp Zoom"],
+	stagekit_send_to: ["Send To"],
+	stagekit_shadow_backdrop: ["Shadow & Backdrop"],
+	stagekit_standby: ["Standby Picture"],
+	stagekit_visibility_link: ["Visibility Link"],
 };
 
 /**
@@ -85,6 +108,25 @@ export function kindName(kind: string): string {
 	return NAMES[kind] ?? kind;
 }
 
+/** What OBS's list of filters shows for a kind: "Scene Filter: Fit to Space (StageKit)". */
+export function shownName(kind: string): string {
+	const name = NAMES[kind];
+	if (!name) return kind;
+	return `${SCENE_KINDS.has(kind) ? "Scene Filter" : "Source Filter"}: ${name} (StageKit)`;
+}
+
+/**
+ * Whether a filter's name is its kind's own: the name OBS gives it now, one
+ * that has the kind's name in it, or exactly a name it was given under an
+ * earlier name ("Fit Item (StageKit)"). Old names are matched whole, never
+ * as a part: some are plain words ("Layout") a user's own name may contain.
+ */
+export function isOwnName(name: string, kind: string): boolean {
+	const now = kindName(kind);
+	if (name === shownName(kind) || name === now || name.includes(now)) return true;
+	return (OLD_NAMES[kind] ?? []).some((n) => name === n || name === `${n} (StageKit)`);
+}
+
 export type Item = { label: string; value: string };
 
 /** The sources that have at least one filter of the wanted sort, by name. */
@@ -104,7 +146,7 @@ export function filterItems(filters: FilterInfo[], source: string, wanted: (kind
 		.filter((f) => f.source === source && wanted(f.kind))
 		.map((f) => {
 			const kind = kindName(f.kind);
-			const label = f.name === kind || f.name.includes(kind) ? f.name : `${f.name} (${kind})`;
+			const label = isOwnName(f.name, f.kind) ? f.name : `${f.name} (${kind})`;
 			return { label, value: f.name };
 		});
 }
@@ -123,7 +165,7 @@ export function targetItems(filters: FilterInfo[], wanted: (kind: string) => boo
 	for (const f of mine) count.set(f.source, (count.get(f.source) ?? 0) + 1);
 	return mine
 		.map((f) => {
-			const plain = (count.get(f.source) ?? 0) === 1 && (f.name === kindName(f.kind) || f.name.includes(kindName(f.kind)));
+			const plain = (count.get(f.source) ?? 0) === 1 && isOwnName(f.name, f.kind);
 			return { label: plain ? f.source : `${f.source} \u2014 ${f.name}`, value: `${f.source}${TARGET_SEP}${f.name}` };
 		})
 		.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" }));

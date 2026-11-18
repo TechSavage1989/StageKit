@@ -5,7 +5,9 @@ import {
 	afterPress,
 	filterItems,
 	isMove,
+	isOwnName,
 	isSwitch,
+	shownName,
 	sourceItems,
 	targetItems,
 	targetOf,
@@ -74,4 +76,31 @@ test("a key's target is read from the one setting, or from the two older ones", 
 	assert.deepEqual(targetOf({ source: "Game", filter: "Ramp Blur" }), { source: "Game", filter: "Ramp Blur" });
 	assert.deepEqual(targetOf({ target: `a${TARGET_SEP}b`, source: "old", filter: "older" }), { source: "a", filter: "b" });
 	assert.deepEqual(targetOf({}), { source: "", filter: "" });
+});
+
+test("a filter's own name is the one OBS shows now, or one it was given under an earlier name", () => {
+	assert.equal(shownName("stagekit_fit_item"), "Scene Filter: Fit to Space (StageKit)");
+	assert.equal(shownName("stagekit_ramp_blur"), "Source Filter: Blur (StageKit)");
+	assert.equal(shownName("stagekit_standby"), "Source Filter: Standby Image (StageKit)");
+	assert.equal(shownName("color_filter"), "color_filter");
+	assert.equal(isOwnName("Scene Filter: Fit to Space (StageKit)", "stagekit_fit_item"), true);
+	assert.equal(isOwnName("Fit Item (StageKit)", "stagekit_fit_item"), true);
+	assert.equal(isOwnName("Standby Picture (StageKit)", "stagekit_standby"), true);
+	assert.equal(isOwnName("Visibility Link (StageKit)", "stagekit_visibility_link"), true);
+	assert.equal(isOwnName("Capture App in Use (StageKit)", "stagekit_app_capture"), true);
+	assert.equal(isOwnName("Fit the game", "stagekit_fit_item"), false);
+	// Old names are matched whole: a user's own name with a plain word in it is not the kind's.
+	assert.equal(isOwnName("Chat Layout", "stagekit_layout"), false);
+	assert.equal(isOwnName("Layout (StageKit)", "stagekit_layout"), true);
+	assert.equal(isOwnName("My Active App", "stagekit_active_app"), false);
+	const named: FilterInfo[] = [
+		{ source: "Game", name: "Source Filter: Blur (StageKit)", kind: "stagekit_ramp_blur", enabled: false },
+		{ source: "Cam", name: "Standby Picture (StageKit)", kind: "stagekit_standby", enabled: true },
+	];
+	assert.deepEqual(targetItems(named, (kind) => kind === "stagekit_ramp_blur"), [
+		{ label: "Game", value: `Game${TARGET_SEP}Source Filter: Blur (StageKit)` },
+	]);
+	assert.deepEqual(filterItems(named, "Cam", isSwitch), [
+		{ label: "Standby Picture (StageKit)", value: "Standby Picture (StageKit)" },
+	]);
 });

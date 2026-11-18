@@ -51,6 +51,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../shadow/shadow-backdrop.hpp"
 #include "../transition/morph.hpp"
 #include "scene-blur.hpp"
+#include "../common/tooltip.hpp"
 
 #include <obs-module.h>
 #include <plugin-support.h>
@@ -655,11 +656,11 @@ obs_properties_t *get_properties(void *data)
 						       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(fill, obs_module_text("Shadow.Fill.Color"), 0);
 	obs_property_list_add_int(fill, obs_module_text("Shadow.Fill.Picture"), 1);
-	obs_property_set_long_description(fill, obs_module_text("Shadow.Fill.Tip"));
+	set_tip(fill, obs_module_text("Shadow.Fill.Tip"));
 	obs_property_set_modified_callback(fill, look_modified);
 	obs_properties_add_color(shadow, "shadow_color", obs_module_text("Shadow.Color"));
 	obs_property_t *boost = slider(shadow, "shadow_boost", "Shadow.Boost", 0.0, 100.0, "%");
-	obs_property_set_long_description(boost, obs_module_text("Shadow.Boost.Tip"));
+	set_tip(boost, obs_module_text("Shadow.Boost.Tip"));
 	slider(shadow, "shadow_opacity", "Shadow.Opacity", 0.0, 100.0, "%");
 	slider(shadow, "offset_x", "Shadow.OffsetX", -200.0, 200.0, " px");
 	slider(shadow, "offset_y", "Shadow.OffsetY", -200.0, 200.0, " px");
@@ -673,7 +674,7 @@ obs_properties_t *get_properties(void *data)
 	slider(outline, "outline_opacity", "Shadow.OutlineOpacity", 0.0, 100.0, "%");
 	obs_property_t *ring = obs_properties_add_group(props, "outline", obs_module_text("Shadow.Outline"),
 							OBS_GROUP_CHECKABLE, outline);
-	obs_property_set_long_description(ring, obs_module_text("SceneShadow.Outline.Tip"));
+	set_tip(ring, obs_module_text("SceneShadow.Outline.Tip"));
 
 	// The scene's own sources (a group as one), for the two lists.
 	auto sources = [filter](std::vector<std::string> &names) {
@@ -698,12 +699,12 @@ obs_properties_t *get_properties(void *data)
 						       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(from, obs_module_text("SceneShadow.From.Scene"), (int)From::Scene);
 	obs_property_list_add_int(from, obs_module_text("SceneShadow.From.Each"), (int)From::Each);
-	obs_property_set_long_description(from, obs_module_text("SceneShadow.From.Tip"));
+	set_tip(from, obs_module_text("SceneShadow.From.Tip"));
 	obs_property_t *which = obs_properties_add_list(props, "which", obs_module_text("SceneShadow.Which"),
 							OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(which, obs_module_text("SceneShadow.Which.All"), (int)Which::AllSources);
 	obs_property_list_add_int(which, obs_module_text("SceneShadow.Which.Chosen"), (int)Which::Chosen);
-	obs_property_set_long_description(which, obs_module_text("SceneShadow.Which.Tip"));
+	set_tip(which, obs_module_text("SceneShadow.Which.Tip"));
 	obs_property_set_modified_callback(which, which_modified);
 	PickList chosen;
 	chosen.setting = "shadow_sources";
@@ -721,7 +722,7 @@ obs_properties_t *get_properties(void *data)
 	pick_list_add(props, filter, background);
 	obs_property_t *autob =
 		obs_properties_add_bool(props, "auto_background", obs_module_text("SceneShadow.AutoBackground"));
-	obs_property_set_long_description(autob, obs_module_text("SceneShadow.AutoBackground.Tip"));
+	set_tip(autob, obs_module_text("SceneShadow.AutoBackground.Tip"));
 	PickList skip;
 	skip.setting = "shadow_skip";
 	skip.title = "SceneShadow.Skip";
@@ -733,7 +734,7 @@ obs_properties_t *get_properties(void *data)
 	obs_property_t *ramp =
 		obs_properties_add_int_slider(props, "ramp_ms", obs_module_text("SceneShadow.Ramp"), 0, 5000, 50);
 	obs_property_int_set_suffix(ramp, " ms");
-	obs_property_set_long_description(ramp, obs_module_text("SceneShadow.Ramp.Tip"));
+	set_tip(ramp, obs_module_text("SceneShadow.Ramp.Tip"));
 	add_easing_properties(props, "ramp_");
 	return props;
 }

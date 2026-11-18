@@ -9,47 +9,43 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | `feat/sd-mode-key-page` (the Scene Mode key's page, betaNEXT), on `main` after beta179. Next: the new collection |
+| Working branch | `chore/filter-names-tooltips` (filter names, wrapped tooltips, more Mode types, betaNEXT), on `main` after beta176 (#192). Next: the new collection |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
-## The Scene Mode key's page: a mode, then its settings (0.1.0-beta181, plugin 0.28.0.0)
+## Filter names, tooltips, Mode types (0.1.0-betaNEXT)
 
-Branch `feat/sd-mode-key-page`, on `main` after beta179. Notes: `docs/releases/0.1.0-beta181.md`.
-Stream Deck only; nothing in the OBS plugin changed (it was not built here). The owner
-(2026-11-18): "the scene modes key is very long in the configuration when the different modes are
-stacked. allow the mode to configure to be selected from another selector under the scene modes
-selector, and have it's configurations configurable".
+Branch `chore/filter-names-tooltips`, on `main` after beta176 (#192). Notes:
+`docs/releases/0.1.0-betaNEXT.md`. Three things the owner asked for:
 
-- **The page** (`mode_page_html` in `streamdeck/tools/make-plugin-files.py`, written to
-  `ui/mode.html`): *Scene Modes*; *Mode settings* (`modeFor`, was *Settings for*) with that mode's
-  *Use in Next* (`modeUse`), *Layout* (`modeLayout`) and *Image* (`modeType`) right under it; then
-  an open *Key* fold-out with *On press*, *Switch to mode* (`mode`, was *Mode*), *Long press*,
-  *Long press mode*, *Hold time* and *Palette*. The key-wide *Layout* and *Mode type* rows are gone
-  (`page(..., lists=False, palette=False)`), so the page has one long type list instead of two. No
-  setting id changed.
-- **Keys saved before**: `layout` and `sourceType` are still read with the old precedence
-  (`followedModePicture`, unchanged): `layout` behind every mode without its own Layout,
-  `sourceType` behind the key's own mode only. Extending `sourceType` to every mode, as first
-  asked, would have changed what Toggle and Next mode keys show for the other modes, so it was not.
-  The own mode's *Image* list loads `sourceType` (the page shows what the key shows); editing it
-  replaces it (`sourceType` set to `auto`). Which mode it was loaded for is kept
-  (`modeTypeKeyWide`): changing *Switch to mode* reloads the lists, never counts as an edit of
-  the Image (a review found it wrote the old mode an image of its own, or erased `sourceType`). `layout` can no longer be changed on the page; each
-  mode's own Layout wins over it.
-- **Mode settings chosen for you** (`editModeSettings(settings, firstMode)`, `upToDate` in
-  `src/actions/mode.ts`): empty, it takes the key's `mode`, else the filter's first mode (read from
-  OBS), also after another Scene Modes is chosen.
-- Tests (`npm test`, 76 pass; `tsc --noEmit`; `streamdeck validate`): the page's order and
-  labels, the old key-wide rows gone, one Palette; `editModeSettings`' defaulting and the key-wide
-  Mode type loaded and replaced; an old key with `layout` / `sourceType` and no `perMode` shows the
-  same image, title and state before and after its page is brought up to date, for its own mode,
-  another mode and none. The tests that went through every key's type lists know `mode` as the key
-  whose lists are per mode.
-- **Not proven:** on a Stream Deck (that sdpi-components shows the values the plugin writes back,
-  and the `<details open>` fold-out's look).
+- **Filter names say where the filter goes** (the owner: "I want all scene filters in the plugin
+  referred to as scene filters, and likewise for source filters so they are easily
+  distinguishable in the list", in the form *Scene Filter: Fit to Space (StageKit)* / *Source
+  Filter: Blur (StageKit)*). Only the `*.Name` values of `data/locale/en-US.ini` changed; the list
+  is AGENTS.md's fifth Names entry. Program Trigger is a source filter (it goes on any source, a
+  scene included). Filters already in a collection keep their names. The dock's *Add effect*
+  names what it adds without the prefix, as before. The Stream Deck plugin's `kinds.ts` gained
+  `shownName` and `isOwnName` (now and earlier names, `OLD_NAMES`), so a key's list treats
+  *Source Filter: Blur (StageKit)* and *Ramp Blur (StageKit)* alike as a kind's own name. Old
+  names count only whole ("Layout" or "Layout (StageKit)"), never as a part: some are plain words,
+  and a user's "Chat Layout" must still be labelled "Chat Layout (Apply Layout)". `targetItems`'
+  labelling is otherwise unchanged. Stream Deck plugin `VERSION` 0.29.0.0 (a file under
+  `streamdeck/` changed).
+- **Tooltips are broken into lines** (the owner: "all tooltips in the plugin are hard to read
+  because they are just one really long line of text"): `set_tip` / `wrap_tip` in
+  `src/common/tooltip.hpp`, 64 characters a line, used for all 157 calls that set a long
+  description. `[tooltips: ...]` (`STAGEKIT_TEST_ONLY_TOOLTIPS`) tests the wrapping and opens
+  every StageKit kind's window to check every tooltip line.
+- **Scene Modes' *Mode type* offers every type the Stream Deck Scene Mode key does** (the owner:
+  "handheld is not an option"): 86 types, the key's ids in the key's order; the 20 there were keep
+  their ids and wording, but *Capture card* reads *Capture card (internal)*, as on the Stream Deck,
+  beside the new *Capture card (external)*. `streamdeck/tests/mode-types.test.ts` checks the two
+  lists agree and that every type gives the key a picture.
 
-## Scene Transitions: Override other filters (0.1.0-beta179)
+Not seen on Windows: how OBS's tooltips look with the breaks (Qt shows a plain-text tooltip's
+line breaks as they are).
+
+## Scene Shadow from each source, Scene Corners on the whole scene (0.1.0-beta176)
 
 Branch `fix/stale-transition-flake`, on `main` after beta174. Notes:
 `docs/releases/0.1.0-beta180.md`. No Stream Deck file changed. The check *a scene left with a cut

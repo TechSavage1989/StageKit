@@ -30,6 +30,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/scene-util.hpp"
 #include "../dock/arrange.hpp"
 #include "../dock/arrange-tools.hpp"
+#include "../common/tooltip.hpp"
 
 #include <obs-module.h>
 #include <obs-frontend-api.h>
@@ -713,10 +714,10 @@ obs_properties_t *get_properties(void *data)
 	obs_property_float_set_suffix(margin, " px");
 	obs_property_t *visible_pixels =
 		obs_properties_add_bool(props, "visible_pixels", obs_module_text("Measure.Visible"));
-	obs_property_set_long_description(visible_pixels, obs_module_text("Measure.Visible.Tip"));
+	set_tip(visible_pixels, obs_module_text("Measure.Visible.Tip"));
 	obs_property_set_modified_callback(visible_pixels, destination_modified);
 	obs_property_t *no_shadows = obs_properties_add_bool(props, "no_shadows", obs_module_text("Measure.NoShadows"));
-	obs_property_set_long_description(no_shadows, obs_module_text("Measure.NoShadows.Tip"));
+	set_tip(no_shadows, obs_module_text("Measure.NoShadows.Tip"));
 	obs_properties_add_float(props, "saved_x", obs_module_text("Place.SavedX"), -20000.0, 20000.0, 1.0);
 	obs_properties_add_float(props, "saved_y", obs_module_text("Place.SavedY"), -20000.0, 20000.0, 1.0);
 	obs_properties_add_bool(props, "restore_size", obs_module_text("Place.RestoreSize"));
@@ -739,7 +740,7 @@ obs_properties_t *get_properties(void *data)
 		obs_property_list_add_int(where, obs_module_text("SendTo.Where.Every"), (int)ApplyIn::Every);
 		obs_property_list_add_int(where, obs_module_text("SendTo.Where.OnScreen"), (int)ApplyIn::OnScreen);
 		obs_property_list_add_int(where, obs_module_text("SendTo.Where.Chosen"), (int)ApplyIn::Chosen);
-		obs_property_set_long_description(where, obs_module_text("SendTo.Where.Tip"));
+		set_tip(where, obs_module_text("SendTo.Where.Tip"));
 		obs_property_set_modified_callback(where, destination_modified);
 		// The scenes this source is in, to choose one from.
 		obs_property_t *scene = obs_properties_add_list(props, "apply_scene",

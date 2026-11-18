@@ -75,6 +75,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/timing.hpp"
 #include "../transition/morph.hpp"
 #include "scene-shadow.hpp"
+#include "../common/tooltip.hpp"
 
 #include <obs-module.h>
 #include <graphics/matrix4.h>
@@ -1065,7 +1066,7 @@ obs_properties_t *get_properties(void *data)
 	obs_property_list_add_int(cover, obs_module_text("SceneBlur.Cover.All"), (int)Cover::All);
 	obs_property_list_add_int(cover, obs_module_text("SceneBlur.Cover.Live"), (int)Cover::Live);
 	obs_property_list_add_int(cover, obs_module_text("SceneBlur.Cover.Chosen"), (int)Cover::Chosen);
-	obs_property_set_long_description(cover, obs_module_text("SceneBlur.Cover.Tip"));
+	set_tip(cover, obs_module_text("SceneBlur.Cover.Tip"));
 	obs_property_set_modified_callback(cover, cover_modified);
 
 	// The scene's own sources (a group as one), for the two lists.
@@ -1106,7 +1107,7 @@ obs_properties_t *get_properties(void *data)
 						       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(area, obs_module_text("SceneBlur.Area.Scene"), (int)Area::Scene);
 	obs_property_list_add_int(area, obs_module_text("SceneBlur.Area.Each"), (int)Area::EachSource);
-	obs_property_set_long_description(area, obs_module_text("SceneBlur.Area.Tip"));
+	set_tip(area, obs_module_text("SceneBlur.Area.Tip"));
 	obs_property_set_modified_callback(area, [](obs_properties_t *p, obs_property_t *, obs_data_t *settings) {
 		blur_look_visibility(p, settings);
 		return true;

@@ -51,6 +51,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/pick-list.hpp"
 #include "../common/scene-rev.hpp"
 #include "../common/scene-util.hpp"
+#include "../common/tooltip.hpp"
 
 #include <obs-module.h>
 #include <plugin-support.h>
@@ -706,7 +707,7 @@ obs_properties_t *get_properties(void *data)
 	obs_property_list_add_int(mode, obs_module_text("Link.Mode.OnlyOne"), (int)LinkMode::OnlyOne);
 	obs_property_list_add_int(mode, obs_module_text("Link.Mode.Together"), (int)LinkMode::Together);
 	obs_property_list_add_int(mode, obs_module_text("Link.Mode.Follow"), (int)LinkMode::Follow);
-	obs_property_set_long_description(mode, obs_module_text("Link.Mode.Tip"));
+	set_tip(mode, obs_module_text("Link.Mode.Tip"));
 	obs_property_set_modified_callback(mode, mode_modified);
 
 	// Follow sources: the sources that lead, and when the rest show.
@@ -723,10 +724,10 @@ obs_properties_t *get_properties(void *data)
 						       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(rule, obs_module_text("Link.LeadRule.Any"), (int)LeadRule::Any);
 	obs_property_list_add_int(rule, obs_module_text("Link.LeadRule.All"), (int)LeadRule::All);
-	obs_property_set_long_description(rule, obs_module_text("Link.LeadRule.Tip"));
+	set_tip(rule, obs_module_text("Link.LeadRule.Tip"));
 	obs_property_t *take = obs_properties_add_button2(props, "take_first", obs_module_text("Link.TakeFirst"),
 							  take_first_clicked, self);
-	obs_property_set_long_description(take, obs_module_text("Link.TakeFirst.Tip"));
+	set_tip(take, obs_module_text("Link.TakeFirst.Tip"));
 
 	PickList items;
 	items.setting = "items";
@@ -761,7 +762,7 @@ obs_properties_t *get_properties(void *data)
 	// both lists.
 	add_item_change_properties(props, self ? self->source() : nullptr, "leads,items,elsewhere");
 	obs_property_t *lock_hidden = obs_properties_add_bool(props, "lock_hidden", obs_module_text("Link.LockHidden"));
-	obs_property_set_long_description(lock_hidden, obs_module_text("Link.LockHidden.Tip"));
+	set_tip(lock_hidden, obs_module_text("Link.LockHidden.Tip"));
 	obs_property_t *help = obs_properties_add_text(props, "help", obs_module_text("Link.Help"), OBS_TEXT_INFO);
 	obs_property_text_set_info_word_wrap(help, true);
 	if (self) {

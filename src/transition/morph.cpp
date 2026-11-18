@@ -51,6 +51,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../placement/visibility-link.hpp"
 #include "../capture/active-app.hpp"
 #include "../capture/program-trigger.hpp"
+#include "../common/tooltip.hpp"
 
 #include <obs-module.h>
 #include <graphics/matrix4.h>
@@ -1359,9 +1360,9 @@ void add_room_properties(obs_properties_t *props)
 						      OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(way, obs_module_text("MakeRoom.Way.Push"), (int)RoomWay::Push);
 	obs_property_list_add_int(way, obs_module_text("MakeRoom.Way.Nearest"), (int)RoomWay::Nearest);
-	obs_property_set_long_description(way, obs_module_text("MakeRoom.Way.Tip"));
+	set_tip(way, obs_module_text("MakeRoom.Way.Tip"));
 	obs_property_t *fade = obs_properties_add_bool(props, "room_fade", obs_module_text("MakeRoom.Fade"));
-	obs_property_set_long_description(fade, obs_module_text("MakeRoom.Fade.Tip"));
+	set_tip(fade, obs_module_text("MakeRoom.Fade.Tip"));
 }
 
 // The Make Room transition's window: Morph's pairing and links, its easing,
@@ -1373,11 +1374,11 @@ obs_properties_t *get_room_properties(void *data)
 	obs_properties_t *props = obs_properties_create();
 	add_room_properties(props);
 	obs_property_t *pair_main = obs_properties_add_bool(props, "pair_main", obs_module_text("Morph.PairMain"));
-	obs_property_set_long_description(pair_main, obs_module_text("Morph.PairMain.Tip"));
+	set_tip(pair_main, obs_module_text("Morph.PairMain.Tip"));
 	obs_property_t *seen = obs_properties_add_bool(props, "visible_pixels", obs_module_text("Morph.Seen"));
-	obs_property_set_long_description(seen, obs_module_text("Morph.Seen.Tip"));
+	set_tip(seen, obs_module_text("Morph.Seen.Tip"));
 	obs_property_t *no_shadows = obs_properties_add_bool(props, "no_shadows", obs_module_text("Measure.NoShadows"));
-	obs_property_set_long_description(no_shadows, obs_module_text("Morph.NoShadows.Tip"));
+	set_tip(no_shadows, obs_module_text("Morph.NoShadows.Tip"));
 	add_easing_properties(props, "");
 	add_morph_link_properties(props, self ? self->source() : nullptr, "");
 	return props;
@@ -1393,7 +1394,7 @@ obs_properties_t *get_properties(void *data)
 	obs_property_list_add_int(others, obs_module_text("Morph.Others.Zoom"), (int)Others::Zoom);
 	obs_property_list_add_int(others, obs_module_text("Morph.Others.Slide"), (int)Others::Slide);
 	obs_property_list_add_int(others, obs_module_text("MakeRoom.Option"), (int)Others::MakeRoom);
-	obs_property_set_long_description(others, obs_module_text("Morph.Others.Tip"));
+	set_tip(others, obs_module_text("Morph.Others.Tip"));
 	// Unpaired sources: when this is an item's own transition, how an item
 	// with nothing to change into comes and goes. Morph's own ways, a cut, or
 	// any other transition, whose own settings follow (`unpaired|g`).
@@ -1411,7 +1412,7 @@ obs_properties_t *get_properties(void *data)
 		const char *shown_as = obs_source_get_display_name(kind);
 		obs_property_list_add_string(unpaired, shown_as ? shown_as : kind, kind);
 	}
-	obs_property_set_long_description(unpaired, obs_module_text("Morph.Alone.Tip"));
+	set_tip(unpaired, obs_module_text("Morph.Alone.Tip"));
 	if (self) {
 		obs_properties_add_group(props, "unpaired|g", obs_module_text("Morph.AloneOwn"), OBS_GROUP_NORMAL,
 					 obs_properties_create());
@@ -1422,11 +1423,11 @@ obs_properties_t *get_properties(void *data)
 	}
 	add_room_properties(props);
 	obs_property_t *pair_main = obs_properties_add_bool(props, "pair_main", obs_module_text("Morph.PairMain"));
-	obs_property_set_long_description(pair_main, obs_module_text("Morph.PairMain.Tip"));
+	set_tip(pair_main, obs_module_text("Morph.PairMain.Tip"));
 	obs_property_t *seen = obs_properties_add_bool(props, "visible_pixels", obs_module_text("Morph.Seen"));
-	obs_property_set_long_description(seen, obs_module_text("Morph.Seen.Tip"));
+	set_tip(seen, obs_module_text("Morph.Seen.Tip"));
 	obs_property_t *no_shadows = obs_properties_add_bool(props, "no_shadows", obs_module_text("Measure.NoShadows"));
-	obs_property_set_long_description(no_shadows, obs_module_text("Morph.NoShadows.Tip"));
+	set_tip(no_shadows, obs_module_text("Morph.NoShadows.Tip"));
 	add_easing_properties(props, "");
 
 	// Links: two different sources that are to count as the same thing.
@@ -1451,18 +1452,18 @@ obs_properties_t *get_properties(void *data)
 				return true;
 			},
 			scene);
-		obs_property_set_long_description(scene, obs_module_text("Morph.Rules.Tip"));
+		set_tip(scene, obs_module_text("Morph.Rules.Tip"));
 		// Two scenes that have a rule already: its settings are shown.
 		obs_property_set_modified_callback(scene, rule_chosen);
 	}
 	obs_property_t *both = obs_properties_add_bool(rule, "rule_both", obs_module_text("Morph.RuleBoth"));
-	obs_property_set_long_description(both, obs_module_text("Morph.RuleBoth.Tip"));
+	set_tip(both, obs_module_text("Morph.RuleBoth.Tip"));
 	obs_property_t *style = obs_properties_add_list(rule, "rule_style", obs_module_text("Morph.RuleStyle"),
 							OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(style, obs_module_text("Morph.RuleStyle.Morph"), (int)Style::Morph);
 	obs_property_list_add_int(style, obs_module_text("Morph.RuleStyle.Fade"), (int)Style::CrossFade);
 	obs_property_list_add_int(style, obs_module_text("Morph.RuleStyle.Cut"), (int)Style::Cut);
-	obs_property_set_long_description(style, obs_module_text("Morph.RuleStyle.Tip"));
+	set_tip(style, obs_module_text("Morph.RuleStyle.Tip"));
 	obs_property_t *rule_others = obs_properties_add_list(rule, "rule_others", obs_module_text("Morph.Others"),
 							      OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(rule_others, obs_module_text("Morph.Others.Fade"), (int)Others::Fade);

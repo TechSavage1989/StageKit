@@ -41,6 +41,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/scene-util.hpp"
 #include "../common/filter-order.hpp"
 #include "../common/timing.hpp"
+#include "../common/tooltip.hpp"
 
 #include <obs-frontend-api.h>
 #include <obs-module.h>
@@ -774,7 +775,7 @@ bool cover_changed(obs_properties_t *props, obs_property_t *, obs_data_t *settin
 	if (obs_property_t *group = obs_properties_get(props, "sources|alist"))
 		obs_property_set_description(group, sources_title(cover));
 	if (obs_property_t *pick = obs_properties_get(props, "sources|apick"))
-		obs_property_set_long_description(pick, sources_tip(cover));
+		set_tip(pick, sources_tip(cover));
 	return true;
 }
 
@@ -800,7 +801,7 @@ obs_properties_t *get_properties(void *data)
 							OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(cover, obs_module_text("SceneTrans.Cover.All"), (int)Cover::All);
 	obs_property_list_add_int(cover, obs_module_text("SceneTrans.Cover.Listed"), (int)Cover::Listed);
-	obs_property_set_long_description(cover, obs_module_text("SceneTrans.Cover.Tip"));
+	set_tip(cover, obs_module_text("SceneTrans.Cover.Tip"));
 	obs_property_set_modified_callback(cover, cover_changed);
 
 	obs_data_t *now = source ? obs_source_get_settings(source) : nullptr;
@@ -828,11 +829,11 @@ obs_properties_t *get_properties(void *data)
 	pick_list_add(props, source, except);
 
 	obs_property_t *in_groups = obs_properties_add_bool(props, "in_groups", obs_module_text("SceneTrans.InGroups"));
-	obs_property_set_long_description(in_groups, obs_module_text("SceneTrans.InGroups.Tip"));
+	set_tip(in_groups, obs_module_text("SceneTrans.InGroups.Tip"));
 
 	obs_property_t *overrides =
 		obs_properties_add_bool(props, "override_others", obs_module_text("SceneTrans.Override"));
-	obs_property_set_long_description(overrides, obs_module_text("SceneTrans.Override.Tip"));
+	set_tip(overrides, obs_module_text("SceneTrans.Override.Tip"));
 
 	add_item_change_properties(props, source, "sources");
 	return props;

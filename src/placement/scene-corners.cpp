@@ -42,6 +42,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../look/scene-shadow.hpp"
 #include "../shape/corners.hpp"
 #include "../transition/morph.hpp"
+#include "../common/tooltip.hpp"
 
 #include <obs-module.h>
 #include <plugin-support.h>
@@ -418,7 +419,7 @@ obs_properties_t *get_properties(void *data)
 						       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(area, obs_module_text("SceneCorners.Area.Each"), (int)Area::Each);
 	obs_property_list_add_int(area, obs_module_text("SceneCorners.Area.Whole"), (int)Area::Whole);
-	obs_property_set_long_description(area, obs_module_text("SceneCorners.Area.Tip"));
+	set_tip(area, obs_module_text("SceneCorners.Area.Tip"));
 	obs_property_set_modified_callback(area, area_modified);
 
 	obs_property_t *which = obs_properties_add_list(props, "which", obs_module_text("SceneCorners.Which"),
@@ -427,7 +428,7 @@ obs_properties_t *get_properties(void *data)
 	obs_property_list_add_int(which, obs_module_text("SceneCorners.Which.Every"), (int)Which::AllSources);
 	obs_property_list_add_int(which, obs_module_text("SceneCorners.Which.All"), (int)Which::AllButBackground);
 	obs_property_list_add_int(which, obs_module_text("SceneCorners.Which.Chosen"), (int)Which::Chosen);
-	obs_property_set_long_description(which, obs_module_text("SceneCorners.Which.Tip"));
+	set_tip(which, obs_module_text("SceneCorners.Which.Tip"));
 	obs_property_set_modified_callback(which, which_modified);
 
 	auto items = [scene](std::vector<std::string> &names) {
@@ -461,7 +462,7 @@ obs_properties_t *get_properties(void *data)
 	pick_list_add(props, owner, skip);
 	obs_property_t *background =
 		obs_properties_add_bool(props, "auto_background", obs_module_text("SceneCorners.AutoBackground"));
-	obs_property_set_long_description(background, obs_module_text("SceneCorners.AutoBackground.Tip"));
+	set_tip(background, obs_module_text("SceneCorners.AutoBackground.Tip"));
 
 	corners_add_look_properties(props);
 

@@ -61,6 +61,21 @@ Ids (`stagekit_standby`, `stagekit_start_image`, `SetPictureShape`), settings, p
 the code are unchanged, and **the rest of this file still says picture and start image**. Write
 *image* in any new string.
 
+A fifth, at the owner's word (2026-11-18, betaNEXT): "I want all scene filters in the plugin
+referred to as scene filters, and likewise for source filters so they are easily distinguishable in
+the list", in the form they chose, *Scene Filter: Fit to Space (StageKit)* and *Source Filter: Blur
+(StageKit)*. Every StageKit filter's `*.Name` in `data/locale/en-US.ini` says one or the other
+(values only; keys and ids unchanged). Scene filters: Move Scene Item, Show/Hide Animation, Match
+Item, Link Visibility, Apply Layout, Fit to Space, Automatic Source Switcher, Scene Modes, Scene
+Transitions, Scene Fit, Scene Standby, Scene Corners, Scene Shadow, Scene Blur. Source filters:
+Blur, Zoom, Shadow, Glow & Outline, Corners & Edges, Auto Frame, Aspect Ratio Preset, Auto Capture,
+Program Trigger (a scene is a source too), Automatic Window Switcher, Standby Image, Move Source,
+Show in Scenes. Sources (Ambient Background, Cropped View, Standby Image) and transitions (Morph,
+Fade and Zoom, Make Room) are not filters and keep their names. A filter already on a source keeps
+the name it was given; the dock still names what it adds without the prefix (`add_effect`), and
+the Stream Deck plugin knows a kind's own name now and before (`isOwnName`, `OLD_NAMES` in
+`streamdeck/src/kinds.ts`). The rest of this file names filters without the prefix.
+
 The trial scenes were renamed at the owner's word (2026-11-17, beta154: "Full capture should be
 called Live / Holding should be called standby / Component should be called Chat Live"):
 Full-Capture-Scene is *Live*, Component-Capture-Scene *Chat Live*, Holding-Scene *Standby*. Those
@@ -178,7 +193,16 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   editable list or a comma-separated text box for a new list.
 - **Long control labels push every control to the right** in OBS's filter window, which the owner
   rejected. Keep a label under about 26 characters and put the rest in a tooltip
-  (`obs_property_set_long_description`).
+  (`set_tip`, below).
+- **Every tooltip goes through `set_tip`** (`src/common/tooltip.hpp`, betaNEXT), never
+  `obs_property_set_long_description` itself: OBS shows a long description as one line as wide as
+  its text, and the owner found "all tooltips in the plugin are hard to read because they are just
+  one really long line of text". `wrap_tip` breaks it at spaces to `kTipWidth` (64) characters,
+  counted in UTF-8 characters, keeping the breaks already in it and never splitting a word. Tested
+  in `[tooltips: ...]` (`tooltips_test`, run by `tests/run-tests.sh` as a run of its own with `STAGEKIT_TEST_ONLY_TOOLTIPS`), which also opens
+  every StageKit kind's window (filters, sources, transitions, with their modified callbacks run
+  once) and fails on a line over the limit. Stream Deck pages are left alone: a browser wraps a
+  `title` tooltip itself.
 - **A program can be named by part of its window's title wherever it is named by file.** The owner
   runs Dolphin (4:3) and PrimeHack, a build of it with the same `Dolphin.exe` (16:9): "some
   applications i have are the same exe name but they are different versions and need different
@@ -1533,8 +1557,9 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     nine are the same mountain. Within one list no value, name, picture id or picture file repeats
     (tested).
   - **Settings.** `sourceType` (Source type, or *Mode type* on the Scene Mode key; ids append-only,
-    the first twenty those of the Scene Modes filter's *Mode type* in OBS, which has not been given
-    the new ones), `sceneType` (Scene type), `look` (Blur style, Corner style, Shadow style,
+    the Scene Modes filter's *Mode type* in OBS offers every source type of the Scene Mode key's
+    list, the same ids in the same order since betaNEXT: `tests/mode-types.test.ts` reads
+    `kTypes` in `scene-modes.cpp` and fails when the two differ), `sceneType` (Scene type), `look` (Blur style, Corner style, Shadow style,
     Transition, Position, Capture type). Each list starts with *Automatic*, value `auto`; unset or empty reads the same. Since beta160
     every key a user can add has one (tested from the manifest): the keys whose own list is what
     they do (Arrange tool, Dock Option, Slide to Edge, Set Aspect Ratio, Manual Window / Source:
@@ -1927,10 +1952,12 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   "scene modes should not have specific names built in. instead scene modes should be able to be
   made manually and customized", with templates to start from. A mode is known by an **id**
   (`m1`, `m2`, ..., from `mode_seq`; never reused, never renamed): settings `modes` (the ids in
-  order), `mode|<id>|name`, `mode|<id>|type` (a string id, the Stream Deck Source type's: `game`,
-  `window`, `art_app`, `code_editor`, `browser`, `camera`, `capture_card`, `display`, `phone`,
-  `tablet`, `chat`, `music`, `alerts`, `title`, `image`, `video`, `starting`, `brb`,
-  `intermission`, `ending`; "" Automatic; append only), `mode|<id>|go_to`, `mode|<id>|sources`;
+  order), `mode|<id>|name`, `mode|<id>|type` (a string id, the Stream Deck Source type's: up to
+  beta176 `game`, `window`, `art_app`, `code_editor`, `browser`, `camera`, `capture_card`,
+  `display`, `phone`, `tablet`, `chat`, `music`, `alerts`, `title`, `image`, `video`, `starting`,
+  `brb`, `intermission`, `ending`; since betaNEXT every source type of the Scene Mode key's list,
+  `handheld` and the rest, in the key's order (the owner: "handheld is not an option"); ""
+  Automatic; ids never change or go), `mode|<id>|go_to`, `mode|<id>|sources`;
   `mode_now` and `mode_before` (ids, written by the filter under its lock, in `kOwnSettings`).
   Hotkeys `stagekit.mode.<filter>.<id>`, `.next`, `.none` (shown with the mode's name), and the
   vendor requests `ListSceneModes`, `GetSceneMode`, `SetSceneMode` (an id, or a name) and the event

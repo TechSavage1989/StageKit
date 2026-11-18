@@ -38,6 +38,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/scene-util.hpp"
 #include "../common/stand-in.hpp"
 #include "../common/timing.hpp"
+#include "../common/tooltip.hpp"
 
 #include <obs-module.h>
 #include <plugin-support.h>
@@ -983,7 +984,7 @@ obs_properties_t *get_properties(void *data)
 							OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(which, obs_module_text("SceneFit.Which.All"), (int)Which::AllSources);
 	obs_property_list_add_int(which, obs_module_text("SceneFit.Which.Listed"), (int)Which::Chosen);
-	obs_property_set_long_description(which, obs_module_text("SceneFit.Which.Tip"));
+	set_tip(which, obs_module_text("SceneFit.Which.Tip"));
 	obs_property_set_modified_callback2(which, which_modified, self);
 	PickList entries;
 	entries.setting = "entries";
@@ -1005,19 +1006,19 @@ obs_properties_t *get_properties(void *data)
 	pick_list_add(props, owner, skip);
 	obs_property_t *take =
 		obs_properties_add_button2(props, "take_over", obs_module_text("SceneFit.TakeOver"), take_over, self);
-	obs_property_set_long_description(take, obs_module_text("SceneFit.TakeOver.Tip"));
+	set_tip(take, obs_module_text("SceneFit.TakeOver.Tip"));
 	obs_property_t *rule = obs_properties_add_bool(props, "skip_fill_on", obs_module_text("Fit.SkipFillOn"));
-	obs_property_set_long_description(rule, obs_module_text("SceneFit.SkipFillOn.Tip"));
+	set_tip(rule, obs_module_text("SceneFit.SkipFillOn.Tip"));
 	obs_property_set_modified_callback2(rule, chosen_modified, self);
 	obs_property_t *by_list = obs_properties_add_bool(props, "list_priority", obs_module_text("Fit.ListPriority"));
-	obs_property_set_long_description(by_list, obs_module_text("SceneFit.ListPriority.Tip"));
+	set_tip(by_list, obs_module_text("SceneFit.ListPriority.Tip"));
 	obs_property_set_modified_callback2(by_list, chosen_modified, self);
 	// Each source its own settings, or one set for all of them.
 	obs_property_t *mode = obs_properties_add_list(props, "settings_mode", obs_module_text("SceneFit.Settings"),
 						       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(mode, obs_module_text("SceneFit.Settings.Each"), (int)Shared::Each);
 	obs_property_list_add_int(mode, obs_module_text("SceneFit.Settings.Same"), (int)Shared::Same);
-	obs_property_set_long_description(mode, obs_module_text("SceneFit.Settings.Tip"));
+	set_tip(mode, obs_module_text("SceneFit.Settings.Tip"));
 	{
 		obs_properties_t *content = obs_properties_create();
 		fit_add_controls(content, kGroupPrefix, kGroupLists, owner, parent, true);
@@ -1026,7 +1027,7 @@ obs_properties_t *get_properties(void *data)
 	}
 	obs_property_t *chosen = obs_properties_add_list(props, "fit_for", obs_module_text("SceneFit.For"),
 							 OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
-	obs_property_set_long_description(chosen, obs_module_text("SceneFit.For.Tip"));
+	set_tip(chosen, obs_module_text("SceneFit.For.Tip"));
 	obs_data_t *settings = owner ? obs_source_get_settings(owner) : nullptr;
 	if (settings) {
 		sync_groups(props, owner, settings);

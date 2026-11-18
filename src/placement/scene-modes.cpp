@@ -48,6 +48,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/pick-list.hpp"
 #include "../common/scene-util.hpp"
 #include "../common/timing.hpp"
+#include "../common/tooltip.hpp"
 
 #include <obs-module.h>
 #include <plugin-support.h>
@@ -71,32 +72,100 @@ namespace {
 
 // What a mode shows, for the image of a Stream Deck Scene Mode key left on
 // Automatic. Kept by id, never by number: the same ids as the Stream Deck
-// plugin's Source type option. "" is Automatic.
+// plugin's Source type option. "" is Automatic. Every source type that key's
+// Mode type list offers, in its order (streamdeck/tests/mode-types.test.ts
+// checks the two agree); a new type goes in both.
 struct TypeInfo {
 	const char *id, *text;
 };
 const TypeInfo kTypes[] = {
 	{"", "Modes.Type.Auto"},
 	{"game", "Modes.Type.Game"},
-	{"window", "Modes.Type.Window"},
-	{"art_app", "Modes.Type.ArtApp"},
-	{"code_editor", "Modes.Type.CodeEditor"},
-	{"browser", "Modes.Type.Browser"},
-	{"camera", "Modes.Type.Camera"},
+	{"retro", "Modes.Type.Retro"},
+	{"emulator", "Modes.Type.Emulator"},
+	{"console", "Modes.Type.Console"},
+	{"handheld", "Modes.Type.Handheld"},
+	{"linked_handheld", "Modes.Type.LinkedHandheld"},
 	{"capture_card", "Modes.Type.CaptureCard"},
+	{"window", "Modes.Type.Window"},
 	{"display", "Modes.Type.Display"},
-	{"phone", "Modes.Type.Phone"},
 	{"tablet", "Modes.Type.Tablet"},
-	{"chat", "Modes.Type.Chat"},
-	{"music", "Modes.Type.Music"},
-	{"alerts", "Modes.Type.Alerts"},
-	{"title", "Modes.Type.Title"},
-	{"image", "Modes.Type.Image"},
-	{"video", "Modes.Type.Video"},
+	{"art_app", "Modes.Type.ArtApp"},
+	{"app_3d", "Modes.Type.App3d"},
+	{"sculpting", "Modes.Type.Sculpting"},
+	{"cad", "Modes.Type.Cad"},
+	{"code_editor", "Modes.Type.CodeEditor"},
+	{"office", "Modes.Type.Office"},
+	{"video_player", "Modes.Type.VideoPlayer"},
+	{"reference", "Modes.Type.Reference"},
+	{"camera", "Modes.Type.Camera"},
+	{"countdown", "Modes.Type.Countdown"},
+	{"live", "Modes.Type.Live"},
+	{"recording", "Modes.Type.Recording"},
+	{"paused", "Modes.Type.Paused"},
+	{"muted", "Modes.Type.Muted"},
+	{"offline", "Modes.Type.Offline"},
+	{"privacy", "Modes.Type.Privacy"},
+	{"raid", "Modes.Type.Raid"},
 	{"starting", "Modes.Type.Starting"},
 	{"brb", "Modes.Type.Brb"},
 	{"intermission", "Modes.Type.Intermission"},
+	{"technical", "Modes.Type.Technical"},
 	{"ending", "Modes.Type.Ending"},
+	{"column_chat", "Modes.Type.ColumnChat"},
+	{"column_handheld", "Modes.Type.ColumnHandheld"},
+	{"speedrun", "Modes.Type.Speedrun"},
+	{"music_production", "Modes.Type.MusicProduction"},
+	{"cooking", "Modes.Type.Cooking"},
+	{"irl", "Modes.Type.Irl"},
+	{"tutorial", "Modes.Type.Tutorial"},
+	{"unboxing", "Modes.Type.Unboxing"},
+	{"fitness", "Modes.Type.Fitness"},
+	{"reading", "Modes.Type.Reading"},
+	{"watch_party", "Modes.Type.WatchParty"},
+	{"charity", "Modes.Type.Charity"},
+	{"just_chatting", "Modes.Type.JustChatting"},
+	{"podcast", "Modes.Type.Podcast"},
+	{"interview", "Modes.Type.Interview"},
+	{"linked_handheld_2", "Modes.Type.LinkedHandheld2"},
+	{"capture_box", "Modes.Type.CaptureBox"},
+	{"hdmi_source", "Modes.Type.HdmiSource"},
+	{"browser", "Modes.Type.Browser"},
+	{"second_display", "Modes.Type.SecondDisplay"},
+	{"phone", "Modes.Type.Phone"},
+	{"dslr", "Modes.Type.Dslr"},
+	{"camcorder", "Modes.Type.Camcorder"},
+	{"action_cam", "Modes.Type.ActionCam"},
+	{"ptz_camera", "Modes.Type.PtzCamera"},
+	{"facecam", "Modes.Type.Facecam"},
+	{"full_camera", "Modes.Type.FullCamera"},
+	{"side_camera", "Modes.Type.SideCamera"},
+	{"phone_camera", "Modes.Type.PhoneCamera"},
+	{"workspace_camera", "Modes.Type.WorkspaceCamera"},
+	{"virtual_camera", "Modes.Type.VirtualCamera"},
+	{"pc", "Modes.Type.Pc"},
+	{"laptop", "Modes.Type.Laptop"},
+	{"retro_console", "Modes.Type.RetroConsole"},
+	{"controller", "Modes.Type.Controller"},
+	{"stream_deck", "Modes.Type.StreamDeck"},
+	{"pen_display", "Modes.Type.PenDisplay"},
+	{"vr_headset", "Modes.Type.VrHeadset"},
+	{"headset", "Modes.Type.Headset"},
+	{"microphone", "Modes.Type.Microphone"},
+	{"speaker", "Modes.Type.Speaker"},
+	{"mixer", "Modes.Type.Mixer"},
+	{"key_light", "Modes.Type.KeyLight"},
+	{"green_screen", "Modes.Type.GreenScreen"},
+	{"chat", "Modes.Type.Chat"},
+	{"voice_chat", "Modes.Type.VoiceChat"},
+	{"music", "Modes.Type.Music"},
+	{"alerts", "Modes.Type.Alerts"},
+	{"events", "Modes.Type.Events"},
+	{"title", "Modes.Type.Title"},
+	{"image", "Modes.Type.Image"},
+	{"video", "Modes.Type.Video"},
+	{"logo", "Modes.Type.Logo"},
+	{"standby_image", "Modes.Type.StandbyImage"},
 };
 
 // The templates a mode can be made from: a starting name and a type, both
@@ -1388,7 +1457,7 @@ void add_modes_and_rest(obs_properties_t *props, obs_source_t *owner, obs_data_t
 
 		obs_property_t *name = obs_properties_add_text(content, key(mode.id, "name").c_str(),
 							       obs_module_text("Modes.ModeName"), OBS_TEXT_DEFAULT);
-		obs_property_set_long_description(name, obs_module_text("Modes.ModeName.Tip"));
+		set_tip(name, obs_module_text("Modes.ModeName.Tip"));
 		obs_property_set_modified_callback2(name, renamed_cb, owner);
 
 		obs_property_t *type = obs_properties_add_list(content, key(mode.id, "type").c_str(),
@@ -1396,7 +1465,7 @@ void add_modes_and_rest(obs_properties_t *props, obs_source_t *owner, obs_data_t
 							       OBS_COMBO_FORMAT_STRING);
 		for (const TypeInfo &t : kTypes)
 			obs_property_list_add_string(type, obs_module_text(t.text), t.id);
-		obs_property_set_long_description(type, obs_module_text("Modes.Type.Tip"));
+		set_tip(type, obs_module_text("Modes.Type.Tip"));
 
 		obs_property_t *go_to = obs_properties_add_list(content, key(mode.id, "go_to").c_str(),
 								obs_module_text("Modes.GoTo"), OBS_COMBO_TYPE_LIST,
@@ -1408,7 +1477,7 @@ void add_modes_and_rest(obs_properties_t *props, obs_source_t *owner, obs_data_t
 			targets.push_back(mode.go_to);
 		for (const std::string &scene : targets)
 			obs_property_list_add_string(go_to, scene.c_str(), scene.c_str());
-		obs_property_set_long_description(go_to, obs_module_text("Modes.GoTo.Tip"));
+		set_tip(go_to, obs_module_text("Modes.GoTo.Tip"));
 
 		const std::string sources_setting = key(mode.id, "sources");
 		PickList sources;
@@ -1447,21 +1516,21 @@ void add_modes_and_rest(obs_properties_t *props, obs_source_t *owner, obs_data_t
 								   obs_module_text("Modes.LeaveTo"),
 								   OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
 		fill_leave_to(leave_to, settings, mode.id);
-		obs_property_set_long_description(leave_to, obs_module_text("Modes.LeaveTo.Tip"));
+		set_tip(leave_to, obs_module_text("Modes.LeaveTo.Tip"));
 
 		if (i > 0)
 			obs_properties_add_button2(content, key(mode.id, "up").c_str(), obs_module_text("Modes.MoveUp"),
 						   move_up_cb, owner);
 		obs_property_t *remove = obs_properties_add_button2(content, key(mode.id, "remove").c_str(),
 								    obs_module_text("Modes.Remove"), remove_cb, owner);
-		obs_property_set_long_description(remove, obs_module_text("Modes.Remove.Tip"));
+		set_tip(remove, obs_module_text("Modes.Remove.Tip"));
 
 		obs_properties_add_group(props, key(mode.id, "g").c_str(), group_title(mode.name).c_str(),
 					 OBS_GROUP_NORMAL, content);
 	}
 
 	obs_property_t *none = obs_properties_add_bool(props, "allow_none", obs_module_text("Modes.AllowNone"));
-	obs_property_set_long_description(none, obs_module_text("Modes.AllowNone.Tip"));
+	set_tip(none, obs_module_text("Modes.AllowNone.Tip"));
 	obs_property_set_modified_callback2(none, allow_none_cb, owner);
 
 	PickList share;
@@ -1478,7 +1547,7 @@ void add_modes_and_rest(obs_properties_t *props, obs_source_t *owner, obs_data_t
 	pick_list_add(props, owner, share);
 
 	obs_property_t *lock = obs_properties_add_bool(props, "lock_hidden", obs_module_text("Modes.LockHidden"));
-	obs_property_set_long_description(lock, obs_module_text("Modes.LockHidden.Tip"));
+	set_tip(lock, obs_module_text("Modes.LockHidden.Tip"));
 
 	add_item_change_properties(props, owner, nullptr);
 }
@@ -1499,23 +1568,23 @@ obs_properties_t *get_properties(void *data)
 
 	obs_property_t *now = obs_properties_add_list(props, "mode_now", obs_module_text("Modes.Now"),
 						      OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
-	obs_property_set_long_description(now, obs_module_text("Modes.Now.Tip"));
+	set_tip(now, obs_module_text("Modes.Now.Tip"));
 	if (settings)
 		fill_mode_now(now, settings);
 
 	obs_property_t *typed =
 		obs_properties_add_text(props, "new_mode", obs_module_text("Modes.NewName"), OBS_TEXT_DEFAULT);
-	obs_property_set_long_description(typed, obs_module_text("Modes.NewName.Tip"));
+	set_tip(typed, obs_module_text("Modes.NewName.Tip"));
 	obs_property_t *add =
 		obs_properties_add_button2(props, "add_mode", obs_module_text("Modes.Add"), add_mode_cb, owner);
-	obs_property_set_long_description(add, obs_module_text("Modes.Add.Tip"));
+	set_tip(add, obs_module_text("Modes.Add.Tip"));
 
 	obs_property_t *templates = obs_properties_add_list(props, "template", obs_module_text("Modes.Template"),
 							    OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(templates, obs_module_text("Modes.Template.Choose"), -1);
 	for (size_t i = 0; i < sizeof(kTemplates) / sizeof(kTemplates[0]); i++)
 		obs_property_list_add_int(templates, obs_module_text(kTemplates[i].name), (long long)i);
-	obs_property_set_long_description(templates, obs_module_text("Modes.Template.Tip"));
+	set_tip(templates, obs_module_text("Modes.Template.Tip"));
 	obs_properties_add_button2(props, "add_template", obs_module_text("Modes.AddTemplate"), add_template_cb, owner);
 
 	add_modes_and_rest(props, owner, settings);

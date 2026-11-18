@@ -114,8 +114,11 @@ On Windows, with the installer:
 1. Download the file ending in `windows-x64-Installer.exe` from the releases page.
 2. Close OBS, then run the installer. Windows may warn that the publisher is unknown, because the
    installer is not signed: choose *More info*, then *Run anyway*, if you trust this download.
-3. Start OBS. *Blur (StageKit)* and the other tools appear in the filter list of any source,
+3. Start OBS. *Source Filter: Blur (StageKit)* and the other tools appear in the filter list of any source,
    *Ambient Background (StageKit)* in the list of sources, and the dock under *Docks → StageKit*.
+   Every StageKit filter's name says where it goes: *Scene Filter: …* for a filter you add to a
+   scene, *Source Filter: …* for one you add to a source. A filter you already have keeps the name
+   it was given.
 
 The installer puts the plugin in `C:\ProgramData\obs-studio\plugins\stagekit` and adds an entry under
 *Apps & features* for removing it. It needs administrator rights for that folder.
@@ -133,7 +136,7 @@ programs to capture, items to link), it works the same way: choose from the box 
 
 ### Blur
 
-Add **Blur (StageKit)** as a filter on a source or scene. The filter's own on/off switch is the
+Add **Source Filter: Blur (StageKit)** as a filter on a source or scene. The filter's own on/off switch is the
 blur: turning it on ramps the blur in, turning it off ramps it out and then really switches the filter
 off, so it costs nothing while off.
 
@@ -212,7 +215,7 @@ Changing the standby image updates both at once.
 
 ### Shadow, Glow & Outline
 
-Add **Shadow, Glow & Outline (StageKit)** as a filter on a source, group or scene. (It was called
+Add **Source Filter: Shadow, Glow & Outline (StageKit)** as a filter on a source, group or scene. (It was called
 Shadow & Backdrop; filters you already have keep working.) It has three parts, each with a tick box in
 its heading:
 
@@ -250,7 +253,7 @@ inside a bounding box. Switching the filter off or removing it puts the items ba
 
 ### Corners & Edges
 
-Add **Corners & Edges (StageKit)** as a filter on a source: a camera, a capture, an image, a browser
+Add **Source Filter: Corners & Edges (StageKit)** as a filter on a source: a camera, a capture, an image, a browser
 widget.
 
 <p align="center"><img src="docs/images/corners-edges.png" width="900" alt="A blue card shown nine ways: rounded corners, cut-off corners, notched corners, scooped corners, only two corners rounded, a soft faded edge, a yellow outline, rounded with a drop shadow that has the same rounded shape, and a game image with rounded corners inside a wider frame"></p>
@@ -276,7 +279,7 @@ It works with the other tools:
 
 ### Auto Frame
 
-Add **Auto Frame (StageKit)** as the first filter on a game, window or capture-card source. Set the
+Add **Source Filter: Auto Frame (StageKit)** as the first filter on a game, window or capture-card source. Set the
 frame's width and height once. From then on the source always has that size, and whatever the game or
 emulator outputs is fitted inside it, gliding to its new fit when the resolution changes.
 
@@ -342,7 +345,7 @@ longest name is used, so `primehack = 16:9` and `dolphin = 4:3` can sit side by 
 Automatic Source Switcher tells two captures of such programs apart by their window titles, and Auto
 Capture's *Never capture* and *Always capture* take part of a title as well as part of a file name.
 
-To set the shape from a Stream Deck, add **Aspect Ratio Preset (StageKit)** next to Auto Frame, once per
+To set the shape from a Stream Deck, add **Source Filter: Aspect Ratio Preset (StageKit)** next to Auto Frame, once per
 shape, and point a *Filter* key at it. Switching it on sets the shape and it switches itself off; a key
 set to *Automatic* hands control back.
 
@@ -351,7 +354,7 @@ automation that switched between them. Put Shadow, Glow & Outline after it and t
 
 ### Fit to Space
 
-Add **Fit to Space (StageKit)** as a filter on a *scene*. It places one item of that scene for you.
+Add **Scene Filter: Fit to Space (StageKit)** as a filter on a *scene*. It places one item of that scene for you.
 
 - **Item**: the item to place, usually your game capture.
 - **Fit area**: *The whole screen*, *A box I set* (left, top, width, height in canvas pixels), or
@@ -468,7 +471,7 @@ filter off to move the item by hand.
 
 ### Auto Capture
 
-Add **Auto Capture (StageKit)** as a filter on one *Game Capture* source. Windows only.
+Add **Source Filter: Auto Capture (StageKit)** as a filter on one *Game Capture* source. Windows only.
 
 Four times a second it looks at the window in front. If that window is a game, the capture is aimed at
 it, windowed or full-screen. It stays on that game when you switch to another program, and moves on
@@ -509,7 +512,7 @@ once is remembered and picked up at once from then on. The filter changes the Ga
 ### Standby Image
 
 An image in a capture's place while the capture has nothing to show, so its spot in the scene is not
-an empty hole while you wait for a game or window. Add **Standby Image (StageKit)** as a filter on a
+an empty hole while you wait for a game or window. Add **Source Filter: Standby Image (StageKit)** as a filter on a
 Game Capture, Window Capture or other live source.
 
 - **Nothing to show** means no game or window is attached to the capture. A capture that is attached
@@ -547,7 +550,7 @@ the list; after that the order is yours.
 
 ### Automatic Window Switcher
 
-One Window Capture for several apps. Add **Automatic Window Switcher (StageKit)** as a filter on a
+One Window Capture for several apps. Add **Source Filter: Automatic Window Switcher (StageKit)** as a filter on a
 *Window Capture* and list the apps it is for. The filter aims that one capture at whichever of them
 you are using, so a scene needs one capture, one set of filters and one Fit to Space instead of a
 capture for each app.
@@ -612,7 +615,7 @@ there.
 ### Automatic Source Switcher
 
 For a scene that shows whichever app you are working in. Give the scene a Window Capture for each app
-(Blender, ZBrush, a browser, and so on), then add **Automatic Source Switcher (StageKit)** as a filter on the *scene*
+(Blender, ZBrush, a browser, and so on), then add **Scene Filter: Automatic Source Switcher (StageKit)** as a filter on the *scene*
 and add those captures to its list. Windows only.
 
 Which app a capture belongs to is read from the capture itself, so there is nothing to type. From then
@@ -652,7 +655,7 @@ Each capture can have its own [Fit to Space](#fit-to-space), shadow and blur; th
 
 ### Program Trigger
 
-Add **Program Trigger (StageKit)** as a filter on a *scene* to show and hide that scene's items, or on
+Add **Source Filter: Program Trigger (StageKit)** as a filter on a *scene* to show and hide that scene's items, or on
 any *source* to switch that source's other filters. Windows only.
 
 1. **While this program**: choose the program from the open ones, or find its file. Optionally give
@@ -684,12 +687,12 @@ camera is still captured only once.
 
 ### Zoom
 
-Add **Zoom (StageKit)** as a filter on a source. Turning it on zooms into the point you choose;
+Add **Source Filter: Zoom (StageKit)** as a filter on a source. Turning it on zooms into the point you choose;
 turning it off zooms back out. It has a `StageKit: Zoom Toggle` hotkey under the source.
 
 ### Move Source
 
-Add **Move Source (StageKit)** as a filter on the source you want to move, such as your camera. Add one per
+Add **Source Filter: Move Source (StageKit)** as a filter on the source you want to move, such as your camera. Add one per
 spot and name each after its spot ("Camera top right").
 
 1. Choose where to send it: one of nine screen positions with a margin from the edge, or a saved spot.
@@ -712,7 +715,7 @@ next press. Each filter also has a `StageKit: Move` hotkey under the source.
 
 ### Move Scene Item
 
-Move Scene Item does the same job from the scene's side. Add **Move Scene Item (StageKit)** as a filter on a
+Move Scene Item does the same job from the scene's side. Add **Scene Filter: Move Scene Item (StageKit)** as a filter on a
 *scene*, once per destination.
 
 1. Choose the item to move.
@@ -873,14 +876,14 @@ Options:
 
 ### Show/Hide Animation
 
-Add **Show/Hide Animation (StageKit)** as a filter on a scene and leave it on. Choose the item and
+Add **Scene Filter: Show/Hide Animation (StageKit)** as a filter on a scene and leave it on. Choose the item and
 where it comes in from: the nearest screen edge, a chosen edge, or a pop from its centre. From then on,
 showing or hiding the item animates it, including from a Stream Deck *Source* key.
 
 ### Show in Scenes
 
 One switch that shows or hides sources across scenes, in place of a Stream Deck multi-action with a
-*Source Visibility* step for every scene. Add **Show in Scenes (StageKit)** as a filter on a source,
+*Source Visibility* step for every scene. Add **Source Filter: Show in Scenes (StageKit)** as a filter on a source,
 then make a Stream Deck *Filter* key for that source and filter. Each press switches the filter on or
 off, and the sources are shown or hidden to match.
 
@@ -917,7 +920,7 @@ change you see.
 
 ### Link Visibility
 
-Add **Link Visibility (StageKit)** as a filter on a *scene*, once per set of items.
+Add **Scene Filter: Link Visibility (StageKit)** as a filter on a *scene*, once per set of items.
 
 1. Choose *Show only one at a time*, *Show and hide together* or *Follow sources*.
 2. Pick each item from the list and press *Add it to the list*.
@@ -1039,14 +1042,14 @@ the camera view shows it even when the camera switch is off; press the switch of
 
 ### Match Item
 
-Add **Match Item (StageKit)** as a filter on a scene and leave it on. Choose an item in this scene, and
+Add **Scene Filter: Match Item (StageKit)** as a filter on a scene and leave it on. Choose an item in this scene, and
 the scene and item it should line up with. *Fit inside the same box* scales the item to the other
 item's box, which suits titles of different lengths; *Copy its position and size settings* matches it
 exactly. Moving the original moves every matched item.
 
 ### Apply Layout
 
-Add **Apply Layout (StageKit)** as a filter on a scene. Arrange the scene and press *Save where everything is
+Add **Scene Filter: Apply Layout (StageKit)** as a filter on a scene. Arrange the scene and press *Save where everything is
 now*. Switching the filter on glides every saved item back to that arrangement. To cover only some
 items, add their names under *Only these items* before saving; several Apply Layout filters can then each
 move a different set.
@@ -1239,7 +1242,7 @@ have keeps doing what it did.
 #### Scene Modes
 
 <!-- ==== scene-filters:modes (Scene Modes) ==== -->
-**Scene Modes (StageKit)** names a scene's modes and the sources of each: *Game*, *Window* and
+**Scene Filter: Scene Modes (StageKit)** names a scene's modes and the sources of each: *Game*, *Window* and
 *Display* in a live scene, say, or *Starting*, *Be right back*, *Intermission* and *Ending* in a holding
 scene. One mode is on at a time. Turning a mode on hides the other modes' sources and shows its own.
 A source in both the old and the new mode is left as it is (an image shown in Starting and Be right
@@ -1251,7 +1254,7 @@ back stays up), and a source in no mode is never touched.
   changed afterwards. No mode name is built in, and two modes may have the same name.
 - **Each mode** has a group of its own, headed *Mode: <name>*:
   - **Name**: renaming a mode keeps its sources, its hotkey and its Stream Deck keys.
-  - **Mode type**: what it shows (Game, Window, Camera, Chat, Starting and so on). A Stream Deck
+  - **Mode type**: what it shows (Game, Handheld, Window, Camera, Chat, Starting and so on: every type the Stream Deck Scene Mode key offers). A Stream Deck
     *Scene Mode* key left on *Automatic* takes its image from this.
   - **Switch to scene**: a key or hotkey turning this mode on also changes OBS to that scene, unless
     the scene on screen is this filter's own scene or one under *Same modes in scenes*.
@@ -1313,7 +1316,7 @@ changes (`m1`, `m2`, ...), so renaming it breaks no key.
 #### Scene Transitions
 
 <!-- ==== scene-filters:transitions (Scene Transitions) ==== -->
-**Scene Transitions (StageKit)** is one place to set how every source in a scene shows and hides, instead of
+**Scene Filter: Scene Transitions (StageKit)** is one place to set how every source in a scene shows and hides, instead of
 a transition setting inside each filter. It sets OBS's own show and hide transition on each source (the ones
 in a source's right-click menu), so they also hold when a source is shown or hidden with the eye, its
 hotkeys, a Stream Deck *Source Visibility* key or obs-websocket.
@@ -1362,7 +1365,7 @@ out where the source last came to rest: OBS starts the transition before StageKi
 #### Scene Fit
 
 <!-- ==== scene-filters:fit (Scene Fit) ==== -->
-**Scene Fit (StageKit)** does what a Fit to Space filter does, for several sources of the scene at once. Each source in
+**Scene Filter: Scene Fit (StageKit)** does what a Fit to Space filter does, for several sources of the scene at once. Each source in
 *Fitted sources* has the whole set of Fit to Space settings of its own (choose it under *Settings for*), and
 starts from a gap of 30 px in the free space round its place.
 
@@ -1428,7 +1431,7 @@ a projector counts as on screen.
 #### Scene Standby
 
 <!-- ==== scene-filters:standby-corners (Scene Standby) ==== -->
-**Scene Standby (StageKit)** sets the standby image once for the sources of a scene: any empty capture shows
+**Scene Filter: Scene Standby (StageKit)** sets the standby image once for the sources of a scene: any empty capture shows
 the image, and any source you list shows it in its place while it is hidden, without setting up a filter on
 each capture by hand.
 
@@ -1464,7 +1467,7 @@ other takes it over if that one is removed.
 #### Scene Corners
 
 <!-- ==== scene-filters:standby-corners (Scene Corners) ==== -->
-**Scene Corners (StageKit)** puts the same corners and edges on the sources of a scene, set once. It adds a
+**Scene Filter: Scene Corners (StageKit)** puts the same corners and edges on the sources of a scene, set once. It adds a
 **Corners & Edges** filter to each source it covers and sets it from the scene filter; that filter says *Set by
 Scene Corners in <scene>*. Corners & Edges never changes a source's size, so nothing in the scene moves and
 Morph still morphs the scene.
@@ -1496,7 +1499,7 @@ and says so.
 #### Scene Shadow
 
 <!-- ==== scene-filters:shadow (Scene Shadow) ==== -->
-**Scene Shadow (StageKit)** gives every source of a scene one shadow, glow or outline, set once, instead of a
+**Scene Filter: Scene Shadow (StageKit)** gives every source of a scene one shadow, glow or outline, set once, instead of a
 Shadow, Glow & Outline on each source.
 
 <p align="center"><img src="docs/images/scene-shadow.png" width="900" alt="The same scene as OBS draws it, with one drop shadow under the game, the chat box and the camera, with an amber glow and a white outline round them, and half-way through a Morph to a scene without a shadow, the shadow at half strength; then a red source over a white one with Shadow from: The scene as drawn, where nothing falls on the white source, and with Each source by itself, where the red source's shadow falls on it; the outline round each source; and half-way through a Morph between two scenes shadowed each source by itself"></p>
@@ -1552,7 +1555,7 @@ What to know:
 #### Scene Blur
 
 <!-- ==== scene-filters:blur (Scene Blur) ==== -->
-**Scene Blur (StageKit)** blurs a scene's sources, in that scene only: switch it on for a "be right back"
+**Scene Filter: Scene Blur (StageKit)** blurs a scene's sources, in that scene only: switch it on for a "be right back"
 over the game, say, and the same game in your other scenes stays sharp.
 
 <p align="center"><img src="docs/images/scene-blur.png" width="900" alt="The same scene five times: as OBS draws it (a game capture, a dark panel, a camera and a patterned background); with all sources blurred; with only the live sources (the game and the camera) blurred; with all sources blurred except the camera; and with only the background blurred, as a mosaic of glass hexagons"></p>

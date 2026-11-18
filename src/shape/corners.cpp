@@ -23,6 +23,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/shown-scale.hpp"
 #include "../frame/auto-frame.hpp"
 #include "../shadow/shadow-backdrop.hpp"
+#include "../common/tooltip.hpp"
 
 #include <obs-module.h>
 #include <graphics/vec2.h>
@@ -245,11 +246,11 @@ void corners_add_look_properties(obs_properties_t *props)
 	obs_property_t *inset =
 		obs_properties_add_float_slider(edges, "inset", obs_module_text("Corners.Inset"), 0.0, 500.0, 1.0);
 	obs_property_float_set_suffix(inset, " px");
-	obs_property_set_long_description(inset, obs_module_text("Corners.Inset.Tip"));
+	set_tip(inset, obs_module_text("Corners.Inset.Tip"));
 	obs_property_t *soft =
 		obs_properties_add_float_slider(edges, "soft", obs_module_text("Corners.Soft"), 0.0, 200.0, 1.0);
 	obs_property_float_set_suffix(soft, " px");
-	obs_property_set_long_description(soft, obs_module_text("Corners.Soft.Tip"));
+	set_tip(soft, obs_module_text("Corners.Soft.Tip"));
 	obs_properties_add_group(props, "edges", obs_module_text("Corners.Edges"), OBS_GROUP_NORMAL, edges);
 
 	obs_properties_t *line = obs_properties_create();
@@ -263,7 +264,7 @@ void corners_add_look_properties(obs_properties_t *props)
 	obs_properties_add_group(props, "line", obs_module_text("Corners.Line"), OBS_GROUP_NORMAL, line);
 
 	obs_property_t *screen = obs_properties_add_bool(props, "screen_px", obs_module_text("Corners.ScreenPx"));
-	obs_property_set_long_description(screen, obs_module_text("Corners.ScreenPx.Tip"));
+	set_tip(screen, obs_module_text("Corners.ScreenPx.Tip"));
 }
 
 void corners_look_defaults(obs_data_t *settings)

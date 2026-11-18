@@ -12,6 +12,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "morph-paint.hpp"
 #include "../common/pick-list.hpp"
 #include "../common/scene-util.hpp"
+#include "../common/tooltip.hpp"
 
 #include <graphics/vec4.h>
 #include <plugin-support.h>
@@ -210,11 +211,11 @@ void add_morph_link_properties(obs_properties_t *props, obs_source_t *owner, con
 	obs_property_t *link_a = obs_properties_add_list(props, name_a.c_str(), obs_module_text("Morph.LinkA"),
 							 OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
 	add_sources(link_a);
-	obs_property_set_long_description(link_a, obs_module_text("Morph.Links.Tip"));
+	set_tip(link_a, obs_module_text("Morph.Links.Tip"));
 	obs_property_t *link_b = obs_properties_add_list(props, name_b.c_str(), obs_module_text("Morph.LinkB"),
 							 OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
 	add_sources(link_b);
-	obs_property_set_long_description(link_b, obs_module_text("Morph.Links.Tip"));
+	set_tip(link_b, obs_module_text("Morph.Links.Tip"));
 	obs_properties_add_button2(props, name_add.c_str(), obs_module_text("Morph.LinkAdd"), add_link, owner);
 	// (The list keeps its setting's name for as long as the window is open.)
 	static std::set<std::string> names;

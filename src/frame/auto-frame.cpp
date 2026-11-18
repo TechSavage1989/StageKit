@@ -25,6 +25,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/easing.hpp"
 #include "../common/pick-list.hpp"
 #include "../common/scene-util.hpp"
+#include "../common/tooltip.hpp"
 
 #include <obs-module.h>
 #include <graphics/vec4.h>
@@ -1607,7 +1608,7 @@ obs_properties_t *get_properties(void *data)
 						       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(mode, obs_module_text("Frame.Mode.Fixed"), 0);
 	obs_property_list_add_int(mode, obs_module_text("Frame.Mode.Picture"), 1);
-	obs_property_set_long_description(mode, obs_module_text("Frame.Mode.Tip"));
+	set_tip(mode, obs_module_text("Frame.Mode.Tip"));
 	obs_properties_add_int(props, "frame_width", obs_module_text("Frame.Width"), 2, 16384, 1);
 	obs_properties_add_int(props, "frame_height", obs_module_text("Frame.Height"), 2, 16384, 1);
 
@@ -1697,11 +1698,11 @@ obs_properties_t *get_properties(void *data)
 			return saved_one;
 		},
 		data);
-	obs_property_set_long_description(keep, obs_module_text("Frame.TrimKeep.Tip"));
+	set_tip(keep, obs_module_text("Frame.TrimKeep.Tip"));
 	obs_property_t *wait =
 		obs_properties_add_float_slider(props, "trim_wait", obs_module_text("Frame.TrimWait"), 0.0, 60.0, 0.5);
 	obs_property_float_set_suffix(wait, " s");
-	obs_property_set_long_description(wait, obs_module_text("Frame.TrimWait.Tip"));
+	set_tip(wait, obs_module_text("Frame.TrimWait.Tip"));
 	obs_property_t *tx =
 		obs_properties_add_float(props, "trim_x", obs_module_text("Frame.TrimX"), 0.0, 8000.0, 1.0);
 	obs_property_float_set_suffix(tx, " px");
@@ -1715,7 +1716,7 @@ obs_properties_t *get_properties(void *data)
 	// owner's own, chosen from what is open or found on the computer.
 	props = obs_properties_create();
 	obs_property_t *known = obs_properties_add_bool(props, "known_programs", obs_module_text("Frame.Known"));
-	obs_property_set_long_description(known, obs_module_text("Frame.Known.Tip"));
+	set_tip(known, obs_module_text("Frame.Known.Tip"));
 	obs_property_t *forget = obs_properties_add_button2(
 		props, "learned_forget", obs_module_text("Frame.Forget"),
 		[](obs_properties_t *, obs_property_t *, void *d) {
@@ -1728,10 +1729,10 @@ obs_properties_t *get_properties(void *data)
 	const std::string remembered = self ? self->learned_now() : std::string();
 	const std::string forget_tip = std::string(obs_module_text("Frame.Forget.Tip")) + " " +
 				       (remembered.empty() ? obs_module_text("Frame.Forget.None") : remembered);
-	obs_property_set_long_description(forget, forget_tip.c_str());
+	set_tip(forget, forget_tip.c_str());
 	obs_property_t *program = obs_properties_add_list(props, "rule_program", obs_module_text("Frame.RuleProgram"),
 							  OBS_COMBO_TYPE_EDITABLE, OBS_COMBO_FORMAT_STRING);
-	obs_property_set_long_description(program, obs_module_text("Frame.RuleProgram.Tip"));
+	set_tip(program, obs_module_text("Frame.RuleProgram.Tip"));
 	if (self) {
 		std::vector<std::string> names;
 		const std::string captured = self->captured_executable();

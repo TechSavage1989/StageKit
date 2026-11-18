@@ -14,6 +14,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "scene-util.hpp"
 #include "../transition/morph-paint.hpp"
 #include "../transition/morph.hpp"
+#include "tooltip.hpp"
 
 #include <obs-module.h>
 
@@ -262,7 +263,7 @@ void add_item_transition_properties(obs_properties_t *props)
 	}
 	obs_property_list_add_string(transition, obs_module_text("Change.Keep"), kTransitionKeep);
 	const std::string tip = std::string(obs_module_text("Change.Tip")) + " " + obs_module_text("Change.Scene.Tip");
-	obs_property_set_long_description(transition, tip.c_str());
+	set_tip(transition, tip.c_str());
 	obs_property_set_modified_callback(transition, [](obs_properties_t *p, obs_property_t *, obs_data_t *settings) {
 		const std::string kind = obs_data_get_string(settings, "transition");
 		obs_property_set_visible(obs_properties_get(p, "transition_ms"),
@@ -272,7 +273,7 @@ void add_item_transition_properties(obs_properties_t *props)
 	obs_property_t *time =
 		obs_properties_add_int_slider(props, "transition_ms", obs_module_text("Change.Time"), 50, 5000, 50);
 	obs_property_int_set_suffix(time, " ms");
-	obs_property_set_long_description(time, obs_module_text("Change.Time.Tip"));
+	set_tip(time, obs_module_text("Change.Time.Tip"));
 }
 
 void item_transition_defaults(obs_data_t *settings)
@@ -662,9 +663,9 @@ void add_own(obs_properties_t *into, obs_data_t *settings, const std::string &pr
 			break; // a file, a font, a button: not offered here
 		}
 		if (made && morph && strcmp(their_name, "pair_main") == 0)
-			obs_property_set_long_description(made, obs_module_text("Morph.Item.Tip"));
+			set_tip(made, obs_module_text("Morph.Item.Tip"));
 		else if (made && obs_property_long_description(p))
-			obs_property_set_long_description(made, obs_property_long_description(p));
+			set_tip(made, obs_property_long_description(p));
 	}
 	obs_data_release(defaults);
 	obs_properties_destroy(theirs);
@@ -786,7 +787,7 @@ void build(obs_properties_t *top, obs_source_t *owner, obs_data_t *settings)
 		std::string tip = obs_module_text(show ? "Change.ShowWith.Tip" : "Change.HideWith.Tip");
 		if (scene_entry)
 			tip += std::string(" ") + obs_module_text("Change.Scene.Tip");
-		obs_property_set_long_description(kinds, tip.c_str());
+		set_tip(kinds, tip.c_str());
 		obs_property_set_modified_callback2(kinds, rebuild_cb, owner);
 		const std::string kind = obs_data_get_string(settings, kind_name.c_str());
 		const bool timed = kind != kTransitionCut && kind != kTransitionKeep && kind != kUsual &&
@@ -797,7 +798,7 @@ void build(obs_properties_t *top, obs_source_t *owner, obs_data_t *settings)
 								     obs_module_text("Change.Time"), 50, 5000, 50);
 		obs_property_int_set_suffix(time, " ms");
 		if (kind == kTransitionScene) {
-			obs_property_set_long_description(time, obs_module_text("Change.Time.Tip"));
+			set_tip(time, obs_module_text("Change.Time.Tip"));
 			continue; // (its own settings are the scene's)
 		}
 		const std::string prefix = own_prefix(scope, show, kind);
@@ -909,7 +910,7 @@ void add_item_change_properties(obs_properties_t *props, obs_source_t *owner, co
 	obs_properties_t *content = obs_properties_create();
 	obs_property_t *for_box = obs_properties_add_list(content, kForName, obs_module_text("Change.For"),
 							  OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
-	obs_property_set_long_description(for_box, obs_module_text("Change.For.Tip"));
+	set_tip(for_box, obs_module_text("Change.For.Tip"));
 	obs_property_set_modified_callback2(for_box, rebuild_cb, owner);
 	const std::string group_name = std::string(kGroupStart) + (list_setting ? list_setting : "");
 	obs_properties_add_group(props, group_name.c_str(), obs_module_text("Change.Group"), OBS_GROUP_NORMAL, content);

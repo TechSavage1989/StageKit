@@ -30,6 +30,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/scene-util.hpp"
 #include "../common/stand-in.hpp"
 #include "../common/timing.hpp"
+#include "../common/tooltip.hpp"
 
 #include <obs-module.h>
 #include <plugin-support.h>
@@ -355,7 +356,7 @@ obs_properties_t *get_properties(void *data)
 		props, "status", now.empty() ? obs_module_text("SceneStandby.Status.None") : now.c_str(),
 		OBS_TEXT_INFO);
 	obs_property_text_set_info_word_wrap(status, true);
-	obs_property_set_long_description(status, obs_module_text("SceneStandby.Status.Tip"));
+	set_tip(status, obs_module_text("SceneStandby.Status.Tip"));
 
 	obs_property_t *which = obs_properties_add_list(props, "which", obs_module_text("SceneStandby.Which"),
 							OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
@@ -363,7 +364,7 @@ obs_properties_t *get_properties(void *data)
 	obs_property_list_add_int(which, obs_module_text("SceneStandby.Which.Every"), (int)Which::AllSources);
 	obs_property_list_add_int(which, obs_module_text("SceneStandby.Which.All"), (int)Which::AllCaptures);
 	obs_property_list_add_int(which, obs_module_text("SceneStandby.Which.Chosen"), (int)Which::Chosen);
-	obs_property_set_long_description(which, obs_module_text("SceneStandby.Which.Tip"));
+	set_tip(which, obs_module_text("SceneStandby.Which.Tip"));
 	obs_property_set_modified_callback(which, which_modified);
 
 	auto video_sources = [scene](std::vector<std::string> &names) {
@@ -400,10 +401,10 @@ obs_properties_t *get_properties(void *data)
 	};
 	pick_list_add(props, owner, skip);
 	obs_property_t *screens = obs_properties_add_bool(props, "screens", obs_module_text("SceneStandby.Screens"));
-	obs_property_set_long_description(screens, obs_module_text("SceneStandby.Screens.Tip"));
+	set_tip(screens, obs_module_text("SceneStandby.Screens.Tip"));
 
 	obs_property_t *empty = obs_properties_add_bool(props, "when_empty", obs_module_text("SceneStandby.WhenEmpty"));
-	obs_property_set_long_description(empty, obs_module_text("SceneStandby.WhenEmpty.Tip"));
+	set_tip(empty, obs_module_text("SceneStandby.WhenEmpty.Tip"));
 
 	// The image and how it comes and goes: the Standby Image filter's own
 	// controls, set here for every source.
@@ -412,7 +413,7 @@ obs_properties_t *get_properties(void *data)
 	obs_property_list_add_int(picture, obs_module_text("Standby.Picture.Start"), 0);
 	obs_property_list_add_int(picture, obs_module_text("Standby.Picture.File"), 1);
 	obs_property_list_add_int(picture, obs_module_text("Standby.Picture.Source"), 2);
-	obs_property_set_long_description(picture, obs_module_text("Standby.Picture.Tip"));
+	set_tip(picture, obs_module_text("Standby.Picture.Tip"));
 	obs_property_set_modified_callback(picture, picture_modified);
 	obs_properties_add_path(props, "file", obs_module_text("Standby.File"), OBS_PATH_FILE,
 				obs_module_text("Standby.File.Filter"), nullptr);
@@ -426,7 +427,7 @@ obs_properties_t *get_properties(void *data)
 			obs_property_list_add_string(source, name.c_str(), name.c_str());
 	}
 	obs_property_t *own_shape = obs_properties_add_bool(props, "own_shape", obs_module_text("Standby.OwnShape"));
-	obs_property_set_long_description(own_shape, obs_module_text("Standby.OwnShape.Tip"));
+	set_tip(own_shape, obs_module_text("Standby.OwnShape.Tip"));
 	obs_property_t *style = obs_properties_add_list(props, "style", obs_module_text("Standby.Style"),
 							OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	const char *const styles[] = {"Standby.Style.Fade",       "Standby.Style.Cut",       "Standby.Style.SlideLeft",
@@ -435,18 +436,18 @@ obs_properties_t *get_properties(void *data)
 				      "Standby.Style.WipeDown",   "Standby.Style.Zoom",      "Standby.Style.Morph"};
 	for (int i = 0; i < 12; i++)
 		obs_property_list_add_int(style, obs_module_text(styles[i]), i);
-	obs_property_set_long_description(style, obs_module_text("Standby.Style.Tip"));
+	set_tip(style, obs_module_text("Standby.Style.Tip"));
 	obs_property_t *fade =
 		obs_properties_add_int_slider(props, "fade_ms", obs_module_text("Standby.Fade"), 0, 5000, 50);
 	obs_property_int_set_suffix(fade, " ms");
-	obs_property_set_long_description(fade, obs_module_text("Standby.Fade.Tip"));
+	set_tip(fade, obs_module_text("Standby.Fade.Tip"));
 	obs_property_t *back =
 		obs_properties_add_int_slider(props, "back_ms", obs_module_text("Standby.Back"), 0, 5000, 50);
 	obs_property_int_set_suffix(back, " ms");
-	obs_property_set_long_description(back, obs_module_text("Standby.Back.Tip"));
+	set_tip(back, obs_module_text("Standby.Back.Tip"));
 	add_easing_properties(props, "");
 	obs_property_t *glide = obs_properties_add_bool(props, "glide_size", obs_module_text("Standby.GlideSize"));
-	obs_property_set_long_description(glide, obs_module_text("Standby.GlideSize.Tip"));
+	set_tip(glide, obs_module_text("Standby.GlideSize.Tip"));
 
 	// In a hidden source's place, in this scene.
 	PickList hidden;

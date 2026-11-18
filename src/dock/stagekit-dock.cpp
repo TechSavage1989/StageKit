@@ -2205,6 +2205,11 @@ private:
 		const size_t suffix = base.find(" (StageKit)");
 		if (suffix != std::string::npos)
 			base.erase(suffix);
+		// Without "Scene Filter: " or "Source Filter: ": the dock names
+		// what it adds after what it is for.
+		const size_t kind_end = base.find(" Filter: ");
+		if (kind_end != std::string::npos && kind_end < 7)
+			base.erase(0, kind_end + 9);
 		if (on_scene)
 			base += std::string(": ") + item_->currentText().toUtf8().constData();
 		std::string name = base;

@@ -26,6 +26,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/pick-list.hpp"
 #include "../common/scene-util.hpp"
 #include "../common/shown-scale.hpp"
+#include "../common/tooltip.hpp"
 
 #include <obs-module.h>
 #include <graphics/vec2.h>
@@ -1092,7 +1093,7 @@ obs_properties_t *get_properties(void *data)
 							       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 		obs_property_list_add_int(fill, obs_module_text("Shadow.Fill.Color"), (int)Fill::Color);
 		obs_property_list_add_int(fill, obs_module_text("Shadow.Fill.Picture"), (int)Fill::Picture);
-		obs_property_set_long_description(fill, obs_module_text("Shadow.Fill.Tip"));
+		set_tip(fill, obs_module_text("Shadow.Fill.Tip"));
 		obs_property_set_modified_callback(fill, visibility_modified);
 	};
 
@@ -1106,7 +1107,7 @@ obs_properties_t *get_properties(void *data)
 	made_from(shadow, "shadow_fill");
 	obs_properties_add_color(shadow, "shadow_color", obs_module_text("Shadow.Color"));
 	obs_property_t *boost = slider(shadow, "shadow_boost", "Shadow.Boost", 0.0, 100.0, "%");
-	obs_property_set_long_description(boost, obs_module_text("Shadow.Boost.Tip"));
+	set_tip(boost, obs_module_text("Shadow.Boost.Tip"));
 	slider(shadow, "shadow_opacity", "Shadow.Opacity", 0.0, 100.0, "%");
 	slider(shadow, "offset_x", "Shadow.OffsetX", -200.0, 200.0, " px");
 	slider(shadow, "offset_y", "Shadow.OffsetY", -200.0, 200.0, " px");
@@ -1123,9 +1124,9 @@ obs_properties_t *get_properties(void *data)
 						       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(edge, obs_module_text("Shadow.OutlineEdge.Stretch"), (int)Edge::Stretch);
 	obs_property_list_add_int(edge, obs_module_text("Shadow.OutlineEdge.Mirror"), (int)Edge::Mirror);
-	obs_property_set_long_description(edge, obs_module_text("Shadow.OutlineEdge.Tip"));
+	set_tip(edge, obs_module_text("Shadow.OutlineEdge.Tip"));
 	obs_property_t *line_blur = slider(outline, "outline_blur", "Shadow.OutlineBlur", 0.0, 200.0, " px");
-	obs_property_set_long_description(line_blur, obs_module_text("Shadow.OutlineBlur.Tip"));
+	set_tip(line_blur, obs_module_text("Shadow.OutlineBlur.Tip"));
 	slider(outline, "outline_opacity", "Shadow.OutlineOpacity", 0.0, 100.0, "%");
 	obs_properties_add_group(props, "outline", obs_module_text("Shadow.Outline"), OBS_GROUP_CHECKABLE, outline);
 
@@ -1158,11 +1159,11 @@ obs_properties_t *get_properties(void *data)
 		pick_list_add(props, filter, off);
 	}
 	obs_property_t *screen = obs_properties_add_bool(props, "screen_px", obs_module_text("Shadow.ScreenPx"));
-	obs_property_set_long_description(screen, obs_module_text("Shadow.ScreenPx.Tip"));
+	set_tip(screen, obs_module_text("Shadow.ScreenPx.Tip"));
 	obs_property_t *in_view = obs_properties_add_bool(props, "in_view", obs_module_text("Shadow.InView"));
-	obs_property_set_long_description(in_view, obs_module_text("Shadow.InView.Tip"));
+	set_tip(in_view, obs_module_text("Shadow.InView.Tip"));
 	obs_property_t *keep = obs_properties_add_bool(props, "keep_place", obs_module_text("Shadow.Keep"));
-	obs_property_set_long_description(keep, obs_module_text("Shadow.Keep.Tip"));
+	set_tip(keep, obs_module_text("Shadow.Keep.Tip"));
 	return props;
 }
 
