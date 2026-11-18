@@ -9,15 +9,15 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | `claude/fervent-knuth-cvsmaj` (a filter removed while drawn no longer crashes, betaNEXT), on `main` after beta185. Next: the new collection |
+| Working branch | `claude/fervent-knuth-cvsmaj` (a filter removed while drawn no longer crashes, beta187), on `main` after beta186. Next: the new collection |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
-## A filter removed while it is drawn no longer crashes OBS (betaNEXT)
+## A filter removed while it is drawn no longer crashes OBS (0.1.0-beta187)
 
-Branch `claude/fervent-knuth-cvsmaj`, on `main` after beta185. No release notes yet (a fix to go
-into the next pre-release). `fix/scene-shadow-flicker`, which was to bring the helper, was not on
-GitHub when this was done, so the helper was added here; if that branch arrives, keep one copy.
+Branch `claude/fervent-knuth-cvsmaj`, on `main` after beta186. Notes: `docs/releases/0.1.0-beta187.md`.
+Beta186 (`fix/scene-shadow-flicker`, below) brought the same `skip_filter_input` for Scene Shadow
+while this was being done; the two were merged into one copy, which also checks for a null filter.
 
 - **Cause.** `obs_filter_get_parent` goes to NULL when `obs_source_filter_remove` runs on the
   window's thread while the video thread draws the filter. libobs 30's
@@ -41,38 +41,95 @@ GitHub when this was done, so the helper was added here; if that branch arrives,
   Blur round (gdb: `SceneBlur::render`, scene-blur.cpp:709); with it, three runs of 150 rounds a
   kind passed. Only on OpenGL and libobs 30.0.2; not seen on Windows.
 
-## The Update button lists what changed since your version (0.1.0-beta185)
+## Scene Shadow: no flicker when items change, no gap at smoothed edges (0.1.0-beta186)
 
-Branch `feat/updater-whats-new`, on `main` after beta181. Notes: `docs/releases/0.1.0-beta185.md`.
-The owner (2026-11-18): "id like future updaters to show the recent changes clearly at a high level
-when pressing the update button".
+Branch `fix/scene-shadow-flicker`, rebased on `main` after beta176. Notes: `docs/releases/0.1.0-beta186.md`.
+No Stream Deck file changed. The owner: "shadows flicker when transitions happen" ("scene
+shadow. none of the sources have their own shadow"; "when i switch/show or hide sources inside a
+scene"), and "text with the scene shadow has a noticeable separation from the shadow".
 
-- **What it shows.** The dock's *Update* and the Tools menu's *Update to … now* open a dialog
-  (`show_changes(true)` in `src/dock/stagekit-dock.cpp`, object `updateChanges`): a heading with
-  the installed and the offered version, a scrolling list (`QTextBrowser`, `updateChangesList`),
-  the old *Update.Confirm* question, and *Release page*, Yes, No. *What's new* opens the same list
-  with Close (it used to open the browser). Each release: version in bold, its summary, the bold
-  leads of New / Changed / Fixed as a list.
-- **Where it comes from.** `check_for_update` already read every page of releases; each page now
-  also goes through `read_changes` (every release newer than `STAGEKIT_RELEASE`, drafts out,
-  pre-releases in regardless of the betas setting), and once the newest is known `order_changes`
-  keeps those up to it, newest first, once each, at most 15, and counts the rest (`Release::changes`,
-  `Release::earlier`). No extra request.
-- **Parsing** (`notes_of`): lines split on `\n` with `\r` dropped; stops at `### Checksums` or the
-  *still being built* line; a leading `# StageKit …` is skipped; the first paragraph is the summary
-  (joined, made plain, cut at 300 characters); under a `##`/`###` heading starting New, Changed or
-  Fixed, top-level `- `/`* ` bullets with their indented continuation lines are points, each its
-  bold lead or else its first sentence, cut at 110 characters, at most four per release.
-  `plain` drops `*`, backticks, `_` at a word's edge (not in snake_case) and link targets.
-- **Rule from now on:** line 3 of every notes file is a one-line summary (AGENTS.md, *Conventions*
-  and the updater's entry; *Releasing* below).
-- Tests: `[updates: what changed since your version]` (`update_changes_test`, also at the end of
-  `[updates]` in a full run; alone with `STAGEKIT_TEST_ONLY_UPDATES`), through the procs
-  `stagekit_update_notes` and `stagekit_update_changes`. The dialog itself has not been opened in
-  a test or on Windows; the installed build only gets the list once a release with this code is the
-  one installed (the release that brings it is offered by an older updater, without the list).
+- **Flicker, cause:** the item Morph draws a pair through a layer item it adds to the scene
+  (`start_job` in `src/transition/item-morph.cpp`), and the two items' own transitions draw
+  nothing while *Paired*. Scene Shadow looked at the scene's items only four times a second
+  (`SceneShadow::tick`, `kLookEvery`), and an item it had not looked at was "masked, casts
+  nothing" (`flags_of` in `SceneShadow::render`). So for up to a quarter second at the start of
+  every item Morph the pair cast no shadow. Measured headless, drawing the scene through the
+  change: 362.4 (sum of the shadow's darkening) before, 155.8 (only the chat column's) for
+  100 to 200 ms from the layer's first frame, back to 362 after the next look; three tries
+  of three failed or blinked, with and without a glide beside it.
+- **Flicker, fix:** `has_new_items` in the tick: whenever `scene_revision()` has changed while
+  the scene is in view, the scene's item ids are compared with the flags, and a new one makes
+  the look due in that tick. OBS runs tick callbacks before source ticks, so the layer (and
+  any item added from a tick callback or between frames) is looked at before the first frame
+  that draws it. `flags_of` also gives an unlooked-at Morph layer *casts* outright. Cost: an
+  id list of the scene per scene change while in view (every frame while something glides),
+  no `classify` unless an id is new.
+- **Not flickering headless** (before and after): Fade and Slide item transitions (worst 0.97
+  of the frames round it), a Fit to Space-like glide during them, a change of scene with Morph
+  between two shadowed scenes (1.00), and a scene coming into view with a source added while
+  out of view (classified at once on coming into view, as before).
+- **Gap, cause:** the shader (`data/effects/stagekit-scene-shadow.effect`) shadowed the whole
+  finished pixel by `sa * (1 - mask.a)`. At a smoothed edge with coverage a, what is under the
+  source is (1 - a) of the pixel and should be shadowed by `sa`; it got `sa * (1 - a)`, so
+  `bg * a * (1 - a) * sa` too much background stayed: a 1 px bright line. Test: an
+  antialiased dark grey disc on orange, hard black shadow (8, 8): red 139 at edge pixels whose
+  shadow comes from the disc's inside, against at most 66 (the disc 60, the shadow beyond);
+  73 of 73 edge pixels too bright.
+- **Gap, fix:** `split_at` splits each pixel into the sources' part (M as drawn,
+  premultiplied, to linear light) and what is under them (the scene less that, held to the
+  uncovered share); shadow and outline go on the second only (`laid_under`). After: 0 of 73;
+  the shadow-free side of the edge and the inside unchanged (0 off). Morph's carried shadow
+  and Scene Blur's `lay_over` go through the same `compose`, and so does beta176's *Each
+  source by itself* (`compose_layers` calls `compose` per layer; a later layer's picture is
+  straight alpha, which `scene_linear` already reads through `image_straight`).
+- **Each source by itself, the masks' colours** (done in the rebase onto beta176): a layer's
+  mask was the mask above it copied first and the layer's own sources drawn over it, so where a
+  lower source showed through a see-through edge of a higher one the mask's colours were the
+  lower one's. Alpha was all that counted before; `split_at` reads the colours too. Now the
+  layer's sources are drawn first and the mask above laid over them
+  (`LookPaint::copy_onto(..., over = true)`), in `SceneShadow::render_layers` and Morph's
+  `draw_layers`. The flicker fix needs nothing more there: `render_layers` uses the same
+  `flags_of`, and the tick's look is the same for both modes.
+- Tests: `[scene shadow: no flicker through transitions]` (`shadow_flicker_test`; Morph, Fade,
+  Slide, Morph and Fade with a glide, three tries each; a source added from a tick callback;
+  a change of scene with Morph both ways twice; a scene coming into view) and `[scene shadow:
+  no gap at a smoothed edge]` (`shadow_edge_test`, each check for *The scene as drawn* and for
+  *Each source by itself*, the disc a layer above a small block's), alone with
+  `STAGEKIT_TEST_ONLY_SHADOW_FLICKER`, and last in a full run (they need sound).
+- **The flicker test goes by OBS's video thread** (after the rebase onto beta181, where the
+  release queue's full run failed once: *Fade, the chat column gliding (try 2)*, 245.3
+  against 362.4 for one frame at 168 ms, before the change was even made). Not a fault of the
+  filter: the test drew the scene from its own thread, by the wall clock, while OBS's video
+  thread ticked and drew. Three ways that showed what OBS never shows: the chat column was
+  moved from the test's thread, and OBS 30 works an item's matrix out in place step by step
+  (`update_item_transform` from `obs_sceneitem_set_pos`, no lock), so a draw could read it
+  half-made; a draw made while the sources ticked found an item transition's textures locked
+  by `obs_transition_tick` (`trylock_textures` fails, a hiding item is then drawn as nothing);
+  and a draw waiting for the graphics behind a lagging video thread carried a stale time. On
+  top, with few draws a frame (a busy machine) the twelve draws each one was compared with
+  reached so far that the shadow's own fall and rise read as a blink: 24 gliding tries
+  failed in six runs of the old test with two busy loops (of 36), all of that kind. Now the changes
+  are made from a tick callback (as Fit to Space and the item Morph make them), every draw
+  measured is made in a main-rendered callback (twice a frame, the second from the frame's
+  cache), times are video times, and a draw is compared with those within 100 ms each way
+  (at least the next frame each way); each case also needs three frames drawn while the change
+  goes on. Still catches the bug it was written for: with `has_new_items` and the layer's
+  *casts* taken out, Morph fails at 155.8 against 362.4 as before.
+- **A crash found on the way:** with the gate run alone 30-odd times, 4 runs ended in a
+  segfault after the last check (none seen in the queue's full run). gdb: the video thread in
+  `SceneShadow::render` calling `obs_source_skip_video_filter` after `obs_source_filter_remove`
+  had cleared the filter's parent from the test's thread mid-draw (the log's
+  `obs_source_enum_filters: Null 'source' parameter` just before); OBS's skip reads
+  `parent->info` unchecked. The same can happen in OBS when a Scene Shadow is removed in the
+  Filters window while its scene is drawn. Scene Shadow now gives up through
+  `skip_filter_input` (`src/common/filter-input.hpp`), which skips only while the filter still
+  has a parent and target. Other filters still call OBS's skip directly; most do so at once,
+  Scene Blur after a long draw as Scene Shadow did.
+- **Not proven:** Windows and Direct3D (the effect now has a struct returned from a function,
+  as `VSDefault` already does); the owner's own scenes; text from a real text source (the
+  test's disc is drawn by Qt with antialiasing).
 
-## The Scene Mode key's page: a mode, then its settings (0.1.0-beta181, plugin 0.28.0.0)
+## Scene Shadow from each source, Scene Corners on the whole scene (0.1.0-beta176)
 
 Branch `fix/auto-capture-hook-loop`, on `main` after beta180. Notes:
 `docs/releases/0.1.0-beta184.md`. No Stream Deck file changed.

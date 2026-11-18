@@ -4858,6 +4858,611 @@ static void blur_off_draw_test(uint32_t w, uint32_t h, const char *base_image)
 	}
 }
 
+// Scene Shadow through transitions, frame by frame. The owner: "shadows
+// flicker when transitions happen ... scene shadow. none of the sources have
+// their own shadow". Each case draws its scene twice in every video frame
+// through a change, as OBS has drawn it, and measures the shadow: how much
+// darker than the grey background the grey parts of the picture are, in all
+// (`mass`). A flicker is a draw where that drops well below the highest of
+// the draws in the 100 ms of video time just before it and of those just
+// after it, and comes back. Run alone: STAGEKIT_TEST_ONLY_SHADOW_FLICKER.
+static void shadow_flicker_test(uint32_t w, uint32_t h)
+{
+	printf("\n[scene shadow: no flicker through transitions]\n");
+	if (!obs_source_get_display_name("stagekit_morph")) {
+		CHECK(false, "the Morph transition is there");
+		return;
+	}
+	auto block = [](const char *name, long long abgr, int bw, int bh) {
+		obs_data_t *d = obs_data_create();
+		obs_data_set_int(d, "color", abgr);
+		obs_data_set_int(d, "width", bw);
+		obs_data_set_int(d, "height", bh);
+		obs_source_t *src = obs_source_create("color_source", name, d, nullptr);
+		obs_data_release(d);
+		return src;
+	};
+	auto put = [](obs_scene_t *scene, obs_source_t *src, float x, float y) {
+		obs_sceneitem_t *item = obs_scene_add(scene, src);
+		vec2 p;
+		vec2_set(&p, x, y);
+		obs_sceneitem_set_pos(item, &p);
+		return item;
+	};
+	auto count_items = [](obs_scene_t *scene) {
+		int n = 0;
+		obs_scene_enum_items(
+			scene,
+			[](obs_scene_t *, obs_sceneitem_t *, void *param) {
+				++*static_cast<int *>(param);
+				return true;
+			},
+			&n);
+		return n;
+	};
+	// The shadow: how much darker than grey 128 the grey parts of the
+	// picture are, in all (the sources are white, so never grey).
+	auto mass = [](const std::vector<uint8_t> &px) {
+		double sum = 0.0;
+		for (size_t i = 0; i + 3 < px.size(); i += 4) {
+			const int r = px[i], g = px[i + 1], b = px[i + 2];
+			if (std::abs(r - g) <= 3 && std::abs(g - b) <= 3 && r < 127)
+				sum += 128 - r;
+		}
+		return sum / 1000.0;
+	};
+	struct Sample {
+		double ms;
+		double mass;
+		int layers; // Morph layers in the scene
+	};
+	// The worst dip: the lowest ratio of a draw's shadow to the smaller of
+	// the highest shadow drawn in the `reach_ms` of video time before it and
+	// the highest in the `reach_ms` after it (at least the frame next to it
+	// each way, when OBS drew none that close). By video time, not by a count
+	// of draws: on a busy machine there are fewer draws a frame, and twelve
+	// of them reached so far back that the shadow's own fall and rise (the
+	// camera fading out, then the chat column moving off the capture) read
+	// as a blink. (Samples are in the order of their frames.)
+	struct Dip {
+		double ratio = 1.0;
+		double ms = 0.0, at = 0.0, around = 0.0;
+	};
+	auto worst_dip = [](const std::vector<Sample> &s, double reach_ms) {
+		Dip dip;
+		for (size_t i = 1; i + 1 < s.size(); i++) {
+			double before = 0.0, after = 0.0;
+			double last_before = -1.0, first_after = -1.0; // the frames next to it
+			for (size_t j = i; j-- > 0;)
+				if (s[j].ms < s[i].ms) {
+					if (last_before < 0.0)
+						last_before = s[j].ms;
+					if (s[j].ms < s[i].ms - reach_ms && s[j].ms < last_before)
+						break;
+					before = std::max(before, s[j].mass);
+				}
+			for (size_t j = i + 1; j < s.size(); j++)
+				if (s[j].ms > s[i].ms) {
+					if (first_after < 0.0)
+						first_after = s[j].ms;
+					if (s[j].ms > s[i].ms + reach_ms && s[j].ms > first_after)
+						break;
+					after = std::max(after, s[j].mass);
+				}
+			const double around = std::min(before, after);
+			if (around < 1.0)
+				continue;
+			const double ratio = s[i].mass / around;
+			if (ratio < dip.ratio)
+				dip = Dip{ratio, s[i].ms, s[i].mass, around};
+		}
+		return dip;
+	};
+	const double kReachMs = 100.0; // six frames each way
+	// How many video frames were measured from `from` ms to `to` ms: at
+	// least three while the change goes on, or it was not watched at all.
+	// (On a busy machine OBS draws fewer frames; that alone is no blink.)
+	auto frames_in = [](const std::vector<Sample> &s, double from, double to) {
+		int n = 0;
+		for (size_t i = 0; i < s.size(); i++)
+			n += s[i].ms >= from && s[i].ms <= to && (i == 0 || s[i].ms != s[i - 1].ms);
+		return n;
+	};
+	auto print = [](const char *what, const std::vector<Sample> &s) {
+		printf("    %s (ms: shadow, L while a Morph layer is in the scene):", what);
+		int n = 0;
+		for (const Sample &x : s) {
+			if (n++ % 8 == 0)
+				printf("\n     ");
+			printf(" %4.0f:%6.1f%s", x.ms, x.mass, x.layers ? "L" : " ");
+		}
+		printf("\n");
+	};
+	auto elapsed = [](std::chrono::steady_clock::time_point t0) {
+		return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+	};
+	// Everything goes by the video clock and happens where it happens in OBS,
+	// on its video thread: the changes from a tick callback, before the
+	// sources tick (as Fit to Space moves an item and the item Morph puts its
+	// layer in), and every draw measured from a rendered callback, just after
+	// OBS has drawn the frame (`drawn_cb`; twice, as a projector or the
+	// multiview draws a scene again in the same frame). Up to the first run
+	// on a busy machine the test drew from its own thread, by the wall clock,
+	// and found blinks OBS cannot show: a draw made while the video thread
+	// ticked the sources found an item's show or hide transition with its
+	// textures locked by that tick (OBS then draws a hiding item as nothing),
+	// and a move made from the test's thread was seen half-made (OBS works an
+	// item's matrix out in place, step by step: the chat column's shadow was
+	// drawn at the canvas's corner for a frame). And with fewer draws a
+	// frame, the twelve draws round each one that it was compared with reached
+	// so far that the shadow's own fall and rise (the camera fading out, then
+	// the chat column moving off the capture) read as a blink.
+	struct Watch {
+		obs_source_t *source = nullptr; // what is drawn and measured
+		obs_scene_t *scene = nullptr;   // its items counted, for the Morph layers
+		int items_before = 0;
+		uint32_t w = 0, h = 0;
+		uint64_t t0 = 0; // video time at the start
+		double (*mass)(const std::vector<uint8_t> &) = nullptr;
+		int (*count)(obs_scene_t *) = nullptr;
+		// The change: `hide` hidden and `show` shown after `change_ms`;
+		// `glider` moved all the while from 150 ms to 1100 ms.
+		obs_sceneitem_t *hide = nullptr, *show = nullptr, *glider = nullptr;
+		double change_ms = -1.0;
+		bool changed = false;
+		std::atomic<bool> on{false};
+		std::mutex mutex;
+		std::vector<Sample> samples;
+		double ms() const
+		{
+			const uint64_t now = obs_get_video_frame_time();
+			return now > t0 ? (double)(now - t0) / 1e6 : 0.0;
+		}
+		void sample()
+		{
+			const double at = ms();
+			const double m = mass(render(source, w, h));
+			const int layers = scene ? count(scene) - items_before : 0;
+			std::lock_guard lock(mutex);
+			samples.push_back(Sample{at, m, layers});
+		}
+		std::vector<Sample> taken()
+		{
+			std::lock_guard lock(mutex);
+			return samples;
+		}
+	};
+	auto drive_cb = [](void *param, float) {
+		auto *x = static_cast<Watch *>(param);
+		if (!x->on)
+			return;
+		const double ms = x->ms();
+		if (!x->changed && x->change_ms >= 0.0 && ms > x->change_ms) {
+			obs_sceneitem_set_visible(x->hide, false);
+			obs_sceneitem_set_visible(x->show, true);
+			x->changed = true;
+		}
+		if (x->glider && ms > 150 && ms < 1100) {
+			vec2 p;
+			vec2_set(&p, 470.0f + (float)(ms - 150.0) * 0.12f, 40.0f);
+			obs_sceneitem_set_pos(x->glider, &p);
+		}
+	};
+	auto drawn_cb = [](void *param) {
+		auto *x = static_cast<Watch *>(param);
+		if (!x->on)
+			return;
+		x->sample();
+		x->sample();
+	};
+	// Watches for `ms` of video time (a minute at the most by the wall clock);
+	// `between` is called from the test's thread every 2 ms with the video
+	// time.
+	auto watch = [&](Watch &x, double ms, const std::function<void(double)> &between) {
+		x.mass = +mass;
+		x.count = +count_items;
+		x.w = w;
+		x.h = h;
+		x.t0 = obs_get_video_frame_time();
+		x.on = true;
+		obs_add_tick_callback(drive_cb, &x);
+		obs_add_main_rendered_callback(drawn_cb, &x);
+		const auto wall = std::chrono::steady_clock::now();
+		while (x.ms() <= ms && elapsed(wall) < 60000.0) {
+			if (between)
+				between(x.ms());
+			sleep_ms(2);
+		}
+		x.on = false;
+		obs_remove_main_rendered_callback(drawn_cb, &x);
+		obs_remove_tick_callback(drive_cb, &x);
+		return x.taken();
+	};
+	obs_source_t *before_out = obs_get_output_source(0);
+
+	obs_source_t *bg = block("SF Back", 0xFF808080, (int)w, (int)h);
+	obs_source_t *cam = block("SF Camera", 0xFFFFFFFF, 240, 180);
+	obs_source_t *grab = block("SF Capture", 0xFFFFFFFF, 240, 180);
+	obs_source_t *chat = block("SF Chat", 0xFFFFFFFF, 120, 200);
+
+	// ---- An item hidden and another shown in a scene on screen, with each
+	// kind of item transition; with a glide, the chat column moves all the
+	// while, as Fit to Space moves it.
+	struct Kind {
+		const char *id;
+		const char *name;
+		bool glide;
+	};
+	const Kind kinds[] = {{"stagekit_morph", "Morph", false},
+			      {"fade_transition", "Fade", false},
+			      {"slide_transition", "Slide", false},
+			      {"stagekit_morph", "Morph, the chat column gliding", true},
+			      {"fade_transition", "Fade, the chat column gliding", true}};
+	for (const Kind &k : kinds) {
+		if (!obs_source_get_display_name(k.id)) {
+			printf("  (skipped: %s is not installed)\n", k.name);
+			continue;
+		}
+		for (int round = 0; round < 3; round++) {
+			obs_scene_t *scene = obs_scene_create("SF Scene");
+			obs_source_t *scene_src = obs_scene_get_source(scene);
+			put(scene, bg, 0, 0);
+			obs_sceneitem_t *a = put(scene, cam, 40, 60);
+			obs_sceneitem_t *b = put(scene, grab, 330, 100);
+			obs_sceneitem_t *c = put(scene, chat, 470, 40);
+			obs_sceneitem_set_visible(b, false);
+			for (obs_sceneitem_t *item : {a, b})
+				for (const bool show : {true, false}) {
+					obs_data_t *d = obs_data_create();
+					obs_data_set_int(d, "ease_curve", 0);
+					obs_source_t *t = obs_source_create_private(k.id, "SF Item Transition", d);
+					obs_data_release(d);
+					obs_sceneitem_set_transition(item, show, t);
+					obs_sceneitem_set_transition_duration(item, show, 600);
+					obs_source_release(t);
+				}
+			obs_source_t *shadow =
+				obs_source_create("stagekit_scene_shadow", "SF Shadow", nullptr, nullptr);
+			obs_source_filter_add(scene_src, shadow);
+			obs_set_output_source(0, scene_src);
+			sleep_ms(500);
+			Watch x;
+			x.source = scene_src;
+			x.scene = scene;
+			x.items_before = count_items(scene);
+			x.hide = a;
+			x.show = b;
+			x.change_ms = 150 + 37 * round;
+			x.glider = k.glide ? c : nullptr;
+			const std::vector<Sample> samples = watch(x, 1400, nullptr);
+			const int frames = frames_in(samples, x.change_ms, x.change_ms + 600);
+			const Dip dip = worst_dip(samples, kReachMs);
+			if (dip.ratio < 0.8)
+				print(k.name, samples);
+			CHECK(x.changed && frames >= 3 && dip.ratio >= 0.8,
+			      "%s (try %d): an item hidden and another shown, the shadow never blinks (worst %.2f of what is round it, at %.0f ms: %.1f against %.1f; %d frames while it changed)",
+			      k.name, round + 1, dip.ratio, dip.ms, dip.at, dip.around, frames);
+			obs_set_output_source(0, nullptr);
+			sleep_ms(100);
+			obs_source_filter_remove(scene_src, shadow);
+			obs_source_release(shadow);
+			obs_scene_release(scene);
+			sleep_ms(100);
+		}
+	}
+
+	// ---- A source put into a scene on screen, as the item Morph puts its
+	// layer in and Standby its stand-ins: from a tick callback, which OBS
+	// calls before it ticks the sources and draws the frame.
+	for (int round = 0; round < 3; round++) {
+		obs_scene_t *scene = obs_scene_create("SF Added");
+		obs_source_t *scene_src = obs_scene_get_source(scene);
+		put(scene, bg, 0, 0);
+		put(scene, cam, 40, 60);
+		obs_source_t *shadow = obs_source_create("stagekit_scene_shadow", "SF Shadow Added", nullptr, nullptr);
+		obs_source_filter_add(scene_src, shadow);
+		obs_set_output_source(0, scene_src);
+		sleep_ms(400 + 37 * round);
+		struct Adding {
+			obs_scene_t *scene;
+			obs_source_t *source;
+			std::atomic<bool> go{false};
+			std::atomic<bool> done{false};
+		} adding{scene, chat};
+		auto add_cb = [](void *param, float) {
+			auto *x = static_cast<Adding *>(param);
+			if (!x->go || x->done)
+				return;
+			obs_sceneitem_t *item = obs_scene_add(x->scene, x->source);
+			vec2 p;
+			vec2_set(&p, 470.0f, 40.0f);
+			obs_sceneitem_set_pos(item, &p);
+			x->done = true;
+		};
+		obs_add_tick_callback(add_cb, &adding);
+		adding.go = true;
+		std::vector<Sample> samples;
+		const auto t0 = std::chrono::steady_clock::now();
+		while (elapsed(t0) < 600) {
+			if (adding.done)
+				samples.push_back(Sample{elapsed(t0), mass(render(scene_src, w, h)), 0});
+			sleep_ms(2);
+		}
+		obs_remove_tick_callback(add_cb, &adding);
+		const double last = samples.empty() ? 0.0 : samples.back().mass;
+		double least = last;
+		for (const Sample &x : samples)
+			least = std::min(least, x.mass);
+		if (least < 0.9 * last)
+			print("a source added", samples);
+		CHECK(!samples.empty() && least >= 0.9 * last,
+		      "a source put into a scene on screen (try %d) casts its shadow from the first frame (least %.1f, at rest %.1f)",
+		      round + 1, least, last);
+		obs_set_output_source(0, nullptr);
+		sleep_ms(100);
+		obs_source_filter_remove(scene_src, shadow);
+		obs_source_release(shadow);
+		obs_scene_release(scene);
+		sleep_ms(100);
+	}
+
+	// ---- A change of scene with Morph, both scenes with a Scene Shadow.
+	{
+		obs_scene_t *s1 = obs_scene_create("SF Live");
+		obs_scene_t *s2 = obs_scene_create("SF Chat Live");
+		put(s1, bg, 0, 0);
+		put(s1, cam, 40, 60);
+		put(s2, bg, 0, 0);
+		put(s2, cam, 300, 120);
+		put(s2, chat, 40, 40);
+		obs_source_t *src1 = obs_scene_get_source(s1), *src2 = obs_scene_get_source(s2);
+		obs_source_t *sh1 = obs_source_create("stagekit_scene_shadow", "SF Shadow 1", nullptr, nullptr);
+		obs_source_t *sh2 = obs_source_create("stagekit_scene_shadow", "SF Shadow 2", nullptr, nullptr);
+		obs_source_filter_add(src1, sh1);
+		obs_source_filter_add(src2, sh2);
+		obs_data_t *md = obs_data_create();
+		obs_data_set_int(md, "ease_curve", 0);
+		obs_source_t *morph = obs_source_create_private("stagekit_morph", "SF Morph", md);
+		obs_data_release(md);
+		obs_transition_set(morph, src1);
+		obs_set_output_source(0, morph);
+		sleep_ms(500);
+		for (int way = 0; way < 4; way++) {
+			obs_source_t *to = way % 2 == 0 ? src2 : src1;
+			// (Started from the test's thread, as OBS's window starts one.)
+			Watch x;
+			x.source = morph;
+			bool started = false;
+			const std::vector<Sample> samples = watch(x, 1400, [&](double ms) {
+				if (!started && ms > 150) {
+					obs_transition_start(morph, OBS_TRANSITION_MODE_AUTO, 800, to);
+					started = true;
+				}
+			});
+			const int frames = frames_in(samples, 150, 950);
+			const Dip dip = worst_dip(samples, kReachMs);
+			const char *what = way % 2 == 0 ? "there" : "back";
+			if (dip.ratio < 0.8)
+				print(what, samples);
+			CHECK(started && frames >= 3 && dip.ratio >= 0.8,
+			      "a change of scene with Morph %s (try %d), both scenes shadowed: the shadow never blinks (worst %.2f, at %.0f ms: %.1f against %.1f; %d frames while it changed)",
+			      what, way / 2 + 1, dip.ratio, dip.ms, dip.at, dip.around, frames);
+			sleep_ms(200);
+		}
+		obs_set_output_source(0, nullptr);
+		sleep_ms(100);
+		obs_source_release(morph);
+		obs_source_filter_remove(src1, sh1);
+		obs_source_filter_remove(src2, sh2);
+		obs_source_release(sh1);
+		obs_source_release(sh2);
+		obs_scene_release(s1);
+		obs_scene_release(s2);
+		sleep_ms(100);
+	}
+
+	// ---- A scene coming into view (a cut) with a source added to it while
+	// it was out of view.
+	for (int round = 0; round < 3; round++) {
+		obs_scene_t *s1 = obs_scene_create("SF Elsewhere");
+		obs_scene_t *s2 = obs_scene_create("SF Arriving");
+		put(s1, bg, 0, 0);
+		put(s2, bg, 0, 0);
+		put(s2, cam, 40, 60);
+		obs_source_t *src1 = obs_scene_get_source(s1), *src2 = obs_scene_get_source(s2);
+		obs_source_t *sh2 = obs_source_create("stagekit_scene_shadow", "SF Shadow Arriving", nullptr, nullptr);
+		obs_source_filter_add(src2, sh2);
+		obs_set_output_source(0, src2);
+		sleep_ms(400);
+		obs_set_output_source(0, src1);
+		sleep_ms(400);
+		put(s2, chat, 470, 40); // added out of view
+		sleep_ms(400 + 37 * round);
+		obs_set_output_source(0, src2);
+		std::vector<Sample> samples;
+		const auto t0 = std::chrono::steady_clock::now();
+		for (;;) {
+			const double ms = elapsed(t0);
+			if (ms > 600)
+				break;
+			samples.push_back(Sample{ms, mass(render(src2, w, h)), 0});
+			sleep_ms(2);
+		}
+		const double first = samples.empty() ? 0.0 : samples.front().mass;
+		const double last = samples.empty() ? 0.0 : samples.back().mass;
+		double least = last;
+		for (const Sample &s : samples)
+			least = std::min(least, s.mass);
+		if (least < 0.9 * last)
+			print("coming into view", samples);
+		CHECK(least >= 0.9 * last,
+		      "a scene coming into view (try %d) with a source added while out of view: its shadow is whole from the first draw (least %.1f, first %.1f, at rest %.1f)",
+		      round + 1, least, first, last);
+		obs_set_output_source(0, nullptr);
+		sleep_ms(100);
+		obs_source_filter_remove(src2, sh2);
+		obs_source_release(sh2);
+		obs_scene_release(s1);
+		obs_scene_release(s2);
+		sleep_ms(100);
+	}
+
+	obs_set_output_source(0, before_out);
+	obs_source_release(before_out);
+	for (obs_source_t *s : {bg, cam, grab, chat})
+		obs_source_release(s);
+	sleep_ms(100);
+}
+
+// Scene Shadow at a source's smoothed edge. The owner, of bold dark text on a
+// bright orange background with a hard shadow: "text with the scene shadow
+// has a noticeable separation from the shadow", a thin bright line of the
+// background between each glyph and its shadow. Where a source covers part
+// of a pixel, what is under that part is shadowed in full and the source's
+// own part not at all. A disc stands in for a glyph: smoothed all round, and
+// at its lower right the shadow comes from its own inside.
+static void shadow_edge_test(uint32_t w, uint32_t h, const std::string &out)
+{
+	printf("\n[scene shadow: no gap at a smoothed edge]\n");
+	const int size = 160, cxp = 200, cyp = 100; // the disc's picture and where it is put
+	const double r = 70.0;
+	const std::string path = out + "/../shadow-edge-disc.png";
+	QImage disc(size, size, QImage::Format_ARGB32_Premultiplied);
+	disc.fill(Qt::transparent);
+	{
+		QPainter p(&disc);
+		p.setRenderHint(QPainter::Antialiasing, true);
+		p.setPen(Qt::NoPen);
+		p.setBrush(QColor(60, 60, 60)); // dark grey, as the owner's text
+		p.drawEllipse(QPointF(size / 2.0, size / 2.0), r, r);
+	}
+	disc.save(QString::fromStdString(path));
+	auto alpha_at = [&](int x, int y) { // the disc's coverage at a canvas pixel
+		const int sx = x - cxp, sy = y - cyp;
+		if (sx < 0 || sy < 0 || sx >= size || sy >= size)
+			return 0;
+		return qAlpha(disc.pixel(sx, sy));
+	};
+	obs_data_t *bd = obs_data_create();
+	obs_data_set_int(bd, "color", 0xFF008CFF); // orange (255, 140, 0)
+	obs_data_set_int(bd, "width", (int)w);
+	obs_data_set_int(bd, "height", (int)h);
+	obs_source_t *bg = obs_source_create("color_source", "SE Orange", bd, nullptr);
+	obs_data_release(bd);
+	obs_data_t *id = obs_data_create();
+	obs_data_set_string(id, "file", path.c_str());
+	obs_source_t *img = obs_source_create("image_source", "SE Disc", id, nullptr);
+	obs_data_release(id);
+	// A small block under the disc's top left corner (clear of the disc
+	// itself, its shadow too): with *Each source by itself* the disc is then
+	// a layer of its own, and its shadow is laid over the picture the block's
+	// layer made.
+	obs_data_t *kd = obs_data_create();
+	obs_data_set_int(kd, "color", 0xFF3C3C3C);
+	obs_data_set_int(kd, "width", 10);
+	obs_data_set_int(kd, "height", 10);
+	obs_source_t *block = obs_source_create("color_source", "SE Block", kd, nullptr);
+	obs_data_release(kd);
+	obs_scene_t *scene = obs_scene_create("SE Scene");
+	obs_scene_t *plain = obs_scene_create("SE Plain");
+	for (obs_scene_t *s : {scene, plain}) {
+		obs_scene_add(s, bg);
+		obs_sceneitem_t *under = obs_scene_add(s, block);
+		vec2 bp;
+		vec2_set(&bp, (float)cxp, (float)cyp);
+		obs_sceneitem_set_pos(under, &bp);
+		obs_sceneitem_t *item = obs_scene_add(s, img);
+		vec2 p;
+		vec2_set(&p, (float)cxp, (float)cyp);
+		obs_sceneitem_set_pos(item, &p);
+	}
+	obs_source_t *scene_src = obs_scene_get_source(scene);
+	obs_source_t *before_out = obs_get_output_source(0);
+	obs_set_output_source(0, scene_src);
+	// Shadow from: The scene as drawn (0), then Each source by itself (1).
+	for (int from = 0; from < 2; from++) {
+		const char *how = from ? "each source by itself" : "the scene as drawn";
+		obs_data_t *sd = obs_data_create();
+		obs_data_set_int(sd, "shadow_from", from);
+		obs_data_set_double(sd, "shadow_opacity", 100.0);
+		obs_data_set_double(sd, "softness", 0.0);
+		obs_data_set_double(sd, "offset_x", 8.0);
+		obs_data_set_double(sd, "offset_y", 8.0);
+		obs_source_t *shadow = obs_source_create("stagekit_scene_shadow", "SE Shadow", sd, nullptr);
+		obs_data_release(sd);
+		obs_source_filter_add(scene_src, shadow);
+		sleep_ms(600);
+		render(scene_src, w, h);
+		const std::vector<uint8_t> got = render(scene_src, w, h);
+		const std::vector<uint8_t> bare = render(obs_scene_get_source(plain), w, h);
+		int layers = 0;
+		{
+			calldata_t cd;
+			calldata_init(&cd);
+			proc_handler_call(obs_source_get_proc_handler(shadow), "layers", &cd);
+			layers = (int)calldata_int(&cd, "count");
+			calldata_free(&cd);
+		}
+		if (from)
+			CHECK(layers == 2, "%s: the disc is a layer above the block's (%d layers)", how, layers);
+		auto px = [&](const std::vector<uint8_t> &f, int x, int y, int c) {
+			return (int)f[(size_t(y) * w + x) * 4 + c];
+		};
+		// Lower right: edge pixels whose shadow comes from the disc's inside.
+		// Each must be no brighter than both the disc and the shadow beyond it.
+		int over = 0, edges = 0, worst = 0, worst_x = 0, worst_y = 0;
+		// Upper left, where no shadow falls: as without the filter.
+		int off = 0, edges_ul = 0;
+		for (int y = cyp; y < cyp + size; y++)
+			for (int x = cxp; x < cxp + size; x++) {
+				const int a = alpha_at(x, y);
+				if (a < 13 || a > 242)
+					continue;
+				const double dx = x - (cxp + size / 2.0), dy = y - (cyp + size / 2.0);
+				if (dx > 15 && dy > 15 && alpha_at(x - 8, y - 8) == 255) {
+					edges++;
+					const int beyond =
+						px(got, std::min((int)w - 1, x + 2), std::min((int)h - 1, y + 2), 0);
+					const int limit = std::max(60, beyond) + 6;
+					const int v = px(got, x, y, 0);
+					if (v > limit) {
+						over++;
+						if (v - limit > worst) {
+							worst = v - limit;
+							worst_x = x;
+							worst_y = y;
+						}
+					}
+				} else if (dx < -15 && dy < -15) {
+					edges_ul++;
+					for (int c = 0; c < 3; c++)
+						off = std::max(off, std::abs(px(got, x, y, c) - px(bare, x, y, c)));
+				}
+			}
+		CHECK(edges > 20 && over == 0,
+		      "%s: on the shadow side of a smoothed edge no background shows between the source and its shadow (%d of %d edge pixels brighter than the source and the shadow, worst by %d at %d,%d: red %d)",
+		      how, over, edges, worst, worst_x, worst_y, worst ? px(got, worst_x, worst_y, 0) : 0);
+		CHECK(edges_ul > 20 && off <= 2,
+		      "%s: where no shadow falls, the smoothed edge is as without the filter (off by %d over %d pixels)",
+		      how, off, edges_ul);
+		const int ix = cxp + size / 2, iy = cyp + size / 2;
+		CHECK(std::abs(px(got, ix, iy, 0) - px(bare, ix, iy, 0)) <= 1 &&
+			      px(got, 20, 20, 0) == px(bare, 20, 20, 0),
+		      "%s: the source's inside and the background away from it are untouched (%d / %d inside, %d / %d away)",
+		      how, px(got, ix, iy, 0), px(bare, ix, iy, 0), px(got, 20, 20, 0), px(bare, 20, 20, 0));
+		obs_source_filter_remove(scene_src, shadow);
+		obs_source_release(shadow);
+	}
+	obs_set_output_source(0, before_out);
+	obs_source_release(before_out);
+	obs_scene_release(scene);
+	obs_scene_release(plain);
+	obs_source_release(bg);
+	obs_source_release(img);
+	obs_source_release(block);
+	sleep_ms(100);
+}
+
 // Make Room. The owner: "can we make a new transition called something like
 // "make room" which would be a transition in which sources move off screen on
 // the closed side of the screen based on other objects morphing into the
@@ -6103,6 +6708,19 @@ int main(int argc, char **argv)
 	}
 	if (getenv("STAGEKIT_TEST_ONLY_CORNERS_WHOLE")) { // to try that section alone
 		scene_corners_whole_test(w, h, out);
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
+	if (getenv("STAGEKIT_TEST_ONLY_SHADOW_FLICKER")) { // to try that section alone
+		// With sound, as at the end of a full run: item transitions end only then.
+		obs_audio_info sound = {};
+		sound.samples_per_sec = 48000;
+		sound.speakers = SPEAKERS_STEREO;
+		obs_reset_audio(&sound);
+		shadow_flicker_test(w, h);
+		shadow_edge_test(w, h, out);
 		obs_shutdown();
 		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
 		       g_failures == 1 ? "" : "s");
@@ -22284,6 +22902,8 @@ int main(int argc, char **argv)
 	// show and hide transitions only then.)
 	capture_pop_in_test(w, h, out);
 	link_follow_sources_test();
+	shadow_flicker_test(w, h); // (alone: STAGEKIT_TEST_ONLY_SHADOW_FLICKER)
+	shadow_edge_test(w, h, out);
 
 	obs_source_dec_showing(bg);
 	obs_data_release(s);

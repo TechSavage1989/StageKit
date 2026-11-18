@@ -2251,7 +2251,15 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   picture **off M** (`MaskedShadow`, `Ring` for the outline). That pass works **in linear light**
   (`to_linear`/`to_srgb` in the effect): OBS lays a source over what is under it in linear
   light, and done on raw values the shadow came out darker than the per-source filter's (52
-  against 84 on grey 128). It never moves or resizes anything. An item whose show or hide
+  against 84 on grey 128). **Only the part of a pixel no source covers is shadowed** (`split_at`
+  in the effect, beta186): M holds the sources as drawn (premultiplied), so a pixel splits into
+  their part and what is under them, and the shadow and the outline go on the second only
+  (`laid_under`). Shadowing the whole pixel by the uncovered share, as before, left most of what
+  is under a smoothed edge unshadowed: the owner's "text with the scene shadow has a noticeable
+  separation from the shadow", a 1 px bright line of the orange background between each glyph
+  and its hard shadow (red 139 against at most 66 in the test). Where M's colours differ from
+  the scene's (an overlap, a background listed above a source) what is under is held to the
+  uncovered share, so a source's inside is never darkened. It never moves or resizes anything. An item whose show or hide
   transition runs is drawn through the transition (`item_transition_running`: a show's second
   side, a hide's first side, is the item's source), so its shadow fades with it; drawing it a
   second time after the scene has drawn it does not keep it from ending (tested by the
@@ -2259,7 +2267,30 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   sound half never ends there). Flags by item id (`ShadowFlag`: background, casts, masked) are
   worked out in the tick (`classify`), four times a second while the scene shows or was drawn or
   asked for by Morph in the last second, at once on coming into view or a settings change, never
-  before `scenes_loaded()`; an item not yet looked at is masked and casts nothing. Background:
+  before `scenes_loaded()`; **and in the very tick an item is added to a scene in view**
+  (`has_new_items`, beta186: when `scene_revision()` has changed, the scene's item ids are
+  compared with the flags', and a new one makes the look due at once). OBS calls tick callbacks
+  before it ticks sources, so the item Morph's layer, added from its tick callback, is looked at
+  before the frame that first draws it. Up to beta174 an item not yet looked at was masked and
+  cast nothing for up to a quarter second, and the layer is what draws both items of an item
+  Morph (their own transitions draw nothing while *Paired*): the shadow of the pair went for
+  that time at the start of every item Morph, the owner's "shadows flicker when ... i
+  switch/show or hide sources inside a scene" (shadow 155.8 against 362.4 in the test, at the
+  layer's first frames). An item still not looked at when drawn (none should be) is masked and
+  casts nothing, but the Morph layer always casts. Fade and Slide never flickered (worst 0.97 of
+  the frames round it), nor did a change of scene with Morph or a scene coming into view.
+  Tested in `[scene shadow: no flicker through transitions]` and `[scene shadow: no gap at a
+  smoothed edge]` (alone: `STAGEKIT_TEST_ONLY_SHADOW_FLICKER`; with sound, last in the file).
+  **A frame-by-frame test draws on OBS's video thread**, from a main-rendered callback, and
+  makes its changes from a tick callback, by the video clock: drawn from the test's own thread
+  while OBS ticked, a scene showed blinks OBS cannot show (an item moved from another thread is
+  seen with its matrix half-made, an item transition ticking has its textures locked and draws
+  a hiding item as nothing), and on a busy machine the queue's full run failed on them.
+  A filter taken off while it is drawn (from another thread) has no parent any more, and OBS's
+  `obs_source_skip_video_filter` then crashes: Scene Shadow gives up through
+  `skip_filter_input` (`src/common/filter-input.hpp`), as every filter now does (see *A filter
+  skips with `skip_filter_input`*).
+  Background:
   listed, or the unbroken run of bottom items covering nine tenths of the canvas (groups only if
   listed); the Morph layer casts and is never background; a stand-in twin takes its owner's
   flags; a source with an enabled Shadow, Glow & Outline casts nothing. Drawn **once a frame**
@@ -2309,6 +2340,13 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   `docs/images/scene-shadow.png`): against two per-source Shadow, Glow & Outline filters at most
   1 level off (0.036 mean), 2 layers and 1 apart, outlines, with Scene Blur on the lower source,
   morphed half-way with the shadow falling, the mixed cross-fade. Only OpenGL.
+  Each layer goes through `compose`, so `split_at` (only the uncovered part of a pixel is
+  shadowed) holds here too, and the tick's look for a new item is the same in both modes. Since
+  that reads the mask's colours, a layer's mask is its own sources drawn first and the mask above
+  laid **over** them (`copy_onto(..., over = true)`, in `render_layers` and Morph's
+  `draw_layers`), so what is on top is on top in the mask; copied first, as in beta176, a lower
+  source's colours stood where it showed through a higher one's edge. `[scene shadow: no gap at
+  a smoothed edge]` checks both modes, the disc a layer above a small block's.
 <!-- ==== end scene-filters:shadow ==== -->
 <!-- ==== scene-filters:blur ==== -->
 - **Scene Blur** (`stagekit_scene_blur`, `src/look/scene-blur.*`; the shared blur in

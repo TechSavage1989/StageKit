@@ -906,8 +906,9 @@ bool Morph::draw_layers(double t, uint32_t cx, uint32_t cy, gs_texture_t *pictur
 		return l + 1 < n ? starts[l + 1] : parts_.size();
 	};
 	// One pass of the morph into a canvas picture, for the layer set now,
-	// over a copy of `under` if there is one.
-	auto into = [&](gs_texrender_t *tr, Pass pass, gs_texture_t *under) -> gs_texture_t * {
+	// with `above` (the masks above) laid over it if there is one: the mask's
+	// colours are the sources' part of a pixel, so what is on top stays so.
+	auto into = [&](gs_texrender_t *tr, Pass pass, gs_texture_t *above) -> gs_texture_t * {
 		pass_ = pass;
 		gs_texrender_reset(tr);
 		if (!gs_texrender_begin_with_color_space(tr, cx, cy, GS_CS_SRGB))
@@ -916,9 +917,9 @@ bool Morph::draw_layers(double t, uint32_t cx, uint32_t cy, gs_texture_t *pictur
 		vec4_zero(&clear);
 		gs_clear(GS_CLEAR_COLOR, &clear, 0.0f, 0);
 		gs_ortho(0.0f, (float)cx, 0.0f, (float)cy, -100.0f, 100.0f);
-		if (under)
-			look_->copy_onto(under, cx, cy);
 		draw_morph(t, cx, cy);
+		if (above)
+			look_->copy_onto(above, cx, cy, true);
 		gs_texrender_end(tr);
 		return gs_texrender_get_texture(tr);
 	};

@@ -44,6 +44,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/loading.hpp"
 #include "../common/pick-list.hpp"
 #include "../common/scene-filter-ids.hpp"
+#include "../common/scene-rev.hpp"
 #include "../common/scene-util.hpp"
 #include "../common/stand-in.hpp"
 #include "../common/switch-ramp.hpp"
@@ -90,6 +91,21 @@ enum class From : int { Scene = 0, Each = 1 };
 bool listed(const std::vector<std::string> &list, const char *name)
 {
 	return name && std::find(list.begin(), list.end(), name) != list.end();
+}
+
+// The ids of a scene's own items (a group as one), from the back.
+std::vector<int64_t> item_ids(obs_source_t *scene_source)
+{
+	std::vector<int64_t> ids;
+	if (obs_scene_t *scene = obs_scene_from_source(scene_source))
+		obs_scene_enum_items(
+			scene,
+			[](obs_scene_t *, obs_sceneitem_t *item, void *param) {
+				static_cast<std::vector<int64_t> *>(param)->push_back(obs_sceneitem_get_id(item));
+				return true;
+			},
+			&ids);
+	return ids;
 }
 
 // What each item of the scene does, by its id. See ShadowFlag.
@@ -175,6 +191,7 @@ private:
 			   const std::function<void(obs_sceneitem_t *)> &draw, const ShadowLook &look, uint32_t cx,
 			   uint32_t cy);
 	void finish(const ShadowLook &look, uint64_t frame, uint32_t cx, uint32_t cy, bool linear, bool each);
+	bool has_new_items(obs_source_t *parent);
 
 	obs_source_t *source_;
 	SwitchRamp ramp_;
@@ -195,6 +212,7 @@ private:
 	double countdown_ = -1.0;
 	bool was_showing_ = false;
 	std::string told_blocked_;
+	uint64_t seen_rev_ = 0; // scene_revision() when its items were last checked for new ones
 	std::atomic<uint64_t> wanted_ns_{0};
 	std::atomic<bool> settings_changed_{true};
 
@@ -332,6 +350,18 @@ void SceneShadow::look_again(obs_source_t *parent)
 	wide_ = wide;
 }
 
+// Whether the scene has an item the last look did not see: one added since
+// (the item Morph's layer, a Standby stand-in, a source put in the scene).
+bool SceneShadow::has_new_items(obs_source_t *parent)
+{
+	const std::vector<int64_t> ids = item_ids(parent);
+	std::lock_guard lock(mutex_);
+	for (const int64_t id : ids)
+		if (!flags_.count(id))
+			return true;
+	return false;
+}
+
 void SceneShadow::tick(float seconds)
 {
 	ramp_.tick(seconds);
@@ -361,9 +391,26 @@ void SceneShadow::tick(float seconds)
 	const uint64_t wanted = wanted_ns_.load();
 	const bool showing = obs_source_showing(parent) || (wanted && (wanted >= now || now - wanted < kWantedNs));
 	countdown_ -= seconds;
-	// At once when it comes into view or its settings change; then a few
-	// times a second while it is seen. Off screen it does nothing.
-	const bool due = (showing && !was_showing_) || settings_changed_.exchange(false) ||
+	// An item added while it is seen is looked at in this very tick, before
+	// the frame is drawn: up to a quarter second "not looked at yet" was a
+	// blink of the shadow. The item Morph's layer is added from a tick
+	// callback, which OBS calls before it ticks the sources, and while the
+	// layer was not looked at the two items it draws cast nothing (the
+	// owner: "shadows flicker when ... i switch/show or hide sources inside
+	// a scene"). Only when something in a scene changed, and then only the
+	// ids are compared.
+	bool new_items = false;
+	if (showing) {
+		const uint64_t rev = scene_revision();
+		if (rev != seen_rev_) {
+			seen_rev_ = rev;
+			new_items = has_new_items(parent);
+		}
+	}
+	// At once when it comes into view, its settings change or it has a new
+	// item; then a few times a second while it is seen. Off screen it does
+	// nothing.
+	const bool due = (showing && !was_showing_) || settings_changed_.exchange(false) || new_items ||
 			 (showing && countdown_ <= 0.0);
 	was_showing_ = showing;
 	if (!due)
@@ -439,9 +486,12 @@ void SceneShadow::render()
 		&items);
 	auto flags_of = [&](obs_sceneitem_t *item) -> uint8_t {
 		const auto found = flags.find(obs_sceneitem_get_id(item));
+		if (found != flags.end())
+			return found->second;
 		// (An item added since the last look is kept clear, and casts
-		// nothing until it has been looked at.)
-		return found != flags.end() ? found->second : (uint8_t)kShadowMasked;
+		// nothing until it has been looked at; the tick looks at once. The
+		// item Morph's layer always casts: it draws two sources that do.)
+		return is_morph_layer(item) ? (uint8_t)(kShadowCasts | kShadowMasked) : (uint8_t)kShadowMasked;
 	};
 	// A Scene Blur after this one that blurs each source by itself: such a
 	// source's shape is its blurred image's (a mosaic's whole cells, say), so
@@ -568,16 +618,18 @@ bool SceneShadow::render_layers(const std::vector<obs_sceneitem_t *> &items,
 		paint_->end_canvas(tr_layer_cast_[l]);
 		layer_casts_[l] = gs_texrender_get_texture(tr_layer_cast_[l]);
 	}
-	// The masks from the top down: each is the one above it and its own
-	// layer's sources.
+	// The masks from the top down: each is its own layer's sources with the
+	// one above it laid over them (in that order, so its colours are the
+	// sources' as they are drawn: the shader takes them for the sources'
+	// part of a pixel).
 	for (size_t k = n; k-- > 0;) {
 		if (!paint_->begin_canvas(tr_layer_mask_[k], cx, cy))
 			return false;
-		if (k + 1 < n)
-			paint_->copy_onto(layer_masks_[k + 1], cx, cy);
 		for (size_t i = starts[k]; i < end_of(k); i++)
 			if (boxes[i].present)
 				draw(items[i]);
+		if (k + 1 < n)
+			paint_->copy_onto(layer_masks_[k + 1], cx, cy, true);
 		paint_->end_canvas(tr_layer_mask_[k]);
 		layer_masks_[k] = gs_texrender_get_texture(tr_layer_mask_[k]);
 	}

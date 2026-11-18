@@ -397,13 +397,13 @@ void LookPaint::end_canvas(gs_texrender_t *into)
 	gs_texrender_end(into);
 }
 
-void LookPaint::copy_onto(gs_texture_t *texture, uint32_t cx, uint32_t cy)
+void LookPaint::copy_onto(gs_texture_t *texture, uint32_t cx, uint32_t cy, bool over)
 {
 	if (!texture)
 		return;
 	gs_effect_t *def = obs_get_base_effect(OBS_EFFECT_DEFAULT);
 	gs_blend_state_push();
-	gs_blend_function(GS_BLEND_ONE, GS_BLEND_ZERO);
+	gs_blend_function(GS_BLEND_ONE, over ? GS_BLEND_INVSRCALPHA : GS_BLEND_ZERO);
 	gs_effect_set_texture(gs_effect_get_param_by_name(def, "image"), texture);
 	while (gs_effect_loop(def, "Draw"))
 		gs_draw_sprite(texture, 0, cx, cy);
