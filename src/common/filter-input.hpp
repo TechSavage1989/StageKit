@@ -56,4 +56,15 @@ inline bool draw_filter_input(obs_source_t *filter, gs_texrender_t *into, uint32
 	return true;
 }
 
+// obs_source_skip_video_filter, unless the filter has been taken off its
+// source meanwhile: OBS takes a filter off (from another thread, the
+// window's) while the video thread may be drawing it, and its skip then
+// reads the parent it no longer has. A filter that draws for long (Scene
+// Shadow) and then gives up must skip through this; nothing is drawn then.
+inline void skip_filter_input(obs_source_t *filter)
+{
+	if (obs_filter_get_parent(filter) && obs_filter_get_target(filter))
+		obs_source_skip_video_filter(filter);
+}
+
 } // namespace stagekit

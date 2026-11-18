@@ -122,8 +122,11 @@ public:
 	bool begin_canvas(gs_texrender_t *into, uint32_t cx, uint32_t cy);
 	void end_canvas(gs_texrender_t *into);
 	// A whole picture laid onto the canvas being drawn, replacing what is
-	// there (to start a mask from the silhouette).
-	void copy_onto(gs_texture_t *texture, uint32_t cx, uint32_t cy);
+	// there (to start a mask from the silhouette), or, with `over`, laid over
+	// it as a premultiplied picture (a layer's mask under the masks above it:
+	// the shader reads the mask's colours as the sources' part of a pixel, so
+	// what is on top must be on top there too).
+	void copy_onto(gs_texture_t *texture, uint32_t cx, uint32_t cy, bool over = false);
 
 	// The shadow and outline of `cast` laid over `scene`, off `mask`
 	// (nullptr: the mask is `cast` itself). Kept in a picture of its own
