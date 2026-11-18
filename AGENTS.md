@@ -1882,6 +1882,21 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   breaks the key. *Blur All* uses the `BlurAll` and `ListBlurFilters` vendor requests.
   `com.techsavage1989.stagekit` and the action UUIDs under it must never change once
   the owner has keys on their decks: Stream Deck ties saved keys to them.
+- **The Update button lists what changed** (`notes_of`, `read_changes`, `order_changes` in
+  `src/update/updater.*`; `show_changes` in the dock; betaNEXT). The owner: "id like future
+  updaters to show the recent changes clearly at a high level when pressing the update button".
+  The release bodies come with the list of releases the updater already reads (every page, no
+  request per release); every release after `STAGEKIT_RELEASE` up to the one offered, drafts
+  left out, pre-releases in whatever the betas setting, newest first, at most `kMostChanges`
+  (15) and then "and N earlier". Each shows the body's first paragraph (the notes' **line 3
+  summary**) and the bold leads of the bullets under *New*, *Changed* and *Fixed*, at most
+  `kMostPoints` (4), a bullet without a bold lead by its first sentence; never *Good to know*,
+  nested bullets or anything from `### Checksums` (or the *still being built* line) on. Markdown
+  marks are taken out. *What's new* opens the same list with a Close button; the release page is
+  a button in both. So **a release's notes must start with a one-line summary on line 3, and each
+  bullet of New, Changed and Fixed with a short bold lead that reads alone**: that is what users
+  see before installing. Tested in `[updates: what changed since your version]`
+  (`STAGEKIT_TEST_ONLY_UPDATES`), which also prints the list made from the real beta179 to 181.
 - **The updater installs only what it has checked.** `newest_release` takes a release only if it
   has a Windows installer *and* the notes carry that file's SHA-256 (the release workflow writes
   them); `install_script` downloads, compares the hash, and only then closes OBS. Keep that order
@@ -2477,6 +2492,10 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
 
 ## Conventions
 
+- Release notes (`docs/releases/<version>.md`): line 1 `# StageKit <version>`, line 3 **a one-line
+  summary** (required: the dock's Update list shows it), then `## New`, `## Changed`, `## Fixed`,
+  `## Good to know`, each bullet starting `- **Short bold lead.**`. The updater lists the bold leads
+  of the first three.
 - Persisted enum values in settings are append-only.
 - Every user-visible string goes in `data/locale/en-US.ini`; wording is plain and describes what the
   user sees, not the mechanism.

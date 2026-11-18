@@ -71,6 +71,9 @@ the Free Software Foundation; either version 2 of the License, or
 #include <QPainter>
 #include <QPainterPath>
 #include <QDesktopServices>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QTextBrowser>
 #include <QMessageBox>
 #include <QPointer>
 #include <QTabWidget>
@@ -1043,10 +1046,9 @@ public:
 		QObject::connect(update_now, &QPushButton::clicked, this, [this] { install_now(); });
 		auto *whats_new = new QPushButton(tr_text("Update.WhatsNew"), update_bar_);
 		whats_new->setObjectName("updateWhatsNew");
-		QObject::connect(whats_new, &QPushButton::clicked, this, [this] {
-			if (!found_.page.empty())
-				QDesktopServices::openUrl(QUrl(QString::fromStdString(found_.page)));
-		});
+		// The same list the Update button shows, with the release page a
+		// button away.
+		QObject::connect(whats_new, &QPushButton::clicked, this, [this] { show_changes(false); });
 		update_column->addWidget(update_text_);
 		update_column->addLayout(update_row);
 		// They give way before the dock is cut off.
@@ -1280,6 +1282,78 @@ private:
 			QMessageBox::information(window, tr_text("Update.Title"), answer);
 	}
 
+	// What changed between this build and the release found, at a glance:
+	// each release's summary and the leads of what it added, changed and
+	// fixed, newest first. The owner: "id like future updaters to show the
+	// recent changes clearly at a high level when pressing the update
+	// button". `ask`: with the question and Yes / No (the Update button);
+	// otherwise a Close button (What's new). True on a yes.
+	bool show_changes(bool ask)
+	{
+		if (found_.version.empty())
+			return false;
+		QString html;
+		for (const ReleaseNotes &n : found_.changes) {
+			html += "<p style=\"margin-bottom:2px\"><b>" +
+				QString::fromStdString(n.version).toHtmlEscaped() + "</b>";
+			if (!n.summary.empty())
+				html += "<br>" + QString::fromStdString(n.summary).toHtmlEscaped();
+			html += "</p>";
+			if (!n.points.empty()) {
+				html += "<ul style=\"margin-top:0px\">";
+				for (const std::string &point : n.points)
+					html += "<li>" + QString::fromStdString(point).toHtmlEscaped() + "</li>";
+				html += "</ul>";
+			}
+		}
+		if (found_.changes.empty())
+			html = "<p>" + tr_text("Update.Changes.None").toHtmlEscaped() + "</p>";
+		else if (found_.earlier > 0)
+			html += "<p><i>" + tr_text("Update.Changes.Earlier").arg(found_.earlier).toHtmlEscaped() +
+				"</i></p>";
+
+		QDialog dialog(this);
+		dialog.setObjectName("updateChanges");
+		dialog.setWindowTitle(ask ? tr_text("Update.Title") : tr_text("Update.WhatsNew.Title"));
+		auto *column = new QVBoxLayout(&dialog);
+		auto *heading = new QLabel(tr_text("Update.Changes")
+						   .arg(QString::fromUtf8(current_release()),
+							QString::fromStdString(found_.version)),
+					   &dialog);
+		heading->setWordWrap(true);
+		column->addWidget(heading);
+		auto *list = new QTextBrowser(&dialog);
+		list->setObjectName("updateChangesList");
+		list->setOpenLinks(false);
+		list->setHtml(html);
+		list->setMinimumSize(420, 260);
+		column->addWidget(list, 1);
+		if (ask) {
+			auto *question = new QLabel(
+				tr_text("Update.Confirm").arg(QString::fromStdString(found_.version)), &dialog);
+			question->setWordWrap(true);
+			column->addWidget(question);
+		}
+		auto *buttons = new QDialogButtonBox(&dialog);
+		QPushButton *page = buttons->addButton(tr_text("Update.ReleasePage"), QDialogButtonBox::ActionRole);
+		page->setEnabled(!found_.page.empty());
+		const std::string url = found_.page;
+		QObject::connect(page, &QPushButton::clicked, &dialog,
+				 [url] { QDesktopServices::openUrl(QUrl(QString::fromStdString(url))); });
+		if (ask) {
+			buttons->addButton(QDialogButtonBox::Yes);
+			buttons->addButton(QDialogButtonBox::No);
+			buttons->button(QDialogButtonBox::Yes)->setDefault(true);
+		} else {
+			buttons->addButton(QDialogButtonBox::Close);
+		}
+		QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+		QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+		column->addWidget(buttons);
+		dialog.resize(520, 480);
+		return dialog.exec() == QDialog::Accepted && ask;
+	}
+
 	// One press: after a yes, the update is downloaded and checked, OBS
 	// closes, the installer runs and OBS opens again.
 	void install_now()
@@ -1290,9 +1364,7 @@ private:
 			QDesktopServices::openUrl(QUrl(QString::fromStdString(found_.page)));
 			return;
 		}
-		if (QMessageBox::question(this, tr_text("Update.Title"),
-					  tr_text("Update.Confirm").arg(QString::fromStdString(found_.version)),
-					  QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes) != QMessageBox::Yes)
+		if (!show_changes(true))
 			return;
 		std::string error;
 		if (install_update(found_, error)) {

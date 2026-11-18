@@ -110,6 +110,88 @@ std::string checksum_of(const std::string &notes, const std::string &file)
 	return {};
 }
 
+// Markdown made plain for the dock: emphasis, code marks and link targets
+// taken out, runs of spaces made one.
+std::string plain(const std::string &text)
+{
+	std::string out;
+	auto word = [](char c) {
+		return std::isalnum((unsigned char)c) != 0;
+	};
+	for (size_t i = 0; i < text.size(); i++) {
+		const char c = text[i];
+		if (c == '*' || c == '`')
+			continue;
+		// An underscore marks emphasis only at a word's edge (not in snake_case).
+		if (c == '_' && !(i > 0 && word(text[i - 1]) && i + 1 < text.size() && word(text[i + 1])))
+			continue;
+		// [text](target): the text alone.
+		if (c == ']' && i + 1 < text.size() && text[i + 1] == '(') {
+			const size_t close = text.find(')', i + 2);
+			if (close != std::string::npos) {
+				i = close;
+				continue;
+			}
+		}
+		if (c == '[' && text.find("](", i) != std::string::npos)
+			continue;
+		if (std::isspace((unsigned char)c)) {
+			if (!out.empty() && out.back() != ' ')
+				out += ' ';
+			continue;
+		}
+		out += c;
+	}
+	while (!out.empty() && out.back() == ' ')
+		out.pop_back();
+	return out;
+}
+
+std::string trimmed(const std::string &line)
+{
+	size_t a = 0, b = line.size();
+	while (a < b && std::isspace((unsigned char)line[a]))
+		a++;
+	while (b > a && std::isspace((unsigned char)line[b - 1]))
+		b--;
+	return line.substr(a, b - a);
+}
+
+// Text cut to about `most` characters at a space, with an ellipsis.
+std::string shortened(const std::string &text, size_t most)
+{
+	if (text.size() <= most)
+		return text;
+	size_t cut = text.rfind(' ', most);
+	if (cut == std::string::npos || cut < most / 2)
+		cut = most;
+	return text.substr(0, cut) + "...";
+}
+
+// What a bullet says at a glance: its bold lead ("- **Lead.** more"), else
+// its first sentence.
+std::string lead_of(const std::string &bullet)
+{
+	std::string lead;
+	if (bullet.rfind("**", 0) == 0) {
+		const size_t end = bullet.find("**", 2);
+		if (end != std::string::npos)
+			lead = bullet.substr(2, end - 2);
+	}
+	if (lead.empty()) {
+		lead = bullet;
+		for (size_t i = 0; i + 1 < lead.size(); i++)
+			if (lead[i] == '.' && lead[i + 1] == ' ') {
+				lead.resize(i);
+				break;
+			}
+	}
+	lead = plain(lead);
+	while (!lead.empty() && (lead.back() == '.' || lead.back() == ':' || lead.back() == ' '))
+		lead.pop_back();
+	return shortened(lead, 110);
+}
+
 std::string settings_file()
 {
 	char *path = obs_module_config_path("updates.json");
@@ -312,6 +394,137 @@ bool newest_release(const std::string &json, bool betas, Release &out)
 	return any;
 }
 
+ReleaseNotes notes_of(const std::string &version, const std::string &body)
+{
+	ReleaseNotes notes;
+	notes.version = version;
+	std::vector<std::string> lines;
+	for (size_t at = 0; at <= body.size();) {
+		size_t end = body.find('\n', at);
+		if (end == std::string::npos)
+			end = body.size();
+		std::string line = body.substr(at, end - at);
+		if (!line.empty() && line.back() == '\r')
+			line.pop_back();
+		lines.push_back(line);
+		at = end + 1;
+	}
+	enum class Part { Top, Summary, Wanted, Other } part = Part::Top;
+	std::string summary, bullet;
+	auto take = [&] {
+		if (!bullet.empty() && notes.points.size() < kMostPoints) {
+			const std::string lead = lead_of(trimmed(bullet));
+			if (!lead.empty())
+				notes.points.push_back(lead);
+		}
+		bullet.clear();
+	};
+	for (const std::string &raw : lines) {
+		const std::string line = trimmed(raw);
+		// The checksums, and the line that says which files are still on
+		// their way, come last: nothing after them is notes.
+		if (line.rfind("### Checksums", 0) == 0 ||
+		    (line.rfind("_The ", 0) == 0 && line.find("still being built") != std::string::npos))
+			break;
+		if (line.rfind('#', 0) == 0) {
+			take();
+			std::string title = line;
+			while (!title.empty() && title[0] == '#')
+				title.erase(0, 1);
+			title = trimmed(title);
+			std::string low;
+			for (char c : title)
+				low += (char)std::tolower((unsigned char)c);
+			// Older notes wrote "What's new" and "Added".
+			if (low.rfind("what's ", 0) == 0)
+				low.erase(0, 7);
+			// "# StageKit <version>" (a body written in full) is no section.
+			if (line.rfind("# ", 0) == 0 && part == Part::Top)
+				continue;
+			const bool wanted = low.rfind("new", 0) == 0 || low.rfind("changed", 0) == 0 ||
+					    low.rfind("fixed", 0) == 0 || low.rfind("added", 0) == 0;
+			part = wanted ? Part::Wanted : Part::Other;
+			continue;
+		}
+		if (part == Part::Top || part == Part::Summary) {
+			if (line.empty()) {
+				if (part == Part::Summary)
+					part = Part::Other; // the summary is the first paragraph only
+				continue;
+			}
+			part = Part::Summary;
+			summary += (summary.empty() ? "" : " ") + line;
+			continue;
+		}
+		if (part != Part::Wanted)
+			continue;
+		const bool top_bullet = (raw.rfind("- ", 0) == 0 || raw.rfind("* ", 0) == 0);
+		if (top_bullet) {
+			take();
+			bullet = raw.substr(2);
+		} else if (line.empty()) {
+			take();
+		} else if (!bullet.empty() && raw.rfind("  ", 0) == 0 && trimmed(raw).rfind("- ", 0) != 0 &&
+			   trimmed(raw).rfind("* ", 0) != 0) {
+			bullet += " " + line; // the bullet goes on, indented
+		} else {
+			take(); // a bullet under a bullet, or plain text: not a point
+		}
+	}
+	take();
+	notes.summary = shortened(plain(summary), 300);
+	return notes;
+}
+
+void read_changes(const std::string &json, const std::string &installed, std::vector<ReleaseNotes> &out)
+{
+	obs_data_t *root = obs_data_create_from_json(("{\"releases\":" + json + "}").c_str());
+	if (!root)
+		return;
+	obs_data_array_t *releases = obs_data_get_array(root, "releases");
+	for (size_t i = 0; i < obs_data_array_count(releases); i++) {
+		obs_data_t *one = obs_data_array_item(releases, i);
+		const std::string version = obs_data_get_string(one, "tag_name");
+		if (!version.empty() && !obs_data_get_bool(one, "draft") && compare_versions(version, installed) > 0)
+			out.push_back(notes_of(version, obs_data_get_string(one, "body")));
+		obs_data_release(one);
+	}
+	obs_data_array_release(releases);
+	obs_data_release(root);
+}
+
+int order_changes(std::vector<ReleaseNotes> &changes, const std::string &upto, size_t most)
+{
+	changes.erase(std::remove_if(changes.begin(), changes.end(),
+				     [&](const ReleaseNotes &n) { return compare_versions(n.version, upto) > 0; }),
+		      changes.end());
+	std::stable_sort(changes.begin(), changes.end(), [](const ReleaseNotes &a, const ReleaseNotes &b) {
+		return compare_versions(a.version, b.version) > 0;
+	});
+	changes.erase(std::unique(changes.begin(), changes.end(),
+				  [](const ReleaseNotes &a, const ReleaseNotes &b) {
+					  return compare_versions(a.version, b.version) == 0;
+				  }),
+		      changes.end());
+	const int left_out = changes.size() > most ? (int)(changes.size() - most) : 0;
+	if (left_out)
+		changes.resize(most);
+	return left_out;
+}
+
+std::string changes_text(const std::vector<ReleaseNotes> &changes, int earlier)
+{
+	std::string out;
+	for (const ReleaseNotes &n : changes) {
+		out += n.version + (n.summary.empty() ? "" : ": " + n.summary) + "\n";
+		for (const std::string &point : n.points)
+			out += "  - " + point + "\n";
+	}
+	if (earlier > 0)
+		out += "and " + std::to_string(earlier) + " earlier\n";
+	return out;
+}
+
 UpdateSettings update_settings()
 {
 	UpdateSettings s;
@@ -353,12 +566,14 @@ void check_for_update(std::function<void(bool, const Release &)> done)
 		os_set_thread_name("stagekit: update check");
 		Release newest;
 		bool found = false;
+		std::vector<ReleaseNotes> changes; // what came after this build, from the same pages
 		for (int page = 1; page <= kMostPages; page++) {
 			const std::string json =
 				https_get(kReleasesHost, (std::string(kReleasesPath) + std::to_string(page)).c_str());
 			// Nothing, or an empty list: that was the last page.
 			if (json.find('{') == std::string::npos)
 				break;
+			read_changes(json, current_release(), changes);
 			Release best;
 			if (newest_release(json, betas, best) &&
 			    (!found || compare_versions(best.version, newest.version) > 0)) {
@@ -375,6 +590,10 @@ void check_for_update(std::function<void(bool, const Release &)> done)
 		}
 		if (found && compare_versions(newest.version, current_release()) <= 0)
 			newest = Release(); // nothing newer than this build
+		if (!newest.version.empty()) {
+			newest.earlier = order_changes(changes, newest.version, kMostChanges);
+			newest.changes = std::move(changes);
+		}
 		if (!found)
 			obs_log(LOG_INFO, "Updates: the list of releases could not be read");
 		else if (newest.version.empty())
@@ -516,6 +735,33 @@ void register_updater_test_hooks()
 			r.deck_url = calldata_string(cd, "deck");
 			r.deck_sha = calldata_string(cd, "deck_sha");
 			calldata_set_string(cd, "script", install_script(r, calldata_string(cd, "obs")).c_str());
+		},
+		nullptr);
+	proc_handler_add(
+		obs_get_proc_handler(),
+		"void stagekit_update_notes(in string body, out string summary, out string points, out int count)",
+		[](void *, calldata_t *cd) {
+			const ReleaseNotes n = notes_of("", calldata_string(cd, "body"));
+			std::string points;
+			for (const std::string &p : n.points)
+				points += p + "\n";
+			calldata_set_string(cd, "summary", n.summary.c_str());
+			calldata_set_string(cd, "points", points.c_str());
+			calldata_set_int(cd, "count", (long long)n.points.size());
+		},
+		nullptr);
+	proc_handler_add(
+		obs_get_proc_handler(),
+		"void stagekit_update_changes(in string json, in string installed, in string upto, in int most, "
+		"out string text, out int count, out int earlier)",
+		[](void *, calldata_t *cd) {
+			std::vector<ReleaseNotes> changes;
+			read_changes(calldata_string(cd, "json"), calldata_string(cd, "installed"), changes);
+			const int earlier =
+				order_changes(changes, calldata_string(cd, "upto"), (size_t)calldata_int(cd, "most"));
+			calldata_set_string(cd, "text", changes_text(changes, earlier).c_str());
+			calldata_set_int(cd, "count", (long long)changes.size());
+			calldata_set_int(cd, "earlier", earlier);
 		},
 		nullptr);
 	proc_handler_add(

@@ -1832,9 +1832,13 @@ StageKit updates itself from inside OBS, on Windows.
   releases of this project on GitHub. Nothing about you or your setup is sent; it is an ordinary
   web request to `api.github.com`.
 - **When there is one**, a line appears at the top of the StageKit dock: *StageKit … is
-  available*, with **What's new** (the release page) and **Update**. With no update, the dock shows
-  nothing of the updater.
-- **Update** asks first. Then the installer (and the Stream Deck plugin's file, if that plugin is
+  available*, with **What's new** and **Update**. With no update, the dock shows nothing of the
+  updater.
+- **What's new** and **Update** both list what changed since the version you have, at a glance:
+  every release in between, newest first (you may have skipped a few), each with its one-line
+  summary and the headlines of what it added, changed and fixed. Fifteen releases at most; the
+  list then says how many earlier ones there were. *Release page* opens the full notes.
+- **Update** asks first, under that list. Then the installer (and the Stream Deck plugin's file, if that plugin is
   installed) is downloaded and checked against the checksums in the release notes. If that fails it
   says so and nothing is changed. Otherwise OBS closes, Windows asks for permission to install, the
   installer runs without its pages, and OBS opens again. It will not start while you are streaming
