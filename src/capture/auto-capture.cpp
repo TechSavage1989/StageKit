@@ -48,6 +48,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/timing.hpp"
 
 #include "../common/item-transition.hpp"
+#include "../common/hid-items.hpp"
 #include "../common/pick-list.hpp"
 #include "../common/tooltip.hpp"
 
@@ -527,6 +528,7 @@ public:
 		keep_ready_ = obs_data_get_bool(settings, "keep_ready");
 		no_game_standby_ = obs_data_get_bool(settings, "no_game_standby");
 		hide_standby_ = obs_data_get_bool(settings, "hide_standby");
+		hid_pending_ = !hid_items_read(settings).empty();
 		cover_style_ = (int)std::clamp<long long>(obs_data_get_int(settings, "standby_style"), 0, 11);
 		cover_ms_ = (int)std::clamp<long long>(obs_data_get_int(settings, "standby_ms"), 0, 10000);
 		cover_curve_ = (int)obs_data_get_int(settings, "standby_ease_curve");
@@ -859,19 +861,26 @@ private:
 			mode = cover_mode_;
 		}
 		if (cmd_hide_.exchange(false)) {
+			// Covered by the command: uncovered. Items it hid: those shown
+			// again, and only those. Otherwise covered with the Standby
+			// Picture, or its items hidden and written down.
 			// (Asking for the state it already has only says whether there
 			// is a Standby Picture to hide behind.)
-			if (use_standby && standby_cover_set(parent_, covered_, style, ms, curve, mode))
-				hidden_ = !hidden_;
+			if (hidden_)
+				hidden_ = false; // (uncovered below)
+			else if (!hid_pending_ && use_standby &&
+				 standby_cover_set(parent_, covered_, style, ms, curve, mode))
+				hidden_ = true;
 			else
-				hide_items();
+				hid_pending_ = hid_items_press(source_, parent_, HidChange{}, "Auto Capture");
 			state_s_ = 1.0; // (said at once)
 		}
 		// For a Stream Deck key showing shown or hidden (once a second: the
-		// scenes are gone through for it).
+		// scenes are gone through for it). Items the command hid and has
+		// not shown again read hidden.
 		if ((state_s_ += 0.25) >= 1.0) {
 			state_s_ = 0.0;
-			vendor_switch_state(source_, false, hidden_ || shown_nowhere(parent_));
+			vendor_switch_state(source_, false, hidden_ || hid_pending_ || shown_nowhere(parent_));
 		}
 		const bool want = hidden_ || (no_game && !have_game);
 		if (want != covered_) {
@@ -884,42 +893,6 @@ private:
 		}
 	}
 
-	// Without a Standby Picture: the capture's items, in every scene and
-	// group, hidden or shown with their own show and hide transitions.
-	void hide_items()
-	{
-		struct Found {
-			obs_source_t *capture;
-			std::vector<obs_sceneitem_t *> items;
-		} found{parent_, {}};
-		obs_enum_scenes(
-			[](void *param, obs_source_t *scene_source) {
-				auto *f = static_cast<Found *>(param);
-				obs_scene_t *scene = obs_group_or_scene_from_source(scene_source);
-				if (scene)
-					obs_scene_enum_items(
-						scene,
-						[](obs_scene_t *, obs_sceneitem_t *item, void *p) {
-							auto *f2 = static_cast<Found *>(p);
-							if (obs_sceneitem_get_source(item) == f2->capture) {
-								obs_sceneitem_addref(item);
-								f2->items.push_back(item);
-							}
-							return true;
-						},
-						f);
-				return true;
-			},
-			&found);
-		const bool any = std::any_of(found.items.begin(), found.items.end(),
-					     [](obs_sceneitem_t *item) { return obs_sceneitem_visible(item); });
-		for (obs_sceneitem_t *item : found.items) {
-			obs_sceneitem_set_visible(item, !any);
-			obs_sceneitem_release(item);
-		}
-		obs_log(LOG_INFO, "Auto Capture: '%s' %s", obs_source_get_name(parent_), any ? "hidden" : "shown");
-	}
-
 	obs_source_t *source_;
 	obs_source_t *parent_ = nullptr;
 	std::mutex mutex_;
@@ -928,6 +901,7 @@ private:
 	int cover_style_ = 0, cover_ms_ = 600, cover_curve_ = 0, cover_mode_ = 0;
 	std::atomic<bool> cmd_hide_{false};
 	bool hidden_ = false, covered_ = false; // used on the tick only
+	std::atomic<bool> hid_pending_{false};  // items hidden by the command, to show again
 	double state_s_ = 1.0;                  // since the state was last reported
 	obs_hotkey_id hotkey_ = OBS_INVALID_HOTKEY_ID;
 	Mode mode_ = Mode::AnyGame;

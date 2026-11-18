@@ -501,6 +501,11 @@ The filter's controls show what it is capturing now.
   its Standby Image instead of hiding the item; *Hide/show capture now* does it, as does the
   hotkey under the capture and the Stream Deck *Manual Window / Source* key. *Transition*,
   *Duration* and the easing are how the Standby Image comes and goes for these two.
+- Without a Standby Image (or with *Hide shows Standby Image* unticked) the hide hides the
+  capture's items wherever they are shown and remembers where; the next press shows them again
+  there only, never in a scene where the capture was hidden already (a Link Visibility's other
+  capture, a mode that is not on). With nothing remembered, the press shows nothing. What is
+  remembered is kept over a restart.
 - With no game open, the Game Capture goes back to *Capture any fullscreen application*.
 
 A game is recognised by what the program has loaded: a graphics engine together with something only
@@ -563,7 +568,7 @@ capture for each app.
 | Keep other windows captured | Ticked (as it comes): while the capture is showing, the other open apps on the two lists are captured in the background, so the one you switch to is there at once. Unticked, a switch waits for the capture to find the other window, which saves graphics memory |
 | Transition | How one app's image gives way to the next: a fade (as it comes), **Morph** (the frame changes shape and size as the one image turns into the other), a cut, a fade and zoom, or sliding in from any of the four sides |
 | Duration / Easing | How long that takes, and its curve |
-| Show/Hide transition | *Hide/show capture now* hides the capture in every scene it is in, or shows it again, with the transition chosen under it. Also a hotkey and a Stream Deck key |
+| Show/Hide transition | *Hide/show capture now* hides the capture in every scene it is shown in, or shows it again, with the transition chosen under it. Also a hotkey and a Stream Deck key. The show brings it back only where the hide hid it (not in a scene where it was hidden already, nor where a mode not on holds it hidden), and does nothing when nothing was hidden; this is kept over a restart |
 
 - An app on the list that opens is captured. When the app being captured closes, the one you used
   before it comes back.

@@ -13,6 +13,36 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
+## The capture hide shows only what it hid (0.1.0-beta183)
+
+Branch `fix/switcher-hide-restores`, on `main` after beta176. Notes:
+`docs/releases/0.1.0-beta183.md`. No Stream Deck file changed. The owner's DSLR camera had a
+leftover Auto Capture; its *Manual Window / Source* key on *Hide or show the capture*, with no
+Standby Image on the camera, showed DSLR in every scene at the second press, full-screen over the
+mode and the capture a Link Visibility (*Show only one*) had on.
+
+- **`hid_items_press`** (`src/common/hid-items.*`), used by Auto Capture (`standby_step`, its old
+  `hide_items` removed) and the Automatic Window Switcher (`toggle_hidden`, its `items_showing`
+  removed): the hide hides every shown item of the capture (scenes and their groups) and writes
+  down scene, containing scene or group and item id in the filter's own settings (`hid_items`,
+  in `kOwnSettings`); the show shows those still hidden, passes over one `mode_holds_hidden`
+  holds, and clears the record. No record and nothing shown: nothing, logged. Always on, not an
+  option. The Standby cover path is as before, but a press with a record pending always shows
+  (it never covers then). `SwitcherChanged` / `GetSwitcherState` read hidden while a record is
+  pending (`hid_pending_`, read in `update`). Same rule as Show in Scenes' *Show only what it
+  hid* on another branch; nothing shared with it.
+- Show Source in Use (Automatic Source Switcher) has no hide command (next, toggle, back only), so
+  it is unchanged.
+- `GetSwitcherState` added to the tests' `stagekit_vendor_call`.
+- Tests: `[capture hide: the show brings back only what the hide hid]`
+  (`capture_hide_restores_test`, after the switch test in the follow-sources section; alone with
+  `STAGEKIT_TEST_ONLY_CAPTURE_HIDE`): Live / Chat Live (Link Visibility only-one with a window
+  capture) / Standby (a Follow link), Auto Capture and a switcher, a press with nothing recorded,
+  and a filter made again from its saved settings. AGENTS, *The capture hide shows only what it
+  hid*.
+- Not proven: on Windows; the Auto Capture and switcher hide checks in the full run (not run here:
+  the machine's release queue uses `run-tests.sh`).
+
 ## Filter names, tooltips, Mode types (0.1.0-beta182)
 
 Branch `chore/filter-names-tooltips`, on `main` after beta176 (#192). Notes:

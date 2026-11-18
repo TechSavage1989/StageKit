@@ -43,6 +43,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "auto-capture.hpp"
 #include "standby.hpp"
 #include "../common/item-transition.hpp"
+#include "../common/hid-items.hpp"
 #include "../frame/auto-frame.hpp"
 #include "../common/easing.hpp"
 #include "../common/pick-list.hpp"
@@ -202,41 +203,6 @@ int applied_index(obs_source_t *parent, obs_source_t *filter)
 	return find.found;
 }
 
-// Every scene item showing a source, inside groups too, each held.
-std::vector<obs_sceneitem_t *> items_showing(obs_source_t *wanted)
-{
-	struct Find {
-		obs_source_t *wanted;
-		std::vector<obs_sceneitem_t *> out;
-	} find{wanted, {}};
-	static const auto visit = [](obs_scene_t *, obs_sceneitem_t *item, void *param) {
-		auto *f = static_cast<Find *>(param);
-		if (obs_sceneitem_get_source(item) == f->wanted) {
-			obs_sceneitem_addref(item);
-			f->out.push_back(item);
-		}
-		return true;
-	};
-	obs_enum_scenes(
-		[](void *param, obs_source_t *scene_source) {
-			if (obs_source_is_group(scene_source))
-				return true; // reached through the scene that holds it
-			if (obs_scene_t *scene = obs_scene_from_source(scene_source))
-				obs_scene_enum_items(
-					scene,
-					[](obs_scene_t *s, obs_sceneitem_t *item, void *p) {
-						visit(s, item, p);
-						if (obs_sceneitem_is_group(item))
-							obs_sceneitem_group_enum_items(item, visit, p);
-						return true;
-					},
-					param);
-			return true;
-		},
-		&find);
-	return find.out;
-}
-
 // What every enabled switcher lists, for Auto Capture to leave alone.
 std::mutex g_listed_mutex;
 std::map<const void *, std::vector<std::string>> g_listed;
@@ -374,6 +340,7 @@ public:
 		pick_now_ = obs_data_get_int(settings, "picked") == 1;
 		hand_follow_ = obs_data_get_bool(settings, "hand_follow");
 		hide_standby_ = obs_data_get_bool(settings, "hide_standby");
+		hid_pending_ = !hid_items_read(settings).empty();
 		style_ = static_cast<Style>(std::clamp<long long>(obs_data_get_int(settings, "change"), 0, 7));
 		change_s_ = std::clamp<long long>(obs_data_get_int(settings, "change_ms"), 0, 10000) / 1000.0;
 		curve_ = static_cast<EaseCurve>(obs_data_get_int(settings, "ease_curve"));
@@ -640,10 +607,11 @@ private:
 	obs_hotkey_id hotkeys_[5] = {OBS_INVALID_HOTKEY_ID, OBS_INVALID_HOTKEY_ID, OBS_INVALID_HOTKEY_ID,
 				     OBS_INVALID_HOTKEY_ID, OBS_INVALID_HOTKEY_ID};
 	std::pair<AppCapture *, const char *> pressed_[5];
-	bool cmd_clear_ = false;      // the windows picked by hand are to be taken off the list
-	bool standby_hidden_ = false; // hidden behind its Standby Picture by the hide command (tick only)
-	double state_s_ = 1.0;        // since the state was last reported
-	bool loaded_ = false;         // the settings have been read once (OBS loading the filter)
+	bool cmd_clear_ = false;               // the windows picked by hand are to be taken off the list
+	bool standby_hidden_ = false;          // hidden behind its Standby Picture by the hide command (tick only)
+	std::atomic<bool> hid_pending_{false}; // items hidden by the hide command, to show again
+	double state_s_ = 1.0;                 // since the state was last reported
+	bool loaded_ = false;                  // the settings have been read once (OBS loading the filter)
 	// The change between two windows.
 	Phase phase_ = Phase::Idle;
 	double phase_s_ = 0.0;
@@ -814,25 +782,17 @@ void AppCapture::aim(obs_source_t *parent, const OpenWindow &window, const std::
 	}
 }
 
-// Hides the capture everywhere it is shown, or shows it again.
+// Hides the capture everywhere it is shown and writes down where, or shows
+// it again where it hid it.
 void AppCapture::toggle_hidden(obs_source_t *parent)
 {
-	std::string transition;
-	uint32_t ms;
+	HidChange change;
 	{
 		std::lock_guard lock(mutex_);
-		transition = transition_;
-		ms = transition_ms_;
+		change.kind = transition_;
+		change.ms = transition_ms_;
 	}
-	const std::vector<obs_sceneitem_t *> items = items_showing(parent);
-	const bool any = std::any_of(items.begin(), items.end(),
-				     [](obs_sceneitem_t *item) { return obs_sceneitem_visible(item); });
-	for (obs_sceneitem_t *item : items) {
-		set_item_transitions(item, transition, ms);
-		obs_sceneitem_set_visible(item, !any);
-		obs_sceneitem_release(item);
-	}
-	obs_log(LOG_INFO, "Capture App in Use: '%s' %s", obs_source_get_name(parent), any ? "hidden" : "shown");
+	hid_pending_ = hid_items_press(source_, parent, change, "Capture App in Use");
 }
 
 // It belongs before whatever stands in for the picture or frames it: a
@@ -1453,10 +1413,16 @@ void AppCapture::tick(float seconds)
 	// Hidden: a Standby Picture on the capture takes its place, when there is
 	// one; otherwise its items are hidden.
 	if (hide) {
-		if (hide_standby_ && standby_cover_toggle(parent))
-			standby_hidden_ = !standby_hidden_;
-		else
+		// Covered by the command: uncovered. Items it hid: those shown
+		// again, and only those (never one it did not hide).
+		if (standby_hidden_) {
+			standby_cover_toggle(parent);
+			standby_hidden_ = false;
+		} else if (!hid_pending_ && hide_standby_ && standby_cover_toggle(parent)) {
+			standby_hidden_ = true;
+		} else {
 			toggle_hidden(parent);
+		}
 	}
 	// For a Stream Deck key showing manual or automatic, shown or hidden
 	// (looked at twice a second: the scenes are gone through for it).
@@ -1467,7 +1433,7 @@ void AppCapture::tick(float seconds)
 			std::lock_guard lock(mutex_);
 			manual = !held_.empty();
 		}
-		vendor_switch_state(source_, manual, standby_hidden_ || shown_nowhere(parent));
+		vendor_switch_state(source_, manual, standby_hidden_ || hid_pending_ || shown_nowhere(parent));
 	}
 	if (look)
 		follow(parent);

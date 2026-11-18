@@ -721,6 +721,7 @@ void vendor_api_add_test_calls()
 				{"SetSceneMode", req_set_scene_mode},
 				{"ListSceneBlurs", req_list_scene_blurs},
 				{"SceneBlur", req_scene_blur},
+				{"GetSwitcherState", req_get_switcher_state},
 			};
 			obs_data_t *request = json && *json ? obs_data_create_from_json(json) : obs_data_create();
 			if (!request)

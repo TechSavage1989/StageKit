@@ -575,8 +575,8 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   the source) and `in_use` only from libobs 31 (`[capture scenes ...]`'s chain,
   `capture_chain_test`, alone with `STAGEKIT_TEST_ONLY_CAPTURE_CHAIN`). Found by driving the generated collection headless with the new build; the tests had
   waited for every change to end before the next step. Items a Standby filter owns are passed over. Link Visibility, Show
-  in Scenes and Scene Modes go through it; Program Trigger, the two switchers, Auto Capture's hide,
-  Show/Hide Animation and the stand-ins do not yet (the stand-ins through it broke the Standby
+  in Scenes, Scene Modes and the capture hide (`hid_items_press`) go through it; Program Trigger,
+  the two switchers' following, Show/Hide Animation and the stand-ins do not yet (the stand-ins through it broke the Standby
   transition tests, which draw a scene that is not on the output: to it, out of view). A Standby filter forgets the
   items it owns when it is taken off its source (`filter_remove`): kept by address, they made a
   source created later at the same address "owned", so its hides were never cuts. A source with sound is finished hiding in the scene's
@@ -1471,6 +1471,16 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   cause on their machine is **not known**: the log line `Standby Picture '...': shown over the
   capture, over ... ms (transition n)` is there to tell. `Style::Morph` (11) stretches both
   pictures over the gliding frame, as the window switcher's Morph does.
+- **The capture hide shows only what it hid** (`hid_items_press` in `src/common/hid-items.*`;
+  Auto Capture and the Automatic Window Switcher, beta183). Without a Standby Picture to cover
+  with, the hide hides the capture's shown items in every scene and group and writes down which
+  (scene, containing scene or group, item id; `hid_items` in the filter's own settings, in
+  `kOwnSettings`, never an item held); the show shows only those still hidden, passing over what
+  `mode_holds_hidden` holds, and clears the record; with no record and nothing shown it does
+  nothing. Before, the show showed the capture everywhere: the owner's DSLR, with a leftover Auto
+  Capture, came up full-screen over the capture a Link Visibility had on. A pending record reads
+  hidden to the Stream Deck key. Not an option: a show of an item the command never hid is the
+  bug. Tested in `[capture hide: ...]` (`STAGEKIT_TEST_ONLY_CAPTURE_HIDE`).
 - **Auto Capture can show the capture's Standby Picture** (`no_game_standby`, *No game: Standby
   Picture*, off as it comes; `hide_standby`, *Hide shows Standby Picture*, on; hotkey
   `stagekit.active.hide.` + filter name, the window switchers' beginning, so the Stream Deck

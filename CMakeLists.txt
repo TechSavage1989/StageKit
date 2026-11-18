@@ -136,6 +136,8 @@ target_sources(
     src/common/filter-order.hpp
     src/common/go-to-scene.cpp
     src/common/go-to-scene.hpp
+    src/common/hid-items.cpp
+    src/common/hid-items.hpp
     src/common/holds-hidden.cpp
     src/common/holds-hidden.hpp
     src/common/scene-filter-ids.hpp
