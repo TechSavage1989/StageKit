@@ -86,7 +86,33 @@ struct Window {
 	bool foreground = false;
 	bool looks_like_game = false; // only worked out for the window in front
 	uint64_t handle = 0;          // which window it is, while it is open
+	GameArea game_area;           // only looked for in windows asked for
 };
+
+// The windows whose game area has been asked for, and when (os_gettime_ns).
+std::mutex g_area_mutex;
+std::map<uint64_t, uint64_t> g_area_wanted;
+
+#ifdef _WIN32
+constexpr uint64_t kAreaWantedNs = 5000000000ULL;
+
+// The handles asked for in the last few seconds; the rest are forgotten.
+std::set<uint64_t> areas_wanted_now()
+{
+	std::set<uint64_t> out;
+	std::lock_guard lock(g_area_mutex);
+	const uint64_t now = os_gettime_ns(); // (under the lock: never before a time noted)
+	for (auto it = g_area_wanted.begin(); it != g_area_wanted.end();) {
+		if (now - it->second > kAreaWantedNs) {
+			it = g_area_wanted.erase(it);
+			continue;
+		}
+		out.insert(it->first);
+		++it;
+	}
+	return out;
+}
+#endif
 
 std::string lower(std::string text)
 {
@@ -244,9 +270,106 @@ bool fills_its_screen(HWND window)
 	       rect.right >= info.rcMonitor.right && rect.bottom >= info.rcMonitor.bottom;
 }
 
+// A program's own controls, never where it draws its picture. (Window classes
+// of the common controls, and the words their kinds are named with in other
+// toolkits. Also Chromium's page window, in every Chromium browser and
+// Electron app: a browser on the switcher's lists keeps its tabs and address
+// bar, as before.)
+bool control_class(const std::string &window_class)
+{
+	const std::string c = lower(window_class);
+	for (const char *known :
+	     {"scrollbar", "button", "static", "edit", "combobox", "comboboxex32", "listbox", "syslistview32",
+	      "systreeview32", "systabcontrol32", "msctls_trackbar32", "msctls_progress32", "msctls_updown32",
+	      "sysheader32", "#32768", "#32770", "chrome_renderwidgethosthwnd", "intermediate d3d window"})
+		if (c == known)
+			return true;
+	for (const char *part : {"statusbar", "toolbar", "menubar", "rebar", "tooltip", "richedit", "scrollbar"})
+		if (c.find(part) != std::string::npos)
+			return true;
+	return false;
+}
+
+struct AreaLook {
+	HWND top = nullptr;
+	LONG client_w = 0, client_h = 0;
+	long long best = 0; // the area of the best child so far
+	RECT rect{};        // its part of the client area, in client pixels
+	std::string child_class;
+};
+
+BOOL CALLBACK look_at_child(HWND child, LPARAM param)
+{
+	auto *look = reinterpret_cast<AreaLook *>(param);
+	if (!IsWindowVisible(child))
+		return TRUE;
+	wchar_t name[256];
+	const int length = GetClassNameW(child, name, 256);
+	const std::string child_class = utf8(name, length);
+	if (control_class(child_class))
+		return TRUE;
+	RECT r;
+	if (!GetWindowRect(child, &r))
+		return TRUE;
+	// From the screen to the top-level window's client area: both are in
+	// this process's DPI terms, so they agree whatever the monitor's scaling.
+	MapWindowPoints(HWND_DESKTOP, look->top, reinterpret_cast<POINT *>(&r), 2);
+	const LONG left = std::max<LONG>(r.left, 0), top = std::max<LONG>(r.top, 0);
+	const LONG right = std::min<LONG>(r.right, look->client_w), bottom = std::min<LONG>(r.bottom, look->client_h);
+	if (right <= left || bottom <= top)
+		return TRUE;
+	const LONG w = right - left, h = bottom - top;
+	// At least two fifths of the client area, and something of it left out
+	// (a child that fills it all is a frame round the picture, not the
+	// picture's own part of the window).
+	const long long area = (long long)w * h, whole = (long long)look->client_w * look->client_h;
+	if (area * 5 < whole * 2 || (look->client_w - w) + (look->client_h - h) < 4)
+		return TRUE;
+	if (area > look->best) {
+		look->best = area;
+		look->rect = RECT{left, top, right, bottom};
+		look->child_class = child_class;
+	}
+	return TRUE;
+}
+
+// Where in its client area a window draws its picture: the largest visible
+// child window that is not a control. Emulators draw into a child of their
+// own (Qt's native render widget, an Avalonia native host, Dolphin's render
+// window) under their menu bar and above their status bar.
+GameArea find_game_area(HWND window)
+{
+	GameArea area;
+	area.looked = true;
+	RECT client;
+	if (!GetClientRect(window, &client) || client.right < 64 || client.bottom < 64)
+		return area;
+	area.client_w = (int)client.right;
+	area.client_h = (int)client.bottom;
+	AreaLook look;
+	look.top = window;
+	look.client_w = client.right;
+	look.client_h = client.bottom;
+	EnumChildWindows(window, look_at_child, reinterpret_cast<LPARAM>(&look));
+	if (look.best > 0) {
+		area.x = (int)look.rect.left;
+		area.y = (int)look.rect.top;
+		area.w = (int)(look.rect.right - look.rect.left);
+		area.h = (int)(look.rect.bottom - look.rect.top);
+		area.child_class = look.child_class;
+	}
+	return area;
+}
+
+struct Collect {
+	std::vector<Window> windows;
+	std::set<uint64_t> areas; // the windows to look for a game area in
+};
+
 BOOL CALLBACK collect_window(HWND window, LPARAM param)
 {
-	auto *windows = reinterpret_cast<std::vector<Window> *>(param);
+	auto *collect = reinterpret_cast<Collect *>(param);
+	std::vector<Window> *windows = &collect->windows;
 	// Only real, visible, top-level application windows.
 	if (!IsWindowVisible(window) || IsIconic(window) || GetWindow(window, GW_OWNER) != nullptr)
 		return TRUE;
@@ -295,6 +418,8 @@ BOOL CALLBACK collect_window(HWND window, LPARAM param)
 		const bool game_like = controller || engine_window(found.window_class) || fills_its_screen(window);
 		found.looks_like_game = big_enough && (readable ? graphics && game_like : fills_its_screen(window));
 	}
+	if (collect->areas.count(found.handle))
+		found.game_area = find_game_area(window);
 	windows->push_back(found);
 	return TRUE;
 }
@@ -305,9 +430,10 @@ std::vector<Window> list_windows()
 	// window asking for itself share what is remembered about programs.
 	static std::mutex one_at_a_time;
 	std::lock_guard lock(one_at_a_time);
-	std::vector<Window> windows;
-	EnumWindows(collect_window, reinterpret_cast<LPARAM>(&windows));
-	return windows;
+	Collect collect;
+	collect.areas = areas_wanted_now();
+	EnumWindows(collect_window, reinterpret_cast<LPARAM>(&collect));
+	return std::move(collect.windows);
 }
 
 #else
@@ -1485,8 +1611,16 @@ std::vector<OpenWindow> open_windows()
 {
 	std::vector<OpenWindow> out;
 	for (const Window &w : g_window_watch.latest())
-		out.push_back({w.title, w.executable, w.foreground, w.window_class, w.handle});
+		out.push_back({w.title, w.executable, w.foreground, w.window_class, w.handle, w.game_area});
 	return out;
+}
+
+void game_area_want(uint64_t handle)
+{
+	if (!handle)
+		return;
+	std::lock_guard lock(g_area_mutex);
+	g_area_wanted[handle] = os_gettime_ns();
 }
 
 namespace {

@@ -26,6 +26,19 @@ void register_auto_capture();
 // (OBS, browsers, launchers) left out. Empty on systems other than Windows.
 std::vector<std::string> open_program_names();
 
+// Where a program draws its picture inside its window: the largest child
+// window that is not one of its controls (a menu bar, a tool bar, a status
+// bar) and leaves some of the client area out. In client-area pixels, with
+// the client area's size it was found in. Only looked for in windows that
+// were asked for (`game_area_want`); `looked` says whether it was.
+struct GameArea {
+	bool looked = false;
+	int x = 0, y = 0, w = 0, h = 0;
+	int client_w = 0, client_h = 0;
+	std::string child_class;
+	bool found() const { return w > 0 && h > 0 && client_w > 0 && client_h > 0; }
+};
+
 // One open (not minimised) window. Empty list on systems other than Windows.
 struct OpenWindow {
 	std::string title, executable;
@@ -35,7 +48,13 @@ struct OpenWindow {
 	// windows of one program, such as two browser profiles, are told apart
 	// by it. 0 where it is not known.
 	uint64_t handle = 0;
+	GameArea game_area;
 };
+
+// Asks the thread that keeps the list of open windows to look for the game
+// area inside this window (by its handle) for the next few seconds. Cheap:
+// only noted here, looked for on that thread.
+void game_area_want(uint64_t handle);
 // Every open window, everyday programs included. Looked up at most five
 // times a second however many callers ask.
 std::vector<OpenWindow> open_windows();

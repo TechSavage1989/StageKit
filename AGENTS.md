@@ -1318,6 +1318,46 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     the scene they showed places the two windows apart.
   - The Capture Front Window key switches it off, as it does an Auto Capture; switching it on
     hands the capture back (it takes the app in front or the last one used).
+  - **Game area only** (`game_area`, off as it comes; betaNEXT). The owner, of emulators
+    (Ryujinx, eden, nxemu, Dolphin) in a Window Capture with *Client area* ticked: "I don't want
+    it to grab the window toolbars and such of the game window", "i'm not manually cropping
+    anything". The emulator's own menu, tool and status bars are inside the client area. **How
+    it is found** (`find_game_area` in `auto-capture.cpp`, on the window watch's thread, only
+    for handles asked for in the last 5 s with `game_area_want`, which the switcher does for
+    every window of its two lists at each look): the largest visible child window
+    (`EnumChildWindows`, all depths) of at least two fifths of the client area that leaves
+    some of it out (one that fills it is a frame), skipping controls (`control_class`: the
+    common controls' classes, and any class with statusbar, toolbar, menubar, rebar, tooltip,
+    richedit or scrollbar in it, and Chromium's page window, `Chrome_RenderWidgetHostHWND` and
+    `Intermediate D3D Window`, so a browser or an Electron app keeps its tabs and bars). Measured with `GetWindowRect` mapped into the client with
+    `MapWindowPoints`, both in OBS's own DPI terms. It is published in the snapshot as
+    `OpenWindow::game_area` (`GameArea`, client pixels with the client size; `looked` says it
+    was looked for). Qt render widgets (eden and yuzu forks, Dolphin), Avalonia's native host
+    (Ryujinx) are expected to be such children; **none of it has run on Windows or a real
+    emulator**: the tests give stand-in windows an area (`set_test_windows`' fifth field,
+    `x,y,w,h,cw,ch` or `none`). A single-surface app gives none and is shown whole (the log
+    says `no game area found in <program>: shown whole`; found: `game area of <program>:
+    child <class>, WxH at x,y in a WxH client`, once per program). Looking at the image
+    instead was left out on purpose. **How it is applied**: the switcher draws its live
+    picture through copies already; `copy_live` draws only the cut part (`LiveBox`, from
+    `live_box`) and the cut size is the filter's size, so Standby, Auto Frame and Fit to Space
+    see the game's shape. Nothing is written to the item or the capture. The cut is kept as
+    shares of the client (`Cut`), and used only when the picture has the client area's shape;
+    a picture of another shape keeps the cut for up to a second (`kMismatchNs`,
+    `mismatch_since_`: a window resized or maximised has its new image before the window watch
+    has its new client size), and only after that is shown whole (*Client area* unticked),
+    logged once per window switched to. A switch takes the new window's
+    cut at once (`cut_at_once_locked` in `aim`; the change between the two pictures glides the
+    size); within one window a new cut is taken once it has stayed 0.3 s (`kAreaSteadyNs`) and
+    is more than 3 px off (`near_cut`), and glided to over the switcher's duration and easing
+    (`cut_t_`); that glide is reported to Fit to Space through `app_capture_change` like a
+    change of window (`change()`, its id `changes_ | cut_seq_ << 40`, so Ambient Background,
+    which plays its change at each `changes_`, plays none). Unticking glides back to the whole
+    picture the same way. While the cut glides, `copy_live` makes its copy's texture again each
+    frame (its size changes): a fraction of a second, only when the area changes, accepted.
+    Tested in `[window switcher: game area only]` (`game_area_test`, alone with
+    `STAGEKIT_TEST_ONLY_GAME_AREA`; a stand-in kind `stagekit_test_window` drawing red menus
+    round a green game, by the program it is aimed at).
   - **Nothing is started, aimed or stopped at a switch** (beta119). Every open entry of the two
     lists has its ready capture from the moment its app opens, the one being shown too, and a
     switch only changes which is drawn (`bridge_`); the capture itself is left where it was
