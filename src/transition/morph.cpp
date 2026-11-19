@@ -259,6 +259,8 @@ private:
 	void plan(obs_source_t *from, obs_source_t *to);
 	void draw_morph(double t, uint32_t cx, uint32_t cy);
 	void draw_part(const Shown &shown, const Quad &quad, const Crop &crop, float strength);
+	// Pass::Ring: the line round a part's box, with the look's corners.
+	void draw_ring(const Quad &quad, float strength);
 	void draw_shadowed(double t, uint32_t cx, uint32_t cy, const SceneShadowNow *from, const SceneShadowNow *to);
 	bool draw_layers(double t, uint32_t cx, uint32_t cy, gs_texture_t *picture, const ShadowLook &shade);
 	bool in_layer(const Part &part) const;
@@ -319,7 +321,10 @@ private:
 	// morph is drawn three times (the picture, the casting parts and the
 	// parts the shadow is kept off), and the shadow, part-way between the
 	// two scenes', is laid over the picture as the filter lays it.
-	enum class Pass { Picture, Cast, Mask };
+	// (Ring: the lines round the casting parts' boxes, when the line's
+	// corners are chosen.)
+	enum class Pass { Picture, Cast, Mask, Ring };
+	ShadowLook ring_look_; // the look the Ring pass draws with
 	Pass pass_ = Pass::Picture;
 	ShadowFlags flags_from_, flags_to_; // what each item does, this frame
 	ShadowFlags plain_from_, plain_to_; // for a scene with none, worked out with the plan
@@ -327,10 +332,11 @@ private:
 	gs_texrender_t *tr_pic_ = nullptr;
 	gs_texrender_t *tr_cast_ = nullptr;
 	gs_texrender_t *tr_mask_ = nullptr;
+	gs_texrender_t *tr_ring_ = nullptr;
 	// *Shadow from: Each source by itself*: the casting parts and the mask
 	// a layer at a time (the parts from layer_lo_ up to layer_hi_).
 	size_t layer_lo_ = 0, layer_hi_ = SIZE_MAX;
-	std::vector<gs_texrender_t *> tr_layer_cast_, tr_layer_mask_;
+	std::vector<gs_texrender_t *> tr_layer_cast_, tr_layer_mask_, tr_layer_ring_;
 	obs_source_t *told_mixed_ = nullptr; // the scene last logged for two ways of shadowing
 	// A Scene Corners shaping a whole scene: the morph drawn into a picture
 	// and cut to the shape, part-way between the two scenes'.
@@ -346,6 +352,7 @@ Morph::Morph(obs_data_t *settings, obs_source_t *source, bool room) : source_(so
 	tr_pic_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 	tr_cast_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 	tr_mask_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
+	tr_ring_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 	obs_leave_graphics();
 	update(settings);
 }
@@ -362,8 +369,9 @@ Morph::~Morph()
 	gs_texrender_destroy(tr_pic_);
 	gs_texrender_destroy(tr_cast_);
 	gs_texrender_destroy(tr_mask_);
+	gs_texrender_destroy(tr_ring_);
 	gs_texrender_destroy(tr_round_);
-	for (auto *list : {&tr_layer_cast_, &tr_layer_mask_})
+	for (auto *list : {&tr_layer_cast_, &tr_layer_mask_, &tr_layer_ring_})
 		for (gs_texrender_t *tr : *list)
 			gs_texrender_destroy(tr);
 	obs_leave_graphics();
@@ -575,7 +583,7 @@ void Morph::draw_side_items(const std::vector<const Part *> &run, bool leaving, 
 	const Settings s = active_;
 	// How far gone: 0 in place, 1 all the way out.
 	const double gone = std::clamp(leaving ? t : 1.0 - t, 0.0, 1.0);
-	const uint8_t wanted = pass_ == Pass::Cast ? kShadowCasts : kShadowMasked;
+	const uint8_t wanted = pass_ == Pass::Cast || pass_ == Pass::Ring ? kShadowCasts : kShadowMasked;
 	for (const Part *part : run) {
 		Shown shown;
 		obs_sceneitem_t *item = leaving ? part->from : part->to;
@@ -614,7 +622,10 @@ void Morph::draw_side_items(const std::vector<const Part *> &run, bool leaving, 
 			quad = room_moved(quad, b, room_edge(b, (double)cx, (double)cy, push ? &centre : nullptr), gone,
 					  (double)cx, (double)cy);
 		}
-		draw_item(shown, quad, shown.crop);
+		if (pass_ == Pass::Ring)
+			draw_ring(quad, 1.0f);
+		else
+			draw_item(shown, quad, shown.crop);
 	}
 }
 
@@ -735,7 +746,9 @@ void Morph::draw_morph(double t, uint32_t cx, uint32_t cy)
 				  : had && has ? between(was.quad, will.quad, t)
 				  : had        ? was.quad
 					       : will.quad;
-		if (had && has && was.source == will.source) {
+		if (pass_ == Pass::Ring) {
+			draw_ring(quad, strength);
+		} else if (had && has && was.source == will.source) {
 			// The same source: once, its crop part-way as well. (A curve
 			// that overshoots moves past its place, but cuts no further.)
 			const double k = std::clamp(t, 0.0, 1.0);
@@ -748,8 +761,16 @@ void Morph::draw_morph(double t, uint32_t cx, uint32_t cy)
 			// Two sources that change into each other: both, mixed.
 			gs_texture_t *first = cropped(was, from_part);
 			gs_texture_t *second = cropped(will, to_part);
+			// What casts and throws the line is the two shapes together, each
+			// whole: mixed as the picture is, a shape the other lacks counted
+			// half half-way, and its line and shadow went see-through with it
+			// (the owner's titles, "STREAM STARTING", changing into another).
+			// Scaled by the larger share, the two are each whole at their own
+			// end and never less than whole on the way.
+			const double k = std::clamp(t, 0.0, 1.0);
+			const float whole = pass_ == Pass::Cast ? (float)(1.0 / std::max(k, 1.0 - k)) : 1.0f;
 			if (first && second)
-				draw_texture(first, second, quad, (float)std::clamp(t, 0.0, 1.0), strength);
+				draw_texture(first, second, quad, (float)k, strength * whole);
 		} else {
 			draw_part(had ? was : will, quad, had ? was.crop : will.crop, strength);
 		}
@@ -767,6 +788,18 @@ void Morph::draw_part(const Shown &shown, const Quad &quad, const Crop &crop, fl
 	}
 	if (gs_texture_t *texture = cropped(shown, crop))
 		draw_texture(texture, nullptr, quad, 0.0f, strength);
+}
+
+void Morph::draw_ring(const Quad &quad, float strength)
+{
+	if (!look_)
+		return;
+	matrix4 m;
+	vec4_set(&m.x, (float)quad.a, (float)quad.b, 0.0f, 0.0f);
+	vec4_set(&m.y, (float)quad.c, (float)quad.d, 0.0f, 0.0f);
+	vec4_set(&m.z, 0.0f, 0.0f, 1.0f, 0.0f);
+	vec4_set(&m.t, (float)quad.tx, (float)quad.ty, 0.0f, 1.0f);
+	look_->draw_box_ring(m, ring_look_, strength);
 }
 
 // What an item does under its scene's Scene Shadow (or under one as it
@@ -787,7 +820,7 @@ double Morph::weight(const Part &part, double t) const
 		return 1.0;
 	if (!in_layer(part))
 		return 0.0;
-	const uint8_t wanted = pass_ == Pass::Cast ? kShadowCasts : kShadowMasked;
+	const uint8_t wanted = pass_ == Pass::Cast || pass_ == Pass::Ring ? kShadowCasts : kShadowMasked;
 	const double from = part.from && (flags_of(part.from, true) & wanted) ? 1.0 : 0.0;
 	const double to = part.to && (flags_of(part.to, false) & wanted) ? 1.0 : 0.0;
 	if (!part.from)
@@ -844,8 +877,10 @@ void Morph::draw_shadowed(double t, uint32_t cx, uint32_t cy, const SceneShadowN
 	}
 	gs_texture_t *cast = picture ? into(tr_cast_, Pass::Cast) : nullptr;
 	gs_texture_t *mask = cast && needs_mask ? into(tr_mask_, Pass::Mask) : nullptr;
+	ring_look_ = look;
+	gs_texture_t *ring = cast && look.box_line() ? into(tr_ring_, Pass::Ring) : nullptr;
 	pass_ = Pass::Picture;
-	if (!cast || !look_->compose(picture, cast, mask, look, cx, cy)) {
+	if (!cast || !look_->compose(picture, cast, mask, look, cx, cy, nullptr, false, ring)) {
 		draw_morph(t, cx, cy);
 		return;
 	}
@@ -901,6 +936,7 @@ bool Morph::draw_layers(double t, uint32_t cx, uint32_t cy, gs_texture_t *pictur
 	while (tr_layer_cast_.size() < n) {
 		tr_layer_cast_.push_back(gs_texrender_create(GS_RGBA, GS_ZS_NONE));
 		tr_layer_mask_.push_back(gs_texrender_create(GS_RGBA, GS_ZS_NONE));
+		tr_layer_ring_.push_back(gs_texrender_create(GS_RGBA, GS_ZS_NONE));
 	}
 	auto end_of = [&](size_t l) {
 		return l + 1 < n ? starts[l + 1] : parts_.size();
@@ -923,7 +959,8 @@ bool Morph::draw_layers(double t, uint32_t cx, uint32_t cy, gs_texture_t *pictur
 		gs_texrender_end(tr);
 		return gs_texrender_get_texture(tr);
 	};
-	std::vector<gs_texture_t *> casts(n, nullptr), masks(n, nullptr);
+	std::vector<gs_texture_t *> casts(n, nullptr), masks(n, nullptr), rings(n, nullptr);
+	ring_look_ = shade;
 	for (size_t l = 0; l < n; l++) {
 		bool casts_any = false;
 		for (size_t i = starts[l]; i < end_of(l); i++) {
@@ -936,6 +973,8 @@ bool Morph::draw_layers(double t, uint32_t cx, uint32_t cy, gs_texture_t *pictur
 		layer_lo_ = starts[l];
 		layer_hi_ = end_of(l);
 		casts[l] = into(tr_layer_cast_[l], Pass::Cast, nullptr);
+		if (shade.box_line())
+			rings[l] = into(tr_layer_ring_[l], Pass::Ring, nullptr);
 	}
 	for (size_t k = n; k-- > 0;) {
 		layer_lo_ = starts[k];
@@ -945,7 +984,7 @@ bool Morph::draw_layers(double t, uint32_t cx, uint32_t cy, gs_texture_t *pictur
 	layer_lo_ = 0;
 	layer_hi_ = SIZE_MAX;
 	pass_ = Pass::Picture;
-	return look_->compose_layers(picture, casts, masks, shade, cx, cy);
+	return look_->compose_layers(picture, casts, masks, shade, cx, cy, nullptr, &rings);
 }
 
 // A Scene Corners on either scene shaping the whole scene: the change drawn

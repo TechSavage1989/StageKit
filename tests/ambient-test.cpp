@@ -14419,6 +14419,427 @@ static void scene_shadow_each_test(uint32_t w, uint32_t h, const std::string &ou
 	// the section ends, so obs_shutdown finds nothing of them.)
 	sleep_ms(500);
 }
+// Outlines and glows: the outline's corners, the same width from Shadow,
+// Glow & Outline and from Scene Shadow (and a drop shadow thrown by the
+// outlined shape in both), an outline that stays solid through a Morph, and a
+// glow with a smooth, unbanded tail.
+static void outline_glow_test(uint32_t w, uint32_t h, const std::string &out)
+{
+	printf("\n[outline and glow: corners, matching widths, solid through Morph, a smooth glow]\n");
+	const std::string dir = out + "/../outline-glow";
+	if (std::system(("mkdir -p '" + dir + "'").c_str()) != 0)
+		printf("  (could not make %s)\n", dir.c_str());
+	auto block = [](const char *name, long long abgr, int bw, int bh) {
+		obs_data_t *d = obs_data_create();
+		obs_data_set_int(d, "color", abgr);
+		obs_data_set_int(d, "width", bw);
+		obs_data_set_int(d, "height", bh);
+		obs_source_t *src = obs_source_create("color_source", name, d, nullptr);
+		obs_data_release(d);
+		return src;
+	};
+	auto put = [](obs_scene_t *scene, obs_source_t *src, float x, float y, float k = 1.0f) {
+		obs_sceneitem_t *item = obs_scene_add(scene, src);
+		vec2 p, s;
+		vec2_set(&p, x, y);
+		vec2_set(&s, k, k);
+		obs_sceneitem_set_pos(item, &p);
+		obs_sceneitem_set_scale(item, &s);
+		return item;
+	};
+	auto px = [&](const std::vector<uint8_t> &f, int x, int y, int c) {
+		return (int)f[(size_t(y) * w + x) * 4 + c];
+	};
+	auto most = [&](const std::vector<uint8_t> &a, const std::vector<uint8_t> &b, int x0, int y0, int x1, int y1) {
+		int m = 0;
+		for (int y = y0; y < y1; y++)
+			for (int x = x0; x < x1; x++)
+				for (int c = 0; c < 3; c++)
+					m = std::max(m, std::abs(px(a, x, y, c) - px(b, x, y, c)));
+		return m;
+	};
+	auto shot = [&](obs_source_t *src) {
+		sleep_ms(350);
+		render(src, w, h);
+		return render(src, w, h);
+	};
+	auto set = [](obs_source_t *f, const std::function<void(obs_data_t *)> &change) {
+		obs_data_t *s = obs_source_get_settings(f);
+		change(s);
+		obs_source_update(f, s);
+		obs_data_release(s);
+	};
+	auto ring = [](obs_data_t *s, double width) {
+		obs_data_set_bool(s, "shadow", false);
+		obs_data_set_bool(s, "outline", true);
+		obs_data_set_double(s, "outline_width", width);
+		obs_data_set_int(s, "outline_color", 0xFF000000);
+	};
+	auto own_filter = [](obs_source_t *src, const std::function<void(obs_data_t *)> &look) {
+		obs_data_t *pd = obs_data_create();
+		obs_data_set_int(pd, "adjusted_left", 0); // (a new filter: no room given yet)
+		look(pd);
+		obs_source_t *per = obs_source_create("stagekit_shadow_backdrop", "OG Own", pd, nullptr);
+		obs_data_release(pd);
+		obs_source_filter_add(src, per);
+		return per;
+	};
+	auto scene_filter = [](obs_scene_t *scene, const std::function<void(obs_data_t *)> &look) {
+		obs_data_t *zd = obs_data_create();
+		obs_data_set_int(zd, "ramp_ms", 0);
+		look(zd);
+		obs_source_t *ss = obs_source_create("stagekit_scene_shadow", "OG Scene", zd, nullptr);
+		obs_data_release(zd);
+		obs_source_filter_add(obs_scene_get_source(scene), ss);
+		return ss;
+	};
+	// How much the grey background is darkened along a row, summed from
+	// x0 to x1: pixels of solid black.
+	auto dark_sum = [&](const std::vector<uint8_t> &f, int y, int x0, int x1) {
+		double sum = 0.0;
+		for (int x = x0; x < x1; x++)
+			sum += std::clamp((128.0 - px(f, x, y, 0)) / 128.0, 0.0, 1.0);
+		return sum;
+	};
+	auto to_lin = [](double v) {
+		v /= 255.0;
+		return v <= 0.04045 ? v / 12.92 : std::pow((v + 0.055) / 1.055, 2.4);
+	};
+	obs_source_t *bg = block("OG Back", 0xFF808080, 640, 360);
+	// 1 and 2. Two white sources, at scale 1 (100..300 by 100..220) and at
+	// a half (a 400 by 240 source at 380, 100: 380..580 by 100..220), with
+	// each filter.
+	obs_source_t *own = block("OG Own Full", 0xFFFFFFFF, 200, 120);
+	obs_source_t *own_half = block("OG Own Half", 0xFFFFFFFF, 400, 240);
+	obs_source_t *plain = block("OG Plain Full", 0xFFFFFFFF, 200, 120);
+	obs_source_t *plain_half = block("OG Plain Half", 0xFFFFFFFF, 400, 240);
+	obs_scene_t *a = obs_scene_create("OG Own Line");
+	obs_scene_t *b = obs_scene_create("OG Scene Line");
+	put(a, bg, 0, 0);
+	put(a, own, 100, 100);
+	put(a, own_half, 380, 100, 0.5f);
+	put(b, bg, 0, 0);
+	put(b, plain, 100, 100);
+	put(b, plain_half, 380, 100, 0.5f);
+	auto ten = [&](obs_data_t *s) {
+		ring(s, 10.0);
+	};
+	obs_source_t *f_own = own_filter(own, ten);
+	obs_source_t *f_half = own_filter(own_half, ten);
+	obs_source_t *f_scene = scene_filter(b, ten);
+	auto both = [&](const std::function<void(obs_data_t *)> &change) {
+		for (obs_source_t *f : {f_own, f_half, f_scene})
+			set(f, change);
+	};
+	{
+		obs_data_t *fresh = obs_data_create();
+		obs_source_t *d = obs_source_create("stagekit_shadow_backdrop", "OG Defaults", fresh, nullptr);
+		obs_data_release(fresh);
+		obs_data_t *ds = obs_source_get_settings(d);
+		const long long corners = obs_data_get_int(ds, "outline_corners");
+		const double intensity = obs_data_get_double(ds, "glow_intensity");
+		obs_data_release(ds);
+		obs_properties_t *props = obs_source_properties(d);
+		obs_property_t *p = props ? obs_properties_get(props, "outline_corners") : nullptr;
+		const size_t count = p ? obs_property_list_item_count(p) : 0;
+		obs_properties_destroy(props);
+		obs_source_release(d);
+		CHECK(corners == 0 && intensity == 100.0 && count == 5,
+		      "a new filter's outline follows the source and its intensity is 100%% (%lld, %.0f; %zu corner choices)",
+		      corners, intensity, count);
+	}
+	sleep_ms(300);
+	{
+		const std::vector<uint8_t> fa = shot(obs_scene_get_source(a));
+		const std::vector<uint8_t> fb = shot(obs_scene_get_source(b));
+		write_frame(dir + "/01 outline 10 px, Shadow Glow & Outline.rgba", fa, w, h);
+		write_frame(dir + "/02 outline 10 px, Scene Shadow.rgba", fb, w, h);
+		const double oa = dark_sum(fa, 160, 40, 100), ob = dark_sum(fb, 160, 40, 100);
+		const double ha = dark_sum(fa, 160, 330, 380), hb = dark_sum(fb, 160, 330, 380);
+		CHECK(std::abs(oa - 10.0) <= 1.0 && std::abs(ob - 10.0) <= 1.0 && std::abs(ha - 10.0) <= 1.0 &&
+			      std::abs(hb - 10.0) <= 1.0,
+		      "10 px of outline is 10 px on screen from either filter, at scale 1 and at a half (%.2f, %.2f; %.2f, %.2f)",
+		      oa, ob, ha, hb);
+	}
+	// With a drop shadow (12 px right and down, softened 20 px): the shadow
+	// is thrown by the outlined shape in both, so what darkens beside the
+	// source is the same.
+	both([](obs_data_t *s) { obs_data_set_bool(s, "shadow", true); });
+	{
+		const std::vector<uint8_t> fa = shot(obs_scene_get_source(a));
+		const std::vector<uint8_t> fb = shot(obs_scene_get_source(b));
+		write_frame(dir + "/03 outline and shadow, Shadow Glow & Outline.rgba", fa, w, h);
+		write_frame(dir + "/04 outline and shadow, Scene Shadow.rgba", fb, w, h);
+		const double ra = dark_sum(fa, 160, 300, 370), rb = dark_sum(fb, 160, 300, 370);
+		const int off = most(fa, fb, 290, 100, 350, 270);
+		CHECK(std::abs(ra - rb) <= 1.0 && off <= 6,
+		      "with a drop shadow the line and shadow beside the source look the same from either filter (%.2f and %.2f px dark; at most %d off)",
+		      ra, rb, off);
+	}
+	// The drop shadow, sharp (no softening), round the outline's corners:
+	// a pixel inside the shadow's square box but outside its rounded corner
+	// is not shadowed, in either filter, and the corners match.
+	both([](obs_data_t *s) { obs_data_set_double(s, "softness", 0.0); });
+	{
+		const std::vector<uint8_t> fa = shot(obs_scene_get_source(a));
+		const std::vector<uint8_t> fb = shot(obs_scene_get_source(b));
+		// The outlined box ends at 310, 230 with a corner of 10 round 300,
+		// 220; the shadow 12 px on: round 312, 232. 320, 240 lies in the
+		// square (to 322, 242) and outside the round; 316, 236 inside it.
+		const int out_a = px(fa, 320, 240, 0), out_b = px(fb, 320, 240, 0);
+		const int in_a = px(fa, 316, 236, 0), in_b = px(fb, 316, 236, 0);
+		const int off = most(fa, fb, 290, 210, 330, 250);
+		CHECK(out_b >= 124 && out_a >= 124 && in_b < 100 && in_a < 100 && off <= 6,
+		      "Scene Shadow's drop shadow takes the outline's rounded corner as the per-source filter's does (outside the round: %d, %d; inside: %d, %d; corner at most %d off)",
+		      out_a, out_b, in_a, in_b, off);
+	}
+	// 1. The outline's corners: rounded 30 px, as a shape round the box.
+	both([](obs_data_t *s) {
+		obs_data_set_bool(s, "shadow", false);
+		obs_data_set_int(s, "outline_corners", 1);
+		obs_data_set_double(s, "outline_corner_size", 30.0);
+	});
+	{
+		const std::vector<uint8_t> fa = shot(obs_scene_get_source(a));
+		const std::vector<uint8_t> fb = shot(obs_scene_get_source(b));
+		write_frame(dir + "/05 rounded outline corners, Shadow Glow & Outline.rgba", fa, w, h);
+		write_frame(dir + "/06 rounded outline corners, Scene Shadow.rgba", fb, w, h);
+		// The outer corner is round 120, 120, 30 across: 96, 96 is outside
+		// it (followed round the source it was inside the line); 200, 95 is
+		// on the line; 102, 102 is the source.
+		CHECK(px(fa, 96, 96, 0) >= 124 && px(fb, 96, 96, 0) >= 124 && px(fa, 200, 95, 0) < 8 &&
+			      px(fb, 200, 95, 0) < 8 && px(fa, 102, 102, 0) > 250 && px(fb, 102, 102, 0) > 250,
+		      "rounded corners: outside the round corner nothing (%d, %d), the line along the side (%d, %d), the source untouched",
+		      px(fa, 96, 96, 0), px(fb, 96, 96, 0), px(fa, 200, 95, 0), px(fb, 200, 95, 0));
+		// At a half the 30 px are screen pixels too: round 410, 130.
+		CHECK(px(fa, 376, 96, 0) >= 124 && px(fa, 480, 95, 0) < 8 && most(fa, fb, 80, 80, 140, 140) <= 6,
+		      "and at a half, in screen pixels; the two filters' corners match (at most %d off)",
+		      most(fa, fb, 80, 80, 140, 140));
+	}
+	both([](obs_data_t *s) { obs_data_set_int(s, "outline_corners", 2); });
+	{
+		const std::vector<uint8_t> fa = shot(obs_scene_get_source(a));
+		const std::vector<uint8_t> fb = shot(obs_scene_get_source(b));
+		write_frame(dir + "/07 bevelled outline corners, Scene Shadow.rgba", fb, w, h);
+		// 30 px is more than a cut can take and still cover the source's
+		// corner: it is 20 (twice the width), from 90, 110 to 110, 90.
+		CHECK(px(fa, 98, 98, 0) >= 124 && px(fb, 98, 98, 0) >= 124 && px(fa, 104, 92, 0) >= 124 &&
+			      px(fb, 118, 95, 0) < 100 && most(fa, fb, 80, 80, 140, 140) <= 6,
+		      "bevelled corners cut the line across the corner (%d, %d past the cut; %d on it), both filters alike",
+		      px(fa, 98, 98, 0), px(fb, 98, 98, 0), px(fb, 118, 95, 0));
+	}
+	// The drop shadow with the outline's rounded corners, in Scene Shadow.
+	both([](obs_data_t *s) {
+		obs_data_set_int(s, "outline_corners", 1);
+		obs_data_set_bool(s, "shadow", true);
+		obs_data_set_double(s, "softness", 0.0);
+	});
+	{
+		const std::vector<uint8_t> fa = shot(obs_scene_get_source(a));
+		const std::vector<uint8_t> fb = shot(obs_scene_get_source(b));
+		write_frame(dir + "/08 rounded corners with a drop shadow, Scene Shadow.rgba", fb, w, h);
+		// The shadow's corner is round 292 + 12, 212 + 12, 30 across: 330,
+		// 250 is in its square, outside its round.
+		CHECK(px(fb, 330, 250, 0) >= 124 && px(fa, 330, 250, 0) >= 124 && most(fa, fb, 280, 200, 340, 260) <= 6,
+		      "with rounded outline corners the drop shadow is round there too (%d, %d), both filters alike (at most %d off)",
+		      px(fa, 330, 250, 0), px(fb, 330, 250, 0), most(fa, fb, 280, 200, 340, 260));
+	}
+	for (obs_source_t *f : {f_own, f_half})
+		obs_source_filter_remove(f == f_own ? own : own_half, f);
+	obs_source_filter_remove(obs_scene_get_source(b), f_scene);
+	for (obs_source_t *f : {f_own, f_half, f_scene})
+		obs_source_release(f);
+	obs_scene_release(a);
+	obs_scene_release(b);
+	for (obs_source_t *s : {own, own_half, plain, plain_half})
+		obs_source_release(s);
+
+	// 3. Through a Morph: the line of a source in both scenes stays solid;
+	// that of a source in one scene fades with it, once; and two different
+	// sources changing into each other keep a solid line.
+	{
+		obs_source_t *shared = block("OG Shared", 0xFFFFFFFF, 120, 80);
+		obs_source_t *only = block("OG Only", 0xFFFFFFFF, 120, 80);
+		obs_source_t *cut = block("OG Cut", 0xFFFFFFFF, 240, 150);
+		obs_source_t *whole = block("OG Whole", 0xFFFFFFFF, 240, 150);
+		{
+			obs_data_t *cd = obs_data_create();
+			obs_data_set_int(cd, "style", 1); // cut corners
+			obs_data_set_double(cd, "size", 60.0);
+			obs_source_t *corners = obs_source_create("stagekit_corners", "OG Cut Corners", cd, nullptr);
+			obs_data_release(cd);
+			obs_source_filter_add(cut, corners);
+			obs_source_release(corners);
+		}
+		obs_scene_t *m1 = obs_scene_create("OG Morph From");
+		obs_scene_t *m2 = obs_scene_create("OG Morph To");
+		put(m1, bg, 0, 0);
+		put(m1, shared, 40, 40);
+		put(m1, only, 40, 240);
+		put(m1, cut, 360, 160);
+		put(m2, bg, 0, 0);
+		put(m2, shared, 200, 40);
+		put(m2, whole, 360, 160);
+		std::vector<obs_source_t *> shadows;
+		for (obs_scene_t *scene : {m1, m2})
+			shadows.push_back(scene_filter(scene, ten));
+		const std::vector<uint8_t> rest = shot(obs_scene_get_source(m1));
+		obs_data_t *md = obs_data_create();
+		obs_data_set_int(md, "ease_curve", 0); // linear
+		obs_source_t *morph = obs_source_create_private("stagekit_morph", "OG Morph", md);
+		obs_data_release(md);
+		obs_transition_set(morph, obs_scene_get_source(m1));
+		obs_transition_start(morph, OBS_TRANSITION_MODE_MANUAL, 0, obs_scene_get_source(m2));
+		obs_transition_set_manual_time(morph, 0.5f);
+		sleep_ms(150);
+		render(morph, w, h);
+		const std::vector<uint8_t> half = render(morph, w, h);
+		write_frame(dir + "/09 Morph half-way, outlines.rgba", half, w, h);
+		// Half-way the shared source is at 120..240 by 40..120; the one
+		// that goes is at 40..160 by 240..320; the pair at 360..600 by
+		// 160..310, the cut one's corners empty, the other's whole.
+		const int at_rest = px(rest, 35, 80, 0), shared_line = px(half, 115, 80, 0);
+		const double line_a = 1.0 - to_lin(px(half, 35, 280, 0)) / to_lin(128);
+		const double body_a = (to_lin(px(half, 100, 280, 0)) - to_lin(128)) / (1.0 - to_lin(128));
+		const int pair_line = px(half, 356, 156, 0), pair_side = px(half, 480, 155, 0);
+		CHECK(std::abs(shared_line - at_rest) <= 4,
+		      "half-way through a Morph, a source in both scenes keeps its line solid (%d; %d at rest)",
+		      shared_line, at_rest);
+		CHECK(std::abs(line_a - body_a) <= 0.08 && body_a > 0.3 && body_a < 0.7,
+		      "a source in one scene only: its line fades with it, once (line %.2f, source %.2f, in linear light)",
+		      line_a, body_a);
+		CHECK(pair_line <= 8 && pair_side <= 8,
+		      "two different sources changing into each other keep a solid line, at the corner one of them lacks too (%d there, %d along the side)",
+		      pair_line, pair_side);
+		obs_transition_force_stop(morph);
+		obs_transition_clear(morph);
+		// With rounded corners, carried by the Morph.
+		for (obs_source_t *ss : shadows)
+			set(ss, [](obs_data_t *s) {
+				obs_data_set_int(s, "outline_corners", 1);
+				obs_data_set_double(s, "outline_corner_size", 30.0);
+			});
+		sleep_ms(300);
+		obs_transition_set(morph, obs_scene_get_source(m1));
+		obs_transition_start(morph, OBS_TRANSITION_MODE_MANUAL, 0, obs_scene_get_source(m2));
+		obs_transition_set_manual_time(morph, 0.5f);
+		sleep_ms(150);
+		render(morph, w, h);
+		const std::vector<uint8_t> round_half = render(morph, w, h);
+		write_frame(dir + "/10 Morph half-way, rounded outline corners.rgba", round_half, w, h);
+		// The shared source's outer corner is round 140, 60: 116, 36 is out
+		// of it, 180, 35 on the line.
+		CHECK(px(round_half, 116, 36, 0) >= 124 && px(round_half, 180, 35, 0) <= 8,
+		      "Morph carries the outline's rounded corners (%d outside the corner, %d on the line)",
+		      px(round_half, 116, 36, 0), px(round_half, 180, 35, 0));
+		obs_transition_force_stop(morph);
+		obs_transition_clear(morph);
+		obs_source_release(morph);
+		obs_source_filter_remove(obs_scene_get_source(m1), shadows[0]);
+		obs_source_filter_remove(obs_scene_get_source(m2), shadows[1]);
+		for (obs_source_t *ss : shadows)
+			obs_source_release(ss);
+		obs_scene_release(m1);
+		obs_scene_release(m2);
+		for (obs_source_t *s : {shared, only, cut, whole})
+			obs_source_release(s);
+	}
+
+	// 4. The glow: white, 40 px soft, round a dark grey source on black.
+	{
+		obs_source_t *dark = block("OG Dark", 0xFF000000, 640, 360);
+		obs_source_t *lamp = block("OG Lamp", 0xFF303030, 120, 120);
+		obs_source_t *lamp2 = block("OG Lamp 2", 0xFF303030, 120, 120);
+		obs_scene_t *g = obs_scene_create("OG Glow");
+		put(g, dark, 0, 0);
+		put(g, lamp, 60, 120);
+		put(g, lamp2, 380, 120);
+		auto glow = [](obs_data_t *s) {
+			obs_data_set_bool(s, "shadow", true);
+			obs_data_set_int(s, "shadow_type", 1);
+			obs_data_set_int(s, "shadow_color", 0xFFFFFFFF);
+			obs_data_set_double(s, "shadow_opacity", 100.0);
+			obs_data_set_double(s, "softness", 40.0);
+		};
+		obs_source_t *gf = own_filter(lamp, glow);
+		obs_source_t *gs = scene_filter(g, [](obs_data_t *s) {
+			obs_data_set_bool(s, "shadow", true);
+			obs_data_set_int(s, "shadow_type", 1);
+			obs_data_set_int(s, "shadow_color", 0xFFFFFFFF);
+			obs_data_set_double(s, "shadow_opacity", 100.0);
+			obs_data_set_double(s, "softness", 40.0);
+			obs_data_array_t *list = obs_data_array_create();
+			obs_data_t *e = obs_data_create();
+			obs_data_set_string(e, "value", "OG Lamp");
+			obs_data_array_push_back(list, e);
+			obs_data_release(e);
+			obs_data_set_array(s, "shadow_skip", list);
+			obs_data_array_release(list);
+		});
+		// The tail right of each source (180.. and 500..), along its middle
+		// row and averaged over 16 rows.
+		auto profile = [&](const std::vector<uint8_t> &f, int x0, int n, bool averaged) {
+			std::vector<double> v(n);
+			for (int i = 0; i < n; i++) {
+				double sum = 0.0;
+				const int rows = averaged ? 16 : 1;
+				for (int y = 172; y < 172 + rows; y++)
+					sum += px(f, x0 + i, y, 1);
+				v[i] = sum / rows;
+			}
+			return v;
+		};
+		// Banding is a stair: flat, then a jump. Down the averaged tail
+		// (the bands, if any, are the same in every row) each step is
+		// within 2 levels of the mean of the steps either side of it, it
+		// never gets brighter further out, and it reaches well out.
+		auto check_tail = [&](const std::vector<uint8_t> &f, int x0, const char *who) {
+			const std::vector<double> avg = profile(f, x0, 100, true);
+			double worst_stair = 0.0, worst_rise = 0.0;
+			int tail = 0, reach = 0;
+			for (int i = 1; i < 100; i++) {
+				worst_rise = std::max(worst_rise, avg[i] - avg[i - 1]);
+				if (avg[i] >= 1.0)
+					reach = i;
+				if (i + 1 < 100 && avg[i] < 64.0 && avg[i - 1] >= 0.5) {
+					const double here = avg[i] - avg[i - 1];
+					const double around =
+						(avg[i - 1] - avg[std::max(0, i - 2)] + avg[i + 1] - avg[i]) / 2.0;
+					worst_stair = std::max(worst_stair, std::abs(here - around));
+					tail++;
+				}
+			}
+			CHECK(tail >= 15 && worst_stair <= 2.0 && worst_rise <= 0.5 && avg[0] > 120.0 && reach >= 30,
+			      "%s's glow: bright at the source (%.0f), reaching %d px, no stair in its tail over 2 levels (%.1f over %d px), never brighter further out (%.2f)",
+			      who, avg[0], reach, worst_stair, tail, worst_rise);
+			return avg;
+		};
+		const std::vector<uint8_t> f1 = shot(obs_scene_get_source(g));
+		write_frame(dir + "/11 glow 40 px, Shadow Glow & Outline (left) and Scene Shadow (right).rgba", f1, w,
+			    h);
+		const std::vector<double> own_tail = check_tail(f1, 180, "Shadow, Glow & Outline");
+		const std::vector<double> scene_tail = check_tail(f1, 500, "Scene Shadow");
+		set(gf, [](obs_data_t *s) { obs_data_set_double(s, "glow_intensity", 250.0); });
+		set(gs, [](obs_data_t *s) { obs_data_set_double(s, "glow_intensity", 250.0); });
+		const std::vector<uint8_t> f2 = shot(obs_scene_get_source(g));
+		write_frame(dir + "/12 glow at 250% intensity.rgba", f2, w, h);
+		const std::vector<double> own_bright = check_tail(f2, 180, "At 250% intensity, Shadow, Glow & Outline");
+		const std::vector<double> scene_bright = check_tail(f2, 500, "At 250% intensity, Scene Shadow");
+		CHECK(own_bright[20] > own_tail[20] + 15 && scene_bright[20] > scene_tail[20] + 15,
+		      "more intensity makes the glow brighter further out (%.0f against %.0f, %.0f against %.0f, 20 px out)",
+		      own_bright[20], own_tail[20], scene_bright[20], scene_tail[20]);
+		obs_source_filter_remove(lamp, gf);
+		obs_source_filter_remove(obs_scene_get_source(g), gs);
+		obs_source_release(gf);
+		obs_source_release(gs);
+		obs_scene_release(g);
+		for (obs_source_t *s : {dark, lamp, lamp2})
+			obs_source_release(s);
+	}
+	obs_source_release(bg);
+	// (OBS takes released sources apart on a thread of its own.)
+	sleep_ms(500);
+}
 // ==== end scene-filters:shadow ====
 
 // ==== scene-filters:standby-corners ====
@@ -16262,6 +16683,13 @@ int main(int argc, char **argv)
 
 	if (getenv("STAGEKIT_TEST_ONLY_SHADOW_EACH")) { // to try that section alone
 		scene_shadow_each_test(w, h, out);
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
+	if (getenv("STAGEKIT_TEST_ONLY_OUTLINE_GLOW")) { // to try that section alone
+		outline_glow_test(w, h, out);
 		obs_shutdown();
 		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
 		       g_failures == 1 ? "" : "s");

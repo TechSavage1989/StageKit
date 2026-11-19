@@ -252,6 +252,16 @@ its heading:
   mirroring the image, and *Outline blur* softens it. The
   line follows the image's real shape, including text and rounded or cut corners. A shadow is cast
   by the image and its outline together.
+  - *Outline corners*: *Follow the source* (as it comes: the line goes round the shape of what shows,
+    as it always did), or *Rounded*, *Bevel*, *Notch* or *Scoop*: the line is drawn as a shape round
+    the source's box (its panel, when it has one), its outer corners *Corner size* pixels across (no
+    larger than keeps the source's own corners under the line), and
+    the drop shadow takes the same shape.
+  - *Intensity* (in the shadow part, 100 % as it comes): more fills a glow's or shadow's soft tail in
+    towards full colour without giving it a hard edge, for a bright glow; less makes it fainter.
+    Shadows and glows fall off smoothly with no steps in their soft tail.
+
+<p align="center"><img src="docs/images/outline-glow.png" width="900" alt="White sources with a 10 px black outline from Shadow, Glow &amp; Outline and from Scene Shadow, the same width, with a drop shadow, with rounded and bevelled outline corners, the drop shadow rounded with them, half-way through a Morph with the outlines solid, and a white glow round dark squares at 100% and 250% intensity"></p>
 - **Panel behind the source**: a coloured panel with a margin.
 
 *Rounded corners* rounds the image and the panel.
@@ -1679,8 +1689,11 @@ Shadow, Glow & Outline on each source.
     Morph carries it too; a change between a scene shadowed one way and a scene shadowed the other way is a
     cross-fade (the log says so).
 - **Shadow or glow** and **Outline** have the same settings as Shadow, Glow & Outline (type, colour or the
-  image's own colours, opacity, offsets, softness, strength, colour boost; outline width, colour and opacity).
-  Sizes are in canvas pixels.
+  image's own colours, opacity, offsets, softness, strength, colour boost, intensity; outline width, colour,
+  opacity and corners). Sizes are in canvas pixels, so the same number gives the same width as a Shadow, Glow
+  & Outline in screen pixels. As there, the drop shadow is thrown by the sources with their outline, so it
+  has the outline's corners. Morph keeps an outline solid through a change for a source in both scenes,
+  and fades it with a source that comes or goes.
 - **Background sources**: drawn underneath as they are; they cast nothing and the shadow falls on them.
   **Full-screen = background** (on as it comes) counts the sources at the bottom of the scene that cover nine
   tenths of it as background, so the scene's picture or colour needs no listing.

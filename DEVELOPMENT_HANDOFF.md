@@ -23,6 +23,19 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
+## Outline corners, matching outlines, solid through Morph, a smoother glow (0.1.0-betaNEXT)
+
+Branch `fix/outline-glow`. Not pushed. Four of the owner's items and one from the coordinator, in
+Shadow, Glow & Outline and Scene Shadow (see AGENTS.md, *Outline corners, matching widths ...*):
+*Outline corners* and *Corner size*; Scene Shadow's drop shadow thrown by the outlined shape
+(the cause of "thicker" and of the square shadow corners: widths themselves measured equal);
+Morph's silhouette of two different sources changing into each other made whole (the only
+see-through case found; shared and one-scene sources were already right); a smoother, unbanded
+glow with *Intensity*. Gates passed: OUTLINE_GLOW (new), SHADOW_EACH, CORNERS_WHOLE, MORPH_HOLDS,
+BLUR_EDGES, SHADOW_FLICKER, TOOLTIPS. Not seen on Direct3D or Windows. To free disk space for the
+build, the old scratch folders `perf2` and `linktrans` and `morphholds-vg.log` (from 2026-11-17)
+were deleted from the session scratchpad.
+
 ## Scene Modes: places per mode, and Settings for (0.1.0-beta206)
 
 Branch `feat/mode-transforms`. Not pushed. Each mode can keep saved transforms for chosen sources
