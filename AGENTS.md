@@ -1802,7 +1802,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   does not have that". It aims the capture at the window in front (from the window watch) and
   switches an Auto Capture on that source off, or that would aim it elsewhere a quarter second
   later; switching the Auto Capture on again is how it is handed back. OBS itself in front is
-  refused. **It hands itself back when the program closes** (betaNEXT; the owner's Game Capture,
+  refused. **It hands itself back when the program closes** (beta204; the owner's Game Capture,
   hooked by hand on an emulator, stayed aimed at the closed program for days with its Auto
   Capture saved off: "make the hand hook change"): the hook writes the program into the Auto
   Capture's own settings (`hand_hooked`, lower case, in `kOwnSettings`), and the filter's tick,

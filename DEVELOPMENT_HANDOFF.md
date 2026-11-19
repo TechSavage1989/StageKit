@@ -23,7 +23,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
-## A hook by hand hands the capture back (0.1.0-betaNEXT)
+## A hook by hand hands the capture back (0.1.0-beta204)
 
 Branch `fix/hand-hook-hands-back`, on beta203. Not pushed. The owner hooked a Game Capture by
 hand on an emulator days before; the hook switched its Auto Capture off, OBS saved it off, and the
