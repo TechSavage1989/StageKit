@@ -23,6 +23,48 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
+## Auto Capture's two gated tests: no plugin fault (0.1.0-beta211)
+
+Branch `fix/auto-capture-tests`, on `main` at beta210. Not pushed. Tests only.
+`STAGEKIT_TEST_ONLY_AUTO_WINCLOSE` and `STAGEKIT_TEST_ONLY_AUTO_KEEP_AIM` had been reported as
+failing two checks each since beta202/203. Neither is a plugin bug and neither expectation was
+stale: both write their red standby image to `<out dir>/../<name>-standby.png`, and the runs that
+failed gave an output folder that did not exist (`G`, relative to the worktree, where the files are
+in `out/G`). `QImage::save` then failed without a word, the Standby filter had no image (the log's
+`failed to load texture 'G/../winclose-standby.png'`), and exactly the checks that look for the
+red image failed (centre 0, 0); every aiming check passed. Run as `tests/run-tests.sh` runs them
+(an existing folder) both pass on unchanged beta210: 17 and 25 checks. No expectation was
+changed. The two sections now make the output folder and check that the image was written
+(18 and 26 checks), so a wrong folder says so in its own line; passed with a folder that did not
+exist too. Also run, all passed: `AUTO_REST` (18), `HOOK_BACK` (6), `CAPTURE_HIDE` (5).
+**When running a gate by hand, give argv 6 and 8 a folder that exists** (`out/tooltips` as
+run-tests.sh does). Other sections that write to `<out>/../` have the same weakness and were not
+touched.
+
+## A fading source and its outline are one flat picture (0.1.0-beta211)
+
+Branch `fix/outline-fade-flat`, on `main` at beta210. Not pushed. The owner, after beta210: "the
+directly morphing outlines are fine, but fading ones using the secondary animation still have the
+multiply/transparent issue when transitioning." Cause, the same in all three paths (the scene
+Morph's unpaired parts, an item's own show or hide transition under a Scene Shadow, the item
+Morph's layer): the mask held the fading source at its faded alpha, so the shader took the share
+it let through for free room and laid the source's own line (and shadow) there, under the source:
+at half-way a quarter of the line over the whole of the picture. A red source (176, 32, 32) on a
+208 grey background, green half-way: 113 before, 154 now (154 is half the source over the
+background in linear light); over another source 79 before, 107 now; the line itself was right
+already (152, half black). beta207's test used a white source, where a clamp hid it. Fix: a
+*presence* picture beside the mask (see AGENTS.md, Scene Shadow, *A fading source ...*). Costs one
+more pass of the morph, or one more canvas in a scene, only while something fades. Limits: a
+soft shadow of another source falling under a fading one is thinned there by the fading one's
+alpha (it cannot be told from its own); a source that is see-through all over while its transition
+runs counts as whole. Tested in OUTLINE_GLOW (section 3b, ten checks: Morph half-way alone and
+over another source, both *Shadow from* ways; Make room without a fade solid; item show
+transitions: OBS's fade, Morph unpaired fade, Make room fading through the layer). Gates passed:
+OUTLINE_GLOW (71), SHADOW_EACH (13), MORPH_HOLDS (5), MAKE_ROOM (15), TOOLTIPS (12); the full
+suite was not run. Only OpenGL: the two new techniques (`Presence`, `TopFirst`/`TopReduce` in
+`stagekit-looks.effect`) and the new `presence` uniform (set at every `compose`) have not run on
+Direct3D.
+
 ## Square lines on Windows, and text keeps a following line (0.1.0-beta210)
 
 Branch `fix/outline-square`. Not pushed. The owner's Standby scene (beta209, Square and then Scoop)
@@ -127,8 +169,9 @@ leaving out a window another ordinary capture source already shows. The ungated 
 section of the full run had two counts changed (3 to 2 kept, the capture's own window having none)
 and was not run. Gates passed: READY_SHARE (new, 4 checks), CLEAR_PICKED, GAME_AREA,
 AUTO_FRAME_SWITCHER, CAPTURE_HIDE, STANDBY_COVER. AUTO_WINCLOSE and AUTO_KEEP_AIM (Auto Capture,
-no switcher) fail two checks each here; AUTO_WINCLOSE fails the same with beta202's
-`app-capture.cpp` (AUTO_KEEP_AIM not tried so). Not seen on
+no switcher) failed two checks each here; AUTO_WINCLOSE failed the same with beta202's
+`app-capture.cpp` (AUTO_KEEP_AIM not tried so). (Not a fault of the plugin: the output folder
+given did not exist; see *Auto Capture's two gated tests* at the top.) Not seen on
 Windows: what a real Window Capture costs, and whether a switch to the capture's own window is
 clean there.
 

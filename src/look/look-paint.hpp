@@ -127,12 +127,16 @@ public:
 	VisibleRect &operator=(const VisibleRect &) = delete;
 	void begin_frame() { next_ = 0; }
 	Seen measure(gs_texture_t *picture, uint32_t w, uint32_t h);
+	// The most alpha anywhere in a picture, in the red of a one-pixel
+	// picture (nullptr when it cannot be worked out).
+	gs_texture_t *top(gs_texture_t *picture, uint32_t w, uint32_t h);
 
 private:
 	gs_texture_t *reduce(gs_texture_t *picture, uint32_t w, uint32_t h, const char *first, const char *rest);
 	gs_effect_t *effect_ = nullptr;
 	gs_eparam_t *p_image_ = nullptr;
 	gs_eparam_t *p_in_size_ = nullptr;
+	bool has_top_ = false;
 	std::vector<std::vector<gs_texrender_t *>> sets_; // one chain of levels per reduction this frame
 	size_t next_ = 0;
 };
@@ -192,9 +196,13 @@ public:
 	// pictures do, instead of OBS's premultiplied scene.)
 	// (`ring`: with a line round the boxes (`box_line`), the lines as drawn
 	// by draw_box_ring; nullptr: round the sources' own shape.)
+	// (`presence`: the mask's sources each whole where it is, however far it
+	// has faded in or out (alpha; draw_presence), so a fading source's line
+	// and shadow fade with it as one flat picture and never show through it.
+	// nullptr: none is fading, the mask says it.)
 	bool compose(gs_texture_t *scene, gs_texture_t *cast, gs_texture_t *mask, const ShadowLook &look, uint32_t cx,
 		     uint32_t cy, gs_texrender_t *into = nullptr, bool scene_straight = false,
-		     gs_texture_t *ring = nullptr);
+		     gs_texture_t *ring = nullptr, gs_texture_t *presence = nullptr);
 	// Each source by itself: one shadow per layer of sources, from the
 	// bottom, each laid over the picture the one below it made. `casts[i]`
 	// is layer i's casting sources (nullptr: it casts nothing) and
@@ -202,7 +210,15 @@ public:
 	// off. Where to (`into`) and false as compose.
 	bool compose_layers(gs_texture_t *scene, const std::vector<gs_texture_t *> &casts,
 			    const std::vector<gs_texture_t *> &masks, const ShadowLook &look, uint32_t cx, uint32_t cy,
-			    gs_texrender_t *into = nullptr, const std::vector<gs_texture_t *> *rings = nullptr);
+			    gs_texrender_t *into = nullptr, const std::vector<gs_texture_t *> *rings = nullptr,
+			    const std::vector<gs_texture_t *> *presences = nullptr);
+	// Whether an item is, or may be, drawn part-way see-through as a whole:
+	// its show or hide transition is running, or it is the item Morph's
+	// layer. Such an item goes into a presence canvas with draw_presence.
+	static bool may_fade(obs_sceneitem_t *item);
+	// An item into a presence canvas (begin_canvas): where it is drawn now,
+	// whole however far it has faded (its alpha over the most alpha in it).
+	void draw_presence(obs_sceneitem_t *item);
 	// A line round a box, with the look's corners (`box_line`), onto the
 	// canvas being drawn (begin_canvas): the box is the unit square under
 	// `m` (canvas pixels), counted `strength` of the way (a Morph part-way).
@@ -262,6 +278,8 @@ private:
 	gs_eparam_t *p_force_follow_ = nullptr;
 	gs_eparam_t *p_follow_amount_ = nullptr;
 	gs_eparam_t *p_follow_tex_ = nullptr;
+	gs_eparam_t *p_presence_ = nullptr;
+	bool has_presence_ = false;
 	std::unique_ptr<VisibleRect> rects_;
 	gs_texture_t *no_rect_ = nullptr;
 	gs_texrender_t *outlined_ = nullptr; // the casting sources with their line, which casts the shadow

@@ -328,7 +328,11 @@ private:
 	// two scenes', is laid over the picture as the filter lays it.
 	// (Ring: the lines round the casting parts' boxes, when the line's
 	// corners are chosen.)
-	enum class Pass { Picture, Cast, Mask, Ring };
+	// (Presence: the mask with every part whole where it is, however far it
+	// has faded in or out, so a fading part's line and shadow fade with it
+	// as one flat picture.)
+	enum class Pass { Picture, Cast, Mask, Ring, Presence };
+	bool fading_parts() const;
 	ShadowLook ring_look_; // the look the Ring pass draws with
 	Pass pass_ = Pass::Picture;
 	ShadowFlags flags_from_, flags_to_; // what each item does, this frame
@@ -337,11 +341,12 @@ private:
 	gs_texrender_t *tr_pic_ = nullptr;
 	gs_texrender_t *tr_cast_ = nullptr;
 	gs_texrender_t *tr_mask_ = nullptr;
+	gs_texrender_t *tr_presence_ = nullptr;
 	gs_texrender_t *tr_ring_ = nullptr;
 	// *Shadow from: Each source by itself*: the casting parts and the mask
 	// a layer at a time (the parts from layer_lo_ up to layer_hi_).
 	size_t layer_lo_ = 0, layer_hi_ = SIZE_MAX;
-	std::vector<gs_texrender_t *> tr_layer_cast_, tr_layer_mask_, tr_layer_ring_;
+	std::vector<gs_texrender_t *> tr_layer_cast_, tr_layer_mask_, tr_layer_ring_, tr_layer_presence_;
 	obs_source_t *told_mixed_ = nullptr; // the scene last logged for two ways of shadowing
 	// A Scene Corners shaping a whole scene: the morph drawn into a picture
 	// and cut to the shape, part-way between the two scenes'.
@@ -357,6 +362,7 @@ Morph::Morph(obs_data_t *settings, obs_source_t *source, bool room) : source_(so
 	tr_pic_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 	tr_cast_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 	tr_mask_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
+	tr_presence_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 	tr_ring_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 	obs_leave_graphics();
 	update(settings);
@@ -374,9 +380,10 @@ Morph::~Morph()
 	gs_texrender_destroy(tr_pic_);
 	gs_texrender_destroy(tr_cast_);
 	gs_texrender_destroy(tr_mask_);
+	gs_texrender_destroy(tr_presence_);
 	gs_texrender_destroy(tr_ring_);
 	gs_texrender_destroy(tr_round_);
-	for (auto *list : {&tr_layer_cast_, &tr_layer_mask_, &tr_layer_ring_})
+	for (auto *list : {&tr_layer_cast_, &tr_layer_mask_, &tr_layer_ring_, &tr_layer_presence_})
 		for (gs_texrender_t *tr : *list)
 			gs_texrender_destroy(tr);
 	obs_leave_graphics();
@@ -683,15 +690,12 @@ void Morph::draw_run(const std::vector<const Part *> &run, double t, uint32_t cx
 	gs_texture_t *to = any_to ? gs_texrender_get_texture(tr_to_) : nullptr;
 	const Quad screen{(double)cx, 0.0, 0.0, (double)cy, 0.0, 0.0};
 	const float amount = (float)std::clamp(t, 0.0, 1.0);
-	if (from && to) {
-		draw_texture(from, to, screen, amount);
-	} else if (from || to) {
-		// One side only: faded out, or in, over what is under it.
-		gs_effect_set_float(p_opacity_, from ? 1.0f - amount : amount);
+	// One side: faded out, or in, over what is under it.
+	auto one_side = [&](gs_texture_t *only_one, float opacity) {
+		gs_effect_set_float(p_opacity_, opacity);
 		const bool linear = gs_get_linear_srgb();
 		const bool was_srgb = gs_framebuffer_srgb_enabled();
 		gs_enable_framebuffer_srgb(linear);
-		gs_texture_t *only_one = from ? from : to;
 		if (linear)
 			gs_effect_set_texture_srgb(p_image_, only_one);
 		else
@@ -699,6 +703,17 @@ void Morph::draw_run(const std::vector<const Part *> &run, double t, uint32_t cx
 		while (gs_effect_loop(effect_, "Draw"))
 			gs_draw_sprite(only_one, 0, cx, cy);
 		gs_enable_framebuffer_srgb(was_srgb);
+	};
+	if (pass_ == Pass::Presence) {
+		// Where the parts stand: each side whole, however far it has faded.
+		if (from)
+			one_side(from, 1.0f);
+		if (to)
+			one_side(to, 1.0f);
+	} else if (from && to) {
+		draw_texture(from, to, screen, amount);
+	} else if (from || to) {
+		one_side(from ? from : to, from ? 1.0f - amount : amount);
 	}
 	if (solid) {
 		if (any_from)
@@ -917,10 +932,11 @@ void Morph::draw_shadowed(double t, uint32_t cx, uint32_t cy, const SceneShadowN
 	}
 	gs_texture_t *cast = picture ? into(tr_cast_, Pass::Cast) : nullptr;
 	gs_texture_t *mask = cast && needs_mask ? into(tr_mask_, Pass::Mask) : nullptr;
+	gs_texture_t *presence = cast && fading_parts() ? into(tr_presence_, Pass::Presence) : nullptr;
 	ring_look_ = look;
 	gs_texture_t *ring = cast && look.box_line() ? into(tr_ring_, Pass::Ring) : nullptr;
 	pass_ = Pass::Picture;
-	if (!cast || !look_->compose(picture, cast, mask, look, cx, cy, nullptr, false, ring)) {
+	if (!cast || !look_->compose(picture, cast, mask, look, cx, cy, nullptr, false, ring, presence)) {
 		draw_morph(t, cx, cy);
 		return;
 	}
@@ -928,6 +944,21 @@ void Morph::draw_shadowed(double t, uint32_t cx, uint32_t cy, const SceneShadowN
 	gs_blend_function_separate(GS_BLEND_SRCALPHA, GS_BLEND_INVSRCALPHA, GS_BLEND_ONE, GS_BLEND_INVSRCALPHA);
 	look_->draw_out(cx, cy);
 	gs_blend_state_pop();
+}
+
+// Whether a part that is kept clear of the shadow is in one scene only: it
+// fades in or out on the way (a Make Room part that only moves is whole in
+// both pictures, which is the same).
+bool Morph::fading_parts() const
+{
+	for (const Part &part : parts_) {
+		if (part.from && part.to)
+			continue;
+		if ((part.from && (flags_of(part.from, true) & kShadowMasked)) ||
+		    (part.to && (flags_of(part.to, false) & kShadowMasked)))
+			return true;
+	}
+	return false;
 }
 
 // Whether a part counts in the layer being drawn (every part outside the
@@ -977,6 +1008,7 @@ bool Morph::draw_layers(double t, uint32_t cx, uint32_t cy, gs_texture_t *pictur
 		tr_layer_cast_.push_back(gs_texrender_create(GS_RGBA, GS_ZS_NONE));
 		tr_layer_mask_.push_back(gs_texrender_create(GS_RGBA, GS_ZS_NONE));
 		tr_layer_ring_.push_back(gs_texrender_create(GS_RGBA, GS_ZS_NONE));
+		tr_layer_presence_.push_back(gs_texrender_create(GS_RGBA, GS_ZS_NONE));
 	}
 	auto end_of = [&](size_t l) {
 		return l + 1 < n ? starts[l + 1] : parts_.size();
@@ -999,7 +1031,8 @@ bool Morph::draw_layers(double t, uint32_t cx, uint32_t cy, gs_texture_t *pictur
 		gs_texrender_end(tr);
 		return gs_texrender_get_texture(tr);
 	};
-	std::vector<gs_texture_t *> casts(n, nullptr), masks(n, nullptr), rings(n, nullptr);
+	std::vector<gs_texture_t *> casts(n, nullptr), masks(n, nullptr), rings(n, nullptr), presences(n, nullptr);
+	const bool fading = fading_parts();
 	ring_look_ = shade;
 	for (size_t l = 0; l < n; l++) {
 		bool casts_any = false;
@@ -1020,11 +1053,14 @@ bool Morph::draw_layers(double t, uint32_t cx, uint32_t cy, gs_texture_t *pictur
 		layer_lo_ = starts[k];
 		layer_hi_ = end_of(k);
 		masks[k] = into(tr_layer_mask_[k], Pass::Mask, k + 1 < n ? masks[k + 1] : nullptr);
+		if (fading)
+			presences[k] =
+				into(tr_layer_presence_[k], Pass::Presence, k + 1 < n ? presences[k + 1] : nullptr);
 	}
 	layer_lo_ = 0;
 	layer_hi_ = SIZE_MAX;
 	pass_ = Pass::Picture;
-	return look_->compose_layers(picture, casts, masks, shade, cx, cy, nullptr, &rings);
+	return look_->compose_layers(picture, casts, masks, shade, cx, cy, nullptr, &rings, &presences);
 }
 
 // A Scene Corners on either scene shaping the whole scene: the change drawn

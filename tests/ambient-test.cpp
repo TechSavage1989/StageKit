@@ -6576,9 +6576,14 @@ static void auto_window_closed_test(const std::string &out)
 	const std::string none = "window :StageKitNoWindow:stagekit-no-window.exe";
 	const std::string red_path = out + "/../winclose-standby.png";
 	{
+		// (The output folder may not be there when the section is run by
+		// hand: without the image the Standby checks fail for no fault.)
+		std::error_code made;
+		std::filesystem::create_directories(out, made);
 		QImage red(320, 180, QImage::Format_RGB32);
 		red.fill(QColor(255, 0, 0));
-		red.save(QString::fromStdString(red_path));
+		const bool saved = red.save(QString::fromStdString(red_path));
+		CHECK(saved, "the test's standby image is written (%s)", red_path.c_str());
 	}
 	obs_data_t *cd = obs_data_create();
 	obs_data_set_int(cd, "color", 0xFF00FF00); // green
@@ -6792,9 +6797,14 @@ static void auto_keep_aim_test(const std::string &out)
 	register_stand_in_capture("game_capture");
 	const std::string red_path = out + "/../keepaim-standby.png";
 	{
+		// (The output folder may not be there when the section is run by
+		// hand: without the image the Standby checks fail for no fault.)
+		std::error_code made;
+		std::filesystem::create_directories(out, made);
 		QImage red(320, 180, QImage::Format_RGB32);
 		red.fill(QColor(255, 0, 0));
-		red.save(QString::fromStdString(red_path));
+		const bool saved = red.save(QString::fromStdString(red_path));
+		CHECK(saved, "the test's standby image is written (%s)", red_path.c_str());
 	}
 	log_handler_t prev_log = nullptr;
 	void *prev_param = nullptr;
@@ -15316,6 +15326,215 @@ static void outline_glow_test(uint32_t w, uint32_t h, const std::string &out, co
 		obs_scene_release(m2);
 		for (obs_source_t *s : {shared, only, cut, whole})
 			obs_source_release(s);
+	}
+
+	// 3b. A source that fades in or out takes its line with it as one flat
+	// picture: the line is as faded as the source, nothing of it shows
+	// through the source, and the two never darken each other. (A red
+	// source on a light background: a line showing through it darkens it.)
+	{
+		auto to_level = [](double lin) {
+			lin = std::clamp(lin, 0.0, 1.0);
+			return 255.0 * (lin <= 0.0031308 ? lin * 12.92 : 1.055 * std::pow(lin, 1.0 / 2.4) - 0.055);
+		};
+		const int kRed = 0xB0, kLow = 0x20; // the source: red 176, green and blue 32
+		// The red source over `under` (a grey level) in row y, somewhere
+		// from x0 to x1: where it is, how faded its line (5 px past its
+		// right edge), its middle against that fade (red and green), the
+		// pixels just inside its edge, and the darkest of source and line.
+		struct Unit {
+			bool found = false;
+			int left = 0, right = 0, line = 0, red = 0, green = 0, edge = 0, darkest = 255;
+			double fade = 0.0, want_red = 0.0, want_green = 0.0;
+		};
+		auto unit = [&](const std::vector<uint8_t> &f, int y, int x0, int x1, int under) {
+			Unit u;
+			u.left = -1;
+			for (int x = x0; x < x1; x++) {
+				if (px(f, x, y, 0) - px(f, x, y, 1) < 12)
+					continue;
+				if (u.left < 0)
+					u.left = x;
+				u.right = x;
+			}
+			if (u.left < 0 || u.right - u.left < 20 || u.right + 12 >= (int)w)
+				return u;
+			u.found = true;
+			u.line = px(f, u.right + 5, y, 1);
+			u.red = px(f, (u.left + u.right) / 2, y, 0);
+			u.green = px(f, (u.left + u.right) / 2, y, 1);
+			u.edge = std::min(px(f, u.right - 2, y, 1), px(f, u.right - 1, y, 1));
+			for (int x = u.left + 2; x <= u.right + 8; x++)
+				u.darkest = std::min(u.darkest, px(f, x, y, 1));
+			u.fade = 1.0 - to_lin(u.line) / to_lin(under);
+			u.want_red = to_level(u.fade * to_lin(kRed) + (1.0 - u.fade) * to_lin(under));
+			u.want_green = to_level(u.fade * to_lin(kLow) + (1.0 - u.fade) * to_lin(under));
+			return u;
+		};
+		auto flat = [](const Unit &u) {
+			return u.found && std::abs(u.red - u.want_red) <= 6.0 &&
+			       std::abs(u.green - u.want_green) <= 6.0 && u.edge >= u.green - 3 &&
+			       u.darkest >= std::min(u.line, u.green) - 6;
+		};
+		auto say = [](const Unit &u) {
+			char text[256];
+			snprintf(
+				text, sizeof text,
+				"line %d, fade %.2f; source red %d, %.0f wanted, green %d, %.0f wanted; just inside its edge %d; darkest %d",
+				u.line, u.fade, u.red, u.want_red, u.green, u.want_green, u.edge, u.darkest);
+			return std::string(text);
+		};
+		const long long red = 0xFF000000LL | (kLow << 16) | (kLow << 8) | kRed;
+		obs_source_t *light = block("OF Back", 0xFFD0D0D0, 640, 360);
+		obs_source_t *only = block("OF Only", red, 120, 80);
+		obs_source_t *top = block("OF Top", red, 100, 60);
+		obs_source_t *under = block("OF Under", 0xFF909090, 220, 140);
+		obs_scene_t *m1 = obs_scene_create("OF Morph From");
+		obs_scene_t *m2 = obs_scene_create("OF Morph To");
+		put(m1, light, 0, 0);
+		put(m1, only, 60, 60);
+		put(m1, under, 300, 40);
+		put(m1, top, 340, 80);
+		put(m2, light, 0, 0);
+		put(m2, under, 300, 40);
+		std::vector<obs_source_t *> shadows;
+		for (obs_scene_t *scene : {m1, m2})
+			shadows.push_back(scene_filter(scene, ten));
+		shot(obs_scene_get_source(m1));
+		shot(obs_scene_get_source(m2));
+		obs_data_t *md = obs_data_create();
+		obs_data_set_int(md, "ease_curve", 0); // linear
+		obs_source_t *morph = obs_source_create_private("stagekit_morph", "OF Morph", md);
+		auto half_way = [&] {
+			obs_transition_set(morph, obs_scene_get_source(m1));
+			obs_transition_start(morph, OBS_TRANSITION_MODE_MANUAL, 0, obs_scene_get_source(m2));
+			obs_transition_set_manual_time(morph, 0.5f);
+			sleep_ms(150);
+			render(morph, w, h);
+			const std::vector<uint8_t> f = render(morph, w, h);
+			obs_transition_force_stop(morph);
+			obs_transition_clear(morph);
+			return f;
+		};
+		// The scene as drawn: the source alone at 60..180 by 60..140, and
+		// the one over another source at 340..440 by 80..140.
+		{
+			const std::vector<uint8_t> f = half_way();
+			const Unit u = unit(f, 100, 20, 260, 0xD0);
+			const Unit t = unit(f, 110, 310, 500, 0x90);
+			CHECK(flat(u) && std::abs(u.fade - 0.5) <= 0.05,
+			      "half-way through a Morph, a source that fades out and its line are one flat picture: the line half black over what is behind, the source half itself, no darker where the two meet (%s)",
+			      say(u).c_str());
+			const double over = to_level(0.5 * to_lin(kLow) + 0.5 * to_lin(0x90));
+			CHECK(t.found && std::abs(t.green - over) <= 6.0 && t.edge >= t.green - 3,
+			      "and so is one that fades out over another source (green %d, %.0f wanted; just inside its edge %d)",
+			      t.green, over, t.edge);
+		}
+		// Each source by itself: the upper one's line lies on the lower one.
+		for (obs_source_t *ss : shadows)
+			set(ss, [](obs_data_t *s) { obs_data_set_int(s, "shadow_from", 1); });
+		sleep_ms(300);
+		shot(obs_scene_get_source(m1));
+		shot(obs_scene_get_source(m2));
+		{
+			const std::vector<uint8_t> f = half_way();
+			const Unit u = unit(f, 100, 20, 260, 0xD0);
+			const Unit t = unit(f, 110, 310, 500, 0x90);
+			CHECK(flat(u) && std::abs(u.fade - 0.5) <= 0.05, "with Each source by itself too (%s)",
+			      say(u).c_str());
+			CHECK(flat(t) && std::abs(t.fade - 0.5) <= 0.05,
+			      "and over another source, its line on that one (%s)", say(t).c_str());
+		}
+		for (obs_source_t *ss : shadows)
+			set(ss, [](obs_data_t *s) { obs_data_set_int(s, "shadow_from", 0); });
+		// Make room without a fade: the source moves (up, its nearest
+		// edge), whole, and so does its line.
+		obs_data_set_int(md, "others", 3);
+		obs_data_set_bool(md, "room_fade", false);
+		obs_source_update(morph, md);
+		sleep_ms(300);
+		shot(obs_scene_get_source(m1));
+		{
+			const std::vector<uint8_t> f = half_way();
+			const Unit u = unit(f, 30, 0, 260, 0xD0);
+			CHECK(u.found && u.line <= 8 && std::abs(u.red - kRed) <= 4 && std::abs(u.green - kLow) <= 4 &&
+				      u.edge >= kLow - 4,
+			      "Make room without a fade: the source on its way keeps a solid line (%s; at x %d..%d)",
+			      say(u).c_str(), u.left, u.right);
+		}
+		obs_data_release(md);
+		obs_source_release(morph);
+		obs_source_filter_remove(obs_scene_get_source(m1), shadows[0]);
+		obs_source_filter_remove(obs_scene_get_source(m2), shadows[1]);
+		for (obs_source_t *ss : shadows)
+			obs_source_release(ss);
+		obs_scene_release(m1);
+		obs_scene_release(m2);
+
+		// In a scene with a Scene Shadow: an item fading in by its own show
+		// transition (OBS's fade, Morph's own for an unpaired source, and
+		// Make room with a fade, which the item Morph's layer draws: in
+		// from the left, its nearest edge).
+		struct Way {
+			const char *kind, *what;
+			bool room_fade;
+			int each;
+		};
+		for (const Way &way :
+		     {Way{"fade_transition", "OBS's fade", false, 0},
+		      Way{"fade_transition", "OBS's fade, each source by itself", false, 1},
+		      Way{"stagekit_morph", "Morph, unpaired: fade", false, 0},
+		      Way{"stagekit_make_room", "Make room, fading", true, 0},
+		      Way{"stagekit_make_room", "Make room, fading, each source by itself", true, 1}}) {
+			if (!obs_source_get_display_name(way.kind))
+				continue;
+			obs_scene_t *sc = obs_scene_create("OF Items");
+			put(sc, light, 0, 0);
+			obs_sceneitem_t *item = put(sc, only, 20, 140);
+			obs_source_t *ss = scene_filter(sc, [&](obs_data_t *s) {
+				ten(s);
+				obs_data_set_int(s, "shadow_from", way.each);
+			});
+			obs_data_t *td = obs_data_create();
+			obs_data_set_int(td, "ease_curve", 0);
+			if (way.room_fade)
+				obs_data_set_bool(td, "room_fade", true);
+			obs_source_t *tr = obs_source_create_private(way.kind, "OF Item Transition", td);
+			obs_data_release(td);
+			obs_sceneitem_set_transition(item, true, tr);
+			obs_sceneitem_set_transition_duration(item, true, 1600);
+			obs_source_release(tr);
+			obs_source_t *before_out = obs_get_output_source(0);
+			obs_set_output_source(0, obs_scene_get_source(sc));
+			obs_sceneitem_set_visible(item, false);
+			shot(obs_scene_get_source(sc));
+			obs_sceneitem_set_visible(item, true);
+			// Looked at a few times on the way in: the frame nearest half.
+			Unit best;
+			for (int i = 0; i < 11; i++) {
+				sleep_ms(100);
+				const Unit u = unit(render(obs_scene_get_source(sc), w, h), 180, 0, 420, 0xD0);
+				if (u.found && (!best.found || std::abs(u.fade - 0.5) < std::abs(best.fade - 0.5)))
+					best = u;
+			}
+			CHECK(flat(best) && best.fade > 0.2 && best.fade < 0.8,
+			      "an item fading in by its show transition (%s) under a Scene Shadow is one flat picture with its line (%s)",
+			      way.what, say(best).c_str());
+			sleep_ms(1000);
+			render(obs_scene_get_source(sc), w, h);
+			const Unit rest = unit(render(obs_scene_get_source(sc), w, h), 180, 0, 420, 0xD0);
+			CHECK(rest.found && rest.line <= 8 && std::abs(rest.green - kLow) <= 4,
+			      "and has a solid line once it is in (%s: line %d, green %d)", way.what, rest.line,
+			      rest.green);
+			obs_set_output_source(0, before_out);
+			obs_source_release(before_out);
+			obs_source_filter_remove(obs_scene_get_source(sc), ss);
+			obs_source_release(ss);
+			obs_scene_release(sc);
+			sleep_ms(200);
+		}
+		for (obs_source_t *src : {only, top, under, light})
+			obs_source_release(src);
 	}
 
 	// 4. The glow: white, 40 px soft, round a dark grey source on black.

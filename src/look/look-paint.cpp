@@ -10,6 +10,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include "look-paint.hpp"
 
+#include "../common/scene-util.hpp"
 #include "../common/tooltip.hpp"
 
 #include <obs-module.h>
@@ -244,6 +245,8 @@ LookPaint::LookPaint()
 		p_force_follow_ = gs_effect_get_param_by_name(effect_, "force_follow");
 		p_follow_amount_ = gs_effect_get_param_by_name(effect_, "follow_amount");
 		p_follow_tex_ = gs_effect_get_param_by_name(effect_, "follow_tex");
+		p_presence_ = gs_effect_get_param_by_name(effect_, "presence");
+		has_presence_ = gs_effect_get_technique(effect_, "Presence") != nullptr;
 	}
 	// (Smooth: sixteen-bit pictures and one more level, so a soft shadow's
 	// tail has no steps.)
@@ -501,7 +504,8 @@ void LookPaint::copy_onto(gs_texture_t *texture, uint32_t cx, uint32_t cy, bool 
 }
 
 bool LookPaint::compose(gs_texture_t *scene, gs_texture_t *cast, gs_texture_t *mask, const ShadowLook &look,
-			uint32_t cx, uint32_t cy, gs_texrender_t *into, bool scene_straight, gs_texture_t *ring)
+			uint32_t cx, uint32_t cy, gs_texrender_t *into, bool scene_straight, gs_texture_t *ring,
+			gs_texture_t *presence)
 {
 	gs_texrender_t *out = into ? into : out_;
 	if (!effect_ || !scene || !cast || !cx || !cy)
@@ -566,6 +570,7 @@ bool LookPaint::compose(gs_texture_t *scene, gs_texture_t *cast, gs_texture_t *m
 		gs_effect_set_texture(p_image_, scene);
 		gs_effect_set_texture(p_shadow_, softened);
 		gs_effect_set_texture(p_mask_, mask ? mask : cast);
+		gs_effect_set_texture(p_presence_, presence ? presence : mask ? mask : cast);
 		gs_effect_set_vec2(p_offset_, &offset);
 		gs_effect_set_vec4(p_color_, &color);
 		gs_effect_set_float(p_gain_, (float)(1.0 + look.spread * 6.0));
@@ -601,6 +606,8 @@ VisibleRect::VisibleRect()
 		for (const char *t : {"RectFirst", "RectReduce", "AreaFirst", "AreaReduce"})
 			if (!gs_effect_get_technique(effect_, t))
 				effect_ = nullptr;
+		has_top_ = effect_ && gs_effect_get_technique(effect_, "TopFirst") &&
+			   gs_effect_get_technique(effect_, "TopReduce");
 	}
 	obs_leave_graphics();
 	bfree(path);
@@ -672,6 +679,56 @@ Seen VisibleRect::measure(gs_texture_t *picture, uint32_t w, uint32_t h)
 	if (!out.known())
 		out = Seen();
 	return out;
+}
+
+gs_texture_t *VisibleRect::top(gs_texture_t *picture, uint32_t w, uint32_t h)
+{
+	if (!effect_ || !has_top_ || !picture || !w || !h)
+		return nullptr;
+	const bool previous = gs_framebuffer_srgb_enabled();
+	gs_enable_framebuffer_srgb(false);
+	gs_matrix_push();
+	gs_matrix_identity();
+	gs_texture_t *out = reduce(picture, w, h, "TopFirst", "TopReduce");
+	gs_matrix_pop();
+	gs_enable_framebuffer_srgb(previous);
+	return out;
+}
+
+bool LookPaint::may_fade(obs_sceneitem_t *item)
+{
+	return item && (is_morph_layer(item) || item_transition_running(item, obs_sceneitem_visible(item)));
+}
+
+void LookPaint::draw_presence(obs_sceneitem_t *item)
+{
+	matrix4 m;
+	uint32_t w = 0, h = 0;
+	gs_texture_t *picture = item_picture(item, m, w, h);
+	if (!picture || !w || !h)
+		return;
+	gs_texture_t *top = effect_ && has_presence_ && rects_ ? rects_->top(picture, w, h) : nullptr;
+	if (!top) {
+		// As it is drawn: the look of before.
+		gs_blend_state_push();
+		gs_blend_function(GS_BLEND_ONE, GS_BLEND_INVSRCALPHA);
+		draw_picture(picture, m, w, h);
+		gs_blend_state_pop();
+		return;
+	}
+	const bool previous = gs_framebuffer_srgb_enabled();
+	gs_enable_framebuffer_srgb(false);
+	gs_blend_state_push();
+	gs_blend_function(GS_BLEND_ONE, GS_BLEND_INVSRCALPHA);
+	gs_matrix_push();
+	gs_matrix_mul(&m);
+	gs_effect_set_texture(p_image_, picture);
+	gs_effect_set_texture(p_area_tex_, top);
+	while (gs_effect_loop(effect_, "Presence"))
+		gs_draw_sprite(picture, 0, w, h);
+	gs_matrix_pop();
+	gs_blend_state_pop();
+	gs_enable_framebuffer_srgb(previous);
 }
 
 Seen LookPaint::visible_rect(gs_texture_t *picture, uint32_t w, uint32_t h)
@@ -802,7 +859,8 @@ void LookPaint::draw_item_ring(obs_sceneitem_t *item, const ShadowLook &look)
 
 bool LookPaint::compose_layers(gs_texture_t *scene, const std::vector<gs_texture_t *> &casts,
 			       const std::vector<gs_texture_t *> &masks, const ShadowLook &look, uint32_t cx,
-			       uint32_t cy, gs_texrender_t *into, const std::vector<gs_texture_t *> *rings)
+			       uint32_t cy, gs_texrender_t *into, const std::vector<gs_texture_t *> *rings,
+			       const std::vector<gs_texture_t *> *presences)
 {
 	size_t last = casts.size();
 	for (size_t i = 0; i < casts.size(); i++)
@@ -824,7 +882,8 @@ bool LookPaint::compose_layers(gs_texture_t *scene, const std::vector<gs_texture
 			turn ^= 1;
 		}
 		gs_texture_t *ring = rings && i < rings->size() ? (*rings)[i] : nullptr;
-		if (!compose(under, casts[i], masks[i], look, cx, cy, to, straight, ring))
+		gs_texture_t *presence = presences && i < presences->size() ? (*presences)[i] : nullptr;
+		if (!compose(under, casts[i], masks[i], look, cx, cy, to, straight, ring, presence))
 			return false;
 		under = gs_texrender_get_texture(to);
 		straight = true;
