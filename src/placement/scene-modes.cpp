@@ -27,6 +27,9 @@ the Free Software Foundation; either version 2 of the License, or
 //   mode|<id>|hide      array {value}   other sources hidden when it comes on (never shown again by it)
 //   mode|<id>|leave_on  array {value}   sources that, shown while it is on, make it leave
 //   mode|<id>|leave_to  string          where it leaves to: "" the mode before, "none" no mode, or an id
+//   mode|<id>|place     array {value}   sources put in a saved place when it comes on (need not be members)
+//   mode|<id>|xf        object          their saved places: scene name -> source name -> transform
+//   mode|<id>|place_ms, place_ease_curve, place_ease_mode   the glide to them
 //   mode_now            string          the id of the mode on now (written by the filter)
 //   mode_before         string          the one before, for Toggle (written by the filter)
 //   allow_none, share_scenes, lock_hidden, and the fuller Show/Hide transition.
@@ -38,9 +41,11 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include "scene-modes.hpp"
 
+#include "fit-item.hpp"
 #include "visibility-link.hpp"
 
 #include "../api/vendor-api.hpp"
+#include "../common/easing.hpp"
 #include "../common/filter-input.hpp"
 #include "../common/go-to-scene.hpp"
 #include "../common/holds-hidden.hpp"
@@ -56,6 +61,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <functional>
@@ -208,6 +214,170 @@ bool has(const std::vector<std::string> &list, const char *name)
 // "Leave to": the mode before (as it comes), no mode, or a mode's id. Ids
 // always start with "m", so "none" is never one.
 const char kLeaveNone[] = "none";
+
+// ---- "Placed in this mode": a scene item's transform, as saved and applied.
+// The item's own values (inside a group, the group's coordinates), so the
+// same item gets them back as it had them.
+struct Xf {
+	double x = 0, y = 0, sx = 1, sy = 1, rot = 0, bw = 0, bh = 0;
+	long long align = 0, btype = 0, balign = 0;
+	long long cl = 0, ct = 0, cr = 0, cb = 0;
+};
+
+Xf xf_of(obs_sceneitem_t *item)
+{
+	Xf x;
+	vec2 v;
+	obs_sceneitem_get_pos(item, &v);
+	x.x = v.x;
+	x.y = v.y;
+	obs_sceneitem_get_scale(item, &v);
+	x.sx = v.x;
+	x.sy = v.y;
+	x.rot = obs_sceneitem_get_rot(item);
+	x.align = obs_sceneitem_get_alignment(item);
+	x.btype = obs_sceneitem_get_bounds_type(item);
+	x.balign = obs_sceneitem_get_bounds_alignment(item);
+	obs_sceneitem_get_bounds(item, &v);
+	x.bw = v.x;
+	x.bh = v.y;
+	obs_sceneitem_crop crop;
+	obs_sceneitem_get_crop(item, &crop);
+	x.cl = crop.left;
+	x.ct = crop.top;
+	x.cr = crop.right;
+	x.cb = crop.bottom;
+	return x;
+}
+
+void xf_set(obs_sceneitem_t *item, const Xf &x)
+{
+	obs_sceneitem_defer_update_begin(item);
+	vec2 v;
+	vec2_set(&v, (float)x.x, (float)x.y);
+	obs_sceneitem_set_pos(item, &v);
+	vec2_set(&v, (float)x.sx, (float)x.sy);
+	obs_sceneitem_set_scale(item, &v);
+	obs_sceneitem_set_rot(item, (float)x.rot);
+	obs_sceneitem_set_alignment(item, (uint32_t)x.align);
+	obs_sceneitem_set_bounds_type(item, (obs_bounds_type)x.btype);
+	obs_sceneitem_set_bounds_alignment(item, (uint32_t)x.balign);
+	vec2_set(&v, (float)x.bw, (float)x.bh);
+	obs_sceneitem_set_bounds(item, &v);
+	obs_sceneitem_crop crop = {(int)x.cl, (int)x.ct, (int)x.cr, (int)x.cb};
+	obs_sceneitem_set_crop(item, &crop);
+	obs_sceneitem_defer_update_end(item);
+}
+
+// Part-way from a to b. The kinds (alignment, bounds type) are b's from the
+// start; when the bounds type changes, the bounds size is b's at once too.
+Xf xf_between(const Xf &a, const Xf &b, double t)
+{
+	auto mix = [t](double p, double q) {
+		return p + (q - p) * t;
+	};
+	auto mixi = [&](long long p, long long q) {
+		return (long long)std::llround(mix((double)p, (double)q));
+	};
+	Xf x = b;
+	x.x = mix(a.x, b.x);
+	x.y = mix(a.y, b.y);
+	x.sx = mix(a.sx, b.sx);
+	x.sy = mix(a.sy, b.sy);
+	x.rot = mix(a.rot, b.rot);
+	if (a.btype == b.btype) {
+		x.bw = mix(a.bw, b.bw);
+		x.bh = mix(a.bh, b.bh);
+	}
+	x.cl = std::max(0LL, mixi(a.cl, b.cl));
+	x.ct = std::max(0LL, mixi(a.ct, b.ct));
+	x.cr = std::max(0LL, mixi(a.cr, b.cr));
+	x.cb = std::max(0LL, mixi(a.cb, b.cb));
+	return x;
+}
+
+obs_data_t *xf_data(const Xf &x)
+{
+	obs_data_t *d = obs_data_create();
+	obs_data_set_double(d, "x", x.x);
+	obs_data_set_double(d, "y", x.y);
+	obs_data_set_double(d, "sx", x.sx);
+	obs_data_set_double(d, "sy", x.sy);
+	obs_data_set_double(d, "rot", x.rot);
+	obs_data_set_int(d, "align", x.align);
+	obs_data_set_int(d, "btype", x.btype);
+	obs_data_set_int(d, "balign", x.balign);
+	obs_data_set_double(d, "bw", x.bw);
+	obs_data_set_double(d, "bh", x.bh);
+	obs_data_set_int(d, "cl", x.cl);
+	obs_data_set_int(d, "ct", x.ct);
+	obs_data_set_int(d, "cr", x.cr);
+	obs_data_set_int(d, "cb", x.cb);
+	return d;
+}
+
+Xf xf_read(obs_data_t *d)
+{
+	Xf x;
+	x.x = obs_data_get_double(d, "x");
+	x.y = obs_data_get_double(d, "y");
+	x.sx = obs_data_get_double(d, "sx");
+	x.sy = obs_data_get_double(d, "sy");
+	x.rot = obs_data_get_double(d, "rot");
+	x.align = obs_data_get_int(d, "align");
+	x.btype = obs_data_get_int(d, "btype");
+	x.balign = obs_data_get_int(d, "balign");
+	x.bw = obs_data_get_double(d, "bw");
+	x.bh = obs_data_get_double(d, "bh");
+	x.cl = obs_data_get_int(d, "cl");
+	x.ct = obs_data_get_int(d, "ct");
+	x.cr = obs_data_get_int(d, "cr");
+	x.cb = obs_data_get_int(d, "cb");
+	return x;
+}
+
+// A mode's saved places: scene name -> source name -> transform.
+using Places = std::map<std::string, std::map<std::string, Xf>>;
+
+Places read_places(obs_data_t *settings, const std::string &id)
+{
+	Places places;
+	obs_data_t *all = obs_data_get_obj(settings, key(id, "xf").c_str());
+	if (!all)
+		return places;
+	for (obs_data_item_t *scene = obs_data_first(all); scene; obs_data_item_next(&scene)) {
+		obs_data_t *sources = obs_data_item_get_obj(scene);
+		if (!sources)
+			continue;
+		auto &into = places[obs_data_item_get_name(scene)];
+		for (obs_data_item_t *src = obs_data_first(sources); src; obs_data_item_next(&src)) {
+			if (obs_data_t *x = obs_data_item_get_obj(src)) {
+				into[obs_data_item_get_name(src)] = xf_read(x);
+				obs_data_release(x);
+			}
+		}
+		obs_data_release(sources);
+	}
+	obs_data_release(all);
+	return places;
+}
+
+void write_places(obs_data_t *settings, const std::string &id, const Places &places)
+{
+	obs_data_t *all = obs_data_create();
+	for (const auto &[scene, sources] : places) {
+		obs_data_t *in = obs_data_create();
+		for (const auto &[name, x] : sources) {
+			obs_data_t *d = xf_data(x);
+			obs_data_set_obj(in, name.c_str(), d);
+			obs_data_release(d);
+		}
+		obs_data_set_obj(all, scene.c_str(), in);
+		obs_data_release(in);
+	}
+	obs_data_set_obj(settings, key(id, "xf").c_str(), all);
+	obs_data_release(all);
+}
 
 struct Mode {
 	std::string id, name, type, go_to;
@@ -422,6 +592,14 @@ public:
 	void update(obs_data_t *settings)
 	{
 		std::vector<Mode> modes = read_modes(settings);
+		// Each mode's glide to its saved places, as it comes.
+		for (const Mode &mode : modes) {
+			obs_data_set_default_int(settings, key(mode.id, "place_ms").c_str(), 300);
+			obs_data_set_default_int(settings, key(mode.id, "place_ease_curve").c_str(),
+						 (int)EaseCurve::Cubic);
+			obs_data_set_default_int(settings, key(mode.id, "place_ease_mode").c_str(),
+						 (int)EaseMode::InOut);
+		}
 		const std::vector<std::string> share = pick_list_read(settings, "share_scenes", false);
 		const bool allow_none = obs_data_get_bool(settings, "allow_none");
 		const bool lock_hidden = obs_data_get_bool(settings, "lock_hidden");
@@ -557,6 +735,7 @@ public:
 		// Off, nothing is done; on again, the items are taken as they are.
 		if (!enabled) {
 			was_on_ = false;
+			glides_.clear();
 			return;
 		}
 		// While OBS loads its scenes, or changes collection, nothing is
@@ -565,6 +744,7 @@ public:
 		if (!scenes_loaded()) {
 			unwatch();
 			was_on_ = false;
+			glides_.clear();
 			return;
 		}
 		was_on_ = true;
@@ -582,6 +762,7 @@ public:
 			put_back(seen);
 		for (const Press &press : presses)
 			act(press);
+		step_glides(seconds);
 		// A change left under way in a scene that was left with a cut is
 		// ended, once a second, in the scenes not on screen.
 		if ((stale_timer_ -= seconds) <= 0.0) {
@@ -843,6 +1024,8 @@ private:
 			const Mode *now = find_mode(s.modes, to);
 			obs_log(LOG_INFO, "Scene Modes '%s': mode '%s' on, %zu source(s) shown or hidden",
 				obs_source_get_name(source_), now ? now->name.c_str() : "(none)", count);
+			if (!to.empty())
+				start_places(to, s.share, true);
 			vendor_emit_scene_mode_changed(source_, to, s.current);
 		}
 		// "Switch to scene": a key's press turning a mode on, even the one on
@@ -883,6 +1066,8 @@ private:
 		const Snap s = snap();
 		if (s.current.empty())
 			return; // no mode on: nothing to go by
+		// Its saved places, at once.
+		start_places(s.current, s.share, false);
 		const Mode *now = find_mode(s.modes, s.current);
 		std::vector<obs_source_t *> scenes = covered(s.share);
 		std::vector<Work> work;
@@ -961,6 +1146,90 @@ private:
 					obs_sceneitem_set_locked(item, true);
 			});
 		release_all(scenes);
+	}
+
+	// "Placed in this mode": every listed source with a place saved for the
+	// scene it is in goes there, gliding when its scene is on screen and it
+	// is shown, at once otherwise. Locked items too. A source fitted by a Fit
+	// to Space or a Scene Fit is handed to it once in place.
+	void start_places(const std::string &mode, const std::vector<std::string> &share, bool glide)
+	{
+		obs_data_t *settings = obs_source_get_settings(source_);
+		const std::vector<std::string> listed = pick_list_read(settings, key(mode, "place").c_str(), false);
+		const Places places = listed.empty() ? Places() : read_places(settings, mode);
+		const double seconds = (double)obs_data_get_int(settings, key(mode, "place_ms").c_str()) / 1000.0;
+		const auto curve = (EaseCurve)obs_data_get_int(settings, key(mode, "place_ease_curve").c_str());
+		const auto how = (EaseMode)obs_data_get_int(settings, key(mode, "place_ease_mode").c_str());
+		obs_data_release(settings);
+		if (places.empty())
+			return;
+		std::vector<obs_source_t *> scenes = covered(share);
+		size_t count = 0;
+		for (obs_source_t *scene : scenes) {
+			const char *scene_name = obs_source_get_name(scene);
+			const auto in = places.find(scene_name ? scene_name : "");
+			if (in == places.end())
+				continue;
+			std::vector<std::string> done;
+			each_item(scene, [&](obs_sceneitem_t *item, const char *name) {
+				const auto x = in->second.find(name);
+				if (x == in->second.end() || !has(listed, name) || has(done, name))
+					return;
+				done.push_back(name);
+				obs_source_t *holder = obs_scene_get_source(obs_sceneitem_get_scene(item));
+				Glide g;
+				g.holder = obs_source_get_name(holder) ? obs_source_get_name(holder) : "";
+				g.item = obs_sceneitem_get_id(item);
+				g.source = name;
+				g.from = xf_of(item);
+				g.to = x->second;
+				g.seconds = seconds;
+				g.curve = curve;
+				g.how = how;
+				glides_.erase(std::remove_if(glides_.begin(), glides_.end(),
+							     [&](const Glide &o) {
+								     return o.holder == g.holder && o.item == g.item;
+							     }),
+					      glides_.end());
+				count++;
+				if (glide && seconds > 0.0 && obs_source_showing(scene) &&
+				    obs_sceneitem_visible(item)) {
+					glides_.push_back(std::move(g));
+				} else {
+					xf_set(item, g.to);
+					fit_item_placed(holder, name);
+				}
+			});
+		}
+		release_all(scenes);
+		if (count)
+			obs_log(LOG_INFO, "Scene Modes '%s': %zu source(s) go to their places for this mode%s",
+				obs_source_get_name(source_), count, glide ? "" : " (at once)");
+	}
+
+	void step_glides(float seconds)
+	{
+		for (auto it = glides_.begin(); it != glides_.end();) {
+			Glide &g = *it;
+			obs_source_t *holder = obs_get_source_by_name(g.holder.c_str());
+			obs_scene_t *sc = holder ? obs_group_or_scene_from_source(holder) : nullptr;
+			obs_sceneitem_t *item = sc ? obs_scene_find_sceneitem_by_id(sc, g.item) : nullptr;
+			if (!item) {
+				obs_source_release(holder);
+				it = glides_.erase(it);
+				continue;
+			}
+			g.elapsed += seconds;
+			const bool done = g.elapsed >= g.seconds;
+			if (done) {
+				xf_set(item, g.to);
+				fit_item_placed(holder, g.source.c_str());
+			} else {
+				xf_set(item, xf_between(g.from, g.to, ease(g.curve, g.how, g.elapsed / g.seconds)));
+			}
+			obs_source_release(holder);
+			it = done ? glides_.erase(it) : it + 1;
+		}
 	}
 
 	void end_stale()
@@ -1168,6 +1437,16 @@ private:
 	bool sweep_ = false; // lock what is hidden: the option was just switched on
 
 	// The tick's own.
+	struct Glide {
+		std::string holder; // the scene or group the item is straight in
+		int64_t item = 0;
+		std::string source;
+		Xf from, to;
+		double elapsed = 0.0, seconds = 0.0;
+		EaseCurve curve = EaseCurve::Cubic;
+		EaseMode how = EaseMode::InOut;
+	};
+	std::vector<Glide> glides_;
 	std::vector<obs_weak_source_t *> watched_;
 	double watch_timer_ = 0.0, stale_timer_ = 1.0;
 	bool ready_ = false;  // looked at once after loading
@@ -1210,7 +1489,7 @@ void on_source_rename(void *, calldata_t *cd)
 		bool changed = false;
 		std::vector<std::string> lists;
 		for (const std::string &id : pick_list_read(settings, "modes", false))
-			for (const char *part : {"sources", "hide", "leave_on"})
+			for (const char *part : {"sources", "hide", "leave_on", "place"})
 				lists.push_back(key(id, part));
 		lists.push_back("share_scenes");
 		for (const std::string &list : lists) {
@@ -1227,6 +1506,24 @@ void on_source_rename(void *, calldata_t *cd)
 			}
 		}
 		for (const std::string &id : pick_list_read(settings, "modes", false)) {
+			// Saved places, by scene and by source.
+			Places places = read_places(settings, id);
+			bool moved = false;
+			if (places.count(was)) {
+				places[now] = std::move(places[was]);
+				places.erase(was);
+				moved = true;
+			}
+			for (auto &[scene, sources] : places)
+				if (sources.count(was)) {
+					sources[now] = sources[was];
+					sources.erase(was);
+					moved = true;
+				}
+			if (moved) {
+				write_places(settings, id, places);
+				changed = true;
+			}
 			const std::string go = key(id, "go_to");
 			if (strcmp(obs_data_get_string(settings, go.c_str()), was) == 0) {
 				obs_data_set_string(settings, go.c_str(), now);
@@ -1274,6 +1571,37 @@ void fill_mode_now(obs_property_t *list, obs_data_t *settings)
 }
 
 void add_modes_and_rest(obs_properties_t *props, obs_source_t *owner, obs_data_t *settings);
+
+// "Settings for": the modes by name; only the chosen mode's group shows, so
+// the settings under the modes are in reach. Empty or gone: the mode on,
+// else the first. Only visibility changes here, never the controls, so it
+// is safe at OBS's first round of modified callbacks.
+void show_chosen_mode(obs_properties_t *props, obs_data_t *settings)
+{
+	const std::vector<Mode> modes = read_modes(settings);
+	std::string chosen = obs_data_get_string(settings, "mode_for");
+	if (!find_mode(modes, chosen)) {
+		chosen = obs_data_get_string(settings, "mode_now");
+		if (!find_mode(modes, chosen))
+			chosen = modes.empty() ? std::string() : modes.front().id;
+		obs_data_set_string(settings, "mode_for", chosen.c_str());
+	}
+	if (obs_property_t *box = obs_properties_get(props, "mode_for")) {
+		obs_property_list_clear(box);
+		for (const Mode &mode : modes)
+			obs_property_list_add_string(box, mode.name.c_str(), mode.id.c_str());
+		obs_property_set_visible(box, !modes.empty());
+	}
+	for (const Mode &mode : modes)
+		if (obs_property_t *group = obs_properties_get(props, key(mode.id, "g").c_str()))
+			obs_property_set_visible(group, mode.id == chosen);
+}
+
+bool mode_for_cb(void *, obs_properties_t *props, obs_property_t *, obs_data_t *settings)
+{
+	show_chosen_mode(props, settings);
+	return true;
+}
 
 // "Leave to": the mode before, no mode, and every other mode by name.
 void fill_leave_to(obs_property_t *list, obs_data_t *settings, const std::string &own)
@@ -1325,6 +1653,7 @@ void add_mode(obs_source_t *owner, obs_data_t *settings, const std::string &name
 	obs_data_set_string(settings, key(id, "name").c_str(), name.c_str());
 	obs_data_set_string(settings, key(id, "type").c_str(), type.c_str());
 	obs_data_set_string(settings, key(id, "go_to").c_str(), "");
+	obs_data_set_string(settings, "mode_for", id.c_str()); // the new one is shown
 	obs_source_update(owner, settings);
 }
 
@@ -1400,9 +1729,16 @@ bool remove_cb(obs_properties_t *props, obs_property_t *property, void *data)
 		return false;
 	obs_data_t *settings = obs_source_get_settings(owner);
 	std::vector<std::string> ids = pick_list_read(settings, "modes", false);
+	// The one before it is shown next (the first, when it was first).
+	const auto at = std::find(ids.begin(), ids.end(), id);
+	if (id == obs_data_get_string(settings, "mode_for") && at != ids.end()) {
+		const std::string next = at != ids.begin() ? *(at - 1) : (at + 1 != ids.end() ? *(at + 1) : "");
+		obs_data_set_string(settings, "mode_for", next.c_str());
+	}
 	ids.erase(std::remove(ids.begin(), ids.end(), id), ids.end());
 	pick_list_write(settings, "modes", false, ids);
-	for (const char *part : {"name", "type", "go_to", "sources", "hide", "leave_on", "leave_to"})
+	for (const char *part : {"name", "type", "go_to", "sources", "hide", "leave_on", "leave_to", "place", "xf",
+				 "place_ms", "place_ease_curve", "place_ease_mode"})
 		obs_data_erase(settings, key(id, part).c_str());
 	// A mode that left to it goes to the mode before instead.
 	for (const std::string &other : ids)
@@ -1417,6 +1753,56 @@ bool remove_cb(obs_properties_t *props, obs_property_t *property, void *data)
 	rebuild(props, owner, settings);
 	obs_data_release(settings);
 	return true;
+}
+
+// "Save their places now": each listed source's transform, in the filter's
+// scene and the scenes under "Same modes in scenes", kept for this mode.
+// Only settings are written: the window is not rebuilt.
+size_t save_places(obs_source_t *owner, obs_data_t *settings, const std::string &id)
+{
+	obs_source_t *parent = obs_filter_get_parent(owner);
+	if (!parent)
+		return 0;
+	const std::vector<std::string> listed = pick_list_read(settings, key(id, "place").c_str(), false);
+	std::vector<obs_source_t *> scenes;
+	scenes.push_back(obs_source_get_ref(parent));
+	for (const std::string &name : pick_list_read(settings, "share_scenes", false)) {
+		obs_source_t *scene = obs_get_source_by_name(name.c_str());
+		if (scene && scene != parent && obs_scene_from_source(scene) && !obs_source_is_group(scene))
+			scenes.push_back(scene);
+		else
+			obs_source_release(scene);
+	}
+	Places places;
+	size_t count = 0;
+	for (obs_source_t *scene : scenes) {
+		const char *scene_name = obs_source_get_name(scene);
+		if (scene_name)
+			each_item(scene, [&](obs_sceneitem_t *item, const char *name) {
+				auto &into = places[scene_name];
+				if (!has(listed, name) || into.count(name))
+					return;
+				into[name] = xf_of(item);
+				count++;
+			});
+		obs_source_release(scene);
+	}
+	write_places(settings, id, places);
+	return count;
+}
+
+bool save_places_cb(obs_properties_t *, obs_property_t *property, void *data)
+{
+	auto *owner = static_cast<obs_source_t *>(data);
+	const std::string id = id_of(property);
+	if (!owner || id.empty())
+		return false;
+	obs_data_t *settings = obs_source_get_settings(owner);
+	const size_t count = save_places(owner, settings, id);
+	obs_data_release(settings);
+	obs_log(LOG_INFO, "Scene Modes '%s': saved the places of %zu source(s) for mode '%s'",
+		obs_source_get_name(owner), count, id.c_str());
+	return false;
 }
 
 // A name typed: the mode's heading and the "Mode now" list follow at once.
@@ -1436,6 +1822,7 @@ bool renamed_cb(void *priv, obs_properties_t *props, obs_property_t *property, o
 	for (const Mode &mode : read_modes(settings))
 		if (obs_property_t *to = obs_properties_get(props, key(mode.id, "leave_to").c_str()))
 			fill_leave_to(to, settings, mode.id);
+	show_chosen_mode(props, settings);
 	return true;
 }
 
@@ -1452,6 +1839,9 @@ void add_modes_and_rest(obs_properties_t *props, obs_source_t *owner, obs_data_t
 	std::vector<std::string> scenes;
 	scene_names(scenes);
 	const std::vector<Mode> modes = settings ? read_modes(settings) : std::vector<Mode>();
+	obs_property_t *mode_for = obs_properties_add_list(props, "mode_for", obs_module_text("Modes.For"),
+							   OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
+	set_tip(mode_for, obs_module_text("Modes.For.Tip"));
 	for (size_t i = 0; i < modes.size(); i++) {
 		const Mode &mode = modes[i];
 		obs_properties_t *content = obs_properties_create();
@@ -1519,6 +1909,26 @@ void add_modes_and_rest(obs_properties_t *props, obs_source_t *owner, obs_data_t
 		fill_leave_to(leave_to, settings, mode.id);
 		set_tip(leave_to, obs_module_text("Modes.LeaveTo.Tip"));
 
+		const std::string place_setting = key(mode.id, "place");
+		PickList place;
+		place.setting = place_setting.c_str();
+		place.title = "Modes.Place";
+		place.add = "Modes.Sources.Add";
+		place.tip = "Modes.Place.Tip";
+		place.choices = [parent](std::vector<std::string> &names) {
+			scene_item_names(parent, names);
+		};
+		pick_list_add(content, owner, place);
+		obs_property_t *save = obs_properties_add_button2(content, key(mode.id, "place_save").c_str(),
+								  obs_module_text("Modes.PlaceSave"), save_places_cb,
+								  owner);
+		set_tip(save, obs_module_text("Modes.PlaceSave.Tip"));
+		obs_property_t *ms = obs_properties_add_int_slider(content, key(mode.id, "place_ms").c_str(),
+								   obs_module_text("Modes.PlaceMs"), 0, 3000, 50);
+		obs_property_int_set_suffix(ms, " ms");
+		set_tip(ms, obs_module_text("Modes.PlaceMs.Tip"));
+		add_easing_properties(content, key(mode.id, "place_").c_str());
+
 		if (i > 0)
 			obs_properties_add_button2(content, key(mode.id, "up").c_str(), obs_module_text("Modes.MoveUp"),
 						   move_up_cb, owner);
@@ -1551,6 +1961,9 @@ void add_modes_and_rest(obs_properties_t *props, obs_source_t *owner, obs_data_t
 	set_tip(lock, obs_module_text("Modes.LockHidden.Tip"));
 
 	add_item_change_properties(props, owner, nullptr);
+	if (settings)
+		show_chosen_mode(props, settings);
+	obs_property_set_modified_callback2(mode_for, mode_for_cb, owner);
 }
 
 obs_properties_t *get_properties(void *data)

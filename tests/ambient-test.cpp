@@ -7285,6 +7285,292 @@ static void switch_is_command_test()
 	obs_source_release(before_out);
 }
 
+// Scene Modes' "Placed in this mode": a widget shown in two modes sits in a
+// place of each mode's own. The owner: "my amuse component aligns with the
+// chat box in chat mode, but in GBA mode, it's misaligned and not the same
+// width as the GBA link sources". Run after the Scene Modes section, and
+// alone with STAGEKIT_TEST_ONLY_MODE_PLACE.
+static void mode_place_test()
+{
+	printf("\n[scene modes: placed in this mode]\n");
+	auto block = [](const char *name) {
+		obs_data_t *d = obs_data_create();
+		obs_data_set_int(d, "color", 0xFF2080FF);
+		obs_data_set_int(d, "width", 160);
+		obs_data_set_int(d, "height", 90);
+		obs_source_t *src = obs_source_create("color_source", name, d, nullptr);
+		obs_data_release(d);
+		return src;
+	};
+	auto set_list = [](obs_data_t *settings, const std::string &list, const std::vector<std::string> &names) {
+		obs_data_array_t *rows = obs_data_array_create();
+		for (const std::string &name : names) {
+			obs_data_t *row = obs_data_create();
+			obs_data_set_string(row, "value", name.c_str());
+			obs_data_array_push_back(rows, row);
+			obs_data_release(row);
+		}
+		obs_data_set_array(settings, list.c_str(), rows);
+		obs_data_array_release(rows);
+	};
+	auto press = [](const char *scene, const char *mode) {
+		obs_data_t *req = obs_data_create();
+		obs_data_set_string(req, "scene", scene);
+		obs_data_set_string(req, "mode", mode);
+		obs_data_set_string(req, "how", "on");
+		calldata_t cd = {};
+		calldata_set_string(&cd, "request", "SetSceneMode");
+		calldata_set_string(&cd, "data", obs_data_get_json(req));
+		proc_handler_call(obs_get_proc_handler(), "stagekit_vendor_call", &cd);
+		calldata_free(&cd);
+		obs_data_release(req);
+	};
+	auto put = [](obs_sceneitem_t *item, float x, float y, float scale, int crop_left, obs_bounds_type bt, float bw,
+		      float bh) {
+		vec2 v;
+		vec2_set(&v, x, y);
+		obs_sceneitem_set_pos(item, &v);
+		vec2_set(&v, scale, scale);
+		obs_sceneitem_set_scale(item, &v);
+		obs_sceneitem_crop crop = {crop_left, 0, 0, 0};
+		obs_sceneitem_set_crop(item, &crop);
+		obs_sceneitem_set_bounds_type(item, bt);
+		vec2_set(&v, bw, bh);
+		obs_sceneitem_set_bounds(item, &v);
+	};
+	auto at = [](obs_sceneitem_t *item, float x, float y, float tol = 0.6f) {
+		vec2 v;
+		obs_sceneitem_get_pos(item, &v);
+		return std::fabs(v.x - x) < tol && std::fabs(v.y - y) < tol;
+	};
+	auto pos = [](obs_sceneitem_t *item) {
+		vec2 v;
+		obs_sceneitem_get_pos(item, &v);
+		return v;
+	};
+	obs_source_t *before_out = obs_get_output_source(0);
+	obs_source_t *chat = block("MP Chat");
+	obs_source_t *gba = block("MP GBA");
+	obs_source_t *widget = block("MP Widget");
+	obs_scene_t *scene = obs_scene_create("MP Scene");
+	obs_scene_t *side = obs_scene_create("MP Side");
+	obs_source_t *scene_src = obs_scene_get_source(scene);
+	obs_source_t *side_src = obs_scene_get_source(side);
+	obs_scene_add(scene, chat);
+	obs_sceneitem_t *gi = obs_scene_add(scene, gba);
+	obs_sceneitem_set_visible(gi, false);
+	obs_sceneitem_t *wi = obs_scene_add(scene, widget);
+	obs_sceneitem_set_locked(wi, true); // the owner's layouts lock items
+	obs_sceneitem_t *si = obs_scene_add(side, widget);
+	obs_set_output_source(0, scene_src);
+
+	obs_data_t *md = obs_data_create();
+	set_list(md, "modes", {"m1", "m2", "m3"});
+	obs_data_set_string(md, "mode|m1|name", "Chat");
+	set_list(md, "mode|m1|sources", {"MP Chat"});
+	set_list(md, "mode|m1|place", {"MP Widget"});
+	obs_data_set_string(md, "mode|m2|name", "GBA");
+	set_list(md, "mode|m2|sources", {"MP GBA"});
+	set_list(md, "mode|m2|place", {"MP Widget"});
+	obs_data_set_int(md, "mode|m2|place_ms", 400);
+	obs_data_set_string(md, "mode|m3|name", "Plain");
+	set_list(md, "share_scenes", {"MP Side"});
+	obs_data_set_string(md, "mode_now", "m1");
+	obs_data_set_string(md, "transition", "none");
+	obs_source_t *modes = obs_source_create("stagekit_scene_modes", "MP Modes", md, nullptr);
+	obs_data_release(md);
+	obs_source_filter_add(scene_src, modes);
+	sleep_ms(300);
+
+	// The window: the list, the button and the duration in each mode's group.
+	obs_properties_t *props = obs_source_properties(modes);
+	bool short_labels = true;
+	for (const char *name :
+	     {"mode|m1|place|alist", "mode|m1|place_save", "mode|m1|place_ms", "mode|m1|place_ease_curve"}) {
+		obs_property_t *pr = obs_properties_get(props, name);
+		if (!pr || strlen(obs_property_description(pr)) >= 26)
+			short_labels = false;
+	}
+	obs_data_t *ms = obs_source_get_settings(modes);
+	const long long default_ms = obs_data_get_int(ms, "mode|m1|place_ms");
+	obs_data_release(ms);
+	CHECK(short_labels && default_ms == 300,
+	      "each mode's group has 'Placed in this mode', 'Save their places now', a move duration (300 ms as it comes) and easing, with short labels");
+
+	// "Settings for": only the chosen mode's group shows (as it comes, the
+	// mode on); another chosen shows that one.
+	auto shown = [&](obs_properties_t *pr) {
+		std::string out;
+		for (const char *id : {"m1", "m2", "m3", "m4"})
+			if (obs_property_t *g = obs_properties_get(pr, (std::string("mode|") + id + "|g").c_str()))
+				out += obs_property_visible(g) ? id : "";
+		return out;
+	};
+	auto chosen_for = [&] {
+		obs_data_t *st = obs_source_get_settings(modes);
+		std::string v = obs_data_get_string(st, "mode_for");
+		obs_data_release(st);
+		return v;
+	};
+	obs_property_t *for_box = obs_properties_get(props, "mode_for");
+	const std::string first_shown = shown(props);
+	{
+		obs_data_t *st = obs_source_get_settings(modes);
+		obs_data_set_string(st, "mode_for", "m2");
+		if (for_box)
+			obs_property_modified(for_box, st);
+		obs_data_release(st);
+	}
+	const std::string second_shown = shown(props);
+	bool before_groups = false;
+	for (obs_property_t *p = obs_properties_first(props); p; obs_property_next(&p)) {
+		if (strcmp(obs_property_name(p), "mode_for") == 0)
+			before_groups = true;
+		if (strcmp(obs_property_name(p), "mode|m1|g") == 0)
+			break;
+	}
+	CHECK(for_box && obs_property_list_item_count(for_box) == 3 && before_groups && first_shown == "m1" &&
+		      second_shown == "m2",
+	      "'Settings for' lists the modes above their groups, and only the chosen mode's group shows (%s, then %s)",
+	      first_shown.c_str(), second_shown.c_str());
+	// A mode added is chosen; removed, the one before it is.
+	{
+		obs_data_t *st = obs_source_get_settings(modes);
+		obs_data_set_string(st, "new_mode", "Fourth");
+		obs_source_update(modes, st);
+		obs_data_release(st);
+	}
+	if (obs_property_t *add = obs_properties_get(props, "add_mode"))
+		obs_property_button_clicked(add, modes);
+	const std::string added_for = chosen_for(), added_shown = shown(props);
+	if (obs_property_t *rm = obs_properties_get(props, "mode|m4|remove"))
+		obs_property_button_clicked(rm, modes);
+	const std::string removed_for = chosen_for(), removed_shown = shown(props);
+	for_box = obs_properties_get(props, "mode_for");
+	CHECK(added_for == "m4" && added_shown == "m4" && removed_for == "m3" && removed_shown == "m3" && for_box &&
+		      obs_property_list_item_count(for_box) == 3,
+	      "a mode added is the one shown (%s, %s), and removed, the one before it (%s, %s)", added_for.c_str(),
+	      added_shown.c_str(), removed_for.c_str(), removed_shown.c_str());
+	sleep_ms(100);
+
+	// Chat's places, then GBA's, each saved with the button.
+	put(wi, 100, 50, 1.5f, 8, OBS_BOUNDS_NONE, 0, 0);
+	put(si, 20, 30, 1.0f, 0, OBS_BOUNDS_NONE, 0, 0);
+	obs_property_t *save1 = obs_properties_get(props, "mode|m1|place_save");
+	const bool refresh = save1 && obs_property_button_clicked(save1, modes);
+	put(wi, 400, 300, 0.5f, 0, OBS_BOUNDS_SCALE_INNER, 200, 100);
+	put(si, 300, 200, 1.0f, 0, OBS_BOUNDS_NONE, 0, 0);
+	if (obs_property_t *save2 = obs_properties_get(props, "mode|m2|place_save"))
+		obs_property_button_clicked(save2, modes);
+	CHECK(save1 && !refresh, "'Save their places now' is pressed without the window being rebuilt");
+
+	// Chat on: the widget glides back to Chat's place, size and crop.
+	press("MP Scene", "m2"); // GBA's place is where it is
+	sleep_ms(200);
+	press("MP Scene", "m1");
+	sleep_ms(100);
+	const vec2 mid = pos(wi);
+	sleep_ms(400);
+	vec2 sc;
+	obs_sceneitem_get_scale(wi, &sc);
+	obs_sceneitem_crop crop;
+	obs_sceneitem_get_crop(wi, &crop);
+	CHECK(mid.x > 101 && mid.x < 399 && at(wi, 100, 50) && std::fabs(sc.x - 1.5f) < 0.001f && crop.left == 8 &&
+		      obs_sceneitem_get_bounds_type(wi) == OBS_BOUNDS_NONE && obs_sceneitem_locked(wi),
+	      "Chat on: the locked widget glides (at %.0f part-way) to Chat's place, scale and crop", mid.x);
+	CHECK(at(si, 20, 30), "the scene under 'Same modes in scenes' gets its own saved place, off screen, at once");
+
+	// GBA on: its place and bounding box.
+	press("MP Scene", "m2");
+	sleep_ms(700);
+	vec2 b;
+	obs_sceneitem_get_bounds(wi, &b);
+	CHECK(at(wi, 400, 300) && obs_sceneitem_get_bounds_type(wi) == OBS_BOUNDS_SCALE_INNER &&
+		      std::fabs(b.x - 200) < 0.6f && at(si, 300, 200),
+	      "GBA on: the widget goes to GBA's place and bounding box (%.0f x %.0f)", b.x, b.y);
+
+	// A mode with no places leaves it alone.
+	press("MP Scene", "m3");
+	sleep_ms(400);
+	CHECK(at(wi, 400, 300), "a mode with no saved places leaves the widget where it is");
+
+	// Off screen: at once.
+	obs_set_output_source(0, nullptr);
+	press("MP Scene", "m1");
+	sleep_ms(200);
+	CHECK(at(wi, 100, 50), "off screen the widget is put in Chat's place at once");
+
+	// A Fit to Space on the widget in the side scene: it takes the place
+	// it was given and does not put it back.
+	{
+		obs_data_t *fd = obs_data_create();
+		obs_data_set_string(fd, "item", "MP Widget");
+		obs_data_set_int(fd, "box", 2);
+		obs_data_set_double(fd, "margin", 10);
+		obs_data_set_int(fd, "glide_ms", 0);
+		obs_data_set_bool(fd, "resize", false);
+		obs_source_t *fit = obs_source_create("stagekit_fit_item", "MP Fit", fd, nullptr);
+		obs_data_release(fd);
+		obs_source_filter_add(side_src, fit);
+		obs_set_output_source(0, side_src);
+		for (int i = 0; i < 16; i++) {
+			render(side_src, 640, 360);
+			sleep_ms(50);
+		}
+		obs_set_output_source(0, nullptr);
+		sleep_ms(300);
+		const vec2 fitted = pos(si);
+		press("MP Scene", "m2");
+		sleep_ms(800);
+		CHECK(at(si, 300, 200),
+		      "a widget a Fit to Space looks after stays in GBA's place (%.0f, %.0f; the fit had it at %.0f, %.0f)",
+		      pos(si).x, pos(si).y, fitted.x, fitted.y);
+		obs_source_filter_remove(side_src, fit);
+		obs_source_release(fit);
+		sleep_ms(300); // (gone for good before the rename below)
+	}
+
+	// A rename: the lists and the saved places follow.
+	obs_source_set_name(widget, "MP Widget 2");
+	sleep_ms(100);
+	press("MP Scene", "m1");
+	sleep_ms(300);
+	CHECK(at(wi, 100, 50), "after the widget is renamed, Chat's place is still its own");
+
+	// Loading: a filter saved with GBA on puts the widget in GBA's place once.
+	obs_data_t *saved = obs_source_get_settings(modes);
+	obs_data_t *copy = obs_data_create_from_json(obs_data_get_json(saved));
+	obs_data_release(saved);
+	obs_data_set_string(copy, "mode_now", "m2");
+	obs_source_filter_remove(scene_src, modes);
+	obs_source_release(modes);
+	obs_properties_destroy(props);
+	obs_sceneitem_set_visible(gi, true);
+	sleep_ms(100);
+	obs_source_t *loaded = obs_source_create("stagekit_scene_modes", "MP Loaded", copy, nullptr);
+	obs_data_release(copy);
+	obs_source_filter_add(scene_src, loaded);
+	sleep_ms(300);
+	const bool load_place = at(wi, 400, 300);
+	put(wi, 5, 5, 1.0f, 0, OBS_BOUNDS_NONE, 0, 0);
+	sleep_ms(400);
+	CHECK(load_place && at(wi, 5, 5), "at load the mode on puts the widget in its place once, and then leaves it");
+
+	obs_source_filter_remove(scene_src, loaded);
+	obs_source_release(loaded);
+	sleep_ms(100);
+	obs_source_remove(scene_src);
+	obs_source_remove(side_src);
+	obs_scene_release(scene);
+	obs_scene_release(side);
+	for (obs_source_t *src : {chat, gba, widget}) {
+		obs_source_remove(src);
+		obs_source_release(src);
+	}
+	obs_set_output_source(0, before_out);
+	obs_source_release(before_out);
+}
+
 // Scene Modes' "Hide when on" and "Leave when shown": the owner's
 // Component-Capture-Scene without its two column markers. GBA mode hides the
 // full-screen DSLR when it comes on, and DSLR shown while GBA is on (by a
@@ -15814,6 +16100,14 @@ int main(int argc, char **argv)
 	if (getenv("STAGEKIT_TEST_ONLY_MORPH_UI_TASK")) { // to try that section alone
 		morph_ui_task_test(w, h);
 		scene_walk_test();
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
+
+	if (getenv("STAGEKIT_TEST_ONLY_MODE_PLACE")) { // to try that section alone
+		mode_place_test();
 		obs_shutdown();
 		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
 		       g_failures == 1 ? "" : "s");
@@ -24857,6 +25151,8 @@ int main(int argc, char **argv)
 		obs_source_release(modes_before_out);
 		// Hide when on, and Leave when shown (alone: STAGEKIT_TEST_ONLY_MODES_HIDE).
 		modes_hide_test();
+		// Placed in this mode (alone: STAGEKIT_TEST_ONLY_MODE_PLACE).
+		mode_place_test();
 	}
 	// ==== end scene-filters:modes ====
 	// ==== scene-filters:transitions ====

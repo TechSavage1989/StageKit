@@ -1403,6 +1403,8 @@ back stays up), and a source in no mode is never touched.
   template* (Starting, Game, Display / Screen, Window, Camera, Chat, Intermission, Be right back,
   Ending) and press *Add from template*. A template only fills in the name and the type; both can be
   changed afterwards. No mode name is built in, and two modes may have the same name.
+- **Settings for**: the mode whose group is shown. Only one mode's group shows at a time, so the
+  settings under the modes are in reach. A mode added is the one shown; removed, the one before it.
 - **Each mode** has a group of its own, headed *Mode: <name>*:
   - **Name**: renaming a mode keeps its sources, its hotkey and its Stream Deck keys.
   - **Mode type**: what it shows (Game, Handheld, Window, Camera, Chat, Starting and so on: every type the Stream Deck Scene Mode key offers). A Stream Deck
@@ -1418,6 +1420,15 @@ back stays up), and a source in no mode is never touched.
     Show in Scenes key, a Link Visibility, the eye) turns the mode under *Leave to* on: *The mode
     before* (as it comes), *No mode* (only with *Allow no mode*) or another mode. The source that
     was shown stays shown, even when the next mode's *Hide when on* lists it (the log says so).
+  - **Placed in this mode**, **Save their places now**, **Move duration** and easing: sources put in
+    a place of their own when this mode comes on: position, size, crop and bounding box. They need
+    not be the mode's sources; a music widget shown in two modes can sit under the chat in one and
+    match the width of the handheld windows in the other. Turn the mode on, arrange the sources by
+    hand, press *Save their places now* (in this scene and the scenes under *Same modes in scenes*).
+    When the mode comes on they glide there (300 ms as it comes; 0 moves them at once; at once in a
+    scene not on screen, for a hidden source and when OBS starts). Locked sources move too. A mode
+    with nothing saved for a source leaves it where it is. A Fit to Space or Scene Fit on the source
+    takes it where it was put, but may still adjust it by its own rules.
   - **Move up** and **Remove mode**. The order is the order of *next*. A mode removed leaves its
     sources as they are.
 - **Mode now**: the mode that is on. Choosing another here turns it on, but never changes scene.

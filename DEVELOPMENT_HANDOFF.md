@@ -23,6 +23,14 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
+## Scene Modes: places per mode, and Settings for (0.1.0-beta206)
+
+Branch `feat/mode-transforms`. Not pushed. Each mode can keep saved transforms for chosen sources
+(*Placed in this mode*, *Save their places now*, *Move duration* and easing) and glides them there
+when it comes on; the window shows one mode's group at a time (*Settings for*, `mode_for`). See
+AGENTS.md's Scene Modes entry. Gates `MODE_PLACE`, `MODES_HIDE`, `TOOLTIPS` passed; the full
+suite was not run. Not seen on Windows.
+
 ## Ambient Background: no bars between repeats (0.1.0-beta205)
 
 Branch `fix/ambient-seams`. Not pushed. The owner's background image had fully transparent left
