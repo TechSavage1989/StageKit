@@ -2725,7 +2725,8 @@ void FitScan::look(obs_source_t *scene, obs_sceneitem_t *other, const Measure &h
 	obs_source_t *source = obs_sceneitem_get_source(other);
 	seen.width = obs_source_get_width(source);
 	seen.height = obs_source_get_height(source);
-	seen.there = seen.width && seen.height && measure_seen(scene, other, Measure{true, how.leave_out_shadows}, seen.box);
+	seen.there = seen.width && seen.height &&
+		     measure_seen(scene, other, Measure{true, how.leave_out_shadows}, seen.box);
 	seen.item_at = scene_box(scene, other);
 	if (!how.visible_pixels)
 		seen.box = seen.item_at;
@@ -2777,7 +2778,6 @@ void FitScan::obstacles(obs_source_t *scene, obs_sceneitem_t *self, const std::v
 					continue;
 				passed = true;
 			}
-
 		}
 		if (std::find(used_.begin(), used_.end(), g.item) == used_.end())
 			used_.push_back(g.item);

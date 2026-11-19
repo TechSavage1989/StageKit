@@ -131,8 +131,7 @@ bool on_drawing_thread(std::function<void()> work)
 		return true;
 	const int count = ++g_gave_up;
 	if (count <= 5)
-		blog(LOG_WARNING,
-		     "[stagekit] measuring: OBS's drawing thread did not answer in %d ms", kPatienceMs);
+		blog(LOG_WARNING, "[stagekit] measuring: OBS's drawing thread did not answer in %d ms", kPatienceMs);
 	return false;
 }
 
@@ -1782,8 +1781,8 @@ FitCheck copy_keeps_fits(obs_source_t *scene, obs_sceneitem_t *copy, const Box &
 	return spaces_kept(held, {m}, who);
 }
 
-int fit_to_space(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items, double dock_gap, const Measure &dock_how,
-		 std::vector<obs_sceneitem_t *> *fitted, FitToSpaceNote *note)
+int fit_to_space(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items, double dock_gap,
+		 const Measure &dock_how, std::vector<obs_sceneitem_t *> *fitted, FitToSpaceNote *note)
 {
 	if (!scene || items.empty())
 		return 0;
@@ -2107,7 +2106,8 @@ int fit_to_space(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &item
 		// each try only works the fits' spaces out again.
 		{
 			Outcome first;
-			if (outcome(step(full_k, entry.toward_x, entry.toward_y, nullptr), first) && nothing_to_do(first.st))
+			if (outcome(step(full_k, entry.toward_x, entry.toward_y, nullptr), first) &&
+			    nothing_to_do(first.st))
 				continue; // already fitted
 		}
 		const double k_low = full_k > 1.0 ? 1.0 : full_k * 0.5;

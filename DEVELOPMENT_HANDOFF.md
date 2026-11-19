@@ -9,11 +9,11 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | `fix/auto-capture-keeps-aim` (Auto Capture stays aimed at a game while its picture comes back, betaNEXT), on `main` after beta193. Next: the new collection |
+| Working branch | `fix/scene-fit-visible-layout`, on `main` after beta197. Release notes in `docs/releases/0.1.0-beta198.md`. |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
-## Dock and Scene Fit in a split game layout (betaNEXT)
+## Dock and Scene Fit in a split game layout (0.1.0-beta198)
 
 The dock reads the selected source's fit settings even when the filter is disabled. Measurement runs
 on the graphics thread. A timeout ends the attempt and is reported in the dock. Fitted neighbors

@@ -1081,8 +1081,8 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   other fit's item at *its* home (`Claim::home`, `Obstacle::home`). In `solve`, while that space
   is the same again (3 px, `kHomeSlack`) and the picture at home keeps the gap (same slack) to
   what counts and the screen's edges, a kept-size image returns to the home box. For Resize-on
-  compare the image that fills the measured room to the home width and height using the entry's
-  size tolerance. A fitting hand layout retains its exact placement. An undersized home fills the
+  compare the image that fills the room with the other sources at their home positions to the
+  home width and height using the entry's size tolerance. A fitting hand layout retains its exact placement. An undersized home fills the
   room once the measurements settle. Keep reference sizes as image dimensions in scene pixels
   (`keep_w/h`, `orig_w/h`). Convert legacy scales once, after a nonzero capture settles.
   At each source size fit the image inside those reference dimensions. A 0x0 capture must never

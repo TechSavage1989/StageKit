@@ -2551,8 +2551,8 @@ static void fit_enable_test()
 				obs_sceneitem_get_pos(its[i], &pos);
 				obs_sceneitem_get_bounds(its[i], &bounds);
 				const double k = target.w / r.w;
-				place(its[i], target.x - (r.x - pos.x) * k, target.y - (r.y - pos.y) * k,
-				      bounds.x * k, bounds.y * k);
+				place(its[i], target.x - (r.x - pos.x) * k, target.y - (r.y - pos.y) * k, bounds.x * k,
+				      bounds.y * k);
 			}
 			if (ready)
 				break;
@@ -2898,8 +2898,9 @@ static void fit_enable_test()
 		obs_source_filter_add(ss, standby);
 		obs_data_t *d = obs_data_create();
 		list(d, "entries", {"FE Layout Game", "FE Top", "FE Mid", "FE Bottom", "FE Camera", "FE Chat Group"});
-		for (Entry e : {Entry{"FE Layout Game", true, 0}, Entry{"FE Top", true, 6}, Entry{"FE Mid", true, 0},
-				Entry{"FE Bottom", false, 8}, Entry{"FE Camera", false, 0}, Entry{"FE Chat Group", false, 0}}) {
+		for (Entry e :
+		     {Entry{"FE Layout Game", true, 0}, Entry{"FE Top", true, 6}, Entry{"FE Mid", true, 0},
+		      Entry{"FE Bottom", false, 8}, Entry{"FE Camera", false, 0}, Entry{"FE Chat Group", false, 0}}) {
 			const std::string prefix = std::string("fit|") + e.name + "|";
 			look(d, prefix, e);
 			obs_data_set_double(d, (prefix + "margin").c_str(), 30);
@@ -2910,13 +2911,18 @@ static void fit_enable_test()
 		obs_source_filter_add(ss, fit);
 		obs_set_output_source(0, ss);
 		frames(ss, 50);
-		CHECK(!obs_sceneitem_visible(chat) && !obs_sceneitem_visible(cam), "the other mode's sources are hidden");
+		CHECK(!obs_sceneitem_visible(chat) && !obs_sceneitem_visible(cam),
+		      "the other mode's sources are hidden");
 		int twins = 0;
-		obs_scene_enum_items(scene, [](obs_scene_t *, obs_sceneitem_t *it, void *data) {
-			if (strcmp(obs_source_get_unversioned_id(obs_sceneitem_get_source(it)), "stagekit_stand_in") == 0)
-				++*static_cast<int *>(data);
-			return true;
-		}, &twins);
+		obs_scene_enum_items(
+			scene,
+			[](obs_scene_t *, obs_sceneitem_t *it, void *data) {
+				if (strcmp(obs_source_get_unversioned_id(obs_sceneitem_get_source(it)),
+					   "stagekit_stand_in") == 0)
+					++*static_cast<int *>(data);
+				return true;
+			},
+			&twins);
 		CHECK(twins == 4, "Scene Standby created all four twins (%d)", twins);
 		place(game_it, 40, 65, 215, 150);
 		place(top_it, 490 - 10.0 * 2 / 3, 20, 200.0 * 2 / 3, 100);
@@ -2945,7 +2951,8 @@ static void fit_enable_test()
 				const auto now = shows_all(ss);
 				for (size_t j = 0; j < items.size(); j++) {
 					if (i != j)
-						CHECK(worst_of({was[j]}, {now[j]}) <= 1, "dock press %zu leaves image %zu alone", i, j);
+						CHECK(worst_of({was[j]}, {now[j]}) <= 1,
+						      "dock press %zu leaves image %zu alone", i, j);
 				}
 				CHECK(now[i].any && now[i].w >= was[i].w - 1 && now[i].h >= was[i].h - 1,
 				      "dock press %zu keeps or grows the selected image", i);
@@ -2955,8 +2962,8 @@ static void fit_enable_test()
 		const auto hand = shows_all(ss);
 		CHECK(hand[0].any && std::fabs(hand[0].x - 30) <= 1 && std::fabs(hand[0].y - 30) <= 1 &&
 			      std::fabs(hand[0].w - 430) <= 1 && std::fabs(hand[0].h - 300) <= 1,
-		      "the game fills the left area with 30 px gaps (%.0f,%.0f %.0fx%.0f)",
-		      hand[0].x, hand[0].y, hand[0].w, hand[0].h);
+		      "the game fills the left area with 30 px gaps (%.0f,%.0f %.0fx%.0f)", hand[0].x, hand[0].y,
+		      hand[0].w, hand[0].h);
 		for (size_t i = 1; i <= 3; ++i) {
 			const Rect &image = hand[i];
 			const double y = 30.0 + (i - 1) * 110.0;
@@ -3009,9 +3016,9 @@ static void fit_enable_test()
 		obs_sceneitem_get_pos(low_it, &p);
 		obs_sceneitem_get_bounds(low_it, &b);
 		obs_sceneitem_get_scale(low_it, &k);
-		CHECK(obs_source_get_width(bottom) == 0 && obs_source_get_height(bottom) == 0 &&
-			      p.x == pos.x && p.y == pos.y && b.x == bounds.x && b.y == bounds.y &&
-			      k.x == scale.x && k.y == scale.y, "0x0 leaves the handheld transform untouched");
+		CHECK(obs_source_get_width(bottom) == 0 && obs_source_get_height(bottom) == 0 && p.x == pos.x &&
+			      p.y == pos.y && b.x == bounds.x && b.y == bounds.y && k.x == scale.x && k.y == scale.y,
+		      "0x0 leaves the handheld transform untouched");
 		input(480, 480, 0, 0);
 		const Rect square_image = shows_all(ss)[3];
 		CHECK(square_image.any && std::fabs(square_image.w - 80) <= 1 && std::fabs(square_image.h - 80) <= 1,
@@ -9396,7 +9403,8 @@ static void fit_tool_test(uint32_t w, uint32_t h)
 		pump(50);
 		const QString said = status->text();
 		pump(1000);
-		CHECK(off_by(held_of(item), mine) <= 0.5 && said.contains("Left to FT Own Fit: it resizes to fill its space"),
+		CHECK(off_by(held_of(item), mine) <= 0.5 &&
+			      said.contains("Left to FT Own Fit: it resizes to fill its space"),
 		      "an item its own Fit to Space resizes is left to it: \"%s\"", said.toUtf8().constData());
 		obs_source_set_enabled(own, false);
 		obs_data_t *align = obs_data_create();
@@ -9569,8 +9577,9 @@ static void fit_tool_test(uint32_t w, uint32_t h)
 		long long fits = 0, alike = 0, home = 0;
 		const std::string said_on = predicts(fits, alike, home);
 		const bool placed_as_expected = c.resize ? std::fabs(low_on.w() - 250) <= 2 && low_on.w() > laid.w()
-						       : std::abs(low_on.x0 - laid.x0) <= 1 &&
-								 std::abs(low_on.y0 - laid.y0) <= 1 && low_on.w() == laid.w();
+							 : std::abs(low_on.x0 - laid.x0) <= 1 &&
+								   std::abs(low_on.y0 - laid.y0) <= 1 &&
+								   low_on.w() == laid.w();
 		CHECK(low_on.any() && placed_as_expected && fits >= 1 && alike == fits && home == (c.resize ? 0 : 1),
 		      "%s: Resize-on fills the available width and Resize-off keeps the hand layout (%lld of %lld alike): %s",
 		      c.what, alike, fits, said_on.c_str());
@@ -9582,10 +9591,10 @@ static void fit_tool_test(uint32_t w, uint32_t h)
 		const Seen low_after = seen_low();
 		const std::string said_after = predicts(fits, alike, home);
 		CHECK(most <= 0.5 && low_after.any() && std::abs(low_after.x0 - low_on.x0) <= 1 &&
-			      std::abs(low_after.y0 - low_on.y0) <= 1 && low_after.w() == low_on.w() &&
-			      alike == fits && fits >= 1,
-		      "%s: the press leaves the neighbor's fitted image in place for 3 s (off by %.2f): %s",
-		      c.what, most, said_after.c_str());
+			      std::abs(low_after.y0 - low_on.y0) <= 1 && low_after.w() == low_on.w() && alike == fits &&
+			      fits >= 1,
+		      "%s: the press leaves the neighbor's fitted image in place for 3 s (off by %.2f): %s", c.what,
+		      most, said_after.c_str());
 		CHECK(s.any() && s.h() > 30.0 && s.y1 + 1 <= low_after.y0 - 29 && s.x1 + 1 <= (int)w - 29,
 		      "%s: and the item grows into what is free and keeps the gap above it (y %d to %d, %.0f x %.0f)",
 		      c.what, s.y0, s.y1 + 1, s.w(), s.h());
@@ -17751,7 +17760,8 @@ int main(int argc, char **argv)
 				obs_source_t *loaded = load(false);
 				wait(1500);
 				obs_data_t *now = obs_source_get_settings(loaded);
-				CHECK(is(width(), 100) && std::fabs(obs_data_get_double(now, "keep_w") - 100.0) < 0.001 &&
+				CHECK(is(width(), 100) &&
+					      std::fabs(obs_data_get_double(now, "keep_w") - 100.0) < 0.001 &&
 					      std::string(obs_data_get_string(now, "keep_item")) == "Restart Box",
 				      "loaded with 'Resize it to fit' unticked, the item keeps the size it was saved at, not the one from before the filter, and that size is saved (%.0f wide, saved %.3f)",
 				      width(), obs_data_get_double(now, "keep_w"));

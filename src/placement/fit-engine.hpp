@@ -53,7 +53,7 @@ struct FitSettings {
 	// owner has the same source in scenes where it belongs elsewhere.)
 	std::vector<std::string> share_scenes;
 	std::string orig_item;         // the item whose size was noted before the filter first touched it
-	double orig_k = 0; // legacy collection, converted when the source has an image
+	double orig_k = 0;             // legacy collection, converted when the source has an image
 	double orig_w = 0, orig_h = 0; // original image size in scene pixels
 	bool visible_pixels = true;    // other items are measured by what they draw, not their boxes
 	bool no_shadows = true;        // and shadows, glows and outlines do not count, its own included

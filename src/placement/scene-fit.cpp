@@ -643,7 +643,6 @@ void SceneFit::tick(float seconds)
 			obs_sceneitem_addref(items[i]);
 	}
 
-
 	// A: everything about each item before its space is looked for. A
 	// hidden one, one coming back and one with no picture say where their
 	// room is, and the others go by that in this same tick.
