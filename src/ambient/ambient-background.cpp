@@ -237,6 +237,7 @@ private:
 	uint64_t start_choice_ = start_image_choice();
 	gs_image_file4_t overlay_image_ = {};
 	bool overlay_image_loaded_ = false;
+	uint64_t base_anim_ns_ = 0, overlay_anim_ns_ = 0; // an animated picture's last move on
 
 	gs_effect_t *effect_ = nullptr;
 	gs_eparam_t *p_image_ = nullptr;
@@ -615,6 +616,14 @@ void AmbientBackground::resolve_children()
 void AmbientBackground::tick(float seconds)
 {
 	time_ += seconds;
+	// An animated picture (a GIF) plays, as in OBS's own Image source.
+	{
+		const bool showing = obs_source_showing(source_);
+		if (base_image_loaded_)
+			tick_animated_image(base_image_, base_anim_ns_, showing);
+		if (overlay_image_loaded_)
+			tick_animated_image(overlay_image_, overlay_anim_ns_, showing);
+	}
 	frame_seconds_ = std::min(frame_seconds_.load() + seconds, 1.0f); // since the trail last moved on
 	new_frame_ = true;
 

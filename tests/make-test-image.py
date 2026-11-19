@@ -71,3 +71,8 @@ Image.new("RGBA", (W, H), (0, 0, 0, 255)).save(f"{out}/test-black.png")
 dark = Image.new("RGBA", (W, H), (0, 0, 0, 255))
 dark.paste(art.resize((350, 250)), (145, 55))
 dark.save(f"{out}/test-dark-game.png")
+
+# 7. A small animated GIF, red then blue, a fifth of a second each, played for
+#    ever: an animated standby image.
+frames = [Image.new("RGB", (64, 36), c) for c in ((255, 0, 0), (0, 0, 255))]
+frames[0].save(f"{out}/test-anim.gif", save_all=True, append_images=frames[1:], duration=200, loop=0)

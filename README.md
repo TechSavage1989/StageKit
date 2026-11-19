@@ -227,6 +227,10 @@ of it. It is saved with the scene collection.
 
 Changing the standby image updates both at once.
 
+An animated image, such as a GIF, plays: in the Standby Image source, in every Standby Image filter
+(and the image shown in a hidden source's place), in Ambient Background and in the dock's small image,
+where it keeps the zoom and place you chose with the wheel. A still image is shown as before.
+
 ### Shadow, Glow & Outline
 
 Add **Source Filter: Shadow, Glow & Outline (StageKit)** as a filter on a source, group or scene. (It was called

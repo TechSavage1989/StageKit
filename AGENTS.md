@@ -503,6 +503,15 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   (`get_standing`), so Corners & Edges and the rest shape the whole picture. The capture is always
   drawn by way of a copy (`render_live_`), kept when the capture ends so the change back starts from
   the last frame: a capture that has ended draws nothing.
+- **An animated start image plays** (2026-11-19; the owner: "standby images that are animated, like
+  gifs, should be animated. currently it's not"). `tick_animated_image` (`src/common/start-image.*`)
+  moves a `gs_image_file4_t` on by the video time while its user is showing, as OBS's Image source
+  does, all under the graphics lock; the Start Image source (so every Standby filter, managed ones
+  and stand-ins, whose picture is a private one, inc_showing'd while held) and Ambient Background's
+  base and overlay images call it from their tick. A still file is untouched. The dock's thumbnail
+  plays a `QMovie` (`play_picture`) whose frames take `thumb_full_`'s place, so the wheel zoom and
+  pan hold. Tested in `[standby image: an animated GIF plays]` (`STAGEKIT_TEST_ONLY_STANDBY_GIF`,
+  its own run in `run-tests.sh`; `out/test-anim.gif` from `make-test-image.py`). Not seen on Windows.
 - **Standby Picture can stand in for a hidden source** (`when_hidden`, *Show when source is
   hidden*, off as it comes; beta139). The owner: "I need a way for the standby image to be displayed
   in place of any source I choose when it's hidden". A hidden scene item draws nothing, so each

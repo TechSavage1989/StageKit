@@ -15355,6 +15355,110 @@ static void layout_scenes_test()
 	}
 }
 
+// An animated standby image plays (the owner: "standby images that are
+// animated, like gifs, should be animated. currently it's not"): the Start
+// Image source and a Standby Image filter covering a camera, drawn over a
+// second and a half, show both frames of a two-frame GIF; a still image
+// shows one colour all along. Alone with STAGEKIT_TEST_ONLY_STANDBY_GIF.
+static void standby_gif_test(const std::string &gif_path, const std::string &still_path)
+{
+	printf("\n[standby image: an animated GIF plays]\n");
+	auto set_start = [](const std::string &path) {
+		calldata_t cd = {};
+		calldata_set_string(&cd, "path", path.c_str());
+		proc_handler_call(obs_get_proc_handler(), "stagekit_set_start_image", &cd);
+		calldata_free(&cd);
+		sleep_ms(100);
+	};
+	auto call = [](const char *request, const std::string &json) {
+		calldata_t cd = {};
+		calldata_set_string(&cd, "request", request);
+		calldata_set_string(&cd, "data", json.c_str());
+		proc_handler_call(obs_get_proc_handler(), "stagekit_vendor_call", &cd);
+		const char *answer = calldata_string(&cd, "response");
+		obs_data_t *out = obs_data_create_from_json(answer && *answer ? answer : "{}");
+		calldata_free(&cd);
+		return out;
+	};
+	// The colours seen in the middle of `src`, drawn every 80 ms for 1.3 s.
+	auto seen = [](obs_source_t *src, uint32_t w, uint32_t h) {
+		std::string colours;
+		for (int i = 0; i < 16; i++) {
+			sleep_ms(80);
+			const std::vector<uint8_t> px = render(src, w, h);
+			const uint8_t *p = &px[(size_t(h / 2) * w + w / 2) * 4];
+			const char c = p[0] > 200 && p[1] < 60 && p[2] < 60   ? 'r'
+				       : p[2] > 200 && p[0] < 60 && p[1] < 60 ? 'b'
+				       : p[1] > 200 && p[0] < 60 && p[2] < 60 ? 'g'
+									      : '?';
+			if (colours.find(c) == std::string::npos)
+				colours += c;
+		}
+		std::sort(colours.begin(), colours.end());
+		return colours;
+	};
+	{
+		QImage green(64, 36, QImage::Format_RGB32);
+		green.fill(QColor(0, 255, 0));
+		green.save(QString::fromStdString(still_path));
+	}
+	obs_source_t *before_out = obs_get_output_source(0);
+
+	// The Start Image source.
+	set_start(gif_path);
+	obs_source_t *start = obs_source_create("stagekit_start_image", "GIF Start", nullptr, nullptr);
+	obs_source_inc_showing(start);
+	sleep_ms(100);
+	const std::string start_gif = seen(start, 64, 36);
+	CHECK(start_gif == "br", "the Start Image source plays an animated GIF: both frames are drawn (%s)",
+	      start_gif.c_str());
+	set_start(still_path);
+	const std::string start_still = seen(start, 64, 36);
+	CHECK(start_still == "g", "a still start image shows one colour all along (%s)", start_still.c_str());
+	obs_source_dec_showing(start);
+	obs_source_release(start);
+
+	// A Standby Image filter over a camera, through its cover.
+	set_start(gif_path);
+	obs_data_t *cd = obs_data_create();
+	obs_data_set_int(cd, "color", 0xFF00FFFF); // yellow
+	obs_data_set_int(cd, "width", 160);
+	obs_data_set_int(cd, "height", 90);
+	obs_source_t *camera = obs_source_create("color_source", "GIF Camera", cd, nullptr);
+	obs_data_release(cd);
+	obs_scene_t *scene = obs_scene_create("GIF Scene");
+	obs_scene_add(scene, camera);
+	obs_set_output_source(0, obs_scene_get_source(scene));
+	obs_data_t *sd = obs_data_create();
+	obs_data_set_int(sd, "picture", 0); // the start image
+	obs_data_set_int(sd, "style", 1);   // a cut
+	obs_source_t *standby = obs_source_create("stagekit_standby", "GIF Standby", sd, nullptr);
+	obs_data_release(sd);
+	obs_source_filter_add(camera, standby);
+	sleep_ms(200);
+	obs_data_t *on = call("StandbyCover", R"({"sourceName":"GIF Camera","how":"on"})");
+	sleep_ms(300);
+	const std::string standby_gif = seen(camera, 160, 90);
+	CHECK(obs_data_get_bool(on, "covered") && standby_gif == "br",
+	      "a Standby Image filter plays an animated GIF over the camera: both frames are drawn (%s)",
+	      standby_gif.c_str());
+	obs_data_release(on);
+	set_start(still_path);
+	sleep_ms(300);
+	const std::string standby_still = seen(camera, 160, 90);
+	CHECK(standby_still == "g", "a still start image in the Standby Image filter shows one colour (%s)",
+	      standby_still.c_str());
+	obs_data_release(call("StandbyCover", R"({"sourceName":"GIF Camera","how":"off"})"));
+
+	obs_set_output_source(0, before_out);
+	obs_source_release(before_out);
+	obs_source_filter_remove(camera, standby);
+	obs_source_release(standby);
+	obs_scene_release(scene);
+	obs_source_release(camera);
+	set_start("");
+}
+
 int main(int argc, char **argv)
 {
 	if (argc < 7) {
@@ -15662,6 +15766,15 @@ int main(int argc, char **argv)
 
 	if (getenv("STAGEKIT_TEST_ONLY_SWITCH_COMMAND")) { // to try that section alone
 		switch_is_command_test();
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
+
+	if (getenv("STAGEKIT_TEST_ONLY_STANDBY_GIF")) { // to try that section alone
+		const std::string here = std::string(base_image).substr(0, std::string(base_image).rfind('/') + 1);
+		standby_gif_test(here + "test-anim.gif", here + "test-still.png");
 		obs_shutdown();
 		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
 		       g_failures == 1 ? "" : "s");

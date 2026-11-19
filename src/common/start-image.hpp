@@ -11,6 +11,7 @@ the Free Software Foundation; either version 2 of the License, or
 #pragma once
 
 #include <obs.h>
+#include <graphics/image-file.h>
 
 #include <cstdint>
 #include <string>
@@ -50,6 +51,12 @@ std::string ambient_picture_path();
 // For the scene collection's save data.
 void start_image_save(obs_data_t *save_data);
 void start_image_load(obs_data_t *save_data);
+
+// Moves an animated image (a GIF) on to its frame for now, the way OBS's own
+// Image source does: while `showing`, by the video time since the last call
+// (kept in `last_ns`), and only for an animated file. A still image is left
+// as it is. Call it from the tick of whatever draws the image.
+void tick_animated_image(gs_image_file4_t &image, uint64_t &last_ns, bool showing);
 
 // Registers the "Start Image (StageKit)" source and a global
 // "stagekit_set_start_image" procedure.

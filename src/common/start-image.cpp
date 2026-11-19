@@ -55,6 +55,8 @@ public:
 
 	void tick()
 	{
+		if (loaded_)
+			tick_animated_image(image_, last_ns_, obs_source_showing(source_));
 		const uint64_t revision = start_image_revision();
 		if (revision == revision_)
 			return;
@@ -114,9 +116,27 @@ private:
 	uint64_t revision_ = 0;
 	gs_image_file4_t image_ = {};
 	bool loaded_ = false;
+	uint64_t last_ns_ = 0; // the video time an animated image was last moved on
 };
 
 } // namespace
+
+void tick_animated_image(gs_image_file4_t &image, uint64_t &last_ns, bool showing)
+{
+	// Everything under the graphics lock: the image may be freed and made
+	// again from another thread (a settings change) under that same lock.
+	obs_enter_graphics();
+	if (!image.image3.image2.image.is_animated_gif || !showing) {
+		last_ns = 0; // starts again from the frame it is at, without a jump
+		obs_leave_graphics();
+		return;
+	}
+	const uint64_t now = obs_get_video_frame_time();
+	if (last_ns && now > last_ns && gs_image_file4_tick(&image, now - last_ns))
+		gs_image_file4_update_texture(&image);
+	last_ns = now;
+	obs_leave_graphics();
+}
 
 std::string start_image_path()
 {
