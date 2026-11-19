@@ -23,7 +23,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
-## Auto Capture's two gated tests: no plugin fault (0.1.0-betaNEXT)
+## Auto Capture's two gated tests: no plugin fault (0.1.0-beta211)
 
 Branch `fix/auto-capture-tests`, on `main` at beta210. Not pushed. Tests only.
 `STAGEKIT_TEST_ONLY_AUTO_WINCLOSE` and `STAGEKIT_TEST_ONLY_AUTO_KEEP_AIM` had been reported as
@@ -41,7 +41,7 @@ exist too. Also run, all passed: `AUTO_REST` (18), `HOOK_BACK` (6), `CAPTURE_HID
 run-tests.sh does). Other sections that write to `<out>/../` have the same weakness and were not
 touched.
 
-## A fading source and its outline are one flat picture (0.1.0-betaNEXT)
+## A fading source and its outline are one flat picture (0.1.0-beta211)
 
 Branch `fix/outline-fade-flat`, on `main` at beta210. Not pushed. The owner, after beta210: "the
 directly morphing outlines are fine, but fading ones using the secondary animation still have the
