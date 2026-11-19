@@ -23,6 +23,26 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
+## Ambient Background: no bars between repeats (0.1.0-beta205)
+
+Branch `fix/ambient-seams`. Not pushed. The owner's background image had fully transparent left
+and right columns (about 3 % a side); *Mirror at the edges* and the drift repeated them as black
+strips. An image file's empty edges (see-through, or black all the way along; at most a quarter a
+side) are now found once at load from the decoded pixels and left out of the shape and the
+sampling (`picture_crop`, `uv_crop`). A source as the base and live captures are unchanged (no
+cheap measure exists for them). The drift and mirror maths were checked and had no seam. Gates
+passed: AMBIENT_SEAMS (new), BLUR_OFF_DRAW, AMBIENT_DARKEST. Not seen on Direct3D.
+
+## An animated standby image plays (0.1.0-beta205)
+
+Branch `fix/standby-gif`, on `main`. Not pushed. The owner's standby image is an animated GIF
+(`start.gif`) and stood still. `tick_animated_image` in `src/common/start-image.*` ticks the
+`gs_image_file4_t` as OBS's Image source does; the Start Image source and Ambient Background call it
+from their tick, which covers every Standby filter (its picture is a private Start Image source),
+Scene Standby's managed filters and the stand-ins. The dock's thumbnail plays a `QMovie`. A *File*
+picture in a Standby filter was OBS's own Image source already and played. New gate
+`STANDBY_GIF` (its own run in `run-tests.sh`); the full suite was not run. Not seen on Windows.
+
 ## A hook by hand hands the capture back (0.1.0-beta204)
 
 Branch `fix/hand-hook-hands-back`, on beta203. Not pushed. The owner hooked a Game Capture by

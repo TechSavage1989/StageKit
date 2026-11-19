@@ -84,6 +84,63 @@ constexpr double kInternalScale = 0.5;
 // drawn the Dual Kawase way: the taps would stand too far apart.
 constexpr double kTapLimit = 125.0;
 
+// The part of a picture that is picture: the rows and columns at its edges
+// that are see-through, or black all the way along, left out. Drifted and
+// mirrored, those edges were repeated as black bars between the copies (the
+// owner: "I'd like the ambient background to not have any black bars between
+// the repeating patterns"; their image had transparent margins). In pixels,
+// the end exclusive; all of it when nothing is left out.
+struct PictureCrop {
+	uint32_t x0 = 0, y0 = 0, x1 = 0, y1 = 0; // x1 == 0: the whole picture
+	bool whole() const { return x1 == 0; }
+};
+
+// Found once from the decoded pixels, before they go to the graphics card:
+// nothing per frame, no read-back. Only whole edge rows and columns count,
+// never holes inside, and at most a quarter of the picture from each side.
+static PictureCrop picture_crop(const gs_image_file &image)
+{
+	PictureCrop crop;
+	const uint8_t *px = image.texture_data;
+	const uint32_t w = image.cx, h = image.cy;
+	const bool alpha = image.format == GS_RGBA || image.format == GS_BGRA;
+	if (!px || w < 4 || h < 4 || (!alpha && image.format != GS_BGRX))
+		return crop;
+	auto empty = [&](uint32_t x, uint32_t y) {
+		const uint8_t *p = px + (size_t(y) * w + x) * 4;
+		// See-through (under 1/255 of cover), or black.
+		return (alpha && p[3] == 0) || std::max({p[0], p[1], p[2]}) <= 8;
+	};
+	auto empty_col = [&](uint32_t x) {
+		for (uint32_t y = 0; y < h; y++)
+			if (!empty(x, y))
+				return false;
+		return true;
+	};
+	auto empty_row = [&](uint32_t y) {
+		for (uint32_t x = 0; x < w; x++)
+			if (!empty(x, y))
+				return false;
+		return true;
+	};
+	uint32_t x0 = 0, x1 = w, y0 = 0, y1 = h;
+	while (x0 < w / 4 && empty_col(x0))
+		x0++;
+	while (x1 > w - w / 4 && empty_col(x1 - 1))
+		x1--;
+	while (y0 < h / 4 && empty_row(y0))
+		y0++;
+	while (y1 > h - h / 4 && empty_row(y1 - 1))
+		y1--;
+	if (x0 == 0 && y0 == 0 && x1 == w && y1 == h)
+		return crop;
+	crop.x0 = x0;
+	crop.y0 = y0;
+	crop.x1 = x1;
+	crop.y1 = y1;
+	return crop;
+}
+
 struct Settings {
 	BaseType base_type = BaseType::Image;
 	std::string image;
@@ -197,14 +254,15 @@ public:
 	uint32_t height() const { return height_; }
 
 private:
-	void load_image(gs_image_file4_t &file, bool &loaded, const std::string &path);
+	void load_image(gs_image_file4_t &file, bool &loaded, const std::string &path, PictureCrop *crop = nullptr);
 	void set_child(obs_weak_source_t *&slot, obs_source_t *source);
 	obs_source_t *child(obs_weak_source_t *slot);
 	void resolve_children();
 	gs_texture_t *render_child(obs_source_t *child, gs_texrender_t *target, bool picture_only = false);
 	void draw_layer(gs_texture_t *tex, uint32_t w, uint32_t h, double scroll_x, double scroll_y, double zoom,
 			double opacity, const Settings &s, LiveFit fit = LiveFit::Fill, bool clip = false,
-			double focus_x = 0.5, double focus_y = 0.5, bool as_is = false);
+			double focus_x = 0.5, double focus_y = 0.5, bool as_is = false,
+			const PictureCrop &crop = PictureCrop());
 	void draw_base(gs_texture_t *base, uint32_t w, uint32_t h, const Settings &s);
 	void pass(gs_effect_t *effect, gs_eparam_t *image, gs_texrender_t *dst, gs_texture_t *src, uint32_t w,
 		  uint32_t h, const char *technique);
@@ -232,11 +290,14 @@ private:
 
 	gs_image_file4_t base_image_ = {};
 	bool base_image_loaded_ = false;
+	PictureCrop base_crop_;  // of base_image_; guarded by mutex_
+	PictureCrop drawn_crop_; // the copy the drawing in progress uses
 	std::string base_image_path_;
 	uint64_t start_revision_ = 0;
 	uint64_t start_choice_ = start_image_choice();
 	gs_image_file4_t overlay_image_ = {};
 	bool overlay_image_loaded_ = false;
+	uint64_t base_anim_ns_ = 0, overlay_anim_ns_ = 0; // an animated picture's last move on
 
 	gs_effect_t *effect_ = nullptr;
 	gs_eparam_t *p_image_ = nullptr;
@@ -244,6 +305,7 @@ private:
 	gs_eparam_t *p_uv_scale_ = nullptr;
 	gs_eparam_t *p_uv_offset_ = nullptr;
 	gs_eparam_t *p_wrap_mirror_ = nullptr;
+	gs_eparam_t *p_uv_crop_ = nullptr;
 	gs_eparam_t *p_clip_edges_ = nullptr;
 	gs_eparam_t *p_opacity_ = nullptr;
 	gs_eparam_t *p_saturation_ = nullptr;
@@ -348,6 +410,7 @@ AmbientBackground::AmbientBackground(obs_data_t *settings, obs_source_t *source)
 		p_uv_scale_ = gs_effect_get_param_by_name(effect_, "uv_scale");
 		p_uv_offset_ = gs_effect_get_param_by_name(effect_, "uv_offset");
 		p_wrap_mirror_ = gs_effect_get_param_by_name(effect_, "wrap_mirror");
+		p_uv_crop_ = gs_effect_get_param_by_name(effect_, "uv_crop");
 		p_clip_edges_ = gs_effect_get_param_by_name(effect_, "clip_edges");
 		p_opacity_ = gs_effect_get_param_by_name(effect_, "opacity");
 		p_saturation_ = gs_effect_get_param_by_name(effect_, "saturation");
@@ -426,18 +489,34 @@ AmbientBackground::~AmbientBackground()
 	obs_leave_graphics();
 }
 
-void AmbientBackground::load_image(gs_image_file4_t &file, bool &loaded, const std::string &path)
+void AmbientBackground::load_image(gs_image_file4_t &file, bool &loaded, const std::string &path, PictureCrop *crop)
 {
+	PictureCrop found;
 	obs_enter_graphics();
 	if (loaded) {
 		gs_image_file4_free(&file);
 		loaded = false;
 	}
 	obs_leave_graphics();
-	if (path.empty())
+	if (path.empty()) {
+		if (crop) {
+			std::lock_guard lock(mutex_);
+			*crop = found;
+		}
 		return;
+	}
 
 	gs_image_file4_init(&file, path.c_str(), GS_IMAGE_ALPHA_STRAIGHT);
+	if (crop) {
+		found = picture_crop(file.image3.image2.image);
+		if (!found.whole())
+			obs_log(LOG_INFO,
+				"Ambient Background: '%s' is drawn from %u,%u to %u,%u of %ux%u (empty edges left out)",
+				path.c_str(), found.x0, found.y0, found.x1, found.y1, file.image3.image2.image.cx,
+				file.image3.image2.image.cy);
+		std::lock_guard lock(mutex_);
+		*crop = found;
+	}
 	obs_enter_graphics();
 	gs_image_file4_init_texture(&file);
 	obs_leave_graphics();
@@ -509,7 +588,7 @@ void AmbientBackground::update(obs_data_t *settings)
 	start_revision_ = start_image_revision();
 	if (wanted != base_image_path_ || (!wanted.empty() && !base_image_loaded_)) {
 		base_image_path_ = wanted;
-		load_image(base_image_, base_image_loaded_, wanted);
+		load_image(base_image_, base_image_loaded_, wanted, &base_crop_);
 	}
 	if (s.overlay != old_overlay || (!s.overlay.empty() && !overlay_image_loaded_))
 		load_image(overlay_image_, overlay_image_loaded_, s.overlay);
@@ -615,6 +694,14 @@ void AmbientBackground::resolve_children()
 void AmbientBackground::tick(float seconds)
 {
 	time_ += seconds;
+	// An animated picture (a GIF) plays, as in OBS's own Image source.
+	{
+		const bool showing = obs_source_showing(source_);
+		if (base_image_loaded_)
+			tick_animated_image(base_image_, base_anim_ns_, showing);
+		if (overlay_image_loaded_)
+			tick_animated_image(overlay_image_, overlay_anim_ns_, showing);
+	}
 	frame_seconds_ = std::min(frame_seconds_.load() + seconds, 1.0f); // since the trail last moved on
 	new_frame_ = true;
 
@@ -641,7 +728,7 @@ void AmbientBackground::tick(float seconds)
 		const std::string path = ambient_picture_path();
 		if (uses_it && !path.empty() && path != base_image_path_) {
 			base_image_path_ = path;
-			load_image(base_image_, base_image_loaded_, path);
+			load_image(base_image_, base_image_loaded_, path, &base_crop_);
 		}
 	}
 
@@ -793,9 +880,22 @@ bool AmbientBackground::live_shows_something(gs_texture_t *live)
 // caller's ortho), scrolled by the given number of output pixels.
 void AmbientBackground::draw_layer(gs_texture_t *tex, uint32_t out_w, uint32_t out_h, double scroll_x, double scroll_y,
 				   double zoom, double opacity, const Settings &s, LiveFit fit, bool clip,
-				   double focus_x, double focus_y, bool as_is)
+				   double focus_x, double focus_y, bool as_is, const PictureCrop &crop)
 {
-	const double tex_aspect = (double)gs_texture_get_width(tex) / (double)gs_texture_get_height(tex);
+	const uint32_t tw = gs_texture_get_width(tex), th = gs_texture_get_height(tex);
+	// Only the part that is picture is laid down, drifted and mirrored. Its
+	// edges are sampled half a texel in, so the filtering never reaches the
+	// empty texels outside it.
+	vec4 uv_crop;
+	vec4_set(&uv_crop, 0.0f, 0.0f, 1.0f, 1.0f);
+	double cw = tw, ch = th;
+	if (!crop.whole() && crop.x1 <= tw && crop.y1 <= th && crop.x1 > crop.x0 + 1 && crop.y1 > crop.y0 + 1) {
+		cw = crop.x1 - crop.x0;
+		ch = crop.y1 - crop.y0;
+		vec4_set(&uv_crop, (float)((crop.x0 + 0.5) / tw), (float)((crop.y0 + 0.5) / th),
+			 (float)((cw - 1.0) / tw), (float)((ch - 1.0) / th));
+	}
+	const double tex_aspect = cw / ch;
 	const double out_aspect = (double)out_w / (double)out_h;
 	// The part of the texture one screen shows, across and down. Below 1
 	// the texture is cropped; above 1 it is smaller than the screen.
@@ -834,6 +934,7 @@ void AmbientBackground::draw_layer(gs_texture_t *tex, uint32_t out_w, uint32_t o
 	gs_effect_set_texture(p_image_, tex);
 	gs_effect_set_vec2(p_uv_scale_, &scale);
 	gs_effect_set_vec2(p_uv_offset_, &offset);
+	gs_effect_set_vec4(p_uv_crop_, &uv_crop);
 	// (`as_is`: a picture that has been through this already, laid down
 	// again without being coloured a second time.)
 	gs_effect_set_float(p_wrap_mirror_, s.mirror && !as_is ? 1.0f : 0.0f);
@@ -854,7 +955,8 @@ void AmbientBackground::draw_base(gs_texture_t *base, uint32_t w, uint32_t h, co
 	if (s.base_type == BaseType::StartImage)
 		view = ambient_view();
 	draw_layer(base, w, h, s.speed_x * time_ * kInternalScale, s.speed_y * time_ * kInternalScale,
-		   s.zoom * view.zoom, 1.0, s, LiveFit::Fill, false, view.focus_x, view.focus_y);
+		   s.zoom * view.zoom, 1.0, s, LiveFit::Fill, false, view.focus_x, view.focus_y, false,
+		   s.base_type == BaseType::Source ? PictureCrop() : drawn_crop_);
 }
 
 void AmbientBackground::pass(gs_effect_t *effect, gs_eparam_t *image, gs_texrender_t *dst, gs_texture_t *src,
@@ -982,6 +1084,7 @@ void AmbientBackground::render()
 	{
 		std::lock_guard lock(mutex_);
 		s = settings_;
+		drawn_crop_ = base_crop_;
 		base_source = child(base_child_);
 		live_source = child(live_child_);
 	}

@@ -182,7 +182,7 @@ Add **Ambient Background (StageKit)** as a source. It fills the canvas.
 | Group | Settings |
 | --- | --- |
 | Image | The standby image, an image file, or any existing source or scene. Optionally blend in a live capture: a chosen source, or *Automatic*, which uses the largest visible capture in the current scene. The capture can fill the screen, fit inside it, match its width or height, or stretch, with its own zoom. *Live capture replaces the image* makes the capture the whole background while there is one; the moment there is none, the usual image is back. A capture with an Auto Frame is used as the trimmed game image, without the empty frame around it. A capture showing nothing, or black all over for two seconds, counts as no capture. *Keep the capture ready* keeps it running in scenes that do not show it, so it is there at once in the next scene that does |
-| Motion | Drift speed in each direction, zoom, and mirroring at the edges so the drift never shows a seam |
+| Motion | Drift speed in each direction, zoom, and mirroring at the edges so the drift never shows a seam. An image file's empty edges (rows and columns at its sides that are see-through, or black all the way along, up to a quarter of it from each side) are left out, so they never show as bars between the repeats; a source or scene is used as it is |
 | Look | Blur type (Dual Kawase, Gaussian, Box, or Temporal, which blurs over time and leaves trails) and blur; a mosaic in the Blur filter's seven cell shapes, with the same smoothing, origin and rotation; saturation; glow; **Bloom**, where the bright parts of the image shine over what is around them (how strongly, from what brightness, and how far the light spreads); brightness; vignette; **Darkest level** (below) |
 | Texture overlay | An image multiplied or screened over the result, optionally in black and white |
 
@@ -226,6 +226,10 @@ of it. It is saved with the scene collection.
   *Background from* back to *An image* afterwards.
 
 Changing the standby image updates both at once.
+
+An animated image, such as a GIF, plays: in the Standby Image source, in every Standby Image filter
+(and the image shown in a hidden source's place), in Ambient Background and in the dock's small image,
+where it keeps the zoom and place you chose with the wheel. A still image is shown as before.
 
 ### Shadow, Glow & Outline
 

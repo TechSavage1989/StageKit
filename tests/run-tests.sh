@@ -41,6 +41,12 @@ STAGEKIT_TEST_ONLY_TOOLTIPS=1 xvfb-run -a -s "-screen 0 1280x720x24" \
   "$out/test-art.png" "$out/test-texture.png" "$out/test-game.png" "$out/tooltips" \
   "$out/test-title.png" "$out/tooltips" "$out/test-pillarbox.png" "$out/test-black.png" "$out/test-dark-game.png"
 
+# Its own run: an animated standby image plays (it needs out/test-anim.gif).
+STAGEKIT_TEST_ONLY_STANDBY_GIF=1 xvfb-run -a -s "-screen 0 1280x720x24" \
+  "$root/build-tests/tests/stagekit-ambient-test" "$root/build-tests/stagekit.so" "$root/data" \
+  "$out/test-art.png" "$out/test-texture.png" "$out/test-game.png" "$out/tooltips" \
+  "$out/test-title.png" "$out/tooltips" "$out/test-pillarbox.png" "$out/test-black.png" "$out/test-dark-game.png"
+
 echo "=== ambient background, shadow & backdrop ==="
 rm -rf "$out/ambient" "$out/shadow" "$out/corners" "$out/glow" "$out/morph" "$out/item-morph" "$out/make-room" \
   "$out/darkest"

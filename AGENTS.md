@@ -503,6 +503,15 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   (`get_standing`), so Corners & Edges and the rest shape the whole picture. The capture is always
   drawn by way of a copy (`render_live_`), kept when the capture ends so the change back starts from
   the last frame: a capture that has ended draws nothing.
+- **An animated start image plays** (2026-11-19; the owner: "standby images that are animated, like
+  gifs, should be animated. currently it's not"). `tick_animated_image` (`src/common/start-image.*`)
+  moves a `gs_image_file4_t` on by the video time while its user is showing, as OBS's Image source
+  does, all under the graphics lock; the Start Image source (so every Standby filter, managed ones
+  and stand-ins, whose picture is a private one, inc_showing'd while held) and Ambient Background's
+  base and overlay images call it from their tick. A still file is untouched. The dock's thumbnail
+  plays a `QMovie` (`play_picture`) whose frames take `thumb_full_`'s place, so the wheel zoom and
+  pan hold. Tested in `[standby image: an animated GIF plays]` (`STAGEKIT_TEST_ONLY_STANDBY_GIF`,
+  its own run in `run-tests.sh`; `out/test-anim.gif` from `make-test-image.py`). Not seen on Windows.
 - **Standby Picture can stand in for a hidden source** (`when_hidden`, *Show when source is
   hidden*, off as it comes; beta139). The owner: "I need a way for the standby image to be displayed
   in place of any source I choose when it's hidden". A hidden scene item draws nothing, so each
@@ -2252,6 +2261,17 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   to it instantly. there should be a configurable delay ... and the transition for that blend in
   should include the same transition options that others do". The tests use a cut for the
   pictures they take and check the fade separately.
+- **Ambient Background draws an image file without its empty edges** (`picture_crop`,
+  `PictureCrop`, `base_crop_`; the `uv_crop` uniform of the Layer technique). The owner, of a
+  poster drifted and mirrored: "I'd like the ambient background to not have any black bars between
+  the repeating patterns"; their image had transparent left and right columns, about 3 % a side,
+  which the mirror and the repeat laid side by side as black strips. Whole edge rows and columns
+  that are see-through (alpha 0) or black (every channel 8 or under) are found once, from the
+  decoded pixels before they are uploaded (no read-back, nothing per frame), at most a quarter from
+  each side, never holes inside; the shape and the sampling use that part only, half a texel in.
+  A source or scene as the base is used as it is (no measure), and so is a live capture. The
+  drift and mirror maths had no seam of their own. Tested in `[ambient background: no black bars
+  between the repeats]` (`STAGEKIT_TEST_ONLY_AMBIENT_SEAMS`). Only OpenGL.
 - **Ambient Background's bloom light is spread at least as far as the blur** (`spread`, the larger
   of `bloom_size` and `blur`). It is taken from the picture before the blur; spread less, it laid
   the sharp picture back over the blurred one. The owner: "blur does not appear to work correctly

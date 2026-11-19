@@ -53,6 +53,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <QGridLayout>
 #include <QGroupBox>
 #include <QImageReader>
+#include <QMovie>
 #include <QInputDialog>
 #include <QLabel>
 #include <QLineEdit>
@@ -389,6 +390,7 @@ public:
 			}
 			thumb_full_ = load_picture(shown);
 			retry_in_ = thumb_full_.isNull() && !shown.isEmpty() && ++tries_ < 6 ? 5 : 0;
+			play_picture(shown);
 			start_thumb_->setToolTip(tr_text("Dock.ThumbHint") + QStringLiteral("\n") + shown);
 			show_thumb();
 		}
@@ -427,6 +429,38 @@ private:
 			obs_log(LOG_WARNING, "dock: could not read the picture '%s' (%s)", path.toUtf8().constData(),
 				reader.errorString().toUtf8().constData());
 		return picture;
+	}
+
+	// An animated picture (a GIF) plays in the thumbnail: each frame takes
+	// the still picture's place, at the same zoom and place. A still
+	// picture has no movie.
+	void play_picture(const QString &path)
+	{
+		delete movie_;
+		movie_ = nullptr;
+		if (path.isEmpty())
+			return;
+		auto *movie = new QMovie(path, QByteArray(), this);
+		if (!movie->isValid() || movie->frameCount() == 1) {
+			delete movie;
+			return;
+		}
+		const QSize size = QImageReader(path).size();
+		if (size.isValid())
+			movie->setScaledSize(size.scaled(1280, 720, Qt::KeepAspectRatio));
+		QObject::connect(movie, &QMovie::frameChanged, this, [this, movie](int) {
+			if (measuring_stopped()) { // OBS is closing
+				movie->stop();
+				return;
+			}
+			const QPixmap frame = movie->currentPixmap();
+			if (frame.isNull())
+				return;
+			thumb_full_ = frame;
+			show_thumb();
+		});
+		movie_ = movie;
+		movie->start();
 	}
 
 	// Draws the picture small, at the zoom and place chosen with the wheel
@@ -481,6 +515,7 @@ private:
 	QLabel *start_label_ = nullptr;
 	Thumb *start_thumb_ = nullptr;
 	QPixmap thumb_full_;
+	QMovie *movie_ = nullptr;                                 // an animated picture, playing; none for a still one
 	double thumb_zoom_ = 1.0, thumb_x_ = 0.5, thumb_y_ = 0.5; // the thumbnail's own view
 	QPushButton *background_same_ = nullptr;
 	QString thumb_path_ = QStringLiteral("\x01"); // nothing loaded yet
