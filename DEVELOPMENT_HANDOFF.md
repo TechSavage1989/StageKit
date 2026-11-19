@@ -23,9 +23,9 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
-## Scene Fit rests at rest (0.1.0-betaNEXT)
+## Scene Fit rests at rest (0.1.0-beta202)
 
-Branch `fix/scene-fit-idle`, on beta201. Notes: `docs/releases/0.1.0-betaNEXT.md` (to be numbered
+Branch `fix/scene-fit-idle`, on beta201. Notes: `docs/releases/0.1.0-beta202.md` (to be numbered
 just before pushing). Not pushed. The owner's OBS 32 log: StageKit's ticks 0.27 to 0.36 ms a frame,
 `stagekit_scene_fit: tick 5400 calls, 0.040–0.059 ms each` for three Scene Fits, one per layout
 scene. Scene Fit already had the off-screen rule (`kIdleEvery`), but it counted *All sources* and
