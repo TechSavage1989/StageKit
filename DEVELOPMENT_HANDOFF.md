@@ -23,7 +23,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
-## Outline designs (0.1.0-betaNEXT)
+## Outline designs (0.1.0-beta212)
 
 Branch `feat/outline-designs`, on the beta211 branch. Not pushed. The owner asked for more outline
 types, some animated or procedural: an *Outline design* list (Solid, Double line, Dashed, Dotted,
@@ -34,7 +34,7 @@ a shape is patterned round the source's middle in the per-source filter and alon
 diagonal in Scene Shadow; Neon lies inside the outline's width and is laid over, not added;
 Pulse changes the line's opacity, not its width. Gates passed: `OUTLINE_DESIGNS` (new, 36),
 `OUTLINE_GLOW` (71), `SHADOW_EACH` (13), `MORPH_HOLDS` (5), `TOOLTIPS` (12); the full suite was
-not run. Not seen on Direct3D or Windows. Release notes in `docs/releases/0.1.0-betaNEXT.md`,
+not run. Not seen on Direct3D or Windows. Release notes in `docs/releases/0.1.0-beta212.md`,
 to be numbered just before pushing.
 
 ## Auto Capture's two gated tests: no plugin fault (0.1.0-beta211)
