@@ -13,10 +13,10 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
-## Every Stream Deck key says what it works with (0.1.0-betaNEXT, plugin 0.32.0.0)
+## Every Stream Deck key says what it works with (0.1.0-beta195, plugin 0.32.0.0)
 
 Branch `feat/streamdeck-works-with`, on `main` after beta193. Notes:
-`docs/releases/0.1.0-betaNEXT.md`. Stream Deck plugin only; no C++ changed. The owner
+`docs/releases/0.1.0-beta195.md`. Stream Deck plugin only; no C++ changed. The owner
 (2026-11-18): "I want the stream deck keys to show the filter or feature they work with somewhere
 outside its [list]. somewhere in the configuration area at the top for all keys."
 

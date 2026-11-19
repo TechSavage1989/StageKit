@@ -1836,7 +1836,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   kind as OBS lists it (Scene Filter or Source Filter as beta182 names them, now from the table
   below). The line under it that said the kind again (beta189) is gone: the page's first row says
   it (next entry). A new key that picks a filter uses `target_list`.
-- **Every key's page starts with *Works with*** (betaNEXT, plugin 0.32.0.0; the owner, 2026-11-18:
+- **Every key's page starts with *Works with*** (beta195, plugin 0.32.0.0; the owner, 2026-11-18:
   "I want the stream deck keys to show the filter or feature they work with somewhere outside its
   [list]. somewhere in the configuration area at the top for all keys"). One table,
   `streamdeck/src/works-with.ts` (`WORKS_WITH`, every action in the manifest by the last part of
