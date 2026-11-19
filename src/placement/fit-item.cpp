@@ -114,6 +114,11 @@ void fit_item_placed(obs_source_t *scene, const char *item_name)
 	engines_placed(scene, item_name);
 }
 
+bool fit_item_refit(obs_source_t *scene, const char *item_name, std::string *filter)
+{
+	return item_name && scene && engines_refit(scene, item_name, filter);
+}
+
 void fit_item_shared(obs_source_t *scene, const char *item_name, const double *home)
 {
 	if (!item_name || !scene)

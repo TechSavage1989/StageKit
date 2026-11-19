@@ -379,7 +379,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   transform of the selected source." It uses Fit to Space's own `fit::FitScan` and
   `fit::free_space`. A selected source's own fit supplies its alignment, gap and measuring rules
   even while disabled. Without an entry, use the dock's Edge distance and measuring options and
-  center the image. The dock glides the result (`set_arrange_glide`,
+  centre the image. The dock glides the result (`set_arrange_glide`,
   `glide_back`, owned by one dock: `set_arrange_glide(nullptr, this)` clears only its own), the
   hotkey path too while a dock is there. **An item is handed to its Fit to Space when its glide
   ends** (`ArrangeOutcome::placed`, `Glide::hand_over`; at once when nothing glides), never
@@ -400,8 +400,9 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   Surface the timeout in the dock and stop before changing that item. Exclude private sources,
   all twins, the Morph layer and hidden items during collection. A recently hidden fit's last
   image may be reserved for two seconds unless a mode holds it hidden.
-  Automatic fits keep a visible capture's saved slot while it reports 0x0 during a switch,
-  so the camera and chat column stay still. A dock press requires a drawn image.
+  An automatic fit takes what another fit places by that fit's claim without looking at it
+  (beta200; see *Nothing is read back while a size changes*), so a capture with no image yet
+  and a widget with nothing to show keep their room. A dock press requires a drawn image.
   Fitted obstacles use their published image claim. In `spaces_kept`, predict the neighboring
   image with `space_from` and `claim_from` and compare its position and size within 0.5 px, its
   growth flags and its lean. A change of unused room alone is allowed. A home still being found
@@ -413,9 +414,14 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   half the full result when that is no larger). With an entry, every candidate uses its alignment.
   Without one the tool can try other positions. The status line names the affected source
   (`FitToSpaceNote`, `Arrange.FitSpace.Smaller` / `.Left`), also when the fitted spaces leave no
-  room at all. **An item with a fit of its own**: one that resizes it is left to it
-  (`Arrange.FitSpace.OwnFit`: the fit decides its size, and handed over it would fill its own
-  space anyway); one that keeps its size is put where that fit will put it once handed over (its
+  room at all. **An item with a fit of its own**: one that is switched on and resizes it is
+  told to fit it now (`fit_item_refit`, `Arrange.FitSpace.Refit`: "Fitted by %1."; see *Fit to
+  space on a source its own fit resizes*; `Arrange.FitSpace.OwnFit` is said only when no fit
+  could be told); one switched on that keeps it at its size in the whole scene or an area of its
+  own puts it straight back, so it is left to it and said (`Arrange.FitSpace.OwnArea`); one that
+  keeps its size in the free space and whose space is smaller than it is never made smaller, and
+  said (`Arrange.FitSpace.KeepsSize`); one that keeps its size is put where that fit will put
+  it once handed over (its
   anchor the new box's centre, the kept size scaled, with a home its home where it is put, as
   `FitEngine::placed` takes it, also when its home did not match the item before
   (`SpaceInputs::takes_home`: a window of another shape): `handed_over`; `fit::claim_from`, the
@@ -433,7 +439,18 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   each try only works spaces out again. The global proc `stagekit_test_fit_predicts` (tests)
   says, per fit of a scene, whether what `held_spaces` gives, worked out again, is the claim the
   fit makes now, and whether it is at home. Items with no fit are obstacles by what shows, as
-  before, and are never changed anyway.
+  before, and are never changed anyway. Its space is looked for round the item's middle and,
+  when that lies on something in its way, round 25 points of what shows of it, the biggest
+  picture taken (`best_space`, beta200: just off the sides of what covered its middle the
+  space was often a sliver). What a press that found OBS busy had begun to look at is kept for
+  the next press on that scene, five seconds at the most (`Begun`), so a large scene is not too
+  much for every press alike. `fit_tool_test` cases 16 and 17 (beta200) recreate the owner's
+  layout scene of 2026-11-19 with generic names (a game, a column of a letterboxed window, a
+  capture card and a kept-size letterboxed window, the other layout's group and camera hidden
+  by a mode, a stand-in that shows, two widgets that show nothing): with the Scene Fit off no
+  column source shrinks and the game fills the room left of the column; with it on the game
+  fills, the kept-size window keeps its size at the bottom right, and off and on again over
+  that layout nothing moves; and an item grows into a fitted strip's spare room.
 - **Edits made by a person go into OBS's undo list** (`add_transform_undo` in
   `src/dock/arrange-tools.*`): the arrange tools, snap on release, the dock's Send to buttons. Moves
   fired by filters and Stream Deck keys do not; they are part of the show.
@@ -868,18 +885,60 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   has its own *In every scene* (`arrange_every_scene`, off as it comes: a tool's result is copied to
   the other scenes with `copy_to_every_scene`). Both asked for by the owner on beta87.
 - **Fit to Space can leave the size alone** (`resize`, *Resize it to fit*, ticked as it comes).
-  Unticked, the picture keeps the size it has (`keep_w_`, read from the item once and again after a
-  resize by hand) and is centred in its space. The owner: "move the box without changing the shape
+  Unticked, the picture keeps the size it has (`keep_`, read from the item once and again after a
+  resize by hand) and lies in its space by *Align in the space*. The owner: "move the box
+  without changing the shape
   or size to fill the gap ... a safety option as well informing the filter to not resize".
   A new filter starts ticked and fits the item the moment one is chosen, so the size an item has
   before the filter first touches it is saved (`orig_item`, `orig_w`, `orig_h`) and is what
   unticking goes back to when no size was ever kept: the owner's chat box had been shrunk to its
-  space before the box could be unticked ("it shrinks"). **A size kept before (`keep_k`, saved;
-  set by hand or read when first kept) wins over it** (beta194, 2026-11-18): the owner's camera,
-  set by hand to 0.4765 of its source, came back at 0.4899 (`orig_k`) after *Resize to fit* was
-  ticked and unticked. `keep_k` is only ever written while unticked, so it is never a fitted size. It is read again
-  at every update (`saved_keep_item_`), so a rename of the source (which rewrites `keep_item`)
-  keeps it.
+  space before the box could be unticked ("it shrinks"). **A size kept before (saved; set by
+  hand or read when first kept) wins over it** (beta194, 2026-11-18): the owner's camera, set by
+  hand to 0.4765 of its source, came back at 0.4899 (the size from before the filter) after
+  *Resize to fit* was ticked and unticked. The size kept is only ever written while unticked, so
+  it is never a fitted size. It is read again at every update (`saved_keep_item_`,
+  `saved_keep_`), so a rename of the source (which rewrites `keep_item`) keeps it.
+- **A kept size is a size on the screen, not a scale of the source** (`KeptSize keep_` in
+  `fit-engine.hpp`; beta198, the sizes in its source and the rest beta200). The owner,
+  2026-11-19: "I had sized the GBA screens to fit the space, and they've shrunk even when they
+  are set to not resize". A window capture's source changes size with its window, and a scale
+  times that was another size on the screen. Kept and saved: `keep_w`, `keep_h` (scene pixels of
+  what shows of it), `keep_sw`, `keep_sh` (the whole picture in its source then), `keep_pw`,
+  `keep_ph` (what showed of it), and `keep_k` (the scale, written for a version before beta198);
+  the size from before the filter as `orig_w`, `orig_h` (and `orig_k`). All in `kOwnSettings`
+  and Scene Fit's `kFitKeys`. The rules:
+  - A source of another size is drawn as large as fits in the size kept (`p.keep_w`,
+    `p.keep_h`: the same shape at the same size, another shape inside it). A source with no
+    image (0x0) is never touched and never writes a size.
+  - **Its source the size it was kept at, and another part of it shows: the scale stays**
+    (the same-size rule at the end of the kept block in `prepare`), and the size kept becomes
+    what shows now at that scale. In beta198 what shows was fitted into the size kept whatever
+    the source, so a group or a widget that drew more of itself (a chat box with more lines)
+    shrank. Only once what shows is known (`own_known_`).
+  - **Only a scale known** (`KeptSize::k`): a collection saved before beta198, or a size read
+    while no size could be read. It gives the picture that scale, as every version up to
+    beta197 did, and becomes a size at the first tick one can be read (`readable` in
+    `prepare`): the source steady for half a second, what shows of it known, and **no Standby
+    Image standing in** (`standby_waiting`, asked four times a second at the most). While a
+    capture waits, its Standby Image has its own shape, as tall as the capture last was or
+    1080 px: beta198 turned an old scale into a size against that image (about twice too large
+    for the owner's handheld windows, which are under a Scene Standby). Nothing waits for a
+    conversion: up to beta198 a source that never kept its size for half a second was not
+    fitted at all while its old scale waited.
+  - **Read off the item only when it is not the size the one kept gives it** (`same`): a
+    source only moved, or the filter switched off and on, keeps the size kept. Read again off a
+    picture of another shape than the one kept (a 4:3 window fitted inside a 3:2 size), it
+    became that picture's size, and the first window came back smaller.
+  - A size kept by beta198 has no sizes in its source: they are filled in once the picture has
+    the shape kept (`KeptSize::refs`).
+  - The log says `the size kept for '<source>' went from W x H to W x H px (<reason>)` whenever
+    it is read anew (resized in the preview, placed by a tool, switched on, settings changed),
+    and one line when a scale becomes a size. Ask for the log when a size drifts.
+  Tested in `[fit: a kept size is the size on the screen ...]` (`fit_keep_size_test`, alone
+  with `STAGEKIT_TEST_ONLY_FIT_KEEP_SIZE`, and at the end of `STAGEKIT_TEST_ONLY_FIT_ENABLE`):
+  a source made half the size, empty, 4:3 and back; a nested scene that shows four times as
+  much of itself (beta198 drew it at an eighth of its size instead of half); an old collection
+  loaded, and the filter switched off and on, while a Standby Image stands in.
 - **Fit to Space's kept size is read from the item on three occasions only**: when the filter is
   given another item, when *Resize it to fit* is unticked (then the size last kept, else the size
   from before the filter), and after a resize by hand, which starts only on an item that is
@@ -894,9 +953,9 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   making the whole column be worked out again. Any other change of settings leaves it. The owner's
   camera, with *Resize it to fit* unticked, got smaller each time it was hidden and shown
   (beta98/99). **The cause was not reproduced here**: two tests built to match (a shadow in screen
-  pixels, a camera drawn at a quarter of its source) passed without the fix. The filter now logs
-  `the size kept for ... went from ... to ...` with the reason whenever it re-reads the size; ask
-  for the log if it happens again.
+  pixels, a camera drawn at a quarter of its source) passed without the fix. The filter logs
+  `the size kept for ... went from ... to ...` with the reason whenever it re-reads the size
+  (in px since beta200; beta198 had dropped the line); ask for the log if it happens again.
 - **Fit to Space never puts an item past the screen's edge, and does nothing on a group.** With
   *Resize it to fit* unticked, a space narrower than the item used to centre it past the edge (the
   owner's chat box, pushed off the canvas by the game growing beside it); it is now held the gap
@@ -913,8 +972,9 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   picture is taken for measuring error. The picture is the source less its crop and, with *Ignore
   shadows & outlines*, the shadow's room (`own_sw_`), so a change of a shadow's room alone keeps
   what was seen (beta194: sized in screen pixels, the room changes at every resize, and for half
-  a second each time a letterboxed window was fitted with its empty margins). Sizes kept
-  (`keep_k_`, `orig_k`) are scales of the source, so they hold whatever part shows.
+  a second each time a letterboxed window was fitted with its empty margins). Sizes kept are
+  sizes on the screen of what shows (see *A kept size is a size on the screen*), and hold
+  whatever part shows while the source keeps its size.
 - **Two Fit to Space filters in one scene go by each other's destinations** (`Claim`, `claim_set`,
   `claim_of` in `src/placement/fit-item.cpp`): each says where its item will be once it has got
   there and whether it resizes it, and the other takes that for the obstacle, a claimed group as
@@ -1079,10 +1139,11 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   listed get it, plus any scene whose own filter for the item lists this one (`share_partners`),
   so one list links two scenes both ways. The old `share` tick box is not read. Never share with
   a scene that is not named.
-- **Fit to Space's kept size is saved** (`keep_item`, `keep_k`, written whenever the size is read)
-  and is what a filter starts from when OBS loads it (`first_update_`). Before, a filter created
-  with *Resize it to fit* unticked looked like one that had just been unticked and went back to
-  the size from before the filter was first added (`orig_k`): the owner's chat box, set by hand to
+- **Fit to Space's kept size is saved** (`keep_item`, `keep_w`, `keep_h` and the rest, written
+  whenever the size is read) and is what a filter starts from when OBS loads it (`first_update_`,
+  `load_keep_`). Before, a filter created with *Resize it to fit* unticked looked like one that
+  had just been unticked and went back to the size from before the filter was first added: the
+  owner's chat box, set by hand to
   the camera's width, was "slightly larger" after every restart. A size is also only read off an
   item whose source has kept its size for half a second: while OBS loads, a group or a shadowed
   source is not yet the size it will be.
@@ -1091,9 +1152,10 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   "when I set up some layouts as desired, for example my Dolphin-GBA Link layout, manually
   positioning and sizing things with the fit to filter disabled, then enable the filter, even with
   resize to fit enabled, everything changes size." Causes: the first tick on went on from the
-  last session (`have_keep_`, `keep_k_` from before, the round-2 untick restoring a stale `keep_k`
-  or `orig_k` when *Resize to fit* was unticked while off, anchors and claims from the old
-  layout; a filter loaded off read its saved `keep_k` and anchor), and a resized item was always
+  last session (`have_keep_` and the size kept from before, the round-2 untick restoring a stale
+  kept size or the one from before the filter when *Resize to fit* was unticked while off,
+  anchors and claims from the old layout; a filter loaded off read its saved size and anchor),
+  and a resized item was always
   given the largest picture its space holds, never the size it had. Now an off-to-on edge seen by
   the tick (`was_off_`, Fit to Space in `FitEngine::tick`, Scene Fit for all entries in its
   tick; never `!scenes_loaded()`) drops all that: anchor from the item with no wait, the kept size
@@ -1102,13 +1164,13 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   over the next 0.5 s on screen (`home_settling_`), the free space round its place with every
   other fit's item at *its* home (`Claim::home`, `Obstacle::home`). In `solve`, while that space
   is the same again (3 px, `kHomeSlack`) and the picture at home keeps the gap (same slack) to
-  what counts and the screen's edges, a kept-size image returns to the home box. For Resize-on
-  compare the image that fills the room with the other sources at their home positions to the
-  home width and height using the entry's size tolerance. A fitting hand layout retains its exact placement. An undersized home fills the
-  room once the measurements settle. Keep reference sizes as image dimensions in scene pixels
-  (`keep_w/h`, `orig_w/h`). Convert legacy scales once, after a nonzero capture settles.
-  At each source size fit the image inside those reference dimensions. A 0x0 capture must never
-  write a transform or a new reference. Save the home (position and dimensions,
+  what counts and the screen's edges, the item is *at home*. For Resize-on the image that fills
+  the room, with the other sources at their home positions, must also be within the entry's
+  size tolerance of the home width and height; an undersized home fills the room (beta198).
+  **What being at home does changed in beta200: see *Align in the space is always obeyed*.**
+  Up to beta198 an item at home went exactly to its home box. Keep reference sizes as image
+  dimensions in scene pixels (see *A kept size is a size on the screen*). Save the home
+  (position and dimensions,
   `home_space_*`, `home_cut_*`, in `kOwnSettings` and Scene Fit's `kFitKeys`, renamed with the
   source), so a filter loaded on goes by them; `home_cut_*` stands for what shows until the item
   is looked at (else a window's empty margins were its home for half a second and the column
@@ -1123,8 +1185,9 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   first counts where it is, not at its home (`above_`: else it grew over the lower fits at their
   homes); the home is read off OBS's own drawing transform (`home_from_item`: OBS places a picture
   in its bounding box by whole pixels, and the item moved by up to a pixel the first time its box
-  became the picture's); a kept-size item at home is not pulled the full gap in (`apply`,
-  `publish_claim`: a home within the 3 px slack of the edge moved); during a window switcher's
+  became the picture's); a kept-size item at home was not pulled the full gap in (`apply`,
+  `publish_claim`: a home within the 3 px slack of the edge moved; since beta200 it lies by its
+  alignment, the gap inside the edge, at home too); during a window switcher's
   change `home_box` goes by the shape it is changing to (`switching_`: the new window was squeezed
   into the old one's home box); at home a picture of another shape is handed the space round it as
   away from home (`found`, `reshaping`: only when it no longer fits its home, so what shows of it
@@ -1135,8 +1198,160 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   tick on (`count_now_` while off), so a source added meanwhile gets a home with the rest. Tested
   in `[fit: switching it on keeps a hand-made layout]` (`fit_enable_test`, alone with
   `STAGEKIT_TEST_ONLY_FIT_ENABLE`): also a filter made switched off (never ticked on), a shadow in
-  screen pixels on a column window, a bottom window a pixel inside the gap, a game set to *Takes
-  space first* growing as a neighbour is hidden, and *All sources* with a source added while off.
+  screen pixels on a column window, a game set to *Takes space first* growing as a neighbour is
+  hidden, and *All sources* with a source added while off. (Since beta200 the layout it is
+  switched on over is one made with the gaps and by each source's alignment, laid out by another
+  fit that is taken off again: a layout that does not follow the alignment is put right.)
+- **Align in the space is always obeyed, at home too** (`space_from`, `claim_box`, `apply` in
+  `src/placement/fit-engine.cpp`; beta200). The owner, 2026-11-19: "align in the space is not
+  being respected. chat box is not centering". From beta194 to beta198 an item at home went
+  exactly to its home box, so a source laid out by hand stayed where it was put whatever *Align
+  in the space* said: a chat box group with *Resize to fit* off and *The middle* sat at the
+  bottom of its space. Now **a home is the space an entry belongs to and the size it was given
+  by hand, never a place**:
+  - *Resize to fit* off: its size kept, in its space by its alignment, the gap inside the
+    screen's edges, exactly as away from home (`kept_in_room`).
+  - *Resize to fit* on: at home it keeps the size it has there, by its alignment in the space
+    it has **now**, while the picture that fills that space is within the Size tolerance of the
+    home size (`fill`, `slack` in `space_from`; judged on the space it has now as well as on the
+    one round its home, because a neighbour kept at its size may lie elsewhere than at its
+    home). Otherwise it fills its space, also while its home is still settling.
+  - So **switching the filter on can move a source to where its alignment puts it** (the README
+    and the release notes say so). A layout made with the gaps and by the alignments is left
+    exactly as it is.
+  - It glides there: the glide starts from where the item is (`rebase`, `part_on_screen`:
+    the box what is fitted of it has on the screen, read off OBS's drawing transform), at
+    switch-on, after a tool and after a move or resize by hand. Up to beta198 nothing glided
+    from home to home (`was_home && at_home_`) and an item let go of jumped (`have_cur_ =
+    false`). `rebased_` makes `solve` set off also when the goal is the old one (more than a
+    pixel away).
+  - **Not changed, and for the owner to decide:** a kept-size source set to *The middle* that
+    lies above or below a resized picture with no use for more height (a camera held by the
+    column's width) is still packed against that picture at the top of its space, the gap away
+    (`lean_y_of`, beta194, from the owner's own "the chat box is more than 30px from the visible
+    border of the camera box"), and one beside a resized source that does grow goes against the
+    far, firm side (`soft_sides_of`). So the owner's chat box under the camera packs under it;
+    it does not sit in the middle of the column's rest. The release notes' *Good to know* says
+    so. Changing it means deciding which of the two requests wins there.
+  Tested in `fit_keep_size_test` (*The middle* centred, *The bottom right* at the bottom right,
+  a resized picture 4 px smaller kept and aligned, one 153 px smaller filled) and in
+  `fit_enable_test`.
+- **An entry hidden when the filter is switched on is not taken as it is later** (`not_taken`
+  in `prepare`; beta200). `take_home_` used to stay pending through the hidden and no-image
+  early returns: when a mode showed the item, maybe minutes later, it was taken as switched on
+  then, its kept size read off whatever was shown and its home taken there. Now the switch is
+  used up at once for a hidden item, one in a hidden group and one with no image; it keeps the
+  size and home it had, and the log says `switched on while '<source>' is hidden; it keeps the
+  size and home it had`. Tested in `fit_keep_size_test`.
+- **Nothing is read back while a size changes** (`FitScan::obstacles`, `FitScan::look`, the own
+  look in `FitEngine::prepare`; beta200). beta198 added three read-backs against the rule
+  above (*never ... one that runs while things animate*), and the owner reported higher frame
+  times:
+  - `obstacles` looked again at any gathered item whose source's width or height had changed:
+    a draw and read-back on every tick for as long as a size changed (a window switcher's
+    glide, a Standby Image's 800 ms, an Auto Frame settling, a text that changes). **Now an
+    item is looked at when first met and again only when its source comes to have a size or to
+    have none**; between, what shows of it keeps its place in its box and a glance says when it
+    does not. The size is asked once a tick (`Gathered::sized`), not once for each fit and pass.
+  - **An automatic fit takes what another fit places by that fit's claim, without a look**
+    (`automatic && claimed`, as before beta198): beta198 drew every fitted neighbour first and
+    left out one that drew nothing unless its source was 0x0, so an empty widget's or a starting
+    browser source's room was taken by the sources beside it. The beta147 rule holds again: **a
+    showing fitted neighbour with no image keeps its room.** Only a dock press (`mine` null,
+    `by_drawing`) looks at fitted sources and leaves out what draws nothing.
+  - `look` measured by visible pixels whatever the fit's own *Use visible pixels*: a fit that
+    goes by boxes now draws nothing again.
+  - A source kept at its size looked at **itself** on every tick while its size changed
+    (`need_image`). Now only an item not yet touched (switched on, the size before the filter
+    not noted, no size kept yet, or the dock's press) is looked at without the half second, and
+    never twice within half a second (`own_last_look_`). A picture only made larger or smaller,
+    the same shape, keeps the parts seen (`scaled`), so a letterboxed window does not pulse
+    while its size glides.
+  Counted for the tests: `stagekit_test_looks` gives `fit_obstacle` and `fit_own`
+  (`Look::FitObstacle`, `Look::FitOwn` in `src/common/timing.*`). `fit_keep_size_test` changes
+  two sources' sizes on every frame for a second and wants 0 of each.
+  **Stand-ins:** since beta198 no visible Standby stand-in, private source or Morph layer is in
+  the way of any fit (`FitScan::gather`; before, only a Scene Fit's own entries' twins were left
+  out). That was announced in beta198's notes and is left so.
+- **A fit with no place yet waits for what shows of its item** (`own_known_`, `as_is_`,
+  `unplaced_for_` at the end of `prepare`; beta200). A filter loaded with no home saved, a
+  capture whose first image has only just come and an item a filter was only just given were
+  fitted with a letterboxed window's empty margins for the half second until they were looked
+  at; the claim reached into the gap beside it, a resized neighbour made room and never took it
+  back (two resized fits side by side are at rest at any split of the room between them).
+  Meanwhile one taken as it is (new, switched on, placed by a tool) says nothing and the others
+  go by what shows of it; one hidden or without an image until now holds its bounding box
+  (`holds_room`). **Never for longer than `kOwnWait` (1.5 s)**: a source whose size never stays
+  put for half a second is never looked at, and is then placed as it is. Likewise a size to keep
+  is read after `kKeepWait` (3 s) at the latest, as a scale.
+- **Fit to space on a source its own fit resizes fits it now** (`fit_item_refit` in
+  `src/placement/fit-item.*`, `FitEngine::refit`, `engines_refit`; beta200). The owner,
+  2026-11-19, with the Scene Fit on and the game resized small by hand: "if I manually resize a
+  source then click the fit to space button, it doesn't seem to work when scene fit is on, but
+  it does eventually fit automatically. generally the scene fit takes a while to respond but it
+  does eventually. the button doesn't seem to work while scene fit is on". The press only said
+  *Left to ...*. Now the fit is told (`refit_`, under its mutex; taken up at its next tick,
+  `pending()` so an off-screen fit is not skipped): it drops a resize or move by hand it is
+  following (`hand_on_`, `moving_`), forgets its home (which would keep a size made by hand
+  within the Size tolerance), takes its anchor where the item is, looks at the item if what
+  shows of it is not known (one look a press), and glides from where the item is to where it
+  fills its space by its alignment. The status line says *Fitted by <filter>.* alone (no
+  *Changed 0 item(s).*). Nothing else is touched by the press: the other sources do what that
+  fit has them do anyway. **Undo does not cover it**: the fit, not the press, moves the source,
+  over its own glide, and an undone size would be fitted again at once; the tooltip says so. A
+  *Resize to fit* off entry is placed by the tool by its alignment, as before. Tested in
+  `fit_tool_test` case 18 (`STAGEKIT_TEST_ONLY_FIT_TOOL`): made small by hand and pressed, it
+  sets off within the next frames, is seen part of the way, fills its space again, the source
+  beside it never moves, and a press on one that already fills moves nothing. **Compare where
+  the picture is drawn, not the raw transform, in such a test**: a fit gives OBS the picture's
+  own box at home and the whole space it may take otherwise, the picture in the same place.
+- **A fit answers a move or a resize by hand a third of a second after the source is let go**
+  (`held`, `still_for_`, `still_from_hold_`, `hand_on_`, `rebase` in
+  `src/placement/fit-engine.cpp`; beta200; the owner's "takes a while to respond" above). The
+  waits between letting go and the fit acting, as they were in beta198 for a *Resize to fit* on
+  entry with a home: the box still for `kHandStill` (0.3 s); **then**, when the drag had also
+  moved its position, the place still for 0.4 s (`motion` was not reached while the first wait
+  ran); then the home taken there settling for `kHomeSettle` (0.5 s, begun again by the second
+  wait), the goal being the hand size meanwhile; then the glide (300 ms as it comes). 0.8 to
+  1.2 s before anything moved. Not in the path: the 0.15 s wait for *other* items that move
+  (`observe`), the own look (half a second after the *source* changes size, which a resize of
+  the item does not), glances, the off-screen skipping, the 0.1 s coming back after a hide, and
+  the second the source must have kept its size before a resize by hand is believed at all
+  (waited for `kKeepWait`, 3 s, at the most once the mouse is let go, `hand_wait_`: a source
+  whose size changes more often, a growing text or a window switcher stepping, left the fit
+  stuck for as long as that lasted). Now:
+  - The place's rest is counted in `prepare` (`still_for_`), so the two waits run together.
+  - With the mouse button seen held on the selected item (`mouse_held_any_thread` in
+    `src/dock/preview-guides.*`: `GetAsyncKeyState` on Windows, only while a window of OBS's
+    is in front (the button is reported wherever the mouse is: held in a game, it held a
+    selected item's fit for as long as it was down), what the tests say with
+    `stagekit_test_mouse_down`, never Qt's state off the window's thread; elsewhere it says no
+    and only rest tells) nothing is done however long the item is held still, and both waits
+    count from letting go. A drag is at rest `kHandStill` after that: the dock's own correction
+    on letting go (snap, *Stop resizing at edges*; its timer is 120 ms) begins within it. A move
+    by a key or a filter keeps its 0.4 s.
+  - The home's settling no longer holds the goal (see *Align in the space is always obeyed*),
+    and the entry's claim never becomes the small hand size, so the neighbours do not move. (In
+    beta198 it was the hand size for that half second and more: a resized neighbour that could
+    use the room grew into it, and the entry then had less to fill.)
+  - The glide starts from where the item was let go (`rebase`).
+  - A resized entry without a home is watched while the mouse holds it too (before, the fit put
+    its box back on every frame of the drag).
+  **Not shortened:** `kComingBack`, the 0.15 s for other items on their way, and everything two
+  fits answer each other by (claims, `soft_sides_of`, `lean_y_of`, the passes): those are what
+  keep two fits from chasing. The settling that no longer holds the goal was a wait for the
+  measuring of the home's space, not against chasing: entries go by each other's claims
+  meanwhile, as every fit without a home always has. Tested in `fit_tool_test` case 19: held
+  0.7 s with the button down nothing is touched; let go, it sets off about 330 ms later (0.9 s
+  allowed), its first step a pixel or so from where it was let go, and ends filling its space,
+  with a home, without one, and moved only; the source beside it never moves. Against beta198's
+  plugin 13 of the checks of cases 13, 16, 18 and 19 fail (beta198's own timing was read from
+  its code, not measured: case 19 starts from what case 18 leaves, which beta198 leaves small).
+  **`solve` glides only when the picture has somewhere to go** (`there`): after a `rebase`,
+  `cur_` is where what is fitted shows now, and it is compared with where the fit will show it
+  in the goal (`claim_box`), not with the goal's box, which for a resized source is the whole
+  space. Compared with the box, a second press of Fit to space set off a glide of the box round
+  a picture that did not move.
 - **Morph draws the scenes' items itself** (`src/transition/morph.cpp`). OBS gives a transition
   its two scenes as finished pictures; Morph instead draws each item the way a scene does
   (`obs_sceneitem_get_draw_transform`, the source drawn straight on, or through a picture of its own
@@ -2836,7 +3051,8 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   only with the Scene Fit's *Priority by list order* (`set_entry_index`; see *Space priority*);
   *Take over Fit to Space* copies `space_priority` per entry and the first filter's
   `list_priority`. An entry's settings are
-  `fit|<source>|<Fit to Space's key>` (the self-written ones too: anchors, `keep_k`, `orig_k`;
+  `fit|<source>|<Fit to Space's key>` (the self-written ones too: anchors, `keep_w`, `orig_w`
+  and the like;
   `kOwnSettings` matches on the last `|` part), but its two lists are `fit_<the name in hex>_skip`
   and `..._share_scenes` (`fit_list_prefix`): a PickList's setting cannot hold a bar and a
   source's name may. The overlap switch `skip_fill_on` is one for the whole Scene Fit, so the

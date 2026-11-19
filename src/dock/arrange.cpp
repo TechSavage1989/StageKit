@@ -21,6 +21,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <graphics/vec2.h>
 #include <graphics/vec3.h>
 #include <graphics/vec4.h>
+#include <util/platform.h>
 
 #include <algorithm>
 #include <atomic>
@@ -1260,7 +1261,8 @@ const char *const kOwnSettings[] = {
 	"hid_items",      "hidden_record",   "home_item",        "home_x",
 	"home_y",         "home_w",          "home_h",           "home_space_x",
 	"home_space_y",   "home_space_w",    "home_space_h",     "home_cut_l",
-	"home_cut_t",     "home_cut_r",      "home_cut_b",
+	"home_cut_t",     "home_cut_r",      "home_cut_b",       "keep_sw",
+	"keep_sh",        "keep_pw",         "keep_ph",
 };
 
 // Whether a setting is one of those. A setting kept per source or per mode
@@ -1800,7 +1802,27 @@ int fit_to_space(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &item
 	std::stable_sort(order.begin(), order.end(),
 			 [&](obs_sceneitem_t *a, obs_sceneitem_t *b) { return height_of(a) > height_of(b); });
 	// An entry may use a different measurement from the preceding selection.
+	// (What a press that found OBS busy had begun to look at is kept for the
+	// next press on that scene, a few seconds at the most: the work it handed
+	// over finishes by itself, and the press after it then has that much
+	// less to draw and read back in the time it is given. Started afresh, a
+	// large scene could be too much for every press alike. Only this thread
+	// takes or keeps them; the looking itself is all on OBS's drawing thread,
+	// one press's work after the other's.)
+	// (The scene is known by its uuid: nothing of OBS's is held meanwhile.)
+	struct Begun {
+		std::string scene;
+		uint64_t when = 0;
+		std::map<int, std::shared_ptr<fit::FitScan>> scans;
+	};
+	static Begun begun;
+	const char *scene_uuid = obs_source_get_uuid(scene);
 	std::map<int, std::shared_ptr<fit::FitScan>> scans;
+	if (!begun.scene.empty()) {
+		if (scene_uuid && begun.scene == scene_uuid && os_gettime_ns() - begun.when < 5000000000ULL)
+			scans = std::move(begun.scans);
+		begun = Begun{};
+	}
 	// The spaces the scene's fits hold, asked once for the press.
 	const std::vector<fit::HeldSpace> held = fit::held_spaces(scene);
 	// The items changed so far in this press, for the check, and where what
@@ -1823,8 +1845,8 @@ int fit_to_space(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &item
 		const int64_t id = obs_sceneitem_get_id(item);
 		const char *item_name = obs_source_get_name(obs_sceneitem_get_source(item));
 		fit::FitSettings entry;
-		std::string resizing_filter;
-		const bool has_entry = fit::fit_settings_for(scene, item_name, entry, resizing_filter);
+		std::string resizing_filter, entry_filter;
+		const bool has_entry = fit::fit_settings_for(scene, item_name, entry, resizing_filter, &entry_filter);
 		const Measure how = has_entry ? Measure{entry.visible_pixels, entry.no_shadows} : dock_how;
 		const double gap = has_entry ? entry.margin : std::max(0.0, dock_gap);
 		const double tolerance = has_entry ? entry.tolerance : 8.0;
@@ -1843,13 +1865,37 @@ int fit_to_space(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &item
 		// that keeps its size is worked out below.
 		const fit::HeldSpace *own = own_fit_of(held, item);
 		if (!resizing_filter.empty()) {
-			if (note)
-				add_name(note->own_fit, resizing_filter);
+			// That fit is told to fit it now, from where it is: it drops
+			// whatever it is waiting for and glides the item to where it
+			// fills its space. (Up to beta198 the press only said the item
+			// was left to its fit; the owner, with a source made small by
+			// hand: "the button doesn't seem to work while scene fit is
+			// on", 2026-11-19.) Nothing else is touched here: what the
+			// other sources do is what that fit has them do anyway.
+			std::string by;
+			if (fit_item_refit(scene, item_name, &by)) {
+				if (note)
+					add_name(note->refitted, by.empty() ? resizing_filter : by);
+			} else if (note) {
+				const std::pair<std::string, std::string> left{resizing_filter,
+									       item_name ? item_name : ""};
+				if (std::find(note->own_fit.begin(), note->own_fit.end(), left) == note->own_fit.end())
+					note->own_fit.push_back(left);
+			}
 			continue;
 		}
 		if (own && (!own->worked || own->in.kept_w <= 0.0 || own->in.kept_h <= 0.0)) {
 			if (note)
 				add_name(note->unknown, own->name);
+			continue;
+		}
+		// A fit of its own that is switched on and keeps it at its size in
+		// the whole scene or an area of its own puts it straight back there:
+		// left to it, and said. (In beta198 the press moved it, and that
+		// fit moved it back at the next frame, without a word.)
+		if (has_entry && !entry_filter.empty() && entry.box != fit::BoxKind::FreeSpace) {
+			if (note)
+				add_name(note->own_area, entry_filter);
 			continue;
 		}
 		struct Measurements {
@@ -1884,6 +1930,9 @@ int fit_to_space(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &item
 		    })) {
 			if (note)
 				note->busy = true;
+			begun.scene = scene_uuid ? scene_uuid : "";
+			begun.when = os_gettime_ns();
+			begun.scans = scans;
 			break;
 		}
 		const Box now = result->now, seen = result->seen;
@@ -1941,7 +1990,38 @@ int fit_to_space(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &item
 			add_name(fitted_by, h.name);
 		}
 		const double cx = seen.x + seen.w / 2.0, cy = seen.y + seen.h / 2.0;
-		const Box space = fit::free_space(canvas, cx, cy, boxes, gap, seen.w / seen.h, tolerance, &firm);
+		const double shape = seen.w / seen.h;
+		// Where its space is looked for: round its middle, as a fit looks for
+		// its own. Should its middle lie on something in its way (an item it
+		// overlaps), also round the parts of it that do not, the space that
+		// holds the biggest picture taken: looked for only just off the sides
+		// of what covers its middle, the space found was often a sliver.
+		const auto best_space = [&](const std::vector<Box> &in, const std::vector<bool> &in_firm) {
+			Box best = fit::free_space(canvas, cx, cy, in, gap, shape, tolerance, &in_firm);
+			bool covered = false;
+			for (const Box &o : in)
+				covered = covered || (cx > o.x - gap && cx < o.x + o.w + gap && cy > o.y - gap &&
+						      cy < o.y + o.h + gap);
+			if (!covered)
+				return best;
+			double best_k = best.w >= 2.0 && best.h >= 2.0 ? std::min(best.w / shape, best.h) : -1.0;
+			static const double kAt[] = {0.1, 0.3, 0.5, 0.7, 0.9};
+			for (double fx : kAt)
+				for (double fy : kAt) {
+					const Box one = fit::free_space(canvas, seen.x + seen.w * fx,
+									seen.y + seen.h * fy, in, gap, shape, tolerance,
+									&in_firm);
+					if (one.w < 2.0 || one.h < 2.0)
+						continue;
+					const double k = std::min(one.w / shape, one.h);
+					if (k > best_k + 0.5) {
+						best = one;
+						best_k = k;
+					}
+				}
+			return best;
+		};
+		const Box space = best_space(boxes, firm);
 		// No room for it: when there would be but for the spaces of fitted
 		// sources, it is left as it is for them, and the status line says so.
 		const auto left_for_fits = [&] {
@@ -1954,8 +2034,7 @@ int fit_to_space(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &item
 					rest.push_back(boxes[i]);
 					rest_firm.push_back(firm[i]);
 				}
-			const Box without =
-				fit::free_space(canvas, cx, cy, rest, gap, seen.w / seen.h, tolerance, &rest_firm);
+			const Box without = best_space(rest, rest_firm);
 			if (without.w < 2.0 || without.h < 2.0)
 				return;
 			if (note)
@@ -2016,6 +2095,10 @@ int fit_to_space(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &item
 		const double full_k =
 			std::min((space.w - room_w) / (seen.w - room_w), (space.h - room_h) / (seen.h - room_h));
 		if (!(full_k > 0.0) || (has_entry && !entry.resize && full_k < 1.0 - 1e-4)) {
+			// (One that keeps its size is never made smaller: said, where
+			// there is room for something but not for all of it.)
+			if (full_k > 0.0 && note && item_name)
+				add_name(note->keeps_size, item_name);
 			left_for_fits();
 			continue;
 		}

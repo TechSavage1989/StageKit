@@ -96,16 +96,39 @@ int guides_preview_state()
 	return g_preview_state.load();
 }
 
+#ifdef _WIN32
+// Asked of Windows itself: OBS's preview is a window of its own, and
+// Windows knows about the button whichever window has the mouse. It
+// reports the physical button, so a swapped mouse is allowed for.
+static bool button_down_in_windows()
+{
+	const int button = GetSystemMetrics(SM_SWAPBUTTON) ? VK_RBUTTON : VK_LBUTTON;
+	return (GetAsyncKeyState(button) & 0x8000) != 0;
+}
+#endif
+
 bool guides_mouse_down()
 {
 	if (g_test_mouse.load() || QGuiApplication::mouseButtons().testFlag(Qt::LeftButton))
 		return true;
 #ifdef _WIN32
-	// Also asked of Windows itself: OBS's preview is a window of its own,
-	// and Windows knows about the button whichever window has the mouse.
-	// It reports the physical button, so a swapped mouse is allowed for.
-	const int button = GetSystemMetrics(SM_SWAPBUTTON) ? VK_RBUTTON : VK_LBUTTON;
-	return (GetAsyncKeyState(button) & 0x8000) != 0;
+	return button_down_in_windows();
+#else
+	return false;
+#endif
+}
+
+bool mouse_held_any_thread()
+{
+	if (g_test_mouse.load())
+		return true;
+#ifdef _WIN32
+	// (Only while a window of OBS's is in front: the button is reported
+	// wherever the mouse is, and held in a game it held a selected item's
+	// fit for as long as the button was down.)
+	DWORD pid = 0;
+	GetWindowThreadProcessId(GetForegroundWindow(), &pid);
+	return pid == GetCurrentProcessId() && button_down_in_windows();
 #else
 	return false;
 #endif

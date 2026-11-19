@@ -2429,9 +2429,14 @@ static void fit_owner_test()
 // a 3:2 Cropped View of a camera, and a second letterboxed window that keeps
 // its size, aligned to the bottom right. The fit has run on another layout
 // first (its anchors and kept sizes are stale), is switched off, the bottom
-// window told to keep its size, and everything moved and sized by hand.
-// Switched on, nothing moves; the middle hidden, the others may make use of
-// the room; shown again, the hand layout is back. The same for a filter saved
+// window told to keep its size, and everything laid out with the gaps, each
+// source where its Align in the space puts it (since betaNEXT that counts at
+// home too, so a layout that does not follow it is put right when the filter
+// is switched on; [fit: a kept size ...] below tests that). Switched on,
+// nothing moves; the middle hidden, the others may make use of the room;
+// shown again, the hand layout is back. A game made 60 px smaller by hand
+// fills its space again when the filter is switched on (the owner,
+// 2026-11-19: "it's not actually filling the space as desired"). The same for a filter saved
 // and loaded, for four Fit to Space filters, for a game set to take its space
 // first (the column makes room while it grows, and comes home with it), for
 // All sources with a source added while the filter is off, and for filters
@@ -2495,6 +2500,706 @@ void register_fe_letterbox()
 	obs_register_source(&info);
 }
 } // namespace
+
+// --------------------------------- fit: the size kept on the screen, and Align in the space
+// Resize to fit off keeps the size the owner sees, not a scale of the source
+// (the owner, 2026-11-19: "i had previously sized the GBA screens to fit the
+// space, and they've shrunk even when they are set to not resize"), and
+// Align in the space is obeyed at home too (the owner: "align in the space is
+// not being respected. chat box is not centering"). An entry switched on
+// while a mode hides it, and shown by the mode later, is not taken as
+// switched on then. A fitted neighbour that draws nothing for the moment
+// keeps its room; nothing is drawn and read back while a size glides; and a
+// scale kept by a version before beta198 is not turned into a size while a
+// Standby Image stands in for the capture. On a 640x360 canvas with a gap of
+// 10. Run alone with STAGEKIT_TEST_ONLY_FIT_KEEP_SIZE (and in
+// STAGEKIT_TEST_ONLY_FIT_ENABLE).
+static void fit_keep_size_test()
+{
+	printf("\n[fit: a kept size is the size on the screen, placed by Align in the space]\n");
+	register_fe_letterbox();
+	constexpr uint32_t W = 640, H = 360;
+	auto colour = [](const char *name, int cw, int ch, long long abgr) {
+		obs_data_t *d = obs_data_create();
+		obs_data_set_int(d, "width", cw);
+		obs_data_set_int(d, "height", ch);
+		obs_data_set_int(d, "color", abgr);
+		obs_source_t *src = obs_source_create("color_source", name, d, nullptr);
+		obs_data_release(d);
+		return src;
+	};
+	auto resize_source = [](obs_source_t *src, int cw, int ch) {
+		obs_data_t *d = obs_data_create();
+		obs_data_set_int(d, "width", cw);
+		obs_data_set_int(d, "height", ch);
+		obs_source_update(src, d);
+		obs_data_release(d);
+	};
+	auto list = [](obs_data_t *d, const char *setting, std::vector<std::string> values) {
+		obs_data_array_t *arr = obs_data_array_create();
+		for (const std::string &value : values) {
+			obs_data_t *entry = obs_data_create();
+			obs_data_set_string(entry, "value", value.c_str());
+			obs_data_array_push_back(arr, entry);
+			obs_data_release(entry);
+		}
+		obs_data_set_array(d, setting, arr);
+		obs_data_array_release(arr);
+	};
+	auto place = [](obs_sceneitem_t *it, double x, double y, double bw, double bh) {
+		vec2 v;
+		obs_sceneitem_set_alignment(it, OBS_ALIGN_LEFT | OBS_ALIGN_TOP);
+		obs_sceneitem_set_bounds_type(it, OBS_BOUNDS_SCALE_INNER);
+		obs_sceneitem_set_bounds_alignment(it, OBS_ALIGN_CENTER);
+		vec2_set(&v, (float)bw, (float)bh);
+		obs_sceneitem_set_bounds(it, &v);
+		vec2_set(&v, (float)x, (float)y);
+		obs_sceneitem_set_pos(it, &v);
+	};
+	// Where the picture is drawn, worked out from the item (exactly, not
+	// from a drawing): its source scaled into its bounding box, less `mx`,
+	// `my` of its source at each side (a window's empty margins).
+	struct Drawn {
+		double x = 0, y = 0, w = 0, h = 0;
+	};
+	auto drawn_part = [](obs_sceneitem_t *it, double mx, double my) {
+		Drawn out;
+		obs_source_t *src = obs_sceneitem_get_source(it);
+		const double sw = obs_source_get_width(src), sh = obs_source_get_height(src);
+		vec2 b, p;
+		obs_sceneitem_get_bounds(it, &b);
+		obs_sceneitem_get_pos(it, &p);
+		if (sw < 1.0 || sh < 1.0 || b.x < 1.0f || b.y < 1.0f)
+			return out;
+		const double k = std::min(b.x / sw, b.y / sh);
+		const uint32_t a = obs_sceneitem_get_bounds_alignment(it);
+		const double fx = a & OBS_ALIGN_LEFT ? 0.0 : a & OBS_ALIGN_RIGHT ? 1.0 : 0.5;
+		const double fy = a & OBS_ALIGN_TOP ? 0.0 : a & OBS_ALIGN_BOTTOM ? 1.0 : 0.5;
+		out.w = (sw - 2.0 * mx) * k;
+		out.h = (sh - 2.0 * my) * k;
+		out.x = p.x + (b.x - sw * k) * fx + mx * k;
+		out.y = p.y + (b.y - sh * k) * fy + my * k;
+		return out;
+	};
+	auto drawn = [&](obs_sceneitem_t *it) {
+		return drawn_part(it, 0.0, 0.0);
+	};
+	auto off = [](const Drawn &a, const Drawn &b) {
+		return std::max(
+			{std::fabs(a.x - b.x), std::fabs(a.y - b.y), std::fabs(a.w - b.w), std::fabs(a.h - b.h)});
+	};
+	auto frames = [&](obs_source_t *ss, int n) {
+		for (int i = 0; i < n; i++) {
+			render(ss, W, H);
+			sleep_ms(20);
+		}
+	};
+	auto setting = [](obs_source_t *f, const char *key) {
+		obs_data_t *d = obs_source_get_settings(f);
+		const double v = obs_data_get_double(d, key);
+		obs_data_release(d);
+		return v;
+	};
+	// How many times a fit has drawn a thing in its way, and its own item,
+	// and read it back (`stagekit_test_looks`).
+	struct Looks {
+		long long obstacle = 0, own = 0;
+	};
+	auto looks = [] {
+		calldata_t cd;
+		calldata_init(&cd);
+		proc_handler_call(obs_get_proc_handler(), "stagekit_test_looks", &cd);
+		const char *json = calldata_string(&cd, "json");
+		obs_data_t *data = obs_data_create_from_json(json ? json : "{}");
+		calldata_free(&cd);
+		Looks l{obs_data_get_int(data, "fit_obstacle"), obs_data_get_int(data, "fit_own")};
+		obs_data_release(data);
+		return l;
+	};
+	obs_source_t *before = obs_get_output_source(0);
+	obs_source_t *bg = colour("FK Background", W, H, 0xFF202020);
+	obs_source_t *window = colour("FK Window", 960, 640, 0xFF0000FF);
+	obs_source_t *corner = colour("FK Corner", 300, 200, 0xFF00FF00);
+	obs_source_t *game = colour("FK Game", 60, 40, 0xFFFF0000);
+	obs_scene_t *scene = obs_scene_create("FK Scene");
+	obs_source_t *ss = obs_scene_get_source(scene);
+	obs_scene_add(scene, bg);
+	obs_sceneitem_t *gi = obs_scene_add(scene, game);
+	place(gi, 10.0, 10.0, 30.0, 20.0);
+	obs_sceneitem_t *wi = obs_scene_add(scene, window);
+	obs_sceneitem_t *ci = obs_scene_add(scene, corner);
+	place(wi, 40.0, 40.0, 150.0, 100.0);
+	place(ci, 400.0, 50.0, 120.0, 80.0);
+	obs_set_output_source(0, ss);
+	// The modes: the window in one, the game in the other (the window shown).
+	obs_data_t *md = obs_data_create();
+	list(md, "modes", {"m1", "m2"});
+	obs_data_set_string(md, "mode|m1|name", "Window");
+	list(md, "mode|m1|sources", {"FK Window"});
+	obs_data_set_string(md, "mode|m2|name", "Game");
+	list(md, "mode|m2|sources", {"FK Game"});
+	obs_data_set_string(md, "mode_now", "m1");
+	obs_data_set_string(md, "transition", "none");
+	obs_source_t *modes = obs_source_create("stagekit_scene_modes", "FK Modes", md, nullptr);
+	obs_data_release(md);
+	obs_source_filter_add(ss, modes);
+	frames(ss, 20);
+	auto press = [&](const char *mode) {
+		obs_data_t *req = obs_data_create();
+		obs_data_set_string(req, "scene", "FK Scene");
+		obs_data_set_string(req, "filter", "FK Modes");
+		obs_data_set_string(req, "mode", mode);
+		obs_data_set_string(req, "how", "on");
+		calldata_t cd = {};
+		calldata_set_string(&cd, "request", "SetSceneMode");
+		calldata_set_string(&cd, "data", obs_data_get_json(req));
+		proc_handler_call(obs_get_proc_handler(), "stagekit_vendor_call", &cd);
+		calldata_free(&cd);
+		obs_data_release(req);
+		frames(ss, 15);
+	};
+	// The Scene Fit, made switched off over the hand layout, then switched on.
+	obs_data_t *fd = obs_data_create();
+	list(fd, "entries", {"FK Window", "FK Corner"});
+	struct Entry {
+		const char *name;
+		int toward;
+	};
+	for (const Entry &e : {Entry{"FK Window", 0}, Entry{"FK Corner", 8}}) {
+		const std::string pre = std::string("fit|") + e.name + "|";
+		obs_data_set_int(fd, (pre + "box").c_str(), 2);
+		obs_data_set_double(fd, (pre + "margin").c_str(), 10.0);
+		obs_data_set_bool(fd, (pre + "resize").c_str(), false);
+		obs_data_set_int(fd, (pre + "toward").c_str(), e.toward);
+		obs_data_set_int(fd, (pre + "glide_ms").c_str(), 0);
+	}
+	obs_source_t *fit = obs_source_create("stagekit_scene_fit", "FK Fit", fd, nullptr);
+	obs_data_release(fd);
+	obs_source_set_enabled(fit, false);
+	obs_source_filter_add(ss, fit);
+	frames(ss, 10);
+	obs_source_set_enabled(fit, true);
+	frames(ss, 100);
+	// Its space: the screen less the gap, less the corner's picture and the
+	// gap beside it (the corner lies at the bottom right of the whole screen).
+	const Drawn w0 = drawn(wi), c0 = drawn(ci);
+	printf("    switched on: window %.1f,%.1f %.1fx%.1f; corner %.1f,%.1f %.1fx%.1f\n", w0.x, w0.y, w0.w, w0.h,
+	       c0.x, c0.y, c0.w, c0.h);
+	const double space_l = 10.0, space_r = W - 10.0 - 120.0 - 10.0, space_t = 10.0, space_b = H - 10.0;
+	CHECK(std::fabs(w0.w - 150.0) <= 0.5 && std::fabs(w0.h - 100.0) <= 0.5 &&
+		      std::fabs(w0.x - (space_l + (space_r - space_l - 150.0) / 2.0)) <= 0.5 &&
+		      std::fabs(w0.y - (space_t + (space_b - space_t - 100.0) / 2.0)) <= 0.5,
+	      "switched on over a layout made by hand, a kept-size source set to The middle keeps its size and sits in the middle of its space (%.1f x %.1f at %.1f, %.1f)",
+	      w0.w, w0.h, w0.x, w0.y);
+	CHECK(std::fabs(c0.w - 120.0) <= 0.5 && std::fabs(c0.h - 80.0) <= 0.5 &&
+		      std::fabs(c0.x + c0.w - (W - 10.0)) <= 0.5 && std::fabs(c0.y + c0.h - (H - 10.0)) <= 0.5,
+	      "and one set to The bottom right sits at the bottom right, the gap away (%.1f x %.1f at %.1f, %.1f)",
+	      c0.w, c0.h, c0.x, c0.y);
+	CHECK(std::fabs(setting(fit, "fit|FK Window|keep_w") - 150.0) <= 0.5 &&
+		      std::fabs(setting(fit, "fit|FK Window|keep_h") - 100.0) <= 0.5 &&
+		      std::fabs(setting(fit, "fit|FK Window|keep_sw") - 960.0) <= 0.5 &&
+		      setting(fit, "fit|FK Window|keep_k") > 0.0,
+	      "the size kept is saved as it shows on the screen (%.1f x %.1f, of a source %.0f wide), and as a scale for a version before",
+	      setting(fit, "fit|FK Window|keep_w"), setting(fit, "fit|FK Window|keep_h"),
+	      setting(fit, "fit|FK Window|keep_sw"));
+
+	// The window's source made smaller and larger, and empty for 2 s.
+	struct Step {
+		const char *what;
+		int sw, sh;
+		int wait;
+		double ew, eh;
+	};
+	const Step steps[] = {
+		{"made half the size", 480, 320, 60, 150.0, 100.0}, {"back to its size", 960, 640, 60, 150.0, 100.0},
+		{"with no image for 2 s", 0, 0, 100, 0.0, 0.0},     {"its image back", 960, 640, 60, 150.0, 100.0},
+		{"4:3", 640, 480, 60, 400.0 / 3.0, 100.0},          {"3:2 again", 960, 640, 60, 150.0, 100.0}};
+	for (const Step &st : steps) {
+		resize_source(window, st.sw, st.sh);
+		double worst = 0.0;
+		for (int t = 0; t < st.wait; t += 10) {
+			frames(ss, 10);
+			if (!st.sw)
+				continue;
+			const Drawn d = drawn(wi);
+			if (t >= 10)
+				worst = std::max({worst, std::fabs(d.w - st.ew), std::fabs(d.h - st.eh)});
+		}
+		const Drawn d = drawn(wi);
+		if (!st.sw) {
+			CHECK(std::fabs(setting(fit, "fit|FK Window|keep_w") - 150.0) <= 0.5,
+			      "the window's source %s: the size kept is left as it is (%.1f wide)", st.what,
+			      setting(fit, "fit|FK Window|keep_w"));
+			continue;
+		}
+		const double cx = d.x + d.w / 2.0, cy = d.y + d.h / 2.0;
+		CHECK(worst <= 0.5 && std::fabs(cx - (space_l + space_r) / 2.0) <= 0.5 &&
+			      std::fabs(cy - (space_t + space_b) / 2.0) <= 0.5 &&
+			      std::fabs(setting(fit, "fit|FK Window|keep_w") - 150.0) <= 0.5,
+		      "the window's source %s (%d x %d): it shows %.1f x %.1f on the screen (%.1f x %.1f wanted, off by %.2f at most), in the middle of its space, and the size kept stays %.1f wide",
+		      st.what, st.sw, st.sh, d.w, d.h, st.ew, st.eh, worst, setting(fit, "fit|FK Window|keep_w"));
+	}
+
+	// Switched on while a mode hides the window, and the window shown by the
+	// mode afterwards: it keeps its kept size and its home (not taken as
+	// switched on then), whatever size its box had meanwhile.
+	const double home_w = setting(fit, "fit|FK Window|home_w"), home_x = setting(fit, "fit|FK Window|home_x");
+	obs_source_set_enabled(fit, false);
+	frames(ss, 10);
+	press("m2");
+	CHECK(!obs_sceneitem_visible(wi), "the mode hides the window");
+	obs_source_set_enabled(fit, true);
+	frames(ss, 30);
+	{
+		vec2 small; // another size meanwhile
+		vec2_set(&small, 60.0f, 40.0f);
+		obs_sceneitem_set_bounds(wi, &small);
+	}
+	frames(ss, 30);
+	press("m1");
+	frames(ss, 60);
+	const Drawn w1 = drawn(wi);
+	CHECK(obs_sceneitem_visible(wi) && std::fabs(w1.w - 150.0) <= 0.5 && std::fabs(w1.h - 100.0) <= 0.5 &&
+		      std::fabs(setting(fit, "fit|FK Window|keep_w") - 150.0) <= 0.5 && home_w > 1.0 &&
+		      std::fabs(setting(fit, "fit|FK Window|home_w") - home_w) <= 0.01 &&
+		      std::fabs(setting(fit, "fit|FK Window|home_x") - home_x) <= 0.01,
+	      "switched on while a mode hid it, and shown by the mode: the window keeps its kept size and home (%.1f x %.1f, home %.1f wide, was %.1f)",
+	      w1.w, w1.h, setting(fit, "fit|FK Window|home_w"), home_w);
+
+	obs_source_filter_remove(ss, fit);
+	obs_source_release(fit);
+	obs_source_filter_remove(ss, modes);
+	obs_source_release(modes);
+
+	// Resize to fit: laid out by hand a few pixels smaller than its space
+	// (within the Size tolerance, 8) against the side it is kept towards,
+	// switched on, it keeps that size; laid out elsewhere in its space at
+	// that size, it keeps the size and goes where its alignment puts it;
+	// made much smaller, it fills its space.
+	{
+		obs_scene_t *fs = obs_scene_create("FK Fill");
+		obs_source_t *fss = obs_scene_get_source(fs);
+		obs_scene_add(fs, bg);
+		obs_source_t *picture = colour("FK Picture", 400, 300, 0xFFFFFF00);
+		obs_sceneitem_t *pi = obs_scene_add(fs, picture);
+		obs_set_output_source(0, fss);
+		obs_data_t *gd = obs_data_create();
+		list(gd, "entries", {"FK Picture"});
+		obs_data_set_int(gd, "fit|FK Picture|box", 2);
+		obs_data_set_double(gd, "fit|FK Picture|margin", 10.0);
+		obs_data_set_int(gd, "fit|FK Picture|toward", 5); // the top left
+		obs_data_set_int(gd, "fit|FK Picture|glide_ms", 0);
+		obs_source_t *fill = obs_source_create("stagekit_scene_fit", "FK Fill Fit", gd, nullptr);
+		obs_data_release(gd);
+		obs_source_set_enabled(fill, false);
+		obs_source_filter_add(fss, fill);
+		// Its space: 620 x 340, so the image fills it at 453.3 x 340.
+		const double full_w = 340.0 * 4.0 / 3.0;
+		place(pi, 10.0, 10.0, full_w - 4.0, (full_w - 4.0) * 0.75);
+		frames(fss, 10);
+		obs_source_set_enabled(fill, true);
+		double worst = 0.0;
+		for (int t = 0; t < 6; t++) {
+			frames(fss, 10);
+			const Drawn d = drawn(pi);
+			worst = std::max(
+				{worst, std::fabs(d.x - 10.0), std::fabs(d.y - 10.0), std::fabs(d.w - (full_w - 4.0))});
+		}
+		CHECK(worst <= 0.5,
+		      "Resize to fit: laid out 4 px smaller than its space at the top left, switched on it keeps that size and place (off by %.2f)",
+		      worst);
+		obs_source_set_enabled(fill, false);
+		frames(fss, 10);
+		place(pi, 60.0, 14.0, full_w - 4.0, (full_w - 4.0) * 0.75);
+		frames(fss, 10);
+		obs_source_set_enabled(fill, true);
+		frames(fss, 60);
+		const Drawn a = drawn(pi);
+		CHECK(std::fabs(a.w - (full_w - 4.0)) <= 0.5 && std::fabs(a.x - 10.0) <= 0.5 &&
+			      std::fabs(a.y - 10.0) <= 0.5,
+		      "Resize to fit: laid out at that size 50 px from the side it is kept towards, switched on it keeps the size and lies at the top left (%.1f x %.1f at %.1f, %.1f)",
+		      a.w, a.h, a.x, a.y);
+		obs_source_set_enabled(fill, false);
+		frames(fss, 10);
+		place(pi, 10.0, 10.0, 300.0, 225.0);
+		frames(fss, 10);
+		obs_source_set_enabled(fill, true);
+		frames(fss, 60);
+		const Drawn d = drawn(pi);
+		CHECK(std::fabs(d.w - full_w) <= 0.5 && std::fabs(d.h - 340.0) <= 0.5 && std::fabs(d.x - 10.0) <= 0.5 &&
+			      std::fabs(d.y - 10.0) <= 0.5,
+		      "Resize to fit: laid out 153 px smaller, switched on it fills its space (%.1f x %.1f at %.1f, %.1f)",
+		      d.w, d.h, d.x, d.y);
+		obs_source_filter_remove(fss, fill);
+		obs_source_release(fill);
+		obs_set_output_source(0, ss);
+		obs_source_remove(fss);
+		obs_scene_release(fs);
+		obs_source_release(picture);
+	}
+
+	// A fitted neighbour that draws nothing for the moment keeps its room
+	// (a widget between two songs; the rule for a capture with no image
+	// since beta147). A 4:3 picture that resizes, and at the bottom right a
+	// widget kept at its size: a nested scene, which has a size whatever it
+	// draws. The widget stops drawing: the picture stays as it is, also once
+	// everything is looked at again (new settings), and when the widget
+	// draws again. (In beta198 the widget, drawing nothing, was left out of
+	// what is in the picture's way, and the picture grew over its room.)
+	{
+		obs_scene_t *rs = obs_scene_create("FK Room");
+		obs_source_t *rss = obs_scene_get_source(rs);
+		obs_scene_add(rs, bg);
+		obs_source_t *picture = colour("FK Room Picture", 400, 300, 0xFFFFFF00);
+		obs_source_t *fill = colour("FK Widget Fill", W, H, 0xFFFF00FF);
+		obs_scene_t *widget = obs_scene_create("FK Widget");
+		obs_sceneitem_t *fill_item = obs_scene_add(widget, fill);
+		obs_sceneitem_t *pi = obs_scene_add(rs, picture);
+		obs_sceneitem_t *wgi = obs_scene_add(rs, obs_scene_get_source(widget));
+		place(pi, 10.0, 10.0, 200.0, 150.0);
+		place(wgi, 390.0, 215.0, 240.0, 135.0);
+		obs_set_output_source(0, rss);
+		obs_data_t *rd = obs_data_create();
+		list(rd, "entries", {"FK Room Picture", "FK Widget"});
+		for (const char *name : {"FK Room Picture", "FK Widget"}) {
+			const std::string pre = std::string("fit|") + name + "|";
+			obs_data_set_int(rd, (pre + "box").c_str(), 2);
+			obs_data_set_double(rd, (pre + "margin").c_str(), 10.0);
+			obs_data_set_int(rd, (pre + "glide_ms").c_str(), 0);
+		}
+		obs_data_set_int(rd, "fit|FK Room Picture|toward", 3); // the left
+		obs_data_set_bool(rd, "fit|FK Widget|resize", false);
+		obs_data_set_int(rd, "fit|FK Widget|toward", 8); // the bottom right
+		obs_source_t *room = obs_source_create("stagekit_scene_fit", "FK Room Fit", rd, nullptr);
+		obs_data_release(rd);
+		obs_source_filter_add(rss, room);
+		frames(rss, 150);
+		const Drawn p0 = drawn(pi), g0 = drawn(wgi);
+		printf("    fitted: picture %.1f,%.1f %.1fx%.1f; widget %.1f,%.1f %.1fx%.1f\n", p0.x, p0.y, p0.w, p0.h,
+		       g0.x, g0.y, g0.w, g0.h);
+		// (Left of the widget, the gap from it: 370 wide.)
+		CHECK(std::fabs(p0.w - 370.0) <= 0.5 && std::fabs(p0.x - 10.0) <= 0.5 &&
+			      std::fabs(g0.x + g0.w - (W - 10.0)) <= 0.5 && std::fabs(g0.w - 240.0) <= 0.5,
+		      "a picture beside a widget kept at its size fills the room left of it (%.1f wide at %.1f; the widget %.1f wide, to %.1f)",
+		      p0.w, p0.x, g0.w, g0.x + g0.w);
+		obs_sceneitem_set_visible(fill_item, false);
+		double most = 0.0;
+		for (int t = 0; t < 15; t++) {
+			frames(rss, 10);
+			most = std::max({most, off(drawn(pi), p0), off(drawn(wgi), g0)});
+		}
+		CHECK(most <= 0.5,
+		      "the widget draws nothing for 3 s: it keeps its room, and the picture beside it stays as it is (off by %.2f)",
+		      most);
+		// Everything looked at again (new settings do that).
+		obs_data_t *nudge = obs_data_create();
+		obs_data_set_double(nudge, "fit|FK Room Picture|tolerance", 7.0);
+		obs_source_update(room, nudge);
+		obs_data_release(nudge);
+		most = 0.0;
+		for (int t = 0; t < 10; t++) {
+			frames(rss, 10);
+			most = std::max({most, off(drawn(pi), p0), off(drawn(wgi), g0)});
+		}
+		CHECK(most <= 0.5,
+		      "and with everything looked at again, the widget still drawing nothing (off by %.2f)", most);
+		obs_sceneitem_set_visible(fill_item, true);
+		most = 0.0;
+		for (int t = 0; t < 10; t++) {
+			frames(rss, 10);
+			most = std::max({most, off(drawn(pi), p0), off(drawn(wgi), g0)});
+		}
+		CHECK(most <= 0.5, "the widget draws again: nothing has moved (off by %.2f)", most);
+		obs_source_filter_remove(rss, room);
+		obs_source_release(room);
+		obs_set_output_source(0, ss);
+		obs_source_remove(rss);
+		obs_scene_release(rs);
+		obs_source_remove(obs_scene_get_source(widget));
+		obs_scene_release(widget);
+		obs_source_release(picture);
+		obs_source_release(fill);
+	}
+
+	// A source kept at its size that shows more of itself keeps its scale:
+	// a chat box with more lines in it, here a nested scene (640x360, like
+	// a group or a browser widget: its size stays whatever it draws) with a
+	// block of lines at its top left, kept at half its size at the top left
+	// of the screen. The block grows to four times its height: the scene is
+	// still drawn at half its size, and the size kept is what shows now at
+	// that scale. (In beta198 what shows was fitted into the size kept
+	// before: the block, four times as tall, was squeezed into the room of
+	// the short one, and the whole box drawn at an eighth of its size.)
+	{
+		obs_scene_t *cs = obs_scene_create("FK Chat Scene");
+		obs_source_t *css = obs_scene_get_source(cs);
+		obs_scene_add(cs, bg);
+		obs_source_t *lines = colour("FK Chat Lines", 200, 60, 0xFFFFFFFF);
+		obs_scene_t *chat = obs_scene_create("FK Chat");
+		obs_scene_add(chat, lines);
+		obs_sceneitem_t *chi = obs_scene_add(cs, obs_scene_get_source(chat));
+		place(chi, 30.0, 40.0, 320.0, 180.0);
+		obs_set_output_source(0, css);
+		obs_data_t *cd = obs_data_create();
+		list(cd, "entries", {"FK Chat"});
+		obs_data_set_int(cd, "fit|FK Chat|box", 2);
+		obs_data_set_double(cd, "fit|FK Chat|margin", 10.0);
+		obs_data_set_bool(cd, "fit|FK Chat|resize", false);
+		obs_data_set_int(cd, "fit|FK Chat|toward", 5); // the top left
+		obs_data_set_int(cd, "fit|FK Chat|glide_ms", 0);
+		obs_source_t *chat_fit = obs_source_create("stagekit_scene_fit", "FK Chat Fit", cd, nullptr);
+		obs_data_release(cd);
+		obs_source_filter_add(css, chat_fit);
+		frames(css, 150);
+		const double scale_was = drawn(chi).w / 640.0;
+		const double kept_was = setting(chat_fit, "fit|FK Chat|keep_h");
+		resize_source(lines, 200, 240);
+		frames(css, 200);
+		const Drawn grown = drawn(chi);
+		const double scale_now = grown.w / 640.0, kept_now = setting(chat_fit, "fit|FK Chat|keep_h");
+		CHECK(std::fabs(scale_was - 0.5) <= 0.01 && std::fabs(kept_was - 30.0) <= 1.0 &&
+			      std::fabs(scale_now - scale_was) <= 0.005 && std::fabs(kept_now - 120.0) <= 2.0 &&
+			      std::fabs(grown.x - 10.0) <= 0.5 && std::fabs(grown.y - 10.0) <= 0.5,
+		      "a source kept at its size that shows more of itself keeps its scale (%.3f of its source, was %.3f) and its place; the size kept follows what shows (%.1f high, was %.1f)",
+		      scale_now, scale_was, kept_now, kept_was);
+		obs_source_filter_remove(css, chat_fit);
+		obs_source_release(chat_fit);
+		obs_set_output_source(0, ss);
+		obs_source_remove(css);
+		obs_scene_release(cs);
+		obs_source_remove(obs_scene_get_source(chat));
+		obs_scene_release(chat);
+		obs_source_release(lines);
+	}
+
+	// Nothing is drawn and read back while a size changes. A picture that
+	// resizes, a window kept at its size at the bottom right, and a badge
+	// no fit looks after at the top right. The window's source and the
+	// badge's then change size on every frame for a second (a window
+	// switcher's glide, a Standby Image's, a text that changes): the window
+	// keeps its size on the screen, and no fit looks at the badge or at its
+	// own item meanwhile. (In beta198 the badge was looked at by each fit on
+	// every tick its size changed, and the window by its own.)
+	{
+		obs_scene_t *gs = obs_scene_create("FK Glide");
+		obs_source_t *gss = obs_scene_get_source(gs);
+		obs_scene_add(gs, bg);
+		obs_source_t *picture = colour("FK Glide Picture", 400, 300, 0xFFFFFF00);
+		obs_source_t *kept = colour("FK Glide Window", 300, 200, 0xFF0000FF);
+		obs_source_t *badge = colour("FK Glide Badge", 100, 50, 0xFF00FF00);
+		obs_sceneitem_t *pi = obs_scene_add(gs, picture);
+		obs_sceneitem_t *ki = obs_scene_add(gs, kept);
+		obs_sceneitem_t *bi = obs_scene_add(gs, badge);
+		place(pi, 10.0, 10.0, 200.0, 150.0);
+		place(ki, 480.0, 250.0, 150.0, 100.0);
+		{
+			// (The badge by its scale: its box grows with its source.)
+			vec2 v;
+			obs_sceneitem_set_bounds_type(bi, OBS_BOUNDS_NONE);
+			vec2_set(&v, 520.0f, 10.0f);
+			obs_sceneitem_set_pos(bi, &v);
+			vec2_set(&v, 0.5f, 0.5f);
+			obs_sceneitem_set_scale(bi, &v);
+		}
+		obs_set_output_source(0, gss);
+		obs_data_t *gd = obs_data_create();
+		list(gd, "entries", {"FK Glide Picture", "FK Glide Window"});
+		for (const char *name : {"FK Glide Picture", "FK Glide Window"}) {
+			const std::string pre = std::string("fit|") + name + "|";
+			obs_data_set_int(gd, (pre + "box").c_str(), 2);
+			obs_data_set_double(gd, (pre + "margin").c_str(), 10.0);
+			obs_data_set_int(gd, (pre + "glide_ms").c_str(), 0);
+		}
+		obs_data_set_int(gd, "fit|FK Glide Picture|toward", 3); // the left
+		obs_data_set_bool(gd, "fit|FK Glide Window|resize", false);
+		obs_data_set_int(gd, "fit|FK Glide Window|toward", 8); // the bottom right
+		obs_source_t *glide = obs_source_create("stagekit_scene_fit", "FK Glide Fit", gd, nullptr);
+		obs_data_release(gd);
+		obs_source_filter_add(gss, glide);
+		frames(gss, 150);
+		const Drawn k0 = drawn(ki);
+		const Looks at_rest = looks();
+		double worst = 0.0;
+		for (int i = 1; i <= 50; i++) {
+			resize_source(kept, 300 + 6 * i, 200 + 4 * i);
+			resize_source(badge, 100 + 2 * i, 50 + i);
+			frames(gss, 1);
+			const Drawn d = drawn(ki);
+			worst = std::max({worst, std::fabs(d.w - k0.w), std::fabs(d.h - k0.h)});
+		}
+		const Looks gliding = looks();
+		frames(gss, 75);
+		const Looks after = looks();
+		const Drawn k1 = drawn(ki);
+		printf("    looks while the sizes changed: %lld at things in the way, %lld at a fit's own item; %lld and %lld more in the 1.5 s after\n",
+		       gliding.obstacle - at_rest.obstacle, gliding.own - at_rest.own,
+		       after.obstacle - gliding.obstacle, after.own - gliding.own);
+		CHECK(gliding.obstacle == at_rest.obstacle && gliding.own - at_rest.own <= 1,
+		      "while two sources change size on every frame for a second, no fit draws and reads back what is in its way (%lld looks), nor its own item (%lld)",
+		      gliding.obstacle - at_rest.obstacle, gliding.own - at_rest.own);
+		CHECK(after.own - gliding.own <= 2 && after.obstacle - gliding.obstacle <= 2,
+		      "once they have stopped, the window is looked at again by its own fit, once (%lld looks at a fit's own item, %lld at things in the way)",
+		      after.own - gliding.own, after.obstacle - gliding.obstacle);
+		CHECK(worst <= 0.5 && off(k1, k0) <= 0.5,
+		      "and the window, its source twice the size, shows at the size kept all along (%.1f x %.1f, off by %.2f at most)",
+		      k1.w, k1.h, worst);
+		obs_source_filter_remove(gss, glide);
+		obs_source_release(glide);
+		obs_set_output_source(0, ss);
+		obs_source_remove(gss);
+		obs_scene_release(gs);
+		for (obs_source_t *s : {picture, kept, badge})
+			obs_source_release(s);
+	}
+
+	// A scale kept by a version before beta198 is turned into a size on the
+	// screen only off the capture's own image, never while a Standby Image
+	// stands in for it. A handheld window (960x640 with empty margins: 864 x
+	// 576 shows) kept at 120 x 80 at the bottom right, with a Standby Image
+	// (16:9) on it. Saved as an old collection (the scale alone), and loaded
+	// while the capture has no signal: the image stands in, 16:9 and as tall
+	// as the capture was. (Converted then, as beta198 did once the image had
+	// kept its size for half a second, the size kept became the image's, 158
+	// wide, and the window came back larger than it was laid out.)
+	{
+		obs_scene_t *ls = obs_scene_create("FK Legacy");
+		obs_source_t *lss = obs_scene_get_source(ls);
+		obs_scene_add(ls, bg);
+		obs_data_t *hd = obs_data_create();
+		obs_data_set_int(hd, "width", 960);
+		obs_data_set_int(hd, "height", 640);
+		obs_data_set_int(hd, "margin_x", 48);
+		obs_data_set_int(hd, "margin_y", 32);
+		obs_data_set_int(hd, "color", 0xFF00FFFF);
+		obs_source_t *hand = obs_source_create("stagekit_test_fe_letterbox", "FK Hand", hd, nullptr);
+		obs_data_release(hd);
+		obs_source_t *image = colour("FK Standby Image", 320, 180, 0xFF0080FF);
+		obs_data_t *sd = obs_data_create();
+		obs_data_set_int(sd, "picture", 2); // a source
+		obs_data_set_string(sd, "source", "FK Standby Image");
+		obs_data_set_int(sd, "style", 1); // a cut
+		obs_data_set_bool(sd, "glide_size", false);
+		obs_source_t *standby = obs_source_create("stagekit_standby", "FK Standby", sd, nullptr);
+		obs_data_release(sd);
+		obs_source_filter_add(hand, standby);
+		obs_sceneitem_t *hi = obs_scene_add(ls, hand);
+		// (Its box holds the whole window: 133.3 x 88.9 for 120 x 80 showing.)
+		const double k_hand = 120.0 / 864.0;
+		place(hi, W - 10.0 - 120.0 - 48.0 * k_hand, H - 10.0 - 80.0 - 32.0 * k_hand, 960.0 * k_hand,
+		      640.0 * k_hand);
+		obs_set_output_source(0, lss);
+		auto input = [&](int cw, int ch, int mx, int my, int wait) {
+			obs_data_t *change = obs_data_create();
+			obs_data_set_int(change, "width", cw);
+			obs_data_set_int(change, "height", ch);
+			obs_data_set_int(change, "margin_x", mx);
+			obs_data_set_int(change, "margin_y", my);
+			obs_source_update(hand, change);
+			obs_data_release(change);
+			frames(lss, wait);
+		};
+		auto make_fit = [&](const char *name, obs_data_t *from) {
+			obs_data_t *d = from ? from : obs_data_create();
+			if (!from) {
+				list(d, "entries", {"FK Hand"});
+				obs_data_set_int(d, "fit|FK Hand|box", 2);
+				obs_data_set_double(d, "fit|FK Hand|margin", 10.0);
+				obs_data_set_bool(d, "fit|FK Hand|resize", false);
+				obs_data_set_int(d, "fit|FK Hand|toward", 8);
+				obs_data_set_int(d, "fit|FK Hand|glide_ms", 0);
+			}
+			obs_source_t *f = obs_source_create("stagekit_scene_fit", name, d, nullptr);
+			obs_data_release(d);
+			obs_source_filter_add(lss, f);
+			return f;
+		};
+		obs_source_t *now_fit = make_fit("FK Hand Fit", nullptr);
+		frames(lss, 100);
+		const Drawn laid = drawn_part(hi, 48.0, 32.0);
+		CHECK(std::fabs(laid.w - 120.0) <= 0.5 && std::fabs(laid.h - 80.0) <= 0.5 &&
+			      std::fabs(setting(now_fit, "fit|FK Hand|keep_w") - 120.0) <= 0.5,
+		      "a handheld window under a Standby Image is kept at 120 x 80 by what shows of it (%.1f x %.1f; kept %.1f wide)",
+		      laid.w, laid.h, setting(now_fit, "fit|FK Hand|keep_w"));
+		// The capture loses its signal with this version's filter on: the
+		// image stands in, and the size kept is not read off it.
+		input(0, 0, 0, 0, 75);
+		const double image_w = obs_source_get_width(hand), image_h = obs_source_get_height(hand);
+		CHECK(image_w > 1.0 && std::fabs(image_w / image_h - 16.0 / 9.0) <= 0.02 &&
+			      std::fabs(setting(now_fit, "fit|FK Hand|keep_w") - 120.0) <= 0.5,
+		      "with no signal the Standby Image stands in (%.0f x %.0f), and the size kept stays %.1f wide",
+		      image_w, image_h, setting(now_fit, "fit|FK Hand|keep_w"));
+		// Saved as an old collection, and loaded with the image standing in.
+		obs_data_t *saved = obs_source_get_settings(now_fit);
+		obs_data_t *legacy = obs_data_create_from_json(obs_data_get_json(saved));
+		obs_data_release(saved);
+		for (const char *key :
+		     {"keep_w", "keep_h", "keep_sw", "keep_sh", "keep_pw", "keep_ph", "orig_w", "orig_h"})
+			obs_data_unset_user_value(legacy, (std::string("fit|FK Hand|") + key).c_str());
+		for (const char *key : {"keep_k", "orig_k"})
+			obs_data_set_double(legacy, (std::string("fit|FK Hand|") + key).c_str(), k_hand);
+		obs_source_filter_remove(lss, now_fit);
+		obs_source_release(now_fit);
+		frames(lss, 10);
+		obs_source_t *old_fit = make_fit("FK Old Fit", legacy);
+		frames(lss, 100);
+		const Drawn standing = drawn(hi);
+		CHECK(setting(old_fit, "fit|FK Hand|keep_w") == 0.0 && setting(old_fit, "fit|FK Hand|orig_w") == 0.0 &&
+			      std::fabs(standing.h - image_h * k_hand) <= 0.5,
+		      "an old collection loaded while a Standby Image stands in: its kept scale is not turned into a size (kept %.1f wide, noted %.1f), and the image shows at that scale (%.1f x %.1f)",
+		      setting(old_fit, "fit|FK Hand|keep_w"), setting(old_fit, "fit|FK Hand|orig_w"), standing.w,
+		      standing.h);
+		// The signal back: the capture's own image, and now the size.
+		input(960, 640, 48, 32, 100);
+		const Drawn back = drawn_part(hi, 48.0, 32.0);
+		CHECK(std::fabs(setting(old_fit, "fit|FK Hand|keep_w") - 120.0) <= 1.0 &&
+			      std::fabs(setting(old_fit, "fit|FK Hand|keep_h") - 80.0) <= 1.0 &&
+			      std::fabs(setting(old_fit, "fit|FK Hand|orig_w") - 120.0) <= 1.0 &&
+			      off(back, laid) <= 1.0,
+		      "its signal back, the scale becomes the size of what shows of the capture itself (%.1f x %.1f), and the window is as it was laid out (%.1f x %.1f, off by %.2f)",
+		      setting(old_fit, "fit|FK Hand|keep_w"), setting(old_fit, "fit|FK Hand|keep_h"), back.w, back.h,
+		      off(back, laid));
+		// And no signal again: the size stays.
+		input(0, 0, 0, 0, 75);
+		input(960, 640, 48, 32, 100);
+		CHECK(std::fabs(setting(old_fit, "fit|FK Hand|keep_w") - 120.0) <= 1.0 &&
+			      off(drawn_part(hi, 48.0, 32.0), laid) <= 1.0,
+		      "the signal lost and back once more: the size kept is the same (%.1f wide), and so is the window (off by %.2f)",
+		      setting(old_fit, "fit|FK Hand|keep_w"), off(drawn_part(hi, 48.0, 32.0), laid));
+		// The filter switched off and on while the image stands in: the
+		// size kept is not read off the image (it is drawn at the very size
+		// the one kept gives it), and the window comes back as it was laid
+		// out. (Read again then, the size kept became the image's, 16:9,
+		// and the 3:2 window came back smaller each time.)
+		input(0, 0, 0, 0, 75);
+		obs_source_set_enabled(old_fit, false);
+		frames(lss, 15);
+		obs_source_set_enabled(old_fit, true);
+		frames(lss, 75);
+		const double kept_standing = setting(old_fit, "fit|FK Hand|keep_w"),
+			     kept_standing_h = setting(old_fit, "fit|FK Hand|keep_h");
+		input(960, 640, 48, 32, 100);
+		CHECK(std::fabs(kept_standing - 120.0) <= 1.0 && std::fabs(kept_standing_h - 80.0) <= 1.0 &&
+			      off(drawn_part(hi, 48.0, 32.0), laid) <= 1.0,
+		      "switched off and on while the Standby Image stands in: the size kept stays %.1f x %.1f, and the window comes back as it was laid out (off by %.2f)",
+		      kept_standing, kept_standing_h, off(drawn_part(hi, 48.0, 32.0), laid));
+		obs_source_filter_remove(lss, old_fit);
+		obs_source_release(old_fit);
+		obs_source_filter_remove(hand, standby);
+		obs_source_release(standby);
+		obs_set_output_source(0, ss);
+		obs_source_remove(lss);
+		obs_scene_release(ls);
+		obs_source_release(hand);
+		obs_source_release(image);
+	}
+
+	obs_set_output_source(0, before);
+	obs_source_release(before);
+	obs_source_remove(ss);
+	obs_scene_release(scene);
+	for (obs_source_t *s : {bg, window, corner, game})
+		obs_source_release(s);
+}
 
 static void fit_enable_test()
 {
@@ -2654,10 +3359,31 @@ static void fit_enable_test()
 		obs_set_output_source(0, obs_scene_get_source(scene));
 		return scene;
 	};
-	// The column is 4.5 px from its usual right alignment, with the bottom
-	// image one pixel nearer the screen's bottom edge than the gap. A filled
-	// hand layout should retain these intentional offsets.
+	// A first, rough layout by hand: the column 4.5 px from the right
+	// alignment its sources have, the bottom image one pixel nearer the
+	// screen's bottom edge than the gap. Up to beta198 switching the filter
+	// on kept such offsets (the goal at home was the home box exactly);
+	// since betaNEXT Align in the space decides where a source lies in its
+	// space, at home too, so the layout that switching on leaves alone is
+	// one made with the gaps and by each source's alignment. That one is
+	// made here by a fit of its own (another filter, `temp`, with the same
+	// settings and nothing remembered, taken off again) over the rough one.
+	// What is seen is read off a drawing by whole pixels, and with a gap of
+	// 7.5 edges lie on half pixels: a hundredth of a pixel can read as one,
+	// so here "nothing moves" is one pixel at most.
 	const double hand_cx = W - kGap - 165.0 - 4.5;
+	// The game's box made `by` px smaller, its left edge and middle kept (it
+	// is kept towards the left).
+	auto shrink_game = [](obs_sceneitem_t *it, double by) {
+		vec2 b, p;
+		obs_sceneitem_get_bounds(it, &b);
+		obs_sceneitem_get_pos(it, &p);
+		const float dh = (float)(by * b.y / b.x);
+		vec2_set(&b, b.x - (float)by, b.y - dh);
+		obs_sceneitem_set_bounds(it, &b);
+		vec2_set(&p, p.x, p.y + dh / 2.0f);
+		obs_sceneitem_set_pos(it, &p);
+	};
 	// Place the visible image, including when a screen-sized shadow adds
 	// room outside its OBS bounds. Measure the hand layout with the filters
 	// off, independently of StageKit's fit solver.
@@ -2686,15 +3412,16 @@ static void fit_enable_test()
 				break;
 		}
 	};
-	// One run: the fit (`filters`, switched on and off together) over the
-	// hand layout. `keep_bottom`: how the bottom window is told to keep its
-	// size while the filter is off. `ran_before`: the fit ran on another
-	// layout first; otherwise it was made switched off and has never ticked
-	// while on (OBS started with it off): what shows of each source is
-	// measured only after it is switched on.
+	// One run: the fit (`filters`, switched on and off together) over a
+	// layout made by hand with the gaps. `keep_bottom`: how the bottom
+	// window is told to keep its size while the filter is off. `ran_before`:
+	// the fit ran on another layout first; otherwise it was made switched
+	// off and has never ticked while on (OBS started with it off): what
+	// shows of each source is measured only after it is switched on. `temp`:
+	// makes the other filter that lays the hand layout out.
 	auto run = [&](const char *label, obs_source_t *ss, obs_sceneitem_t *its[4],
 		       const std::vector<obs_source_t *> &filters, const std::function<void()> &keep_bottom,
-		       bool ran_before) {
+		       bool ran_before, const std::function<std::vector<obs_source_t *>()> &temp) {
 		if (ran_before) {
 			// First on another layout, so that what it noted is stale.
 			lay_out(its, 400.0, 460.0, 80.0, 140.0, 0.0);
@@ -2706,6 +3433,17 @@ static void fit_enable_test()
 		frames(ss, 10);
 		keep_bottom();
 		hand_layout(ss, its);
+		frames(ss, 10);
+		print("laid out roughly", shows_all(ss));
+		// Laid out with the gaps, by another fit.
+		std::vector<obs_source_t *> others = temp();
+		for (obs_source_t *f : others)
+			obs_source_filter_add(ss, f);
+		frames(ss, 150);
+		for (obs_source_t *f : others) {
+			obs_source_filter_remove(ss, f);
+			obs_source_release(f);
+		}
 		frames(ss, 20);
 		const std::vector<Rect> hand = shows_all(ss);
 		print("hand layout, filter off", hand);
@@ -2719,8 +3457,9 @@ static void fit_enable_test()
 			if (t == 0 || t == 5)
 				print(t == 0 ? "switched on, +0.5 s" : "switched on, +3 s", now);
 		}
-		CHECK(worst <= 0.5, "%s: switched on over the hand layout, nothing moves for 3 s (worst %.1f px)",
-		      label, worst);
+		CHECK(worst <= 1.0,
+		      "%s: switched on over a layout made with the gaps, nothing moves for 3 s (worst %.1f px)", label,
+		      worst);
 		// The middle hidden: the others may make use of its room.
 		obs_sceneitem_set_visible(its[2], false);
 		frames(ss, 75);
@@ -2730,10 +3469,41 @@ static void fit_enable_test()
 		const std::vector<Rect> back = shows_all(ss);
 		print("middle shown again", back);
 		const double back_worst = worst_of(hand, back);
-		CHECK(back_worst <= 0.5,
+		CHECK(back_worst <= 1.0,
 		      "%s: the middle hidden and shown again, the hand layout is back (worst %.1f px)", label,
 		      back_worst);
 		return hand;
+	};
+	// A Scene Fit like the one tested, made afresh (for laying out with the gaps).
+	auto scene_fit_like = [&](const char *name, bool all) {
+		obs_data_t *d = obs_data_create();
+		if (all)
+			obs_data_set_int(d, "which", 1);
+		else
+			list(d, "entries", {"FE Game", "FE Top", "FE Mid", "FE Bottom"});
+		for (const Entry &e : entries)
+			look(d, std::string("fit|") + e.name + "|", e);
+		if (all)
+			look(d, "fit|FE Square|", Entry{"FE Square", true, 0});
+		obs_data_set_bool(d, "fit|FE Bottom|resize", false);
+		obs_source_t *f = obs_source_create("stagekit_scene_fit", name, d, nullptr);
+		obs_data_release(d);
+		return std::vector<obs_source_t *>{f};
+	};
+	auto fits_to_space_like = [&](const char *suffix) {
+		std::vector<obs_source_t *> out;
+		for (const Entry &e : entries) {
+			obs_data_t *d = obs_data_create();
+			obs_data_set_string(d, "item", e.name);
+			look(d, "", e);
+			obs_data_set_double(d, "tolerance", 8.0);
+			if (strcmp(e.name, "FE Bottom") == 0)
+				obs_data_set_bool(d, "resize", false);
+			out.push_back(obs_source_create("stagekit_fit_item", (std::string(e.name) + suffix).c_str(), d,
+							nullptr));
+			obs_data_release(d);
+		}
+		return out;
 	};
 	auto stores_home = [](obs_source_t *f, const char *key) {
 		obs_data_t *d = obs_source_get_settings(f);
@@ -2763,9 +3533,32 @@ static void fit_enable_test()
 				obs_source_update(fit, u);
 				obs_data_release(u);
 			},
-			true);
+			true, [&] { return scene_fit_like("FE Fit Temp", false); });
 		CHECK(stores_home(fit, "fit|FE Bottom|home_item") && stores_home(fit, "fit|FE Game|home_item"),
 		      "Scene Fit: the homes are saved with the filter");
+		// The game made much smaller by hand than its space (more than the
+		// Size tolerance): switched on, it fills its space again, and the
+		// column stays where it is. (The owner, 2026-11-19: "it's not
+		// actually filling the space as desired".) It is left so for what
+		// follows: the layout with the gaps again.
+		{
+			obs_source_set_enabled(fit, false);
+			frames(ss, 10);
+			shrink_game(its[0], 60.0);
+			frames(ss, 20);
+			const std::vector<Rect> small = shows_all(ss);
+			obs_source_set_enabled(fit, true);
+			frames(ss, 100);
+			const std::vector<Rect> filled = shows_all(ss);
+			print("game made small, switched on", filled);
+			const double column = worst_of(std::vector<Rect>(hand.begin() + 1, hand.end()),
+						       std::vector<Rect>(filled.begin() + 1, filled.end()));
+			CHECK(filled[0].any && std::fabs(filled[0].w - hand[0].w) <= 1.0 &&
+				      filled[0].w > small[0].w + 40.0 && column <= 1.0,
+			      "Scene Fit: a game made 60 px smaller by hand fills its space again when switched on (%.0f wide, %.0f by hand, %.0f with the gaps), the column stays (worst %.1f px)",
+			      filled[0].w, small[0].w, hand[0].w, column);
+		}
+		const std::vector<Rect> settled = shows_all(ss);
 		// Saved and loaded on: the homes as they were saved.
 		obs_data_t *saved = obs_source_get_settings(fit);
 		obs_data_t *copy = obs_data_create_from_json(obs_data_get_json(saved));
@@ -2779,13 +3572,13 @@ static void fit_enable_test()
 		double worst = 0.0;
 		for (int t = 0; t < 4; t++) {
 			frames(ss, 25);
-			worst = std::max(worst, worst_of(hand, shows_all(ss)));
+			worst = std::max(worst, worst_of(settled, shows_all(ss)));
 		}
 		print("loaded on", shows_all(ss));
-		CHECK(worst <= 0.5, "Scene Fit: loaded on with its homes, nothing moves for 2 s (worst %.1f px)",
+		CHECK(worst <= 1.0, "Scene Fit: loaded on with its homes, nothing moves for 2 s (worst %.1f px)",
 		      worst);
-		// The game set to take its space first (switched off, set, laid out
-		// by hand, switched on: nothing moves), then the bottom window (which
+		// The game set to take its space first (switched off, set, switched
+		// on: nothing moves), then the bottom window (which
 		// keeps its size, so it holds its room against the game) hidden: the
 		// game leaves its home and grows over where the column's resized
 		// pictures are (they are not in its way). They go by where it is, not
@@ -2797,7 +3590,6 @@ static void fit_enable_test()
 		obs_data_set_int(first_d, "fit|FE Game|space_priority", 1);
 		obs_source_update(loaded, first_d);
 		obs_data_release(first_d);
-		hand_layout(ss, its);
 		frames(ss, 20);
 		const std::vector<Rect> hand_first = shows_all(ss);
 		obs_source_set_enabled(loaded, true);
@@ -2807,7 +3599,7 @@ static void fit_enable_test()
 			worst = std::max(worst, worst_of(hand_first, shows_all(ss)));
 		}
 		print("the game takes space first", shows_all(ss));
-		CHECK(worst <= 0.5,
+		CHECK(worst <= 1.0,
 		      "Scene Fit: switched on with the game taking its space first, nothing moves for 2 s (worst %.1f px)",
 		      worst);
 		obs_sceneitem_set_visible(its[3], false);
@@ -2827,7 +3619,7 @@ static void fit_enable_test()
 		const std::vector<Rect> shared = shows_all(ss);
 		print("the bottom shown again", shared);
 		const double shared_worst = worst_of(hand_first, shared);
-		CHECK(shared_worst <= 0.5,
+		CHECK(shared_worst <= 1.0,
 		      "Scene Fit: the bottom shown again, the hand layout is back around the game (worst %.1f px)",
 		      shared_worst);
 		// A filter that never had a home fits as it always did: the game
@@ -2877,7 +3669,7 @@ static void fit_enable_test()
 				obs_source_update(filters[3], u);
 				obs_data_release(u);
 			},
-			true);
+			true, [&] { return fits_to_space_like(" Temp Fit"); });
 		CHECK(stores_home(filters[3], "home_item"), "Fit to Space: the home is saved with the filter");
 		for (obs_source_t *f : filters) {
 			obs_source_filter_remove(ss, f);
@@ -2913,7 +3705,7 @@ static void fit_enable_test()
 				obs_sceneitem_t *sq = obs_scene_add(scene, square);
 				place(sq, 20.0, 332.0, 30.0, 20.0);
 			},
-			true);
+			true, [&] { return scene_fit_like("FE Fit All Temp", true); });
 		obs_source_filter_remove(ss, fit);
 		obs_source_release(fit);
 		obs_source_remove(ss);
@@ -2948,7 +3740,9 @@ static void fit_enable_test()
 		obs_data_release(d);
 		obs_source_set_enabled(fit, false);
 		obs_source_filter_add(ss, fit);
-		run("Scene Fit, never on before", ss, its, {fit}, [] {}, false);
+		run(
+			"Scene Fit, never on before", ss, its, {fit}, [] {}, false,
+			[&] { return scene_fit_like("FE Fit Never On Temp", false); });
 		obs_source_filter_remove(ss, fit);
 		obs_source_release(fit);
 		obs_source_remove(ss);
@@ -2973,7 +3767,9 @@ static void fit_enable_test()
 			obs_source_filter_add(ss, f);
 			filters.push_back(f);
 		}
-		run("Fit to Space, never on before", ss, its, filters, [] {}, false);
+		run(
+			"Fit to Space, never on before", ss, its, filters, [] {}, false,
+			[&] { return fits_to_space_like(" Never On Temp Fit"); });
 		for (obs_source_t *f : filters) {
 			obs_source_filter_remove(ss, f);
 			obs_source_release(f);
@@ -3204,6 +4000,8 @@ static void fit_enable_test()
 	obs_source_release(shadow);
 	for (obs_source_t *s : {bg, game, camera, mid, top, bottom})
 		obs_source_release(s);
+	// The size kept on the screen, and Align in the space at home.
+	fit_keep_size_test();
 }
 
 // ------------------------------------------------- scene fit groups
@@ -10301,8 +11099,8 @@ static void fit_tool_test(uint32_t w, uint32_t h)
 		sleep_ms(100);
 	}
 
-	// 13. An item whose own fit resizes it is left to that fit, and the
-	// status line says so.
+	// 13. An item whose own fit resizes it is fitted by that fit (told to
+	// fit it now: betaNEXT), and the status line says so.
 	if (status) {
 		reset();
 		sleep_ms(100);
@@ -10321,9 +11119,9 @@ static void fit_tool_test(uint32_t w, uint32_t h)
 		pump(50);
 		const QString said = status->text();
 		pump(1000);
-		CHECK(off_by(held_of(item), mine) <= 0.5 &&
-			      said.contains("Left to FT Own Fit: it resizes to fill its space"),
-		      "an item its own Fit to Space resizes is left to it: \"%s\"", said.toUtf8().constData());
+		CHECK(off_by(held_of(item), mine) <= 0.5 && said == "Fitted by FT Own Fit.",
+		      "an item its own Fit to Space resizes is fitted by it, where it already is: \"%s\"",
+		      said.toUtf8().constData());
 		obs_source_set_enabled(own, false);
 		obs_data_t *align = obs_data_create();
 		obs_data_set_int(align, "toward", 6);
@@ -10453,10 +11251,14 @@ static void fit_tool_test(uint32_t w, uint32_t h)
 		obs_source_release(inner_src);
 	}
 
-	// 15. A fitted source at its home (laid out by hand with its fit off,
-	// then switched on: beta194) stays there: what the tool is told of each
-	// fit gives, worked out again, the very claim that fit makes, at home,
-	// and the item grows only as far as leaves the source at its home.
+	// 15. A fitted source at its home (its fit switched off and on over the
+	// layout: beta194) stays there: what the tool is told of each fit gives,
+	// worked out again, the very claim that fit makes, at home, and the item
+	// grows only as far as leaves the source at its home. (One that keeps
+	// its size is left where its fit has put it, with the gaps: since
+	// betaNEXT Align in the space counts at home too, so a place made by
+	// hand that does not follow it is put right. One that resizes is put
+	// down small by hand: switched on, it fills its space.)
 	auto predicts = [&](long long &fits, long long &alike, long long &home) {
 		calldata_t cd = {};
 		calldata_set_string(&cd, "scene", "FT Scene");
@@ -10480,13 +11282,13 @@ static void fit_tool_test(uint32_t w, uint32_t h)
 		sleep_ms(100);
 		obs_source_t *f = fit_on_low(c.kind, c.resize);
 		sleep_ms(1500);
-		// Laid out by hand while it is off, where the fit would not put it
-		// (the gap kept to everything), then switched on.
 		obs_source_set_enabled(f, false);
 		sleep_ms(300);
-		obs_sceneitem_set_bounds_type(low_item, OBS_BOUNDS_NONE);
-		obs_sceneitem_set_alignment(low_item, OBS_ALIGN_LEFT | OBS_ALIGN_TOP);
-		put(low_item, 415, 248, 1);
+		if (c.resize) {
+			obs_sceneitem_set_bounds_type(low_item, OBS_BOUNDS_NONE);
+			obs_sceneitem_set_alignment(low_item, OBS_ALIGN_LEFT | OBS_ALIGN_TOP);
+			put(low_item, 415, 248, 1);
+		}
 		sleep_ms(200);
 		const Seen laid = seen_low();
 		obs_source_set_enabled(f, true);
@@ -10523,6 +11325,621 @@ static void fit_tool_test(uint32_t w, uint32_t h)
 	reset_low();
 	reset();
 	sleep_ms(100);
+
+	// 16. The owner's layout scene (2026-11-19), with generic names, on this
+	// 640x360 canvas with a gap of 10: a game on the left; on the right a
+	// column of a letterboxed 3:2 window (top right), a 16:9 capture card
+	// (middle) and a second letterboxed window that keeps its size (bottom
+	// right); the other layout's chat column (a group) and camera hidden by a
+	// mode at the bottom left; a hidden webcam whose standby stand-in shows
+	// there; and two widgets that show nothing, one at the bottom left, one
+	// over the column's bottom window. A Scene Fit with the owner's mix of
+	// settings looks after the four. The owner, with the Scene Fit off:
+	// pressing Fit to space on the column's windows "mostly shrunk" them, the
+	// game did not fill the free space, "it makes some things tiny and does
+	// not follow the alignment rules anymore"; and of the Scene Fit: "it's
+	// not actually filling the space as desired".
+	if (status) {
+		register_fe_letterbox();
+		constexpr double G = 10.0;
+		auto letterbox = [](const char *name, uint32_t c) {
+			obs_data_t *d = obs_data_create();
+			obs_data_set_int(d, "width", 200);
+			obs_data_set_int(d, "height", 150);
+			obs_data_set_int(d, "margin_x", 10);
+			obs_data_set_int(d, "margin_y", 15); // a 180x120 window inside
+			obs_data_set_int(d, "color", c);
+			obs_source_t *src = obs_source_create("stagekit_test_fe_letterbox", name, d, nullptr);
+			obs_data_release(d);
+			return src;
+		};
+		auto boxed = [](obs_sceneitem_t *it, double x, double y, double bw, double bh) {
+			vec2 v;
+			obs_sceneitem_set_alignment(it, OBS_ALIGN_LEFT | OBS_ALIGN_TOP);
+			obs_sceneitem_set_bounds_type(it, OBS_BOUNDS_SCALE_INNER);
+			obs_sceneitem_set_bounds_alignment(it, OBS_ALIGN_CENTER);
+			vec2_set(&v, (float)bw, (float)bh);
+			obs_sceneitem_set_bounds(it, &v);
+			vec2_set(&v, (float)x, (float)y);
+			obs_sceneitem_set_pos(it, &v);
+		};
+		// What shows of an item, worked out from its transform: its source
+		// scaled into its box (or by its scale), less `mx`, `my` of empty
+		// margin each side (in the source's pixels).
+		struct Shows {
+			double x = 0, y = 0, w = 0, h = 0;
+		};
+		auto shows_of = [](obs_sceneitem_t *it, double mx, double my) {
+			Shows out;
+			obs_source_t *src = obs_sceneitem_get_source(it);
+			const double sw = obs_source_get_width(src), sh = obs_source_get_height(src);
+			vec2 p, b, sc;
+			obs_sceneitem_get_pos(it, &p);
+			obs_sceneitem_get_bounds(it, &b);
+			obs_sceneitem_get_scale(it, &sc);
+			if (sw < 1.0 || sh < 1.0)
+				return out;
+			double k = sc.x, x = p.x, y = p.y;
+			if (obs_sceneitem_get_bounds_type(it) != OBS_BOUNDS_NONE) {
+				k = std::min(b.x / sw, b.y / sh);
+				const uint32_t a = obs_sceneitem_get_bounds_alignment(it);
+				const double fx = a & OBS_ALIGN_LEFT ? 0.0 : a & OBS_ALIGN_RIGHT ? 1.0 : 0.5;
+				const double fy = a & OBS_ALIGN_TOP ? 0.0 : a & OBS_ALIGN_BOTTOM ? 1.0 : 0.5;
+				x += (b.x - sw * k) * fx;
+				y += (b.y - sh * k) * fy;
+			}
+			out = Shows{x + mx * k, y + my * k, (sw - 2.0 * mx) * k, (sh - 2.0 * my) * k};
+			return out;
+		};
+		auto off = [](const Shows &a, const Shows &b) {
+			return std::max({std::fabs(a.x - b.x), std::fabs(a.y - b.y), std::fabs(a.w - b.w),
+					 std::fabs(a.h - b.h)});
+		};
+		auto colour_src = [](const char *name, long long abgr, int cw, int ch) {
+			obs_data_t *d = obs_data_create();
+			obs_data_set_int(d, "color", abgr);
+			obs_data_set_int(d, "width", cw);
+			obs_data_set_int(d, "height", ch);
+			obs_source_t *src = obs_source_create("color_source", name, d, nullptr);
+			obs_data_release(d);
+			return src;
+		};
+		auto list_of = [](obs_data_t *d, const char *setting, std::vector<std::string> values) {
+			obs_data_array_t *arr = obs_data_array_create();
+			for (const std::string &value : values) {
+				obs_data_t *entry = obs_data_create();
+				obs_data_set_string(entry, "value", value.c_str());
+				obs_data_array_push_back(arr, entry);
+				obs_data_release(entry);
+			}
+			obs_data_set_array(d, setting, arr);
+			obs_data_array_release(arr);
+		};
+		obs_scene_t *ls = obs_scene_create("FT Layout");
+		obs_source_t *ls_src = obs_scene_get_source(ls);
+		obs_source_t *l_back = colour_src("FT2 Back", 0xFF303030, (int)w, (int)h);
+		obs_source_t *l_game = colour_src("FT2 Game", 0xFFC00000, 320, 240);
+		obs_source_t *l_hand1 = letterbox("FT2 Hand 1", 0xFF00FFFF);
+		obs_source_t *l_card = colour_src("FT2 Card", 0xFFC0C000, 320, 180);
+		obs_source_t *l_hand2 = letterbox("FT2 Hand 2", 0xFFFF00FF);
+		obs_source_t *l_chat = colour_src("FT2 Chat", 0xFF808080, 100, 60);
+		obs_source_t *l_cam = colour_src("FT2 Cam", 0xFF0000C0, 160, 90);
+		obs_source_t *l_webcam = colour_src("FT2 Webcam", 0xFF00C000, 160, 90);
+		obs_source_t *l_picture = colour_src("FT2 Standby Image", 0xFF0080FF, 160, 90);
+		obs_source_t *l_empty_l = colour_src("FT2 Empty Left", 0x00000000, 200, 120);
+		obs_source_t *l_empty_c = colour_src("FT2 Empty Column", 0x00000000, 170, 120);
+		obs_scene_add(ls, l_back);
+		obs_sceneitem_t *i_empty_l = obs_scene_add(ls, l_empty_l);
+		obs_sceneitem_t *i_cam = obs_scene_add(ls, l_cam);
+		obs_sceneitem_t *i_chat = obs_scene_add(ls, l_chat);
+		obs_sceneitem_t *i_group = obs_scene_add_group(ls, "FT2 Chat Group");
+		obs_sceneitem_group_add_item(i_group, i_chat);
+		obs_sceneitem_t *i_webcam = obs_scene_add(ls, l_webcam);
+		obs_sceneitem_t *i_game = obs_scene_add(ls, l_game);
+		obs_sceneitem_t *i_hand2 = obs_scene_add(ls, l_hand2);
+		obs_sceneitem_t *i_card = obs_scene_add(ls, l_card);
+		obs_sceneitem_t *i_hand1 = obs_scene_add(ls, l_hand1);
+		obs_sceneitem_t *i_empty_c = obs_scene_add(ls, l_empty_c);
+		boxed(i_empty_l, G, 230.0, 200.0, 120.0);
+		boxed(i_empty_c, 470.0, 200.0, 170.0, 120.0);
+		boxed(i_cam, 20.0, 250.0, 160.0, 90.0);
+		boxed(i_chat, 30.0, 200.0, 100.0, 60.0);
+		boxed(i_webcam, 20.0, 270.0, 120.0, 67.5);
+		// The standby stand-in: shows while the webcam is hidden by hand.
+		obs_data_t *sbd = obs_data_create();
+		obs_data_set_bool(sbd, "when_hidden", true);
+		obs_data_set_int(sbd, "picture", 2);
+		obs_data_set_string(sbd, "source", "FT2 Standby Image");
+		obs_data_set_string(sbd, "transition", "none");
+		obs_source_t *l_standby = obs_source_create("stagekit_standby", "FT2 Standby", sbd, nullptr);
+		obs_data_release(sbd);
+		obs_source_filter_add(l_webcam, l_standby);
+		obs_sceneitem_set_visible(i_webcam, false);
+		// The hand layout, made with the gaps but for the game, which is
+		// smaller than its space and a long way from the screen's left edge.
+		const double k_hand = 156.0 / 180.0;
+		auto hand_layout = [&] {
+			boxed(i_game, 118.0, G, 346.0, 259.5);
+			boxed(i_hand1, 474.0 - 10.0 * k_hand, G - 15.0 * k_hand, 200.0 * k_hand, 150.0 * k_hand);
+			boxed(i_card, 474.0, 124.0, 156.0, 87.75);
+			boxed(i_hand2, 474.0 - 10.0 * k_hand, 246.0 - 15.0 * k_hand, 200.0 * k_hand, 150.0 * k_hand);
+		};
+		hand_layout();
+		// The modes: the game layout on, the chat layout's sources hidden.
+		obs_data_t *lmd = obs_data_create();
+		list_of(lmd, "modes", {"m1", "m2"});
+		obs_data_set_string(lmd, "mode|m1|name", "Game");
+		list_of(lmd, "mode|m1|sources", {"FT2 Game", "FT2 Hand 1", "FT2 Card", "FT2 Hand 2"});
+		obs_data_set_string(lmd, "mode|m2|name", "Chat");
+		list_of(lmd, "mode|m2|sources", {"FT2 Chat Group", "FT2 Cam"});
+		obs_data_set_string(lmd, "mode_now", "m1");
+		obs_data_set_string(lmd, "transition", "none");
+		obs_source_t *l_modes = obs_source_create("stagekit_scene_modes", "FT2 Modes", lmd, nullptr);
+		obs_data_release(lmd);
+		obs_source_filter_add(ls_src, l_modes);
+		// The Scene Fit, switched off for now.
+		obs_data_t *lfd = obs_data_create();
+		list_of(lfd, "entries", {"FT2 Game", "FT2 Hand 1", "FT2 Card", "FT2 Hand 2"});
+		struct LEntry {
+			const char *name;
+			bool resize;
+			int toward;
+		};
+		for (const LEntry &e : {LEntry{"FT2 Game", true, 0}, LEntry{"FT2 Hand 1", true, 6},
+					LEntry{"FT2 Card", true, 0}, LEntry{"FT2 Hand 2", false, 8}}) {
+			const std::string pre = std::string("fit|") + e.name + "|";
+			obs_data_set_int(lfd, (pre + "box").c_str(), 2);
+			obs_data_set_double(lfd, (pre + "margin").c_str(), G);
+			obs_data_set_bool(lfd, (pre + "resize").c_str(), e.resize);
+			obs_data_set_int(lfd, (pre + "toward").c_str(), e.toward);
+			obs_data_set_int(lfd, (pre + "glide_ms").c_str(), 0);
+		}
+		obs_source_t *l_fit = obs_source_create("stagekit_scene_fit", "FT2 Fit", lfd, nullptr);
+		obs_data_release(lfd);
+		obs_source_set_enabled(l_fit, false);
+		obs_source_filter_add(ls_src, l_fit);
+		obs_sceneitem_select(item, false);
+		obs_set_output_source(0, ls_src);
+		margin->setValue(30); // the dock's own: not what these sources go by
+		visible->setChecked(true);
+		no_shadow->setChecked(true);
+		sleep_ms(1000);
+		auto twin_shown = [&] {
+			bool shown = false;
+			obs_scene_enum_items(
+				ls,
+				[](obs_scene_t *, obs_sceneitem_t *it, void *p) {
+					if (strcmp(obs_source_get_unversioned_id(obs_sceneitem_get_source(it)),
+						   "stagekit_stand_in") == 0 &&
+					    obs_sceneitem_visible(it))
+						*static_cast<bool *>(p) = true;
+					return true;
+				},
+				&shown);
+			return shown;
+		};
+		CHECK(!obs_sceneitem_visible(i_group) && !obs_sceneitem_visible(i_cam) && twin_shown(),
+		      "the owner's layout: the chat layout's group and camera hidden by the mode, the webcam's stand-in shown");
+		const Shows hand_game = shows_of(i_game, 0, 0), hand_h1 = shows_of(i_hand1, 10, 15);
+		const Shows hand_card = shows_of(i_card, 0, 0), hand_h2 = shows_of(i_hand2, 10, 15);
+		const Held still_group = held_of(i_group), still_chat = held_of(i_chat), still_cam = held_of(i_cam);
+		const Held still_webcam = held_of(i_webcam), still_el = held_of(i_empty_l),
+			   still_ec = held_of(i_empty_c);
+		auto press_on = [&](obs_sceneitem_t *it) {
+			for (obs_sceneitem_t *one : {i_game, i_hand1, i_card, i_hand2})
+				obs_sceneitem_select(one, one == it);
+			sleep_ms(60);
+			fit->click();
+			pump(100);
+			return status->text();
+		};
+		// (a) The Scene Fit off: Fit to space on each of the column's
+		// sources, then on the game.
+		const QString said_h1 = press_on(i_hand1);
+		const Shows a_h1 = shows_of(i_hand1, 10, 15);
+		const QString said_card = press_on(i_card);
+		const Shows a_card = shows_of(i_card, 0, 0);
+		const QString said_h2 = press_on(i_hand2);
+		const Shows a_h2 = shows_of(i_hand2, 10, 15);
+		const QString said_game = press_on(i_game);
+		const Shows a_game = shows_of(i_game, 0, 0);
+		printf("    Scene Fit off, pressed: hand 1 %.1f,%.1f %.1fx%.1f; card %.1f,%.1f %.1fx%.1f; hand 2 %.1f,%.1f %.1fx%.1f; game %.1f,%.1f %.1fx%.1f\n",
+		       a_h1.x, a_h1.y, a_h1.w, a_h1.h, a_card.x, a_card.y, a_card.w, a_card.h, a_h2.x, a_h2.y, a_h2.w,
+		       a_h2.h, a_game.x, a_game.y, a_game.w, a_game.h);
+		printf("      status: \"%s\" / \"%s\" / \"%s\" / \"%s\"\n", said_h1.toUtf8().constData(),
+		       said_card.toUtf8().constData(), said_h2.toUtf8().constData(), said_game.toUtf8().constData());
+		CHECK(off(a_h1, hand_h1) <= 0.5,
+		      "Scene Fit off: the top window, which fills its space at the top right, keeps its place and size (%.1f x %.1f at %.1f, %.1f)",
+		      a_h1.w, a_h1.h, a_h1.x, a_h1.y);
+		CHECK(a_card.w >= hand_card.w - 0.5 && std::fabs(a_card.x - 474.0) <= 0.5 &&
+			      std::fabs(a_card.y - (124.0 + (112.0 - a_card.h) / 2.0)) <= 0.5,
+		      "Scene Fit off: the capture card is not made smaller and lies in the middle of its space, as its entry says (%.1f x %.1f at %.1f, %.1f)",
+		      a_card.w, a_card.h, a_card.x, a_card.y);
+		CHECK(a_h2.w >= hand_h2.w - 0.5 && std::fabs(a_h2.x + a_h2.w - (w - G)) <= 0.5 &&
+			      std::fabs(a_h2.y + a_h2.h - (h - G)) <= 0.5,
+		      "Scene Fit off: the bottom window, under a widget that shows nothing, is not made smaller and ends at the bottom right, the gap away (%.1f x %.1f at %.1f, %.1f)",
+		      a_h2.w, a_h2.h, a_h2.x, a_h2.y);
+		const double game_w = std::min((474.0 - G - G) / 4.0 * 3.0, h - 2.0 * G) * 4.0 / 3.0;
+		CHECK(std::fabs(a_game.w - game_w) <= 1.0 && std::fabs(a_game.y - G) <= 1.0 &&
+			      std::fabs(a_game.x - (G + (474.0 - G - G - game_w) / 2.0)) <= 1.0,
+		      "Scene Fit off: the game fills the free area left of the column, the gap from everything, past the stand-in, the hidden sources and the widget that shows nothing (%.1f x %.1f at %.1f, %.1f; %.1f wide wanted)",
+		      a_game.w, a_game.h, a_game.x, a_game.y, game_w);
+		const double others_moved =
+			std::max({off_by(held_of(i_group), still_group), off_by(held_of(i_chat), still_chat),
+				  off_by(held_of(i_cam), still_cam), off_by(held_of(i_webcam), still_webcam),
+				  off_by(held_of(i_empty_l), still_el), off_by(held_of(i_empty_c), still_ec)});
+		CHECK(others_moved <= 0.01 && !said_game.contains("Left") && !said_game.contains("smaller"),
+		      "Scene Fit off: nothing else moves (off by %.2f): \"%s\"", others_moved,
+		      said_game.toUtf8().constData());
+
+		// (b) The Scene Fit switched on over the hand layout (the webcam taken
+		// out: a stand-in that shows is in a fit's way). The game, resized,
+		// fills its space; the windows and the card fill theirs; the bottom
+		// window keeps its size at the bottom right.
+		obs_sceneitem_remove(i_webcam);
+		hand_layout();
+		sleep_ms(500);
+		obs_source_set_enabled(l_fit, true);
+		pump(3000);
+		const Shows b_game = shows_of(i_game, 0, 0), b_h1 = shows_of(i_hand1, 10, 15);
+		const Shows b_card = shows_of(i_card, 0, 0), b_h2 = shows_of(i_hand2, 10, 15);
+		printf("    Scene Fit on: hand 1 %.1f,%.1f %.1fx%.1f; card %.1f,%.1f %.1fx%.1f; hand 2 %.1f,%.1f %.1fx%.1f; game %.1f,%.1f %.1fx%.1f\n",
+		       b_h1.x, b_h1.y, b_h1.w, b_h1.h, b_card.x, b_card.y, b_card.w, b_card.h, b_h2.x, b_h2.y, b_h2.w,
+		       b_h2.h, b_game.x, b_game.y, b_game.w, b_game.h);
+		CHECK(std::fabs(b_game.w - game_w) <= 1.0 && std::fabs(b_game.y - G) <= 1.0,
+		      "Scene Fit on: the game (Resize to fit) fills its space, not its smaller hand size (%.1f x %.1f at %.1f, %.1f; %.0f wide by hand)",
+		      b_game.w, b_game.h, b_game.x, b_game.y, hand_game.w);
+		CHECK(b_h1.w >= hand_h1.w - 0.5 && std::fabs(b_h1.x + b_h1.w - (w - G)) <= 0.5 &&
+			      std::fabs(b_h1.y - G) <= 0.5 && b_card.w >= hand_card.w - 0.5,
+		      "Scene Fit on: the top window fills its space at the top right and the card is not made smaller (%.1f x %.1f at %.1f, %.1f; card %.1f x %.1f)",
+		      b_h1.w, b_h1.h, b_h1.x, b_h1.y, b_card.w, b_card.h);
+		CHECK(off(b_h2, hand_h2) <= 0.5,
+		      "Scene Fit on: the bottom window (Resize to fit off) keeps its size at the bottom right (%.1f x %.1f at %.1f, %.1f)",
+		      b_h2.w, b_h2.h, b_h2.x, b_h2.y);
+		// Switched off and on again over that layout, made with the gaps:
+		// nothing moves.
+		obs_source_set_enabled(l_fit, false);
+		pump(300);
+		obs_source_set_enabled(l_fit, true);
+		double again = 0.0;
+		for (int t = 0; t < 2000; t += 250) {
+			pump(250);
+			again = std::max({again, off(shows_of(i_game, 0, 0), b_game),
+					  off(shows_of(i_hand1, 10, 15), b_h1), off(shows_of(i_card, 0, 0), b_card),
+					  off(shows_of(i_hand2, 10, 15), b_h2)});
+		}
+		CHECK(again <= 0.5,
+		      "Scene Fit switched off and on again over a layout made with the gaps: nothing moves for 2 s (off by %.2f)",
+		      again);
+		// The capture card hidden and shown again: the layout comes back.
+		obs_sceneitem_set_visible(i_card, false);
+		pump(1500);
+		obs_sceneitem_set_visible(i_card, true);
+		pump(2000);
+		const double back =
+			std::max({off(shows_of(i_game, 0, 0), b_game), off(shows_of(i_hand1, 10, 15), b_h1),
+				  off(shows_of(i_card, 0, 0), b_card), off(shows_of(i_hand2, 10, 15), b_h2)});
+		CHECK(back <= 0.5,
+		      "Scene Fit on: the capture card hidden and shown again, the layout is back (off by %.2f)", back);
+		// Fit to space on the game now: its entry resizes it, so the Scene
+		// Fit is told to fit it, and the status line says so.
+		const QString said_left = press_on(i_game);
+		pump(1000);
+		CHECK(off(shows_of(i_game, 0, 0), b_game) <= 0.5 && said_left.contains("Fitted by FT2 Fit"),
+		      "Scene Fit on: Fit to space on the game has the Scene Fit fit it (it already fills: nothing moves), and says so: \"%s\"",
+		      said_left.toUtf8().constData());
+		for (obs_sceneitem_t *one : {i_game, i_hand1, i_card, i_hand2})
+			obs_sceneitem_select(one, false);
+		obs_set_output_source(0, scene_src);
+		obs_source_filter_remove(ls_src, l_fit);
+		obs_source_release(l_fit);
+		obs_source_filter_remove(ls_src, l_modes);
+		obs_source_release(l_modes);
+		obs_source_filter_remove(l_webcam, l_standby);
+		obs_source_release(l_standby);
+		obs_scene_release(ls);
+		for (obs_source_t *src : {l_back, l_game, l_hand1, l_card, l_hand2, l_chat, l_cam, l_webcam, l_picture,
+					  l_empty_l, l_empty_c})
+			obs_source_release(src);
+		sleep_ms(100);
+	}
+
+	// 17. A fitted neighbour whose spare room gets smaller while its image
+	// stays where it is gives up nothing: the item grows into that room. A
+	// 32:9 strip kept at the top of the screen by its Fit to Space (Resize to
+	// fit, the top), the room below its image empty, and a small item down
+	// there with no fit of its own (the dock's edge distance, 30).
+	if (status) {
+		obs_scene_t *rs = obs_scene_create("FT Room");
+		obs_source_t *rs_src = obs_scene_get_source(rs);
+		obs_source_t *r_back = block("FT3 Back", 0xFF303030, (int)w, (int)h);
+		obs_source_t *r_wide = block("FT3 Wide", 0xFFC0C000, 640, 180);
+		obs_source_t *r_badge = block("FT3 Badge", 0xFF00FF00, 160, 90);
+		obs_scene_add(rs, r_back);
+		obs_sceneitem_t *i_wide = obs_scene_add(rs, r_wide);
+		put(i_wide, 10, 10, 620.0f / 640.0f);
+		obs_sceneitem_t *i_badge = obs_scene_add(rs, r_badge);
+		put(i_badge, 300, 280, 0.25f);
+		obs_data_t *wd = obs_data_create();
+		obs_data_set_string(wd, "item", "FT3 Wide");
+		obs_data_set_int(wd, "box", 2);
+		obs_data_set_double(wd, "margin", 10);
+		obs_data_set_int(wd, "toward", 1); // the top
+		obs_data_set_int(wd, "glide_ms", 0);
+		obs_source_t *wide_fit = obs_source_create("stagekit_fit_item", "FT3 Wide Fit", wd, nullptr);
+		obs_data_release(wd);
+		obs_source_filter_add(rs_src, wide_fit);
+		obs_sceneitem_select(item, false);
+		obs_set_output_source(0, rs_src);
+		sleep_ms(1500);
+		obs_sceneitem_select(i_badge, true);
+		sleep_ms(100);
+		margin->setValue(30);
+		// What shows of the strip: its picture in its box (kept at the top).
+		auto strip = [&] {
+			vec2 b, p;
+			obs_sceneitem_get_bounds(i_wide, &b);
+			obs_sceneitem_get_pos(i_wide, &p);
+			if (obs_sceneitem_get_bounds_type(i_wide) == OBS_BOUNDS_NONE) {
+				const vec2 sc = scale_of(i_wide);
+				return std::array<double, 4>{p.x, p.y, 640.0 * sc.x, 180.0 * sc.y};
+			}
+			const double k = std::min(b.x / 640.0, b.y / 180.0);
+			const uint32_t a = obs_sceneitem_get_bounds_alignment(i_wide);
+			const double fx = a & OBS_ALIGN_LEFT ? 0.0 : a & OBS_ALIGN_RIGHT ? 1.0 : 0.5;
+			const double fy = a & OBS_ALIGN_TOP ? 0.0 : a & OBS_ALIGN_BOTTOM ? 1.0 : 0.5;
+			return std::array<double, 4>{p.x + (b.x - 640.0 * k) * fx, p.y + (b.y - 180.0 * k) * fy,
+						     640.0 * k, 180.0 * k};
+		};
+		const std::array<double, 4> wide_was = strip();
+		fit->click();
+		pump(50);
+		const QString said = status->text();
+		double most = 0.0;
+		for (int t = 0; t < 2000; t += 250) {
+			pump(250);
+			const std::array<double, 4> now = strip();
+			for (int i = 0; i < 4; i++)
+				most = std::max(most, std::fabs(now[i] - wide_was[i]));
+		}
+		const vec2 bs = scale_of(i_badge), bp = pos_of(i_badge);
+		const double badge_h = 90.0 * bs.y, wide_bottom = 10.0 + 180.0 * 620.0 / 640.0;
+		CHECK(badge_h > 100.0 && bp.y >= wide_bottom + 29.5 && most <= 0.5 && !said.contains("smaller") &&
+			      !said.contains("Left as it is"),
+		      "an item below a fitted strip grows into the strip's spare room (%.1f high, from y %.1f; the strip ends at %.1f), and the strip's image keeps its place and size (off by %.2f): \"%s\"",
+		      badge_h, bp.y, wide_bottom, most, said.toUtf8().constData());
+		obs_sceneitem_select(i_badge, false);
+		obs_set_output_source(0, scene_src);
+		obs_source_filter_remove(rs_src, wide_fit);
+		obs_source_release(wide_fit);
+		obs_scene_release(rs);
+		for (obs_source_t *src : {r_back, r_wide, r_badge})
+			obs_source_release(src);
+		obs_sceneitem_select(item, true);
+		sleep_ms(100);
+	}
+
+	// 18 and 19. With a fit switched on. The owner, 2026-11-19, with the
+	// Scene Fit on and the game resized small by hand: "if I manually resize
+	// a source then click the fit to space button, it doesn't seem to work
+	// when scene fit is on, but it does eventually fit automatically.
+	// generally the scene fit takes a while to respond but it does
+	// eventually. the button doesn't seem to work while scene fit is on". A
+	// 4:3 game kept towards the left and a 3:2 window at the top right, both
+	// resized by a Scene Fit with a gap of 10 and a glide of 300 ms.
+	if (status) {
+		obs_scene_t *fs = obs_scene_create("FT Refit");
+		obs_source_t *fs_src = obs_scene_get_source(fs);
+		obs_source_t *f_back = block("FT4 Back", 0xFF303030, (int)w, (int)h);
+		obs_source_t *f_game = block("FT4 Game", 0xFFC00000, 320, 240);
+		obs_source_t *f_side = block("FT4 Side", 0xFF00C0C0, 180, 120);
+		obs_scene_add(fs, f_back);
+		obs_sceneitem_t *i_game = obs_scene_add(fs, f_game);
+		obs_sceneitem_t *i_side = obs_scene_add(fs, f_side);
+		put(i_game, 20, 40, 1);
+		put(i_side, 450, 10, 1);
+		auto make_fit = [&](const char *name) {
+			obs_data_t *d = obs_data_create();
+			obs_data_array_t *list = obs_data_array_create();
+			for (const char *entry_name : {"FT4 Game", "FT4 Side"}) {
+				obs_data_t *entry = obs_data_create();
+				obs_data_set_string(entry, "value", entry_name);
+				obs_data_array_push_back(list, entry);
+				obs_data_release(entry);
+				const std::string pre = std::string("fit|") + entry_name + "|";
+				obs_data_set_int(d, (pre + "box").c_str(), 2);
+				obs_data_set_double(d, (pre + "margin").c_str(), 10);
+				obs_data_set_bool(d, (pre + "resize").c_str(), true);
+				obs_data_set_int(d, (pre + "glide_ms").c_str(), 300);
+			}
+			obs_data_set_array(d, "entries", list);
+			obs_data_array_release(list);
+			obs_data_set_int(d, "fit|FT4 Game|toward", 3); // the left
+			obs_data_set_int(d, "fit|FT4 Side|toward", 6); // the top right
+			obs_source_t *f = obs_source_create("stagekit_scene_fit", name, d, nullptr);
+			obs_data_release(d);
+			obs_source_filter_add(fs_src, f);
+			return f;
+		};
+		auto mouse = [](bool down) {
+			calldata_t cd = {};
+			calldata_set_bool(&cd, "down", down);
+			proc_handler_call(obs_get_proc_handler(), "stagekit_test_mouse_down", &cd);
+			calldata_free(&cd);
+		};
+		// (Nothing of the dock's own acts when an item is let go.)
+		if (auto *snap = dock->findChild<QCheckBox *>("arrangeLiveSnap"))
+			snap->setChecked(false);
+		if (auto *limit = dock->findChild<QCheckBox *>("arrangeLimitResize"))
+			limit->setChecked(false);
+		obs_source_t *f_fit = make_fit("FT4 Fit");
+		obs_sceneitem_select(item, false);
+		obs_set_output_source(0, fs_src);
+		sleep_ms(1500);
+		// Switched off and on over the layout it made: each entry has a home,
+		// as the owner's entries have.
+		auto take_homes = [&](obs_source_t *f) {
+			obs_source_set_enabled(f, false);
+			sleep_ms(300);
+			obs_source_set_enabled(f, true);
+			sleep_ms(1500);
+		};
+		take_homes(f_fit);
+		// Where an item's picture is drawn, worked out from its transform:
+		// its source scaled into its bounding box. (A fit gives OBS the
+		// picture's own box at one time and the whole space it may take at
+		// another: the picture is in the same place either way.)
+		struct Pic {
+			double x = 0, y = 0, w = 0, h = 0;
+		};
+		auto pic_of = [](obs_sceneitem_t *it) {
+			Pic out;
+			obs_source_t *src = obs_sceneitem_get_source(it);
+			const double sw = obs_source_get_width(src), sh = obs_source_get_height(src);
+			vec2 p, b;
+			obs_sceneitem_get_pos(it, &p);
+			obs_sceneitem_get_bounds(it, &b);
+			if (sw < 1.0 || sh < 1.0 || obs_sceneitem_get_bounds_type(it) == OBS_BOUNDS_NONE)
+				return out;
+			const double k = std::min(b.x / sw, b.y / sh);
+			const uint32_t a = obs_sceneitem_get_bounds_alignment(it);
+			const double fx = a & OBS_ALIGN_LEFT ? 0.0 : a & OBS_ALIGN_RIGHT ? 1.0 : 0.5;
+			const double fy = a & OBS_ALIGN_TOP ? 0.0 : a & OBS_ALIGN_BOTTOM ? 1.0 : 0.5;
+			out = Pic{p.x + (b.x - sw * k) * fx, p.y + (b.y - sh * k) * fy, sw * k, sh * k};
+			return out;
+		};
+		auto far = [](const Pic &a, const Pic &b) {
+			return std::max({std::fabs(a.x - b.x), std::fabs(a.y - b.y), std::fabs(a.w - b.w),
+					 std::fabs(a.h - b.h)});
+		};
+		const Pic g0 = pic_of(i_game), s0 = pic_of(i_side);
+		// (The game fills the room left of the window: 430 x 322.5.)
+		CHECK(std::fabs(g0.w - 430.0) <= 1.0 && std::fabs(g0.x - 10.0) <= 0.5 && std::fabs(s0.w - 180.0) <= 1.0,
+		      "fitted: the game fills the room left of the window (%.1f wide at %.1f; the window %.1f wide)",
+		      g0.w, g0.x, s0.w);
+		// The game's box made `f` of its fitted size, its top left moved.
+		auto by_hand = [&](double f, float dx, float dy) {
+			vec2 b, p;
+			vec2_set(&b, (float)(g0.w * f), (float)(g0.h * f));
+			obs_sceneitem_set_bounds(i_game, &b);
+			vec2_set(&p, (float)g0.x + dx, (float)g0.y + dy);
+			obs_sceneitem_set_pos(i_game, &p);
+		};
+		for (obs_sceneitem_t *one : {i_game, i_side})
+			obs_sceneitem_select(one, one == i_game);
+		sleep_ms(100);
+		// What happens to the game over `ms`: when it first leaves `from`
+		// (ms; -1 never), how far its width had gone by then, whether it was
+		// seen part of the way, and how far the window moved.
+		struct Watch {
+			double started = -1.0, first_step = 0.0, side = 0.0;
+			bool part_way = false;
+		};
+		auto watch = [&](const Pic &from, int ms) {
+			Watch out;
+			const uint64_t began = os_gettime_ns();
+			for (int t = 0; t < ms; t += 10) {
+				pump(10);
+				const Pic now = pic_of(i_game);
+				if (out.started < 0.0 && far(now, from) > 0.5) {
+					out.started = (double)(os_gettime_ns() - began) / 1e6;
+					out.first_step = std::fabs(now.w - from.w);
+				}
+				out.part_way = out.part_way || (now.w > from.w + 5.0 && now.w < g0.w - 5.0);
+				out.side = std::max(out.side, far(pic_of(i_side), s0));
+			}
+			return out;
+		};
+
+		// 18. Made small by hand, and Fit to space pressed at once: the
+		// Scene Fit fits it now, from where it is.
+		by_hand(0.5, 30.0f, 60.0f);
+		pump(40);
+		const Pic small = pic_of(i_game);
+		fit->click();
+		pump(20);
+		const QString said = status->text();
+		const Watch pressed = watch(small, 1500);
+		const Pic after_press = pic_of(i_game);
+		CHECK(said == "Fitted by FT4 Fit.",
+		      "Fit to space on a source its own Scene Fit resizes: the status line says who fits it: \"%s\"",
+		      said.toUtf8().constData());
+		CHECK(pressed.started >= 0.0 && pressed.started <= 500.0 && pressed.part_way &&
+			      far(after_press, g0) <= 0.5,
+		      "and that fit fits it at once: it sets off %.0f ms after the press, glides from where it was (seen part of the way: %s) and fills its space again (off by %.2f)",
+		      pressed.started, pressed.part_way ? "yes" : "no", far(after_press, g0));
+		CHECK(pressed.side <= 0.5, "and the window beside it does not move (off by %.2f)", pressed.side);
+		// Pressed again on a source that already fills: nothing moves.
+		fit->click();
+		pump(20);
+		const QString said_again = status->text();
+		const Watch again = watch(after_press, 1000);
+		CHECK(said_again == "Fitted by FT4 Fit." && again.started < 0.0 && again.side <= 0.5,
+		      "pressed on a source that already fills its space, nothing moves: \"%s\"",
+		      said_again.toUtf8().constData());
+
+		// 19. Resized by hand in the preview: left alone while the mouse
+		// holds it, however long, and a third of a second after it is let go
+		// it glides back from where it was let go. With a home (the filter
+		// was switched off and on), and without one.
+		struct Drag {
+			const char *what;
+			bool home, resize;
+		};
+		const Drag drags[] = {{"resized by hand, with a home", true, true},
+				      {"resized by hand, with no home", false, true},
+				      {"moved by hand, with a home", true, false}};
+		for (const Drag &dr : drags) {
+			if (dr.home) {
+				take_homes(f_fit);
+			} else {
+				// (A filter made anew and never switched off has no homes.)
+				obs_source_filter_remove(fs_src, f_fit);
+				obs_source_release(f_fit);
+				f_fit = make_fit("FT4 Fit");
+				sleep_ms(1500);
+			}
+			const double before = far(pic_of(i_game), g0);
+			mouse(true);
+			for (int i = 1; i <= 6; i++) {
+				by_hand(dr.resize ? 1.0 - 0.07 * i : 1.0, 5.0f * i, dr.resize ? 4.0f * i : 2.0f * i);
+				pump(50);
+			}
+			const Held dragged_held = held_of(i_game);
+			const Pic dragged = pic_of(i_game);
+			// Held still for 0.7 s, the button down.
+			double held_moved = 0.0, side_moved = 0.0;
+			for (int t = 0; t < 700; t += 20) {
+				pump(20);
+				held_moved = std::max(held_moved, off_by(held_of(i_game), dragged_held));
+				side_moved = std::max(side_moved, far(pic_of(i_side), s0));
+			}
+			mouse(false);
+			const Watch let_go = watch(dragged, 2000);
+			const Pic ended = pic_of(i_game);
+			const double way = dr.resize ? std::fabs(g0.w - dragged.w) : 30.0;
+			CHECK(before <= 0.5 && held_moved < 0.01 && side_moved <= 0.5,
+			      "%s: while the mouse holds it, 0.7 s without moving, the fit leaves it alone (off by %.2f) and the window beside it stays (off by %.2f)",
+			      dr.what, held_moved, side_moved);
+			CHECK(let_go.started >= 150.0 && let_go.started <= 900.0 &&
+				      (!dr.resize || let_go.first_step < way * 0.5),
+			      "%s: let go, it sets off %.0f ms later (0.9 s at the most), from where it was let go (its first step %.1f px of %.1f)",
+			      dr.what, let_go.started, let_go.first_step, way);
+			CHECK(far(ended, g0) <= 0.5 && let_go.side <= 0.5 && (!dr.resize || let_go.part_way),
+			      "%s: and it ends filling its space as before (off by %.2f); the window beside it never moved (off by %.2f)",
+			      dr.what, far(ended, g0), let_go.side);
+		}
+		for (obs_sceneitem_t *one : {i_game, i_side})
+			obs_sceneitem_select(one, false);
+		obs_set_output_source(0, scene_src);
+		obs_source_filter_remove(fs_src, f_fit);
+		obs_source_release(f_fit);
+		obs_scene_release(fs);
+		for (obs_source_t *src : {f_back, f_game, f_side})
+			obs_source_release(src);
+		obs_sceneitem_select(item, true);
+		sleep_ms(100);
+	}
 
 	delete dock;
 	QCoreApplication::processEvents();
@@ -13224,6 +14641,13 @@ int main(int argc, char **argv)
 	}
 	if (getenv("STAGEKIT_TEST_ONLY_FIT_ENABLE")) { // to try that section alone
 		fit_enable_test();
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
+	if (getenv("STAGEKIT_TEST_ONLY_FIT_KEEP_SIZE")) { // to try that section alone
+		fit_keep_size_test();
 		obs_shutdown();
 		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
 		       g_failures == 1 ? "" : "s");

@@ -9,9 +9,99 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | `fix/item-morph-freeze`, on `main` after beta198. Release notes in `docs/releases/0.1.0-beta199.md` (to be numbered just before pushing). Not pushed. |
+| Working branch | `fix/fit-followup`, on `main` after beta198. Release notes in `docs/releases/0.1.0-beta200.md` (numbered just before pushing). Not pushed. |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
+| Gate | Checks passed |
+| --- | --- |
+| `MORPH_UI_TASK` (new; five runs) | 27 of 27 each time |
+| `MORPH` (*[morph between items]*, the new sections in the full flow, and what comes before) | 246 |
+| `MORPH_HOLDS`, `MAKE_ROOM`, `POP_IN` | 5, 15, 4 |
+| `LINK_FOLLOW`, `LINK_TRANS`, `SWITCH_COMMAND` | 51, 14, 3 |
+| `CAPTURE_HIDE`, `CAPTURE_CHAIN`, `RESTORE_HIDDEN`, `STANDBY_COVER` | 5, 11, 5, 7 |
+| `LAYOUT`, `MODES_HIDE`, `SCENE_TRANS_OVERRIDE` | 40, 29, 9 |
+| `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
+| The other nineteen gates (the test program's waiting changed for all of them) | all passed |
+
+## Scene Fit: alignment always obeyed, the dock button fits at once, no extra frame cost (0.1.0-beta200)
+
+Branch `fix/fit-followup`, on `main` after beta198 (pull request 216, another assistant's fix for
+the same fit problems, merged and released as beta198). Notes: `docs/releases/0.1.0-beta200.md`.
+No Stream Deck file changed. Not pushed, not released. This finishes what beta198 left of the
+owner's reports of 2026-11-19 and takes back three things beta198 broke; a second fix written
+here on beta197 the same night (one local commit, never pushed) was the source for the ideas and
+tests, but beta198's code is the base: nothing of it was replaced wholesale.
+
+- **The owner (2026-11-19):** "align in the space is not being respected. chat box is not
+  centering"; "I had sized the GBA screens to fit the space, and they've shrunk even when they are
+  set to not resize"; and, of beta198 with the Scene Fit on and the game resized small by hand: "if
+  I manually resize a source then click the fit to space button, it doesn't seem to work when scene
+  fit is on, but it does eventually fit automatically. generally the scene fit takes a while to
+  respond but it does eventually. the button doesn't seem to work while scene fit is on".
+- **Align in the space at home** (`space_from`, `claim_box`, `apply`): a home is the space and the
+  size given by hand, never a place. Kept size: by its alignment, as away from home. Resized: the
+  home size by its alignment in the space it has now while the fill is within the Size tolerance,
+  else it fills. Switching the filter on can therefore move a source; it glides there.
+- **Glides start from where the item is** (`rebase`, `part_on_screen`): at switch-on, after a tool,
+  after a move or resize by hand, after what shows of it is measured anew. Replaces "never glide
+  from home to home" and "no glide from where it was let go".
+- **The dock's Fit to space with the fit on** (`fit_item_refit`, `FitEngine::refit`): the source's
+  own switched-on *Resize to fit* fit is told to fit now; status *Fitted by <filter>.*. Undo does
+  not cover it (the fit moves it, and would fit an undone size again).
+- **After a hand resize** the fit acts 0.3 s after the mouse is let go (was 0.3 s, then 0.4 s if
+  the place changed too, then 0.5 s of home settling: 0.8 to 1.2 s). The mouse button is read on
+  Windows (`mouse_held_any_thread`); the tests say it with `stagekit_test_mouse_down`.
+- **Frame cost** (`FitScan::obstacles` / `look`, the own look in `prepare`): no look because a
+  size changed; another fit's item by its claim without a look; by boxes nothing is drawn; a kept
+  entry no longer looks at itself on every tick. Counted by `stagekit_test_looks` (`fit_obstacle`,
+  `fit_own`).
+- **Room kept** for a showing fitted neighbour that draws nothing (the beta147 rule, lost in
+  beta198 for any source with a size).
+- **Kept size** (`KeptSize`): `keep_w/h` plus the sizes in its source (`keep_sw/sh/pw/ph`) and
+  `keep_k` for older versions; the scale stays while the source keeps its size and shows another
+  part; only a scale while no size can be read yet (older collections, a source not steady);
+  read while a Standby Image stands in, what is on the screen is kept as a rectangle (and the size
+  noted before the filter likewise), never the image's scale, which turned into a size with the
+  capture's made a 480 px window some 118 px wide;
+  not re-read when the item is drawn at the size kept; the log line is back. Nothing blocks on a
+  conversion any more.
+- **`take_home_`** is used up for an entry hidden or without an image at switch-on.
+- **First placing** waits for what shows of the item, 1.5 s at the most.
+- **The dock tool**: the space is looked for round the rest of the item when its middle is
+  covered (`best_space`); a press that found OBS busy leaves its looks for the next one (5 s); a
+  kept-size source whose space is too small, and one kept by a fit in an area of its own, are named
+  in the status line.
+- **Left as beta198 has it, on purpose:** no Standby stand-in is in the way of any fit (announced in
+  beta198's notes).
+- **Open, for the owner:** a kept-size source set to *The middle* above or below a resized image
+  with no use for more height is still packed against that image (the beta194 rule from "the chat
+  box is more than 30px from the visible border of the camera box"). Their chat box under the
+  camera therefore packs under it; it does not sit in the middle of the rest of the column. The
+  release notes' *Good to know* asks.
+- **Not seen on Windows:** all of it. The mouse-button reading in particular has only run through
+  the tests' own switch.
+- **Tests** (each gate run alone under Xvfb on the final build; **the full `tests/run-tests.sh`
+  was NOT run**: the machine was shared that night, so the ungated fit sections of the suite have
+  only been read against the change, not run):
+  `FIT_TOOL` 79 passed (cases 16 to 19 new: the owner's layout with the Scene Fit off and on, a
+  neighbour's spare room, the dock press with the fit on, a resize and a move by hand with the
+  mouse held and let go: it sets off 327 to 345 ms after letting go, 10 ms after a press),
+  `FIT_ENABLE` 80 (re-laid: the layout it is switched on over is made with the gaps by another
+  fit; the kept-size section runs at its end), `FIT_KEEP_SIZE` 28 (new gate), `FIT_OWNER` 15,
+  `FIT_VISIBLE` 16, `FIT_PRIORITY` 41, `FIT_GROUPS` 15, `LAYOUT` 40, `MAKE_ROOM` 15, `TOOLTIPS`
+  12; and, for what the engine changes could touch, `POP_IN` 4, `CAPTURE_CHAIN` 11,
+  `CAPTURE_HIDE` 5, `LINK_TRANS` 14, `GAME_AREA` 8, `AUTO_FRAME_SWITCHER` 10, `STANDBY_COVER` 7,
+  `RESTORE_HIDDEN` 5, `MODES_HIDE` 29, `LINK_FOLLOW` 51, `SHADOW_FLICKER` 32, `FILTER_REMOVE` 9.
+  No failures. Against beta198's plugin the new tests fail where they should: 17 of the 28
+  kept-size checks (alignment at home, the entry hidden at switch-on, the widget's room taken, 83
+  px, a kept scale turned into the Standby Image's 158 px instead of 120, a kept-size box that
+  shows four times as much of itself drawn at an eighth of its size instead of half) and 13 of
+  `FIT_TOOL`'s.
+  beta198's own tests on beta198's plugin: all gates passed here but `FIT_TOOL`, where *with
+  shadows counted (by what shows), image and shadow stay inside the gap* failed in one run of two
+  (it passed in every run of the new build; not looked into).
+  clang-format 19 and `scripts/check-root.sh` clean.
+
 
 ## Morph between sources: the layer on OBS's own thread (0.1.0-beta199)
 
@@ -104,16 +194,6 @@ ends, as before.
 Results, each gate alone with `STAGEKIT_TEST_ONLY_<name>`, the final build (after the review's
 changes below), no failure in any:
 
-| Gate | Checks passed |
-| --- | --- |
-| `MORPH_UI_TASK` (new; five runs) | 27 of 27 each time |
-| `MORPH` (*[morph between items]*, the new sections in the full flow, and what comes before) | 246 |
-| `MORPH_HOLDS`, `MAKE_ROOM`, `POP_IN` | 5, 15, 4 |
-| `LINK_FOLLOW`, `LINK_TRANS`, `SWITCH_COMMAND` | 51, 14, 3 |
-| `CAPTURE_HIDE`, `CAPTURE_CHAIN`, `RESTORE_HIDDEN`, `STANDBY_COVER` | 5, 11, 5, 7 |
-| `LAYOUT`, `MODES_HIDE`, `SCENE_TRANS_OVERRIDE` | 40, 29, 9 |
-| `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
-| The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
 `tests/run-tests.sh` (the full run) was **not** run here: other work was using the machine. Run it
 before the merge. Under valgrind (the final build again), `MORPH_UI_TASK` runs to its end with no
