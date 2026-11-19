@@ -3514,7 +3514,15 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   reduced on the card to one 32-bit float pixel, nothing read back; `rect_tex` in both effects; the
   item drawn by itself with `item_picture`, Morph's part with `cropped`), so see-through margins (a
   widget's, a capture's) no longer stand the line off the picture on some sides; `outline_corners`
-  5 is *Square* (a rounded corner of no size); the outer corner is capped (`line_corner`) so the box's own square corner stays under the line, and the line never lies inside the box; Morph draws it in `Pass::Ring` at each part's quad
+  5 is *Square* (a rounded corner of no size). **Never pick between a value and a far-off "empty"
+  one with `lerp`**: Direct3D's lerp is a + t(b - a), and with the first build's 1e9
+  sentinel it lost up to some 32 of the picture's pixels, which put the owner's square lines off
+  their pictures and lost their bottom sides (OpenGL here computed it exactly; the tests never
+  saw it). The sentinel is 65536 / -1 and the shaders pick with `a * (1 - t) + b * t`. A source
+  filling under nine tenths of that rectangle (alpha summed by `AreaFirst`/`AreaReduce`, `Seen`),
+  or turned (`box_turned`), keeps a following line: the ring canvas holds the box lines in alpha
+  and those sources in red, both drawn with `GS_BLEND_OP_MAX` (`draw_box_ring`, `draw_follow`,
+  technique `FollowGate`), and `line_reach` dilates the red (`follow_tex`). The outer corner is capped (`line_corner`) so the box's own square corner stays under the line, and the line never lies inside the box; Morph draws it in `Pass::Ring` at each part's quad
   with its weight, so the run's cross-fade fades it). **Scene Shadow's shadow is thrown by the
   outlined shape** (technique `Outlined`, `LookPaint::outlined_`), as the per-source filter's
   always was (its card includes the line). Widths were measured equal (10.00 px at scale 1 and

@@ -47,6 +47,11 @@ uniform float ring_strength;    // BoxRing: how much the source counts (a Morph 
 uniform texture2d rect_tex;     // BoxRing: what shows of the source, x0 y0 x1 y1 in its picture's pixels
 uniform float rect_known;       // BoxRing: 1 rect_tex holds it, 0 the line goes round the whole box
 uniform float2 rect_pic;        // BoxRing: the source's picture, in pixels (what rect_tex counts in)
+uniform texture2d area_tex;     // BoxRing, FollowGate: the sum of the picture's alpha (red)
+uniform float force_follow;     // BoxRing, FollowGate: 1 the source is turned: it keeps a line that follows it
+uniform float follow_amount;    // FollowGate: how much the source counts (a Morph part-way)
+uniform texture2d follow_tex;   // Ring, Outlined: what the line follows round its shape: the casting
+                                // sources (alpha), or with box lines the ring canvas (red)
 
 sampler_state linearClamp {
 	Filter   = Linear;
@@ -214,20 +219,39 @@ float4 PSMaskedShadow(VertData v_in) : TARGET
 
 // How much of the line covers a pixel: round the casting sources' own shape
 // (the most solid of them within the width), or the shapes round their boxes.
+// What the line follows round its shape at a point: a casting source's
+// alpha, or with box lines the sources that keep a following line (text and
+// shaped sources), in the ring canvas's red.
+float follow_at(float2 uv)
+{
+	float4 t = follow_tex.SampleLevel(linearClamp, uv, 0);
+	return t.a * (1.0 - ring_box) + t.r * ring_box;
+}
+
 float line_reach(float2 uv)
 {
-	float reach = silhouette.Sample(linearClamp, uv).a;
+	float reach = follow_at(uv);
 	float2 step_uv = float2(outline_width, outline_width) / out_size;
 	for (int i = 0; i < 24; i++) {
 		float angle = float(i) * 0.26179939;
 		float2 dir = float2(cos(angle), sin(angle)) * step_uv;
-		float a = silhouette.SampleLevel(linearClamp, uv + dir, 0).a;
-		float b = silhouette.SampleLevel(linearClamp, uv + dir * 0.75, 0).a;
-		float e = silhouette.SampleLevel(linearClamp, uv + dir * 0.5, 0).a;
-		float d = silhouette.SampleLevel(linearClamp, uv + dir * 0.25, 0).a;
+		float a = follow_at(uv + dir);
+		float b = follow_at(uv + dir * 0.75);
+		float e = follow_at(uv + dir * 0.5);
+		float d = follow_at(uv + dir * 0.25);
 		reach = max(reach, max(max(a, b), max(e, d)));
 	}
-	return lerp(reach, ring_shape.Sample(linearClamp, uv).a, ring_box);
+	return max(reach, ring_shape.Sample(linearClamp, uv).a * ring_box);
+}
+
+// 1 when a source keeps a line that follows it: turned, or filling under
+// nine tenths of the rectangle that shows of it (text, a logo, a group with
+// gaps); 0 when it gets the box line.
+float follows(float4 seen, float area)
+{
+	float rect_area = max((seen.z - seen.x) * (seen.w - seen.y), 1.0);
+	float sparse = step(area, 0.9 * rect_area) * rect_known;
+	return max(force_follow, sparse);
 }
 
 float4 PSRing(VertData v_in) : TARGET
@@ -256,14 +280,24 @@ float4 PSBoxRing(VertData v_in) : TARGET
 	float4 seen = rect_tex.Sample(pointClamp, float2(0.5, 0.5));
 	float2 k = box_rect.zw / rect_pic;
 	float4 shown = float4(box_rect.xy + seen.xy * k, (seen.zw - seen.xy) * k);
-	float4 box_shown = lerp(box_rect, shown, rect_known);
+	float4 box_shown = box_rect * (1.0 - rect_known) + shown * rect_known;
 	float any = lerp(1.0, step(seen.x, seen.z - 0.5) * step(seen.y, seen.w - 0.5), rect_known);
 	float4 outer = float4(box_shown.xy - float2(outline_width, outline_width),
 			      box_shown.zw + float2(outline_width, outline_width) * 2.0);
 	float d_out = corner_distance(p, outer, line_corner(corner_size, corner_style), corner_style);
 	float d_in = corner_distance(p, box_shown, 0.0, corner_style);
-	float a = saturate(0.5 - d_out) * saturate(0.5 + d_in) * ring_strength * any;
-	return float4(a, a, a, a);
+	float gate = follows(seen, area_tex.Sample(pointClamp, float2(0.5, 0.5)).r);
+	float a = saturate(0.5 - d_out) * saturate(0.5 + d_in) * ring_strength * any * (1.0 - gate);
+	return float4(0.0, 0.0, 0.0, a);
+}
+
+// A source that keeps a following line, into the ring canvas's red.
+float4 PSFollowGate(VertData v_in) : TARGET
+{
+	float4 seen = rect_tex.Sample(pointClamp, float2(0.5, 0.5));
+	float gate = follows(seen, area_tex.Sample(pointClamp, float2(0.5, 0.5)).r);
+	float a = image.Sample(linearClamp, v_in.uv).a * gate * follow_amount;
+	return float4(a, 0.0, 0.0, 0.0);
 }
 
 technique MaskedShadow
@@ -299,5 +333,14 @@ technique BoxRing
 	{
 		vertex_shader = VSDefault(v_in);
 		pixel_shader  = PSBoxRing(v_in);
+	}
+}
+
+technique FollowGate
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSFollowGate(v_in);
 	}
 }

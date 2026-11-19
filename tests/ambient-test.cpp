@@ -14506,7 +14506,7 @@ static void scene_shadow_each_test(uint32_t w, uint32_t h, const std::string &ou
 // Glow & Outline and from Scene Shadow (and a drop shadow thrown by the
 // outlined shape in both), an outline that stays solid through a Morph, and a
 // glow with a smooth, unbanded tail.
-static void outline_glow_test(uint32_t w, uint32_t h, const std::string &out)
+static void outline_glow_test(uint32_t w, uint32_t h, const std::string &out, const std::string &picture_file)
 {
 	printf("\n[outline and glow: corners, matching widths, solid through Morph, a smooth glow]\n");
 	const std::string dir = out + "/../outline-glow";
@@ -14928,6 +14928,276 @@ static void outline_glow_test(uint32_t w, uint32_t h, const std::string &out)
 		obs_scene_release(scene_scene);
 		for (obs_source_t *s : made)
 			obs_source_release(s);
+	}
+
+	// Square lines in the places the owner's Standby scene has them, in a
+	// magenta line so a picture of any colour can be told from it: bounding
+	// boxes wider and taller than the picture, aligned top, top-left, centre
+	// and bottom-right, for a colour source and an image (from Scene Shadow
+	// and, for the colour, from Shadow, Glow & Outline); a group, moved and
+	// scaled; a nested scene; two sources overlapping; a hidden one; one
+	// running off the screen; a turned one; a large source drawn small; and
+	// a group with gaps (as text has), which keeps a following line.
+	{
+		auto magenta = [&](const std::vector<uint8_t> &f, int x, int y) {
+			if (x < 0 || y < 0 || x >= (int)w || y >= (int)h)
+				return false;
+			const int r = px(f, x, y, 0), g = px(f, x, y, 1), b = px(f, x, y, 2);
+			return r - g > 127 && b - g > 127;
+		};
+		struct Rect {
+			double x0, y0, x1, y1;
+		};
+		// Where an item's picture is drawn: its draw transform on its
+		// (cropped) source.
+		auto rect_of = [](obs_sceneitem_t *item) {
+			matrix4 m;
+			obs_sceneitem_get_draw_transform(item, &m);
+			obs_source_t *src = obs_sceneitem_get_source(item);
+			obs_sceneitem_crop c;
+			obs_sceneitem_get_crop(item, &c);
+			const double sw = (double)obs_source_get_width(src) - c.left - c.right;
+			const double sh = (double)obs_source_get_height(src) - c.top - c.bottom;
+			Rect r{1e9, 1e9, -1e9, -1e9};
+			for (int i = 0; i < 4; i++) {
+				vec3 corner, at;
+				vec3_set(&corner, (i & 1) ? (float)sw : 0.0f, (i & 2) ? (float)sh : 0.0f, 0.0f);
+				vec3_transform(&at, &corner, &m);
+				r.x0 = std::min(r.x0, (double)at.x);
+				r.y0 = std::min(r.y0, (double)at.y);
+				r.x1 = std::max(r.x1, (double)at.x);
+				r.y1 = std::max(r.y1, (double)at.y);
+			}
+			return r;
+		};
+		// The line's width on each side (left, right, top, bottom; -1 off
+		// the screen) along the middle of that side, counted outward from
+		// three pixels inside the edge; and whether each corner pixel a
+		// width less one out is line and the one past it is not.
+		auto measure = [&](const std::vector<uint8_t> &f, const Rect &r, int out_w[4], bool corners[4]) {
+			const int mx = (int)std::floor((r.x0 + r.x1) / 2.0), my = (int)std::floor((r.y0 + r.y1) / 2.0);
+			const int ex[4] = {(int)std::lround(r.x0) - 1, (int)std::lround(r.x1), mx, mx};
+			const int ey[4] = {my, my, (int)std::lround(r.y0) - 1, (int)std::lround(r.y1)};
+			const int dx[4] = {-1, 1, 0, 0}, dy[4] = {0, 0, -1, 1};
+			for (int s = 0; s < 4; s++) {
+				const int sx = ex[s], sy = ey[s];
+				if (sx < 0 || sy < 0 || sx >= (int)w || sy >= (int)h) {
+					out_w[s] = -1;
+					continue;
+				}
+				int n = 0;
+				for (int k = -3; k < 20; k++)
+					n += magenta(f, sx + dx[s] * k, sy + dy[s] * k) ? 1 : 0;
+				out_w[s] = n;
+			}
+			// (The outermost whole pixel of the line, and the one two past
+			// it: an edge between pixels leaves one pixel half line.)
+			const int lx = (int)std::ceil(r.x0 - 10.0 - 1e-6), ty = (int)std::ceil(r.y0 - 10.0 - 1e-6);
+			const int rx = (int)std::floor(r.x1 + 10.0 + 1e-6) - 1,
+				  by = (int)std::floor(r.y1 + 10.0 + 1e-6) - 1;
+			const int qx[4] = {lx, rx, lx, rx}, qy[4] = {ty, ty, by, by};
+			const int ox[4] = {-2, 2, -2, 2}, oy[4] = {-2, -2, 2, 2};
+			for (int c = 0; c < 4; c++)
+				corners[c] = (qx[c] < 0 || qy[c] < 0 || qx[c] >= (int)w || qy[c] >= (int)h) ||
+					     (magenta(f, qx[c], qy[c]) && !magenta(f, qx[c] + ox[c], qy[c] + oy[c]));
+		};
+		auto check_item = [&](const std::vector<uint8_t> &f, const Rect &r, const char *who, const char *what) {
+			int sw[4];
+			bool corners[4];
+			measure(f, r, sw, corners);
+			bool ok = true;
+			for (int s = 0; s < 4; s++)
+				ok = ok && (sw[s] < 0 || std::abs(sw[s] - 10) <= 1);
+			for (bool c : corners)
+				ok = ok && c;
+			CHECK(ok,
+			      "%s, Square, %s (%.0f..%.0f by %.0f..%.0f): 10 px on each side (%d/%d/%d/%d), square corners (%d%d%d%d)",
+			      who, what, r.x0, r.x1, r.y0, r.y1, sw[0], sw[1], sw[2], sw[3], (int)corners[0],
+			      (int)corners[1], (int)corners[2], (int)corners[3]);
+		};
+		auto square = [](obs_data_t *s) {
+			obs_data_set_bool(s, "shadow", false);
+			obs_data_set_bool(s, "outline", true);
+			obs_data_set_double(s, "outline_width", 10.0);
+			obs_data_set_int(s, "outline_color", 0xFFFF00FF);
+			obs_data_set_int(s, "outline_corners", 5);
+		};
+		std::vector<obs_source_t *> made;
+		// Bounding boxes: 120 by 110, at four places; a 70 by 40 colour
+		// source that the box only shrinks (so the box is wider and taller),
+		// and an image fitted in the box.
+		const uint32_t aligns[4] = {OBS_ALIGN_TOP, OBS_ALIGN_TOP | OBS_ALIGN_LEFT, OBS_ALIGN_CENTER,
+					    OBS_ALIGN_BOTTOM | OBS_ALIGN_RIGHT};
+		const char *align_names[4] = {"top", "top-left", "centre", "bottom-right"};
+		obs_scene_t *boxes_scene = obs_scene_create("OG Boxes");
+		obs_scene_t *own_boxes = obs_scene_create("OG Own Boxes");
+		put(boxes_scene, bg, 0, 0);
+		put(own_boxes, bg, 0, 0);
+		std::vector<obs_sceneitem_t *> box_items, own_items;
+		std::vector<obs_source_t *> own_filters;
+		for (int i = 0; i < 8; i++) {
+			const bool image = i >= 4;
+			const std::string name =
+				std::string("OG Box ") + (image ? "image " : "colour ") + align_names[i % 4];
+			obs_source_t *src = nullptr;
+			if (image) {
+				obs_data_t *d = obs_data_create();
+				obs_data_set_string(d, "file", picture_file.c_str());
+				src = obs_source_create("image_source", name.c_str(), d, nullptr);
+				obs_data_release(d);
+			} else {
+				src = block(name.c_str(), 0xFFFFFFFF, 70, 40);
+			}
+			made.push_back(src);
+			const float x = 20.0f + 160.0f * (float)(i % 4), y = image ? 200.0f : 20.0f;
+			vec2 bounds;
+			vec2_set(&bounds, 120.0f, 110.0f);
+			for (obs_scene_t *scene : {boxes_scene, own_boxes}) {
+				if (scene == own_boxes && image)
+					continue;
+				obs_sceneitem_t *item = put(scene, src, x, y);
+				obs_sceneitem_set_bounds_type(item,
+							      image ? OBS_BOUNDS_SCALE_INNER : OBS_BOUNDS_MAX_ONLY);
+				obs_sceneitem_set_bounds(item, &bounds);
+				obs_sceneitem_set_bounds_alignment(item, aligns[i % 4]);
+				(scene == own_boxes ? own_items : box_items).push_back(item);
+			}
+		}
+		// The per-source filter goes on a source of its own for each box.
+		for (int i = 0; i < 4; i++) {
+			const std::string name = std::string("OG Own Box ") + align_names[i];
+			obs_source_t *src = block(name.c_str(), 0xFFFFFFFF, 70, 40);
+			made.push_back(src);
+			obs_sceneitem_t *old = own_items[i];
+			vec2 pos, bounds;
+			obs_sceneitem_get_pos(old, &pos);
+			obs_sceneitem_get_bounds(old, &bounds);
+			obs_sceneitem_remove(old);
+			obs_sceneitem_t *item = put(own_boxes, src, pos.x, pos.y);
+			obs_sceneitem_set_bounds_type(item, OBS_BOUNDS_MAX_ONLY);
+			obs_sceneitem_set_bounds(item, &bounds);
+			obs_sceneitem_set_bounds_alignment(item, aligns[i]);
+			own_items[i] = item;
+			own_filters.push_back(own_filter(src, square));
+		}
+		obs_source_t *boxes_shadow = scene_filter(boxes_scene, square);
+		sleep_ms(400);
+		const std::vector<uint8_t> fb = shot(obs_scene_get_source(boxes_scene));
+		const std::vector<uint8_t> fo = shot(obs_scene_get_source(own_boxes));
+		write_frame(dir + "/15 square lines in boxes, Scene Shadow.rgba", fb, w, h);
+		write_frame(dir + "/16 square lines in boxes, Shadow Glow & Outline.rgba", fo, w, h);
+		for (int i = 0; i < 8; i++) {
+			const std::string what = std::string(i >= 4 ? "an image" : "a colour source") +
+						 " in a bigger box, aligned " + align_names[i % 4];
+			check_item(fb, rect_of(box_items[i]), "Scene Shadow", what.c_str());
+		}
+		for (int i = 0; i < 4; i++) {
+			// (The per-source filter's picture is its source with the room
+			// round it; the source is 70 by 40 inside it.)
+			Rect r = rect_of(own_items[i]);
+			const double room = (r.x1 - r.x0 - 70.0) / 2.0;
+			r = Rect{r.x0 + room, r.y0 + room, r.x1 - room, r.y1 - room};
+			const std::string what =
+				std::string("a colour source in a bigger box, aligned ") + align_names[i];
+			check_item(fo, r, "Shadow, Glow & Outline", what.c_str());
+		}
+		obs_source_filter_remove(obs_scene_get_source(boxes_scene), boxes_shadow);
+		obs_source_release(boxes_shadow);
+		for (int i = 0; i < 4; i++) {
+			obs_source_filter_remove(made[8 + i], own_filters[i]);
+			obs_source_release(own_filters[i]);
+		}
+		obs_scene_release(boxes_scene);
+		obs_scene_release(own_boxes);
+
+		// The other places, in one scene with a Scene Shadow.
+		obs_scene_t *s2 = obs_scene_create("OG Places");
+		put(s2, bg, 0, 0);
+		auto white = [&](const char *name, int bw, int bh) {
+			obs_source_t *src = block(name, 0xFFFFFFFF, bw, bh);
+			made.push_back(src);
+			return src;
+		};
+		// A group, moved and scaled: 160 by 80 inside, at 30, 30, three
+		// quarters: 120 by 60.
+		obs_sceneitem_t *in_group = put(s2, white("OG In Group", 160, 80), 0, 0);
+		obs_sceneitem_t *group = obs_scene_add_group(s2, "OG Group");
+		obs_sceneitem_group_add_item(group, in_group);
+		{
+			vec2 p, k;
+			vec2_set(&p, 30.0f, 30.0f);
+			vec2_set(&k, 0.75f, 0.75f);
+			obs_sceneitem_set_pos(group, &p);
+			obs_sceneitem_set_scale(group, &k);
+		}
+		// A nested scene: a 100 by 60 source at 300, 200 in it, the scene at
+		// 190, 30 at 0.4: 310..350 by 110..134.
+		obs_scene_t *inner = obs_scene_create("OG Inner");
+		put(inner, white("OG In Inner", 100, 60), 300, 200);
+		put(s2, obs_scene_get_source(inner), 190, 30, 0.4f);
+		// A large source drawn small: 2560 by 1440 at 0.05.
+		obs_sceneitem_t *large = put(s2, white("OG Large", 2560, 1440), 400, 30, 0.05f);
+		// Two overlapping.
+		obs_sceneitem_t *ov_a = put(s2, white("OG Over A", 120, 80), 40, 170);
+		obs_sceneitem_t *ov_b = put(s2, white("OG Over B", 120, 80), 110, 210);
+		// A hidden one.
+		obs_sceneitem_t *hidden = put(s2, white("OG Hidden", 60, 60), 270, 180);
+		obs_sceneitem_set_visible(hidden, false);
+		// One running off the screen.
+		obs_sceneitem_t *off = put(s2, white("OG Off", 300, 120), 480, 260);
+		// A turned one.
+		obs_sceneitem_t *turned = put(s2, white("OG Turned", 100, 50), 330, 240);
+		obs_sceneitem_set_rot(turned, 20.0f);
+		// A group with gaps: two 30 px squares 60 apart, as letters are.
+		obs_sceneitem_t *g1 = put(s2, white("OG Gap A", 30, 30), 0, 0);
+		obs_sceneitem_t *g2 = put(s2, white("OG Gap B", 30, 30), 90, 0);
+		obs_sceneitem_t *gappy = obs_scene_add_group(s2, "OG Gappy");
+		obs_sceneitem_group_add_item(gappy, g1);
+		obs_sceneitem_group_add_item(gappy, g2);
+		{
+			vec2 p;
+			vec2_set(&p, 420.0f, 150.0f);
+			obs_sceneitem_set_pos(gappy, &p);
+		}
+		obs_source_t *places_shadow = scene_filter(s2, square);
+		sleep_ms(400);
+		const std::vector<uint8_t> fp = shot(obs_scene_get_source(s2));
+		write_frame(dir + "/17 square lines, groups, nested, overlapping, off screen, turned.rgba", fp, w, h);
+		check_item(fp, rect_of(group), "Scene Shadow", "a group, moved and scaled");
+		check_item(fp, Rect{310, 110, 350, 134}, "Scene Shadow", "a nested scene's source");
+		check_item(fp, rect_of(large), "Scene Shadow", "a 2560 by 1440 source drawn at 0.05");
+		check_item(fp, rect_of(off), "Scene Shadow", "a source running off the screen");
+		{
+			int sa[4], sb[4];
+			bool ca[4], cb[4];
+			measure(fp, rect_of(ov_a), sa, ca);
+			measure(fp, rect_of(ov_b), sb, cb);
+			CHECK(std::abs(sa[0] - 10) <= 1 && std::abs(sa[2] - 10) <= 1 && std::abs(sb[1] - 10) <= 1 &&
+				      std::abs(sb[3] - 10) <= 1 && ca[0] && cb[3],
+			      "two overlapping sources each get their own line (the lower's left %d and top %d, the upper's right %d and bottom %d)",
+			      sa[0], sa[2], sb[1], sb[3]);
+		}
+		CHECK(!magenta(fp, 265, 210) && !magenta(fp, 300, 175),
+		      "a hidden source gets no line (beside it: %d, above it: %d)", (int)magenta(fp, 265, 210),
+		      (int)magenta(fp, 300, 175));
+		{
+			// The turned source's top edge goes from 330, 240 at 20 degrees;
+			// 5 px out from its middle is line, as Follow the source draws it.
+			const double c = std::cos(20.0 * M_PI / 180.0), s = std::sin(20.0 * M_PI / 180.0);
+			const double mx = 330.0 + 50.0 * c, my = 240.0 + 50.0 * s;
+			const int qx = (int)std::lround(mx + 5.0 * s), qy = (int)std::lround(my - 5.0 * c);
+			CHECK(magenta(fp, qx, qy), "a turned source keeps a line that follows it (5 px out at %d, %d)",
+			      qx, qy);
+		}
+		CHECK(magenta(fp, 455, 165) && magenta(fp, 505, 165) && !magenta(fp, 480, 165),
+		      "a group with gaps, as text has, keeps a line that follows its shapes, not a box (beside each: %d %d; in the middle of the gap: %d)",
+		      (int)magenta(fp, 455, 165), (int)magenta(fp, 505, 165), (int)magenta(fp, 480, 165));
+		obs_source_filter_remove(obs_scene_get_source(s2), places_shadow);
+		obs_source_release(places_shadow);
+		obs_scene_release(s2);
+		obs_scene_release(inner);
+		for (obs_source_t *src : made)
+			obs_source_release(src);
 	}
 
 	for (obs_source_t *f : {f_own, f_half})
@@ -16999,7 +17269,7 @@ int main(int argc, char **argv)
 		return g_failures ? 1 : 0;
 	}
 	if (getenv("STAGEKIT_TEST_ONLY_OUTLINE_GLOW")) { // to try that section alone
-		outline_glow_test(w, h, out);
+		outline_glow_test(w, h, out, base_image);
 		obs_shutdown();
 		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
 		       g_failures == 1 ? "" : "s");

@@ -240,6 +240,10 @@ LookPaint::LookPaint()
 		p_rect_tex_ = gs_effect_get_param_by_name(effect_, "rect_tex");
 		p_rect_known_ = gs_effect_get_param_by_name(effect_, "rect_known");
 		p_rect_pic_ = gs_effect_get_param_by_name(effect_, "rect_pic");
+		p_area_tex_ = gs_effect_get_param_by_name(effect_, "area_tex");
+		p_force_follow_ = gs_effect_get_param_by_name(effect_, "force_follow");
+		p_follow_amount_ = gs_effect_get_param_by_name(effect_, "follow_amount");
+		p_follow_tex_ = gs_effect_get_param_by_name(effect_, "follow_tex");
 	}
 	// (Smooth: sixteen-bit pictures and one more level, so a soft shadow's
 	// tail has no steps.)
@@ -520,6 +524,7 @@ bool LookPaint::compose(gs_texture_t *scene, gs_texture_t *cast, gs_texture_t *m
 	auto line_values = [&] {
 		gs_effect_set_texture(p_cast_, cast);
 		gs_effect_set_texture(p_ring_shape_, box ? ring : cast);
+		gs_effect_set_texture(p_follow_tex_, box ? ring : cast);
 		gs_effect_set_float(p_ring_box_, box ? 1.0f : 0.0f);
 		gs_effect_set_vec2(p_out_size_, &size);
 		gs_effect_set_float(p_outline_width_, (float)look.outline_width);
@@ -593,8 +598,9 @@ VisibleRect::VisibleRect()
 		p_image_ = gs_effect_get_param_by_name(effect_, "image");
 		p_in_size_ = gs_effect_get_param_by_name(effect_, "rect_in_size");
 		// (A file of the others' may not have the techniques.)
-		if (!gs_effect_get_technique(effect_, "RectFirst") || !gs_effect_get_technique(effect_, "RectReduce"))
-			effect_ = nullptr;
+		for (const char *t : {"RectFirst", "RectReduce", "AreaFirst", "AreaReduce"})
+			if (!gs_effect_get_technique(effect_, t))
+				effect_ = nullptr;
 	}
 	obs_leave_graphics();
 	bfree(path);
@@ -603,42 +609,42 @@ VisibleRect::VisibleRect()
 VisibleRect::~VisibleRect()
 {
 	obs_enter_graphics();
-	for (gs_texrender_t *tr : levels_)
-		gs_texrender_destroy(tr);
+	for (auto &set : sets_)
+		for (gs_texrender_t *tr : set)
+			gs_texrender_destroy(tr);
 	gs_effect_destroy(effect_);
 	obs_leave_graphics();
 }
 
-gs_texture_t *VisibleRect::measure(gs_texture_t *picture, uint32_t w, uint32_t h)
+// Blocks of 8 by 8 at a time, down to one pixel, in a chain of its own for
+// this frame (each result is kept until begin_frame).
+gs_texture_t *VisibleRect::reduce(gs_texture_t *picture, uint32_t w, uint32_t h, const char *first_pass,
+				  const char *rest)
 {
-	if (!effect_ || !picture || !w || !h)
-		return nullptr;
-	const bool previous = gs_framebuffer_srgb_enabled();
-	gs_enable_framebuffer_srgb(false);
-	gs_matrix_push();
-	gs_matrix_identity();
+	if (next_ >= sets_.size())
+		sets_.emplace_back();
+	std::vector<gs_texrender_t *> &levels = sets_[next_++];
 	gs_texture_t *cur = picture;
 	uint32_t cw = w, ch = h;
 	size_t level = 0;
 	bool first = true;
-	while (first || cw > 1 || ch > 1) {
+	while (cur && (first || cw > 1 || ch > 1)) {
 		const uint32_t ow = (cw + 7) / 8, oh = (ch + 7) / 8;
-		if (level >= levels_.size())
-			levels_.push_back(gs_texrender_create(GS_RGBA32F, GS_ZS_NONE));
-		gs_texrender_t *into = levels_[level++];
+		if (level >= levels.size())
+			levels.push_back(gs_texrender_create(GS_RGBA32F, GS_ZS_NONE));
+		gs_texrender_t *into = levels[level++];
 		gs_texrender_reset(into);
-		if (!gs_texrender_begin(into, ow, oh)) {
-			cur = nullptr;
-			break;
-		}
+		if (!gs_texrender_begin(into, ow, oh))
+			return nullptr;
 		gs_ortho(0.0f, (float)ow, 0.0f, (float)oh, -100.0f, 100.0f);
+		// (No blending: float pictures need not be blendable.)
 		gs_blend_state_push();
-		gs_blend_function(GS_BLEND_ONE, GS_BLEND_ZERO);
+		gs_enable_blending(false);
 		vec2 in_size;
 		vec2_set(&in_size, (float)cw, (float)ch);
 		gs_effect_set_texture(p_image_, cur);
 		gs_effect_set_vec2(p_in_size_, &in_size);
-		while (gs_effect_loop(effect_, first ? "RectFirst" : "RectReduce"))
+		while (gs_effect_loop(effect_, first ? first_pass : rest))
 			gs_draw_sprite(nullptr, 0, ow, oh);
 		gs_blend_state_pop();
 		gs_texrender_end(into);
@@ -646,23 +652,61 @@ gs_texture_t *VisibleRect::measure(gs_texture_t *picture, uint32_t w, uint32_t h
 		cw = ow;
 		ch = oh;
 		first = false;
-		if (!cur)
-			break;
 	}
-	gs_matrix_pop();
-	gs_enable_framebuffer_srgb(previous);
 	return cur;
 }
 
-gs_texture_t *LookPaint::visible_rect(gs_texture_t *picture, uint32_t w, uint32_t h)
+Seen VisibleRect::measure(gs_texture_t *picture, uint32_t w, uint32_t h)
 {
-	return rects_ ? rects_->measure(picture, w, h) : nullptr;
+	Seen out;
+	if (!effect_ || !picture || !w || !h)
+		return out;
+	const bool previous = gs_framebuffer_srgb_enabled();
+	gs_enable_framebuffer_srgb(false);
+	gs_matrix_push();
+	gs_matrix_identity();
+	out.rect = reduce(picture, w, h, "RectFirst", "RectReduce");
+	out.area = out.rect ? reduce(picture, w, h, "AreaFirst", "AreaReduce") : nullptr;
+	gs_matrix_pop();
+	gs_enable_framebuffer_srgb(previous);
+	if (!out.known())
+		out = Seen();
+	return out;
 }
 
-void LookPaint::draw_box_ring(const matrix4 &m, const ShadowLook &look, float strength, gs_texture_t *seen, double pw,
-			      double ph)
+Seen LookPaint::visible_rect(gs_texture_t *picture, uint32_t w, uint32_t h)
 {
-	if (!effect_ || !look.box_line() || strength <= 0.001f)
+	return rects_ ? rects_->measure(picture, w, h) : Seen();
+}
+
+namespace {
+
+// The rect and area values (or the stand-in), for BoxRing and FollowGate.
+void set_seen(gs_eparam_t *rect, gs_eparam_t *area, gs_eparam_t *known, gs_eparam_t *pic, const Seen &seen, double pw,
+	      double ph, gs_texture_t *none)
+{
+	const bool ok = seen.known() && pw > 0.0 && ph > 0.0;
+	vec2 size;
+	vec2_set(&size, ok ? (float)pw : 1.0f, ok ? (float)ph : 1.0f);
+	gs_effect_set_texture(rect, ok ? seen.rect : none);
+	gs_effect_set_texture(area, ok ? seen.area : none);
+	gs_effect_set_float(known, ok ? 1.0f : 0.0f);
+	gs_effect_set_vec2(pic, &size);
+}
+
+// Both halves are drawn taking the larger value, each channel by itself.
+void max_blending()
+{
+	gs_blend_function(GS_BLEND_ONE, GS_BLEND_ONE);
+	gs_blend_op(GS_BLEND_OP_MAX);
+}
+
+} // namespace
+
+void LookPaint::draw_box_ring(const matrix4 &m, const ShadowLook &look, float strength, const Seen &seen, double pw,
+			      double ph, bool turned)
+{
+	if (!effect_ || !look.box_line() || strength <= 0.001f || turned)
 		return;
 	// The box's sides on the canvas.
 	const double bw = std::hypot((double)m.x.x, (double)m.x.y);
@@ -685,14 +729,12 @@ void LookPaint::draw_box_ring(const matrix4 &m, const ShadowLook &look, float st
 	gs_effect_set_float(p_corner_style_, square ? 0.0f : (float)(look.outline_corners - 1));
 	gs_effect_set_float(p_ring_strength_, std::clamp(strength, 0.0f, 1.0f));
 	gs_effect_set_float(p_outline_width_, (float)look.outline_width);
-	const bool known = seen && pw > 0.0 && ph > 0.0;
-	vec2 pic;
-	vec2_set(&pic, known ? (float)pw : 1.0f, known ? (float)ph : 1.0f);
-	gs_effect_set_texture(p_rect_tex_, known ? seen : no_rect_);
-	gs_effect_set_float(p_rect_known_, known ? 1.0f : 0.0f);
-	gs_effect_set_vec2(p_rect_pic_, &pic);
+	gs_effect_set_float(p_force_follow_, 0.0f);
+	set_seen(p_rect_tex_, p_area_tex_, p_rect_known_, p_rect_pic_, seen, pw, ph, no_rect_);
 	const bool previous = gs_framebuffer_srgb_enabled();
 	gs_enable_framebuffer_srgb(false);
+	gs_blend_state_push();
+	max_blending();
 	gs_matrix_push();
 	gs_matrix_mul(&m);
 	gs_matrix_scale3f((float)(1.0 / bw), (float)(1.0 / bh), 1.0f);
@@ -700,7 +742,41 @@ void LookPaint::draw_box_ring(const matrix4 &m, const ShadowLook &look, float st
 	while (gs_effect_loop(effect_, "BoxRing"))
 		gs_draw_sprite(nullptr, 0, (uint32_t)sw, (uint32_t)sh);
 	gs_matrix_pop();
+	gs_blend_op(GS_BLEND_OP_ADD);
+	gs_blend_state_pop();
 	gs_enable_framebuffer_srgb(previous);
+}
+
+void LookPaint::draw_follow(gs_texture_t *picture, const matrix4 &m, double pw, double ph, const Seen &seen,
+			    bool turned, float amount)
+{
+	if (!effect_ || !picture || pw < 1.0 || ph < 1.0 || amount <= 0.001f)
+		return;
+	gs_effect_set_texture(p_image_, picture);
+	gs_effect_set_float(p_force_follow_, turned ? 1.0f : 0.0f);
+	gs_effect_set_float(p_follow_amount_, std::min(amount, 64.0f));
+	set_seen(p_rect_tex_, p_area_tex_, p_rect_known_, p_rect_pic_, seen, pw, ph, no_rect_);
+	const bool previous = gs_framebuffer_srgb_enabled();
+	gs_enable_framebuffer_srgb(false);
+	gs_blend_state_push();
+	max_blending();
+	gs_matrix_push();
+	gs_matrix_mul(&m);
+	while (gs_effect_loop(effect_, "FollowGate"))
+		gs_draw_sprite(nullptr, 0, 1, 1);
+	gs_matrix_pop();
+	gs_blend_op(GS_BLEND_OP_ADD);
+	gs_blend_state_pop();
+	gs_enable_framebuffer_srgb(previous);
+}
+
+bool box_turned(const matrix4 &m)
+{
+	// (A box line only for a box that is not turned: a turned one keeps a
+	// line that follows it.)
+	const double ax = std::fabs((double)m.x.x), ay = std::fabs((double)m.x.y);
+	const double bx = std::fabs((double)m.y.x), by = std::fabs((double)m.y.y);
+	return ay > 1e-3 * std::max(ax, 1e-9) || bx > 1e-3 * std::max(by, 1e-9);
 }
 
 void LookPaint::draw_item_ring(obs_sceneitem_t *item, const ShadowLook &look)
@@ -713,13 +789,15 @@ void LookPaint::draw_item_ring(obs_sceneitem_t *item, const ShadowLook &look)
 	gs_texture_t *picture = item_picture(item, m, w, h);
 	if (!picture || !w || !h)
 		return;
-	gs_texture_t *rect = visible_rect(picture, w, h);
+	const Seen seen = visible_rect(picture, w, h);
 	matrix4 unit, box;
 	matrix4_identity(&unit);
 	vec4_set(&unit.x, (float)w, 0.0f, 0.0f, 0.0f);
 	vec4_set(&unit.y, 0.0f, (float)h, 0.0f, 0.0f);
 	matrix4_mul(&box, &unit, &m);
-	draw_box_ring(box, look, 1.0f, rect, (double)w, (double)h);
+	const bool turned = box_turned(box);
+	draw_box_ring(box, look, 1.0f, seen, (double)w, (double)h, turned);
+	draw_follow(picture, box, (double)w, (double)h, seen, turned, 1.0f);
 }
 
 bool LookPaint::compose_layers(gs_texture_t *scene, const std::vector<gs_texture_t *> &casts,

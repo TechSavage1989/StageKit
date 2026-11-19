@@ -256,7 +256,9 @@ its heading:
     text and odd shapes too, as it always did; its outer corners are rounded by the line's width), or
     *Square*, *Rounded*, *Bevel*, *Notch* or *Scoop*: the line is drawn as a shape round the rectangle
     the source's image covers on screen, see-through margins left out (its panel, when it has one),
-    the same width on every side whatever its bounding box, crop or scale; *Square* has sharp
+    the same width on every side whatever its bounding box, crop or scale (text and shaped sources,
+    anything that fills under nine tenths of that rectangle, and turned sources keep a line that
+    follows them); *Square* has sharp
     corners, and the others at a *Corner size* of 0 are square too. An item's crop cuts Shadow, Glow &
     Outline's line with the rest of what the filter draws (OBS crops the finished image), so crop
     with a Cropped View or a crop filter before it, or use Scene Shadow; its outer corners *Corner size* pixels across (no
