@@ -401,7 +401,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   all twins, the Morph layer and hidden items during collection. A recently hidden fit's last
   image may be reserved for two seconds unless a mode holds it hidden.
   An automatic fit takes what another fit places by that fit's claim without looking at it
-  (betaNEXT; see *Nothing is read back while a size changes*), so a capture with no image yet
+  (beta200; see *Nothing is read back while a size changes*), so a capture with no image yet
   and a widget with nothing to show keep their room. A dock press requires a drawn image.
   Fitted obstacles use their published image claim. In `spaces_kept`, predict the neighboring
   image with `space_from` and `claim_from` and compare its position and size within 0.5 px, its
@@ -441,10 +441,10 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   fit makes now, and whether it is at home. Items with no fit are obstacles by what shows, as
   before, and are never changed anyway. Its space is looked for round the item's middle and,
   when that lies on something in its way, round 25 points of what shows of it, the biggest
-  picture taken (`best_space`, betaNEXT: just off the sides of what covered its middle the
+  picture taken (`best_space`, beta200: just off the sides of what covered its middle the
   space was often a sliver). What a press that found OBS busy had begun to look at is kept for
   the next press on that scene, five seconds at the most (`Begun`), so a large scene is not too
-  much for every press alike. `fit_tool_test` cases 16 and 17 (betaNEXT) recreate the owner's
+  much for every press alike. `fit_tool_test` cases 16 and 17 (beta200) recreate the owner's
   layout scene of 2026-11-19 with generic names (a game, a column of a letterboxed window, a
   capture card and a kept-size letterboxed window, the other layout's group and camera hidden
   by a mode, a stand-in that shows, two widgets that show nothing): with the Scene Fit off no
@@ -899,7 +899,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   it is never a fitted size. It is read again at every update (`saved_keep_item_`,
   `saved_keep_`), so a rename of the source (which rewrites `keep_item`) keeps it.
 - **A kept size is a size on the screen, not a scale of the source** (`KeptSize keep_` in
-  `fit-engine.hpp`; beta198, the sizes in its source and the rest betaNEXT). The owner,
+  `fit-engine.hpp`; beta198, the sizes in its source and the rest beta200). The owner,
   2026-11-19: "I had sized the GBA screens to fit the space, and they've shrunk even when they
   are set to not resize". A window capture's source changes size with its window, and a scale
   times that was another size on the screen. Kept and saved: `keep_w`, `keep_h` (scene pixels of
@@ -955,7 +955,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   (beta98/99). **The cause was not reproduced here**: two tests built to match (a shadow in screen
   pixels, a camera drawn at a quarter of its source) passed without the fix. The filter logs
   `the size kept for ... went from ... to ...` with the reason whenever it re-reads the size
-  (in px since betaNEXT; beta198 had dropped the line); ask for the log if it happens again.
+  (in px since beta200; beta198 had dropped the line); ask for the log if it happens again.
 - **Fit to Space never puts an item past the screen's edge, and does nothing on a group.** With
   *Resize it to fit* unticked, a space narrower than the item used to centre it past the edge (the
   owner's chat box, pushed off the canvas by the game growing beside it); it is now held the gap
@@ -1167,7 +1167,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   what counts and the screen's edges, the item is *at home*. For Resize-on the image that fills
   the room, with the other sources at their home positions, must also be within the entry's
   size tolerance of the home width and height; an undersized home fills the room (beta198).
-  **What being at home does changed in betaNEXT: see *Align in the space is always obeyed*.**
+  **What being at home does changed in beta200: see *Align in the space is always obeyed*.**
   Up to beta198 an item at home went exactly to its home box. Keep reference sizes as image
   dimensions in scene pixels (see *A kept size is a size on the screen*). Save the home
   (position and dimensions,
@@ -1186,7 +1186,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   homes); the home is read off OBS's own drawing transform (`home_from_item`: OBS places a picture
   in its bounding box by whole pixels, and the item moved by up to a pixel the first time its box
   became the picture's); a kept-size item at home was not pulled the full gap in (`apply`,
-  `publish_claim`: a home within the 3 px slack of the edge moved; since betaNEXT it lies by its
+  `publish_claim`: a home within the 3 px slack of the edge moved; since beta200 it lies by its
   alignment, the gap inside the edge, at home too); during a window switcher's
   change `home_box` goes by the shape it is changing to (`switching_`: the new window was squeezed
   into the old one's home box); at home a picture of another shape is handed the space round it as
@@ -1199,11 +1199,11 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   in `[fit: switching it on keeps a hand-made layout]` (`fit_enable_test`, alone with
   `STAGEKIT_TEST_ONLY_FIT_ENABLE`): also a filter made switched off (never ticked on), a shadow in
   screen pixels on a column window, a game set to *Takes space first* growing as a neighbour is
-  hidden, and *All sources* with a source added while off. (Since betaNEXT the layout it is
+  hidden, and *All sources* with a source added while off. (Since beta200 the layout it is
   switched on over is one made with the gaps and by each source's alignment, laid out by another
   fit that is taken off again: a layout that does not follow the alignment is put right.)
 - **Align in the space is always obeyed, at home too** (`space_from`, `claim_box`, `apply` in
-  `src/placement/fit-engine.cpp`; betaNEXT). The owner, 2026-11-19: "align in the space is not
+  `src/placement/fit-engine.cpp`; beta200). The owner, 2026-11-19: "align in the space is not
   being respected. chat box is not centering". From beta194 to beta198 an item at home went
   exactly to its home box, so a source laid out by hand stayed where it was put whatever *Align
   in the space* said: a chat box group with *Resize to fit* off and *The middle* sat at the
@@ -1237,14 +1237,14 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   a resized picture 4 px smaller kept and aligned, one 153 px smaller filled) and in
   `fit_enable_test`.
 - **An entry hidden when the filter is switched on is not taken as it is later** (`not_taken`
-  in `prepare`; betaNEXT). `take_home_` used to stay pending through the hidden and no-image
+  in `prepare`; beta200). `take_home_` used to stay pending through the hidden and no-image
   early returns: when a mode showed the item, maybe minutes later, it was taken as switched on
   then, its kept size read off whatever was shown and its home taken there. Now the switch is
   used up at once for a hidden item, one in a hidden group and one with no image; it keeps the
   size and home it had, and the log says `switched on while '<source>' is hidden; it keeps the
   size and home it had`. Tested in `fit_keep_size_test`.
 - **Nothing is read back while a size changes** (`FitScan::obstacles`, `FitScan::look`, the own
-  look in `FitEngine::prepare`; betaNEXT). beta198 added three read-backs against the rule
+  look in `FitEngine::prepare`; beta200). beta198 added three read-backs against the rule
   above (*never ... one that runs while things animate*), and the owner reported higher frame
   times:
   - `obstacles` looked again at any gathered item whose source's width or height had changed:
@@ -1274,7 +1274,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   the way of any fit (`FitScan::gather`; before, only a Scene Fit's own entries' twins were left
   out). That was announced in beta198's notes and is left so.
 - **A fit with no place yet waits for what shows of its item** (`own_known_`, `as_is_`,
-  `unplaced_for_` at the end of `prepare`; betaNEXT). A filter loaded with no home saved, a
+  `unplaced_for_` at the end of `prepare`; beta200). A filter loaded with no home saved, a
   capture whose first image has only just come and an item a filter was only just given were
   fitted with a letterboxed window's empty margins for the half second until they were looked
   at; the claim reached into the gap beside it, a resized neighbour made room and never took it
@@ -1285,7 +1285,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   put for half a second is never looked at, and is then placed as it is. Likewise a size to keep
   is read after `kKeepWait` (3 s) at the latest, as a scale.
 - **Fit to space on a source its own fit resizes fits it now** (`fit_item_refit` in
-  `src/placement/fit-item.*`, `FitEngine::refit`, `engines_refit`; betaNEXT). The owner,
+  `src/placement/fit-item.*`, `FitEngine::refit`, `engines_refit`; beta200). The owner,
   2026-11-19, with the Scene Fit on and the game resized small by hand: "if I manually resize a
   source then click the fit to space button, it doesn't seem to work when scene fit is on, but
   it does eventually fit automatically. generally the scene fit takes a while to respond but it
@@ -1307,7 +1307,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   own box at home and the whole space it may take otherwise, the picture in the same place.
 - **A fit answers a move or a resize by hand a third of a second after the source is let go**
   (`held`, `still_for_`, `still_from_hold_`, `hand_on_`, `rebase` in
-  `src/placement/fit-engine.cpp`; betaNEXT; the owner's "takes a while to respond" above). The
+  `src/placement/fit-engine.cpp`; beta200; the owner's "takes a while to respond" above). The
   waits between letting go and the fit acting, as they were in beta198 for a *Resize to fit* on
   entry with a home: the box still for `kHandStill` (0.3 s); **then**, when the drag had also
   moved its position, the place still for 0.4 s (`motion` was not reached while the first wait

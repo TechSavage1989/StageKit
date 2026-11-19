@@ -9,7 +9,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | `fix/fit-followup`, on `main` after beta198. Release notes in `docs/releases/0.1.0-betaNEXT.md` (numbered just before pushing). Not pushed. |
+| Working branch | `fix/fit-followup`, on `main` after beta198. Release notes in `docs/releases/0.1.0-beta200.md` (numbered just before pushing). Not pushed. |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 | Gate | Checks passed |
@@ -23,10 +23,10 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
-## Scene Fit: alignment always obeyed, the dock button fits at once, no extra frame cost (0.1.0-betaNEXT)
+## Scene Fit: alignment always obeyed, the dock button fits at once, no extra frame cost (0.1.0-beta200)
 
 Branch `fix/fit-followup`, on `main` after beta198 (pull request 216, another assistant's fix for
-the same fit problems, merged and released as beta198). Notes: `docs/releases/0.1.0-betaNEXT.md`.
+the same fit problems, merged and released as beta198). Notes: `docs/releases/0.1.0-beta200.md`.
 No Stream Deck file changed. Not pushed, not released. This finishes what beta198 left of the
 owner's reports of 2026-11-19 and takes back three things beta198 broke; a second fix written
 here on beta197 the same night (one local commit, never pushed) was the source for the ideas and
