@@ -61,8 +61,8 @@ using namespace fit;
 
 namespace {
 
-constexpr int kPasses = 4;              // the most times the entries are worked out in one tick
-constexpr uint32_t kIdleEvery = 15;     // off screen, a full tick four times a second
+constexpr int kPasses = 8;          // the most times the entries are worked out in one tick (each way round in turn)
+constexpr uint32_t kIdleEvery = 15; // off screen, a full tick four times a second
 constexpr double kLookForSources = 0.5; // with All sources, how often the scene's sources are counted
 constexpr double kFillsScreen = 0.9;    // a source this much of the screen is never fitted unasked
 
@@ -117,6 +117,19 @@ const FitKey kFitKeys[] = {
 	{"orig_k", Kind::Double, true},
 	{"keep_item", Kind::String, true},
 	{"keep_k", Kind::Double, true},
+	{"home_item", Kind::String, true},
+	{"home_x", Kind::Double, true},
+	{"home_y", Kind::Double, true},
+	{"home_w", Kind::Double, true},
+	{"home_h", Kind::Double, true},
+	{"home_space_x", Kind::Double, true},
+	{"home_space_y", Kind::Double, true},
+	{"home_space_w", Kind::Double, true},
+	{"home_space_h", Kind::Double, true},
+	{"home_cut_l", Kind::Double, true},
+	{"home_cut_t", Kind::Double, true},
+	{"home_cut_r", Kind::Double, true},
+	{"home_cut_b", Kind::Double, true},
 };
 
 std::string prefix_of(const std::string &entry)
@@ -549,6 +562,7 @@ private:
 	uint32_t idle_turn_ = 0;
 	uint64_t unsettled_logged_ = 0;
 	bool first_update_ = true; // the settings read as OBS made or loaded the filter
+	bool was_off_ = false;     // seen switched off (on the tick only)
 };
 
 void SceneFit::tick(float seconds)
@@ -559,7 +573,17 @@ void SceneFit::tick(float seconds)
 		entries = entries_;
 	}
 	// Not on a group (a group is only as large as what is in it), not
-	// while a collection loads, not while switched off.
+	// while a collection loads, not while switched off. (Switched off, the
+	// sources are counted again at the first tick on, before the entries
+	// take their items as they are: a source added meanwhile, or one that
+	// was waiting inside another's box until the layout was made by hand,
+	// is an entry with a home like the others, not one fitted half a second
+	// later whose new room moves them all off theirs.)
+	if (!obs_source_enabled(source_)) {
+		was_off_ = true;
+		std::lock_guard lock(mutex_);
+		count_now_ = true;
+	}
 	if (!parent_ || !obs_source_enabled(source_) || obs_source_is_group(parent_) || !scenes_loaded()) {
 		for (const auto &entry : entries)
 			claim_clear(entry->engine.get());
@@ -572,6 +596,13 @@ void SceneFit::tick(float seconds)
 		entries = entries_;
 		all = all_;
 	}
+	// Switched on (it was seen off): every entry takes its item as it is
+	// now, the layout made by hand while the filter was off (FitEngine::
+	// switched_on). Not after loading: a filter saved on goes by its homes
+	// as they were saved.
+	if (std::exchange(was_off_, false))
+		for (const auto &entry : entries)
+			entry->engine->switched_on();
 	// With All sources, every source is fitted: another entry's claim is
 	// in the way even where an entry's place lies inside it (FitEngine::
 	// solve), or two resized entries could take one space for good.
@@ -670,7 +701,15 @@ void SceneFit::tick(float seconds)
 		int pass = 0;
 		for (; pass < kPasses && moved; pass++) {
 			moved = false;
-			for (size_t i = 0; i < n; i++) {
+			// Down the list, then back up it, and so on: an entry whose
+			// space ends at one listed after it (a camera between two
+			// handheld windows) waited a pass for that one's new place,
+			// and a column of three needed more passes than there are,
+			// "its sources did not settle in 4 passes" in the owner's
+			// logs (2026-11-18). Each way round, what an entry goes by on
+			// either side was worked out just before it.
+			for (size_t k = 0; k < n; k++) {
+				const size_t i = pass % 2 == 0 ? k : n - 1 - k;
 				if (way[i] != Way::Solve)
 					continue;
 				FitEngine &engine = *entries[i]->engine;
@@ -1128,7 +1167,7 @@ void on_source_rename(void *, calldata_t *cd)
 			bool moved = move(settings, prefix_of(was), prefix_of(now));
 			moved = move(settings, fit_list_prefix(was), fit_list_prefix(now)) || moved;
 			changed = changed || moved;
-			for (const char *key : {"keep_item", "orig_item"}) {
+			for (const char *key : {"keep_item", "orig_item", "home_item"}) {
 				const std::string full = prefix_of(now) + key;
 				if (obs_data_get_string(settings, full.c_str()) == was)
 					obs_data_set_string(settings, full.c_str(), now.c_str());

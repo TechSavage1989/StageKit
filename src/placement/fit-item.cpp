@@ -135,7 +135,7 @@ void on_source_rename(void *, calldata_t *cd)
 	for (obs_source_t *filter : filters) {
 		obs_data_t *settings = obs_source_get_settings(filter);
 		bool changed = false;
-		for (const char *key : {"item", "keep_item", "orig_item"}) {
+		for (const char *key : {"item", "keep_item", "orig_item", "home_item"}) {
 			if (strcmp(obs_data_get_string(settings, key), was) == 0) {
 				obs_data_set_string(settings, key, now);
 				changed = true;

@@ -73,10 +73,13 @@ FIT = "stagekit_fit_item"
 SHOW_IN_SCENES = "stagekit_show_in_scenes"
 LINK = "stagekit_visibility_link"
 STANDBY = "stagekit_standby"
-# What a Fit to Space filter writes down about its own item (src/placement/fit-item.cpp, and
-# kOwnSettings in src/dock/arrange.cpp): its home point, the size it keeps and the size from before
-# the filter. A copy made for another source starts without them.
-FIT_OWN = ["have_anchor", "anchor_x", "anchor_y", "orig_item", "orig_k", "orig_w", "orig_h", "keep_item", "keep_k"]
+# What a Fit to Space filter writes down about its own item (src/placement/fit-engine.cpp, and
+# kOwnSettings in src/dock/arrange.cpp): its home point, the size it keeps, the size from before
+# the filter, and the place and size it was laid out at by hand (home_*). A copy made for another
+# source starts without them.
+FIT_OWN = ["have_anchor", "anchor_x", "anchor_y", "orig_item", "orig_k", "orig_w", "orig_h", "keep_item", "keep_k",
+           "home_item", "home_x", "home_y", "home_w", "home_h", "home_space_x", "home_space_y", "home_space_w",
+           "home_space_h", "home_cut_l", "home_cut_t", "home_cut_r", "home_cut_b"]
 # How an item with no transition is written by OBS.
 NO_TRANSITION = {"duration": 0}
 # What is compared in the fidelity table.

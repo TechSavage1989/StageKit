@@ -103,7 +103,30 @@ inline bool outranks(const Rank &a, const Rank &b)
 struct Claim {
 	Box box;
 	bool resizes = true;
+	// For one that resizes: whether more room across (`grows_x`) or
+	// down (`grows_y`) would make its picture larger. A picture held by
+	// its width (empty room above and below it in its space) has no use
+	// for more height, and the other way round.
+	bool grows_x = true, grows_y = true;
+	// For one that keeps its size: it lies at the top of its space
+	// (`leans_y`) because a resized picture above or below it has no use
+	// for more height (see `lean_axes`). `leans_x` is never set: side by
+	// side, placing is as it was.
+	bool leans_x = false, leans_y = false;
+	// What it holds whatever the fits it makes room for do (`has_least`):
+	// for one keeping its size, that size at its home (its anchor), on the
+	// screen (one that resizes holds nothing: it shrinks to make room). A
+	// fit that takes its space before this one goes by that, never by
+	// `box`: `box` follows that fit's own claim, `least` does not, so the
+	// dependence stays one-way (see FitScan::obstacles).
+	Box least;
+	bool has_least = false;
 	Rank rank;
+	// Where its picture lies in the layout as it was made by hand
+	// (`has_home`, see FitEngine::switched_on): the others look for their
+	// own home space with it there.
+	Box home;
+	bool has_home = false;
 };
 void claim_set(obs_source_t *scene, int64_t item, const void *owner, const Claim &claim);
 void claim_clear(const void *owner);
@@ -141,6 +164,9 @@ struct Prep {
 	double keep_w = 0.0, keep_h = 0.0;                       // the size kept, when it is not resized
 	double picture = 1.0;                                    // the shape fitted
 	bool free = false;                                       // in the free space round it
+	// The picture before what shows of it is cut from it ("Use visible
+	// pixels"): where it starts in the source, and its size.
+	double whole_left = 0.0, whole_top = 0.0, whole_w = 0.0, whole_h = 0.0;
 };
 
 // One thing in the way of a fitted item: what shows of it, or where another
@@ -151,6 +177,14 @@ struct Obstacle {
 	Box box;
 	int64_t id = 0;
 	bool said = false, gives = false, passed = false, above = false;
+	// (For one that gives way: whether it would take more room across or
+	// down. For a kept-size fit's of the same standing: 1, it lies to the
+	// left of its space, 2, at its top, for a resized picture's sake.)
+	bool grows_x = true, grows_y = true;
+	int leans = 0;
+	// Another fit's item: where it lies in the layout as made by hand.
+	Box home;
+	bool has_home = false;
 };
 
 // What is in the way: the items of a scene, each looked at (drawn and read
@@ -164,8 +198,9 @@ public:
 	// The things in the way of `self`, from what was gathered: items another
 	// fit (not `asking`) places by where it is taking them, the rest by what
 	// shows of them. Items in `skip` are left out, or marked when `keep_skipped`.
-	// With `mine`: an item placed by a fit `mine` outranks is not in the way
-	// at all, and one placed by a fit that outranks `mine` is firm.
+	// With `mine`: an item placed by a fit `mine` outranks is in the way
+	// only by what that fit holds whatever happens (`Claim::least`, for one
+	// keeping its size), not by where it is going, and one placed by a fit that outranks `mine` is firm.
 	void obstacles(obs_source_t *scene, obs_sceneitem_t *self, const std::vector<std::string> &skip,
 		       bool keep_skipped, const void *asking, const Measure &how, std::vector<Obstacle> &out,
 		       const std::vector<int64_t> *twins_of = nullptr, const Rank *mine = nullptr);
@@ -245,6 +280,9 @@ public:
 	const Rank &rank() const { return rank_; }
 	// A Fit to Space's tick: the steps below, in order, with its own scan.
 	void tick(float seconds, FitScan &scan);
+	// The filter has just been switched on: the item is taken as it is now,
+	// its place, its size and the layout round it (its home, see `solve`).
+	void switched_on();
 
 	// ---- the steps, for a host that fits several items together
 	// Off screen with nothing to do: true, and the tick is skipped (four
@@ -295,9 +333,31 @@ private:
 	void store_double(const char *key, double v);
 	void store_string(const char *key, const char *v);
 	void soft_sides(bool &l, bool &r, bool &t, bool &b) const;
+	// Whether a kept-size item lies at the top of its space: a resizing
+	// fit's picture above or below it would not grow into more height,
+	// and nothing else decides it (`x` is always false).
+	void lean_axes(const Prep &p, bool &x, bool &y) const;
+	// A resized picture that leaves its space empty above and below, with
+	// a kept-size fit above or below it that leans: the space is cut down
+	// to the picture, at the top.
+	void trim_for_kept(const Prep &p, Box &goal) const;
+	// A resized picture that leaves its space empty along one axis, with
+	// another fit's item beyond it along that axis: the space is cut to the
+	// picture where it lies in it, so the item's box is what shows.
+	void trim_to_picture(const Prep &p, Box &goal) const;
+	// The picture is of another shape than its space was cut for: OBS is
+	// given the space before the cut, so the picture is fitted at once.
+	bool reshaping(const Prep &p) const;
 	// Says where the item will be, with where this fit stands.
 	void say(int64_t item, Claim claim);
 	Box kept_in(const Prep &p, const Box &room, double kw, double kh) const;
+	// Where the picture lies at its home, as it shows now; false with no
+	// home, or one that no longer fits the picture (another shape, another
+	// kept size).
+	bool home_box(const Prep &p, Box &out) const;
+	// The home taken from the item as it is now.
+	bool home_from_item(const Prep &p);
+	void store_home_space();
 
 	obs_source_t *source_;
 	std::string prefix_, entry_, list_prefix_;
@@ -322,6 +382,8 @@ private:
 	bool own_looked_have_ = false;
 	std::vector<Box> boxes_;  // what is in the way now
 	std::vector<bool> gives_; // and which of them another filter resizes to make room
+	std::vector<int> grows_;  // of those, 1: it would take more width, 2: more height
+	std::vector<int> leans_;  // of the kept-size fits' of the same standing, which lean (Obstacle::leans)
 	std::vector<int64_t> ids_;
 	std::vector<bool> said_;
 	bool claims_firm_ = false; // on the tick only
@@ -335,13 +397,27 @@ private:
 	bool look_again_ = true, changed_ = false, unsettled_ = false;
 	double calm_for_ = 0.0;
 	double shape_seen_ = 0.0, shape_used_ = 0.0, shape_for_ = 0.0;
+	// A window switcher's change is under way: the shape it is going to is
+	// `shape_used_`, until the picture has that shape (`home_box` goes by it).
+	bool switching_ = false;
 	double used_margin_ = -1.0, used_tolerance_ = -1.0;
 	double set_bw_ = 0.0, set_bh_ = 0.0; // the bounding box last given to the item
-	double keep_k_ = 0.0;                // "Resize it to fit" off: how large the picture is kept, as a scale
+	double set_k_ = 0.0;                 // and the scale the picture was drawn at in it
+	// A resize by hand under way: the box it has, and how long it has kept
+	// it. It counts once the box has stopped changing (`kHandStill`).
+	static constexpr double kHandStill = 0.3;
+	bool hand_on_ = false;
+	double hand_bw_ = 0.0, hand_bh_ = 0.0, hand_still_ = 0.0;
+	// Whether more width or height would grow the resized picture, from the
+	// space it was given before that was cut to the picture.
+	bool space_grows_x_ = true, space_grows_y_ = true;
+	double keep_k_ = 0.0; // "Resize it to fit" off: how large the picture is kept, as a scale
 	// What shows of the fitted item itself: the part of its picture cut off
 	// on the left, top, right and bottom, when it was last looked at.
 	double own_cut_[4] = {0.0, 0.0, 0.0, 0.0};
 	bool own_seen_ = false, was_placed_ = false;
+	// The size of the picture (before what shows is cut from it) that what
+	// was seen goes with, and how long since it was last looked at.
 	double own_sw_ = 0.0, own_sh_ = 0.0, own_for_ = 0.0;
 	bool have_keep_ = false;
 	// The kept size as it is saved in the settings, and whether the settings
@@ -358,6 +434,10 @@ private:
 	// The item's source has kept its size this long.
 	double steady_sw_ = 0.0, steady_sh_ = 0.0, steady_for_ = 0.0;
 	Box goal_, from_, cur_;
+	// The space before `trim_to_picture` cut it, glided with the goal, and
+	// whether it was what OBS was given last (the picture of another shape).
+	Box room_goal_, room_from_, room_cur_;
+	bool handed_room_ = false;
 	bool have_goal_ = false, have_cur_ = false;
 	double glide_ = 1.0;
 	// A glide that goes with a window switcher's change of window: its time
@@ -381,6 +461,35 @@ private:
 	double back_for_ = 0.0;
 	Claim last_claim_;
 	double set_x_ = 0.0, set_y_ = 0.0, seen_x_ = 0.0, seen_y_ = 0.0, still_for_ = 0.0;
+	// The layout as made by hand (the owner, 2026-11-18: everything changed
+	// size when the filter was switched on over a layout made with it off).
+	// Taken when the filter is switched on (`switched_on`), and again when
+	// the item is moved or resized by hand or placed by a tool: the box its
+	// picture had then (`home_`, the whole picture before what shows is cut
+	// from it) and the space it found round it with the other fits' items at
+	// their homes (`home_space_`). While the space is that again and the
+	// picture there keeps the gap, the picture goes exactly there.
+	bool was_off_ = false;   // the filter was seen switched off (on the tick)
+	bool take_home_ = false; // switched on just now: taken at the next prepare
+	bool home_due_ = false;  // taken at the end of this prepare
+	bool has_home_ = false, have_home_space_ = false, at_home_ = false;
+	Box home_, home_space_;
+	bool home_settling_ = false; // the space round the home is still being found
+	double home_settle_ = 0.0;
+	static constexpr double kHomeSettle = 0.5;
+	static constexpr double kHomeSlack = 3.0; // px: what measuring on a small copy can be off by
+	std::vector<Box> homes_;                  // of what is in the way: where each lies at home
+	std::vector<bool> has_homes_;
+	// Under mutex_: the home as saved, to be taken up at the next prepare.
+	bool home_loaded_ = false;
+	std::string saved_home_item_;
+	Box saved_home_, saved_home_space_;
+	double saved_home_cut_[4] = {0.0, 0.0, 0.0, 0.0};
+	// What showed of it when the home was saved, taken as its first
+	// measure until it is looked at (a home is what shows of it).
+	bool have_loaded_cut_ = false;
+	double loaded_cut_[4] = {0.0, 0.0, 0.0, 0.0};
+	void store_home_cut();
 };
 
 // Every engine there is: told of an item placed by a tool, or given its place

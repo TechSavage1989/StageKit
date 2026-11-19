@@ -9,6 +9,7 @@
 #include <obs-nix-platform.h>
 #include <graphics/matrix4.h>
 #include <graphics/vec4.h>
+#include <util/platform.h>
 
 #include "../src/common/tooltip.hpp"
 
@@ -1291,6 +1292,1527 @@ static void fit_priority_test()
 	obs_source_release(before);
 	obs_source_release(fp_cam);
 	obs_source_release(fp_game);
+}
+
+// ------------------------------------------------- fit visible pixels
+// The owner, 2026-11-18, of a Scene Fit on Component-Capture-Scene: "the chat
+// box is more than 30px from the visible border of the camera box, but the
+// bounding box of the camera box is exactly 30 from each edge". The camera is
+// a Cropped View of a DirectShow camera (async video); its picture is of
+// another shape than the space it gets, so OBS letterboxes it in its bounding
+// box. The chat box, a group, is fitted below it. The gap is to be measured
+// from the camera's visible picture. On a 640x360 canvas with a gap of 20: a
+// wall (not fitted) on the left leaves a column on the right. Run alone with
+// STAGEKIT_TEST_ONLY_FIT_VISIBLE.
+namespace {
+// A camera: async video, one frame of one colour, pushed once.
+struct FvCamera {
+	obs_source_t *source = nullptr;
+};
+void register_fv_camera()
+{
+	static bool registered = false; // (two sections use it)
+	if (std::exchange(registered, true))
+		return;
+	obs_source_info info = {};
+	info.id = "stagekit_test_fv_camera";
+	info.type = OBS_SOURCE_TYPE_INPUT;
+	info.output_flags = OBS_SOURCE_ASYNC_VIDEO;
+	info.get_name = [](void *) {
+		return "Camera (stand-in, async video)";
+	};
+	info.create = [](obs_data_t *settings, obs_source_t *source) -> void * {
+		auto *c = new FvCamera();
+		c->source = source;
+		const uint32_t cw = (uint32_t)obs_data_get_int(settings, "width");
+		const uint32_t ch = (uint32_t)obs_data_get_int(settings, "height");
+		const uint32_t colour = (uint32_t)obs_data_get_int(settings, "color"); // ABGR, as colour sources
+		std::vector<uint32_t> px(size_t(cw) * ch, colour);
+		obs_source_set_async_unbuffered(source, true);
+		obs_source_frame frame = {};
+		frame.data[0] = reinterpret_cast<uint8_t *>(px.data());
+		frame.linesize[0] = cw * 4;
+		frame.width = cw;
+		frame.height = ch;
+		frame.format = VIDEO_FORMAT_RGBA;
+		frame.full_range = true;
+		frame.timestamp = os_gettime_ns();
+		obs_source_output_video(source, &frame);
+		return c;
+	};
+	info.destroy = [](void *data) {
+		delete static_cast<FvCamera *>(data);
+	};
+	obs_register_source(&info);
+}
+} // namespace
+
+static void fit_visible_test()
+{
+	printf("\n[fit visible pixels: a letterboxed camera and the chat box below it]\n");
+	register_fv_camera();
+	constexpr uint32_t W = 640, H = 360;
+	constexpr double kGap = 20.0;
+	auto colour = [](const char *kind, const char *name, int cw, int ch, uint32_t c) {
+		obs_data_t *d = obs_data_create();
+		obs_data_set_int(d, "width", cw);
+		obs_data_set_int(d, "height", ch);
+		obs_data_set_int(d, "color", c);
+		obs_source_t *src = obs_source_create(kind, name, d, nullptr);
+		obs_data_release(d);
+		return src;
+	};
+	// Red camera, 320x180; its Cropped View cuts 20 off each side: 280x180.
+	obs_source_t *dslr = colour("stagekit_test_fv_camera", "FV DSLR", 320, 180, 0xFF0000FF);
+	obs_data_t *vd = obs_data_create();
+	obs_data_set_string(vd, "source", "FV DSLR");
+	obs_data_set_int(vd, "left", 20);
+	obs_data_set_int(vd, "right", 20);
+	obs_source_t *view = obs_source_create("stagekit_cropped_view", "FV DSLR Component", vd, nullptr);
+	obs_data_release(vd);
+	obs_source_t *wall = colour("color_source", "FV Wall", 360, 360, 0xFF808080); // grey
+	obs_source_t *chat = colour("color_source", "FV Chat", 120, 200, 0xFF00FF00); // green
+	// (A wide one, for a resized picture held by the column's width.)
+	obs_source_t *banner = colour("color_source", "FV Banner", 300, 100, 0xFF00FF00);
+	obs_source_t *before = obs_get_output_source(0);
+	struct Rect {
+		double x = 0, y = 0, w = 0, h = 0;
+		bool any = false;
+	};
+	// Where a colour shows on the scene, read back.
+	auto shows = [&](obs_source_t *scene, uint32_t rgb) {
+		const std::vector<uint8_t> px = render(scene, W, H);
+		int x0 = W, y0 = H, x1 = -1, y1 = -1;
+		const int r = rgb & 0xFF, g = (rgb >> 8) & 0xFF, b = (rgb >> 16) & 0xFF;
+		for (uint32_t y = 0; y < H; y++)
+			for (uint32_t x = 0; x < W; x++) {
+				const uint8_t *p = &px[(size_t(y) * W + x) * 4];
+				if (std::abs(p[0] - r) < 40 && std::abs(p[1] - g) < 40 && std::abs(p[2] - b) < 40 &&
+				    p[3] > 128) {
+					x0 = std::min<int>(x0, x);
+					y0 = std::min<int>(y0, y);
+					x1 = std::max<int>(x1, x);
+					y1 = std::max<int>(y1, y);
+				}
+			}
+		Rect out;
+		if (x1 >= 0)
+			out = Rect{(double)x0, (double)y0, double(x1 - x0 + 1), double(y1 - y0 + 1), true};
+		return out;
+	};
+	auto box = [](obs_sceneitem_t *it) {
+		vec2 p, b;
+		obs_sceneitem_get_pos(it, &p);
+		obs_sceneitem_get_bounds(it, &b);
+		return Rect{p.x, p.y, b.x, b.y, true};
+	};
+	auto list = [](obs_data_t *d, const char *setting, std::vector<std::string> values) {
+		obs_data_array_t *arr = obs_data_array_create();
+		for (const std::string &value : values) {
+			obs_data_t *entry = obs_data_create();
+			obs_data_set_string(entry, "value", value.c_str());
+			obs_data_array_push_back(arr, entry);
+			obs_data_release(entry);
+		}
+		obs_data_set_array(d, setting, arr);
+		obs_data_array_release(arr);
+	};
+	enum class Visible { On, Defaults, Off };
+	// How one fit is set: the owner's (Free space, gap, Resize to fit, Shares
+	// space, The middle), the measuring options as `vis` says.
+	auto look = [&](obs_data_t *d, const std::string &prefix, Visible vis, bool resize, int toward) {
+		obs_data_set_int(d, (prefix + "box").c_str(), 2);
+		obs_data_set_double(d, (prefix + "margin").c_str(), kGap);
+		obs_data_set_bool(d, (prefix + "resize").c_str(), resize);
+		obs_data_set_int(d, (prefix + "toward").c_str(), toward);
+		obs_data_set_int(d, (prefix + "space_priority").c_str(), 0);
+		obs_data_set_int(d, (prefix + "glide_ms").c_str(), 200);
+		if (vis != Visible::Defaults) {
+			obs_data_set_bool(d, (prefix + "visible_pixels").c_str(), vis == Visible::On);
+			obs_data_set_bool(d, (prefix + "no_shadows").c_str(), vis == Visible::On);
+		}
+	};
+	int made = 0;
+	struct Extra {
+		bool cam_keeps = false;        // the camera keeps its size (and the chat box resizes)
+		obs_source_t *inner = nullptr; // in the chat box group, instead of FV Chat
+		int chat_toward = 0;           // the chat box's Align in the space
+		bool gap = true;               // the gap is checked, not only that nothing moves
+	};
+	// One case: `scene_fit` a Scene Fit with both entries, else two Fit to
+	// Space filters. Returns the visible gap and prints what was seen.
+	auto run = [&](const char *label, bool scene_fit, Visible vis, bool chat_first, bool chat_keeps,
+		       Extra x = Extra{}) {
+		made++;
+		obs_scene_t *scene = obs_scene_create(("FV Scene " + std::to_string(made)).c_str());
+		obs_source_t *ss = obs_scene_get_source(scene);
+		obs_sceneitem_t *w_it = obs_scene_add(scene, wall);
+		(void)w_it;
+		obs_sceneitem_t *cam = obs_scene_add(scene, view);
+		vec2 at, k;
+		vec2_set(&at, 400.0f, 20.0f);
+		vec2_set(&k, 0.6f, 0.6f);
+		obs_sceneitem_set_pos(cam, &at);
+		obs_sceneitem_set_scale(cam, &k);
+		const std::string gname = "FV Chat Box Group " + std::to_string(made);
+		obs_sceneitem_t *grp = obs_scene_add_group(scene, gname.c_str());
+		obs_sceneitem_t *inner = obs_scene_add(scene, x.inner ? x.inner : chat);
+		obs_sceneitem_group_add_item(grp, inner);
+		vec2_set(&at, 460.0f, 170.0f);
+		vec2_set(&k, chat_keeps ? 0.5f : 0.8f, chat_keeps ? 0.5f : 0.8f);
+		obs_sceneitem_set_pos(grp, &at);
+		obs_sceneitem_set_scale(grp, &k);
+		obs_set_output_source(0, ss);
+		std::vector<obs_source_t *> filters;
+		std::vector<std::string> names = {"FV DSLR Component", gname};
+		if (chat_first)
+			std::swap(names[0], names[1]);
+		if (scene_fit) {
+			obs_data_t *d = obs_data_create();
+			list(d, "entries", names);
+			for (const std::string &e : names)
+				look(d, "fit|" + e + "|", vis, e == gname ? !chat_keeps : !x.cam_keeps,
+				     e == gname ? x.chat_toward : 0);
+			obs_source_t *f = obs_source_create(
+				"stagekit_scene_fit", ("FV Scene Fit " + std::to_string(made)).c_str(), d, nullptr);
+			obs_data_release(d);
+			obs_source_filter_add(ss, f);
+			filters.push_back(f);
+		} else {
+			for (const std::string &e : names) {
+				obs_data_t *d = obs_data_create();
+				obs_data_set_string(d, "item", e.c_str());
+				look(d, "", vis, e == gname ? !chat_keeps : !x.cam_keeps,
+				     e == gname ? x.chat_toward : 0);
+				obs_source_t *f = obs_source_create(
+					"stagekit_fit_item", ("FV Fit " + e + " " + std::to_string(made)).c_str(), d,
+					nullptr);
+				obs_data_release(d);
+				obs_source_filter_add(ss, f);
+				filters.push_back(f);
+			}
+		}
+		// Settle, then watch for 5 s how often anything moves (two fits that
+		// answer each other would go back and forth for good).
+		for (int i = 0; i < 150; i++) {
+			render(ss, W, H);
+			sleep_ms(20);
+		}
+		int changes = 0;
+		Rect last_c = box(cam), last_g = box(grp);
+		double min_cy = 1e9, max_cy = -1e9, min_gy = 1e9, max_gy = -1e9;
+		for (int i = 0; i < 250; i++) {
+			render(ss, W, H);
+			sleep_ms(20);
+			const Rect c = box(cam), g = box(grp);
+			if (std::fabs(c.y - last_c.y) > 0.05 || std::fabs(c.h - last_c.h) > 0.05 ||
+			    std::fabs(g.y - last_g.y) > 0.05 || std::fabs(g.h - last_g.h) > 0.05)
+				changes++;
+			min_cy = std::min(min_cy, c.y);
+			max_cy = std::max(max_cy, c.y);
+			min_gy = std::min(min_gy, g.y);
+			max_gy = std::max(max_gy, g.y);
+			last_c = c;
+			last_g = g;
+		}
+		const Rect cb = box(cam), gb = box(grp);
+		const Rect cv = shows(ss, 0xFF0000FF), gv = shows(ss, 0xFF00FF00);
+		const double visible_gap = gv.y - (cv.y + cv.h);
+		const double box_gap = gv.y - (cb.y + cb.h);
+		printf("    %s:\n      camera box %.1f,%.1f %.1fx%.1f, picture %.0f,%.0f %.0fx%.0f (letterbox %.1f above, %.1f below; %.1f left, %.1f right)\n"
+		       "      chat box %.1f,%.1f %.1fx%.1f, shows %.0f,%.0f %.0fx%.0f\n"
+		       "      gap from the camera's picture %.1f, from its box %.1f; picture to top %.1f, to right %.1f; moves in 5 s: %d (camera y %.1f..%.1f, chat y %.1f..%.1f)\n",
+		       label, cb.x, cb.y, cb.w, cb.h, cv.x, cv.y, cv.w, cv.h, cv.y - cb.y, cb.y + cb.h - cv.y - cv.h,
+		       cv.x - cb.x, cb.x + cb.w - cv.x - cv.w, gb.x, gb.y, gb.w, gb.h, gv.x, gv.y, gv.w, gv.h,
+		       visible_gap, box_gap, cv.y, W - cv.x - cv.w, changes, min_cy, max_cy, min_gy, max_gy);
+		CHECK(cv.any && gv.any && (!x.gap || std::fabs(visible_gap - kGap) <= 1.5) && changes == 0,
+		      "%s: the chat box is %.1f below the camera's visible picture (%s %.0f; %.1f from its box), and nothing moves in 5 s at rest (%d)",
+		      label, visible_gap, x.gap ? "the gap," : "not checked, the gap is", kGap, box_gap, changes);
+		for (obs_source_t *f : filters) {
+			obs_source_filter_remove(ss, f);
+			obs_source_release(f);
+		}
+		obs_source_remove(ss);
+		obs_scene_release(scene);
+	};
+	// Both resized to fit.
+	run("Scene Fit, both resize, Use visible pixels ticked", true, Visible::On, false, false);
+	run("Scene Fit, both resize, entry defaults", true, Visible::Defaults, false, false);
+	run("Scene Fit, both resize, chat listed first", true, Visible::On, true, false);
+	run("two Fit to Space, both resize", false, Visible::On, false, false);
+	// The chat box keeping its size (Resize to fit unticked), as the owner's
+	// has been: the camera's space reaches down to it.
+	run("Scene Fit, chat keeps its size, Use visible pixels ticked", true, Visible::On, false, true);
+	run("Scene Fit, chat keeps its size, entry defaults", true, Visible::Defaults, false, true);
+	run("Scene Fit, chat keeps its size, chat listed first", true, Visible::On, true, true);
+	run("two Fit to Space, chat keeps its size", false, Visible::On, false, true);
+	run("two Fit to Space, chat keeps its size, defaults", false, Visible::Defaults, false, true);
+	run("Scene Fit, chat keeps its size, Use visible pixels unticked", true, Visible::Off, false, true);
+	// The other way round: the camera keeps its size and a wide picture
+	// below it is resized, held by the column's width. The two are packed
+	// to the top as well: the camera stays at the top, the picture comes up
+	// to it.
+	{
+		Extra x;
+		x.cam_keeps = true;
+		x.inner = banner;
+		run("Scene Fit, the camera keeps its size, a wide picture below resized", true, Visible::On, false,
+		    false, x);
+		run("two Fit to Space, the camera keeps its size, a wide picture below resized", false, Visible::On,
+		    false, false, x);
+	}
+	// A chat box kept towards the bottom goes there, as before, and the two
+	// still do not answer each other.
+	{
+		Extra x;
+		x.chat_toward = 2;
+		x.gap = false;
+		run("Scene Fit, chat keeps its size, kept towards the bottom", true, Visible::On, false, true, x);
+		run("two Fit to Space, chat keeps its size, kept towards the bottom", false, Visible::On, false, true,
+		    x);
+	}
+	// Side by side nothing is packed: a 4:3 game resized to fit, held by its
+	// height, beside a chat column that keeps its size (both in the middle),
+	// leaves the column against the screen's right edge and the game centred
+	// in the rest, as before this change. (Packing the two to the left moved
+	// the owner's emulator layouts.)
+	{
+		obs_source_t *game43 = colour("color_source", "FV Game 4:3", 400, 300, 0xFFFF0000); // blue
+		obs_source_t *column = colour("color_source", "FV Column", 100, 200, 0xFF00FF00);   // green
+		for (int scene_fit = 1; scene_fit >= 0; scene_fit--) {
+			made++;
+			obs_scene_t *scene = obs_scene_create(("FV Scene " + std::to_string(made)).c_str());
+			obs_source_t *ss = obs_scene_get_source(scene);
+			obs_sceneitem_t *g_it = obs_scene_add(scene, game43);
+			obs_sceneitem_t *c_it = obs_scene_add(scene, column);
+			vec2 at, k;
+			vec2_set(&at, 20.0f, 20.0f);
+			vec2_set(&k, 0.5f, 0.5f);
+			obs_sceneitem_set_pos(g_it, &at);
+			obs_sceneitem_set_scale(g_it, &k);
+			vec2_set(&at, 480.0f, 80.0f);
+			vec2_set(&k, 1.0f, 1.0f);
+			obs_sceneitem_set_pos(c_it, &at);
+			obs_sceneitem_set_scale(c_it, &k);
+			obs_set_output_source(0, ss);
+			std::vector<obs_source_t *> filters;
+			const std::vector<std::string> names = {"FV Game 4:3", "FV Column"};
+			if (scene_fit) {
+				obs_data_t *d = obs_data_create();
+				list(d, "entries", names);
+				for (const std::string &e : names)
+					look(d, "fit|" + e + "|", Visible::On, e == names[0], 0);
+				obs_source_t *f = obs_source_create("stagekit_scene_fit",
+								    ("FV Scene Fit " + std::to_string(made)).c_str(), d,
+								    nullptr);
+				obs_data_release(d);
+				obs_source_filter_add(ss, f);
+				filters.push_back(f);
+			} else {
+				for (const std::string &e : names) {
+					obs_data_t *d = obs_data_create();
+					obs_data_set_string(d, "item", e.c_str());
+					look(d, "", Visible::On, e == names[0], 0);
+					obs_source_t *f = obs_source_create(
+						"stagekit_fit_item",
+						("FV Fit " + e + " " + std::to_string(made)).c_str(), d, nullptr);
+					obs_data_release(d);
+					obs_source_filter_add(ss, f);
+					filters.push_back(f);
+				}
+			}
+			for (int i = 0; i < 150; i++) {
+				render(ss, W, H);
+				sleep_ms(20);
+			}
+			Rect last_g = box(g_it);
+			vec2 last_cp;
+			obs_sceneitem_get_pos(c_it, &last_cp);
+			int changes = 0;
+			for (int i = 0; i < 250; i++) {
+				render(ss, W, H);
+				sleep_ms(20);
+				const Rect g = box(g_it);
+				vec2 cp;
+				obs_sceneitem_get_pos(c_it, &cp);
+				if (std::fabs(g.x - last_g.x) > 0.05 || std::fabs(g.w - last_g.w) > 0.05 ||
+				    std::fabs(cp.x - last_cp.x) > 0.05 || std::fabs(cp.y - last_cp.y) > 0.05)
+					changes++;
+				last_g = g;
+				last_cp = cp;
+			}
+			const Rect gv = shows(ss, 0xFFFF0000), cv = shows(ss, 0xFF00FF00);
+			const double to_right = W - (cv.x + cv.w);
+			const double left = gv.x, right = cv.x - (gv.x + gv.w);
+			const char *label =
+				scene_fit ? "Scene Fit, a 4:3 game beside a chat column that keeps its size"
+					  : "two Fit to Space, a 4:3 game beside a chat column that keeps its size";
+			printf("    %s:\n      game shows %.0f,%.0f %.0fx%.0f, column shows %.0f,%.0f %.0fx%.0f; column to the right edge %.1f, game %.1f from the left and %.1f from the column; moves in 5 s: %d\n",
+			       label, gv.x, gv.y, gv.w, gv.h, cv.x, cv.y, cv.w, cv.h, to_right, left, right, changes);
+			CHECK(gv.any && cv.any && std::fabs(to_right - kGap) <= 1.5 && std::fabs(left - right) <= 1.5 &&
+				      changes == 0,
+			      "%s: the column stays the gap from the right edge (%.1f), the game centred in the rest (%.1f and %.1f), and nothing moves in 5 s (%d)",
+			      label, to_right, left, right, changes);
+			for (obs_source_t *f : filters) {
+				obs_source_filter_remove(ss, f);
+				obs_source_release(f);
+			}
+			obs_source_remove(ss);
+			obs_scene_release(scene);
+		}
+		obs_source_release(game43);
+		obs_source_release(column);
+	}
+
+	obs_set_output_source(0, before);
+	obs_source_release(before);
+	obs_source_release(chat);
+	obs_source_release(banner);
+	obs_source_release(wall);
+	obs_source_release(view);
+	obs_source_release(dslr);
+}
+
+// ------------------------------------------------- fit: a layout scene of the owner's shape
+// The owner's open Scene Fit problems (2026-11-18), in their layout scene: a
+// game on the left, a column on the right that Scene Modes switch between a
+// Chat mode (a camera view and a chat box group, both keeping their size) and
+// a GBA mode (two 3:2 handheld windows and a second view of the camera, all
+// resized to fit). The shapes and settings are theirs, the names generic, the
+// canvas a quarter of theirs (640x360, a gap of 7.5 for their 30).
+//   G1 a resized letterboxed camera took more of the column than it shows
+//      (now its box is its picture where another fit lies beyond it);
+//   G2 unticking Resize to fit went back to the size from before the
+//      filter, not the one last set by hand (now the one set by hand);
+//   G3 Takes space first let the game cover the column (now a fit it
+//      outranks is in its way by its home and kept size);
+//   G4 "its sources did not settle in 4 passes" (now the passes go down
+//      the list and back up it in turn, eight at most);
+//   G5 the size kept was read again on every frame of a resize and of the
+//      dock's glide after it (now once the box has kept still 0.3 s).
+// Every scenario ends with 5 s at rest: nothing moves, nothing logged.
+// Run alone with STAGEKIT_TEST_ONLY_FIT_OWNER.
+namespace {
+std::mutex g_fo_mutex;
+std::vector<std::string> g_fo_lines;
+struct FoPrev {
+	log_handler_t handler = nullptr;
+	void *param = nullptr;
+} g_fo_prev;
+size_t fo_lines_now()
+{
+	std::lock_guard lock(g_fo_mutex);
+	return g_fo_lines.size();
+}
+// The lines with `needle` in them from line `from` on.
+std::vector<std::string> fo_lines_since(size_t from, const char *needle)
+{
+	std::lock_guard lock(g_fo_mutex);
+	std::vector<std::string> out;
+	for (size_t i = from; i < g_fo_lines.size(); i++)
+		if (g_fo_lines[i].find(needle) != std::string::npos)
+			out.push_back(g_fo_lines[i]);
+	return out;
+}
+} // namespace
+
+static void fit_owner_test()
+{
+	printf("\n[fit: the owner's layout scene (G1 to G5)]\n");
+	register_fv_camera();
+	base_get_log_handler(&g_fo_prev.handler, &g_fo_prev.param);
+	base_set_log_handler(
+		[](int level, const char *format, va_list args, void *) {
+			va_list copy;
+			va_copy(copy, args);
+			char text[2048];
+			vsnprintf(text, sizeof(text), format, copy);
+			va_end(copy);
+			if (strstr(text, "Scene Fit") || strstr(text, "Fit to Space")) {
+				std::lock_guard lock(g_fo_mutex);
+				g_fo_lines.push_back(text);
+			}
+			if (g_fo_prev.handler)
+				g_fo_prev.handler(level, format, args, g_fo_prev.param);
+		},
+		nullptr);
+	constexpr uint32_t W = 640, H = 360;
+	constexpr double kQ = 0.25;        // the owner's canvas is 2560x1440
+	constexpr double kGap = 30.0 * kQ; // their gap of 30
+	auto colour = [](const char *kind, const char *name, int cw, int ch, uint32_t c) {
+		obs_data_t *d = obs_data_create();
+		obs_data_set_int(d, "width", cw);
+		obs_data_set_int(d, "height", ch);
+		obs_data_set_int(d, "color", c);
+		obs_source_t *src = obs_source_create(kind, name, d, nullptr);
+		obs_data_release(d);
+		return src;
+	};
+	auto view_of = [](const char *name) {
+		obs_data_t *vd = obs_data_create();
+		obs_data_set_string(vd, "source", "FO Camera");
+		obs_data_set_int(vd, "left", 60);
+		obs_data_set_int(vd, "right", 60);
+		obs_data_set_int(vd, "top", 34);
+		obs_data_set_int(vd, "bottom", 34);
+		obs_source_t *v = obs_source_create("stagekit_cropped_view", name, vd, nullptr);
+		obs_data_release(vd);
+		return v;
+	};
+	obs_source_t *bg = colour("color_source", "FO Background", W, H, 0xFF202020);
+	obs_source_t *game = colour("color_source", "FO Game", 320, 240, 0xFFFF0000);                // blue, 4:3
+	obs_source_t *camera = colour("stagekit_test_fv_camera", "FO Camera", 480, 270, 0xFF0000FF); // red, 16:9
+	obs_source_t *cam_chat = view_of("FO Camera Component");                                     // 360x202
+	obs_source_t *cam_gba = view_of("FO Camera GBA Link");
+	obs_source_t *chat = colour("color_source", "FO Chat", 277, 345, 0xFF00FF00);       // green, tall
+	obs_source_t *gba1 = colour("color_source", "FO GBA Link 1", 180, 120, 0xFF00FFFF); // yellow, 3:2
+	obs_source_t *gba2 = colour("color_source", "FO GBA Link 2", 180, 120, 0xFFFFFF00); // cyan, 3:2
+	const uint32_t kRed = 0xFF0000FF, kGreen = 0xFF00FF00, kGameC = 0xFFFF0000, kYellow = 0xFF00FFFF,
+		       kCyan = 0xFFFFFF00;
+	obs_source_t *before = obs_get_output_source(0);
+	struct Rect {
+		double x = 0, y = 0, w = 0, h = 0;
+		bool any = false;
+	};
+	auto shows_all = [&](obs_source_t *scene, const std::vector<uint32_t> &rgbs) {
+		const std::vector<uint8_t> px = render(scene, W, H);
+		std::vector<Rect> out;
+		for (uint32_t rgb : rgbs) {
+			int x0 = W, y0 = H, x1 = -1, y1 = -1;
+			const int r = rgb & 0xFF, g = (rgb >> 8) & 0xFF, b = (rgb >> 16) & 0xFF;
+			for (uint32_t y = 0; y < H; y++)
+				for (uint32_t x = 0; x < W; x++) {
+					const uint8_t *p = &px[(size_t(y) * W + x) * 4];
+					if (std::abs(p[0] - r) < 40 && std::abs(p[1] - g) < 40 &&
+					    std::abs(p[2] - b) < 40 && p[3] > 128) {
+						x0 = std::min<int>(x0, x);
+						y0 = std::min<int>(y0, y);
+						x1 = std::max<int>(x1, x);
+						y1 = std::max<int>(y1, y);
+					}
+				}
+			Rect one;
+			if (x1 >= 0)
+				one = Rect{(double)x0, (double)y0, double(x1 - x0 + 1), double(y1 - y0 + 1), true};
+			out.push_back(one);
+		}
+		return out;
+	};
+	auto box = [](obs_sceneitem_t *it) {
+		vec2 p, b;
+		obs_sceneitem_get_pos(it, &p);
+		obs_sceneitem_get_bounds(it, &b);
+		return Rect{p.x, p.y, b.x, b.y, true};
+	};
+	auto list = [](obs_data_t *d, const char *setting, std::vector<std::string> values) {
+		obs_data_array_t *arr = obs_data_array_create();
+		for (const std::string &value : values) {
+			obs_data_t *entry = obs_data_create();
+			obs_data_set_string(entry, "value", value.c_str());
+			obs_data_array_push_back(arr, entry);
+			obs_data_release(entry);
+		}
+		obs_data_set_array(d, setting, arr);
+		obs_data_array_release(arr);
+	};
+	auto hex_prefix = [](const std::string &entry) {
+		static const char *const kHex = "0123456789abcdef";
+		std::string out = "fit_";
+		for (unsigned char c : entry) {
+			out += kHex[c >> 4];
+			out += kHex[c & 15];
+		}
+		return out + "_";
+	};
+	auto place = [](obs_sceneitem_t *it, double x, double y, double bw, double bh, uint32_t balign) {
+		vec2 v;
+		obs_sceneitem_set_alignment(it, OBS_ALIGN_LEFT | OBS_ALIGN_TOP);
+		obs_sceneitem_set_bounds_type(it, OBS_BOUNDS_SCALE_INNER);
+		obs_sceneitem_set_bounds_alignment(it, balign);
+		vec2_set(&v, (float)bw, (float)bh);
+		obs_sceneitem_set_bounds(it, &v);
+		vec2_set(&v, (float)x, (float)y);
+		obs_sceneitem_set_pos(it, &v);
+	};
+
+	// The scene, bottom first, as theirs: the background, the column's
+	// sources, the game, the chat box group and the camera views on top.
+	obs_scene_t *scene = obs_scene_create("FO Component Scene");
+	obs_source_t *ss = obs_scene_get_source(scene);
+	obs_scene_add(scene, bg);
+	obs_sceneitem_t *g2_it = obs_scene_add(scene, gba2);
+	obs_sceneitem_t *g1_it = obs_scene_add(scene, gba1);
+	obs_sceneitem_t *game_it = obs_scene_add(scene, game);
+	obs_sceneitem_t *grp = obs_scene_add_group(scene, "FO Chat Box Group");
+	obs_sceneitem_t *chat_in = obs_scene_add(scene, chat);
+	obs_sceneitem_group_add_item(grp, chat_in);
+	obs_sceneitem_t *cc_it = obs_scene_add(scene, cam_chat);
+	obs_sceneitem_t *cg_it = obs_scene_add(scene, cam_gba);
+	// Where theirs were when the collection was saved (in Chat mode), a
+	// quarter the size: the GBA mode's three in a sliver at the right edge.
+	place(game_it, 30 * kQ, 30 * kQ, 1783.5 * kQ, 1380 * kQ, OBS_ALIGN_LEFT);
+	place(cc_it, 1844 * kQ, 67 * kQ, 686 * kQ, 386 * kQ, OBS_ALIGN_CENTER);
+	place(grp, 1843.6 * kQ, 519.8 * kQ, 686.4 * kQ, 853.3 * kQ, OBS_ALIGN_CENTER);
+	place(g1_it, 2513.5 * kQ, 30 * kQ, 16.5 * kQ, 654.5 * kQ, OBS_ALIGN_RIGHT | OBS_ALIGN_TOP);
+	place(cg_it, 2513.5 * kQ, 69.5 * kQ, 16.5 * kQ, 1301 * kQ, OBS_ALIGN_CENTER);
+	place(g2_it, 2513.5 * kQ, 755.5 * kQ, 16.5 * kQ, 654.5 * kQ, OBS_ALIGN_RIGHT | OBS_ALIGN_BOTTOM);
+	obs_sceneitem_t *const items[] = {game_it, cc_it, grp, g1_it, cg_it, g2_it};
+	const char *const names[] = {"FO Game",       "FO Camera Component", "FO Chat Box Group",
+				     "FO GBA Link 1", "FO Camera GBA Link",  "FO GBA Link 2"};
+	const uint32_t colours[] = {kGameC, kRed, kGreen, kYellow, kRed, kCyan};
+	auto chat_mode = [&](bool on) {
+		obs_sceneitem_set_visible(cc_it, on);
+		obs_sceneitem_set_visible(grp, on);
+		obs_sceneitem_set_visible(g1_it, !on);
+		obs_sceneitem_set_visible(cg_it, !on);
+		obs_sceneitem_set_visible(g2_it, !on);
+	};
+	chat_mode(true);
+	obs_set_output_source(0, ss);
+
+	// Their Scene Fit, entry by entry (a quarter of their pixel values).
+	obs_data_t *d = obs_data_create();
+	list(d, "entries", std::vector<std::string>(std::begin(names), std::end(names)));
+	struct Owner {
+		const char *name;
+		bool resize;
+		int toward;
+		double tolerance, ax, ay, keep_k, orig_k;
+	};
+	const Owner owner[] = {
+		{"FO Game", true, 3, 5, 1310.0, 690.0, 0, 0},
+		{"FO Camera Component", false, 0, 5, 2187.25, 223.0, 0.4765432098765432, 0.48994638069705093},
+		{"FO Chat Box Group", false, 0, 5, 2186.8, 983.3, 0.6183437587978604, 0},
+		{"FO GBA Link 1", true, 6, 8, 2156.75, 491.5, 0.33515625, 0.33515625},
+		{"FO Camera GBA Link", true, 0, 8, 2187.75, 805.5, 0.35637858510017395, 0.35637858510017395},
+		{"FO GBA Link 2", true, 8, 8, 2176.75, 1241.25, 0.7052083333333333, 0.33515625},
+	};
+	for (const Owner &o : owner) {
+		const std::string p = std::string("fit|") + o.name + "|";
+		obs_data_set_int(d, (p + "box").c_str(), 2);
+		obs_data_set_double(d, (p + "margin").c_str(), kGap);
+		obs_data_set_double(d, (p + "tolerance").c_str(), o.tolerance * kQ);
+		obs_data_set_bool(d, (p + "resize").c_str(), o.resize);
+		obs_data_set_int(d, (p + "toward").c_str(), o.toward);
+		obs_data_set_int(d, (p + "space_priority").c_str(), 0);
+		obs_data_set_bool(d, (p + "visible_pixels").c_str(), true);
+		obs_data_set_bool(d, (p + "no_shadows").c_str(), true);
+		obs_data_set_bool(d, (p + "have_anchor").c_str(), true);
+		obs_data_set_double(d, (p + "anchor_x").c_str(), o.ax * kQ);
+		obs_data_set_double(d, (p + "anchor_y").c_str(), o.ay * kQ);
+		obs_data_set_string(d, (p + "keep_item").c_str(), o.name);
+		obs_data_set_double(d, (p + "keep_k").c_str(), o.keep_k);
+		obs_data_set_string(d, (p + "orig_item").c_str(), o.name);
+		obs_data_set_double(d, (p + "orig_k").c_str(), o.orig_k);
+	}
+	list(d, (hex_prefix("FO Game") + "skip").c_str(), {"FO Background"});
+	obs_source_t *fit = obs_source_create("stagekit_scene_fit", "FO Scene Fit", d, nullptr);
+	obs_data_release(d);
+	obs_source_filter_add(ss, fit);
+	auto set_entry = [&](const char *name, const char *key, auto value) {
+		obs_data_t *u = obs_data_create();
+		const std::string k = std::string("fit|") + name + "|" + key;
+		if constexpr (std::is_same_v<decltype(value), bool>)
+			obs_data_set_bool(u, k.c_str(), value);
+		else
+			obs_data_set_int(u, k.c_str(), value);
+		obs_source_update(fit, u);
+		obs_data_release(u);
+	};
+	auto glides = [&](const char *item) {
+		calldata_t cd;
+		calldata_init(&cd);
+		calldata_set_string(&cd, "filter", "FO Scene Fit");
+		calldata_set_string(&cd, "item", item);
+		proc_handler_call(obs_get_proc_handler(), "stagekit_test_fit_counts", &cd);
+		const long long n = calldata_int(&cd, "glides");
+		calldata_free(&cd);
+		return n;
+	};
+	auto frames = [&](int n) {
+		for (int i = 0; i < n; i++) {
+			render(ss, W, H);
+			sleep_ms(20);
+		}
+	};
+	// Watches for `n` frames: how many saw anything move, and the glides set off.
+	auto watch = [&](int n, long long &glide_count) {
+		long long g0 = 0;
+		for (const char *nm : names)
+			g0 += glides(nm);
+		Rect last[6];
+		for (int i = 0; i < 6; i++)
+			last[i] = box(items[i]);
+		int changes = 0;
+		for (int f = 0; f < n; f++) {
+			render(ss, W, H);
+			sleep_ms(20);
+			bool any = false;
+			for (int i = 0; i < 6; i++) {
+				const Rect b = box(items[i]);
+				if (obs_sceneitem_visible(items[i]) &&
+				    (std::fabs(b.x - last[i].x) > 0.05 || std::fabs(b.y - last[i].y) > 0.05 ||
+				     std::fabs(b.w - last[i].w) > 0.05 || std::fabs(b.h - last[i].h) > 0.05))
+					any = true;
+				last[i] = b;
+			}
+			changes += any ? 1 : 0;
+		}
+		long long g1 = 0;
+		for (const char *nm : names)
+			g1 += glides(nm);
+		glide_count = g1 - g0;
+		return changes;
+	};
+	// What shows of each visible entry, and how it lies in its box.
+	struct Seen {
+		Rect box[6], shows[6];
+	};
+	auto look = [&](const char *label) {
+		Seen s;
+		std::vector<uint32_t> want;
+		for (int i = 0; i < 6; i++)
+			want.push_back(colours[i]);
+		const std::vector<Rect> got = shows_all(ss, want);
+		printf("    %s:\n", label);
+		for (int i = 0; i < 6; i++) {
+			if (!obs_sceneitem_visible(items[i]))
+				continue;
+			s.box[i] = box(items[i]);
+			s.shows[i] = got[i];
+			const Rect &b = s.box[i], &v = s.shows[i];
+			printf("      %-20s box %6.1f,%6.1f %6.1fx%6.1f  shows %4.0f,%4.0f %4.0fx%4.0f  (empty in its box: %.1f wide, %.1f high)\n",
+			       names[i], b.x, b.y, b.w, b.h, v.x, v.y, v.w, v.h, b.w - v.w, b.h - v.h);
+		}
+		return s;
+	};
+	// The largest overlap of two entries' pictures, in square pixels, and the
+	// smallest gap between any two in the column, from what shows.
+	auto overlap = [](const Rect &a, const Rect &b) {
+		if (!a.any || !b.any)
+			return 0.0;
+		const double w = std::min(a.x + a.w, b.x + b.w) - std::max(a.x, b.x);
+		const double h = std::min(a.y + a.h, b.y + b.h) - std::max(a.y, b.y);
+		return w > 0 && h > 0 ? w * h : 0.0;
+	};
+	auto worst_overlap = [&](const Seen &s, const char **who_a, const char **who_b) {
+		double worst = 0.0;
+		for (int i = 0; i < 6; i++)
+			for (int j = i + 1; j < 6; j++) {
+				// (The two camera views show the same red: never on together.)
+				const double o = overlap(s.shows[i], s.shows[j]);
+				if (o > worst) {
+					worst = o;
+					*who_a = names[i];
+					*who_b = names[j];
+				}
+			}
+		return worst;
+	};
+	const char *settle_line = "did not settle";
+
+	// ---- Chat mode, as the collection was saved.
+	size_t mark = fo_lines_now();
+	frames(150);
+	long long gl = 0;
+	int moves = watch(250, gl);
+	Seen chat_seen = look("Chat mode, settled");
+	const char *oa = "", *ob = "";
+	double worst = worst_overlap(chat_seen, &oa, &ob);
+	size_t unsettled = fo_lines_since(mark, settle_line).size();
+	printf("      moves in 5 s: %d, glides %lld, 'did not settle' lines: %zu, largest overlap %.0f px² (%s, %s)\n",
+	       moves, gl, unsettled, worst, oa, ob);
+	CHECK(moves == 0 && unsettled == 0 && worst < 1.0,
+	      "G4 Chat mode settles: nothing moves in 5 s (%d, %lld glides), no 'did not settle' (%zu), no overlap (%.0f)",
+	      moves, gl, unsettled, worst);
+
+	// ---- GBA mode (cut), from the slivers the collection was saved with.
+	mark = fo_lines_now();
+	chat_mode(false);
+	frames(150);
+	moves = watch(250, gl);
+	Seen gba_seen = look("GBA mode, settled");
+	worst = worst_overlap(gba_seen, &oa, &ob);
+	unsettled = fo_lines_since(mark, settle_line).size();
+	printf("      moves in 5 s: %d, glides %lld, 'did not settle' lines: %zu, largest overlap %.0f px² (%s, %s)\n",
+	       moves, gl, unsettled, worst, oa, ob);
+	CHECK(moves == 0 && unsettled == 0 && worst < 1.0,
+	      "G4 GBA mode settles: nothing moves in 5 s (%d, %lld glides), no 'did not settle' (%zu), no overlap (%.0f)",
+	      moves, gl, unsettled, worst);
+	{
+		// G1: the column (x from the game's gap to the screen's gap) is shared
+		// by three resized pictures; each claims what it shows, not its box.
+		const Rect &cb = gba_seen.box[4], &cv = gba_seen.shows[4];
+		const Rect &v1 = gba_seen.shows[3], &v2 = gba_seen.shows[5];
+		const double column_h = H - 2 * kGap;
+		const double used = v1.h + cv.h + v2.h + 2 * kGap;
+		printf("      G1: camera box %.1f high, shows %.0f (%.0f%% of its box empty); GBA 1 shows %.0fx%.0f, GBA 2 %.0fx%.0f; column %.1f high, pictures and gaps use %.1f\n",
+		       cb.h, cv.h, cb.h > 0 ? 100.0 * (cb.h - cv.h) / cb.h : 0.0, v1.w, v1.h, v2.w, v2.h, column_h,
+		       used);
+		CHECK(cv.any && cb.h - cv.h <= 2.0 && v1.h >= 0.8 * v2.h && v2.h >= 0.8 * v1.h,
+		      "G1 the camera's box is its picture (%.1f empty in it), and the two GBA windows get alike (%.0f and %.0f high)",
+		      cb.h - cv.h, v1.h, v2.h);
+	}
+
+	{
+		// G1's cut never makes a picture lag: the camera's view, cut to its
+		// 16:9 picture between the two GBA windows, turned to a taller shape
+		// (its crop widened, as a capture changing resolution would) is
+		// fitted in the space it was cut from at once, as before the cut,
+		// not squeezed into the old cut box for half a second and a glide.
+		auto crop = [&](int side) {
+			obs_data_t *u = obs_data_create();
+			obs_data_set_int(u, "left", side);
+			obs_data_set_int(u, "right", side);
+			obs_source_update(cam_gba, u);
+			obs_data_release(u);
+		};
+		const Rect was = look("GBA mode, before the camera's view turns taller").shows[4];
+		crop(120); // 360x202 to 240x202
+		frames(4); // (OBS applies settings on the next tick)
+		const Rect soon = shows_all(ss, {kRed})[0];
+		frames(150);
+		mark = fo_lines_now();
+		moves = watch(250, gl);
+		Seen taller = look("GBA mode, the camera's view taller, settled");
+		worst = worst_overlap(taller, &oa, &ob);
+		unsettled = fo_lines_since(mark, settle_line).size();
+		printf("      G1: the camera shows %.0fx%.0f, %.0fx%.0f four frames after turning taller, %.0fx%.0f settled; moves in 5 s %d, overlap %.0f px², 'did not settle' %zu\n",
+		       was.w, was.h, soon.w, soon.h, taller.shows[4].w, taller.shows[4].h, moves, worst, unsettled);
+		CHECK(soon.any && soon.h >= was.h + 10.0 && std::fabs(soon.h - taller.shows[4].h) <= 2.0,
+		      "G1 a picture turning taller grows into its space at once (%.0f high from %.0f; %.0f once settled), never squeezed into the cut box",
+		      soon.h, was.h, taller.shows[4].h);
+		CHECK(moves == 0 && worst < 1.0 && unsettled == 0,
+		      "G1 and then settles (%d moves, %lld glides), no overlap (%.0f px²), no 'did not settle' (%zu)",
+		      moves, gl, worst, unsettled);
+		crop(60);
+		frames(150);
+		const Rect back = look("GBA mode, the camera's view back to 16:9").shows[4];
+		CHECK(std::fabs(back.h - was.h) <= 1.0 && std::fabs(back.w - was.w) <= 1.0,
+		      "G1 back to 16:9, back to where it was (%.0fx%.0f, was %.0fx%.0f)", back.w, back.h, was.w, was.h);
+	}
+
+	// ---- G4: modes switched back and forth, a second or two apart.
+	// (The log line is said at most once a minute, so the glides each change
+	// sets off are counted too: a change that settles in one tick sets off
+	// one glide per entry that moves; one that does not, a glide a tick.)
+	mark = fo_lines_now();
+	auto all_glides = [&]() {
+		long long n = 0;
+		for (const char *nm : names)
+			n += glides(nm);
+		return n;
+	};
+	std::string per_switch;
+	long long most_glides = 0;
+	for (int round = 0; round < 3; round++) {
+		for (bool to_chat : {true, false}) {
+			const long long g0 = all_glides();
+			chat_mode(to_chat);
+			frames(60 + 20 * round);
+			const long long n = all_glides() - g0;
+			most_glides = std::max(most_glides, n);
+			per_switch += (per_switch.empty() ? "" : ", ") + std::to_string(n);
+		}
+	}
+	printf("      glides set off per change of mode: %s\n", per_switch.c_str());
+	CHECK(most_glides <= 6, "G4 each change of mode sets off at most one glide per entry (most %lld)", most_glides);
+	chat_mode(true);
+	frames(150);
+	moves = watch(250, gl);
+	Seen again = look("Chat mode again, after switching three times");
+	unsettled = fo_lines_since(mark, settle_line).size();
+	double drift = 0.0;
+	for (int i = 0; i < 3; i++)
+		drift = std::max({drift, std::fabs(again.box[i].x - chat_seen.box[i].x),
+				  std::fabs(again.box[i].y - chat_seen.box[i].y),
+				  std::fabs(again.box[i].w - chat_seen.box[i].w),
+				  std::fabs(again.box[i].h - chat_seen.box[i].h)});
+	printf("      moves in 5 s: %d, glides %lld, 'did not settle' lines while switching: %zu, off from the first Chat mode by %.1f\n",
+	       moves, gl, unsettled, drift);
+	CHECK(moves == 0 && unsettled == 0 && drift <= 1.0,
+	      "G4 after switching modes: settles (%d moves, %lld glides), no 'did not settle' (%zu), back where it was (%.1f)",
+	      moves, gl, unsettled, drift);
+
+	// ---- G3: the game Takes space first; nothing crosses another's border,
+	// in either mode (the column keeping its size, then resized).
+	mark = fo_lines_now();
+	set_entry("FO Game", "space_priority", (long long)1);
+	frames(150);
+	moves = watch(250, gl);
+	Seen first = look("Chat mode, the game Takes space first");
+	const char *fa = "", *fb = "";
+	double over_first = worst_overlap(first, &fa, &fb);
+	const double over_cam = overlap(first.shows[0], first.shows[1]);
+	const double over_chat = overlap(first.shows[0], first.shows[2]);
+	unsettled = fo_lines_since(mark, settle_line).size();
+	printf("      game over the camera %.0f px², over the chat box %.0f px²; largest overlap %.0f px²; moves in 5 s %d, glides %lld, 'did not settle' %zu\n",
+	       over_cam, over_chat, over_first, moves, gl, unsettled);
+	CHECK(over_first < 1.0 && moves == 0 && unsettled == 0,
+	      "G3 a game that takes its space first does not cover the camera (%.0f px²) or the chat box (%.0f px²), and all settles (%d moves, %zu 'did not settle')",
+	      over_cam, over_chat, moves, unsettled);
+	mark = fo_lines_now();
+	chat_mode(false);
+	frames(150);
+	moves = watch(250, gl);
+	Seen first_gba = look("GBA mode, the game Takes space first");
+	over_first = worst_overlap(first_gba, &fa, &fb);
+	unsettled = fo_lines_since(mark, settle_line).size();
+	printf("      largest overlap %.0f px² (%s, %s); moves in 5 s %d, glides %lld, 'did not settle' %zu\n",
+	       over_first, fa, fb, moves, gl, unsettled);
+	CHECK(over_first < 1.0 && moves == 0 && unsettled == 0 && first_gba.shows[3].h >= 0.8 * first_gba.shows[5].h,
+	      "G3 GBA mode, the game taking its space first: no overlap (%.0f px², %s and %s), the column shared (%.0f and %.0f high), settled (%d moves, %zu 'did not settle')",
+	      over_first, fa, fb, first_gba.shows[3].h, first_gba.shows[5].h, moves, unsettled);
+	chat_mode(true);
+	set_entry("FO Game", "space_priority", (long long)0);
+	frames(150);
+
+	// ---- G2: the camera's size set by hand (0.4765, from 0.4899 before the
+	// filter); Resize to fit ticked and then unticked again.
+	auto drawn_k = [&](obs_sceneitem_t *it) {
+		vec2 b;
+		obs_sceneitem_get_bounds(it, &b);
+		obs_source_t *src = obs_sceneitem_get_source(it);
+		const double sw = obs_source_get_width(src), sh = obs_source_get_height(src);
+		return sw > 0 && sh > 0 ? std::min(b.x / sw, b.y / sh) : 0.0;
+	};
+	const double k_hand = drawn_k(cc_it);
+	set_entry("FO Camera Component", "resize", true);
+	frames(100);
+	const double k_fitted = drawn_k(cc_it);
+	set_entry("FO Camera Component", "resize", false);
+	frames(100);
+	const double k_back = drawn_k(cc_it);
+	printf("    G2: camera drawn at %.4f of its source (set by hand), %.4f resized to fit, %.4f once unticked again\n",
+	       k_hand, k_fitted, k_back);
+	CHECK(std::fabs(k_back - k_hand) < 0.002,
+	      "G2 unticking Resize to fit brings back the size set by hand (%.4f), not the one from before the filter (now %.4f)",
+	      k_hand, k_back);
+	mark = fo_lines_now();
+	moves = watch(250, gl);
+	unsettled = fo_lines_since(mark, settle_line).size();
+	const double k_rest = drawn_k(cc_it);
+	CHECK(moves == 0 && unsettled == 0 && std::fabs(k_rest - k_hand) < 0.002,
+	      "G2 then at rest: nothing moves in 5 s (%d, %lld glides), no 'did not settle' (%zu), still %.4f", moves,
+	      gl, unsettled, k_rest);
+
+	// ---- G5: a source keeping its size, selected, resized by hand: OBS's
+	// handle dragged for 0.6 s, and then the dock's Stop resizing at edges
+	// (snap on release) puts the size it allows for a frame, back to where
+	// it was let go, and glides there over 0.45 s, eased (step_glides).
+	chat_mode(false);
+	frames(150);
+	set_entry("FO GBA Link 2", "resize", false);
+	frames(120);
+	obs_sceneitem_select(g2_it, true);
+	frames(70); // (its source's size has been steady for a second)
+	const Rect from = box(g2_it);
+	const size_t g5_mark = fo_lines_now();
+	auto set_size = [&](double w, double h) {
+		vec2 b;
+		vec2_set(&b, (float)w, (float)h);
+		obs_sceneitem_set_bounds(g2_it, &b);
+	};
+	const double grow = 2.7; // as theirs: 0.335 of the source to 0.902
+	const int drag_frames = 36, glide_frames = 27;
+	for (int f = 1; f <= drag_frames; f++) {
+		const double t = (double)f / drag_frames;
+		set_size(from.w * (1.0 + (grow - 1.0) * t), from.h * (1.0 + (grow - 1.0) * t));
+		sleep_ms(17);
+	}
+	const size_t g5_drag = fo_lines_since(g5_mark, "resized in the preview").size();
+	const Rect let_go = box(g2_it);
+	const double allowed = 0.6168; // 0.5563 of 0.9021 in their log
+	set_size(let_go.w * allowed, let_go.h * allowed);
+	sleep_ms(17);
+	set_size(let_go.w, let_go.h);
+	sleep_ms(17);
+	for (int f = 1; f <= glide_frames; f++) {
+		double t = (double)f / glide_frames;
+		t = t < 0.5 ? 4 * t * t * t : 1 - std::pow(-2 * t + 2, 3) / 2;
+		const double k = 1.0 + (allowed - 1.0) * t;
+		set_size(let_go.w * k, let_go.h * k);
+		sleep_ms(17);
+	}
+	frames(80);
+	const std::vector<std::string> g5_lines = fo_lines_since(g5_mark, "resized in the preview");
+	obs_sceneitem_select(g2_it, false);
+	printf("    G5: a hand resize over %d frames and a glide of %d frames read as %zu resizes by hand (%zu during the drag, %zu at and after letting go)\n",
+	       drag_frames, glide_frames, g5_lines.size(), g5_drag, g5_lines.size() - g5_drag);
+	for (size_t i = 0; i < g5_lines.size() && i < 3; i++)
+		printf("      %s\n", g5_lines[i].c_str());
+	if (g5_lines.size() > 3)
+		printf("      ... %s\n", g5_lines.back().c_str());
+	CHECK(g5_lines.size() <= 2,
+	      "G5 one resize by hand is read once or twice when it ends (drag, then the glide to the allowed size), not on every frame (%zu)",
+	      g5_lines.size());
+	{
+		// What was let go of is kept, and nothing moves afterwards.
+		const Rect after = box(g2_it);
+		mark = fo_lines_now();
+		moves = watch(250, gl);
+		unsettled = fo_lines_since(mark, settle_line).size();
+		const Rect rest = box(g2_it);
+		const double want_w = let_go.w * allowed;
+		printf("    G5: box %.1fx%.1f once let go (the dock's size %.1f wide), %.1fx%.1f 5 s later\n", after.w,
+		       after.h, want_w, rest.w, rest.h);
+		CHECK(std::fabs(after.w - want_w) < 1.0 && std::fabs(rest.w - after.w) < 0.1 &&
+			      std::fabs(rest.h - after.h) < 0.1 && moves == 0 && unsettled == 0,
+		      "G5 the size the dock let go at is the size kept (%.1f wide, wanted %.1f), and nothing moves in 5 s (%d, %lld glides, %zu 'did not settle')",
+		      after.w, want_w, moves, gl, unsettled);
+	}
+	const size_t all_unsettled = fo_lines_since(0, settle_line).size();
+	CHECK(all_unsettled == 0, "no 'did not settle' anywhere in the section (%zu)", all_unsettled);
+
+	obs_source_filter_remove(ss, fit);
+	obs_source_release(fit);
+	obs_set_output_source(0, before);
+	obs_source_release(before);
+	obs_source_remove(ss);
+	obs_scene_release(scene);
+	for (obs_source_t *s : {bg, game, camera, cam_chat, cam_gba, chat, gba1, gba2})
+		obs_source_release(s);
+	base_set_log_handler(g_fo_prev.handler, g_fo_prev.param);
+}
+
+// ------------------------------------------- fit: switched on over a hand layout
+// The owner, 2026-11-18: "when I set up some layouts as desired, for example
+// my Dolphin-GBA Link layout, manually positioning and sizing things with the
+// fit to filter disabled, then enable the filter, even with resize to fit
+// enabled, everything changes size." A stand-in of that scene at a quarter of
+// their canvas (640x360, their gap of 30 as 7.5): a 4:3 game with a shadow on
+// the left; on the right a column of a 3:2 window letterboxed in a source with
+// transparent margins (larger than the gap, so its box hangs off the screen),
+// a 3:2 Cropped View of a camera, and a second letterboxed window that keeps
+// its size, aligned to the bottom right. The fit has run on another layout
+// first (its anchors and kept sizes are stale), is switched off, the bottom
+// window told to keep its size, and everything moved and sized by hand.
+// Switched on, nothing moves; the middle hidden, the others may make use of
+// the room; shown again, the hand layout is back. The same for a filter saved
+// and loaded, for four Fit to Space filters, for a game set to take its space
+// first (the column makes room while it grows, and comes home with it), for
+// All sources with a source added while the filter is off, and for filters
+// made switched off (nothing measured before they are switched on) with a
+// shadow in screen pixels on the top window. Run alone with
+// STAGEKIT_TEST_ONLY_FIT_ENABLE.
+namespace {
+struct FeLetterbox {
+	uint32_t w = 0, h = 0, mx = 0, my = 0, colour = 0;
+};
+void register_fe_letterbox()
+{
+	static bool registered = false;
+	if (std::exchange(registered, true))
+		return;
+	obs_source_info info = {};
+	info.id = "stagekit_test_fe_letterbox";
+	info.type = OBS_SOURCE_TYPE_INPUT;
+	info.output_flags = OBS_SOURCE_VIDEO | OBS_SOURCE_CUSTOM_DRAW;
+	info.get_name = [](void *) {
+		return "Letterboxed window (stand-in)";
+	};
+	info.create = [](obs_data_t *settings, obs_source_t *) -> void * {
+		auto *l = new FeLetterbox();
+		l->w = (uint32_t)obs_data_get_int(settings, "width");
+		l->h = (uint32_t)obs_data_get_int(settings, "height");
+		l->mx = (uint32_t)obs_data_get_int(settings, "margin_x");
+		l->my = (uint32_t)obs_data_get_int(settings, "margin_y");
+		l->colour = (uint32_t)obs_data_get_int(settings, "color");
+		return l;
+	};
+	info.destroy = [](void *data) {
+		delete static_cast<FeLetterbox *>(data);
+	};
+	info.get_width = [](void *data) {
+		return static_cast<FeLetterbox *>(data)->w;
+	};
+	info.get_height = [](void *data) {
+		return static_cast<FeLetterbox *>(data)->h;
+	};
+	info.video_render = [](void *data, gs_effect_t *) {
+		auto *l = static_cast<FeLetterbox *>(data);
+		gs_effect_t *solid = obs_get_base_effect(OBS_EFFECT_SOLID);
+		vec4 c;
+		vec4_from_rgba(&c, l->colour);
+		gs_effect_set_vec4(gs_effect_get_param_by_name(solid, "color"), &c);
+		gs_matrix_push();
+		gs_matrix_translate3f((float)l->mx, (float)l->my, 0.0f);
+		while (gs_effect_loop(solid, "Solid"))
+			gs_draw_sprite(nullptr, 0, l->w - 2 * l->mx, l->h - 2 * l->my);
+		gs_matrix_pop();
+	};
+	obs_register_source(&info);
+}
+} // namespace
+
+static void fit_enable_test()
+{
+	printf("\n[fit: switching it on keeps a hand-made layout]\n");
+	register_fv_camera();
+	register_fe_letterbox();
+	constexpr uint32_t W = 640, H = 360;
+	constexpr double kGap = 7.5;
+	auto colour = [](const char *kind, const char *name, int cw, int ch, uint32_t c) {
+		obs_data_t *d = obs_data_create();
+		obs_data_set_int(d, "width", cw);
+		obs_data_set_int(d, "height", ch);
+		obs_data_set_int(d, "color", c);
+		obs_source_t *src = obs_source_create(kind, name, d, nullptr);
+		obs_data_release(d);
+		return src;
+	};
+	auto letterbox = [](const char *name, uint32_t c) {
+		obs_data_t *d = obs_data_create();
+		obs_data_set_int(d, "width", 200);
+		obs_data_set_int(d, "height", 150);
+		obs_data_set_int(d, "margin_x", 10);
+		obs_data_set_int(d, "margin_y", 15); // a 180x120 window inside
+		obs_data_set_int(d, "color", c);
+		obs_source_t *src = obs_source_create("stagekit_test_fe_letterbox", name, d, nullptr);
+		obs_data_release(d);
+		return src;
+	};
+	const uint32_t kBlue = 0xFFFF0000, kRed = 0xFF0000FF, kYellow = 0xFF00FFFF, kCyan = 0xFFFFFF00,
+		       kGreen = 0xFF00FF00;
+	obs_source_t *bg = colour("color_source", "FE Background", W, H, 0xFF202020);
+	obs_source_t *game = colour("color_source", "FE Game", 320, 240, kBlue);
+	obs_source_t *shadow = obs_source_create("stagekit_shadow_backdrop", "FE Shadow", nullptr, nullptr);
+	obs_source_filter_add(game, shadow);
+	obs_source_t *camera = colour("stagekit_test_fv_camera", "FE Camera", 480, 270, kRed);
+	obs_data_t *vd = obs_data_create();
+	obs_data_set_string(vd, "source", "FE Camera");
+	obs_data_set_int(vd, "left", 37);
+	obs_data_set_int(vd, "right", 38); // 405x270, 3:2
+	obs_source_t *mid = obs_source_create("stagekit_cropped_view", "FE Mid", vd, nullptr);
+	obs_data_release(vd);
+	obs_source_t *top = letterbox("FE Top", kYellow);
+	obs_source_t *bottom = letterbox("FE Bottom", kCyan);
+	obs_source_t *before = obs_get_output_source(0);
+	struct Rect {
+		double x = 0, y = 0, w = 0, h = 0;
+		bool any = false;
+	};
+	// Where each colour shows, read back.
+	auto shows_all = [&](obs_source_t *scene) {
+		const std::vector<uint8_t> px = render(scene, W, H);
+		std::vector<Rect> out;
+		for (uint32_t rgb : {kBlue, kYellow, kRed, kCyan, kGreen}) {
+			int x0 = W, y0 = H, x1 = -1, y1 = -1;
+			const int r = rgb & 0xFF, g = (rgb >> 8) & 0xFF, b = (rgb >> 16) & 0xFF;
+			for (uint32_t y = 0; y < H; y++)
+				for (uint32_t x = 0; x < W; x++) {
+					const uint8_t *p = &px[(size_t(y) * W + x) * 4];
+					if (std::abs(p[0] - r) < 40 && std::abs(p[1] - g) < 40 &&
+					    std::abs(p[2] - b) < 40 && p[3] > 128) {
+						x0 = std::min<int>(x0, x);
+						y0 = std::min<int>(y0, y);
+						x1 = std::max<int>(x1, x);
+						y1 = std::max<int>(y1, y);
+					}
+				}
+			Rect one;
+			if (x1 >= 0)
+				one = Rect{(double)x0, (double)y0, double(x1 - x0 + 1), double(y1 - y0 + 1), true};
+			out.push_back(one);
+		}
+		return out;
+	};
+	const char *names[] = {"game", "top", "middle", "bottom", "square"};
+	auto worst_of = [&](const std::vector<Rect> &a, const std::vector<Rect> &b, bool skip_mid = false) {
+		double worst = 0.0;
+		for (size_t i = 0; i < a.size() && i < b.size(); i++) {
+			if (skip_mid && i == 2)
+				continue;
+			if (a[i].any != b[i].any)
+				return 1e9;
+			worst = std::max({worst, std::fabs(a[i].x - b[i].x), std::fabs(a[i].y - b[i].y),
+					  std::fabs(a[i].x + a[i].w - b[i].x - b[i].w),
+					  std::fabs(a[i].y + a[i].h - b[i].y - b[i].h)});
+		}
+		return worst;
+	};
+	auto print = [&](const char *when, const std::vector<Rect> &v) {
+		printf("    %-26s", when);
+		for (size_t i = 0; i < v.size(); i++)
+			printf(" %s %.0f,%.0f %.0fx%.0f%s", names[i], v[i].x, v[i].y, v[i].w, v[i].h,
+			       i + 1 < v.size() ? ";" : "\n");
+	};
+	auto list = [](obs_data_t *d, const char *setting, std::vector<std::string> values) {
+		obs_data_array_t *arr = obs_data_array_create();
+		for (const std::string &value : values) {
+			obs_data_t *entry = obs_data_create();
+			obs_data_set_string(entry, "value", value.c_str());
+			obs_data_array_push_back(arr, entry);
+			obs_data_release(entry);
+		}
+		obs_data_set_array(d, setting, arr);
+		obs_data_array_release(arr);
+	};
+	auto place = [](obs_sceneitem_t *it, double x, double y, double bw, double bh) {
+		vec2 v;
+		obs_sceneitem_set_alignment(it, OBS_ALIGN_LEFT | OBS_ALIGN_TOP);
+		obs_sceneitem_set_bounds_type(it, OBS_BOUNDS_SCALE_INNER);
+		obs_sceneitem_set_bounds_alignment(it, OBS_ALIGN_CENTER);
+		vec2_set(&v, (float)bw, (float)bh);
+		obs_sceneitem_set_bounds(it, &v);
+		vec2_set(&v, (float)x, (float)y);
+		obs_sceneitem_set_pos(it, &v);
+	};
+	// A layout: the game's box, and the column's pictures `ph` high at `cx`
+	// (top, middle and bottom, `ph` apart by the gap, from the top down; the
+	// bottom `drop` px nearer the screen's edge than the gap).
+	auto lay_out = [&](obs_sceneitem_t *const its[4], double game_w, double cx, double ph, double mid_y,
+			   double drop) {
+		place(its[0], kGap, kGap, game_w, game_w * 0.75);
+		const double pw = ph * 1.5, k = pw / 180.0;
+		place(its[1], cx - 10 * k, kGap - 15 * k, 200 * k, 150 * k);
+		place(its[2], cx, mid_y, pw, ph);
+		place(its[3], cx - 10 * k, H - kGap - ph - 15 * k + drop, 200 * k, 150 * k);
+	};
+	auto frames = [&](obs_source_t *ss, int n) {
+		for (int i = 0; i < n; i++) {
+			render(ss, W, H);
+			sleep_ms(20);
+		}
+	};
+	// The owner's settings: Free space, the gap, visible pixels and no
+	// shadows; the game kept to the left, the top window to the top right,
+	// the camera in the middle, the bottom window to the bottom right.
+	struct Entry {
+		const char *name;
+		bool resize;
+		int toward;
+	};
+	const Entry entries[] = {{"FE Game", true, 3}, {"FE Top", true, 6}, {"FE Mid", true, 0}, {"FE Bottom", true, 8}};
+	auto look = [&](obs_data_t *d, const std::string &prefix, const Entry &e) {
+		obs_data_set_int(d, (prefix + "box").c_str(), 2);
+		obs_data_set_double(d, (prefix + "margin").c_str(), kGap);
+		obs_data_set_bool(d, (prefix + "resize").c_str(), e.resize);
+		obs_data_set_int(d, (prefix + "toward").c_str(), e.toward);
+		obs_data_set_int(d, (prefix + "glide_ms").c_str(), 200);
+		obs_data_set_bool(d, (prefix + "visible_pixels").c_str(), true);
+		obs_data_set_bool(d, (prefix + "no_shadows").c_str(), true);
+	};
+	auto make_scene = [&](const char *name, obs_sceneitem_t *its[4]) {
+		obs_scene_t *scene = obs_scene_create(name);
+		obs_scene_add(scene, bg);
+		its[3] = obs_scene_add(scene, bottom);
+		its[2] = obs_scene_add(scene, mid);
+		its[1] = obs_scene_add(scene, top);
+		its[0] = obs_scene_add(scene, game);
+		obs_set_output_source(0, obs_scene_get_source(scene));
+		return scene;
+	};
+	// The hand layout: the game smaller than its space would make it, the
+	// column off the right edge by 4.5 px (a fit would put the windows
+	// against it and centre the camera), each picture 165x110, the gap
+	// between them all, and the bottom window (which keeps its size) a pixel
+	// nearer the screen's bottom edge than the gap: what measuring on a small
+	// copy can be off by, which is still at home and must not be pulled in.
+	const double hand_cx = W - kGap - 165.0 - 4.5;
+	// One run: the fit (`filters`, switched on and off together) over the
+	// hand layout. `keep_bottom`: how the bottom window is told to keep its
+	// size while the filter is off. `ran_before`: the fit ran on another
+	// layout first; otherwise it was made switched off and has never ticked
+	// while on (OBS started with it off): what shows of each source is
+	// measured only after it is switched on.
+	auto run = [&](const char *label, obs_source_t *ss, obs_sceneitem_t *its[4],
+		       const std::vector<obs_source_t *> &filters, const std::function<void()> &keep_bottom,
+		       bool ran_before) {
+		if (ran_before) {
+			// First on another layout, so that what it noted is stale.
+			lay_out(its, 400.0, 460.0, 80.0, 140.0, 0.0);
+			frames(ss, 100);
+			print((std::string(label) + ", ran on before").c_str(), shows_all(ss));
+			for (obs_source_t *f : filters)
+				obs_source_set_enabled(f, false);
+		}
+		frames(ss, 10);
+		keep_bottom();
+		lay_out(its, 430.0, hand_cx, 110.0, kGap + 110.0 + kGap, 1.0);
+		frames(ss, 20);
+		const std::vector<Rect> hand = shows_all(ss);
+		print("hand layout, filter off", hand);
+		for (obs_source_t *f : filters)
+			obs_source_set_enabled(f, true);
+		double worst = 0.0;
+		for (int t = 0; t < 6; t++) {
+			frames(ss, 25);
+			const std::vector<Rect> now = shows_all(ss);
+			worst = std::max(worst, worst_of(hand, now));
+			if (t == 0 || t == 5)
+				print(t == 0 ? "switched on, +0.5 s" : "switched on, +3 s", now);
+		}
+		CHECK(worst <= 0.5, "%s: switched on over the hand layout, nothing moves for 3 s (worst %.1f px)",
+		      label, worst);
+		// The middle hidden: the others may make use of its room.
+		obs_sceneitem_set_visible(its[2], false);
+		frames(ss, 75);
+		print("middle hidden", shows_all(ss));
+		obs_sceneitem_set_visible(its[2], true);
+		frames(ss, 100);
+		const std::vector<Rect> back = shows_all(ss);
+		print("middle shown again", back);
+		const double back_worst = worst_of(hand, back);
+		CHECK(back_worst <= 0.5,
+		      "%s: the middle hidden and shown again, the hand layout is back (worst %.1f px)", label,
+		      back_worst);
+		return hand;
+	};
+	auto stores_home = [](obs_source_t *f, const char *key) {
+		obs_data_t *d = obs_source_get_settings(f);
+		const bool has = *obs_data_get_string(d, key) != '\0';
+		obs_data_release(d);
+		return has;
+	};
+
+	// ---- a Scene Fit
+	{
+		obs_sceneitem_t *its[4] = {};
+		obs_scene_t *scene = make_scene("FE Scene Fit", its);
+		obs_source_t *ss = obs_scene_get_source(scene);
+		obs_data_t *d = obs_data_create();
+		list(d, "entries", {"FE Game", "FE Top", "FE Mid", "FE Bottom"});
+		for (const Entry &e : entries)
+			look(d, std::string("fit|") + e.name + "|", e);
+		obs_source_t *fit = obs_source_create("stagekit_scene_fit", "FE Fit", d, nullptr);
+		obs_data_release(d);
+		obs_source_filter_add(ss, fit);
+		const std::vector<Rect> hand = run(
+			"Scene Fit", ss, its, {fit},
+			[&] {
+				// Unticked while the filter is off, as the owner did.
+				obs_data_t *u = obs_data_create();
+				obs_data_set_bool(u, "fit|FE Bottom|resize", false);
+				obs_source_update(fit, u);
+				obs_data_release(u);
+			},
+			true);
+		CHECK(stores_home(fit, "fit|FE Bottom|home_item") && stores_home(fit, "fit|FE Game|home_item"),
+		      "Scene Fit: the homes are saved with the filter");
+		// Saved and loaded on: the homes as they were saved.
+		obs_data_t *saved = obs_source_get_settings(fit);
+		obs_data_t *copy = obs_data_create_from_json(obs_data_get_json(saved));
+		obs_data_release(saved);
+		obs_source_filter_remove(ss, fit);
+		obs_source_release(fit);
+		frames(ss, 10);
+		obs_source_t *loaded = obs_source_create("stagekit_scene_fit", "FE Fit Loaded", copy, nullptr);
+		obs_data_release(copy);
+		obs_source_filter_add(ss, loaded);
+		double worst = 0.0;
+		for (int t = 0; t < 4; t++) {
+			frames(ss, 25);
+			worst = std::max(worst, worst_of(hand, shows_all(ss)));
+		}
+		print("loaded on", shows_all(ss));
+		CHECK(worst <= 0.5, "Scene Fit: loaded on with its homes, nothing moves for 2 s (worst %.1f px)",
+		      worst);
+		// The game set to take its space first (switched off, set, laid out
+		// by hand, switched on: nothing moves), then the bottom window (which
+		// keeps its size, so it holds its room against the game) hidden: the
+		// game leaves its home and grows over where the column's resized
+		// pictures are (they are not in its way). They go by where it is, not
+		// by its home, so they make room and keep the gap; with the bottom
+		// shown again, everything is home again.
+		obs_source_set_enabled(loaded, false);
+		frames(ss, 10);
+		obs_data_t *first_d = obs_data_create();
+		obs_data_set_int(first_d, "fit|FE Game|space_priority", 1);
+		obs_source_update(loaded, first_d);
+		obs_data_release(first_d);
+		lay_out(its, 430.0, hand_cx, 110.0, kGap + 110.0 + kGap, 1.0);
+		frames(ss, 20);
+		const std::vector<Rect> hand_first = shows_all(ss);
+		obs_source_set_enabled(loaded, true);
+		worst = 0.0;
+		for (int t = 0; t < 4; t++) {
+			frames(ss, 25);
+			worst = std::max(worst, worst_of(hand_first, shows_all(ss)));
+		}
+		print("the game takes space first", shows_all(ss));
+		CHECK(worst <= 0.5,
+		      "Scene Fit: switched on with the game taking its space first, nothing moves for 2 s (worst %.1f px)",
+		      worst);
+		obs_sceneitem_set_visible(its[3], false);
+		frames(ss, 100);
+		const std::vector<Rect> first = shows_all(ss);
+		print("and the bottom hidden", first);
+		double least_gap = 1e9;
+		for (size_t i = 1; i < first.size(); i++)
+			if (first[i].any && first[0].any && first[i].y < first[0].y + first[0].h &&
+			    first[i].y + first[i].h > first[0].y)
+				least_gap = std::min(least_gap, first[i].x - first[0].x - first[0].w);
+		CHECK(first[0].w > hand_first[0].w + 5.0 && least_gap >= kGap - 1.5,
+		      "Scene Fit: a game that takes its space first grows (%.0f wide, %.0f by hand), and the column beside it keeps the gap (%.1f px)",
+		      first[0].w, hand_first[0].w, least_gap);
+		obs_sceneitem_set_visible(its[3], true);
+		frames(ss, 100);
+		const std::vector<Rect> shared = shows_all(ss);
+		print("the bottom shown again", shared);
+		const double shared_worst = worst_of(hand_first, shared);
+		CHECK(shared_worst <= 0.5,
+		      "Scene Fit: the bottom shown again, the hand layout is back around the game (worst %.1f px)",
+		      shared_worst);
+		// A filter that never had a home fits as it always did: the game
+		// grows into its space.
+		obs_source_filter_remove(ss, loaded);
+		obs_source_release(loaded);
+		obs_data_t *fresh_d = obs_data_create();
+		list(fresh_d, "entries", {"FE Game", "FE Top", "FE Mid", "FE Bottom"});
+		for (const Entry &e : entries)
+			look(fresh_d, std::string("fit|") + e.name + "|", e);
+		obs_source_t *fresh = obs_source_create("stagekit_scene_fit", "FE Fit Fresh", fresh_d, nullptr);
+		obs_data_release(fresh_d);
+		obs_source_filter_add(ss, fresh);
+		frames(ss, 100);
+		const std::vector<Rect> fitted = shows_all(ss);
+		print("a new filter, never off", fitted);
+		CHECK(fitted[0].w > hand[0].w + 5.0,
+		      "a filter never switched off fits as before: the game fills its space (%.0f wide, %.0f by hand)",
+		      fitted[0].w, hand[0].w);
+		obs_source_filter_remove(ss, fresh);
+		obs_source_release(fresh);
+		obs_source_remove(ss);
+		obs_scene_release(scene);
+	}
+	// ---- four Fit to Space filters
+	{
+		obs_sceneitem_t *its[4] = {};
+		obs_scene_t *scene = make_scene("FE Fit to Space", its);
+		obs_source_t *ss = obs_scene_get_source(scene);
+		std::vector<obs_source_t *> filters;
+		for (const Entry &e : entries) {
+			obs_data_t *d = obs_data_create();
+			obs_data_set_string(d, "item", e.name);
+			look(d, "", e);
+			obs_data_set_double(d, "tolerance", 8.0);
+			obs_source_t *f = obs_source_create("stagekit_fit_item", (std::string(e.name) + " Fit").c_str(),
+							    d, nullptr);
+			obs_data_release(d);
+			obs_source_filter_add(ss, f);
+			filters.push_back(f);
+		}
+		run(
+			"Fit to Space", ss, its, filters,
+			[&] {
+				obs_data_t *u = obs_data_create();
+				obs_data_set_bool(u, "resize", false);
+				obs_source_update(filters[3], u);
+				obs_data_release(u);
+			},
+			true);
+		CHECK(stores_home(filters[3], "home_item"), "Fit to Space: the home is saved with the filter");
+		for (obs_source_t *f : filters) {
+			obs_source_filter_remove(ss, f);
+			obs_source_release(f);
+		}
+		obs_source_remove(ss);
+		obs_scene_release(scene);
+	}
+	// ---- All sources, and a source added while the filter is off
+	// Every source of the scene is fitted. A small one is put down by hand
+	// below the game while the filter is off: switched on, it is one of the
+	// sources with a home at once, not one fitted half a second later whose
+	// new room moves the others off theirs.
+	obs_source_t *square = colour("color_source", "FE Square", 60, 40, kGreen);
+	{
+		obs_sceneitem_t *its[4] = {};
+		obs_scene_t *scene = make_scene("FE All Sources", its);
+		obs_source_t *ss = obs_scene_get_source(scene);
+		obs_data_t *d = obs_data_create();
+		obs_data_set_int(d, "which", 1); // All sources
+		for (const Entry &e : entries)
+			look(d, std::string("fit|") + e.name + "|", e);
+		look(d, "fit|FE Square|", Entry{"FE Square", true, 0});
+		obs_data_set_bool(d, "fit|FE Bottom|resize", false);
+		obs_source_t *fit = obs_source_create("stagekit_scene_fit", "FE Fit All", d, nullptr);
+		obs_data_release(d);
+		obs_source_filter_add(ss, fit);
+		// (No settings changed while it is off: new settings have the
+		// sources counted again anyway.)
+		run(
+			"Scene Fit, all sources", ss, its, {fit},
+			[&] {
+				obs_sceneitem_t *sq = obs_scene_add(scene, square);
+				place(sq, 20.0, 332.0, 30.0, 20.0);
+			},
+			true);
+		obs_source_filter_remove(ss, fit);
+		obs_source_release(fit);
+		obs_source_remove(ss);
+		obs_scene_release(scene);
+	}
+	obs_source_release(square);
+	// ---- never on before, and a shadow on the top window
+	// Made switched off (as when OBS starts with the filter off), so nothing
+	// is known of what shows of each source when it is switched on: the
+	// space round each home must be found once that has been measured. And
+	// the top window has a shadow sized in screen pixels: when it grows into
+	// the hidden middle's room the shadow's room changes, and the shadow
+	// filter moves the item to keep the picture in place, which is not a
+	// move by hand (the home stays the hand layout).
+	obs_data_t *top_sd = obs_data_create();
+	obs_data_set_double(top_sd, "softness", 4.0);
+	obs_data_set_double(top_sd, "offset_x", 2.0);
+	obs_data_set_double(top_sd, "offset_y", 2.0);
+	obs_source_t *top_shadow = obs_source_create("stagekit_shadow_backdrop", "FE Top Shadow", top_sd, nullptr);
+	obs_data_release(top_sd);
+	obs_source_filter_add(top, top_shadow);
+	{
+		obs_sceneitem_t *its[4] = {};
+		obs_scene_t *scene = make_scene("FE Scene Fit Never On", its);
+		obs_source_t *ss = obs_scene_get_source(scene);
+		obs_data_t *d = obs_data_create();
+		list(d, "entries", {"FE Game", "FE Top", "FE Mid", "FE Bottom"});
+		for (const Entry &e : entries)
+			look(d, std::string("fit|") + e.name + "|", e);
+		obs_data_set_bool(d, "fit|FE Bottom|resize", false);
+		obs_source_t *fit = obs_source_create("stagekit_scene_fit", "FE Fit Never On", d, nullptr);
+		obs_data_release(d);
+		obs_source_set_enabled(fit, false);
+		obs_source_filter_add(ss, fit);
+		run("Scene Fit, never on before", ss, its, {fit}, [] {}, false);
+		obs_source_filter_remove(ss, fit);
+		obs_source_release(fit);
+		obs_source_remove(ss);
+		obs_scene_release(scene);
+	}
+	{
+		obs_sceneitem_t *its[4] = {};
+		obs_scene_t *scene = make_scene("FE Fit to Space Never On", its);
+		obs_source_t *ss = obs_scene_get_source(scene);
+		std::vector<obs_source_t *> filters;
+		for (const Entry &e : entries) {
+			obs_data_t *d = obs_data_create();
+			obs_data_set_string(d, "item", e.name);
+			look(d, "", e);
+			obs_data_set_double(d, "tolerance", 8.0);
+			if (strcmp(e.name, "FE Bottom") == 0)
+				obs_data_set_bool(d, "resize", false);
+			obs_source_t *f = obs_source_create(
+				"stagekit_fit_item", (std::string(e.name) + " Fit Never On").c_str(), d, nullptr);
+			obs_data_release(d);
+			obs_source_set_enabled(f, false);
+			obs_source_filter_add(ss, f);
+			filters.push_back(f);
+		}
+		run("Fit to Space, never on before", ss, its, filters, [] {}, false);
+		for (obs_source_t *f : filters) {
+			obs_source_filter_remove(ss, f);
+			obs_source_release(f);
+		}
+		obs_source_remove(ss);
+		obs_scene_release(scene);
+	}
+	obs_source_filter_remove(top, top_shadow);
+	obs_source_release(top_shadow);
+	obs_set_output_source(0, before);
+	obs_source_release(before);
+	obs_source_filter_remove(game, shadow);
+	obs_source_release(shadow);
+	for (obs_source_t *s : {bg, game, camera, mid, top, bottom})
+		obs_source_release(s);
 }
 
 // ------------------------------------------------- scene fit groups
@@ -8020,6 +9542,631 @@ static void clear_picked_test()
 	obs_source_release(image);
 }
 
+// A layout scene: every capture stacked in the capture's place with one
+// shown, a camera above a chat box beside it, a Fit to Space for each.
+// It turns sound on, so it runs late in a full run (alone:
+// STAGEKIT_TEST_ONLY_LAYOUT).
+static void layout_scenes_test()
+{
+	// A layout scene: every capture stacked in the capture's place with one
+	// shown, a camera above a chat box beside it, a Fit to Space for each.
+	// Changing the capture must leave everything else where it is. What is
+	// drawn is noted for every frame, so a lurch of a few frames shows.
+	printf("\n[layout scenes: changing the capture leaves the rest where it is]\n");
+	if (obs_source_get_display_name("fade_transition")) {
+		obs_source_t *before_out = obs_get_output_source(0);
+		// With sound, as in OBS: OBS ends an item's show or hide transition
+		// only once its sound side is over too, and until it has ended the
+		// source it hides counts as in use. (The tests before this one run
+		// without sound, which is why this section comes last.)
+		obs_audio_info sound = {};
+		sound.samples_per_sec = 48000;
+		sound.speakers = SPEAKERS_STEREO;
+		const bool with_sound = obs_reset_audio(&sound);
+		// Twice over. The filters of a scene are ticked in the order they
+		// were added, and a capture is changed between two frames, so
+		// whichever of them comes first sees the change first: the Link
+		// Visibility may hide the old capture before the new one's Fit to
+		// Space has said a word, and the camera's may be ticked before
+		// either. Both orders must come to the same.
+		for (int order = 0; order < 2; order++) {
+			printf("  (%s)\n", order == 0
+						   ? "the captures' filters first, then the column's, then the link"
+						   : "the link first, then the column's filters, then the captures'");
+			const char *kind = obs_source_get_display_name("stagekit_morph") ? "stagekit_morph"
+											 : "fade_transition";
+			auto block = [](const char *name, long long abgr, int bw, int bh) {
+				obs_data_t *d = obs_data_create();
+				obs_data_set_int(d, "color", abgr);
+				obs_data_set_int(d, "width", bw);
+				obs_data_set_int(d, "height", bh);
+				obs_source_t *src = obs_source_create("color_source", name, d, nullptr);
+				obs_data_release(d);
+				return src;
+			};
+			auto set_list = [](obs_data_t *settings, const char *list, std::vector<const char *> names) {
+				obs_data_array_t *rows = obs_data_array_create();
+				for (const char *name : names) {
+					obs_data_t *row = obs_data_create();
+					obs_data_set_string(row, "value", name);
+					obs_data_array_push_back(rows, row);
+					obs_data_release(row);
+				}
+				obs_data_set_array(settings, list, rows);
+				obs_data_array_release(rows);
+			};
+			// The five captures: two of the screen's shape, a squarer window,
+			// a display that has no size until it has started, and a tablet.
+			enum { Game, Card, Window, Display, Tablet, Captures };
+			// (Names of their own for each time round: made again under the
+			// same names, nothing of the second lot did anything.)
+			const char *const names[2][Captures + 4] = {
+				{"Layout Game", "Layout Card", "Layout Window", "Layout Display", "Layout Tablet",
+				 "Layout Camera", "Layout Chat", "Layout Full", "Layout Component"},
+				{"Layout Game 2", "Layout Card 2", "Layout Window 2", "Layout Display 2",
+				 "Layout Tablet 2", "Layout Camera 2", "Layout Chat 2", "Layout Full 2",
+				 "Layout Component 2"}};
+			const char *const *cap_names = names[order];
+			const char *camera_name = names[order][Captures], *chat_name = names[order][Captures + 1];
+			const int cap_w[Captures] = {320, 320, 400, 0, 320}, cap_h[Captures] = {180, 180, 300, 0, 200};
+			const long long cap_colour[Captures] = {0xFF00FFFF, 0xFFFFFF00, 0xFFFF00FF, 0xFF0000FF,
+								0xFF00FF00};
+			obs_source_t *cap[Captures], *sw[Captures];
+			for (int i = 0; i < Captures; i++)
+				cap[i] = block(cap_names[i], cap_colour[i], cap_w[i], cap_h[i]);
+			obs_source_t *camera = block(camera_name, 0xFF808080, 100, 60);
+			obs_source_t *chat = block(chat_name, 0xFF404040, 100, 150);
+			const char *scene_names[2] = {names[order][Captures + 2], names[order][Captures + 3]};
+			obs_scene_t *full_scene = obs_scene_create(scene_names[0]);
+			obs_scene_t *comp = obs_scene_create(scene_names[1]); // 640x360
+			obs_source_t *full_src = obs_scene_get_source(full_scene),
+				     *comp_src = obs_scene_get_source(comp);
+			// As the file is written: each capture in the capture's box, all
+			// but the first hidden, never fitted.
+			obs_sceneitem_t *in_full[Captures], *in_comp[Captures];
+			for (int i = 0; i < Captures; i++) {
+				in_full[i] = obs_scene_add(full_scene, cap[i]);
+				in_comp[i] = obs_scene_add(comp, cap[i]);
+				vec2 at, box;
+				vec2_set(&at, 20.0f, 20.0f);
+				vec2_set(&box, 480.0f, 320.0f);
+				// (Two as a file may well have them: the window's box a
+				// pixel larger, the tablet lying a little off the space.)
+				if (i == Window)
+					vec2_set(&box, 481.0f, 321.0f);
+				if (i == Tablet) {
+					vec2_set(&at, 24.0f, 26.0f);
+					vec2_set(&box, 470.0f, 300.0f);
+				}
+				obs_sceneitem_set_pos(in_comp[i], &at);
+				obs_sceneitem_set_bounds_type(in_comp[i], OBS_BOUNDS_SCALE_INNER);
+				obs_sceneitem_set_bounds(in_comp[i], &box);
+				if (i != Game) {
+					obs_sceneitem_set_visible(in_full[i], false);
+					obs_sceneitem_set_visible(in_comp[i], false);
+				}
+			}
+			obs_sceneitem_t *cam_item = obs_scene_add(comp, camera);
+			obs_sceneitem_t *chat_item = obs_scene_add(comp, chat);
+			vec2 put;
+			vec2_set(&put, 520.0f, 50.0f);
+			obs_sceneitem_set_pos(cam_item, &put);
+			vec2_set(&put, 520.0f, 160.0f);
+			obs_sceneitem_set_pos(chat_item, &put);
+			obs_set_output_source(0, comp_src);
+			sleep_ms(100);
+
+			std::vector<obs_source_t *> scene_filters[2];
+			auto fit_for = [&](int scene, const std::string &name, const char *item_name, int box,
+					   bool resize, int toward = 0) {
+				obs_data_t *d = obs_data_create();
+				obs_data_set_string(d, "item", item_name);
+				obs_data_set_int(d, "box", box);
+				obs_data_set_double(d, "margin", 20);
+				obs_data_set_bool(d, "resize", resize);
+				obs_data_set_int(d, "toward", toward);
+				obs_data_set_bool(d, "visible_pixels", true);
+				obs_data_set_bool(d, "no_shadows", true);
+				obs_source_t *f = obs_source_create("stagekit_fit_item", name.c_str(), d, nullptr);
+				obs_data_release(d);
+				obs_source_filter_add(scene ? comp_src : full_src, f);
+				scene_filters[scene].push_back(f);
+			};
+			auto link_scenes = [&] {
+				for (int s = 0; s < 2; s++) {
+					obs_data_t *ld = obs_data_create();
+					set_list(ld, "items",
+						 {cap_names[0], cap_names[1], cap_names[2], cap_names[3],
+						  cap_names[4]});
+					obs_data_set_string(ld, "transition", kind);
+					obs_data_set_int(ld, "transition_ms", 300);
+					obs_data_set_bool(ld, "lock_hidden", true);
+					obs_source_t *link = obs_source_create("stagekit_visibility_link",
+									       "Link Visibility-Captures", ld, nullptr);
+					obs_data_release(ld);
+					obs_source_filter_add(s ? comp_src : full_src, link);
+					scene_filters[s].push_back(link);
+				}
+			};
+			auto fit_capture = [&](int i) {
+				fit_for(0, std::string("Full Fit ") + cap_names[i], cap_names[i], 0, true);
+				// (The window is kept towards the left of its space, as the owner's is.)
+				fit_for(1, std::string("Fit ") + cap_names[i], cap_names[i], 2, true,
+					i == Window ? 3 : 0);
+			};
+			if (order == 0) {
+				for (int i = 0; i < Captures; i++)
+					fit_capture(i);
+			} else {
+				link_scenes();
+			}
+			fit_for(1, "Fit Layout Camera", camera_name, 2, false);
+			fit_for(1, "Fit Layout Chat", chat_name, 2, false);
+			if (order == 0) {
+				link_scenes();
+			} else {
+				for (int i = Captures - 1; i >= 0; i--)
+					fit_capture(i);
+			}
+			auto switch_for = [&](obs_source_t *on, const char *name, std::vector<const char *> scenes) {
+				obs_data_t *sd = obs_data_create();
+				set_list(sd, "scenes", scenes);
+				obs_data_set_int(sd, "where", 1);
+				obs_data_set_string(sd, "transition", kind);
+				obs_data_set_int(sd, "transition_ms", 300);
+				obs_data_set_bool(sd, "follow", true);
+				obs_source_t *f = obs_source_create("stagekit_show_in_scenes", name, sd, nullptr);
+				obs_data_release(sd);
+				obs_source_filter_add(on, f);
+				return f;
+			};
+			for (int i = 0; i < Captures; i++)
+				sw[i] = switch_for(cap[i], "Show in Scenes-Capture", {scene_names[0], scene_names[1]});
+			obs_source_t *cam_sw = switch_for(camera, "Show in Scenes-Camera", {scene_names[1]});
+
+			// What was drawn, frame by frame: where each watched item of the
+			// Component scene was (position and bounding box) in every frame
+			// OBS drew, and whether that scene was the one on screen.
+			enum { TCam = Captures, TChat, Watched };
+			struct Frame {
+				bool on_screen;
+				bool visible[Watched];
+				float at[Watched][4];
+			};
+			struct Trace {
+				std::mutex mutex;
+				bool on = false;
+				obs_source_t *scene = nullptr;
+				obs_sceneitem_t *item[Watched];
+				std::vector<Frame> frames;
+			} trace;
+			trace.scene = comp_src;
+			for (int i = 0; i < Captures; i++)
+				trace.item[i] = in_comp[i];
+			trace.item[TCam] = cam_item;
+			trace.item[TChat] = chat_item;
+			const auto drawn = [](void *param) {
+				auto *t = static_cast<Trace *>(param);
+				std::lock_guard lock(t->mutex);
+				if (!t->on)
+					return;
+				Frame f;
+				f.on_screen = obs_source_active(t->scene);
+				for (int i = 0; i < Watched; i++) {
+					vec2 p, b;
+					obs_sceneitem_get_pos(t->item[i], &p);
+					obs_sceneitem_get_bounds(t->item[i], &b);
+					f.visible[i] = obs_sceneitem_visible(t->item[i]);
+					f.at[i][0] = p.x;
+					f.at[i][1] = p.y;
+					f.at[i][2] = b.x;
+					f.at[i][3] = b.y;
+				}
+				t->frames.push_back(f);
+			};
+			obs_add_main_rendered_callback(drawn, &trace);
+			auto watch = [&] {
+				std::lock_guard lock(trace.mutex);
+				trace.frames.clear();
+				trace.on = true;
+			};
+			auto watched = [&] {
+				std::lock_guard lock(trace.mutex);
+				trace.on = false;
+				return trace.frames;
+			};
+			struct Place {
+				float v[4];
+			};
+			auto place = [&](int which) {
+				Place out;
+				vec2 p, b;
+				obs_sceneitem_get_pos(trace.item[which], &p);
+				obs_sceneitem_get_bounds(trace.item[which], &b);
+				out.v[0] = p.x;
+				out.v[1] = p.y;
+				out.v[2] = b.x;
+				out.v[3] = b.y;
+				return out;
+			};
+			// How far an item was from a place at the worst, over the frames
+			// in which its scene was on screen, and in how many of them it
+			// was more than a pixel off.
+			struct Off {
+				double worst = 0.0;
+				int frames = 0, of = 0;
+			};
+			auto off_from = [](const std::vector<Frame> &frames, int which, const Place &ref) {
+				Off out;
+				for (const Frame &f : frames) {
+					if (!f.on_screen)
+						continue;
+					double d = 0.0;
+					for (int k = 0; k < 4; k++)
+						d = std::max(d, (double)std::fabs(f.at[which][k] - ref.v[k]));
+					out.worst = std::max(out.worst, d);
+					out.frames += d > 1.0;
+					out.of++;
+				}
+				return out;
+			};
+			auto same = [](const Place &a, const Place &b) {
+				for (int k = 0; k < 4; k++)
+					if (std::fabs(a.v[k] - b.v[k]) > 1.0f)
+						return false;
+				return true;
+			};
+			// What shows of an item on the canvas: the picture inside its box.
+			struct Rect {
+				double x, y, w, h;
+			};
+			auto picture_of = [&](int which) {
+				const Place p = place(which);
+				obs_source_t *src = obs_sceneitem_get_source(trace.item[which]);
+				const double pw = obs_source_get_width(src), ph = obs_source_get_height(src);
+				if (pw < 1.0 || ph < 1.0)
+					return Rect{p.v[0], p.v[1], 0.0, 0.0};
+				if (obs_sceneitem_get_bounds_type(trace.item[which]) == OBS_BOUNDS_NONE)
+					return Rect{p.v[0], p.v[1], pw, ph};
+				const double k = std::min(p.v[2] / pw, p.v[3] / ph);
+				const uint32_t to = obs_sceneitem_get_bounds_alignment(trace.item[which]);
+				const double fx = to & OBS_ALIGN_LEFT ? 0.0 : to & OBS_ALIGN_RIGHT ? 1.0 : 0.5;
+				const double fy = to & OBS_ALIGN_TOP ? 0.0 : to & OBS_ALIGN_BOTTOM ? 1.0 : 0.5;
+				return Rect{p.v[0] + (p.v[2] - pw * k) * fx, p.v[1] + (p.v[3] - ph * k) * fy, pw * k,
+					    ph * k};
+			};
+			// Whether any two of the items showing lie over each other.
+			auto overlap = [&] {
+				std::vector<Rect> shown;
+				for (int i = 0; i < Watched; i++)
+					if (obs_sceneitem_visible(trace.item[i]))
+						shown.push_back(picture_of(i));
+				for (size_t a = 0; a < shown.size(); a++)
+					for (size_t b = a + 1; b < shown.size(); b++)
+						if (shown[a].x < shown[b].x + shown[b].w - 0.5 &&
+						    shown[b].x < shown[a].x + shown[a].w - 0.5 &&
+						    shown[a].y < shown[b].y + shown[b].h - 0.5 &&
+						    shown[b].y < shown[a].y + shown[a].h - 0.5)
+							return true;
+				return false;
+			};
+			// Which captures are shown in the two scenes, and which are locked
+			// in the Component scene.
+			auto state = [&] {
+				std::string text;
+				for (int i = 0; i < Captures; i++)
+					text += obs_sceneitem_visible(in_full[i]) ? "1" : "0";
+				text += "/";
+				for (int i = 0; i < Captures; i++)
+					text += obs_sceneitem_visible(in_comp[i]) ? "1" : "0";
+				text += " locked ";
+				for (int i = 0; i < Captures; i++)
+					text += obs_sceneitem_locked(in_comp[i]) ? "1" : "0";
+				return text;
+			};
+			auto only = [](int which) {
+				std::string shown = "00000", locked = "11111";
+				shown[which] = '1';
+				locked[which] = '0';
+				return shown + "/" + shown + " locked " + locked;
+			};
+
+			sleep_ms(3000);
+			const Place cam0 = place(TCam), chat0 = place(TChat), space0 = place(Game);
+			const Rect cam_pic = picture_of(TCam), chat_pic = picture_of(TChat),
+				   game_pic = picture_of(Game);
+			CHECK(state() == only(Game) && std::fabs(space0.v[0] - 20) < 1 &&
+				      std::fabs(space0.v[1] - 20) < 1 && std::fabs(space0.v[2] - 480) < 1 &&
+				      std::fabs(space0.v[3] - 320) < 1 && std::fabs(cam_pic.x - 520) < 1 &&
+				      std::fabs(chat_pic.x - 520) < 1 && cam_pic.y + cam_pic.h < chat_pic.y &&
+				      !overlap(),
+			      "to begin with the game is fitted in the space beside the column, the camera above the chat box (%s; game %.0f, %.0f %.0fx%.0f in a space %.0fx%.0f; camera %.0f, %.0f; chat box %.0f, %.0f)",
+			      state().c_str(), game_pic.x, game_pic.y, game_pic.w, game_pic.h, space0.v[2], space0.v[3],
+			      cam_pic.x, cam_pic.y, chat_pic.x, chat_pic.y);
+
+			// One capture change, watched for a second and a quarter.
+			struct Change {
+				Off cam, chat;
+				std::vector<Frame> frames;
+			};
+			auto change_to = [&](int which, const Place &cam_ref, const Place &chat_ref) {
+				watch();
+				obs_source_set_enabled(sw[which], true);
+				sleep_ms(1250);
+				Change out;
+				out.frames = watched();
+				out.cam = off_from(out.frames, TCam, cam_ref);
+				out.chat = off_from(out.frames, TChat, chat_ref);
+				return out;
+			};
+
+			// 1. Another capture of the same shape, never shown here before.
+			{
+				const Change c = change_to(Card, cam0, chat0);
+				CHECK(c.cam.worst <= 1.0 && c.chat.worst <= 1.0 && c.cam.of > 40,
+				      "another capture switched on, for the first time in this scene: the camera and the chat box do not move in any frame (at most %.2f and %.2f px off over %d frames)",
+				      c.cam.worst, c.chat.worst, c.cam.of);
+				CHECK(state() == only(Card) && same(place(Card), space0) && !overlap(),
+				      "it ends where the first was, which is hidden and locked (%s; %.1f, %.1f %.1fx%.1f)",
+				      state().c_str(), place(Card).v[0], place(Card).v[1], place(Card).v[2],
+				      place(Card).v[3]);
+				// And back to one that has been fitted here before.
+				const Change back = change_to(Game, cam0, chat0);
+				CHECK(back.cam.worst <= 1.0 && back.chat.worst <= 1.0 && state() == only(Game) &&
+					      same(place(Game), space0),
+				      "and back to the first, which was fitted here before: the same (at most %.2f and %.2f px off; %s)",
+				      back.cam.worst, back.chat.worst, state().c_str());
+			}
+			// 2. A capture of another shape.
+			{
+				const Change c = change_to(Window, cam0, chat0);
+				const Rect pic = picture_of(Window);
+				CHECK(c.cam.worst <= 1.0 && c.chat.worst <= 1.0,
+				      "a capture of another shape (4:3 after 16:9): the column does not move in any frame (at most %.2f and %.2f px off over %d frames)",
+				      c.cam.worst, c.chat.worst, c.cam.of);
+				CHECK(state() == only(Window) && same(place(Window), space0) &&
+					      std::fabs(pic.h - 320) < 1 && std::fabs(pic.w - 426.7) < 1 && !overlap(),
+				      "and its space is the same one, though it was written a pixel larger (%s; picture %.0f, %.0f %.0fx%.0f)",
+				      state().c_str(), pic.x, pic.y, pic.w, pic.h);
+				const Change back = change_to(Game, cam0, chat0);
+				CHECK(back.cam.worst <= 1.0 && back.chat.worst <= 1.0 && state() == only(Game) &&
+					      same(place(Game), space0),
+				      "and back to the wide one: the same (at most %.2f and %.2f px off; %s)",
+				      back.cam.worst, back.chat.worst, state().c_str());
+			}
+			// 3. The camera hidden by its switch, the capture changed, the
+			// camera shown again.
+			{
+				obs_source_set_enabled(cam_sw, false);
+				sleep_ms(1200);
+				const Place chat1 = place(TChat);
+				CHECK(!obs_sceneitem_visible(cam_item) && std::fabs(chat1.v[1] - chat0.v[1]) > 5.0 &&
+					      same(place(TCam), cam0),
+				      "with the camera hidden by its switch the chat box takes the room, as before (chat box y %.1f, was %.1f)",
+				      chat1.v[1], chat0.v[1]);
+				const Change c = change_to(Window, cam0, chat1);
+				CHECK(c.chat.worst <= 1.0 && c.cam.worst <= 1.0 && state() == only(Window) &&
+					      same(place(Window), space0),
+				      "the capture changed meanwhile: the chat box and the hidden camera stay where they are (at most %.2f and %.2f px off)",
+				      c.chat.worst, c.cam.worst);
+				watch();
+				obs_source_set_enabled(cam_sw, true);
+				sleep_ms(1500);
+				const std::vector<Frame> frames = watched();
+				// The chat box goes back in one move; everything else stays.
+				int turns = 0, rest = -1, n = 0;
+				double last_y = chat1.v[1], last_step = 0.0;
+				bool begun = false;
+				for (const Frame &f : frames) {
+					const double y = f.at[TChat][1], step = y - last_y;
+					if (std::fabs(step) > 0.05 && std::fabs(last_step) <= 0.05 && begun)
+						turns++; // stopped and set off again
+					if (step * last_step < 0.0)
+						turns++; // turned round
+					begun = begun || std::fabs(step) > 0.05;
+					if (std::fabs(y - chat0.v[1]) > 0.5)
+						rest = -1;
+					else if (rest < 0)
+						rest = n;
+					last_step = step;
+					last_y = y;
+					n++;
+				}
+				const Off cam = off_from(frames, TCam, cam0), win = off_from(frames, Window, space0);
+				CHECK(obs_sceneitem_visible(cam_item) && cam.worst <= 1.0 && win.worst <= 1.0,
+				      "the camera shown again: it is where it was and the capture does not move (at most %.2f and %.2f px off over %d frames)",
+				      cam.worst, win.worst, cam.of);
+				CHECK(turns == 0 && rest >= 0 && same(place(TChat), chat0) && same(place(TCam), cam0) &&
+					      same(place(Window), space0) && !overlap(),
+				      "and the chat box makes way in one move, everything coming to rest once with nothing inside anything else (stops and turns: %d; at rest from frame %d of %d; chat box y %.1f, wanted %.1f)",
+				      turns, rest, n, place(TChat).v[1], chat0.v[1]);
+				change_to(Game, cam0, chat0);
+			}
+			// 4. A display, which has no size until it has started.
+			{
+				watch();
+				obs_source_set_enabled(sw[Display], true);
+				sleep_ms(300);
+				const std::vector<Frame> unsized = watched();
+				const std::string while_unsized = state();
+				watch();
+				obs_data_t *dd = obs_source_get_settings(cap[Display]);
+				obs_data_set_int(dd, "width", 320);
+				obs_data_set_int(dd, "height", 200);
+				obs_source_update(cap[Display], dd);
+				obs_data_release(dd);
+				sleep_ms(1500);
+				const std::vector<Frame> sized_frames = watched();
+				const Off cam_a = off_from(unsized, TCam, cam0),
+					  chat_a = off_from(unsized, TChat, chat0);
+				const Off cam_b = off_from(sized_frames, TCam, cam0),
+					  chat_b = off_from(sized_frames, TChat, chat0);
+				CHECK(while_unsized == only(Display) && cam_a.worst <= 1.0 && chat_a.worst <= 1.0,
+				      "a display shown before it has a size: the camera and the chat box stay put while it has none (at most %.2f and %.2f px off over %d frames; %s)",
+				      cam_a.worst, chat_a.worst, cam_a.of, while_unsized.c_str());
+				CHECK(cam_b.worst <= 1.0 && chat_b.worst <= 1.0,
+				      "nor do they move when its size comes (at most %.2f and %.2f px off over %d frames)",
+				      cam_b.worst, chat_b.worst, cam_b.of);
+				// Drawn: the display is red, 320x200, so 480x300 in its space.
+				const std::vector<uint8_t> px = render(comp_src, 640, 360);
+				int x0 = 640, y0 = 360, x1 = -1, y1 = -1;
+				for (int y = 0; y < 360; y++)
+					for (int x = 0; x < 640; x++) {
+						const uint8_t *p = &px[(size_t(y) * 640 + x) * 4];
+						if (p[0] > 200 && p[1] < 50 && p[2] < 50) {
+							x0 = std::min(x0, x);
+							y0 = std::min(y0, y);
+							x1 = std::max(x1, x);
+							y1 = std::max(y1, y);
+						}
+					}
+				CHECK(same(place(Display), space0) && std::abs(x0 - 20) <= 1 &&
+					      std::abs(y0 - 30) <= 1 && std::abs(x1 - x0 + 1 - 480) <= 2 &&
+					      std::abs(y1 - y0 + 1 - 300) <= 2 && !overlap(),
+				      "and it is then fitted in the capture's space (drawn at %d, %d %dx%d)", x0, y0,
+				      x1 - x0 + 1, y1 - y0 + 1);
+			}
+			// 5. The capture changed while this scene is not on screen.
+			{
+				static int taken = 0;
+				const auto count = [](void *, calldata_t *) {
+					taken++;
+				};
+				auto listen = [&](int which, bool on) {
+					signal_handler_t *sh = obs_source_get_signal_handler(cap[which]);
+					for (const char *signal : {"activate", "show"}) {
+						if (on)
+							signal_handler_connect(sh, signal, count, nullptr);
+						else
+							signal_handler_disconnect(sh, signal, count, nullptr);
+					}
+				};
+				auto in_use = [&](int which) {
+					return obs_source_active(cap[which]) || obs_source_showing(cap[which]);
+				};
+				// `to` is switched on while the other scene is on screen;
+				// `from` is the one showing until then. Every other capture
+				// is hidden all the while and listened to from the start;
+				// `from` from the moment this scene comes back, as the scene
+				// on screen until then fades it out, which uses it.
+				auto away_change = [&](int from, int to, const char *what) {
+					obs_set_output_source(0, full_src);
+					sleep_ms(300);
+					std::vector<int> idle;
+					for (int i = 0; i < Captures; i++)
+						if (i != from && i != to)
+							idle.push_back(i);
+					taken = 0;
+					for (int which : idle)
+						listen(which, true);
+					obs_source_set_enabled(sw[to], true);
+					sleep_ms(900);
+					const std::string away = state();
+					listen(from, true);
+					watch();
+					obs_set_output_source(0, comp_src);
+					sleep_ms(1000);
+					const std::vector<Frame> frames = watched();
+					bool unused = !in_use(from);
+					for (int which : idle)
+						unused = unused && !in_use(which);
+					std::string using_now;
+					for (int i = 0; i < Captures; i++) {
+						using_now += obs_source_active(cap[i]) ? "a" : "-";
+						using_now += obs_source_showing(cap[i]) ? "s" : "-";
+					}
+					listen(from, false);
+					for (int which : idle)
+						listen(which, false);
+					const Off cam = off_from(frames, TCam, cam0),
+						  chat_off = off_from(frames, TChat, chat0),
+						  capture = off_from(frames, to, space0);
+					CHECK(away == only(to) && cam.of > 30 && cam.worst <= 1.0 &&
+						      chat_off.worst <= 1.0 && capture.worst <= 1.0 && !overlap(),
+					      "%s while the scene is out of view: from the first frame it is drawn again everything is in its place, with no glide (%s; camera %.2f, chat box %.2f, capture %.2f px off at most over %d frames)",
+					      what, away.c_str(), cam.worst, chat_off.worst, capture.worst, cam.of);
+					CHECK(with_sound && taken == 0 && unused && in_use(to),
+					      "and no capture hidden there is taken into use at any moment (taken into use %d times; active and showing at the end: %s)",
+					      taken, using_now.c_str());
+				};
+				away_change(Display, Window,
+					    "a squarer capture that was fitted there before, switched on");
+				away_change(
+					Window, Tablet,
+					"a capture never shown there before and lying a little off the space, switched on");
+			}
+			// 6. A capture that shows but has no picture when its filter is
+			// first ticked, as when OBS starts with a display that is not
+			// there: its filter is new, and it has never been hidden.
+			{
+				change_to(Display, cam0, chat0);
+				obs_data_t *dd = obs_source_get_settings(cap[Display]);
+				obs_data_set_int(dd, "width", 0);
+				obs_data_set_int(dd, "height", 0);
+				obs_source_update(cap[Display], dd);
+				const std::string fit_name = std::string("Fit ") + cap_names[Display];
+				for (obs_source_t *&f : scene_filters[1])
+					if (fit_name == obs_source_get_name(f)) {
+						obs_data_t *as_saved = obs_data_create();
+						obs_data_t *was = obs_source_get_settings(f);
+						obs_data_apply(as_saved, was);
+						obs_data_release(was);
+						watch();
+						obs_source_filter_remove(comp_src, f);
+						obs_source_release(f);
+						f = obs_source_create("stagekit_fit_item", fit_name.c_str(), as_saved,
+								      nullptr);
+						obs_data_release(as_saved);
+						obs_source_filter_add(comp_src, f);
+						break;
+					}
+				sleep_ms(1200);
+				const std::vector<Frame> frames = watched();
+				const Off cam = off_from(frames, TCam, cam0), chat_off = off_from(frames, TChat, chat0);
+				CHECK(obs_source_get_width(cap[Display]) == 0 && state() == only(Display) &&
+					      cam.of > 40 && cam.worst <= 1.0 && chat_off.worst <= 1.0,
+				      "a capture showing with no picture from the start, its filter new: it holds its box, and the camera and the chat box stay put (at most %.2f and %.2f px off over %d frames)",
+				      cam.worst, chat_off.worst, cam.of);
+				watch();
+				obs_data_set_int(dd, "width", 320);
+				obs_data_set_int(dd, "height", 200);
+				obs_source_update(cap[Display], dd);
+				obs_data_release(dd);
+				sleep_ms(1500);
+				const std::vector<Frame> after = watched();
+				const Off cam_b = off_from(after, TCam, cam0), chat_b = off_from(after, TChat, chat0);
+				const Rect pic = picture_of(Display);
+				CHECK(cam_b.worst <= 1.0 && chat_b.worst <= 1.0 && same(place(Display), space0) &&
+					      std::fabs(pic.w - 480) < 1 && std::fabs(pic.h - 300) < 1 && !overlap(),
+				      "and when its picture comes it is fitted in the capture's space, the column still where it was (at most %.2f and %.2f px off over %d frames; picture %.0f, %.0f %.0fx%.0f)",
+				      cam_b.worst, chat_b.worst, cam_b.of, pic.x, pic.y, pic.w, pic.h);
+			}
+			obs_remove_main_rendered_callback(drawn, &trace);
+			obs_set_output_source(0, before_out);
+			for (int i = 0; i < Captures; i++) {
+				obs_source_filter_remove(cap[i], sw[i]);
+				obs_source_release(sw[i]);
+			}
+			obs_source_filter_remove(camera, cam_sw);
+			obs_source_release(cam_sw);
+			for (int s = 0; s < 2; s++)
+				for (obs_source_t *f : scene_filters[s]) {
+					obs_source_filter_remove(s ? comp_src : full_src, f);
+					obs_source_release(f);
+				}
+			sleep_ms(100);
+			obs_scene_release(full_scene);
+			obs_scene_release(comp);
+			for (obs_source_t *source : cap)
+				obs_source_release(source);
+			obs_source_release(camera);
+			obs_source_release(chat);
+			sleep_ms(300);
+		}
+		obs_source_release(before_out);
+	}
+}
+
 int main(int argc, char **argv)
 {
 	if (argc < 7) {
@@ -8081,6 +10228,27 @@ int main(int argc, char **argv)
 
 	if (getenv("STAGEKIT_TEST_ONLY_UPDATES")) { // to try that section alone
 		update_changes_test(argv[2]);
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
+	if (getenv("STAGEKIT_TEST_ONLY_FIT_ENABLE")) { // to try that section alone
+		fit_enable_test();
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
+	if (getenv("STAGEKIT_TEST_ONLY_FIT_OWNER")) { // to try that section alone
+		fit_owner_test();
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
+	if (getenv("STAGEKIT_TEST_ONLY_FIT_VISIBLE")) { // to try that section alone
+		fit_visible_test();
 		obs_shutdown();
 		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
 		       g_failures == 1 ? "" : "s");
@@ -8255,6 +10423,14 @@ int main(int argc, char **argv)
 		return g_failures ? 1 : 0;
 	}
 
+	if (getenv("STAGEKIT_TEST_ONLY_LAYOUT")) { // to try that section alone
+		// (It turns sound on itself, as in the full run.)
+		layout_scenes_test();
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
 	if (getenv("STAGEKIT_TEST_ONLY_MAKE_ROOM")) { // to try that section alone
 		make_room_test(w, h, out);
 		obs_shutdown();
@@ -22950,6 +25126,13 @@ int main(int argc, char **argv)
 	fit_priority_test();
 	// A Scene Fit's Same for all sources, and groups (STAGEKIT_TEST_ONLY_FIT_GROUPS).
 	scene_fit_groups_test();
+	// A letterboxed camera and a chat box keeping its size below it
+	// (STAGEKIT_TEST_ONLY_FIT_VISIBLE).
+	fit_visible_test();
+	// The owner's layout scene, G1 to G5 (STAGEKIT_TEST_ONLY_FIT_OWNER).
+	fit_owner_test();
+	// Switched on over a layout made by hand (STAGEKIT_TEST_ONLY_FIT_ENABLE).
+	fit_enable_test();
 	// ==== end scene-filters:fit ====
 	// ==== scene-filters:all-sources ====
 	// ---------------------------------------- the scene filters' All sources
@@ -23746,644 +25929,7 @@ int main(int argc, char **argv)
 		}
 	}
 
-	{
-		// A layout scene: every capture stacked in the capture's place with one
-		// shown, a camera above a chat box beside it, a Fit to Space for each.
-		// Changing the capture must leave everything else where it is. What is
-		// drawn is noted for every frame, so a lurch of a few frames shows.
-		printf("\n[layout scenes: changing the capture leaves the rest where it is]\n");
-		if (obs_source_get_display_name("fade_transition")) {
-			obs_source_t *before_out = obs_get_output_source(0);
-			// With sound, as in OBS: OBS ends an item's show or hide transition
-			// only once its sound side is over too, and until it has ended the
-			// source it hides counts as in use. (The tests before this one run
-			// without sound, which is why this section comes last.)
-			obs_audio_info sound = {};
-			sound.samples_per_sec = 48000;
-			sound.speakers = SPEAKERS_STEREO;
-			const bool with_sound = obs_reset_audio(&sound);
-			// Twice over. The filters of a scene are ticked in the order they
-			// were added, and a capture is changed between two frames, so
-			// whichever of them comes first sees the change first: the Link
-			// Visibility may hide the old capture before the new one's Fit to
-			// Space has said a word, and the camera's may be ticked before
-			// either. Both orders must come to the same.
-			for (int order = 0; order < 2; order++) {
-				printf("  (%s)\n",
-				       order == 0 ? "the captures' filters first, then the column's, then the link"
-						  : "the link first, then the column's filters, then the captures'");
-				const char *kind = obs_source_get_display_name("stagekit_morph") ? "stagekit_morph"
-												 : "fade_transition";
-				auto block = [](const char *name, long long abgr, int bw, int bh) {
-					obs_data_t *d = obs_data_create();
-					obs_data_set_int(d, "color", abgr);
-					obs_data_set_int(d, "width", bw);
-					obs_data_set_int(d, "height", bh);
-					obs_source_t *src = obs_source_create("color_source", name, d, nullptr);
-					obs_data_release(d);
-					return src;
-				};
-				auto set_list = [](obs_data_t *settings, const char *list,
-						   std::vector<const char *> names) {
-					obs_data_array_t *rows = obs_data_array_create();
-					for (const char *name : names) {
-						obs_data_t *row = obs_data_create();
-						obs_data_set_string(row, "value", name);
-						obs_data_array_push_back(rows, row);
-						obs_data_release(row);
-					}
-					obs_data_set_array(settings, list, rows);
-					obs_data_array_release(rows);
-				};
-				// The five captures: two of the screen's shape, a squarer window,
-				// a display that has no size until it has started, and a tablet.
-				enum { Game, Card, Window, Display, Tablet, Captures };
-				// (Names of their own for each time round: made again under the
-				// same names, nothing of the second lot did anything.)
-				const char *const names[2][Captures + 4] = {
-					{"Layout Game", "Layout Card", "Layout Window", "Layout Display",
-					 "Layout Tablet", "Layout Camera", "Layout Chat", "Layout Full",
-					 "Layout Component"},
-					{"Layout Game 2", "Layout Card 2", "Layout Window 2", "Layout Display 2",
-					 "Layout Tablet 2", "Layout Camera 2", "Layout Chat 2", "Layout Full 2",
-					 "Layout Component 2"}};
-				const char *const *cap_names = names[order];
-				const char *camera_name = names[order][Captures],
-					   *chat_name = names[order][Captures + 1];
-				const int cap_w[Captures] = {320, 320, 400, 0, 320},
-					  cap_h[Captures] = {180, 180, 300, 0, 200};
-				const long long cap_colour[Captures] = {0xFF00FFFF, 0xFFFFFF00, 0xFFFF00FF, 0xFF0000FF,
-									0xFF00FF00};
-				obs_source_t *cap[Captures], *sw[Captures];
-				for (int i = 0; i < Captures; i++)
-					cap[i] = block(cap_names[i], cap_colour[i], cap_w[i], cap_h[i]);
-				obs_source_t *camera = block(camera_name, 0xFF808080, 100, 60);
-				obs_source_t *chat = block(chat_name, 0xFF404040, 100, 150);
-				const char *scene_names[2] = {names[order][Captures + 2], names[order][Captures + 3]};
-				obs_scene_t *full_scene = obs_scene_create(scene_names[0]);
-				obs_scene_t *comp = obs_scene_create(scene_names[1]); // 640x360
-				obs_source_t *full_src = obs_scene_get_source(full_scene),
-					     *comp_src = obs_scene_get_source(comp);
-				// As the file is written: each capture in the capture's box, all
-				// but the first hidden, never fitted.
-				obs_sceneitem_t *in_full[Captures], *in_comp[Captures];
-				for (int i = 0; i < Captures; i++) {
-					in_full[i] = obs_scene_add(full_scene, cap[i]);
-					in_comp[i] = obs_scene_add(comp, cap[i]);
-					vec2 at, box;
-					vec2_set(&at, 20.0f, 20.0f);
-					vec2_set(&box, 480.0f, 320.0f);
-					// (Two as a file may well have them: the window's box a
-					// pixel larger, the tablet lying a little off the space.)
-					if (i == Window)
-						vec2_set(&box, 481.0f, 321.0f);
-					if (i == Tablet) {
-						vec2_set(&at, 24.0f, 26.0f);
-						vec2_set(&box, 470.0f, 300.0f);
-					}
-					obs_sceneitem_set_pos(in_comp[i], &at);
-					obs_sceneitem_set_bounds_type(in_comp[i], OBS_BOUNDS_SCALE_INNER);
-					obs_sceneitem_set_bounds(in_comp[i], &box);
-					if (i != Game) {
-						obs_sceneitem_set_visible(in_full[i], false);
-						obs_sceneitem_set_visible(in_comp[i], false);
-					}
-				}
-				obs_sceneitem_t *cam_item = obs_scene_add(comp, camera);
-				obs_sceneitem_t *chat_item = obs_scene_add(comp, chat);
-				vec2 put;
-				vec2_set(&put, 520.0f, 50.0f);
-				obs_sceneitem_set_pos(cam_item, &put);
-				vec2_set(&put, 520.0f, 160.0f);
-				obs_sceneitem_set_pos(chat_item, &put);
-				obs_set_output_source(0, comp_src);
-				sleep_ms(100);
-
-				std::vector<obs_source_t *> scene_filters[2];
-				auto fit_for = [&](int scene, const std::string &name, const char *item_name, int box,
-						   bool resize, int toward = 0) {
-					obs_data_t *d = obs_data_create();
-					obs_data_set_string(d, "item", item_name);
-					obs_data_set_int(d, "box", box);
-					obs_data_set_double(d, "margin", 20);
-					obs_data_set_bool(d, "resize", resize);
-					obs_data_set_int(d, "toward", toward);
-					obs_data_set_bool(d, "visible_pixels", true);
-					obs_data_set_bool(d, "no_shadows", true);
-					obs_source_t *f =
-						obs_source_create("stagekit_fit_item", name.c_str(), d, nullptr);
-					obs_data_release(d);
-					obs_source_filter_add(scene ? comp_src : full_src, f);
-					scene_filters[scene].push_back(f);
-				};
-				auto link_scenes = [&] {
-					for (int s = 0; s < 2; s++) {
-						obs_data_t *ld = obs_data_create();
-						set_list(ld, "items",
-							 {cap_names[0], cap_names[1], cap_names[2], cap_names[3],
-							  cap_names[4]});
-						obs_data_set_string(ld, "transition", kind);
-						obs_data_set_int(ld, "transition_ms", 300);
-						obs_data_set_bool(ld, "lock_hidden", true);
-						obs_source_t *link = obs_source_create("stagekit_visibility_link",
-										       "Link Visibility-Captures", ld,
-										       nullptr);
-						obs_data_release(ld);
-						obs_source_filter_add(s ? comp_src : full_src, link);
-						scene_filters[s].push_back(link);
-					}
-				};
-				auto fit_capture = [&](int i) {
-					fit_for(0, std::string("Full Fit ") + cap_names[i], cap_names[i], 0, true);
-					// (The window is kept towards the left of its space, as the owner's is.)
-					fit_for(1, std::string("Fit ") + cap_names[i], cap_names[i], 2, true,
-						i == Window ? 3 : 0);
-				};
-				if (order == 0) {
-					for (int i = 0; i < Captures; i++)
-						fit_capture(i);
-				} else {
-					link_scenes();
-				}
-				fit_for(1, "Fit Layout Camera", camera_name, 2, false);
-				fit_for(1, "Fit Layout Chat", chat_name, 2, false);
-				if (order == 0) {
-					link_scenes();
-				} else {
-					for (int i = Captures - 1; i >= 0; i--)
-						fit_capture(i);
-				}
-				auto switch_for = [&](obs_source_t *on, const char *name,
-						      std::vector<const char *> scenes) {
-					obs_data_t *sd = obs_data_create();
-					set_list(sd, "scenes", scenes);
-					obs_data_set_int(sd, "where", 1);
-					obs_data_set_string(sd, "transition", kind);
-					obs_data_set_int(sd, "transition_ms", 300);
-					obs_data_set_bool(sd, "follow", true);
-					obs_source_t *f =
-						obs_source_create("stagekit_show_in_scenes", name, sd, nullptr);
-					obs_data_release(sd);
-					obs_source_filter_add(on, f);
-					return f;
-				};
-				for (int i = 0; i < Captures; i++)
-					sw[i] = switch_for(cap[i], "Show in Scenes-Capture",
-							   {scene_names[0], scene_names[1]});
-				obs_source_t *cam_sw = switch_for(camera, "Show in Scenes-Camera", {scene_names[1]});
-
-				// What was drawn, frame by frame: where each watched item of the
-				// Component scene was (position and bounding box) in every frame
-				// OBS drew, and whether that scene was the one on screen.
-				enum { TCam = Captures, TChat, Watched };
-				struct Frame {
-					bool on_screen;
-					bool visible[Watched];
-					float at[Watched][4];
-				};
-				struct Trace {
-					std::mutex mutex;
-					bool on = false;
-					obs_source_t *scene = nullptr;
-					obs_sceneitem_t *item[Watched];
-					std::vector<Frame> frames;
-				} trace;
-				trace.scene = comp_src;
-				for (int i = 0; i < Captures; i++)
-					trace.item[i] = in_comp[i];
-				trace.item[TCam] = cam_item;
-				trace.item[TChat] = chat_item;
-				const auto drawn = [](void *param) {
-					auto *t = static_cast<Trace *>(param);
-					std::lock_guard lock(t->mutex);
-					if (!t->on)
-						return;
-					Frame f;
-					f.on_screen = obs_source_active(t->scene);
-					for (int i = 0; i < Watched; i++) {
-						vec2 p, b;
-						obs_sceneitem_get_pos(t->item[i], &p);
-						obs_sceneitem_get_bounds(t->item[i], &b);
-						f.visible[i] = obs_sceneitem_visible(t->item[i]);
-						f.at[i][0] = p.x;
-						f.at[i][1] = p.y;
-						f.at[i][2] = b.x;
-						f.at[i][3] = b.y;
-					}
-					t->frames.push_back(f);
-				};
-				obs_add_main_rendered_callback(drawn, &trace);
-				auto watch = [&] {
-					std::lock_guard lock(trace.mutex);
-					trace.frames.clear();
-					trace.on = true;
-				};
-				auto watched = [&] {
-					std::lock_guard lock(trace.mutex);
-					trace.on = false;
-					return trace.frames;
-				};
-				struct Place {
-					float v[4];
-				};
-				auto place = [&](int which) {
-					Place out;
-					vec2 p, b;
-					obs_sceneitem_get_pos(trace.item[which], &p);
-					obs_sceneitem_get_bounds(trace.item[which], &b);
-					out.v[0] = p.x;
-					out.v[1] = p.y;
-					out.v[2] = b.x;
-					out.v[3] = b.y;
-					return out;
-				};
-				// How far an item was from a place at the worst, over the frames
-				// in which its scene was on screen, and in how many of them it
-				// was more than a pixel off.
-				struct Off {
-					double worst = 0.0;
-					int frames = 0, of = 0;
-				};
-				auto off_from = [](const std::vector<Frame> &frames, int which, const Place &ref) {
-					Off out;
-					for (const Frame &f : frames) {
-						if (!f.on_screen)
-							continue;
-						double d = 0.0;
-						for (int k = 0; k < 4; k++)
-							d = std::max(d, (double)std::fabs(f.at[which][k] - ref.v[k]));
-						out.worst = std::max(out.worst, d);
-						out.frames += d > 1.0;
-						out.of++;
-					}
-					return out;
-				};
-				auto same = [](const Place &a, const Place &b) {
-					for (int k = 0; k < 4; k++)
-						if (std::fabs(a.v[k] - b.v[k]) > 1.0f)
-							return false;
-					return true;
-				};
-				// What shows of an item on the canvas: the picture inside its box.
-				struct Rect {
-					double x, y, w, h;
-				};
-				auto picture_of = [&](int which) {
-					const Place p = place(which);
-					obs_source_t *src = obs_sceneitem_get_source(trace.item[which]);
-					const double pw = obs_source_get_width(src), ph = obs_source_get_height(src);
-					if (pw < 1.0 || ph < 1.0)
-						return Rect{p.v[0], p.v[1], 0.0, 0.0};
-					if (obs_sceneitem_get_bounds_type(trace.item[which]) == OBS_BOUNDS_NONE)
-						return Rect{p.v[0], p.v[1], pw, ph};
-					const double k = std::min(p.v[2] / pw, p.v[3] / ph);
-					const uint32_t to = obs_sceneitem_get_bounds_alignment(trace.item[which]);
-					const double fx = to & OBS_ALIGN_LEFT ? 0.0 : to & OBS_ALIGN_RIGHT ? 1.0 : 0.5;
-					const double fy = to & OBS_ALIGN_TOP ? 0.0 : to & OBS_ALIGN_BOTTOM ? 1.0 : 0.5;
-					return Rect{p.v[0] + (p.v[2] - pw * k) * fx, p.v[1] + (p.v[3] - ph * k) * fy,
-						    pw * k, ph * k};
-				};
-				// Whether any two of the items showing lie over each other.
-				auto overlap = [&] {
-					std::vector<Rect> shown;
-					for (int i = 0; i < Watched; i++)
-						if (obs_sceneitem_visible(trace.item[i]))
-							shown.push_back(picture_of(i));
-					for (size_t a = 0; a < shown.size(); a++)
-						for (size_t b = a + 1; b < shown.size(); b++)
-							if (shown[a].x < shown[b].x + shown[b].w - 0.5 &&
-							    shown[b].x < shown[a].x + shown[a].w - 0.5 &&
-							    shown[a].y < shown[b].y + shown[b].h - 0.5 &&
-							    shown[b].y < shown[a].y + shown[a].h - 0.5)
-								return true;
-					return false;
-				};
-				// Which captures are shown in the two scenes, and which are locked
-				// in the Component scene.
-				auto state = [&] {
-					std::string text;
-					for (int i = 0; i < Captures; i++)
-						text += obs_sceneitem_visible(in_full[i]) ? "1" : "0";
-					text += "/";
-					for (int i = 0; i < Captures; i++)
-						text += obs_sceneitem_visible(in_comp[i]) ? "1" : "0";
-					text += " locked ";
-					for (int i = 0; i < Captures; i++)
-						text += obs_sceneitem_locked(in_comp[i]) ? "1" : "0";
-					return text;
-				};
-				auto only = [](int which) {
-					std::string shown = "00000", locked = "11111";
-					shown[which] = '1';
-					locked[which] = '0';
-					return shown + "/" + shown + " locked " + locked;
-				};
-
-				sleep_ms(3000);
-				const Place cam0 = place(TCam), chat0 = place(TChat), space0 = place(Game);
-				const Rect cam_pic = picture_of(TCam), chat_pic = picture_of(TChat),
-					   game_pic = picture_of(Game);
-				CHECK(state() == only(Game) && std::fabs(space0.v[0] - 20) < 1 &&
-					      std::fabs(space0.v[1] - 20) < 1 && std::fabs(space0.v[2] - 480) < 1 &&
-					      std::fabs(space0.v[3] - 320) < 1 && std::fabs(cam_pic.x - 520) < 1 &&
-					      std::fabs(chat_pic.x - 520) < 1 && cam_pic.y + cam_pic.h < chat_pic.y &&
-					      !overlap(),
-				      "to begin with the game is fitted in the space beside the column, the camera above the chat box (%s; game %.0f, %.0f %.0fx%.0f in a space %.0fx%.0f; camera %.0f, %.0f; chat box %.0f, %.0f)",
-				      state().c_str(), game_pic.x, game_pic.y, game_pic.w, game_pic.h, space0.v[2],
-				      space0.v[3], cam_pic.x, cam_pic.y, chat_pic.x, chat_pic.y);
-
-				// One capture change, watched for a second and a quarter.
-				struct Change {
-					Off cam, chat;
-					std::vector<Frame> frames;
-				};
-				auto change_to = [&](int which, const Place &cam_ref, const Place &chat_ref) {
-					watch();
-					obs_source_set_enabled(sw[which], true);
-					sleep_ms(1250);
-					Change out;
-					out.frames = watched();
-					out.cam = off_from(out.frames, TCam, cam_ref);
-					out.chat = off_from(out.frames, TChat, chat_ref);
-					return out;
-				};
-
-				// 1. Another capture of the same shape, never shown here before.
-				{
-					const Change c = change_to(Card, cam0, chat0);
-					CHECK(c.cam.worst <= 1.0 && c.chat.worst <= 1.0 && c.cam.of > 40,
-					      "another capture switched on, for the first time in this scene: the camera and the chat box do not move in any frame (at most %.2f and %.2f px off over %d frames)",
-					      c.cam.worst, c.chat.worst, c.cam.of);
-					CHECK(state() == only(Card) && same(place(Card), space0) && !overlap(),
-					      "it ends where the first was, which is hidden and locked (%s; %.1f, %.1f %.1fx%.1f)",
-					      state().c_str(), place(Card).v[0], place(Card).v[1], place(Card).v[2],
-					      place(Card).v[3]);
-					// And back to one that has been fitted here before.
-					const Change back = change_to(Game, cam0, chat0);
-					CHECK(back.cam.worst <= 1.0 && back.chat.worst <= 1.0 &&
-						      state() == only(Game) && same(place(Game), space0),
-					      "and back to the first, which was fitted here before: the same (at most %.2f and %.2f px off; %s)",
-					      back.cam.worst, back.chat.worst, state().c_str());
-				}
-				// 2. A capture of another shape.
-				{
-					const Change c = change_to(Window, cam0, chat0);
-					const Rect pic = picture_of(Window);
-					CHECK(c.cam.worst <= 1.0 && c.chat.worst <= 1.0,
-					      "a capture of another shape (4:3 after 16:9): the column does not move in any frame (at most %.2f and %.2f px off over %d frames)",
-					      c.cam.worst, c.chat.worst, c.cam.of);
-					CHECK(state() == only(Window) && same(place(Window), space0) &&
-						      std::fabs(pic.h - 320) < 1 && std::fabs(pic.w - 426.7) < 1 &&
-						      !overlap(),
-					      "and its space is the same one, though it was written a pixel larger (%s; picture %.0f, %.0f %.0fx%.0f)",
-					      state().c_str(), pic.x, pic.y, pic.w, pic.h);
-					const Change back = change_to(Game, cam0, chat0);
-					CHECK(back.cam.worst <= 1.0 && back.chat.worst <= 1.0 &&
-						      state() == only(Game) && same(place(Game), space0),
-					      "and back to the wide one: the same (at most %.2f and %.2f px off; %s)",
-					      back.cam.worst, back.chat.worst, state().c_str());
-				}
-				// 3. The camera hidden by its switch, the capture changed, the
-				// camera shown again.
-				{
-					obs_source_set_enabled(cam_sw, false);
-					sleep_ms(1200);
-					const Place chat1 = place(TChat);
-					CHECK(!obs_sceneitem_visible(cam_item) &&
-						      std::fabs(chat1.v[1] - chat0.v[1]) > 5.0 &&
-						      same(place(TCam), cam0),
-					      "with the camera hidden by its switch the chat box takes the room, as before (chat box y %.1f, was %.1f)",
-					      chat1.v[1], chat0.v[1]);
-					const Change c = change_to(Window, cam0, chat1);
-					CHECK(c.chat.worst <= 1.0 && c.cam.worst <= 1.0 && state() == only(Window) &&
-						      same(place(Window), space0),
-					      "the capture changed meanwhile: the chat box and the hidden camera stay where they are (at most %.2f and %.2f px off)",
-					      c.chat.worst, c.cam.worst);
-					watch();
-					obs_source_set_enabled(cam_sw, true);
-					sleep_ms(1500);
-					const std::vector<Frame> frames = watched();
-					// The chat box goes back in one move; everything else stays.
-					int turns = 0, rest = -1, n = 0;
-					double last_y = chat1.v[1], last_step = 0.0;
-					bool begun = false;
-					for (const Frame &f : frames) {
-						const double y = f.at[TChat][1], step = y - last_y;
-						if (std::fabs(step) > 0.05 && std::fabs(last_step) <= 0.05 && begun)
-							turns++; // stopped and set off again
-						if (step * last_step < 0.0)
-							turns++; // turned round
-						begun = begun || std::fabs(step) > 0.05;
-						if (std::fabs(y - chat0.v[1]) > 0.5)
-							rest = -1;
-						else if (rest < 0)
-							rest = n;
-						last_step = step;
-						last_y = y;
-						n++;
-					}
-					const Off cam = off_from(frames, TCam, cam0),
-						  win = off_from(frames, Window, space0);
-					CHECK(obs_sceneitem_visible(cam_item) && cam.worst <= 1.0 && win.worst <= 1.0,
-					      "the camera shown again: it is where it was and the capture does not move (at most %.2f and %.2f px off over %d frames)",
-					      cam.worst, win.worst, cam.of);
-					CHECK(turns == 0 && rest >= 0 && same(place(TChat), chat0) &&
-						      same(place(TCam), cam0) && same(place(Window), space0) &&
-						      !overlap(),
-					      "and the chat box makes way in one move, everything coming to rest once with nothing inside anything else (stops and turns: %d; at rest from frame %d of %d; chat box y %.1f, wanted %.1f)",
-					      turns, rest, n, place(TChat).v[1], chat0.v[1]);
-					change_to(Game, cam0, chat0);
-				}
-				// 4. A display, which has no size until it has started.
-				{
-					watch();
-					obs_source_set_enabled(sw[Display], true);
-					sleep_ms(300);
-					const std::vector<Frame> unsized = watched();
-					const std::string while_unsized = state();
-					watch();
-					obs_data_t *dd = obs_source_get_settings(cap[Display]);
-					obs_data_set_int(dd, "width", 320);
-					obs_data_set_int(dd, "height", 200);
-					obs_source_update(cap[Display], dd);
-					obs_data_release(dd);
-					sleep_ms(1500);
-					const std::vector<Frame> sized_frames = watched();
-					const Off cam_a = off_from(unsized, TCam, cam0),
-						  chat_a = off_from(unsized, TChat, chat0);
-					const Off cam_b = off_from(sized_frames, TCam, cam0),
-						  chat_b = off_from(sized_frames, TChat, chat0);
-					CHECK(while_unsized == only(Display) && cam_a.worst <= 1.0 &&
-						      chat_a.worst <= 1.0,
-					      "a display shown before it has a size: the camera and the chat box stay put while it has none (at most %.2f and %.2f px off over %d frames; %s)",
-					      cam_a.worst, chat_a.worst, cam_a.of, while_unsized.c_str());
-					CHECK(cam_b.worst <= 1.0 && chat_b.worst <= 1.0,
-					      "nor do they move when its size comes (at most %.2f and %.2f px off over %d frames)",
-					      cam_b.worst, chat_b.worst, cam_b.of);
-					// Drawn: the display is red, 320x200, so 480x300 in its space.
-					const std::vector<uint8_t> px = render(comp_src, 640, 360);
-					int x0 = 640, y0 = 360, x1 = -1, y1 = -1;
-					for (int y = 0; y < 360; y++)
-						for (int x = 0; x < 640; x++) {
-							const uint8_t *p = &px[(size_t(y) * 640 + x) * 4];
-							if (p[0] > 200 && p[1] < 50 && p[2] < 50) {
-								x0 = std::min(x0, x);
-								y0 = std::min(y0, y);
-								x1 = std::max(x1, x);
-								y1 = std::max(y1, y);
-							}
-						}
-					CHECK(same(place(Display), space0) && std::abs(x0 - 20) <= 1 &&
-						      std::abs(y0 - 30) <= 1 && std::abs(x1 - x0 + 1 - 480) <= 2 &&
-						      std::abs(y1 - y0 + 1 - 300) <= 2 && !overlap(),
-					      "and it is then fitted in the capture's space (drawn at %d, %d %dx%d)",
-					      x0, y0, x1 - x0 + 1, y1 - y0 + 1);
-				}
-				// 5. The capture changed while this scene is not on screen.
-				{
-					static int taken = 0;
-					const auto count = [](void *, calldata_t *) {
-						taken++;
-					};
-					auto listen = [&](int which, bool on) {
-						signal_handler_t *sh = obs_source_get_signal_handler(cap[which]);
-						for (const char *signal : {"activate", "show"}) {
-							if (on)
-								signal_handler_connect(sh, signal, count, nullptr);
-							else
-								signal_handler_disconnect(sh, signal, count, nullptr);
-						}
-					};
-					auto in_use = [&](int which) {
-						return obs_source_active(cap[which]) || obs_source_showing(cap[which]);
-					};
-					// `to` is switched on while the other scene is on screen;
-					// `from` is the one showing until then. Every other capture
-					// is hidden all the while and listened to from the start;
-					// `from` from the moment this scene comes back, as the scene
-					// on screen until then fades it out, which uses it.
-					auto away_change = [&](int from, int to, const char *what) {
-						obs_set_output_source(0, full_src);
-						sleep_ms(300);
-						std::vector<int> idle;
-						for (int i = 0; i < Captures; i++)
-							if (i != from && i != to)
-								idle.push_back(i);
-						taken = 0;
-						for (int which : idle)
-							listen(which, true);
-						obs_source_set_enabled(sw[to], true);
-						sleep_ms(900);
-						const std::string away = state();
-						listen(from, true);
-						watch();
-						obs_set_output_source(0, comp_src);
-						sleep_ms(1000);
-						const std::vector<Frame> frames = watched();
-						bool unused = !in_use(from);
-						for (int which : idle)
-							unused = unused && !in_use(which);
-						std::string using_now;
-						for (int i = 0; i < Captures; i++) {
-							using_now += obs_source_active(cap[i]) ? "a" : "-";
-							using_now += obs_source_showing(cap[i]) ? "s" : "-";
-						}
-						listen(from, false);
-						for (int which : idle)
-							listen(which, false);
-						const Off cam = off_from(frames, TCam, cam0),
-							  chat_off = off_from(frames, TChat, chat0),
-							  capture = off_from(frames, to, space0);
-						CHECK(away == only(to) && cam.of > 30 && cam.worst <= 1.0 &&
-							      chat_off.worst <= 1.0 && capture.worst <= 1.0 &&
-							      !overlap(),
-						      "%s while the scene is out of view: from the first frame it is drawn again everything is in its place, with no glide (%s; camera %.2f, chat box %.2f, capture %.2f px off at most over %d frames)",
-						      what, away.c_str(), cam.worst, chat_off.worst, capture.worst,
-						      cam.of);
-						CHECK(with_sound && taken == 0 && unused && in_use(to),
-						      "and no capture hidden there is taken into use at any moment (taken into use %d times; active and showing at the end: %s)",
-						      taken, using_now.c_str());
-					};
-					away_change(Display, Window,
-						    "a squarer capture that was fitted there before, switched on");
-					away_change(
-						Window, Tablet,
-						"a capture never shown there before and lying a little off the space, switched on");
-				}
-				// 6. A capture that shows but has no picture when its filter is
-				// first ticked, as when OBS starts with a display that is not
-				// there: its filter is new, and it has never been hidden.
-				{
-					change_to(Display, cam0, chat0);
-					obs_data_t *dd = obs_source_get_settings(cap[Display]);
-					obs_data_set_int(dd, "width", 0);
-					obs_data_set_int(dd, "height", 0);
-					obs_source_update(cap[Display], dd);
-					const std::string fit_name = std::string("Fit ") + cap_names[Display];
-					for (obs_source_t *&f : scene_filters[1])
-						if (fit_name == obs_source_get_name(f)) {
-							obs_data_t *as_saved = obs_data_create();
-							obs_data_t *was = obs_source_get_settings(f);
-							obs_data_apply(as_saved, was);
-							obs_data_release(was);
-							watch();
-							obs_source_filter_remove(comp_src, f);
-							obs_source_release(f);
-							f = obs_source_create("stagekit_fit_item", fit_name.c_str(),
-									      as_saved, nullptr);
-							obs_data_release(as_saved);
-							obs_source_filter_add(comp_src, f);
-							break;
-						}
-					sleep_ms(1200);
-					const std::vector<Frame> frames = watched();
-					const Off cam = off_from(frames, TCam, cam0),
-						  chat_off = off_from(frames, TChat, chat0);
-					CHECK(obs_source_get_width(cap[Display]) == 0 && state() == only(Display) &&
-						      cam.of > 40 && cam.worst <= 1.0 && chat_off.worst <= 1.0,
-					      "a capture showing with no picture from the start, its filter new: it holds its box, and the camera and the chat box stay put (at most %.2f and %.2f px off over %d frames)",
-					      cam.worst, chat_off.worst, cam.of);
-					watch();
-					obs_data_set_int(dd, "width", 320);
-					obs_data_set_int(dd, "height", 200);
-					obs_source_update(cap[Display], dd);
-					obs_data_release(dd);
-					sleep_ms(1500);
-					const std::vector<Frame> after = watched();
-					const Off cam_b = off_from(after, TCam, cam0),
-						  chat_b = off_from(after, TChat, chat0);
-					const Rect pic = picture_of(Display);
-					CHECK(cam_b.worst <= 1.0 && chat_b.worst <= 1.0 &&
-						      same(place(Display), space0) && std::fabs(pic.w - 480) < 1 &&
-						      std::fabs(pic.h - 300) < 1 && !overlap(),
-					      "and when its picture comes it is fitted in the capture's space, the column still where it was (at most %.2f and %.2f px off over %d frames; picture %.0f, %.0f %.0fx%.0f)",
-					      cam_b.worst, chat_b.worst, cam_b.of, pic.x, pic.y, pic.w, pic.h);
-				}
-				obs_remove_main_rendered_callback(drawn, &trace);
-				obs_set_output_source(0, before_out);
-				for (int i = 0; i < Captures; i++) {
-					obs_source_filter_remove(cap[i], sw[i]);
-					obs_source_release(sw[i]);
-				}
-				obs_source_filter_remove(camera, cam_sw);
-				obs_source_release(cam_sw);
-				for (int s = 0; s < 2; s++)
-					for (obs_source_t *f : scene_filters[s]) {
-						obs_source_filter_remove(s ? comp_src : full_src, f);
-						obs_source_release(f);
-					}
-				sleep_ms(100);
-				obs_scene_release(full_scene);
-				obs_scene_release(comp);
-				for (obs_source_t *source : cap)
-					obs_source_release(source);
-				obs_source_release(camera);
-				obs_source_release(chat);
-				sleep_ms(300);
-			}
-			obs_source_release(before_out);
-		}
-	}
+	layout_scenes_test(); // (alone: STAGEKIT_TEST_ONLY_LAYOUT)
 
 	// ==== scene-filters:sound ====
 	// ---- modes
