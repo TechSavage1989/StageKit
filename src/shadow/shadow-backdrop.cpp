@@ -392,6 +392,10 @@ private:
 	gs_eparam_t *p_corner_size_ = nullptr;
 	gs_eparam_t *p_intensity_ = nullptr;
 	gs_eparam_t *p_out_linear_ = nullptr;
+	gs_eparam_t *p_rect_tex_ = nullptr;
+	gs_eparam_t *p_rect_known_ = nullptr;
+	std::unique_ptr<VisibleRect> rects_; // what shows of the source, for a line round it
+	gs_texture_t *no_rect_ = nullptr;
 	gs_texrender_t *tr_body_ = nullptr;
 	gs_texrender_t *tr_extended_ = nullptr;
 	gs_eparam_t *p_extended_ = nullptr;
@@ -442,6 +446,8 @@ ShadowBackdrop::ShadowBackdrop(obs_data_t *settings, obs_source_t *source) : sou
 		p_corner_size_ = gs_effect_get_param_by_name(effect_, "corner_size");
 		p_intensity_ = gs_effect_get_param_by_name(effect_, "glow_intensity");
 		p_out_linear_ = gs_effect_get_param_by_name(effect_, "out_linear");
+		p_rect_tex_ = gs_effect_get_param_by_name(effect_, "rect_tex");
+		p_rect_known_ = gs_effect_get_param_by_name(effect_, "rect_known");
 		p_extended_ = gs_effect_get_param_by_name(effect_, "extended");
 		p_extend_mirror_ = gs_effect_get_param_by_name(effect_, "extend_mirror");
 	}
@@ -456,16 +462,25 @@ ShadowBackdrop::ShadowBackdrop(obs_data_t *settings, obs_source_t *source) : sou
 	tr_final_ = gs_texrender_create(GS_RGBA16F, GS_ZS_NONE);
 	tr_body_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 	tr_extended_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
+	{
+		// (A stand-in for rect_tex when no rectangle is known.)
+		const float none[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+		const uint8_t *data = reinterpret_cast<const uint8_t *>(none);
+		no_rect_ = gs_texture_create(1, 1, GS_RGBA32F, 1, &data, 0);
+	}
 	obs_leave_graphics();
 	bfree(path);
+	rects_ = std::make_unique<VisibleRect>();
 
 	update(settings);
 }
 
 ShadowBackdrop::~ShadowBackdrop()
 {
+	rects_.reset();
 	obs_enter_graphics();
 	blur_.reset();
+	gs_texture_destroy(no_rect_);
 	gs_effect_destroy(effect_);
 	gs_texrender_destroy(tr_input_);
 	gs_texrender_destroy(tr_card_);
@@ -528,7 +543,7 @@ void ShadowBackdrop::update(obs_data_t *settings)
 	s.outline_fill = obs_data_get_int(settings, "outline_fill") == 1 ? Fill::Picture : Fill::Color;
 	s.outline_edge = obs_data_get_int(settings, "outline_edge") == 1 ? Edge::Mirror : Edge::Stretch;
 	s.outline_blur = std::clamp(obs_data_get_double(settings, "outline_blur"), 0.0, 200.0);
-	s.outline_corners = (int)std::clamp<long long>(obs_data_get_int(settings, "outline_corners"), 0, 4);
+	s.outline_corners = (int)std::clamp<long long>(obs_data_get_int(settings, "outline_corners"), 0, 5);
 	s.outline_corner_size = std::clamp(obs_data_get_double(settings, "outline_corner_size"), 0.0, 500.0);
 	s.intensity = std::clamp(obs_data_get_double(settings, "glow_intensity") / 100.0, 0.25, 4.0);
 	// A glow sits evenly all round.
@@ -1034,13 +1049,22 @@ void ShadowBackdrop::render()
 		gs_effect_set_float(p_outline_width_, (float)s.outline_width);
 		gs_effect_set_vec4(p_outline_color_, &outline_color);
 		gs_effect_set_float(p_outline_picture_, s.outline_fill == Fill::Picture ? 1.0f : 0.0f);
-		gs_effect_set_float(p_outline_corners_, (float)s.outline_corners);
-		gs_effect_set_float(p_corner_size_, (float)s.outline_corner_size);
+		// (Square: a rounded corner of no size.)
+		const bool square = s.outline_corners == 5;
+		gs_effect_set_float(p_outline_corners_, square ? 1.0f : (float)s.outline_corners);
+		gs_effect_set_float(p_corner_size_, square ? 0.0f : (float)s.outline_corner_size);
 		// (The box: given again, an effect's values last for one draw.)
 		gs_effect_set_vec2(p_src_size_, &src_size);
 		gs_effect_set_vec2(p_pad_, &pad);
 		gs_effect_set_float(p_backdrop_on_, s.backdrop ? 1.0f : 0.0f);
 		gs_effect_set_float(p_backdrop_pad_, (float)s.backdrop_pad);
+		// A line round the box goes round what shows of the source (a
+		// widget's or a capture's see-through margins left out), or round
+		// its panel when it has one.
+		gs_texture_t *rect = s.outline_corners > 0 && !s.backdrop && rects_ ? rects_->measure(input, w, h)
+										    : nullptr;
+		gs_effect_set_texture(p_rect_tex_, rect ? rect : no_rect_);
+		gs_effect_set_float(p_rect_known_, rect ? 1.0f : 0.0f);
 		draw(tr_body_, card, "Outline");
 		if (gs_texture_t *body = gs_texrender_get_texture(tr_body_))
 			card = body;

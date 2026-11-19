@@ -3509,7 +3509,12 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   round the box (the source rect, or its panel, in `stagekit-shadow.effect`'s `box_line`; per
   item in Scene Shadow: `LookPaint::draw_item_ring` / `draw_box_ring`, technique `BoxRing`, into
   a ring canvas per frame or per layer, which `compose(..., ring)` / `compose_layers(..., rings)`
-  read instead of dilating the silhouette; the outer corner is capped (`line_corner`) so the box's own square corner stays under the line, and the line never lies inside the box; Morph draws it in `Pass::Ring` at each part's quad
+  read instead of dilating the silhouette; the box is **what shows of the source** (`VisibleRect`
+  in `look-paint.*`, techniques `RectFirst`/`RectReduce` in `stagekit-looks.effect`, blocks of 8 by 8
+  reduced on the card to one 32-bit float pixel, nothing read back; `rect_tex` in both effects; the
+  item drawn by itself with `item_picture`, Morph's part with `cropped`), so see-through margins (a
+  widget's, a capture's) no longer stand the line off the picture on some sides; `outline_corners`
+  5 is *Square* (a rounded corner of no size); the outer corner is capped (`line_corner`) so the box's own square corner stays under the line, and the line never lies inside the box; Morph draws it in `Pass::Ring` at each part's quad
   with its weight, so the run's cross-fade fades it). **Scene Shadow's shadow is thrown by the
   outlined shape** (technique `Outlined`, `LookPaint::outlined_`), as the per-source filter's
   always was (its card includes the line). Widths were measured equal (10.00 px at scale 1 and

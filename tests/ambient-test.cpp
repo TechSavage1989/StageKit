@@ -14627,7 +14627,7 @@ static void outline_glow_test(uint32_t w, uint32_t h, const std::string &out)
 		const size_t count = p ? obs_property_list_item_count(p) : 0;
 		obs_properties_destroy(props);
 		obs_source_release(d);
-		CHECK(corners == 0 && intensity == 100.0 && count == 5,
+		CHECK(corners == 0 && intensity == 100.0 && count == 6,
 		      "a new filter's outline follows the source and its intensity is 100%% (%lld, %.0f; %zu corner choices)",
 		      corners, intensity, count);
 	}
@@ -14727,6 +14727,209 @@ static void outline_glow_test(uint32_t w, uint32_t h, const std::string &out)
 		      "with rounded outline corners the drop shadow is round there too (%d, %d), both filters alike (at most %d off)",
 		      px(fa, 330, 250, 0), px(fb, 330, 250, 0), most(fa, fb, 280, 200, 340, 260));
 	}
+	// The line is the same width on all four sides of the drawn picture,
+	// whatever places it: a bounding box it does not fill (to the left, and
+	// in the middle), a crop, half size; from either filter, for each kind
+	// of corner. (The owner's window capture, fitted in a bounding box, had
+	// a thin line on two sides and a thick one on the others.)
+	{
+		struct Place {
+			const char *name;
+			float x, y;   // the drawn picture's middle
+			float hw, hh; // and half its size
+		};
+		const Place places[] = {
+			{"in a box, to the left", 140, 80, 120, 60},
+			{"in a box, in the middle", 170, 240, 120, 60},
+			{"cropped", 435, 65, 75, 45},
+			{"at a half", 430, 245, 50, 25},
+			{"with see-through edges", 460, 320, 85, 15},
+		};
+		auto lay_out = [&](obs_scene_t *scene, const char *prefix, std::vector<obs_source_t *> &made) {
+			put(scene, bg, 0, 0);
+			for (int i = 0; i < 5; i++) {
+				const std::string name = std::string(prefix) + places[i].name;
+				obs_source_t *src = block(name.c_str(), 0xFFFFFFFF, i < 2 ? 160 : 200,
+							  i < 2   ? 80
+							  : i < 4 ? 100
+								  : 60);
+				made.push_back(src);
+				obs_sceneitem_t *item = nullptr;
+				if (i < 2) {
+					// 160 by 80 in a 300 by 120 box: drawn 240 by 120.
+					item = put(scene, src, 20, i == 0 ? 20.0f : 180.0f);
+					vec2 bounds;
+					vec2_set(&bounds, 300.0f, 120.0f);
+					obs_sceneitem_set_bounds_type(item, OBS_BOUNDS_SCALE_INNER);
+					obs_sceneitem_set_bounds(item, &bounds);
+					obs_sceneitem_set_bounds_alignment(item,
+									   i == 0 ? OBS_ALIGN_LEFT : OBS_ALIGN_CENTER);
+				} else if (i == 2) {
+					// 200 by 100 less 20 left, 10 top, 30 right: 150 by 90.
+					item = put(scene, src, 360, 20);
+					obs_sceneitem_crop crop = {20, 10, 30, 0};
+					obs_sceneitem_set_crop(item, &crop);
+				} else if (i == 3) {
+					item = put(scene, src, 380, 220, 0.5f);
+				} else {
+					// 200 by 60 with 15 see-through pixels all round (a
+					// widget with an empty margin): 170 by 30 shows.
+					item = put(scene, src, 360, 290);
+					obs_data_t *cd = obs_data_create();
+					obs_data_set_double(cd, "size", 0.0);
+					obs_data_set_double(cd, "inset", 15.0);
+					obs_source_t *trim =
+						obs_source_create("stagekit_corners", "OG Trim", cd, nullptr);
+					obs_data_release(cd);
+					obs_source_filter_add(src, trim);
+					obs_source_release(trim);
+				}
+			}
+		};
+		// The line's width on each side: from the picture's edge outwards,
+		// along the middle of that side, the darkening summed.
+		auto sides = [&](const std::vector<uint8_t> &f, const Place &p, double out_w[4]) {
+			const int cx = (int)p.x, cy = (int)p.y;
+			const int dx[4] = {-1, 1, 0, 0}, dy[4] = {0, 0, -1, 1};
+			for (int s = 0; s < 4; s++) {
+				int x = cx, y = cy;
+				while (x > 0 && y > 0 && x < (int)w - 1 && y < (int)h - 1 && px(f, x, y, 0) >= 250) {
+					x += dx[s];
+					y += dy[s];
+				}
+				// From where the picture gives way to the line (half-way
+				// from white to black) to where the line gives way to the
+				// background (half-way from black to grey), each found
+				// between two pixels: a line drawn larger than it was made,
+				// the per-source filter's in a box, has soft edges, and its
+				// width is still from half to half.
+				x -= dx[s];
+				y -= dy[s];
+				std::vector<double> v;
+				for (int k = 0; k < 24 && x >= 0 && y >= 0 && x < (int)w && y < (int)h; k++) {
+					v.push_back(px(f, x, y, 0));
+					x += dx[s];
+					y += dy[s];
+				}
+				auto crossing = [&](size_t from, double level, bool falling) {
+					for (size_t i = from; i + 1 < v.size(); i++)
+						if (falling ? (v[i] >= level && v[i + 1] < level)
+							    : (v[i] <= level && v[i + 1] > level))
+							return (double)i + (v[i] - level) / (v[i] - v[i + 1]);
+					return -100.0;
+				};
+				const double inner = crossing(0, 127.5, true);
+				size_t darkest = 0;
+				for (size_t i = 0; i < v.size(); i++)
+					if (v[i] < v[darkest])
+						darkest = i;
+				const double outer = crossing(darkest, 64.0, false);
+				out_w[s] = outer - inner;
+			}
+		};
+		std::vector<obs_source_t *> made;
+		obs_scene_t *own_scene = obs_scene_create("OG Placed Own");
+		obs_scene_t *scene_scene = obs_scene_create("OG Placed Scene");
+		lay_out(own_scene, "OG Own ", made);
+		lay_out(scene_scene, "OG Scene ", made);
+		std::vector<obs_source_t *> filters;
+		for (int i = 0; i < 5; i++)
+			filters.push_back(own_filter(made[i], ten));
+		filters.push_back(scene_filter(scene_scene, ten));
+		struct Kind {
+			const char *name;
+			int corners;
+			double size;
+		} kinds[] = {{"follow", 0, 0.0}, {"rounded 0", 1, 0.0}, {"rounded 30", 1, 30.0},
+			     {"bevel", 2, 30.0}, {"bevel 0", 2, 0.0},   {"square", 5, 30.0}};
+		int frame = 13;
+		for (const Kind &k : kinds) {
+			for (obs_source_t *f : filters)
+				set(f, [&](obs_data_t *s) {
+					obs_data_set_int(s, "outline_corners", k.corners);
+					obs_data_set_double(s, "outline_corner_size", k.size);
+				});
+			const std::vector<uint8_t> fo = shot(obs_scene_get_source(own_scene));
+			const std::vector<uint8_t> fs = shot(obs_scene_get_source(scene_scene));
+			if (k.corners == 1 && k.size > 0.0) {
+				write_frame(dir + "/" + std::to_string(frame++) +
+						    " placed sources, rounded, Shadow Glow & Outline.rgba",
+					    fo, w, h);
+				write_frame(dir + "/" + std::to_string(frame++) +
+						    " placed sources, rounded, Scene Shadow.rgba",
+					    fs, w, h);
+			}
+			for (int who = 0; who < 2; who++) {
+				double worst = 0.0;
+				std::string seen;
+				for (const Place &p : places) {
+					// (An item's crop cuts the per-source filter's picture,
+					// line and all: OBS crops what the filters made.)
+					if (!who && std::string(p.name) == "cropped")
+						continue;
+					double sw[4];
+					sides(who ? fs : fo, p, sw);
+					char line[160];
+					snprintf(line, sizeof(line), " %s %.1f/%.1f/%.1f/%.1f;", p.name, sw[0], sw[1],
+						 sw[2], sw[3]);
+					seen += line;
+					// (The per-source filter draws at its source's own size: a
+					// picture drawn larger, in the box, has its line's edges
+					// resampled, soft and up to half a pixel off each way.)
+					const double slack =
+						!who && std::string(p.name).rfind("in a box", 0) == 0 ? 0.5 : 0.0;
+					for (double v : sw)
+						worst = std::max(worst, std::abs(v - 10.0) - slack);
+				}
+				CHECK(worst <= 1.0,
+				      "%s, %s: 10 px on all four sides of each picture (left/right/top/bottom:%s)",
+				      who ? "Scene Shadow" : "Shadow, Glow & Outline", k.name, seen.c_str());
+				// Square, and either kind of corner at no size: the corner
+				// pixel a width less one out from the picture's corner is
+				// all line.
+				if (k.corners == 5 || (k.corners > 0 && k.size == 0.0)) {
+					int lightest = 0;
+					std::string where;
+					for (const Place &p : places) {
+						if (!who && std::string(p.name) == "cropped")
+							continue;
+						const int x0 = (int)std::lround(p.x - p.hw),
+							  y0 = (int)std::lround(p.y - p.hh);
+						const int x1 = (int)std::lround(p.x + p.hw),
+							  y1 = (int)std::lround(p.y + p.hh);
+						// (One pixel in for the per-source filter's resampled
+						// line in the box.)
+						const int in =
+							!who && std::string(p.name).rfind("in a box", 0) == 0 ? 1 : 0;
+						// (There, a soft corner pixel; mostly line still: a
+						// corner rounded by the width would be the background.)
+						const int here =
+							std::max(px(who ? fs : fo, x0 - 10 + in, y0 - 10 + in, 0),
+								 px(who ? fs : fo, x1 + 9 - in, y1 + 9 - in, 0)) -
+							(in ? 56 : 0);
+						if (here > lightest) {
+							lightest = here;
+							where = p.name;
+						}
+					}
+					CHECK(lightest <= 8,
+					      "%s, %s: sharp corners, the corner pixel is all line (lightest %d%s%s)",
+					      who ? "Scene Shadow" : "Shadow, Glow & Outline", k.name, lightest,
+					      where.empty() ? "" : ", ", where.c_str());
+				}
+			}
+		}
+		for (int i = 0; i < 5; i++)
+			obs_source_filter_remove(made[i], filters[i]);
+		obs_source_filter_remove(obs_scene_get_source(scene_scene), filters[5]);
+		for (obs_source_t *f : filters)
+			obs_source_release(f);
+		obs_scene_release(own_scene);
+		obs_scene_release(scene_scene);
+		for (obs_source_t *s : made)
+			obs_source_release(s);
+	}
+
 	for (obs_source_t *f : {f_own, f_half})
 		obs_source_filter_remove(f == f_own ? own : own_half, f);
 	obs_source_filter_remove(obs_scene_get_source(b), f_scene);
@@ -14815,6 +15018,23 @@ static void outline_glow_test(uint32_t w, uint32_t h, const std::string &out)
 		CHECK(px(round_half, 116, 36, 0) >= 124 && px(round_half, 180, 35, 0) <= 8,
 		      "Morph carries the outline's rounded corners (%d outside the corner, %d on the line)",
 		      px(round_half, 116, 36, 0), px(round_half, 180, 35, 0));
+		obs_transition_force_stop(morph);
+		obs_transition_clear(morph);
+		// Square, carried by the Morph: the shared source's outer corner,
+		// 110, 30, is all line half-way.
+		for (obs_source_t *ss : shadows)
+			set(ss, [](obs_data_t *s) { obs_data_set_int(s, "outline_corners", 5); });
+		sleep_ms(300);
+		obs_transition_set(morph, obs_scene_get_source(m1));
+		obs_transition_start(morph, OBS_TRANSITION_MODE_MANUAL, 0, obs_scene_get_source(m2));
+		obs_transition_set_manual_time(morph, 0.5f);
+		sleep_ms(150);
+		render(morph, w, h);
+		const std::vector<uint8_t> square_half = render(morph, w, h);
+		CHECK(px(square_half, 110, 30, 0) <= 8 && px(square_half, 109, 29, 0) >= 124 &&
+			      px(square_half, 180, 35, 0) <= 8,
+		      "Morph carries square outline corners (%d at the corner, %d just past it, %d on the line)",
+		      px(square_half, 110, 30, 0), px(square_half, 109, 29, 0), px(square_half, 180, 35, 0));
 		obs_transition_force_stop(morph);
 		obs_transition_clear(morph);
 		obs_source_release(morph);

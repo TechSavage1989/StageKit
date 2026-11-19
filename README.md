@@ -253,8 +253,13 @@ its heading:
   line follows the image's real shape, including text and rounded or cut corners. A shadow is cast
   by the image and its outline together.
   - *Outline corners*: *Follow the source* (as it comes: the line goes round the shape of what shows,
-    as it always did), or *Rounded*, *Bevel*, *Notch* or *Scoop*: the line is drawn as a shape round
-    the source's box (its panel, when it has one), its outer corners *Corner size* pixels across (no
+    text and odd shapes too, as it always did; its outer corners are rounded by the line's width), or
+    *Square*, *Rounded*, *Bevel*, *Notch* or *Scoop*: the line is drawn as a shape round the rectangle
+    the source's image covers on screen, see-through margins left out (its panel, when it has one),
+    the same width on every side whatever its bounding box, crop or scale; *Square* has sharp
+    corners, and the others at a *Corner size* of 0 are square too. An item's crop cuts Shadow, Glow &
+    Outline's line with the rest of what the filter draws (OBS crops the finished image), so crop
+    with a Cropped View or a crop filter before it, or use Scene Shadow; its outer corners *Corner size* pixels across (no
     larger than keeps the source's own corners under the line), and
     the drop shadow takes the same shape.
   - *Intensity* (in the shadow part, 100 % as it comes): more fills a glow's or shadow's soft tail in
