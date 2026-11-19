@@ -179,8 +179,10 @@ std::string item_transition_own_json(obs_data_t *settings, const std::string &pr
 
 // Which way an item goes off the nearest edge of `scene` (null: the item's
 // own), in a slide's words ("left", "right", "up", "down"): to hide it moves
-// towards that edge, to show it comes in from it.
-const char *item_off_nearest_edge(obs_sceneitem_t *item, obs_source_t *scene, bool show);
+// towards that edge, to show it comes in from it. With `as_it_is` it goes by
+// the box OBS last worked out and asks OBS for nothing, so nothing is
+// signalled: for a caller on OBS's drawing thread (a tick callback).
+const char *item_off_nearest_edge(obs_sceneitem_t *item, obs_source_t *scene, bool show, bool as_it_is = false);
 
 // Whether a transition kind may be Morph's fallback: a real transition of
 // OBS's (or another plugin's), not a cut, not Morph itself or Make Room (which

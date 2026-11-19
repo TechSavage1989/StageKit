@@ -110,21 +110,34 @@ enum class Where : int {
 // Goes through the items showing one of `sources` in the scenes covered:
 // every scene, or the ones named. A group's own items are reached through the
 // scene that holds the group, and `scene` is that scene for them too.
+//
+// The items are found first, each held, and `act` is called for them after:
+// never while a scene is gone through. Going through a scene holds its locks
+// (and OBS's list of sources), and `act` changes transitions and shows and
+// hides items, which makes and unmakes sources and runs every listener's
+// handler: with those locks held, that is how two threads come to wait for
+// each other for good.
 void each_item(const std::vector<std::string> &sources, const std::vector<std::string> &scenes, bool every,
 	       const std::function<void(obs_sceneitem_t *item, const char *name, obs_source_t *scene)> &act)
 {
+	struct Found {
+		obs_sceneitem_t *item; // held
+		obs_source_t *scene;   // held
+	};
 	struct Work {
 		const std::vector<std::string> *sources, *scenes;
 		bool every;
-		const std::function<void(obs_sceneitem_t *, const char *, obs_source_t *)> *act;
+		std::vector<Found> found;
 		obs_source_t *scene = nullptr; // the scene being gone through
-		void look(obs_sceneitem_t *item) const
+		void look(obs_sceneitem_t *item)
 		{
 			const char *name = obs_source_get_name(obs_sceneitem_get_source(item));
-			if (name && std::find(sources->begin(), sources->end(), name) != sources->end())
-				(*act)(item, name, scene);
+			if (!name || std::find(sources->begin(), sources->end(), name) == sources->end())
+				return;
+			obs_sceneitem_addref(item);
+			found.push_back({item, obs_source_get_ref(scene)});
 		}
-	} work{&sources, &scenes, every, &act};
+	} work{&sources, &scenes, every, {}};
 	static const auto each = [](obs_scene_t *, obs_sceneitem_t *item, void *param) {
 		static_cast<Work *>(param)->look(item);
 		if (obs_sceneitem_is_group(item))
@@ -153,6 +166,16 @@ void each_item(const std::vector<std::string> &sources, const std::vector<std::s
 			return true;
 		},
 		&work);
+	for (const Found &f : work.found) {
+		// (Taken out of its scene, or its scene on its way out, meanwhile.)
+		const char *name = obs_source_get_name(obs_sceneitem_get_source(f.item));
+		if (f.scene && name && obs_sceneitem_get_scene(f.item))
+			act(f.item, name, f.scene);
+	}
+	for (const Found &f : work.found) {
+		obs_sceneitem_release(f.item);
+		obs_source_release(f.scene);
+	}
 }
 
 // Adds to `sources` the items their Send To filters bring along, and those

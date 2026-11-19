@@ -130,8 +130,14 @@ public:
 
 protected:
 	// An item as it is to be drawn now, its place worked out afresh when it
-	// is first met and whenever its source changes size.
-	bool look(obs_sceneitem_t *item, Shown &out);
+	// is first met and whenever its source changes size. `work_out` false:
+	// the place is taken as OBS last worked it out and OBS is asked for
+	// nothing, for an item of a scene that is being drawn at this moment
+	// (the item Morph's layer, which is one of that scene's items: the scene
+	// works every item's place out before it draws any). Working it out says
+	// so to every listener of the scene, which must not happen in the middle
+	// of that scene's drawing: see `refresh_item`.
+	bool look(obs_sceneitem_t *item, Shown &out, bool work_out = true);
 	// What `look` remembers is let go; `what` names the change in the log.
 	void forget_sizes();
 	gs_texrender_t *spare();

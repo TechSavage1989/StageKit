@@ -396,15 +396,18 @@ bool has_direction(const std::string &kind)
 // Which way an item goes off the nearest edge of its scene, in a slide's
 // words. To hide it moves towards that edge; to show it comes in from it,
 // which is moving the other way.
-const char *off_nearest_edge(obs_sceneitem_t *item, obs_source_t *scene, bool show)
+const char *off_nearest_edge(obs_sceneitem_t *item, obs_source_t *scene, bool show, bool as_it_is = false)
 {
 	if (!scene)
 		scene = obs_scene_get_source(obs_sceneitem_get_scene(item));
 	const double w = scene ? obs_source_get_width(scene) : 0.0, h = scene ? obs_source_get_height(scene) : 0.0;
 	if (w < 1.0 || h < 1.0)
 		return show ? "right" : "left";
-	refresh_item(item);
-	const Box box = scene_box(scene, item);
+	// (`as_it_is`: by the box OBS last worked out, with nothing signalled; for
+	// a caller on OBS's drawing thread. See `refresh_item`.)
+	if (!as_it_is)
+		refresh_item(item);
+	const Box box = scene_box(scene, item, as_it_is);
 	// How far each way until it is all off the screen.
 	const double left = box.x + box.w, right = w - box.x, up = box.y + box.h, down = h - box.y;
 	const double least = std::min({left, right, up, down});
@@ -934,9 +937,9 @@ std::string item_transition_own_json(obs_data_t *settings, const std::string &pr
 	return own_json(settings, prefix);
 }
 
-const char *item_off_nearest_edge(obs_sceneitem_t *item, obs_source_t *scene, bool show)
+const char *item_off_nearest_edge(obs_sceneitem_t *item, obs_source_t *scene, bool show, bool as_it_is)
 {
-	return off_nearest_edge(item, scene, show);
+	return off_nearest_edge(item, scene, show, as_it_is);
 }
 
 bool item_transition_is_fallback_kind(const char *kind)

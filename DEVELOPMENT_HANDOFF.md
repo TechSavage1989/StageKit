@@ -9,9 +9,152 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | `fix/scene-fit-visible-layout`, on `main` after beta197. Release notes in `docs/releases/0.1.0-beta198.md`. |
+| Working branch | `fix/item-morph-freeze`, on `main` after beta198. Release notes in `docs/releases/0.1.0-beta199.md` (to be numbered just before pushing). Not pushed. |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
+
+## Morph between sources: the layer on OBS's own thread (0.1.0-beta199)
+
+The owner (2026-11-19): OBS "probably froze. it's happened a bunch of times while pressing
+streamdeck buttons, and the average time to render has been a lot higher". No crash file, so a
+hang. Four freezes in their logs (beta179, beta195, beta196) each ended within 0.2 s of the item
+Morph adding or removing its *Morph (StageKit, in progress)* layer from its tick callback. AGENTS.md
+(*The layer is put into its scene and taken out on OBS's own thread*) has the locks involved. Which
+two locks met on the owner's machine is **not proven**: there is no memory dump. The release notes
+ask for one if OBS freezes again.
+
+What changed:
+
+- **Who does what.** The item Morph's tick callback (OBS's drawing thread, with OBS's lock round
+  all tick callbacks held) now only looks and decides. A change is claimed there (`Job`,
+  `Entry::claims`); its layer is put into the scene, and later taken out, by `ui_work` on OBS's own
+  thread (`src/common/ui-task.*`, `obs_queue_task(OBS_TASK_UI, ..., false)`, never waited for; one
+  task on its way at most). The tick after the layer is in (`take_up_layers`) the layer starts
+  drawing and the two items' own transitions stop, in one frame. Until then the hidden item stays
+  whole and the shown one is not drawn, so a late window thread shows as a later start, never as
+  a blink. A change that is over first gets no layer.
+- **Lifetimes.** A `Job` holds its two items, their sources and the clock's transition from the
+  tick that pairs them until `ui_work` lets go of them (`Job::let_go`); nothing of OBS's is let go
+  of on the drawing thread any more, also not what a tick took hold of for its own look (`Bin`).
+  The scene is still only held weakly. `item_morph_let_go()` and `item_morph_stop()` (the frontend's
+  events, on OBS's own thread) end everything and take every layer out there and then; a task
+  that comes after finds nothing to do. **A layer is only taken out of a scene that can still be
+  held** (`take_out`: a strong reference from the job's weak one, for that call). A scene whose
+  last reference is gone takes its own items out on OBS's thread for unmaking things and is freed
+  straight after; `obs_sceneitem_remove` reads the item's scene without a lock and could lock a
+  scene being freed. Such a layer is left to its scene (found in review; the race was there
+  before, from the tick).
+- **The tick never waits for a scene's locks with OBS's list of sources locked.** `find_items`
+  lists the scenes first (`obs_enum_scenes` holds the canvas's `sources_mutex` for all of its
+  callbacks), holds each, and goes through each scene's items after. OBS's own thread now takes a
+  layer out with its scene locked and every `item_remove` listener called meanwhile; a listener
+  that lists scenes or looks a source up there would wait for the tick, and the tick for the scene.
+- **No `refresh_item` in the tick or in the layer's drawing.** It has OBS signal `item_transform`
+  to every listener. The tick and the layer go by the place OBS last worked out
+  (`item_box(item, true)`, `MorphPaint::look(..., false)`).
+- **Show in Scenes and Link Visibility** find their items first and change them after the walk
+  (`each_item`, `follow_elsewhere`), not with a scene's locks held.
+- **Timing.** The tick callback is a kind of its own in the 30 s lines, `stagekit_item_morph`
+  (`timed_tick_callback`).
+
+One long-lived layer per scene was looked at and **not built**: its place in the stack depends on
+the pair (so most presses would still reorder it, with the same signal and the same save by OBS),
+two changes at once need two layers, and an item kept in every scene would be in OBS's Sources
+list, in every saved scene and in every list a Stream Deck or websocket client reads. That is the
+owner's call to make. So OBS still saves the collection once when a layer goes in and once when it
+comes out; what one tick asks for is done in one task.
+
+Not done, and known:
+
+- **Not seen on Windows.** The freeze never happened in the tests either (they have no window);
+  what is tested is that nothing is added, removed, made or let go of on the drawing thread, and
+  that nothing blinks or is left behind whenever the task comes.
+- `MorphPaint::seen_crop` reads a small copy back in the frame it is drawn in, once per item at the
+  start of a change between two different sources: a stall of its own. Left as it is (noted in the
+  code and in AGENTS.md).
+- Link Visibility's `watch_others` still connects signal handlers inside `obs_enum_scenes`. The
+  Standby stand-ins are still added and removed, and items shown and hidden by every filter, from
+  a source's own tick (OBS's drawing thread, but with no lock of OBS's held, unlike a tick
+  callback). If a freeze comes back, the memory dump will say whether one of these is in it.
+- **Every other walk still goes through a scene inside `obs_enum_scenes`** (Show in Scenes'
+  `each_item`, Link Visibility's `follow_elsewhere`, and most filters that look for a source in
+  every scene): they wait for a scene's locks with OBS's list of sources locked, from a source's
+  tick. Only the item Morph's `find_items` was changed. Such a walk can only hang against
+  something that holds a scene's locks and then asks OBS for its list of sources, as a listener
+  of `item_remove` or `item_visible` might. Whether any listener on the owner's machine does (the
+  Elgato Stream Deck plugin's, say) is not known. Worth one sweep with a shared helper (list the
+  scenes, hold them, walk after), as a change of its own.
+- **OBS selects every item that is added to a scene, and deselects the rest of that scene**
+  (`OBSBasic::AddSceneItem`, `select_one`, OBS 32.2.2 `OBSBasic_Scenes.cpp`). So each layer takes
+  the selection in its scene and leaves nothing selected when it goes: a Morph in the scene being
+  edited loses what was selected there. That is as old as the item Morph (it came as a queued call
+  before and now runs inside `obs_scene_add`); read from OBS's source, not seen, and never
+  reported by the owner. Not changed here: putting the selection back would say `item_select`
+  again for each item, in an order the arrange tools would take for the order they were selected
+  in (`track_selection_order`). A change of its own, with the owner's word on it.
+- What a tick takes hold of for its look (a scene, its items) is held until OBS's own thread lets
+  go of it: at once in practice, longer while that thread is busy.
+
+Tests (Linux libobs 30.0.2, Xvfb, each gate run alone): see the results at the end of this
+section. The test program now is OBS's own thread for the whole run: `ui_thread_start` sets a
+handler for OBS's UI tasks, `sleep_ms` runs them, and a test can make each wait a number of frames
+(`g_ui_delay`). The other test programs set no handler; there StageKit does that work as its tick
+ends, as before.
+
+Results, each gate alone with `STAGEKIT_TEST_ONLY_<name>`, the final build (after the review's
+changes below), no failure in any:
+
+| Gate | Checks passed |
+| --- | --- |
+| `MORPH_UI_TASK` (new; five runs) | 27 of 27 each time |
+| `MORPH` (*[morph between items]*, the new sections in the full flow, and what comes before) | 246 |
+| `MORPH_HOLDS`, `MAKE_ROOM`, `POP_IN` | 5, 15, 4 |
+| `LINK_FOLLOW`, `LINK_TRANS`, `SWITCH_COMMAND` | 51, 14, 3 |
+| `CAPTURE_HIDE`, `CAPTURE_CHAIN`, `RESTORE_HIDDEN`, `STANDBY_COVER` | 5, 11, 5, 7 |
+| `LAYOUT`, `MODES_HIDE`, `SCENE_TRANS_OVERRIDE` | 40, 29, 9 |
+| `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
+| The other nineteen gates (the test program's waiting changed for all of them) | all passed |
+
+`tests/run-tests.sh` (the full run) was **not** run here: other work was using the machine. Run it
+before the merge. Under valgrind (the final build again), `MORPH_UI_TASK` runs to its end with no
+memory error: its seven frame-by-frame checks fail there, as they must (a frame takes far longer),
+and every check of what is held, left behind or let go of passes. `MORPH_HOLDS` under valgrind: no
+memory error in three runs, all five checks passed in two of them; in the third the camera and the
+capture of one case were not paired (the two changes came more than Morph's 0.1 s apart under
+valgrind, so there was no layer to look at), and nothing was held there either.
+
+**Reviewed twice before it was pushed** (threads and lifetimes; tests and docs), by reading, against
+OBS 32.2.2's source. What came of it:
+
+- *Changed:* `take_out` and a scene being unmade (above: low, and older than this change; the
+  tick had the same race a frame later). The gate has a case for it, a scene let go of with its
+  layer in it and the change half-way, and StageKit counts the layers it left to their scene
+  (`left` in `stagekit_test_item_morph_layers`): one there. (The build before asked OBS to take
+  the layer out whatever had become of the scene.)
+- *Changed:* the case of a change that is over before its layer comes went by how fast the machine
+  draws (150 frames against 4.9 s of waiting: about 31 frames a second). A test that has seen what
+  it wanted of a late task now lets it come (`ui_tasks_release`, which `tasks_done` calls).
+- *Changed:* AGENTS.md's Scene Shadow entry and a comment in `src/look/scene-shadow.cpp` still
+  said the layer is added from a tick callback. What they claim still holds: `item_add` raises
+  `scene_revision()` before `Job::placed` is said, so Scene Shadow has looked at the layer before
+  the frame that first draws it.
+- *Offered, and done:* `find_items` lists the scenes first (above).
+- *Offered, and not done:* putting the selection back after a layer is added (the last point under
+  *Not done, and known*).
+- Nothing else: no new lock taken in two orders, no use after free and no gap in the hand-over
+  from the items' own transitions to the layer was found.
+
+What `MORPH_UI_TASK` looks at, frame by frame as OBS draws them: a pair and a Make Room item with
+the layer 0, 1 and 5 frames late (never both pictures, never neither; the hidden item whole until
+the layer is in); a change that is over before its layer comes (no layer, nothing held after); a
+second key half a second into a change that hides the item the first one shows; the collection
+changing and a scene removed with the task still on its way; a scene let go of with the task on
+its way, and with its layer in it; and that every layer was put in and
+taken out on OBS's own thread, by StageKit's own count and by the thread each scene signal came
+on. Its second section has a listener that needs the scene from another thread while Show in
+Scenes or Link Visibility hides a source. The same test program with the beta198 plugin fails
+both: 138 scene signals came from the drawing thread, and the listener could not get at the
+scene.
 
 ## Dock and Scene Fit in a split game layout (0.1.0-beta198)
 

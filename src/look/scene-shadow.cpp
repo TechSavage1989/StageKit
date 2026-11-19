@@ -393,12 +393,12 @@ void SceneShadow::tick(float seconds)
 	countdown_ -= seconds;
 	// An item added while it is seen is looked at in this very tick, before
 	// the frame is drawn: up to a quarter second "not looked at yet" was a
-	// blink of the shadow. The item Morph's layer is added from a tick
-	// callback, which OBS calls before it ticks the sources, and while the
-	// layer was not looked at the two items it draws cast nothing (the
-	// owner: "shadows flicker when ... i switch/show or hide sources inside
-	// a scene"). Only when something in a scene changed, and then only the
-	// ids are compared.
+	// blink of the shadow. The item Morph's layer is put in on OBS's own
+	// thread and starts drawing from the item Morph's next tick callback,
+	// which OBS calls before it ticks the sources; and while the layer was
+	// not looked at the two items it draws cast nothing (the owner: "shadows
+	// flicker when ... i switch/show or hide sources inside a scene"). Only
+	// when something in a scene changed, and then only the ids are compared.
 	bool new_items = false;
 	if (showing) {
 		const uint64_t rev = scene_revision();

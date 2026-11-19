@@ -299,6 +299,12 @@ void MorphPaint::forget_seen()
 	seen_.clear();
 }
 
+// (A known cost, left as it is: the small copy is read back in the frame it
+// is drawn in, which makes the graphics card finish all it was given first.
+// That is a stall of its own in the first frame of each change between two
+// different sources, once per item. Read back two frames later, as Fit to
+// Space's glances are, the change would have to begin by the boxes and jump
+// to the parts.)
 Crop MorphPaint::seen_crop(obs_sceneitem_t *item, const Shown &shown)
 {
 	const auto found = seen_.find(item);
@@ -369,7 +375,7 @@ void MorphPaint::forget_sizes()
 // box, worked out from no size, is nowhere. Left at that, the owner's display
 // capture was missing for the whole change and came in at a stroke when it
 // ended.
-bool MorphPaint::look(obs_sceneitem_t *item, Shown &out)
+bool MorphPaint::look(obs_sceneitem_t *item, Shown &out, bool work_out)
 {
 	obs_source_t *source = item ? obs_sceneitem_get_source(item) : nullptr;
 	if (!source)
@@ -377,10 +383,12 @@ bool MorphPaint::look(obs_sceneitem_t *item, Shown &out)
 	const uint32_t w = obs_source_get_width(source), h = obs_source_get_height(source);
 	auto found = sized_.find(item);
 	if (found == sized_.end()) {
-		refresh_item(item);
+		if (work_out)
+			refresh_item(item);
 		sized_[item] = Sized{w, h, w && h};
 	} else if (found->second.w != w || found->second.h != h) {
-		refresh_item(item);
+		if (work_out)
+			refresh_item(item);
 		if (!found->second.had && w && h) {
 			// (For the log, should a capture still be seen to come in late.)
 			obs_log(LOG_INFO, "Morph: '%s' had no picture for the first %d ms of the change",

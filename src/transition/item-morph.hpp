@@ -52,9 +52,12 @@ void item_morph_gone(obs_source_t *transition);
 
 // What a Morph transition that is an item's own is to draw.
 enum class ItemMorph {
-	None,    // not known to be an item's: as before
-	Waiting, // an item's, and its other half may still come: a hiding item stays as it is, a showing one is not drawn
-	Paired, // the change is drawn for it: it draws nothing
+	None, // not known to be an item's: as before
+	// An item's, and its other half may still come, or has come and the
+	// layer that draws the two is not in the scene yet: a hiding item stays
+	// as it is, a showing one is not drawn.
+	Waiting,
+	Paired, // the change is drawn for it, by a layer that is in the scene: it draws nothing
 	Alone,  // nothing to change into or from: it fades by itself
 };
 ItemMorph item_morph_now(obs_source_t *transition);
@@ -66,11 +69,14 @@ ItemMorph item_morph_now(obs_source_t *transition);
 const char *item_morph_edge(obs_source_t *transition);
 
 void register_item_morph();
-// The scene collection is changing: every change under way is ended and
-// everything held is let go of, before OBS looks for sources left over.
+// The scene collection is changing: every change under way is ended, its
+// layer taken out of its scene and everything held let go of, before OBS
+// looks for sources left over. Called on OBS's own thread (the frontend's
+// event), where all of that is done there and then; a task already on its
+// way to that thread then finds nothing left to do.
 void item_morph_let_go();
-// OBS is closing, or the plugin is being unloaded: the same, and nothing
-// more is started.
+// OBS is closing, or the plugin is being unloaded: the same, on the same
+// thread, and nothing more is started.
 void item_morph_stop();
 
 } // namespace stagekit

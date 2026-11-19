@@ -104,7 +104,7 @@ notice and the confirmation are what there is. This is recorded in the handoff.
 | `src/placement/` | Scene filters: Move Scene Item, Show/Hide Animation, Link Visibility, Match Item, Layout, Fit to Space (keeps one item fitted in a box, filling it or floating centred by shape); Move Source, Move Scene Item's code as a filter on the source it moves; and Show in Scenes (`show-in-scenes.*`), a filter on any source that is a switch for showing and hiding sources across scenes |
 | `src/placement/scene-*`, `src/look/` | The scene filters: Scene Modes, Scene Transitions, Scene Fit, Scene Standby, Scene Corners, Scene Shadow and Scene Blur, each a filter on a scene that looks after its sources together. Each one's files are listed in its entry at the end of *Things that will bite you* |
 | `src/dock/` | `window-layout.*` keeps OBS's window layout. One dock (Qt widgets, no `Q_OBJECT`): StageKit follows the item selected in OBS and drives Move Source filters on that item's source; its Standby & Ambient tab (`BackgroundDock`, `pageBackground`; a dock of its own up to beta151, called Background in beta152) holds the start image thumbnail. `arrange-tools.*` is the one set of line-up actions and options behind the dock, the hotkeys and the preview's right-click menu |
-| `src/common/` | Shared helpers: `timing` (registers every kind and logs what is slow), easing and `Tween`, `SwitchRamp`, `KawaseBlur`, scene utilities, `item-transition` (the *Change with* control for filters that show and hide items), and the start image (global path + Start Image source). For the scene filters: `scene-filter-ids.hpp` (their ids), `holds-hidden` (is an item held hidden by a mode not showing), `go-to-scene` (*Switch to scene*), `filter-order.hpp` (`applied_index`, `first_filter`, `first_filter_of_kind`), `stand-in.hpp` (a Standby twin and the item it stands for) |
+| `src/common/` | Shared helpers: `timing` (registers every kind and logs what is slow), easing and `Tween`, `SwitchRamp`, `KawaseBlur`, scene utilities, `item-transition` (the *Change with* control for filters that show and hide items), and the start image (global path + Start Image source). For the scene filters: `scene-filter-ids.hpp` (their ids), `holds-hidden` (is an item held hidden by a mode not showing), `go-to-scene` (*Switch to scene*), `filter-order.hpp` (`applied_index`, `first_filter`, `first_filter_of_kind`), `stand-in.hpp` (a Standby twin and the item it stands for). `ui-task` hands work to OBS's own thread, the window's (`on_ui_thread_later`; the item Morph's layer is put in and taken out there) |
 | `src/frame/` | Auto Frame filter and the Aspect Ratio Preset filter |
 | `src/capture/` | Auto Capture filter (aims a Game Capture at the game in front), Program Trigger filter (shows items and switches filters while a program is open) and Show Source in Use scene filter (shows the one of several captures whose app is in use). Capture App in Use (`app-capture.*`), a filter on one Window Capture that aims it at whichever of several listed apps is in use. All use the Win32 window list in `auto-capture.cpp`; compiled but idle elsewhere. Also Standby Picture (`standby.*`), a filter that shows a picture in a capture's place while it has nothing; it works everywhere |
 | `src/api/` | obs-websocket vendor requests (`StageKit` vendor) |
@@ -170,7 +170,13 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   keeps that placeholder until its scene is drawn, and `obs_sceneitem_force_update_transform` only acts
   on items OBS has flagged. Call `refresh_item()` (`src/common/scene-util.hpp`) once before measuring at
   the start of an operation. Items inside groups use group coordinates: measure with `scene_box()` and
-  convert with `item_space()`.
+  convert with `item_space()`. **`refresh_item` makes OBS signal `item_transform` to every listener**
+  (OBS's window, obs-websocket, other plugins), on the calling thread; only StageKit's own count of
+  scene changes passes it over. So never call it while a scene is gone through
+  (`obs_scene_enum_items`), from a tick callback (`obs_add_tick_callback`: OBS holds a lock round all
+  of them) or while an item of the scene is drawn. Go by the box as it is there
+  (`item_box(item, true)`, `scene_box(scene, item, true)`, `shown_of`): in a scene on screen OBS
+  worked every item's place out as it drew the last frame. The item Morph does (beta199).
 - **The owner's emulators run full-screen at 2560x1440 with black bars**; their old scenes differ only
   by crop (320 px a side for 4:3, 343 for SNES, 150 for GBA) inside one shared 1754.5x1268.5 box at
   30.5, 85.5. Auto Frame's automatic trim exists for this. It reads back a thin copy of the capture
@@ -591,6 +597,18 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   Since beta147 a press is acted on in the filter's next tick (`press_`, the last of a frame), not
   on the thread that pressed: a Link Visibility acts on the same items from its tick, and two
   threads setting one item's transitions at once can each let go of the other's.
+- **Nothing is changed while a scene is gone through** (beta199). `obs_scene_enum_items` holds
+  the scene's video and audio mutexes for the whole walk, and `obs_enum_scenes` OBS's list of
+  sources. Show in Scenes (`each_item`) and Link Visibility (`follow_elsewhere`) used to call
+  `apply_item_change` and `set_item_visible` from inside the walk: transitions made and unmade,
+  and `item_visible` sent to every listener, with those locks held. Both now find the items first
+  (each held, with its scene) and change them after the walk, as Scene Modes' `plan` and `apply`
+  always did; an item taken out of its scene meanwhile is passed over. Do the same in anything
+  new, and never call `refresh_item` inside a walk either (see *A scene item's box is cached*).
+  Not looked at here: Link Visibility's `watch_others` connects a signal handler inside
+  `obs_enum_scenes`; the Standby stand-ins are still added and removed, and items shown and hidden
+  by every filter, from a source's own tick (which OBS calls on its drawing thread with no lock of
+  its own held, unlike a tick callback).
 - **Show in Scenes' *Switch to scene*** (`go_to`, a scene name, empty as it comes; beta154). The
   owner: "Pressing the show button for any source that belongs to a specific scene automatically
   switches to that scene ... it must be universal to work with future scene collection designs".
@@ -838,7 +856,9 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   `timing, last 30 s:` line to OBS's log for any kind with a call over 3 ms or over 2% of the time;
   nothing while all is quick. A filter's drawing time includes what it draws from. It measures the
   processor's side only: a slow shader shows up as OBS's own rendering lag, not here. Ask the owner
-  for the log when frames drop; do not guess.
+  for the log when frames drop; do not guess. A tick callback that is no source's own
+  (`obs_add_tick_callback`) is timed with `timed_tick_callback(id, tick)`: give OBS what it returns.
+  The item Morph's is `stagekit_item_morph` (beta199); before, its cost was in no timing line.
 - **Fit to Space's free space takes the roomiest of the spaces that are as good as equal**
   (`free_space`: pictures within the filter's *Tolerance*, 8 px as it comes; the owner asked for it to be a setting). The owner's music widget, set to the same width as the
   column above it, was read a few pixels wider (what shows is measured on a small copy), and the
@@ -1170,7 +1190,10 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     the smallest part holding all that is not see-through, both parts are drawn as pictures of
     their own and mixed on one quad that goes from the one part's place to the other's. It is
     found from a 256 px copy read back at once, **once per item per change** (kept in `seen_`,
-    let go by `forget_sizes` and at each new item change): never per frame. The same source in
+    let go by `forget_sizes` and at each new item change): never per frame. (Read back in the
+    frame it is drawn in, it makes the graphics card finish all it was given first: a stall of
+    its own in the first frame of a change between two different sources. Noted in beta199 and
+    left: read two frames later, the change would begin by the boxes and jump to the parts.) The same source in
     both scenes is not looked at; its box is the same part of it either way.
     *Ignore shadows & outlines* (`no_shadows`, on as it comes; the owner: "add ignore shadows,
     strokes/glow, etc") matches the pictures without the room their Shadow, Glow & Outline
@@ -1246,8 +1269,100 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   - The change goes by the shown item's transition's clock, and the tick ends it at the very frame
     that transition draws the item itself: OBS's video time is the same in a frame's tick and its
     drawing. Do not time it any other way, or there is a frame with both or with neither.
-  - Scene items are added and removed from a tick callback, never from inside a signal or while
-    drawing. Everything stops at `item_morph_stop()` (OBS closing, unload).
+  - **The layer is put into its scene and taken out on OBS's own thread, never from the tick**
+    (beta199; `ui_work`, a task asked for with `obs_queue_task(OBS_TASK_UI, ..., false)`
+    through `src/common/ui-task.*` and never waited for). The owner (2026-11-19): OBS "probably
+    froze. it's happened a bunch of times while pressing streamdeck buttons, and the average time
+    to render has been a lot higher". No crash file: a hang. Four freezes in their logs (beta179,
+    beta195, beta196) each ended within 0.2 s of the item Morph adding or removing its layer **from
+    its tick callback**, which is how it was done up to beta198. What goes wrong there: libobs
+    calls tick callbacks holding `draw_callbacks_mutex`; `obs_scene_add` registers the item's
+    hotkey pair (under `hotkeys.mutex`) and signals `item_add` and `reorder`;
+    `obs_sceneitem_remove` holds the scene's video and audio mutexes while the `item_remove`
+    handlers run (a signal's own mutex is held for all its handlers), then unregisters the hotkeys
+    and may destroy the source. Every handler runs on the calling thread: OBS's window's (it
+    builds a Sources row for the item), obs-websocket's, the Elgato Stream Deck plugin's (it lists
+    every scene item at each add and remove). Meanwhile OBS's window thread connects to that
+    scene's signals (taking each signal's mutex) and runs routed hotkey callbacks holding
+    `hotkeys.mutex`. The drawing thread, holding its locks, waits for one the window's thread
+    holds while the window's thread waits for one of the drawing thread's: neither moves again.
+    Which two locks it was on the owner's machine is **not proven** (there is no memory dump);
+    the fix does not depend on it. So:
+    - **The tick only looks and decides.** It never adds or removes a scene item, never makes a
+      source, never lets go of what may be the last reference to an item or a source (those go
+      into a `Bin`, which OBS's own thread empties), and never calls `refresh_item` (which has OBS
+      signal `item_transform` to every listener). It measures by the place OBS last worked out
+      (`shown_of`; `item_off_nearest_edge(..., true)`, `item_box(item, true)`): in a scene on
+      screen that was as the last frame was drawn. The layer draws the same way
+      (`MorphPaint::look(..., false)`): it is an item of the scene being drawn, which has worked
+      every item's place out before drawing any. (The Morph between scenes still works places out
+      as it draws: neither of its scenes is being drawn.) And it never waits for a scene's locks
+      with OBS's list of sources locked: `find_items` lists the scenes first, each held into the
+      `Bin`, and goes through each after `obs_enum_scenes` has returned. OBS's own thread takes a
+      layer out with its scene locked and every `item_remove` listener called meanwhile; one that
+      asks OBS for a source there would wait for the tick, and the tick for the scene. (Whether
+      any listener on the owner's machine does is not known. The other filters' walks still go
+      through a scene inside `obs_enum_scenes`: see the handoff.)
+    - **A change is claimed first and drawn later.** `start_job` and `start_solo` make the `Job`
+      (it takes hold of the two items, their sources and the transition whose clock it goes by)
+      and count a claim on each entry (`Entry::claims`). A claimed entry still reads *Waiting* (the
+      hidden item whole, the shown one not drawn), is not paired afresh and does not go *Alone*.
+      `ui_work` puts the layer in (`place_layer`: the source made, `obs_scene_add`, locked, moved
+      only when the top is not its place, its own place worked out there and then, the two sources
+      kept showing) and says `Job::placed`; **the next tick** (`take_up_layers`) makes the entries
+      *Paired* and says `Job::drawing`, between two frames, so no frame has both or neither.
+      However late the window's thread is, nothing blinks; a change that is over before its layer
+      comes gets none (`ui_work` passes over a job that is `done`) and ends as a cut.
+    - **A change that is over is handed back** (`end_job`, into `g_to_end`): `ui_work` takes its
+      layer out (`take_out`) and lets go of all it held (`Job::let_go`). **A layer is only taken
+      out of a scene that can still be held** (a strong reference from the job's weak one, for
+      that call): a scene whose last reference is gone takes its own items out on OBS's thread
+      for unmaking things and is freed straight after, and `obs_sceneitem_remove` reads the
+      item's scene without a lock, so it could lock, and take the item out of, a scene being
+      freed. A scene that cannot be held is left to take the layer out itself. The layer holds
+      `Job::use` while it draws; `let_go` takes it only to mark the change gone and take the
+      references out, and lets go of them **after** the lock is released: letting go of a source
+      or an item may wait for the graphics lock (a source that stops showing, an item's own
+      picture unmade), which a drawing waiting for `use` would be holding. Never call into OBS
+      with one of this file's locks held on OBS's own thread. One that ended before it drew gives
+      its claims back, and its entries go *Alone*: left *Waiting* they were paired again at every
+      tick (the first build of this made a change a frame).
+    - **`ui_work` goes by what waits when it runs**, not by what waited when it was asked for
+      (one task on its way at most, `g_asked`). So a task that comes after `item_morph_let_go()`
+      or `item_morph_stop()` finds nothing to do. Those two are called on OBS's own thread (the
+      frontend's event) and do it all there and then: `end_all()` under `g_tick_mutex`, then
+      `ui_work()` itself. From the tick (`!scenes_loaded()`), `end_all()` is followed by the task.
+    - Where there is no window, and so no such thread (`ui_thread_there()` false: the tests'
+      other programs), `ui_work` is run as the tick ends.
+    - **A layer per change, not one kept in each scene.** One long-lived layer was looked at and
+      left for now: its place in the stack depends on the pair (so most presses would still
+      reorder it, with the same signal and the same save by OBS), two changes at once need two,
+      and an item kept there would be in OBS's Sources list, in every saved scene and in every
+      list a Stream Deck or websocket client reads. OBS still saves the collection when a layer
+      goes in and when it comes out; what one tick asks for is done in one task. OBS's window
+      also selects every item added to a scene and deselects the rest of that scene
+      (`OBSBasic::AddSceneItem`, `select_one`): each layer takes the selection in its scene, as
+      it has since there was an item Morph. Read from OBS's source, not seen; not put back (the
+      handoff says why).
+    - Tests: `[the item Morph's layer is put in and taken out on OBS's own thread]`
+      (`morph_ui_task_test`, alone: `STAGEKIT_TEST_ONLY_MORPH_UI_TASK`). The test program's main
+      thread is OBS's own thread: `ui_thread_start` sets a handler (`obs_set_ui_task_handler`)
+      that keeps the tasks, `sleep_ms` runs them, each `g_ui_delay` frames after it was asked
+      for, and StageKit is told there is such a thread (`stagekit_test_ui_tasks`). A test that
+      has seen what it wanted of a late task lets it come with `ui_tasks_release` (`tasks_done`
+      does): never wait a number of frames for one, or the test goes by how fast the machine
+      draws (the first build needed 31 frames a second to pass). Frames are
+      looked at from `obs_add_main_render_callback`: on OBS's drawing thread, between one tick
+      and the next, as OBS draws them. `stagekit_test_item_morph_layers` gives the layers put in
+      and taken out and on which thread, and how many were left to a scene that was going;
+      `stagekit_test_item_morph_let_go` is the frontend's
+      event. The gate's second section (`scene_walk_test`) has a listener of `item_visible` that
+      needs the scene from another thread before it lets the caller go on: with a scene locked
+      round the change (Show in Scenes and Link Visibility up to beta198) it never gets it. The
+      same test program with the beta198 plugin fails both sections. No memory error under
+      valgrind (the checks of timing fail there). Not seen on Windows.
+
+    Everything stops at `item_morph_stop()` (OBS closing, unload).
   - **Nothing here holds a scene, and an item only while its change is drawn** (beta170). An
     item's Morph transition is known (`Entry`) from its start until OBS says it stopped, and OBS
     says that only when the transition is drawn to its end with its sound ended: never for a
@@ -1257,15 +1372,17 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     given up on, 20 s later. A change of collection or exit in that time found them held (OBS's
     "Not all sources were cleared"; in the tests "N source(s) were remaining" and "Double
     destroy" at shutdown, 39 lines in the new section). Now an entry keeps a weak scene and the
-    item's id, and each tick finds the item afresh and lets go of it as the tick ends (`Held`,
-    `reach`, outside `g_mutex`: OBS calls in here holding a scene's lock). The nearest edge a
+    item's id, and each tick finds the item afresh (`reach`, outside `g_mutex`: OBS calls in here
+    holding a scene's lock) and hands what it took hold of to OBS's own thread as it ends (`Bin`,
+    `hand_over`; until that thread gets to it, at once in practice, the references are still
+    held). The nearest edge a
     transition needs is worked out in the tick when the entry is made (`item_morph_edge`); the
     item is never handed out. A change (`Job`) holds its two items and sources while it is drawn,
-    and a weak scene; it ends when its scene is removed, and the layer lets go of it in
-    `end_job`, not when OBS destroys the layer. Everything is let go of (`let_go_all`) at
-    `SCENE_COLLECTION_CHANGING` and `CLEANUP` (`item_morph_let_go`, from the frontend callback in
-    `plugin-main.cpp`: OBS clears the collection at once, no tick comes between), in a tick while
-    `!scenes_loaded()`, and at `item_morph_stop()`. Tested in `[the item Morph lets go of scenes
+    and a weak scene; it ends when its scene is gone, and the layer lets go of it in
+    `take_out`, not when OBS destroys the layer. Everything is let go of (`end_all`, then
+    `ui_work`) at `SCENE_COLLECTION_CHANGING` and `CLEANUP` (`item_morph_let_go`, from the frontend
+    callback in `plugin-main.cpp`: OBS clears the collection at once, no tick comes between), in a
+    tick while `!scenes_loaded()` (the letting go by a task), and at `item_morph_stop()`. Tested in `[the item Morph lets go of scenes
     and sources]` (`STAGEKIT_TEST_ONLY_MORPH_HOLDS`; `stagekit_test_item_morph_held`, a global
     proc, gives the entries and changes held) and at the end of the Link Visibility section.
   - Anything that goes through a scene's items to fit round them, line up with them or snap to
@@ -1323,9 +1440,12 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     Without *Fade while moving* the moving items are drawn whole straight into the target after
     the run's backgrounds are cross-faded (`Only::Fills` / `Only::Movers` in `draw_side_items`).
   - **As an item's change** (a Morph's *Alone* item with Make Room, and every Make Room item): the
-    tick, as it sets an entry *Alone* in a scene on screen and not in a group, starts a job with
-    one side (`Job::solo`, `start_solo`) with the item Morph's layer, so the item crosses the
-    screen; its own transition is then `Paired` and draws nothing. Every edge of a tick is worked
+    tick, when an entry in a scene on screen and not in a group has waited out its 0.1 s, starts a
+    job with one side (`Job::solo`, `start_solo`) with the item Morph's layer, so the item crosses
+    the screen. Like a pair, it is claimed first: it still reads *Waiting* (a hidden item whole, a
+    shown one not drawn) until OBS's own thread has put its layer in, and is `Paired` (its own
+    transition draws nothing) from the tick after; it never slides inside its own frame first.
+    Every edge of a tick is worked
     out before any job starts (`room_centre`): for an item going, the destinations of the jobs in
     its scene, the items of the other kind that started near it, and any item of the scene whose
     own show transition is running (`item_transition_running`, any kind: a Fade and Zoom shown
@@ -2856,9 +2976,11 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   asked for by Morph in the last second, at once on coming into view or a settings change, never
   before `scenes_loaded()`; **and in the very tick an item is added to a scene in view**
   (`has_new_items`, beta186: when `scene_revision()` has changed, the scene's item ids are
-  compared with the flags', and a new one makes the look due at once). OBS calls tick callbacks
-  before it ticks sources, so the item Morph's layer, added from its tick callback, is looked at
-  before the frame that first draws it. Up to beta174 an item not yet looked at was masked and
+  compared with the flags', and a new one makes the look due at once). The item Morph's layer is
+  put into the scene on OBS's own thread (beta199) and only starts drawing from the item Morph's
+  next tick callback (`take_up_layers`), which OBS calls before it ticks sources; so this
+  filter's tick in that frame, or an earlier one, has looked at the layer before the frame that
+  first draws it. Up to beta174 an item not yet looked at was masked and
   cast nothing for up to a quarter second, and the layer is what draws both items of an item
   Morph (their own transitions draw nothing while *Paired*): the shadow of the pair went for
   that time at the start of every item Morph, the owner's "shadows flicker when ... i
