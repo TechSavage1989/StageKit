@@ -30,12 +30,16 @@ struct Box {
 };
 
 // The item's bounding box on the scene canvas, whatever its alignment,
-// crop, bounds or rotation.
-inline Box item_box(obs_sceneitem_t *item)
+// crop, bounds or rotation. With `as_it_is`, the box OBS last worked out:
+// nothing is asked of OBS, so nothing is signalled. That is the box to go by
+// on OBS's drawing thread (a tick callback, a drawing): in a scene on screen
+// OBS has worked out every item's place as it drew the last frame.
+inline Box item_box(obs_sceneitem_t *item, bool as_it_is = false)
 {
 	// OBS caches this box and refreshes it lazily (later still for items
 	// inside groups); make sure it reflects the item as it is right now.
-	obs_sceneitem_force_update_transform(item);
+	if (!as_it_is)
+		obs_sceneitem_force_update_transform(item);
 	matrix4 transform;
 	obs_sceneitem_get_box_transform(item, &transform);
 	double min_x = 1e18, min_y = 1e18, max_x = -1e18, max_y = -1e18;
@@ -87,6 +91,13 @@ inline double screen_share(obs_sceneitem_t *item)
 // for everything that looks again only when a scene changed
 // (`scene_revision`): the signal is passed over, and counted only when the
 // box did change.
+//
+// OBS still sends that signal to every other listener (its own window,
+// obs-websocket, other plugins), on the calling thread. So never call this
+// while going through a scene's items (obs_scene_enum_items holds the scene's
+// locks), from a tick callback (OBS holds a lock round all of them) or while
+// drawing a scene's item: go by the box as it is there (`item_box` with
+// `as_it_is`, `shown_of`).
 inline void refresh_item(obs_sceneitem_t *item)
 {
 	matrix4 before, after;
@@ -148,10 +159,11 @@ inline Space item_space(obs_source_t *scene_source, obs_sceneitem_t *item)
 	return space;
 }
 
-// The item's bounding box in its scene's coordinates, group or not.
-inline Box scene_box(obs_source_t *scene_source, obs_sceneitem_t *item)
+// The item's bounding box in its scene's coordinates, group or not (and
+// with `as_it_is`, as OBS last worked it out: see `item_box`).
+inline Box scene_box(obs_source_t *scene_source, obs_sceneitem_t *item, bool as_it_is = false)
 {
-	const Box box = item_box(item);
+	const Box box = item_box(item, as_it_is);
 	const Space sp = item_space(scene_source, item);
 	return {sp.ox + box.x * sp.sx, sp.oy + box.y * sp.sy, box.w * sp.sx, box.h * sp.sy};
 }

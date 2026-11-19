@@ -23,6 +23,13 @@ namespace stagekit {
 // over 0.1 ms.
 void register_timed(obs_source_info *info);
 
+// A tick callback that is no source's own (obs_add_tick_callback), timed as
+// a kind called `id` like a source's tick: give OBS what this returns, and
+// take it off again with the same. (`tick` itself when no more kinds can be
+// kept time of.)
+using TickCallback = void (*)(void *, float);
+TickCallback timed_tick_callback(const char *id, TickCallback tick);
+
 // Adds the global procs of the timing (once): `stagekit_timing_take(out
 // string json)`, which returns what every kind has cost since the last take
 // and starts counting afresh, for the measuring harness and the tests;

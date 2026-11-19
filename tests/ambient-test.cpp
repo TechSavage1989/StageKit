@@ -42,8 +42,10 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <condition_variable>
 #include <cstdio>
 #include <cstring>
+#include <deque>
 #include <functional>
 #include <mutex>
 #include <string>
@@ -64,9 +66,135 @@ static int g_failures = 0;
 		printf("\n");               \
 	} while (0)
 
+// ------------------------------------------------------- OBS's own thread
+// OBS has a thread of its own, its window's, and work is handed to it with
+// obs_queue_task(OBS_TASK_UI): StageKit puts the item Morph's layer into a
+// scene there and takes it out there, never on OBS's drawing thread. This
+// program has no window, so its main thread is that thread: the tasks are
+// kept, and run from here whenever a test waits (`sleep_ms`), as a window's
+// event loop runs them between two things it does. A test can make every
+// task wait a number of frames first (`g_ui_delay`), as a window's thread
+// that is busy would.
+struct UiTask {
+	obs_task_t task;
+	void *param;
+	uint64_t due; // the frame it may run from
+};
+static std::mutex g_ui_mutex;
+static std::condition_variable g_ui_wake;
+static std::deque<UiTask> g_ui_tasks;
+static std::atomic<uint64_t> g_ui_frame{0}; // the frames OBS has ticked
+static std::atomic<int> g_ui_delay{0};      // how many frames each task waits
+static std::atomic<long long> g_ui_ran{0};
+static std::thread::id g_ui_thread;
+
+// With `g_ui_mutex` held. (In the order they were queued: one that is not
+// due yet keeps back those behind it.)
+static bool ui_task_due()
+{
+	return !g_ui_tasks.empty() && g_ui_tasks.front().due <= g_ui_frame.load();
+}
+
+// Runs the tasks that are due. On the main thread only.
+static void run_ui_tasks()
+{
+	if (std::this_thread::get_id() != g_ui_thread)
+		return;
+	for (;;) {
+		UiTask next;
+		{
+			std::lock_guard<std::mutex> lock(g_ui_mutex);
+			if (!ui_task_due())
+				return;
+			next = g_ui_tasks.front();
+			g_ui_tasks.pop_front();
+		}
+		next.task(next.param);
+		g_ui_ran++;
+	}
+}
+
+static size_t ui_tasks_waiting()
+{
+	std::lock_guard<std::mutex> lock(g_ui_mutex);
+	return g_ui_tasks.size();
+}
+
+// The thread is free again: every task that waits is due now, however many
+// frames it was to wait. (A test that has seen what it wanted of a late task
+// lets it come this way. Left to its frames, how long it took went by how
+// fast this machine draws, and on a busy one the test gave up first.)
+static void ui_tasks_release()
+{
+	{
+		std::lock_guard<std::mutex> lock(g_ui_mutex);
+		for (UiTask &task : g_ui_tasks)
+			task.due = 0;
+	}
+	g_ui_wake.notify_all();
+}
+
+// What OBS calls for each task. (Nothing here waits for this thread from
+// another: `wait` only matters on the thread itself.)
+static void ui_task_handler(obs_task_t task, void *param, bool wait)
+{
+	if (wait && std::this_thread::get_id() == g_ui_thread) {
+		task(param);
+		return;
+	}
+	{
+		std::lock_guard<std::mutex> lock(g_ui_mutex);
+		g_ui_tasks.push_back({task, param, g_ui_frame.load() + (uint64_t)std::max(0, g_ui_delay.load())});
+	}
+	g_ui_wake.notify_all();
+}
+
+// Counts OBS's frames, and wakes the main thread when a task may be due.
+static void ui_frame_tick(void *, float)
+{
+	g_ui_frame++;
+	bool any;
+	{
+		std::lock_guard<std::mutex> lock(g_ui_mutex);
+		any = !g_ui_tasks.empty();
+	}
+	if (any)
+		g_ui_wake.notify_all();
+}
+
+// Waits, and on the main thread runs OBS's own thread's tasks meanwhile.
 static void sleep_ms(int ms)
 {
-	std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+	const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
+	if (std::this_thread::get_id() != g_ui_thread) {
+		std::this_thread::sleep_until(until);
+		return;
+	}
+	for (;;) {
+		run_ui_tasks();
+		std::unique_lock<std::mutex> lock(g_ui_mutex);
+		if (!g_ui_wake.wait_until(lock, until, [] { return ui_task_due(); }))
+			break;
+	}
+}
+
+// Sets this program up as OBS's own thread (before the modules are loaded),
+// and tells StageKit there is one (after).
+static void ui_thread_start()
+{
+	g_ui_thread = std::this_thread::get_id();
+	obs_set_ui_task_handler(ui_task_handler);
+	obs_add_tick_callback(ui_frame_tick, nullptr);
+	run_ui_tasks(); // (libobs's own first task: it notes which thread this is)
+}
+
+static void ui_thread_tell(bool there)
+{
+	calldata_t cd;
+	calldata_init(&cd);
+	calldata_set_bool(&cd, "there", there);
+	proc_handler_call(obs_get_proc_handler(), "stagekit_test_ui_tasks", &cd);
+	calldata_free(&cd);
 }
 
 static bool load_module(const char *bin, const char *data)
@@ -7426,6 +7554,796 @@ static void item_morph_holds_test(uint32_t w, uint32_t h)
 	obs_scene_release(elsewhere);
 }
 
+// ------------------------------ the item Morph's layer, on OBS's own thread
+// The layer that draws a change between two items is put into its scene and
+// taken out again on OBS's own thread, by a task that is asked for and never
+// waited for; never on OBS's drawing thread. (Done from the tick callback,
+// up to beta198, OBS froze for good under the owner's Stream Deck keys: the
+// drawing thread and the window's thread each waited for something the other
+// held.) So the layer comes a little after the change is found, and how much
+// later depends on how busy that thread is. Looked at here frame by frame,
+// each frame as OBS itself draws it (from a callback of its own drawing, so
+// between one tick and the next): with the layer 0, 1 and 5 frames late no
+// frame may have both pictures or neither; a change that is over before its
+// layer comes gets none; two changes in quick succession; a collection
+// changing and a scene removed with a task still on its way; and every scene
+// item added or removed on this thread only (alone:
+// STAGEKIT_TEST_ONLY_MORPH_UI_TASK).
+static void morph_ui_task_test(uint32_t w, uint32_t h)
+{
+	printf("\n[the item Morph's layer is put in and taken out on OBS's own thread]\n");
+	if (!obs_source_get_display_name("stagekit_morph") || !obs_source_get_display_name("stagekit_make_room")) {
+		CHECK(false, "the Morph and Make Room transitions are there");
+		return;
+	}
+	CHECK(obs_in_task_thread(OBS_TASK_UI) && !obs_in_task_thread(OBS_TASK_GRAPHICS),
+	      "this program's main thread is OBS's own thread here, as its window's is in OBS");
+	obs_source_t *before_out = obs_get_output_source(0);
+	obs_scene_t *elsewhere = obs_scene_create("UT Elsewhere");
+	const int kW = 300, kH = 200, kArea = kW * kH;
+	const long long kRed = 0xFF0000FF, kGreen = 0xFF00FF00, kBlue = 0xFFFF0000;
+
+	// What StageKit says of its layers: put in, taken out, how many of those
+	// on OBS's drawing thread or on any thread but OBS's own, and how many
+	// changes wait for that thread.
+	struct Counts {
+		long long placed = 0, removed = 0, on_drawing = 0, off_own = 0, waiting = 0, left = 0;
+	};
+	auto counts = [] {
+		Counts c;
+		calldata_t cd;
+		calldata_init(&cd);
+		proc_handler_call(obs_get_proc_handler(), "stagekit_test_item_morph_layers", &cd);
+		c.placed = calldata_int(&cd, "placed");
+		c.removed = calldata_int(&cd, "removed");
+		c.on_drawing = calldata_int(&cd, "on_drawing");
+		c.off_own = calldata_int(&cd, "off_own");
+		c.waiting = calldata_int(&cd, "waiting");
+		c.left = calldata_int(&cd, "left");
+		calldata_free(&cd);
+		return c;
+	};
+	const Counts at_start = counts();
+
+	// And what the scenes themselves say: every signal that an item was
+	// added, removed, reordered or locked, with the thread it came on. (That
+	// an item's place was worked out is counted apart: OBS itself says so
+	// from its drawing thread whenever it finds a source of another size, as
+	// it may for an item just added, before StageKit has worked its place out.)
+	struct Signals {
+		std::atomic<int> adds{0}, removes{0}, other{0}, off_main{0}, placed{0}, placed_off_main{0};
+	} told;
+	static const auto note = [](Signals *s, std::atomic<int> &which) {
+		which++;
+		if (std::this_thread::get_id() != g_ui_thread)
+			s->off_main++;
+	};
+	void (*on_add)(void *, calldata_t *) = [](void *data, calldata_t *) {
+		auto *s = static_cast<Signals *>(data);
+		note(s, s->adds);
+	};
+	void (*on_remove)(void *, calldata_t *) = [](void *data, calldata_t *) {
+		auto *s = static_cast<Signals *>(data);
+		note(s, s->removes);
+	};
+	void (*on_other)(void *, calldata_t *) = [](void *data, calldata_t *) {
+		auto *s = static_cast<Signals *>(data);
+		note(s, s->other);
+	};
+	void (*on_placed)(void *, calldata_t *) = [](void *data, calldata_t *) {
+		auto *s = static_cast<Signals *>(data);
+		s->placed++;
+		if (std::this_thread::get_id() != g_ui_thread)
+			s->placed_off_main++;
+	};
+	auto listen = [&](obs_scene_t *scene, bool on) {
+		signal_handler_t *sh = obs_source_get_signal_handler(obs_scene_get_source(scene));
+		auto set = on ? signal_handler_connect : signal_handler_disconnect;
+		set(sh, "item_add", on_add, &told);
+		set(sh, "item_remove", on_remove, &told);
+		for (const char *name : {"reorder", "item_locked"})
+			set(sh, name, on_other, &told);
+		set(sh, "item_transform", on_placed, &told);
+	};
+	// Each frame as OBS draws it: how much is drawn, where, how much of it is
+	// one pure colour, and how many Morph layers the scene has.
+	struct Seen {
+		uint64_t frame = 0;
+		int drawn = 0, x0 = 0, y0 = 0, x1 = -1, y1 = -1;
+		int pure[3] = {0, 0, 0};
+		int layers = 0;
+	};
+	struct Watch {
+		std::mutex mutex;
+		obs_source_t *scene = nullptr; // watched while set
+		uint32_t w = 0, h = 0;
+		std::vector<Seen> seen;
+	} watch;
+	watch.w = w;
+	watch.h = h;
+	void (*sample)(void *, uint32_t, uint32_t) = [](void *param, uint32_t, uint32_t) {
+		auto *wt = static_cast<Watch *>(param);
+		std::lock_guard<std::mutex> lock(wt->mutex);
+		if (!wt->scene)
+			return;
+		const std::vector<uint8_t> frame = render(wt->scene, wt->w, wt->h);
+		Seen s;
+		s.frame = g_ui_frame.load();
+		s.x0 = (int)wt->w;
+		s.y0 = (int)wt->h;
+		for (int y = 0; y < (int)wt->h; y++) {
+			const uint8_t *row = &frame[size_t(y) * wt->w * 4];
+			for (int x = 0; x < (int)wt->w; x++) {
+				const uint8_t *p = row + x * 4;
+				if (p[0] <= 40 && p[1] <= 40 && p[2] <= 40)
+					continue;
+				s.drawn++;
+				s.x0 = std::min(s.x0, x);
+				s.x1 = std::max(s.x1, x);
+				s.y0 = std::min(s.y0, y);
+				s.y1 = std::max(s.y1, y);
+				for (int c = 0; c < 3; c++)
+					if (p[c] > 200 && p[(c + 1) % 3] < 60 && p[(c + 2) % 3] < 60)
+						s.pure[c]++;
+			}
+		}
+		obs_scene_enum_items(
+			obs_scene_from_source(wt->scene),
+			[](obs_scene_t *, obs_sceneitem_t *item, void *n) {
+				const char *id = obs_source_get_unversioned_id(obs_sceneitem_get_source(item));
+				if (id && strcmp(id, "stagekit_morph_layer") == 0)
+					++*static_cast<int *>(n);
+				return true;
+			},
+			&s.layers);
+		wt->seen.push_back(s);
+	};
+	obs_add_main_render_callback(sample, &watch);
+	auto stop_watching = [&] {
+		std::lock_guard<std::mutex> lock(watch.mutex);
+		watch.scene = nullptr;
+		std::vector<Seen> out;
+		out.swap(watch.seen);
+		return out;
+	};
+
+	auto count_items = [](obs_scene_t *scene) {
+		int n = 0;
+		obs_scene_enum_items(
+			scene,
+			[](obs_scene_t *, obs_sceneitem_t *, void *param) {
+				++*static_cast<int *>(param);
+				return true;
+			},
+			&n);
+		return n;
+	};
+	// A scene of coloured blocks, each hidden and shown with `kind` over `ms`
+	// (at an even pace), on the output and watched.
+	struct Spec {
+		const char *name;
+		long long abgr;
+		float x, y;
+		bool shown;
+	};
+	struct Rig {
+		obs_scene_t *scene = nullptr;
+		obs_source_t *scene_src = nullptr;
+		std::vector<obs_source_t *> sources;
+		std::vector<obs_sceneitem_t *> items;
+		std::vector<obs_weak_source_t *> weak;
+		int base = 0;
+	};
+	auto make = [&](const char *scene_name, const std::vector<Spec> &specs, const char *kind, int ms) {
+		Rig r;
+		r.scene = obs_scene_create(scene_name);
+		r.scene_src = obs_scene_get_source(r.scene);
+		r.weak.push_back(obs_source_get_weak_source(r.scene_src));
+		for (const Spec &sp : specs) {
+			obs_data_t *d = obs_data_create();
+			obs_data_set_int(d, "color", sp.abgr);
+			obs_data_set_int(d, "width", kW);
+			obs_data_set_int(d, "height", kH);
+			obs_source_t *src = obs_source_create("color_source", sp.name, d, nullptr);
+			obs_data_release(d);
+			obs_sceneitem_t *item = obs_scene_add(r.scene, src);
+			vec2 at;
+			vec2_set(&at, sp.x, sp.y);
+			obs_sceneitem_set_pos(item, &at);
+			obs_sceneitem_set_visible(item, sp.shown);
+			for (const bool show : {true, false}) {
+				obs_data_t *td = obs_data_create();
+				obs_data_set_int(td, "ease_curve", 0);
+				obs_source_t *t = obs_source_create_private(kind, "UT Item Change", td);
+				obs_data_release(td);
+				r.weak.push_back(obs_source_get_weak_source(t));
+				obs_sceneitem_set_transition(item, show, t);
+				obs_sceneitem_set_transition_duration(item, show, (uint32_t)ms);
+				obs_source_release(t);
+			}
+			r.weak.push_back(obs_source_get_weak_source(src));
+			r.sources.push_back(src);
+			r.items.push_back(item);
+		}
+		listen(r.scene, true);
+		obs_set_output_source(0, r.scene_src);
+		sleep_ms(250);
+		r.base = count_items(r.scene);
+		std::lock_guard<std::mutex> lock(watch.mutex);
+		watch.seen.clear();
+		watch.scene = r.scene_src;
+		return r;
+	};
+	// Lets go of a scene and its sources, and says what is still held of
+	// them after at most `for_ms` ("" for nothing). With `own_thread`, OBS's
+	// own thread's tasks are run meanwhile; without, none is. With `removed`
+	// the scene is removed first, as OBS does with a scene that is deleted.
+	auto drop = [&](Rig &r, bool own_thread, int for_ms, bool removed = false) {
+		stop_watching();
+		listen(r.scene, false);
+		obs_set_output_source(0, obs_scene_get_source(elsewhere));
+		if (removed)
+			obs_source_remove(r.scene_src);
+		obs_scene_release(r.scene);
+		for (obs_source_t *src : r.sources)
+			obs_source_release(src);
+		std::string left;
+		for (int i = 0; i < for_ms / 10; i++) {
+			left.clear();
+			for (obs_weak_source_t *weak : r.weak) {
+				obs_source_t *src = obs_weak_source_get_source(weak);
+				if (src)
+					left += std::string(left.empty() ? "" : ", ") + obs_source_get_name(src) +
+						" held";
+				obs_source_release(src);
+			}
+			long long entries = 0, jobs = 0;
+			item_morph_held(entries, jobs);
+			if (entries || jobs)
+				left += std::string(left.empty() ? "" : ", ") + std::to_string(entries) + " entries, " +
+					std::to_string(jobs) + " changes";
+			if (left.empty())
+				break;
+			if (own_thread)
+				sleep_ms(10);
+			else
+				std::this_thread::sleep_for(std::chrono::milliseconds(10));
+		}
+		for (obs_weak_source_t *weak : r.weak)
+			obs_weak_source_release(weak);
+		return left;
+	};
+	// Several items shown and hidden between two frames, as a filter's tick
+	// does it: their transitions start on the same clock.
+	auto at_once = [](const std::function<void()> &act) {
+		obs_queue_task(
+			OBS_TASK_GRAPHICS, [](void *param) { (*static_cast<const std::function<void()> *>(param))(); },
+			const_cast<void *>(static_cast<const void *>(&act)), true);
+	};
+	// Lets every task that waits for OBS's own thread come now (however many
+	// frames late it was to be), and waits until none is on its way.
+	auto tasks_done = [](int for_ms) {
+		ui_tasks_release();
+		for (int i = 0; i < for_ms / 10 && ui_tasks_waiting(); i++)
+			sleep_ms(10);
+		return ui_tasks_waiting() == 0;
+	};
+	// One picture's worth is drawn: not two (both), not none (neither).
+	auto one_picture = [&](const Seen &s) {
+		return s.drawn >= kArea * 0.88 && s.drawn <= kArea * 1.12;
+	};
+	// The block of colour `c` whole at x, y, and nothing else.
+	auto whole = [&](const Seen &s, int c, int x, int y) {
+		return s.pure[c] >= kArea * 0.97 && s.drawn <= kArea * 1.03 && std::abs(s.x0 - x) <= 1 &&
+		       std::abs(s.y0 - y) <= 1;
+	};
+	const std::vector<Spec> pair = {{"UT Red", kRed, 10, 10, true}, {"UT Green", kGreen, 330, 150, false}};
+
+	// 1. Two items change into each other, the layer 0, 1 and 5 frames late.
+	// Until it is there the hidden item stays whole where it was and the
+	// shown one is not drawn; then one picture goes from the one place to the
+	// other; then the shown item is whole. Never both, never neither.
+	for (const int delay : {0, 1, 5}) {
+		Rig r = make("UT Pair", pair, "stagekit_morph", 600);
+		g_ui_delay = delay;
+		uint64_t press = 0;
+		at_once([&] {
+			press = g_ui_frame.load();
+			obs_sceneitem_set_visible(r.items[0], false);
+			obs_sceneitem_set_visible(r.items[1], true);
+		});
+		sleep_ms(1100);
+		g_ui_delay = 0;
+		tasks_done(1000);
+		const std::vector<Seen> seen = stop_watching();
+		int wrong = 0, between = 0, waited = 0, waited_wrong = 0, most = 0, back = 0, last_x = -1;
+		uint64_t first_layer = 0;
+		for (const Seen &s : seen) {
+			wrong += !one_picture(s);
+			most = std::max(most, s.layers);
+			if (s.layers > 0 && !first_layer)
+				first_layer = s.frame;
+			if (s.frame > press && one_picture(s) && !whole(s, 0, 10, 10) && !whole(s, 1, 330, 150))
+				between++;
+			if (s.frame > press) {
+				back += s.x0 < last_x - 1;
+				last_x = s.x0;
+			}
+		}
+		for (const Seen &s : seen)
+			if (s.frame > press && first_layer && s.frame <= first_layer) {
+				waited++;
+				waited_wrong += !whole(s, 0, 10, 10);
+			}
+		const long long late = first_layer ? (long long)(first_layer - press) : -1;
+		const bool ended = !seen.empty() && whole(seen.back(), 1, 330, 150) && seen.back().layers == 0;
+		CHECK(seen.size() >= 30 && wrong == 0 && late >= delay + 1 && waited >= 1 && waited_wrong == 0 &&
+			      between >= 5 && back == 0 && most == 1 && ended && count_items(r.scene) == r.base,
+		      "a pair, its layer put in %d frame(s) late: no frame of %zu has both pictures or neither; the hidden item stays whole until the layer is there (%d frames, %d wrong; the layer %lld frames after the keys), then one picture goes over (%d frames on the way, %d steps back), and at the end the shown item is whole and the layer gone (%d frames wrong; %d layers at most; %d items, %d before)",
+		      delay, seen.size(), waited, waited_wrong, late, between, back, wrong, most, count_items(r.scene),
+		      r.base);
+		const std::string left = drop(r, true, 2000);
+		CHECK(left.empty(), "and once the scene is let go, nothing of it is held (%s)",
+		      left.empty() ? "nothing left" : left.c_str());
+	}
+
+	// 2. Make Room, one item by itself: it stays whole until its layer is
+	// there, then moves off the nearest edge (the left one), a little less of
+	// it on the screen each frame; never more than one picture, never gone
+	// and back.
+	for (const int delay : {0, 1, 5}) {
+		Rig r = make("UT Room", {{"UT Blue", kBlue, 20, 80, true}}, "stagekit_make_room", 600);
+		g_ui_delay = delay;
+		uint64_t press = 0;
+		at_once([&] {
+			press = g_ui_frame.load();
+			obs_sceneitem_set_visible(r.items[0], false);
+		});
+		sleep_ms(1100);
+		g_ui_delay = 0;
+		tasks_done(1000);
+		const std::vector<Seen> seen = stop_watching();
+		int more = 0, part = 0, waited = 0, waited_wrong = 0, most = 0, last = kArea, moved_back = 0,
+		    last_x1 = 100000;
+		double drop_most = 0.0;
+		uint64_t first_layer = 0;
+		for (const Seen &s : seen) {
+			most = std::max(most, s.layers);
+			if (s.layers > 0 && !first_layer)
+				first_layer = s.frame;
+			more += s.drawn > last + kArea * 0.02 || s.drawn > kArea * 1.03;
+			drop_most = std::max(drop_most, (double)(last - s.drawn) / kArea);
+			last = s.drawn;
+			part += s.drawn > kArea * 0.2 && s.drawn < kArea * 0.8;
+			if (s.drawn > 0) {
+				moved_back += s.x1 > last_x1 + 1;
+				last_x1 = s.x1;
+			}
+		}
+		for (const Seen &s : seen)
+			if (s.frame > press && first_layer && s.frame <= first_layer) {
+				waited++;
+				waited_wrong += !whole(s, 2, 20, 80);
+			}
+		const long long late = first_layer ? (long long)(first_layer - press) : -1;
+		const bool ended = !seen.empty() && seen.back().drawn < 50 && seen.back().layers == 0;
+		CHECK(seen.size() >= 30 && more == 0 && drop_most <= 0.35 && part >= 3 && moved_back == 0 &&
+			      late >= delay + 1 && waited >= 1 && waited_wrong == 0 && most == 1 && ended &&
+			      count_items(r.scene) == r.base && !obs_sceneitem_visible(r.items[0]),
+		      "Make Room, its layer put in %d frame(s) late: the item stays whole until the layer is there (%d frames, %d wrong; the layer %lld frames after the key), then goes off the left edge with never more of it drawn than the frame before and never gone at a stroke (%d frames with more, the largest step %.0f%% of it, %d frames part-way, %d steps back), and the layer is gone after (%d items, %d before)",
+		      delay, waited, waited_wrong, late, more, drop_most * 100.0, part, moved_back,
+		      count_items(r.scene), r.base);
+		// And shown again, the same way round: not drawn until its layer is
+		// there, then in from the edge, never less of it than the frame before.
+		if (delay == 1) {
+			{
+				std::lock_guard<std::mutex> lock(watch.mutex);
+				watch.seen.clear();
+				watch.scene = r.scene_src;
+			}
+			g_ui_delay = delay;
+			at_once([&] { obs_sceneitem_set_visible(r.items[0], true); });
+			sleep_ms(1100);
+			g_ui_delay = 0;
+			tasks_done(1000);
+			const std::vector<Seen> in = stop_watching();
+			int less = 0, in_part = 0, was = 0;
+			double rise_most = 0.0;
+			for (const Seen &s : in) {
+				less += s.drawn < was - kArea * 0.02 || s.drawn > kArea * 1.03;
+				rise_most = std::max(rise_most, (double)(s.drawn - was) / kArea);
+				was = s.drawn;
+				in_part += s.drawn > kArea * 0.2 && s.drawn < kArea * 0.8;
+			}
+			CHECK(in.size() >= 30 && less == 0 && rise_most <= 0.35 && in_part >= 3 &&
+				      whole(in.back(), 2, 20, 80) && in.back().layers == 0 &&
+				      count_items(r.scene) == r.base,
+			      "and shown again it comes in from that edge: never less of it than the frame before, never there at a stroke, whole at the end (%d frames with less, the largest step %.0f%% of it, %d frames part-way)",
+			      less, rise_most * 100.0, in_part);
+		}
+		const std::string left = drop(r, true, 2000);
+		CHECK(left.empty(), "and once the scene is let go, nothing of it is held (%s)",
+		      left.empty() ? "nothing left" : left.c_str());
+	}
+
+	// 3. A change that is over before its layer comes: OBS's own thread busy
+	// for 2.5 s, the change 0.4 s long. The hidden item stays until its time
+	// is up and the shown one is there from then; no layer is ever put in,
+	// none is left behind when the task does come, and nothing is held.
+	{
+		Rig r = make("UT Too Late", pair, "stagekit_morph", 400);
+		const Counts before = counts();
+		g_ui_delay = 150;
+		at_once([&] {
+			obs_sceneitem_set_visible(r.items[0], false);
+			obs_sceneitem_set_visible(r.items[1], true);
+		});
+		sleep_ms(900);
+		g_ui_delay = 0;
+		const Counts over = counts();
+		long long entries = 0, held = 0;
+		item_morph_held(entries, held);
+		const size_t on_its_way = ui_tasks_waiting();
+		const std::vector<Seen> seen = stop_watching();
+		int wrong = 0, layers = 0;
+		for (const Seen &s : seen) {
+			wrong += !one_picture(s);
+			layers += s.layers;
+		}
+		const bool ended = !seen.empty() && whole(seen.back(), 1, 330, 150);
+		const bool came = tasks_done(4000);
+		sleep_ms(100);
+		const Counts after = counts();
+		long long held_after = 0;
+		item_morph_held(entries, held_after);
+		CHECK(on_its_way >= 1 && over.waiting >= 1 && held == 1 && wrong == 0 && layers == 0 && ended && came &&
+			      after.placed == before.placed && after.removed == before.removed && after.waiting == 0 &&
+			      held_after == 0 && count_items(r.scene) == r.base,
+		      "a change that is over before its layer comes: the hidden item stays to the end and the shown one is there from then (%d of %zu frames with both or neither), no layer is ever in the scene (%d seen; %lld put in, %lld taken out), and when the task does come it leaves none and lets go of the change (%lld held while it waited, %lld after; %d items, %d before)",
+		      wrong, seen.size(), layers, after.placed - before.placed, after.removed - before.removed, held,
+		      held_after, count_items(r.scene), r.base);
+		const std::string left = drop(r, true, 2000);
+		CHECK(left.empty(), "and once the scene is let go, nothing of it is held (%s)",
+		      left.empty() ? "nothing left" : left.c_str());
+	}
+
+	// 4. Two keys in quick succession (the owner's log, 22:08): the second
+	// half a second into the first change, hiding the very item the first one
+	// shows. The first change ends there, the second begins; one picture all
+	// the way, and both layers gone after.
+	{
+		const std::vector<Spec> three = {{"UT Red", kRed, 10, 10, true},
+						 {"UT Green", kGreen, 330, 150, false},
+						 {"UT Blue", kBlue, 170, 20, false}};
+		Rig r = make("UT Quick", three, "stagekit_morph", 1000);
+		const Counts before = counts();
+		g_ui_delay = 1;
+		at_once([&] {
+			obs_sceneitem_set_visible(r.items[0], false);
+			obs_sceneitem_set_visible(r.items[1], true);
+		});
+		sleep_ms(500);
+		uint64_t second = 0;
+		at_once([&] {
+			second = g_ui_frame.load();
+			obs_sceneitem_set_visible(r.items[1], false);
+			obs_sceneitem_set_visible(r.items[2], true);
+		});
+		sleep_ms(1500);
+		g_ui_delay = 0;
+		tasks_done(1000);
+		const std::vector<Seen> seen = stop_watching();
+		int wrong = 0, most = 0, green_whole = 0, first_way = 0, second_way = 0;
+		for (const Seen &s : seen) {
+			wrong += !one_picture(s);
+			most = std::max(most, s.layers);
+			const bool on_the_way = one_picture(s) && !whole(s, 0, 10, 10) && !whole(s, 1, 330, 150) &&
+						!whole(s, 2, 170, 20);
+			first_way += on_the_way && s.frame <= second;
+			second_way += on_the_way && s.frame > second;
+			green_whole += s.frame > second && whole(s, 1, 330, 150);
+		}
+		const Counts after = counts();
+		long long entries = 0, held = 0;
+		item_morph_held(entries, held);
+		const bool ended = !seen.empty() && whole(seen.back(), 2, 170, 20) && seen.back().layers == 0;
+		CHECK(seen.size() >= 60 && wrong == 0 && first_way >= 5 && second_way >= 5 && green_whole >= 1 &&
+			      most <= 2 && ended && after.placed - before.placed == 2 &&
+			      after.removed - before.removed == 2 && held == 0 && count_items(r.scene) == r.base,
+		      "a second key half a second into a change, hiding the item that change shows: one picture in every frame (%d of %zu with both or neither), the first change on its way (%d frames), then the item it showed whole (%d frames) and the second change on its way (%d frames) to the third item; two layers put in and two taken out (%lld, %lld; %d at once at most; %lld changes held after; %d items, %d before)",
+		      wrong, seen.size(), first_way, green_whole, second_way, after.placed - before.placed,
+		      after.removed - before.removed, most, held, count_items(r.scene), r.base);
+		const std::string left = drop(r, true, 2000);
+		CHECK(left.empty(), "and once the scene is let go, nothing of it is held (%s)",
+		      left.empty() ? "nothing left" : left.c_str());
+	}
+
+	// 5. The collection changes with a task still on its way (in OBS, the
+	// frontend's event, on this thread): everything is let go of there and
+	// then, with no task run; the task finds nothing to do when it comes.
+	auto let_go = [] {
+		calldata_t cd;
+		calldata_init(&cd);
+		proc_handler_call(obs_get_proc_handler(), "stagekit_test_item_morph_let_go", &cd);
+		calldata_free(&cd);
+	};
+	{
+		Rig r = make("UT Changing", pair, "stagekit_morph", 2000);
+		const Counts before = counts();
+		const long long ran = g_ui_ran.load();
+		g_ui_delay = 90;
+		at_once([&] {
+			obs_sceneitem_set_visible(r.items[0], false);
+			obs_sceneitem_set_visible(r.items[1], true);
+		});
+		sleep_ms(200);
+		g_ui_delay = 0;
+		long long entries = 0, held = 0;
+		item_morph_held(entries, held);
+		const Counts claimed = counts();
+		const size_t on_its_way = ui_tasks_waiting();
+		let_go();
+		long long entries_now = 0, held_now = 0;
+		item_morph_held(entries_now, held_now);
+		const Counts gone = counts();
+		const int layers = count_items(r.scene) - r.base;
+		const std::string left = drop(r, false, 1500);
+		const bool not_run = g_ui_ran.load() == ran && ui_tasks_waiting() >= 1;
+		const bool came = tasks_done(4000);
+		const Counts after = counts();
+		CHECK(held == 1 && claimed.waiting >= 1 && on_its_way >= 1 && entries_now == 0 && held_now == 0 &&
+			      gone.waiting == 0 && layers == 0 && left.empty() && not_run && came &&
+			      after.placed == before.placed && after.removed == before.removed,
+		      "the collection changing with the layer's task still on its way: the change and all it held are let go of there and then, with no task run (%lld change(s) before, %lld after; %s), and the task finds nothing to do when it comes (%lld layers put in)",
+		      held, held_now, left.empty() ? "nothing left" : left.c_str(), after.placed - before.placed);
+	}
+	{
+		Rig r = make("UT Changing Two", pair, "stagekit_morph", 2000);
+		at_once([&] {
+			obs_sceneitem_set_visible(r.items[0], false);
+			obs_sceneitem_set_visible(r.items[1], true);
+		});
+		for (int i = 0; i < 300 && count_items(r.scene) == r.base; i++)
+			sleep_ms(10);
+		sleep_ms(60);
+		const int in = count_items(r.scene) - r.base;
+		let_go();
+		const int out = count_items(r.scene) - r.base;
+		long long entries = 0, held = 0;
+		item_morph_held(entries, held);
+		const std::string left = drop(r, false, 1500);
+		CHECK(in == 1 && out == 0 && entries == 0 && held == 0 && left.empty(),
+		      "and with the layer in the scene: it is taken out there and then (%d layer before, %d after; %s)",
+		      in, out, left.empty() ? "nothing left" : left.c_str());
+		tasks_done(2000);
+	}
+
+	// 6. The scene removed with the layer's task still on its way: the task
+	// finds no scene to put a layer into, and nothing is held after.
+	{
+		Rig r = make("UT Removed", pair, "stagekit_morph", 2000);
+		const Counts before = counts();
+		g_ui_delay = 90;
+		at_once([&] {
+			obs_sceneitem_set_visible(r.items[0], false);
+			obs_sceneitem_set_visible(r.items[1], true);
+		});
+		sleep_ms(150);
+		g_ui_delay = 0;
+		long long entries = 0, held = 0;
+		item_morph_held(entries, held);
+		const size_t on_its_way = ui_tasks_waiting();
+		// (The task may come from here on; none is run before the scene is
+		// removed: tasks are only run while this thread waits.)
+		ui_tasks_release();
+		const std::string left = drop(r, true, 5000, true);
+		tasks_done(2000);
+		const Counts after = counts();
+		CHECK(held == 1 && on_its_way >= 1 && left.empty() && after.placed == before.placed &&
+			      after.removed == before.removed && after.waiting == 0,
+		      "a scene removed with the layer's task still on its way: no layer is made for it (%lld put in), and nothing of the scene is held once the task has come (%s)",
+		      after.placed - before.placed, left.empty() ? "nothing left" : left.c_str());
+	}
+	// (Only let go of by this program, not removed: the references the tick
+	// took keep the scene until the task comes, so a layer may still be put
+	// in. It must be taken out again, and nothing held after.)
+	{
+		Rig r = make("UT Let Go Of", pair, "stagekit_morph", 2000);
+		const Counts before = counts();
+		g_ui_delay = 90;
+		at_once([&] {
+			obs_sceneitem_set_visible(r.items[0], false);
+			obs_sceneitem_set_visible(r.items[1], true);
+		});
+		sleep_ms(150);
+		g_ui_delay = 0;
+		ui_tasks_release();
+		const std::string left = drop(r, true, 5000);
+		tasks_done(2000);
+		const Counts after = counts();
+		CHECK(left.empty() && after.placed - before.placed == after.removed - before.removed &&
+			      after.waiting == 0,
+		      "and a scene this program only lets go of, with the task on its way: nothing of it is held once the task has come, and no layer is left (%lld put in, %lld taken out; %s)",
+		      after.placed - before.placed, after.removed - before.removed,
+		      left.empty() ? "nothing left" : left.c_str());
+	}
+	// (And let go of with its layer in it and the change half-way: the scene
+	// takes its own items out as it is unmade, on a thread of OBS's for that.
+	// The layer is left to it, never taken out of a scene that is going at
+	// that moment, and what the change held is let go of all the same.)
+	{
+		Rig r = make("UT Let Go Of Late", pair, "stagekit_morph", 2000);
+		const Counts before = counts();
+		at_once([&] {
+			obs_sceneitem_set_visible(r.items[0], false);
+			obs_sceneitem_set_visible(r.items[1], true);
+		});
+		for (int i = 0; i < 300 && count_items(r.scene) == r.base; i++)
+			sleep_ms(10);
+		sleep_ms(60);
+		const int in = count_items(r.scene) - r.base;
+		const std::string left = drop(r, true, 5000);
+		tasks_done(2000);
+		const Counts after = counts();
+		CHECK(in == 1 && left.empty() && after.placed - before.placed == 1 &&
+			      after.removed - before.removed == 1 && after.left - before.left == 1 &&
+			      after.waiting == 0,
+		      "and a scene let go of with its layer in it, the change half-way: the layer is left to the scene, which takes its own items out as it goes (%lld left to it), nothing of the scene is held after, and the change is let go of (%d layer in the scene before; %lld put in, %lld let go of; %s)",
+		      after.left - before.left, in, after.placed - before.placed, after.removed - before.removed,
+		      left.empty() ? "nothing left" : left.c_str());
+	}
+
+	// 7. Where all of that was done.
+	const Counts at_end = counts();
+	CHECK(at_end.placed - at_start.placed >= 9 &&
+		      at_end.placed - at_start.placed == at_end.removed - at_start.removed &&
+		      at_end.on_drawing == at_start.on_drawing && at_end.off_own == at_start.off_own,
+	      "every layer was put into its scene and taken out on OBS's own thread, none on its drawing thread (%lld put in, %lld taken out; %lld of those on the drawing thread, %lld on any thread but OBS's own)",
+	      at_end.placed - at_start.placed, at_end.removed - at_start.removed,
+	      at_end.on_drawing - at_start.on_drawing, at_end.off_own - at_start.off_own);
+	CHECK(told.adds.load() >= 9 && told.removes.load() >= 9 && told.off_main.load() == 0 &&
+		      told.placed_off_main.load() <= 2,
+	      "and the scenes say the same: every item added, removed, reordered or locked was so on this thread (%d added, %d removed, %d reordered or locked; %d from another thread), and an item's place was worked out on this thread too, all but OBS's own first look at a new item now and then (%d times, %d on another thread)",
+	      told.adds.load(), told.removes.load(), told.other.load(), told.off_main.load(), told.placed.load(),
+	      told.placed_off_main.load());
+
+	obs_remove_main_render_callback(sample, &watch);
+	obs_set_output_source(0, before_out);
+	obs_source_release(before_out);
+	obs_scene_release(elsewhere);
+}
+
+// ------------------- nothing is changed while a scene is gone through
+// Show in Scenes and Link Visibility (*Also in other scenes*) go through
+// the scenes for the items they show and hide. Going through a scene holds
+// its locks; up to beta198 they changed each item as they came to it, so
+// every listener of `item_visible` was called with the scene locked. A
+// listener that needs that scene from another thread before it lets the
+// caller go on (as OBS's window may) then waits for good: here it gives up
+// after half a second and says so. Now the items are found first and changed
+// after (with the item Morph's gate, STAGEKIT_TEST_ONLY_MORPH_UI_TASK).
+static void scene_walk_test()
+{
+	printf("\n[show in scenes, link visibility: sources are changed after the scenes are gone through, not while]\n");
+	auto block = [](const char *name, long long abgr) {
+		obs_data_t *d = obs_data_create();
+		obs_data_set_int(d, "color", abgr);
+		obs_data_set_int(d, "width", 200);
+		obs_data_set_int(d, "height", 120);
+		obs_source_t *src = obs_source_create("color_source", name, d, nullptr);
+		obs_data_release(d);
+		return src;
+	};
+	auto set_list = [](obs_data_t *settings, const char *list, std::vector<const char *> names) {
+		obs_data_array_t *rows = obs_data_array_create();
+		for (const char *name : names) {
+			obs_data_t *row = obs_data_create();
+			obs_data_set_string(row, "value", name);
+			obs_data_array_push_back(rows, row);
+			obs_data_release(row);
+		}
+		obs_data_set_array(settings, list, rows);
+		obs_data_array_release(rows);
+	};
+	// The listener: another thread goes through the scene the signal came
+	// from, and the signal's own thread waits for it, half a second at most.
+	struct Probe {
+		std::atomic<int> calls{0}, stuck{0}, busy{0};
+	} probe;
+	void (*on_visible)(void *, calldata_t *) = [](void *data, calldata_t *cd) {
+		auto *p = static_cast<Probe *>(data);
+		auto *scene = static_cast<obs_scene_t *>(calldata_ptr(cd, "scene"));
+		if (!scene)
+			return;
+		p->calls++;
+		p->busy++;
+		auto through = std::make_shared<std::atomic<bool>>(false);
+		std::thread([scene, through] {
+			obs_scene_enum_items(
+				scene, [](obs_scene_t *, obs_sceneitem_t *, void *) { return true; }, nullptr);
+			*through = true;
+		}).detach();
+		for (int i = 0; i < 100 && !*through; i++)
+			std::this_thread::sleep_for(std::chrono::milliseconds(5));
+		if (!*through)
+			p->stuck++;
+		p->busy--;
+	};
+	// (A listener still waiting is waited for, so each count is for its own part.)
+	auto settled = [&] {
+		sleep_ms(100);
+		for (int i = 0; i < 300 && probe.busy.load(); i++)
+			sleep_ms(10);
+	};
+	obs_source_t *cam = block("SW Cam", 0xFF0000FF);
+	obs_source_t *chat = block("SW Chat", 0xFF00FF00);
+	obs_source_t *lead = block("SW Lead", 0xFFFF0000);
+	obs_scene_t *one = obs_scene_create("SW One");
+	obs_scene_t *two = obs_scene_create("SW Two");
+	obs_sceneitem_t *cam_one = obs_scene_add(one, cam);
+	obs_sceneitem_t *lead_one = obs_scene_add(one, lead);
+	obs_sceneitem_t *cam_two = obs_scene_add(two, cam);
+	obs_sceneitem_t *chat_two = obs_scene_add(two, chat);
+	obs_source_t *before_out = obs_get_output_source(0);
+	obs_set_output_source(0, obs_scene_get_source(one));
+	for (obs_scene_t *scene : {one, two})
+		signal_handler_connect(obs_source_get_signal_handler(obs_scene_get_source(scene)), "item_visible",
+				       on_visible, &probe);
+
+	// Show in Scenes on the camera, in every scene: switched off, it hides
+	// the camera in both.
+	obs_data_t *sd = obs_data_create();
+	obs_data_set_string(sd, "transition", "none");
+	obs_source_t *sw = obs_source_create("stagekit_show_in_scenes", "SW Show in Scenes", sd, nullptr);
+	obs_data_release(sd);
+	obs_source_filter_add(cam, sw);
+	sleep_ms(500);
+	obs_source_set_enabled(sw, false);
+	for (int i = 0; i < 300 && (obs_sceneitem_visible(cam_one) || obs_sceneitem_visible(cam_two)); i++)
+		sleep_ms(10);
+	settled();
+	const int switch_calls = probe.calls.load(), switch_stuck = probe.stuck.load();
+	CHECK(!obs_sceneitem_visible(cam_one) && !obs_sceneitem_visible(cam_two) && switch_calls >= 2 &&
+		      switch_stuck == 0,
+	      "Show in Scenes hides its source in two scenes with neither scene locked as their listeners are told (%d told, %d of them could not get at the scene from another thread)",
+	      switch_calls, switch_stuck);
+
+	// Link Visibility on the first scene, its lead there and the chat box
+	// followed into the second: hiding the lead hides the chat box there.
+	obs_data_t *ld = obs_data_create();
+	set_list(ld, "items", {"SW Lead"});
+	set_list(ld, "elsewhere", {"SW Chat"});
+	obs_data_set_int(ld, "mode", 1); // Together
+	obs_data_set_string(ld, "transition", "none");
+	obs_source_t *link = obs_source_create("stagekit_visibility_link", "SW Link", ld, nullptr);
+	obs_data_release(ld);
+	obs_source_filter_add(obs_scene_get_source(one), link);
+	sleep_ms(500);
+	obs_sceneitem_set_visible(lead_one, false);
+	for (int i = 0; i < 300 && obs_sceneitem_visible(chat_two); i++)
+		sleep_ms(10);
+	settled();
+	const int link_calls = probe.calls.load() - switch_calls, link_stuck = probe.stuck.load() - switch_stuck;
+	CHECK(!obs_sceneitem_visible(chat_two) && link_calls >= 2 && link_stuck == 0,
+	      "Link Visibility hides a source it follows into another scene with that scene not locked as its listeners are told (%d told, %d of them could not get at the scene from another thread)",
+	      link_calls, link_stuck);
+
+	for (obs_scene_t *scene : {one, two})
+		signal_handler_disconnect(obs_source_get_signal_handler(obs_scene_get_source(scene)), "item_visible",
+					  on_visible, &probe);
+	obs_set_output_source(0, before_out);
+	obs_source_release(before_out);
+	obs_source_filter_remove(obs_scene_get_source(one), link);
+	obs_source_release(link);
+	obs_source_filter_remove(cam, sw);
+	obs_source_release(sw);
+	sleep_ms(100);
+	obs_scene_release(one);
+	obs_scene_release(two);
+	for (obs_source_t *src : {cam, chat, lead})
+		obs_source_release(src);
+}
+
 // ==== scene-filters:transitions ====
 // Scene Transitions' *Override other filters*, the list's wording under each
 // *Sources covered*, and Morph's own choices in its window reaching the
@@ -12276,6 +13194,8 @@ int main(int argc, char **argv)
 	ovi.scale_type = OBS_SCALE_BICUBIC;
 	if (obs_reset_video(&ovi) != OBS_VIDEO_SUCCESS)
 		return 1;
+	// This thread is OBS's own, as its window's is: see `UiTask`.
+	ui_thread_start();
 
 	if (!load_module("/usr/lib/x86_64-linux-gnu/obs-plugins/image-source.so",
 			 "/usr/share/obs/obs-plugins/image-source") ||
@@ -12286,6 +13206,7 @@ int main(int argc, char **argv)
 	load_module("/usr/lib/x86_64-linux-gnu/obs-plugins/obs-transitions.so",
 		    "/usr/share/obs/obs-plugins/obs-transitions");
 	obs_post_load_modules();
+	ui_thread_tell(true);
 	if (getenv("STAGEKIT_TEST_ONLY_TOOLTIPS")) { // to try that section alone
 		tooltips_test();
 		obs_shutdown();
@@ -12413,6 +13334,14 @@ int main(int argc, char **argv)
 
 	if (getenv("STAGEKIT_TEST_ONLY_MORPH_HOLDS")) { // to try that section alone
 		item_morph_holds_test(w, h);
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
+	if (getenv("STAGEKIT_TEST_ONLY_MORPH_UI_TASK")) { // to try that section alone
+		morph_ui_task_test(w, h);
+		scene_walk_test();
 		obs_shutdown();
 		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
 		       g_failures == 1 ? "" : "s");
@@ -14337,6 +15266,8 @@ int main(int argc, char **argv)
 			obs_source_release(src);
 		link_transitions_test(w, h);
 		item_morph_holds_test(w, h);
+		morph_ui_task_test(w, h);
+		scene_walk_test();
 		make_room_test(w, h, out);
 		if (getenv("STAGEKIT_TEST_ONLY_MORPH")) { // to try this section alone
 			obs_source_release(live);

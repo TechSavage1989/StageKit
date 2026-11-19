@@ -1265,8 +1265,10 @@ camera.)
 Things to know:
 
 - While a change lasts, a locked item named *Morph (StageKit, in progress)* is in the scene, straight
-  above the two items; it draws the change and takes itself out again. You may see it flash by in
-  the Sources list.
+  above the two items; it draws the change and is taken out again after. You may see it flash by in
+  the Sources list. It is put in a frame or two after the keys are pressed (longer if OBS is busy);
+  until then the item being hidden stays as it is, and then the change runs over the time that is
+  left.
 - It works in the scene that is on screen and for items straight in the scene. An item inside a
   group, or in a scene that is not showing, fades instead.
 - The two items are hidden and shown from the first moment, as far as OBS and everything else is
@@ -2036,6 +2038,13 @@ to (the two update choices are kept with the plugin instead). Replacing the plug
   little more of the processor's time.
 - **Items inside a group are missing from a scene filter's item list.** Add the filter to the group
   itself instead.
+- **OBS froze (stopped responding, with no crash report) while sources were shown and hidden with
+  Morph or Make Room, often from Stream Deck keys.** Up to beta198 StageKit added and removed its
+  *Morph (StageKit, in progress)* layer in the middle of OBS's drawing, where it could end up waiting
+  for OBS's window while the window waited for it. Update StageKit: the layer is now added and
+  removed on OBS's own thread, as OBS does it itself. If OBS still freezes, leave it frozen, open
+  Task Manager, go to *Details*, right-click `obs64.exe`, choose *Create memory dump file*, and send
+  that file with the OBS log: the dump shows what each part of OBS was waiting for.
 <!-- ==== scene-filters:perf (Frame time) ==== -->
 - **OBS's *Average time to render frame* went up.** Every 30 seconds StageKit writes to the OBS log
   what its own work cost, when it was noticeable: a line per filter that was slow (`timing, last 30

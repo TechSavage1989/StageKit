@@ -401,6 +401,20 @@ uint32_t uuid_hash(obs_source_t *source)
 
 } // namespace
 
+TickCallback timed_tick_callback(const char *id, TickCallback tick)
+{
+	const size_t at = g_count.load();
+	if (at >= kMost || !tick) {
+		obs_log(LOG_WARNING, "timing: more kinds than kept time of; %s is not timed", id ? id : "");
+		return tick;
+	}
+	Kind &k = g_kinds[at];
+	k.id = id ? id : "";
+	k.tick = tick;
+	g_count = at + 1;
+	return g_ticks[at];
+}
+
 void register_timed(obs_source_info *info)
 {
 	const size_t at = g_count.load();

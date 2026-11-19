@@ -472,28 +472,39 @@ public:
 	// Shows or hides the sources followed into the other scenes, groups
 	// included: as `changed` was (Together, Follow sources), or, for
 	// Show only one, all but the one shown.
+	//
+	// The items are found first, each held, and changed after: never while a
+	// scene is gone through. Going through one holds its locks (and OBS's
+	// list of sources); changing an item's transitions and showing or hiding
+	// it makes and unmakes sources and runs every listener's handler, and
+	// with those locks held that is how two threads come to wait for each
+	// other for good.
 	void follow_elsewhere(const std::vector<std::string> &elsewhere, const std::string &changed,
 			      const Changes &change, bool only_one, bool visible)
 	{
+		struct Found {
+			obs_sceneitem_t *item; // held
+			obs_source_t *scene;   // held; null for an item in a group
+		};
 		struct Work {
 			const std::vector<std::string> *sources;
 			const std::string *changed;
-			const Changes *change;
 			bool only_one, visible;
 			obs_source_t *scene; // the scene gone through (null for a group)
-		} work{&elsewhere, &changed, &change, only_one, visible, nullptr};
+			std::vector<Found> found;
+		} work{&elsewhere, &changed, only_one, visible, nullptr, {}};
+		// Together: the same as what changed. Only one: the others go; the
+		// one that was shown stays as it is.
+		const bool want = only_one ? false : visible;
 		static const auto each = [](obs_scene_t *, obs_sceneitem_t *item, void *param) {
 			auto *w = static_cast<Work *>(param);
 			const char *name = obs_source_get_name(obs_sceneitem_get_source(item));
 			const bool listed = name && std::find(w->sources->begin(), w->sources->end(), name) !=
 							    w->sources->end();
-			// Together: the same as what changed. Only one: the
-			// others go; the one that was shown stays as it is.
 			const bool act = listed && !(w->only_one && *w->changed == name);
-			const bool want = w->only_one ? false : w->visible;
-			if (act && obs_sceneitem_visible(item) != want) {
-				apply_item_change(item, w->change->of(name), w->scene);
-				set_item_visible(item, want);
+			if (act && obs_sceneitem_visible(item) != (w->only_one ? false : w->visible)) {
+				obs_sceneitem_addref(item);
+				w->found.push_back({item, w->scene ? obs_source_get_ref(w->scene) : nullptr});
 			}
 			return true;
 		};
@@ -513,6 +524,18 @@ public:
 				return true;
 			},
 			&scenes);
+		for (const Found &f : work.found) {
+			// (Taken out of its scene, or changed already, meanwhile.)
+			const char *name = obs_source_get_name(obs_sceneitem_get_source(f.item));
+			if (!name || !obs_sceneitem_get_scene(f.item) || obs_sceneitem_visible(f.item) == want)
+				continue;
+			apply_item_change(f.item, change.of(name), f.scene);
+			set_item_visible(f.item, want);
+		}
+		for (const Found &f : work.found) {
+			obs_sceneitem_release(f.item);
+			obs_source_release(f.scene);
+		}
 	}
 
 	// Follow sources: the leads' state is followed once each time it
