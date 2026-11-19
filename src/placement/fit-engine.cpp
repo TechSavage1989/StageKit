@@ -59,20 +59,62 @@ namespace stagekit::fit {
 std::mutex g_claims_mutex;
 std::map<std::pair<obs_source_t *, int64_t>, std::pair<const void *, Claim>> g_claims;
 
+// Raised whenever a claim is made, changed or taken back, and whenever a
+// glance sees an item draw another part of itself: what a Scene Fit at rest
+// goes by besides `scene_revision` (`SceneFit::tick`).
+std::atomic<uint64_t> g_claims_rev{0}, g_glance_rev{0};
+
+bool same_box(const Box &a, const Box &b)
+{
+	return a.x == b.x && a.y == b.y && a.w == b.w && a.h == b.h;
+}
+
+bool same_claim(const Claim &a, const Claim &b)
+{
+	return same_box(a.box, b.box) && a.resizes == b.resizes && a.grows_x == b.grows_x && a.grows_y == b.grows_y &&
+	       a.leans_x == b.leans_x && a.leans_y == b.leans_y && same_box(a.least, b.least) &&
+	       a.has_least == b.has_least && a.rank.by_list == b.rank.by_list && a.rank.level == b.rank.level &&
+	       a.rank.filter == b.rank.filter && a.rank.entry == b.rank.entry && same_box(a.home, b.home) &&
+	       a.has_home == b.has_home;
+}
+
 void claim_set(obs_source_t *scene, int64_t item, const void *owner, const Claim &claim)
 {
 	std::lock_guard lock(g_claims_mutex);
+	bool changed = false;
 	for (auto it = g_claims.begin(); it != g_claims.end();)
-		it = it->second.first == owner && it->first != std::make_pair(scene, item) ? g_claims.erase(it)
-											   : std::next(it);
-	g_claims[{scene, item}] = {owner, claim};
+		if (it->second.first == owner && it->first != std::make_pair(scene, item)) {
+			it = g_claims.erase(it);
+			changed = true;
+		} else {
+			++it;
+		}
+	auto &slot = g_claims[{scene, item}];
+	if (changed || slot.first != owner || !same_claim(slot.second, claim))
+		g_claims_rev++;
+	slot = {owner, claim};
 }
 
 void claim_clear(const void *owner)
 {
 	std::lock_guard lock(g_claims_mutex);
 	for (auto it = g_claims.begin(); it != g_claims.end();)
-		it = it->second.first == owner ? g_claims.erase(it) : std::next(it);
+		if (it->second.first == owner) {
+			it = g_claims.erase(it);
+			g_claims_rev++;
+		} else {
+			++it;
+		}
+}
+
+uint64_t claims_revision()
+{
+	return g_claims_rev.load();
+}
+
+uint64_t glance_revision()
+{
+	return g_glance_rev.load();
 }
 
 // Another filter's claim on an item, if there is one. Asked only about items
@@ -203,6 +245,8 @@ void glance_step(const void *asking, obs_source_t *scene, const std::vector<obs_
 			const auto was = g.seen.find(g.of);
 			if (was != g.seen.end() && glance_differs(seen, was->second))
 				g.lively[g.of] = g.frame;
+			if (was == g.seen.end() || glance_differs(seen, was->second))
+				g_glance_rev++;
 			g.seen[g.of] = seen;
 		}
 		return;

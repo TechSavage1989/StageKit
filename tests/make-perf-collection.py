@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """Writes a synthetic scene collection for tests/collection-perf: the shape of a large StageKit setup.
 
-Usage: python3 -I tests/make-perf-collection.py <out.json> [--scale S]
+Usage: python3 -I tests/make-perf-collection.py <out.json> [--scale S] [--scene-fit]
 
 --scale draws the same collection on a canvas S times the size (0.25: 640x360), every place and size with it:
 headless, llvmpipe draws a 2560x1440 frame in a few tenths of a second, and every filter's timers then come round
 at every tick, which a real graphics card's 60 frames a second never do.
+
+--scene-fit gives each layout scene one Scene Fit with All sources in place of its Fit to Space filters, the same
+sources listed with the same settings (the owner's layout scenes, 2026-11-19).
 
 Nothing in it is anyone's: the names are made up and every capture, camera and browser is a colour source
 (or a text) of the size it would have. What it mirrors is the number and kind of StageKit filters a big
@@ -20,6 +23,7 @@ import json
 import sys
 
 SCALE = float(sys.argv[sys.argv.index("--scale") + 1]) if "--scale" in sys.argv else 1.0
+SCENE_FIT = "--scene-fit" in sys.argv
 W, H = round(2560 * SCALE), round(1440 * SCALE)
 CAPTURES = ["Capture Game", "Capture Card", "Capture Window", "Capture Display", "Capture Tablet"]
 sources = []
@@ -82,6 +86,18 @@ def fit(source, i, **extra):
     settings = {"item": source}
     settings.update(extra)
     return filt("stagekit_fit_item", f"Fit {source} {i}", settings)
+
+
+def layout_fits(fits):
+    """A layout scene's Fit to Space filters, or with --scene-fit one Scene Fit (All sources) in their place."""
+    if not SCENE_FIT:
+        return fits
+    settings = {"entries": picks([f["settings"]["item"] for f in fits]), "which": 1}
+    for f in fits:
+        for key, value in f["settings"].items():
+            if key != "item":
+                settings[f"fit|{f['settings']['item']}|{key}"] = value
+    return [filt("stagekit_scene_fit", "Scene Fit (StageKit)", settings)]
 
 
 def shadow(src, screen_px=False):
@@ -176,7 +192,7 @@ live_items = [item("Ambient Background", 0, 0, 2560, 1440)] + \
      item("Text Ticker", 40, 1380), item("Frame Panel", 0, 0, 2560, 1440)]
 live_items[-1]["visible"] = False
 scene("Live", live_items,
-      [fit(c, i, resize=True) for i, c in enumerate(CAPTURES[:3])] + [fit("Camera", 9, resize=False)] +
+      layout_fits([fit(c, i, resize=True) for i, c in enumerate(CAPTURES[:3])] + [fit("Camera", 9, resize=False)]) +
       [filt("stagekit_visibility_link", "Link Visibility (StageKit)",
             {"items": picks(CAPTURES), "mode": 0, "lock_hidden": True})])
 
@@ -188,9 +204,9 @@ chat_items = [item("Ambient Background", 0, 0, 2560, 1440)] + \
      item("Text Now Playing", 40, 1380), item("Text Clock", 2300, 1380), item("Console Feed", 30, 85, 1755, 1269,
                                                                                 visible=False)]
 scene("Chat Live", chat_items,
-      [fit(c, i, resize=True, visible_pixels=True) for i, c in enumerate(CAPTURES[:4])] +
-      [fit("Camera", 5, resize=False), fit("Chat Box", 6, resize=True), fit("Music Widget", 7, resize=False),
-       fit("Console Feed", 8)] +
+      layout_fits([fit(c, i, resize=True, visible_pixels=True) for i, c in enumerate(CAPTURES[:4])] +
+                  [fit("Camera", 5, resize=False), fit("Chat Box", 6, resize=True),
+                   fit("Music Widget", 7, resize=False), fit("Console Feed", 8)]) +
       [filt("stagekit_visibility_link", "Link Visibility (StageKit)",
             {"items": picks(CAPTURES + ["Console Feed"]), "mode": 0, "lock_hidden": True}),
        filt("stagekit_visibility_link", "Link Visibility Cameras (StageKit)",
@@ -208,8 +224,8 @@ standby_items = [item("Ambient Background", 0, 0, 2560, 1440)] + \
      item("Text Socials", 40, 1380), item("Music Widget", 40, 1250), item("Start Image", 0, 0, 2560, 1440,
                                                                           visible=False)]
 scene("Standby", standby_items,
-      [fit("Camera", 1, resize=False), fit("Chat Box", 2, resize=True),
-       filt("stagekit_visibility_link", "Link Visibility Titles (StageKit)",
+      layout_fits([fit("Camera", 1, resize=False), fit("Chat Box", 2, resize=True)]) +
+      [filt("stagekit_visibility_link", "Link Visibility Titles (StageKit)",
             {"items": picks([f"Title {t}" for t in modes]), "mode": 0})] +
       [filt("stagekit_visibility_link", f"Link Visibility {t} (StageKit)",
             {"items": picks([f"Title {t}"] + (["Camera"] if t in ("Stream Start", "Intermission") else ["Chat Box"])),
@@ -226,7 +242,7 @@ collection = {
 }
 
 if __name__ == "__main__":
-    if len(sys.argv) not in (2, 4):
+    if len(sys.argv) - (1 if SCENE_FIT else 0) not in (2, 4):
         print(__doc__.strip())
         sys.exit(2)
     with open(sys.argv[1], "w", encoding="utf-8") as f:

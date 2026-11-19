@@ -48,6 +48,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../frame/auto-frame.hpp"
 #include "../common/easing.hpp"
 #include "../common/pick-list.hpp"
+#include "../common/scene-rev.hpp"
 #include "../common/scene-util.hpp"
 #include "../common/timing.hpp"
 #include "../api/vendor-api.hpp"
@@ -1054,6 +1055,7 @@ void AppCapture::aim(obs_source_t *parent, const OpenWindow &window, const std::
 	if (bridge_) {
 		// At once.
 		phase_ = Phase::Mix;
+		scene_revision_bump(); // a Scene Fit at rest looks again (its change)
 		mix_ = 0.0;
 	} else {
 		// The last picture stays until the new window's is there.
@@ -1844,6 +1846,7 @@ void AppCapture::tick(float seconds)
 			if (has) {
 				// It is back by itself.
 				phase_ = Phase::Mix;
+				scene_revision_bump(); // a Scene Fit at rest looks again (its change)
 				mix_ = 0.0;
 			} else if (phase_s_ >= kLostFor) {
 				phase_ = Phase::Idle;
@@ -1853,6 +1856,7 @@ void AppCapture::tick(float seconds)
 		case Phase::Wait:
 			if (has && ((seen_empty_ && own_s_ >= 0.1) || phase_s_ >= kSettle)) {
 				phase_ = Phase::Mix;
+				scene_revision_bump(); // a Scene Fit at rest looks again (its change)
 				mix_ = 0.0;
 			} else if (phase_s_ >= kWaitFor) {
 				phase_ = Phase::Idle;
