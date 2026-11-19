@@ -12618,6 +12618,134 @@ static void dock_bounds_test()
 		obs_source_release(src);
 }
 
+// A 32-bit TGA (top-left first, straight alpha), which libobs's image loader
+// reads like any picture: the tests need pictures with transparent margins.
+static bool write_tga(const std::string &path, uint32_t w, uint32_t h,
+		      const std::function<uint32_t(uint32_t, uint32_t)> &rgba)
+{
+	FILE *f = fopen(path.c_str(), "wb");
+	if (!f)
+		return false;
+	uint8_t head[18] = {};
+	head[2] = 2; // uncompressed true colour
+	head[12] = uint8_t(w & 0xFF);
+	head[13] = uint8_t(w >> 8);
+	head[14] = uint8_t(h & 0xFF);
+	head[15] = uint8_t(h >> 8);
+	head[16] = 32;
+	head[17] = 0x28; // 8 bits of alpha, rows from the top
+	fwrite(head, 1, sizeof(head), f);
+	std::vector<uint8_t> row(size_t(w) * 4);
+	for (uint32_t y = 0; y < h; y++) {
+		for (uint32_t x = 0; x < w; x++) {
+			const uint32_t c = rgba(x, y); // 0xAARRGGBB
+			row[x * 4 + 0] = uint8_t(c);
+			row[x * 4 + 1] = uint8_t(c >> 8);
+			row[x * 4 + 2] = uint8_t(c >> 16);
+			row[x * 4 + 3] = uint8_t(c >> 24);
+		}
+		fwrite(row.data(), 1, row.size(), f);
+	}
+	fclose(f);
+	return true;
+}
+
+// The owner, of a poster repeated side by side: "I'd like the ambient
+// background to not have any black bars between the repeating patterns".
+static void ambient_seams_test(uint32_t w, uint32_t h, const char *pillarbox, const std::string &dir)
+{
+	printf("\n[ambient background: no black bars between the repeats]\n");
+	// A red poster, narrower than the screen, with a gentle gradient so a
+	// mirrored seam is not itself a jump in brightness.
+	auto poster = [](uint32_t x, uint32_t y, uint32_t pw, uint32_t ph) {
+		const uint32_t r = 150 + 80 * x / pw, g = 30 + 40 * y / ph;
+		return 0xFF000000u | (r << 16) | (g << 8) | 40u;
+	};
+	const uint32_t pw = 400, ph = 600, mx = 24, my = 12;
+	const std::string margins = dir + "/seam-margins.tga", plain = dir + "/seam-plain.tga",
+			  black = dir + "/seam-black-edges.tga";
+	write_tga(margins, pw, ph, [&](uint32_t x, uint32_t y) {
+		const bool in = x >= mx && x < pw - mx && y >= my && y < ph - my;
+		return in ? poster(x - mx, y - my, pw - 2 * mx, ph - 2 * my) : 0u;
+	});
+	write_tga(plain, pw, ph, [&](uint32_t x, uint32_t y) { return poster(x, y, pw, ph); });
+	write_tga(black, pw, ph, [&](uint32_t x, uint32_t y) {
+		const bool in = x >= mx && x < pw - mx;
+		return in ? poster(x - mx, y, pw - 2 * mx, ph) : 0xFF000000u;
+	});
+
+	struct Case {
+		const char *name;
+		std::string file;
+	};
+	const Case cases[] = {{"a picture with black side bars", pillarbox},
+			      {"a poster with black side edges", black},
+			      {"a poster with transparent margins", margins},
+			      {"a plain narrow poster", plain}};
+	auto luma = [](const std::vector<uint8_t> &px, size_t i) {
+		return 0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2];
+	};
+	for (const Case &c : cases) {
+		for (const bool mirror : {true, false}) {
+			// The owner's settings: drifting 100 and 50 px/s, 120 %,
+			// Dual Kawase at 0.
+			obs_data_t *s = obs_data_create();
+			obs_data_set_int(s, "base_type", 0);
+			obs_data_set_string(s, "image", c.file.c_str());
+			obs_data_set_double(s, "speed_x", 100);
+			obs_data_set_double(s, "speed_y", 50);
+			obs_data_set_double(s, "zoom", 120);
+			obs_data_set_bool(s, "mirror", mirror);
+			obs_data_set_int(s, "blur_type", 0);
+			obs_data_set_double(s, "blur", 0);
+			obs_data_set_double(s, "vignette", 0);
+			obs_data_set_int(s, "live_mode", 0);
+			obs_source_t *bg =
+				obs_source_create("stagekit_ambient_background", "Seam Background", s, nullptr);
+			obs_data_release(s);
+			obs_source_inc_showing(bg);
+			sleep_ms(300);
+			// Columns and rows: the darkest strip of 4 against the mean of
+			// the picture, over frames a while apart so the seams pass
+			// through the screen.
+			double worst = 1e9;
+			int worst_frame = -1;
+			for (int frame = 0; frame < 16; frame++) {
+				sleep_ms(frame ? 230 : 0);
+				std::vector<uint8_t> px = render(bg, w, h);
+				std::vector<double> col(w, 0.0), row(h, 0.0);
+				double all = 0.0;
+				for (uint32_t y = 0; y < h; y++)
+					for (uint32_t x = 0; x < w; x++) {
+						const double l = luma(px, (size_t(y) * w + x) * 4);
+						col[x] += l / h;
+						row[y] += l / w;
+						all += l;
+					}
+				all /= double(w) * h;
+				auto darkest = [&](const std::vector<double> &v) {
+					double low = 1e9;
+					for (size_t i = 0; i + 4 <= v.size(); i++)
+						low = std::min(low, (v[i] + v[i + 1] + v[i + 2] + v[i + 3]) / 4.0);
+					return low;
+				};
+				const double share = std::min(darkest(col), darkest(row)) / std::max(all, 1.0);
+				if (share < worst) {
+					worst = share;
+					worst_frame = frame;
+				}
+				if (frame == 8 && mirror)
+					write_frame(dir + "/seam-" + std::to_string(&c - cases) + ".rgba", px, w, h);
+			}
+			CHECK(worst > 0.6,
+			      "%s, mirror %s, drifting: no strip at a repeat is dark (darkest strip %.0f %% of the picture's mean, frame %d)",
+			      c.name, mirror ? "on" : "off", worst * 100.0, worst_frame);
+			obs_source_dec_showing(bg);
+			obs_source_release(bg);
+		}
+	}
+}
+
 static void blur_off_draw_test(uint32_t w, uint32_t h, const char *base_image)
 {
 	printf("\n[Ambient Background's mosaic sets every uniform of the shared effect]\n");
@@ -15632,6 +15760,14 @@ int main(int argc, char **argv)
 
 	if (getenv("STAGEKIT_TEST_ONLY_AMBIENT_DARKEST")) { // to try that section alone
 		ambient_darkest_test(w, h, base_image, out + "/../darkest");
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
+
+	if (getenv("STAGEKIT_TEST_ONLY_AMBIENT_SEAMS")) { // to try that section alone
+		ambient_seams_test(w, h, argv[9], out);
 		obs_shutdown();
 		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
 		       g_failures == 1 ? "" : "s");
