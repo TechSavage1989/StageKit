@@ -23,7 +23,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
-## Outline round what shows, and Square corners (0.1.0-betaNEXT)
+## Outline round what shows, and Square corners (0.1.0-beta209)
 
 Branch `fix/outline-shape-box`. Not pushed. The owner saw a line of varying width in Scene Shadow
 with *Rounded*, size 0, round a capture fitted in a bounding box and round a small widget. The box
