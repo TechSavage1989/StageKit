@@ -47,6 +47,7 @@
 #include <cstdio>
 #include <cstring>
 #include <deque>
+#include <filesystem>
 #include <functional>
 #include <mutex>
 #include <string>
@@ -12662,17 +12663,24 @@ static void ambient_seams_test(uint32_t w, uint32_t h, const char *pillarbox, co
 		return 0xFF000000u | (r << 16) | (g << 8) | 40u;
 	};
 	const uint32_t pw = 400, ph = 600, mx = 24, my = 12;
+	// (The output folder may not be there yet: without it no picture is
+	// written and every case reads as black.)
+	std::error_code made;
+	std::filesystem::create_directories(dir, made);
 	const std::string margins = dir + "/seam-margins.tga", plain = dir + "/seam-plain.tga",
 			  black = dir + "/seam-black-edges.tga";
-	write_tga(margins, pw, ph, [&](uint32_t x, uint32_t y) {
+	bool written = write_tga(margins, pw, ph, [&](uint32_t x, uint32_t y) {
 		const bool in = x >= mx && x < pw - mx && y >= my && y < ph - my;
 		return in ? poster(x - mx, y - my, pw - 2 * mx, ph - 2 * my) : 0u;
 	});
-	write_tga(plain, pw, ph, [&](uint32_t x, uint32_t y) { return poster(x, y, pw, ph); });
-	write_tga(black, pw, ph, [&](uint32_t x, uint32_t y) {
-		const bool in = x >= mx && x < pw - mx;
-		return in ? poster(x - mx, y, pw - 2 * mx, ph) : 0xFF000000u;
-	});
+	written = write_tga(plain, pw, ph, [&](uint32_t x, uint32_t y) { return poster(x, y, pw, ph); }) && written;
+	written = write_tga(black, pw, ph,
+			    [&](uint32_t x, uint32_t y) {
+				    const bool in = x >= mx && x < pw - mx;
+				    return in ? poster(x - mx, y, pw - 2 * mx, ph) : 0xFF000000u;
+			    }) &&
+		  written;
+	CHECK(written, "the test pictures are written to '%s'", dir.c_str());
 
 	struct Case {
 		const char *name;
