@@ -1246,7 +1246,9 @@ A scene transition, chosen like any other: in OBS's *Scene Transitions* box pres
   place, size and crop in the scene you go to. Groups move as one.
 - **Morph the main image** (ticked as it comes): besides those, the largest item left over in
   each scene is taken for the main image, and the one changes into the other while it moves and
-  resizes: a game capture in one scene and a window capture in the next. Unticked, those two are
+  resizes: a game capture in one scene and a window capture in the next. A source that fills the
+  screen counts too when it lies over a background (a full-screen game over a wallpaper); with
+  nothing under it, it is the scene's background and is cross-faded. Unticked, those two are
   cross-faded where they are.
 - **Use visible pixels** (ticked as it comes): when two different sources change into each other
   (linked sources, or the main images), they are matched by the part of each that shows, not by

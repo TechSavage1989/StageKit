@@ -373,6 +373,7 @@ LookPaint::LookPaint()
 		p_presence_ = gs_effect_get_param_by_name(effect_, "presence");
 		design_.find(effect_);
 		has_presence_ = gs_effect_get_technique(effect_, "Presence") != nullptr;
+		has_mix_ = gs_effect_get_technique(effect_, "MixSides") != nullptr;
 	}
 	// (Smooth: sixteen-bit pictures and one more level, so a soft shadow's
 	// tail has no steps.)
@@ -1007,36 +1008,69 @@ void LookPaint::draw_item_ring(obs_sceneitem_t *item, const ShadowLook &look)
 
 bool LookPaint::compose_layers(gs_texture_t *scene, const std::vector<gs_texture_t *> &casts,
 			       const std::vector<gs_texture_t *> &masks, const ShadowLook &look, uint32_t cx,
-			       uint32_t cy, gs_texrender_t *into, const std::vector<gs_texture_t *> *rings,
-			       const std::vector<gs_texture_t *> *presences)
+			       uint32_t cy, gs_texrender_t *into, const std::vector<gs_texture_t *> *rings)
 {
-	size_t last = casts.size();
-	for (size_t i = 0; i < casts.size(); i++)
-		if (casts[i] && i < masks.size() && masks[i])
-			last = i;
-	if (!scene || last == casts.size())
+	std::vector<Stage> stages;
+	for (size_t i = 0; i < casts.size(); i++) {
+		if (!casts[i] || i >= masks.size() || !masks[i])
+			continue;
+		Stage stage;
+		stage.cast = casts[i];
+		stage.mask = masks[i];
+		stage.ring = rings && i < rings->size() ? (*rings)[i] : nullptr;
+		stages.push_back(stage);
+	}
+	return compose_stages(scene, stages, look, cx, cy, into);
+}
+
+bool LookPaint::compose_stages(gs_texture_t *scene, const std::vector<Stage> &stages, const ShadowLook &look,
+			       uint32_t cx, uint32_t cy, gs_texrender_t *into)
+{
+	if (!scene || stages.empty())
 		return false;
 	gs_texture_t *under = scene;
 	bool straight = false;
 	int turn = 0;
-	for (size_t i = 0; i <= last; i++) {
-		if (!casts[i] || i >= masks.size() || !masks[i])
-			continue;
+	for (size_t i = 0; i < stages.size(); i++) {
 		gs_texrender_t *to = into ? into : out_;
-		if (i != last) {
+		if (i + 1 != stages.size()) {
 			if (!between_[turn])
 				between_[turn] = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 			to = between_[turn];
 			turn ^= 1;
 		}
-		gs_texture_t *ring = rings && i < rings->size() ? (*rings)[i] : nullptr;
-		gs_texture_t *presence = presences && i < presences->size() ? (*presences)[i] : nullptr;
-		if (!compose(under, casts[i], masks[i], look, cx, cy, to, straight, ring, presence))
+		const Stage &s = stages[i];
+		if (!compose(under, s.cast, s.mask, look, cx, cy, to, straight, s.ring, s.presence))
 			return false;
 		under = gs_texrender_get_texture(to);
 		straight = true;
 	}
 	return true;
+}
+
+bool LookPaint::mix(gs_texture_t *a, gs_texture_t *b, double t, uint32_t cx, uint32_t cy)
+{
+	if (!effect_ || !has_mix_ || !a || !b || !cx || !cy)
+		return false;
+	const bool previous = gs_framebuffer_srgb_enabled();
+	gs_enable_framebuffer_srgb(false);
+	gs_texrender_reset(out_);
+	bool drawn = false;
+	if (gs_texrender_begin(out_, cx, cy)) {
+		gs_ortho(0.0f, (float)cx, 0.0f, (float)cy, -100.0f, 100.0f);
+		gs_blend_state_push();
+		gs_blend_function(GS_BLEND_ONE, GS_BLEND_ZERO);
+		gs_effect_set_texture(p_image_, a);
+		gs_effect_set_texture(p_shadow_, b);
+		gs_effect_set_float(p_ring_strength_, (float)std::clamp(t, 0.0, 1.0));
+		while (gs_effect_loop(effect_, "MixSides"))
+			gs_draw_sprite(a, 0, cx, cy);
+		gs_blend_state_pop();
+		gs_texrender_end(out_);
+		drawn = true;
+	}
+	gs_enable_framebuffer_srgb(previous);
+	return drawn;
 }
 
 void LookPaint::draw_out(uint32_t cx, uint32_t cy)
