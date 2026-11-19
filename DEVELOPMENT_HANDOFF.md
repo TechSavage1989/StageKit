@@ -13,9 +13,9 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
-## Ambient Background: Darkest level is a soft floor, under the blur (0.1.0-betaNEXT)
+## Ambient Background: Darkest level is a soft floor, under the blur (0.1.0-beta196)
 
-Branch `fix/darkest-level-soft`, on `main` after beta193. Notes: `docs/releases/0.1.0-betaNEXT.md`.
+Branch `fix/darkest-level-soft`, on `main` after beta193. Notes: `docs/releases/0.1.0-beta196.md`.
 No Stream Deck file changed. The owner (2026-11-19), with a screenshot (a mostly black live
 capture, hexagons, Darkest level 1 % toward a bright magenta image, the black parts the image at
 full strength with a hard edge against a dark circle): "Even at 1%, Darkest level seems to bright
@@ -78,9 +78,9 @@ a lot. it's also not smoothly blended. the darkest level should be effected by t
 ## Window switcher: Game area only (0.1.0-beta193)
 
 
-## Dock: Fit to space and Edit transform (0.1.0-betaNEXT, plugin 0.33.0.0)
+## Dock: Fit to space and Edit transform (0.1.0-beta196, plugin 0.33.0.0)
 
-Branch `feat/dock-fit-tool`, rebased on `main` after beta194. Notes: `docs/releases/0.1.0-betaNEXT.md`.
+Branch `feat/dock-fit-tool`, rebased on `main` after beta194. Notes: `docs/releases/0.1.0-beta196.md`.
 The owner (2026-11-18), with screenshots of a layout of a game and a column of two handheld screens
 and a capture card: "i'd like a new arrange or place option to "fit" an object to the available
 space respecting existing rules like margins and gaps and use visible pixels, etc. I'd also like a

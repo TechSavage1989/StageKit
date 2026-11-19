@@ -367,7 +367,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   controls only show and set them. Add a new tool to `ArrangeAction` and `kInfo` and it appears in the
   dock, the menu and the hotkeys at once.
 - **Fit to space is a one-press arrange tool, not a filter** (`fit_to_space` in `src/dock/arrange.*`,
-  `ArrangeAction::FitSpace`, `fit_space`; 2026-11-18, betaNEXT). The owner: "i'd like a new arrange
+  `ArrangeAction::FitSpace`, `fit_space`; 2026-11-18, beta196). The owner: "i'd like a new arrange
   or place option to "fit" an object to the available space respecting existing rules like margins
   and gaps and use visible pixels, etc. I'd also like a shortcut button in the relevant tab to edit
   transform of the selected source." It uses Fit to Space's own `fit::FitScan` and
@@ -1959,7 +1959,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   a way I can prevent the background from ever becoming completely black, even when the ambient
   background is capturing a live feed that has completely black content?", then "add darkest
   level as a configurable option". **The level is how bright black becomes, and the lift is
-  made before the blur** (2026-11-19, betaNEXT; the owner, with a mostly black capture,
+  made before the blur** (2026-11-19, beta196; the owner, with a mostly black capture,
   hexagons and 1 % toward a bright image: "Even at 1%, Darkest level seems to bright a lot. it's
   also not smoothly blended. the darkest level should be effected by the blur settings"). Up to
   then the `Lift` pass ran last, on the finished picture, and laid the *whole* image over
