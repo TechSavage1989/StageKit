@@ -23,6 +23,30 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
+## A fading source and its outline are one flat picture (0.1.0-betaNEXT)
+
+Branch `fix/outline-fade-flat`, on `main` at beta210. Not pushed. The owner, after beta210: "the
+directly morphing outlines are fine, but fading ones using the secondary animation still have the
+multiply/transparent issue when transitioning." Cause, the same in all three paths (the scene
+Morph's unpaired parts, an item's own show or hide transition under a Scene Shadow, the item
+Morph's layer): the mask held the fading source at its faded alpha, so the shader took the share
+it let through for free room and laid the source's own line (and shadow) there, under the source:
+at half-way a quarter of the line over the whole of the picture. A red source (176, 32, 32) on a
+208 grey background, green half-way: 113 before, 154 now (154 is half the source over the
+background in linear light); over another source 79 before, 107 now; the line itself was right
+already (152, half black). beta207's test used a white source, where a clamp hid it. Fix: a
+*presence* picture beside the mask (see AGENTS.md, Scene Shadow, *A fading source ...*). Costs one
+more pass of the morph, or one more canvas in a scene, only while something fades. Limits: a
+soft shadow of another source falling under a fading one is thinned there by the fading one's
+alpha (it cannot be told from its own); a source that is see-through all over while its transition
+runs counts as whole. Tested in OUTLINE_GLOW (section 3b, ten checks: Morph half-way alone and
+over another source, both *Shadow from* ways; Make room without a fade solid; item show
+transitions: OBS's fade, Morph unpaired fade, Make room fading through the layer). Gates passed:
+OUTLINE_GLOW (71), SHADOW_EACH (13), MORPH_HOLDS (5), MAKE_ROOM (15), TOOLTIPS (12); the full
+suite was not run. Only OpenGL: the two new techniques (`Presence`, `TopFirst`/`TopReduce` in
+`stagekit-looks.effect`) and the new `presence` uniform (set at every `compose`) have not run on
+Direct3D.
+
 ## Square lines on Windows, and text keeps a following line (0.1.0-beta210)
 
 Branch `fix/outline-square`. Not pushed. The owner's Standby scene (beta209, Square and then Scoop)

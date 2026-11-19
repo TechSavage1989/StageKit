@@ -773,6 +773,56 @@ float4 PSAreaReduce(VertData v_in) : TARGET
 	return float4(sum, 0.0, 0.0, 1.0);
 }
 
+// The most alpha anywhere in a picture, the same way (TopFirst / TopReduce):
+// how far a source that fades as a whole has got.
+float4 PSTopFirst(VertData v_in) : TARGET
+{
+	float2 blocks = ceil(rect_in_size / 8.0);
+	float2 base = floor(v_in.uv * blocks) * 8.0;
+	float top = 0.0;
+	for (int j = 0; j < 8; j++) {
+		for (int i = 0; i < 8; i++) {
+			float2 t = base + float2(float(i), float(j));
+			float inside = step(t.x + 0.5, rect_in_size.x) * step(t.y + 0.5, rect_in_size.y);
+			top = max(top, inside * image.SampleLevel(rectPoint, (t + 0.5) / rect_in_size, 0).a);
+		}
+	}
+	return float4(top, 0.0, 0.0, 1.0);
+}
+
+float4 PSTopReduce(VertData v_in) : TARGET
+{
+	float2 blocks = ceil(rect_in_size / 8.0);
+	float2 base = floor(v_in.uv * blocks) * 8.0;
+	float top = 0.0;
+	for (int j = 0; j < 8; j++) {
+		for (int i = 0; i < 8; i++) {
+			float2 t = base + float2(float(i), float(j));
+			float inside = step(t.x + 0.5, rect_in_size.x) * step(t.y + 0.5, rect_in_size.y);
+			top = max(top, inside * image.SampleLevel(rectPoint, (t + 0.5) / rect_in_size, 0).r);
+		}
+	}
+	return float4(top, 0.0, 0.0, 1.0);
+}
+
+technique TopFirst
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSTopFirst(v_in);
+	}
+}
+
+technique TopReduce
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSTopReduce(v_in);
+	}
+}
+
 technique RectFirst
 {
 	pass

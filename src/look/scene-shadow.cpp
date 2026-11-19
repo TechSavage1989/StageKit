@@ -221,14 +221,16 @@ private:
 	gs_texrender_t *tr_scene_ = nullptr;
 	gs_texrender_t *tr_cast_ = nullptr;
 	gs_texrender_t *tr_mask_ = nullptr;
+	gs_texrender_t *tr_presence_ = nullptr; // the masked sources, each whole while it fades
+	bool presence_used_ = false;
 	gs_texrender_t *tr_over_ = nullptr; // lay_over's picture
 	gs_texrender_t *tr_ring_ = nullptr; // the lines round the casting sources' boxes (corners chosen)
 	bool mask_used_ = false;            // tr_mask_ was drawn for the last frame
 	bool ring_used_ = false;            // tr_ring_ was drawn for the last frame
 	// Each source by itself: a cast and a mask per layer (the cast left out
 	// of the frame's list where the layer casts nothing).
-	std::vector<gs_texrender_t *> tr_layer_cast_, tr_layer_mask_, tr_layer_ring_;
-	std::vector<gs_texture_t *> layer_casts_, layer_masks_, layer_rings_; // the last frame's
+	std::vector<gs_texrender_t *> tr_layer_cast_, tr_layer_mask_, tr_layer_ring_, tr_layer_presence_;
+	std::vector<gs_texture_t *> layer_casts_, layer_masks_, layer_rings_, layer_presences_; // the last frame's
 	bool last_each_ = false;
 	ShadowLook last_look_;
 	uint64_t last_frame_ = 0;
@@ -246,6 +248,7 @@ SceneShadow::SceneShadow(obs_data_t *settings, obs_source_t *source) : source_(s
 	tr_scene_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 	tr_cast_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 	tr_mask_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
+	tr_presence_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 	tr_over_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 	tr_ring_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 	obs_leave_graphics();
@@ -274,9 +277,10 @@ SceneShadow::~SceneShadow()
 	gs_texrender_destroy(tr_scene_);
 	gs_texrender_destroy(tr_cast_);
 	gs_texrender_destroy(tr_mask_);
+	gs_texrender_destroy(tr_presence_);
 	gs_texrender_destroy(tr_over_);
 	gs_texrender_destroy(tr_ring_);
-	for (auto *list : {&tr_layer_cast_, &tr_layer_mask_, &tr_layer_ring_})
+	for (auto *list : {&tr_layer_cast_, &tr_layer_mask_, &tr_layer_ring_, &tr_layer_presence_})
 		for (gs_texrender_t *tr : *list)
 			gs_texrender_destroy(tr);
 	obs_leave_graphics();
@@ -568,11 +572,32 @@ void SceneShadow::render()
 		paint_->end_canvas(tr_mask_);
 		mask = gs_texrender_get_texture(tr_mask_);
 	}
+	// A source on its way in or out (its own show or hide transition, or the
+	// item Morph's layer) is see-through as a whole: where each source
+	// stands, whole, so its line and shadow fade with it as one picture.
+	gs_texture_t *presence = nullptr;
+	bool fading = false;
+	for (obs_sceneitem_t *item : items)
+		fading = fading || ((flags_of(item) & kShadowMasked) && LookPaint::may_fade(item));
+	if (cast && fading && paint_->begin_canvas(tr_presence_, cx, cy)) {
+		for (obs_sceneitem_t *item : items) {
+			if (!(flags_of(item) & kShadowMasked))
+				continue;
+			if (LookPaint::may_fade(item))
+				paint_->draw_presence(item);
+			else
+				draw(item);
+		}
+		paint_->end_canvas(tr_presence_);
+		presence = gs_texrender_get_texture(tr_presence_);
+	}
+	presence_used_ = presence != nullptr;
 	obs_source_release(find_blur.blur);
 	for (obs_sceneitem_t *item : items)
 		obs_sceneitem_release(item);
 	mask_used_ = mask != nullptr;
-	if (!paint_->compose(gs_texrender_get_texture(tr_scene_), cast, mask, look, cx, cy, nullptr, false, ring)) {
+	if (!paint_->compose(gs_texrender_get_texture(tr_scene_), cast, mask, look, cx, cy, nullptr, false, ring,
+			     presence)) {
 		skip_filter_input(source_);
 		return;
 	}
@@ -612,16 +637,22 @@ bool SceneShadow::render_layers(const std::vector<obs_sceneitem_t *> &items,
 	layer_casts_.assign(n, nullptr);
 	layer_masks_.assign(n, nullptr);
 	layer_rings_.assign(n, nullptr);
+	layer_presences_.assign(n, nullptr);
 	if (!n)
 		return false;
 	while (tr_layer_cast_.size() < n) {
 		tr_layer_cast_.push_back(gs_texrender_create(GS_RGBA, GS_ZS_NONE));
 		tr_layer_mask_.push_back(gs_texrender_create(GS_RGBA, GS_ZS_NONE));
 		tr_layer_ring_.push_back(gs_texrender_create(GS_RGBA, GS_ZS_NONE));
+		tr_layer_presence_.push_back(gs_texrender_create(GS_RGBA, GS_ZS_NONE));
 	}
 	auto end_of = [&](size_t l) {
 		return l + 1 < n ? starts[l + 1] : items.size();
 	};
+	// (A source on its way in or out: see render.)
+	bool fading = false;
+	for (size_t i = 0; i < items.size(); i++)
+		fading = fading || (boxes[i].present && LookPaint::may_fade(items[i]));
 	for (size_t l = 0; l < n; l++) {
 		bool casts = false;
 		for (size_t i = starts[l]; i < end_of(l); i++)
@@ -655,9 +686,24 @@ bool SceneShadow::render_layers(const std::vector<obs_sceneitem_t *> &items,
 			paint_->copy_onto(layer_masks_[k + 1], cx, cy, true);
 		paint_->end_canvas(tr_layer_mask_[k]);
 		layer_masks_[k] = gs_texrender_get_texture(tr_layer_mask_[k]);
+		if (!fading || !paint_->begin_canvas(tr_layer_presence_[k], cx, cy))
+			continue;
+		for (size_t i = starts[k]; i < end_of(k); i++) {
+			if (!boxes[i].present)
+				continue;
+			if (LookPaint::may_fade(items[i]))
+				paint_->draw_presence(items[i]);
+			else
+				draw(items[i]);
+		}
+		if (k + 1 < n)
+			paint_->copy_onto(layer_presences_[k + 1] ? layer_presences_[k + 1] : layer_masks_[k + 1], cx,
+					  cy, true);
+		paint_->end_canvas(tr_layer_presence_[k]);
+		layer_presences_[k] = gs_texrender_get_texture(tr_layer_presence_[k]);
 	}
 	return paint_->compose_layers(gs_texrender_get_texture(tr_scene_), layer_casts_, layer_masks_, look, cx, cy,
-				      nullptr, &layer_rings_);
+				      nullptr, &layer_rings_, &layer_presences_);
 }
 
 // The shadow drawn this frame, from the same shapes, over another picture of
@@ -674,13 +720,14 @@ gs_texture_t *SceneShadow::lay_over(gs_texture_t *picture, uint32_t cx, uint32_t
 		return nullptr;
 	if (last_each_)
 		return paint_->compose_layers(picture, layer_casts_, layer_masks_, last_look_, cx, cy, tr_over_,
-					      &layer_rings_)
+					      &layer_rings_, &layer_presences_)
 			       ? gs_texrender_get_texture(tr_over_)
 			       : nullptr;
 	gs_texture_t *cast = gs_texrender_get_texture(tr_cast_);
 	gs_texture_t *mask = mask_used_ ? gs_texrender_get_texture(tr_mask_) : nullptr;
 	gs_texture_t *ring = ring_used_ ? gs_texrender_get_texture(tr_ring_) : nullptr;
-	if (!cast || !paint_->compose(picture, cast, mask, last_look_, cx, cy, tr_over_, false, ring))
+	gs_texture_t *presence = presence_used_ ? gs_texrender_get_texture(tr_presence_) : nullptr;
+	if (!cast || !paint_->compose(picture, cast, mask, last_look_, cx, cy, tr_over_, false, ring, presence))
 		return nullptr;
 	return gs_texrender_get_texture(tr_over_);
 }

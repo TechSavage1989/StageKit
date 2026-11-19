@@ -26,6 +26,8 @@ uniform texture2d image;        // the scene as OBS drew it, premultiplied
 uniform texture2d shadow;       // the casting sources' silhouette, softened (straight alpha)
 uniform texture2d silhouette;   // the casting sources' silhouette, sharp
 uniform texture2d mask;         // every source that is not background, as drawn (premultiplied)
+uniform texture2d presence;     // the same sources, each whole where it is however far it has faded
+                                // (alpha); the mask itself when none of them is fading
 
 uniform float2 out_size;        // the canvas in pixels
 uniform float2 shadow_offset;   // pixels
@@ -166,6 +168,8 @@ struct Split {
 	float4 source; // the sources' part of the pixel: linear light, premultiplied
 	float4 under;  // the rest
 	float free;    // how much of the pixel the sources leave uncovered
+	float fade;    // how far the source here is faded in (1: whole, or none here)
+	float clear;   // the share of what shows through that no source stands on
 };
 
 Split split_at(float2 uv)
@@ -179,7 +183,25 @@ Split split_at(float2 uv)
 	// colours differ from the scene's, the scene is kept as it is.)
 	s.under = min(max(scene - drawn, float4(0.0, 0.0, 0.0, 0.0)), float4(s.free, s.free, s.free, s.free));
 	s.source = scene - s.under;
+	// A source on its way in or out is drawn part-way (the mask's alpha), but
+	// stands on all of its place (the presence).
+	float there = max(presence.Sample(linearClamp, uv).a, m.a);
+	s.fade = saturate(m.a / max(there, 0.0001));
+	s.clear = saturate((1.0 - there) / max(s.free, 0.0001));
 	return s;
+}
+
+// How much of a shadow or line is laid at a pixel. A source that fades takes
+// its line and shadow with it as one flat picture: they are as faded as it
+// is, and nothing of them lies under the source itself, or they would show
+// through it for as long as it is see-through. So where a fading source
+// stands, the part of the amount it can have thrown itself (up to its own
+// fade) is left out, and what is over that is another source's, whole on
+// what shows through. Where nothing fades this is the amount as it is.
+float laid_amount(float amount, Split s)
+{
+	float others = saturate(max(amount - s.fade, 0.0) / max(1.0 - s.fade, 0.0001));
+	return others + (amount - others) * s.clear;
 }
 
 // What is under the sources with a colour laid over it, `amount` of the way,
@@ -197,7 +219,7 @@ float4 shadowed_under(float2 uv, Split s)
 	float2 suv = uv - shadow_offset / out_size;
 	float inside = step(0.0, suv.x) * step(suv.x, 1.0) * step(0.0, suv.y) * step(suv.y, 1.0);
 	float4 thrown = shadow.Sample(linearClamp, suv);
-	float sa = densified(thrown.a * shadow_gain, glow_intensity) * shadow_color.a * inside;
+	float sa = laid_amount(densified(thrown.a * shadow_gain, glow_intensity), s) * shadow_color.a * inside;
 	float3 shade = lerp(shadow_color.rgb, picture_color(thrown.rgb, shadow_boost), shadow_picture);
 	return laid_under(s.under, s.free, shade, sa);
 }
@@ -259,7 +281,8 @@ float4 PSRing(VertData v_in) : TARGET
 	Split s = split_at(v_in.uv);
 	float4 under = shadowed_under(v_in.uv, s);
 	float reach = line_reach(v_in.uv);
-	return finished(s.source + laid_under(under, s.free, outline_color.rgb, reach * outline_color.a), v_in.uv);
+	return finished(s.source + laid_under(under, s.free, outline_color.rgb, laid_amount(reach, s) * outline_color.a),
+			v_in.uv);
 }
 
 // The casting sources with their line: premultiplied, as the silhouette.
@@ -298,6 +321,25 @@ float4 PSFollowGate(VertData v_in) : TARGET
 	float gate = follows(seen, area_tex.Sample(pointClamp, float2(0.5, 0.5)).r);
 	float a = image.Sample(linearClamp, v_in.uv).a * gate * follow_amount;
 	return float4(a, 0.0, 0.0, 0.0);
+}
+
+// A source's picture (premultiplied) as where the source is: its alpha over
+// the most alpha anywhere in it (area_tex's red), so a source faded part-way
+// in still stands on all of its place.
+float4 PSPresence(VertData v_in) : TARGET
+{
+	float top = area_tex.Sample(pointClamp, float2(0.5, 0.5)).r;
+	float a = saturate(image.Sample(linearClamp, v_in.uv).a / max(top, 0.004));
+	return float4(0.0, 0.0, 0.0, a);
+}
+
+technique Presence
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSPresence(v_in);
+	}
 }
 
 technique MaskedShadow

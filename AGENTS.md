@@ -3330,6 +3330,16 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   opacity 0). A scene with no Scene Shadow gets the flags one would give it as it comes
   (`scene_shadow_default_flags`, worked out with the plan), so the shadow fades over its
   background. The item Morph needs nothing: its layer item casts.
+  **A fading source and its line and shadow are one flat picture** (the owner, after beta210: "fading
+  ones using the secondary animation still have the multiply/transparent issue"): the mask holds a
+  source as faded as it is drawn, so its own line and shadow were laid under it on the share it let
+  through and darkened it. `compose` takes a `presence` picture beside the mask (each masked source
+  whole where it stands: Morph's `Pass::Presence`, drawn only with `fading_parts()`; in a scene,
+  `LookPaint::draw_presence` for an item whose show or hide transition runs and for the item
+  Morph's layer, `may_fade`, its alpha over the most alpha in it, `VisibleRect::top`), and the
+  shader's `laid_amount` leaves out, where a fading source stands, the amount it can have thrown
+  itself. With no presence the mask is given in its place and nothing changes. A new caller of
+  `compose` that draws anything part-way see-through must give one.
 - **Scene Shadow's *Shadow from*** (`shadow_from`, by number, append-only: 0 *The scene as drawn*,
   as it comes and as every filter saved before reads; 1 *Each source by itself*; 2026-11-17). Put to
   the owner with Scene Corners' *Corners on* ("every casting source gets its own shadow ... falls
