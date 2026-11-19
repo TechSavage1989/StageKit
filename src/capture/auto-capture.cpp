@@ -50,6 +50,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include "../common/item-transition.hpp"
 #include "../common/hid-items.hpp"
+#include "../common/loading.hpp"
 #include "../common/pick-list.hpp"
 #include "../common/tooltip.hpp"
 
@@ -698,6 +699,9 @@ constexpr size_t kTriedMost = 64;
 // again: only a candidate clicked into takes over meanwhile; after it, an
 // open candidate or the fallback.
 constexpr double kKeepGrace = 3.0;
+// How long a program hooked by hand may go unseen, after loading, before
+// the Auto Capture it was handed from takes the capture back.
+constexpr double kHandGrace = 5.0;
 
 class AutoCapture {
 public:
@@ -776,6 +780,69 @@ public:
 			obs_hotkey_unregister(hotkey_);
 	}
 
+	// Switched off by a hook by hand (`hand_hooked`, the program it was
+	// handed to): while switched off, the program is looked for four times
+	// a second, and once no window of it is open (seen open before, or
+	// not seen for `kHandGrace` after loading) it switches itself on again
+	// and follows games. The owner's Game Capture, hooked by hand on an
+	// emulator days before, stayed aimed at the closed program for good.
+	// One switched off by the user (no record) is never switched on.
+	void hand_watch(float seconds)
+	{
+		std::string exe;
+		std::set<std::string> running;
+		bool use_test;
+		{
+			std::lock_guard lock(mutex_);
+			if (hand_exe_.empty() || !scenes_loaded())
+				return;
+			hand_wait_s_ += seconds;
+			hand_timer_ -= seconds;
+			if (hand_timer_ > 0.0)
+				return;
+			hand_timer_ = 0.25;
+			exe = hand_exe_;
+			use_test = use_test_windows_;
+			if (use_test)
+				running = test_running_;
+		}
+		if (!use_test)
+			g_window_watch.latest(&running);
+		const bool open = running.count(exe) > 0;
+		{
+			std::lock_guard lock(mutex_);
+			if (exe != hand_exe_)
+				return;
+			if (open) {
+				hand_seen_ = true;
+				return;
+			}
+			if (!hand_seen_ && hand_wait_s_ < kHandGrace)
+				return;
+		}
+		hand_forget();
+		obs_source_t *parent = obs_filter_get_parent(source_);
+		obs_log(LOG_INFO, "Auto Capture: '%s' back to following games: %s closed",
+			parent ? obs_source_get_name(parent) : obs_source_get_name(source_), exe.c_str());
+		obs_source_set_enabled(source_, true);
+	}
+
+	// Drops the record of a hook by hand.
+	void hand_forget()
+	{
+		{
+			std::lock_guard lock(mutex_);
+			if (hand_exe_.empty())
+				return;
+			hand_exe_.clear();
+			hand_seen_ = false;
+			hand_wait_s_ = 0.0;
+		}
+		obs_data_t *settings = obs_source_get_settings(source_);
+		obs_data_erase(settings, "hand_hooked");
+		obs_data_release(settings);
+	}
+
 	// Hide or show the capture: its Standby Picture over it, or its items.
 	void ask_hide()
 	{
@@ -797,6 +864,15 @@ public:
 		no_game_standby_ = obs_data_get_bool(settings, "no_game_standby");
 		hide_standby_ = obs_data_get_bool(settings, "hide_standby");
 		hid_pending_ = !hid_items_read(settings).empty();
+		{
+			const std::string hand = lower(obs_data_get_string(settings, "hand_hooked"));
+			if (hand != hand_exe_) {
+				hand_exe_ = hand;
+				hand_seen_ = false;
+				hand_wait_s_ = 0.0;
+				hand_timer_ = 0.0;
+			}
+		}
 		cover_style_ = (int)std::clamp<long long>(obs_data_get_int(settings, "standby_style"), 0, 11);
 		cover_ms_ = (int)std::clamp<long long>(obs_data_get_int(settings, "standby_ms"), 0, 10000);
 		cover_curve_ = (int)obs_data_get_int(settings, "standby_ease_curve");
@@ -828,6 +904,10 @@ public:
 				obs_source_dec_showing(parent_);
 			holding_ = hold;
 		}
+		if (obs_source_enabled(source_))
+			hand_forget(); // switched on, by the user or by itself: following again
+		else if (parent_)
+			hand_watch(seconds);
 		if (!parent_ || !obs_source_enabled(source_)) {
 			// Switched off: a picture it put over the capture goes.
 			if (covered_ && parent_) {
@@ -1699,6 +1779,11 @@ private:
 	std::atomic<uint64_t> hook_events_{0};
 	obs_source_t *listened_ = nullptr; // (only while attached to it)
 	bool use_test_windows_ = false;
+	// The program a hook by hand was handed (lower case; empty: none), and
+	// how its watch goes (`hand_watch`).
+	std::string hand_exe_;
+	bool hand_seen_ = false;
+	double hand_wait_s_ = 0.0, hand_timer_ = 0.0;
 	std::string applied_key_;
 	// Programs seen to be games, by executable name in lower case. Only the tick uses it.
 	std::set<std::string> known_games_;
@@ -2051,15 +2136,32 @@ bool hook_front_window(obs_source_t *capture, std::string &what, std::string &er
 		what = front.executable;
 		return true;
 	}
-	// An Auto Capture here would aim the capture somewhere else again.
+	// An Auto Capture here would aim the capture somewhere else again: it
+	// is switched off, with the program it was handed to written down, so
+	// it takes the capture back when that program closes (`hand_watch`).
+	// One switched off by the user is left as it is; one this hook had
+	// switched off already is handed the new program.
+	const std::string handed = lower(front.executable);
 	obs_source_enum_filters(
 		capture,
-		[](obs_source_t *, obs_source_t *filter, void *) {
+		[](obs_source_t *, obs_source_t *filter, void *param) {
 			const char *kind = obs_source_get_unversioned_id(filter);
-			if (kind && strcmp(kind, kAutoCaptureId) == 0 && obs_source_enabled(filter))
+			if (!kind || strcmp(kind, kAutoCaptureId) != 0)
+				return;
+			obs_data_t *settings = obs_source_get_settings(filter);
+			const bool had = *obs_data_get_string(settings, "hand_hooked") != '\0';
+			obs_data_release(settings);
+			const bool on = obs_source_enabled(filter);
+			if (!on && !had)
+				return;
+			if (on)
 				obs_source_set_enabled(filter, false);
+			obs_data_t *record = obs_data_create();
+			obs_data_set_string(record, "hand_hooked", static_cast<const std::string *>(param)->c_str());
+			obs_source_update(filter, record);
+			obs_data_release(record);
 		},
-		nullptr);
+		const_cast<std::string *>(&handed));
 	obs_log(LOG_INFO, "Hook: '%s' now captures %s, by hand", obs_source_get_name(capture),
 		front.executable.c_str());
 	what = front.executable;

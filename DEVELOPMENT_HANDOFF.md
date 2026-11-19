@@ -23,6 +23,16 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
+## A hook by hand hands the capture back (0.1.0-betaNEXT)
+
+Branch `fix/hand-hook-hands-back`, on beta203. Not pushed. The owner hooked a Game Capture by
+hand on an emulator days before; the hook switched its Auto Capture off, OBS saved it off, and the
+capture stayed aimed at the closed program. Now `hook_front_window` writes `hand_hooked` (the
+program) into the Auto Capture it switches off, and the filter's tick (called while off) switches
+it on again once that program has no window (`hand_watch`; 5 s grace after loading for a saved
+record). User-switched-off filters are never switched on. Gate `HOOK_BACK` (see AGENTS.md's hand-hook
+entry). Not seen on Windows.
+
 ## Window switchers share their ready captures (0.1.0-beta203)
 
 Branch `fix/ready-capture-share`, on beta202. Not pushed; release notes written by another session.

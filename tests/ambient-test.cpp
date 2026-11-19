@@ -5381,6 +5381,120 @@ static void in_one_tick(std::function<void()> work)
 	obs_remove_tick_callback(in_one_tick_cb, &job);
 }
 
+// A hook by hand hands the capture back when its program closes: the Auto
+// Capture it switched off writes the program down and switches itself on
+// again once no window of it is open. The owner's Game Capture, hooked by
+// hand on an emulator, stayed aimed at the closed program for days. Alone
+// with STAGEKIT_TEST_ONLY_HOOK_BACK.
+static void hook_back_test()
+{
+	printf("\n[hook by hand: the Auto Capture takes the capture back when the program closes]\n");
+	register_stand_in_capture("game_capture");
+	auto make = [](const char *name, obs_data_t *fd) {
+		obs_data_t *cd = obs_data_create();
+		obs_data_set_int(cd, "width", 320);
+		obs_data_set_int(cd, "height", 180);
+		obs_source_t *capture = obs_source_create("game_capture", name, cd, nullptr);
+		obs_data_release(cd);
+		obs_source_t *filter =
+			obs_source_create("stagekit_auto_capture", (std::string(name) + " AC").c_str(), fd, nullptr);
+		obs_source_filter_add(capture, filter);
+		return std::make_pair(capture, filter);
+	};
+	auto windows = [](obs_source_t *filter, const char *text) {
+		calldata_t cd = {};
+		calldata_set_string(&cd, "windows", text);
+		proc_handler_call(obs_source_get_proc_handler(filter), "set_test_windows", &cd);
+		calldata_free(&cd);
+	};
+	auto front = [](const char *title, const char *cls, const char *exe) {
+		calldata_t cd = {};
+		calldata_set_string(&cd, "title", title);
+		calldata_set_string(&cd, "window_class", cls);
+		calldata_set_string(&cd, "executable", exe);
+		proc_handler_call(obs_get_proc_handler(), "stagekit_test_front_window", &cd);
+		calldata_free(&cd);
+	};
+	auto hook = [](const char *source) {
+		calldata_t cd = {};
+		calldata_set_string(&cd, "source", source);
+		proc_handler_call(obs_get_proc_handler(), "stagekit_hook_front", &cd);
+		const bool ok = calldata_bool(&cd, "success");
+		calldata_free(&cd);
+		return ok;
+	};
+	auto record = [](obs_source_t *filter) {
+		obs_data_t *d = obs_source_get_settings(filter);
+		const std::string got = obs_data_get_string(d, "hand_hooked");
+		obs_data_release(d);
+		return got;
+	};
+	const char *emu = "Snes9x|Snes9xWnd|snes9x.exe|front|game\nNotes|NotesWnd|notes.exe||";
+
+	auto [gc, ac] = make("Hook Back Game", nullptr);
+	windows(ac, emu);
+	sleep_ms(150);
+	front("Snes9x", "Snes9xWnd", "snes9x.exe");
+	const bool hooked = hook("Hook Back Game");
+	CHECK(hooked && !obs_source_enabled(ac) && record(ac) == "snes9x.exe",
+	      "a hook by hand switches the Auto Capture off and writes the program down (%s)", record(ac).c_str());
+	sleep_ms(1500);
+	CHECK(!obs_source_enabled(ac), "it stays off while the program is open");
+	windows(ac, "Notes|NotesWnd|notes.exe|front|");
+	bool back = false;
+	for (int i = 0; i < 40 && !back; i++) {
+		sleep_ms(50);
+		back = obs_source_enabled(ac);
+	}
+	CHECK(back && record(ac).empty(), "the program closing switches it on again and clears the record (%d, '%s')",
+	      (int)back, record(ac).c_str());
+	// Hooked again, then switched on by the user: the record goes.
+	windows(ac, emu);
+	hook("Hook Back Game");
+	sleep_ms(100);
+	obs_source_set_enabled(ac, true);
+	sleep_ms(150);
+	CHECK(record(ac).empty(), "switched on by the user, the record is cleared ('%s')", record(ac).c_str());
+
+	// Switched off by the user: never switched on, the program gone or not,
+	// and a hook by hand leaves it as it is.
+	auto [gc2, ac2] = make("Hook Back Off", nullptr);
+	windows(ac2, emu);
+	obs_source_set_enabled(ac2, false);
+	front("Snes9x", "Snes9xWnd", "snes9x.exe");
+	hook("Hook Back Off");
+	windows(ac2, "Notes|NotesWnd|notes.exe|front|");
+	sleep_ms(1500);
+	CHECK(!obs_source_enabled(ac2) && record(ac2).empty(),
+	      "one switched off by the user stays off, with nothing written down ('%s')", record(ac2).c_str());
+
+	// Saved off with a record (OBS restarted), the program not open: it is
+	// handed back after the grace, not before.
+	obs_data_t *fd = obs_data_create();
+	obs_data_set_string(fd, "hand_hooked", "snes9x.exe");
+	auto [gc3, ac3] = make("Hook Back Loaded", fd);
+	obs_data_release(fd);
+	obs_source_set_enabled(ac3, false);
+	windows(ac3, "Notes|NotesWnd|notes.exe|front|");
+	sleep_ms(2500);
+	const bool early = obs_source_enabled(ac3);
+	bool later = false;
+	for (int i = 0; i < 80 && !later; i++) {
+		sleep_ms(50);
+		later = obs_source_enabled(ac3);
+	}
+	CHECK(!early && later && record(ac3).empty(),
+	      "a saved record with the program not open hands back after the grace (%d %d '%s')", (int)early,
+	      (int)later, record(ac3).c_str());
+
+	front("", "", "");
+	for (auto [c, f] : {std::make_pair(gc, ac), std::make_pair(gc2, ac2), std::make_pair(gc3, ac3)}) {
+		obs_source_filter_remove(c, f);
+		obs_source_release(f);
+		obs_source_release(c);
+	}
+}
+
 // Auto Capture rests a program it gets no picture from for real: the Game
 // Capture is aimed at no window meanwhile, so OBS stops trying to hook it,
 // and titles that change all the time (a frame rate, a GBA window's
@@ -15490,6 +15604,14 @@ int main(int argc, char **argv)
 		return g_failures ? 1 : 0;
 	}
 
+	if (getenv("STAGEKIT_TEST_ONLY_HOOK_BACK")) { // to try that section alone
+		hook_back_test();
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
+
 	if (getenv("STAGEKIT_TEST_ONLY_AUTO_REST")) { // to try that section alone
 		auto_rest_test();
 		obs_shutdown();
@@ -17790,6 +17912,7 @@ int main(int argc, char **argv)
 		}
 
 		auto_rest_test();
+		hook_back_test();
 		auto_window_closed_test(out);
 		auto_keep_aim_test(out);
 		game_area_test();
