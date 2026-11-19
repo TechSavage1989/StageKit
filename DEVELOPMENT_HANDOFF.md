@@ -23,6 +23,17 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
+## Dock: Bounds list and Auto-fit switch (0.1.0-beta201)
+
+Branch `feat/dock-bounds-autofit`, on the beta200 branch. Notes: `docs/releases/0.1.0-beta201.md`
+(to be numbered just before pushing). Not pushed. The owner asked for a *Bounds* list like OBS 32's
+Edit Transform and an *Auto-fit* on/off for the scene's fit filters; then for a level: *Selected
+only* acts on the selected sources' own Fit to Space and their Scene Fit entries, which needed a
+per-entry switch (`fit|<source>|enabled`, *Fit this source* in the Scene Fit window). Both are on
+the Place tab under the arrows. Hotkey `stagekit.arrange.auto_fit` (*StageKit: Auto-fit on/off*);
+no vendor request or Stream Deck key. Tested by the new gate `DOCK_BOUNDS` (23 checks) and
+`TOOLTIPS`; the full suite was not run. Not seen in OBS on Windows.
+
 ## Scene Fit: alignment always obeyed, the dock button fits at once, no extra frame cost (0.1.0-beta200)
 
 Branch `fix/fit-followup`, on `main` after beta198 (pull request 216, another assistant's fix for

@@ -11951,6 +11951,228 @@ static void fit_tool_test(uint32_t w, uint32_t h)
 	obs_scene_release(scene);
 }
 
+// The dock's Bounds list and its Auto-fit switch, at both levels. Run
+// alone: STAGEKIT_TEST_ONLY_DOCK_BOUNDS.
+static void dock_bounds_test()
+{
+	printf("\n[dock: bounds type and auto-fit]\n");
+	auto block = [](const char *name, long long abgr, int bw, int bh) {
+		obs_data_t *d = obs_data_create();
+		obs_data_set_int(d, "color", abgr);
+		obs_data_set_int(d, "width", bw);
+		obs_data_set_int(d, "height", bh);
+		obs_source_t *src = obs_source_create("color_source", name, d, nullptr);
+		obs_data_release(d);
+		return src;
+	};
+	auto pump = [](int ms) {
+		for (int t = 0; t < ms; t += 10) {
+			QCoreApplication::processEvents();
+			sleep_ms(10);
+		}
+		QCoreApplication::processEvents();
+	};
+	obs_scene_t *scene = obs_scene_create("DB Scene");
+	obs_source_t *scene_src = obs_scene_get_source(scene);
+	obs_source_t *back = block("DB Back", 0xFF303030, 1920, 1080);
+	obs_source_t *a = block("DB One", 0xFF0000C0, 200, 100);
+	obs_source_t *b = block("DB Two", 0xFF00C000, 160, 90);
+	obs_scene_add(scene, back);
+	obs_sceneitem_t *ia = obs_scene_add(scene, a);
+	obs_sceneitem_t *ib = obs_scene_add(scene, b);
+	auto put = [](obs_sceneitem_t *item, float x, float y, float k) {
+		vec2 pos, scale;
+		vec2_set(&pos, x, y);
+		vec2_set(&scale, k, k);
+		obs_sceneitem_set_pos(item, &pos);
+		obs_sceneitem_set_scale(item, &scale);
+	};
+	put(ia, 100, 100, 0.5f);
+	put(ib, 900, 600, 1.0f);
+	obs_source_t *before_out = obs_get_output_source(0);
+	obs_set_output_source(0, scene_src);
+	obs_sceneitem_select(ia, true);
+	sleep_ms(100);
+
+	calldata_t dock_cd = {};
+	calldata_set_string(&dock_cd, "scene", "DB Scene");
+	proc_handler_call(obs_get_proc_handler(), "stagekit_create_dock", &dock_cd);
+	auto *dock = static_cast<QWidget *>(calldata_ptr(&dock_cd, "widget"));
+	calldata_free(&dock_cd);
+	auto *place = dock ? dock->findChild<QWidget *>("pagePlace") : nullptr;
+	auto *bounds = place ? place->findChild<QComboBox *>("boundsType") : nullptr;
+	auto *fit = place ? place->findChild<QCheckBox *>("autoFit") : nullptr;
+	auto *level = place ? place->findChild<QCheckBox *>("autoFitSources") : nullptr;
+	auto *status = dock ? dock->findChild<QLabel *>("status") : nullptr;
+	CHECK(bounds && fit && level && status, "the Place tab has a Bounds list, Auto-fit and Selected only");
+	if (!(bounds && fit && level && status)) {
+		delete dock;
+		obs_set_output_source(0, before_out);
+		obs_source_release(before_out);
+		return;
+	}
+	level->setChecked(false);
+	pump(500);
+	QStringList names;
+	for (int i = 0; i < bounds->count(); i++)
+		names << bounds->itemText(i);
+	CHECK(names.join("|") == "Automatic|Stretch|Fit|Cover|Fill Width|Fill Height|Maximum size only",
+	      "the list is OBS's own, in its order (%s)", names.join("|").toUtf8().constData());
+	CHECK(bounds->currentText() == "Automatic", "it shows the selected item's type (%s)",
+	      bounds->currentText().toUtf8().constData());
+	CHECK(!fit->isEnabled(), "Auto-fit is off limits in a scene without fit filters");
+
+	auto choose = [&](const char *text) {
+		const int i = bounds->findText(text);
+		bounds->setCurrentIndex(i);
+		emit bounds->activated(i);
+		pump(50);
+	};
+	auto pos_of = [](obs_sceneitem_t *item) {
+		vec2 p;
+		obs_sceneitem_get_pos(item, &p);
+		return p;
+	};
+	auto bounds_of = [](obs_sceneitem_t *item) {
+		vec2 p;
+		obs_sceneitem_get_bounds(item, &p);
+		return p;
+	};
+	choose("Fit");
+	vec2 bd = bounds_of(ia), at = pos_of(ia);
+	CHECK(obs_sceneitem_get_bounds_type(ia) == OBS_BOUNDS_SCALE_INNER && std::fabs(bd.x - 100) < 0.01 &&
+		      std::fabs(bd.y - 50) < 0.01 && std::fabs(at.x - 100) < 0.01 && std::fabs(at.y - 100) < 0.01,
+	      "from no bounds, the bounds are its size on screen and it stays put (%.1f x %.1f at %.1f, %.1f)", bd.x,
+	      bd.y, at.x, at.y);
+	// A picture smaller than its bounds, centred in them: back to
+	// Automatic, it keeps its size and its place on screen.
+	vec2 wide;
+	vec2_set(&wide, 300, 50);
+	obs_sceneitem_set_bounds(ia, &wide);
+	obs_sceneitem_set_bounds_alignment(ia, 0);
+	sleep_ms(60);
+	choose("Automatic");
+	vec2 sc;
+	obs_sceneitem_get_scale(ia, &sc);
+	at = pos_of(ia);
+	CHECK(obs_sceneitem_get_bounds_type(ia) == OBS_BOUNDS_NONE && std::fabs(sc.x - 0.5f) < 0.001f &&
+		      std::fabs(at.x - 200) < 0.05 && std::fabs(at.y - 100) < 0.05,
+	      "to Automatic, the scale keeps its size and the position its place (scale %.3f, at %.1f, %.1f)", sc.x,
+	      at.x, at.y);
+	calldata_t undo_cd = {};
+	calldata_set_bool(&undo_cd, "redo", false);
+	proc_handler_call(obs_get_proc_handler(), "stagekit_replay_arrange", &undo_cd);
+	calldata_free(&undo_cd);
+	sleep_ms(60);
+	CHECK(obs_sceneitem_get_bounds_type(ia) == OBS_BOUNDS_SCALE_INNER && std::fabs(pos_of(ia).x - 100) < 0.05,
+	      "one step in Undo takes it back (type %d)", (int)obs_sceneitem_get_bounds_type(ia));
+	obs_sceneitem_select(ib, true);
+	pump(500);
+	CHECK(bounds->currentIndex() == -1, "two selected items of different types show a blank list (%s)",
+	      bounds->currentText().toUtf8().constData());
+	choose("Stretch");
+	CHECK(obs_sceneitem_get_bounds_type(ia) == OBS_BOUNDS_STRETCH &&
+		      obs_sceneitem_get_bounds_type(ib) == OBS_BOUNDS_STRETCH,
+	      "a choice sets every selected item");
+	pump(500);
+	CHECK(bounds->currentText() == "Stretch", "and the list shows it (%s)",
+	      bounds->currentText().toUtf8().constData());
+	obs_sceneitem_select(ib, false);
+	choose("Automatic");
+	obs_sceneitem_get_scale(ia, &sc);
+	// (Undone to 300 x 50 bounds, then stretched over them.)
+	CHECK(std::fabs(sc.x - 1.5f) < 0.001f && std::fabs(sc.y - 0.5f) < 0.001f,
+	      "a stretch back to Automatic keeps the stretched size (scale %.3f x %.3f)", sc.x, sc.y);
+
+	// A Fit to Space on the first, a Scene Fit listing the second.
+	obs_data_t *fd = obs_data_create();
+	obs_data_set_string(fd, "item", "DB One");
+	obs_source_t *f_one = obs_source_create("stagekit_fit_item", "DB Fit One", fd, nullptr);
+	obs_data_release(fd);
+	obs_data_t *sd = obs_data_create();
+	{
+		obs_data_array_t *list = obs_data_array_create();
+		obs_data_t *entry = obs_data_create();
+		obs_data_set_string(entry, "value", "DB Two");
+		obs_data_array_push_back(list, entry);
+		obs_data_release(entry);
+		obs_data_set_array(sd, "entries", list);
+		obs_data_array_release(list);
+	}
+	obs_source_t *f_scene = obs_source_create("stagekit_scene_fit", "DB Scene Fit", sd, nullptr);
+	obs_data_release(sd);
+	obs_source_filter_add(scene_src, f_one);
+	obs_source_filter_add(scene_src, f_scene);
+	pump(500);
+	choose(obs_sceneitem_get_bounds_type(ia) == OBS_BOUNDS_SCALE_OUTER ? "Fit" : "Cover");
+	CHECK(status->text().contains("DB One is fitted by DB Fit One"),
+	      "the status line says when a fit filter sets the bounds (%s)", status->text().toUtf8().constData());
+
+	pump(500);
+	CHECK(fit->isEnabled() && fit->isChecked(), "Auto-fit shows on when the scene's fit filters are");
+	fit->click();
+	pump(100);
+	CHECK(!obs_source_enabled(f_one) && !obs_source_enabled(f_scene) && !fit->isChecked(),
+	      "unticked, it switches every Fit to Space and Scene Fit of the scene off");
+	fit->click();
+	pump(100);
+	CHECK(obs_source_enabled(f_one) && obs_source_enabled(f_scene) && fit->isChecked(), "and on again");
+
+	// The source level: only the selected source's fit.
+	level->click();
+	CHECK(level->isChecked(), "Selected only is ticked");
+	obs_sceneitem_select(ia, false);
+	obs_sceneitem_select(ib, true);
+	pump(500);
+	auto entry_on = [&] {
+		obs_data_t *now = obs_source_get_settings(f_scene);
+		const bool on = !obs_data_has_user_value(now, "fit|DB Two|enabled") ||
+				obs_data_get_bool(now, "fit|DB Two|enabled");
+		obs_data_release(now);
+		return on;
+	};
+	CHECK(fit->isChecked() && entry_on(), "at the source level it shows the selected source's entry, on");
+	fit->click();
+	pump(100);
+	CHECK(!entry_on() && obs_source_enabled(f_scene) && obs_source_enabled(f_one) && !fit->isChecked(),
+	      "unticked, only that source's Scene Fit entry goes off; the filters stay on");
+	// An entry that is off fits nothing: the source stays where it is put.
+	obs_sceneitem_set_bounds_type(ib, OBS_BOUNDS_NONE);
+	put(ib, 1500, 800, 1.0f);
+	pump(900);
+	vec2 still = pos_of(ib);
+	CHECK(std::fabs(still.x - 1500) < 0.01 && std::fabs(still.y - 800) < 0.01 &&
+		      obs_sceneitem_get_bounds_type(ib) == OBS_BOUNDS_NONE,
+	      "a source whose entry is off is left alone (at %.1f, %.1f)", still.x, still.y);
+	fit->click();
+	pump(1500);
+	CHECK(entry_on() && fit->isChecked() && obs_sceneitem_get_bounds_type(ib) != OBS_BOUNDS_NONE,
+	      "switched on again, its Scene Fit fits it (bounds type %d)", (int)obs_sceneitem_get_bounds_type(ib));
+	obs_sceneitem_select(ib, false);
+	obs_sceneitem_select(ia, true);
+	pump(500);
+	CHECK(fit->isChecked(), "the first source shows its own Fit to Space, on");
+	fit->click();
+	pump(100);
+	CHECK(!obs_source_enabled(f_one) && obs_source_enabled(f_scene) && entry_on(),
+	      "unticked, only its own Fit to Space goes off");
+	level->click();
+	pump(500);
+	CHECK(fit->isChecked(), "back at the scene level, it shows on while any fit filter is");
+
+	delete dock;
+	QCoreApplication::processEvents();
+	obs_source_filter_remove(scene_src, f_one);
+	obs_source_filter_remove(scene_src, f_scene);
+	obs_source_release(f_one);
+	obs_source_release(f_scene);
+	obs_set_output_source(0, before_out);
+	obs_source_release(before_out);
+	obs_scene_release(scene);
+	for (obs_source_t *src : {back, a, b})
+		obs_source_release(src);
+}
+
 static void blur_off_draw_test(uint32_t w, uint32_t h, const char *base_image)
 {
 	printf("\n[Ambient Background's mosaic sets every uniform of the shared effect]\n");
@@ -14710,6 +14932,14 @@ int main(int argc, char **argv)
 		return g_failures ? 1 : 0;
 	}
 
+	if (getenv("STAGEKIT_TEST_ONLY_DOCK_BOUNDS")) { // to try that section alone
+		dock_bounds_test();
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
+
 	if (getenv("STAGEKIT_TEST_ONLY_FIT_TOOL")) { // to try that section alone
 		fit_tool_test(w, h);
 		obs_shutdown();
@@ -15203,6 +15433,7 @@ int main(int argc, char **argv)
 	ambient_darkest_test(w, h, base_image, out + "/../darkest"); // (alone: STAGEKIT_TEST_ONLY_AMBIENT_DARKEST)
 	filter_remove_while_drawn_test(w, h);                        // (alone: STAGEKIT_TEST_ONLY_FILTER_REMOVE)
 	fit_tool_test(w, h);                                         // (alone: STAGEKIT_TEST_ONLY_FIT_TOOL)
+	dock_bounds_test();                                          // (alone: STAGEKIT_TEST_ONLY_DOCK_BOUNDS)
 
 	// ==== scene-filters:blur ====
 	// ------------------------------------------------------------ scene blur

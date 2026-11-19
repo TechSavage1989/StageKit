@@ -1139,6 +1139,17 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   listed get it, plus any scene whose own filter for the item lists this one (`share_partners`),
   so one list links two scenes both ways. The old `share` tick box is not read. Never share with
   a scene that is not named.
+- **The dock's Bounds list and Auto-fit switch** (Place tab, `boundsType`, `autoFit`,
+  `autoFitSources`; `set_bounds_type`, `auto_fit_state`, `set_auto_fit` in
+  `src/dock/arrange-tools.*`). Bounds keeps each item's size and place on screen (from no bounds,
+  bounds = its size; back to Automatic, the scale OBS used in the bounds) and is one undo step;
+  a fitted item's status says its filter may set the bounds again. Auto-fit switches the scene's
+  Fit to Space and Scene Fit filters, or with *Selected only* (`auto_fit_sources`, an Arrange
+  option) the selected sources' own Fit to Space and their Scene Fit entry: `fit|<source>|enabled`
+  (on unless set, always the source's own, deliberately not in `kFitKeys`: *Take over* would copy a
+  Fit to Space's missing key as off). An entry that is off has no engine at all (`build`), so no
+  placing and no claim. Tested in `[dock: bounds type and auto-fit]`
+  (`STAGEKIT_TEST_ONLY_DOCK_BOUNDS`); not seen in OBS on Windows.
 - **Fit to Space's kept size is saved** (`keep_item`, `keep_w`, `keep_h` and the rest, written
   whenever the size is read) and is what a filter starts from when OBS loads it (`first_update_`,
   `load_keep_`). Before, a filter created with *Resize it to fit* unticked looked like one that

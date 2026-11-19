@@ -57,6 +57,10 @@ struct ArrangeOptions {
 	// Both copy tools: the sources that take the transform, by name. Empty
 	// (as it comes): the copies of the selected item's own source.
 	std::vector<std::string> copy_sources;
+	// The dock's Auto-fit switch acts on the selected sources only (their
+	// Fit to Space filters and Scene Fit entries in the scene being edited),
+	// not on every fit filter of that scene. Off as it comes.
+	bool auto_fit_sources = false;
 	// The Place tab's edge distance: how far short of the screen's edges and
 	// of other items the slides stop and Fit to space leaves its item.
 	int place_margin = 30;
@@ -172,6 +176,35 @@ ArrangeOutcome run_arrange_on_selection(ArrangeAction action);
 // The scene being edited: the preview in Studio Mode, else the current scene.
 // Returns a new reference, or nullptr.
 obs_source_t *editing_scene();
+
+// The dock's Bounds list: the bounds type the items share, or -1 when they
+// differ or there are none.
+int bounds_type_of(const std::vector<obs_sceneitem_t *> &items);
+struct BoundsOutcome {
+	int changed = 0;
+	// "source\tfilter" for each item a fit filter of the scene sets the
+	// bounds of (an enabled Fit to Space, or a switched-on Scene Fit entry).
+	std::vector<std::string> fitted;
+};
+// Sets the bounds type of each item, as OBS's Edit Transform does: from no
+// bounds the bounds become the picture's size on screen, back to none the
+// scale keeps that size, and the picture stays where it is. The bounds
+// alignment is kept. One step in OBS's undo list.
+BoundsOutcome set_bounds_type(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items, obs_bounds_type type);
+// The fit filter of `scene` that fits `source` ("" for none).
+std::string fitted_by(obs_source_t *scene, const std::string &source);
+
+// The dock's Auto-fit switch. `sources` null: every Fit to Space and Scene
+// Fit on the scene; otherwise only those sources' Fit to Space filters and
+// their Scene Fit entries. -1 when there are none, 1 when any is on, else 0.
+int auto_fit_state(obs_source_t *scene, const std::vector<std::string> *sources);
+// Switches them all on or off. Returns how many were changed.
+int set_auto_fit(obs_source_t *scene, bool on, const std::vector<std::string> *sources);
+// The sources the items show, each once, in order.
+std::vector<std::string> sources_of(const std::vector<obs_sceneitem_t *> &items);
+// The switch on the scene being edited and its selection, at the chosen
+// level (for the hotkey): on when all are off, else off.
+void toggle_auto_fit_on_selection();
 
 void register_arrange_hotkeys();
 void arrange_save_load(obs_data_t *save_data, bool saving);

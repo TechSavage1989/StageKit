@@ -145,6 +145,16 @@ std::string prefix_of(const std::string &entry)
 	return "fit|" + entry + "|";
 }
 
+// Whether an entry fits at all (`fit|<source>|enabled`, on as it comes, so
+// every filter saved before reads on). Always the source's own, also with
+// the same settings for all. Not one of kFitKeys: Take over would copy a
+// Fit to Space's missing key as off.
+bool entry_on(obs_data_t *settings, const std::string &name)
+{
+	const std::string key = prefix_of(name) + "enabled";
+	return !obs_data_has_user_value(settings, key.c_str()) || obs_data_get_bool(settings, key.c_str());
+}
+
 bool has(const std::vector<std::string> &list, const std::string &name)
 {
 	return std::find(list.begin(), list.end(), name) != list.end();
@@ -476,6 +486,11 @@ private:
 		}
 		std::vector<std::shared_ptr<Entry>> now;
 		for (const std::string &name : names) {
+			// An entry switched off is no entry: no placing, no claim, as
+			// for a source not fitted (its engine, gone, takes its claim
+			// with it).
+			if (!entry_on(settings, name))
+				continue;
 			std::shared_ptr<Entry> entry;
 			for (const auto &old : was)
 				if (old->name == name)
@@ -832,6 +847,10 @@ void add_entry_group(obs_properties_t *top, obs_source_t *owner, obs_data_t *set
 	fit_entry_defaults(settings, prefix);
 	obs_source_t *parent = owner ? obs_filter_get_parent(owner) : nullptr;
 	obs_properties_t *content = obs_properties_create();
+	obs_data_set_default_bool(settings, (prefix + "enabled").c_str(), true);
+	obs_property_t *on =
+		obs_properties_add_bool(content, (prefix + "enabled").c_str(), obs_module_text("SceneFit.EntryOn"));
+	set_tip(on, obs_module_text("SceneFit.EntryOn.Tip"));
 	fit_add_controls(content, prefix, fit_list_prefix(name), owner, parent, true);
 	obs_properties_add_group(top, (prefix + "g").c_str(), name.c_str(), OBS_GROUP_NORMAL, content);
 }
@@ -1224,6 +1243,36 @@ void on_source_rename(void *, calldata_t *cd)
 }
 
 } // namespace
+
+bool scene_fit_covers(obs_source_t *filter, const std::string &source)
+{
+	if (!filter || source.empty())
+		return false;
+	obs_data_t *settings = obs_source_get_settings(filter);
+	bool covers = has(pick_list_read(settings, "entries", false), source);
+	if (!covers && obs_data_get_int(settings, "which") == (int)Which::AllSources)
+		covers = has(unlisted_sources(filter, obs_filter_get_parent(filter), settings), source);
+	obs_data_release(settings);
+	return covers;
+}
+
+bool scene_fit_entry_on(obs_source_t *filter, const std::string &source)
+{
+	obs_data_t *settings = filter ? obs_source_get_settings(filter) : nullptr;
+	const bool on = settings && entry_on(settings, source);
+	obs_data_release(settings);
+	return on;
+}
+
+void scene_fit_set_entry_on(obs_source_t *filter, const std::string &source, bool on)
+{
+	if (!filter || source.empty())
+		return;
+	obs_data_t *change = obs_data_create();
+	obs_data_set_bool(change, (prefix_of(source) + "enabled").c_str(), on);
+	obs_source_update(filter, change);
+	obs_data_release(change);
+}
 
 void scene_fit_stop()
 {
