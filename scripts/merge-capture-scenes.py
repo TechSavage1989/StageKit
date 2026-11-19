@@ -78,6 +78,7 @@ STANDBY = "stagekit_standby"
 # the filter, and the place and size it was laid out at by hand (home_*). A copy made for another
 # source starts without them.
 FIT_OWN = ["have_anchor", "anchor_x", "anchor_y", "orig_item", "orig_k", "orig_w", "orig_h", "keep_item", "keep_k",
+           "keep_w", "keep_h", "keep_sw", "keep_sh", "keep_pw", "keep_ph",
            "home_item", "home_x", "home_y", "home_w", "home_h", "home_space_x", "home_space_y", "home_space_w",
            "home_space_h", "home_cut_l", "home_cut_t", "home_cut_r", "home_cut_b"]
 # How an item with no transition is written by OBS.

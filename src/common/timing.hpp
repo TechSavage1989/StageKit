@@ -51,6 +51,8 @@ enum class Look : int {
 	LinkFollow,     // Link Visibility's "Follow the first source"
 	ShadowScale,    // Shadow, Glow & Outline's scale and on-screen check
 	AmbientSources, // Ambient Background looking its sources up
+	FitObstacle,    // a fit, or the dock's Fit to space, drawing a thing in the way and reading it back
+	FitOwn,         // a fit drawing its own item and reading it back
 	Count,
 };
 void count_look(Look which);

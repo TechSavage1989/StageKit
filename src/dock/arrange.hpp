@@ -17,6 +17,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace stagekit {
@@ -148,8 +149,13 @@ struct FitToSpaceNote {
 	bool busy = false;
 	int shrunk = 0, refused = 0;          // items kept smaller, items left as they were
 	std::vector<std::string> gave_way_to; // the fitted sources they gave way to
-	std::vector<std::string> own_fit;     // items left to their own fit
-	std::vector<std::string> unknown;     // fitted sources not worked out with the item shown
+	// Items left to their own fit, which could not be told to fit them now:
+	// the filter, then the source.
+	std::vector<std::pair<std::string, std::string>> own_fit;
+	std::vector<std::string> refitted;   // the fits told to fit their item now
+	std::vector<std::string> own_area;   // fits that keep their item at its size in an area of their own
+	std::vector<std::string> keeps_size; // items that keep their size, their space smaller than they are
+	std::vector<std::string> unknown;    // fitted sources not worked out with the item shown
 };
 int fit_to_space(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items, double gap, const Measure &how,
 		 std::vector<obs_sceneitem_t *> *fitted = nullptr, FitToSpaceNote *note = nullptr);

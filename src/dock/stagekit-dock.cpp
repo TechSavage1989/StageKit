@@ -1596,7 +1596,10 @@ private:
 			return tr_text("Arrange.SelectFirst");
 		if (out.had < out.needs)
 			return tr_text(out.needs >= 3 ? "Arrange.NeedThree" : "Arrange.NeedTwo");
-		QString text = tr_text("Arrange.Done").arg(out.changed);
+		// (Fit to space on a source its own fit resizes: that fit does the
+		// work, and "Changed 0 item(s)" would say nothing was done.)
+		QString text = out.changed == 0 && !out.fit.refitted.empty() ? QString()
+									     : tr_text("Arrange.Done").arg(out.changed);
 		// Fit to space: what it held back so no other fit gives up room.
 		const auto join = [](const std::vector<std::string> &names) {
 			QStringList list;
@@ -1610,15 +1613,23 @@ private:
 			text += " " + tr_text(out.fit.refused > 0 && out.fit.shrunk == 0 ? "Arrange.FitSpace.Left"
 											 : "Arrange.FitSpace.Smaller")
 					      .arg(join(out.fit.gave_way_to));
-		if (!out.fit.own_fit.empty())
-			text += " " + tr_text("Arrange.FitSpace.OwnFit").arg(join(out.fit.own_fit));
+		if (!out.fit.refitted.empty())
+			text += " " + tr_text("Arrange.FitSpace.Refit").arg(join(out.fit.refitted));
+		for (const auto &left : out.fit.own_fit)
+			text += " " +
+				tr_text("Arrange.FitSpace.OwnFit")
+					.arg(QString::fromStdString(left.first), QString::fromStdString(left.second));
+		if (!out.fit.own_area.empty())
+			text += " " + tr_text("Arrange.FitSpace.OwnArea").arg(join(out.fit.own_area));
+		if (!out.fit.keeps_size.empty())
+			text += " " + tr_text("Arrange.FitSpace.KeepsSize").arg(join(out.fit.keeps_size));
 		if (!out.fit.unknown.empty())
 			text += " " + tr_text("Arrange.FitSpace.Unknown").arg(join(out.fit.unknown));
 		if (!out.not_copied.empty())
 			text += " " + tr_text("Arrange.FitSpace.NotCopied").arg(join(out.not_copied));
 		if (!out.not_known.empty())
 			text += " " + tr_text("Arrange.FitSpace.NotKnown").arg(join(out.not_known));
-		return text;
+		return text.trimmed();
 	}
 
 	// Puts the shared options into the dock's controls.

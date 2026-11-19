@@ -221,14 +221,13 @@ Box space_from(const SpaceInputs &in, SpaceOut *out = nullptr);
 // What a fit says it will show of its item once it is in `goal` (its claim,
 // `FitEngine::publish_claim`): `kept`, its kept size against the side it is
 // kept towards (or away from a side that gives way, or packed towards the
-// top beside a picture that would not grow that way), on the screen unless
-// `at_home`; otherwise a picture of the shape `pw` by `ph` fitted into the
+// top beside a picture that would not grow that way), on the screen (at home
+// too); otherwise a picture of the shape `pw` by `ph` fitted into the
 // space (`room` while it is `reshaping`, else `goal`). `lean_y`: whether a
 // kept-size one leans towards the top (`Claim::leans_y`).
 Box claim_box(const Box &goal, const Box &room, const Box &within, double margin, bool kept, double kept_w,
 	      double kept_h, int toward_x, int toward_y, const std::vector<Box> &boxes, const std::vector<bool> &gives,
-	      const std::vector<int> &grows, bool at_home, bool reshaping, double pw, double ph,
-	      bool *lean_y = nullptr);
+	      const std::vector<int> &grows, bool reshaping, double pw, double ph, bool *lean_y = nullptr);
 // The same from a fit's inputs (`out`: what `space_from` gives for them,
 // worked out when not given).
 Box claim_from(const SpaceInputs &in, const SpaceOut *out = nullptr, bool *lean_y = nullptr);
@@ -251,7 +250,10 @@ struct HeldSpace {
 };
 std::vector<HeldSpace> held_spaces(obs_source_t *scene);
 // Prefer an enabled owner when two filters name the same source.
-bool fit_settings_for(obs_source_t *scene, const char *name, FitSettings &settings, std::string &resizing_filter);
+// `resizing_filter`: the switched-on filter that resizes it, if one does.
+// `enabled_filter`: the filter the settings are from, when it is switched on.
+bool fit_settings_for(obs_source_t *scene, const char *name, FitSettings &settings, std::string &resizing_filter,
+		      std::string *enabled_filter = nullptr);
 // For the tests: `stagekit_test_fit_predicts`, whether what `held_spaces`
 // says of each fit gives, worked out again, the claim that fit makes.
 void fit_engine_add_test_calls();
@@ -323,6 +325,9 @@ public:
 		obs_sceneitem_t *item; // valid for the tick
 		obs_sceneitem_t *top;  // the item of the scene it is in, or itself
 		bool claimed;          // a group placed by a fit: one thing
+		// Whether its source has a size (1) or none (0), asked once for all
+		// the `obstacles` of a tick, and only when it is needed (-1: not yet).
+		int sized = -1;
 	};
 	std::vector<Gathered> &gathered() { return gathered_; }
 	// Every item the last `obstacles` went through, in the way or not.
@@ -336,7 +341,9 @@ private:
 		bool there = false;
 		uint32_t width = 0, height = 0;
 	};
-	void look(obs_source_t *scene, obs_sceneitem_t *other, const Measure &how);
+	// `by_drawing`: by what it draws whatever `how` says (a dock press: an
+	// item that draws nothing is not in its way, also when it goes by boxes).
+	void look(obs_source_t *scene, obs_sceneitem_t *other, const Measure &how, bool by_drawing);
 	std::vector<Gathered> gathered_;
 	std::vector<obs_sceneitem_t *> used_; // what the last obstacles were taken from
 	std::vector<int64_t> visible_, empty_;
@@ -360,6 +367,10 @@ public:
 		  std::string look_list_prefix = std::string());
 	~FitEngine();
 	void placed(obs_source_t *scene, const char *item_name);
+	// The dock's Fit to space pressed on the item this fit resizes: it is
+	// fitted now, from where it is (see `fit_item_refit`). False when this
+	// fit does not look after that item in that scene, or does not resize it.
+	bool refit(obs_source_t *scene, const char *item_name);
 	// Whether this filter, looking after the item of that name, lists the
 	// scene of that name to share its place with.
 	bool shares_with(const std::string &item_name, const char *scene_name)
@@ -437,7 +448,7 @@ public:
 	bool pending()
 	{
 		std::lock_guard lock(mutex_);
-		return dirty_ || placed_ || shared_in_ || new_item_;
+		return dirty_ || placed_ || shared_in_ || new_item_ || refit_;
 	}
 	void skip_time(float seconds) { idle_s_ += seconds; }
 	void not_free() { have_cur_ = false; }
@@ -467,6 +478,11 @@ private:
 	// The home taken from the item as it is now.
 	bool home_from_item(const Prep &p);
 	void store_home_space();
+	// Where a part of the item's source (in its pixels, before the item's
+	// crop) is drawn on the screen now. False for a rotated item.
+	bool part_on_screen(const Prep &p, double left, double top, double w, double h, Box &out) const;
+	// The glide starts from where the item is now (see `rebase_`).
+	void rebase(const Prep &p);
 
 	obs_source_t *source_;
 	std::string prefix_, entry_, list_prefix_;
@@ -522,11 +538,48 @@ private:
 	// Whether more width or height would grow the resized picture, from the
 	// space it was given before that was cut to the picture.
 	bool space_grows_x_ = true, space_grows_y_ = true;
-	double keep_w_ = 0.0, keep_h_ = 0.0; // the reference image size, in scene pixels
+	// "Resize to fit" off: the size the picture is kept at, as it shows on
+	// the screen (`w`, `h`: scene pixels of what shows of it), not as a scale
+	// of its source: a capture whose source changes size (a window resized, a
+	// window switcher's image of another shape) keeps the size the owner
+	// sees (2026-11-19: "i had previously sized the GBA screens to fit the
+	// space, and they've shrunk even when they are set to not resize"). With
+	// it, the sizes in its source it was kept at: the whole picture (`sw`,
+	// `sh`) and what showed of it (`pw`, `ph`). While the source is that size
+	// and another part of it shows (a chat box with more lines, a window's
+	// empty margins found), the scale stays and the size follows; a source of
+	// another size is drawn as large as fits in the size kept. `k` alone: only
+	// a scale is known (a collection saved by a version before, or a size read
+	// while a Standby Image stood in), which gives the picture that scale
+	// until a size can be read off the real picture (`prepare`).
+	struct KeptSize {
+		double w = 0.0, h = 0.0, sw = 0.0, sh = 0.0, pw = 0.0, ph = 0.0, k = 0.0;
+		bool sized() const { return w > 0.0 && h > 0.0; }
+		bool known() const { return sized() || k > 0.0; }
+		// (One saved by beta198 has the size alone: `refs` is false until
+		// the picture is seen at that shape.)
+		bool refs() const { return sized() && sw > 0.0 && sh > 0.0 && pw > 0.0 && ph > 0.0; }
+	};
+	KeptSize keep_;
 	// What shows of the fitted item itself: the part of its picture cut off
 	// on the left, top, right and bottom, when it was last looked at.
 	double own_cut_[4] = {0.0, 0.0, 0.0, 0.0};
 	bool own_seen_ = false, was_placed_ = false;
+	// What shows of it is known for the picture as it is: it was looked at
+	// (or saved, or only made larger or smaller) since its shape changed.
+	bool own_known_ = false;
+	// Taken as it is (a new filter or item, switched on, placed by a tool;
+	// not hidden since) and not placed yet: while what shows of it is waited
+	// for it says nothing, and the others go by what shows of it.
+	bool as_is_ = true;
+	// How long it has waited to be placed for want of that (`kOwnWait` at
+	// the most: a source that changes size all the time is never looked at).
+	double unplaced_for_ = 0.0;
+	static constexpr double kOwnWait = 1.5;
+	// How long since the item itself was last looked at: one that needs
+	// looking at before it is first touched is looked at at once, but not
+	// on every frame while its size changes.
+	double own_last_look_ = 1e9;
 	// The size of the picture (before what shows is cut from it) that what
 	// was seen goes with, and how long since it was last looked at.
 	double own_sw_ = 0.0, own_sh_ = 0.0, own_for_ = 0.0;
@@ -535,11 +588,22 @@ private:
 	// have been read yet (the first time is OBS loading the filter).
 	bool first_update_ = true;
 	std::string saved_keep_item_;
-	double saved_keep_k_ = 0.0; // legacy, used only until both pixel dimensions are saved
-	double saved_keep_w_ = 0.0, saved_keep_h_ = 0.0;
+	KeptSize saved_keep_;
 	bool load_keep_ = false;
 	bool back_to_original_ = false, resized_by_hand_ = false;
 	bool placed_by_tool_ = false;
+	bool switched_keep_ = false; // switched on just now: the size it has is read off it
+	// Whether a Standby Image stands in for the item's source, as last
+	// asked, and how long ago that was (`prepare`'s `readable`).
+	bool standing_ = false;
+	double standing_age_ = 1e9;
+	// How long a size to keep has been waited for (its source not steady):
+	// `kKeepWait` at the most, then the scale it is drawn at is taken.
+	double keep_wait_ = 0.0;
+	// How long a resize by hand has been waited out with the mouse let go
+	// (`kKeepWait` at the most, then its source need not be steady).
+	double hand_wait_ = 0.0;
+	static constexpr double kKeepWait = 3.0;
 	bool placed_ = false; // under mutex_: the item was just placed on purpose by a tool
 	// Under mutex_: the item was just given its place by another scene's filter.
 	bool shared_in_ = false, shared_home_ = false;
@@ -561,6 +625,19 @@ private:
 	EaseMode sync_mode_ = EaseMode::InOut;
 	uint64_t switch_id_ = 0;
 	bool have_set_ = false, moving_ = false;
+	// The item is somewhere else than this fit last put it (let go of after
+	// a move or a resize by hand, switched on over a layout made by hand,
+	// placed by a tool) or what shows of it was measured anew: the glide to
+	// its goal starts from where it is now (`rebase`), not from where the
+	// fit had it. `rebase_`: due at the end of this prepare. `rebased_`: for
+	// the next `solve`, which then sets off also when the goal is the old one.
+	bool rebase_ = false, rebased_ = false;
+	// Whether it was the mouse that last held or moved it (a drag in the
+	// preview): its rest then counts from the button being let go, and is
+	// over `kHandStill` later.
+	bool still_from_hold_ = false;
+	// Under mutex_: the dock's Fit to space was pressed on it (`refit`).
+	bool refit_ = false;
 	// "Same place in other scenes": the place last given to the other scenes.
 	bool have_shared_ = false;
 	std::atomic<bool> share_again_{false};
@@ -604,6 +681,7 @@ public:
 private:
 	bool box_asked_ = false; // its bounding box was asked for, for want of a room it was given
 	bool new_item_ = false;  // the filter was given another item (set under mutex_)
+	bool load_item_ = false; // under mutex_: that item is the one OBS loaded it with
 	double back_for_ = 0.0;
 	Claim last_claim_;
 	double set_x_ = 0.0, set_y_ = 0.0, seen_x_ = 0.0, seen_y_ = 0.0, still_for_ = 0.0;
@@ -640,6 +718,7 @@ private:
 // Every engine there is: told of an item placed by a tool, or given its place
 // by another scene's fit; and the filters that own them (each held).
 void engines_placed(obs_source_t *scene, const char *item_name);
+bool engines_refit(obs_source_t *scene, const char *item_name, std::string *filter);
 void engines_shared(obs_source_t *scene, const char *item_name, const double *home);
 std::vector<obs_source_t *> engine_owners();
 // Where a Scene Fit entry's two lists are kept: "fit_<the name's bytes in

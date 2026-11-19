@@ -51,5 +51,11 @@ QString guides_report();
 // say that it is.
 bool guides_mouse_down();
 void guides_test_mouse(bool down);
+// The same, asked from any thread (a fit asks on OBS's own thread whether an
+// item is still being dragged): what Windows says of the button itself, or
+// what the tests say, and only while a window of OBS is in front. Elsewhere
+// it is not known off the window's thread
+// (Qt's own state belongs to that thread), and this says no.
+bool mouse_held_any_thread();
 
 } // namespace stagekit

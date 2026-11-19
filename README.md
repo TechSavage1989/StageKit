@@ -447,19 +447,32 @@ nearest.
   source with it ticked counts as *Shares space*.
 - An item is never put past the screen's edges: it stays the gap inside them whatever is beside it.
 - **Resize to fit** (ticked as it comes). Unticked, the item keeps the size it has and is only
-  moved, to the middle of its space, so the room left over is the same on both sides and above and
-  below; when the space changes (a camera above it is hidden, say) it moves to the new middle.
+  moved, to where *Align in the space* puts it in its space (the middle as it comes, so the room
+  left over is the same on both sides and above and below); when the space changes (a camera above
+  it is hidden, say) it moves with it.
   Unticking gives the item back the size it last kept: the one you gave it in the preview, or, if it
   never kept one (a new filter starts ticked), the size it had before the filter. Resize it
   yourself in the preview and that is the size it keeps, once you let go and it has stayed that
   size for a moment (the dock's snap and resize glide are taken as one resize). This works for the whole screen
   and a box as well as the free space.
+- **Moved or resized by hand while the filter is on**, a source is left alone for as long as you
+  hold it, and about a third of a second after you let go the filter takes over again: a source
+  with *Resize to fit* ticked glides back, from where you let go, to fill its space; one with it
+  unticked keeps the size you gave it and glides to where its alignment puts it. (Holding is
+  known from the mouse button on Windows; elsewhere the filter goes by the source having come to
+  rest.) To have it fitted at once, press the dock's **Fit to space**.
 - **Align in the space** (*The middle* as it comes): where the item lies in its space when it does not
   fill it, which is an image of another shape than the space, or an item that keeps its size. A
   side or a corner puts it against that side, the gap away, with all the room left over on the
   other side, so it only ever moves that way: a camera kept towards the top stays at the top, and a
   chat box kept towards the bottom stays put when the camera above it is hidden. A side where
-  another fitted item makes room for this one is not used.
+  another fitted item makes room for this one is not used. It is always obeyed, also for a layout
+  you made by hand with the filter off: **switching the filter on moves a source to where its
+  alignment puts it** if you had put it somewhere else in its space (it glides there). One case
+  goes its own way: a source that keeps its size and is set to *The middle*, lying above or below
+  a resized image that has no use for more height (a camera as wide as its column), is kept the
+  gap from that image rather than in the middle of the room left over; choose a side or a corner
+  to place it yourself.
 - An item that is hidden is left exactly where it is and holds no space, so the others take its
   room. Shown again, it is where it was, and the others make way for it in one move.
 - An item that is showing but has no image yet (a display capture before its first frame, a
@@ -473,13 +486,20 @@ nearest.
   link holds both ways: a listed scene with a Fit to Space of its own for the item gives its place
   back when it is the one on screen, and fits the item to itself when it comes into view (at once,
   without a glide); where the scenes are laid out alike that is the same place.
-- With *Resize to fit* off, StageKit saves the visible image width and height in scene pixels.
-  A capture that changes resolution keeps its on-screen size. A different aspect ratio fits
-  inside the saved rectangle. While the capture reports 0x0, its transform stays in place.
-- **Switching the filter on over a hand layout** saves each image's home. An image with
-  *Resize to fit* on stays exactly where you placed it when its size already fills the
-  available space within *Size tolerance*. An undersized image grows to fit. A kept-size
-  image retains its hand-set size and home while the same space and gap are available.
+- With *Resize to fit* off, StageKit keeps the size the image has on the screen, not a share of
+  its source. A capture that changes resolution keeps its on-screen size. A different aspect ratio
+  fits inside the saved rectangle. While the capture has no image (0x0), nothing about it is
+  changed. While a source keeps its resolution and shows more or less of itself (a chat box with
+  more lines), it keeps its scale. A size is never read off a Standby Image standing in for a
+  capture: a collection saved by an older version, which kept a scale, is given its sizes when
+  the capture's own image is there.
+- **Switching the filter on over a hand layout** takes each source as it is: the space it is in
+  and the size you gave it. An image with *Resize to fit* on keeps that size when it already
+  fills the available space within *Size tolerance*; an undersized image grows to fit. A
+  kept-size image keeps its size. Each then lies in its space by its *Align in the space*, so a
+  layout made with the gaps and the alignments is left exactly as it is, and one that is not is
+  put right. A source that is hidden (or has no image) when the filter is switched on keeps the
+  size and space it had before.
 - **Size tolerance** (8 px as it comes): when something sticks a little way into the space, the image
   may be made up to this many pixels smaller to keep the whole space, instead of keeping its size and
   losing the part of the space beside that thing. At 0 the biggest image always wins, even by one
@@ -853,12 +873,16 @@ at the bottom, whichever tab is open.
   still moving is one step for Undo.
 - **Fit to space** uses the selected source's *Gap*, *Align in the space*, *Use visible pixels*
   and *Ignore shadows & outlines* whenever it has a fit entry, including when the filter is off.
-  Without an entry, it uses the dock's *Edge distance* and measuring options and centers the image.
+  Without an entry, it uses the dock's *Edge distance* and measuring options and centres the image.
   Visible images set the limits. Standby twins, private sources, the Morph layer and sources
   held hidden by Scene Modes leave their space available. A briefly hidden fitted source can
-  keep its last image clear for up to two seconds. The tool checks whether a neighboring image
-  would move or resize before applying a change. An enabled filter that resizes the selected
-  source is named in the status line. If OBS is busy measuring, press the button again.
+  keep its last image clear for up to two seconds. The tool checks whether a neighbouring image
+  would move or resize before applying a change. **A source that its own fit filter resizes**
+  (the filter on, *Resize to fit* ticked) is fitted by that filter at once: it glides from where
+  it is, a size you gave it by hand included, to fill its space, and the status line says
+  *Fitted by* and the filter's name. (Undo does not cover that: the filter does the moving.) A
+  source that keeps its size is never made smaller; the status line says so when its space is
+  too small. If OBS is busy measuring, press the button again.
   A source in a group that has its own fit stays in place.
   With *In every scene*, a scene where the copy would make a filter there move or resize its
   source is left out and named, and so is a scene whose filters have not worked out their spaces

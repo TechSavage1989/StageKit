@@ -451,8 +451,8 @@ void timing_add_procs()
 	proc_handler_add(
 		ph, "void stagekit_test_looks(out string json)",
 		[](void *, calldata_t *cd) {
-			static const char *const kNames[] = {"switch_follow", "link_follow", "shadow_scale",
-							     "ambient_sources"};
+			static const char *const kNames[] = {"switch_follow",   "link_follow",  "shadow_scale",
+							     "ambient_sources", "fit_obstacle", "fit_own"};
 			obs_data_t *out = obs_data_create();
 			for (size_t i = 0; i < g_looks.size(); i++)
 				obs_data_set_int(out, kNames[i], (long long)g_looks[i].load());

@@ -12,6 +12,8 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include <obs.h>
 
+#include <string>
+
 namespace stagekit {
 
 inline constexpr const char *kFitItemId = "stagekit_fit_item";
@@ -29,6 +31,15 @@ void fit_item_stop();
 // for, and for an item that keeps its size, the size it has now is the one
 // kept. Without it the filter puts the item straight back.
 void fit_item_placed(obs_source_t *scene, const char *item_name);
+
+// Tells the fit that looks after the item of this name in `scene` and
+// resizes it (Resize to fit on, switched on) to fit it now: the dock's Fit to
+// space was pressed on it. That fit drops whatever it is waiting for (a move
+// or a resize by hand being followed to its end, a home that keeps a size
+// made by hand), looks for the item's space round where it is now and glides
+// it there from where it is. `filter`: that filter's name. False when no
+// such fit is there: nothing is done.
+bool fit_item_refit(obs_source_t *scene, const char *item_name, std::string *filter = nullptr);
 
 // Tells the Fit to Space that looks after the item of this name in `scene`
 // that another scene's filter has just given the item its own place and size
