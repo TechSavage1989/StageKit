@@ -1593,9 +1593,13 @@ fit::SpaceInputs with_moved(const fit::SpaceInputs &in, const std::vector<MovedB
 			Box &o = out.boxes[i];
 			const bool said = i < out.said.size() && out.said[i];
 			if (said) {
-				// Where its own fit takes it: where that will take it.
+				// Where its own fit takes it: where that will take it. (Or,
+				// for a fit that goes by what a kept-size fit holds at its
+				// home, `Obstacle::holds`: where it is put, which is its
+				// home then.)
 				if (after) {
-					o = m.has_claim ? m.claim : moved_box(o, m);
+					const bool holds = i < out.holds.size() && out.holds[i];
+					o = m.has_claim ? (holds ? m.held : m.claim) : moved_box(o, m);
 					home_after(out, i, m);
 				}
 				continue;
@@ -1604,9 +1608,15 @@ fit::SpaceInputs with_moved(const fit::SpaceInputs &in, const std::vector<MovedB
 			if (!after) {
 				o = here;
 			} else if (m.has_claim) {
-				o = m.claim;
+				// (Its own fit says where it goes from now on: a fit that
+				// resizes its item then goes by what a kept-size one
+				// holds, as above.)
+				const bool holds = m.keeps && !(in.kept_w > 0.0 && in.kept_h > 0.0);
+				o = holds ? m.held : m.claim;
 				if (i < out.said.size())
 					out.said[i] = true;
+				if (holds && i < out.holds.size())
+					out.holds[i] = true;
 				home_after(out, i, m);
 			} else {
 				o = moved_box(here, m);
@@ -1638,17 +1648,28 @@ fit::SpaceInputs settled(fit::SpaceInputs in)
 	return in;
 }
 
-// Protect the image a neighbour displays and the growth and lean it publishes to other fits.
+// Protect the image a neighbour displays: its claim, which is all it says to
+// the other fits. (Up to betaNEXT also whether it would grow and whether a
+// kept-size one leaned: nothing goes by either any more.)
 bool same_outcome(const fit::SpaceInputs &a, const fit::SpaceInputs &b)
 {
 	fit::SpaceOut x, y;
 	fit::space_from(a, &x);
 	fit::space_from(b, &y);
-	bool lean_before = false, lean_after = false;
-	const Box before = fit::claim_from(a, &x, &lean_before);
-	const Box after = fit::claim_from(b, &y, &lean_after);
-	return same_space(before, after) && x.grows_x == y.grows_x && x.grows_y == y.grows_y &&
-	       lean_before == lean_after;
+	return same_space(fit::claim_from(a, &x), fit::claim_from(b, &y));
+}
+
+// What a fit that keeps its item's size holds for it once the item is put
+// where `at` says (`Claim::least`: its size there, the gap inside the screen).
+Box held_at(Box at, const fit::SpaceInputs &in)
+{
+	const Box &within = in.within;
+	const double gap = std::min({in.margin, within.w / 2.0 - 1.0, within.h / 2.0 - 1.0});
+	if (within.w - 2.0 * gap >= at.w)
+		at.x = std::clamp(at.x, within.x + gap, within.x + within.w - gap - at.w);
+	if (within.h - 2.0 * gap >= at.h)
+		at.y = std::clamp(at.y, within.y + gap, within.y + within.h - gap - at.h);
+	return at;
 }
 
 // An item's own fit once it is handed the item where it is put (`m`: the
@@ -1675,7 +1696,7 @@ fit::SpaceInputs handed_over(fit::SpaceInputs in, const MovedBox &m, const Box &
 }
 
 // Check what each other fitted source would show after the move. A change
-// to unused space is allowed when its image, growth and lean stay the same.
+// to unused space is allowed when its image stays the same.
 FitCheck spaces_kept(const std::vector<fit::HeldSpace> &spaces, const std::vector<MovedBox> &moved, std::string *who,
 		     const std::vector<int64_t> &empty = {})
 {
@@ -1779,12 +1800,16 @@ FitCheck copy_keeps_fits(obs_source_t *scene, obs_sceneitem_t *copy, const Box &
 		// (Its home where it is put, whether or not it stays at home.)
 		m.has_home = in.has_home;
 		m.home = in.home;
+		// (What a fit that keeps its size holds from then on: its size
+		// where it is put, on the screen.)
+		m.keeps = !own->resizes;
+		m.held = held_at(moved_box(fit::claim_from(own->in), m), in);
 	}
 	return spaces_kept(held, {m}, who);
 }
 
 int fit_to_space(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items, double dock_gap,
-		 const Measure &dock_how, std::vector<obs_sceneitem_t *> *fitted, FitToSpaceNote *note)
+		 const Measure &dock_how, std::vector<obs_sceneitem_t *> *fitted, FitToSpaceNote *note, int dock_toward)
 {
 	if (!scene || items.empty())
 		return 0;
@@ -1847,6 +1872,12 @@ int fit_to_space(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &item
 		fit::FitSettings entry;
 		std::string resizing_filter, entry_filter;
 		const bool has_entry = fit::fit_settings_for(scene, item_name, entry, resizing_filter, &entry_filter);
+		if (!has_entry) {
+			// (Without a fit of its own: the dock's alignment grid.)
+			const int t = std::clamp(dock_toward, 0, 8);
+			entry.toward_x = fit::kTowardX[t];
+			entry.toward_y = fit::kTowardY[t];
+		}
 		const Measure how = has_entry ? Measure{entry.visible_pixels, entry.no_shadows} : dock_how;
 		const double gap = has_entry ? entry.margin : std::max(0.0, dock_gap);
 		const double tolerance = has_entry ? entry.tolerance : 8.0;
@@ -2167,7 +2198,8 @@ int fit_to_space(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &item
 				return false;
 			const Box claim = fit::claim_from(in, &found);
 			// (Put where it claims, its home, when it has one, is there.)
-			const MovedBox by{id, own_claim, claim, screen_room, now, true, claim, in.has_home, claim};
+			const MovedBox by{id,    own_claim,   claim, screen_room,   now,  true,
+					  claim, in.has_home, claim, !own->resizes, claim};
 			const Step put{moved_box(seen, by), st.k};
 			const Box box_put = moved_box(now, by);
 			in.ax = box_put.x + box_put.w / 2.0;

@@ -142,8 +142,9 @@ Offset slide_offset(obs_source_t *scene, obs_sceneitem_t *item, int dx, int dy, 
 		    const std::vector<obs_sceneitem_t *> &leave_out, const Box *from = nullptr);
 
 // Fit the selected items in stacking order using fit::free_space. A fit
-// entry supplies its own gap, alignment and measuring options even when off.
-// Other sources keep their image position, size, growth flags and lean.
+// entry supplies its own gap, alignment and measuring options even when off;
+// `toward` (Align in the space, by its saved number) is for an item with none.
+// Other sources keep their image position and size.
 // The caller hands changed items to their filters after any glide finishes.
 struct FitToSpaceNote {
 	bool busy = false;
@@ -158,7 +159,7 @@ struct FitToSpaceNote {
 	std::vector<std::string> unknown;    // fitted sources not worked out with the item shown
 };
 int fit_to_space(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items, double gap, const Measure &how,
-		 std::vector<obs_sceneitem_t *> *fitted = nullptr, FitToSpaceNote *note = nullptr);
+		 std::vector<obs_sceneitem_t *> *fitted = nullptr, FitToSpaceNote *note = nullptr, int toward = 0);
 
 // An item of a scene drawn elsewhere, for the checks: a part of it before
 // (`from`) and after (`to`), its box or, round a shadow sized in screen
@@ -168,6 +169,9 @@ int fit_to_space(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &item
 // `home`: with `has_claim`, that fit's home once the item is put there
 // (where it is put: FitEngine::placed), when it has one (`has_home`); its
 // claim is elsewhere when it does not keep the gap there.
+// `keeps`, `held`: with `has_claim`, whether that fit keeps the item's size,
+// and what it then holds for it whatever the other fits do (its size where
+// it is put, `fit::Claim::least`): what a fit that resizes its item goes by.
 struct MovedBox {
 	int64_t id = 0;
 	Box from, to;
@@ -177,6 +181,8 @@ struct MovedBox {
 	Box claim;
 	bool has_home = false;
 	Box home;
+	bool keeps = false;
+	Box held;
 };
 enum class FitCheck { Kept, Changes, Unknown };
 // A copy given another transform (its box in its scene `from`, then `to`):

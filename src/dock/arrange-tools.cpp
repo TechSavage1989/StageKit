@@ -403,7 +403,7 @@ ArrangeOutcome run_arrange_now(ArrangeAction action, obs_source_t *scene, const 
 		out.changed = copy_to_every_scene(scene, items, &o.copy_scenes, &o.copy_sources, o.copy_locked);
 		break;
 	case ArrangeAction::FitSpace:
-		out.changed = fit_to_space(scene, items, o.place_margin, o.how, &out.placed, &out.fit);
+		out.changed = fit_to_space(scene, items, o.place_margin, o.how, &out.placed, &out.fit, o.place_toward);
 		break;
 	default:
 		break;
@@ -727,6 +727,7 @@ void arrange_save_load(obs_data_t *save_data, bool saving)
 		obs_data_set_array(save_data, "stagekit.copy.sources", copy_sources);
 		obs_data_array_release(copy_sources);
 		obs_data_set_int(save_data, "stagekit.place.margin", o.place_margin);
+		obs_data_set_int(save_data, "stagekit.place.toward", o.place_toward);
 		obs_data_set_int(save_data, "stagekit.arrange.within", o.within);
 		obs_data_set_bool(save_data, "stagekit.arrange.auto_fit_sources", o.auto_fit_sources);
 	} else if (obs_data_has_user_value(save_data, "stagekit.arrange.within")) {
@@ -752,6 +753,7 @@ void arrange_save_load(obs_data_t *save_data, bool saving)
 		o.limit_resize = obs_data_get_bool(save_data, "stagekit.arrange.limit_resize");
 		if (obs_data_has_user_value(save_data, "stagekit.place.margin"))
 			o.place_margin = std::clamp((int)obs_data_get_int(save_data, "stagekit.place.margin"), 0, 400);
+		o.place_toward = std::clamp((int)obs_data_get_int(save_data, "stagekit.place.toward"), 0, 8);
 		if (obs_data_has_user_value(save_data, "stagekit.arrange.limit_px"))
 			o.limit_px = (int)obs_data_get_int(save_data, "stagekit.arrange.limit_px");
 		if (obs_data_array_t *copy_scenes = obs_data_get_array(save_data, "stagekit.copy.scenes")) {

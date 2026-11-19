@@ -33,6 +33,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/start-image.hpp"
 #include "../placement/place-item.hpp"
 #include "../placement/fit-item.hpp"
+#include "../placement/fit-engine.hpp"
 #include "arrange.hpp"
 #include "arrange-tools.hpp"
 #include "preview-guides.hpp"
@@ -66,6 +67,8 @@ the Free Software Foundation; either version 2 of the License, or
 #include <QResizeEvent>
 #include <QPixmap>
 #include <QPushButton>
+#include <QButtonGroup>
+#include <QToolButton>
 #include <QScrollArea>
 #include <QSpinBox>
 #include <QStringList>
@@ -852,6 +855,38 @@ public:
 			edit_transform_->setIcon(tool_icon("edit_transform", edit_transform_));
 			QObject::connect(edit_transform_, &QPushButton::clicked, this, [this] { edit_transform(); });
 			place_tools_->addWidget(edit_transform_);
+			// Where Fit to space puts the source in its space: nine small
+			// squares, one checked, as OBS's Edit Transform shows a bounding
+			// box's alignment (the owner: "similar Alignment design as the
+			// built in bounds alignment for the transform menu"). It shows
+			// and sets the selected source's own fit (Align in the space),
+			// or the dock's own for a source with none.
+			fit_align_ = new QWidget(move_box);
+			fit_align_->setObjectName("fitAlign");
+			auto *align_grid = new QGridLayout(fit_align_);
+			align_grid->setContentsMargins(0, 0, 0, 0);
+			align_grid->setSpacing(2);
+			fit_align_group_ = new QButtonGroup(fit_align_);
+			fit_align_group_->setExclusive(true);
+			static const char *const kPlaces[9] = {"Dock.FitAlign.TopLeft",    "Dock.FitAlign.Top",
+							       "Dock.FitAlign.TopRight",   "Dock.FitAlign.Left",
+							       "Dock.FitAlign.Middle",     "Dock.FitAlign.Right",
+							       "Dock.FitAlign.BottomLeft", "Dock.FitAlign.Bottom",
+							       "Dock.FitAlign.BottomRight"};
+			for (int cell = 0; cell < 9; cell++) {
+				auto *square = new QToolButton(fit_align_);
+				square->setObjectName(QString("fitAlign%1").arg(cell));
+				square->setCheckable(true);
+				square->setFixedSize(12, 12);
+				square->setToolTip(tr_text("Dock.FitAlign.Tip").arg(tr_text(kPlaces[cell])));
+				square->setAccessibleName(tr_text(kPlaces[cell]));
+				fit_align_group_->addButton(square, fit::kTowardGrid[cell]);
+				align_grid->addWidget(square, cell / 3, cell % 3);
+			}
+			QObject::connect(fit_align_group_, &QButtonGroup::idClicked, this,
+					 [this](int toward) { set_fit_align(toward); });
+			fit_align_->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+			place_tools_->addWidget(fit_align_);
 			place_tools_->addStretch(1);
 			show_edit_transform();
 		}
@@ -1862,7 +1897,56 @@ private:
 		const int state = scene ? auto_fit_state(scene, auto_fit_level(scene, picked)) : -1;
 		auto_fit_->setEnabled(state >= 0);
 		auto_fit_->setChecked(state == 1);
+		show_fit_align(scene, items);
 		obs_source_release(scene);
+	}
+
+	// The alignment grid: the first selected source's own fit, or the
+	// dock's own for a source with none.
+	void show_fit_align(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items)
+	{
+		if (!fit_align_group_)
+			return;
+		int toward = arrange_options().place_toward;
+		for (obs_sceneitem_t *item : items) {
+			int own = 0;
+			if (scene &&
+			    fit::fit_toward_for(scene, obs_source_get_name(obs_sceneitem_get_source(item)), own)) {
+				toward = own;
+				break;
+			}
+		}
+		if (QAbstractButton *square = fit_align_group_->button(toward); square && !square->isChecked())
+			square->setChecked(true);
+	}
+
+	// A square of the grid pressed: the selected sources' fits take it, and
+	// so does the dock's own (for the sources with none).
+	void set_fit_align(int toward)
+	{
+		obs_source_t *scene = arrange_scene();
+		const std::vector<obs_sceneitem_t *> items = scene ? arrange_items(scene)
+								   : std::vector<obs_sceneitem_t *>{};
+		int changed = 0;
+		bool without = items.empty();
+		for (obs_sceneitem_t *item : items) {
+			const char *name = obs_source_get_name(obs_sceneitem_get_source(item));
+			int own = 0;
+			if (fit::fit_toward_for(scene, name, own))
+				changed += fit::fit_set_toward_for(scene, name, toward);
+			else
+				without = true;
+		}
+		if (without) {
+			ArrangeOptions o = arrange_options();
+			o.place_toward = toward;
+			set_arrange_options(o);
+		}
+		obs_source_release(scene);
+		// (Not shown again from the fits now: OBS hands a filter its new
+		// settings at the next video tick, and the square pressed stays
+		// checked meanwhile. The dock's next look shows what they say.)
+		say(tr_text("Dock.FitAlign.Done").arg(changed));
 	}
 
 	void set_bounds(int index)
@@ -2737,6 +2821,8 @@ private:
 	QSpinBox *margin_ = nullptr;
 	QHBoxLayout *place_tools_ = nullptr; // Fit to space and Edit transform, beside the arrows
 	QPushButton *edit_transform_ = nullptr;
+	QWidget *fit_align_ = nullptr;            // Fit to space's alignment grid
+	QButtonGroup *fit_align_group_ = nullptr; // its nine squares, by Align in the space's number
 	QSpinBox *duration_ = nullptr;
 	QLabel *status_ = nullptr;
 };

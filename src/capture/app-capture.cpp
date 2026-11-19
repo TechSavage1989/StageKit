@@ -131,6 +131,106 @@ std::string decoded(const std::string &part)
 	return out;
 }
 
+// Whether a capture is aimed at this very window, the way it would be aimed
+// (by its title or by its program), and has a picture of it.
+bool capture_on(obs_source_t *capture, const OpenWindow &window, bool by_title)
+{
+	if (!capture || !obs_source_get_width(capture) || !obs_source_get_height(capture))
+		return false;
+	obs_data_t *settings = obs_source_get_settings(capture);
+	const std::string aimed = obs_data_get_string(settings, "window");
+	const long long by = obs_data_get_int(settings, "priority");
+	obs_data_release(settings);
+	const size_t a = aimed.find(':'), b = a == std::string::npos ? a : aimed.find(':', a + 1);
+	if (b == std::string::npos || by != (by_title ? 1 : 2))
+		return false;
+	return decoded(aimed.substr(0, a)) == window.title &&
+	       decoded(aimed.substr(a + 1, b - a - 1)) == window.window_class &&
+	       decoded(aimed.substr(b + 1)) == window.executable;
+}
+
+// The captures kept ready, shared by every window switcher: one per window,
+// way of aiming, kind of capture and the rest of its settings, however many
+// switchers list that window. (Each its own, the owner's Dolphin GBA windows
+// were captured two and three times over, and OBS's tick_sources went to 3 or
+// 4 ms.) The pool holds no capture: each switcher using one holds it and
+// keeps it showing itself; the pool only knows it weakly, with its users.
+struct PoolEntry {
+	obs_weak_source_t *weak = nullptr;
+	int users = 0;
+};
+std::mutex g_pool_mutex;
+std::map<std::string, PoolEntry> g_pool;
+
+std::string ready_key(obs_source_t *parent, const OpenWindow &window, bool by_title)
+{
+	obs_data_t *like = obs_data_create();
+	obs_data_t *own = obs_source_get_settings(parent);
+	obs_data_apply(like, own);
+	obs_data_release(own);
+	// (What aiming writes is not part of it.)
+	for (const char *aimed : {"window", "priority", "capture_mode"})
+		obs_data_erase(like, aimed);
+	const char *json = obs_data_get_json(like);
+	std::string key = std::string(obs_source_get_unversioned_id(parent)) + "\n" + (by_title ? "t" : "p") + "\n";
+	key += window.handle ? "#" + std::to_string(window.handle)
+			     : window.executable + "\n" + window.window_class + "\n" + window.title;
+	key += "\n";
+	key += json ? json : "";
+	obs_data_release(like);
+	return key;
+}
+
+// The capture for this key, held for the caller: the one there is, or one
+// made by `make` (`made` says which). Null when none could be made.
+template<class Make> obs_source_t *ready_take(const std::string &key, Make make, bool &made)
+{
+	made = false;
+	{
+		std::lock_guard lock(g_pool_mutex);
+		auto it = g_pool.find(key);
+		if (it != g_pool.end()) {
+			if (obs_source_t *there = obs_weak_source_get_source(it->second.weak)) {
+				it->second.users++;
+				return there;
+			}
+		}
+	}
+	obs_source_t *capture = make();
+	if (!capture)
+		return nullptr;
+	obs_source_t *there = nullptr;
+	{
+		std::lock_guard lock(g_pool_mutex);
+		PoolEntry &entry = g_pool[key];
+		there = entry.weak ? obs_weak_source_get_source(entry.weak) : nullptr;
+		if (there) {
+			entry.users++; // (made meanwhile by another: that one is used)
+		} else {
+			obs_weak_source_release(entry.weak);
+			entry.weak = obs_source_get_weak_source(capture);
+			entry.users = 1;
+			made = true;
+		}
+	}
+	if (!there)
+		return capture;
+	obs_source_release(capture);
+	return there;
+}
+
+// One user lets go of the capture for this key (its own hold is the caller's
+// to let go of).
+void ready_give(const std::string &key)
+{
+	std::lock_guard lock(g_pool_mutex);
+	auto it = g_pool.find(key);
+	if (it == g_pool.end() || --it->second.users > 0)
+		return;
+	obs_weak_source_release(it->second.weak);
+	g_pool.erase(it);
+}
+
 // A window picked by hand is kept as that one window, not its program:
 // "<program> — <its title when picked>". Two windows of one program (two
 // browser profiles) are then never taken for each other.
@@ -676,7 +776,8 @@ private:
 	// picture is there the moment it is switched to.
 	struct Ready {
 		std::string entry;
-		obs_source_t *capture = nullptr; // held, and kept showing
+		obs_source_t *capture = nullptr; // held, and kept showing (by this filter; shared, see g_pool)
+		std::string key;                 // its key in the pool
 		std::string title;               // the window's title when it was aimed
 		double empty_s = 0.0;            // how long it has had no picture
 	};
@@ -923,22 +1024,44 @@ void AppCapture::keep_ready(const std::vector<std::pair<std::string, const OpenW
 		if (!parent ||
 		    std::any_of(kept.begin(), kept.end(), [&](const Ready &r) { return r.entry == w.first; }))
 			continue;
-		// A capture like this one, aimed at that app's window.
-		obs_data_t *like = obs_data_create();
-		obs_data_t *own = obs_source_get_settings(parent);
-		obs_data_apply(like, own);
-		obs_data_release(own);
-		const std::string name = std::string(obs_source_get_name(parent)) + " (" + w.first + ")";
-		obs_source_t *capture = obs_source_create_private(obs_source_get_id(parent), name.c_str(), like);
-		obs_data_release(like);
-		if (!capture)
-			continue;
-		OpenWindow window = *w.second;
+		// A capture like this one, aimed at that app's window: the one
+		// another switcher keeps for it, or a new one.
+		const OpenWindow window = *w.second;
 		// (A picked window only ever by its whole title: aimed by its
 		// program, OBS would take another window of it once this one closes.)
-		aim_capture_at(capture, window, is_pinned(w.first) || answers(w.first, window) == 1);
+		const bool by_title = is_pinned(w.first) || answers(w.first, window) == 1;
+		const std::string key = ready_key(parent, window, by_title);
+		bool made = false;
+		obs_source_t *capture = ready_take(
+			key,
+			[&]() -> obs_source_t * {
+				obs_data_t *like = obs_data_create();
+				obs_data_t *own = obs_source_get_settings(parent);
+				obs_data_apply(like, own);
+				obs_data_release(own);
+				const std::string name =
+					std::string(obs_source_get_name(parent)) + " (" + w.first + ")";
+				obs_source_t *made_now =
+					obs_source_create_private(obs_source_get_id(parent), name.c_str(), like);
+				obs_data_release(like);
+				return made_now;
+			},
+			made);
+		if (!capture)
+			continue;
+		std::string title = window.title;
+		if (made) {
+			aim_capture_at(capture, window, by_title);
+		} else {
+			// (Shared: the title it was aimed with, which the look below
+			// goes by.)
+			obs_data_t *d = obs_source_get_settings(capture);
+			const std::string aimed = obs_data_get_string(d, "window");
+			obs_data_release(d);
+			title = decoded(aimed.substr(0, aimed.find(':')));
+		}
 		obs_source_inc_showing(capture);
-		kept.push_back(Ready{w.first, capture, window.title, 0.0});
+		kept.push_back(Ready{w.first, capture, key, title, 0.0});
 	}
 	// A picked window's title changes (a browser's with its tab): a capture
 	// that has not found it by the title it was aimed with is aimed again.
@@ -977,6 +1100,7 @@ void AppCapture::keep_ready(const std::vector<std::pair<std::string, const OpenW
 		obs_source_release(bridge);
 		obs_source_dec_showing(r.capture);
 		obs_source_release(r.capture);
+		ready_give(r.key);
 	}
 }
 
@@ -985,10 +1109,11 @@ void AppCapture::aim(obs_source_t *parent, const OpenWindow &window, const std::
 {
 	// This is the window to show now, chosen here: the guard that held
 	// back a capture whose window had closed is let go.
-	bool uncover;
+	bool uncover, was_unsafe;
 	{
 		std::lock_guard lock(mutex_);
 		shown_handle_ = window.handle;
+		was_unsafe = unsafe_;
 		unsafe_ = false;
 		uncover = guard_cover_;
 		guard_cover_ = false;
@@ -1008,8 +1133,11 @@ void AppCapture::aim(obs_source_t *parent, const OpenWindow &window, const std::
 				ready = obs_source_get_ref(r.capture);
 	}
 	// With one, the capture itself is left alone: aiming it starts its
-	// capturing afresh, which costs a frame or more.
-	if (!ready)
+	// capturing afresh, which costs a frame or more. So it is too when it is
+	// on that window already, with its picture (no ready capture is kept of
+	// it then, see `ready_for`): its own picture is the new one, at once.
+	const bool own_there = !ready && !was_unsafe && !is_pinned(entry) && capture_on(parent, window, by_title);
+	if (!ready && !own_there)
 		aim_capture_at(parent, window, by_title);
 	const bool drawn = [&] {
 		std::lock_guard lock(mutex_);
@@ -1052,7 +1180,7 @@ void AppCapture::aim(obs_source_t *parent, const OpenWindow &window, const std::
 		// the next one comes in over.
 		std::swap(last_, next_);
 	}
-	if (bridge_) {
+	if (bridge_ || own_there) {
 		// At once.
 		phase_ = Phase::Mix;
 		scene_revision_bump(); // a Scene Fit at rest looks again (its change)
@@ -1413,13 +1541,47 @@ void AppCapture::follow(obs_source_t *parent)
 		// window was switched to (the owner, beta130: "the capture is
 		// gone and does not come back").
 		const bool all = obs_source_showing(parent);
+		// Nor is the window the capture itself is on (on show, aimed at it
+		// as a ready capture would be, with its picture): that would be the
+		// same window captured twice. A switch to it takes the capture's own
+		// picture at once (`aim`). Not the window shown while the capture's
+		// own picture is not believed (it is drawn from a ready capture),
+		// nor one whose ready capture is being drawn, nor a picked window.
+		std::string own_entry;
+		{
+			bool own_ok, unsafe;
+			obs_source_t *drawn_from;
+			{
+				std::lock_guard lock(mutex_);
+				own_ok = own_ok_;
+				unsafe = unsafe_;
+				drawn_from = bridge_;
+			}
+			auto is_own = [&](const std::string &entry, const OpenWindow &window) {
+				if (!all || unsafe || is_pinned(entry) || (entry == shown && !own_ok))
+					return false;
+				{
+					std::lock_guard lock(mutex_);
+					for (const Ready &r : ready_)
+						if (r.entry == entry && r.capture == drawn_from)
+							return false;
+				}
+				return capture_on(parent, window, answers(entry, window) == 1);
+			};
+			for (size_t i = 0; i < apps.size() && own_entry.empty(); i++)
+				if (slots[i].window && is_own(apps[i], *slots[i].window))
+					own_entry = apps[i];
+			for (size_t i = 0; i < by_hand.size() && own_entry.empty(); i++)
+				if (hand[i].window && is_own(by_hand[i], *hand[i].window))
+					own_entry = by_hand[i];
+		}
 		std::vector<std::pair<std::string, const OpenWindow *>> wanted;
 		if (ready) {
 			for (size_t i = 0; i < apps.size(); i++)
-				if (slots[i].window && (all || apps[i] == shown))
+				if (slots[i].window && (all || apps[i] == shown) && apps[i] != own_entry)
 					wanted.emplace_back(apps[i], slots[i].window);
 			for (size_t i = 0; i < by_hand.size(); i++)
-				if (hand[i].window && (all || by_hand[i] == shown) &&
+				if (hand[i].window && (all || by_hand[i] == shown) && by_hand[i] != own_entry &&
 				    std::none_of(wanted.begin(), wanted.end(),
 						 [&](const auto &w) { return w.first == by_hand[i]; }))
 					wanted.emplace_back(by_hand[i], hand[i].window);
@@ -2449,6 +2611,24 @@ void register_app_capture()
 	info.get_properties = get_properties;
 	info.get_defaults = get_defaults;
 	register_timed(&info);
+	// For the tests: how many ready captures there are, and their users.
+	proc_handler_add(
+		obs_get_proc_handler(), "void stagekit_test_ready_pool(out int captures, out int users)",
+		[](void *, calldata_t *cd) {
+			long long captures = 0, users = 0;
+			std::lock_guard lock(g_pool_mutex);
+			for (const auto &[key, entry] : g_pool) {
+				obs_source_t *there = obs_weak_source_get_source(entry.weak);
+				if (there) {
+					captures++;
+					users += entry.users;
+				}
+				obs_source_release(there);
+			}
+			calldata_set_int(cd, "captures", captures);
+			calldata_set_int(cd, "users", users);
+		},
+		nullptr);
 }
 
 } // namespace stagekit

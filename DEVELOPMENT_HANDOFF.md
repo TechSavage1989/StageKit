@@ -23,6 +23,57 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
+## Window switchers share their ready captures (0.1.0-beta203)
+
+Branch `fix/ready-capture-share`, on beta202. Not pushed; release notes written by another session.
+The owner's logs: `tick_sources` median 3 to 3.9 ms while their Dolphin GBA windows (BitBlt Window
+Captures) were open. Each Automatic Window Switcher kept a private ready capture of every open
+listed window, the one its own capture was already on included, so a window was captured two or
+three times. Now the ready captures are one per window, aiming and capture settings for the whole
+plugin (`g_pool` in `src/capture/app-capture.cpp`, weak references and a count of users), and no
+ready capture is kept of the window the switcher's own capture is on; switching to that window
+mixes in the capture's own picture at once. See AGENTS.md, *Ready captures are shared*. Not done:
+leaving out a window another ordinary capture source already shows. The ungated window switcher
+section of the full run had two counts changed (3 to 2 kept, the capture's own window having none)
+and was not run. Gates passed: READY_SHARE (new, 4 checks), CLEAR_PICKED, GAME_AREA,
+AUTO_FRAME_SWITCHER, CAPTURE_HIDE, STANDBY_COVER. AUTO_WINCLOSE and AUTO_KEEP_AIM (Auto Capture,
+no switcher) fail two checks each here; AUTO_WINCLOSE fails the same with beta202's
+`app-capture.cpp` (AUTO_KEEP_AIM not tried so). Not seen on
+Windows: what a real Window Capture costs, and whether a switch to the capture's own window is
+clean there.
+
+## Fit alignment rule B and the alignment grid (0.1.0-beta203)
+
+Branch `fix/fit-rule-b-grid`, on beta202. Notes: `docs/releases/0.1.0-beta203.md` (to be numbered
+just before pushing; another session adds the window switchers' shared ready captures to the same
+release). Not pushed. The owner chose rule B: "b is the correct logic. these features need to work
+with any layout format in the future, and not be specific to mine", and asked for "similar
+Alignment design as the built in bounds alignment for the transform menu".
+
+- *Align in the space* alone places a kept-size source (`kept_in_room`); `soft_sides_of`,
+  `lean_y_of`, `trim_for_kept_in` and the `grows_*`/`leans_*` on claims are gone. What keeps two
+  fits from chasing: a resizing fit goes by what a kept-size fit of its standing holds at its
+  home (`Claim::least`, `Obstacle::holds`), never by where it lies. Built from an earlier partial
+  attempt (beta199-era), merged onto beta202 by hand; the dock's checks (`spaces_kept`) carry the
+  held box (`MovedBox::keeps`, `held`).
+- The filters' *Align in the space* list is in grid order with arrows (values unchanged; a real
+  grid is not possible in OBS's properties window). The dock has a real 3x3 grid beside Fit to
+  space; a source with no fit uses `ArrangeOptions::place_toward`, saved as
+  `stagekit.place.toward`.
+- Tests: new `[fit align: ...]` (`STAGEKIT_TEST_ONLY_FIT_ALIGN`). `fit_enable_test`'s *a game made
+  60 px smaller by hand fills its space again* expected the column to stay to the pixel; under
+  rule B the game fills its whole space (451 against the hand layout's 447, within the Size
+  tolerance) and the column's resized sources move up to 5 px by their alignment, the gap kept:
+  the check now allows 6 px and checks the gap. `fit_visible_test` expected the beta194 packing
+  (a kept-size chat box at *The middle* packed the gap under the camera; a column at *The middle*
+  against the right edge): its cases now set *The top* (chat box, and the camera in the banner
+  case) and *The right* (column), and the game is centred in the room round the column's home.
+  `layout_scenes_test`'s camera and chat box are kept towards the right (4): at *The middle* they
+  moved 26.65 px with each capture of another shape, which is rule B. **The owner's own layout
+  scenes have their column at *The middle* unless they set it**; the release notes say so.
+  Gates passed: FIT_ALIGN, FIT_ENABLE, FIT_KEEP_SIZE, FIT_PRIORITY, FIT_GROUPS, FIT_TOOL,
+  DOCK_BOUNDS, FIT_VISIBLE, LAYOUT, TOOLTIPS.
+
 ## Scene Fit rests at rest (0.1.0-beta202)
 
 Branch `fix/scene-fit-idle`, on beta201. Notes: `docs/releases/0.1.0-beta202.md` (to be numbered
