@@ -14260,6 +14260,119 @@ static void tooltips_test()
 // by program at firefox.exe, and after a restart OBS's Window Capture found
 // the other profile's window by itself, which was on the Ignored list. Run
 // after the switcher's section, and alone with STAGEKIT_TEST_ONLY_CLEAR_PICKED.
+// Two window switchers listing the same windows keep one capture of each in
+// the background between them, not one each; none of the window the capture
+// itself is on; and a switch still draws at once.
+static void ready_share_test()
+{
+	printf("\n[window switcher: ready captures shared, none of the capture's own window]\n");
+	auto pool = [](long long &users) {
+		calldata_t cd = {};
+		proc_handler_call(obs_get_proc_handler(), "stagekit_test_ready_pool", &cd);
+		const long long n = calldata_int(&cd, "captures");
+		users = calldata_int(&cd, "users");
+		calldata_free(&cd);
+		return n;
+	};
+	auto kept = [](obs_source_t *f) {
+		calldata_t cd = {};
+		proc_handler_call(obs_source_get_proc_handler(f), "ready_count", &cd);
+		const long long n = calldata_int(&cd, "count");
+		calldata_free(&cd);
+		return n;
+	};
+	auto aimed = [](obs_source_t *cap) {
+		obs_data_t *d = obs_source_get_settings(cap);
+		const std::string window = obs_data_get_string(d, "window");
+		obs_data_release(d);
+		return window;
+	};
+	obs_source_t *caps[2] = {}, *sws[2] = {};
+	for (int i = 0; i < 2; i++) {
+		// (Alike: the same kind and settings, so their ready captures can be one.)
+		obs_data_t *cd = obs_data_create();
+		obs_data_set_int(cd, "color", 0xFF0000FFLL);
+		obs_data_set_int(cd, "width", 200);
+		obs_data_set_int(cd, "height", 100);
+		caps[i] = obs_source_create("color_source", i ? "RS Capture 2" : "RS Capture 1", cd, nullptr);
+		obs_data_release(cd);
+		obs_data_t *fd = obs_data_create();
+		obs_data_array_t *apps = obs_data_array_create();
+		for (const char *name : {"game.exe", "GBA1", "GBA2"}) {
+			obs_data_t *e = obs_data_create();
+			obs_data_set_string(e, "value", name);
+			obs_data_array_push_back(apps, e);
+			obs_data_release(e);
+		}
+		obs_data_set_array(fd, "apps", apps);
+		obs_data_array_release(apps);
+		obs_data_set_bool(fd, "ready", true);
+		obs_data_set_int(fd, "change", 1); // a cut
+		sws[i] = obs_source_create("stagekit_app_capture", i ? "RS Switcher 2" : "RS Switcher 1", fd, nullptr);
+		obs_data_release(fd);
+		obs_source_filter_add(caps[i], sws[i]);
+		obs_source_inc_showing(caps[i]);
+	}
+	std::vector<uint8_t> frame;
+	auto draw_for = [&](int ms) {
+		for (int waited = 0; waited < ms; waited += 50) {
+			render(caps[1], 200, 100);
+			frame = render(caps[0], 200, 100);
+			sleep_ms(50);
+		}
+	};
+	auto windows = [&](const char *text) {
+		for (obs_source_t *sw : sws) {
+			calldata_t cd = {};
+			calldata_set_string(&cd, "windows", text);
+			proc_handler_call(obs_source_get_proc_handler(sw), "set_test_windows", &cd);
+			calldata_free(&cd);
+		}
+	};
+	draw_for(300);
+	windows("Game|game.exe|front|11\nGBA1 - Muted|dolphin.exe||12\nGBA2 - Muted|dolphin.exe||13");
+	draw_for(600);
+	long long users = 0;
+	const long long first = pool(users);
+	const std::string at_first = aimed(caps[0]);
+	CHECK(first == 2 && users == 4 && kept(sws[0]) == 2 && kept(sws[1]) == 2 &&
+		      at_first.find("game.exe") != std::string::npos,
+	      "two switchers listing the same windows share one ready capture of each, and keep none of the window their captures are on (%lld captures, %lld users; %lld and %lld kept; aimed at %s)",
+	      first, users, kept(sws[0]), kept(sws[1]), at_first.c_str());
+	windows("Game|game.exe||11\nGBA1 - Muted|dolphin.exe|front|12\nGBA2 - Muted|dolphin.exe||13");
+	draw_for(150);
+	const uint32_t at_once = obs_source_get_width(caps[0]);
+	const bool drawn = opaque(frame);
+	draw_for(600);
+	CHECK(at_once == 200 && drawn && aimed(caps[0]) == at_first && pool(users) == 2,
+	      "a switch draws the shared capture at once, without aiming the capture (%u wide, drawn %d, %lld captures)",
+	      at_once, drawn, pool(users));
+	windows("Game|game.exe|front|11\nGBA1 - Muted|dolphin.exe||12\nGBA2 - Muted|dolphin.exe||13");
+	draw_for(150);
+	const uint32_t back_w = obs_source_get_width(caps[0]);
+	const bool back_drawn = opaque(frame);
+	draw_for(600);
+	CHECK(back_w == 200 && back_drawn && aimed(caps[0]) == at_first && kept(sws[0]) == 2 && pool(users) == 2,
+	      "back to the window the capture is on, its own picture is drawn at once and still no ready capture of it is made (%u wide, drawn %d, %lld kept)",
+	      back_w, back_drawn, kept(sws[0]));
+	obs_source_filter_remove(caps[0], sws[0]);
+	obs_source_release(sws[0]);
+	draw_for(300);
+	const long long one_left = pool(users);
+	const long long one_users = users;
+	obs_source_filter_remove(caps[1], sws[1]);
+	obs_source_release(sws[1]);
+	draw_for(300);
+	const long long none_left = pool(users);
+	CHECK(one_left == 2 && one_users == 2 && none_left == 0 && users == 0,
+	      "the ready captures are kept while one switcher uses them and let go when both are gone (%lld captures for %lld users, then %lld)",
+	      one_left, one_users, none_left);
+	for (obs_source_t *cap : caps) {
+		obs_source_dec_showing(cap);
+		obs_source_release(cap);
+	}
+}
+
 static void clear_picked_test()
 {
 	printf("\n[window switcher: picked windows cleared from both lists, nothing unlisted drawn]\n");
@@ -15379,6 +15492,14 @@ int main(int argc, char **argv)
 
 	if (getenv("STAGEKIT_TEST_ONLY_AUTO_REST")) { // to try that section alone
 		auto_rest_test();
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
+
+	if (getenv("STAGEKIT_TEST_ONLY_READY_SHARE")) { // to try that section alone
+		ready_share_test();
 		obs_shutdown();
 		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
 		       g_failures == 1 ? "" : "s");
@@ -22966,8 +23087,8 @@ int main(int argc, char **argv)
 				// (The capture itself is left where it was: aiming it again is
 				// what cost frames at every switch.)
 				const std::string left_at = aimed(title, priority);
-				CHECK(ready == 3 && left_at == "modeller.exe" && at_once == 200 && opaque(frame),
-				      "with the other windows kept captured, every open app has a capture in the background and a switch draws that picture without aiming the capture again (%lld kept, the capture still at %s)",
+				CHECK(ready == 2 && left_at == "modeller.exe" && at_once == 200 && opaque(frame),
+				      "with the other windows kept captured, every open app but the one the capture is on has a capture in the background and a switch draws that picture without aiming the capture again (%lld kept, the capture still at %s)",
 				      ready, left_at.c_str());
 				// In no scene on show for a while (another scene is on), and
 				// back: the picture is there again without switching windows.
@@ -22983,7 +23104,7 @@ int main(int argc, char **argv)
 				const long long away = kept_now();
 				obs_source_inc_showing(cap);
 				draw_for(600);
-				CHECK(away == 1 && kept_now() == 3 && obs_source_get_width(cap) == 200 && opaque(frame),
+				CHECK(away == 1 && kept_now() == 2 && obs_source_get_width(cap) == 200 && opaque(frame),
 				      "away from every scene on show only the window shown stays captured, and its picture is there on the way back (%lld kept away, %lld back, %u wide)",
 				      away, kept_now(), obs_source_get_width(cap));
 			}
@@ -23001,6 +23122,7 @@ int main(int argc, char **argv)
 			obs_source_release(one);
 			obs_source_release(cap);
 		}
+		ready_share_test();
 		clear_picked_test();
 		auto_frame_switcher_test(); // (alone: STAGEKIT_TEST_ONLY_AUTO_FRAME_SWITCHER)
 

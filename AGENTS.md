@@ -1953,6 +1953,23 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     under 10 ms and no StageKit tick over 7 ms: it was the captures starting. The parent is aimed
     only when there is no ready capture with a picture yet, so its settings do not say what is
     shown: ask `app_capture_shown_window` (above).
+  - **Ready captures are shared, and none is kept of the capture's own window** (after beta202). The
+    owner's log: `tick_sources` at a median of 3 to 3.9 ms with their Dolphin GBA windows open,
+    each window captured once per switcher that lists it and once more by the parent. Now one
+    private ready capture per window (its handle, else program, class and title), way of aiming
+    and kind and settings of the parent less what aiming writes (`ready_key`) serves every
+    switcher (`g_pool`, `ready_take` / `ready_give` in `app-capture.cpp`): the pool holds it only
+    weakly with a count of users; each switcher holds it and keeps it showing itself, so it goes
+    when the last one lets go (filter destroyed, a change of collection, shutdown) and nothing is
+    held past that. Only the switcher that made it aims it. And `ready_for` keeps no ready capture
+    of the window the parent is on (on show, `capture_on`: aimed at it the way a ready capture
+    would be, with a picture; never a pinned window, never while `unsafe_`, never the shown
+    window while `own_ok_` is false, never one whose ready capture is `bridge_`); a switch to it
+    (`aim`, `own_there`) leaves the parent alone and mixes its own picture in at once. Another
+    ordinary capture of the same window elsewhere in the collection is not looked for: drawing
+    from it would bring its filters along. Tested in `[window switcher: ready captures shared
+    ...]` (`ready_share_test`, alone with `STAGEKIT_TEST_ONLY_READY_SHARE`;
+    `stagekit_test_ready_pool`, a global proc).
   - *Captured window* (`picked`, by number, append-only: 0 *Wait until switched to*, as it
     comes; 1 *Switch at selection*): what the Capture Active Window key does through the filter.
     Waiting, the window's program joins `by_hand` and becomes `last_held_`, so it is captured in

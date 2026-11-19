@@ -23,6 +23,25 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
+## Window switchers share their ready captures (0.1.0-betaNEXT)
+
+Branch `fix/ready-capture-share`, on beta202. Not pushed; release notes written by another session.
+The owner's logs: `tick_sources` median 3 to 3.9 ms while their Dolphin GBA windows (BitBlt Window
+Captures) were open. Each Automatic Window Switcher kept a private ready capture of every open
+listed window, the one its own capture was already on included, so a window was captured two or
+three times. Now the ready captures are one per window, aiming and capture settings for the whole
+plugin (`g_pool` in `src/capture/app-capture.cpp`, weak references and a count of users), and no
+ready capture is kept of the window the switcher's own capture is on; switching to that window
+mixes in the capture's own picture at once. See AGENTS.md, *Ready captures are shared*. Not done:
+leaving out a window another ordinary capture source already shows. The ungated window switcher
+section of the full run had two counts changed (3 to 2 kept, the capture's own window having none)
+and was not run. Gates passed: READY_SHARE (new, 4 checks), CLEAR_PICKED, GAME_AREA,
+AUTO_FRAME_SWITCHER, CAPTURE_HIDE, STANDBY_COVER. AUTO_WINCLOSE and AUTO_KEEP_AIM (Auto Capture,
+no switcher) fail two checks each here; AUTO_WINCLOSE fails the same with beta202's
+`app-capture.cpp` (AUTO_KEEP_AIM not tried so). Not seen on
+Windows: what a real Window Capture costs, and whether a switch to the capture's own window is
+clean there.
+
 ## Fit alignment rule B and the alignment grid (0.1.0-betaNEXT)
 
 Branch `fix/fit-rule-b-grid`, on beta202. Notes: `docs/releases/0.1.0-betaNEXT.md` (to be numbered
