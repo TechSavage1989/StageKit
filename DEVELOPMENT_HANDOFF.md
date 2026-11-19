@@ -24,6 +24,9 @@ Resize-on entries keep a hand layout within their size tolerance and fill an und
 Resize-off saves the reference image in scene pixels, including during conversion from an older
 collection. The FIT_TOOL and FIT_ENABLE sections of the headless test cover dock placement, the
 hand layout, timing of handoff, capture-size changes, signal loss and recovery.
+Both isolated tests passed under Linux libobs and Xvfb, including conversion of legacy scales after
+a capture regains its signal. The run also executes the full suite with `tests/run-tests.sh`.
+[Headless validation](https://github.com/TechSavage1989/StageKit/actions/runs/44457536649).
 
 ## Auto Capture stays aimed at a game while its picture comes back (0.1.0-beta197)
 
