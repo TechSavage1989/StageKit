@@ -3112,6 +3112,22 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   raised in `ShadowBackdrop::update` and `settle_items`: anything else that changes the room
   must raise it too. `stagekit_test_fit_counts` (a global proc) gives a fit filter's full ticks
   and glides, for the tests.
+  **A Scene Fit is idle as a whole** (2026-11-19, the owner's log: three Scene Fits 0.04 to
+  0.06 ms a tick, the largest part of StageKit's ticks). Off screen it decides before anything
+  else (no counting of sources, no scans, no passes) and ticks fully every fifteenth tick. On
+  screen it skips its tick but every `kRestEvery` (30) once `kQuietTicks` (30) full ticks in a
+  row found nothing moved, every entry at rest and not `settling()` (a move or resize by hand, a
+  glide, a wait, a window switcher's change, a home's space, a scene just shown), nothing
+  `pending()`, and the same `RestKey`: `scene_revision()`, `claims_revision()` (raised by
+  `claim_set` only when a claim changes, and `claim_clear`), `glance_revision()` (a glance that
+  sees another part drawn) and `shadow_room_revision()`. A window switcher's change raises
+  `scene_revision_bump()` when its mix starts. Skipped ticks still glance (`glance_at_rest`,
+  every other tick, every showing item) and give their time to `prepare`. *All sources* is
+  counted again only when the scenes' revision changed, or every 2 s. Measured with
+  `SCENE_FIT=1 tests/run-perf.sh` (the synthetic collection with one Scene Fit per layout
+  scene): Scene Fit 78 to 28 µs a frame on Live, 109 to 32 on Chat Live, 22 to 13 on Standby, about 15
+  of it the glances' drawing, which a full tick at rest did every tick before too; nothing on
+  screen 15 to 16 (unchanged: the full tick every fifteenth is most of it).
 <!-- ==== end scene-filters:fit ==== -->
 <!-- ==== scene-filters:standby-corners ==== -->
 - **Scene Standby and Scene Corners keep a filter on each source; neither draws** (Scene Corners

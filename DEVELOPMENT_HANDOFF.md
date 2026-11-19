@@ -23,6 +23,28 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
+## Scene Fit rests at rest (0.1.0-betaNEXT)
+
+Branch `fix/scene-fit-idle`, on beta201. Notes: `docs/releases/0.1.0-betaNEXT.md` (to be numbered
+just before pushing). Not pushed. The owner's OBS 32 log: StageKit's ticks 0.27 to 0.36 ms a frame,
+`stagekit_scene_fit: tick 5400 calls, 0.040–0.059 ms each` for three Scene Fits, one per layout
+scene. Scene Fit already had the off-screen rule (`kIdleEvery`), but it counted *All sources* and
+set claims first; and on screen it did a full solve every tick at rest. Now (`SceneFit::tick`): the
+skip is decided first; on screen, after 30 quiet full ticks with the same `RestKey` (scene, claims,
+glances, shadow room revisions), a full tick every 30th only, glances kept going in between
+(`glance_at_rest`). New: `claims_revision()`, `glance_revision()`, `FitEngine::settling()`, a
+`scene_revision_bump()` where a window switcher starts its mix, and `SCENE_FIT=1` /
+`--scene-fit` for the perf harness. See AGENTS.md, *Fit to Space is idle off screen*.
+
+Measured (`SCENE_FIT=1 FRAMES=600 WARMUP=6 tests/run-perf.sh`, µs a frame of Scene Fit, without
+ticks of 1 ms or more, before → after): Live 78.0 → 28.2, Chat Live 109.1 → 31.8, Standby 22.0 →
+12.9, nothing on screen 15.0 → 15.8 (noise; the off-screen full tick every fifteenth is most of it,
+not cut further). StageKit's ticks in all, without those of 1 ms or more: Live 171.9 → 114.0, Chat
+Live 207.4 → 119.1. Without the glances (an experiment, not shipped) Scene Fit on Chat Live was
+about 20: the rest is the glances' drawing, which the full tick at rest did every frame before too.
+Gates passed: FIT_GROUPS, FIT_PRIORITY, FIT_ENABLE, FIT_KEEP_SIZE, FIT_OWNER, FIT_TOOL,
+FIT_VISIBLE, DOCK_BOUNDS, LAYOUT. The full run (its ungated `[scene fit]` section) was not run.
+
 ## Dock: Bounds list and Auto-fit switch (0.1.0-beta201)
 
 Branch `feat/dock-bounds-autofit`, on the beta200 branch. Notes: `docs/releases/0.1.0-beta201.md`

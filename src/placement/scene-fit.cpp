@@ -36,6 +36,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/loading.hpp"
 #include "../common/pick-list.hpp"
 #include "../common/scene-filter-ids.hpp"
+#include "../common/scene-rev.hpp"
 #include "../common/scene-util.hpp"
 #include "../common/stand-in.hpp"
 #include "../common/timing.hpp"
@@ -63,7 +64,14 @@ namespace {
 
 constexpr int kPasses = 8;          // the most times the entries are worked out in one tick (each way round in turn)
 constexpr uint32_t kIdleEvery = 15; // off screen, a full tick four times a second
+// On screen at rest (nothing in the scene changed, no claim, glance, shadow
+// room or settings, and nothing under way in any entry for `kQuietTicks` full
+// ticks in a row): a full tick every `kRestEvery` only, a slow look for
+// whatever no revision tells of.
+constexpr uint32_t kQuietTicks = 30;
+constexpr uint32_t kRestEvery = 30;
 constexpr double kLookForSources = 0.5; // with All sources, how often the scene's sources are counted
+constexpr double kCountAnyway = 2.0;    // and how often when nothing in the scenes changed
 constexpr double kFillsScreen = 0.9;    // a source this much of the screen is never fitted unasked
 
 // Sources fitted. Saved by number: append only. A filter saved before there
@@ -414,6 +422,7 @@ public:
 	SceneFit(obs_data_t *settings, obs_source_t *source) : source_(source)
 	{
 		idle_turn_ = (uint32_t)((reinterpret_cast<uintptr_t>(this) >> 4) % kIdleEvery);
+		rest_turn_ = (uint32_t)((reinterpret_cast<uintptr_t>(this) >> 4) % kRestEvery);
 		update(settings);
 		std::lock_guard lock(g_fits_mutex);
 		g_fits.push_back(this);
@@ -526,9 +535,13 @@ private:
 			now = std::exchange(count_now_, false);
 		}
 		count_s_ += seconds;
-		if (!all || (!now && count_s_ < kLookForSources))
+		// Nothing in the scenes changed: counted every `kCountAnyway` only
+		// (another filter's list, a source's size off screen).
+		const uint64_t rev = scene_revision();
+		if (!all || (!now && (count_s_ < kLookForSources || (rev == count_rev_ && count_s_ < kCountAnyway))))
 			return;
 		count_s_ = 0.0;
+		count_rev_ = rev;
 		obs_data_t *settings = obs_source_get_settings(source_);
 		const std::vector<std::string> found = unlisted_sources(source_, parent_, settings);
 		bool changed;
@@ -578,11 +591,32 @@ private:
 	std::vector<std::string> unlisted_;           // the sources fitted besides the listed ones (under mutex_)
 	bool count_now_ = true;                       // (under mutex_)
 	double count_s_ = 0.0;                        // on the tick only
+	uint64_t count_rev_ = 0;                      // scene_revision() at the last count (on the tick only)
 	// One look at what is in the way for each way of measuring the
 	// entries use (normally one): by visible pixels, without shadows.
 	std::map<int, FitScan> scans_;
 	std::atomic<bool> forget_{false};
 	uint32_t idle_turn_ = 0;
+	// At rest on screen: what the last full tick went by, and how many
+	// full ticks in a row found nothing changed and nothing under way.
+	struct RestKey {
+		uint64_t scenes = 0, claims = 0, glances = 0, rooms = 0;
+		size_t entries = 0;
+		bool operator==(const RestKey &o) const
+		{
+			return scenes == o.scenes && claims == o.claims && glances == o.glances && rooms == o.rooms &&
+			       entries == o.entries;
+		}
+	};
+	RestKey rest_key_;
+	uint32_t quiet_ = 0, rest_turn_ = 0;
+	bool rest_showing_ = false;
+	size_t entries_count()
+	{
+		std::lock_guard lock(mutex_);
+		return entries_.size();
+	}
+	void glance_at_rest();
 	uint64_t unsettled_logged_ = 0;
 	bool first_update_ = true; // the settings read as OBS made or loaded the filter
 	bool was_off_ = false;     // seen switched off (on the tick only)
@@ -612,6 +646,36 @@ void SceneFit::tick(float seconds)
 			claim_clear(entry->engine.get());
 		return;
 	}
+	// Off screen with nothing asked of any entry: four times a second only.
+	// On screen at rest: twice a second only. Skipped, nothing is counted,
+	// gathered or worked out; the time goes to each entry's next full tick
+	// (`FitEngine::prepare`), and the sources are counted on a full one.
+	const bool showing = obs_source_showing(parent_);
+	bool asked = false;
+	{
+		std::lock_guard lock(mutex_);
+		asked = count_now_;
+	}
+	for (const auto &entry : entries)
+		asked = asked || entry->engine->pending();
+	const RestKey key{scene_revision(), claims_revision(), glance_revision(), shadow_room_revision(),
+			  entries.size()};
+	if (showing != rest_showing_ || asked || !(key == rest_key_))
+		quiet_ = 0;
+	rest_showing_ = showing;
+	const bool skip = !asked && (showing ? quiet_ >= kQuietTicks && ++rest_turn_ % kRestEvery != 0
+					     : ++idle_turn_ % kIdleEvery != 0);
+	if (skip) {
+		count_s_ += seconds;
+		for (const auto &entry : entries)
+			entry->engine->skip_time(seconds);
+		// The glances go on (every other frame is as often as they can
+		// be started and read back), so a widget that starts or stops
+		// drawing is noticed as soon as before (`glance_revision`).
+		if (showing && rest_turn_ % 2 == 0)
+			glance_at_rest();
+		return;
+	}
 	count_sources(seconds);
 	bool all;
 	{
@@ -633,17 +697,8 @@ void SceneFit::tick(float seconds)
 		entry->engine->set_claims_firm(all);
 	if (forget_.exchange(false))
 		scans_.clear();
-	// Off screen with nothing asked of any entry: four times a second only.
-	if (!obs_source_showing(parent_)) {
-		bool asked = false;
-		for (const auto &entry : entries)
-			asked = asked || entry->engine->pending();
-		if (!asked && ++idle_turn_ % kIdleEvery != 0) {
-			for (const auto &entry : entries)
-				entry->engine->skip_time(seconds);
-			return;
-		}
-	}
+	// Whether this full tick found everything at rest (see `quiet_`).
+	bool quiet = showing;
 	const size_t n = entries.size();
 	// Each entry's item, held for this tick only.
 	std::vector<obs_sceneitem_t *> items(n, nullptr);
@@ -754,6 +809,9 @@ void SceneFit::tick(float seconds)
 				engine.publish_claim(p);
 			}
 		}
+		for (size_t i = 0; i < n; i++)
+			if (moved_any[i] || (way[i] == Way::Solve && !at_rest[i]))
+				quiet = false;
 		if (moved && pass == kPasses) {
 			// Kept as the last pass left them; said in the log, now and then.
 			const uint64_t now = os_gettime_ns();
@@ -809,6 +867,41 @@ void SceneFit::tick(float seconds)
 		}
 		engine.apply(preps[i], spaces[i]);
 	}
+	for (const auto &entry : entries)
+		if (entry->engine->settling() || entry->engine->pending())
+			quiet = false;
+	// Taken after the tick: what it changed itself (a claim said again
+	// the same changes nothing) is the next tick's key.
+	const RestKey after{scene_revision(), claims_revision(), glance_revision(), shadow_room_revision(),
+			    entries_count()};
+	quiet_ = quiet && after == key ? quiet_ + 1 : 0;
+	rest_key_ = after;
+}
+
+// Every item that shows in the scene (in groups too), glanced at as a full
+// tick at rest would (`FitScan::at_rest`), held for the call only.
+bool add_glanced(obs_scene_t *, obs_sceneitem_t *item, void *param)
+{
+	obs_source_t *source = obs_sceneitem_get_source(item);
+	if (!obs_sceneitem_visible(item) || !source || obs_obj_is_private(source) || is_stand_in(source) ||
+	    is_morph_layer(item))
+		return true;
+	if (obs_sceneitem_is_group(item)) {
+		obs_sceneitem_group_enum_items(item, add_glanced, param);
+		return true;
+	}
+	obs_sceneitem_addref(item);
+	static_cast<std::vector<obs_sceneitem_t *> *>(param)->push_back(item);
+	return true;
+}
+
+void SceneFit::glance_at_rest()
+{
+	std::vector<obs_sceneitem_t *> items;
+	obs_scene_enum_items(obs_scene_from_source(parent_), add_glanced, &items);
+	glance_step(this, parent_, items);
+	for (obs_sceneitem_t *item : items)
+		obs_sceneitem_release(item);
 }
 
 // ---------------------------------------------------------------- the window

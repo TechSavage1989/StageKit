@@ -16,7 +16,8 @@
 # "Live,Chat Live,Standby,(off)"), OUT (folder for the results, default a new
 # one under /tmp), STAND_INS=1 (replace sources of kinds not loaded here, for
 # a real collection), PLUGIN (the stagekit.so to measure, default the build
-# dir's). The owner's collections are private: never commit them or their
+# dir's), SCENE_FIT=1 (the synthetic collection with one Scene Fit per layout
+# scene in place of its Fit to Space filters). The owner's collections are private: never commit them or their
 # results.
 #
 # llvmpipe draws a 2560x1440 frame in a few tenths of a second, and a
@@ -44,7 +45,8 @@ if [ ! -x "$perf" ]; then
 fi
 runs=("$@")
 if [ "${#runs[@]}" -eq 0 ]; then
-  python3 -I "$root/tests/make-perf-collection.py" "$out/synthetic.json" --scale "${SCALE:-0.25}"
+  python3 -I "$root/tests/make-perf-collection.py" "$out/synthetic.json" --scale "${SCALE:-0.25}" \
+    $([ "${SCENE_FIT:-0}" = 1 ] && echo --scene-fit)
   runs=("synthetic=$out/synthetic.json")
 fi
 scene_args=()

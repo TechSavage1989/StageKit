@@ -132,6 +132,11 @@ struct Claim {
 void claim_set(obs_source_t *scene, int64_t item, const void *owner, const Claim &claim);
 void claim_clear(const void *owner);
 bool claim_of(obs_source_t *scene, int64_t item, const void *asking, Claim &out);
+// Raised when any claim is made, changed or taken back.
+uint64_t claims_revision();
+// Raised when a glance sees an item draw another part of itself than at the
+// glance before (or first sees it).
+uint64_t glance_revision();
 
 struct Glance {
 	bool any = false;                   // something is drawn
@@ -451,6 +456,15 @@ public:
 		return dirty_ || placed_ || shared_in_ || new_item_ || refit_;
 	}
 	void skip_time(float seconds) { idle_s_ += seconds; }
+	// Something under way that counts the time of every tick: a move by
+	// hand or a key, a resize by hand, a glide, a wait for others to stop,
+	// a window switcher's change, the space round a new home, a scene just
+	// come into view. A Scene Fit at rest skips its ticks only without.
+	bool settling() const
+	{
+		return moving_ || hand_on_ || home_settling_ || unsettled_ || switching_ || with_switch_ ||
+		       glide_ < 1.0 || (was_showing_ && shown_for_ < kArriving);
+	}
 	void not_free() { have_cur_ = false; }
 	Box current() const { return cur_; }
 
