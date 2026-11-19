@@ -1796,6 +1796,95 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   of, the menu aimed at first and the game watched all the same, a GBA window closing not let
   go of, a game under another title opened within the wait followed. The stand-in windows have a sixth field, an id for the handle. Whether OBS's Game Capture
   really drops the hook's last frame when aimed at no window is not seen on Windows.
+- **Auto Capture stays aimed at a game while its picture comes back** (`running`, `aimed`,
+  `same_program`, `kept`, `kKeepGrace`, `keep_seen_s_` in `src/capture/auto-capture.cpp`;
+  betaNEXT, after beta193). The owner (2026-11-19), of a windowed Switch emulator running a Vulkan
+  game: "auto capture still takes a while to grab some windowed games". Their log: each time
+  OBS freed the hook (`vulkan capture freed`, twice followed by `capture window no longer
+  exists`: the emulator made its window again, for full screen or a game started or stopped),
+  Auto Capture said `back to any full-screen application` about half a second later and `now
+  follows` the emulator again 3.5, 45, 6 and over 37 s after that; OBS then hooked it in 3.4 to
+  4.2 s. Left aimed, OBS hooked the same frees by itself in 0.14 to 0.16 s (once 1.6 s). The
+  cause was not in Auto Capture's choosing: in each gap no window of the program passed the
+  window watch's filter (visible, not minimised, not owned, not a tool window, a title), though
+  in two of the three the same process ran all along (no new hook injected when it came back;
+  the 45 s one was a new process), so nothing was chosen. The program was on *Always capture*,
+  so no rest, probe, let-go (`spent_`) or title change was involved. OBS's own search
+  is looser (minimised windows too, by program alone at priority 2), and each change of the
+  capture's mode or window starts OBS's capture again (`capture_needs_reset` in OBS's
+  game-capture.c), so going to any full-screen and back cost two restarts. Which of the
+  emulator's windows the filter missed is a guess (its game-list window minimised, with the
+  render window a top-level window of its own). Now:
+  - The window watch also gives every program with a top-level window of any kind, shown or
+    not (`running`, worked out in `collect_window` before its filter, with a process-name cache
+    `g_program_of` pruned at every look; on the watch's thread, never in a tick).
+  - The tick finds the program aimed at (`aimed`, from `applied_key_`; none for `kRestKey`)
+    and chooses, in order: a candidate in front; its window by key (`current`); another of its
+    windows (`same_program`, the one in front first); a stand-in for it built from the key and
+    the capture's own title (`kept`, so nothing is written), while no window of it is listed at
+    all and it is in `running` or was in the last `kKeepGrace` (3 s, for a program whose one
+    window is being made again); an *Always capture* program open; a remembered game open; then
+    the fallback. So in the grace too only a candidate in front takes over (a first build let an
+    open candidate take over in the grace; the task's rule is that only a click does). `kept` needs
+    it to be a candidate by its name or the capture's title, not excluded, not `spent_`
+    (beta190's let-go wins) and a Game Capture.
+  - **Beta190's watch with none of the program's windows listed** (`watch_captured`'s `!open`;
+    found in review: keeping the aim had made a Dolphin-like program whose menu was minimised
+    when its game window closed keep the game's last frame, where it used to go to any
+    full-screen). Treated as the program closed (the watch starts afresh, the aim is kept) when
+    it is out of `running`, the capture has no picture, or OBS has started or stopped capturing
+    since the game's window was last there: `hook_events_` counts the Game Capture's own
+    `hooked` and `unhooked` signals (`listen`, `unlisten`, in `attach`/`detach`/the destructor;
+    `Captured::hooks`), because OBS can hook a game again in a tenth of a second, between two
+    looks, and a width check alone then sees the picture there all along. Otherwise (running,
+    the same picture there) a game window that is still there unlisted (`exists`: `IsWindow` on
+    Windows, a `hidden` stand-in in the tests; hidden while it makes its drawing again) is the
+    game, and with all of them gone the usual `kLetGoAfter` let-go follows. The let-go also
+    counts as spent the program's windows seen while the game was that are there unlisted (the
+    minimised menu), so the menu brought back is not aimed at. Not covered: a game window gone
+    while OBS's own window (`gc->window`, which OBS finds by the title at priority 2) is another
+    of the program's windows, with the last frame up for longer than half a second before the
+    game draws again: that is let go of, and the next window shown is aimed at afresh.
+  - **Switched off and on again, it aims afresh** (`tick`'s disabled branch clears
+    `aimed_once_` and `applied_key_`, as `attach` does). Found in review: a capture aimed by
+    hand (`hook_front_window` switches Auto Capture off) was not handed back when it was switched
+    on again while its game from before was still open (the key matched the stale
+    `applied_key_`, so nothing was written; with `kept`, also while that game ran unseen or for
+    the grace).
+  - Another class of the same program (`same_program` or in front): with no picture it is aimed
+    at in the same tick; with the picture there it is taken as it is (`applied_key_` only, logged
+    `stays on ..., whose window changed`), since writing the window restarts OBS's capture.
+  - Logged once each time the picture goes while aimed (`had_picture_`, `keep_said_`): `kept on
+    <program> while its picture comes back`, and once more with `(no window of it can be seen;
+    it is still running)` or `(...; it was running a moment ago)`.
+  - Rests are as before: a remembered game kept with no picture still rests after
+    `give_up_s_`; *Always capture* never rests. `rest_`, `tried_` and `spent_` take a program
+    for closed only when it is out of `running` (a minimised resting program stays resting).
+  - Outside the tests the tick acts on each new look of the window watch (`generation`,
+    `seen_look_`) and its clock steps by the time that passed (`since_s_`, at most 1 s), so a
+    program that comes back is followed within one look; its timer (0.5 s) is only for when no
+    look comes. The tests' stand-in windows keep the quarter-second clock.
+  - The watch reads OBS's own windows' titles with `InternalGetWindowText`: `GetWindowTextW` on a
+    window of this process sends that window's thread a message, and the UI thread can be
+    waiting on `list_windows`' lock (`open_programs`). Not seen to hang; found reading the code.
+  - Tested in `[auto capture: stays aimed at a game while its picture comes back]`
+    (`auto_keep_aim_test`, alone with `STAGEKIT_TEST_ONLY_AUTO_KEEP_AIM`): stand-in windows have
+    a seventh field, `hidden` (its program runs, the window is not listed). The picture gone
+    with the window there, the window unseen for 1 and 6 s, back under another handle (nothing
+    written) and another class (aimed at within one look; taken as it is with the picture
+    there), not running for 1 s, another listed program behind (nothing) and clicked into
+    (taken), switched off, aimed by hand and on again (aimed afresh within one look), closed
+    (any full-screen after about 3 s), opened again (one look; `is_emu` needs window mode, as
+    any full-screen leaves the window setting as it was), closed with another open behind
+    (taken after about 3 s), a remembered game kept unseen still resting; the Standby Image
+    shows while there is no picture and the aim stays. Then an emulator with a menu and a game
+    window, none listed with the picture there: the game's window hidden (kept), gone with the
+    picture gone and back between two looks (kept), the game's window closed with the menu
+    minimised (let go of in 0.35 to 0.9 s, the menu brought back not aimed at). The stand-in
+    capture sends `hooked` and `unhooked` when its picture starts and stops. Each of the three
+    parts of the `!open` rule was taken out once and its check failed. Not proven: the Windows
+    side (`running`, `InternalGetWindowText`, the clock on the watch's looks, the hook signals
+    as OBS sends them).
 - **Ambient Background follows a change of capture with a transition** (`live_change`,
   `live_change_ms`, `live_delay_ms`, `live_ease_*`): when the capture blended in changes (another
   source, none, or `app_capture_changes` says the switcher took another window) the scene as last

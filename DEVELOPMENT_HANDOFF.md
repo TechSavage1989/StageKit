@@ -9,9 +9,79 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | `fix/auto-frame-follows-switcher` (Auto Frame goes by the window the Automatic Window Switcher shows; betaNEXT), on `main` after beta194. Next: the new collection |
+| Working branch | `fix/auto-capture-keeps-aim` (Auto Capture stays aimed at a game while its picture comes back, betaNEXT), on `main` after beta193. Next: the new collection |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
+
+## Auto Capture stays aimed at a game while its picture comes back (0.1.0-betaNEXT)
+
+Branch `fix/auto-capture-keeps-aim`, on `main` after beta193. Notes:
+`docs/releases/0.1.0-betaNEXT.md`. No Stream Deck file changed. The owner (2026-11-19), with a
+screenshot of a windowed Switch emulator running a Vulkan game and OBS not showing it: "auto
+capture still takes a while to grab some windowed games".
+
+- **Cause (from their log, read with scripts kept out of the repository; no window titles
+  quoted).** The emulator was on *Always capture*. Each time OBS freed its hook (`vulkan capture
+  freed`; twice `capture window no longer exists`), Auto Capture said `back to any full-screen
+  application` 0.35 to 0.56 s later and `now follows` the emulator again 3.5, 45.3, 5.9 and over
+  37 s after (the last until the log ends); OBS's first frame came 3.4 to 4.2 s after each
+  re-aim. On two of the three returns no new hook was injected, so the same process had run
+  all along (the 45 s one was a new process): no window of it passed the window watch's filter
+  (visible, not minimised, not owned, not a tool window, a title) in those gaps, and nothing
+  was chosen. Frees OBS handled with the aim left alone
+  took 0.14 to 0.16 s (once 1.6 s). Every change of the capture's mode or window restarts OBS's capture
+  (`capture_needs_reset`), so each drop cost two restarts. Re-following came within one tick
+  and one look of the window reappearing. The 32 s to the very first frame was OBS hooking a
+  game still booting. The other log (Dolphin) showed rests and quick pickup behaving.
+- **Fix** (`src/capture/auto-capture.cpp`): the window watch also gives every program with a
+  top-level window of any kind (`running`); the capture stays aimed at the program it is aimed
+  at while that program runs (another of its windows, `same_program`, or, with none listed, a
+  stand-in `kept` that writes nothing), and for `kKeepGrace` (3 s) after it was last seen
+  running; only a candidate in front takes over meanwhile, an open one after the grace.
+  Another class with no picture is aimed at in the same tick, with the picture there it is
+  taken as it is (no restart). Logged `kept on <program> while its picture comes back`, once a
+  drop, and once more when no window of it can be seen. Rests unchanged (a remembered game kept
+  with no picture rests after 10 s; *Always capture* never). `rest_`, `tried_` and `spent_`
+  count a program closed by `running`. Outside the tests the tick acts on each new look of the
+  watch, with its clock stepping by real time. OBS's own windows' titles are read with
+  `InternalGetWindowText` (a possible hang between the watch's thread and the UI thread, found
+  reading the code). Details in AGENTS.md (*Auto Capture stays aimed at a game ...*).
+- **Review fixes** (two reviews of the first build, in the same commit):
+  - Keeping the aim had brought back beta190's last frame for a Dolphin-like program whose menu
+    is minimised when its game window closes (none of its windows listed, so the watch reset as
+    if it had closed). Now, with none listed, the watch resets only when the program is out of
+    `running`, the capture has no picture, or OBS's Game Capture has sent `hooked`/`unhooked`
+    since the game's window was last there (`hook_events_`: OBS can hook again between two
+    looks); otherwise a game window still there unlisted keeps it and with all gone it lets go
+    after 0.5 s, the minimised menu counted as spent. The reviewer's simpler rule (picture there
+    means let go) would have let go of the owner's emulator whenever OBS hooked it again within
+    one look, or its window was only hidden.
+  - Switched off (a capture hooked by hand) and on again, Auto Capture now aims afresh
+    (`aimed_once_` and `applied_key_` cleared): it had left the hand-hooked window while its
+    old game was still open (older than this branch; `kept` made it likelier).
+  - `kept` now ranks above an open listed or remembered game during the grace too (the task's
+    rule); the test's "closed with another open" waits about 3 s. The test's `is_emu` also
+    needs window mode: any full-screen keeps the window setting, so "opened again" had passed at
+    once without a re-aim.
+  - Docs: OBS's own hook after a re-aim was 3.4 to 4.2 s, frees left aimed 0.14 to 0.16 s (once
+    1.6 s); the Troubleshooting note says the `kept on` line comes once the game has shown an
+    image.
+- **Tests:** `[auto capture: stays aimed at a game while its picture comes back]`, alone with
+  `STAGEKIT_TEST_ONLY_AUTO_KEEP_AIM` (25 checks, all passed), and in the full run after
+  `auto_window_closed_test`. Each of the three parts of the new no-window rule was taken out
+  once and its check failed. Also run: `AUTO_REST`, `AUTO_WINCLOSE`, `CAPTURE_HIDE`,
+  `TOOLTIPS`, and the full run's `[auto capture]` block under a temporary gate (not committed):
+  all passed. The full run itself was not made here (machine limits).
+- **Not proven:** none of the Windows side has run (`running`, `InternalGetWindowText`, acting on
+  the watch's looks, the Game Capture's hook signals). Which of the emulator's windows the filter
+  missed is a guess (its game-list window minimised, with *Single Window Mode* off): worth asking
+  the owner. A game window gone while OBS captures through another window of the program, with
+  the last frame up for over half a second, is still let go of (AGENTS.md). The fix removes the
+  hop to any full-screen and its two restarts; it does not shorten OBS's own 3 to 4 s from a
+  game starting to its first frame.
+
+## Window switcher: Game area only (0.1.0-beta193)
+
 
 ## Auto Frame goes by the window the switcher shows (0.1.0-betaNEXT)
 

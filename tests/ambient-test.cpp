@@ -265,6 +265,10 @@ static void register_stand_in_capture(const char *id)
 		c->cy = (uint32_t)obs_data_get_int(settings, "height");
 		c->lazy = !obs_data_get_bool(settings, "always");
 		c->live = !c->lazy;
+		// As OBS's Game Capture: it says when its picture starts and stops.
+		signal_handler_t *sh = obs_source_get_signal_handler(source);
+		signal_handler_add(sh, "void unhooked(ptr source)");
+		signal_handler_add(sh, "void hooked(ptr source, string title, string class, string executable)");
 		return c;
 	};
 	info.update = [](void *data, obs_data_t *settings) {
@@ -284,15 +288,26 @@ static void register_stand_in_capture(const char *id)
 		auto *c = static_cast<StandInCapture *>(data);
 		if (!c->lazy)
 			return;
+		const bool was = c->live;
 		// Its picture comes a few frames after it is first shown, and goes
 		// the moment nothing shows it.
 		c->frames_shown = obs_source_showing(c->source) ? c->frames_shown + 1 : 0;
 		if (!c->needs.empty()) {
 			c->frames_aimed = c->aimed && c->frames_shown > 0 ? c->frames_aimed + 1 : 0;
 			c->live = c->frames_aimed > c->start_frames;
-			return;
+		} else {
+			c->live = c->frames_shown >= c->start_frames;
 		}
-		c->live = c->frames_shown >= c->start_frames;
+		if (c->live != was) {
+			calldata_t cd = {};
+			calldata_set_ptr(&cd, "source", c->source);
+			calldata_set_string(&cd, "title", "");
+			calldata_set_string(&cd, "class", "");
+			calldata_set_string(&cd, "executable", "");
+			signal_handler_signal(obs_source_get_signal_handler(c->source), c->live ? "hooked" : "unhooked",
+					      &cd);
+			calldata_free(&cd);
+		}
 	};
 	info.get_width = [](void *data) -> uint32_t {
 		auto *c = static_cast<StandInCapture *>(data);
@@ -5137,6 +5152,396 @@ static void auto_window_closed_test(const std::string &out)
 	obs_source_release(standby);
 	obs_source_release(filter);
 	obs_source_release(capture);
+}
+
+// Auto Capture stays aimed at a game whose picture has gone while its
+// program runs, also while no window of it can be seen. The owner
+// (2026-11-19): "auto capture still takes a while to grab some windowed
+// games". Their log: each time OBS freed the hook of a windowed emulator
+// (its window made again: full screen, a game started or stopped), no
+// window of it passed the window watch for 3 to 46 s, and the capture went
+// to "any full-screen application" (OBS started it again) and back to the
+// emulator (again), seconds on top of OBS's own hooking. Stand-in windows
+// for a generic emulator on Always capture; "hidden" is a window of a
+// program that runs and cannot be seen. Alone with
+// STAGEKIT_TEST_ONLY_AUTO_KEEP_AIM.
+static std::atomic<int> g_keep_logged{0}, g_keep_unseen_logged{0}, g_keep_fullscreen_logged{0};
+static void auto_keep_aim_test(const std::string &out)
+{
+	printf("\n[auto capture: stays aimed at a game while its picture comes back]\n");
+	register_stand_in_capture("game_capture");
+	const std::string red_path = out + "/../keepaim-standby.png";
+	{
+		QImage red(320, 180, QImage::Format_RGB32);
+		red.fill(QColor(255, 0, 0));
+		red.save(QString::fromStdString(red_path));
+	}
+	log_handler_t prev_log = nullptr;
+	void *prev_param = nullptr;
+	base_get_log_handler(&prev_log, &prev_param);
+	static log_handler_t s_prev_log = nullptr;
+	static void *s_prev_param = nullptr;
+	s_prev_log = prev_log;
+	s_prev_param = prev_param;
+	g_keep_logged = g_keep_unseen_logged = g_keep_fullscreen_logged = 0;
+	base_set_log_handler(
+		[](int level, const char *format, va_list args, void *) {
+			char line[2048];
+			va_list copy;
+			va_copy(copy, args);
+			vsnprintf(line, sizeof(line), format, copy);
+			va_end(copy);
+			if (strstr(line, "'KA Game Capture' kept on switchemu.exe while its picture comes back")) {
+				g_keep_logged++;
+				if (strstr(line, "no window of it can be seen"))
+					g_keep_unseen_logged++;
+			}
+			if (strstr(line, "'KA Game Capture' back to any full-screen application"))
+				g_keep_fullscreen_logged++;
+			if (s_prev_log)
+				s_prev_log(level, format, args, s_prev_param);
+		},
+		nullptr);
+
+	obs_data_t *cd = obs_data_create();
+	obs_data_set_int(cd, "color", 0xFF00FF00); // green
+	obs_data_set_int(cd, "width", 320);
+	obs_data_set_int(cd, "height", 180);
+	obs_data_set_int(cd, "start_frames", 100000000); // no picture until hooked
+	obs_source_t *capture = obs_source_create("game_capture", "KA Game Capture", cd, nullptr);
+	obs_data_release(cd);
+	obs_data_t *fd = obs_data_create();
+	obs_data_set_string(fd, "always", "switchemu, othergame");
+	obs_data_set_bool(fd, "no_game_standby", true);
+	obs_source_t *filter = obs_source_create("stagekit_auto_capture", "KA Auto Capture", fd, nullptr);
+	obs_data_release(fd);
+	obs_source_filter_add(capture, filter);
+	obs_data_t *sd = obs_data_create();
+	obs_data_set_int(sd, "picture", 1); // a file
+	obs_data_set_string(sd, "file", red_path.c_str());
+	obs_data_set_int(sd, "style", 1); // a cut
+	obs_source_t *standby = obs_source_create("stagekit_standby", "KA Standby", sd, nullptr);
+	obs_data_release(sd);
+	obs_source_filter_add(capture, standby);
+
+	auto show_on = [](obs_source_t *f, const std::string &windows) {
+		calldata_t c = {};
+		calldata_set_string(&c, "windows", windows.c_str());
+		calldata_set_bool(&c, "keep_clock", true);
+		proc_handler_call(obs_source_get_proc_handler(f), "set_test_windows", &c);
+		calldata_free(&c);
+	};
+	auto aim_of = [](obs_source_t *c) {
+		obs_data_t *d = obs_source_get_settings(c);
+		const std::string got =
+			std::string(obs_data_get_string(d, "capture_mode")) + " " + obs_data_get_string(d, "window");
+		obs_data_release(d);
+		return got;
+	};
+	auto aim = [&] {
+		return aim_of(capture);
+	};
+	auto hooked = [&](bool yes) {
+		obs_data_t *d = obs_data_create();
+		obs_data_set_int(d, "start_frames", yes ? 0 : 100000000);
+		obs_source_update(capture, d);
+		obs_data_release(d);
+	};
+	auto centre = [&] {
+		const uint32_t w = obs_source_get_width(capture), h = obs_source_get_height(capture);
+		if (!w || !h)
+			return std::array<int, 2>{-1, -1};
+		const std::vector<uint8_t> px = render(capture, w, h);
+		const uint8_t *p = &px[(size_t(h / 2) * w + w / 2) * 4];
+		return std::array<int, 2>{p[0], p[1]};
+	};
+	using clock = std::chrono::steady_clock;
+	auto since = [](clock::time_point t) {
+		return std::chrono::duration<double>(clock::now() - t).count();
+	};
+	auto run = [&](const std::string &windows, const std::function<bool()> &until, double limit_s) {
+		const auto t0 = clock::now();
+		while (since(t0) < limit_s) {
+			show_on(filter, windows);
+			sleep_ms(50);
+			if (until())
+				return since(t0);
+		}
+		return -1.0;
+	};
+	// Shows the windows for a while; whether the capture was aimed only at
+	// `at` all along (and at what else, if not).
+	auto stays = [&](const std::function<std::string(double)> &windows, double seconds, const std::string &at) {
+		std::string other;
+		const auto t0 = clock::now();
+		while (since(t0) < seconds) {
+			show_on(filter, windows(since(t0)));
+			sleep_ms(50);
+			if (aim() != at && other.empty())
+				other = aim();
+		}
+		return other;
+	};
+	// (Aimed at it: "any full-screen application" leaves the window as it
+	// was, so the mode counts too.)
+	auto is_emu = [](const std::string &a) {
+		return a.rfind("window ", 0) == 0 && a.find("switchemu.exe") != std::string::npos;
+	};
+	auto is_fullscreen = [](const std::string &a) {
+		return a.rfind("any_fullscreen", 0) == 0;
+	};
+
+	const std::string win = "SwitchEmu 1.0|EmuWnd|switchemu.exe|front||1";
+	const std::string hidden = "SwitchEmu 1.0|EmuWnd|switchemu.exe|||1|hidden";
+	double t = run(win, [&] { return is_emu(aim()); }, 1.5);
+	CHECK(t >= 0.0, "the emulator is aimed at (%s)", aim().c_str());
+	const std::string first = aim();
+	hooked(true);
+	run(win, [] { return false; }, 1.0);
+	std::array<int, 2> c = centre();
+	CHECK(c[1] > 240 && c[0] < 15, "the capture shows the game (centre %d, %d)", c[0], c[1]);
+
+	// OBS frees the hook (the game makes its drawing again), the window
+	// still there: the aim stays, and the Standby Image stands in by itself.
+	hooked(false);
+	std::string other = stays([&](double) { return win; }, 1.5, first);
+	c = centre();
+	CHECK(other.empty() && c[0] > 240 && c[1] < 15 && g_keep_logged == 1,
+	      "the picture gone with its window still there: the aim stays, the Standby Image shows, and the log says it once (%s; centre %d, %d; %d line)",
+	      other.c_str(), c[0], c[1], g_keep_logged.load());
+
+	// No window of it can be seen while it runs: for a second, and for six
+	// (longer than the grace for a program not seen running at all).
+	other = stays([&](double) { return hidden; }, 1.0, first);
+	CHECK(other.empty(), "no window of it to be seen for a second while it runs: the aim stays (%s)",
+	      other.c_str());
+	other = stays([&](double) { return hidden; }, 6.0, first);
+	c = centre();
+	CHECK(other.empty() && c[0] > 240 && g_keep_unseen_logged == 1,
+	      "nor for six seconds, the Standby Image up all along, the log saying so once (%s; centre %d; %d line)",
+	      other.c_str(), c[0], g_keep_unseen_logged.load());
+	// Back under another handle, the same class: nothing written.
+	other = stays([&](double) { return "SwitchEmu 1.0|EmuWnd|switchemu.exe|front||2"; }, 1.0, first);
+	CHECK(other.empty(), "back under another handle and the same class: nothing written (%s)", other.c_str());
+	// Made again under another class, with no picture: aimed at at once.
+	stays([&](double) { return hidden; }, 0.5, first);
+	t = run("SwitchEmu 1.0 - A Game|EmuRender|switchemu.exe|front||3", [&] { return aim() != first; }, 1.5);
+	const std::string render_aim = aim();
+	CHECK(t >= 0.0 && t <= 0.4 && render_aim.find(":EmuRender:switchemu.exe") != std::string::npos,
+	      "back under another class with no picture: aimed at it within one look (%.2f s; %s)", t,
+	      render_aim.c_str());
+	// With the picture there, another class is taken as it is: writing the
+	// capture's settings would start OBS's capture again.
+	hooked(true);
+	run("SwitchEmu 1.0 - A Game|EmuRender|switchemu.exe|front||3", [] { return false; }, 1.0);
+	other = stays([&](double) { return "SwitchEmu 1.0|EmuWnd|switchemu.exe|front||4"; }, 1.0, render_aim);
+	CHECK(other.empty() && obs_source_get_base_width(capture) > 0,
+	      "another class while the picture is there: nothing written, the picture kept (%s; %u px)", other.c_str(),
+	      obs_source_get_base_width(capture));
+	hooked(false);
+	// Not even running for a second (its one window made again): the grace.
+	other = stays([&](double s) { return s < 1.0 ? std::string() : std::string(win); }, 1.6, render_aim);
+	CHECK(other.empty(), "not seen running at all for a second: the aim stays (%s)", other.c_str());
+
+	// Another program on the list, open behind, takes nothing while it
+	// runs; clicked into, it does.
+	const std::string odd_behind = "Other Game|OtherWnd|othergame.exe|||9";
+	const std::string odd_front = "Other Game|OtherWnd|othergame.exe|front||9";
+	other = stays([&](double) { return hidden + "\n" + odd_behind; }, 1.0, render_aim);
+	CHECK(other.empty(), "another listed program open behind takes nothing while it runs (%s)", other.c_str());
+	t = run(hidden + "\n" + odd_front, [&] { return aim().find("othergame.exe") != std::string::npos; }, 1.5);
+	CHECK(t >= 0.0 && t <= 0.4, "clicked into, it takes over (%.2f s; %s)", t, aim().c_str());
+	t = run(win + "\n" + odd_behind, [&] { return is_emu(aim()); }, 1.5);
+	CHECK(t >= 0.0, "and the emulator clicked into again takes it back (%s)", aim().c_str());
+	CHECK(g_keep_fullscreen_logged == 0, "never once 'any full-screen application' so far (%d)",
+	      g_keep_fullscreen_logged.load());
+
+	// Switched off and the capture aimed elsewhere by hand (as the Capture
+	// Active Window key does), switched on again: it aims afresh at once,
+	// whatever it was aimed at before (the capture is handed back).
+	obs_source_set_enabled(filter, false);
+	run(win + "\n" + odd_behind, [] { return false; }, 0.3);
+	{
+		obs_data_t *d = obs_data_create();
+		obs_data_set_string(d, "capture_mode", "window");
+		obs_data_set_string(d, "window", "Hand Window:HandWnd:handapp.exe");
+		obs_source_update(capture, d);
+		obs_data_release(d);
+	}
+	run(win + "\n" + odd_behind, [] { return false; }, 0.5);
+	const std::string by_hand = aim();
+	obs_source_set_enabled(filter, true);
+	t = run(win + "\n" + odd_behind, [&] { return is_emu(aim()); }, 1.5);
+	CHECK(by_hand.find("handapp.exe") != std::string::npos && t >= 0.0 && t <= 0.4,
+	      "switched on again after a capture aimed by hand: aimed afresh within one look (%s; %.2f s; %s)",
+	      by_hand.c_str(), t, aim().c_str());
+
+	// Closed for good: after the grace, the usual fallback.
+	t = run("", [&] { return is_fullscreen(aim()); }, 5.0);
+	CHECK(t >= 2.5 && t <= 4.5 && g_keep_fullscreen_logged == 1,
+	      "closed: any full-screen application after about three seconds (%.2f s; %s)", t, aim().c_str());
+	// Opened again: followed within one look.
+	t = run(win, [&] { return is_emu(aim()); }, 1.5);
+	CHECK(t >= 0.0 && t <= 0.4, "opened again: followed within one look (%.2f s)", t);
+	// Closed with another listed program open, behind: that one once the
+	// grace is over (the emulator might only be making its window again).
+	t = run(odd_behind, [&] { return aim().find("othergame.exe") != std::string::npos; }, 5.0);
+	CHECK(t >= 2.5 && t <= 4.5,
+	      "closed with another listed program open behind: that one after about three seconds (%.2f s; %s)", t,
+	      aim().c_str());
+
+	obs_source_filter_remove(capture, standby);
+	obs_source_filter_remove(capture, filter);
+	obs_source_release(standby);
+	obs_source_release(filter);
+	obs_source_release(capture);
+
+	// A program recognised as a game (not on Always capture) kept while no
+	// window of it can be seen still rests when it gives no picture.
+	{
+		obs_data_t *kd = obs_data_create();
+		obs_data_set_int(kd, "width", 320);
+		obs_data_set_int(kd, "height", 180);
+		obs_data_set_int(kd, "start_frames", 100000000);
+		obs_source_t *cap2 = obs_source_create("game_capture", "KA Known Capture", kd, nullptr);
+		obs_data_release(kd);
+		obs_data_t *gd = obs_data_create();
+		obs_data_set_int(gd, "give_up_ms", 1000);
+		obs_source_t *f2 = obs_source_create("stagekit_auto_capture", "KA Known Auto Capture", gd, nullptr);
+		obs_data_release(gd);
+		obs_source_filter_add(cap2, f2);
+		const std::string known = "Known Game|KnownWnd|knowngame.exe|front|game|20";
+		const std::string known_hidden = "Known Game|KnownWnd|knowngame.exe|||20|hidden";
+		const auto t0 = clock::now();
+		while (since(t0) < 1.0 && aim_of(cap2).find("knowngame.exe") == std::string::npos) {
+			show_on(f2, known);
+			sleep_ms(50);
+		}
+		const std::string taken = aim_of(cap2);
+		const auto t1 = clock::now();
+		std::string before_rest;
+		double rested = -1.0;
+		while (since(t1) < 3.0) {
+			show_on(f2, known_hidden);
+			sleep_ms(50);
+			const std::string now = aim_of(cap2);
+			if (now == "window :StageKitNoWindow:stagekit-no-window.exe") {
+				rested = since(t1);
+				break;
+			}
+			if (now != taken && before_rest.empty())
+				before_rest = now;
+		}
+		CHECK(taken.find("knowngame.exe") != std::string::npos && before_rest.empty() && rested >= 0.5 &&
+			      rested <= 1.6,
+		      "a game it recognised, kept with no window to be seen, still rests when it gives no picture (%s; %s; rested after %.2f s)",
+		      taken.c_str(), before_rest.c_str(), rested);
+		obs_source_filter_remove(cap2, f2);
+		obs_source_release(f2);
+		obs_source_release(cap2);
+	}
+
+	// An emulator with a menu window and a window for its game (beta190's
+	// case), with no window of it listed and the picture still there. The
+	// game's window there but hidden (making its drawing again): kept. The
+	// picture gone and back between two looks (OBS hooked it again): kept.
+	// The game's window closed with the menu minimised: let go of as with
+	// the menu listed (kept on, OBS would show the game's last frame), and
+	// the menu brought back is not aimed at.
+	{
+		const std::string none = "window :StageKitNoWindow:stagekit-no-window.exe";
+		obs_data_t *md = obs_data_create();
+		obs_data_set_int(md, "width", 320);
+		obs_data_set_int(md, "height", 180);
+		obs_data_set_int(md, "start_frames", 100000000);
+		obs_source_t *cap3 = obs_source_create("game_capture", "KA Menu Capture", md, nullptr);
+		obs_data_release(md);
+		obs_data_t *gd = obs_data_create();
+		obs_data_set_string(gd, "always", "menuemu");
+		obs_source_t *f3 = obs_source_create("stagekit_auto_capture", "KA Menu Auto Capture", gd, nullptr);
+		obs_data_release(gd);
+		obs_source_filter_add(cap3, f3);
+		auto aim3 = [&] {
+			return aim_of(cap3);
+		};
+		auto hooked3 = [&](bool yes) {
+			obs_data_t *d = obs_data_create();
+			obs_data_set_int(d, "start_frames", yes ? 0 : 100000000);
+			obs_source_update(cap3, d);
+			obs_data_release(d);
+		};
+		auto run3 = [&](const std::string &windows, const std::function<bool()> &until, double limit_s) {
+			const auto t0 = clock::now();
+			while (since(t0) < limit_s) {
+				show_on(f3, windows);
+				sleep_ms(50);
+				if (until())
+					return since(t0);
+			}
+			return -1.0;
+		};
+		auto stays3 = [&](const std::string &windows, double seconds, const std::string &at) {
+			std::string moved;
+			const auto t0 = clock::now();
+			while (since(t0) < seconds) {
+				show_on(f3, windows);
+				sleep_ms(50);
+				if (aim3() != at && moved.empty())
+					moved = aim3();
+			}
+			return moved;
+		};
+		auto is_menuemu = [](const std::string &a) {
+			return a.find("menuemu.exe") != std::string::npos;
+		};
+		const std::string menu = "MenuEmu 5.0|EmuQt|menuemu.exe|||31\n";
+		const std::string menu_hidden = "MenuEmu 5.0|EmuQt|menuemu.exe|||31|hidden\n";
+		const std::string game = "MenuEmu 5.0 - A Game - 60 fps|EmuQt|menuemu.exe|front||32";
+		const std::string game_hidden = "MenuEmu 5.0 - A Game - 60 fps|EmuQt|menuemu.exe|||32|hidden";
+		double t3 = run3(menu + game, [&] { return is_menuemu(aim3()); }, 1.5);
+		const std::string at = aim3();
+		hooked3(true);
+		run3(menu + game, [] { return false; }, 1.2);
+		CHECK(t3 >= 0.0 && obs_source_get_base_width(cap3) > 0, "an emulator's game is aimed at and shows (%s)",
+		      at.c_str());
+
+		std::string moved = stays3(menu_hidden + game_hidden, 1.5, at);
+		CHECK(moved.empty(), "none of its windows listed, the game's still there, the picture there: kept (%s)",
+		      moved.c_str());
+
+		// (The game's window made again, unlisted: OBS hooks it again within
+		// one look.)
+		show_on(f3, menu_hidden);
+		hooked3(false);
+		for (int i = 0; i < 100 && obs_source_get_base_width(cap3) > 0; i++)
+			sleep_ms(5);
+		hooked3(true);
+		moved = stays3(menu_hidden, 1.5, at);
+		CHECK(moved.empty(),
+		      "none listed, the game's window gone, the picture gone and back between two looks: kept (%s)",
+		      moved.c_str());
+
+		// Its next window shows: watched again.
+		const std::string game2 = "MenuEmu 5.0 - A Game - 60 fps|EmuQt|menuemu.exe|front||33";
+		moved = stays3(menu + game2, 1.2, at);
+		CHECK(moved.empty(), "its window shows again: still aimed at (%s)", moved.c_str());
+
+		// The game's window closes with the menu minimised, the picture
+		// still there (the last frame): let go of.
+		t3 = run3(menu_hidden, [&] { return aim3() == none; }, 1.5);
+		CHECK(t3 >= 0.35 && t3 <= 0.9,
+		      "the game's window closes with the menu minimised: let go of (%.2f s; %s)", t3, aim3().c_str());
+		hooked3(false); // (OBS frees the hook)
+		moved = stays3("MenuEmu 5.0|EmuQt|menuemu.exe|front||31", 1.0, none);
+		CHECK(moved.empty(), "and the menu brought back is not aimed at (%s)", moved.c_str());
+		t3 = run3("", [&] { return aim3() != none; }, 1.5);
+		CHECK(t3 >= 0.0, "the program closing ends its let-go (%s)", aim3().c_str());
+
+		obs_source_filter_remove(cap3, f3);
+		obs_source_release(f3);
+		obs_source_release(cap3);
+	}
+	base_set_log_handler(prev_log, prev_param);
 }
 
 // A Show in Scenes switch is a command, not a hold: a switch that is
@@ -11792,6 +12197,14 @@ int main(int argc, char **argv)
 		return g_failures ? 1 : 0;
 	}
 
+	if (getenv("STAGEKIT_TEST_ONLY_AUTO_KEEP_AIM")) { // to try that section alone
+		auto_keep_aim_test(out);
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
+
 	if (getenv("STAGEKIT_TEST_ONLY_SWITCH_COMMAND")) { // to try that section alone
 		switch_is_command_test();
 		obs_shutdown();
@@ -14042,6 +14455,7 @@ int main(int argc, char **argv)
 
 		auto_rest_test();
 		auto_window_closed_test(out);
+		auto_keep_aim_test(out);
 		game_area_test();
 
 		// The controls: say what is captured, undo a wrong pick in one
