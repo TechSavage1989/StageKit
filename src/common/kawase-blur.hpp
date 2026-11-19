@@ -21,7 +21,11 @@ namespace stagekit {
 // graphics context. Works on raw colour values (no sRGB conversion).
 class KawaseBlur {
 public:
-	KawaseBlur();
+	// `smooth`: sixteen-bit pictures on the way and one level more at half
+	// the step, about the same reach with a rounder, smoother falloff and no
+	// eight-bit steps in a long soft tail (shadows and glows). A little more
+	// work, all of it at reduced size.
+	explicit KawaseBlur(bool smooth = false);
 	~KawaseBlur();
 	KawaseBlur(const KawaseBlur &) = delete;
 	KawaseBlur &operator=(const KawaseBlur &) = delete;
@@ -35,11 +39,13 @@ private:
 	static constexpr int kLevels = 7;
 	void pass(gs_texrender_t *dst, gs_texture_t *src, uint32_t w, uint32_t h, const char *technique);
 
+	bool smooth_ = false;
 	gs_effect_t *effect_ = nullptr;
 	gs_eparam_t *p_image_ = nullptr;
 	gs_eparam_t *p_texel_ = nullptr;
 	gs_eparam_t *p_offset_ = nullptr;
 	gs_texrender_t *out_ = nullptr;
+	gs_texrender_t *finish_ = nullptr; // smooth: the last tent at full size
 	std::array<gs_texrender_t *, kLevels> down_{};
 	std::array<gs_texrender_t *, kLevels> up_{};
 };

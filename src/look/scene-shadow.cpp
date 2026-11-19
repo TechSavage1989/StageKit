@@ -222,11 +222,13 @@ private:
 	gs_texrender_t *tr_cast_ = nullptr;
 	gs_texrender_t *tr_mask_ = nullptr;
 	gs_texrender_t *tr_over_ = nullptr; // lay_over's picture
+	gs_texrender_t *tr_ring_ = nullptr; // the lines round the casting sources' boxes (corners chosen)
 	bool mask_used_ = false;            // tr_mask_ was drawn for the last frame
+	bool ring_used_ = false;            // tr_ring_ was drawn for the last frame
 	// Each source by itself: a cast and a mask per layer (the cast left out
 	// of the frame's list where the layer casts nothing).
-	std::vector<gs_texrender_t *> tr_layer_cast_, tr_layer_mask_;
-	std::vector<gs_texture_t *> layer_casts_, layer_masks_; // the last frame's
+	std::vector<gs_texrender_t *> tr_layer_cast_, tr_layer_mask_, tr_layer_ring_;
+	std::vector<gs_texture_t *> layer_casts_, layer_masks_, layer_rings_; // the last frame's
 	bool last_each_ = false;
 	ShadowLook last_look_;
 	uint64_t last_frame_ = 0;
@@ -245,6 +247,7 @@ SceneShadow::SceneShadow(obs_data_t *settings, obs_source_t *source) : source_(s
 	tr_cast_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 	tr_mask_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 	tr_over_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
+	tr_ring_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 	obs_leave_graphics();
 	// For the tests: how many times it has drawn the shadow (once a frame
 	// at most, however often the scene is drawn).
@@ -272,7 +275,8 @@ SceneShadow::~SceneShadow()
 	gs_texrender_destroy(tr_cast_);
 	gs_texrender_destroy(tr_mask_);
 	gs_texrender_destroy(tr_over_);
-	for (auto *list : {&tr_layer_cast_, &tr_layer_mask_})
+	gs_texrender_destroy(tr_ring_);
+	for (auto *list : {&tr_layer_cast_, &tr_layer_mask_, &tr_layer_ring_})
 		for (gs_texrender_t *tr : *list)
 			gs_texrender_destroy(tr);
 	obs_leave_graphics();
@@ -543,6 +547,16 @@ void SceneShadow::render()
 		paint_->end_canvas(tr_cast_);
 	}
 	gs_texture_t *cast = gs_texrender_get_texture(tr_cast_);
+	// The line round the casting sources' boxes, when its corners are chosen.
+	gs_texture_t *ring = nullptr;
+	if (cast && look.box_line() && paint_->begin_canvas(tr_ring_, cx, cy)) {
+		for (obs_sceneitem_t *item : items)
+			if (flags_of(item) & kShadowCasts)
+				paint_->draw_item_ring(item, look);
+		paint_->end_canvas(tr_ring_);
+		ring = gs_texrender_get_texture(tr_ring_);
+	}
+	ring_used_ = ring != nullptr;
 	gs_texture_t *mask = nullptr;
 	if (cast && masked_only && paint_->begin_canvas(tr_mask_, cx, cy)) {
 		paint_->copy_onto(cast, cx, cy);
@@ -558,7 +572,7 @@ void SceneShadow::render()
 	for (obs_sceneitem_t *item : items)
 		obs_sceneitem_release(item);
 	mask_used_ = mask != nullptr;
-	if (!paint_->compose(gs_texrender_get_texture(tr_scene_), cast, mask, look, cx, cy)) {
+	if (!paint_->compose(gs_texrender_get_texture(tr_scene_), cast, mask, look, cx, cy, nullptr, false, ring)) {
 		skip_filter_input(source_);
 		return;
 	}
@@ -597,11 +611,13 @@ bool SceneShadow::render_layers(const std::vector<obs_sceneitem_t *> &items,
 	layers_ = (int)n;
 	layer_casts_.assign(n, nullptr);
 	layer_masks_.assign(n, nullptr);
+	layer_rings_.assign(n, nullptr);
 	if (!n)
 		return false;
 	while (tr_layer_cast_.size() < n) {
 		tr_layer_cast_.push_back(gs_texrender_create(GS_RGBA, GS_ZS_NONE));
 		tr_layer_mask_.push_back(gs_texrender_create(GS_RGBA, GS_ZS_NONE));
+		tr_layer_ring_.push_back(gs_texrender_create(GS_RGBA, GS_ZS_NONE));
 	}
 	auto end_of = [&](size_t l) {
 		return l + 1 < n ? starts[l + 1] : items.size();
@@ -617,6 +633,13 @@ bool SceneShadow::render_layers(const std::vector<obs_sceneitem_t *> &items,
 				draw(items[i]);
 		paint_->end_canvas(tr_layer_cast_[l]);
 		layer_casts_[l] = gs_texrender_get_texture(tr_layer_cast_[l]);
+		if (look.box_line() && paint_->begin_canvas(tr_layer_ring_[l], cx, cy)) {
+			for (size_t i = starts[l]; i < end_of(l); i++)
+				if (boxes[i].present && (flags_of(items[i]) & kShadowCasts))
+					paint_->draw_item_ring(items[i], look);
+			paint_->end_canvas(tr_layer_ring_[l]);
+			layer_rings_[l] = gs_texrender_get_texture(tr_layer_ring_[l]);
+		}
 	}
 	// The masks from the top down: each is its own layer's sources with the
 	// one above it laid over them (in that order, so its colours are the
@@ -633,7 +656,8 @@ bool SceneShadow::render_layers(const std::vector<obs_sceneitem_t *> &items,
 		paint_->end_canvas(tr_layer_mask_[k]);
 		layer_masks_[k] = gs_texrender_get_texture(tr_layer_mask_[k]);
 	}
-	return paint_->compose_layers(gs_texrender_get_texture(tr_scene_), layer_casts_, layer_masks_, look, cx, cy);
+	return paint_->compose_layers(gs_texrender_get_texture(tr_scene_), layer_casts_, layer_masks_, look, cx, cy,
+				      nullptr, &layer_rings_);
 }
 
 // The shadow drawn this frame, from the same shapes, over another picture of
@@ -649,12 +673,14 @@ gs_texture_t *SceneShadow::lay_over(gs_texture_t *picture, uint32_t cx, uint32_t
 	    now - last_frame_ > two_frames || cx != last_cx_ || cy != last_cy_)
 		return nullptr;
 	if (last_each_)
-		return paint_->compose_layers(picture, layer_casts_, layer_masks_, last_look_, cx, cy, tr_over_)
+		return paint_->compose_layers(picture, layer_casts_, layer_masks_, last_look_, cx, cy, tr_over_,
+					      &layer_rings_)
 			       ? gs_texrender_get_texture(tr_over_)
 			       : nullptr;
 	gs_texture_t *cast = gs_texrender_get_texture(tr_cast_);
 	gs_texture_t *mask = mask_used_ ? gs_texrender_get_texture(tr_mask_) : nullptr;
-	if (!cast || !paint_->compose(picture, cast, mask, last_look_, cx, cy, tr_over_))
+	gs_texture_t *ring = ring_used_ ? gs_texrender_get_texture(tr_ring_) : nullptr;
+	if (!cast || !paint_->compose(picture, cast, mask, last_look_, cx, cy, tr_over_, false, ring))
 		return nullptr;
 	return gs_texrender_get_texture(tr_over_);
 }
@@ -718,12 +744,14 @@ obs_properties_t *get_properties(void *data)
 	slider(shadow, "offset_y", "Shadow.OffsetY", -200.0, 200.0, " px");
 	slider(shadow, "softness", "Shadow.Softness", 0.0, 200.0, " px");
 	slider(shadow, "spread", "Shadow.Spread", 0.0, 100.0, "%");
+	add_intensity_property(shadow);
 	obs_properties_add_group(props, "shadow", obs_module_text("Shadow.Shadow"), OBS_GROUP_CHECKABLE, shadow);
 
 	obs_properties_t *outline = obs_properties_create();
 	slider(outline, "outline_width", "Shadow.OutlineWidth", 0.0, 100.0, " px");
 	obs_properties_add_color(outline, "outline_color", obs_module_text("Shadow.OutlineColor"));
 	slider(outline, "outline_opacity", "Shadow.OutlineOpacity", 0.0, 100.0, "%");
+	add_outline_corner_properties(outline);
 	obs_property_t *ring = obs_properties_add_group(props, "outline", obs_module_text("Shadow.Outline"),
 							OBS_GROUP_CHECKABLE, outline);
 	set_tip(ring, obs_module_text("SceneShadow.Outline.Tip"));
@@ -807,6 +835,7 @@ void get_defaults(obs_data_t *settings)
 	obs_data_set_default_double(settings, "outline_width", 6.0);
 	obs_data_set_default_int(settings, "outline_color", 0xFFFFFFFF);
 	obs_data_set_default_double(settings, "outline_opacity", 100.0);
+	outline_glow_defaults(settings);
 	obs_data_set_default_bool(settings, "auto_background", true);
 	obs_data_set_default_int(settings, "which", (int)Which::AllSources);
 	obs_data_set_default_int(settings, "shadow_from", (int)From::Scene);

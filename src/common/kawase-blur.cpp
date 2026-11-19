@@ -19,7 +19,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 namespace stagekit {
 
-KawaseBlur::KawaseBlur()
+KawaseBlur::KawaseBlur(bool smooth) : smooth_(smooth)
 {
 	char *path = obs_module_file("effects/stagekit-blur.effect");
 	char *errors = nullptr;
@@ -33,17 +33,20 @@ KawaseBlur::KawaseBlur()
 		p_texel_ = gs_effect_get_param_by_name(effect_, "texel");
 		p_offset_ = gs_effect_get_param_by_name(effect_, "offset");
 	}
-	out_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
+	const gs_color_format format = smooth ? GS_RGBA16F : GS_RGBA;
+	out_ = gs_texrender_create(format, GS_ZS_NONE);
+	finish_ = smooth ? gs_texrender_create(format, GS_ZS_NONE) : nullptr;
 	for (auto &tr : down_)
-		tr = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
+		tr = gs_texrender_create(format, GS_ZS_NONE);
 	for (auto &tr : up_)
-		tr = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
+		tr = gs_texrender_create(format, GS_ZS_NONE);
 }
 
 KawaseBlur::~KawaseBlur()
 {
 	gs_effect_destroy(effect_);
 	gs_texrender_destroy(out_);
+	gs_texrender_destroy(finish_);
 	for (auto *tr : down_)
 		gs_texrender_destroy(tr);
 	for (auto *tr : up_)
@@ -71,7 +74,8 @@ gs_texture_t *KawaseBlur::blur(gs_texture_t *input, uint32_t w, uint32_t h, doub
 	if (!effect_ || !input || scaled < 0.05)
 		return input;
 
-	int levels = std::clamp((int)std::floor(std::log2(std::max(scaled, 1.0))) + 1, 1, kLevels);
+	const int more = smooth_ ? 1 : 0;
+	int levels = std::clamp((int)std::floor(std::log2(std::max(scaled, 1.0))) + 1 + more, 1, kLevels);
 	while (levels > 1 && ((w >> levels) < 2 || (h >> levels) < 2))
 		levels--;
 	const float offset = (float)(scaled / std::pow(2.0, levels - 1));
@@ -101,6 +105,16 @@ gs_texture_t *KawaseBlur::blur(gs_texture_t *input, uint32_t w, uint32_t h, doub
 		gs_texrender_t *dst = i == 1 ? out_ : up_[i - 1];
 		pass(dst, cur, lw[i - 1], lh[i - 1], "KawaseUp");
 		cur = gs_texrender_get_texture(dst);
+	}
+	if (smooth_ && cur) {
+		// One more tent at full size takes out the faint ripple the
+		// half-pixel taps leave in a long soft tail.
+		vec2 texel;
+		vec2_set(&texel, 1.0f / (float)w, 1.0f / (float)h);
+		gs_effect_set_vec2(p_texel_, &texel);
+		gs_effect_set_float(p_offset_, 1.5f);
+		pass(finish_, cur, w, h, "KawaseUp");
+		cur = gs_texrender_get_texture(finish_);
 	}
 	return cur;
 }

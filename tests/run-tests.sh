@@ -67,6 +67,14 @@ python3 "$root/tests/make-sheet.py" "$out/make-room" "$out/make-room.png" 5
 python3 "$root/tests/make-sheet.py" "$out/darkest" "$out/ambient-darkest.png" 4
 # ==== scene-filters:shadow ====
 python3 "$root/tests/make-sheet.py" "$out/scene-shadow" "$out/scene-shadow.png" 2
+# Its own run: outline corners, matching widths, outlines through Morph, the glow.
+rm -rf "$out/outline-glow"
+mkdir -p "$out/outline-glow"
+STAGEKIT_TEST_ONLY_OUTLINE_GLOW=1 xvfb-run -a -s "-screen 0 1280x720x24" \
+  "$root/build-tests/tests/stagekit-ambient-test" "$root/build-tests/stagekit.so" "$root/data" \
+  "$out/test-art.png" "$out/test-texture.png" "$out/test-game.png" "$out/tooltips" \
+  "$out/test-title.png" "$out/tooltips" "$out/test-pillarbox.png" "$out/test-black.png" "$out/test-dark-game.png"
+python3 "$root/tests/make-sheet.py" "$out/outline-glow" "$out/outline-glow.png" 3 light
 # ==== end scene-filters:shadow ====
 # ==== scene-filters:standby-corners ====
 python3 "$root/tests/make-sheet.py" "$out/scene-corners" "$out/scene-corners.png" 2

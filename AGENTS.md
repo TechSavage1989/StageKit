@@ -3494,6 +3494,34 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     on a real Stream Deck.
 <!-- ==== end scene-filters:blur ==== -->
 <!-- ==== scene-filters:perf ==== -->
+- **Outline corners, matching widths, the outline through Morph, the glow** (2026-11-19; the owner:
+  "the Outline filter should have corner types configuration", "the outline seems thicker than the
+  scene outline objects", outlines "semi-transparent" during a Morph, "the glow feature is not the
+  quality I expect"). `outline_corners` (by number, append-only: 0 *Follow the source*, as it
+  comes; 1 rounded, 2 bevel, 3 notch, 4 scoop, Corners & Edges' styles + 1) and
+  `outline_corner_size` in both filters (controls shared: `add_outline_corner_properties`,
+  `add_intensity_property`, `outline_glow_defaults` in `look-paint.*`). Not 0: the line is a shape
+  round the box (the source rect, or its panel, in `stagekit-shadow.effect`'s `box_line`; per
+  item in Scene Shadow: `LookPaint::draw_item_ring` / `draw_box_ring`, technique `BoxRing`, into
+  a ring canvas per frame or per layer, which `compose(..., ring)` / `compose_layers(..., rings)`
+  read instead of dilating the silhouette; the outer corner is capped (`line_corner`) so the box's own square corner stays under the line, and the line never lies inside the box; Morph draws it in `Pass::Ring` at each part's quad
+  with its weight, so the run's cross-fade fades it). **Scene Shadow's shadow is thrown by the
+  outlined shape** (technique `Outlined`, `LookPaint::outlined_`), as the per-source filter's
+  always was (its card includes the line). Widths were measured equal (10.00 px at scale 1 and
+  a half, shadow off); the thicker look was that difference: the per-source shadow starts past the
+  line, Scene Shadow's started under it, and had square corners behind a rounded line. In Morph,
+  a source in both scenes and one in one scene were already right (solid; the line's alpha equals
+  the source's, in linear light); what went see-through was **two different sources changing into
+  each other**: their silhouettes were mixed like their pictures, so a shape one lacked counted
+  half. The Cast pass now draws that pair at `1 / max(t, 1 - t)` strength. *Intensity*
+  (`glow_intensity`, %, 100 as it comes: `densified`, `1 - (1 - a)^k`, a soft knee, no clip). The
+  blur for shadows (`KawaseBlur(true)`: 16-bit, one more level at half the step, a full-size tent
+  at the end) and Shadow, Glow & Outline's final picture (`tr_final_`, 16-bit, written in linear
+  light when OBS draws in linear light, `out_linear`, read without an sRGB view) take the steps
+  out of a soft tail: in eight bits one alpha step near black is some thirteen levels on screen.
+  Scene Shadow's output is dithered by 0.9 of a level (`finished`). Tested in `[outline and glow:
+  ...]` (`outline_glow_test`, alone: `STAGEKIT_TEST_ONLY_OUTLINE_GLOW`; `docs/images/outline-glow.png`
+  from `$out/outline-glow`). Only OpenGL.
 - **Frame time** (`src/common/timing.*`, `src/common/scene-rev.*`; the harness `tests/collection-perf.cpp`,
   `tests/make-perf-collection.py`, `tests/run-perf.sh`, `tests/perf-compare.py`). The owner's
   *Average time to render frame* went from under 1 ms to 1.1 ms: all of it `tick_sources` (0.25 to

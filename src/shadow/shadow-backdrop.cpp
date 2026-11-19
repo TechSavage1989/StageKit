@@ -27,6 +27,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/scene-util.hpp"
 #include "../common/shown-scale.hpp"
 #include "../common/tooltip.hpp"
+#include "../look/look-paint.hpp"
 
 #include <obs-module.h>
 #include <graphics/vec2.h>
@@ -89,6 +90,9 @@ struct Settings {
 	Fill outline_fill = Fill::Color;
 	Edge outline_edge = Edge::Stretch;
 	double outline_blur = 20.0;
+	int outline_corners = 0; // 0 round the picture's own shape; 1..4 round its box (look-paint.hpp)
+	double outline_corner_size = 20.0;
+	double intensity = 1.0;
 	// Sizes are meant as they look on screen: an item drawn at half size
 	// gets twice the numbers, so 20 px of shadow is 20 px in the picture.
 	bool screen_px = true;
@@ -384,6 +388,10 @@ private:
 	gs_eparam_t *p_outline_width_ = nullptr;
 	gs_eparam_t *p_outline_color_ = nullptr;
 	gs_eparam_t *p_outline_picture_ = nullptr;
+	gs_eparam_t *p_outline_corners_ = nullptr;
+	gs_eparam_t *p_corner_size_ = nullptr;
+	gs_eparam_t *p_intensity_ = nullptr;
+	gs_eparam_t *p_out_linear_ = nullptr;
 	gs_texrender_t *tr_body_ = nullptr;
 	gs_texrender_t *tr_extended_ = nullptr;
 	gs_eparam_t *p_extended_ = nullptr;
@@ -430,13 +438,22 @@ ShadowBackdrop::ShadowBackdrop(obs_data_t *settings, obs_source_t *source) : sou
 		p_outline_width_ = gs_effect_get_param_by_name(effect_, "outline_width");
 		p_outline_color_ = gs_effect_get_param_by_name(effect_, "outline_color");
 		p_outline_picture_ = gs_effect_get_param_by_name(effect_, "outline_picture");
+		p_outline_corners_ = gs_effect_get_param_by_name(effect_, "outline_corners");
+		p_corner_size_ = gs_effect_get_param_by_name(effect_, "corner_size");
+		p_intensity_ = gs_effect_get_param_by_name(effect_, "glow_intensity");
+		p_out_linear_ = gs_effect_get_param_by_name(effect_, "out_linear");
 		p_extended_ = gs_effect_get_param_by_name(effect_, "extended");
 		p_extend_mirror_ = gs_effect_get_param_by_name(effect_, "extend_mirror");
 	}
-	blur_ = std::make_unique<KawaseBlur>();
+	// (Smooth: sixteen-bit pictures and one more level, so a soft shadow or
+	// glow has a round falloff and no steps in its tail.)
+	blur_ = std::make_unique<KawaseBlur>(true);
 	tr_input_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 	tr_card_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
-	tr_final_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
+	// (Sixteen-bit: OBS lays the picture over what is under it in linear
+	// light, where one step of eight-bit alpha near black is some thirteen
+	// levels on screen, a visible band at the end of a soft shadow or glow.)
+	tr_final_ = gs_texrender_create(GS_RGBA16F, GS_ZS_NONE);
 	tr_body_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 	tr_extended_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 	obs_leave_graphics();
@@ -511,6 +528,9 @@ void ShadowBackdrop::update(obs_data_t *settings)
 	s.outline_fill = obs_data_get_int(settings, "outline_fill") == 1 ? Fill::Picture : Fill::Color;
 	s.outline_edge = obs_data_get_int(settings, "outline_edge") == 1 ? Edge::Mirror : Edge::Stretch;
 	s.outline_blur = std::clamp(obs_data_get_double(settings, "outline_blur"), 0.0, 200.0);
+	s.outline_corners = (int)std::clamp<long long>(obs_data_get_int(settings, "outline_corners"), 0, 4);
+	s.outline_corner_size = std::clamp(obs_data_get_double(settings, "outline_corner_size"), 0.0, 500.0);
+	s.intensity = std::clamp(obs_data_get_double(settings, "glow_intensity") / 100.0, 0.25, 4.0);
 	// A glow sits evenly all round.
 	if (s.shadow_type == ShadowType::Glow)
 		s.offset_x = s.offset_y = 0.0;
@@ -895,6 +915,7 @@ Settings ShadowBackdrop::settings()
 		s.backdrop_pad /= both;
 		s.outline_width = std::min(200.0, s.outline_width / both);
 		s.outline_blur = std::min(200.0, s.outline_blur / both);
+		s.outline_corner_size /= both;
 		s.radius /= both;
 	}
 	return s;
@@ -1013,6 +1034,13 @@ void ShadowBackdrop::render()
 		gs_effect_set_float(p_outline_width_, (float)s.outline_width);
 		gs_effect_set_vec4(p_outline_color_, &outline_color);
 		gs_effect_set_float(p_outline_picture_, s.outline_fill == Fill::Picture ? 1.0f : 0.0f);
+		gs_effect_set_float(p_outline_corners_, (float)s.outline_corners);
+		gs_effect_set_float(p_corner_size_, (float)s.outline_corner_size);
+		// (The box: given again, an effect's values last for one draw.)
+		gs_effect_set_vec2(p_src_size_, &src_size);
+		gs_effect_set_vec2(p_pad_, &pad);
+		gs_effect_set_float(p_backdrop_on_, s.backdrop ? 1.0f : 0.0f);
+		gs_effect_set_float(p_backdrop_pad_, (float)s.backdrop_pad);
 		draw(tr_body_, card, "Outline");
 		if (gs_texture_t *body = gs_texrender_get_texture(tr_body_))
 			card = body;
@@ -1038,6 +1066,8 @@ void ShadowBackdrop::render()
 		gs_effect_set_float(p_hide_source_, s.hide_source ? 1.0f : 0.0f);
 		gs_effect_set_float(p_shadow_picture_, s.shadow_fill == Fill::Picture ? 1.0f : 0.0f);
 		gs_effect_set_float(p_shadow_boost_, (float)s.shadow_boost);
+		gs_effect_set_float(p_intensity_, (float)s.intensity);
+		gs_effect_set_float(p_out_linear_, gs_get_linear_srgb() ? 1.0f : 0.0f);
 		draw(tr_final_, card, "Compose");
 	}
 
@@ -1046,13 +1076,12 @@ void ShadowBackdrop::render()
 	if (gs_texture_t *final_tex = card ? gs_texrender_get_texture(tr_final_) : nullptr) {
 		gs_effect_t *def = obs_get_base_effect(OBS_EFFECT_DEFAULT);
 		gs_eparam_t *image = gs_effect_get_param_by_name(def, "image");
+		// (It holds linear light already where OBS draws in it: a
+		// sixteen-bit picture has no sRGB view to read it through.)
 		const bool linear = gs_get_linear_srgb();
 		const bool previous = gs_framebuffer_srgb_enabled();
 		gs_enable_framebuffer_srgb(linear);
-		if (linear)
-			gs_effect_set_texture_srgb(image, final_tex);
-		else
-			gs_effect_set_texture(image, final_tex);
+		gs_effect_set_texture(image, final_tex);
 		while (gs_effect_loop(def, "Draw"))
 			gs_draw_sprite(final_tex, 0, ow, oh);
 		gs_enable_framebuffer_srgb(previous);
@@ -1113,6 +1142,7 @@ obs_properties_t *get_properties(void *data)
 	slider(shadow, "offset_y", "Shadow.OffsetY", -200.0, 200.0, " px");
 	slider(shadow, "softness", "Shadow.Softness", 0.0, 200.0, " px");
 	slider(shadow, "spread", "Shadow.Spread", 0.0, 100.0, "%");
+	add_intensity_property(shadow);
 	obs_properties_add_bool(shadow, "hide_source", obs_module_text("Shadow.HideSource"));
 	obs_properties_add_group(props, "shadow", obs_module_text("Shadow.Shadow"), OBS_GROUP_CHECKABLE, shadow);
 
@@ -1128,6 +1158,7 @@ obs_properties_t *get_properties(void *data)
 	obs_property_t *line_blur = slider(outline, "outline_blur", "Shadow.OutlineBlur", 0.0, 200.0, " px");
 	set_tip(line_blur, obs_module_text("Shadow.OutlineBlur.Tip"));
 	slider(outline, "outline_opacity", "Shadow.OutlineOpacity", 0.0, 100.0, "%");
+	add_outline_corner_properties(outline);
 	obs_properties_add_group(props, "outline", obs_module_text("Shadow.Outline"), OBS_GROUP_CHECKABLE, outline);
 
 	obs_properties_t *backdrop = obs_properties_create();
@@ -1187,6 +1218,7 @@ void get_defaults(obs_data_t *settings)
 	obs_data_set_default_double(settings, "outline_blur", 20.0);
 	obs_data_set_default_int(settings, "outline_color", 0xFFFFFFFF);
 	obs_data_set_default_double(settings, "outline_opacity", 100.0);
+	outline_glow_defaults(settings);
 	obs_data_set_default_bool(settings, "backdrop", false);
 	obs_data_set_default_int(settings, "backdrop_color", 0xFF3A3A3A);
 	obs_data_set_default_double(settings, "backdrop_opacity", 100.0);

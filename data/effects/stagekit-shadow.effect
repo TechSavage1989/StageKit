@@ -31,6 +31,11 @@ uniform float outline_width;    // pixels
 uniform float4 outline_color;   // straight alpha; a = opacity
 uniform float outline_picture;  // 1 = the line takes the picture's own colours
 uniform float extend_mirror;    // 1 = past its edge the picture is mirrored, 0 = its edge is stretched
+uniform float outline_corners;  // 0 = round the picture's own shape; 1..4 = round its box, corners
+                                // rounded, cut, notched or scooped
+uniform float corner_size;      // the line's outer corners, in pixels
+uniform float glow_intensity;   // 1 as it was; more fills the soft tail in, never harder-edged
+uniform float out_linear;       // 1: Compose writes linear light (OBS draws in linear light)
 
 sampler_state linearClamp {
 	Filter   = Linear;
@@ -78,6 +83,59 @@ float4 PSCard(VertData v_in) : TARGET
 	return float4(rgb, a);
 }
 
+// Signed distance to a box with its corners shaped (Corners & Edges' maths):
+// negative inside.
+float corner_distance(float2 p, float4 r4, float r, float style)
+{
+	float2 half_size = r4.zw * 0.5;
+	float2 v = p - (r4.xy + half_size);
+	r = min(r, min(half_size.x, half_size.y));
+	float2 q = abs(v) - half_size;
+	float box = max(q.x, q.y);
+	float2 qr = q + float2(r, r);
+	float rounded = length(max(qr, float2(0.0, 0.0))) + min(max(qr.x, qr.y), 0.0) - r;
+	float cut = max(box, (q.x + q.y + r) * 0.70710678);
+	float notch = max(box, min(qr.x, qr.y));
+	float scoop = max(box, r - length(q));
+	float d = rounded;
+	d = lerp(d, cut, step(0.5, style));
+	d = lerp(d, notch, step(1.5, style));
+	d = lerp(d, scoop, step(2.5, style));
+	return d;
+}
+
+// The line's outer corner, no larger than keeps the box's own (square)
+// corner under the line: larger, the source's corner would show past it.
+// (Round: 2 + sqrt(2) widths; cut: 2; notch: 1; scoop: sqrt(2).)
+float line_corner(float r, float style)
+{
+	float most = lerp(3.41421356, 2.0, step(0.5, style));
+	most = lerp(most, 1.0, step(1.5, style));
+	most = lerp(most, 1.41421356, step(2.5, style));
+	return min(r, outline_width * most);
+}
+
+// The line as a shape round the box (the source, or its panel): the box
+// grown by the width with the chosen corners, less the box itself.
+float box_line(float2 p)
+{
+	float grow = backdrop_on * backdrop_pad;
+	float4 box = float4(pad - float2(grow, grow), src_size + float2(grow, grow) * 2.0);
+	float4 outer = float4(box.xy - float2(outline_width, outline_width),
+			      box.zw + float2(outline_width, outline_width) * 2.0);
+	float style = outline_corners - 1.0;
+	float d_out = corner_distance(p, outer, line_corner(corner_size, style), style);
+	float d_in = corner_distance(p, box, 0.0, style);
+	return saturate(0.5 - d_out) * saturate(0.5 + d_in);
+}
+
+// A soft-kneed density: 1 is the coverage as it is; more fills the soft tail
+// in towards full without clipping it.
+float densified(float a, float k)
+{
+	return 1.0 - pow(max(1.0 - saturate(a), 0.0), max(k, 0.01));
+}
+
 // The picture's own colour, made richer and brighter by boost.
 float3 picture_color(float3 c, float boost)
 {
@@ -111,6 +169,7 @@ float4 PSOutline(VertData v_in) : TARGET
 		float d = image.SampleLevel(linearClamp, v_in.uv + dir * 0.25, 0).a;
 		reach = max(reach, max(max(a, b), max(c, d)));
 	}
+	reach = lerp(reach, box_line(v_in.uv * out_size), step(0.5, outline_corners));
 	float4 own = extended.Sample(linearClamp, v_in.uv);
 	float3 line_rgb = lerp(outline_color.rgb, own.rgb, outline_picture);
 	float la = reach * outline_color.a * lerp(1.0, own.a, outline_picture);
@@ -126,12 +185,15 @@ float4 PSCompose(VertData v_in) : TARGET
 	float inside = step(0.0, suv.x) * step(suv.x, 1.0) * step(0.0, suv.y) * step(suv.y, 1.0);
 	// The softened copy comes back with straight alpha: its colours are the picture's.
 	float4 thrown = shadow.Sample(linearClamp, suv);
-	float sa = saturate(thrown.a * shadow_gain) * shadow_color.a * inside;
+	float sa = densified(thrown.a * shadow_gain, glow_intensity) * shadow_color.a * inside;
 	float3 shade = lerp(shadow_color.rgb, picture_color(thrown.rgb, shadow_boost), shadow_picture);
 
 	float3 rgb = card.rgb + shade * sa * (1.0 - card.a);
 	float a = card.a + sa * (1.0 - card.a);
-	return float4(rgb / max(a, 0.00001), a);
+	float3 straight = rgb / max(a, 0.00001);
+	float3 lin = lerp(straight / 12.92, pow(max((straight + 0.055) / 1.055, float3(0.0, 0.0, 0.0)), float3(2.4, 2.4, 2.4)),
+			  step(float3(0.04045, 0.04045, 0.04045), straight));
+	return float4(lerp(straight, lin, out_linear), a);
 }
 
 technique Card

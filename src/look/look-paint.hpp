@@ -43,6 +43,16 @@ struct ShadowLook {
 	double outline_width = 6.0;
 	uint32_t outline_color = 0xFFFFFFFF;
 	double outline_opacity = 1.0; // 0..1
+	// The line's corners (Shadow, Glow & Outline's `outline_corners`, by
+	// number, append-only): 0 round the source's own shape, as it always
+	// was; 1 rounded, 2 cut, 3 notched, 4 scooped, as a shape round the
+	// source's box, its outer corners `outline_corner_size` across.
+	int outline_corners = 0;
+	double outline_corner_size = 20.0;
+	// How dense the shadow or glow is (`glow_intensity` / 100): 1 as it
+	// always was; more fills its soft tail in without a hard edge.
+	double intensity = 1.0;
+	bool box_line() const { return outline && outline_corners > 0; }
 
 	// Whether anything is drawn at all.
 	bool any() const { return (shadow && opacity > 0.001) || (outline && outline_opacity > 0.001); }
@@ -50,6 +60,13 @@ struct ShadowLook {
 
 // The look as the settings say (the ids of Shadow, Glow & Outline).
 ShadowLook read_shadow_look(obs_data_t *settings);
+
+// The controls Shadow, Glow & Outline and Scene Shadow share for the line's
+// corners (into the line's group) and the shadow's intensity (into the
+// shadow's group), and their defaults.
+void add_outline_corner_properties(obs_properties_t *outline);
+void add_intensity_property(obs_properties_t *shadow);
+void outline_glow_defaults(obs_data_t *settings);
 
 // Both opacities times `level` (a switch fading the look in or out).
 ShadowLook scaled_look(ShadowLook look, double level);
@@ -135,8 +152,11 @@ public:
 	// draw_out.)
 	// (`scene_straight`: `scene` holds straight alpha, as compose's own
 	// pictures do, instead of OBS's premultiplied scene.)
+	// (`ring`: with a line round the boxes (`box_line`), the lines as drawn
+	// by draw_box_ring; nullptr: round the sources' own shape.)
 	bool compose(gs_texture_t *scene, gs_texture_t *cast, gs_texture_t *mask, const ShadowLook &look, uint32_t cx,
-		     uint32_t cy, gs_texrender_t *into = nullptr, bool scene_straight = false);
+		     uint32_t cy, gs_texrender_t *into = nullptr, bool scene_straight = false,
+		     gs_texture_t *ring = nullptr);
 	// Each source by itself: one shadow per layer of sources, from the
 	// bottom, each laid over the picture the one below it made. `casts[i]`
 	// is layer i's casting sources (nullptr: it casts nothing) and
@@ -144,7 +164,14 @@ public:
 	// off. Where to (`into`) and false as compose.
 	bool compose_layers(gs_texture_t *scene, const std::vector<gs_texture_t *> &casts,
 			    const std::vector<gs_texture_t *> &masks, const ShadowLook &look, uint32_t cx, uint32_t cy,
-			    gs_texrender_t *into = nullptr);
+			    gs_texrender_t *into = nullptr, const std::vector<gs_texture_t *> *rings = nullptr);
+	// A line round a box, with the look's corners (`box_line`), onto the
+	// canvas being drawn (begin_canvas): the box is the unit square under
+	// `m` (canvas pixels), counted `strength` of the way (a Morph part-way).
+	void draw_box_ring(const matrix4 &m, const ShadowLook &look, float strength);
+	// The same round an item's box as its scene draws it now (nothing for
+	// an item that draws nothing).
+	void draw_item_ring(obs_sceneitem_t *item, const ShadowLook &look);
 	// What `compose` made, onto what is being drawn, following OBS's
 	// linear-light setting.
 	void draw_out(uint32_t cx, uint32_t cy);
@@ -167,6 +194,15 @@ private:
 	gs_eparam_t *p_outline_width_ = nullptr;
 	gs_eparam_t *p_outline_color_ = nullptr;
 	gs_eparam_t *p_straight_ = nullptr;
+	gs_eparam_t *p_ring_shape_ = nullptr;
+	gs_eparam_t *p_ring_box_ = nullptr;
+	gs_eparam_t *p_intensity_ = nullptr;
+	gs_eparam_t *p_box_size_ = nullptr;
+	gs_eparam_t *p_box_rect_ = nullptr;
+	gs_eparam_t *p_corner_size_ = nullptr;
+	gs_eparam_t *p_corner_style_ = nullptr;
+	gs_eparam_t *p_ring_strength_ = nullptr;
+	gs_texrender_t *outlined_ = nullptr; // the casting sources with their line, which casts the shadow
 	std::unique_ptr<KawaseBlur> blur_;
 	gs_texrender_t *out_ = nullptr;
 	gs_texrender_t *between_[2] = {nullptr, nullptr}; // compose_layers' pictures on the way
