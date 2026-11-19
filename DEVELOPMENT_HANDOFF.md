@@ -23,7 +23,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
-## Ambient Background: no bars between repeats (0.1.0-betaNEXT)
+## Ambient Background: no bars between repeats (0.1.0-beta205)
 
 Branch `fix/ambient-seams`. Not pushed. The owner's background image had fully transparent left
 and right columns (about 3 % a side); *Mirror at the edges* and the drift repeated them as black
@@ -33,7 +33,7 @@ sampling (`picture_crop`, `uv_crop`). A source as the base and live captures are
 cheap measure exists for them). The drift and mirror maths were checked and had no seam. Gates
 passed: AMBIENT_SEAMS (new), BLUR_OFF_DRAW, AMBIENT_DARKEST. Not seen on Direct3D.
 
-## An animated standby image plays (0.1.0-betaNEXT)
+## An animated standby image plays (0.1.0-beta205)
 
 Branch `fix/standby-gif`, on `main`. Not pushed. The owner's standby image is an animated GIF
 (`start.gif`) and stood still. `tick_animated_image` in `src/common/start-image.*` ticks the
