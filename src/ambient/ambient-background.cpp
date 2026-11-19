@@ -16,6 +16,7 @@ the Free Software Foundation; either version 2 of the License, or
 // Pipeline (the picture is built at half resolution, since it ends up
 // blurred anyway):
 //   base image/source --scroll, saturation, glow--> scene
+//   (or a pattern, drawn by a shader of its own in one pass, in the image's place)
 //   live capture      --cover, opacity------------> scene
 //   scene -> darkest level (only when set) -> blur or trail -> bloom ->
 //   mosaic -> texture overlay, vignette, brightness -> output
@@ -54,7 +55,21 @@ namespace stagekit {
 
 namespace {
 
-enum class BaseType : int { Image = 0, Source = 1, StartImage = 2 };
+// Saved by number: new ones go at the end.
+enum class BaseType : int { Image = 0, Source = 1, StartImage = 2, Pattern = 3 };
+// The patterns, each a technique of stagekit-patterns.effect. Saved by
+// number: new ones go at the end.
+constexpr const char *kPatternTechniques[] = {"Aurora", "Plasma",   "Lava",   "Waves", "Bokeh",
+					      "Stars",  "Gradient", "Nebula", "Grid",  "Rays"};
+constexpr const char *kPatternNames[] = {"Ambient.Pattern.Aurora",   "Ambient.Pattern.Plasma", "Ambient.Pattern.Lava",
+					 "Ambient.Pattern.Waves",    "Ambient.Pattern.Bokeh",  "Ambient.Pattern.Stars",
+					 "Ambient.Pattern.Gradient", "Ambient.Pattern.Nebula", "Ambient.Pattern.Grid",
+					 "Ambient.Pattern.Rays"};
+constexpr int kPatterns = 10;
+constexpr const char *kPatternsFile = "effects/stagekit-patterns.effect";
+// A pattern comes back to where it began after this long at a speed of 100 %:
+// the shader is handed how far through it is, 0..1, never a growing time.
+constexpr double kPatternLoopS = 240.0;
 enum class LiveMode : int { None = 0, Auto = 1, Source = 2 };
 // How the live capture is laid over the screen.
 enum class LiveFit : int { Fill = 0, Fit = 1, Stretch = 2, Width = 3, Height = 4 };
@@ -145,6 +160,12 @@ struct Settings {
 	BaseType base_type = BaseType::Image;
 	std::string image;
 	std::string base_source;
+	int pattern = 0;
+	double pattern_speed = 1.0; // 0: still; under 0: backwards
+	double pattern_scale = 1.0;
+	double pattern_detail = 0.5;
+	uint32_t pattern_colour[3] = {0xFF3C1814, 0xFFBEA028, 0xFFA046C8}; // as OBS keeps a colour: 0xAABBGGRR
+	double test_time = -1.0;                                           // the tests': the time a pattern is drawn at
 	double speed_x = 30.0;
 	double speed_y = 15.0;
 	double zoom = 1.2;
@@ -264,6 +285,7 @@ private:
 			double focus_x = 0.5, double focus_y = 0.5, bool as_is = false,
 			const PictureCrop &crop = PictureCrop());
 	void draw_base(gs_texture_t *base, uint32_t w, uint32_t h, const Settings &s);
+	gs_texture_t *draw_pattern(const Settings &s, uint32_t w, uint32_t h);
 	void pass(gs_effect_t *effect, gs_eparam_t *image, gs_texrender_t *dst, gs_texture_t *src, uint32_t w,
 		  uint32_t h, const char *technique);
 	gs_texture_t *blur(gs_texture_t *input, uint32_t w, uint32_t h, double strength);
@@ -316,6 +338,20 @@ private:
 	gs_eparam_t *p_overlay_gray_ = nullptr;
 	gs_eparam_t *p_brightness_ = nullptr;
 	gs_eparam_t *p_vignette_ = nullptr;
+
+	// The patterns: a shader file of their own, loaded when a pattern is first
+	// chosen. Should it not load, the image is the background and the log says
+	// so once.
+	gs_effect_t *patterns_ = nullptr;
+	bool patterns_tried_ = false;
+	gs_eparam_t *pp_phase_ = nullptr;
+	gs_eparam_t *pp_aspect_ = nullptr;
+	gs_eparam_t *pp_scale_ = nullptr;
+	gs_eparam_t *pp_detail_ = nullptr;
+	gs_eparam_t *pp_colour_[3] = {nullptr, nullptr, nullptr};
+	std::atomic<double> pattern_speed_{1.0};
+	std::atomic<double> pattern_phase_{0.0}; // 0..1 through the loop, moved on by the tick
+	bool base_is_pattern_ = false;           // in the drawing in progress
 
 	gs_effect_t *blur_effect_ = nullptr;
 	gs_eparam_t *pb_image_ = nullptr;
@@ -475,6 +511,7 @@ AmbientBackground::~AmbientBackground()
 	gs_effect_destroy(effect_);
 	gs_effect_destroy(blur_effect_);
 	gs_effect_destroy(looks_);
+	gs_effect_destroy(patterns_);
 	gs_texrender_destroy(tr_probe_);
 	gs_stagesurface_destroy(probe_stage_);
 	gs_texrender_destroy(tr_was_);
@@ -531,6 +568,45 @@ void AmbientBackground::update(obs_data_t *settings)
 	s.base_type = static_cast<BaseType>(obs_data_get_int(settings, "base_type"));
 	s.image = obs_data_get_string(settings, "image");
 	s.base_source = obs_data_get_string(settings, "base_source");
+	s.pattern = (int)std::clamp<long long>(obs_data_get_int(settings, "pattern"), 0, kPatterns - 1);
+	s.pattern_speed = std::clamp(obs_data_get_double(settings, "pattern_speed") / 100.0, -4.0, 4.0);
+	s.pattern_scale = std::clamp(obs_data_get_double(settings, "pattern_scale") / 100.0, 0.25, 4.0);
+	s.pattern_detail = std::clamp(obs_data_get_double(settings, "pattern_detail") / 100.0, 0.0, 1.0);
+	s.pattern_colour[0] = (uint32_t)obs_data_get_int(settings, "pattern_colour1");
+	s.pattern_colour[1] = (uint32_t)obs_data_get_int(settings, "pattern_colour2");
+	s.pattern_colour[2] = (uint32_t)obs_data_get_int(settings, "pattern_colour3");
+	// (Only the tests set this: a pattern drawn at a time of their choosing.)
+	if (obs_data_has_user_value(settings, "test_pattern_time"))
+		s.test_time = obs_data_get_double(settings, "test_pattern_time");
+	pattern_speed_ = s.pattern_speed;
+	// The patterns' shaders, the first time a pattern is asked for. Nothing
+	// is loaded for a background that never shows one.
+	if (s.base_type == BaseType::Pattern && !patterns_tried_) {
+		patterns_tried_ = true;
+		// (The tests name a file that is not there.)
+		const char *named = obs_data_get_string(settings, "test_pattern_effect");
+		const char *file = *named ? named : kPatternsFile;
+		char *path = obs_module_file(file);
+		char *errors = nullptr;
+		obs_enter_graphics();
+		patterns_ = path ? gs_effect_create_from_file(path, &errors) : nullptr;
+		obs_leave_graphics();
+		if (patterns_) {
+			pp_phase_ = gs_effect_get_param_by_name(patterns_, "phase");
+			pp_aspect_ = gs_effect_get_param_by_name(patterns_, "aspect");
+			pp_scale_ = gs_effect_get_param_by_name(patterns_, "scale");
+			pp_detail_ = gs_effect_get_param_by_name(patterns_, "detail");
+			pp_colour_[0] = gs_effect_get_param_by_name(patterns_, "colour1");
+			pp_colour_[1] = gs_effect_get_param_by_name(patterns_, "colour2");
+			pp_colour_[2] = gs_effect_get_param_by_name(patterns_, "colour3");
+		} else {
+			obs_log(LOG_ERROR,
+				"Ambient Background: the patterns are not available (failed to load '%s': %s); the image is shown in a pattern's place.",
+				file, errors ? errors : "not found");
+		}
+		bfree(errors);
+		bfree(path);
+	}
 	s.speed_x = obs_data_get_double(settings, "speed_x");
 	s.speed_y = obs_data_get_double(settings, "speed_y");
 	s.zoom = std::clamp(obs_data_get_double(settings, "zoom") / 100.0, 1.0, 4.0);
@@ -584,7 +660,12 @@ void AmbientBackground::update(obs_data_t *settings)
 	// The picture is this source's own file, or the shared start image.
 	// With no start image chosen yet, its own file stands in.
 	const std::string start = ambient_picture_path();
-	const std::string wanted = s.base_type == BaseType::StartImage && !start.empty() ? start : s.image;
+	// A pattern needs no image, unless its shaders did not load: then the
+	// standby image (or the file) is the background.
+	const bool pattern = s.base_type == BaseType::Pattern;
+	const std::string wanted = pattern && patterns_                                                 ? std::string()
+				   : (pattern || s.base_type == BaseType::StartImage) && !start.empty() ? start
+													: s.image;
 	start_revision_ = start_image_revision();
 	if (wanted != base_image_path_ || (!wanted.empty() && !base_image_loaded_)) {
 		base_image_path_ = wanted;
@@ -694,6 +775,12 @@ void AmbientBackground::resolve_children()
 void AmbientBackground::tick(float seconds)
 {
 	time_ += seconds;
+	// A pattern moves on by its speed, whatever the frame rate, and is kept
+	// within its loop here: the shader never sees a large number.
+	{
+		double phase = pattern_phase_.load() + (double)seconds * pattern_speed_.load() / kPatternLoopS;
+		pattern_phase_ = phase - std::floor(phase);
+	}
 	// An animated picture (a GIF) plays, as in OBS's own Image source.
 	{
 		const bool showing = obs_source_showing(source_);
@@ -723,7 +810,8 @@ void AmbientBackground::tick(float seconds)
 		bool uses_it;
 		{
 			std::lock_guard lock(mutex_);
-			uses_it = settings_.base_type == BaseType::StartImage;
+			uses_it = settings_.base_type == BaseType::StartImage ||
+				  (settings_.base_type == BaseType::Pattern && !patterns_);
 		}
 		const std::string path = ambient_picture_path();
 		if (uses_it && !path.empty() && path != base_image_path_) {
@@ -951,12 +1039,51 @@ void AmbientBackground::draw_layer(gs_texture_t *tex, uint32_t out_w, uint32_t o
 void AmbientBackground::draw_base(gs_texture_t *base, uint32_t w, uint32_t h, const Settings &s)
 {
 	// The collection-wide framing applies to the shared picture only.
+	// A pattern fills the screen as it is: the Motion controls are for an
+	// image (the pattern moves by its own Speed).
+	if (base_is_pattern_) {
+		draw_layer(base, w, h, 0.0, 0.0, 1.0, 1.0, s, LiveFit::Stretch);
+		return;
+	}
 	AmbientView view;
 	if (s.base_type == BaseType::StartImage)
 		view = ambient_view();
 	draw_layer(base, w, h, s.speed_x * time_ * kInternalScale, s.speed_y * time_ * kInternalScale,
 		   s.zoom * view.zoom, 1.0, s, LiveFit::Fill, false, view.focus_x, view.focus_y, false,
 		   s.base_type == BaseType::Source ? PictureCrop() : drawn_crop_);
+}
+
+// The pattern chosen, drawn at the picture's working size: one pass, no
+// texture read. Every uniform of the file is set at every run.
+gs_texture_t *AmbientBackground::draw_pattern(const Settings &s, uint32_t w, uint32_t h)
+{
+	gs_texrender_reset(tr_base_);
+	if (!gs_texrender_begin(tr_base_, w, h))
+		return nullptr;
+	double phase = pattern_phase_.load();
+	if (s.test_time >= 0.0) {
+		phase = s.test_time * s.pattern_speed / kPatternLoopS;
+		phase -= std::floor(phase);
+	}
+	vec2 aspect;
+	vec2_set(&aspect, (float)w / (float)h, 1.0f);
+	gs_effect_set_float(pp_phase_, (float)phase);
+	gs_effect_set_vec2(pp_aspect_, &aspect);
+	gs_effect_set_float(pp_scale_, (float)s.pattern_scale);
+	gs_effect_set_float(pp_detail_, (float)s.pattern_detail);
+	for (int i = 0; i < 3; i++) {
+		vec4 colour;
+		vec4_from_rgba(&colour, s.pattern_colour[i] | 0xFF000000u);
+		gs_effect_set_vec4(pp_colour_[i], &colour);
+	}
+	gs_blend_state_push();
+	gs_blend_function(GS_BLEND_ONE, GS_BLEND_ZERO);
+	gs_ortho(0.0f, (float)w, 0.0f, (float)h, -100.0f, 100.0f);
+	while (gs_effect_loop(patterns_, kPatternTechniques[s.pattern]))
+		gs_draw_sprite(nullptr, 0, w, h);
+	gs_blend_state_pop();
+	gs_texrender_end(tr_base_);
+	return gs_texrender_get_texture(tr_base_);
 }
 
 void AmbientBackground::pass(gs_effect_t *effect, gs_eparam_t *image, gs_texrender_t *dst, gs_texture_t *src,
@@ -1098,7 +1225,10 @@ void AmbientBackground::render()
 	gs_enable_framebuffer_srgb(false);
 
 	gs_texture_t *base = nullptr;
-	if (s.base_type == BaseType::Source) {
+	base_is_pattern_ = s.base_type == BaseType::Pattern && patterns_;
+	if (base_is_pattern_) {
+		base = draw_pattern(s, iw, ih);
+	} else if (s.base_type == BaseType::Source) {
 		if (base_source)
 			base = render_child(base_source, tr_base_);
 	} else if (base_image_loaded_) {
@@ -1408,6 +1538,11 @@ bool visibility_modified(obs_properties_t *props, obs_property_t *, obs_data_t *
 	const bool has_overlay = *obs_data_get_string(settings, "overlay") != 0;
 	obs_property_set_visible(obs_properties_get(props, "image"), base == BaseType::Image);
 	obs_property_set_visible(obs_properties_get(props, "base_source"), base == BaseType::Source);
+	for (const char *name : {"pattern", "pattern_colour1", "pattern_colour2", "pattern_colour3", "pattern_speed",
+				 "pattern_scale", "pattern_detail"})
+		obs_property_set_visible(obs_properties_get(props, name), base == BaseType::Pattern);
+	// (A pattern moves by its own Speed; drift, zoom and mirror are an image's.)
+	obs_property_set_visible(obs_properties_get(props, "motion_group"), base != BaseType::Pattern);
 	obs_property_set_visible(obs_properties_get(props, "live_source"), live == LiveMode::Source);
 	obs_property_set_visible(obs_properties_get(props, "live_opacity"), live != LiveMode::None);
 	for (const char *name : {"live_fit", "live_zoom", "live_replace", "live_ready", "live_skip_standby"})
@@ -1454,6 +1589,7 @@ obs_properties_t *get_properties(void *)
 	obs_property_list_add_int(base, obs_module_text("Ambient.BaseType.Image"), (int)BaseType::Image);
 	obs_property_list_add_int(base, obs_module_text("Ambient.BaseType.StartImage"), (int)BaseType::StartImage);
 	obs_property_list_add_int(base, obs_module_text("Ambient.BaseType.Source"), (int)BaseType::Source);
+	obs_property_list_add_int(base, obs_module_text("Ambient.BaseType.Pattern"), (int)BaseType::Pattern);
 	obs_property_set_modified_callback(base, visibility_modified);
 	obs_properties_add_path(picture, "image", obs_module_text("Ambient.Image"), OBS_PATH_FILE, image_filter,
 				nullptr);
@@ -1461,6 +1597,23 @@ obs_properties_t *get_properties(void *)
 							      obs_module_text("Ambient.BaseSource"),
 							      OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
 	fill_source_list(base_source, true);
+	// A pattern: which, its three colours and how it moves.
+	obs_property_t *pattern = obs_properties_add_list(picture, "pattern", obs_module_text("Ambient.Pattern"),
+							  OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+	for (int i = 0; i < kPatterns; i++)
+		obs_property_list_add_int(pattern, obs_module_text(kPatternNames[i]), i);
+	set_tip(pattern, obs_module_text("Ambient.Pattern.Tip"));
+	obs_property_t *colour1 =
+		obs_properties_add_color(picture, "pattern_colour1", obs_module_text("Ambient.PatternColour1"));
+	set_tip(colour1, obs_module_text("Ambient.PatternColour.Tip"));
+	obs_properties_add_color(picture, "pattern_colour2", obs_module_text("Ambient.PatternColour2"));
+	obs_properties_add_color(picture, "pattern_colour3", obs_module_text("Ambient.PatternColour3"));
+	obs_property_t *pattern_speed = percent_slider(picture, "pattern_speed", "Ambient.PatternSpeed", -400.0, 400.0);
+	set_tip(pattern_speed, obs_module_text("Ambient.PatternSpeed.Tip"));
+	obs_property_t *pattern_scale = percent_slider(picture, "pattern_scale", "Ambient.PatternScale", 25.0, 400.0);
+	set_tip(pattern_scale, obs_module_text("Ambient.PatternScale.Tip"));
+	obs_property_t *pattern_detail = percent_slider(picture, "pattern_detail", "Ambient.PatternDetail", 0.0, 100.0);
+	set_tip(pattern_detail, obs_module_text("Ambient.PatternDetail.Tip"));
 	obs_property_t *live = obs_properties_add_list(picture, "live_mode", obs_module_text("Ambient.Live"),
 						       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(live, obs_module_text("Ambient.Live.None"), (int)LiveMode::None);
@@ -1630,6 +1783,13 @@ obs_properties_t *get_properties(void *)
 void get_defaults(obs_data_t *settings)
 {
 	obs_data_set_default_int(settings, "base_type", (int)BaseType::StartImage);
+	obs_data_set_default_int(settings, "pattern", 0);
+	obs_data_set_default_int(settings, "pattern_colour1", 0xFF3C1814); // a deep blue
+	obs_data_set_default_int(settings, "pattern_colour2", 0xFFBEA028); // a teal
+	obs_data_set_default_int(settings, "pattern_colour3", 0xFFA046C8); // a magenta
+	obs_data_set_default_double(settings, "pattern_speed", 100.0);
+	obs_data_set_default_double(settings, "pattern_scale", 100.0);
+	obs_data_set_default_double(settings, "pattern_detail", 50.0);
 	obs_data_set_default_int(settings, "live_mode", (int)LiveMode::None);
 	obs_data_set_default_double(settings, "live_opacity", 70.0);
 	obs_data_set_default_int(settings, "live_fit", (int)LiveFit::Fill);

@@ -2461,6 +2461,29 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   (`lent_`, `own_` in `src/capture/standby.cpp`); then the filter's own settings apply again. The
   owner: "add an option for no game: show standby image, with transition options similar to
   other filters". Without a Standby Picture, hiding hides the capture's items in every scene.
+- **Ambient Background's patterns** (`base_type` 3, `BaseType::Pattern`, *Background from: A
+  pattern*; the owner, 2026-11-19: "id like to have some animated ambient background choices
+  added too. some procedural ones that would be appealing"). `pattern` (by number, append-only,
+  `kPatternTechniques`: 0 Aurora, 1 Plasma, 2 Lava, 3 Waves, 4 Bokeh, 5 Stars, 6 Gradient,
+  7 Nebula, 8 Grid, 9 Rays), `pattern_colour1`..`3`, `pattern_speed` (%, -400..400), `pattern_scale`,
+  `pattern_detail`. Each is a technique of **`data/effects/stagekit-patterns.effect`, a file of
+  its own** with no texture, loaded only when a pattern is first chosen (`patterns_tried_`); if it
+  does not load, one error is logged and the standby image (or the file) is the background.
+  `draw_pattern` draws it into `tr_base_` at the working (half) size, and from there it is the
+  base like an image: saturation and glow in `Layer`, capture blend and transition, Darkest level,
+  blur, bloom, mosaic, Final. **Motion is not applied** (`draw_base` lays it down stretched, the
+  Motion group is hidden): a pattern moves by its own Speed. Time is `pattern_phase_`, 0..1 through
+  a loop of `kPatternLoopS` (240 s at 100 %), moved on in the tick by the frame's seconds and
+  wrapped there; the shader gets only `phase` and every motion is `turn(k)` or `frac(phase * k)`
+  with a whole k (drifting cells are numbered round sixteen, `wrap16`), so the loop has no seam and
+  no large number reaches the shader. Keep to that in a new pattern, and to small-number `hash`
+  (no `sin(x) * 43758`). *Colours from capture* was asked for only if cheap and is not built:
+  nothing here knows the capture's colours without a read-back. Test seams, settings only the
+  tests write: `test_pattern_time` (seconds; the phase is that times the speed) and
+  `test_pattern_effect` (another file name, to miss). Tested in `[ambient background: patterns]`
+  (`ambient_patterns_test`, alone: `STAGEKIT_TEST_ONLY_AMBIENT_PATTERNS`, its own run in
+  `run-tests.sh`; sheet `docs/images/ambient-patterns.png` from `$out/ambient-patterns`). Only
+  OpenGL; not seen on Windows.
 - **Ambient Background's Bloom has two styles** (`bloom_style`): 0, the bright parts shine
   (threshold, screen-blended); 1, *Whole picture, amplified*: all of the picture's light added
   back (`BloomAmplify`), which is what the bloom in the owner's old collection did

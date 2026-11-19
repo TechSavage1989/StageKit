@@ -23,6 +23,26 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
+## Ambient Background patterns (0.1.0-betaNEXT)
+
+The owner: "id like to have some animated ambient background choices added too. some procedural
+ones that would be appealing." *Background from: A pattern* (`base_type` 3) with ten patterns, a
+three-colour palette, Speed, Size and Detail. Details in AGENTS.md (*Ambient Background's
+patterns*).
+
+- The shaders are `data/effects/stagekit-patterns.effect`, a new file loaded only when a pattern is
+  chosen. **It has only run on OpenGL.** If Direct3D refuses it, the background shows the image and
+  the log has one line, `Ambient Background: the patterns are not available (...)`: ask the owner
+  for that line if a pattern shows the standby image instead.
+- A pattern takes the image's place in the pipeline; nothing after it changed. Motion (drift, zoom,
+  mirror) is not applied to a pattern and its group is hidden.
+- Not built: *Colours from capture* (no cheap source of the capture's colours), a hex lattice for
+  Grid pulse (it is a square grid).
+- Tests run for this change: AMBIENT_PATTERNS (new), AMBIENT_SEAMS, AMBIENT_DARKEST, BLUR_OFF_DRAW,
+  STANDBY_GIF, TOOLTIPS. The full suite was not run (the owner is short on usage).
+- The default blur (60) turns every pattern into soft colour; the README and the tooltip say to
+  turn it down. Whether the defaults look right on the owner's screen is theirs to say.
+
 ## Fading lines again, and a full-screen main image (0.1.0-beta213)
 
 Branch `fix/outline-fade-2`, rebased on `main` at beta212. Not pushed. The owner on beta211:
