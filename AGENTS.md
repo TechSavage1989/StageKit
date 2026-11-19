@@ -548,7 +548,12 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
 - **Fit to Space follows a renamed source** (`on_source_rename` in `src/placement/fit-item.cpp`,
   beta144: `item`, `keep_item`, `orig_item`). The owner's camera source had been renamed and
   two of its three filters still named the old one, so they did nothing. No other filter
-  follows a rename yet; give one the same when it is asked for.
+  follows a rename yet; give one the same when it is asked for. A registry of filters gone
+  through from another thread (this rename, Scene Fit's, Scene Modes', Scene Transitions') reaches
+  each filter's source through `OwnerRef` (`src/common/owner-ref.hpp`, a weak reference held for
+  the filter's life), never `obs_source_get_ref` on the raw pointer: OBS frees the weak control at
+  the last release and calls the filter's destroy later, on its destruction thread (valgrind, a
+  rename right after a removal; `[fit: a rename right after ...]`, `STAGEKIT_TEST_ONLY_FIT_RENAME`).
 - **The change between a source and its stand-in is one transition, the Standby filter's**
   (beta141). The owner: "the dslr standby works, but I want it to morph or perform transition
   that I choose. currently it seems to just slide": the slide was the item's own hide transition,

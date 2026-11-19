@@ -511,6 +511,7 @@ std::string fit_list_prefix(const std::string &entry)
 FitEngine::FitEngine(obs_data_t *settings, obs_source_t *owner, std::string prefix, std::string entry,
 		     std::string look_prefix, std::string look_list_prefix)
 	: source_(owner),
+	  owner_(owner),
 	  prefix_(std::move(prefix)),
 	  entry_(std::move(entry)),
 	  list_prefix_(entry_.empty() ? std::string() : fit_list_prefix(entry_))
@@ -962,7 +963,7 @@ int fit_set_toward_for(obs_source_t *scene, const char *name, int toward)
 				seen = seen || (source == engine->source() && k == key);
 			if (seen)
 				continue;
-			if (obs_source_t *source = obs_source_get_ref(engine->source()))
+			if (obs_source_t *source = engine->owner_ref())
 				found.emplace_back(source, key);
 		}
 	}
@@ -3410,7 +3411,7 @@ std::vector<obs_source_t *> engine_owners()
 	for (FitEngine *each : g_filters) {
 		if (!each->prefix().empty())
 			continue; // a Scene Fit follows a rename itself
-		if (obs_source_t *held = obs_source_get_ref(each->source()))
+		if (obs_source_t *held = each->owner_ref())
 			owners.push_back(held);
 	}
 	return owners;

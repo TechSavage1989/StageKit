@@ -7285,6 +7285,90 @@ static void switch_is_command_test()
 	obs_source_release(before_out);
 }
 
+// Fit to Space and Scene Fit listen to every source's rename. A filter
+// removed and released just before a rename was still in their registry
+// while OBS destroyed it on its own thread, and the rename read its freed
+// weak control (valgrind; alone with STAGEKIT_TEST_ONLY_FIT_RENAME).
+static void fit_rename_test()
+{
+	printf("\n[fit: a rename right after a fit filter is removed]\n");
+	obs_data_t *cd = obs_data_create();
+	obs_data_set_int(cd, "width", 160);
+	obs_data_set_int(cd, "height", 90);
+	obs_source_t *src = obs_source_create("color_source", "FR Source 0", cd, nullptr);
+	obs_data_release(cd);
+	obs_scene_t *scene = obs_scene_create("FR Scene");
+	obs_source_t *scene_src = obs_scene_get_source(scene);
+	obs_sceneitem_t *item = obs_scene_add(scene, src);
+	int names = 0;
+	auto name_now = [&] {
+		return "FR Source " + std::to_string(names);
+	};
+	auto make = [&](bool scene_fit, int n) {
+		obs_data_t *d = obs_data_create();
+		obs_source_t *filter;
+		const std::string current = name_now();
+		if (scene_fit) {
+			obs_data_array_t *list = obs_data_array_create();
+			obs_data_t *entry = obs_data_create();
+			obs_data_set_string(entry, "value", current.c_str());
+			obs_data_array_push_back(list, entry);
+			obs_data_release(entry);
+			obs_data_set_array(d, "entries", list);
+			obs_data_array_release(list);
+			filter = obs_source_create("stagekit_scene_fit", ("FR Scene Fit " + std::to_string(n)).c_str(),
+						   d, nullptr);
+		} else {
+			obs_data_set_string(d, "item", current.c_str());
+			filter = obs_source_create("stagekit_fit_item", ("FR Fit " + std::to_string(n)).c_str(), d,
+						   nullptr);
+		}
+		obs_data_release(d);
+		obs_source_filter_add(scene_src, filter);
+		return filter;
+	};
+	auto rename = [&] {
+		names++;
+		obs_source_set_name(src, name_now().c_str());
+	};
+	// Removed, released, renamed at once: twenty times each way.
+	for (int round = 0; round < 40; round++) {
+		obs_source_t *filter = make(round % 2 == 1, round);
+		render(scene_src, 320, 180);
+		obs_source_filter_remove(scene_src, filter);
+		obs_source_release(filter);
+		rename();
+	}
+	// Released on another thread while the source is renamed here.
+	for (int round = 0; round < 20; round++) {
+		obs_source_t *a = make(false, 100 + round);
+		obs_source_t *b = make(true, 100 + round);
+		obs_source_filter_remove(scene_src, a);
+		obs_source_filter_remove(scene_src, b);
+		std::thread other([a, b] {
+			obs_source_release(a);
+			obs_source_release(b);
+		});
+		for (int i = 0; i < 3; i++)
+			rename();
+		other.join();
+	}
+	// One that stays still follows the rename.
+	obs_source_t *kept = make(false, 999);
+	rename();
+	obs_data_t *ks = obs_source_get_settings(kept);
+	CHECK(name_now() == obs_data_get_string(ks, "item"),
+	      "a Fit to Space still on its scene follows the rename (it names '%s')", obs_data_get_string(ks, "item"));
+	obs_data_release(ks);
+	obs_source_filter_remove(scene_src, kept);
+	obs_source_release(kept);
+	sleep_ms(200);
+	CHECK(true, "no filter removed just before a rename was reached (valgrind tells)");
+	obs_sceneitem_remove(item);
+	obs_source_release(src);
+	obs_scene_release(scene);
+}
+
 // Scene Modes' "Placed in this mode": a widget shown in two modes sits in a
 // place of each mode's own. The owner: "my amuse component aligns with the
 // chat box in chat mode, but in GBA mode, it's misaligned and not the same
@@ -7527,7 +7611,6 @@ static void mode_place_test()
 		      pos(si).x, pos(si).y, fitted.x, fitted.y);
 		obs_source_filter_remove(side_src, fit);
 		obs_source_release(fit);
-		sleep_ms(300); // (gone for good before the rename below)
 	}
 
 	// A rename: the lists and the saved places follow.
@@ -16527,6 +16610,13 @@ int main(int argc, char **argv)
 		return g_failures ? 1 : 0;
 	}
 
+	if (getenv("STAGEKIT_TEST_ONLY_FIT_RENAME")) { // to try that section alone
+		fit_rename_test();
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
 	if (getenv("STAGEKIT_TEST_ONLY_MODE_PLACE")) { // to try that section alone
 		mode_place_test();
 		obs_shutdown();
@@ -25581,6 +25671,8 @@ int main(int argc, char **argv)
 		modes_hide_test();
 		// Placed in this mode (alone: STAGEKIT_TEST_ONLY_MODE_PLACE).
 		mode_place_test();
+		// A rename right after a fit filter goes (STAGEKIT_TEST_ONLY_FIT_RENAME).
+		fit_rename_test();
 	}
 	// ==== end scene-filters:modes ====
 	// ==== scene-filters:transitions ====

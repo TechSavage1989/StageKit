@@ -11,6 +11,7 @@ the Free Software Foundation; either version 2 of the License, or
 #pragma once
 
 #include "../common/easing.hpp"
+#include "../common/owner-ref.hpp"
 #include "../common/scene-util.hpp"
 #include "../dock/arrange.hpp"
 
@@ -405,6 +406,8 @@ public:
 	void attach(obs_source_t *parent, bool forget = true);
 	void detach(bool forget = true);
 	obs_source_t *source() const { return source_; }
+	// A reference to release, or nullptr once the filter's source is going.
+	obs_source_t *owner_ref() const { return owner_.get(); }
 	obs_source_t *parent() const { return parent_; }
 	const std::string &prefix() const { return prefix_; }
 	// Where how it fits is read from now (its own prefix, or a Scene Fit's
@@ -511,6 +514,7 @@ private:
 	void rebase(const Prep &p);
 
 	obs_source_t *source_;
+	OwnerRef owner_;
 	std::string prefix_, entry_, list_prefix_;
 	std::string look_prefix_, look_list_prefix_; // under mutex_: where how it fits is read from
 	obs_source_t *parent_ = nullptr;

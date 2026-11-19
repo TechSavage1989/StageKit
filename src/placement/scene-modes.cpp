@@ -51,6 +51,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/holds-hidden.hpp"
 #include "../common/item-transition.hpp"
 #include "../common/loading.hpp"
+#include "../common/owner-ref.hpp"
 #include "../common/pick-list.hpp"
 #include "../common/scene-util.hpp"
 #include "../common/timing.hpp"
@@ -526,7 +527,7 @@ struct Seen {
 
 class SceneModes {
 public:
-	SceneModes(obs_data_t *settings, obs_source_t *source) : source_(source)
+	SceneModes(obs_data_t *settings, obs_source_t *source) : source_(source), owner_(source)
 	{
 		update(settings);
 		{
@@ -543,13 +544,20 @@ public:
 	~SceneModes()
 	{
 		detach();
-		std::lock_guard lock(g_modes_mutex);
-		g_modes.erase(std::remove(g_modes.begin(), g_modes.end(), this), g_modes.end());
-		if (--g_rename_users == 0)
+		bool last;
+		{
+			std::lock_guard lock(g_modes_mutex);
+			g_modes.erase(std::remove(g_modes.begin(), g_modes.end(), this), g_modes.end());
+			last = --g_rename_users == 0;
+		}
+		// Not under g_modes_mutex: a rename being handled holds the signal's
+		// lock and waits for g_modes_mutex.
+		if (last)
 			signal_handler_disconnect(obs_get_signal_handler(), "source_rename", on_source_rename, nullptr);
 	}
 
 	obs_source_t *source() const { return source_; }
+	obs_source_t *owner_ref() const { return owner_.get(); }
 
 	obs_source_t *parent()
 	{
@@ -1424,6 +1432,7 @@ private:
 	}
 
 	obs_source_t *source_;
+	OwnerRef owner_;
 	obs_source_t *parent_ = nullptr; // under g_modes_mutex
 	std::mutex mutex_;
 	std::vector<Mode> modes_;
@@ -1481,7 +1490,7 @@ void on_source_rename(void *, calldata_t *cd)
 	{
 		std::lock_guard lock(g_modes_mutex);
 		for (SceneModes *each : g_modes)
-			if (obs_source_t *held = obs_source_get_ref(each->source()))
+			if (obs_source_t *held = each->owner_ref())
 				filters.push_back(held);
 	}
 	for (obs_source_t *filter : filters) {
@@ -2028,7 +2037,7 @@ std::vector<obs_source_t *> filters_on(const char *scene, const char *filter)
 			continue;
 		if (filter && *filter && strcmp(filter, obs_source_get_name(each->source())) != 0)
 			continue;
-		if (obs_source_t *held = obs_source_get_ref(each->source()))
+		if (obs_source_t *held = each->owner_ref())
 			out.push_back(held);
 	}
 	return out;

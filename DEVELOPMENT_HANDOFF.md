@@ -23,6 +23,19 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
+## A rename right after a fit filter goes (0.1.0-betaNEXT)
+
+Branch `fix/fit-rename-uaf`. Not pushed. Valgrind found an invalid read in `engine_owners()` when
+a source was renamed right after a Fit to Space was removed: `obs_source_release` frees a source's
+weak control at once and OBS calls the filter's destroy later on its destruction thread, so the
+engine was still in `g_filters` and `obs_source_get_ref(source_)` read the freed control. Fit
+engines, Scene Fit, Scene Modes and Scene Transitions now hold an `OwnerRef`
+(`src/common/owner-ref.hpp`) and their registries take references through it. Scene Modes'
+destructor disconnects `source_rename` outside `g_modes_mutex` (a rename in progress holds the
+signal's lock and waits for that mutex). The 300 ms wait in the `MODE_PLACE` test before its
+rename is gone. Gates `FIT_RENAME` (also under valgrind), `FIT_ENABLE`, `FIT_KEEP_SIZE`,
+`MODE_PLACE` passed; the full suite was not run.
+
 ## Outline corners, matching outlines, solid through Morph, a smoother glow (0.1.0-beta207)
 
 Branch `fix/outline-glow`. Not pushed. Four of the owner's items and one from the coordinator, in
