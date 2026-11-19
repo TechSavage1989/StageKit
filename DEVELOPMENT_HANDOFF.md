@@ -23,7 +23,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
-## Fading lines again, and a full-screen main image (0.1.0-betaNEXT)
+## Fading lines again, and a full-screen main image (0.1.0-beta213)
 
 Branch `fix/outline-fade-2`, rebased on `main` at beta212. Not pushed. The owner on beta211:
 "outline issue is worse now" (a screenshot mid change of scene: the band of each line showed the
