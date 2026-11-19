@@ -22,11 +22,13 @@ unless a mode holds it hidden. Neighbor prediction compares image position, size
 
 Resize-on entries keep a hand layout within their size tolerance and fill an undersized home.
 Resize-off saves the reference image in scene pixels, including during conversion from an older
-collection. The FIT_TOOL and FIT_ENABLE sections of the headless test cover dock placement, the
-hand layout, timing of handoff, capture-size changes, signal loss and recovery.
-Both isolated tests passed under Linux libobs and Xvfb, including conversion of legacy scales after
-a capture regains its signal. The run also executes the full suite with `tests/run-tests.sh`.
-[Headless validation](https://github.com/TechSavage1989/StageKit/actions/runs/44457536649).
+collection. Automatic capture switching preserves a visible display capture's reserved slot while the input
+starts at 0x0. This keeps the camera and chat column in place through the first frame.
+
+The LAYOUT, FIT_TOOL and FIT_ENABLE tests passed under Linux libobs and Xvfb. They cover dock
+placement, a filled hand layout, capture switching, signal loss and recovery, and conversion of a
+legacy saved scale. The same run executes the full suite with `tests/run-tests.sh`.
+[Headless validation](https://github.com/TechSavage1989/StageKit/actions/runs/44462893755).
 
 ## Auto Capture stays aimed at a game while its picture comes back (0.1.0-beta197)
 
