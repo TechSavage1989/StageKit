@@ -34,6 +34,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include "../common/filter-input.hpp"
 #include "../common/loading.hpp"
+#include "../common/owner-ref.hpp"
 #include "../common/pick-list.hpp"
 #include "../common/scene-filter-ids.hpp"
 #include "../common/scene-rev.hpp"
@@ -419,7 +420,7 @@ std::vector<SceneFit *> g_fits;
 
 class SceneFit {
 public:
-	SceneFit(obs_data_t *settings, obs_source_t *source) : source_(source)
+	SceneFit(obs_data_t *settings, obs_source_t *source) : source_(source), owner_(source)
 	{
 		idle_turn_ = (uint32_t)((reinterpret_cast<uintptr_t>(this) >> 4) % kIdleEvery);
 		rest_turn_ = (uint32_t)((reinterpret_cast<uintptr_t>(this) >> 4) % kRestEvery);
@@ -434,6 +435,7 @@ public:
 	}
 
 	obs_source_t *source() const { return source_; }
+	obs_source_t *owner_ref() const { return owner_.get(); }
 	obs_source_t *parent() const { return parent_; }
 
 	void update(obs_data_t *settings)
@@ -584,6 +586,7 @@ private:
 		std::unique_ptr<FitEngine> engine;
 	};
 	obs_source_t *source_;
+	OwnerRef owner_;
 	obs_source_t *parent_ = nullptr;
 	std::mutex mutex_;
 	std::vector<std::shared_ptr<Entry>> entries_; // under mutex_
@@ -1220,7 +1223,7 @@ void on_source_rename(void *, calldata_t *cd)
 	{
 		std::lock_guard lock(g_fits_mutex);
 		for (SceneFit *each : g_fits)
-			if (obs_source_t *held = obs_source_get_ref(each->source()))
+			if (obs_source_t *held = each->owner_ref())
 				owners.push_back(held);
 	}
 	auto move = [](obs_data_t *settings, const std::string &from, const std::string &to) -> bool {

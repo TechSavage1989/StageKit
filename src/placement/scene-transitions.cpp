@@ -38,6 +38,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "scene-tools.hpp"
 #include "../common/filter-input.hpp"
 #include "../common/loading.hpp"
+#include "../common/owner-ref.hpp"
 #include "../common/pick-list.hpp"
 #include "../common/scene-util.hpp"
 #include "../common/filter-order.hpp"
@@ -130,7 +131,7 @@ std::vector<SceneTransitions *> g_all;
 
 class SceneTransitions {
 public:
-	SceneTransitions(obs_data_t *settings, obs_source_t *source) : source_(source)
+	SceneTransitions(obs_data_t *settings, obs_source_t *source) : source_(source), owner_(source)
 	{
 		update(settings);
 		signal_handler_connect(obs_source_get_signal_handler(source_), "enable", on_enable, this);
@@ -151,6 +152,7 @@ public:
 	}
 
 	obs_source_t *source() const { return source_; }
+	obs_source_t *owner_ref() const { return owner_.get(); }
 
 	std::shared_ptr<const Look> look() const
 	{
@@ -569,6 +571,7 @@ private:
 	}
 
 	obs_source_t *source_;
+	OwnerRef owner_;
 	mutable std::mutex mutex_; // guards look_ and animated_ (read by the lookup, any thread)
 	std::shared_ptr<const Look> look_;
 	std::set<std::string> animated_;
@@ -608,7 +611,7 @@ bool lookup(obs_source_t *scene, obs_sceneitem_t *item, ItemChange &out, bool &o
 			obs_source_t *parent = obs_filter_get_parent(each->source());
 			if (!parent || (parent != scene && !(in_group && scene == holder)))
 				continue;
-			if (obs_source_t *held = obs_source_get_ref(each->source()))
+			if (obs_source_t *held = each->owner_ref())
 				candidates.push_back({held, parent, each->look(), each->animated()});
 		}
 	}
@@ -714,7 +717,7 @@ void on_source_rename(void *, calldata_t *cd)
 	{
 		std::lock_guard lock(g_mutex);
 		for (SceneTransitions *each : g_all)
-			if (obs_source_t *held = obs_source_get_ref(each->source()))
+			if (obs_source_t *held = each->owner_ref())
 				filters.push_back(held);
 	}
 	for (obs_source_t *filter : filters) {
