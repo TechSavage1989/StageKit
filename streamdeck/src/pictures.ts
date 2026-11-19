@@ -233,6 +233,7 @@ export function hookPicture(chosen: string | undefined, inputKind: string | unde
 const TOOLS: Record<string, string> = {
 	same_everywhere: "options/copy-all",
 	same_chosen: "options/copy-chosen",
+	fit_space: "options/fit-space",
 	snap_now: "options/snap-now",
 	left: "options/align-left",
 	center: "options/align-center",

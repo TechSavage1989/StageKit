@@ -157,6 +157,7 @@ void fit_item_stop()
 
 void register_fit_item()
 {
+	fit_engine_add_test_calls();
 	// For the tests: how many full ticks a fit filter's engines have had
 	// (off screen most are skipped), and how many glides they set off.
 	proc_handler_add(

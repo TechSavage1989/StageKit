@@ -366,6 +366,79 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
 - **Arrange options are global** (`arrange_options()`), saved with the scene collection. The dock's
   controls only show and set them. Add a new tool to `ArrangeAction` and `kInfo` and it appears in the
   dock, the menu and the hotkeys at once.
+- **Fit to space is a one-press arrange tool, not a filter** (`fit_to_space` in `src/dock/arrange.*`,
+  `ArrangeAction::FitSpace`, `fit_space`; 2026-11-18, beta196). The owner: "i'd like a new arrange
+  or place option to "fit" an object to the available space respecting existing rules like margins
+  and gaps and use visible pixels, etc. I'd also like a shortcut button in the relevant tab to edit
+  transform of the selected source." It uses Fit to Space's own `fit::FitScan` and
+  `fit::free_space`, never a copy: change how a space is found there. Every obstacle is firm but one
+  the item lies wholly on, so an item is never put over another. Its gap is the Place tab's *Edge
+  distance* (`ArrangeOptions::place_margin`); the dock glides the result (`set_arrange_glide`,
+  `glide_back`, owned by one dock: `set_arrange_glide(nullptr, this)` clears only its own), the
+  hotkey path too while a dock is there. **An item is handed to its Fit to Space when its glide
+  ends** (`ArrangeOutcome::placed`, `Glide::hand_over`; at once when nothing glides), never
+  before: the filter reads the item's place and kept size when told, and told at the start it read
+  the old, small place the glide starts from. **An item with a Shadow, Glow & Outline in screen pixels
+  does not glide**: the shadow moves it as its room changes, by the size at the moment it looks,
+  so a glide in between left the picture off its place (8 px in the test); a glide still adds what
+  moved the item between two steps (`Glide::last`). With such a shadow counted (by boxes always,
+  by visible pixels unless ignored) the place is set by the picture's, which the shadow keeps
+  where it is when its room shrinks back a tick later. A *maximum size only* box has
+  its scale changed with it. It sits on the Place tab with *Edit
+  transform* (`editTransform`, OBS's `actionEditTransform` triggered, switched on for the press:
+  OBS switches it off while its Edit menu last opened with nothing selected; the dock's item is
+  selected alone first; off with a tooltip when the action is not found). Tested in `[dock: fit to space ...]` (`STAGEKIT_TEST_ONLY_FIT_TOOL`).
+  **It never makes another fit give up room** (the owner, 2026-11-18: "the fit to space
+  option/tool cannot force other objects to resize"). Every fit of the free space in the scene
+  (a Fit to Space, a Scene Fit entry, enabled; its item shown **or hidden**) is known by
+  `fit::held_spaces`: the space and the inputs (`fit::SpaceInputs`) the engine last worked out
+  (`FitEngine::held`, written in `solve`, kept while the item is hidden, let go when the fit
+  gets another item or leaves the free space), its item found by name, inside groups too, and
+  taken only when its id matches. Its item is in the way by that whole space, firm, **unless the
+  space reaches what shows of the item** (that fit then ignores the item, or lies on it: the
+  claim counts as before, so a camera lying on a capture whose fit lists it under *Ignored
+  sources* still grows over it); a hidden item's space is in the way too (it is taken back when
+  the item shows), and one never worked out counts by the room it claims. Then the result is
+  checked (`spaces_kept`): each fit's inputs with the moved item where it is now (`with_moved`:
+  `SpaceInputs::at` is each obstacle's item box when it was looked at, so a record from when the
+  scene was last shown follows the item to where it is) and where it would be, both worked out
+  by **the engine's own `fit::space_from`** (what `FitEngine::solve` calls: the space, the trims
+  to the picture, `trim_for_kept_in` and `trim_to_picture_in`, and the home), must give the same
+  space, the same goal and the same claim (`fit::claim_box`, what `publish_claim` calls) within
+  half a pixel (`same_outcome`). **A fit at its home** (beta194's layout made by hand:
+  `SpaceInputs::has_home`, `home`, `homes`, `home_space`; `SpaceOut::at_home`) has its home for
+  its goal, so the check keeps it there: the item may not change the space round that home with
+  the other fits' items at their homes, nor come within the gap of it. A home still being found
+  is worked out as it will be once found (`settled`). Round a shadow sized in screen pixels the item maps as its image
+  (`MovedBox::keeps_outside`: what another fit sees of it outside the image keeps its size). An
+  item the fit did not see when it worked its space out (`SpaceInputs::visible`: hidden then)
+  makes the check **unknown**: it is left as it is (`Arrange.FitSpace.Unknown`). When one would
+  change, the item is kept smaller: twenty sizes from the full result down to its size now (to
+  half the full result when that is no larger), each centred, then (but the full size) part of
+  the way from where it is, then against each side and corner of the space, the first that
+  changes nobody taken; none, and it is left as it is. The status line says which
+  (`FitToSpaceNote`, `Arrange.FitSpace.Smaller` / `.Left`), also when the fitted spaces leave no
+  room at all. **An item with a fit of its own**: one that resizes it is left to it
+  (`Arrange.FitSpace.OwnFit`: the fit decides its size, and handed over it would fill its own
+  space anyway); one that keeps its size is put where that fit will put it once handed over (its
+  anchor the new box's centre, the kept size scaled, with a home its home where it is put, as
+  `FitEngine::placed` takes it, also when its home did not match the item before
+  (`SpaceInputs::takes_home`: a window of another shape): `handed_over`; `fit::claim_from`, the
+  code `publish_claim` itself calls), taken only when that fit then finds the same space round it
+  and the result stays in the tool's space, and the other fits are checked against that claim,
+  and against that home where it is put (`MovedBox::home`, `home_after`), not against the claim:
+  a copy that does not keep the gap where it lands leaves its home for a claim elsewhere. **An
+  item in a group a fit looks after is left as it is** (the group would change and be fitted
+  again). Items already changed in the press are in the way where they now are. With *In every
+  scene* each copy is checked in its own scene (`copy_keeps_fits`, `copy_to_every_scene`'s
+  `allow`): a scene where it would change a fit (the copy's own fit taking it where it would) is
+  left out, not shrunk there (the copies stay the item's transform), and named
+  (`ArrangeOutcome::not_copied`); so is one with a shown fit not worked out yet, its scene not
+  shown since OBS started (`not_known`, `Arrange.FitSpace.NotKnown`). Measured once per press;
+  each try only works spaces out again. The global proc `stagekit_test_fit_predicts` (tests)
+  says, per fit of a scene, whether what `held_spaces` gives, worked out again, is the claim the
+  fit makes now, and whether it is at home. Items with no fit are obstacles by what shows, as
+  before, and are never changed anyway.
 - **Edits made by a person go into OBS's undo list** (`add_transform_undo` in
   `src/dock/arrange-tools.*`): the arrange tools, snap on release, the dock's Send to buttons. Moves
   fired by filters and Stream Deck keys do not; they are part of the show.
@@ -843,7 +916,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   is judged by which side of the space's middle it lies on, never by whether it touches the space:
   judged by touching, the two filters chased each other without end.
 - **A resized picture that has no use for more height is packed with a kept-size item above or
-  below it, top first** (`grows_x`/`grows_y` and `leans_x`/`leans_y` on `Claim`, `lean_axes`, `trim_for_kept` in
+  below it, top first** (`grows_x`/`grows_y` and `leans_x`/`leans_y` on `Claim`, `lean_axes`, `trim_for_kept_in` in
   `src/placement/fit-engine.cpp`; beta194, 2026-11-18). The owner, of a Scene Fit with their camera
   (resized, held by the column's width) above the chat box (keeping its size): "I don't think use
   visible pixels is working as intended. the chat box is more than 30px from the visible border of
@@ -868,7 +941,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   first build packed side by side too and moved that layout (column 73 px off the right edge on
   the test canvas); tested since in the same section. Horizontal packing would be a new layout
   rule: only at the owner's word.
-- **A resized picture's box is its picture where another resized fit lies beyond it** (`trim_to_picture`
+- **A resized picture's box is its picture where another resized fit lies beyond it** (`trim_to_picture_in`
   in `src/placement/fit-engine.cpp`, beta194, 2026-11-18). The owner's GBA mode: two 3:2 handheld
   windows and a 16:9 camera view share a column, all resized, all held by its width; the camera's
   box took about 1250 px of the column's height while its image used a third of that, and GBA 1
@@ -1885,23 +1958,51 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   colour*; `darkest_color`, a mid grey, shown only for a colour; beta192). The owner: "is there
   a way I can prevent the background from ever becoming completely black, even when the ambient
   background is capturing a live feed that has completely black content?", then "add darkest
-  level as a configurable option". The last pass (`Lift` in `stagekit-looks.effect`, full size,
-  raw values like `Final`, before the hand-off that follows `gs_get_linear_srgb()`): toward the
-  image a part becomes the fill as far as it is dark (`1 - smoothstep(0, 1.5 x level, luma)`);
-  then, with either fill, the floor `luma + level x (1 - smoothstep(0, 1.5 x level, luma))`,
-  which never falls under the level, is made up by adding the fill's colour scaled to unit
-  luminance (grey for what a saturated colour cannot give). From 1.5 x the level up nothing
-  changes. The image fill is the picture before `Final` itself while the scene holds the image
-  alone (no capture, no change under way: no cost), else the image drawn alone into `tr_fill_`
-  and blurred by a `KawaseBlur` of its own (`fill_blur_`) at *Blur* (not for Temporal), with no
-  mosaic or bloom; `Lift` gives it `Final`'s brightness and vignette. No image under *Background
-  from*: the colour. A black capture counts as no capture after two seconds
-  (`live_shows_something`), so this is for a capture that is dark but not empty. Every uniform
-  of `Lift` (`lift_*`, `image`, `image2`) is set at each run; the test gives the shader other
-  values first for each fill, a new colour each time (a colour left in the shader by the first
-  would hide an unset `lift_color` in the second). Tested in `[ambient background:
-  darkest level]` (`ambient_darkest_test`, alone `STAGEKIT_TEST_ONLY_AMBIENT_DARKEST`; sheet
-  `docs/images/ambient-darkest.png` from `$out/darkest`). Not run on Direct3D.
+  level as a configurable option". **The level is how bright black becomes, and the lift is
+  made before the blur** (2026-11-19, beta196; the owner, with a mostly black capture,
+  hexagons and 1 % toward a bright image: "Even at 1%, Darkest level seems to bright a lot. it's
+  also not smoothly blended. the darkest level should be effected by the blur settings"). Up to
+  then the `Lift` pass ran last, on the finished picture, and laid the *whole* image over
+  anything darker than 1.5 x the level (the level only set that threshold), in a band a pixel or
+  two wide next to the blurred black: the full image at 1 %, a hard edge, and never blurred or
+  cut into cells. Now `Lift` (in `stagekit-looks.effect`) runs on `tr_scene_` (the image with
+  the capture over it, half size, raw values) into `tr_lift_`, and that is what the blur or
+  trail, bloom (its bright parts too) and the mosaic take; `Final`'s overlay, vignette and
+  brightness come after, for the lift as for the rest (nothing is pre-applied to the fill any
+  more; so, unlike beta192, a Brightness under 100 % or a vignette of 2/3 or more can take a
+  colour floor below the level, which the README and the tooltip say). `tr_scene_` itself stays unlifted: it is what a change of capture keeps (`tr_was_`), and
+  lifting a kept picture again would lift it twice. The floor `F`: toward the image, the image
+  times the level (100 % is the image itself); toward a colour, the colour scaled to the
+  level's luminance (grey for what a saturated colour cannot give). Then, with `l` the part's
+  luminance and `Lf` the floor's, a quadratic smooth maximum with a knee `k`:
+  `h = saturate(1 - |l - Lf| / k)`, `m = max(l, Lf) + k h^2 / 4`, and
+  `out = rgb + F (m - l) / Lf`: black is `F` exactly, the luminance rises smoothly and never
+  falls (no band), and what is added is the floor's colour, so a part's own bright colours keep
+  their hue. `k` is `Lf` (nothing changes from `2 Lf` up), except toward the image, where it is
+  `min(Lf, Li - Lf)` with `Li` the image's own luminance there: as wide as `Lf` above 50 % the
+  knee reached the image's own brightness and made the image itself brighter, by a quarter at
+  100 % (found in review before release), so the image round a capture was brighter than the
+  image in its black parts and dimmed when a dark capture came in. Now no part toward the image
+  is made brighter than itself or the image: the image alone is left as it is at every level,
+  up to 50 % nothing differs, and 100 % is `max(l, Li)` (a plain maximum, `k` 0). The image fill is
+  `tr_scene_` itself while it holds the image alone (no capture, no change under way: no copy),
+  else the image drawn alone into `tr_fill_` the same way and size, unblurred (the blur comes
+  after). No image under *Background from*: the colour. A black capture counts as no capture
+  after two seconds (`live_shows_something`), so this is for a capture that is dark but not
+  empty. Cost while on: one half-size pass (it was full size), plus the image drawn once more
+  while a capture is in (it was also blurred). Every uniform of `Lift` (`lift_level`,
+  `lift_color`, `lift_image`, `image`, `image2`; `lift_brightness` and `lift_vignette` are gone)
+  is set at each run; the test gives the shader other values first for each fill, a new colour
+  each time (a colour left in the shader by the first would hide an unset `lift_color` in the
+  second). A saved level keeps its number and now looks much darker toward the image: that is
+  the fix. Tested in `[ambient background: darkest level]` (`ambient_darkest_test`, alone
+  `STAGEKIT_TEST_ONLY_AMBIENT_DARKEST`; sheet `docs/images/ambient-darkest.png` from
+  `$out/darkest`): 1 %, 10 %, 30 %, 75 % and 100 % against the image's own brightness,
+  monotonic, the image alone lifted toward itself unchanged at 30, 75 and 100 % (the knee as
+  wide as `Lf`: 21.5 levels off at 100 %), 0
+  exactly off, the largest neighbour step under a strong Gaussian no larger than without the
+  lift (beta192's code: 82 against 5), every square mosaic cell one colour (beta192's: 201
+  apart). Not run on Direct3D.
 - **Auto Capture keeps its capture shown** (`keep_ready`, on by default, `obs_source_inc_showing` on
   the capture). OBS stops a Game Capture about 0.3 s after the last scene showing it is left and
   hooks it again on the way back; the owner's log showed that at every scene switch.

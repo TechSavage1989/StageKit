@@ -13,6 +13,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "arrange.hpp"
 
 #include <obs.h>
+#include <graphics/vec2.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -56,6 +57,9 @@ struct ArrangeOptions {
 	// Both copy tools: the sources that take the transform, by name. Empty
 	// (as it comes): the copies of the selected item's own source.
 	std::vector<std::string> copy_sources;
+	// The Place tab's edge distance: how far short of the screen's edges and
+	// of other items the slides stop and Fit to space leaves its item.
+	int place_margin = 30;
 };
 
 ArrangeOptions arrange_options();
@@ -86,6 +90,7 @@ enum class ArrangeAction {
 	SameSize,
 	SameEverywhere, // the selected items' place, size, rotation and crop for every copy of their sources
 	SameChosen,     // the same, only in the scenes chosen in ArrangeOptions::copy_scenes
+	FitSpace,       // each item as large as the free space round it lets it be (fit_to_space)
 	Count
 };
 
@@ -100,6 +105,17 @@ const ArrangeInfo &arrange_info(ArrangeAction action);
 struct ArrangeOutcome {
 	size_t had = 0, needs = 1;
 	int changed = 0;
+	// The items a tool put somewhere on purpose (Fit to space), for their
+	// Fit to Space filters to be told once they are there. Valid for the
+	// call; run_arrange tells them itself.
+	std::vector<obs_sceneitem_t *> placed;
+	// Fit to space: what it held back so that no other fit gives up room
+	// (see `fit_to_space`), and, with In every scene, the scenes its result
+	// was not copied to for that reason, each with the fitted source there
+	// ("scene: source"), and those whose fits have not worked their spaces
+	// out yet.
+	FitToSpaceNote fit;
+	std::vector<std::string> not_copied, not_known;
 };
 
 // Runs an action on the given items of a scene with the shared options.
@@ -107,6 +123,24 @@ ArrangeOutcome run_arrange(ArrangeAction action, obs_source_t *scene, const std:
 
 // The same without an undo step, for callers that record their own.
 ArrangeOutcome run_arrange_now(ArrangeAction action, obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items);
+
+// Where an item was before a tool that glides changed it (Fit to space), for
+// the dock to take it back there and glide it to its new place, as it does
+// a snap on release. The dock gives the handler, on the window's thread,
+// where the tools run; it is called with the items changed, each valid for
+// the call, after the change is in OBS's undo list. An item with `hand_over`
+// is to be told to its Fit to Space (`fit_item_placed`, in `scene`) once its
+// glide ends, never before: the filter reads the item's place and size when
+// told. The handler tells it at once when it does not glide.
+struct ArrangeStart {
+	obs_sceneitem_t *item;
+	vec2 pos, scale, bounds;
+	bool hand_over;
+};
+using ArrangeGlide = std::function<void(obs_source_t *scene, const std::vector<ArrangeStart> &)>;
+// `owner` says whose handler it is: a null handler with an owner only clears
+// the handler that owner set; with no owner (OBS closing) it clears any.
+void set_arrange_glide(ArrangeGlide handler, const void *owner);
 
 // Every item's place and size in a scene, as OBS's own undo keeps them.
 std::string transform_snapshot(obs_source_t *scene);

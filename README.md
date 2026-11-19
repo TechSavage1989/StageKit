@@ -198,16 +198,20 @@ Two more things about the capture blended in and the bloom:
   everything and lets colours run into white: the look of obs-shaderfilter's bloom shader, with
   100 % its strength of 1). Bloom now goes to 1000 %. The light always spreads at least as far as
   *Blur*, so bloom never makes the background sharper.
-- **Darkest level** (0 %, off, as it comes): the background never gets darker than this, even
-  while the capture blended in is dark. Parts darker than the level are lifted smoothly; parts
-  brighter than one and a half times the level are left as they are. **Lift toward**: *The
-  background image* (the image or source the background is made from, blurred and coloured as
-  the background is, so a dark capture shows the usual background; with nothing under
-  *Background from*, the colour is used) or *A colour* (**Lift colour**, a mid grey as it comes:
-  dark parts take on that colour, as bright as the level). A capture that is black all over for
-  two seconds already counts as no capture; this is for one that is dark but not empty.
+- **Darkest level** (0 %, off, as it comes): how bright the darkest parts of the background
+  become, even while the capture blended in is dark. **Lift toward**: *The background image*
+  (the image or source the background is made from, where the background has it, at the level's
+  share of its brightness: 1 % barely shows it, 10 % is a dim image, 100 % is the image itself;
+  with nothing under *Background from*, the colour is used) or *A colour* (**Lift colour**, a mid
+  grey as it comes: black takes on that colour, as bright as the level). Parts twice as bright as
+  that are left as they are, with a smooth change between, and the image itself is never made
+  brighter. The lift is made before the blur, so the blur, the mosaic, the trail and bloom act on
+  it as on the rest of the background (it is as soft as the blur, and a mosaic cell is one
+  colour); brightness, vignette and the texture overlay come after it (a strong vignette can
+  darken the corners below the level). A capture that is black all over for two seconds already
+  counts as no capture; this is for one that is dark but not empty.
 
-![Darkest level: off, toward a grey, toward a red, toward the background image](docs/images/ambient-darkest.png)
+![Darkest level: off; toward a grey and a red at 30 %; toward the background image at 1 %, 10 % and 100 %; with a strong Gaussian blur; with hexagons](docs/images/ambient-darkest.png)
 
 Put it in one shared scene and nest that scene wherever you need the background.
 
@@ -831,6 +835,30 @@ at the bottom, whichever tab is open.
   the screen in each of its scenes. It glides for the *Duration*, following the *Motion* you choose
   (the curve, and whether it eases at the start, the end or both); a run of presses made while it is
   still moving is one step for Undo.
+- **Fit to space** (the first of the two drawings under the tick boxes beside the arrows) makes the
+  item as large as the free space around it allows, keeping its shape, and centres it there: the
+  *Edge distance* short of the screen's edges and of every other visible item, found the way the Fit
+  to Space filter finds its space. *Use visible pixels* and *Ignore shadows & outlines* decide what
+  counts, of the item and of the others. Something the item lies wholly on, such as a background, is
+  not in the way; something it only overlaps is, and it goes into the space beside that. It never
+  makes another source move or resize: a source a Fit to Space or Scene Fit looks after, shown or
+  hidden, is in the way by the whole space that filter holds (unless that filter ignores the item).
+  If that filter would still have to move or resize its source, the item is kept smaller, or left as
+  it is when any growth would, and the status line names that source. A source laid out by hand
+  that its filter keeps where it was put (switched on over the layout) stays there too: the item
+  never comes within that filter's gap of it. An item whose own Fit to Space
+  or Scene Fit resizes it is left to that filter; one whose filter keeps its size gets the new size
+  and goes where that filter then puts it. An item in a group that such a filter fits is left as it
+  is. With *In every scene*, a scene where the copy would make a filter there move or resize its
+  source is left out and named, and so is a scene whose filters have not worked out their spaces
+  since OBS started (show that scene once first). An item with
+  a bounding box gets a new box instead of a new scale. It glides there for the *Duration*, is one
+  step for Undo, and with *In every scene* on the Arrange tab its copies in other scenes take the
+  result. With several items selected, the top-most goes first and the next sees where it went.
+  Locked items are left alone. It is also in the preview's right-click *StageKit* menu, a hotkey
+  (*StageKit: Fit to space*) and a choice of the Stream Deck *Arrange tool* key.
+- **Edit transform** (the second drawing) opens OBS's own *Edit Transform* window for the item
+  chosen in the dock, selecting it in OBS's preview first.
 - *Make 9 position keys* adds a Move Source filter for each one **to the item's own source**,
   named after the position ("Top right"). Point a Stream Deck *Filter* key at the camera and one of
   those filters, or give it a hotkey.

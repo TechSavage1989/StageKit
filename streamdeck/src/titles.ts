@@ -55,6 +55,7 @@ const TOOLS: Record<string, string> = {
 	same_size: "Same\nSize",
 	same_everywhere: "Copy to\nAll",
 	same_chosen: "Copy to\nChosen",
+	fit_space: "Fit to\nSpace",
 };
 
 const OPTIONS: Record<string, string> = {

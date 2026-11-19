@@ -112,7 +112,7 @@ TAKEN = (
     ["hide", "clear"]
     # Arrange tools.
     + ["align-left", "align-center", "align-right", "align-top", "align-middle", "align-bottom", "space-across", "space-down",
-       "snap-now", "same-width", "same-height", "same-size", "copy-all", "copy-chosen", "plain-tool"]
+       "snap-now", "same-width", "same-height", "same-size", "copy-all", "copy-chosen", "fit-space", "plain-tool"]
     # Dock options.
     + ["snap", "guides", "limit", "slide-to-edge", "every-scene", "keep-shape", "plain-switch"]
     # Slide to Edge.

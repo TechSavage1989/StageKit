@@ -11,6 +11,8 @@ the Free Software Foundation; either version 2 of the License, or
 #include "arrange-tools.hpp"
 
 #include "../api/vendor-api.hpp"
+#include "../placement/fit-item.hpp"
+#include "../shadow/shadow-backdrop.hpp"
 
 #include <obs-module.h>
 #include <obs-frontend-api.h>
@@ -45,6 +47,7 @@ const ArrangeInfo kInfo[(int)ArrangeAction::Count] = {
 	{"same_size", "Arrange.SameSize", "Hotkey.Arrange.SameSize", 2},
 	{"same_everywhere", "Arrange.SameEverywhere", "Hotkey.Arrange.SameEverywhere", 1},
 	{"same_chosen", "Arrange.SameChosen", "Hotkey.Arrange.SameChosen", 1},
+	{"fit_space", "Arrange.FitSpace", "Hotkey.Arrange.FitSpace", 1},
 };
 
 struct Hotkey {
@@ -84,6 +87,8 @@ void set_arrange_options(const ArrangeOptions &options)
 
 namespace {
 std::function<void(int)> g_slide; // only touched on the window's thread
+ArrangeGlide g_glide;             // the same
+const void *g_glide_owner = nullptr;
 std::atomic<bool> g_can_slide{false};
 } // namespace
 
@@ -105,6 +110,14 @@ bool request_slide(int direction)
 		},
 		(void *)(intptr_t)direction, false);
 	return true;
+}
+
+void set_arrange_glide(ArrangeGlide handler, const void *owner)
+{
+	if (!handler && owner && owner != g_glide_owner)
+		return; // another dock's, set since
+	g_glide = std::move(handler);
+	g_glide_owner = g_glide ? owner : nullptr;
 }
 
 ArrangeGuide last_arrange_guide()
@@ -253,14 +266,73 @@ ArrangeOutcome run_arrange(ArrangeAction action, obs_source_t *scene, const std:
 	const bool copies = action == ArrangeAction::SameEverywhere || action == ArrangeAction::SameChosen;
 	const bool everywhere = copies || arrange_options().arrange_every_scene;
 	const std::string before = everywhere ? transform_snapshot_all() : transform_snapshot(scene);
-	const ArrangeOutcome out = run_arrange_now(action, scene, items);
+	// Where each item was, for a tool whose change glides.
+	const bool glides = action == ArrangeAction::FitSpace && g_glide;
+	std::vector<ArrangeStart> starts;
+	// (Not an item with a shadow sized in screen pixels: its filter moves the
+	// item as its room changes with the size, by the size at that moment,
+	// and a glide in between leaves the picture off its place.)
+	const auto fixed_shadow = [](obs_sceneitem_t *item) {
+		ShadowFree free;
+		if (!shadow_free(obs_sceneitem_get_source(item), free))
+			return false;
+		obs_source_release(free.draw);
+		return free.fixed_on_screen;
+	};
+	if (glides)
+		for (obs_sceneitem_t *item : items) {
+			if (fixed_shadow(item))
+				continue;
+			ArrangeStart start{item, {}, {}, {}, false};
+			obs_sceneitem_get_pos(item, &start.pos);
+			obs_sceneitem_get_scale(item, &start.scale);
+			obs_sceneitem_get_bounds(item, &start.bounds);
+			starts.push_back(start);
+		}
+	ArrangeOutcome out = run_arrange_now(action, scene, items);
 	// "In every scene": what was lined up here sits the same way wherever
-	// else its source is shown.
+	// else its source is shown. Fit to space never makes another fit give
+	// up room there either: a scene where the copy would is left out (not
+	// shrunk there: the copies stay the same as the item here), and so is
+	// one whose fits have not worked their spaces out yet (its scene not
+	// shown since OBS started), where that cannot be known.
+	CopyAllowed keep_fits;
+	if (action == ArrangeAction::FitSpace)
+		keep_fits = [&out](obs_source_t *in, obs_sceneitem_t *copy, const Box &from, const Box &to) {
+			std::string who;
+			const FitCheck check = copy_keeps_fits(in, copy, from, to, &who);
+			if (check == FitCheck::Kept)
+				return true;
+			const char *name = obs_source_get_name(in);
+			const std::string scene_name = name ? name : "";
+			auto &list = check == FitCheck::Unknown ? out.not_known : out.not_copied;
+			const std::string entry = check == FitCheck::Unknown ? scene_name : scene_name + ": " + who;
+			if (std::find(list.begin(), list.end(), entry) == list.end())
+				list.push_back(entry);
+			return false;
+		};
 	if (!copies && everywhere && out.changed > 0)
-		copy_to_every_scene(scene, items);
+		copy_to_every_scene(scene, items, nullptr, nullptr, false, keep_fits);
 	if (out.changed > 0)
 		add_transform_undo(obs_module_text(arrange_info(action).hotkey), before,
 				   everywhere ? transform_snapshot_all() : transform_snapshot(scene));
+	// An item placed on purpose is handed to its Fit to Space where it ends
+	// up: at once, or by the glide when it gets there.
+	const auto placed = [&](obs_sceneitem_t *item) {
+		return std::find(out.placed.begin(), out.placed.end(), item) != out.placed.end();
+	};
+	const auto gliding = [&](obs_sceneitem_t *item) {
+		return glides && std::any_of(starts.begin(), starts.end(),
+					     [item](const ArrangeStart &start) { return start.item == item; });
+	};
+	for (obs_sceneitem_t *item : out.placed)
+		if (!gliding(item))
+			fit_item_placed(scene, obs_source_get_name(obs_sceneitem_get_source(item)));
+	if (glides && out.changed > 0 && !starts.empty()) {
+		for (ArrangeStart &start : starts)
+			start.hand_over = placed(start.item);
+		g_glide(scene, starts);
+	}
 	return out;
 }
 
@@ -321,6 +393,9 @@ ArrangeOutcome run_arrange_now(ArrangeAction action, obs_source_t *scene, const 
 		break;
 	case ArrangeAction::SameChosen:
 		out.changed = copy_to_every_scene(scene, items, &o.copy_scenes, &o.copy_sources, o.copy_locked);
+		break;
+	case ArrangeAction::FitSpace:
+		out.changed = fit_to_space(scene, items, o.place_margin, o.how, &out.placed, &out.fit);
 		break;
 	default:
 		break;
@@ -403,6 +478,7 @@ void arrange_save_load(obs_data_t *save_data, bool saving)
 		}
 		obs_data_set_array(save_data, "stagekit.copy.sources", copy_sources);
 		obs_data_array_release(copy_sources);
+		obs_data_set_int(save_data, "stagekit.place.margin", o.place_margin);
 		obs_data_set_int(save_data, "stagekit.arrange.within", o.within);
 	} else if (obs_data_has_user_value(save_data, "stagekit.arrange.within")) {
 		ArrangeOptions o;
@@ -424,6 +500,8 @@ void arrange_save_load(obs_data_t *save_data, bool saving)
 			o.send_curve = std::clamp((int)obs_data_get_int(save_data, "stagekit.send.curve"), 0, 10);
 		o.send_mode = std::clamp((int)obs_data_get_int(save_data, "stagekit.send.mode"), 0, 2);
 		o.limit_resize = obs_data_get_bool(save_data, "stagekit.arrange.limit_resize");
+		if (obs_data_has_user_value(save_data, "stagekit.place.margin"))
+			o.place_margin = std::clamp((int)obs_data_get_int(save_data, "stagekit.place.margin"), 0, 400);
 		if (obs_data_has_user_value(save_data, "stagekit.arrange.limit_px"))
 			o.limit_px = (int)obs_data_get_int(save_data, "stagekit.arrange.limit_px");
 		if (obs_data_array_t *copy_scenes = obs_data_get_array(save_data, "stagekit.copy.scenes")) {

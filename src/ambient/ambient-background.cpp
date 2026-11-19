@@ -17,8 +17,8 @@ the Free Software Foundation; either version 2 of the License, or
 // blurred anyway):
 //   base image/source --scroll, saturation, glow--> scene
 //   live capture      --cover, opacity------------> scene
-//   scene -> dual-Kawase blur -> square/hex mosaic -> texture overlay,
-//   vignette, brightness -> darkest level (only when set) -> output
+//   scene -> darkest level (only when set) -> blur or trail -> bloom ->
+//   mosaic -> texture overlay, vignette, brightness -> output
 
 #include "ambient-background.hpp"
 #include "../common/timing.hpp"
@@ -124,8 +124,9 @@ struct Settings {
 	double glow = 0.0;
 	double brightness = 1.0;
 	double vignette = 0.0;
-	// No part of the background darker than this (luminance, 0..1). 0: off,
-	// and no pass is drawn.
+	// How bright the darkest parts become, before the blur (0..1): toward the
+	// image, its share of the image's brightness; toward a colour, the
+	// colour's luminance. 0: off, and no pass is drawn.
 	double darkest_level = 0.0;
 	DarkestFill darkest_fill = DarkestFill::Image;
 	uint32_t darkest_color = 0xFF808080; // as OBS keeps a colour: 0xAABBGGRR
@@ -277,13 +278,11 @@ private:
 	gs_eparam_t *pl_lift_level_ = nullptr;
 	gs_eparam_t *pl_lift_color_ = nullptr;
 	gs_eparam_t *pl_lift_image_ = nullptr;
-	gs_eparam_t *pl_lift_brightness_ = nullptr;
-	gs_eparam_t *pl_lift_vignette_ = nullptr;
-	// The finished picture, lifted; and the background image alone, blurred,
-	// for a lift toward the image while a capture covers it.
+	// The picture as it is put together, lifted (what is blurred); and the
+	// background image alone, for a lift toward the image while a capture
+	// covers it.
 	gs_texrender_t *tr_lift_ = nullptr;
 	gs_texrender_t *tr_fill_ = nullptr;
-	std::unique_ptr<KawaseBlur> fill_blur_;
 	// Bloom: the bright parts, and those spread out.
 	gs_texrender_t *tr_bright_ = nullptr;
 	gs_texrender_t *tr_bloom_ = nullptr;
@@ -381,14 +380,11 @@ AmbientBackground::AmbientBackground(obs_data_t *settings, obs_source_t *source)
 		pl_lift_level_ = gs_effect_get_param_by_name(looks_, "lift_level");
 		pl_lift_color_ = gs_effect_get_param_by_name(looks_, "lift_color");
 		pl_lift_image_ = gs_effect_get_param_by_name(looks_, "lift_image");
-		pl_lift_brightness_ = gs_effect_get_param_by_name(looks_, "lift_brightness");
-		pl_lift_vignette_ = gs_effect_get_param_by_name(looks_, "lift_vignette");
 	} else {
 		obs_log(LOG_ERROR,
 			"Ambient Background: cell shapes other than squares and hexagons, the Temporal blur type and Bloom are not available.");
 	}
 	bloom_blur_ = std::make_unique<KawaseBlur>();
-	fill_blur_ = std::make_unique<KawaseBlur>();
 	for (gs_texrender_t *&tr : tr_past_)
 		tr = gs_texrender_create(GS_RGBA16F, GS_ZS_NONE);
 	for (gs_texrender_t **tr : {&tr_base_, &tr_live_, &tr_scene_, &tr_blur_, &tr_pixel_, &tr_final_, &tr_bright_,
@@ -423,7 +419,6 @@ AmbientBackground::~AmbientBackground()
 				   tr_taps_, tr_past_[0], tr_past_[1], tr_lift_, tr_fill_})
 		gs_texrender_destroy(tr);
 	bloom_blur_.reset();
-	fill_blur_.reset();
 	for (auto *tr : tr_down_)
 		gs_texrender_destroy(tr);
 	for (auto *tr : tr_up_)
@@ -1110,12 +1105,56 @@ void AmbientBackground::render()
 		was_valid_ = true;
 	}
 
-	// What the scene above holds besides the background image: with nothing
-	// else, the picture as it is styled is also what the Darkest level
-	// lifts toward, and no copy of the image is needed.
-	const bool image_only = base && !live && !was;
+	// Darkest level: the picture as it is put together lifted where it is
+	// dark, toward the background image or a colour, before anything blurs
+	// it, so the blur, the trail, bloom and the mosaic act on the lift as on
+	// the rest (the owner, 2026-11-19: "Even at 1%, Darkest level seems to
+	// bright a lot. it's also not smoothly blended. the darkest level should
+	// be effected by the blur settings"). tr_scene_ stays as it was drawn: it
+	// is what a change of capture keeps. Off (0), nothing is drawn. The owner
+	// (2026-11-18): "is there a way I can prevent the background from ever
+	// becoming completely black, even when the ambient background is
+	// capturing a live feed that has completely black content?"
+	gs_texture_t *scene = gs_texrender_get_texture(tr_scene_);
+	if (scene && s.darkest_level > 0.0005 && looks_) {
+		// The background image where the picture has it: the picture itself
+		// while it is nothing else (no capture, no change under way: no
+		// copy), otherwise the image alone, drawn the same way now. The
+		// brightness, vignette and texture of the Final pass come after, for
+		// the lift as for the rest.
+		gs_texture_t *fill = nullptr;
+		if (s.darkest_fill == DarkestFill::Image && base) {
+			if (!live && !was) {
+				fill = scene;
+			} else {
+				gs_texrender_reset(tr_fill_);
+				if (gs_texrender_begin(tr_fill_, iw, ih)) {
+					vec4 black;
+					vec4_set(&black, 0.0f, 0.0f, 0.0f, 1.0f);
+					gs_clear(GS_CLEAR_COLOR, &black, 0.0f, 0);
+					gs_ortho(0.0f, (float)iw, 0.0f, (float)ih, -100.0f, 100.0f);
+					gs_blend_state_push();
+					gs_blend_function(GS_BLEND_ONE, GS_BLEND_INVSRCALPHA);
+					draw_base(base, iw, ih, s);
+					gs_blend_state_pop();
+					gs_texrender_end(tr_fill_);
+					fill = gs_texrender_get_texture(tr_fill_);
+				}
+			}
+		}
+		// Every uniform the Lift pass reads, at every run (the effect file is
+		// shared; see mosaic-uniforms.hpp). With no image, the colour.
+		vec4 colour;
+		vec4_from_rgba(&colour, s.darkest_color | 0xFF000000u);
+		gs_effect_set_float(pl_lift_level_, (float)s.darkest_level);
+		gs_effect_set_vec4(pl_lift_color_, &colour);
+		gs_effect_set_float(pl_lift_image_, fill ? 1.0f : 0.0f);
+		gs_effect_set_texture(pl_image2_, fill ? fill : scene);
+		pass(looks_, pl_image_, tr_lift_, scene, iw, ih, "Lift");
+		if (gs_texture_t *lifted = gs_texrender_get_texture(tr_lift_))
+			scene = lifted;
+	}
 
-	gs_texture_t *const scene = gs_texrender_get_texture(tr_scene_);
 	gs_texture_t *cur = scene;
 	if (cur) {
 		if (s.blur_kind == BlurKind::Temporal) {
@@ -1213,55 +1252,6 @@ void AmbientBackground::render()
 		pass(effect_, p_image_, tr_final_, cur, w, h, "Final");
 	}
 	gs_texture_t *final_tex = cur ? gs_texrender_get_texture(tr_final_) : nullptr;
-
-	// Darkest level: the finished picture lifted where it is darker than the
-	// level, toward the background image or a colour. Off (0), nothing is
-	// drawn. The owner (2026-11-18): "is there a way I can prevent the
-	// background from ever becoming completely black, even when the ambient
-	// background is capturing a live feed that has completely black
-	// content?"
-	if (final_tex && s.darkest_level > 0.0005 && looks_) {
-		// The background image, styled as the picture is (before the Final
-		// pass, whose brightness and vignette the Lift pass gives it): the
-		// picture itself while it is nothing else; otherwise the image alone,
-		// blurred as the background is, made only now.
-		gs_texture_t *fill = nullptr;
-		if (s.darkest_fill == DarkestFill::Image && base) {
-			if (image_only) {
-				fill = cur;
-			} else {
-				gs_texrender_reset(tr_fill_);
-				if (gs_texrender_begin(tr_fill_, iw, ih)) {
-					vec4 black;
-					vec4_set(&black, 0.0f, 0.0f, 0.0f, 1.0f);
-					gs_clear(GS_CLEAR_COLOR, &black, 0.0f, 0);
-					gs_ortho(0.0f, (float)iw, 0.0f, (float)ih, -100.0f, 100.0f);
-					gs_blend_state_push();
-					gs_blend_function(GS_BLEND_ONE, GS_BLEND_INVSRCALPHA);
-					draw_base(base, iw, ih, s);
-					gs_blend_state_pop();
-					gs_texrender_end(tr_fill_);
-					fill = gs_texrender_get_texture(tr_fill_);
-					// (Temporal blurs over time, not across: the image is still.)
-					if (fill && fill_blur_ && s.blur_kind != BlurKind::Temporal)
-						fill = fill_blur_->blur(fill, iw, ih, s.blur * kInternalScale);
-				}
-			}
-		}
-		// Every uniform the Lift pass reads, at every run (the effect file is
-		// shared; see mosaic-uniforms.hpp). With no image, the colour.
-		vec4 colour;
-		vec4_from_rgba(&colour, s.darkest_color | 0xFF000000u);
-		gs_effect_set_float(pl_lift_level_, (float)s.darkest_level);
-		gs_effect_set_vec4(pl_lift_color_, &colour);
-		gs_effect_set_float(pl_lift_image_, fill ? 1.0f : 0.0f);
-		gs_effect_set_float(pl_lift_brightness_, (float)s.brightness);
-		gs_effect_set_float(pl_lift_vignette_, (float)s.vignette);
-		gs_effect_set_texture(pl_image2_, fill ? fill : final_tex);
-		pass(looks_, pl_image_, tr_lift_, final_tex, w, h, "Lift");
-		if (gs_texture_t *lifted = gs_texrender_get_texture(tr_lift_))
-			final_tex = lifted;
-	}
 
 	gs_enable_framebuffer_srgb(previous_srgb);
 	obs_source_release(base_source);

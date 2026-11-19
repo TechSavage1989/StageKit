@@ -32,6 +32,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/scene-util.hpp"
 #include "../common/start-image.hpp"
 #include "../placement/place-item.hpp"
+#include "../placement/fit-item.hpp"
 #include "arrange.hpp"
 #include "arrange-tools.hpp"
 #include "preview-guides.hpp"
@@ -188,7 +189,7 @@ public:
 		for (int a = 0; a < (int)ArrangeAction::Count; a++) {
 			const auto action = static_cast<ArrangeAction>(a);
 			if (action == ArrangeAction::SpaceAcross || action == ArrangeAction::SameWidth ||
-			    action == ArrangeAction::Top)
+			    action == ArrangeAction::Top || action == ArrangeAction::FitSpace)
 				sub->addSeparator();
 			// The hotkey names read "StageKit: Align left"; the menu is already StageKit's.
 			QAction *entry =
@@ -488,6 +489,10 @@ class Dock : public QWidget {
 public:
 	// fixed_scene: a scene name to control instead of OBS's current scene
 	// (used by the tests, where there is no OBS window).
+	// (The glide handler holds this dock: it goes with it, unless a dock
+	// made since has set its own.)
+	~Dock() override { set_arrange_glide(nullptr, this); }
+
 	explicit Dock(const std::string &fixed_scene = {}, QWidget *parent = nullptr)
 		: QWidget(parent),
 		  fixed_scene_(fixed_scene)
@@ -644,6 +649,14 @@ public:
 		place_no_shadow_->setToolTip(tr_text("Arrange.NoShadow.Tip"));
 		beside_arrows->insertWidget(2, place_visible_);
 		beside_arrows->insertWidget(3, place_no_shadow_);
+		// Two tools for the item itself, beside the arrows that move it:
+		// Fit to space (filled in below, with the arrange tools it is one
+		// of) and OBS's own Edit Transform window. The owner: "a new arrange
+		// or place option to "fit" an object to the available space ... a
+		// shortcut button in the relevant tab to edit transform".
+		place_tools_ = new QHBoxLayout();
+		place_tools_->setSpacing(4);
+		beside_arrows->insertLayout(4, place_tools_);
 
 		auto *keys_box = new QGroupBox(tr_text("Dock.KeysBox"), this);
 		auto *keys_layout = new QVBoxLayout(keys_box);
@@ -781,6 +794,23 @@ public:
 			arrange_grid->addWidget(tool, a / 3, a % 3);
 		}
 		arrange_grid->setSpacing(4);
+		{
+			QPushButton *fit = arrange_button(ArrangeAction::FitSpace, move_box, true);
+			fit->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+			fit->setFixedSize(40, 30);
+			place_tools_->addWidget(fit);
+			edit_transform_ = new QPushButton(move_box);
+			edit_transform_->setObjectName("editTransform");
+			edit_transform_->setAccessibleName(tr_text("Dock.EditTransform"));
+			icon_only(edit_transform_);
+			edit_transform_->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+			edit_transform_->setFixedSize(40, 30);
+			edit_transform_->setIcon(tool_icon("edit_transform", edit_transform_));
+			QObject::connect(edit_transform_, &QPushButton::clicked, this, [this] { edit_transform(); });
+			place_tools_->addWidget(edit_transform_);
+			place_tools_->addStretch(1);
+			show_edit_transform();
+		}
 		auto *tools_row = new QHBoxLayout();
 		tools_row->setContentsMargins(0, 0, 0, 0);
 		tools_row->setSpacing(10);
@@ -969,6 +999,7 @@ public:
 				 [this](int) { store_arrange_options(); });
 		QObject::connect(snap_within_, &QSpinBox::valueChanged, this, [this](int) { store_arrange_options(); });
 		QObject::connect(limit_px_, &QSpinBox::valueChanged, this, [this](int) { store_arrange_options(); });
+		QObject::connect(margin_, &QSpinBox::valueChanged, this, [this](int) { store_arrange_options(); });
 		for (QComboBox *box : {curve_, ease_mode_})
 			QObject::connect(box, &QComboBox::currentIndexChanged, this,
 					 [this](int) { store_arrange_options(); });
@@ -988,6 +1019,20 @@ public:
 		});
 		glide_timer_ = new QTimer(this);
 		QObject::connect(glide_timer_, &QTimer::timeout, this, [this] { step_glides(); });
+		// A tool whose change glides (Fit to space), from the dock, a hotkey
+		// or the preview's menu: the same glide as a snap on release.
+		set_arrange_glide(
+			[this](obs_source_t *scene, const std::vector<ArrangeStart> &starts) {
+				if (measuring_stopped())
+					return;
+				std::vector<GlideFrom> from;
+				for (const ArrangeStart &start : starts)
+					from.push_back({start.item, Placed{start.pos, start.scale, start.bounds},
+							start.hand_over});
+				const char *name = scene ? obs_source_get_name(scene) : nullptr;
+				glide_back(from, name ? name : "");
+			},
+			this);
 
 		auto *order_box = new QGroupBox(tr_text("Dock.OrderBox"), this);
 		auto *order_layout = new QGridLayout(order_box);
@@ -1551,7 +1596,27 @@ private:
 			return tr_text("Arrange.SelectFirst");
 		if (out.had < out.needs)
 			return tr_text(out.needs >= 3 ? "Arrange.NeedThree" : "Arrange.NeedTwo");
-		return tr_text("Arrange.Done").arg(out.changed);
+		QString text = tr_text("Arrange.Done").arg(out.changed);
+		// Fit to space: what it held back so no other fit gives up room.
+		const auto join = [](const std::vector<std::string> &names) {
+			QStringList list;
+			for (const std::string &name : names)
+				list << QString::fromStdString(name);
+			return list.join(", ");
+		};
+		if (!out.fit.gave_way_to.empty())
+			text += " " + tr_text(out.fit.refused > 0 && out.fit.shrunk == 0 ? "Arrange.FitSpace.Left"
+											 : "Arrange.FitSpace.Smaller")
+					      .arg(join(out.fit.gave_way_to));
+		if (!out.fit.own_fit.empty())
+			text += " " + tr_text("Arrange.FitSpace.OwnFit").arg(join(out.fit.own_fit));
+		if (!out.fit.unknown.empty())
+			text += " " + tr_text("Arrange.FitSpace.Unknown").arg(join(out.fit.unknown));
+		if (!out.not_copied.empty())
+			text += " " + tr_text("Arrange.FitSpace.NotCopied").arg(join(out.not_copied));
+		if (!out.not_known.empty())
+			text += " " + tr_text("Arrange.FitSpace.NotKnown").arg(join(out.not_known));
+		return text;
 	}
 
 	// Puts the shared options into the dock's controls.
@@ -1577,6 +1642,7 @@ private:
 		curve_->setCurrentIndex(std::clamp(o.send_curve, 0, curve_->count() - 1));
 		ease_mode_->setCurrentIndex(std::clamp(o.send_mode, 0, ease_mode_->count() - 1));
 		snap_within_->setValue(o.within);
+		margin_->setValue(o.place_margin);
 		storing_ = false;
 		show_copy_scenes();
 		show_copy_sources();
@@ -1691,6 +1757,7 @@ private:
 		o.send_curve = curve_->currentIndex();
 		o.send_mode = ease_mode_->currentIndex();
 		o.within = snap_within_->value();
+		o.place_margin = margin_->value();
 		set_arrange_options(o);
 		shown_options_ = arrange_options_revision();
 	}
@@ -1753,7 +1820,28 @@ private:
 		obs_sceneitem_t *item; // holds a reference
 		Placed from, to;
 		double at, lasts;
+		Placed last; // what the glide wrote last
+		// Told to its Fit to Space, in this scene, when the glide ends.
+		bool hand_over = false;
+		std::string scene;
 	};
+	struct GlideFrom {
+		obs_sceneitem_t *item;
+		Placed was;
+		bool hand_over;
+	};
+	// An item placed on purpose is told to its Fit to Space once it is
+	// where it is going (the filter reads its place and size then).
+	static void hand_over(const std::string &scene_name, obs_sceneitem_t *item)
+	{
+		if (measuring_stopped() || scene_name.empty())
+			return;
+		obs_source_t *scene = obs_get_source_by_name(scene_name.c_str());
+		if (!scene)
+			return;
+		fit_item_placed(scene, obs_source_get_name(obs_sceneitem_get_source(item)));
+		obs_source_release(scene);
+	}
 	// One step of every correction still gliding. Taking hold of an item
 	// again ends them where they are.
 	void step_glides()
@@ -1765,6 +1853,16 @@ private:
 		for (auto it = glides_.begin(); it != glides_.end();) {
 			bool done = grabbed || measuring_stopped();
 			if (!done) {
+				// Whatever moved the item meanwhile (a Shadow, Glow &
+				// Outline keeping its picture in place as its room
+				// changes with the size) moves the whole glide with it.
+				const Placed cur = placed_of(it->item);
+				for (Placed *p : {&it->from, &it->to}) {
+					vec2_add(&p->pos, &p->pos, &cur.pos);
+					vec2_sub(&p->pos, &p->pos, &it->last.pos);
+					vec2_add(&p->bounds, &p->bounds, &cur.bounds);
+					vec2_sub(&p->bounds, &p->bounds, &it->last.bounds);
+				}
 				it->at = std::min(1.0, it->at + dt / it->lasts);
 				const float t = (float)ease(curve, mode, it->at);
 				auto mix = [t](const vec2 &a, const vec2 &b) {
@@ -1779,8 +1877,11 @@ private:
 					done = true;
 				}
 				place_at(it->item, now);
+				it->last = placed_of(it->item);
 			}
 			if (done) {
+				if (it->hand_over)
+					hand_over(it->scene, it->item);
 				obs_sceneitem_release(it->item);
 				it = glides_.erase(it);
 			} else {
@@ -1789,6 +1890,118 @@ private:
 		}
 		if (glides_.empty())
 			glide_timer_->stop();
+	}
+
+	// Each item goes back to where it was (`from`) and travels to where it
+	// is now, over the dock's glide time and curve. Undo already holds the
+	// finished places.
+	// An item with `hand_over` is told to its Fit to Space in `scene` when it
+	// gets there, or at once when it does not glide.
+	void glide_back(const std::vector<GlideFrom> &from, const std::string &scene = {})
+	{
+		const int glide_ms = g_test_correct_ms >= 0 ? g_test_correct_ms : duration_->value();
+		for (const GlideFrom &f : from) {
+			obs_sceneitem_t *item = f.item;
+			const Placed to = placed_of(item);
+			bool owed = f.hand_over;
+			// An item still gliding from before starts afresh from here
+			// (and is still owed to its Fit to Space, if it was).
+			for (auto it = glides_.begin(); it != glides_.end();) {
+				if (it->item == item) {
+					owed = owed || it->hand_over;
+					obs_sceneitem_release(it->item);
+					it = glides_.erase(it);
+				} else {
+					++it;
+				}
+			}
+			if (glide_ms <= 0 || to == f.was) {
+				if (owed)
+					hand_over(scene, item);
+				continue;
+			}
+			obs_sceneitem_addref(item);
+			place_at(item, f.was);
+			glides_.push_back({item, f.was, to, 0.0, glide_ms / 1000.0, placed_of(item), owed, scene});
+		}
+		if (!glides_.empty() && !glide_timer_->isActive()) {
+			glide_clock_.start();
+			glide_timer_->start(16);
+		}
+	}
+
+	// OBS's own Edit Transform window (Edit > Transform > Edit Transform),
+	// reached through its menu entry: OBS has no call for it. Null when the
+	// entry is not there (OBS renamed it, or no OBS window: the tests).
+	static QAction *edit_transform_action()
+	{
+		auto *window = static_cast<QWidget *>(obs_frontend_get_main_window());
+		return window ? window->findChild<QAction *>(QStringLiteral("actionEditTransform")) : nullptr;
+	}
+
+	// The button says whether it can open the window, and why not.
+	void show_edit_transform()
+	{
+		const bool there = edit_transform_action() != nullptr;
+		edit_transform_->setEnabled(there);
+		edit_transform_->setToolTip(tr_text("Dock.EditTransform") + "\n" +
+					    tr_text(there ? "Dock.EditTransform.Tip" : "Dock.EditTransform.Missing"));
+		static bool said = false;
+		if (!there && !said) {
+			said = true;
+			blog(LOG_INFO,
+			     "[StageKit] OBS's Edit Transform menu entry (actionEditTransform) was not found: "
+			     "the dock's Edit transform button is off");
+		}
+	}
+
+	// Opens OBS's Edit Transform window for the item chosen in the dock,
+	// which is selected first (alone, when it is in the scene being edited)
+	// so the window opens for it; with no such item, for what is selected in
+	// OBS's preview.
+	void edit_transform()
+	{
+		QAction *action = edit_transform_action();
+		if (!action) {
+			show_edit_transform();
+			say(tr_text("Dock.EditTransform.Missing"));
+			return;
+		}
+		obs_source_t *editing = editing_scene();
+		obs_source_t *scene = current_scene();
+		bool chosen = false;
+		if (editing && editing == scene) {
+			obs_sceneitem_t *item = find_item(scene, item_->currentText().toUtf8().constData());
+			if (item && (!obs_sceneitem_selected(item) || selected_items(scene).size() > 1)) {
+				// Only it: OBS opens the window for the top-most item
+				// selected, which could be another.
+				for (obs_sceneitem_t *other : selected_items(scene))
+					obs_sceneitem_select(other, false);
+				obs_sceneitem_select(item, true);
+			}
+			chosen = item != nullptr;
+		}
+		const bool any = chosen || (editing && !selected_items(editing).empty());
+		obs_source_release(scene);
+		obs_source_release(editing);
+		if (!any) {
+			say(tr_text("Arrange.SelectFirst"));
+			return;
+		}
+		// Once OBS's Sources list has taken in the selection.
+		QPointer<QAction> held(action);
+		// OBS switches the entry off while its Edit menu last opened with
+		// nothing (or several) selected, and a switched-off entry does
+		// nothing: it is switched on for the press, as it was after. OBS's
+		// own handler does nothing with no item selected.
+		QTimer::singleShot(50, this, [held] {
+			if (!held)
+				return;
+			const bool was = held->isEnabled();
+			held->setEnabled(true);
+			held->trigger();
+			held->setEnabled(was);
+		});
 	}
 
 	// A small drawing of what a tool does, in the theme's own text colour, so
@@ -1877,6 +2090,23 @@ private:
 			for (int i = 0; i < 3; i++)
 				bar(40, 6 + i * 19, 18, 14, name == "same_chosen" && i == 1 ? soft : ink);
 			arrow(QPointF(28, 32), QPointF(37, 32));
+		} else if (name == "fit_space") {
+			// The room left beside a column, and the item filling it, the
+			// edge distance short of its sides.
+			p.setPen(QPen(ink, 4));
+			p.drawRect(QRectF(5, 7, 36, 50));
+			bar(12, 20, 22, 24, ink);
+			bar(47, 7, 12, 22, ink);
+			bar(47, 35, 12, 22, ink);
+		} else if (name == "edit_transform") {
+			// A box with the handles OBS draws at a selected item's corners,
+			// and a pencil across one of them.
+			p.setPen(QPen(ink, 4));
+			p.drawRect(QRectF(9, 12, 36, 36));
+			for (const QPointF &at : {QPointF(9, 12), QPointF(45, 12), QPointF(9, 48), QPointF(45, 48)})
+				bar(at.x() - 6, at.y() - 6, 12, 12, ink);
+			p.setPen(QPen(ink, 8, Qt::SolidLine, Qt::RoundCap));
+			p.drawLine(QPointF(60, 30), QPointF(38, 52));
 		} else if (name.rfind("order", 0) == 0) {
 			// Each its own drawing, told apart at a glance (two sheets, one
 			// over the other, looked alike in all four to the owner). All the
@@ -1959,20 +2189,11 @@ private:
 			// The correction glides: each item goes back to where it was let
 			// go and travels to its place from there, over the dock's glide
 			// time and curve. (Undo already holds the finished places.)
-			const int glide_ms = g_test_correct_ms >= 0 ? g_test_correct_ms : duration_->value();
-			if ((limited || snapped) && glide_ms > 0) {
-				for (size_t i = 0; i < items.size(); i++) {
-					const Placed to = placed_of(items[i]);
-					if (to == dropped[i])
-						continue;
-					obs_sceneitem_addref(items[i]);
-					glides_.push_back({items[i], dropped[i], to, 0.0, glide_ms / 1000.0});
-					place_at(items[i], dropped[i]);
-				}
-				if (!glides_.empty() && !glide_timer_->isActive()) {
-					glide_clock_.start();
-					glide_timer_->start(16);
-				}
+			if (limited || snapped) {
+				std::vector<GlideFrom> from;
+				for (size_t i = 0; i < items.size(); i++)
+					from.push_back({items[i], dropped[i], false});
+				glide_back(from);
 			}
 			now = look();
 		}
@@ -2390,6 +2611,8 @@ private:
 	QComboBox *item_ = nullptr;
 	QComboBox *linked_ = nullptr;
 	QSpinBox *margin_ = nullptr;
+	QHBoxLayout *place_tools_ = nullptr; // Fit to space and Edit transform, beside the arrows
+	QPushButton *edit_transform_ = nullptr;
 	QSpinBox *duration_ = nullptr;
 	QLabel *status_ = nullptr;
 };
@@ -2530,6 +2753,7 @@ void register_dock()
 				return;
 			measuring_stop();
 			set_slide_handler(nullptr);
+			set_arrange_glide(nullptr, nullptr);
 			remove_preview_guides();
 			if (g_preview_menu && qApp)
 				qApp->removeEventFilter(g_preview_menu);

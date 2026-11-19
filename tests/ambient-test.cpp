@@ -7172,9 +7172,15 @@ static void link_transitions_test(uint32_t w, uint32_t h)
 // it would count as no capture after two seconds and the image would show
 // anyway) is the whole background. Off, the background is black; with a
 // colour, nothing is darker than the level; toward the image, the black
-// shows the usual background and the white patch is left as it is. Frames
-// go to `sheet` when it is given (docs/images/ambient-darkest.png). Run
-// alone with STAGEKIT_TEST_ONLY_AMBIENT_DARKEST.
+// shows the image at the level's share of its brightness, and the white
+// patch is left as it is. Then (2026-11-19): "Even at 1%, Darkest
+// level seems to bright a lot. it's also not smoothly blended. the darkest
+// level should be effected by the blur settings": at 1 % the black is all
+// but black, at 10 % a tenth of the image, at 100 % the image; the lift is
+// made before the blur, so a strong Gaussian leaves no step and a mosaic
+// cell is one colour; at 0 nothing changes. Frames go to `sheet` when it is
+// given (docs/images/ambient-darkest.png). Run alone with
+// STAGEKIT_TEST_ONLY_AMBIENT_DARKEST.
 static void ambient_darkest_test(uint32_t w, uint32_t h, const char *base_image, const std::string &sheet)
 {
 	printf("\n[ambient background: darkest level]\n");
@@ -7310,19 +7316,171 @@ static void ambient_darkest_test(uint32_t w, uint32_t h, const char *base_image,
 	      "a red lifts as bright, and red (darkest %.1f; red %.0f against green %.0f)", red_darkest, r / 1e3,
 	      g / 1e3);
 
-	// What the image looks like by itself, lifted the same (its own dark
-	// parts are lifted too, the same way).
+	// Toward the background image: the black shows the image at the level's
+	// share of its brightness. The image by itself, unlifted, is what it is
+	// measured against (in the black part, well clear of the patch).
 	const std::vector<uint8_t> image_alone = shot("x image alone", [](obs_data_t *d) {
+		obs_data_set_double(d, "darkest_level", 0);
 		obs_data_set_int(d, "darkest_fill", 0);
 		obs_data_set_int(d, "live_mode", 0);
 	});
-	const std::vector<uint8_t> toward_image =
-		shot("4 toward the background image", [](obs_data_t *d) { obs_data_set_int(d, "live_mode", 2); });
-	CHECK(opaque(toward_image) && region_diff(toward_image, image_alone, false) < 4.0 &&
-		      region_diff(toward_image, off, true) < 1.0 && region_mean(toward_image, false) > 40.0,
-	      "toward the background image the black shows the image's own look (%.2f off it; black part %.1f) and the white patch is left as it is (%.2f)",
-	      region_diff(toward_image, image_alone, false), region_mean(toward_image, false),
-	      region_diff(toward_image, off, true));
+	const double image_mean = region_mean(image_alone, false);
+	struct Toward {
+		double level;
+		const char *name;
+		std::vector<uint8_t> px;
+	};
+	std::vector<Toward> towards = {{1, "4 toward the image, 1 %", {}},
+				       {10, "5 toward the image, 10 %", {}},
+				       {30, "x toward the image, 30 %", {}},
+				       {75, "x toward the image, 75 %", {}},
+				       {100, "6 toward the image, 100 %", {}}};
+	for (Toward &t : towards)
+		t.px = shot(t.name, [&](obs_data_t *d) {
+			obs_data_set_int(d, "live_mode", 2);
+			obs_data_set_double(d, "darkest_level", t.level);
+		});
+	const double m1 = region_mean(towards[0].px, false), m10 = region_mean(towards[1].px, false),
+		     m30 = region_mean(towards[2].px, false), m75 = region_mean(towards[3].px, false),
+		     m100 = region_mean(towards[4].px, false);
+	double patch_moved = 0.0;
+	for (const Toward &t : towards)
+		patch_moved = std::max(patch_moved, region_diff(t.px, off, true));
+	CHECK(image_mean > 80.0 && m1 <= 0.03 * 255.0 && std::abs(m1 - 0.01 * image_mean) < 1.5,
+	      "toward the background image at 1 %% the black is all but black: %.2f of 255 (the image is %.1f; 1 %% of it %.2f; at most %.2f)",
+	      m1, image_mean, 0.01 * image_mean, 0.03 * 255.0);
+	CHECK(std::abs(m10 - 0.10 * image_mean) < 2.0 && std::abs(m30 - 0.30 * image_mean) < 2.5,
+	      "at 10 %% it is a tenth of the image (%.2f against %.2f), at 30 %% three tenths (%.2f against %.2f)", m10,
+	      0.10 * image_mean, m30, 0.30 * image_mean);
+	CHECK(region_diff(towards[4].px, image_alone, false) < 1.5 && std::abs(m75 - 0.75 * image_mean) < 3.0,
+	      "at 100 %% the black shows the image itself (%.2f off it; black part %.1f, the image %.1f), at 75 %% three quarters of it (%.2f against %.2f)",
+	      region_diff(towards[4].px, image_alone, false), m100, image_mean, m75, 0.75 * image_mean);
+	CHECK(region_mean(off, false) < m1 && m1 < m10 && m10 < m30 && m30 < m75 && m75 < m100 && patch_moved < 1.0,
+	      "the higher the level, the brighter the black (0: %.2f, 1 %%: %.2f, 10 %%: %.2f, 30 %%: %.2f, 75 %%: %.2f, 100 %%: %.2f), and the white patch is left as it is (at most %.2f off)",
+	      region_mean(off, false), m1, m10, m30, m75, m100, patch_moved);
+
+	// The image by itself, lifted toward itself, is left as it is at every
+	// level: above 50 % a knee as wide as the floor reached the image's own
+	// brightness and made it brighter (by a quarter at 100 %), so the image
+	// round a capture was brighter than the image in the capture's black
+	// parts, and it dimmed when a dark capture came in (found in review).
+	double alone_off = 0.0;
+	std::string alone_offs;
+	for (double level : {30.0, 75.0, 100.0}) {
+		const std::vector<uint8_t> px = shot("x image alone, lifted", [&](obs_data_t *d) {
+			obs_data_set_int(d, "live_mode", 0);
+			obs_data_set_double(d, "darkest_level", level);
+		});
+		const double off_by = mean_abs_diff(px, image_alone);
+		alone_off = std::max(alone_off, off_by);
+		char part[48];
+		snprintf(part, sizeof part, "%s%.0f %%: %.3f", alone_offs.empty() ? "" : ", ", level, off_by);
+		alone_offs += part;
+	}
+	CHECK(alone_off < 0.5,
+	      "the background image alone, lifted toward itself, is left as it is at every level (%s off the image)",
+	      alone_offs.c_str());
+
+	// Level 0 is no lift at all: the picture is the one drawn before the
+	// Darkest level existed, to the bit, whatever Lift toward says.
+	const std::vector<uint8_t> zero = shot("x level 0", [](obs_data_t *d) {
+		obs_data_set_int(d, "live_mode", 2);
+		obs_data_set_double(d, "darkest_level", 0);
+		obs_data_set_int(d, "darkest_fill", 1);
+	});
+	CHECK(mean_abs_diff(zero, off) == 0.0, "at 0 %% the background is exactly as with no Darkest level (%.4f)",
+	      mean_abs_diff(zero, off));
+
+	// The lift comes before the blur: next to a white patch under a strong
+	// Gaussian, the lifted black runs into the white as smoothly as the
+	// black does with no lift. (Made after the blur, as in beta192, the
+	// image was laid over everything darker than one and a half times the
+	// level: at 1 % a jump of the image's whole brightness within a pixel or
+	// two of the black's edge, the owner's hard edge.)
+	auto most_step = [&](const std::vector<uint8_t> &px) {
+		double most = 0.0;
+		for (uint32_t y = 0; y + 1 < h; y++)
+			for (uint32_t x = 0; x + 1 < w; x++) {
+				const size_t i = (size_t(y) * w + x) * 4;
+				const double here = luma(px, i);
+				most = std::max(most, std::abs(here - luma(px, i + 4)));
+				most = std::max(most, std::abs(here - luma(px, i + size_t(w) * 4)));
+			}
+		return most;
+	};
+	const std::vector<uint8_t> soft_off = shot("x Gaussian, off", [](obs_data_t *d) {
+		obs_data_set_int(d, "darkest_fill", 0);
+		obs_data_set_int(d, "blur_type", 1);
+		obs_data_set_double(d, "blur", 80);
+	});
+	const double step_off = most_step(soft_off);
+	double step_lifted = 0.0;
+	std::string steps;
+	for (double level : {1.0, 10.0, 30.0}) {
+		const char *name = level == 10.0 ? "7 a strong Gaussian blur, 10 %" : "x Gaussian";
+		const std::vector<uint8_t> px =
+			shot(name, [&](obs_data_t *d) { obs_data_set_double(d, "darkest_level", level); });
+		const double step = most_step(px);
+		step_lifted = std::max(step_lifted, step);
+		char part[64];
+		snprintf(part, sizeof part, "%s%.0f %%: %.2f", steps.empty() ? "" : ", ", level, step);
+		steps += part;
+		if (level != 10.0 && !sheet.empty())
+			remove((sheet + "/" + name + ".rgba").c_str());
+	}
+	CHECK(step_off > 0.5 && step_lifted <= step_off + 1.0,
+	      "under a strong Gaussian the lifted black runs into the white patch smoothly: the largest step between neighbouring pixels is %s, against %.2f with no lift",
+	      steps.c_str(), step_off);
+
+	// And the mosaic: every cell one colour, the lift inside it. Squares of
+	// 40 px laid from the middle (as the shader lays them), no blur, 30 %
+	// toward the image: each cell, a few pixels in from its sides, is one
+	// colour.
+	const std::vector<uint8_t> cells = shot("x squares", [](obs_data_t *d) {
+		obs_data_set_int(d, "blur_type", 0);
+		obs_data_set_double(d, "blur", 0);
+		obs_data_set_int(d, "pixel_style", 1);
+		obs_data_set_double(d, "pixel_size", 40);
+		obs_data_set_double(d, "darkest_level", 30);
+	});
+	int worst_cell = 0, cells_seen = 0;
+	double cell_mean = 0.0;
+	for (int cy = -5; cy <= 5; cy++)
+		for (int cx = -9; cx <= 9; cx++) {
+			const int x0 = int(w) / 2 + cx * 40, y0 = int(h) / 2 + cy * 40;
+			if (x0 + 3 < 0 || y0 + 3 < 0 || x0 + 37 > int(w) || y0 + 37 > int(h))
+				continue;
+			// (What is not the black part is the top left quarter: a cell
+			// whose top left corner is in the black part is all in it.)
+			if (!in_black(uint32_t(x0 + 3), uint32_t(y0 + 3)))
+				continue;
+			int lo[3] = {255, 255, 255}, hi[3] = {0, 0, 0};
+			for (int y = y0 + 3; y < y0 + 37; y++)
+				for (int x = x0 + 3; x < x0 + 37; x++) {
+					const size_t i = (size_t(y) * w + size_t(x)) * 4;
+					for (int c = 0; c < 3; c++) {
+						lo[c] = std::min(lo[c], int(cells[i + c]));
+						hi[c] = std::max(hi[c], int(cells[i + c]));
+					}
+				}
+			for (int c = 0; c < 3; c++)
+				worst_cell = std::max(worst_cell, hi[c] - lo[c]);
+			cell_mean += luma(cells, (size_t(y0 + 20) * w + size_t(x0 + 20)) * 4);
+			cells_seen++;
+		}
+	cell_mean /= std::max(cells_seen, 1);
+	CHECK(cells_seen >= 10 && worst_cell <= 2 && cell_mean > 0.15 * image_mean,
+	      "with a mosaic every cell of the lifted black is one colour (%d cells, at most %d apart inside one; mean %.1f)",
+	      cells_seen, worst_cell, cell_mean);
+	shot("8 hexagons, 10 %", [](obs_data_t *d) {
+		obs_data_set_int(d, "pixel_style", 2);
+		obs_data_set_double(d, "pixel_size", 30);
+		obs_data_set_double(d, "darkest_level", 10);
+		obs_data_set_double(d, "blur", 12);
+	});
+	obs_data_set_int(s, "pixel_style", 0);
+	obs_data_set_double(s, "blur", 12);
+	obs_data_set_double(s, "darkest_level", 30);
 
 	// No background from at all: the colour.
 	const std::vector<uint8_t> no_image = shot("x no image", [](obs_data_t *d) {
@@ -7336,6 +7494,7 @@ static void ambient_darkest_test(uint32_t w, uint32_t h, const char *base_image,
 	      "with no background image to lift toward, the colour is used (darkest %.1f; black part %.1f)",
 	      no_image_darkest, region_mean(no_image, false));
 	obs_data_set_string(s, "image", base_image);
+	obs_data_set_int(s, "darkest_fill", 0);
 
 	// Every uniform of the Lift technique is set at every run: drawn after
 	// another user of the shared effect has given them other values, the
@@ -7370,8 +7529,6 @@ static void ambient_darkest_test(uint32_t w, uint32_t h, const char *base_image,
 				gs_effect_set_texture(gs_effect_get_param_by_name(looks, "image2"), tex);
 				f1("lift_level", 0.9f);
 				f1("lift_image", 0.0f);
-				f1("lift_brightness", 0.2f);
-				f1("lift_vignette", 1.0f);
 				vec4 other;
 				vec4_set(&other, r, g, b, 1.0f);
 				gs_effect_set_vec4(gs_effect_get_param_by_name(looks, "lift_color"), &other);
@@ -7411,8 +7568,10 @@ static void ambient_darkest_test(uint32_t w, uint32_t h, const char *base_image,
 		      mean_abs_diff(bright_on, bright_off));
 	}
 	if (!sheet.empty())
-		for (const char *name : {"x image alone", "x no image", "x own", "x own colour", "x own image again",
-					 "x bright on", "x bright off"})
+		for (const char *name :
+		     {"x image alone", "x toward the image, 30 %", "x toward the image, 75 %", "x image alone, lifted",
+		      "x level 0", "x Gaussian, off", "x squares", "x no image", "x own", "x own colour",
+		      "x own image again", "x bright on", "x bright off"})
 			remove((sheet + "/" + name + ".rgba").c_str());
 
 	obs_source_dec_showing(bg);
@@ -7545,6 +7704,955 @@ static void filter_remove_while_drawn_test(uint32_t w, uint32_t h)
 	obs_source_release(before_out);
 	obs_source_release(back);
 	obs_source_release(front);
+	obs_scene_release(scene);
+}
+
+// The dock's Fit to space and Edit transform (2026-11-18). The owner: "i'd
+// like a new arrange or place option to "fit" an object to the available
+// space respecting existing rules like margins and gaps and use visible
+// pixels, etc. I'd also like a shortcut button in the relevant tab to edit
+// transform of the selected source." A full-screen background, an item on
+// the left and a column of two on the right; a small item in the gap of the
+// column grows to fill it. Run alone: STAGEKIT_TEST_ONLY_FIT_TOOL.
+static void register_framed_kind()
+{
+	static bool registered = false;
+	if (registered)
+		return;
+	registered = true;
+	// 200 x 150, of which only the middle 160 x 90 (from 20, 30) is drawn:
+	// what shows is 16:9 inside a see-through 4:3.
+	obs_source_info k = {};
+	k.id = "stagekit_test_framed";
+	k.type = OBS_SOURCE_TYPE_INPUT;
+	k.output_flags = OBS_SOURCE_VIDEO | OBS_SOURCE_CUSTOM_DRAW;
+	k.get_name = [](void *) {
+		return "Framed (stand-in)";
+	};
+	k.create = [](obs_data_t *settings, obs_source_t *) -> void * {
+		return new uint32_t((uint32_t)obs_data_get_int(settings, "color"));
+	};
+	k.destroy = [](void *data) {
+		delete static_cast<uint32_t *>(data);
+	};
+	k.get_width = [](void *) -> uint32_t {
+		return 200;
+	};
+	k.get_height = [](void *) -> uint32_t {
+		return 150;
+	};
+	k.video_render = [](void *data, gs_effect_t *) {
+		gs_effect_t *solid = obs_get_base_effect(OBS_EFFECT_SOLID);
+		vec4 colour;
+		vec4_from_rgba(&colour, *static_cast<uint32_t *>(data));
+		gs_effect_set_vec4(gs_effect_get_param_by_name(solid, "color"), &colour);
+		gs_matrix_push();
+		gs_matrix_translate3f(20.0f, 30.0f, 0.0f);
+		while (gs_effect_loop(solid, "Solid"))
+			gs_draw_sprite(nullptr, 0, 160, 90);
+		gs_matrix_pop();
+	};
+	obs_register_source(&k);
+}
+
+static void fit_tool_test(uint32_t w, uint32_t h)
+{
+	printf("\n[dock: fit to space and edit transform]\n");
+	register_framed_kind();
+	auto block = [](const char *name, long long abgr, int bw, int bh) {
+		obs_data_t *d = obs_data_create();
+		obs_data_set_int(d, "color", abgr);
+		obs_data_set_int(d, "width", bw);
+		obs_data_set_int(d, "height", bh);
+		obs_source_t *src = obs_source_create("color_source", name, d, nullptr);
+		obs_data_release(d);
+		return src;
+	};
+	auto put = [](obs_sceneitem_t *item, float x, float y, float k) {
+		vec2 pos, scale;
+		vec2_set(&pos, x, y);
+		vec2_set(&scale, k, k);
+		obs_sceneitem_set_pos(item, &pos);
+		obs_sceneitem_set_scale(item, &scale);
+	};
+	auto pump = [](int ms) {
+		for (int t = 0; t < ms; t += 10) {
+			QCoreApplication::processEvents();
+			sleep_ms(10);
+		}
+		QCoreApplication::processEvents();
+	};
+	obs_scene_t *scene = obs_scene_create("FT Scene");
+	obs_source_t *scene_src = obs_scene_get_source(scene);
+	obs_source_t *back = block("FT Back", 0xFF404040, (int)w, (int)h);
+	obs_source_t *left = block("FT Left", 0xFFC00000, 300, 300);
+	obs_source_t *top = block("FT Column Top", 0xFF0000C0, 180, 80);
+	obs_source_t *low = block("FT Column Bottom", 0xFF00C0C0, 180, 80);
+	obs_data_t *fd = obs_data_create();
+	obs_data_set_int(fd, "color", 0xFF00FF00);
+	obs_source_t *small = obs_source_create("stagekit_test_framed", "FT Small", fd, nullptr);
+	obs_data_release(fd);
+	obs_scene_add(scene, back);
+	put(obs_scene_add(scene, left), 30, 30, 1);
+	put(obs_scene_add(scene, top), 430, 30, 1);
+	put(obs_scene_add(scene, low), 430, 250, 1);
+	obs_sceneitem_t *item = obs_scene_add(scene, small);
+	// Its box 50 x 37.5 at 460, 150; what shows 40 x 22.5 at 465, 157.5:
+	// in the gap of the column (x 360 to 610, y 140 to 220 with a 30 px gap).
+	auto reset = [&] {
+		obs_sceneitem_set_bounds_type(item, OBS_BOUNDS_NONE);
+		put(item, 460, 150, 0.25f);
+	};
+	reset();
+	obs_source_t *before_out = obs_get_output_source(0);
+	obs_set_output_source(0, scene_src);
+	obs_sceneitem_select(item, true);
+	sleep_ms(150);
+
+	// What shows of the green item, from a drawing of the scene.
+	struct Seen {
+		int x0 = 1 << 30, y0 = 1 << 30, x1 = -1, y1 = -1;
+		bool any() const { return x1 >= 0; }
+		double w() const { return x1 - x0 + 1; }
+		double h() const { return y1 - y0 + 1; }
+	};
+	auto seen = [&] {
+		sleep_ms(80);
+		const std::vector<uint8_t> px = render(scene_src, w, h);
+		Seen out;
+		for (uint32_t y = 0; y < h; y++)
+			for (uint32_t x = 0; x < w; x++) {
+				const uint8_t *p = &px[(size_t(y) * w + x) * 4];
+				if (p[1] > 200 && p[0] < 80 && p[2] < 80) {
+					out.x0 = std::min(out.x0, (int)x);
+					out.y0 = std::min(out.y0, (int)y);
+					out.x1 = std::max(out.x1, (int)x);
+					out.y1 = std::max(out.y1, (int)y);
+				}
+			}
+		return out;
+	};
+	auto scale_of = [&](obs_sceneitem_t *it) {
+		vec2 sc;
+		obs_sceneitem_get_scale(it, &sc);
+		return sc;
+	};
+	auto pos_of = [&](obs_sceneitem_t *it) {
+		vec2 p;
+		obs_sceneitem_get_pos(it, &p);
+		return p;
+	};
+
+	calldata_t dock_cd = {};
+	calldata_set_string(&dock_cd, "scene", "FT Scene");
+	proc_handler_call(obs_get_proc_handler(), "stagekit_create_dock", &dock_cd);
+	auto *dock = static_cast<QWidget *>(calldata_ptr(&dock_cd, "widget"));
+	calldata_free(&dock_cd);
+	CHECK(dock != nullptr, "the dock can be built");
+	if (!dock) {
+		obs_set_output_source(0, before_out);
+		obs_source_release(before_out);
+		return;
+	}
+	dock->resize(340, 640);
+	auto *place = dock->findChild<QWidget *>("pagePlace");
+	auto *fit = place ? place->findChild<QPushButton *>("arrange_fit_space") : nullptr;
+	auto *edit = place ? place->findChild<QPushButton *>("editTransform") : nullptr;
+	auto *margin = dock->findChild<QSpinBox *>("margin");
+	auto *visible = dock->findChild<QCheckBox *>("placeVisible");
+	auto *no_shadow = dock->findChild<QCheckBox *>("placeNoShadow");
+	auto *every = dock->findChild<QCheckBox *>("arrangeEveryScene");
+	CHECK(fit && edit && margin && visible && no_shadow && every,
+	      "the Place tab has Fit to space and Edit transform beside its arrows and tick boxes");
+	if (!(fit && edit && margin && visible && no_shadow && every)) {
+		delete dock;
+		obs_set_output_source(0, before_out);
+		obs_source_release(before_out);
+		return;
+	}
+	CHECK(fit->text().isEmpty() && fit->toolTip().contains("Fit to space") && !fit->icon().isNull(),
+	      "Fit to space is a drawing with its name and use in its tooltip");
+	CHECK(fit->icon().pixmap(64, 64).toImage() != edit->icon().pixmap(64, 64).toImage(),
+	      "the two tools have drawings of their own");
+	// No OBS window here: no Edit Transform entry to reach.
+	CHECK(!edit->isEnabled() && edit->toolTip().contains("could not be found"),
+	      "without OBS's Edit Transform entry the button is off and its tooltip says why");
+	margin->setValue(30);
+	visible->setChecked(true);
+	no_shadow->setChecked(true);
+	every->setChecked(false);
+
+	// 1. By what shows, gliding as a snap on release does.
+	calldata_t glide_cd = {};
+	calldata_set_int(&glide_cd, "ms", 300);
+	proc_handler_call(obs_get_proc_handler(), "stagekit_test_correct_glide", &glide_cd);
+	fit->click();
+	const vec2 at_once = scale_of(item);
+	pump(700);
+	Seen s = seen();
+	const vec2 sc = scale_of(item);
+	CHECK(std::fabs(at_once.x - 0.25f) < 0.001f && sc.x > 0.25f,
+	      "it glides from where it was (scale %.3f at once, %.3f after)", at_once.x, sc.x);
+	CHECK(s.any() && std::fabs(s.y0 - 140) <= 1.5 && std::fabs(s.y1 + 1 - 220) <= 1.5,
+	      "what shows fills the gap, the edge distance from the column above and below (y %d to %d)", s.y0,
+	      s.y1 + 1);
+	CHECK(std::fabs((s.x0 + s.x1 + 1) / 2.0 - 485.0) <= 1.5 && s.x0 >= 359,
+	      "centred across its space, clear of the item on the left (x %d to %d)", s.x0, s.x1 + 1);
+	CHECK(std::fabs(sc.x - sc.y) < 1e-4 && std::fabs(s.w() / s.h() - 16.0 / 9.0) < 0.04,
+	      "and keeps its shape (%.0f x %.0f, scale %.3f / %.3f)", s.w(), s.h(), sc.x, sc.y);
+	calldata_set_int(&glide_cd, "ms", 0);
+	proc_handler_call(obs_get_proc_handler(), "stagekit_test_correct_glide", &glide_cd);
+	calldata_free(&glide_cd);
+
+	// One step in Undo.
+	calldata_t undo_cd = {};
+	calldata_set_bool(&undo_cd, "redo", false);
+	proc_handler_call(obs_get_proc_handler(), "stagekit_replay_arrange", &undo_cd);
+	sleep_ms(60);
+	const vec2 undone = scale_of(item), undone_at = pos_of(item);
+	calldata_set_bool(&undo_cd, "redo", true);
+	proc_handler_call(obs_get_proc_handler(), "stagekit_replay_arrange", &undo_cd);
+	calldata_free(&undo_cd);
+	sleep_ms(60);
+	CHECK(std::fabs(undone.x - 0.25f) < 0.001f && std::fabs(undone_at.x - 460) < 0.5 &&
+		      std::fabs(scale_of(item).x - sc.x) < 0.001f,
+	      "one step in Undo takes it back, and Redo forward (scale %.3f, then %.3f)", undone.x, scale_of(item).x);
+
+	// A second press finds it already fitted.
+	fit->click();
+	pump(50);
+	CHECK(std::fabs(scale_of(item).x - sc.x) < 0.002f, "a second press leaves it as it is (scale %.3f)",
+	      scale_of(item).x);
+
+	// 2. Its box, not what shows: the whole 4:3 box fills the gap's height.
+	reset();
+	visible->setChecked(false);
+	fit->click();
+	pump(50);
+	{
+		const vec2 b = scale_of(item), p = pos_of(item);
+		CHECK(std::fabs(p.y - 140) < 1.0 && std::fabs(p.y + 150 * b.y - 220) < 1.0,
+		      "with Use visible pixels off, its box fills the gap (y %.1f to %.1f)", p.y, p.y + 150 * b.y);
+	}
+	visible->setChecked(true);
+
+	// 3. A bounding box gets a new box; the scale is not touched.
+	reset();
+	{
+		obs_sceneitem_set_bounds_type(item, OBS_BOUNDS_SCALE_INNER);
+		vec2 bounds, one;
+		vec2_set(&bounds, 50.0f, 37.5f);
+		vec2_set(&one, 1.0f, 1.0f);
+		obs_sceneitem_set_bounds(item, &bounds);
+		obs_sceneitem_set_scale(item, &one);
+		sleep_ms(60);
+		fit->click();
+		pump(50);
+		obs_sceneitem_get_bounds(item, &bounds);
+		const vec2 b = scale_of(item);
+		s = seen();
+		CHECK(std::fabs(b.x - 1.0f) < 1e-4 && std::fabs(bounds.y - 80.0f / 90.0f * 150.0f) < 2.0f &&
+			      std::fabs(s.y0 - 140) <= 1.5 && std::fabs(s.y1 + 1 - 220) <= 1.5,
+		      "an item with a bounding box gets its box changed (%.1f x %.1f, scale %.2f; y %d to %d)",
+		      bounds.x, bounds.y, b.x, s.y0, s.y1 + 1);
+	}
+
+	// 4. Shadows ignored: the picture, not its shadow, fills the gap.
+	reset();
+	obs_source_t *shadow = obs_source_create("stagekit_shadow_backdrop", "FT Shadow", nullptr, nullptr);
+	obs_source_filter_add(small, shadow);
+	sleep_ms(400);
+	reset();
+	sleep_ms(400);
+	fit->click();
+	pump(50);
+	sleep_ms(400);
+	s = seen();
+	CHECK(s.any() && std::fabs(s.y0 - 140) <= 2.0 && std::fabs(s.y1 + 1 - 220) <= 2.0 &&
+		      std::fabs(s.w() / s.h() - 16.0 / 9.0) < 0.05,
+	      "with a shadow ignored, the image itself fills the gap (y %d to %d, %.0f x %.0f)", s.y0, s.y1 + 1, s.w(),
+	      s.h());
+	// The same with a glide time: an item with a shadow in screen pixels
+	// does not glide (the shadow moves it as its room changes, by the size
+	// at that moment), so it ends where it would at once. (The shadow takes
+	// its room for the size it was reset to a few ticks later: under load,
+	// 400 ms was now and then too little.)
+	reset();
+	sleep_ms(1000);
+	{
+		calldata_t sg = {};
+		calldata_set_int(&sg, "ms", 300);
+		proc_handler_call(obs_get_proc_handler(), "stagekit_test_correct_glide", &sg);
+		fit->click();
+		pump(900);
+		calldata_set_int(&sg, "ms", 0);
+		proc_handler_call(obs_get_proc_handler(), "stagekit_test_correct_glide", &sg);
+		calldata_free(&sg);
+	}
+	sleep_ms(400);
+	s = seen();
+	CHECK(s.any() && std::fabs(s.y0 - 140) <= 2.0 && std::fabs(s.y1 + 1 - 220) <= 2.0 &&
+		      std::fabs((s.x0 + s.x1 + 1) / 2.0 - 485.0) <= 2.0,
+	      "with a glide time and a shadow in screen pixels, the image ends where it should (x %d to %d, y %d to %d)",
+	      s.x0, s.x1 + 1, s.y0, s.y1 + 1);
+	// Shadows counted: the image and its shadow fill the gap together, by
+	// what shows and by boxes (the shadow keeps its size on the screen).
+	auto drawn = [&] {
+		sleep_ms(80);
+		const std::vector<uint8_t> px = render(scene_src, w, h);
+		Seen out;
+		for (uint32_t y = 120; y < 240; y++)
+			for (uint32_t x = 335; x < 625; x++) {
+				const uint8_t *q = &px[(size_t(y) * w + x) * 4];
+				const bool green = q[1] > 200 && q[0] < 80 && q[2] < 80;
+				const bool dark = q[0] < 0x3A && q[1] < 0x3A && q[2] < 0x3A;
+				if (green || dark) {
+					out.x0 = std::min(out.x0, (int)x);
+					out.y0 = std::min(out.y0, (int)y);
+					out.x1 = std::max(out.x1, (int)x);
+					out.y1 = std::max(out.y1, (int)y);
+				}
+			}
+		return out;
+	};
+	for (const bool by_pixels : {true, false}) {
+		reset();
+		no_shadow->setChecked(false);
+		visible->setChecked(by_pixels);
+		if (!by_pixels) {
+			// A smaller shadow: the box's room is most of the gap otherwise.
+			obs_data_t *small_shadow = obs_data_create();
+			obs_data_set_double(small_shadow, "softness", 3.0);
+			obs_data_set_double(small_shadow, "offset_x", 4.0);
+			obs_data_set_double(small_shadow, "offset_y", 4.0);
+			obs_source_update(shadow, small_shadow);
+			obs_data_release(small_shadow);
+			reset();
+		}
+		sleep_ms(400);
+		fit->click();
+		pump(50);
+		sleep_ms(500);
+		const Seen d = drawn();
+		const Seen g = seen();
+		// By boxes the whole box, the shadow's room in it, fills the gap's
+		// height (the room is most of it here).
+		const vec2 p = pos_of(item), k = scale_of(item);
+		const double top = p.y, bottom = p.y + obs_source_get_height(small) * k.y;
+		const bool fills = by_pixels ? g.h() > 50.0
+					     : std::fabs(top - 140) <= 2.0 && std::fabs(bottom - 220) <= 2.0;
+		CHECK(d.any() && g.any() && d.y0 >= 139 && d.y1 + 1 <= 221 && d.x0 >= 359 && d.x1 + 1 <= 611 && fills,
+		      "with shadows counted (%s), image and shadow stay inside the gap (x %d to %d, y %d to %d; "
+		      "image %.0f x %.0f, box y %.1f to %.1f)",
+		      by_pixels ? "by what shows" : "by boxes", d.x0, d.x1 + 1, d.y0, d.y1 + 1, g.w(), g.h(), top,
+		      bottom);
+	}
+	no_shadow->setChecked(true);
+	visible->setChecked(true);
+	obs_source_filter_remove(small, shadow);
+	obs_source_release(shadow);
+	sleep_ms(200);
+
+	// 5. In every scene: the same place where else the source is shown.
+	reset();
+	obs_scene_t *other = obs_scene_create("FT Other");
+	obs_sceneitem_t *other_item = obs_scene_add(other, small);
+	put(other_item, 5, 5, 1);
+	every->setChecked(true);
+	fit->click();
+	pump(50);
+	{
+		const vec2 a = scale_of(item), b = scale_of(other_item), pa = pos_of(item), pb = pos_of(other_item);
+		CHECK(a.x > 0.25f && std::fabs(a.x - b.x) < 1e-4 && std::fabs(pa.x - pb.x) < 0.5 &&
+			      std::fabs(pa.y - pb.y) < 0.5,
+		      "with In every scene ticked, its copy in another scene gets the same transform (%.3f, %.3f)", b.x,
+		      pb.x);
+	}
+	every->setChecked(false);
+
+	// 6. A locked item is left alone.
+	reset();
+	obs_sceneitem_set_locked(item, true);
+	fit->click();
+	pump(50);
+	CHECK(std::fabs(scale_of(item).x - 0.25f) < 1e-4 && std::fabs(pos_of(item).x - 460) < 0.01,
+	      "a locked item is left alone");
+	obs_sceneitem_set_locked(item, false);
+
+	// 7. From the hotkey (and the preview's menu, which runs the same).
+	reset();
+	calldata_t hk = {};
+	calldata_set_string(&hk, "action", "fit_space");
+	proc_handler_call(obs_get_proc_handler(), "stagekit_run_arrange", &hk);
+	calldata_free(&hk);
+	pump(50);
+	s = seen();
+	CHECK(std::fabs(s.y0 - 140) <= 1.5 && std::fabs(s.y1 + 1 - 220) <= 1.5,
+	      "the hotkey stagekit.arrange.fit_space does the same (y %d to %d)", s.y0, s.y1 + 1);
+
+	// 8. Never over another item: one it only overlaps is in the way.
+	reset();
+	put(item, 400, 40, 0.25f); // overlapping the column's top item at x 430
+	fit->click();
+	pump(50);
+	s = seen();
+	// Clear of all three by the edge distance (less a pixel of rounding).
+	struct Rect {
+		double x0, y0, x1, y1;
+	};
+	const Rect others[] = {{30, 30, 330, 330}, {430, 30, 610, 110}, {430, 250, 610, 330}};
+	auto clear_of = [](const Seen &a, const Rect &o, double gap) {
+		return a.x1 + 1 <= o.x0 - gap || a.x0 >= o.x1 + gap || a.y1 + 1 <= o.y0 - gap || a.y0 >= o.y1 + gap;
+	};
+	bool clear = s.any();
+	for (const Rect &o : others)
+		clear = clear && clear_of(s, o, 29.0);
+	CHECK(clear, "an item it overlaps is not covered, nor any other (x %d to %d, y %d to %d)", s.x0, s.x1 + 1, s.y0,
+	      s.y1 + 1);
+
+	// 9. Several selected: the top-most first, the next seeing where it went.
+	reset();
+	put(item, 450, 150, 0.25f);
+	obs_data_t *md = obs_data_create();
+	obs_data_set_int(md, "color", 0xFFFF00FF);
+	obs_source_t *second_src = obs_source_create("stagekit_test_framed", "FT Second", md, nullptr);
+	obs_data_release(md);
+	obs_sceneitem_t *second = obs_scene_add(scene, second_src);
+	put(second, 540, 150, 0.25f);
+	obs_sceneitem_select(second, true);
+	sleep_ms(80);
+	fit->click();
+	pump(50);
+	auto seen_of = [&](bool magenta) {
+		sleep_ms(80);
+		const std::vector<uint8_t> px = render(scene_src, w, h);
+		Seen out;
+		for (uint32_t y = 0; y < h; y++)
+			for (uint32_t x = 0; x < w; x++) {
+				const uint8_t *q = &px[(size_t(y) * w + x) * 4];
+				const bool hit = magenta ? (q[0] > 200 && q[1] < 80 && q[2] > 200)
+							 : (q[1] > 200 && q[0] < 80 && q[2] < 80);
+				if (hit) {
+					out.x0 = std::min(out.x0, (int)x);
+					out.y0 = std::min(out.y0, (int)y);
+					out.x1 = std::max(out.x1, (int)x);
+					out.y1 = std::max(out.y1, (int)y);
+				}
+			}
+		return out;
+	};
+	{
+		const Seen a = seen_of(false), b = seen_of(true);
+		bool apart = a.any() && b.any();
+		for (const Rect &o : others)
+			apart = apart && clear_of(a, o, 29.0) && clear_of(b, o, 29.0);
+		const Rect rb{(double)b.x0, (double)b.y0, (double)b.x1 + 1, (double)b.y1 + 1};
+		apart = apart && clear_of(a, rb, 29.0);
+		CHECK(apart && std::fabs(b.x0 - (a.x1 + 1) - 30.0) <= 1.5 && std::fabs(b.x1 + 1 - 610) <= 1.5 &&
+			      std::fabs(a.x0 - 360) <= 1.5,
+		      "two selected share the gap, the edge distance apart and from everything else (x %d to %d and %d "
+		      "to %d)",
+		      a.x0, a.x1 + 1, b.x0, b.x1 + 1);
+	}
+	obs_sceneitem_remove(second);
+	obs_source_release(second_src);
+
+	// 10. Handed to its Fit to Space once the glide is over, not before:
+	// a filter that keeps the item's size keeps the size it glided to.
+	reset();
+	sleep_ms(80);
+	obs_data_t *fs = obs_data_create();
+	obs_data_set_string(fs, "item", "FT Small");
+	obs_data_set_int(fs, "box", 2);
+	obs_data_set_double(fs, "margin", 30);
+	obs_data_set_bool(fs, "resize", false);
+	obs_source_t *fit_filter = obs_source_create("stagekit_fit_item", "FT Fit", fs, nullptr);
+	obs_data_release(fs);
+	obs_source_filter_add(scene_src, fit_filter);
+	sleep_ms(600);
+	calldata_t slow_cd = {};
+	calldata_set_int(&slow_cd, "ms", 300);
+	proc_handler_call(obs_get_proc_handler(), "stagekit_test_correct_glide", &slow_cd);
+	fit->click();
+	pump(1500);
+	calldata_set_int(&slow_cd, "ms", 0);
+	proc_handler_call(obs_get_proc_handler(), "stagekit_test_correct_glide", &slow_cd);
+	calldata_free(&slow_cd);
+	s = seen();
+	CHECK(s.any() && std::fabs(s.h() - 80.0) <= 3.0,
+	      "an item a Fit to Space keeps the size of keeps the size it glided to (%.0f x %.0f)", s.w(), s.h());
+	obs_source_filter_remove(scene_src, fit_filter);
+	obs_source_release(fit_filter);
+	sleep_ms(100);
+
+	// 11. It never makes another fit give up room (the owner, 2026-11-18:
+	// "the fit to space option/tool cannot force other objects to resize").
+	// The column's bottom item is fitted by a filter of its own in the free
+	// space round it, which ends 30 px below the small item; growing down
+	// into that, as by what shows of the bottom item it could, would make
+	// the filter shrink or move its item.
+	obs_sceneitem_t *low_item = obs_scene_find_source(scene, "FT Column Bottom");
+	auto *status = dock->findChild<QLabel *>("status");
+	CHECK(low_item && status, "the column's bottom item and the status line are there");
+	struct Held {
+		vec2 pos, scale, bounds;
+		int type;
+	};
+	auto held_of = [&](obs_sceneitem_t *it) {
+		Held out{};
+		obs_sceneitem_get_pos(it, &out.pos);
+		obs_sceneitem_get_scale(it, &out.scale);
+		obs_sceneitem_get_bounds(it, &out.bounds);
+		out.type = (int)obs_sceneitem_get_bounds_type(it);
+		return out;
+	};
+	auto off_by = [](const Held &a, const Held &b) -> double {
+		if (a.type != b.type)
+			return 1e9;
+		return std::max({std::fabs(a.pos.x - b.pos.x), std::fabs(a.pos.y - b.pos.y),
+				 std::fabs(a.bounds.x - b.bounds.x), std::fabs(a.bounds.y - b.bounds.y),
+				 100.0f * std::fabs(a.scale.x - b.scale.x), 100.0f * std::fabs(a.scale.y - b.scale.y)});
+	};
+	// What shows of the bottom item (yellow), from a drawing of the scene.
+	auto seen_low = [&] {
+		sleep_ms(80);
+		const std::vector<uint8_t> px = render(scene_src, w, h);
+		Seen out;
+		for (uint32_t y = 0; y < h; y++)
+			for (uint32_t x = 0; x < w; x++) {
+				const uint8_t *q = &px[(size_t(y) * w + x) * 4];
+				if (q[0] > 150 && q[1] > 150 && q[2] < 60) {
+					out.x0 = std::min(out.x0, (int)x);
+					out.y0 = std::min(out.y0, (int)y);
+					out.x1 = std::max(out.x1, (int)x);
+					out.y1 = std::max(out.y1, (int)y);
+				}
+			}
+		return out;
+	};
+	auto reset_low = [&] {
+		obs_sceneitem_set_bounds_type(low_item, OBS_BOUNDS_NONE);
+		obs_sceneitem_set_alignment(low_item, OBS_ALIGN_LEFT | OBS_ALIGN_TOP);
+		put(low_item, 430, 250, 1);
+	};
+	auto fit_on_low = [&](const char *kind, bool resize) {
+		obs_data_t *d = obs_data_create();
+		obs_source_t *f = nullptr;
+		if (std::strcmp(kind, "stagekit_fit_item") == 0) {
+			obs_data_set_string(d, "item", "FT Column Bottom");
+			obs_data_set_int(d, "box", 2);
+			obs_data_set_double(d, "margin", 30);
+			obs_data_set_bool(d, "resize", resize);
+			obs_data_set_int(d, "glide_ms", 0);
+			f = obs_source_create(kind, "FT Low Fit", d, nullptr);
+		} else {
+			obs_data_array_t *list = obs_data_array_create();
+			obs_data_t *entry = obs_data_create();
+			obs_data_set_string(entry, "value", "FT Column Bottom");
+			obs_data_array_push_back(list, entry);
+			obs_data_release(entry);
+			obs_data_set_array(d, "entries", list);
+			obs_data_array_release(list);
+			const std::string pre = "fit|FT Column Bottom|";
+			obs_data_set_int(d, (pre + "box").c_str(), 2);
+			obs_data_set_double(d, (pre + "margin").c_str(), 30);
+			obs_data_set_bool(d, (pre + "resize").c_str(), resize);
+			obs_data_set_int(d, (pre + "glide_ms").c_str(), 0);
+			f = obs_source_create(kind, "FT Low Scene Fit", d, nullptr);
+		}
+		obs_data_release(d);
+		obs_source_filter_add(scene_src, f);
+		return f;
+	};
+	// Several seconds of ticks after the press: the bottom item moves
+	// and grows by no more than half a pixel.
+	auto watch_low = [&](const Held &before, int ms) {
+		double most = 0.0;
+		for (int t = 0; t < ms; t += 250) {
+			pump(250);
+			most = std::max(most, off_by(held_of(low_item), before));
+		}
+		return most;
+	};
+	struct Case {
+		const char *what, *kind;
+		bool resize;
+	};
+	const Case cases[] = {{"a Fit to Space resizing it", "stagekit_fit_item", true},
+			      {"a Fit to Space with Resize to fit off", "stagekit_fit_item", false},
+			      {"a Scene Fit entry", "stagekit_scene_fit", true}};
+	margin->setValue(30);
+	for (const Case &c : cases) {
+		if (!low_item || !status)
+			break;
+		reset();
+		reset_low();
+		sleep_ms(100);
+		obs_source_t *f = fit_on_low(c.kind, c.resize);
+		sleep_ms(1500);
+		const Held before = held_of(low_item);
+		const Seen low_before = seen_low();
+		fit->click();
+		pump(50);
+		const double most = watch_low(before, 3000);
+		s = seen();
+		const Seen low_after = seen_low();
+		CHECK(most <= 0.5 && low_after.any() && std::abs(low_after.y0 - low_before.y0) <= 1 &&
+			      std::abs(low_after.x0 - low_before.x0) <= 1 && low_after.w() == low_before.w(),
+		      "%s: the fitted item below keeps its place and size for 3 s after the press (off by %.2f; y %d "
+		      "to %d)",
+		      c.what, most, low_after.y0, low_after.y1 + 1);
+		CHECK(s.any() && s.h() > 30.0 && s.y1 + 1 <= low_after.y0 - 29 && std::fabs(s.y0 - 140) <= 1.5,
+		      "%s: the item grows into what is free and keeps the gap above it (y %d to %d, %.0f x %.0f)",
+		      c.what, s.y0, s.y1 + 1, s.w(), s.h());
+		obs_source_filter_remove(scene_src, f);
+		obs_source_release(f);
+		sleep_ms(100);
+	}
+
+	// A smaller edge distance than the bottom item's filter keeps: taking
+	// it all would push that filter's space down, so the item is kept
+	// smaller, against the top of its space, and the status line says so.
+	if (low_item && status) {
+		reset();
+		reset_low();
+		sleep_ms(100);
+		obs_source_t *f = fit_on_low("stagekit_fit_item", true);
+		sleep_ms(1500);
+		const Held before = held_of(low_item);
+		margin->setValue(10);
+		fit->click();
+		pump(50);
+		const QString said = status->text();
+		const double most = watch_low(before, 3000);
+		s = seen();
+		const Seen low_after = seen_low();
+		CHECK(most <= 0.5 && s.any() && s.h() > 45.0 && s.h() < 75.0 && s.y1 + 1 <= low_after.y0 - 29 &&
+			      std::fabs(s.y0 - 120) <= 1.5,
+		      "with a smaller edge distance than the filter's, it is kept smaller so that filter keeps its "
+		      "space (off by %.2f; y %d to %d, below from %d)",
+		      most, s.y0, s.y1 + 1, low_after.y0);
+		CHECK(said.contains("Kept smaller") && said.contains("FT Column Bottom"),
+		      "and the status line says why: \"%s\"", said.toUtf8().constData());
+		margin->setValue(30);
+
+		// In every scene: a scene where the copy would make a fit give up
+		// room is left out, and the status line names it.
+		reset();
+		reset_low();
+		sleep_ms(1500);
+		const Held before2 = held_of(low_item);
+		obs_source_t *other_src = obs_scene_get_source(other);
+		obs_source_t *box_src = block("FT Other Box", 0xFFC000C0, 100, 50);
+		obs_sceneitem_t *box_item = obs_scene_add(other, box_src);
+		put(box_item, 450, 130, 1);
+		put(other_item, 5, 5, 1);
+		auto fit_on = [](obs_source_t *in, const char *what, const char *name) {
+			obs_data_t *od = obs_data_create();
+			obs_data_set_string(od, "item", what);
+			obs_data_set_int(od, "box", 2);
+			obs_data_set_double(od, "margin", 30);
+			obs_data_set_bool(od, "resize", true);
+			obs_data_set_int(od, "glide_ms", 0);
+			obs_source_t *f = obs_source_create("stagekit_fit_item", name, od, nullptr);
+			obs_data_release(od);
+			obs_source_filter_add(in, f);
+			return f;
+		};
+		obs_source_t *other_fit = fit_on(other_src, "FT Other Box", "FT Other Fit");
+		// A third scene with a fitted source, never shown: its fit has not
+		// worked its space out, so what a copy would do there is not known.
+		obs_scene_t *fresh = obs_scene_create("FT Fresh");
+		obs_source_t *fresh_src = obs_scene_get_source(fresh);
+		obs_sceneitem_t *fresh_item = obs_scene_add(fresh, small);
+		put(fresh_item, 5, 5, 1);
+		obs_source_t *fresh_box_src = block("FT Fresh Box", 0xFFC000C0, 100, 50);
+		put(obs_scene_add(fresh, fresh_box_src), 450, 130, 1);
+		obs_source_t *fresh_fit = fit_on(fresh_src, "FT Fresh Box", "FT Fresh Fit");
+		// (A fit works its space out while its scene is shown.)
+		obs_set_output_source(0, other_src);
+		sleep_ms(1500);
+		obs_set_output_source(0, scene_src);
+		sleep_ms(500);
+		const Held other_before = held_of(other_item), box_before = held_of(box_item);
+		const Held fresh_before = held_of(fresh_item);
+		every->setChecked(true);
+		fit->click();
+		pump(50);
+		const QString said2 = status->text();
+		const double most2 = watch_low(before2, 2000);
+		s = seen();
+		CHECK(s.any() && s.h() > 30.0 && most2 <= 0.5,
+		      "with In every scene ticked, it is fitted here as before (y %d to %d; below off by %.2f)", s.y0,
+		      s.y1 + 1, most2);
+		// And the other scene's fitted source, shown, keeps its box over
+		// ticks (a fit works its space out again when its scene is shown).
+		obs_set_output_source(0, other_src);
+		double most_other = 0.0;
+		for (int t = 0; t < 2000; t += 250) {
+			pump(250);
+			most_other = std::max(most_other, off_by(held_of(box_item), box_before));
+		}
+		obs_set_output_source(0, scene_src);
+		sleep_ms(300);
+		CHECK(off_by(held_of(other_item), other_before) < 0.01 && most_other <= 0.5 &&
+			      said2.contains("Not copied to FT Other") && said2.contains("FT Other Box"),
+		      "a scene where the copy would make a fit give up room is left out, and named (its fitted source "
+		      "shown for 2 s after: off by %.2f): \"%s\"",
+		      most_other, said2.toUtf8().constData());
+		CHECK(off_by(held_of(fresh_item), fresh_before) < 0.01 && said2.contains("Not copied to FT Fresh") &&
+			      said2.contains("not been worked out"),
+		      "a scene whose fit has not worked its space out yet is left out too, and named");
+		every->setChecked(false);
+		obs_source_filter_remove(other_src, other_fit);
+		obs_source_release(other_fit);
+		obs_sceneitem_remove(box_item);
+		obs_source_release(box_src);
+		obs_source_filter_remove(fresh_src, fresh_fit);
+		obs_source_release(fresh_fit);
+		obs_scene_release(fresh);
+		obs_source_release(fresh_box_src);
+		obs_source_filter_remove(scene_src, f);
+		obs_source_release(f);
+		reset_low();
+		sleep_ms(100);
+	}
+
+	// 12. A fitted source that is hidden takes its space back when it is
+	// shown: the item stays out of that space as if it showed.
+	if (low_item && status) {
+		reset();
+		reset_low();
+		sleep_ms(100);
+		obs_source_t *f = fit_on_low("stagekit_fit_item", true);
+		sleep_ms(1500);
+		const Held low_was = held_of(low_item);
+		const Seen low_seen = seen_low();
+		obs_sceneitem_set_visible(low_item, false);
+		sleep_ms(300);
+		fit->click();
+		pump(50);
+		const QString said = status->text();
+		sleep_ms(300);
+		s = seen();
+		obs_sceneitem_set_visible(low_item, true);
+		const double most = watch_low(low_was, 2000);
+		CHECK(s.any() && s.h() > 30.0 && s.y1 + 1 <= low_seen.y0 - 29 && most <= 0.5,
+		      "a hidden fitted source's space is kept for it: the item stops the edge distance above it (y %d to "
+		      "%d, it from %d), and shown again it keeps its place and size (off by %.2f)",
+		      s.y0, s.y1 + 1, low_seen.y0, most);
+		// (Its space is in the way from the start, as a shown one's is: the
+		// item is not first made too large and then kept smaller.)
+		CHECK(!said.contains("Kept smaller"), "the hidden source's space is in the way from the start: \"%s\"",
+		      said.toUtf8().constData());
+		obs_source_filter_remove(scene_src, f);
+		obs_source_release(f);
+		reset_low();
+		sleep_ms(100);
+	}
+
+	// 13. An item whose own fit resizes it is left to that fit, and the
+	// status line says so.
+	if (status) {
+		reset();
+		sleep_ms(100);
+		obs_data_t *od = obs_data_create();
+		obs_data_set_string(od, "item", "FT Small");
+		obs_data_set_int(od, "box", 2);
+		obs_data_set_double(od, "margin", 30);
+		obs_data_set_bool(od, "resize", true);
+		obs_data_set_int(od, "glide_ms", 0);
+		obs_source_t *own = obs_source_create("stagekit_fit_item", "FT Own Fit", od, nullptr);
+		obs_data_release(od);
+		obs_source_filter_add(scene_src, own);
+		sleep_ms(1500);
+		const Held mine = held_of(item);
+		fit->click();
+		pump(50);
+		const QString said = status->text();
+		pump(1000);
+		CHECK(off_by(held_of(item), mine) <= 0.5 && said.contains("its own fit filter sizes FT Small"),
+		      "an item its own Fit to Space resizes is left to it: \"%s\"", said.toUtf8().constData());
+		obs_source_filter_remove(scene_src, own);
+		obs_source_release(own);
+		sleep_ms(100);
+		reset();
+	}
+
+	// 14. In a scene of their own: an item in a group a Fit to Space looks
+	// after is left as it is (changing it changes the group); and an item
+	// lying on a fitted source whose fit never counts it (its Ignored
+	// sources) is not kept out of that source's space.
+	if (status) {
+		obs_scene_t *gs = obs_scene_create("FT Group Scene");
+		obs_source_t *gs_src = obs_scene_get_source(gs);
+		obs_source_t *inner_src = block("FT Inner", 0xFF808000, 100, 60);
+		obs_sceneitem_t *inner = obs_scene_add(gs, inner_src);
+		put(inner, 100, 100, 1);
+		obs_sceneitem_t *group = obs_scene_add_group(gs, "FT Group");
+		obs_sceneitem_group_add_item(group, inner);
+		obs_data_t *gd = obs_data_create();
+		obs_data_set_string(gd, "item", "FT Group");
+		obs_data_set_int(gd, "box", 2);
+		obs_data_set_double(gd, "margin", 30);
+		obs_data_set_int(gd, "glide_ms", 0);
+		obs_source_t *group_fit = obs_source_create("stagekit_fit_item", "FT Group Fit", gd, nullptr);
+		obs_data_release(gd);
+		obs_source_filter_add(gs_src, group_fit);
+		obs_sceneitem_select(item, false);
+		obs_set_output_source(0, gs_src);
+		sleep_ms(1500);
+		obs_sceneitem_select(inner, true);
+		sleep_ms(100);
+		const Held inner_was = held_of(inner), group_was = held_of(group);
+		fit->click();
+		pump(50);
+		const QString said = status->text();
+		pump(1000);
+		CHECK(off_by(held_of(inner), inner_was) <= 0.01 && off_by(held_of(group), group_was) <= 0.5 &&
+			      said.contains("Left as it is") && said.contains("FT Group"),
+		      "an item in a group a Fit to Space looks after is left as it is, and the group named: \"%s\"",
+		      said.toUtf8().constData());
+		obs_sceneitem_select(inner, false);
+		obs_source_filter_remove(gs_src, group_fit);
+		obs_source_release(group_fit);
+
+		obs_scene_t *cs = obs_scene_create("FT Capture Scene");
+		obs_source_t *cs_src = obs_scene_get_source(cs);
+		obs_source_t *cap_src = block("FT Capture", 0xFF606060, (int)w, (int)h);
+		obs_source_t *cam_src = block("FT Cam", 0xFF0080FF, 80, 45);
+		obs_sceneitem_t *cap = obs_scene_add(cs, cap_src);
+		obs_sceneitem_t *cam = obs_scene_add(cs, cam_src);
+		put(cam, 60, 60, 1);
+		obs_data_t *cd = obs_data_create();
+		obs_data_set_string(cd, "item", "FT Capture");
+		obs_data_set_int(cd, "box", 2);
+		obs_data_set_double(cd, "margin", 0);
+		obs_data_set_int(cd, "glide_ms", 0);
+		obs_data_array_t *skip = obs_data_array_create();
+		obs_data_t *entry = obs_data_create();
+		obs_data_set_string(entry, "value", "FT Cam");
+		obs_data_array_push_back(skip, entry);
+		obs_data_release(entry);
+		obs_data_set_array(cd, "skip", skip);
+		obs_data_array_release(skip);
+		obs_source_t *cap_fit = obs_source_create("stagekit_fit_item", "FT Capture Fit", cd, nullptr);
+		obs_data_release(cd);
+		obs_source_filter_add(cs_src, cap_fit);
+		obs_set_output_source(0, cs_src);
+		sleep_ms(1500);
+		// (Hidden and shown again meanwhile, as a camera switch does: that
+		// fit still knows it goes by the camera in no way.)
+		obs_sceneitem_set_visible(cam, false);
+		sleep_ms(300);
+		obs_sceneitem_set_visible(cam, true);
+		sleep_ms(300);
+		obs_sceneitem_select(cam, true);
+		sleep_ms(100);
+		const Held cap_was = held_of(cap);
+		const vec2 cam_scale = scale_of(cam);
+		fit->click();
+		pump(50);
+		const QString said_cap = status->text();
+		double most = 0.0;
+		for (int t = 0; t < 2000; t += 250) {
+			pump(250);
+			most = std::max(most, off_by(held_of(cap), cap_was));
+		}
+		CHECK(scale_of(cam).x > cam_scale.x * 1.5f && most <= 0.5,
+		      "an item lying on a fitted source that ignores it still grows (scale %.2f to %.2f), and that "
+		      "source keeps its place and size (off by %.2f): \"%s\"",
+		      cam_scale.x, scale_of(cam).x, most, said_cap.toUtf8().constData());
+		obs_sceneitem_select(cam, false);
+		obs_source_filter_remove(cs_src, cap_fit);
+		obs_source_release(cap_fit);
+		obs_set_output_source(0, scene_src);
+		obs_sceneitem_select(item, true);
+		sleep_ms(100);
+		obs_scene_release(cs);
+		obs_source_release(cap_src);
+		obs_source_release(cam_src);
+		obs_scene_release(gs);
+		obs_source_release(inner_src);
+	}
+
+	// 15. A fitted source at its home (laid out by hand with its fit off,
+	// then switched on: beta194) stays there: what the tool is told of each
+	// fit gives, worked out again, the very claim that fit makes, at home,
+	// and the item grows only as far as leaves the source at its home.
+	auto predicts = [&](long long &fits, long long &alike, long long &home) {
+		calldata_t cd = {};
+		calldata_set_string(&cd, "scene", "FT Scene");
+		proc_handler_call(obs_get_proc_handler(), "stagekit_test_fit_predicts", &cd);
+		fits = calldata_int(&cd, "fits");
+		alike = calldata_int(&cd, "alike");
+		home = calldata_int(&cd, "at_home");
+		const std::string detail = calldata_string(&cd, "detail") ? calldata_string(&cd, "detail") : "";
+		calldata_free(&cd);
+		return detail;
+	};
+	const Case home_cases[] = {{"a Fit to Space with Resize to fit off", "stagekit_fit_item", false},
+				   {"a Fit to Space resizing it", "stagekit_fit_item", true},
+				   {"a Scene Fit entry", "stagekit_scene_fit", true}};
+	margin->setValue(30);
+	for (const Case &c : home_cases) {
+		if (!low_item || !status)
+			break;
+		reset();
+		reset_low();
+		sleep_ms(100);
+		obs_source_t *f = fit_on_low(c.kind, c.resize);
+		sleep_ms(1500);
+		// Laid out by hand while it is off, where the fit would not put it
+		// (the gap kept to everything), then switched on.
+		obs_source_set_enabled(f, false);
+		sleep_ms(300);
+		obs_sceneitem_set_bounds_type(low_item, OBS_BOUNDS_NONE);
+		obs_sceneitem_set_alignment(low_item, OBS_ALIGN_LEFT | OBS_ALIGN_TOP);
+		put(low_item, 415, 248, 1);
+		sleep_ms(200);
+		const Seen laid = seen_low();
+		obs_source_set_enabled(f, true);
+		sleep_ms(1500);
+		const Seen low_on = seen_low();
+		long long fits = 0, alike = 0, home = 0;
+		const std::string said_on = predicts(fits, alike, home);
+		CHECK(low_on.any() && std::abs(low_on.x0 - laid.x0) <= 1 && std::abs(low_on.y0 - laid.y0) <= 1 &&
+			      low_on.w() == laid.w() && fits >= 1 && alike == fits && home >= 1,
+		      "%s: switched on over a layout made by hand, the source stays there, and what the tool is "
+		      "told of it says the same, at home (%lld of %lld alike, %lld at home): %s",
+		      c.what, alike, fits, home, said_on.c_str());
+		const Held before = held_of(low_item);
+		fit->click();
+		pump(50);
+		const double most = watch_low(before, 3000);
+		s = seen();
+		const Seen low_after = seen_low();
+		const std::string said_after = predicts(fits, alike, home);
+		CHECK(most <= 0.5 && low_after.any() && std::abs(low_after.x0 - laid.x0) <= 1 &&
+			      std::abs(low_after.y0 - laid.y0) <= 1 && low_after.w() == laid.w() && home >= 1 &&
+			      alike == fits && fits >= 1,
+		      "%s: after the press it is still at its home for 3 s (off by %.2f; %lld of %lld alike, %lld at "
+		      "home): %s",
+		      c.what, most, alike, fits, home, said_after.c_str());
+		CHECK(s.any() && s.h() > 30.0 && s.y1 + 1 <= low_after.y0 - 29 && s.x1 + 1 <= (int)w - 29,
+		      "%s: and the item grows into what is free and keeps the gap above it (y %d to %d, %.0f x %.0f)",
+		      c.what, s.y0, s.y1 + 1, s.w(), s.h());
+		obs_source_filter_remove(scene_src, f);
+		obs_source_release(f);
+		sleep_ms(100);
+	}
+	reset_low();
+	reset();
+	sleep_ms(100);
+
+	delete dock;
+	QCoreApplication::processEvents();
+	obs_set_output_source(0, before_out);
+	obs_source_release(before_out);
+	obs_scene_release(other);
+	for (obs_source_t *src : {back, left, top, low, small})
+		obs_source_release(src);
 	obs_scene_release(scene);
 }
 
@@ -10297,6 +11405,14 @@ int main(int argc, char **argv)
 		return g_failures ? 1 : 0;
 	}
 
+	if (getenv("STAGEKIT_TEST_ONLY_FIT_TOOL")) { // to try that section alone
+		fit_tool_test(w, h);
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
+
 	if (getenv("STAGEKIT_TEST_ONLY_FILTER_REMOVE")) { // to try that section alone
 		filter_remove_while_drawn_test(w, h);
 		obs_shutdown();
@@ -10757,6 +11873,7 @@ int main(int argc, char **argv)
 	blur_off_draw_test(w, h, base_image);                        // (alone: STAGEKIT_TEST_ONLY_BLUR_OFF_DRAW)
 	ambient_darkest_test(w, h, base_image, out + "/../darkest"); // (alone: STAGEKIT_TEST_ONLY_AMBIENT_DARKEST)
 	filter_remove_while_drawn_test(w, h);                        // (alone: STAGEKIT_TEST_ONLY_FILTER_REMOVE)
+	fit_tool_test(w, h);                                         // (alone: STAGEKIT_TEST_ONLY_FIT_TOOL)
 
 	// ==== scene-filters:blur ====
 	// ------------------------------------------------------------ scene blur

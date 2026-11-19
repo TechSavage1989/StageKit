@@ -14,6 +14,8 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include <obs.h>
 
+#include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -78,9 +80,14 @@ int distribute_items(obs_source_t *scene, std::vector<obs_sceneitem_t *> items, 
 // showing the sources of those names instead of to copies of the same source,
 // in this scene as well as the others; with several items selected, the last
 // in the list is the one copied.
+// With `allow`, each copy is asked about once it has its new transform (its
+// scene, the copy, its box before and after): a copy refused is put back as
+// it was and not counted.
+using CopyAllowed = std::function<bool(obs_source_t *scene, obs_sceneitem_t *copy, const Box &from, const Box &to)>;
 int copy_to_every_scene(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items,
 			const std::vector<std::string> *only = nullptr,
-			const std::vector<std::string> *to_sources = nullptr, bool even_locked = false);
+			const std::vector<std::string> *to_sources = nullptr, bool even_locked = false,
+			const CopyAllowed &allow = {});
 
 // Gives every copy of `item`'s source in the scenes of these names, while
 // they are not on screen, the transform it has here, locked copies too, and hands each to a Fit to
@@ -132,6 +139,67 @@ struct Offset {
 };
 Offset slide_offset(obs_source_t *scene, obs_sceneitem_t *item, int dx, int dy, double gap, const Measure &how,
 		    const std::vector<obs_sceneitem_t *> &leave_out, const Box *from = nullptr);
+
+// Fit to space, the one-press tool: each item (top-most first) grows or
+// shrinks, keeping its shape, until what shows of it fills the largest clear
+// space holding its place, `gap` short of the screen's edges and of every
+// other visible item, and is centred in it. The space is found as Fit to
+// Space finds its own (`fit::free_space`, the same obstacles); something the
+// item lies wholly on (a background) is not in the way. An item with a
+// bounding box has its box changed instead of its scale. Locked items are
+// left alone. Says how many changed; `fitted`, when given, receives them,
+// for the caller to tell their Fit to Space (`fit_item_placed`) once they
+// are where they are going (run_arrange does).
+//
+// It never makes another fit give up room (the owner: "the fit to space
+// option/tool cannot force other objects to resize"). An item a fit of the
+// free space looks after (a Fit to Space, a Scene Fit entry; hidden too) is
+// in the way by the whole space that fit holds, not by what shows of it,
+// unless that space reaches the item (then that fit does not count the item,
+// and what shows of its source counts as before). And the result is checked:
+// with it in place, every such fit of the scene must find the same space as
+// before (by the fit's own working out, `fit::space_from`). When one would
+// not, the item is kept smaller, between its size now and the full result,
+// the largest that changes nobody; when even a little would change one, it
+// is left as it is. An item with a fit of its own that resizes it is left to
+// that fit; one whose fit keeps its size goes where that fit will then put
+// it, and is checked there. One in a group a fit looks after is left as it
+// is. `note`, when given, says what was held back and why.
+struct FitToSpaceNote {
+	int shrunk = 0, refused = 0;          // items kept smaller, items left as they were
+	std::vector<std::string> gave_way_to; // the fitted sources they gave way to
+	std::vector<std::string> own_fit;     // items left to their own fit
+	std::vector<std::string> unknown;     // fitted sources not worked out with the item shown
+};
+int fit_to_space(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items, double gap, const Measure &how,
+		 std::vector<obs_sceneitem_t *> *fitted = nullptr, FitToSpaceNote *note = nullptr);
+
+// An item of a scene drawn elsewhere, for the checks: a part of it before
+// (`from`) and after (`to`), its box or, round a shadow sized in screen
+// pixels (`keeps_outside`), the image in its box: what another fit sees of
+// it inside that part scales with it, what lies outside keeps its size.
+// `now`: its box before. `claim`: where its own fit will then take it.
+// `home`: with `has_claim`, that fit's home once the item is put there
+// (where it is put: FitEngine::placed), when it has one (`has_home`); its
+// claim is elsewhere when it does not keep the gap there.
+struct MovedBox {
+	int64_t id = 0;
+	Box from, to;
+	bool keeps_outside = false;
+	Box now;
+	bool has_claim = false;
+	Box claim;
+	bool has_home = false;
+	Box home;
+};
+enum class FitCheck { Kept, Changes, Unknown };
+// A copy given another transform (its box in its scene `from`, then `to`):
+// whether every fit of the free space in its scene keeps the space it holds
+// (within half a pixel), the copy's own fit taking it where it would.
+// Unknown when one of them has not worked its space out with the copy shown
+// (its scene not shown since OBS started). `who` names the fitted source.
+FitCheck copy_keeps_fits(obs_source_t *scene, obs_sceneitem_t *copy, const Box &from, const Box &to,
+			 std::string *who = nullptr);
 
 // Moves an item the last few pixels so an edge or centre meets the screen's
 // or another item's. Returns true when it moved.

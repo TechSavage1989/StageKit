@@ -17,6 +17,7 @@ export const TOOLS: Array<{ value: string; label: string }> = [
 	{ value: "same_size", label: "Make the same size" },
 	{ value: "same_everywhere", label: "Copy transform to all scenes" },
 	{ value: "same_chosen", label: "Copy transform to chosen scenes" },
+	{ value: "fit_space", label: "Fit to space" },
 ];
 
 export function hotkeyOf(tool: string | undefined): string | undefined {

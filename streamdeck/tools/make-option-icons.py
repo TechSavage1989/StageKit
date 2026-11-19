@@ -122,6 +122,8 @@ DRAWINGS = {
     "same-width": [("box", 10, 5, 54, 13), ("box", 10, 23, 54, 31)] + arrow(32, 18, 54, 18, 4) + arrow(32, 18, 10, 18, 4),
     "same-height": [("box", 10, 4, 22, 32), ("box", 42, 4, 54, 32)] + arrow(32, 18, 32, 4, 4) + arrow(32, 18, 32, 32, 4),
     "same-size": [("box", 8, 7, 28, 29), ("box", 36, 7, 56, 29)],
+    # Fit to space: the room beside a column, and the item filling it
+    "fit-space": [("frame", 4, 3, 40, 33), ("box", 10, 9, 34, 27), ("box", 46, 3, 58, 16), ("box", 46, 20, 58, 33)],
     # Dock options
     "limit": [("line", 54, 3, 54, 33), ("frame", 10, 9, 34, 27)] + arrow(36, 18, 50, 18, 4),
     "slide-to-edge": [("line", 56, 3, 56, 33), ("box", 8, 11, 24, 25)] + arrow(28, 18, 52, 18),
