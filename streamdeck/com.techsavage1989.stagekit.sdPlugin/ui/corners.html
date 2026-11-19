@@ -13,15 +13,23 @@
 			summary { color: #969696; cursor: pointer; padding: 2px 0 8px 2px; outline: none; }
 			summary:hover { color: #d8d8d8; }
 			details p { color: #8a8a8a; line-height: 1.45; margin: 8px 4px 4px 4px; }
-			p.which { color: #8a8a8a; line-height: 1.4; margin: 0 4px 10px 4px; }
+			#worksWith { line-height: 1.4; padding: 6px 0 4px 0; cursor: default; }
+			.works-kind { color: #d8d8d8; }
+			.works-chosen { color: #8a8a8a; }
+			.works-chosen:empty { display: none; }
 		</style>
 	</head>
 
 	<body>
+		<sdpi-item class="works" label="Works with" title="The kind of StageKit filter this key works, as OBS&#x27;s Filters window names it, and under it the one chosen below. In OBS: right-click the source and choose Filters.">
+			<div id="worksWith" data-follow="target source filter">
+				<div class="works-kind">Source Filter: Corners &amp; Edges (StageKit)</div>
+				<div class="works-chosen"></div>
+			</div>
+		</sdpi-item>
 		<sdpi-item label="Source and filter" title="Each entry is a source and, after the dash, the name of its “Source Filter: Corners &amp; Edges (StageKit)”. In OBS: right-click the source and choose Filters to find that filter by its name.">
 			<sdpi-select setting="target" datasource="getTargets" placeholder="Choose" show-refresh></sdpi-select>
 		</sdpi-item>
-		<p class="which">Works the filter named after the dash, a “Source Filter: Corners & Edges (StageKit)”. In OBS: right-click the source, Filters.</p>
 		<sdpi-item label="On press">
 			<sdpi-select setting="press" default="toggle">
 				<option value="toggle">Toggle</option>
@@ -233,5 +241,30 @@
 				&ldquo;Show Connect Info&rdquo; for the port and password. One connection serves every StageKit key.
 			</p>
 		</details>
+
+		<script>
+			// Works with: what this key works in OBS, and what it is set to.
+			(() => {
+				const row = document.getElementById("worksWith");
+				const client = window.SDPIComponents && window.SDPIComponents.streamDeckClient;
+				if (!row || !client || !client.sendToPropertyInspector || typeof client.send !== "function") return;
+				const kind = row.querySelector(".works-kind");
+				const chosen = row.querySelector(".works-chosen");
+				client.sendToPropertyInspector.subscribe((ev) => {
+					const answer = ev && ev.payload;
+					if (!answer || answer.event !== "getWorksWith") return;
+					if (typeof answer.kind === "string" && answer.kind !== "") kind.textContent = answer.kind;
+					if (typeof answer.chosen === "string") chosen.textContent = answer.chosen;
+				});
+				const ask = () => Promise.resolve().then(() => client.send("sendToPlugin", { event: "getWorksWith" })).catch(() => {});
+				const later = () => setTimeout(ask, 200);
+				for (const setting of (row.dataset.follow || "").split(" ").filter(Boolean))
+					for (const list of document.querySelectorAll(`[setting="${setting}"]`)) {
+						list.addEventListener("valuechange", later);
+						list.addEventListener("change", later);
+					}
+				ask();
+			})();
+		</script>
 	</body>
 </html>

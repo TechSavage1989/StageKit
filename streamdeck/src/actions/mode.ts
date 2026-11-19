@@ -118,7 +118,7 @@ export class SceneModeKey extends SingletonAction<KeySettings> {
 			await streamDeck.ui.sendToPropertyInspector({ event, items });
 			return;
 		}
-		await answerLists(ev.payload, await ev.action.getSettings(), () => false);
+		await answerLists(ev.payload, await ev.action.getSettings(), () => false, this.manifestId);
 	}
 
 	/**

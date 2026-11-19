@@ -55,7 +55,7 @@ export class SceneBlurKey extends SingletonAction<KeySettings> {
 	override async onSendToPlugin(ev: SendToPluginEvent<JsonValue, KeySettings>): Promise<void> {
 		const event = (ev.payload as { event?: string } | null)?.event;
 		if (event !== "getSceneBlurs" && event !== "getSceneBlurScenes") {
-			await answerLists(ev.payload, await ev.action.getSettings(), () => false);
+			await answerLists(ev.payload, await ev.action.getSettings(), () => false, this.manifestId);
 			return;
 		}
 		let filters: SceneBlurFilter[] = [];

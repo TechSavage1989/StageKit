@@ -19,7 +19,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, "..")
 PLUGIN = os.path.join(ROOT, "com.techsavage1989.stagekit.sdPlugin")
 BASE = "com.techsavage1989.stagekit"
-VERSION = "0.30.0.0"
+VERSION = "0.32.0.0"
 
 # The pack picture each feature's key starts with (its "on" and "off" look).
 PICTURES = {
@@ -90,8 +90,79 @@ STYLE = """		<style>
 			summary { color: #969696; cursor: pointer; padding: 2px 0 8px 2px; outline: none; }
 			summary:hover { color: #d8d8d8; }
 			details p { color: #8a8a8a; line-height: 1.45; margin: 8px 4px 4px 4px; }
-			p.which { color: #8a8a8a; line-height: 1.4; margin: 0 4px 10px 4px; }
+			#worksWith { line-height: 1.4; padding: 6px 0 4px 0; cursor: default; }
+			.works-kind { color: #d8d8d8; }
+			.works-chosen { color: #8a8a8a; }
+			.works-chosen:empty { display: none; }
 		</style>
+"""
+
+_WORKS = None
+
+
+def works(key):
+    """A key's *Works with* row as src/works-with.ts says it (the one table
+    of what every key works with in OBS). A key missing there stops the
+    build here."""
+    global _WORKS
+    if _WORKS is None:
+        script = "import { worksWithPages } from './src/works-with.ts'; console.log(JSON.stringify(worksWithPages()));"
+        done = subprocess.run(["node", "--input-type=module", "-e", script], cwd=ROOT, capture_output=True, text=True, check=True)
+        _WORKS = json.loads(done.stdout)
+    return _WORKS[key]
+
+
+def works_row(key):
+    """The first row of every page: what the key works with in OBS, as
+    information, not a control. The first line is the kind of filter exactly
+    as OBS's Filters window names it (or the feature); the second, filled in
+    by the plugin when the page asks (WORKS_SCRIPT), what the key is set to,
+    or its note. The owner (2026-11-18): "I want the stream deck keys to show
+    the filter or feature they work with somewhere outside its [list].
+    somewhere in the configuration area at the top for all keys"."""
+    w = works(key)
+    e = lambda t: html.escape(t, quote=True)
+    return (
+        f'		<sdpi-item class="works" label="Works with" title="{e(w["tip"])}">\n'
+        f'			<div id="worksWith" data-follow="{" ".join(w["follow"])}">\n'
+        f'				<div class="works-kind">{e(w["first"])}</div>\n'
+        f'				<div class="works-chosen">{e(w["note"])}</div>\n'
+        "			</div>\n"
+        "		</sdpi-item>\n"
+    )
+
+
+# The row's second line (and, for a key that works several kinds, its first)
+# from the plugin: the same request and answer a list's datasource uses
+# (sendToPlugin with an event, sendToPropertyInspector back with that event),
+# read by the page itself. Asked when the page opens and again when a list
+# it goes by changes, after the change has been saved. Without an answer the
+# row keeps what the page was written with.
+WORKS_SCRIPT = """
+		<script>
+			// Works with: what this key works in OBS, and what it is set to.
+			(() => {
+				const row = document.getElementById("worksWith");
+				const client = window.SDPIComponents && window.SDPIComponents.streamDeckClient;
+				if (!row || !client || !client.sendToPropertyInspector || typeof client.send !== "function") return;
+				const kind = row.querySelector(".works-kind");
+				const chosen = row.querySelector(".works-chosen");
+				client.sendToPropertyInspector.subscribe((ev) => {
+					const answer = ev && ev.payload;
+					if (!answer || answer.event !== "getWorksWith") return;
+					if (typeof answer.kind === "string" && answer.kind !== "") kind.textContent = answer.kind;
+					if (typeof answer.chosen === "string") chosen.textContent = answer.chosen;
+				});
+				const ask = () => Promise.resolve().then(() => client.send("sendToPlugin", { event: "getWorksWith" })).catch(() => {});
+				const later = () => setTimeout(ask, 200);
+				for (const setting of (row.dataset.follow || "").split(" ").filter(Boolean))
+					for (const list of document.querySelectorAll(`[setting="${setting}"]`)) {
+						list.addEventListener("valuechange", later);
+						list.addEventListener("change", later);
+					}
+				ask();
+			})();
+		</script>
 """
 
 FOLLOW = """
@@ -115,44 +186,29 @@ def one_list(label, source="getTargets", setting="target", placeholder="Choose",
     )
 
 
-# The kinds of filter that go on a scene (src/kinds.ts SCENE_KINDS), by name:
-# OBS lists them as "Scene Filter: <name> (StageKit)", the rest as "Source
-# Filter: <name> (StageKit)" (beta182).
-SCENE_NAMES = {
-    "Fit to Space", "Automatic Source Switcher", "Link Visibility", "Show/Hide Animation", "Apply Layout",
-    "Move Scene Item", "Match Item", "Scene Modes", "Scene Transitions", "Scene Fit", "Scene Standby",
-    "Scene Corners", "Scene Shadow", "Scene Blur",
-}
-
-
-def obs_name(name):
-    """A kind of filter as OBS's list of filters shows it."""
-    return f"{'Scene Filter' if name in SCENE_NAMES else 'Source Filter'}: {name} (StageKit)"
-
-
 def obs_names(names):
-    """The kinds of filter as OBS's Filters window lists them, quoted:
-    "Source Filter: Blur (StageKit)", and "A or B" for a key that works
-    several kinds."""
-    quoted = [f"\u201c{obs_name(n)}\u201d" for n in names]
+    """The kinds of filter as OBS's Filters window lists them (src/kinds.ts
+    `shownName`, through src/works-with.ts), quoted: "Source Filter: Blur
+    (StageKit)", and "A or B" for a key that works several kinds."""
+    quoted = [f"\u201c{n}\u201d" for n in names]
     return quoted[0] if len(quoted) == 1 else ", ".join(quoted[:-1]) + " or " + quoted[-1]
 
 
-def target_list(names, scene=False, label=None):
+def target_list(key, label=None):
     """The list that picks the filter a key works, with the kind of filter to
-    look for in OBS said in its tooltip and in a line under it. The owner:
-    "The stream deck keys don't really say what filters they are associated
-    with which makes it difficult for me to find the associated filters".
-    Each entry reads "<source> \u2014 <filter>" (src/kinds.ts targetItems)."""
-    where = "scene" if scene else "source"
-    if not scene and any(n in SCENE_NAMES for n in names):
-        where = "source or scene"
-    kinds = obs_names(names)
-    label = label or ("Scene and filter" if scene else "Source and filter")
+    look for in OBS said in its tooltip. The owner: "The stream deck keys
+    don't really say what filters they are associated with which makes it
+    difficult for me to find the associated filters". Each entry reads
+    "<source> \u2014 <filter>" (src/kinds.ts targetItems). The line under it
+    that named the kind again (beta189) is the page's first row now, *Works
+    with* (works_row), which also says the filter chosen."""
+    w = works(key)
+    where = w["where"]
+    kinds = obs_names(w["kinds"])
+    label = label or ("Scene and filter" if where == "scene" else "Source and filter")
     tip = (f"Each entry is a {where} and, after the dash, the name of its {kinds}. "
            f"In OBS: right-click the {where} and choose Filters to find that filter by its name.")
-    note = f'\t\t<p class="which">Works the filter named after the dash, a {kinds}. In OBS: right-click the {where}, Filters.</p>\n'
-    return one_list(label, tip=tip) + note
+    return one_list(label, tip=tip)
 
 
 def options(label, setting, default, pairs):
@@ -229,7 +285,6 @@ def mode_page_html():
         'In OBS: right-click the scene and choose Filters to find that filter by its name.">\n'
         '			<sdpi-select id="modeFilter" setting="modeFilter" datasource="getModeFilters" placeholder="Choose a Scene Modes" show-refresh></sdpi-select>\n'
         "		</sdpi-item>\n"
-        '		<p class="which">Works the filter named after the dash, a \u201cScene Filter: Scene Modes (StageKit)\u201d. In OBS: right-click the scene, Filters.</p>\n'
         + modes("Mode settings", "modeFor",
                 "A mode of the Scene Modes: choose one to set, just below, whether Next mode uses it and the key's layout and image while it is on. "
                 "Each mode keeps its own. Chosen for you: the key's Switch to mode, else the first mode.", indent="		")
@@ -385,13 +440,16 @@ def output_page(output, presses, longs):
 
 
 def page(name, title, body, script="", key=None, after="", lists=True, palette=True):
+    """A key's settings page. `key` is the key's name in the manifest when
+    the page has another name (blur-all). Every page starts with the key's
+    *Works with* row."""
     html = (
         "<!doctype html>\n<html>\n	<head lang=\"en\">\n"
         f"		<title>{title}</title>\n"
         '		<meta charset="utf-8" />\n'
         '		<script src="https://sdpi-components.dev/releases/v4/sdpi-components.js"></script>\n'
         + STYLE +
-        "	</head>\n\n	<body>\n" + body + ("".join(type_list_html(l) for l in type_lists(key or name)) if lists else "") + after + (PALETTE if palette else "") + "\n" + CONNECTION + script + "	</body>\n</html>\n"
+        "	</head>\n\n	<body>\n" + works_row(key or name) + body + ("".join(type_list_html(l) for l in type_lists(key or name)) if lists else "") + after + (PALETTE if palette else "") + "\n" + CONNECTION + script + WORKS_SCRIPT + "	</body>\n</html>\n"
     )
     with open(os.path.join(PLUGIN, "ui", name + ".html"), "w", encoding="utf-8") as out:
         out.write(html)
@@ -456,8 +514,7 @@ def main():
     for feature in features["switches"]:
         on, off = PICTURES.get(feature["kind"], ("options/plain-switch-on", "options/plain-switch-off"))
         key_pictures(feature["key"], on, off)
-        scene = feature.get("scene", False)
-        body = target_list([feature["name"]], scene)
+        body = target_list(feature["key"])
         if feature["kind"] == "stagekit_standby":
             body += STANDBY_PRESS
         else:
@@ -469,7 +526,7 @@ def main():
     for feature in features["moves"]:
         on, _ = PICTURES.get(feature["kind"], ("options/plain-move", None))
         key_pictures(feature["key"], on, None)
-        page(feature["key"], f"StageKit {feature['name']}", target_list([feature["name"]], feature.get("scene", False)))
+        page(feature["key"], f"StageKit {feature['name']}", target_list(feature["key"]))
         add(feature["key"], feature["name"], feature["tip"], feature["key"], "imgs/actions/move/icon", one(feature["key"]))
 
     key_pictures("shape", "filters/auto-frame-on", None)
@@ -477,7 +534,7 @@ def main():
     page(
         "shape",
         "StageKit set aspect ratio",
-        target_list(["Auto Frame"], label="Capture and filter")
+        target_list("shape", label="Capture and filter")
         + options("Ratio", "shape", "4:3", shapes)
         + options("Keep ratio", "keep", "game", [("game", "This game only"), ("always", "Until changed")]),
     )
@@ -495,19 +552,19 @@ def main():
         '			<sdpi-textfield setting="lasting" placeholder="300" pattern="[0-9]*"></sdpi-textfield>\n'
         "		</sdpi-item>\n",
     )
-    add("hook", "Capture Active Window", "Makes a Game Capture or a Window Capture take the active window or game. An Automatic Window Switcher on it holds that window as its manual window.", "hook", "imgs/actions/hook/icon", one("hookgame"))
+    add("hook", "Capture Active Window", "Makes a Game Capture or a Window Capture take the active window or game. With an Automatic Window Switcher on it, the window becomes that filter's manual window instead.", "hook", "imgs/actions/hook/icon", one("hookgame"))
 
     key_pictures("appswitch", "options/toggle", "options/toggle")
     page(
         "appswitch",
         "StageKit next manual capture",
-        target_list(["Automatic Window Switcher", "Automatic Source Switcher", "Auto Capture"], label="Switcher filter")
+        target_list("appswitch", label="Switcher filter")
         + options("On press", "step", "next", [("toggle", "Toggle manual / automatic"), ("next", "Next manual window or source"), ("back", "Return to automatic"), ("hide", "Hide or show the capture"), ("clear", "Clear picked windows")]),
     )
-    add("appswitch", "Manual Window / Source", "For an Automatic Window Switcher or an Automatic Source Switcher: toggles between the manual window and automatic, steps to the next manual one, returns to automatic, hides and shows the capture, or clears the windows picked by hand.", "appswitch", "imgs/actions/move/icon", two("appswitch"))
+    add("appswitch", "Manual Window / Source", "For an Automatic Window Switcher, an Automatic Source Switcher or (Hide only) an Auto Capture: toggles between the manual window and automatic, steps to the next manual one, returns to automatic, hides and shows the capture, or clears the windows picked by hand.", "appswitch", "imgs/actions/move/icon", two("appswitch"))
 
     key_pictures("fitoverlap", "options/overlap-on", "options/overlap-off")
-    page("fitoverlap", "StageKit Fit to Space overlap", target_list(["Fit to Space", "Scene Fit"], True) + PRESS)
+    page("fitoverlap", "StageKit Fit to Space overlap", target_list("fitoverlap") + PRESS)
     add("fitoverlap", "Fit to Space Overlap", "Switches a Fit to Space filter's 'Overlap only when it fills': on, the fitted window goes under the camera only while it fills its space, and beside it otherwise.", "fitoverlap", "imgs/actions/switch/icon", two("fitoverlap"))
 
     key_pictures("scene", "options/scene-on", "options/scene-off")
@@ -540,7 +597,6 @@ def main():
             '		<sdpi-item label="Blur filter">\n'
             '			<sdpi-select id="filter" setting="filter" datasource="getSceneBlurs" placeholder="Choose a Scene Blur" show-refresh></sdpi-select>\n'
             "		</sdpi-item>\n"
-            '		<p class="which">Works the \u201cScene Filter: Scene Blur (StageKit)\u201d filters of that name. In OBS: right-click the scene, Filters.</p>\n'
             '		<sdpi-item label="Scene">\n'
             '			<sdpi-select id="scene" setting="scene" datasource="getSceneBlurScenes" default="" show-refresh></sdpi-select>\n'
             "		</sdpi-item>\n"

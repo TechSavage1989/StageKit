@@ -13,11 +13,20 @@
 			summary { color: #969696; cursor: pointer; padding: 2px 0 8px 2px; outline: none; }
 			summary:hover { color: #d8d8d8; }
 			details p { color: #8a8a8a; line-height: 1.45; margin: 8px 4px 4px 4px; }
-			p.which { color: #8a8a8a; line-height: 1.4; margin: 0 4px 10px 4px; }
+			#worksWith { line-height: 1.4; padding: 6px 0 4px 0; cursor: default; }
+			.works-kind { color: #d8d8d8; }
+			.works-chosen { color: #8a8a8a; }
+			.works-chosen:empty { display: none; }
 		</style>
 	</head>
 
 	<body>
+		<sdpi-item class="works" label="Works with" title="The key starts, stops, pauses and resumes OBS&#x27;s recording, as OBS&#x27;s own recording buttons do. No StageKit filter is needed.">
+			<div id="worksWith" data-follow="">
+				<div class="works-kind">OBS recording</div>
+				<div class="works-chosen"></div>
+			</div>
+		</sdpi-item>
 		<sdpi-item label="On press" title="Toggle starts the recording, or stops it while recording. Pause / resume pauses it, or resumes it while paused.">
 			<sdpi-select setting="press" default="toggle">
 				<option value="toggle">Toggle (start or stop)</option>
@@ -238,5 +247,30 @@
 				&ldquo;Show Connect Info&rdquo; for the port and password. One connection serves every StageKit key.
 			</p>
 		</details>
+
+		<script>
+			// Works with: what this key works in OBS, and what it is set to.
+			(() => {
+				const row = document.getElementById("worksWith");
+				const client = window.SDPIComponents && window.SDPIComponents.streamDeckClient;
+				if (!row || !client || !client.sendToPropertyInspector || typeof client.send !== "function") return;
+				const kind = row.querySelector(".works-kind");
+				const chosen = row.querySelector(".works-chosen");
+				client.sendToPropertyInspector.subscribe((ev) => {
+					const answer = ev && ev.payload;
+					if (!answer || answer.event !== "getWorksWith") return;
+					if (typeof answer.kind === "string" && answer.kind !== "") kind.textContent = answer.kind;
+					if (typeof answer.chosen === "string") chosen.textContent = answer.chosen;
+				});
+				const ask = () => Promise.resolve().then(() => client.send("sendToPlugin", { event: "getWorksWith" })).catch(() => {});
+				const later = () => setTimeout(ask, 200);
+				for (const setting of (row.dataset.follow || "").split(" ").filter(Boolean))
+					for (const list of document.querySelectorAll(`[setting="${setting}"]`)) {
+						list.addEventListener("valuechange", later);
+						list.addEventListener("change", later);
+					}
+				ask();
+			})();
+		</script>
 	</body>
 </html>

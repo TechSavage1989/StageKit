@@ -4,11 +4,13 @@
 import streamDeck from "@elgato/streamdeck";
 import type { JsonValue } from "@elgato/utils";
 
-import { filterItems, sourceItems, targetItems } from "../kinds.ts";
+import { filterItems, sourceItems, targetItems, targetOf } from "../kinds.ts";
 import { obs } from "../obs.ts";
 import { adoptOld, typeForKept } from "../key-types.ts";
 import { composed } from "../compose.ts";
+import { modeKeyFilter } from "../modes.ts";
 import { laidOut, layersOf, type LayoutSettings, type Picture, type Shown } from "../pictures.ts";
+import { type Found, type WorksWith, worksWithOf, worksWithRow } from "../works-with.ts";
 
 /** What a key's image depends on besides the picture: its palette and its Layout (with the type lists it goes by). */
 export type Look = LayoutSettings & { palette?: string };
@@ -121,17 +123,82 @@ export type KeySettings = {
 };
 
 /**
+ * What OBS says of what a key is set to (src/works-with.ts `Found`): the
+ * chosen filter's kind, what the chosen capture is, or that OBS has no such
+ * thing. Undefined while OBS cannot be asked, or nothing is chosen.
+ */
+async function foundInObs(works: WorksWith, settings: KeySettings): Promise<Found | undefined> {
+	if (!obs.isConnected) return undefined;
+	switch (works.chosen) {
+		case "target": {
+			const { source, filter } = targetOf(settings);
+			if (!source || !filter) return undefined;
+			const now = await obs.filter(source, filter);
+			return now ? { kind: now.kind } : { missing: true };
+		}
+		case "modeFilter": {
+			const { scene, filter } = modeKeyFilter(settings);
+			if (!scene || !filter) return undefined;
+			return (await obs.sceneMode(scene, filter)) ? { kind: "stagekit_scene_modes" } : { missing: true };
+		}
+		case "sceneBlur": {
+			const filter = typeof settings.filter === "string" ? settings.filter : "";
+			if (!filter) return undefined;
+			const found = (await obs.sceneBlurs()).find((f) => f.filter === filter);
+			const here = found && (!settings.scene || found.scenes.some((s) => s.scene === settings.scene));
+			return here ? { kind: "stagekit_scene_blur" } : { missing: true };
+		}
+		case "capture": {
+			if (!settings.source) return undefined;
+			const capture = (await obs.captures()).find((c) => c.name === settings.source);
+			return capture ? { what: capture.kind === "window_capture" ? "Window Capture" : "Game Capture" } : { missing: true };
+		}
+		case "scene":
+			if (!settings.scene) return undefined;
+			return (await obs.scenes()).includes(String(settings.scene)) ? {} : { missing: true };
+		default:
+			return undefined;
+	}
+}
+
+/**
+ * The first row of a key's settings page, *Works with* (src/works-with.ts):
+ * what the key works in OBS and what it is set to, from its settings, and
+ * from OBS when it can be asked (with OBS closed, the kind and the saved
+ * choice alone). `uuid` is the key's action. Undefined for a key not in the
+ * table.
+ */
+export async function worksWithNow(uuid: string, settings: KeySettings): Promise<{ kind: string; chosen: string } | undefined> {
+	const works = worksWithOf(uuid);
+	if (!works) return undefined;
+	let found: Found | undefined;
+	try {
+		found = await foundInObs(works, settings);
+	} catch (error) {
+		streamDeck.logger.warn(`Could not ask OBS what a key works with: ${String(error)}`);
+	}
+	return worksWithRow(works, settings, found);
+}
+
+/**
  * Answers the property inspector's lists (sdpi-components "datasource"):
  * `getSources` with the sources that have a filter of the wanted sort,
  * `getFilters` with the chosen source's filters of that sort, and
- * `getCaptures` with the Game and Window Captures.
+ * `getCaptures` with the Game and Window Captures. And the page's first
+ * row, `getWorksWith` (`worksWithNow`), for the key's action `uuid`.
  */
 export async function answerLists(
 	payload: JsonValue,
 	settings: KeySettings,
 	wanted: (kind: string) => boolean,
+	uuid: string,
 ): Promise<void> {
 	const event = (payload as { event?: string } | null)?.event;
+	if (event === "getWorksWith") {
+		const row = await worksWithNow(uuid, settings);
+		if (row) await streamDeck.ui.sendToPropertyInspector({ event, ...row });
+		return;
+	}
 	if (event === "getTransitions") {
 		// "A fade" first, as everywhere in StageKit; then a cut; then the rest OBS has.
 		const names: Record<string, string> = {

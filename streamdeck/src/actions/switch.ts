@@ -101,7 +101,7 @@ export class FilterSwitch extends SingletonAction<KeySettings> {
 	}
 
 	override onSendToPlugin(ev: SendToPluginEvent<JsonValue, KeySettings>): Promise<void> {
-		return ev.action.getSettings().then((settings) => answerLists(ev.payload, settings, this.wanted));
+		return ev.action.getSettings().then((settings) => answerLists(ev.payload, settings, this.wanted, this.manifestId));
 	}
 
 	private async show(key: KeyAction<KeySettings>, settings: KeySettings): Promise<void> {

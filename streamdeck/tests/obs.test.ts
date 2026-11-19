@@ -859,3 +859,40 @@ test("a Standby Image key covers its source with the image and is lit while cove
 	assert.equal(filters.DSLR[1].filterEnabled, true);
 	assert.equal(shown.alerts, 1);
 });
+
+test("a key's Works with row says the kind of the filter chosen, what the capture is, and what OBS no longer has", async () => {
+	// The owner (2026-11-18): "I want the stream deck keys to show the filter or feature they work
+	// with somewhere outside its [list]. somewhere in the configuration area at the top for all keys."
+	const { worksWithNow } = await import("../src/actions/shared.ts");
+	obs.use({ host: "127.0.0.1", port });
+	while (!obs.isConnected) await once(obs, "connection");
+	const sep = "\u001f";
+	const dash = "—";
+	const uuid = (key: string) => `com.techsavage1989.stagekit.${key}`;
+	assert.deepEqual(await worksWithNow(uuid("blur"), { target: `camera${sep}Ramp Blur` }), { kind: "Source Filter: Blur (StageKit)", chosen: `camera ${dash} Ramp Blur` });
+	assert.deepEqual(await worksWithNow(uuid("blur"), { target: `camera${sep}Gone` }), {
+		kind: "Source Filter: Blur (StageKit)",
+		chosen: `camera ${dash} Gone (not found in OBS)`,
+	});
+	// The older catch-all key, and a key that works several kinds: the chosen filter's own kind.
+	assert.equal((await worksWithNow(uuid("switch"), { source: "Game Scene", filter: "Fit the game" }))?.kind, "Scene Filter: Fit to Space (StageKit)");
+	assert.equal((await worksWithNow(uuid("fitoverlap"), { target: `Game Scene${sep}Fit the game` }))?.kind, "Scene Filter: Fit to Space (StageKit)");
+	assert.equal((await worksWithNow(uuid("move"), { target: `camera${sep}Top right` }))?.kind, "Source Filter: Move Source (StageKit)");
+	// A capture, a scene, a Scene Modes, a Scene Blur.
+	assert.equal((await worksWithNow(uuid("hook"), { source: "Game" }))?.chosen, "Game (Game Capture)");
+	assert.equal((await worksWithNow(uuid("hook"), { source: "Window" }))?.chosen, "Window (Window Capture)");
+	assert.equal((await worksWithNow(uuid("hook"), { source: "camera" }))?.chosen, "camera (not found in OBS)", "not a Game or Window Capture");
+	assert.equal((await worksWithNow(uuid("scene"), { scene: "Game Scene" }))?.chosen, "Game Scene");
+	assert.equal((await worksWithNow(uuid("scene"), { scene: "Gone" }))?.chosen, "Gone (not found in OBS)");
+	assert.deepEqual(await worksWithNow(uuid("mode"), { modeFilter: `Standby${sep}Standby modes` }), {
+		kind: "Scene Filter: Scene Modes (StageKit)",
+		chosen: `Standby ${dash} Standby modes`,
+	});
+	assert.equal((await worksWithNow(uuid("mode"), { modeFilter: `Standby${sep}Gone` }))?.chosen, `Standby ${dash} Gone (not found in OBS)`);
+	assert.equal((await worksWithNow(uuid("sceneblur"), { filter: "Blur", scene: "Live" }))?.chosen, `Live ${dash} Blur`);
+	assert.equal((await worksWithNow(uuid("sceneblur"), { filter: "Blur", scene: "" }))?.chosen, `All scenes with this filter ${dash} Blur`);
+	assert.equal((await worksWithNow(uuid("sceneblur"), { filter: "Mosaic", scene: "Live" }))?.chosen, `Live ${dash} Mosaic (not found in OBS)`);
+	// Nothing chosen, and a key set to nothing in OBS.
+	assert.equal((await worksWithNow(uuid("showinscenes"), {}))?.chosen, "(choose one below)");
+	assert.deepEqual(await worksWithNow(uuid("stream"), {}), { kind: "OBS streaming", chosen: "" });
+});

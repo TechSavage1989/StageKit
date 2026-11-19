@@ -1,6 +1,6 @@
 {
 	"Name": "StageKit",
-	"Version": "0.30.0.0",
+	"Version": "0.32.0.0",
 	"Author": "StageKit contributors",
 	"Actions": [
 		{
@@ -485,7 +485,7 @@
 			"Name": "Capture Active Window",
 			"UUID": "com.techsavage1989.stagekit.hook",
 			"Icon": "imgs/actions/hook/icon",
-			"Tooltip": "Makes a Game Capture or a Window Capture take the active window or game. An Automatic Window Switcher on it holds that window as its manual window.",
+			"Tooltip": "Makes a Game Capture or a Window Capture take the active window or game. With an Automatic Window Switcher on it, the window becomes that filter's manual window instead.",
 			"PropertyInspectorPath": "ui/hook.html",
 			"Controllers": [
 				"Keypad"
@@ -501,7 +501,7 @@
 			"Name": "Manual Window / Source",
 			"UUID": "com.techsavage1989.stagekit.appswitch",
 			"Icon": "imgs/actions/appswitch/icon",
-			"Tooltip": "For an Automatic Window Switcher or an Automatic Source Switcher: toggles between the manual window and automatic, steps to the next manual one, returns to automatic, hides and shows the capture, or clears the windows picked by hand.",
+			"Tooltip": "For an Automatic Window Switcher, an Automatic Source Switcher or (Hide only) an Auto Capture: toggles between the manual window and automatic, steps to the next manual one, returns to automatic, hides and shows the capture, or clears the windows picked by hand.",
 			"PropertyInspectorPath": "ui/appswitch.html",
 			"Controllers": [
 				"Keypad"
