@@ -741,15 +741,10 @@ Box space_from(const SpaceInputs &in, SpaceOut *result)
 	std::vector<bool> counted_above;
 	double at_x = 0.0, at_y = 0.0;
 	Box goal = space_among(in, in.boxes, out.avoiding, counted, counted_above, at_x, at_y);
-	// At home: the layout made by hand. With the other fits' items at
-	// their homes, the space round its place is the one it had when the
-	// home was taken, and the picture there keeps the gap to everything
-	// and to the screen's edges: it goes exactly there, whatever the
-	// space would give it. Something shown, hidden, moved or resized
-	// changes that space, and the picture is fitted as it always was;
-	// once that is undone it is back at home. (While the space round a
-	// home just taken is being found it stays there anyway: switching
-	// the filter on changes nothing.)
+	// Measure the hand layout with the other entries at their homes. Keep
+	// its exact placement while the room and gaps match and, for an entry
+	// that resizes, the home image already fills that room within tolerance.
+	// Let new measurements settle before making that comparison.
 	if (in.has_home) {
 		const Box &home = in.home;
 		// (A fit that takes its space before this one is where it is,

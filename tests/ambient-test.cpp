@@ -3018,6 +3018,43 @@ static void fit_enable_test()
 		      "a square capture fits inside the kept 120x80 image");
 		input(960, 640, 48, 32);
 		CHECK(worst_of({hand[3]}, {shows_all(ss)[3]}) <= 1, "returning to 3:2 restores the kept image");
+
+		// Load the same scene as an older collection. Its only size records
+		// are scales, and the handheld has no signal when the filter loads.
+		obs_data_t *saved = obs_source_get_settings(fit);
+		obs_data_t *legacy = obs_data_create_from_json(obs_data_get_json(saved));
+		obs_data_release(saved);
+		const std::string prefix = "fit|FE Bottom|";
+		for (const char *key : {"keep_w", "keep_h", "orig_w", "orig_h"})
+			obs_data_unset_user_value(legacy, (prefix + key).c_str());
+		for (const char *key : {"keep_k", "orig_k"})
+			obs_data_set_double(legacy, (prefix + key).c_str(), 120.0 / 864.0);
+		obs_source_filter_remove(ss, fit);
+		obs_source_release(fit);
+		input(0, 0, 0, 0);
+		fit = obs_source_create("stagekit_scene_fit", "FE Legacy Fit", legacy, nullptr);
+		obs_data_release(legacy);
+		obs_source_filter_add(ss, fit);
+		frames(ss, 35);
+		auto saved_pixel = [&](const char *key) {
+			obs_data_t *settings = obs_source_get_settings(fit);
+			const double value = obs_data_get_double(settings, (prefix + key).c_str());
+			obs_data_release(settings);
+			return value;
+		};
+		CHECK(saved_pixel("keep_w") == 0 && saved_pixel("orig_w") == 0,
+		      "a legacy capture without a signal waits to convert its scales");
+		input(960, 640, 48, 32);
+		const double kept_w = saved_pixel("keep_w"), kept_h = saved_pixel("keep_h");
+		CHECK(std::fabs(kept_w - 120) <= 1 && std::fabs(kept_h - 80) <= 1 &&
+			      std::fabs(saved_pixel("orig_w") - 120) <= 1 && std::fabs(saved_pixel("orig_h") - 80) <= 1,
+		      "legacy scales convert to visible image dimensions (%.2fx%.2f)", kept_w, kept_h);
+		input(480, 320, 24, 16);
+		input(0, 0, 0, 0);
+		CHECK(saved_pixel("keep_w") == kept_w && saved_pixel("keep_h") == kept_h,
+		      "a resolution change and loss of signal preserve the saved dimensions");
+		input(960, 640, 48, 32);
+		CHECK(worst_of({hand[3]}, {shows_all(ss)[3]}) <= 1, "the converted handheld recovers at its hand size");
 		obs_source_filter_remove(ss, fit);
 		obs_source_filter_remove(ss, modes);
 		obs_source_release(fit);

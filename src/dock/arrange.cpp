@@ -1673,9 +1673,8 @@ fit::SpaceInputs handed_over(fit::SpaceInputs in, const MovedBox &m, const Box &
 	return settled(std::move(in));
 }
 
-// Whether every fit that has worked its space out (but the moved items' own)
-// does the same with the moved items where they would be: the same space,
-// and the same goal (so one at its home stays there).
+// Check what each other fitted source would show after the move. A change
+// to unused space is allowed when its image, growth and lean stay the same.
 FitCheck spaces_kept(const std::vector<fit::HeldSpace> &spaces, const std::vector<MovedBox> &moved, std::string *who,
 		     const std::vector<int64_t> &empty = {})
 {
