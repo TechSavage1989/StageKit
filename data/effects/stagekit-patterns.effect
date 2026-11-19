@@ -1,0 +1,444 @@
+// StageKit Ambient Background: procedural patterns
+//
+// Each technique draws one animated pattern, in one pass, with no texture.
+// Ambient Background draws it small (half the canvas) and then treats it as
+// it does an image: blur, bloom, mosaic and the rest come after.
+//
+// A file of its own, so that a compiler refusing any of it only takes the
+// patterns away. Written for both HLSL and GLSL: constant loop bounds,
+// float(i) casts, no inout, no atan2, and no large numbers anywhere: time
+// arrives as `phase`, 0..1 over one loop, and every motion makes a whole
+// number of turns in a loop, so the loop has no seam.
+
+uniform float4x4 ViewProj;
+
+uniform float phase;     // 0..1 over one loop of the animation
+uniform float2 aspect;   // (width / height, 1)
+uniform float scale;     // how large the pattern's features are, 1 = as designed
+uniform float detail;    // 0..1
+uniform float4 colour1;  // the palette; colour1 is the ground of patterns that have one
+uniform float4 colour2;
+uniform float4 colour3;
+
+struct VertData {
+	float4 pos : POSITION;
+	float2 uv  : TEXCOORD0;
+};
+
+VertData VSDefault(VertData v_in)
+{
+	VertData vert_out;
+	vert_out.pos = mul(float4(v_in.pos.xyz, 1.0), ViewProj);
+	vert_out.uv  = v_in.uv;
+	return vert_out;
+}
+
+// An angle that makes k whole turns in a loop.
+float turn(float k)
+{
+	return 6.2831853 * frac(phase * k);
+}
+
+// The screen with its middle at 0 and its height 1 (at scale 1).
+float2 place(float2 uv)
+{
+	return (uv - float2(0.5, 0.5)) * aspect / max(scale, 0.05);
+}
+
+// colour1 -> colour2 -> colour3 over 0..1
+float3 palette(float t)
+{
+	float u = saturate(t);
+	float3 a = lerp(colour1.rgb, colour2.rgb, saturate(u * 2.0));
+	return lerp(a, colour3.rgb, saturate(u * 2.0 - 1.0));
+}
+
+// colour1 -> colour2 -> colour3 -> colour1, round and round
+float3 palette_round(float t)
+{
+	float u = frac(t) * 3.0;
+	float3 a = lerp(colour1.rgb, colour2.rgb, saturate(u));
+	float3 b = lerp(a, colour3.rgb, saturate(u - 1.0));
+	return lerp(b, colour1.rgb, saturate(u - 2.0));
+}
+
+// 0..1 from a cell's number. Small numbers only, so it is the same everywhere.
+float hash(float2 p)
+{
+	float3 p3 = frac(float3(p.x, p.y, p.x) * 0.1031);
+	float d = dot(p3, float3(p3.y, p3.z, p3.x) + float3(33.33, 33.33, 33.33));
+	p3 = p3 + float3(d, d, d);
+	return frac((p3.x + p3.y) * p3.z);
+}
+
+float value_noise(float2 p)
+{
+	float2 i = floor(p);
+	float2 f = p - i;
+	float2 u = f * f * (float2(3.0, 3.0) - 2.0 * f);
+	float a = hash(i);
+	float b = hash(i + float2(1.0, 0.0));
+	float c = hash(i + float2(0.0, 1.0));
+	float d = hash(i + float2(1.0, 1.0));
+	return lerp(lerp(a, b, u.x), lerp(c, d, u.x), u.y);
+}
+
+// Five layers of noise; the finer ones count by `detail`.
+float clouds(float2 p)
+{
+	float sum = 0.0;
+	float weight = 0.0;
+	float amp = 0.5;
+	float2 q = p;
+	for (int i = 0; i < 5; i++) {
+		float fi = float(i);
+		float w = amp * (fi < 2.0 ? 1.0 : detail * 1.6);
+		sum += w * value_noise(q);
+		weight += w;
+		q = q * 2.03 + float2(17.1, 9.3);
+		amp *= 0.5;
+	}
+	return sum / max(weight, 0.001);
+}
+
+// A cell's number wrapped to 0..15, so a layer that drifts a whole number
+// of sixteen cells in a loop comes back to where it began.
+float2 wrap16(float2 cell)
+{
+	return cell - 16.0 * floor(cell / 16.0);
+}
+
+// ------------------------------------------------------------------ Aurora
+
+float4 PSAurora(VertData v_in) : TARGET
+{
+	float2 p = place(v_in.uv);
+	float3 rgb = colour1.rgb * (0.22 + 0.18 * v_in.uv.y);
+	for (int i = 0; i < 3; i++) {
+		float fi = float(i);
+		float x = p.x * (1.6 + 0.7 * fi);
+		float y0 = (fi - 1.0) * 0.2 + 0.11 * sin(x + turn(3.0 + fi) + fi * 2.1) +
+			   0.05 * sin(x * 2.7 - turn(5.0 + 2.0 * fi));
+		float d = p.y - y0;
+		// A curtain: sharp below, trailing off upward.
+		float sharp = d > 0.0 ? 70.0 : 16.0;
+		float band = exp(-d * d * sharp);
+		float streaks = 1.0 - detail * 0.55 * (0.5 + 0.5 * sin(p.x * (23.0 + 6.0 * fi) + turn(7.0 + fi) + 2.0 * sin(p.x * 3.0 + fi)));
+		float3 c = fi < 0.5 ? colour2.rgb : (fi < 1.5 ? lerp(colour2.rgb, colour3.rgb, 0.5) : colour3.rgb);
+		rgb += c * band * streaks * 0.6;
+	}
+	return float4(saturate(rgb), 1.0);
+}
+
+// ------------------------------------------------------------------ Plasma
+
+float4 PSPlasma(VertData v_in) : TARGET
+{
+	float2 p = place(v_in.uv);
+	float2 c = float2(0.45 * sin(turn(3.0)), 0.35 * cos(turn(4.0)));
+	float v = sin(p.x * 5.0 + turn(6.0)) + sin(p.y * 6.3 - turn(5.0)) + sin((p.x + p.y) * 4.1 + turn(4.0)) +
+		  sin(length(p - c) * 8.0 - turn(8.0));
+	float t = 0.5 + 0.5 * sin(v * (0.9 + detail * 1.4));
+	return float4(palette(t), 1.0);
+}
+
+// --------------------------------------------------------------- Lava lamp
+
+float4 PSLava(VertData v_in) : TARGET
+{
+	// The blobs wander over the whole screen whatever the size; the size is
+	// the blobs' own.
+	float2 p = (v_in.uv - float2(0.5, 0.5)) * aspect;
+	float field = 0.0;
+	for (int i = 0; i < 6; i++) {
+		float fi = float(i);
+		float2 c = float2(aspect.x * 0.42 * sin(turn(1.0 + floor(fi * 0.5)) + fi * 1.7),
+				  0.42 * sin(turn(2.0 + fi - 3.0 * floor(fi / 3.0)) + fi * 2.3));
+		float r = (0.11 + 0.03 * sin(fi * 5.1)) * scale;
+		float2 d = p - c;
+		field += r * r / (dot(d, d) + 0.0004);
+	}
+	float soft = 0.5 - 0.42 * detail;
+	float m = smoothstep(1.0 - soft, 1.0 + soft, field);
+	float3 blob = lerp(colour2.rgb, colour3.rgb, saturate((field - 1.0) * 0.45));
+	float3 ground = colour1.rgb * (0.75 + 0.25 * v_in.uv.y);
+	// A glow round the blobs.
+	float3 rgb = ground + colour2.rgb * 0.25 * saturate(field * 0.6);
+	return float4(saturate(lerp(rgb, blob, m)), 1.0);
+}
+
+// ------------------------------------------------------------------- Waves
+
+float4 PSWaves(VertData v_in) : TARGET
+{
+	float2 p = place(v_in.uv);
+	float3 rgb = lerp(colour1.rgb * 0.55, colour1.rgb, v_in.uv.y);
+	float edge = 0.05 - 0.046 * detail;
+	for (int i = 0; i < 6; i++) {
+		float fi = float(i);
+		float way = fi - 2.0 * floor(fi * 0.5) < 0.5 ? 1.0 : -1.0;
+		float h = -0.3 + 0.15 * fi + 0.055 * sin(p.x * (2.2 + 0.6 * fi) + way * turn(4.0 + fi) + fi * 1.9) +
+			  0.025 * sin(p.x * (5.3 + fi) - way * turn(7.0 + fi) + fi);
+		float under = smoothstep(h - edge, h + edge, p.y);
+		float3 c = palette((fi + 1.0) / 6.0);
+		// Lit along the crest, darker further down.
+		c *= 1.08 - 0.45 * saturate((p.y - h) * 3.5);
+		rgb = lerp(rgb, c, under);
+	}
+	return float4(saturate(rgb), 1.0);
+}
+
+// ------------------------------------------------------------------- Bokeh
+
+float4 PSBokeh(VertData v_in) : TARGET
+{
+	float2 p = place(v_in.uv);
+	float3 rgb = colour1.rgb * (0.45 + 0.35 * v_in.uv.y);
+	for (int i = 0; i < 4; i++) {
+		float fi = float(i);
+		float cells = 2.2 + 1.3 * fi;
+		// Sixteen cells a loop, upward and a little sideways.
+		float2 q = p * cells + float2(16.0 * frac(phase * (fi < 2.0 ? 1.0 : -1.0)), 16.0 * frac(phase * (1.0 + fi))) +
+			   float2(fi * 3.7, fi * 1.3);
+		float2 cell = floor(q);
+		float2 f = q - cell;
+		float2 id = wrap16(cell) + float2(fi * 19.0, fi * 7.0);
+		float h1 = hash(id);
+		float h2 = hash(id + float2(5.0, 11.0));
+		float h3 = hash(id + float2(13.0, 3.0));
+		float2 centre = float2(0.5, 0.5) + (float2(h1, h2) - float2(0.5, 0.5)) * 0.36;
+		float r = 0.14 + 0.17 * h3;
+		float d = length(f - centre);
+		float soft = r * (0.55 - 0.45 * detail);
+		float disc = 1.0 - smoothstep(r - soft, r, d);
+		// A brighter rim, as a lens gives.
+		disc *= 0.7 + 0.3 * smoothstep(r * 0.55, r, d);
+		float fade = 0.5 + 0.5 * sin(turn(6.0 + floor(h2 * 8.0)) + h1 * 6.2831853);
+		float there = step(0.3, h3 + h1 * 0.5);
+		float3 c = lerp(colour2.rgb, colour3.rgb, h2);
+		rgb += c * disc * fade * there * (0.5 - 0.05 * fi);
+	}
+	return float4(saturate(rgb), 1.0);
+}
+
+// --------------------------------------------------------------- Starfield
+
+float4 PSStars(VertData v_in) : TARGET
+{
+	float2 p = place(v_in.uv);
+	float3 rgb = lerp(colour1.rgb * 0.35, colour1.rgb * 0.8, v_in.uv.y);
+	for (int i = 0; i < 4; i++) {
+		float fi = float(i);
+		float cells = 5.0 + 3.5 * fi;
+		// The nearer layers (fewer, larger cells) drift faster across.
+		float2 q = p * cells + float2(16.0 * frac(phase * (4.0 - fi)), fi * 2.9);
+		float2 cell = floor(q);
+		float2 f = q - cell;
+		float2 id = wrap16(cell) + float2(fi * 23.0, fi * 5.0);
+		float h1 = hash(id);
+		float h2 = hash(id + float2(7.0, 3.0));
+		float h3 = hash(id + float2(1.0, 17.0));
+		float2 centre = float2(0.5, 0.5) + (float2(h1, h2) - float2(0.5, 0.5)) * 0.8;
+		float r = 0.035 + 0.06 * h3;
+		float d = length(f - centre) / r;
+		float star = saturate(1.0 - d);
+		star = star * star + 0.25 * saturate(1.0 - d * 0.4) * h3;
+		float twinkle = 0.62 + 0.38 * sin(turn(18.0 + floor(h1 * 24.0)) + h2 * 6.2831853);
+		float there = step(h3, 0.25 + 0.75 * detail);
+		float3 c = lerp(colour2.rgb, colour3.rgb, h2);
+		// Towards white at the heart of a star.
+		c = lerp(c, float3(1.0, 1.0, 1.0), star * 0.5);
+		rgb += c * star * twinkle * there;
+	}
+	return float4(saturate(rgb), 1.0);
+}
+
+// ----------------------------------------------------------- Gradient flow
+
+float4 PSGradient(VertData v_in) : TARGET
+{
+	float2 p = place(v_in.uv);
+	float a = turn(1.0);
+	float2 dir = float2(cos(a), sin(a));
+	float2 across = float2(-dir.y, dir.x);
+	float t = dot(p, dir) * 0.45 + phase * 3.0;
+	// Bent a little, so it is never a ruled line.
+	t += detail * 0.16 * sin(dot(p, across) * 2.6 + turn(5.0)) + detail * 0.07 * sin(dot(p, dir) * 4.3 - turn(7.0));
+	return float4(palette_round(t), 1.0);
+}
+
+// ------------------------------------------------------------------ Nebula
+
+float4 PSNebula(VertData v_in) : TARGET
+{
+	float2 p = place(v_in.uv) * 2.6 + float2(40.0, 40.0);
+	float2 drift1 = 0.9 * float2(cos(turn(1.0)), sin(turn(1.0)));
+	float2 drift2 = 0.7 * float2(sin(turn(2.0)), cos(turn(1.0)));
+	float n = clouds(p + drift1);
+	float m = clouds(p + float2(5.2, 1.3) + drift2 + float2(n, n) * 1.6);
+	float t = smoothstep(0.22, 0.78, m);
+	float3 rgb = palette(t) * (0.45 + 0.85 * n);
+	return float4(saturate(rgb), 1.0);
+}
+
+// -------------------------------------------------------------- Grid pulse
+
+// A pulse on line number `line_no`, seen from `along` cells along it.
+float pulse(float line_no, float along)
+{
+	float n = line_no - 16.0 * floor(line_no / 16.0);
+	float h = hash(float2(n, 3.0));
+	float h2 = hash(float2(7.0, n));
+	float way = h2 < 0.5 ? 1.0 : -1.0;
+	// Eight cells from one pulse to the next on a line.
+	float at = frac(phase * (3.0 + floor(h * 4.0))) * way + h2;
+	float d = frac((along / 8.0) - at + 0.5) - 0.5;
+	// A head and a tail behind it.
+	float behind = d * way;
+	float tail = behind < 0.0 ? exp(behind * 10.0) : exp(-behind * 220.0);
+	return tail;
+}
+
+float4 PSGrid(VertData v_in) : TARGET
+{
+	float2 q = place(v_in.uv) * 7.0;
+	float2 at_line = floor(q + float2(0.5, 0.5));
+	float2 off = abs(q - at_line);
+	float width = 0.035;
+	float line_x = 1.0 - smoothstep(0.0, width, off.x); // on an upright line
+	float line_y = 1.0 - smoothstep(0.0, width, off.y);
+	float glow_x = exp(-off.x * off.x * 90.0);
+	float glow_y = exp(-off.y * off.y * 90.0);
+	float lines = max(line_x, line_y);
+	float px = pulse(at_line.x, q.y);
+	float py = pulse(at_line.y + 5.0, q.x);
+	float3 rgb = colour1.rgb * (0.55 + 0.3 * v_in.uv.y);
+	rgb += colour2.rgb * lines * (0.12 + 0.5 * detail);
+	rgb += colour3.rgb * (px * (line_x + 0.45 * glow_x) + py * (line_y + 0.45 * glow_y));
+	// The crossings breathe.
+	float node = exp(-dot(off, off) * 70.0) * (0.5 + 0.5 * sin(turn(6.0) + hash(wrap16(at_line)) * 6.2831853));
+	rgb += colour2.rgb * node * 0.5;
+	return float4(saturate(rgb), 1.0);
+}
+
+// -------------------------------------------------------------------- Rays
+
+float4 PSRays(VertData v_in) : TARGET
+{
+	float2 p = (v_in.uv - float2(0.5, 0.38)) * aspect;
+	float dist = length(p);
+	float2 dir = p / max(dist, 0.0001);
+	float sharp = (30.0 + 170.0 * detail) / max(scale * scale, 0.01);
+	float a = turn(1.0);
+	float b = -turn(2.0);
+	float one = 0.0;
+	float two = 0.0;
+	for (int i = 0; i < 7; i++) {
+		float ang = float(i) * 0.8975979 + a; // a seventh of a turn apart
+		float along = max(dot(dir, float2(cos(ang), sin(ang))), 0.0001);
+		one += pow(along, sharp) * (0.6 + 0.4 * sin(float(i) * 2.4 + turn(5.0)));
+	}
+	for (int j = 0; j < 5; j++) {
+		float ang2 = float(j) * 1.2566371 + b; // a fifth of a turn apart
+		float along2 = max(dot(dir, float2(cos(ang2), sin(ang2))), 0.0001);
+		two += pow(along2, sharp * 0.45) * (0.6 + 0.4 * sin(float(j) * 1.7 - turn(4.0)));
+	}
+	float reach = 1.0 / (1.0 + dist * 1.6);
+	float3 rgb = colour1.rgb * (0.5 + 0.3 * reach);
+	rgb += colour2.rgb * two * reach * 0.55;
+	rgb += colour3.rgb * one * reach * 0.8;
+	// The point the rays come from.
+	float heart = exp(-dist * dist * 14.0 / max(scale * scale, 0.01));
+	rgb += lerp(colour3.rgb, float3(1.0, 1.0, 1.0), 0.4) * heart * 0.6;
+	return float4(saturate(rgb), 1.0);
+}
+
+technique Aurora
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSAurora(v_in);
+	}
+}
+
+technique Plasma
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSPlasma(v_in);
+	}
+}
+
+technique Lava
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSLava(v_in);
+	}
+}
+
+technique Waves
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSWaves(v_in);
+	}
+}
+
+technique Bokeh
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSBokeh(v_in);
+	}
+}
+
+technique Stars
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSStars(v_in);
+	}
+}
+
+technique Gradient
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSGradient(v_in);
+	}
+}
+
+technique Nebula
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSNebula(v_in);
+	}
+}
+
+technique Grid
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSGrid(v_in);
+	}
+}
+
+technique Rays
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSRays(v_in);
+	}
+}

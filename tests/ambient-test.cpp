@@ -49,6 +49,7 @@
 #include <deque>
 #include <filesystem>
 #include <functional>
+#include <set>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -10627,6 +10628,274 @@ static void link_transitions_test(uint32_t w, uint32_t h)
 	obs_source_release(before_out);
 }
 
+// Ambient Background's patterns (the owner, 2026-11-19: "id like to have
+// some animated ambient background choices added too. some procedural ones
+// that would be appealing"): each of the ten draws something, in the
+// palette's colours, moves with time and holds still at Speed 0, and is
+// unlike the others; the mosaic acts on a pattern as on an image; an image
+// background is not touched by the new settings; and without the patterns'
+// shader file the image is shown and the log says so once. Frames go to
+// `sheet` (docs/images/ambient-patterns.png). Run alone with
+// STAGEKIT_TEST_ONLY_AMBIENT_PATTERNS.
+static void ambient_patterns_test(uint32_t w, uint32_t h, const char *base_image, const std::string &sheet)
+{
+	printf("\n[ambient background: patterns]\n");
+	std::error_code made;
+	std::filesystem::create_directories(sheet, made);
+	static const char *const kNames[] = {"aurora",    "plasma",        "lava lamp", "waves",      "bokeh",
+					     "starfield", "gradient flow", "nebula",    "grid pulse", "rays"};
+	constexpr int kCount = 10;
+
+	static int unavailable = 0;
+	static log_handler_t prev_log = nullptr;
+	static void *prev_param = nullptr;
+	base_get_log_handler(&prev_log, &prev_param);
+	unavailable = 0;
+	base_set_log_handler(
+		[](int level, const char *format, va_list args, void *) {
+			char line[2048];
+			va_list copy;
+			va_copy(copy, args);
+			vsnprintf(line, sizeof(line), format, copy);
+			va_end(copy);
+			if (strstr(line, "the patterns are not available"))
+				unavailable++;
+			if (prev_log)
+				prev_log(level, format, args, prev_param);
+		},
+		nullptr);
+
+	// The controls: a pattern's own show only for "A pattern", and Motion not then.
+	{
+		obs_data_t *fresh = obs_data_create();
+		obs_source_t *bg = obs_source_create("stagekit_ambient_background", "PT Controls", fresh, nullptr);
+		obs_data_release(fresh);
+		auto shown = [&](int base, const char *name) {
+			obs_data_t *ds = obs_source_get_settings(bg);
+			obs_data_set_int(ds, "base_type", base);
+			obs_data_release(ds);
+			obs_properties_t *props = obs_source_properties(bg);
+			obs_property_t *p = obs_properties_get(props, name);
+			const bool visible = p && obs_property_visible(p);
+			obs_properties_destroy(props);
+			return visible;
+		};
+		obs_data_t *ds = obs_source_get_settings(bg);
+		const long long base_default = obs_data_get_int(ds, "base_type");
+		obs_data_release(ds);
+		bool with = true, without = false;
+		for (const char *name : {"pattern", "pattern_colour1", "pattern_colour2", "pattern_colour3",
+					 "pattern_speed", "pattern_scale", "pattern_detail"}) {
+			with = with && shown(3, name);
+			without = without || shown(0, name) || shown(2, name);
+		}
+		CHECK(base_default == 2 && with && !without && !shown(3, "motion_group") && shown(0, "motion_group") &&
+			      !shown(3, "image"),
+		      "a new background is still made from the standby image; the pattern's list, three colours, Speed, Size and Detail show only for 'A pattern', and Motion not then (default %lld)",
+		      base_default);
+		obs_source_release(bg);
+	}
+
+	obs_data_t *s = obs_data_create();
+	obs_data_set_int(s, "base_type", 3);
+	obs_data_set_double(s, "blur", 0);
+	obs_data_set_double(s, "test_pattern_time", 10.0);
+	obs_source_t *bg = obs_source_create("stagekit_ambient_background", "PT Background", s, nullptr);
+	obs_source_inc_showing(bg);
+	auto shot = [&](const std::string &name, const std::function<void(obs_data_t *)> &change) {
+		change(s);
+		obs_source_update(bg, s);
+		sleep_ms(200);
+		std::vector<uint8_t> px = render(bg, w, h);
+		if (!name.empty())
+			write_frame(sheet + "/" + name + ".rgba", px, w, h);
+		return px;
+	};
+	struct Mean {
+		double r = 0, g = 0, b = 0;
+	};
+	auto mean_of = [&](const std::vector<uint8_t> &px) {
+		Mean m;
+		for (size_t i = 0; i < px.size(); i += 4) {
+			m.r += px[i];
+			m.g += px[i + 1];
+			m.b += px[i + 2];
+		}
+		const double n = double(px.size() / 4);
+		m.r /= n;
+		m.g /= n;
+		m.b /= n;
+		return m;
+	};
+	auto colours_in = [&](const std::vector<uint8_t> &px) {
+		std::set<uint32_t> seen;
+		for (size_t i = 0; i < px.size(); i += 4)
+			seen.insert(uint32_t(px[i]) << 16 | uint32_t(px[i + 1]) << 8 | px[i + 2]);
+		return seen.size();
+	};
+
+	std::vector<std::vector<uint8_t>> first;
+	for (int i = 0; i < kCount; i++) {
+		char label[64];
+		snprintf(label, sizeof(label), "%02d %s", i + 1, kNames[i]);
+		const std::vector<uint8_t> a = shot(label, [&](obs_data_t *d) {
+			obs_data_set_int(d, "pattern", i);
+			obs_data_set_double(d, "pattern_speed", 100);
+			obs_data_set_double(d, "test_pattern_time", 10.0);
+			obs_data_unset_user_value(d, "pattern_colour1");
+			obs_data_unset_user_value(d, "pattern_colour2");
+			obs_data_unset_user_value(d, "pattern_colour3");
+		});
+		const std::vector<uint8_t> again = shot("", [](obs_data_t *) {});
+		const std::vector<uint8_t> later =
+			shot("", [](obs_data_t *d) { obs_data_set_double(d, "test_pattern_time", 25.0); });
+		const std::vector<uint8_t> still_a = shot("", [](obs_data_t *d) {
+			obs_data_set_double(d, "pattern_speed", 0);
+			obs_data_set_double(d, "test_pattern_time", 10.0);
+		});
+		const std::vector<uint8_t> still_b =
+			shot("", [](obs_data_t *d) { obs_data_set_double(d, "test_pattern_time", 25.0); });
+		const std::vector<uint8_t> other = shot("", [](obs_data_t *d) {
+			obs_data_set_double(d, "pattern_speed", 100);
+			obs_data_set_double(d, "test_pattern_time", 10.0);
+			obs_data_set_int(d, "pattern_colour1", 0xFF102060); // 0xAABBGGRR: a dark red-brown
+			obs_data_set_int(d, "pattern_colour2", 0xFF20C0F0); // a yellow
+			obs_data_set_int(d, "pattern_colour3", 0xFFE0F0FF); // a warm white
+		});
+		const Mean ma = mean_of(a), mo = mean_of(other);
+		const double bright = 0.2126 * ma.r + 0.7152 * ma.g + 0.0722 * ma.b;
+		const double palette = std::fabs(ma.r - mo.r) + std::fabs(ma.g - mo.g) + std::fabs(ma.b - mo.b);
+		CHECK(opaque(a) && bright > 6.0 && colours_in(a) > 50,
+		      "%s draws something (mean brightness %.1f of 255, %zu colours)", kNames[i], bright,
+		      colours_in(a));
+		CHECK(mean_abs_diff(a, again) == 0.0 && mean_abs_diff(a, later) > 0.3,
+		      "%s is the same at the same time (%.3f) and has moved fifteen seconds on (%.2f)", kNames[i],
+		      mean_abs_diff(a, again), mean_abs_diff(a, later));
+		CHECK(mean_abs_diff(still_a, still_b) == 0.0, "%s holds still at a Speed of 0 (%.3f)", kNames[i],
+		      mean_abs_diff(still_a, still_b));
+		CHECK(palette > 12.0 && mo.r > mo.b + 6.0,
+		      "%s takes its colours from the palette: a warm one changes its mean colour by %.1f (red %.1f, blue %.1f)",
+		      kNames[i], palette, mo.r, mo.b);
+		first.push_back(a);
+	}
+	double nearest = 1e9;
+	int na = 0, nb = 0;
+	for (int i = 0; i < kCount; i++)
+		for (int j = i + 1; j < kCount; j++) {
+			const double d = mean_abs_diff(first[i], first[j]);
+			if (d < nearest) {
+				nearest = d;
+				na = i;
+				nb = j;
+			}
+		}
+	CHECK(nearest > 2.0, "no two patterns are alike (the nearest two, %s and %s, differ by %.2f)", kNames[na],
+	      kNames[nb], nearest);
+
+	// The rest of the pipeline acts on a pattern as on an image.
+	{
+		// (Nebula: its cloud has no two neighbouring pixels alike for long.)
+		auto flat = [&](const std::vector<uint8_t> &px) {
+			size_t same = 0, n = 0;
+			for (uint32_t y = 0; y < h; y++)
+				for (uint32_t x = 0; x + 1 < w; x++) {
+					const size_t i = (size_t(y) * w + x) * 4;
+					same += px[i] == px[i + 4] && px[i + 1] == px[i + 5] && px[i + 2] == px[i + 6];
+					n++;
+				}
+			return double(same) / double(n);
+		};
+		const std::vector<uint8_t> &plain = first[7];
+		const std::vector<uint8_t> hexes = shot("11 nebula, hexagons", [](obs_data_t *d) {
+			obs_data_set_int(d, "pattern", 7);
+			obs_data_unset_user_value(d, "pattern_colour1");
+			obs_data_unset_user_value(d, "pattern_colour2");
+			obs_data_unset_user_value(d, "pattern_colour3");
+			obs_data_set_int(d, "pixel_style", 2);
+			obs_data_set_double(d, "pixel_size", 48);
+		});
+		CHECK(mean_abs_diff(plain, hexes) > 0.5 && flat(hexes) > 0.9 && flat(hexes) > flat(plain) + 0.2,
+		      "the hexagon mosaic acts on a pattern: flat cells (%.2f of neighbouring pixels alike, against %.2f plain), %.2f apart",
+		      flat(hexes), flat(plain), mean_abs_diff(plain, hexes));
+		const std::vector<uint8_t> soft = shot("12 aurora, blurred, bloom", [](obs_data_t *d) {
+			obs_data_set_int(d, "pixel_style", 0);
+			obs_data_set_int(d, "pattern", 0);
+			obs_data_set_double(d, "blur", 60);
+			obs_data_set_double(d, "bloom", 60);
+		});
+		const std::vector<uint8_t> &sharp = first[0];
+		CHECK(mean_abs_diff(soft, sharp) > 0.5, "the blur and bloom act on a pattern (%.2f from it plain)",
+		      mean_abs_diff(soft, sharp));
+		obs_data_set_double(s, "blur", 0);
+		obs_data_set_double(s, "bloom", 0);
+	}
+	obs_source_dec_showing(bg);
+	obs_source_release(bg);
+	obs_data_release(s);
+	CHECK(unavailable == 0, "the patterns' shader file loaded (%d complaints)", unavailable);
+
+	// An image background takes no notice of the pattern's settings.
+	auto image_shot = [&](const char *name, const std::function<void(obs_data_t *)> &change) {
+		obs_data_t *d = obs_data_create();
+		obs_data_set_int(d, "base_type", 0);
+		obs_data_set_string(d, "image", base_image);
+		obs_data_set_double(d, "speed_x", 0);
+		obs_data_set_double(d, "speed_y", 0);
+		obs_data_set_double(d, "blur", 12);
+		change(d);
+		obs_source_t *src = obs_source_create("stagekit_ambient_background", name, d, nullptr);
+		obs_data_release(d);
+		obs_source_inc_showing(src);
+		sleep_ms(400);
+		std::vector<uint8_t> px = render(src, w, h);
+		obs_source_dec_showing(src);
+		obs_source_release(src);
+		return px;
+	};
+	const std::vector<uint8_t> image_plain = image_shot("PT Image", [](obs_data_t *) {});
+	const std::vector<uint8_t> image_keys = image_shot("PT Image Keys", [](obs_data_t *d) {
+		obs_data_set_int(d, "pattern", 4);
+		obs_data_set_double(d, "pattern_speed", -250);
+		obs_data_set_double(d, "pattern_scale", 300);
+		obs_data_set_double(d, "pattern_detail", 5);
+		obs_data_set_int(d, "pattern_colour1", 0xFF00FF00);
+	});
+	CHECK(opaque(image_plain) && mean_abs_diff(image_plain, image_keys) == 0.0 && unavailable == 0,
+	      "an image background is the same with the pattern's settings absent or set (%.3f), and loads no pattern",
+	      mean_abs_diff(image_plain, image_keys));
+
+	// Without the patterns' shader file: the image, and one line in the log.
+	{
+		const std::vector<uint8_t> standby_image =
+			image_shot("PT Standby", [](obs_data_t *d) { obs_data_set_int(d, "base_type", 2); });
+		obs_data_t *d = obs_data_create();
+		obs_data_set_int(d, "base_type", 3);
+		obs_data_set_string(d, "image", base_image);
+		obs_data_set_string(d, "test_pattern_effect", "effects/stagekit-no-such-file.effect");
+		obs_data_set_double(d, "speed_x", 0);
+		obs_data_set_double(d, "speed_y", 0);
+		obs_data_set_double(d, "blur", 12);
+		obs_source_t *src = obs_source_create("stagekit_ambient_background", "PT Missing", d, nullptr);
+		obs_source_inc_showing(src);
+		sleep_ms(400);
+		const std::vector<uint8_t> fell_back = render(src, w, h);
+		obs_data_set_int(d, "pattern", 3);
+		obs_source_update(src, d);
+		sleep_ms(200);
+		obs_source_update(src, d);
+		sleep_ms(200);
+		const std::vector<uint8_t> fell_back_again = render(src, w, h);
+		CHECK(unavailable == 1 && mean_abs_diff(fell_back, standby_image) == 0.0 &&
+			      mean_abs_diff(fell_back_again, standby_image) == 0.0,
+		      "without the patterns' shader file the background is the image (%.3f from it) and the log says so once (%d)",
+		      mean_abs_diff(fell_back, standby_image), unavailable);
+		obs_source_dec_showing(src);
+		obs_source_release(src);
+		obs_data_release(d);
+	}
+	base_set_log_handler(prev_log, prev_param);
+}
+
 // Ambient Background's Darkest level. The owner (2026-11-18): "is there a
 // way I can prevent the background from ever becoming completely black,
 // even when the ambient background is capturing a live feed that has
@@ -18071,6 +18340,14 @@ int main(int argc, char **argv)
 
 	if (getenv("STAGEKIT_TEST_ONLY_FILTER_REMOVE")) { // to try that section alone
 		filter_remove_while_drawn_test(w, h);
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
+
+	if (getenv("STAGEKIT_TEST_ONLY_AMBIENT_PATTERNS")) { // its own run: see tests/run-tests.sh
+		ambient_patterns_test(w, h, base_image, out + "/../ambient-patterns");
 		obs_shutdown();
 		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
 		       g_failures == 1 ? "" : "s");

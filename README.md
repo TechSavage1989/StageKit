@@ -181,7 +181,7 @@ Add **Ambient Background (StageKit)** as a source. It fills the canvas.
 
 | Group | Settings |
 | --- | --- |
-| Image | The standby image, an image file, or any existing source or scene. Optionally blend in a live capture: a chosen source, or *Automatic*, which uses the largest visible capture in the current scene. The capture can fill the screen, fit inside it, match its width or height, or stretch, with its own zoom. *Live capture replaces the image* makes the capture the whole background while there is one; the moment there is none, the usual image is back. A capture with an Auto Frame is used as the trimmed game image, without the empty frame around it. A capture showing nothing, or black all over for two seconds, counts as no capture. *Keep the capture ready* keeps it running in scenes that do not show it, so it is there at once in the next scene that does |
+| Image | The standby image, an image file, any existing source or scene, or an animated pattern (below). Optionally blend in a live capture: a chosen source, or *Automatic*, which uses the largest visible capture in the current scene. The capture can fill the screen, fit inside it, match its width or height, or stretch, with its own zoom. *Live capture replaces the image* makes the capture the whole background while there is one; the moment there is none, the usual image is back. A capture with an Auto Frame is used as the trimmed game image, without the empty frame around it. A capture showing nothing, or black all over for two seconds, counts as no capture. *Keep the capture ready* keeps it running in scenes that do not show it, so it is there at once in the next scene that does |
 | Motion | Drift speed in each direction, zoom, and mirroring at the edges so the drift never shows a seam. An image file's empty edges (rows and columns at its sides that are see-through, or black all the way along, up to a quarter of it from each side) are left out, so they never show as bars between the repeats; a source or scene is used as it is |
 | Look | Blur type (Dual Kawase, Gaussian, Box, or Temporal, which blurs over time and leaves trails) and blur; a mosaic in the Blur filter's seven cell shapes, with the same smoothing, origin and rotation; saturation; glow; **Bloom**, where the bright parts of the image shine over what is around them (how strongly, from what brightness, and how far the light spreads); brightness; vignette; **Darkest level** (below) |
 | Texture overlay | An image multiplied or screened over the result, optionally in black and white |
@@ -212,6 +212,24 @@ Two more things about the capture blended in and the bloom:
   counts as no capture; this is for one that is dark but not empty.
 
 ![Darkest level: off; toward a grey and a red at 30 %; toward the background image at 1 %, 10 % and 100 %; with a strong Gaussian blur; with hexagons](docs/images/ambient-darkest.png)
+
+**Patterns.** *Background from: A pattern* needs no image: StageKit draws an animated background
+itself. **Pattern**: *Aurora* (slow curtains of colour), *Plasma*, *Lava lamp* (soft blobs that
+merge and part), *Waves* (layered dunes), *Bokeh* (soft circles drifting and fading), *Starfield*
+(drifting points that twinkle), *Gradient flow* (a turning, sliding three-colour gradient),
+*Nebula* (cloud), *Grid pulse* (a faint grid with pulses running along its lines) and *Rays*
+(light rays turning slowly round a point). **Colour 1**, **Colour 2**, **Colour 3** are its palette
+(Colour 1 is the ground where a pattern has one); **Speed** (100 % as it comes; 0 holds it still,
+under 0 runs it backwards; at 100 % a pattern comes back to where it began every four minutes,
+with no jump), **Size** and **Detail**. A pattern takes the image's place and nothing else changes:
+the blur, the mosaic, bloom, Darkest level, the texture overlay and a live capture blended in all
+act on it, so a hexagon mosaic over Plasma works as it does over an image. The blur softens a
+pattern a great deal: turn *Blur* down to see its shapes. The Motion group (drift, zoom, mirror) is
+an image's and is hidden for a pattern. The patterns cost one small extra drawing step, and
+nothing while an image is chosen. If the patterns cannot be loaded, the background shows the
+standby image (or its image file) and OBS's log says so.
+
+![The ten patterns: aurora, plasma, lava lamp, waves, bokeh, starfield, gradient flow, nebula, grid pulse, rays; nebula under a hexagon mosaic; aurora blurred with bloom](docs/images/ambient-patterns.png)
 
 Put it in one shared scene and nest that scene wherever you need the background.
 
