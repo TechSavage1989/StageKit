@@ -23,7 +23,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
-## A rename right after a fit filter goes (0.1.0-betaNEXT)
+## A rename right after a fit filter goes (0.1.0-beta208)
 
 Branch `fix/fit-rename-uaf`. Not pushed. Valgrind found an invalid read in `engine_owners()` when
 a source was renamed right after a Fit to Space was removed: `obs_source_release` frees a source's
