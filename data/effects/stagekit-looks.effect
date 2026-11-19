@@ -36,9 +36,16 @@ uniform float counted;          // MaskPiece: 1 the piece is blurred, 0 it is ke
 uniform float lift_level;       // Lift: how bright black becomes (0..1: the image's share, or the colour's luminance)
 uniform float4 lift_color;      // Lift: the colour a dark part is lifted toward
 uniform float lift_image;       // Lift: 1 lift toward image2 (the background image alone), 0 toward lift_color
+uniform float2 rect_in_size;    // RectFirst / RectReduce: the picture (or rectangles) read, in texels
 
 sampler_state linearClamp {
 	Filter   = Linear;
+	AddressU = Clamp;
+	AddressV = Clamp;
+};
+
+sampler_state rectPoint {
+	Filter   = Point;
 	AddressU = Clamp;
 	AddressV = Clamp;
 };
@@ -682,5 +689,64 @@ technique Lift
 	{
 		vertex_shader = VSDefault(v_in);
 		pixel_shader  = PSLift(v_in);
+	}
+}
+
+// The rectangle a picture's visible pixels (alpha at least a half) cover,
+// found on the graphics card without reading anything back: RectFirst gives
+// each block of 8 by 8 pixels its rectangle (x0, y0, x1, y1 in pixels, x1
+// and y1 past the last; an empty block is 1e9, 1e9, -1e9, -1e9), RectReduce
+// joins blocks of 8 by 8 of those, down to one. For a Scene Shadow or Shadow,
+// Glow & Outline line round the drawn picture: a source's box can hold
+// see-through margins (a widget's, a capture's), and a line round the box
+// stood off the picture on those sides.
+float4 PSRectFirst(VertData v_in) : TARGET
+{
+	float2 blocks = ceil(rect_in_size / 8.0);
+	float2 base = floor(v_in.uv * blocks) * 8.0;
+	float4 r = float4(1e9, 1e9, -1e9, -1e9);
+	for (int j = 0; j < 8; j++) {
+		for (int i = 0; i < 8; i++) {
+			float2 t = base + float2(float(i), float(j));
+			float inside = step(t.x + 0.5, rect_in_size.x) * step(t.y + 0.5, rect_in_size.y);
+			float a = image.SampleLevel(rectPoint, (t + 0.5) / rect_in_size, 0).a;
+			float on = inside * step(0.5, a);
+			r = lerp(r, float4(min(r.xy, t), max(r.zw, t + 1.0)), on);
+		}
+	}
+	return r;
+}
+
+float4 PSRectReduce(VertData v_in) : TARGET
+{
+	float2 blocks = ceil(rect_in_size / 8.0);
+	float2 base = floor(v_in.uv * blocks) * 8.0;
+	float4 r = float4(1e9, 1e9, -1e9, -1e9);
+	for (int j = 0; j < 8; j++) {
+		for (int i = 0; i < 8; i++) {
+			float2 t = base + float2(float(i), float(j));
+			float inside = step(t.x + 0.5, rect_in_size.x) * step(t.y + 0.5, rect_in_size.y);
+			float4 c = image.SampleLevel(rectPoint, (t + 0.5) / rect_in_size, 0);
+			r = lerp(r, float4(min(r.xy, c.xy), max(r.zw, c.zw)), inside);
+		}
+	}
+	return r;
+}
+
+technique RectFirst
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSRectFirst(v_in);
+	}
+}
+
+technique RectReduce
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSRectReduce(v_in);
 	}
 }

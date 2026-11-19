@@ -260,7 +260,9 @@ private:
 	void draw_morph(double t, uint32_t cx, uint32_t cy);
 	void draw_part(const Shown &shown, const Quad &quad, const Crop &crop, float strength);
 	// Pass::Ring: the line round a part's box, with the look's corners.
-	void draw_ring(const Quad &quad, float strength);
+	// (`shown`, `crop`: the source, so the line goes round what shows of it;
+	// nullptr: round the whole quad.)
+	void draw_ring(const Quad &quad, float strength, const Shown *shown = nullptr, const Crop *crop = nullptr);
 	void draw_shadowed(double t, uint32_t cx, uint32_t cy, const SceneShadowNow *from, const SceneShadowNow *to);
 	bool draw_layers(double t, uint32_t cx, uint32_t cy, gs_texture_t *picture, const ShadowLook &shade);
 	bool in_layer(const Part &part) const;
@@ -623,7 +625,7 @@ void Morph::draw_side_items(const std::vector<const Part *> &run, bool leaving, 
 					  (double)cx, (double)cy);
 		}
 		if (pass_ == Pass::Ring)
-			draw_ring(quad, 1.0f);
+			draw_ring(quad, 1.0f, &shown, &shown.crop);
 		else
 			draw_item(shown, quad, shown.crop);
 	}
@@ -747,7 +749,10 @@ void Morph::draw_morph(double t, uint32_t cx, uint32_t cy)
 				  : had        ? was.quad
 					       : will.quad;
 		if (pass_ == Pass::Ring) {
-			draw_ring(quad, strength);
+			// (Two sources: round the quad, which is already what shows of
+			// each with Use visible pixels.)
+			const Shown *one = two ? nullptr : had && has ? &will : had ? &was : &will;
+			draw_ring(quad, strength, one, one ? &one->crop : nullptr);
 		} else if (had && has && was.source == will.source) {
 			// The same source: once, its crop part-way as well. (A curve
 			// that overshoots moves past its place, but cuts no further.)
@@ -790,16 +795,25 @@ void Morph::draw_part(const Shown &shown, const Quad &quad, const Crop &crop, fl
 		draw_texture(texture, nullptr, quad, 0.0f, strength);
 }
 
-void Morph::draw_ring(const Quad &quad, float strength)
+void Morph::draw_ring(const Quad &quad, float strength, const Shown *shown, const Crop *crop)
 {
 	if (!look_)
 		return;
+	gs_texture_t *rect = nullptr;
+	double pw = 0.0, ph = 0.0;
+	if (shown && crop) {
+		if (gs_texture_t *picture = cropped(*shown, *crop)) {
+			pw = (double)gs_texture_get_width(picture);
+			ph = (double)gs_texture_get_height(picture);
+			rect = look_->visible_rect(picture, (uint32_t)pw, (uint32_t)ph);
+		}
+	}
 	matrix4 m;
 	vec4_set(&m.x, (float)quad.a, (float)quad.b, 0.0f, 0.0f);
 	vec4_set(&m.y, (float)quad.c, (float)quad.d, 0.0f, 0.0f);
 	vec4_set(&m.z, 0.0f, 0.0f, 1.0f, 0.0f);
 	vec4_set(&m.t, (float)quad.tx, (float)quad.ty, 0.0f, 1.0f);
-	look_->draw_box_ring(m, ring_look_, strength);
+	look_->draw_box_ring(m, ring_look_, strength, rect, pw, ph);
 }
 
 // What an item does under its scene's Scene Shadow (or under one as it

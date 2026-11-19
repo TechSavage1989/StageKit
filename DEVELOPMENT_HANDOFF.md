@@ -23,6 +23,18 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
+## Outline round what shows, and Square corners (0.1.0-betaNEXT)
+
+Branch `fix/outline-shape-box`. Not pushed. The owner saw a line of varying width in Scene Shadow
+with *Rounded*, size 0, round a capture fitted in a bounding box and round a small widget. The box
+lines went round the item's box; a box with see-through margins (a widget's, a window capture's)
+stood the line off the picture on those sides. Bounding boxes (scale to inner, aligned left or
+centre), crops and scale were measured right already (10.0 px on every side). The line now goes
+round the rectangle the visible pixels cover, found on the graphics card (`VisibleRect`), in both
+filters and in Morph; *Square* was added (5). The per-source filter's line is still cut by an item's
+crop (OBS crops the filter's image) and, in a box that draws it larger than its source, is
+resampled (soft, within half a pixel). Gates: OUTLINE_GLOW, SHADOW_EACH, TOOLTIPS.
+
 ## A rename right after a fit filter goes (0.1.0-beta208)
 
 Branch `fix/fit-rename-uaf`. Not pushed. Valgrind found an invalid read in `engine_owners()` when

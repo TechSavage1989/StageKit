@@ -35,10 +35,18 @@ uniform float outline_corners;  // 0 = round the picture's own shape; 1..4 = rou
                                 // rounded, cut, notched or scooped
 uniform float corner_size;      // the line's outer corners, in pixels
 uniform float glow_intensity;   // 1 as it was; more fills the soft tail in, never harder-edged
+uniform texture2d rect_tex;     // what shows of the source, x0 y0 x1 y1 in its pixels (the line goes round it)
+uniform float rect_known;       // 1 rect_tex holds it, 0 the line goes round the whole source
 uniform float out_linear;       // 1: Compose writes linear light (OBS draws in linear light)
 
 sampler_state linearClamp {
 	Filter   = Linear;
+	AddressU = Clamp;
+	AddressV = Clamp;
+};
+
+sampler_state pointClamp {
+	Filter   = Point;
 	AddressU = Clamp;
 	AddressV = Clamp;
 };
@@ -120,13 +128,18 @@ float line_corner(float r, float style)
 float box_line(float2 p)
 {
 	float grow = backdrop_on * backdrop_pad;
-	float4 box = float4(pad - float2(grow, grow), src_size + float2(grow, grow) * 2.0);
+	float4 seen = rect_tex.Sample(pointClamp, float2(0.5, 0.5));
+	float4 whole = float4(pad, src_size);
+	float4 shown = float4(pad + seen.xy, seen.zw - seen.xy);
+	float any = lerp(1.0, step(seen.x, seen.z - 0.5) * step(seen.y, seen.w - 0.5), rect_known);
+	float4 part = lerp(whole, shown, rect_known);
+	float4 box = float4(part.xy - float2(grow, grow), part.zw + float2(grow, grow) * 2.0);
 	float4 outer = float4(box.xy - float2(outline_width, outline_width),
 			      box.zw + float2(outline_width, outline_width) * 2.0);
 	float style = outline_corners - 1.0;
 	float d_out = corner_distance(p, outer, line_corner(corner_size, style), style);
 	float d_in = corner_distance(p, box, 0.0, style);
-	return saturate(0.5 - d_out) * saturate(0.5 + d_in);
+	return saturate(0.5 - d_out) * saturate(0.5 + d_in) * any;
 }
 
 // A soft-kneed density: 1 is the coverage as it is; more fills the soft tail

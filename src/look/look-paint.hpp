@@ -45,7 +45,7 @@ struct ShadowLook {
 	double outline_opacity = 1.0; // 0..1
 	// The line's corners (Shadow, Glow & Outline's `outline_corners`, by
 	// number, append-only): 0 round the source's own shape, as it always
-	// was; 1 rounded, 2 cut, 3 notched, 4 scooped, as a shape round the
+	// was; 1 rounded, 2 cut, 3 notched, 4 scooped, 5 square, as a shape round the
 	// source's box, its outer corners `outline_corner_size` across.
 	int outline_corners = 0;
 	double outline_corner_size = 20.0;
@@ -103,6 +103,25 @@ std::vector<size_t> shadow_layers(const std::vector<LayerBox> &boxes, double rea
 bool item_drawn_box(obs_sceneitem_t *item, LayerBox &out);
 
 struct ItemDraw;
+
+// The rectangle a picture's visible pixels cover, worked out on the graphics
+// card (nothing read back): a one-pixel 32-bit float picture holding x0, y0,
+// x1, y1 in the picture's pixels (empty: x1 < x0). On the drawing thread;
+// kept until the next call.
+class VisibleRect {
+public:
+	VisibleRect();
+	~VisibleRect();
+	VisibleRect(const VisibleRect &) = delete;
+	VisibleRect &operator=(const VisibleRect &) = delete;
+	gs_texture_t *measure(gs_texture_t *picture, uint32_t w, uint32_t h);
+
+private:
+	gs_effect_t *effect_ = nullptr;
+	gs_eparam_t *p_image_ = nullptr;
+	gs_eparam_t *p_in_size_ = nullptr;
+	std::vector<gs_texrender_t *> levels_;
+};
 
 class LookPaint {
 public:
@@ -168,7 +187,12 @@ public:
 	// A line round a box, with the look's corners (`box_line`), onto the
 	// canvas being drawn (begin_canvas): the box is the unit square under
 	// `m` (canvas pixels), counted `strength` of the way (a Morph part-way).
-	void draw_box_ring(const matrix4 &m, const ShadowLook &look, float strength);
+	// `rect` (VisibleRect's, for a picture pw by ph laid on that square):
+	// the line goes round the part that shows instead of the whole box.
+	void draw_box_ring(const matrix4 &m, const ShadowLook &look, float strength, gs_texture_t *rect = nullptr,
+			   double pw = 0.0, double ph = 0.0);
+	// What shows of a picture (VisibleRect), with LookPaint's own.
+	gs_texture_t *visible_rect(gs_texture_t *picture, uint32_t w, uint32_t h);
 	// The same round an item's box as its scene draws it now (nothing for
 	// an item that draws nothing).
 	void draw_item_ring(obs_sceneitem_t *item, const ShadowLook &look);
@@ -202,6 +226,11 @@ private:
 	gs_eparam_t *p_corner_size_ = nullptr;
 	gs_eparam_t *p_corner_style_ = nullptr;
 	gs_eparam_t *p_ring_strength_ = nullptr;
+	gs_eparam_t *p_rect_tex_ = nullptr;
+	gs_eparam_t *p_rect_known_ = nullptr;
+	gs_eparam_t *p_rect_pic_ = nullptr;
+	std::unique_ptr<VisibleRect> rects_;
+	gs_texture_t *no_rect_ = nullptr;
 	gs_texrender_t *outlined_ = nullptr; // the casting sources with their line, which casts the shadow
 	std::unique_ptr<KawaseBlur> blur_;
 	gs_texrender_t *out_ = nullptr;

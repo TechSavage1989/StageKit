@@ -44,9 +44,18 @@ uniform float4 box_rect;        // BoxRing: the source's box in it: x, y, width,
 uniform float corner_size;      // BoxRing: the line's outer corner size, in canvas pixels
 uniform float corner_style;     // BoxRing: 0 round, 1 cut, 2 notch, 3 scoop
 uniform float ring_strength;    // BoxRing: how much the source counts (a Morph part-way)
+uniform texture2d rect_tex;     // BoxRing: what shows of the source, x0 y0 x1 y1 in its picture's pixels
+uniform float rect_known;       // BoxRing: 1 rect_tex holds it, 0 the line goes round the whole box
+uniform float2 rect_pic;        // BoxRing: the source's picture, in pixels (what rect_tex counts in)
 
 sampler_state linearClamp {
 	Filter   = Linear;
+	AddressU = Clamp;
+	AddressV = Clamp;
+};
+
+sampler_state pointClamp {
+	Filter   = Point;
 	AddressU = Clamp;
 	AddressV = Clamp;
 };
@@ -243,11 +252,17 @@ float4 PSOutlined(VertData v_in) : TARGET
 float4 PSBoxRing(VertData v_in) : TARGET
 {
 	float2 p = v_in.uv * box_size;
-	float4 outer = float4(box_rect.xy - float2(outline_width, outline_width),
-			      box_rect.zw + float2(outline_width, outline_width) * 2.0);
+	// What shows of the source, in the sprite's pixels.
+	float4 seen = rect_tex.Sample(pointClamp, float2(0.5, 0.5));
+	float2 k = box_rect.zw / rect_pic;
+	float4 shown = float4(box_rect.xy + seen.xy * k, (seen.zw - seen.xy) * k);
+	float4 box_shown = lerp(box_rect, shown, rect_known);
+	float any = lerp(1.0, step(seen.x, seen.z - 0.5) * step(seen.y, seen.w - 0.5), rect_known);
+	float4 outer = float4(box_shown.xy - float2(outline_width, outline_width),
+			      box_shown.zw + float2(outline_width, outline_width) * 2.0);
 	float d_out = corner_distance(p, outer, line_corner(corner_size, corner_style), corner_style);
-	float d_in = corner_distance(p, box_rect, 0.0, corner_style);
-	float a = saturate(0.5 - d_out) * saturate(0.5 + d_in) * ring_strength;
+	float d_in = corner_distance(p, box_shown, 0.0, corner_style);
+	float a = saturate(0.5 - d_out) * saturate(0.5 + d_in) * ring_strength * any;
 	return float4(a, a, a, a);
 }
 

@@ -41,7 +41,7 @@ ShadowLook read_shadow_look(obs_data_t *settings)
 	s.outline_width = std::clamp(obs_data_get_double(settings, "outline_width"), 0.0, 200.0);
 	s.outline_color = (uint32_t)obs_data_get_int(settings, "outline_color");
 	s.outline_opacity = std::clamp(obs_data_get_double(settings, "outline_opacity") / 100.0, 0.0, 1.0);
-	s.outline_corners = (int)std::clamp<long long>(obs_data_get_int(settings, "outline_corners"), 0, 4);
+	s.outline_corners = (int)std::clamp<long long>(obs_data_get_int(settings, "outline_corners"), 0, 5);
 	s.outline_corner_size = std::clamp(obs_data_get_double(settings, "outline_corner_size"), 0.0, 500.0);
 	s.intensity = std::clamp(obs_data_get_double(settings, "glow_intensity") / 100.0, 0.25, 4.0);
 	// A glow sits evenly all round.
@@ -57,7 +57,8 @@ namespace {
 bool corners_modified(obs_properties_t *props, obs_property_t *, obs_data_t *settings)
 {
 	obs_property_set_visible(obs_properties_get(props, "outline_corner_size"),
-				 obs_data_get_int(settings, "outline_corners") > 0);
+				 obs_data_get_int(settings, "outline_corners") > 0 &&
+					 obs_data_get_int(settings, "outline_corners") != 5);
 	return true;
 }
 
@@ -73,6 +74,7 @@ void add_outline_corner_properties(obs_properties_t *outline)
 	obs_property_list_add_int(corners, obs_module_text("Shadow.OutlineCorners.Cut"), 2);
 	obs_property_list_add_int(corners, obs_module_text("Shadow.OutlineCorners.Notch"), 3);
 	obs_property_list_add_int(corners, obs_module_text("Shadow.OutlineCorners.Scoop"), 4);
+	obs_property_list_add_int(corners, obs_module_text("Shadow.OutlineCorners.Square"), 5);
 	set_tip(corners, obs_module_text("Shadow.OutlineCorners.Tip"));
 	obs_property_set_modified_callback(corners, corners_modified);
 	obs_property_t *size = obs_properties_add_float_slider(
@@ -235,10 +237,21 @@ LookPaint::LookPaint()
 		p_corner_size_ = gs_effect_get_param_by_name(effect_, "corner_size");
 		p_corner_style_ = gs_effect_get_param_by_name(effect_, "corner_style");
 		p_ring_strength_ = gs_effect_get_param_by_name(effect_, "ring_strength");
+		p_rect_tex_ = gs_effect_get_param_by_name(effect_, "rect_tex");
+		p_rect_known_ = gs_effect_get_param_by_name(effect_, "rect_known");
+		p_rect_pic_ = gs_effect_get_param_by_name(effect_, "rect_pic");
 	}
 	// (Smooth: sixteen-bit pictures and one more level, so a soft shadow's
 	// tail has no steps.)
 	blur_ = std::make_unique<KawaseBlur>(true);
+	rects_ = std::make_unique<VisibleRect>();
+	{
+		// (A stand-in for rect_tex when no rectangle is known: every
+		// texture an effect reads is given one.)
+		const float none[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+		const uint8_t *data = reinterpret_cast<const uint8_t *>(none);
+		no_rect_ = gs_texture_create(1, 1, GS_RGBA32F, 1, &data, 0);
+	}
 	out_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 	outlined_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 	obs_leave_graphics();
@@ -249,6 +262,8 @@ LookPaint::~LookPaint()
 {
 	obs_enter_graphics();
 	blur_.reset();
+	rects_.reset();
+	gs_texture_destroy(no_rect_);
 	gs_effect_destroy(effect_);
 	gs_texrender_destroy(out_);
 	gs_texrender_destroy(outlined_);
@@ -564,7 +579,88 @@ bool LookPaint::compose(gs_texture_t *scene, gs_texture_t *cast, gs_texture_t *m
 	return drawn;
 }
 
-void LookPaint::draw_box_ring(const matrix4 &m, const ShadowLook &look, float strength)
+VisibleRect::VisibleRect()
+{
+	char *path = obs_module_file("effects/stagekit-looks.effect");
+	obs_enter_graphics();
+	char *errors = nullptr;
+	effect_ = path ? gs_effect_create_from_file(path, &errors) : nullptr;
+	if (!effect_)
+		obs_log(LOG_WARNING, "outline: could not load '%s' (%s); lines go round the whole box",
+			path ? path : "(missing)", errors ? errors : "unknown error");
+	bfree(errors);
+	if (effect_) {
+		p_image_ = gs_effect_get_param_by_name(effect_, "image");
+		p_in_size_ = gs_effect_get_param_by_name(effect_, "rect_in_size");
+		// (A file of the others' may not have the techniques.)
+		if (!gs_effect_get_technique(effect_, "RectFirst") || !gs_effect_get_technique(effect_, "RectReduce"))
+			effect_ = nullptr;
+	}
+	obs_leave_graphics();
+	bfree(path);
+}
+
+VisibleRect::~VisibleRect()
+{
+	obs_enter_graphics();
+	for (gs_texrender_t *tr : levels_)
+		gs_texrender_destroy(tr);
+	gs_effect_destroy(effect_);
+	obs_leave_graphics();
+}
+
+gs_texture_t *VisibleRect::measure(gs_texture_t *picture, uint32_t w, uint32_t h)
+{
+	if (!effect_ || !picture || !w || !h)
+		return nullptr;
+	const bool previous = gs_framebuffer_srgb_enabled();
+	gs_enable_framebuffer_srgb(false);
+	gs_matrix_push();
+	gs_matrix_identity();
+	gs_texture_t *cur = picture;
+	uint32_t cw = w, ch = h;
+	size_t level = 0;
+	bool first = true;
+	while (first || cw > 1 || ch > 1) {
+		const uint32_t ow = (cw + 7) / 8, oh = (ch + 7) / 8;
+		if (level >= levels_.size())
+			levels_.push_back(gs_texrender_create(GS_RGBA32F, GS_ZS_NONE));
+		gs_texrender_t *into = levels_[level++];
+		gs_texrender_reset(into);
+		if (!gs_texrender_begin(into, ow, oh)) {
+			cur = nullptr;
+			break;
+		}
+		gs_ortho(0.0f, (float)ow, 0.0f, (float)oh, -100.0f, 100.0f);
+		gs_blend_state_push();
+		gs_blend_function(GS_BLEND_ONE, GS_BLEND_ZERO);
+		vec2 in_size;
+		vec2_set(&in_size, (float)cw, (float)ch);
+		gs_effect_set_texture(p_image_, cur);
+		gs_effect_set_vec2(p_in_size_, &in_size);
+		while (gs_effect_loop(effect_, first ? "RectFirst" : "RectReduce"))
+			gs_draw_sprite(nullptr, 0, ow, oh);
+		gs_blend_state_pop();
+		gs_texrender_end(into);
+		cur = gs_texrender_get_texture(into);
+		cw = ow;
+		ch = oh;
+		first = false;
+		if (!cur)
+			break;
+	}
+	gs_matrix_pop();
+	gs_enable_framebuffer_srgb(previous);
+	return cur;
+}
+
+gs_texture_t *LookPaint::visible_rect(gs_texture_t *picture, uint32_t w, uint32_t h)
+{
+	return rects_ ? rects_->measure(picture, w, h) : nullptr;
+}
+
+void LookPaint::draw_box_ring(const matrix4 &m, const ShadowLook &look, float strength, gs_texture_t *seen, double pw,
+			      double ph)
 {
 	if (!effect_ || !look.box_line() || strength <= 0.001f)
 		return;
@@ -583,10 +679,18 @@ void LookPaint::draw_box_ring(const matrix4 &m, const ShadowLook &look, float st
 	vec4_set(&rect, (float)grow, (float)grow, (float)bw, (float)bh);
 	gs_effect_set_vec2(p_box_size_, &size);
 	gs_effect_set_vec4(p_box_rect_, &rect);
-	gs_effect_set_float(p_corner_size_, (float)look.outline_corner_size);
-	gs_effect_set_float(p_corner_style_, (float)(look.outline_corners - 1));
+	// (Square: a rounded corner of no size.)
+	const bool square = look.outline_corners == 5;
+	gs_effect_set_float(p_corner_size_, square ? 0.0f : (float)look.outline_corner_size);
+	gs_effect_set_float(p_corner_style_, square ? 0.0f : (float)(look.outline_corners - 1));
 	gs_effect_set_float(p_ring_strength_, std::clamp(strength, 0.0f, 1.0f));
 	gs_effect_set_float(p_outline_width_, (float)look.outline_width);
+	const bool known = seen && pw > 0.0 && ph > 0.0;
+	vec2 pic;
+	vec2_set(&pic, known ? (float)pw : 1.0f, known ? (float)ph : 1.0f);
+	gs_effect_set_texture(p_rect_tex_, known ? seen : no_rect_);
+	gs_effect_set_float(p_rect_known_, known ? 1.0f : 0.0f);
+	gs_effect_set_vec2(p_rect_pic_, &pic);
 	const bool previous = gs_framebuffer_srgb_enabled();
 	gs_enable_framebuffer_srgb(false);
 	gs_matrix_push();
@@ -601,17 +705,21 @@ void LookPaint::draw_box_ring(const matrix4 &m, const ShadowLook &look, float st
 
 void LookPaint::draw_item_ring(obs_sceneitem_t *item, const ShadowLook &look)
 {
-	ItemDraw d;
-	if (!item_draw(item, d) || d.cw <= 0 || d.ch <= 0)
+	// The item drawn by itself (its crop and any transition running), so
+	// the line goes round what shows of it, not round its box: a box can
+	// hold see-through margins.
+	matrix4 m;
+	uint32_t w = 0, h = 0;
+	gs_texture_t *picture = item_picture(item, m, w, h);
+	if (!picture || !w || !h)
 		return;
-	matrix4 m, unit;
-	obs_sceneitem_get_draw_transform(item, &m);
+	gs_texture_t *rect = visible_rect(picture, w, h);
+	matrix4 unit, box;
 	matrix4_identity(&unit);
-	vec4_set(&unit.x, (float)d.cw, 0.0f, 0.0f, 0.0f);
-	vec4_set(&unit.y, 0.0f, (float)d.ch, 0.0f, 0.0f);
-	matrix4 box;
+	vec4_set(&unit.x, (float)w, 0.0f, 0.0f, 0.0f);
+	vec4_set(&unit.y, 0.0f, (float)h, 0.0f, 0.0f);
 	matrix4_mul(&box, &unit, &m);
-	draw_box_ring(box, look, 1.0f);
+	draw_box_ring(box, look, 1.0f, rect, (double)w, (double)h);
 }
 
 bool LookPaint::compose_layers(gs_texture_t *scene, const std::vector<gs_texture_t *> &casts,
