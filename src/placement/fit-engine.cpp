@@ -2789,7 +2789,11 @@ void FitScan::obstacles(obs_source_t *scene, obs_sceneitem_t *self, const std::v
 			found = seen_.find(id);
 		}
 		const Seen &seen = found->second;
-		if (!seen.there) {
+		// A live automatic fit reserves the slot of a capture waiting for
+		// its first frame. This keeps the column still through a capture
+		// switch. A dock press measures only images that are drawing.
+		const bool starting_capture = mine && claimed && (!seen.width || !seen.height);
+		if (!seen.there && !starting_capture) {
 			empty_.push_back(id);
 			continue;
 		}

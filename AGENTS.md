@@ -394,6 +394,8 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   Surface the timeout in the dock and stop before changing that item. Exclude private sources,
   all twins, the Morph layer and hidden items during collection. A recently hidden fit's last
   image may be reserved for two seconds unless a mode holds it hidden.
+  Automatic fits keep a visible capture's saved slot while it reports 0x0 during a switch,
+  so the camera and chat column stay still. A dock press requires a drawn image.
   Fitted obstacles use their published image claim. In `spaces_kept`, predict the neighboring
   image with `space_from` and `claim_from` and compare its position and size within 0.5 px, its
   growth flags and its lean. A change of unused room alone is allowed. A home still being found

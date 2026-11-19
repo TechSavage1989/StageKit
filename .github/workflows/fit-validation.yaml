@@ -1,27 +1,32 @@
-name: Compare Scene Fit regressions
+name: Validate Scene Fit and capture switching
 on:
   push:
     branches: [fix/scene-fit-visible-layout]
 permissions:
   contents: read
-  actions: read
+concurrency:
+  group: stagekit-visible-fit-validation-${{ github.sha }}
+  cancel-in-progress: true
 jobs:
-  failures:
+  format:
     runs-on: ubuntu-24.04
+    timeout-minutes: 6
     steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: stagekit-test-logs
-          run-id: 44457536649
-          github-token: ${{ github.token }}
-          path: ${{ runner.temp }}/fit-logs
-      - name: Report failing assertions by test section
-        shell: bash
+      - uses: actions/checkout@v4
+      - name: Check repository and report clang-format 19 changes
         run: |
-          log="$(find "$RUNNER_TEMP/fit-logs" -name stagekit-full.log -print -quit)"
-          test -s "$log"
-          awk '/^\[/ {section=$0} /FAIL  |FAILED \(|Segmentation fault/ {print section; print}' "$log"
-  baseline:
+          python3 -m venv /tmp/stagekit-format
+          /tmp/stagekit-format/bin/pip install clang-format==19.1.7 gersemi
+          /tmp/stagekit-format/bin/gersemi --check CMakeLists.txt tests/CMakeLists.txt
+          bash scripts/check-root.sh
+          /tmp/stagekit-format/bin/clang-format -i $(git ls-files 'src/*.cpp' 'src/*.hpp' 'tests/*.cpp')
+          git diff --exit-code
+  headless:
+    name: ${{ matrix.suite }}
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [fit-and-layout, full-suite]
     runs-on: ubuntu-24.04
     timeout-minutes: 55
     env:
@@ -30,10 +35,7 @@ jobs:
       LIBGL_ALWAYS_SOFTWARE: 1
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: d4fe50f9eb788be1bc0e515efafd892c52ac02fb
-      - name: Install headless OBS
-        shell: bash
+      - name: Install test tools
         run: |
           cat > /tmp/stagekit-ubuntu.list <<'LIST'
           deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] https://archive.ubuntu.com/ubuntu noble main universe
@@ -41,12 +43,35 @@ jobs:
           deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] https://security.ubuntu.com/ubuntu noble-security main universe
           LIST
           apt_options=(-o Dir::Etc::sourcelist=/tmp/stagekit-ubuntu.list -o Dir::Etc::sourceparts=- -o Acquire::Retries=2 -o Acquire::https::Timeout=20)
-          sudo apt-get "${apt_options[@]}" update -qq
+          sudo apt-get "${apt_options[@]}" update
           sudo apt-get "${apt_options[@]}" install -y --no-install-recommends obs-studio libobs-dev qt6-base-dev xvfb xauth python3-pil ninja-build libgl1-mesa-dri
-      - name: Run the full unmodified beta197 suite
-        shell: bash
+      - name: Build tests
+        run: |
+          cmake -S . -B build-tests -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DSTAGEKIT_BUILD_TESTS=ON -DCMAKE_COMPILE_WARNING_AS_ERROR=ON
+          cmake --build build-tests
+      - name: Run fit and capture-switching tests
+        if: matrix.suite == 'fit-and-layout'
+        run: |
+          out=build-tests/out
+          mkdir -p "$out"
+          python3 tests/make-test-image.py "$out"
+          failed=0
+          for gate in LAYOUT FIT_TOOL FIT_ENABLE; do
+            env STAGEKIT_TEST_ONLY_$gate=1 xvfb-run -a -s "-screen 0 1280x720x24" build-tests/tests/stagekit-ambient-test build-tests/stagekit.so data "$out/test-art.png" "$out/test-texture.png" "$out/test-game.png" "$out" "$out/test-title.png" "$out" "$out/test-pillarbox.png" "$out/test-black.png" "$out/test-dark-game.png" > "$out/$gate.log" 2>&1 || failed=1
+            grep -E '^  |FAIL|ALL PASSED' "$out/$gate.log" || true
+          done
+          exit "$failed"
+      - name: Full suite
+        if: matrix.suite == 'full-suite'
         run: |
           result=0
-          bash tests/run-tests.sh > /tmp/stagekit-baseline.log 2>&1 || result=$?
-          awk '/^\[/ {section=$0} /FAIL  |FAILED \(|ALL PASSED|Segmentation fault/ {print section; print}' /tmp/stagekit-baseline.log
+          bash tests/run-tests.sh > /tmp/stagekit-full.log 2>&1 || result=$?
+          awk '/^\[/ {section=$0} /FAIL  |FAILED \(|ALL PASSED|Segmentation fault/ {print section; print}' /tmp/stagekit-full.log
           exit "$result"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: stagekit-test-logs-${{ matrix.suite }}
+          path: |
+            build-tests/out/*.log
+            /tmp/stagekit-full.log
