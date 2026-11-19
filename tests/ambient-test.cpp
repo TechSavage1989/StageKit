@@ -6576,9 +6576,14 @@ static void auto_window_closed_test(const std::string &out)
 	const std::string none = "window :StageKitNoWindow:stagekit-no-window.exe";
 	const std::string red_path = out + "/../winclose-standby.png";
 	{
+		// (The output folder may not be there when the section is run by
+		// hand: without the image the Standby checks fail for no fault.)
+		std::error_code made;
+		std::filesystem::create_directories(out, made);
 		QImage red(320, 180, QImage::Format_RGB32);
 		red.fill(QColor(255, 0, 0));
-		red.save(QString::fromStdString(red_path));
+		const bool saved = red.save(QString::fromStdString(red_path));
+		CHECK(saved, "the test's standby image is written (%s)", red_path.c_str());
 	}
 	obs_data_t *cd = obs_data_create();
 	obs_data_set_int(cd, "color", 0xFF00FF00); // green
@@ -6792,9 +6797,14 @@ static void auto_keep_aim_test(const std::string &out)
 	register_stand_in_capture("game_capture");
 	const std::string red_path = out + "/../keepaim-standby.png";
 	{
+		// (The output folder may not be there when the section is run by
+		// hand: without the image the Standby checks fail for no fault.)
+		std::error_code made;
+		std::filesystem::create_directories(out, made);
 		QImage red(320, 180, QImage::Format_RGB32);
 		red.fill(QColor(255, 0, 0));
-		red.save(QString::fromStdString(red_path));
+		const bool saved = red.save(QString::fromStdString(red_path));
+		CHECK(saved, "the test's standby image is written (%s)", red_path.c_str());
 	}
 	log_handler_t prev_log = nullptr;
 	void *prev_param = nullptr;
