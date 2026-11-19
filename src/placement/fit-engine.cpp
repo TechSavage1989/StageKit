@@ -2712,7 +2712,10 @@ void FitScan::gather(obs_source_t *scene, obs_sceneitem_t *self, const void *ask
 void FitScan::look(obs_source_t *scene, obs_sceneitem_t *other, const Measure &how)
 {
 	Seen seen;
-	seen.there = measure_seen(scene, other, how, seen.box);
+	obs_source_t *source = obs_sceneitem_get_source(other);
+	seen.width = obs_source_get_width(source);
+	seen.height = obs_source_get_height(source);
+	seen.there = seen.width && seen.height && measure_seen(scene, other, how, seen.box);
 	seen.item_at = scene_box(scene, other);
 	seen_[obs_sceneitem_get_id(other)] = seen;
 	// What a glance last said of it goes with this look: another
@@ -2730,6 +2733,7 @@ void FitScan::obstacles(obs_source_t *scene, obs_sceneitem_t *self, const std::v
 {
 	out.clear();
 	visible_.clear();
+	empty_.clear();
 	if (look_again_) {
 		look_again_ = false;
 		seen_.clear();
@@ -2765,6 +2769,18 @@ void FitScan::obstacles(obs_source_t *scene, obs_sceneitem_t *self, const std::v
 		}
 		if (std::find(used_.begin(), used_.end(), g.item) == used_.end())
 			used_.push_back(g.item);
+		auto found = seen_.find(id);
+		obs_source_t *source = obs_sceneitem_get_source(g.item);
+		if (found == seen_.end() || found->second.width != obs_source_get_width(source) ||
+		    found->second.height != obs_source_get_height(source)) {
+			look(scene, g.item, how);
+			found = seen_.find(id);
+		}
+		const Seen &seen = found->second;
+		if (!seen.there) {
+			empty_.push_back(id);
+			continue;
+		}
 		if (lower) {
 			out.push_back(Obstacle{claim.least, id, true, false, passed, false});
 			continue;
@@ -2781,14 +2797,7 @@ void FitScan::obstacles(obs_source_t *scene, obs_sceneitem_t *self, const std::v
 			out.back().has_home = claim.has_home;
 			continue;
 		}
-		auto found = seen_.find(id);
-		if (found == seen_.end()) {
-			look(scene, g.item, how);
-			found = seen_.find(id);
-		}
-		const Seen &seen = found->second;
-		if (!seen.there)
-			continue;
+
 		const Box now = scene_box(scene, g.item);
 		if (seen.item_at.w < 1.0 || seen.item_at.h < 1.0 || now.w < 1.0 || now.h < 1.0) {
 			out.push_back(Obstacle{seen.box, id, false, false, passed});

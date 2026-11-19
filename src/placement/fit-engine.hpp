@@ -327,17 +327,19 @@ public:
 	std::vector<Gathered> &gathered() { return gathered_; }
 	// Every item the last `obstacles` went through, in the way or not.
 	const std::vector<int64_t> &visible_ids() const { return visible_; }
+	const std::vector<int64_t> &empty_ids() const { return empty_; }
 
 private:
 	struct Seen {
 		Box box;     // what shows in it, on the canvas, when it was looked at
 		Box item_at; // and where its box was then
 		bool there = false;
+		uint32_t width = 0, height = 0;
 	};
 	void look(obs_source_t *scene, obs_sceneitem_t *other, const Measure &how);
 	std::vector<Gathered> gathered_;
 	std::vector<obs_sceneitem_t *> used_; // what the last obstacles were taken from
-	std::vector<int64_t> visible_;
+	std::vector<int64_t> visible_, empty_;
 	std::map<int64_t, Seen> seen_;
 	std::map<int64_t, Glance> looked_; // what a glance said of each item when it was last looked at
 	bool look_again_ = true;

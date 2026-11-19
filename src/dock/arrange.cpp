@@ -1675,10 +1675,11 @@ fit::SpaceInputs handed_over(fit::SpaceInputs in, const MovedBox &m, const Box &
 // Whether every fit that has worked its space out (but the moved items' own)
 // does the same with the moved items where they would be: the same space,
 // and the same goal (so one at its home stays there).
-FitCheck spaces_kept(const std::vector<fit::HeldSpace> &spaces, const std::vector<MovedBox> &moved, std::string *who)
+FitCheck spaces_kept(const std::vector<fit::HeldSpace> &spaces, const std::vector<MovedBox> &moved, std::string *who,
+		     const std::vector<int64_t> &empty = {})
 {
 	for (const fit::HeldSpace &held : spaces) {
-		if (!held.worked)
+		if (!held.worked || std::find(empty.begin(), empty.end(), held.item) != empty.end())
 			continue;
 		if (std::any_of(moved.begin(), moved.end(), [&](const MovedBox &m) { return m.id == held.item; }))
 			continue; // a moved item's own fit: asked about by the caller
@@ -2123,7 +2124,7 @@ int fit_to_space(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &item
 				std::vector<MovedBox> with = moved;
 				with.push_back(oc.m);
 				std::string blocked;
-				const FitCheck check = spaces_kept(held, with, &blocked);
+				const FitCheck check = spaces_kept(held, with, &blocked, scan->empty_ids());
 				if (check == FitCheck::Kept) {
 					chosen = oc;
 					found = true;

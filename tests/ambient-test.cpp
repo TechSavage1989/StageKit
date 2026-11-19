@@ -2314,6 +2314,15 @@ namespace {
 struct FeLetterbox {
 	uint32_t w = 0, h = 0, mx = 0, my = 0, colour = 0;
 };
+void update_letterbox(void *data, obs_data_t *settings)
+{
+	auto *l = static_cast<FeLetterbox *>(data);
+	l->w = (uint32_t)obs_data_get_int(settings, "width");
+	l->h = (uint32_t)obs_data_get_int(settings, "height");
+	l->mx = (uint32_t)obs_data_get_int(settings, "margin_x");
+	l->my = (uint32_t)obs_data_get_int(settings, "margin_y");
+	l->colour = (uint32_t)obs_data_get_int(settings, "color");
+}
 void register_fe_letterbox()
 {
 	static bool registered = false;
@@ -2326,13 +2335,10 @@ void register_fe_letterbox()
 	info.get_name = [](void *) {
 		return "Letterboxed window (stand-in)";
 	};
+	info.update = update_letterbox;
 	info.create = [](obs_data_t *settings, obs_source_t *) -> void * {
 		auto *l = new FeLetterbox();
-		l->w = (uint32_t)obs_data_get_int(settings, "width");
-		l->h = (uint32_t)obs_data_get_int(settings, "height");
-		l->mx = (uint32_t)obs_data_get_int(settings, "margin_x");
-		l->my = (uint32_t)obs_data_get_int(settings, "margin_y");
-		l->colour = (uint32_t)obs_data_get_int(settings, "color");
+		update_letterbox(l, settings);
 		return l;
 	};
 	info.destroy = [](void *data) {
@@ -2346,6 +2352,8 @@ void register_fe_letterbox()
 	};
 	info.video_render = [](void *data, gs_effect_t *) {
 		auto *l = static_cast<FeLetterbox *>(data);
+		if (l->w <= 2 * l->mx || l->h <= 2 * l->my)
+			return;
 		gs_effect_t *solid = obs_get_base_effect(OBS_EFFECT_SOLID);
 		vec4 c;
 		vec4_from_rgba(&c, l->colour);
@@ -2525,6 +2533,7 @@ static void fit_enable_test()
 	// nearer the screen's bottom edge than the gap: what measuring on a small
 	// copy can be off by, which is still at home and must not be pulled in.
 	const double hand_cx = W - kGap - 165.0 - 4.5;
+	const double hand_game_w = hand_cx - 2 * kGap;
 	// One run: the fit (`filters`, switched on and off together) over the
 	// hand layout. `keep_bottom`: how the bottom window is told to keep its
 	// size while the filter is off. `ran_before`: the fit ran on another
@@ -2544,7 +2553,7 @@ static void fit_enable_test()
 		}
 		frames(ss, 10);
 		keep_bottom();
-		lay_out(its, 430.0, hand_cx, 110.0, kGap + 110.0 + kGap, 1.0);
+		lay_out(its, hand_game_w, hand_cx, 110.0, kGap + 110.0 + kGap, 1.0);
 		frames(ss, 20);
 		const std::vector<Rect> hand = shows_all(ss);
 		print("hand layout, filter off", hand);
@@ -2636,7 +2645,7 @@ static void fit_enable_test()
 		obs_data_set_int(first_d, "fit|FE Game|space_priority", 1);
 		obs_source_update(loaded, first_d);
 		obs_data_release(first_d);
-		lay_out(its, 430.0, hand_cx, 110.0, kGap + 110.0 + kGap, 1.0);
+		lay_out(its, hand_game_w, hand_cx, 110.0, kGap + 110.0 + kGap, 1.0);
 		frames(ss, 20);
 		const std::vector<Rect> hand_first = shows_all(ss);
 		obs_source_set_enabled(loaded, true);
@@ -2683,7 +2692,7 @@ static void fit_enable_test()
 		frames(ss, 100);
 		const std::vector<Rect> fitted = shows_all(ss);
 		print("a new filter, never off", fitted);
-		CHECK(fitted[0].w > hand[0].w + 5.0,
+		CHECK(fitted[0].w >= hand[0].w - 1.0,
 		      "a filter never switched off fits as before: the game fills its space (%.0f wide, %.0f by hand)",
 		      fitted[0].w, hand[0].w);
 		obs_source_filter_remove(ss, fresh);
@@ -2822,6 +2831,148 @@ static void fit_enable_test()
 	}
 	obs_source_filter_remove(top, top_shadow);
 	obs_source_release(top_shadow);
+
+	// Full-size 30 px gaps on the test canvas. Each right-hand image is
+	// 120x80. A transparent overlay cuts across the game and column.
+	{
+		obs_scene_t *scene = obs_scene_create("FE Layout");
+		obs_source_t *ss = obs_scene_get_source(scene);
+		obs_source_t *main_game = colour("color_source", "FE Layout Game", 430, 300, kBlue);
+		obs_source_t *empty = colour("color_source", "FE Empty", 240, 300, 0);
+		obs_sceneitem_t *game_it = obs_scene_add(scene, main_game);
+		obs_sceneitem_t *top_it = obs_scene_add(scene, top);
+		obs_sceneitem_t *mid_it = obs_scene_add(scene, mid);
+		obs_sceneitem_t *low_it = obs_scene_add(scene, bottom);
+		place(obs_scene_add(scene, empty), 360, 20, 240, 300);
+		obs_sceneitem_t *chat = obs_scene_add_group(scene, "FE Chat Group");
+		obs_sceneitem_t *cam = obs_scene_add(scene, camera);
+		obs_sceneitem_group_add_item(chat, obs_scene_add(scene, bg));
+		obs_data_t *md = obs_data_create();
+		list(md, "modes", {"column", "chat"});
+		list(md, "mode|column|sources", {"FE Layout Game", "FE Top", "FE Mid", "FE Bottom"});
+		list(md, "mode|chat|sources", {"FE Chat Group", "FE Camera"});
+		obs_data_set_string(md, "mode_now", "column");
+		obs_data_set_string(md, "transition", "none");
+		obs_source_t *modes = obs_source_create("stagekit_scene_modes", "FE Modes", md, nullptr);
+		obs_data_release(md);
+		obs_source_filter_add(ss, modes);
+		obs_data_t *sd = obs_data_create();
+		obs_data_set_int(sd, "which", 1);
+		list(sd, "hidden", {"FE Layout Game", "FE Top", "FE Mid", "FE Bottom"});
+		obs_source_t *standby = obs_source_create("stagekit_scene_standby", "FE Standby", sd, nullptr);
+		obs_data_release(sd);
+		obs_source_filter_add(ss, standby);
+		obs_data_t *d = obs_data_create();
+		list(d, "entries", {"FE Layout Game", "FE Top", "FE Mid", "FE Bottom", "FE Camera", "FE Chat Group"});
+		for (Entry e : {Entry{"FE Layout Game", true, 0}, Entry{"FE Top", true, 6}, Entry{"FE Mid", true, 0},
+				Entry{"FE Bottom", false, 8}, Entry{"FE Camera", false, 0}, Entry{"FE Chat Group", false, 0}}) {
+			const std::string prefix = std::string("fit|") + e.name + "|";
+			look(d, prefix, e);
+			obs_data_set_double(d, (prefix + "margin").c_str(), 30);
+		}
+		obs_source_t *fit = obs_source_create("stagekit_scene_fit", "FE Layout Fit", d, nullptr);
+		obs_data_release(d);
+		obs_source_set_enabled(fit, false);
+		obs_source_filter_add(ss, fit);
+		obs_set_output_source(0, ss);
+		frames(ss, 50);
+		CHECK(!obs_sceneitem_visible(chat) && !obs_sceneitem_visible(cam), "Scene Modes hides the other layout");
+		place(game_it, 40, 65, 215, 150);
+		place(top_it, 490 - 10.0 * 2 / 3, 20, 200.0 * 2 / 3, 100);
+		place(mid_it, 490, 140, 120, 80);
+		place(low_it, 490 - 10.0 * 2 / 3, 240, 200.0 * 2 / 3, 100);
+		frames(ss, 20);
+		calldata_t cd = {};
+		calldata_set_string(&cd, "scene", "FE Layout");
+		proc_handler_call(obs_get_proc_handler(), "stagekit_create_dock", &cd);
+		auto *dock = static_cast<QWidget *>(calldata_ptr(&cd, "widget"));
+		calldata_free(&cd);
+		auto *button = dock ? dock->findChild<QPushButton *>("arrange_fit_space") : nullptr;
+		CHECK(button, "the layout dock has Fit to space");
+		if (button) {
+			dock->findChild<QSpinBox *>("margin")->setValue(3);
+			dock->findChild<QCheckBox *>("placeVisible")->setChecked(false);
+			dock->findChild<QCheckBox *>("arrangeEveryScene")->setChecked(false);
+			std::vector<obs_sceneitem_t *> items{game_it, top_it, mid_it, low_it};
+			for (size_t i = 0; i < items.size(); i++) {
+				for (auto *it : items)
+					obs_sceneitem_select(it, it == items[i]);
+				const auto was = shows_all(ss);
+				button->click();
+				frames(ss, 45);
+				QCoreApplication::processEvents();
+				const auto now = shows_all(ss);
+				for (size_t j = 0; j < items.size(); j++) {
+					if (i != j)
+						CHECK(worst_of({was[j]}, {now[j]}) <= 1, "dock press %zu leaves image %zu alone", i, j);
+				}
+				CHECK(now[i].any && now[i].w >= was[i].w - 1 && now[i].h >= was[i].h - 1,
+				      "dock press %zu keeps or grows the selected image", i);
+			}
+		}
+		delete dock;
+		const auto hand = shows_all(ss);
+		CHECK(hand[0].any && std::fabs(hand[0].x - 30) <= 1 && std::fabs(hand[0].y - 30) <= 1 &&
+			      std::fabs(hand[0].w - 430) <= 1 && std::fabs(hand[0].h - 300) <= 1,
+		      "the game fills the left area with 30 px gaps (%.0f,%.0f %.0fx%.0f)",
+		      hand[0].x, hand[0].y, hand[0].w, hand[0].h);
+		obs_source_set_enabled(fit, true);
+		frames(ss, 90);
+		CHECK(worst_of(hand, shows_all(ss)) <= 1, "enabling Scene Fit preserves the filled 30 px layout");
+		obs_source_set_enabled(fit, false);
+		frames(ss, 10);
+		place(game_it, 40, 65, 215, 150);
+		obs_source_set_enabled(fit, true);
+		frames(ss, 100);
+		CHECK(worst_of(hand, shows_all(ss)) <= 1, "an undersized Resize-on game fills the original space");
+
+		// Remove Standby before simulating signal loss so the source really
+		// reports 0x0 instead of displaying its standby image.
+		obs_source_filter_remove(ss, standby);
+		obs_source_release(standby);
+		frames(ss, 30);
+		auto input = [&](int w, int h, int mx, int my) {
+			obs_data_t *change = obs_data_create();
+			obs_data_set_int(change, "width", w);
+			obs_data_set_int(change, "height", h);
+			obs_data_set_int(change, "margin_x", mx);
+			obs_data_set_int(change, "margin_y", my);
+			obs_source_update(bottom, change);
+			obs_data_release(change);
+			frames(ss, 50);
+		};
+		for (int w : {960, 480}) {
+			input(w, w * 2 / 3, w / 20, w / 30);
+			const Rect seen = shows_all(ss)[3];
+			CHECK(seen.any && std::fabs(seen.w - 120) <= 1 && std::fabs(seen.h - 80) <= 1,
+			      "the lower handheld keeps 120x80 at input width %d (%.0fx%.0f)", w, seen.w, seen.h);
+		}
+		vec2 pos, bounds, scale;
+		obs_sceneitem_get_pos(low_it, &pos);
+		obs_sceneitem_get_bounds(low_it, &bounds);
+		obs_sceneitem_get_scale(low_it, &scale);
+		input(0, 0, 0, 0);
+		vec2 p, b, k;
+		obs_sceneitem_get_pos(low_it, &p);
+		obs_sceneitem_get_bounds(low_it, &b);
+		obs_sceneitem_get_scale(low_it, &k);
+		CHECK(obs_source_get_width(bottom) == 0 && obs_source_get_height(bottom) == 0 &&
+			      p.x == pos.x && p.y == pos.y && b.x == bounds.x && b.y == bounds.y &&
+			      k.x == scale.x && k.y == scale.y, "0x0 leaves the handheld transform untouched");
+		input(480, 480, 0, 0);
+		const Rect square_image = shows_all(ss)[3];
+		CHECK(square_image.any && std::fabs(square_image.w - 80) <= 1 && std::fabs(square_image.h - 80) <= 1,
+		      "a square capture fits inside the kept 120x80 image");
+		input(960, 640, 48, 32);
+		CHECK(worst_of({hand[3]}, {shows_all(ss)[3]}) <= 1, "returning to 3:2 restores the kept image");
+		obs_source_filter_remove(ss, fit);
+		obs_source_filter_remove(ss, modes);
+		obs_source_release(fit);
+		obs_source_release(modes);
+		obs_scene_release(scene);
+		obs_source_release(main_game);
+		obs_source_release(empty);
+	}
 	obs_set_output_source(0, before);
 	obs_source_release(before);
 	obs_source_filter_remove(game, shadow);
@@ -9145,7 +9296,7 @@ static void fit_tool_test(uint32_t w, uint32_t h)
 		pump(50);
 		const QString said = status->text();
 		pump(1000);
-		CHECK(off_by(held_of(item), mine) <= 0.5 && said.contains("its own fit filter sizes FT Small"),
+		CHECK(off_by(held_of(item), mine) <= 0.5 && said.contains("Left to FT Own Fit: it resizes to fill its space"),
 		      "an item its own Fit to Space resizes is left to it: \"%s\"", said.toUtf8().constData());
 		obs_source_filter_remove(scene_src, own);
 		obs_source_release(own);
@@ -17474,10 +17625,10 @@ int main(int argc, char **argv)
 				obs_source_t *loaded = load(false);
 				wait(1500);
 				obs_data_t *now = obs_source_get_settings(loaded);
-				CHECK(is(width(), 100) && std::fabs(obs_data_get_double(now, "keep_k") - 1.0) < 0.001 &&
+				CHECK(is(width(), 100) && std::fabs(obs_data_get_double(now, "keep_w") - 100.0) < 0.001 &&
 					      std::string(obs_data_get_string(now, "keep_item")) == "Restart Box",
 				      "loaded with 'Resize it to fit' unticked, the item keeps the size it was saved at, not the one from before the filter, and that size is saved (%.0f wide, saved %.3f)",
-				      width(), obs_data_get_double(now, "keep_k"));
+				      width(), obs_data_get_double(now, "keep_w"));
 				obs_data_release(now);
 				obs_source_filter_remove(obs_scene_get_source(rs), loaded);
 				obs_source_release(loaded);
@@ -26612,7 +26763,7 @@ int main(int argc, char **argv)
 		{
 			obs_data_t *own = obs_source_get_settings(sf);
 			CHECK(obs_data_get_bool(own, "fit|SF Cam|have_anchor") &&
-				      std::fabs(obs_data_get_double(own, "fit|SF Chat|keep_k") - 1.0) < 0.001 &&
+				      std::fabs(obs_data_get_double(own, "fit|SF Chat|keep_w") - b_chat.w) < 0.5 &&
 				      !obs_data_has_user_value(own, "have_anchor"),
 			      "each entry keeps what it writes down under its own name (anchor, kept size)");
 			obs_data_release(own);
@@ -26827,7 +26978,7 @@ int main(int argc, char **argv)
 		{
 			obs_data_t *own = obs_source_get_settings(taker);
 			CHECK(all_off && obs_data_get_bool(own, "fit|SF Cam|have_anchor") &&
-				      obs_data_get_double(own, "fit|SF Chat|keep_k") > 0.0,
+				      obs_data_get_double(own, "fit|SF Chat|keep_w") > 0.0,
 			      "the filters are switched off and the entries carry their anchors and kept sizes");
 			obs_data_release(own);
 		}
