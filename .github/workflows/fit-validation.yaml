@@ -1,0 +1,60 @@
+name: Fit regression validation
+on:
+  push:
+    branches: [fix/scene-fit-visible-layout]
+permissions:
+  contents: read
+concurrency:
+  group: stagekit-visible-fit-validation
+  cancel-in-progress: true
+jobs:
+  headless:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: 3
+      QT_QPA_PLATFORM: offscreen
+      LIBGL_ALWAYS_SOFTWARE: 1
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install test tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends obs-studio libobs-dev qt6-base-dev xvfb xauth python3-pil ninja-build libgl1-mesa-dri
+          python3 -m venv /tmp/stagekit-format
+          /tmp/stagekit-format/bin/pip install clang-format==19.1.7 gersemi
+      - name: Check formatting
+        run: |
+          /tmp/stagekit-format/bin/clang-format -i $(git ls-files 'src/*.cpp' 'src/*.hpp' 'tests/*.cpp')
+          git diff > /tmp/stagekit-format.patch
+          git diff --stat
+          /tmp/stagekit-format/bin/gersemi --check CMakeLists.txt tests/CMakeLists.txt
+          bash scripts/check-root.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stagekit-format
+          path: /tmp/stagekit-format.patch
+      - name: Build tests
+        run: |
+          cmake -S . -B build-tests -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DSTAGEKIT_BUILD_TESTS=ON -DCMAKE_COMPILE_WARNING_AS_ERROR=ON
+          cmake --build build-tests
+      - name: Run fit gates
+        run: |
+          out=build-tests/out
+          mkdir -p "$out"
+          python3 tests/make-test-image.py "$out"
+          failed=0
+          for gate in FIT_TOOL FIT_ENABLE; do
+            env STAGEKIT_TEST_ONLY_$gate=1 xvfb-run -a -s "-screen 0 1280x720x24" build-tests/tests/stagekit-ambient-test build-tests/stagekit.so data "$out/test-art.png" "$out/test-texture.png" "$out/test-game.png" "$out" "$out/test-title.png" "$out" "$out/test-pillarbox.png" "$out/test-black.png" "$out/test-dark-game.png" > "$out/$gate.log" 2>&1 || failed=1
+            grep -E '^  |FAILED|ALL PASSED' "$out/$gate.log" || true
+          done
+          exit "$failed"
+      - name: Full suite
+        run: bash tests/run-tests.sh > /tmp/stagekit-full.log 2>&1 || { tail -100 /tmp/stagekit-full.log; exit 1; }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: stagekit-test-logs
+          path: |
+            build-tests/out/*.log
+            /tmp/stagekit-full.log

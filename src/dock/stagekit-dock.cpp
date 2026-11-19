@@ -1604,6 +1604,8 @@ private:
 				list << QString::fromStdString(name);
 			return list.join(", ");
 		};
+		if (out.fit.busy)
+			text += " " + tr_text("Arrange.FitSpace.Busy");
 		if (!out.fit.gave_way_to.empty())
 			text += " " + tr_text(out.fit.refused > 0 && out.fit.shrunk == 0 ? "Arrange.FitSpace.Left"
 											 : "Arrange.FitSpace.Smaller")

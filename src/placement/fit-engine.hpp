@@ -53,7 +53,8 @@ struct FitSettings {
 	// owner has the same source in scenes where it belongs elsewhere.)
 	std::vector<std::string> share_scenes;
 	std::string orig_item;         // the item whose size was noted before the filter first touched it
-	double orig_k = 0;             // how large it was drawn then, as a scale of its source
+	double orig_k = 0; // legacy collection, converted when the source has an image
+	double orig_w = 0, orig_h = 0; // original image size in scene pixels
 	bool visible_pixels = true;    // other items are measured by what they draw, not their boxes
 	bool no_shadows = true;        // and shadows, glows and outlines do not count, its own included
 	std::vector<std::string> skip; // items that are never in the way
@@ -230,7 +231,7 @@ Box claim_box(const Box &goal, const Box &room, const Box &within, double margin
 	      bool *lean_y = nullptr);
 // The same from a fit's inputs (`out`: what `space_from` gives for them,
 // worked out when not given).
-Box claim_from(const SpaceInputs &in, const SpaceOut *out = nullptr);
+Box claim_from(const SpaceInputs &in, const SpaceOut *out = nullptr, bool *lean_y = nullptr);
 // Every fit of the free space in a scene whose item is there: the item it
 // fits (its id, its source's name), whether that item shows, and, once the
 // fit has worked its space out (`worked`), that space (`space`: the whole
@@ -249,6 +250,8 @@ struct HeldSpace {
 	SpaceInputs in;
 };
 std::vector<HeldSpace> held_spaces(obs_source_t *scene);
+// Prefer an enabled owner when two filters name the same source.
+bool fit_settings_for(obs_source_t *scene, const char *name, FitSettings &settings, std::string &resizing_filter);
 // For the tests: `stagekit_test_fit_predicts`, whether what `held_spaces`
 // says of each fit gives, worked out again, the claim that fit makes.
 void fit_engine_add_test_calls();
@@ -308,7 +311,7 @@ public:
 	// keeping its size), not by where it is going, and one placed by a fit that outranks `mine` is firm.
 	void obstacles(obs_source_t *scene, obs_sceneitem_t *self, const std::vector<std::string> &skip,
 		       bool keep_skipped, const void *asking, const Measure &how, std::vector<Obstacle> &out,
-		       const std::vector<int64_t> *twins_of = nullptr, const Rank *mine = nullptr);
+		       const Rank *mine = nullptr);
 	// At rest: one glance a tick at the gathered items and `extra`, and one
 	// proper look at an item a glance shows to have changed.
 	void at_rest(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &extra, const void *glance_owner,
@@ -517,7 +520,7 @@ private:
 	// Whether more width or height would grow the resized picture, from the
 	// space it was given before that was cut to the picture.
 	bool space_grows_x_ = true, space_grows_y_ = true;
-	double keep_k_ = 0.0; // "Resize it to fit" off: how large the picture is kept, as a scale
+	double keep_w_ = 0.0, keep_h_ = 0.0; // the reference image size, in scene pixels
 	// What shows of the fitted item itself: the part of its picture cut off
 	// on the left, top, right and bottom, when it was last looked at.
 	double own_cut_[4] = {0.0, 0.0, 0.0, 0.0};
@@ -530,7 +533,9 @@ private:
 	// have been read yet (the first time is OBS loading the filter).
 	bool first_update_ = true;
 	std::string saved_keep_item_;
-	double saved_keep_k_ = 0.0;
+	double saved_keep_k_ = 0.0; // legacy, used only until both pixel dimensions are saved
+	double saved_keep_w_ = 0.0, saved_keep_h_ = 0.0;
+	bool load_keep_ = false;
 	bool back_to_original_ = false, resized_by_hand_ = false;
 	bool placed_by_tool_ = false;
 	bool placed_ = false; // under mutex_: the item was just placed on purpose by a tool
@@ -561,6 +566,7 @@ private:
 	uint32_t shared_toward_ = 0;
 	// A hidden item is left alone; shown again, it first says where it is.
 	static constexpr double kComingBack = 0.1;
+	std::atomic<uint64_t> hidden_since_{0};
 	bool hidden_ = false, coming_back_ = false, have_claim_ = false;
 	// What the goal was last worked out from, for `held_spaces` (under
 	// held_mutex_: asked from the window's thread). Kept while the item is
@@ -578,6 +584,12 @@ public:
 	// What `held_spaces` gives of this engine: false when it has worked
 	// nothing out (and then `name` is the item it is given, if any).
 	bool held(HeldSpace &out);
+	bool recently_hidden() const;
+	FitSettings settings()
+	{
+		std::lock_guard lock(mutex_);
+		return settings_;
+	}
 	// In the free space? (`resizes`: whether it resizes its item.)
 	bool in_free_space(bool *resizes = nullptr)
 	{

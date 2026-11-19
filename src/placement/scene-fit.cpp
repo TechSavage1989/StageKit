@@ -115,8 +115,12 @@ const FitKey kFitKeys[] = {
 	{"anchor_y", Kind::Double, true},
 	{"orig_item", Kind::String, true},
 	{"orig_k", Kind::Double, true},
+	{"orig_w", Kind::Double, true},
+	{"orig_h", Kind::Double, true},
 	{"keep_item", Kind::String, true},
 	{"keep_k", Kind::Double, true},
+	{"keep_w", Kind::Double, true},
+	{"keep_h", Kind::Double, true},
 	{"home_item", Kind::String, true},
 	{"home_x", Kind::Double, true},
 	{"home_y", Kind::Double, true},
@@ -638,10 +642,7 @@ void SceneFit::tick(float seconds)
 		if (items[i])
 			obs_sceneitem_addref(items[i]);
 	}
-	std::vector<int64_t> ids;
-	for (obs_sceneitem_t *item : items)
-		if (item)
-			ids.push_back(obs_sceneitem_get_id(item));
+
 
 	// A: everything about each item before its space is looked for. A
 	// hidden one, one coming back and one with no picture say where their
@@ -715,7 +716,7 @@ void SceneFit::tick(float seconds)
 				FitEngine &engine = *entries[i]->engine;
 				Prep &p = preps[i];
 				scan_of(p.how).obstacles(parent_, p.item, p.s.skip, p.s.skip_rule, &engine, p.how,
-							 in_way, &ids, &engine.rank());
+							 in_way, &engine.rank());
 				bool rest = false;
 				engine.observe(in_way, engine.arriving(), pass == 0 ? seconds : 0.0f, rest,
 					       &scan_of(p.how).visible_ids());

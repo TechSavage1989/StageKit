@@ -166,6 +166,7 @@ Offset slide_offset(obs_source_t *scene, obs_sceneitem_t *item, int dx, int dy, 
 // it, and is checked there. One in a group a fit looks after is left as it
 // is. `note`, when given, says what was held back and why.
 struct FitToSpaceNote {
+	bool busy = false;
 	int shrunk = 0, refused = 0;          // items kept smaller, items left as they were
 	std::vector<std::string> gave_way_to; // the fitted sources they gave way to
 	std::vector<std::string> own_fit;     // items left to their own fit
