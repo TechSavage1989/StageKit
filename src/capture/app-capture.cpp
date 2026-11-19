@@ -544,6 +544,43 @@ public:
 		return current_;
 	}
 
+	// The window whose image is drawn now (see app_capture_shown_window).
+	bool shown_window(AppCaptureShown &out)
+	{
+		std::lock_guard lock(mutex_);
+		out = AppCaptureShown();
+		if ((current_.empty() || unsafe_) && phase_ == Phase::Lost && kept_w_ && kept_h_ &&
+		    (!shown_exe_.empty() || !shown_title_.empty())) {
+			// The window shown has closed and its last image is still held
+			// (`kLostFor`) before the Standby Image comes in: that window is
+			// what is on screen, so its shape stays on it until then.
+			out.any = true;
+			out.executable = shown_exe_;
+			out.title = shown_title_;
+			return true;
+		}
+		if (current_.empty())
+			// Nothing chosen. With the capture's own image passed on as it
+			// is (nothing listed, not looked yet, or not on Windows) the
+			// capture says what it shows; otherwise nothing is shown.
+			return !(own_ok_ && !unsafe_ && !bridge_);
+		if (unsafe_)
+			return true; // its window has closed and nothing chosen has taken its place
+		out.any = true;
+		if (shown_entry_ == current_) {
+			out.executable = shown_exe_;
+			out.title = shown_title_;
+		} else if (is_pinned(current_)) {
+			out.executable = pinned_program(current_);
+			out.title = pinned_title(current_);
+		} else if (current_.size() > 4 && lowered(current_.substr(current_.size() - 4)) == ".exe") {
+			out.executable = current_;
+		} else {
+			out.title = current_;
+		}
+		return true;
+	}
+
 	// The app held by hand, if any.
 	bool lists_something()
 	{
@@ -797,7 +834,11 @@ private:
 	// Following the apps (the tick, under the lock where another thread reads it).
 	double timer_ = 0.0;
 	bool started_ = false;
-	std::string current_;             // the entry being captured, as far as this filter knows
+	std::string current_; // the entry being captured, as far as this filter knows
+	// The window chosen for it: its entry, program and title (kept up to
+	// date while it is open). What Auto Frame and others go by: the capture
+	// itself may be aimed elsewhere (`own_ok_`).
+	std::string shown_entry_, shown_exe_, shown_title_;
 	std::string held_;                // the entry switched to by hand, while it is held
 	std::vector<std::string> recent_; // entries, the one used last first
 	std::vector<std::string> was_open_;
@@ -993,6 +1034,9 @@ void AppCapture::aim(obs_source_t *parent, const OpenWindow &window, const std::
 		}
 	} release{old_bridge, &lock};
 	current_ = entry;
+	shown_entry_ = entry;
+	shown_exe_ = window.executable;
+	shown_title_ = window.title;
 	cut_at_once_locked(entry, window.game_area);
 	if (remember) {
 		recent_.erase(std::remove(recent_.begin(), recent_.end(), entry), recent_.end());
@@ -1194,8 +1238,14 @@ void AppCapture::follow(obs_source_t *parent)
 	{
 		std::unique_lock lock(mutex_);
 		const uint64_t shown = shown_handle_;
-		if (shown && std::none_of(windows.begin(), windows.end(),
-					  [&](const OpenWindow &w) { return w.handle == shown; })) {
+		const auto open = std::find_if(windows.begin(), windows.end(),
+					       [&](const OpenWindow &w) { return shown && w.handle == shown; });
+		if (open != windows.end() && shown_entry_ == current_) {
+			// Still open: its title as it is now (a browser's goes with its tab).
+			shown_exe_ = open->executable;
+			shown_title_ = open->title;
+		}
+		if (shown && open == windows.end()) {
 			shown_handle_ = 0;
 			unsafe_ = true;
 			own_ok_ = false;
@@ -1561,8 +1611,13 @@ void AppCapture::follow(obs_source_t *parent)
 			std::lock_guard lock(mutex_);
 			current_ = current = apps[(size_t)now];
 			own_ok_ = true;
-			// (Which window that is, for noticing when it closes.)
-			shown_handle_ = slots[(size_t)now].window ? slots[(size_t)now].window->handle : 0;
+			// (Which window that is, for noticing when it closes, and for
+			// what goes by the window shown.)
+			const OpenWindow *window = slots[(size_t)now].window;
+			shown_handle_ = window ? window->handle : 0;
+			shown_entry_ = current_;
+			shown_exe_ = window ? window->executable : aimed.executable;
+			shown_title_ = window ? window->title : aimed.title;
 		}
 	}
 	int target = -1;
@@ -1742,6 +1797,16 @@ void AppCapture::tick(float seconds)
 		phase_ = Phase::Idle;
 		started_ = false;
 		own_ok_ = true;
+		// What it showed goes with the capture it drew from: the capture's
+		// own image is passed on now, and the first look once it is on
+		// again goes by where the capture itself is aimed, or aims afresh.
+		// (Kept, a window drawn by way of a ready capture was still named
+		// over the capture's own window: Auto Frame took its shape.)
+		current_.clear();
+		shown_handle_ = 0;
+		shown_entry_.clear();
+		shown_exe_.clear();
+		shown_title_.clear();
 		held_.clear();
 		cmd_step_ = cmd_back_ = false;
 		const bool hide = cmd_hide_;
@@ -2252,6 +2317,31 @@ bool app_capture_change(obs_source_t *capture, AppCaptureChange &change)
 				a->found = self->change(*a->out);
 		},
 		&ask);
+	return ask.found;
+}
+
+bool app_capture_shown_window(obs_source_t *capture, AppCaptureShown &shown)
+{
+	struct Ask {
+		AppCaptureShown *out;
+		bool found;
+	} ask{&shown, false};
+	shown = AppCaptureShown();
+	if (!capture)
+		return false;
+	obs_source_enum_filters(
+		capture,
+		[](obs_source_t *, obs_source_t *filter, void *param) {
+			auto *a = static_cast<Ask *>(param);
+			const char *id = obs_source_get_unversioned_id(filter);
+			if (a->found || !id || strcmp(id, kAppCaptureId) != 0 || !obs_source_enabled(filter))
+				return;
+			if (auto *self = static_cast<AppCapture *>(obs_obj_get_data(filter)))
+				a->found = self->shown_window(*a->out);
+		},
+		&ask);
+	if (!ask.found)
+		shown = AppCaptureShown();
 	return ask.found;
 }
 

@@ -298,7 +298,8 @@ frame's width and height once. From then on the source always has that size, and
 emulator outputs is fitted inside it, gliding to its new fit when the resolution changes.
 
 The top line of the controls says which program is being captured and which image shape applies.
-The settings are in five numbered groups:
+On a Window Capture with an Automatic Window Switcher, that is the window the switcher shows, not
+the one the capture was last aimed at. The settings are in five numbered groups:
 
 | Group | What is in it |
 | --- | --- |
@@ -552,9 +553,22 @@ The filter's controls show what it is capturing now.
   Image after it comes in with its own transition, or, with *No game: Standby Image*, Auto
   Capture's. The program's next game window is picked up as usual. A window that is only made
   again (going full-screen) or minimised, or one of several closing (a GBA window), is not let go
-  of.
+  of. The same happens when the menu is minimised as the game's window closes, and the menu is
+  not taken for a game when it is brought back.
+- **It stays on a game while its image comes back.** When OBS loses a game's image for a moment
+  (the game goes full-screen or makes its window again, or an emulator starts or stops a game),
+  the capture stays aimed at that game for as long as its program runs, also while none of its
+  windows can be seen, and OBS picks the image up again by itself. Only another game you click
+  into takes over meanwhile. A game whose window is made again as another kind of window is
+  followed at once. OBS's log says `kept on <program> while its picture comes back`.
 - With no game open, the Game Capture goes back to *Capture any fullscreen application* (while an
-  emulator whose game window closed is still open, it stays aimed at nothing instead).
+  emulator whose game window closed is still open, it stays aimed at nothing instead). A program
+  that has just closed is waited for about three seconds first, in case it is only making its
+  window again; only then does another game that is open take over (one you click into takes
+  over at once).
+- **Switching Auto Capture on again hands the capture back.** After *Capture Active Window* (or
+  anything else) has aimed the capture by hand and Auto Capture was switched off, switching it
+  on again aims the capture afresh at once.
 
 A game is recognised by what the program has loaded: a graphics engine together with something only
 games have (controller support, a game store's library, a game engine's player, game audio or video),
@@ -676,6 +690,12 @@ capture for each app.
   cut. *Morph* stretches both images over the gliding frame; the others keep each image's own
   shape inside it.
 - It keeps itself before a Standby Image and an Auto Frame in the capture's filter list.
+- **An Auto Frame after it goes by the window shown.** Its top line names the program of the
+  window on screen, and that program's saved shape (by file name or part of the title) is the one
+  used: a browser shown after Dolphin is not cut to Dolphin's 4:3, and going back to Dolphin brings
+  its 4:3 back. Each switch to another program is a new program for Auto Frame. When the window
+  shown closes, its last image keeps its shape for the moment it is held; while nothing is shown,
+  Auto Frame names no program.
 - Windows only, like the other capture tools.
 
 For a capture per app in one scene, each with its own filters, Automatic Source Switcher below is still
@@ -2014,6 +2034,15 @@ to (the two update choices are kept with the plugin instead). Replacing the plug
   other. OBS's log shows it as `attempting to hook process` followed by `capture stopped` over and
   over, or `vulkan capture freed` many times a second. Emulators such as Ryujinx and Dolphin are
   typical. It can be set for single programs under *Program Settings* instead.
+- **A game takes a few seconds to show after it starts, or after it goes full-screen.** That is
+  OBS's Game Capture hooking it, which can take a few seconds (Vulkan games and emulators more
+  than most), and nothing can be hooked while an emulator is in its menu or a game is still
+  loading. Auto Capture stays aimed at the game meanwhile (once the game has shown an image, the
+  log says `kept on ...` when the image goes). How often
+  OBS tries is the Game Capture's own **Hook Rate**, in its properties: *Slow* (every 4 seconds),
+  *Normal (recommended)* (every 2 seconds), *Fast* (every second) or *Fastest* (five times a
+  second), each twice as long after a try that failed. A faster rate finds the game sooner for a
+  little more of the processor's time.
 - **Items inside a group are missing from a scene filter's item list.** Add the filter to the group
   itself instead.
 <!-- ==== scene-filters:perf (Frame time) ==== -->

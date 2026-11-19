@@ -364,25 +364,66 @@ GameArea find_game_area(HWND window)
 struct Collect {
 	std::vector<Window> windows;
 	std::set<uint64_t> areas; // the windows to look for a game area in
+	// Every program with a top-level window of any kind, shown or not
+	// (lower case), and the processes seen.
+	std::set<std::string> running;
+	std::set<DWORD> processes;
 };
+
+// A process's program file name, by process id, for the programs that are
+// running. Only `list_windows` uses it (under its lock); a process not seen
+// in a look is forgotten, so a name is looked up once while its process
+// lives. (Empty when the process cannot be looked at.)
+std::map<DWORD, std::string> g_program_of;
+
+const std::string &program_of(DWORD process_id)
+{
+	auto it = g_program_of.find(process_id);
+	if (it != g_program_of.end())
+		return it->second;
+	std::string name;
+	if (HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, process_id)) {
+		wchar_t path[MAX_PATH];
+		DWORD path_length = MAX_PATH;
+		if (QueryFullProcessImageNameW(process, 0, path, &path_length)) {
+			const wchar_t *file = path;
+			for (DWORD i = 0; i < path_length; i++)
+				if (path[i] == L'\\' || path[i] == L'/')
+					file = path + i + 1;
+			name = lower(utf8(file, (int)(path + path_length - file)));
+		}
+		CloseHandle(process);
+	}
+	return g_program_of.emplace(process_id, name).first->second;
+}
 
 BOOL CALLBACK collect_window(HWND window, LPARAM param)
 {
 	auto *collect = reinterpret_cast<Collect *>(param);
 	std::vector<Window> *windows = &collect->windows;
+	// A program whose windows are all hidden, minimised or being made again
+	// (an emulator going full-screen, starting or stopping a game) is still
+	// running: Auto Capture stays aimed at it (`running`).
+	DWORD process_id = 0;
+	GetWindowThreadProcessId(window, &process_id);
+	collect->processes.insert(process_id);
+	if (const std::string &program = program_of(process_id); !program.empty())
+		collect->running.insert(program);
 	// Only real, visible, top-level application windows.
 	if (!IsWindowVisible(window) || IsIconic(window) || GetWindow(window, GW_OWNER) != nullptr)
 		return TRUE;
 	if (GetWindowLongPtrW(window, GWL_EXSTYLE) & WS_EX_TOOLWINDOW)
 		return TRUE;
 
+	// (Never GetWindowTextW on one of OBS's own windows: for a window of
+	// this process it asks the window's thread, which may be waiting for
+	// this very look. InternalGetWindowText reads the text as it is kept.)
 	wchar_t title[512];
-	const int title_length = GetWindowTextW(window, title, 512);
+	const int title_length = process_id == GetCurrentProcessId() ? InternalGetWindowText(window, title, 512)
+								     : GetWindowTextW(window, title, 512);
 	if (title_length <= 0)
 		return TRUE;
 
-	DWORD process_id = 0;
-	GetWindowThreadProcessId(window, &process_id);
 	HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, process_id);
 	if (!process)
 		return TRUE;
@@ -424,7 +465,7 @@ BOOL CALLBACK collect_window(HWND window, LPARAM param)
 	return TRUE;
 }
 
-std::vector<Window> list_windows()
+std::vector<Window> list_windows(std::set<std::string> *running = nullptr)
 {
 	// One look at a time: the thread that keeps the list and a properties
 	// window asking for itself share what is remembered about programs.
@@ -433,13 +474,19 @@ std::vector<Window> list_windows()
 	Collect collect;
 	collect.areas = areas_wanted_now();
 	EnumWindows(collect_window, reinterpret_cast<LPARAM>(&collect));
+	for (auto it = g_program_of.begin(); it != g_program_of.end();)
+		it = collect.processes.count(it->first) ? std::next(it) : g_program_of.erase(it);
+	if (running)
+		*running = std::move(collect.running);
 	return std::move(collect.windows);
 }
 
 #else
 
-std::vector<Window> list_windows()
+std::vector<Window> list_windows(std::set<std::string> *running = nullptr)
 {
+	if (running)
+		running->clear();
 	return {};
 }
 
@@ -455,7 +502,9 @@ class WindowWatch {
 public:
 	~WindowWatch() { stop(); }
 
-	std::vector<Window> latest()
+	// The windows, and (asked for) the programs running and which look
+	// that was (`generation`, one more at every look).
+	std::vector<Window> latest(std::set<std::string> *running = nullptr, uint64_t *generation = nullptr)
 	{
 		asked_at_ = os_gettime_ns();
 		std::unique_lock lock(mutex_);
@@ -465,15 +514,25 @@ public:
 			// The first time: one look here and now, so nobody starts
 			// from an empty list, then the thread takes over.
 			lock.unlock();
-			std::vector<Window> first = list_windows();
+			std::set<std::string> names;
+			std::vector<Window> first = list_windows(&names);
 			lock.lock();
 			if (!thread_.joinable() && !stopped_) {
 				windows_ = std::move(first);
+				running_ = std::move(names);
+				generation_++;
 				thread_ = std::thread([this] { run(); });
 			}
 		}
+		if (running)
+			*running = running_;
+		if (generation)
+			*generation = generation_.load();
 		return windows_;
 	}
+
+	// Which look the list is from (for acting at once on a new one).
+	uint64_t generation() const { return generation_.load(); }
 
 	void stop()
 	{
@@ -498,9 +557,12 @@ private:
 			if (os_gettime_ns() - asked_at_.load() > 3000000000ULL)
 				continue; // nobody is asking
 			lock.unlock();
-			std::vector<Window> now = list_windows();
+			std::set<std::string> names;
+			std::vector<Window> now = list_windows(&names);
 			lock.lock();
 			windows_ = std::move(now);
+			running_ = std::move(names);
+			generation_++;
 		}
 	}
 
@@ -508,6 +570,8 @@ private:
 	std::condition_variable wake_;
 	std::thread thread_;
 	std::vector<Window> windows_;
+	std::set<std::string> running_;
+	std::atomic<uint64_t> generation_{0};
 	std::atomic<uint64_t> asked_at_{0};
 	bool stopped_ = false;
 };
@@ -629,6 +693,11 @@ constexpr int kQuickProbes = 12;
 constexpr double kProbeEveryMost = 15.0;
 // (A bound on the titles remembered for one program.)
 constexpr size_t kTriedMost = 64;
+// How long the capture stays aimed at a program that is not seen running
+// at all (no window of any kind), in case it is only making its one window
+// again: only a candidate clicked into takes over meanwhile; after it, an
+// open candidate or the fallback.
+constexpr double kKeepGrace = 3.0;
 
 class AutoCapture {
 public:
@@ -636,8 +705,10 @@ public:
 	{
 		update(settings);
 		// For the tests: stand-in windows, one per line,
-		// "title|class|exe|front|game|id" (the last three may be left
-		// empty; the id stands for the window's handle);
+		// "title|class|exe|front|game|id|hidden" (the last four may be
+		// left empty; the id stands for the window's handle; "hidden" is a
+		// window that is there and cannot be seen, minimised or hidden: its
+		// program is running, and the window is not in the list);
 		// `keep_clock`, when set, leaves the next look where it was.
 		proc_handler_add(
 			obs_source_get_proc_handler(source_), "void set_test_windows(in string windows)",
@@ -645,6 +716,8 @@ public:
 				auto *self = static_cast<AutoCapture *>(data);
 				const char *text = calldata_string(cd, "windows");
 				std::vector<Window> windows;
+				std::set<std::string> running;
+				std::set<uint64_t> unlisted;
 				std::string line;
 				auto flush = [&] {
 					if (line.empty())
@@ -657,14 +730,18 @@ public:
 						else
 							fields.back() += c;
 					}
-					fields.resize(6);
+					fields.resize(7);
 					w.title = fields[0];
 					w.window_class = fields[1];
 					w.executable = fields[2];
 					w.foreground = fields[3] == "front";
 					w.looks_like_game = fields[4] == "game";
 					w.handle = strtoull(fields[5].c_str(), nullptr, 10);
-					windows.push_back(w);
+					running.insert(lower(w.executable));
+					if (fields[6] != "hidden")
+						windows.push_back(w);
+					else if (w.handle)
+						unlisted.insert(w.handle);
 					line.clear();
 				};
 				for (const char *p = text ? text : ""; *p; p++) {
@@ -676,6 +753,8 @@ public:
 				flush();
 				std::lock_guard lock(self->mutex_);
 				self->test_windows_ = windows;
+				self->test_running_ = running;
+				self->test_unlisted_ = unlisted;
 				self->use_test_windows_ = true;
 				// (Looked at at once, unless asked to keep time: every
 				// look moves the filter's clock on a quarter second.)
@@ -691,6 +770,7 @@ public:
 
 	~AutoCapture()
 	{
+		unlisten();
 		vendor_switch_forget(source_);
 		if (hotkey_ != OBS_INVALID_HOTKEY_ID)
 			obs_hotkey_unregister(hotkey_);
@@ -756,31 +836,52 @@ public:
 			}
 			covered_ = hidden_ = false;
 			// (What it watched may be aimed elsewhere by the time it is
-			// switched on again: a capture hooked by hand.)
+			// switched on again: a capture hooked by hand. Switched on, it
+			// aims afresh, as when first added, which is how a capture
+			// hooked by hand is handed back: what it aimed at before is
+			// neither kept nor taken for written.)
 			captured_ = Captured{};
+			aimed_once_ = false;
+			applied_key_.clear();
 			return;
 		}
 		Mode mode;
 		std::vector<std::string> always, never;
 		std::vector<Window> windows;
+		// The programs running, by any window they have (`collect_window`).
+		std::set<std::string> running;
+		// (In the tests: the stand-in windows that are there and not listed.)
+		std::set<uint64_t> unlisted;
 		bool fallback, use_test;
+		double step;
 		{
 			std::lock_guard lock(mutex_);
 			timer_ -= seconds;
-			if (timer_ > 0.0)
+			since_s_ += seconds;
+			// A new look at the windows is acted on at once, so a program
+			// that comes back is followed within one look; the timer is
+			// for when no new look comes. (The tests' stand-in windows
+			// are looked at by the quarter second, as always.)
+			const bool fresh = !use_test_windows_ && g_window_watch.generation() != seen_look_;
+			if (timer_ > 0.0 && !fresh)
 				return;
-			timer_ = 0.25;
-			clock_s_ += 0.25;
+			step = use_test_windows_ ? 0.25 : std::clamp(since_s_, 0.0, 1.0);
+			since_s_ = 0.0;
+			timer_ = use_test_windows_ ? 0.25 : 0.5;
+			clock_s_ += step;
 			mode = mode_;
 			always = always_;
 			never = never_;
 			fallback = fallback_fullscreen_;
 			use_test = use_test_windows_;
-			if (use_test)
+			if (use_test) {
 				windows = test_windows_;
+				running = test_running_;
+				unlisted = test_unlisted_;
+			}
 		}
 		if (!use_test)
-			windows = g_window_watch.latest();
+			windows = g_window_watch.latest(&running, &seen_look_);
 
 		auto key_of = [](const Window &w) {
 			return w.window_class + ":" + w.executable;
@@ -790,15 +891,35 @@ public:
 		const bool game_capture = parent_id && strcmp(parent_id, "game_capture") == 0;
 		// The game's own window closing while its program stays open.
 		if (game_capture)
-			watch_captured(windows, use_test);
+			watch_captured(windows, running, unlisted, use_test);
+
+		// The program the capture is aimed at now (lower case; none while
+		// it is aimed at no window), and when it was last seen running.
+		const size_t key_colon = applied_key_.rfind(':');
+		const std::string aimed = applied_key_.empty() || applied_key_ == kRestKey ||
+							  key_colon == std::string::npos
+						  ? std::string()
+						  : lower(applied_key_.substr(key_colon + 1));
+		if (aimed != keep_exe_) {
+			keep_exe_ = aimed;
+			keep_seen_s_ = clock_s_;
+			keep_said_ = 0;
+			had_picture_ = false;
+		}
+		const bool aimed_running = !aimed.empty() && running.count(aimed) > 0;
+		if (aimed_running)
+			keep_seen_s_ = clock_s_;
 
 		// 1. A game in front wins.  2. Otherwise stay on the game already
-		// being captured while its window exists.  3. Otherwise any program
-		// from the "always capture" list that is open.
+		// being captured while its window exists (or another window of its
+		// program, or, while its program runs, none to be seen).
+		// 3. Otherwise any program from the "always capture" list that is
+		// open.
 		// A program is only looked into while it is in front. Once it has
 		// been seen to be a game it is remembered, so the next time it is
 		// picked up at once, in a window, in front or not.
 		const Window *in_front = nullptr, *current = nullptr, *listed_open = nullptr, *known_open = nullptr;
+		const Window *same_program = nullptr;
 		bool learned_something = false;
 		// (A program that has closed is no longer being rested from.)
 		// Whether any of a resting program's windows is in front: an
@@ -807,15 +928,16 @@ public:
 		std::set<std::string> rest_in_front;
 		// And whether one of its windows shows a title not tried before.
 		std::set<std::string> rest_retitled;
+		// (Closed is no window of any kind: one whose windows are all
+		// minimised or hidden has not closed.)
 		for (auto it = rest_.begin(); it != rest_.end();) {
-			bool open = false;
+			const bool open = running.count(it->first) > 0;
 			const Tried *tried = nullptr;
 			if (auto t = tried_.find(it->first); t != tried_.end())
 				tried = &t->second;
 			for (const Window &w : windows) {
 				if (lower(w.executable) != it->first)
 					continue;
-				open = true;
 				if (w.foreground)
 					rest_in_front.insert(it->first);
 				if (!tried || !tried->shapes.count(title_shape(w.title)))
@@ -823,14 +945,12 @@ public:
 			}
 			it = open ? std::next(it) : rest_.erase(it);
 		}
-		for (auto it = tried_.begin(); it != tried_.end();) {
-			const bool open = std::any_of(windows.begin(), windows.end(), [&](const Window &w) {
-				return lower(w.executable) == it->first;
-			});
-			it = open ? std::next(it) : tried_.erase(it);
-		}
+		for (auto it = tried_.begin(); it != tried_.end();)
+			it = running.count(it->first) ? std::next(it) : tried_.erase(it);
+		bool aimed_listed = false; // (a window of it in the list, of any kind)
 		for (const Window &w : windows) {
 			const std::string exe = lower(w.executable);
+			aimed_listed = aimed_listed || (!aimed.empty() && exe == aimed);
 			// Either list can name a program or part of a window's title:
 			// two builds of one program share a file name.
 			const std::string title = lower(w.title);
@@ -908,12 +1028,57 @@ public:
 			if ((!spent || captured_.gone_since >= 0.0) && !applied_key_.empty() &&
 			    key_of(w) == applied_key_)
 				current = &w;
+			// (Or another window of the program aimed at: its window made
+			// again under another class, aimed at in this very tick. The one
+			// in front first.)
+			if (!aimed.empty() && exe == aimed && candidate && (!same_program || w.foreground))
+				same_program = &w;
 			if (listed && !spent && !listed_open)
 				listed_open = &w;
 			if (known && !spent && !known_open)
 				known_open = &w;
 		}
-		const Window *chosen = in_front ? in_front : current ? current : listed_open ? listed_open : known_open;
+		// The program aimed at shows no window that can be seen (all
+		// minimised, hidden or being made again: an emulator going
+		// full-screen, starting or stopping a game), and is still running,
+		// or was a moment ago: the capture stays aimed at it, and OBS hooks
+		// it again by itself when it draws. Aimed elsewhere ("any
+		// full-screen application"), OBS starts the capture again twice and
+		// the game waits for both. The owner (2026-11-19): "auto capture
+		// still takes a while to grab some windowed games". Only another
+		// candidate clicked into takes over while it runs, and for
+		// `kKeepGrace` after it was last seen running (a program making its
+		// one window again has none for a moment); after that an open
+		// candidate does, or the usual fallback. A game whose window closed
+		// with its program still showing one, or still running with none to
+		// be seen (`spent_`), is let go of as before.
+		Window kept_window;
+		const Window *kept = nullptr;
+		bool kept_running = false;
+		if (game_capture && !aimed.empty() && !aimed_listed && !spent_.count(aimed) &&
+		    (aimed_running || clock_s_ - keep_seen_s_ < kKeepGrace - 1e-6)) {
+			obs_data_t *settings = obs_source_get_settings(parent_);
+			const std::string title = window_title_of(obs_data_get_string(settings, "window"));
+			obs_data_release(settings);
+			const std::string t = lower(title);
+			const bool listed = matches(aimed, always) || matches(t, always);
+			const bool excluded = !listed && (matches(aimed, never) || matches(t, never) ||
+							  built_in_never(aimed) || app_capture_lists(aimed, t));
+			const bool known = mode == Mode::AnyGame && known_games_.count(aimed) > 0;
+			if (!excluded && (listed || known)) {
+				kept_window.title = title;
+				kept_window.window_class = applied_key_.substr(0, key_colon);
+				kept_window.executable = applied_key_.substr(key_colon + 1);
+				kept = &kept_window;
+				kept_running = aimed_running;
+			}
+		}
+		const Window *chosen = in_front       ? in_front
+				       : current      ? current
+				       : same_program ? same_program
+				       : kept         ? kept
+				       : listed_open  ? listed_open
+						      : known_open;
 		// Every title the chosen program shows while the capture is aimed at
 		// it has been tried: none of them ends a rest later.
 		if (chosen && game_capture) {
@@ -949,7 +1114,30 @@ public:
 			obs_data_release(own);
 		}
 
-		standby_step(chosen != nullptr && !probing);
+		// (Kept on its program is a game being there: the Standby Picture
+		// stands in by itself while the capture has no picture.)
+		standby_step(chosen != nullptr && !probing, step);
+
+		// The log says when the capture stays aimed at a program whose
+		// picture has gone (OBS freed its hook: the game made its window or
+		// its drawing again), once each time, and once more when no window
+		// of the program can be seen.
+		if (game_capture && chosen && !probing && !aimed.empty() && lower(chosen->executable) == aimed) {
+			if (obs_source_get_base_width(parent_) > 0) {
+				had_picture_ = true;
+				keep_said_ = 0;
+			} else if (const int said = chosen == kept ? 2 : had_picture_ ? 1 : 0; said > keep_said_) {
+				if (said == 2)
+					obs_log(LOG_INFO,
+						"Auto Capture: '%s' kept on %s while its picture comes back (no window of it can be seen; %s)",
+						obs_source_get_name(parent_), chosen->executable.c_str(),
+						kept_running ? "it is still running" : "it was running a moment ago");
+				else
+					obs_log(LOG_INFO, "Auto Capture: '%s' kept on %s while its picture comes back",
+						obs_source_get_name(parent_), chosen->executable.c_str());
+				keep_said_ = said;
+			}
+		}
 
 		// Emulators put the frame rate in their title, so what counts as
 		// "a different window" is the program and window class only.
@@ -1005,7 +1193,7 @@ public:
 					rest_.erase(rest_it); // it can be hooked after all
 					rest_said_ = false;
 				}
-			} else if ((!use_test || give_up_in_tests_) && (unhooked_s_ += 0.25) >= patience - 1e-6) {
+			} else if ((!use_test || give_up_in_tests_) && (unhooked_s_ += step) >= patience - 1e-6) {
 				unhooked_s_ = 0.0;
 				Rest &rest = rest_[exe];
 				if (look) {
@@ -1036,6 +1224,21 @@ public:
 			key = kRestKey;
 			std::lock_guard lock(mutex_);
 			current_.clear();
+		}
+		// Another window of the program aimed at (made again under another
+		// class, or another of its windows in front) while the capture has
+		// its picture: OBS's hook is in the program, not the window, and
+		// writing the capture's settings would start the capture again,
+		// the picture gone for a moment. Taken as it is. (With no picture
+		// it is aimed at in this very tick, below.)
+		if (aimed_once_ && chosen && game_capture && !aimed.empty() && lower(chosen->executable) == aimed &&
+		    obs_source_get_base_width(parent_) > 0) {
+			obs_log(LOG_INFO,
+				"Auto Capture: '%s' stays on %s, whose window changed: its picture is there, so the capture is not started again",
+				obs_source_get_name(parent_), chosen->executable.c_str());
+			applied_key_ = key;
+			unhooked_s_ = 0.0;
+			return;
 		}
 		aimed_once_ = true;
 		unhooked_s_ = 0.0;
@@ -1122,6 +1325,7 @@ public:
 		applied_key_.clear();
 		captured_ = Captured{};
 		spent_.clear();
+		listen(parent);
 	}
 	void detach()
 	{
@@ -1134,6 +1338,7 @@ public:
 		if (holding_ && parent_)
 			obs_source_dec_showing(parent_);
 		holding_ = false;
+		unlisten();
 		parent_ = nullptr;
 	}
 	obs_source_t *source() const { return source_; }
@@ -1194,6 +1399,33 @@ public:
 	}
 
 private:
+	// OBS's Game Capture says when it starts capturing ("hooked") and stops
+	// ("unhooked"), counted in `hook_events_`: a picture that went and came
+	// back between two looks of the tick (OBS can hook a game again in a
+	// tenth of a second) is a new one, not the last frame of a game whose
+	// window closed. Listened to only while on a Game Capture.
+	static void on_hook_event(void *data, calldata_t *) { static_cast<AutoCapture *>(data)->hook_events_++; }
+	void listen(obs_source_t *parent)
+	{
+		unlisten();
+		const char *id = parent ? obs_source_get_unversioned_id(parent) : nullptr;
+		if (!id || strcmp(id, "game_capture") != 0)
+			return;
+		signal_handler_t *sh = obs_source_get_signal_handler(parent);
+		signal_handler_connect(sh, "hooked", on_hook_event, this);
+		signal_handler_connect(sh, "unhooked", on_hook_event, this);
+		listened_ = parent;
+	}
+	void unlisten()
+	{
+		if (!listened_)
+			return;
+		signal_handler_t *sh = obs_source_get_signal_handler(listened_);
+		signal_handler_disconnect(sh, "hooked", on_hook_event, this);
+		signal_handler_disconnect(sh, "unhooked", on_hook_event, this);
+		listened_ = nullptr;
+	}
+
 	// Whether a window was open when the game's window of its program
 	// closed (and is no game to aim at while the program stays open).
 	bool is_spent(const std::string &exe, uint64_t handle) const
@@ -1218,15 +1450,24 @@ private:
 	// A window that opens in that time is followed instead (a switch to full
 	// screen makes the window again; a game started at once makes a new
 	// one), and any other new window is chosen as usual.
-	void watch_captured(const std::vector<Window> &windows, bool use_test)
+	void watch_captured(const std::vector<Window> &windows, const std::set<std::string> &running,
+			    const std::set<uint64_t> &unlisted, bool use_test)
 	{
 		constexpr double kLetGoAfter = 0.5;
+		// A window that is there but not in the list (minimised or hidden):
+		// asked of Windows itself, in the tests a stand-in marked hidden.
+		auto exists = [&](uint64_t h) {
+#ifdef _WIN32
+			if (!use_test)
+				return IsWindow((HWND)(uintptr_t)h) != FALSE;
+#endif
+			return unlisted.count(h) > 0;
+		};
 		// (A picture can come before the window list shows the game's
 		// window: a moment to see it.)
 		constexpr double kPickAfter = 0.5;
 		for (auto it = spent_.begin(); it != spent_.end();) {
-			bool open = std::any_of(windows.begin(), windows.end(),
-						[&](const Window &w) { return lower(w.executable) == it->first; });
+			bool open = running.count(it->first) > 0;
 #ifdef _WIN32
 			// (Minimised, the program's windows are left out of the list.)
 			if (!open && !use_test)
@@ -1286,6 +1527,7 @@ private:
 				found.handles.insert(pick->handle);
 			}
 			found.exe = aimed;
+			found.hooks = hook_events_.load();
 			for (const Window &w : windows)
 				if (of_it(w)) {
 					found.seen.insert(w.handle);
@@ -1304,9 +1546,25 @@ private:
 			if (captured_.handles.count(w.handle))
 				there.insert(w.handle);
 		}
+		// None of its windows listed: the program closed, or OBS let go of
+		// it (no picture, or a new one since: OBS hooked it again between
+		// two looks), the program making its window again: the capture is
+		// kept on it in the tick and watched afresh once a window shows.
+		// Still running with the same picture there, its windows are
+		// minimised or hidden: a window of the game still there (hidden
+		// while it makes its drawing again) is the game, and the game's own
+		// windows all gone (the menu minimised) is let go of below as with
+		// the menu listed. Kept on, OBS would show the game's last frame for
+		// as long as the program runs.
 		if (!open) {
-			captured_ = Captured{}; // the program closed: the usual way
-			return;
+			if (!running.count(captured_.exe) || obs_source_get_base_width(parent_) == 0 ||
+			    hook_events_.load() != captured_.hooks) {
+				captured_ = Captured{};
+				return;
+			}
+			for (uint64_t h : captured_.handles)
+				if (exists(h))
+					there.insert(h);
 		}
 #ifdef _WIN32
 		// Minimised it is left out of the list of windows, and still there.
@@ -1326,6 +1584,7 @@ private:
 				if (w.handle && lower(w.executable) == captured_.exe)
 					captured_.seen.insert(w.handle);
 			captured_.gone_since = -1.0;
+			captured_.hooks = hook_events_.load();
 			return;
 		}
 		// A new window meanwhile: under the same title first.
@@ -1345,6 +1604,7 @@ private:
 			captured_.shapes = {title_shape(again->title)};
 			captured_.seen.insert(again->handle);
 			captured_.gone_since = -1.0;
+			captured_.hooks = hook_events_.load();
 			return;
 		}
 		if (captured_.gone_since < 0.0)
@@ -1359,13 +1619,18 @@ private:
 		for (const Window &w : windows)
 			if (w.handle && lower(w.executable) == captured_.exe && captured_.seen.count(w.handle))
 				left.insert(w.handle);
+		// (And those seen then that are there unlisted: a menu minimised
+		// is no game either when it is brought back.)
+		for (uint64_t h : captured_.seen)
+			if (h && !captured_.handles.count(h) && exists(h))
+				left.insert(h);
 		captured_ = Captured{};
 	}
 
 	// The Standby Picture over the capture: while it is hidden, and (asked
 	// for) while there is no game. Through the Standby Picture filter on the
 	// capture, with this filter's transition.
-	void standby_step(bool have_game)
+	void standby_step(bool have_game, double step)
 	{
 		bool no_game, use_standby;
 		int style, ms, curve, mode;
@@ -1396,7 +1661,7 @@ private:
 		// For a Stream Deck key showing shown or hidden (once a second: the
 		// scenes are gone through for it). Items the command hid and has
 		// not shown again read hidden.
-		if ((state_s_ += 0.25) >= 1.0) {
+		if ((state_s_ += step) >= 1.0) {
 			state_s_ = 0.0;
 			vendor_switch_state(source_, false, hidden_ || hid_pending_ || shown_nowhere(parent_));
 		}
@@ -1429,6 +1694,10 @@ private:
 	bool holding_ = false; // used on the tick only
 	double timer_ = 0.0;
 	std::vector<Window> test_windows_;
+	std::set<std::string> test_running_;
+	std::set<uint64_t> test_unlisted_;
+	std::atomic<uint64_t> hook_events_{0};
+	obs_source_t *listened_ = nullptr; // (only while attached to it)
 	bool use_test_windows_ = false;
 	std::string applied_key_;
 	// Programs seen to be games, by executable name in lower case. Only the tick uses it.
@@ -1443,6 +1712,7 @@ private:
 		std::set<std::string> shapes; // their titles, `title_shape`
 		std::set<uint64_t> seen;      // the program's windows while they were there
 		double gone_since = -1.0;     // by clock_s_
+		uint64_t hooks = 0;           // `hook_events_` when they were last there
 	};
 	Captured captured_;
 	// The program's windows when the capture was first aimed at it (the
@@ -1478,6 +1748,16 @@ private:
 	bool rest_said_ = false; // "aimed at no window" logged for this rest
 	double probe_every_s_ = kProbeEvery, probe_for_s_ = kProbeFor, probe_most_s_ = kProbeEveryMost;
 	double clock_s_ = 0.0;
+	double since_s_ = 0.0;   // since the last look (the clock's step when not in the tests)
+	uint64_t seen_look_ = 0; // the window watch's look acted on last
+	// The program the capture is aimed at (lower case), when it was last
+	// seen running (by clock_s_), whether its picture has been there, and
+	// what the log has said of its picture going (1 kept, 2 no window).
+	// Only the tick uses them.
+	std::string keep_exe_;
+	double keep_seen_s_ = 0.0;
+	bool had_picture_ = false;
+	int keep_said_ = 0;
 	bool give_up_in_tests_ = false; // (the tests' stand-in capture never has a picture)
 };
 
