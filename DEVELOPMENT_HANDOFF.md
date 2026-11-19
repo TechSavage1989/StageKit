@@ -23,7 +23,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
-## Scene Modes: places per mode, and Settings for (0.1.0-betaNEXT)
+## Scene Modes: places per mode, and Settings for (0.1.0-beta206)
 
 Branch `feat/mode-transforms`. Not pushed. Each mode can keep saved transforms for chosen sources
 (*Placed in this mode*, *Save their places now*, *Move duration* and easing) and glides them there
