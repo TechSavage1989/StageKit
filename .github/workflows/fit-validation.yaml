@@ -1,0 +1,52 @@
+name: Compare Scene Fit regressions
+on:
+  push:
+    branches: [fix/scene-fit-visible-layout]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  failures:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: stagekit-test-logs
+          run-id: 44457536649
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/fit-logs
+      - name: Report failing assertions by test section
+        shell: bash
+        run: |
+          log="$(find "$RUNNER_TEMP/fit-logs" -name stagekit-full.log -print -quit)"
+          test -s "$log"
+          awk '/^\[/ {section=$0} /FAIL  |FAILED \(|Segmentation fault/ {print section; print}' "$log"
+  baseline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: 3
+      QT_QPA_PLATFORM: offscreen
+      LIBGL_ALWAYS_SOFTWARE: 1
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: d4fe50f9eb788be1bc0e515efafd892c52ac02fb
+      - name: Install headless OBS
+        shell: bash
+        run: |
+          cat > /tmp/stagekit-ubuntu.list <<'LIST'
+          deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] https://archive.ubuntu.com/ubuntu noble main universe
+          deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] https://archive.ubuntu.com/ubuntu noble-updates main universe
+          deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] https://security.ubuntu.com/ubuntu noble-security main universe
+          LIST
+          apt_options=(-o Dir::Etc::sourcelist=/tmp/stagekit-ubuntu.list -o Dir::Etc::sourceparts=- -o Acquire::Retries=2 -o Acquire::https::Timeout=20)
+          sudo apt-get "${apt_options[@]}" update -qq
+          sudo apt-get "${apt_options[@]}" install -y --no-install-recommends obs-studio libobs-dev qt6-base-dev xvfb xauth python3-pil ninja-build libgl1-mesa-dri
+      - name: Run the full unmodified beta197 suite
+        shell: bash
+        run: |
+          result=0
+          bash tests/run-tests.sh > /tmp/stagekit-baseline.log 2>&1 || result=$?
+          awk '/^\[/ {section=$0} /FAIL  |FAILED \(|ALL PASSED|Segmentation fault/ {print section; print}' /tmp/stagekit-baseline.log
+          exit "$result"
