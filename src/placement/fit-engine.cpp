@@ -934,7 +934,8 @@ std::vector<HeldSpace> held_spaces(obs_source_t *scene)
 				one.name = item;
 				one.resizes = resizes;
 			}
-			if (!one.name.empty() && each->recently_hidden())
+			one.recently_hidden = each->recently_hidden();
+			if (!one.name.empty())
 				out.push_back(std::move(one));
 		}
 	}
@@ -957,7 +958,8 @@ std::vector<HeldSpace> held_spaces(obs_source_t *scene)
 		it->shown = obs_sceneitem_visible(item) && (!group || obs_sceneitem_visible(group));
 		obs_source_t *source = obs_sceneitem_get_source(item);
 		if (obs_obj_is_private(source) || is_stand_in(source) || is_morph_layer(item) ||
-		    (!it->shown && (mode_holds_hidden(scene, item) || (group && mode_holds_hidden(scene, group))))) {
+		    (!it->shown && (!it->recently_hidden || mode_holds_hidden(scene, item) ||
+				    (group && mode_holds_hidden(scene, group))))) {
 			it = out.erase(it);
 			continue;
 		}
@@ -1372,7 +1374,9 @@ bool FitEngine::prepare(obs_sceneitem_t *item, float tick_seconds, Prep &p)
 	// then a filter ticked before this one took the item for something
 	// firm, and with the captures of a layout scene changed by a key
 	// the camera and the chat box beside them jumped 27 px for a frame.
-	obs_sceneitem_t *group = item ? obs_sceneitem_get_group(scene_of(parent_), item) : nullptr;
+	obs_sceneitem_t *group = item && obs_sceneitem_get_scene(item) != scene_of(parent_)
+					 ? obs_sceneitem_get_group(scene_of(parent_), item)
+					 : nullptr;
 	if (item && (!obs_sceneitem_visible(item) || (group && !obs_sceneitem_visible(group)))) {
 		if (!hidden_) {
 			hidden_since_ = os_gettime_ns();
@@ -1746,7 +1750,12 @@ bool FitEngine::prepare(obs_sceneitem_t *item, float tick_seconds, Prep &p)
 		// resolution or aspect ratio never writes a new reference.
 		if (!have_keep_ && (load_keep_ || back_to_original_) && !placed_by_tool_ && !resized_by_hand_) {
 			std::lock_guard lock(mutex_);
-			if (saved_keep_item_ == s.item && saved_keep_w_ > 0.0 && saved_keep_h_ > 0.0) {
+			if (back_to_original_ && has_home_ && home_.h > 0.0 &&
+			    std::fabs(home_.w / home_.h - whole_w / whole_h) <= 0.01 * whole_w / whole_h) {
+				keep_w_ = pw * home_.w / whole_w;
+				keep_h_ = ph * home_.h / whole_h;
+				have_keep_ = true;
+			} else if (saved_keep_item_ == s.item && saved_keep_w_ > 0.0 && saved_keep_h_ > 0.0) {
 				keep_w_ = saved_keep_w_;
 				keep_h_ = saved_keep_h_;
 				have_keep_ = true;
@@ -2715,8 +2724,10 @@ void FitScan::look(obs_source_t *scene, obs_sceneitem_t *other, const Measure &h
 	obs_source_t *source = obs_sceneitem_get_source(other);
 	seen.width = obs_source_get_width(source);
 	seen.height = obs_source_get_height(source);
-	seen.there = seen.width && seen.height && measure_seen(scene, other, how, seen.box);
+	seen.there = seen.width && seen.height && measure_seen(scene, other, Measure{true, how.leave_out_shadows}, seen.box);
 	seen.item_at = scene_box(scene, other);
+	if (!how.visible_pixels)
+		seen.box = seen.item_at;
 	seen_[obs_sceneitem_get_id(other)] = seen;
 	// What a glance last said of it goes with this look: another
 	// look is due when a glance says otherwise.

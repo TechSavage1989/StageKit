@@ -243,7 +243,7 @@ Box claim_from(const SpaceInputs &in, const SpaceOut *out = nullptr, bool *lean_
 struct HeldSpace {
 	int64_t item = 0;
 	std::string name;
-	bool shown = true;
+	bool shown = true, recently_hidden = false;
 	bool worked = false;
 	Box space, goal;
 	bool resizes = true;

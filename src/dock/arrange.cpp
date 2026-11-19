@@ -1256,6 +1256,7 @@ const char *const kOwnSettings[] = {
 	"learned",        "last_width",      "last_height",      "rule_program",
 	"rule_browse",    "force_ratio",     "force_until_gone", "orig_item",
 	"orig_k",         "share_scenes",    "keep_item",        "keep_k",
+	"orig_w",         "orig_h",          "keep_w",           "keep_h",
 	"mode_now",       "mode_before",     "managed",          "managed_by",
 	"hid_items",      "hidden_record",   "home_item",        "home_x",
 	"home_y",         "home_w",          "home_h",           "home_space_x",
@@ -1679,10 +1680,17 @@ FitCheck spaces_kept(const std::vector<fit::HeldSpace> &spaces, const std::vecto
 		     const std::vector<int64_t> &empty = {})
 {
 	for (const fit::HeldSpace &held : spaces) {
-		if (!held.worked || std::find(empty.begin(), empty.end(), held.item) != empty.end())
+		if (std::find(empty.begin(), empty.end(), held.item) != empty.end())
 			continue;
 		if (std::any_of(moved.begin(), moved.end(), [&](const MovedBox &m) { return m.id == held.item; }))
 			continue; // a moved item's own fit: asked about by the caller
+		if (!held.worked) {
+			if (!held.shown)
+				continue;
+			if (who)
+				*who = held.name;
+			return FitCheck::Unknown;
+		}
 		bool touched = false, unknown = false;
 		const fit::SpaceInputs before = settled(with_moved(held.in, moved, false, &touched, &unknown));
 		if (unknown) {
@@ -2007,7 +2015,7 @@ int fit_to_space(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &item
 		// The full result: as large as the space lets it be, centred in it.
 		const double full_k =
 			std::min((space.w - room_w) / (seen.w - room_w), (space.h - room_h) / (seen.h - room_h));
-		if (!(full_k > 0.0)) {
+		if (!(full_k > 0.0) || (has_entry && !entry.resize && full_k < 1.0 - 1e-4)) {
 			left_for_fits();
 			continue;
 		}

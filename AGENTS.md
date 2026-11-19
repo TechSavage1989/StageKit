@@ -371,9 +371,9 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   or place option to "fit" an object to the available space respecting existing rules like margins
   and gaps and use visible pixels, etc. I'd also like a shortcut button in the relevant tab to edit
   transform of the selected source." It uses Fit to Space's own `fit::FitScan` and
-  `fit::free_space`, never a copy: change how a space is found there. Every obstacle is firm but one
-  the item lies wholly on, so an item is never put over another. Its gap is the Place tab's *Edge
-  distance* (`ArrangeOptions::place_margin`); the dock glides the result (`set_arrange_glide`,
+  `fit::free_space`. A selected source's own fit supplies its alignment, gap and measuring rules
+  even while disabled. Without an entry, use the dock's Edge distance and measuring options and
+  center the image. The dock glides the result (`set_arrange_glide`,
   `glide_back`, owned by one dock: `set_arrange_glide(nullptr, this)` clears only its own), the
   hotkey path too while a dock is there. **An item is handed to its Fit to Space when its glide
   ends** (`ArrangeOutcome::placed`, `Glide::hand_over`; at once when nothing glides), never
@@ -388,35 +388,22 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   transform* (`editTransform`, OBS's `actionEditTransform` triggered, switched on for the press:
   OBS switches it off while its Edit menu last opened with nothing selected; the dock's item is
   selected alone first; off with a tooltip when the action is not found). Tested in `[dock: fit to space ...]` (`STAGEKIT_TEST_ONLY_FIT_TOOL`).
-  **It never makes another fit give up room** (the owner, 2026-11-18: "the fit to space
-  option/tool cannot force other objects to resize"). Every fit of the free space in the scene
-  (a Fit to Space, a Scene Fit entry, enabled; its item shown **or hidden**) is known by
-  `fit::held_spaces`: the space and the inputs (`fit::SpaceInputs`) the engine last worked out
-  (`FitEngine::held`, written in `solve`, kept while the item is hidden, let go when the fit
-  gets another item or leaves the free space), its item found by name, inside groups too, and
-  taken only when its id matches. Its item is in the way by that whole space, firm, **unless the
-  space reaches what shows of the item** (that fit then ignores the item, or lies on it: the
-  claim counts as before, so a camera lying on a capture whose fit lists it under *Ignored
-  sources* still grows over it); a hidden item's space is in the way too (it is taken back when
-  the item shows), and one never worked out counts by the room it claims. Then the result is
-  checked (`spaces_kept`): each fit's inputs with the moved item where it is now (`with_moved`:
-  `SpaceInputs::at` is each obstacle's item box when it was looked at, so a record from when the
-  scene was last shown follows the item to where it is) and where it would be, both worked out
-  by **the engine's own `fit::space_from`** (what `FitEngine::solve` calls: the space, the trims
-  to the picture, `trim_for_kept_in` and `trim_to_picture_in`, and the home), must give the same
-  space, the same goal and the same claim (`fit::claim_box`, what `publish_claim` calls) within
-  half a pixel (`same_outcome`). **A fit at its home** (beta194's layout made by hand:
-  `SpaceInputs::has_home`, `home`, `homes`, `home_space`; `SpaceOut::at_home`) has its home for
-  its goal, so the check keeps it there: the item may not change the space round that home with
-  the other fits' items at their homes, nor come within the gap of it. A home still being found
-  is worked out as it will be once found (`settled`). Round a shadow sized in screen pixels the item maps as its image
+  **Protect other images during a dock fit.** The owner reported that a hidden mode, standby twins
+  and invisible captures left large empty strips beside the game. Read the visible image on the
+  graphics thread. Timed-out measurement jobs own their inputs and may only return measurements.
+  Surface the timeout in the dock and stop before changing that item. Exclude private sources,
+  all twins, the Morph layer and hidden items during collection. A recently hidden fit's last
+  image may be reserved for two seconds unless a mode holds it hidden.
+  Fitted obstacles use their published image claim. In `spaces_kept`, predict the neighboring
+  image with `space_from` and `claim_from` and compare its position and size within 0.5 px, its
+  growth flags and its lean. A change of unused room alone is allowed. A home still being found
+  is evaluated as it will settle. Round a shadow sized in screen pixels the item maps as its image
   (`MovedBox::keeps_outside`: what another fit sees of it outside the image keeps its size). An
   item the fit did not see when it worked its space out (`SpaceInputs::visible`: hidden then)
   makes the check **unknown**: it is left as it is (`Arrange.FitSpace.Unknown`). When one would
   change, the item is kept smaller: twenty sizes from the full result down to its size now (to
-  half the full result when that is no larger), each centred, then (but the full size) part of
-  the way from where it is, then against each side and corner of the space, the first that
-  changes nobody taken; none, and it is left as it is. The status line says which
+  half the full result when that is no larger). With an entry, every candidate uses its alignment.
+  Without one the tool can try other positions. The status line names the affected source
   (`FitToSpaceNote`, `Arrange.FitSpace.Smaller` / `.Left`), also when the fitted spaces leave no
   room at all. **An item with a fit of its own**: one that resizes it is left to it
   (`Arrange.FitSpace.OwnFit`: the fit decides its size, and handed over it would fill its own
@@ -1093,14 +1080,13 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   over the next 0.5 s on screen (`home_settling_`), the free space round its place with every
   other fit's item at *its* home (`Claim::home`, `Obstacle::home`). In `solve`, while that space
   is the same again (3 px, `kHomeSlack`) and the picture at home keeps the gap (same slack) to
-  what counts and the screen's edges, the goal is the home box exactly, no trims, home to home
-  without a glide; otherwise it fits as it always did, and comes back when the change is undone.
-  Comparing against the others' homes, not where they are now, is what makes a column return:
-  each entry decides alone and the departed ones do not hold each other off. A resized item
-  grows beyond its hand size only while the space round it differs (a neighbour hidden), as
-  before. Retaken on a move by something else, a resize by hand (now watched for resized items
-  with a home too) and a copy tool's placing; dropped for another item; unticking *Resize to
-  fit* with a home keeps the home's size. Saved as own settings (`home_item`, `home_x/y/w/h`,
+  what counts and the screen's edges, a kept-size image returns to the home box. For Resize-on
+  compare the image that fills the measured room to the home width and height using the entry's
+  size tolerance. A fitting hand layout retains its exact placement. An undersized home fills the
+  room once the measurements settle. Keep reference sizes as image dimensions in scene pixels
+  (`keep_w/h`, `orig_w/h`). Convert legacy scales once, after a nonzero capture settles.
+  At each source size fit the image inside those reference dimensions. A 0x0 capture must never
+  write a transform or a new reference. Save the home (position and dimensions,
   `home_space_*`, `home_cut_*`, in `kOwnSettings` and Scene Fit's `kFitKeys`, renamed with the
   source), so a filter loaded on goes by them; `home_cut_*` stands for what shows until the item
   is looked at (else a window's empty margins were its home for half a second and the column

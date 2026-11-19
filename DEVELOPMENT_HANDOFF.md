@@ -13,6 +13,18 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
+## Dock and Scene Fit in a split game layout (betaNEXT)
+
+The dock reads the selected source's fit settings even when the filter is disabled. Measurement runs
+on the graphics thread. A timeout ends the attempt and is reported in the dock. Fitted neighbors
+claim their image rectangles. A briefly hidden fit can reserve its last image for two seconds,
+unless a mode holds it hidden. Neighbor prediction compares image position, size, growth and lean.
+
+Resize-on entries keep a hand layout within their size tolerance and fill an undersized home.
+Resize-off saves the reference image in scene pixels, including during conversion from an older
+collection. The FIT_TOOL and FIT_ENABLE sections of the headless test cover dock placement, the
+hand layout, timing of handoff, capture-size changes, signal loss and recovery.
+
 ## Auto Capture stays aimed at a game while its picture comes back (0.1.0-beta197)
 
 Branch `fix/auto-capture-keeps-aim`, on `main` after beta193. Notes:

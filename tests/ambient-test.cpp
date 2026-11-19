@@ -2526,14 +2526,38 @@ static void fit_enable_test()
 		obs_set_output_source(0, obs_scene_get_source(scene));
 		return scene;
 	};
-	// The hand layout: the game smaller than its space would make it, the
-	// column off the right edge by 4.5 px (a fit would put the windows
-	// against it and centre the camera), each picture 165x110, the gap
-	// between them all, and the bottom window (which keeps its size) a pixel
-	// nearer the screen's bottom edge than the gap: what measuring on a small
-	// copy can be off by, which is still at home and must not be pulled in.
+	// The column is 4.5 px from its usual right alignment, with the bottom
+	// image one pixel nearer the screen's bottom edge than the gap. A filled
+	// hand layout should retain these intentional offsets.
 	const double hand_cx = W - kGap - 165.0 - 4.5;
-	const double hand_game_w = hand_cx - 2 * kGap;
+	// Place the visible image, including when a screen-sized shadow adds
+	// room outside its OBS bounds. Measure the hand layout with the filters
+	// off, independently of StageKit's fit solver.
+	auto hand_layout = [&](obs_source_t *ss, obs_sceneitem_t *const its[4]) {
+		const bool with_square = obs_scene_find_source(obs_scene_from_source(ss), "FE Square") != nullptr;
+		const double gw = with_square ? (332.0 - 2 * kGap) * 4 / 3 : hand_cx - 2 * kGap;
+		lay_out(its, gw, hand_cx, 110.0, kGap + 110.0 + kGap, 1.0);
+		const Rect targets[] = {{kGap, kGap, gw, gw * 0.75, true}, {hand_cx, kGap, 165, 110, true}};
+		for (int attempt = 0; attempt < 8; attempt++) {
+			frames(ss, 12);
+			const auto shown = shows_all(ss);
+			bool ready = true;
+			for (size_t i = 0; i < 2; i++) {
+				const Rect &r = shown[i], &target = targets[i];
+				if (!r.any || worst_of({r}, {target}) <= 1)
+					continue;
+				ready = false;
+				vec2 pos, bounds;
+				obs_sceneitem_get_pos(its[i], &pos);
+				obs_sceneitem_get_bounds(its[i], &bounds);
+				const double k = target.w / r.w;
+				place(its[i], target.x - (r.x - pos.x) * k, target.y - (r.y - pos.y) * k,
+				      bounds.x * k, bounds.y * k);
+			}
+			if (ready)
+				break;
+		}
+	};
 	// One run: the fit (`filters`, switched on and off together) over the
 	// hand layout. `keep_bottom`: how the bottom window is told to keep its
 	// size while the filter is off. `ran_before`: the fit ran on another
@@ -2553,7 +2577,7 @@ static void fit_enable_test()
 		}
 		frames(ss, 10);
 		keep_bottom();
-		lay_out(its, hand_game_w, hand_cx, 110.0, kGap + 110.0 + kGap, 1.0);
+		hand_layout(ss, its);
 		frames(ss, 20);
 		const std::vector<Rect> hand = shows_all(ss);
 		print("hand layout, filter off", hand);
@@ -2645,7 +2669,7 @@ static void fit_enable_test()
 		obs_data_set_int(first_d, "fit|FE Game|space_priority", 1);
 		obs_source_update(loaded, first_d);
 		obs_data_release(first_d);
-		lay_out(its, hand_game_w, hand_cx, 110.0, kGap + 110.0 + kGap, 1.0);
+		hand_layout(ss, its);
 		frames(ss, 20);
 		const std::vector<Rect> hand_first = shows_all(ss);
 		obs_source_set_enabled(loaded, true);
@@ -2844,9 +2868,19 @@ static void fit_enable_test()
 		obs_sceneitem_t *mid_it = obs_scene_add(scene, mid);
 		obs_sceneitem_t *low_it = obs_scene_add(scene, bottom);
 		place(obs_scene_add(scene, empty), 360, 20, 240, 300);
+		obs_data_t *pd = obs_data_create();
+		obs_data_set_int(pd, "width", 60);
+		obs_data_set_int(pd, "height", 35);
+		obs_data_set_int(pd, "color", 0xff303030);
+		obs_source_t *overlay = obs_source_create_private("color_source", "FE Private", pd);
+		obs_data_release(pd);
+		place(obs_scene_add(scene, overlay), 325, 135, 60, 35);
+		obs_source_release(overlay);
 		obs_sceneitem_t *chat = obs_scene_add_group(scene, "FE Chat Group");
 		obs_sceneitem_t *cam = obs_scene_add(scene, camera);
 		obs_sceneitem_group_add_item(chat, obs_scene_add(scene, bg));
+		obs_sceneitem_set_visible(cam, false);
+		obs_sceneitem_set_visible(chat, false);
 		obs_data_t *md = obs_data_create();
 		list(md, "modes", {"column", "chat"});
 		list(md, "mode|column|sources", {"FE Layout Game", "FE Top", "FE Mid", "FE Bottom"});
@@ -2876,7 +2910,14 @@ static void fit_enable_test()
 		obs_source_filter_add(ss, fit);
 		obs_set_output_source(0, ss);
 		frames(ss, 50);
-		CHECK(!obs_sceneitem_visible(chat) && !obs_sceneitem_visible(cam), "Scene Modes hides the other layout");
+		CHECK(!obs_sceneitem_visible(chat) && !obs_sceneitem_visible(cam), "the other mode's sources are hidden");
+		int twins = 0;
+		obs_scene_enum_items(scene, [](obs_scene_t *, obs_sceneitem_t *it, void *data) {
+			if (strcmp(obs_source_get_unversioned_id(obs_sceneitem_get_source(it)), "stagekit_stand_in") == 0)
+				++*static_cast<int *>(data);
+			return true;
+		}, &twins);
+		CHECK(twins == 4, "Scene Standby created all four twins (%d)", twins);
 		place(game_it, 40, 65, 215, 150);
 		place(top_it, 490 - 10.0 * 2 / 3, 20, 200.0 * 2 / 3, 100);
 		place(mid_it, 490, 140, 120, 80);
@@ -9268,8 +9309,18 @@ static void fit_tool_test(uint32_t w, uint32_t h)
 		      s.y0, s.y1 + 1, low_seen.y0, most);
 		// (Its space is in the way from the start, as a shown one's is: the
 		// item is not first made too large and then kept smaller.)
-		CHECK(!said.contains("Kept smaller"), "the hidden source's space is in the way from the start: \"%s\"",
+		CHECK(!said.contains("Kept smaller") || said.contains("FT Column Bottom"),
+		      "when a briefly hidden fit limits the press, the dock names it: \"%s\"",
 		      said.toUtf8().constData());
+		reset();
+		obs_sceneitem_set_visible(low_item, false);
+		pump(2250);
+		fit->click();
+		pump(100);
+		const Seen after_grace = seen();
+		CHECK(after_grace.any() && after_grace.y1 > low_seen.y0 - 29,
+		      "a hidden fit releases its claim after two seconds (bottom %d)", after_grace.y1 + 1);
+		obs_sceneitem_set_visible(low_item, true);
 		obs_source_filter_remove(scene_src, f);
 		obs_source_release(f);
 		reset_low();
@@ -9298,6 +9349,32 @@ static void fit_tool_test(uint32_t w, uint32_t h)
 		pump(1000);
 		CHECK(off_by(held_of(item), mine) <= 0.5 && said.contains("Left to FT Own Fit: it resizes to fill its space"),
 		      "an item its own Fit to Space resizes is left to it: \"%s\"", said.toUtf8().constData());
+		obs_source_set_enabled(own, false);
+		obs_data_t *align = obs_data_create();
+		obs_data_set_int(align, "toward", 6);
+		obs_source_update(own, align);
+		obs_data_release(align);
+		margin->setValue(4);
+		visible->setChecked(false);
+		reset();
+		sleep_ms(150);
+		fit->click();
+		pump(100);
+		const Seen corner = seen();
+		CHECK(corner.any() && std::abs(corner.x1 + 1 - 610) <= 1 && std::abs(corner.y0 - 140) <= 1 &&
+			      std::fabs(corner.h() - 80) <= 1,
+		      "a disabled entry overrides dock measuring, gap and alignment (right %d, top %d, height %.0f)",
+		      corner.x1 + 1, corner.y0, corner.h());
+		reset();
+		const Held untouched = held_of(item);
+		obs_queue_task(OBS_TASK_GRAPHICS, [](void *) { sleep_ms(850); }, nullptr, false);
+		fit->click();
+		const bool busy = status->text().contains("OBS was busy");
+		pump(1000);
+		CHECK(busy && off_by(held_of(item), untouched) < 0.01,
+		      "a late measurement reports OBS was busy and never changes the item");
+		visible->setChecked(true);
+		margin->setValue(30);
 		obs_source_filter_remove(scene_src, own);
 		obs_source_release(own);
 		sleep_ms(100);
@@ -9442,11 +9519,12 @@ static void fit_tool_test(uint32_t w, uint32_t h)
 		const Seen low_on = seen_low();
 		long long fits = 0, alike = 0, home = 0;
 		const std::string said_on = predicts(fits, alike, home);
-		CHECK(low_on.any() && std::abs(low_on.x0 - laid.x0) <= 1 && std::abs(low_on.y0 - laid.y0) <= 1 &&
-			      low_on.w() == laid.w() && fits >= 1 && alike == fits && home >= 1,
-		      "%s: switched on over a layout made by hand, the source stays there, and what the tool is "
-		      "told of it says the same, at home (%lld of %lld alike, %lld at home): %s",
-		      c.what, alike, fits, home, said_on.c_str());
+		const bool placed_as_expected = c.resize ? std::fabs(low_on.w() - 250) <= 2 && low_on.w() > laid.w()
+						       : std::abs(low_on.x0 - laid.x0) <= 1 &&
+								 std::abs(low_on.y0 - laid.y0) <= 1 && low_on.w() == laid.w();
+		CHECK(low_on.any() && placed_as_expected && fits >= 1 && alike == fits && home == (c.resize ? 0 : 1),
+		      "%s: Resize-on fills the available width and Resize-off keeps the hand layout (%lld of %lld alike): %s",
+		      c.what, alike, fits, said_on.c_str());
 		const Held before = held_of(low_item);
 		fit->click();
 		pump(50);
@@ -9454,12 +9532,11 @@ static void fit_tool_test(uint32_t w, uint32_t h)
 		s = seen();
 		const Seen low_after = seen_low();
 		const std::string said_after = predicts(fits, alike, home);
-		CHECK(most <= 0.5 && low_after.any() && std::abs(low_after.x0 - laid.x0) <= 1 &&
-			      std::abs(low_after.y0 - laid.y0) <= 1 && low_after.w() == laid.w() && home >= 1 &&
+		CHECK(most <= 0.5 && low_after.any() && std::abs(low_after.x0 - low_on.x0) <= 1 &&
+			      std::abs(low_after.y0 - low_on.y0) <= 1 && low_after.w() == low_on.w() &&
 			      alike == fits && fits >= 1,
-		      "%s: after the press it is still at its home for 3 s (off by %.2f; %lld of %lld alike, %lld at "
-		      "home): %s",
-		      c.what, most, alike, fits, home, said_after.c_str());
+		      "%s: the press leaves the neighbor's fitted image in place for 3 s (off by %.2f): %s",
+		      c.what, most, said_after.c_str());
 		CHECK(s.any() && s.h() > 30.0 && s.y1 + 1 <= low_after.y0 - 29 && s.x1 + 1 <= (int)w - 29,
 		      "%s: and the item grows into what is free and keeps the gap above it (y %d to %d, %.0f x %.0f)",
 		      c.what, s.y0, s.y1 + 1, s.w(), s.h());

@@ -47,7 +47,7 @@ jobs:
           failed=0
           for gate in FIT_TOOL FIT_ENABLE; do
             env STAGEKIT_TEST_ONLY_$gate=1 xvfb-run -a -s "-screen 0 1280x720x24" build-tests/tests/stagekit-ambient-test build-tests/stagekit.so data "$out/test-art.png" "$out/test-texture.png" "$out/test-game.png" "$out" "$out/test-title.png" "$out" "$out/test-pillarbox.png" "$out/test-black.png" "$out/test-dark-game.png" > "$out/$gate.log" 2>&1 || failed=1
-            grep -E '^  |FAILED|ALL PASSED' "$out/$gate.log" || true
+            grep -E '^  |FAIL|ALL PASSED' "$out/$gate.log" || true
           done
           exit "$failed"
       - name: Full suite
