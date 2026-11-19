@@ -23,7 +23,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
-## Ambient Background patterns (0.1.0-betaNEXT)
+## Ambient Background patterns (0.1.0-beta214)
 
 The owner: "id like to have some animated ambient background choices added too. some procedural
 ones that would be appealing." *Background from: A pattern* (`base_type` 3) with ten patterns, a
