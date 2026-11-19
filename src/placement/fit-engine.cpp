@@ -788,6 +788,13 @@ Box space_from(const SpaceInputs &in, SpaceOut *result)
 				clear = !(b.x < home.x + home.w + m && b.x + b.w > home.x - m &&
 					  b.y < home.y + home.h + m && b.y + b.h > home.y - m);
 			}
+			// Test the filled image with the other entries at their homes too.
+			// Their current positions can still be returning from a visibility change.
+			if (clear && !kept && in.pw > 0.0 && in.ph > 0.0) {
+				const double k = std::min(space.w / in.pw, space.h / in.ph);
+				clear = std::fabs(in.pw * k - home.w) <= in.tolerance &&
+					std::fabs(in.ph * k - home.h) <= in.tolerance;
+			}
 			out.at_home = clear;
 		}
 	}
@@ -803,11 +810,6 @@ Box space_from(const SpaceInputs &in, SpaceOut *result)
 		out.grows_set = true;
 		out.grows_x = h < goal.h - 0.5;
 		out.grows_y = w < goal.w - 0.5;
-		// Wait for the other entries and their letterbox measurements before
-		// judging a newly captured layout. Then only an already-filled home wins.
-		if (out.at_home && !in.home_settling)
-			out.at_home = std::fabs(w - in.home.w) <= in.tolerance &&
-				      std::fabs(h - in.home.h) <= in.tolerance;
 	}
 	out.room = goal;
 	if (out.at_home)
@@ -895,20 +897,24 @@ bool fit_settings_for(obs_source_t *scene, const char *name, FitSettings &settin
 {
 	if (!name)
 		return false;
-	bool found = false;
+	bool found = false, found_enabled = false;
 	std::lock_guard lock(g_filters_mutex);
 	for (FitEngine *engine : g_filters) {
-		if (engine->parent() != scene || engine->item_name() != name)
+		if (engine->parent() != scene)
+			continue;
+		const FitSettings candidate = engine->settings();
+		if (candidate.item != name)
 			continue;
 		const bool enabled = obs_source_enabled(engine->source());
-		if (found && !enabled)
-			continue;
-		settings = engine->settings();
-		found = true;
-		if (enabled) {
-			if (settings.resize)
-				resizing_filter = obs_source_get_name(engine->source());
-			break;
+		if (enabled && candidate.resize) {
+			settings = candidate;
+			resizing_filter = obs_source_get_name(engine->source());
+			return true;
+		}
+		if (!found || (enabled && !found_enabled)) {
+			settings = candidate;
+			found = true;
+			found_enabled = enabled;
 		}
 	}
 	return found;
@@ -2836,14 +2842,18 @@ void FitScan::at_rest(obs_source_t *scene, const std::vector<obs_sceneitem_t *> 
 		const int64_t id = obs_sceneitem_get_id(other);
 		Claim claim;
 		Glance glance;
-		if (claim_of(scene, id, asking, claim) || !glance_of(scene, id, glance))
+		if (!glance_of(scene, id, glance))
 			continue;
 		// (Its first glance since it was looked at is no measure
 		// of that look: the item may have changed in between,
 		// seconds apart as they can be. It is looked at once
 		// more, and the two go together from then on.)
 		const auto was = looked_.find(id);
-		if (was == looked_.end() || glance_differs(glance, was->second)) {
+		// A fitted source supplies its own box, but can stop or start drawing
+		// without changing either its dimensions or its claim.
+		const bool claimed = claim_of(scene, id, asking, claim);
+		if (was == looked_.end() ||
+		    (claimed ? glance.any != was->second.any : glance_differs(glance, was->second))) {
 			look(scene, other, how);
 			break; // one look a tick is enough
 		}

@@ -2957,9 +2957,21 @@ static void fit_enable_test()
 			      std::fabs(hand[0].w - 430) <= 1 && std::fabs(hand[0].h - 300) <= 1,
 		      "the game fills the left area with 30 px gaps (%.0f,%.0f %.0fx%.0f)",
 		      hand[0].x, hand[0].y, hand[0].w, hand[0].h);
+		for (size_t i = 1; i <= 3; ++i) {
+			const Rect &image = hand[i];
+			const double y = 30.0 + (i - 1) * 110.0;
+			CHECK(image.any && std::fabs(image.x - 490.0) <= 1 && std::fabs(image.y - y) <= 1 &&
+				      std::fabs(image.w - 120.0) <= 1 && std::fabs(image.h - 80.0) <= 1,
+			      "right-column image %zu keeps its 30 px gaps (%.0f,%.0f %.0fx%.0f)", i, image.x, image.y,
+			      image.w, image.h);
+		}
 		obs_source_set_enabled(fit, true);
-		frames(ss, 90);
-		CHECK(worst_of(hand, shows_all(ss)) <= 1, "enabling Scene Fit preserves the filled 30 px layout");
+		double worst = 0.0;
+		for (int i = 0; i < 18; ++i) {
+			frames(ss, 5);
+			worst = std::max(worst, worst_of(hand, shows_all(ss)));
+		}
+		CHECK(worst <= 0.5, "enabling Scene Fit preserves the filled 30 px layout throughout (%.1f px)", worst);
 		obs_source_set_enabled(fit, false);
 		frames(ss, 10);
 		place(game_it, 40, 65, 215, 150);

@@ -1867,10 +1867,12 @@ int fit_to_space(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &item
 		auto hold = std::make_shared<Held>(scene, std::vector<obs_sceneitem_t *>{item});
 		if (!on_drawing_thread([hold, scan, item, how, result] {
 			    obs_source_t *s = hold->scene;
-			    result->any = measure_seen(s, item, how, result->seen);
-			    result->now = scene_box(s, item);
+			    result->any = measure_seen(s, item, Measure{true, how.leave_out_shadows}, result->seen);
 			    if (!result->any)
 				    return;
+			    result->now = scene_box(s, item);
+			    if (!how.visible_pixels)
+				    result->seen = result->now;
 			    if (how.visible_pixels && !how.leave_out_shadows) {
 				    ShadowFree shadow;
 				    if (shadow_free(obs_sceneitem_get_source(item), shadow)) {

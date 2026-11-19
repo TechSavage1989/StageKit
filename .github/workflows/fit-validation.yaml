@@ -5,7 +5,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: stagekit-visible-fit-validation
+  group: stagekit-visible-fit-validation-${{ github.sha }}
   cancel-in-progress: true
 jobs:
   headless:
@@ -19,8 +19,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install test tools
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends obs-studio libobs-dev qt6-base-dev xvfb xauth python3-pil ninja-build libgl1-mesa-dri
+          apt_options=(-o Dir::Etc::sourcelist=/etc/apt/sources.list.d/ubuntu.sources -o Dir::Etc::sourceparts=- -o Acquire::Retries=2 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20)
+          sudo apt-get "${apt_options[@]}" update -qq
+          sudo apt-get "${apt_options[@]}" install -y --no-install-recommends obs-studio libobs-dev qt6-base-dev xvfb xauth python3-pil ninja-build libgl1-mesa-dri
           python3 -m venv /tmp/stagekit-format
           /tmp/stagekit-format/bin/pip install clang-format==19.1.7 gersemi
       - name: Check formatting
