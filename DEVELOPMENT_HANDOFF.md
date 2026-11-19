@@ -23,7 +23,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
-## Square lines on Windows, and text keeps a following line (0.1.0-betaNEXT)
+## Square lines on Windows, and text keeps a following line (0.1.0-beta210)
 
 Branch `fix/outline-square`. Not pushed. The owner's Standby scene (beta209, Square and then Scoop)
 showed lines off their pictures and missing bottom sides. Cause: the visible-rectangle passes
