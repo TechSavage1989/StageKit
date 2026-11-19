@@ -1505,8 +1505,38 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     the two lists, kept showing while the parent is. On a switch the filter draws that capture at
     once (`bridge_`) while the parent is being aimed, and goes back to the parent's own picture
     once it has the window. The owner, of beta116, which waited for the one capture every time:
-    "switches between apps much slower than the show source in use filter ... a long pause". The
-    parent is still aimed, because Auto Frame and others read the program from its settings.
+    "switches between apps much slower than the show source in use filter ... a long pause".
+    (This entry is beta116's; since beta119 the parent is no longer aimed at a switch, below.)
+  - **What the capture shows is the switcher's to say, not the capture's settings**
+    (`app_capture_shown_window`, `AppCaptureShown`, betaNEXT). Since beta119 the parent stays
+    aimed at an earlier window while a ready capture is drawn, so its `window` setting (and its
+    `get_hooked`) name the wrong program. Auto Frame read them: the owner (2026-11-19), of a
+    browser shown: Auto Frame said "Capturing Dolphin.exe. Aspect ratio: 4:3, from your saved
+    shapes", "says capturing dolphin, but it's a web browser", and cut the browser to 4:3. The
+    call gives the program and title of the window chosen for `current_` (`shown_entry_`,
+    `shown_exe_`, `shown_title_`: set in `aim` and when the first look adopts the parent's aim,
+    the title kept up to date by window handle at each look), `any` false while nothing is
+    shown (`unsafe_`, or nothing chosen with the capture's own image not believed), and returns
+    false (go by the capture itself) when the switcher has no say: nothing chosen since OBS
+    started or it was switched on, with the capture's own image passed on as it is (lists
+    nothing, not looked yet, not on Windows), or switched off. While a closed window's last
+    image is held (`Phase::Lost`, `kLostFor`) it still names that window (`shown_*` outlive
+    `current_`), so its shape stays on the held image. **Switching the filter off forgets what it
+    showed** (`current_`, `shown_handle_`, `shown_*`, in the off branch of `tick`): it passes the
+    capture's own image on then, and a `current_` kept named the window last drawn by way of a
+    ready capture over the capture's own after it was switched on again with nothing in front.
+    Auto Frame's `captured` asks it first, for its saved shapes (by program and by
+    title), learned shapes, held shape, status line and the program offered first in its list;
+    a change of the switcher's count (`app_capture_changes`) makes it look before the next
+    image is drawn, as a new size does, so a switch is a change of program exactly as a re-aimed
+    capture was. Anything new that goes by the program a capture shows must ask this first. The
+    readers of the parent's own `window` that stay: the switcher's own (its first look, the
+    title re-aim, `settle_aim`: about where the capture itself is aimed), Auto Capture's (its
+    own Game Capture), and Show Source in Use's `program_of` (which app each listed capture is
+    *for*, a choice made in setting it up; a capture with a switcher is not one of those).
+    Tested in `[auto frame: goes by the window the window switcher shows]`
+    (`auto_frame_switcher_test`, alone with `STAGEKIT_TEST_ONLY_AUTO_FRAME_SWITCHER`; a stand-in
+    kind `stagekit_test_af_window` drawn by the program it is aimed at).
   - *Apps you switch to* (`by_hand`) are held by hand (`held_`): the *next* command takes the next
     one that is open, and after the last, or with *back*, the apps are followed again. Nothing is
     followed while one is held. The owner: "manually switch to and from a specific app, like a
@@ -1590,7 +1620,8 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     stopped a third. The owner: "a significant increase in frame times and FPS drop when
     transitioning"; OBS's profiler in their log had `tick_sources` at up to 135 ms with drawing
     under 10 ms and no StageKit tick over 7 ms: it was the captures starting. The parent is aimed
-    only when there is no ready capture with a picture yet.
+    only when there is no ready capture with a picture yet, so its settings do not say what is
+    shown: ask `app_capture_shown_window` (above).
   - *Captured window* (`picked`, by number, append-only: 0 *Wait until switched to*, as it
     comes; 1 *Switch at selection*): what the Capture Active Window key does through the filter.
     Waiting, the window's program joins `by_hand` and becomes `last_held_`, so it is captured in

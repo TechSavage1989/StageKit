@@ -298,7 +298,8 @@ frame's width and height once. From then on the source always has that size, and
 emulator outputs is fitted inside it, gliding to its new fit when the resolution changes.
 
 The top line of the controls says which program is being captured and which image shape applies.
-The settings are in five numbered groups:
+On a Window Capture with an Automatic Window Switcher, that is the window the switcher shows, not
+the one the capture was last aimed at. The settings are in five numbered groups:
 
 | Group | What is in it |
 | --- | --- |
@@ -676,6 +677,12 @@ capture for each app.
   cut. *Morph* stretches both images over the gliding frame; the others keep each image's own
   shape inside it.
 - It keeps itself before a Standby Image and an Auto Frame in the capture's filter list.
+- **An Auto Frame after it goes by the window shown.** Its top line names the program of the
+  window on screen, and that program's saved shape (by file name or part of the title) is the one
+  used: a browser shown after Dolphin is not cut to Dolphin's 4:3, and going back to Dolphin brings
+  its 4:3 back. Each switch to another program is a new program for Auto Frame. When the window
+  shown closes, its last image keeps its shape for the moment it is held; while nothing is shown,
+  Auto Frame names no program.
 - Windows only, like the other capture tools.
 
 For a capture per app in one scene, each with its own filters, Automatic Source Switcher below is still

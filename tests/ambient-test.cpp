@@ -4388,6 +4388,275 @@ static void game_area_test()
 	obs_source_release(capture);
 }
 
+// Auto Frame after an Automatic Window Switcher goes by the window the
+// switcher shows. The owner (2026-11-19), of a Window Capture showing a web
+// browser: Auto Frame said "Capturing Dolphin.exe. Aspect ratio: 4:3, from
+// your saved shapes." -- "says capturing dolphin, but it's a web browser".
+// Since beta119 the switcher draws a capture kept ready for the window shown
+// and leaves the capture itself aimed at an earlier window, whose program
+// Auto Frame read. Stand-in windows, drawn by the program a capture is aimed
+// at and plain all over (no bars, so only a saved shape trims them):
+// emu_43.exe 640x360 with a 4:3 shape saved for it, browser.exe 800x450 with
+// none. Alone with STAGEKIT_TEST_ONLY_AUTO_FRAME_SWITCHER.
+struct AfWindow {
+	uint32_t w = 0, h = 0;
+};
+static AfWindow af_window_of(obs_data_t *settings)
+{
+	const std::string window = obs_data_get_string(settings, "window");
+	if (window.find("emu_43.exe") != std::string::npos)
+		return AfWindow{640, 360};
+	if (window.find("browser.exe") != std::string::npos)
+		return AfWindow{800, 450};
+	return AfWindow{};
+}
+static void register_af_window_kind()
+{
+	static bool registered = false;
+	if (registered)
+		return;
+	registered = true;
+	obs_source_info k = {};
+	k.id = "stagekit_test_af_window";
+	k.type = OBS_SOURCE_TYPE_INPUT;
+	k.output_flags = OBS_SOURCE_VIDEO | OBS_SOURCE_CUSTOM_DRAW;
+	k.get_name = [](void *) {
+		return "Window (stand-in for Auto Frame)";
+	};
+	k.create = [](obs_data_t *settings, obs_source_t *) -> void * {
+		return new AfWindow(af_window_of(settings));
+	};
+	k.destroy = [](void *data) {
+		delete static_cast<AfWindow *>(data);
+	};
+	k.update = [](void *data, obs_data_t *settings) {
+		*static_cast<AfWindow *>(data) = af_window_of(settings);
+	};
+	k.get_width = [](void *data) -> uint32_t {
+		return static_cast<AfWindow *>(data)->w;
+	};
+	k.get_height = [](void *data) -> uint32_t {
+		return static_cast<AfWindow *>(data)->h;
+	};
+	k.video_render = [](void *data, gs_effect_t *) {
+		const AfWindow *w = static_cast<AfWindow *>(data);
+		if (!w->w || !w->h)
+			return;
+		gs_effect_t *solid = obs_get_base_effect(OBS_EFFECT_SOLID);
+		vec4 c;
+		vec4_set(&c, 0.8f, 0.8f, 0.8f, 1.0f);
+		gs_effect_set_vec4(gs_effect_get_param_by_name(solid, "color"), &c);
+		while (gs_effect_loop(solid, "Solid"))
+			gs_draw_sprite(nullptr, 0, w->w, w->h);
+	};
+	obs_register_source(&k);
+}
+
+static void auto_frame_switcher_test()
+{
+	printf("\n[auto frame: goes by the window the window switcher shows]\n");
+	register_af_window_kind();
+	obs_data_t *cd_settings = obs_data_create();
+	obs_data_set_string(cd_settings, "window", "Emu 43:Wnd:emu_43.exe");
+	obs_source_t *capture = obs_source_create("stagekit_test_af_window", "AF Capture", cd_settings, nullptr);
+	obs_data_release(cd_settings);
+	obs_source_inc_showing(capture);
+
+	obs_data_t *sd = obs_data_create();
+	{
+		obs_data_array_t *rows = obs_data_array_create();
+		for (const char *name : {"emu_43.exe", "browser.exe"}) {
+			obs_data_t *row = obs_data_create();
+			obs_data_set_string(row, "value", name);
+			obs_data_array_push_back(rows, row);
+			obs_data_release(row);
+		}
+		obs_data_set_array(sd, "apps", rows);
+		obs_data_array_release(rows);
+	}
+	obs_data_set_int(sd, "change", 0); // a fade
+	obs_data_set_int(sd, "change_ms", 300);
+	obs_data_set_string(sd, "transition", "none");
+	obs_source_t *sw = obs_source_create("stagekit_app_capture", "AF Switcher", sd, nullptr);
+	obs_data_release(sd);
+	obs_data_t *fd = obs_data_create();
+	obs_data_set_int(fd, "frame_width", 320);
+	obs_data_set_int(fd, "frame_height", 180);
+	obs_data_set_int(fd, "glide_ms", 0);
+	// The shapes saved by the owner: one by program, one by part of a title.
+	obs_data_set_string(fd, "rules_text", "emu_43 = 4:3, arcade night = 3:2");
+	obs_source_t *af = obs_source_create("stagekit_auto_frame", "AF Frame", fd, nullptr);
+	obs_data_release(fd);
+	obs_source_filter_add(capture, sw);
+	obs_source_filter_add(capture, af);
+
+	auto windows = [&](const std::string &text) {
+		calldata_t cd = {};
+		calldata_set_string(&cd, "windows", text.c_str());
+		proc_handler_call(obs_source_get_proc_handler(sw), "set_test_windows", &cd);
+		calldata_free(&cd);
+	};
+	auto both = [&](bool browser_front, const char *browser_title = "Docs - Browser") {
+		windows(std::string("Emu 43|emu_43.exe|") + (browser_front ? "" : "front") + "|1\n" + browser_title +
+			"|browser.exe|" + (browser_front ? "front" : "") + "|2");
+	};
+	// What the top line of Auto Frame's controls says.
+	auto status = [&] {
+		obs_properties_t *props = obs_source_properties(af);
+		obs_property_t *line = props ? obs_properties_get(props, "status") : nullptr;
+		const std::string text = line && obs_property_description(line) ? obs_property_description(line) : "";
+		obs_properties_destroy(props);
+		return text;
+	};
+	auto trim_x = [&] {
+		calldata_t cd = {};
+		proc_handler_call(obs_source_get_proc_handler(af), "get_trim", &cd);
+		const double x = calldata_float(&cd, "x");
+		calldata_free(&cd);
+		return x;
+	};
+	// Drawn as OBS would, every frame or so: Auto Frame works its trim out as it draws.
+	auto draw_for = [&](int ms) {
+		for (int t = 0; t < ms; t += 30) {
+			sleep_ms(30);
+			render(capture, 320, 180);
+		}
+	};
+	auto aimed = [&] {
+		obs_data_t *s = obs_source_get_settings(capture);
+		const std::string window = obs_data_get_string(s, "window");
+		obs_data_release(s);
+		return window;
+	};
+	auto has = [](const std::string &text, const char *part) {
+		return text.find(part) != std::string::npos;
+	};
+
+	both(false);
+	draw_for(900);
+	std::string said = status();
+	double x = trim_x();
+	CHECK(has(said, "Capturing emu_43.exe.") && has(said, "4:3, from your saved shapes") &&
+		      std::fabs(x - 80.0) < 0.6,
+	      "the program with a saved 4:3 shape is captured: its shape trims its image (%.1f px a side; \"%s\")", x,
+	      said.c_str());
+
+	// To the browser: the switcher draws the capture kept ready for it, and
+	// the capture itself stays aimed at the emulator.
+	both(true);
+	double worst = 0.0;
+	int moving = 0;
+	for (int t = 0; t < 1200; t += 30) {
+		sleep_ms(30);
+		render(capture, 320, 180);
+		if (obs_source_get_width(sw) != 640) {
+			// (From the moment the switch shows in the image's size.)
+			moving++;
+			worst = std::max(worst, trim_x());
+		}
+	}
+	said = status();
+	x = trim_x();
+	const std::string still_aimed = aimed();
+	CHECK(has(still_aimed, "emu_43.exe") && obs_source_get_width(sw) == 800,
+	      "(as since beta119, the capture itself is still aimed at the emulator while the browser is shown: %s, %u wide)",
+	      still_aimed.c_str(), obs_source_get_width(sw));
+	CHECK(has(said, "Capturing browser.exe.") && !has(said, "emu_43") && !has(said, "saved shapes"),
+	      "switched to the browser, Auto Frame says it captures the browser, with no saved shape (\"%s\")",
+	      said.c_str());
+	CHECK(moving > 0 && worst < 0.5 && x < 0.5,
+	      "and the emulator's 4:3 is never put on the browser's image, from the first frame of the switch (%d frames, most %.1f px, now %.1f)",
+	      moving, worst, x);
+
+	// The browser's title changes (another tab): a shape saved for part of
+	// a title is followed, as with the capture's own window before.
+	both(true, "Arcade Night - Browser");
+	draw_for(800);
+	said = status();
+	x = trim_x();
+	CHECK(has(said, "Capturing browser.exe.") && has(said, "3:2, from your saved shapes") &&
+		      std::fabs(x - 62.5) < 0.6,
+	      "a saved shape for part of the shown window's title is used when its title changes (%.1f px; \"%s\")", x,
+	      said.c_str());
+	both(true);
+	draw_for(600);
+
+	// Back to the emulator: its 4:3 again.
+	both(false);
+	draw_for(1200);
+	said = status();
+	x = trim_x();
+	CHECK(has(said, "Capturing emu_43.exe.") && has(said, "4:3, from your saved shapes") &&
+		      std::fabs(x - 80.0) < 0.6,
+	      "back to the emulator, its saved 4:3 trims its image again (%.1f px; \"%s\")", x, said.c_str());
+
+	// Switched off and on again while the browser was drawn by way of a
+	// ready capture (the capture itself aimed at the emulator), with
+	// neither in front: what is named is what is drawn.
+	both(true);
+	draw_for(900);
+	windows("Emu 43|emu_43.exe||1\nDocs - Browser|browser.exe||2");
+	obs_source_set_enabled(sw, false);
+	draw_for(600);
+	obs_source_set_enabled(sw, true);
+	draw_for(900);
+	said = status();
+	x = trim_x();
+	const uint32_t drawn_w = obs_source_get_width(sw);
+	CHECK((drawn_w == 640 && has(said, "Capturing emu_43.exe.") && std::fabs(x - 80.0) < 0.6) ||
+		      (drawn_w == 800 && has(said, "Capturing browser.exe.") && x < 0.5),
+	      "switched off and on again, Auto Frame names the window whose image is drawn (%u wide, %.1f px; \"%s\")",
+	      drawn_w, x, said.c_str());
+
+	// Nothing listed open: the window shown has closed. Its last image is
+	// held for a moment before the switcher shows nothing; while it is, it
+	// keeps its shape, and once nothing is shown no program is named.
+	both(false);
+	draw_for(1200);
+	windows("Notes|notes.exe|front|9");
+	const uint64_t closed_at = os_gettime_ns();
+	int held = 0, held_late = 0;
+	double least = 1e9;
+	std::string said_held;
+	for (int t = 0; t < 1500; t += 30) {
+		sleep_ms(30);
+		render(capture, 320, 180);
+		if (obs_source_get_width(sw) != 640)
+			continue; // (the hold is over)
+		held++;
+		least = std::min(least, trim_x());
+		if (os_gettime_ns() - closed_at >= 350000000ull) {
+			held_late++;
+			if (said_held.empty())
+				said_held = status();
+		}
+	}
+	CHECK(held_late > 0 && std::fabs(least - 80.0) < 0.6 && has(said_held, "Capturing emu_43.exe."),
+	      "while the closed window's last image is held, its 4:3 stays on it (%d frames, %d after Auto Frame's next look, least %.1f px; \"%s\")",
+	      held, held_late, least, said_held.c_str());
+	said = status();
+	CHECK(has(said, "No program detected"),
+	      "with nothing listed open the switcher shows nothing, and Auto Frame names no program (\"%s\")",
+	      said.c_str());
+
+	// Without the switcher, the capture's own window counts, as always.
+	obs_source_set_enabled(sw, false);
+	draw_for(900);
+	said = status();
+	x = trim_x();
+	CHECK(has(said, "Capturing emu_43.exe.") && std::fabs(x - 80.0) < 0.6,
+	      "with the switcher switched off, the window the capture itself is aimed at counts (%.1f px; \"%s\")", x,
+	      said.c_str());
+	obs_source_set_enabled(sw, true);
+
+	obs_source_filter_remove(capture, af);
+	obs_source_release(af);
+	obs_source_filter_remove(capture, sw);
+	obs_source_release(sw);
+	obs_source_dec_showing(capture);
+	obs_source_release(capture);
+}
+
 // The whole chain of the capture scenes section (Link Visibility, Show in
 // Scenes and an item transition, two scenes): run inside that section, and
 // alone with STAGEKIT_TEST_ONLY_CAPTURE_CHAIN.
@@ -11501,6 +11770,14 @@ int main(int argc, char **argv)
 
 	if (getenv("STAGEKIT_TEST_ONLY_CLEAR_PICKED")) { // to try that section alone
 		clear_picked_test();
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
+
+	if (getenv("STAGEKIT_TEST_ONLY_AUTO_FRAME_SWITCHER")) { // to try that section alone
+		auto_frame_switcher_test();
 		obs_shutdown();
 		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
 		       g_failures == 1 ? "" : "s");
@@ -19095,6 +19372,7 @@ int main(int argc, char **argv)
 			obs_source_release(cap);
 		}
 		clear_picked_test();
+		auto_frame_switcher_test(); // (alone: STAGEKIT_TEST_ONLY_AUTO_FRAME_SWITCHER)
 
 		// Active App: one of several captures shows, the one whose app is in use.
 		printf("\n[active app]\n");

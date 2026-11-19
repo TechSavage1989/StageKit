@@ -57,6 +57,27 @@ bool app_capture_change(obs_source_t *capture, AppCaptureChange &change);
 // it (Standby Picture) follows that size as it is and does not glide again.
 bool app_capture_present(obs_source_t *capture);
 
+// The window an enabled Automatic Window Switcher on this capture shows now:
+// the one whose image it draws (by way of a capture kept ready for it, or
+// the capture itself). Since beta119 the capture itself is left aimed at an
+// earlier window while a ready capture is drawn, so the capture's own
+// settings do not say what is on screen: anything that goes by the program
+// shown (Auto Frame's saved shapes) asks this first.
+struct AppCaptureShown {
+	// False: nothing is shown (nothing listed is open, or its window has
+	// closed and its last image is no longer held).
+	bool any = false;
+	std::string executable; // the program's file name, as Windows gives it ("firefox.exe")
+	std::string title;      // the window's title now
+};
+// False when no enabled switcher on the capture has a say in what it shows:
+// there is none, it is switched off, or it has chosen no window since OBS
+// started or it was switched on and passes the capture's own image on as it
+// is (it lists nothing, or has not looked yet). The capture's own settings
+// say what it shows then. Safe from any thread; holds nothing after it
+// returns.
+bool app_capture_shown_window(obs_source_t *capture, AppCaptureShown &shown);
+
 struct OpenWindow;
 // Hands a window picked by hand to an enabled Capture App in Use on this
 // capture: it changes over to it in its own way, holds it, and remembers its

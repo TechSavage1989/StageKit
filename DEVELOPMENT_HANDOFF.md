@@ -9,9 +9,82 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | `fix/darkest-level-soft` (Ambient Background: Darkest level is a soft floor, betaNEXT), on `main` after beta193. Next: the new collection |
+| Working branch | `fix/auto-frame-follows-switcher` (Auto Frame goes by the window the Automatic Window Switcher shows; betaNEXT), on `main` after beta194. Next: the new collection |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
+
+## Auto Frame goes by the window the switcher shows (0.1.0-betaNEXT)
+
+Branch `fix/auto-frame-follows-switcher`, on `main` after beta194. Notes:
+`docs/releases/0.1.0-betaNEXT.md`. No Stream Deck file changed. The owner (2026-11-19), with a
+screenshot of a Window Capture's filters (Automatic Window Switcher, Auto Frame, Show in Scenes,
+Standby Picture) showing a web browser while Auto Frame's top line said *Capturing Dolphin.exe.
+Aspect ratio: 4:3, from your saved shapes.*: "says capturing dolphin, but it's a web browser".
+
+- **Cause** (reproduced: the new test, with the fix switched off, gives the owner's very line
+  and cuts the browser's 800x450 to 600x450). Since beta119 a switch only changes which ready
+  capture is drawn (`bridge_`, `own_ok_` false); the Window Capture itself stays aimed at an
+  earlier window. Auto Frame took the program from the capture's `get_hooked` and `window`
+  setting, so it kept Dolphin's saved 4:3 on whatever was shown. The AGENTS.md line "The parent
+  is still aimed, because Auto Frame and others read the program from its settings" was
+  beta116's and stopped being true at beta119.
+- **Fix.** `app_capture_shown_window` (`src/capture/app-capture.*`, `AppCaptureShown`): the
+  program and title of the window the enabled switcher shows (`shown_entry_`, `shown_exe_`,
+  `shown_title_`, set in `aim` and at the first look's adoption, the title refreshed by window
+  handle at each look); nothing while it shows nothing (`unsafe_`, or nothing chosen with the
+  capture's own image not believed); false, so the capture's own settings count, when it has no
+  say (switched off, or no window chosen since OBS started or it was switched on, with the
+  capture's own image passed on: lists nothing, not looked yet, not on Windows; lists emptied
+  while it runs leave the last window shown and named). Under the filter's lock,
+  through `obs_source_enum_filters` like `app_capture_change`; nothing held after it. Auto
+  Frame's `captured` (one call in place of `captured_program` and `captured_executable`) asks it
+  first; its saved shapes (by program or title), learned shapes, held shape, status line and the
+  first entry of its *Program or window* list go by it. A change of `app_capture_changes` makes
+  it look before the next image (`switches_`), as a new size does, so windows of the same size
+  change program at once too.
+- **Two cases found in review, fixed.** (1) Switched off and on again: the off branch of
+  `AppCapture::tick` drops the ready captures and the bridge and passes the capture's own image
+  on (`own_ok_` true), but kept `current_`; on again, with no listed window in front, the first
+  look found `current_` still listed and neither adopted the capture's aim nor aimed anything,
+  so the capture's own window (the emulator) was drawn while the browser was named (and its
+  status line said so too). The off branch now forgets `current_`, `shown_handle_` and the
+  `shown_*` fields, so the first look after it adopts where the capture is aimed or aims afresh,
+  as at start. (`shown_handle_` too: kept, a window closed while off would have set `unsafe_`
+  at that look, which the adoption does not clear.) (2) The window shown closes with nothing else
+  open: `phase_` is `Lost` and its last image is held for `kLostFor` (0.8 s) before the Standby
+  Image covers, but `current_` is cleared and `unsafe_` set at once, so Auto Frame named nothing
+  and dropped the shape off the held image. `shown_window` now names `shown_exe_`/`shown_title_`
+  (not cleared with `current_`) while `Lost` with a kept image after a close, as beta194 did
+  when the closed window was the capture's own.
+- **Readers of the capture's own `window` left as they are**: the switcher's own (first look's
+  adoption, the title re-aim in `ready_for`, `settle_aim`, its status line when switched off: all
+  about where the capture itself is aimed), Auto Capture's (its own Game Capture, which it aims
+  itself), and Show Source in Use's `program_of`/`title_of` (which app each listed capture is
+  *for*, set up by aiming it; a capture with a switcher is not meant to be in that list, and
+  going by what it shows would change which item an existing scene filter shows). Standby, Fit
+  to Space and Ambient Background never read a program; they use the switcher's own calls.
+- **Not changed**: a shape set by hand for this game only (*Set Aspect Ratio*, `force_until_gone`)
+  is still dropped only when the capture has had nothing for 4 s, so it stays on through a
+  switch to another program, as it did when a re-aimed capture found the next window quickly.
+  Not asked for; worth asking the owner.
+- **Tested** (`[auto frame: goes by the window the window switcher shows]`,
+  `auto_frame_switcher_test`, alone with `STAGEKIT_TEST_ONLY_AUTO_FRAME_SWITCHER`, also in the
+  full run after the clear-picked section; stand-in kind `stagekit_test_af_window`): emu_43.exe
+  (640x360, `emu_43 = 4:3` saved) trimmed 80 px a side; switched to browser.exe (800x450, nothing
+  saved) while the capture stays aimed at emu_43: *Capturing browser.exe*, trim 0 on every one of
+  39 frames from the first frame of the switch; the browser's title changed to one with a saved
+  `arcade night = 3:2`: 62.5 px; back to emu_43: 80 px and *from your saved shapes*; switched
+  off and on again with the browser drawn and nothing in front: the window named is the one
+  drawn (emu_43, 640 wide, 80 px); the window shown closes with nothing listed open: 4:3 kept on
+  every held frame (24, 14 of them 0.35 s on, after Auto Frame's next look), then *No program
+  detected*; switcher off: the capture's own emu_43 again. With the fix switched off 4 of the
+  first 8 checks fail; without the two review fixes the two new checks fail (*Capturing
+  browser.exe* over the 640-wide image with no trim; the held image's trim 0). Also run here,
+  all passed: `GAME_AREA`, `CLEAR_PICKED`, `CAPTURE_HIDE`, `STANDBY_COVER`, `TOOLTIPS`; the new
+  section three more times. The full suite (with the `[auto frame]` and the main window
+  switcher sections, whose off-and-on step starts with nothing shown and so is not changed) was
+  not run here. Not seen on Windows with a real Window Capture.
+
 
 ## Ambient Background: Darkest level is a soft floor, under the blur (0.1.0-beta196)
 

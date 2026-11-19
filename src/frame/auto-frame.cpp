@@ -21,6 +21,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "auto-frame.hpp"
 #include "../common/timing.hpp"
 
+#include "../capture/app-capture.hpp"
 #include "../capture/auto-capture.hpp"
 #include "../common/easing.hpp"
 #include "../common/pick-list.hpp"
@@ -474,15 +475,24 @@ public:
 					"Auto Frame: the capture has ended; the shape set by hand is dropped");
 				set_forced_ratio(0.0);
 			}
+			// An Automatic Window Switcher before this filter that has
+			// changed to another window: looked at before the next picture
+			// is drawn, as a new size is (the two windows may be the same size).
+			obs_source_t *parent = obs_filter_get_parent(source_);
+			const uint64_t switches = parent ? app_capture_changes(parent) : 0;
 			std::lock_guard lock(mutex_);
 			if (w && h && last_w_ && (w != last_w_ || h != last_h_))
 				identity_timer_ = 0.0;
+			if (switches != switches_) {
+				switches_ = switches;
+				identity_timer_ = 0.0;
+			}
 		}
 		double rule_ratio = -1.0;
 		if (identity_timer_ <= 0.0) {
 			identity_timer_ = 0.25;
-			const std::string program = captured_program();
-			const std::string executable = captured_executable();
+			std::string program, executable;
+			captured(program, executable);
 			std::lock_guard lock(mutex_);
 			rule_ratio = 0.0;
 			double usual = 0.0;
@@ -573,14 +583,33 @@ public:
 
 	obs_source_t *source() const { return source_; }
 
-	// Lower-case text describing the program a capture source is showing:
-	// what a game or window capture reports it is attached to, plus its
-	// "window" setting (title:class:executable).
-	std::string captured_program()
+	// What the capture source is showing: `program`, lower-case text the
+	// saved shapes are looked for in (the program's file name and its
+	// window's title), and `executable`, the program's file name
+	// ("snes9x-x64.exe"), empty when it is not showing a program.
+	//
+	// With an Automatic Window Switcher on the source, the window that
+	// filter shows: the capture itself is left aimed at an earlier window
+	// while the switcher draws a capture kept ready for the one shown, so
+	// its settings named the wrong program (the owner, 2026-11-19, of a
+	// browser shown with Dolphin's 4:3: "says capturing dolphin, but it's a
+	// web browser"). Otherwise what a game or window capture reports it is
+	// attached to, and its "window" setting (title:class:executable).
+	void captured(std::string &program, std::string &executable)
 	{
+		program.clear();
+		executable.clear();
 		obs_source_t *parent = obs_filter_get_parent(source_);
 		if (!parent)
-			return {};
+			return;
+		AppCaptureShown shown;
+		if (app_capture_shown_window(parent, shown)) {
+			if (shown.any) {
+				executable = shown.executable;
+				program = lower(shown.executable + " " + shown.title);
+			}
+			return;
+		}
 		std::string text;
 		calldata_t cd = {};
 		if (proc_handler_call(obs_source_get_proc_handler(parent), "get_hooked", &cd)) {
@@ -589,40 +618,22 @@ public:
 				if (calldata_get_string(&cd, key, &value) && value)
 					text += std::string(value) + " ";
 			}
-		}
-		calldata_free(&cd);
-		obs_data_t *settings = obs_source_get_settings(parent);
-		text += obs_data_get_string(settings, "window");
-		obs_data_release(settings);
-		return lower(text);
-	}
-
-	// The file name of the program being captured ("snes9x-x64.exe"), or
-	// empty when the source is not capturing a program.
-	std::string captured_executable()
-	{
-		obs_source_t *parent = obs_filter_get_parent(source_);
-		if (!parent)
-			return {};
-		std::string executable;
-		calldata_t cd = {};
-		if (proc_handler_call(obs_source_get_proc_handler(parent), "get_hooked", &cd)) {
 			const char *value = nullptr;
 			if (calldata_get_string(&cd, "executable", &value) && value)
 				executable = value;
 		}
 		calldata_free(&cd);
+		obs_data_t *settings = obs_source_get_settings(parent);
+		const std::string window = obs_data_get_string(settings, "window");
+		obs_data_release(settings);
+		program = lower(text + window);
 		if (executable.empty()) {
 			// The "window" setting is title:class:executable, with ':' in
 			// a part written "#3A".
-			obs_data_t *settings = obs_source_get_settings(parent);
-			const std::string window = obs_data_get_string(settings, "window");
-			obs_data_release(settings);
 			const size_t colon = window.rfind(':');
 			if (colon != std::string::npos)
 				executable = window.substr(colon + 1);
 		}
-		return executable;
 	}
 
 	// For the controls: what is being captured and which shape applies.
@@ -1504,6 +1515,7 @@ private:
 	bool measure_once_[2] = {false, false};
 	double measured_[2] = {0.0, 0.0};
 	double identity_timer_ = 0.0;
+	uint64_t switches_ = 0; // an Automatic Window Switcher's count of changes, at the last look
 	double rule_ratio_ = 0.0;
 	double usual_ratio_ = 0.0; // the built-in shape for the program being captured
 	std::string program_;
@@ -1735,7 +1747,10 @@ obs_properties_t *get_properties(void *data)
 	set_tip(program, obs_module_text("Frame.RuleProgram.Tip"));
 	if (self) {
 		std::vector<std::string> names;
-		const std::string captured = self->captured_executable();
+		// (First the program shown: with a window switcher, the window it
+		// shows, not the one the capture itself is aimed at.)
+		std::string text, captured;
+		self->captured(text, captured);
 		if (!captured.empty())
 			names.push_back(captured);
 		for (const std::string &name : open_program_names())
