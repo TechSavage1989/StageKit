@@ -267,8 +267,24 @@ its heading:
   - *Intensity* (in the shadow part, 100 % as it comes): more fills a glow's or shadow's soft tail in
     towards full colour without giving it a hard edge, for a bright glow; less makes it fainter.
     Shadows and glows fall off smoothly with no steps in their soft tail.
+  - *Outline design* (in the outline part of both filters, *Solid* as it comes): *Double line*
+    (two thin lines with a gap, inside the outline's width), *Dashed* and *Dotted* (*Dash length*,
+    *Gap length*), *Gradient* (the outline colour changing into a *Second colour* round the
+    border), *Neon* (a bright thin tube with a soft glow of the outline colour; *Glow size* is the
+    glow's share of the width) and *Inner line* (drawn just inside the image's edge instead of
+    outside it; it needs *Outline corners* other than *Follow the source*, and text and shaped
+    sources keep a solid line outside). Five designs move, at a *Speed* you set (0 stands still, a
+    negative number goes the other way): *Marching dashes*, *Travelling gradient*, *Pulse* (the
+    line fades in and out), *Shimmer* (a highlight in the second colour goes round) and *Rainbow*.
+    The patterns run round the border when *Outline corners* is Square, Rounded, Bevel, Notch or
+    Scoop. With *Follow the source* they are laid round the source's middle in Shadow, Glow &
+    Outline, and slanted across the whole scene in Scene Shadow, so pick corners there for dashes
+    that travel round. The drop shadow is still thrown by the whole line, and a filter saved
+    before keeps its solid line.
 
 <p align="center"><img src="docs/images/outline-glow.png" width="900" alt="White sources with a 10 px black outline from Shadow, Glow &amp; Outline and from Scene Shadow, the same width, with a drop shadow, with rounded and bevelled outline corners, the drop shadow rounded with them, half-way through a Morph with the outlines solid, and a white glow round dark squares at 100% and 250% intensity"></p>
+
+<p align="center"><img src="docs/images/outline-designs.png" width="900" alt="The twelve outline designs, each from Shadow, Glow &amp; Outline and from Scene Shadow: solid, double line, dashed, dotted, gradient, neon, inner line, marching dashes, travelling gradient, pulse, shimmer and rainbow"></p>
 - **Panel behind the source**: a coloured panel with a margin.
 
 *Rounded corners* rounds the image and the panel.

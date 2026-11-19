@@ -27,6 +27,53 @@ the Free Software Foundation; either version 2 of the License, or
 
 namespace stagekit {
 
+// How the line is drawn (`outline_design`, by number, append-only): 0 solid,
+// as it always was; then the still designs and the ones that move. Sizes in
+// the pixels of whoever draws (canvas pixels for Scene Shadow).
+struct OutlineDesign {
+	enum Kind {
+		Solid = 0,
+		Double = 1,
+		Dashed = 2,
+		Dotted = 3,
+		Gradient = 4,
+		Neon = 5,
+		Inner = 6,
+		Marching = 7,
+		Travelling = 8,
+		Pulse = 9,
+		Shimmer = 10,
+		Rainbow = 11,
+		kLast = Rainbow,
+	};
+	int kind = Solid;
+	uint32_t color2 = 0xFFFFAA00; // the gradient's other end, the shimmer's highlight
+	double dash = 24.0, gap = 16.0;
+	double speed = 60.0; // pixels a second for dashes; 600 is one round a second; 0 stands still
+	double glow = 0.7;   // Neon: the share of the line's width that is glow
+	// Drawn inside the source's edge, with no line outside it.
+	bool inner() const { return kind == Inner; }
+};
+
+// The design as the settings say, and part-way between two (the kind changes
+// half-way).
+OutlineDesign read_outline_design(obs_data_t *settings);
+OutlineDesign lerp_design(const OutlineDesign &a, const OutlineDesign &b, double t);
+
+// The design's values in an effect (the same names in stagekit-shadow.effect
+// and stagekit-scene-shadow.effect), set at every run of a technique that
+// draws a line. What moves goes by OBS's video frame time, wrapped here, so
+// a shader never sees a large number.
+class DesignUniforms {
+public:
+	void find(gs_effect_t *effect);
+	void set(const OutlineDesign &design) const;
+
+private:
+	gs_eparam_t *kind_ = nullptr, *color2_ = nullptr, *dash_ = nullptr, *gap_ = nullptr;
+	gs_eparam_t *phase_ = nullptr, *turn_ = nullptr, *pulse_ = nullptr, *glow_ = nullptr;
+};
+
 // A shadow, glow or outline, with the same settings (names and numbers) as
 // Shadow, Glow & Outline, all in canvas pixels.
 struct ShadowLook {
@@ -49,10 +96,14 @@ struct ShadowLook {
 	// source's box, its outer corners `outline_corner_size` across.
 	int outline_corners = 0;
 	double outline_corner_size = 20.0;
+	OutlineDesign design;
 	// How dense the shadow or glow is (`glow_intensity` / 100): 1 as it
 	// always was; more fills its soft tail in without a hard edge.
 	double intensity = 1.0;
 	bool box_line() const { return outline && outline_corners > 0; }
+	// An inner line of a source lies on the source, so whatever is stacked
+	// above it must cover it (LookPaint::cover_ring).
+	bool inner_line() const { return box_line() && design.inner(); }
 
 	// Whether anything is drawn at all.
 	bool any() const { return (shadow && opacity > 0.001) || (outline && outline_opacity > 0.001); }
@@ -65,6 +116,7 @@ ShadowLook read_shadow_look(obs_data_t *settings);
 // corners (into the line's group) and the shadow's intensity (into the
 // shadow's group), and their defaults.
 void add_outline_corner_properties(obs_properties_t *outline);
+void add_outline_design_properties(obs_properties_t *outline);
 void add_intensity_property(obs_properties_t *shadow);
 void outline_glow_defaults(obs_data_t *settings);
 
@@ -241,6 +293,10 @@ public:
 	// Both halves for an item as its scene draws it now (nothing for an
 	// item that draws nothing).
 	void draw_item_ring(obs_sceneitem_t *item, const ShadowLook &look);
+	// An item stacked above the ones whose lines are in the ring canvas
+	// being drawn: what it covers of them is taken out, so an inner line
+	// (which lies on its source) does not show through a source above it.
+	void cover_ring(obs_sceneitem_t *item);
 	// What `compose` made, onto what is being drawn, following OBS's
 	// linear-light setting.
 	void draw_out(uint32_t cx, uint32_t cy);
@@ -279,6 +335,7 @@ private:
 	gs_eparam_t *p_follow_amount_ = nullptr;
 	gs_eparam_t *p_follow_tex_ = nullptr;
 	gs_eparam_t *p_presence_ = nullptr;
+	DesignUniforms design_;
 	bool has_presence_ = false;
 	std::unique_ptr<VisibleRect> rects_;
 	gs_texture_t *no_rect_ = nullptr;
