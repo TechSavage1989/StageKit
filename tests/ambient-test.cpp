@@ -15632,6 +15632,392 @@ static void outline_glow_test(uint32_t w, uint32_t h, const std::string &out, co
 	// (OBS takes released sources apart on a thread of its own.)
 	sleep_ms(500);
 }
+// Outline designs: every design from both filters, the moving ones by the
+// clock, the controls shown for each, and a design through a Morph.
+static void outline_designs_test(uint32_t w, uint32_t h, const std::string &out)
+{
+	printf("\n[outline designs: still and moving, in Shadow, Glow & Outline and Scene Shadow]\n");
+	const std::string dir = out + "/../outline-designs";
+	if (std::system(("mkdir -p '" + dir + "'").c_str()) != 0)
+		printf("  (could not make %s)\n", dir.c_str());
+	auto block = [](const char *name, long long abgr, int bw, int bh) {
+		obs_data_t *d = obs_data_create();
+		obs_data_set_int(d, "color", abgr);
+		obs_data_set_int(d, "width", bw);
+		obs_data_set_int(d, "height", bh);
+		obs_source_t *src = obs_source_create("color_source", name, d, nullptr);
+		obs_data_release(d);
+		return src;
+	};
+	auto put = [](obs_scene_t *scene, obs_source_t *src, float x, float y) {
+		obs_sceneitem_t *item = obs_scene_add(scene, src);
+		vec2 p;
+		vec2_set(&p, x, y);
+		obs_sceneitem_set_pos(item, &p);
+		return item;
+	};
+	auto px = [&](const std::vector<uint8_t> &f, int x, int y, int c) {
+		return (int)f[(size_t(y) * w + x) * 4 + c];
+	};
+	auto most = [&](const std::vector<uint8_t> &a, const std::vector<uint8_t> &b, int x0, int y0, int x1, int y1) {
+		int m = 0;
+		for (int y = y0; y < y1; y++)
+			for (int x = x0; x < x1; x++)
+				for (int c = 0; c < 3; c++)
+					m = std::max(m, std::abs(px(a, x, y, c) - px(b, x, y, c)));
+		return m;
+	};
+	auto shot = [&](obs_source_t *src, int wait = 350) {
+		sleep_ms(wait);
+		render(src, w, h);
+		return render(src, w, h);
+	};
+	auto set = [](obs_source_t *f, const std::function<void(obs_data_t *)> &change) {
+		obs_data_t *s = obs_source_get_settings(f);
+		change(s);
+		obs_source_update(f, s);
+		obs_data_release(s);
+	};
+	// A black line on the grey background: how dark a pixel is, 0 to 1.
+	auto dark = [&](const std::vector<uint8_t> &f, int x, int y) {
+		return std::clamp((128.0 - px(f, x, y, 0)) / 128.0, 0.0, 1.0);
+	};
+	// Pieces of line along a row: how often it starts, and how much of the
+	// row is line.
+	struct Row {
+		int starts = 0;
+		double share = 0.0;
+	};
+	auto along = [&](const std::vector<uint8_t> &f, int y, int x0, int x1) {
+		Row r;
+		bool was = dark(f, x0, y) > 0.5;
+		int on = was ? 1 : 0;
+		for (int x = x0 + 1; x < x1; x++) {
+			const bool is = dark(f, x, y) > 0.5;
+			if (is && !was)
+				r.starts++;
+			on += is ? 1 : 0;
+			was = is;
+		}
+		r.share = (double)on / (double)(x1 - x0);
+		return r;
+	};
+	// A white source, 200 by 120 at 100, 100, with a 12 px black line: the
+	// per-source filter in one scene, Scene Shadow in the other.
+	obs_source_t *bg = block("OD Back", 0xFF808080, 640, 360);
+	obs_source_t *own = block("OD Own", 0xFFFFFFFF, 200, 120);
+	obs_source_t *plain = block("OD Plain", 0xFFFFFFFF, 200, 120);
+	obs_scene_t *a = obs_scene_create("OD Own Line");
+	obs_scene_t *b = obs_scene_create("OD Scene Line");
+	put(a, bg, 0, 0);
+	put(a, own, 100, 100);
+	put(b, bg, 0, 0);
+	put(b, plain, 100, 100);
+	auto line = [](obs_data_t *s) {
+		obs_data_set_bool(s, "shadow", false);
+		obs_data_set_bool(s, "outline", true);
+		obs_data_set_double(s, "outline_width", 12.0);
+		obs_data_set_int(s, "outline_color", 0xFF000000);
+		obs_data_set_int(s, "outline_corners", 5); // square, round the box
+	};
+	obs_source_t *f_own, *f_scene;
+	{
+		obs_data_t *pd = obs_data_create();
+		obs_data_set_int(pd, "adjusted_left", 0);
+		line(pd);
+		f_own = obs_source_create("stagekit_shadow_backdrop", "OD Own", pd, nullptr);
+		obs_data_release(pd);
+		obs_source_filter_add(own, f_own);
+		obs_data_t *zd = obs_data_create();
+		obs_data_set_int(zd, "ramp_ms", 0);
+		line(zd);
+		f_scene = obs_source_create("stagekit_scene_shadow", "OD Scene", zd, nullptr);
+		obs_data_release(zd);
+		obs_source_filter_add(obs_scene_get_source(b), f_scene);
+	}
+	obs_source_t *const filters[2] = {f_own, f_scene};
+	obs_source_t *const scenes[2] = {obs_scene_get_source(a), obs_scene_get_source(b)};
+	const char *const who[2] = {"Shadow, Glow & Outline", "Scene Shadow"};
+	auto both = [&](const std::function<void(obs_data_t *)> &change) {
+		for (obs_source_t *f : filters)
+			set(f, change);
+	};
+	static const char *const names[12] = {"solid",      "double line",     "dashed",
+					      "dotted",     "gradient",        "neon",
+					      "inner line", "marching dashes", "travelling gradient",
+					      "pulse",      "shimmer",         "rainbow"};
+	auto keep = [&](int design, int i, const std::vector<uint8_t> &f) {
+		char name[128];
+		snprintf(name, sizeof(name), "/%02d %s, %s.rgba", design * 2 + i + 1, names[design], who[i]);
+		write_frame(dir + name, f, w, h);
+	};
+	sleep_ms(300);
+	// A filter saved before reads Solid, and Solid is the line as it was.
+	std::vector<uint8_t> before[2];
+	for (int i = 0; i < 2; i++) {
+		obs_data_t *s = obs_source_get_settings(filters[i]);
+		const bool unset = !obs_data_has_user_value(s, "outline_design");
+		const long long kind = obs_data_get_int(s, "outline_design");
+		obs_data_release(s);
+		obs_properties_t *props = obs_source_properties(filters[i]);
+		obs_property_t *p = props ? obs_properties_get(props, "outline_design") : nullptr;
+		const size_t count = p ? obs_property_list_item_count(p) : 0;
+		obs_properties_destroy(props);
+		before[i] = shot(scenes[i]);
+		CHECK(unset && kind == 0 && count == 12,
+		      "%s: a filter saved without a design reads Solid, of %zu designs (%lld)", who[i], count, kind);
+	}
+	both([](obs_data_t *s) { obs_data_set_int(s, "outline_design", 0); });
+	for (int i = 0; i < 2; i++) {
+		const std::vector<uint8_t> f = shot(scenes[i]);
+		keep(0, i, f);
+		const int off = most(before[i], f, 0, 0, (int)w, (int)h);
+		const Row top = along(f, 94, 100, 300);
+		CHECK(off == 0 && top.share > 0.99,
+		      "%s: Solid is the line as it was (at most %d off; %.2f of the top side is line)", who[i], off,
+		      top.share);
+	}
+	// Double line: line, gap, line across the 12 px above the source.
+	both([](obs_data_t *s) { obs_data_set_int(s, "outline_design", 1); });
+	for (int i = 0; i < 2; i++) {
+		const std::vector<uint8_t> f = shot(scenes[i]);
+		keep(1, i, f);
+		const double outer = dark(f, 200, 89), gap = dark(f, 200, 94), inner = dark(f, 200, 98);
+		CHECK(outer > 0.8 && inner > 0.8 && gap < 0.1,
+		      "%s: Double line is two lines with a gap (outer %.2f, gap %.2f, inner %.2f)", who[i], outer, gap,
+		      inner);
+	}
+	// Dashed: 24 px of line and 16 of gap, five to the top side.
+	both([](obs_data_t *s) {
+		obs_data_set_int(s, "outline_design", 2);
+		obs_data_set_double(s, "outline_dash", 24.0);
+		obs_data_set_double(s, "outline_gap", 16.0);
+	});
+	for (int i = 0; i < 2; i++) {
+		const std::vector<uint8_t> f = shot(scenes[i]);
+		keep(2, i, f);
+		const Row top = along(f, 94, 100, 300);
+		CHECK(top.starts >= 4 && top.starts <= 6 && std::abs(top.share - 0.6) < 0.08,
+		      "%s: Dashed has a dash every 40 px along the top side (%d dashes, %.2f of it line)", who[i],
+		      top.starts, top.share);
+	}
+	// The drop shadow is thrown by the whole line: no gaps in it.
+	both([](obs_data_t *s) {
+		obs_data_set_bool(s, "shadow", true);
+		obs_data_set_double(s, "softness", 0.0);
+		obs_data_set_double(s, "shadow_opacity", 100.0);
+		obs_data_set_double(s, "offset_x", 12.0);
+		obs_data_set_double(s, "offset_y", 12.0);
+	});
+	for (int i = 0; i < 2; i++) {
+		const std::vector<uint8_t> f = shot(scenes[i]);
+		// (The bottom line lies at 220..232; its shadow 12 px on, at 232..244.)
+		const Row thrown = along(f, 238, 120, 300);
+		const Row dashes = along(f, 94, 100, 300);
+		CHECK(thrown.share > 0.99 && dashes.starts >= 4,
+		      "%s: a dashed line's drop shadow has no gaps (%.2f of it dark; %d dashes on the top side)",
+		      who[i], thrown.share, dashes.starts);
+	}
+	both([](obs_data_t *s) { obs_data_set_bool(s, "shadow", false); });
+	// Dotted: round dots the line's width across, 16 px apart.
+	both([](obs_data_t *s) { obs_data_set_int(s, "outline_design", 3); });
+	for (int i = 0; i < 2; i++) {
+		const std::vector<uint8_t> f = shot(scenes[i]);
+		keep(3, i, f);
+		const Row top = along(f, 94, 100, 300);
+		const Row edge = along(f, 89, 100, 300);
+		CHECK(top.starts >= 6 && top.starts <= 8 && top.share < 0.5 && edge.share < top.share,
+		      "%s: Dotted has a round dot every 28 px (%d dots, %.2f of the middle row line, %.2f of a row near the edge)",
+		      who[i], top.starts, top.share, edge.share);
+	}
+	// Gradient: red at the top left, blue at the bottom right.
+	both([](obs_data_t *s) {
+		obs_data_set_int(s, "outline_design", 4);
+		obs_data_set_int(s, "outline_color", 0xFF0000FF);
+		obs_data_set_int(s, "outline_color2", 0xFFFF0000);
+	});
+	for (int i = 0; i < 2; i++) {
+		const std::vector<uint8_t> f = shot(scenes[i]);
+		keep(4, i, f);
+		const int r0 = px(f, 104, 94, 0), b0 = px(f, 104, 94, 2), r1 = px(f, 296, 226, 0),
+			  b1 = px(f, 296, 226, 2);
+		CHECK(r0 > 200 && b0 < 60 && b1 > 200 && r1 < 60,
+		      "%s: Gradient goes from the outline colour to the second colour round the border (red %d blue %d at the top left; red %d blue %d at the bottom right)",
+		      who[i], r0, b0, r1, b1);
+	}
+	// Neon: a bright tube at the source, its glow fading outwards.
+	both([](obs_data_t *s) {
+		obs_data_set_int(s, "outline_design", 5);
+		obs_data_set_double(s, "outline_neon", 70.0);
+	});
+	for (int i = 0; i < 2; i++) {
+		const std::vector<uint8_t> f = shot(scenes[i]);
+		keep(5, i, f);
+		auto away = [&](int y) {
+			return std::abs(px(f, 200, y, 0) - 128) + std::abs(px(f, 200, y, 1) - 128);
+		};
+		const int tube = px(f, 200, 98, 1);
+		CHECK(tube > 180 && away(95) > away(92) && away(92) > away(89) && away(89) < 40,
+		      "%s: Neon is a bright tube with a glow that falls off outwards (tube green %d; off the background by %d, %d, %d going out)",
+		      who[i], tube, away(95), away(92), away(89));
+	}
+	// Inner line: inside the source's edge, nothing outside it.
+	both([](obs_data_t *s) {
+		obs_data_set_int(s, "outline_design", 6);
+		obs_data_set_int(s, "outline_color", 0xFF000000);
+	});
+	for (int i = 0; i < 2; i++) {
+		const std::vector<uint8_t> f = shot(scenes[i]);
+		keep(6, i, f);
+		const int inside = px(f, 200, 106, 0), outside = px(f, 200, 94, 0), middle = px(f, 200, 160, 0);
+		CHECK(inside < 30 && std::abs(outside - 128) <= 2 && middle > 250,
+		      "%s: Inner line lies inside the source's edge and nowhere outside it (%d inside, %d outside, %d in the middle)",
+		      who[i], inside, outside, middle);
+	}
+	{
+		// A source stacked above covers the line under it (Scene Shadow).
+		obs_source_t *over = block("OD Over", 0xFF00FF00, 60, 60);
+		obs_sceneitem_t *item = put(b, over, 90, 90);
+		const std::vector<uint8_t> f = shot(scenes[1]);
+		const int r = px(f, 130, 106, 0), g = px(f, 130, 106, 1);
+		CHECK(g > 240 && r < 15,
+		      "Scene Shadow: an inner line does not show through a source stacked above it (red %d, green %d)",
+		      r, g);
+		obs_sceneitem_remove(item);
+		obs_source_release(over);
+	}
+	// The ones that move: two looks 0.4 s apart differ, and at speed 0 not.
+	for (int design = 7; design <= 11; design++) {
+		both([design](obs_data_t *s) {
+			obs_data_set_int(s, "outline_design", design);
+			obs_data_set_double(s, "outline_speed", 150.0);
+			obs_data_set_int(s, "outline_color", design == 10 ? 0xFF000000 : 0xFF0000FF);
+			obs_data_set_int(s, "outline_color2", design == 10 ? 0xFFFFFFFF : 0xFFFF0000);
+		});
+		std::vector<uint8_t> first[2];
+		int moved[2] = {0, 0};
+		for (int i = 0; i < 2; i++) {
+			first[i] = shot(scenes[i]);
+			keep(design, i, first[i]);
+		}
+		// (Two later looks: a pulse may be back where it was at one of them.)
+		for (int wait : {400, 230})
+			for (int i = 0; i < 2; i++)
+				moved[i] = std::max(moved[i], most(first[i], shot(scenes[i], wait), 80, 80, 320, 240));
+		both([](obs_data_t *s) { obs_data_set_double(s, "outline_speed", 0.0); });
+		for (int i = 0; i < 2; i++) {
+			const std::vector<uint8_t> still = shot(scenes[i]);
+			const int at_rest = most(still, shot(scenes[i], 400), 0, 0, (int)w, (int)h);
+			CHECK(moved[i] > 20 && at_rest == 0,
+			      "%s: %s moves by the clock and stands still at speed 0 (up to %d off a moment later; %d at speed 0)",
+			      who[i], names[design], moved[i], at_rest);
+		}
+	}
+	// Following the source (no corners chosen): the designs still apply.
+	both([](obs_data_t *s) {
+		obs_data_set_int(s, "outline_corners", 0);
+		obs_data_set_int(s, "outline_design", 2);
+		obs_data_set_int(s, "outline_color", 0xFF000000);
+	});
+	for (int i = 0; i < 2; i++) {
+		const std::vector<uint8_t> f = shot(scenes[i]);
+		const Row top = along(f, 94, 100, 300);
+		CHECK(top.starts >= 3 && top.starts <= 7 && top.share > 0.3 && top.share < 0.85,
+		      "%s: a line that follows the source is dashed too (%d dashes, %.2f of the top side line)", who[i],
+		      top.starts, top.share);
+	}
+	both([](obs_data_t *s) {
+		obs_data_set_int(s, "outline_design", 4);
+		obs_data_set_int(s, "outline_color", 0xFF0000FF);
+		obs_data_set_int(s, "outline_color2", 0xFFFF0000);
+	});
+	for (int i = 0; i < 2; i++) {
+		const std::vector<uint8_t> f = shot(scenes[i]);
+		const int off = std::abs(px(f, 104, 94, 0) - px(f, 296, 226, 0)) +
+				std::abs(px(f, 104, 94, 2) - px(f, 296, 226, 2));
+		CHECK(off > 150, "%s: a line that follows the source takes the gradient too (two far points %d apart)",
+		      who[i], off);
+	}
+	// The controls shown for each design.
+	for (int i = 0; i < 2; i++) {
+		int wrong = 0;
+		for (int design = 0; design <= 11; design++) {
+			obs_data_t *s = obs_source_get_settings(filters[i]);
+			obs_data_set_int(s, "outline_design", design);
+			obs_properties_t *props = obs_source_properties(filters[i]);
+			obs_properties_apply_settings(props, s);
+			auto shown = [&](const char *name) {
+				obs_property_t *p = obs_properties_get(props, name);
+				return p && obs_property_visible(p);
+			};
+			const bool dashes = design == 2 || design == 7;
+			wrong += shown("outline_color2") != (design == 4 || design == 8 || design == 10);
+			wrong += shown("outline_dash") != dashes;
+			wrong += shown("outline_gap") != (dashes || design == 3);
+			wrong += shown("outline_speed") != (design >= 7);
+			wrong += shown("outline_neon") != (design == 5);
+			obs_properties_destroy(props);
+			obs_data_release(s);
+		}
+		CHECK(wrong == 0, "%s: each design shows only its own controls (%d wrong)", who[i], wrong);
+	}
+	// Through a Morph from a solid line to a dashed one: the design changes
+	// half-way.
+	{
+		obs_source_t *box = block("OD Morph Box", 0xFFFFFFFF, 200, 120);
+		obs_scene_t *m1 = obs_scene_create("OD Morph From");
+		obs_scene_t *m2 = obs_scene_create("OD Morph To");
+		std::vector<obs_source_t *> shadows;
+		int n = 0;
+		for (obs_scene_t *scene : {m1, m2}) {
+			put(scene, bg, 0, 0);
+			put(scene, box, 100, 100);
+			obs_data_t *zd = obs_data_create();
+			obs_data_set_int(zd, "ramp_ms", 0);
+			line(zd);
+			obs_data_set_int(zd, "outline_design", n++ == 0 ? 0 : 2);
+			obs_source_t *ss = obs_source_create("stagekit_scene_shadow", "OD Morph Shadow", zd, nullptr);
+			obs_data_release(zd);
+			obs_source_filter_add(obs_scene_get_source(scene), ss);
+			shadows.push_back(ss);
+		}
+		shot(obs_scene_get_source(m1));
+		shot(obs_scene_get_source(m2));
+		obs_data_t *md = obs_data_create();
+		obs_data_set_int(md, "ease_curve", 0); // linear
+		obs_source_t *morph = obs_source_create_private("stagekit_morph", "OD Morph", md);
+		obs_data_release(md);
+		obs_transition_set(morph, obs_scene_get_source(m1));
+		obs_transition_start(morph, OBS_TRANSITION_MODE_MANUAL, 0, obs_scene_get_source(m2));
+		obs_transition_set_manual_time(morph, 0.25f);
+		sleep_ms(150);
+		render(morph, w, h);
+		const Row early = along(render(morph, w, h), 94, 100, 300);
+		obs_transition_set_manual_time(morph, 0.75f);
+		sleep_ms(150);
+		render(morph, w, h);
+		const Row late = along(render(morph, w, h), 94, 100, 300);
+		CHECK(early.share > 0.99 && late.starts >= 4 && late.share < 0.7,
+		      "Morph carries the design: solid a quarter of the way to a dashed line, dashed at three quarters (%.2f line; then %d dashes, %.2f line)",
+		      early.share, late.starts, late.share);
+		obs_transition_force_stop(morph);
+		obs_transition_clear(morph);
+		obs_source_release(morph);
+		for (obs_source_t *ss : shadows)
+			obs_source_release(ss);
+		obs_scene_release(m1);
+		obs_scene_release(m2);
+		obs_source_release(box);
+	}
+	for (obs_source_t *f : filters)
+		obs_source_release(f);
+	obs_scene_release(a);
+	obs_scene_release(b);
+	for (obs_source_t *src : {bg, own, plain})
+		obs_source_release(src);
+	// (OBS takes released sources apart on a thread of its own.)
+	sleep_ms(500);
+}
 // ==== end scene-filters:shadow ====
 
 // ==== scene-filters:standby-corners ====
@@ -17482,6 +17868,13 @@ int main(int argc, char **argv)
 
 	if (getenv("STAGEKIT_TEST_ONLY_SHADOW_EACH")) { // to try that section alone
 		scene_shadow_each_test(w, h, out);
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
+	if (getenv("STAGEKIT_TEST_ONLY_OUTLINE_DESIGNS")) { // to try that section alone
+		outline_designs_test(w, h, out);
 		obs_shutdown();
 		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
 		       g_failures == 1 ? "" : "s");

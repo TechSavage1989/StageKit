@@ -3550,6 +3550,53 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   Scene Shadow's output is dithered by 0.9 of a level (`finished`). Tested in `[outline and glow:
   ...]` (`outline_glow_test`, alone: `STAGEKIT_TEST_ONLY_OUTLINE_GLOW`; `docs/images/outline-glow.png`
   from `$out/outline-glow`). Only OpenGL.
+- **Outline designs** (`outline_design`, by number, append-only: 0 Solid, as it comes and as every
+  saved filter reads; 1 Double line, 2 Dashed, 3 Dotted, 4 Gradient, 5 Neon, 6 Inner line, 7
+  Marching dashes, 8 Travelling gradient, 9 Pulse, 10 Shimmer, 11 Rainbow; the owner: "would be
+  nice to have some additional outline/border types and designs as well as maybe some animated
+  and/or procedural ones"). The same keys in Shadow, Glow & Outline and Scene Shadow
+  (`outline_color2`, `outline_dash`, `outline_gap`, `outline_speed`, `outline_neon`), one struct
+  (`OutlineDesign` in `src/look/look-paint.hpp`, inside `ShadowLook`), one set of controls
+  (`add_outline_design_properties`, shown per design by the list's callback, never a slider's)
+  and one uniform helper (`DesignUniforms`: `design_kind`, `design_color2`, `design_dash`,
+  `design_gap`, `design_phase`, `design_turn`, `design_pulse`, `design_glow`, the same names in
+  both effect files, set at every run of a technique that draws a line). The shader text
+  (`design_at`, `design_rgb`, `dash_cover`, `along_box`) is in both effect files: **change the two
+  together**. What it rests on:
+  - **Solid costs nothing and is the line as it was**: the design is mixed in by
+    `step(0.5, design_kind)`, and nothing ticks. Time is OBS's video frame time, wrapped in
+    double precision in `DesignUniforms::set` into a phase (0..1), a turn (0..1) and the pulse's
+    level, so a shader never sees a large number (the Direct3D lesson). *Speed*: pixels a second
+    for Marching dashes; 600 is one round a second for Travelling gradient, Shimmer and Rainbow;
+    100 is one pulse a second; 0 stands still.
+  - **A box line** (corners Square, Rounded, Bevel, Notch, Scoop) goes by how far round its box a
+    point is (`along_box`, clockwise from the top left, a whole number of dashes or dots round
+    it, a corner in the middle of a dash) and how far across the line (`d_in`, `d_out`). In Scene
+    Shadow `BoxRing` works that out per source and writes it beside the line: alpha is still the
+    whole line (what throws the shadow), green how much of the line is there, blue what its
+    colour goes by; `Ring` reads them. **A line that follows a shape** (corners *Follow the
+    source*, text, turned sources) has no box: Shadow, Glow & Outline goes by how far round the
+    rectangle that shows of the source a point is, seen from its middle (`around_middle`, no
+    `atan2`); Scene Shadow, whose last pass is the whole canvas, by the canvas's diagonal
+    (x + y), one pattern for the scene, so dashes there are slanted cuts and travel right and
+    down. Across such a line only quarter steps are known (the four rings of the reach loop):
+    Double and Neon are coarser there and Dotted is dashes the line's width long.
+  - **The drop shadow is thrown by the whole line.** Scene Shadow's `Outlined` reads alpha only;
+    Shadow, Glow & Outline draws its `Outline` pass once more with Solid (`tr_plain_`) when a
+    design and the shadow are both on. Neon is laid over like any line (white towards the tube),
+    inside the outline's width: no extra pass, no extra room.
+  - **Inner line** needs a box line: inside the box down to a hole with the line's corners, no
+    line outside (a following source keeps a solid outer line). In Scene Shadow it lies on its
+    source (`Ring`, over the whole pixel, faded with the source by `Split::there`), so every
+    source stacked above takes it out of the ring canvas first (`LookPaint::cover_ring`, and in
+    `draw_item_ring`; `ShadowLook::inner_line`). Morph's own ring drawing does not, so during a
+    morph an inner line can show on a source above it.
+  - `lerp_look` carries the design (`lerp_design`: the kind changes half-way; sizes glide only
+    between two of one kind). A picture-filled outline (*Made from: the image*) takes a design's
+    shape but keeps the image's colours.
+  - Tested in `[outline designs: ...]` (`outline_designs_test`, alone with
+    `STAGEKIT_TEST_ONLY_OUTLINE_DESIGNS`; contact sheet `docs/images/outline-designs.png` from
+    `$out/outline-designs`). Only OpenGL.
 - **Frame time** (`src/common/timing.*`, `src/common/scene-rev.*`; the harness `tests/collection-perf.cpp`,
   `tests/make-perf-collection.py`, `tests/run-perf.sh`, `tests/perf-compare.py`). The owner's
   *Average time to render frame* went from under 1 ms to 1.1 ms: all of it `tick_sources` (0.25 to

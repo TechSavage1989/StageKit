@@ -22,6 +22,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include <algorithm>
 #include <cmath>
+#include <string>
 
 namespace stagekit {
 
@@ -45,6 +46,7 @@ ShadowLook read_shadow_look(obs_data_t *settings)
 	s.outline_corners = (int)std::clamp<long long>(obs_data_get_int(settings, "outline_corners"), 0, 5);
 	s.outline_corner_size = std::clamp(obs_data_get_double(settings, "outline_corner_size"), 0.0, 500.0);
 	s.intensity = std::clamp(obs_data_get_double(settings, "glow_intensity") / 100.0, 0.25, 4.0);
+	s.design = read_outline_design(settings);
 	// A glow sits evenly all round.
 	if (s.glow)
 		s.offset_x = s.offset_y = 0.0;
@@ -53,7 +55,75 @@ ShadowLook read_shadow_look(obs_data_t *settings)
 	return s;
 }
 
+OutlineDesign read_outline_design(obs_data_t *settings)
+{
+	OutlineDesign d;
+	d.kind = (int)std::clamp<long long>(obs_data_get_int(settings, "outline_design"), 0, OutlineDesign::kLast);
+	d.color2 = (uint32_t)obs_data_get_int(settings, "outline_color2");
+	d.dash = std::clamp(obs_data_get_double(settings, "outline_dash"), 1.0, 400.0);
+	d.gap = std::clamp(obs_data_get_double(settings, "outline_gap"), 1.0, 400.0);
+	d.speed = std::clamp(obs_data_get_double(settings, "outline_speed"), -1000.0, 1000.0);
+	d.glow = std::clamp(obs_data_get_double(settings, "outline_neon") / 100.0, 0.1, 0.9);
+	return d;
+}
+
+void DesignUniforms::find(gs_effect_t *effect)
+{
+	kind_ = gs_effect_get_param_by_name(effect, "design_kind");
+	color2_ = gs_effect_get_param_by_name(effect, "design_color2");
+	dash_ = gs_effect_get_param_by_name(effect, "design_dash");
+	gap_ = gs_effect_get_param_by_name(effect, "design_gap");
+	phase_ = gs_effect_get_param_by_name(effect, "design_phase");
+	turn_ = gs_effect_get_param_by_name(effect, "design_turn");
+	pulse_ = gs_effect_get_param_by_name(effect, "design_pulse");
+	glow_ = gs_effect_get_param_by_name(effect, "design_glow");
+}
+
+void DesignUniforms::set(const OutlineDesign &d) const
+{
+	if (!kind_)
+		return;
+	// (Seconds within a long round, in double precision; every design's
+	// cycle is wrapped before it reaches the shader.)
+	const double seconds = (double)(obs_get_video_frame_time() % 3600000000000ULL) * 1e-9;
+	auto wrapped = [](double x) {
+		return x - std::floor(x);
+	};
+	const bool moves = d.kind >= OutlineDesign::Marching && d.speed != 0.0;
+	const double travelled = moves ? d.speed * seconds : 0.0;
+	vec4 two;
+	vec4_from_rgba(&two, d.color2);
+	gs_effect_set_float(kind_, (float)d.kind);
+	gs_effect_set_vec4(color2_, &two);
+	gs_effect_set_float(dash_, (float)d.dash);
+	gs_effect_set_float(gap_, (float)d.gap);
+	gs_effect_set_float(phase_, (float)wrapped(travelled / std::max(d.dash + d.gap, 1.0)));
+	gs_effect_set_float(turn_, (float)wrapped(travelled / 600.0));
+	gs_effect_set_float(
+		pulse_, d.kind == OutlineDesign::Pulse
+				? (float)(0.3 + 0.7 * (0.5 + 0.5 * std::cos(travelled * (6.283185307179586 / 100.0))))
+				: 1.0f);
+	gs_effect_set_float(glow_, (float)d.glow);
+}
+
 namespace {
+
+bool design_modified(obs_properties_t *props, obs_property_t *, obs_data_t *settings)
+{
+	const long long kind = obs_data_get_int(settings, "outline_design");
+	auto show = [&](const char *name, bool on) {
+		if (obs_property_t *p = obs_properties_get(props, name))
+			obs_property_set_visible(p, on);
+	};
+	const bool dashes = kind == OutlineDesign::Dashed || kind == OutlineDesign::Marching;
+	show("outline_color2",
+	     kind == OutlineDesign::Gradient || kind == OutlineDesign::Travelling || kind == OutlineDesign::Shimmer);
+	show("outline_dash", dashes);
+	show("outline_gap", dashes || kind == OutlineDesign::Dotted);
+	show("outline_speed", kind >= OutlineDesign::Marching);
+	show("outline_neon", kind == OutlineDesign::Neon);
+	return true;
+}
 
 bool corners_modified(obs_properties_t *props, obs_property_t *, obs_data_t *settings)
 {
@@ -84,6 +154,36 @@ void add_outline_corner_properties(obs_properties_t *outline)
 	set_tip(size, obs_module_text("Shadow.OutlineCornerSize.Tip"));
 }
 
+void add_outline_design_properties(obs_properties_t *outline)
+{
+	obs_property_t *design = obs_properties_add_list(outline, "outline_design",
+							 obs_module_text("Shadow.OutlineDesign"), OBS_COMBO_TYPE_LIST,
+							 OBS_COMBO_FORMAT_INT);
+	static const char *const names[] = {"Solid", "Double",   "Dashed",     "Dotted", "Gradient", "Neon",
+					    "Inner", "Marching", "Travelling", "Pulse",  "Shimmer",  "Rainbow"};
+	for (int i = 0; i <= OutlineDesign::kLast; i++)
+		obs_property_list_add_int(
+			design, obs_module_text((std::string("Shadow.OutlineDesign.") + names[i]).c_str()), i);
+	set_tip(design, obs_module_text("Shadow.OutlineDesign.Tip"));
+	obs_property_set_modified_callback(design, design_modified);
+	obs_property_t *two =
+		obs_properties_add_color(outline, "outline_color2", obs_module_text("Shadow.OutlineColor2"));
+	set_tip(two, obs_module_text("Shadow.OutlineColor2.Tip"));
+	auto slider = [&](const char *name, const char *text, double min, double max, const char *suffix) {
+		obs_property_t *p =
+			obs_properties_add_float_slider(outline, name, obs_module_text(text), min, max, 1.0);
+		if (suffix)
+			obs_property_float_set_suffix(p, suffix);
+		return p;
+	};
+	slider("outline_dash", "Shadow.OutlineDash", 1.0, 200.0, " px");
+	slider("outline_gap", "Shadow.OutlineGap", 1.0, 200.0, " px");
+	set_tip(slider("outline_speed", "Shadow.OutlineSpeed", -600.0, 600.0, nullptr),
+		obs_module_text("Shadow.OutlineSpeed.Tip"));
+	set_tip(slider("outline_neon", "Shadow.OutlineNeon", 10.0, 90.0, "%"),
+		obs_module_text("Shadow.OutlineNeon.Tip"));
+}
+
 void add_intensity_property(obs_properties_t *shadow)
 {
 	obs_property_t *p = obs_properties_add_float_slider(shadow, "glow_intensity",
@@ -97,6 +197,13 @@ void outline_glow_defaults(obs_data_t *settings)
 	obs_data_set_default_int(settings, "outline_corners", 0);
 	obs_data_set_default_double(settings, "outline_corner_size", 20.0);
 	obs_data_set_default_double(settings, "glow_intensity", 100.0);
+	const OutlineDesign d;
+	obs_data_set_default_int(settings, "outline_design", d.kind);
+	obs_data_set_default_int(settings, "outline_color2", d.color2);
+	obs_data_set_default_double(settings, "outline_dash", d.dash);
+	obs_data_set_default_double(settings, "outline_gap", d.gap);
+	obs_data_set_default_double(settings, "outline_speed", d.speed);
+	obs_data_set_default_double(settings, "outline_neon", d.glow * 100.0);
 }
 
 ShadowLook scaled_look(ShadowLook look, double level)
@@ -126,6 +233,20 @@ double mix(double x, double y, double t)
 
 } // namespace
 
+OutlineDesign lerp_design(const OutlineDesign &a, const OutlineDesign &b, double t)
+{
+	OutlineDesign out = t < 0.5 ? a : b;
+	// (Only between two of one kind do the sizes glide: a dash length means
+	// nothing to a solid line.)
+	if (a.kind == b.kind) {
+		out.color2 = mix_color(a.color2, b.color2, t);
+		out.dash = mix(a.dash, b.dash, t);
+		out.gap = mix(a.gap, b.gap, t);
+		out.glow = mix(a.glow, b.glow, t);
+	}
+	return out;
+}
+
 ShadowLook lerp_look(const ShadowLook *a, const ShadowLook *b, double t)
 {
 	t = std::clamp(t, 0.0, 1.0);
@@ -148,7 +269,9 @@ ShadowLook lerp_look(const ShadowLook *a, const ShadowLook *b, double t)
 			const bool outline = x.outline;
 			const int corners = x.outline_corners;
 			const double corner_size = x.outline_corner_size;
+			const OutlineDesign design = x.design;
 			x = ShadowLook(y);
+			x.design = design;
 			x.opacity = 0.0;
 			x.outline = outline;
 			x.outline_width = outline_width;
@@ -164,6 +287,7 @@ ShadowLook lerp_look(const ShadowLook *a, const ShadowLook *b, double t)
 			x.outline_opacity = 0.0;
 			x.outline_corners = y.outline_corners;
 			x.outline_corner_size = y.outline_corner_size;
+			x.design = y.design;
 		}
 	};
 	part(from, to);
@@ -187,6 +311,7 @@ ShadowLook lerp_look(const ShadowLook *a, const ShadowLook *b, double t)
 	out.outline_corners = t < 0.5 ? from.outline_corners : to.outline_corners;
 	out.outline_corner_size = mix(from.outline_corner_size, to.outline_corner_size, t);
 	out.intensity = mix(from.intensity, to.intensity, t);
+	out.design = lerp_design(from.design, to.design, t);
 	return out;
 }
 
@@ -246,6 +371,7 @@ LookPaint::LookPaint()
 		p_follow_amount_ = gs_effect_get_param_by_name(effect_, "follow_amount");
 		p_follow_tex_ = gs_effect_get_param_by_name(effect_, "follow_tex");
 		p_presence_ = gs_effect_get_param_by_name(effect_, "presence");
+		design_.find(effect_);
 		has_presence_ = gs_effect_get_technique(effect_, "Presence") != nullptr;
 	}
 	// (Smooth: sixteen-bit pictures and one more level, so a soft shadow's
@@ -533,6 +659,7 @@ bool LookPaint::compose(gs_texture_t *scene, gs_texture_t *cast, gs_texture_t *m
 		gs_effect_set_vec2(p_out_size_, &size);
 		gs_effect_set_float(p_outline_width_, (float)look.outline_width);
 		gs_effect_set_vec4(p_outline_color_, &line);
+		design_.set(look.design);
 	};
 	// The shadow is thrown by the sources with their line round them, as the
 	// per-source filter's is (its shadow comes from the outlined picture):
@@ -787,6 +914,7 @@ void LookPaint::draw_box_ring(const matrix4 &m, const ShadowLook &look, float st
 	gs_effect_set_float(p_ring_strength_, std::clamp(strength, 0.0f, 1.0f));
 	gs_effect_set_float(p_outline_width_, (float)look.outline_width);
 	gs_effect_set_float(p_force_follow_, 0.0f);
+	design_.set(look.design);
 	set_seen(p_rect_tex_, p_area_tex_, p_rect_known_, p_rect_pic_, seen, pw, ph, no_rect_);
 	const bool previous = gs_framebuffer_srgb_enabled();
 	gs_enable_framebuffer_srgb(false);
@@ -836,6 +964,19 @@ bool box_turned(const matrix4 &m)
 	return ay > 1e-3 * std::max(ax, 1e-9) || bx > 1e-3 * std::max(by, 1e-9);
 }
 
+void LookPaint::cover_ring(obs_sceneitem_t *item)
+{
+	matrix4 m;
+	uint32_t w = 0, h = 0;
+	gs_texture_t *picture = item_picture(item, m, w, h);
+	if (!picture || !w || !h)
+		return;
+	gs_blend_state_push();
+	gs_blend_function(GS_BLEND_ZERO, GS_BLEND_INVSRCALPHA);
+	draw_picture(picture, m, w, h);
+	gs_blend_state_pop();
+}
+
 void LookPaint::draw_item_ring(obs_sceneitem_t *item, const ShadowLook &look)
 {
 	// The item drawn by itself (its crop and any transition running), so
@@ -853,6 +994,13 @@ void LookPaint::draw_item_ring(obs_sceneitem_t *item, const ShadowLook &look)
 	vec4_set(&unit.y, 0.0f, (float)h, 0.0f, 0.0f);
 	matrix4_mul(&box, &unit, &m);
 	const bool turned = box_turned(box);
+	// (An inner line of a source below lies under this one.)
+	if (look.inner_line()) {
+		gs_blend_state_push();
+		gs_blend_function(GS_BLEND_ZERO, GS_BLEND_INVSRCALPHA);
+		draw_picture(picture, m, w, h);
+		gs_blend_state_pop();
+	}
 	draw_box_ring(box, look, 1.0f, seen, (double)w, (double)h, turned);
 	draw_follow(picture, box, (double)w, (double)h, seen, turned, 1.0f);
 }

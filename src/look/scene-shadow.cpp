@@ -554,9 +554,13 @@ void SceneShadow::render()
 	// The line round the casting sources' boxes, when its corners are chosen.
 	gs_texture_t *ring = nullptr;
 	if (cast && look.box_line() && paint_->begin_canvas(tr_ring_, cx, cy)) {
-		for (obs_sceneitem_t *item : items)
-			if (flags_of(item) & kShadowCasts)
+		for (obs_sceneitem_t *item : items) {
+			const uint8_t f = flags_of(item);
+			if (f & kShadowCasts)
 				paint_->draw_item_ring(item, look);
+			else if ((f & kShadowMasked) && look.inner_line())
+				paint_->cover_ring(item);
+		}
 		paint_->end_canvas(tr_ring_);
 		ring = gs_texrender_get_texture(tr_ring_);
 	}
@@ -668,6 +672,12 @@ bool SceneShadow::render_layers(const std::vector<obs_sceneitem_t *> &items,
 			for (size_t i = starts[l]; i < end_of(l); i++)
 				if (boxes[i].present && (flags_of(items[i]) & kShadowCasts))
 					paint_->draw_item_ring(items[i], look);
+				else if (boxes[i].present && look.inner_line())
+					paint_->cover_ring(items[i]);
+			// (An inner line lies under every source of the layers above.)
+			for (size_t i = end_of(l); look.inner_line() && i < items.size(); i++)
+				if (boxes[i].present)
+					paint_->cover_ring(items[i]);
 			paint_->end_canvas(tr_layer_ring_[l]);
 			layer_rings_[l] = gs_texrender_get_texture(tr_layer_ring_[l]);
 		}
@@ -799,6 +809,7 @@ obs_properties_t *get_properties(void *data)
 	obs_properties_add_color(outline, "outline_color", obs_module_text("Shadow.OutlineColor"));
 	slider(outline, "outline_opacity", "Shadow.OutlineOpacity", 0.0, 100.0, "%");
 	add_outline_corner_properties(outline);
+	add_outline_design_properties(outline);
 	obs_property_t *ring = obs_properties_add_group(props, "outline", obs_module_text("Shadow.Outline"),
 							OBS_GROUP_CHECKABLE, outline);
 	set_tip(ring, obs_module_text("SceneShadow.Outline.Tip"));

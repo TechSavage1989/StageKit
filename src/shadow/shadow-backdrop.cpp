@@ -92,6 +92,7 @@ struct Settings {
 	double outline_blur = 20.0;
 	int outline_corners = 0; // 0 round the picture's own shape; 1..4 round its box (look-paint.hpp)
 	double outline_corner_size = 20.0;
+	OutlineDesign design;
 	double intensity = 1.0;
 	// Sizes are meant as they look on screen: an item drawn at half size
 	// gets twice the numbers, so 20 px of shadow is 20 px in the picture.
@@ -399,6 +400,8 @@ private:
 	gs_texture_t *no_rect_ = nullptr;
 	gs_texrender_t *tr_body_ = nullptr;
 	gs_texrender_t *tr_extended_ = nullptr;
+	gs_texrender_t *tr_plain_ = nullptr;
+	DesignUniforms design_;
 	gs_eparam_t *p_extended_ = nullptr;
 	gs_eparam_t *p_extend_mirror_ = nullptr;
 	gs_eparam_t *p_backdrop_on_ = nullptr;
@@ -447,6 +450,7 @@ ShadowBackdrop::ShadowBackdrop(obs_data_t *settings, obs_source_t *source) : sou
 		p_corner_size_ = gs_effect_get_param_by_name(effect_, "corner_size");
 		p_intensity_ = gs_effect_get_param_by_name(effect_, "glow_intensity");
 		p_out_linear_ = gs_effect_get_param_by_name(effect_, "out_linear");
+		design_.find(effect_);
 		p_rect_tex_ = gs_effect_get_param_by_name(effect_, "rect_tex");
 		p_rect_known_ = gs_effect_get_param_by_name(effect_, "rect_known");
 		p_area_tex_ = gs_effect_get_param_by_name(effect_, "area_tex");
@@ -464,6 +468,7 @@ ShadowBackdrop::ShadowBackdrop(obs_data_t *settings, obs_source_t *source) : sou
 	tr_final_ = gs_texrender_create(GS_RGBA16F, GS_ZS_NONE);
 	tr_body_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 	tr_extended_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
+	tr_plain_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 	{
 		// (A stand-in for rect_tex when no rectangle is known.)
 		const float none[4] = {0.0f, 0.0f, 0.0f, 0.0f};
@@ -489,6 +494,7 @@ ShadowBackdrop::~ShadowBackdrop()
 	gs_texrender_destroy(tr_final_);
 	gs_texrender_destroy(tr_body_);
 	gs_texrender_destroy(tr_extended_);
+	gs_texrender_destroy(tr_plain_);
 	obs_leave_graphics();
 }
 
@@ -548,6 +554,7 @@ void ShadowBackdrop::update(obs_data_t *settings)
 	s.outline_corners = (int)std::clamp<long long>(obs_data_get_int(settings, "outline_corners"), 0, 5);
 	s.outline_corner_size = std::clamp(obs_data_get_double(settings, "outline_corner_size"), 0.0, 500.0);
 	s.intensity = std::clamp(obs_data_get_double(settings, "glow_intensity") / 100.0, 0.25, 4.0);
+	s.design = read_outline_design(settings);
 	// A glow sits evenly all round.
 	if (s.shadow_type == ShadowType::Glow)
 		s.offset_x = s.offset_y = 0.0;
@@ -933,6 +940,8 @@ Settings ShadowBackdrop::settings()
 		s.outline_width = std::min(200.0, s.outline_width / both);
 		s.outline_blur = std::min(200.0, s.outline_blur / both);
 		s.outline_corner_size /= both;
+		s.design.dash = std::min(400.0, s.design.dash / both);
+		s.design.gap = std::min(400.0, s.design.gap / both);
 		s.radius /= both;
 	}
 	return s;
@@ -1029,6 +1038,7 @@ void ShadowBackdrop::render()
 	gs_texture_t *card = gs_texrender_get_texture(tr_card_);
 
 	// 2. A line around it, in a colour or in the picture's own colours.
+	gs_texture_t *plain = nullptr; // the card with its line whole, when the line has a design
 	if (card && s.outline) {
 		// Made from the picture: the picture itself carried on past its
 		// edges, softened as asked, shows through the line.
@@ -1043,23 +1053,6 @@ void ShadowBackdrop::render()
 			if (gs_texture_t *whole = gs_texrender_get_texture(tr_extended_))
 				extended = blur_->blur(whole, ow, oh, s.outline_blur);
 		}
-		vec4 outline_color;
-		vec4_from_rgba(&outline_color, s.outline_color);
-		outline_color.w = (float)s.outline_opacity;
-		gs_effect_set_vec2(p_out_size_, &out_size);
-		gs_effect_set_texture(p_extended_, extended);
-		gs_effect_set_float(p_outline_width_, (float)s.outline_width);
-		gs_effect_set_vec4(p_outline_color_, &outline_color);
-		gs_effect_set_float(p_outline_picture_, s.outline_fill == Fill::Picture ? 1.0f : 0.0f);
-		// (Square: a rounded corner of no size.)
-		const bool square = s.outline_corners == 5;
-		gs_effect_set_float(p_outline_corners_, square ? 1.0f : (float)s.outline_corners);
-		gs_effect_set_float(p_corner_size_, square ? 0.0f : (float)s.outline_corner_size);
-		// (The box: given again, an effect's values last for one draw.)
-		gs_effect_set_vec2(p_src_size_, &src_size);
-		gs_effect_set_vec2(p_pad_, &pad);
-		gs_effect_set_float(p_backdrop_on_, s.backdrop ? 1.0f : 0.0f);
-		gs_effect_set_float(p_backdrop_pad_, (float)s.backdrop_pad);
 		// A line round the box goes round what shows of the source (a
 		// widget's or a capture's see-through margins left out), or round
 		// its panel when it has one.
@@ -1071,18 +1064,48 @@ void ShadowBackdrop::render()
 			seen = rects_->measure(input, w, h);
 		}
 		const bool known = seen.known() && !s.backdrop;
-		gs_effect_set_texture(p_rect_tex_, known ? seen.rect : no_rect_);
-		gs_effect_set_texture(p_area_tex_, known ? seen.area : no_rect_);
-		gs_effect_set_float(p_rect_known_, known ? 1.0f : 0.0f);
+		// (Every value the pass reads, each time it runs: an effect's
+		// values last for one draw.)
+		auto line_values = [&](const OutlineDesign &design) {
+			vec4 outline_color;
+			vec4_from_rgba(&outline_color, s.outline_color);
+			outline_color.w = (float)s.outline_opacity;
+			gs_effect_set_vec2(p_out_size_, &out_size);
+			gs_effect_set_texture(p_extended_, extended);
+			gs_effect_set_float(p_outline_width_, (float)s.outline_width);
+			gs_effect_set_vec4(p_outline_color_, &outline_color);
+			gs_effect_set_float(p_outline_picture_, s.outline_fill == Fill::Picture ? 1.0f : 0.0f);
+			// (Square: a rounded corner of no size.)
+			const bool square = s.outline_corners == 5;
+			gs_effect_set_float(p_outline_corners_, square ? 1.0f : (float)s.outline_corners);
+			gs_effect_set_float(p_corner_size_, square ? 0.0f : (float)s.outline_corner_size);
+			// (The box: given again, an effect's values last for one draw.)
+			gs_effect_set_vec2(p_src_size_, &src_size);
+			gs_effect_set_vec2(p_pad_, &pad);
+			gs_effect_set_float(p_backdrop_on_, s.backdrop ? 1.0f : 0.0f);
+			gs_effect_set_float(p_backdrop_pad_, (float)s.backdrop_pad);
+			gs_effect_set_texture(p_rect_tex_, known ? seen.rect : no_rect_);
+			gs_effect_set_texture(p_area_tex_, known ? seen.area : no_rect_);
+			gs_effect_set_float(p_rect_known_, known ? 1.0f : 0.0f);
+			design_.set(design);
+		};
+		// The shadow is thrown by the whole line: a design's gaps are not
+		// holes in it. (An inner line changes no silhouette.)
+		if (s.design.kind != OutlineDesign::Solid && !s.design.inner() && s.shadow) {
+			line_values(OutlineDesign());
+			draw(tr_plain_, card, "Outline");
+			plain = gs_texrender_get_texture(tr_plain_);
+		}
+		line_values(s.design);
 		draw(tr_body_, card, "Outline");
 		if (gs_texture_t *body = gs_texrender_get_texture(tr_body_))
 			card = body;
 	}
 
 	// 3. Its silhouette, softened, becomes the shadow.
-	gs_texture_t *silhouette = card;
+	gs_texture_t *silhouette = plain ? plain : card;
 	if (card && s.shadow && s.softness > 0.0)
-		silhouette = blur_->blur(card, ow, oh, s.softness);
+		silhouette = blur_->blur(silhouette, ow, oh, s.softness);
 
 	// 4. Shadow underneath the card.
 	if (card) {
@@ -1192,6 +1215,7 @@ obs_properties_t *get_properties(void *data)
 	set_tip(line_blur, obs_module_text("Shadow.OutlineBlur.Tip"));
 	slider(outline, "outline_opacity", "Shadow.OutlineOpacity", 0.0, 100.0, "%");
 	add_outline_corner_properties(outline);
+	add_outline_design_properties(outline);
 	obs_properties_add_group(props, "outline", obs_module_text("Shadow.Outline"), OBS_GROUP_CHECKABLE, outline);
 
 	obs_properties_t *backdrop = obs_properties_create();

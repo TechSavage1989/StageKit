@@ -52,6 +52,14 @@ uniform float2 rect_pic;        // BoxRing: the source's picture, in pixels (wha
 uniform texture2d area_tex;     // BoxRing, FollowGate: the sum of the picture's alpha (red)
 uniform float force_follow;     // BoxRing, FollowGate: 1 the source is turned: it keeps a line that follows it
 uniform float follow_amount;    // FollowGate: how much the source counts (a Morph part-way)
+uniform float design_kind;      // the line's design (OutlineDesign, by number): 0 solid
+uniform float4 design_color2;   // the gradient's other end, the shimmer's highlight
+uniform float design_dash;      // pixels
+uniform float design_gap;       // pixels
+uniform float design_phase;     // marching dashes: how far along, in dash-and-gap lengths (0..1)
+uniform float design_turn;      // what travels round: how far round (0..1)
+uniform float design_pulse;     // the pulse now: 1 whole
+uniform float design_glow;      // neon: the share of the width that is glow
 uniform texture2d follow_tex;   // Ring, Outlined: what the line follows round its shape: the casting
                                 // sources (alpha), or with box lines the ring canvas (red)
 
@@ -112,6 +120,96 @@ float line_corner(float r, float style)
 	return min(r, outline_width * most);
 }
 
+// ---- The line's design. `u` is how far along the border a point is and
+// `total` the border's length (pixels); `x` runs across the line from 0 at
+// the source to 1 at its outer edge and `x_out` the other way; `follows` is
+// 1 for a line that follows a shape, where both are only known in quarter
+// steps. Gives (how much of the line is there, what its colour goes by).
+float is_design(float n)
+{
+	return step(n - 0.5, design_kind) * step(design_kind, n + 0.5);
+}
+
+float3 hue_rgb(float h)
+{
+	return saturate(abs(frac(float3(h, h + 0.6666667, h + 0.3333333)) * 6.0 - 3.0) - 1.0);
+}
+
+// Dashes along the border, a whole number of them round it.
+float dash_cover(float u, float total, float dash, float gap, float phase)
+{
+	float period = max(dash + gap, 1.0);
+	float count = max(floor(total / period + 0.5), 1.0);
+	float per = total / count;
+	float len = per * dash / period;
+	// (Half a dash on: a box's corner, where the border starts, is the
+	// middle of a dash.)
+	float a = frac((u + len * 0.5) / per - phase + 1.0) * per;
+	return saturate(saturate(min(a, len - a) + 0.5) + saturate(a - per + 0.5));
+}
+
+float2 design_at(float u, float total, float x, float x_out, float w, float follows)
+{
+	float third = w / 3.0;
+	float two_box = saturate(saturate(third - x * w + 0.5) + saturate(third - x_out * w + 0.5));
+	float two_follow = saturate(step(0.875, x_out) + step(x_out, 0.375));
+	float two = two_box + (two_follow - two_box) * follows;
+
+	float dashes = dash_cover(u, total, design_dash, design_gap, design_phase * is_design(7.0));
+
+	float dot_period = max(w + design_gap, 1.0);
+	float dot_count = max(floor(total / dot_period + 0.5), 1.0);
+	float dot_per = total / dot_count;
+	float2 from_dot = float2((frac(u / dot_per) - 0.5) * dot_per, (x - 0.5) * w);
+	float dots_box = saturate(w * 0.5 - length(from_dot) + 0.5);
+	float dots_follow = dash_cover(u, total, w, design_gap, 0.0);
+	float dots = dots_box + (dots_follow - dots_box) * follows;
+
+	float core = 1.0 - design_glow;
+	float tube = saturate((core - x) * w + 0.5);
+	float fall = saturate((1.0 - x) / max(design_glow, 0.01));
+	float neon = saturate(tube + fall * fall * (1.0 - tube));
+
+	float at = u / max(total, 1.0);
+	float wave = 0.5 - 0.5 * cos(6.2831853 * (at - design_turn * is_design(8.0)));
+	float glint = pow(saturate(0.5 + 0.5 * cos(6.2831853 * (at - design_turn))), 24.0);
+	float hue = frac(at - design_turn + 1.0);
+
+	float there = 1.0 + (two - 1.0) * is_design(1.0) + (dashes - 1.0) * (is_design(2.0) + is_design(7.0)) +
+		      (dots - 1.0) * is_design(3.0) + (neon - 1.0) * is_design(5.0) +
+		      (design_pulse - 1.0) * is_design(9.0);
+	float k = wave * (is_design(4.0) + is_design(8.0)) + glint * is_design(10.0) + hue * is_design(11.0) +
+		  tube * is_design(5.0);
+	return float2(there, k);
+}
+
+// The line's colour from what design_at gave.
+float3 design_rgb(float3 base, float k)
+{
+	float mixes = is_design(4.0) + is_design(8.0) + is_design(10.0);
+	float neon = is_design(5.0);
+	float rainbow = is_design(11.0);
+	float3 two = base + (design_color2.rgb - base) * k;
+	float3 lit = base + (float3(1.0, 1.0, 1.0) - base) * (k * 0.85);
+	return base * (1.0 - mixes - neon - rainbow) + two * mixes + lit * neon + hue_rgb(k) * rainbow;
+}
+
+// How far along a box's border a point is, clockwise from its top left
+// corner (x), and the border's length (y).
+float2 along_box(float2 p, float4 box)
+{
+	float2 half_size = box.zw * 0.5;
+	float2 v = p - (box.xy + half_size);
+	float2 q = abs(v) - half_size;
+	float top = clamp(v.x + half_size.x, 0.0, box.z);
+	float right = box.z + clamp(v.y + half_size.y, 0.0, box.w);
+	float bottom = box.z + box.w + clamp(half_size.x - v.x, 0.0, box.z);
+	float left = 2.0 * box.z + box.w + clamp(half_size.y - v.y, 0.0, box.w);
+	float tb = top + (bottom - top) * step(0.0, v.y);
+	float lr = left + (right - left) * step(0.0, v.x);
+	return float2(tb + (lr - tb) * step(q.y, q.x), max(2.0 * (box.z + box.w), 1.0));
+}
+
 // A soft-kneed density: 1 is the coverage as it is; more fills the soft tail
 // in towards full without clipping it (no hard edge where it saturates).
 float densified(float a, float k)
@@ -169,6 +267,7 @@ struct Split {
 	float4 under;  // the rest
 	float free;    // how much of the pixel the sources leave uncovered
 	float fade;    // how far the source here is faded in (1: whole, or none here)
+	float there;   // how much a source stands here, however far it has faded
 	float clear;   // the share of what shows through that no source stands on
 };
 
@@ -186,6 +285,7 @@ Split split_at(float2 uv)
 	// A source on its way in or out is drawn part-way (the mask's alpha), but
 	// stands on all of its place (the presence).
 	float there = max(presence.Sample(linearClamp, uv).a, m.a);
+	s.there = there;
 	s.fade = saturate(m.a / max(there, 0.0001));
 	s.clear = saturate((1.0 - there) / max(s.free, 0.0001));
 	return s;
@@ -250,9 +350,12 @@ float follow_at(float2 uv)
 	return t.a * (1.0 - ring_box) + t.r * ring_box;
 }
 
-float line_reach(float2 uv)
+// (x: the line that follows a shape; y: how near the shape the point is, 1
+// at it and less in quarter steps to the line's outer edge.)
+float2 follow_reach(float2 uv)
 {
-	float reach = follow_at(uv);
+	float here = follow_at(uv);
+	float4 ring = float4(here, here, here, here);
 	float2 step_uv = float2(outline_width, outline_width) / out_size;
 	for (int i = 0; i < 24; i++) {
 		float angle = float(i) * 0.26179939;
@@ -261,9 +364,14 @@ float line_reach(float2 uv)
 		float b = follow_at(uv + dir * 0.75);
 		float e = follow_at(uv + dir * 0.5);
 		float d = follow_at(uv + dir * 0.25);
-		reach = max(reach, max(max(a, b), max(e, d)));
+		ring = max(ring, float4(a, b, e, d));
 	}
-	return max(reach, ring_shape.Sample(linearClamp, uv).a * ring_box);
+	return float2(max(max(ring.x, ring.y), max(ring.z, ring.w)), (ring.x + ring.y + ring.z + ring.w) * 0.25);
+}
+
+float line_reach(float2 uv)
+{
+	return max(follow_reach(uv).x, ring_shape.Sample(linearClamp, uv).a * ring_box);
 }
 
 // 1 when a source keeps a line that follows it: turned, or filling under
@@ -280,9 +388,29 @@ float4 PSRing(VertData v_in) : TARGET
 {
 	Split s = split_at(v_in.uv);
 	float4 under = shadowed_under(v_in.uv, s);
-	float reach = line_reach(v_in.uv);
-	return finished(s.source + laid_under(under, s.free, outline_color.rgb, laid_amount(reach, s) * outline_color.a),
-			v_in.uv);
+	float2 follow = follow_reach(v_in.uv);
+	float4 ring = ring_shape.Sample(linearClamp, v_in.uv) * ring_box;
+	float reach = max(follow.x, ring.a);
+	// The design: a box line's was worked out with its box (BoxRing: green
+	// what is there of it, blue what its colour goes by); a line that
+	// follows a shape goes by the canvas's diagonal, one pattern for the
+	// whole scene.
+	float designed = step(0.5, design_kind);
+	float2 p = v_in.uv * out_size;
+	float2 by_shape = design_at(p.x + p.y, (out_size.x + out_size.y) * 0.5, 1.0 - follow.y, follow.y,
+				    outline_width, 1.0);
+	float boxed = step(follow.x, ring.a) * step(0.001, ring.a);
+	float amount_design = ring.g * boxed + follow.x * by_shape.x * (1.0 - boxed);
+	float k = ring.b * boxed + by_shape.y * (1.0 - boxed);
+	float amount = reach * (1.0 - designed) + amount_design * designed;
+	float3 line_rgb = design_rgb(outline_color.rgb, k * designed);
+	float4 laid = s.source + laid_under(under, s.free, line_rgb, laid_amount(amount, s) * outline_color.a);
+	// An inner line lies on its source (in green, with no line outside):
+	// over the whole pixel, as faded as the source is.
+	float faded = s.fade * step(0.004, s.there) + (1.0 - step(0.004, s.there));
+	float inner = ring.g * is_design(6.0) * outline_color.a * faded;
+	laid = laid * (1.0 - inner) + float4(to_linear(line_rgb) * inner, inner);
+	return finished(laid, v_in.uv);
 }
 
 // The casting sources with their line: premultiplied, as the silhouette.
@@ -310,8 +438,21 @@ float4 PSBoxRing(VertData v_in) : TARGET
 	float d_out = corner_distance(p, outer, line_corner(corner_size, corner_style), corner_style);
 	float d_in = corner_distance(p, box_shown, 0.0, corner_style);
 	float gate = follows(seen, area_tex.Sample(pointClamp, float2(0.5, 0.5)).r);
-	float a = saturate(0.5 - d_out) * saturate(0.5 + d_in) * ring_strength * any * (1.0 - gate);
-	return float4(0.0, 0.0, 0.0, a);
+	float counts = ring_strength * any * (1.0 - gate);
+	float inner_design = is_design(6.0);
+	float a = saturate(0.5 - d_out) * saturate(0.5 + d_in) * counts * (1.0 - inner_design);
+	// The design (green: how much of the line is there; blue: what its
+	// colour goes by). The shadow is still thrown by the whole line (alpha).
+	float2 along = along_box(p, box_shown);
+	float w = max(outline_width, 0.5);
+	float2 made = design_at(along.x, along.y, d_in / w, -d_out / w, w, 0.0);
+	// An inner line: inside the box, down to a hole with the line's corners.
+	float4 hole = float4(box_shown.xy + float2(outline_width, outline_width),
+			     max(box_shown.zw - float2(outline_width, outline_width) * 2.0, float2(0.0, 0.0)));
+	float d_hole = corner_distance(p, hole, corner_size, corner_style);
+	float inner = saturate(0.5 - d_in) * saturate(0.5 + d_hole) * counts * inner_design;
+	float g = a * made.x + inner;
+	return float4(0.0, g, made.y * step(0.001, g), a);
 }
 
 // A source that keeps a following line, into the ring canvas's red.
