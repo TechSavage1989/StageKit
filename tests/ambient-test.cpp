@@ -15537,6 +15537,432 @@ static void outline_glow_test(uint32_t w, uint32_t h, const std::string &out, co
 			obs_source_release(src);
 	}
 
+	// 3c. Two scenes with a background, sources and a Scene Shadow each,
+	// and no source in common: half-way, every pixel is half the old scene
+	// as it was at rest (its lines solid) and half the new one, in linear
+	// light. No line is a hole on to the other scene.
+	{
+		auto to_level = [](double lin) {
+			lin = std::clamp(lin, 0.0, 1.0);
+			return 255.0 * (lin <= 0.0031308 ? lin * 12.92 : 1.055 * std::pow(lin, 1.0 / 2.4) - 0.055);
+		};
+		auto mixed = [&](int a, int b, double t) {
+			return to_level((1.0 - t) * to_lin(a) + t * to_lin(b));
+		};
+		obs_source_t *blue = block("OX Blue", 0xFFC04020, 640, 360);
+		obs_source_t *orange = block("OX Orange", 0xFF2090E0, 640, 360);
+		obs_source_t *box_a = block("OX Box A", 0xFFFFFFFF, 120, 80);
+		obs_source_t *bar1 = block("OX Bar 1", 0xFFFFFFFF, 20, 80);
+		obs_source_t *bar2 = block("OX Bar 2", 0xFFFFFFFF, 20, 80);
+		obs_source_t *box_b = block("OX Box B", 0xFF40C040, 200, 100);
+		obs_source_t *box_b2 = block("OX Box B2", 0xFF40C040, 100, 60);
+		obs_source_t *both = block("OX Both", 0xFFFFFFFF, 80, 50);
+		obs_scene_t *sa = obs_scene_create("OX From");
+		obs_scene_t *sb = obs_scene_create("OX To");
+		put(sa, blue, 0, 0);
+		put(sa, box_a, 60, 60); // 60..180 by 60..140
+		{
+			// Letters, as a title in a group: two bars 20 apart at 300, 60.
+			obs_sceneitem_t *g1 = put(sa, bar1, 0, 0);
+			obs_sceneitem_t *g2 = put(sa, bar2, 40, 0);
+			obs_sceneitem_t *group = obs_scene_add_group(sa, "OX Title");
+			obs_sceneitem_group_add_item(group, g1);
+			obs_sceneitem_group_add_item(group, g2);
+			vec2 p;
+			vec2_set(&p, 300.0f, 60.0f);
+			obs_sceneitem_set_pos(group, &p);
+		}
+		put(sb, orange, 0, 0);
+		put(sb, box_b, 380, 230); // 380..580 by 230..330
+		put(sb, box_b2, 150, 40); // 150..250 by 40..100: under the white box's right side and its line
+		struct Case {
+			const char *what;
+			int from;
+			bool shadow;
+		};
+		std::vector<obs_source_t *> shadows;
+		for (obs_scene_t *scene : {sa, sb})
+			shadows.push_back(scene_filter(scene, ten));
+		obs_data_t *md = obs_data_create();
+		obs_data_set_int(md, "ease_curve", 0); // linear
+		obs_source_t *morph = obs_source_create_private("stagekit_morph", "OX Morph", md);
+		auto part_way = [&](double t) {
+			obs_transition_set(morph, obs_scene_get_source(sa));
+			obs_transition_start(morph, OBS_TRANSITION_MODE_MANUAL, 0, obs_scene_get_source(sb));
+			obs_transition_set_manual_time(morph, (float)t);
+			sleep_ms(150);
+			render(morph, w, h);
+			const std::vector<uint8_t> f = render(morph, w, h);
+			obs_transition_force_stop(morph);
+			obs_transition_clear(morph);
+			return f;
+		};
+		auto half_way = [&] {
+			return part_way(0.5);
+		};
+		for (const Case &c : {Case{"a line only", 0, false}, Case{"a line and a drop shadow", 0, true},
+				      Case{"each source by itself", 1, false},
+				      Case{"each source by itself, with a drop shadow", 1, true}}) {
+			for (obs_source_t *ss : shadows)
+				set(ss, [&](obs_data_t *d) {
+					obs_data_set_int(d, "shadow_from", c.from);
+					obs_data_set_bool(d, "shadow", c.shadow);
+					obs_data_set_double(d, "offset_x", 20.0);
+					obs_data_set_double(d, "offset_y", 20.0);
+					obs_data_set_double(d, "softness", 0.0);
+					obs_data_set_double(d, "shadow_opacity", 100.0);
+				});
+			obs_data_set_int(md, "others", 0);
+			obs_source_update(morph, md);
+			sleep_ms(300);
+			const std::vector<uint8_t> ra = shot(obs_scene_get_source(sa));
+			const std::vector<uint8_t> rb = shot(obs_scene_get_source(sb));
+			const std::vector<uint8_t> f = half_way();
+			int worst = 0, wx = 0, wy = 0, wc = 0, off = 0;
+			for (int y = 0; y < (int)h; y++)
+				for (int x = 0; x < (int)w; x++)
+					for (int ch = 0; ch < 3; ch++) {
+						const int d = (int)std::lround(
+							std::abs(px(f, x, y, ch) -
+								 mixed(px(ra, x, y, ch), px(rb, x, y, ch), 0.5)));
+						off += d > 6;
+						if (d > worst) {
+							worst = d;
+							wx = x;
+							wy = y;
+							wc = ch;
+						}
+					}
+			// In the white box's line where the new scene's box stands
+			// (185, 70), where only its background does (55, 100), and
+			// between the title's bars (330, 100).
+			CHECK(worst <= 6,
+			      "two scenes with nothing in common, %s: half-way every pixel is half the one and half the other (worst %d off at %d, %d, channel %d: %d, %d and %d at rest; %d values over 6 off; the line over the new scene's box %d %d %d, %0.f %0.f %0.f wanted; over its background %d %d %d; between the letters %d %d %d)",
+			      c.what, worst, wx, wy, wc, px(f, wx, wy, wc), px(ra, wx, wy, wc), px(rb, wx, wy, wc), off,
+			      px(f, 185, 70, 0), px(f, 185, 70, 1), px(f, 185, 70, 2), mixed(0, 0x40, 0.5),
+			      mixed(0, 0xC0, 0.5), mixed(0, 0x40, 0.5), px(f, 55, 100, 0), px(f, 55, 100, 1),
+			      px(f, 55, 100, 2), px(f, 330, 100, 0), px(f, 330, 100, 1), px(f, 330, 100, 2));
+			if (c.shadow && c.from == 1)
+				continue; // (the moving ways: once with a shadow is enough)
+			// The other ways out (2, a slide, is the owner's): the white box
+			// is somewhere else on the way, as faded as its scene (whole
+			// with Make room and no fade), its line travels with it as solid
+			// as it is, the title's line too, and the place it left is the
+			// two backgrounds and nothing else.
+			for (int others : {2, 1, 3}) {
+				obs_data_set_int(md, "others", others);
+				obs_data_set_bool(md, "room_fade", false);
+				obs_source_update(morph, md);
+				sleep_ms(200);
+				for (double t : {0.25, 0.5, 0.75}) {
+					const std::vector<uint8_t> g = part_way(t);
+					const double part = others == 3 ? 1.0 : 1.0 - t;
+					auto over_new = [&](int level, int behind) {
+						return to_level(part * to_lin(level) + (1.0 - part) * to_lin(behind));
+					};
+					const double want_r = over_new(255, 0xE0);
+					int x0 = (int)w, x1 = -1, y0 = (int)h, y1 = -1;
+					for (int y = 0; y < 200; y++)
+						for (int x = 0; x < 150; x++)
+							if (std::abs(px(g, x, y, 0) - want_r) <= 5 &&
+							    std::abs(px(g, x, y, 2) - over_new(255, 0x20)) <= 5) {
+								x0 = std::min(x0, x);
+								x1 = std::max(x1, x);
+								y0 = std::min(y0, y);
+								y1 = std::max(y1, y);
+							}
+					const bool found = x1 - x0 > 30 && y1 - y0 > 12 && x0 >= 8;
+					const int ly = found ? (y0 + y1) / 2 : 0, lx = found ? x0 - 5 : 0;
+					const double line_r = over_new(0, 0xE0), line_g = over_new(0, 0x90);
+					CHECK(found && std::abs(px(g, lx, ly, 0) - line_r) <= 6 &&
+						      std::abs(px(g, lx, ly, 1) - line_g) <= 6,
+					      "Other items %d, %s, %.2f of the way: the white box's line travels with it, as solid as the box, over the new scene (%d, %d at %d, %d; %.0f, %.0f wanted; the box at %d..%d by %d..%d)",
+					      others, c.what, t, found ? px(g, lx, ly, 0) : -1,
+					      found ? px(g, lx, ly, 1) : -1, lx, ly, line_r, line_g, x0, x1, y0, y1);
+					if (others == 1 || !found)
+						continue;
+					// (Both went up by the same way: their lower edges were
+					// level.) Between the title's bars, 5 px above their
+					// lower end; and where the box was, at 120, 130 (150,
+					// 175 with a shadow, clear of the box's on its way).
+					const int gy = y1 - 139 + 135;
+					const int px0 = c.shadow ? 100 : 120, py0 = c.shadow ? 185 : 130;
+					const double left_r = mixed(0x20, 0xE0, t), left_b = mixed(0xC0, 0x20, t);
+					CHECK(gy >= 0 && std::abs(px(g, 330, gy, 0) - line_r) <= 6 &&
+						      std::abs(px(g, 330, gy, 1) - line_g) <= 6 &&
+						      std::abs(px(g, px0, py0, 0) - left_r) <= 6 &&
+						      std::abs(px(g, px0, py0, 2) - left_b) <= 6,
+					      "and the title's line with it (%d, %d between its letters at 330, %d; %.0f, %.0f wanted), and the place the box left is the two backgrounds only (red %d, blue %d; %.0f, %.0f wanted)",
+					      gy >= 0 ? px(g, 330, gy, 0) : -1, gy >= 0 ? px(g, 330, gy, 1) : -1, gy,
+					      line_r, line_g, px(g, px0, py0, 0), px(g, px0, py0, 2), left_r, left_b);
+				}
+			}
+		}
+		// A source in both scenes, moving: its line stays solid, and the
+		// rest is still half and half.
+		for (obs_source_t *ss : shadows)
+			set(ss, [](obs_data_t *d) {
+				obs_data_set_int(d, "shadow_from", 0);
+				obs_data_set_bool(d, "shadow", false);
+			});
+		put(sa, both, 440, 40);
+		put(sb, both, 520, 40);
+		obs_data_set_int(md, "others", 0);
+		obs_source_update(morph, md);
+		sleep_ms(300);
+		{
+			const std::vector<uint8_t> ra = shot(obs_scene_get_source(sa));
+			const std::vector<uint8_t> rb = shot(obs_scene_get_source(sb));
+			const std::vector<uint8_t> f = half_way();
+			// Half-way it is at 480..560 by 40..90.
+			int worst = 0;
+			for (int y = 0; y < (int)h; y++)
+				for (int x = 0; x < 420; x++)
+					for (int ch = 0; ch < 3; ch++)
+						worst = std::max(worst, (int)std::lround(std::abs(
+										px(f, x, y, ch) -
+										mixed(px(ra, x, y, ch),
+										      px(rb, x, y, ch), 0.5))));
+			CHECK(px(f, 475, 65, 0) <= 8 && px(f, 475, 65, 1) <= 8 && px(f, 520, 65, 1) >= 247 &&
+				      worst <= 6,
+			      "with one source in both scenes: it keeps a solid line on its way (%d; the source %d) and the rest is half and half (worst %d off)",
+			      px(f, 475, 65, 0), px(f, 520, 65, 1), worst);
+		}
+		obs_data_release(md);
+		obs_source_release(morph);
+		obs_source_filter_remove(obs_scene_get_source(sa), shadows[0]);
+		obs_source_filter_remove(obs_scene_get_source(sb), shadows[1]);
+		for (obs_source_t *ss : shadows)
+			obs_source_release(ss);
+		obs_scene_release(sa);
+		obs_scene_release(sb);
+
+		// In one scene: a source fading out as another fades in over part
+		// of it and of its line. The line under the one coming in is still
+		// there, as faded as its own source.
+		for (int each : {0, 1}) {
+			obs_scene_t *sc = obs_scene_create("OX Swap");
+			put(sc, orange, 0, 0);
+			obs_sceneitem_t *out_item = put(sc, box_a, 100, 100); // 100..220 by 100..180
+			obs_sceneitem_t *in_item = put(sc, box_b, 200, 60);   // 200..400 by 60..160
+			obs_source_t *ss = scene_filter(sc, [&](obs_data_t *d) {
+				ten(d);
+				obs_data_set_int(d, "shadow_from", each);
+			});
+			for (obs_sceneitem_t *item : {out_item, in_item}) {
+				for (bool show : {true, false}) {
+					obs_source_t *tr =
+						obs_source_create_private("fade_transition", "OX Fade", nullptr);
+					obs_sceneitem_set_transition(item, show, tr);
+					obs_sceneitem_set_transition_duration(item, show, 1600);
+					obs_source_release(tr);
+				}
+			}
+			obs_source_t *before_out = obs_get_output_source(0);
+			obs_set_output_source(0, obs_scene_get_source(sc));
+			obs_sceneitem_set_visible(in_item, false);
+			sleep_ms(1900);
+			shot(obs_scene_get_source(sc));
+			obs_sceneitem_set_visible(out_item, false);
+			obs_sceneitem_set_visible(in_item, true);
+			// The frame nearest half-way: how far the one coming in is, by
+			// its middle over the background (green 0xC0 over 0x90, red
+			// 0x40 over 0xE0), and the going one's line under it at 225,
+			// 130: the new box, t of it, over the line, 1 - t of that, over
+			// the background.
+			double best_t = -1.0, best_want = 0.0;
+			int best_got = 0, best_line = 0;
+			for (int i = 0; i < 11; i++) {
+				sleep_ms(100);
+				const std::vector<uint8_t> f = render(obs_scene_get_source(sc), w, h);
+				const double t =
+					(to_lin(0xE0) - to_lin(px(f, 350, 110, 0))) / (to_lin(0xE0) - to_lin(0x40));
+				if (best_t >= 0.0 && std::abs(t - 0.5) >= std::abs(best_t - 0.5))
+					continue;
+				best_t = t;
+				// (Each source by itself: the box coming in is above, and
+				// its own line is not here; the line going is under it.)
+				const double under = (1.0 - t) * 0.0 + t * to_lin(0xE0);
+				best_want = to_level(t * to_lin(0x40) + (1.0 - t) * under);
+				best_got = px(f, 225, 130, 0);
+				best_line = px(f, 95, 140, 0);
+			}
+			CHECK(best_t > 0.25 && best_t < 0.75 && std::abs(best_got - best_want) <= 8 &&
+				      std::abs(best_line - to_level(best_t * to_lin(0xE0))) <= 8,
+			      "a source fading out as another fades in over its line (Shadow from %d): the line under the one coming in is still there (red %d, %.0f wanted, %.2f of the way; the line beside it %d, %.0f wanted)",
+			      each, best_got, best_want, best_t, best_line, to_level(best_t * to_lin(0xE0)));
+			sleep_ms(1700);
+			render(obs_scene_get_source(sc), w, h);
+			obs_set_output_source(0, before_out);
+			obs_source_release(before_out);
+			obs_source_filter_remove(obs_scene_get_source(sc), ss);
+			obs_source_release(ss);
+			obs_scene_release(sc);
+			sleep_ms(200);
+		}
+		for (obs_source_t *src : {blue, orange, box_a, bar1, bar2, box_b, box_b2, both})
+			obs_source_release(src);
+	}
+
+	// 3d. The owner's change of scene: both scenes share a full-screen
+	// background and a see-through full-screen overlay on top, nothing else;
+	// Morph with Make room and no fade. Everything else slides out, or in,
+	// whole: each mover its own colour, its line solid black, and nothing of
+	// the other scene showing through either.
+	{
+		obs_source_t *amb = block("OM Ambient", 0xFF806040, 640, 360); // red 0x40, green 0x60, blue 0x80
+		obs_source_t *alerts = block("OM Alerts", 0x00000000, 640, 360);
+		obs_source_t *image = block("OM Image", 0xFFFFFFFF, 120, 80);
+		obs_source_t *bar1 = block("OM Bar 1", 0xFFFFFFFF, 20, 80);
+		obs_source_t *bar2 = block("OM Bar 2", 0xFFFFFFFF, 20, 80);
+		obs_source_t *game = block("OM Game", 0xFF2090E0, 620, 340); // fills the screen but for a gap
+		obs_source_t *widget = block("OM Widget", 0xFF40C040, 100, 60);
+		obs_scene_t *sa = obs_scene_create("OM Standby");
+		obs_scene_t *sb = obs_scene_create("OM Live");
+		put(sa, amb, 0, 0);
+		put(sa, image, 60, 60);
+		{
+			obs_sceneitem_t *g1 = put(sa, bar1, 0, 0);
+			obs_sceneitem_t *g2 = put(sa, bar2, 40, 0);
+			obs_sceneitem_t *group = obs_scene_add_group(sa, "OM Title");
+			obs_sceneitem_group_add_item(group, g1);
+			obs_sceneitem_group_add_item(group, g2);
+			vec2 p;
+			vec2_set(&p, 300.0f, 60.0f);
+			obs_sceneitem_set_pos(group, &p);
+		}
+		put(sa, alerts, 0, 0);
+		put(sb, amb, 0, 0);
+		put(sb, game, 10, 10);
+		put(sb, widget, 500, 250);
+		put(sb, alerts, 0, 0);
+		std::vector<obs_source_t *> shadows;
+		for (obs_scene_t *scene : {sa, sb})
+			shadows.push_back(scene_filter(scene, ten));
+		obs_data_t *md = obs_data_create();
+		obs_data_set_int(md, "ease_curve", 0); // linear
+		obs_data_set_int(md, "others", 3);
+		obs_data_set_string(md, "unpaired", "morph_make_room");
+		obs_source_t *morph = obs_source_create_private("stagekit_morph", "OM Morph", md);
+		obs_data_release(md);
+		shot(obs_scene_get_source(sa));
+		shot(obs_scene_get_source(sb));
+		auto part_way = [&](obs_scene_t *from, obs_scene_t *to, double t) {
+			obs_transition_set(morph, obs_scene_get_source(from));
+			obs_transition_start(morph, OBS_TRANSITION_MODE_MANUAL, 0, obs_scene_get_source(to));
+			obs_transition_set_manual_time(morph, (float)t);
+			sleep_ms(150);
+			render(morph, w, h);
+			const std::vector<uint8_t> f = render(morph, w, h);
+			obs_transition_force_stop(morph);
+			obs_transition_clear(morph);
+			return f;
+		};
+		struct Found {
+			int x0, x1, y0, y1, n;
+		};
+		// The pixels of one colour, exactly, from x0 to x1.
+		auto find = [&](const std::vector<uint8_t> &f, int r, int g, int b, int xa, int xb) {
+			Found o{(int)w, -1, (int)h, -1, 0};
+			for (int y = 0; y < (int)h; y++)
+				for (int x = xa; x < xb; x++)
+					if (std::abs(px(f, x, y, 0) - r) <= 3 && std::abs(px(f, x, y, 1) - g) <= 3 &&
+					    std::abs(px(f, x, y, 2) - b) <= 3) {
+						o.x0 = std::min(o.x0, x);
+						o.x1 = std::max(o.x1, x);
+						o.y0 = std::min(o.y0, y);
+						o.y1 = std::max(o.y1, y);
+						o.n++;
+					}
+			return o;
+		};
+		for (int way = 0; way < 2; way++) {
+			for (double t : {0.25, 0.5, 0.75}) {
+				if (way == 1 && t != 0.5)
+					continue;
+				const std::vector<uint8_t> f = way == 0 ? part_way(sa, sb, t) : part_way(sb, sa, t);
+				// The image (white, 120 by 80, at 60, 60 at rest) and the
+				// title's bars (white, at 300 and 340), wherever they are.
+				const Found im = find(f, 255, 255, 255, 0, 250);
+				const Found ti = find(f, 255, 255, 255, 250, 420);
+				const bool image_whole = im.n > 0 && im.x1 - im.x0 == 119 &&
+							 im.n == 120 * (im.y1 - im.y0 + 1) && im.y1 - im.y0 >= 15;
+				const bool title_whole = ti.n > 0 && ti.x1 - ti.x0 == 59 &&
+							 ti.n == 40 * (ti.y1 - ti.y0 + 1) && ti.y1 - ti.y0 >= 15;
+				const int iy = image_whole ? (im.y0 + im.y1) / 2 : 0,
+					  ty = title_whole ? (ti.y0 + ti.y1) / 2 : 0;
+				auto dark = [&](int x, int y) {
+					return std::max({px(f, x, y, 0), px(f, x, y, 1), px(f, x, y, 2)});
+				};
+				const int line_l = image_whole ? dark(im.x0 - 5, iy) : -1;
+				const int line_r = image_whole ? dark(im.x1 + 5, iy) : -1;
+				const int gap = title_whole ? dark(ti.x0 + 30, ty) : -1;
+				const int beside = title_whole ? dark(ti.x1 + 5, ty) : -1;
+				CHECK(image_whole && title_whole && line_l >= 0 && line_l <= 8 && line_r <= 8 &&
+					      gap <= 8 && beside <= 8,
+				      "Make room, a shared background and overlay, %s, %.2f of the way: the image and the title slide whole, their lines solid black (image at %d..%d by %d..%d, %d white px; title at %d..%d by %d..%d, %d white px; the image's line %d and %d, the title's %d between the letters and %d beside them: 0 is black)",
+				      way == 0 ? "out" : "in", t, im.x0, im.x1, im.y0, im.y1, im.n, ti.x0, ti.x1, ti.y0,
+				      ti.y1, ti.n, line_l, line_r, gap, beside);
+			}
+		}
+		obs_source_release(morph);
+		obs_source_filter_remove(obs_scene_get_source(sa), shadows[0]);
+		obs_source_filter_remove(obs_scene_get_source(sb), shadows[1]);
+		for (obs_source_t *ss : shadows)
+			obs_source_release(ss);
+		obs_scene_release(sa);
+		obs_scene_release(sb);
+		for (obs_source_t *src : {amb, alerts, image, bar1, bar2, game, widget})
+			obs_source_release(src);
+	}
+
+	// 3e. Morph the main image: a scene's image over a shared background
+	// changes into the other scene's game shown full-screen over the same
+	// background. (Full-screen with nothing under it, a source is its
+	// scene's background and is cross-faded: section 3c's two wallpapers.)
+	{
+		obs_source_t *amb = block("OP Ambient", 0xFF806040, 640, 360);
+		obs_source_t *start = block("OP Start", 0xFFFFFFFF, 300, 230);
+		obs_source_t *game = block("OP Game", 0xFF2090E0, 640, 360);
+		obs_scene_t *sa = obs_scene_create("OP Standby");
+		obs_scene_t *sb = obs_scene_create("OP Live");
+		put(sa, amb, 0, 0);
+		put(sa, start, 80, 10); // 80..380 by 10..240, three tenths of the screen
+		put(sb, amb, 0, 0);
+		put(sb, game, 0, 0);
+		obs_data_t *md = obs_data_create();
+		obs_data_set_int(md, "ease_curve", 0); // linear
+		obs_source_t *morph = obs_source_create_private("stagekit_morph", "OP Morph", md);
+		obs_data_release(md);
+		shot(obs_scene_get_source(sa));
+		shot(obs_scene_get_source(sb));
+		for (int way = 0; way < 2; way++) {
+			obs_transition_set(morph, obs_scene_get_source(way ? sb : sa));
+			obs_transition_start(morph, OBS_TRANSITION_MODE_MANUAL, 0, obs_scene_get_source(way ? sa : sb));
+			obs_transition_set_manual_time(morph, 0.5f);
+			sleep_ms(150);
+			render(morph, w, h);
+			const std::vector<uint8_t> f = render(morph, w, h);
+			obs_transition_force_stop(morph);
+			obs_transition_clear(morph);
+			// Half-way the pair is at 40..510 by 5..300: both pictures
+			// mixed inside, the background alone outside.
+			const int in_r = px(f, 200, 150, 0), in_g = px(f, 200, 150, 1);
+			const int out_r = px(f, 580, 330, 0), out_g = px(f, 580, 330, 1), out_b = px(f, 580, 330, 2);
+			const int edge_in = px(f, 500, 150, 1), edge_out = px(f, 520, 150, 1);
+			CHECK(in_r >= 220 && in_g > 0x90 + 15 && in_g < 240 && std::abs(out_r - 0x40) <= 6 &&
+				      std::abs(out_g - 0x60) <= 6 && std::abs(out_b - 0x80) <= 6 &&
+				      edge_in > 0x90 + 15 && std::abs(edge_out - 0x60) <= 6,
+			      "a scene's main image and the other's full-screen game over a shared background are one morphing pair, %s (inside, both mixed: red %d, green %d; outside, the background: %d %d %d; green %d just inside the pair's right edge and %d just outside)",
+			      way ? "back" : "there", in_r, in_g, out_r, out_g, out_b, edge_in, edge_out);
+		}
+		obs_source_release(morph);
+		obs_scene_release(sa);
+		obs_scene_release(sb);
+		for (obs_source_t *src : {amb, start, game})
+			obs_source_release(src);
+	}
+
 	// 4. The glow: white, 40 px soft, round a dark grey source on black.
 	{
 		obs_source_t *dark = block("OG Dark", 0xFF000000, 640, 360);

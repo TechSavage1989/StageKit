@@ -292,16 +292,14 @@ Split split_at(float2 uv)
 }
 
 // How much of a shadow or line is laid at a pixel. A source that fades takes
-// its line and shadow with it as one flat picture: they are as faded as it
-// is, and nothing of them lies under the source itself, or they would show
-// through it for as long as it is see-through. So where a fading source
-// stands, the part of the amount it can have thrown itself (up to its own
-// fade) is left out, and what is over that is another source's, whole on
-// what shows through. Where nothing fades this is the amount as it is.
+// its line and shadow with it as one flat picture: nothing of them lies under
+// the source itself, or they would show through it for as long as it is
+// see-through. The presence says where the sources that threw this line
+// stand, whole; with none fading it is the mask and this is the amount as it
+// is.
 float laid_amount(float amount, Split s)
 {
-	float others = saturate(max(amount - s.fade, 0.0) / max(1.0 - s.fade, 0.0001));
-	return others + (amount - others) * s.clear;
+	return amount * s.clear;
 }
 
 // What is under the sources with a colour laid over it, `amount` of the way,
@@ -480,6 +478,29 @@ technique Presence
 	{
 		vertex_shader = VSDefault(v_in);
 		pixel_shader  = PSPresence(v_in);
+	}
+}
+
+// Two finished pictures (straight alpha, ordinary values: `image` and
+// `shadow`), the second `ring_strength` of the way over the first, mixed in
+// linear light: the two scenes of a change, each with its own lines.
+float4 PSMixSides(VertData v_in) : TARGET
+{
+	float4 a = image.Sample(linearClamp, v_in.uv);
+	float4 b = shadow.Sample(linearClamp, v_in.uv);
+	float t = saturate(ring_strength);
+	float4 pa = float4(to_linear(a.rgb) * a.a, a.a);
+	float4 pb = float4(to_linear(b.rgb) * b.a, b.a);
+	float4 c = pa * (1.0 - t) + pb * t;
+	return float4(to_srgb(c.rgb / max(c.a, 0.00001)), c.a);
+}
+
+technique MixSides
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSMixSides(v_in);
 	}
 }
 

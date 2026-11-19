@@ -23,6 +23,36 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
+## Fading lines again, and a full-screen main image (0.1.0-beta213)
+
+Branch `fix/outline-fade-2`, rebased on `main` at beta212. Not pushed. The owner on beta211:
+"outline issue is worse now" (a screenshot mid change of scene: the band of each line showed the
+other scene, a hole). Measured with two scenes that share nothing (blue and orange backgrounds, a
+white box and a two-bar "title" in a group, 10 px black lines, both with Scene Shadow), half-way,
+*Other items* Slide: the box's line was 120, 81 (red, green) in beta210 and in beta211, 164, 104
+wanted (half black over the new scene) and got now. Fade: where both scenes have a line the pixel
+was 120 in both, 0 wanted and got; beta210 had 77,585 values over 6 levels off the half-and-half
+mix, beta211 53,548, now none (worst 0). In one scene, a source fading out as another fades in
+over its line, Each source by itself: 164 in beta211 (the hole), 109 in beta210, 126 wanted, 130
+now. Cause: the line was laid on the mixed picture of both scenes (beta210: see-through; beta211's
+single presence also removed it wherever any other fading source stood). Fix: see AGENTS.md,
+Scene Shadow, *A fading source ...* (Morph draws a scene's side at a time and mixes; in a scene
+each fading source is a stage of its own). Morph now costs two sets of passes while unpaired
+parts fade or move.
+
+**Not reproduced: Make room movers half see-through.** The owner's saved Morph is Make room with
+no fade. With colour sources, a shared full-screen background, a see-through full-screen overlay
+on top and a game filling 91 % of the other scene, the movers and their lines are whole at 0.25,
+0.5 and 0.75 in beta210, beta211 and now (test 3d). An earlier save had *Other items* Slide, which
+fades what it slides and matches the screenshot as described; if movers still look see-through
+with Make room, ask for the log and whether *Fade while moving* is on. Stand-in twins, real text
+sources and browser sources were not in the test.
+
+Also: *Morph the main image* takes a full-screen source that has a background under it (AGENTS.md,
+Morph, *The main image may fill the screen ...*); the owner asked why Standby to Live did not
+morph. Tested in OUTLINE_GLOW (3c, 3d, 3e; 129 checks before the rebase). Only OpenGL: `MixSides`
+is new shader code.
+
 ## Outline designs (0.1.0-beta212)
 
 Branch `feat/outline-designs`, on the beta211 branch. Not pushed. The owner asked for more outline

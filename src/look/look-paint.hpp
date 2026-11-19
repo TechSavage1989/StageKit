@@ -248,10 +248,11 @@ public:
 	// pictures do, instead of OBS's premultiplied scene.)
 	// (`ring`: with a line round the boxes (`box_line`), the lines as drawn
 	// by draw_box_ring; nullptr: round the sources' own shape.)
-	// (`presence`: the mask's sources each whole where it is, however far it
-	// has faded in or out (alpha; draw_presence), so a fading source's line
-	// and shadow fade with it as one flat picture and never show through it.
-	// nullptr: none is fading, the mask says it.)
+	// (`presence`: the mask with the casting sources whole where they
+	// stand, however far they have faded in or out (alpha; draw_presence),
+	// so a fading source's line and shadow are never laid under the source
+	// itself. Only for a cast of fading sources by themselves: a line is
+	// kept off the whole of it. nullptr: none is fading, the mask says it.)
 	bool compose(gs_texture_t *scene, gs_texture_t *cast, gs_texture_t *mask, const ShadowLook &look, uint32_t cx,
 		     uint32_t cy, gs_texrender_t *into = nullptr, bool scene_straight = false,
 		     gs_texture_t *ring = nullptr, gs_texture_t *presence = nullptr);
@@ -262,8 +263,17 @@ public:
 	// off. Where to (`into`) and false as compose.
 	bool compose_layers(gs_texture_t *scene, const std::vector<gs_texture_t *> &casts,
 			    const std::vector<gs_texture_t *> &masks, const ShadowLook &look, uint32_t cx, uint32_t cy,
-			    gs_texrender_t *into = nullptr, const std::vector<gs_texture_t *> *rings = nullptr,
-			    const std::vector<gs_texture_t *> *presences = nullptr);
+			    gs_texrender_t *into = nullptr, const std::vector<gs_texture_t *> *rings = nullptr);
+	// The same as a list of compose's own arguments, each laid over the
+	// picture the one before made (`mask` nullptr: the cast).
+	struct Stage {
+		gs_texture_t *cast = nullptr, *mask = nullptr, *ring = nullptr, *presence = nullptr;
+	};
+	bool compose_stages(gs_texture_t *scene, const std::vector<Stage> &stages, const ShadowLook &look, uint32_t cx,
+			    uint32_t cy, gs_texrender_t *into = nullptr);
+	// Two pictures compose made (`into`), the second `t` of the way over the
+	// first in linear light, for draw_out. False when it could not be done.
+	bool mix(gs_texture_t *a, gs_texture_t *b, double t, uint32_t cx, uint32_t cy);
 	// Whether an item is, or may be, drawn part-way see-through as a whole:
 	// its show or hide transition is running, or it is the item Morph's
 	// layer. Such an item goes into a presence canvas with draw_presence.
@@ -337,6 +347,7 @@ private:
 	gs_eparam_t *p_presence_ = nullptr;
 	DesignUniforms design_;
 	bool has_presence_ = false;
+	bool has_mix_ = false;
 	std::unique_ptr<VisibleRect> rects_;
 	gs_texture_t *no_rect_ = nullptr;
 	gs_texrender_t *outlined_ = nullptr; // the casting sources with their line, which casts the shadow

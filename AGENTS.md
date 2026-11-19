@@ -1396,6 +1396,16 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     half-way, a dark dip.
   - The plan (which items go together, and the order) holds scene items by reference and is let go
     through `changed()` on the drawing thread, never from the thread a transition is started on.
+  - **The main image may fill the screen when it has a background under it** (`largest` in
+    `plan`, `Part::main`). A source of 98 % of the screen or more was never offered to *Morph the
+    main image* (a background is cross-faded), so the owner's Standby image did not change into
+    Live's game capture, full-screen over the shared Ambient Background, while it did into Chat
+    Live's smaller one. Now such a source is the main image when something under it in its scene
+    covers nine tenths of the screen; with nothing under it it is still its scene's background
+    (two different wallpapers cross-fade). The pair counts for Make room's middle
+    (`find_room_centres`) however large; whether it casts follows the Scene Shadow's flags as
+    before (in Live the game is background by the nine-tenths run, so its line fades out on the
+    way). The log says `Morph: 'A' changes into 'B' (the scenes' main images)`.
   - *Linked sources* (`links`, lines of "A ↔ B" in a PickList, made with two boxes and a button)
     are matched after sources that are the same and before the main picture; a link holds by way
     of other links too (`linked`). The owner: "link my different camera sources to each other
@@ -3331,15 +3341,28 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   (`scene_shadow_default_flags`, worked out with the plan), so the shadow fades over its
   background. The item Morph needs nothing: its layer item casts.
   **A fading source and its line and shadow are one flat picture** (the owner, after beta210: "fading
-  ones using the secondary animation still have the multiply/transparent issue"): the mask holds a
-  source as faded as it is drawn, so its own line and shadow were laid under it on the share it let
-  through and darkened it. `compose` takes a `presence` picture beside the mask (each masked source
-  whole where it stands: Morph's `Pass::Presence`, drawn only with `fading_parts()`; in a scene,
-  `LookPaint::draw_presence` for an item whose show or hide transition runs and for the item
-  Morph's layer, `may_fade`, its alpha over the most alpha in it, `VisibleRect::top`), and the
-  shader's `laid_amount` leaves out, where a fading source stands, the amount it can have thrown
-  itself. With no presence the mask is given in its place and nothing changes. A new caller of
-  `compose` that draws anything part-way see-through must give one.
+  ones using the secondary animation still have the multiply/transparent issue"; after beta211,
+  whose one presence picture for everything left a hole where another fading source stood: "outline
+  issue is worse now"). Two rules, both from the same fault: a line laid on a picture in which its
+  source is already part-way see-through shows through that source and through whatever it is
+  fading over.
+  - **In Morph, parts in one scene only are drawn a scene's side at a time** (`Side`, `side_`,
+    `fading_parts()`): the change is drawn twice, each time with one scene's own unpaired parts
+    whole (every pair and every Make room mover without a fade is in both), each side composed
+    with that scene's own look (`lerp_look` at 0 and at 1), and the two finished pictures are mixed
+    (`LookPaint::mix`, technique `MixSides`, linear light). So half-way every pixel is half the old
+    scene with its lines solid and half the new. Never outline the mixed picture when parts fade:
+    the line was laid over both scenes' pictures at once. With no unpaired masked part the change
+    is drawn once, as before.
+  - **In a scene, a source whose show or hide transition runs (and the item Morph's layer:
+    `LookPaint::may_fade`) is laid in a stage of its own** (`SceneShadow::add_stages`,
+    `LookPaint::Stage`, `compose_stages`): the whole sources are one `compose`, each fading one
+    (those whose lines cannot meet together, `shadow_layers`, six at most) another over it, with a
+    `presence`: the mask with that source whole on it (`draw_presence`, its alpha over the most
+    alpha in it, `VisibleRect::top`). The shader's `laid_amount` keeps a line off the whole of the
+    presence, which is why a presence may only go with a cast of the fading sources themselves:
+    another source's line under a fading one must still show through it.
+  `lay_over` repeats the frame's stages. The canvases come from a pool (`canvas()`).
 - **Scene Shadow's *Shadow from*** (`shadow_from`, by number, append-only: 0 *The scene as drawn*,
   as it comes and as every filter saved before reads; 1 *Each source by itself*; 2026-11-17). Put to
   the owner with Scene Corners' *Corners on* ("every casting source gets its own shadow ... falls
