@@ -104,23 +104,37 @@ bool item_drawn_box(obs_sceneitem_t *item, LayerBox &out);
 
 struct ItemDraw;
 
-// The rectangle a picture's visible pixels cover, worked out on the graphics
-// card (nothing read back): a one-pixel 32-bit float picture holding x0, y0,
-// x1, y1 in the picture's pixels (empty: x1 < x0). On the drawing thread;
-// kept until the next call.
+// Whether a box (the unit square under `m`) is turned or slanted on the canvas.
+bool box_turned(const matrix4 &m);
+
+// What shows of a picture, worked out on the graphics card (nothing read
+// back): `rect`, a one-pixel 32-bit float picture holding x0, y0, x1, y1 in
+// the picture's pixels (empty: x1 < x0), and `area`, one holding the sum of
+// its alpha in red (how much of that rectangle it fills).
+struct Seen {
+	gs_texture_t *rect = nullptr;
+	gs_texture_t *area = nullptr;
+	bool known() const { return rect && area; }
+};
+
+// Works Seen out. On the drawing thread; each result is kept until the next
+// begin_frame.
 class VisibleRect {
 public:
 	VisibleRect();
 	~VisibleRect();
 	VisibleRect(const VisibleRect &) = delete;
 	VisibleRect &operator=(const VisibleRect &) = delete;
-	gs_texture_t *measure(gs_texture_t *picture, uint32_t w, uint32_t h);
+	void begin_frame() { next_ = 0; }
+	Seen measure(gs_texture_t *picture, uint32_t w, uint32_t h);
 
 private:
+	gs_texture_t *reduce(gs_texture_t *picture, uint32_t w, uint32_t h, const char *first, const char *rest);
 	gs_effect_t *effect_ = nullptr;
 	gs_eparam_t *p_image_ = nullptr;
 	gs_eparam_t *p_in_size_ = nullptr;
-	std::vector<gs_texrender_t *> levels_;
+	std::vector<std::vector<gs_texrender_t *>> sets_; // one chain of levels per reduction this frame
+	size_t next_ = 0;
 };
 
 class LookPaint {
@@ -134,7 +148,12 @@ public:
 
 	// At the start of each drawing: the pictures borrowed for cropped items
 	// are free again.
-	void begin_frame() { spare_ = 0; }
+	void begin_frame()
+	{
+		spare_ = 0;
+		if (rects_)
+			rects_->begin_frame();
+	}
 
 	// Draws an item as its scene draws it, onto what is being drawn: its
 	// place, size and crop, and a show or hide transition while one runs
@@ -187,14 +206,24 @@ public:
 	// A line round a box, with the look's corners (`box_line`), onto the
 	// canvas being drawn (begin_canvas): the box is the unit square under
 	// `m` (canvas pixels), counted `strength` of the way (a Morph part-way).
-	// `rect` (VisibleRect's, for a picture pw by ph laid on that square):
+	// `seen` (VisibleRect's, for a picture pw by ph laid on that square):
 	// the line goes round the part that shows instead of the whole box.
-	void draw_box_ring(const matrix4 &m, const ShadowLook &look, float strength, gs_texture_t *rect = nullptr,
-			   double pw = 0.0, double ph = 0.0);
+	// The canvas holds the line in alpha and, in red, the sources outlined
+	// as Follow the source instead (`draw_follow`); both are drawn taking
+	// the larger value, so any number of sources share it.
+	void draw_box_ring(const matrix4 &m, const ShadowLook &look, float strength, const Seen &seen = Seen(),
+			   double pw = 0.0, double ph = 0.0, bool turned = false);
+	// The other half: `picture` (pw by ph, laid on the unit square under
+	// `m`) into the canvas's red, where it fills under nine tenths of the
+	// rectangle that shows of it (text, a logo, a group with gaps: those
+	// keep a line that follows them), or always when `turned` (a turned
+	// box gets no box line). `amount` scales it (a Morph part-way).
+	void draw_follow(gs_texture_t *picture, const matrix4 &m, double pw, double ph, const Seen &seen, bool turned,
+			 float amount);
 	// What shows of a picture (VisibleRect), with LookPaint's own.
-	gs_texture_t *visible_rect(gs_texture_t *picture, uint32_t w, uint32_t h);
-	// The same round an item's box as its scene draws it now (nothing for
-	// an item that draws nothing).
+	Seen visible_rect(gs_texture_t *picture, uint32_t w, uint32_t h);
+	// Both halves for an item as its scene draws it now (nothing for an
+	// item that draws nothing).
 	void draw_item_ring(obs_sceneitem_t *item, const ShadowLook &look);
 	// What `compose` made, onto what is being drawn, following OBS's
 	// linear-light setting.
@@ -229,6 +258,10 @@ private:
 	gs_eparam_t *p_rect_tex_ = nullptr;
 	gs_eparam_t *p_rect_known_ = nullptr;
 	gs_eparam_t *p_rect_pic_ = nullptr;
+	gs_eparam_t *p_area_tex_ = nullptr;
+	gs_eparam_t *p_force_follow_ = nullptr;
+	gs_eparam_t *p_follow_amount_ = nullptr;
+	gs_eparam_t *p_follow_tex_ = nullptr;
 	std::unique_ptr<VisibleRect> rects_;
 	gs_texture_t *no_rect_ = nullptr;
 	gs_texrender_t *outlined_ = nullptr; // the casting sources with their line, which casts the shadow

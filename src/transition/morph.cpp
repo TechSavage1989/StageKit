@@ -262,7 +262,10 @@ private:
 	// Pass::Ring: the line round a part's box, with the look's corners.
 	// (`shown`, `crop`: the source, so the line goes round what shows of it;
 	// nullptr: round the whole quad.)
-	void draw_ring(const Quad &quad, float strength, const Shown *shown = nullptr, const Crop *crop = nullptr);
+	// (`b`, `cb`, `k`: a second source changing into the first, `k` of the
+	// way; the line's kind, box or following, is the nearer one's.)
+	void draw_ring(const Quad &quad, float strength, const Shown *shown = nullptr, const Crop *crop = nullptr,
+		       const Shown *b = nullptr, const Crop *cb = nullptr, double k = 0.0);
 	void draw_shadowed(double t, uint32_t cx, uint32_t cy, const SceneShadowNow *from, const SceneShadowNow *to);
 	bool draw_layers(double t, uint32_t cx, uint32_t cy, gs_texture_t *picture, const ShadowLook &shade);
 	bool in_layer(const Part &part) const;
@@ -751,8 +754,12 @@ void Morph::draw_morph(double t, uint32_t cx, uint32_t cy)
 		if (pass_ == Pass::Ring) {
 			// (Two sources: round the quad, which is already what shows of
 			// each with Use visible pixels.)
-			const Shown *one = two ? nullptr : had && has ? &will : had ? &was : &will;
-			draw_ring(quad, strength, one, one ? &one->crop : nullptr);
+			if (two) {
+				draw_ring(quad, strength, &was, &from_part, &will, &to_part, std::clamp(t, 0.0, 1.0));
+			} else {
+				const Shown *one = had && has ? &will : had ? &was : &will;
+				draw_ring(quad, strength, one, &one->crop);
+			}
 		} else if (had && has && was.source == will.source) {
 			// The same source: once, its crop part-way as well. (A curve
 			// that overshoots moves past its place, but cuts no further.)
@@ -795,25 +802,43 @@ void Morph::draw_part(const Shown &shown, const Quad &quad, const Crop &crop, fl
 		draw_texture(texture, nullptr, quad, 0.0f, strength);
 }
 
-void Morph::draw_ring(const Quad &quad, float strength, const Shown *shown, const Crop *crop)
+void Morph::draw_ring(const Quad &quad, float strength, const Shown *shown, const Crop *crop, const Shown *b,
+		      const Crop *cb, double k)
 {
-	if (!look_)
+	if (!look_ || !shown || !crop)
 		return;
-	gs_texture_t *rect = nullptr;
-	double pw = 0.0, ph = 0.0;
-	if (shown && crop) {
-		if (gs_texture_t *picture = cropped(*shown, *crop)) {
-			pw = (double)gs_texture_get_width(picture);
-			ph = (double)gs_texture_get_height(picture);
-			rect = look_->visible_rect(picture, (uint32_t)pw, (uint32_t)ph);
-		}
-	}
 	matrix4 m;
 	vec4_set(&m.x, (float)quad.a, (float)quad.b, 0.0f, 0.0f);
 	vec4_set(&m.y, (float)quad.c, (float)quad.d, 0.0f, 0.0f);
 	vec4_set(&m.z, 0.0f, 0.0f, 1.0f, 0.0f);
 	vec4_set(&m.t, (float)quad.tx, (float)quad.ty, 0.0f, 1.0f);
-	look_->draw_box_ring(m, ring_look_, strength, rect, pw, ph);
+	const bool turned = box_turned(m);
+	gs_texture_t *first = cropped(*shown, *crop);
+	gs_texture_t *second = b && cb ? cropped(*b, *cb) : nullptr;
+	if (!first)
+		return;
+	auto size = [](gs_texture_t *t, double &w, double &h) {
+		w = t ? (double)gs_texture_get_width(t) : 0.0;
+		h = t ? (double)gs_texture_get_height(t) : 0.0;
+	};
+	double w1, h1, w2, h2;
+	size(first, w1, h1);
+	size(second, w2, h2);
+	// The nearer side says whether the line is a box or follows.
+	const bool near_second = second && k >= 0.5;
+	gs_texture_t *near = near_second ? second : first;
+	const double nw = near_second ? w2 : w1, nh = near_second ? h2 : h1;
+	const Seen seen = look_->visible_rect(near, (uint32_t)nw, (uint32_t)nh);
+	look_->draw_box_ring(m, ring_look_, strength, seen, nw, nh, turned);
+	if (!second) {
+		look_->draw_follow(first, m, w1, h1, seen, turned, strength);
+		return;
+	}
+	// Two sources changing into each other: both shapes, each whole at its
+	// end and never less than whole on the way (as the Cast pass draws them).
+	const double whole = 1.0 / std::max(k, 1.0 - k);
+	look_->draw_follow(first, m, nw, nh, seen, turned, (float)(strength * (1.0 - k) * whole));
+	look_->draw_follow(second, m, nw, nh, seen, turned, (float)(strength * k * whole));
 }
 
 // What an item does under its scene's Scene Shadow (or under one as it
@@ -863,6 +888,7 @@ void Morph::draw_shadowed(double t, uint32_t cx, uint32_t cy, const SceneShadowN
 	// every item transition set to it, and most never need one.)
 	if (!look_)
 		look_ = std::make_unique<LookPaint>();
+	look_->begin_frame();
 	auto into = [&](gs_texrender_t *tr, Pass pass) -> gs_texture_t * {
 		pass_ = pass;
 		gs_texrender_reset(tr);

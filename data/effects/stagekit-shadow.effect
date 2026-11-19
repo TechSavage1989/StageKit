@@ -36,6 +36,7 @@ uniform float outline_corners;  // 0 = round the picture's own shape; 1..4 = rou
 uniform float corner_size;      // the line's outer corners, in pixels
 uniform float glow_intensity;   // 1 as it was; more fills the soft tail in, never harder-edged
 uniform texture2d rect_tex;     // what shows of the source, x0 y0 x1 y1 in its pixels (the line goes round it)
+uniform texture2d area_tex;     // the sum of the source's alpha (red), for how much of rect_tex it fills
 uniform float rect_known;       // 1 rect_tex holds it, 0 the line goes round the whole source
 uniform float out_linear;       // 1: Compose writes linear light (OBS draws in linear light)
 
@@ -132,7 +133,7 @@ float box_line(float2 p)
 	float4 whole = float4(pad, src_size);
 	float4 shown = float4(pad + seen.xy, seen.zw - seen.xy);
 	float any = lerp(1.0, step(seen.x, seen.z - 0.5) * step(seen.y, seen.w - 0.5), rect_known);
-	float4 part = lerp(whole, shown, rect_known);
+	float4 part = whole * (1.0 - rect_known) + shown * rect_known;
 	float4 box = float4(part.xy - float2(grow, grow), part.zw + float2(grow, grow) * 2.0);
 	float4 outer = float4(box.xy - float2(outline_width, outline_width),
 			      box.zw + float2(outline_width, outline_width) * 2.0);
@@ -182,7 +183,13 @@ float4 PSOutline(VertData v_in) : TARGET
 		float d = image.SampleLevel(linearClamp, v_in.uv + dir * 0.25, 0).a;
 		reach = max(reach, max(max(a, b), max(c, d)));
 	}
-	reach = lerp(reach, box_line(v_in.uv * out_size), step(0.5, outline_corners));
+	// A source filling under nine tenths of the rectangle that shows of it
+	// (text, a logo, a shape) keeps the line that follows it.
+	float4 seen = rect_tex.Sample(pointClamp, float2(0.5, 0.5));
+	float rect_area = max((seen.z - seen.x) * (seen.w - seen.y), 1.0);
+	float sparse = step(area_tex.Sample(pointClamp, float2(0.5, 0.5)).r, 0.9 * rect_area) * rect_known;
+	float boxed = step(0.5, outline_corners) * (1.0 - sparse);
+	reach = reach * (1.0 - boxed) + box_line(v_in.uv * out_size) * boxed;
 	float4 own = extended.Sample(linearClamp, v_in.uv);
 	float3 line_rgb = lerp(outline_color.rgb, own.rgb, outline_picture);
 	float la = reach * outline_color.a * lerp(1.0, own.a, outline_picture);

@@ -692,26 +692,36 @@ technique Lift
 	}
 }
 
-// The rectangle a picture's visible pixels (alpha at least a half) cover,
+// The rectangle a picture's visible pixels (alpha at least a tenth) cover,
 // found on the graphics card without reading anything back: RectFirst gives
 // each block of 8 by 8 pixels its rectangle (x0, y0, x1, y1 in pixels, x1
-// and y1 past the last; an empty block is 1e9, 1e9, -1e9, -1e9), RectReduce
-// joins blocks of 8 by 8 of those, down to one. For a Scene Shadow or Shadow,
-// Glow & Outline line round the drawn picture: a source's box can hold
-// see-through margins (a widget's, a capture's), and a line round the box
-// stood off the picture on those sides.
+// and y1 past the last; an empty block is 65536, 65536, -1, -1), RectReduce
+// joins blocks of 8 by 8 of those, down to one. AreaFirst / AreaReduce add
+// up the picture's alpha the same way (how much of that rectangle the
+// picture fills). For a Scene Shadow or Shadow, Glow & Outline line round
+// the drawn picture.
+//
+// (Picked with `pick`, never lerp: Direct3D's lerp is a + t * (b - a), and
+// with a far-off "empty" value (1e9 up to beta209) it lost tens of pixels,
+// which moved the owner's lines off their pictures and lost the bottom
+// ones.)
+float4 pick(float4 a, float4 b, float t)
+{
+	return a * (1.0 - t) + b * t;
+}
+
 float4 PSRectFirst(VertData v_in) : TARGET
 {
 	float2 blocks = ceil(rect_in_size / 8.0);
 	float2 base = floor(v_in.uv * blocks) * 8.0;
-	float4 r = float4(1e9, 1e9, -1e9, -1e9);
+	float4 r = float4(65536.0, 65536.0, -1.0, -1.0);
 	for (int j = 0; j < 8; j++) {
 		for (int i = 0; i < 8; i++) {
 			float2 t = base + float2(float(i), float(j));
 			float inside = step(t.x + 0.5, rect_in_size.x) * step(t.y + 0.5, rect_in_size.y);
 			float a = image.SampleLevel(rectPoint, (t + 0.5) / rect_in_size, 0).a;
-			float on = inside * step(0.5, a);
-			r = lerp(r, float4(min(r.xy, t), max(r.zw, t + 1.0)), on);
+			float on = inside * step(0.1, a);
+			r = pick(r, float4(min(r.xy, t), max(r.zw, t + 1.0)), on);
 		}
 	}
 	return r;
@@ -721,16 +731,46 @@ float4 PSRectReduce(VertData v_in) : TARGET
 {
 	float2 blocks = ceil(rect_in_size / 8.0);
 	float2 base = floor(v_in.uv * blocks) * 8.0;
-	float4 r = float4(1e9, 1e9, -1e9, -1e9);
+	float4 r = float4(65536.0, 65536.0, -1.0, -1.0);
 	for (int j = 0; j < 8; j++) {
 		for (int i = 0; i < 8; i++) {
 			float2 t = base + float2(float(i), float(j));
 			float inside = step(t.x + 0.5, rect_in_size.x) * step(t.y + 0.5, rect_in_size.y);
 			float4 c = image.SampleLevel(rectPoint, (t + 0.5) / rect_in_size, 0);
-			r = lerp(r, float4(min(r.xy, c.xy), max(r.zw, c.zw)), inside);
+			r = pick(r, float4(min(r.xy, c.xy), max(r.zw, c.zw)), inside);
 		}
 	}
 	return r;
+}
+
+float4 PSAreaFirst(VertData v_in) : TARGET
+{
+	float2 blocks = ceil(rect_in_size / 8.0);
+	float2 base = floor(v_in.uv * blocks) * 8.0;
+	float sum = 0.0;
+	for (int j = 0; j < 8; j++) {
+		for (int i = 0; i < 8; i++) {
+			float2 t = base + float2(float(i), float(j));
+			float inside = step(t.x + 0.5, rect_in_size.x) * step(t.y + 0.5, rect_in_size.y);
+			sum += inside * image.SampleLevel(rectPoint, (t + 0.5) / rect_in_size, 0).a;
+		}
+	}
+	return float4(sum, 0.0, 0.0, 1.0);
+}
+
+float4 PSAreaReduce(VertData v_in) : TARGET
+{
+	float2 blocks = ceil(rect_in_size / 8.0);
+	float2 base = floor(v_in.uv * blocks) * 8.0;
+	float sum = 0.0;
+	for (int j = 0; j < 8; j++) {
+		for (int i = 0; i < 8; i++) {
+			float2 t = base + float2(float(i), float(j));
+			float inside = step(t.x + 0.5, rect_in_size.x) * step(t.y + 0.5, rect_in_size.y);
+			sum += inside * image.SampleLevel(rectPoint, (t + 0.5) / rect_in_size, 0).r;
+		}
+	}
+	return float4(sum, 0.0, 0.0, 1.0);
 }
 
 technique RectFirst
@@ -748,5 +788,23 @@ technique RectReduce
 	{
 		vertex_shader = VSDefault(v_in);
 		pixel_shader  = PSRectReduce(v_in);
+	}
+}
+
+technique AreaFirst
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSAreaFirst(v_in);
+	}
+}
+
+technique AreaReduce
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSAreaReduce(v_in);
 	}
 }

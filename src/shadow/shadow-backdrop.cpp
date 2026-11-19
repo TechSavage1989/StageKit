@@ -394,6 +394,7 @@ private:
 	gs_eparam_t *p_out_linear_ = nullptr;
 	gs_eparam_t *p_rect_tex_ = nullptr;
 	gs_eparam_t *p_rect_known_ = nullptr;
+	gs_eparam_t *p_area_tex_ = nullptr;
 	std::unique_ptr<VisibleRect> rects_; // what shows of the source, for a line round it
 	gs_texture_t *no_rect_ = nullptr;
 	gs_texrender_t *tr_body_ = nullptr;
@@ -448,6 +449,7 @@ ShadowBackdrop::ShadowBackdrop(obs_data_t *settings, obs_source_t *source) : sou
 		p_out_linear_ = gs_effect_get_param_by_name(effect_, "out_linear");
 		p_rect_tex_ = gs_effect_get_param_by_name(effect_, "rect_tex");
 		p_rect_known_ = gs_effect_get_param_by_name(effect_, "rect_known");
+		p_area_tex_ = gs_effect_get_param_by_name(effect_, "area_tex");
 		p_extended_ = gs_effect_get_param_by_name(effect_, "extended");
 		p_extend_mirror_ = gs_effect_get_param_by_name(effect_, "extend_mirror");
 	}
@@ -1061,10 +1063,17 @@ void ShadowBackdrop::render()
 		// A line round the box goes round what shows of the source (a
 		// widget's or a capture's see-through margins left out), or round
 		// its panel when it has one.
-		gs_texture_t *rect = s.outline_corners > 0 && !s.backdrop && rects_ ? rects_->measure(input, w, h)
-										    : nullptr;
-		gs_effect_set_texture(p_rect_tex_, rect ? rect : no_rect_);
-		gs_effect_set_float(p_rect_known_, rect ? 1.0f : 0.0f);
+		// (And a source that fills under nine tenths of it, text or a
+		// shape, keeps the line that follows it.)
+		Seen seen;
+		if (s.outline_corners > 0 && rects_) {
+			rects_->begin_frame();
+			seen = rects_->measure(input, w, h);
+		}
+		const bool known = seen.known() && !s.backdrop;
+		gs_effect_set_texture(p_rect_tex_, known ? seen.rect : no_rect_);
+		gs_effect_set_texture(p_area_tex_, known ? seen.area : no_rect_);
+		gs_effect_set_float(p_rect_known_, known ? 1.0f : 0.0f);
 		draw(tr_body_, card, "Outline");
 		if (gs_texture_t *body = gs_texrender_get_texture(tr_body_))
 			card = body;

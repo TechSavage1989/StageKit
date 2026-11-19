@@ -23,6 +23,20 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
+## Square lines on Windows, and text keeps a following line (0.1.0-beta210)
+
+Branch `fix/outline-square`. Not pushed. The owner's Standby scene (beta209, Square and then Scoop)
+showed lines off their pictures and missing bottom sides. Cause: the visible-rectangle passes
+picked with `lerp` from a 1e9 "empty" value; Direct3D's lerp (a + t(b - a)) lost up to some 32
+picture pixels there, OpenGL here none, so the tests passed. Now an exact pick and a 65536 / -1
+empty value. And every box mode keeps a following line for a source filling under nine tenths of
+its visible rectangle (text, logos, groups with gaps) or turned. Tested: bigger-than-picture
+bounding boxes aligned top, top-left, centre and bottom-right (colour and image, both filters), a
+moved and scaled group, a nested scene, 2560 by 1440 at 0.05, overlapping, hidden, off screen,
+turned, a gappy group. Not tested: an item mid show or hide transition (its rectangle counts
+alpha from a tenth, and a fading source fills under nine tenths, so it follows and fades). Gates:
+OUTLINE_GLOW, SHADOW_EACH, TOOLTIPS. Not seen on Direct3D.
+
 ## Outline round what shows, and Square corners (0.1.0-beta209)
 
 Branch `fix/outline-shape-box`. Not pushed. The owner saw a line of varying width in Scene Shadow
