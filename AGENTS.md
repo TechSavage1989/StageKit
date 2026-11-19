@@ -3031,6 +3031,24 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   `STAGEKIT_TEST_ONLY_MODES_HIDE`): on and off screen, a Link Visibility before and after, by
   hand, the loop case, a filter saved without the keys, the window (rebuild, rename, *The mode
   before*).
+  **Placed in this mode** (2026-11-19; the owner: "my amuse component aligns with the chat box in
+  chat mode, but in GBA mode, it's misaligned and not the same width as the GBA link sources"):
+  `mode|<id>|place` (a PickList; need not be members), `mode|<id>|place_save` (a button: each
+  listed item's own transform, first item per source per scene, in the filter's scene and *Same
+  modes in scenes*, written as the object `mode|<id>|xf`: scene name -> source name -> `Xf`;
+  writes settings only, no `rebuild`), `mode|<id>|place_ms` (300 as it comes, set as a default in
+  `update`) and `mode|<id>|place_ease_*`. `start_places` runs on a change of mode in `act` (any
+  press, after the shows and hides) and at the put-right after loading (at once); glides
+  (`glides_`, by holder scene or group name and item id, never an item held) step in the tick,
+  start from where the item is, replace one under way for that item, are cleared while off or
+  loading; at once in a scene not showing or for a hidden item. Locked items move. At the end,
+  `fit_item_placed(holder, source)`. Not own settings: they name sources, like the mode's lists.
+  Renames follow (scene and source keys of `xf`); *Remove mode* erases them. **Settings for**
+  (`mode_for`, a mode id; 2026-11-19, the owner: "a settings for selector, similar to scene fit"):
+  only that mode's group is visible (`show_chosen_mode`, visibility only, so safe in OBS's first
+  round of modified callbacks); empty or gone reads the mode on, else the first; *Add mode* and a
+  template choose the new one, *Remove mode* the one before. Tested in `[scene modes: placed in
+  this mode]` (`mode_place_test`, alone with `STAGEKIT_TEST_ONLY_MODE_PLACE`).
 <!-- ==== end scene-filters:modes ==== -->
 <!-- ==== scene-filters:transitions ==== -->
 - **Scene Transitions** (`src/placement/scene-transitions.*`, `stagekit_scene_transitions`; the owner
