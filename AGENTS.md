@@ -1508,7 +1508,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     "switches between apps much slower than the show source in use filter ... a long pause".
     (This entry is beta116's; since beta119 the parent is no longer aimed at a switch, below.)
   - **What the capture shows is the switcher's to say, not the capture's settings**
-    (`app_capture_shown_window`, `AppCaptureShown`, betaNEXT). Since beta119 the parent stays
+    (`app_capture_shown_window`, `AppCaptureShown`, beta197). Since beta119 the parent stays
     aimed at an earlier window while a ready capture is drawn, so its `window` setting (and its
     `get_hooked`) name the wrong program. Auto Frame read them: the owner (2026-11-19), of a
     browser shown: Auto Frame said "Capturing Dolphin.exe. Aspect ratio: 4:3, from your saved
@@ -1798,7 +1798,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   really drops the hook's last frame when aimed at no window is not seen on Windows.
 - **Auto Capture stays aimed at a game while its picture comes back** (`running`, `aimed`,
   `same_program`, `kept`, `kKeepGrace`, `keep_seen_s_` in `src/capture/auto-capture.cpp`;
-  betaNEXT, after beta193). The owner (2026-11-19), of a windowed Switch emulator running a Vulkan
+  beta197, after beta193). The owner (2026-11-19), of a windowed Switch emulator running a Vulkan
   game: "auto capture still takes a while to grab some windowed games". Their log: each time
   OBS freed the hook (`vulkan capture freed`, twice followed by `capture window no longer
   exists`: the emulator made its window again, for full screen or a game started or stopped),

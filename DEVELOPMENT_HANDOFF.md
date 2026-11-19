@@ -13,10 +13,10 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
-## Auto Capture stays aimed at a game while its picture comes back (0.1.0-betaNEXT)
+## Auto Capture stays aimed at a game while its picture comes back (0.1.0-beta197)
 
 Branch `fix/auto-capture-keeps-aim`, on `main` after beta193. Notes:
-`docs/releases/0.1.0-betaNEXT.md`. No Stream Deck file changed. The owner (2026-11-19), with a
+`docs/releases/0.1.0-beta197.md`. No Stream Deck file changed. The owner (2026-11-19), with a
 screenshot of a windowed Switch emulator running a Vulkan game and OBS not showing it: "auto
 capture still takes a while to grab some windowed games".
 
@@ -83,10 +83,10 @@ capture still takes a while to grab some windowed games".
 ## Window switcher: Game area only (0.1.0-beta193)
 
 
-## Auto Frame goes by the window the switcher shows (0.1.0-betaNEXT)
+## Auto Frame goes by the window the switcher shows (0.1.0-beta197)
 
 Branch `fix/auto-frame-follows-switcher`, on `main` after beta194. Notes:
-`docs/releases/0.1.0-betaNEXT.md`. No Stream Deck file changed. The owner (2026-11-19), with a
+`docs/releases/0.1.0-beta197.md`. No Stream Deck file changed. The owner (2026-11-19), with a
 screenshot of a Window Capture's filters (Automatic Window Switcher, Auto Frame, Show in Scenes,
 Standby Picture) showing a web browser while Auto Frame's top line said *Capturing Dolphin.exe.
 Aspect ratio: 4:3, from your saved shapes.*: "says capturing dolphin, but it's a web browser".
