@@ -986,7 +986,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
 - **Two Fit to Space filters in one scene go by each other's destinations** (`Claim`, `claim_set`,
   `claim_of` in `src/placement/fit-item.cpp`): each says where its item will be once it has got
   there and whether it resizes it, and the other takes that for the obstacle, a claimed group as
-  one thing. **Rule B** (betaNEXT; the note above `kept_in_room` in `src/placement/fit-engine.cpp`):
+  one thing. **Rule B** (beta203; the note above `kept_in_room` in `src/placement/fit-engine.cpp`):
   a kept-size item lies where its *Align in the space* puts it (`kept_in_room` takes only the
   alignment), and nothing chases because the dependence is one-way: a fit that resizes its item
   goes by what a kept-size fit of its own standing *holds* (`Claim::least`, its size at its home,
@@ -1004,7 +1004,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
 - **A resized picture that has no use for more height was packed with a kept-size item above or
   below it, top first** (`lean_y_of`, `trim_for_kept_in`; beta194 to beta202, for the owner's
   chat box under their camera: "the chat box is more than 30px from the visible border of the
-  camera box"). Removed in betaNEXT by rule B: such a chat box lies by its *Align in the space* in
+  camera box"). Removed in beta203 by rule B: such a chat box lies by its *Align in the space* in
   the room under the camera; set it to *The top* to have it the gap under the camera's picture.
 - **A resized picture's box is its picture where another resized fit lies beyond it** (`trim_to_picture_in`
   in `src/placement/fit-engine.cpp`, beta194, 2026-11-18). The owner's GBA mode: two 3:2 handheld
@@ -1116,7 +1116,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
 - **Fit to Space's *Keep it towards*** (`toward`, saved by number, append-only: middle, top,
   bottom, left, right, then the four corners): where an item lies in its space when it does not
   fill it. A kept-size item goes against that side (`kept_in`), a resized picture is aligned in
-  OBS's bounding box (`obs_sceneitem_set_bounds_alignment`). Since betaNEXT nothing else wins over
+  OBS's bounding box (`obs_sceneitem_set_bounds_alignment`). Since beta203 nothing else wins over
   it (rule B above). The owner asked for "a directional bias or preferred direction ... prevent it
   from going in an undesirable direction". **Shown as OBS's nine squares** (the owner: "similar
   Alignment design as the built in bounds alignment for the transform menu"): the filters' list
@@ -1240,7 +1240,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     false`). `rebased_` makes `solve` set off also when the goal is the old one (more than a
     pixel away).
   - The owner decided the case left open here (packing against a resized picture, the far firm
-    side) for rule B in betaNEXT: see *Two Fit to Space filters in one scene*.
+    side) for rule B in beta203: see *Two Fit to Space filters in one scene*.
   Tested in `fit_keep_size_test` (*The middle* centred, *The bottom right* at the bottom right,
   a resized picture 4 px smaller kept and aligned, one 153 px smaller filled) and in
   `fit_enable_test`.

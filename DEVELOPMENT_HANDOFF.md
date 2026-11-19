@@ -23,7 +23,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
-## Window switchers share their ready captures (0.1.0-betaNEXT)
+## Window switchers share their ready captures (0.1.0-beta203)
 
 Branch `fix/ready-capture-share`, on beta202. Not pushed; release notes written by another session.
 The owner's logs: `tick_sources` median 3 to 3.9 ms while their Dolphin GBA windows (BitBlt Window
@@ -42,9 +42,9 @@ no switcher) fail two checks each here; AUTO_WINCLOSE fails the same with beta20
 Windows: what a real Window Capture costs, and whether a switch to the capture's own window is
 clean there.
 
-## Fit alignment rule B and the alignment grid (0.1.0-betaNEXT)
+## Fit alignment rule B and the alignment grid (0.1.0-beta203)
 
-Branch `fix/fit-rule-b-grid`, on beta202. Notes: `docs/releases/0.1.0-betaNEXT.md` (to be numbered
+Branch `fix/fit-rule-b-grid`, on beta202. Notes: `docs/releases/0.1.0-beta203.md` (to be numbered
 just before pushing; another session adds the window switchers' shared ready captures to the same
 release). Not pushed. The owner chose rule B: "b is the correct logic. these features need to work
 with any layout format in the future, and not be specific to mine", and asked for "similar
