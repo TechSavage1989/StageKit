@@ -13,10 +13,10 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
-## Scene Fit: the gap from what shows of a letterboxed source (0.1.0-betaNEXT)
+## Scene Fit: the gap from what shows of a letterboxed source (0.1.0-beta194)
 
 Branch `fix/scene-fit-visible-pixels`, rebased on `main` after beta191. Notes:
-`docs/releases/0.1.0-betaNEXT.md`. The owner (2026-11-18, Component-Capture-Scene, a Scene Fit on
+`docs/releases/0.1.0-beta194.md`. The owner (2026-11-18, Component-Capture-Scene, a Scene Fit on
 *Each source its own*, DSLR Component above Chat Box Group): "the chat box is more than 30px from
 the visible border of the camera box, but the bounding box of the camera box is exactly 30 from
 each edge". With Scene Fit off the dock's tools placed it right.

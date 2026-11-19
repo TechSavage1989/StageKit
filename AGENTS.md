@@ -793,7 +793,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   before the filter first touches it is saved (`orig_item`, `orig_w`, `orig_h`) and is what
   unticking goes back to when no size was ever kept: the owner's chat box had been shrunk to its
   space before the box could be unticked ("it shrinks"). **A size kept before (`keep_k`, saved;
-  set by hand or read when first kept) wins over it** (betaNEXT, 2026-11-18): the owner's camera,
+  set by hand or read when first kept) wins over it** (beta194, 2026-11-18): the owner's camera,
   set by hand to 0.4765 of its source, came back at 0.4899 (`orig_k`) after *Resize to fit* was
   ticked and unticked. `keep_k` is only ever written while unticked, so it is never a fitted size. It is read again
   at every update (`saved_keep_item_`), so a rename of the source (which rewrites `keep_item`)
@@ -803,9 +803,9 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   from before the filter), and after a resize by hand, which starts only on an item that is
   selected, showing, and whose source has kept its size for a second, and **counts once the box
   has kept still for `kHandStill` (0.3 s)**, its source's size not changing meanwhile (a change
-  starts the wait again) (`hand_on_`, betaNEXT); the item is left alone
+  starts the wait again) (`hand_on_`, beta194); the item is left alone
   meanwhile and the resize is followed to its end even if the item is no longer selected. Read on
-  every tick (up to betaNEXT), a drag and the dock's Stop resizing at edges glide after it
+  every tick (up to beta194), a drag and the dock's Stop resizing at edges glide after it
   (`step_glides`: the allowed size for one frame, back to where it was let go, then a glide there)
   were read once a frame, 53 times in the test; the owner's log had "went from 0.9021 to 0.5563
   ... (resized in the preview)" and back within two frames, then a run of small steps, each one
@@ -827,10 +827,10 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   pixels in the group, or any other item should be counted. otherwise, what's the point of that
   setting?" It is looked at when first met, half a second after its picture last changed size, and
   every three seconds while it sits where it was put; also while its box hangs past the screen's
-  edge (betaNEXT: the source is drawn by itself to be measured); and a cut under a fiftieth of the
+  edge (beta194: the source is drawn by itself to be measured); and a cut under a fiftieth of the
   picture is taken for measuring error. The picture is the source less its crop and, with *Ignore
   shadows & outlines*, the shadow's room (`own_sw_`), so a change of a shadow's room alone keeps
-  what was seen (betaNEXT: sized in screen pixels, the room changes at every resize, and for half
+  what was seen (beta194: sized in screen pixels, the room changes at every resize, and for half
   a second each time a letterboxed window was fitted with its empty margins). Sizes kept
   (`keep_k_`, `orig_k`) are scales of the source, so they hold whatever part shows.
 - **Two Fit to Space filters in one scene go by each other's destinations** (`Claim`, `claim_set`,
@@ -844,7 +844,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   judged by touching, the two filters chased each other without end.
 - **A resized picture that has no use for more height is packed with a kept-size item above or
   below it, top first** (`grows_x`/`grows_y` and `leans_x`/`leans_y` on `Claim`, `lean_axes`, `trim_for_kept` in
-  `src/placement/fit-engine.cpp`; betaNEXT, 2026-11-18). The owner, of a Scene Fit with their camera
+  `src/placement/fit-engine.cpp`; beta194, 2026-11-18). The owner, of a Scene Fit with their camera
   (resized, held by the column's width) above the chat box (keeping its size): "I don't think use
   visible pixels is working as intended. the chat box is more than 30px from the visible border of
   the camera box, but the bounding box of the camera box is exactly 30 from each edge". Measuring
@@ -869,7 +869,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   the test canvas); tested since in the same section. Horizontal packing would be a new layout
   rule: only at the owner's word.
 - **A resized picture's box is its picture where another resized fit lies beyond it** (`trim_to_picture`
-  in `src/placement/fit-engine.cpp`, betaNEXT, 2026-11-18). The owner's GBA mode: two 3:2 handheld
+  in `src/placement/fit-engine.cpp`, beta194, 2026-11-18). The owner's GBA mode: two 3:2 handheld
   windows and a 16:9 camera view share a column, all resized, all held by its width; the camera's
   box took about 1250 px of the column's height while its image used a third of that, and GBA 1
   looked squeezed to a sliver. The claim was always the picture; the box was the whole roomiest
@@ -897,7 +897,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   taller is 120 px high four frames later (88 squeezed into the cut box without it). A goal that is the picture changes only when the picture does, which
   is most of G4 below. Test canvas: camera box 120.0 high for an 88 px picture before, 88.4 after.
 - **"Its sources did not settle in 4 passes"** (the owner's logs, within 10 s of start and after
-  mode changes; betaNEXT). Two causes, both fixed: the goals of a column's resized entries were
+  mode changes; beta194). Two causes, both fixed: the goals of a column's resized entries were
   their spaces and chased each other's edges geometrically (cut to the picture, above), and an
   entry whose space ends at one listed after it (the camera between the two windows) waited a pass
   for that one each time, so from the owner's saved slivers a column of three needed six passes.
@@ -917,7 +917,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   Fit entry's place in *Fitted sources*), so moving a filter up or down counts at the next tick and
   is followed with a glide (`observe` sees the obstacles change; nothing listens to
   `reorder_filters`). `FitScan::obstacles` with `mine`: a claim `mine` outranks is in the way
-  **only by what that fit holds whatever happens** (`Claim::least`, betaNEXT): for a fit that
+  **only by what that fit holds whatever happens** (`Claim::least`, beta194): for a fit that
   keeps its size, that size round its home (its anchor), on the screen; a resizing fit holds
   nothing and is not in the way, as before (it shrinks to make room, so it is never covered).
   Never by where it is going (`box`), which follows the higher fit's claim. A claim that outranks
@@ -925,7 +925,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   other's claims exactly as before. So between two fits of different standing the dependence is
   still one-way and there is nothing to chase: the higher goes by the lower's home and kept size
   (which change only when it is moved by hand, resized by hand, shared, shown or hidden), the
-  lower by the higher's claim. Up to betaNEXT a kept-size lower was not in the way at all either,
+  lower by the higher's claim. Up to beta194 a kept-size lower was not in the way at all either,
   and the owner's game on *Takes space first* covered the camera and the chat box beside it
   (test: 576 and 1278 px² of overlap), which cannot shrink. The owner: "they aren't supposed to
   ever cross borders of other sources unless specifically allowed with the overlap setting"
@@ -952,7 +952,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   the scene down. `set_claims_firm`'s step out of a claim passes over an `above_` claim and leaves
   it to `free_space`'s `firm` sides; an outranked claim is in `boxes_` only as its `least`. Tested
   at the end of `[fit priority]`: All sources, the game taking its space first, a source put down
-  inside it (resized: unchanged by betaNEXT's `least`, which only kept-size fits have).
+  inside it (resized: unchanged by beta194's `least`, which only kept-size fits have).
 - **Fit to Space does nothing to a hidden item** (`hidden_` in `src/placement/fit-item.cpp`): no
   placing, anchor and kept size untouched, so the other filters take its room. Its room stays on
   record (`holds_room`, beta147): nothing goes by it while the item is hidden (claims are only asked
@@ -1005,7 +1005,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   item whose source has kept its size for half a second: while OBS loads, a group or a shadowed
   source is not yet the size it will be.
 - **A fit switched on takes the layout as it is: its home** (`FitEngine::switched_on`, `home_`,
-  `home_space_`, `home_box`, `home_from_item`, `at_home_`; betaNEXT). The owner, 2026-11-18:
+  `home_space_`, `home_box`, `home_from_item`, `at_home_`; beta194). The owner, 2026-11-18:
   "when I set up some layouts as desired, for example my Dolphin-GBA Link layout, manually
   positioning and sizing things with the fit to filter disabled, then enable the filter, even with
   resize to fit enabled, everything changes size." Causes: the first tick on went on from the
@@ -2470,7 +2470,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   `publish_claim`, `advance` (the glide) and `apply`, and `FitEngine::tick` calls them in the
   order the old `FitItem::tick` did: change them there, never in one host only. Scene Fit
   works its entries out in the order of *Fitted sources*, top first, then bottom first, and so on
-  in turn (up to eight passes, `kPasses`; four, all top first, up to betaNEXT) while one entry's
+  in turn (up to eight passes, `kPasses`; four, all top first, up to beta194) while one entry's
   new claim moves another's goal, before any glide
   starts: each entry sets off once per change, all in one tick. The list's order is a priority
   only with the Scene Fit's *Priority by list order* (`set_entry_index`; see *Space priority*);
