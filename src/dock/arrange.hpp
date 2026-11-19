@@ -140,32 +140,12 @@ struct Offset {
 Offset slide_offset(obs_source_t *scene, obs_sceneitem_t *item, int dx, int dy, double gap, const Measure &how,
 		    const std::vector<obs_sceneitem_t *> &leave_out, const Box *from = nullptr);
 
-// Fit to space, the one-press tool: each item (top-most first) grows or
-// shrinks, keeping its shape, until what shows of it fills the largest clear
-// space holding its place, `gap` short of the screen's edges and of every
-// other visible item, and is centred in it. The space is found as Fit to
-// Space finds its own (`fit::free_space`, the same obstacles); something the
-// item lies wholly on (a background) is not in the way. An item with a
-// bounding box has its box changed instead of its scale. Locked items are
-// left alone. Says how many changed; `fitted`, when given, receives them,
-// for the caller to tell their Fit to Space (`fit_item_placed`) once they
-// are where they are going (run_arrange does).
-//
-// It never makes another fit give up room (the owner: "the fit to space
-// option/tool cannot force other objects to resize"). An item a fit of the
-// free space looks after (a Fit to Space, a Scene Fit entry; hidden too) is
-// in the way by the whole space that fit holds, not by what shows of it,
-// unless that space reaches the item (then that fit does not count the item,
-// and what shows of its source counts as before). And the result is checked:
-// with it in place, every such fit of the scene must find the same space as
-// before (by the fit's own working out, `fit::space_from`). When one would
-// not, the item is kept smaller, between its size now and the full result,
-// the largest that changes nobody; when even a little would change one, it
-// is left as it is. An item with a fit of its own that resizes it is left to
-// that fit; one whose fit keeps its size goes where that fit will then put
-// it, and is checked there. One in a group a fit looks after is left as it
-// is. `note`, when given, says what was held back and why.
+// Fit the selected items in stacking order using fit::free_space. A fit
+// entry supplies its own gap, alignment and measuring options even when off.
+// Other sources keep their image position, size, growth flags and lean.
+// The caller hands changed items to their filters after any glide finishes.
 struct FitToSpaceNote {
+	bool busy = false;
 	int shrunk = 0, refused = 0;          // items kept smaller, items left as they were
 	std::vector<std::string> gave_way_to; // the fitted sources they gave way to
 	std::vector<std::string> own_fit;     // items left to their own fit

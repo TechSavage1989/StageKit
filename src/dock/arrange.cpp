@@ -131,10 +131,7 @@ bool on_drawing_thread(std::function<void()> work)
 		return true;
 	const int count = ++g_gave_up;
 	if (count <= 5)
-		blog(LOG_WARNING,
-		     "[stagekit] measuring: OBS's drawing thread did not answer in %d ms; "
-		     "going by the items' boxes this once",
-		     kPatienceMs);
+		blog(LOG_WARNING, "[stagekit] measuring: OBS's drawing thread did not answer in %d ms", kPatienceMs);
 	return false;
 }
 
@@ -321,8 +318,18 @@ bool measure_seen(obs_source_t *scene, obs_sceneitem_t *item, const Measure &how
 	if (!scene || !item)
 		return false;
 	if (!obs_in_task_thread(OBS_TASK_GRAPHICS)) {
-		box = measure_item(scene, item, how);
-		return box.w > 0.0 && box.h > 0.0;
+		struct Result {
+			Box box;
+			bool nothing = true;
+		};
+		auto held = std::make_shared<Held>(scene, std::vector<obs_sceneitem_t *>{item});
+		auto result = std::make_shared<Result>();
+		if (!on_drawing_thread([held, item, how, result] {
+			    result->box = measure_item_now(held->scene, item, how, &result->nothing);
+		    }))
+			return false;
+		box = result->box;
+		return !result->nothing && box.w > 0.0 && box.h > 0.0;
 	}
 	bool nothing = false;
 	box = measure_item_now(scene, item, how, &nothing);
@@ -380,9 +387,7 @@ Box measure_item_now(obs_source_t *scene, obs_sceneitem_t *item, const Measure &
 			part.y += free.top;
 			// What a filter takes away (a mask, a key, cut corners) is not
 			// there to be seen either: only what is also drawn in the end.
-			const Drawn both = common(part, drawn);
-			if (both.any)
-				part = both;
+			part = common(part, drawn);
 		}
 	}
 	if (shadowed)
@@ -398,8 +403,7 @@ Box measure_item_now(obs_source_t *scene, obs_sceneitem_t *item, const Measure &
 			const double x0 = std::max(part.x, room[0]), y0 = std::max(part.y, room[1]);
 			const double x1 = std::min(part.x + part.w, sw - room[2]);
 			const double y1 = std::min(part.y + part.h, sh - room[3]);
-			if (x1 > x0 && y1 > y0)
-				part = {x0, y0, x1 - x0, y1 - y0, true};
+			part = {x0, y0, x1 - x0, y1 - y0, x1 > x0 && y1 > y0};
 		}
 	}
 	if (!part.any) {
@@ -429,8 +433,11 @@ Box measure_item_now(obs_source_t *scene, obs_sceneitem_t *item, const Measure &
 	// What an item's crop or bounding box cuts off is not visible either.
 	const double x0 = std::max(min_x, whole.x), y0 = std::max(min_y, whole.y);
 	const double x1 = std::min(max_x, whole.x + whole.w), y1 = std::min(max_y, whole.y + whole.h);
-	if (x1 <= x0 || y1 <= y0)
+	if (x1 <= x0 || y1 <= y0) {
+		if (nothing)
+			*nothing = true;
 		return whole;
+	}
 	return {x0, y0, x1 - x0, y1 - y0};
 }
 
@@ -1248,6 +1255,7 @@ const char *const kOwnSettings[] = {
 	"learned",        "last_width",      "last_height",      "rule_program",
 	"rule_browse",    "force_ratio",     "force_until_gone", "orig_item",
 	"orig_k",         "share_scenes",    "keep_item",        "keep_k",
+	"orig_w",         "orig_h",          "keep_w",           "keep_h",
 	"mode_now",       "mode_before",     "managed",          "managed_by",
 	"hid_items",      "hidden_record",   "home_item",        "home_x",
 	"home_y",         "home_w",          "home_h",           "home_space_x",
@@ -1628,16 +1636,17 @@ fit::SpaceInputs settled(fit::SpaceInputs in)
 	return in;
 }
 
-// Whether a fit does the same from both: the same goal (its home, when it is
-// at home), the same space round it, and the same claim (a kept size goes
-// to one side or the other of its space by what lies round it).
+// Protect the image a neighbour displays and the growth and lean it publishes to other fits.
 bool same_outcome(const fit::SpaceInputs &a, const fit::SpaceInputs &b)
 {
 	fit::SpaceOut x, y;
 	fit::space_from(a, &x);
 	fit::space_from(b, &y);
-	return x.at_home == y.at_home && same_space(x.goal, y.goal) && same_space(x.room, y.room) &&
-	       same_space(fit::claim_from(a, &x), fit::claim_from(b, &y));
+	bool lean_before = false, lean_after = false;
+	const Box before = fit::claim_from(a, &x, &lean_before);
+	const Box after = fit::claim_from(b, &y, &lean_after);
+	return same_space(before, after) && x.grows_x == y.grows_x && x.grows_y == y.grows_y &&
+	       lean_before == lean_after;
 }
 
 // An item's own fit once it is handed the item where it is put (`m`: the
@@ -1663,16 +1672,23 @@ fit::SpaceInputs handed_over(fit::SpaceInputs in, const MovedBox &m, const Box &
 	return settled(std::move(in));
 }
 
-// Whether every fit that has worked its space out (but the moved items' own)
-// does the same with the moved items where they would be: the same space,
-// and the same goal (so one at its home stays there).
-FitCheck spaces_kept(const std::vector<fit::HeldSpace> &spaces, const std::vector<MovedBox> &moved, std::string *who)
+// Check what each other fitted source would show after the move. A change
+// to unused space is allowed when its image, growth and lean stay the same.
+FitCheck spaces_kept(const std::vector<fit::HeldSpace> &spaces, const std::vector<MovedBox> &moved, std::string *who,
+		     const std::vector<int64_t> &empty = {})
 {
 	for (const fit::HeldSpace &held : spaces) {
-		if (!held.worked)
+		if (std::find(empty.begin(), empty.end(), held.item) != empty.end())
 			continue;
 		if (std::any_of(moved.begin(), moved.end(), [&](const MovedBox &m) { return m.id == held.item; }))
 			continue; // a moved item's own fit: asked about by the caller
+		if (!held.worked) {
+			if (!held.shown)
+				continue;
+			if (who)
+				*who = held.name;
+			return FitCheck::Unknown;
+		}
 		bool touched = false, unknown = false;
 		const fit::SpaceInputs before = settled(with_moved(held.in, moved, false, &touched, &unknown));
 		if (unknown) {
@@ -1765,15 +1781,15 @@ FitCheck copy_keeps_fits(obs_source_t *scene, obs_sceneitem_t *copy, const Box &
 	return spaces_kept(held, {m}, who);
 }
 
-int fit_to_space(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items, double gap, const Measure &how,
-		 std::vector<obs_sceneitem_t *> *fitted, FitToSpaceNote *note)
+int fit_to_space(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items, double dock_gap,
+		 const Measure &dock_how, std::vector<obs_sceneitem_t *> *fitted, FitToSpaceNote *note)
 {
 	if (!scene || items.empty())
 		return 0;
 	const double canvas_w = obs_source_get_width(scene), canvas_h = obs_source_get_height(scene);
 	if (canvas_w < 2.0 || canvas_h < 2.0)
 		return 0;
-	gap = std::max(0.0, gap);
+
 	// Top-most first, so the item in front has the first say.
 	const std::vector<obs_sceneitem_t *> stack = stacking_order(scene);
 	std::vector<obs_sceneitem_t *> order = items;
@@ -1783,10 +1799,8 @@ int fit_to_space(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &item
 	};
 	std::stable_sort(order.begin(), order.end(),
 			 [&](obs_sceneitem_t *a, obs_sceneitem_t *b) { return height_of(a) > height_of(b); });
-	// One scan for the whole press: every other item is looked at once, when
-	// first met, and followed by its box after that, so an item fitted here
-	// is where it now is for the next.
-	fit::FitScan scan;
+	// An entry may use a different measurement from the preceding selection.
+	std::map<int, std::shared_ptr<fit::FitScan>> scans;
 	// The spaces the scene's fits hold, asked once for the press.
 	const std::vector<fit::HeldSpace> held = fit::held_spaces(scene);
 	// The items changed so far in this press, for the check, and where what
@@ -1806,13 +1820,14 @@ int fit_to_space(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &item
 	for (obs_sceneitem_t *item : order) {
 		if (!item || obs_sceneitem_locked(item) || !obs_sceneitem_visible(item))
 			continue;
-		refresh_item(item);
-		const Box now = scene_box(scene, item);
-		const Box seen = measure_item(scene, item, how);
-		if (now.w < 1.0 || now.h < 1.0 || seen.w < 1.0 || seen.h < 1.0)
-			continue;
 		const int64_t id = obs_sceneitem_get_id(item);
 		const char *item_name = obs_source_get_name(obs_sceneitem_get_source(item));
+		fit::FitSettings entry;
+		std::string resizing_filter;
+		const bool has_entry = fit::fit_settings_for(scene, item_name, entry, resizing_filter);
+		const Measure how = has_entry ? Measure{entry.visible_pixels, entry.no_shadows} : dock_how;
+		const double gap = has_entry ? entry.margin : std::max(0.0, dock_gap);
+		const double tolerance = has_entry ? entry.tolerance : 8.0;
 		// In a group a fit looks after: changing it changes the group, and
 		// that fit would fit the group again. Left as it is.
 		if (const fit::HeldSpace *group = group_fit_of(held, scene, item)) {
@@ -1827,31 +1842,56 @@ int fit_to_space(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &item
 		// A fit of its own that resizes it decides its size: left to it. One
 		// that keeps its size is worked out below.
 		const fit::HeldSpace *own = own_fit_of(held, item);
-		if (own && (own->resizes || !own->worked || own->in.kept_w <= 0.0 || own->in.kept_h <= 0.0)) {
+		if (!resizing_filter.empty()) {
 			if (note)
-				add_name(note->own_fit, item_name ? item_name : "");
+				add_name(note->own_fit, resizing_filter);
 			continue;
 		}
-		// What is in the way, by the same rules as Fit to Space: what shows
-		// of each visible item (or where another fit is taking it), less
-		// the Morph layer and this item's own stand-in.
-		scan.gather(scene, item, &kFitTool);
-		const std::vector<int64_t> self{id};
-		std::vector<fit::Obstacle> in_way;
-		scan.obstacles(scene, item, {}, false, &kFitTool, how, in_way, &self);
-		// Something the item lies wholly on (a background, a panel behind
-		// it) is not in the way; anything that only overlaps it is, all of
-		// it: the space is looked for just off its sides. An item a fit of
-		// the free space looks after, shown or hidden, is in the way by the
-		// whole space that fit holds, whatever shows of it: taking any of it
-		// would make that fit move or resize its item. (Unless that space
-		// reaches the item: then that fit does not count the item at all,
-		// and the check below has the last word.)
+		if (own && (!own->worked || own->in.kept_w <= 0.0 || own->in.kept_h <= 0.0)) {
+			if (note)
+				add_name(note->unknown, own->name);
+			continue;
+		}
+		struct Measurements {
+			Box now, seen, picture;
+			bool any = false;
+			std::vector<fit::Obstacle> obstacles;
+		};
+		const int key = (how.visible_pixels ? 1 : 0) | (how.leave_out_shadows ? 2 : 0);
+		auto &scan = scans[key];
+		if (!scan)
+			scan = std::make_shared<fit::FitScan>();
+		auto result = std::make_shared<Measurements>();
+		auto hold = std::make_shared<Held>(scene, std::vector<obs_sceneitem_t *>{item});
+		if (!on_drawing_thread([hold, scan, item, how, result] {
+			    obs_source_t *s = hold->scene;
+			    result->any = measure_seen(s, item, Measure{true, how.leave_out_shadows}, result->seen);
+			    if (!result->any)
+				    return;
+			    result->now = scene_box(s, item);
+			    if (!how.visible_pixels)
+				    result->seen = result->now;
+			    if (how.visible_pixels && !how.leave_out_shadows) {
+				    ShadowFree shadow;
+				    if (shadow_free(obs_sceneitem_get_source(item), shadow)) {
+					    obs_source_release(shadow.draw);
+					    if (shadow.fixed_on_screen)
+						    measure_seen(s, item, Measure{true, true}, result->picture);
+				    }
+			    }
+			    scan->gather(s, item, &kFitTool);
+			    scan->obstacles(s, item, {}, false, &kFitTool, how, result->obstacles);
+		    })) {
+			if (note)
+				note->busy = true;
+			break;
+		}
+		const Box now = result->now, seen = result->seen;
+		if (!result->any || now.w < 1.0 || now.h < 1.0 || seen.w < 1.0 || seen.h < 1.0)
+			continue;
 		const double sx0 = std::max(seen.x, 0.0), sy0 = std::max(seen.y, 0.0);
 		const double sx1 = std::min(seen.x + seen.w, canvas_w), sy1 = std::min(seen.y + seen.h, canvas_h);
-		const auto meets = [&](const Box &b) {
-			return b.x < sx1 - 0.5 && b.x + b.w > sx0 + 0.5 && b.y < sy1 - 0.5 && b.y + b.h > sy0 + 0.5;
-		};
+
 		const auto held_by = [&](int64_t other) -> const fit::HeldSpace * {
 			for (const fit::HeldSpace &h : held)
 				if (h.item == other && &h != own)
@@ -1861,7 +1901,7 @@ int fit_to_space(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &item
 		std::vector<Box> boxes;
 		std::vector<bool> firm, of_fit;
 		std::vector<std::string> fitted_by; // whose spaces are in the way
-		for (const fit::Obstacle &o : in_way) {
+		for (const fit::Obstacle &o : result->obstacles) {
 			if (group_item && o.id == group_id)
 				continue; // its own group: what it lies in
 			// Changed earlier in this press: where it now is.
@@ -1874,13 +1914,7 @@ int fit_to_space(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &item
 				continue;
 			}
 			const fit::HeldSpace *h = held_by(o.id);
-			if (h && h->space.w >= 2.0 && h->space.h >= 2.0 && !meets(h->space)) {
-				boxes.push_back(h->space);
-				firm.push_back(true);
-				of_fit.push_back(true);
-				add_name(fitted_by, h->name);
-				continue;
-			}
+
 			if (o.box.w < 1.0 || o.box.h < 1.0)
 				continue;
 			const bool under = o.box.x <= sx0 + 0.5 && o.box.y <= sy0 + 0.5 &&
@@ -1889,19 +1923,25 @@ int fit_to_space(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &item
 				continue;
 			boxes.push_back(o.box);
 			firm.push_back(true);
-			of_fit.push_back(false);
+			of_fit.push_back(h != nullptr);
+			if (h)
+				add_name(fitted_by, h->name);
 		}
-		// A hidden item's fit takes its space back when the item is shown.
+		// A briefly hidden fit can return on the next frame. Only its last
+		// image is protected. Mode-held and long-hidden fits are filtered out.
 		for (const fit::HeldSpace &h : held) {
-			if (h.shown || &h == own || h.space.w < 2.0 || h.space.h < 2.0 || meets(h.space))
+			if (h.shown || &h == own || !h.worked)
 				continue;
-			boxes.push_back(h.space);
+			const Box claim = fit::claim_from(h.in);
+			if (claim.w < 1.0 || claim.h < 1.0)
+				continue;
+			boxes.push_back(claim);
 			firm.push_back(true);
 			of_fit.push_back(true);
 			add_name(fitted_by, h.name);
 		}
 		const double cx = seen.x + seen.w / 2.0, cy = seen.y + seen.h / 2.0;
-		const Box space = fit::free_space(canvas, cx, cy, boxes, gap, seen.w / seen.h, 8.0, &firm);
+		const Box space = fit::free_space(canvas, cx, cy, boxes, gap, seen.w / seen.h, tolerance, &firm);
 		// No room for it: when there would be but for the spaces of fitted
 		// sources, it is left as it is for them, and the status line says so.
 		const auto left_for_fits = [&] {
@@ -1915,7 +1955,7 @@ int fit_to_space(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &item
 					rest_firm.push_back(firm[i]);
 				}
 			const Box without =
-				fit::free_space(canvas, cx, cy, rest, gap, seen.w / seen.h, 8.0, &rest_firm);
+				fit::free_space(canvas, cx, cy, rest, gap, seen.w / seen.h, tolerance, &rest_firm);
 			if (without.w < 2.0 || without.h < 2.0)
 				return;
 			if (note)
@@ -1938,8 +1978,6 @@ int fit_to_space(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &item
 		// the item's box, for the check: what lies round it keeps its size.)
 		bool screen_room = false;
 		Box image = now;
-		Measure picture_only = how;
-		picture_only.leave_out_shadows = true;
 		ShadowFree free;
 		if (shadow_free(obs_sceneitem_get_source(item), free)) {
 			obs_source_release(free.draw);
@@ -1954,7 +1992,7 @@ int fit_to_space(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &item
 				}
 			}
 			if (free.fixed_on_screen && how.visible_pixels && !how.leave_out_shadows) {
-				const Box picture = measure_item(scene, item, picture_only);
+				const Box picture = result->picture;
 				if (picture.w >= 1.0 && picture.h >= 1.0 && picture.w < seen.w && picture.h < seen.h) {
 					room_w = seen.w - picture.w;
 					room_h = seen.h - picture.h;
@@ -1977,12 +2015,13 @@ int fit_to_space(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &item
 		// The full result: as large as the space lets it be, centred in it.
 		const double full_k =
 			std::min((space.w - room_w) / (seen.w - room_w), (space.h - room_h) / (seen.h - room_h));
-		if (!(full_k > 0.0)) {
+		if (!(full_k > 0.0) || (has_entry && !entry.resize && full_k < 1.0 - 1e-4)) {
 			left_for_fits();
 			continue;
 		}
 		const double full_w = (seen.w - room_w) * full_k + room_w, full_h = (seen.h - room_h) * full_k + room_h;
-		const Box full{space.x + (space.w - full_w) / 2.0, space.y + (space.h - full_h) / 2.0, full_w, full_h};
+		const Box full{space.x + (space.w - full_w) * (entry.toward_x + 1) / 2.0,
+			       space.y + (space.h - full_h) * (entry.toward_y + 1) / 2.0, full_w, full_h};
 		// A smaller result: `k` the scale (no larger than the space lets it
 		// be), at (x, y) or, without a place, where `ax`, `ay` put it in the
 		// space (-1, 0 or 1 a side: 0 the middle), kept in the space.
@@ -2067,7 +2106,8 @@ int fit_to_space(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &item
 		// each try only works the fits' spaces out again.
 		{
 			Outcome first;
-			if (outcome(step(full_k, 0, 0, nullptr), first) && nothing_to_do(first.st))
+			if (outcome(step(full_k, entry.toward_x, entry.toward_y, nullptr), first) &&
+			    nothing_to_do(first.st))
 				continue; // already fitted
 		}
 		const double k_low = full_k > 1.0 ? 1.0 : full_k * 0.5;
@@ -2077,14 +2117,15 @@ int fit_to_space(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &item
 		static const int kSides[8][2] = {{0, -1}, {0, 1}, {-1, 0}, {1, 0}, {-1, -1}, {1, -1}, {-1, 1}, {1, 1}};
 		for (int n = 20; n >= 1 && !found && not_known.empty(); n--) {
 			const double k = k_low + (full_k - k_low) * n / 20.0;
-			std::vector<Step> tries{step(k, 0, 0, nullptr)};
-			if (n < 20) {
+			std::vector<Step> tries{step(k, entry.toward_x, entry.toward_y, nullptr)};
+			if (!has_entry && n < 20) {
 				const double t = std::fabs(full_k - 1.0) > 1e-6 ? (k - 1.0) / (full_k - 1.0) : 1.0;
 				const double at[2] = {seen.x + (full.x - seen.x) * t, seen.y + (full.y - seen.y) * t};
 				tries.push_back(step(k, 0, 0, at));
 			}
-			for (const auto &side : kSides)
-				tries.push_back(step(k, side[0], side[1], nullptr));
+			if (!has_entry)
+				for (const auto &side : kSides)
+					tries.push_back(step(k, side[0], side[1], nullptr));
 			for (const Step &st : tries) {
 				Outcome oc;
 				if (!outcome(st, oc) || nothing_to_do(oc.st))
@@ -2092,7 +2133,7 @@ int fit_to_space(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &item
 				std::vector<MovedBox> with = moved;
 				with.push_back(oc.m);
 				std::string blocked;
-				const FitCheck check = spaces_kept(held, with, &blocked);
+				const FitCheck check = spaces_kept(held, with, &blocked, scan->empty_ids());
 				if (check == FitCheck::Kept) {
 					chosen = oc;
 					found = true;
@@ -2119,7 +2160,7 @@ int fit_to_space(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &item
 					note->refused++;
 				gave_way(who);
 			} else if (own && note) {
-				add_name(note->own_fit, item_name ? item_name : "");
+				gave_way(own->name);
 			}
 			continue;
 		}
@@ -2136,11 +2177,8 @@ int fit_to_space(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &item
 		double at_x = 0.0, at_y = 0.0;
 		const Box resized = scene_box(scene, item);
 		if (fixed_room && how.visible_pixels) {
-			// Where the picture now is: measured again, once. (Its room
-			// is still the old one; the picture is where it will stay.)
-			const Box after = measure_item(scene, item, picture_only);
-			at_x = after.x - rl;
-			at_y = after.y - rt;
+			at_x = resized.x + (result->picture.x - now.x) * resized.w / now.w - rl;
+			at_y = resized.y + (result->picture.y - now.y) * resized.h / now.h - rt;
 		} else if (fixed_room) {
 			// The picture's place in the box grows with the box (the
 			// room in source pixels is still the old one).

@@ -312,7 +312,8 @@ ArrangeOutcome run_arrange(ArrangeAction action, obs_source_t *scene, const std:
 			return false;
 		};
 	if (!copies && everywhere && out.changed > 0)
-		copy_to_every_scene(scene, items, nullptr, nullptr, false, keep_fits);
+		copy_to_every_scene(scene, action == ArrangeAction::FitSpace ? out.placed : items, nullptr, nullptr,
+				    false, keep_fits);
 	if (out.changed > 0)
 		add_transform_undo(obs_module_text(arrange_info(action).hotkey), before,
 				   everywhere ? transform_snapshot_all() : transform_snapshot(scene));

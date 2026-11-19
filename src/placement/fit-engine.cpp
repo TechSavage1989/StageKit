@@ -15,6 +15,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "fit-engine.hpp"
 #include "../common/stand-in.hpp"
 #include "../common/filter-order.hpp"
+#include "../common/holds-hidden.hpp"
 
 #include "../common/timing.hpp"
 
@@ -30,6 +31,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <obs-module.h>
 #include <graphics/vec2.h>
 #include <plugin-support.h>
+#include <util/platform.h>
 
 #include <algorithm>
 #include <array>
@@ -739,15 +741,10 @@ Box space_from(const SpaceInputs &in, SpaceOut *result)
 	std::vector<bool> counted_above;
 	double at_x = 0.0, at_y = 0.0;
 	Box goal = space_among(in, in.boxes, out.avoiding, counted, counted_above, at_x, at_y);
-	// At home: the layout made by hand. With the other fits' items at
-	// their homes, the space round its place is the one it had when the
-	// home was taken, and the picture there keeps the gap to everything
-	// and to the screen's edges: it goes exactly there, whatever the
-	// space would give it. Something shown, hidden, moved or resized
-	// changes that space, and the picture is fitted as it always was;
-	// once that is undone it is back at home. (While the space round a
-	// home just taken is being found it stays there anyway: switching
-	// the filter on changes nothing.)
+	// Measure the hand layout with the other entries at their homes. Keep
+	// its exact placement while the room and gaps match and, for an entry
+	// that resizes, the home image already fills that room within tolerance.
+	// Let new measurements settle before making that comparison.
 	if (in.has_home) {
 		const Box &home = in.home;
 		// (A fit that takes its space before this one is where it is,
@@ -786,6 +783,13 @@ Box space_from(const SpaceInputs &in, SpaceOut *result)
 				clear = !(b.x < home.x + home.w + m && b.x + b.w > home.x - m &&
 					  b.y < home.y + home.h + m && b.y + b.h > home.y - m);
 			}
+			// Test the filled image with the other entries at their homes too.
+			// Their current positions can still be returning from a visibility change.
+			if (clear && !kept && in.pw > 0.0 && in.ph > 0.0) {
+				const double k = std::min(space.w / in.pw, space.h / in.ph);
+				clear = std::fabs(in.pw * k - home.w) <= in.tolerance &&
+					std::fabs(in.ph * k - home.h) <= in.tolerance;
+			}
 			out.at_home = clear;
 		}
 	}
@@ -794,34 +798,17 @@ Box space_from(const SpaceInputs &in, SpaceOut *result)
 	// window dragged to another shape is fitted from the first frame, as
 	// away from home, `apply`. Given the home box instead, it could only
 	// shrink there until the new shape was taken half a second later.)
-	Box found = goal;
-	if (out.at_home) {
-		// (Whether more room would grow it, for the fits beside it:
-		// judged on the space it would be given.)
-		if (!kept && in.pw > 0.0 && in.ph > 0.0 && goal.w >= 2.0 && goal.h >= 2.0) {
-			trim_for_kept_in(found, in.boxes, in.leans, in.pw, in.ph, in.toward_y);
-			const double kg = std::min(found.w / in.pw, found.h / in.ph);
-			out.grows_set = true;
-			out.grows_x = in.ph * kg < found.h - 0.5;
-			out.grows_y = in.pw * kg < found.w - 0.5;
-		}
-		goal = in.home;
-	}
-	if (goal.w >= 2.0 && goal.h >= 2.0 && !kept && !out.at_home) {
+	if (!kept && goal.w >= 2.0 && goal.h >= 2.0 && in.pw > 0.0 && in.ph > 0.0) {
 		trim_for_kept_in(goal, in.boxes, in.leans, in.pw, in.ph, in.toward_y);
-		// (Whether more room would grow it is judged on the space
-		// before it is cut down to the picture.)
-		if (in.pw > 0.0 && in.ph > 0.0) {
-			const double kg = std::min(goal.w / in.pw, goal.h / in.ph);
-			out.grows_set = true;
-			out.grows_x = in.ph * kg < goal.h - 0.5;
-			out.grows_y = in.pw * kg < goal.w - 0.5;
-		}
+		const double k = std::min(goal.w / in.pw, goal.h / in.ph);
+		const double w = in.pw * k, h = in.ph * k;
+		out.grows_set = true;
+		out.grows_x = h < goal.h - 0.5;
+		out.grows_y = w < goal.w - 0.5;
 	}
-	// The space before it is cut to the picture: what OBS is given
-	// while the picture is of another shape than the cut was made
-	// for (`apply`).
-	out.room = out.at_home ? found : goal;
+	out.room = goal;
+	if (out.at_home)
+		goal = in.home;
 	if (goal.w >= 2.0 && goal.h >= 2.0 && !kept && !out.at_home)
 		trim_to_picture_in(goal, in.boxes, in.said, in.gives, in.passed, out.avoiding, in.pw, in.ph,
 				   in.toward_x, in.toward_y);
@@ -862,7 +849,7 @@ Box claim_box(const Box &goal, const Box &room, const Box &within, double margin
 		   pw * kg, ph * kg};
 }
 
-Box claim_from(const SpaceInputs &in, const SpaceOut *given)
+Box claim_from(const SpaceInputs &in, const SpaceOut *given, bool *lean_y)
 {
 	SpaceOut out;
 	if (given)
@@ -877,7 +864,7 @@ Box claim_from(const SpaceInputs &in, const SpaceOut *given)
 	const bool reshaping = !kept && !in.with_switch && in.shape > 0.0 && out.room.w >= 2.0 && out.room.h >= 2.0 &&
 			       std::fabs(pw / ph - in.shape) > 0.01 * (pw / ph) && !out.at_home;
 	return claim_box(out.goal, out.room, in.within, in.margin, kept, in.kept_w, in.kept_h, in.toward_x, in.toward_y,
-			 in.boxes, in.gives, in.grows, out.at_home, reshaping, pw, ph);
+			 in.boxes, in.gives, in.grows, out.at_home, reshaping, pw, ph, lean_y);
 }
 
 bool FitEngine::held(HeldSpace &out)
@@ -893,6 +880,39 @@ bool FitEngine::held(HeldSpace &out)
 	out.in = held_in_;
 	out.worked = true;
 	return true;
+}
+
+bool FitEngine::recently_hidden() const
+{
+	const uint64_t since = hidden_since_.load();
+	return !since || os_gettime_ns() - since < 2000000000ULL;
+}
+
+bool fit_settings_for(obs_source_t *scene, const char *name, FitSettings &settings, std::string &resizing_filter)
+{
+	if (!name)
+		return false;
+	bool found = false, found_enabled = false;
+	std::lock_guard lock(g_filters_mutex);
+	for (FitEngine *engine : g_filters) {
+		if (engine->parent() != scene)
+			continue;
+		const FitSettings candidate = engine->settings();
+		if (candidate.item != name)
+			continue;
+		const bool enabled = obs_source_enabled(engine->source());
+		if (enabled && candidate.resize) {
+			settings = candidate;
+			resizing_filter = obs_source_get_name(engine->source());
+			return true;
+		}
+		if (!found || (enabled && !found_enabled)) {
+			settings = candidate;
+			found = true;
+			found_enabled = enabled;
+		}
+	}
+	return found;
 }
 
 std::vector<HeldSpace> held_spaces(obs_source_t *scene)
@@ -915,6 +935,7 @@ std::vector<HeldSpace> held_spaces(obs_source_t *scene)
 				one.name = item;
 				one.resizes = resizes;
 			}
+			one.recently_hidden = each->recently_hidden();
 			if (!one.name.empty())
 				out.push_back(std::move(one));
 		}
@@ -934,7 +955,15 @@ std::vector<HeldSpace> held_spaces(obs_source_t *scene)
 			it->in = SpaceInputs{};
 		}
 		it->item = id;
-		it->shown = obs_sceneitem_visible(item);
+		obs_sceneitem_t *group = obs_sceneitem_get_group(scene_of(scene), item);
+		it->shown = obs_sceneitem_visible(item) && (!group || obs_sceneitem_visible(group));
+		obs_source_t *source = obs_sceneitem_get_source(item);
+		if (obs_obj_is_private(source) || is_stand_in(source) || is_morph_layer(item) ||
+		    (!it->shown && (!it->recently_hidden || mode_holds_hidden(scene, item) ||
+				    (group && mode_holds_hidden(scene, group))))) {
+			it = out.erase(it);
+			continue;
+		}
 		Claim claim;
 		if (!it->worked && claim_of(scene, id, nullptr, claim))
 			it->space = it->goal = claim.box;
@@ -1107,6 +1136,8 @@ void FitEngine::update(obs_data_t *settings)
 	s.by_list = obs_data_get_bool(settings, "list_priority");
 	s.orig_item = obs_data_get_string(settings, k("orig_item").c_str());
 	s.orig_k = num("orig_k");
+	s.orig_w = num("orig_w");
+	s.orig_h = num("orig_h");
 	own_seen_ = false; // what shows of the item is looked at again
 	{
 		std::lock_guard lock(mutex_);
@@ -1137,6 +1168,8 @@ void FitEngine::update(obs_data_t *settings)
 		// after it.)
 		saved_keep_item_ = obs_data_get_string(settings, k("keep_item").c_str());
 		saved_keep_k_ = num("keep_k");
+		saved_keep_w_ = num("keep_w");
+		saved_keep_h_ = num("keep_h");
 		// The home as saved, taken up when OBS loads the filter or the
 		// filter is given another item (a rename gives it the same one).
 		if (first_update_ || s.item != settings_.item) {
@@ -1153,10 +1186,7 @@ void FitEngine::update(obs_data_t *settings)
 		if (first_update_) {
 			first_update_ = false;
 			back_to_original_ = false;
-			if (!s.resize && !s.item.empty() && saved_keep_item_ == s.item && saved_keep_k_ > 0.0) {
-				keep_k_ = saved_keep_k_;
-				have_keep_ = true;
-			}
+			load_keep_ = !s.resize && !s.item.empty() && saved_keep_item_ == s.item;
 		}
 	}
 	const long long kind = obs_data_get_int(settings, l("box").c_str());
@@ -1345,9 +1375,14 @@ bool FitEngine::prepare(obs_sceneitem_t *item, float tick_seconds, Prep &p)
 	// then a filter ticked before this one took the item for something
 	// firm, and with the captures of a layout scene changed by a key
 	// the camera and the chat box beside them jumped 27 px for a frame.
-	if (item && !obs_sceneitem_visible(item)) {
-		if (!hidden_)
+	obs_sceneitem_t *group = item && obs_sceneitem_get_scene(item) != scene_of(parent_)
+					 ? obs_sceneitem_get_group(scene_of(parent_), item)
+					 : nullptr;
+	if (item && (!obs_sceneitem_visible(item) || (group && !obs_sceneitem_visible(group)))) {
+		if (!hidden_) {
+			hidden_since_ = os_gettime_ns();
 			box_asked_ = false;
+		}
 		if (holds_room(item, s))
 			say(obs_sceneitem_get_id(item), last_claim_);
 		else
@@ -1360,6 +1395,7 @@ bool FitEngine::prepare(obs_sceneitem_t *item, float tick_seconds, Prep &p)
 	// for its space at once, it would find its place inside the other
 	// and take that for something it sits on.
 	if (hidden_) {
+		hidden_since_ = 0;
 		hidden_ = false;
 		box_asked_ = false;
 		back_for_ = 0.0;
@@ -1474,7 +1510,10 @@ bool FitEngine::prepare(obs_sceneitem_t *item, float tick_seconds, Prep &p)
 			if (glance_of(parent_, own_id, glance))
 				own_changed = !own_looked_have_ || glance_differs(glance, own_looked_);
 		}
-		const bool due = (!own_seen_ && own_for_ >= 0.5) || (own_changed && own_for_ >= 0.5);
+		// Homes, legacy scales and a newly captured reference size need the
+		// visible image before the first transform can change it.
+		const bool need_image = take_home_ || ((!s.resize || s.orig_w <= 0.0) && !own_seen_);
+		const bool due = (!own_seen_ && (need_image || own_for_ >= 0.5)) || (own_changed && own_for_ >= 0.5);
 		if (due && obs_source_showing(parent_) && !measuring_stopped()) {
 			own_for_ = 0.0;
 			own_seen_ = true;
@@ -1576,21 +1615,48 @@ bool FitEngine::prepare(obs_sceneitem_t *item, float tick_seconds, Prep &p)
 		k_now = std::min(kx, ky);
 		return k_now > 0.0;
 	};
+	if (sw != steady_sw_ || sh != steady_sh_ || !obs_sceneitem_visible(item)) {
+		steady_sw_ = sw;
+		steady_sh_ = sh;
+		steady_for_ = 0.0;
+	} else {
+		steady_for_ += seconds;
+	}
+	// A legacy scale needs a stable input before it can become a pixel size.
+	if (s.orig_item == s.item && s.orig_k > 0.0 && s.orig_w <= 0.0 && steady_for_ < 0.5 && !take_home_)
+		return false;
 	// Before the filter does anything to an item, the size it has is
 	// noted, so that "Resize it to fit" can be unticked later and the
 	// item gets its own size back. (A new filter starts ticked: the
 	// owner's chat box was fitted, and so shrunk, before the box could
 	// be unticked, and then kept the shrunken size.)
-	if (s.orig_item != s.item) {
-		double k0 = 0.0;
-		if (drawn_now(k0)) {
+	if (s.orig_item != s.item || s.orig_w <= 0.0 || s.orig_h <= 0.0) {
+		double k = s.orig_item == s.item ? s.orig_k : 0.0;
+		if (k > 0.0 || drawn_now(k)) {
 			s.orig_item = s.item;
-			s.orig_k = k0;
-			store_string("orig_item", s.orig_item.c_str());
-			store_double("orig_k", k0);
+			s.orig_w = pw * k;
+			s.orig_h = ph * k;
+			store_string("orig_item", s.item.c_str());
+			store_double("orig_w", s.orig_w);
+			store_double("orig_h", s.orig_h);
 			std::lock_guard lock(mutex_);
-			settings_.orig_item = s.orig_item;
-			settings_.orig_k = k0;
+			settings_.orig_item = s.item;
+			settings_.orig_w = s.orig_w;
+			settings_.orig_h = s.orig_h;
+		}
+	}
+	// Migrate a saved scale even if resizing is currently on. The stored
+	// dimensions take precedence after this, including on subsequent loads.
+	{
+		std::lock_guard lock(mutex_);
+		if (saved_keep_item_ == s.item && saved_keep_k_ > 0.0 &&
+		    (saved_keep_w_ <= 0.0 || saved_keep_h_ <= 0.0)) {
+			if (steady_for_ < 0.5 && !take_home_)
+				return false;
+			saved_keep_w_ = pw * saved_keep_k_;
+			saved_keep_h_ = ph * saved_keep_k_;
+			store_double("keep_w", saved_keep_w_);
+			store_double("keep_h", saved_keep_h_);
 		}
 	}
 	// Switched on just now: the item keeps the size it has (the layout
@@ -1608,7 +1674,9 @@ bool FitEngine::prepare(obs_sceneitem_t *item, float tick_seconds, Prep &p)
 		if (!s.resize) {
 			double k_now = 0.0;
 			if (drawn_now(k_now)) {
-				keep_k_ = k_now;
+				keep_w_ = pw * k_now;
+				keep_h_ = ph * k_now;
+				load_keep_ = false;
 				have_keep_ = true;
 			}
 		}
@@ -1622,13 +1690,7 @@ bool FitEngine::prepare(obs_sceneitem_t *item, float tick_seconds, Prep &p)
 	// item hidden or shown changes it): taken for a resize by hand, that
 	// made the owner's camera a little smaller each time it was hidden
 	// and shown again.
-	if (sw != steady_sw_ || sh != steady_sh_ || !obs_sceneitem_visible(item)) {
-		steady_sw_ = sw;
-		steady_sh_ = sh;
-		steady_for_ = 0.0;
-	} else {
-		steady_for_ += seconds;
-	}
+
 	// (A resized one is watched only when it has a home: without one it
 	// is fitted to its space whatever its size, as it always was.)
 	const bool hand_watched = (!s.resize && have_keep_) || (s.resize && has_home_ && s.box == BoxKind::FreeSpace);
@@ -1685,67 +1747,50 @@ bool FitEngine::prepare(obs_sceneitem_t *item, float tick_seconds, Prep &p)
 		}
 	}
 	if (!s.resize) {
-		// Unticked just now: back to the size it was last kept at (the
-		// one set by hand, saved as `keep_k`), or, never kept, the one it
-		// had before this filter first resized it. (Up to betaNEXT always
-		// the second: the owner's camera, set by hand to 0.4765 of its
-		// source, came back at 0.4899 after Resize to fit was ticked and
-		// unticked again, 2026-11-18.)
-		// (With a home: the size it has there.)
-		if (!have_keep_ && back_to_original_ && has_home_ && whole_w >= 1.0 && whole_h >= 1.0 &&
-		    std::fabs(home_.w / home_.h - whole_w / whole_h) <= 0.01 * (whole_w / whole_h)) {
-			keep_k_ = home_.w / whole_w;
+		// A chosen size is a reference rectangle. A change of capture
+		// resolution or aspect ratio never writes a new reference.
+		if (!have_keep_ && (load_keep_ || back_to_original_) && !placed_by_tool_ && !resized_by_hand_) {
+			std::lock_guard lock(mutex_);
+			if (back_to_original_ && has_home_ && home_.h > 0.0 &&
+			    std::fabs(home_.w / home_.h - whole_w / whole_h) <= 0.01 * whole_w / whole_h) {
+				keep_w_ = pw * home_.w / whole_w;
+				keep_h_ = ph * home_.h / whole_h;
+				have_keep_ = true;
+			} else if (saved_keep_item_ == s.item && saved_keep_w_ > 0.0 && saved_keep_h_ > 0.0) {
+				keep_w_ = saved_keep_w_;
+				keep_h_ = saved_keep_h_;
+				have_keep_ = true;
+			} else if (back_to_original_ && s.orig_item == s.item) {
+				keep_w_ = s.orig_w;
+				keep_h_ = s.orig_h;
+				have_keep_ = keep_w_ > 0.0 && keep_h_ > 0.0;
+			}
+		}
+		if (!have_keep_) {
+			if (!resized_by_hand_ && steady_for_ < 0.5)
+				return false;
+			double k = 0.0;
+			if (!drawn_now(k))
+				return false;
+			keep_w_ = pw * k;
+			keep_h_ = ph * k;
 			have_keep_ = true;
 		}
-		if (!have_keep_ && back_to_original_) {
-			std::string saved_item;
-			double saved_k = 0.0;
-			{
-				std::lock_guard lock(mutex_);
-				saved_item = saved_keep_item_;
-				saved_k = saved_keep_k_;
-			}
-			if (saved_item == s.item && saved_k > 0.0) {
-				keep_k_ = saved_k;
-				have_keep_ = true;
-			} else if (s.orig_item == s.item && s.orig_k > 0.0) {
-				keep_k_ = s.orig_k;
-				have_keep_ = true;
-			}
-		}
-		// (Read only from an item whose source has kept its size for
-		// half a second: one that is still loading says a wrong size.)
-		if (!have_keep_ && !resized_by_hand_ && steady_for_ < 0.5)
-			return false;
-		if (!have_keep_) {
-			const double was = keep_k_;
-			have_keep_ = drawn_now(keep_k_);
-			// For the log, so a size that changes by itself can be
-			// traced: when the kept size was read, and why.
-			if (have_keep_ && was > 0.0 && std::fabs(keep_k_ - was) > 0.001 * was)
-				obs_log(LOG_INFO,
-					"%s '%s': the size kept for '%s' went from %.4f to %.4f of its source (%s)",
-					prefix_.empty() ? "Fit to Space" : "Scene Fit", obs_source_get_name(source_),
-					s.item.c_str(), was, keep_k_,
-					resized_by_hand_  ? "resized in the preview"
-					: placed_by_tool_ ? "placed by a copy tool"
-							  : "settings changed");
-			resized_by_hand_ = false;
-		}
-		back_to_original_ = false;
-		// Saved with the scene collection, for the next time OBS starts.
-		bool store = false;
-		if (have_keep_) {
+		load_keep_ = back_to_original_ = resized_by_hand_ = placed_by_tool_ = false;
+		bool save = false;
+		{
 			std::lock_guard lock(mutex_);
-			store = saved_keep_item_ != s.item || std::fabs(saved_keep_k_ - keep_k_) > 1e-9 * keep_k_;
-			if (store) {
+			save = saved_keep_item_ != s.item || saved_keep_w_ != keep_w_ || saved_keep_h_ != keep_h_;
+			if (save) {
 				saved_keep_item_ = s.item;
-				saved_keep_k_ = keep_k_;
+				saved_keep_w_ = keep_w_;
+				saved_keep_h_ = keep_h_;
 			}
 		}
-		if (store) {
+		if (save) {
 			store_string("keep_item", s.item.c_str());
-			store_double("keep_k", keep_k_);
+			store_double("keep_w", keep_w_);
+			store_double("keep_h", keep_h_);
 		}
 	}
 	p.sw = sw;
@@ -1765,8 +1810,9 @@ bool FitEngine::prepare(obs_sceneitem_t *item, float tick_seconds, Prep &p)
 	p.bw = bw;
 	p.bh = bh;
 	// The size kept is the size of what shows of it.
-	p.keep_w = pw * keep_k_;
-	p.keep_h = ph * keep_k_;
+	const double k = std::min(keep_w_ / pw, keep_h_ / ph);
+	p.keep_w = pw * k;
+	p.keep_h = ph * k;
 	p.picture = pw / ph;
 	p.free = s.box == BoxKind::FreeSpace;
 	p.whole_left = whole_left;
@@ -2603,7 +2649,7 @@ void FitEngine::tick(float seconds, FitScan &scan)
 				scan.forget();
 			scan.gather(parent_, p.item, this);
 			std::vector<Obstacle> in_way;
-			scan.obstacles(parent_, p.item, p.s.skip, p.s.skip_rule, this, p.how, in_way, nullptr, &rank_);
+			scan.obstacles(parent_, p.item, p.s.skip, p.s.skip_rule, this, p.how, in_way, &rank_);
 			bool at_rest = false;
 			observe(in_way, arriving(), seconds, at_rest, &scan.visible_ids());
 			if (at_rest)
@@ -2637,10 +2683,14 @@ void FitScan::gather(obs_source_t *scene, obs_sceneitem_t *self, const void *ask
 		const void *asking;
 		obs_sceneitem_t *top;
 	} gather{&gathered_, self, scene, asking, nullptr};
+	static const auto excluded = [](obs_sceneitem_t *item) {
+		obs_source_t *source = obs_sceneitem_get_source(item);
+		return !obs_sceneitem_visible(item) || !source || obs_obj_is_private(source) || is_stand_in(source) ||
+		       is_morph_layer(item);
+	};
 	static const auto add = [](obs_scene_t *, obs_sceneitem_t *other, void *param) {
 		auto *g = static_cast<Gather *>(param);
-		if (other == g->self || !obs_sceneitem_visible(other) || obs_sceneitem_is_group(other) ||
-		    is_morph_layer(other))
+		if (other == g->self || obs_sceneitem_is_group(other) || excluded(other))
 			return true;
 		g->out->push_back(Gathered{other, g->top ? g->top : other, false});
 		return true;
@@ -2649,7 +2699,7 @@ void FitScan::gather(obs_source_t *scene, obs_sceneitem_t *self, const void *ask
 		obs_scene_from_source(scene),
 		[](obs_scene_t *sc, obs_sceneitem_t *other, void *param) {
 			auto *g = static_cast<Gather *>(param);
-			if (other == g->self)
+			if (other == g->self || excluded(other))
 				return true;
 			if (obs_sceneitem_is_group(other) && obs_sceneitem_visible(other)) {
 				// A group another fit is placing counts as one thing,
@@ -2672,8 +2722,14 @@ void FitScan::gather(obs_source_t *scene, obs_sceneitem_t *self, const void *ask
 void FitScan::look(obs_source_t *scene, obs_sceneitem_t *other, const Measure &how)
 {
 	Seen seen;
-	seen.there = measure_seen(scene, other, how, seen.box);
+	obs_source_t *source = obs_sceneitem_get_source(other);
+	seen.width = obs_source_get_width(source);
+	seen.height = obs_source_get_height(source);
+	seen.there = seen.width && seen.height &&
+		     measure_seen(scene, other, Measure{true, how.leave_out_shadows}, seen.box);
 	seen.item_at = scene_box(scene, other);
+	if (!how.visible_pixels)
+		seen.box = seen.item_at;
 	seen_[obs_sceneitem_get_id(other)] = seen;
 	// What a glance last said of it goes with this look: another
 	// look is due when a glance says otherwise.
@@ -2686,10 +2742,11 @@ void FitScan::look(obs_source_t *scene, obs_sceneitem_t *other, const Measure &h
 
 void FitScan::obstacles(obs_source_t *scene, obs_sceneitem_t *self, const std::vector<std::string> &skip,
 			bool keep_skipped, const void *asking, const Measure &how, std::vector<Obstacle> &out,
-			const std::vector<int64_t> *twins_of, const Rank *mine)
+			const Rank *mine)
 {
 	out.clear();
 	visible_.clear();
+	empty_.clear();
 	if (look_again_) {
 		look_again_ = false;
 		seen_.clear();
@@ -2721,16 +2778,25 @@ void FitScan::obstacles(obs_source_t *scene, obs_sceneitem_t *self, const std::v
 					continue;
 				passed = true;
 			}
-			// (A stand-in for one of the host's own items holds that
-			// item's room, which the item's claim already says.)
-			if (twins_of) {
-				const int64_t of = stand_in_for_item(g.item);
-				if (of && std::find(twins_of->begin(), twins_of->end(), of) != twins_of->end())
-					continue;
-			}
 		}
 		if (std::find(used_.begin(), used_.end(), g.item) == used_.end())
 			used_.push_back(g.item);
+		auto found = seen_.find(id);
+		obs_source_t *source = obs_sceneitem_get_source(g.item);
+		if (found == seen_.end() || found->second.width != obs_source_get_width(source) ||
+		    found->second.height != obs_source_get_height(source)) {
+			look(scene, g.item, how);
+			found = seen_.find(id);
+		}
+		const Seen &seen = found->second;
+		// A live automatic fit reserves the slot of a capture waiting for
+		// its first frame. This keeps the column still through a capture
+		// switch. A dock press measures only images that are drawing.
+		const bool starting_capture = mine && claimed && (!seen.width || !seen.height);
+		if (!seen.there && !starting_capture) {
+			empty_.push_back(id);
+			continue;
+		}
 		if (lower) {
 			out.push_back(Obstacle{claim.least, id, true, false, passed, false});
 			continue;
@@ -2747,14 +2813,7 @@ void FitScan::obstacles(obs_source_t *scene, obs_sceneitem_t *self, const std::v
 			out.back().has_home = claim.has_home;
 			continue;
 		}
-		auto found = seen_.find(id);
-		if (found == seen_.end()) {
-			look(scene, g.item, how);
-			found = seen_.find(id);
-		}
-		const Seen &seen = found->second;
-		if (!seen.there)
-			continue;
+
 		const Box now = scene_box(scene, g.item);
 		if (seen.item_at.w < 1.0 || seen.item_at.h < 1.0 || now.w < 1.0 || now.h < 1.0) {
 			out.push_back(Obstacle{seen.box, id, false, false, passed});
@@ -2782,14 +2841,18 @@ void FitScan::at_rest(obs_source_t *scene, const std::vector<obs_sceneitem_t *> 
 		const int64_t id = obs_sceneitem_get_id(other);
 		Claim claim;
 		Glance glance;
-		if (claim_of(scene, id, asking, claim) || !glance_of(scene, id, glance))
+		if (!glance_of(scene, id, glance))
 			continue;
 		// (Its first glance since it was looked at is no measure
 		// of that look: the item may have changed in between,
 		// seconds apart as they can be. It is looked at once
 		// more, and the two go together from then on.)
 		const auto was = looked_.find(id);
-		if (was == looked_.end() || glance_differs(glance, was->second)) {
+		// A fitted source supplies its own box, but can stop or start drawing
+		// without changing either its dimensions or its claim.
+		const bool claimed = claim_of(scene, id, asking, claim);
+		if (was == looked_.end() ||
+		    (claimed ? glance.any != was->second.any : glance_differs(glance, was->second))) {
 			look(scene, other, how);
 			break; // one look a tick is enough
 		}

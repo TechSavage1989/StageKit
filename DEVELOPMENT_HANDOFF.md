@@ -9,9 +9,26 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | `fix/auto-capture-keeps-aim` (Auto Capture stays aimed at a game while its picture comes back, betaNEXT), on `main` after beta193. Next: the new collection |
+| Working branch | `fix/scene-fit-visible-layout`, on `main` after beta197. Release notes in `docs/releases/0.1.0-beta198.md`. |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
+
+## Dock and Scene Fit in a split game layout (0.1.0-beta198)
+
+The dock reads the selected source's fit settings even when the filter is disabled. Measurement runs
+on the graphics thread. A timeout ends the attempt and is reported in the dock. Fitted neighbors
+claim their image rectangles. A briefly hidden fit can reserve its last image for two seconds,
+unless a mode holds it hidden. Neighbor prediction compares image position, size, growth and lean.
+
+Resize-on entries keep a hand layout within their size tolerance and fill an undersized home.
+Resize-off saves the reference image in scene pixels, including during conversion from an older
+collection. Automatic capture switching preserves a visible display capture's reserved slot while the input
+starts at 0x0. This keeps the camera and chat column in place through the first frame.
+
+The LAYOUT, FIT_TOOL and FIT_ENABLE tests passed under Linux libobs and Xvfb. They cover dock
+placement, a filled hand layout, capture switching, signal loss and recovery, and conversion of a
+legacy saved scale. The same run executes the full suite with `tests/run-tests.sh`.
+[Headless validation](https://github.com/TechSavage1989/StageKit/actions/runs/44462893755).
 
 ## Auto Capture stays aimed at a game while its picture comes back (0.1.0-beta197)
 
