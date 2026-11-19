@@ -1262,7 +1262,7 @@ const char *const kOwnSettings[] = {
 	"home_y",         "home_w",          "home_h",           "home_space_x",
 	"home_space_y",   "home_space_w",    "home_space_h",     "home_cut_l",
 	"home_cut_t",     "home_cut_r",      "home_cut_b",       "keep_sw",
-	"keep_sh",        "keep_pw",         "keep_ph",
+	"keep_sh",        "keep_pw",         "keep_ph",          "hand_hooked",
 };
 
 // Whether a setting is one of those. A setting kept per source or per mode

@@ -1802,7 +1802,18 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   does not have that". It aims the capture at the window in front (from the window watch) and
   switches an Auto Capture on that source off, or that would aim it elsewhere a quarter second
   later; switching the Auto Capture on again is how it is handed back. OBS itself in front is
-  refused. Its Windows side has not run in the tests (they give it a stand-in window).
+  refused. **It hands itself back when the program closes** (beta204; the owner's Game Capture,
+  hooked by hand on an emulator, stayed aimed at the closed program for days with its Auto
+  Capture saved off: "make the hand hook change"): the hook writes the program into the Auto
+  Capture's own settings (`hand_hooked`, lower case, in `kOwnSettings`), and the filter's tick,
+  which OBS calls while it is switched off, looks for it four times a second (`hand_watch`, the
+  window watch's `running`, never `list_windows()`); once no window of it is open (seen open
+  before, or unseen for `kHandGrace`, 5 s, after `scenes_loaded()`: a record saved over a
+  restart) it switches itself on, clears the record and logs `Auto Capture: '<capture>' back to
+  following games: <exe> closed`. Switched on any other way, the record is cleared; hooked again,
+  it is replaced. One switched off by the user (no record) is never switched on, and a hook
+  leaves it off without a record. Tested in `[hook by hand: ...]` (`hook_back_test`, alone with
+  `STAGEKIT_TEST_ONLY_HOOK_BACK`); not seen on Windows. Its Windows side has not run in the tests (they give it a stand-in window).
 - **A picture shape set by hand lasts for one game when asked to** (`force_until_gone` in Auto
   Frame, `SetPictureShape`, the *Set Aspect Ratio* key). The owner: "it should maintain that ratio for
   the active or hooked game until its over". It is dropped once the capture has had a picture since

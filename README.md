@@ -582,7 +582,9 @@ The filter's controls show what it is capturing now.
   over at once).
 - **Switching Auto Capture on again hands the capture back.** After *Capture Active Window* (or
   anything else) has aimed the capture by hand and Auto Capture was switched off, switching it
-  on again aims the capture afresh at once.
+  on again aims the capture afresh at once. It also switches itself back on once the program you
+  hooked has closed (after a restart too), so it follows games again; one you switched off
+  yourself stays off.
 
 A game is recognised by what the program has loaded: a graphics engine together with something only
 games have (controller support, a game store's library, a game engine's player, game audio or video),
