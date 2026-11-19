@@ -894,6 +894,18 @@ at the bottom, whichever tab is open.
   (*StageKit: Fit to space*) and a choice of the Stream Deck *Arrange tool* key.
 - **Edit transform** (the second drawing) opens OBS's own *Edit Transform* window for the item
   chosen in the dock, selecting it in OBS's preview first.
+- **Bounds** sets the bounding box type of the selected items, in the words of OBS's own Edit
+  Transform: *Automatic* (no bounds), *Stretch*, *Fit*, *Cover*, *Fill Width*, *Fill Height* and
+  *Maximum size only*. It shows the selected item's type, or nothing when the selected items differ.
+  Each item keeps its size and place on screen: from no bounds its bounds become its size, back to
+  *Automatic* its scale is set to that size. The bounds alignment is kept, and it is one step for
+  Undo. When a Fit to Space or Scene Fit fits the item, the status line says so: that filter may
+  set the bounds again.
+- **Auto-fit** switches every Fit to Space and Scene Fit filter of the scene being edited on or
+  off; it is ticked while any is on, and greyed out in a scene without them. With **Selected only**
+  ticked it acts on the selected sources alone: their own Fit to Space filters and their entries in
+  a Scene Fit (each entry has *Fit this source* in the Scene Fit's window). There is a hotkey,
+  *StageKit: Auto-fit on/off*, which goes by the same tick box.
 - *Make 9 position keys* adds a Move Source filter for each one **to the item's own source**,
   named after the position ("Top right"). Point a Stream Deck *Filter* key at the camera and one of
   those filters, or give it a hotkey.

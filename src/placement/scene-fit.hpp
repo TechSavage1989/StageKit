@@ -12,6 +12,8 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include <obs.h>
 
+#include <string>
+
 namespace stagekit {
 
 // Scene Fit: one filter on a scene that fits several of its sources, each
@@ -20,5 +22,13 @@ namespace stagekit {
 void register_scene_fit();
 // At unload.
 void scene_fit_stop();
+
+// Whether a Scene Fit filter fits a source: listed, or, with All sources,
+// one of the rest it fits.
+bool scene_fit_covers(obs_source_t *filter, const std::string &source);
+// Whether that source's entry is switched on (`fit|<source>|enabled`, on as
+// it comes), and switching it.
+bool scene_fit_entry_on(obs_source_t *filter, const std::string &source);
+void scene_fit_set_entry_on(obs_source_t *filter, const std::string &source, bool on);
 
 } // namespace stagekit

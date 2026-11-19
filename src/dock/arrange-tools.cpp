@@ -11,14 +11,19 @@ the Free Software Foundation; either version 2 of the License, or
 #include "arrange-tools.hpp"
 
 #include "../api/vendor-api.hpp"
+#include "../common/scene-filter-ids.hpp"
 #include "../placement/fit-item.hpp"
+#include "../placement/scene-fit.hpp"
 #include "../shadow/shadow-backdrop.hpp"
 
 #include <obs-module.h>
 #include <obs-frontend-api.h>
+#include <graphics/matrix4.h>
 
 #include <map>
 #include <algorithm>
+#include <cmath>
+#include <cstring>
 #include <atomic>
 #include <mutex>
 #include <string>
@@ -56,6 +61,8 @@ struct Hotkey {
 	std::string name;
 };
 Hotkey g_hotkeys[(int)ArrangeAction::Count];
+obs_hotkey_id g_auto_fit_hotkey = OBS_INVALID_HOTKEY_ID;
+const char *const kAutoFitHotkey = "stagekit.arrange.auto_fit";
 
 // The last step handed to OBS's undo list, kept so the tests can replay it.
 std::string g_last_before, g_last_after;
@@ -420,6 +427,238 @@ ArrangeOutcome run_arrange_on_selection(ArrangeAction action)
 	return out;
 }
 
+int bounds_type_of(const std::vector<obs_sceneitem_t *> &items)
+{
+	int type = -1;
+	for (size_t i = 0; i < items.size(); i++) {
+		const int t = (int)obs_sceneitem_get_bounds_type(items[i]);
+		if (i == 0)
+			type = t;
+		else if (t != type)
+			return -1;
+	}
+	return type;
+}
+
+namespace {
+
+// Where the item's picture starts (its source's top-left corner) in its
+// parent's coordinates.
+vec3 picture_origin(obs_sceneitem_t *item)
+{
+	obs_sceneitem_force_update_transform(item);
+	matrix4 draw;
+	obs_sceneitem_get_draw_transform(item, &draw);
+	vec3 at;
+	vec3_set(&at, 0.0f, 0.0f, 0.0f);
+	vec3_transform(&at, &at, &draw);
+	return at;
+}
+
+// The scale OBS gives a picture of w x h in bounds of bw x bh.
+vec2 scale_in_bounds(obs_bounds_type type, float w, float h, float bw, float bh)
+{
+	vec2 k;
+	const float kx = bw / w, ky = bh / h;
+	switch (type) {
+	case OBS_BOUNDS_STRETCH:
+		vec2_set(&k, kx, ky);
+		break;
+	case OBS_BOUNDS_SCALE_OUTER:
+		vec2_set(&k, std::max(kx, ky), std::max(kx, ky));
+		break;
+	case OBS_BOUNDS_SCALE_TO_WIDTH:
+		vec2_set(&k, kx, kx);
+		break;
+	case OBS_BOUNDS_SCALE_TO_HEIGHT:
+		vec2_set(&k, ky, ky);
+		break;
+	case OBS_BOUNDS_MAX_ONLY: {
+		const float m = (w > bw || h > bh) ? std::min(kx, ky) : 1.0f;
+		vec2_set(&k, m, m);
+		break;
+	}
+	default:
+		vec2_set(&k, std::min(kx, ky), std::min(kx, ky));
+		break;
+	}
+	return k;
+}
+
+void fit_filters_of(obs_source_t *scene, std::vector<obs_source_t *> &out)
+{
+	if (!scene)
+		return;
+	obs_source_enum_filters(
+		scene,
+		[](obs_source_t *, obs_source_t *filter, void *param) {
+			const char *id = obs_source_get_unversioned_id(filter);
+			if (id && (std::strcmp(id, kFitItemId) == 0 || std::strcmp(id, kSceneFitId) == 0))
+				static_cast<std::vector<obs_source_t *> *>(param)->push_back(filter);
+		},
+		&out);
+}
+
+bool is_scene_fit(obs_source_t *filter)
+{
+	const char *id = obs_source_get_unversioned_id(filter);
+	return id && std::strcmp(id, kSceneFitId) == 0;
+}
+
+std::string fit_item_of(obs_source_t *filter)
+{
+	obs_data_t *settings = obs_source_get_settings(filter);
+	std::string item = obs_data_get_string(settings, "item");
+	obs_data_release(settings);
+	return item;
+}
+
+} // namespace
+
+std::string fitted_by(obs_source_t *scene, const std::string &source)
+{
+	std::vector<obs_source_t *> filters;
+	fit_filters_of(scene, filters);
+	for (obs_source_t *filter : filters) {
+		if (!obs_source_enabled(filter))
+			continue;
+		if (is_scene_fit(filter) ? scene_fit_covers(filter, source) && scene_fit_entry_on(filter, source)
+					 : fit_item_of(filter) == source)
+			return obs_source_get_name(filter);
+	}
+	return {};
+}
+
+BoundsOutcome set_bounds_type(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &items, obs_bounds_type type)
+{
+	BoundsOutcome out;
+	const std::string before = transform_snapshot(scene);
+	for (obs_sceneitem_t *item : items) {
+		const obs_bounds_type was = obs_sceneitem_get_bounds_type(item);
+		if (was == type)
+			continue;
+		refresh_item(item);
+		obs_source_t *source = obs_sceneitem_get_source(item);
+		obs_sceneitem_crop crop;
+		obs_sceneitem_get_crop(item, &crop);
+		const float w = std::max(1.0f, (float)obs_source_get_width(source) - crop.left - crop.right);
+		const float h = std::max(1.0f, (float)obs_source_get_height(source) - crop.top - crop.bottom);
+		vec2 scale, bounds;
+		obs_sceneitem_get_scale(item, &scale);
+		obs_sceneitem_get_bounds(item, &bounds);
+		const vec3 from = picture_origin(item);
+		obs_sceneitem_defer_update_begin(item);
+		if (type == OBS_BOUNDS_NONE) {
+			// The scale OBS used inside the bounds, so the size on screen stays.
+			const vec2 k = scale_in_bounds(was, w, h, std::fabs(bounds.x), std::fabs(bounds.y));
+			vec2 now;
+			vec2_set(&now, std::copysign(k.x, scale.x), std::copysign(k.y, scale.y));
+			obs_sceneitem_set_scale(item, &now);
+		} else if (was == OBS_BOUNDS_NONE) {
+			vec2 size;
+			vec2_set(&size, w * std::fabs(scale.x), h * std::fabs(scale.y));
+			obs_sceneitem_set_bounds(item, &size);
+		}
+		obs_sceneitem_set_bounds_type(item, type);
+		obs_sceneitem_defer_update_end(item);
+		// The picture where it was: the position moves by however far its
+		// corner did (a picture smaller than its bounds sits inside them).
+		const vec3 to = picture_origin(item);
+		if (std::fabs(to.x - from.x) > 0.01f || std::fabs(to.y - from.y) > 0.01f) {
+			vec2 pos;
+			obs_sceneitem_get_pos(item, &pos);
+			pos.x += from.x - to.x;
+			pos.y += from.y - to.y;
+			obs_sceneitem_set_pos(item, &pos);
+		}
+		out.changed++;
+		const char *name = obs_source_get_name(source);
+		const std::string by = name ? fitted_by(scene, name) : std::string();
+		if (!by.empty())
+			out.fitted.push_back(std::string(name) + "\t" + by);
+	}
+	if (out.changed)
+		add_transform_undo(obs_module_text("Dock.Bounds"), before, transform_snapshot(scene));
+	return out;
+}
+
+std::vector<std::string> sources_of(const std::vector<obs_sceneitem_t *> &items)
+{
+	std::vector<std::string> out;
+	for (obs_sceneitem_t *item : items) {
+		const char *name = obs_source_get_name(obs_sceneitem_get_source(item));
+		if (name && *name && std::find(out.begin(), out.end(), name) == out.end())
+			out.push_back(name);
+	}
+	return out;
+}
+
+namespace {
+
+// Calls `each(filter, source)` for every switch the Auto-fit control has:
+// a whole filter (source empty), or a source's Scene Fit entry.
+template<typename F> void each_auto_fit(obs_source_t *scene, const std::vector<std::string> *sources, F each)
+{
+	std::vector<obs_source_t *> filters;
+	fit_filters_of(scene, filters);
+	for (obs_source_t *filter : filters) {
+		if (!sources) {
+			each(filter, std::string());
+			continue;
+		}
+		for (const std::string &source : *sources) {
+			if (is_scene_fit(filter)) {
+				if (scene_fit_covers(filter, source))
+					each(filter, source);
+			} else if (fit_item_of(filter) == source) {
+				each(filter, std::string());
+			}
+		}
+	}
+}
+
+} // namespace
+
+int auto_fit_state(obs_source_t *scene, const std::vector<std::string> *sources)
+{
+	int state = -1;
+	each_auto_fit(scene, sources, [&](obs_source_t *filter, const std::string &source) {
+		const bool on = source.empty() ? obs_source_enabled(filter) : scene_fit_entry_on(filter, source);
+		state = std::max(state, on ? 1 : 0);
+	});
+	return state;
+}
+
+int set_auto_fit(obs_source_t *scene, bool on, const std::vector<std::string> *sources)
+{
+	int changed = 0;
+	each_auto_fit(scene, sources, [&](obs_source_t *filter, const std::string &source) {
+		if (source.empty()) {
+			if (obs_source_enabled(filter) != on) {
+				obs_source_set_enabled(filter, on);
+				changed++;
+			}
+		} else if (scene_fit_entry_on(filter, source) != on) {
+			scene_fit_set_entry_on(filter, source, on);
+			changed++;
+		}
+	});
+	return changed;
+}
+
+void toggle_auto_fit_on_selection()
+{
+	obs_source_t *scene = editing_scene();
+	if (!scene)
+		return;
+	const std::vector<std::string> picked = sources_of(selection_in_order(scene));
+	const std::vector<std::string> *sources = arrange_options().auto_fit_sources ? &picked : nullptr;
+	const int state = auto_fit_state(scene, sources);
+	if (state >= 0)
+		set_auto_fit(scene, state == 0, sources);
+	obs_source_release(scene);
+}
+
 void register_arrange_hotkeys()
 {
 	for (int i = 0; i < (int)ArrangeAction::Count; i++) {
@@ -441,6 +680,14 @@ void register_arrange_hotkeys()
 			},
 			&hk);
 	}
+	g_auto_fit_hotkey = obs_hotkey_register_frontend(
+		kAutoFitHotkey, obs_module_text("Hotkey.Arrange.AutoFit"),
+		[](void *, obs_hotkey_id, obs_hotkey_t *, bool pressed) {
+			if (pressed)
+				obs_queue_task(
+					OBS_TASK_UI, [](void *) { toggle_auto_fit_on_selection(); }, nullptr, false);
+		},
+		nullptr);
 }
 
 void arrange_save_load(obs_data_t *save_data, bool saving)
@@ -481,6 +728,7 @@ void arrange_save_load(obs_data_t *save_data, bool saving)
 		obs_data_array_release(copy_sources);
 		obs_data_set_int(save_data, "stagekit.place.margin", o.place_margin);
 		obs_data_set_int(save_data, "stagekit.arrange.within", o.within);
+		obs_data_set_bool(save_data, "stagekit.arrange.auto_fit_sources", o.auto_fit_sources);
 	} else if (obs_data_has_user_value(save_data, "stagekit.arrange.within")) {
 		ArrangeOptions o;
 		o.against = static_cast<Against>(
@@ -494,6 +742,7 @@ void arrange_save_load(obs_data_t *save_data, bool saving)
 		// Collections saved before this option existed take its default.
 		o.arrange_every_scene = obs_data_get_bool(save_data, "stagekit.arrange.every_scene");
 		o.copy_locked = obs_data_get_bool(save_data, "stagekit.copy.locked");
+		o.auto_fit_sources = obs_data_get_bool(save_data, "stagekit.arrange.auto_fit_sources");
 		if (obs_data_has_user_value(save_data, "stagekit.send.every_scene"))
 			o.send_every_scene = obs_data_get_bool(save_data, "stagekit.send.every_scene");
 		o.send_slide = obs_data_get_bool(save_data, "stagekit.send.slide");
@@ -526,6 +775,17 @@ void arrange_save_load(obs_data_t *save_data, bool saving)
 			obs_data_array_release(copy_sources);
 		}
 		set_arrange_options(o);
+	}
+	if (g_auto_fit_hotkey != OBS_INVALID_HOTKEY_ID) {
+		if (saving) {
+			obs_data_array_t *bindings = obs_hotkey_save(g_auto_fit_hotkey);
+			obs_data_set_array(save_data, kAutoFitHotkey, bindings);
+			obs_data_array_release(bindings);
+		} else {
+			obs_data_array_t *bindings = obs_data_get_array(save_data, kAutoFitHotkey);
+			obs_hotkey_load(g_auto_fit_hotkey, bindings);
+			obs_data_array_release(bindings);
+		}
 	}
 	for (Hotkey &hk : g_hotkeys) {
 		if (hk.id == OBS_INVALID_HOTKEY_ID)

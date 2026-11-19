@@ -658,6 +658,50 @@ public:
 		place_tools_->setSpacing(4);
 		beside_arrows->insertLayout(4, place_tools_);
 
+		// The selected items' bounds type, in OBS's own words, and the
+		// switch for the scene's fit filters. The owner asked for both.
+		{
+			auto *bounds_row = new QHBoxLayout();
+			bounds_row->setSpacing(6);
+			auto *bounds_label = new QLabel(tr_text("Dock.Bounds"), this);
+			bounds_label->setToolTip(tr_text("Dock.Bounds.Tip"));
+			bounds_ = new QComboBox(this);
+			bounds_->setObjectName("boundsType");
+			bounds_->setToolTip(tr_text("Dock.Bounds.Tip"));
+			const std::pair<const char *, obs_bounds_type> kinds[] = {
+				{"Dock.Bounds.None", OBS_BOUNDS_NONE},
+				{"Dock.Bounds.Stretch", OBS_BOUNDS_STRETCH},
+				{"Dock.Bounds.Fit", OBS_BOUNDS_SCALE_INNER},
+				{"Dock.Bounds.Cover", OBS_BOUNDS_SCALE_OUTER},
+				{"Dock.Bounds.Width", OBS_BOUNDS_SCALE_TO_WIDTH},
+				{"Dock.Bounds.Height", OBS_BOUNDS_SCALE_TO_HEIGHT},
+				{"Dock.Bounds.MaxOnly", OBS_BOUNDS_MAX_ONLY},
+			};
+			for (const auto &[text, type] : kinds)
+				bounds_->addItem(tr_text(text), (int)type);
+			bounds_->setCurrentIndex(-1);
+			QObject::connect(bounds_, QOverload<int>::of(&QComboBox::activated), this,
+					 [this](int index) { set_bounds(index); });
+			bounds_label->setBuddy(bounds_);
+			bounds_row->addWidget(bounds_label);
+			bounds_row->addWidget(bounds_, 1);
+			place_page->addLayout(bounds_row);
+			auto *fit_row = new QHBoxLayout();
+			fit_row->setSpacing(10);
+			auto_fit_ = new QCheckBox(tr_text("Dock.AutoFit"), this);
+			auto_fit_->setObjectName("autoFit");
+			auto_fit_->setToolTip(tr_text("Dock.AutoFit.Tip"));
+			auto_fit_sources_ = new QCheckBox(tr_text("Dock.AutoFitSources"), this);
+			auto_fit_sources_->setObjectName("autoFitSources");
+			auto_fit_sources_->setToolTip(tr_text("Dock.AutoFitSources.Tip"));
+			QObject::connect(auto_fit_, &QCheckBox::clicked, this,
+					 [this](bool on) { switch_auto_fit(on); });
+			fit_row->addWidget(auto_fit_);
+			fit_row->addWidget(auto_fit_sources_);
+			fit_row->addStretch(1);
+			place_page->addLayout(fit_row);
+		}
+
 		auto *keys_box = new QGroupBox(tr_text("Dock.KeysBox"), this);
 		auto *keys_layout = new QVBoxLayout(keys_box);
 		auto *make_keys = new QPushButton(tr_text("Dock.MakeKeys"), keys_box);
@@ -993,7 +1037,7 @@ public:
 		// The options are shared with the hotkeys and the right-click menu.
 		show_arrange_options();
 		for (QCheckBox *box : {visible_, no_shadow_, keep_shape_, live_snap_, guides_, every_scene_, slide_,
-				       limit_resize_, arrange_every_, copy_locked_})
+				       limit_resize_, arrange_every_, copy_locked_, auto_fit_sources_})
 			QObject::connect(box, &QCheckBox::toggled, this, [this](bool) { store_arrange_options(); });
 		QObject::connect(against_, &QComboBox::currentIndexChanged, this,
 				 [this](int) { store_arrange_options(); });
@@ -1168,6 +1212,7 @@ public:
 	void refresh()
 	{
 		follow_selection();
+		show_bounds_and_fit();
 		show_arrange_target();
 		show_filters();
 		if (shown_options_ != arrange_options_revision())
@@ -1649,6 +1694,7 @@ private:
 		every_scene_->setChecked(o.send_every_scene);
 		arrange_every_->setChecked(o.arrange_every_scene);
 		copy_locked_->setChecked(o.copy_locked);
+		auto_fit_sources_->setChecked(o.auto_fit_sources);
 		place_visible_->setChecked(o.how.visible_pixels);
 		place_no_shadow_->setChecked(o.how.leave_out_shadows);
 		slide_->setChecked(o.send_slide);
@@ -1766,6 +1812,7 @@ private:
 		o.send_every_scene = every_scene_->isChecked();
 		o.arrange_every_scene = arrange_every_->isChecked();
 		o.copy_locked = copy_locked_->isChecked();
+		o.auto_fit_sources = auto_fit_sources_->isChecked();
 		o.send_slide = slide_->isChecked();
 		o.send_curve = curve_->currentIndex();
 		o.send_mode = ease_mode_->currentIndex();
@@ -1786,6 +1833,68 @@ private:
 			return editing;
 		obs_source_release(editing);
 		return current_scene();
+	}
+
+	// The sources Auto-fit acts on: null for the whole scene, else these.
+	const std::vector<std::string> *auto_fit_level(obs_source_t *scene, std::vector<std::string> &picked) const
+	{
+		if (!arrange_options().auto_fit_sources)
+			return nullptr;
+		picked = sources_of(arrange_items(scene));
+		return &picked;
+	}
+
+	// The Bounds list and the Auto-fit switch as the selection and the
+	// scene's filters are now.
+	void show_bounds_and_fit()
+	{
+		if (!bounds_ || !auto_fit_)
+			return;
+		obs_source_t *scene = arrange_scene();
+		const std::vector<obs_sceneitem_t *> items = scene ? arrange_items(scene)
+								   : std::vector<obs_sceneitem_t *>{};
+		const int type = bounds_type_of(items);
+		bounds_->setEnabled(!items.empty());
+		const int index = type < 0 ? -1 : bounds_->findData(type);
+		if (bounds_->currentIndex() != index)
+			bounds_->setCurrentIndex(index);
+		std::vector<std::string> picked;
+		const int state = scene ? auto_fit_state(scene, auto_fit_level(scene, picked)) : -1;
+		auto_fit_->setEnabled(state >= 0);
+		auto_fit_->setChecked(state == 1);
+		obs_source_release(scene);
+	}
+
+	void set_bounds(int index)
+	{
+		obs_source_t *scene = arrange_scene();
+		const std::vector<obs_sceneitem_t *> items = scene ? arrange_items(scene)
+								   : std::vector<obs_sceneitem_t *>{};
+		if (index < 0 || items.empty()) {
+			obs_source_release(scene);
+			show_bounds_and_fit();
+			return;
+		}
+		const BoundsOutcome out =
+			set_bounds_type(scene, items, static_cast<obs_bounds_type>(bounds_->itemData(index).toInt()));
+		obs_source_release(scene);
+		if (!out.fitted.empty()) {
+			const QStringList parts = QString::fromUtf8(out.fitted.front().c_str()).split('\t');
+			say(tr_text("Dock.Bounds.Fitted").arg(parts.value(0), parts.value(1)));
+		} else {
+			say(tr_text("Dock.Bounds.Done").arg(out.changed));
+		}
+		show_bounds_and_fit();
+	}
+
+	void switch_auto_fit(bool on)
+	{
+		obs_source_t *scene = arrange_scene();
+		std::vector<std::string> picked;
+		const int changed = scene ? set_auto_fit(scene, on, auto_fit_level(scene, picked)) : 0;
+		obs_source_release(scene);
+		say(tr_text(on ? "Dock.AutoFit.On" : "Dock.AutoFit.Off").arg(changed));
+		show_bounds_and_fit();
 	}
 
 	// What the arrange buttons act on: the items selected in OBS, or failing
@@ -2570,6 +2679,8 @@ private:
 	QCheckBox *every_scene_ = nullptr;
 	QComboBox *lock_which_ = nullptr, *lock_where_ = nullptr;
 	QCheckBox *copy_locked_ = nullptr;
+	QComboBox *bounds_ = nullptr;
+	QCheckBox *auto_fit_ = nullptr, *auto_fit_sources_ = nullptr;
 	QComboBox *filter_from_ = nullptr, *filter_to_ = nullptr;
 	QCheckBox *filter_add_ = nullptr;
 	QStringList filter_labels_;
