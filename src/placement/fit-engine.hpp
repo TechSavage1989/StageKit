@@ -104,22 +104,15 @@ inline bool outranks(const Rank &a, const Rank &b)
 struct Claim {
 	Box box;
 	bool resizes = true;
-	// For one that resizes: whether more room across (`grows_x`) or
-	// down (`grows_y`) would make its picture larger. A picture held by
-	// its width (empty room above and below it in its space) has no use
-	// for more height, and the other way round.
-	bool grows_x = true, grows_y = true;
-	// For one that keeps its size: it lies at the top of its space
-	// (`leans_y`) because a resized picture above or below it has no use
-	// for more height (see `lean_axes`). `leans_x` is never set: side by
-	// side, placing is as it was.
-	bool leans_x = false, leans_y = false;
-	// What it holds whatever the fits it makes room for do (`has_least`):
-	// for one keeping its size, that size at its home (its anchor), on the
-	// screen (one that resizes holds nothing: it shrinks to make room). A
-	// fit that takes its space before this one goes by that, never by
-	// `box`: `box` follows that fit's own claim, `least` does not, so the
-	// dependence stays one-way (see FitScan::obstacles).
+	// What it holds whatever the other fits do (`has_least`): for one
+	// keeping its size, that size at its home (where its picture lay when
+	// its home was taken, else round its anchor), on the screen. (One that
+	// resizes holds nothing: it shrinks to make room.) A fit that resizes
+	// its item, and any fit that takes its space before this one, goes by
+	// that, never by `box`: `box` is where this fit's item lies in the room
+	// those leave it, by its Align in the space, so it follows their
+	// claims; `least` does not, and the dependence stays one-way (see
+	// FitScan::obstacles).
 	Box least;
 	bool has_least = false;
 	Rank rank;
@@ -161,8 +154,8 @@ constexpr double kHomeSlack = 3.0;
 
 // What a fit's goal is worked out from: the screen (or its box), the point
 // it is looked for round, the rules, what is in the way (what shows of each
-// item, or where another fit is taking it; with `said`, `passed` and
-// `above` as in `Obstacle`), and its home. `space_from` is the very working
+// item, or where another fit is taking it, or what a kept-size fit holds;
+// with `said`, `passed`, `above` and `holds` as in `Obstacle`), and its home. `space_from` is the very working
 // out a fit does each time something changes (`FitEngine::solve`), so a
 // tool can ask what a fit would do were something else in its way (the
 // dock's Fit to space: it must never make another fit give up room).
@@ -181,11 +174,10 @@ struct SpaceInputs {
 	std::vector<Box> boxes;
 	std::vector<int64_t> ids;
 	std::vector<bool> said, passed, above;
-	// Whether another fit resizes each to make room (`Obstacle::gives`),
-	// which way it would grow (1 across, 2 down) and which way a kept-size
-	// one leans (`Obstacle::leans`).
-	std::vector<bool> gives;
-	std::vector<int> grows, leans;
+	// Whether another fit resizes each to make room (`Obstacle::gives`), and
+	// whether each is what a kept-size fit holds at its home, not where that
+	// fit is taking its item (`Obstacle::holds`).
+	std::vector<bool> gives, holds;
 	// Each other fit's item at its home (`Obstacle::home`).
 	std::vector<Box> homes;
 	std::vector<bool> has_homes;
@@ -218,24 +210,19 @@ struct SpaceOut {
 	bool took_home = false; // its home's space was still being found: `home_space` is it now
 	Box home_space;
 	bool have_home_space = false;
-	bool grows_set = false; // for a resized picture: whether more width or height would grow it
-	bool grows_x = true, grows_y = true;
 };
 // The goal (`out`: the rest).
 Box space_from(const SpaceInputs &in, SpaceOut *out = nullptr);
 // What a fit says it will show of its item once it is in `goal` (its claim,
-// `FitEngine::publish_claim`): `kept`, its kept size against the side it is
-// kept towards (or away from a side that gives way, or packed towards the
-// top beside a picture that would not grow that way), on the screen (at home
-// too); otherwise a picture of the shape `pw` by `ph` fitted into the
-// space (`room` while it is `reshaping`, else `goal`). `lean_y`: whether a
-// kept-size one leans towards the top (`Claim::leans_y`).
+// `FitEngine::publish_claim`): `kept`, its kept size where its Align in the
+// space puts it in that space, whatever lies beside it, on the screen;
+// otherwise a picture of the shape `pw` by `ph` fitted into the space (`room`
+// while it is `reshaping`, else `goal`), by its Align in the space too.
 Box claim_box(const Box &goal, const Box &room, const Box &within, double margin, bool kept, double kept_w,
-	      double kept_h, int toward_x, int toward_y, const std::vector<Box> &boxes, const std::vector<bool> &gives,
-	      const std::vector<int> &grows, bool reshaping, double pw, double ph, bool *lean_y = nullptr);
+	      double kept_h, int toward_x, int toward_y, bool reshaping, double pw, double ph);
 // The same from a fit's inputs (`out`: what `space_from` gives for them,
 // worked out when not given).
-Box claim_from(const SpaceInputs &in, const SpaceOut *out = nullptr, bool *lean_y = nullptr);
+Box claim_from(const SpaceInputs &in, const SpaceOut *out = nullptr);
 // Every fit of the free space in a scene whose item is there: the item it
 // fits (its id, its source's name), whether that item shows, and, once the
 // fit has worked its space out (`worked`), that space (`space`: the whole
@@ -259,6 +246,29 @@ std::vector<HeldSpace> held_spaces(obs_source_t *scene);
 // `enabled_filter`: the filter the settings are from, when it is switched on.
 bool fit_settings_for(obs_source_t *scene, const char *name, FitSettings &settings, std::string &resizing_filter,
 		      std::string *enabled_filter = nullptr);
+// Align in the space (`toward`, saved by number, append-only: 0 the middle,
+// 1 top, 2 bottom, 3 left, 4 right, 5 top left, 6 top right, 7 bottom left,
+// 8 bottom right), and the same nine laid out as OBS lays out a bounding
+// box's alignment: row by row from the top left (`kTowardGrid[cell]` is the
+// saved number of the cell at row cell / 3, column cell % 3).
+inline constexpr int kTowardX[9] = {0, 0, 0, -1, 1, -1, 1, -1, 1};
+inline constexpr int kTowardY[9] = {0, -1, 1, 0, 0, -1, -1, 1, 1};
+inline constexpr int kTowardGrid[9] = {5, 1, 6, 3, 0, 4, 7, 2, 8};
+// The saved number for a side (-1, 0 or 1 each way).
+inline int toward_number(int x, int y)
+{
+	for (int i = 0; i < 9; i++)
+		if (kTowardX[i] == x && kTowardY[i] == y)
+			return i;
+	return 0;
+}
+// The Align in the space of the fit `fit_settings_for` would give for the
+// source `name` in `scene` (false: no fit names it).
+bool fit_toward_for(obs_source_t *scene, const char *name, int &toward);
+// Sets Align in the space for every fit in `scene` that fits the source
+// `name` (a Fit to Space's own setting, a Scene Fit entry's or its shared
+// set's); the number of fits changed.
+int fit_set_toward_for(obs_source_t *scene, const char *name, int toward);
 // For the tests: `stagekit_test_fit_predicts`, whether what `held_spaces`
 // says of each fit gives, worked out again, the claim that fit makes.
 void fit_engine_add_test_calls();
@@ -287,15 +297,12 @@ struct Prep {
 // fit is taking it (`said`), whether that fit resizes it (`gives`), and
 // whether it is one of the items never in the way (`passed`).
 // `above`: placed by a fit that takes its space before this one.
+// `holds`: not where its fit is taking it but what that fit holds whatever
+// happens (`Claim::least`: a kept size at its home).
 struct Obstacle {
 	Box box;
 	int64_t id = 0;
-	bool said = false, gives = false, passed = false, above = false;
-	// (For one that gives way: whether it would take more room across or
-	// down. For a kept-size fit's of the same standing: 1, it lies to the
-	// left of its space, 2, at its top, for a resized picture's sake.)
-	bool grows_x = true, grows_y = true;
-	int leans = 0;
+	bool said = false, gives = false, passed = false, above = false, holds = false;
 	// Another fit's item: where it lies in the layout as made by hand.
 	Box home;
 	bool has_home = false;
@@ -316,9 +323,12 @@ public:
 	// With `mine`: an item placed by a fit `mine` outranks is in the way
 	// only by what that fit holds whatever happens (`Claim::least`, for one
 	// keeping its size), not by where it is going, and one placed by a fit that outranks `mine` is firm.
+	// `mine_resizes`: the asking fit resizes its item. It then goes by what
+	// a kept-size fit of its own standing holds too, never by where that
+	// one lies in its space (see the note on settling in fit-engine.cpp).
 	void obstacles(obs_source_t *scene, obs_sceneitem_t *self, const std::vector<std::string> &skip,
 		       bool keep_skipped, const void *asking, const Measure &how, std::vector<Obstacle> &out,
-		       const Rank *mine = nullptr);
+		       const Rank *mine = nullptr, bool mine_resizes = false);
 	// At rest: one glance a tick at the gathered items and `extra`, and one
 	// proper look at an item a glance shows to have changed.
 	void at_rest(obs_source_t *scene, const std::vector<obs_sceneitem_t *> &extra, const void *glance_owner,
@@ -397,6 +407,13 @@ public:
 	obs_source_t *source() const { return source_; }
 	obs_source_t *parent() const { return parent_; }
 	const std::string &prefix() const { return prefix_; }
+	// Where how it fits is read from now (its own prefix, or a Scene Fit's
+	// shared set).
+	std::string look_prefix()
+	{
+		std::lock_guard lock(mutex_);
+		return look_prefix_;
+	}
 	std::string item_name()
 	{
 		std::lock_guard lock(mutex_);
@@ -472,13 +489,8 @@ private:
 	void store_bool(const char *key, bool v);
 	void store_double(const char *key, double v);
 	void store_string(const char *key, const char *v);
-	void soft_sides(bool &l, bool &r, bool &t, bool &b) const;
-	// Whether a kept-size item lies at the top of its space: a resizing
-	// fit's picture above or below it would not grow into more height,
-	// and nothing else decides it (`x` is always false).
-	void lean_axes(const Prep &p, bool &x, bool &y) const;
 	// (A resized picture's space cut to it: `space_from`, with
-	// `trim_for_kept_in` and `trim_to_picture_in` in fit-engine.cpp.)
+	// `trim_to_picture_in` in fit-engine.cpp.)
 	// The picture is of another shape than its space was cut for: OBS is
 	// given the space before the cut, so the picture is fitted at once.
 	bool reshaping(const Prep &p) const;
@@ -521,8 +533,7 @@ private:
 	bool own_looked_have_ = false;
 	std::vector<Box> boxes_;  // what is in the way now
 	std::vector<bool> gives_; // and which of them another filter resizes to make room
-	std::vector<int> grows_;  // of those, 1: it would take more width, 2: more height
-	std::vector<int> leans_;  // of the kept-size fits' of the same standing, which lean (Obstacle::leans)
+	std::vector<bool> holds_; // which are what a kept-size fit holds at its home (Obstacle::holds)
 	std::vector<int64_t> ids_;
 	std::vector<Box> at_;          // each one's item's box when it was looked at
 	std::vector<int64_t> visible_; // every item they were taken from
@@ -549,9 +560,6 @@ private:
 	static constexpr double kHandStill = 0.3;
 	bool hand_on_ = false;
 	double hand_bw_ = 0.0, hand_bh_ = 0.0, hand_still_ = 0.0;
-	// Whether more width or height would grow the resized picture, from the
-	// space it was given before that was cut to the picture.
-	bool space_grows_x_ = true, space_grows_y_ = true;
 	// "Resize to fit" off: the size the picture is kept at, as it shows on
 	// the screen (`w`, `h`: scene pixels of what shows of it), not as a scale
 	// of its source: a capture whose source changes size (a window resized, a
@@ -709,7 +717,10 @@ private:
 	// picture there keeps the gap, the picture goes exactly there.
 	bool was_off_ = false;   // the filter was seen switched off (on the tick)
 	bool take_home_ = false; // switched on just now: taken at the next prepare
-	bool home_due_ = false;  // taken at the end of this prepare
+	// Switched on just now, having put its item somewhere before: whether the
+	// item still lies there is asked at the next prepare (its anchor is then kept).
+	bool on_as_put_ = false;
+	bool home_due_ = false; // taken at the end of this prepare
 	bool has_home_ = false, have_home_space_ = false, at_home_ = false;
 	Box home_, home_space_;
 	bool home_settling_ = false; // the space round the home is still being found

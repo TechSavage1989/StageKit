@@ -35,6 +35,7 @@
 #include <QPixmap>
 #include <QTabWidget>
 #include <QPushButton>
+#include <QToolButton>
 #include <QWidget>
 
 #include <algorithm>
@@ -1579,7 +1580,8 @@ static void fit_visible_test()
 	struct Extra {
 		bool cam_keeps = false;        // the camera keeps its size (and the chat box resizes)
 		obs_source_t *inner = nullptr; // in the chat box group, instead of FV Chat
-		int chat_toward = 0;           // the chat box's Align in the space
+		int chat_toward = 1;           // the chat box's Align in the space (the top)
+		int cam_toward = 0;            // the camera's
 		bool gap = true;               // the gap is checked, not only that nothing moves
 	};
 	// One case: `scene_fit` a Scene Fit with both entries, else two Fit to
@@ -1615,7 +1617,7 @@ static void fit_visible_test()
 			list(d, "entries", names);
 			for (const std::string &e : names)
 				look(d, "fit|" + e + "|", vis, e == gname ? !chat_keeps : !x.cam_keeps,
-				     e == gname ? x.chat_toward : 0);
+				     e == gname ? x.chat_toward : x.cam_toward);
 			obs_source_t *f = obs_source_create(
 				"stagekit_scene_fit", ("FV Scene Fit " + std::to_string(made)).c_str(), d, nullptr);
 			obs_data_release(d);
@@ -1626,7 +1628,7 @@ static void fit_visible_test()
 				obs_data_t *d = obs_data_create();
 				obs_data_set_string(d, "item", e.c_str());
 				look(d, "", vis, e == gname ? !chat_keeps : !x.cam_keeps,
-				     e == gname ? x.chat_toward : 0);
+				     e == gname ? x.chat_toward : x.cam_toward);
 				obs_source_t *f = obs_source_create(
 					"stagekit_fit_item", ("FV Fit " + e + " " + std::to_string(made)).c_str(), d,
 					nullptr);
@@ -1684,7 +1686,9 @@ static void fit_visible_test()
 	run("Scene Fit, both resize, chat listed first", true, Visible::On, true, false);
 	run("two Fit to Space, both resize", false, Visible::On, false, false);
 	// The chat box keeping its size (Resize to fit unticked), as the owner's
-	// has been: the camera's space reaches down to it.
+	// has been: the camera's space reaches down to it. (Rule B, betaNEXT: it
+	// lies by its Align in the space, here The top, so it is the gap under
+	// the camera's picture. Up to beta202 it was packed there at The middle.)
 	run("Scene Fit, chat keeps its size, Use visible pixels ticked", true, Visible::On, false, true);
 	run("Scene Fit, chat keeps its size, entry defaults", true, Visible::Defaults, false, true);
 	run("Scene Fit, chat keeps its size, chat listed first", true, Visible::On, true, true);
@@ -1698,6 +1702,7 @@ static void fit_visible_test()
 	{
 		Extra x;
 		x.cam_keeps = true;
+		x.cam_toward = 1; // (rule B: both at The top)
 		x.inner = banner;
 		run("Scene Fit, the camera keeps its size, a wide picture below resized", true, Visible::On, false,
 		    false, x);
@@ -1715,7 +1720,8 @@ static void fit_visible_test()
 		    x);
 	}
 	// Side by side nothing is packed: a 4:3 game resized to fit, held by its
-	// height, beside a chat column that keeps its size (both in the middle),
+	// height, beside a chat column that keeps its size (the column kept
+	// towards the right, the game in the middle),
 	// leaves the column against the screen's right edge and the game centred
 	// in the rest, as before this change. (Packing the two to the left moved
 	// the owner's emulator layouts.)
@@ -1744,7 +1750,7 @@ static void fit_visible_test()
 				obs_data_t *d = obs_data_create();
 				list(d, "entries", names);
 				for (const std::string &e : names)
-					look(d, "fit|" + e + "|", Visible::On, e == names[0], 0);
+					look(d, "fit|" + e + "|", Visible::On, e == names[0], e == names[0] ? 0 : 4);
 				obs_source_t *f = obs_source_create("stagekit_scene_fit",
 								    ("FV Scene Fit " + std::to_string(made)).c_str(), d,
 								    nullptr);
@@ -1755,7 +1761,7 @@ static void fit_visible_test()
 				for (const std::string &e : names) {
 					obs_data_t *d = obs_data_create();
 					obs_data_set_string(d, "item", e.c_str());
-					look(d, "", Visible::On, e == names[0], 0);
+					look(d, "", Visible::On, e == names[0], e == names[0] ? 0 : 4);
 					obs_source_t *f = obs_source_create(
 						"stagekit_fit_item",
 						("FV Fit " + e + " " + std::to_string(made)).c_str(), d, nullptr);
@@ -1786,7 +1792,10 @@ static void fit_visible_test()
 			}
 			const Rect gv = shows(ss, 0xFFFF0000), cv = shows(ss, 0xFF00FF00);
 			const double to_right = W - (cv.x + cv.w);
-			const double left = gv.x, right = cv.x - (gv.x + gv.w);
+			// (Rule B, betaNEXT: the column, kept towards the right, lies
+			// against the screen's edge; the game fills the room round
+			// where the column belongs, its home at 480, the gap away.)
+			const double left = gv.x, right = 480.0 - (gv.x + gv.w);
 			const char *label =
 				scene_fit ? "Scene Fit, a 4:3 game beside a chat column that keeps its size"
 					  : "two Fit to Space, a 4:3 game beside a chat column that keeps its size";
@@ -2500,6 +2509,317 @@ void register_fe_letterbox()
 	obs_register_source(&info);
 }
 } // namespace
+
+// --------------------------------- fit: Align in the space decides, for any layout
+// Rule B (the owner, 2026-11-19: "b is the correct logic. these features need
+// to work with any layout format in the future, and not be specific to
+// mine"): Align in the space decides where a source lies in its space, kept
+// at its size or resized, whatever lies beside it. Two fits beside each
+// other come to rest and stay. The filters' list and the dock's grid give
+// the saved numbers of OBS's nine squares, row by row. On a 640x360 canvas
+// with a gap of 10. Run alone with STAGEKIT_TEST_ONLY_FIT_ALIGN.
+static void fit_align_test()
+{
+	printf("\n[fit align: Align in the space decides, for any layout, and its grid]\n");
+	constexpr uint32_t W = 640, H = 360;
+	auto colour = [](const char *name, int cw, int ch, long long abgr) {
+		obs_data_t *d = obs_data_create();
+		obs_data_set_int(d, "width", cw);
+		obs_data_set_int(d, "height", ch);
+		obs_data_set_int(d, "color", abgr);
+		obs_source_t *src = obs_source_create("color_source", name, d, nullptr);
+		obs_data_release(d);
+		return src;
+	};
+	auto list = [](obs_data_t *d, const char *setting, std::vector<std::string> values) {
+		obs_data_array_t *arr = obs_data_array_create();
+		for (const std::string &value : values) {
+			obs_data_t *entry = obs_data_create();
+			obs_data_set_string(entry, "value", value.c_str());
+			obs_data_array_push_back(arr, entry);
+			obs_data_release(entry);
+		}
+		obs_data_set_array(d, setting, arr);
+		obs_data_array_release(arr);
+	};
+	auto place = [](obs_sceneitem_t *it, double x, double y, double bw, double bh) {
+		vec2 v;
+		obs_sceneitem_set_alignment(it, OBS_ALIGN_LEFT | OBS_ALIGN_TOP);
+		obs_sceneitem_set_bounds_type(it, OBS_BOUNDS_SCALE_INNER);
+		obs_sceneitem_set_bounds_alignment(it, OBS_ALIGN_CENTER);
+		vec2_set(&v, (float)bw, (float)bh);
+		obs_sceneitem_set_bounds(it, &v);
+		vec2_set(&v, (float)x, (float)y);
+		obs_sceneitem_set_pos(it, &v);
+	};
+	struct Drawn {
+		double x = 0, y = 0, w = 0, h = 0;
+	};
+	// Where the picture is drawn, worked out from the item.
+	auto drawn = [](obs_sceneitem_t *it) {
+		Drawn out;
+		obs_source_t *src = obs_sceneitem_get_source(it);
+		const double sw = obs_source_get_width(src), sh = obs_source_get_height(src);
+		vec2 b, p;
+		obs_sceneitem_get_bounds(it, &b);
+		obs_sceneitem_get_pos(it, &p);
+		if (sw < 1.0 || sh < 1.0 || b.x < 1.0f || b.y < 1.0f)
+			return out;
+		const double k = std::min(b.x / sw, b.y / sh);
+		const uint32_t a = obs_sceneitem_get_bounds_alignment(it);
+		const double fx = a & OBS_ALIGN_LEFT ? 0.0 : a & OBS_ALIGN_RIGHT ? 1.0 : 0.5;
+		const double fy = a & OBS_ALIGN_TOP ? 0.0 : a & OBS_ALIGN_BOTTOM ? 1.0 : 0.5;
+		out.w = sw * k;
+		out.h = sh * k;
+		out.x = p.x + (b.x - out.w) * fx;
+		out.y = p.y + (b.y - out.h) * fy;
+		return out;
+	};
+	auto frames = [&](obs_source_t *ss, int n) {
+		for (int i = 0; i < n; i++) {
+			render(ss, W, H);
+			sleep_ms(20);
+		}
+	};
+	auto set_int = [](obs_source_t *f, const std::string &key, long long v) {
+		obs_data_t *d = obs_data_create();
+		obs_data_set_int(d, key.c_str(), v);
+		obs_source_update(f, d);
+		obs_data_release(d);
+	};
+	auto set_bool = [](obs_source_t *f, const std::string &key, bool v) {
+		obs_data_t *d = obs_data_create();
+		obs_data_set_bool(d, key.c_str(), v);
+		obs_source_update(f, d);
+		obs_data_release(d);
+	};
+	auto get_int = [](obs_source_t *f, const char *key) {
+		obs_data_t *d = obs_source_get_settings(f);
+		const long long v = obs_data_get_int(d, key);
+		obs_data_release(d);
+		return v;
+	};
+	obs_source_t *before = obs_get_output_source(0);
+
+	// 1. One source in the room right of a wall: kept at its size, then resized.
+	obs_source_t *bg = colour("FA Background", W, H, 0xFF202020);
+	obs_source_t *wall = colour("FA Wall", 200, 360, 0xFF808080);
+	obs_source_t *chat = colour("FA Chat", 300, 180, 0xFF00FF00);
+	obs_scene_t *scene = obs_scene_create("FA Scene");
+	obs_source_t *ss = obs_scene_get_source(scene);
+	obs_scene_add(scene, bg);
+	obs_scene_add(scene, wall);
+	obs_sceneitem_t *ci = obs_scene_add(scene, chat);
+	place(ci, 350.0, 150.0, 100.0, 60.0);
+	obs_set_output_source(0, ss);
+	obs_data_t *fd = obs_data_create();
+	list(fd, "entries", {"FA Chat"});
+	obs_data_set_int(fd, "fit|FA Chat|box", 2);
+	obs_data_set_double(fd, "fit|FA Chat|margin", 10.0);
+	obs_data_set_bool(fd, "fit|FA Chat|resize", false);
+	obs_data_set_int(fd, "fit|FA Chat|glide_ms", 0);
+	obs_source_t *fit = obs_source_create("stagekit_scene_fit", "FA Fit", fd, nullptr);
+	obs_data_release(fd);
+	obs_source_filter_add(ss, fit);
+	frames(ss, 40);
+	// Its space: right of the wall, the gap inside it and the screen.
+	const double sl = 210.0, sr = W - 10.0, st = 10.0, sb = H - 10.0;
+	struct Case {
+		int toward;
+		const char *name;
+		double fx, fy;
+	};
+	const Case cases[] = {{0, "the middle", 0.5, 0.5},
+			      {5, "the top left", 0.0, 0.0},
+			      {8, "the bottom right", 1.0, 1.0}};
+	for (bool resized : {false, true}) {
+		if (resized) {
+			set_bool(fit, "fit|FA Chat|resize", true);
+			frames(ss, 30);
+		}
+		for (const Case &c : cases) {
+			set_int(fit, "fit|FA Chat|toward", c.toward);
+			frames(ss, 40);
+			const Drawn d = drawn(ci);
+			// Kept: 100x60. Resized: 5:3 held by the space's width, 420x252.
+			const double ew = resized ? 420.0 : 100.0, eh = resized ? 252.0 : 60.0;
+			const double ex = sl + (sr - sl - ew) * c.fx, ey = st + (sb - st - eh) * c.fy;
+			CHECK(std::fabs(d.w - ew) <= 0.6 && std::fabs(d.h - eh) <= 0.6 && std::fabs(d.x - ex) <= 0.6 &&
+				      std::fabs(d.y - ey) <= 0.6,
+			      "%s, set to %s, it lies at %s of its space (%.1f x %.1f at %.1f, %.1f; wanted %.1f x %.1f at %.1f, %.1f)",
+			      resized ? "resized" : "kept at its size", c.name, c.name, d.w, d.h, d.x, d.y, ew, eh, ex,
+			      ey);
+		}
+	}
+	set_bool(fit, "fit|FA Chat|resize", false);
+	set_int(fit, "fit|FA Chat|toward", 0);
+	frames(ss, 40);
+
+	// 2. The filters' list: OBS's nine squares, row by row, by saved number.
+	{
+		obs_source_t *own = obs_source_create("stagekit_fit_item", "FA Own", nullptr, nullptr);
+		const int grid[9] = {5, 1, 6, 3, 0, 4, 7, 2, 8};
+		for (obs_source_t *f : {own, fit}) {
+			obs_properties_t *props = obs_source_properties(f);
+			obs_property_t *p = obs_properties_get(props, f == own ? "toward" : "fit|FA Chat|toward");
+			bool ok = p && obs_property_list_item_count(p) == 9;
+			std::string names;
+			for (size_t i = 0; ok && i < 9; i++) {
+				ok = obs_property_list_item_int(p, i) == grid[i];
+				names += std::string(i ? " | " : "") + obs_property_list_item_name(p, i);
+			}
+			CHECK(ok,
+			      "%s's Align in the space lists the nine places row by row from the top left, saved as before (%s)",
+			      f == own ? "Fit to Space" : "a Scene Fit entry", names.c_str());
+			obs_properties_destroy(props);
+		}
+		obs_source_release(own);
+	}
+
+	// 3. The dock's grid: nine squares, one checked, setting the selected
+	// source's fit by the same numbers.
+	{
+		auto pump = [&](int ms) {
+			for (int t = 0; t < ms; t += 20) {
+				QCoreApplication::processEvents();
+				render(ss, W, H);
+				sleep_ms(20);
+			}
+			QCoreApplication::processEvents();
+		};
+		obs_sceneitem_select(ci, true);
+		calldata_t dock_cd = {};
+		calldata_set_string(&dock_cd, "scene", "FA Scene");
+		proc_handler_call(obs_get_proc_handler(), "stagekit_create_dock", &dock_cd);
+		auto *dock = static_cast<QWidget *>(calldata_ptr(&dock_cd, "widget"));
+		calldata_free(&dock_cd);
+		QToolButton *squares[9] = {};
+		bool all = dock != nullptr;
+		for (int i = 0; all && i < 9; i++) {
+			squares[i] = dock->findChild<QToolButton *>(QString("fitAlign%1").arg(i));
+			all = squares[i] && squares[i]->isCheckable() && squares[i]->width() <= 16 &&
+			      squares[i]->width() == squares[i]->height() && !squares[i]->toolTip().isEmpty();
+		}
+		CHECK(all, "the dock's Place tab has nine small square buttons for Fit to space's alignment");
+		if (all) {
+			pump(600);
+			int checked = 0;
+			for (QToolButton *b : squares)
+				checked += b->isChecked() ? 1 : 0;
+			CHECK(checked == 1 && squares[4]->isChecked(),
+			      "one is checked, the middle, as the selected source's fit says");
+			const int grid[9] = {5, 1, 6, 3, 0, 4, 7, 2, 8};
+			bool right = true;
+			for (int cell : {8, 0, 1, 5, 4}) {
+				squares[cell]->click();
+				pump(100);
+				const long long now = get_int(fit, "fit|FA Chat|toward");
+				right = right && now == grid[cell] && squares[cell]->isChecked();
+				if (now != grid[cell])
+					printf("    square %d gave %lld, not %d\n", cell, now, grid[cell]);
+			}
+			CHECK(right, "each square sets the selected source's Align in the space to its saved number");
+			frames(ss, 40);
+			const Drawn d = drawn(ci);
+			CHECK(std::fabs(d.x - sl - (sr - sl - 100.0) / 2.0) <= 0.6 &&
+				      std::fabs(d.y - st - (sb - st - 60.0) / 2.0) <= 0.6,
+			      "and the source goes there (%.1f, %.1f)", d.x, d.y);
+		}
+		delete dock;
+		obs_sceneitem_select(ci, false);
+	}
+	obs_source_filter_remove(ss, fit);
+	obs_source_release(fit);
+
+	// 4. Two fits beside each other, a resized game and a chat box kept at
+	// its size, come to rest and stay: in one Scene Fit, and as two Fit to
+	// Space filters, with the chat box in the middle and in a corner.
+	for (int how = 0; how < 4; how++) {
+		const bool scene_fit = how < 2;
+		const int chat_toward = how % 2 ? 8 : 0;
+		obs_sceneitem_t *items[2];
+		const std::string gn = "FA Game " + std::to_string(how), bn = "FA Box " + std::to_string(how);
+		obs_source_t *game = colour(gn.c_str(), 320, 180, 0xFFFF0000);
+		obs_source_t *box = colour(bn.c_str(), 150, 100, 0xFF0000FF);
+		obs_scene_t *two = obs_scene_create(("FA Two " + std::to_string(how)).c_str());
+		obs_source_t *ts = obs_scene_get_source(two);
+		obs_scene_add(two, bg);
+		items[0] = obs_scene_add(two, game);
+		items[1] = obs_scene_add(two, box);
+		place(items[0], 10.0, 10.0, 400.0, 225.0);
+		place(items[1], 470.0, 130.0, 150.0, 100.0);
+		obs_set_output_source(0, ts);
+		std::vector<obs_source_t *> filters;
+		auto entry = [&](obs_data_t *d, const std::string &pre, bool resize, int toward) {
+			obs_data_set_int(d, (pre + "box").c_str(), 2);
+			obs_data_set_double(d, (pre + "margin").c_str(), 10.0);
+			obs_data_set_bool(d, (pre + "resize").c_str(), resize);
+			obs_data_set_int(d, (pre + "toward").c_str(), toward);
+			obs_data_set_int(d, (pre + "glide_ms").c_str(), 150);
+		};
+		if (scene_fit) {
+			obs_data_t *d = obs_data_create();
+			list(d, "entries", {gn, bn});
+			entry(d, "fit|" + gn + "|", true, 0);
+			entry(d, "fit|" + bn + "|", false, chat_toward);
+			filters.push_back(obs_source_create("stagekit_scene_fit", "FA Two Fit", d, nullptr));
+			obs_data_release(d);
+		} else {
+			for (int i = 0; i < 2; i++) {
+				obs_data_t *d = obs_data_create();
+				obs_data_set_string(d, "item", i ? bn.c_str() : gn.c_str());
+				entry(d, "", i == 0, i ? chat_toward : 0);
+				filters.push_back(obs_source_create("stagekit_fit_item",
+								    i ? "FA Box Fit" : "FA Game Fit", d, nullptr));
+				obs_data_release(d);
+			}
+		}
+		for (obs_source_t *f : filters)
+			obs_source_filter_add(ts, f);
+		frames(ts, 60);
+		const Drawn g0 = drawn(items[0]), b0 = drawn(items[1]);
+		double worst = 0.0;
+		for (int i = 0; i < 100; i++) {
+			frames(ts, 1);
+			for (int k = 0; k < 2; k++) {
+				const Drawn now = drawn(items[k]), was = k ? b0 : g0;
+				worst = std::max({worst, std::fabs(now.x - was.x), std::fabs(now.y - was.y),
+						  std::fabs(now.w - was.w), std::fabs(now.h - was.h)});
+			}
+		}
+		const bool apart = g0.x + g0.w <= b0.x + 0.5 || b0.x + b0.w <= g0.x + 0.5 ||
+				   g0.y + g0.h <= b0.y + 0.5 || b0.y + b0.h <= g0.y + 0.5;
+		printf("    %s, the box at %s: game %.1f,%.1f %.1fx%.1f; box %.1f,%.1f %.1fx%.1f\n",
+		       scene_fit ? "one Scene Fit" : "two Fit to Space",
+		       chat_toward ? "the bottom right" : "the middle", g0.x, g0.y, g0.w, g0.h, b0.x, b0.y, b0.w, b0.h);
+		// (The box's space: right of the game's picture, 470 to 630 across,
+		// 10 to 350 down; the box lies in it by its Align in the space.)
+		const double bx = chat_toward ? 480.0 : 475.0, by = chat_toward ? 250.0 : 130.0;
+		CHECK(std::fabs(b0.x - bx) <= 0.6 && std::fabs(b0.y - by) <= 0.6,
+		      "%s: the box lies where its Align in the space puts it beside the game (%.1f, %.1f; wanted %.1f, %.1f)",
+		      scene_fit ? "one Scene Fit" : "two Fit to Space", b0.x, b0.y, bx, by);
+		CHECK(worst <= 0.5 && apart && std::fabs(b0.w - 150.0) <= 0.6,
+		      "%s, the box set to %s: both at rest for 2 s, apart, the box at its size (moved at most %.2f px)",
+		      scene_fit ? "one Scene Fit" : "two Fit to Space", chat_toward ? "the bottom right" : "the middle",
+		      worst);
+		for (obs_source_t *f : filters) {
+			obs_source_filter_remove(ts, f);
+			obs_source_release(f);
+		}
+		obs_set_output_source(0, ss);
+		obs_source_remove(ts);
+		obs_scene_release(two);
+		obs_source_release(game);
+		obs_source_release(box);
+	}
+
+	obs_set_output_source(0, before);
+	obs_source_release(before);
+	obs_source_remove(ss);
+	obs_scene_release(scene);
+	for (obs_source_t *src : {bg, wall, chat})
+		obs_source_release(src);
+}
 
 // --------------------------------- fit: the size kept on the screen, and Align in the space
 // Resize to fit off keeps the size the owner sees, not a scale of the source
@@ -3553,10 +3873,21 @@ static void fit_enable_test()
 			print("game made small, switched on", filled);
 			const double column = worst_of(std::vector<Rect>(hand.begin() + 1, hand.end()),
 						       std::vector<Rect>(filled.begin() + 1, filled.end()));
-			CHECK(filled[0].any && std::fabs(filled[0].w - hand[0].w) <= 1.0 &&
-				      filled[0].w > small[0].w + 40.0 && column <= 1.0,
-			      "Scene Fit: a game made 60 px smaller by hand fills its space again when switched on (%.0f wide, %.0f by hand, %.0f with the gaps), the column stays (worst %.1f px)",
-			      filled[0].w, small[0].w, hand[0].w, column);
+			// (Rule B, betaNEXT: the game fills its whole space, up to
+			// the gap from the column, where the hand layout left it a
+			// few pixels short within the Size tolerance; the column's
+			// resized sources then lie by their Align in the space in
+			// the few pixels less they have. Up to beta202 the column
+			// stayed to the pixel.)
+			double gap_to_column = 1e9;
+			for (size_t i = 1; i < filled.size(); i++)
+				if (filled[i].any && filled[i].w > 0.0)
+					gap_to_column =
+						std::min(gap_to_column, filled[i].x - (filled[0].x + filled[0].w));
+			CHECK(filled[0].any && std::fabs(filled[0].w - hand[0].w) <= 6.0 &&
+				      filled[0].w > small[0].w + 40.0 && column <= 6.0 && gap_to_column >= kGap - 1.0,
+			      "Scene Fit: a game made 60 px smaller by hand fills its space again when switched on (%.0f wide, %.0f by hand, %.0f with the gaps), the column keeps the gap from it (%.1f px) and stays within a few pixels (worst %.1f px)",
+			      filled[0].w, small[0].w, hand[0].w, gap_to_column, column);
 		}
 		const std::vector<Rect> settled = shows_all(ss);
 		// Saved and loaded on: the homes as they were saved.
@@ -14325,8 +14656,13 @@ static void layout_scenes_test()
 			} else {
 				link_scenes();
 			}
-			fit_for(1, "Fit Layout Camera", camera_name, 2, false);
-			fit_for(1, "Fit Layout Chat", chat_name, 2, false);
+			// (Kept towards the right: under rule B, betaNEXT, Align in the
+			// space alone places a kept-size source, and a column that is
+			// to stay against the screen's edge says so. Set to the middle
+			// it would lie in the middle of the room the capture leaves,
+			// and move with each capture of another shape.)
+			fit_for(1, "Fit Layout Camera", camera_name, 2, false, 4);
+			fit_for(1, "Fit Layout Chat", chat_name, 2, false, 4);
 			if (order == 0) {
 				link_scenes();
 			} else {
@@ -14863,6 +15199,13 @@ int main(int argc, char **argv)
 	}
 	if (getenv("STAGEKIT_TEST_ONLY_FIT_ENABLE")) { // to try that section alone
 		fit_enable_test();
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
+	if (getenv("STAGEKIT_TEST_ONLY_FIT_ALIGN")) { // to try that section alone
+		fit_align_test();
 		obs_shutdown();
 		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
 		       g_failures == 1 ? "" : "s");
@@ -29815,6 +30158,8 @@ int main(int argc, char **argv)
 	fit_owner_test();
 	// Switched on over a layout made by hand (STAGEKIT_TEST_ONLY_FIT_ENABLE).
 	fit_enable_test();
+	// Align in the space decides, and its grid (STAGEKIT_TEST_ONLY_FIT_ALIGN).
+	fit_align_test();
 	// ==== end scene-filters:fit ====
 	// ==== scene-filters:all-sources ====
 	// ---------------------------------------- the scene filters' All sources

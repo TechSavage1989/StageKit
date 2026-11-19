@@ -71,8 +71,7 @@ bool same_box(const Box &a, const Box &b)
 
 bool same_claim(const Claim &a, const Claim &b)
 {
-	return same_box(a.box, b.box) && a.resizes == b.resizes && a.grows_x == b.grows_x && a.grows_y == b.grows_y &&
-	       a.leans_x == b.leans_x && a.leans_y == b.leans_y && same_box(a.least, b.least) &&
+	return same_box(a.box, b.box) && a.resizes == b.resizes && same_box(a.least, b.least) &&
 	       a.has_least == b.has_least && a.rank.by_list == b.rank.by_list && a.rank.level == b.rank.level &&
 	       a.rank.filter == b.rank.filter && a.rank.entry == b.rank.entry && same_box(a.home, b.home) &&
 	       a.has_home == b.has_home;
@@ -536,97 +535,47 @@ FitEngine::~FitEngine()
 		glance_free();
 }
 
+// How the fits of one scene settle (the owner, 2026-11-19, shown a kept-size
+// chat box packed under a resized camera and the same chat box in the middle
+// of the room below it: "b is the correct logic. these features need to work
+// with any layout format in the future, and not be specific to mine").
+//
+// The rule, for any layout: Align in the space always decides where a source
+// lies in its space. A source kept at its size lies there whatever is beside
+// it; a resized picture lies there in the room it does not fill. Nothing is
+// shaped round one scene: a special case has to be something a setting says.
+//
+// What makes that come to rest in one glide is the order things depend on
+// each other in, which is one-way between the two kinds of fit:
+//   1. A fit that resizes its item ("Resize to fit" means fill) goes by what
+//      a kept-size fit of its own standing HOLDS: that source's size at its
+//      home, the place it was given (`Claim::least`). It never looks at where
+//      that source lies in its space. So it takes all the room there is round
+//      the homes of the kept-size sources, and what it takes changes only
+//      when a kept-size source is moved or resized by hand, shown or hidden.
+//   2. A fit that keeps its item's size goes by where the resized pictures
+//      are going (their claims: the picture, not the space it leaves empty),
+//      and lies by its alignment in the room that leaves it. Its home lies
+//      in that room, because the resized fits kept clear of it.
+// A kept-size source that lies elsewhere than at its home therefore moves
+// nothing: no resized fit follows it, and there is nothing to chase. Up to
+// betaNEXT a resized fit went by where the kept-size source was going, and
+// that source by the resized one's claim: centred between a wall and
+// something that makes room, it never came to rest (it made room, the middle
+// moved, it made room again), which is what two older rules were for: one
+// sent the kept-size source against the far, firm side whatever its
+// alignment said, the other packed it against a picture with no use for more
+// room (`soft_sides_of`, `lean_y_of`, `trim_for_kept_in`). Both are gone.
+// (Between two kept-size fits, and between two resized ones, nothing
+// changed: they go by each other's claims as before. Space priority still
+// says who makes room for whom where the user has set it.)
 namespace {
-// Which sides of the free space `goal` end at something another filter
-// resizes to make room (see `FitEngine::soft_sides`).
-void soft_sides_of(const Box &goal, const std::vector<Box> &boxes, const std::vector<bool> &gives,
-		   const std::vector<int> &grows_of, bool &soft_l, bool &soft_r, bool &soft_t, bool &soft_b)
+// Where a kept-size picture lies in a room: by its Align in the space, and
+// by nothing else.
+Box kept_in_room(const Box &room, double kw, double kh, int toward_x, int toward_y)
 {
-	soft_l = soft_r = soft_t = soft_b = false;
-	for (size_t i = 0; i < boxes.size() && i < gives.size(); i++) {
-		if (!gives[i])
-			continue;
-		// (Above or below, only one that would grow in height: see
-		// `lean_axes`. Beside it, as before, whatever its shape.)
-		const int grows = i < grows_of.size() ? grows_of[i] : 3;
-		const Box &o = boxes[i];
-		const bool beside = o.y < goal.y + goal.h && o.y + o.h > goal.y;
-		const bool above_below = (grows & 2) && o.x < goal.x + goal.w && o.x + o.w > goal.x;
-		const bool across = o.y < goal.y + goal.h && o.y + o.h > goal.y;
-		// By which side of the space's middle it lies on, not by
-		// whether it touches the space: it may have grown into
-		// the space since that was worked out, and judged by
-		// touching, the two filters chased each other for good.
-		const double mid_x = goal.x + goal.w / 2.0, mid_y = goal.y + goal.h / 2.0;
-		soft_l = soft_l || (beside && o.x + o.w <= mid_x);
-		soft_r = soft_r || (beside && o.x >= mid_x);
-		soft_t = soft_t || (above_below && !across && o.y + o.h <= mid_y);
-		soft_b = soft_b || (above_below && !across && o.y >= mid_y);
-	}
-}
-
-// Whether a kept-size item in `goal` leans towards the top (see
-// `FitEngine::lean_axes`; nothing leans sideways).
-bool lean_y_of(const Box &goal, const std::vector<Box> &boxes, const std::vector<bool> &gives,
-	       const std::vector<int> &grows, int toward_y)
-{
-	bool soft_l = false, soft_r = false, soft_t = false, soft_b = false;
-	soft_sides_of(goal, boxes, gives, grows, soft_l, soft_r, soft_t, soft_b);
-	bool lean_y = false;
-	for (size_t i = 0; i < boxes.size() && i < gives.size() && i < grows.size(); i++) {
-		if (!gives[i])
-			continue;
-		const Box &o = boxes[i];
-		const bool across = o.y < goal.y + goal.h && o.y + o.h > goal.y;
-		const bool above_below = o.x < goal.x + goal.w && o.x + o.w > goal.x;
-		lean_y = lean_y || (above_below && !across && !(grows[i] & 2));
-	}
-	// (A side that does give way decides, as it did.)
-	return lean_y && toward_y == 0 && soft_t == soft_b;
-}
-
-// Where a kept-size picture goes in a room (see `FitEngine::kept_in`).
-Box kept_in_room(const Box &room, double kw, double kh, int toward_x, int toward_y, bool soft_l, bool soft_r,
-		 bool soft_t, bool soft_b, bool lean_x, bool lean_y)
-{
-	// (A side it is to be kept towards counts unless that side is
-	// the one that gives way: the two would close in for good.)
-	auto along = [](double from, double size, double own, bool soft_near, bool soft_far, bool lean, int toward) {
-		if (soft_near && !soft_far)
-			return from + size - own; // against the far, firm side
-		if (soft_far && !soft_near)
-			return from;
-		if (lean)
-			return from; // packed with a picture that will not grow this way
-		if (toward != 0)
-			return toward < 0 ? from : from + size - own;
-		return from + (size - own) / 2.0;
-	};
-	return Box{along(room.x, room.w, kw, soft_l, soft_r, lean_x, toward_x),
-		   along(room.y, room.h, kh, soft_t, soft_b, lean_y, toward_y), kw, kh};
-}
-
-// A resized picture that leaves its space empty above and below, with a
-// kept-size fit above or below it that leans: the space is cut down to the
-// picture, at the top (see `FitEngine::lean_axes`).
-void trim_for_kept_in(Box &goal, const std::vector<Box> &boxes, const std::vector<int> &leans, double pw, double ph,
-		      int toward_y)
-{
-	if (pw <= 0.0 || ph <= 0.0)
-		return;
-	const double kg = std::min(goal.w / pw, goal.h / ph);
-	const double h = ph * kg;
-	bool ky = false;
-	for (size_t i = 0; i < boxes.size() && i < leans.size(); i++) {
-		const Box &o = boxes[i];
-		const bool across = o.y < goal.y + goal.h && o.y + o.h > goal.y;
-		const bool above_below = o.x < goal.x + goal.w && o.x + o.w > goal.x;
-		ky = ky || (above_below && !across && (leans[i] & 2));
-	}
-	// (Only with the picture in the middle along that axis: kept towards a
-	// side, it already lies against one.)
-	if (ky && toward_y == 0 && goal.h - h > 0.5)
-		goal.h = h;
+	return Box{room.x + (room.w - kw) * (toward_x + 1) / 2.0, room.y + (room.h - kh) * (toward_y + 1) / 2.0, kw,
+		   kh};
 }
 
 // G1 (the owner, 2026-11-18): in their GBA column three resized pictures
@@ -847,14 +796,6 @@ Box space_from(const SpaceInputs &in, SpaceOut *result)
 	// window dragged to another shape is fitted from the first frame, as
 	// away from home, `apply`. Given the home box instead, it could only
 	// shrink there until the new shape was taken half a second later.)
-	if (!kept && goal.w >= 2.0 && goal.h >= 2.0 && in.pw > 0.0 && in.ph > 0.0) {
-		trim_for_kept_in(goal, in.boxes, in.leans, in.pw, in.ph, in.toward_y);
-		const double k = std::min(goal.w / in.pw, goal.h / in.ph);
-		const double w = in.pw * k, h = in.ph * k;
-		out.grows_set = true;
-		out.grows_x = h < goal.h - 0.5;
-		out.grows_y = w < goal.w - 0.5;
-	}
 	out.room = goal;
 	// A home is the space an entry belongs to and the size it was given by
 	// hand, not a place: Align in the space decides where it lies in its
@@ -899,21 +840,12 @@ Box space_from(const SpaceInputs &in, SpaceOut *result)
 }
 
 Box claim_box(const Box &goal, const Box &room, const Box &within, double margin, bool kept, double kept_w,
-	      double kept_h, int toward_x, int toward_y, const std::vector<Box> &boxes, const std::vector<bool> &gives,
-	      const std::vector<int> &grows, bool reshaping, double pw, double ph, bool *lean_y)
+	      double kept_h, int toward_x, int toward_y, bool reshaping, double pw, double ph)
 {
-	if (lean_y)
-		*lean_y = false;
 	if (kept) {
-		bool soft_l = false, soft_r = false, soft_t = false, soft_b = false;
-		soft_sides_of(goal, boxes, gives, grows, soft_l, soft_r, soft_t, soft_b);
-		const bool lean = lean_y_of(goal, boxes, gives, grows, toward_y);
-		if (lean_y)
-			*lean_y = lean;
-		Box box = kept_in_room(goal, kept_w, kept_h, toward_x, toward_y, soft_l, soft_r, soft_t, soft_b, false,
-				       lean);
-		// (At home too: it lies in its space by Align in the space, the
-		// gap inside the screen's edges, as `apply` puts it.)
+		// By its Align in the space, at home too, the gap inside the
+		// screen's edges, as `apply` puts it.
+		Box box = kept_in_room(goal, kept_w, kept_h, toward_x, toward_y);
 		const double gap = std::min({margin, within.w / 2.0 - 1.0, within.h / 2.0 - 1.0});
 		if (within.w - 2.0 * gap >= kept_w)
 			box.x = std::clamp(box.x, within.x + gap, within.x + within.w - gap - kept_w);
@@ -929,7 +861,7 @@ Box claim_box(const Box &goal, const Box &room, const Box &within, double margin
 		   pw * kg, ph * kg};
 }
 
-Box claim_from(const SpaceInputs &in, const SpaceOut *given, bool *lean_y)
+Box claim_from(const SpaceInputs &in, const SpaceOut *given)
 {
 	SpaceOut out;
 	if (given)
@@ -944,7 +876,7 @@ Box claim_from(const SpaceInputs &in, const SpaceOut *given, bool *lean_y)
 	const bool reshaping = !kept && !in.with_switch && in.shape > 0.0 && out.room.w >= 2.0 && out.room.h >= 2.0 &&
 			       std::fabs(pw / ph - in.shape) > 0.01 * (pw / ph) && !out.at_home;
 	return claim_box(out.goal, out.room, in.within, in.margin, kept, in.kept_w, in.kept_h, in.toward_x, in.toward_y,
-			 in.boxes, in.gives, in.grows, reshaping, pw, ph, lean_y);
+			 reshaping, pw, ph);
 }
 
 bool FitEngine::held(HeldSpace &out)
@@ -1000,6 +932,54 @@ bool fit_settings_for(obs_source_t *scene, const char *name, FitSettings &settin
 		}
 	}
 	return found;
+}
+
+bool fit_toward_for(obs_source_t *scene, const char *name, int &toward)
+{
+	FitSettings s;
+	std::string resizing;
+	if (!fit_settings_for(scene, name, s, resizing))
+		return false;
+	toward = toward_number(s.toward_x, s.toward_y);
+	return true;
+}
+
+int fit_set_toward_for(obs_source_t *scene, const char *name, int toward)
+{
+	if (!scene || !name || toward < 0 || toward > 8)
+		return 0;
+	// (Found under the lock, set outside it: an update reaches the engines,
+	// and a Scene Fit's every one of its entries.)
+	std::vector<std::pair<obs_source_t *, std::string>> found;
+	{
+		std::lock_guard lock(g_filters_mutex);
+		for (FitEngine *engine : g_filters) {
+			if (engine->parent() != scene || engine->item_name() != name)
+				continue;
+			const std::string key = engine->look_prefix() + "toward";
+			bool seen = false;
+			for (const auto &[source, k] : found)
+				seen = seen || (source == engine->source() && k == key);
+			if (seen)
+				continue;
+			if (obs_source_t *source = obs_source_get_ref(engine->source()))
+				found.emplace_back(source, key);
+		}
+	}
+	int changed = 0;
+	for (auto &[source, key] : found) {
+		obs_data_t *settings = obs_source_get_settings(source);
+		if (obs_data_get_int(settings, key.c_str()) != toward) {
+			obs_data_t *change = obs_data_create();
+			obs_data_set_int(change, key.c_str(), toward);
+			obs_source_update(source, change);
+			obs_data_release(change);
+			changed++;
+		}
+		obs_data_release(settings);
+		obs_source_release(source);
+	}
+	return changed;
 }
 
 std::vector<HeldSpace> held_spaces(obs_source_t *scene)
@@ -1218,8 +1198,6 @@ void FitEngine::update(obs_data_t *settings)
 	s.px_right = std::max(0.0, lnum("skip_px_right"));
 	s.resize = obs_data_get_bool(settings, l("resize").c_str());
 	// 0 the middle, then top, bottom, left, right, and the four corners.
-	static const int kTowardX[] = {0, 0, 0, -1, 1, -1, 1, -1, 1};
-	static const int kTowardY[] = {0, -1, 1, 0, 0, -1, -1, 1, 1};
 	const long long toward = std::clamp<long long>(obs_data_get_int(settings, l("toward").c_str()), 0, 8);
 	s.toward_x = kTowardX[toward];
 	s.toward_y = kTowardY[toward];
@@ -1543,6 +1521,7 @@ bool FitEngine::prepare(obs_sceneitem_t *item, float tick_seconds, Prep &p)
 	// then ("switched on, ... keeps the place and size it has" in the log),
 	// its kept size read off whatever was shown at that moment.
 	auto not_taken = [&](const char *why) {
+		on_as_put_ = false;
 		if (!std::exchange(take_home_, false))
 			return;
 		obs_log(LOG_INFO, "%s '%s': switched on while '%s' %s; it keeps the size and home it had",
@@ -1934,6 +1913,29 @@ bool FitEngine::prepare(obs_sceneitem_t *item, float tick_seconds, Prep &p)
 		hand_on_ = false;
 		resized_by_hand_ = false;
 		back_to_original_ = false;
+		// Its place (its anchor: the point its space is looked for round,
+		// and where a kept size is held for the resized sources,
+		// `Claim::least`) is taken afresh where it lies, unless it lies
+		// exactly where this fit last put it: then nothing was done to it
+		// while the filter was off, and its place is the one it was given
+		// before. A kept-size source may lie elsewhere than at its place,
+		// where its Align in the space puts it in the room it is left; its
+		// place taken there, the resized sources beside it would take the
+		// room it left at every switch off and on, and a layout nobody
+		// touched would shift each time.
+		if (std::exchange(on_as_put_, false)) {
+			vec2 at, box;
+			obs_sceneitem_get_pos(item, &at);
+			obs_sceneitem_get_bounds(item, &box);
+			if (obs_sceneitem_get_bounds_type(item) == OBS_BOUNDS_SCALE_INNER &&
+			    obs_sceneitem_get_rot(item) == 0.0f && std::fabs(at.x - set_x_) <= 0.5 &&
+			    std::fabs(at.y - set_y_) <= 0.5 && std::fabs(box.x - set_bw_) <= 0.5 &&
+			    std::fabs(box.y - set_bh_) <= 0.5) {
+				s.have_anchor = true;
+				std::lock_guard lock(mutex_);
+				settings_.have_anchor = true;
+			}
+		}
 		if (!s.resize) {
 			// (Read off it below, as after a resize by hand.)
 			have_keep_ = false;
@@ -2360,8 +2362,7 @@ void FitEngine::observe(const std::vector<Obstacle> &in_way, bool arriving, floa
 		visible_ = *visible;
 	std::vector<Box> boxes;
 	std::vector<bool> gives;
-	std::vector<int> grows;
-	std::vector<int> leans;
+	std::vector<bool> holds;  // what a kept-size fit holds at its home
 	std::vector<int64_t> ids; // which item each is, and whether its
 	std::vector<bool> said;   // filter said where it is going
 	std::vector<bool> passed; // one of the items never in the way
@@ -2375,8 +2376,7 @@ void FitEngine::observe(const std::vector<Obstacle> &in_way, bool arriving, floa
 		above.push_back(o.above);
 		boxes.push_back(o.box);
 		gives.push_back(o.gives);
-		grows.push_back((o.grows_x ? 1 : 0) | (o.grows_y ? 2 : 0));
-		leans.push_back(o.leans);
+		holds.push_back(o.holds);
 		ids.push_back(o.id);
 		said.push_back(o.said);
 		passed.push_back(o.passed);
@@ -2405,8 +2405,8 @@ void FitEngine::observe(const std::vector<Obstacle> &in_way, bool arriving, floa
 	// they are now: `motion`.)
 	if (home_settling_ && homes_changed)
 		home_settle_ = 0.0;
-	bool moved = false,
-	     stepped = ids != ids_ || said != said_ || passed != passed_ || above != above_ || homes_changed;
+	bool moved = false, stepped = ids != ids_ || said != said_ || passed != passed_ || above != above_ ||
+				      holds != holds_ || homes_changed;
 	if (!stepped)
 		for (size_t i = 0; i < boxes.size(); i++)
 			if (differs(boxes[i], boxes_[i]))
@@ -2417,10 +2417,8 @@ void FitEngine::observe(const std::vector<Obstacle> &in_way, bool arriving, floa
 	}
 	// Which of them give way can change while nothing moves (another
 	// filter has just said where its item is going).
-	if ((gives != gives_ || grows != grows_ || leans != leans_) && !moved && !stepped) {
+	if (gives != gives_ && !moved && !stepped) {
 		gives_ = gives;
-		grows_ = grows;
-		leans_ = leans;
 		changed_ = true;
 	}
 	if (moved) {
@@ -2430,8 +2428,7 @@ void FitEngine::observe(const std::vector<Obstacle> &in_way, bool arriving, floa
 		// on every frame of the move. No looking meanwhile either.
 		boxes_ = boxes;
 		gives_ = gives;
-		grows_ = grows;
-		leans_ = leans;
+		holds_ = holds;
 		ids_ = ids;
 		said_ = said;
 		passed_ = passed;
@@ -2448,8 +2445,7 @@ void FitEngine::observe(const std::vector<Obstacle> &in_way, bool arriving, floa
 		// "adjust multiple times before settling".)
 		boxes_ = boxes;
 		gives_ = gives;
-		grows_ = grows;
-		leans_ = leans;
+		holds_ = holds;
 		ids_ = ids;
 		said_ = said;
 		passed_ = passed;
@@ -2573,8 +2569,7 @@ bool FitEngine::solve(Prep &p, float seconds, bool first_pass, bool &moved)
 		in.passed = passed_;
 		in.above = above_;
 		in.gives = gives_;
-		in.grows = grows_;
-		in.leans = leans_;
+		in.holds = holds_;
 		in.homes = homes_;
 		in.has_homes = has_homes_;
 		in.at = at_;
@@ -2595,10 +2590,6 @@ bool FitEngine::solve(Prep &p, float seconds, bool first_pass, bool &moved)
 			// (What a tool is told: the space as it is now taken.)
 			in.home_space = home_space_;
 			in.have_home_space = have_home_space_;
-		}
-		if (out.grows_set) {
-			space_grows_x_ = out.grows_x;
-			space_grows_y_ = out.grows_y;
 		}
 		{
 			std::lock_guard lock(held_mutex_);
@@ -2627,7 +2618,7 @@ bool FitEngine::solve(Prep &p, float seconds, bool first_pass, bool &moved)
 		bool there = false;
 		if (rebased && p.pw > 0.0 && p.ph > 0.0) {
 			const Box shows = claim_box(goal, room, within, s.margin, kept, kept_w, kept_h, s.toward_x,
-						    s.toward_y, boxes_, gives_, grows_, false, p.pw, p.ph);
+						    s.toward_y, false, p.pw, p.ph);
 			there = std::fabs(cur_.x - shows.x) <= 1.0 && std::fabs(cur_.y - shows.y) <= 1.0 &&
 				std::fabs(cur_.w - shows.w) <= 1.0 && std::fabs(cur_.h - shows.h) <= 1.0;
 		}
@@ -2687,62 +2678,24 @@ Box FitEngine::advance(const Prep &p, float seconds)
 	return cur_;
 }
 
-// Which sides of the free space end at something another filter resizes
-// to make room (a game fitted beside it). Centring between such a thing and
-// a wall never comes to rest: it makes room, the middle moves, it makes room
-// again. So against one of those the item goes to the other side at once,
-// and stays.
-void FitEngine::soft_sides(bool &soft_l, bool &soft_r, bool &soft_t, bool &soft_b) const
-{
-	soft_l = soft_r = soft_t = soft_b = false;
-	if (!have_goal_)
-		return;
-	soft_sides_of(goal_, boxes_, gives_, grows_, soft_l, soft_r, soft_t, soft_b);
-}
-
-// A kept-size item beside the picture of a resizing fit that would not grow
-// towards it: a camera held by the column's width, with room above and below
-// its picture that it has no use for. Going to the far side of such a thing
-// (as from one that does grow) left that room as empty space inside the
-// camera's box, and the item more than the gap from what shows of the camera:
-// the owner's chat box (2026-11-18, "the chat box is more than 30px from the
-// visible border of the camera box"). Above and below, the two are packed
-// towards the top instead: the item lies at the top of its space, and the
-// resized picture at the top of its own (`trim_for_kept_in`),
-// whichever of the two is above, so the item is the gap from the picture and
-// neither moves again. (Packing towards whichever lies above, not towards the
-// item's side: a centred picture and an item going against it crept to the
-// wall one glide at a time.) Only with the item in the middle of its space
-// along that axis: kept towards a side, it goes there as before. Side by
-// side nothing leans: a 4:3 game held by its height beside a kept-size chat
-// column gives way sideways as it always did, and the column stays against
-// the screen's edge (packing the two to the left moved saved layouts).
-void FitEngine::lean_axes(const Prep &p, bool &lean_x, bool &lean_y) const
-{
-	lean_x = lean_y = false;
-	if (!p.free || !have_goal_)
-		return;
-	lean_y = lean_y_of(goal_, boxes_, gives_, grows_, p.s.toward_y);
-}
-
-// Where a kept-size picture goes in a space.
+// Where a kept-size picture goes in a space: where its Align in the space
+// puts it, whatever lies beside it (see the note on settling above
+// `kept_in_room`).
 Box FitEngine::kept_in(const Prep &p, const Box &room, double kw, double kh) const
 {
-	bool soft_l = false, soft_r = false, soft_t = false, soft_b = false;
-	bool lean_x = false, lean_y = false;
-	if (p.free) {
-		soft_sides(soft_l, soft_r, soft_t, soft_b);
-		lean_axes(p, lean_x, lean_y);
-	}
-	return kept_in_room(room, kw, kh, p.s.toward_x, p.s.toward_y, soft_l, soft_r, soft_t, soft_b, lean_x, lean_y);
+	return kept_in_room(room, kw, kh, p.s.toward_x, p.s.toward_y);
 }
 
 // Switched on (it was seen off): the layout is taken as it is. Nothing of
 // where it was going or what it held before counts any more, the place it
 // has is its anchor (with no wait), the size it has the size kept, and both
-// together its home (`prepare`, `home_from_item`).
+// together its home (`prepare`, `home_from_item`). (Its anchor is kept after
+// all when the item still lies exactly where this fit last put it:
+// `on_as_put_`, asked in `prepare`, which has the item.)
 void FitEngine::switched_on()
 {
+	std::lock_guard lock(mutex_);
+	on_as_put_ = have_set_ && settings_.have_anchor;
 	take_home_ = true;
 	as_is_ = true; // the layout as it is: it says nothing until placed
 	unplaced_for_ = 0.0;
@@ -2751,7 +2704,6 @@ void FitEngine::switched_on()
 	have_claim_ = box_asked_ = false;
 	glide_ = 1.0;
 	at_home_ = false;
-	std::lock_guard lock(mutex_);
 	dirty_ = true;
 	settings_.have_anchor = false;
 }
@@ -2909,32 +2861,36 @@ void FitEngine::publish_claim(const Prep &p)
 		// drawn in the space before the cut, `apply`: that is where it shows.)
 		const bool kept = !s.resize && have_keep_;
 		claim.box = claim_box(goal_, room_goal_, outer, s.margin, kept, p.keep_w, p.keep_h, s.toward_x,
-				      s.toward_y, boxes_, gives_, grows_, !kept && reshaping(p), p.pw, p.ph,
-				      &claim.leans_y);
-		if (!kept) {
-			// More width helps a picture that leaves room above or
-			// below it, more height one that leaves room at its sides;
-			// one that fills its space both ways (or is held by its
-			// width and given more height) has no use for either.
-			claim.grows_x = space_grows_x_;
-			claim.grows_y = space_grows_y_;
-		}
-		// What it holds whatever a fit it makes room for does: for one
-		// keeping its size, that size round its home, on the screen. (One
-		// that resizes holds nothing: it makes room by shrinking, so it is
-		// never covered. Its home as a point was tried: it changed the
-		// shape of the higher fits' spaces, and two of them sharing one
+				      s.toward_y, !kept && reshaping(p), p.pw, p.ph);
+		// What it holds whatever the other fits do: for one keeping its
+		// size, that size at its home, on the screen. The fits that resize
+		// their items go by this, and so does any fit it makes room for
+		// (see the note on settling above `kept_in_room`): never by
+		// `claim.box`, which is where it lies in the room they leave it.
+		// (One that resizes holds nothing: it makes room by shrinking, so
+		// it is never covered. Its home as a point was tried: it changed
+		// the shape of the higher fits' spaces, and two of them sharing one
 		// column then crept for good, half a pixel a tick.)
-		if (s.have_anchor && !s.resize && have_keep_) {
+		// Its home is its anchor, the middle of its item's box when its
+		// place was taken. What is fitted of it need not lie in the middle
+		// of that box (a shadow's room on one side, a group that draws to
+		// one side of itself): where it lay in the box at this size is
+		// worked out from what is not fitted on each side now, so that a
+		// layout made by hand with the gaps is the layout the resized
+		// sources go by, to the pixel.
+		if (s.have_anchor && !s.resize && have_keep_ && p.pw > 0.0 && p.ph > 0.0) {
 			claim.has_least = true;
 			const double gap = std::min({s.margin, outer.w / 2.0 - 1.0, outer.h / 2.0 - 1.0});
 			auto on = [](double centre, double size, double from, double room) {
 				return room >= size ? std::clamp(centre - size / 2.0, from, from + room - size)
 						    : from + (room - size) / 2.0;
 			};
-			claim.least = Box{on(s.anchor_x, p.keep_w, outer.x + gap, outer.w - 2.0 * gap),
-					  on(s.anchor_y, p.keep_h, outer.y + gap, outer.h - 2.0 * gap), p.keep_w,
-					  p.keep_h};
+			const double kx = p.keep_w / p.pw, ky = p.keep_h / p.ph;
+			const double off_x = ((p.left - p.crop.left) - (p.right - p.crop.right)) / 2.0 * kx;
+			const double off_y = ((p.top - p.crop.top) - (p.bottom - p.crop.bottom)) / 2.0 * ky;
+			claim.least = Box{on(s.anchor_x + off_x, p.keep_w, outer.x + gap, outer.w - 2.0 * gap),
+					  on(s.anchor_y + off_y, p.keep_h, outer.y + gap, outer.h - 2.0 * gap),
+					  p.keep_w, p.keep_h};
 		}
 		claim.has_home = home_box(p, claim.home);
 		say(obs_sceneitem_get_id(p.item), claim);
@@ -3135,7 +3091,8 @@ void FitEngine::tick(float seconds, FitScan &scan)
 				scan.forget();
 			scan.gather(parent_, p.item, this);
 			std::vector<Obstacle> in_way;
-			scan.obstacles(parent_, p.item, p.s.skip, p.s.skip_rule, this, p.how, in_way, &rank_);
+			scan.obstacles(parent_, p.item, p.s.skip, p.s.skip_rule, this, p.how, in_way, &rank_,
+				       p.s.resize);
 			bool at_rest = false;
 			observe(in_way, arriving(), seconds, at_rest, &scan.visible_ids());
 			if (at_rest)
@@ -3235,7 +3192,7 @@ void FitScan::look(obs_source_t *scene, obs_sceneitem_t *other, const Measure &h
 
 void FitScan::obstacles(obs_source_t *scene, obs_sceneitem_t *self, const std::vector<std::string> &skip,
 			bool keep_skipped, const void *asking, const Measure &how, std::vector<Obstacle> &out,
-			const Rank *mine)
+			const Rank *mine, bool mine_resizes)
 {
 	out.clear();
 	visible_.clear();
@@ -3265,6 +3222,21 @@ void FitScan::obstacles(obs_source_t *scene, obs_sceneitem_t *self, const std::v
 		const bool lower = claimed && mine && outranks(*mine, claim.rank);
 		if (lower && !claim.has_least)
 			continue;
+		// Placed by a fit of the same standing that keeps its size, and the
+		// asking fit resizes its item: in its way by what that fit holds too
+		// (its size at its home), never by where it lies in its space by its
+		// Align in the space. A resized source fills the room round the
+		// kept-size sources' homes; a kept-size source then lies by its
+		// alignment in the room that leaves it, and moves no resized source
+		// when it does: one-way again, and nothing to chase (see the note on
+		// settling above `kept_in_room`).
+		const bool held = claimed && !lower && mine && mine_resizes && !claim.resizes && claim.has_least &&
+				  !outranks(claim.rank, *mine);
+		auto holding = [&](bool passed) {
+			Obstacle o{claim.least, id, true, false, passed, false};
+			o.holds = true;
+			return o;
+		};
 		bool passed = false;
 		if (!g.claimed) {
 			const char *name = obs_source_get_name(obs_sceneitem_get_source(g.item));
@@ -3286,15 +3258,12 @@ void FitScan::obstacles(obs_source_t *scene, obs_sceneitem_t *self, const std::v
 		// was taken by the sources beside it, which jumped back when it
 		// drew again.) A dock press goes by what is drawing, below.
 		if (automatic && claimed) {
-			if (lower) {
-				out.push_back(Obstacle{claim.least, id, true, false, passed, false});
+			if (lower || held) {
+				out.push_back(holding(passed));
 				continue;
 			}
 			const bool above = outranks(claim.rank, *mine);
-			out.push_back(Obstacle{
-				claim.box, id, true, claim.resizes && !above, passed, above, claim.grows_x,
-				claim.grows_y,
-				!claim.resizes && !above ? (claim.leans_x ? 1 : 0) | (claim.leans_y ? 2 : 0) : 0});
+			out.push_back(Obstacle{claim.box, id, true, claim.resizes && !above, passed, above});
 			out.back().home = claim.home;
 			out.back().has_home = claim.has_home;
 			continue;
@@ -3327,9 +3296,7 @@ void FitScan::obstacles(obs_source_t *scene, obs_sceneitem_t *self, const std::v
 			// (Only a dock press gets here: a fit of its own took every
 			// claimed item above, ranks and all. To a press, another
 			// fit's item is where that fit is taking it.)
-			out.push_back(Obstacle{claim.box, id, true, claim.resizes, passed, false, claim.grows_x,
-					       claim.grows_y,
-					       !claim.resizes ? (claim.leans_x ? 1 : 0) | (claim.leans_y ? 2 : 0) : 0});
+			out.push_back(Obstacle{claim.box, id, true, claim.resizes, passed, false});
 			out.back().home = claim.home;
 			out.back().has_home = claim.has_home;
 			continue;
@@ -3566,12 +3533,19 @@ void fit_add_controls(obs_properties_t *props, const std::string &prefix, const 
 	}
 	obs_property_t *toward = obs_properties_add_list(props, key("toward").c_str(), obs_module_text("Fit.Toward"),
 							 OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
-	// Saved by number: new ones go at the end.
-	int toward_value = 0;
-	for (const char *name :
-	     {"Fit.Toward.Middle", "Fit.Toward.Top", "Fit.Toward.Bottom", "Fit.Toward.Left", "Fit.Toward.Right",
-	      "Fit.Toward.TopLeft", "Fit.Toward.TopRight", "Fit.Toward.BottomLeft", "Fit.Toward.BottomRight"})
-		obs_property_list_add_int(toward, obs_module_text(name), toward_value++);
+	// Saved by number: new ones go at the end. Listed as OBS's Edit
+	// Transform lays out a bounding box's alignment, row by row from the
+	// top left, each with its arrow (`kTowardGrid`). OBS's filter window has
+	// no control a plugin can draw itself, so a grid of nine buttons cannot
+	// be put there; nine tick boxes would be nine rows. (The dock has the
+	// real grid.)
+	static const char *const kTowardNames[9] = {"Fit.Toward.Middle",     "Fit.Toward.Top",
+						    "Fit.Toward.Bottom",     "Fit.Toward.Left",
+						    "Fit.Toward.Right",      "Fit.Toward.TopLeft",
+						    "Fit.Toward.TopRight",   "Fit.Toward.BottomLeft",
+						    "Fit.Toward.BottomRight"};
+	for (int cell = 0; cell < 9; cell++)
+		obs_property_list_add_int(toward, obs_module_text(kTowardNames[kTowardGrid[cell]]), kTowardGrid[cell]);
 	set_tip(toward, obs_module_text("Fit.Toward.Tip"));
 	obs_property_t *tolerance = obs_properties_add_float_slider(props, key("tolerance").c_str(),
 								    obs_module_text("Fit.Tolerance"), 0.0, 100.0, 1.0);

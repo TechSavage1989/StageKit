@@ -155,6 +155,13 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
 
 ## Things that will bite you
 
+- **Fit behaviour is general and must work for any layout** (the owner, 2026-11-19: "b is the
+  correct logic. these features need to work with any layout format in the future, and not be
+  specific to mine"). Never shape a rule of Fit to Space, Scene Fit or the dock's Fit to space
+  round one user's scene: a special case must be something a setting says. *Align in the space*
+  (`toward`) always decides where a source lies in its space, kept at its size or resized,
+  whatever lies beside it (rule B, see *Two Fit to Space filters in one scene*).
+
 - **Shaders are only proven on OpenGL.** The tests run libobs with OpenGL. Windows uses Direct3D, which
   compiles `.effect` files when OBS loads the plugin. A build passing CI says nothing about that. Keep
   shader code to what both accept: `float(i)` casts, constant loop bounds with `break`, `SampleLevel`
@@ -404,8 +411,9 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   (beta200; see *Nothing is read back while a size changes*), so a capture with no image yet
   and a widget with nothing to show keep their room. A dock press requires a drawn image.
   Fitted obstacles use their published image claim. In `spaces_kept`, predict the neighboring
-  image with `space_from` and `claim_from` and compare its position and size within 0.5 px, its
-  growth flags and its lean. A change of unused room alone is allowed. A home still being found
+  image with `space_from` and `claim_from` and compare its position and size within 0.5 px (and,
+  for a fit that resizes beside a kept-size one, what that one holds where it is put,
+  `MovedBox::keeps`/`held`). A change of unused room alone is allowed. A home still being found
   is evaluated as it will settle. Round a shadow sized in screen pixels the item maps as its image
   (`MovedBox::keeps_outside`: what another fit sees of it outside the image keeps its size). An
   item the fit did not see when it worked its space out (`SpaceInputs::visible`: hidden then)
@@ -978,38 +986,26 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
 - **Two Fit to Space filters in one scene go by each other's destinations** (`Claim`, `claim_set`,
   `claim_of` in `src/placement/fit-item.cpp`): each says where its item will be once it has got
   there and whether it resizes it, and the other takes that for the obstacle, a claimed group as
-  one thing. A kept-size item with something that resizes on one side of it and something firm on
-  the other goes against the firm side at once (`kept_in`, `soft_l` and so on); centring between
-  them never came to rest, because the other made room each time. The owner's game and chat box
-  shifted "a number of times" after a scene switch or a camera being hidden. Which side gives way
-  is judged by which side of the space's middle it lies on, never by whether it touches the space:
-  judged by touching, the two filters chased each other without end.
-- **A resized picture that has no use for more height is packed with a kept-size item above or
-  below it, top first** (`grows_x`/`grows_y` and `leans_x`/`leans_y` on `Claim`, `lean_axes`, `trim_for_kept_in` in
-  `src/placement/fit-engine.cpp`; beta194, 2026-11-18). The owner, of a Scene Fit with their camera
-  (resized, held by the column's width) above the chat box (keeping its size): "I don't think use
-  visible pixels is working as intended. the chat box is more than 30px from the visible border of
-  the camera box, but the bounding box of the camera box is exactly 30 from each edge". Measuring
-  was right (a claim is the picture, not the box); the chat box went to the far side (the canvas's
-  bottom) because the camera resizes, and the camera's space then reached down to it, its picture
-  centred with 22 and 24 px empty above and below (test canvas). Now a resizing fit's claim says
-  whether more width or more height would make its picture larger (it leaves room the other way);
-  only along an axis it would grow in is it a side that gives way (`soft_sides`). Along an axis it
-  would not grow in, a kept-size item lies at the top of its space and says so in its
-  claim, and the resized fit cuts its space down to its picture at the top: whichever of
-  the two is above stays against its edge and the other comes up the gap from it, in one move, and
-  nothing answers anything after (5 s watched). Packing towards the item's side instead crept, one
-  glide at a time. Only with *Align in the space* in the middle along that axis on both; a side
-  that does give way still decides as before. Same in Scene Fit and Fit to Space, with *Use visible
-  pixels* or without. Tested in `[fit visible pixels: ...]` (`fit_visible_test`, alone:
-  `STAGEKIT_TEST_ONLY_FIT_VISIBLE`; a Cropped View of an async camera). The owner's flashing chat
-  box in the same scene was not reproduced. **Vertically only**: side by side nothing leans and
-  nothing is trimmed (`leans_x` is never set, `soft_sides`' `beside` ignores `grows_x`), so a 4:3
-  game held by its height beside a kept-size chat column still counts as giving way, the column
-  stays against the screen's edge and the game centred in the rest, exactly as at beta181. The
-  first build packed side by side too and moved that layout (column 73 px off the right edge on
-  the test canvas); tested since in the same section. Horizontal packing would be a new layout
-  rule: only at the owner's word.
+  one thing. **Rule B** (betaNEXT; the note above `kept_in_room` in `src/placement/fit-engine.cpp`):
+  a kept-size item lies where its *Align in the space* puts it (`kept_in_room` takes only the
+  alignment), and nothing chases because the dependence is one-way: a fit that resizes its item
+  goes by what a kept-size fit of its own standing *holds* (`Claim::least`, its size at its home,
+  `Obstacle::holds`, `FitScan::obstacles`' `mine_resizes`), never by where that item lies in its
+  space; the kept-size fit goes by the resized ones' claims. Between two kept-size fits, or two
+  resized ones, they go by each other's claims as before. Up to beta202 a kept-size item beside
+  something that resizes went against the far, firm side whatever its alignment (`soft_sides_of`)
+  and was packed with a resized picture above or below it (`lean_y_of`, `trim_for_kept_in`):
+  both removed, with `grows_*`/`leans_*` on `Claim` and `Obstacle`. Switched on with its item
+  exactly where it last put it, a fit keeps its anchor (`on_as_put_`), or the resized sources
+  beside a kept-size one would take its room at every switch off and on. Tested in
+  `[fit align: ...]` (`fit_align_test`, alone with `STAGEKIT_TEST_ONLY_FIT_ALIGN`): each place,
+  kept and resized, and two fits beside each other at rest for 2 s, in a Scene Fit and as two
+  Fit to Space filters.
+- **A resized picture that has no use for more height was packed with a kept-size item above or
+  below it, top first** (`lean_y_of`, `trim_for_kept_in`; beta194 to beta202, for the owner's
+  chat box under their camera: "the chat box is more than 30px from the visible border of the
+  camera box"). Removed in betaNEXT by rule B: such a chat box lies by its *Align in the space* in
+  the room under the camera; set it to *The top* to have it the gap under the camera's picture.
 - **A resized picture's box is its picture where another resized fit lies beyond it** (`trim_to_picture_in`
   in `src/placement/fit-engine.cpp`, beta194, 2026-11-18). The owner's GBA mode: two 3:2 handheld
   windows and a 16:9 camera view share a column, all resized, all held by its width; the camera's
@@ -1120,10 +1116,17 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
 - **Fit to Space's *Keep it towards*** (`toward`, saved by number, append-only: middle, top,
   bottom, left, right, then the four corners): where an item lies in its space when it does not
   fill it. A kept-size item goes against that side (`kept_in`), a resized picture is aligned in
-  OBS's bounding box (`obs_sceneitem_set_bounds_alignment`). A side where a resizing filter's item
-  makes room (`soft_*`) still wins over it, or the two would close in for good. The owner asked
-  for "a directional bias or preferred direction ... prevent it from going in an undesirable
-  direction".
+  OBS's bounding box (`obs_sceneitem_set_bounds_alignment`). Since betaNEXT nothing else wins over
+  it (rule B above). The owner asked for "a directional bias or preferred direction ... prevent it
+  from going in an undesirable direction". **Shown as OBS's nine squares** (the owner: "similar
+  Alignment design as the built in bounds alignment for the transform menu"): the filters' list
+  is in grid order, row by row from the top left, each with an arrow (`kTowardGrid` in
+  `fit-engine.hpp` maps a cell to the saved number; OBS's filter window has no custom control),
+  and the dock's Place tab has a real 3x3 grid of 12 px checkable `QToolButton`s beside Fit to
+  space (`fitAlign0`..`8`, `show_fit_align`, `set_fit_align`): it shows the first selected
+  source's fit (`fit_toward_for`) and sets every fit of that source (`fit_set_toward_for`, a
+  Scene Fit's shared set in *Same for all sources*), or `ArrangeOptions::place_toward`
+  (`stagekit.place.toward`) for a source with no fit, which `fit_to_space` then uses.
 - **Fit to Space's *Same place in these scenes*** (`share_scenes`, a PickList, empty as it comes; `share_place` in
   `src/dock/arrange.*`, `fit_item_shared` in `src/placement/fit-item.*`): each time the filter's
   item has come to rest in a scene that is showing, the same source's copies in the scenes that
@@ -1236,14 +1239,8 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     from home to home (`was_home && at_home_`) and an item let go of jumped (`have_cur_ =
     false`). `rebased_` makes `solve` set off also when the goal is the old one (more than a
     pixel away).
-  - **Not changed, and for the owner to decide:** a kept-size source set to *The middle* that
-    lies above or below a resized picture with no use for more height (a camera held by the
-    column's width) is still packed against that picture at the top of its space, the gap away
-    (`lean_y_of`, beta194, from the owner's own "the chat box is more than 30px from the visible
-    border of the camera box"), and one beside a resized source that does grow goes against the
-    far, firm side (`soft_sides_of`). So the owner's chat box under the camera packs under it;
-    it does not sit in the middle of the column's rest. The release notes' *Good to know* says
-    so. Changing it means deciding which of the two requests wins there.
+  - The owner decided the case left open here (packing against a resized picture, the far firm
+    side) for rule B in betaNEXT: see *Two Fit to Space filters in one scene*.
   Tested in `fit_keep_size_test` (*The middle* centred, *The bottom right* at the bottom right,
   a resized picture 4 px smaller kept and aligned, one 153 px smaller filled) and in
   `fit_enable_test`.
@@ -1349,7 +1346,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   - A resized entry without a home is watched while the mouse holds it too (before, the fit put
     its box back on every frame of the drag).
   **Not shortened:** `kComingBack`, the 0.15 s for other items on their way, and everything two
-  fits answer each other by (claims, `soft_sides_of`, `lean_y_of`, the passes): those are what
+  fits answer each other by (claims, what a kept-size fit holds, the passes): those are what
   keep two fits from chasing. The settling that no longer holds the goal was a wait for the
   measuring of the home's space, not against chasing: entries go by each other's claims
   meanwhile, as every fit without a home always has. Tested in `fit_tool_test` case 19: held

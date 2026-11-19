@@ -64,6 +64,10 @@ struct ArrangeOptions {
 	// The Place tab's edge distance: how far short of the screen's edges and
 	// of other items the slides stop and Fit to space leaves its item.
 	int place_margin = 30;
+	// The Place tab's alignment grid for Fit to space, for a source with no
+	// fit of its own (Align in the space by its saved number, fit::kTowardX;
+	// 0 the middle, as it comes).
+	int place_toward = 0;
 };
 
 ArrangeOptions arrange_options();

@@ -413,17 +413,15 @@ nearest.
   around it: a group, a widget or a nested scene that is larger than its image is fitted, kept
   and centred by the image, and the empty part of its box may reach into the gap.
 - Two Fit to Space filters in one scene work together: each goes by where the other is taking its
-  item, so they settle in one move. An item that keeps its size, with a resized item on one side
-  and the screen's edge or a fixed item on the other, sits against the fixed side; the resized item
-  takes the rest. When the resized item is above or below it and could not use more height (a
-  camera held by the column's width), the two are packed together towards the top instead, so the
-  item keeps the gap from the image you see, not from the empty part of the camera's box.
+  item, so they settle in one move. Wherever they are, each lies in its space where its *Align in
+  the space* puts it: a resized item fills the room round where the items that keep their size
+  belong, and an item that keeps its size lies by its alignment in the room that leaves it. The
+  same rule holds for any layout; nothing is special to one arrangement.
   Where another resized source is above, below or beside a resized one, the resized one's box is
   just its image (a source that keeps its size there changes nothing: a capture keeps its whole
   space beside a camera and chat column), so several resized sources share a column (two handheld windows and a camera,
   say) without one box taking the room the others' images need. Side by
-  side this does not happen: a 4:3 game beside a chat column stays as described above. That needs *Align in the space* set to the middle on both; the same goes for a
-  Scene Fit's sources.
+  side this does not happen. The same goes for a Scene Fit's sources.
 - **Space priority** (in the free space) says which source gets the room when two want it:
   - *Takes space first*: the source takes the space it would have if the sources that share space
     or make room were not there, and never shrinks for them; they fit around it. It never covers
@@ -465,14 +463,14 @@ nearest.
   fill it, which is an image of another shape than the space, or an item that keeps its size. A
   side or a corner puts it against that side, the gap away, with all the room left over on the
   other side, so it only ever moves that way: a camera kept towards the top stays at the top, and a
-  chat box kept towards the bottom stays put when the camera above it is hidden. A side where
-  another fitted item makes room for this one is not used. It is always obeyed, also for a layout
-  you made by hand with the filter off: **switching the filter on moves a source to where its
-  alignment puts it** if you had put it somewhere else in its space (it glides there). One case
-  goes its own way: a source that keeps its size and is set to *The middle*, lying above or below
-  a resized image that has no use for more height (a camera as wide as its column), is kept the
-  gap from that image rather than in the middle of the room left over; choose a side or a corner
-  to place it yourself.
+  chat box kept towards the bottom stays put when the camera above it is hidden. It always
+  decides, whatever lies beside the item, for a source kept at its size and a resized one alike,
+  in Fit to Space, in Scene Fit and for the dock's Fit to space. It is also obeyed for a layout you
+  made by hand with the filter off: **switching the filter on moves a source to where its
+  alignment puts it** if you had put it somewhere else in its space (it glides there). The list
+  shows the nine places row by row with an arrow each, as OBS's Edit Transform lays out a
+  bounding box's alignment (OBS's filter window cannot show a grid of buttons); the dock has the
+  grid itself (below).
 - An item that is hidden is left exactly where it is and holds no space, so the others take its
   room. Shown again, it is where it was, and the others make way for it in one move.
 - An item that is showing but has no image yet (a display capture before its first frame, a
@@ -873,7 +871,10 @@ at the bottom, whichever tab is open.
   still moving is one step for Undo.
 - **Fit to space** uses the selected source's *Gap*, *Align in the space*, *Use visible pixels*
   and *Ignore shadows & outlines* whenever it has a fit entry, including when the filter is off.
-  Without an entry, it uses the dock's *Edge distance* and measuring options and centres the image.
+  Without an entry, it uses the dock's *Edge distance* and measuring options, and the alignment
+  grid beside it. That grid, nine small squares as in OBS's Edit Transform, shows the selected
+  source's *Align in the space* and sets it on its Fit to Space or Scene Fit entry when pressed;
+  for a source with no fit it is how the dock's Fit to space places it.
   Visible images set the limits. Standby twins, private sources, the Morph layer and sources
   held hidden by Scene Modes leave their space available. A briefly hidden fitted source can
   keep its last image clear for up to two seconds. The tool checks whether a neighbouring image
