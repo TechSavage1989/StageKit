@@ -23,7 +23,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
-## Outline corners, matching outlines, solid through Morph, a smoother glow (0.1.0-betaNEXT)
+## Outline corners, matching outlines, solid through Morph, a smoother glow (0.1.0-beta207)
 
 Branch `fix/outline-glow`. Not pushed. Four of the owner's items and one from the coordinator, in
 Shadow, Glow & Outline and Scene Shadow (see AGENTS.md, *Outline corners, matching widths ...*):
