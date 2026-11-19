@@ -176,7 +176,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   (`obs_scene_enum_items`), from a tick callback (`obs_add_tick_callback`: OBS holds a lock round all
   of them) or while an item of the scene is drawn. Go by the box as it is there
   (`item_box(item, true)`, `scene_box(scene, item, true)`, `shown_of`): in a scene on screen OBS
-  worked every item's place out as it drew the last frame. The item Morph does (betaNEXT).
+  worked every item's place out as it drew the last frame. The item Morph does (beta199).
 - **The owner's emulators run full-screen at 2560x1440 with black bars**; their old scenes differ only
   by crop (320 px a side for 4:3, 343 for SNES, 150 for GBA) inside one shared 1754.5x1268.5 box at
   30.5, 85.5. Auto Frame's automatic trim exists for this. It reads back a thin copy of the capture
@@ -597,7 +597,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   Since beta147 a press is acted on in the filter's next tick (`press_`, the last of a frame), not
   on the thread that pressed: a Link Visibility acts on the same items from its tick, and two
   threads setting one item's transitions at once can each let go of the other's.
-- **Nothing is changed while a scene is gone through** (betaNEXT). `obs_scene_enum_items` holds
+- **Nothing is changed while a scene is gone through** (beta199). `obs_scene_enum_items` holds
   the scene's video and audio mutexes for the whole walk, and `obs_enum_scenes` OBS's list of
   sources. Show in Scenes (`each_item`) and Link Visibility (`follow_elsewhere`) used to call
   `apply_item_change` and `set_item_visible` from inside the walk: transitions made and unmade,
@@ -858,7 +858,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   processor's side only: a slow shader shows up as OBS's own rendering lag, not here. Ask the owner
   for the log when frames drop; do not guess. A tick callback that is no source's own
   (`obs_add_tick_callback`) is timed with `timed_tick_callback(id, tick)`: give OBS what it returns.
-  The item Morph's is `stagekit_item_morph` (betaNEXT); before, its cost was in no timing line.
+  The item Morph's is `stagekit_item_morph` (beta199); before, its cost was in no timing line.
 - **Fit to Space's free space takes the roomiest of the spaces that are as good as equal**
   (`free_space`: pictures within the filter's *Tolerance*, 8 px as it comes; the owner asked for it to be a setting). The owner's music widget, set to the same width as the
   column above it, was read a few pixels wider (what shows is measured on a small copy), and the
@@ -1192,7 +1192,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     found from a 256 px copy read back at once, **once per item per change** (kept in `seen_`,
     let go by `forget_sizes` and at each new item change): never per frame. (Read back in the
     frame it is drawn in, it makes the graphics card finish all it was given first: a stall of
-    its own in the first frame of a change between two different sources. Noted in betaNEXT and
+    its own in the first frame of a change between two different sources. Noted in beta199 and
     left: read two frames later, the change would begin by the boxes and jump to the parts.) The same source in
     both scenes is not looked at; its box is the same part of it either way.
     *Ignore shadows & outlines* (`no_shadows`, on as it comes; the owner: "add ignore shadows,
@@ -1270,7 +1270,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     that transition draws the item itself: OBS's video time is the same in a frame's tick and its
     drawing. Do not time it any other way, or there is a frame with both or with neither.
   - **The layer is put into its scene and taken out on OBS's own thread, never from the tick**
-    (betaNEXT; `ui_work`, a task asked for with `obs_queue_task(OBS_TASK_UI, ..., false)`
+    (beta199; `ui_work`, a task asked for with `obs_queue_task(OBS_TASK_UI, ..., false)`
     through `src/common/ui-task.*` and never waited for). The owner (2026-11-19): OBS "probably
     froze. it's happened a bunch of times while pressing streamdeck buttons, and the average time
     to render has been a lot higher". No crash file: a hang. Four freezes in their logs (beta179,
@@ -2977,7 +2977,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   before `scenes_loaded()`; **and in the very tick an item is added to a scene in view**
   (`has_new_items`, beta186: when `scene_revision()` has changed, the scene's item ids are
   compared with the flags', and a new one makes the look due at once). The item Morph's layer is
-  put into the scene on OBS's own thread (betaNEXT) and only starts drawing from the item Morph's
+  put into the scene on OBS's own thread (beta199) and only starts drawing from the item Morph's
   next tick callback (`take_up_layers`), which OBS calls before it ticks sources; so this
   filter's tick in that frame, or an earlier one, has looked at the layer before the frame that
   first draws it. Up to beta174 an item not yet looked at was masked and

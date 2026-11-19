@@ -9,11 +9,11 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | `fix/item-morph-freeze`, on `main` after beta198. Release notes in `docs/releases/0.1.0-betaNEXT.md` (to be numbered just before pushing). Not pushed. |
+| Working branch | `fix/item-morph-freeze`, on `main` after beta198. Release notes in `docs/releases/0.1.0-beta199.md` (to be numbered just before pushing). Not pushed. |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 
-## Morph between sources: the layer on OBS's own thread (0.1.0-betaNEXT)
+## Morph between sources: the layer on OBS's own thread (0.1.0-beta199)
 
 The owner (2026-11-19): OBS "probably froze. it's happened a bunch of times while pressing
 streamdeck buttons, and the average time to render has been a lot higher". No crash file, so a
