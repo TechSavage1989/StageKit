@@ -198,16 +198,20 @@ Two more things about the capture blended in and the bloom:
   everything and lets colours run into white: the look of obs-shaderfilter's bloom shader, with
   100 % its strength of 1). Bloom now goes to 1000 %. The light always spreads at least as far as
   *Blur*, so bloom never makes the background sharper.
-- **Darkest level** (0 %, off, as it comes): the background never gets darker than this, even
-  while the capture blended in is dark. Parts darker than the level are lifted smoothly; parts
-  brighter than one and a half times the level are left as they are. **Lift toward**: *The
-  background image* (the image or source the background is made from, blurred and coloured as
-  the background is, so a dark capture shows the usual background; with nothing under
-  *Background from*, the colour is used) or *A colour* (**Lift colour**, a mid grey as it comes:
-  dark parts take on that colour, as bright as the level). A capture that is black all over for
-  two seconds already counts as no capture; this is for one that is dark but not empty.
+- **Darkest level** (0 %, off, as it comes): how bright the darkest parts of the background
+  become, even while the capture blended in is dark. **Lift toward**: *The background image*
+  (the image or source the background is made from, where the background has it, at the level's
+  share of its brightness: 1 % barely shows it, 10 % is a dim image, 100 % is the image itself;
+  with nothing under *Background from*, the colour is used) or *A colour* (**Lift colour**, a mid
+  grey as it comes: black takes on that colour, as bright as the level). Parts twice as bright as
+  that are left as they are, with a smooth change between, and the image itself is never made
+  brighter. The lift is made before the blur, so the blur, the mosaic, the trail and bloom act on
+  it as on the rest of the background (it is as soft as the blur, and a mosaic cell is one
+  colour); brightness, vignette and the texture overlay come after it (a strong vignette can
+  darken the corners below the level). A capture that is black all over for two seconds already
+  counts as no capture; this is for one that is dark but not empty.
 
-![Darkest level: off, toward a grey, toward a red, toward the background image](docs/images/ambient-darkest.png)
+![Darkest level: off; toward a grey and a red at 30 %; toward the background image at 1 %, 10 % and 100 %; with a strong Gaussian blur; with hexagons](docs/images/ambient-darkest.png)
 
 Put it in one shared scene and nest that scene wherever you need the background.
 

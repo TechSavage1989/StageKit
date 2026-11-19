@@ -9,9 +9,74 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | `feat/dock-fit-tool` (the dock's Fit to space and Edit transform; betaNEXT), rebased on `main` after beta194. Next: the new collection |
+| Working branch | `fix/darkest-level-soft` (Ambient Background: Darkest level is a soft floor, betaNEXT), on `main` after beta193. Next: the new collection |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
+
+## Ambient Background: Darkest level is a soft floor, under the blur (0.1.0-betaNEXT)
+
+Branch `fix/darkest-level-soft`, on `main` after beta193. Notes: `docs/releases/0.1.0-betaNEXT.md`.
+No Stream Deck file changed. The owner (2026-11-19), with a screenshot (a mostly black live
+capture, hexagons, Darkest level 1 % toward a bright magenta image, the black parts the image at
+full strength with a hard edge against a dark circle): "Even at 1%, Darkest level seems to bright
+a lot. it's also not smoothly blended. the darkest level should be effected by the blur settings".
+
+- **Cause** (beta192's `PSLift`): `c = lerp(rgb, fill, under * lift_image)` with
+  `under = 1 - smoothstep(0, 1.5 x level, luma)` put the whole image wherever the picture was
+  darker than 1.5 x the level, whatever the level (it only set the threshold), and the pass ran
+  last, after blur, mosaic, bloom, brightness and vignette: a band a pixel or two wide next to the
+  blurred black, never blurred or cut into cells.
+- **Formula** (`PSLift` in `data/effects/stagekit-looks.effect`): the floor `F` is the image times
+  the level, or the colour scaled to the level's luminance (grey making up what a saturated
+  colour cannot give). With `l` the part's luminance, `Lf` the floor's and a knee `k`: `h =
+  saturate(1 - |l - Lf| / k)`, `m = max(l, Lf) + k h^2 / 4` (a quadratic smooth maximum),
+  `out = rgb + F (m - l) / Lf`. `k` is `Lf` (as wide as the floor is bright: from `2 Lf` up
+  nothing changes), except toward the image, where it is `min(Lf, Li - Lf)`, `Li` the image's
+  own luminance there. Black becomes `F` exactly (1 %: 1 % of the image), the luminance rises
+  smoothly and never falls (in the part's brightness and in the level), and only the floor's
+  colour is added (no hue shift for the picture's own bright parts). The narrower knee toward
+  the image was found in review: as wide as `Lf` it reached the image's own brightness above
+  50 % and made the image itself brighter, by `(level - 0.5)^2 / level` (a quarter at 100 %),
+  so the image round a capture was brighter than in its black parts and dimmed when a dark
+  capture came in. Now no part toward the image ends brighter than itself or the image: up to
+  50 % nothing differs, the image alone is left as it is at every level, and 100 % is a plain
+  `max(l, Li)` (`k` 0; a kink in the curve there, which no monotonic curve that keeps both black
+  to the image and the image as it is can avoid; the blur after smooths it). Chosen over a cap
+  of the added luminance at `max(l, Li)` (the other reviewer's way): the same up to 50 %, but
+  that one has a kink above 50 % where the cap starts, this one is smooth below 100 %. Chosen over
+  `rgb + F w(l)` with a smoothstep weight falling to 0 at 2 to 2.5 x the level: that adds half to
+  two thirds of the floor to a part as bright as it, this a quarter, and nothing from `2 Lf` up.
+- **Where** (`render` in `src/ambient/ambient-background.cpp`): straight after `tr_scene_` is put
+  together (image, capture, the kept picture of a change), into `tr_lift_` at half size; the
+  blur or trail, bloom and the mosaic take the lifted picture, `Final` (overlay, vignette,
+  brightness) comes after. `tr_scene_` stays unlifted (`tr_was_` copies it). The image fill is
+  `tr_scene_` while it holds the image alone, else `draw_base` into `tr_fill_` at the same size and
+  place, no longer blurred (`fill_blur_` removed); `lift_brightness` and `lift_vignette` removed
+  from the effect and the code. Level 0: no pass, the picture to the bit as before.
+- **Settings** unchanged (`darkest_level`, `darkest_fill`, `darkest_color`, same ranges and
+  defaults); a saved level looks much darker toward the image now, which is the fix. Tooltips of
+  *Darkest level* and *Lift toward* say what the level now means.
+- **Tests:** `[ambient background: darkest level]`, alone with
+  `STAGEKIT_TEST_ONLY_AMBIENT_DARKEST`, 15 checks, all passed: toward the image (mean 119.7 of 255
+  in the black part) the black is 1.26 at 1 %, 12.07 at 10 %, 36.00 at 30 %, the image itself at
+  100 % (0.00 off); 0 exactly as off; the largest neighbour step under a Gaussian of 80 is 4.93 /
+  4.21 / 3.93 at 1 / 10 / 30 % against 5.00 with no lift; 96 square mosaic cells each one colour
+  (0 apart). The same new checks against beta192's code: 6 failures (119.65 at 1 %, a step of
+  82.28, cells 201 apart). Also run: `BLUR_OFF_DRAW`, `TOOLTIPS`, all passed. The full run was not
+  made here (machine limits). Contact sheet `docs/images/ambient-darkest.png` regenerated (eight
+  frames). After review: 16 checks, all passed; 75 % added (89.77 against 89.74) and the image
+  alone lifted toward itself at 30, 75 and 100 % (0.000 off; with the knee as wide as `Lf`,
+  7.67 at 75 % and 21.53 at 100 %, a failure). The eight frames of the sheet are byte for byte
+  as before (frame 6, 100 %, is the capture's black part, which was already the image), so the
+  sheet was not made again. Final now comes after the lift, so a Brightness under 100 % or a
+  vignette of 2/3 or more takes the colour floor below the level (beta192 guaranteed it after
+  them): the tooltip and the notes say so.
+- **Not proven:** Direct3D (the shader keeps to the rules: no loops, no `inout`, no `atan2`, a
+  ternary on a scalar condition as beta192 had, `saturate`, `abs`, `min`, `max`, `lerp`); not
+  seen on the owner's machine.
+
+## Window switcher: Game area only (0.1.0-beta193)
+
 
 ## Dock: Fit to space and Edit transform (0.1.0-betaNEXT, plugin 0.33.0.0)
 

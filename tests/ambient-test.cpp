@@ -7172,9 +7172,15 @@ static void link_transitions_test(uint32_t w, uint32_t h)
 // it would count as no capture after two seconds and the image would show
 // anyway) is the whole background. Off, the background is black; with a
 // colour, nothing is darker than the level; toward the image, the black
-// shows the usual background and the white patch is left as it is. Frames
-// go to `sheet` when it is given (docs/images/ambient-darkest.png). Run
-// alone with STAGEKIT_TEST_ONLY_AMBIENT_DARKEST.
+// shows the image at the level's share of its brightness, and the white
+// patch is left as it is. Then (2026-11-19): "Even at 1%, Darkest
+// level seems to bright a lot. it's also not smoothly blended. the darkest
+// level should be effected by the blur settings": at 1 % the black is all
+// but black, at 10 % a tenth of the image, at 100 % the image; the lift is
+// made before the blur, so a strong Gaussian leaves no step and a mosaic
+// cell is one colour; at 0 nothing changes. Frames go to `sheet` when it is
+// given (docs/images/ambient-darkest.png). Run alone with
+// STAGEKIT_TEST_ONLY_AMBIENT_DARKEST.
 static void ambient_darkest_test(uint32_t w, uint32_t h, const char *base_image, const std::string &sheet)
 {
 	printf("\n[ambient background: darkest level]\n");
@@ -7310,19 +7316,171 @@ static void ambient_darkest_test(uint32_t w, uint32_t h, const char *base_image,
 	      "a red lifts as bright, and red (darkest %.1f; red %.0f against green %.0f)", red_darkest, r / 1e3,
 	      g / 1e3);
 
-	// What the image looks like by itself, lifted the same (its own dark
-	// parts are lifted too, the same way).
+	// Toward the background image: the black shows the image at the level's
+	// share of its brightness. The image by itself, unlifted, is what it is
+	// measured against (in the black part, well clear of the patch).
 	const std::vector<uint8_t> image_alone = shot("x image alone", [](obs_data_t *d) {
+		obs_data_set_double(d, "darkest_level", 0);
 		obs_data_set_int(d, "darkest_fill", 0);
 		obs_data_set_int(d, "live_mode", 0);
 	});
-	const std::vector<uint8_t> toward_image =
-		shot("4 toward the background image", [](obs_data_t *d) { obs_data_set_int(d, "live_mode", 2); });
-	CHECK(opaque(toward_image) && region_diff(toward_image, image_alone, false) < 4.0 &&
-		      region_diff(toward_image, off, true) < 1.0 && region_mean(toward_image, false) > 40.0,
-	      "toward the background image the black shows the image's own look (%.2f off it; black part %.1f) and the white patch is left as it is (%.2f)",
-	      region_diff(toward_image, image_alone, false), region_mean(toward_image, false),
-	      region_diff(toward_image, off, true));
+	const double image_mean = region_mean(image_alone, false);
+	struct Toward {
+		double level;
+		const char *name;
+		std::vector<uint8_t> px;
+	};
+	std::vector<Toward> towards = {{1, "4 toward the image, 1 %", {}},
+				       {10, "5 toward the image, 10 %", {}},
+				       {30, "x toward the image, 30 %", {}},
+				       {75, "x toward the image, 75 %", {}},
+				       {100, "6 toward the image, 100 %", {}}};
+	for (Toward &t : towards)
+		t.px = shot(t.name, [&](obs_data_t *d) {
+			obs_data_set_int(d, "live_mode", 2);
+			obs_data_set_double(d, "darkest_level", t.level);
+		});
+	const double m1 = region_mean(towards[0].px, false), m10 = region_mean(towards[1].px, false),
+		     m30 = region_mean(towards[2].px, false), m75 = region_mean(towards[3].px, false),
+		     m100 = region_mean(towards[4].px, false);
+	double patch_moved = 0.0;
+	for (const Toward &t : towards)
+		patch_moved = std::max(patch_moved, region_diff(t.px, off, true));
+	CHECK(image_mean > 80.0 && m1 <= 0.03 * 255.0 && std::abs(m1 - 0.01 * image_mean) < 1.5,
+	      "toward the background image at 1 %% the black is all but black: %.2f of 255 (the image is %.1f; 1 %% of it %.2f; at most %.2f)",
+	      m1, image_mean, 0.01 * image_mean, 0.03 * 255.0);
+	CHECK(std::abs(m10 - 0.10 * image_mean) < 2.0 && std::abs(m30 - 0.30 * image_mean) < 2.5,
+	      "at 10 %% it is a tenth of the image (%.2f against %.2f), at 30 %% three tenths (%.2f against %.2f)", m10,
+	      0.10 * image_mean, m30, 0.30 * image_mean);
+	CHECK(region_diff(towards[4].px, image_alone, false) < 1.5 && std::abs(m75 - 0.75 * image_mean) < 3.0,
+	      "at 100 %% the black shows the image itself (%.2f off it; black part %.1f, the image %.1f), at 75 %% three quarters of it (%.2f against %.2f)",
+	      region_diff(towards[4].px, image_alone, false), m100, image_mean, m75, 0.75 * image_mean);
+	CHECK(region_mean(off, false) < m1 && m1 < m10 && m10 < m30 && m30 < m75 && m75 < m100 && patch_moved < 1.0,
+	      "the higher the level, the brighter the black (0: %.2f, 1 %%: %.2f, 10 %%: %.2f, 30 %%: %.2f, 75 %%: %.2f, 100 %%: %.2f), and the white patch is left as it is (at most %.2f off)",
+	      region_mean(off, false), m1, m10, m30, m75, m100, patch_moved);
+
+	// The image by itself, lifted toward itself, is left as it is at every
+	// level: above 50 % a knee as wide as the floor reached the image's own
+	// brightness and made it brighter (by a quarter at 100 %), so the image
+	// round a capture was brighter than the image in the capture's black
+	// parts, and it dimmed when a dark capture came in (found in review).
+	double alone_off = 0.0;
+	std::string alone_offs;
+	for (double level : {30.0, 75.0, 100.0}) {
+		const std::vector<uint8_t> px = shot("x image alone, lifted", [&](obs_data_t *d) {
+			obs_data_set_int(d, "live_mode", 0);
+			obs_data_set_double(d, "darkest_level", level);
+		});
+		const double off_by = mean_abs_diff(px, image_alone);
+		alone_off = std::max(alone_off, off_by);
+		char part[48];
+		snprintf(part, sizeof part, "%s%.0f %%: %.3f", alone_offs.empty() ? "" : ", ", level, off_by);
+		alone_offs += part;
+	}
+	CHECK(alone_off < 0.5,
+	      "the background image alone, lifted toward itself, is left as it is at every level (%s off the image)",
+	      alone_offs.c_str());
+
+	// Level 0 is no lift at all: the picture is the one drawn before the
+	// Darkest level existed, to the bit, whatever Lift toward says.
+	const std::vector<uint8_t> zero = shot("x level 0", [](obs_data_t *d) {
+		obs_data_set_int(d, "live_mode", 2);
+		obs_data_set_double(d, "darkest_level", 0);
+		obs_data_set_int(d, "darkest_fill", 1);
+	});
+	CHECK(mean_abs_diff(zero, off) == 0.0, "at 0 %% the background is exactly as with no Darkest level (%.4f)",
+	      mean_abs_diff(zero, off));
+
+	// The lift comes before the blur: next to a white patch under a strong
+	// Gaussian, the lifted black runs into the white as smoothly as the
+	// black does with no lift. (Made after the blur, as in beta192, the
+	// image was laid over everything darker than one and a half times the
+	// level: at 1 % a jump of the image's whole brightness within a pixel or
+	// two of the black's edge, the owner's hard edge.)
+	auto most_step = [&](const std::vector<uint8_t> &px) {
+		double most = 0.0;
+		for (uint32_t y = 0; y + 1 < h; y++)
+			for (uint32_t x = 0; x + 1 < w; x++) {
+				const size_t i = (size_t(y) * w + x) * 4;
+				const double here = luma(px, i);
+				most = std::max(most, std::abs(here - luma(px, i + 4)));
+				most = std::max(most, std::abs(here - luma(px, i + size_t(w) * 4)));
+			}
+		return most;
+	};
+	const std::vector<uint8_t> soft_off = shot("x Gaussian, off", [](obs_data_t *d) {
+		obs_data_set_int(d, "darkest_fill", 0);
+		obs_data_set_int(d, "blur_type", 1);
+		obs_data_set_double(d, "blur", 80);
+	});
+	const double step_off = most_step(soft_off);
+	double step_lifted = 0.0;
+	std::string steps;
+	for (double level : {1.0, 10.0, 30.0}) {
+		const char *name = level == 10.0 ? "7 a strong Gaussian blur, 10 %" : "x Gaussian";
+		const std::vector<uint8_t> px =
+			shot(name, [&](obs_data_t *d) { obs_data_set_double(d, "darkest_level", level); });
+		const double step = most_step(px);
+		step_lifted = std::max(step_lifted, step);
+		char part[64];
+		snprintf(part, sizeof part, "%s%.0f %%: %.2f", steps.empty() ? "" : ", ", level, step);
+		steps += part;
+		if (level != 10.0 && !sheet.empty())
+			remove((sheet + "/" + name + ".rgba").c_str());
+	}
+	CHECK(step_off > 0.5 && step_lifted <= step_off + 1.0,
+	      "under a strong Gaussian the lifted black runs into the white patch smoothly: the largest step between neighbouring pixels is %s, against %.2f with no lift",
+	      steps.c_str(), step_off);
+
+	// And the mosaic: every cell one colour, the lift inside it. Squares of
+	// 40 px laid from the middle (as the shader lays them), no blur, 30 %
+	// toward the image: each cell, a few pixels in from its sides, is one
+	// colour.
+	const std::vector<uint8_t> cells = shot("x squares", [](obs_data_t *d) {
+		obs_data_set_int(d, "blur_type", 0);
+		obs_data_set_double(d, "blur", 0);
+		obs_data_set_int(d, "pixel_style", 1);
+		obs_data_set_double(d, "pixel_size", 40);
+		obs_data_set_double(d, "darkest_level", 30);
+	});
+	int worst_cell = 0, cells_seen = 0;
+	double cell_mean = 0.0;
+	for (int cy = -5; cy <= 5; cy++)
+		for (int cx = -9; cx <= 9; cx++) {
+			const int x0 = int(w) / 2 + cx * 40, y0 = int(h) / 2 + cy * 40;
+			if (x0 + 3 < 0 || y0 + 3 < 0 || x0 + 37 > int(w) || y0 + 37 > int(h))
+				continue;
+			// (What is not the black part is the top left quarter: a cell
+			// whose top left corner is in the black part is all in it.)
+			if (!in_black(uint32_t(x0 + 3), uint32_t(y0 + 3)))
+				continue;
+			int lo[3] = {255, 255, 255}, hi[3] = {0, 0, 0};
+			for (int y = y0 + 3; y < y0 + 37; y++)
+				for (int x = x0 + 3; x < x0 + 37; x++) {
+					const size_t i = (size_t(y) * w + size_t(x)) * 4;
+					for (int c = 0; c < 3; c++) {
+						lo[c] = std::min(lo[c], int(cells[i + c]));
+						hi[c] = std::max(hi[c], int(cells[i + c]));
+					}
+				}
+			for (int c = 0; c < 3; c++)
+				worst_cell = std::max(worst_cell, hi[c] - lo[c]);
+			cell_mean += luma(cells, (size_t(y0 + 20) * w + size_t(x0 + 20)) * 4);
+			cells_seen++;
+		}
+	cell_mean /= std::max(cells_seen, 1);
+	CHECK(cells_seen >= 10 && worst_cell <= 2 && cell_mean > 0.15 * image_mean,
+	      "with a mosaic every cell of the lifted black is one colour (%d cells, at most %d apart inside one; mean %.1f)",
+	      cells_seen, worst_cell, cell_mean);
+	shot("8 hexagons, 10 %", [](obs_data_t *d) {
+		obs_data_set_int(d, "pixel_style", 2);
+		obs_data_set_double(d, "pixel_size", 30);
+		obs_data_set_double(d, "darkest_level", 10);
+		obs_data_set_double(d, "blur", 12);
+	});
+	obs_data_set_int(s, "pixel_style", 0);
+	obs_data_set_double(s, "blur", 12);
+	obs_data_set_double(s, "darkest_level", 30);
 
 	// No background from at all: the colour.
 	const std::vector<uint8_t> no_image = shot("x no image", [](obs_data_t *d) {
@@ -7336,6 +7494,7 @@ static void ambient_darkest_test(uint32_t w, uint32_t h, const char *base_image,
 	      "with no background image to lift toward, the colour is used (darkest %.1f; black part %.1f)",
 	      no_image_darkest, region_mean(no_image, false));
 	obs_data_set_string(s, "image", base_image);
+	obs_data_set_int(s, "darkest_fill", 0);
 
 	// Every uniform of the Lift technique is set at every run: drawn after
 	// another user of the shared effect has given them other values, the
@@ -7370,8 +7529,6 @@ static void ambient_darkest_test(uint32_t w, uint32_t h, const char *base_image,
 				gs_effect_set_texture(gs_effect_get_param_by_name(looks, "image2"), tex);
 				f1("lift_level", 0.9f);
 				f1("lift_image", 0.0f);
-				f1("lift_brightness", 0.2f);
-				f1("lift_vignette", 1.0f);
 				vec4 other;
 				vec4_set(&other, r, g, b, 1.0f);
 				gs_effect_set_vec4(gs_effect_get_param_by_name(looks, "lift_color"), &other);
@@ -7411,8 +7568,10 @@ static void ambient_darkest_test(uint32_t w, uint32_t h, const char *base_image,
 		      mean_abs_diff(bright_on, bright_off));
 	}
 	if (!sheet.empty())
-		for (const char *name : {"x image alone", "x no image", "x own", "x own colour", "x own image again",
-					 "x bright on", "x bright off"})
+		for (const char *name :
+		     {"x image alone", "x toward the image, 30 %", "x toward the image, 75 %", "x image alone, lifted",
+		      "x level 0", "x Gaussian, off", "x squares", "x no image", "x own", "x own colour",
+		      "x own image again", "x bright on", "x bright off"})
 			remove((sheet + "/" + name + ".rgba").c_str());
 
 	obs_source_dec_showing(bg);

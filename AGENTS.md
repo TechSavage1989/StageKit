@@ -1958,23 +1958,51 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   colour*; `darkest_color`, a mid grey, shown only for a colour; beta192). The owner: "is there
   a way I can prevent the background from ever becoming completely black, even when the ambient
   background is capturing a live feed that has completely black content?", then "add darkest
-  level as a configurable option". The last pass (`Lift` in `stagekit-looks.effect`, full size,
-  raw values like `Final`, before the hand-off that follows `gs_get_linear_srgb()`): toward the
-  image a part becomes the fill as far as it is dark (`1 - smoothstep(0, 1.5 x level, luma)`);
-  then, with either fill, the floor `luma + level x (1 - smoothstep(0, 1.5 x level, luma))`,
-  which never falls under the level, is made up by adding the fill's colour scaled to unit
-  luminance (grey for what a saturated colour cannot give). From 1.5 x the level up nothing
-  changes. The image fill is the picture before `Final` itself while the scene holds the image
-  alone (no capture, no change under way: no cost), else the image drawn alone into `tr_fill_`
-  and blurred by a `KawaseBlur` of its own (`fill_blur_`) at *Blur* (not for Temporal), with no
-  mosaic or bloom; `Lift` gives it `Final`'s brightness and vignette. No image under *Background
-  from*: the colour. A black capture counts as no capture after two seconds
-  (`live_shows_something`), so this is for a capture that is dark but not empty. Every uniform
-  of `Lift` (`lift_*`, `image`, `image2`) is set at each run; the test gives the shader other
-  values first for each fill, a new colour each time (a colour left in the shader by the first
-  would hide an unset `lift_color` in the second). Tested in `[ambient background:
-  darkest level]` (`ambient_darkest_test`, alone `STAGEKIT_TEST_ONLY_AMBIENT_DARKEST`; sheet
-  `docs/images/ambient-darkest.png` from `$out/darkest`). Not run on Direct3D.
+  level as a configurable option". **The level is how bright black becomes, and the lift is
+  made before the blur** (2026-11-19, betaNEXT; the owner, with a mostly black capture,
+  hexagons and 1 % toward a bright image: "Even at 1%, Darkest level seems to bright a lot. it's
+  also not smoothly blended. the darkest level should be effected by the blur settings"). Up to
+  then the `Lift` pass ran last, on the finished picture, and laid the *whole* image over
+  anything darker than 1.5 x the level (the level only set that threshold), in a band a pixel or
+  two wide next to the blurred black: the full image at 1 %, a hard edge, and never blurred or
+  cut into cells. Now `Lift` (in `stagekit-looks.effect`) runs on `tr_scene_` (the image with
+  the capture over it, half size, raw values) into `tr_lift_`, and that is what the blur or
+  trail, bloom (its bright parts too) and the mosaic take; `Final`'s overlay, vignette and
+  brightness come after, for the lift as for the rest (nothing is pre-applied to the fill any
+  more; so, unlike beta192, a Brightness under 100 % or a vignette of 2/3 or more can take a
+  colour floor below the level, which the README and the tooltip say). `tr_scene_` itself stays unlifted: it is what a change of capture keeps (`tr_was_`), and
+  lifting a kept picture again would lift it twice. The floor `F`: toward the image, the image
+  times the level (100 % is the image itself); toward a colour, the colour scaled to the
+  level's luminance (grey for what a saturated colour cannot give). Then, with `l` the part's
+  luminance and `Lf` the floor's, a quadratic smooth maximum with a knee `k`:
+  `h = saturate(1 - |l - Lf| / k)`, `m = max(l, Lf) + k h^2 / 4`, and
+  `out = rgb + F (m - l) / Lf`: black is `F` exactly, the luminance rises smoothly and never
+  falls (no band), and what is added is the floor's colour, so a part's own bright colours keep
+  their hue. `k` is `Lf` (nothing changes from `2 Lf` up), except toward the image, where it is
+  `min(Lf, Li - Lf)` with `Li` the image's own luminance there: as wide as `Lf` above 50 % the
+  knee reached the image's own brightness and made the image itself brighter, by a quarter at
+  100 % (found in review before release), so the image round a capture was brighter than the
+  image in its black parts and dimmed when a dark capture came in. Now no part toward the image
+  is made brighter than itself or the image: the image alone is left as it is at every level,
+  up to 50 % nothing differs, and 100 % is `max(l, Li)` (a plain maximum, `k` 0). The image fill is
+  `tr_scene_` itself while it holds the image alone (no capture, no change under way: no copy),
+  else the image drawn alone into `tr_fill_` the same way and size, unblurred (the blur comes
+  after). No image under *Background from*: the colour. A black capture counts as no capture
+  after two seconds (`live_shows_something`), so this is for a capture that is dark but not
+  empty. Cost while on: one half-size pass (it was full size), plus the image drawn once more
+  while a capture is in (it was also blurred). Every uniform of `Lift` (`lift_level`,
+  `lift_color`, `lift_image`, `image`, `image2`; `lift_brightness` and `lift_vignette` are gone)
+  is set at each run; the test gives the shader other values first for each fill, a new colour
+  each time (a colour left in the shader by the first would hide an unset `lift_color` in the
+  second). A saved level keeps its number and now looks much darker toward the image: that is
+  the fix. Tested in `[ambient background: darkest level]` (`ambient_darkest_test`, alone
+  `STAGEKIT_TEST_ONLY_AMBIENT_DARKEST`; sheet `docs/images/ambient-darkest.png` from
+  `$out/darkest`): 1 %, 10 %, 30 %, 75 % and 100 % against the image's own brightness,
+  monotonic, the image alone lifted toward itself unchanged at 30, 75 and 100 % (the knee as
+  wide as `Lf`: 21.5 levels off at 100 %), 0
+  exactly off, the largest neighbour step under a strong Gaussian no larger than without the
+  lift (beta192's code: 82 against 5), every square mosaic cell one colour (beta192's: 201
+  apart). Not run on Direct3D.
 - **Auto Capture keeps its capture shown** (`keep_ready`, on by default, `obs_source_inc_showing` on
   the capture). OBS stops a Game Capture about 0.3 s after the last scene showing it is left and
   hooks it again on the way back; the owner's log showed that at every scene switch.
