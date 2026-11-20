@@ -1666,6 +1666,7 @@ obs_properties_t *get_properties(void *data)
 	for (const auto &entry : shapes)
 		obs_property_list_add_int(shape, entry.text, (int)entry.value);
 	obs_property_list_add_int(shape, obs_module_text("Frame.Shape.Custom"), (int)Shape::Custom);
+	set_tip(shape, obs_module_text("Frame.Shape.Tip"));
 	obs_property_set_modified_callback(shape, shape_modified);
 	obs_properties_add_float(props, "custom_w", obs_module_text("Frame.CustomW"), 0.01, 1000.0, 0.01);
 	obs_properties_add_float(props, "custom_h", obs_module_text("Frame.CustomH"), 0.01, 1000.0, 0.01);

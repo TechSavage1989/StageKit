@@ -149,7 +149,7 @@ void register_fade_zoom()
 		obs_properties_t *props = obs_properties_create();
 		obs_property_t *zoom = obs_properties_add_float_slider(props, "zoom", obs_module_text("FadeZoom.Zoom"),
 								       10.0, 100.0, 1.0);
-		obs_property_float_set_suffix(zoom, " %");
+		obs_property_float_set_suffix(zoom, "%");
 		set_tip(zoom, obs_module_text("FadeZoom.Zoom.Tip"));
 		add_easing_properties(props, "");
 		return props;

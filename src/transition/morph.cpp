@@ -1560,9 +1560,9 @@ obs_properties_t *get_properties(void *data)
 	// any other transition, whose own settings follow (`unpaired|g`).
 	obs_property_t *unpaired = obs_properties_add_list(props, "unpaired", obs_module_text("Morph.Alone"),
 							   OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
-	obs_property_list_add_string(unpaired, obs_module_text("Morph.Others.Fade"), kUnpairedFade);
-	obs_property_list_add_string(unpaired, obs_module_text("Morph.Others.Zoom"), kUnpairedZoom);
-	obs_property_list_add_string(unpaired, obs_module_text("Morph.Others.Slide"), kUnpairedSlide);
+	obs_property_list_add_string(unpaired, obs_module_text("Morph.Alone.Fade"), kUnpairedFade);
+	obs_property_list_add_string(unpaired, obs_module_text("Morph.Alone.Zoom"), kUnpairedZoom);
+	obs_property_list_add_string(unpaired, obs_module_text("Morph.Alone.Slide"), kUnpairedSlide);
 	obs_property_list_add_string(unpaired, obs_module_text("MakeRoom.Option"), kUnpairedRoom);
 	obs_property_list_add_string(unpaired, obs_module_text("Change.Cut"), kTransitionCut);
 	const char *kind = nullptr;

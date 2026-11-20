@@ -781,6 +781,7 @@ public:
 			// Qt reads a single "&" as a keyboard-shortcut marker.
 			auto *button = new QPushButton(tr_text(effect.text).replace("&", "&&"), add_box);
 			button->setObjectName(effect.object_name);
+			button->setToolTip(tr_text((std::string(effect.text) + ".Tip").c_str()));
 			const std::string id = effect.filter_id;
 			const bool on_scene = effect.on_scene;
 			QObject::connect(button, &QPushButton::clicked, this,

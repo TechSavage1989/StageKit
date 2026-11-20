@@ -16,7 +16,10 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/timing.hpp"
 
 #include "../common/switch-ramp.hpp"
+#include "../common/tooltip.hpp"
 
+#include <initializer_list>
+#include <utility>
 #include <obs-module.h>
 #include <graphics/vec4.h>
 #include <plugin-support.h>
@@ -180,6 +183,14 @@ obs_properties_t *get_properties(void *)
 		obs_properties_add_int_slider(props, "ramp_out_ms", obs_module_text("Zoom.RampOut"), 0, 5000, 50);
 	obs_property_int_set_suffix(out, " ms");
 	add_easing_properties(props, "");
+	for (const auto &[name, key] :
+	     std::initializer_list<std::pair<const char *, const char *>>{{"zoom", "Zoom.Amount.Tip"},
+									  {"center_x", "Zoom.Center.Tip"},
+									  {"center_y", "Zoom.Center.Tip"},
+									  {"ramp_in_ms", "Zoom.RampIn.Tip"},
+									  {"ramp_out_ms", "Zoom.RampOut.Tip"}})
+		if (obs_property_t *one = obs_properties_get(props, name))
+			set_tip(one, obs_module_text(key));
 	obs_property_t *help = obs_properties_add_text(props, "help", obs_module_text("Zoom.Help"), OBS_TEXT_INFO);
 	obs_property_text_set_info_word_wrap(help, true);
 	return props;
