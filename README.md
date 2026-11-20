@@ -299,8 +299,10 @@ its heading:
   - *Outline design* (in the outline part of both filters, *Solid* as it comes): *Double line*
     (two thin lines with a gap, inside the outline's width), *Dashed* and *Dotted* (*Dash length*,
     *Gap length*), *Gradient* (the outline colour changing into a *Second colour* round the
-    border), *Neon* (a bright thin tube with a soft glow of the outline colour; *Glow size* is the
-    glow's share of the width) and *Inner line* (drawn just inside the image's edge instead of
+    border), *Neon* (a bright tube in the outline colour with a soft halo of light spreading out past the
+    line; *Glow size* is how far the halo reaches, in per cent of the outline's width; pick a
+    bright colour, as a black line has no light to give and then takes the *Second colour* for
+    its halo if that is brighter) and *Inner line* (drawn just inside the image's edge instead of
     outside it; it needs *Outline corners* other than *Follow the source*, and text and shaped
     sources keep a solid line outside). Five designs move, at a *Speed* you set (0 stands still, a
     negative number goes the other way): *Marching dashes*, *Travelling gradient*, *Pulse* (the

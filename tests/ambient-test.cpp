@@ -16856,7 +16856,7 @@ static void outline_designs_test(uint32_t w, uint32_t h, const std::string &out)
 		const size_t count = p ? obs_property_list_item_count(p) : 0;
 		obs_properties_destroy(props);
 		before[i] = shot(scenes[i]);
-		CHECK(unset && kind == 0 && count == 27,
+		CHECK(unset && kind == 0 && count == 29,
 		      "%s: a filter saved without a design reads Solid, of %zu designs (%lld)", who[i], count, kind);
 	}
 	both([](obs_data_t *s) { obs_data_set_int(s, "outline_design", 0); });
@@ -16937,21 +16937,138 @@ static void outline_designs_test(uint32_t w, uint32_t h, const std::string &out)
 		      "%s: Gradient goes from the outline colour to the second colour round the border (red %d blue %d at the top left; red %d blue %d at the bottom right)",
 		      who[i], r0, b0, r1, b1);
 	}
-	// Neon: a bright tube at the source, its glow fading outwards.
-	both([](obs_data_t *s) {
-		obs_data_set_int(s, "outline_design", 5);
-		obs_data_set_double(s, "outline_neon", 70.0);
-	});
-	for (int i = 0; i < 2; i++) {
-		const std::vector<uint8_t> f = shot(scenes[i]);
-		keep(5, i, f);
-		auto away = [&](int y) {
-			return std::abs(px(f, 200, y, 0) - 128) + std::abs(px(f, 200, y, 1) - 128);
+	// Neon: the line is a tube in its colour, brighter along its middle, and
+	// a halo of light spreads out past it. A cyan line on dark grey, each
+	// filter on a source of its own.
+	{
+		obs_source_t *night = block("OD Night", 0xFF282828, 640, 360);
+		obs_source_t *n_own = block("OD Neon Own", 0xFFFFFFFF, 200, 120);
+		obs_source_t *n_plain = block("OD Neon Plain", 0xFFFFFFFF, 200, 120);
+		obs_scene_t *na = obs_scene_create("OD Neon Own Line");
+		obs_scene_t *nb = obs_scene_create("OD Neon Scene Line");
+		put(na, night, 0, 0);
+		put(na, n_own, 100, 100);
+		put(nb, night, 0, 0);
+		put(nb, n_plain, 100, 100);
+		auto cyan = [&](obs_data_t *s) {
+			line(s);
+			obs_data_set_int(s, "outline_color", 0xFFDCC800); // red 0, green 200, blue 220
 		};
-		const int tube = px(f, 200, 98, 1);
-		CHECK(tube > 180 && away(95) > away(92) && away(92) > away(89) && away(89) < 40,
-		      "%s: Neon is a bright tube with a glow that falls off outwards (tube green %d; off the background by %d, %d, %d going out)",
-		      who[i], tube, away(95), away(92), away(89));
+		obs_data_t *pd = obs_data_create();
+		obs_data_set_int(pd, "adjusted_left", 0);
+		cyan(pd);
+		obs_source_t *nf_own = obs_source_create("stagekit_shadow_backdrop", "OD Neon Own", pd, nullptr);
+		obs_data_release(pd);
+		obs_source_filter_add(n_own, nf_own);
+		obs_data_t *zd = obs_data_create();
+		obs_data_set_int(zd, "ramp_ms", 0);
+		cyan(zd);
+		obs_source_t *nf_scene = obs_source_create("stagekit_scene_shadow", "OD Neon Scene", zd, nullptr);
+		obs_data_release(zd);
+		obs_source_filter_add(obs_scene_get_source(nb), nf_scene);
+		obs_source_t *const nf[2] = {nf_own, nf_scene};
+		obs_source_t *const ns[2] = {obs_scene_get_source(na), obs_scene_get_source(nb)};
+		sleep_ms(300);
+		for (int i = 0; i < 2; i++) {
+			const std::vector<uint8_t> solid = shot(ns[i]);
+			const uint32_t wide_solid = obs_source_get_width(n_own);
+			obs_data_t *unset = obs_source_get_settings(nf[i]);
+			const double as_it_comes = obs_data_get_double(unset, "outline_neon");
+			obs_data_release(unset);
+			set(nf[i], [](obs_data_t *s) { obs_data_set_int(s, "outline_design", 5); });
+			const std::vector<uint8_t> f = shot(ns[i]);
+			keep(5, i, f);
+			// The line is rows 88 to 99 above the source; the halo reaches
+			// 18 px (150 %) past it, to row 70.
+			auto green = [&](int y) {
+				return px(f, 200, y, 1);
+			};
+			bool falls = true;
+			for (int y = 86; y >= 71; y -= 3)
+				falls = falls && green(y) + 1 >= green(y - 3);
+			const int gone = std::abs(green(67) - 40) + std::abs(px(f, 200, 67, 0) - 40);
+			CHECK(as_it_comes == 150.0 && green(86) > 80 && green(86) > green(77) + 15 && falls &&
+				      gone <= 3,
+			      "%s: Neon's halo lights what is past the line and falls off to the background within its reach (green %d, %d, %d, %d going out from the line, background 40; %d off past the reach; Glow size %.0f %% as it comes)",
+			      who[i], green(86), green(82), green(78), green(74), gone, as_it_comes);
+			int best = 88;
+			auto sum = [&](int y) {
+				return px(f, 200, y, 0) + px(f, 200, y, 1) + px(f, 200, y, 2);
+			};
+			for (int y = 88; y <= 99; y++)
+				if (sum(y) > sum(best))
+					best = y;
+			const int r = px(f, 200, best, 0), g = px(f, 200, best, 1), b = px(f, 200, best, 2);
+			CHECK(sum(best) > 420 + 25 && g >= 200 && b >= 220 && r < g - 40 && r < 200,
+			      "%s: Neon's tube is brighter than the outline colour along its middle and keeps its hue, not white (%d, %d, %d; the colour is 0, 200, 220)",
+			      who[i], r, g, b);
+			const int inside = most(solid, f, 102, 102, 298, 218);
+			const uint32_t wide_neon = obs_source_get_width(n_own);
+			const bool room = i == 1 || wide_neon >= wide_solid + 36;
+			CHECK(inside <= 1 && px(f, 101, 160, 0) > 240 && px(f, 97, 160, 0) < 200 && room,
+			      "%s: from Solid to Neon the image stays where it is and as it was (at most %d off inside; the source %u wide, then %u)",
+			      who[i], inside, wide_solid, wide_neon);
+			// A black line has no light to give: a dim rim, no halo.
+			set(nf[i], [](obs_data_t *s) {
+				obs_data_set_int(s, "outline_color", 0xFF000000);
+				obs_data_set_int(s, "outline_color2", 0xFF000000);
+			});
+			const std::vector<uint8_t> k = shot(ns[i]);
+			int rim = 0, off_bg = 0;
+			for (int y = 88; y <= 99; y++)
+				for (int c = 0; c < 3; c++)
+					rim = std::max(rim, px(k, 200, y, c));
+			for (int y = 72; y <= 86; y++)
+				for (int c = 0; c < 3; c++)
+					off_bg = std::max(off_bg, std::abs(px(k, 200, y, c) - 40));
+			CHECK(rim >= 25 && rim <= 110 && px(k, 200, 88, 1) < 20 && off_bg <= 2,
+			      "%s: a black Neon line is dark with a dim rim, not white, and has no halo (brightest in the line %d; %d off the background past it)",
+			      who[i], rim, off_bg);
+			// With a brighter second colour, that is the halo's light.
+			set(nf[i], [](obs_data_t *s) { obs_data_set_int(s, "outline_color2", 0xFFFF00FF); });
+			const std::vector<uint8_t> m = shot(ns[i]);
+			CHECK(px(m, 200, 86, 0) > 80 && px(m, 200, 86, 1) <= 44,
+			      "%s: a black Neon line takes a brighter second colour for its halo (red %d, green %d past the line)",
+			      who[i], px(m, 200, 86, 0), px(m, 200, 86, 1));
+		}
+		for (obs_source_t *x : nf)
+			obs_source_release(x);
+		obs_scene_release(na);
+		obs_scene_release(nb);
+		// A still for the owner: three Neon lines on dark.
+		obs_scene_t *pv = obs_scene_create("OD Neon Preview");
+		put(pv, night, 0, 0);
+		const long long colours[3] = {0xFFFFE600, 0xFFFF28FF, 0xFF0A8CFF}; // cyan, magenta, orange
+		const int corners[3] = {1, 5, 0};
+		std::vector<obs_source_t *> made;
+		for (int n = 0; n < 3; n++) {
+			obs_source_t *src = block("OD Neon Preview Source", 0xFF3A3028, 150, 150);
+			put(pv, src, 45.0f + 200.0f * (float)n, 105.0f);
+			obs_data_t *d = obs_data_create();
+			obs_data_set_int(d, "adjusted_left", 0);
+			obs_data_set_bool(d, "shadow", false);
+			obs_data_set_bool(d, "outline", true);
+			obs_data_set_double(d, "outline_width", 8.0);
+			obs_data_set_int(d, "outline_color", colours[n]);
+			obs_data_set_int(d, "outline_corners", corners[n]);
+			obs_data_set_double(d, "outline_corner_size", 28.0);
+			obs_data_set_int(d, "outline_design", 5);
+			obs_data_set_double(d, "outline_neon", 300.0);
+			obs_source_t *nfp =
+				obs_source_create("stagekit_shadow_backdrop", "OD Neon Preview", d, nullptr);
+			obs_data_release(d);
+			obs_source_filter_add(src, nfp);
+			made.push_back(nfp);
+			made.push_back(src);
+		}
+		const std::string still = out + "/../neon-preview";
+		if (std::system(("mkdir -p '" + still + "'").c_str()) == 0)
+			write_frame(still + "/neon.rgba", shot(obs_scene_get_source(pv)), w, h);
+		obs_scene_release(pv);
+		for (obs_source_t *x : made)
+			obs_source_release(x);
+		for (obs_source_t *x : {night, n_own, n_plain})
+			obs_source_release(x);
 	}
 	// Inner line: inside the source's edge, nothing outside it.
 	both([](obs_data_t *s) {
@@ -17043,7 +17160,7 @@ static void outline_designs_test(uint32_t w, uint32_t h, const std::string &out)
 				return p && obs_property_visible(p);
 			};
 			const bool dashes = design == 2 || design == 7;
-			wrong += shown("outline_color2") != (design == 4 || design == 8 || design == 10);
+			wrong += shown("outline_color2") != (design == 4 || design == 5 || design == 8 || design == 10);
 			wrong += shown("outline_dash") != dashes;
 			wrong += shown("outline_gap") != (dashes || design == 3);
 			wrong += shown("outline_speed") != (design >= 7);
@@ -17527,7 +17644,8 @@ static void outline_patterns_test(uint32_t w, uint32_t h, const std::string &out
 			const bool pattern = design >= 12;
 			wrong += shown("outline_color3") != pattern;
 			wrong += shown("outline_pattern_scale") != pattern;
-			wrong += shown("outline_color2") != (pattern || design == 4 || design == 8 || design == 10);
+			wrong += shown("outline_color2") !=
+				 (pattern || design == 4 || design == 5 || design == 8 || design == 10);
 			wrong += shown("outline_speed") != (design >= 7);
 			wrong += pattern && (shown("outline_dash") || shown("outline_gap") || shown("outline_neon"));
 			count = obs_property_list_item_count(obs_properties_get(props, "outline_design"));

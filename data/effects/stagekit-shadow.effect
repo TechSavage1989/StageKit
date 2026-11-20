@@ -45,7 +45,8 @@ uniform float design_gap;       // pixels
 uniform float design_phase;     // marching dashes: how far along, in dash-and-gap lengths (0..1)
 uniform float design_turn;      // what travels round: how far round (0..1)
 uniform float design_pulse;     // the pulse now: 1 whole
-uniform float design_glow;      // neon: the share of the width that is glow
+uniform texture2d halo_tex;     // neon: the line's shape, softened (alpha): its halo of light
+uniform float4 halo_color;      // neon: the halo's colour, as bright as it goes; a = how much light (0: none)
 uniform texture2d pattern_tex;   // a pattern fill: the pattern, drawn by stagekit-patterns.effect, over this picture
 uniform float pattern_on;       // 1: the line's colour is pattern_tex's, 0: the design's own
 uniform float out_linear;       // 1: Compose writes linear light (OBS draws in linear light)
@@ -179,10 +180,9 @@ float2 design_at(float u, float total, float x, float x_out, float w, float foll
 	float dots_follow = dash_cover(u, total, w, design_gap, 0.0);
 	float dots = dots_box + (dots_follow - dots_box) * follows;
 
-	float core = 1.0 - design_glow;
-	float tube = saturate((core - x) * w + 0.5);
-	float fall = saturate((1.0 - x) / max(design_glow, 0.01));
-	float neon = saturate(tube + fall * fall * (1.0 - tube));
+	// Neon: the whole line is the tube, brightest along its middle (its
+	// halo of light is laid past the line, from halo_tex).
+	float tube = saturate(1.0 - abs(2.0 * x - 1.0));
 
 	float at = u / max(total, 1.0);
 	float wave = 0.5 - 0.5 * cos(6.2831853 * (at - design_turn * is_design(8.0)));
@@ -190,7 +190,7 @@ float2 design_at(float u, float total, float x, float x_out, float w, float foll
 	float hue = frac(at - design_turn + 1.0);
 
 	float there = 1.0 + (two - 1.0) * is_design(1.0) + (dashes - 1.0) * (is_design(2.0) + is_design(7.0)) +
-		      (dots - 1.0) * is_design(3.0) + (neon - 1.0) * is_design(5.0) +
+		      (dots - 1.0) * is_design(3.0) +
 		      (design_pulse - 1.0) * is_design(9.0);
 	float k = wave * (is_design(4.0) + is_design(8.0)) + glint * is_design(10.0) + hue * is_design(11.0) +
 		  tube * is_design(5.0);
@@ -204,7 +204,12 @@ float3 design_rgb(float3 base, float k)
 	float neon = is_design(5.0);
 	float rainbow = is_design(11.0);
 	float3 two = base + (design_color2.rgb - base) * k;
-	float3 lit = base + (float3(1.0, 1.0, 1.0) - base) * (k * 0.85);
+	// (Neon's tube: the colour brightened, towards white only along the very
+	// middle and by no more than the colour is bright, so it keeps its hue; a
+	// black line gets a dim rim.)
+	float top = max(base.r, max(base.g, base.b));
+	float3 bright = saturate(base * (1.0 + 0.35 * k));
+	float3 lit = bright + (float3(1.0, 1.0, 1.0) - bright) * (k * k * (0.25 + 0.35 * top));
 	return base * (1.0 - mixes - neon - rainbow) + two * mixes + lit * neon + hue_rgb(k) * rainbow;
 }
 
@@ -366,8 +371,16 @@ float4 PSCompose(VertData v_in) : TARGET
 	float sa = densified(thrown.a * shadow_gain, glow_intensity) * shadow_color.a * inside;
 	float3 shade = lerp(shadow_color.rgb, picture_color(thrown.rgb, shadow_boost), shadow_picture);
 
-	float3 rgb = card.rgb + shade * sa * (1.0 - card.a);
-	float a = card.a + sa * (1.0 - card.a);
+	// Neon's halo: light past the line, over the shadow and under the card,
+	// in its brightest colour with as much alpha as there is light, so it
+	// adds to what is behind the source more than it covers it. (Times
+	// nothing while there is none: every other design is as it was.)
+	float halo = saturate(halo_tex.Sample(linearClamp, v_in.uv).a * 2.0);
+	float ha = halo * halo * halo_color.a;
+	float3 under_rgb = shade * sa * (1.0 - ha) + halo_color.rgb * ha;
+	float under_a = sa + ha * (1.0 - sa);
+	float3 rgb = card.rgb + under_rgb * (1.0 - card.a);
+	float a = card.a + under_a * (1.0 - card.a);
 	float3 straight = rgb / max(a, 0.00001);
 	float3 lin = lerp(straight / 12.92, pow(max((straight + 0.055) / 1.055, float3(0.0, 0.0, 0.0)), float3(2.4, 2.4, 2.4)),
 			  step(float3(0.04045, 0.04045, 0.04045), straight));

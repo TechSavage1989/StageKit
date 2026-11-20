@@ -114,7 +114,9 @@ Padding padding_for(const Settings &s)
 	const double ox = s.shadow ? s.offset_x : 0.0;
 	const double oy = s.shadow ? s.offset_y : 0.0;
 	const double shadow = s.shadow ? 1.0 : 0.0;
-	const double around = panel + line;
+	// (Neon's halo of light reaches past the line.)
+	const double halo = s.outline && s.outline_fill != Fill::Picture ? s.design.halo_reach(s.outline_width) : 0.0;
+	const double around = panel + line + (halo > 0.0 ? std::ceil(halo) + 2.0 : 0.0);
 	Padding p;
 	p.left = (uint32_t)std::ceil(around + shadow * (std::max(0.0, -ox) + soft));
 	p.right = (uint32_t)std::ceil(around + shadow * (std::max(0.0, ox) + soft));
@@ -415,6 +417,7 @@ private:
 	gs_eparam_t *p_hide_source_ = nullptr;
 
 	std::unique_ptr<KawaseBlur> blur_;
+	std::unique_ptr<KawaseBlur> halo_blur_; // Neon's halo, made when first wanted
 	gs_texrender_t *tr_input_ = nullptr;
 	gs_texrender_t *tr_card_ = nullptr;
 	gs_texrender_t *tr_final_ = nullptr;
@@ -489,6 +492,7 @@ ShadowBackdrop::~ShadowBackdrop()
 	rects_.reset();
 	obs_enter_graphics();
 	blur_.reset();
+	halo_blur_.reset();
 	gs_texture_destroy(no_rect_);
 	gs_effect_destroy(effect_);
 	gs_texrender_destroy(tr_input_);
@@ -1117,6 +1121,18 @@ void ShadowBackdrop::render()
 
 	// 3. Its silhouette, softened, becomes the shadow.
 	gs_texture_t *silhouette = plain ? plain : card;
+	// (And, softened by itself, a Neon line's halo of light: one more blur,
+	// only for a Neon line.)
+	gs_texture_t *halo = nullptr;
+	const double halo_reach = s.outline && s.outline_fill != Fill::Picture ? s.design.halo_reach(s.outline_width)
+									       : 0.0;
+	if (card && halo_reach > 0.0) {
+		if (!halo_blur_)
+			halo_blur_ = std::make_unique<KawaseBlur>(true);
+		halo = halo_blur_->blur(silhouette, ow, oh, halo_reach * kHaloBlur);
+		if (halo == silhouette)
+			halo = nullptr;
+	}
 	if (card && s.shadow && s.softness > 0.0)
 		silhouette = blur_->blur(silhouette, ow, oh, s.softness);
 
@@ -1137,6 +1153,7 @@ void ShadowBackdrop::render()
 		gs_effect_set_float(p_shadow_boost_, (float)s.shadow_boost);
 		gs_effect_set_float(p_intensity_, (float)s.intensity);
 		gs_effect_set_float(p_out_linear_, gs_get_linear_srgb() ? 1.0f : 0.0f);
+		design_.set_halo(s.design, s.outline_color, s.outline_opacity, halo, card);
 		draw(tr_final_, card, "Compose");
 	}
 

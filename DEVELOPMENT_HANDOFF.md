@@ -23,6 +23,25 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
+## Neon is a tube with a halo (0.1.0-betaNEXT)
+
+Branch `feat/neon-glow`, rebased on `main` at beta217. Not pushed. The owner on beta212's Neon:
+"neon just looks white", and said "go" to a proper tube. Now the line is whole, in the outline
+colour and brighter along its middle; a halo of light spreads past it (*Glow size*,
+`outline_neon`, now per cent of the width beyond the line, 150 as it comes, to 400); a very dark
+colour has no halo unless the *Second colour* (shown for Neon now) is brighter. One more blur,
+only for Neon; every other design is unchanged (designs 0 to 4 and 6 to 11 at speed 0 compared
+file by file with the build before, in both filters: the same). How it is built is in AGENTS.md
+under *Outline designs*. Gates on the rebased tree: `OUTLINE_DESIGNS` (new checks: halo lit and
+falling off within its reach, tube brighter and still cyan, a black line a dim rim, the second
+colour's halo, the image unmoved from Solid to Neon with 40 px more room), `OUTLINE_GLOW`,
+`OUTLINE_PATTERNS`, `SHADOW_EACH`, `MORPH_HOLDS`, `TOOLTIPS`. The full suite was not run. Not
+tested: Neon through a Morph (it goes through the same `compose`), text, the pattern-filled
+designs bit for bit (their pictures move with the clock). Two stale expectations were put
+right on the way (29 designs, not 27, since beta216). Only OpenGL. Contact sheet
+`docs/images/outline-designs.png` regenerated (Neon on dark). Release notes in
+`docs/releases/0.1.0-betaNEXT.md`, to be numbered just before pushing.
+
 ## The whole screen makes room when the image does not fill (0.1.0-beta218)
 
 Branch `feat/whole-screen-overlap`, on `main` at beta215. Not pushed. The owner (a 4:3 standby
