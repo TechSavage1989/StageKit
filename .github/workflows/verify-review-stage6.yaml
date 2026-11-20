@@ -33,6 +33,20 @@ jobs:
             test "$actual" = "$expected"
             echo "formatted file $actual $changed"
           done
+  deck:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: streamdeck
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - run: npm run validate
   render:
     runs-on: ubuntu-24.04
     timeout-minutes: 40
@@ -55,7 +69,7 @@ jobs:
           mkdir -p "$out/tooltips"
           python3 tests/make-test-image.py "$out"
           failed=0
-          for gate in LAYOUT MODE_PLACE SWITCH_COMMAND AUTO_FRAME_SWITCHER CAPTURE_HIDE SCENE_TRANS_OVERRIDE MORPH; do
+          for gate in REVIEW_CONTROLS RESTORE_HIDDEN MODE_PLACE SWITCH_COMMAND AUTO_FRAME_SWITCHER CAPTURE_HIDE SCENE_TRANS_OVERRIDE LAYOUT MORPH; do
             env "STAGEKIT_TEST_ONLY_${gate}=1" xvfb-run -a build-tests/tests/stagekit-ambient-test "$PWD/build-tests/stagekit.so" "$PWD/data" "$out/test-art.png" "$out/test-texture.png" "$out/test-game.png" "$out/tooltips" "$out/test-title.png" "$out/tooltips" "$out/test-pillarbox.png" "$out/test-black.png" "$out/test-dark-game.png" > "$out/$gate.log" 2>&1 || failed=1
             echo "$gate"
             grep -E 'FAIL|ALL PASSED|Assertion' "$out/$gate.log" | tail -28 || true
@@ -68,6 +82,6 @@ jobs:
           mkdir -p "$out/tooltips"
           python3 tests/make-test-image.py "$out"
           result=0
-          env STAGEKIT_TEST_ONLY_SCENE_TRANS_OVERRIDE=1 xvfb-run -a valgrind --tool=memcheck --leak-check=no --undef-value-errors=no --error-exitcode=86 --log-file="$out/valgrind.log" build-tests/tests/stagekit-ambient-test "$PWD/build-tests/stagekit.so" "$PWD/data" "$out/test-art.png" "$out/test-texture.png" "$out/test-game.png" "$out/tooltips" "$out/test-title.png" "$out/tooltips" "$out/test-pillarbox.png" "$out/test-black.png" "$out/test-dark-game.png" > "$out/valgrind-test.log" 2>&1 || result=$?
+          env STAGEKIT_TEST_ONLY_REVIEW_CONTROLS=1 xvfb-run -a valgrind --tool=memcheck --leak-check=no --undef-value-errors=no --error-exitcode=86 --log-file="$out/valgrind.log" build-tests/tests/stagekit-ambient-test "$PWD/build-tests/stagekit.so" "$PWD/data" "$out/test-art.png" "$out/test-texture.png" "$out/test-game.png" "$out/tooltips" "$out/test-title.png" "$out/tooltips" "$out/test-pillarbox.png" "$out/test-black.png" "$out/test-dark-game.png" > "$out/valgrind-test.log" 2>&1 || result=$?
           grep -E -A12 'Invalid read|Invalid write|Invalid free|ERROR SUMMARY' "$out/valgrind.log" | head -110 || true
           test "$result" = 0 || { test "$result" = 1 && grep -q 'ERROR SUMMARY: 0 errors' "$out/valgrind.log"; }

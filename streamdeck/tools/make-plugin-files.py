@@ -19,7 +19,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, "..")
 PLUGIN = os.path.join(ROOT, "com.techsavage1989.stagekit.sdPlugin")
 BASE = "com.techsavage1989.stagekit"
-VERSION = "0.34.0.0"
+VERSION = "0.35.0.0"
 
 # The pack picture each feature's key starts with (its "on" and "off" look).
 PICTURES = {
@@ -517,7 +517,7 @@ def main():
 
     def add(key, name, tip, page_name, icon, states, visible=True):
         # Every key offered has its own icon in Stream Deck's list
-        # (tools/make-action-icons.py); the two hidden older keys keep theirs.
+        # (tools/make-action-icons.py); the hidden older keys keep theirs.
         if visible:
             icon = f"imgs/actions/{key}/icon"
         action = {
@@ -562,7 +562,8 @@ def main():
         on, _ = PICTURES.get(feature["kind"], ("options/plain-move", None))
         key_pictures(feature["key"], on, None)
         page(feature["key"], f"StageKit {feature['name']}", target_list(feature["key"]))
-        add(feature["key"], feature["name"], feature["tip"], feature["key"], "imgs/actions/move/icon", one(feature["key"]))
+        key = feature["key"]
+        add(key, feature["name"], feature["tip"], key, f"imgs/actions/{key}/icon", one(key), visible=key != "placeitem")
 
     key_pictures("shape", "filters/auto-frame-on", None)
     ratio_labels = {"8:7": "8:7 (SNES / NES, square pixels)", "64:49": "64:49 (SNES / NES on a 4:3 TV)"}

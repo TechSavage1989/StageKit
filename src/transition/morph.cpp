@@ -200,8 +200,6 @@ struct Settings {
 
 // Between the scenes of a rule's line in the list, and before each setting
 // of a rule in the settings.
-constexpr const char *kRuleMark = " \xE2\x86\x92 ";
-constexpr const char *kAnyScene = "(any scene)"; // saved rule value, independent of the displayed label
 constexpr const char *kRuleKey = "rule|";
 
 // The settings for one change of scene: the usual ones, or those of the rule

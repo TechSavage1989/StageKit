@@ -20235,6 +20235,224 @@ static void clear_picked_test()
 	obs_source_release(image);
 }
 
+// Saved collections and the actual OBS controls for review stage 6.
+static void review_controls_test()
+{
+	printf("\n[review: old and new settings, source renames and filter controls]\n");
+	auto create = [](const char *id, const char *name, const char *json) {
+		obs_data_t *settings = obs_data_create_from_json(json);
+		obs_source_t *src = obs_source_create(id, name, settings, nullptr);
+		obs_data_release(settings);
+		return src;
+	};
+	auto loaded = [](const char *id, const char *name, const char *json) {
+		obs_data_t *settings = obs_data_create_from_json(json);
+		obs_data_t *entry = obs_data_create();
+		obs_data_set_string(entry, "name", name);
+		obs_data_set_string(entry, "id", id);
+		obs_data_set_obj(entry, "settings", settings);
+		obs_data_array_t *sources = obs_data_array_create();
+		obs_data_array_push_back(sources, entry);
+		obs_source_t *result = nullptr;
+		obs_load_sources(sources, [](void *out, obs_source_t *src) {
+			*static_cast<obs_source_t **>(out) = obs_source_get_ref(src);
+		}, &result);
+		obs_data_array_release(sources);
+		obs_data_release(entry);
+		obs_data_release(settings);
+		return result;
+	};
+	auto list = [](obs_data_t *settings, const char *name, std::vector<std::string> values) {
+		obs_data_array_t *array = obs_data_array_create();
+		for (const auto &v : values) {
+			obs_data_t *row = obs_data_create();
+			obs_data_set_string(row, "value", v.c_str());
+			obs_data_set_bool(row, "selected", true);
+			obs_data_array_push_back(array, row);
+			obs_data_release(row);
+		}
+		obs_data_set_array(settings, name, array);
+		obs_data_array_release(array);
+	};
+	auto first = [](obs_data_t *settings, const char *key) {
+		obs_data_array_t *array = obs_data_get_array(settings, key);
+		obs_data_t *row = obs_data_array_count(array) ? obs_data_array_item(array, 0) : nullptr;
+		const std::string value = row ? obs_data_get_string(row, "value") : "";
+		obs_data_release(row);
+		obs_data_array_release(array);
+		return value;
+	};
+	auto command = [](obs_source_t *owner, const char *name) {
+		calldata_t cd;
+		calldata_init(&cd);
+		const bool ok = proc_handler_call(obs_source_get_proc_handler(owner), name, &cd);
+		calldata_free(&cd);
+		return ok;
+	};
+	obs_scene_t *scene = obs_scene_create("Review Stage Scene");
+	obs_scene_t *to = obs_scene_create("Review Other Scene");
+	obs_source_t *parent = obs_scene_get_source(scene);
+	auto *cam = create("color_source", "Review Cam", R"({"width":160,"height":100})");
+	obs_sceneitem_t *item = obs_scene_add(scene, cam);
+	obs_source_t *before = obs_get_output_source(0);
+	obs_set_output_source(0, parent);
+	std::vector<obs_source_t *> filters;
+	auto attach = [&](const char *id, const char *name, const char *json) {
+		auto *f = create(id, name, json);
+		obs_source_filter_add(parent, f);
+		filters.push_back(f);
+		return f;
+	};
+	CHECK((obs_get_source_output_flags("stagekit_place_item") & OBS_SOURCE_DEPRECATED) &&
+		      !(obs_get_source_output_flags("stagekit_send_to") & OBS_SOURCE_DEPRECATED),
+	      "only the older Move Scene Item is hidden from Add Filter");
+	auto *place = attach("stagekit_place_item", "Review existing move", R"({"item":"Review Cam"})");
+	CHECK(command(place, "trigger"), "a saved Move Scene Item still accepts its original trigger");
+
+	for (const auto id : {"stagekit_show_in_scenes", "stagekit_active_app"}) {
+		const bool showing = strcmp(id, "stagekit_show_in_scenes") == 0;
+		obs_source_t *fresh = create(id, "Review fresh switch", "{}");
+		obs_source_t *old = loaded(id, "Review empty saved switch", "{}");
+		obs_source_t *custom = loaded(id, "Review explicit switch",
+			showing ? R"({"restore_hidden":false})" : R"({"transition_ms":875})");
+		obs_data_t *a = obs_source_get_settings(fresh), *b = obs_source_get_settings(old), *c = obs_source_get_settings(custom);
+		CHECK(showing ? (obs_data_get_bool(a, "restore_hidden") && !obs_data_get_bool(b, "restore_hidden") && !obs_data_get_bool(c, "restore_hidden"))
+			      : (obs_data_get_int(a, "transition_ms") == 300 && obs_data_get_int(b, "transition_ms") == 250 && obs_data_get_int(c, "transition_ms") == 875),
+		      "%s distinguishes a new switch, an empty old collection and an explicit saved choice", id);
+		for (auto *s : {a,b,c}) obs_data_release(s);
+		for (auto *s : {fresh,old,custom}) obs_source_release(s);
+	}
+	for (int old : {0, 1, 2}) {
+		const std::string json = "{\"which\":" + std::to_string(old) + ",\"auto_background\":true}";
+		auto *corner = create("stagekit_scene_corners", "Review corners", json.c_str());
+		obs_data_t *s = obs_source_get_settings(corner);
+		obs_properties_t *props = obs_source_properties(corner);
+		CHECK(obs_property_list_item_count(obs_properties_get(props, "which")) == 2 &&
+			obs_data_get_int(s, "which") == (old == 1 ? 1 : 2) && obs_data_get_bool(s, "auto_background") == (old != 2),
+		      "old Scene Corners coverage %d has the same meaning in the two-choice control", old);
+		obs_properties_destroy(props);
+		obs_data_release(s);
+		obs_source_release(corner);
+	}
+	for (const char *id : {"stagekit_program_trigger", "stagekit_active_app", "stagekit_app_capture", "stagekit_auto_capture"}) {
+		auto *filter = attach(id, id, "{}");
+		obs_properties_t *props = obs_source_properties(filter);
+		obs_data_t *s = obs_source_get_settings(filter);
+		obs_properties_apply_settings(props, s);
+		obs_data_set_string(s, "transition", "slide_transition");
+		auto *show = obs_properties_get(props, "transition");
+		if (show) obs_property_modified(show, s);
+		obs_data_set_string(s, "hide_transition", "none");
+		auto *hide = obs_properties_get(props, "hide_transition");
+		if (hide) obs_property_modified(hide, s);
+		CHECK(show && hide && obs_properties_get(props,"transition_ms"), "%s has separate show and hide settings and can rebuild them", id);
+		if (strcmp(id,"stagekit_active_app") == 0)
+			CHECK(obs_properties_get(props,"by_hand_toggle") && obs_properties_get(props,"by_hand_next") &&
+				obs_properties_get(props,"by_hand_back") && !obs_data_get_bool(s,"lock_hidden"), "manual commands are available and locks start off");
+		obs_properties_destroy(props);
+		obs_data_release(s);
+	}
+	const std::string linkmark = " \xE2\x86\x94 ", rulemark = " \xE2\x86\x92 ";
+	auto *link = attach("stagekit_visibility_link", "Review rename link", "{}");
+	auto *view = create("stagekit_cropped_view", "Review cropped view", R"({"source":"Review Cam"})");
+	auto *ambient = create("stagekit_ambient_background", "Review ambient", R"({"base_source":"Review Cam","live_source":"Review Cam SD"})");
+	auto *morph = obs_source_create_private("stagekit_morph", "Review private morph", nullptr);
+	obs_data_t *mc = obs_source_get_settings(morph), *lc = obs_source_get_settings(link);
+	list(lc,"items",{"Review Cam","Review Cam SD"});
+	list(lc,"for|Review Cam|morph_links",{"Review Cam"+linkmark+"Review Cam SD"});
+	list(lc,"morph_links",{"Review Cam SD"+linkmark+"Review Cam"});
+	obs_data_set_int(lc,"for|Review Cam|hide_ms",721);
+	obs_data_set_int(lc,"for|Review Cam SD|hide_ms",333);
+	obs_data_set_string(lc,"change|for","Review Cam");
+	list(mc,"links",{"Review Cam"+linkmark+"Review Cam SD"});
+	obs_data_set_string(mc,"rule_from","Review Stage Scene");
+	obs_data_set_string(mc,"rule_to","Review Other Scene");
+	obs_properties_t *mp = obs_source_properties(morph);
+	auto *add = obs_properties_get(mp,"rule_add");
+	CHECK(add && obs_property_button_clicked(add, morph), "the Add button creates a new Morph pair");
+	obs_data_set_int(mc,"rule_style",2);
+	obs_property_modified(obs_properties_get(mp,"rule_style"),mc);
+	CHECK(obs_data_get_int(mc,("rule|Review Stage Scene"+rulemark+"Review Other Scene|style").c_str()) == 2,
+	      "editing an existing rule immediately writes its saved style");
+	obs_data_set_string(mc,"rule_from","(any scene)");
+	obs_property_modified(obs_properties_get(mp,"rule_from"),mc);
+	obs_data_set_int(mc,"rule_style",1);
+	obs_property_modified(obs_properties_get(mp,"rule_style"),mc);
+	obs_data_array_t *rules = obs_data_get_array(mc,"rules");
+	CHECK(obs_data_array_count(rules) == 1 && !obs_data_has_user_value(mc,("rule|(any scene)"+rulemark+"Review Other Scene|style").c_str()),
+	      "an unadded rule stays out of the collection until Add is pressed");
+	obs_data_array_release(rules);
+	obs_properties_destroy(mp);
+	obs_source_set_name(cam, "Review Camera");
+	obs_source_set_name(parent, "Review Renamed Scene");
+	obs_data_t *vc = obs_source_get_settings(view), *ac = obs_source_get_settings(ambient);
+	CHECK(first(lc,"items") == "Review Camera" && first(lc,"for|Review Camera|morph_links") == "Review Camera"+linkmark+"Review Cam SD" &&
+		first(lc,"morph_links") == "Review Cam SD"+linkmark+"Review Camera" && obs_data_get_int(lc,"for|Review Camera|hide_ms") == 721 &&
+		!obs_data_has_user_value(lc,"for|Review Cam|hide_ms") && obs_data_get_int(lc,"for|Review Cam SD|hide_ms") == 333,
+		"renaming the camera keeps per-source values, both link directions and neighboring names");
+	CHECK(first(mc,"links") == "Review Camera"+linkmark+"Review Cam SD" && first(mc,"rules") == "Review Renamed Scene"+rulemark+"Review Other Scene" &&
+		obs_data_get_int(mc,("rule|Review Renamed Scene"+rulemark+"Review Other Scene|style").c_str()) == 2,
+		"private Morph links and scene rule values follow a rename");
+	CHECK(strcmp(obs_data_get_string(vc,"source"),"Review Camera") == 0 &&
+		strcmp(obs_data_get_string(ac,"base_source"),"Review Camera") == 0 && strcmp(obs_data_get_string(ac,"live_source"),"Review Cam SD") == 0,
+		"only the exact Cropped View and Ambient source names change");
+	for (auto *s : {mc,lc,vc,ac}) obs_data_release(s);
+	auto *shadow = attach("stagekit_scene_shadow","Review Shadow",R"({"ramp_ms":0,"ramp_out_ms":0})");
+	sleep_ms(200);
+	auto *sp = obs_source_properties(shadow);
+	auto *toggle = obs_properties_get(sp,"toggle_now");
+	if (toggle) obs_property_button_clicked(toggle,shadow);
+	sleep_ms(140);
+	const bool off = !obs_source_enabled(shadow);
+	if (toggle) obs_property_button_clicked(toggle,shadow);
+	sleep_ms(140);
+	CHECK(toggle && off && obs_source_enabled(shadow), "Scene Shadow button switches the real effect off and back on");
+	obs_properties_destroy(sp);
+	auto *layout = attach("stagekit_layout","Review Layout",R"({"duration_ms":0})");
+	sleep_ms(160);
+	vec2 box, pos; vec2_set(&box,201,113);
+	obs_sceneitem_set_bounds_type(item,OBS_BOUNDS_SCALE_INNER);
+	obs_sceneitem_set_bounds(item,&box);
+	obs_sceneitem_set_bounds_alignment(item,OBS_ALIGN_RIGHT|OBS_ALIGN_BOTTOM);
+	obs_sceneitem_crop crop = {4,7,9,11};
+	obs_sceneitem_set_crop(item,&crop);
+#if LIBOBS_API_VER >= MAKE_SEMANTIC_VERSION(30,1,0)
+	obs_sceneitem_set_bounds_crop(item,true);
+#endif
+	command(layout,"save");
+	obs_sceneitem_set_bounds_type(item,OBS_BOUNDS_NONE);
+	obs_sceneitem_crop clean = {};
+	obs_sceneitem_set_crop(item,&clean);
+#if LIBOBS_API_VER >= MAKE_SEMANTIC_VERSION(30,1,0)
+	obs_sceneitem_set_bounds_crop(item,false);
+#endif
+	command(layout,"trigger"); sleep_ms(250);
+	obs_sceneitem_get_bounds(item,&box); obs_sceneitem_get_crop(item,&crop);
+	bool full = crop.left==4 && crop.top==7 && crop.right==9 && crop.bottom==11 &&
+		obs_sceneitem_get_bounds_type(item)==OBS_BOUNDS_SCALE_INNER && box.x==201 && box.y==113 &&
+		obs_sceneitem_get_bounds_alignment(item)==(OBS_ALIGN_RIGHT|OBS_ALIGN_BOTTOM);
+#if LIBOBS_API_VER >= MAKE_SEMANTIC_VERSION(30,1,0)
+	full = full && obs_sceneitem_get_bounds_crop(item);
+#endif
+	CHECK(full,"Apply Layout restores fitted bounds, alignment and all four crop edges");
+	auto *legacy = attach("stagekit_layout","Review old layout",R"({"duration_ms":0,"saved":[{"name":"Review Camera","x":35,"y":51,"sx":1,"sy":1,"rot":0}]})");
+	sleep_ms(150); command(legacy,"trigger"); sleep_ms(220);
+	obs_sceneitem_get_pos(item,&pos); obs_sceneitem_get_crop(item,&crop);
+	CHECK(pos.x==35 && pos.y==51 && crop.left==4 && obs_sceneitem_get_bounds_type(item)==OBS_BOUNDS_SCALE_INNER,
+		"old position-only layouts still leave the current framing alone");
+	obs_set_output_source(0,before);
+	obs_source_release(before);
+	for (auto it=filters.rbegin(); it!=filters.rend(); ++it) {
+		obs_source_filter_remove(parent,*it);
+		obs_source_release(*it);
+	}
+	for (auto *src : {view,ambient,morph}) obs_source_release(src);
+	obs_scene_release(to);
+	obs_scene_release(scene);
+	obs_source_release(cam);
+	sleep_ms(120);
+}
+
 // A layout scene: every capture stacked in the capture's place with one
 // shown, a camera above a chat box beside it, a Fit to Space for each.
 // It turns sound on, so it runs late in a full run (alone:
@@ -21898,6 +22116,13 @@ int main(int argc, char **argv)
 		obs_shutdown();
 		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
 		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
+
+	if (getenv("STAGEKIT_TEST_ONLY_REVIEW_CONTROLS")) {
+		review_controls_test();
+		obs_shutdown();
+		printf("\n%s (%d failures)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures);
 		return g_failures ? 1 : 0;
 	}
 
@@ -37501,6 +37726,7 @@ int main(int argc, char **argv)
 		}
 	}
 
+	review_controls_test();
 	layout_scenes_test(); // (alone: STAGEKIT_TEST_ONLY_LAYOUT)
 
 	// ==== scene-filters:sound ====

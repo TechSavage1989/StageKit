@@ -57,7 +57,7 @@ function shown(key: string, setting: string, value: string): string | undefined 
 	return chooseFor(undefined, kind, {}, "", undefined, types)?.id;
 }
 
-test("every key a user can add has a type list; only the two old hidden ones have none", () => {
+test("every newly offered key and the saved Move Scene Item action keep their type lists", () => {
 	// The owner: "no types selection for manual window/source? all keys must have the options".
 	const manifest = JSON.parse(readFileSync(new URL("manifest.json", plugin), "utf8"));
 	const offered = manifest.Actions.filter((a: { VisibleInActionsList?: boolean }) => a.VisibleInActionsList !== false).map((a: { UUID: string }) =>
@@ -67,7 +67,7 @@ test("every key a user can add has a type list; only the two old hidden ones hav
 	for (const key of offered) assert.ok(typeLists(key).length > 0, key);
 	for (const key of Object.keys(OWN_LISTS)) assert.ok(typeLists(key).some((l) => l.setting === "sourceType"), `${key}: a Source type besides its own list`);
 	for (const key of ["switch", "move"]) assert.equal(typeLists(key).length, 0, key);
-	assert.deepEqual([...keysWithLists()].sort(), [...offered].sort());
+	assert.deepEqual([...keysWithLists()].sort(), [...offered, "placeitem"].sort());
 	// The ones asked for by name, and what they offer.
 	const values = (key: string, setting: string) => typeLists(key).find((l) => l.setting === setting)!.groups.flatMap((g) => g.entries.map((e) => e.value));
 	for (const v of ["window", "browser", "game", "retro", "emulator", "art_app", "code_editor", "chat", "voice_chat", "music", "camera"])

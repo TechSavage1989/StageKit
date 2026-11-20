@@ -564,15 +564,19 @@ public:
 	}
 
 	// Writes the record into the filter's own settings (with mutex_ held).
-	void save_record()
+	static std::string record_text(const Record &record)
 	{
 		std::string text;
-		for (const Noted &n : record_.items)
+		for (const Noted &n : record.items)
 			text += "i\t" + n.scene + "\t" + n.owner + "\t" + std::to_string(n.id) + "\n";
-		for (const std::string &c : record_.covers)
+		for (const std::string &c : record.covers)
 			text += "c\t" + c + "\n";
+		return text;
+	}
+	void save_record()
+	{
 		obs_data_t *settings = obs_source_get_settings(source_);
-		obs_data_set_string(settings, "hidden_record", text.c_str());
+		obs_data_set_string(settings, "hidden_record", record_text(record_).c_str());
 		obs_data_release(settings);
 	}
 
@@ -678,6 +682,27 @@ public:
 	}
 
 	// Loading a saved filter with an empty settings object uses the historical default.
+	static bool rename_record(obs_data_t *settings, const std::string &was, const std::string &now)
+	{
+		auto record = read_record(obs_data_get_string(settings, "hidden_record"));
+		bool changed = false;
+		for (auto &item : record.items) {
+			for (auto *name : {&item.scene, &item.owner}) {
+				if (*name == was) {
+					*name = now;
+					changed = true;
+				}
+			}
+		}
+		if (record.covers.erase(was)) {
+			record.covers.insert(now);
+			changed = true;
+		}
+		if (changed)
+			obs_data_set_string(settings, "hidden_record", record_text(record).c_str());
+		return changed;
+	}
+
 	void loaded(obs_data_t *settings)
 	{
 		if (assumed_new_) {
@@ -924,6 +949,11 @@ bool show_in_scenes_press(obs_source_t *source, const std::string &filter_name, 
 		obs_source_set_enabled(filter, enabled);
 	obs_source_release(filter);
 	return true;
+}
+
+bool show_in_rename_record(obs_data_t *settings, const char *was, const char *now)
+{
+	return ShowInScenes::rename_record(settings, was, now);
 }
 
 void register_show_in_scenes()
