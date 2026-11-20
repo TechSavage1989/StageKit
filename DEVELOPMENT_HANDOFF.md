@@ -30,6 +30,7 @@ Every existing UUID, target separator, persisted control ID and saved picture re
 Match Item and Scene Transitions have their own keys. A manual switcher hotkey is registered on the
 parent in OBS, so the key includes that exact source or scene as the WebSocket context.
 The optional scene-transition restore is tested headless and awaits a visual check in OBS.
+All 93 Stream Deck tests passed. Elgato's validator accepted the plugin and the package built.
 
 ## Twelve material and data patterns (0.1.0-beta228)
 
