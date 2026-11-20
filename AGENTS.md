@@ -3713,8 +3713,26 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     Double and Neon are coarser there and Dotted is dashes the line's width long.
   - **The drop shadow is thrown by the whole line.** Scene Shadow's `Outlined` reads alpha only;
     Shadow, Glow & Outline draws its `Outline` pass once more with Solid (`tr_plain_`) when a
-    design and the shadow are both on. Neon is laid over like any line (white towards the tube),
-    inside the outline's width: no extra pass, no extra room.
+    design and the shadow are both on. **Neon is a tube with a halo of light past the line** (after beta217; the
+    owner, of beta212's, which kept its glow inside the line's width and went to white: "neon
+    just looks white"). The line is whole (its shape is Solid's, so the shadow and the room it
+    throws are the line's), coloured by `design_rgb`: brighter along its middle, towards white by
+    no more than the colour is bright, a black line a dim rim. The halo is **one more blur,
+    only while Neon is chosen** (`halo_blur_`, a second `KawaseBlur`, made when first wanted),
+    of the sources with their line (Scene Shadow's `outlined_`, made for Neon without a shadow
+    too; the per-source filter's card), read as `saturate(2a)` squared, so it is whole at the
+    line's edge and gone at the reach: `OutlineDesign::halo_reach` = width x `glow`
+    (`outline_neon` %, 10 to 400, 150 as it comes; it was the glow's share of the width, 10 to
+    90), blurred at `kHaloBlur` (1.4) a pixel of reach. `DesignUniforms::set_halo` sets
+    `halo_tex` and `halo_color` at every run of `Ring` and `Compose` (a stand-in and no light
+    for every other design: times nothing, so they are bit for bit as they were; `design_glow`
+    is gone from both files). The light's colour is the outline colour at full brightness with
+    as much alpha as it is bright; under 0.12 it is the second colour's if brighter (the
+    control shows for Neon), else none. Scene Shadow screens it onto what is under the sources
+    in linear light (`laid_amount`, so it fades as one with its source, and Morph carries it
+    through `compose`); Shadow, Glow & Outline lays it over the shadow and under the card and
+    takes room for it (`padding_for`, so the items are settled as for any room). Not with an
+    outline *Made from: the image*. No flicker with Speed: not asked for.
   - **Inner line** needs a box line: inside the box down to a hole with the line's corners, no
     line outside (a following source keeps a solid outer line). In Scene Shadow it lies on its
     source (`Ring`, over the whole pixel, faded with the source by `Split::there`), so every

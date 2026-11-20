@@ -64,7 +64,7 @@ OutlineDesign read_outline_design(obs_data_t *settings)
 	d.dash = std::clamp(obs_data_get_double(settings, "outline_dash"), 1.0, 400.0);
 	d.gap = std::clamp(obs_data_get_double(settings, "outline_gap"), 1.0, 400.0);
 	d.speed = std::clamp(obs_data_get_double(settings, "outline_speed"), -1000.0, 1000.0);
-	d.glow = std::clamp(obs_data_get_double(settings, "outline_neon") / 100.0, 0.1, 0.9);
+	d.glow = std::clamp(obs_data_get_double(settings, "outline_neon") / 100.0, 0.1, 4.0);
 	d.color3 = (uint32_t)obs_data_get_int(settings, "outline_color3");
 	d.pattern_scale = std::clamp(obs_data_get_double(settings, "outline_pattern_scale") / 100.0, 0.1, 4.0);
 	// (Only the tests set this: another file in the patterns' place.)
@@ -82,7 +82,8 @@ void DesignUniforms::find(gs_effect_t *effect)
 	phase_ = gs_effect_get_param_by_name(effect, "design_phase");
 	turn_ = gs_effect_get_param_by_name(effect, "design_turn");
 	pulse_ = gs_effect_get_param_by_name(effect, "design_pulse");
-	glow_ = gs_effect_get_param_by_name(effect, "design_glow");
+	halo_tex_ = gs_effect_get_param_by_name(effect, "halo_tex");
+	halo_color_ = gs_effect_get_param_by_name(effect, "halo_color");
 	pattern_tex_ = gs_effect_get_param_by_name(effect, "pattern_tex");
 	pattern_on_ = gs_effect_get_param_by_name(effect, "pattern_on");
 }
@@ -111,11 +112,41 @@ void DesignUniforms::set(const OutlineDesign &d, gs_texture_t *pattern, gs_textu
 		pulse_, d.kind == OutlineDesign::Pulse
 				? (float)(0.3 + 0.7 * (0.5 + 0.5 * std::cos(travelled * (6.283185307179586 / 100.0))))
 				: 1.0f);
-	gs_effect_set_float(glow_, (float)d.glow);
 	if (stand_in && pattern_tex_ && pattern_on_) {
 		gs_effect_set_texture(pattern_tex_, pattern ? pattern : stand_in);
 		gs_effect_set_float(pattern_on_, pattern ? 1.0f : 0.0f);
 	}
+}
+
+void DesignUniforms::set_halo(const OutlineDesign &d, uint32_t outline_color, double opacity, gs_texture_t *halo,
+			      gs_texture_t *stand_in) const
+{
+	if (!halo_tex_ || !halo_color_)
+		return;
+	// The light's colour: the outline colour as bright as it goes, a little
+	// richer, and as much of it as the colour is bright. A very dark line
+	// has no light to give: the second colour gives it then, if brighter.
+	vec4 c, two;
+	vec4_from_rgba(&c, outline_color);
+	vec4_from_rgba(&two, d.color2);
+	float top = std::max(c.x, std::max(c.y, c.z));
+	const float top2 = std::max(two.x, std::max(two.y, two.z));
+	if (top < 0.12f && top2 > top + 0.1f) {
+		c = two;
+		top = top2;
+	}
+	vec4 light;
+	vec4_zero(&light);
+	if (halo && d.kind == OutlineDesign::Neon && top > 0.004f) {
+		const float r = c.x / top, g = c.y / top, b = c.z / top;
+		const float gray = 0.299f * r + 0.587f * g + 0.114f * b;
+		auto rich = [gray](float v) {
+			return std::clamp(gray + (v - gray) * 1.25f, 0.0f, 1.0f);
+		};
+		vec4_set(&light, rich(r), rich(g), rich(b), top * (float)std::clamp(opacity, 0.0, 1.0));
+	}
+	gs_effect_set_texture(halo_tex_, light.w > 0.0f ? halo : stand_in);
+	gs_effect_set_vec4(halo_color_, &light);
 }
 
 namespace {
@@ -130,7 +161,7 @@ bool design_modified(obs_properties_t *props, obs_property_t *, obs_data_t *sett
 	const bool dashes = kind == OutlineDesign::Dashed || kind == OutlineDesign::Marching;
 	const bool pattern = kind >= OutlineDesign::Aurora && kind <= OutlineDesign::kLast;
 	show("outline_color2", pattern || kind == OutlineDesign::Gradient || kind == OutlineDesign::Travelling ||
-				       kind == OutlineDesign::Shimmer);
+				       kind == OutlineDesign::Shimmer || kind == OutlineDesign::Neon);
 	show("outline_color3", pattern);
 	show("outline_pattern_scale", pattern);
 	show("outline_dash", dashes);
@@ -201,7 +232,7 @@ void add_outline_design_properties(obs_properties_t *outline)
 	slider("outline_gap", "Shadow.OutlineGap", 1.0, 200.0, " px");
 	set_tip(slider("outline_speed", "Shadow.OutlineSpeed", -600.0, 600.0, nullptr),
 		obs_module_text("Shadow.OutlineSpeed.Tip"));
-	set_tip(slider("outline_neon", "Shadow.OutlineNeon", 10.0, 90.0, "%"),
+	set_tip(slider("outline_neon", "Shadow.OutlineNeon", 10.0, 400.0, "%"),
 		obs_module_text("Shadow.OutlineNeon.Tip"));
 	set_tip(slider("outline_pattern_scale", "Shadow.OutlinePatternScale", 10.0, 400.0, "%"),
 		obs_module_text("Shadow.OutlinePatternScale.Tip"));
@@ -423,6 +454,7 @@ LookPaint::~LookPaint()
 {
 	obs_enter_graphics();
 	blur_.reset();
+	halo_blur_.reset();
 	rects_.reset();
 	gs_texture_destroy(no_rect_);
 	gs_effect_destroy(effect_);
@@ -518,7 +550,7 @@ double shadow_reach(const ShadowLook &look)
 	if (look.shadow)
 		reach += std::max(std::abs(look.offset_x), std::abs(look.offset_y)) + 2.0 * look.softness;
 	if (look.outline)
-		reach = std::max(reach, look.outline_width + 2.0);
+		reach = std::max(reach, look.outline_width + look.design.halo_reach(look.outline_width) + 2.0);
 	return reach;
 }
 
@@ -697,7 +729,10 @@ bool LookPaint::compose(gs_texture_t *scene, gs_texture_t *cast, gs_texture_t *m
 	// from the bare sources, the shadow of an outlined source started under
 	// its line and showed square corners behind a rounded one.
 	gs_texture_t *thrower = cast;
-	if (has_ring && look.shadow && look.opacity > 0.001) {
+	// (Neon's halo is that shape softened, so it is made for it too.)
+	const bool neon = has_ring && look.design.kind == OutlineDesign::Neon;
+	gs_texture_t *lined = nullptr;
+	if (has_ring && ((look.shadow && look.opacity > 0.001) || neon)) {
 		gs_texrender_reset(outlined_);
 		if (gs_texrender_begin(outlined_, cx, cy)) {
 			gs_ortho(0.0f, (float)cx, 0.0f, (float)cy, -100.0f, 100.0f);
@@ -710,12 +745,22 @@ bool LookPaint::compose(gs_texture_t *scene, gs_texture_t *cast, gs_texture_t *m
 			gs_blend_state_pop();
 			gs_texrender_end(outlined_);
 			if (gs_texture_t *grown = gs_texrender_get_texture(outlined_))
-				thrower = grown;
+				thrower = lined = grown;
 		}
 	}
 	gs_texture_t *softened = thrower;
 	if (look.shadow && look.softness > 0.0)
 		softened = blur_->blur(thrower, cx, cy, look.softness);
+	// Neon's halo: one more blur, of the sources with their line, only for
+	// a Neon line.
+	gs_texture_t *halo = nullptr;
+	if (neon && lined) {
+		if (!halo_blur_)
+			halo_blur_ = std::make_unique<KawaseBlur>(true);
+		halo = halo_blur_->blur(lined, cx, cy, look.design.halo_reach(look.outline_width) * kHaloBlur);
+		if (halo == lined)
+			halo = nullptr;
+	}
 	gs_texrender_reset(out);
 	bool drawn = false;
 	if (gs_texrender_begin(out, cx, cy)) {
@@ -737,6 +782,7 @@ bool LookPaint::compose(gs_texture_t *scene, gs_texture_t *cast, gs_texture_t *m
 		gs_effect_set_float(p_straight_, scene_straight ? 1.0f : 0.0f);
 		gs_effect_set_float(p_intensity_, (float)look.intensity);
 		line_values();
+		design_.set_halo(look.design, look.outline_color, look.outline_opacity, halo, cast);
 		while (gs_effect_loop(effect_, has_ring ? "Ring" : "MaskedShadow"))
 			gs_draw_sprite(scene, 0, cx, cy);
 		gs_blend_state_pop();

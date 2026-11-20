@@ -69,7 +69,7 @@ struct OutlineDesign {
 	uint32_t color2 = 0xFFFFAA00; // the gradient's other end, the shimmer's highlight
 	double dash = 24.0, gap = 16.0;
 	double speed = 60.0; // pixels a second for dashes; 600 is one round a second; 0 stands still
-	double glow = 0.7;   // Neon: the share of the line's width that is glow
+	double glow = 1.5;   // Neon: how far its halo reaches past the line, in line widths
 	// The pattern fills: their third colour (the outline colour and `color2`
 	// are the first two) and how large the pattern is, 1 as designed.
 	uint32_t color3 = 0xFFA046C8;
@@ -77,7 +77,13 @@ struct OutlineDesign {
 	bool pattern() const { return kind >= Aurora && kind <= kLast; }
 	// Drawn inside the source's edge, with no line outside it.
 	bool inner() const { return kind == Inner; }
+	// Neon: how far the halo of light reaches past a line `width` wide.
+	double halo_reach(double width) const { return kind == Neon ? width * glow : 0.0; }
 };
+
+// Neon's halo: the blur's strength for a reach of one pixel (measured: a
+// KawaseBlur's picture is gone some two thirds of its strength from an edge).
+constexpr double kHaloBlur = 1.4;
 
 // The design as the settings say, and part-way between two (the kind changes
 // half-way).
@@ -97,10 +103,16 @@ public:
 	// effect reads must be set at every run. Without `stand_in` the two
 	// are left alone (a technique that draws no colour).
 	void set(const OutlineDesign &design, gs_texture_t *pattern = nullptr, gs_texture_t *stand_in = nullptr) const;
+	// Neon's halo, for the technique that lays it (Ring; Compose): `halo`,
+	// the line's shape softened, or null for none; `stand_in`, any texture,
+	// given in its place then. At every run of that technique.
+	void set_halo(const OutlineDesign &design, uint32_t outline_color, double opacity, gs_texture_t *halo,
+		      gs_texture_t *stand_in) const;
 
 private:
 	gs_eparam_t *kind_ = nullptr, *color2_ = nullptr, *dash_ = nullptr, *gap_ = nullptr;
-	gs_eparam_t *phase_ = nullptr, *turn_ = nullptr, *pulse_ = nullptr, *glow_ = nullptr;
+	gs_eparam_t *phase_ = nullptr, *turn_ = nullptr, *pulse_ = nullptr;
+	gs_eparam_t *halo_tex_ = nullptr, *halo_color_ = nullptr;
 	gs_eparam_t *pattern_tex_ = nullptr, *pattern_on_ = nullptr;
 };
 
@@ -382,6 +394,7 @@ private:
 	gs_texture_t *no_rect_ = nullptr;
 	gs_texrender_t *outlined_ = nullptr; // the casting sources with their line, which casts the shadow
 	std::unique_ptr<KawaseBlur> blur_;
+	std::unique_ptr<KawaseBlur> halo_blur_; // Neon's halo, made when first wanted
 	gs_texrender_t *out_ = nullptr;
 	gs_texrender_t *between_[2] = {nullptr, nullptr}; // compose_layers' pictures on the way
 	std::vector<gs_texrender_t *> spares_;
