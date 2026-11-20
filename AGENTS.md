@@ -2339,7 +2339,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   The owner: a camera overlapping a window capture, but beside it when the window "doesn't fit
   the whole screen".
 - **The whole screen can make room when the image does not fill it** (`whole_make_room`, *Make
-  room if not filling*, off as it comes; shown for Fit area 0 and 1; betaNEXT). The owner, of a
+  room if not filling*, off as it comes; shown for Fit area 0 and 1; beta218). The owner, of a
   4:3 standby image on *The whole screen* over a sliver of the square camera: "id like those
   settings to exist for whole screen mode too". Ticked, the fit goes through the free space's
   engine path whatever the switch (`FitSettings::whole`; a tick's copy `Prep::s` says `FreeSpace`,

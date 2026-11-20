@@ -23,7 +23,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
-## The whole screen makes room when the image does not fill (0.1.0-betaNEXT)
+## The whole screen makes room when the image does not fill (0.1.0-beta218)
 
 Branch `feat/whole-screen-overlap`, on `main` at beta215. Not pushed. The owner (a 4:3 standby
 image on *The whole screen*, centred, over a sliver of the square camera in the corner): "id like
