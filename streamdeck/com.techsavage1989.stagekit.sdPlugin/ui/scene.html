@@ -27,24 +27,32 @@
 				<div class="works-chosen"></div>
 			</div>
 		</sdpi-item>
-		<sdpi-item label="Scene">
-			<sdpi-select setting="scene" datasource="getScenes" placeholder="Choose a scene" show-refresh></sdpi-select>
+		<sdpi-item label="Scene" title="The OBS scene this key selects.">
+			<sdpi-select setting="scene" datasource="getScenes" placeholder="Choose one" show-refresh></sdpi-select>
 		</sdpi-item>
-		<sdpi-item label="Switch">
+		<sdpi-item label="Switch" title="Preview selects the preview in Studio Mode and the live scene when Studio Mode is off.">
 			<sdpi-select setting="where" default="program">
 				<option value="program">Program (live)</option>
 				<option value="preview">Preview (Studio Mode)</option>
 			</sdpi-select>
 		</sdpi-item>
-		<sdpi-item label="Transition">
+		<sdpi-item label="Transition" title="Choose the transition used when switching. Leave OBS's as it is uses the current OBS transition.">
 			<sdpi-select setting="transition" datasource="getSceneTransitions" default=""></sdpi-select>
 		</sdpi-item>
-		<sdpi-item label="Duration (ms)">
+		<sdpi-item label="Duration (ms)" title="Blank keeps the current OBS duration. A number changes the duration of a transition with adjustable timing.">
 			<sdpi-textfield setting="lasting" placeholder="As set in OBS" pattern="[0-9]*"></sdpi-textfield>
 		</sdpi-item>
-		<sdpi-item label="Layout" title="How the key&#x27;s image is laid out: the type alone, in the live layout with a camera in its corner, or in the live layout with a camera and chat column. Automatic keeps the image as it is.">
-			<sdpi-select setting="layout" placeholder="Automatic">
-				<option value="auto">Automatic</option>
+		<sdpi-item label="After the switch" title="Keep makes this transition and duration the OBS defaults. Restore puts the previous values back after the live switch completes.">
+			<sdpi-select setting="restoreTransition" default="keep">
+				<option value="keep">Keep the selected transition</option>
+				<option value="restore">Restore the previous transition</option>
+			</sdpi-select>
+		</sdpi-item>
+		<details open>
+			<summary>Image</summary>
+		<sdpi-item label="Image layout" title="Live adds a camera. Live + chat adds a camera and a chat column. Standalone removes the frame from the six game, window and capture-card layout images. Other images keep their usual drawing.">
+			<sdpi-select setting="layout" placeholder="Automatic (usual layout)">
+				<option value="auto">Automatic (usual layout)</option>
 				<option value="standalone">Standalone</option>
 				<option value="live">Live (no chat)</option>
 				<option value="chat">Live + chat</option>
@@ -199,7 +207,7 @@
 				</optgroup>
 			</sdpi-select>
 		</sdpi-item>
-		<sdpi-item label="Palette">
+		<sdpi-item label="Palette" title="The colors used to draw this key. Applies to its on and off states.">
 			<sdpi-select setting="palette" default="mono">
 				<option value="mono">Mono</option>
 				<option value="violet">Violet</option>
@@ -209,16 +217,16 @@
 				<option value="neon">Neon</option>
 			</sdpi-select>
 		</sdpi-item>
-
+		</details>
 		<details>
 			<summary>OBS connection</summary>
-			<sdpi-item label="Address">
+			<sdpi-item label="Address" title="Computer running OBS. Use 127.0.0.1 when Stream Deck and OBS run on the same computer.">
 				<sdpi-textfield setting="host" global placeholder="127.0.0.1"></sdpi-textfield>
 			</sdpi-item>
-			<sdpi-item label="Port">
+			<sdpi-item label="Port" title="The port shown in OBS under Tools, WebSocket Server Settings.">
 				<sdpi-textfield setting="port" global placeholder="4455"></sdpi-textfield>
 			</sdpi-item>
-			<sdpi-item label="Password">
+			<sdpi-item label="Password" title="The password shown in OBS under WebSocket Server Settings, Show Connect Info. All StageKit keys share it.">
 				<sdpi-password setting="password" global></sdpi-password>
 			</sdpi-item>
 			<p>

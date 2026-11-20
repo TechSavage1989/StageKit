@@ -28,7 +28,7 @@
 			</div>
 		</sdpi-item>
 		<sdpi-item label="Scene and filter" title="Each entry is a scene and, after the dash, the name of its “Scene Filter: Scene Modes (StageKit)”. In OBS: right-click the scene and choose Filters to find that filter by its name.">
-			<sdpi-select id="modeFilter" setting="modeFilter" datasource="getModeFilters" placeholder="Choose a Scene Modes" show-refresh></sdpi-select>
+			<sdpi-select id="modeFilter" setting="modeFilter" datasource="getModeFilters" placeholder="Choose one" show-refresh></sdpi-select>
 		</sdpi-item>
 		<sdpi-item label="Mode settings" title="A mode of the Scene Modes: choose one to set, just below, whether Next mode uses it and the key&#x27;s layout and image while it is on. Each mode keeps its own. Chosen for you: the key&#x27;s Switch to mode, else the first mode.">
 			<sdpi-select id="modeFor" setting="modeFor" datasource="getFilterModes" placeholder="Choose a mode" show-refresh></sdpi-select>
@@ -39,17 +39,17 @@
 				<option value="skip">Left out of Next mode</option>
 			</sdpi-select>
 		</sdpi-item>
-		<sdpi-item label="Layout" title="The layout of the key&#x27;s image while the mode chosen in Mode settings is on. Automatic: the key-wide Layout of a key made earlier, else the image as it comes (not Standalone).">
-			<sdpi-select setting="modeLayout" placeholder="Automatic">
-				<option value="auto">Automatic</option>
+		<sdpi-item label="Image layout" title="The layout of the key&#x27;s image while the mode chosen in Mode settings is on. Automatic: the key-wide Layout of a key made earlier, else the image as it comes (not Standalone).">
+			<sdpi-select setting="modeLayout" placeholder="Automatic (usual layout)">
+				<option value="auto">Automatic (usual layout)</option>
 				<option value="standalone">Standalone</option>
 				<option value="live">Live (no chat)</option>
 				<option value="chat">Live + chat</option>
 			</sdpi-select>
 		</sdpi-item>
-		<sdpi-item label="Image" title="The image the key shows while the mode chosen in Mode settings is on. Automatic: the mode&#x27;s Mode type set in OBS, then the type its name speaks of.">
-			<sdpi-select setting="modeType" placeholder="Automatic">
-				<option value="auto">Automatic</option>
+		<sdpi-item label="Mode type" title="The image the key shows while the mode chosen in Mode settings is on. Automatic: the mode&#x27;s Mode type set in OBS, then the type its name speaks of.">
+			<sdpi-select setting="modeType" placeholder="Automatic (from OBS)">
+				<option value="auto">Automatic (from OBS)</option>
 				<optgroup label="Captures &amp; games">
 					<option value="game">Game</option>
 					<option value="retro">Retro game</option>
@@ -196,23 +196,23 @@
 		</sdpi-item>
 		<details open>
 			<summary>Key</summary>
-			<sdpi-item label="On press" title="Switch on: its mode. Switch off: no mode (the filter must allow no mode). Toggle: its mode, or back to the mode before. Next mode: the next of the modes used, in the filter&#x27;s order, round again after the last.">
+			<sdpi-item label="On press" title="Toggle selects this mode. Press again to leave it: clear it if the filter allows no mode, or return to the previous mode if one is available. Switch on selects this mode. Switch off clears it if the filter allows no mode. Next mode: the next of the modes used, in the filter&#x27;s order, round again after the last.">
 				<sdpi-select setting="press" default="on">
+					<option value="toggle">Toggle</option>
 					<option value="on">Switch on</option>
 					<option value="off">Switch off</option>
-					<option value="toggle">Toggle</option>
 					<option value="next">Next mode</option>
 				</sdpi-select>
 			</sdpi-item>
-			<sdpi-item label="Switch to mode" title="The mode Switch on and Toggle act on. The key shows the mode that is on.">
+			<sdpi-item label="Switch to mode" title="The mode selected by Switch on or Toggle. A new key starts with the mode shown in Mode settings. Switch on shows its own mode. The other actions show the active mode.">
 				<sdpi-select id="mode" setting="mode" datasource="getFilterModes" placeholder="Choose a mode" show-refresh></sdpi-select>
 			</sdpi-item>
 			<sdpi-item label="Long press" title="What holding the key does. Nothing (as it comes): the key acts the moment it is pressed. Set, a press acts when the key is let go, and holding it for the hold time does this instead.">
 				<sdpi-select setting="longPress" default="none">
 					<option value="none">Nothing</option>
+					<option value="toggle">Toggle</option>
 					<option value="on">Switch on</option>
 					<option value="off">Switch off</option>
-					<option value="toggle">Toggle</option>
 					<option value="next">Next mode</option>
 				</sdpi-select>
 			</sdpi-item>
@@ -222,27 +222,29 @@
 			<sdpi-item label="Hold time (ms)" title="How long the key must be held for its long press: 300 to 5000 ms, 800 as it comes.">
 				<sdpi-textfield setting="holdMs" placeholder="800" pattern="[0-9]*"></sdpi-textfield>
 			</sdpi-item>
-			<sdpi-item label="Palette">
-				<sdpi-select setting="palette" default="mono">
-					<option value="mono">Mono</option>
-					<option value="violet">Violet</option>
-					<option value="ocean">Ocean</option>
-					<option value="forest">Forest</option>
-					<option value="ember">Ember</option>
-					<option value="neon">Neon</option>
-				</sdpi-select>
-			</sdpi-item>
 		</details>
-
+		<details open>
+			<summary>Image</summary>
+		<sdpi-item label="Palette" title="The colors used to draw this key. Applies to its on and off states.">
+			<sdpi-select setting="palette" default="mono">
+				<option value="mono">Mono</option>
+				<option value="violet">Violet</option>
+				<option value="ocean">Ocean</option>
+				<option value="forest">Forest</option>
+				<option value="ember">Ember</option>
+				<option value="neon">Neon</option>
+			</sdpi-select>
+		</sdpi-item>
+		</details>
 		<details>
 			<summary>OBS connection</summary>
-			<sdpi-item label="Address">
+			<sdpi-item label="Address" title="Computer running OBS. Use 127.0.0.1 when Stream Deck and OBS run on the same computer.">
 				<sdpi-textfield setting="host" global placeholder="127.0.0.1"></sdpi-textfield>
 			</sdpi-item>
-			<sdpi-item label="Port">
+			<sdpi-item label="Port" title="The port shown in OBS under Tools, WebSocket Server Settings.">
 				<sdpi-textfield setting="port" global placeholder="4455"></sdpi-textfield>
 			</sdpi-item>
-			<sdpi-item label="Password">
+			<sdpi-item label="Password" title="The password shown in OBS under WebSocket Server Settings, Show Connect Info. All StageKit keys share it.">
 				<sdpi-password setting="password" global></sdpi-password>
 			</sdpi-item>
 			<p>
@@ -283,6 +285,34 @@
 						list.addEventListener("change", later);
 					}
 				ask();
+			})();
+		</script>
+
+		<script>
+			(() => {
+				const controls = Object.fromEntries(Array.from(document.querySelectorAll("[setting]"),
+					(element) => [element.getAttribute("setting"), element]));
+				const value = (setting) => controls[setting]?.value ?? controls[setting]?.getAttribute("default") ?? "";
+				const visible = (setting, show) => {
+					const row = controls[setting]?.closest("sdpi-item");
+					if (row) row.hidden = !show;
+				};
+				const update = () => {
+					const long = value("longPress");
+					visible("holdMs", Boolean(long && long !== "none"));
+					visible("longMode", long === "on" || long === "toggle");
+					visible("modeUse", value("press") === "next" || long === "next");
+					visible("hideAs", value("press") !== "on");
+					visible("animate", !value("sceneType") || value("sceneType") === "auto");
+				};
+				for (const element of Object.values(controls)) {
+					element.addEventListener("valuechange", update);
+					element.addEventListener("change", update);
+				}
+				const client = window.SDPIComponents?.streamDeckClient;
+				client?.didReceiveSettings?.subscribe(() => requestAnimationFrame(update));
+				customElements.whenDefined("sdpi-select").then(() => requestAnimationFrame(update));
+				update();
 			})();
 		</script>
 	</body>

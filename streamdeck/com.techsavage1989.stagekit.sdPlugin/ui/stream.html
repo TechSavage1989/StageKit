@@ -57,9 +57,11 @@
 				<option value="off">Off</option>
 			</sdpi-select>
 		</sdpi-item>
-		<sdpi-item label="Layout" title="How the key&#x27;s image is laid out: the type alone, in the live layout with a camera in its corner, or in the live layout with a camera and chat column. Automatic keeps the image as it is.">
-			<sdpi-select setting="layout" placeholder="Automatic">
-				<option value="auto">Automatic</option>
+		<details open>
+			<summary>Image</summary>
+		<sdpi-item label="Image layout" title="Live adds a camera. Live + chat adds a camera and a chat column. Standalone removes the frame from the six game, window and capture-card layout images. Other images keep their usual drawing.">
+			<sdpi-select setting="layout" placeholder="Automatic (usual layout)">
+				<option value="auto">Automatic (usual layout)</option>
 				<option value="standalone">Standalone</option>
 				<option value="live">Live (no chat)</option>
 				<option value="chat">Live + chat</option>
@@ -214,7 +216,7 @@
 				</optgroup>
 			</sdpi-select>
 		</sdpi-item>
-		<sdpi-item label="Palette">
+		<sdpi-item label="Palette" title="The colors used to draw this key. Applies to its on and off states.">
 			<sdpi-select setting="palette" default="mono">
 				<option value="mono">Mono</option>
 				<option value="violet">Violet</option>
@@ -224,16 +226,16 @@
 				<option value="neon">Neon</option>
 			</sdpi-select>
 		</sdpi-item>
-
+		</details>
 		<details>
 			<summary>OBS connection</summary>
-			<sdpi-item label="Address">
+			<sdpi-item label="Address" title="Computer running OBS. Use 127.0.0.1 when Stream Deck and OBS run on the same computer.">
 				<sdpi-textfield setting="host" global placeholder="127.0.0.1"></sdpi-textfield>
 			</sdpi-item>
-			<sdpi-item label="Port">
+			<sdpi-item label="Port" title="The port shown in OBS under Tools, WebSocket Server Settings.">
 				<sdpi-textfield setting="port" global placeholder="4455"></sdpi-textfield>
 			</sdpi-item>
-			<sdpi-item label="Password">
+			<sdpi-item label="Password" title="The password shown in OBS under WebSocket Server Settings, Show Connect Info. All StageKit keys share it.">
 				<sdpi-password setting="password" global></sdpi-password>
 			</sdpi-item>
 			<p>
@@ -264,6 +266,34 @@
 						list.addEventListener("change", later);
 					}
 				ask();
+			})();
+		</script>
+
+		<script>
+			(() => {
+				const controls = Object.fromEntries(Array.from(document.querySelectorAll("[setting]"),
+					(element) => [element.getAttribute("setting"), element]));
+				const value = (setting) => controls[setting]?.value ?? controls[setting]?.getAttribute("default") ?? "";
+				const visible = (setting, show) => {
+					const row = controls[setting]?.closest("sdpi-item");
+					if (row) row.hidden = !show;
+				};
+				const update = () => {
+					const long = value("longPress");
+					visible("holdMs", Boolean(long && long !== "none"));
+					visible("longMode", long === "on" || long === "toggle");
+					visible("modeUse", value("press") === "next" || long === "next");
+					visible("hideAs", value("press") !== "on");
+					visible("animate", !value("sceneType") || value("sceneType") === "auto");
+				};
+				for (const element of Object.values(controls)) {
+					element.addEventListener("valuechange", update);
+					element.addEventListener("change", update);
+				}
+				const client = window.SDPIComponents?.streamDeckClient;
+				client?.didReceiveSettings?.subscribe(() => requestAnimationFrame(update));
+				customElements.whenDefined("sdpi-select").then(() => requestAnimationFrame(update));
+				update();
 			})();
 		</script>
 	</body>

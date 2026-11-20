@@ -77,10 +77,12 @@ jobs:
               result = subprocess.run(["gh","api","--method","POST","repos/"+os.environ["GITHUB_REPOSITORY"]+"/git/blobs","--input","-","--jq",".sha"],input=body,stdout=subprocess.PIPE,check=True)
               assert want == result.stdout.decode().strip()
               return "generated file " + want + " " + path
-          for row in concurrent.futures.ThreadPoolExecutor(max_workers=3).map(save, sorted(set(generated))):
+          changed = set(subprocess.check_output(["git","diff","--name-only","--","streamdeck"]).decode().splitlines()) | set(new)
+          for row in concurrent.futures.ThreadPoolExecutor(max_workers=2).map(save, sorted(set(generated) & changed)):
               print(row,flush=True)
           PY
       - name: Exercise the generated inspectors and the OBS WebSocket protocol
+        if: always()
         working-directory: streamdeck
         run: npm test
       - name: Typecheck, compile and package

@@ -566,7 +566,7 @@ def main():
 
     key_pictures("shape", "filters/auto-frame-on", None)
     ratio_labels = {"8:7": "8:7 (SNES / NES, square pixels)", "64:49": "64:49 (SNES / NES on a 4:3 TV)"}
-    shapes = [("auto", "Automatic (follow Auto Frame)")] + [(value, ratio_labels.get(value, value)) for value in
+    shapes = [("auto", "Automatic (work it out)")] + [(value, ratio_labels.get(value, value)) for value in
               ("4:3", "8:7", "64:49", "3:2", "10:9", "16:15", "16:9", "16:10", "5:4", "1:1")]
     page(
         "shape",
