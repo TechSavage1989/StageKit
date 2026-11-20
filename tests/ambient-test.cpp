@@ -18162,6 +18162,8 @@ static void outline_bleed_test(uint32_t w, uint32_t h)
 		{"0.6 px short in width", 0.0f, 0.0f, (float)w - 0.6f, (float)h},
 		{"0.6 px short in width, centred", 0.3f, 0.0f, (float)w - 0.6f, (float)h},
 		{"0.4 px up", 0.0f, -0.4f, (float)w, (float)h},
+		{"1.14 px short at the right", 0.0f, 0.0f, (float)w - 1.14f, (float)h},
+		{"two empty columns at the right", 0.0f, 0.0f, (float)w - 2.0f, (float)h},
 		{"0.6 px short in height", 0.0f, 0.0f, (float)w, (float)h - 0.6f},
 		{"0.45 px short all round", 0.45f, 0.45f, (float)w - 0.9f, (float)h - 0.9f},
 		{"1.5 px past every edge", -1.5f, -1.5f, (float)w + 3.0f, (float)h + 3.0f},
@@ -18174,13 +18176,16 @@ static void outline_bleed_test(uint32_t w, uint32_t h)
 			      {"square", 5, 0},
 			      {"rounded", 1, 0},
 			      {"a pattern, square", 5, 12},
-			      {"a pattern, following", 0, 12}};
+			      {"a pattern, following", 0, 12},
+			      {"Nebula, rounded", 1, 16}};
 	int b_cases = 0, b_bad = 0, b_worst_level = 0, b_controls = 0, b_missing = 0;
 	std::string b_worst;
 	for (const Size &size : {Size{480, 270}})
 		for (const Place &place : places)
 			for (int from = 0; from < 2; from++) {
-				if (quick && &place != &places[0] && &place != &places[4])
+				const bool one_column = place.bw == (float)w - 1.14f;
+			const bool two_columns = place.bw == (float)w - 2.0f;
+			if (quick && &place != &places[0] && &place != &places[4] && !one_column && !two_columns)
 					continue;
 				obs_source_t *bg = block("OB Back", 0xFF000000, (int)w, (int)h);
 				obs_source_t *src = block("OB Source", green, size.w, size.h);
@@ -18217,7 +18222,9 @@ static void outline_bleed_test(uint32_t w, uint32_t h)
 				obs_data_release(zd);
 				obs_source_filter_add(ss, look);
 				for (const Line &line : lines)
-					for (int width : {1, 3, 12}) {
+					for (int width : {1, 3, 6, 12}) {
+						if ((one_column || two_columns || line.design == 16) && width != 6)
+							continue;
 						obs_data_t *d = obs_data_create();
 						obs_data_set_double(d, "outline_width", (double)width);
 						obs_data_set_int(d, "outline_corners", line.corners);
@@ -18252,14 +18259,22 @@ static void outline_bleed_test(uint32_t w, uint32_t h)
 							       first(place.x + place.bw, (int)w),
 							       first(place.y + place.bh, (int)h)};
 						const Edges e = edges(f, &span);
+						if (two_columns) {
+							// A real two-column gap must still show the outer line.
+							int ink = 0;
+							for (uint32_t y = h / 4; y < 3 * h / 4; y++) {
+								const size_t right = ((size_t)y * w + w - 1) * 4;
+								ink = std::max(ink, (int)std::max(f[right], f[right + 2]));
+							}
+							b_controls++;
+							if (ink < 24)
+								b_missing++;
+							continue;
+						}
 						b_cases++;
 						bool bad = false;
-						// (Here by the item's place: the
-						// picture covers a pixel when it covers
-						// its middle. A pattern line can have
-						// green in it.)
-						const bool covers[4] = {span.l == 0, span.t == 0, span.r == (int)w,
-									span.b == (int)h};
+						const bool covers[4] = {span.l <= 1, span.t <= 1, span.r >= (int)w - 1,
+									span.b >= (int)h - 1};
 						for (int s = 0; s < 4; s++)
 							if (covers[s] && e.most[s] > kMost) {
 								bad = true;
@@ -18300,10 +18315,10 @@ static void outline_bleed_test(uint32_t w, uint32_t h)
 				sleep_ms(60);
 			}
 	CHECK(b_controls > 0 && b_missing == 0,
-	      "Scene Shadow: the line shows round a source well inside the screen (%d of %d without one)", b_missing,
+	      "Scene Shadow: an inset source and a two-pixel gap keep their outline (%d of %d missing)", b_missing,
 	      b_controls);
 	CHECK(b_bad == 0,
-	      "Scene Shadow, sources a fraction of a pixel on or off the screen: no line at an edge the picture covers (%d of %d cases showed one%s%s)",
+	      "Scene Shadow, sources a fraction of a pixel on or off the screen: no line in a single exposed canvas row or column (%d of %d cases showed one%s%s)",
 	      b_bad, b_cases, b_bad ? "; the worst: " : "", b_worst.c_str());
 	obs_set_output_source(0, before);
 	if (before)
