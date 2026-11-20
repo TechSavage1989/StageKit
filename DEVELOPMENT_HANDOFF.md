@@ -23,7 +23,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
-## Position X, Position Y and Rotation (0.1.0-betaNEXT)
+## Position X, Position Y and Rotation (0.1.0-beta220)
 
 The owner: "the ambient background image/animations and shadow outlines/animations should have
 similar transform controls as the blur/mosaic feature with x, y, and rotation controls."
