@@ -9,7 +9,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | `feat/outline-ambient-fill`. Release notes in `docs/releases/0.1.0-beta226.md`. |
+| Working branch | `feat/material-patterns-batch2`. Release notes in `docs/releases/0.1.0-beta228.md`. |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 | Gate | Checks passed |
@@ -30,6 +30,30 @@ separate shader file protects earlier looks when a renderer cannot load it. Nine
 have outline designs 35 through 43. The Ambient Background fill keeps its value 34.
 Code wall, Network web and HUD data wall use the full background to show their small details.
 The solder-pad circuit board is a separate option so a saved circuit board keeps its look.
+An isolated Windows OBS 32.2.2 Direct3D 11 renderer checked both palettes, motion and the
+240-second loop endpoints for all twelve backgrounds. The Ubuntu OpenGL tests passed for
+HEX_PATTERNS, OUTLINE_AMBIENT, OUTLINE_PATTERNS and PATTERN_TRANSFORM. The two animated
+preview sheets in the guide show frames captured from the Windows renderer.
+
+## Dock and filter controls (0.1.0-beta227)
+
+The approved third review stage covers the dock decisions D16 to D22, source hotkey renames,
+capture choices, timing, ratio presets and source-specific status. The dock's ordered selection,
+copy destination, placement duration and position keys preserve existing collections. The Stream
+Deck's matching ratio list belongs to stage 4. Fit behavior and migration belong to stage 7.
+
+- Scene Transitions lists scene sources in *Settings for*. A saved per-source transition applies
+  in All sources even when its name is absent from the Chosen sources list. Link Visibility and
+  Show in Scenes continue to use their configured lists. The Scene Transitions test exercises
+  an unlisted source and its unaffected neighbour.
+- Scene Fit reports the same decisions its existing source selection makes. Apply Layout compares
+  saved source names with the active list. Scene Shadow and Scene Blur report the blocking filter or HDR.
+- Preserve integer IDs for ratio and visual transition choices. Auto Capture's default scene-item
+  hide keeps the item's own transition. A saved Scene Shadow with only one time uses that for both
+  ramp directions. A saved Morph wildcard keeps the literal value it had in English.
+- Targeted render checks cover capture hiding, Standby, dock bounds, tooltips, layouts,
+  Auto Frame and Scene Transitions. All seven targeted groups passed on Linux OpenGL. The Scene
+  Transitions property rebuild completed under Valgrind with zero memory errors.
 
 ## Outlines filled with an Ambient Background (0.1.0-beta226)
 

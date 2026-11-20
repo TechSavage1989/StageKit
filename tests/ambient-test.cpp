@@ -6752,7 +6752,7 @@ static void auto_frame_switcher_test()
 	draw_for(900);
 	std::string said = status();
 	double x = trim_x();
-	CHECK(has(said, "Capturing emu_43.exe.") && has(said, "4:3, from your saved shapes") &&
+	CHECK(has(said, "Capturing emu_43.exe.") && has(said, "4:3, from your saved aspect ratios") &&
 		      std::fabs(x - 80.0) < 0.6,
 	      "the program with a saved 4:3 shape is captured: its shape trims its image (%.1f px a side; \"%s\")", x,
 	      said.c_str());
@@ -6790,7 +6790,7 @@ static void auto_frame_switcher_test()
 	draw_for(800);
 	said = status();
 	x = trim_x();
-	CHECK(has(said, "Capturing browser.exe.") && has(said, "3:2, from your saved shapes") &&
+	CHECK(has(said, "Capturing browser.exe.") && has(said, "3:2, from your saved aspect ratios") &&
 		      std::fabs(x - 62.5) < 0.6,
 	      "a saved shape for part of the shown window's title is used when its title changes (%.1f px; \"%s\")", x,
 	      said.c_str());
@@ -6802,7 +6802,7 @@ static void auto_frame_switcher_test()
 	draw_for(1200);
 	said = status();
 	x = trim_x();
-	CHECK(has(said, "Capturing emu_43.exe.") && has(said, "4:3, from your saved shapes") &&
+	CHECK(has(said, "Capturing emu_43.exe.") && has(said, "4:3, from your saved aspect ratios") &&
 		      std::fabs(x - 80.0) < 0.6,
 	      "back to the emulator, its saved 4:3 trims its image again (%.1f px; \"%s\")", x, said.c_str());
 
@@ -10648,6 +10648,14 @@ static void scene_trans_override_test()
 		obs_data_release(s);
 		obs_properties_t *props = obs_source_properties(f);
 		const std::string all_title = description(props, "sources|alist");
+		obs_property_t *for_box = obs_properties_get(props, "change|for");
+		bool offers_a = false, offers_b = false;
+		for (size_t n = 0; for_box && n < obs_property_list_item_count(for_box); n++) {
+			const char *name = obs_property_list_item_string(for_box, n);
+			offers_a |= name && strcmp(name, "OV A") == 0;
+			offers_b |= name && strcmp(name, "OV B") == 0;
+		}
+		CHECK(offers_a && offers_b, "Settings for offers both scene sources before either is listed");
 		std::string all_tip = tip(props, "sources|apick");
 		const bool has_box = obs_properties_get(props, "override_others") != nullptr;
 		const std::string box = description(props, "override_others");
@@ -10683,6 +10691,18 @@ static void scene_trans_override_test()
 		      "with Chosen sources it is Chosen sources, changed in place and in a new window (%s / %s: %s)",
 		      chosen_title.c_str(), opened.c_str(), chosen_tip.c_str());
 	}
+
+	change(f, [](obs_data_t *s) {
+		obs_data_set_string(s, "for|OV B|transition", "slide_transition");
+		obs_data_set_int(s, "for|OV B|transition_ms", 250);
+	});
+	wait(src, 350);
+	CHECK(kind_of(ib, true) == "slide_transition" && kind_of(ia, true) == "fade_transition",
+	      "an unlisted source uses its own transition while its neighbour keeps the scene's fade");
+	change(f, [](obs_data_t *s) {
+		obs_data_erase(s, "for|OV B|transition");
+		obs_data_erase(s, "for|OV B|transition_ms");
+	});
 
 	// ---- Morph's own choices in the window
 	{
@@ -13755,6 +13775,20 @@ static void dock_bounds_test()
 	proc_handler_call(obs_get_proc_handler(), "stagekit_create_dock", &dock_cd);
 	auto *dock = static_cast<QWidget *>(calldata_ptr(&dock_cd, "widget"));
 	calldata_free(&dock_cd);
+	const char *untipped = nullptr;
+	for (const char *name : {"scene", "item", "linked", "margin", "duration", "makeKeys", "saveSpot", "snapWithin",
+				 "filterCopy", "lockItems", "unlockItems", "updateWhatsNew"}) {
+		auto *control = dock ? dock->findChild<QWidget *>(name) : nullptr;
+		if (!control || control->toolTip().isEmpty()) {
+			untipped = name;
+			break;
+		}
+		for (const QString &line : control->toolTip().split('\n'))
+			if (static_cast<size_t>(line.size()) > stagekit::kTipWidth)
+				untipped = name;
+	}
+	CHECK(!untipped, "the dock's target, position, copy and update controls have wrapped tooltips (%s)",
+	      untipped ? untipped : "all");
 	auto *place = dock ? dock->findChild<QWidget *>("pagePlace") : nullptr;
 	auto *bounds = place ? place->findChild<QComboBox *>("boundsType") : nullptr;
 	auto *fit = place ? place->findChild<QCheckBox *>("autoFit") : nullptr;
@@ -20993,7 +21027,9 @@ static void hex_patterns_test(uint32_t w, uint32_t h, const char *base_image, co
 				obs_property_list_item_int(list, size_t(kFirst + i)) == kFirst + i;
 		obs_properties_destroy(props);
 		obs_source_release(bg);
-		CHECK(named, "the Pattern list has %zu entries, the six hex designs retain their saved names and numbers", count);
+		CHECK(named,
+		      "the Pattern list has %zu entries, the six hex designs retain their saved names and numbers",
+		      count);
 	}
 
 	obs_data_t *s = obs_data_create();
@@ -21172,7 +21208,10 @@ static void hex_patterns_test(uint32_t w, uint32_t h, const char *base_image, co
 	}
 	// The material patterns start after the six hex patterns. Check both palettes and the
 	// full four-minute return, with the normal saved IDs going through the source.
-	static const char *const material_names[] = {"Code wall", "Neon hex tiles", "Network web", "Hex flood", "Frosted glass", "Crystal ice", "HUD data wall", "Circuit board with solder pads", "Data streams", "Petal lattice", "Liquid marble", "Deep space"};
+	static const char *const material_names[] = {
+		"Code wall",     "Neon hex tiles", "Network web",   "Hex flood",
+		"Frosted glass", "Crystal ice",    "HUD data wall", "Circuit board with solder pads",
+		"Data streams",  "Petal lattice",  "Liquid marble", "Deep space"};
 	std::vector<std::vector<uint8_t>> materials;
 	for (int index = 0; index < 12; ++index) {
 		auto first = shot("", [&](obs_data_t *d) {
@@ -21392,8 +21431,10 @@ static void hex_patterns_test(uint32_t w, uint32_t h, const char *base_image, co
 		      "%s: %zu designs, designs 29 to 33 the new fills by name and number, and one of them shows a pattern's colours, size, speed, position and rotation",
 		      who[i], count);
 	}
-	static const char *const kFills[] = {"mesh", "halftone", "dot grid", "hex wire glow", "hex mosaic",
-		"Neon hex tiles", "Hex flood", "Frosted glass", "Crystal ice", "Circuit board with solder pads", "Data streams", "Petal lattice", "Liquid marble", "Deep space"};
+	static const char *const kFills[] = {
+		"mesh",           "halftone",      "dot grid",      "hex wire glow", "hex mosaic",
+		"Neon hex tiles", "Hex flood",     "Frosted glass", "Crystal ice",   "Circuit board with solder pads",
+		"Data streams",   "Petal lattice", "Liquid marble", "Deep space"};
 	for (int p = 0; p < int(sizeof(kFills) / sizeof(kFills[0])); p++) {
 		const int design = p < 5 ? 29 + p : 30 + p; // design 34 is Ambient Background
 		both([&](obs_data_t *d) {
@@ -35770,10 +35811,15 @@ int main(int argc, char **argv)
 									      add_source->findData("Copy Target") > 0 &&
 									      dock->findChild<QLabel *>(
 										      "copySourcesSame"),
-								      "the dock lists the sources that can be added to 'Sources to copy to', and says 'The same source' while none is");
+								      "the dock lists the sources that can be added to 'Sources to copy to', and shows an empty list while none is");
 								if (add_source) {
 									emit add_source->activated(
 										add_source->findData("Copy Target"));
+									// Since D17 a listed source counts only with Copy to: Chosen sources.
+									if (auto *copy_to =
+										    dock->findChild<QComboBox *>(
+											    "copyTo"))
+										copy_to->setCurrentIndex(1);
 									for (int i = 0; i < 4; i++) {
 										QCoreApplication::processEvents();
 										sleep_ms(50);
@@ -35802,6 +35848,9 @@ int main(int argc, char **argv)
 								if (auto *remove = dock->findChild<QPushButton *>(
 									    "copySourcesRemove"))
 									remove->click();
+								if (auto *copy_to =
+									    dock->findChild<QComboBox *>("copyTo"))
+									copy_to->setCurrentIndex(0);
 								for (int i = 0; i < 6; i++) {
 									QCoreApplication::processEvents();
 									sleep_ms(50);

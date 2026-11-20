@@ -26,7 +26,6 @@ namespace {
 std::mutex g_mutex;
 std::string g_path;
 std::atomic<uint64_t> g_revision{1};
-std::atomic<uint64_t> g_choice{0};
 AmbientView g_view;
 
 // Shows the start image at its own size. Choosing a file in this source's
@@ -158,13 +157,6 @@ void set_start_image_path(const std::string &path)
 void choose_start_image(const std::string &path)
 {
 	set_start_image_path(path);
-	if (!path.empty())
-		g_choice++;
-}
-
-uint64_t start_image_choice()
-{
-	return g_choice.load();
 }
 
 uint64_t start_image_revision()
@@ -183,9 +175,6 @@ void set_ambient_view(const AmbientView &view)
 	{
 		std::lock_guard lock(g_mutex);
 		g_view = view;
-		// Only the picture is a setting; the framing stays neutral.
-		g_view.zoom = 1.0;
-		g_view.focus_x = g_view.focus_y = 0.5;
 	}
 	g_revision++;
 }
@@ -201,9 +190,6 @@ void start_image_save(obs_data_t *save_data)
 	obs_data_set_string(save_data, "stagekit.start_image", start_image_path().c_str());
 	const AmbientView view = ambient_view();
 	obs_data_set_string(save_data, "stagekit.ambient_image", view.image.c_str());
-	obs_data_set_double(save_data, "stagekit.ambient_zoom", view.zoom);
-	obs_data_set_double(save_data, "stagekit.ambient_focus_x", view.focus_x);
-	obs_data_set_double(save_data, "stagekit.ambient_focus_y", view.focus_y);
 }
 
 void start_image_load(obs_data_t *save_data)
@@ -212,13 +198,12 @@ void start_image_load(obs_data_t *save_data)
 	// Start Image source in it may already have set.
 	if (obs_data_has_user_value(save_data, "stagekit.start_image"))
 		set_start_image_path(obs_data_get_string(save_data, "stagekit.start_image"));
+	// (Up to beta223 the image was saved with a zoom and focus that did
+	// nothing; it is read whichever of the two a collection has.)
 	AmbientView view;
-	if (obs_data_has_user_value(save_data, "stagekit.ambient_zoom")) {
+	if (obs_data_has_user_value(save_data, "stagekit.ambient_image") ||
+	    obs_data_has_user_value(save_data, "stagekit.ambient_zoom"))
 		view.image = obs_data_get_string(save_data, "stagekit.ambient_image");
-		view.zoom = obs_data_get_double(save_data, "stagekit.ambient_zoom");
-		view.focus_x = obs_data_get_double(save_data, "stagekit.ambient_focus_x");
-		view.focus_y = obs_data_get_double(save_data, "stagekit.ambient_focus_y");
-	}
 	set_ambient_view(view);
 }
 
@@ -271,19 +256,6 @@ void register_start_image()
 		[](void *, calldata_t *cd) {
 			const char *path = calldata_string(cd, "path");
 			choose_start_image(path ? path : "");
-		},
-		nullptr);
-	proc_handler_add(
-		obs_get_proc_handler(),
-		"void stagekit_set_ambient_view(in string image, in float zoom, in float focus_x, in float focus_y)",
-		[](void *, calldata_t *cd) {
-			AmbientView view;
-			const char *image = calldata_string(cd, "image");
-			view.image = image ? image : "";
-			view.zoom = calldata_float(cd, "zoom");
-			view.focus_x = calldata_float(cd, "focus_x");
-			view.focus_y = calldata_float(cd, "focus_y");
-			set_ambient_view(view);
 		},
 		nullptr);
 }

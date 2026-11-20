@@ -39,6 +39,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../transition/morph-paint.hpp"
 #include "../transition/morph.hpp"
 #include "../common/tooltip.hpp"
+#include "../common/hotkey-rename.hpp"
 
 #include <obs-module.h>
 #include <plugin-support.h>
@@ -325,24 +326,38 @@ public:
 		hidden_changed_ = true;
 	}
 
+	// The cover hotkey, under the filter's name: from the tick at first, and
+	// again from a rename (`again`), which keeps its key bindings.
+	void register_hotkey(obs_source_t *parent, bool again)
+	{
+		std::lock_guard lock(hotkey_mutex_);
+		if (!again && hotkey_ != OBS_INVALID_HOTKEY_ID)
+			return;
+		if (hotkey_ != OBS_INVALID_HOTKEY_ID)
+			obs_hotkey_unregister(hotkey_);
+		hotkey_ = OBS_INVALID_HOTKEY_ID;
+		if (!parent)
+			return;
+		const std::string name = obs_source_get_name(source_) ? obs_source_get_name(source_) : "";
+		std::string text = obs_module_text("Hotkey.Standby.Cover");
+		const size_t at = text.find("%1");
+		if (at != std::string::npos)
+			text.replace(at, 2, name);
+		hotkey_ = obs_hotkey_register_source(
+			parent, ("stagekit.standby.cover." + name).c_str(), text.c_str(),
+			[](void *data, obs_hotkey_id, obs_hotkey_t *, bool pressed) {
+				if (pressed)
+					static_cast<Standby *>(data)->toggle_cover();
+			},
+			this);
+	}
+
 	void tick(float seconds)
 	{
 		obs_source_t *parent = obs_filter_get_parent(source_);
 		obs_source_t *target = obs_filter_get_target(source_);
-		if (parent && hotkey_ == OBS_INVALID_HOTKEY_ID) {
-			const std::string name = obs_source_get_name(source_) ? obs_source_get_name(source_) : "";
-			std::string text = obs_module_text("Hotkey.Standby.Cover");
-			const size_t at = text.find("%1");
-			if (at != std::string::npos)
-				text.replace(at, 2, name);
-			hotkey_ = obs_hotkey_register_source(
-				parent, ("stagekit.standby.cover." + name).c_str(), text.c_str(),
-				[](void *data, obs_hotkey_id, obs_hotkey_t *, bool pressed) {
-					if (pressed)
-						static_cast<Standby *>(data)->toggle_cover();
-				},
-				this);
-		}
+		if (parent && hotkey_ == OBS_INVALID_HOTKEY_ID)
+			register_hotkey(parent, false);
 		if (!parent || !target)
 			return;
 		// The stand-ins for the source while it is hidden, looked at four
@@ -1218,6 +1233,11 @@ private:
 	Look own_;                       // the filter's own transition
 	bool lent_ = false;              // another's is in use until the picture has gone again
 	obs_hotkey_id hotkey_ = OBS_INVALID_HOTKEY_ID;
+	std::mutex hotkey_mutex_; // the tick registers it, a rename again
+	HotkeyRename renamed_{source_, [this] { return std::vector<obs_hotkey_id *>{&hotkey_}; },
+			      [this] {
+				      register_hotkey(obs_filter_get_parent(source_), true);
+			      }};
 	bool own_shape_ = true;            // while waiting, the picture keeps its own shape
 	uint32_t live_w_ = 0, live_h_ = 0; // the capture's size while it shows
 	// The size, gliding from one to the next.

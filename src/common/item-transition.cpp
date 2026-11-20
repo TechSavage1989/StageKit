@@ -752,6 +752,14 @@ void build(obs_properties_t *top, obs_source_t *owner, obs_data_t *settings)
 				listed.push_back(name);
 		start = comma + 1;
 	}
+	const char *kind = owner ? obs_source_get_unversioned_id(owner) : nullptr;
+	if (kind && strcmp(kind, kSceneTransitionsId) == 0 && obs_data_get_int(settings, "cover") == 0) {
+		std::vector<std::string> scene_names;
+		scene_item_names(obs_filter_get_parent(owner), scene_names);
+		for (const std::string &name : scene_names)
+			if (std::find(listed.begin(), listed.end(), name) == listed.end())
+				listed.push_back(name);
+	}
 	std::string chosen = obs_data_get_string(settings, kForName);
 	if (std::find(listed.begin(), listed.end(), chosen) == listed.end())
 		chosen.clear();
@@ -984,6 +992,12 @@ void add_item_change_properties(obs_properties_t *props, obs_source_t *owner, co
 	else
 		add_morph_link_properties(content, owner, kMorphPrefix); // (a window of no filter)
 	obs_data_release(settings);
+}
+
+void refresh_item_change_properties(obs_properties_t *props, obs_source_t *owner, obs_data_t *settings)
+{
+	build(props, owner, settings);
+	show_links(props, settings);
 }
 
 void item_transition_add_own(obs_properties_t *into, obs_data_t *settings, const std::string &prefix,

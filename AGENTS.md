@@ -14,6 +14,13 @@ samples an Ambient Background and has no procedural technique. Use the shape's s
 indexing the shader table. The test for hex and material patterns covers normal skin and scene
 outline rendering as well as saved IDs, palette changes and loop points.
 
+## Dock and filter review (beta227)
+
+Keep existing Scene Shadow values for both fade times when loading a filter with only the
+original duration. New position keys with *In every scene* clear store the dock's selected
+scene. Existing keys keep their original scope. The dock's *Copy to* choice is independent
+of the lock source list. Unversioned OBS IDs and saved values remain stable.
+
 ## Names
 
 The owner asked for names "to make more sense" and approved a table (2026-11-14, beta87). What a

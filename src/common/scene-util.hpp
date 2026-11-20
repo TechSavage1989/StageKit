@@ -13,6 +13,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <obs.h>
 #include <obs-frontend-api.h>
 #include "scene-rev.hpp"
+#include "stand-in.hpp"
 #include <graphics/matrix4.h>
 #include <graphics/vec2.h>
 #include <graphics/vec3.h>
@@ -122,6 +123,13 @@ inline bool is_morph_layer(obs_sceneitem_t *item)
 	return id && strcmp(id, "stagekit_morph_layer") == 0;
 }
 
+// Names offered by scene filter selectors come from the owner's sources.
+inline const char *selectable_item_name(obs_sceneitem_t *item)
+{
+	obs_source_t *source = obs_sceneitem_get_source(item);
+	return is_morph_layer(item) || is_stand_in(source) ? nullptr : obs_source_get_name(source);
+}
+
 // The scene (or group) behind a source, or nullptr.
 inline obs_scene_t *scene_of(obs_source_t *source)
 {
@@ -176,7 +184,7 @@ inline void add_scene_items_to_list(obs_source_t *scene_source, obs_property_t *
 	if (!scene)
 		return;
 	static const auto add = [](obs_scene_t *, obs_sceneitem_t *item, void *param) {
-		const char *name = obs_source_get_name(obs_sceneitem_get_source(item));
+		const char *name = selectable_item_name(item);
 		if (name && *name)
 			obs_property_list_add_string(static_cast<obs_property_t *>(param), name, name);
 		return true;
@@ -244,7 +252,7 @@ inline void scene_item_names(obs_source_t *scene_source, std::vector<std::string
 	if (!scene)
 		return;
 	static const auto add = [](obs_scene_t *, obs_sceneitem_t *item, void *param) {
-		const char *name = obs_source_get_name(obs_sceneitem_get_source(item));
+		const char *name = selectable_item_name(item);
 		if (name && *name)
 			static_cast<std::vector<std::string> *>(param)->push_back(name);
 		return true;

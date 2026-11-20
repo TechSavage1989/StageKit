@@ -296,18 +296,9 @@ obs_properties_t *get_properties(void *data)
 							OBS_COMBO_TYPE_EDITABLE, OBS_COMBO_FORMAT_STRING);
 	{
 		std::vector<std::string> titles;
-		auto offer = [&titles](const std::string &text) {
-			if (text.size() >= 3 && std::find(titles.begin(), titles.end(), text) == titles.end())
-				titles.push_back(text);
-		};
-		for (const OpenWindow &w : open_windows())
-			offer(w.title);
-		for (const OpenWindow &w : open_windows())
-			for (const char *mark : {" | ", " - "}) {
-				const size_t at = w.title.find(mark);
-				if (at != std::string::npos)
-					offer(w.title.substr(0, at));
-			}
+		for (const OpenWindow &window : open_windows())
+			if (window.title.size() >= 3)
+				add_window_title_choices(titles, window.title);
 		for (const std::string &text : titles)
 			obs_property_list_add_string(title, text.c_str(), text.c_str());
 	}

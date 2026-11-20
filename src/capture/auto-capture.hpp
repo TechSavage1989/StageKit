@@ -26,6 +26,9 @@ void register_auto_capture();
 // (OBS, browsers, launchers) left out. Empty on systems other than Windows.
 std::vector<std::string> open_program_names();
 
+// Add a complete title and its stable prefixes once each to a window chooser.
+void add_window_title_choices(std::vector<std::string> &names, const std::string &title);
+
 // Where a program draws its picture inside its window: the largest child
 // window that is not one of its controls (a menu bar, a tool bar, a status
 // bar) and leaves some of the client area out. In client-area pixels, with

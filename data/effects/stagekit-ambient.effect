@@ -16,6 +16,7 @@ uniform float2 pose_shift;   // Layer: and moved, in uv
 uniform float wrap_mirror;   // Layer: 1 = mirror at the edges, 0 = repeat
 uniform float4 uv_crop;      // Layer: the part of the texture that is picture (origin, size)
 uniform float clip_edges;    // Layer: 1 = draw nothing outside the picture, 0 = wrap
+uniform float4 visible_uv;    // Layer: screen rectangle still showing the outgoing capture
 uniform float opacity;       // Layer
 uniform float saturation;    // Layer: 0 = grey, 1 = unchanged, 2 = vivid
 uniform float gain;          // Layer: glow, 1 = unchanged
@@ -74,7 +75,8 @@ float4 PSLayer(VertData v_in) : TARGET
 	rgb = saturate(rgb * gain / (float3(1.0, 1.0, 1.0) + rgb * (gain - 1.0)));
 	// A layer fitted inside the screen leaves the rest to what is under it.
 	float inside = step(0.0, uv.x) * step(uv.x, 1.0) * step(0.0, uv.y) * step(uv.y, 1.0);
-	float a = c.a * opacity * lerp(1.0, inside, clip_edges);
+	float2 shown = step(visible_uv.xy, v_in.uv) * step(v_in.uv, visible_uv.zw);
+	float a = c.a * opacity * lerp(1.0, inside, clip_edges) * shown.x * shown.y;
 	return float4(rgb * a, a);
 }
 

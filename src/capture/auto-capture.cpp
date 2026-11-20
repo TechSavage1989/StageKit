@@ -53,6 +53,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/loading.hpp"
 #include "../common/pick-list.hpp"
 #include "../common/tooltip.hpp"
+#include "../common/hotkey-rename.hpp"
 
 #include <obs-module.h>
 #include <util/platform.h>
@@ -863,6 +864,9 @@ public:
 		keep_ready_ = obs_data_get_bool(settings, "keep_ready");
 		no_game_standby_ = obs_data_get_bool(settings, "no_game_standby");
 		hide_standby_ = obs_data_get_bool(settings, "hide_standby");
+		hide_change_.kind = obs_data_get_string(settings, "transition");
+		hide_change_.ms =
+			(uint32_t)std::clamp<long long>(obs_data_get_int(settings, "transition_ms"), 0, 10000);
 		hid_pending_ = !hid_items_read(settings).empty();
 		{
 			const std::string hand = lower(obs_data_get_string(settings, "hand_hooked"));
@@ -873,7 +877,7 @@ public:
 				hand_timer_ = 0.0;
 			}
 		}
-		cover_style_ = (int)std::clamp<long long>(obs_data_get_int(settings, "standby_style"), 0, 11);
+		cover_style_ = (int)std::clamp<long long>(obs_data_get_int(settings, "standby_style"), -1, 11);
 		cover_ms_ = (int)std::clamp<long long>(obs_data_get_int(settings, "standby_ms"), 0, 10000);
 		cover_curve_ = (int)obs_data_get_int(settings, "standby_ease_curve");
 		cover_mode_ = (int)obs_data_get_int(settings, "standby_ease_mode");
@@ -1386,20 +1390,8 @@ public:
 		// "Hide or show the capture", under the capture in OBS's hotkeys.
 		// (The same beginning as the window switchers' own, so the Stream
 		// Deck's Manual Window / Source key presses it too.)
-		if (hotkey_ == OBS_INVALID_HOTKEY_ID && parent) {
-			const std::string name = obs_source_get_name(source_) ? obs_source_get_name(source_) : "";
-			std::string text = obs_module_text("Hotkey.AppCapture.Hide");
-			const size_t at = text.find("%1");
-			if (at != std::string::npos)
-				text.replace(at, 2, name);
-			hotkey_ = obs_hotkey_register_source(
-				parent, ("stagekit.active.hide." + name).c_str(), text.c_str(),
-				[](void *data, obs_hotkey_id, obs_hotkey_t *, bool pressed) {
-					if (pressed)
-						static_cast<AutoCapture *>(data)->ask_hide();
-				},
-				this);
-		}
+		if (hotkey_ == OBS_INVALID_HOTKEY_ID && parent)
+			register_hotkey(parent);
 		// Whatever the source is aimed at now is not something we chose.
 		aimed_once_ = false;
 		applied_key_.clear();
@@ -1407,6 +1399,29 @@ public:
 		spent_.clear();
 		listen(parent);
 	}
+	// Registers the hide hotkey under the filter's current name, in place of
+	// the one there was (a rename keeps its bindings: `renamed_`).
+	void register_hotkey(obs_source_t *parent)
+	{
+		if (hotkey_ != OBS_INVALID_HOTKEY_ID)
+			obs_hotkey_unregister(hotkey_);
+		hotkey_ = OBS_INVALID_HOTKEY_ID;
+		if (!parent)
+			return;
+		const std::string name = obs_source_get_name(source_) ? obs_source_get_name(source_) : "";
+		std::string text = obs_module_text("Hotkey.AppCapture.Hide");
+		const size_t at = text.find("%1");
+		if (at != std::string::npos)
+			text.replace(at, 2, name);
+		hotkey_ = obs_hotkey_register_source(
+			parent, ("stagekit.active.hide." + name).c_str(), text.c_str(),
+			[](void *data, obs_hotkey_id, obs_hotkey_t *, bool pressed) {
+				if (pressed)
+					static_cast<AutoCapture *>(data)->ask_hide();
+			},
+			this);
+	}
+
 	void detach()
 	{
 		// Taken off the capture: a Standby Picture it had put over it goes.
@@ -1445,15 +1460,11 @@ public:
 		}
 		if (!use_test)
 			windows = list_windows();
-		std::vector<Window> out;
-		for (const Window &w : windows) {
-			const std::string exe = lower(w.executable);
-			const bool seen = std::any_of(out.begin(), out.end(),
-						      [&](const Window &o) { return lower(o.executable) == exe; });
-			if (!seen && !built_in_never(exe))
-				out.push_back(w);
-		}
-		return out;
+		windows.erase(
+			std::remove_if(windows.begin(), windows.end(),
+				       [](const Window &window) { return built_in_never(lower(window.executable)); }),
+			windows.end());
+		return windows;
 	}
 
 	// Adds a program to the "never" or "always" line and takes it off the other.
@@ -1714,16 +1725,20 @@ private:
 	{
 		bool no_game, use_standby;
 		int style, ms, curve, mode;
+		const bool toggle = cmd_hide_.exchange(false);
+		HidChange hide_change;
 		{
 			std::lock_guard lock(mutex_);
 			no_game = no_game_standby_;
 			use_standby = hide_standby_;
+			if (toggle)
+				hide_change = hide_change_;
 			style = cover_style_;
 			ms = cover_ms_;
 			curve = cover_curve_;
 			mode = cover_mode_;
 		}
-		if (cmd_hide_.exchange(false)) {
+		if (toggle) {
 			// Covered by the command: uncovered. Items it hid: those shown
 			// again, and only those. Otherwise covered with the Standby
 			// Picture, or its items hidden and written down.
@@ -1735,7 +1750,7 @@ private:
 				 standby_cover_set(parent_, covered_, style, ms, curve, mode))
 				hidden_ = true;
 			else
-				hid_pending_ = hid_items_press(source_, parent_, HidChange{}, "Auto Capture");
+				hid_pending_ = hid_items_press(source_, parent_, hide_change, "Auto Capture");
 			state_s_ = 1.0; // (said at once)
 		}
 		// For a Stream Deck key showing shown or hidden (once a second: the
@@ -1761,12 +1776,17 @@ private:
 	std::mutex mutex_;
 	bool no_game_standby_ = false;
 	bool hide_standby_ = true;
+	HidChange hide_change_;
 	int cover_style_ = 0, cover_ms_ = 600, cover_curve_ = 0, cover_mode_ = 0;
 	std::atomic<bool> cmd_hide_{false};
 	bool hidden_ = false, covered_ = false; // used on the tick only
 	std::atomic<bool> hid_pending_{false};  // items hidden by the command, to show again
 	double state_s_ = 1.0;                  // since the state was last reported
 	obs_hotkey_id hotkey_ = OBS_INVALID_HOTKEY_ID;
+	HotkeyRename renamed_{source_, [this] { return std::vector<obs_hotkey_id *>{&hotkey_}; },
+			      [this] {
+				      register_hotkey(obs_filter_get_parent(source_));
+			      }};
 	Mode mode_ = Mode::AnyGame;
 	std::vector<std::string> always_, never_;
 	bool fallback_fullscreen_ = true;
@@ -1866,12 +1886,20 @@ void show_status(obs_properties_t *props, AutoCapture *self)
 // The Standby Image's transition is only used by the two standby options:
 // with neither ticked its controls do nothing and are hidden. Only
 // visibility changes here.
-bool standby_modified(obs_properties_t *props, obs_property_t *, obs_data_t *settings)
+bool standby_modified(void *data, obs_properties_t *props, obs_property_t *, obs_data_t *settings)
 {
 	const bool used = obs_data_get_bool(settings, "no_game_standby") || obs_data_get_bool(settings, "hide_standby");
-	for (const char *name : {"standby_style", "standby_ms", "standby_ease_curve", "standby_ease_mode"})
-		if (obs_property_t *p = obs_properties_get(props, name))
-			obs_property_set_visible(p, used);
+	obs_property_set_visible(obs_properties_get(props, "standby_style"), used);
+	const int style = (int)obs_data_get_int(settings, "standby_style");
+	for (const char *name : {"standby_ms", "standby_ease_curve", "standby_ease_mode"})
+		obs_property_set_visible(obs_properties_get(props, name), used && style != -1 && style != 1);
+	auto *capture = static_cast<AutoCapture *>(data);
+	obs_source_t *parent = capture ? obs_filter_get_parent(capture->source()) : nullptr;
+	const bool hide_items = !obs_data_get_bool(settings, "hide_standby") || !parent || !standby_present(parent);
+	obs_property_set_visible(obs_properties_get(props, "item_hide_group"), hide_items);
+	const std::string kind = obs_data_get_string(settings, "transition");
+	obs_property_set_visible(obs_properties_get(props, "transition_ms"),
+				 kind != kTransitionKeep && kind != kTransitionCut);
 	return true;
 }
 
@@ -1913,8 +1941,12 @@ obs_properties_t *get_properties(void *data)
 	auto open_now = [self](std::vector<std::string> &names) {
 		if (!self)
 			return;
-		for (const Window &w : self->open_programs())
-			names.push_back(w.executable);
+		const auto windows = self->open_programs();
+		for (const Window &w : windows)
+			if (!w.executable.empty() && std::find(names.begin(), names.end(), w.executable) == names.end())
+				names.push_back(w.executable);
+		for (const Window &w : windows)
+			add_window_title_choices(names, w.title);
 	};
 	PickList always;
 	always.setting = "always";
@@ -1949,7 +1981,7 @@ obs_properties_t *get_properties(void *data)
 	obs_property_t *no_game =
 		obs_properties_add_bool(no_game_group, "no_game_standby", obs_module_text("Capture.NoGameStandby"));
 	set_tip(no_game, obs_module_text("Capture.NoGameStandby.Tip"));
-	obs_property_set_modified_callback(no_game, standby_modified);
+	obs_property_set_modified_callback2(no_game, standby_modified, self);
 	obs_properties_add_group(props, "no_game_group", obs_module_text("Capture.NoGameGroup"), OBS_GROUP_NORMAL,
 				 no_game_group);
 
@@ -1959,7 +1991,7 @@ obs_properties_t *get_properties(void *data)
 	obs_property_t *hide_standby =
 		obs_properties_add_bool(standby, "hide_standby", obs_module_text("AppCapture.HideStandby"));
 	set_tip(hide_standby, obs_module_text("Capture.HideStandby.Tip"));
-	obs_property_set_modified_callback(hide_standby, standby_modified);
+	obs_property_set_modified_callback2(hide_standby, standby_modified, self);
 	obs_property_t *style = obs_properties_add_list(standby, "standby_style", obs_module_text("Change.With"),
 							OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	{
@@ -1976,12 +2008,18 @@ obs_properties_t *get_properties(void *data)
 		for (const auto &one : styles)
 			obs_property_list_add_int(style, obs_module_text(one.text), one.value);
 	}
+	obs_property_list_add_int(style, obs_module_text("Capture.StandbyOwn"), -1);
 	set_tip(style, obs_module_text("Capture.StandbyStyle.Tip"));
+	obs_property_set_modified_callback2(style, standby_modified, self);
 	obs_property_t *ms =
 		obs_properties_add_int_slider(standby, "standby_ms", obs_module_text("Change.Time"), 0, 5000, 50);
 	obs_property_int_set_suffix(ms, " ms");
 	set_tip(ms, obs_module_text("Capture.StandbyMs.Tip"));
 	add_easing_properties(standby, "standby_");
+	obs_properties_t *item_hide = obs_properties_create();
+	add_item_transition_properties(item_hide);
+	obs_properties_add_group(standby, "item_hide_group", obs_module_text("Capture.ItemHide"), OBS_GROUP_NORMAL,
+				 item_hide);
 	obs_property_t *hide_now = obs_properties_add_button2(
 		standby, "hide_now", obs_module_text("AppCapture.Hide.Now"),
 		[](obs_properties_t *, obs_property_t *, void *d) {
@@ -1999,6 +2037,20 @@ obs_properties_t *get_properties(void *data)
 }
 
 } // namespace
+
+void add_window_title_choices(std::vector<std::string> &names, const std::string &title)
+{
+	auto add = [&](const std::string &value) {
+		if (!value.empty() && std::find(names.begin(), names.end(), value) == names.end())
+			names.push_back(value);
+	};
+	add(title);
+	for (const char *separator : {" | ", " - "}) {
+		const size_t at = title.find(separator);
+		if (at != std::string::npos && at >= 3)
+			add(title.substr(0, at));
+	}
+}
 
 std::vector<OpenWindow> open_windows()
 {
@@ -2295,6 +2347,8 @@ void register_auto_capture()
 		obs_data_set_default_bool(settings, "keep_ready", true);
 		obs_data_set_default_bool(settings, "no_game_standby", false);
 		obs_data_set_default_bool(settings, "hide_standby", true);
+		obs_data_set_default_string(settings, "transition", kTransitionKeep);
+		obs_data_set_default_int(settings, "transition_ms", 300);
 		obs_data_set_default_int(settings, "standby_style", 0);
 		obs_data_set_default_int(settings, "standby_ms", 600);
 		obs_data_set_default_int(settings, "standby_ease_curve", (int)EaseCurve::Cubic);
