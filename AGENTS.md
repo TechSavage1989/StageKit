@@ -2568,6 +2568,27 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   (`ambient_patterns_test`, alone: `STAGEKIT_TEST_ONLY_AMBIENT_PATTERNS`, its own run in
   `run-tests.sh`; sheet `docs/images/ambient-patterns.png` from `$out/ambient-patterns`). Only
   OpenGL; not seen on Windows.
+  **The hexagon and dot patterns are a fourth file, `stagekit-patterns-hex.effect`**
+  (`pattern_file` 3, `kFirstHexPattern`; the owner's "pattern batch 2", from reference looks):
+  19 HexColumns, 20 Mesh, 21 Halftone, 22 DotGrid, 23 HexWire, 24 HexMosaic. All but Hex columns
+  are also outline designs 29 to 33 (`OutlineDesign::Mesh` to `HexMosaic`, `file_of` 3; Hex
+  columns is a view, not a texture). Colour 1 is the ground in all six, whatever the reference
+  said (one had Colour 1 at one side): what is lit goes from Colour 2 to Colour 3, and
+  `hx_light` / `hx_hot` do for a light ground what `cc_hot` does. `hx_cell` is the comb (a
+  point up, one unit wide; local place and the cell's middle), `hx_soft` a pixel's width for
+  the edges' smoothing. Hex columns: a column's top is its cell moved up the screen by its
+  height; a pixel belongs to the front-most of the six cells met going down the screen from it
+  in steps of half a hexagon's side that covers it (heights stay under 1.1 so six steps are
+  enough: raise the loop with the height). Halftone's large comb turns a sixth of a turn in a
+  loop about a cell's middle, which brings it onto itself, and its wave goes by the cell's place
+  on the screen, never by a hash of the cell's number, or the loop would have a seam. Dot grid's
+  stars look seven dots along the row and seven along the column (the one loop with real cost:
+  about 1.5 times Mesh on llvmpipe). Tested in `[hexagon and dot patterns: ...]`
+  (`hex_patterns_test`, alone: `STAGEKIT_TEST_ONLY_HEX_PATTERNS`, its own run in `run-tests.sh`;
+  sheet `docs/images/hex-patterns.png` from `$out/hex-patterns`): each not flat on a dark and a
+  light palette, moving calmly, no jump a fifth of a second either side of the loop's end, the
+  five fills in both filters, the file missing. `tests/make-pattern-preview.sh` takes
+  `STAGEKIT_PREVIEW_SIZE`. Only OpenGL.
 - **Ambient Background's Bloom has two styles** (`bloom_style`): 0, the bright parts shine
   (threshold, screen-blended); 1, *Whole picture, amplified*: all of the picture's light added
   back (`BloomAmplify`), which is what the bloom in the owner's old collection did
@@ -3748,7 +3769,8 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
 - **Outline designs filled with a pattern** (`OutlineDesign::Aurora` 12 to `Embers` 26, appended:
   Aurora, Plasma, Lava lamp, Waves, Nebula, Gradient flow, Starfield, Bokeh, Rays, Circuit board,
   Hex grid, Matrix rain, Tunnel, Ripples, Embers; then 27 CircuitTraces and 28 DataLines, with the
-  circuit file as a third in `kFiles` / `file_of`; `pattern()` is `Aurora` to `kLast`; `kTechniques` in order;
+  circuit file as a third in `kFiles` / `file_of`; then 29 Mesh, 30 Halftone, 31 DotGrid, 32 HexWire
+  and 33 HexMosaic from the fourth file; `pattern()` is `Aurora` to `kLast`; `kTechniques` in order;
   `src/look/outline-pattern.*`; beta215). The owner: "can any of the new background animations
   have counterparts for the outlines/borders?" The line's shape is whatever it was; its colour at
   each pixel is read from a picture of the pattern.

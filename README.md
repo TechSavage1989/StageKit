@@ -229,7 +229,17 @@ lights up (in Data lines: the drifting lights), and they are made for a light bo
 dark one: on a light Colour 1 the lights turn deeper instead of whiter. *Hex grid* (a
 honeycomb whose cells light up), *Matrix rain* (falling streaks of changing signs), *Tunnel*
 (rings flying out of the middle), *Ripples* (raindrop rings on water), *Embers* (sparks rising),
-*Sun grid* (a sun over a grid running to the horizon). **Colour 1**, **Colour 2**, **Colour 3** are its palette
+*Sun grid* (a sun over a grid running to the horizon). Six more are built on hexagons and dots:
+*Hex columns* (six-sided columns seen from above and in front, with lit tops, darker sides and
+dark edges, rising and falling in slow waves), *Mesh* (perforated metal: a tight comb of round
+discs with dark rims, under a wide soft light that sweeps across), *Halftone hexagons* (fine dots
+whose size draws large hexagons with rings in them, a wave passing from one to the next while the
+whole turns very slowly), *Dot grid* (rows of small dots under diagonal beams of light; a dot
+under a beam is larger and brighter, and one where two beams cross flares in a four-point star),
+*Hex wire glow* (a dark honeycomb whose thin lines light up where a soft light passes) and *Hex
+mosaic* (flat hexagon tiles in close shades that shimmer slowly). In these Colour 1 is the ground,
+dark or light, and Colours 2 and 3 are what is lit or inked; Dot grid and Hex wire glow run from
+Colour 2 at one side of the screen to Colour 3 at the other. **Colour 1**, **Colour 2**, **Colour 3** are its palette
 (Colour 1 is the ground where a pattern has one); **Speed** (100 % as it comes; 0 holds it still,
 under 0 runs it backwards; at 100 % a pattern comes back to where it began every four minutes,
 with no jump), **Size** and **Detail**. A pattern takes the image's place and nothing else changes:
@@ -246,7 +256,9 @@ and Sun grid can tilt. All three are 0 as they come, and then nothing changes. T
 nothing while an image is chosen. If the patterns cannot be loaded, the background shows the
 standby image (or its image file) and OBS's log says so.
 
-![The nineteen patterns: aurora, plasma, lava lamp, waves, bokeh, starfield, gradient flow, nebula, grid pulse, rays, circuit board, hex grid, matrix rain, tunnel, ripples, embers, sun grid, circuit traces, data lines; nebula under a hexagon mosaic; aurora blurred with bloom](docs/images/ambient-patterns.png)
+![The six hexagon and dot patterns on a dark and on a light palette, and five of them as outline fills from Shadow, Glow & Outline and Scene Shadow](docs/images/hex-patterns.png)
+
+![The first nineteen patterns: aurora, plasma, lava lamp, waves, bokeh, starfield, gradient flow, nebula, grid pulse, rays, circuit board, hex grid, matrix rain, tunnel, ripples, embers, sun grid, circuit traces, data lines; nebula under a hexagon mosaic; aurora blurred with bloom](docs/images/ambient-patterns.png)
 
 Put it in one shared scene and nest that scene wherever you need the background.
 
@@ -318,10 +330,11 @@ its heading:
     Outline, and slanted across the whole scene in Scene Shadow, so pick corners there for dashes
     that travel round. The drop shadow is still thrown by the whole line, and a filter saved
     before keeps its solid line.
-  - *Outline design* also has seventeen designs called *Pattern*, which fill the line with one of
+  - *Outline design* also has twenty-two designs called *Pattern*, which fill the line with one of
     Ambient Background's moving patterns: *Aurora*, *Plasma*, *Lava lamp*, *Waves*, *Nebula*,
     *Gradient flow*, *Starfield*, *Bokeh*, *Rays*, *Circuit board*, *Hex grid*, *Matrix rain*,
-    *Tunnel*, *Ripples*, *Embers*, *Circuit traces* and *Data lines*. The line keeps its width, corners and shape
+    *Tunnel*, *Ripples*, *Embers*, *Circuit traces*, *Data lines*, *Mesh*, *Halftone*, *Dot grid*,
+    *Hex wire glow* and *Hex mosaic*. The line keeps its width, corners and shape
     (round the box or following the source); it is a window onto the pattern. The colours are the
     outline colour, the *Second colour* and a *Third colour*; *Pattern size* makes the pattern
     smaller or larger (smaller shows more of it along a thin line), and *Speed* moves it (60 is
@@ -332,8 +345,9 @@ its heading:
     with light passing through, as are Ripples and Embers, and look best on a wide line. For
     Circuit board, Circuit traces, Hex grid and Matrix rain turn *Pattern size* down (to 30 % or
     so) so that traces, cells and streaks fit in the line's width. Data lines is sparse on
-    purpose: in a line it is the outline colour with a thin line or a light now and then. Grid pulse is not offered (in a line it is
-    only a tick every so often), nor Sun grid (it is a view, not a texture).
+    purpose: in a line it is the outline colour with a thin line or a light now and then. Mesh, Halftone, Dot grid, Hex wire glow and Hex mosaic also want *Pattern size* at 30 to 50 %;
+    Hex wire glow is dark except where its light passes. Grid pulse is not offered (in a line it is
+    only a tick every so often), nor Sun grid or Hex columns (each is a view, not a texture).
     *Position X*, *Position Y* and *Rotation* move and turn the pattern inside the line (the
     line itself stays where it is); they show for the pattern fills. *Rotation* alone also shows
     for the designs with something that goes round the border: for Gradient, Travelling, Shimmer

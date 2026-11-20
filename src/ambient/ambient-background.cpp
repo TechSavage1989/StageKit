@@ -60,32 +60,39 @@ namespace {
 enum class BaseType : int { Image = 0, Source = 1, StartImage = 2, Pattern = 3 };
 // The patterns, each a technique of stagekit-patterns.effect. Saved by
 // number: new ones go at the end.
-constexpr const char *kPatternTechniques[] = {"Aurora",  "Plasma",   "Lava",          "Waves",    "Bokeh",
-					      "Stars",   "Gradient", "Nebula",        "Grid",     "Rays",
-					      "Circuit", "Hex",      "Rain",          "Tunnel",   "Ripples",
-					      "Embers",  "SunGrid",  "CircuitTraces", "DataLines"};
+constexpr const char *kPatternTechniques[] = {"Aurora",  "Plasma",   "Lava",          "Waves",     "Bokeh",
+					      "Stars",   "Gradient", "Nebula",        "Grid",      "Rays",
+					      "Circuit", "Hex",      "Rain",          "Tunnel",    "Ripples",
+					      "Embers",  "SunGrid",  "CircuitTraces", "DataLines", "HexColumns",
+					      "Mesh",    "Halftone", "DotGrid",       "HexWire",   "HexMosaic"};
 constexpr const char *kPatternNames[] = {
-	"Ambient.Pattern.Aurora",   "Ambient.Pattern.Plasma",  "Ambient.Pattern.Lava",
-	"Ambient.Pattern.Waves",    "Ambient.Pattern.Bokeh",   "Ambient.Pattern.Stars",
-	"Ambient.Pattern.Gradient", "Ambient.Pattern.Nebula",  "Ambient.Pattern.Grid",
-	"Ambient.Pattern.Rays",     "Ambient.Pattern.Circuit", "Ambient.Pattern.Hex",
-	"Ambient.Pattern.Rain",     "Ambient.Pattern.Tunnel",  "Ambient.Pattern.Ripples",
-	"Ambient.Pattern.Embers",   "Ambient.Pattern.SunGrid", "Ambient.Pattern.CircuitTraces",
-	"Ambient.Pattern.DataLines"};
-constexpr int kPatterns = 19;
-// The first ten are in one shader file, the next six in another and the
-// circuit patterns (Circuit board, Circuit traces, Data lines) in a third,
-// so a compiler that refuses one file leaves the others' patterns alone.
+	"Ambient.Pattern.Aurora",    "Ambient.Pattern.Plasma",     "Ambient.Pattern.Lava",
+	"Ambient.Pattern.Waves",     "Ambient.Pattern.Bokeh",      "Ambient.Pattern.Stars",
+	"Ambient.Pattern.Gradient",  "Ambient.Pattern.Nebula",     "Ambient.Pattern.Grid",
+	"Ambient.Pattern.Rays",      "Ambient.Pattern.Circuit",    "Ambient.Pattern.Hex",
+	"Ambient.Pattern.Rain",      "Ambient.Pattern.Tunnel",     "Ambient.Pattern.Ripples",
+	"Ambient.Pattern.Embers",    "Ambient.Pattern.SunGrid",    "Ambient.Pattern.CircuitTraces",
+	"Ambient.Pattern.DataLines", "Ambient.Pattern.HexColumns", "Ambient.Pattern.Mesh",
+	"Ambient.Pattern.Halftone",  "Ambient.Pattern.DotGrid",    "Ambient.Pattern.HexWire",
+	"Ambient.Pattern.HexMosaic"};
+constexpr int kPatterns = 25;
+// In four files: the first ten in one, the later ones in a second, the
+// circuit patterns (Circuit board, Circuit traces, Data lines) in a third and
+// the hexagon and dot patterns (Hex columns to Hex mosaic) in a fourth, so a
+// compiler that refuses one file leaves the others' patterns alone.
 constexpr const char *kPatternFiles[] = {"effects/stagekit-patterns.effect", "effects/stagekit-patterns-more.effect",
-					 "effects/stagekit-patterns-circuit.effect"};
+					 "effects/stagekit-patterns-circuit.effect",
+					 "effects/stagekit-patterns-hex.effect"};
 constexpr int kFirstMorePattern = 10;
 constexpr int kCircuitPattern = 10;
 constexpr int kFirstLaterCircuitPattern = 17;
+constexpr int kFirstHexPattern = 19;
 constexpr int pattern_file(int pattern)
 {
-	return pattern == kCircuitPattern || pattern >= kFirstLaterCircuitPattern ? 2
-	       : pattern >= kFirstMorePattern                                     ? 1
-										  : 0;
+	return pattern >= kFirstHexPattern                                          ? 3
+	       : pattern == kCircuitPattern || pattern >= kFirstLaterCircuitPattern ? 2
+	       : pattern >= kFirstMorePattern                                       ? 1
+										    : 0;
 }
 // A pattern comes back to where it began after this long at a speed of 100 %:
 // the shader is handed how far through it is, 0..1, never a growing time.
@@ -365,7 +372,7 @@ private:
 	// The patterns: a shader file of their own, loaded when a pattern is first
 	// chosen. Should it not load, the image is the background and the log says
 	// so once.
-	// (Of the two files, the one the chosen pattern is in: `patterns_tried_`
+	// (Of the four files, the one the chosen pattern is in: `patterns_tried_`
 	// says which was last asked for, -1 none yet.)
 	gs_effect_t *patterns_ = nullptr;
 	int patterns_tried_ = -1;

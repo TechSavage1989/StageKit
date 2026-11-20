@@ -55,6 +55,14 @@ STAGEKIT_TEST_ONLY_AMBIENT_PATTERNS=1 xvfb-run -a -s "-screen 0 1280x720x24" \
   "$out/test-art.png" "$out/test-texture.png" "$out/test-game.png" "$out/tooltips" \
   "$out/test-title.png" "$out/tooltips" "$out/test-pillarbox.png" "$out/test-black.png" "$out/test-dark-game.png"
 python3 "$root/tests/make-sheet.py" "$out/ambient-patterns" "$out/ambient-patterns.png" 5
+# Its own run: the hexagon and dot patterns, as backgrounds and as outline fills.
+rm -rf "$out/hex-patterns"
+mkdir -p "$out/hex-patterns"
+STAGEKIT_TEST_ONLY_HEX_PATTERNS=1 xvfb-run -a -s "-screen 0 1280x720x24" \
+  "$root/build-tests/tests/stagekit-ambient-test" "$root/build-tests/stagekit.so" "$root/data" \
+  "$out/test-art.png" "$out/test-texture.png" "$out/test-game.png" "$out/tooltips" \
+  "$out/test-title.png" "$out/tooltips" "$out/test-pillarbox.png" "$out/test-black.png" "$out/test-dark-game.png"
+python3 "$root/tests/make-sheet.py" "$out/hex-patterns" "$out/hex-patterns.png" 4
 
 echo "=== ambient background, shadow & backdrop ==="
 rm -rf "$out/ambient" "$out/shadow" "$out/corners" "$out/glow" "$out/morph" "$out/item-morph" "$out/make-room" \

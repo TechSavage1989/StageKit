@@ -23,6 +23,31 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
+## Six hexagon and dot patterns (0.1.0-beta221)
+
+The owner's "pattern batch 2", part 1, from reference looks (style only).
+
+- **Ambient Background** `pattern` 19 to 24: Hex columns, Mesh, Halftone hexagons, Dot grid, Hex
+  wire glow, Hex mosaic. All in a new file, `data/effects/stagekit-patterns-hex.effect`
+  (`pattern_file` 3); the three older files are untouched. Same uniforms, all set at every run by
+  both users.
+- **Outline designs** 29 to 33 (Shadow, Glow & Outline and Scene Shadow): Mesh, Halftone, Dot
+  grid, Hex wire glow, Hex mosaic, through `outline-pattern.cpp`'s fourth file. Hex columns is
+  not offered there (a view, not a texture).
+- **Colour 1 is the ground in all six.** Two references described Colour 1 as a light's colour
+  (Mesh: "colour 1 to colour 2 to dark"; Dot grid: "colour 1 one side, colour 3 the other"); here
+  the light is Colour 2 to Colour 3 so that a light Colour 1 works as a light ground, as in the
+  circuit patterns. Say so if the owner asks for the reference's order.
+- Tested in `STAGEKIT_TEST_ONLY_HEX_PATTERNS` (79 checks; its own run in `run-tests.sh`, sheet
+  `docs/images/hex-patterns.png`). Also run: `AMBIENT_PATTERNS`, `OUTLINE_PATTERNS`,
+  `OUTLINE_DESIGNS`, `PATTERN_TRANSFORM`, `TOOLTIPS` (the two outline tests now expect 34
+  designs). **Not the full suite.** Only OpenGL: the new file has not been compiled by Direct3D.
+- Cost on llvmpipe at 1280x720 (drawn at half size), a frame: Mesh 20 ms, Hex mosaic 23, Halftone
+  and Hex wire glow 25, Hex columns 34 (six cells looked at per pixel), Dot grid 34 to 40
+  (fourteen dots looked at per pixel for the stars). Not measured on a graphics card.
+- Not done: no Stream Deck wording was touched; `docs/images/ambient-patterns.png` still shows
+  the first nineteen (the README has the new sheet beside it).
+
 ## Position X, Position Y and Rotation (0.1.0-beta220)
 
 The owner: "the ambient background image/animations and shadow outlines/animations should have

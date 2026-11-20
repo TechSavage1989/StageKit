@@ -1,0 +1,463 @@
+// StageKit Ambient Background: the hexagon and dot patterns
+//
+// Hex columns, Mesh, Halftone hexagons, Dot grid, Hex wire glow and Hex
+// mosaic, in a file of their own: a compiler that refuses any of these takes
+// only these away, and the other patterns still load. The same uniforms and
+// the same rules as stagekit-patterns.effect: constant loop bounds, float(i)
+// casts, no inout, no atan2, no large numbers; time arrives as `phase`, 0..1
+// over one loop, and every motion makes a whole number of turns in a loop.
+//
+// The helpers at the top are copies of that file's: change them together.
+//
+// All six are drawings in three colours that must read on a dark ground and
+// on a light one: colour1 the ground, colour2 and colour3 what is lit.
+// Nothing is added to the ground's colour; a light is mixed towards its
+// colour, and what is in shadow is the ground's colour times less than one,
+// so it shows on cream as on black.
+
+uniform float4x4 ViewProj;
+
+uniform float phase;     // 0..1 over one loop of the animation
+uniform float2 aspect;   // (width / height, 1)
+uniform float scale;     // how large the pattern's features are, 1 = as designed
+uniform float detail;    // 0..1
+uniform float4 colour1;  // the palette; colour1 is the ground
+uniform float4 colour2;
+uniform float4 colour3;
+uniform float4 frame;       // where the pattern lies: the picture's uv to the pattern's, a 2x2 matrix by rows
+uniform float2 frame_shift; // and how far it is moved, in uv (pattern-frame.hpp)
+
+struct VertData {
+	float4 pos : POSITION;
+	float2 uv  : TEXCOORD0;
+};
+
+VertData VSDefault(VertData v_in)
+{
+	VertData vert_out;
+	vert_out.pos = mul(float4(v_in.pos.xyz, 1.0), ViewProj);
+	float2 d = v_in.uv - float2(0.5, 0.5) - frame_shift;
+	vert_out.uv  = float2(0.5, 0.5) + float2(dot(d, frame.xy), dot(d, frame.zw));
+	return vert_out;
+}
+
+// An angle that makes k whole turns in a loop.
+float turn(float k)
+{
+	return 6.2831853 * frac(phase * k);
+}
+
+// The screen with its middle at 0 and its height 1 (at scale 1).
+float2 place(float2 uv)
+{
+	return (uv - float2(0.5, 0.5)) * aspect / max(scale, 0.05);
+}
+
+// 0..1 from a cell's number. Small numbers only, so it is the same everywhere.
+float hash(float2 p)
+{
+	float3 p3 = frac(float3(p.x, p.y, p.x) * 0.1031);
+	float d = dot(p3, float3(p3.y, p3.z, p3.x) + float3(33.33, 33.33, 33.33));
+	p3 = p3 + float3(d, d, d);
+	return frac((p3.x + p3.y) * p3.z);
+}
+
+// 0 on a dark ground, 1 on a light one.
+float hx_light(float3 ground)
+{
+	return smoothstep(0.4, 0.65, dot(ground, float3(0.3, 0.6, 0.1)));
+}
+
+// What the middle of a light goes towards: white on a dark ground, a deeper
+// tone of itself on a light one.
+float3 hx_hot(float3 lit)
+{
+	return lerp(lerp(lit, float3(1.0, 1.0, 1.0), 0.6), lit * 0.6, hx_light(colour1.rgb));
+}
+
+// How wide one pixel is, about, in a pattern that is `zoom` units high.
+float hx_soft(float zoom)
+{
+	return zoom * 0.0032 / max(scale, 0.05);
+}
+
+// A comb of hexagons one unit wide, a point up. xy: where `q` lies from its
+// cell's middle; zw: that middle.
+float4 hx_cell(float2 q)
+{
+	float2 r = float2(1.0, 1.7320508);
+	float2 half_r = r * 0.5;
+	float2 a = q - r * floor(q / r) - half_r;
+	float2 qb = q - half_r;
+	float2 b = qb - r * floor(qb / r) - half_r;
+	float s = step(dot(a, a), dot(b, b));
+	float2 g = a * s + b * (1.0 - s);
+	return float4(g.x, g.y, q.x - g.x, q.y - g.y);
+}
+
+// A cell's number from its middle: whole and small.
+float2 hx_id(float2 middle)
+{
+	return floor(float2(middle.x * 2.0, middle.y / 0.8660254) + float2(40.5, 40.5));
+}
+
+// 0 on a cell's border, 0.5 at its middle.
+float hx_edge(float2 g)
+{
+	return 0.5 - max(abs(g.x), dot(abs(g), float2(0.5, 0.8660254)));
+}
+
+// -------------------------------------------------------------- Hex columns
+//
+// Six-sided columns standing side by side, seen from the front and above:
+// a column's top is its cell moved up the screen by its height, and below
+// the top its two front faces show, down to where a column in front covers
+// them. A pixel may belong to its own cell's column or to one of the few in
+// front of it (further down the screen); the one nearest the viewer that
+// covers it is drawn. Heights rise and fall in slow waves.
+
+float hc_height(float2 c)
+{
+	float h1 = hash(hx_id(c));
+	float w1 = sin(dot(c, float2(0.46, 0.3)) - turn(5.0));
+	float w2 = sin(dot(c, float2(-0.27, 0.55)) + turn(3.0) + 1.7);
+	float w3 = sin(turn(6.0 + 2.0 * floor(h1 * 4.0)) + h1 * 6.2831853);
+	float v = saturate(0.5 + 0.26 * w1 + 0.17 * w2 + (0.06 + 0.1 * detail) * w3 + (h1 - 0.5) * 0.5);
+	return 0.06 + 1.02 * v * v * (3.0 - 2.0 * v);
+}
+
+float4 PSHexColumns(VertData v_in) : TARGET
+{
+	float2 p = place(v_in.uv) * float2(6.5, 8.4) + float2(0.31, 0.17);
+	float soft = hx_soft(8.0);
+	// The column in front of all that cover this pixel.
+	float2 bc = float2(0.0, 0.0);
+	float bh = 0.0;
+	float by = -1000.0;
+	for (int k = 0; k < 6; k++) {
+		float4 cell = hx_cell(float2(p.x, p.y + float(k) * 0.2886751));
+		float2 c = cell.zw;
+		float h = hc_height(c);
+		float2 dk = p - c;
+		float ybk = (1.0 - abs(dk.x)) * 0.5773503;
+		float covers = step(dk.y, ybk) * step(-ybk - h, dk.y) * step(by, c.y);
+		bc = bc * (1.0 - covers) + c * covers;
+		bh = bh * (1.0 - covers) + h * covers;
+		by = by * (1.0 - covers) + c.y * covers;
+	}
+	float2 d = p - bc;
+	float ax = abs(d.x);
+	float yb = (1.0 - ax) * 0.5773503;
+	float2 gt = float2(d.x, d.y + bh);  // in the top's own space
+	float e_top = hx_edge(gt);
+	float is_top = step(gt.y, yb);
+	float down = gt.y - yb;             // on a face: how far below the top's rim
+	float hn = saturate((bh - 0.06) / 1.02);
+	float light = hx_light(colour1.rgb);
+	// Its colour: the ground's while low, colour2 or colour3 as it rises.
+	float h1 = hash(hx_id(bc) + float2(7.0, 3.0));
+	float tone = 0.5 + 0.5 * sin(dot(bc, float2(0.17, 0.26)) + turn(2.0) + (h1 - 0.5) * 1.4);
+	float3 accent = lerp(colour2.rgb, colour3.rgb, smoothstep(0.25, 0.75, tone));
+	float3 low = colour1.rgb * lerp(1.25, 1.0, light);
+	float3 top = lerp(low, accent, 0.1 + 0.9 * hn * sqrt(hn));
+	top = lerp(top, hx_hot(accent), 0.45 * hn * hn * hn);
+	// the top: a little brighter away from the viewer, and a lit bevel
+	float lw = 0.03;
+	float3 face_top = top * (0.92 - 0.2 * gt.y);
+	float bevel = (1.0 - smoothstep(lw + 0.03, lw + 0.03 + soft * 2.0, e_top)) * (0.2 + 0.5 * detail);
+	face_top = lerp(face_top, hx_hot(top), bevel * (0.25 + 0.5 * hn));
+	// the two front faces: the left in shadow, both darker towards the foot
+	float left = step(d.x, 0.0);
+	float shade = lerp(lerp(0.66, 0.84, light), lerp(0.36, 0.6, light), left);
+	float3 face_side = top * shade * (1.0 - 0.4 * saturate(down / 1.1));
+	float3 rgb = lerp(face_side, face_top, is_top);
+	// the edges: round the top, between the two faces and at the sides
+	float line_top = 1.0 - smoothstep(lw, lw + soft, e_top);
+	float line_side = max(1.0 - smoothstep(lw * 0.7, lw * 0.7 + soft, ax),
+			      max(1.0 - smoothstep(lw, lw + soft, 0.5 - ax), 1.0 - smoothstep(lw, lw + soft, down)));
+	float edge = lerp(line_side, line_top, is_top);
+	rgb = lerp(rgb, top * lerp(0.14, 0.34, light), edge * 0.92);
+	return float4(saturate(rgb), 1.0);
+}
+
+// --------------------------------------------------------------------- Mesh
+//
+// Perforated metal: a tight comb of round discs, each with a dark rim and a
+// small highlight, the gaps between them darker still. A wide soft light
+// sweeps across it at a slant, over a dim light that stays: a disc near the
+// light's middle is colour2, further out colour3, and far off the ground.
+
+float4 PSMesh(VertData v_in) : TARGET
+{
+	float zoom = 26.0;
+	float2 q = place(v_in.uv) * zoom;
+	float soft = min(hx_soft(zoom), 0.12);
+	float4 cell = hx_cell(q);
+	float2 g = cell.xy;
+	float r = length(g);
+	float h1 = hash(hx_id(cell.zw));
+	// the disc's place on the screen, its height 1
+	float2 sc = cell.zw / zoom * max(scale, 0.05);
+	float span = 3.4;
+	float along = dot(sc, float2(0.8, 0.6));
+	float d1 = (frac(along / span - frac(phase * 20.0)) - 0.5) * span;
+	float sweep = exp(-d1 * d1 / 0.3);
+	float2 stays = sc - float2(-0.45 * aspect.x, -0.4) - float2(0.12 * sin(turn(6.0)), 0.08 * cos(turn(6.0)));
+	float rest = exp(-dot(stays, stays) / 1.1);
+	// a slow shimmer from disc to disc
+	float own = 1.0 + (0.1 + 0.2 * detail) * (h1 - 0.5) * (1.0 + 0.6 * sin(turn(24.0 + 8.0 * floor(h1 * 5.0)) + h1 * 40.0));
+	float lit = saturate((0.45 * rest + 0.85 * sweep) * own);
+	float light = hx_light(colour1.rgb);
+	float3 gap = colour1.rgb * lerp(0.22, 0.76, light);
+	float3 far_off = colour1.rgb * lerp(0.62, 0.96, light);
+	float3 metal = lerp(far_off, colour3.rgb, smoothstep(0.04, 0.5, lit));
+	metal = lerp(metal, colour2.rgb, smoothstep(0.45, 1.0, lit));
+	metal = lerp(metal, hx_hot(colour2.rgb), 0.35 * smoothstep(0.85, 1.0, lit));
+	// the disc: darker towards its rim, a highlight towards the light
+	float radius = 0.41;
+	float disc = 1.0 - smoothstep(radius - soft, radius + soft, r);
+	float rim = smoothstep(0.2, radius, r);
+	float2 hl = g - float2(-0.11, -0.13);
+	float shine = exp(-dot(hl, hl) / (0.03 - 0.014 * detail)) * (0.15 + 0.5 * lit);
+	float3 face = metal * (1.0 - (0.45 + 0.2 * detail) * rim * rim);
+	face = lerp(face, hx_hot(metal), shine);
+	// a little of the light lies in the gaps too
+	float3 rgb = lerp(lerp(gap, metal, 0.12 * lit), face, disc);
+	return float4(saturate(rgb), 1.0);
+}
+
+// -------------------------------------------------------- Halftone hexagons
+//
+// A fine comb of dots in two tones. How large a dot is comes from a comb of
+// large hexagons under it, read at the dot's own middle so every dot stays
+// round: small on a large hexagon's border, and in rings inside it that
+// travel as a wave passes from hexagon to hexagon. The large comb turns a
+// sixth of a turn in a loop, which brings it back onto itself.
+
+float4 PSHalftone(VertData v_in) : TARGET
+{
+	float zoom = 46.0;
+	float2 base = place(v_in.uv);
+	float soft = min(hx_soft(zoom), 0.14);
+	float4 dots = hx_cell(base * zoom);
+	float2 at = dots.zw / zoom;
+	// (a sixth of a turn: the comb is then where it began)
+	float ang = 1.0471976 * frac(phase);
+	float cs = cos(ang);
+	float sn = sin(ang);
+	float2 turned = float2(at.x * cs - at.y * sn, at.x * sn + at.y * cs);
+	float4 large = hx_cell(turned * 2.3);
+	float e = 2.0 * hx_edge(large.xy);
+	// the large cell's middle, on the screen: the wave crosses the screen,
+	// whichever way the comb is turned
+	float2 mid = float2(large.z * cs + large.w * sn, large.w * cs - large.z * sn);
+	float rings = 1.0 + 1.5 * detail;
+	float wave = dot(mid, float2(0.62, 0.38)) * 1.3;
+	float m = 0.5 + 0.5 * sin(6.2831853 * e * rings + wave - turn(10.0));
+	m = m * smoothstep(0.0, 0.14, e) * (0.75 + 0.25 * e);
+	float radius = 0.06 + 0.4 * m;
+	float dot_a = 1.0 - smoothstep(radius - soft, radius + soft, length(dots.xy));
+	// two tones: the ground, and an ink that goes from colour2 to colour3
+	// across the screen and back, slowly
+	float2 sc = at * max(scale, 0.05);
+	float tone = 0.5 + 0.5 * sin(dot(sc, float2(1.5, 0.9)) + turn(5.0));
+	float3 ink = lerp(colour2.rgb, colour3.rgb, smoothstep(0.2, 0.8, tone));
+	float2 dv = v_in.uv - float2(0.5, 0.5);
+	float3 ground = colour1.rgb * (1.06 - 0.5 * dot(dv, dv));
+	float3 rgb = lerp(ground, ink, dot_a * (0.55 + 0.45 * m));
+	return float4(saturate(rgb), 1.0);
+}
+
+// ----------------------------------------------------------------- Dot grid
+//
+// Small dots in straight rows and columns. Beams of light at 45 degrees
+// sweep across, two families crossing each other: a dot under a beam is
+// larger and brighter, and one where two beams cross flares in a four-point
+// star. The dots are colour2 at one side of the screen and colour3 at the
+// other.
+
+float dg_beam(float x, float period, float speed, float offs, float width)
+{
+	float d = (frac(x / period - frac(phase * speed) + offs) - 0.5) * period;
+	return exp(-d * d / (width * width));
+}
+
+// x: the beams one way, y: the beams the other way, at a dot's middle
+float2 dg_beams(float2 c)
+{
+	float u = (c.x + c.y) * 0.7071068;
+	float v = (c.x - c.y) * 0.7071068;
+	float more = 0.5 + 0.5 * detail;
+	float a = max(dg_beam(u, 19.0, 30.0, 0.13, 1.25), more * dg_beam(u, 31.0, -20.0, 0.61, 0.95));
+	float b = max(dg_beam(v, 23.0, -26.0, 0.47, 1.25), more * dg_beam(v, 37.0, 18.0, 0.29, 0.95));
+	return float2(a, b);
+}
+
+float4 PSDotGrid(VertData v_in) : TARGET
+{
+	float zoom = 24.0;
+	float2 q = place(v_in.uv) * zoom + float2(0.5, 0.5);
+	float soft = min(hx_soft(zoom), 0.1);
+	float2 cell = floor(q);
+	float2 f = q - cell - float2(0.5, 0.5);
+	float2 beams = dg_beams(cell);
+	float boost = saturate(beams.x + beams.y);
+	float r = length(f);
+	float radius = 0.065 + 0.012 * detail + 0.15 * boost;
+	float core = 1.0 - smoothstep(radius - soft, radius + soft, r);
+	float halo = exp(-r * r / (radius * radius * 2.4)) * (0.12 + 0.45 * boost);
+	// the stars: an arm reaches a few dots along its row and its column
+	float star = 0.0;
+	for (int j = 0; j < 7; j++) {
+		float o = float(j) - 3.0;
+		float2 bx = dg_beams(cell + float2(o, 0.0));
+		float2 by = dg_beams(cell + float2(0.0, o));
+		float cx = bx.x * bx.y;
+		float cy = by.x * by.y;
+		cx = cx * cx * cx;
+		cy = cy * cy * cy;
+		float ax = abs(f.x - o);
+		float ay = abs(f.y - o);
+		float reach_x = saturate(1.0 - ax / (0.8 + 2.6 * cx));
+		float reach_y = saturate(1.0 - ay / (0.8 + 2.6 * cy));
+		star += cx * reach_x * reach_x * exp(-f.y * f.y / (0.0016 + 0.012 * reach_x * reach_x));
+		star += cy * reach_y * reach_y * exp(-f.x * f.x / (0.0016 + 0.012 * reach_y * reach_y));
+	}
+	float side = smoothstep(0.1, 0.9, v_in.uv.x + 0.25 * (v_in.uv.y - 0.5));
+	float3 tint = lerp(colour2.rgb, colour3.rgb, side);
+	float3 hot = hx_hot(tint);
+	float2 dv = v_in.uv - float2(0.5, 0.5);
+	float3 rgb = colour1.rgb * (1.05 - 0.55 * dot(dv, dv));
+	// the beams themselves, faintly, where the pixel is
+	float2 here = dg_beams(q - float2(0.5, 0.5));
+	rgb = lerp(rgb, tint, 0.1 * saturate(here.x + here.y));
+	rgb = lerp(rgb, tint, saturate(halo));
+	rgb = lerp(rgb, lerp(tint, hot, boost), core * (0.5 + 0.5 * boost));
+	rgb = lerp(rgb, hot, saturate(star * 2.0));
+	return float4(saturate(rgb), 1.0);
+}
+
+// ------------------------------------------------------------ Hex wire glow
+//
+// A flat comb of dark hexagons with thin lines between them. A soft light
+// moves from side to side, and a smaller one wanders: where they are, the
+// lines are lit, colour2 at one side of the screen, colour3 at the other and
+// a brighter blend between; elsewhere the lines are nearly as dark as the
+// ground.
+
+float4 PSHexWire(VertData v_in) : TARGET
+{
+	float zoom = 8.0;
+	float2 q = place(v_in.uv) * zoom + float2(0.5, 0.29);
+	float soft = min(hx_soft(zoom), 0.05);
+	float4 cell = hx_cell(q);
+	float e = hx_edge(cell.xy);
+	float h1 = hash(hx_id(cell.zw));
+	float2 sc = (v_in.uv - float2(0.5, 0.5)) * aspect;
+	float2 d1 = sc - float2(0.44 * aspect.x * sin(turn(8.0)), 0.16 * sin(turn(16.0) + 0.9));
+	float2 d2 = sc - float2(0.4 * aspect.x * cos(turn(5.0) + 1.0), 0.34 * sin(turn(7.0)));
+	float lit = saturate(exp(-dot(d1, d1) / 0.2) + 0.75 * exp(-dot(d2, d2) / 0.09));
+	// the light's colour, across the width
+	float across = v_in.uv.x;
+	float3 hue = lerp(colour2.rgb, colour3.rgb, smoothstep(0.15, 0.85, across));
+	float mid = 1.0 - abs(across * 2.0 - 1.0);
+	hue = lerp(hue, hx_hot(hue), 0.35 * mid * mid);
+	float light = hx_light(colour1.rgb);
+	float3 fill = colour1.rgb * lerp(0.42, 0.96, light) * (0.94 + 0.12 * h1);
+	// a lit hexagon takes a little of the light, most at its border
+	fill = lerp(fill, hue, lit * (0.05 + 0.1 * (1.0 - 2.0 * e)));
+	float lw = 0.016 + 0.008 * detail;
+	float line_a = 1.0 - smoothstep(lw, lw + soft, e);
+	float glow = exp(-e * e / (0.004 + 0.008 * detail));
+	float3 unlit = fill * lerp(0.5, 0.82, light);
+	float3 rgb = lerp(fill, hue, glow * lit * 0.5);
+	rgb = lerp(rgb, lerp(unlit, lerp(hue, hx_hot(hue), 0.5 * lit * lit), saturate(lit * 1.5)), line_a);
+	return float4(saturate(rgb), 1.0);
+}
+
+// --------------------------------------------------------------- Hex mosaic
+//
+// Flat hexagon tiles, each a shade of its own between the colours, close
+// together so the whole stays calm. A tile's shade drifts slowly and a soft
+// wave of light passes over them all.
+
+float4 PSHexMosaic(VertData v_in) : TARGET
+{
+	float zoom = 9.0;
+	float2 q = place(v_in.uv) * zoom + float2(0.5, 0.29);
+	float soft = min(hx_soft(zoom), 0.05);
+	float4 cell = hx_cell(q);
+	float e = hx_edge(cell.xy);
+	float2 id = hx_id(cell.zw);
+	float h1 = hash(id);
+	float h2 = hash(id + float2(9.0, 4.0));
+	float h3 = hash(float2(id.y + 3.0, id.x + 17.0));
+	float own = 0.5 + 0.5 * sin(turn(8.0 + 2.0 * floor(h2 * 5.0)) + h1 * 6.2831853);
+	float wave = 0.5 + 0.5 * sin(dot(cell.zw, float2(0.52, 0.34)) - turn(14.0));
+	wave = wave * wave * wave;
+	float contrast = 0.35 + 0.5 * detail;
+	float shade = saturate(0.1 + contrast * (0.62 * h1 + 0.26 * own) + 0.26 * wave);
+	float3 rgb = lerp(colour1.rgb, colour2.rgb, shade * 0.85);
+	// some tiles lean towards the third colour, more of them to one side
+	float lean = smoothstep(0.3, 1.0, h3 * 0.75 + 0.5 * (v_in.uv.x - v_in.uv.y * 0.4));
+	rgb = lerp(rgb, colour3.rgb, lean * (0.2 + 0.3 * own) * (0.5 + contrast * 0.6));
+	rgb = lerp(rgb, hx_hot(rgb), 0.16 * wave);
+	// a thin seam between tiles
+	float seam = 1.0 - smoothstep(0.012, 0.012 + soft, e);
+	rgb = lerp(rgb, colour1.rgb * lerp(0.6, 0.82, hx_light(colour1.rgb)), seam * 0.6);
+	return float4(saturate(rgb), 1.0);
+}
+
+technique HexColumns
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSHexColumns(v_in);
+	}
+}
+
+technique Mesh
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSMesh(v_in);
+	}
+}
+
+technique Halftone
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSHalftone(v_in);
+	}
+}
+
+technique DotGrid
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSDotGrid(v_in);
+	}
+}
+
+technique HexWire
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSHexWire(v_in);
+	}
+}
+
+technique HexMosaic
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSHexMosaic(v_in);
+	}
+}
