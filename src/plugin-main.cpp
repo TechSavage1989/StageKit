@@ -61,6 +61,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 // ==== end scene-filters:standby-corners ====
 // ==== scene-filters:shadow ====
 #include "look/scene-shadow.hpp"
+#include "ambient/ambient-frame.hpp"
+#include "look/outline-ambient.hpp"
 #include "look/outline-pattern.hpp"
 // ==== end scene-filters:shadow ====
 // ==== scene-filters:blur ====
@@ -155,6 +157,9 @@ bool obs_module_load(void)
 	stagekit::register_scene_modes();
 	stagekit::vendor_api_add_test_calls();
 	stagekit::outline_pattern_add_test_calls();
+	stagekit::outline_ambient_add_test_calls();
+	stagekit::ambient_frame_add_test_calls();
+	stagekit::outline_ambient_start();
 	// ==== end scene-filters:modes ====
 	// ==== scene-filters:transitions ====
 	stagekit::register_scene_transitions();
@@ -216,6 +221,8 @@ void obs_module_unload(void)
 	stagekit::fit_item_stop();
 	stagekit::scene_transitions_stop();
 	stagekit::outline_pattern_stop();
+	stagekit::outline_ambient_stop();
+	stagekit::ambient_frame_stop();
 	stagekit::stop_window_watch();
 	stagekit::stop_updater();
 	// ==== scene-filters:perf ====

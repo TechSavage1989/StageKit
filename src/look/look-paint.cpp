@@ -9,6 +9,7 @@ the Free Software Foundation; either version 2 of the License, or
 */
 
 #include "look-paint.hpp"
+#include "outline-ambient.hpp"
 #include "outline-pattern.hpp"
 
 #include "../common/scene-util.hpp"
@@ -70,6 +71,9 @@ OutlineDesign read_outline_design(obs_data_t *settings)
 	d.pose.x = std::clamp(obs_data_get_double(settings, "outline_pos_x") / 100.0, -1.0, 1.0);
 	d.pose.y = std::clamp(obs_data_get_double(settings, "outline_pos_y") / 100.0, -1.0, 1.0);
 	d.pose.degrees = std::clamp(obs_data_get_double(settings, "outline_rotation"), -180.0, 180.0);
+	d.ambient = outline_ambient_choice(obs_data_get_string(settings, "outline_ambient"));
+	d.ambient_bright = std::clamp(obs_data_get_double(settings, "outline_ambient_bright") / 100.0, 0.0, 3.0);
+	d.ambient_sat = std::clamp(obs_data_get_double(settings, "outline_ambient_sat") / 100.0, 0.0, 3.0);
 	// (Only the tests set this: another file in the patterns' place.)
 	if (obs_data_has_user_value(settings, "test_pattern_effect"))
 		outline_pattern_test_file(obs_data_get_string(settings, "test_pattern_effect"));
@@ -165,21 +169,27 @@ bool design_modified(obs_properties_t *props, obs_property_t *, obs_data_t *sett
 			obs_property_set_visible(p, on);
 	};
 	const bool dashes = kind == OutlineDesign::Dashed || kind == OutlineDesign::Marching;
-	const bool pattern = kind >= OutlineDesign::Aurora && kind <= OutlineDesign::kLast;
+	const bool ambient = kind == OutlineDesign::Ambient;
+	// (What lays a fill out in the line: a pattern's and the background's.)
+	const bool laid = ambient || (kind >= OutlineDesign::Aurora && kind <= OutlineDesign::HexMosaic);
+	const bool pattern = laid && !ambient;
 	show("outline_color2", pattern || kind == OutlineDesign::Gradient || kind == OutlineDesign::Travelling ||
 				       kind == OutlineDesign::Shimmer || kind == OutlineDesign::Neon);
 	show("outline_color3", pattern);
-	show("outline_pattern_scale", pattern);
+	show("outline_pattern_scale", laid);
+	show("outline_ambient", ambient);
+	show("outline_ambient_bright", ambient);
+	show("outline_ambient_sat", ambient);
 	// Where they act: a pattern fill is moved and turned in the line; dashes
 	// and the colours round the border are turned only.
-	show("outline_pos_x", pattern);
-	show("outline_pos_y", pattern);
-	show("outline_rotation", pattern || kind == OutlineDesign::Dashed || kind == OutlineDesign::Marching ||
+	show("outline_pos_x", laid);
+	show("outline_pos_y", laid);
+	show("outline_rotation", laid || kind == OutlineDesign::Dashed || kind == OutlineDesign::Marching ||
 					 kind == OutlineDesign::Gradient || kind == OutlineDesign::Travelling ||
 					 kind == OutlineDesign::Shimmer || kind == OutlineDesign::Rainbow);
 	show("outline_dash", dashes);
 	show("outline_gap", dashes || kind == OutlineDesign::Dotted);
-	show("outline_speed", kind >= OutlineDesign::Marching);
+	show("outline_speed", kind >= OutlineDesign::Marching && !ambient);
 	show("outline_neon", kind == OutlineDesign::Neon);
 	return true;
 }
@@ -224,12 +234,13 @@ void add_outline_design_properties(obs_properties_t *outline)
 					    "Waves",    "Nebula",  "Flow",          "Stars",      "Bokeh",
 					    "Rays",     "Circuit", "Hex",           "Rain",       "Tunnel",
 					    "Ripples",  "Embers",  "CircuitTraces", "DataLines",  "Mesh",
-					    "Halftone", "DotGrid", "HexWire",       "HexMosaic"};
+					    "Halftone", "DotGrid", "HexWire",       "HexMosaic",  "Ambient"};
 	for (int i = 0; i <= OutlineDesign::kLast; i++)
 		obs_property_list_add_int(
 			design, obs_module_text((std::string("Shadow.OutlineDesign.") + names[i]).c_str()), i);
 	set_tip(design, obs_module_text("Shadow.OutlineDesign.Tip"));
 	obs_property_set_modified_callback(design, design_modified);
+	add_outline_ambient_property(outline);
 	obs_property_t *two =
 		obs_properties_add_color(outline, "outline_color2", obs_module_text("Shadow.OutlineColor2"));
 	set_tip(two, obs_module_text("Shadow.OutlineColor2.Tip"));
@@ -251,6 +262,10 @@ void add_outline_design_properties(obs_properties_t *outline)
 		obs_module_text("Shadow.OutlineNeon.Tip"));
 	set_tip(slider("outline_pattern_scale", "Shadow.OutlinePatternScale", 10.0, 400.0, "%"),
 		obs_module_text("Shadow.OutlinePatternScale.Tip"));
+	set_tip(slider("outline_ambient_bright", "Shadow.OutlineAmbientBright", 0.0, 300.0, "%"),
+		obs_module_text("Shadow.OutlineAmbientBright.Tip"));
+	set_tip(slider("outline_ambient_sat", "Shadow.OutlineAmbientSat", 0.0, 300.0, "%"),
+		obs_module_text("Shadow.OutlineAmbientSat.Tip"));
 	set_tip(slider("outline_pos_x", "Transform.PositionX", -100.0, 100.0, "%"),
 		obs_module_text("Shadow.OutlinePosition.Tip"));
 	set_tip(slider("outline_pos_y", "Transform.PositionY", -100.0, 100.0, "%"),
@@ -284,6 +299,9 @@ void outline_glow_defaults(obs_data_t *settings)
 	obs_data_set_default_double(settings, "outline_pos_x", 0.0);
 	obs_data_set_default_double(settings, "outline_pos_y", 0.0);
 	obs_data_set_default_double(settings, "outline_rotation", 0.0);
+	obs_data_set_default_string(settings, "outline_ambient", "");
+	obs_data_set_default_double(settings, "outline_ambient_bright", d.ambient_bright * 100.0);
+	obs_data_set_default_double(settings, "outline_ambient_sat", d.ambient_sat * 100.0);
 }
 
 ShadowLook scaled_look(ShadowLook look, double level)
@@ -328,6 +346,9 @@ OutlineDesign lerp_design(const OutlineDesign &a, const OutlineDesign &b, double
 		out.pose.x = mix(a.pose.x, b.pose.x, t);
 		out.pose.y = mix(a.pose.y, b.pose.y, t);
 		out.pose.degrees = mix(a.pose.degrees, b.pose.degrees, t);
+		// (Which background is the nearer side's: two pictures are not mixed.)
+		out.ambient_bright = mix(a.ambient_bright, b.ambient_bright, t);
+		out.ambient_sat = mix(a.ambient_sat, b.ambient_sat, t);
 	}
 	return out;
 }
@@ -740,7 +761,11 @@ bool LookPaint::compose(gs_texture_t *scene, gs_texture_t *cast, gs_texture_t *m
 	// each technique, and Direct3D draws nothing while one has none.)
 	// A pattern fill: the pattern over the whole canvas, which the line is a
 	// window onto (drawn before any of this file's passes begin).
-	gs_texture_t *pattern = has_ring ? outline_pattern_texture(look.design, look.outline_color, cx, cy) : nullptr;
+	// (The Ambient Background fill: the background where the canvas shows it.)
+	gs_texture_t *pattern = !has_ring ? nullptr
+				: look.design.ambient_fill()
+					? outline_ambient_texture(look.design, cx, cy)
+					: outline_pattern_texture(look.design, look.outline_color, cx, cy);
 	auto line_values = [&] {
 		gs_effect_set_texture(p_cast_, cast);
 		gs_effect_set_texture(p_ring_shape_, box ? ring : cast);

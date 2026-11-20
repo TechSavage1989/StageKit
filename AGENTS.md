@@ -3835,6 +3835,49 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   the other designs show none (`design_modified`). Tested in `[pattern transform: ...]`
   (`pattern_transform_test`, alone with `STAGEKIT_TEST_ONLY_PATTERN_TRANSFORM`, frames in
   `$out/pattern-transform`). Only OpenGL.
+- **Outline design Ambient Background** (`OutlineDesign::Ambient` 34, appended; the owner: "a
+  border/shadow/outline option to follow the ambient background setting for pattern, but also
+  background image or live, including mosaic and blur configurations"). The line shows an Ambient
+  Background's finished picture, in both Shadow, Glow & Outline and Scene Shadow. Settings:
+  `outline_ambient` (*Background*, a string: "" *Automatic* as it comes, or a background's name;
+  followed on a rename, `renamed` in `outline-ambient.cpp`), `outline_ambient_bright` (*Fill
+  brightness*, 0 to 300 %, 130) and `outline_ambient_sat` (*Fill saturation*, 0 to 300 %, 120);
+  `outline_pattern_scale`, `outline_pos_x/y` and `outline_rotation` lay it out as for a pattern.
+  - **The picture is the one the background drew** (`src/ambient/ambient-frame.*`): every Ambient
+    Background joins a registry when made (`ambient_frame_join`, a number never used twice, a weak
+    reference), publishes its finished texture and the video frame at the end of each `render`
+    and leaves in its destructor, in the graphics context. `ambient_frame_get` hands out that
+    texture; one not drawn in the last two frames (in no scene on show) is drawn once into a
+    scratch texrender, for everyone asking that frame. Nobody draws the background a second time.
+  - **Which background** (`outline-ambient.*`): `outline_ambient_choice` turns the name into a
+    number the `OutlineDesign` carries (`ambient`); `outline_ambient_resolve` gives the answer
+    kept for (choice, scene), **never looks anything up itself**, because it is called while
+    drawing: OBS draws the main view holding the view's channel lock, which
+    `obs_get_output_source` (in `scene_on_screen` without the frontend) takes again; the first
+    build hung there. The lookup is made by a tick callback (`look_tick`, when a background comes
+    or goes and four times a second) and by `outline_ambient_warm` from each filter's tick, so the
+    first drawing has an answer. Automatic: the first Ambient Background in the filter's scene
+    (Scene Shadow: its own scene; groups looked into), then the one in the scene on screen (the
+    source filter starts there), then any; a named one that is gone reads as Automatic. The scene
+    is held weakly and a choice not asked for in 5 s is let go of.
+  - **Laid out** by `data/effects/stagekit-outline-ambient.effect` (its own file: refused, only this
+    fill goes, logged once, the line is its outline colour) into one picture per background,
+    size and layout a frame, shared (`Key`); every uniform set at every run; mirrored at the
+    edges. Scene Shadow: the picture is the canvas, so the line shows the background where it
+    lies (at the defaults exactly the background, then lifted). Shadow, Glow & Outline: the
+    source's own picture, at the canvas's scale, **the background's middle on the source's
+    middle** (`AmbientCover`): the filter does not know where the item is on screen (one source,
+    many scenes). Brightness and saturation are the fill's own (`PSFill`).
+  - Morph carries it (`lerp_design`: the nearer side's background, brightness and saturation
+    mixed), and Scene Blur's `lay_over` with the rest of Scene Shadow's look. **The drop shadow
+    and glow do not take it**: a shadow in the picture's own colours exists (`shadow_fill`), but
+    one in the background's would be another texture through both filters' shadow passes; not
+    done.
+  - Tested in `[outline: filled with an Ambient Background ...]` (`outline_ambient_test`, alone
+    with `STAGEKIT_TEST_ONLY_OUTLINE_AMBIENT`; frames in `$out/outline-ambient`, with
+    `STAGEKIT_OUTLINE_AMBIENT_FRAMES` a few moving ones). `stagekit_test_ambient_frames` and
+    `stagekit_test_outline_ambient` (global procs) give the backgrounds known, the extra
+    drawings and the pictures held. Only OpenGL.
 - **Frame time** (`src/common/timing.*`, `src/common/scene-rev.*`; the harness `tests/collection-perf.cpp`,
   `tests/make-perf-collection.py`, `tests/run-perf.sh`, `tests/perf-compare.py`). The owner's
   *Average time to render frame* went from under 1 ms to 1.1 ms: all of it `tick_sources` (0.25 to
