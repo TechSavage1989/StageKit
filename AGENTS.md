@@ -3787,6 +3787,32 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     `$out/outline-patterns-same`, to compare with another build's. `stagekit_test_outline_patterns`
     (a global proc) gives the pictures held and drawn; the setting `test_pattern_effect` on either
     filter names another file in the patterns' place. Only OpenGL.
+- **Position X, Position Y and Rotation** (`src/common/pattern-frame.hpp`, `PatternPose`,
+  `pattern_frame`; the owner: "the ambient background image/animations and shadow
+  outlines/animations should have similar transform controls as the blur/mosaic feature with x,
+  y, and rotation controls"). Offsets in % of the picture (-100 to 100), rotation in degrees
+  clockwise (-180 to 180, the mosaic's *Rotation* label), **all 0 as they come, and at 0 every
+  value handed to a shader is exactly what it was before** (tested against the keys absent).
+  Ambient Background: `base_pos_x`, `base_pos_y`, `base_rotation`, for every base. An image or
+  source is turned in `PSLayer` (`pose`, a 2x2 matrix in uv worked out on the CPU in pixels, and
+  `pose_shift`; both set at every `draw_layer`, the identity for the live and kept layers); the
+  layer's own wrapping fills what a turn uncovers, so there is no cover scale and no empty
+  corner, and the drift is turned back on the CPU so it stays across the screen. A pattern:
+  the three patterns files' vertex shader turns the uv (`frame`, `frame_shift`, **set by both
+  users of those files at every run**: Ambient Background and `outline-pattern.cpp`); the
+  pattern is drawn as for the screen the turned picture fits in (`aspect` and `scale` are
+  adjusted), so its uv stays within 0..1 and features keep their size; the few patterns that
+  ignore `scale` (Lava lamp, Ripples, Rays) come out larger when turned. Outlines:
+  `outline_pos_x`, `outline_pos_y`, `outline_rotation` in `OutlineDesign::pose`, read by
+  `read_outline_design` for both filters, carried by Morph (`lerp_design`, between two of one
+  kind). A pattern fill: the pose is part of the shared picture's `Key`. The designs that go
+  round the border (`OutlineDesign::turns()`: Dashed, Marching, Gradient, Travelling, Shimmer,
+  Rainbow): the rotation alone, added on the CPU to `design_phase` / `design_turn` (rotation /
+  360; the two shaders no longer gate those by design, the CPU sends 0 where nothing moves).
+  X and Y mean nothing to a line set out along its border and are shown for pattern fills only;
+  the other designs show none (`design_modified`). Tested in `[pattern transform: ...]`
+  (`pattern_transform_test`, alone with `STAGEKIT_TEST_ONLY_PATTERN_TRANSFORM`, frames in
+  `$out/pattern-transform`). Only OpenGL.
 - **Frame time** (`src/common/timing.*`, `src/common/scene-rev.*`; the harness `tests/collection-perf.cpp`,
   `tests/make-perf-collection.py`, `tests/run-perf.sh`, `tests/perf-compare.py`). The owner's
   *Average time to render frame* went from under 1 ms to 1.1 ms: all of it `tick_sources` (0.25 to

@@ -55,10 +55,12 @@ struct Key {
 	uint32_t colour[3] = {0, 0, 0};
 	uint32_t w = 0, h = 0;
 	float phase = 0.0f, scale = 1.0f;
+	PatternPose pose;
 	bool operator==(const Key &o) const
 	{
 		return kind == o.kind && colour[0] == o.colour[0] && colour[1] == o.colour[1] &&
-		       colour[2] == o.colour[2] && w == o.w && h == o.h && phase == o.phase && scale == o.scale;
+		       colour[2] == o.colour[2] && w == o.w && h == o.h && phase == o.phase && scale == o.scale &&
+		       pose == o.pose;
 	}
 };
 
@@ -78,6 +80,7 @@ struct Shaders {
 	bool tried = false;
 	gs_eparam_t *phase = nullptr, *aspect = nullptr, *scale = nullptr, *detail = nullptr;
 	gs_eparam_t *colour[3] = {nullptr, nullptr, nullptr};
+	gs_eparam_t *frame = nullptr, *frame_shift = nullptr;
 };
 Shaders g_shaders[kFileCount];
 bool g_said = false; // that the patterns are not there: once
@@ -148,6 +151,8 @@ Shaders *load(int which)
 		sh.colour[0] = gs_effect_get_param_by_name(sh.effect, "colour1");
 		sh.colour[1] = gs_effect_get_param_by_name(sh.effect, "colour2");
 		sh.colour[2] = gs_effect_get_param_by_name(sh.effect, "colour3");
+		sh.frame = gs_effect_get_param_by_name(sh.effect, "frame");
+		sh.frame_shift = gs_effect_get_param_by_name(sh.effect, "frame_shift");
 	} else if (!g_said) {
 		g_said = true;
 		obs_log(LOG_ERROR,
@@ -170,11 +175,12 @@ void draw(Entry &e, const Shaders &sh)
 	gs_enable_framebuffer_srgb(false);
 	// Every uniform of the file, at every run (Ambient Background uses the
 	// same copy of it).
-	vec2 aspect;
-	vec2_set(&aspect, (float)k.w / (float)k.h, 1.0f);
+	const PatternFrame f = pattern_frame(k.w, k.h, k.scale, k.pose);
 	gs_effect_set_float(sh.phase, k.phase);
-	gs_effect_set_vec2(sh.aspect, &aspect);
-	gs_effect_set_float(sh.scale, k.scale);
+	gs_effect_set_vec2(sh.aspect, &f.aspect);
+	gs_effect_set_float(sh.scale, f.scale);
+	gs_effect_set_vec4(sh.frame, &f.frame);
+	gs_effect_set_vec2(sh.frame_shift, &f.shift);
 	gs_effect_set_float(sh.detail, (float)kDetail);
 	for (int i = 0; i < 3; i++) {
 		vec4 colour;
@@ -223,6 +229,7 @@ gs_texture_t *outline_pattern_texture(const OutlineDesign &design, uint32_t outl
 	phase -= std::floor(phase);
 	key.phase = (float)phase;
 	key.scale = (float)std::clamp(design.pattern_scale * size, 0.05, 40.0);
+	key.pose = design.pose;
 
 	Entry *found = nullptr, *spare = nullptr;
 	for (Entry &e : g_entries) {

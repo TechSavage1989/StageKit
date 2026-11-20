@@ -17,6 +17,7 @@ the Free Software Foundation; either version 2 of the License, or
 #pragma once
 
 #include "../common/kawase-blur.hpp"
+#include "../common/pattern-frame.hpp"
 
 #include <obs.h>
 #include <graphics/matrix4.h>
@@ -74,6 +75,15 @@ struct OutlineDesign {
 	// are the first two) and how large the pattern is, 1 as designed.
 	uint32_t color3 = 0xFFA046C8;
 	double pattern_scale = 1.0;
+	// Position X, Position Y and Rotation. A pattern fill: where the pattern
+	// lies in the line's picture. Dashes and the colours that go round the
+	// border (`turns()`): the rotation alone, as how far round they begin.
+	PatternPose pose;
+	bool turns() const
+	{
+		return kind == Dashed || kind == Marching || kind == Gradient || kind == Travelling ||
+		       kind == Shimmer || kind == Rainbow;
+	}
 	bool pattern() const { return kind >= Aurora && kind <= kLast; }
 	// Drawn inside the source's edge, with no line outside it.
 	bool inner() const { return kind == Inner; }

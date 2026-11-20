@@ -11,6 +11,8 @@ uniform texture2d overlay;
 
 uniform float2 uv_scale;     // Layer: cover-fit scale around the centre
 uniform float2 uv_offset;    // Layer: scroll offset in uv
+uniform float4 pose;         // Layer: the picture turned on the screen, a 2x2 matrix in uv by rows (1,0,0,1: as it is)
+uniform float2 pose_shift;   // Layer: and moved, in uv
 uniform float wrap_mirror;   // Layer: 1 = mirror at the edges, 0 = repeat
 uniform float4 uv_crop;      // Layer: the part of the texture that is picture (origin, size)
 uniform float clip_edges;    // Layer: 1 = draw nothing outside the picture, 0 = wrap
@@ -62,7 +64,8 @@ float2 wrap_uv(float2 uv)
 // Output is premultiplied; draw with blend ONE / INVSRCALPHA.
 float4 PSLayer(VertData v_in) : TARGET
 {
-	float2 uv = (v_in.uv - float2(0.5, 0.5)) * uv_scale + float2(0.5, 0.5) + uv_offset;
+	float2 d = v_in.uv - float2(0.5, 0.5) - pose_shift;
+	float2 uv = float2(dot(d, pose.xy), dot(d, pose.zw)) * uv_scale + float2(0.5, 0.5) + uv_offset;
 	float4 c = image.Sample(linearClamp, uv_crop.xy + wrap_uv(uv) * uv_crop.zw);
 	float l = luma(c.rgb);
 	float3 rgb = lerp(float3(l, l, l), c.rgb, saturation);

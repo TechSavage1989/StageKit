@@ -100,6 +100,13 @@ STAGEKIT_TEST_ONLY_OUTLINE_PATTERNS=1 xvfb-run -a -s "-screen 0 1280x720x24" \
   "$out/test-art.png" "$out/test-texture.png" "$out/test-game.png" "$out/tooltips" \
   "$out/test-title.png" "$out/tooltips" "$out/test-pillarbox.png" "$out/test-black.png" "$out/test-dark-game.png"
 python3 "$root/tests/make-sheet.py" "$out/outline-patterns" "$out/outline-patterns.png" 6 light
+# Its own run: Position X, Position Y and Rotation, in Ambient Background and the outlines.
+rm -rf "$out/pattern-transform"
+mkdir -p "$out/pattern-transform"
+STAGEKIT_TEST_ONLY_PATTERN_TRANSFORM=1 xvfb-run -a -s "-screen 0 1280x720x24" \
+  "$root/build-tests/tests/stagekit-ambient-test" "$root/build-tests/stagekit.so" "$root/data" \
+  "$out/test-art.png" "$out/test-texture.png" "$out/test-game.png" "$out/tooltips" \
+  "$out/test-title.png" "$out/tooltips" "$out/test-pillarbox.png" "$out/test-black.png" "$out/test-dark-game.png"
 # ==== end scene-filters:shadow ====
 # ==== scene-filters:standby-corners ====
 python3 "$root/tests/make-sheet.py" "$out/scene-corners" "$out/scene-corners.png" 2

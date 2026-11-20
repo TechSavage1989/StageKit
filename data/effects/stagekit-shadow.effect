@@ -170,7 +170,7 @@ float2 design_at(float u, float total, float x, float x_out, float w, float foll
 	float two_follow = saturate(step(0.875, x_out) + step(x_out, 0.375));
 	float two = two_box + (two_follow - two_box) * follows;
 
-	float dashes = dash_cover(u, total, design_dash, design_gap, design_phase * is_design(7.0));
+	float dashes = dash_cover(u, total, design_dash, design_gap, design_phase);
 
 	float dot_period = max(w + design_gap, 1.0);
 	float dot_count = max(floor(total / dot_period + 0.5), 1.0);
@@ -185,7 +185,7 @@ float2 design_at(float u, float total, float x, float x_out, float w, float foll
 	float tube = saturate(1.0 - abs(2.0 * x - 1.0));
 
 	float at = u / max(total, 1.0);
-	float wave = 0.5 - 0.5 * cos(6.2831853 * (at - design_turn * is_design(8.0)));
+	float wave = 0.5 - 0.5 * cos(6.2831853 * (at - design_turn));
 	float glint = pow(saturate(0.5 + 0.5 * cos(6.2831853 * (at - design_turn))), 24.0);
 	float hue = frac(at - design_turn + 1.0);
 

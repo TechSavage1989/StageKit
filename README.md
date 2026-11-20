@@ -236,7 +236,13 @@ with no jump), **Size** and **Detail**. A pattern takes the image's place and no
 the blur, the mosaic, bloom, Darkest level, the texture overlay and a live capture blended in all
 act on it, so a hexagon mosaic over Plasma works as it does over an image. The blur softens a
 pattern a great deal: turn *Blur* down to see its shapes. The Motion group (drift, zoom, mirror) is
-an image's and is hidden for a pattern. The patterns cost one small extra drawing step, and
+an image's and is hidden for a pattern. **Position X**, **Position Y** and **Rotation** pose the
+background whatever it is made from: X and Y move it by a share of the screen's width and height,
+Rotation turns it about the middle of the screen (clockwise, -180° to 180°). An image or source
+still covers the whole screen (the space left is filled by repeating or mirroring it, as the drift
+does) and its drift stays in the direction set. A pattern's own layout is moved and turned, so
+Circuit traces can come in from a side instead of the top, the centre of Rays can sit elsewhere
+and Sun grid can tilt. All three are 0 as they come, and then nothing changes. The patterns cost one small extra drawing step, and
 nothing while an image is chosen. If the patterns cannot be loaded, the background shows the
 standby image (or its image file) and OBS's log says so.
 
@@ -328,6 +334,13 @@ its heading:
     so) so that traces, cells and streaks fit in the line's width. Data lines is sparse on
     purpose: in a line it is the outline colour with a thin line or a light now and then. Grid pulse is not offered (in a line it is
     only a tick every so often), nor Sun grid (it is a view, not a texture).
+    *Position X*, *Position Y* and *Rotation* move and turn the pattern inside the line (the
+    line itself stays where it is); they show for the pattern fills. *Rotation* alone also shows
+    for the designs with something that goes round the border: for Gradient, Travelling, Shimmer
+    and Rainbow it is where round the border the colours begin (180° puts the first colour at
+    the opposite corner), for Dashed and Marching it slides the dashes along, a whole turn being
+    one dash and gap. Solid, Double, Dotted, Neon, Inner and Pulse have nothing to pose and show
+    none of the three.
 
 <p align="center"><img src="docs/images/outline-glow.png" width="900" alt="White sources with a 10 px black outline from Shadow, Glow &amp; Outline and from Scene Shadow, the same width, with a drop shadow, with rounded and bevelled outline corners, the drop shadow rounded with them, half-way through a Morph with the outlines solid, and a white glow round dark squares at 100% and 250% intensity"></p>
 

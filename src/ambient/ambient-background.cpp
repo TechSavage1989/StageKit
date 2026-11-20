@@ -29,6 +29,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/easing.hpp"
 #include "../common/kawase-blur.hpp"
 #include "../common/mosaic-uniforms.hpp"
+#include "../common/pattern-frame.hpp"
 #include "../common/scene-rev.hpp"
 #include "../common/scene-util.hpp"
 #include "../common/start-image.hpp"
@@ -183,6 +184,7 @@ struct Settings {
 	double pattern_speed = 1.0; // 0: still; under 0: backwards
 	double pattern_scale = 1.0;
 	double pattern_detail = 0.5;
+	PatternPose pose; // Position X, Position Y, Rotation: of the base, whatever it is
 	uint32_t pattern_colour[3] = {0xFF3C1814, 0xFFBEA028, 0xFFA046C8}; // as OBS keeps a colour: 0xAABBGGRR
 	double test_time = -1.0;                                           // the tests': the time a pattern is drawn at
 	double speed_x = 30.0;
@@ -302,7 +304,7 @@ private:
 	void draw_layer(gs_texture_t *tex, uint32_t w, uint32_t h, double scroll_x, double scroll_y, double zoom,
 			double opacity, const Settings &s, LiveFit fit = LiveFit::Fill, bool clip = false,
 			double focus_x = 0.5, double focus_y = 0.5, bool as_is = false,
-			const PictureCrop &crop = PictureCrop());
+			const PictureCrop &crop = PictureCrop(), const PatternPose &pose = PatternPose());
 	void draw_base(gs_texture_t *base, uint32_t w, uint32_t h, const Settings &s);
 	gs_texture_t *draw_pattern(const Settings &s, uint32_t w, uint32_t h);
 	void pass(gs_effect_t *effect, gs_eparam_t *image, gs_texrender_t *dst, gs_texture_t *src, uint32_t w,
@@ -347,6 +349,8 @@ private:
 	gs_eparam_t *p_uv_offset_ = nullptr;
 	gs_eparam_t *p_wrap_mirror_ = nullptr;
 	gs_eparam_t *p_uv_crop_ = nullptr;
+	gs_eparam_t *p_pose_ = nullptr;
+	gs_eparam_t *p_pose_shift_ = nullptr;
 	gs_eparam_t *p_clip_edges_ = nullptr;
 	gs_eparam_t *p_opacity_ = nullptr;
 	gs_eparam_t *p_saturation_ = nullptr;
@@ -369,6 +373,8 @@ private:
 	gs_eparam_t *pp_aspect_ = nullptr;
 	gs_eparam_t *pp_scale_ = nullptr;
 	gs_eparam_t *pp_detail_ = nullptr;
+	gs_eparam_t *pp_frame_ = nullptr;
+	gs_eparam_t *pp_frame_shift_ = nullptr;
 	gs_eparam_t *pp_colour_[3] = {nullptr, nullptr, nullptr};
 	std::atomic<double> pattern_speed_{1.0};
 	std::atomic<double> pattern_phase_{0.0}; // 0..1 through the loop, moved on by the tick
@@ -468,6 +474,8 @@ AmbientBackground::AmbientBackground(obs_data_t *settings, obs_source_t *source)
 		p_uv_offset_ = gs_effect_get_param_by_name(effect_, "uv_offset");
 		p_wrap_mirror_ = gs_effect_get_param_by_name(effect_, "wrap_mirror");
 		p_uv_crop_ = gs_effect_get_param_by_name(effect_, "uv_crop");
+		p_pose_ = gs_effect_get_param_by_name(effect_, "pose");
+		p_pose_shift_ = gs_effect_get_param_by_name(effect_, "pose_shift");
 		p_clip_edges_ = gs_effect_get_param_by_name(effect_, "clip_edges");
 		p_opacity_ = gs_effect_get_param_by_name(effect_, "opacity");
 		p_saturation_ = gs_effect_get_param_by_name(effect_, "saturation");
@@ -593,6 +601,9 @@ void AmbientBackground::update(obs_data_t *settings)
 	s.pattern_speed = std::clamp(obs_data_get_double(settings, "pattern_speed") / 100.0, -4.0, 4.0);
 	s.pattern_scale = std::clamp(obs_data_get_double(settings, "pattern_scale") / 100.0, 0.25, 4.0);
 	s.pattern_detail = std::clamp(obs_data_get_double(settings, "pattern_detail") / 100.0, 0.0, 1.0);
+	s.pose.x = std::clamp(obs_data_get_double(settings, "base_pos_x") / 100.0, -1.0, 1.0);
+	s.pose.y = std::clamp(obs_data_get_double(settings, "base_pos_y") / 100.0, -1.0, 1.0);
+	s.pose.degrees = std::clamp(obs_data_get_double(settings, "base_rotation"), -180.0, 180.0);
 	s.pattern_colour[0] = (uint32_t)obs_data_get_int(settings, "pattern_colour1");
 	s.pattern_colour[1] = (uint32_t)obs_data_get_int(settings, "pattern_colour2");
 	s.pattern_colour[2] = (uint32_t)obs_data_get_int(settings, "pattern_colour3");
@@ -619,6 +630,8 @@ void AmbientBackground::update(obs_data_t *settings)
 			pp_aspect_ = gs_effect_get_param_by_name(patterns_, "aspect");
 			pp_scale_ = gs_effect_get_param_by_name(patterns_, "scale");
 			pp_detail_ = gs_effect_get_param_by_name(patterns_, "detail");
+			pp_frame_ = gs_effect_get_param_by_name(patterns_, "frame");
+			pp_frame_shift_ = gs_effect_get_param_by_name(patterns_, "frame_shift");
 			pp_colour_[0] = gs_effect_get_param_by_name(patterns_, "colour1");
 			pp_colour_[1] = gs_effect_get_param_by_name(patterns_, "colour2");
 			pp_colour_[2] = gs_effect_get_param_by_name(patterns_, "colour3");
@@ -992,7 +1005,8 @@ bool AmbientBackground::live_shows_something(gs_texture_t *live)
 // caller's ortho), scrolled by the given number of output pixels.
 void AmbientBackground::draw_layer(gs_texture_t *tex, uint32_t out_w, uint32_t out_h, double scroll_x, double scroll_y,
 				   double zoom, double opacity, const Settings &s, LiveFit fit, bool clip,
-				   double focus_x, double focus_y, bool as_is, const PictureCrop &crop)
+				   double focus_x, double focus_y, bool as_is, const PictureCrop &crop,
+				   const PatternPose &pose)
 {
 	const uint32_t tw = gs_texture_get_width(tex), th = gs_texture_get_height(tex);
 	// Only the part that is picture is laid down, drifted and mirrored. Its
@@ -1047,6 +1061,20 @@ void AmbientBackground::draw_layer(gs_texture_t *tex, uint32_t out_w, uint32_t o
 	gs_effect_set_vec2(p_uv_scale_, &scale);
 	gs_effect_set_vec2(p_uv_offset_, &offset);
 	gs_effect_set_vec4(p_uv_crop_, &uv_crop);
+	// Position and Rotation: the picture turned about the screen's middle
+	// (in pixels, so it keeps its shape) and moved. The wrapping fills what
+	// the turn uncovers. Exactly (1,0,0,1) and no shift with neither.
+	vec4 turned;
+	vec2 moved;
+	vec4_set(&turned, 1.0f, 0.0f, 0.0f, 1.0f);
+	vec2_set(&moved, (float)pose.x, (float)pose.y);
+	if (pose.degrees != 0.0) {
+		const double r = pose.degrees * 3.14159265358979323846 / 180.0;
+		vec4_set(&turned, (float)std::cos(r), (float)(std::sin(r) / out_aspect),
+			 (float)(-std::sin(r) * out_aspect), (float)std::cos(r));
+	}
+	gs_effect_set_vec4(p_pose_, &turned);
+	gs_effect_set_vec2(p_pose_shift_, &moved);
 	// (`as_is`: a picture that has been through this already, laid down
 	// again without being coloured a second time.)
 	gs_effect_set_float(p_wrap_mirror_, s.mirror && !as_is ? 1.0f : 0.0f);
@@ -1072,9 +1100,16 @@ void AmbientBackground::draw_base(gs_texture_t *base, uint32_t w, uint32_t h, co
 	AmbientView view;
 	if (s.base_type == BaseType::StartImage)
 		view = ambient_view();
-	draw_layer(base, w, h, s.speed_x * time_ * kInternalScale, s.speed_y * time_ * kInternalScale,
-		   s.zoom * view.zoom, 1.0, s, LiveFit::Fill, false, view.focus_x, view.focus_y, false,
-		   s.base_type == BaseType::Source ? PictureCrop() : drawn_crop_);
+	// The drift is across the screen whichever way the picture is turned.
+	double drift_x = s.speed_x * time_ * kInternalScale, drift_y = s.speed_y * time_ * kInternalScale;
+	if (s.pose.degrees != 0.0) {
+		const double r = s.pose.degrees * 3.14159265358979323846 / 180.0;
+		const double x = drift_x, y = drift_y;
+		drift_x = std::cos(r) * x + std::sin(r) * y;
+		drift_y = -std::sin(r) * x + std::cos(r) * y;
+	}
+	draw_layer(base, w, h, drift_x, drift_y, s.zoom * view.zoom, 1.0, s, LiveFit::Fill, false, view.focus_x,
+		   view.focus_y, false, s.base_type == BaseType::Source ? PictureCrop() : drawn_crop_, s.pose);
 }
 
 // The pattern chosen, drawn at the picture's working size: one pass, no
@@ -1089,11 +1124,12 @@ gs_texture_t *AmbientBackground::draw_pattern(const Settings &s, uint32_t w, uin
 		phase = s.test_time * s.pattern_speed / kPatternLoopS;
 		phase -= std::floor(phase);
 	}
-	vec2 aspect;
-	vec2_set(&aspect, (float)w / (float)h, 1.0f);
+	const PatternFrame f = pattern_frame(w, h, s.pattern_scale, s.pose);
 	gs_effect_set_float(pp_phase_, (float)phase);
-	gs_effect_set_vec2(pp_aspect_, &aspect);
-	gs_effect_set_float(pp_scale_, (float)s.pattern_scale);
+	gs_effect_set_vec2(pp_aspect_, &f.aspect);
+	gs_effect_set_float(pp_scale_, f.scale);
+	gs_effect_set_vec4(pp_frame_, &f.frame);
+	gs_effect_set_vec2(pp_frame_shift_, &f.shift);
 	gs_effect_set_float(pp_detail_, (float)s.pattern_detail);
 	for (int i = 0; i < 3; i++) {
 		vec4 colour;
@@ -1638,6 +1674,15 @@ obs_properties_t *get_properties(void *)
 	set_tip(pattern_scale, obs_module_text("Ambient.PatternScale.Tip"));
 	obs_property_t *pattern_detail = percent_slider(picture, "pattern_detail", "Ambient.PatternDetail", 0.0, 100.0);
 	set_tip(pattern_detail, obs_module_text("Ambient.PatternDetail.Tip"));
+	// Where the base lies on the screen, whatever it is.
+	obs_property_t *pos_x = percent_slider(picture, "base_pos_x", "Transform.PositionX", -100.0, 100.0);
+	set_tip(pos_x, obs_module_text("Ambient.Position.Tip"));
+	obs_property_t *pos_y = percent_slider(picture, "base_pos_y", "Transform.PositionY", -100.0, 100.0);
+	set_tip(pos_y, obs_module_text("Ambient.Position.Tip"));
+	obs_property_t *base_rotation = obs_properties_add_float_slider(
+		picture, "base_rotation", obs_module_text("Mosaic.Rotation"), -180.0, 180.0, 1.0);
+	obs_property_float_set_suffix(base_rotation, "°");
+	set_tip(base_rotation, obs_module_text("Ambient.Rotation.Tip"));
 	obs_property_t *live = obs_properties_add_list(picture, "live_mode", obs_module_text("Ambient.Live"),
 						       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(live, obs_module_text("Ambient.Live.None"), (int)LiveMode::None);
@@ -1814,6 +1859,9 @@ void get_defaults(obs_data_t *settings)
 	obs_data_set_default_double(settings, "pattern_speed", 100.0);
 	obs_data_set_default_double(settings, "pattern_scale", 100.0);
 	obs_data_set_default_double(settings, "pattern_detail", 50.0);
+	obs_data_set_default_double(settings, "base_pos_x", 0.0);
+	obs_data_set_default_double(settings, "base_pos_y", 0.0);
+	obs_data_set_default_double(settings, "base_rotation", 0.0);
 	obs_data_set_default_int(settings, "live_mode", (int)LiveMode::None);
 	obs_data_set_default_double(settings, "live_opacity", 70.0);
 	obs_data_set_default_int(settings, "live_fit", (int)LiveFit::Fill);
