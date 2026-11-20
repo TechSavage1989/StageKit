@@ -256,7 +256,7 @@ public:
 		if (!use_test)
 			return;
 #endif
-		if (names.empty() && hand_names.empty()) {
+		if (names.empty()) {
 			previously_hidden_.clear();
 			return;
 		}

@@ -17421,7 +17421,8 @@ static void outline_designs_test(uint32_t w, uint32_t h, const std::string &out)
 				sleep_ms(31 + 7 * sample);
 				for (int i = 0; i < 2; ++i)
 					if (moved[i] <= 20)
-						moved[i] = std::max(moved[i], most(first[i], shot(scenes[i], 0), 80, 80, 320, 240));
+						moved[i] = std::max(moved[i], most(first[i], shot(scenes[i], 0), 80, 80,
+										   320, 240));
 			}
 		}
 		both([](obs_data_t *s) { obs_data_set_double(s, "outline_speed", 0.0); });
@@ -20266,9 +20267,12 @@ static void review_controls_test()
 		obs_data_array_t *sources = obs_data_array_create();
 		obs_data_array_push_back(sources, entry);
 		obs_source_t *result = nullptr;
-		obs_load_sources(sources, [](void *out, obs_source_t *src) {
-			*static_cast<obs_source_t **>(out) = obs_source_get_ref(src);
-		}, &result);
+		obs_load_sources(
+			sources,
+			[](void *out, obs_source_t *src) {
+				*static_cast<obs_source_t **>(out) = obs_source_get_ref(src);
+			},
+			&result);
 		obs_data_array_release(sources);
 		obs_data_release(entry);
 		obs_data_release(settings);
@@ -20326,13 +20330,19 @@ static void review_controls_test()
 		obs_source_t *fresh = create(id, "Review fresh switch", "{}");
 		obs_source_t *old = loaded(id, "Review empty saved switch", "{}");
 		obs_source_t *custom = loaded(id, "Review explicit switch",
-			showing ? R"({"restore_hidden":false})" : R"({"transition_ms":875})");
-		obs_data_t *a = obs_source_get_settings(fresh), *b = obs_source_get_settings(old), *c = obs_source_get_settings(custom);
-		CHECK(showing ? (obs_data_get_bool(a, "restore_hidden") && !obs_data_get_bool(b, "restore_hidden") && !obs_data_get_bool(c, "restore_hidden"))
-			      : (obs_data_get_int(a, "transition_ms") == 300 && obs_data_get_int(b, "transition_ms") == 250 && obs_data_get_int(c, "transition_ms") == 875),
+					      showing ? R"({"restore_hidden":false})" : R"({"transition_ms":875})");
+		obs_data_t *a = obs_source_get_settings(fresh), *b = obs_source_get_settings(old),
+			   *c = obs_source_get_settings(custom);
+		CHECK(showing ? (obs_data_get_bool(a, "restore_hidden") && !obs_data_get_bool(b, "restore_hidden") &&
+				 !obs_data_get_bool(c, "restore_hidden"))
+			      : (obs_data_get_int(a, "transition_ms") == 300 &&
+				 obs_data_get_int(b, "transition_ms") == 250 &&
+				 obs_data_get_int(c, "transition_ms") == 875),
 		      "%s distinguishes a new switch, an empty old collection and an explicit saved choice", id);
-		for (auto *s : {a,b,c}) obs_data_release(s);
-		for (auto *s : {fresh,old,custom}) obs_source_release(s);
+		for (auto *s : {a, b, c})
+			obs_data_release(s);
+		for (auto *s : {fresh, old, custom})
+			obs_source_release(s);
 	}
 	for (int old : {0, 1, 2}) {
 		const std::string json = "{\"which\":" + std::to_string(old) + ",\"auto_background\":true}";
@@ -20340,71 +20350,82 @@ static void review_controls_test()
 		obs_data_t *s = obs_source_get_settings(corner);
 		obs_properties_t *props = obs_source_properties(corner);
 		CHECK(obs_property_list_item_count(obs_properties_get(props, "which")) == 2 &&
-			obs_data_get_int(s, "which") == (old == 1 ? 1 : 2) && obs_data_get_bool(s, "auto_background") == (old != 2),
+			      obs_data_get_int(s, "which") == (old == 1 ? 1 : 2) &&
+			      obs_data_get_bool(s, "auto_background") == (old != 2),
 		      "old Scene Corners coverage %d has the same meaning in the two-choice control", old);
 		obs_properties_destroy(props);
 		obs_data_release(s);
 		obs_source_release(corner);
 	}
-	for (const char *id : {"stagekit_program_trigger", "stagekit_active_app", "stagekit_app_capture", "stagekit_auto_capture"}) {
+	for (const char *id :
+	     {"stagekit_program_trigger", "stagekit_active_app", "stagekit_app_capture", "stagekit_auto_capture"}) {
 		auto *filter = attach(id, id, "{}");
 		obs_properties_t *props = obs_source_properties(filter);
 		obs_data_t *s = obs_source_get_settings(filter);
 		obs_properties_apply_settings(props, s);
 		obs_data_set_string(s, "transition", "slide_transition");
 		auto *show = obs_properties_get(props, "transition");
-		if (show) obs_property_modified(show, s);
+		if (show)
+			obs_property_modified(show, s);
 		obs_data_set_string(s, "hide_transition", "none");
 		auto *hide = obs_properties_get(props, "hide_transition");
-		if (hide) obs_property_modified(hide, s);
-		CHECK(show && hide && obs_properties_get(props,"transition_ms"), "%s has separate show and hide settings and can rebuild them", id);
-		if (strcmp(id,"stagekit_active_app") == 0)
-			CHECK(obs_properties_get(props,"by_hand_toggle") && obs_properties_get(props,"by_hand_next") &&
-				obs_properties_get(props,"by_hand_back") && !obs_data_get_bool(s,"lock_hidden"), "manual commands are available and locks start off");
+		if (hide)
+			obs_property_modified(hide, s);
+		CHECK(show && hide && obs_properties_get(props, "transition_ms"),
+		      "%s has separate show and hide settings and can rebuild them", id);
+		if (strcmp(id, "stagekit_active_app") == 0)
+			CHECK(obs_properties_get(props, "by_hand_toggle") &&
+				      obs_properties_get(props, "by_hand_next") &&
+				      obs_properties_get(props, "by_hand_back") && !obs_data_get_bool(s, "lock_hidden"),
+			      "manual commands are available and locks start off");
 		obs_properties_destroy(props);
 		obs_data_release(s);
 	}
 	{
 		auto *manual = create("color_source", "Review Manual", R"({"width":80,"height":50})");
-		auto *manual_item = obs_scene_add(scene,manual);
-		obs_sceneitem_set_visible(manual_item,false);
-		auto *sw = obs_source_get_filter_by_name(parent,"stagekit_active_app");
+		auto *manual_item = obs_scene_add(scene, manual);
+		obs_sceneitem_set_visible(manual_item, false);
+		auto *sw = obs_source_get_filter_by_name(parent, "stagekit_active_app");
 		obs_data_t *s = obs_source_get_settings(sw);
-		list(s,"items",{"Review Cam"}); list(s,"by_hand",{"Review Manual"});
-		obs_data_set_bool(s,"lock_hidden",true);
-		obs_data_set_string(s,"transition","none");
-		obs_data_set_string(s,"for|Review Manual|transition","fade_transition");
-		obs_data_set_int(s,"for|Review Manual|transition_ms",450);
-		obs_data_set_string(s,"for|Review Manual|hide_transition","none");
-		obs_source_update(sw,s);
+		list(s, "items", {"Review Cam"});
+		list(s, "by_hand", {"Review Manual"});
+		obs_data_set_bool(s, "lock_hidden", true);
+		obs_data_set_string(s, "transition", "none");
+		obs_data_set_string(s, "for|Review Manual|transition", "fade_transition");
+		obs_data_set_int(s, "for|Review Manual|transition_ms", 450);
+		obs_data_set_string(s, "for|Review Manual|hide_transition", "none");
+		obs_source_update(sw, s);
 		obs_data_release(s);
-		calldata_t cd; calldata_init(&cd);
-		calldata_set_bool(&cd,"loaded",true);
-		proc_handler_call(obs_get_proc_handler(),"stagekit_test_loaded",&cd);
-		calldata_set_string(&cd,"windows","Review|review.exe|front");
-		proc_handler_call(obs_source_get_proc_handler(sw),"set_test_windows",&cd);
+		calldata_t cd;
+		calldata_init(&cd);
+		calldata_set_bool(&cd, "loaded", true);
+		proc_handler_call(obs_get_proc_handler(), "stagekit_test_loaded", &cd);
+		calldata_set_string(&cd, "windows", "Review|review.exe|front");
+		proc_handler_call(obs_source_get_proc_handler(sw), "set_test_windows", &cd);
 		calldata_free(&cd);
 		sleep_ms(380);
 		obs_properties_t *p = obs_source_properties(sw);
 		auto press = [&](const char *key) {
-			if (obs_property_t *button=obs_properties_get(p,key))
-				obs_property_button_clicked(button,sw);
+			if (obs_property_t *button = obs_properties_get(p, key))
+				obs_property_button_clicked(button, sw);
 			sleep_ms(350);
 		};
-		const bool first_lock=obs_sceneitem_locked(manual_item);
+		const bool first_lock = obs_sceneitem_locked(manual_item);
 		press("by_hand_next");
-		obs_source_t *show=obs_sceneitem_get_transition(manual_item,true), *hide=obs_sceneitem_get_transition(manual_item,false);
+		obs_source_t *show = obs_sceneitem_get_transition(manual_item, true),
+			     *hide = obs_sceneitem_get_transition(manual_item, false);
 		CHECK(first_lock && obs_sceneitem_visible(manual_item) && !obs_sceneitem_locked(manual_item) &&
-			!obs_sceneitem_visible(item) && obs_sceneitem_locked(item),
-			"the manual button shows and unlocks the held capture and locks the hidden automatic source");
-		CHECK(show && strcmp(obs_source_get_unversioned_id(show),"fade_transition")==0 && !hide &&
-			obs_sceneitem_get_transition_duration(manual_item,true)==450,
-			"the manual capture gets its own 450 ms fade in and a cut out");
+			      !obs_sceneitem_visible(item) && obs_sceneitem_locked(item),
+		      "the manual button shows and unlocks the held capture and locks the hidden automatic source");
+		CHECK(show && strcmp(obs_source_get_unversioned_id(show), "fade_transition") == 0 && !hide &&
+			      obs_sceneitem_get_transition_duration(manual_item, true) == 450,
+		      "the manual capture gets its own 450 ms fade in and a cut out");
 		press("by_hand_back");
 		CHECK(!obs_sceneitem_visible(manual_item) && obs_sceneitem_locked(manual_item) &&
-			obs_sceneitem_visible(item) && !obs_sceneitem_locked(item), "return to automatic restores visibility and locks");
+			      obs_sceneitem_visible(item) && !obs_sceneitem_locked(item),
+		      "return to automatic restores visibility and locks");
 		obs_properties_destroy(p);
-		obs_source_set_enabled(sw,false);
+		obs_source_set_enabled(sw, false);
 		obs_source_release(sw);
 		obs_sceneitem_remove(manual_item);
 		obs_source_release(manual);
@@ -20412,117 +20433,145 @@ static void review_controls_test()
 	const std::string linkmark = " \xE2\x86\x94 ", rulemark = " \xE2\x86\x92 ";
 	auto *link = attach("stagekit_visibility_link", "Review rename link", "{}");
 	auto *view = create("stagekit_cropped_view", "Review cropped view", R"({"source":"Review Cam"})");
-	auto *ambient = create("stagekit_ambient_background", "Review ambient", R"({"base_source":"Review Cam","live_source":"Review Cam SD"})");
+	auto *ambient = create("stagekit_ambient_background", "Review ambient",
+			       R"({"base_source":"Review Cam","live_source":"Review Cam SD"})");
 	auto *morph = obs_source_create_private("stagekit_morph", "Review private morph", nullptr);
 	obs_data_t *mc = obs_source_get_settings(morph), *lc = obs_source_get_settings(link);
-	list(lc,"items",{"Review Cam","Review Cam SD"});
-	list(lc,"for|Review Cam|morph_links",{"Review Cam"+linkmark+"Review Cam SD"});
-	list(lc,"morph_links",{"Review Cam SD"+linkmark+"Review Cam"});
-	obs_data_set_int(lc,"for|Review Cam|hide_ms",721);
-	obs_data_set_int(lc,"for|Review Cam SD|hide_ms",333);
-	obs_data_set_string(lc,"change|for","Review Cam");
-	list(mc,"links",{"Review Cam"+linkmark+"Review Cam SD"});
-	obs_data_set_string(mc,"rule_from","Review Stage Scene");
-	obs_data_set_string(mc,"rule_to","Review Other Scene");
+	list(lc, "items", {"Review Cam", "Review Cam SD"});
+	list(lc, "for|Review Cam|morph_links", {"Review Cam" + linkmark + "Review Cam SD"});
+	list(lc, "morph_links", {"Review Cam SD" + linkmark + "Review Cam"});
+	obs_data_set_int(lc, "for|Review Cam|hide_ms", 721);
+	obs_data_set_int(lc, "for|Review Cam SD|hide_ms", 333);
+	obs_data_set_string(lc, "change|for", "Review Cam");
+	list(mc, "links", {"Review Cam" + linkmark + "Review Cam SD"});
+	obs_data_set_string(mc, "rule_from", "Review Stage Scene");
+	obs_data_set_string(mc, "rule_to", "Review Other Scene");
 	obs_properties_t *mp = obs_source_properties(morph);
-	auto *add = obs_properties_get(mp,"rule_add");
+	auto *add = obs_properties_get(mp, "rule_add");
 	CHECK(add && obs_property_button_clicked(add, morph), "the Add button creates a new Morph pair");
-	obs_data_set_int(mc,"rule_style",2);
-	obs_property_modified(obs_properties_get(mp,"rule_style"),mc);
-	CHECK(obs_data_get_int(mc,("rule|Review Stage Scene"+rulemark+"Review Other Scene|style").c_str()) == 2,
+	obs_data_set_int(mc, "rule_style", 2);
+	obs_property_modified(obs_properties_get(mp, "rule_style"), mc);
+	CHECK(obs_data_get_int(mc, ("rule|Review Stage Scene" + rulemark + "Review Other Scene|style").c_str()) == 2,
 	      "editing an existing rule immediately writes its saved style");
-	obs_data_set_string(mc,"rule_from","(any scene)");
-	obs_property_modified(obs_properties_get(mp,"rule_from"),mc);
-	obs_data_set_int(mc,"rule_style",1);
-	obs_property_modified(obs_properties_get(mp,"rule_style"),mc);
-	obs_data_array_t *rules = obs_data_get_array(mc,"rules");
-	CHECK(obs_data_array_count(rules) == 1 && !obs_data_has_user_value(mc,("rule|(any scene)"+rulemark+"Review Other Scene|style").c_str()),
+	obs_data_set_string(mc, "rule_from", "(any scene)");
+	obs_property_modified(obs_properties_get(mp, "rule_from"), mc);
+	obs_data_set_int(mc, "rule_style", 1);
+	obs_property_modified(obs_properties_get(mp, "rule_style"), mc);
+	obs_data_array_t *rules = obs_data_get_array(mc, "rules");
+	CHECK(obs_data_array_count(rules) == 1 &&
+		      !obs_data_has_user_value(mc,
+					       ("rule|(any scene)" + rulemark + "Review Other Scene|style").c_str()),
 	      "an unadded rule stays out of the collection until Add is pressed");
 	obs_data_array_release(rules);
 	obs_properties_destroy(mp);
 	obs_source_set_name(cam, "Review Camera");
 	obs_source_set_name(parent, "Review Renamed Scene");
 	obs_data_t *vc = obs_source_get_settings(view), *ac = obs_source_get_settings(ambient);
-	CHECK(first(lc,"items") == "Review Camera" && first(lc,"for|Review Camera|morph_links") == "Review Camera"+linkmark+"Review Cam SD" &&
-		first(lc,"morph_links") == "Review Cam SD"+linkmark+"Review Camera" && obs_data_get_int(lc,"for|Review Camera|hide_ms") == 721 &&
-		!obs_data_has_user_value(lc,"for|Review Cam|hide_ms") && obs_data_get_int(lc,"for|Review Cam SD|hide_ms") == 333,
-		"renaming the camera keeps per-source values, both link directions and neighboring names");
-	CHECK(first(mc,"links") == "Review Camera"+linkmark+"Review Cam SD" && first(mc,"rules") == "Review Renamed Scene"+rulemark+"Review Other Scene" &&
-		obs_data_get_int(mc,("rule|Review Renamed Scene"+rulemark+"Review Other Scene|style").c_str()) == 2,
-		"private Morph links and scene rule values follow a rename");
-	CHECK(strcmp(obs_data_get_string(vc,"source"),"Review Camera") == 0 &&
-		strcmp(obs_data_get_string(ac,"base_source"),"Review Camera") == 0 && strcmp(obs_data_get_string(ac,"live_source"),"Review Cam SD") == 0,
-		"only the exact Cropped View and Ambient source names change");
-	for (auto *s : {mc,lc,vc,ac}) obs_data_release(s);
-	auto *shadow = attach("stagekit_scene_shadow","Review Shadow",R"({"ramp_ms":0,"ramp_out_ms":0})");
+	CHECK(first(lc, "items") == "Review Camera" &&
+		      first(lc, "for|Review Camera|morph_links") == "Review Camera" + linkmark + "Review Cam SD" &&
+		      first(lc, "morph_links") == "Review Cam SD" + linkmark + "Review Camera" &&
+		      obs_data_get_int(lc, "for|Review Camera|hide_ms") == 721 &&
+		      !obs_data_has_user_value(lc, "for|Review Cam|hide_ms") &&
+		      obs_data_get_int(lc, "for|Review Cam SD|hide_ms") == 333,
+	      "renaming the camera keeps per-source values, both link directions and neighboring names");
+	CHECK(first(mc, "links") == "Review Camera" + linkmark + "Review Cam SD" &&
+		      first(mc, "rules") == "Review Renamed Scene" + rulemark + "Review Other Scene" &&
+		      obs_data_get_int(
+			      mc, ("rule|Review Renamed Scene" + rulemark + "Review Other Scene|style").c_str()) == 2,
+	      "private Morph links and scene rule values follow a rename");
+	CHECK(strcmp(obs_data_get_string(vc, "source"), "Review Camera") == 0 &&
+		      strcmp(obs_data_get_string(ac, "base_source"), "Review Camera") == 0 &&
+		      strcmp(obs_data_get_string(ac, "live_source"), "Review Cam SD") == 0,
+	      "only the exact Cropped View and Ambient source names change");
+	for (auto *s : {mc, lc, vc, ac})
+		obs_data_release(s);
+	auto *shadow = attach("stagekit_scene_shadow", "Review Shadow", R"({"ramp_ms":0,"ramp_out_ms":0})");
 	sleep_ms(200);
 	auto *sp = obs_source_properties(shadow);
-	auto *toggle = obs_properties_get(sp,"toggle_now");
-	if (toggle) obs_property_button_clicked(toggle,shadow);
+	auto *toggle = obs_properties_get(sp, "toggle_now");
+	if (toggle)
+		obs_property_button_clicked(toggle, shadow);
 	sleep_ms(140);
 	const bool off = !obs_source_enabled(shadow);
-	if (toggle) obs_property_button_clicked(toggle,shadow);
+	if (toggle)
+		obs_property_button_clicked(toggle, shadow);
 	sleep_ms(140);
-	CHECK(toggle && off && obs_source_enabled(shadow), "Scene Shadow button switches the real effect off and back on");
+	CHECK(toggle && off && obs_source_enabled(shadow),
+	      "Scene Shadow button switches the real effect off and back on");
 	obs_properties_destroy(sp);
 	auto shadow_keys = [](const char *suffix) {
-		struct Match { const char *suffix; unsigned mask; } match{suffix,0};
-		obs_enum_hotkeys([](void *data, obs_hotkey_id, obs_hotkey_t *key) {
-			auto &m=*static_cast<Match *>(data);
-			const std::string name=obs_hotkey_get_name(key);
-			unsigned bit=1;
-			for (const char *action : {"toggle.","on.","off."}) {
-				if (name==std::string("stagekit.sceneshadow.")+action+m.suffix)
-					m.mask |= bit;
-				bit <<= 1;
-			}
-			return true;
-		},&match);
+		struct Match {
+			const char *suffix;
+			unsigned mask;
+		} match{suffix, 0};
+		obs_enum_hotkeys(
+			[](void *data, obs_hotkey_id, obs_hotkey_t *key) {
+				auto &m = *static_cast<Match *>(data);
+				const std::string name = obs_hotkey_get_name(key);
+				unsigned bit = 1;
+				for (const char *action : {"toggle.", "on.", "off."}) {
+					if (name == std::string("stagekit.sceneshadow.") + action + m.suffix)
+						m.mask |= bit;
+					bit <<= 1;
+				}
+				return true;
+			},
+			&match);
 		return match.mask;
 	};
-	const auto keys_before=shadow_keys("Review Shadow");
-	obs_source_set_name(shadow,"Review Camera Shadow");
-	CHECK(keys_before==7 && shadow_keys("Review Camera Shadow")==7 && shadow_keys("Review Shadow")==0,
-		"Scene Shadow's three scene hotkeys follow its filter name");
-	auto *layout = attach("stagekit_layout","Review Layout",R"({"duration_ms":0})");
+	const auto keys_before = shadow_keys("Review Shadow");
+	obs_source_set_name(shadow, "Review Camera Shadow");
+	CHECK(keys_before == 7 && shadow_keys("Review Camera Shadow") == 7 && shadow_keys("Review Shadow") == 0,
+	      "Scene Shadow's three scene hotkeys follow its filter name");
+	auto *layout = attach("stagekit_layout", "Review Layout", R"({"duration_ms":0})");
 	sleep_ms(160);
-	vec2 box, pos; vec2_set(&box,201,113);
-	obs_sceneitem_set_bounds_type(item,OBS_BOUNDS_SCALE_INNER);
-	obs_sceneitem_set_bounds(item,&box);
-	obs_sceneitem_set_bounds_alignment(item,OBS_ALIGN_RIGHT|OBS_ALIGN_BOTTOM);
-	obs_sceneitem_crop crop = {4,7,9,11};
-	obs_sceneitem_set_crop(item,&crop);
-#if LIBOBS_API_VER >= MAKE_SEMANTIC_VERSION(30,1,0)
-	obs_sceneitem_set_bounds_crop(item,true);
+	vec2 box, pos;
+	vec2_set(&box, 201, 113);
+	obs_sceneitem_set_bounds_type(item, OBS_BOUNDS_SCALE_INNER);
+	obs_sceneitem_set_bounds(item, &box);
+	obs_sceneitem_set_bounds_alignment(item, OBS_ALIGN_RIGHT | OBS_ALIGN_BOTTOM);
+	obs_sceneitem_crop crop = {4, 7, 9, 11};
+	obs_sceneitem_set_crop(item, &crop);
+#if LIBOBS_API_VER >= MAKE_SEMANTIC_VERSION(30, 1, 0)
+	obs_sceneitem_set_bounds_crop(item, true);
 #endif
-	command(layout,"save");
-	obs_sceneitem_set_bounds_type(item,OBS_BOUNDS_NONE);
+	command(layout, "save");
+	obs_sceneitem_set_bounds_type(item, OBS_BOUNDS_NONE);
 	obs_sceneitem_crop clean = {};
-	obs_sceneitem_set_crop(item,&clean);
-#if LIBOBS_API_VER >= MAKE_SEMANTIC_VERSION(30,1,0)
-	obs_sceneitem_set_bounds_crop(item,false);
+	obs_sceneitem_set_crop(item, &clean);
+#if LIBOBS_API_VER >= MAKE_SEMANTIC_VERSION(30, 1, 0)
+	obs_sceneitem_set_bounds_crop(item, false);
 #endif
-	command(layout,"trigger"); sleep_ms(250);
-	obs_sceneitem_get_bounds(item,&box); obs_sceneitem_get_crop(item,&crop);
-	bool full = crop.left==4 && crop.top==7 && crop.right==9 && crop.bottom==11 &&
-		obs_sceneitem_get_bounds_type(item)==OBS_BOUNDS_SCALE_INNER && box.x==201 && box.y==113 &&
-		obs_sceneitem_get_bounds_alignment(item)==(OBS_ALIGN_RIGHT|OBS_ALIGN_BOTTOM);
-#if LIBOBS_API_VER >= MAKE_SEMANTIC_VERSION(30,1,0)
+	command(layout, "trigger");
+	sleep_ms(250);
+	obs_sceneitem_get_bounds(item, &box);
+	obs_sceneitem_get_crop(item, &crop);
+	bool full = crop.left == 4 && crop.top == 7 && crop.right == 9 && crop.bottom == 11 &&
+		    obs_sceneitem_get_bounds_type(item) == OBS_BOUNDS_SCALE_INNER && box.x == 201 && box.y == 113 &&
+		    obs_sceneitem_get_bounds_alignment(item) == (OBS_ALIGN_RIGHT | OBS_ALIGN_BOTTOM);
+#if LIBOBS_API_VER >= MAKE_SEMANTIC_VERSION(30, 1, 0)
 	full = full && obs_sceneitem_get_bounds_crop(item);
 #endif
-	CHECK(full,"Apply Layout restores fitted bounds, alignment and all four crop edges");
-	auto *legacy = attach("stagekit_layout","Review old layout",R"({"duration_ms":0,"saved":[{"name":"Review Camera","x":35,"y":51,"sx":1,"sy":1,"rot":0}]})");
-	sleep_ms(150); command(legacy,"trigger"); sleep_ms(220);
-	obs_sceneitem_get_pos(item,&pos); obs_sceneitem_get_crop(item,&crop);
-	CHECK(pos.x==35 && pos.y==51 && crop.left==4 && obs_sceneitem_get_bounds_type(item)==OBS_BOUNDS_SCALE_INNER,
-		"old position-only layouts still leave the current framing alone");
-	obs_set_output_source(0,before);
+	CHECK(full, "Apply Layout restores fitted bounds, alignment and all four crop edges");
+	auto *legacy =
+		attach("stagekit_layout", "Review old layout",
+		       R"({"duration_ms":0,"saved":[{"name":"Review Camera","x":35,"y":51,"sx":1,"sy":1,"rot":0}]})");
+	sleep_ms(150);
+	command(legacy, "trigger");
+	sleep_ms(220);
+	obs_sceneitem_get_pos(item, &pos);
+	obs_sceneitem_get_crop(item, &crop);
+	CHECK(pos.x == 35 && pos.y == 51 && crop.left == 4 &&
+		      obs_sceneitem_get_bounds_type(item) == OBS_BOUNDS_SCALE_INNER,
+	      "old position-only layouts still leave the current framing alone");
+	obs_set_output_source(0, before);
 	obs_source_release(before);
-	for (auto it=filters.rbegin(); it!=filters.rend(); ++it) {
-		obs_source_filter_remove(parent,*it);
+	for (auto it = filters.rbegin(); it != filters.rend(); ++it) {
+		obs_source_filter_remove(parent, *it);
 		obs_source_release(*it);
 	}
-	for (auto *src : {view,ambient,morph}) obs_source_release(src);
+	for (auto *src : {view, ambient, morph})
+		obs_source_release(src);
 	obs_scene_release(to);
 	obs_scene_release(scene);
 	obs_source_release(cam);

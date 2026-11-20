@@ -30,6 +30,10 @@ controls on the capture tools, source and scene renames, Morph rule editing, Sce
 source commands, and Apply Layout framing. Move Scene Item remains registered for saved filters and keys.
 The Fit defaults and behavior in stage 7 await the owner's separate Fit work.
 
+The review, restore-hidden, mode placement, switch command, automatic frame and source switching,
+capture hide, scene transition override, layout and Morph tests passed on Linux. Memcheck reported
+zero invalid memory accesses when the new controls rebuilt their settings.
+
 ## Guide arranged by job (0.1.0-beta230)
 
 The guide begins with six comparison tables. Source and scene filters are grouped by job.
