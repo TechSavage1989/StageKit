@@ -23,7 +23,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
-## Make room only when the image would overlap (0.1.0-betaNEXT)
+## Make room only when the image would overlap (0.1.0-beta222)
 
 Branch `feat/make-room-only-overlap`, on `main` at beta220. Committed locally, not pushed. The
 owner: "for the make room if not filling, add an option to only reposition/make room if the
