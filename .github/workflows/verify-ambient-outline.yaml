@@ -24,7 +24,6 @@ jobs:
           ! grep -E '^[A-Za-z]' data/locale/en-US.ini | cut -d= -f1 | sort | uniq -d | grep .
       - name: Install OBS development and rendering dependencies
         run: |
-          sudo add-apt-repository --yes ppa:obsproject/obs-studio
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends libobs-dev obs-studio qt6-base-dev libgl1-mesa-dri xvfb xauth python3-pil fonts-dejavu-core
       - name: Build the plugin and headless render test

@@ -18184,8 +18184,9 @@ static void outline_bleed_test(uint32_t w, uint32_t h)
 		for (const Place &place : places)
 			for (int from = 0; from < 2; from++) {
 				const bool one_column = place.bw == (float)w - 1.14f;
-			const bool two_columns = place.bw == (float)w - 2.0f;
-			if (quick && &place != &places[0] && &place != &places[4] && !one_column && !two_columns)
+				const bool two_columns = place.bw == (float)w - 2.0f;
+				if (quick && &place != &places[0] && &place != &places[4] && !one_column &&
+				    !two_columns)
 					continue;
 				obs_source_t *bg = block("OB Back", 0xFF000000, (int)w, (int)h);
 				obs_source_t *src = block("OB Source", green, size.w, size.h);
@@ -18264,7 +18265,8 @@ static void outline_bleed_test(uint32_t w, uint32_t h)
 							int ink = 0;
 							for (uint32_t y = h / 4; y < 3 * h / 4; y++) {
 								const size_t right = ((size_t)y * w + w - 1) * 4;
-								ink = std::max(ink, (int)std::max(f[right], f[right + 2]));
+								ink = std::max(ink,
+									       (int)std::max(f[right], f[right + 2]));
 							}
 							b_controls++;
 							if (ink < 24)

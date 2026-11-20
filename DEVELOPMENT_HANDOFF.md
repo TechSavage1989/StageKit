@@ -48,8 +48,7 @@ configurations".
 - **Not done**: the drop shadow and glow in the background's colours (a shadow in the source's
   own colours exists; this would be another texture through both shadow passes).
 - Tested in `STAGEKIT_TEST_ONLY_OUTLINE_AMBIENT` (its own run in `run-tests.sh`, sheet
-  `docs/images/outline-ambient.png`). Also run: the original branch's outline gates (handoff); the integrated change is being rechecked. **Not the full suite.** Only
-  OpenGL: the new effect file has not been compiled by Direct3D.
+  `docs/images/outline-ambient.png`). Also run: the original branch's outline gates (handoff); the integrated change is being rechecked. **Not the full suite.** The new effect also compiled in Windows OBS 32.2.2 with Direct3D 11.
 
 ## A one-column Scene Shadow outline (0.1.0-beta225)
 
@@ -62,6 +61,11 @@ positive two-column control, including Nebula and both Scene Shadow stacking mod
 The shader looks at the caster one pixel inward only at the canvas perimeter. It preserves the
 scene underneath and only gates the outer ring there. Source sizing and fitted bounds use their
 existing paths.
+
+An isolated Windows OBS 32.2.2 Direct3D 11 render reproduced the report with a synthetic source,
+zero crop, 4/3 scale, 2560 × 1440 Fit bounds and the 6 px Nebula outline. On beta224 the last column
+contained the outline. With the updated shader it matched the black background, and widening the gap
+to two columns restored the outline. This test did not load the owner's scene collection.
 
 ## An outline at the screen's edge (0.1.0-beta224)
 
