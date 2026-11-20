@@ -682,6 +682,32 @@ Box space_among(const SpaceInputs &in, const std::vector<Box> &in_way, bool &avo
 					room_for.push_back(in_way[i]);
 					room_above.push_back(i < in.above.size() && in.above[i]);
 				}
+			// "Only if it would overlap": room is made only when the
+			// picture, lying where this fit area puts it (`full`, by its
+			// alignment), would overlap one of those sources: what shows
+			// of each, as the fit measures (an item that draws nothing is
+			// not among them), with no gap counted. A source in the empty
+			// bar beside a narrow picture is then left where it is and the
+			// picture keeps the whole screen. Like `fills` it comes from
+			// the picture's shape and where the screen would put it, never
+			// from where the picture is now, so it cannot flip once the
+			// picture has made room. What the middle lies inside is not in
+			// the way, as below.
+			bool hit = !in.only_hit;
+			const Box would{full.x + left, full.y + top, std::min(fw, full.w), std::min(fh, full.h)};
+			for (size_t i = 0; !hit && i < room_for.size(); i++) {
+				const Box &o = room_for[i];
+				if (!room_above[i] && ax_at > o.x && ax_at < o.x + o.w && ay_at > o.y &&
+				    ay_at < o.y + o.h)
+					continue;
+				const double over_w = std::min(would.x + would.w, o.x + o.w) - std::max(would.x, o.x);
+				const double over_h = std::min(would.y + would.h, o.y + o.h) - std::max(would.y, o.y);
+				hit = over_w > 0.5 && over_h > 0.5;
+			}
+			if (!hit) {
+				covering = true;
+				return full;
+			}
 			const Box beside = free_space(within, ax_at, ay_at, room_for, in.margin, in.shape, in.tolerance,
 						      &room_above);
 			if (beside.w >= 2.0 && beside.h >= 2.0) {
@@ -1345,6 +1371,7 @@ void FitEngine::update(obs_data_t *settings)
 		s.box = BoxKind::FreeSpace;
 	// (Off unless ticked, so a filter saved before it fits as it did.)
 	s.whole = kind != 2 && obs_data_get_bool(settings, l("whole_make_room").c_str());
+	s.whole_only_hit = s.whole && obs_data_get_bool(settings, l("whole_room_only_hit").c_str());
 	// The filter's own two measuring options. Before they existed there
 	// was one tick box that followed the dock; unticked, it meant boxes.
 	s.visible_pixels = obs_data_get_bool(settings, l("visible_pixels").c_str());
@@ -2605,7 +2632,7 @@ bool FitEngine::solve(Prep &p, float seconds, bool first_pass, bool &moved)
 			switching_ = false;
 	}
 	// The gap or the tolerance set anew: the space is worked out again.
-	const std::array<double, 14> rule{s.skip_rule ? 1.0 : 0.0,
+	const std::array<double, 15> rule{s.skip_rule ? 1.0 : 0.0,
 					  s.skip_pct ? 1.0 : 0.0,
 					  s.skip_fill,
 					  s.skip_px ? 1.0 : 0.0,
@@ -2615,6 +2642,7 @@ bool FitEngine::solve(Prep &p, float seconds, bool first_pass, bool &moved)
 					  s.px_right,
 					  s.whole ? 1.0 : 0.0,
 					  s.whole && !s.skip.empty() ? 1.0 : 0.0,
+					  s.whole_only_hit ? 1.0 : 0.0,
 					  within.x,
 					  within.y,
 					  within.w,
@@ -2655,6 +2683,7 @@ bool FitEngine::solve(Prep &p, float seconds, bool first_pass, bool &moved)
 		in.claims_firm = claims_firm_;
 		in.whole = s.whole;
 		in.only_listed = s.whole && !s.skip.empty();
+		in.only_hit = s.whole_only_hit;
 		in.with_switch = with_switch_;
 		in.boxes = boxes_;
 		in.ids = ids_;
@@ -3565,6 +3594,7 @@ void fit_controls_shown(obs_properties_t *props, obs_data_t *settings, const std
 	// made for (the same list: those it overlaps only while it fills).
 	shown(get("whole_make_room"), kind != 2);
 	const bool room = kind != 2 && obs_data_get_bool(settings, (prefix + "whole_make_room").c_str());
+	shown(get("whole_room_only_hit"), room);
 	const bool like_free = kind == 2 || room;
 	if (obs_property_t *list = obs_properties_get(props, (list_prefix + "skip|alist").c_str())) {
 		shown(list, like_free);
@@ -3686,6 +3716,9 @@ void fit_add_controls(obs_properties_t *props, const std::string &prefix, const 
 		obs_properties_add_bool(props, key("whole_make_room").c_str(), obs_module_text("Fit.MakeRoom"));
 	set_tip(make_room, obs_module_text(entry ? "SceneFit.MakeRoom.Tip" : "Fit.MakeRoom.Tip"));
 	obs_property_set_modified_callback2(make_room, box_modified, (void *)keys);
+	obs_property_t *only_hit =
+		obs_properties_add_bool(props, key("whole_room_only_hit").c_str(), obs_module_text("Fit.RoomOnlyHit"));
+	set_tip(only_hit, obs_module_text("Fit.RoomOnlyHit.Tip"));
 	PickList skip;
 	const std::string skip_setting = list_prefix + "skip";
 	skip.setting = skip_setting.c_str();
@@ -3770,6 +3803,7 @@ void fit_entry_defaults(obs_data_t *settings, const std::string &prefix)
 	obs_data_set_default_double(settings, key("tolerance").c_str(), 8.0);
 	obs_data_set_default_double(settings, key("skip_fill").c_str(), 95.0);
 	obs_data_set_default_bool(settings, key("whole_make_room").c_str(), false);
+	obs_data_set_default_bool(settings, key("whole_room_only_hit").c_str(), false);
 	obs_data_set_default_bool(settings, key("skip_use_pct").c_str(), true);
 	obs_data_set_default_bool(settings, key("skip_use_px").c_str(), false);
 	for (const char *name : {"skip_px_top", "skip_px_bottom", "skip_px_left", "skip_px_right"})

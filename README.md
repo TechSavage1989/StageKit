@@ -535,6 +535,15 @@ nearest.
   also gets the free space's *Move duration*, easing, *Use visible pixels*, *Size tolerance* and
   *Space priority*. With *Overlap only when it fills* off, the image always takes the whole
   screen.
+- **Only if it would overlap** (under *Make room if not filling*; unticked as it comes): room is
+  made only when the image, fitted to the screen as it would be without making room, would
+  actually overlap one of the *Make room for* sources. A camera that lies wholly in the empty bar
+  beside a narrow image is then left alone, and the image keeps the whole screen; a camera the
+  image would reach is made room for as above. It goes by what shows of each, as *Use visible
+  pixels* and *Ignore shadows & outlines* say (boxes with *Use visible pixels* off); edges that
+  only touch and the gap do not count, and a source that draws nothing is not there. Like the
+  fill rules it is worked out from the image's shape and where the screen would put it, not from
+  where the image is now, so it does not flip once room has been made.
 - Add the filter to the **scene**, not to a group. To fit a group, choose the group as the *Item*.
   On a group the filter does nothing and says so.
 - With *Use visible pixels* ticked, the fitted item itself goes by what it shows, like the items

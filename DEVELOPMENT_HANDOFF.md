@@ -23,6 +23,32 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
+## Make room only when the image would overlap (0.1.0-beta222)
+
+Branch `feat/make-room-only-overlap`, on `main` at beta220. Committed locally, not pushed. The
+owner: "for the make room if not filling, add an option to only reposition/make room if the
+visible pixels would actually overlap the Make room for source otherwise."
+
+- New setting `whole_room_only_hit` (*Only if it would overlap*, off as it comes, so a saved
+  filter fits as in beta218), under *Make room if not filling* in Fit to Space, in each Scene Fit
+  entry and in the shared set (`kFitKeys`); shown only while that box is shown and ticked.
+- Decided in `space_among`'s `in.whole` branch, after `fills`: the picture as the fit area would
+  place it (`would`) against each box room is made for, plain overlap of more than half a pixel
+  each way, no gap. The boxes are the scan's obstacles as already measured (visible pixels and
+  shadows by the fit's own two options), so there is no new drawing or read-back. A box the
+  area's middle lies inside is passed over, as `free_space` passes it over. No overlap: it is
+  `covering`, exactly as when it fills. See the AGENTS.md entry.
+- Tests: `[fit whole screen: making room only when the image would overlap]`
+  (`fit_room_only_hit_test`, under `STAGEKIT_TEST_ONLY_FIT_WHOLE_OVERLAP`, Scene Fit entry and
+  Fit to Space): saved without the key, camera in the bar ticked and unticked, camera under the
+  image's edge, 3 s without a move or a glide in both places, nothing listed with a background,
+  the window. 36 checks with beta218's 22. Gates passed: FIT_WHOLE_OVERLAP, FIT_ALIGN,
+  FIT_ENABLE, FIT_GROUPS, FIT_KEEP_SIZE, FIT_OWNER, FIT_PRIORITY, FIT_RENAME, FIT_TOOL,
+  FIT_VISIBLE (one run, no fault at shutdown), TOOLTIPS. The full suite was not run. Not seen
+  on Windows.
+- Not tested: a *Make room for* source that is see-through in part (the overlap goes by the
+  box of what shows, not pixel by pixel), a box set as the fit area, a source kept at its size.
+
 ## Six hexagon and dot patterns (0.1.0-beta221)
 
 The owner's "pattern batch 2", part 1, from reference looks (style only).
