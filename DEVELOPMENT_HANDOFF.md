@@ -9,7 +9,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | `chore/review-stage3`. Release notes in `docs/releases/0.1.0-beta227.md`. |
+| Working branch | `feat/material-patterns-batch2`. Release notes in `docs/releases/0.1.0-beta228.md`. |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 | Gate | Checks passed |
@@ -22,6 +22,18 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `LAYOUT`, `MODES_HIDE`, `SCENE_TRANS_OVERRIDE` | 40, 29, 9 |
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
+
+## Twelve material and data patterns (0.1.0-beta228)
+
+Ambient pattern values 25 through 36 follow the owner's remaining references in order. The
+separate shader file protects earlier looks when a renderer cannot load it. Nine textures
+have outline designs 35 through 43. The Ambient Background fill keeps its value 34.
+Code wall, Network web and HUD data wall use the full background to show their small details.
+The solder-pad circuit board is a separate option so a saved circuit board keeps its look.
+An isolated Windows OBS 32.2.2 Direct3D 11 renderer checked both palettes, motion and the
+240-second loop endpoints for all twelve backgrounds. The Ubuntu OpenGL tests passed for
+HEX_PATTERNS, OUTLINE_AMBIENT, OUTLINE_PATTERNS and PATTERN_TRANSFORM. The two animated
+preview sheets in the guide show frames captured from the Windows renderer.
 
 ## Dock and filter controls (0.1.0-beta227)
 

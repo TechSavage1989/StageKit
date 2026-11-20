@@ -31,14 +31,23 @@ namespace {
 // patterns, the later ones, the circuit patterns, the hexagon and dot
 // patterns: a refusal of one file leaves the others).
 constexpr const char *kFiles[] = {"effects/stagekit-patterns.effect", "effects/stagekit-patterns-more.effect",
-				  "effects/stagekit-patterns-circuit.effect", "effects/stagekit-patterns-hex.effect"};
-constexpr int kFileCount = 4;
-constexpr const char *kTechniques[] = {"Aurora",   "Plasma",  "Lava",    "Waves",         "Nebula",    "Gradient",
-				       "Stars",    "Bokeh",   "Rays",    "Circuit",       "Hex",       "Rain",
-				       "Tunnel",   "Ripples", "Embers",  "CircuitTraces", "DataLines", "Mesh",
-				       "Halftone", "DotGrid", "HexWire", "HexMosaic"};
+				  "effects/stagekit-patterns-circuit.effect", "effects/stagekit-patterns-hex.effect",
+				  "effects/stagekit-patterns-materials.effect"};
+constexpr int kFileCount = sizeof(kFiles) / sizeof(kFiles[0]);
+constexpr const char
+	*
+		kTechniques[] = {"Aurora",        "Plasma",       "Lava",         "Waves",      "Nebula",
+				 "Gradient",      "Stars",        "Bokeh",        "Rays",       "Circuit",
+				 "Hex",           "Rain",         "Tunnel",       "Ripples",    "Embers",
+				 "CircuitTraces", "DataLines",    "Mesh",         "Halftone",   "DotGrid",
+				 "HexWire",       "HexMosaic",    nullptr, // Ambient samples a source, not a pattern shader.
+				 "NeonTiles",     "HexFlood",     "FrostedGlass", "CrystalIce", "SolderMask",
+				 "DataStreams",   "PetalLattice", "LiquidMarble", "DeepSpace"};
+static_assert(sizeof(kTechniques) / sizeof(kTechniques[0]) == OutlineDesign::kLast - OutlineDesign::Aurora + 1);
 constexpr int file_of(int kind)
 {
+	if (kind >= OutlineDesign::NeonTiles)
+		return 4;
 	return kind >= OutlineDesign::Mesh                                              ? 3
 	       : kind == OutlineDesign::Circuit || kind >= OutlineDesign::CircuitTraces ? 2
 	       : kind > OutlineDesign::Circuit                                          ? 1

@@ -1,0 +1,465 @@
+// StageKit Ambient Background: code, geometry and material patterns.
+// Colour 1 is the ground. Colours 2 and 3 colour the marks and lights.
+// Motion either returns on a whole turn or wraps through a fixed lattice.
+uniform float4x4 ViewProj;
+
+uniform float phase;     // 0..1 over one loop of the animation
+uniform float2 aspect;   // (width / height, 1)
+uniform float scale;     // how large the pattern's features are, 1 = as designed
+uniform float detail;    // 0..1
+uniform float4 colour1;  // the palette; colour1 is the ground
+uniform float4 colour2;
+uniform float4 colour3;
+uniform float4 frame;       // where the pattern lies: the picture's uv to the pattern's, a 2x2 matrix by rows
+uniform float2 frame_shift; // and how far it is moved, in uv (pattern-frame.hpp)
+
+struct VertData {
+	float4 pos : POSITION;
+	float2 uv  : TEXCOORD0;
+};
+
+VertData VSDefault(VertData v_in)
+{
+	VertData vert_out;
+	vert_out.pos = mul(float4(v_in.pos.xyz, 1.0), ViewProj);
+	float2 d = v_in.uv - float2(0.5, 0.5) - frame_shift;
+	vert_out.uv  = float2(0.5, 0.5) + float2(dot(d, frame.xy), dot(d, frame.zw));
+	return vert_out;
+}
+
+// An angle that makes k whole turns in a loop.
+float turn(float k)
+{
+	return 6.2831853 * frac(phase * k);
+}
+
+// The screen with its middle at 0 and its height 1 (at scale 1).
+float2 place(float2 uv)
+{
+	return (uv - float2(0.5, 0.5)) * aspect / max(scale, 0.05);
+}
+
+// 0..1 from a cell's number. Small numbers only, so it is the same everywhere.
+float hash(float2 p)
+{
+	float3 p3 = frac(float3(p.x, p.y, p.x) * 0.1031);
+	float d = dot(p3, float3(p3.y, p3.z, p3.x) + float3(33.33, 33.33, 33.33));
+	p3 = p3 + float3(d, d, d);
+	return frac((p3.x + p3.y) * p3.z);
+}
+
+// A comb of hexagons one unit wide, a point up. xy: where `q` lies from its
+// cell's middle; zw: that middle.
+float4 hx_cell(float2 q)
+{
+	float2 r = float2(1.0, 1.7320508);
+	float2 half_r = r * 0.5;
+	float2 a = q - r * floor(q / r) - half_r;
+	float2 qb = q - half_r;
+	float2 b = qb - r * floor(qb / r) - half_r;
+	float s = step(dot(a, a), dot(b, b));
+	float2 g = a * s + b * (1.0 - s);
+	return float4(g.x, g.y, q.x - g.x, q.y - g.y);
+}
+
+// A cell's number from its middle: whole and small.
+float2 hx_id(float2 middle)
+{
+	return floor(float2(middle.x * 2.0, middle.y / 0.8660254) + float2(40.5, 40.5));
+}
+
+// 0 on a cell's border, 0.5 at its middle.
+float hx_edge(float2 g)
+{
+	return 0.5 - max(abs(g.x), dot(abs(g), float2(0.5, 0.8660254)));
+}
+
+
+float noise2(float2 p)
+{
+	float2 i = floor(p);
+	float2 f = frac(p);
+	f = f * f * (3.0 - 2.0 * f);
+	return lerp(lerp(hash(i), hash(i + float2(1.0, 0.0)), f.x),
+		    lerp(hash(i + float2(0.0, 1.0)), hash(i + float2(1.0, 1.0)), f.x), f.y);
+}
+
+float clouds(float2 p)
+{
+	return 0.54 * noise2(p) + 0.27 * noise2(p * 2.09 + float2(8.1, 1.7))
+	       + 0.13 * noise2(p * 4.17 + float2(1.3, 6.1)) + 0.06 * noise2(p * 8.1);
+}
+
+float2 orbit(float k)
+{
+	float angle = turn(k);
+	return float2(cos(angle), sin(angle));
+}
+
+float3 ink(float shade)
+{
+	return lerp(colour2.rgb, colour3.rgb, saturate(shade));
+}
+
+float band(float distance_to_line, float half_width, float soft)
+{
+	return 1.0 - smoothstep(half_width, half_width + soft, abs(distance_to_line));
+}
+
+float segment(float2 p, float2 a, float2 b)
+{
+	float2 delta = b - a;
+	return length(p - a - delta * saturate(dot(p - a, delta) / max(dot(delta, delta), 0.00001)));
+}
+
+// Individual 3 by 5 glyphs, indented rows and a slowly scrolling rear layer.
+float code_page(float2 p, float seed, float repeat_rows)
+{
+	float column = floor(p.x);
+	float2 q = float2(frac(p.x) * 19.0, p.y + phase * repeat_rows);
+	float row = floor(q.y) - repeat_rows * floor(floor(q.y) / repeat_rows);
+	float2 row_id = float2(column + seed, row);
+	float glyph = floor(q.x);
+	float indent = floor(hash(row_id) * 5.0);
+	float count = 5.0 + floor(hash(row_id + 4.1) * 12.0);
+	float used = step(indent, glyph) * step(glyph, indent + count) * step(0.15, hash(row_id + 9.0));
+	float2 cell = frac(q) * float2(4.0, 7.0);
+	float2 dot_id = floor(cell);
+	float letter = hash(row_id + float2(glyph, glyph * 0.73));
+	float vertical = step(abs(dot_id.x - floor(letter * 3.0)), 0.25);
+	float horizontal = step(abs(dot_id.y - floor(frac(letter * 7.0) * 5.0)), 0.25);
+	float dots = step(0.59, hash(dot_id + float2(glyph, letter * 9.0)));
+	float inside = step(dot_id.x, 2.0) * step(dot_id.y, 4.0);
+	return used * inside * max(max(vertical, horizontal), dots);
+}
+
+float4 PSCodeWall(VertData v_in) : TARGET
+{
+	float2 p = place(v_in.uv);
+	float haze = clouds(p * 3.0 + orbit(1.0));
+	float back = code_page(p * float2(3.1, 21.0), 3.0, 24.0);
+	float front = code_page(p * float2(2.3, 18.0 + 12.0 * detail) + float2(0.3, 0.2), 9.0, 48.0);
+	float3 base = lerp(colour1.rgb, ink(haze), 0.07 + 0.17 * haze + 0.15 * back);
+	return float4(lerp(base, ink(0.3 + 0.5 * haze), 0.72 * front), 1.0);
+}
+
+float4 PSNeonTiles(VertData v_in) : TARGET
+{
+	float2 p = place(v_in.uv);
+	float depth = max(0.38, 1.06 - 0.7 * p.y);
+	float2 q = float2(p.x / depth, p.y * 1.7 / depth) * (6.0 + detail * 6.0);
+	float4 hex = hx_cell(q);
+	float edge = hx_edge(hex.xy);
+	float cell = hash(hx_id(hex.zw));
+	float light = 0.5 + 0.5 * sin(p.x * 4.0 + p.y * 2.0 + turn(2.0));
+	float pulse = 0.60 + 0.40 * sin(turn(5.0) + cell * 6.28);
+	float bevel = (1.0 - smoothstep(0.03, 0.15, edge)) * (0.35 + 0.65 * saturate(0.5 - 1.6 * hex.y));
+	float seam = band(edge - 0.037, 0.009, 0.012) + 0.52 * band(edge, 0.008, 0.014);
+	float3 face = lerp(colour1.rgb * (0.8 + 0.16 * cell), ink(light), 0.07 + 0.15 * light + 0.2 * bevel);
+	return float4(lerp(face, ink(1.0 - light), saturate(seam * (0.75 + 0.25 * pulse))), 1.0);
+}
+
+float2 web_node(float2 cell)
+{
+	float u = hash(cell);
+	float v = hash(cell + 5.7);
+	return cell + 0.5 + 0.24 * float2(sin(turn(2.0) + u * 6.28), cos(turn(3.0) + v * 6.28));
+}
+
+float4 PSNetworkWeb(VertData v_in) : TARGET
+{
+	float2 p = place(v_in.uv);
+	float r = length(p);
+	float twist = 0.18 * sin(turn(1.0)) + 0.6 * exp(-r * 3.0);
+	float2 q = float2(p.x * cos(twist) - p.y * sin(twist), p.x * sin(twist) + p.y * cos(twist));
+	q *= (7.0 + 5.0 * detail) * (1.0 + 1.1 * exp(-r * 6.0));
+	float2 cell = floor(q - 0.5);
+	float2 a = web_node(cell), b = web_node(cell + float2(1.0, 0.0));
+	float2 c = web_node(cell + float2(0.0, 1.0)), d = web_node(cell + 1.0);
+	float lines = min(min(segment(q, a, b), segment(q, a, c)), min(segment(q, b, d), segment(q, c, d)));
+	lines = min(lines, hash(cell) > 0.5 ? segment(q, a, d) : segment(q, b, c));
+	float2 nearest_cell = floor(q);
+	float node = length(q - web_node(nearest_cell));
+	float ring = band(node - (0.055 + 0.082 * hash(nearest_cell)), 0.013, 0.017);
+	float glow = 0.48 + 0.32 * sin(turn(4.0) + dot(q, float2(0.34, 0.19)));
+	float cloud = clouds(p * 3.8 + orbit(1.0));
+	float3 ground = lerp(colour1.rgb, ink(cloud), 0.18 * cloud);
+	return float4(lerp(ground, ink(cloud), max(ring, glow * band(lines, 0.009, 0.021))), 1.0);
+}
+
+float4 PSHexFlood(VertData v_in) : TARGET
+{
+	float2 p = place(v_in.uv);
+	float4 hex = hx_cell(p * (14.0 + 14.0 * detail));
+	float2 uv = hex.zw / (14.0 + 14.0 * detail);
+	float id = hash(hx_id(hex.zw));
+	float patch = clouds(uv * 5.5 + orbit(1.0));
+	float front = uv.x + 0.55 * uv.y + 0.75 * (patch - 0.5) - 0.32 * sin(turn(2.0));
+	float step_colour = floor(patch * 6.0 + id * 0.40) / 5.0;
+	float3 tile = lerp(ink(step_colour), float3(0.94, 0.93, 0.88), 0.14 + 0.22 * id);
+	float3 ground = colour1.rgb * (0.76 + id * 0.22);
+	return float4(lerp(ground, tile, (1.0 - smoothstep(-0.025, 0.025, front)) * smoothstep(0.0, 0.042, hx_edge(hex.xy))), 1.0);
+}
+
+float4 PSFrostedGlass(VertData v_in) : TARGET
+{
+	float2 p = place(v_in.uv);
+	float2 q = p * (55.0 + 55.0 * detail);
+	float2 bump = float2(noise2(q + 4.0), noise2(q + 12.0)) - 0.5;
+	float2 behind = p + 0.15 * bump + 0.26 * orbit(1.0);
+	float lamp = 0.5 + 0.5 * sin(behind.x * 5.0 + 2.1 * cos(behind.y * 4.0 + turn(1.0)));
+	float scatter = noise2(q + 0.28 * orbit(2.0));
+	float3 glass = lerp(colour1.rgb, ink(clouds(behind * 4.0)), 0.15 + 0.64 * lamp);
+	return float4(lerp(glass, ink(lamp), 0.30 * saturate(scatter + dot(bump, orbit(2.0)))), 1.0);
+}
+
+float4 PSCrystalIce(VertData v_in) : TARGET
+{
+	float2 p = place(v_in.uv);
+	float density = 18.0 + 18.0 * detail;
+	float2 q = float2(p.x + 0.52 * p.y, 1.13 * p.y) * density;
+	q += float2(noise2(p * 5.0), noise2(p * 5.0 + 8.0)) * 1.8;
+	float2 cell = floor(q), f = frac(q);
+	float side = step(1.0, f.x + f.y);
+	float seed = hash(cell + side * 0.37);
+	float edge = min(min(min(f.x, 1.0 - f.x), min(f.y, 1.0 - f.y)), abs(f.x + f.y - 1.0) * 0.7);
+	float lamp = exp(-3.5 * length(p - 0.23 * orbit(1.0)));
+	float glint = pow(saturate(0.5 + 0.5 * cos(turn(3.0) + seed * 6.28)), 8.0);
+	float value = saturate(0.12 + 0.38 * seed + 0.4 * lamp + 0.27 * glint + 0.26 * band(edge, 0.013, 0.025));
+	return float4(lerp(colour1.rgb, ink(seed), value), 1.0);
+}
+
+float4 PSHudWall(VertData v_in) : TARGET
+{
+	float2 p = place(v_in.uv);
+	float2 q = p * float2(5.0, 8.0) * (0.8 + 0.8 * detail);
+	float2 cell = floor(q), uv = frac(q);
+	float seed = hash(cell), tick = 0.5 + 0.5 * sin(turn(6.0) + seed * 21.0);
+	float rim = min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y));
+	float corner = max(step(uv.x, 0.12), step(uv.y, 0.12));
+	float frame_line = band(rim - 0.035, 0.006, 0.009) * (0.3 + 0.7 * corner);
+	float bars = step(0.13, uv.x) * step(uv.x, 0.22 + 0.56 * hash(cell + floor(uv.y * 7.0)) + 0.09 * tick)
+		     * step(0.18, uv.y) * step(uv.y, 0.88) * band(frac(uv.y * 7.0) - 0.45, 0.14, 0.04);
+	float2 dial_pos = (uv - float2(0.48, 0.51)) * float2(1.6, 1.0);
+	float dial = band(length(dial_pos) - 0.27, 0.012, 0.012)
+		     + band(segment(dial_pos, float2(0.0, 0.0), orbit(4.0) * 0.23), 0.012, 0.013);
+	float wave = 0.48 + 0.22 * sin(uv.x * 10.0 + turn(3.0) + seed * 11.0) * cos(uv.x * 7.3 + seed * 6.0);
+	float graph = band(uv.y - wave, 0.012, 0.022) * step(0.08, uv.x) * step(uv.x, 0.9);
+	float mode = floor(seed * 3.0);
+	float marks = mode < 1.0 ? bars : (mode < 2.0 ? dial : graph);
+	float dots = band(length(frac(uv * float2(26.0, 15.0)) - 0.5), 0.09, 0.09);
+	float scan = band(frac(uv.y - phase * 4.0 - seed) - 0.5, 0.006, 0.025);
+	return float4(lerp(colour1.rgb, ink(frac(seed * 3.7)), saturate(0.08 * dots + 0.72 * frame_line + 0.84 * marks + 0.17 * scan)), 1.0);
+}
+
+// A copper pour, three parallel tracks with a 45 degree elbow and plated pads.
+float4 PSSolderMask(VertData v_in) : TARGET
+{
+	float2 p = place(v_in.uv);
+	float2 q = p * (4.0 + 4.0 * detail);
+	float2 cell = floor(q), f = frac(q);
+	float seed = hash(cell);
+	if (seed > 0.5)
+		f = float2(f.y, 1.0 - f.x);
+	float conductor = 0.0, pad = 0.0;
+	for (int lane = 0; lane < 3; lane++) {
+		float off = 0.09 * float(lane);
+		float2 a = float2(0.0, 0.17 + off);
+		float2 b = float2(0.36 - off * 0.36, a.y);
+		float2 c = b + float2(0.24, 0.24);
+		float2 d = float2(0.83, c.y);
+		float distance_to_track = min(segment(f, a, b), min(segment(f, b, c), segment(f, c, d)));
+		conductor = max(conductor, band(distance_to_track, 0.012, 0.010));
+		float ring = length(f - d);
+		pad = max(pad, band(ring - 0.034, 0.012, 0.008));
+	}
+	float2 pour_box = abs(f - float2(0.24, 0.77)) - float2(0.17, 0.12);
+	float pour = 1.0 - smoothstep(-0.016, 0.012, max(pour_box.x, pour_box.y));
+	float light = 0.5 + 0.5 * sin(turn(3.0) + p.x * 7.0 - p.y * 3.0);
+	float3 board = lerp(colour1.rgb, ink(seed), 0.08 + 0.24 * pour);
+	float sweep = smoothstep(0.64, 0.97, 0.5 + 0.5 * cos(turn(6.0) + p.x * 8.0 - p.y * 5.0));
+	board = lerp(board, lerp(colour2.rgb, colour3.rgb, 0.72 * sweep), conductor * (0.58 + 0.34 * sweep));
+	return float4(lerp(board, lerp(colour3.rgb, float3(1.0, 1.0, 1.0), 0.32 * light), 0.94 * pad), 1.0);
+}
+
+float4 PSDataStreams(VertData v_in) : TARGET
+{
+	float2 p = place(v_in.uv);
+	float2 q = float2(p.x + p.y * 0.20, p.y - 0.07 * p.x);
+	float row = floor(q.y * (26.0 + 24.0 * detail));
+	float seed = hash(float2(row, 17.1));
+	float columns = 2.0 + floor(seed * 3.0);
+	float cyc = 12.0;
+	// Every row translates by twelve cells per cycle (or a multiple), so each packet returns.
+	float x = q.x * columns - phase * cyc * (1.0 + floor(seed * 2.0));
+	float id = floor(x) - cyc * floor(floor(x) / cyc);
+	float packet = hash(float2(id, row));
+	float width = 0.08 + 0.69 * packet;
+	float left = frac(x), across = abs(frac(q.y * (26.0 + 24.0 * detail)) - 0.5);
+	float focus = smoothstep(-0.65, 0.45, p.x);
+	float softness = lerp(0.09, 0.016, focus);
+	float bar = smoothstep(0.0, softness, left) * (1.0 - smoothstep(width, width + softness, left));
+	float pattern = packet > 0.64 ? 0.40 + 0.60 * smoothstep(0.22, 0.55, frac(left * 55.0)) : 1.0;
+	float body = bar * pattern * (1.0 - smoothstep(0.08 + 0.10 * seed, 0.16 + 0.10 * seed + softness, across));
+	float leds = step(0.86, seed) * band(length(float2(frac(x * 28.0) - 0.5, across * 1.4)), 0.13, 0.06);
+	return float4(lerp(colour1.rgb, ink(packet), saturate(max(body * (0.40 + 0.60 * packet), leds))), 1.0);
+}
+
+float4 PSPetalLattice(VertData v_in) : TARGET
+{
+	float2 p = place(v_in.uv);
+	float2 q = p * (5.0 + 5.0 * detail);
+	float2 f = frac(q);
+	float ring = min(min(abs(length(f) - 0.71), abs(length(f - float2(1.0, 0.0)) - 0.71)),
+			 min(abs(length(f - float2(0.0, 1.0)) - 0.71), abs(length(f - 1.0) - 0.71)));
+	float slow = 0.5 + 0.5 * sin(3.6 * p.x + turn(2.0) + 1.6 * sin(3.2 * p.y + turn(1.0)));
+	float lamp = saturate(0.88 - 0.38 * length(p) + 0.2 * cos(5.0 * p.y + turn(2.0)));
+	float glow = 0.26 * exp(-20.0 * ring) + 0.70 * band(ring, 0.010, 0.018);
+	return float4(lerp(colour1.rgb, ink(slow), saturate(lamp * glow)), 1.0);
+}
+
+float4 PSLiquidMarble(VertData v_in) : TARGET
+{
+	float2 p = place(v_in.uv) * (2.0 + detail);
+	float2 drift = orbit(1.0) * 0.35;
+	float2 warp = float2(clouds(p + drift), clouds(p + float2(5.7, 9.3) - drift));
+	float2 flow = p + (warp - 0.5) * 2.8;
+	float field = clouds(flow * 1.7 + orbit(2.0) * 0.18);
+	float vein = abs(frac(field * (4.0 + detail * 4.0) + 0.35 * warp.x) - 0.5);
+	float body = 0.14 + 0.51 * smoothstep(0.18, 0.87, field);
+	float3 paint = lerp(colour1.rgb, colour2.rgb, body);
+	return float4(lerp(paint, colour3.rgb, 0.80 * band(vein, 0.020, 0.066) + 0.12 * exp(-8.0 * vein)), 1.0);
+}
+
+float space_stars(float2 p, float density, float threshold, float rate)
+{
+	float2 q = p * density;
+	float2 cell = floor(q);
+	float h = hash(cell);
+	float2 location = 0.24 + 0.52 * float2(hash(cell + 5.2), hash(cell + 14.2));
+	float2 d = frac(q) - location;
+	float twinkle = 0.51 + 0.49 * sin(turn(rate) + h * 23.0);
+	float radius = 0.028 + 0.075 * h;
+	return step(threshold, h) * twinkle * (band(length(d), radius, 0.054) + 0.20 * exp(-12.0 * length(d)));
+}
+
+float4 PSDeepSpace(VertData v_in) : TARGET
+{
+	float2 p = place(v_in.uv);
+	float2 drift = orbit(1.0) * 0.17;
+	float wisps = clouds(p * 3.8 + drift);
+	float fog = clouds(p * 2.7 + float2(wisps * 2.1, wisps) + drift);
+	float strand = band(fog - 0.46 - 0.08 * sin(3.4 * p.x), 0.012, 0.055);
+	float3 space = lerp(colour1.rgb, ink(wisps), saturate(0.10 + 0.47 * fog + 0.24 * strand * wisps));
+	float stars = space_stars(p, 26.0 + 24.0 * detail, 0.76, 5.0)
+		      + space_stars(p + 1.2, 11.0, 0.87, 3.0);
+	return float4(lerp(space, lerp(colour3.rgb, float3(1.0, 1.0, 1.0), 0.42), saturate(stars)), 1.0);
+}
+
+technique CodeWall
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSCodeWall(v_in);
+	}
+}
+
+technique NeonTiles
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSNeonTiles(v_in);
+	}
+}
+
+technique NetworkWeb
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSNetworkWeb(v_in);
+	}
+}
+
+technique HexFlood
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSHexFlood(v_in);
+	}
+}
+
+technique FrostedGlass
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSFrostedGlass(v_in);
+	}
+}
+
+technique CrystalIce
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSCrystalIce(v_in);
+	}
+}
+
+technique HudWall
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSHudWall(v_in);
+	}
+}
+
+technique SolderMask
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSSolderMask(v_in);
+	}
+}
+
+technique DataStreams
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSDataStreams(v_in);
+	}
+}
+
+technique PetalLattice
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSPetalLattice(v_in);
+	}
+}
+
+technique LiquidMarble
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSLiquidMarble(v_in);
+	}
+}
+
+technique DeepSpace
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSDeepSpace(v_in);
+	}
+}

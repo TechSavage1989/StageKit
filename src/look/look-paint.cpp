@@ -171,7 +171,7 @@ bool design_modified(obs_properties_t *props, obs_property_t *, obs_data_t *sett
 	const bool dashes = kind == OutlineDesign::Dashed || kind == OutlineDesign::Marching;
 	const bool ambient = kind == OutlineDesign::Ambient;
 	// (What lays a fill out in the line: a pattern's and the background's.)
-	const bool laid = ambient || (kind >= OutlineDesign::Aurora && kind <= OutlineDesign::HexMosaic);
+	const bool laid = kind >= OutlineDesign::Aurora && kind <= OutlineDesign::kLast;
 	const bool pattern = laid && !ambient;
 	show("outline_color2", pattern || kind == OutlineDesign::Gradient || kind == OutlineDesign::Travelling ||
 				       kind == OutlineDesign::Shimmer || kind == OutlineDesign::Neon);
@@ -228,13 +228,16 @@ void add_outline_design_properties(obs_properties_t *outline)
 	obs_property_t *design = obs_properties_add_list(outline, "outline_design",
 							 obs_module_text("Shadow.OutlineDesign"), OBS_COMBO_TYPE_LIST,
 							 OBS_COMBO_FORMAT_INT);
-	static const char *const names[] = {"Solid",    "Double",  "Dashed",        "Dotted",     "Gradient",
-					    "Neon",     "Inner",   "Marching",      "Travelling", "Pulse",
-					    "Shimmer",  "Rainbow", "Aurora",        "Plasma",     "Lava",
-					    "Waves",    "Nebula",  "Flow",          "Stars",      "Bokeh",
-					    "Rays",     "Circuit", "Hex",           "Rain",       "Tunnel",
-					    "Ripples",  "Embers",  "CircuitTraces", "DataLines",  "Mesh",
-					    "Halftone", "DotGrid", "HexWire",       "HexMosaic",  "Ambient"};
+	static const char *const names[] = {"Solid",       "Double",       "Dashed",        "Dotted",     "Gradient",
+					    "Neon",        "Inner",        "Marching",      "Travelling", "Pulse",
+					    "Shimmer",     "Rainbow",      "Aurora",        "Plasma",     "Lava",
+					    "Waves",       "Nebula",       "Flow",          "Stars",      "Bokeh",
+					    "Rays",        "Circuit",      "Hex",           "Rain",       "Tunnel",
+					    "Ripples",     "Embers",       "CircuitTraces", "DataLines",  "Mesh",
+					    "Halftone",    "DotGrid",      "HexWire",       "HexMosaic",  "Ambient",
+					    "NeonTiles",   "HexFlood",     "FrostedGlass",  "CrystalIce", "SolderMask",
+					    "DataStreams", "PetalLattice", "LiquidMarble",  "DeepSpace"};
+	static_assert(sizeof(names) / sizeof(names[0]) == OutlineDesign::kLast + 1);
 	for (int i = 0; i <= OutlineDesign::kLast; i++)
 		obs_property_list_add_int(
 			design, obs_module_text((std::string("Shadow.OutlineDesign.") + names[i]).c_str()), i);

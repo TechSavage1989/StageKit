@@ -17155,7 +17155,7 @@ static void outline_designs_test(uint32_t w, uint32_t h, const std::string &out)
 		const size_t count = p ? obs_property_list_item_count(p) : 0;
 		obs_properties_destroy(props);
 		before[i] = shot(scenes[i]);
-		CHECK(unset && kind == 0 && count == 35,
+		CHECK(unset && kind == 0 && count == 44,
 		      "%s: a filter saved without a design reads Solid, of %zu designs (%lld)", who[i], count, kind);
 	}
 	both([](obs_data_t *s) { obs_data_set_int(s, "outline_design", 0); });
@@ -18600,7 +18600,7 @@ static void outline_ambient_test(uint32_t w, uint32_t h, const std::string &out)
 		obs_properties_t *props = obs_source_properties(filters[i]);
 		obs_property_t *list = obs_properties_get(props, "outline_design");
 		const size_t n = list ? obs_property_list_item_count(list) : 0;
-		const bool named = n == 35 &&
+		const bool named = n == 44 &&
 				   strcmp(obs_property_list_item_name(list, 34), "Ambient Background") == 0 &&
 				   obs_property_list_item_int(list, 34) == 34;
 		obs_property_t *which = obs_properties_get(props, "outline_ambient");
@@ -19456,7 +19456,7 @@ static void outline_patterns_test(uint32_t w, uint32_t h, const std::string &out
 		CHECK(spread(f) > 6.0, "%s: with the shaders back the pattern is back (%.1f)", who[i], spread(f));
 	}
 
-	// The controls: 35 designs (the last, the Ambient Background fill, has its own test); a pattern shows its colours, size and speed.
+	// The controls: the design list (Ambient Background has its own test); a pattern shows its colours, size and speed.
 	for (int i = 0; i < 2; i++) {
 		int wrong = 0;
 		size_t count = 0;
@@ -19481,7 +19481,7 @@ static void outline_patterns_test(uint32_t w, uint32_t h, const std::string &out
 			obs_data_release(s);
 		}
 		set(filters[i], [](obs_data_t *s) { obs_data_set_int(s, "outline_design", 13); });
-		CHECK(wrong == 0 && count == 35,
+		CHECK(wrong == 0 && count == 44,
 		      "%s: %zu designs; a pattern shows Second colour, Third colour, Pattern size and Speed, the others do not show the new two (%d wrong)",
 		      who[i], count, wrong);
 	}
@@ -21019,7 +21019,7 @@ static void hex_patterns_test(uint32_t w, uint32_t h, const char *base_image, co
 		obs_properties_t *props = obs_source_properties(bg);
 		obs_property_t *list = obs_properties_get(props, "pattern");
 		const size_t count = list ? obs_property_list_item_count(list) : 0;
-		bool named = count == 25;
+		bool named = count == 37;
 		static const char *const kShown[] = {"Hex columns", "Mesh",          "Halftone hexagons",
 						     "Dot grid",    "Hex wire glow", "Hex mosaic"};
 		for (int i = 0; named && i < kCount; i++)
@@ -21027,7 +21027,9 @@ static void hex_patterns_test(uint32_t w, uint32_t h, const char *base_image, co
 				obs_property_list_item_int(list, size_t(kFirst + i)) == kFirst + i;
 		obs_properties_destroy(props);
 		obs_source_release(bg);
-		CHECK(named, "the Pattern list has %zu entries, the last six the new ones by name and number", count);
+		CHECK(named,
+		      "the Pattern list has %zu entries, the six hex designs retain their saved names and numbers",
+		      count);
 	}
 
 	obs_data_t *s = obs_data_create();
@@ -21203,6 +21205,34 @@ static void hex_patterns_test(uint32_t w, uint32_t h, const char *base_image, co
 			      mean_abs_diff(plain, turned) > 1.0,
 		      "Size, Detail and Position with Rotation change a new pattern (%.2f, %.2f and %.2f from it plain)",
 		      mean_abs_diff(plain, large), mean_abs_diff(plain, fine), mean_abs_diff(plain, turned));
+	}
+	// The material patterns start after the six hex patterns. Check both palettes and the
+	// full four-minute return, with the normal saved IDs going through the source.
+	static const char *const material_names[] = {
+		"Code wall",     "Neon hex tiles", "Network web",   "Hex flood",
+		"Frosted glass", "Crystal ice",    "HUD data wall", "Circuit board with solder pads",
+		"Data streams",  "Petal lattice",  "Liquid marble", "Deep space"};
+	std::vector<std::vector<uint8_t>> materials;
+	for (int index = 0; index < 12; ++index) {
+		auto first = shot("", [&](obs_data_t *d) {
+			defaults(d);
+			obs_data_set_int(d, "pattern", 25 + index);
+			obs_data_set_double(d, "pattern_scale", 100);
+			obs_data_set_double(d, "pattern_detail", 50);
+			obs_data_set_double(d, "pattern_speed", 100);
+			obs_data_set_double(d, "test_pattern_time", 0);
+		});
+		auto moved = shot("", [](obs_data_t *d) { obs_data_set_double(d, "test_pattern_time", 15); });
+		auto end = shot("", [](obs_data_t *d) { obs_data_set_double(d, "test_pattern_time", 240); });
+		auto light = shot("", [](obs_data_t *d) { obs_data_set_int(d, "pattern_colour1", 0xFFE8EFEA); });
+		bool distinct = true;
+		for (const auto &prior : materials)
+			distinct = distinct && mean_abs_diff(first, prior) > 1.0;
+		CHECK(colours_in(first) > 30 && colours_in(light) > 30 && distinct && mean_abs_diff(first, light) > 5.0,
+		      "%s renders a distinct material on both a light and dark ground", material_names[index]);
+		CHECK(mean_abs_diff(first, moved) > 0.08 && mean_abs_diff(first, end) < 0.03,
+		      "%s moves and returns to the same frame at the loop point", material_names[index]);
+		materials.push_back(std::move(first));
 	}
 	obs_source_dec_showing(bg);
 	obs_source_release(bg);
@@ -21381,7 +21411,7 @@ static void hex_patterns_test(uint32_t w, uint32_t h, const char *base_image, co
 		const size_t count = list ? obs_property_list_item_count(list) : 0;
 		static const char *const kShown[] = {"Pattern: Mesh", "Pattern: Halftone", "Pattern: Dot grid",
 						     "Pattern: Hex wire glow", "Pattern: Hex mosaic"};
-		bool named = count == 35; // (the Ambient Background fill after them)
+		bool named = count == 44; // (the Ambient Background fill after them)
 		for (int n = 0; named && n < 5; n++)
 			named = strcmp(obs_property_list_item_name(list, size_t(29 + n)), kShown[n]) == 0 &&
 				obs_property_list_item_int(list, size_t(29 + n)) == 29 + n;
@@ -21401,9 +21431,12 @@ static void hex_patterns_test(uint32_t w, uint32_t h, const char *base_image, co
 		      "%s: %zu designs, designs 29 to 33 the new fills by name and number, and one of them shows a pattern's colours, size, speed, position and rotation",
 		      who[i], count);
 	}
-	static const char *const kFills[5] = {"mesh", "halftone", "dot grid", "hex wire glow", "hex mosaic"};
-	for (int p = 0; p < 5; p++) {
-		const int design = 29 + p;
+	static const char *const kFills[] = {
+		"mesh",           "halftone",      "dot grid",      "hex wire glow", "hex mosaic",
+		"Neon hex tiles", "Hex flood",     "Frosted glass", "Crystal ice",   "Circuit board with solder pads",
+		"Data streams",   "Petal lattice", "Liquid marble", "Deep space"};
+	for (int p = 0; p < int(sizeof(kFills) / sizeof(kFills[0])); p++) {
+		const int design = p < 5 ? 29 + p : 30 + p; // design 34 is Ambient Background
 		both([&](obs_data_t *d) {
 			obs_data_set_int(d, "outline_design", design);
 			obs_data_set_int(d, "outline_color", navy);
