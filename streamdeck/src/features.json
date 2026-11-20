@@ -17,7 +17,9 @@
 		{ "key": "scenefit", "kind": "stagekit_scene_fit", "scene": true, "name": "Scene Fit", "tip": "Switches a scene's Scene Fit on and off: the fitting of its sources into the free space." },
 		{ "key": "sceneshadow", "kind": "stagekit_scene_shadow", "scene": true, "name": "Scene Shadow", "tip": "Switches a scene's one shadow, glow or outline round its sources on and off." },
 		{ "key": "scenecorners", "kind": "stagekit_scene_corners", "scene": true, "name": "Scene Corners", "tip": "Switches the corners and edges a Scene Corners gives a scene's sources on and off." },
-		{ "key": "scenestandby", "kind": "stagekit_scene_standby", "scene": true, "name": "Scene Standby", "tip": "Switches a scene's Scene Standby on and off: the standby image for every empty capture in it." }
+		{ "key": "scenestandby", "kind": "stagekit_scene_standby", "scene": true, "name": "Scene Standby", "tip": "Switches a scene's Scene Standby on and off: the standby image for every empty capture in it." },
+		{ "key": "matchitem", "kind": "stagekit_match_item", "scene": true, "name": "Match Item", "tip": "Switches a scene's Match Item filter on or off. The filter keeps its configured items matched to their reference." },
+		{ "key": "scenetransitions", "kind": "stagekit_scene_transitions", "scene": true, "name": "Scene Transitions", "tip": "Switches this scene's source show and hide transitions on or off." }
 	],
 	"moves": [
 		{ "key": "sendto", "kind": "stagekit_send_to", "name": "Move Source", "tip": "Sends the camera, or any source, to one of its saved places." },

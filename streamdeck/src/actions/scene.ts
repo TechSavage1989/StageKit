@@ -47,7 +47,8 @@ export class SceneSwitch extends SingletonAction<KeySettings> {
 		}
 		try {
 			const ms = Number(lasting);
-			await obs.switchScene(String(scene), where === "preview", transition ? String(transition) : "", Number.isFinite(ms) && ms > 0 ? ms : 0);
+			await obs.switchScene(String(scene), where === "preview", transition ? String(transition) : "",
+				Number.isFinite(ms) && ms > 0 ? ms : 0, ev.payload.settings.restoreTransition === "restore");
 		} catch {
 			await ev.action.showAlert();
 		}
@@ -63,7 +64,7 @@ export class SceneSwitch extends SingletonAction<KeySettings> {
 		const pick = (s: KeySettings) => scenePicture(keptPicture(s), scene, s.sceneType);
 		settings = await settle(key, "scene", settings, (s) => pick(s).id);
 		const now = await obs.currentScenes();
-		const live = settings.where === "preview" ? now?.preview : now?.program;
+		const live = settings.where === "preview" && now?.preview ? now.preview : now?.program;
 		await showOnOff(key, pick(settings), scene !== "" && live === scene, settings);
 		await key.setTitle(sceneTitle(scene));
 	}

@@ -43,6 +43,7 @@ class ObsLink extends EventEmitter {
 	private connected = false;
 	private connecting = false;
 	private timer: NodeJS.Timeout | undefined;
+	private sceneSwitches: Promise<void> = Promise.resolve();
 	/** Why the last try failed, for a property inspector to show. */
 	lastError = "";
 
@@ -279,8 +280,8 @@ class ObsLink extends EventEmitter {
 	}
 
 	/** Presses one of OBS's hotkeys by its name (StageKit's arrange tools have one each). */
-	async pressHotkey(hotkeyName: string): Promise<void> {
-		await this.obs.call("TriggerHotkeyByName", { hotkeyName });
+	async pressHotkey(hotkeyName: string, contextName?: string): Promise<void> {
+		await this.obs.call("TriggerHotkeyByName", contextName ? { hotkeyName, contextName } : { hotkeyName });
 	}
 
 	/**
@@ -341,17 +342,66 @@ class ObsLink extends EventEmitter {
 	 * Switches to a scene: the program, or the preview (Studio Mode; the program
 	 * when it is off). A transition named here, and a duration, are set first.
 	 */
-	async switchScene(sceneName: string, toPreview: boolean, transitionName: string, durationMs: number): Promise<void> {
-		if (transitionName) await this.obs.call("SetCurrentSceneTransition", { transitionName });
-		if (durationMs > 0) await this.obs.call("SetCurrentSceneTransitionDuration", { transitionDuration: durationMs });
-		if (toPreview) {
-			const studio = await this.obs.call("GetStudioModeEnabled");
-			if (studio.studioModeEnabled) {
-				await this.obs.call("SetCurrentPreviewScene", { sceneName });
-				return;
+	switchScene(sceneName: string, toPreview: boolean, transitionName: string, durationMs: number, restore = false): Promise<void> {
+		const apply = () => this.applySceneSwitch(sceneName, toPreview, transitionName, durationMs, restore);
+		const next = this.sceneSwitches.then(apply);
+		this.sceneSwitches = next.catch(() => {});
+		return next;
+	}
+
+	private async applySceneSwitch(sceneName: string, toPreview: boolean, transitionName: string, durationMs: number, restore: boolean): Promise<void> {
+		const preview = toPreview && (await this.obs.call("GetStudioModeEnabled")).studioModeEnabled;
+		const request = preview ? "SetCurrentPreviewScene" : "SetCurrentProgramScene";
+		if ((restore && preview) || (!transitionName && durationMs <= 0)) {
+			await this.obs.call(request, { sceneName });
+			return;
+		}
+		const before = restore ? await this.obs.call("GetCurrentSceneTransition") : undefined;
+		let changedName = false;
+		let changedTime = false;
+		let expectedTime: number | undefined;
+		let cancelWait: (() => void) | undefined;
+		try {
+			if (transitionName && transitionName !== before?.transitionName) {
+				await this.obs.call("SetCurrentSceneTransition", { transitionName });
+				changedName = true;
+			}
+			if (durationMs > 0) {
+				await this.obs.call("SetCurrentSceneTransitionDuration", { transitionDuration: durationMs });
+				changedTime = true;
+				expectedTime = durationMs;
+			}
+			let finished: Promise<void> | undefined;
+			if (before && (changedName || changedTime)) {
+				const active = await this.obs.call("GetCurrentSceneTransition");
+				expectedTime = active.transitionDuration ?? undefined;
+				if (active.transitionKind !== "cut_transition" && (await this.obs.call("GetCurrentProgramScene")).currentProgramSceneName !== sceneName) {
+					// Subscribe before the switch so even a very short transition can signal completion.
+					finished = new Promise<void>((resolve) => {
+						const ended = (event: { transitionName: string }) => {
+							if (event.transitionName === active.transitionName) resolve();
+						};
+						this.obs.on("SceneTransitionEnded", ended);
+						const timer = setTimeout(resolve, Math.max(active.transitionDuration ?? 0, 300) + 500);
+						cancelWait = () => { clearTimeout(timer); this.obs.off("SceneTransitionEnded", ended); };
+					});
+				}
+			}
+			await this.obs.call(request, { sceneName });
+			if (finished) await finished;
+		} finally {
+			cancelWait?.();
+			if (before && (changedName || changedTime)) {
+				const current = await this.obs.call("GetCurrentSceneTransition");
+				// A selection made by the operator during the switch takes precedence.
+				if (current.transitionName === (transitionName || before.transitionName) &&
+					(expectedTime === undefined || current.transitionDuration === expectedTime)) {
+					if (changedName) await this.obs.call("SetCurrentSceneTransition", { transitionName: before.transitionName });
+					if (before.transitionDuration != null && !before.transitionFixed && (changedTime || changedName))
+						await this.obs.call("SetCurrentSceneTransitionDuration", { transitionDuration: before.transitionDuration });
+				}
 			}
 		}
-		await this.obs.call("SetCurrentProgramScene", { sceneName });
 	}
 
 	/**

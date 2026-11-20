@@ -47,6 +47,8 @@ const PLAIN: Record<string, string> = {
 	stagekit_show_hide: "options/show-hide",
 	stagekit_layout: "options/layout",
 	stagekit_scene_fit: "options/scene-fit",
+	stagekit_match_item: "options/match-item",
+	stagekit_scene_transitions: "options/scene-transitions",
 	stagekit_scene_shadow: "options/scene-shadow",
 	stagekit_scene_corners: "options/scene-corners",
 	stagekit_scene_standby: "filters/standby-picture",
@@ -193,11 +195,15 @@ export function chooseFor(
 		: sourceTypePicture(explicit(t.sourceType), family, style);
 	if (typed && BY_ID.has(typed)) return BY_ID.get(typed);
 	if (chosen && BY_ID.has(chosen)) return BY_ID.get(chosen);
-	if (look && kind === "stagekit_corners") return BY_ID.get(lookPicture("corners", look) ?? "") ?? automatic(kind, settings);
+	if (look && kind === "stagekit_show_hide")
+		return BY_ID.get(lookPicture("animation", look) ?? lookPicture("transition", look) ?? "") ?? automatic(kind, settings);
+	if (look && (kind === "stagekit_corners" || kind === "stagekit_scene_corners"))
+		return BY_ID.get(lookPicture("corners", look) ?? "") ?? automatic(kind, settings);
 	if (look && (kind === "stagekit_send_to" || kind === "stagekit_place_item"))
 		return BY_ID.get(lookPicture("position", look) ?? "") ?? automatic(kind, settings);
-	if (look && kind === "stagekit_shadow_backdrop") return BY_ID.get(lookPicture("shadow", look) ?? "") ?? automatic(kind, settings);
-	const changes = ["stagekit_show_hide", "stagekit_visibility_link", "stagekit_active_app", "stagekit_app_capture"];
+	if (look && (kind === "stagekit_shadow_backdrop" || kind === "stagekit_scene_shadow"))
+		return BY_ID.get(lookPicture("shadow", look) ?? "") ?? automatic(kind, settings);
+	const changes = ["stagekit_visibility_link", "stagekit_active_app", "stagekit_app_capture", "stagekit_scene_transitions"];
 	if (look && changes.includes(kind)) return BY_ID.get(lookPicture("transition", look) ?? "") ?? automatic(kind, settings);
 	const own = blur ? { ...settings, blur_type: BLUR.indexOf(packBlurStyle(style!)) } : settings;
 	// (A Blur style the pack has no pictures of is its own drawing, unless the source has one in the nearest style.)

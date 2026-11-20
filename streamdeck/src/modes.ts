@@ -186,6 +186,10 @@ export function editModeSettings<T extends Record<string, unknown>>(settings: T,
 			changed = true;
 		}
 	}
+	if (filter && forId && !str(s.mode)) {
+		s = { ...s, mode: forId };
+		changed = true;
+	}
 	const map: Record<string, PerMode> = { ...perModeOf(s) };
 	// (The key-wide Mode type of a key saved up to beta179 stands for the key's own mode while that mode has
 	// no image of its own. `modeTypeKeyWide` names the mode it was loaded into the Image list for, so a later

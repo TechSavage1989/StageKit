@@ -140,6 +140,8 @@ ICONS = {
     # Stream: an antenna sending; Record: a record dot in a ring.
     "stream": lambda d: (line(d, 0.5, 0.42, 0.5, 0.9), line(d, 0.34, 0.92, 0.66, 0.92), ring(d, 0.5, 0.34, 0.07, fill=True), d.arc((*p(0.28, 0.12), *p(0.72, 0.56)), -45, 45, fill=INK, width=W), d.arc((*p(0.28, 0.12), *p(0.72, 0.56)), 135, 225, fill=INK, width=W), d.arc((*p(0.08, -0.08), *p(0.92, 0.76)), -40, 40, fill=INK, width=W), d.arc((*p(0.08, -0.08), *p(0.92, 0.76)), 140, 220, fill=INK, width=W)),
     "record": lambda d: (ring(d, 0.5, 0.5, 0.4), ring(d, 0.5, 0.5, 0.24, fill=True)),
+    "matchitem": lambda d: (box(d, 0.05, 0.08, 0.53, 0.55, width=W - 3), box(d, 0.47, 0.45, 0.95, 0.92, width=W - 3), line(d, 0.09, 0.70, 0.34, 0.70, W - 4), line(d, 0.09, 0.84, 0.34, 0.84, W - 4)),
+    "scenetransitions": lambda d: (box(d, 0.03, 0.09, 0.40, 0.66, width=W - 4), box(d, 0.60, 0.34, 0.97, 0.91, width=W - 4), arrow(d, 0.30, 0.50, 0.74, 0.50, 0.13, W - 4)),
     "slide": lambda d: (line(d, 0.9, 0.08, 0.9, 0.92), box(d, 0.06, 0.34, 0.34, 0.66, r=0.03, fill=True), arrow(d, 0.42, 0.5, 0.8, 0.5, 0.15)),
 }
 

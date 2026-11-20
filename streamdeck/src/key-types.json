@@ -1872,19 +1872,41 @@
 						],
 						[
 							"wipe",
-							"Wipe",
+							"Luma wipe",
 							"options/style-wipe"
 						],
 						[
 							"zoom",
-							"Zoom",
+							"Fade and zoom",
 							"options/style-zoom"
 						],
 						[
 							"morph",
 							"Morph",
 							"options/style-morph"
+						],
+						[
+							"make-room",
+							"Make room",
+							"options/style-make-room"
 						]
+					]
+				}
+			]
+		},
+		"animation": {
+			"label": "Direction",
+			"tip": "The direction shown on the key. Automatic uses the Show/Hide Animation filter image.",
+			"groups": [
+				{
+					"label": "",
+					"entries": [
+						["nearest", "The nearest screen edge", "options/slide-to-edge"],
+						["from-left", "The left", "options/slide-left"],
+						["from-right", "The right", "options/slide-right"],
+						["from-top", "The top", "options/slide-up"],
+						["from-bottom", "The bottom", "options/slide-down"],
+						["pop", "Nowhere: it pops", "options/style-zoom"]
 					]
 				}
 			]

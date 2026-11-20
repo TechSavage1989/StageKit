@@ -4,7 +4,7 @@
 import streamDeck from "@elgato/streamdeck";
 import type { JsonValue } from "@elgato/utils";
 
-import { filterItems, sourceItems, targetItems, targetOf } from "../kinds.ts";
+import { filterItems, sourceItems, switcherSteps, TARGET_SEP, targetItems, targetOf } from "../kinds.ts";
 import { obs } from "../obs.ts";
 import { adoptOld, typeForKept } from "../key-types.ts";
 import { composed } from "../compose.ts";
@@ -69,10 +69,12 @@ export async function settle(
 	settings: KeySettings,
 	resolve: (settings: KeySettings) => string | undefined,
 ): Promise<KeySettings> {
-	if (typeof settings.picture !== "string") return settings;
-	const next = (typeForKept(name, settings, (s) => resolve(s as KeySettings)) ?? adoptOld(settings)) as KeySettings | undefined;
-	if (!next) return settings;
-	await key.setSettings(next);
+	let next = settings;
+	if ((name === "switch" || name === "move") && !settings.target && settings.source && settings.filter)
+		next = { ...settings, target: settings.source + TARGET_SEP + settings.filter };
+	if (typeof next.picture === "string")
+		next = (typeForKept(name, next, (s) => resolve(s as KeySettings)) ?? adoptOld(next) ?? next) as KeySettings;
+	if (next !== settings) await key.setSettings(next);
 	return next;
 }
 
@@ -200,13 +202,13 @@ export async function answerLists(
 		return;
 	}
 	if (event === "getTransitions") {
-		// "A fade" first, as everywhere in StageKit; then a cut; then the rest OBS has.
+		// The same transition names used on the Auto Capture filter.
 		const names: Record<string, string> = {
-			fade_transition: "A fade",
+			fade_transition: "Fade",
 			cut_transition: "",
 			swipe_transition: "Swipe",
 			slide_transition: "Slide",
-			fade_to_color_transition: "Fade to colour",
+			fade_to_color_transition: "Fade to Color",
 			wipe_transition: "Luma wipe",
 			obs_stinger_transition: "",
 		};
@@ -217,8 +219,8 @@ export async function answerLists(
 			// Not connected: the two that are always there.
 		}
 		const items = [
-			{ label: "A fade", value: "fade_transition" },
-			{ label: "A cut (no transition)", value: "none" },
+			{ label: "Fade", value: "fade_transition" },
+			{ label: "Cut", value: "none" },
 		];
 		for (const kind of kinds) {
 			if (kind === "fade_transition" || names[kind] === "") continue;
@@ -233,7 +235,7 @@ export async function answerLists(
 			items =
 				event === "getScenes"
 					? (await obs.scenes()).map((name) => ({ label: name, value: name }))
-					: [{ label: "As set in OBS", value: "" }, ...(await obs.sceneTransitions()).map((name) => ({ label: name, value: name }))];
+					: [{ label: "Leave OBS's as it is", value: "" }, ...(await obs.sceneTransitions()).map((name) => ({ label: name, value: name }))];
 		} catch (error) {
 			streamDeck.logger.warn(`Could not read the scenes from OBS: ${String(error)}`);
 		}
@@ -254,6 +256,14 @@ export async function answerLists(
 		if (!obs.isConnected) captures = [{ label: "OBS is not connected (see below)", value: "" }];
 		else if (captures.length === 0) captures = [{ label: "No Game Capture or Window Capture yet", value: "" }];
 		await streamDeck.ui.sendToPropertyInspector({ event, items: captures });
+		return;
+	}
+	if (event === "getSwitcherSteps") {
+		const { source, filter } = targetOf(settings);
+		const current = await obs.filter(source, filter);
+		const items = switcherSteps(current?.kind);
+		if (!items.length) items.push({ value: "", label: obs.isConnected ? "Choose a source or scene and filter first" : "Connect to OBS to see its controls" });
+		await streamDeck.ui.sendToPropertyInspector({ event, items });
 		return;
 	}
 	if (event !== "getSources" && event !== "getFilters" && event !== "getTargets") return;

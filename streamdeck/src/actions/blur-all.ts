@@ -37,7 +37,8 @@ export class BlurAll extends SingletonAction<KeySettings> {
 	}
 
 	override async onKeyDown(ev: KeyDownEvent<KeySettings>): Promise<void> {
-		const answer = await obs.stageKit("BlurAll", { mode: "toggle" });
+		const { press } = ev.payload.settings;
+		const answer = await obs.stageKit("BlurAll", { mode: press === "on" || press === "off" ? press : "toggle" });
 		if (!answer) await ev.action.showAlert();
 		await this.show(ev.action, ev.payload.settings);
 	}
