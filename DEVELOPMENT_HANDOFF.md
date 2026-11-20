@@ -40,8 +40,8 @@ Deck's matching ratio list belongs to stage 4. Fit behavior and migration belong
   hide keeps the item's own transition. A saved Scene Shadow with only one time uses that for both
   ramp directions. A saved Morph wildcard keeps the literal value it had in English.
 - Targeted render checks cover capture hiding, Standby, dock bounds, tooltips, layouts,
-  Auto Frame and Scene Transitions. The Scene Transitions property rebuild was also exercised
-  under Valgrind. See the release pull request for the final results.
+  Auto Frame and Scene Transitions. All seven targeted groups passed on Linux OpenGL. The Scene
+  Transitions property rebuild completed under Valgrind with zero memory errors.
 
 ## Outlines filled with an Ambient Background (0.1.0-beta226)
 

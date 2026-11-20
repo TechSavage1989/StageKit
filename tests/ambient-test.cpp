@@ -13787,7 +13787,8 @@ static void dock_bounds_test()
 			if (static_cast<size_t>(line.size()) > stagekit::kTipWidth)
 				untipped = name;
 	}
-	CHECK(!untipped, "the dock's target, position, copy and update controls have wrapped tooltips (%s)", untipped ? untipped : "all");
+	CHECK(!untipped, "the dock's target, position, copy and update controls have wrapped tooltips (%s)",
+	      untipped ? untipped : "all");
 	auto *place = dock ? dock->findChild<QWidget *>("pagePlace") : nullptr;
 	auto *bounds = place ? place->findChild<QComboBox *>("boundsType") : nullptr;
 	auto *fit = place ? place->findChild<QCheckBox *>("autoFit") : nullptr;
