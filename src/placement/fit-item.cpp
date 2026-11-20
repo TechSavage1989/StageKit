@@ -88,6 +88,7 @@ void get_defaults(obs_data_t *settings)
 	obs_data_set_default_double(settings, "margin", 80.0);
 	obs_data_set_default_double(settings, "tolerance", 8.0);
 	obs_data_set_default_bool(settings, "skip_fill_on", false);
+	obs_data_set_default_bool(settings, "whole_make_room", false);
 	obs_data_set_default_double(settings, "skip_fill", 95.0);
 	obs_data_set_default_bool(settings, "skip_use_pct", true);
 	obs_data_set_default_bool(settings, "skip_use_px", false);

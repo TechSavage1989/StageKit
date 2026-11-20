@@ -65,6 +65,14 @@ struct FitSettings {
 	double skip_fill = 0.0; // (that share)
 	bool skip_px = false;   // by the empty room it would leave at each edge of its space
 	double px_top = 0.0, px_bottom = 0.0, px_left = 0.0, px_right = 0.0;
+	// "Make room if not filling", for the whole screen or a box (`box` is
+	// then still that one here; a tick's own copy, `Prep::s`, says FreeSpace,
+	// with `in_area` for a box): while the picture fills the screen by the
+	// rules above it is fitted there as ever, over everything; while it does
+	// not, into the free space clear of the other sources (those listed in
+	// `skip`, or all of them with none listed). See `space_among`.
+	bool whole = false;
+	bool in_area = false; // (in a tick's copy only: the space is the box set, not the screen)
 	// Which fits of the scene make room for which (see `Rank`).
 	SpacePriority priority = SpacePriority::Shares;
 	bool by_list = false;     // "Priority by list order": the level is not read
@@ -172,6 +180,10 @@ struct SpaceInputs {
 	double skip_fill = 0.0, px_top = 0.0, px_bottom = 0.0, px_left = 0.0, px_right = 0.0;
 	bool claims_firm = false; // a Scene Fit with All sources
 	bool with_switch = false; // a window switcher's change is under way
+	// "Make room if not filling" (`FitSettings::whole`): `within` is the
+	// whole screen or the box set; `only_listed`: room is made only for the
+	// items listed (`passed`), not for every one.
+	bool whole = false, only_listed = false;
 	std::vector<Box> boxes;
 	std::vector<int64_t> ids;
 	std::vector<bool> said, passed, above;
@@ -207,6 +219,7 @@ struct SpaceOut {
 	Box goal;               // where it takes its picture (w or h under 2: no room at all)
 	Box room;               // the space before it is cut to the picture
 	bool avoiding = false;  // the items never in the way counted after all
+	bool covering = false;  // "Make room if not filling": it fills, and takes the whole screen
 	bool at_home = false;   // its goal is its home
 	bool took_home = false; // its home's space was still being found: `home_space` is it now
 	Box home_space;
@@ -289,6 +302,7 @@ struct Prep {
 	double keep_w = 0.0, keep_h = 0.0;                       // the size kept, when it is not resized
 	double picture = 1.0;                                    // the shape fitted
 	bool free = false;                                       // in the free space round it
+	bool whole = false;                                      // (by "Make room if not filling")
 	// The picture before what shows of it is cut from it ("Use visible
 	// pixels"): where it starts in the source, and its size.
 	double whole_left = 0.0, whole_top = 0.0, whole_w = 0.0, whole_h = 0.0;
@@ -546,7 +560,7 @@ private:
 	std::vector<bool> passed_; // which are items never in the way, counted only when the picture leaves room
 	std::vector<bool> above_;  // which are placed by a fit that takes its space before this one
 	bool avoiding_ = false;    // they count just now
-	std::array<double, 8> used_rule_{-1.0};
+	std::array<double, 14> used_rule_{-1.0};
 	static constexpr double kArriving = 0.25;
 	bool was_showing_ = false;
 	double shown_for_ = 0.0;
@@ -701,13 +715,16 @@ public:
 		std::lock_guard lock(mutex_);
 		if (resizes)
 			*resizes = settings_.resize;
-		return settings_.box == BoxKind::FreeSpace;
+		// (One that makes room when not filling holds a space only while
+		// it does not fill: over the whole screen it is in nobody's way.)
+		return settings_.box == BoxKind::FreeSpace || (settings_.whole && !covering_.load());
 	}
 
 private:
-	bool box_asked_ = false; // its bounding box was asked for, for want of a room it was given
-	bool new_item_ = false;  // the filter was given another item (set under mutex_)
-	bool load_item_ = false; // under mutex_: that item is the one OBS loaded it with
+	std::atomic<bool> covering_{false}; // "Make room if not filling": it fills, and has the whole screen
+	bool box_asked_ = false;            // its bounding box was asked for, for want of a room it was given
+	bool new_item_ = false;             // the filter was given another item (set under mutex_)
+	bool load_item_ = false;            // under mutex_: that item is the one OBS loaded it with
 	double back_for_ = 0.0;
 	Claim last_claim_;
 	double set_x_ = 0.0, set_y_ = 0.0, seen_x_ = 0.0, seen_y_ = 0.0, still_for_ = 0.0;

@@ -492,6 +492,20 @@ nearest.
   20 px above and below overlaps the camera with top and bottom at 30; a narrower one that leaves
   300 px at the sides goes beside it. With both boxes ticked, meeting either is enough; with
   neither, the source is always fitted beside the ignored sources.
+- **Make room if not filling** (for *The whole screen* and *A box I set*; unticked as it comes):
+  with it and *Overlap only when it fills* both ticked, an image that fills the screen is fitted
+  there as ever, over the other sources, and one that does not (a 4:3 standby image on a
+  widescreen canvas) is fitted into the largest space clear of the other sources instead, the
+  margin kept as a gap, so it sits beside a camera in the corner rather than over a sliver of it.
+  When the image fills again (a widescreen game appears) it glides back to the whole screen.
+  *Use fill percentage* and *Use edge gaps* say what counts as filling, measured against the
+  screen (less the margin, for an image of another shape); which of the two places it takes comes
+  from the image's shape alone, so it does not flip by itself. **Make room for** lists the
+  sources room is made for; with none listed, room is made for every other source. Anything the
+  middle of the screen lies inside (a background, a frame) is never in the way. Ticked, the fit
+  also gets the free space's *Move duration*, easing, *Use visible pixels*, *Size tolerance* and
+  *Space priority*. With *Overlap only when it fills* off, the image always takes the whole
+  screen.
 - Add the filter to the **scene**, not to a group. To fit a group, choose the group as the *Item*.
   On a group the filter does nothing and says so.
 - With *Use visible pixels* ticked, the fitted item itself goes by what it shows, like the items
@@ -1663,6 +1677,11 @@ learns where the others are going a frame later, and they could shift a few time
   already *Shared by all sources*, they go by its settings.
 - **Overlap only when it fills**: one switch for every entry; each entry's own rules (*Use fill percentage*,
   *Use edge gaps*) say when. A *Fit to Space Overlap* key on the Stream Deck works on a Scene Fit too.
+  The rules are in each source's settings (under *Settings for*): they show with *Fit area* on *Free space
+  around source*, and with *The whole screen* or *A box I set* once that source's **Make room if not
+  filling** is ticked (see Fit to Space).
+- **Ignored for this source** and **Sync to scenes** are the entry's own lists, as in Fit to Space.
+
 - **Ignored for this source** and **Sync position to scenes** are the entry's own lists, as in Fit to Space.
 
 **Groups of sources.** To give several sources one set of settings, and other sources another, add one Scene

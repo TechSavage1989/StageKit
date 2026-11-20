@@ -112,6 +112,7 @@ const FitKey kFitKeys[] = {
 	{"glide_ms", Kind::Int, false},
 	{"ease_curve", Kind::Int, false},
 	{"ease_mode", Kind::Int, false},
+	{"whole_make_room", Kind::Bool, false},
 	{"skip_use_pct", Kind::Bool, false},
 	{"skip_fill", Kind::Double, false},
 	{"skip_use_px", Kind::Bool, false},
@@ -791,8 +792,8 @@ void SceneFit::tick(float seconds)
 					continue;
 				FitEngine &engine = *entries[i]->engine;
 				Prep &p = preps[i];
-				scan_of(p.how).obstacles(parent_, p.item, p.s.skip, p.s.skip_rule, &engine, p.how,
-							 in_way, &engine.rank(), p.s.resize);
+				scan_of(p.how).obstacles(parent_, p.item, p.s.skip, p.s.skip_rule || p.s.whole, &engine,
+							 p.how, in_way, &engine.rank(), p.s.resize);
 				bool rest = false;
 				engine.observe(in_way, engine.arriving(), pass == 0 ? seconds : 0.0f, rest,
 					       &scan_of(p.how).visible_ids());

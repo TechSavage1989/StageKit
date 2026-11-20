@@ -2338,6 +2338,25 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   the picture's shape, never from where it is now, or the choice would flip once it had moved.
   The owner: a camera overlapping a window capture, but beside it when the window "doesn't fit
   the whole screen".
+- **The whole screen can make room when the image does not fill it** (`whole_make_room`, *Make
+  room if not filling*, off as it comes; shown for Fit area 0 and 1; beta218). The owner, of a
+  4:3 standby image on *The whole screen* over a sliver of the square camera: "id like those
+  settings to exist for whole screen mode too". Ticked, the fit goes through the free space's
+  engine path whatever the switch (`FitSettings::whole`; a tick's copy `Prep::s` says `FreeSpace`,
+  with `in_area` for a box; `settings()` still says kind 0 or 1), and `space_among`'s `in.whole`
+  branch chooses: the picture as kind 0 gives it (`full`: the box, or the box less the margin for
+  another shape) *fills* by `skip_use_pct` / `skip_use_px` measured against `full` (always, with
+  `skip_fill_on` off) and takes `full` (`SpaceOut::covering`, `covering_`); else the largest space
+  round the box's middle clear of the sources listed in `skip` (heading *Make room for* then), or
+  of every source with none listed. From the shape used and the settings alone, never from where
+  anything is, so it cannot flip. Its place (anchor) is always the box's middle, it has no home,
+  and **covering it says no claim** and is no held space (`in_free_space`), as a whole-screen fit
+  never did; beside, it claims like any free-space fit. So both ways are one glide, and the
+  Stream Deck *Fit to Space Overlap* key glides too. A filter saved without the key is untouched
+  (the non-free path). The window: `fit_controls_shown`'s `like_free` (the free space's controls
+  for kind 0/1 once ticked), the list's heading and the rules' tips swapped per kind
+  (`Fit.Room*`). Tested in `[fit whole screen: ...]` (`fit_whole_overlap_test`, alone with
+  `STAGEKIT_TEST_ONLY_FIT_WHOLE_OVERLAP`), Scene Fit entry and Fit to Space. Not seen on Windows.
 - **Fit to Space's overlap rule has two measures, each with a tick box** (`skip_use_pct`, *Use fill
   percentage*, on as it comes, with `skip_fill`; `skip_use_px`, *Use edge distances*, with
   `skip_px_top`, `_bottom`, `_left`, `_right`, 50 px as they come): the second overlaps when the

@@ -23,6 +23,41 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
+## The whole screen makes room when the image does not fill (0.1.0-beta218)
+
+Branch `feat/whole-screen-overlap`, on `main` at beta215. Not pushed. The owner (a 4:3 standby
+image on *The whole screen*, centred, over a sliver of the square camera in the corner): "id like
+those settings to exist for whole screen mode too, that way if a standby image or other odd
+resolution item doesn't fill the screen to a certain amount, it doesn't awkwardly cover a sliver
+of the camera square."
+
+- New per-source setting `whole_make_room` (*Make room if not filling*, off as it comes), shown
+  for *The whole screen* and *A box I set* in Fit to Space and in each Scene Fit entry (and the
+  shared set of *Same for all sources*; it is one of `kFitKeys`). It needs *Overlap only when it
+  fills* (`skip_fill_on`; a Scene Fit's is filter-wide) to do anything: the owner already has that
+  ticked with entries on the whole screen, so the switch alone must not change a saved layout.
+- Ticked, the fit runs the free space's path (glide, claims, visible pixels, tolerance); whether
+  it takes the whole screen or the room beside the other sources is decided in `space_among`
+  (`in.whole`) from the shape and the settings only. See the AGENTS.md entry for the rules.
+- The list (`skip`) is shown as *Make room for* there: the sources room is made for, all of them
+  when it is empty. Chosen over "never in the way": a camera listed from habit (as under the free
+  space, where listed sources are the ones overlapped only while it fills) then works, and so
+  does an empty list.
+- The dock's *Fit to space* on such a source: a resized one is refitted by its own fit
+  (`fit_item_refit`, unchanged, which now glides it to where the rule puts it); one kept at its
+  size is still left to its fit, as for any whole-screen fit. Nothing was changed in the dock.
+- Scene Fit's *Overlap only when it fills* tooltip now says where each source's rules are and
+  for which Fit areas they show.
+- Differences from a plain whole-screen fit while the box is ticked: it is not fitted while its
+  scene is out of view (put right without a glide on coming into view), and a new shape is taken
+  after the usual half second, with a glide.
+- Tests: `STAGEKIT_TEST_ONLY_FIT_WHOLE_OVERLAP` (22 checks). Gates passed: FIT_ENABLE,
+  FIT_KEEP_SIZE, FIT_PRIORITY, FIT_GROUPS, FIT_TOOL, FIT_ALIGN, FIT_VISIBLE, DOCK_BOUNDS, LAYOUT,
+  TOOLTIPS. FIT_VISIBLE passed its 16 checks in every run, but one run of five ended in a
+  segmentation fault at shutdown, after the last scene was destroyed; **cause not looked for**
+  (the machine was shared with another build at the time), so whether it is new is not known.
+  The full suite was not run (the owner asked for efficiency). Not seen on Windows.
+
 ## Review stage 1: words only (0.1.0-beta217)
 
 Stage 1 of the approved whole-plugin review (the proposal and the owner's decisions, 2026-11-19:

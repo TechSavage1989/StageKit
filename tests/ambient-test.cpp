@@ -2512,6 +2512,321 @@ void register_fe_letterbox()
 }
 } // namespace
 
+// ------------------------- fit: the whole screen, making room when not filling
+// The owner, 2026-11-20, of a 4:3 standby image fitted to The whole screen
+// over a sliver of the square camera in the corner: "id like those settings
+// to exist for whole screen mode too". On a 640x360 canvas with a margin of
+// 10: a 100x100 camera in the bottom left corner, an image that is 4:3 or
+// 16:9. Run alone with STAGEKIT_TEST_ONLY_FIT_WHOLE_OVERLAP.
+static void fit_whole_overlap_test()
+{
+	printf("\n[fit whole screen: making room when the image does not fill]\n");
+	constexpr uint32_t W = 640, H = 360;
+	auto colour = [](const char *name, int cw, int ch, long long abgr) {
+		obs_data_t *d = obs_data_create();
+		obs_data_set_int(d, "width", cw);
+		obs_data_set_int(d, "height", ch);
+		obs_data_set_int(d, "color", abgr);
+		obs_source_t *src = obs_source_create("color_source", name, d, nullptr);
+		obs_data_release(d);
+		return src;
+	};
+	struct Drawn {
+		double x = 0, y = 0, w = 0, h = 0;
+	};
+	auto drawn = [](obs_sceneitem_t *it) {
+		Drawn out;
+		obs_source_t *src = obs_sceneitem_get_source(it);
+		const double sw = obs_source_get_width(src), sh = obs_source_get_height(src);
+		vec2 b, p;
+		obs_sceneitem_get_bounds(it, &b);
+		obs_sceneitem_get_pos(it, &p);
+		if (sw < 1.0 || sh < 1.0 || b.x < 1.0f || b.y < 1.0f)
+			return out;
+		const double k = std::min(b.x / sw, b.y / sh);
+		const uint32_t a = obs_sceneitem_get_bounds_alignment(it);
+		const double fx = a & OBS_ALIGN_LEFT ? 0.0 : a & OBS_ALIGN_RIGHT ? 1.0 : 0.5;
+		const double fy = a & OBS_ALIGN_TOP ? 0.0 : a & OBS_ALIGN_BOTTOM ? 1.0 : 0.5;
+		out.w = sw * k;
+		out.h = sh * k;
+		out.x = p.x + (b.x - out.w) * fx;
+		out.y = p.y + (b.y - out.h) * fy;
+		return out;
+	};
+	auto is = [](const Drawn &d, double x, double y, double w, double h) {
+		return std::fabs(d.x - x) <= 0.7 && std::fabs(d.y - y) <= 0.7 && std::fabs(d.w - w) <= 0.7 &&
+		       std::fabs(d.h - h) <= 0.7;
+	};
+	obs_source_t *before = obs_get_output_source(0);
+	// Where the 4:3 image lies: in the whole screen (over 16.7 px of the
+	// camera), and beside the camera (the room right of it, 510 wide).
+	const double whole43[4] = {93.33, 10.0, 453.33, 340.0};
+	const double beside43[4] = {148.33, 10.0, 453.33, 340.0};
+	for (int host = 0; host < 2; host++) {
+		const bool entry = host == 0;
+		const char *what = entry ? "Scene Fit" : "Fit to Space";
+		const std::string pre = entry ? "fit|FW Image|" : "";
+		obs_source_t *bg = colour("FW Background", W, H, 0xFF202020);
+		obs_source_t *image = colour("FW Image", 400, 300, 0xFF00FF00);
+		obs_source_t *camera = colour("FW Camera", 100, 100, 0xFF0000FF);
+		obs_source_t *badge = colour("FW Badge", 60, 60, 0xFFFF0000);
+		obs_scene_t *scene = obs_scene_create("FW Scene");
+		obs_source_t *ss = obs_scene_get_source(scene);
+		obs_scene_add(scene, bg);
+		obs_sceneitem_t *ii = obs_scene_add(scene, image);
+		obs_sceneitem_t *ci = obs_scene_add(scene, camera);
+		obs_sceneitem_t *bi = obs_scene_add(scene, badge);
+		vec2 v;
+		vec2_set(&v, 10.0f, 250.0f);
+		obs_sceneitem_set_pos(ci, &v);
+		vec2_set(&v, 570.0f, 10.0f);
+		obs_sceneitem_set_pos(bi, &v);
+		obs_sceneitem_set_visible(bi, false);
+		obs_set_output_source(0, ss);
+		auto frames = [&](int n) {
+			for (int i = 0; i < n; i++) {
+				render(ss, W, H);
+				sleep_ms(20);
+			}
+		};
+		auto shape = [&](int cw, int ch) {
+			obs_data_t *d = obs_data_create();
+			obs_data_set_int(d, "width", cw);
+			obs_data_set_int(d, "height", ch);
+			obs_source_update(image, d);
+			obs_data_release(d);
+		};
+		// 7. A filter saved without the new setting, the switch on: as before.
+		obs_data_t *fd = obs_data_create();
+		if (entry) {
+			obs_data_array_t *arr = obs_data_array_create();
+			obs_data_t *e = obs_data_create();
+			obs_data_set_string(e, "value", "FW Image");
+			obs_data_array_push_back(arr, e);
+			obs_data_release(e);
+			obs_data_set_array(fd, "entries", arr);
+			obs_data_array_release(arr);
+		} else {
+			obs_data_set_string(fd, "item", "FW Image");
+		}
+		obs_data_set_int(fd, (pre + "box").c_str(), 0);
+		obs_data_set_double(fd, (pre + "margin").c_str(), 10.0);
+		obs_data_set_int(fd, (pre + "glide_ms").c_str(), 200);
+		obs_data_set_bool(fd, "skip_fill_on", true);
+		obs_source_t *fit =
+			obs_source_create(entry ? "stagekit_scene_fit" : "stagekit_fit_item", "FW Fit", fd, nullptr);
+		obs_data_release(fd);
+		obs_source_filter_add(ss, fit);
+		auto set_bool = [&](const std::string &key, bool on) {
+			obs_data_t *d = obs_data_create();
+			obs_data_set_bool(d, key.c_str(), on);
+			obs_source_update(fit, d);
+			obs_data_release(d);
+		};
+		auto set_num = [&](const std::string &key, double value) {
+			obs_data_t *d = obs_data_create();
+			obs_data_set_double(d, key.c_str(), value);
+			obs_source_update(fit, d);
+			obs_data_release(d);
+		};
+		auto set_int = [&](const std::string &key, long long value) {
+			obs_data_t *d = obs_data_create();
+			obs_data_set_int(d, key.c_str(), value);
+			obs_source_update(fit, d);
+			obs_data_release(d);
+		};
+		auto glides = [&] {
+			calldata_t cd;
+			calldata_init(&cd);
+			calldata_set_string(&cd, "filter", "FW Fit");
+			calldata_set_string(&cd, "item", "FW Image");
+			proc_handler_call(obs_get_proc_handler(), "stagekit_test_fit_counts", &cd);
+			const long long n = calldata_int(&cd, "glides");
+			calldata_free(&cd);
+			return n;
+		};
+		frames(60);
+		Drawn d = drawn(ii);
+		CHECK(is(d, whole43[0], whole43[1], whole43[2], whole43[3]),
+		      "%s, saved without the setting: the 4:3 image is in the whole screen as before, over the camera's edge (%.1f x %.1f at %.1f, %.1f)",
+		      what, d.w, d.h, d.x, d.y);
+		// 1. Ticked, fill 95 %: beside the camera, the gap kept, by its alignment.
+		set_bool(pre + "whole_make_room", true);
+		frames(70);
+		d = drawn(ii);
+		CHECK(is(d, beside43[0], beside43[1], beside43[2], beside43[3]) && d.x >= 110.0 + 10.0 - 0.7,
+		      "%s, Make room if not filling: the 4:3 image is beside the camera, in the middle of the room right of it (%.1f x %.1f at %.1f, %.1f; wanted %.1f x %.1f at %.1f, %.1f)",
+		      what, d.w, d.h, d.x, d.y, beside43[2], beside43[3], beside43[0], beside43[1]);
+		set_int(pre + "toward", 3);
+		frames(60);
+		d = drawn(ii);
+		CHECK(is(d, 120.0, 10.0, 453.33, 340.0),
+		      "%s: aligned left, it lies the gap from the camera (%.1f x %.1f at %.1f, %.1f)", what, d.w, d.h,
+		      d.x, d.y);
+		set_int(pre + "toward", 0);
+		frames(60);
+		// 2 and 3. 16:9: the whole screen, over the camera; and back. One
+		// glide each, and nothing moves after.
+		long long g0 = glides();
+		shape(640, 360);
+		frames(90);
+		d = drawn(ii);
+		const long long g1 = glides();
+		CHECK(is(d, 0.0, 0.0, 640.0, 360.0),
+		      "%s: a 16:9 image fills the whole screen, over the camera (%.1f x %.1f at %.1f, %.1f)", what, d.w,
+		      d.h, d.x, d.y);
+		shape(400, 300);
+		frames(90);
+		d = drawn(ii);
+		const long long g2 = glides();
+		CHECK(is(d, beside43[0], beside43[1], beside43[2], beside43[3]),
+		      "%s: 4:3 again, it is back beside the camera (%.1f x %.1f at %.1f, %.1f)", what, d.w, d.h, d.x,
+		      d.y);
+		int moves = 0;
+		Drawn last = d;
+		for (int i = 0; i < 100; i++) {
+			render(ss, W, H);
+			sleep_ms(20);
+			const Drawn now = drawn(ii);
+			if (!is(now, last.x, last.y, last.w, last.h))
+				moves++;
+			last = now;
+		}
+		const long long g3 = glides();
+		CHECK(g1 - g0 == 1 && g2 - g1 == 1 && g3 == g2 && moves == 0,
+		      "%s: one glide to the whole screen, one back, and nothing moves in the 2 s after (%lld, %lld, then %lld glides and %d frames that moved)",
+		      what, g1 - g0, g2 - g1, g3 - g2, moves);
+		// Room is made for the sources listed only; with none, for all.
+		obs_sceneitem_set_visible(bi, true);
+		frames(70);
+		d = drawn(ii);
+		CHECK(is(d, 120.0, 15.0, 440.0, 330.0),
+		      "%s: with nothing listed, room is made for every source, a badge in the top right corner too (%.1f x %.1f at %.1f, %.1f)",
+		      what, d.w, d.h, d.x, d.y);
+		{
+			obs_data_t *u = obs_data_create();
+			obs_data_array_t *arr = obs_data_array_create();
+			obs_data_t *e = obs_data_create();
+			obs_data_set_string(e, "value", "FW Camera");
+			obs_data_array_push_back(arr, e);
+			obs_data_release(e);
+			std::string key = "skip";
+			if (entry) {
+				// (An entry's list is kept under the source's name in hex.)
+				key = "fit_";
+				for (unsigned char c : std::string("FW Image")) {
+					char hex[3];
+					snprintf(hex, sizeof hex, "%02x", c);
+					key += hex;
+				}
+				key += "_skip";
+			}
+			obs_data_set_array(u, key.c_str(), arr);
+			obs_data_array_release(arr);
+			obs_source_update(fit, u);
+			obs_data_release(u);
+		}
+		frames(70);
+		d = drawn(ii);
+		CHECK(is(d, beside43[0], beside43[1], beside43[2], beside43[3]),
+		      "%s: with the camera listed, room is made for the camera alone (%.1f x %.1f at %.1f, %.1f)", what,
+		      d.w, d.h, d.x, d.y);
+		obs_sceneitem_set_visible(bi, false);
+		frames(60);
+		// 5. By the edge gaps: 83 px either side of the 4:3 image.
+		set_bool(pre + "skip_use_pct", false);
+		set_bool(pre + "skip_use_px", true);
+		frames(60);
+		d = drawn(ii);
+		const bool px_beside = is(d, beside43[0], beside43[1], beside43[2], beside43[3]);
+		set_num(pre + "skip_px_left", 100.0);
+		set_num(pre + "skip_px_right", 100.0);
+		frames(70);
+		d = drawn(ii);
+		CHECK(px_beside && is(d, whole43[0], whole43[1], whole43[2], whole43[3]),
+		      "%s, by edge gaps: 83 px either side is beside the camera with gaps up to 50 (%s), the whole screen with gaps up to 100 (%.1f x %.1f at %.1f, %.1f)",
+		      what, px_beside ? "yes" : "no", d.w, d.h, d.x, d.y);
+		set_bool(pre + "skip_use_pct", true);
+		set_bool(pre + "skip_use_px", false);
+		frames(70);
+		// 4. The switch off, or the box unticked: the whole screen, both shapes.
+		set_bool("skip_fill_on", false);
+		frames(70);
+		d = drawn(ii);
+		const bool off43 = is(d, whole43[0], whole43[1], whole43[2], whole43[3]);
+		set_bool("skip_fill_on", true);
+		frames(70);
+		const Drawn on_again = drawn(ii);
+		set_bool(pre + "whole_make_room", false);
+		frames(40);
+		d = drawn(ii);
+		const bool un43 = is(d, whole43[0], whole43[1], whole43[2], whole43[3]);
+		shape(640, 360);
+		frames(40);
+		d = drawn(ii);
+		CHECK(off43 && is(on_again, beside43[0], beside43[1], beside43[2], beside43[3]) && un43 &&
+			      is(d, 0.0, 0.0, 640.0, 360.0),
+		      "%s: with Overlap only when it fills off the 4:3 image has the whole screen (%s), on again it makes room (%.1f at %.1f), and unticked it is the whole screen for both shapes (%s; 16:9 %.1f x %.1f at %.1f, %.1f)",
+		      what, off43 ? "yes" : "no", on_again.w, on_again.x, un43 ? "yes" : "no", d.w, d.h, d.x, d.y);
+		// The window: the controls by Fit area and the tick box.
+		{
+			auto visible = [&](obs_properties_t *props, const std::string &name) {
+				obs_property_t *p = obs_properties_get(props, name.c_str());
+				return p && obs_property_visible(p);
+			};
+			std::string list_name = "skip|alist";
+			if (entry) {
+				list_name = "fit_";
+				for (unsigned char c : std::string("FW Image")) {
+					char hex[3];
+					snprintf(hex, sizeof hex, "%02x", c);
+					list_name += hex;
+				}
+				list_name += "_skip|alist";
+			}
+			auto look = [&](bool &box, bool &rules, bool &list, std::string &heading) {
+				obs_properties_t *props = obs_source_properties(fit);
+				obs_data_t *st = obs_source_get_settings(fit);
+				obs_properties_apply_settings(props, st);
+				obs_data_release(st);
+				box = visible(props, pre + "whole_make_room");
+				rules = visible(props, pre + "skip_use_pct") && visible(props, pre + "skip_fill");
+				list = visible(props, list_name);
+				obs_property_t *l = obs_properties_get(props, list_name.c_str());
+				heading = l && obs_property_description(l) ? obs_property_description(l) : "";
+				obs_properties_destroy(props);
+			};
+			bool box0 = false, rules0 = true, list0 = true, box1 = false, rules1 = false, list1 = false;
+			bool box2 = true, rules2 = false, list2 = false;
+			std::string h0, h1, h2;
+			look(box0, rules0, list0, h0);
+			set_bool(pre + "whole_make_room", true);
+			frames(5);
+			look(box1, rules1, list1, h1);
+			set_int(pre + "box", 2);
+			frames(5);
+			look(box2, rules2, list2, h2);
+			CHECK(box0 && !rules0 && !list0 && box1 && rules1 && list1 && h1 == "Make room for" && !box2 &&
+				      rules2 && list2 && h2 != "Make room for",
+			      "%s's window: the whole screen shows the tick box alone (%d %d %d), ticked the rules and 'Make room for' (%d %d %d '%s'), the free space no tick box and its own list (%d %d %d '%s')",
+			      what, box0, rules0, list0, box1, rules1, list1, h1.c_str(), box2, rules2, list2,
+			      h2.c_str());
+		}
+		obs_source_filter_remove(ss, fit);
+		obs_source_release(fit);
+		obs_set_output_source(0, before);
+		obs_source_remove(ss);
+		obs_scene_release(scene);
+		for (obs_source_t *src : {bg, image, camera, badge}) {
+			obs_source_remove(src);
+			obs_source_release(src);
+		}
+		frames(3);
+	}
+	if (before)
+		obs_source_release(before);
+}
+
 // --------------------------------- fit: Align in the space decides, for any layout
 // Rule B (the owner, 2026-11-19: "b is the correct logic. these features need
 // to work with any layout format in the future, and not be specific to
@@ -18786,6 +19101,13 @@ int main(int argc, char **argv)
 		       g_failures == 1 ? "" : "s");
 		return g_failures ? 1 : 0;
 	}
+	if (getenv("STAGEKIT_TEST_ONLY_FIT_WHOLE_OVERLAP")) { // to try that section alone
+		fit_whole_overlap_test();
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
 	if (getenv("STAGEKIT_TEST_ONLY_FIT_ALIGN")) { // to try that section alone
 		fit_align_test();
 		obs_shutdown();
@@ -33831,6 +34153,8 @@ int main(int argc, char **argv)
 	fit_enable_test();
 	// Align in the space decides, and its grid (STAGEKIT_TEST_ONLY_FIT_ALIGN).
 	fit_align_test();
+	// The whole screen, making room when not filling (STAGEKIT_TEST_ONLY_FIT_WHOLE_OVERLAP).
+	fit_whole_overlap_test();
 	// ==== end scene-filters:fit ====
 	// ==== scene-filters:all-sources ====
 	// ---------------------------------------- the scene filters' All sources
