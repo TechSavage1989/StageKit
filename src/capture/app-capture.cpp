@@ -54,6 +54,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../api/vendor-api.hpp"
 #include "../transition/morph-paint.hpp"
 #include "../common/tooltip.hpp"
+#include "../common/hotkey-rename.hpp"
 
 #include <obs-module.h>
 #include <graphics/vec4.h>
@@ -973,6 +974,19 @@ private:
 	obs_hotkey_id hotkeys_[5] = {OBS_INVALID_HOTKEY_ID, OBS_INVALID_HOTKEY_ID, OBS_INVALID_HOTKEY_ID,
 				     OBS_INVALID_HOTKEY_ID, OBS_INVALID_HOTKEY_ID};
 	std::pair<AppCapture *, const char *> pressed_[5];
+	HotkeyRename renamed_{source_,
+			      [this] {
+				      std::vector<obs_hotkey_id *> ids;
+				      for (obs_hotkey_id &id : hotkeys_)
+					      ids.push_back(&id);
+				      return ids;
+			      },
+			      [this] {
+				      obs_source_t *parent = obs_filter_get_parent(source_);
+				      detach();
+				      if (parent)
+					      attach(parent);
+			      }};
 	bool cmd_clear_ = false;               // the windows picked by hand are to be taken off the list
 	bool standby_hidden_ = false;          // hidden behind its Standby Picture by the hide command (tick only)
 	std::atomic<bool> hid_pending_{false}; // items hidden by the hide command, to show again
@@ -2293,21 +2307,8 @@ obs_properties_t *get_properties(void *data)
 		for (const std::string &name : open_program_names())
 			if (std::find(names.begin(), names.end(), name) == names.end())
 				names.push_back(name);
-		// And the open windows by title, for telling apart two programs
-		// with the same file name.
 		for (const OpenWindow &w : open_windows())
-			if (!w.title.empty() && std::find(names.begin(), names.end(), w.title) == names.end())
-				names.push_back(w.title);
-		// And the first part of a title that has several ("GBA1" of
-		// "GBA1 | Volume 100%"): the part that stays when the rest changes.
-		for (const OpenWindow &w : open_windows())
-			for (const char *mark : {" | ", " - "}) {
-				const size_t at = w.title.find(mark);
-				const std::string first = at == std::string::npos ? std::string()
-										  : w.title.substr(0, at);
-				if (first.size() >= 3 && std::find(names.begin(), names.end(), first) == names.end())
-					names.push_back(first);
-			}
+			add_window_title_choices(names, w.title);
 	};
 	pick_list_add(windows, self ? self->source() : nullptr, apps);
 	PickList ignore_list;

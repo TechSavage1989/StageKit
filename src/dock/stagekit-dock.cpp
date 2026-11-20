@@ -28,6 +28,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../update/updater.hpp"
 
 #include "../common/easing.hpp"
+#include "../common/tooltip.hpp"
 
 #include "../common/scene-util.hpp"
 #include "../common/start-image.hpp"
@@ -116,6 +117,13 @@ const char *const kSlideText[] = {"Slide.UpLeft", "Slide.Up",       "Slide.UpRig
 QString tr_text(const char *key)
 {
 	return QString::fromUtf8(obs_module_text(key));
+}
+
+// A dock control's tooltip, broken into short lines as the filter windows'
+// are (`wrap_tip`; review C74). Every tooltip in the dock goes through it.
+void dock_tip(QWidget *widget, const QString &text)
+{
+	widget->setToolTip(QString::fromStdString(wrap_tip(text.toStdString())));
 }
 
 // The background picture, small. The wheel zooms it and dragging pans it;
@@ -312,6 +320,15 @@ public:
 		};
 		auto *choose = new QPushButton(tr_text("Dock.StartChoose"), start_box);
 		choose->setObjectName("chooseStartImage");
+		dock_tip(choose, tr_text("Dock.StartChoose.Tip"));
+		// The standby image can be cleared once chosen (review C71).
+		auto *clear = new QPushButton(tr_text("Dock.StartClear"), start_box);
+		clear->setObjectName("clearStartImage");
+		dock_tip(clear, tr_text("Dock.StartClear.Tip"));
+		QObject::connect(clear, &QPushButton::clicked, this, [this] {
+			choose_start_image("");
+			refresh();
+		});
 		QObject::connect(choose, &QPushButton::clicked, this, [this] {
 			const QString current = QString::fromUtf8(start_image_path().c_str());
 			const QString file = QFileDialog::getOpenFileName(
@@ -335,6 +352,7 @@ public:
 		ambient_label_->setAlignment(Qt::AlignCenter);
 		auto *other = new QPushButton(tr_text("Dock.BackgroundOther"), ambient_box);
 		other->setObjectName("backgroundOther");
+		dock_tip(other, tr_text("Dock.BackgroundOther.Tip"));
 		QObject::connect(other, &QPushButton::clicked, this, [this] {
 			const QString file = QFileDialog::getOpenFileName(
 				this, tr_text("Dock.BackgroundOther"),
@@ -349,6 +367,7 @@ public:
 		});
 		background_same_ = new QPushButton(tr_text("Dock.BackgroundSame"), ambient_box);
 		background_same_->setObjectName("backgroundSame");
+		dock_tip(background_same_, tr_text("Dock.BackgroundSame.Tip"));
 		QObject::connect(background_same_, &QPushButton::clicked, this, [this] {
 			AmbientView view = ambient_view();
 			view.image.clear();
@@ -357,12 +376,16 @@ public:
 		});
 		auto *background_settings = new QPushButton(tr_text("Dock.BackgroundSettings"), ambient_box);
 		background_settings->setObjectName("backgroundSettings");
-		background_settings->setToolTip(tr_text("Dock.BackgroundSettings.Tip"));
+		dock_tip(background_settings, tr_text("Dock.BackgroundSettings.Tip"));
 		QObject::connect(background_settings, &QPushButton::clicked, this,
 				 [this, background_settings] { open_background_settings(background_settings); });
 		start_layout->addWidget(start_thumb_);
 		start_layout->addWidget(start_label_);
-		start_layout->addWidget(choose);
+		auto *start_buttons = new QHBoxLayout();
+		start_buttons->setSpacing(4);
+		start_buttons->addWidget(choose, 1);
+		start_buttons->addWidget(clear);
+		start_layout->addLayout(start_buttons);
 		layout->addWidget(start_box);
 		ambient_layout->addWidget(ambient_label_);
 		ambient_layout->addWidget(other);
@@ -398,10 +421,10 @@ public:
 			return name;
 		};
 		start_label_->setText(shown.isEmpty() ? tr_text("Dock.StartNone") : short_name(shown));
-		start_label_->setToolTip(shown);
+		dock_tip(start_label_, shown);
 		ambient_label_->setText(own ? tr_text("Dock.BackgroundIs").arg(short_name(background))
 					    : tr_text("Dock.AmbientSame"));
-		ambient_label_->setToolTip(own ? background : QString());
+		dock_tip(ambient_label_, own ? background : QString());
 		background_same_->setVisible(own);
 		// A picture that could not be read yet (a drive still waking up) is
 		// tried again a little later.
@@ -418,7 +441,7 @@ public:
 			thumb_full_ = load_picture(shown);
 			retry_in_ = thumb_full_.isNull() && !shown.isEmpty() && ++tries_ < 6 ? 5 : 0;
 			play_picture(shown);
-			start_thumb_->setToolTip(tr_text("Dock.ThumbHint") + QStringLiteral("\n") + shown);
+			dock_tip(start_thumb_, tr_text("Dock.ThumbHint") + QStringLiteral("\n") + shown);
 			show_thumb();
 		}
 	}
@@ -612,12 +635,15 @@ public:
 		// that live in a nested scene are reachable.
 		scene_ = new QComboBox(this);
 		scene_->setObjectName("scene");
+		dock_tip(scene_, tr_text("Dock.TargetScene.Tip"));
 		QObject::connect(scene_, &QComboBox::currentIndexChanged, this, [this](int) { refresh(); });
 		form->addRow(tr_text("Dock.SceneRow"), scene_);
 		item_ = new QComboBox(this);
 		item_->setObjectName("item");
+		dock_tip(item_, tr_text("Dock.TargetSource.Tip"));
 		linked_ = new QComboBox(this);
 		linked_->setObjectName("linked");
+		dock_tip(linked_, tr_text("Place.Linked.Tip"));
 		form->addRow(tr_text("Dock.Item"), item_);
 		layout->addLayout(form);
 
@@ -674,7 +700,7 @@ public:
 		for (int i = 0; i < 9; i++) {
 			auto *button = new QPushButton(QString::fromUtf8(kArrows[i]), move_box);
 			button->setObjectName(QString("grid%1").arg(i));
-			button->setToolTip(tr_text(kDestinationText[i]));
+			dock_tip(button, tr_text(kDestinationText[i]));
 			button->setFixedSize(40, 40);
 			QFont arrow = button->font();
 			arrow.setPointSizeF(arrow.pointSizeF() * 1.5);
@@ -693,11 +719,13 @@ public:
 		auto *options = new QFormLayout();
 		margin_ = new QSpinBox(move_box);
 		margin_->setObjectName("margin");
+		dock_tip(margin_, tr_text("Place.Margin.Tip"));
 		margin_->setRange(0, 400);
 		margin_->setValue(30);
 		margin_->setSuffix(" px");
 		duration_ = new QSpinBox(move_box);
 		duration_->setObjectName("duration");
+		dock_tip(duration_, tr_text("Dock.MoveDuration.Tip"));
 		duration_->setRange(0, 5000);
 		duration_->setSingleStep(50);
 		duration_->setValue(500);
@@ -708,16 +736,14 @@ public:
 		// How the move glides: the same curves the filters offer.
 		curve_ = new QComboBox(move_box);
 		curve_->setObjectName("sendCurve");
-		for (const char *name :
-		     {"Easing.Linear", "Easing.Sine", "Easing.Quad", "Easing.Cubic", "Easing.Quart", "Easing.Quint",
-		      "Easing.Expo", "Easing.Circ", "Easing.Back", "Easing.Elastic", "Easing.Bounce"})
-			curve_->addItem(tr_text(name));
-		curve_->setToolTip(tr_text("Dock.Motion.Tip"));
+		for (const EaseChoice &c : kEaseCurves)
+			curve_->addItem(tr_text(c.text));
+		dock_tip(curve_, tr_text("Easing.Curve.Tip") + "\n" + tr_text("Dock.Motion.Tip"));
 		ease_mode_ = new QComboBox(move_box);
 		ease_mode_->setObjectName("sendMode");
-		for (const char *name : {"Easing.InOut", "Easing.In", "Easing.Out"})
-			ease_mode_->addItem(tr_text(name));
-		ease_mode_->setToolTip(tr_text("Dock.Motion.Tip"));
+		for (const EaseChoice &m : kEaseModes)
+			ease_mode_->addItem(tr_text(m.text));
+		dock_tip(ease_mode_, tr_text("Easing.Mode.Tip") + "\n" + tr_text("Dock.Motion.Tip"));
 		// Curve and direction side by side: one row, not two.
 		auto *motion = new QHBoxLayout();
 		motion->setSpacing(4);
@@ -727,17 +753,17 @@ public:
 		move_layout->addLayout(options);
 		slide_ = new QCheckBox(tr_text("Dock.Slide"), move_box);
 		slide_->setObjectName("sendSlide");
-		slide_->setToolTip(tr_text("Dock.Slide.Tip"));
+		dock_tip(slide_, tr_text("Dock.Slide.Tip"));
 		beside_arrows->addWidget(slide_);
 		// The arrows say what they will do.
 		QObject::connect(slide_, &QCheckBox::toggled, this, [this, move_box](bool sliding) {
 			for (int i = 0; i < 9; i++)
 				if (auto *button = move_box->findChild<QPushButton *>(QString("grid%1").arg(i)))
-					button->setToolTip(tr_text(sliding ? kSlideTips[i] : kDestinationText[i]));
+					dock_tip(button, tr_text(sliding ? kSlideTips[i] : kDestinationText[i]));
 		});
 		every_scene_ = new QCheckBox(tr_text("Dock.SendEvery"), move_box);
 		every_scene_->setObjectName("sendEveryScene");
-		every_scene_->setToolTip(tr_text("Dock.SendEvery.Tip"));
+		dock_tip(every_scene_, tr_text("Dock.SendEvery.Tip"));
 		every_scene_->setChecked(true);
 		beside_arrows->addWidget(every_scene_);
 		beside_arrows->addStretch(1);
@@ -746,10 +772,10 @@ public:
 		// Arrange tab, here beside the arrows where they act.
 		place_visible_ = new QCheckBox(tr_text("Arrange.Visible"), move_box);
 		place_visible_->setObjectName("placeVisible");
-		place_visible_->setToolTip(tr_text("Arrange.Visible.Tip"));
+		dock_tip(place_visible_, tr_text("Arrange.Visible.Tip"));
 		place_no_shadow_ = new QCheckBox(tr_text("Arrange.NoShadow").replace("&", "&&"), move_box);
 		place_no_shadow_->setObjectName("placeNoShadow");
-		place_no_shadow_->setToolTip(tr_text("Arrange.NoShadow.Tip"));
+		dock_tip(place_no_shadow_, tr_text("Arrange.NoShadow.Tip"));
 		beside_arrows->insertWidget(2, place_visible_);
 		beside_arrows->insertWidget(3, place_no_shadow_);
 		// Two tools for the item itself, beside the arrows that move it:
@@ -767,10 +793,10 @@ public:
 			auto *bounds_row = new QHBoxLayout();
 			bounds_row->setSpacing(6);
 			auto *bounds_label = new QLabel(tr_text("Dock.Bounds"), this);
-			bounds_label->setToolTip(tr_text("Dock.Bounds.Tip"));
+			dock_tip(bounds_label, tr_text("Dock.Bounds.Tip"));
 			bounds_ = new QComboBox(this);
 			bounds_->setObjectName("boundsType");
-			bounds_->setToolTip(tr_text("Dock.Bounds.Tip"));
+			dock_tip(bounds_, tr_text("Dock.Bounds.Tip"));
 			const std::pair<const char *, obs_bounds_type> kinds[] = {
 				{"Dock.Bounds.None", OBS_BOUNDS_NONE},
 				{"Dock.Bounds.Stretch", OBS_BOUNDS_STRETCH},
@@ -793,10 +819,10 @@ public:
 			fit_row->setSpacing(10);
 			auto_fit_ = new QCheckBox(tr_text("Dock.AutoFit"), this);
 			auto_fit_->setObjectName("autoFit");
-			auto_fit_->setToolTip(tr_text("Dock.AutoFit.Tip"));
+			dock_tip(auto_fit_, tr_text("Dock.AutoFit.Tip"));
 			auto_fit_sources_ = new QCheckBox(tr_text("Dock.AutoFitSources"), this);
 			auto_fit_sources_->setObjectName("autoFitSources");
-			auto_fit_sources_->setToolTip(tr_text("Dock.AutoFitSources.Tip"));
+			dock_tip(auto_fit_sources_, tr_text("Dock.AutoFitSources.Tip"));
 			QObject::connect(auto_fit_, &QCheckBox::clicked, this,
 					 [this](bool on) { switch_auto_fit(on); });
 			fit_row->addWidget(auto_fit_);
@@ -809,9 +835,11 @@ public:
 		auto *keys_layout = new QVBoxLayout(keys_box);
 		auto *make_keys = new QPushButton(tr_text("Dock.MakeKeys"), keys_box);
 		make_keys->setObjectName("makeKeys");
+		dock_tip(make_keys, tr_text("Dock.MakeKeys.Tip"));
 		QObject::connect(make_keys, &QPushButton::clicked, this, [this] { make_all_keys(); });
 		auto *save_spot = new QPushButton(tr_text("Dock.SaveSpot"), keys_box);
 		save_spot->setObjectName("saveSpot");
+		dock_tip(save_spot, tr_text("Dock.SaveSpot.Tip"));
 		QObject::connect(save_spot, &QPushButton::clicked, this, [this] {
 			bool ok = false;
 			const QString name = QInputDialog::getText(this, tr_text("Dock.SaveSpot"),
@@ -821,7 +849,7 @@ public:
 				save_spot_as(name.trimmed());
 		});
 		// Explanations live in tooltips: the dock itself stays short.
-		keys_box->setToolTip(tr_text("Dock.KeysHint"));
+		dock_tip(keys_box, tr_text("Dock.KeysHint"));
 		keys_layout->addWidget(make_keys);
 		keys_layout->addWidget(save_spot);
 		place_page->addWidget(keys_box);
@@ -846,7 +874,7 @@ public:
 			// Qt reads a single "&" as a keyboard-shortcut marker.
 			auto *button = new QPushButton(tr_text(effect.text).replace("&", "&&"), add_box);
 			button->setObjectName(effect.object_name);
-			button->setToolTip(tr_text((std::string(effect.text) + ".Tip").c_str()));
+			dock_tip(button, tr_text((std::string(effect.text) + ".Tip").c_str()));
 			const std::string id = effect.filter_id;
 			const bool on_scene = effect.on_scene;
 			QObject::connect(button, &QPushButton::clicked, this,
@@ -873,7 +901,7 @@ public:
 		arrange_list_->setFocusPolicy(Qt::NoFocus);
 		arrange_list_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 		arrange_list_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
-		arrange_list_->setToolTip(tr_text("Arrange.Selected.Tip"));
+		dock_tip(arrange_list_, tr_text("Arrange.Selected.Tip"));
 		arrange_layout->addWidget(new QLabel(tr_text("Arrange.Selected"), arrange_box));
 		arrange_layout->addWidget(arrange_list_);
 		auto *against_row = new QFormLayout();
@@ -883,7 +911,7 @@ public:
 		against_->addItem(tr_text("Arrange.Against.Selection"), (int)Against::Selection);
 		against_->addItem(tr_text("Arrange.Against.First"), (int)Against::First);
 		against_->addItem(tr_text("Arrange.Against.Last"), (int)Against::Last);
-		against_->setToolTip(tr_text("Arrange.Against.Tip"));
+		dock_tip(against_, tr_text("Arrange.Against.Tip"));
 		against_row->addRow(tr_text("Arrange.Against"), against_);
 		arrange_layout->addLayout(against_row);
 		auto *arrange_grid = new QGridLayout();
@@ -904,16 +932,17 @@ public:
 			if (drawing_only) {
 				icon_only(button);
 				button->setAccessibleName(tr_text(info.text));
-				button->setToolTip(tr_text(info.text) + "\n" + tip);
+				dock_tip(button, tr_text(info.text) + "\n" + tip);
 			} else {
-				button->setToolTip(tip);
+				dock_tip(button, tip);
 			}
 			QObject::connect(button, &QPushButton::clicked, this, [this, action] {
 				obs_source_t *scene = arrange_scene();
 				const ArrangeOutcome out = run_arrange(action, scene, arrange_items(scene));
 				obs_source_release(scene);
 				const bool copied_nothing = out.had > 0 && out.changed == 0;
-				const bool to_sources = !arrange_options().copy_sources.empty();
+				const bool to_sources = arrange_options().copy_to_chosen &&
+							!arrange_options().copy_sources.empty();
 				if (action == ArrangeAction::SameChosen && out.had > 0 &&
 				    arrange_options().copy_scenes.empty())
 					say(tr_text("Arrange.ChooseScenes"));
@@ -979,7 +1008,7 @@ public:
 				square->setObjectName(QString("fitAlign%1").arg(cell));
 				square->setCheckable(true);
 				square->setFixedSize(12, 12);
-				square->setToolTip(tr_text("Dock.FitAlign.Tip").arg(tr_text(kPlaces[cell])));
+				dock_tip(square, tr_text("Dock.FitAlign.Tip").arg(tr_text(kPlaces[cell])));
 				square->setAccessibleName(tr_text(kPlaces[cell]));
 				fit_align_group_->addButton(square, fit::kTowardGrid[cell]);
 				align_grid->addWidget(square, cell / 3, cell % 3);
@@ -1004,14 +1033,14 @@ public:
 		// scenes and Chosen sources. Choose to add, one row each with its own
 		// remove button, as every list in StageKit.
 		auto *copy_label = new QLabel(tr_text("Arrange.CopyScenes"), copy_box);
-		copy_label->setToolTip(tr_text("Arrange.CopyScenes.Tip"));
+		dock_tip(copy_label, tr_text("Arrange.CopyScenes.Tip"));
 		copy_layout->addWidget(copy_label);
 		copy_rows_ = new QVBoxLayout();
 		copy_rows_->setSpacing(2);
 		copy_layout->addLayout(copy_rows_);
 		copy_add_ = new QComboBox(copy_box);
 		copy_add_->setObjectName("copyScenesAdd");
-		copy_add_->setToolTip(tr_text("Arrange.CopyScenes.Tip"));
+		dock_tip(copy_add_, tr_text("Arrange.CopyScenes.Tip"));
 		QObject::connect(copy_add_, QOverload<int>::of(&QComboBox::activated), this, [this](int index) {
 			const QString name = copy_add_->itemData(index).toString();
 			if (name.isEmpty())
@@ -1025,14 +1054,14 @@ public:
 		// The sources that take the transform: the same kind of list. Left
 		// empty, it is the selected item's own source.
 		auto *sources_label = new QLabel(tr_text("Arrange.CopySources"), copy_box);
-		sources_label->setToolTip(tr_text("Arrange.CopySources.Tip"));
+		dock_tip(sources_label, tr_text("Arrange.CopySources.Tip"));
 		copy_layout->addWidget(sources_label);
 		source_rows_ = new QVBoxLayout();
 		source_rows_->setSpacing(2);
 		copy_layout->addLayout(source_rows_);
 		source_add_ = new QComboBox(copy_box);
 		source_add_->setObjectName("copySourcesAdd");
-		source_add_->setToolTip(tr_text("Arrange.CopySources.Tip"));
+		dock_tip(source_add_, tr_text("Arrange.CopySources.Tip"));
 		QObject::connect(source_add_, QOverload<int>::of(&QComboBox::activated), this, [this](int index) {
 			const QString name = source_add_->itemData(index).toString();
 			if (name.isEmpty())
@@ -1050,11 +1079,26 @@ public:
 		transform_box->setObjectName("copyTransformBox");
 		auto *transform_layout = new QVBoxLayout(transform_box);
 		transform_layout->setSpacing(6);
+		// Where the two tools copy to: the same source in the other scenes,
+		// or the sources of Chosen sources (decision D17). Adding a source
+		// to the list, to lock it say, no longer changes what they do.
+		auto *copy_to_row = new QHBoxLayout();
+		copy_to_row->setSpacing(6);
+		auto *copy_to_label = new QLabel(tr_text("Arrange.CopyTo"), transform_box);
+		copy_to_ = new QComboBox(transform_box);
+		copy_to_->setObjectName("copyTo");
+		copy_to_->addItem(tr_text("Arrange.CopyTo.Same"), false);
+		copy_to_->addItem(tr_text("Arrange.CopyTo.Chosen"), true);
+		dock_tip(copy_to_, tr_text("Arrange.CopyTo.Tip"));
+		dock_tip(copy_to_label, tr_text("Arrange.CopyTo.Tip"));
+		copy_to_row->addWidget(copy_to_label);
+		copy_to_row->addWidget(copy_to_, 1);
+		transform_layout->addLayout(copy_to_row);
 		transform_layout->addWidget(arrange_button(ArrangeAction::SameEverywhere, transform_box));
 		transform_layout->addWidget(arrange_button(ArrangeAction::SameChosen, transform_box));
 		copy_locked_ = new QCheckBox(tr_text("Arrange.CopyLocked"), transform_box);
 		copy_locked_->setObjectName("copyLocked");
-		copy_locked_->setToolTip(tr_text("Arrange.CopyLocked.Tip"));
+		dock_tip(copy_locked_, tr_text("Arrange.CopyLocked.Tip"));
 		transform_layout->addWidget(copy_locked_);
 		copy_page->addWidget(transform_box);
 		// Locking and unlocking across scenes: which items, in which
@@ -1066,12 +1110,12 @@ public:
 		lock_which_->setObjectName("lockWhich");
 		for (const char *name : {"Dock.Lock.Selected", "Dock.Lock.Listed", "Dock.Lock.Every"})
 			lock_which_->addItem(tr_text(name));
-		lock_which_->setToolTip(tr_text("Dock.Lock.Which.Tip"));
+		dock_tip(lock_which_, tr_text("Dock.Lock.Which.Tip"));
 		lock_where_ = new QComboBox(lock_box);
 		lock_where_->setObjectName("lockWhere");
 		for (const char *name : {"Dock.Lock.AllScenes", "Dock.Lock.ListedScenes", "Dock.Lock.ThisScene"})
 			lock_where_->addItem(tr_text(name));
-		lock_where_->setToolTip(tr_text("Dock.Lock.Where.Tip"));
+		dock_tip(lock_where_, tr_text("Dock.Lock.Where.Tip"));
 		lock_form->addRow(tr_text("Dock.Lock.Which"), lock_which_);
 		lock_form->addRow(tr_text("Dock.Lock.Where"), lock_where_);
 		auto *lock_buttons = new QHBoxLayout();
@@ -1079,6 +1123,7 @@ public:
 		for (const bool lock : {true, false}) {
 			auto *button = new QPushButton(tr_text(lock ? "Dock.Lock.Lock" : "Dock.Lock.Unlock"), lock_box);
 			button->setObjectName(lock ? "lockItems" : "unlockItems");
+			dock_tip(button, tr_text(lock ? "Dock.Lock.Do.Tip" : "Dock.Unlock.Do.Tip"));
 			QObject::connect(button, &QPushButton::clicked, this, [this, lock] { lock_items(lock); });
 			lock_buttons->addWidget(button, 1);
 		}
@@ -1090,18 +1135,19 @@ public:
 		auto *filter_form = new QFormLayout(filter_box);
 		filter_from_ = new QComboBox(filter_box);
 		filter_from_->setObjectName("filterFrom");
-		filter_from_->setToolTip(tr_text("Dock.Filter.From.Tip"));
+		dock_tip(filter_from_, tr_text("Dock.Filter.From.Tip"));
 		filter_to_ = new QComboBox(filter_box);
 		filter_to_->setObjectName("filterTo");
 		for (const char *name :
 		     {"Dock.Filter.Every", "Dock.Filter.Listed", "Dock.Filter.ListedScenes", "Dock.Filter.ThisScene"})
 			filter_to_->addItem(tr_text(name));
-		filter_to_->setToolTip(tr_text("Dock.Filter.To.Tip"));
+		dock_tip(filter_to_, tr_text("Dock.Filter.To.Tip"));
 		filter_add_ = new QCheckBox(tr_text("Dock.Filter.Add"), filter_box);
 		filter_add_->setObjectName("filterAddMissing");
-		filter_add_->setToolTip(tr_text("Dock.Filter.Add.Tip"));
+		dock_tip(filter_add_, tr_text("Dock.Filter.Add.Tip"));
 		auto *filter_go = new QPushButton(tr_text("Dock.Filter.Go"), filter_box);
 		filter_go->setObjectName("filterCopy");
+		dock_tip(filter_go, tr_text("Dock.Filter.Go.Tip"));
 		QObject::connect(filter_go, &QPushButton::clicked, this, [this] { copy_filter(); });
 		filter_form->addRow(tr_text("Dock.Filter.From"), filter_from_);
 		filter_form->addRow(tr_text("Dock.Filter.To"), filter_to_);
@@ -1115,19 +1161,19 @@ public:
 		copy_page->addStretch(1);
 		visible_ = new QCheckBox(tr_text("Arrange.Visible"), arrange_box);
 		visible_->setObjectName("arrangeVisible");
-		visible_->setToolTip(tr_text("Arrange.Visible.Tip"));
+		dock_tip(visible_, tr_text("Arrange.Visible.Tip"));
 		no_shadow_ = new QCheckBox(tr_text("Arrange.NoShadow").replace("&", "&&"), arrange_box);
 		no_shadow_->setObjectName("arrangeNoShadow");
-		no_shadow_->setToolTip(tr_text("Arrange.NoShadow.Tip"));
+		dock_tip(no_shadow_, tr_text("Arrange.NoShadow.Tip"));
 		keep_shape_ = new QCheckBox(tr_text("Arrange.KeepShape"), arrange_box);
 		keep_shape_->setObjectName("arrangeKeepShape");
-		keep_shape_->setToolTip(tr_text("Arrange.KeepShape.Tip"));
+		dock_tip(keep_shape_, tr_text("Arrange.KeepShape.Tip"));
 		live_snap_ = new QCheckBox(tr_text("Arrange.LiveSnap"), arrange_box);
 		live_snap_->setObjectName("arrangeLiveSnap");
-		live_snap_->setToolTip(tr_text("Arrange.LiveSnap.Tip"));
+		dock_tip(live_snap_, tr_text("Arrange.LiveSnap.Tip"));
 		guides_ = new QCheckBox(tr_text("Arrange.Guides"), arrange_box);
 		guides_->setObjectName("arrangeGuides");
-		guides_->setToolTip(tr_text("Arrange.Guides.Tip"));
+		dock_tip(guides_, tr_text("Arrange.Guides.Tip"));
 		// Says at once whether guides can show: a frame flashes round the
 		// canvas in the preview, or the preview was not found.
 		QObject::connect(guides_, &QCheckBox::toggled, this, [this](bool on) {
@@ -1146,17 +1192,18 @@ public:
 		auto *limit_row = new QFormLayout();
 		snap_within_ = new QSpinBox(arrange_box);
 		snap_within_->setObjectName("snapWithin");
+		dock_tip(snap_within_, tr_text("Dock.SnapWithin.Tip"));
 		snap_within_->setRange(1, 200);
 		snap_within_->setSuffix(" px");
 		within_row->addRow(tr_text("Arrange.Within"), snap_within_);
 		limit_resize_ = new QCheckBox(tr_text("Arrange.LimitResize"), arrange_box);
 		limit_resize_->setObjectName("arrangeLimitResize");
-		limit_resize_->setToolTip(tr_text("Arrange.LimitResize.Tip"));
+		dock_tip(limit_resize_, tr_text("Arrange.LimitResize.Tip"));
 		limit_px_ = new QSpinBox(arrange_box);
 		limit_px_->setObjectName("limitPx");
 		limit_px_->setRange(0, 1000);
 		limit_px_->setSuffix(" px");
-		limit_px_->setToolTip(tr_text("Arrange.LimitResize.Tip"));
+		dock_tip(limit_px_, tr_text("Arrange.LimitResize.Tip"));
 		limit_row->addRow(tr_text("Arrange.LimitPx"), limit_px_);
 		// (The gap is only read while the limit is on.)
 		limit_px_->setEnabled(false);
@@ -1170,7 +1217,7 @@ public:
 		measure_layout->addWidget(keep_shape_);
 		arrange_every_ = new QCheckBox(tr_text("Dock.ArrangeEvery"), arrange_box);
 		arrange_every_->setObjectName("arrangeEveryScene");
-		arrange_every_->setToolTip(tr_text("Arrange.Every.Tip"));
+		dock_tip(arrange_every_, tr_text("Arrange.Every.Tip"));
 		measure_layout->addWidget(arrange_every_);
 		// One option, two tick boxes: each follows the other.
 		for (auto pair :
@@ -1198,6 +1245,9 @@ public:
 		QObject::connect(snap_within_, &QSpinBox::valueChanged, this, [this](int) { store_arrange_options(); });
 		QObject::connect(limit_px_, &QSpinBox::valueChanged, this, [this](int) { store_arrange_options(); });
 		QObject::connect(margin_, &QSpinBox::valueChanged, this, [this](int) { store_arrange_options(); });
+		QObject::connect(duration_, &QSpinBox::valueChanged, this, [this](int) { store_arrange_options(); });
+		QObject::connect(copy_to_, &QComboBox::currentIndexChanged, this,
+				 [this](int) { store_arrange_options(); });
 		for (QComboBox *box : {curve_, ease_mode_})
 			QObject::connect(box, &QComboBox::currentIndexChanged, this,
 					 [this](int) { store_arrange_options(); });
@@ -1252,7 +1302,7 @@ public:
 			auto *button = new QPushButton(order_box);
 			button->setObjectName(order.object_name);
 			button->setAccessibleName(tr_text(order.text));
-			button->setToolTip(tr_text(order.text));
+			dock_tip(button, tr_text(order.text) + "\n" + tr_text("Dock.Order.Tip"));
 			icon_only(button);
 			// (The size of the line-up tools above them.)
 			button->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
@@ -1285,10 +1335,11 @@ public:
 		update_text_->setWordWrap(true);
 		auto *update_now = new QPushButton(tr_text("Update.Now"), update_bar_);
 		update_now->setObjectName("updateNow");
-		update_now->setToolTip(tr_text("Update.Now.Tip"));
+		dock_tip(update_now, tr_text("Update.Now.Tip"));
 		QObject::connect(update_now, &QPushButton::clicked, this, [this] { install_now(); });
 		auto *whats_new = new QPushButton(tr_text("Update.WhatsNew"), update_bar_);
 		whats_new->setObjectName("updateWhatsNew");
+		dock_tip(whats_new, tr_text("Update.WhatsNew.Tip"));
 		// The same list the Update button shows, with the release page a
 		// button away.
 		QObject::connect(whats_new, &QPushButton::clicked, this, [this] { show_changes(false); });
@@ -1521,9 +1572,19 @@ private:
 				: tr_text("Update.Newest").arg(QString::fromUtf8(current_release()));
 		say(answer);
 		// Asked from the Tools menu, where the dock may not be in sight: the
-		// answer is said in a window too. (A newer one shows in the dock.)
-		if (auto *window = static_cast<QWidget *>(obs_frontend_get_main_window()); window && !newer)
+		// answer is said in a window too. A newer one opens the list of what
+		// changed with Yes and No, as the dock's Update button does
+		// (decision D21; where StageKit cannot install, with Close).
+		auto *window = static_cast<QWidget *>(obs_frontend_get_main_window());
+		if (window && !newer)
 			QMessageBox::information(window, tr_text("Update.Title"), answer);
+		else if (window)
+			QTimer::singleShot(0, this, [this] {
+				if (can_install_updates())
+					install_now();
+				else
+					show_changes(false);
+			});
 	}
 
 	// What changed between this build and the release found, at a glance:
@@ -1580,6 +1641,7 @@ private:
 		}
 		auto *buttons = new QDialogButtonBox(&dialog);
 		QPushButton *page = buttons->addButton(tr_text("Update.ReleasePage"), QDialogButtonBox::ActionRole);
+		dock_tip(page, tr_text("Update.ReleasePage.Tip"));
 		page->setEnabled(!found_.page.empty());
 		const std::string url = found_.page;
 		QObject::connect(page, &QPushButton::clicked, &dialog,
@@ -1587,9 +1649,11 @@ private:
 		if (ask) {
 			buttons->addButton(QDialogButtonBox::Yes);
 			buttons->addButton(QDialogButtonBox::No);
+			dock_tip(buttons->button(QDialogButtonBox::Yes), tr_text("Update.Now.Tip"));
+			dock_tip(buttons->button(QDialogButtonBox::No), tr_text("Update.KeepRunning.Tip"));
 			buttons->button(QDialogButtonBox::Yes)->setDefault(true);
 		} else {
-			buttons->addButton(QDialogButtonBox::Close);
+			dock_tip(buttons->addButton(QDialogButtonBox::Close), tr_text("Update.KeepRunning.Tip"));
 		}
 		QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
 		QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
@@ -1697,7 +1761,8 @@ private:
 			}
 			to = sources_in_scenes(o.copy_scenes);
 		} else if (where == 3) {
-			obs_source_t *scene = current_scene();
+			// The scene Lock and unlock's "This scene only" means (D16).
+			obs_source_t *scene = arrange_scene();
 			if (scene && obs_source_get_name(scene))
 				to = sources_in_scenes({obs_source_get_name(scene)});
 			obs_source_release(scene);
@@ -1761,9 +1826,13 @@ private:
 			key = 0;
 		else if (items.size() > 1 && against == Against::Last)
 			key = (int)items.size() - 1;
+		// Nothing selected: the dock's own source, marked as such (D16).
+		const bool from_dock = !items.empty() && scene && selection_in_order(scene).empty();
 		for (size_t i = 0; i < items.size(); i++) {
 			const QString name = QString::fromUtf8(obs_source_get_name(obs_sceneitem_get_source(items[i])));
-			rows << ((int)i == key ? tr_text("Arrange.KeyItem").arg(name) : name);
+			rows << (from_dock       ? tr_text("Arrange.ChosenInDock").arg(name)
+				 : (int)i == key ? tr_text("Arrange.KeyItem").arg(name)
+						 : name);
 		}
 		obs_source_release(scene);
 		if (rows.isEmpty())
@@ -1773,7 +1842,7 @@ private:
 		arrange_rows_ = rows;
 		arrange_list_->clear();
 		arrange_list_->addItems(rows);
-		if (items.empty())
+		if (items.empty() || from_dock)
 			arrange_list_->item(0)->setForeground(
 				arrange_list_->palette().color(QPalette::Disabled, QPalette::Text));
 		if (key >= 0) {
@@ -1848,6 +1917,8 @@ private:
 		every_scene_->setChecked(o.send_every_scene);
 		arrange_every_->setChecked(o.arrange_every_scene);
 		copy_locked_->setChecked(o.copy_locked);
+		copy_to_->setCurrentIndex(o.copy_to_chosen ? 1 : 0);
+		duration_->setValue(o.send_duration_ms);
 		auto_fit_sources_->setChecked(o.auto_fit_sources);
 		place_visible_->setChecked(o.how.visible_pixels);
 		place_no_shadow_->setChecked(o.how.leave_out_shadows);
@@ -1885,7 +1956,7 @@ private:
 			auto *remove = new QPushButton(QStringLiteral("x"), row);
 			remove->setObjectName(QStringLiteral("copySourcesRemove"));
 			remove->setFixedWidth(28);
-			remove->setToolTip(tr_text("Arrange.CopySources.Remove"));
+			dock_tip(remove, tr_text("Arrange.CopySources.Remove"));
 			QObject::connect(remove, &QPushButton::clicked, this, [this, name] {
 				ArrangeOptions changed = arrange_options();
 				changed.copy_sources.erase(std::remove(changed.copy_sources.begin(),
@@ -1926,7 +1997,7 @@ private:
 			auto *remove = new QPushButton(QStringLiteral("x"), row);
 			remove->setObjectName(QStringLiteral("copyScenesRemove"));
 			remove->setFixedWidth(28);
-			remove->setToolTip(tr_text("Arrange.CopyScenes.Remove"));
+			dock_tip(remove, tr_text("Arrange.CopyScenes.Remove"));
 			QObject::connect(remove, &QPushButton::clicked, this, [this, name] {
 				ArrangeOptions changed = arrange_options();
 				changed.copy_scenes.erase(std::remove(changed.copy_scenes.begin(),
@@ -1966,6 +2037,8 @@ private:
 		o.send_every_scene = every_scene_->isChecked();
 		o.arrange_every_scene = arrange_every_->isChecked();
 		o.copy_locked = copy_locked_->isChecked();
+		o.copy_to_chosen = copy_to_->currentData().toBool();
+		o.send_duration_ms = duration_->value();
 		o.auto_fit_sources = auto_fit_sources_->isChecked();
 		o.send_slide = slide_->isChecked();
 		o.send_curve = curve_->currentIndex();
@@ -2269,8 +2342,9 @@ private:
 	{
 		const bool there = edit_transform_action() != nullptr;
 		edit_transform_->setEnabled(there);
-		edit_transform_->setToolTip(tr_text("Dock.EditTransform") + "\n" +
-					    tr_text(there ? "Dock.EditTransform.Tip" : "Dock.EditTransform.Missing"));
+		dock_tip(edit_transform_,
+			 tr_text("Dock.EditTransform") + "\n" +
+				 tr_text(there ? "Dock.EditTransform.Tip" : "Dock.EditTransform.Missing"));
 		static bool said = false;
 		if (!there && !said) {
 			said = true;
@@ -2573,29 +2647,56 @@ private:
 		return source;
 	}
 
-	// Moves the selected item in front of or behind the others.
+	// Moves the sources the Arrange tools act on (selected in the preview,
+	// else the dock's own) in front of or behind the others, as one step in
+	// Edit > Undo (decision D16). They keep their order among themselves:
+	// up and to the back, the one nearest that way goes first.
 	void reorder(obs_order_movement movement)
 	{
-		obs_source_t *scene = current_scene();
-		obs_sceneitem_t *item = find_item(scene, item_->currentText().toUtf8().constData());
-		if (!item) {
+		obs_source_t *scene = arrange_scene();
+		std::vector<obs_sceneitem_t *> items = scene ? arrange_items(scene) : std::vector<obs_sceneitem_t *>{};
+		if (items.empty()) {
+			obs_source_release(scene);
 			say(tr_text("Dock.PickItem"));
-		} else {
-			obs_sceneitem_set_order(item, movement);
-			names_.clear(); // the list order changed
-			const QString keep = item_->currentText();
-			refresh();
-			item_->setCurrentText(keep);
-			say(tr_text("Dock.Reordered").arg(keep));
+			return;
 		}
+		const bool top_first = movement == OBS_ORDER_MOVE_UP || movement == OBS_ORDER_MOVE_BOTTOM;
+		std::stable_sort(items.begin(), items.end(), [top_first](obs_sceneitem_t *a, obs_sceneitem_t *b) {
+			const int pa = obs_sceneitem_get_order_position(a), pb = obs_sceneitem_get_order_position(b);
+			return top_first ? pa > pb : pa < pb;
+		});
+		const std::string before = stacking_snapshot(items);
+		for (obs_sceneitem_t *item : items)
+			obs_sceneitem_set_order(item, movement);
+		add_transform_undo(obs_module_text("Dock.OrderUndo"), before, stacking_snapshot(items));
+		QStringList names;
+		for (obs_sceneitem_t *item : items)
+			names << QString::fromUtf8(obs_source_get_name(obs_sceneitem_get_source(item)));
 		obs_source_release(scene);
+		names_.clear(); // the list order changed
+		const QString keep = item_->currentText();
+		refresh();
+		item_->setCurrentText(keep);
+		say(tr_text("Dock.Reordered").arg(names.join(", ")));
 	}
 
-	obs_data_t *place_settings(int destination) const
+	// `for_key`: for a filter made to be pressed later (the Keys buttons, a
+	// saved spot). Unticked, In every scene then names the dock's scene, as
+	// the arrows move it there (decision D22); the dock's own moves say
+	// the scene they act in themselves.
+	obs_data_t *place_settings(int destination, bool for_key = false) const
 	{
 		obs_data_t *d = obs_data_create();
 		// In every scene the source is in, or only in the scene on screen.
 		obs_data_set_int(d, "apply_in", every_scene_->isChecked() ? 0 : 1);
+		if (for_key && !every_scene_->isChecked()) {
+			obs_source_t *scene = current_scene();
+			if (const char *name = scene ? obs_source_get_name(scene) : nullptr; name && *name) {
+				obs_data_set_int(d, "apply_in", 2);
+				obs_data_set_string(d, "apply_scene", name);
+			}
+			obs_source_release(scene);
+		}
 		obs_data_set_string(d, "linked", linked_->currentData().toString().toUtf8().constData());
 		obs_data_set_int(d, "destination", destination);
 		obs_data_set_double(d, "margin", margin_->value());
@@ -2769,7 +2870,7 @@ private:
 			return;
 		}
 		for (int i = 0; i < 9; i++) {
-			obs_data_t *settings = place_settings(i);
+			obs_data_t *settings = place_settings(i, true);
 			obs_source_t *filter = ensure_filter(
 				source, kSendToId, tr_text(kDestinationText[i]).toUtf8().toStdString(), settings);
 			obs_data_release(settings);
@@ -2792,7 +2893,7 @@ public:
 		vec2 pos, scale;
 		obs_sceneitem_get_pos(item, &pos);
 		obs_sceneitem_get_scale(item, &scale);
-		obs_data_t *settings = place_settings(9); // a saved spot
+		obs_data_t *settings = place_settings(9, true); // a saved spot
 		obs_data_set_double(settings, "saved_x", pos.x);
 		obs_data_set_double(settings, "saved_y", pos.y);
 		obs_data_set_double(settings, "saved_scale_x", scale.x);
@@ -2882,6 +2983,7 @@ private:
 	QCheckBox *every_scene_ = nullptr;
 	QComboBox *lock_which_ = nullptr, *lock_where_ = nullptr;
 	QCheckBox *copy_locked_ = nullptr;
+	QComboBox *copy_to_ = nullptr; // Copy to: the same source, or Chosen sources
 	QComboBox *bounds_ = nullptr;
 	QCheckBox *auto_fit_ = nullptr, *auto_fit_sources_ = nullptr;
 	QComboBox *filter_from_ = nullptr, *filter_to_ = nullptr;

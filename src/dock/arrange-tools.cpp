@@ -67,10 +67,40 @@ const char *const kAutoFitHotkey = "stagekit.arrange.auto_fit";
 // The last step handed to OBS's undo list, kept so the tests can replay it.
 std::string g_last_before, g_last_after;
 
+// A stacking order taken by stacking_snapshot: each scene or group's items,
+// bottom first, put back in that order.
+void load_stacking(obs_data_array_t *stacking)
+{
+	for (size_t i = 0; i < obs_data_array_count(stacking); i++) {
+		obs_data_t *entry = obs_data_array_item(stacking, i);
+		obs_source_t *source = obs_get_source_by_uuid(obs_data_get_string(entry, "uuid"));
+		obs_scene_t *scene = source ? obs_group_or_scene_from_source(source) : nullptr;
+		obs_data_array_t *ids = obs_data_get_array(entry, "ids");
+		int at = 0;
+		for (size_t k = 0; scene && k < obs_data_array_count(ids); k++) {
+			obs_data_t *id = obs_data_array_item(ids, k);
+			if (obs_sceneitem_t *item = obs_scene_find_sceneitem_by_id(scene, obs_data_get_int(id, "id")))
+				obs_sceneitem_set_order_position(item, at++);
+			obs_data_release(id);
+		}
+		obs_data_array_release(ids);
+		obs_source_release(source);
+		obs_data_release(entry);
+	}
+}
+
 void load_transforms(const char *state)
 {
-	if (state && *state)
+	if (!state || !*state)
+		return;
+	obs_data_t *data = obs_data_create_from_json(state);
+	obs_data_array_t *stacking = data ? obs_data_get_array(data, "stacking") : nullptr;
+	if (stacking)
+		load_stacking(stacking);
+	else
 		obs_scene_load_transform_states(state);
+	obs_data_array_release(stacking);
+	obs_data_release(data);
 }
 
 } // namespace
@@ -261,6 +291,44 @@ void add_transform_undo(const char *name, const std::string &before, const std::
 						  false);
 }
 
+std::string stacking_snapshot(const std::vector<obs_sceneitem_t *> &items)
+{
+	std::vector<obs_scene_t *> containers;
+	for (obs_sceneitem_t *item : items)
+		if (obs_scene_t *in = obs_sceneitem_get_scene(item))
+			if (std::find(containers.begin(), containers.end(), in) == containers.end())
+				containers.push_back(in);
+	if (containers.empty())
+		return {};
+	obs_data_t *data = obs_data_create();
+	obs_data_array_t *stacking = obs_data_array_create();
+	for (obs_scene_t *in : containers) {
+		obs_data_t *entry = obs_data_create();
+		obs_data_set_string(entry, "uuid", obs_source_get_uuid(obs_scene_get_source(in)));
+		obs_data_array_t *ids = obs_data_array_create();
+		obs_scene_enum_items(
+			in,
+			[](obs_scene_t *, obs_sceneitem_t *item, void *param) {
+				obs_data_t *id = obs_data_create();
+				obs_data_set_int(id, "id", obs_sceneitem_get_id(item));
+				obs_data_array_push_back(static_cast<obs_data_array_t *>(param), id);
+				obs_data_release(id);
+				return true;
+			},
+			ids);
+		obs_data_set_array(entry, "ids", ids);
+		obs_data_array_release(ids);
+		obs_data_array_push_back(stacking, entry);
+		obs_data_release(entry);
+	}
+	obs_data_set_array(data, "stacking", stacking);
+	obs_data_array_release(stacking);
+	const char *json = obs_data_get_json(data);
+	std::string out = json ? json : "";
+	obs_data_release(data);
+	return out;
+}
+
 void replay_last_arrange(bool redo)
 {
 	load_transforms((redo ? g_last_after : g_last_before).c_str());
@@ -397,10 +465,12 @@ ArrangeOutcome run_arrange_now(ArrangeAction action, obs_source_t *scene, const 
 		break;
 	}
 	case ArrangeAction::SameEverywhere:
-		out.changed = copy_to_every_scene(scene, items, nullptr, &o.copy_sources, o.copy_locked);
+		out.changed = copy_to_every_scene(scene, items, nullptr, o.copy_to_chosen ? &o.copy_sources : nullptr,
+						  o.copy_locked);
 		break;
 	case ArrangeAction::SameChosen:
-		out.changed = copy_to_every_scene(scene, items, &o.copy_scenes, &o.copy_sources, o.copy_locked);
+		out.changed = copy_to_every_scene(scene, items, &o.copy_scenes,
+						  o.copy_to_chosen ? &o.copy_sources : nullptr, o.copy_locked);
 		break;
 	case ArrangeAction::FitSpace:
 		out.changed = fit_to_space(scene, items, o.place_margin, o.how, &out.placed, &out.fit, o.place_toward);
@@ -706,6 +776,8 @@ void arrange_save_load(obs_data_t *save_data, bool saving)
 		obs_data_set_bool(save_data, "stagekit.send.slide", o.send_slide);
 		obs_data_set_int(save_data, "stagekit.send.curve", o.send_curve);
 		obs_data_set_int(save_data, "stagekit.send.mode", o.send_mode);
+		obs_data_set_int(save_data, "stagekit.send.duration_ms", o.send_duration_ms);
+		obs_data_set_bool(save_data, "stagekit.copy.to_chosen", o.copy_to_chosen);
 		obs_data_set_bool(save_data, "stagekit.arrange.limit_resize", o.limit_resize);
 		obs_data_set_int(save_data, "stagekit.arrange.limit_px", o.limit_px);
 		obs_data_array_t *copy_scenes = obs_data_array_create();
@@ -750,6 +822,9 @@ void arrange_save_load(obs_data_t *save_data, bool saving)
 		if (obs_data_has_user_value(save_data, "stagekit.send.curve"))
 			o.send_curve = std::clamp((int)obs_data_get_int(save_data, "stagekit.send.curve"), 0, 10);
 		o.send_mode = std::clamp((int)obs_data_get_int(save_data, "stagekit.send.mode"), 0, 2);
+		if (obs_data_has_user_value(save_data, "stagekit.send.duration_ms"))
+			o.send_duration_ms =
+				std::clamp((int)obs_data_get_int(save_data, "stagekit.send.duration_ms"), 0, 5000);
 		o.limit_resize = obs_data_get_bool(save_data, "stagekit.arrange.limit_resize");
 		if (obs_data_has_user_value(save_data, "stagekit.place.margin"))
 			o.place_margin = std::clamp((int)obs_data_get_int(save_data, "stagekit.place.margin"), 0, 400);
@@ -776,6 +851,9 @@ void arrange_save_load(obs_data_t *save_data, bool saving)
 			}
 			obs_data_array_release(copy_sources);
 		}
+		o.copy_to_chosen = obs_data_has_user_value(save_data, "stagekit.copy.to_chosen")
+					   ? obs_data_get_bool(save_data, "stagekit.copy.to_chosen")
+					   : !o.copy_sources.empty();
 		set_arrange_options(o);
 	}
 	if (g_auto_fit_hotkey != OBS_INVALID_HOTKEY_ID) {

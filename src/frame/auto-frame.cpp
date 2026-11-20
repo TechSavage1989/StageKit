@@ -27,6 +27,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/pick-list.hpp"
 #include "../common/scene-util.hpp"
 #include "../common/tooltip.hpp"
+#include "../common/hotkey-rename.hpp"
 
 #include <obs-module.h>
 #include <graphics/vec4.h>
@@ -65,7 +66,27 @@ enum class Shape : int {
 	R16x10 = 7,
 	R10x9 = 8,
 	Custom = 9,
+	R64x49 = 10,
+	R16x15 = 11,
 };
+
+struct RatioChoice {
+	Shape shape;
+	const char *value;
+	const char *label;
+};
+constexpr RatioChoice kRatioChoices[] = {
+	{Shape::R4x3, "4:3", nullptr},          {Shape::R8x7, "8:7", "Shape.SquareSnes"},
+	{Shape::R64x49, "64:49", "Shape.Snes"}, {Shape::R3x2, "3:2", nullptr},
+	{Shape::R10x9, "10:9", nullptr},        {Shape::R16x15, "16:15", nullptr},
+	{Shape::R16x9, "16:9", nullptr},        {Shape::R16x10, "16:10", nullptr},
+	{Shape::R5x4, "5:4", nullptr},          {Shape::R1x1, "1:1", nullptr},
+};
+
+const char *ratio_label(const RatioChoice &choice)
+{
+	return choice.label ? obs_module_text(choice.label) : choice.value;
+}
 
 // Removing black bars a game or emulator draws around its picture.
 enum class Trim : int {
@@ -125,6 +146,10 @@ double shape_ratio(const Settings &s, uint32_t w, uint32_t h)
 		return 16.0 / 10.0;
 	case Shape::R10x9:
 		return 10.0 / 9.0;
+	case Shape::R64x49:
+		return 64.0 / 49.0;
+	case Shape::R16x15:
+		return 16.0 / 15.0;
 	case Shape::Custom:
 		if (s.custom_w > 0.0 && s.custom_h > 0.0)
 			return s.custom_w / s.custom_h;
@@ -1648,7 +1673,7 @@ obs_properties_t *get_properties(void *data)
 	obs_enum_scenes(
 		[](void *param, obs_source_t *source) {
 			const char *name = obs_source_get_name(source);
-			if (name && *name)
+			if (name && *name && !obs_source_is_group(source))
 				obs_property_list_add_string(static_cast<obs_property_t *>(param), name, name);
 			return true;
 		},
@@ -1674,13 +1699,8 @@ obs_properties_t *get_properties(void *data)
 	obs_property_t *shape = obs_properties_add_list(props, "shape", obs_module_text("Frame.Shape"),
 							OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(shape, obs_module_text("Frame.Shape.Source"), (int)Shape::Source);
-	struct {
-		Shape value;
-		const char *text;
-	} shapes[] = {{Shape::R4x3, "4:3"},   {Shape::R16x9, "16:9"},   {Shape::R8x7, "8:7"}, {Shape::R3x2, "3:2"},
-		      {Shape::R10x9, "10:9"}, {Shape::R16x10, "16:10"}, {Shape::R5x4, "5:4"}, {Shape::R1x1, "1:1"}};
-	for (const auto &entry : shapes)
-		obs_property_list_add_int(shape, entry.text, (int)entry.value);
+	for (const RatioChoice &ratio : kRatioChoices)
+		obs_property_list_add_int(shape, ratio_label(ratio), (int)ratio.shape);
 	obs_property_list_add_int(shape, obs_module_text("Frame.Shape.Custom"), (int)Shape::Custom);
 	set_tip(shape, obs_module_text("Frame.Shape.Tip"));
 	obs_property_set_modified_callback(shape, shape_modified);
@@ -1776,8 +1796,7 @@ obs_properties_t *get_properties(void *data)
 		// And the open windows by title, for telling apart two programs
 		// with the same file name.
 		for (const OpenWindow &w : open_windows())
-			if (!w.title.empty() && std::find(names.begin(), names.end(), w.title) == names.end())
-				names.push_back(w.title);
+			add_window_title_choices(names, w.title);
 		for (const std::string &name : names)
 			obs_property_list_add_string(program, name.c_str(), name.c_str());
 	}
@@ -1797,8 +1816,8 @@ obs_properties_t *get_properties(void *data)
 	});
 	obs_property_t *rule_shape = obs_properties_add_list(props, "rule_shape", obs_module_text("Frame.RuleShape"),
 							     OBS_COMBO_TYPE_EDITABLE, OBS_COMBO_FORMAT_STRING);
-	for (const char *name : {"4:3", "64:49", "8:7", "3:2", "10:9", "16:9", "16:10", "5:4", "1:1"})
-		obs_property_list_add_string(rule_shape, name, name);
+	for (const RatioChoice &ratio : kRatioChoices)
+		obs_property_list_add_string(rule_shape, ratio_label(ratio), ratio.value);
 	obs_properties_add_button2(
 		props, "rule_add", obs_module_text("Frame.RuleAdd"),
 		[](obs_properties_t *p, obs_property_t *, void *d) {
@@ -1999,6 +2018,12 @@ private:
 	std::atomic<bool> pending_{false};
 	std::atomic<bool> ready_{false};
 	obs_hotkey_id hotkey_ = OBS_INVALID_HOTKEY_ID;
+	// Last: let go of first.
+	HotkeyRename renamed_{source_, [this] { return std::vector<obs_hotkey_id *>{&hotkey_}; },
+			      [this] {
+				      if (parent_)
+					      attach(parent_);
+			      }};
 };
 
 obs_properties_t *picture_shape_properties(void *)
@@ -2007,12 +2032,8 @@ obs_properties_t *picture_shape_properties(void *)
 	obs_property_t *shape = obs_properties_add_list(props, "shape", obs_module_text("Shape.Shape"),
 							OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
 	obs_property_list_add_string(shape, obs_module_text("Shape.Automatic"), "0");
-	const char *shapes[][2] = {{"4:3", "4:3"},     {"Shape.Snes", "64:49"}, {"3:2", "3:2"}, {"8:7", "8:7"},
-				   {"10:9", "10:9"},   {"16:15", "16:15"},      {"5:4", "5:4"}, {"1:1", "1:1"},
-				   {"16:10", "16:10"}, {"16:9", "16:9"}};
-	for (const auto &entry : shapes)
-		obs_property_list_add_string(
-			shape, strncmp(entry[0], "Shape.", 6) == 0 ? obs_module_text(entry[0]) : entry[0], entry[1]);
+	for (const RatioChoice &ratio : kRatioChoices)
+		obs_property_list_add_string(shape, ratio_label(ratio), ratio.value);
 	obs_property_list_add_string(shape, obs_module_text("Frame.Shape.Custom"), "custom");
 	obs_property_set_modified_callback(shape, [](obs_properties_t *p, obs_property_t *, obs_data_t *settings) {
 		obs_property_set_visible(obs_properties_get(p, "custom"),

@@ -222,7 +222,7 @@ struct Settings {
 	double bloom_size = 80.0;     // how far the light spreads, on the blur's scale
 	int bloom_style = 0;          // 0: the bright parts shine; 1: the whole picture is amplified
 	// How the picture gives way when the capture blended in changes.
-	int live_change = 0; // 0 fade, 1 cut, 2..5 the old picture slides away left, right, up, down
+	int live_change = 0; // Standby transition IDs: fade, cut, slides (2..5), wipes (6..9), zoom (10)
 	double live_change_s = 0.6;
 	double live_delay_s = 0.0; // how long the old picture stays first
 	EaseCurve live_curve = EaseCurve::Cubic;
@@ -312,7 +312,8 @@ private:
 	void draw_layer(gs_texture_t *tex, uint32_t w, uint32_t h, double scroll_x, double scroll_y, double zoom,
 			double opacity, const Settings &s, LiveFit fit = LiveFit::Fill, bool clip = false,
 			double focus_x = 0.5, double focus_y = 0.5, bool as_is = false,
-			const PictureCrop &crop = PictureCrop(), const PatternPose &pose = PatternPose());
+			const PictureCrop &crop = PictureCrop(), const PatternPose &pose = PatternPose(),
+			const vec4 *visible_uv = nullptr);
 	void draw_base(gs_texture_t *base, uint32_t w, uint32_t h, const Settings &s);
 	gs_texture_t *draw_pattern(const Settings &s, uint32_t w, uint32_t h);
 	void pass(gs_effect_t *effect, gs_eparam_t *image, gs_texrender_t *dst, gs_texture_t *src, uint32_t w,
@@ -346,7 +347,6 @@ private:
 	PictureCrop drawn_crop_; // the copy the drawing in progress uses
 	std::string base_image_path_;
 	uint64_t start_revision_ = 0;
-	uint64_t start_choice_ = start_image_choice();
 	gs_image_file4_t overlay_image_ = {};
 	bool overlay_image_loaded_ = false;
 	uint64_t base_anim_ns_ = 0, overlay_anim_ns_ = 0; // an animated picture's last move on
@@ -361,6 +361,7 @@ private:
 	gs_eparam_t *p_pose_ = nullptr;
 	gs_eparam_t *p_pose_shift_ = nullptr;
 	gs_eparam_t *p_clip_edges_ = nullptr;
+	gs_eparam_t *p_visible_uv_ = nullptr;
 	gs_eparam_t *p_opacity_ = nullptr;
 	gs_eparam_t *p_saturation_ = nullptr;
 	gs_eparam_t *p_gain_ = nullptr;
@@ -486,6 +487,7 @@ AmbientBackground::AmbientBackground(obs_data_t *settings, obs_source_t *source)
 		p_pose_ = gs_effect_get_param_by_name(effect_, "pose");
 		p_pose_shift_ = gs_effect_get_param_by_name(effect_, "pose_shift");
 		p_clip_edges_ = gs_effect_get_param_by_name(effect_, "clip_edges");
+		p_visible_uv_ = gs_effect_get_param_by_name(effect_, "visible_uv");
 		p_opacity_ = gs_effect_get_param_by_name(effect_, "opacity");
 		p_saturation_ = gs_effect_get_param_by_name(effect_, "saturation");
 		p_gain_ = gs_effect_get_param_by_name(effect_, "gain");
@@ -680,7 +682,7 @@ void AmbientBackground::update(obs_data_t *settings)
 	s.pixel_rotation = obs_data_get_double(settings, "pixel_rotation");
 	s.bloom = std::clamp(obs_data_get_double(settings, "bloom") / 100.0, 0.0, 20.0);
 	s.bloom_style = (int)std::clamp<long long>(obs_data_get_int(settings, "bloom_style"), 0, 1);
-	s.live_change = (int)std::clamp<long long>(obs_data_get_int(settings, "live_change"), 0, 5);
+	s.live_change = (int)std::clamp<long long>(obs_data_get_int(settings, "live_change"), 0, 10);
 	s.live_change_s = std::clamp<long long>(obs_data_get_int(settings, "live_change_ms"), 0, 10000) / 1000.0;
 	s.live_delay_s = std::clamp<long long>(obs_data_get_int(settings, "live_delay_ms"), 0, 10000) / 1000.0;
 	s.live_curve = static_cast<EaseCurve>(obs_data_get_int(settings, "live_ease_curve"));
@@ -841,17 +843,8 @@ void AmbientBackground::tick(float seconds)
 	frame_seconds_ = std::min(frame_seconds_.load() + seconds, 1.0f); // since the trail last moved on
 	new_frame_ = true;
 
-	// A start image picked by the owner becomes this background's picture
-	// without a visit to these settings.
-	if (start_image_choice() != start_choice_) {
-		start_choice_ = start_image_choice();
-		obs_data_t *settings = obs_source_get_settings(source_);
-		if (static_cast<BaseType>(obs_data_get_int(settings, "base_type")) == BaseType::Image) {
-			obs_data_set_int(settings, "base_type", (int)BaseType::StartImage);
-			obs_source_update(source_, settings);
-		}
-		obs_data_release(settings);
-	}
+	// (Choosing a standby image no longer turns a background set to an
+	// image file over to it: decision D19.)
 
 	// Pick up a new start image as soon as one is chosen.
 	if (start_image_revision() != start_revision_) {
@@ -1018,7 +1011,7 @@ bool AmbientBackground::live_shows_something(gs_texture_t *live)
 void AmbientBackground::draw_layer(gs_texture_t *tex, uint32_t out_w, uint32_t out_h, double scroll_x, double scroll_y,
 				   double zoom, double opacity, const Settings &s, LiveFit fit, bool clip,
 				   double focus_x, double focus_y, bool as_is, const PictureCrop &crop,
-				   const PatternPose &pose)
+				   const PatternPose &pose, const vec4 *visible_uv)
 {
 	const uint32_t tw = gs_texture_get_width(tex), th = gs_texture_get_height(tex);
 	// Only the part that is picture is laid down, drifted and mirrored. Its
@@ -1091,6 +1084,9 @@ void AmbientBackground::draw_layer(gs_texture_t *tex, uint32_t out_w, uint32_t o
 	// again without being coloured a second time.)
 	gs_effect_set_float(p_wrap_mirror_, s.mirror && !as_is ? 1.0f : 0.0f);
 	gs_effect_set_float(p_clip_edges_, clip ? 1.0f : 0.0f);
+	vec4 full;
+	vec4_set(&full, 0.0f, 0.0f, 1.0f, 1.0f);
+	gs_effect_set_vec4(p_visible_uv_, visible_uv ? visible_uv : &full);
 	gs_effect_set_float(p_opacity_, (float)opacity);
 	gs_effect_set_float(p_saturation_, as_is ? 1.0f : (float)s.saturation);
 	gs_effect_set_float(p_gain_, as_is ? 1.0f : (float)(1.0 + s.glow * 3.0));
@@ -1395,15 +1391,23 @@ void AmbientBackground::render()
 		if (was) {
 			// The picture from before the change, over the new one: fading,
 			// or sliding off the way chosen.
-			const bool slides = s.live_change >= 2 && change_phase_ == 2;
+			const bool slides = s.live_change >= 2 && s.live_change <= 5 && change_phase_ == 2;
 			const double dx = s.live_change == 2   ? was_gone * iw
 					  : s.live_change == 3 ? -was_gone * iw
 							       : 0.0;
 			const double dy = s.live_change == 4   ? was_gone * ih
 					  : s.live_change == 5 ? -was_gone * ih
 							       : 0.0;
-			draw_layer(was, iw, ih, slides ? dx : 0.0, slides ? dy : 0.0, 1.0, slides ? 1.0 : was_left, s,
-				   LiveFit::Stretch, slides, 0.5, 0.5, true);
+			const bool wipes = s.live_change >= 6 && s.live_change <= 9 && change_phase_ == 2;
+			vec4 visible;
+			vec4_set(&visible, s.live_change == 7 ? (float)was_gone : 0.0f,
+				 s.live_change == 9 ? (float)was_gone : 0.0f,
+				 s.live_change == 6 ? (float)was_left : 1.0f,
+				 s.live_change == 8 ? (float)was_left : 1.0f);
+			const double zoom = s.live_change == 10 ? 1.0 + was_gone * 0.4 : 1.0;
+			draw_layer(was, iw, ih, slides ? dx : 0.0, slides ? dy : 0.0, zoom,
+				   slides || wipes ? 1.0 : was_left, s, LiveFit::Stretch, slides, 0.5, 0.5, true,
+				   PictureCrop(), PatternPose(), wipes ? &visible : nullptr);
 		}
 		gs_blend_state_pop();
 		gs_texrender_end(tr_scene_);
@@ -1767,11 +1771,16 @@ obs_properties_t *get_properties(void *data)
 							      obs_module_text("Ambient.LiveChange"),
 							      OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(live_change, obs_module_text("Standby.Style.Fade"), 0);
+	obs_property_list_add_int(live_change, obs_module_text("Standby.Style.Zoom"), 10);
 	obs_property_list_add_int(live_change, obs_module_text("Standby.Style.Cut"), 1);
 	obs_property_list_add_int(live_change, obs_module_text("Standby.Style.SlideLeft"), 2);
 	obs_property_list_add_int(live_change, obs_module_text("Standby.Style.SlideRight"), 3);
 	obs_property_list_add_int(live_change, obs_module_text("Standby.Style.SlideUp"), 4);
 	obs_property_list_add_int(live_change, obs_module_text("Standby.Style.SlideDown"), 5);
+	obs_property_list_add_int(live_change, obs_module_text("Standby.Style.WipeLeft"), 6);
+	obs_property_list_add_int(live_change, obs_module_text("Standby.Style.WipeRight"), 7);
+	obs_property_list_add_int(live_change, obs_module_text("Standby.Style.WipeUp"), 8);
+	obs_property_list_add_int(live_change, obs_module_text("Standby.Style.WipeDown"), 9);
 	set_tip(live_change, obs_module_text("Ambient.LiveChange.Tip"));
 	obs_property_set_modified_callback(live_change, visibility_modified);
 	obs_property_t *live_delay = obs_properties_add_int_slider(picture, "live_delay_ms",

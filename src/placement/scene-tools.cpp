@@ -80,6 +80,9 @@ public:
 		in_s_ = std::max<long long>(0, obs_data_get_int(settings, "in_ms")) / 1000.0;
 		out_s_ = std::max<long long>(0, obs_data_get_int(settings, "out_ms")) / 1000.0;
 		curve_ = static_cast<EaseCurve>(obs_data_get_int(settings, "ease_curve"));
+		// 0 (as it comes, and every filter saved before): out when showing,
+		// in when hiding; then the usual three (review C6). Append-only.
+		direction_ = (int)std::clamp<long long>(obs_data_get_int(settings, "ease_direction"), 0, 3);
 	}
 
 	void attach(obs_source_t *parent)
@@ -110,8 +113,11 @@ public:
 		}
 		elapsed_ = std::min(duration_, elapsed_ + seconds);
 		const double t = duration_ > 0.0 ? elapsed_ / duration_ : 1.0;
-		// Arrive decelerating, leave accelerating.
-		k_ = k_from_ + (k_to_ - k_from_) * ease(curve_, entering_ ? EaseMode::Out : EaseMode::In, t);
+		// Arrive decelerating, leave accelerating, unless a direction is chosen.
+		static constexpr EaseMode kChosen[] = {EaseMode::InOut, EaseMode::InOut, EaseMode::In, EaseMode::Out};
+		const EaseMode mode = direction_ == 0 ? (entering_ ? EaseMode::Out : EaseMode::In)
+						      : kChosen[direction_];
+		k_ = k_from_ + (k_to_ - k_from_) * ease(curve_, mode, t);
 		apply(k_);
 		if (elapsed_ < duration_)
 			return;
@@ -241,6 +247,7 @@ private:
 	ShowStyle style_ = ShowStyle::NearestEdge;
 	double in_s_ = 0.4, out_s_ = 0.3;
 	EaseCurve curve_ = EaseCurve::Cubic;
+	int direction_ = 0; // `ease_direction`
 
 	obs_sceneitem_t *item_ = nullptr; // non-null while animating
 	bool reshow_ = false;
@@ -269,13 +276,13 @@ obs_properties_t *show_hide_properties(void *data)
 	obs_property_t *out =
 		obs_properties_add_int_slider(props, "out_ms", obs_module_text("ShowHide.Out"), 0, 5000, 50);
 	obs_property_int_set_suffix(out, " ms");
-	obs_property_t *curve = obs_properties_add_list(props, "ease_curve", obs_module_text("Easing.Curve"),
-							OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
-	const char *curves[] = {"Easing.Linear", "Easing.Sine",    "Easing.Quad",  "Easing.Cubic",
-				"Easing.Quart",  "Easing.Quint",   "Easing.Expo",  "Easing.Circ",
-				"Easing.Back",   "Easing.Elastic", "Easing.Bounce"};
-	for (int i = 0; i < 11; i++)
-		obs_property_list_add_int(curve, obs_module_text(curves[i]), i);
+	add_ease_curve_list(props, "ease_curve");
+	obs_property_t *direction = obs_properties_add_list(props, "ease_direction", obs_module_text("Easing.Mode"),
+							    OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+	obs_property_list_add_int(direction, obs_module_text("ShowHide.EaseAuto"), 0);
+	for (int i = 0; i < 3; i++)
+		obs_property_list_add_int(direction, obs_module_text(kEaseModes[i].text), i + 1);
+	set_tip(direction, obs_module_text("ShowHide.EaseAuto.Tip"));
 	for (const auto &[name, key] :
 	     std::initializer_list<std::pair<const char *, const char *>>{{"item", "ShowHide.Item.Tip"},
 									  {"style", "ShowHide.Style.Tip"},
@@ -768,12 +775,62 @@ private:
 	obs_hotkey_id hotkey_ = OBS_INVALID_HOTKEY_ID;
 };
 
+void update_layout_status(obs_properties_t *props, obs_source_t *filter, obs_data_t *settings)
+{
+	obs_property_t *status = obs_properties_get(props, "saved_status");
+	if (!status)
+		return;
+	if (!settings || !obs_data_has_user_value(settings, "saved")) {
+		obs_property_set_description(status, obs_module_text("Layout.NotSaved"));
+		return;
+	}
+
+	std::vector<std::string> saved_names;
+	obs_data_array_t *saved = obs_data_get_array(settings, "saved");
+	for (size_t i = 0; i < obs_data_array_count(saved); ++i) {
+		obs_data_t *entry = obs_data_array_item(saved, i);
+		saved_names.emplace_back(obs_data_get_string(entry, "name"));
+		obs_data_release(entry);
+	}
+	obs_data_array_release(saved);
+
+	std::string text = obs_module_text("Layout.SavedStatus");
+	const size_t count = text.find("%1");
+	if (count != std::string::npos)
+		text.replace(count, 2, std::to_string(saved_names.size()));
+	if (obs_source_t *parent = filter ? obs_filter_get_parent(filter) : nullptr) {
+		std::vector<std::string> current;
+		scene_item_names(parent, current);
+		const auto chosen = pick_list_read(settings, "only_items", false);
+		if (!chosen.empty())
+			current.erase(std::remove_if(current.begin(), current.end(),
+						     [&](const std::string &name) {
+							     return std::find(chosen.begin(), chosen.end(), name) ==
+								    chosen.end();
+						     }),
+				      current.end());
+		std::sort(current.begin(), current.end());
+		std::sort(saved_names.begin(), saved_names.end());
+		if (current != saved_names)
+			text += std::string(" ") + obs_module_text("Layout.Changed");
+	}
+	obs_property_set_description(status, text.c_str());
+}
+
 obs_properties_t *layout_properties(void *data)
 {
 	obs_properties_t *props = obs_properties_create();
 	obs_properties_add_button2(
 		props, "save", obs_module_text("Layout.Save"),
-		[](obs_properties_t *, obs_property_t *, void *d) { return static_cast<Layout *>(d)->save_current(); },
+		[](obs_properties_t *p, obs_property_t *, void *d) {
+			auto *layout = static_cast<Layout *>(d);
+			if (!layout || !layout->save_current())
+				return false;
+			obs_data_t *settings = obs_source_get_settings(layout->source());
+			update_layout_status(p, layout->source(), settings);
+			obs_data_release(settings);
+			return true;
+		},
 		data);
 	{
 		obs_source_t *filter = data ? static_cast<Layout *>(data)->source() : nullptr;
@@ -787,9 +844,13 @@ obs_properties_t *layout_properties(void *data)
 		};
 		pick_list_add(props, filter, only);
 	}
-	obs_property_t *count =
-		obs_properties_add_int(props, "saved_count", obs_module_text("Layout.SavedCount"), 0, 100000, 1);
-	obs_property_set_enabled(count, false);
+	obs_property_t *status = obs_properties_add_text(props, "saved_status", "", OBS_TEXT_INFO);
+	obs_property_text_set_info_word_wrap(status, true);
+	obs_source_t *owner = data ? static_cast<Layout *>(data)->source() : nullptr;
+	obs_data_t *settings = owner ? obs_source_get_settings(owner) : nullptr;
+	update_layout_status(props, owner, settings);
+	obs_data_release(settings);
+	pick_list_on_change_for(kLayoutId, update_layout_status);
 	obs_property_t *duration =
 		obs_properties_add_int_slider(props, "duration_ms", obs_module_text("Place.Duration"), 0, 5000, 50);
 	obs_property_int_set_suffix(duration, " ms");

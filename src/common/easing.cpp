@@ -9,6 +9,7 @@ the Free Software Foundation; either version 2 of the License, or
 */
 
 #include "easing.hpp"
+#include "tooltip.hpp"
 
 #include <obs-module.h>
 
@@ -95,32 +96,27 @@ double ease(EaseCurve curve, EaseMode mode, double t)
 	}
 }
 
+obs_property_t *add_ease_curve_list(obs_properties_t *props, const char *key)
+{
+	obs_property_t *curve = obs_properties_add_list(props, key, obs_module_text("Easing.Curve"),
+							OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+	for (const EaseChoice &c : kEaseCurves)
+		obs_property_list_add_int(curve, obs_module_text(c.text), c.value);
+	set_tip(curve, obs_module_text("Easing.Curve.Tip"));
+	return curve;
+}
+
 void add_easing_properties(obs_properties_t *props, const char *prefix)
 {
 	const std::string curve_key = std::string(prefix) + "ease_curve";
 	const std::string mode_key = std::string(prefix) + "ease_mode";
 
-	obs_property_t *curve = obs_properties_add_list(props, curve_key.c_str(), obs_module_text("Easing.Curve"),
-							OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
-	struct {
-		EaseCurve value;
-		const char *text;
-	} curves[] = {
-		{EaseCurve::Linear, "Easing.Linear"}, {EaseCurve::Sine, "Easing.Sine"},
-		{EaseCurve::Quad, "Easing.Quad"},     {EaseCurve::Cubic, "Easing.Cubic"},
-		{EaseCurve::Quart, "Easing.Quart"},   {EaseCurve::Quint, "Easing.Quint"},
-		{EaseCurve::Expo, "Easing.Expo"},     {EaseCurve::Circ, "Easing.Circ"},
-		{EaseCurve::Back, "Easing.Back"},     {EaseCurve::Elastic, "Easing.Elastic"},
-		{EaseCurve::Bounce, "Easing.Bounce"},
-	};
-	for (const auto &c : curves)
-		obs_property_list_add_int(curve, obs_module_text(c.text), static_cast<long long>(c.value));
-
+	add_ease_curve_list(props, curve_key.c_str());
 	obs_property_t *mode = obs_properties_add_list(props, mode_key.c_str(), obs_module_text("Easing.Mode"),
 						       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
-	obs_property_list_add_int(mode, obs_module_text("Easing.InOut"), static_cast<long long>(EaseMode::InOut));
-	obs_property_list_add_int(mode, obs_module_text("Easing.In"), static_cast<long long>(EaseMode::In));
-	obs_property_list_add_int(mode, obs_module_text("Easing.Out"), static_cast<long long>(EaseMode::Out));
+	for (const EaseChoice &m : kEaseModes)
+		obs_property_list_add_int(mode, obs_module_text(m.text), m.value);
+	set_tip(mode, obs_module_text("Easing.Mode.Tip"));
 }
 
 void Tween::start(double from_value, double to_value, double seconds, EaseCurve c, EaseMode m)

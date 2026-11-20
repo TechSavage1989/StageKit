@@ -201,6 +201,7 @@ struct Settings {
 // Between the scenes of a rule's line in the list, and before each setting
 // of a rule in the settings.
 constexpr const char *kRuleMark = " \xE2\x86\x92 ";
+constexpr const char *kAnyScene = "(any scene)"; // saved rule value, independent of the displayed label
 constexpr const char *kRuleKey = "rule|";
 
 // The settings for one change of scene: the usual ones, or those of the rule
@@ -428,13 +429,12 @@ void Morph::update(obs_data_t *settings)
 		const size_t mark = line.find(kRuleMark);
 		if (mark == std::string::npos)
 			continue;
-		const std::string any = obs_module_text("Morph.AnyScene");
 		Rule rule;
 		rule.from = line.substr(0, mark);
 		rule.to = line.substr(mark + strlen(kRuleMark));
-		if (rule.from == any)
+		if (rule.from == kAnyScene)
 			rule.from.clear();
-		if (rule.to == any)
+		if (rule.to == kAnyScene)
 			rule.to.clear();
 		const std::string key = std::string(kRuleKey) + line + "|";
 		auto number = [&](const char *name) {
@@ -1682,8 +1682,7 @@ obs_properties_t *get_properties(void *data)
 			rule, name, obs_module_text(strcmp(name, "rule_from") == 0 ? "Morph.RuleFrom" : "Morph.RuleTo"),
 			OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
 		obs_property_list_add_string(scene, obs_module_text("List.Choose"), "");
-		obs_property_list_add_string(scene, obs_module_text("Morph.AnyScene"),
-					     obs_module_text("Morph.AnyScene"));
+		obs_property_list_add_string(scene, obs_module_text("Morph.AnyScene"), kAnyScene);
 		obs_enum_scenes(
 			[](void *param, obs_source_t *source) {
 				const char *scene_name = obs_source_get_name(source);

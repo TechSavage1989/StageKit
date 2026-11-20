@@ -386,7 +386,9 @@ obs_properties_t *get_properties(void *data)
 	sources.title = "SceneStandby.Sources";
 	sources.add = "List.Choose";
 	sources.tip = "SceneStandby.Sources.Tip";
-	sources.choices = video_sources;
+	sources.choices = [scene](std::vector<std::string> &names) {
+		scene_item_names(scene, names);
+	};
 	pick_list_add(props, owner, sources);
 
 	PickList skip;

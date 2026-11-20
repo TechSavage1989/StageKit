@@ -176,6 +176,19 @@ public:
 	~SceneShadow();
 
 	obs_source_t *filter() const { return source_; }
+	std::string inactive_reason()
+	{
+		std::lock_guard lock(mutex_);
+		if (wide_)
+			return obs_module_text("SceneLook.InactiveHDR");
+		if (told_blocked_.empty())
+			return {};
+		std::string text = obs_module_text("SceneLook.BlockedBy");
+		const size_t at = text.find("%1");
+		if (at != std::string::npos)
+			text.replace(at, 2, told_blocked_);
+		return text;
+	}
 	void update(obs_data_t *settings);
 	void tick(float seconds);
 	void render();
@@ -287,8 +300,13 @@ SceneShadow::~SceneShadow()
 void SceneShadow::update(obs_data_t *settings)
 {
 	const ShadowLook look = read_shadow_look(settings);
+	// One time for both ways up to beta223: a filter saved with its own time
+	// and none for the way out takes that time for both (review C5).
+	if (obs_data_has_user_value(settings, "ramp_ms") && !obs_data_has_user_value(settings, "ramp_out_ms"))
+		obs_data_set_int(settings, "ramp_out_ms", obs_data_get_int(settings, "ramp_ms"));
 	const double ramp = std::max(0.0, (double)obs_data_get_int(settings, "ramp_ms") / 1000.0);
-	ramp_.configure(ramp, ramp, static_cast<EaseCurve>(obs_data_get_int(settings, "ramp_ease_curve")),
+	const double ramp_out = std::max(0.0, (double)obs_data_get_int(settings, "ramp_out_ms") / 1000.0);
+	ramp_.configure(ramp, ramp_out, static_cast<EaseCurve>(obs_data_get_int(settings, "ramp_ease_curve")),
 			static_cast<EaseMode>(obs_data_get_int(settings, "ramp_ease_mode")));
 	std::lock_guard lock(mutex_);
 	look_ = look;
@@ -333,7 +351,6 @@ void SceneShadow::look_again(obs_source_t *parent)
 	if (!in_the_way.empty() && in_the_way != told_blocked_)
 		obs_log(LOG_INFO, "Scene Shadow '%s': the filter '%s' draws before it, so it draws nothing",
 			obs_source_get_name(source_), in_the_way.c_str());
-	told_blocked_ = in_the_way;
 	obs_video_info ovi = {};
 	const bool wide = obs_get_video_info(&ovi) &&
 			  (ovi.colorspace == VIDEO_CS_2100_PQ || ovi.colorspace == VIDEO_CS_2100_HLG);
@@ -352,6 +369,7 @@ void SceneShadow::look_again(obs_source_t *parent)
 	std::lock_guard lock(mutex_);
 	flags_.swap(flags);
 	classified_ = true;
+	told_blocked_ = in_the_way;
 	blocked_ = !in_the_way.empty();
 	wide_ = wide;
 }
@@ -804,6 +822,13 @@ obs_properties_t *get_properties(void *data)
 	obs_source_t *parent = filter ? obs_filter_get_parent(filter) : nullptr;
 	if (parent && obs_source_is_group(parent)) {
 		add_on_group_warning(props, obs_module_text("SceneShadow.OnGroup"));
+	} else if (data) {
+		const std::string reason = static_cast<SceneShadow *>(data)->inactive_reason();
+		if (!reason.empty()) {
+			obs_property_t *status =
+				obs_properties_add_text(props, "look_status", reason.c_str(), OBS_TEXT_INFO);
+			obs_property_text_set_info_word_wrap(status, true);
+		}
 	}
 
 	// What it applies to and the lists first, then the look, then the timing:
@@ -903,6 +928,10 @@ obs_properties_t *get_properties(void *data)
 		obs_properties_add_int_slider(props, "ramp_ms", obs_module_text("SceneShadow.Ramp"), 0, 5000, 50);
 	obs_property_int_set_suffix(ramp, " ms");
 	set_tip(ramp, obs_module_text("SceneShadow.Ramp.Tip"));
+	obs_property_t *ramp_out = obs_properties_add_int_slider(props, "ramp_out_ms",
+								 obs_module_text("SceneShadow.RampOut"), 0, 5000, 50);
+	obs_property_int_set_suffix(ramp_out, " ms");
+	set_tip(ramp_out, obs_module_text("SceneShadow.RampOut.Tip"));
 	add_easing_properties(props, "ramp_");
 	set_tips_where_missing(props, {{"shadow_color", obs_module_text("Shadow.Color.Tip")},
 				       {"shadow_opacity", obs_module_text("Shadow.Opacity.Tip")},
@@ -938,6 +967,7 @@ void get_defaults(obs_data_t *settings)
 	obs_data_set_default_int(settings, "which", (int)Which::AllSources);
 	obs_data_set_default_int(settings, "shadow_from", (int)From::Scene);
 	obs_data_set_default_int(settings, "ramp_ms", 300);
+	obs_data_set_default_int(settings, "ramp_out_ms", 300);
 	obs_data_set_default_int(settings, "ramp_ease_curve", (int)EaseCurve::Cubic);
 	obs_data_set_default_int(settings, "ramp_ease_mode", (int)EaseMode::InOut);
 }
