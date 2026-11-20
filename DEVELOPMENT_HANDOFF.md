@@ -47,8 +47,16 @@ configurations".
   do it now; drawing only reads the answer kept.
 - **Not done**: the drop shadow and glow in the background's colours (a shadow in the source's
   own colours exists; this would be another texture through both shadow passes).
-- Tested in `STAGEKIT_TEST_ONLY_OUTLINE_AMBIENT` (its own run in `run-tests.sh`, sheet
-  `docs/images/outline-ambient.png`). Also run: the original branch's outline gates (handoff); the integrated change is being rechecked. **Not the full suite.** The new effect also compiled in Windows OBS 32.2.2 with Direct3D 11.
+- Verified on Ubuntu with OBS 30.0.2 and software OpenGL: `OUTLINE_AMBIENT`, `OUTLINE_BLEED`
+  (including the one-column and two-column controls), `OUTLINE_GLOW`, `OUTLINE_PATTERNS`,
+  `OUTLINE_DESIGNS` and `HEX_PATTERNS` all passed. The rendered preview is
+  [outline-ambient.png](docs/images/outline-ambient.png). The full suite was not run.
+- The OpenGL neon gate reproduced a texture binding failure with the first integrated build.
+  Ring and Follow had separate shader uniforms for the same texture. Both now use `ring_shape`,
+  leaving room for the caster sample that protects the canvas edge. The beta224 comparison
+  and the corrected build both passed the neon gate on the same runner image.
+- The new fill effect compiled in OBS 32.2.2 on Windows with Direct3D 11. All six beta221
+  patterns also produced distinct nonflat frames and animated on that renderer.
 
 ## A one-column Scene Shadow outline (0.1.0-beta225)
 
@@ -169,7 +177,7 @@ The owner's "pattern batch 2", part 1, from reference looks (style only).
 - Tested in `STAGEKIT_TEST_ONLY_HEX_PATTERNS` (79 checks; its own run in `run-tests.sh`, sheet
   `docs/images/hex-patterns.png`). Also run: `AMBIENT_PATTERNS`, `OUTLINE_PATTERNS`,
   `OUTLINE_DESIGNS`, `PATTERN_TRANSFORM`, `TOOLTIPS` (the two outline tests now expect 34
-  designs). **Not the full suite.** Only OpenGL: the new file has not been compiled by Direct3D.
+  designs). **Not the full suite.** The original release was tested on OpenGL. A subsequent check on Windows OBS 32.2.2 rendered and animated all six on Direct3D 11.
 - Cost on llvmpipe at 1280x720 (drawn at half size), a frame: Mesh 20 ms, Hex mosaic 23, Halftone
   and Hex wire glow 25, Hex columns 34 (six cells looked at per pixel), Dot grid 34 to 40
   (fourteen dots looked at per pixel for the stars). Not measured on a graphics card.
