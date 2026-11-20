@@ -54,7 +54,7 @@ export class Move extends SingletonAction<KeySettings> {
 		const pick = (s: KeySettings) => moveShown(keptPicture(s), seen?.kind ?? "", seen?.settings, s) ?? { picture: plain("move") };
 		settings = await settle(key, this.name, seen ? { ...settings, seen } : settings, (s) => shownId(pick(s)));
 		await key.setImage(imageOf(pick(settings), settings));
-		await key.setTitle(moveTitle(seen?.kind, seen?.settings, settings.look));
+		await key.setTitle(moveTitle(seen?.kind ?? (this.name === "layout" ? "stagekit_layout" : undefined), seen?.settings, settings.look));
 	}
 
 	private async showAll(): Promise<void> {

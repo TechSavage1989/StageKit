@@ -182,10 +182,10 @@ CONDITIONAL_ROWS = """
 			(() => {
 				const controls = Object.fromEntries(Array.from(document.querySelectorAll("[setting]"),
 					(element) => [element.getAttribute("setting"), element]));
-				const value = (setting) => controls[setting]?.value ?? controls[setting]?.getAttribute("default") ?? "";
+				const value = (setting) => controls[setting]?.value || controls[setting]?.getAttribute("default") || "";
 				const visible = (setting, show) => {
 					const row = controls[setting]?.closest("sdpi-item");
-					if (row) row.hidden = !show;
+					if (row) { row.hidden = !show; row.style.display = show ? "" : "none"; }
 				};
 				const update = () => {
 					const long = value("longPress");

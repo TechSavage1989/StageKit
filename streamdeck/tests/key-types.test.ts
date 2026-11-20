@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { test } from "node:test";
+import { runInNewContext } from "node:vm";
 
 import features from "../src/features.json" with { type: "json" };
 import { adoptOld, keptPicture, keysWithLists, layoutList, modePictureLists, OWN_LISTS, SCENE_TYPES, sceneTypePicture, SOURCE_TYPES, sourceTypePicture, typeForKept, typeLists } from "../src/key-types.ts";
@@ -325,4 +326,27 @@ test("the Scene Mode key's page: the filter, a mode and its own settings, then t
 	for (const gone of ["layout", "sourceType"]) assert.ok(!page.includes(`setting="${gone}"`), gone);
 	assert.equal(page.split('setting="palette"').length, 2, "one Palette");
 	assert.equal(page.split("<optgroup").length - 1, modePictureLists()[1].groups.filter((g) => g.label).length, "one long type list");
+});
+
+test("property inspector rows follow the selected action, hold and picture type", () => {
+	const page = readFileSync(new URL("../com.techsavage1989.stagekit.sdPlugin/ui/mode.html", import.meta.url), "utf8");
+	const script = [...page.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]).find((code) => code.includes("const visible ="));
+	assert.ok(script);
+	const values: Record<string, string> = { longPress: "none", press: "on", sceneType: "auto" };
+	const hidden: Record<string, boolean> = {};
+	let update = () => {};
+	const elements = ["holdMs", "longMode", "modeUse", "hideAs", "animate", ...Object.keys(values)].map((name) => ({
+		get value() { return values[name] || ""; },
+		getAttribute: (attr: string) => attr === "setting" ? name : "",
+		addEventListener: (_event: string, callback: () => void) => { update = callback; },
+		closest: () => ({ set hidden(value: boolean) { hidden[name] = value; }, style: {} }),
+	}));
+	runInNewContext(script, { document: { querySelectorAll: () => elements }, window: {},
+		customElements: { whenDefined: () => ({ then: (callback: () => void) => callback() }) },
+		requestAnimationFrame: (callback: () => void) => callback(),
+	});
+	assert.deepEqual(hidden, { holdMs: true, longMode: true, modeUse: true, hideAs: true, animate: false });
+	Object.assign(values, { longPress: "toggle", press: "next", sceneType: "camera" });
+	update();
+	assert.deepEqual(hidden, { holdMs: false, longMode: false, modeUse: false, hideAs: false, animate: true });
 });
