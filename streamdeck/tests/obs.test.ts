@@ -355,9 +355,25 @@ test("manual capture addresses the chosen parent and offers only that filter's c
 	delete filters.Second;
 });
 
+test("Blur All accepts repeatable on and off actions and preserves toggle on existing keys", async () => {
+	const { BlurAll } = await import("../src/actions/blur-all.ts");
+	const action = new BlurAll();
+	const key = { setTitle: async () => {}, setImage: async () => {}, setState: async () => {}, showAlert: async () => assert.fail("Blur All was refused") };
+	const press = (value?: string) => action.onKeyDown({ action: key, payload: { settings: { press: value } } } as never);
+	for (const value of ["on", "on", "off", "off", undefined]) {
+		await press(value);
+		assert.equal(blurred, value !== "off");
+	}
+});
+
 test("a scene key uses the live scene outside Studio Mode and can restore OBS transition settings", async () => {
 	await obs.switchScene("Live", true, "Swipe", 480, true);
 	assert.deepEqual(await obs.currentScenes(), { program: "Live", preview: "" });
+	const { SceneSwitch } = await import("../src/actions/scene.ts");
+	let state = -1;
+	const key = { isKey: () => true, setTitle: async () => {}, setImage: async () => {}, setState: async (value: number) => { state = value; } };
+	await new SceneSwitch().onWillAppear({ action: key, payload: { settings: { where: "preview", scene: "Live" } } } as never);
+	assert.equal(state, 1, "a Preview key lights on its live program scene with Studio Mode off");
 	assert.deepEqual([selectedTransition, selectedDuration], ["Fade", 300]);
 	await assert.rejects(obs.switchScene("Missing scene", false, "Swipe", 450, true));
 	assert.deepEqual([selectedTransition, selectedDuration], ["Fade", 300], "restore on a rejected switch");
@@ -544,10 +560,10 @@ test("a Scene Mode key is tied to one filter: Switch on, Switch off, Toggle, Nex
 	page = editModeSettings({ modeFilter: standby, modeFilterWas: standby, mode: "m2" })!;
 	assert.deepEqual([page.modeFor, page.modeForWas, page.modeType], ["m2", "m2", "auto"], "the key's own mode");
 	page = editModeSettings({ modeFilter: standby, modeFilterWas: standby }, "m1")!;
-	assert.equal(page.modeFor, "m1", "none to switch to: the filter's first mode");
+	assert.deepEqual([page.mode, page.modeFor], ["m1", "m1"], "a new key selects the first mode for both controls");
 	assert.equal(editModeSettings({ modeFilter: standby, modeFilterWas: standby }), undefined, "the first mode not known: left empty");
 	page = editModeSettings({ modeFilter: `Chat Live${sep}Column`, modeFilterWas: standby, mode: "m2", modeFor: "m2", modeForWas: "m2" }, "k1")!;
-	assert.deepEqual([page.mode, page.modeFor], ["", "k1"], "another filter: its first mode");
+	assert.deepEqual([page.mode, page.modeFor], ["k1", "k1"], "the new filter selects its first mode for the first press");
 
 	// A key saved up to beta179 with the key-wide Layout and Mode type the page no longer shows: its own mode's
 	// Image list shows that Mode type, nothing is written for looking, and editing that Image takes its place.
