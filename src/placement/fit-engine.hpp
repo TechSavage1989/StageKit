@@ -72,6 +72,10 @@ struct FitSettings {
 	// not, into the free space clear of the other sources (those listed in
 	// `skip`, or all of them with none listed). See `space_among`.
 	bool whole = false;
+	// "Only if it would overlap" (`whole_room_only_hit`): with `whole`, room
+	// is made only while the picture, lying where the whole screen puts it,
+	// would overlap one of the sources room is made for.
+	bool whole_only_hit = false;
 	bool in_area = false; // (in a tick's copy only: the space is the box set, not the screen)
 	// Which fits of the scene make room for which (see `Rank`).
 	SpacePriority priority = SpacePriority::Shares;
@@ -184,6 +188,9 @@ struct SpaceInputs {
 	// whole screen or the box set; `only_listed`: room is made only for the
 	// items listed (`passed`), not for every one.
 	bool whole = false, only_listed = false;
+	// "Only if it would overlap": room is made only when the picture, where
+	// `within` would put it, overlaps one of those boxes (no gap counted).
+	bool only_hit = false;
 	std::vector<Box> boxes;
 	std::vector<int64_t> ids;
 	std::vector<bool> said, passed, above;
@@ -560,7 +567,7 @@ private:
 	std::vector<bool> passed_; // which are items never in the way, counted only when the picture leaves room
 	std::vector<bool> above_;  // which are placed by a fit that takes its space before this one
 	bool avoiding_ = false;    // they count just now
-	std::array<double, 14> used_rule_{-1.0};
+	std::array<double, 15> used_rule_{-1.0};
 	static constexpr double kArriving = 0.25;
 	bool was_showing_ = false;
 	double shown_for_ = 0.0;

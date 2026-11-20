@@ -2357,6 +2357,20 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   for kind 0/1 once ticked), the list's heading and the rules' tips swapped per kind
   (`Fit.Room*`). Tested in `[fit whole screen: ...]` (`fit_whole_overlap_test`, alone with
   `STAGEKIT_TEST_ONLY_FIT_WHOLE_OVERLAP`), Scene Fit entry and Fit to Space. Not seen on Windows.
+  **Only if it would overlap** (`whole_room_only_hit`, off as it comes, one of `kFitKeys`; shown
+  only while *Make room if not filling* is shown and ticked; `FitSettings::whole_only_hit`,
+  `SpaceInputs::only_hit`). The owner: "add an option to only reposition/make room if the visible
+  pixels would actually overlap the Make room for source otherwise". Ticked, an image that does
+  not fill makes room only when the picture **where the fit area would put it** (`would` in
+  `space_among`: `fw` x `fh` in `full`, by *Align in the space*) overlaps, by more than half a
+  pixel each way and with no gap counted, one of the boxes room is made for; otherwise it is
+  `covering` and keeps the whole screen. Those boxes are the obstacles the scan already gives
+  (measured by the fit's *Use visible pixels* and *Ignore shadows & outlines*; an item that draws
+  nothing is not among them), so nothing new is drawn or read back; a box the area's middle lies
+  inside (a background) is no overlap, as it is no obstacle. Like `fills` it comes from the
+  shape and the would-be place, never from where the picture is, so it does not flip once room
+  is made. It is in `used_rule_` (15 numbers now). Tested in `[fit whole screen: making room
+  only when the image would overlap]` (`fit_room_only_hit_test`, under the same gate).
 - **Fit to Space's overlap rule has two measures, each with a tick box** (`skip_use_pct`, *Use fill
   percentage*, on as it comes, with `skip_fill`; `skip_use_px`, *Use edge distances*, with
   `skip_px_top`, `_bottom`, `_left`, `_right`, 50 px as they come): the second overlaps when the

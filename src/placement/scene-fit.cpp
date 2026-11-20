@@ -113,6 +113,7 @@ const FitKey kFitKeys[] = {
 	{"ease_curve", Kind::Int, false},
 	{"ease_mode", Kind::Int, false},
 	{"whole_make_room", Kind::Bool, false},
+	{"whole_room_only_hit", Kind::Bool, false},
 	{"skip_use_pct", Kind::Bool, false},
 	{"skip_fill", Kind::Double, false},
 	{"skip_use_px", Kind::Bool, false},
