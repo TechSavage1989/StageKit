@@ -76,6 +76,44 @@ the name it was given; the dock still names what it adds without the prefix (`ad
 the Stream Deck plugin knows a kind's own name now and before (`isOwnName`, `OLD_NAMES` in
 `streamdeck/src/kinds.ts`). The rest of this file names filters without the prefix.
 
+A sixth, stage 1 of the whole-plugin review (2026-11-19; the owner, of the proposal: "make it so with
+all your recommendations"; beta NEXT). Words only: values in `data/locale/en-US.ini` and the README; no
+key, id, setting or saved number changed, and **the rest of this file still uses the names from before
+it**. The Stream Deck plugin's share waits for the review's stage 4. Then and now: *item* in every
+label and tooltip: *source* (Item to move: Source to move; the dock's Item: Source; Items to show:
+Sources to show; Linked items: Sources; These items: These sources; Only these items: Only these
+sources; What is set on each item: Keep each source's own; filter names keep *Item*). Match Item's
+Item in this scene / Line it up with: scene / item: Source / Line up with scene / Line up with
+source. Edge distance (Move Source, Move Scene Item, the dock): Gap; Resize limit: Resize gap.
+A saved spot / A spot on the screen: Saved position / Screen position; Save its current spot: Save
+current position. Bring-along items too: Move's linked sources too. Corners & Edges' Outline (and
+its width, colour, opacity): Border, also in Scene Corners; Sizes as seen on screen: Sizes in screen
+pixels. Blur's Zoom (radial): Radial (zoom blur); Zoom centre X / Y and Zoom's Zoom in on: Centre X /
+Centre Y. Auto Frame's Aspect ratio (the stretch): Display shape; its leftover *shape* words: *aspect
+ratio* (4. Aspect ratio for each program, Start from usual ratios, Forget ratios seen before, Its
+aspect ratio, Remember this ratio); Aspect Ratio Preset's Image is / Custom shape: Aspect ratio /
+Custom ratio. Cover the capture now: Cover the source now. The Window Switcher's Transition /
+Duration for a change of window: Switch transition / Switch duration (its hide keeps Transition /
+Duration). In the Show/Hide transition group the two Durations: Show duration / Hide duration; All
+sources (the usual): All sources. Morph's Other items: Unpaired: scene change; Unpaired sources:
+Unpaired: show or hide; Unpaired: its settings: Unpaired transition; in that list Morph's own Fade /
+Fade and zoom / Slide off the nearest edge: Morph: fade / Morph: fade and zoom / Morph: slide off
+nearest edge; Make room's Nearest edge away from the morph: Away from the morph. Scene Fit's own
+Ignored sources: Never fitted (Fit to Space's keeps the name); Sync to scenes: Sync position to
+scenes; Settings / Each source its own / Same for all sources: Settings are / Each source's own /
+Shared by all sources. Scene Blur's Sources to blur / Blur these: Sources covered / Chosen sources.
+Cropped View's Show / Whatever is drawn / A square: Source / Visible pixels / 1:1 (square). Ambient
+Background's Blur / Mosaic size: Blur strength / Cell size. Show in Scenes' empty Switch to scene:
+Stay in this scene; (nothing) and (No mode): (none) and (no mode). The dock's Scene list's first
+entry: (the scene being edited); its arrange tools are named as their hotkeys (Align left, Space out
+across). Tools menu: Check for updates when OBS starts, Restore layout when a collection loads, Save
+layout when OBS closes. **Hotkey descriptions follow one pattern**, "StageKit: <filter's name>:
+<what it does>" (toggle, switch on, switch off, move, apply layout, set aspect ratio, cover or
+uncover, switch to <mode>; Blur All: "StageKit: Blur All: toggle"); the hotkeys' ids, which the
+Stream Deck plugin and saved bindings go by, are unchanged, and the global arrange hotkeys keep
+"StageKit: <tool>" (the preview menu reads the text after the first ": "). A tooltip on a transition
+list starts with *As the scene sets*.
+
 The trial scenes were renamed at the owner's word (2026-11-17, beta154: "Full capture should be
 called Live / Holding should be called standby / Component should be called Chat Live"):
 Full-Capture-Scene is *Live*, Component-Capture-Scene *Chat Live*, Holding-Scene *Standby*. Those

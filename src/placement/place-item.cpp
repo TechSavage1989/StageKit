@@ -33,6 +33,8 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../dock/arrange-tools.hpp"
 #include "../common/tooltip.hpp"
 
+#include <initializer_list>
+#include <utility>
 #include <obs-module.h>
 #include <obs-frontend-api.h>
 #include <graphics/matrix4.h>
@@ -719,8 +721,12 @@ obs_properties_t *get_properties(void *data)
 	obs_property_set_modified_callback(visible_pixels, destination_modified);
 	obs_property_t *no_shadows = obs_properties_add_bool(props, "no_shadows", obs_module_text("Measure.NoShadows"));
 	set_tip(no_shadows, obs_module_text("Measure.NoShadows.Tip"));
-	obs_properties_add_float(props, "saved_x", obs_module_text("Place.SavedX"), -20000.0, 20000.0, 1.0);
-	obs_properties_add_float(props, "saved_y", obs_module_text("Place.SavedY"), -20000.0, 20000.0, 1.0);
+	obs_property_t *saved_x =
+		obs_properties_add_float(props, "saved_x", obs_module_text("Place.SavedX"), -20000.0, 20000.0, 1.0);
+	obs_property_float_set_suffix(saved_x, " px");
+	obs_property_t *saved_y =
+		obs_properties_add_float(props, "saved_y", obs_module_text("Place.SavedY"), -20000.0, 20000.0, 1.0);
+	obs_property_float_set_suffix(saved_y, " px");
 	obs_properties_add_bool(props, "restore_size", obs_module_text("Place.RestoreSize"));
 	obs_property_t *spot_x =
 		obs_properties_add_float(props, "spot_x", obs_module_text("Place.SpotX"), -20000.0, 20000.0, 1.0);
@@ -783,6 +789,22 @@ obs_properties_t *get_properties(void *data)
 		},
 		data);
 
+	for (const auto &[name, key] :
+	     std::initializer_list<std::pair<const char *, const char *>>{{"item", "Place.Item.Tip"},
+									  {"destination", "Place.Destination.Tip"},
+									  {"margin", "Place.Margin.Tip"},
+									  {"saved_x", "Place.Saved.Tip"},
+									  {"saved_y", "Place.Saved.Tip"},
+									  {"restore_size", "Place.RestoreSize.Tip"},
+									  {"spot_x", "Place.Spot.Tip"},
+									  {"spot_y", "Place.Spot.Tip"},
+									  {"capture", "Place.Capture.Tip"},
+									  {"linked", "Place.Linked.Tip"},
+									  {"flip_linked", "Place.FlipLinked.Tip"},
+									  {"duration_ms", "Place.Duration.Tip"},
+									  {"go", "Place.Go.Tip"}})
+		if (obs_property_t *one = obs_properties_get(props, name))
+			set_tip(one, obs_module_text(key));
 	obs_property_t *help = obs_properties_add_text(
 		props, "help", obs_module_text(on_source ? "SendTo.Help" : "Place.Help"), OBS_TEXT_INFO);
 	obs_property_text_set_info_word_wrap(help, true);

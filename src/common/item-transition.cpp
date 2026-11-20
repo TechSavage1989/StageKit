@@ -262,7 +262,7 @@ void add_item_transition_properties(obs_properties_t *props)
 		obs_property_list_add_string(transition, shown_as ? shown_as : id, id);
 	}
 	obs_property_list_add_string(transition, obs_module_text("Change.Keep"), kTransitionKeep);
-	const std::string tip = std::string(obs_module_text("Change.Tip")) + " " + obs_module_text("Change.Scene.Tip");
+	const std::string tip = std::string(obs_module_text("Change.Scene.Tip")) + " " + obs_module_text("Change.Tip");
 	set_tip(transition, tip.c_str());
 	obs_property_set_modified_callback(transition, [](obs_properties_t *p, obs_property_t *, obs_data_t *settings) {
 		const std::string kind = obs_data_get_string(settings, "transition");
@@ -789,7 +789,7 @@ void build(obs_properties_t *top, obs_source_t *owner, obs_data_t *settings)
 		add_kinds(kinds, scene_entry);
 		std::string tip = obs_module_text(show ? "Change.ShowWith.Tip" : "Change.HideWith.Tip");
 		if (scene_entry)
-			tip += std::string(" ") + obs_module_text("Change.Scene.Tip");
+			tip = std::string(obs_module_text("Change.Scene.Tip")) + " " + tip;
 		set_tip(kinds, tip.c_str());
 		obs_property_set_modified_callback2(kinds, rebuild_cb, owner);
 		const std::string kind = obs_data_get_string(settings, kind_name.c_str());
@@ -797,9 +797,11 @@ void build(obs_properties_t *top, obs_source_t *owner, obs_data_t *settings)
 				   kind != kSame && !kind.empty();
 		if (!timed)
 			continue;
-		obs_property_t *time = obs_properties_add_int_slider(content, ms_name.c_str(),
-								     obs_module_text("Change.Time"), 50, 5000, 50);
+		obs_property_t *time = obs_properties_add_int_slider(
+			content, ms_name.c_str(), obs_module_text(show ? "Change.ShowTime" : "Change.HideTime"), 50,
+			5000, 50);
 		obs_property_int_set_suffix(time, " ms");
+		set_tip(time, obs_module_text("Change.Duration.Tip"));
 		if (kind == kTransitionScene) {
 			set_tip(time, obs_module_text("Change.Time.Tip"));
 			continue; // (its own settings are the scene's)

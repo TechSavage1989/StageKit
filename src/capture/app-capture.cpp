@@ -2401,8 +2401,8 @@ obs_properties_t *get_properties(void *data)
 				obs_property_set_visible(one, timed);
 		return true;
 	});
-	obs_property_t *time =
-		obs_properties_add_int_slider(props, "change_ms", obs_module_text("Change.Time"), 50, 5000, 50);
+	obs_property_t *time = obs_properties_add_int_slider(props, "change_ms",
+							     obs_module_text("AppCapture.ChangeTime"), 50, 5000, 50);
 	obs_property_int_set_suffix(time, " ms");
 	add_easing_properties(props, "");
 

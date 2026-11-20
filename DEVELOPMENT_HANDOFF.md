@@ -23,6 +23,62 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
+## Review stage 1: words only (0.1.0-beta217)
+
+Stage 1 of the approved whole-plugin review (the proposal and the owner's decisions, 2026-11-19:
+"make it so with all your recommendations"). Wording only: values in `data/locale/en-US.ini`, the
+README, and a few lines of C++ that give a control a tooltip or a label a key of its own. No setting
+key, id, enum number, default or control order changed. The then-and-now list is the sixth table in
+AGENTS.md's *Names*.
+
+**Done:** C1 (item: source, with Match Item's labels from C54 and Show in Scenes' *Move's linked
+sources too* from C39, both pure renames), C2 (hotkey descriptions), C4 (list wording: values only),
+C7, C8, C9, C11, C13 (in part, below), C15, C22, C25, C29, C33, C34, C35, C37, C38, C43, C46, C50, C53,
+C56, C57, C58, C59, C60, C64, C65, C69 (names only), C70, C77, C79, C80 (menu wording), C81 (wording),
+C97, C98 (the labels that changed here, and the hotkey counts), C101, and decisions D5 (A), D8, D9
+and D12 b.
+
+**C++ touched, and why:** new locale keys for the fuller *Show/Hide transition*'s two durations
+(`Change.ShowTime`, `Change.HideTime`, `Change.Duration.Tip`) and the Window Switcher's
+`AppCapture.ChangeTime`; Morph's own entries in the unpaired list (`Morph.Alone.Fade/Zoom/Slide`);
+the transition tooltips put *As the scene sets* first; tooltips set by control name at the end of
+the Zoom, Cropped View, Show/Hide Animation and Move windows, on Blur's *Strength*, Auto Frame's
+*Display shape* and the dock's five Effects buttons (`<key>.Tip`); "px" on the saved position; "%"
+without a space in Fade and Zoom and Corners & Edges; and Scene Fit's shared settings use Fit to
+Space's list titles (`shared` in `fit_add_controls`: titles only).
+
+**Skipped as moot:** *Capture.Always/Never* "separated by commas" (they are lists now: the tooltips
+were corrected instead); C101's `Capture.Lists` is in use and stays; of C101's 27 keys, 24 are deleted
+and `Trigger.ActGroup`, `Frame.Rules.Tip` and `Arrange.CopyBox` are kept for stages 2 and 3.
+
+**Left for later stages:**
+- *Stream Deck (stage 4):* its share of C1, C37, C38 and C77 (the look name *Outlined edges*, the
+  Position labels, tool names). Nothing under `streamdeck/` was touched, so its version is unchanged.
+- *C4:* one shared `List.AddSource` key in place of the per-filter ones, and "(choose a …)" against
+  "(none)" in every list (needs each call site looked at). *C102:* shared `Common.*` keys. Neither
+  is visible.
+- *C13:* only the worst tooltips were cut (Outline design, Outline corners, Link Visibility's mode,
+  *Show only what it hid*, *Show when source is hidden*, Darkest level, the dock's slide). Still
+  over 550 characters, among others: `Fit.Priority.Tip`, `Fit.Toward.Tip`, `SceneFit.Settings.Tip`,
+  `SceneFit.TakeOver.Tip`, `SceneBlur.Area.Tip`, `Morph.Alone.Tip`, `SceneTrans.Cover.Tip`. Controls
+  still without a tooltip in Auto Frame, Auto Capture, Program Trigger, Shadow and Corners & Edges
+  go with their windows' regrouping in stage 2 (C18, C27, C36, C40).
+- *C64:* the "Unpaired transition" line before the copied settings in a filter's window (a new
+  control: stage 2).
+- *C69:* the order of Ambient Background's blur types (order is stage 2). Its mosaic list keeps the
+  name *Mosaic*, because its first entry is *None*; the slider is *Cell size*.
+- *C80:* *Release page* on the update button on macOS and Linux, and `Update.Check.Title` (code).
+  *C81:* the undo name "StageKit: Snap on release" (a new key in code).
+- *C98, C99:* the README was brought in line with every label renamed here; the wider pass over
+  its quoted labels, the corrected troubleshooting and scene-filter introduction, the Features list
+  by job and the two standby sections go with the guide's reorganising (stage 5).
+- Anything about how Fit to Space or Scene Fit behave: stage 7.
+
+**Tested:** the tooltips gate (`STAGEKIT_TEST_ONLY_TOOLTIPS`: every kind's window, 34 kinds), the
+Link Visibility sections that read labels and build the transition group, and the Scene Fit groups
+section. The full suite was not run (the owner asked for a short job); the dock section's check of
+the Tools menu text was updated to the new wording and has not run.
+
 ## The circuit patterns (0.1.0-beta216)
 
 Branch `fix/circuit-board`, on `main` at beta215. Not pushed. The owner, of beta215: "i don't

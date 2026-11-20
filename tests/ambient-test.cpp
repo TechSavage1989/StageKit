@@ -10363,7 +10363,7 @@ static void link_transitions_test(uint32_t w, uint32_t h)
 		obs_sceneitem_set_visible(ai, true); // shows A: B goes
 		sleep_ms(200);
 		CHECK(!obs_sceneitem_visible(bi) && kind_of(bi, false) == "(none)",
-		      "and one saved as What is set on each item leaves the items' own transitions alone (%s)",
+		      "and one saved as Keep each source's own leaves the items' own transitions alone (%s)",
 		      kind_of(bi, false).c_str());
 		obs_source_filter_remove(scene_src, old_link);
 		obs_source_release(old_link);
@@ -22149,7 +22149,7 @@ int main(int argc, char **argv)
 				      "set back to a cut, and the source back to the usual, every item's transitions are taken off again");
 			}
 
-			// Bring-along items too: what the camera's Send To key brings along.
+			// Move's linked sources too: what the camera's Send To key brings along.
 			{
 				obs_source_t *tag = obs_source_create("color_source", "Switch Tag", nullptr, nullptr);
 				obs_sceneitem_t *tag1 = obs_scene_add(one, tag);
@@ -22181,7 +22181,7 @@ int main(int argc, char **argv)
 				const bool tag_goes = !obs_sceneitem_visible(tag1) && !obs_sceneitem_visible(cam1);
 				flip(true);
 				CHECK(tag_stays && tag_goes && obs_sceneitem_visible(tag1),
-				      "with 'Bring-along items too', what the source's Send To key brings along is hidden and shown with it (%d %d)",
+				      "with \"Move's linked sources too\", what the source's Send To key brings along is hidden and shown with it (%d %d)",
 				      tag_stays, tag_goes);
 				obs_source_filter_remove(cam, key);
 				obs_source_release(key);
@@ -25116,7 +25116,7 @@ int main(int argc, char **argv)
 			vp = render(view, 150, 150);
 			CHECK((int)vp[(size_t(75) * 150 + 10) * 4 + 2] > 150, "what is left is the right-hand part");
 
-			// "Whatever is drawn": the see-through room around the content is
+			// "Visible pixels": the see-through room around the content is
 			// trimmed off without any numbers, and the view follows the content.
 			{
 				auto card = [&](const char *name, int x0, int x1, int y0, int y1) {
@@ -29906,7 +29906,7 @@ int main(int argc, char **argv)
 		CHECK(std::fabs(p.x) < 0.6 && std::fabs(p.y + p.h - 600) < 0.6,
 		      "alignment sits it bottom-left (%.0f,%.0f)", p.x, p.y);
 
-		// "Use that item's size": the frame is copied from an item already laid out.
+		// "Use that source's size": the frame is copied from an item already laid out.
 		{
 			obs_scene_t *layout_scene = obs_scene_create("Old 4:3 Scene");
 			obs_source_t *old_src = obs_source_create("color_source", "Old Capture", nullptr, nullptr);
@@ -30102,7 +30102,7 @@ int main(int argc, char **argv)
 					const std::string saved = obs_data_get_string(now, "rules_text");
 					obs_data_set_string(bf, "rules_text", saved.c_str());
 					obs_data_release(now);
-					CHECK(saved == "snes9x-x64 = 4:3", "'Remember this shape' saves it (%s)",
+					CHECK(saved == "snes9x-x64 = 4:3", "'Remember this ratio' saves it (%s)",
 					      saved.c_str());
 				}
 				auto [t10, p10] = look(1800);
@@ -30569,7 +30569,7 @@ int main(int argc, char **argv)
 				obs_properties_destroy(learned_props);
 				sleep_ms(100);
 				CHECK(remembered().empty(),
-				      "'Forget shapes seen before' clears what was remembered (%s)",
+				      "'Forget ratios seen before' clears what was remembered (%s)",
 				      remembered().c_str());
 				// A program whose picture simply fills its window has no shape to start from.
 				QImage filling(1000, 650, QImage::Format_RGB32); // not a shape any console uses
@@ -31144,7 +31144,7 @@ int main(int argc, char **argv)
 					QAction *at_start = updates->findChild<QAction *>("layoutAtStart");
 					CHECK(at_start &&
 						      at_start->text() ==
-							      QString("Restore it when a collection loads") &&
+							      QString("Restore layout when a collection loads") &&
 						      updates->findChild<QAction *>("layoutSave")->text() ==
 							      QString("Save window layout"),
 					      "and the menu says so (%s)",

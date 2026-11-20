@@ -107,8 +107,9 @@ void add_blur_look_properties(obs_properties_t *props)
 	set_tip(type, obs_module_text("RampBlur.Type.Tip"));
 	obs_property_set_modified_callback(type, type_modified);
 
-	obs_properties_add_float_slider(look, "strength", obs_module_text("RampBlur.Strength"), 0.0, kMaxBlurStrength,
-					0.5);
+	obs_property_t *strength = obs_properties_add_float_slider(
+		look, "strength", obs_module_text("RampBlur.Strength"), 0.0, kMaxBlurStrength, 0.5);
+	set_tip(strength, obs_module_text("RampBlur.Strength.Tip"));
 	obs_property_t *angle =
 		obs_properties_add_float_slider(look, "angle", obs_module_text("RampBlur.Angle"), -180.0, 180.0, 1.0);
 	obs_property_float_set_suffix(angle, "°");

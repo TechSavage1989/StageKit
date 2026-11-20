@@ -20,7 +20,10 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include "cropped-view.hpp"
 #include "../common/timing.hpp"
+#include "../common/tooltip.hpp"
 
+#include <initializer_list>
+#include <utility>
 #include <obs-module.h>
 #include <graphics/vec4.h>
 #include <plugin-support.h>
@@ -388,6 +391,11 @@ obs_properties_t *get_properties(void *data)
 		obs_property_t *amount = obs_properties_add_int(props, name, obs_module_text(key.c_str()), 0, 16384, 1);
 		obs_property_int_set_suffix(amount, " px");
 	}
+	for (const auto &[name, key] :
+	     std::initializer_list<std::pair<const char *, const char *>>{{"source", "View.Source.Tip"},
+									  {"crop_to", "View.CropTo.Tip"}})
+		if (obs_property_t *one = obs_properties_get(props, name))
+			set_tip(one, obs_module_text(key));
 	obs_property_t *help = obs_properties_add_text(props, "help", obs_module_text("View.Help"), OBS_TEXT_INFO);
 	obs_property_text_set_info_word_wrap(help, true);
 	return props;

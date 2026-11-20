@@ -260,7 +260,7 @@ void corners_add_look_properties(obs_properties_t *props)
 	obs_properties_add_color(line, "border_color", obs_module_text("Corners.BorderColor"));
 	obs_property_t *opacity = obs_properties_add_float_slider(
 		line, "border_opacity", obs_module_text("Corners.BorderOpacity"), 0.0, 100.0, 1.0);
-	obs_property_float_set_suffix(opacity, " %");
+	obs_property_float_set_suffix(opacity, "%");
 	obs_properties_add_group(props, "line", obs_module_text("Corners.Line"), OBS_GROUP_NORMAL, line);
 
 	obs_property_t *screen = obs_properties_add_bool(props, "screen_px", obs_module_text("Corners.ScreenPx"));

@@ -17,7 +17,10 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/easing.hpp"
 #include "../common/pick-list.hpp"
 #include "../common/scene-util.hpp"
+#include "../common/tooltip.hpp"
 
+#include <initializer_list>
+#include <utility>
 #include <obs-module.h>
 #include <graphics/vec2.h>
 #include <plugin-support.h>
@@ -273,6 +276,13 @@ obs_properties_t *show_hide_properties(void *data)
 				"Easing.Back",   "Easing.Elastic", "Easing.Bounce"};
 	for (int i = 0; i < 11; i++)
 		obs_property_list_add_int(curve, obs_module_text(curves[i]), i);
+	for (const auto &[name, key] :
+	     std::initializer_list<std::pair<const char *, const char *>>{{"item", "ShowHide.Item.Tip"},
+									  {"style", "ShowHide.Style.Tip"},
+									  {"in_ms", "ShowHide.In.Tip"},
+									  {"out_ms", "ShowHide.Out.Tip"}})
+		if (obs_property_t *one = obs_properties_get(props, name))
+			set_tip(one, obs_module_text(key));
 	obs_property_t *help = obs_properties_add_text(props, "help", obs_module_text("ShowHide.Help"), OBS_TEXT_INFO);
 	obs_property_text_set_info_word_wrap(help, true);
 	return props;

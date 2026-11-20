@@ -3567,7 +3567,9 @@ void fit_add_controls(obs_properties_t *props, const std::string &prefix, const 
 	PickList skip;
 	const std::string skip_setting = list_prefix + "skip";
 	skip.setting = skip_setting.c_str();
-	skip.title = entry ? "SceneFit.SkipFor" : "Fit.Skip";
+	// One set shared by every source of a Scene Fit is named as Fit to Space's.
+	const bool shared = prefix.rfind("group|", 0) == 0;
+	skip.title = entry && !shared ? "SceneFit.SkipFor" : "Fit.Skip";
 	skip.add = entry ? "SceneFit.AddSource" : "List.AddItem";
 	skip.tip = "Fit.Skip.Tip";
 	skip.choices = [parent](std::vector<std::string> &names) {
@@ -3605,7 +3607,7 @@ void fit_add_controls(obs_properties_t *props, const std::string &prefix, const 
 	PickList share;
 	const std::string share_setting = list_prefix + "share_scenes";
 	share.setting = share_setting.c_str();
-	share.title = entry ? "SceneFit.ShareFor" : "Fit.Share";
+	share.title = entry && !shared ? "SceneFit.ShareFor" : "Fit.Share";
 	share.add = "List.AddScene";
 	share.tip = "Fit.Share.Tip";
 	share.choices = [parent](std::vector<std::string> &names) {
