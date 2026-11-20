@@ -380,6 +380,9 @@ its heading:
 <p align="center"><img src="docs/images/outline-designs.png" width="900" alt="The twelve outline designs, each from Shadow, Glow &amp; Outline and from Scene Shadow: solid, double line, dashed, dotted, gradient, neon, inner line, marching dashes, travelling gradient, pulse, shimmer and rainbow"></p>
 
 <p align="center"><img src="docs/images/outline-patterns.png" width="900" alt="A white source with a 12 px outline filled with each of the seventeen patterns, from Shadow, Glow &amp; Outline and from Scene Shadow, then a rounded line filled with Plasma and a line following two bars filled with a small circuit board"></p>
+
+<p align="center"><img src="docs/images/outline-ambient.png" width="900" alt="Source and scene outlines filled with an Ambient Background, including pattern, blur, mosaic and live capture examples"></p>
+
 - **Panel behind the source**: a coloured panel with a margin.
 
 *Rounded corners* rounds the image and the panel. For other corner styles, use Corners & Edges.
