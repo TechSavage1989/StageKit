@@ -20,7 +20,7 @@ namespace stagekit {
 // How a scene item appears and disappears when one of StageKit's filters
 // shows or hides it: any transition OBS has, a cut, or whatever the item is
 // set to already. Every filter that shows and hides items offers the same
-// two controls, kept in the settings "transition" and "transition_ms".
+// Show/Hide transition group, with the original "transition" and "transition_ms" settings.
 inline constexpr const char *kTransitionCut = "none";  // at once; the item's transitions are taken off
 inline constexpr const char *kTransitionKeep = "keep"; // whatever is set on the item is left alone
 inline constexpr const char *kTransitionFade = "fade_transition";
@@ -52,11 +52,9 @@ void cut_item_transitions(obs_sceneitem_t *item);
 // item keeps its transitions for the next change made in view. Items whose
 // transitions are another filter's (`item_transitions_owner`) are passed over
 // here too: they are shown and hidden as OBS does it.
-// Link Visibility, Show in Scenes and the capture filters' hide
-// (`hid_items_press`) go through this, after `set_item_transitions` or
-// `apply_item_change`. Program Trigger, the two switchers' following,
-// Show/Hide Animation and Standby's stand-ins do not yet. A group's inner items, whose transitions OBS starts when the
-// group itself is shown or hidden, are not stopped.
+// Link Visibility, Show in Scenes, Program Trigger, the Automatic Source Switcher and the capture
+// filters' hide use this after applying the item's transition. A group's inner items still
+// follow OBS when the group itself is shown or hidden.
 bool set_item_visible(obs_sceneitem_t *item, bool visible);
 
 // Ends a show transition still under way on a hidden item, or a hide
@@ -66,16 +64,6 @@ bool set_item_visible(obs_sceneitem_t *item, bool visible);
 // stays open). The next change in the other direction does not end it either.
 // Says whether there was one.
 bool end_stale_transition(obs_sceneitem_t *item);
-
-// Adds the "Change with" list and its "Lasting" time to a properties window.
-void add_item_transition_properties(obs_properties_t *props);
-
-// As the scene sets, 300 ms (a fade of 300 ms where the scene sets nothing).
-void item_transition_defaults(obs_data_t *settings);
-
-// Reads the two settings.
-std::string item_transition_kind(obs_data_t *settings);
-uint32_t item_transition_ms(obs_data_t *settings);
 
 // ---------------------------------------------------------------------------
 // The fuller control: showing and hiding each have their own transition, a

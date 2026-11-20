@@ -40,6 +40,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/loading.hpp"
 #include "../common/owner-ref.hpp"
 #include "../common/pick-list.hpp"
+#include "../common/source-rename.hpp"
 #include "../common/scene-util.hpp"
 #include "../common/filter-order.hpp"
 #include "../common/timing.hpp"
@@ -668,82 +669,6 @@ bool lookup(obs_source_t *scene, obs_sceneitem_t *item, ItemChange &out, bool &o
 	return found;
 }
 
-// A source renamed: its name follows in both lists and in its own settings.
-void rename_in(obs_source_t *filter, const char *was, const char *now)
-{
-	obs_data_t *settings = obs_source_get_settings(filter);
-	bool changed = false;
-	for (const char *list : {"sources", "except"}) {
-		std::vector<std::string> names = pick_list_read(settings, list, false);
-		bool here = false;
-		for (std::string &name : names)
-			if (name == was) {
-				name = now;
-				here = true;
-			}
-		if (here) {
-			pick_list_write(settings, list, false, names);
-			changed = true;
-		}
-	}
-	const std::string from = std::string("for|") + was + "|", to = std::string("for|") + now + "|";
-	std::vector<std::string> keys;
-	for (obs_data_item_t *it = obs_data_first(settings); it; obs_data_item_next(&it)) {
-		const char *name = obs_data_item_get_name(it);
-		if (name && strncmp(name, from.c_str(), from.size()) == 0 && obs_data_item_has_user_value(it))
-			keys.push_back(name);
-	}
-	for (const std::string &old_key : keys) {
-		const std::string new_key = to + old_key.substr(from.size());
-		obs_data_item_t *it = obs_data_item_byname(settings, old_key.c_str());
-		switch (obs_data_item_gettype(it)) {
-		case OBS_DATA_STRING:
-			obs_data_set_string(settings, new_key.c_str(), obs_data_item_get_string(it));
-			break;
-		case OBS_DATA_BOOLEAN:
-			obs_data_set_bool(settings, new_key.c_str(), obs_data_item_get_bool(it));
-			break;
-		case OBS_DATA_NUMBER:
-			if (obs_data_item_numtype(it) == OBS_DATA_NUM_DOUBLE)
-				obs_data_set_double(settings, new_key.c_str(), obs_data_item_get_double(it));
-			else
-				obs_data_set_int(settings, new_key.c_str(), obs_data_item_get_int(it));
-			break;
-		default:
-			break;
-		}
-		obs_data_item_release(&it);
-		obs_data_erase(settings, old_key.c_str());
-		changed = true;
-	}
-	if (strcmp(obs_data_get_string(settings, "change|for"), was) == 0) {
-		obs_data_set_string(settings, "change|for", now);
-		changed = true;
-	}
-	if (changed)
-		obs_source_update(filter, settings);
-	obs_data_release(settings);
-}
-
-void on_source_rename(void *, calldata_t *cd)
-{
-	const char *was = calldata_string(cd, "prev_name");
-	const char *now = calldata_string(cd, "new_name");
-	if (!was || !now || !*was || !*now)
-		return;
-	std::vector<obs_source_t *> filters;
-	{
-		std::lock_guard lock(g_mutex);
-		for (SceneTransitions *each : g_all)
-			if (obs_source_t *held = each->owner_ref())
-				filters.push_back(held);
-	}
-	for (obs_source_t *filter : filters) {
-		rename_in(filter, was, now);
-		obs_source_release(filter);
-	}
-}
-
 // The scene's sources, for the two lists (and those in its groups).
 void scene_source_names(obs_source_t *parent, std::vector<std::string> &names)
 {
@@ -877,13 +802,13 @@ bool scene_transition_for(obs_source_t *scene, obs_sceneitem_t *item, ItemChange
 void scene_transitions_stop()
 {
 	item_transitions_scene(nullptr);
-	signal_handler_disconnect(obs_get_signal_handler(), "source_rename", on_source_rename, nullptr);
+	signal_handler_disconnect(obs_get_signal_handler(), "source_rename", source_references_renamed, nullptr);
 }
 
 void register_scene_transitions()
 {
 	item_transitions_scene(&lookup);
-	signal_handler_connect(obs_get_signal_handler(), "source_rename", on_source_rename, nullptr);
+	signal_handler_connect(obs_get_signal_handler(), "source_rename", source_references_renamed, nullptr);
 	// Let go before OBS takes its scenes apart.
 	obs_frontend_add_event_callback(
 		[](obs_frontend_event event, void *) {

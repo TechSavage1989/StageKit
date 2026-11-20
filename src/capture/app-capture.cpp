@@ -550,8 +550,7 @@ public:
 		change_s_ = std::clamp<long long>(obs_data_get_int(settings, "change_ms"), 0, 10000) / 1000.0;
 		curve_ = static_cast<EaseCurve>(obs_data_get_int(settings, "ease_curve"));
 		mode_ = static_cast<EaseMode>(obs_data_get_int(settings, "ease_mode"));
-		transition_ = item_transition_kind(settings);
-		transition_ms_ = item_transition_ms(settings);
+		hide_change_ = item_change_read(settings);
 		started_ = false; // settings changed: work out what to capture afresh
 		timer_ = 0.0;
 	}
@@ -932,8 +931,7 @@ private:
 	double change_s_ = 0.3;
 	EaseCurve curve_ = EaseCurve::Cubic;
 	EaseMode mode_ = EaseMode::InOut;
-	std::string transition_ = kTransitionFade;
-	uint32_t transition_ms_ = 300;
+	ItemChange hide_change_;
 	// Following the apps (the tick, under the lock where another thread reads it).
 	double timer_ = 0.0;
 	bool started_ = false;
@@ -1210,11 +1208,10 @@ void AppCapture::aim(obs_source_t *parent, const OpenWindow &window, const std::
 // it again where it hid it.
 void AppCapture::toggle_hidden(obs_source_t *parent)
 {
-	HidChange change;
+	ItemChange change;
 	{
 		std::lock_guard lock(mutex_);
-		change.kind = transition_;
-		change.ms = transition_ms_;
+		change = hide_change_;
 	}
 	hid_pending_ = hid_items_press(source_, parent, change, "Capture App in Use");
 }
@@ -2430,15 +2427,20 @@ obs_properties_t *get_properties(void *data)
 
 	// Hiding the capture altogether, and showing it again.
 	obs_properties_t *hiding = obs_properties_create();
-	add_item_transition_properties(hiding);
-	// (Said here: with a Standby Image covering, these two are not used.)
-	if (obs_property_t *hide_with = obs_properties_get(hiding, "transition"))
-		set_tip(hide_with, std::string(obs_module_text("Change.Scene.Tip")) + " " +
-					   obs_module_text("Change.Tip") + "\n" +
-					   obs_module_text("AppCapture.Hide.With.Tip"));
 	obs_property_t *to_standby =
 		obs_properties_add_bool(hiding, "hide_standby", obs_module_text("AppCapture.HideStandby"));
 	set_tip(to_standby, obs_module_text("AppCapture.HideStandby.Tip"));
+	obs_property_set_modified_callback2(
+		to_standby,
+		[](void *data, obs_properties_t *top, obs_property_t *, obs_data_t *settings) {
+			auto *filter = static_cast<AppCapture *>(data);
+			auto *parent = filter ? obs_filter_get_parent(filter->source()) : nullptr;
+			const bool hide_items = !obs_data_get_bool(settings, "hide_standby") || !parent ||
+						!standby_present(parent);
+			obs_property_set_visible(obs_properties_get(top, "change|g|"), hide_items);
+			return true;
+		},
+		self);
 	obs_property_t *hide_now = obs_properties_add_button2(
 		hiding, "hide_now", obs_module_text("AppCapture.Hide.Now"),
 		[](obs_properties_t *, obs_property_t *, void *data) {
@@ -2449,6 +2451,7 @@ obs_properties_t *get_properties(void *data)
 		self);
 	set_tip(hide_now, obs_module_text("AppCapture.Hide.Now.Tip"));
 	obs_properties_add_group(props, "hiding", obs_module_text("AppCapture.Hide"), OBS_GROUP_NORMAL, hiding);
+	add_item_change_properties(props, self ? self->source() : nullptr, nullptr);
 	add_help_line(props, obs_module_text("AppCapture.Help"));
 	return props;
 }
@@ -2462,7 +2465,7 @@ void get_defaults(obs_data_t *settings)
 	obs_data_set_default_bool(settings, "hand_follow", true);
 	obs_data_set_default_bool(settings, "clear_picked", true);
 	obs_data_set_default_bool(settings, "hide_standby", true);
-	item_transition_defaults(settings);
+	item_change_defaults(settings);
 	obs_data_set_default_int(settings, "change", (int)Style::Fade);
 	obs_data_set_default_int(settings, "change_ms", 300);
 	obs_data_set_default_int(settings, "ease_curve", (int)EaseCurve::Cubic);

@@ -12,6 +12,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include "scene-tools.hpp"
 #include "../common/filter-input.hpp"
+#include "../common/saved-transform.hpp"
 #include "../common/timing.hpp"
 
 #include "../common/easing.hpp"
@@ -502,8 +503,8 @@ obs_properties_t *match_item_properties(void *data)
 
 struct Placement {
 	std::string name;
-	vec2 pos, scale;
-	float rot = 0.0f;
+	Xf transform;
+	bool framing = false;
 };
 
 struct Glide {
@@ -545,11 +546,8 @@ public:
 			obs_data_t *entry = obs_data_array_item(array, i);
 			Placement p;
 			p.name = obs_data_get_string(entry, "name");
-			vec2_set(&p.pos, (float)obs_data_get_double(entry, "x"),
-				 (float)obs_data_get_double(entry, "y"));
-			vec2_set(&p.scale, (float)obs_data_get_double(entry, "sx"),
-				 (float)obs_data_get_double(entry, "sy"));
-			p.rot = (float)obs_data_get_double(entry, "rot");
+			p.transform = xf_read(entry);
+			p.framing = obs_data_has_user_value(entry, "btype");
 			saved.push_back(p);
 			obs_data_release(entry);
 		}
@@ -594,16 +592,8 @@ public:
 			const std::string name = source_name(obs_sceneitem_get_source(item));
 			if (!c->only.empty() && std::find(c->only.begin(), c->only.end(), name) == c->only.end())
 				return true;
-			vec2 pos, scale;
-			obs_sceneitem_get_pos(item, &pos);
-			obs_sceneitem_get_scale(item, &scale);
-			obs_data_t *entry = obs_data_create();
+			obs_data_t *entry = xf_data(xf_of(item, true));
 			obs_data_set_string(entry, "name", name.c_str());
-			obs_data_set_double(entry, "x", pos.x);
-			obs_data_set_double(entry, "y", pos.y);
-			obs_data_set_double(entry, "sx", scale.x);
-			obs_data_set_double(entry, "sy", scale.y);
-			obs_data_set_double(entry, "rot", obs_sceneitem_get_rot(item));
 			obs_data_array_push_back(c->array, entry);
 			obs_data_release(entry);
 			return true;
@@ -678,9 +668,7 @@ private:
 				continue;
 			obs_sceneitem_addref(item);
 			Glide g{item, to, to};
-			obs_sceneitem_get_pos(item, &g.from.pos);
-			obs_sceneitem_get_scale(item, &g.from.scale);
-			g.from.rot = obs_sceneitem_get_rot(item);
+			g.from.transform = xf_of(item, to.framing);
 			glides_.push_back(g);
 		}
 		elapsed_ = 0.0;
@@ -690,16 +678,8 @@ private:
 
 	void apply(double t)
 	{
-		for (const Glide &g : glides_) {
-			vec2 pos, scale;
-			vec2_set(&pos, (float)(g.from.pos.x + (g.to.pos.x - g.from.pos.x) * t),
-				 (float)(g.from.pos.y + (g.to.pos.y - g.from.pos.y) * t));
-			vec2_set(&scale, (float)(g.from.scale.x + (g.to.scale.x - g.from.scale.x) * t),
-				 (float)(g.from.scale.y + (g.to.scale.y - g.from.scale.y) * t));
-			obs_sceneitem_set_pos(g.item, &pos);
-			obs_sceneitem_set_scale(g.item, &scale);
-			obs_sceneitem_set_rot(g.item, (float)(g.from.rot + (g.to.rot - g.from.rot) * t));
-		}
+		for (const Glide &g : glides_)
+			xf_set(g.item, xf_between(g.from.transform, g.to.transform, t), g.to.framing);
 	}
 
 	void release_glides()

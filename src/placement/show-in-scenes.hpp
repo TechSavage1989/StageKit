@@ -20,6 +20,7 @@ inline constexpr const char *kShowInScenesId = "stagekit_show_in_scenes";
 
 // Registers the "Show in Scenes (StageKit)" filter: one switch that shows or
 // hides sources in the scenes chosen, or in every scene they are in.
+bool show_in_rename_record(obs_data_t *settings, const char *was, const char *now);
 void register_show_in_scenes();
 
 // A Stream Deck key's press of the Show in Scenes filter named on `source`:

@@ -49,7 +49,7 @@ the Free Software Foundation; either version 2 of the License, or
 // hide did, whichever way that was (`covered_`: the sources this filter
 // covered).
 //
-// "Show only what it hid" (`restore_hidden`, off as it comes): a press that
+// "Show only what it hid" (`restore_hidden`): a press that
 // hides notes each item it actually hid (its scene's name, the name of the
 // scene or group holding it and its id, never the item itself) and each
 // source it covered, in its own settings (`hidden_record`, kept over a
@@ -63,6 +63,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include "show-in-scenes.hpp"
 #include "../common/filter-input.hpp"
+#include "../common/new-filter-settings.hpp"
 #include "../common/timing.hpp"
 
 #include "place-item.hpp"
@@ -240,6 +241,9 @@ class ShowInScenes {
 public:
 	ShowInScenes(obs_data_t *settings, obs_source_t *source) : source_(source)
 	{
+		assumed_new_ = !has_saved_settings(settings);
+		if (assumed_new_)
+			obs_data_set_bool(settings, "restore_hidden", true);
 		update(settings);
 		signal_handler_connect(obs_source_get_signal_handler(source_), "enable", enabled_cb, this);
 	}
@@ -560,15 +564,19 @@ public:
 	}
 
 	// Writes the record into the filter's own settings (with mutex_ held).
-	void save_record()
+	static std::string record_text(const Record &record)
 	{
 		std::string text;
-		for (const Noted &n : record_.items)
+		for (const Noted &n : record.items)
 			text += "i\t" + n.scene + "\t" + n.owner + "\t" + std::to_string(n.id) + "\n";
-		for (const std::string &c : record_.covers)
+		for (const std::string &c : record.covers)
 			text += "c\t" + c + "\n";
+		return text;
+	}
+	void save_record()
+	{
 		obs_data_t *settings = obs_source_get_settings(source_);
-		obs_data_set_string(settings, "hidden_record", text.c_str());
+		obs_data_set_string(settings, "hidden_record", record_text(record_).c_str());
 		obs_data_release(settings);
 	}
 
@@ -673,6 +681,37 @@ public:
 		return out;
 	}
 
+	// Loading a saved filter with an empty settings object uses the historical default.
+	static bool rename_record(obs_data_t *settings, const std::string &was, const std::string &now)
+	{
+		auto record = read_record(obs_data_get_string(settings, "hidden_record"));
+		bool changed = false;
+		for (auto &item : record.items) {
+			for (auto *name : {&item.scene, &item.owner}) {
+				if (*name == was) {
+					*name = now;
+					changed = true;
+				}
+			}
+		}
+		if (record.covers.erase(was)) {
+			record.covers.insert(now);
+			changed = true;
+		}
+		if (changed)
+			obs_data_set_string(settings, "hidden_record", record_text(record).c_str());
+		return changed;
+	}
+
+	void loaded(obs_data_t *settings)
+	{
+		if (assumed_new_) {
+			obs_data_unset_user_value(settings, "restore_hidden");
+			assumed_new_ = false;
+			update(settings);
+		}
+	}
+
 	obs_source_t *source() const { return source_; }
 	bool hides_when_on()
 	{
@@ -724,6 +763,7 @@ private:
 	std::atomic<bool> ready_{false};
 	bool follow_ = false;       // the switch goes by what is shown
 	bool hide_standby_ = false; // a hide covers a source with its Standby Image instead
+	bool assumed_new_ = false;
 	bool restore_ = false;      // a show brings back only what the hides noted
 	Record record_;             // what they noted (also in the settings, `hidden_record`)
 	std::string go_to_;         // the scene a press turning it on goes to
@@ -911,6 +951,11 @@ bool show_in_scenes_press(obs_source_t *source, const std::string &filter_name, 
 	return true;
 }
 
+bool show_in_rename_record(obs_data_t *settings, const char *was, const char *now)
+{
+	return ShowInScenes::rename_record(settings, was, now);
+}
+
 void register_show_in_scenes()
 {
 	obs_source_info info = {};
@@ -928,6 +973,9 @@ void register_show_in_scenes()
 	};
 	info.update = [](void *data, obs_data_t *settings) {
 		static_cast<ShowInScenes *>(data)->update(settings);
+	};
+	info.load = [](void *data, obs_data_t *settings) {
+		static_cast<ShowInScenes *>(data)->loaded(settings);
 	};
 	info.get_defaults = [](obs_data_t *settings) {
 		obs_data_set_default_int(settings, "where", (int)Where::Every);

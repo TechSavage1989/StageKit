@@ -34,6 +34,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include <algorithm>
 #include <cctype>
+#include <map>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -115,8 +116,9 @@ public:
 			program_.resize(program_.size() - 4);
 		title_ = lowered(obs_data_get_string(settings, "title"));
 		opposite_ = obs_data_get_bool(settings, "opposite");
-		transition_ = item_transition_kind(settings);
-		transition_ms_ = item_transition_ms(settings);
+		changes_.clear();
+		for (const auto &name : items)
+			changes_.emplace(name, item_change_read(settings, name.c_str()));
 		items_ = items;
 		filters_ = filters;
 		known_ = false; // settings changed: apply the answer afresh
@@ -130,6 +132,7 @@ public:
 		When when;
 		std::string program, title;
 		std::vector<std::string> items, filters;
+		std::map<std::string, ItemChange> changes;
 		std::vector<OpenWindow> windows;
 		bool opposite, use_test, known, was;
 		{
@@ -143,6 +146,7 @@ public:
 			title = title_;
 			opposite = opposite_;
 			items = items_;
+			changes = changes_;
 			filters = filters_;
 			use_test = use_test_windows_;
 			if (use_test)
@@ -178,15 +182,8 @@ public:
 		for (const std::string &name : items) {
 			obs_sceneitem_t *item = find_item(parent_, name);
 			if (item && obs_sceneitem_visible(item) != on) {
-				std::string transition;
-				uint32_t transition_ms;
-				{
-					std::lock_guard lock(mutex_);
-					transition = transition_;
-					transition_ms = transition_ms_;
-				}
-				set_item_transitions(item, transition, transition_ms);
-				obs_sceneitem_set_visible(item, on);
+				apply_item_change(item, changes.at(name), parent_);
+				set_item_visible(item, on);
 			}
 		}
 		for (const std::string &name : filters) {
@@ -240,8 +237,7 @@ private:
 	obs_source_t *source_;
 	obs_source_t *parent_ = nullptr;
 	std::mutex mutex_;
-	std::string transition_ = kTransitionFade;
-	uint32_t transition_ms_ = 300;
+	std::map<std::string, ItemChange> changes_;
 	When when_ = When::Open;
 	std::string program_, title_;
 	bool opposite_ = false;
@@ -327,7 +323,7 @@ obs_properties_t *get_properties(void *data)
 	filters.title = "Trigger.Filters";
 	filters.add = "List.AddFilter";
 	filters.tip = "Trigger.Filters.Tip";
-	obs_source_t *own = self->source();
+	obs_source_t *own = self ? self->source() : nullptr;
 	filters.choices = [parent, own](std::vector<std::string> &names) {
 		if (!parent)
 			return;
@@ -348,11 +344,11 @@ obs_properties_t *get_properties(void *data)
 	pick_list_add(act, own, filters);
 	// (The transition is for showing and hiding sources: on a source, where
 	// only filters are switched, it does nothing and is left out.)
-	if (scene_of(parent))
-		add_item_transition_properties(act);
 	obs_property_t *opposite = obs_properties_add_bool(act, "opposite", obs_module_text("Trigger.Opposite"));
 	set_tip(opposite, obs_module_text("Trigger.Opposite.Tip"));
 	obs_properties_add_group(props, "act_group", obs_module_text("Trigger.ActGroup"), OBS_GROUP_NORMAL, act);
+	if (scene_of(parent))
+		add_item_change_properties(props, own, "items");
 	set_tips_where_missing(props, {{"program", obs_module_text("Trigger.Program.Tip")},
 				       {"browse", obs_module_text("Trigger.Browse.Tip")},
 				       {"when", obs_module_text("Trigger.When.Tip")}});
@@ -385,7 +381,7 @@ void register_program_trigger()
 	info.get_defaults = [](obs_data_t *settings) {
 		obs_data_set_default_int(settings, "when", (int)When::Open);
 		obs_data_set_default_bool(settings, "opposite", false);
-		item_transition_defaults(settings);
+		item_change_defaults(settings);
 	};
 	info.get_properties = get_properties;
 	info.video_tick = [](void *data, float seconds) {

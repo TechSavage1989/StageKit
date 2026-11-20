@@ -249,51 +249,6 @@ bool end_stale_transition(obs_sceneitem_t *item)
 	return end_held_change(other);
 }
 
-void add_item_transition_properties(obs_properties_t *props)
-{
-	// Any transition OBS has, except the ones that need a file of their own.
-	obs_property_t *transition = obs_properties_add_list(props, "transition", obs_module_text("Change.With"),
-							     OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
-	obs_property_list_add_string(transition, obs_module_text("Change.Scene"), kTransitionScene);
-	obs_property_list_add_string(transition, obs_module_text("Change.Cut"), kTransitionCut);
-	const char *id = nullptr;
-	for (size_t i = 0; obs_enum_transition_types(i, &id); i++) {
-		if (!id || strcmp(id, "cut_transition") == 0 || strcmp(id, "obs_stinger_transition") == 0)
-			continue;
-		const char *shown_as = obs_source_get_display_name(id);
-		obs_property_list_add_string(transition, shown_as ? shown_as : id, id);
-	}
-	obs_property_list_add_string(transition, obs_module_text("Change.Keep"), kTransitionKeep);
-	const std::string tip = std::string(obs_module_text("Change.Scene.Tip")) + " " + obs_module_text("Change.Tip");
-	set_tip(transition, tip.c_str());
-	obs_property_set_modified_callback(transition, [](obs_properties_t *p, obs_property_t *, obs_data_t *settings) {
-		const std::string kind = obs_data_get_string(settings, "transition");
-		obs_property_set_visible(obs_properties_get(p, "transition_ms"),
-					 kind != kTransitionCut && kind != kTransitionKeep);
-		return true;
-	});
-	obs_property_t *time =
-		obs_properties_add_int_slider(props, "transition_ms", obs_module_text("Change.Time"), 50, 5000, 50);
-	obs_property_int_set_suffix(time, " ms");
-	set_tip(time, obs_module_text("Change.Time.Tip"));
-}
-
-void item_transition_defaults(obs_data_t *settings)
-{
-	obs_data_set_default_string(settings, "transition", kTransitionScene);
-	obs_data_set_default_int(settings, "transition_ms", 300);
-}
-
-std::string item_transition_kind(obs_data_t *settings)
-{
-	return obs_data_get_string(settings, "transition");
-}
-
-uint32_t item_transition_ms(obs_data_t *settings)
-{
-	return (uint32_t)std::clamp<long long>(obs_data_get_int(settings, "transition_ms"), 0, 10000);
-}
-
 // ---------------------------------------------------------------- the fuller control
 
 namespace {
@@ -1028,7 +983,8 @@ bool item_transition_is_fallback_kind(const char *kind)
 
 void item_change_defaults(obs_data_t *settings)
 {
-	item_transition_defaults(settings);
+	obs_data_set_default_string(settings, "transition", kTransitionScene);
+	obs_data_set_default_int(settings, "transition_ms", 300);
 	obs_data_set_default_string(settings, "hide_transition", kSame);
 	obs_data_set_default_int(settings, "hide_ms", 300);
 	obs_data_set_default_string(settings, kForName, "");

@@ -66,12 +66,6 @@ std::vector<Found> items_of(obs_source_t *capture)
 	return look.out;
 }
 
-void prepare(obs_sceneitem_t *item, const HidChange &change)
-{
-	if (!change.kind.empty())
-		set_item_transitions(item, change.kind, change.ms);
-}
-
 } // namespace
 
 std::vector<HidItem> hid_items_read(obs_data_t *settings)
@@ -122,7 +116,7 @@ bool hid_items_pending(obs_source_t *filter)
 	return pending;
 }
 
-bool hid_items_press(obs_source_t *filter, obs_source_t *capture, const HidChange &change, const char *who)
+bool hid_items_press(obs_source_t *filter, obs_source_t *capture, const ItemChange &change, const char *who)
 {
 	if (!filter || !capture)
 		return false;
@@ -142,7 +136,7 @@ bool hid_items_press(obs_source_t *filter, obs_source_t *capture, const HidChang
 				if (mode_holds_hidden(top ? top : in, item)) {
 					held++;
 				} else {
-					prepare(item, change);
+					apply_item_change(item, change, top ? top : in);
 					set_item_visible(item, true);
 					shown++;
 				}
@@ -160,7 +154,9 @@ bool hid_items_press(obs_source_t *filter, obs_source_t *capture, const HidChang
 	std::vector<HidItem> hid;
 	for (Found &found : items_of(capture)) {
 		if (obs_sceneitem_visible(found.item)) {
-			prepare(found.item, change);
+			obs_source_t *top = obs_get_source_by_name(found.scene.c_str());
+			apply_item_change(found.item, change, top);
+			obs_source_release(top);
 			set_item_visible(found.item, false);
 			hid.push_back({found.scene, found.in, obs_sceneitem_get_id(found.item)});
 		}

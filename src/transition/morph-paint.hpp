@@ -106,6 +106,8 @@ Quad room_moved(const Quad &q, const Bounds &b, RoomEdge edge, double gone, doub
 // Sources set to count as one thing: the one changes into the other. A link
 // is kept as one line of a list, the two names with `kLinkMark` between them.
 using MorphLinks = std::vector<std::pair<std::string, std::string>>;
+inline constexpr const char *kRuleMark = " \xE2\x86\x92 ";
+inline constexpr const char *kAnyScene = "(any scene)";
 inline constexpr const char *kLinkMark = " \xE2\x86\x94 ";
 
 // The links in a list kept under `setting`.

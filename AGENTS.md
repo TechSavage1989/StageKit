@@ -7,6 +7,13 @@ Read `DEVELOPMENT_HANDOFF.md` next for the current state, then
 [docs/REPOSITORY_STANDARDS.md](docs/REPOSITORY_STANDARDS.md), the shared standard that is identical in
 every TechSavage1989 app repository. Change that file only to change the standard everywhere.
 
+## Saved scene settings and source renames
+
+Run the REVIEW_CONTROLS test when changing saved defaults, Apply Layout framing, Morph scene rules
+or shared transition controls. OBS calls load after creating sources from a saved collection, including
+a filter with empty settings. Keep the original choice for those filters. Keep the Move Scene Item
+source and Stream Deck action IDs registered for existing setups.
+
 ## Checking setting names in the guide
 
 Run python3 scripts/check-guide-settings.py after changing a Setting table or an English
@@ -628,8 +635,8 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   first.
 - **Fit to Space follows a renamed source** (`on_source_rename` in `src/placement/fit-item.cpp`,
   beta144: `item`, `keep_item`, `orig_item`). The owner's camera source had been renamed and
-  two of its three filters still named the old one, so they did nothing. No other filter
-  follows a rename yet; give one the same when it is asked for. A registry of filters gone
+  two of its three filters still named the old one, so they did nothing. Other named references
+  now follow the shared source rename handler. A registry of filters gone
   through from another thread (this rename, Scene Fit's, Scene Modes', Scene Transitions') reaches
   each filter's source through `OwnerRef` (`src/common/owner-ref.hpp`, a weak reference held for
   the filter's life), never `obs_source_get_ref` on the raw pointer: OBS frees the weak control at
@@ -901,9 +908,8 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   something in a change of scene and is not copied), and, for another transition there, that
   transition's own settings, kept as `show|stagekit_morph|unpaired|<kind>|<its setting>` and
   handed to the item's Morph inside its own settings like `links`. An old filter's `others` of
-  Fade and zoom reads as *Unpaired sources* Fade and zoom. Show Source in Use and Program
-  Trigger still have the plain two controls; give them this one when it is asked for, not a
-  third kind. The controls are rebuilt only when their mark (`change|sig|...`: the source chosen,
+  Fade and zoom reads as *Unpaired sources* Fade and zoom. The Automatic Source Switcher, Program
+  Trigger and the plain capture hide also use this group as of beta231. The controls are rebuilt only when their mark (`change|sig|...`: the source chosen,
   the kinds, Morph's *Unpaired sources*) is missing, and the mark is added **after** the controls
   are made (beta163): making them sets defaults, and a mark taken before did not match at OBS's
   first round of callbacks, which then took the controls off while OBS went through them (a

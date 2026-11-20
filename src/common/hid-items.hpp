@@ -39,12 +39,7 @@ struct HidItem {
 	int64_t id = 0;
 };
 
-// How the items change: with their own transitions (`kind` empty), or with
-// `kind` for `ms` set on them first (`set_item_transitions`).
-struct HidChange {
-	std::string kind;
-	uint32_t ms = 300;
-};
+struct ItemChange;
 
 // The record in `settings`.
 std::vector<HidItem> hid_items_read(obs_data_t *settings);
@@ -59,6 +54,6 @@ bool hid_items_pending(obs_source_t *filter);
 // capture is hidden and written down; when none is shown, nothing happens.
 // `who` names the filter kind for the log. Says whether the capture is now
 // hidden by the command (a record is pending).
-bool hid_items_press(obs_source_t *filter, obs_source_t *capture, const HidChange &change, const char *who);
+bool hid_items_press(obs_source_t *filter, obs_source_t *capture, const ItemChange &change, const char *who);
 
 } // namespace stagekit

@@ -63,6 +63,10 @@ target_sources(
     src/common/hotkey-rename.hpp
     src/common/item-transition.cpp
     src/common/item-transition.hpp
+    src/common/new-filter-settings.hpp
+    src/common/saved-transform.hpp
+    src/common/source-rename.cpp
+    src/common/source-rename.hpp
     src/ambient/ambient-background.cpp
     src/ambient/ambient-background.hpp
     src/ambient/ambient-frame.cpp

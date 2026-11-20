@@ -32,9 +32,9 @@ test("every key offered has an icon of its own in Stream Deck's list, at both si
 	assert.equal(drawings.size, icons.length, "two keys have the same drawing");
 });
 
-test("the two catch-all keys are no longer offered, and the keys made with them are still known", () => {
+test("the retired keys remain registered for existing profiles and are hidden from the action list", () => {
 	const hidden = manifest.Actions.filter((a: { VisibleInActionsList?: boolean }) => a.VisibleInActionsList === false);
-	assert.deepEqual(hidden.map((a: { UUID: string }) => a.UUID).sort(), [`${base}.move`, `${base}.switch`]);
+	assert.deepEqual(hidden.map((a: { UUID: string }) => a.UUID).sort(), [`${base}.move`, `${base}.placeitem`, `${base}.switch`]);
 });
 
 test("a feature's key is named for the feature, and each is for one kind of filter", () => {
