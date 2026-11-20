@@ -913,6 +913,10 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   had no such fault: a line shows at a screen edge only in a pixel row the item's box does not
   cover the middle of. Tested in `[outline bleed: ...]` (`STAGEKIT_TEST_ONLY_OUTLINE_BLEED`;
   `STAGEKIT_TEST_BLEED_QUICK=<n>` one size, `STAGEKIT_TEST_BLEED_VERBOSE` every case's edges).
+- **Scene Shadow's canvas-edge rule (beta225)** uses the rendered caster's alpha in
+  `stagekit-scene-shadow.effect`. Only in the outermost row or column, an opaque neighbour one canvas
+  pixel inward suppresses the external line and its neon halo. The inner line and actual scene pixels
+  are separate. The regression in `OUTLINE_BLEED` includes a 1.14 px shortfall and a two-column control.
 - **Corners & Edges must never change a source's size.** Everything that makes it safe beside the
   other tools rests on that. It belongs before Shadow, Glow & Outline in the filter list (the shadow reads
   alpha, so it follows the shape); when first added it moves itself above an existing shadow once and

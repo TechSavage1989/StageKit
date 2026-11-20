@@ -1871,6 +1871,8 @@ Shadow, Glow & Outline on each source.
 - **Background sources**: drawn underneath as they are; they cast nothing and the shadow falls on them.
   **Full-screen = background** (on as it comes) counts the sources at the bottom of the scene that cover nine
   tenths of it as background, so the scene's picture or colour needs no listing.
+- When a fitted source leaves just one pixel between its opaque image and the canvas edge, Scene Shadow
+  leaves that pixel clear of the outer outline. A gap of two pixels or more keeps its outline.
 - **Sources covered**: *All sources* (as it comes: every source that is not background casts, sources added
   later too) or *Chosen sources*: only the sources listed cast. With *The scene as drawn* the shadow is kept
   off every source that is not background.
