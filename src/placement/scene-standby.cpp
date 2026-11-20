@@ -365,28 +365,14 @@ obs_properties_t *get_properties(void *data)
 	set_tip(which, obs_module_text("SceneStandby.Which.Tip"));
 	obs_property_set_modified_callback(which, which_modified);
 
-	auto video_sources = [scene](std::vector<std::string> &names) {
-		struct Fill {
-			std::vector<std::string> *names;
-			obs_source_t *scene;
-		} fill{&names, scene};
-		obs_enum_sources(
-			[](void *param, obs_source_t *source) {
-				auto *f = static_cast<Fill *>(param);
-				const char *name = obs_source_get_name(source);
-				if (name && *name && source != f->scene && !is_stand_in(source) &&
-				    (obs_source_get_output_flags(source) & OBS_SOURCE_VIDEO))
-					f->names->push_back(name);
-				return true;
-			},
-			&fill);
-	};
 	PickList sources;
 	sources.setting = "sources";
 	sources.title = "SceneStandby.Sources";
 	sources.add = "List.Choose";
 	sources.tip = "SceneStandby.Sources.Tip";
-	sources.choices = video_sources;
+	sources.choices = [scene](std::vector<std::string> &names) {
+		scene_item_names(scene, names);
+	};
 	pick_list_add(props, owner, sources);
 
 	PickList skip;

@@ -1,0 +1,57 @@
+name: Validate review stage 3
+on:
+  push:
+    branches: [chore/review-stage3]
+permissions:
+  contents: read
+jobs:
+  format:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Format changed sources with the repository style
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 -m venv "$RUNNER_TEMP/format"
+          "$RUNNER_TEMP/format/bin/pip" install --quiet clang-format==19.1.7 gersemi
+          "$RUNNER_TEMP/format/bin/clang-format" -i src/ambient/ambient-background.cpp src/capture/active-app.cpp src/capture/app-capture.cpp src/capture/auto-capture.cpp src/capture/standby.cpp src/common/easing.cpp src/common/easing.hpp src/common/hotkey-rename.hpp src/common/start-image.cpp src/common/start-image.hpp src/dock/arrange-tools.cpp src/dock/arrange-tools.hpp src/dock/stagekit-dock.cpp src/frame/auto-frame.cpp src/look/scene-shadow.cpp src/placement/fit-engine.cpp src/placement/scene-tools.cpp src/zoom/ramp-zoom.cpp tests/ambient-test.cpp src/transition/morph.cpp src/common/scene-util.hpp src/placement/scene-standby.cpp src/capture/auto-capture.hpp src/capture/program-trigger.cpp
+          "$RUNNER_TEMP/format/bin/gersemi" --check CMakeLists.txt tests/CMakeLists.txt
+          bash scripts/check-root.sh
+          ! grep -E '^[A-Za-z]' data/locale/en-US.ini | cut -d= -f1 | sort | uniq -d | grep .
+          for changed in $(git diff --name-only); do
+            expected=$(git hash-object "$changed")
+            actual=$(python3 -c 'import base64,json,sys; print(json.dumps(dict(encoding="base64",content=base64.b64encode(open(sys.argv[1],"rb").read()).decode())))' "$changed" | gh api --method POST "repos/$GITHUB_REPOSITORY/git/blobs" --input - --jq .sha)
+            test "$actual" = "$expected"
+            echo "formatted file $actual $changed"
+          done
+  render:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      QT_QPA_PLATFORM: offscreen
+      LIBGL_ALWAYS_SOFTWARE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install OBS development and rendering dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libobs-dev obs-studio qt6-base-dev libgl1-mesa-dri xvfb xauth python3-pil
+      - name: Build the plugin and headless test
+        run: |
+          cmake -S . -B build-tests -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DSTAGEKIT_BUILD_TESTS=ON -DCMAKE_COMPILE_WARNING_AS_ERROR=ON
+          cmake --build build-tests --parallel 3 --target stagekit stagekit-ambient-test
+      - name: Exercise capture, dock, presets and tooltips
+        run: |
+          out="$PWD/build-tests/out"
+          mkdir -p "$out/tooltips"
+          python3 tests/make-test-image.py "$out"
+          failed=0
+          for gate in TOOLTIPS CAPTURE_HIDE STANDBY_COVER DOCK_BOUNDS AUTO_FRAME_SWITCHER SCENE_TRANS_OVERRIDE LAYOUT; do
+            env "STAGEKIT_TEST_ONLY_${gate}=1" xvfb-run -a build-tests/tests/stagekit-ambient-test "$PWD/build-tests/stagekit.so" "$PWD/data" "$out/test-art.png" "$out/test-texture.png" "$out/test-game.png" "$out/tooltips" "$out/test-title.png" "$out/tooltips" "$out/test-pillarbox.png" "$out/test-black.png" "$out/test-dark-game.png" > "$out/$gate.log" 2>&1 || failed=1
+            echo "$gate"
+            grep -E 'FAIL|ALL PASSED|Assertion' "$out/$gate.log" | tail -28 || true
+          done
+          exit "$failed"
