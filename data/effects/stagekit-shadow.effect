@@ -6,6 +6,7 @@
 //          own colours. Output is premultiplied.
 // Compose  slides a (blurred) copy of the card's alpha underneath as the
 //          shadow and writes straight alpha for the rest of OBS.
+// Show     draws that where the source is shown (see PSShow).
 
 uniform float4x4 ViewProj;
 uniform texture2d image;
@@ -385,6 +386,35 @@ float4 PSCompose(VertData v_in) : TARGET
 	float3 lin = lerp(straight / 12.92, pow(max((straight + 0.055) / 1.055, float3(0.0, 0.0, 0.0)), float3(2.4, 2.4, 2.4)),
 			  step(float3(0.04045, 0.04045, 0.04045), straight));
 	return float4(lerp(straight, lin, out_linear), a);
+}
+
+// The finished picture drawn where the source is shown (OBS's own Draw, but
+// for one thing). Drawn larger than its pixels, a pixel just inside the
+// source's (or its panel's) edge took in the line's pixel beside it: an item
+// fitted to the screen at a scale that is no whole number showed a sliver of
+// its line all along the screen's edge (an eighth of the line at 4/3, 1920
+// to 2560), though the whole line lay past it. Inside that box only what is
+// inside it is read; past it, nothing changes.
+float4 PSShow(VertData v_in) : TARGET
+{
+	float grow = backdrop_on * backdrop_pad;
+	float2 lo = pad - float2(grow, grow);
+	float2 hi = pad + src_size + float2(grow, grow);
+	float2 p = v_in.uv * out_size;
+	float2 within = step(lo, p) * step(p, hi);
+	float inside = within.x * within.y;
+	float2 kept = clamp(p, lo + float2(0.5, 0.5), max(hi - float2(0.5, 0.5), lo + float2(0.5, 0.5)));
+	float2 at = p + (kept - p) * inside;
+	return image.Sample(linearClamp, at / out_size);
+}
+
+technique Show
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSShow(v_in);
+	}
 }
 
 technique Card

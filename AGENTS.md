@@ -900,6 +900,19 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   filter shifts each item showing the source (and grows its bounding box) by that room so the picture
   stays put, and remembers what it applied in `adjusted_*` settings. Anything else that changes the
   room around a source must go through `keep_picture_in_place`, not around it.
+- **Shadow, Glow & Outline draws its picture through `Show`, not OBS's `Draw`** (beta: the
+  next after 220; `PSShow` in `stagekit-shadow.effect`). The owner: "the border seems to bleed a
+  pixel or two on the right and/or left sides of some sources" (a 1920x1080 capture fitted to a
+  2560x1440 screen). The filter's picture is the source with its room, the line in that room; an
+  item drawn larger samples it bilinearly, so a screen pixel just inside the source's edge took in
+  the line's pixel beside it: 1/8 of it at 4/3 (sRGB 99 of 255 red at a screen edge where the whole
+  line lay off the screen; up to 245 with odd sizes). `Show` reads only inside the source's (or its
+  panel's) box for a point inside it, and is OBS's Draw elsewhere: at scale 1 nothing changes.
+  Still open: OBS draws an item through a texture of its own when it is cropped, has a scale
+  filter or a blending mode, and then samples the same way (not fixed, not tested). Scene Shadow
+  had no such fault: a line shows at a screen edge only in a pixel row the item's box does not
+  cover the middle of. Tested in `[outline bleed: ...]` (`STAGEKIT_TEST_ONLY_OUTLINE_BLEED`;
+  `STAGEKIT_TEST_BLEED_QUICK=<n>` one size, `STAGEKIT_TEST_BLEED_VERBOSE` every case's edges).
 - **Corners & Edges must never change a source's size.** Everything that makes it safe beside the
   other tools rests on that. It belongs before Shadow, Glow & Outline in the filter list (the shadow reads
   alpha, so it follows the shape); when first added it moves itself above an existing shadow once and
