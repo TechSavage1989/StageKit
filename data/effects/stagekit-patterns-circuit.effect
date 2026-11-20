@@ -23,6 +23,8 @@ uniform float detail;    // 0..1
 uniform float4 colour1;  // the palette; colour1 is the ground of patterns that have one
 uniform float4 colour2;
 uniform float4 colour3;
+uniform float4 frame;       // where the pattern lies: the picture's uv to the pattern's, a 2x2 matrix by rows
+uniform float2 frame_shift; // and how far it is moved, in uv (pattern-frame.hpp)
 
 struct VertData {
 	float4 pos : POSITION;
@@ -33,7 +35,8 @@ VertData VSDefault(VertData v_in)
 {
 	VertData vert_out;
 	vert_out.pos = mul(float4(v_in.pos.xyz, 1.0), ViewProj);
-	vert_out.uv  = v_in.uv;
+	float2 d = v_in.uv - float2(0.5, 0.5) - frame_shift;
+	vert_out.uv  = float2(0.5, 0.5) + float2(dot(d, frame.xy), dot(d, frame.zw));
 	return vert_out;
 }
 

@@ -23,6 +23,30 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
+## Position X, Position Y and Rotation (0.1.0-beta220)
+
+The owner: "the ambient background image/animations and shadow outlines/animations should have
+similar transform controls as the blur/mosaic feature with x, y, and rotation controls."
+
+- **Ambient Background** (Image group, every base): `base_pos_x`, `base_pos_y` (% of the screen,
+  -100 to 100), `base_rotation` (degrees, -180 to 180). Image, standby image, source: turned and
+  moved in `PSLayer` before everything else; the wrapping (mirror or repeat) fills the corners;
+  drift stays across the screen. Pattern: the pattern's own frame is moved and turned in the
+  patterns' vertex shader (`src/common/pattern-frame.hpp`).
+- **Outlines** (Shadow, Glow & Outline and Scene Shadow, one code path): `outline_pos_x`,
+  `outline_pos_y`, `outline_rotation`. All three for the pattern fills (designs 12 to 28);
+  *Rotation* alone for Dashed, Marching, Gradient, Travelling, Shimmer and Rainbow (where round
+  the border they begin); none for Solid, Double, Dotted, Neon, Inner, Pulse. Morph glides them.
+- Defaults 0; at 0 a render is identical to one with the keys absent (tested). The two outline
+  effect files changed by two expressions each (`design_phase` and `design_turn` are no longer
+  gated by design in the shader; the CPU already sent 0 for the designs that do not move).
+- Not done: Dotted has no offset (its dots are laid out without a phase); the lerp in Morph is
+  not exercised by a test (the test program cannot call into the plugin's `lerp_design`).
+- Found on the way, not touched: `Shadow.OutlineDesign.Tip` is in `data/locale/en-US.ini` twice
+  on `main` (lines 233 and 237), which `tests/run-tests.sh` stops on.
+- Gates run: `PATTERN_TRANSFORM` (31 checks), `AMBIENT_PATTERNS`, `OUTLINE_PATTERNS`,
+  `OUTLINE_DESIGNS`, `AMBIENT_SEAMS`, `BLUR_OFF_DRAW`, `TOOLTIPS`. Not the full suite. Only OpenGL.
+
 ## Neon is a tube with a halo (0.1.0-beta219)
 
 Branch `feat/neon-glow`, rebased on `main` at beta217. Not pushed. The owner on beta212's Neon:

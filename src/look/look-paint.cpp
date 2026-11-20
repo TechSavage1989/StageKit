@@ -67,6 +67,9 @@ OutlineDesign read_outline_design(obs_data_t *settings)
 	d.glow = std::clamp(obs_data_get_double(settings, "outline_neon") / 100.0, 0.1, 4.0);
 	d.color3 = (uint32_t)obs_data_get_int(settings, "outline_color3");
 	d.pattern_scale = std::clamp(obs_data_get_double(settings, "outline_pattern_scale") / 100.0, 0.1, 4.0);
+	d.pose.x = std::clamp(obs_data_get_double(settings, "outline_pos_x") / 100.0, -1.0, 1.0);
+	d.pose.y = std::clamp(obs_data_get_double(settings, "outline_pos_y") / 100.0, -1.0, 1.0);
+	d.pose.degrees = std::clamp(obs_data_get_double(settings, "outline_rotation"), -180.0, 180.0);
 	// (Only the tests set this: another file in the patterns' place.)
 	if (obs_data_has_user_value(settings, "test_pattern_effect"))
 		outline_pattern_test_file(obs_data_get_string(settings, "test_pattern_effect"));
@@ -100,14 +103,17 @@ void DesignUniforms::set(const OutlineDesign &d, gs_texture_t *pattern, gs_textu
 	};
 	const bool moves = d.kind >= OutlineDesign::Marching && d.speed != 0.0;
 	const double travelled = moves ? d.speed * seconds : 0.0;
+	// Rotation: how far round the border the dashes or the colours begin (a
+	// whole turn is one dash and gap, or once round). Nothing at 0.
+	const double turned = d.turns() ? d.pose.degrees / 360.0 : 0.0;
 	vec4 two;
 	vec4_from_rgba(&two, d.color2);
 	gs_effect_set_float(kind_, (float)d.kind);
 	gs_effect_set_vec4(color2_, &two);
 	gs_effect_set_float(dash_, (float)d.dash);
 	gs_effect_set_float(gap_, (float)d.gap);
-	gs_effect_set_float(phase_, (float)wrapped(travelled / std::max(d.dash + d.gap, 1.0)));
-	gs_effect_set_float(turn_, (float)wrapped(travelled / 600.0));
+	gs_effect_set_float(phase_, (float)wrapped(travelled / std::max(d.dash + d.gap, 1.0) + turned));
+	gs_effect_set_float(turn_, (float)wrapped(travelled / 600.0 + turned));
 	gs_effect_set_float(
 		pulse_, d.kind == OutlineDesign::Pulse
 				? (float)(0.3 + 0.7 * (0.5 + 0.5 * std::cos(travelled * (6.283185307179586 / 100.0))))
@@ -164,6 +170,13 @@ bool design_modified(obs_properties_t *props, obs_property_t *, obs_data_t *sett
 				       kind == OutlineDesign::Shimmer || kind == OutlineDesign::Neon);
 	show("outline_color3", pattern);
 	show("outline_pattern_scale", pattern);
+	// Where they act: a pattern fill is moved and turned in the line; dashes
+	// and the colours round the border are turned only.
+	show("outline_pos_x", pattern);
+	show("outline_pos_y", pattern);
+	show("outline_rotation", pattern || kind == OutlineDesign::Dashed || kind == OutlineDesign::Marching ||
+					 kind == OutlineDesign::Gradient || kind == OutlineDesign::Travelling ||
+					 kind == OutlineDesign::Shimmer || kind == OutlineDesign::Rainbow);
 	show("outline_dash", dashes);
 	show("outline_gap", dashes || kind == OutlineDesign::Dotted);
 	show("outline_speed", kind >= OutlineDesign::Marching);
@@ -236,6 +249,12 @@ void add_outline_design_properties(obs_properties_t *outline)
 		obs_module_text("Shadow.OutlineNeon.Tip"));
 	set_tip(slider("outline_pattern_scale", "Shadow.OutlinePatternScale", 10.0, 400.0, "%"),
 		obs_module_text("Shadow.OutlinePatternScale.Tip"));
+	set_tip(slider("outline_pos_x", "Transform.PositionX", -100.0, 100.0, "%"),
+		obs_module_text("Shadow.OutlinePosition.Tip"));
+	set_tip(slider("outline_pos_y", "Transform.PositionY", -100.0, 100.0, "%"),
+		obs_module_text("Shadow.OutlinePosition.Tip"));
+	set_tip(slider("outline_rotation", "Mosaic.Rotation", -180.0, 180.0, "°"),
+		obs_module_text("Shadow.OutlineRotation.Tip"));
 }
 
 void add_intensity_property(obs_properties_t *shadow)
@@ -260,6 +279,9 @@ void outline_glow_defaults(obs_data_t *settings)
 	obs_data_set_default_double(settings, "outline_neon", d.glow * 100.0);
 	obs_data_set_default_int(settings, "outline_color3", d.color3);
 	obs_data_set_default_double(settings, "outline_pattern_scale", d.pattern_scale * 100.0);
+	obs_data_set_default_double(settings, "outline_pos_x", 0.0);
+	obs_data_set_default_double(settings, "outline_pos_y", 0.0);
+	obs_data_set_default_double(settings, "outline_rotation", 0.0);
 }
 
 ShadowLook scaled_look(ShadowLook look, double level)
@@ -301,6 +323,9 @@ OutlineDesign lerp_design(const OutlineDesign &a, const OutlineDesign &b, double
 		out.glow = mix(a.glow, b.glow, t);
 		out.color3 = mix_color(a.color3, b.color3, t);
 		out.pattern_scale = mix(a.pattern_scale, b.pattern_scale, t);
+		out.pose.x = mix(a.pose.x, b.pose.x, t);
+		out.pose.y = mix(a.pose.y, b.pose.y, t);
+		out.pose.degrees = mix(a.pose.degrees, b.pose.degrees, t);
 	}
 	return out;
 }

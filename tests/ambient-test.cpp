@@ -17228,6 +17228,381 @@ static void outline_designs_test(uint32_t w, uint32_t h, const std::string &out)
 	sleep_ms(500);
 }
 
+// Position X, Position Y and Rotation: of Ambient Background's base (an image
+// and a pattern) and of the outline's pattern fills and turning designs, in
+// Shadow, Glow & Outline and Scene Shadow. With none set a look is as it was.
+// Run alone with STAGEKIT_TEST_ONLY_PATTERN_TRANSFORM.
+static void pattern_transform_test(uint32_t w, uint32_t h, const char *base_image, const std::string &out)
+{
+	printf("\n[pattern transform: Position X, Position Y and Rotation in Ambient Background and the outlines]\n");
+	const std::string dir = out + "/../pattern-transform";
+	std::error_code made;
+	std::filesystem::create_directories(dir, made);
+	const int W = (int)w, H = (int)h;
+	auto at = [&](const std::vector<uint8_t> &f, int x, int y, int c) {
+		return (int)f[(size_t(y) * w + x) * 4 + c];
+	};
+	// The mean difference of a and b where `map` says which pixel of b a
+	// pixel of a should be (false: not compared).
+	auto apart = [&](const std::vector<uint8_t> &a, const std::vector<uint8_t> &b,
+			 const std::function<bool(int, int, int &, int &)> &map) {
+		double sum = 0.0;
+		long n = 0;
+		for (int y = 0; y < H; y++)
+			for (int x = 0; x < W; x++) {
+				int bx = 0, by = 0;
+				if (!map(x, y, bx, by) || bx < 0 || by < 0 || bx >= W || by >= H)
+					continue;
+				for (int c = 0; c < 3; c++)
+					sum += std::abs(at(a, x, y, c) - at(b, bx, by, c));
+				n += 3;
+			}
+		return n ? sum / (double)n : 999.0;
+	};
+	auto same_place = [](int x, int y, int &bx, int &by) {
+		bx = x;
+		by = y;
+		return true;
+	};
+	const int shift_x = W / 4, shift_y = H / 4;
+	auto moved_right = [&](int x, int y, int &bx, int &by) {
+		bx = x - shift_x;
+		by = y;
+		return x >= shift_x + 4;
+	};
+	auto moved_down = [&](int x, int y, int &bx, int &by) {
+		bx = x;
+		by = y - shift_y;
+		return y >= shift_y + 4;
+	};
+	// Turned a quarter clockwise about the middle: the middle square.
+	auto quarter = [&](int x, int y, int &bx, int &by) {
+		bx = W / 2 - H / 2 + y;
+		by = H / 2 + W / 2 - x - 1;
+		return std::abs(2 * x + 1 - W) < H - 8 && y >= 4 && y < H - 4;
+	};
+	auto half = [&](int x, int y, int &bx, int &by) {
+		bx = W - 1 - x;
+		by = H - 1 - y;
+		return true;
+	};
+	// How much the picture changes across and down, on average.
+	auto steps = [&](const std::vector<uint8_t> &f, bool across) {
+		double sum = 0.0;
+		long n = 0;
+		for (int y = 8; y < H - 8; y += 2)
+			for (int x = 8; x < W - 8; x += 2) {
+				for (int c = 0; c < 3; c++)
+					sum += std::abs(at(f, x, y, c) -
+							at(f, across ? x + 6 : x, across ? y : y + 6, c));
+				n += 3;
+			}
+		return sum / (double)n;
+	};
+
+	// ---- Ambient Background.
+	obs_data_t *s = obs_data_create();
+	obs_data_set_int(s, "base_type", 0);
+	obs_data_set_string(s, "image", base_image);
+	obs_data_set_double(s, "blur", 0);
+	obs_data_set_double(s, "speed_x", 0);
+	obs_data_set_double(s, "speed_y", 0);
+	obs_data_set_double(s, "zoom", 100);
+	obs_data_set_double(s, "vignette", 0);
+	obs_data_set_double(s, "test_pattern_time", 10.0);
+	obs_source_t *bg = obs_source_create("stagekit_ambient_background", "XF Background", s, nullptr);
+	obs_source_inc_showing(bg);
+	auto shot = [&](const char *name, double x, double y, double turn) {
+		obs_data_set_double(s, "base_pos_x", x);
+		obs_data_set_double(s, "base_pos_y", y);
+		obs_data_set_double(s, "base_rotation", turn);
+		obs_source_update(bg, s);
+		sleep_ms(250);
+		render(bg, w, h);
+		std::vector<uint8_t> px = render(bg, w, h);
+		if (name)
+			write_frame(dir + "/" + name + ".rgba", px, w, h);
+		return px;
+	};
+	{
+		obs_properties_t *props = obs_source_properties(bg);
+		bool all = true;
+		for (int base : {0, 2, 3}) {
+			obs_data_t *ds = obs_source_get_settings(bg);
+			obs_data_set_int(ds, "base_type", base);
+			obs_property_modified(obs_properties_get(props, "base_type"), ds);
+			obs_data_set_int(ds, "base_type", 0);
+			obs_data_release(ds);
+			for (const char *name : {"base_pos_x", "base_pos_y", "base_rotation"}) {
+				obs_property_t *p = obs_properties_get(props, name);
+				all = all && p && obs_property_visible(p);
+			}
+		}
+		obs_properties_destroy(props);
+		CHECK(all,
+		      "Ambient Background: Position X, Position Y and Rotation show for an image, the standby image and a pattern");
+	}
+	{
+		sleep_ms(400);
+		obs_data_erase(s, "base_pos_x");
+		obs_data_erase(s, "base_pos_y");
+		obs_data_erase(s, "base_rotation");
+		obs_source_update(bg, s);
+		sleep_ms(250);
+		render(bg, w, h);
+		const std::vector<uint8_t> absent = render(bg, w, h);
+		const std::vector<uint8_t> plain = shot("01-image", 0, 0, 0);
+		CHECK(absent == plain,
+		      "an image: with all three at 0 the background is the one with none of them saved");
+		const std::vector<uint8_t> right = shot("02-image-right", 25, 0, 0);
+		const std::vector<uint8_t> down = shot(nullptr, 0, 25, 0);
+		const double stays = apart(right, plain, same_place);
+		CHECK(apart(right, plain, moved_right) < 1.5 && stays > 6.0,
+		      "an image: Position X 25%% moves it %d px to the right (%.2f off the image moved so, %.2f off the image unmoved)",
+		      shift_x, apart(right, plain, moved_right), stays);
+		CHECK(apart(down, plain, moved_down) < 1.5 && apart(down, plain, same_place) > 6.0,
+		      "an image: Position Y 25%% moves it %d px down (%.2f off the image moved so, %.2f unmoved)",
+		      shift_y, apart(down, plain, moved_down), apart(down, plain, same_place));
+		const std::vector<uint8_t> turned = shot("03-image-90", 0, 0, 90);
+		CHECK(apart(turned, plain, quarter) < 2.5 && apart(turned, plain, same_place) > 6.0,
+		      "an image: Rotation 90 is the image turned a quarter clockwise about the middle (%.2f off it, %.2f off the image unturned)",
+		      apart(turned, plain, quarter), apart(turned, plain, same_place));
+		for (int mirror = 1; mirror >= 0; mirror--) {
+			obs_data_set_bool(s, "mirror", mirror == 1);
+			const std::vector<uint8_t> tilted =
+				shot(mirror ? "04-image-30" : "05-image-30-repeated", 0, 0, 30);
+			int least_alpha = 255;
+			double corner[4] = {0, 0, 0, 0};
+			for (int y = 0; y < H; y++)
+				for (int x = 0; x < W; x++) {
+					least_alpha = std::min(least_alpha, at(tilted, x, y, 3));
+					if ((x < 24 || x >= W - 24) && (y < 24 || y >= H - 24))
+						corner[(x < 24 ? 0 : 1) + (y < 24 ? 0 : 2)] +=
+							(at(tilted, x, y, 0) + at(tilted, x, y, 1) +
+							 at(tilted, x, y, 2)) /
+							(3.0 * 24 * 24);
+				}
+			const double darkest = *std::min_element(corner, corner + 4);
+			CHECK(least_alpha == 255 && darkest > 6.0,
+			      "an image at 30 degrees, %s: the screen is covered, no corner empty (least alpha %d, darkest corner %.1f)",
+			      mirror ? "mirrored" : "repeated", least_alpha, darkest);
+		}
+		obs_data_set_bool(s, "mirror", true);
+	}
+	// A pattern: its own layout is moved and turned.
+	obs_data_set_int(s, "base_type", 3);
+	static const char *const kPatternNames[] = {"waves", "circuit traces"};
+	const int kPatterns[] = {3, 17};
+	for (int i = 0; i < 2; i++) {
+		obs_data_set_int(s, "pattern", kPatterns[i]);
+		obs_data_erase(s, "base_pos_x");
+		obs_data_erase(s, "base_pos_y");
+		obs_data_erase(s, "base_rotation");
+		obs_source_update(bg, s);
+		sleep_ms(300);
+		render(bg, w, h);
+		const std::vector<uint8_t> absent = render(bg, w, h);
+		const std::vector<uint8_t> plain = shot(i ? "08-traces" : "06-waves", 0, 0, 0);
+		CHECK(absent == plain, "%s: with all three at 0 the pattern is the one with none of them saved",
+		      kPatternNames[i]);
+		const std::vector<uint8_t> turned = shot(i ? "09-traces-90" : "07-waves-90", 0, 0, 90);
+		const double across0 = steps(plain, true), down0 = steps(plain, false);
+		const double across1 = steps(turned, true), down1 = steps(turned, false);
+		CHECK((across0 > down0) != (across1 > down1) && apart(turned, plain, same_place) > 3.0,
+		      "%s: Rotation 90 turns the pattern: it changed most %s (%.2f across, %.2f down) and now changes most %s (%.2f across, %.2f down)",
+		      kPatternNames[i], across0 > down0 ? "across" : "down", across0, down0,
+		      across1 > down1 ? "across" : "down", across1, down1);
+		const std::vector<uint8_t> over = shot(nullptr, 0, 0, 180);
+		CHECK(apart(over, plain, half) < 1.5 && apart(over, plain, same_place) > 3.0,
+		      "%s: Rotation 180 is the pattern upside down (%.2f off it, %.2f off the pattern unturned)",
+		      kPatternNames[i], apart(over, plain, half), apart(over, plain, same_place));
+		const std::vector<uint8_t> right = shot(nullptr, 25, 0, 0);
+		CHECK(apart(right, plain, moved_right) < 1.5 && apart(right, plain, same_place) > 3.0,
+		      "%s: Position X 25%% moves the pattern %d px to the right (%.2f off it, %.2f off the pattern unmoved)",
+		      kPatternNames[i], shift_x, apart(right, plain, moved_right), apart(right, plain, same_place));
+	}
+	obs_source_dec_showing(bg);
+	obs_source_release(bg);
+	obs_data_release(s);
+
+	// ---- The outlines, from both filters.
+	auto block = [](const char *name, long long abgr, int bw, int bh) {
+		obs_data_t *d = obs_data_create();
+		obs_data_set_int(d, "color", abgr);
+		obs_data_set_int(d, "width", bw);
+		obs_data_set_int(d, "height", bh);
+		obs_source_t *src = obs_source_create("color_source", name, d, nullptr);
+		obs_data_release(d);
+		return src;
+	};
+	auto put = [](obs_scene_t *scene, obs_source_t *src, float x, float y) {
+		vec2 p;
+		vec2_set(&p, x, y);
+		obs_sceneitem_set_pos(obs_scene_add(scene, src), &p);
+	};
+	const int x0 = 220, y0 = 120, x1 = 420, y1 = 240, lw = 12;
+	auto in_band = [&](int x, int y) {
+		const bool in_outer = x >= x0 - lw + 2 && x < x1 + lw - 2 && y >= y0 - lw + 2 && y < y1 + lw - 2;
+		const bool in_box = x >= x0 - 2 && x < x1 + 2 && y >= y0 - 2 && y < y1 + 2;
+		return in_outer && !in_box;
+	};
+	auto off_line = [&](int x, int y) {
+		const bool in_outer = x >= x0 - lw - 1 && x < x1 + lw + 1 && y >= y0 - lw - 1 && y < y1 + lw + 1;
+		const bool in_box = x >= x0 + 1 && x < x1 - 1 && y >= y0 + 1 && y < y1 - 1;
+		return !in_outer || in_box;
+	};
+	auto band = [&](const std::vector<uint8_t> &a, const std::vector<uint8_t> &b) {
+		return apart(a, b, [&](int x, int y, int &bx, int &by) {
+			bx = x;
+			by = y;
+			return in_band(x, y);
+		});
+	};
+	auto rest = [&](const std::vector<uint8_t> &a, const std::vector<uint8_t> &b) {
+		int m = 0;
+		for (int y = 0; y < H; y++)
+			for (int x = 0; x < W; x++)
+				if (off_line(x, y))
+					for (int c = 0; c < 4; c++)
+						m = std::max(m, std::abs(at(a, x, y, c) - at(b, x, y, c)));
+		return m;
+	};
+	obs_source_t *back = block("XF Back", 0xFF808080, 640, 360);
+	obs_source_t *own = block("XF Own", 0xFFFFFFFF, 200, 120);
+	obs_source_t *plain = block("XF Plain", 0xFFFFFFFF, 200, 120);
+	obs_scene_t *a = obs_scene_create("XF Own Line");
+	obs_scene_t *b = obs_scene_create("XF Scene Line");
+	put(a, back, 0, 0);
+	put(a, own, (float)x0, (float)y0);
+	put(b, back, 0, 0);
+	put(b, plain, (float)x0, (float)y0);
+	auto line = [&](obs_data_t *d) {
+		obs_data_set_bool(d, "shadow", false);
+		obs_data_set_bool(d, "outline", true);
+		obs_data_set_double(d, "outline_width", (double)lw);
+		obs_data_set_int(d, "outline_color", 0xFF2020E0);
+		obs_data_set_int(d, "outline_color2", 0xFFFF0000);
+		obs_data_set_int(d, "outline_color3", 0xFF30E040);
+		obs_data_set_int(d, "outline_corners", 5);
+		obs_data_set_double(d, "outline_speed", 0.0);
+	};
+	obs_data_t *pd = obs_data_create();
+	obs_data_set_int(pd, "adjusted_left", 0);
+	obs_data_set_bool(pd, "screen_px", false);
+	line(pd);
+	obs_source_t *f_own = obs_source_create("stagekit_shadow_backdrop", "XF Own", pd, nullptr);
+	obs_data_release(pd);
+	obs_source_filter_add(own, f_own);
+	obs_data_t *zd = obs_data_create();
+	obs_data_set_int(zd, "ramp_ms", 0);
+	line(zd);
+	obs_source_t *f_scene = obs_source_create("stagekit_scene_shadow", "XF Scene", zd, nullptr);
+	obs_data_release(zd);
+	obs_source_filter_add(obs_scene_get_source(b), f_scene);
+	obs_source_t *const filters[2] = {f_own, f_scene};
+	obs_source_t *const scenes[2] = {obs_scene_get_source(a), obs_scene_get_source(b)};
+	const char *const who[2] = {"Shadow, Glow & Outline", "Scene Shadow"};
+	for (int i = 0; i < 2; i++) {
+		obs_source_t *f = filters[i];
+		auto look = [&](const char *name, int design, double x, double y, double turn, bool saved = true) {
+			obs_data_t *d = obs_source_get_settings(f);
+			obs_data_set_int(d, "outline_design", design);
+			if (saved) {
+				obs_data_set_double(d, "outline_pos_x", x);
+				obs_data_set_double(d, "outline_pos_y", y);
+				obs_data_set_double(d, "outline_rotation", turn);
+			} else {
+				obs_data_erase(d, "outline_pos_x");
+				obs_data_erase(d, "outline_pos_y");
+				obs_data_erase(d, "outline_rotation");
+			}
+			obs_source_update(f, d);
+			obs_data_release(d);
+			sleep_ms(300);
+			render(scenes[i], w, h);
+			std::vector<uint8_t> px = render(scenes[i], w, h);
+			if (name)
+				write_frame(dir + "/" + (i ? "2" : "1") + name + ".rgba", px, w, h);
+			return px;
+		};
+		// The controls, where they act.
+		{
+			obs_properties_t *props = obs_source_properties(f);
+			auto shown = [&](int design, const char *name) {
+				obs_data_t *d = obs_source_get_settings(f);
+				const long long was = obs_data_get_int(d, "outline_design");
+				obs_data_set_int(d, "outline_design", design);
+				obs_property_modified(obs_properties_get(props, "outline_design"), d);
+				obs_data_set_int(d, "outline_design", was);
+				obs_data_release(d);
+				obs_property_t *p = obs_properties_get(props, name);
+				return p && obs_property_visible(p);
+			};
+			bool fills = true, turns = true, others = false;
+			for (int design = 12; design <= 28; design++)
+				fills = fills && shown(design, "outline_pos_x") && shown(design, "outline_pos_y") &&
+					shown(design, "outline_rotation");
+			for (int design : {2, 4, 7, 8, 10, 11})
+				turns = turns && shown(design, "outline_rotation") && !shown(design, "outline_pos_x") &&
+					!shown(design, "outline_pos_y");
+			for (int design : {0, 1, 3, 5, 6, 9})
+				others = others || shown(design, "outline_rotation") ||
+					 shown(design, "outline_pos_x") || shown(design, "outline_pos_y");
+			obs_properties_destroy(props);
+			CHECK(fills && turns && !others,
+			      "%s: Position X, Position Y and Rotation show for a pattern fill, Rotation alone for dashes and the colours that go round, none for the rest (%d %d %d)",
+			      who[i], fills, turns, others);
+		}
+		// A pattern fill (Waves).
+		const std::vector<uint8_t> solid = look(nullptr, 0, 0, 0, 0);
+		const std::vector<uint8_t> absent = look(nullptr, 15, 0, 0, 0, false);
+		const std::vector<uint8_t> fill = look("0-waves", 15, 0, 0, 0);
+		CHECK(absent == fill, "%s: a pattern fill with all three at 0 is the one with none of them saved",
+		      who[i]);
+		const std::vector<uint8_t> moved = look("1-waves-moved", 15, 30, 20, 0);
+		const std::vector<uint8_t> turned = look("2-waves-turned", 15, 0, 0, 90);
+		CHECK(band(moved, fill) > 2.0 && rest(moved, fill) <= 1 && rest(moved, solid) <= 1,
+		      "%s: Position X and Y change the pattern in the line (%.2f) and nothing of its shape or outside it (%d, %d against the solid line)",
+		      who[i], band(moved, fill), rest(moved, fill), rest(moved, solid));
+		CHECK(band(turned, fill) > 2.0 && band(turned, moved) > 2.0 && rest(turned, fill) <= 1,
+		      "%s: Rotation 90 changes the pattern in the line (%.2f) and nothing of its shape or outside it (%d)",
+		      who[i], band(turned, fill), rest(turned, fill));
+		// The gradient: the rotation is where round the border it begins.
+		const std::vector<uint8_t> grad_absent = look(nullptr, 4, 0, 0, 0, false);
+		const std::vector<uint8_t> grad = look("3-gradient", 4, 0, 0, 0);
+		const std::vector<uint8_t> grad_over = look("4-gradient-180", 4, 0, 0, 180);
+		const std::vector<uint8_t> grad_moved = look(nullptr, 4, 40, 40, 0);
+		const int cx = x0 - lw / 2, cy = y0 - lw / 2, fx = x1 + lw / 2 - 1, fy = y1 + lw / 2 - 1;
+		CHECK(grad_absent == grad && grad_moved == grad,
+		      "%s: a gradient at 0 is the one with none saved, and Position X and Y do nothing to it", who[i]);
+		CHECK(at(grad, cx, cy, 0) - at(grad, cx, cy, 2) > 80 &&
+			      at(grad_over, cx, cy, 2) - at(grad_over, cx, cy, 0) > 80 &&
+			      at(grad_over, fx, fy, 0) - at(grad_over, fx, fy, 2) > 80 && rest(grad_over, grad) <= 1,
+		      "%s: a gradient's Rotation 180 puts the first colour at the opposite corner (first corner red %d blue %d, then red %d blue %d; far corner then red %d blue %d; outside the line %d)",
+		      who[i], at(grad, cx, cy, 0), at(grad, cx, cy, 2), at(grad_over, cx, cy, 0),
+		      at(grad_over, cx, cy, 2), at(grad_over, fx, fy, 0), at(grad_over, fx, fy, 2),
+		      rest(grad_over, grad));
+		// Dashes slide along.
+		const std::vector<uint8_t> dashes_absent = look(nullptr, 2, 0, 0, 0, false);
+		const std::vector<uint8_t> dashes = look(nullptr, 2, 0, 0, 0);
+		const std::vector<uint8_t> dashes_on = look("5-dashes-180", 2, 0, 0, 180);
+		CHECK(dashes_absent == dashes && band(dashes_on, dashes) > 10.0 && rest(dashes_on, dashes) <= 1,
+		      "%s: dashes at 0 are as with none saved, and Rotation 180 slides them half a dash and gap along (%.2f in the line, %d outside it)",
+		      who[i], band(dashes_on, dashes), rest(dashes_on, dashes));
+		// A design the three do nothing to.
+		const std::vector<uint8_t> twice = look(nullptr, 1, 0, 0, 0);
+		const std::vector<uint8_t> twice_set = look(nullptr, 1, 30, 30, 120);
+		CHECK(twice == twice_set, "%s: a double line is not touched by the three", who[i]);
+	}
+	for (int i = 0; i < 2; i++)
+		obs_source_release(filters[i]);
+	obs_scene_release(a);
+	obs_scene_release(b);
+	obs_source_release(back);
+	obs_source_release(own);
+	obs_source_release(plain);
+}
+
 // Outline designs filled with a pattern (beta215): the line is a window onto
 // one of Ambient Background's patterns, in both filters. Run alone with
 // STAGEKIT_TEST_ONLY_OUTLINE_PATTERNS.
@@ -19552,6 +19927,13 @@ int main(int argc, char **argv)
 
 	if (getenv("STAGEKIT_TEST_ONLY_SHADOW_EACH")) { // to try that section alone
 		scene_shadow_each_test(w, h, out);
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
+	if (getenv("STAGEKIT_TEST_ONLY_PATTERN_TRANSFORM")) { // to try that section alone
+		pattern_transform_test(w, h, base_image, out);
 		obs_shutdown();
 		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
 		       g_failures == 1 ? "" : "s");
