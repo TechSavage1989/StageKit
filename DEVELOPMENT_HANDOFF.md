@@ -23,7 +23,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
-## Review stage 1: words only (0.1.0-betaNEXT)
+## Review stage 1: words only (0.1.0-beta217)
 
 Stage 1 of the approved whole-plugin review (the proposal and the owner's decisions, 2026-11-19:
 "make it so with all your recommendations"). Wording only: values in `data/locale/en-US.ini`, the
