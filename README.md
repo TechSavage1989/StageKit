@@ -264,6 +264,13 @@ standby image (or its image file) and OBS's log says so.
 
 ![The six hexagon and dot patterns on a dark and on a light palette, and five of them as outline fills from Shadow, Glow & Outline and Scene Shadow](docs/images/hex-patterns.png)
 
+The additional patterns use all three colors, Speed, Size and Detail. The controls for position and rotation also apply to them.
+
+![Code wall, neon hex tiles, network web, hex flood, frosted glass and crystal ice](docs/images/material-patterns-1.gif)
+
+![HUD data wall, circuit board with solder pads, data streams, petal lattice, liquid marble and deep space](docs/images/material-patterns-2.gif)
+
+
 ![The first nineteen patterns: aurora, plasma, lava lamp, waves, bokeh, starfield, gradient flow, nebula, grid pulse, rays, circuit board, hex grid, matrix rain, tunnel, ripples, embers, sun grid, circuit traces, data lines; nebula under a hexagon mosaic; aurora blurred with bloom](docs/images/ambient-patterns.png)
 
 Put it in one shared scene and nest that scene wherever you need the background.

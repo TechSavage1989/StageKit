@@ -65,7 +65,8 @@ constexpr const char *kPatternTechniques[] = {"Aurora",  "Plasma",   "Lava",    
 					      "Stars",   "Gradient", "Nebula",        "Grid",      "Rays",
 					      "Circuit", "Hex",      "Rain",          "Tunnel",    "Ripples",
 					      "Embers",  "SunGrid",  "CircuitTraces", "DataLines", "HexColumns",
-					      "Mesh",    "Halftone", "DotGrid",       "HexWire",   "HexMosaic"};
+					      "Mesh",    "Halftone", "DotGrid",       "HexWire",   "HexMosaic",
+					      "CodeWall", "NeonTiles", "NetworkWeb", "HexFlood", "FrostedGlass", "CrystalIce", "HudWall", "SolderMask", "DataStreams", "PetalLattice", "LiquidMarble", "DeepSpace"};
 constexpr const char *kPatternNames[] = {
 	"Ambient.Pattern.Aurora",    "Ambient.Pattern.Plasma",     "Ambient.Pattern.Lava",
 	"Ambient.Pattern.Waves",     "Ambient.Pattern.Bokeh",      "Ambient.Pattern.Stars",
@@ -75,21 +76,26 @@ constexpr const char *kPatternNames[] = {
 	"Ambient.Pattern.Embers",    "Ambient.Pattern.SunGrid",    "Ambient.Pattern.CircuitTraces",
 	"Ambient.Pattern.DataLines", "Ambient.Pattern.HexColumns", "Ambient.Pattern.Mesh",
 	"Ambient.Pattern.Halftone",  "Ambient.Pattern.DotGrid",    "Ambient.Pattern.HexWire",
-	"Ambient.Pattern.HexMosaic"};
-constexpr int kPatterns = 25;
+	"Ambient.Pattern.HexMosaic",
+	"Ambient.Pattern.CodeWall", "Ambient.Pattern.NeonTiles", "Ambient.Pattern.NetworkWeb", "Ambient.Pattern.HexFlood", "Ambient.Pattern.FrostedGlass", "Ambient.Pattern.CrystalIce", "Ambient.Pattern.HudWall", "Ambient.Pattern.SolderMask", "Ambient.Pattern.DataStreams", "Ambient.Pattern.PetalLattice", "Ambient.Pattern.LiquidMarble", "Ambient.Pattern.DeepSpace"};
+constexpr int kPatterns = sizeof(kPatternTechniques) / sizeof(kPatternTechniques[0]);
+static_assert(sizeof(kPatternNames) / sizeof(kPatternNames[0]) == kPatterns);
 // In four files: the first ten in one, the later ones in a second, the
 // circuit patterns (Circuit board, Circuit traces, Data lines) in a third and
 // the hexagon and dot patterns (Hex columns to Hex mosaic) in a fourth, so a
 // compiler that refuses one file leaves the others' patterns alone.
 constexpr const char *kPatternFiles[] = {"effects/stagekit-patterns.effect", "effects/stagekit-patterns-more.effect",
 					 "effects/stagekit-patterns-circuit.effect",
-					 "effects/stagekit-patterns-hex.effect"};
+					 "effects/stagekit-patterns-hex.effect", "effects/stagekit-patterns-materials.effect"};
 constexpr int kFirstMorePattern = 10;
 constexpr int kCircuitPattern = 10;
 constexpr int kFirstLaterCircuitPattern = 17;
 constexpr int kFirstHexPattern = 19;
+constexpr int kFirstMaterialPattern = 25;
 constexpr int pattern_file(int pattern)
 {
+	if (pattern >= kFirstMaterialPattern)
+		return 4;
 	return pattern >= kFirstHexPattern                                          ? 3
 	       : pattern == kCircuitPattern || pattern >= kFirstLaterCircuitPattern ? 2
 	       : pattern >= kFirstMorePattern                                       ? 1

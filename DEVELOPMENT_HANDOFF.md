@@ -23,6 +23,14 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
+## Twelve material and data patterns (0.1.0-beta228)
+
+Ambient pattern values 25 through 36 follow the owner's remaining references in order. The
+separate shader file protects earlier looks when a renderer cannot load it. Nine textures
+have outline designs 35 through 43. The Ambient Background fill keeps its value 34.
+Code wall, Network web and HUD data wall use the full background to show their small details.
+The solder-pad circuit board is a separate option so a saved circuit board keeps its look.
+
 ## Outlines filled with an Ambient Background (0.1.0-beta226)
 
 The owner: "id also like there to be a border/shadow/outline option to follow the ambient

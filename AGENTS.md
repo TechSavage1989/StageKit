@@ -7,6 +7,13 @@ Read `DEVELOPMENT_HANDOFF.md` next for the current state, then
 [docs/REPOSITORY_STANDARDS.md](docs/REPOSITORY_STANDARDS.md), the shared standard that is identical in
 every TechSavage1989 app repository. Change that file only to change the standard everywhere.
 
+## Additional materials and data patterns
+
+Append new patterns to both the Ambient Background and outline registries. Outline design 34
+samples an Ambient Background and has no procedural technique. Use the shape's saved ID when
+indexing the shader table. The test for hex and material patterns covers normal skin and scene
+outline rendering as well as saved IDs, palette changes and loop points.
+
 ## Names
 
 The owner asked for names "to make more sense" and approved a table (2026-11-14, beta87). What a

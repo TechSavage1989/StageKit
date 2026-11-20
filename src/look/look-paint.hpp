@@ -73,7 +73,16 @@ struct OutlineDesign {
 		// Filled with an Ambient Background's finished picture
 		// (outline-ambient.*): the line shows the background, lifted.
 		Ambient = 34,
-		kLast = Ambient,
+		NeonTiles = 35,
+		HexFlood = 36,
+		FrostedGlass = 37,
+		CrystalIce = 38,
+		SolderMask = 39,
+		DataStreams = 40,
+		PetalLattice = 41,
+		LiquidMarble = 42,
+		DeepSpace = 43,
+		kLast = DeepSpace,
 	};
 	int kind = Solid;
 	uint32_t color2 = 0xFFFFAA00; // the gradient's other end, the shimmer's highlight
@@ -100,7 +109,7 @@ struct OutlineDesign {
 		return kind == Dashed || kind == Marching || kind == Gradient || kind == Travelling ||
 		       kind == Shimmer || kind == Rainbow;
 	}
-	bool pattern() const { return kind >= Aurora && kind <= HexMosaic; }
+	bool pattern() const { return kind >= Aurora && kind <= kLast && kind != Ambient; }
 	bool ambient_fill() const { return kind == Ambient; }
 	// Drawn inside the source's edge, with no line outside it.
 	bool inner() const { return kind == Inner; }
