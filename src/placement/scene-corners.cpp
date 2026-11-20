@@ -93,7 +93,7 @@ constexpr double kBackgroundShare = 0.9;
 
 struct Config {
 	Area area = Area::Each;
-	Which which = Which::AllButBackground;
+	Which which = Which::AllSources;
 	std::vector<std::string> sources, skip;
 	bool auto_background = true;
 	std::string look_json;
@@ -139,6 +139,15 @@ public:
 
 	void update(obs_data_t *settings)
 	{
+		const int old_scope = (int)obs_data_get_int(settings, "which");
+		if (!obs_data_get_bool(settings, "coverage_v2")) {
+			// The old All sources choice included full-screen items even if the hidden box was ticked.
+			if (obs_data_has_user_value(settings, "which") && old_scope == (int)Which::AllSources)
+				obs_data_set_bool(settings, "auto_background", false);
+			obs_data_set_bool(settings, "coverage_v2", true);
+		}
+		if (old_scope == (int)Which::AllButBackground)
+			obs_data_set_int(settings, "which", (int)Which::AllSources);
 		auto config = std::make_shared<Config>();
 		config->area = static_cast<Area>(std::clamp((int)obs_data_get_int(settings, "corners_area"), 0, 1));
 		config->which = static_cast<Which>(std::clamp((int)obs_data_get_int(settings, "which"), 0, 2));
@@ -234,8 +243,7 @@ private:
 			// source), bottom first. All but the background also leaves
 			// out what covers most of the screen under everything else;
 			// All sources leaves out only the ignored ones.
-			const bool find_background = config->which == Which::AllButBackground &&
-						     config->auto_background;
+			const bool find_background = config->auto_background;
 			std::vector<obs_sceneitem_t *> items;
 			obs_scene_enum_items(
 				obs_scene_from_source(scene),
@@ -387,7 +395,7 @@ bool area_modified(obs_properties_t *props, obs_property_t *, obs_data_t *settin
 	obs_property_set_visible(obs_properties_get(props, "sources|alist"), !whole && chosen);
 	obs_property_set_visible(obs_properties_get(props, "skip|alist"), !whole && !chosen);
 	obs_property_set_visible(obs_properties_get(props, "auto_background"),
-				 !whole && which == (int)Which::AllButBackground);
+				 !whole && !chosen);
 	obs_property_set_visible(obs_properties_get(props, "screen_px"), !whole);
 	return true;
 }
@@ -423,7 +431,6 @@ obs_properties_t *get_properties(void *data)
 							OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	// All sources first, as in every scene filter; the numbers stay as saved.
 	obs_property_list_add_int(which, obs_module_text("SceneCorners.Which.Every"), (int)Which::AllSources);
-	obs_property_list_add_int(which, obs_module_text("SceneCorners.Which.All"), (int)Which::AllButBackground);
 	obs_property_list_add_int(which, obs_module_text("SceneCorners.Which.Chosen"), (int)Which::Chosen);
 	set_tip(which, obs_module_text("SceneCorners.Which.Tip"));
 	obs_property_set_modified_callback(which, which_modified);
@@ -524,7 +531,7 @@ void register_scene_corners()
 	info.get_defaults = [](obs_data_t *settings) {
 		// (Not All sources: it would round a full-screen background's
 		// corners, and change every filter saved with the default.)
-		obs_data_set_default_int(settings, "which", (int)Which::AllButBackground);
+		obs_data_set_default_int(settings, "which", (int)Which::AllSources);
 		obs_data_set_default_bool(settings, "auto_background", true);
 		obs_data_set_default_int(settings, "corners_area", (int)Area::Each);
 		corners_look_defaults(settings);

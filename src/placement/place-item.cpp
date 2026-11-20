@@ -858,6 +858,7 @@ void register_place_item()
 
 	// On a scene: moves an item chosen from that scene.
 	info.id = kPlaceItemId;
+	info.output_flags = OBS_SOURCE_VIDEO | OBS_SOURCE_DEPRECATED;
 	info.get_name = [](void *) {
 		return obs_module_text("Place.Name");
 	};
@@ -868,6 +869,7 @@ void register_place_item()
 
 	// On a source: moves that source.
 	info.id = kSendToId;
+	info.output_flags = OBS_SOURCE_VIDEO;
 	info.get_name = [](void *) {
 		return obs_module_text("SendTo.Name");
 	};
