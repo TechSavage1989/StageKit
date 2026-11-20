@@ -2472,10 +2472,26 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   (`kPatternFiles`, `pattern_file`; its helpers are copies of the first file's): the first ten
   have not been seen on Direct3D either, and a refusal of a new one must not take them along. A
   background holds the one file its pattern is in (`patterns_tried_` says which). A further
-  pattern goes in the second file. Circuit board is cells whose sides a trace crosses or not by a hash of
-  the side (`crosses`, so neighbours agree), a pad where a trace ends or three meet, a slanted
-  run for a corner, a finer dimmer layer under it, a chip per four-cell place by hash, and
-  lights by `data_pulse` along rows and columns; the board stands still, only the lights move),
+  pattern goes in a file of its own or the newest one, never one that has shipped. **The circuit
+  family is a third file, `stagekit-patterns-circuit.effect`** (after beta215; `pattern_file` 2:
+  10 Circuit, moved there, and the appended 17 CircuitTraces, 18 DataLines). The owner, of
+  beta215's Circuit board (random cells of traces, a few creeping lights): "i don't really like
+  the circuit board effect animation. it needs major improvement", then reference pictures of
+  three looks, each on dark and on light boards. Circuit board (`cc_ribbons`): rows, each a ribbon
+  of 3 to 12 traces (or one thick one) that lies at a hashed place per 2.4-unit cell and moves to
+  the next cell's place by one 45° run, trace k turning `off_k * 0.4142` earlier or later so the
+  ribbon keeps its width; only the nearest three traces are worked out per pixel; where a ribbon
+  stops (`cc_there`) each trace ends in a ring pad, in a slanted row; lights are `cc_pulse` (each
+  trace's own, and the ribbon's together, staggered); a chip (even cells only, Detail over about
+  20 %, the ribbon fans into it), soldered pads and a pour at a higher Detail; the same function
+  turned a quarter, dimmer, lies under it. Circuit traces (`ct_bundles`): the same along y from
+  the top edge, each trace stopping in a filled pad that flashes as its light arrives, plus
+  `cc_motes`. Data lines (`dl_lines`): one thin line a row with a smoothstep step per cell, end
+  dots, dashes of light, motes, smoke by `dl_noise`. **None adds light to the board: every light
+  is a `lerp` towards its colour, and `cc_hot` goes to white on a dark Colour 1 and to a deeper
+  tone on a light one**, so cream boards work. The board stands still; only lights move.
+  `tests/make-pattern-preview.sh` writes a GIF of any pattern (`STAGEKIT_PREVIEW_PATTERN`, not a
+  test) and prints what a frame costs; on llvmpipe, against Nebula: 1.6, 1.35 and 1.2 times),
   `pattern_colour1`..`3`, `pattern_speed` (%, -400..400), `pattern_scale`,
   `pattern_detail`. Each is a technique of **`data/effects/stagekit-patterns.effect`, a file of
   its own** with no texture, loaded only when a pattern is first chosen (`patterns_tried_`); if it
@@ -3656,7 +3672,8 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     `$out/outline-designs`). Only OpenGL.
 - **Outline designs filled with a pattern** (`OutlineDesign::Aurora` 12 to `Embers` 26, appended:
   Aurora, Plasma, Lava lamp, Waves, Nebula, Gradient flow, Starfield, Bokeh, Rays, Circuit board,
-  Hex grid, Matrix rain, Tunnel, Ripples, Embers; `pattern()`; `kTechniques` in order;
+  Hex grid, Matrix rain, Tunnel, Ripples, Embers; then 27 CircuitTraces and 28 DataLines, with the
+  circuit file as a third in `kFiles` / `file_of`; `pattern()` is `Aurora` to `kLast`; `kTechniques` in order;
   `src/look/outline-pattern.*`; beta215). The owner: "can any of the new background animations
   have counterparts for the outlines/borders?" The line's shape is whatever it was; its colour at
   each pixel is read from a picture of the pattern.

@@ -128,7 +128,7 @@ bool design_modified(obs_properties_t *props, obs_property_t *, obs_data_t *sett
 			obs_property_set_visible(p, on);
 	};
 	const bool dashes = kind == OutlineDesign::Dashed || kind == OutlineDesign::Marching;
-	const bool pattern = kind >= OutlineDesign::Aurora && kind <= OutlineDesign::Embers;
+	const bool pattern = kind >= OutlineDesign::Aurora && kind <= OutlineDesign::kLast;
 	show("outline_color2", pattern || kind == OutlineDesign::Gradient || kind == OutlineDesign::Travelling ||
 				       kind == OutlineDesign::Shimmer);
 	show("outline_color3", pattern);
@@ -174,11 +174,11 @@ void add_outline_design_properties(obs_properties_t *outline)
 	obs_property_t *design = obs_properties_add_list(outline, "outline_design",
 							 obs_module_text("Shadow.OutlineDesign"), OBS_COMBO_TYPE_LIST,
 							 OBS_COMBO_FORMAT_INT);
-	static const char *const names[] = {"Solid",  "Double",   "Dashed",     "Dotted",  "Gradient", "Neon",
-					    "Inner",  "Marching", "Travelling", "Pulse",   "Shimmer",  "Rainbow",
-					    "Aurora", "Plasma",   "Lava",       "Waves",   "Nebula",   "Flow",
-					    "Stars",  "Bokeh",    "Rays",       "Circuit", "Hex",      "Rain",
-					    "Tunnel", "Ripples",  "Embers"};
+	static const char *const names[] = {"Solid",  "Double",   "Dashed",     "Dotted",        "Gradient", "Neon",
+					    "Inner",  "Marching", "Travelling", "Pulse",         "Shimmer",  "Rainbow",
+					    "Aurora", "Plasma",   "Lava",       "Waves",         "Nebula",   "Flow",
+					    "Stars",  "Bokeh",    "Rays",       "Circuit",       "Hex",      "Rain",
+					    "Tunnel", "Ripples",  "Embers",     "CircuitTraces", "DataLines"};
 	for (int i = 0; i <= OutlineDesign::kLast; i++)
 		obs_property_list_add_int(
 			design, obs_module_text((std::string("Shadow.OutlineDesign.") + names[i]).c_str()), i);

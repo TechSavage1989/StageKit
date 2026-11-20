@@ -23,6 +23,30 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
+## The circuit patterns (0.1.0-betaNEXT)
+
+Branch `fix/circuit-board`, on `main` at beta215. Not pushed. The owner, of beta215: "i don't
+really like the circuit board effect animation. it needs major improvement", then reference
+pictures. Circuit board (`pattern` 10, outline design 21) is drawn anew: ribbons of parallel
+traces bending together at 45°, ring pads where they end, thick traces, a dimmer board under,
+lights along the ribbons, chips and soldered pads at a higher Detail. Two new patterns, appended:
+17 Circuit traces and 18 Data lines (outline designs 27 and 28). All three are in a new file,
+`data/effects/stagekit-patterns-circuit.effect`; Circuit board was taken out of
+`stagekit-patterns-more.effect`. Details in AGENTS.md (*Ambient Background's patterns*).
+
+- **Only run on OpenGL.** If the three show the standby image on Windows, the log line names the
+  circuit file; the other sixteen patterns are in the two older files and unaffected.
+- Previews for the owner (not committed): `tests/make-pattern-preview.sh <out.gif> "<pattern>
+  <frames> <fps> <detail> <size> <colour1> <colour2> <colour3>" [still.png]`.
+- Cost on llvmpipe against Nebula (a whole frame at 1280x720, the least of three runs): Circuit
+  board 1.6 times, Circuit traces 1.35, Data lines 1.2.
+- Not built from the references: serpentine (length-matching) runs, traces that grow, small
+  rectangular loops, "∞" marks. Data lines in an outline is nearly the plain outline colour.
+- A second batch of patterns from further references (Hex columns, Code wall, Mesh, Halftone
+  hexagons) is another session's, in a file of its own.
+- Gates run: `AMBIENT_PATTERNS`, `OUTLINE_PATTERNS`, `AMBIENT_SEAMS`, `TOOLTIPS`; the full suite
+  was not run (the owner is short on usage).
+
 ## Outline designs filled with a pattern (0.1.0-beta215)
 
 Branch `feat/outline-patterns`, on `main` at beta214. Not pushed. The owner: "can any of the new

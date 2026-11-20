@@ -218,12 +218,18 @@ itself. **Pattern**: *Aurora* (slow curtains of colour), *Plasma*, *Lava lamp* (
 merge and part), *Waves* (layered dunes), *Bokeh* (soft circles drifting and fading), *Starfield*
 (drifting points that twinkle), *Gradient flow* (a turning, sliding three-colour gradient),
 *Nebula* (cloud), *Grid pulse* (a faint grid with pulses running along its lines), *Rays*
-(light rays turning slowly round a point), *Circuit board* (a board with traces, pads and chips,
-and lights running along the traces: Colour 1 is the board, Colour 2 the traces, Colour 3 the
-lights; *Detail* is how many traces, pads and chips, *Size* the size of its cells), *Hex grid* (a
+(light rays turning slowly round a point), *Circuit board* (ribbons of thin parallel traces that bend together at 45°, each trace ending
+in a ring pad, a few thick traces, a dimmer board under it, and lights running along the ribbons
+that light the pads as they arrive; chips, soldered pads and pours join in at a higher *Detail*),
+*Circuit traces* (bundles of traces coming down from the top, each ending in a round pad at its
+own height, lights running down them and small lights drifting up), *Data lines* (a few very
+thin lines running across with gentle steps, dashes of light sliding along them, and small
+drifting lights). For these three Colour 1 is the board, Colour 2 the lines and Colour 3 what
+lights up (in Data lines: the drifting lights), and they are made for a light board as well as a
+dark one: on a light Colour 1 the lights turn deeper instead of whiter. *Hex grid* (a
 honeycomb whose cells light up), *Matrix rain* (falling streaks of changing signs), *Tunnel*
-(rings flying out of the middle), *Ripples* (raindrop rings on water), *Embers* (sparks rising)
-and *Sun grid* (a sun over a grid running to the horizon). **Colour 1**, **Colour 2**, **Colour 3** are its palette
+(rings flying out of the middle), *Ripples* (raindrop rings on water), *Embers* (sparks rising),
+*Sun grid* (a sun over a grid running to the horizon). **Colour 1**, **Colour 2**, **Colour 3** are its palette
 (Colour 1 is the ground where a pattern has one); **Speed** (100 % as it comes; 0 holds it still,
 under 0 runs it backwards; at 100 % a pattern comes back to where it began every four minutes,
 with no jump), **Size** and **Detail**. A pattern takes the image's place and nothing else changes:
@@ -234,7 +240,7 @@ an image's and is hidden for a pattern. The patterns cost one small extra drawin
 nothing while an image is chosen. If the patterns cannot be loaded, the background shows the
 standby image (or its image file) and OBS's log says so.
 
-![The seventeen patterns: aurora, plasma, lava lamp, waves, bokeh, starfield, gradient flow, nebula, grid pulse, rays, circuit board, hex grid, matrix rain, tunnel, ripples, embers, sun grid; nebula under a hexagon mosaic; aurora blurred with bloom](docs/images/ambient-patterns.png)
+![The nineteen patterns: aurora, plasma, lava lamp, waves, bokeh, starfield, gradient flow, nebula, grid pulse, rays, circuit board, hex grid, matrix rain, tunnel, ripples, embers, sun grid, circuit traces, data lines; nebula under a hexagon mosaic; aurora blurred with bloom](docs/images/ambient-patterns.png)
 
 Put it in one shared scene and nest that scene wherever you need the background.
 
@@ -304,10 +310,10 @@ its heading:
     Outline, and slanted across the whole scene in Scene Shadow, so pick corners there for dashes
     that travel round. The drop shadow is still thrown by the whole line, and a filter saved
     before keeps its solid line.
-  - *Outline design* also has fifteen designs called *Pattern*, which fill the line with one of
+  - *Outline design* also has seventeen designs called *Pattern*, which fill the line with one of
     Ambient Background's moving patterns: *Aurora*, *Plasma*, *Lava lamp*, *Waves*, *Nebula*,
     *Gradient flow*, *Starfield*, *Bokeh*, *Rays*, *Circuit board*, *Hex grid*, *Matrix rain*,
-    *Tunnel*, *Ripples* and *Embers*. The line keeps its width, corners and shape
+    *Tunnel*, *Ripples*, *Embers*, *Circuit traces* and *Data lines*. The line keeps its width, corners and shape
     (round the box or following the source); it is a window onto the pattern. The colours are the
     outline colour, the *Second colour* and a *Third colour*; *Pattern size* makes the pattern
     smaller or larger (smaller shows more of it along a thin line), and *Speed* moves it (60 is
@@ -316,15 +322,16 @@ its heading:
     Outline it lies over the source itself and travels with it. Plasma, Nebula and Gradient flow
     colour a thin line all the way round; Aurora, Starfield and Rays are mostly the outline colour
     with light passing through, as are Ripples and Embers, and look best on a wide line. For
-    Circuit board, Hex grid and Matrix rain turn *Pattern size* down (to 30 % or so) so that
-    traces, cells and streaks fit in the line's width. Grid pulse is not offered (in a line it is
+    Circuit board, Circuit traces, Hex grid and Matrix rain turn *Pattern size* down (to 30 % or
+    so) so that traces, cells and streaks fit in the line's width. Data lines is sparse on
+    purpose: in a line it is the outline colour with a thin line or a light now and then. Grid pulse is not offered (in a line it is
     only a tick every so often), nor Sun grid (it is a view, not a texture).
 
 <p align="center"><img src="docs/images/outline-glow.png" width="900" alt="White sources with a 10 px black outline from Shadow, Glow &amp; Outline and from Scene Shadow, the same width, with a drop shadow, with rounded and bevelled outline corners, the drop shadow rounded with them, half-way through a Morph with the outlines solid, and a white glow round dark squares at 100% and 250% intensity"></p>
 
 <p align="center"><img src="docs/images/outline-designs.png" width="900" alt="The twelve outline designs, each from Shadow, Glow &amp; Outline and from Scene Shadow: solid, double line, dashed, dotted, gradient, neon, inner line, marching dashes, travelling gradient, pulse, shimmer and rainbow"></p>
 
-<p align="center"><img src="docs/images/outline-patterns.png" width="900" alt="A white source with a 12 px outline filled with each of the fifteen patterns, from Shadow, Glow &amp; Outline and from Scene Shadow, then a rounded line filled with Plasma and a line following two bars filled with a small circuit board"></p>
+<p align="center"><img src="docs/images/outline-patterns.png" width="900" alt="A white source with a 12 px outline filled with each of the seventeen patterns, from Shadow, Glow &amp; Outline and from Scene Shadow, then a rounded line filled with Plasma and a line following two bars filled with a small circuit board"></p>
 - **Panel behind the source**: a coloured panel with a margin.
 
 *Rounded corners* rounds the image and the panel.

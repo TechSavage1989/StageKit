@@ -10628,6 +10628,55 @@ static void link_transitions_test(uint32_t w, uint32_t h)
 	obs_source_release(before_out);
 }
 
+// Not a test: frames of one Ambient Background pattern for a moving preview
+// (tests/make-pattern-preview.sh turns them into a GIF), and what a frame
+// costs to draw. STAGEKIT_PREVIEW_PATTERN is "<pattern> <frames> <fps>
+// <detail> <size> <colour1> <colour2> <colour3>" (colours 0xBBGGRR in hex,
+// 0 for the default); the frames go to <out>/frame-NNN.rgba.
+static void pattern_preview(uint32_t w, uint32_t h, const std::string &dir)
+{
+	int pattern = 10, frames = 60, fps = 15;
+	double detail = 50, size = 100;
+	unsigned colour[3] = {0, 0, 0};
+	sscanf(getenv("STAGEKIT_PREVIEW_PATTERN"), "%d %d %d %lf %lf %x %x %x", &pattern, &frames, &fps, &detail, &size,
+	       &colour[0], &colour[1], &colour[2]);
+	std::error_code made;
+	std::filesystem::create_directories(dir, made);
+	obs_data_t *s = obs_data_create();
+	obs_data_set_int(s, "base_type", 3);
+	obs_data_set_double(s, "blur", 0);
+	obs_data_set_int(s, "pattern", pattern);
+	obs_data_set_double(s, "pattern_detail", detail);
+	obs_data_set_double(s, "pattern_scale", size);
+	for (int i = 0; i < 3; i++)
+		if (colour[i])
+			obs_data_set_int(s,
+					 i == 0   ? "pattern_colour1"
+					 : i == 1 ? "pattern_colour2"
+						  : "pattern_colour3",
+					 0xFF000000u | colour[i]);
+	obs_data_set_double(s, "test_pattern_time", 0.0);
+	obs_source_t *bg = obs_source_create("stagekit_ambient_background", "Pattern Preview", s, nullptr);
+	obs_source_inc_showing(bg);
+	sleep_ms(300);
+	render(bg, w, h);
+	const uint64_t began = os_gettime_ns();
+	for (int i = 0; i < 20; i++)
+		render(bg, w, h);
+	printf("pattern %d: %.2f ms a frame at %ux%u\n", pattern, double(os_gettime_ns() - began) / 20e6, w, h);
+	for (int i = 0; i < frames; i++) {
+		obs_data_set_double(s, "test_pattern_time", double(i) / fps);
+		obs_source_update(bg, s);
+		sleep_ms(120);
+		char name[64];
+		snprintf(name, sizeof(name), "/frame-%03d.rgba", i);
+		write_frame(dir + name, render(bg, w, h), w, h);
+	}
+	obs_source_dec_showing(bg);
+	obs_source_release(bg);
+	obs_data_release(s);
+}
+
 // Ambient Background's patterns (the owner, 2026-11-19: "id like to have
 // some animated ambient background choices added too. some procedural ones
 // that would be appealing"): each of the ten draws something, in the
@@ -10642,11 +10691,12 @@ static void ambient_patterns_test(uint32_t w, uint32_t h, const char *base_image
 	printf("\n[ambient background: patterns]\n");
 	std::error_code made;
 	std::filesystem::create_directories(sheet, made);
-	static const char *const kNames[] = {"aurora",        "plasma",        "lava lamp",   "waves",      "bokeh",
-					     "starfield",     "gradient flow", "nebula",      "grid pulse", "rays",
-					     "circuit board", "hex grid",      "matrix rain", "tunnel",     "ripples",
-					     "embers",        "sun grid"};
-	constexpr int kCount = 17;
+	static const char *const kNames[] = {"aurora",      "plasma",         "lava lamp",     "waves",
+					     "bokeh",       "starfield",      "gradient flow", "nebula",
+					     "grid pulse",  "rays",           "circuit board", "hex grid",
+					     "matrix rain", "tunnel",         "ripples",       "embers",
+					     "sun grid",    "circuit traces", "data lines"};
+	constexpr int kCount = 19;
 
 	static int unavailable = 0;
 	static log_handler_t prev_log = nullptr;
@@ -10794,6 +10844,36 @@ static void ambient_patterns_test(uint32_t w, uint32_t h, const char *base_image
 	CHECK(nearest > 2.0, "no two patterns are alike (the nearest two, %s and %s, differ by %.2f)", kNames[na],
 	      kNames[nb], nearest);
 
+	// The circuit patterns move so that it shows, and calmly: two seconds on,
+	// some of the picture has changed by more than twenty levels and most of
+	// it has not; and a loop ends where it began (the phase at 1 is the
+	// phase at 0).
+	for (int i : {10, 17, 18}) {
+		auto at = [&](double seconds) {
+			return shot("", [&](obs_data_t *d) {
+				obs_data_set_int(d, "pattern", i);
+				obs_data_set_double(d, "pattern_speed", 100);
+				obs_data_set_double(d, "test_pattern_time", seconds);
+				obs_data_unset_user_value(d, "pattern_colour1");
+				obs_data_unset_user_value(d, "pattern_colour2");
+				obs_data_unset_user_value(d, "pattern_colour3");
+			});
+		};
+		const std::vector<uint8_t> a = at(30.0), b = at(32.0), begin = at(0.0), end = at(240.0);
+		size_t changed = 0;
+		for (size_t n = 0; n < a.size(); n += 4)
+			changed += std::abs(a[n] - b[n]) > 20 || std::abs(a[n + 1] - b[n + 1]) > 20 ||
+				   std::abs(a[n + 2] - b[n + 2]) > 20;
+		const double share = 100.0 * double(changed) / double(a.size() / 4);
+		const double least = 1.0;
+		CHECK(share >= least && share <= 35.0,
+		      "%s moves visibly and calmly: %.2f %% of the picture is more than twenty levels off two seconds on (at least %.1f %%, at most 35 %%)",
+		      kNames[i], share, least);
+		CHECK(mean_abs_diff(begin, end) < 0.02 && mean_abs_diff(begin, a) > 0.1,
+		      "%s has no seam: the end of a loop is its beginning (%.4f apart; %.2f from half a minute in)",
+		      kNames[i], mean_abs_diff(begin, end), mean_abs_diff(begin, a));
+	}
+
 	// The rest of the pipeline acts on a pattern as on an image.
 	{
 		// (Nebula: its cloud has no two neighbouring pixels alike for long.)
@@ -10808,7 +10888,7 @@ static void ambient_patterns_test(uint32_t w, uint32_t h, const char *base_image
 			return double(same) / double(n);
 		};
 		const std::vector<uint8_t> &plain = first[7];
-		const std::vector<uint8_t> hexes = shot("18 nebula, hexagons", [](obs_data_t *d) {
+		const std::vector<uint8_t> hexes = shot("20 nebula, hexagons", [](obs_data_t *d) {
 			obs_data_set_int(d, "pattern", 7);
 			obs_data_unset_user_value(d, "pattern_colour1");
 			obs_data_unset_user_value(d, "pattern_colour2");
@@ -10819,7 +10899,7 @@ static void ambient_patterns_test(uint32_t w, uint32_t h, const char *base_image
 		CHECK(mean_abs_diff(plain, hexes) > 0.5 && flat(hexes) > 0.9 && flat(hexes) > flat(plain) + 0.2,
 		      "the hexagon mosaic acts on a pattern: flat cells (%.2f of neighbouring pixels alike, against %.2f plain), %.2f apart",
 		      flat(hexes), flat(plain), mean_abs_diff(plain, hexes));
-		const std::vector<uint8_t> soft = shot("19 aurora, blurred, bloom", [](obs_data_t *d) {
+		const std::vector<uint8_t> soft = shot("21 aurora, blurred, bloom", [](obs_data_t *d) {
 			obs_data_set_int(d, "pixel_style", 0);
 			obs_data_set_int(d, "pattern", 0);
 			obs_data_set_double(d, "blur", 60);
@@ -16908,10 +16988,11 @@ static void outline_patterns_test(uint32_t w, uint32_t h, const std::string &out
 		CHECK(spread(solid[i]) < 0.5, "%s: the solid line is one colour (%.2f)", who[i], spread(solid[i]));
 	}
 
-	static const char *const names[15] = {"aurora",        "plasma",      "lava lamp", "waves",   "nebula",
-					      "gradient flow", "starfield",   "bokeh",     "rays",    "circuit board",
-					      "hex grid",      "matrix rain", "tunnel",    "ripples", "embers"};
-	for (int p = 0; p < 15; p++) {
+	static const char *const names[17] = {"aurora",         "plasma",      "lava lamp", "waves",   "nebula",
+					      "gradient flow",  "starfield",   "bokeh",     "rays",    "circuit board",
+					      "hex grid",       "matrix rain", "tunnel",    "ripples", "embers",
+					      "circuit traces", "data lines"};
+	for (int p = 0; p < 17; p++) {
 		const int design = 12 + p;
 		both([&](obs_data_t *s) {
 			obs_data_set_int(s, "outline_design", design);
@@ -17004,7 +17085,7 @@ static void outline_patterns_test(uint32_t w, uint32_t h, const std::string &out
 	for (int i = 0; i < 2; i++) {
 		const std::vector<uint8_t> f = shot(scenes[i]);
 		char name[128];
-		snprintf(name, sizeof(name), "/%02d plasma, rounded, %s.rgba", 31 + i, who[i]);
+		snprintf(name, sizeof(name), "/%02d plasma, rounded, %s.rgba", 35 + i, who[i]);
 		write_frame(dir + name, f, w, h);
 		int corner = 0, side = 0;
 		for (int c = 0; c < 3; c++) {
@@ -17064,7 +17145,7 @@ static void outline_patterns_test(uint32_t w, uint32_t h, const std::string &out
 			const std::vector<uint8_t> f = shot(ts[i]);
 			char name[128];
 			snprintf(name, sizeof(name), "/%02d circuit board at 30 %%, a source like text, %s.rgba",
-				 33 + i, who[i]);
+				 37 + i, who[i]);
 			write_frame(dir + name, f, w, h);
 			// Along the line over the first bar and under the second: the
 			// colour varies; between the bars, past the lines, the grey
@@ -17115,11 +17196,11 @@ static void outline_patterns_test(uint32_t w, uint32_t h, const std::string &out
 		CHECK(spread(f) > 6.0, "%s: with the shaders back the pattern is back (%.1f)", who[i], spread(f));
 	}
 
-	// The controls: 27 designs; a pattern shows its colours, size and speed.
+	// The controls: 29 designs; a pattern shows its colours, size and speed.
 	for (int i = 0; i < 2; i++) {
 		int wrong = 0;
 		size_t count = 0;
-		for (int design = 0; design <= 26; design++) {
+		for (int design = 0; design <= 28; design++) {
 			obs_data_t *s = obs_source_get_settings(filters[i]);
 			obs_data_set_int(s, "outline_design", design);
 			obs_properties_t *props = obs_source_properties(filters[i]);
@@ -17139,7 +17220,7 @@ static void outline_patterns_test(uint32_t w, uint32_t h, const std::string &out
 			obs_data_release(s);
 		}
 		set(filters[i], [](obs_data_t *s) { obs_data_set_int(s, "outline_design", 13); });
-		CHECK(wrong == 0 && count == 27,
+		CHECK(wrong == 0 && count == 29,
 		      "%s: %zu designs; a pattern shows Second colour, Third colour, Pattern size and Speed, the others do not show the new two (%d wrong)",
 		      who[i], count, wrong);
 	}
@@ -18652,7 +18733,9 @@ int main(int argc, char **argv)
 	if (!obs_startup("en-US", nullptr, nullptr))
 		return 1;
 
-	const uint32_t w = 640, h = 360;
+	// (Twice the size for a pattern's preview frames: a pattern is drawn at half size.)
+	const bool preview = getenv("STAGEKIT_PREVIEW_PATTERN") != nullptr;
+	const uint32_t w = preview ? 1280 : 640, h = preview ? 720 : 360;
 	obs_video_info ovi = {};
 	ovi.graphics_module = "libobs-opengl";
 	ovi.fps_num = 60;
@@ -18796,6 +18879,12 @@ int main(int argc, char **argv)
 		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
 		       g_failures == 1 ? "" : "s");
 		return g_failures ? 1 : 0;
+	}
+
+	if (preview) { // not a test: frames for tests/make-pattern-preview.sh
+		pattern_preview(w, h, out);
+		obs_shutdown();
+		return 0;
 	}
 
 	if (getenv("STAGEKIT_TEST_ONLY_AMBIENT_PATTERNS")) { // its own run: see tests/run-tests.sh

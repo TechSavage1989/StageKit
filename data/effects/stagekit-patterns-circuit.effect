@@ -1,0 +1,504 @@
+// StageKit Ambient Background: the circuit patterns
+//
+// Circuit board, Circuit traces and Data lines, in a file of their own: a
+// compiler that refuses any of these takes only these away, and the other
+// patterns still load. The same uniforms and the same rules as
+// stagekit-patterns.effect: constant loop bounds, float(i) casts, no inout,
+// no atan2, no large numbers; time arrives as `phase`, 0..1 over one loop,
+// and every motion makes a whole number of turns in a loop.
+//
+// The helpers at the top are copies of that file's: change them together.
+//
+// All three are flat drawings in three colours that must read on a dark
+// board and on a light one: colour1 the board, colour2 the lines, colour3
+// what lights up. Nothing is added to the board's colour; a light is mixed
+// towards its colour, so it shows on cream as on black.
+
+uniform float4x4 ViewProj;
+
+uniform float phase;     // 0..1 over one loop of the animation
+uniform float2 aspect;   // (width / height, 1)
+uniform float scale;     // how large the pattern's features are, 1 = as designed
+uniform float detail;    // 0..1
+uniform float4 colour1;  // the palette; colour1 is the ground of patterns that have one
+uniform float4 colour2;
+uniform float4 colour3;
+
+struct VertData {
+	float4 pos : POSITION;
+	float2 uv  : TEXCOORD0;
+};
+
+VertData VSDefault(VertData v_in)
+{
+	VertData vert_out;
+	vert_out.pos = mul(float4(v_in.pos.xyz, 1.0), ViewProj);
+	vert_out.uv  = v_in.uv;
+	return vert_out;
+}
+
+// An angle that makes k whole turns in a loop.
+float turn(float k)
+{
+	return 6.2831853 * frac(phase * k);
+}
+
+// The screen with its middle at 0 and its height 1 (at scale 1).
+float2 place(float2 uv)
+{
+	return (uv - float2(0.5, 0.5)) * aspect / max(scale, 0.05);
+}
+
+// colour1 -> colour2 -> colour3 -> colour1, round and round
+float3 palette_round(float t)
+{
+	float u = frac(t) * 3.0;
+	float3 a = lerp(colour1.rgb, colour2.rgb, saturate(u));
+	float3 b = lerp(a, colour3.rgb, saturate(u - 1.0));
+	return lerp(b, colour1.rgb, saturate(u - 2.0));
+}
+
+// 0..1 from a cell's number. Small numbers only, so it is the same everywhere.
+float hash(float2 p)
+{
+	float3 p3 = frac(float3(p.x, p.y, p.x) * 0.1031);
+	float d = dot(p3, float3(p3.y, p3.z, p3.x) + float3(33.33, 33.33, 33.33));
+	p3 = p3 + float3(d, d, d);
+	return frac((p3.x + p3.y) * p3.z);
+}
+
+// A cell's number wrapped to 0..15, so a layer that drifts a whole number
+// of sixteen cells in a loop comes back to where it began.
+float2 wrap16(float2 cell)
+{
+	return cell - 16.0 * floor(cell / 16.0);
+}
+
+// What the middle of a light goes towards: white on a dark board, a deeper
+// tone of itself on a light one.
+float3 cc_hot(float3 lit)
+{
+	float lum = dot(colour1.rgb, float3(0.3, 0.6, 0.1));
+	return lerp(lerp(lit, float3(1.0, 1.0, 1.0), 0.65), lit * 0.55, smoothstep(0.4, 0.65, lum));
+}
+
+// The board: its colour with a soft light in the middle.
+float3 cc_board(float2 uv, float2 middle)
+{
+	float2 d = (uv - middle) * float2(1.0, 0.8);
+	return colour1.rgb * (1.08 - 0.75 * dot(d, d));
+}
+
+// A light running along a line, seen `x` along it: a head with a tail
+// behind it, `period` apart, `speed` whole periods in a loop.
+float cc_pulse(float x, float period, float speed, float offs, float tail)
+{
+	float b = frac(frac(phase * speed) + offs - x / period) * period;
+	return exp(-b * tail) + exp((b - period) * 26.0);
+}
+
+// Small soft lights adrift, one to a cell: x the light itself, y its bloom.
+// They rise sixteen cells `rise` times in a loop.
+float2 cc_motes(float2 p, float seed, float rise, float amount)
+{
+	float2 at_p = float2(p.x, p.y + 16.0 * frac(phase * rise));
+	float2 cell = floor(at_p);
+	float2 f = at_p - cell;
+	float2 cw = wrap16(cell);
+	float h1 = hash(cw + float2(seed, 3.0));
+	float h2 = hash(float2(cw.y + 7.0, cw.x + seed + 11.0));
+	float h3 = hash(cw + float2(19.0, seed + 5.0));
+	float2 at = float2(0.3 + 0.4 * h1, 0.3 + 0.4 * h2);
+	at.x += 0.07 * sin(turn(3.0 + floor(h3 * 5.0)) + h1 * 6.2831853);
+	float r = 0.022 + 0.09 * h3 * h3 * h3;
+	float d = length(f - at);
+	float twinkle = 0.55 + 0.45 * sin(turn(24.0 + floor(h2 * 40.0)) + h3 * 6.2831853);
+	float there = step(h2 * 0.6 + h1 * 0.4, amount) * twinkle;
+	float soft = 1.0 - smoothstep(r * 0.45, r, d);
+	// a ring instead of a dot now and then
+	float ring = step(0.82, h1) * step(0.5, h3);
+	soft = lerp(soft, soft * smoothstep(r * 0.5, r * 0.75, d) * 1.4, ring);
+	return float2(soft, exp(-d * d / (r * r * 2.2))) * there;
+}
+
+// ------------------------------------------------------------ Circuit board
+//
+// Ribbons of thin parallel traces in rows across the board. A row's ribbon
+// keeps its place through a cell and moves to the next cell's place by a
+// run at 45 degrees, every trace turning a little earlier or later than its
+// neighbour so the ribbon keeps its width round the bend. Where a ribbon
+// stops, each trace ends in a ring pad, in a slanted row. Some rows hold one
+// thick trace instead, and at a higher Detail a ribbon runs into a chip now
+// and then. A dimmer board of the same kind lies under it, turned a quarter.
+
+float cc_chip(float cell, float bw, float seed, float amount)
+{
+	float cw = cell - 16.0 * floor(cell / 16.0);
+	float even = step(frac(cell * 0.5), 0.25);
+	return even * step(hash(float2(cw + 41.0, bw + seed + 7.0)), amount);
+}
+
+// Where the ribbon lies in a cell, from the row's middle.
+float cc_off(float cell, float bw, float seed, float reach, float amount)
+{
+	float cw = cell - 16.0 * floor(cell / 16.0);
+	float h = hash(float2(cw + 21.0, bw + seed + 80.0));
+	return (floor(h * 5.0) - 2.0) * 0.5 * reach * (1.0 - cc_chip(cell, bw, seed, amount));
+}
+
+// Whether trace `k` of the ribbon is there in a cell.
+float cc_there(float cell, float k, float bw, float seed, float amount, float fill)
+{
+	float cw = cell - 16.0 * floor(cell / 16.0);
+	float ribbon = step(hash(float2(cw + 5.0, bw + seed + 120.0)), fill);
+	float line_there = step(0.08, hash(float2(cw + k * 17.0 + 3.0, bw + seed + 60.0)));
+	return saturate(ribbon * line_there + cc_chip(cell, bw, seed, amount));
+}
+
+// One board. x: traces, pads and a chip's outline; y: how lit they are;
+// z: the bloom round a light; w: the halo close round a trace, or, under
+// zero, a chip's body.
+float4 cc_ribbons(float2 q, float seed, float density, float soft, float chips)
+{
+	float band = floor(q.y);
+	float fy = q.y - band - 0.5;
+	float bw = band - 16.0 * floor(band / 16.0);
+	float hb = hash(float2(bw + 1.0, seed + 5.0));
+	float hn = hash(float2(seed + 9.0, bw + 2.0));
+	float power = step(hash(float2(bw + 3.0, seed + 23.0)), 0.22);
+	float n = lerp(3.0 + floor(hn * (3.0 + 6.99 * density)), 1.0, power);
+	float mid = (n - 1.0) * 0.5;
+	float pitch = 0.05;
+	float wide = lerp(0.011 + 0.006 * hb, 0.045, power);
+	float reach = max(0.4 - mid * pitch, 0.0);
+	float way = hb < 0.5 ? 1.0 : -1.0;
+	float lean = hn < 0.5 ? 1.0 : -1.0;
+	float fill = 0.62 + 0.33 * density;
+	float amount = chips * step(n, 6.5) * (1.0 - power) * saturate(density * 1.6 - 0.3) * 0.5;
+	float xs = q.x + hb * 16.8;
+	float cell = floor(xs / 2.4);
+	float fx = xs - cell * 2.4;
+	float cw = cell - 16.0 * floor(cell / 16.0);
+	float chip0 = cc_chip(cell, bw, seed, amount);
+	float chipb = cc_chip(cell - 1.0, bw, seed, amount);
+	float o0 = lerp(cc_off(cell, bw, seed, reach, amount), cc_off(cell - 1.0, bw, seed, reach, amount), chipb);
+	float o1 = lerp(cc_off(cell + 1.0, bw, seed, reach, amount), cc_off(cell, bw, seed, reach, amount), chip0);
+	float delta = o1 - o0;
+	float dir = sign(delta);
+	float len = abs(delta);
+	float start = 0.45 + hash(float2(cw + 13.0, bw + seed + 30.0)) * (1.4 - len);
+	float near_chip = abs(fx - 1.2);
+	float spread = 1.0 + 0.8 * chip0 * saturate((1.0 - near_chip) / 0.25);
+	float c0 = o0 + dir * clamp(fx - start, 0.0, len);
+	float k0 = clamp(floor((fy - c0) / (pitch * spread) + mid + 0.5), 0.0, n - 1.0);
+	float pin = chip0 * step(near_chip, 0.75);
+	float solder = step(0.55, density) * step(hash(float2(bw + 47.0, seed + cw)), 0.4);
+	float trace = 0.0;
+	float light = 0.0;
+	float bloom = 0.0;
+	float halo = 0.0;
+	for (int j = 0; j < 3; j++) {
+		float k = k0 + float(j) - 1.0;
+		float valid = step(-0.5, k) * step(k, n - 0.5);
+		float off_k = (k - mid) * pitch;
+		float ramp = clamp(fx + dir * off_k * 0.4142 - start, 0.0, len);
+		float sloped = step(0.0005, ramp) * step(ramp, len - 0.0005);
+		float dl = abs(fy - (o0 + dir * ramp + off_k * spread)) * lerp(1.0, 0.7071, sloped);
+		// where it stops: a pad at the side of a cell where it is there on
+		// one side only, each trace's a little further along than the last
+		float xp = (xs - off_k * lean) / 2.4;
+		float pc = floor(xp);
+		float bc = floor(xp + 0.5);
+		float here = cc_there(pc, k, bw, seed, amount, fill);
+		float other = cc_there(2.0 * bc - 1.0 - pc, k, bw, seed, amount, fill);
+		float ends = abs(here - other);
+		float2 to_pad = float2((xp - bc) * 2.4, fy - (lerp(o0, o1, saturate(bc - cell)) + off_k));
+		float dv = length(to_pad);
+		float r = lerp(0.027, 0.085, power);
+		float disc = 1.0 - smoothstep(r, r + soft, dv);
+		float hole = smoothstep(r * 0.42, r * 0.42 + soft, dv);
+		float pad = ends * disc * lerp(hole, 1.0, solder);
+		float w = wide * (1.0 + 0.9 * pin);
+		float line_a = here * (1.0 - smoothstep(w, w + soft, dl));
+		// its lights: its own, and the ribbon's all together, each trace's a
+		// little behind the one inside it
+		float hk = hash(float2(k + 1.0 + seed, bw * 7.0 + 19.0));
+		float hs = hash(float2(bw + 37.0 + seed, k * 5.0 + 2.0));
+		float along = xs * way;
+		float p = step(0.35, hk) * cc_pulse(along, 10.0, 30.0 + 10.0 * floor(hs * 6.0), hk * 7.0, 1.6);
+		p = max(p, cc_pulse(along, 24.0, 48.0, hb + abs(k - mid) * 0.007, 1.5));
+		p = min(p, 1.0) * valid;
+		float a = max(line_a, pad) * valid;
+		trace = max(trace, a);
+		light = max(light, a * p);
+		// a soldered pad has a highlight of its own
+		light = max(light, pad * solder * valid * (1.0 - smoothstep(r * 0.2, r * 0.6, length(to_pad + float2(r * 0.25, r * 0.25)))));
+		bloom += here * p * exp(-dl * dl * 260.0) + ends * p * valid * exp(-dv * dv * 160.0);
+		halo = max(halo, valid * max(here * exp(-dl * dl * 900.0), ends * exp(-dv * dv * 500.0)));
+	}
+	// The chip a ribbon runs into: a dark body with an outline, a second
+	// line inside it and a mark in each corner. Its outline breathes, and
+	// lights up as the ribbon's lights reach it.
+	float hh = mid * pitch * 1.8 + 0.09;
+	float2 c = float2(fx - 1.2, fy);
+	float2 e = abs(c) - float2(0.62, hh);
+	float out_by = max(e.x, e.y);
+	float body = chip0 * (1.0 - smoothstep(0.0, soft, out_by));
+	float rim = body * smoothstep(-0.024 - soft, -0.024, out_by);
+	float inner = body * (1.0 - smoothstep(0.005, 0.005 + soft, abs(out_by + 0.075)));
+	float2 m = abs(abs(c) - float2(0.5, hh - 0.09));
+	float marks = body * (1.0 - smoothstep(0.022, 0.022 + soft, max(m.x, m.y)));
+	float breath = 0.5 + 0.5 * sin(turn(40.0) + hb * 31.0 + cw);
+	float busy = min(cc_pulse((xs - fx + 1.2) * way, 24.0, 48.0, hb, 0.9), 1.0);
+	float glowing = 0.12 + 0.2 * breath + 0.7 * busy;
+	trace = max(trace * (1.0 - body), max(rim, max(inner * 0.6, marks)));
+	light = max(light * (1.0 - body), max(rim, marks) * glowing);
+	bloom = bloom * (1.0 - body) + chip0 * (1.0 - body) * exp(-max(out_by, 0.0) * 22.0) * glowing * 0.7 + body * exp(out_by * 14.0) * glowing * 0.5;
+	// A pour beside a thick trace now and then: a slab with a cut corner
+	// and a row of holes.
+	float slab_here = power * step(0.5, density) * step(hash(float2(cw + 53.0, bw + seed + 9.0)), 0.3);
+	float2 sc = float2(fx - 1.2, fy - o0 + 0.2 * sign(o0 + 0.001));
+	float2 se = abs(sc) - float2(0.5, 0.11);
+	float cut = (abs(sc.x) + abs(sc.y) - 0.52) * 0.7071;
+	float s_out = max(max(se.x, se.y), cut);
+	float2 hole_at = float2(frac(sc.x * 5.0 + 0.5) - 0.5, sc.y * 5.0);
+	float slab = slab_here * (1.0 - smoothstep(0.0, soft, s_out)) * smoothstep(0.16, 0.16 + soft * 5.0, length(hole_at)) * step(abs(o1 - o0), 0.001);
+	trace = max(trace, slab * 0.8);
+	return float4(trace, light, bloom, lerp(halo * (1.0 - chip0 * step(out_by, 0.03)), -1.0, body));
+}
+
+float4 PSCircuit(VertData v_in) : TARGET
+{
+	float2 q = place(v_in.uv) * 3.5 + float2(40.3, 40.0);
+	float density = detail;
+	float4 top = cc_ribbons(q, 0.0, density, 0.011, 1.0);
+	float4 under = cc_ribbons(float2(q.y, q.x) * 1.25 + float2(3.7, 9.2), 100.0, density * 0.7, 0.014, 0.0);
+	float body = saturate(-top.w);
+	float halo = saturate(top.w);
+	float3 hot = cc_hot(colour3.rgb);
+	float3 board = cc_board(v_in.uv, float2(0.5, 0.5));
+	// a slow sheen across the traces
+	float sheen = 0.5 + 0.5 * cos(6.2831853 * (dot(q, float2(0.8, 0.6)) / 28.0 - frac(phase * 12.0)));
+	sheen = sheen * sheen * sheen * sheen;
+	// the board under: dimmer, and out of sight close to a trace above it
+	float open_to = 1.0 - saturate(halo * 1.6);
+	float3 rgb = lerp(board, colour2.rgb, under.x * 0.3 * open_to);
+	rgb = lerp(rgb, colour3.rgb, saturate(under.y * 0.5 + under.z * 0.2) * open_to);
+	// a soft glow under every trace
+	rgb = lerp(rgb, colour3.rgb, halo * (0.1 + 0.12 * detail + 0.1 * sheen) * (1.0 - top.x));
+	rgb = lerp(rgb, colour1.rgb * 0.45, body);
+	rgb = lerp(rgb, lerp(colour2.rgb, hot, 0.3 * sheen), top.x);
+	rgb = lerp(rgb, colour3.rgb, saturate(top.z * 0.75));
+	rgb = lerp(rgb, hot, saturate(top.y));
+	return float4(saturate(rgb), 1.0);
+}
+
+// ----------------------------------------------------------- Circuit traces
+//
+// Bundles of a few thin traces coming down from the top, each bundle in a
+// column of its own, stepping sideways together by a run at 45 degrees and
+// every trace stopping at its own height in a round pad. Lights run down
+// them and the pad lights as one arrives. A dimmer, smaller set lies behind,
+// and soft lights drift up, more of them towards the lower right.
+
+// x: traces and pads, y: how lit, z: bloom
+float3 ct_bundles(float2 q, float seed, float density, float soft)
+{
+	float band = floor(q.x);
+	float fx = q.x - band - 0.5;
+	float bw = band - 16.0 * floor(band / 16.0);
+	float hb = hash(float2(bw + 1.0, seed + 5.0));
+	float hn = hash(float2(seed + 9.0, bw + 2.0));
+	float there = step(hash(float2(bw + 3.0, seed + 23.0)), 0.4 + 0.55 * density);
+	float n = 2.0 + floor(hn * 3.99);
+	float mid = (n - 1.0) * 0.5;
+	float pitch = 0.07;
+	float reach = 0.36 - mid * pitch;
+	float cell = floor(q.y / 2.0);
+	float fa = q.y - cell * 2.0;
+	float cw = cell - 16.0 * floor(cell / 16.0);
+	float o0 = (floor(hash(float2(cw + 21.0, bw + seed + 80.0)) * 3.0) - 1.0) * reach;
+	float o1 = (floor(hash(float2(cw + 22.0, bw + seed + 80.0)) * 3.0) - 1.0) * reach;
+	float delta = o1 - o0;
+	float dir = sign(delta);
+	float len = abs(delta);
+	float start = 0.9 + hash(float2(cw + 13.0, bw + seed + 30.0)) * (0.9 - len);
+	float c0 = o0 + dir * clamp(fa - start, 0.0, len);
+	float k0 = clamp(floor((fx - c0) / pitch + mid + 0.5), 0.0, n - 1.0);
+	float trace = 0.0;
+	float light = 0.0;
+	float bloom = 0.0;
+	for (int j = 0; j < 3; j++) {
+		float k = k0 + float(j) - 1.0;
+		float valid = step(-0.5, k) * step(k, n - 0.5) * there;
+		float off_k = (k - mid) * pitch;
+		float ramp = clamp(fa + dir * off_k * 0.4142 - start, 0.0, len);
+		float sloped = step(0.0005, ramp) * step(ramp, len - 0.0005);
+		float dl = abs(fx - (o0 + dir * ramp + off_k)) * lerp(1.0, 0.7071, sloped);
+		float hk = hash(float2(k + 1.0 + seed, bw * 7.0 + 19.0));
+		float hs = hash(float2(bw + 37.0 + seed, k * 5.0 + 2.0));
+		// it stops in the straight top part of a cell
+		float end_cell = floor(hb * 1.6 + hk * 1.7);
+		float end_at = (end_cell + 0.1 + 0.25 * hs) * 2.0;
+		float before = step(q.y, end_at);
+		float dv = length(float2(fx - (o0 + off_k), q.y - end_at)) + 9.0 * abs(cell - end_cell);
+		float r = 0.034 + 0.012 * hs;
+		float pad = 1.0 - smoothstep(r, r + soft, dv);
+		float line_a = before * (1.0 - smoothstep(0.009, 0.009 + soft, dl));
+		float speed = 24.0 + 8.0 * floor(hs * 5.0);
+		float runs = step(0.25, hk);
+		float p = runs * min(cc_pulse(q.y, 8.0, speed, hk * 5.0, 1.8), 1.0);
+		float flash = runs * min(cc_pulse(end_at, 8.0, speed, hk * 5.0, 0.9), 1.0);
+		float a = max(line_a, pad) * valid;
+		trace = max(trace, a);
+		light = max(light, max(line_a * p, pad * flash) * valid);
+		bloom += valid * (before * p * exp(-dl * dl * 300.0) + flash * exp(-dv * dv * 90.0));
+	}
+	float depth = 0.45 + 0.55 * hb;
+	return float3(trace * depth, light, bloom);
+}
+
+float4 PSCircuitTraces(VertData v_in) : TARGET
+{
+	float zoom = 5.0 / max(scale, 0.05);
+	float2 q = float2((v_in.uv.x - 0.5) * aspect.x * zoom + 40.0, v_in.uv.y * zoom);
+	float3 back = ct_bundles(q * 1.5 + float2(7.3, 0.0), 50.0, detail, 0.018);
+	float3 front = ct_bundles(q, 0.0, detail, 0.012);
+	float3 hot = cc_hot(colour3.rgb);
+	float3 rgb = cc_board(v_in.uv, float2(0.45, 0.35));
+	rgb = lerp(rgb, colour2.rgb, back.x * 0.32);
+	rgb = lerp(rgb, colour3.rgb, saturate(back.y * 0.4 + back.z * 0.2));
+	rgb = lerp(rgb, colour2.rgb, front.x);
+	rgb = lerp(rgb, colour3.rgb, saturate(front.z * 0.6));
+	rgb = lerp(rgb, hot, saturate(front.y));
+	// the lights adrift, most of them towards the lower right
+	float most = saturate(0.15 + 0.3 * detail + 0.75 * v_in.uv.x * v_in.uv.y);
+	float2 p = float2((v_in.uv.x - 0.5) * aspect.x, v_in.uv.y - 0.5) * zoom;
+	float2 close_by = cc_motes(p * 1.6 + float2(40.0, 40.0), 0.0, 5.0, most * 0.8);
+	float2 far_off = cc_motes(p * 3.1 + float2(23.0, 51.0), 60.0, 3.0, most);
+	rgb = lerp(rgb, colour3.rgb, saturate(close_by.y * 0.45 + far_off.y * 0.3));
+	rgb = lerp(rgb, hot, saturate(close_by.x * 0.8 + far_off.x * 0.5));
+	return float4(saturate(rgb), 1.0);
+}
+
+// --------------------------------------------------------------- Data lines
+//
+// A few very thin lines running a long way across, each stepping up or down
+// once in a cell by a gentle S, most of them faint and a few bright, ending
+// in a small dot. Short dashes of light slide along them, some in broken
+// groups. Small lights of the third colour drift over a smoky ground.
+
+float dl_noise(float2 p)
+{
+	float2 cell = floor(p);
+	float2 f = p - cell;
+	f = f * f * (float2(3.0, 3.0) - 2.0 * f);
+	float a = hash(wrap16(cell));
+	float b = hash(wrap16(cell + float2(1.0, 0.0)));
+	float c = hash(wrap16(cell + float2(0.0, 1.0)));
+	float d = hash(wrap16(cell + float2(1.0, 1.0)));
+	return lerp(lerp(a, b, f.x), lerp(c, d, f.x), f.y);
+}
+
+float dl_off(float cell, float bw, float seed)
+{
+	float cw = cell - 16.0 * floor(cell / 16.0);
+	return (hash(float2(cw + 21.0, bw + seed + 80.0)) - 0.5) * 0.62;
+}
+
+float dl_there(float cell, float bw, float seed)
+{
+	float cw = cell - 16.0 * floor(cell / 16.0);
+	return step(0.3, hash(float2(cw + 5.0, bw + seed + 120.0)));
+}
+
+// x: the line and its dot, y: the dashes of light, z: their bloom
+float3 dl_lines(float2 q, float seed, float density, float soft)
+{
+	float band = floor(q.y);
+	float fy = q.y - band - 0.5;
+	float bw = band - 16.0 * floor(band / 16.0);
+	float hb = hash(float2(bw + 1.0, seed + 5.0));
+	float hn = hash(float2(seed + 9.0, bw + 2.0));
+	float hs = hash(float2(bw + 37.0, seed + 2.0));
+	float wanted = step(hash(float2(bw + 3.0, seed + 23.0)), 0.45 + 0.5 * density);
+	float level = 0.3 + 0.7 * hn * hn;
+	float way = hb < 0.5 ? 1.0 : -1.0;
+	float xs = q.x + hb * 23.0;
+	float cell = floor(xs / 5.0);
+	float fx = xs - cell * 5.0;
+	float cw = cell - 16.0 * floor(cell / 16.0);
+	float o0 = dl_off(cell, bw, seed);
+	float o1 = dl_off(cell + 1.0, bw, seed);
+	float delta = o1 - o0;
+	float len = abs(delta) * 1.5 + 0.2;
+	float start = 1.0 + 2.0 * hash(float2(cw + 13.0, bw + seed + 30.0));
+	float t = saturate((fx - start) / len);
+	float slope = delta * 6.0 * t * (1.0 - t) / len;
+	float dl = abs(fy - (o0 + delta * t * t * (3.0 - 2.0 * t))) / sqrt(1.0 + slope * slope);
+	float here = dl_there(cell, bw, seed);
+	float bc = floor(xs / 5.0 + 0.5);
+	float other = dl_there(2.0 * bc - 1.0 - cell, bw, seed);
+	float ends = abs(here - other);
+	float dv = length(float2(xs - bc * 5.0, fy - lerp(o0, o1, saturate(bc - cell))));
+	float throb = 0.6 + 0.4 * sin(turn(30.0 + floor(hs * 6.0) * 10.0) + hb * 40.0 + cw);
+	float dot_a = ends * (1.0 - smoothstep(0.03, 0.03 + soft, dv));
+	float dot_glow = ends * exp(-dv * dv * 150.0) * throb;
+	float line_a = here * (1.0 - smoothstep(0.007, 0.007 + soft, dl));
+	// dashes: `long` of a line lit, behind a head; some in three pieces
+	float period = 10.0 + 5.0 * floor(hs * 2.0);
+	float b = frac(frac(phase * (20.0 + 10.0 * floor(hn * 5.0 + hs * 2.0))) + hs * 3.0 - way * xs / period) * period;
+	float dash_long = 0.35 + 0.8 * hs;
+	float dash = saturate((dash_long - b) * 30.0) * saturate(b * 60.0 + 0.2);
+	dash *= lerp(1.0, step(frac(b / dash_long * 3.0), 0.62), step(0.55, hb));
+	dash *= here * step(0.3, hn + hs * 0.5);
+	float core = dash * (1.0 - smoothstep(0.012, 0.012 + soft, dl));
+	float bloom = dash * exp(-dl * dl * 220.0);
+	return float3(max(line_a * level, dot_a * max(level, 0.5)), core, bloom * (0.5 + 0.5 * level) + dot_glow * level) * wanted;
+}
+
+float4 PSDataLines(VertData v_in) : TARGET
+{
+	float2 base = place(v_in.uv);
+	float2 q = base * 7.0 + float2(40.0, 40.2);
+	float3 fine = dl_lines(q, 0.0, detail, 0.012);
+	float3 large = dl_lines(base * 4.3 + float2(51.7, 23.4), 50.0, detail * 0.8, 0.008);
+	float smoke = dl_noise(base * 1.3 + float2(5.0, 5.0)) * 0.65 + dl_noise(base * 3.1 + float2(9.0, 2.0)) * 0.35;
+	float3 hot = cc_hot(colour2.rgb);
+	float3 rgb = cc_board(v_in.uv, float2(0.5, 0.5)) * (0.82 + 0.36 * smoke);
+	rgb = lerp(rgb, colour2.rgb, saturate(fine.x * 0.8 + large.x));
+	rgb = lerp(rgb, colour2.rgb, saturate((fine.z + large.z) * 0.6));
+	rgb = lerp(rgb, hot, saturate(fine.y + large.y));
+	float2 close_by = cc_motes(base * 5.0 + float2(40.0, 40.0), 0.0, 2.0, 0.1 + 0.25 * detail);
+	float2 far_off = cc_motes(base * 11.0 + float2(23.0, 51.0), 60.0, 1.0, 0.15 + 0.3 * detail);
+	rgb = lerp(rgb, colour3.rgb, saturate(close_by.y * 0.4 + far_off.y * 0.35));
+	rgb = lerp(rgb, cc_hot(colour3.rgb), saturate(close_by.x * 0.7 + far_off.x * 0.6));
+	return float4(saturate(rgb), 1.0);
+}
+
+technique Circuit
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSCircuit(v_in);
+	}
+}
+
+technique CircuitTraces
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSCircuitTraces(v_in);
+	}
+}
+
+technique DataLines
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSDataLines(v_in);
+	}
+}
