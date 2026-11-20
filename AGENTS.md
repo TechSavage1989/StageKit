@@ -2465,7 +2465,18 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   pattern*; the owner, 2026-11-19: "id like to have some animated ambient background choices
   added too. some procedural ones that would be appealing"). `pattern` (by number, append-only,
   `kPatternTechniques`: 0 Aurora, 1 Plasma, 2 Lava, 3 Waves, 4 Bokeh, 5 Stars, 6 Gradient,
-  7 Nebula, 8 Grid, 9 Rays), `pattern_colour1`..`3`, `pattern_speed` (%, -400..400), `pattern_scale`,
+  7 Nebula, 8 Grid, 9 Rays; since beta215, at the owner's word ("maybe also add some more
+  procedural animations for the background and borders. I'd like at least one of them to be like
+  a circuitry/circuitboard animation style"): 10 Circuit, 11 Hex, 12 Rain, 13 Tunnel, 14 Ripples,
+  15 Embers, 16 SunGrid, **in a second file, `stagekit-patterns-more.effect`**
+  (`kPatternFiles`, `pattern_file`; its helpers are copies of the first file's): the first ten
+  have not been seen on Direct3D either, and a refusal of a new one must not take them along. A
+  background holds the one file its pattern is in (`patterns_tried_` says which). A further
+  pattern goes in the second file. Circuit board is cells whose sides a trace crosses or not by a hash of
+  the side (`crosses`, so neighbours agree), a pad where a trace ends or three meet, a slanted
+  run for a corner, a finer dimmer layer under it, a chip per four-cell place by hash, and
+  lights by `data_pulse` along rows and columns; the board stands still, only the lights move),
+  `pattern_colour1`..`3`, `pattern_speed` (%, -400..400), `pattern_scale`,
   `pattern_detail`. Each is a technique of **`data/effects/stagekit-patterns.effect`, a file of
   its own** with no texture, loaded only when a pattern is first chosen (`patterns_tried_`); if it
   does not load, one error is logged and the standby image (or the file) is the background.
@@ -3643,6 +3654,47 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   - Tested in `[outline designs: ...]` (`outline_designs_test`, alone with
     `STAGEKIT_TEST_ONLY_OUTLINE_DESIGNS`; contact sheet `docs/images/outline-designs.png` from
     `$out/outline-designs`). Only OpenGL.
+- **Outline designs filled with a pattern** (`OutlineDesign::Aurora` 12 to `Embers` 26, appended:
+  Aurora, Plasma, Lava lamp, Waves, Nebula, Gradient flow, Starfield, Bokeh, Rays, Circuit board,
+  Hex grid, Matrix rain, Tunnel, Ripples, Embers; `pattern()`; `kTechniques` in order;
+  `src/look/outline-pattern.*`; beta215). The owner: "can any of the new background animations
+  have counterparts for the outlines/borders?" The line's shape is whatever it was; its colour at
+  each pixel is read from a picture of the pattern.
+  - **Nothing of the patterns is in the outline's shader files.** `outline_pattern_texture` draws
+    the pattern with Ambient Background's two pattern files (`kFiles`, `file_of`: the first ten
+    and the later ones, each loaded when first asked for; every uniform set at every run, Detail
+    fixed at 0.5) into a small picture, half the size it is shown at; the two
+    outline effects gained only `pattern_tex` and `pattern_on` and one line each
+    (`colour * (1 - pattern_on) + pattern * pattern_on`: times one and plus nothing while off, so
+    designs 0 to 11 are as they were, bit for bit). `DesignUniforms::set(design, pattern,
+    stand_in)` sets both at every run of a technique that reads them (`stand_in`, any texture,
+    while there is no pattern: Direct3D draws nothing while a uniform has no value). In the
+    shaders a pattern kind is a solid line (`design_at` gives 1, 0). If the patterns' file does
+    not load, the line is the outline colour and the log says once `Outline patterns are not
+    available (...)`. Do not move pattern maths into the outline effect files.
+  - **One picture per (pattern, three colours, size, moment, picture size) a frame**, for all who
+    ask (`g_entries`, used only in a graphics context); at Speed 0 it is drawn once and kept. A
+    picture not asked for in 2 s is let go of (at the next asking, or by a tick callback when
+    nobody asks), all of them at unload (`outline_pattern_stop`). The moment is the video frame's
+    time, wrapped to the 240 s loop in double precision (Speed 60 is Ambient Background's 100 %).
+  - **Where the pattern lies**: Scene Shadow and Morph (`LookPaint::compose`) draw it over the
+    canvas, so the lines of every source are windows onto one pattern. Shadow, Glow & Outline
+    draws in the source's space and does not know where the source is on screen: the pattern lies
+    over the source and its room, sized as on the canvas (canvas height over the picture's, and
+    by the shown scale with sizes in screen pixels, `pattern_shown`), and goes with the source.
+    An outline *Made from: the image* keeps the image's colours.
+  - Settings: the outline colour is colour 1, `outline_color2` colour 2, `outline_color3` (new)
+    colour 3, `outline_pattern_scale` (new, %, *Pattern size*), `outline_speed`. `lerp_design`
+    mixes the new two between two of one kind. Grid pulse was left out: in a line a few pixels
+    wide it is ground colour with a tick every 150 px. Sun grid too: a view with a horizon, not
+    a texture. A new pattern for both goes at the end of both lists (`kPatternTechniques`,
+    `OutlineDesign` + `kTechniques` + the names in `add_outline_design_properties`).
+  - Tested in `[outline patterns: ...]` (`outline_patterns_test`, alone with
+    `STAGEKIT_TEST_ONLY_OUTLINE_PATTERNS`; contact sheet `docs/images/outline-patterns.png` from
+    `$out/outline-patterns`); it also writes designs 0 to 11 at speed 0 to
+    `$out/outline-patterns-same`, to compare with another build's. `stagekit_test_outline_patterns`
+    (a global proc) gives the pictures held and drawn; the setting `test_pattern_effect` on either
+    filter names another file in the patterns' place. Only OpenGL.
 - **Frame time** (`src/common/timing.*`, `src/common/scene-rev.*`; the harness `tests/collection-perf.cpp`,
   `tests/make-perf-collection.py`, `tests/run-perf.sh`, `tests/perf-compare.py`). The owner's
   *Average time to render frame* went from under 1 ms to 1.1 ms: all of it `tick_sources` (0.25 to

@@ -44,13 +44,35 @@ struct OutlineDesign {
 		Pulse = 9,
 		Shimmer = 10,
 		Rainbow = 11,
-		kLast = Rainbow,
+		// Filled with one of Ambient Background's patterns (outline-pattern.*):
+		// the line is a window onto the pattern.
+		Aurora = 12,
+		Plasma = 13,
+		Lava = 14,
+		Waves = 15,
+		Nebula = 16,
+		Flow = 17,
+		Stars = 18,
+		Bokeh = 19,
+		Rays = 20,
+		Circuit = 21,
+		Hex = 22,
+		Rain = 23,
+		Tunnel = 24,
+		Ripples = 25,
+		Embers = 26,
+		kLast = Embers,
 	};
 	int kind = Solid;
 	uint32_t color2 = 0xFFFFAA00; // the gradient's other end, the shimmer's highlight
 	double dash = 24.0, gap = 16.0;
 	double speed = 60.0; // pixels a second for dashes; 600 is one round a second; 0 stands still
 	double glow = 0.7;   // Neon: the share of the line's width that is glow
+	// The pattern fills: their third colour (the outline colour and `color2`
+	// are the first two) and how large the pattern is, 1 as designed.
+	uint32_t color3 = 0xFFA046C8;
+	double pattern_scale = 1.0;
+	bool pattern() const { return kind >= Aurora && kind <= Embers; }
 	// Drawn inside the source's edge, with no line outside it.
 	bool inner() const { return kind == Inner; }
 };
@@ -67,11 +89,17 @@ OutlineDesign lerp_design(const OutlineDesign &a, const OutlineDesign &b, double
 class DesignUniforms {
 public:
 	void find(gs_effect_t *effect);
-	void set(const OutlineDesign &design) const;
+	// `pattern`: the picture a pattern fill's line takes its colour from
+	// (outline_pattern_texture), or null for the design's own colours;
+	// `stand_in`: any texture, given in its place then, because a value an
+	// effect reads must be set at every run. Without `stand_in` the two
+	// are left alone (a technique that draws no colour).
+	void set(const OutlineDesign &design, gs_texture_t *pattern = nullptr, gs_texture_t *stand_in = nullptr) const;
 
 private:
 	gs_eparam_t *kind_ = nullptr, *color2_ = nullptr, *dash_ = nullptr, *gap_ = nullptr;
 	gs_eparam_t *phase_ = nullptr, *turn_ = nullptr, *pulse_ = nullptr, *glow_ = nullptr;
+	gs_eparam_t *pattern_tex_ = nullptr, *pattern_on_ = nullptr;
 };
 
 // A shadow, glow or outline, with the same settings (names and numbers) as

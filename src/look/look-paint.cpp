@@ -9,6 +9,7 @@ the Free Software Foundation; either version 2 of the License, or
 */
 
 #include "look-paint.hpp"
+#include "outline-pattern.hpp"
 
 #include "../common/scene-util.hpp"
 #include "../common/tooltip.hpp"
@@ -64,6 +65,11 @@ OutlineDesign read_outline_design(obs_data_t *settings)
 	d.gap = std::clamp(obs_data_get_double(settings, "outline_gap"), 1.0, 400.0);
 	d.speed = std::clamp(obs_data_get_double(settings, "outline_speed"), -1000.0, 1000.0);
 	d.glow = std::clamp(obs_data_get_double(settings, "outline_neon") / 100.0, 0.1, 0.9);
+	d.color3 = (uint32_t)obs_data_get_int(settings, "outline_color3");
+	d.pattern_scale = std::clamp(obs_data_get_double(settings, "outline_pattern_scale") / 100.0, 0.1, 4.0);
+	// (Only the tests set this: another file in the patterns' place.)
+	if (obs_data_has_user_value(settings, "test_pattern_effect"))
+		outline_pattern_test_file(obs_data_get_string(settings, "test_pattern_effect"));
 	return d;
 }
 
@@ -77,9 +83,11 @@ void DesignUniforms::find(gs_effect_t *effect)
 	turn_ = gs_effect_get_param_by_name(effect, "design_turn");
 	pulse_ = gs_effect_get_param_by_name(effect, "design_pulse");
 	glow_ = gs_effect_get_param_by_name(effect, "design_glow");
+	pattern_tex_ = gs_effect_get_param_by_name(effect, "pattern_tex");
+	pattern_on_ = gs_effect_get_param_by_name(effect, "pattern_on");
 }
 
-void DesignUniforms::set(const OutlineDesign &d) const
+void DesignUniforms::set(const OutlineDesign &d, gs_texture_t *pattern, gs_texture_t *stand_in) const
 {
 	if (!kind_)
 		return;
@@ -104,6 +112,10 @@ void DesignUniforms::set(const OutlineDesign &d) const
 				? (float)(0.3 + 0.7 * (0.5 + 0.5 * std::cos(travelled * (6.283185307179586 / 100.0))))
 				: 1.0f);
 	gs_effect_set_float(glow_, (float)d.glow);
+	if (stand_in && pattern_tex_ && pattern_on_) {
+		gs_effect_set_texture(pattern_tex_, pattern ? pattern : stand_in);
+		gs_effect_set_float(pattern_on_, pattern ? 1.0f : 0.0f);
+	}
 }
 
 namespace {
@@ -116,8 +128,11 @@ bool design_modified(obs_properties_t *props, obs_property_t *, obs_data_t *sett
 			obs_property_set_visible(p, on);
 	};
 	const bool dashes = kind == OutlineDesign::Dashed || kind == OutlineDesign::Marching;
-	show("outline_color2",
-	     kind == OutlineDesign::Gradient || kind == OutlineDesign::Travelling || kind == OutlineDesign::Shimmer);
+	const bool pattern = kind >= OutlineDesign::Aurora && kind <= OutlineDesign::Embers;
+	show("outline_color2", pattern || kind == OutlineDesign::Gradient || kind == OutlineDesign::Travelling ||
+				       kind == OutlineDesign::Shimmer);
+	show("outline_color3", pattern);
+	show("outline_pattern_scale", pattern);
 	show("outline_dash", dashes);
 	show("outline_gap", dashes || kind == OutlineDesign::Dotted);
 	show("outline_speed", kind >= OutlineDesign::Marching);
@@ -159,8 +174,11 @@ void add_outline_design_properties(obs_properties_t *outline)
 	obs_property_t *design = obs_properties_add_list(outline, "outline_design",
 							 obs_module_text("Shadow.OutlineDesign"), OBS_COMBO_TYPE_LIST,
 							 OBS_COMBO_FORMAT_INT);
-	static const char *const names[] = {"Solid", "Double",   "Dashed",     "Dotted", "Gradient", "Neon",
-					    "Inner", "Marching", "Travelling", "Pulse",  "Shimmer",  "Rainbow"};
+	static const char *const names[] = {"Solid",  "Double",   "Dashed",     "Dotted",  "Gradient", "Neon",
+					    "Inner",  "Marching", "Travelling", "Pulse",   "Shimmer",  "Rainbow",
+					    "Aurora", "Plasma",   "Lava",       "Waves",   "Nebula",   "Flow",
+					    "Stars",  "Bokeh",    "Rays",       "Circuit", "Hex",      "Rain",
+					    "Tunnel", "Ripples",  "Embers"};
 	for (int i = 0; i <= OutlineDesign::kLast; i++)
 		obs_property_list_add_int(
 			design, obs_module_text((std::string("Shadow.OutlineDesign.") + names[i]).c_str()), i);
@@ -169,6 +187,9 @@ void add_outline_design_properties(obs_properties_t *outline)
 	obs_property_t *two =
 		obs_properties_add_color(outline, "outline_color2", obs_module_text("Shadow.OutlineColor2"));
 	set_tip(two, obs_module_text("Shadow.OutlineColor2.Tip"));
+	obs_property_t *three =
+		obs_properties_add_color(outline, "outline_color3", obs_module_text("Shadow.OutlineColor3"));
+	set_tip(three, obs_module_text("Shadow.OutlineColor3.Tip"));
 	auto slider = [&](const char *name, const char *text, double min, double max, const char *suffix) {
 		obs_property_t *p =
 			obs_properties_add_float_slider(outline, name, obs_module_text(text), min, max, 1.0);
@@ -182,6 +203,8 @@ void add_outline_design_properties(obs_properties_t *outline)
 		obs_module_text("Shadow.OutlineSpeed.Tip"));
 	set_tip(slider("outline_neon", "Shadow.OutlineNeon", 10.0, 90.0, "%"),
 		obs_module_text("Shadow.OutlineNeon.Tip"));
+	set_tip(slider("outline_pattern_scale", "Shadow.OutlinePatternScale", 10.0, 400.0, "%"),
+		obs_module_text("Shadow.OutlinePatternScale.Tip"));
 }
 
 void add_intensity_property(obs_properties_t *shadow)
@@ -204,6 +227,8 @@ void outline_glow_defaults(obs_data_t *settings)
 	obs_data_set_default_double(settings, "outline_gap", d.gap);
 	obs_data_set_default_double(settings, "outline_speed", d.speed);
 	obs_data_set_default_double(settings, "outline_neon", d.glow * 100.0);
+	obs_data_set_default_int(settings, "outline_color3", d.color3);
+	obs_data_set_default_double(settings, "outline_pattern_scale", d.pattern_scale * 100.0);
 }
 
 ShadowLook scaled_look(ShadowLook look, double level)
@@ -243,6 +268,8 @@ OutlineDesign lerp_design(const OutlineDesign &a, const OutlineDesign &b, double
 		out.dash = mix(a.dash, b.dash, t);
 		out.gap = mix(a.gap, b.gap, t);
 		out.glow = mix(a.glow, b.glow, t);
+		out.color3 = mix_color(a.color3, b.color3, t);
+		out.pattern_scale = mix(a.pattern_scale, b.pattern_scale, t);
 	}
 	return out;
 }
@@ -652,6 +679,9 @@ bool LookPaint::compose(gs_texture_t *scene, gs_texture_t *cast, gs_texture_t *m
 	const bool box = has_ring && look.box_line() && ring;
 	// (Every value an effect reads, at every pass: OBS empties them after
 	// each technique, and Direct3D draws nothing while one has none.)
+	// A pattern fill: the pattern over the whole canvas, which the line is a
+	// window onto (drawn before any of this file's passes begin).
+	gs_texture_t *pattern = has_ring ? outline_pattern_texture(look.design, look.outline_color, cx, cy) : nullptr;
 	auto line_values = [&] {
 		gs_effect_set_texture(p_cast_, cast);
 		gs_effect_set_texture(p_ring_shape_, box ? ring : cast);
@@ -660,7 +690,7 @@ bool LookPaint::compose(gs_texture_t *scene, gs_texture_t *cast, gs_texture_t *m
 		gs_effect_set_vec2(p_out_size_, &size);
 		gs_effect_set_float(p_outline_width_, (float)look.outline_width);
 		gs_effect_set_vec4(p_outline_color_, &line);
-		design_.set(look.design);
+		design_.set(look.design, pattern, cast);
 	};
 	// The shadow is thrown by the sources with their line round them, as the
 	// per-source filter's is (its shadow comes from the outlined picture):

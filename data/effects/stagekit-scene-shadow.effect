@@ -60,6 +60,8 @@ uniform float design_phase;     // marching dashes: how far along, in dash-and-g
 uniform float design_turn;      // what travels round: how far round (0..1)
 uniform float design_pulse;     // the pulse now: 1 whole
 uniform float design_glow;      // neon: the share of the width that is glow
+uniform texture2d pattern_tex;  // a pattern fill: the pattern, drawn by stagekit-patterns.effect, over the canvas
+uniform float pattern_on;       // 1: the line's colour is pattern_tex's, 0: the design's own
 uniform texture2d follow_tex;   // Ring, Outlined: what the line follows round its shape: the casting
                                 // sources (alpha), or with box lines the ring canvas (red)
 
@@ -401,7 +403,10 @@ float4 PSRing(VertData v_in) : TARGET
 	float amount_design = ring.g * boxed + follow.x * by_shape.x * (1.0 - boxed);
 	float k = ring.b * boxed + by_shape.y * (1.0 - boxed);
 	float amount = reach * (1.0 - designed) + amount_design * designed;
-	float3 line_rgb = design_rgb(outline_color.rgb, k * designed);
+	// A pattern fill: the line is a window onto the pattern's picture.
+	// (Times one and plus nothing while off: the other designs are as they were.)
+	float3 pattern_rgb = pattern_tex.Sample(linearClamp, v_in.uv).rgb;
+	float3 line_rgb = design_rgb(outline_color.rgb, k * designed) * (1.0 - pattern_on) + pattern_rgb * pattern_on;
 	float4 laid = s.source + laid_under(under, s.free, line_rgb, laid_amount(amount, s) * outline_color.a);
 	// An inner line lies on its source (in green, with no line outside):
 	// over the whole pixel, as faded as the source is.

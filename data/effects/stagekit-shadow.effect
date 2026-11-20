@@ -46,6 +46,8 @@ uniform float design_phase;     // marching dashes: how far along, in dash-and-g
 uniform float design_turn;      // what travels round: how far round (0..1)
 uniform float design_pulse;     // the pulse now: 1 whole
 uniform float design_glow;      // neon: the share of the width that is glow
+uniform texture2d pattern_tex;   // a pattern fill: the pattern, drawn by stagekit-patterns.effect, over this picture
+uniform float pattern_on;       // 1: the line's colour is pattern_tex's, 0: the design's own
 uniform float out_linear;       // 1: Compose writes linear light (OBS draws in linear light)
 
 sampler_state linearClamp {
@@ -341,7 +343,11 @@ float4 PSOutline(VertData v_in) : TARGET
 	float amount = reach * (1.0 - boxed * is_design(6.0));
 	amount = amount * (1.0 - designed) + amount * made.x * designed;
 	float4 own = extended.Sample(linearClamp, v_in.uv);
-	float3 line_rgb = lerp(design_rgb(outline_color.rgb, made.y * designed), own.rgb, outline_picture);
+	// A pattern fill: the line is a window onto the pattern's picture.
+	// (Times one and plus nothing while off: the other designs are as they were.)
+	float3 pattern_rgb = pattern_tex.Sample(linearClamp, v_in.uv).rgb;
+	float3 design_colour = design_rgb(outline_color.rgb, made.y * designed) * (1.0 - pattern_on) + pattern_rgb * pattern_on;
+	float3 line_rgb = lerp(design_colour, own.rgb, outline_picture);
 	float seen_through = outline_color.a * lerp(1.0, own.a, outline_picture);
 	float la = amount * seen_through;
 	float3 rgb = card.rgb + line_rgb * la * (1.0 - card.a);
