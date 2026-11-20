@@ -28,19 +28,21 @@ namespace {
 
 // The techniques by OutlineDesign::kind less OutlineDesign::Aurora, and
 // which of Ambient Background's pattern files each is in (the first ten
-// patterns, the later ones, the circuit patterns: a refusal of one file
-// leaves the others).
+// patterns, the later ones, the circuit patterns, the hexagon and dot
+// patterns: a refusal of one file leaves the others).
 constexpr const char *kFiles[] = {"effects/stagekit-patterns.effect", "effects/stagekit-patterns-more.effect",
-				  "effects/stagekit-patterns-circuit.effect"};
-constexpr int kFileCount = 3;
-constexpr const char *kTechniques[] = {"Aurora", "Plasma",  "Lava",   "Waves",         "Nebula",   "Gradient",
-				       "Stars",  "Bokeh",   "Rays",   "Circuit",       "Hex",      "Rain",
-				       "Tunnel", "Ripples", "Embers", "CircuitTraces", "DataLines"};
+				  "effects/stagekit-patterns-circuit.effect", "effects/stagekit-patterns-hex.effect"};
+constexpr int kFileCount = 4;
+constexpr const char *kTechniques[] = {"Aurora",   "Plasma",  "Lava",    "Waves",         "Nebula",    "Gradient",
+				       "Stars",    "Bokeh",   "Rays",    "Circuit",       "Hex",       "Rain",
+				       "Tunnel",   "Ripples", "Embers",  "CircuitTraces", "DataLines", "Mesh",
+				       "Halftone", "DotGrid", "HexWire", "HexMosaic"};
 constexpr int file_of(int kind)
 {
-	return kind == OutlineDesign::Circuit || kind >= OutlineDesign::CircuitTraces ? 2
-	       : kind > OutlineDesign::Circuit                                        ? 1
-										      : 0;
+	return kind >= OutlineDesign::Mesh                                              ? 3
+	       : kind == OutlineDesign::Circuit || kind >= OutlineDesign::CircuitTraces ? 2
+	       : kind > OutlineDesign::Circuit                                          ? 1
+											: 0;
 }
 // As Ambient Background: a pattern is back where it began after this long at
 // a speed of 100 %, which here is the Speed control's 60.

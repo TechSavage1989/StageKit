@@ -2,7 +2,8 @@
 # Writes a moving preview (a GIF) of one Ambient Background pattern, and
 # optionally a still of its first frame.
 # Usage: tests/make-pattern-preview.sh <out.gif> "<pattern> <frames> <fps> <detail> <size> <colour1> <colour2> <colour3>" [still.png]
-# Colours are 0xBBGGRR in hex, 0 for the pattern's default. Needs the test
+# Colours are 0xBBGGRR in hex, 0 for the pattern's default. The GIF is 640 by
+# 360 unless STAGEKIT_PREVIEW_SIZE says otherwise ("480x270"). Needs the test
 # build (tests/run-tests.sh) and its test images in build-tests/out or out.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -19,14 +20,15 @@ STAGEKIT_PREVIEW_PATTERN="$spec" QT_QPA_PLATFORM=offscreen xvfb-run -a -s "-scre
   "$img/test-art.png" "$img/test-texture.png" "$img/test-game.png" "$frames/f" \
   "$img/test-title.png" "$frames/G" "$img/test-pillarbox.png" "$img/test-black.png" "$img/test-dark-game.png" |
   grep "ms a frame" || true
-python3 - "$frames/f" "$gif" "$spec" "$still" <<'PY'
+python3 - "$frames/f" "$gif" "$spec" "$still" "${STAGEKIT_PREVIEW_SIZE:-640x360}" <<'PY'
 import glob, struct, sys
 from PIL import Image
+size = tuple(int(n) for n in sys.argv[5].split("x"))
 frames = []
 for path in sorted(glob.glob(sys.argv[1] + "/frame-*.rgba")):
     with open(path, "rb") as f:
         w, h = struct.unpack("<II", f.read(8))
-        frames.append(Image.frombytes("RGBA", (w, h), f.read(w * h * 4)).convert("RGB").resize((640, 360), Image.LANCZOS))
+        frames.append(Image.frombytes("RGBA", (w, h), f.read(w * h * 4)).convert("RGB").resize(size, Image.LANCZOS))
 fps = int(sys.argv[3].split()[2])
 if sys.argv[4]:
     frames[0].save(sys.argv[4])

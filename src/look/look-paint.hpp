@@ -64,7 +64,13 @@ struct OutlineDesign {
 		Embers = 26,
 		CircuitTraces = 27,
 		DataLines = 28,
-		kLast = DataLines,
+		// (Hex columns is a background only: a view, not a texture.)
+		Mesh = 29,
+		Halftone = 30,
+		DotGrid = 31,
+		HexWire = 32,
+		HexMosaic = 33,
+		kLast = HexMosaic,
 	};
 	int kind = Solid;
 	uint32_t color2 = 0xFFFFAA00; // the gradient's other end, the shimmer's highlight
