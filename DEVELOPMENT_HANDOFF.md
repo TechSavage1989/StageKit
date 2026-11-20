@@ -23,7 +23,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
-## Outline designs filled with a pattern (0.1.0-betaNEXT)
+## Outline designs filled with a pattern (0.1.0-beta215)
 
 Branch `feat/outline-patterns`, on `main` at beta214. Not pushed. The owner: "can any of the new
 background animations have counterparts for the outlines/borders?", then "maybe also add some
