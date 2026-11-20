@@ -44,6 +44,8 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../api/vendor-api.hpp"
 #include "../common/tooltip.hpp"
 #include "../common/hotkey-rename.hpp"
+#include "../common/new-filter-settings.hpp"
+#include "../common/loading.hpp"
 
 #include <obs-module.h>
 #include <plugin-support.h>
@@ -53,6 +55,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <cstring>
 #include <map>
 #include <mutex>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -135,6 +138,9 @@ class ActiveApp {
 public:
 	ActiveApp(obs_data_t *settings, obs_source_t *source) : source_(source)
 	{
+		assumed_new_ = !has_saved_settings(settings);
+		if (!obs_data_has_user_value(settings, "transition_ms"))
+			obs_data_set_int(settings, "transition_ms", assumed_new_ ? 300 : 250);
 		update(settings);
 		// For the tests, which cannot press a hotkey: the two hotkeys' actions.
 		proc_handler_add(
@@ -183,6 +189,15 @@ public:
 		keep_ready({});
 	}
 
+	void loaded(obs_data_t *settings)
+	{
+		if (assumed_new_) {
+			obs_data_set_int(settings, "transition_ms", 250);
+			assumed_new_ = false;
+			update(settings);
+		}
+	}
+
 	void update(obs_data_t *settings)
 	{
 		const std::vector<std::string> items = pick_list_read(settings, "items", false);
@@ -191,8 +206,11 @@ public:
 		items_ = items;
 		by_hand_ = by_hand;
 		follow_ = obs_data_get_bool(settings, "follow");
-		transition_ = obs_data_get_string(settings, "transition");
-		transition_ms_ = (uint32_t)std::clamp<long long>(obs_data_get_int(settings, "transition_ms"), 0, 10000);
+		changes_.clear();
+		for (const auto *list : {&items, &by_hand})
+			for (const auto &name : *list)
+				changes_.emplace(name, item_change_read(settings, name.c_str()));
+		lock_hidden_ = obs_data_get_bool(settings, "lock_hidden");
 		ready_wanted_ = obs_data_get_bool(settings, "ready");
 		started_ = false; // settings changed: work out what to show afresh
 		timer_ = 0.0;
@@ -201,13 +219,14 @@ public:
 	void tick(float seconds)
 	{
 		if (!parent_ || !obs_source_enabled(source_)) {
+			previously_hidden_.clear();
 			keep_ready({});
 			return;
 		}
 		std::vector<std::string> names, hand_names;
 		std::vector<OpenWindow> windows;
-		std::string transition;
-		uint32_t transition_ms;
+		std::map<std::string, ItemChange> changes;
+		bool lock_hidden;
 		bool follow, use_test, first, ready;
 		int step = 0;
 		bool back = false;
@@ -224,8 +243,8 @@ public:
 			hand_step_ = 0;
 			hand_back_ = false;
 			follow = follow_;
-			transition = transition_;
-			transition_ms = transition_ms_;
+			changes = changes_;
+			lock_hidden = lock_hidden_;
 			ready = ready_wanted_;
 			use_test = use_test_windows_;
 			if (use_test)
@@ -237,10 +256,34 @@ public:
 		if (!use_test)
 			return;
 #endif
-		if (names.empty())
+		if (names.empty() && hand_names.empty()) {
+			previously_hidden_.clear();
 			return;
+		}
 		if (!use_test)
 			windows = open_windows();
+
+		// Keep an operator's existing lock on a visible source. After a listed
+		// item has been hidden, showing it unlocks it just as Link Visibility does.
+		auto sync_locks = [&] {
+			std::set<std::string> hidden;
+			if (lock_hidden && scenes_loaded()) {
+				for (const auto &entry : changes) {
+					const auto &name = entry.first;
+					obs_sceneitem_t *item = find_item(parent_, name);
+					if (!item)
+						continue;
+					if (!obs_sceneitem_visible(item)) {
+						hidden.insert(name);
+						if (!obs_sceneitem_locked(item))
+							obs_sceneitem_set_locked(item, true);
+					} else if (previously_hidden_.count(name) && obs_sceneitem_locked(item)) {
+						obs_sceneitem_set_locked(item, false);
+					}
+				}
+			}
+			previously_hidden_.swap(hidden);
+		};
 
 		struct Slot {
 			obs_sceneitem_t *item = nullptr;
@@ -286,7 +329,7 @@ public:
 				if (first_visible < 0)
 					first_visible = (int)i;
 			}
-			set_item_transitions(slot.item, transition, transition_ms);
+			apply_item_change(slot.item, changes.at(names[i]), parent_);
 		}
 		// The other open apps' captures keep running while this scene is on
 		// show, so whichever is switched to has a picture straight away.
@@ -345,7 +388,7 @@ public:
 					continue;
 				hand.push_back(item);
 				hand_shown_as.push_back(name);
-				set_item_transitions(item, transition, transition_ms);
+				apply_item_change(item, changes.at(name), parent_);
 			}
 			int held = -1, newly = -1;
 			for (size_t i = 0; i < hand.size(); i++) {
@@ -368,7 +411,7 @@ public:
 			for (size_t i = 0; i < hand.size(); i++) {
 				const bool on = (int)i == held;
 				if (obs_sceneitem_visible(hand[i]) != on)
-					obs_sceneitem_set_visible(hand[i], on);
+					set_item_visible(hand[i], on);
 			}
 			const std::string now_held = held >= 0 ? hand_shown_as[(size_t)held] : std::string();
 			if (now_held != hand_shown_) {
@@ -387,12 +430,13 @@ public:
 			if (held >= 0) {
 				for (size_t i = 0; i < slots.size(); i++) {
 					if (slots[i].item && slots[i].visible)
-						obs_sceneitem_set_visible(slots[i].item, false);
+						set_item_visible(slots[i].item, false);
 					was_open_[names[i]] = slots[i].open;
 					if (slots[i].item)
 						was_program_[names[i]] = slots[i].program;
 				}
 				last_front_ = front >= 0 ? names[(size_t)front] : std::string();
+				sync_locks();
 				std::lock_guard lock(mutex_);
 				started_ = true;
 				status_ = now_held;
@@ -468,7 +512,7 @@ public:
 			for (size_t i = 0; i < slots.size(); i++) {
 				const bool on = (int)i == want;
 				if (slots[i].item && slots[i].visible != on)
-					obs_sceneitem_set_visible(slots[i].item, on);
+					set_item_visible(slots[i].item, on);
 			}
 			used(want);
 			if (*why)
@@ -479,6 +523,7 @@ public:
 		if (shown >= 0)
 			status = names[(size_t)shown];
 		shown_ = status;
+		sync_locks();
 		std::lock_guard lock(mutex_);
 		started_ = true;
 		status_ = status;
@@ -492,6 +537,13 @@ public:
 		std::lock_guard lock(mutex_);
 		hand_step_ = 1;
 		timer_ = 0.0;
+	}
+	void toggle_manual()
+	{
+		if (held())
+			back_to_apps();
+		else
+			step_by_hand();
 	}
 	void back_to_apps()
 	{
@@ -552,10 +604,7 @@ public:
 				auto *self = static_cast<ActiveApp *>(data);
 				if (!pressed)
 					return;
-				if (self->held())
-					self->back_to_apps();
-				else
-					self->step_by_hand();
+				self->toggle_manual();
 			},
 			this);
 		back_hotkey_ = obs_hotkey_register_source(
@@ -625,8 +674,10 @@ private:
 			register_hotkeys();
 		}};
 	bool follow_ = true;
-	std::string transition_ = kTransitionScene;
-	uint32_t transition_ms_ = 250;
+	bool assumed_new_ = false;
+	bool lock_hidden_ = false;
+	std::map<std::string, ItemChange> changes_;
+	std::set<std::string> previously_hidden_; // tick thread only
 	bool ready_wanted_ = true;
 	std::mutex ready_mutex_;
 	std::vector<obs_weak_source_t *> ready_; // captures kept running
@@ -682,7 +733,27 @@ obs_properties_t *get_properties(void *data)
 	set_tip(follow, obs_module_text("Active.Follow.Tip"));
 
 	// How the change looks.
-	add_item_transition_properties(props);
+	add_item_change_properties(props, self ? self->source() : nullptr, "items,by_hand");
+	auto add_command = [&](const char *key, const char *label, obs_property_clicked_t clicked) {
+		obs_properties_add_button2(props, key, obs_module_text(label), clicked, self);
+	};
+	add_command("by_hand_toggle", "Active.ToggleNow", [](obs_properties_t *, obs_property_t *, void *data) {
+		if (data)
+			static_cast<ActiveApp *>(data)->toggle_manual();
+		return false;
+	});
+	add_command("by_hand_next", "Active.NextNow", [](obs_properties_t *, obs_property_t *, void *data) {
+		if (data)
+			static_cast<ActiveApp *>(data)->step_by_hand();
+		return false;
+	});
+	add_command("by_hand_back", "Active.BackNow", [](obs_properties_t *, obs_property_t *, void *data) {
+		if (data)
+			static_cast<ActiveApp *>(data)->back_to_apps();
+		return false;
+	});
+	set_tip(obs_properties_add_bool(props, "lock_hidden", obs_module_text("Link.LockHidden")),
+		obs_module_text("Active.LockHidden.Tip"));
 	obs_property_t *ready = obs_properties_add_bool(props, "ready", obs_module_text("Active.Ready"));
 	set_tip(ready, obs_module_text("Active.Ready.Tip"));
 
@@ -711,10 +782,11 @@ void register_active_app()
 	info.update = [](void *data, obs_data_t *settings) {
 		static_cast<ActiveApp *>(data)->update(settings);
 	};
+	info.load = [](void *data, obs_data_t *settings) { static_cast<ActiveApp *>(data)->loaded(settings); };
 	info.get_defaults = [](obs_data_t *settings) {
 		obs_data_set_default_bool(settings, "follow", true);
-		obs_data_set_default_string(settings, "transition", kTransitionScene);
-		obs_data_set_default_int(settings, "transition_ms", 250);
+		item_change_defaults(settings);
+		obs_data_set_default_bool(settings, "lock_hidden", false);
 		obs_data_set_default_bool(settings, "ready", true);
 	};
 	info.get_properties = get_properties;

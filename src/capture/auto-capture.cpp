@@ -864,9 +864,7 @@ public:
 		keep_ready_ = obs_data_get_bool(settings, "keep_ready");
 		no_game_standby_ = obs_data_get_bool(settings, "no_game_standby");
 		hide_standby_ = obs_data_get_bool(settings, "hide_standby");
-		hide_change_.kind = obs_data_get_string(settings, "transition");
-		hide_change_.ms =
-			(uint32_t)std::clamp<long long>(obs_data_get_int(settings, "transition_ms"), 0, 10000);
+		hide_change_ = item_change_read(settings);
 		hid_pending_ = !hid_items_read(settings).empty();
 		{
 			const std::string hand = lower(obs_data_get_string(settings, "hand_hooked"));
@@ -1726,7 +1724,7 @@ private:
 		bool no_game, use_standby;
 		int style, ms, curve, mode;
 		const bool toggle = cmd_hide_.exchange(false);
-		HidChange hide_change;
+		ItemChange hide_change;
 		{
 			std::lock_guard lock(mutex_);
 			no_game = no_game_standby_;
@@ -1776,7 +1774,7 @@ private:
 	std::mutex mutex_;
 	bool no_game_standby_ = false;
 	bool hide_standby_ = true;
-	HidChange hide_change_;
+	ItemChange hide_change_;
 	int cover_style_ = 0, cover_ms_ = 600, cover_curve_ = 0, cover_mode_ = 0;
 	std::atomic<bool> cmd_hide_{false};
 	bool hidden_ = false, covered_ = false; // used on the tick only
@@ -1896,10 +1894,7 @@ bool standby_modified(void *data, obs_properties_t *props, obs_property_t *, obs
 	auto *capture = static_cast<AutoCapture *>(data);
 	obs_source_t *parent = capture ? obs_filter_get_parent(capture->source()) : nullptr;
 	const bool hide_items = !obs_data_get_bool(settings, "hide_standby") || !parent || !standby_present(parent);
-	obs_property_set_visible(obs_properties_get(props, "item_hide_group"), hide_items);
-	const std::string kind = obs_data_get_string(settings, "transition");
-	obs_property_set_visible(obs_properties_get(props, "transition_ms"),
-				 kind != kTransitionKeep && kind != kTransitionCut);
+	obs_property_set_visible(obs_properties_get(props, "change|g|"), hide_items);
 	return true;
 }
 
@@ -2016,10 +2011,6 @@ obs_properties_t *get_properties(void *data)
 	obs_property_int_set_suffix(ms, " ms");
 	set_tip(ms, obs_module_text("Capture.StandbyMs.Tip"));
 	add_easing_properties(standby, "standby_");
-	obs_properties_t *item_hide = obs_properties_create();
-	add_item_transition_properties(item_hide);
-	obs_properties_add_group(standby, "item_hide_group", obs_module_text("Capture.ItemHide"), OBS_GROUP_NORMAL,
-				 item_hide);
 	obs_property_t *hide_now = obs_properties_add_button2(
 		standby, "hide_now", obs_module_text("AppCapture.Hide.Now"),
 		[](obs_properties_t *, obs_property_t *, void *d) {
@@ -2031,6 +2022,7 @@ obs_properties_t *get_properties(void *data)
 	set_tip(hide_now, obs_module_text("Capture.HideNow.Tip"));
 	obs_properties_add_group(props, "standby", obs_module_text("AppCapture.Hide"), OBS_GROUP_NORMAL, standby);
 
+	add_item_change_properties(props, self ? self->source() : nullptr, nullptr);
 	add_help_line(props, obs_module_text("Capture.Help"));
 	show_status(props, self);
 	return props;
@@ -2347,8 +2339,8 @@ void register_auto_capture()
 		obs_data_set_default_bool(settings, "keep_ready", true);
 		obs_data_set_default_bool(settings, "no_game_standby", false);
 		obs_data_set_default_bool(settings, "hide_standby", true);
+		item_change_defaults(settings);
 		obs_data_set_default_string(settings, "transition", kTransitionKeep);
-		obs_data_set_default_int(settings, "transition_ms", 300);
 		obs_data_set_default_int(settings, "standby_style", 0);
 		obs_data_set_default_int(settings, "standby_ms", 600);
 		obs_data_set_default_int(settings, "standby_ease_curve", (int)EaseCurve::Cubic);

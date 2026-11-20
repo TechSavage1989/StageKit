@@ -42,6 +42,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/easing.hpp"
 #include "../common/filter-input.hpp"
 #include "../common/filter-order.hpp"
+#include "../common/hotkey-rename.hpp"
 #include "../common/loading.hpp"
 #include "../common/pick-list.hpp"
 #include "../common/scene-filter-ids.hpp"
@@ -194,7 +195,18 @@ public:
 	void render();
 	bool now(SceneShadowNow &out);
 	gs_texture_t *lay_over(gs_texture_t *picture, uint32_t cx, uint32_t cy);
-	void attached() { ramp_.attached(); }
+	void attach(obs_source_t *parent)
+	{
+		parent_ = parent;
+		ramp_.attached();
+		register_hotkeys();
+	}
+	void detach()
+	{
+		parent_ = nullptr;
+		register_hotkeys();
+	}
+	void toggle() { ramp_.set_active(!ramp_.active()); }
 	int draws() const { return draws_.load(); }
 	int layers() const { return layers_.load(); }
 
@@ -209,6 +221,11 @@ private:
 
 	obs_source_t *source_;
 	SwitchRamp ramp_;
+	obs_source_t *parent_ = nullptr;
+	obs_hotkey_id toggle_ = OBS_INVALID_HOTKEY_ID, on_ = OBS_INVALID_HOTKEY_ID, off_ = OBS_INVALID_HOTKEY_ID;
+	void register_hotkeys();
+	HotkeyRename renamed_{source_, [this] { return std::vector<obs_hotkey_id *>{&toggle_, &on_, &off_}; },
+			      [this] { register_hotkeys(); }};
 
 	std::mutex mutex_;
 	ShadowLook look_;
@@ -286,8 +303,41 @@ SceneShadow::SceneShadow(obs_data_t *settings, obs_source_t *source) : source_(s
 	update(settings);
 }
 
+void SceneShadow::register_hotkeys()
+{
+	for (obs_hotkey_id *id : {&toggle_, &on_, &off_}) {
+		if (*id != OBS_INVALID_HOTKEY_ID)
+			obs_hotkey_unregister(*id);
+		*id = OBS_INVALID_HOTKEY_ID;
+	}
+	if (!parent_)
+		return;
+	const std::string name = obs_source_get_name(source_);
+	auto reg = [&](const char *action, const char *label) {
+		const std::string id = std::string("stagekit.sceneshadow.") + action + "." + name;
+		std::string description = obs_module_text(label);
+		const auto slot = description.find("%1");
+		if (slot != std::string::npos)
+			description.replace(slot, 2, name);
+		return obs_hotkey_register_source(parent_, id.c_str(), description.c_str(),
+			[](void *data, obs_hotkey_id key, obs_hotkey_t *, bool pressed) {
+				if (!pressed)
+					return;
+				auto *self = static_cast<SceneShadow *>(data);
+				if (key == self->toggle_)
+					self->toggle();
+				else
+					self->ramp_.set_active(key == self->on_);
+			}, this);
+	};
+	toggle_ = reg("toggle", "Hotkey.SceneShadowToggle");
+	on_ = reg("on", "Hotkey.SceneShadowOn");
+	off_ = reg("off", "Hotkey.SceneShadowOff");
+}
+
 SceneShadow::~SceneShadow()
 {
+	detach();
 	paint_.reset();
 	obs_enter_graphics();
 	gs_texrender_destroy(tr_scene_);
@@ -942,6 +992,12 @@ obs_properties_t *get_properties(void *data)
 				       {"outline_opacity", obs_module_text("Shadow.OutlineLook.Tip")},
 				       {"backdrop_color", obs_module_text("Shadow.BackdropLook.Tip")},
 				       {"backdrop_opacity", obs_module_text("Shadow.BackdropLook.Tip")}});
+	obs_properties_add_button2(props, "toggle_now", obs_module_text("SceneShadow.ToggleNow"),
+		[](obs_properties_t *, obs_property_t *, void *data) {
+			if (data)
+				static_cast<SceneShadow *>(data)->toggle();
+			return false;
+		}, data);
 	add_help_line(props, obs_module_text("SceneShadow.Help"));
 	return props;
 }
@@ -1041,9 +1097,10 @@ void register_scene_shadow()
 	info.video_tick = [](void *data, float seconds) {
 		static_cast<SceneShadow *>(data)->tick(seconds);
 	};
-	info.filter_add = [](void *data, obs_source_t *) {
-		static_cast<SceneShadow *>(data)->attached();
+	info.filter_add = [](void *data, obs_source_t *parent) {
+		static_cast<SceneShadow *>(data)->attach(parent);
 	};
+	info.filter_remove = [](void *data, obs_source_t *) { static_cast<SceneShadow *>(data)->detach(); };
 	register_timed(&info);
 	// A scene whose only filter that draws is a Scene Shadow is still morphed
 	// item by item; Morph carries the shadow through the change.

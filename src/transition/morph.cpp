@@ -1464,8 +1464,28 @@ bool rule_chosen(obs_properties_t *props, obs_property_t *, obs_data_t *settings
 	return true;
 }
 
-// "Save this rule": what is set becomes the rule for the two scenes chosen,
-// a new line of the list or an old one changed.
+void write_rule(obs_data_t *settings, const std::string &line)
+{
+	const std::string key = std::string(kRuleKey) + line + "|";
+	for (const char *name : kRuleNumbers)
+		obs_data_set_int(settings, (key + name).c_str(),
+				 obs_data_get_int(settings, (std::string("rule_") + name).c_str()));
+	for (const char *name : kRuleSwitches)
+		obs_data_set_bool(settings, (key + name).c_str(),
+				  obs_data_get_bool(settings, (std::string("rule_") + name).c_str()));
+}
+
+// Editing an existing pair saves it as the properties change. A new pair is
+// only created by the Add button. Loading a pair just fills the edit fields.
+bool rule_edited(obs_properties_t *props, obs_property_t *property, obs_data_t *settings)
+{
+	const std::string line = rule_line(settings);
+	const auto saved = pick_list_read(settings, "rules", false);
+	if (!line.empty() && std::find(saved.begin(), saved.end(), line) != saved.end())
+		write_rule(settings, line);
+	return strcmp(obs_property_name(property), "rule_style") == 0 && rule_shown(props, settings);
+}
+
 bool add_rule(obs_properties_t *props, obs_property_t *, void *data)
 {
 	auto *owner = static_cast<obs_source_t *>(data);
@@ -1477,13 +1497,7 @@ bool add_rule(obs_properties_t *props, obs_property_t *, void *data)
 		obs_data_release(settings);
 		return false;
 	}
-	const std::string key = std::string(kRuleKey) + line + "|";
-	for (const char *name : kRuleNumbers)
-		obs_data_set_int(settings, (key + name).c_str(),
-				 obs_data_get_int(settings, (std::string("rule_") + name).c_str()));
-	for (const char *name : kRuleSwitches)
-		obs_data_set_bool(settings, (key + name).c_str(),
-				  obs_data_get_bool(settings, (std::string("rule_") + name).c_str()));
+	write_rule(settings, line);
 	std::vector<std::string> lines = pick_list_read(settings, "rules", false);
 	if (std::find(lines.begin(), lines.end(), line) == lines.end()) {
 		lines.push_back(line);
@@ -1545,11 +1559,6 @@ bool rule_shown(obs_properties_t *props, obs_data_t *settings)
 		if (obs_property_t *p = obs_properties_get(props, name))
 			obs_property_set_visible(p, style != Style::Cut);
 	return true;
-}
-
-bool rule_style_cb(obs_properties_t *props, obs_property_t *, obs_data_t *settings)
-{
-	return rule_shown(props, settings);
 }
 
 // Whether this Morph is some source's own show or hide transition (OBS makes
@@ -1704,7 +1713,6 @@ obs_properties_t *get_properties(void *data)
 	obs_property_list_add_int(style, obs_module_text("Morph.RuleStyle.Fade"), (int)Style::CrossFade);
 	obs_property_list_add_int(style, obs_module_text("Morph.RuleStyle.Cut"), (int)Style::Cut);
 	set_tip(style, obs_module_text("Morph.RuleStyle.Tip"));
-	obs_property_set_modified_callback(style, rule_style_cb);
 	obs_property_t *rule_others = obs_properties_add_list(rule, "rule_others", obs_module_text("Morph.Others"),
 							      OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(rule_others, obs_module_text("Morph.Others.Fade"), (int)Others::Fade);
@@ -1716,6 +1724,8 @@ obs_properties_t *get_properties(void *data)
 		obs_properties_add_bool(rule, "rule_pair_main", obs_module_text("Morph.PairMain"));
 	set_tip(rule_pair_main, obs_module_text("Morph.PairMain.Tip"));
 	add_easing_properties(rule, "rule_");
+	for (const char *name : {"rule_style", "rule_others", "rule_both", "rule_pair_main", "rule_ease_curve", "rule_ease_mode"})
+		obs_property_set_modified_callback(obs_properties_get(rule, name), rule_edited);
 	obs_properties_add_button2(rule, "rule_add", obs_module_text("Morph.RuleAdd"), add_rule, owner);
 	obs_properties_add_group(props, "rule_group", obs_module_text("Morph.RuleGroup"), OBS_GROUP_NORMAL, rule);
 	PickList rules;
