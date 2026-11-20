@@ -17868,6 +17868,448 @@ static void pattern_transform_test(uint32_t w, uint32_t h, const char *base_imag
 	obs_source_release(plain);
 }
 
+// An outline must not show at a screen edge its source reaches (2026-11-20;
+// the owner, of a capture filling the screen: "the border seems to bleed a
+// pixel or two on the right and/or left sides of some sources"). A source
+// drawn at a scale that is no whole number (480x270 on the 640x360 canvas,
+// as 1920x1080 on 2560x1440; odd sizes too), fitted to the whole screen by
+// OBS's bounding box alone, by a Fit to Space and by a Scene Fit, with
+// Shadow, Glow & Outline on the source; and plain items, some a fraction of
+// a pixel off, under a Scene Shadow. The outermost two columns and rows of
+// each screen edge whose outermost pixels the picture covers hold nothing of
+// the line's colour. Run alone with STAGEKIT_TEST_ONLY_OUTLINE_BLEED.
+static void outline_bleed_test(uint32_t w, uint32_t h)
+{
+	printf("\n[outline bleed: no line at a screen edge the source reaches]\n");
+	const bool verbose = getenv("STAGEKIT_TEST_BLEED_VERBOSE") != nullptr;
+	auto block = [](const char *name, long long abgr, int bw, int bh) {
+		obs_data_t *d = obs_data_create();
+		obs_data_set_int(d, "color", abgr);
+		obs_data_set_int(d, "width", bw);
+		obs_data_set_int(d, "height", bh);
+		obs_source_t *src = obs_source_create("color_source", name, d, nullptr);
+		obs_data_release(d);
+		return src;
+	};
+	// Where the green picture lies in a frame: the outermost pixels with
+	// green in them (the line has next to none), as left, top, right (past
+	// the last), bottom.
+	struct Box {
+		int l = 0, t = 0, r = 0, b = 0;
+	};
+	auto green_box = [&](const std::vector<uint8_t> &f) {
+		Box box{(int)w, (int)h, 0, 0};
+		for (int y = 0; y < (int)h; y++)
+			for (int x = 0; x < (int)w; x++) {
+				const uint8_t *p = &f[(size_t(y) * w + x) * 4];
+				if (p[1] > 100) {
+					box.l = std::min(box.l, x);
+					box.t = std::min(box.t, y);
+					box.r = std::max(box.r, x + 1);
+					box.b = std::max(box.b, y + 1);
+				}
+			}
+		return box;
+	};
+	// The source is green on black and the line red or a pattern: red or
+	// blue in a pixel is the line's. The most of it in the outermost two
+	// columns or rows of each edge (left, top, right, bottom), along the
+	// stretch the picture covers. A side counts when the picture covers
+	// its outermost pixels (`reaches`): a column the item leaves uncovered
+	// (its box ends 0.6 px short of the pixel's middle) is not the picture,
+	// and the line may show there as anything under the item would.
+	struct Edges {
+		int most[4] = {0, 0, 0, 0};
+		int where[4] = {0, 0, 0, 0}; // along the side
+		bool reaches[4] = {false, false, false, false};
+	};
+	// (`span`: the pixels the picture covers, when known from its place.)
+	auto edges = [&](const std::vector<uint8_t> &f, const Box *span = nullptr) {
+		Edges e;
+		const Box box = span ? *span : green_box(f);
+		e.reaches[0] = box.l == 0;
+		e.reaches[1] = box.t == 0;
+		e.reaches[2] = box.r == (int)w;
+		e.reaches[3] = box.b == (int)h;
+		auto at = [&](int x, int y) {
+			const uint8_t *p = &f[(size_t(y) * w + x) * 4];
+			return std::max((int)p[0], (int)p[2]);
+		};
+		auto keep = [&](int s, int v, int along) {
+			if (v > e.most[s]) {
+				e.most[s] = v;
+				e.where[s] = along;
+			}
+		};
+		for (int y = box.t; y < box.b; y++)
+			for (int i = 0; i < 2; i++) {
+				keep(0, at(i, y), y);
+				keep(2, at((int)w - 1 - i, y), y);
+			}
+		for (int x = box.l; x < box.r; x++)
+			for (int i = 0; i < 2; i++) {
+				keep(1, at(x, i), x);
+				keep(3, at(x, (int)h - 1 - i), x);
+			}
+		return e;
+	};
+	const char *const side[4] = {"left", "top", "right", "bottom"};
+	const int kMost = 24; // of 255: under a tenth of the line's colour
+	obs_source_t *before = obs_get_output_source(0);
+	const long long red = 0xFF0000FF, green = 0xFF00FF00;
+
+	// ---- (a) Shadow, Glow & Outline on the source.
+	struct Size {
+		int w, h;
+	};
+	const Size sizes[] = {{480, 270}, {481, 271}, {853, 480}, {333, 187}};
+	static const char *const hosts[3] = {"OBS's bounding box", "Fit to Space", "Scene Fit"};
+	int a_cases = 0, a_bad = 0, a_controls = 0, a_missing = 0;
+	std::string a_worst;
+	int a_worst_level = 0;
+	// (STAGEKIT_TEST_BLEED_QUICK=<n>: the nth size alone, Fit to Space, no
+	// shadow; and one place under the Scene Shadow.)
+	const char *quick_env = getenv("STAGEKIT_TEST_BLEED_QUICK");
+	const bool quick = quick_env != nullptr;
+	const int quick_size = quick ? std::clamp(atoi(quick_env), 0, 3) : 0;
+	for (const Size &size : sizes)
+		for (int host = 0; host < 3; host++)
+			for (int shadow = 0; shadow < 2; shadow++) {
+				if (quick && (&size != &sizes[quick_size] || host != 1 || shadow != 0))
+					continue;
+				obs_source_t *bg = block("OB Back", 0xFF000000, (int)w, (int)h);
+				obs_source_t *src = block("OB Source", green, size.w, size.h);
+				obs_scene_t *scene = obs_scene_create("OB Scene");
+				obs_source_t *ss = obs_scene_get_source(scene);
+				obs_scene_add(scene, bg);
+				obs_sceneitem_t *item = obs_scene_add(scene, src);
+				vec2 v;
+				vec2_set(&v, (float)w, (float)h);
+				obs_sceneitem_set_bounds_type(item, OBS_BOUNDS_SCALE_INNER);
+				obs_sceneitem_set_bounds(item, &v);
+				obs_set_output_source(0, ss);
+				// (The scene is on the output: OBS ticks and draws it.)
+				auto settled = [&](int ms) {
+					sleep_ms(ms);
+					render(ss, w, h);
+					sleep_ms(40);
+					return render(ss, w, h);
+				};
+				settled(60);
+				obs_data_t *pd = obs_data_create();
+				obs_data_set_bool(pd, "shadow", shadow == 1);
+				obs_data_set_bool(pd, "outline", true);
+				obs_data_set_double(pd, "outline_width", 1.0);
+				obs_data_set_int(pd, "outline_color", red);
+				obs_source_t *look =
+					obs_source_create("stagekit_shadow_backdrop", "OB Look", pd, nullptr);
+				obs_data_release(pd);
+				obs_source_filter_add(src, look);
+				obs_source_t *fit = nullptr;
+				if (host > 0) {
+					obs_data_t *fd = obs_data_create();
+					const std::string pre = host == 2 ? "fit|OB Source|" : "";
+					if (host == 2) {
+						obs_data_array_t *arr = obs_data_array_create();
+						obs_data_t *e = obs_data_create();
+						obs_data_set_string(e, "value", "OB Source");
+						obs_data_array_push_back(arr, e);
+						obs_data_release(e);
+						obs_data_set_array(fd, "entries", arr);
+						obs_data_array_release(arr);
+					} else {
+						obs_data_set_string(fd, "item", "OB Source");
+					}
+					obs_data_set_int(fd, (pre + "box").c_str(), 0);
+					obs_data_set_double(fd, (pre + "margin").c_str(), 0.0);
+					obs_data_set_int(fd, (pre + "glide_ms").c_str(), 0);
+					fit = obs_source_create(host == 2 ? "stagekit_scene_fit" : "stagekit_fit_item",
+								"OB Fit", fd, nullptr);
+					obs_data_release(fd);
+					obs_source_filter_add(ss, fit);
+				}
+				for (int width : {1, 2, 3, 4, 5, 6, 8, 12}) {
+					obs_data_t *d = obs_data_create();
+					obs_data_set_double(d, "outline_width", (double)width);
+					obs_source_update(look, d);
+					obs_data_release(d);
+					const std::vector<uint8_t> f = settled(width == 1 ? 900 : 500);
+					// Where the picture is, from the item's draw
+					// transform and the room the filter took: the
+					// pixels whose middles it covers. (A picture of
+					// another shape than its space, kept towards a side
+					// in it, can leave a strip of a pixel's middle on
+					// one side, which the line rightly fills.)
+					Box span;
+					{
+						matrix4 m;
+						obs_sceneitem_get_draw_transform(item, &m);
+						obs_data_t *ls = obs_source_get_settings(look);
+						const float sw = (float)obs_source_get_width(src);
+						const float sh = (float)obs_source_get_height(src);
+						const float l = (float)obs_data_get_int(ls, "adjusted_left");
+						const float t = (float)obs_data_get_int(ls, "adjusted_top");
+						const float r = sw - (float)obs_data_get_int(ls, "adjusted_right");
+						const float b = sh - (float)obs_data_get_int(ls, "adjusted_bottom");
+						obs_data_release(ls);
+						vec3 p0, p1;
+						vec3_set(&p0, l, t, 0.0f);
+						vec3_set(&p1, r, b, 0.0f);
+						vec3_transform(&p0, &p0, &m);
+						vec3_transform(&p1, &p1, &m);
+						auto first = [](float at, int most) {
+							return std::clamp((int)std::ceil(at - 0.5f), 0, most);
+						};
+						span = Box{first(std::min(p0.x, p1.x), (int)w),
+							   first(std::min(p0.y, p1.y), (int)h),
+							   first(std::max(p0.x, p1.x), (int)w),
+							   first(std::max(p0.y, p1.y), (int)h)};
+					}
+					const Edges e = edges(f, &span);
+					const Box box = green_box(f);
+					const bool *reaches = e.reaches;
+					if (!reaches[0] && box.l >= 2) {
+						// Not filling the screen (OBS's bounding box
+						// keeps the picture with its room inside it):
+						// the line shows beside the picture.
+						int there = 0;
+						for (int x = std::max(box.l - 3, 0); x <= box.l; x++) {
+							const uint8_t *q = &f[(size_t(h / 2) * w + x) * 4];
+							there = std::max(there, std::max((int)q[0], (int)q[2]));
+						}
+						a_controls++;
+						if (there < 100) {
+							a_missing++;
+							printf("  NO LINE  %dx%d, %s, shadow %d, a line of %d: %d\n",
+							       size.w, size.h, hosts[host], shadow, width, there);
+						}
+					}
+					a_cases++;
+					bool bad = false;
+					for (int s = 0; s < 4; s++)
+						if (reaches[s] && e.most[s] > kMost) {
+							bad = true;
+							if (e.most[s] > a_worst_level) {
+								a_worst_level = e.most[s];
+								char text[256];
+								snprintf(
+									text, sizeof(text),
+									"%dx%d, %s, shadow %d, a line of %d: %d at the %s",
+									size.w, size.h, hosts[host], shadow, width,
+									e.most[s], side[s]);
+								a_worst = text;
+							}
+						}
+					if (bad)
+						a_bad++;
+					if (bad || verbose) {
+						vec2 p, b;
+						obs_sceneitem_get_pos(item, &p);
+						obs_sceneitem_get_bounds(item, &b);
+						obs_data_t *ls = obs_source_get_settings(look);
+						printf("  %s  %dx%d %-18s shadow %d line %2d: line's colour l %3d@%d t %3d@%d r %3d@%d b %3d@%d; green %d..%d x %d..%d; item at %.3f, %.3f bounds %.3f x %.3f; source %ux%u, room l %lld t %lld r %lld b %lld\n",
+						       bad ? "BLEED" : "     ", size.w, size.h, hosts[host], shadow,
+						       width, e.most[0], e.where[0], e.most[1], e.where[1], e.most[2],
+						       e.where[2], e.most[3], e.where[3], box.l, box.r, box.t, box.b,
+						       p.x, p.y, b.x, b.y, obs_source_get_width(src),
+						       obs_source_get_height(src),
+						       obs_data_get_int(ls, "adjusted_left"),
+						       obs_data_get_int(ls, "adjusted_top"),
+						       obs_data_get_int(ls, "adjusted_right"),
+						       obs_data_get_int(ls, "adjusted_bottom"));
+						obs_data_release(ls);
+						if (verbose) {
+							const int y = (int)h / 2;
+							printf("    middle row:");
+							for (int x : {0, 1, 2, (int)w - 3, (int)w - 2, (int)w - 1}) {
+								const uint8_t *q = &f[(size_t(y) * w + x) * 4];
+								printf(" [%d] %d,%d,%d,%d", x, q[0], q[1], q[2], q[3]);
+							}
+							printf("\n");
+						}
+					}
+				}
+				obs_set_output_source(0, nullptr);
+				if (fit) {
+					obs_source_filter_remove(ss, fit);
+					obs_source_release(fit);
+				}
+				obs_source_filter_remove(src, look);
+				obs_source_release(look);
+				obs_scene_release(scene);
+				obs_source_release(src);
+				obs_source_release(bg);
+				sleep_ms(60);
+			}
+	CHECK(quick || (a_controls > 0 && a_missing == 0),
+	      "Shadow, Glow & Outline: the line shows beside a picture that does not fill the screen (%d of %d without one)",
+	      a_missing, a_controls);
+	CHECK(a_bad == 0,
+	      "Shadow, Glow & Outline on a source fitted to the whole screen: no line at an edge the picture reaches (%d of %d cases showed one%s%s)",
+	      a_bad, a_cases, a_bad ? "; the worst: " : "", a_worst.c_str());
+
+	// ---- (b) Scene Shadow, the line round plain items.
+	struct Place {
+		const char *what;
+		float x, y, bw, bh;
+	};
+	const Place places[] = {
+		// (First, a control: well inside the screen, the line shows.)
+		{"well inside", 40.0f, 40.0f, (float)w - 80.0f, (float)h - 80.0f},
+		{"filling the screen", 0.0f, 0.0f, (float)w, (float)h},
+		{"0.4 px to the left", -0.4f, 0.0f, (float)w, (float)h},
+		{"0.4 px to the right", 0.4f, 0.0f, (float)w, (float)h},
+		{"0.6 px short in width", 0.0f, 0.0f, (float)w - 0.6f, (float)h},
+		{"0.6 px short in width, centred", 0.3f, 0.0f, (float)w - 0.6f, (float)h},
+		{"0.4 px up", 0.0f, -0.4f, (float)w, (float)h},
+		{"0.6 px short in height", 0.0f, 0.0f, (float)w, (float)h - 0.6f},
+		{"0.45 px short all round", 0.45f, 0.45f, (float)w - 0.9f, (float)h - 0.9f},
+		{"1.5 px past every edge", -1.5f, -1.5f, (float)w + 3.0f, (float)h + 3.0f},
+	};
+	struct Line {
+		const char *what;
+		int corners, design;
+	};
+	const Line lines[] = {{"round the source", 0, 0},
+			      {"square", 5, 0},
+			      {"rounded", 1, 0},
+			      {"a pattern, square", 5, 12},
+			      {"a pattern, following", 0, 12}};
+	int b_cases = 0, b_bad = 0, b_worst_level = 0, b_controls = 0, b_missing = 0;
+	std::string b_worst;
+	for (const Size &size : {Size{480, 270}})
+		for (const Place &place : places)
+			for (int from = 0; from < 2; from++) {
+				if (quick && &place != &places[0] && &place != &places[4])
+					continue;
+				obs_source_t *bg = block("OB Back", 0xFF000000, (int)w, (int)h);
+				obs_source_t *src = block("OB Source", green, size.w, size.h);
+				obs_scene_t *scene = obs_scene_create("OB Scene");
+				obs_source_t *ss = obs_scene_get_source(scene);
+				obs_scene_add(scene, bg);
+				obs_sceneitem_t *item = obs_scene_add(scene, src);
+				vec2 v;
+				vec2_set(&v, place.bw, place.bh);
+				obs_sceneitem_set_bounds_type(item, OBS_BOUNDS_STRETCH);
+				obs_sceneitem_set_bounds(item, &v);
+				vec2_set(&v, place.x, place.y);
+				obs_sceneitem_set_pos(item, &v);
+				obs_set_output_source(0, ss);
+				obs_data_t *zd = obs_data_create();
+				obs_data_set_int(zd, "ramp_ms", 0);
+				obs_data_set_bool(zd, "shadow", false);
+				obs_data_set_bool(zd, "outline", true);
+				obs_data_set_int(zd, "outline_color", red);
+				obs_data_set_double(zd, "outline_speed", 0.0);
+				// (The source would be background by its size.)
+				obs_data_set_bool(zd, "auto_background", false);
+				{
+					obs_data_array_t *arr = obs_data_array_create();
+					obs_data_t *e = obs_data_create();
+					obs_data_set_string(e, "value", "OB Back");
+					obs_data_array_push_back(arr, e);
+					obs_data_release(e);
+					obs_data_set_array(zd, "background", arr);
+					obs_data_array_release(arr);
+				}
+				obs_data_set_int(zd, "shadow_from", from);
+				obs_source_t *look = obs_source_create("stagekit_scene_shadow", "OB Look", zd, nullptr);
+				obs_data_release(zd);
+				obs_source_filter_add(ss, look);
+				for (const Line &line : lines)
+					for (int width : {1, 3, 12}) {
+						obs_data_t *d = obs_data_create();
+						obs_data_set_double(d, "outline_width", (double)width);
+						obs_data_set_int(d, "outline_corners", line.corners);
+						obs_data_set_int(d, "outline_design", line.design);
+						obs_source_update(look, d);
+						obs_data_release(d);
+						sleep_ms(200);
+						render(ss, w, h);
+						sleep_ms(40);
+						const std::vector<uint8_t> f = render(ss, w, h);
+						if (&place == &places[0]) {
+							// The line just outside the item's left edge.
+							int there = 0;
+							for (int y = 50; y < (int)h - 50; y++)
+								for (int x = 37; x < 40; x++) {
+									const uint8_t *q = &f[(size_t(y) * w + x) * 4];
+									there = std::max(there, std::max((int)q[0],
+													 (int)q[2]));
+								}
+							b_controls++;
+							if (there < 100) {
+								b_missing++;
+								printf("  NO LINE  %s, shadow from %d, a line of %d: %d\n",
+								       line.what, from, width, there);
+							}
+							continue;
+						}
+						auto first = [](float at, int most) {
+							return std::clamp((int)std::ceil(at - 0.5f), 0, most);
+						};
+						const Box span{first(place.x, (int)w), first(place.y, (int)h),
+							       first(place.x + place.bw, (int)w),
+							       first(place.y + place.bh, (int)h)};
+						const Edges e = edges(f, &span);
+						b_cases++;
+						bool bad = false;
+						// (Here by the item's place: the
+						// picture covers a pixel when it covers
+						// its middle. A pattern line can have
+						// green in it.)
+						const bool covers[4] = {span.l == 0, span.t == 0, span.r == (int)w,
+									span.b == (int)h};
+						for (int s = 0; s < 4; s++)
+							if (covers[s] && e.most[s] > kMost) {
+								bad = true;
+								if (e.most[s] > b_worst_level) {
+									b_worst_level = e.most[s];
+									char text[256];
+									snprintf(
+										text, sizeof(text),
+										"%dx%d %s, %s, shadow from %d, a line of %d: %d at the %s",
+										size.w, size.h, place.what, line.what,
+										from, width, e.most[s], side[s]);
+									b_worst = text;
+								}
+							}
+						if (bad)
+							b_bad++;
+						if (bad || verbose)
+							printf("  %s  %dx%d %-30s %-22s from %d line %2d: line's colour l %3d t %3d r %3d b %3d\n",
+							       bad ? "BLEED" : "     ", size.w, size.h, place.what,
+							       line.what, from, width, e.most[0], e.most[1], e.most[2],
+							       e.most[3]);
+						if (verbose) {
+							const int y = (int)h / 2;
+							printf("    middle row:");
+							for (int x : {0, 1, (int)w - 3, (int)w - 2, (int)w - 1}) {
+								const uint8_t *q = &f[(size_t(y) * w + x) * 4];
+								printf(" [%d] %d,%d,%d,%d", x, q[0], q[1], q[2], q[3]);
+							}
+							printf("\n");
+						}
+					}
+				obs_set_output_source(0, nullptr);
+				obs_source_filter_remove(ss, look);
+				obs_source_release(look);
+				obs_scene_release(scene);
+				obs_source_release(src);
+				obs_source_release(bg);
+				sleep_ms(60);
+			}
+	CHECK(b_controls > 0 && b_missing == 0,
+	      "Scene Shadow: the line shows round a source well inside the screen (%d of %d without one)", b_missing,
+	      b_controls);
+	CHECK(b_bad == 0,
+	      "Scene Shadow, sources a fraction of a pixel on or off the screen: no line at an edge the picture covers (%d of %d cases showed one%s%s)",
+	      b_bad, b_cases, b_bad ? "; the worst: " : "", b_worst.c_str());
+	obs_set_output_source(0, before);
+	if (before)
+		obs_source_release(before);
+}
+
 // Outline designs filled with a pattern (beta215): the line is a window onto
 // one of Ambient Background's patterns, in both filters. Run alone with
 // STAGEKIT_TEST_ONLY_OUTLINE_PATTERNS.
@@ -20735,6 +21177,13 @@ int main(int argc, char **argv)
 	}
 	if (getenv("STAGEKIT_TEST_ONLY_OUTLINE_DESIGNS")) { // to try that section alone
 		outline_designs_test(w, h, out);
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
+	if (getenv("STAGEKIT_TEST_ONLY_OUTLINE_BLEED")) { // to try that section alone
+		outline_bleed_test(w, h);
 		obs_shutdown();
 		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
 		       g_failures == 1 ? "" : "s");

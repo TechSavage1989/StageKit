@@ -23,6 +23,30 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
+## An outline at the screen's edge (0.1.0-betaNEXT)
+
+Branch `fix/outline-edge-bleed`, from `main` at beta220. Not pushed. The owner (Windows, OBS 32,
+2560x1440): "the border seems to bleed a pixel or two on the right and/or left sides of some
+sources", a capture card filling the screen with a line showing along the right edge.
+
+- **Cause, reproduced**: Shadow, Glow & Outline's last draw used OBS's default `Draw`, which
+  samples the filter's picture (source plus room, line in the room) bilinearly. Drawn larger
+  (480x270 fitted to 640x360 by Fit to Space or Scene Fit, as 1920x1080 on 2560x1440), the
+  screen's outermost pixel sampled 1/8 of the line's texel: (99, 240, 0) instead of green, on all
+  four edges, for every width 1 to 12, with or without shadow; with odd sizes (481x271, 853x480,
+  333x187) 128 to 245 of 255 and unequal between sides, as the owner saw. OBS's bounding box alone
+  never put the picture at the edge (the room is inside the box).
+- **Fix**: technique `Show` (`PSShow`) in `stagekit-shadow.effect`: inside the source's (or
+  panel's) box, the read is kept half a pixel inside the box; elsewhere as before. At scale 1 the
+  same pixels.
+- **Scene Shadow**: no fault. A line shows only in a pixel row or column whose middle the item
+  does not cover (0.6 px short); the item 0.4 px off, or 1.5 px past, shows none. Plain, square,
+  rounded, pattern, both *Shadow from*.
+- **Not covered**: an item OBS draws through its own texture (crop, scale filter, blending mode)
+  samples the same way, outside the filter's reach. Not seen on Windows / Direct3D.
+- Gates: `OUTLINE_BLEED` (new), `OUTLINE_GLOW`, `OUTLINE_DESIGNS`, `OUTLINE_PATTERNS`,
+  `PATTERN_TRANSFORM`, `SHADOW_EACH`, `SHADOW_FLICKER`, `BLUR_EDGES`. Not the full suite.
+
 ## Review stage 2: tidier windows (0.1.0-beta223)
 
 Branch `chore/review-stage2`, on `main` at beta222. Committed locally, not pushed. Stage 2 of the

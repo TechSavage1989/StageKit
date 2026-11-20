@@ -1160,15 +1160,22 @@ void ShadowBackdrop::render()
 	gs_enable_framebuffer_srgb(previous_srgb);
 
 	if (gs_texture_t *final_tex = card ? gs_texrender_get_texture(tr_final_) : nullptr) {
-		gs_effect_t *def = obs_get_base_effect(OBS_EFFECT_DEFAULT);
-		gs_eparam_t *image = gs_effect_get_param_by_name(def, "image");
 		// (It holds linear light already where OBS draws in it: a
 		// sixteen-bit picture has no sRGB view to read it through.)
 		const bool linear = gs_get_linear_srgb();
 		const bool previous = gs_framebuffer_srgb_enabled();
 		gs_enable_framebuffer_srgb(linear);
-		gs_effect_set_texture(image, final_tex);
-		while (gs_effect_loop(def, "Draw"))
+		// Drawn by "Show", OBS's Draw that keeps the line out of the
+		// source's own pixels when the item is drawn larger: an item
+		// fitted to the screen showed a sliver of its line along the
+		// screen's edge. (Every value it reads, given again.)
+		gs_effect_set_texture(p_image_, final_tex);
+		gs_effect_set_vec2(p_out_size_, &out_size);
+		gs_effect_set_vec2(p_src_size_, &src_size);
+		gs_effect_set_vec2(p_pad_, &pad);
+		gs_effect_set_float(p_backdrop_on_, s.backdrop ? 1.0f : 0.0f);
+		gs_effect_set_float(p_backdrop_pad_, (float)s.backdrop_pad);
+		while (gs_effect_loop(effect_, "Show"))
 			gs_draw_sprite(final_tex, 0, ow, oh);
 		gs_enable_framebuffer_srgb(previous);
 	}
