@@ -69,101 +69,6 @@ float2 wrap16(float2 cell)
 	return cell - 16.0 * floor(cell / 16.0);
 }
 
-// ------------------------------------------------------------ Circuit board
-
-float seg_dist(float2 p, float2 a, float2 b)
-{
-	float2 pa = p - a;
-	float2 ba = b - a;
-	float t = saturate(dot(pa, ba) / max(dot(ba, ba), 0.0001));
-	return length(pa - ba * t);
-}
-
-// Whether a trace crosses the side between cell `c` and the next one to its
-// right (way 0) or below it (way 1). Some rows and columns are busier.
-float crosses(float2 c, float way, float density)
-{
-	float lane = hash(float2(lerp(c.y, c.x, way), 31.0 + way * 9.0));
-	float h = hash(c + float2(11.0 + way * 37.0, 5.0 + way * 13.0));
-	return step(h, density * (0.45 + 1.1 * lane));
-}
-
-// A light running along trace number `line_no`, seen from `along` cells
-// along it: a head and a tail, eight cells apart.
-float data_pulse(float line_no, float along)
-{
-	float n = line_no - 16.0 * floor(line_no / 16.0);
-	float h = hash(float2(n, 13.0));
-	float h2 = hash(float2(29.0, n));
-	float way = h2 < 0.5 ? 1.0 : -1.0;
-	float at = frac(phase * (24.0 + floor(h * 24.0))) * way + h2;
-	float d = (frac((along / 8.0) - at + 0.5) - 0.5) * way;
-	return d < 0.0 ? exp(d * 22.0) : exp(-d * 260.0);
-}
-
-// One layer of board in cells: x the traces, y the pads, z the light on the
-// traces. A trace runs from a cell's middle to each side it crosses; one
-// across and one up or down are joined by a slanted run instead.
-float3 circuit(float2 q, float density)
-{
-	float2 cell = floor(q);
-	float2 f = q - cell;
-	float l = crosses(cell - float2(1.0, 0.0), 0.0, density);
-	float r = crosses(cell, 0.0, density);
-	float t = crosses(cell - float2(0.0, 1.0), 1.0, density);
-	float b = crosses(cell, 1.0, density);
-	float n = l + r + t + b;
-	float2 mid = float2(0.5, 0.5);
-	float d_h = min(seg_dist(f, mid, float2(0.0, 0.5)) + (1.0 - l) * 9.0,
-			seg_dist(f, mid, float2(1.0, 0.5)) + (1.0 - r) * 9.0);
-	float d_v = min(seg_dist(f, mid, float2(0.5, 0.0)) + (1.0 - t) * 9.0,
-			seg_dist(f, mid, float2(0.5, 1.0)) + (1.0 - b) * 9.0);
-	float corner = step(1.5, n) * step(n, 2.5) * step(0.5, l + r) * step(l + r, 1.5);
-	float d_slant = seg_dist(f, float2(r, 0.5), float2(0.5, b));
-	float d = lerp(min(d_h, d_v), d_slant, corner);
-	float trace = 1.0 - smoothstep(0.05, 0.085, d);
-	// A pad where a trace ends and where three or four meet, and a via
-	// by itself now and then.
-	float lone = step(n, 0.5) * step(hash(cell + float2(3.0, 71.0)), 0.1 + 0.25 * detail);
-	float pad_here = saturate(step(0.5, n) * step(n, 1.5) + step(2.5, n) + lone);
-	float dc = length(f - mid);
-	float pad = (1.0 - smoothstep(0.17, 0.205, dc)) * smoothstep(0.06, 0.095, dc) * pad_here;
-	float across = saturate(step(d_h, d_v) + corner);
-	float light = lerp(data_pulse(cell.x + 9.0, q.y), data_pulse(cell.y + 3.0, q.x), across);
-	return float3(trace, pad, light * saturate(trace + pad));
-}
-
-float4 PSCircuit(VertData v_in) : TARGET
-{
-	float2 q = place(v_in.uv) * 9.0 + float2(40.5, 40.5);
-	float density = 0.3 + 0.45 * detail;
-	float3 big = circuit(q, density);
-	float3 fine = circuit(q * 2.0 + float2(13.0, 7.0), density * 0.8);
-	float3 board = colour1.rgb * (0.55 + 0.25 * v_in.uv.y);
-	float3 rgb = lerp(board, colour2.rgb * 0.45 + board * 0.35, fine.x * 0.8);
-	rgb += colour3.rgb * fine.z * 0.3;
-	rgb = lerp(rgb, colour2.rgb * 0.8, big.x);
-	rgb = lerp(rgb, colour2.rgb, big.y);
-	rgb += lerp(colour3.rgb, float3(1.0, 1.0, 1.0), 0.25) * big.z;
-	// A chip here and there: a dark body with a rim, legs above and below
-	// and a dot in its corner. Four cells to a place for one.
-	float2 g = q / 4.0;
-	float2 place_no = floor(g);
-	float2 gf = (g - place_no - float2(0.5, 0.5)) * 4.0;
-	float chip = step(hash(place_no + float2(57.0, 23.0)), 0.16 + 0.3 * detail);
-	float2 e = abs(gf) - float2(1.25, 0.8);
-	float out_by = max(e.x, e.y);
-	float body = (1.0 - smoothstep(0.0, 0.04, out_by)) * chip;
-	float rim = body * smoothstep(-0.11, -0.07, out_by);
-	float leg = (1.0 - smoothstep(0.09, 0.13, abs(frac(gf.x * 2.0 + 0.5) - 0.5))) * step(abs(gf.x), 1.15) *
-		    step(0.0, e.y) * step(e.y, 0.32) * chip;
-	float mark = (1.0 - smoothstep(0.07, 0.1, length(gf - float2(-1.0, -0.55)))) * chip;
-	rgb = lerp(rgb, colour1.rgb * 0.3, body);
-	rgb = lerp(rgb, colour2.rgb * 0.7, saturate(rim + mark));
-	rgb = lerp(rgb, colour2.rgb, leg);
-	return float4(saturate(rgb), 1.0);
-}
-
 // ---------------------------------------------------------------- Hex grid
 
 float4 PSHex(VertData v_in) : TARGET
@@ -340,15 +245,6 @@ float4 PSSunGrid(VertData v_in) : TARGET
 	float3 ground = colour1.rgb * 0.16 + colour2.rgb * grid + colour3.rgb * 0.45 * exp(-dy * 16.0);
 	float3 rgb = lerp(sky, ground, step(horizon, p.y));
 	return float4(saturate(rgb), 1.0);
-}
-
-technique Circuit
-{
-	pass
-	{
-		vertex_shader = VSDefault(v_in);
-		pixel_shader  = PSCircuit(v_in);
-	}
 }
 
 technique Hex

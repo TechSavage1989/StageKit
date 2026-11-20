@@ -61,7 +61,9 @@ struct OutlineDesign {
 		Tunnel = 24,
 		Ripples = 25,
 		Embers = 26,
-		kLast = Embers,
+		CircuitTraces = 27,
+		DataLines = 28,
+		kLast = DataLines,
 	};
 	int kind = Solid;
 	uint32_t color2 = 0xFFFFAA00; // the gradient's other end, the shimmer's highlight
@@ -72,7 +74,7 @@ struct OutlineDesign {
 	// are the first two) and how large the pattern is, 1 as designed.
 	uint32_t color3 = 0xFFA046C8;
 	double pattern_scale = 1.0;
-	bool pattern() const { return kind >= Aurora && kind <= Embers; }
+	bool pattern() const { return kind >= Aurora && kind <= kLast; }
 	// Drawn inside the source's edge, with no line outside it.
 	bool inner() const { return kind == Inner; }
 };

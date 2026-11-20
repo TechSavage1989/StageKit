@@ -59,23 +59,32 @@ namespace {
 enum class BaseType : int { Image = 0, Source = 1, StartImage = 2, Pattern = 3 };
 // The patterns, each a technique of stagekit-patterns.effect. Saved by
 // number: new ones go at the end.
-constexpr const char *kPatternTechniques[] = {"Aurora",   "Plasma", "Lava",    "Waves",  "Bokeh",   "Stars",
-					      "Gradient", "Nebula", "Grid",    "Rays",   "Circuit", "Hex",
-					      "Rain",     "Tunnel", "Ripples", "Embers", "SunGrid"};
+constexpr const char *kPatternTechniques[] = {"Aurora",  "Plasma",   "Lava",          "Waves",    "Bokeh",
+					      "Stars",   "Gradient", "Nebula",        "Grid",     "Rays",
+					      "Circuit", "Hex",      "Rain",          "Tunnel",   "Ripples",
+					      "Embers",  "SunGrid",  "CircuitTraces", "DataLines"};
 constexpr const char *kPatternNames[] = {
-	"Ambient.Pattern.Aurora", "Ambient.Pattern.Plasma", "Ambient.Pattern.Lava",     "Ambient.Pattern.Waves",
-	"Ambient.Pattern.Bokeh",  "Ambient.Pattern.Stars",  "Ambient.Pattern.Gradient", "Ambient.Pattern.Nebula",
-	"Ambient.Pattern.Grid",   "Ambient.Pattern.Rays",   "Ambient.Pattern.Circuit",  "Ambient.Pattern.Hex",
-	"Ambient.Pattern.Rain",   "Ambient.Pattern.Tunnel", "Ambient.Pattern.Ripples",  "Ambient.Pattern.Embers",
-	"Ambient.Pattern.SunGrid"};
-constexpr int kPatterns = 17;
-// The first ten are in one shader file and the later ones in another, so a
-// compiler that refuses a later one leaves the first ten alone.
-constexpr const char *kPatternFiles[] = {"effects/stagekit-patterns.effect", "effects/stagekit-patterns-more.effect"};
+	"Ambient.Pattern.Aurora",   "Ambient.Pattern.Plasma",  "Ambient.Pattern.Lava",
+	"Ambient.Pattern.Waves",    "Ambient.Pattern.Bokeh",   "Ambient.Pattern.Stars",
+	"Ambient.Pattern.Gradient", "Ambient.Pattern.Nebula",  "Ambient.Pattern.Grid",
+	"Ambient.Pattern.Rays",     "Ambient.Pattern.Circuit", "Ambient.Pattern.Hex",
+	"Ambient.Pattern.Rain",     "Ambient.Pattern.Tunnel",  "Ambient.Pattern.Ripples",
+	"Ambient.Pattern.Embers",   "Ambient.Pattern.SunGrid", "Ambient.Pattern.CircuitTraces",
+	"Ambient.Pattern.DataLines"};
+constexpr int kPatterns = 19;
+// The first ten are in one shader file, the next six in another and the
+// circuit patterns (Circuit board, Circuit traces, Data lines) in a third,
+// so a compiler that refuses one file leaves the others' patterns alone.
+constexpr const char *kPatternFiles[] = {"effects/stagekit-patterns.effect", "effects/stagekit-patterns-more.effect",
+					 "effects/stagekit-patterns-circuit.effect"};
 constexpr int kFirstMorePattern = 10;
+constexpr int kCircuitPattern = 10;
+constexpr int kFirstLaterCircuitPattern = 17;
 constexpr int pattern_file(int pattern)
 {
-	return pattern >= kFirstMorePattern ? 1 : 0;
+	return pattern == kCircuitPattern || pattern >= kFirstLaterCircuitPattern ? 2
+	       : pattern >= kFirstMorePattern                                     ? 1
+										  : 0;
 }
 // A pattern comes back to where it began after this long at a speed of 100 %:
 // the shader is handed how far through it is, 0..1, never a growing time.

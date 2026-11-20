@@ -27,14 +27,20 @@ namespace stagekit {
 namespace {
 
 // The techniques by OutlineDesign::kind less OutlineDesign::Aurora, and
-// which of Ambient Background's two pattern files each is in (the first ten
-// patterns and the later ones: a refusal of one file leaves the other).
-constexpr const char *kFiles[] = {"effects/stagekit-patterns.effect", "effects/stagekit-patterns-more.effect"};
-constexpr const char *kTechniques[] = {"Aurora", "Plasma",  "Lava", "Waves", "Nebula", "Gradient", "Stars", "Bokeh",
-				       "Rays",   "Circuit", "Hex",  "Rain",  "Tunnel", "Ripples",  "Embers"};
+// which of Ambient Background's pattern files each is in (the first ten
+// patterns, the later ones, the circuit patterns: a refusal of one file
+// leaves the others).
+constexpr const char *kFiles[] = {"effects/stagekit-patterns.effect", "effects/stagekit-patterns-more.effect",
+				  "effects/stagekit-patterns-circuit.effect"};
+constexpr int kFileCount = 3;
+constexpr const char *kTechniques[] = {"Aurora", "Plasma",  "Lava",   "Waves",         "Nebula",   "Gradient",
+				       "Stars",  "Bokeh",   "Rays",   "Circuit",       "Hex",      "Rain",
+				       "Tunnel", "Ripples", "Embers", "CircuitTraces", "DataLines"};
 constexpr int file_of(int kind)
 {
-	return kind >= OutlineDesign::Circuit ? 1 : 0;
+	return kind == OutlineDesign::Circuit || kind >= OutlineDesign::CircuitTraces ? 2
+	       : kind > OutlineDesign::Circuit                                        ? 1
+										      : 0;
 }
 // As Ambient Background: a pattern is back where it began after this long at
 // a speed of 100 %, which here is the Speed control's 60.
@@ -73,7 +79,7 @@ struct Shaders {
 	gs_eparam_t *phase = nullptr, *aspect = nullptr, *scale = nullptr, *detail = nullptr;
 	gs_eparam_t *colour[3] = {nullptr, nullptr, nullptr};
 };
-Shaders g_shaders[2];
+Shaders g_shaders[kFileCount];
 bool g_said = false; // that the patterns are not there: once
 std::mutex g_mutex;
 std::string g_test_file;
