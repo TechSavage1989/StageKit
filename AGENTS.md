@@ -7,6 +7,13 @@ Read `DEVELOPMENT_HANDOFF.md` next for the current state, then
 [docs/REPOSITORY_STANDARDS.md](docs/REPOSITORY_STANDARDS.md), the shared standard that is identical in
 every TechSavage1989 app repository. Change that file only to change the standard everywhere.
 
+## Dock and filter review (beta227)
+
+Keep existing Scene Shadow values for both fade times when loading a filter with only the
+original duration. New position keys with *In every scene* clear store the dock's selected
+scene. Existing keys keep their original scope. The dock's *Copy to* choice is independent
+of the lock source list. Unversioned OBS IDs and saved values remain stable.
+
 ## Names
 
 The owner asked for names "to make more sense" and approved a table (2026-11-14, beta87). What a
@@ -900,6 +907,23 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   filter shifts each item showing the source (and grows its bounding box) by that room so the picture
   stays put, and remembers what it applied in `adjusted_*` settings. Anything else that changes the
   room around a source must go through `keep_picture_in_place`, not around it.
+- **Shadow, Glow & Outline draws its picture through `Show`, not OBS's `Draw`** (beta: the
+  next after 220; `PSShow` in `stagekit-shadow.effect`). The owner: "the border seems to bleed a
+  pixel or two on the right and/or left sides of some sources" (a 1920x1080 capture fitted to a
+  2560x1440 screen). The filter's picture is the source with its room, the line in that room; an
+  item drawn larger samples it bilinearly, so a screen pixel just inside the source's edge took in
+  the line's pixel beside it: 1/8 of it at 4/3 (sRGB 99 of 255 red at a screen edge where the whole
+  line lay off the screen; up to 245 with odd sizes). `Show` reads only inside the source's (or its
+  panel's) box for a point inside it, and is OBS's Draw elsewhere: at scale 1 nothing changes.
+  Still open: OBS draws an item through a texture of its own when it is cropped, has a scale
+  filter or a blending mode, and then samples the same way (not fixed, not tested). Scene Shadow
+  had no such fault: a line shows at a screen edge only in a pixel row the item's box does not
+  cover the middle of. Tested in `[outline bleed: ...]` (`STAGEKIT_TEST_ONLY_OUTLINE_BLEED`;
+  `STAGEKIT_TEST_BLEED_QUICK=<n>` one size, `STAGEKIT_TEST_BLEED_VERBOSE` every case's edges).
+- **Scene Shadow's canvas-edge rule (beta225)** uses the rendered caster's alpha in
+  `stagekit-scene-shadow.effect`. Only in the outermost row or column, an opaque neighbour one canvas
+  pixel inward suppresses the external line and its neon halo. The inner line and actual scene pixels
+  are separate. The regression in `OUTLINE_BLEED` includes a 1.14 px shortfall and a two-column control.
 - **Corners & Edges must never change a source's size.** Everything that makes it safe beside the
   other tools rests on that. It belongs before Shadow, Glow & Outline in the filter list (the shadow reads
   alpha, so it follows the shape); when first added it moves itself above an existing shadow once and
@@ -3866,6 +3890,49 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   the other designs show none (`design_modified`). Tested in `[pattern transform: ...]`
   (`pattern_transform_test`, alone with `STAGEKIT_TEST_ONLY_PATTERN_TRANSFORM`, frames in
   `$out/pattern-transform`). Only OpenGL.
+- **Outline design Ambient Background** (`OutlineDesign::Ambient` 34, appended; the owner: "a
+  border/shadow/outline option to follow the ambient background setting for pattern, but also
+  background image or live, including mosaic and blur configurations"). The line shows an Ambient
+  Background's finished picture, in both Shadow, Glow & Outline and Scene Shadow. Settings:
+  `outline_ambient` (*Background*, a string: "" *Automatic* as it comes, or a background's name;
+  followed on a rename, `renamed` in `outline-ambient.cpp`), `outline_ambient_bright` (*Fill
+  brightness*, 0 to 300 %, 130) and `outline_ambient_sat` (*Fill saturation*, 0 to 300 %, 120);
+  `outline_pattern_scale`, `outline_pos_x/y` and `outline_rotation` lay it out as for a pattern.
+  - **The picture is the one the background drew** (`src/ambient/ambient-frame.*`): every Ambient
+    Background joins a registry when made (`ambient_frame_join`, a number never used twice, a weak
+    reference), publishes its finished texture and the video frame at the end of each `render`
+    and leaves in its destructor, in the graphics context. `ambient_frame_get` hands out that
+    texture; one not drawn in the last two frames (in no scene on show) is drawn once into a
+    scratch texrender, for everyone asking that frame. Nobody draws the background a second time.
+  - **Which background** (`outline-ambient.*`): `outline_ambient_choice` turns the name into a
+    number the `OutlineDesign` carries (`ambient`); `outline_ambient_resolve` gives the answer
+    kept for (choice, scene), **never looks anything up itself**, because it is called while
+    drawing: OBS draws the main view holding the view's channel lock, which
+    `obs_get_output_source` (in `scene_on_screen` without the frontend) takes again; the first
+    build hung there. The lookup is made by a tick callback (`look_tick`, when a background comes
+    or goes and four times a second) and by `outline_ambient_warm` from each filter's tick, so the
+    first drawing has an answer. Automatic: the first Ambient Background in the filter's scene
+    (Scene Shadow: its own scene; groups looked into), then the one in the scene on screen (the
+    source filter starts there), then any; a named one that is gone reads as Automatic. The scene
+    is held weakly and a choice not asked for in 5 s is let go of.
+  - **Laid out** by `data/effects/stagekit-outline-ambient.effect` (its own file: refused, only this
+    fill goes, logged once, the line is its outline colour) into one picture per background,
+    size and layout a frame, shared (`Key`); every uniform set at every run; mirrored at the
+    edges. Scene Shadow: the picture is the canvas, so the line shows the background where it
+    lies (at the defaults exactly the background, then lifted). Shadow, Glow & Outline: the
+    source's own picture, at the canvas's scale, **the background's middle on the source's
+    middle** (`AmbientCover`): the filter does not know where the item is on screen (one source,
+    many scenes). Brightness and saturation are the fill's own (`PSFill`).
+  - Morph carries it (`lerp_design`: the nearer side's background, brightness and saturation
+    mixed), and Scene Blur's `lay_over` with the rest of Scene Shadow's look. **The drop shadow
+    and glow do not take it**: a shadow in the picture's own colours exists (`shadow_fill`), but
+    one in the background's would be another texture through both filters' shadow passes; not
+    done.
+  - Tested in `[outline: filled with an Ambient Background ...]` (`outline_ambient_test`, alone
+    with `STAGEKIT_TEST_ONLY_OUTLINE_AMBIENT`; frames in `$out/outline-ambient`, with
+    `STAGEKIT_OUTLINE_AMBIENT_FRAMES` a few moving ones). `stagekit_test_ambient_frames` and
+    `stagekit_test_outline_ambient` (global procs) give the backgrounds known, the extra
+    drawings and the pictures held. Only OpenGL.
 - **Frame time** (`src/common/timing.*`, `src/common/scene-rev.*`; the harness `tests/collection-perf.cpp`,
   `tests/make-perf-collection.py`, `tests/run-perf.sh`, `tests/perf-compare.py`). The owner's
   *Average time to render frame* went from under 1 ms to 1.1 ms: all of it `tick_sources` (0.25 to

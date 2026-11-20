@@ -38,7 +38,7 @@ uniform float shadow_boost;     // extra colour and brightness for those colours
 uniform float outline_width;    // pixels
 uniform float4 outline_color;   // straight alpha; a = opacity
 uniform float image_straight;   // 1: `image` holds straight alpha (a picture this file made)
-uniform texture2d ring_shape;   // the lines drawn as shapes round the sources' boxes (BoxRing)
+uniform texture2d ring_shape;   // casting sources (alpha), or the box ring canvas (red: reach, alpha: line)
 uniform float ring_box;         // 1: the line is ring_shape's, 0: round the sources' own shape
 uniform float glow_intensity;   // 1 as it was; more makes the shadow or glow denser, never harder-edged
 uniform float2 box_size;        // BoxRing: the sprite, in canvas pixels
@@ -63,8 +63,6 @@ uniform texture2d halo_tex;     // neon: the line's shape, softened (alpha): its
 uniform float4 halo_color;      // neon: the halo's colour, as bright as it goes; a = how much light (0: none)
 uniform texture2d pattern_tex;  // a pattern fill: the pattern, drawn by stagekit-patterns.effect, over the canvas
 uniform float pattern_on;       // 1: the line's colour is pattern_tex's, 0: the design's own
-uniform texture2d follow_tex;   // Ring, Outlined: what the line follows round its shape: the casting
-                                // sources (alpha), or with box lines the ring canvas (red)
 
 sampler_state linearClamp {
 	Filter   = Linear;
@@ -351,7 +349,7 @@ float4 PSMaskedShadow(VertData v_in) : TARGET
 // shaped sources), in the ring canvas's red.
 float follow_at(float2 uv)
 {
-	float4 t = follow_tex.SampleLevel(linearClamp, uv, 0);
+	float4 t = ring_shape.SampleLevel(linearClamp, uv, 0);
 	return t.a * (1.0 - ring_box) + t.r * ring_box;
 }
 
@@ -389,6 +387,20 @@ float follows(float4 seen, float area)
 	return max(force_follow, sparse);
 }
 
+// A fitted source can leave one empty column or row at the canvas boundary.
+// Mask just the outside line there when the next pixel inward is opaque.
+// Sample the caster, so transparent margins and wider gaps keep their line.
+float outer_line_at_edge(float2 uv)
+{
+	float2 p = uv * out_size;
+	float2 edge = min(p, out_size - p);
+	if (min(edge.x, edge.y) >= 1.0)
+		return 1.0;
+	float2 inset = min(float2(1.5, 1.5), out_size * 0.5);
+	float2 inward = clamp(p, inset, out_size - inset) / out_size;
+	return 1.0 - step(0.999, silhouette.SampleLevel(linearClamp, inward, 0).a);
+}
+
 float4 PSRing(VertData v_in) : TARGET
 {
 	Split s = split_at(v_in.uv);
@@ -399,7 +411,8 @@ float4 PSRing(VertData v_in) : TARGET
 	// Neon's halo: light past the line, added to what is under the sources
 	// (screened, in linear light), before the line is laid. (Times nothing
 	// while there is none: every other design is as it was.)
-	float halo = saturate(halo_tex.Sample(linearClamp, v_in.uv).a * 2.0);
+	float outer = outer_line_at_edge(v_in.uv);
+	float halo = saturate(halo_tex.Sample(linearClamp, v_in.uv).a * 2.0) * outer;
 	float3 light = to_linear(halo_color.rgb) * (laid_amount(halo * halo, s) * halo_color.a);
 	float lit_a = max(light.r, max(light.g, light.b));
 	under = float4(under.rgb + light * (float3(s.free, s.free, s.free) - under.rgb),
@@ -420,7 +433,7 @@ float4 PSRing(VertData v_in) : TARGET
 	// (Times one and plus nothing while off: the other designs are as they were.)
 	float3 pattern_rgb = pattern_tex.Sample(linearClamp, v_in.uv).rgb;
 	float3 line_rgb = design_rgb(outline_color.rgb, k * designed) * (1.0 - pattern_on) + pattern_rgb * pattern_on;
-	float4 laid = s.source + laid_under(under, s.free, line_rgb, laid_amount(amount, s) * outline_color.a);
+	float4 laid = s.source + laid_under(under, s.free, line_rgb, laid_amount(amount * outer, s) * outline_color.a);
 	// An inner line lies on its source (in green, with no line outside):
 	// over the whole pixel, as faded as the source is.
 	float faded = s.fade * step(0.004, s.there) + (1.0 - step(0.004, s.there));
@@ -433,7 +446,7 @@ float4 PSRing(VertData v_in) : TARGET
 float4 PSOutlined(VertData v_in) : TARGET
 {
 	float4 own = silhouette.Sample(linearClamp, v_in.uv);
-	float la = line_reach(v_in.uv) * outline_color.a;
+	float la = line_reach(v_in.uv) * outline_color.a * outer_line_at_edge(v_in.uv);
 	return float4(own.rgb + outline_color.rgb * la * (1.0 - own.a), own.a + la * (1.0 - own.a));
 }
 

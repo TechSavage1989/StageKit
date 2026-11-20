@@ -28,6 +28,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/shown-scale.hpp"
 #include "../common/tooltip.hpp"
 #include "../look/look-paint.hpp"
+#include "../look/outline-ambient.hpp"
 #include "../look/outline-pattern.hpp"
 
 #include <obs-module.h>
@@ -750,11 +751,18 @@ void ShadowBackdrop::tick()
 	obs_source_t *parent = obs_filter_get_parent(source_);
 	if (!parent)
 		return;
-	bool keep;
+	bool keep, ambient;
+	uint32_t ambient_choice;
 	{
 		std::lock_guard lock(mutex_);
 		keep = keep_place_;
+		ambient = settings_.outline && settings_.design.ambient_fill();
+		ambient_choice = settings_.design.ambient;
 	}
+	// An Ambient Background fill: its background looked up here, not while
+	// drawing (outline-ambient.hpp).
+	if (ambient)
+		outline_ambient_warm(ambient_choice, nullptr);
 	// The room recorded as already given belongs to the source it was given
 	// on. A filter copied or pasted onto something else arrives with the
 	// other source's record: there, nothing has been adjusted yet.
@@ -1082,6 +1090,16 @@ void ShadowBackdrop::render()
 			const double canvas = obs_get_video_info(&ovi) ? (double)ovi.base_height : 1080.0;
 			pattern = outline_pattern_texture(s.design, s.outline_color, ow, oh,
 							  canvas / (double)oh * s.pattern_shown);
+		} else if (s.design.ambient_fill() && s.outline_fill != Fill::Picture) {
+			// An Ambient Background fill: the background at the size the
+			// canvas shows it, its middle on the source's middle.
+			obs_video_info ovi;
+			AmbientCover cover;
+			if (obs_get_video_info(&ovi) && ovi.base_width && ovi.base_height) {
+				cover.x = (double)ow / (s.pattern_shown * (double)ovi.base_width);
+				cover.y = (double)oh / (s.pattern_shown * (double)ovi.base_height);
+			}
+			pattern = outline_ambient_texture(s.design, ow, oh, cover);
 		}
 		auto line_values = [&](const OutlineDesign &design) {
 			vec4 outline_color;
@@ -1104,7 +1122,7 @@ void ShadowBackdrop::render()
 			gs_effect_set_texture(p_rect_tex_, known ? seen.rect : no_rect_);
 			gs_effect_set_texture(p_area_tex_, known ? seen.area : no_rect_);
 			gs_effect_set_float(p_rect_known_, known ? 1.0f : 0.0f);
-			design_.set(design, design.pattern() ? pattern : nullptr, card);
+			design_.set(design, design.pattern() || design.ambient_fill() ? pattern : nullptr, card);
 		};
 		// The shadow is thrown by the whole line: a design's gaps are not
 		// holes in it. (An inner line changes no silhouette.)
@@ -1160,15 +1178,22 @@ void ShadowBackdrop::render()
 	gs_enable_framebuffer_srgb(previous_srgb);
 
 	if (gs_texture_t *final_tex = card ? gs_texrender_get_texture(tr_final_) : nullptr) {
-		gs_effect_t *def = obs_get_base_effect(OBS_EFFECT_DEFAULT);
-		gs_eparam_t *image = gs_effect_get_param_by_name(def, "image");
 		// (It holds linear light already where OBS draws in it: a
 		// sixteen-bit picture has no sRGB view to read it through.)
 		const bool linear = gs_get_linear_srgb();
 		const bool previous = gs_framebuffer_srgb_enabled();
 		gs_enable_framebuffer_srgb(linear);
-		gs_effect_set_texture(image, final_tex);
-		while (gs_effect_loop(def, "Draw"))
+		// Drawn by "Show", OBS's Draw that keeps the line out of the
+		// source's own pixels when the item is drawn larger: an item
+		// fitted to the screen showed a sliver of its line along the
+		// screen's edge. (Every value it reads, given again.)
+		gs_effect_set_texture(p_image_, final_tex);
+		gs_effect_set_vec2(p_out_size_, &out_size);
+		gs_effect_set_vec2(p_src_size_, &src_size);
+		gs_effect_set_vec2(p_pad_, &pad);
+		gs_effect_set_float(p_backdrop_on_, s.backdrop ? 1.0f : 0.0f);
+		gs_effect_set_float(p_backdrop_pad_, (float)s.backdrop_pad);
+		while (gs_effect_loop(effect_, "Show"))
 			gs_draw_sprite(final_tex, 0, ow, oh);
 		gs_enable_framebuffer_srgb(previous);
 	}

@@ -635,12 +635,15 @@ public:
 		// that live in a nested scene are reachable.
 		scene_ = new QComboBox(this);
 		scene_->setObjectName("scene");
+		dock_tip(scene_, tr_text("Dock.TargetScene.Tip"));
 		QObject::connect(scene_, &QComboBox::currentIndexChanged, this, [this](int) { refresh(); });
 		form->addRow(tr_text("Dock.SceneRow"), scene_);
 		item_ = new QComboBox(this);
 		item_->setObjectName("item");
+		dock_tip(item_, tr_text("Dock.TargetSource.Tip"));
 		linked_ = new QComboBox(this);
 		linked_->setObjectName("linked");
+		dock_tip(linked_, tr_text("Place.Linked.Tip"));
 		form->addRow(tr_text("Dock.Item"), item_);
 		layout->addLayout(form);
 
@@ -716,11 +719,13 @@ public:
 		auto *options = new QFormLayout();
 		margin_ = new QSpinBox(move_box);
 		margin_->setObjectName("margin");
+		dock_tip(margin_, tr_text("Place.Margin.Tip"));
 		margin_->setRange(0, 400);
 		margin_->setValue(30);
 		margin_->setSuffix(" px");
 		duration_ = new QSpinBox(move_box);
 		duration_->setObjectName("duration");
+		dock_tip(duration_, tr_text("Dock.MoveDuration.Tip"));
 		duration_->setRange(0, 5000);
 		duration_->setSingleStep(50);
 		duration_->setValue(500);
@@ -830,9 +835,11 @@ public:
 		auto *keys_layout = new QVBoxLayout(keys_box);
 		auto *make_keys = new QPushButton(tr_text("Dock.MakeKeys"), keys_box);
 		make_keys->setObjectName("makeKeys");
+		dock_tip(make_keys, tr_text("Dock.MakeKeys.Tip"));
 		QObject::connect(make_keys, &QPushButton::clicked, this, [this] { make_all_keys(); });
 		auto *save_spot = new QPushButton(tr_text("Dock.SaveSpot"), keys_box);
 		save_spot->setObjectName("saveSpot");
+		dock_tip(save_spot, tr_text("Dock.SaveSpot.Tip"));
 		QObject::connect(save_spot, &QPushButton::clicked, this, [this] {
 			bool ok = false;
 			const QString name = QInputDialog::getText(this, tr_text("Dock.SaveSpot"),
@@ -1116,6 +1123,7 @@ public:
 		for (const bool lock : {true, false}) {
 			auto *button = new QPushButton(tr_text(lock ? "Dock.Lock.Lock" : "Dock.Lock.Unlock"), lock_box);
 			button->setObjectName(lock ? "lockItems" : "unlockItems");
+			dock_tip(button, tr_text(lock ? "Dock.Lock.Do.Tip" : "Dock.Unlock.Do.Tip"));
 			QObject::connect(button, &QPushButton::clicked, this, [this, lock] { lock_items(lock); });
 			lock_buttons->addWidget(button, 1);
 		}
@@ -1139,6 +1147,7 @@ public:
 		dock_tip(filter_add_, tr_text("Dock.Filter.Add.Tip"));
 		auto *filter_go = new QPushButton(tr_text("Dock.Filter.Go"), filter_box);
 		filter_go->setObjectName("filterCopy");
+		dock_tip(filter_go, tr_text("Dock.Filter.Go.Tip"));
 		QObject::connect(filter_go, &QPushButton::clicked, this, [this] { copy_filter(); });
 		filter_form->addRow(tr_text("Dock.Filter.From"), filter_from_);
 		filter_form->addRow(tr_text("Dock.Filter.To"), filter_to_);
@@ -1183,6 +1192,7 @@ public:
 		auto *limit_row = new QFormLayout();
 		snap_within_ = new QSpinBox(arrange_box);
 		snap_within_->setObjectName("snapWithin");
+		dock_tip(snap_within_, tr_text("Dock.SnapWithin.Tip"));
 		snap_within_->setRange(1, 200);
 		snap_within_->setSuffix(" px");
 		within_row->addRow(tr_text("Arrange.Within"), snap_within_);
@@ -1329,6 +1339,7 @@ public:
 		QObject::connect(update_now, &QPushButton::clicked, this, [this] { install_now(); });
 		auto *whats_new = new QPushButton(tr_text("Update.WhatsNew"), update_bar_);
 		whats_new->setObjectName("updateWhatsNew");
+		dock_tip(whats_new, tr_text("Update.WhatsNew.Tip"));
 		// The same list the Update button shows, with the release page a
 		// button away.
 		QObject::connect(whats_new, &QPushButton::clicked, this, [this] { show_changes(false); });
@@ -1630,6 +1641,7 @@ private:
 		}
 		auto *buttons = new QDialogButtonBox(&dialog);
 		QPushButton *page = buttons->addButton(tr_text("Update.ReleasePage"), QDialogButtonBox::ActionRole);
+		dock_tip(page, tr_text("Update.ReleasePage.Tip"));
 		page->setEnabled(!found_.page.empty());
 		const std::string url = found_.page;
 		QObject::connect(page, &QPushButton::clicked, &dialog,
@@ -1637,9 +1649,11 @@ private:
 		if (ask) {
 			buttons->addButton(QDialogButtonBox::Yes);
 			buttons->addButton(QDialogButtonBox::No);
+			dock_tip(buttons->button(QDialogButtonBox::Yes), tr_text("Update.Now.Tip"));
+			dock_tip(buttons->button(QDialogButtonBox::No), tr_text("Update.KeepRunning.Tip"));
 			buttons->button(QDialogButtonBox::Yes)->setDefault(true);
 		} else {
-			buttons->addButton(QDialogButtonBox::Close);
+			dock_tip(buttons->addButton(QDialogButtonBox::Close), tr_text("Update.KeepRunning.Tip"));
 		}
 		QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
 		QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);

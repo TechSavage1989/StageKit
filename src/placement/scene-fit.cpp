@@ -177,7 +177,7 @@ bool has(const std::vector<std::string> &list, const std::string &name)
 using FitReasons = std::map<std::string, std::vector<std::string>>;
 
 std::vector<std::string> unlisted_sources(obs_source_t *self, obs_source_t *scene, obs_data_t *settings,
-					 FitReasons *reasons = nullptr)
+					  FitReasons *reasons = nullptr)
 {
 	std::vector<std::string> out;
 	obs_scene_t *s = scene && !obs_source_is_group(scene) ? obs_scene_from_source(scene) : nullptr;
@@ -257,14 +257,16 @@ std::vector<std::string> unlisted_sources(obs_source_t *self, obs_source_t *scen
 			continue;
 		if (has(skip, name) || !others.first || has(others.taken, name)) {
 			if (reasons)
-				(*reasons)[has(skip, name) ? "SceneFit.Status.Ignored" : "SceneFit.Status.OtherFit"].push_back(name);
+				(*reasons)[has(skip, name) ? "SceneFit.Status.Ignored" : "SceneFit.Status.OtherFit"]
+					.push_back(name);
 			continue;
 		}
 		if (!fitted_before(name)) {
 			const double share = screen_share(item);
 			if (share <= 0.0 || share >= kFillsScreen) {
 				if (reasons)
-					(*reasons)[share <= 0.0 ? "SceneFit.Status.NoSize" : "SceneFit.Status.Full"].push_back(name);
+					(*reasons)[share <= 0.0 ? "SceneFit.Status.NoSize" : "SceneFit.Status.Full"]
+						.push_back(name);
 				continue;
 			}
 			// Put down inside a fitted source's space: not fitted yet. Its
@@ -975,15 +977,21 @@ void sync_groups(obs_properties_t *top, obs_source_t *owner, obs_data_t *setting
 		std::vector<std::string> in_scene;
 		obs_source_t *parent = owner ? obs_filter_get_parent(owner) : nullptr;
 		if (obs_scene_t *scene = scene_of(parent))
-			obs_scene_enum_items(scene, [](obs_scene_t *, obs_sceneitem_t *item, void *param) {
-				const char *name = selectable_item_name(item);
-				if (name && *name && (obs_source_get_output_flags(obs_sceneitem_get_source(item)) & OBS_SOURCE_VIDEO))
-					static_cast<std::vector<std::string> *>(param)->push_back(name);
-				return true;
-			}, &in_scene);
+			obs_scene_enum_items(
+				scene,
+				[](obs_scene_t *, obs_sceneitem_t *item, void *param) {
+					const char *name = selectable_item_name(item);
+					if (name && *name &&
+					    (obs_source_get_output_flags(obs_sceneitem_get_source(item)) &
+					     OBS_SOURCE_VIDEO))
+						static_cast<std::vector<std::string> *>(param)->push_back(name);
+					return true;
+				},
+				&in_scene);
 		for (const std::string &name : names) {
-			const char *reason = !has(in_scene, name) ? "SceneFit.Status.Missing" :
-					     entry_on(settings, name) ? "SceneFit.Status.Fits" : "SceneFit.Status.Off";
+			const char *reason = !has(in_scene, name)       ? "SceneFit.Status.Missing"
+					     : entry_on(settings, name) ? "SceneFit.Status.Fits"
+									: "SceneFit.Status.Off";
 			reasons[reason].push_back(name);
 		}
 		if (obs_data_get_int(settings, "which") == (int)Which::Chosen)
@@ -1002,7 +1010,8 @@ void sync_groups(obs_properties_t *top, obs_source_t *owner, obs_data_t *setting
 				text += sources[i];
 			}
 		}
-		obs_property_set_description(status, text.empty() ? obs_module_text("SceneFit.Status.None") : text.c_str());
+		obs_property_set_description(status,
+					     text.empty() ? obs_module_text("SceneFit.Status.None") : text.c_str());
 	}
 	// Groups of entries no longer listed.
 	std::vector<std::string> gone;

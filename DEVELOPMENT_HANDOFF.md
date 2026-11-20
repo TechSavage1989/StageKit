@@ -9,7 +9,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | `chore/review-stage2`, on `main` after beta222. Release notes in `docs/releases/0.1.0-beta223.md` (numbered just before pushing). Not pushed. |
+| Working branch | `chore/review-stage3`. Release notes in `docs/releases/0.1.0-beta227.md`. |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 | Gate | Checks passed |
@@ -22,6 +22,102 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `LAYOUT`, `MODES_HIDE`, `SCENE_TRANS_OVERRIDE` | 40, 29, 9 |
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
+
+## Dock and filter controls (0.1.0-beta227)
+
+The approved third review stage covers the dock decisions D16 to D22, source hotkey renames,
+capture choices, timing, ratio presets and source-specific status. The dock's ordered selection,
+copy destination, placement duration and position keys preserve existing collections. The Stream
+Deck's matching ratio list belongs to stage 4. Fit behavior and migration belong to stage 7.
+
+- Scene Transitions lists scene sources in *Settings for*. A saved per-source transition applies
+  in All sources even when its name is absent from the Chosen sources list. Link Visibility and
+  Show in Scenes continue to use their configured lists. The Scene Transitions test exercises
+  an unlisted source and its unaffected neighbour.
+- Scene Fit reports the same decisions its existing source selection makes. Apply Layout compares
+  saved source names with the active list. Scene Shadow and Scene Blur report the blocking filter or HDR.
+- Preserve integer IDs for ratio and visual transition choices. Auto Capture's default scene-item
+  hide keeps the item's own transition. A saved Scene Shadow with only one time uses that for both
+  ramp directions. A saved Morph wildcard keeps the literal value it had in English.
+- Targeted render checks cover capture hiding, Standby, dock bounds, tooltips, layouts,
+  Auto Frame and Scene Transitions. The Scene Transitions property rebuild was also exercised
+  under Valgrind. See the release pull request for the final results.
+
+## Outlines filled with an Ambient Background (0.1.0-beta226)
+
+The owner: "id also like there to be a border/shadow/outline option to follow the ambient
+background setting for pattern, but also background image or live, including mosaic and blur
+configurations".
+
+- **Outline design** 34, *Ambient Background*, in Shadow, Glow & Outline and Scene Shadow. New
+  settings `outline_ambient` (*Background*: "" Automatic, or a name), `outline_ambient_bright`
+  (*Fill brightness*, 130 %), `outline_ambient_sat` (*Fill saturation*, 120 %); the pattern
+  fills' Scale, Position X/Y and Rotation lay it out. Filters saved before are unchanged
+  (tested).
+- **The picture** is the background's own last finished frame (`src/ambient/ambient-frame.*`, a
+  registry by number, weak references, published at the end of `AmbientBackground::render`);
+  a background not drawn in two frames is drawn once into a scratch texrender. Laid out and
+  lifted by `data/effects/stagekit-outline-ambient.effect` (mirror addressing; all uniforms set
+  every run); without it the line is its outline colour and the log says so once.
+- **Mapping**: Scene Shadow canvas-aligned; Shadow, Glow & Outline the background's middle on the
+  source's middle at the canvas's scale (the filter does not know the item's place on screen).
+- **Lookup only in ticks.** The first build looked the background up while drawing and hung the
+  test program: `scene_on_screen()` without the frontend asks `obs_get_output_source`, whose lock
+  the main view holds while drawing. `look_tick` and `outline_ambient_warm` (each filter's tick)
+  do it now; drawing only reads the answer kept.
+- **Not done**: the drop shadow and glow in the background's colours (a shadow in the source's
+  own colours exists; this would be another texture through both shadow passes).
+- Verified on Ubuntu with OBS 30.0.2 and software OpenGL: `OUTLINE_AMBIENT`, `OUTLINE_BLEED`
+  (including the one-column and two-column controls), `OUTLINE_GLOW`, `OUTLINE_PATTERNS`,
+  `OUTLINE_DESIGNS` and `HEX_PATTERNS` all passed. The rendered preview is
+  [outline-ambient.png](docs/images/outline-ambient.png). The full suite was not run.
+- The OpenGL neon gate reproduced a texture binding failure with the first integrated build.
+  Ring and Follow had separate shader uniforms for the same texture. Both now use `ring_shape`,
+  leaving room for the caster sample that protects the canvas edge. The beta224 comparison
+  and the corrected build both passed the neon gate on the same runner image.
+- The new fill effect compiled in OBS 32.2.2 on Windows with Direct3D 11. All six beta221
+  patterns also produced distinct nonflat frames and animated on that renderer.
+
+## A one-column Scene Shadow outline (0.1.0-beta225)
+
+A Windows report showed a 6 px Nebula outline with Scene Shadow set to *Each source by itself*.
+The supplied DSLR transform has a 3665.33 × 2062.67 image in 2560 × 1440 Fit bounds, with zero crop
+and rotation. Fitting that ratio to the height leaves about 1.14 px of horizontal space in total.
+The previous edge test skipped uncovered pixel centres. It now checks a one-column gap and a
+positive two-column control, including Nebula and both Scene Shadow stacking modes.
+
+The shader looks at the caster one pixel inward only at the canvas perimeter. It preserves the
+scene underneath and only gates the outer ring there. Source sizing and fitted bounds use their
+existing paths.
+
+An isolated Windows OBS 32.2.2 Direct3D 11 render reproduced the report with a synthetic source,
+zero crop, 4/3 scale, 2560 × 1440 Fit bounds and the 6 px Nebula outline. On beta224 the last column
+contained the outline. With the updated shader it matched the black background, and widening the gap
+to two columns restored the outline. This test did not load the owner's scene collection.
+
+## An outline at the screen's edge (0.1.0-beta224)
+
+Branch `fix/outline-edge-bleed`, from `main` at beta220. Not pushed. The owner (Windows, OBS 32,
+2560x1440): "the border seems to bleed a pixel or two on the right and/or left sides of some
+sources", a capture card filling the screen with a line showing along the right edge.
+
+- **Cause, reproduced**: Shadow, Glow & Outline's last draw used OBS's default `Draw`, which
+  samples the filter's picture (source plus room, line in the room) bilinearly. Drawn larger
+  (480x270 fitted to 640x360 by Fit to Space or Scene Fit, as 1920x1080 on 2560x1440), the
+  screen's outermost pixel sampled 1/8 of the line's texel: (99, 240, 0) instead of green, on all
+  four edges, for every width 1 to 12, with or without shadow; with odd sizes (481x271, 853x480,
+  333x187) 128 to 245 of 255 and unequal between sides, as the owner saw. OBS's bounding box alone
+  never put the picture at the edge (the room is inside the box).
+- **Fix**: technique `Show` (`PSShow`) in `stagekit-shadow.effect`: inside the source's (or
+  panel's) box, the read is kept half a pixel inside the box; elsewhere as before. At scale 1 the
+  same pixels.
+- **Scene Shadow**: no fault. A line shows only in a pixel row or column whose middle the item
+  does not cover (0.6 px short); the item 0.4 px off, or 1.5 px past, shows none. Plain, square,
+  rounded, pattern, both *Shadow from*.
+- **Not covered**: an item OBS draws through its own texture (crop, scale filter, blending mode)
+  samples the same way, outside the filter's reach. Not seen on Windows / Direct3D.
+- Gates: `OUTLINE_BLEED` (new), `OUTLINE_GLOW`, `OUTLINE_DESIGNS`, `OUTLINE_PATTERNS`,
+  `PATTERN_TRANSFORM`, `SHADOW_EACH`, `SHADOW_FLICKER`, `BLUR_EDGES`. Not the full suite.
 
 ## Review stage 2: tidier windows (0.1.0-beta223)
 
@@ -101,7 +197,7 @@ The owner's "pattern batch 2", part 1, from reference looks (style only).
 - Tested in `STAGEKIT_TEST_ONLY_HEX_PATTERNS` (79 checks; its own run in `run-tests.sh`, sheet
   `docs/images/hex-patterns.png`). Also run: `AMBIENT_PATTERNS`, `OUTLINE_PATTERNS`,
   `OUTLINE_DESIGNS`, `PATTERN_TRANSFORM`, `TOOLTIPS` (the two outline tests now expect 34
-  designs). **Not the full suite.** Only OpenGL: the new file has not been compiled by Direct3D.
+  designs). **Not the full suite.** The original release was tested on OpenGL. A subsequent check on Windows OBS 32.2.2 rendered and animated all six on Direct3D 11.
 - Cost on llvmpipe at 1280x720 (drawn at half size), a frame: Mesh 20 ms, Hex mosaic 23, Halftone
   and Hex wire glow 25, Hex columns 34 (six cells looked at per pixel), Dot grid 34 to 40
   (fourteen dots looked at per pixel for the stars). Not measured on a graphics card.

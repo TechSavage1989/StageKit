@@ -76,11 +76,11 @@ struct RatioChoice {
 	const char *label;
 };
 constexpr RatioChoice kRatioChoices[] = {
-	{Shape::R4x3, "4:3", nullptr}, {Shape::R8x7, "8:7", "Shape.SquareSnes"},
+	{Shape::R4x3, "4:3", nullptr},          {Shape::R8x7, "8:7", "Shape.SquareSnes"},
 	{Shape::R64x49, "64:49", "Shape.Snes"}, {Shape::R3x2, "3:2", nullptr},
-	{Shape::R10x9, "10:9", nullptr}, {Shape::R16x15, "16:15", nullptr},
-	{Shape::R16x9, "16:9", nullptr}, {Shape::R16x10, "16:10", nullptr},
-	{Shape::R5x4, "5:4", nullptr}, {Shape::R1x1, "1:1", nullptr},
+	{Shape::R10x9, "10:9", nullptr},        {Shape::R16x15, "16:15", nullptr},
+	{Shape::R16x9, "16:9", nullptr},        {Shape::R16x10, "16:10", nullptr},
+	{Shape::R5x4, "5:4", nullptr},          {Shape::R1x1, "1:1", nullptr},
 };
 
 const char *ratio_label(const RatioChoice &choice)
@@ -2019,7 +2019,8 @@ private:
 	std::atomic<bool> ready_{false};
 	obs_hotkey_id hotkey_ = OBS_INVALID_HOTKEY_ID;
 	// Last: let go of first.
-	HotkeyRename renamed_{source_, [this] { return std::vector<obs_hotkey_id *>{&hotkey_}; }, [this] {
+	HotkeyRename renamed_{source_, [this] { return std::vector<obs_hotkey_id *>{&hotkey_}; },
+			      [this] {
 				      if (parent_)
 					      attach(parent_);
 			      }};

@@ -191,8 +191,8 @@ public:
 				if (end <= 4)
 					continue;
 				const std::string field = key.substr(end + 1);
-				if (field == "transition" || field == "hide_transition" ||
-				    field == "transition_ms" || field == "hide_ms")
+				if (field == "transition" || field == "hide_transition" || field == "transition_ms" ||
+				    field == "hide_ms")
 					own_names.insert(key.substr(4, end - 4));
 			}
 		}

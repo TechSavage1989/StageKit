@@ -362,12 +362,27 @@ its heading:
     the opposite corner), for Dashed and Marching it slides the dashes along, a whole turn being
     one dash and gap. Solid, Double, Dotted, Neon, Inner and Pulse have nothing to pose and show
     none of the three.
+  - *Outline design* *Ambient Background* fills the line with what an Ambient Background shows:
+    its pattern, image or live capture, with its blur, mosaic, bloom and transitions, moving as
+    it moves. So a border can match the background behind it. *Background* chooses which:
+    *Automatic* (as it comes) takes the one in the scene (for Scene Shadow its own scene; for
+    Shadow, Glow & Outline the scene on screen), or any there is; or pick one by name, which may
+    be in no scene at all. *Fill brightness* (130 % as it comes) and *Fill saturation* (120 %)
+    lift the line so it can be told from the background where the two meet; at 100 % each it is
+    exactly the background. *Pattern size*, *Position X*, *Position Y* and *Rotation* lay the
+    background out in the line as they do a pattern. In Scene Shadow the line shows the
+    background where it lies on the screen; in Shadow, Glow & Outline the background's middle is
+    on the source's middle, at the screen's size, and travels with the source. With no Ambient
+    Background the line is its outline colour. The drop shadow and glow keep their own colours.
 
 <p align="center"><img src="docs/images/outline-glow.png" width="900" alt="White sources with a 10 px black outline from Shadow, Glow &amp; Outline and from Scene Shadow, the same width, with a drop shadow, with rounded and bevelled outline corners, the drop shadow rounded with them, half-way through a Morph with the outlines solid, and a white glow round dark squares at 100% and 250% intensity"></p>
 
 <p align="center"><img src="docs/images/outline-designs.png" width="900" alt="The twelve outline designs, each from Shadow, Glow &amp; Outline and from Scene Shadow: solid, double line, dashed, dotted, gradient, neon, inner line, marching dashes, travelling gradient, pulse, shimmer and rainbow"></p>
 
 <p align="center"><img src="docs/images/outline-patterns.png" width="900" alt="A white source with a 12 px outline filled with each of the seventeen patterns, from Shadow, Glow &amp; Outline and from Scene Shadow, then a rounded line filled with Plasma and a line following two bars filled with a small circuit board"></p>
+
+<p align="center"><img src="docs/images/outline-ambient.png" width="900" alt="Source and scene outlines filled with an Ambient Background, at original and lifted brightness, with a mosaic background and a scene mid-transition"></p>
+
 - **Panel behind the source**: a coloured panel with a margin.
 
 *Rounded corners* rounds the image and the panel. For other corner styles, use Corners & Edges.
@@ -1093,7 +1108,7 @@ at the bottom, whichever tab is open.
   double-click to reset; this changes only the thumbnail, never your scene.
 - The thumbnail is always the standby image. Under it, the *Ambient Background* part says what
   the moving background shows: *Same as standby image*, or the image of its own that *Background
-  image…* gave it (*Use standby image as background* goes back). *Background settings…* opens the
+  image…* gave it (*Use standby image* goes back). Use *No standby image* to clear the shared image. Backgrounds set to *An image file* keep their own file when the shared image changes. *Background settings…* opens the
   Ambient Background in the scene being edited; with several in the collection and none in that
   scene, a list asks which.
 
@@ -1121,7 +1136,8 @@ What they do:
 | *Snap now* | Moves each item the last few pixels so an edge or its centre meets the screen's or a neighbour's. |
 | *Copy transform to all scenes* | Takes the selected item's position, size, rotation and crop in this scene and gives them to every copy of the same source in all your other scenes: OBS's *Copy Transform* and *Paste Transform* done for every scene at once. Copies inside groups land on the same spot of the screen; locked copies are left alone; one step in *Edit → Undo* |
 | *Copy transform to chosen scenes* | The same, but only to the scenes listed under *Chosen scenes*, at the top of the Copy tab. Choose a scene from *Add a scene...* to put it on the list; press the **x** beside one to take it off. The list is saved with your scene collection |
-| *Chosen sources* | The second list at the top of the Copy tab: which sources take the transform, for both copy buttons. Empty (it then reads *The same source*): the copies of the selected item's own source in the other scenes. With sources listed, the transform goes to those sources instead, in this scene and the others, or in the listed scenes with *Copy transform to chosen scenes*. Add the item's own source to the list to include it too. With several items selected, the last one selected is the one copied. Saved with your scene collection |
+| *Copy to* | *Same source* copies the transform to other instances of the selected source. *Chosen sources* copies it to the sources on the list. An existing nonempty list keeps its previous copy behavior. |
+| *Chosen sources* | Add or remove sources for the copy and lock tools. With several items selected, the transform comes from the last one selected. |
 
 *Also change locked copies* (off as it comes): ticked, both copy buttons change copies that are locked
 in their scenes too, and leave them locked. A copy that a Fit to Space filter looks after takes the
@@ -1661,10 +1677,8 @@ in a source's right-click menu), so they also hold when a source is shown or hid
 hotkeys, a Stream Deck *Source Visibility* key or obs-websocket.
 
 - **Sources covered**: *All sources* (as it comes), or *Chosen sources*.
-- **Sources with own settings** (with *All sources*): add a source here to give it a transition of its
-  own, then choose it under *Settings for* in *Show/Hide transition*. Every other source uses the scene's
-  transition. With *Chosen sources* the same list is called **Chosen sources**: only these sources get the
-  scene's transition (and each can still have its own under *Settings for*).
+- With **All sources**, choose a source directly under *Settings for* to give it a transition of its own. The other sources use the scene's transition.
+- With **Chosen sources**, add the sources the filter should cover. Each can have its own transition under *Settings for*.
 - **Ignored sources** (shown with *All sources*): sources this filter never sets, such as one another tool animates. A source a
   Show/Hide Animation animates, and one a Standby Image stands in for, are always left to those filters.
 - **Sources in groups**: also set the sources inside groups (off as it comes: a group is then one source
@@ -1871,6 +1885,8 @@ Shadow, Glow & Outline on each source.
 - **Background sources**: drawn underneath as they are; they cast nothing and the shadow falls on them.
   **Full-screen = background** (on as it comes) counts the sources at the bottom of the scene that cover nine
   tenths of it as background, so the scene's picture or colour needs no listing.
+- When a fitted source leaves just one pixel between its opaque image and the canvas edge, Scene Shadow
+  leaves that pixel clear of the outer outline. A gap of two pixels or more keeps its outline.
 - **Sources covered**: *All sources* (as it comes: every source that is not background casts, sources added
   later too) or *Chosen sources*: only the sources listed cast. With *The scene as drawn* the shadow is kept
   off every source that is not background.
@@ -1879,8 +1895,7 @@ Shadow, Glow & Outline on each source.
   gets two.
 - A source fading in or out with its show or hide transition takes its shadow with it. A Standby stand-in has
   the shadow of the source it stands in for.
-- **Switch duration** and **Easing**: switched on or off (the eye, a hotkey, a Stream Deck filter key), the
-  shadow fades in or out.
+- **Shadow-in duration** and **Shadow-out duration** set the two fade times. *Easing* controls the shape of the fades. An existing Scene Shadow starts with its saved duration in both fields.
 - **Morph keeps morphing.** A scene whose only filter that draws is a Scene Shadow is still morphed source by
   source, and the shadow goes with the change: part-way, it is part-way between the two scenes' shadows (to a
   scene without one, it fades out), and a source that casts in one scene and not in the other gains or loses

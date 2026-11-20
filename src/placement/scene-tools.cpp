@@ -115,7 +115,8 @@ public:
 		const double t = duration_ > 0.0 ? elapsed_ / duration_ : 1.0;
 		// Arrive decelerating, leave accelerating, unless a direction is chosen.
 		static constexpr EaseMode kChosen[] = {EaseMode::InOut, EaseMode::InOut, EaseMode::In, EaseMode::Out};
-		const EaseMode mode = direction_ == 0 ? (entering_ ? EaseMode::Out : EaseMode::In) : kChosen[direction_];
+		const EaseMode mode = direction_ == 0 ? (entering_ ? EaseMode::Out : EaseMode::In)
+						      : kChosen[direction_];
 		k_ = k_from_ + (k_to_ - k_from_) * ease(curve_, mode, t);
 		apply(k_);
 		if (elapsed_ < duration_)
@@ -802,9 +803,12 @@ void update_layout_status(obs_properties_t *props, obs_source_t *filter, obs_dat
 		scene_item_names(parent, current);
 		const auto chosen = pick_list_read(settings, "only_items", false);
 		if (!chosen.empty())
-			current.erase(std::remove_if(current.begin(), current.end(), [&](const std::string &name) {
-				return std::find(chosen.begin(), chosen.end(), name) == chosen.end();
-			}), current.end());
+			current.erase(std::remove_if(current.begin(), current.end(),
+						     [&](const std::string &name) {
+							     return std::find(chosen.begin(), chosen.end(), name) ==
+								    chosen.end();
+						     }),
+				      current.end());
 		std::sort(current.begin(), current.end());
 		std::sort(saved_names.begin(), saved_names.end());
 		if (current != saved_names)

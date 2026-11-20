@@ -6752,7 +6752,7 @@ static void auto_frame_switcher_test()
 	draw_for(900);
 	std::string said = status();
 	double x = trim_x();
-	CHECK(has(said, "Capturing emu_43.exe.") && has(said, "4:3, from your saved shapes") &&
+	CHECK(has(said, "Capturing emu_43.exe.") && has(said, "4:3, from your saved aspect ratios") &&
 		      std::fabs(x - 80.0) < 0.6,
 	      "the program with a saved 4:3 shape is captured: its shape trims its image (%.1f px a side; \"%s\")", x,
 	      said.c_str());
@@ -6790,7 +6790,7 @@ static void auto_frame_switcher_test()
 	draw_for(800);
 	said = status();
 	x = trim_x();
-	CHECK(has(said, "Capturing browser.exe.") && has(said, "3:2, from your saved shapes") &&
+	CHECK(has(said, "Capturing browser.exe.") && has(said, "3:2, from your saved aspect ratios") &&
 		      std::fabs(x - 62.5) < 0.6,
 	      "a saved shape for part of the shown window's title is used when its title changes (%.1f px; \"%s\")", x,
 	      said.c_str());
@@ -6802,7 +6802,7 @@ static void auto_frame_switcher_test()
 	draw_for(1200);
 	said = status();
 	x = trim_x();
-	CHECK(has(said, "Capturing emu_43.exe.") && has(said, "4:3, from your saved shapes") &&
+	CHECK(has(said, "Capturing emu_43.exe.") && has(said, "4:3, from your saved aspect ratios") &&
 		      std::fabs(x - 80.0) < 0.6,
 	      "back to the emulator, its saved 4:3 trims its image again (%.1f px; \"%s\")", x, said.c_str());
 
@@ -13775,6 +13775,19 @@ static void dock_bounds_test()
 	proc_handler_call(obs_get_proc_handler(), "stagekit_create_dock", &dock_cd);
 	auto *dock = static_cast<QWidget *>(calldata_ptr(&dock_cd, "widget"));
 	calldata_free(&dock_cd);
+	const char *untipped = nullptr;
+	for (const char *name : {"scene", "item", "linked", "margin", "duration", "makeKeys", "saveSpot", "snapWithin",
+				 "filterCopy", "lockItems", "unlockItems", "updateWhatsNew"}) {
+		auto *control = dock ? dock->findChild<QWidget *>(name) : nullptr;
+		if (!control || control->toolTip().isEmpty()) {
+			untipped = name;
+			break;
+		}
+		for (const QString &line : control->toolTip().split('\n'))
+			if (static_cast<size_t>(line.size()) > stagekit::kTipWidth)
+				untipped = name;
+	}
+	CHECK(!untipped, "the dock's target, position, copy and update controls have wrapped tooltips (%s)", untipped ? untipped : "all");
 	auto *place = dock ? dock->findChild<QWidget *>("pagePlace") : nullptr;
 	auto *bounds = place ? place->findChild<QComboBox *>("boundsType") : nullptr;
 	auto *fit = place ? place->findChild<QCheckBox *>("autoFit") : nullptr;
@@ -17141,7 +17154,7 @@ static void outline_designs_test(uint32_t w, uint32_t h, const std::string &out)
 		const size_t count = p ? obs_property_list_item_count(p) : 0;
 		obs_properties_destroy(props);
 		before[i] = shot(scenes[i]);
-		CHECK(unset && kind == 0 && count == 34,
+		CHECK(unset && kind == 0 && count == 35,
 		      "%s: a filter saved without a design reads Solid, of %zu designs (%lld)", who[i], count, kind);
 	}
 	both([](obs_data_t *s) { obs_data_set_int(s, "outline_design", 0); });
@@ -17888,6 +17901,1160 @@ static void pattern_transform_test(uint32_t w, uint32_t h, const char *base_imag
 	obs_source_release(plain);
 }
 
+// An outline must not show at a screen edge its source reaches (2026-11-20;
+// the owner, of a capture filling the screen: "the border seems to bleed a
+// pixel or two on the right and/or left sides of some sources"). A source
+// drawn at a scale that is no whole number (480x270 on the 640x360 canvas,
+// as 1920x1080 on 2560x1440; odd sizes too), fitted to the whole screen by
+// OBS's bounding box alone, by a Fit to Space and by a Scene Fit, with
+// Shadow, Glow & Outline on the source; and plain items, some a fraction of
+// a pixel off, under a Scene Shadow. The outermost two columns and rows of
+// each screen edge whose outermost pixels the picture covers hold nothing of
+// the line's colour. Run alone with STAGEKIT_TEST_ONLY_OUTLINE_BLEED.
+static void outline_bleed_test(uint32_t w, uint32_t h)
+{
+	printf("\n[outline bleed: no line at a screen edge the source reaches]\n");
+	const bool verbose = getenv("STAGEKIT_TEST_BLEED_VERBOSE") != nullptr;
+	auto block = [](const char *name, long long abgr, int bw, int bh) {
+		obs_data_t *d = obs_data_create();
+		obs_data_set_int(d, "color", abgr);
+		obs_data_set_int(d, "width", bw);
+		obs_data_set_int(d, "height", bh);
+		obs_source_t *src = obs_source_create("color_source", name, d, nullptr);
+		obs_data_release(d);
+		return src;
+	};
+	// Where the green picture lies in a frame: the outermost pixels with
+	// green in them (the line has next to none), as left, top, right (past
+	// the last), bottom.
+	struct Box {
+		int l = 0, t = 0, r = 0, b = 0;
+	};
+	auto green_box = [&](const std::vector<uint8_t> &f) {
+		Box box{(int)w, (int)h, 0, 0};
+		for (int y = 0; y < (int)h; y++)
+			for (int x = 0; x < (int)w; x++) {
+				const uint8_t *p = &f[(size_t(y) * w + x) * 4];
+				if (p[1] > 100) {
+					box.l = std::min(box.l, x);
+					box.t = std::min(box.t, y);
+					box.r = std::max(box.r, x + 1);
+					box.b = std::max(box.b, y + 1);
+				}
+			}
+		return box;
+	};
+	// The source is green on black and the line red or a pattern: red or
+	// blue in a pixel is the line's. The most of it in the outermost two
+	// columns or rows of each edge (left, top, right, bottom), along the
+	// stretch the picture covers. A side counts when the picture covers
+	// its outermost pixels (`reaches`): a column the item leaves uncovered
+	// (its box ends 0.6 px short of the pixel's middle) is not the picture,
+	// and the line may show there as anything under the item would.
+	struct Edges {
+		int most[4] = {0, 0, 0, 0};
+		int where[4] = {0, 0, 0, 0}; // along the side
+		bool reaches[4] = {false, false, false, false};
+	};
+	// (`span`: the pixels the picture covers, when known from its place.)
+	auto edges = [&](const std::vector<uint8_t> &f, const Box *span = nullptr) {
+		Edges e;
+		const Box box = span ? *span : green_box(f);
+		e.reaches[0] = box.l == 0;
+		e.reaches[1] = box.t == 0;
+		e.reaches[2] = box.r == (int)w;
+		e.reaches[3] = box.b == (int)h;
+		auto at = [&](int x, int y) {
+			const uint8_t *p = &f[(size_t(y) * w + x) * 4];
+			return std::max((int)p[0], (int)p[2]);
+		};
+		auto keep = [&](int s, int v, int along) {
+			if (v > e.most[s]) {
+				e.most[s] = v;
+				e.where[s] = along;
+			}
+		};
+		for (int y = box.t; y < box.b; y++)
+			for (int i = 0; i < 2; i++) {
+				keep(0, at(i, y), y);
+				keep(2, at((int)w - 1 - i, y), y);
+			}
+		for (int x = box.l; x < box.r; x++)
+			for (int i = 0; i < 2; i++) {
+				keep(1, at(x, i), x);
+				keep(3, at(x, (int)h - 1 - i), x);
+			}
+		return e;
+	};
+	const char *const side[4] = {"left", "top", "right", "bottom"};
+	const int kMost = 24; // of 255: under a tenth of the line's colour
+	obs_source_t *before = obs_get_output_source(0);
+	const long long red = 0xFF0000FF, green = 0xFF00FF00;
+
+	// ---- (a) Shadow, Glow & Outline on the source.
+	struct Size {
+		int w, h;
+	};
+	const Size sizes[] = {{480, 270}, {481, 271}, {853, 480}, {333, 187}};
+	static const char *const hosts[3] = {"OBS's bounding box", "Fit to Space", "Scene Fit"};
+	int a_cases = 0, a_bad = 0, a_controls = 0, a_missing = 0;
+	std::string a_worst;
+	int a_worst_level = 0;
+	// (STAGEKIT_TEST_BLEED_QUICK=<n>: the nth size alone, Fit to Space, no
+	// shadow; and one place under the Scene Shadow.)
+	const char *quick_env = getenv("STAGEKIT_TEST_BLEED_QUICK");
+	const bool quick = quick_env != nullptr;
+	const int quick_size = quick ? std::clamp(atoi(quick_env), 0, 3) : 0;
+	for (const Size &size : sizes)
+		for (int host = 0; host < 3; host++)
+			for (int shadow = 0; shadow < 2; shadow++) {
+				if (quick && (&size != &sizes[quick_size] || host != 1 || shadow != 0))
+					continue;
+				obs_source_t *bg = block("OB Back", 0xFF000000, (int)w, (int)h);
+				obs_source_t *src = block("OB Source", green, size.w, size.h);
+				obs_scene_t *scene = obs_scene_create("OB Scene");
+				obs_source_t *ss = obs_scene_get_source(scene);
+				obs_scene_add(scene, bg);
+				obs_sceneitem_t *item = obs_scene_add(scene, src);
+				vec2 v;
+				vec2_set(&v, (float)w, (float)h);
+				obs_sceneitem_set_bounds_type(item, OBS_BOUNDS_SCALE_INNER);
+				obs_sceneitem_set_bounds(item, &v);
+				obs_set_output_source(0, ss);
+				// (The scene is on the output: OBS ticks and draws it.)
+				auto settled = [&](int ms) {
+					sleep_ms(ms);
+					render(ss, w, h);
+					sleep_ms(40);
+					return render(ss, w, h);
+				};
+				settled(60);
+				obs_data_t *pd = obs_data_create();
+				obs_data_set_bool(pd, "shadow", shadow == 1);
+				obs_data_set_bool(pd, "outline", true);
+				obs_data_set_double(pd, "outline_width", 1.0);
+				obs_data_set_int(pd, "outline_color", red);
+				obs_source_t *look =
+					obs_source_create("stagekit_shadow_backdrop", "OB Look", pd, nullptr);
+				obs_data_release(pd);
+				obs_source_filter_add(src, look);
+				obs_source_t *fit = nullptr;
+				if (host > 0) {
+					obs_data_t *fd = obs_data_create();
+					const std::string pre = host == 2 ? "fit|OB Source|" : "";
+					if (host == 2) {
+						obs_data_array_t *arr = obs_data_array_create();
+						obs_data_t *e = obs_data_create();
+						obs_data_set_string(e, "value", "OB Source");
+						obs_data_array_push_back(arr, e);
+						obs_data_release(e);
+						obs_data_set_array(fd, "entries", arr);
+						obs_data_array_release(arr);
+					} else {
+						obs_data_set_string(fd, "item", "OB Source");
+					}
+					obs_data_set_int(fd, (pre + "box").c_str(), 0);
+					obs_data_set_double(fd, (pre + "margin").c_str(), 0.0);
+					obs_data_set_int(fd, (pre + "glide_ms").c_str(), 0);
+					fit = obs_source_create(host == 2 ? "stagekit_scene_fit" : "stagekit_fit_item",
+								"OB Fit", fd, nullptr);
+					obs_data_release(fd);
+					obs_source_filter_add(ss, fit);
+				}
+				for (int width : {1, 2, 3, 4, 5, 6, 8, 12}) {
+					obs_data_t *d = obs_data_create();
+					obs_data_set_double(d, "outline_width", (double)width);
+					obs_source_update(look, d);
+					obs_data_release(d);
+					const std::vector<uint8_t> f = settled(width == 1 ? 900 : 500);
+					// Where the picture is, from the item's draw
+					// transform and the room the filter took: the
+					// pixels whose middles it covers. (A picture of
+					// another shape than its space, kept towards a side
+					// in it, can leave a strip of a pixel's middle on
+					// one side, which the line rightly fills.)
+					Box span;
+					{
+						matrix4 m;
+						obs_sceneitem_get_draw_transform(item, &m);
+						obs_data_t *ls = obs_source_get_settings(look);
+						const float sw = (float)obs_source_get_width(src);
+						const float sh = (float)obs_source_get_height(src);
+						const float l = (float)obs_data_get_int(ls, "adjusted_left");
+						const float t = (float)obs_data_get_int(ls, "adjusted_top");
+						const float r = sw - (float)obs_data_get_int(ls, "adjusted_right");
+						const float b = sh - (float)obs_data_get_int(ls, "adjusted_bottom");
+						obs_data_release(ls);
+						vec3 p0, p1;
+						vec3_set(&p0, l, t, 0.0f);
+						vec3_set(&p1, r, b, 0.0f);
+						vec3_transform(&p0, &p0, &m);
+						vec3_transform(&p1, &p1, &m);
+						auto first = [](float at, int most) {
+							return std::clamp((int)std::ceil(at - 0.5f), 0, most);
+						};
+						span = Box{first(std::min(p0.x, p1.x), (int)w),
+							   first(std::min(p0.y, p1.y), (int)h),
+							   first(std::max(p0.x, p1.x), (int)w),
+							   first(std::max(p0.y, p1.y), (int)h)};
+					}
+					const Edges e = edges(f, &span);
+					const Box box = green_box(f);
+					const bool *reaches = e.reaches;
+					if (!reaches[0] && box.l >= 2) {
+						// Not filling the screen (OBS's bounding box
+						// keeps the picture with its room inside it):
+						// the line shows beside the picture.
+						int there = 0;
+						for (int x = std::max(box.l - 3, 0); x <= box.l; x++) {
+							const uint8_t *q = &f[(size_t(h / 2) * w + x) * 4];
+							there = std::max(there, std::max((int)q[0], (int)q[2]));
+						}
+						a_controls++;
+						if (there < 100) {
+							a_missing++;
+							printf("  NO LINE  %dx%d, %s, shadow %d, a line of %d: %d\n",
+							       size.w, size.h, hosts[host], shadow, width, there);
+						}
+					}
+					a_cases++;
+					bool bad = false;
+					for (int s = 0; s < 4; s++)
+						if (reaches[s] && e.most[s] > kMost) {
+							bad = true;
+							if (e.most[s] > a_worst_level) {
+								a_worst_level = e.most[s];
+								char text[256];
+								snprintf(
+									text, sizeof(text),
+									"%dx%d, %s, shadow %d, a line of %d: %d at the %s",
+									size.w, size.h, hosts[host], shadow, width,
+									e.most[s], side[s]);
+								a_worst = text;
+							}
+						}
+					if (bad)
+						a_bad++;
+					if (bad || verbose) {
+						vec2 p, b;
+						obs_sceneitem_get_pos(item, &p);
+						obs_sceneitem_get_bounds(item, &b);
+						obs_data_t *ls = obs_source_get_settings(look);
+						printf("  %s  %dx%d %-18s shadow %d line %2d: line's colour l %3d@%d t %3d@%d r %3d@%d b %3d@%d; green %d..%d x %d..%d; item at %.3f, %.3f bounds %.3f x %.3f; source %ux%u, room l %lld t %lld r %lld b %lld\n",
+						       bad ? "BLEED" : "     ", size.w, size.h, hosts[host], shadow,
+						       width, e.most[0], e.where[0], e.most[1], e.where[1], e.most[2],
+						       e.where[2], e.most[3], e.where[3], box.l, box.r, box.t, box.b,
+						       p.x, p.y, b.x, b.y, obs_source_get_width(src),
+						       obs_source_get_height(src),
+						       obs_data_get_int(ls, "adjusted_left"),
+						       obs_data_get_int(ls, "adjusted_top"),
+						       obs_data_get_int(ls, "adjusted_right"),
+						       obs_data_get_int(ls, "adjusted_bottom"));
+						obs_data_release(ls);
+						if (verbose) {
+							const int y = (int)h / 2;
+							printf("    middle row:");
+							for (int x : {0, 1, 2, (int)w - 3, (int)w - 2, (int)w - 1}) {
+								const uint8_t *q = &f[(size_t(y) * w + x) * 4];
+								printf(" [%d] %d,%d,%d,%d", x, q[0], q[1], q[2], q[3]);
+							}
+							printf("\n");
+						}
+					}
+				}
+				obs_set_output_source(0, nullptr);
+				if (fit) {
+					obs_source_filter_remove(ss, fit);
+					obs_source_release(fit);
+				}
+				obs_source_filter_remove(src, look);
+				obs_source_release(look);
+				obs_scene_release(scene);
+				obs_source_release(src);
+				obs_source_release(bg);
+				sleep_ms(60);
+			}
+	CHECK(quick || (a_controls > 0 && a_missing == 0),
+	      "Shadow, Glow & Outline: the line shows beside a picture that does not fill the screen (%d of %d without one)",
+	      a_missing, a_controls);
+	CHECK(a_bad == 0,
+	      "Shadow, Glow & Outline on a source fitted to the whole screen: no line at an edge the picture reaches (%d of %d cases showed one%s%s)",
+	      a_bad, a_cases, a_bad ? "; the worst: " : "", a_worst.c_str());
+
+	// ---- (b) Scene Shadow, the line round plain items.
+	struct Place {
+		const char *what;
+		float x, y, bw, bh;
+	};
+	const Place places[] = {
+		// (First, a control: well inside the screen, the line shows.)
+		{"well inside", 40.0f, 40.0f, (float)w - 80.0f, (float)h - 80.0f},
+		{"filling the screen", 0.0f, 0.0f, (float)w, (float)h},
+		{"0.4 px to the left", -0.4f, 0.0f, (float)w, (float)h},
+		{"0.4 px to the right", 0.4f, 0.0f, (float)w, (float)h},
+		{"0.6 px short in width", 0.0f, 0.0f, (float)w - 0.6f, (float)h},
+		{"0.6 px short in width, centred", 0.3f, 0.0f, (float)w - 0.6f, (float)h},
+		{"0.4 px up", 0.0f, -0.4f, (float)w, (float)h},
+		{"1.14 px short at the right", 0.0f, 0.0f, (float)w - 1.14f, (float)h},
+		{"two empty columns at the right", 0.0f, 0.0f, (float)w - 2.0f, (float)h},
+		{"0.6 px short in height", 0.0f, 0.0f, (float)w, (float)h - 0.6f},
+		{"0.45 px short all round", 0.45f, 0.45f, (float)w - 0.9f, (float)h - 0.9f},
+		{"1.5 px past every edge", -1.5f, -1.5f, (float)w + 3.0f, (float)h + 3.0f},
+	};
+	struct Line {
+		const char *what;
+		int corners, design;
+	};
+	const Line lines[] = {{"round the source", 0, 0},
+			      {"square", 5, 0},
+			      {"rounded", 1, 0},
+			      {"a pattern, square", 5, 12},
+			      {"a pattern, following", 0, 12},
+			      {"Nebula, rounded", 1, 16}};
+	int b_cases = 0, b_bad = 0, b_worst_level = 0, b_controls = 0, b_missing = 0;
+	std::string b_worst;
+	for (const Size &size : {Size{480, 270}})
+		for (const Place &place : places)
+			for (int from = 0; from < 2; from++) {
+				const bool one_column = place.bw == (float)w - 1.14f;
+				const bool two_columns = place.bw == (float)w - 2.0f;
+				if (quick && &place != &places[0] && &place != &places[4] && !one_column &&
+				    !two_columns)
+					continue;
+				obs_source_t *bg = block("OB Back", 0xFF000000, (int)w, (int)h);
+				obs_source_t *src = block("OB Source", green, size.w, size.h);
+				obs_scene_t *scene = obs_scene_create("OB Scene");
+				obs_source_t *ss = obs_scene_get_source(scene);
+				obs_scene_add(scene, bg);
+				obs_sceneitem_t *item = obs_scene_add(scene, src);
+				vec2 v;
+				vec2_set(&v, place.bw, place.bh);
+				obs_sceneitem_set_bounds_type(item, OBS_BOUNDS_STRETCH);
+				obs_sceneitem_set_bounds(item, &v);
+				vec2_set(&v, place.x, place.y);
+				obs_sceneitem_set_pos(item, &v);
+				obs_set_output_source(0, ss);
+				obs_data_t *zd = obs_data_create();
+				obs_data_set_int(zd, "ramp_ms", 0);
+				obs_data_set_bool(zd, "shadow", false);
+				obs_data_set_bool(zd, "outline", true);
+				obs_data_set_int(zd, "outline_color", red);
+				obs_data_set_double(zd, "outline_speed", 0.0);
+				// (The source would be background by its size.)
+				obs_data_set_bool(zd, "auto_background", false);
+				{
+					obs_data_array_t *arr = obs_data_array_create();
+					obs_data_t *e = obs_data_create();
+					obs_data_set_string(e, "value", "OB Back");
+					obs_data_array_push_back(arr, e);
+					obs_data_release(e);
+					obs_data_set_array(zd, "background", arr);
+					obs_data_array_release(arr);
+				}
+				obs_data_set_int(zd, "shadow_from", from);
+				obs_source_t *look = obs_source_create("stagekit_scene_shadow", "OB Look", zd, nullptr);
+				obs_data_release(zd);
+				obs_source_filter_add(ss, look);
+				for (const Line &line : lines)
+					for (int width : {1, 3, 6, 12}) {
+						if ((one_column || two_columns || line.design == 16) && width != 6)
+							continue;
+						obs_data_t *d = obs_data_create();
+						obs_data_set_double(d, "outline_width", (double)width);
+						obs_data_set_int(d, "outline_corners", line.corners);
+						obs_data_set_int(d, "outline_design", line.design);
+						obs_source_update(look, d);
+						obs_data_release(d);
+						sleep_ms(200);
+						render(ss, w, h);
+						sleep_ms(40);
+						const std::vector<uint8_t> f = render(ss, w, h);
+						if (&place == &places[0]) {
+							// The line just outside the item's left edge.
+							int there = 0;
+							for (int y = 50; y < (int)h - 50; y++)
+								for (int x = 37; x < 40; x++) {
+									const uint8_t *q = &f[(size_t(y) * w + x) * 4];
+									there = std::max(there, std::max((int)q[0],
+													 (int)q[2]));
+								}
+							b_controls++;
+							if (there < 100) {
+								b_missing++;
+								printf("  NO LINE  %s, shadow from %d, a line of %d: %d\n",
+								       line.what, from, width, there);
+							}
+							continue;
+						}
+						auto first = [](float at, int most) {
+							return std::clamp((int)std::ceil(at - 0.5f), 0, most);
+						};
+						const Box span{first(place.x, (int)w), first(place.y, (int)h),
+							       first(place.x + place.bw, (int)w),
+							       first(place.y + place.bh, (int)h)};
+						const Edges e = edges(f, &span);
+						if (two_columns) {
+							// A real two-column gap must still show the outer line.
+							int ink = 0;
+							for (uint32_t y = h / 4; y < 3 * h / 4; y++) {
+								const size_t right = ((size_t)y * w + w - 1) * 4;
+								ink = std::max(ink,
+									       (int)std::max(f[right], f[right + 2]));
+							}
+							b_controls++;
+							if (ink < 24)
+								b_missing++;
+							continue;
+						}
+						b_cases++;
+						bool bad = false;
+						const bool covers[4] = {span.l <= 1, span.t <= 1, span.r >= (int)w - 1,
+									span.b >= (int)h - 1};
+						for (int s = 0; s < 4; s++)
+							if (covers[s] && e.most[s] > kMost) {
+								bad = true;
+								if (e.most[s] > b_worst_level) {
+									b_worst_level = e.most[s];
+									char text[256];
+									snprintf(
+										text, sizeof(text),
+										"%dx%d %s, %s, shadow from %d, a line of %d: %d at the %s",
+										size.w, size.h, place.what, line.what,
+										from, width, e.most[s], side[s]);
+									b_worst = text;
+								}
+							}
+						if (bad)
+							b_bad++;
+						if (bad || verbose)
+							printf("  %s  %dx%d %-30s %-22s from %d line %2d: line's colour l %3d t %3d r %3d b %3d\n",
+							       bad ? "BLEED" : "     ", size.w, size.h, place.what,
+							       line.what, from, width, e.most[0], e.most[1], e.most[2],
+							       e.most[3]);
+						if (verbose) {
+							const int y = (int)h / 2;
+							printf("    middle row:");
+							for (int x : {0, 1, (int)w - 3, (int)w - 2, (int)w - 1}) {
+								const uint8_t *q = &f[(size_t(y) * w + x) * 4];
+								printf(" [%d] %d,%d,%d,%d", x, q[0], q[1], q[2], q[3]);
+							}
+							printf("\n");
+						}
+					}
+				obs_set_output_source(0, nullptr);
+				obs_source_filter_remove(ss, look);
+				obs_source_release(look);
+				obs_scene_release(scene);
+				obs_source_release(src);
+				obs_source_release(bg);
+				sleep_ms(60);
+			}
+	CHECK(b_controls > 0 && b_missing == 0,
+	      "Scene Shadow: an inset source and a two-pixel gap keep their outline (%d of %d missing)", b_missing,
+	      b_controls);
+	CHECK(b_bad == 0,
+	      "Scene Shadow, sources a fraction of a pixel on or off the screen: no line in a single exposed canvas row or column (%d of %d cases showed one%s%s)",
+	      b_bad, b_cases, b_bad ? "; the worst: " : "", b_worst.c_str());
+	obs_set_output_source(0, before);
+	if (before)
+		obs_source_release(before);
+}
+
+// The outline's Ambient Background fill: the line shows an Ambient
+// Background's finished picture, in both filters. Run alone with
+// STAGEKIT_TEST_ONLY_OUTLINE_AMBIENT.
+static int g_oa_unavailable = 0;
+static void outline_ambient_test(uint32_t w, uint32_t h, const std::string &out)
+{
+	printf("\n[outline: filled with an Ambient Background, in Shadow, Glow & Outline and Scene Shadow]\n");
+	const std::string dir = out + "/../outline-ambient";
+	std::error_code made;
+	std::filesystem::create_directories(dir, made);
+	static log_handler_t prev_log = nullptr;
+	static void *prev_param = nullptr;
+	base_get_log_handler(&prev_log, &prev_param);
+	g_oa_unavailable = 0;
+	base_set_log_handler(
+		[](int level, const char *format, va_list args, void *) {
+			char text[2048];
+			va_list copy;
+			va_copy(copy, args);
+			vsnprintf(text, sizeof(text), format, copy);
+			va_end(copy);
+			if (strstr(text, "Ambient Background fill is not available"))
+				g_oa_unavailable++;
+			if (prev_log)
+				prev_log(level, format, args, prev_param);
+		},
+		nullptr);
+	auto block = [](const char *name, long long abgr, int bw, int bh) {
+		obs_data_t *d = obs_data_create();
+		obs_data_set_int(d, "color", abgr);
+		obs_data_set_int(d, "width", bw);
+		obs_data_set_int(d, "height", bh);
+		obs_source_t *src = obs_source_create("color_source", name, d, nullptr);
+		obs_data_release(d);
+		return src;
+	};
+	auto put = [](obs_scene_t *scene, obs_source_t *src, float x, float y) {
+		obs_sceneitem_t *item = obs_scene_add(scene, src);
+		vec2 p;
+		vec2_set(&p, x, y);
+		obs_sceneitem_set_pos(item, &p);
+		return item;
+	};
+	auto px = [&](const std::vector<uint8_t> &f, int x, int y, int c) {
+		return (int)f[(size_t(y) * w + x) * 4 + c];
+	};
+	auto shot = [&](obs_source_t *src, int wait = 300) {
+		sleep_ms(wait);
+		render(src, w, h);
+		return render(src, w, h);
+	};
+	auto set = [](obs_source_t *f, const std::function<void(obs_data_t *)> &change) {
+		obs_data_t *s = obs_source_get_settings(f);
+		change(s);
+		obs_source_update(f, s);
+		obs_data_release(s);
+	};
+	auto counts = [](const char *proc, const char *what, const char *file = "") {
+		calldata_t cd = {};
+		calldata_set_string(&cd, "file", file);
+		proc_handler_call(obs_get_proc_handler(), proc, &cd);
+		const long long n = calldata_int(&cd, what);
+		calldata_free(&cd);
+		return n;
+	};
+	const long long known_before = counts("stagekit_test_ambient_frames", "known");
+	// A source's box (200 by 120 at bx, by) and its 12 px line: the pixels
+	// of the line's band, well clear of its smoothed edges.
+	const int bw = 200, bh = 120, lw = 12;
+	struct Where {
+		int x, y;
+	};
+	auto band = [&](int bx, int by) {
+		std::vector<Where> at;
+		for (int y = by - lw + 3; y < by + bh + lw - 3; y++)
+			for (int x = bx - lw + 3; x < bx + bw + lw - 3; x++)
+				if (!(x >= bx - 3 && x < bx + bw + 3 && y >= by - 3 && y < by + bh + 3))
+					at.push_back({x, y});
+		return at;
+	};
+	// A coordinate mirrored at the picture's edges, as the fill is.
+	auto mirrored = [](double v, int size) {
+		double t = std::fmod(v, 2.0 * size);
+		if (t < 0)
+			t += 2.0 * size;
+		if (t >= size)
+			t = 2.0 * size - t;
+		return std::clamp((int)std::floor(t), 0, size - 1);
+	};
+	// How far the band is, on average, from `ref` read where `map` says.
+	auto apart = [&](const std::vector<uint8_t> &f, const std::vector<Where> &at, const std::vector<uint8_t> &ref,
+			 const std::function<void(double, double, double &, double &)> &map) {
+		double sum = 0.0;
+		for (const Where &p : at) {
+			double rx, ry;
+			map(p.x + 0.5, p.y + 0.5, rx, ry);
+			const int x = mirrored(rx, (int)w), y = mirrored(ry, (int)h);
+			for (int c = 0; c < 3; c++)
+				sum += std::abs(px(f, p.x, p.y, c) - px(ref, x, y, c));
+		}
+		return sum / (3.0 * (double)at.size());
+	};
+	auto same_place = [](double x, double y, double &rx, double &ry) {
+		rx = x;
+		ry = y;
+	};
+	auto spread = [&](const std::vector<uint8_t> &f, const std::vector<Where> &at) {
+		double sum[3] = {0, 0, 0}, sq[3] = {0, 0, 0};
+		for (const Where &p : at)
+			for (int c = 0; c < 3; c++) {
+				const double v = px(f, p.x, p.y, c);
+				sum[c] += v;
+				sq[c] += v * v;
+			}
+		const double n = (double)at.size();
+		double total = 0.0;
+		for (int c = 0; c < 3; c++)
+			total += std::sqrt(std::max(0.0, sq[c] / n - (sum[c] / n) * (sum[c] / n)));
+		return total;
+	};
+	struct Rgb {
+		double r = 0, g = 0, b = 0;
+	};
+	auto mean = [&](const std::vector<uint8_t> &f, const std::vector<Where> &at) {
+		Rgb m;
+		for (const Where &p : at) {
+			m.r += px(f, p.x, p.y, 0);
+			m.g += px(f, p.x, p.y, 1);
+			m.b += px(f, p.x, p.y, 2);
+		}
+		const double n = (double)at.size();
+		m.r /= n;
+		m.g /= n;
+		m.b /= n;
+		return m;
+	};
+	auto differ = [&](const std::vector<uint8_t> &a, const std::vector<uint8_t> &b, const std::vector<Where> &at) {
+		double sum = 0.0;
+		for (const Where &p : at)
+			for (int c = 0; c < 3; c++)
+				sum += std::abs(px(a, p.x, p.y, c) - px(b, p.x, p.y, c));
+		return sum / (3.0 * (double)at.size());
+	};
+
+	// Two backgrounds: a still plasma in blues, and one in reds that is in
+	// no scene to begin with.
+	auto background = [](const char *name, long long c1, long long c2, long long c3) {
+		obs_data_t *d = obs_data_create();
+		obs_data_set_int(d, "base_type", 3);
+		obs_data_set_int(d, "pattern", 1);
+		obs_data_set_double(d, "blur", 0.0);
+		obs_data_set_double(d, "test_pattern_time", 10.0);
+		obs_data_set_int(d, "pattern_colour1", c1);
+		obs_data_set_int(d, "pattern_colour2", c2);
+		obs_data_set_int(d, "pattern_colour3", c3);
+		obs_source_t *src = obs_source_create("stagekit_ambient_background", name, d, nullptr);
+		obs_data_release(d);
+		return src;
+	};
+	obs_source_t *bg = background("OA Background", 0xFF602010, 0xFFE0C020, 0xFF40E060);
+	obs_source_t *other = background("OA Other", 0xFF000060, 0xFF0000FF, 0xFF2020C0);
+	const int ax = 60, ay = 40;   // the source with its own filter, off the middle
+	const int sx = 220, sy = 120; // the one under Scene Shadow
+	obs_source_t *own = block("OA Own", 0xFFFFFFFF, bw, bh);
+	obs_source_t *plain = block("OA Plain", 0xFFFFFFFF, bw, bh);
+	obs_scene_t *a = obs_scene_create("OA Own Line");
+	obs_scene_t *b = obs_scene_create("OA Scene Line");
+	obs_sceneitem_t *bg_in_a = put(a, bg, 0, 0);
+	put(a, own, (float)ax, (float)ay);
+	obs_sceneitem_t *bg_in_b = put(b, bg, 0, 0);
+	put(b, plain, (float)sx, (float)sy);
+	const long long red = 0xFF0000FF;
+	auto line = [&](obs_data_t *s) {
+		obs_data_set_bool(s, "shadow", false);
+		obs_data_set_bool(s, "outline", true);
+		obs_data_set_double(s, "outline_width", (double)lw);
+		obs_data_set_int(s, "outline_color", red);
+		obs_data_set_int(s, "outline_corners", 5); // square, round the box
+	};
+	obs_source_t *f_own, *f_scene;
+	{
+		obs_data_t *pd = obs_data_create();
+		obs_data_set_int(pd, "adjusted_left", 0);
+		obs_data_set_bool(pd, "screen_px", false);
+		line(pd);
+		f_own = obs_source_create("stagekit_shadow_backdrop", "OA Own", pd, nullptr);
+		obs_data_release(pd);
+		obs_source_filter_add(own, f_own);
+		obs_data_t *zd = obs_data_create();
+		obs_data_set_int(zd, "ramp_ms", 0);
+		line(zd);
+		f_scene = obs_source_create("stagekit_scene_shadow", "OA Scene", zd, nullptr);
+		obs_data_release(zd);
+		obs_source_filter_add(obs_scene_get_source(b), f_scene);
+	}
+	obs_source_t *const filters[2] = {f_own, f_scene};
+	obs_source_t *const scenes[2] = {obs_scene_get_source(a), obs_scene_get_source(b)};
+	const std::vector<Where> bands[2] = {band(ax, ay), band(sx, sy)};
+	const char *const who[2] = {"Shadow, Glow & Outline", "Scene Shadow"};
+	auto both = [&](const std::function<void(obs_data_t *)> &change) {
+		for (obs_source_t *f : filters)
+			set(f, change);
+	};
+	// Where the per-source filter's line reads the background: the
+	// background's middle on the source's middle, at the canvas's size.
+	auto own_place = [&](double x, double y, double &rx, double &ry) {
+		rx = x - (ax + bw / 2.0) + w / 2.0;
+		ry = y - (ay + bh / 2.0) + h / 2.0;
+	};
+	const std::function<void(double, double, double &, double &)> places[2] = {own_place, same_place};
+	sleep_ms(300);
+
+	// The plain line and the other designs, whatever the new settings say.
+	std::vector<uint8_t> solid[2];
+	for (int i = 0; i < 2; i++)
+		solid[i] = shot(scenes[i]);
+	both([](obs_data_t *s) {
+		obs_data_set_string(s, "outline_ambient", "OA Other");
+		obs_data_set_double(s, "outline_ambient_bright", 250.0);
+		obs_data_set_double(s, "outline_ambient_sat", 0.0);
+	});
+	for (int i = 0; i < 2; i++) {
+		const std::vector<uint8_t> f = shot(scenes[i]);
+		const Rgb m = mean(f, bands[i]);
+		CHECK(f == solid[i] && m.r > 250 && m.g < 5 && m.b < 5,
+		      "%s: a line of another design is the same whatever the fill's settings say (a filter saved without them is as it was; the line %.0f, %.0f, %.0f)",
+		      who[i], m.r, m.g, m.b);
+	}
+	both([](obs_data_t *s) {
+		obs_data_unset_user_value(s, "outline_ambient");
+		obs_data_unset_user_value(s, "outline_ambient_bright");
+		obs_data_unset_user_value(s, "outline_ambient_sat");
+	});
+
+	// The window.
+	for (int i = 0; i < 2; i++) {
+		obs_properties_t *props = obs_source_properties(filters[i]);
+		obs_property_t *list = obs_properties_get(props, "outline_design");
+		const size_t n = list ? obs_property_list_item_count(list) : 0;
+		const bool named = n == 35 &&
+				   strcmp(obs_property_list_item_name(list, 34), "Ambient Background") == 0 &&
+				   obs_property_list_item_int(list, 34) == 34;
+		obs_property_t *which = obs_properties_get(props, "outline_ambient");
+		bool listed = which && obs_property_list_item_count(which) >= 3 &&
+			      strcmp(obs_property_list_item_name(which, 0), "Automatic") == 0 &&
+			      strcmp(obs_property_list_item_string(which, 0), "") == 0;
+		bool has_bg = false, has_other = false;
+		for (size_t k = 1; which && k < obs_property_list_item_count(which); k++) {
+			has_bg = has_bg || strcmp(obs_property_list_item_string(which, k), "OA Background") == 0;
+			has_other = has_other || strcmp(obs_property_list_item_string(which, k), "OA Other") == 0;
+		}
+		auto visible = [&](int design) {
+			obs_data_t *s = obs_source_get_settings(filters[i]);
+			obs_data_set_int(s, "outline_design", design);
+			obs_properties_apply_settings(props, s);
+			obs_data_release(s);
+			std::string shown;
+			for (const char *name :
+			     {"outline_ambient", "outline_ambient_bright", "outline_ambient_sat",
+			      "outline_pattern_scale", "outline_pos_x", "outline_pos_y", "outline_rotation",
+			      "outline_color2", "outline_color3", "outline_speed"}) {
+				obs_property_t *p = obs_properties_get(props, name);
+				shown += p && obs_property_visible(p) ? '1' : '0';
+			}
+			return shown;
+		};
+		const std::string fill = visible(34), pattern = visible(12), plain_line = visible(0);
+		set(filters[i], [](obs_data_t *s) { obs_data_set_int(s, "outline_design", 0); });
+		obs_properties_destroy(props);
+		CHECK(named && listed && has_bg && has_other && fill == "1111111000" && pattern == "0001111111" &&
+			      plain_line == "0000000000",
+		      "%s: Outline design ends with Ambient Background (34 of %zu); Background lists Automatic and both backgrounds; its controls show for it only (fill %s, a pattern %s, solid %s)",
+		      who[i], n, fill.c_str(), pattern.c_str(), plain_line.c_str());
+	}
+
+	// The fill, as the background is (Brightness and Saturation at 100 %).
+	both([](obs_data_t *s) {
+		obs_data_set_int(s, "outline_design", 34);
+		obs_data_set_double(s, "outline_ambient_bright", 100.0);
+		obs_data_set_double(s, "outline_ambient_sat", 100.0);
+	});
+	std::vector<uint8_t> ref = shot(bg);
+	std::vector<uint8_t> as_is[2];
+	const long long extra_before = counts("stagekit_test_ambient_frames", "draws");
+	for (int i = 0; i < 2; i++) {
+		as_is[i] = shot(scenes[i]);
+		write_frame(dir + (i ? "/scene-as-is.rgba" : "/own-as-is.rgba"), as_is[i], w, h);
+		const double off = apart(as_is[i], bands[i], ref, places[i]);
+		const double flat = spread(as_is[i], bands[i]);
+		const Rgb m = mean(as_is[i], bands[i]);
+		CHECK(off < 4.0 && flat > 12.0 && !(m.r > 200 && m.g < 60 && m.b < 60),
+		      "%s: the line shows the background's picture %s (%.2f levels off it on average; it varies by %.1f; not the outline colour: %.0f, %.0f, %.0f)",
+		      who[i],
+		      i ? "where the canvas shows it" : "at the canvas's size, its middle on the source's middle", off,
+		      flat, m.r, m.g, m.b);
+	}
+	const long long extra_shown = counts("stagekit_test_ambient_frames", "draws") - extra_before;
+	CHECK(extra_shown == 0,
+	      "a background its scene has just drawn is not drawn a second time (%lld extra drawings)", extra_shown);
+
+	// Brightness and Saturation: as they come the line is lifted.
+	both([](obs_data_t *s) {
+		obs_data_unset_user_value(s, "outline_ambient_bright");
+		obs_data_unset_user_value(s, "outline_ambient_sat");
+	});
+	for (int i = 0; i < 2; i++) {
+		const std::vector<uint8_t> lifted = shot(scenes[i]);
+		write_frame(dir + (i ? "/scene-lifted.rgba" : "/own-lifted.rgba"), lifted, w, h);
+		set(filters[i], [](obs_data_t *s) {
+			obs_data_set_double(s, "outline_ambient_bright", 100.0);
+			obs_data_set_double(s, "outline_ambient_sat", 0.0);
+		});
+		const std::vector<uint8_t> grey = shot(scenes[i]);
+		set(filters[i], [](obs_data_t *s) {
+			obs_data_set_double(s, "outline_ambient_bright", 0.0);
+			obs_data_set_double(s, "outline_ambient_sat", 100.0);
+		});
+		const std::vector<uint8_t> dark = shot(scenes[i]);
+		set(filters[i], [](obs_data_t *s) {
+			obs_data_set_double(s, "outline_ambient_bright", 100.0);
+			obs_data_set_double(s, "outline_ambient_sat", 100.0);
+		});
+		const Rgb was = mean(as_is[i], bands[i]), now = mean(lifted, bands[i]), d = mean(dark, bands[i]);
+		double tint = 0.0;
+		for (const Where &p : bands[i])
+			tint = std::max(tint,
+					(double)std::max({std::abs(px(grey, p.x, p.y, 0) - px(grey, p.x, p.y, 1)),
+							  std::abs(px(grey, p.x, p.y, 1) - px(grey, p.x, p.y, 2))}));
+		const double sum_was = was.r + was.g + was.b, sum_now = now.r + now.g + now.b;
+		CHECK(sum_now > sum_was * 1.15 && differ(lifted, as_is[i], bands[i]) > 8.0 && tint <= 3.0 &&
+			      spread(grey, bands[i]) > 4.0 && d.r + d.g + d.b < 3.0,
+		      "%s: as it comes the line is brighter than the background (%.0f against %.0f); Fill saturation 0 %% is grey (at most %.0f between channels); Fill brightness 0 %% is black (%.1f)",
+		      who[i], sum_now / 3.0, sum_was / 3.0, tint, (d.r + d.g + d.b) / 3.0);
+	}
+
+	// Pattern size, Position and Rotation lay the background out in the
+	// line, mirrored at its edges.
+	struct Layout {
+		const char *name;
+		double scale, x, y, degrees;
+	};
+	const Layout layouts[] = {{"Pattern size 200 %", 200, 0, 0, 0},
+				  {"Position X 25 %", 100, 25, 0, 0},
+				  {"Position Y -50 %", 100, 0, -50, 0},
+				  {"Rotation 90", 100, 0, 0, 90},
+				  {"Pattern size 50 %, Position X 60 %, Rotation 30", 50, 60, 0, 30}};
+	for (const Layout &l : layouts) {
+		both([&](obs_data_t *s) {
+			obs_data_set_double(s, "outline_pattern_scale", l.scale);
+			obs_data_set_double(s, "outline_pos_x", l.x);
+			obs_data_set_double(s, "outline_pos_y", l.y);
+			obs_data_set_double(s, "outline_rotation", l.degrees);
+		});
+		const double r = l.degrees * 3.14159265358979323846 / 180.0, c = std::cos(r), sn = std::sin(r);
+		for (int i = 0; i < 2; i++) {
+			const std::vector<uint8_t> f = shot(scenes[i]);
+			// The middle of the line's picture, and its size, in canvas pixels.
+			const double mx = i ? w / 2.0 : ax + bw / 2.0, my = i ? h / 2.0 : ay + bh / 2.0;
+			const double pw = i ? (double)w : bw + 2.0 * lw, ph = i ? (double)h : bh + 2.0 * lw;
+			auto map = [&](double x, double y, double &rx, double &ry) {
+				const double dx = x - mx - l.x / 100.0 * pw, dy = y - my - l.y / 100.0 * ph;
+				rx = w / 2.0 + (c * dx + sn * dy) / (l.scale / 100.0);
+				ry = h / 2.0 + (-sn * dx + c * dy) / (l.scale / 100.0);
+			};
+			const double off = apart(f, bands[i], ref, map), moved = differ(f, as_is[i], bands[i]);
+			const Rgb m = mean(f, bands[i]);
+			CHECK(off < 7.0 && moved > 6.0 && m.r + m.g + m.b > 30.0,
+			      "%s, %s: the background is laid out so in the line (%.2f levels off; %.1f from the line as it was; never black: %.0f)",
+			      who[i], l.name, off, moved, (m.r + m.g + m.b) / 3.0);
+		}
+	}
+	both([](obs_data_t *s) {
+		obs_data_set_double(s, "outline_pattern_scale", 100.0);
+		obs_data_set_double(s, "outline_pos_x", 0.0);
+		obs_data_set_double(s, "outline_pos_y", 0.0);
+		obs_data_set_double(s, "outline_rotation", 0.0);
+	});
+
+	// The background's own settings change the line with it.
+	struct Change {
+		const char *name;
+		std::function<void(obs_data_t *)> make;
+		double most_off;
+	};
+	const Change changes[] = {
+		// (Circuit board: fine shapes, which a mosaic and a blur change a
+		// great deal.)
+		{"another pattern", [](obs_data_t *s) { obs_data_set_int(s, "pattern", 10); }, 4.0},
+		{"a hexagon mosaic",
+		 [](obs_data_t *s) {
+			 obs_data_set_int(s, "pixel_style", 2);
+			 obs_data_set_double(s, "pixel_size", 24.0);
+		 },
+		 8.0},
+		{"a blur",
+		 [](obs_data_t *s) {
+			 obs_data_set_int(s, "pixel_style", 0);
+			 obs_data_set_double(s, "blur", 40.0);
+		 },
+		 4.0},
+	};
+	std::vector<uint8_t> last[2] = {as_is[0], as_is[1]};
+	for (const Change &ch : changes) {
+		set(bg, ch.make);
+		ref = shot(bg);
+		for (int i = 0; i < 2; i++) {
+			const std::vector<uint8_t> f = shot(scenes[i]);
+			if (strcmp(ch.name, "a hexagon mosaic") == 0)
+				write_frame(dir + (i ? "/scene-mosaic.rgba" : "/own-mosaic.rgba"), f, w, h);
+			const double off = apart(f, bands[i], ref, places[i]), changed = differ(f, last[i], bands[i]);
+			CHECK(off < ch.most_off && changed > 3.0,
+			      "%s: the background given %s, the line has it too (%.2f levels off the background; %.1f from the line before)",
+			      who[i], ch.name, off, changed);
+			last[i] = f;
+		}
+	}
+	set(bg, [](obs_data_t *s) {
+		obs_data_set_double(s, "blur", 0.0);
+		obs_data_set_int(s, "pattern", 1);
+	});
+
+	// A background that moves: so does the line.
+	set(bg, [](obs_data_t *s) {
+		obs_data_unset_user_value(s, "test_pattern_time");
+		obs_data_set_double(s, "pattern_speed", 400.0);
+	});
+	for (int i = 0; i < 2; i++) {
+		const std::vector<uint8_t> one = shot(scenes[i]);
+		const std::vector<uint8_t> two = shot(scenes[i], 900);
+		const double moved = differ(one, two, bands[i]);
+		CHECK(moved > 1.5 && spread(two, bands[i]) > 12.0,
+		      "%s: the line moves with a moving background (%.1f levels between two moments)", who[i], moved);
+	}
+	if (getenv("STAGEKIT_OUTLINE_AMBIENT_FRAMES")) {
+		// A few frames of each to look at.
+		both([](obs_data_t *s) {
+			obs_data_unset_user_value(s, "outline_ambient_bright");
+			obs_data_unset_user_value(s, "outline_ambient_sat");
+		});
+		set(bg, [](obs_data_t *s) {
+			obs_data_set_int(s, "pixel_style", 2);
+			obs_data_set_double(s, "pixel_size", 14.0);
+		});
+		for (int k = 0; k < 16; k++)
+			for (int i = 0; i < 2; i++) {
+				char name[64];
+				snprintf(name, sizeof(name), "/%s-moving-%02d.rgba", i ? "scene" : "own", k);
+				write_frame(dir + name, shot(scenes[i], 120), w, h);
+			}
+		set(bg, [](obs_data_t *s) { obs_data_set_int(s, "pixel_style", 0); });
+		both([](obs_data_t *s) {
+			obs_data_set_double(s, "outline_ambient_bright", 100.0);
+			obs_data_set_double(s, "outline_ambient_sat", 100.0);
+		});
+	}
+	set(bg, [](obs_data_t *s) {
+		obs_data_set_double(s, "test_pattern_time", 10.0);
+		obs_data_set_double(s, "pattern_speed", 100.0);
+	});
+	ref = shot(bg);
+
+	// A background chosen by name, in no scene: drawn once for all who ask.
+	const std::vector<uint8_t> ref_other = shot(other);
+	both([](obs_data_t *s) { obs_data_set_string(s, "outline_ambient", "OA Other"); });
+	sleep_ms(400);
+	const long long extra_named = counts("stagekit_test_ambient_frames", "draws");
+	for (int i = 0; i < 2; i++) {
+		const std::vector<uint8_t> f = shot(scenes[i], 400);
+		const double off = apart(f, bands[i], ref_other, places[i]);
+		const Rgb m = mean(f, bands[i]);
+		CHECK(off < 4.0 && m.r > m.b + 40.0,
+		      "%s: a background chosen by name is the one shown, though it is in no scene (%.2f levels off it; the line %.0f, %.0f, %.0f)",
+		      who[i], off, m.r, m.g, m.b);
+	}
+	const long long drawn_named = counts("stagekit_test_ambient_frames", "draws") - extra_named;
+	CHECK(drawn_named >= 1 && drawn_named <= 4,
+	      "a background in no scene is drawn for the line, once a drawing at most (%lld times for four drawings)",
+	      drawn_named);
+	// Renamed: the filters follow.
+	obs_source_set_name(other, "OA Renamed");
+	for (int i = 0; i < 2; i++) {
+		obs_data_t *s = obs_source_get_settings(filters[i]);
+		const std::string named = obs_data_get_string(s, "outline_ambient");
+		obs_data_release(s);
+		const std::vector<uint8_t> f = shot(scenes[i], 400);
+		const double off = apart(f, bands[i], ref_other, places[i]);
+		CHECK(named == "OA Renamed" && off < 4.0,
+		      "%s: the background renamed, the filter names it by its new name ('%s') and shows it still (%.2f off)",
+		      who[i], named.c_str(), off);
+	}
+
+	// Automatic: the background of the scene before any other.
+	both([](obs_data_t *s) { obs_data_set_string(s, "outline_ambient", ""); });
+	obs_source_t *before_out = obs_get_output_source(0);
+	{
+		// Two scenes with the second background: one with a Scene Shadow
+		// (round the plain source), one with the source that has its own
+		// filter, on screen. (Not both in one: the Scene Shadow would
+		// outline that source too, over its own line.)
+		obs_scene_t *c = obs_scene_create("OA Other's Scene");
+		put(c, other, 0, 0);
+		put(c, plain, (float)sx, (float)sy);
+		obs_scene_t *c2 = obs_scene_create("OA Other's Own Scene");
+		put(c2, other, 0, 0);
+		// (Put where its line's room leaves the source itself at ax, ay:
+		// the filter moved it so in the first scene.)
+		put(c2, own, (float)(ax - lw), (float)(ay - lw));
+		// (A copy: a filter made with another's own settings object shares it.)
+		obs_data_t *from = obs_source_get_settings(f_scene);
+		obs_data_t *zd = obs_data_create();
+		obs_data_apply(zd, from);
+		obs_data_release(from);
+		obs_source_t *f_c = obs_source_create("stagekit_scene_shadow", "OA Scene C", zd, nullptr);
+		obs_data_release(zd);
+		obs_source_filter_add(obs_scene_get_source(c), f_c);
+		obs_set_output_source(0, obs_scene_get_source(c2));
+		const std::vector<uint8_t> in_c2 = shot(obs_scene_get_source(c2), 600);
+		// (The Scene Shadow's scene is not the one on screen: its own comes first.)
+		const std::vector<uint8_t> in_c = shot(obs_scene_get_source(c), 400);
+		const double scene_off = apart(in_c, bands[1], ref_other, same_place);
+		const double own_off = apart(in_c2, bands[0], ref_other, own_place);
+		// Back in the first scenes, the first background.
+		obs_set_output_source(0, scenes[0]);
+		const std::vector<uint8_t> in_a = shot(scenes[0], 600), in_b = shot(scenes[1], 100);
+		const double a_off = apart(in_a, bands[0], ref, own_place),
+			     b_off = apart(in_b, bands[1], ref, same_place);
+		CHECK(scene_off < 4.0 && own_off < 4.0 && a_off < 4.0 && b_off < 4.0,
+		      "Automatic: Scene Shadow shows the background of its own scene, the source's filter the one in the scene on screen (the second background's scene: %.2f and %.2f levels off it; the first one's scenes: %.2f and %.2f off the first)",
+		      scene_off, own_off, a_off, b_off);
+		obs_set_output_source(0, before_out);
+		obs_source_filter_remove(obs_scene_get_source(c), f_c);
+		obs_source_release(f_c);
+		obs_weak_source_t *weak = obs_source_get_weak_source(obs_scene_get_source(c));
+		obs_scene_release(c);
+		obs_scene_release(c2);
+		bool gone = false;
+		for (int k = 0; k < 150 && !gone; k++) {
+			obs_source_t *still = obs_weak_source_get_source(weak);
+			gone = !still;
+			obs_source_release(still);
+			if (!gone)
+				sleep_ms(10);
+		}
+		obs_weak_source_release(weak);
+		CHECK(gone, "that scene is gone once let go of: the fill holds no scene");
+	}
+	obs_source_release(before_out);
+
+	// A change of scene with Morph carries the line.
+	if (obs_source_get_display_name("stagekit_morph")) {
+		obs_scene_t *d = obs_scene_create("OA Morph To");
+		put(d, bg, 0, 0);
+		put(d, plain, (float)sx + 100, (float)sy + 60);
+		obs_data_t *zd = obs_source_get_settings(f_scene);
+		obs_source_t *f_d = obs_source_create("stagekit_scene_shadow", "OA Scene D", zd, nullptr);
+		obs_data_release(zd);
+		obs_source_filter_add(obs_scene_get_source(d), f_d);
+		obs_data_t *ms = obs_data_create();
+		obs_data_set_int(ms, "ease_curve", 0);
+		obs_source_t *morph = obs_source_create_private("stagekit_morph", "OA Morph", ms);
+		obs_data_release(ms);
+		sleep_ms(500);
+		obs_transition_set(morph, scenes[1]);
+		obs_transition_start(morph, OBS_TRANSITION_MODE_MANUAL, 0, obs_scene_get_source(d));
+		obs_transition_set_manual_time(morph, 0.5f);
+		sleep_ms(150);
+		render(morph, w, h);
+		const std::vector<uint8_t> half = render(morph, w, h);
+		write_frame(dir + "/morph-half.rgba", half, w, h);
+		const std::vector<Where> at = band(sx + 50, sy + 30);
+		const double off = apart(half, at, ref, same_place);
+		const Rgb m = mean(half, at);
+		CHECK(off < 5.0 && !(m.r > 200 && m.g < 60 && m.b < 60),
+		      "Morph, half-way between two scenes with the fill: the line is half the way there and shows the background (%.2f levels off it; %.0f, %.0f, %.0f)",
+		      off, m.r, m.g, m.b);
+		obs_transition_set_manual_time(morph, 1.0f);
+		sleep_ms(120);
+		render(morph, w, h);
+		obs_transition_clear(morph);
+		obs_source_release(morph);
+		obs_source_filter_remove(obs_scene_get_source(d), f_d);
+		obs_source_release(f_d);
+		obs_scene_release(d);
+	}
+
+	// Without the shader's file the line is its outline colour, said once.
+	{
+		const int said_before = g_oa_unavailable;
+		counts("stagekit_test_outline_ambient", "held", "effects/no-such-file.effect");
+		bool plain_colour = true;
+		for (int i = 0; i < 2; i++) {
+			const std::vector<uint8_t> f = shot(scenes[i]);
+			const Rgb m = mean(f, bands[i]);
+			plain_colour = plain_colour && m.r > 250 && m.g < 5 && m.b < 5 && spread(f, bands[i]) < 0.5;
+		}
+		const int said = g_oa_unavailable - said_before;
+		counts("stagekit_test_outline_ambient", "held", "-");
+		bool back = true;
+		for (int i = 0; i < 2; i++)
+			back = back && apart(shot(scenes[i]), bands[i], ref, places[i]) < 4.0;
+		CHECK(plain_colour && said == 1 && back,
+		      "without the fill's shader file the line is its outline colour in both filters, the log says so once (%d), and with the file back the fill is too",
+		      said);
+	}
+
+	// A named background that is removed: as Automatic. The last one
+	// removed: the outline colour, and nothing breaks.
+	both([](obs_data_t *s) { obs_data_set_string(s, "outline_ambient", "OA Renamed"); });
+	shot(scenes[0]);
+	{
+		obs_weak_source_t *weak = obs_source_get_weak_source(other);
+		obs_source_remove(other);
+		obs_source_release(other);
+		bool gone = false;
+		for (int k = 0; k < 150 && !gone; k++) {
+			obs_source_t *still = obs_weak_source_get_source(weak);
+			gone = !still;
+			obs_source_release(still);
+			if (!gone)
+				sleep_ms(10);
+		}
+		obs_weak_source_release(weak);
+		double off[2];
+		for (int i = 0; i < 2; i++)
+			off[i] = apart(shot(scenes[i], 400), bands[i], ref, places[i]);
+		CHECK(gone && off[0] < 4.0 && off[1] < 4.0,
+		      "the named background removed: it is gone (the fill held it only weakly) and the line shows the one there is (%.2f and %.2f levels off it)",
+		      off[0], off[1]);
+	}
+	{
+		obs_weak_source_t *weak = obs_source_get_weak_source(bg);
+		obs_sceneitem_remove(bg_in_a);
+		obs_sceneitem_remove(bg_in_b);
+		obs_source_remove(bg);
+		obs_source_release(bg);
+		bool gone = false;
+		for (int k = 0; k < 150 && !gone; k++) {
+			obs_source_t *still = obs_weak_source_get_source(weak);
+			gone = !still;
+			obs_source_release(still);
+			if (!gone)
+				sleep_ms(10);
+		}
+		obs_weak_source_release(weak);
+		bool plain_colour = true;
+		for (int i = 0; i < 2; i++) {
+			const std::vector<uint8_t> f = shot(scenes[i], 400);
+			const Rgb m = mean(f, bands[i]);
+			plain_colour = plain_colour && m.r > 250 && m.g < 5 && m.b < 5;
+		}
+		const long long known = counts("stagekit_test_ambient_frames", "known");
+		CHECK(gone && plain_colour && known == known_before,
+		      "the last background removed: it is gone, the line is its outline colour in both filters, and no background is known any more (%lld, %lld before)",
+		      known, known_before);
+	}
+
+	// Nothing is held once the scenes are let go of.
+	{
+		for (int i = 0; i < 2; i++)
+			obs_source_filter_remove(i ? scenes[1] : own, filters[i]);
+		obs_weak_source_t *weak[6] = {
+			obs_source_get_weak_source(scenes[0]), obs_source_get_weak_source(scenes[1]),
+			obs_source_get_weak_source(own),       obs_source_get_weak_source(plain),
+			obs_source_get_weak_source(f_own),     obs_source_get_weak_source(f_scene)};
+		obs_source_release(f_own);
+		obs_source_release(f_scene);
+		obs_scene_release(a);
+		obs_scene_release(b);
+		obs_source_release(own);
+		obs_source_release(plain);
+		std::string left;
+		for (int k = 0; k < 150; k++) {
+			left.clear();
+			for (obs_weak_source_t *wk : weak) {
+				obs_source_t *src = obs_weak_source_get_source(wk);
+				if (src)
+					left += std::string(left.empty() ? "" : ", ") + obs_source_get_name(src);
+				obs_source_release(src);
+			}
+			if (left.empty())
+				break;
+			sleep_ms(10);
+		}
+		for (obs_weak_source_t *wk : weak)
+			obs_weak_source_release(wk);
+		// And the fill's pictures go when no line asks any more.
+		sleep_ms(2600);
+		const long long held = counts("stagekit_test_outline_ambient", "held");
+		CHECK(left.empty() && held == 0,
+		      "the scenes, sources and filters let go of, nothing of theirs is held (%s), and the fill's pictures are let go of too (%lld held)",
+		      left.empty() ? "nothing left" : left.c_str(), held);
+	}
+	base_set_log_handler(prev_log, prev_param);
+}
+
 // Outline designs filled with a pattern (beta215): the line is a window onto
 // one of Ambient Background's patterns, in both filters. Run alone with
 // STAGEKIT_TEST_ONLY_OUTLINE_PATTERNS.
@@ -18288,7 +19455,7 @@ static void outline_patterns_test(uint32_t w, uint32_t h, const std::string &out
 		CHECK(spread(f) > 6.0, "%s: with the shaders back the pattern is back (%.1f)", who[i], spread(f));
 	}
 
-	// The controls: 34 designs; a pattern shows its colours, size and speed.
+	// The controls: 35 designs (the last, the Ambient Background fill, has its own test); a pattern shows its colours, size and speed.
 	for (int i = 0; i < 2; i++) {
 		int wrong = 0;
 		size_t count = 0;
@@ -18313,7 +19480,7 @@ static void outline_patterns_test(uint32_t w, uint32_t h, const std::string &out
 			obs_data_release(s);
 		}
 		set(filters[i], [](obs_data_t *s) { obs_data_set_int(s, "outline_design", 13); });
-		CHECK(wrong == 0 && count == 34,
+		CHECK(wrong == 0 && count == 35,
 		      "%s: %zu designs; a pattern shows Second colour, Third colour, Pattern size and Speed, the others do not show the new two (%d wrong)",
 		      who[i], count, wrong);
 	}
@@ -20205,7 +21372,7 @@ static void hex_patterns_test(uint32_t w, uint32_t h, const char *base_image, co
 	std::vector<uint8_t> solid[2];
 	for (int i = 0; i < 2; i++)
 		solid[i] = look(scenes[i]);
-	// The list: thirty-four designs, the new five by name, and a new one
+	// The list: thirty-five designs, the new five by name, and a new one
 	// shows a pattern fill's controls.
 	for (int i = 0; i < 2; i++) {
 		obs_properties_t *props = obs_source_properties(filters[i]);
@@ -20213,7 +21380,7 @@ static void hex_patterns_test(uint32_t w, uint32_t h, const char *base_image, co
 		const size_t count = list ? obs_property_list_item_count(list) : 0;
 		static const char *const kShown[] = {"Pattern: Mesh", "Pattern: Halftone", "Pattern: Dot grid",
 						     "Pattern: Hex wire glow", "Pattern: Hex mosaic"};
-		bool named = count == 34;
+		bool named = count == 35; // (the Ambient Background fill after them)
 		for (int n = 0; named && n < 5; n++)
 			named = strcmp(obs_property_list_item_name(list, size_t(29 + n)), kShown[n]) == 0 &&
 				obs_property_list_item_int(list, size_t(29 + n)) == 29 + n;
@@ -20230,7 +21397,7 @@ static void hex_patterns_test(uint32_t w, uint32_t h, const char *base_image, co
 		}
 		obs_properties_destroy(props);
 		CHECK(named && shown,
-		      "%s: %zu designs, the last five the new fills by name and number, and one of them shows a pattern's colours, size, speed, position and rotation",
+		      "%s: %zu designs, designs 29 to 33 the new fills by name and number, and one of them shows a pattern's colours, size, speed, position and rotation",
 		      who[i], count);
 	}
 	static const char *const kFills[5] = {"mesh", "halftone", "dot grid", "hex wire glow", "hex mosaic"};
@@ -20746,6 +21913,13 @@ int main(int argc, char **argv)
 		       g_failures == 1 ? "" : "s");
 		return g_failures ? 1 : 0;
 	}
+	if (getenv("STAGEKIT_TEST_ONLY_OUTLINE_AMBIENT")) { // to try that section alone
+		outline_ambient_test(w, h, out);
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
 	if (getenv("STAGEKIT_TEST_ONLY_OUTLINE_PATTERNS")) { // to try that section alone
 		outline_patterns_test(w, h, out);
 		obs_shutdown();
@@ -20755,6 +21929,13 @@ int main(int argc, char **argv)
 	}
 	if (getenv("STAGEKIT_TEST_ONLY_OUTLINE_DESIGNS")) { // to try that section alone
 		outline_designs_test(w, h, out);
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
+	if (getenv("STAGEKIT_TEST_ONLY_OUTLINE_BLEED")) { // to try that section alone
+		outline_bleed_test(w, h);
 		obs_shutdown();
 		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
 		       g_failures == 1 ? "" : "s");
@@ -34601,7 +35782,9 @@ int main(int argc, char **argv)
 									emit add_source->activated(
 										add_source->findData("Copy Target"));
 									// Since D17 a listed source counts only with Copy to: Chosen sources.
-									if (auto *copy_to = dock->findChild<QComboBox *>("copyTo"))
+									if (auto *copy_to =
+										    dock->findChild<QComboBox *>(
+											    "copyTo"))
 										copy_to->setCurrentIndex(1);
 									for (int i = 0; i < 4; i++) {
 										QCoreApplication::processEvents();
@@ -34631,7 +35814,8 @@ int main(int argc, char **argv)
 								if (auto *remove = dock->findChild<QPushButton *>(
 									    "copySourcesRemove"))
 									remove->click();
-								if (auto *copy_to = dock->findChild<QComboBox *>("copyTo"))
+								if (auto *copy_to =
+									    dock->findChild<QComboBox *>("copyTo"))
 									copy_to->setCurrentIndex(0);
 								for (int i = 0; i < 6; i++) {
 									QCoreApplication::processEvents();

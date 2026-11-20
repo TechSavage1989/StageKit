@@ -65,6 +65,8 @@ target_sources(
     src/common/item-transition.hpp
     src/ambient/ambient-background.cpp
     src/ambient/ambient-background.hpp
+    src/ambient/ambient-frame.cpp
+    src/ambient/ambient-frame.hpp
     src/common/kawase-blur.cpp
     src/common/kawase-blur.hpp
     src/common/switch-ramp.cpp
@@ -170,6 +172,8 @@ target_sources(
     # ==== scene-filters:shadow ====
     src/look/look-paint.cpp
     src/look/look-paint.hpp
+    src/look/outline-ambient.cpp
+    src/look/outline-ambient.hpp
     src/look/outline-pattern.cpp
     src/look/outline-pattern.hpp
     src/look/scene-shadow.cpp

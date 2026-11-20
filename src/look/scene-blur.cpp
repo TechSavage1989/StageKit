@@ -1073,7 +1073,8 @@ obs_properties_t *get_properties(void *data)
 	} else if (data) {
 		const std::string reason = static_cast<SceneBlur *>(data)->inactive_reason();
 		if (!reason.empty()) {
-			obs_property_t *status = obs_properties_add_text(props, "look_status", reason.c_str(), OBS_TEXT_INFO);
+			obs_property_t *status =
+				obs_properties_add_text(props, "look_status", reason.c_str(), OBS_TEXT_INFO);
 			obs_property_text_set_info_word_wrap(status, true);
 		}
 	}

@@ -865,7 +865,8 @@ public:
 		no_game_standby_ = obs_data_get_bool(settings, "no_game_standby");
 		hide_standby_ = obs_data_get_bool(settings, "hide_standby");
 		hide_change_.kind = obs_data_get_string(settings, "transition");
-		hide_change_.ms = (uint32_t)std::clamp<long long>(obs_data_get_int(settings, "transition_ms"), 0, 10000);
+		hide_change_.ms =
+			(uint32_t)std::clamp<long long>(obs_data_get_int(settings, "transition_ms"), 0, 10000);
 		hid_pending_ = !hid_items_read(settings).empty();
 		{
 			const std::string hand = lower(obs_data_get_string(settings, "hand_hooked"));
@@ -1459,9 +1460,10 @@ public:
 		}
 		if (!use_test)
 			windows = list_windows();
-		windows.erase(std::remove_if(windows.begin(), windows.end(), [](const Window &window) {
-			return built_in_never(lower(window.executable));
-		}), windows.end());
+		windows.erase(
+			std::remove_if(windows.begin(), windows.end(),
+				       [](const Window &window) { return built_in_never(lower(window.executable)); }),
+			windows.end());
 		return windows;
 	}
 
@@ -1782,7 +1784,9 @@ private:
 	double state_s_ = 1.0;                  // since the state was last reported
 	obs_hotkey_id hotkey_ = OBS_INVALID_HOTKEY_ID;
 	HotkeyRename renamed_{source_, [this] { return std::vector<obs_hotkey_id *>{&hotkey_}; },
-			      [this] { register_hotkey(obs_filter_get_parent(source_)); }};
+			      [this] {
+				      register_hotkey(obs_filter_get_parent(source_));
+			      }};
 	Mode mode_ = Mode::AnyGame;
 	std::vector<std::string> always_, never_;
 	bool fallback_fullscreen_ = true;
@@ -1894,7 +1898,8 @@ bool standby_modified(void *data, obs_properties_t *props, obs_property_t *, obs
 	const bool hide_items = !obs_data_get_bool(settings, "hide_standby") || !parent || !standby_present(parent);
 	obs_property_set_visible(obs_properties_get(props, "item_hide_group"), hide_items);
 	const std::string kind = obs_data_get_string(settings, "transition");
-	obs_property_set_visible(obs_properties_get(props, "transition_ms"), kind != kTransitionKeep && kind != kTransitionCut);
+	obs_property_set_visible(obs_properties_get(props, "transition_ms"),
+				 kind != kTransitionKeep && kind != kTransitionCut);
 	return true;
 }
 
@@ -2013,7 +2018,8 @@ obs_properties_t *get_properties(void *data)
 	add_easing_properties(standby, "standby_");
 	obs_properties_t *item_hide = obs_properties_create();
 	add_item_transition_properties(item_hide);
-	obs_properties_add_group(standby, "item_hide_group", obs_module_text("Capture.ItemHide"), OBS_GROUP_NORMAL, item_hide);
+	obs_properties_add_group(standby, "item_hide_group", obs_module_text("Capture.ItemHide"), OBS_GROUP_NORMAL,
+				 item_hide);
 	obs_property_t *hide_now = obs_properties_add_button2(
 		standby, "hide_now", obs_module_text("AppCapture.Hide.Now"),
 		[](obs_properties_t *, obs_property_t *, void *d) {
@@ -2342,8 +2348,8 @@ void register_auto_capture()
 		obs_data_set_default_bool(settings, "no_game_standby", false);
 		obs_data_set_default_bool(settings, "hide_standby", true);
 		obs_data_set_default_string(settings, "transition", kTransitionKeep);
-	obs_data_set_default_int(settings, "transition_ms", 300);
-	obs_data_set_default_int(settings, "standby_style", 0);
+		obs_data_set_default_int(settings, "transition_ms", 300);
+		obs_data_set_default_int(settings, "standby_style", 0);
 		obs_data_set_default_int(settings, "standby_ms", 600);
 		obs_data_set_default_int(settings, "standby_ease_curve", (int)EaseCurve::Cubic);
 		obs_data_set_default_int(settings, "standby_ease_mode", (int)EaseMode::InOut);
