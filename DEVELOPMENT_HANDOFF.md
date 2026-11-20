@@ -23,7 +23,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
-## The circuit patterns (0.1.0-betaNEXT)
+## The circuit patterns (0.1.0-beta216)
 
 Branch `fix/circuit-board`, on `main` at beta215. Not pushed. The owner, of beta215: "i don't
 really like the circuit board effect animation. it needs major improvement", then reference
