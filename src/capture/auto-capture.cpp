@@ -1863,6 +1863,18 @@ void show_status(obs_properties_t *props, AutoCapture *self)
 	obs_property_set_visible(obs_properties_get(props, "never_now"), !current.empty());
 }
 
+// The Standby Image's transition is only used by the two standby options:
+// with neither ticked its controls do nothing and are hidden. Only
+// visibility changes here.
+bool standby_modified(obs_properties_t *props, obs_property_t *, obs_data_t *settings)
+{
+	const bool used = obs_data_get_bool(settings, "no_game_standby") || obs_data_get_bool(settings, "hide_standby");
+	for (const char *name : {"standby_style", "standby_ms", "standby_ease_curve", "standby_ease_mode"})
+		if (obs_property_t *p = obs_properties_get(props, name))
+			obs_property_set_visible(p, used);
+	return true;
+}
+
 obs_properties_t *get_properties(void *data)
 {
 	auto *self = static_cast<AutoCapture *>(data);
@@ -1871,7 +1883,7 @@ obs_properties_t *get_properties(void *data)
 	// What it is doing right now, and one press to undo a wrong choice.
 	obs_property_t *status = obs_properties_add_text(props, "status", "", OBS_TEXT_INFO);
 	obs_property_text_set_info_word_wrap(status, true);
-	obs_properties_add_button2(
+	obs_property_t *never_now = obs_properties_add_button2(
 		props, "never_now", obs_module_text("Capture.NeverNow"),
 		[](obs_properties_t *p, obs_property_t *, void *d) {
 			auto *filter = static_cast<AutoCapture *>(d);
@@ -1884,15 +1896,19 @@ obs_properties_t *get_properties(void *data)
 			return true;
 		},
 		data);
-	obs_properties_add_button2(
+	set_tip(never_now, obs_module_text("Capture.NeverNow.Tip"));
+	obs_property_t *check = obs_properties_add_button2(
 		props, "check", obs_module_text("Capture.Check"),
 		[](obs_properties_t *p, obs_property_t *, void *d) {
 			show_status(p, static_cast<AutoCapture *>(d));
 			return true;
 		},
 		data);
+	set_tip(check, obs_module_text("Capture.Check.Tip"));
 
-	// Two lists, each filled by choosing from the programs that are open.
+	// Games: the two lists, each filled by choosing from the programs that
+	// are open, and how games are found.
+	obs_properties_t *games = obs_properties_create();
 	obs_source_t *own = self ? self->source() : nullptr;
 	auto open_now = [self](std::vector<std::string> &names) {
 		if (!self)
@@ -1907,7 +1923,7 @@ obs_properties_t *get_properties(void *data)
 	always.add = "List.AddProgram";
 	always.tip = "Capture.Always.Tip";
 	always.choices = open_now;
-	pick_list_add(props, own, always);
+	pick_list_add(games, own, always);
 	PickList never;
 	never.setting = "never";
 	never.as_text = true;
@@ -1915,26 +1931,35 @@ obs_properties_t *get_properties(void *data)
 	never.add = "List.AddProgram";
 	never.tip = "Capture.Never.Tip";
 	never.choices = open_now;
-	pick_list_add(props, own, never);
-
-	obs_properties_t *lists = obs_properties_create();
-	obs_property_t *mode = obs_properties_add_list(lists, "mode", obs_module_text("Capture.Mode"),
+	pick_list_add(games, own, never);
+	obs_property_t *mode = obs_properties_add_list(games, "mode", obs_module_text("Capture.Mode"),
 						       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(mode, obs_module_text("Capture.Mode.AnyGame"), (int)Mode::AnyGame);
 	obs_property_list_add_int(mode, obs_module_text("Capture.Mode.ListedOnly"), (int)Mode::ListedOnly);
-	obs_properties_add_bool(lists, "fallback_fullscreen", obs_module_text("Capture.Fallback"));
-	obs_property_t *keep_ready = obs_properties_add_bool(lists, "keep_ready", obs_module_text("Capture.KeepReady"));
+	set_tip(mode, obs_module_text("Capture.Mode.Tip"));
+	obs_property_t *keep_ready = obs_properties_add_bool(games, "keep_ready", obs_module_text("Capture.KeepReady"));
 	set_tip(keep_ready, obs_module_text("Capture.KeepReady.Tip"));
-	obs_property_t *no_game =
-		obs_properties_add_bool(lists, "no_game_standby", obs_module_text("Capture.NoGameStandby"));
-	set_tip(no_game, obs_module_text("Capture.NoGameStandby.Tip"));
-	obs_properties_add_group(props, "lists", obs_module_text("Capture.Lists"), OBS_GROUP_NORMAL, lists);
+	obs_properties_add_group(props, "games_group", obs_module_text("Capture.Lists"), OBS_GROUP_NORMAL, games);
 
-	// The Standby Picture over the capture: hiding it, and the transition.
+	// When there is no game.
+	obs_properties_t *no_game_group = obs_properties_create();
+	obs_property_t *fallback =
+		obs_properties_add_bool(no_game_group, "fallback_fullscreen", obs_module_text("Capture.Fallback"));
+	set_tip(fallback, obs_module_text("Capture.Fallback.Tip"));
+	obs_property_t *no_game =
+		obs_properties_add_bool(no_game_group, "no_game_standby", obs_module_text("Capture.NoGameStandby"));
+	set_tip(no_game, obs_module_text("Capture.NoGameStandby.Tip"));
+	obs_property_set_modified_callback(no_game, standby_modified);
+	obs_properties_add_group(props, "no_game_group", obs_module_text("Capture.NoGameGroup"), OBS_GROUP_NORMAL,
+				 no_game_group);
+
+	// Hiding and showing the capture, in the Window Switcher's group and
+	// order: the Standby Image over it, its transition, and the button last.
 	obs_properties_t *standby = obs_properties_create();
 	obs_property_t *hide_standby =
 		obs_properties_add_bool(standby, "hide_standby", obs_module_text("AppCapture.HideStandby"));
 	set_tip(hide_standby, obs_module_text("Capture.HideStandby.Tip"));
+	obs_property_set_modified_callback(hide_standby, standby_modified);
 	obs_property_t *style = obs_properties_add_list(standby, "standby_style", obs_module_text("Change.With"),
 							OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	{
@@ -1955,8 +1980,9 @@ obs_properties_t *get_properties(void *data)
 	obs_property_t *ms =
 		obs_properties_add_int_slider(standby, "standby_ms", obs_module_text("Change.Time"), 0, 5000, 50);
 	obs_property_int_set_suffix(ms, " ms");
+	set_tip(ms, obs_module_text("Capture.StandbyMs.Tip"));
 	add_easing_properties(standby, "standby_");
-	obs_properties_add_button2(
+	obs_property_t *hide_now = obs_properties_add_button2(
 		standby, "hide_now", obs_module_text("AppCapture.Hide.Now"),
 		[](obs_properties_t *, obs_property_t *, void *d) {
 			if (d)
@@ -1964,8 +1990,10 @@ obs_properties_t *get_properties(void *data)
 			return false;
 		},
 		data);
-	obs_properties_add_group(props, "standby", obs_module_text("Standby.Name.Short"), OBS_GROUP_NORMAL, standby);
+	set_tip(hide_now, obs_module_text("Capture.HideNow.Tip"));
+	obs_properties_add_group(props, "standby", obs_module_text("AppCapture.Hide"), OBS_GROUP_NORMAL, standby);
 
+	add_help_line(props, obs_module_text("Capture.Help"));
 	show_status(props, self);
 	return props;
 }

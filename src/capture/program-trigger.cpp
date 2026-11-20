@@ -290,8 +290,27 @@ obs_properties_t *get_properties(void *data)
 		obs_data_set_string(settings, "browse", "");
 		return true;
 	});
-	obs_property_t *title =
-		obs_properties_add_text(watch, "title", obs_module_text("Trigger.Title"), OBS_TEXT_DEFAULT);
+	// (A box to type in that also offers the titles of the windows open now,
+	// and the first part of a title that has several: the part that stays.)
+	obs_property_t *title = obs_properties_add_list(watch, "title", obs_module_text("Trigger.Title"),
+							OBS_COMBO_TYPE_EDITABLE, OBS_COMBO_FORMAT_STRING);
+	{
+		std::vector<std::string> titles;
+		auto offer = [&titles](const std::string &text) {
+			if (text.size() >= 3 && std::find(titles.begin(), titles.end(), text) == titles.end())
+				titles.push_back(text);
+		};
+		for (const OpenWindow &w : open_windows())
+			offer(w.title);
+		for (const OpenWindow &w : open_windows())
+			for (const char *mark : {" | ", " - "}) {
+				const size_t at = w.title.find(mark);
+				if (at != std::string::npos)
+					offer(w.title.substr(0, at));
+			}
+		for (const std::string &text : titles)
+			obs_property_list_add_string(title, text.c_str(), text.c_str());
+	}
 	set_tip(title, obs_module_text("Trigger.Title.Tip"));
 	obs_property_t *when = obs_properties_add_list(watch, "when", obs_module_text("Trigger.When"),
 						       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
@@ -299,21 +318,24 @@ obs_properties_t *get_properties(void *data)
 	obs_property_list_add_int(when, obs_module_text("Trigger.When.InFront"), (int)When::InFront);
 	obs_properties_add_group(props, "watch_group", obs_module_text("Trigger.WatchGroup"), OBS_GROUP_NORMAL, watch);
 
-	// 2. What it switches.
+	// 2. What it switches: a group of its own, like the first.
+	obs_properties_t *act = obs_properties_create();
 	if (scene_of(parent)) {
 		PickList items;
 		items.setting = "items";
 		items.title = "Trigger.Items";
 		items.add = "List.AddItem";
+		items.tip = "Trigger.Items.Tip";
 		items.choices = [parent](std::vector<std::string> &names) {
 			scene_item_names(parent, names);
 		};
-		pick_list_add(props, self->source(), items);
+		pick_list_add(act, self->source(), items);
 	}
 	PickList filters;
 	filters.setting = "filters";
 	filters.title = "Trigger.Filters";
 	filters.add = "List.AddFilter";
+	filters.tip = "Trigger.Filters.Tip";
 	obs_source_t *own = self->source();
 	filters.choices = [parent, own](std::vector<std::string> &names) {
 		if (!parent)
@@ -332,10 +354,17 @@ obs_properties_t *get_properties(void *data)
 			},
 			&fill);
 	};
-	pick_list_add(props, own, filters);
-	add_item_transition_properties(props);
-	obs_property_t *opposite = obs_properties_add_bool(props, "opposite", obs_module_text("Trigger.Opposite"));
+	pick_list_add(act, own, filters);
+	// (The transition is for showing and hiding sources: on a source, where
+	// only filters are switched, it does nothing and is left out.)
+	if (scene_of(parent))
+		add_item_transition_properties(act);
+	obs_property_t *opposite = obs_properties_add_bool(act, "opposite", obs_module_text("Trigger.Opposite"));
 	set_tip(opposite, obs_module_text("Trigger.Opposite.Tip"));
+	obs_properties_add_group(props, "act_group", obs_module_text("Trigger.ActGroup"), OBS_GROUP_NORMAL, act);
+	set_tips_where_missing(props, {{"program", obs_module_text("Trigger.Program.Tip")},
+				       {"browse", obs_module_text("Trigger.Browse.Tip")},
+				       {"when", obs_module_text("Trigger.When.Tip")}});
 
 	obs_property_t *help = obs_properties_add_text(props, "help", obs_module_text("Trigger.Help"), OBS_TEXT_INFO);
 	obs_property_text_set_info_word_wrap(help, true);

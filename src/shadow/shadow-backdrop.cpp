@@ -1218,6 +1218,7 @@ obs_properties_t *get_properties(void *data)
 						       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(type, obs_module_text("Shadow.Type.Drop"), (int)ShadowType::Drop);
 	obs_property_list_add_int(type, obs_module_text("Shadow.Type.Glow"), (int)ShadowType::Glow);
+	set_tip(type, obs_module_text("Shadow.Type.Tip"));
 	obs_property_set_modified_callback(type, visibility_modified);
 	made_from(shadow, "shadow_fill");
 	obs_properties_add_color(shadow, "shadow_color", obs_module_text("Shadow.Color"));
@@ -1226,10 +1227,13 @@ obs_properties_t *get_properties(void *data)
 	slider(shadow, "shadow_opacity", "Shadow.Opacity", 0.0, 100.0, "%");
 	slider(shadow, "offset_x", "Shadow.OffsetX", -200.0, 200.0, " px");
 	slider(shadow, "offset_y", "Shadow.OffsetY", -200.0, 200.0, " px");
-	slider(shadow, "softness", "Shadow.Softness", 0.0, 200.0, " px");
-	slider(shadow, "spread", "Shadow.Spread", 0.0, 100.0, "%");
+	set_tip(slider(shadow, "softness", "Shadow.Softness", 0.0, 200.0, " px"),
+		obs_module_text("Shadow.Softness.Tip"));
+	set_tip(slider(shadow, "spread", "Shadow.Spread", 0.0, 100.0, "%"), obs_module_text("Shadow.Spread.Tip"));
 	add_intensity_property(shadow);
-	obs_properties_add_bool(shadow, "hide_source", obs_module_text("Shadow.HideSource"));
+	obs_property_t *hide_source =
+		obs_properties_add_bool(shadow, "hide_source", obs_module_text("Shadow.HideSource"));
+	set_tip(hide_source, obs_module_text("Shadow.HideSource.Tip"));
 	obs_properties_add_group(props, "shadow", obs_module_text("Shadow.Shadow"), OBS_GROUP_CHECKABLE, shadow);
 
 	obs_properties_t *outline = obs_properties_create();
@@ -1251,11 +1255,23 @@ obs_properties_t *get_properties(void *data)
 	obs_properties_t *backdrop = obs_properties_create();
 	obs_properties_add_color(backdrop, "backdrop_color", obs_module_text("Shadow.BackdropColor"));
 	slider(backdrop, "backdrop_opacity", "Shadow.BackdropOpacity", 0.0, 100.0, "%");
-	slider(backdrop, "backdrop_pad", "Shadow.BackdropPad", 0.0, 200.0, " px");
+	set_tip(slider(backdrop, "backdrop_pad", "Shadow.BackdropPad", 0.0, 200.0, " px"),
+		obs_module_text("Shadow.BackdropPad.Tip"));
 	obs_properties_add_group(props, "backdrop", obs_module_text("Shadow.Backdrop"), OBS_GROUP_CHECKABLE, backdrop);
 
-	slider(props, "radius", "Shadow.Radius", 0.0, 500.0, " px");
+	// (Never inside a group with a tick box: it rounds the shadow, the
+	// outline and the panel alike.)
+	set_tip(slider(props, "radius", "Shadow.Radius", 0.0, 500.0, " px"), obs_module_text("Shadow.Radius.Tip"));
 
+	// Where the source sits and where the filter draws: one group of what
+	// was loose at the end of the window. It holds no setting of its own.
+	obs_properties_t *placement = obs_properties_create();
+	obs_property_t *keep = obs_properties_add_bool(placement, "keep_place", obs_module_text("Shadow.Keep"));
+	set_tip(keep, obs_module_text("Shadow.Keep.Tip"));
+	obs_property_t *screen = obs_properties_add_bool(placement, "screen_px", obs_module_text("Shadow.ScreenPx"));
+	set_tip(screen, obs_module_text("Shadow.ScreenPx.Tip"));
+	obs_property_t *in_view = obs_properties_add_bool(placement, "in_view", obs_module_text("Shadow.InView"));
+	set_tip(in_view, obs_module_text("Shadow.InView.Tip"));
 	// Scenes it is left off in: chosen from the scenes that exist.
 	{
 		obs_source_t *filter = data ? static_cast<ShadowBackdrop *>(data)->filter() : nullptr;
@@ -1274,14 +1290,20 @@ obs_properties_t *get_properties(void *data)
 				},
 				&names);
 		};
-		pick_list_add(props, filter, off);
+		pick_list_add(placement, filter, off);
 	}
-	obs_property_t *screen = obs_properties_add_bool(props, "screen_px", obs_module_text("Shadow.ScreenPx"));
-	set_tip(screen, obs_module_text("Shadow.ScreenPx.Tip"));
-	obs_property_t *in_view = obs_properties_add_bool(props, "in_view", obs_module_text("Shadow.InView"));
-	set_tip(in_view, obs_module_text("Shadow.InView.Tip"));
-	obs_property_t *keep = obs_properties_add_bool(props, "keep_place", obs_module_text("Shadow.Keep"));
-	set_tip(keep, obs_module_text("Shadow.Keep.Tip"));
+	obs_properties_add_group(props, "placement_group", obs_module_text("Shadow.PlacementGroup"), OBS_GROUP_NORMAL,
+				 placement);
+	set_tips_where_missing(props, {{"shadow_color", obs_module_text("Shadow.Color.Tip")},
+				       {"shadow_opacity", obs_module_text("Shadow.Opacity.Tip")},
+				       {"offset_x", obs_module_text("Shadow.Offset.Tip")},
+				       {"offset_y", obs_module_text("Shadow.Offset.Tip")},
+				       {"outline_width", obs_module_text("Shadow.OutlineWidth.Tip")},
+				       {"outline_color", obs_module_text("Shadow.OutlineLook.Tip")},
+				       {"outline_opacity", obs_module_text("Shadow.OutlineLook.Tip")},
+				       {"backdrop_color", obs_module_text("Shadow.BackdropLook.Tip")},
+				       {"backdrop_opacity", obs_module_text("Shadow.BackdropLook.Tip")}});
+	add_help_line(props, obs_module_text("Shadow.Help"));
 	return props;
 }
 

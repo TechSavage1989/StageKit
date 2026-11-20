@@ -404,10 +404,7 @@ obs_properties_t *get_properties(void *data)
 	obs_source_t *scene = self ? self->parent() : nullptr;
 	obs_properties_t *props = obs_properties_create();
 	if (scene && obs_source_is_group(scene)) {
-		obs_property_t *wrong = obs_properties_add_text(props, "on_group",
-								obs_module_text("SceneCorners.OnGroup"), OBS_TEXT_INFO);
-		obs_property_text_set_info_type(wrong, OBS_TEXT_INFO_WARNING);
-		obs_property_text_set_info_word_wrap(wrong, true);
+		add_on_group_warning(props, obs_module_text("SceneCorners.OnGroup"));
 	}
 	const std::string now = self ? self->status() : std::string();
 	obs_property_t *status = obs_properties_add_text(

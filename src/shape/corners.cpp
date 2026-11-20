@@ -216,6 +216,7 @@ obs_properties_t *get_properties(void *data)
 			return props;
 	}
 	corners_add_look_properties(props);
+	add_help_line(props, obs_module_text("Corners.Help"));
 	return props;
 }
 
@@ -265,6 +266,15 @@ void corners_add_look_properties(obs_properties_t *props)
 
 	obs_property_t *screen = obs_properties_add_bool(props, "screen_px", obs_module_text("Corners.ScreenPx"));
 	set_tip(screen, obs_module_text("Corners.ScreenPx.Tip"));
+	set_tips_where_missing(props, {{"style", obs_module_text("Corners.Style.Tip")},
+				       {"size", obs_module_text("Corners.Size.Tip")},
+				       {"top_left", obs_module_text("Corners.Which.Tip")},
+				       {"top_right", obs_module_text("Corners.Which.Tip")},
+				       {"bottom_left", obs_module_text("Corners.Which.Tip")},
+				       {"bottom_right", obs_module_text("Corners.Which.Tip")},
+				       {"border", obs_module_text("Corners.Border.Tip")},
+				       {"border_color", obs_module_text("Corners.BorderLook.Tip")},
+				       {"border_opacity", obs_module_text("Corners.BorderLook.Tip")}});
 }
 
 void corners_look_defaults(obs_data_t *settings)

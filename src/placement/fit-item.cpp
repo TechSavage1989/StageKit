@@ -21,6 +21,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/easing.hpp"
 #include "../common/pick-list.hpp"
 #include "../common/scene-util.hpp"
+#include "../common/tooltip.hpp"
 #include "../dock/arrange-tools.hpp"
 #include "../dock/arrange.hpp"
 #include "../shadow/shadow-backdrop.hpp"
@@ -63,16 +64,14 @@ obs_properties_t *get_properties(void *data)
 	// On a group it has nothing to go by (a group is only as large as what
 	// is in it) and does nothing; said here, where it will be looked for.
 	if (self && self->parent() && obs_source_is_group(self->parent())) {
-		obs_property_t *wrong =
-			obs_properties_add_text(props, "on_group", obs_module_text("Fit.OnGroup"), OBS_TEXT_INFO);
-		obs_property_text_set_info_type(wrong, OBS_TEXT_INFO_WARNING);
-		obs_property_text_set_info_word_wrap(wrong, true);
+		add_on_group_warning(props, obs_module_text("Fit.OnGroup"));
 	}
 	obs_property_t *item = obs_properties_add_list(props, "item", obs_module_text("Fit.Item"), OBS_COMBO_TYPE_LIST,
 						       OBS_COMBO_FORMAT_STRING);
 	obs_property_list_add_string(item, obs_module_text("Fit.Item.None"), "");
 	add_scene_items_to_list(self ? self->parent() : nullptr, item);
 	fit_add_controls(props, "", "", self ? self->source() : nullptr, self ? self->parent() : nullptr, false);
+	add_help_line(props, obs_module_text("Fit.Help"));
 	return props;
 }
 

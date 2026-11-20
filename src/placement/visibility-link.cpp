@@ -782,11 +782,11 @@ obs_properties_t *get_properties(void *data)
 	};
 	pick_list_add(props, self ? self->source() : nullptr, elsewhere);
 
-	// The fuller Show/Hide transition, with Settings for each source of
-	// both lists.
-	add_item_change_properties(props, self ? self->source() : nullptr, "leads,items,elsewhere");
 	obs_property_t *lock_hidden = obs_properties_add_bool(props, "lock_hidden", obs_module_text("Link.LockHidden"));
 	set_tip(lock_hidden, obs_module_text("Link.LockHidden.Tip"));
+	// The fuller Show/Hide transition, with Settings for each source of
+	// both lists: last but the line of help, as in every window.
+	add_item_change_properties(props, self ? self->source() : nullptr, "leads,items,elsewhere");
 	obs_property_t *help = obs_properties_add_text(props, "help", obs_module_text("Link.Help"), OBS_TEXT_INFO);
 	obs_property_text_set_info_word_wrap(help, true);
 	if (self) {

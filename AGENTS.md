@@ -114,6 +114,22 @@ Stream Deck plugin and saved bindings go by, are unchanged, and the global arran
 "StageKit: <tool>" (the preview menu reads the text after the first ": "). A tooltip on a transition
 list starts with *As the scene sets*.
 
+Stage 2 of the review (beta NEXT; windows only, no key, id, default or saved number changed): every
+filter window ends with **one line of help** (`add_help_line` in `src/common/tooltip.hpp`, a word-wrapped
+info line named `help`; Scene Fit's is its first line, because its sources' groups are added under
+everything while the window is open), and a scene filter on a group starts with
+`add_on_group_warning`. Controls made in a loop or elsewhere get tooltips by name with
+`set_tips_where_missing`. A scene filter's window runs: applies to, *Sources covered*, lists, look,
+timing, transition, buttons; a button that acts at once is last in its window or group; the fuller
+*Show/Hide transition* group is last but the help, and **Morph's link controls are inside it**
+(made again by `build` each time, so `show_links` and `obs_properties_get` find them there).
+`add_own` copies a transition's controls from inside its groups too (Morph's own window has
+headings now), never from `|alist`/`|tlist`, `unpaired|g`, `rule_group` or `links_group`. Groups
+added hold no setting and are named so no setting key can clash: Fit to Space's are the prefix +
+`g_where`, `g_size`, `g_share`, `g_measure`, `g_move` (`fit_add_controls`); a checkable group's name
+is its bool's key (Scene Standby's `when_empty`). The lists StageKit draws its own transitions in
+show Fade, Morph, Fade and zoom, Cut, slides, wipes, mapped to each filter's saved numbers.
+
 The trial scenes were renamed at the owner's word (2026-11-17, beta154: "Full capture should be
 called Live / Holding should be called standby / Component should be called Chat Live"):
 Full-Capture-Scene is *Live*, Component-Capture-Scene *Chat Live*, Holding-Scene *Standby*. Those
@@ -3162,7 +3178,8 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   `go_to_scene` with `stay_in` = its own scene and *Same modes in scenes*. Items inside groups are
   shown and hidden, but a group's own `item_visible` is not listened to (an inner item shown by
   hand is not put back). The window's mode groups and everything below them are taken off and
-  added again in place (`rebuild`) on *Add mode*, *Add from template*, *Move up* and *Remove
+  added again in place (`rebuild`, everything after the `add_mode` button) on *Add mode* (one row
+  since the review's stage 2: `template`, `new_mode`, `add_mode`), *Move up* and *Remove
   mode*; a rename only changes the heading and the *Mode now* list. A mode's PickList is nested in
   its group, and its setting has bars in it: `pick-list.cpp`'s `parse` takes the last bar
   followed by `a`/`t` and a part (`list`, `pick`, `none`, `row|n`), not the first bar. The tests

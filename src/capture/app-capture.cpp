@@ -2280,6 +2280,10 @@ obs_properties_t *get_properties(void *data)
 		status.replace(at, 2, now);
 	obs_properties_add_text(props, "status", status.c_str(), OBS_TEXT_INFO);
 
+	// Four groups, in the order they are set up: the windows, the change
+	// between them, the manual windows, then hiding the capture. The groups
+	// hold no setting; every control keeps its name.
+	obs_properties_t *windows = obs_properties_create();
 	PickList apps;
 	apps.setting = "apps";
 	apps.title = "AppCapture.Apps";
@@ -2305,47 +2309,103 @@ obs_properties_t *get_properties(void *data)
 					names.push_back(first);
 			}
 	};
-	pick_list_add(props, self ? self->source() : nullptr, apps);
+	pick_list_add(windows, self ? self->source() : nullptr, apps);
 	PickList ignore_list;
 	ignore_list.setting = "ignore";
 	ignore_list.title = "AppCapture.Ignore";
 	ignore_list.add = "AppCapture.Apps.Add";
 	ignore_list.tip = "AppCapture.Ignore.Tip";
 	ignore_list.choices = apps.choices;
-	pick_list_add(props, self ? self->source() : nullptr, ignore_list);
+	pick_list_add(windows, self ? self->source() : nullptr, ignore_list);
+	obs_property_t *follow = obs_properties_add_bool(windows, "follow", obs_module_text("AppCapture.Follow"));
+	set_tip(follow, obs_module_text("AppCapture.Follow.Tip"));
+	obs_property_t *ready = obs_properties_add_bool(windows, "ready", obs_module_text("AppCapture.Ready"));
+	set_tip(ready, obs_module_text("AppCapture.Ready.Tip"));
+	obs_property_t *game_area =
+		obs_properties_add_bool(windows, "game_area", obs_module_text("AppCapture.GameArea"));
+	set_tip(game_area, obs_module_text("AppCapture.GameArea.Tip"));
+	obs_properties_add_group(props, "windows_group", obs_module_text("AppCapture.Group.Windows"), OBS_GROUP_NORMAL,
+				 windows);
+
+	obs_properties_t *switching = obs_properties_create();
+	obs_property_t *change = obs_properties_add_list(switching, "change", obs_module_text("AppCapture.Change"),
+							 OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+	// One order in every list StageKit draws itself: fade, morph, fade and
+	// zoom, cut, then the slides named for the way the image moves (coming
+	// in from the right, it moves left). The numbers stay as saved.
+	obs_property_list_add_int(change, obs_module_text("AppCapture.Change.Fade"), (int)Style::Fade);
+	obs_property_list_add_int(change, obs_module_text("AppCapture.Change.Morph"), (int)Style::Morph);
+	obs_property_list_add_int(change, obs_module_text("AppCapture.Change.Zoom"), (int)Style::Zoom);
+	obs_property_list_add_int(change, obs_module_text("AppCapture.Change.Cut"), (int)Style::Cut);
+	obs_property_list_add_int(change, obs_module_text("AppCapture.Change.FromRight"), (int)Style::FromRight);
+	obs_property_list_add_int(change, obs_module_text("AppCapture.Change.FromLeft"), (int)Style::FromLeft);
+	obs_property_list_add_int(change, obs_module_text("AppCapture.Change.FromBottom"), (int)Style::FromBottom);
+	obs_property_list_add_int(change, obs_module_text("AppCapture.Change.FromTop"), (int)Style::FromTop);
+	set_tip(change, obs_module_text("AppCapture.Change.Tip"));
+	obs_property_set_modified_callback(change, [](obs_properties_t *p, obs_property_t *, obs_data_t *settings) {
+		const bool timed = obs_data_get_int(settings, "change") != (int)Style::Cut;
+		for (const char *name : {"change_ms", "ease_curve", "ease_mode"})
+			if (obs_property_t *one = obs_properties_get(p, name))
+				obs_property_set_visible(one, timed);
+		return true;
+	});
+	obs_property_t *time = obs_properties_add_int_slider(switching, "change_ms",
+							     obs_module_text("AppCapture.ChangeTime"), 50, 5000, 50);
+	obs_property_int_set_suffix(time, " ms");
+	add_easing_properties(switching, "");
+	obs_properties_add_group(props, "switching_group", obs_module_text("AppCapture.Group.Switching"),
+				 OBS_GROUP_NORMAL, switching);
+
+	obs_properties_t *manual = obs_properties_create();
 	PickList by_hand_list;
 	by_hand_list.setting = "by_hand";
 	by_hand_list.title = "AppCapture.ByHand";
 	by_hand_list.add = "AppCapture.Apps.Add";
 	by_hand_list.tip = "AppCapture.ByHand.Tip";
 	by_hand_list.choices = apps.choices;
-	pick_list_add(props, self ? self->source() : nullptr, by_hand_list);
-	obs_properties_add_button2(
-		props, "by_hand_toggle", obs_module_text("AppCapture.ByHand.Toggle"),
+	pick_list_add(manual, self ? self->source() : nullptr, by_hand_list);
+	obs_property_t *hand_follow =
+		obs_properties_add_bool(manual, "hand_follow", obs_module_text("AppCapture.HandFollow"));
+	set_tip(hand_follow, obs_module_text("AppCapture.HandFollow.Tip"));
+
+	obs_property_t *picked = obs_properties_add_list(manual, "picked", obs_module_text("AppCapture.Picked"),
+							 OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+	obs_property_list_add_int(picked, obs_module_text("AppCapture.Picked.Wait"), 0);
+	obs_property_list_add_int(picked, obs_module_text("AppCapture.Picked.Now"), 1);
+	set_tip(picked, obs_module_text("AppCapture.Picked.Tip"));
+	obs_property_t *clear_on_start =
+		obs_properties_add_bool(manual, "clear_picked", obs_module_text("AppCapture.ClearPicked"));
+	set_tip(clear_on_start, obs_module_text("AppCapture.ClearPicked.Tip"));
+
+	obs_property_t *toggle_now = obs_properties_add_button2(
+		manual, "by_hand_toggle", obs_module_text("AppCapture.ByHand.Toggle"),
 		[](obs_properties_t *, obs_property_t *, void *data) {
 			if (data)
 				static_cast<AppCapture *>(data)->command("toggle");
 			return false;
 		},
 		self);
-	obs_properties_add_button2(
-		props, "by_hand_next", obs_module_text("AppCapture.ByHand.Next"),
+	set_tip(toggle_now, obs_module_text("AppCapture.ByHand.Toggle.Tip"));
+	obs_property_t *next_now = obs_properties_add_button2(
+		manual, "by_hand_next", obs_module_text("AppCapture.ByHand.Next"),
 		[](obs_properties_t *, obs_property_t *, void *data) {
 			if (data)
 				static_cast<AppCapture *>(data)->command("next");
 			return false;
 		},
 		self);
-	obs_properties_add_button2(
-		props, "by_hand_back", obs_module_text("AppCapture.ByHand.Back"),
+	set_tip(next_now, obs_module_text("AppCapture.ByHand.Next.Tip"));
+	obs_property_t *back_now = obs_properties_add_button2(
+		manual, "by_hand_back", obs_module_text("AppCapture.ByHand.Back"),
 		[](obs_properties_t *, obs_property_t *, void *data) {
 			if (data)
 				static_cast<AppCapture *>(data)->command("back");
 			return false;
 		},
 		self);
+	set_tip(back_now, obs_module_text("AppCapture.ByHand.Back.Tip"));
 	obs_property_t *clear_now = obs_properties_add_button2(
-		props, "by_hand_clear", obs_module_text("AppCapture.ByHand.Clear"),
+		manual, "by_hand_clear", obs_module_text("AppCapture.ByHand.Clear"),
 		[](obs_properties_t *p, obs_property_t *, void *data) {
 			if (!data)
 				return false;
@@ -2364,55 +2424,21 @@ obs_properties_t *get_properties(void *data)
 		},
 		self);
 	set_tip(clear_now, obs_module_text("AppCapture.ByHand.Clear.Tip"));
-	obs_property_t *clear_on_start =
-		obs_properties_add_bool(props, "clear_picked", obs_module_text("AppCapture.ClearPicked"));
-	set_tip(clear_on_start, obs_module_text("AppCapture.ClearPicked.Tip"));
-
-	obs_property_t *follow = obs_properties_add_bool(props, "follow", obs_module_text("AppCapture.Follow"));
-	set_tip(follow, obs_module_text("AppCapture.Follow.Tip"));
-	obs_property_t *ready = obs_properties_add_bool(props, "ready", obs_module_text("AppCapture.Ready"));
-	set_tip(ready, obs_module_text("AppCapture.Ready.Tip"));
-	obs_property_t *game_area = obs_properties_add_bool(props, "game_area", obs_module_text("AppCapture.GameArea"));
-	set_tip(game_area, obs_module_text("AppCapture.GameArea.Tip"));
-	obs_property_t *picked = obs_properties_add_list(props, "picked", obs_module_text("AppCapture.Picked"),
-							 OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
-	obs_property_list_add_int(picked, obs_module_text("AppCapture.Picked.Wait"), 0);
-	obs_property_list_add_int(picked, obs_module_text("AppCapture.Picked.Now"), 1);
-	set_tip(picked, obs_module_text("AppCapture.Picked.Tip"));
-	obs_property_t *hand_follow =
-		obs_properties_add_bool(props, "hand_follow", obs_module_text("AppCapture.HandFollow"));
-	set_tip(hand_follow, obs_module_text("AppCapture.HandFollow.Tip"));
-
-	obs_property_t *change = obs_properties_add_list(props, "change", obs_module_text("AppCapture.Change"),
-							 OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
-	obs_property_list_add_int(change, obs_module_text("AppCapture.Change.Fade"), (int)Style::Fade);
-	obs_property_list_add_int(change, obs_module_text("AppCapture.Change.Morph"), (int)Style::Morph);
-	obs_property_list_add_int(change, obs_module_text("AppCapture.Change.Cut"), (int)Style::Cut);
-	obs_property_list_add_int(change, obs_module_text("AppCapture.Change.Zoom"), (int)Style::Zoom);
-	obs_property_list_add_int(change, obs_module_text("AppCapture.Change.FromLeft"), (int)Style::FromLeft);
-	obs_property_list_add_int(change, obs_module_text("AppCapture.Change.FromRight"), (int)Style::FromRight);
-	obs_property_list_add_int(change, obs_module_text("AppCapture.Change.FromTop"), (int)Style::FromTop);
-	obs_property_list_add_int(change, obs_module_text("AppCapture.Change.FromBottom"), (int)Style::FromBottom);
-	set_tip(change, obs_module_text("AppCapture.Change.Tip"));
-	obs_property_set_modified_callback(change, [](obs_properties_t *p, obs_property_t *, obs_data_t *settings) {
-		const bool timed = obs_data_get_int(settings, "change") != (int)Style::Cut;
-		for (const char *name : {"change_ms", "ease_curve", "ease_mode"})
-			if (obs_property_t *one = obs_properties_get(p, name))
-				obs_property_set_visible(one, timed);
-		return true;
-	});
-	obs_property_t *time = obs_properties_add_int_slider(props, "change_ms",
-							     obs_module_text("AppCapture.ChangeTime"), 50, 5000, 50);
-	obs_property_int_set_suffix(time, " ms");
-	add_easing_properties(props, "");
+	obs_properties_add_group(props, "manual_group", obs_module_text("AppCapture.Group.Manual"), OBS_GROUP_NORMAL,
+				 manual);
 
 	// Hiding the capture altogether, and showing it again.
 	obs_properties_t *hiding = obs_properties_create();
 	add_item_transition_properties(hiding);
+	// (Said here: with a Standby Image covering, these two are not used.)
+	if (obs_property_t *hide_with = obs_properties_get(hiding, "transition"))
+		set_tip(hide_with, std::string(obs_module_text("Change.Scene.Tip")) + " " +
+					   obs_module_text("Change.Tip") + "\n" +
+					   obs_module_text("AppCapture.Hide.With.Tip"));
 	obs_property_t *to_standby =
 		obs_properties_add_bool(hiding, "hide_standby", obs_module_text("AppCapture.HideStandby"));
 	set_tip(to_standby, obs_module_text("AppCapture.HideStandby.Tip"));
-	obs_properties_add_button2(
+	obs_property_t *hide_now = obs_properties_add_button2(
 		hiding, "hide_now", obs_module_text("AppCapture.Hide.Now"),
 		[](obs_properties_t *, obs_property_t *, void *data) {
 			if (data)
@@ -2420,7 +2446,9 @@ obs_properties_t *get_properties(void *data)
 			return false;
 		},
 		self);
+	set_tip(hide_now, obs_module_text("AppCapture.Hide.Now.Tip"));
 	obs_properties_add_group(props, "hiding", obs_module_text("AppCapture.Hide"), OBS_GROUP_NORMAL, hiding);
+	add_help_line(props, obs_module_text("AppCapture.Help"));
 	return props;
 }
 

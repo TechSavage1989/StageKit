@@ -1537,8 +1537,23 @@ bool shape_modified(obs_properties_t *props, obs_property_t *, obs_data_t *setti
 	const auto trim = static_cast<Trim>(obs_data_get_int(settings, "trim"));
 	obs_property_set_visible(obs_properties_get(props, "trim_wait"), trim == Trim::Automatic);
 	obs_property_set_visible(obs_properties_get(props, "programs_group"), trim == Trim::Automatic);
+	// (The saved aspect ratios are only read by the automatic trim.)
+	obs_property_set_visible(obs_properties_get(props, "rules_text|tlist"), trim == Trim::Automatic);
 	obs_property_set_visible(obs_properties_get(props, "trim_x"), trim == Trim::Manual);
 	obs_property_set_visible(obs_properties_get(props, "trim_y"), trim == Trim::Manual);
+	return true;
+}
+
+// With "Just the image" the source is the image at one height: the frame's
+// width, the fit and the two alignments do nothing and are hidden, and the
+// height is the image's. (The group that copies a size still sets it.)
+bool frame_mode_modified(obs_properties_t *props, obs_property_t *, obs_data_t *settings)
+{
+	const bool fixed = obs_data_get_int(settings, "frame_mode") == 0;
+	for (const char *name : {"frame_width", "fit", "align_x", "align_y"})
+		obs_property_set_visible(obs_properties_get(props, name), fixed);
+	obs_property_set_description(obs_properties_get(props, "frame_height"),
+				     obs_module_text(fixed ? "Frame.Height" : "Frame.Height.Picture"));
 	return true;
 }
 
@@ -1621,6 +1636,7 @@ obs_properties_t *get_properties(void *data)
 	obs_property_list_add_int(mode, obs_module_text("Frame.Mode.Fixed"), 0);
 	obs_property_list_add_int(mode, obs_module_text("Frame.Mode.Picture"), 1);
 	set_tip(mode, obs_module_text("Frame.Mode.Tip"));
+	obs_property_set_modified_callback(mode, frame_mode_modified);
 	obs_properties_add_int(props, "frame_width", obs_module_text("Frame.Width"), 2, 16384, 1);
 	obs_properties_add_int(props, "frame_height", obs_module_text("Frame.Height"), 2, 16384, 1);
 
@@ -1801,6 +1817,8 @@ obs_properties_t *get_properties(void *data)
 	saved.as_text = true;
 	saved.title = "Frame.Rules";
 	pick_list_add(top, self ? self->source() : nullptr, saved);
+	if (obs_property_t *rules = obs_properties_get(top, "rules_text|tlist"))
+		set_tip(rules, obs_module_text("Frame.Rules.Tip"));
 
 	// 5. Movement.
 	props = obs_properties_create();
@@ -1810,6 +1828,30 @@ obs_properties_t *get_properties(void *data)
 	add_easing_properties(props, "");
 
 	obs_properties_add_group(top, "motion_group", obs_module_text("Frame.MotionGroup"), OBS_GROUP_NORMAL, props);
+
+	// The controls that had no tooltip, by name.
+	for (const auto &[name, key] :
+	     std::initializer_list<std::pair<const char *, const char *>>{{"frame_width", "Frame.Width.Tip"},
+									  {"frame_height", "Frame.Height.Tip"},
+									  {"copy_scene", "Frame.Copy.Tip"},
+									  {"copy_item", "Frame.Copy.Tip"},
+									  {"copy_frame", "Frame.Copy.Tip"},
+									  {"fit", "Frame.Fit.Tip"},
+									  {"custom_w", "Frame.Custom.Tip"},
+									  {"custom_h", "Frame.Custom.Tip"},
+									  {"align_x", "Frame.Align.Tip"},
+									  {"align_y", "Frame.Align.Tip"},
+									  {"sharp", "Frame.Sharp.Tip"},
+									  {"trim", "Frame.Trim.Tip"},
+									  {"trim_now", "Frame.TrimNow.Tip"},
+									  {"trim_x", "Frame.TrimXY.Tip"},
+									  {"trim_y", "Frame.TrimXY.Tip"},
+									  {"rule_browse", "Frame.RuleBrowse.Tip"},
+									  {"rule_shape", "Frame.RuleShape.Tip"},
+									  {"rule_add", "Frame.RuleAdd.Tip"},
+									  {"glide_ms", "Frame.Glide.Tip"}})
+		if (obs_property_t *one = obs_properties_get(top, name))
+			set_tip(one, obs_module_text(key));
 
 	obs_property_t *help = obs_properties_add_text(top, "help", obs_module_text("Frame.Help"), OBS_TEXT_INFO);
 	obs_property_text_set_info_word_wrap(help, true);

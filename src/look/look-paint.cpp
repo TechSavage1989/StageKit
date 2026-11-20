@@ -243,8 +243,10 @@ void add_outline_design_properties(obs_properties_t *outline)
 			obs_property_float_set_suffix(p, suffix);
 		return p;
 	};
-	slider("outline_dash", "Shadow.OutlineDash", 1.0, 200.0, " px");
-	slider("outline_gap", "Shadow.OutlineGap", 1.0, 200.0, " px");
+	set_tip(slider("outline_dash", "Shadow.OutlineDash", 1.0, 200.0, " px"),
+		obs_module_text("Shadow.OutlineDash.Tip"));
+	set_tip(slider("outline_gap", "Shadow.OutlineGap", 1.0, 200.0, " px"),
+		obs_module_text("Shadow.OutlineGap.Tip"));
 	set_tip(slider("outline_speed", "Shadow.OutlineSpeed", -600.0, 600.0, nullptr),
 		obs_module_text("Shadow.OutlineSpeed.Tip"));
 	set_tip(slider("outline_neon", "Shadow.OutlineNeon", 10.0, 400.0, "%"),

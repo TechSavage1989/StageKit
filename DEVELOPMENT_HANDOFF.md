@@ -9,7 +9,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | `fix/fit-followup`, on `main` after beta198. Release notes in `docs/releases/0.1.0-beta200.md` (numbered just before pushing). Not pushed. |
+| Working branch | `chore/review-stage2`, on `main` after beta222. Release notes in `docs/releases/0.1.0-beta223.md` (numbered just before pushing). Not pushed. |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 | Gate | Checks passed |
@@ -22,6 +22,40 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `LAYOUT`, `MODES_HIDE`, `SCENE_TRANS_OVERRIDE` | 40, 29, 9 |
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
+
+## Review stage 2: tidier windows (0.1.0-beta223)
+
+Branch `chore/review-stage2`, on `main` at beta222. Committed locally, not pushed. Stage 2 of the
+approved whole-plugin review: the order, grouping and visibility of controls in the windows, plus
+decision D11 (one line of help per filter window). No setting key, id, default or saved number
+changed; groups added hold no setting. Mechanics are in AGENTS.md's *Names* (the stage 2 paragraph).
+
+**Done:** C10 (StageKit's own transition lists in one order: Standby Image, Scene Standby, Auto
+Capture, the Window Switcher; Ambient's capture change already was), C12 (`add_on_group_warning`),
+C14, C18, C20, C21, C23, C24, C27, C28, C31, C32, C36, C39, C40 (with the open windows' titles),
+C41, C42, C44, C48, C49 (window part only), C51, C54, C61, C62, C63, C64's *Unpaired transition*
+line, C66, C68, C69's blur-type order, C72, C75, C76, C78, and D11. Also: tooltips for the
+controls of Auto Frame, Auto Capture, Program Trigger, Shadow, Glow & Outline (and Scene Shadow)
+and Corners & Edges (and Scene Corners) that had none; *Make room if not filling*'s tooltip (Fit
+to Space and Scene Fit) says the filling rules are hidden while it is unticked; Link Visibility's
+*Lock hidden sources* moved above the transition group; the unused `Modes.AddTemplate` removed.
+
+**Left for later stages:** C5's *Move duration* / *5. Timing* and C6's easing tooltips (stage 3);
+every remaining control without a tooltip outside the windows regrouped here (Blur's look, Layout,
+Cropped View's four sides, the easing lists: C13's rest); Morph used by an item is told by looking
+through the scenes' items (`used_by_item`), and a Morph not yet set on any item shows everything.
+Nothing of Fit to Space or Scene Fit behaviour changed (stage 7); C48/C49 there are the window only.
+
+**Tested** (gates, after rebasing onto beta222): `TOOLTIPS` 12 (34 kinds, 457 tooltips),
+`SCENE_BLUR_CONTROLS` 3, `BLUR_EDGES` 19, `LINK_TRANS` 14, `LINK_FOLLOW` 51, `SCENE_TRANS_OVERRIDE`
+9, `SHADOW_EACH` 13, `CORNERS_WHOLE` 11, `FIT_GROUPS` 15, `FIT_PRIORITY` 41, `FIT_WHOLE_OVERLAP`
+36, `FIT_VISIBLE` 16, `MODES_HIDE` 29, `CAPTURE_HIDE` 5, `CLEAR_PICKED` 7, `STANDBY_COVER` 7,
+`RESTORE_HIDDEN` 5, `SWITCH_COMMAND` 3, `MAKE_ROOM` 15, `MORPH_UI_TASK` 27, `DOCK_BOUNDS` 23,
+`AMBIENT_DARKEST` 16: all passed. `FIT_TOOL` failed once (*with shadows counted (by boxes) ...
+stay inside the gap*, while other builds shared the machine) and passed all 78 on a second run.
+The Scene Modes section that checks the one *Add mode* row and the dock's Standby & Ambient tab run
+only in the full suite, which was not run (the job asked for gates only). Not seen in OBS on
+Windows.
 
 ## Make room only when the image would overlap (0.1.0-beta222)
 

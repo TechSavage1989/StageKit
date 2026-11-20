@@ -1578,23 +1578,33 @@ void AmbientBackground::render()
 
 // --------------------------------------------------------------- properties
 
+// A list of sources to choose from: "(none)" first, then every source with an
+// image but the background itself (`self`, its instance).
+struct SourceList {
+	obs_property_t *list;
+	void *self;
+};
+
 bool add_source_to_list(void *param, obs_source_t *source)
 {
-	auto *list = static_cast<obs_property_t *>(param);
+	auto *into = static_cast<SourceList *>(param);
+	if (into->self && obs_obj_get_data(source) == into->self)
+		return true;
 	if (obs_source_get_output_flags(source) & OBS_SOURCE_VIDEO) {
 		const char *name = obs_source_get_name(source);
 		if (name && *name)
-			obs_property_list_add_string(list, name, name);
+			obs_property_list_add_string(into->list, name, name);
 	}
 	return true;
 }
 
-void fill_source_list(obs_property_t *list, bool include_scenes)
+void fill_source_list(obs_property_t *list, bool include_scenes, void *self)
 {
-	obs_property_list_add_string(list, "", "");
-	obs_enum_sources(add_source_to_list, list);
+	SourceList into{list, self};
+	obs_property_list_add_string(list, obs_module_text("Ambient.Source.None"), "");
+	obs_enum_sources(add_source_to_list, &into);
 	if (include_scenes)
-		obs_enum_scenes(add_source_to_list, list);
+		obs_enum_scenes(add_source_to_list, &into);
 }
 
 bool visibility_modified(obs_properties_t *props, obs_property_t *, obs_data_t *settings)
@@ -1611,9 +1621,15 @@ bool visibility_modified(obs_properties_t *props, obs_property_t *, obs_data_t *
 	// (A pattern moves by its own Speed; drift, zoom and mirror are an image's.)
 	obs_property_set_visible(obs_properties_get(props, "motion_group"), base != BaseType::Pattern);
 	obs_property_set_visible(obs_properties_get(props, "live_source"), live == LiveMode::Source);
-	obs_property_set_visible(obs_properties_get(props, "live_opacity"), live != LiveMode::None);
-	for (const char *name : {"live_fit", "live_zoom", "live_replace", "live_ready", "live_skip_standby"})
+	// (The opacity is not read while the capture replaces the image; and the
+	// capture is only kept ready where it is found by itself.)
+	obs_property_set_visible(obs_properties_get(props, "live_opacity"),
+				 live != LiveMode::None && !obs_data_get_bool(settings, "live_replace"));
+	for (const char *name : {"live_fit", "live_zoom", "live_replace", "live_skip_standby"})
 		obs_property_set_visible(obs_properties_get(props, name), live != LiveMode::None);
+	obs_property_set_visible(obs_properties_get(props, "live_ready"), live == LiveMode::Auto);
+	// (Without a capture nothing changes: the whole group goes.)
+	obs_property_set_visible(obs_properties_get(props, "live_change_group"), live != LiveMode::None);
 	for (const char *name : {"pixel_size", "pixel_smooth", "pixel_glass", "pixel_glass_style", "pixel_origin_x",
 				 "pixel_origin_y", "pixel_rotation"})
 		obs_property_set_visible(obs_properties_get(props, name), pixel != PixelStyle::None);
@@ -1643,7 +1659,7 @@ obs_property_t *percent_slider(obs_properties_t *props, const char *name, const 
 	return p;
 }
 
-obs_properties_t *get_properties(void *)
+obs_properties_t *get_properties(void *data)
 {
 	const char *image_filter =
 		"Images (*.bmp *.tga *.png *.jpeg *.jpg *.jxr *.gif *.psd *.webp *.avif);;All files (*.*)";
@@ -1653,17 +1669,22 @@ obs_properties_t *get_properties(void *)
 	obs_properties_t *picture = obs_properties_create();
 	obs_property_t *base = obs_properties_add_list(picture, "base_type", obs_module_text("Ambient.BaseType"),
 						       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
-	obs_property_list_add_int(base, obs_module_text("Ambient.BaseType.Image"), (int)BaseType::Image);
+	// (The Standby Image's order: the standby image, a file, a source. The
+	// numbers stay as saved.)
 	obs_property_list_add_int(base, obs_module_text("Ambient.BaseType.StartImage"), (int)BaseType::StartImage);
+	obs_property_list_add_int(base, obs_module_text("Ambient.BaseType.Image"), (int)BaseType::Image);
 	obs_property_list_add_int(base, obs_module_text("Ambient.BaseType.Source"), (int)BaseType::Source);
 	obs_property_list_add_int(base, obs_module_text("Ambient.BaseType.Pattern"), (int)BaseType::Pattern);
+	set_tip(base, obs_module_text("Ambient.BaseType.Tip"));
 	obs_property_set_modified_callback(base, visibility_modified);
-	obs_properties_add_path(picture, "image", obs_module_text("Ambient.Image"), OBS_PATH_FILE, image_filter,
-				nullptr);
+	set_tip(obs_properties_add_path(picture, "image", obs_module_text("Ambient.Image"), OBS_PATH_FILE, image_filter,
+					nullptr),
+		obs_module_text("Ambient.Image.Tip"));
 	obs_property_t *base_source = obs_properties_add_list(picture, "base_source",
 							      obs_module_text("Ambient.BaseSource"),
 							      OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
-	fill_source_list(base_source, true);
+	fill_source_list(base_source, true, data);
+	set_tip(base_source, obs_module_text("Ambient.BaseSource.Tip"));
 	// A pattern: which, its three colours and how it moves.
 	obs_property_t *pattern = obs_properties_add_list(picture, "pattern", obs_module_text("Ambient.Pattern"),
 							  OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
@@ -1673,8 +1694,10 @@ obs_properties_t *get_properties(void *)
 	obs_property_t *colour1 =
 		obs_properties_add_color(picture, "pattern_colour1", obs_module_text("Ambient.PatternColour1"));
 	set_tip(colour1, obs_module_text("Ambient.PatternColour.Tip"));
-	obs_properties_add_color(picture, "pattern_colour2", obs_module_text("Ambient.PatternColour2"));
-	obs_properties_add_color(picture, "pattern_colour3", obs_module_text("Ambient.PatternColour3"));
+	set_tip(obs_properties_add_color(picture, "pattern_colour2", obs_module_text("Ambient.PatternColour2")),
+		obs_module_text("Ambient.PatternColour.Tip"));
+	set_tip(obs_properties_add_color(picture, "pattern_colour3", obs_module_text("Ambient.PatternColour3")),
+		obs_module_text("Ambient.PatternColour.Tip"));
 	obs_property_t *pattern_speed = percent_slider(picture, "pattern_speed", "Ambient.PatternSpeed", -400.0, 400.0);
 	set_tip(pattern_speed, obs_module_text("Ambient.PatternSpeed.Tip"));
 	obs_property_t *pattern_scale = percent_slider(picture, "pattern_scale", "Ambient.PatternScale", 25.0, 400.0);
@@ -1690,17 +1713,25 @@ obs_properties_t *get_properties(void *)
 		picture, "base_rotation", obs_module_text("Mosaic.Rotation"), -180.0, 180.0, 1.0);
 	obs_property_float_set_suffix(base_rotation, "°");
 	set_tip(base_rotation, obs_module_text("Ambient.Rotation.Tip"));
+	obs_properties_add_group(props, "picture_group", obs_module_text("Ambient.Group.Picture"), OBS_GROUP_NORMAL,
+				 picture);
+
+	// Live capture: a capture blended into the background.
+	picture = obs_properties_create();
 	obs_property_t *live = obs_properties_add_list(picture, "live_mode", obs_module_text("Ambient.Live"),
 						       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(live, obs_module_text("Ambient.Live.None"), (int)LiveMode::None);
 	obs_property_list_add_int(live, obs_module_text("Ambient.Live.Auto"), (int)LiveMode::Auto);
 	obs_property_list_add_int(live, obs_module_text("Ambient.Live.Source"), (int)LiveMode::Source);
+	set_tip(live, obs_module_text("Ambient.Live.Tip"));
 	obs_property_set_modified_callback(live, visibility_modified);
 	obs_property_t *live_source = obs_properties_add_list(picture, "live_source",
 							      obs_module_text("Ambient.LiveSource"),
 							      OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
-	fill_source_list(live_source, false);
-	percent_slider(picture, "live_opacity", "Ambient.LiveOpacity", 0.0, 100.0);
+	fill_source_list(live_source, false, data);
+	set_tip(live_source, obs_module_text("Ambient.LiveSource.Tip"));
+	set_tip(percent_slider(picture, "live_opacity", "Ambient.LiveOpacity", 0.0, 100.0),
+		obs_module_text("Ambient.LiveOpacity.Tip"));
 	obs_property_t *live_fit = obs_properties_add_list(picture, "live_fit", obs_module_text("Ambient.LiveFit"),
 							   OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(live_fit, obs_module_text("Ambient.LiveFit.Fill"), (int)LiveFit::Fill);
@@ -1708,7 +1739,9 @@ obs_properties_t *get_properties(void *)
 	obs_property_list_add_int(live_fit, obs_module_text("Ambient.LiveFit.Width"), (int)LiveFit::Width);
 	obs_property_list_add_int(live_fit, obs_module_text("Ambient.LiveFit.Height"), (int)LiveFit::Height);
 	obs_property_list_add_int(live_fit, obs_module_text("Ambient.LiveFit.Stretch"), (int)LiveFit::Stretch);
-	percent_slider(picture, "live_zoom", "Ambient.LiveZoom", 25.0, 400.0);
+	set_tip(live_fit, obs_module_text("Ambient.LiveFit.Tip"));
+	set_tip(percent_slider(picture, "live_zoom", "Ambient.LiveZoom", 25.0, 400.0),
+		obs_module_text("Ambient.LiveZoom.Tip"));
 	obs_property_t *replace =
 		obs_properties_add_bool(picture, "live_replace", obs_module_text("Ambient.LiveReplace"));
 	obs_property_t *skip_standby =
@@ -1717,7 +1750,12 @@ obs_properties_t *get_properties(void *)
 	obs_property_t *ready = obs_properties_add_bool(picture, "live_ready", obs_module_text("Ambient.LiveReady"));
 	set_tip(ready, obs_module_text("Ambient.LiveReady.Tip"));
 	set_tip(replace, obs_module_text("Ambient.LiveReplace.Tip"));
+	// (With it the capture is the whole background: its opacity is not read.)
+	obs_property_set_modified_callback(replace, visibility_modified);
+	obs_properties_add_group(props, "live_group", obs_module_text("Ambient.Group.Live"), OBS_GROUP_NORMAL, picture);
+
 	// How the background follows when the capture changes.
+	picture = obs_properties_create();
 	obs_property_t *live_change = obs_properties_add_list(picture, "live_change",
 							      obs_module_text("Ambient.LiveChange"),
 							      OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
@@ -1736,20 +1774,24 @@ obs_properties_t *get_properties(void *)
 	obs_property_t *live_time =
 		obs_properties_add_int_slider(picture, "live_change_ms", obs_module_text("Change.Time"), 50, 5000, 50);
 	obs_property_int_set_suffix(live_time, " ms");
+	set_tip(live_time, obs_module_text("Ambient.LiveChangeTime.Tip"));
 	add_easing_properties(picture, "live_");
-	obs_properties_add_group(props, "picture_group", obs_module_text("Ambient.Group.Picture"), OBS_GROUP_NORMAL,
-				 picture);
+	obs_properties_add_group(props, "live_change_group", obs_module_text("Ambient.Group.LiveChange"),
+				 OBS_GROUP_NORMAL, picture);
 
 	// Motion
 	obs_properties_t *motion = obs_properties_create();
 	obs_property_t *sx = obs_properties_add_float_slider(motion, "speed_x", obs_module_text("Ambient.SpeedX"),
 							     -300.0, 300.0, 1.0);
 	obs_property_float_set_suffix(sx, " px/s");
+	set_tip(sx, obs_module_text("Ambient.Speed.Tip"));
 	obs_property_t *sy = obs_properties_add_float_slider(motion, "speed_y", obs_module_text("Ambient.SpeedY"),
 							     -300.0, 300.0, 1.0);
 	obs_property_float_set_suffix(sy, " px/s");
-	percent_slider(motion, "zoom", "Ambient.Zoom", 100.0, 400.0);
-	obs_properties_add_bool(motion, "mirror", obs_module_text("Ambient.Mirror"));
+	set_tip(sy, obs_module_text("Ambient.Speed.Tip"));
+	set_tip(percent_slider(motion, "zoom", "Ambient.Zoom", 100.0, 400.0), obs_module_text("Ambient.Zoom.Tip"));
+	set_tip(obs_properties_add_bool(motion, "mirror", obs_module_text("Ambient.Mirror")),
+		obs_module_text("Ambient.Mirror.Tip"));
 	obs_properties_add_group(props, "motion_group", obs_module_text("Ambient.Group.Motion"), OBS_GROUP_NORMAL,
 				 motion);
 
@@ -1757,26 +1799,30 @@ obs_properties_t *get_properties(void *)
 	obs_properties_t *look = obs_properties_create();
 	obs_property_t *blur_type = obs_properties_add_list(look, "blur_type", obs_module_text("RampBlur.Type"),
 							    OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
-	obs_property_list_add_int(blur_type, obs_module_text("RampBlur.Type.Kawase"), (int)BlurKind::Kawase);
+	// (Listed in the Blur filter's order; the numbers stay as saved.)
 	obs_property_list_add_int(blur_type, obs_module_text("RampBlur.Type.Gaussian"), (int)BlurKind::Gaussian);
+	obs_property_list_add_int(blur_type, obs_module_text("RampBlur.Type.Kawase"), (int)BlurKind::Kawase);
 	obs_property_list_add_int(blur_type, obs_module_text("RampBlur.Type.Box"), (int)BlurKind::Box);
 	obs_property_list_add_int(blur_type, obs_module_text("RampBlur.Type.Temporal"), (int)BlurKind::Temporal);
 	set_tip(blur_type, obs_module_text("Ambient.BlurType.Tip"));
-	obs_properties_add_float_slider(look, "blur", obs_module_text("Ambient.Blur"), 0.0, 1000.0, 1.0);
+	set_tip(obs_properties_add_float_slider(look, "blur", obs_module_text("Ambient.Blur"), 0.0, 1000.0, 1.0),
+		obs_module_text("Ambient.Blur.Tip"));
 	obs_property_t *pixel = obs_properties_add_list(look, "pixel_style", obs_module_text("Ambient.Pixel"),
 							OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(pixel, obs_module_text("Ambient.Pixel.None"), (int)PixelStyle::None);
-	obs_property_list_add_int(pixel, obs_module_text("Ambient.Pixel.Hex"), (int)PixelStyle::Hex);
 	obs_property_list_add_int(pixel, obs_module_text("Ambient.Pixel.Square"), (int)PixelStyle::Square);
+	obs_property_list_add_int(pixel, obs_module_text("Ambient.Pixel.Hex"), (int)PixelStyle::Hex);
 	obs_property_list_add_int(pixel, obs_module_text("Mosaic.Circle"), (int)PixelStyle::Circle);
 	obs_property_list_add_int(pixel, obs_module_text("Mosaic.Triangle"), (int)PixelStyle::Triangle);
 	obs_property_list_add_int(pixel, obs_module_text("Mosaic.Voronoi"), (int)PixelStyle::Voronoi);
 	obs_property_list_add_int(pixel, obs_module_text("Mosaic.Rhomboid"), (int)PixelStyle::Rhomboid);
 	obs_property_list_add_int(pixel, obs_module_text("Mosaic.Triakis"), (int)PixelStyle::Triakis);
+	set_tip(pixel, obs_module_text("Ambient.Pixel.Tip"));
 	obs_property_set_modified_callback(pixel, visibility_modified);
 	obs_property_t *cell = obs_properties_add_float_slider(look, "pixel_size", obs_module_text("Ambient.PixelSize"),
 							       2.0, 200.0, 1.0);
 	obs_property_float_set_suffix(cell, " px");
+	set_tip(cell, obs_module_text("Ambient.PixelSize.Tip"));
 	obs_property_t *smooth = obs_properties_add_float_slider(look, "pixel_smooth", obs_module_text("Mosaic.Smooth"),
 								 0.0, 100.0, 1.0);
 	obs_property_float_set_suffix(smooth, "%");
@@ -1802,8 +1848,14 @@ obs_properties_t *get_properties(void *)
 	obs_property_t *rotation = obs_properties_add_float_slider(
 		look, "pixel_rotation", obs_module_text("Mosaic.Rotation"), -180.0, 180.0, 1.0);
 	obs_property_float_set_suffix(rotation, "°");
-	percent_slider(look, "saturation", "Ambient.Saturation", 0.0, 300.0);
-	percent_slider(look, "glow", "Ambient.Glow", 0.0, 100.0);
+	set_tip(rotation, obs_module_text("Mosaic.Rotation.Tip"));
+	obs_properties_add_group(props, "blur_group", obs_module_text("Ambient.Group.Blur"), OBS_GROUP_NORMAL, look);
+
+	// Light and colour.
+	look = obs_properties_create();
+	set_tip(percent_slider(look, "saturation", "Ambient.Saturation", 0.0, 300.0),
+		obs_module_text("Ambient.Saturation.Tip"));
+	set_tip(percent_slider(look, "glow", "Ambient.Glow", 0.0, 100.0), obs_module_text("Ambient.Glow.Tip"));
 	obs_property_t *bloom =
 		obs_properties_add_float_slider(look, "bloom", obs_module_text("Ambient.Bloom"), 0.0, 1000.0, 1.0);
 	obs_property_float_set_suffix(bloom, "%");
@@ -1821,8 +1873,14 @@ obs_properties_t *get_properties(void *)
 	obs_property_t *bloom_size = obs_properties_add_float_slider(
 		look, "bloom_size", obs_module_text("Ambient.BloomSize"), 0.0, 1000.0, 1.0);
 	set_tip(bloom_size, obs_module_text("Ambient.BloomSize.Tip"));
-	percent_slider(look, "brightness", "Ambient.Brightness", 0.0, 200.0);
-	percent_slider(look, "vignette", "Ambient.Vignette", 0.0, 100.0);
+	set_tip(percent_slider(look, "brightness", "Ambient.Brightness", 0.0, 200.0),
+		obs_module_text("Ambient.Brightness.Tip"));
+	set_tip(percent_slider(look, "vignette", "Ambient.Vignette", 0.0, 100.0),
+		obs_module_text("Ambient.Vignette.Tip"));
+	obs_properties_add_group(props, "look_group", obs_module_text("Ambient.Group.Look"), OBS_GROUP_NORMAL, look);
+
+	// Darkest level.
+	look = obs_properties_create();
 	// (Its two controls below do not come and go with the level: see Bloom.)
 	obs_property_t *darkest = percent_slider(look, "darkest_level", "Ambient.Darkest", 0.0, 100.0);
 	set_tip(darkest, obs_module_text("Ambient.Darkest.Tip"));
@@ -1837,19 +1895,24 @@ obs_properties_t *get_properties(void *)
 	obs_property_t *darkest_color =
 		obs_properties_add_color(look, "darkest_color", obs_module_text("Ambient.DarkestColour"));
 	set_tip(darkest_color, obs_module_text("Ambient.DarkestColour.Tip"));
-	obs_properties_add_group(props, "look_group", obs_module_text("Ambient.Group.Look"), OBS_GROUP_NORMAL, look);
+	obs_properties_add_group(props, "darkest_group", obs_module_text("Ambient.Group.Darkest"), OBS_GROUP_NORMAL,
+				 look);
 
 	// Texture overlay
 	obs_properties_t *tex = obs_properties_create();
 	obs_property_t *overlay = obs_properties_add_path(tex, "overlay", obs_module_text("Ambient.Overlay"),
 							  OBS_PATH_FILE, image_filter, nullptr);
+	set_tip(overlay, obs_module_text("Ambient.Overlay.Tip"));
 	obs_property_set_modified_callback(overlay, visibility_modified);
 	obs_property_t *mode = obs_properties_add_list(tex, "overlay_mode", obs_module_text("Ambient.OverlayMode"),
 						       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(mode, obs_module_text("Ambient.OverlayMode.Multiply"), (int)OverlayMode::Multiply);
 	obs_property_list_add_int(mode, obs_module_text("Ambient.OverlayMode.Screen"), (int)OverlayMode::Screen);
-	percent_slider(tex, "overlay_strength", "Ambient.OverlayStrength", 0.0, 100.0);
-	obs_properties_add_bool(tex, "overlay_gray", obs_module_text("Ambient.OverlayGray"));
+	set_tip(mode, obs_module_text("Ambient.OverlayMode.Tip"));
+	set_tip(percent_slider(tex, "overlay_strength", "Ambient.OverlayStrength", 0.0, 100.0),
+		obs_module_text("Ambient.OverlayStrength.Tip"));
+	set_tip(obs_properties_add_bool(tex, "overlay_gray", obs_module_text("Ambient.OverlayGray")),
+		obs_module_text("Ambient.OverlayGray.Tip"));
 	obs_properties_add_group(props, "overlay_group", obs_module_text("Ambient.Group.Overlay"), OBS_GROUP_NORMAL,
 				 tex);
 

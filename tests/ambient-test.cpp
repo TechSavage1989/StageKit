@@ -24046,7 +24046,7 @@ int main(int argc, char **argv)
 					seen = left_picture && right_capture;
 				}
 				CHECK(seen,
-				      "with 'Slide away to the left', the capture is uncovered from the right as the picture leaves");
+				      "with 'Slide left', the capture is uncovered from the right as the picture leaves");
 				settle(20);
 				obs_data_set_string(again, "file", "");
 				obs_source_update(capture, again);
@@ -29122,11 +29122,30 @@ int main(int argc, char **argv)
 				      obs_properties_get(props, "mode|m3|g"),
 			      "a mode typed by hand is added with an id of its own (%s)", ids().c_str());
 			modes_set(one_filter, [](obs_data_t *s) { obs_data_set_int(s, "template", 6); });
-			click("add_template");
+			click("add_mode");
+			obs_property_t *row_template = obs_properties_get(props, "template");
+			obs_property_t *row_name = obs_properties_get(props, "new_mode");
+			obs_property_t *row_add = obs_properties_get(props, "add_mode");
+			bool row_in_order = false;
+			for (obs_property_t *p = obs_properties_first(props); p; obs_property_next(&p)) {
+				if (p != row_template)
+					continue;
+				obs_property_t *next = p;
+				obs_property_next(&next);
+				row_in_order = next == row_name;
+				obs_property_next(&next);
+				row_in_order = row_in_order && next == row_add;
+				break;
+			}
+			obs_data_t *after_add = obs_source_get_settings(one_filter);
+			const long long template_after = obs_data_get_int(after_add, "template");
+			obs_data_release(after_add);
 			CHECK(ids() == "m1,m2,m3,m4" && setting("mode|m4|name") == "Intermission" &&
-				      setting("mode|m4|type") == "intermission",
-			      "a mode from a template starts with the template's name and type (%s, %s)",
-			      setting("mode|m4|name").c_str(), setting("mode|m4|type").c_str());
+				      setting("mode|m4|type") == "intermission" && row_in_order &&
+				      !obs_properties_get(props, "add_template") && template_after == -1,
+			      "one row adds a mode (template, name, 'Add mode'): from a template alone it starts with the template's name and type, and the template box is put back (%s, %s, in order %d, template %lld)",
+			      setting("mode|m4|name").c_str(), setting("mode|m4|type").c_str(), (int)row_in_order,
+			      template_after);
 			modes_set(one_filter, [](obs_data_t *s) { obs_data_set_string(s, "new_mode", "Third"); });
 			click("add_mode");
 			CHECK(ids() == "m1,m2,m3,m4,m5" && setting("mode|m5|name") == "Third",

@@ -441,31 +441,50 @@ obs_properties_t *match_item_properties(void *data)
 	obs_property_t *item = obs_properties_add_list(props, "item", obs_module_text("Match.Item"),
 						       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
 	add_scene_items_to_list(self ? self->parent() : nullptr, item);
+	set_tip(item, obs_module_text("Match.Item.Tip"));
 
 	obs_property_t *scene = obs_properties_add_list(props, "master_scene", obs_module_text("Match.MasterScene"),
 							OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
-	obs_enum_scenes(
-		[](void *param, obs_source_t *source) {
-			const char *name = obs_source_get_name(source);
-			if (name && *name)
-				obs_property_list_add_string(static_cast<obs_property_t *>(param), name, name);
-			return true;
-		},
-		scene);
+	// Scenes only, as in every other list of scenes: OBS lists each group as
+	// a scene too. A group chosen before stays chosen, by name.
+	{
+		std::vector<std::string> names;
+		obs_enum_scenes(
+			[](void *param, obs_source_t *source) {
+				const char *name = obs_source_get_name(source);
+				if (name && *name && !obs_source_is_group(source))
+					static_cast<std::vector<std::string> *>(param)->push_back(name);
+				return true;
+			},
+			&names);
+		if (self) {
+			obs_data_t *settings = obs_source_get_settings(self->source());
+			const std::string chosen = obs_data_get_string(settings, "master_scene");
+			obs_data_release(settings);
+			if (!chosen.empty() && std::find(names.begin(), names.end(), chosen) == names.end())
+				names.push_back(chosen);
+		}
+		for (const std::string &name : names)
+			obs_property_list_add_string(scene, name.c_str(), name.c_str());
+	}
+	set_tip(scene, obs_module_text("Match.MasterScene.Tip"));
 	obs_property_set_modified_callback(scene, master_scene_modified);
-	obs_properties_add_list(props, "master_item", obs_module_text("Match.MasterItem"), OBS_COMBO_TYPE_LIST,
-				OBS_COMBO_FORMAT_STRING);
+	obs_property_t *master = obs_properties_add_list(props, "master_item", obs_module_text("Match.MasterItem"),
+							 OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
+	set_tip(master, obs_module_text("Match.MasterItem.Tip"));
 
 	obs_property_t *mode = obs_properties_add_list(props, "mode", obs_module_text("Match.Mode"),
 						       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(mode, obs_module_text("Match.Mode.Fit"), (int)MatchMode::FitBox);
 	obs_property_list_add_int(mode, obs_module_text("Match.Mode.Copy"), (int)MatchMode::CopyTransform);
+	set_tip(mode, obs_module_text("Match.Mode.Tip"));
 	obs_property_set_modified_callback(mode, master_scene_modified);
 	obs_property_t *align = obs_properties_add_list(props, "fit_align", obs_module_text("Match.FitAlign"),
 							OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(align, obs_module_text("Match.FitAlign.Left"), 0);
 	obs_property_list_add_int(align, obs_module_text("Match.FitAlign.Center"), 1);
 	obs_property_list_add_int(align, obs_module_text("Match.FitAlign.Right"), 2);
+	set_tip(align, obs_module_text("Match.FitAlign.Tip"));
 
 	obs_property_t *help = obs_properties_add_text(props, "help", obs_module_text("Match.Help"), OBS_TEXT_INFO);
 	obs_property_text_set_info_word_wrap(help, true);
