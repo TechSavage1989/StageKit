@@ -140,301 +140,296 @@ this guide. A scene filter's window runs in one order: what it applies to, *Sour
 lists, the look, the timing, the transition, then any button; a button that acts at once is the last
 thing in its window or group. Controls that do nothing in the current choice are hidden.
 
-### Blur
+### Which tool for which job
 
-Add **Source Filter: Blur (StageKit)** as a filter on a source or scene. The filter's own on/off switch is the
-blur: turning it on ramps the blur in, turning it off ramps it out and then really switches the filter
-off, so it costs nothing while off.
+#### Showing and hiding
+
+| What you want to do | Tool to use |
+| --- | --- |
+| Choose among named modes with their own sources, such as Starting, BRB and Ending | [Scene Modes](#scene-modes) |
+| Link eye icons, keep one source visible, or have several follow a lead source | [Link Visibility](#link-visibility) |
+| Put one source on a key across selected scenes | [Show in Scenes](#show-in-scenes) |
+| Show an image over a camera or capture while keeping its place | [Standby Image filter](#standby-image-1) |
+
+#### Fitting and framing
+
+| What you want to do | Tool to use |
+| --- | --- |
+| Remove bars or give one game capture a consistent display ratio | [Auto Frame](#auto-frame) |
+| Fit one source around a camera or within an area of the canvas | [Fit to Space](#fit-to-space) |
+| Fit several sources into a scene and move them together | [Scene Fit](#scene-fit) |
+| Use a cropped part of a source as a separate source | [Cropped View](#cropped-view) |
+
+#### Keeping items in the same place
+
+| What you want to do | Tool to use |
+| --- | --- |
+| Move a camera to a saved position in the scenes where it appears | [Move Source](#move-source) |
+| Keep an item in one scene aligned with a reference item in another | [Match Item](#match-item) |
+| Return several items to a saved arrangement | [Apply Layout](#apply-layout) |
+| Copy the current transform to other scenes or chosen sources once | [StageKit dock](#the-stagekit-docks) |
+
+#### Changing the look
+
+| What you want to do | Tool to use |
+| --- | --- |
+| Blur one source or several sources in the current scene | [Blur](#blur) or [Scene Blur](#scene-blur) |
+| Round, cut or soften an edge on one source or across a scene | [Corners & Edges](#corners--edges) or [Scene Corners](#scene-corners) |
+| Draw a shadow, glow or outline, including an animated outline | [Shadow, Glow & Outline](#shadow-glow--outline) or [Scene Shadow](#scene-shadow) |
+| Build a background from a pattern, image or live source | [Ambient Background](#ambient-background) |
+
+#### Choosing a capture
+
+| What you want to do | Tool to use |
+| --- | --- |
+| Let a Game Capture follow the running game on Windows | [Auto Capture](#auto-capture) |
+| Use one Window Capture to follow several applications | [Automatic Window Switcher](#automatic-window-switcher) |
+| Switch among separate capture sources already in a scene | [Automatic Source Switcher](#automatic-source-switcher) |
+| Show selected items or switch filters when a program opens | [Program Trigger](#program-trigger) |
+
+#### Choosing a transition
+
+| What you want to do | Tool to use |
+| --- | --- |
+| Set how sources in one scene appear and disappear | [Scene Transitions](#scene-transitions) |
+| Move an item from a chosen edge or make it pop when shown or hidden | [Show/Hide Animation](#showhide-animation) |
+| Glide matching items between scenes or between two items in one scene | [Morph transition](#morph-transition) or [Morph between items](#morph-between-items) |
+| Move unpaired sources away from the items that morph | [Make Room](#make-room-transition) |
+| Fade and scale the incoming or outgoing picture | [Fade and Zoom](#fade-and-zoom-transition) |
+
+### Scene filters
+
+A scene filter sits on a scene, not on a source, and looks after the scene's sources together: one filter in
+place of one per source. Add one from the scene's own Filters window (right-click the scene, *Filters*).
+There are seven: **Scene Modes** (which sources show), **Scene Transitions** (how they show and hide), **Scene
+Fit** (where they go), **Scene Standby** (the standby image in a capture's place), **Scene Corners**,
+**Scene Shadow** and **Scene Blur** (how they look). They work together, and a Standby Image, Corners & Edges or Shadow, Glow &
+Outline you put on a source yourself is left as it is. Five of them draw nothing, and Scene Shadow is
+built to keep Morph working, so a scene carrying any of them still morphs. In a scene that is not on screen
+they do as little as they can, and nothing at all while a scene collection loads.
+
+Scene Transitions, Scene Fit, Scene Standby, Scene Corners and Scene Shadow each have a **Sources covered**
+list that starts with **All sources**: every source in the scene, a group counting as one, and sources you add
+later too, except the ones under **Ignored sources**. The Morph layer and Standby stand-ins are never counted.
+Each filter starts on what it did before there was a choice (see each one below), so a filter you already
+have keeps doing what it did.
+
+## Capture sources and framing
+
+### Auto Capture
+
+Add **Source Filter: Auto Capture (StageKit)** as a filter on one *Game Capture* source. Windows only.
+
+Four times a second it looks at the window in front. If that window is a game, the capture is aimed at
+it, windowed or full-screen. It stays on that game when you switch to another program, and moves on
+when the game closes or another game comes to the front. There is nothing to set up per game.
+
+The filter's controls show what it is capturing now.
+
+- **It leaves alone what it cannot hook, for a while.** A program taken for a game that gives
+  the capture no image for ten seconds is left alone (OBS's log says so): left aimed at it, OBS
+  goes on trying several times a second, and each try stalls the image for a moment. While it is
+  left alone the capture is aimed at no window at all (or at another game), so OBS stops trying.
+  Every five seconds it looks in on the program for one second, so a game started meanwhile is
+  picked up within a few seconds (after a minute of looks that find nothing, they come up to 15
+  seconds apart); that is about a sixth of the hooking OBS would do if it stayed aimed at it. It is
+  tried again at once, for the full ten seconds, when one of its windows shows a title not seen
+  before, as when a game is started in an emulator, or when you click back into it. A frame rate or
+  a volume in the title changing does not count, and a title counts only once. Nothing is added to
+  *Never capture* by itself. Programs listed in an Automatic Window Switcher are never taken at all.
+- **Not a game? Never capture this program**: one press when it picks up the wrong thing.
+- **Pick from the programs that are open**: choose a program and press *Always capture it* (for a game
+  it misses) or *Never capture it*. There are no file names to type.
+- **Games** (the first group): *Always capture* and *Never capture*, one row per entry with its own
+  remove button, then *Find games* and *Keep the capture ready*. OBS, browsers, Discord, Steam's own
+  windows and similar are already left alone.
+- **Find games**: *Automatically*, or *Only from 'Always capture'*.
+- **Keep the capture ready** (on as it comes): the capture carries on while you are on a scene
+  that does not show it, so it is there at once when you come back. Unticked, OBS stops it a moment
+  after you leave and starts it again when you return.
+- **No game: Standby Image** (off as it comes): with a Standby Image filter on the capture, the
+  Standby Image is shown while no game is captured, and gives way when a game is found.
+- **Standby Image** group: *Hide shows Standby Image* (on as it comes) hides the capture behind
+  its Standby Image instead of hiding the item; *Hide/show capture now* does it, as does the
+  hotkey under the capture and the Stream Deck *Manual Window / Source* key. *Transition*,
+  *Duration* and the easing are how the Standby Image comes and goes for these two.
+- Without a Standby Image (or with *Hide shows Standby Image* unticked) the hide hides the
+  capture's items wherever they are shown and remembers where; the next press shows them again
+  there only, never in a scene where the capture was hidden already (a Link Visibility's other
+  capture, a mode that is not on). With nothing remembered, the press shows nothing. What is
+  remembered is kept over a restart.
+- **A game's window closing lets go of it.** When the game's own window closes and its program
+  stays open (Dolphin back in its game list, with the menu in a window of its own), the capture
+  lets go within about half a second, so it no longer keeps the game's last frame: a Standby
+  Image after it comes in with its own transition, or, with *No game: Standby Image*, Auto
+  Capture's. The program's next game window is picked up as usual. A window that is only made
+  again (going full-screen) or minimised, or one of several closing (a GBA window), is not let go
+  of. The same happens when the menu is minimised as the game's window closes, and the menu is
+  not taken for a game when it is brought back.
+- **It stays on a game while its image comes back.** When OBS loses a game's image for a moment
+  (the game goes full-screen or makes its window again, or an emulator starts or stops a game),
+  the capture stays aimed at that game for as long as its program runs, also while none of its
+  windows can be seen, and OBS picks the image up again by itself. Only another game you click
+  into takes over meanwhile. A game whose window is made again as another kind of window is
+  followed at once. OBS's log says `kept on <program> while its picture comes back`.
+- With no game open, the Game Capture goes back to *Capture any fullscreen application* (while an
+  emulator whose game window closed is still open, it stays aimed at nothing instead). A program
+  that has just closed is waited for about three seconds first, in case it is only making its
+  window again; only then does another game that is open take over (one you click into takes
+  over at once).
+- **Switching Auto Capture on again hands the capture back.** After *Capture Active Window* (or
+  anything else) has aimed the capture by hand and Auto Capture was switched off, switching it
+  on again aims the capture afresh at once. It also switches itself back on once the program you
+  hooked has closed (after a restart too), so it follows games again; one you switched off
+  yourself stays off.
+
+A game is recognised by what the program has loaded: a graphics engine together with something only
+games have (controller support, a game store's library, a game engine's player, game audio or video),
+a game engine's own kind of window, or a window that fills its screen. A program seen to be a game
+once is remembered and picked up at once from then on. The filter changes the Game Capture's own
+*Mode* and *Window* settings for you.
+
+### Automatic Window Switcher
+
+One Window Capture for several apps. Add **Source Filter: Automatic Window Switcher (StageKit)** as a filter on a
+*Window Capture* and list the apps it is for. The filter aims that one capture at whichever of them
+you are using, so a scene needs one capture, one set of filters and one Fit to Space instead of a
+capture for each app.
+
+The window has four groups, in the order of the table: *Windows* (the first four rows), *Switching*
+(the switch transition, its duration and easing), *Manual windows*, then *Show/Hide transition*.
 
 | Setting | What it does |
 | --- | --- |
-| Blur type | Gaussian (smoothest), Dual Kawase (fastest, best for strong blur), Box, Pixelate (a mosaic of cells), Radial (zoom blur), Motion, Temporal (the image stays sharp and whatever moves leaves a trail; strength 100 is a trail of one second) |
-| Cell shape | For Pixelate: squares, hexagons, circles, triangles, Voronoi (uneven cells), rhomboids or triakis (triangles split in three). A filter set to the old *Hexagons* type is now Pixelate with hexagon cells and looks the same |
-| Smoothing | For Pixelate: how far each cell's colour runs into its neighbours. 0 gives hard edges |
-| Glass / Glass style | For Pixelate: lights each cell like a small piece of glass. *Dome*: curved like a bead, with a glint and a darker rim. *Flat plate*: a flat face with sharp bevelled edges (straight facets on squares and hexagons). 0 gives plain cells. Ambient Background's mosaic has the same two controls |
-| Origin X / Y, Rotation | For Pixelate: the point of the image the pattern is laid out from and turned around, and by how much it is turned |
-| Mosaic edge | For Pixelate: *Cut at the edge* (as it comes) cuts the cells along the source's edge straight. *Whole cells* leaves out every cell the edge would cut, so the blurred source's outline is made of whole cells (hexagons, circles ...) and its see-through parts follow them. A Shadow, Glow & Outline or Corners & Edges after the Blur filter then follows that outline. The image never grows past its own edge: cells are only left out, never added. The Blur filter cannot know where its source sits on screen, so on a full-screen source it leaves out the cells along the screen's edge too: there, use Scene Blur with *Each source by itself*, which keeps them |
-| Strength | 0–1000. Gaussian, Kawase and Box look alike at the same number; above 250, Gaussian and Box are drawn the Kawase way, which stays smooth |
-| Blur transition | Grow the blur strength, or cross-fade a fully blurred image in |
-| Ramp in / out time | 0–5000 ms each. 0 is instant |
-| Easing | Eleven curves, eased in, out or both |
-| Include in Blur All | Whether the Blur All hotkeys and the Stream Deck *Blur All* key switch this filter too. It is in the *Switching* group, with *Blur on / off now* |
-| Blur these too | Other sources that are blurred and cleared together with this one. With the two rows below it is in one group, *Blur other sources too* (to blur sources in one scene only, use [Scene Blur](#scene-filters)) |
-| And live captures on screen | Also blurs every game, window, screen and camera capture showing in the scene on screen when this filter is switched on, including one shown through a Cropped View |
-| Never blur these | Shown while *And live captures on screen* is ticked. Sources that it leaves alone: your camera, say, so it stays clear while everything else on screen is blurred. Any source can be chosen; a Cropped View (a camera's crop) also keeps the source it shows clear. Choose to add; each row has its own remove button |
+| Windows to switch between | Open the app, then choose it under *Add a window*: by its program, or by a window's title for two programs with the same file name. The first part of a title is offered too (*GBA1* of *GBA1 | Volume 100%*); a window chosen by part of its title is found again when the rest of the title has changed. **Ignored windows** below it lists windows never to take, by program or part of a title. For two windows of one program in a scene, use two Window Captures, each with this filter and one of the windows. Each row has its own remove button |
+| Switch to the active window | Ticked (as it comes): clicking into one of the apps captures it; clicking into anything else changes nothing, so the last one stays. Unticked: an app is captured when it opens and stays until it closes |
+| Keep other windows captured | Ticked (as it comes): while the capture is showing, the other open apps on the two lists are captured in the background, so the one you switch to is there at once. Unticked, a switch waits for the capture to find the other window, which saves graphics memory |
+| Game area only | Unticked as it comes. Ticked, only the part of the window the app draws its game in is shown: an emulator's menu bar, tool bar and status bar are left out, with nothing to crop by hand. It is found by itself for each window (the app's largest drawing area inside its window) and followed when it changes, gliding to the new size; a menu that opens for a moment changes nothing. Needs Window Capture's *Client area* ticked. Where none is found the window is shown whole (a web browser is always shown whole, tabs and all), and OBS's log says what was found for each program |
+| Switch transition | How one app's image gives way to the next: *Fade* (as it comes), **Morph** (the frame changes shape and size as the one image turns into the other), *Fade and zoom*, *Cut*, or *Slide left / right / up / down*, named for the way the image moves (with *Slide left* the new window comes in from the right) |
+| Duration / Easing | How long that takes, and its curve |
+| Manual windows | Other apps the capture shows when you say so, such as your browser. *Switch to next manual window* (a button here, a hotkey, a Stream Deck key) takes the next one that is open and holds it whatever app you use; after the last, or with *Return to automatic*, the apps above are followed again. In the *Manual windows* group with it: *Auto-switch manual windows*, *When a window is picked*, *Clear picked windows at start* and the buttons |
+| Show/Hide transition | *Hide/show capture now* hides the capture in every scene it is shown in, or shows it again, with the transition chosen under it. Also a hotkey and a Stream Deck key. The show brings it back only where the hide hid it (not in a scene where it was hidden already, nor where a mode not on holds it hidden), and does nothing when nothing was hidden; this is kept over a restart |
 
-Ways to trigger it:
+- An app on the list that opens is captured. When the app being captured closes, the one you used
+  before it comes back.
+- The change is smooth although there is only one capture: the filter keeps the last image the
+  capture had, shows it while the capture is finding the other window, and brings the new image in
+  over it. A Standby Image on the same capture does not stand in for that moment; it does once
+  none of the apps is open.
+- Five hotkeys under the capture in *Settings → Hotkeys*, named after the filter: *next manual
+  window*, *return to automatic*, *toggle manual / automatic*, *hide or show the capture* and *clear picked
+  windows*. The Stream Deck *Manual Window / Source* key does any of the five.
+- To hold a window that is on neither list, press the Stream Deck *Capture Active Window* key on
+  it. The filter adds its program to *Manual windows* and captures it; with *When a window is picked*
+  set to *Switch at selection* it also changes over to it with your *Transition* and holds it.
+  *Manual Window / Source* (*Toggle*) then switches between that window and your apps.
+- **A window you pick is that window, not its program.** *Capture Active Window* adds it to
+  *Manual windows* as *program — its title*, for example two browser profiles as two entries.
+  Another window of the same program never stands in for it. When it closes it leaves the list,
+  and the capture does not move to the program's other window. It goes to your next manual
+  window (with *Auto-switch manual windows*) or back to automatic, and with nowhere to go it
+  shows the Standby Image, or nothing. A program named in a list still means any of its
+  windows.
+- **Picked windows are cleared.** *Clear picked windows at start* (ticked as it comes): windows
+  picked with *Capture Active Window* last only for this OBS session. *Clear picked windows* (a
+  button, a hotkey under the capture, and the Stream Deck *Manual Window / Source* key's *Clear
+  picked windows*) takes them off both lists at any time, *Windows to switch between* and
+  *Manual windows*. A picked window being shown is let go of: the capture goes on to the next
+  automatic window, or shows the Standby Image if none is open. Programs and titles you added
+  yourself stay, Firefox titles too (they have the same dash in them as a picked window).
+- **The window shown is watched.** When it closes, OBS's Window Capture looks for another window
+  of the same program by itself. StageKit does not show that image: it keeps the last frame of
+  the window that closed until it has chosen and aimed at the next one.
+- **Only listed windows are shown.** When none of the windows on the lists is open, nothing of
+  the capture is shown, whatever it is aimed at: the Standby Image stands in if the capture has
+  one, and the status line says *Capturing nothing*. The capture is never left aimed where OBS
+  could find a window by itself: aimed at a program not on the lists by name, at a title no entry
+  answers, or at an ignored window, it is aimed at no window instead.
+- **When a window is picked**: what happens to a window picked with *Capture Active Window*.
+  *Wait until switched to* (as it comes): it becomes the manual window and is captured in the
+  background while your automatic windows go on showing; it is shown when you switch to it with
+  *Manual Window / Source* (*Toggle* or *Next*). *Switch at selection*: the capture changes to
+  it straight away, as before.
+- **Auto-switch manual windows** (ticked as it comes): in manual mode the capture follows among
+  your *Manual windows* the way automatic mode follows among the others: the manual window you
+  click into or that opens is shown, and when the one shown closes the one before comes back.
+  Nothing off the *Manual windows* list is taken. Unticked, the manual window stays until you
+  switch.
+- The capture's size glides from the one window's to the other's with every *Transition* but a
+  cut. *Morph* stretches both images over the gliding frame; the others keep each image's own
+  shape inside it.
+- It keeps itself before a Standby Image and an Auto Frame in the capture's filter list.
+- **An Auto Frame after it goes by the window shown.** Its top line names the program of the
+  window on screen, and that program's saved shape (by file name or part of the title) is the one
+  used: a browser shown after Dolphin is not cut to Dolphin's 4:3, and going back to Dolphin brings
+  its 4:3 back. Each switch to another program is a new program for Auto Frame. When the window
+  shown closes, its last image keeps its shape for the moment it is held; while nothing is shown,
+  Auto Frame names no program.
+- Windows only, like the other capture tools.
 
-- The eye icon next to the filter.
-- StageKit's own **Blur** key on a Stream Deck, or the OBS Studio plugin's *Filter* key pointing at the filter.
-- Hotkeys under the source in *Settings → Hotkeys*: `StageKit: <the filter's name>: toggle`, `switch on` and `switch off`.
-- `StageKit: Blur All: toggle`, `switch on` and `switch off` in the top section of *Settings → Hotkeys*, which drives every
-  Blur at once.
+For a capture per app in one scene, each with its own filters, Automatic Source Switcher below is still
+there.
 
-**One key for several sources.** Under *Blur these too*, choose a source in the *Add a source* box,
-once for each source; each becomes a row. From then on, switching this one filter on or off, from a single Stream
-Deck *Filter* key, blurs and clears every source in the list. A listed source with no Blur of its
-own is given one with the same settings (*Blur (follows another)*); one that already has a Ramp
-Blur keeps its own settings. Remove a source with the ✕ on its row.
+### Automatic Source Switcher
 
-To replace a Composite Blur + Move chain: add one Blur, pick the type and strength (Composite
-Blur's Pixelate at radius 5 is *Pixelate* at strength 4), point your existing keys at it, then delete
-the old filters.
+For a scene that shows whichever app you are working in. Give the scene a Window Capture for each app
+(Blender, ZBrush, a browser, and so on), then add **Scene Filter: Automatic Source Switcher (StageKit)** as a filter on the *scene*
+and add those captures to its list. Windows only.
 
-### Ambient Background
+Which app a capture belongs to is read from the capture itself, so there is nothing to type. From then
+on one of the listed captures is shown at a time:
 
-Add **Ambient Background (StageKit)** as a source. It fills the canvas.
+- **An app that opens is shown.** So is a capture you aim at another window in its own settings.
+- **Clicking into one of the apps shows it** (*Switch to the active window*, on to begin with). With two of
+  them open, the capture follows you from one to the other.
+- **Clicking into anything else changes nothing.** The last app stays captured while OBS, a chat
+  window or anything not on the list is in front.
+- **When the app that is showing closes, the one you used before it comes back.** When none of them is
+  open, the first capture in the list is shown, so put the one you want as the standby first.
 
-| Group | Settings |
+| Setting | What it does |
 | --- | --- |
-| Image | The standby image, an image file, any existing source or scene, or an animated pattern (below). Optionally blend in a live capture: a chosen source, or *Automatic*, which uses the largest visible capture in the current scene. The capture can fill the screen, fit inside it, match its width or height, or stretch, with its own zoom. *Capture replaces image* makes the capture the whole background while there is one; the moment there is none, the usual image is back. A capture with an Auto Frame is used as the trimmed game image, without the empty frame around it. A capture showing nothing, or black all over for two seconds, counts as no capture. *Keep the capture ready* (shown with *Automatic*) keeps it running in scenes that do not show it, so it is there at once in the next scene that does. The window has three groups for this: *Background*, *Live capture* and *Capture change* |
-| Motion | Drift speed in each direction, zoom, and mirroring at the edges so the drift never shows a seam. An image file's empty edges (rows and columns at its sides that are see-through, or black all the way along, up to a quarter of it from each side) are left out, so they never show as bars between the repeats; a source or scene is used as it is |
-| Look | Blur type (Dual Kawase, Gaussian, Box, or Temporal, which blurs over time and leaves trails) and blur; a mosaic in the Blur filter's seven cell shapes, with the same smoothing, origin and rotation (the *Blur and mosaic* group); then, under *Light and colour*: saturation; *Midtone boost*, which lifts the middle brightnesses; **Bloom**, where the bright parts of the image shine over what is around them (how strongly, from what brightness, and how far the light spreads); brightness; vignette; and **Darkest level** (below) in a group of its own |
-| Texture overlay | An image multiplied or screened over the result, optionally in black and white |
+| Sources to switch between | The scene's captures, one per app. Choose to add; each row has its own remove button. The first is the standby |
+| Manual sources | Other captures in the scene that you show yourself, such as a Window Capture of your browser. Show one and it takes over and stays, whatever app you use; hide it and the captures above follow your apps again. Showing one hides any other on this list |
+| Switch to the active window | On: the app you click into is shown. Off: an app is shown when it opens and stays until it closes |
+| Transition | How one capture gives way to the next: a fade (the default), any other transition OBS has, a cut, or whatever is already set on each item. With *Morph (StageKit)* the capture you leave moves, resizes and changes into the one you go to (see [Morph between items](#morph-between-items)). It sets OBS's own show and hide transition on each listed item |
+| Duration | How long the change takes |
+| Keep other windows captured | While the scene is showing, the captures of the other open apps keep running, so the one you switch to has its image at once |
 
-Two more things about the capture blended in and the bloom:
+**Switching to a window by hand.** Add a Window Capture for the window you want (a browser, say), add
+it to *Manual sources*, and hide it. Then:
 
-- **Capture transition**, **Capture delay**, **Duration** and easing: how the background follows when
-  the capture changes (another capture, none any more, or an Automatic Window Switcher taking
-  another window). The background as it was stays for the delay, then gives way with a fade (as it
-  comes), a cut, or a slide to any side. Set the delay to the length of the capture's own transition
-  to have the background change after the image has.
-- **Bloom style**: *Bright parts shine* (only what is brighter than the threshold spreads its light)
-  or *Whole image, amplified* (the image's own light added back onto all of it, which brightens
-  everything and lets colours run into white: the look of obs-shaderfilter's bloom shader, with
-  100 % its strength of 1). Bloom now goes to 1000 %. The light always spreads at least as far as
-  *Blur*, so bloom never makes the background sharper.
-- **Darkest level** (0 %, off, as it comes): how bright the darkest parts of the background
-  become, even while the capture blended in is dark. **Lift toward**: *The background image*
-  (the image or source the background is made from, where the background has it, at the level's
-  share of its brightness: 1 % barely shows it, 10 % is a dim image, 100 % is the image itself;
-  with nothing under *Background from*, the colour is used) or *A colour* (**Lift colour**, a mid
-  grey as it comes: black takes on that colour, as bright as the level). Parts twice as bright as
-  that are left as they are, with a smooth change between, and the image itself is never made
-  brighter. The lift is made before the blur, so the blur, the mosaic, the trail and bloom act on
-  it as on the rest of the background (it is as soft as the blur, and a mosaic cell is one
-  colour); brightness, vignette and the texture overlay come after it (a strong vignette can
-  darken the corners below the level). A capture that is black all over for two seconds already
-  counts as no capture; this is for one that is dark but not empty.
+- **A Stream Deck key** set to show and hide that source in the scene (Elgato's OBS *Source* key)
+  switches to it and back. OBS's own *Show* and *Hide* hotkeys for the item do the same.
+- While it is showing, nothing takes over from it: you can work in Blender or ZBrush and the browser
+  stays on screen. Hide it and the capture of the app you are in comes back.
+- With several on the list, showing one hides the others, so each can have its own key.
+- The filter adds three hotkeys to the scene in *Settings → Hotkeys*, named after the filter: *next manual
+  source* steps through these captures in turn and then back to the apps, *return to automatic* goes straight
+  back to the apps, and *toggle manual / automatic* changes between the two.
 
-![Darkest level: off; toward a grey and a red at 30 %; toward the background image at 1 %, 10 % and 100 %; with a strong Gaussian blur; with hexagons](docs/images/ambient-darkest.png)
+It acts only when one of those things happens, so a capture you show by hand stays until then. A
+minimised window counts as closed. The top line says what is showing. Switch the filter off to pause it.
+Each capture can have its own [Fit to Space](#fit-to-space), shadow and blur; they follow the capture.
 
-**Patterns.** *Background from: A pattern* needs no image: StageKit draws an animated background
-itself. **Pattern**: *Aurora* (slow curtains of colour), *Plasma*, *Lava lamp* (soft blobs that
-merge and part), *Waves* (layered dunes), *Bokeh* (soft circles drifting and fading), *Starfield*
-(drifting points that twinkle), *Gradient flow* (a turning, sliding three-colour gradient),
-*Nebula* (cloud), *Grid pulse* (a faint grid with pulses running along its lines), *Rays*
-(light rays turning slowly round a point), *Circuit board* (ribbons of thin parallel traces that bend together at 45°, each trace ending
-in a ring pad, a few thick traces, a dimmer board under it, and lights running along the ribbons
-that light the pads as they arrive; chips, soldered pads and pours join in at a higher *Detail*),
-*Circuit traces* (bundles of traces coming down from the top, each ending in a round pad at its
-own height, lights running down them and small lights drifting up), *Data lines* (a few very
-thin lines running across with gentle steps, dashes of light sliding along them, and small
-drifting lights). For these three Colour 1 is the board, Colour 2 the lines and Colour 3 what
-lights up (in Data lines: the drifting lights), and they are made for a light board as well as a
-dark one: on a light Colour 1 the lights turn deeper instead of whiter. *Hex grid* (a
-honeycomb whose cells light up), *Matrix rain* (falling streaks of changing signs), *Tunnel*
-(rings flying out of the middle), *Ripples* (raindrop rings on water), *Embers* (sparks rising),
-*Sun grid* (a sun over a grid running to the horizon). Six more are built on hexagons and dots:
-*Hex columns* (six-sided columns seen from above and in front, with lit tops, darker sides and
-dark edges, rising and falling in slow waves), *Mesh* (perforated metal: a tight comb of round
-discs with dark rims, under a wide soft light that sweeps across), *Halftone hexagons* (fine dots
-whose size draws large hexagons with rings in them, a wave passing from one to the next while the
-whole turns very slowly), *Dot grid* (rows of small dots under diagonal beams of light; a dot
-under a beam is larger and brighter, and one where two beams cross flares in a four-point star),
-*Hex wire glow* (a dark honeycomb whose thin lines light up where a soft light passes) and *Hex
-mosaic* (flat hexagon tiles in close shades that shimmer slowly). In these Colour 1 is the ground,
-dark or light, and Colours 2 and 3 are what is lit or inked; Dot grid and Hex wire glow run from
-Colour 2 at one side of the screen to Colour 3 at the other. **Colour 1**, **Colour 2**, **Colour 3** are its palette
-(Colour 1 is the ground where a pattern has one); **Speed** (100 % as it comes; 0 holds it still,
-under 0 runs it backwards; at 100 % a pattern comes back to where it began every four minutes,
-with no jump), **Size** and **Detail**. A pattern takes the image's place and nothing else changes:
-the blur, the mosaic, bloom, Darkest level, the texture overlay and a live capture blended in all
-act on it, so a hexagon mosaic over Plasma works as it does over an image. The blur softens a
-pattern a great deal: turn *Blur* down to see its shapes. The Motion group (drift, zoom, mirror) is
-an image's and is hidden for a pattern. **Position X**, **Position Y** and **Rotation** pose the
-background whatever it is made from: X and Y move it by a share of the screen's width and height,
-Rotation turns it about the middle of the screen (clockwise, -180° to 180°). An image or source
-still covers the whole screen (the space left is filled by repeating or mirroring it, as the drift
-does) and its drift stays in the direction set. A pattern's own layout is moved and turned, so
-Circuit traces can come in from a side instead of the top, the centre of Rays can sit elsewhere
-and Sun grid can tilt. All three are 0 as they come, and then nothing changes. The patterns cost one small extra drawing step, and
-nothing while an image is chosen. If the patterns cannot be loaded, the background shows the
-standby image (or its image file) and OBS's log says so.
+### Program Trigger
 
-![The six hexagon and dot patterns on a dark and on a light palette, and five of them as outline fills from Shadow, Glow & Outline and Scene Shadow](docs/images/hex-patterns.png)
+Add **Source Filter: Program Trigger (StageKit)** as a filter on a *scene* to show and hide that scene's items, or on
+any *source* to switch that source's other filters. Windows only.
 
-The additional patterns use all three colors, Speed, Size and Detail. The controls for position and rotation also apply to them.
+1. **While this program**: choose the program from the open ones, or find its file. Optionally give
+   text its window title must contain (for example `GBA1`); with the program left empty, the title alone
+   decides. Choose whether it counts when it has a window open or only when *Its window is active*. The title box
+   offers the titles of the windows that are open.
+2. **Show and switch on** (the second group): pick items and filters and add them to the lists. *Off
+   while it is here* hides and switches off while the program is here instead.
+3. **Transition** and **Duration**, in the same group: how the items appear and disappear. A fade to
+   begin with; any other transition OBS has, a cut, or whatever is set on each item. On a source, where
+   only filters are switched, the two are not shown.
 
-![Code wall, neon hex tiles, network web, hex flood, frosted glass and crystal ice](docs/images/material-patterns-1.gif)
-
-![HUD data wall, circuit board with solder pads, data streams, petal lattice, liquid marble and deep space](docs/images/material-patterns-2.gif)
-
-
-![The first nineteen patterns: aurora, plasma, lava lamp, waves, bokeh, starfield, gradient flow, nebula, grid pulse, rays, circuit board, hex grid, matrix rain, tunnel, ripples, embers, sun grid, circuit traces, data lines; nebula under a hexagon mosaic; aurora blurred with bloom](docs/images/ambient-patterns.png)
-
-Put it in one shared scene and nest that scene wherever you need the background.
-
-### Standby image
-
-Choose the standby image once, in the StageKit dock under *Standby image*. The dock shows a small image
-of it. It is saved with the scene collection.
-
-- Add **Standby Image (StageKit)** as a source wherever the image itself should be shown.
-- Every Ambient Background uses it as its image automatically. A background you had pointed at an
-  image of its own switches over when you choose a standby image; to keep one on its own image, set its
-  *Background from* back to *An image* afterwards.
-
-Changing the standby image updates both at once.
-
-An animated image, such as a GIF, plays: in the Standby Image source, in every Standby Image filter
-(and the image shown in a hidden source's place), in Ambient Background and in the dock's small image,
-where it keeps the zoom and place you chose with the wheel. A still image is shown as before.
-
-### Shadow, Glow & Outline
-
-Add **Source Filter: Shadow, Glow & Outline (StageKit)** as a filter on a source, group or scene. (It was called
-Shadow & Backdrop; filters you already have keep working.) It has three parts, each with a tick box in
-its heading:
-
-<p align="center"><img src="docs/images/glow-outline.png" width="900" alt="A green card with a red outline, with an outline in its own colour, with an outline and a hard drop shadow, with a dark glow all round, with a green glow in its own colour, and a game image with a soft glow of its own colours around it"></p>
-
-- **Shadow or glow**
-  - *Type*: *Drop shadow (to one side)* or *Glow (all round)*.
-  - *Colour source*: *A colour*, or ***The image itself***. With the image itself, a game, camera or
-    video casts a soft, moving copy of its own colours instead of a flat colour. *Colour boost* makes
-    that richer.
-  - *Opacity*, *Softness* (0 gives a hard edge), *Spread* (how far the shadow stays solid before it
-    fades), and for a drop shadow how far right/left
-    and down/up it falls.
-  - *Hide the image* leaves only the shadow or glow.
-- **Outline**: a line round the image, any width. *Colour source* a colour or the image itself. Made
-  from the image, *Past the edge* chooses between stretching the image's edge outwards and
-  mirroring the image, and *Outline blur* softens it. The
-  line follows the image's real shape, including text and rounded or cut corners. A shadow is cast
-  by the image and its outline together.
-  - *Outline corners*: *Follow the source* (as it comes: the line goes round the shape of what shows,
-    text and odd shapes too, as it always did; its outer corners are rounded by the line's width), or
-    *Square*, *Rounded*, *Bevel*, *Notch* or *Scoop*: the line is drawn as a shape round the rectangle
-    the source's image covers on screen, see-through margins left out (its panel, when it has one),
-    the same width on every side whatever its bounding box, crop or scale (text and shaped sources,
-    anything that fills under nine tenths of that rectangle, and turned sources keep a line that
-    follows them); *Square* has sharp
-    corners, and the others at a *Corner size* of 0 are square too. An item's crop cuts Shadow, Glow &
-    Outline's line with the rest of what the filter draws (OBS crops the finished image), so crop
-    with a Cropped View or a crop filter before it, or use Scene Shadow; its outer corners *Corner size* pixels across (no
-    larger than keeps the source's own corners under the line), and
-    the drop shadow takes the same shape.
-  - *Intensity* (in the shadow part, 100 % as it comes): more fills a glow's or shadow's soft tail in
-    towards full colour without giving it a hard edge, for a bright glow; less makes it fainter.
-    Shadows and glows fall off smoothly with no steps in their soft tail.
-  - *Outline design* (in the outline part of both filters, *Solid* as it comes): *Double line*
-    (two thin lines with a gap, inside the outline's width), *Dashed* and *Dotted* (*Dash length*,
-    *Gap length*), *Gradient* (the outline colour changing into a *Second colour* round the
-    border), *Neon* (a bright tube in the outline colour with a soft halo of light spreading out past the
-    line; *Glow size* is how far the halo reaches, in per cent of the outline's width; pick a
-    bright colour, as a black line has no light to give and then takes the *Second colour* for
-    its halo if that is brighter) and *Inner line* (drawn just inside the image's edge instead of
-    outside it; it needs *Outline corners* other than *Follow the source*, and text and shaped
-    sources keep a solid line outside). Five designs move, at a *Speed* you set (0 stands still, a
-    negative number goes the other way): *Marching dashes*, *Travelling gradient*, *Pulse* (the
-    line fades in and out), *Shimmer* (a highlight in the second colour goes round) and *Rainbow*.
-    The patterns run round the border when *Outline corners* is Square, Rounded, Bevel, Notch or
-    Scoop. With *Follow the source* they are laid round the source's middle in Shadow, Glow &
-    Outline, and slanted across the whole scene in Scene Shadow, so pick corners there for dashes
-    that travel round. The drop shadow is still thrown by the whole line, and a filter saved
-    before keeps its solid line.
-  - *Outline design* also has twenty-two designs called *Pattern*, which fill the line with one of
-    Ambient Background's moving patterns: *Aurora*, *Plasma*, *Lava lamp*, *Waves*, *Nebula*,
-    *Gradient flow*, *Starfield*, *Bokeh*, *Rays*, *Circuit board*, *Hex grid*, *Matrix rain*,
-    *Tunnel*, *Ripples*, *Embers*, *Circuit traces*, *Data lines*, *Mesh*, *Halftone*, *Dot grid*,
-    *Hex wire glow* and *Hex mosaic*. The line keeps its width, corners and shape
-    (round the box or following the source); it is a window onto the pattern. The colours are the
-    outline colour, the *Second colour* and a *Third colour*; *Pattern size* makes the pattern
-    smaller or larger (smaller shows more of it along a thin line), and *Speed* moves it (60 is
-    the speed it has as an Ambient Background, 0 holds it still). In Scene Shadow the pattern lies
-    over the whole scene, so the lines of sources side by side flow together. In Shadow, Glow &
-    Outline it lies over the source itself and travels with it. Plasma, Nebula and Gradient flow
-    colour a thin line all the way round; Aurora, Starfield and Rays are mostly the outline colour
-    with light passing through, as are Ripples and Embers, and look best on a wide line. For
-    Circuit board, Circuit traces, Hex grid and Matrix rain turn *Pattern size* down (to 30 % or
-    so) so that traces, cells and streaks fit in the line's width. Data lines is sparse on
-    purpose: in a line it is the outline colour with a thin line or a light now and then. Mesh, Halftone, Dot grid, Hex wire glow and Hex mosaic also want *Pattern size* at 30 to 50 %;
-    Hex wire glow is dark except where its light passes. Grid pulse is not offered (in a line it is
-    only a tick every so often), nor Sun grid or Hex columns (each is a view, not a texture).
-    *Position X*, *Position Y* and *Rotation* move and turn the pattern inside the line (the
-    line itself stays where it is); they show for the pattern fills. *Rotation* alone also shows
-    for the designs with something that goes round the border: for Gradient, Travelling, Shimmer
-    and Rainbow it is where round the border the colours begin (180° puts the first colour at
-    the opposite corner), for Dashed and Marching it slides the dashes along, a whole turn being
-    one dash and gap. Solid, Double, Dotted, Neon, Inner and Pulse have nothing to pose and show
-    none of the three.
-  - *Outline design* *Ambient Background* fills the line with what an Ambient Background shows:
-    its pattern, image or live capture, with its blur, mosaic, bloom and transitions, moving as
-    it moves. So a border can match the background behind it. *Background* chooses which:
-    *Automatic* (as it comes) takes the one in the scene (for Scene Shadow its own scene; for
-    Shadow, Glow & Outline the scene on screen), or any there is; or pick one by name, which may
-    be in no scene at all. *Fill brightness* (130 % as it comes) and *Fill saturation* (120 %)
-    lift the line so it can be told from the background where the two meet; at 100 % each it is
-    exactly the background. *Pattern size*, *Position X*, *Position Y* and *Rotation* lay the
-    background out in the line as they do a pattern. In Scene Shadow the line shows the
-    background where it lies on the screen; in Shadow, Glow & Outline the background's middle is
-    on the source's middle, at the screen's size, and travels with the source. With no Ambient
-    Background the line is its outline colour. The drop shadow and glow keep their own colours.
-
-<p align="center"><img src="docs/images/outline-glow.png" width="900" alt="White sources with a 10 px black outline from Shadow, Glow &amp; Outline and from Scene Shadow, the same width, with a drop shadow, with rounded and bevelled outline corners, the drop shadow rounded with them, half-way through a Morph with the outlines solid, and a white glow round dark squares at 100% and 250% intensity"></p>
-
-<p align="center"><img src="docs/images/outline-designs.png" width="900" alt="The twelve outline designs, each from Shadow, Glow &amp; Outline and from Scene Shadow: solid, double line, dashed, dotted, gradient, neon, inner line, marching dashes, travelling gradient, pulse, shimmer and rainbow"></p>
-
-<p align="center"><img src="docs/images/outline-patterns.png" width="900" alt="A white source with a 12 px outline filled with each of the seventeen patterns, from Shadow, Glow &amp; Outline and from Scene Shadow, then a rounded line filled with Plasma and a line following two bars filled with a small circuit board"></p>
-
-<p align="center"><img src="docs/images/outline-ambient.png" width="900" alt="Source and scene outlines filled with an Ambient Background, at original and lifted brightness, with a mosaic background and a scene mid-transition"></p>
-
-- **Panel behind the source**: a coloured panel with a margin.
-
-*Rounded corners* rounds the image and the panel. For other corner styles, use Corners & Edges.
-
-The last group, *Placement and scenes*, holds *Keep the image where it is*, *Sizes in screen pixels*,
-*Keep it on screen* and the list below.
-
-**Leave it off in these scenes**: choose scenes from your collection; each becomes a row with its own
-✕ to remove it. While a listed scene is on screen the filter draws nothing; the source shows plain
-there and keeps its place. It goes by the scene on screen (Program in Studio Mode).
-
-Sizes are as they look on screen: with *Sizes in screen pixels* ticked (the default), 20 px of
-shadow is 20 px in the finished image however much the item is scaled, so a small camera and a large
-panel get the same shadow. Untick it to give sizes in the source's own pixels.
-
-The shadow needs room around the source, so the source itself gets bigger. With *Keep the image
-where it is* ticked (the default), the source's items in every scene are adjusted by exactly that room:
-the image keeps its size and place whatever the softness, offset, outline or panel margin, including
-inside a bounding box. Switching the filter off or removing it puts the items back.
-
-### Corners & Edges
-
-Add **Source Filter: Corners & Edges (StageKit)** as a filter on a source: a camera, a capture, an image, a browser
-widget.
-
-<p align="center"><img src="docs/images/corners-edges.png" width="900" alt="A blue card shown nine ways: rounded corners, cut-off corners, notched corners, scooped corners, only two corners rounded, a soft faded edge, a yellow outline, rounded with a drop shadow that has the same rounded shape, and a game image with rounded corners inside a wider frame"></p>
-
-- **Corner style**: *Rounded*, *Cut off (chamfer)*, *Notched (square cut)* or *Scooped (curved in)*.
-- **Corner size**, and **Which corners** it applies to, each one on or off.
-- **Trim edges** cuts the same amount off all four sides. **Soften edge** fades the image out
-  towards its edge.
-- **Border**: a line of any width, colour and opacity that follows the shape, drawn inside the edge (Shadow, Glow & Outline's outline is drawn outside it).
-- **Sizes in screen pixels** (on by default): a 40 px corner looks the same on a large source and a small
-  one, the same rule Shadow, Glow & Outline uses.
-
-It works with the other tools:
-
-- The source **keeps its size**, so nothing moves or resizes in any scene, and Move Source keys, layouts
-  and the line-up tools carry on as before. The line-up tools measure the new shape when *Use visible
-  pixels* is on.
-- **Shadow, Glow & Outline** after it in the filter list casts a shadow of the new shape. If you add
-  Corners & Edges to a source that already has a shadow, it places itself above the shadow for you.
-- After an **Auto Frame**, it shapes the game image inside the frame, and follows it when the image
-  changes shape.
-- Blur and Zoom can go before it (the blur or zoom stays inside the shape) or after it.
+While the program is here the items are shown and the filters are on; when it goes they are hidden and
+off. It acts when the program appears or goes, so a change you make by hand in between is kept until
+then. A minimised window does not count as open. The top line says whether it sees the program now.
 
 ### Auto Frame
 
@@ -512,6 +507,21 @@ set to *Automatic* hands control back.
 
 Because the source's size no longer changes, one scene can replace a scene per image shape and the
 automation that switched between them. Put Shadow, Glow & Outline after it and the shadow follows the image.
+
+### Cropped View
+
+Add **Cropped View (StageKit)** as a source. Choose the source to show, then crop it to *1:1 (square)*, to
+4:3, 16:9, 3:4 or 9:16 from the middle, by set amounts off each side, or to *Visible pixels*.
+
+*Visible pixels* needs no numbers: it trims off the empty, see-through room around the content and
+follows the content when it changes size. It suits web widgets, whose page is much bigger than the card
+they draw. It looks about once a second, grows at once and shrinks only when the smaller image has
+settled.
+
+Use it when one camera is wanted in more than one shape. OBS applies an item's crop after the source's
+filters, so a shadow on the camera is cut off by the crop; a Cropped View is the cropped image as a
+source, and a Shadow, Glow & Outline or Zoom added to the view follows it. Make one view per shape. The
+camera is still captured only once.
 
 ### Fit to Space
 
@@ -694,296 +704,78 @@ every frame. Use one Fit to Space filter for each item to be fitted.
 Fit to Space takes over the item's position and bounding box and removes its rotation. Switch the
 filter off to move the item by hand.
 
-### Auto Capture
+### Scene Fit
 
-Add **Source Filter: Auto Capture (StageKit)** as a filter on one *Game Capture* source. Windows only.
+<!-- ==== scene-filters:fit (Scene Fit) ==== -->
+**Scene Filter: Scene Fit (StageKit)** does what a Fit to Space filter does, for several sources of the scene at once. Each source in
+*Fitted sources* has the whole set of Fit to Space settings of its own (choose it under *Settings for*), and
+starts from a gap of 30 px in the free space round its place.
 
-Four times a second it looks at the window in front. If that window is a game, the capture is aimed at
-it, windowed or full-screen. It stays on that game when you switch to another program, and moves on
-when the game closes or another game comes to the front. There is nothing to set up per game.
+Where it differs is the timing: the sources are worked out together, in the order of the list, before any of
+them moves. When the camera is hidden or shown, a game changes shape or a widget starts to draw, every source
+that has to make way sets off once, all at the same moment. With a Fit to Space per source each filter only
+learns where the others are going a frame later, and they could shift a few times before settling.
 
-The filter's controls show what it is capturing now.
+- **Sources covered**: *Chosen sources* (as it comes: the sources under *Fitted sources*) or *All sources*.
+  With *All sources* every source of the scene is fitted, a group counting as one and sources added later
+  too: first the ones under *Fitted sources*, in their order, then the rest from the top of the scene down,
+  each starting from the usual entry settings (in the free space round its place, a gap of 30 px, resized to
+  fit, *Shares space*). Each one is under *Settings for* like a listed one, with its own *Space
+  priority*; untick *Resize to fit* for a source that keeps its size. Left out: sources under **Never fitted** (they stay where they are, and the fitted sources keep clear of
+  them), a source a Fit to Space of its own already fits, a source another Scene Fit of the scene lists (or
+  every source, when an earlier Scene Fit has *All sources* too), and a source that covers 90% of the
+  screen or more when it is first met, such as the background: it could only be made smaller, and the free
+  space round a place inside it is never in its way. A source fitted once stays fitted however large it is
+  fitted to. A source added on top of a fitted one is fitted once that one has made room for it.
+  Switching back to *Chosen sources* leaves the others where they are.
+- **Fitted sources**: the order matters. Put the sources that keep their size (a camera, a chat box) above
+  the ones that are resized to fit (the game). With *Priority by list order* ticked, the order is also the
+  priority: a source higher in the list takes its space first.
+- **Settings are**: *Each source's own* (as it comes: every source has its own settings, chosen under
+  *Settings for*) or *Shared by all sources*: one group of settings, *Space priority* included, for every
+  fitted source, and no *Settings for*. Each source still keeps its own place and its own kept size.
+  Switching either way moves nothing: the shared settings start as the first source's, and going back to
+  *Each source's own* gives every source the shared settings.
+- **Space priority**: each source's own (*Takes space first*, *Shares space*, *Makes room*), as in
+  [Fit to Space](#fit-to-space), or the group's with *Shared by all sources*.
+- **Priority by list order**: one switch for every source. Ticked, the sources' *Space priority* is greyed
+  out; a source higher in *Fitted sources* takes its space first, and the Scene Fit counts at its place in the
+  scene's filter list against any Fit to Space there that has the box ticked too. Towards the others it counts
+  as *Shares space*.
+- **Take over Fit to Space**: every Fit to Space switched on in this scene becomes an entry here, with all its
+  settings, the place it keeps its source round and the size it keeps. Each filter is switched off, not
+  deleted: switch it on again (and the Scene Fit off) to go back. Nothing moves. Taken into a Scene Fit with
+  no sources yet, two or more Fit to Space filters with exactly the same settings make *Settings are* *Shared by
+  all sources*; if their settings differ it stays *Each source's own*. Taken into a Scene Fit that is
+  already *Shared by all sources*, they go by its settings.
+- **Overlap only when it fills**: one switch for every entry; each entry's own rules (*Use fill percentage*,
+  *Use edge gaps*) say when. A *Fit to Space Overlap* key on the Stream Deck works on a Scene Fit too.
+  The rules are in each source's settings (under *Settings for*): they show with *Fit area* on *Free space
+  around source*, and with *The whole screen* or *A box I set* once that source's **Make room if not
+  filling** is ticked (see Fit to Space).
+- **Ignored for this source** and **Sync to scenes** are the entry's own lists, as in Fit to Space.
 
-- **It leaves alone what it cannot hook, for a while.** A program taken for a game that gives
-  the capture no image for ten seconds is left alone (OBS's log says so): left aimed at it, OBS
-  goes on trying several times a second, and each try stalls the image for a moment. While it is
-  left alone the capture is aimed at no window at all (or at another game), so OBS stops trying.
-  Every five seconds it looks in on the program for one second, so a game started meanwhile is
-  picked up within a few seconds (after a minute of looks that find nothing, they come up to 15
-  seconds apart); that is about a sixth of the hooking OBS would do if it stayed aimed at it. It is
-  tried again at once, for the full ten seconds, when one of its windows shows a title not seen
-  before, as when a game is started in an emulator, or when you click back into it. A frame rate or
-  a volume in the title changing does not count, and a title counts only once. Nothing is added to
-  *Never capture* by itself. Programs listed in an Automatic Window Switcher are never taken at all.
-- **Not a game? Never capture this program**: one press when it picks up the wrong thing.
-- **Pick from the programs that are open**: choose a program and press *Always capture it* (for a game
-  it misses) or *Never capture it*. There are no file names to type.
-- **Games** (the first group): *Always capture* and *Never capture*, one row per entry with its own
-  remove button, then *Find games* and *Keep the capture ready*. OBS, browsers, Discord, Steam's own
-  windows and similar are already left alone.
-- **Find games**: *Automatically*, or *Only from 'Always capture'*.
-- **Keep the capture ready** (on as it comes): the capture carries on while you are on a scene
-  that does not show it, so it is there at once when you come back. Unticked, OBS stops it a moment
-  after you leave and starts it again when you return.
-- **No game: Standby Image** (off as it comes): with a Standby Image filter on the capture, the
-  Standby Image is shown while no game is captured, and gives way when a game is found.
-- **Standby Image** group: *Hide shows Standby Image* (on as it comes) hides the capture behind
-  its Standby Image instead of hiding the item; *Hide/show capture now* does it, as does the
-  hotkey under the capture and the Stream Deck *Manual Window / Source* key. *Transition*,
-  *Duration* and the easing are how the Standby Image comes and goes for these two.
-- Without a Standby Image (or with *Hide shows Standby Image* unticked) the hide hides the
-  capture's items wherever they are shown and remembers where; the next press shows them again
-  there only, never in a scene where the capture was hidden already (a Link Visibility's other
-  capture, a mode that is not on). With nothing remembered, the press shows nothing. What is
-  remembered is kept over a restart.
-- **A game's window closing lets go of it.** When the game's own window closes and its program
-  stays open (Dolphin back in its game list, with the menu in a window of its own), the capture
-  lets go within about half a second, so it no longer keeps the game's last frame: a Standby
-  Image after it comes in with its own transition, or, with *No game: Standby Image*, Auto
-  Capture's. The program's next game window is picked up as usual. A window that is only made
-  again (going full-screen) or minimised, or one of several closing (a GBA window), is not let go
-  of. The same happens when the menu is minimised as the game's window closes, and the menu is
-  not taken for a game when it is brought back.
-- **It stays on a game while its image comes back.** When OBS loses a game's image for a moment
-  (the game goes full-screen or makes its window again, or an emulator starts or stops a game),
-  the capture stays aimed at that game for as long as its program runs, also while none of its
-  windows can be seen, and OBS picks the image up again by itself. Only another game you click
-  into takes over meanwhile. A game whose window is made again as another kind of window is
-  followed at once. OBS's log says `kept on <program> while its picture comes back`.
-- With no game open, the Game Capture goes back to *Capture any fullscreen application* (while an
-  emulator whose game window closed is still open, it stays aimed at nothing instead). A program
-  that has just closed is waited for about three seconds first, in case it is only making its
-  window again; only then does another game that is open take over (one you click into takes
-  over at once).
-- **Switching Auto Capture on again hands the capture back.** After *Capture Active Window* (or
-  anything else) has aimed the capture by hand and Auto Capture was switched off, switching it
-  on again aims the capture afresh at once. It also switches itself back on once the program you
-  hooked has closed (after a restart too), so it follows games again; one you switched off
-  yourself stays off.
+- **Ignored for this source** and **Sync position to scenes** are the entry's own lists, as in Fit to Space.
 
-A game is recognised by what the program has loaded: a graphics engine together with something only
-games have (controller support, a game store's library, a game engine's player, game audio or video),
-a game engine's own kind of window, or a window that fills its screen. A program seen to be a game
-once is remembered and picked up at once from then on. The filter changes the Game Capture's own
-*Mode* and *Window* settings for you.
+**Groups of sources.** To give several sources one set of settings, and other sources another, add one Scene
+Fit per group to the scene, each on *Shared by all sources* with its own *Fitted sources*. For example:
 
-### Standby Image
+1. A Scene Fit named *Captures* listing the game and window captures, *Settings are* *Shared by all sources*,
+   *Space priority* *Takes space first*.
+2. A second Scene Fit named *Camera and chat* listing the camera and the chat box, *Shared by all sources*,
+   *Resize to fit* unticked if they keep their size, *Space priority* *Makes room*.
 
-An image in a capture's place while the capture has nothing to show, so its spot in the scene is not
-an empty hole while you wait for a game or window. Add **Source Filter: Standby Image (StageKit)** as a filter on a
-Game Capture, Window Capture or other live source.
+The captures then take their space as if the camera and chat box were not there and never shrink for them; the
+camera and chat box fit round the captures, and the captures never cover one that keeps its size. Within one group the sources share space with each other. With
+*Priority by list order* ticked on both, the Scene Fit higher in the scene's filter list goes first instead.
+List each source in one group only.
 
-- **Nothing to show** means no game or window is attached to the capture. A capture that is attached
-  and showing a black image, such as a loading screen, is left alone.
-- While it waits, the image is shown whole, in its own shape, as tall as the capture last was.
-- When the capture starts, the size glides from the image's shape to the capture's while the
-  image fades into it. When the capture ends, its last frame fades back into the image, which
-  glides back to its own shape. Neither is ever squashed on the way.
-- It belongs after an Auto Frame in the filter list and puts itself there.
-- After an Automatic Window Switcher it takes the capture's size as the switcher gives it: the
-  switcher already glides from one window's size to the next, and the two do not glide twice.
-- Corners, shadows and other filters after it are put on the image as they are on the capture.
-- To go without it, switch the filter off with its eye or a Stream Deck filter key.
-- *Transition* has a fade, a cut, slides, wipes, *Fade and zoom* and *Morph* (the capture and the
-  image both stretched over the frame as it glides from one shape to the other).
-- **Cover the source now** (the last button in the window, and a hotkey on the source) brings the image in over
-  a capture that is running and takes it away again: a way to hide the capture without leaving a
-  hole. An Automatic Window Switcher on the same capture does this when asked to hide the capture
-  (*Hide shows Standby Image*, ticked as it comes), so the Stream Deck *Hide or show the capture*
-  key shows the Standby Image.
-- **On any source, not only a capture**: put Standby Image on a camera, a capture card or a display
-  capture and cover it from a Stream Deck **Standby Image** key set to *Cover: toggle*, *Cover with
-  image* or *Uncover* (lit while the image covers the source), or from a **Show in Scenes** switch
-  with *Hide shows Standby Image* ticked. No Automatic Window Switcher is needed. See
-  [Covering a camera with its Standby Image](#covering-a-camera-with-its-standby-image).
-- The cover belongs to the source the filter is on, so it shows wherever that source is drawn: every
-  scene, and every Cropped View of it (a *Square Camera* view of a DSLR shows the image too). To
-  cover one view only, put the Standby Image filter on that view instead.
+Do not give a listed source a Fit to Space of its own as well. Off screen, Scene Fit (and Fit to Space) look at
+their sources only four times a second and put everything right the moment the scene comes on. A Multiview or
+a projector counts as on screen.
+<!-- ==== end scene-filters:fit (Scene Fit) ==== -->
 
-| Setting | What it does |
-| --- | --- |
-| Image | *The standby image* (the default: the one set on the StageKit dock's Standby & Ambient tab), *An image or video file*, or *Another source* |
-| Show when source is hidden | While the source is hidden in a scene, the standby image is shown in its place there, at the same position and size and with the source's later filters (shadow, corners). StageKit adds a locked item named *<source> (standby)* under each item of the source and shows and hides it by itself. *Show/Hide transition* below it, shown while this is ticked, is the one change between the source and the standby image: any OBS transition or *Morph (StageKit)*, with that transition's own settings, showing and hiding apart if you like. StageKit sets it on the source's items and on the stand-ins, so the source leaves and the standby image arrives the same way whatever hides the source (a Stream Deck key, Show in Scenes, the eye); other StageKit filters leave those items' transitions alone while this is ticked. With Morph the source changes into the standby image and back. Any StageKit filter may come after Standby Image; put OBS's own filters (colour correction, crop) and other plugins' filters before it in the list, or the change cuts instead of using the transition. The stand-in items appear two seconds after OBS has finished loading. Not for sources inside a group yet |
-| File / Source | The file or source to show, for those two choices. A video loops, without sound |
-| Keep image's aspect ratio | On (the default): the image is shown whole in its own shape. Off: it fills the size the capture last had, with what does not fit cut off |
-| No-signal transition | Used while the source is shown but has nothing to show (hiding and showing it in a scene uses *Show/Hide transition*, below). How the image gives way to the capture: *Fade* (the default), *Morph*, *Fade and zoom*, *Cut*, *Slide left / right / up / down* or *Wipe left / right / up / down*, named for the way the image leaves. It comes back the same way in reverse. The lists StageKit draws itself (this one, Auto Capture's, the Window Switcher's and Ambient Background's) use these names in this order |
-| Duration: image to capture / capture to image | How long each change takes |
-| Easing curve / Easing direction | The motion the change follows |
-| Animate the size change | On (the default): the size glides between the two shapes over the same time. Off: the size changes at once |
-
-When first added it puts itself straight after an Auto Frame if there is one, and otherwise first in
-the list; after that the order is yours.
-
-### Automatic Window Switcher
-
-One Window Capture for several apps. Add **Source Filter: Automatic Window Switcher (StageKit)** as a filter on a
-*Window Capture* and list the apps it is for. The filter aims that one capture at whichever of them
-you are using, so a scene needs one capture, one set of filters and one Fit to Space instead of a
-capture for each app.
-
-The window has four groups, in the order of the table: *Windows* (the first four rows), *Switching*
-(the switch transition, its duration and easing), *Manual windows*, then *Show/Hide transition*.
-
-| Setting | What it does |
-| --- | --- |
-| Windows to switch between | Open the app, then choose it under *Add a window*: by its program, or by a window's title for two programs with the same file name. The first part of a title is offered too (*GBA1* of *GBA1 | Volume 100%*); a window chosen by part of its title is found again when the rest of the title has changed. **Ignored windows** below it lists windows never to take, by program or part of a title. For two windows of one program in a scene, use two Window Captures, each with this filter and one of the windows. Each row has its own remove button |
-| Switch to the active window | Ticked (as it comes): clicking into one of the apps captures it; clicking into anything else changes nothing, so the last one stays. Unticked: an app is captured when it opens and stays until it closes |
-| Keep other windows captured | Ticked (as it comes): while the capture is showing, the other open apps on the two lists are captured in the background, so the one you switch to is there at once. Unticked, a switch waits for the capture to find the other window, which saves graphics memory |
-| Game area only | Unticked as it comes. Ticked, only the part of the window the app draws its game in is shown: an emulator's menu bar, tool bar and status bar are left out, with nothing to crop by hand. It is found by itself for each window (the app's largest drawing area inside its window) and followed when it changes, gliding to the new size; a menu that opens for a moment changes nothing. Needs Window Capture's *Client area* ticked. Where none is found the window is shown whole (a web browser is always shown whole, tabs and all), and OBS's log says what was found for each program |
-| Switch transition | How one app's image gives way to the next: *Fade* (as it comes), **Morph** (the frame changes shape and size as the one image turns into the other), *Fade and zoom*, *Cut*, or *Slide left / right / up / down*, named for the way the image moves (with *Slide left* the new window comes in from the right) |
-| Duration / Easing | How long that takes, and its curve |
-| Manual windows | Other apps the capture shows when you say so, such as your browser. *Switch to next manual window* (a button here, a hotkey, a Stream Deck key) takes the next one that is open and holds it whatever app you use; after the last, or with *Return to automatic*, the apps above are followed again. In the *Manual windows* group with it: *Auto-switch manual windows*, *When a window is picked*, *Clear picked windows at start* and the buttons |
-| Show/Hide transition | *Hide/show capture now* hides the capture in every scene it is shown in, or shows it again, with the transition chosen under it. Also a hotkey and a Stream Deck key. The show brings it back only where the hide hid it (not in a scene where it was hidden already, nor where a mode not on holds it hidden), and does nothing when nothing was hidden; this is kept over a restart |
-
-- An app on the list that opens is captured. When the app being captured closes, the one you used
-  before it comes back.
-- The change is smooth although there is only one capture: the filter keeps the last image the
-  capture had, shows it while the capture is finding the other window, and brings the new image in
-  over it. A Standby Image on the same capture does not stand in for that moment; it does once
-  none of the apps is open.
-- Five hotkeys under the capture in *Settings → Hotkeys*, named after the filter: *next manual
-  window*, *return to automatic*, *toggle manual / automatic*, *hide or show the capture* and *clear picked
-  windows*. The Stream Deck *Manual Window / Source* key does any of the five.
-- To hold a window that is on neither list, press the Stream Deck *Capture Active Window* key on
-  it. The filter adds its program to *Manual windows* and captures it; with *When a window is picked*
-  set to *Switch at selection* it also changes over to it with your *Transition* and holds it.
-  *Manual Window / Source* (*Toggle*) then switches between that window and your apps.
-- **A window you pick is that window, not its program.** *Capture Active Window* adds it to
-  *Manual windows* as *program — its title*, for example two browser profiles as two entries.
-  Another window of the same program never stands in for it. When it closes it leaves the list,
-  and the capture does not move to the program's other window. It goes to your next manual
-  window (with *Auto-switch manual windows*) or back to automatic, and with nowhere to go it
-  shows the Standby Image, or nothing. A program named in a list still means any of its
-  windows.
-- **Picked windows are cleared.** *Clear picked windows at start* (ticked as it comes): windows
-  picked with *Capture Active Window* last only for this OBS session. *Clear picked windows* (a
-  button, a hotkey under the capture, and the Stream Deck *Manual Window / Source* key's *Clear
-  picked windows*) takes them off both lists at any time, *Windows to switch between* and
-  *Manual windows*. A picked window being shown is let go of: the capture goes on to the next
-  automatic window, or shows the Standby Image if none is open. Programs and titles you added
-  yourself stay, Firefox titles too (they have the same dash in them as a picked window).
-- **The window shown is watched.** When it closes, OBS's Window Capture looks for another window
-  of the same program by itself. StageKit does not show that image: it keeps the last frame of
-  the window that closed until it has chosen and aimed at the next one.
-- **Only listed windows are shown.** When none of the windows on the lists is open, nothing of
-  the capture is shown, whatever it is aimed at: the Standby Image stands in if the capture has
-  one, and the status line says *Capturing nothing*. The capture is never left aimed where OBS
-  could find a window by itself: aimed at a program not on the lists by name, at a title no entry
-  answers, or at an ignored window, it is aimed at no window instead.
-- **When a window is picked**: what happens to a window picked with *Capture Active Window*.
-  *Wait until switched to* (as it comes): it becomes the manual window and is captured in the
-  background while your automatic windows go on showing; it is shown when you switch to it with
-  *Manual Window / Source* (*Toggle* or *Next*). *Switch at selection*: the capture changes to
-  it straight away, as before.
-- **Auto-switch manual windows** (ticked as it comes): in manual mode the capture follows among
-  your *Manual windows* the way automatic mode follows among the others: the manual window you
-  click into or that opens is shown, and when the one shown closes the one before comes back.
-  Nothing off the *Manual windows* list is taken. Unticked, the manual window stays until you
-  switch.
-- The capture's size glides from the one window's to the other's with every *Transition* but a
-  cut. *Morph* stretches both images over the gliding frame; the others keep each image's own
-  shape inside it.
-- It keeps itself before a Standby Image and an Auto Frame in the capture's filter list.
-- **An Auto Frame after it goes by the window shown.** Its top line names the program of the
-  window on screen, and that program's saved shape (by file name or part of the title) is the one
-  used: a browser shown after Dolphin is not cut to Dolphin's 4:3, and going back to Dolphin brings
-  its 4:3 back. Each switch to another program is a new program for Auto Frame. When the window
-  shown closes, its last image keeps its shape for the moment it is held; while nothing is shown,
-  Auto Frame names no program.
-- Windows only, like the other capture tools.
-
-For a capture per app in one scene, each with its own filters, Automatic Source Switcher below is still
-there.
-
-### Automatic Source Switcher
-
-For a scene that shows whichever app you are working in. Give the scene a Window Capture for each app
-(Blender, ZBrush, a browser, and so on), then add **Scene Filter: Automatic Source Switcher (StageKit)** as a filter on the *scene*
-and add those captures to its list. Windows only.
-
-Which app a capture belongs to is read from the capture itself, so there is nothing to type. From then
-on one of the listed captures is shown at a time:
-
-- **An app that opens is shown.** So is a capture you aim at another window in its own settings.
-- **Clicking into one of the apps shows it** (*Switch to the active window*, on to begin with). With two of
-  them open, the capture follows you from one to the other.
-- **Clicking into anything else changes nothing.** The last app stays captured while OBS, a chat
-  window or anything not on the list is in front.
-- **When the app that is showing closes, the one you used before it comes back.** When none of them is
-  open, the first capture in the list is shown, so put the one you want as the standby first.
-
-| Setting | What it does |
-| --- | --- |
-| Sources to switch between | The scene's captures, one per app. Choose to add; each row has its own remove button. The first is the standby |
-| Manual sources | Other captures in the scene that you show yourself, such as a Window Capture of your browser. Show one and it takes over and stays, whatever app you use; hide it and the captures above follow your apps again. Showing one hides any other on this list |
-| Switch to the active window | On: the app you click into is shown. Off: an app is shown when it opens and stays until it closes |
-| Transition | How one capture gives way to the next: a fade (the default), any other transition OBS has, a cut, or whatever is already set on each item. With *Morph (StageKit)* the capture you leave moves, resizes and changes into the one you go to (see [Morph between items](#morph-between-items)). It sets OBS's own show and hide transition on each listed item |
-| Duration | How long the change takes |
-| Keep other windows captured | While the scene is showing, the captures of the other open apps keep running, so the one you switch to has its image at once |
-
-**Switching to a window by hand.** Add a Window Capture for the window you want (a browser, say), add
-it to *Manual sources*, and hide it. Then:
-
-- **A Stream Deck key** set to show and hide that source in the scene (Elgato's OBS *Source* key)
-  switches to it and back. OBS's own *Show* and *Hide* hotkeys for the item do the same.
-- While it is showing, nothing takes over from it: you can work in Blender or ZBrush and the browser
-  stays on screen. Hide it and the capture of the app you are in comes back.
-- With several on the list, showing one hides the others, so each can have its own key.
-- The filter adds three hotkeys to the scene in *Settings → Hotkeys*, named after the filter: *next manual
-  source* steps through these captures in turn and then back to the apps, *return to automatic* goes straight
-  back to the apps, and *toggle manual / automatic* changes between the two.
-
-It acts only when one of those things happens, so a capture you show by hand stays until then. A
-minimised window counts as closed. The top line says what is showing. Switch the filter off to pause it.
-Each capture can have its own [Fit to Space](#fit-to-space), shadow and blur; they follow the capture.
-
-### Program Trigger
-
-Add **Source Filter: Program Trigger (StageKit)** as a filter on a *scene* to show and hide that scene's items, or on
-any *source* to switch that source's other filters. Windows only.
-
-1. **While this program**: choose the program from the open ones, or find its file. Optionally give
-   text its window title must contain (for example `GBA1`); with the program left empty, the title alone
-   decides. Choose whether it counts when it has a window open or only when *Its window is active*. The title box
-   offers the titles of the windows that are open.
-2. **Show and switch on** (the second group): pick items and filters and add them to the lists. *Off
-   while it is here* hides and switches off while the program is here instead.
-3. **Transition** and **Duration**, in the same group: how the items appear and disappear. A fade to
-   begin with; any other transition OBS has, a cut, or whatever is set on each item. On a source, where
-   only filters are switched, the two are not shown.
-
-While the program is here the items are shown and the filters are on; when it goes they are hidden and
-off. It acts when the program appears or goes, so a change you make by hand in between is kept until
-then. A minimised window does not count as open. The top line says whether it sees the program now.
-
-### Cropped View
-
-Add **Cropped View (StageKit)** as a source. Choose the source to show, then crop it to *1:1 (square)*, to
-4:3, 16:9, 3:4 or 9:16 from the middle, by set amounts off each side, or to *Visible pixels*.
-
-*Visible pixels* needs no numbers: it trims off the empty, see-through room around the content and
-follows the content when it changes size. It suits web widgets, whose page is much bigger than the card
-they draw. It looks about once a second, grows at once and shrinks only when the smaller image has
-settled.
-
-Use it when one camera is wanted in more than one shape. OBS applies an item's crop after the source's
-filters, so a shadow on the camera is cut off by the crop; a Cropped View is the cropped image as a
-source, and a Shadow, Glow & Outline or Zoom added to the view follows it. Make one view per shape. The
-camera is still captured only once.
-
-### Zoom
-
-Add **Source Filter: Zoom (StageKit)** as a filter on a source. Turning it on zooms into the point you choose;
-turning it off zooms back out. It has a `StageKit: <the filter's name>: toggle` hotkey under the source.
-
-| Setting | What it does |
-| --- | --- |
-| Zoom | How far the image is zoomed in while the filter is on. 100% is no zoom; 200% shows it twice as large |
-| Centre X / Centre Y | The point of the image the zoom closes in on. 50 and 50 is the middle |
-| Zoom-in duration / Zoom-out duration | How long zooming in and back out takes. 0 changes at once |
-| Easing curve / Easing direction | The curve the zoom follows |
-
-On a Stream Deck, use StageKit's own **Zoom** key, or the OBS Studio plugin's *Filter* key.
+## Moving and arranging sources
 
 ### Move Source
 
@@ -1025,6 +817,20 @@ Move Scene Item does the same job from the scene's side. Add **Scene Filter: Mov
 Switching the filter on moves the item; the filter then switches itself off, ready for the next time.
 Trigger it from the eye icon, StageKit's **Move Scene Item** key on a Stream Deck (or the OBS plugin's *Filter* key), *Move it now*, or its
 `StageKit: <the filter's name>: move` hotkey under the scene.
+
+### Match Item
+
+Add **Scene Filter: Match Item (StageKit)** as a filter on a scene and leave it on. Choose an item in this scene, and
+the scene and item it should line up with. *Fit inside the same box* scales the item to the other
+item's box, which suits titles of different lengths; *Copy its position and size settings* matches it
+exactly. Moving the original moves every matched item.
+
+### Apply Layout
+
+Add **Scene Filter: Apply Layout (StageKit)** as a filter on a scene. Arrange the scene and press *Save where everything is
+now*. Switching the filter on glides every saved item back to that arrangement. To cover only some
+items, add their names under *Only these sources* before saving; several Apply Layout filters can then each
+move a different set.
 
 ### The StageKit docks
 
@@ -1211,11 +1017,7 @@ Options:
   OBS's log says when guides are switched on, when a drag is first seen, and where the first line
   was put.
 
-### Show/Hide Animation
-
-Add **Scene Filter: Show/Hide Animation (StageKit)** as a filter on a scene and leave it on. Choose the item and
-where it comes in from: the nearest screen edge, a chosen edge, or a pop from its centre. From then on,
-showing or hiding the item animates it, including from a Stream Deck *Source* key.
+## Visibility, modes and layouts
 
 ### Show in Scenes
 
@@ -1334,6 +1136,91 @@ scene hides the linked items here and the listed sources everywhere. So one Stre
 on one camera hides every camera. For a plain on and off switch on a key, with no item to press,
 there is also [Show in Scenes](#show-in-scenes).
 
+### Scene Modes
+
+<!-- ==== scene-filters:modes (Scene Modes) ==== -->
+**Scene Filter: Scene Modes (StageKit)** names a scene's modes and the sources of each: *Game*, *Window* and
+*Display* in a live scene, say, or *Starting*, *Be right back*, *Intermission* and *Ending* in a holding
+scene. One mode is on at a time. Turning a mode on hides the other modes' sources and shows its own.
+A source in both the old and the new mode is left as it is (an image shown in Starting and Be right
+back stays up), and a source in no mode is never touched.
+
+- **Making modes:** one row adds a mode. Choose one under *From template* (Starting, Game, Display /
+  Screen, Window, Camera, Chat, Intermission, Be right back, Ending), or type a name under *New mode
+  name*, or both, and press *Add mode*. A template gives the mode its type, and its name when none is
+  typed; both can be changed afterwards. No mode name is built in, and two modes may have the same name.
+- **Settings for**: the mode whose group is shown. Only one mode's group shows at a time, so the
+  settings under the modes are in reach. A mode added is the one shown; removed, the one before it.
+- **Each mode** has a group of its own, headed *Mode: <name>*:
+  - **Name**: renaming a mode keeps its sources, its hotkey and its Stream Deck keys.
+  - **Mode type**: what it shows (Game, Handheld, Window, Camera, Chat, Starting and so on: every type the Stream Deck Scene Mode key offers). A Stream Deck
+    *Scene Mode* key left on *Automatic* takes its image from this.
+  - **Switch to scene**: a key or hotkey turning this mode on also changes OBS to that scene, unless
+    the scene on screen is this filter's own scene or one under *Same modes in scenes*.
+  - **Sources**: the sources shown while this mode is on. Sources inside groups, and groups, can be
+    chosen.
+  - **Hide when on**: other sources hidden in this scene when this mode comes on, with the mode's
+    transition. They are not part of the mode: when another mode comes on they are not shown again,
+    and nothing else is done to them.
+  - **Leave when shown** and **Leave to**: while this mode is on, showing one of these sources (a
+    Show in Scenes key, a Link Visibility, the eye) turns the mode under *Leave to* on (shown once a source is listed): *The mode
+    before* (as it comes), *No mode* (only with *Allow no mode*) or another mode. The source that
+    was shown stays shown, even when the next mode's *Hide when on* lists it (the log says so).
+  - **Placed in this mode**, **Save their places now**, **Move duration** and easing: sources put in
+    a place of their own when this mode comes on: position, size, crop and bounding box. They need
+    not be the mode's sources; a music widget shown in two modes can sit under the chat in one and
+    match the width of the handheld windows in the other. Turn the mode on, arrange the sources by
+    hand, press *Save their places now* (in this scene and the scenes under *Same modes in scenes*).
+    When the mode comes on they glide there (300 ms as it comes; 0 moves them at once; at once in a
+    scene not on screen, for a hidden source and when OBS starts). Locked sources move too. A mode
+    with nothing saved for a source leaves it where it is. A Fit to Space or Scene Fit on the source
+    takes it where it was put, but may still adjust it by its own rules.
+  - **Move up** and **Remove mode**. The order is the order of *next*. A mode removed leaves its
+    sources as they are.
+- **Mode now**: the mode that is on. Choosing another here turns it on, but never changes scene.
+- **Allow no mode**: a *Toggle* key pressed on the mode that is on hides every mode's sources. Unticked
+  (as it comes), it goes back to the mode before instead.
+- **Same modes in scenes**: other scenes that follow this filter's mode, so one key works in two
+  layouts alike. A key pressed while one of them is on screen stays in that scene.
+- **Lock hidden sources**: each mode's source is locked while hidden, so a click in OBS's preview
+  cannot pick a source stacked under the one you see.
+- **Show/Hide transition**: how the sources come and go. With *Morph (StageKit)*, the capture of the
+  mode going changes into the capture of the mode coming.
+
+A source of a mode that is not on, shown some other way (the eye, an old *Source* key), is hidden
+again at once. A source of the mode on that you hide stays hidden: a camera switched off stays off.
+A camera switch (Show in Scenes) and a Standby filter's *Show when source is hidden* go by the modes:
+the camera shows only in its own mode, and its standby image never covers another mode. The other
+way round, a camera switch that is off does not stop a mode from showing the camera: a switch is a
+command, not a lock. When a scene
+has two Scene Modes filters, a source in both shows only while both have it on. In a scene that is
+not on screen a change is a cut, so a hidden capture card is never opened for a moment when the scene
+comes on.
+
+**Two columns without marker sources.** A layout scene with a *Chat* mode (chat box, a small
+camera) and a *GBA* mode (two handheld windows, a camera beside them), and a full-screen camera
+(*DSLR*) that must never cover the GBA column: in the GBA mode set *Hide when on*: DSLR, *Leave when
+shown*: DSLR and *Leave to*: Chat. GBA coming on hides DSLR; DSLR shown while GBA is on brings Chat
+back, and DSLR stays shown. If you had kept the two apart with a Link Visibility (*Show only one*
+between DSLR and a transparent *Column: GBA* marker), remove that Link Visibility, take *Column:
+Chat* and *Column: GBA* out of the modes and out of the following sources of any other Link
+Visibility (*Link Visibility-CaptureChat*, say), then delete the two marker sources.
+
+**Keys:** the scene gets a hotkey for each mode (*StageKit: <filter>: <mode>*), one for the next mode,
+and one for no mode while that is allowed. The Stream Deck *Scene Mode* key, and anything else that
+speaks obs-websocket, uses these vendor requests:
+
+| requestType | requestData | Response |
+| --- | --- | --- |
+| `ListSceneModes` | `scene?` | `filters: [{scene, filter, enabled, current, currentName, allowNone, modes: [{id, name, type}], scenes: [{name}]}]` |
+| `GetSceneMode` | `scene`, `filter?` | `current`, `currentName`, `previous`, `previousName`, `enabled`, `allowNone`, `modes` |
+| `SetSceneMode` | `scene`, `filter?`, `mode` (its id, or its name), `how?`: `on` (as it comes), `toggle`, `next` or `none` | none. It fails, with the reason, when the scene, the filter or the mode is not there, the filter is off, or no mode is not allowed |
+
+A `SceneModeChanged` event (`scene`, `filter`, `mode`, `modeName`, `previous`, `previousName`) follows
+every change of mode, and every change to the list of modes. A mode is known by an id that never
+changes (`m1`, `m2`, ...), so renaming it breaks no key.
+<!-- ==== end scene-filters:modes (Scene Modes) ==== -->
+
 ### One scene per layout
 
 Instead of one scene for each capture in each layout (game full screen, game with camera and chat,
@@ -1358,9 +1245,26 @@ A capture that is showing but has no image yet keeps its room meanwhile.
 
 ### One holding scene
 
-The scenes shown before, between and after the game (stream starting, be right back, stream
-ending) often share one design: the same background, image, chat box and alerts, with another
-title and a few extras. They can be one scene with one mode showing:
+Starting, Be right back and Ending can share a scene. Keep their common background, chat and
+alerts visible across modes. Give each mode its own title and any extras that belong with it.
+
+1. Add **Scene Filter: Scene Modes (StageKit)** to the holding scene. Use **From template** or
+   enter a **New mode name**, then select **Add mode** for each state.
+2. Under **Settings for**, choose each mode and add its title and extras to **Sources**. Leave
+   the common background, chat and alerts outside those lists so they stay visible.
+3. To bring up the holding scene from another scene, set that mode's **Switch to scene** to the
+   holding scene. Test each entry with **Mode now**. The title and extras should change together.
+4. For each state, configure a **Scene Mode** key in Stream Deck. Choose the holding scene and
+   its filter, select **Switch on**, then choose the state under **Switch to mode**. Pressing
+   the same key again keeps that state active.
+
+A mode can include a camera, an intermission layout or another group of sources. Each mode
+can also save source positions. [Scene Modes settings](#scene-modes)
+
+#### Holding scene with Link Visibility
+
+Existing holding scenes built with linked titles can continue to use the following setup.
+The conversion script creates this version. [Holding scene conversion script](scripts/merge-holding-scenes.py)
 
 1. Put every mode's title and extras in the scene with the shared items, each where it was. Make
    each title a group, so a mode is one title plus the items that come with it.
@@ -1382,19 +1286,615 @@ handheld game). A camera switch that acts in every scene then shows that view on
 is showing: the other modes' views stay hidden and the switch still reads on. A mode that includes
 the camera view shows it even when the camera switch is off; press the switch off again to hide it.
 
-### Match Item
+## Appearance and standby images
 
-Add **Scene Filter: Match Item (StageKit)** as a filter on a scene and leave it on. Choose an item in this scene, and
-the scene and item it should line up with. *Fit inside the same box* scales the item to the other
-item's box, which suits titles of different lengths; *Copy its position and size settings* matches it
-exactly. Moving the original moves every matched item.
+### Ambient Background
 
-### Apply Layout
+Add **Ambient Background (StageKit)** as a source. It fills the canvas.
 
-Add **Scene Filter: Apply Layout (StageKit)** as a filter on a scene. Arrange the scene and press *Save where everything is
-now*. Switching the filter on glides every saved item back to that arrangement. To cover only some
-items, add their names under *Only these sources* before saving; several Apply Layout filters can then each
-move a different set.
+| Group | Settings |
+| --- | --- |
+| Image | The standby image, an image file, any existing source or scene, or an animated pattern (below). Optionally blend in a live capture: a chosen source, or *Automatic*, which uses the largest visible capture in the current scene. The capture can fill the screen, fit inside it, match its width or height, or stretch, with its own zoom. *Capture replaces image* makes the capture the whole background while there is one; the moment there is none, the usual image is back. A capture with an Auto Frame is used as the trimmed game image, without the empty frame around it. A capture showing nothing, or black all over for two seconds, counts as no capture. *Keep the capture ready* (shown with *Automatic*) keeps it running in scenes that do not show it, so it is there at once in the next scene that does. The window has three groups for this: *Background*, *Live capture* and *Capture change* |
+| Motion | Drift speed in each direction, zoom, and mirroring at the edges so the drift never shows a seam. An image file's empty edges (rows and columns at its sides that are see-through, or black all the way along, up to a quarter of it from each side) are left out, so they never show as bars between the repeats; a source or scene is used as it is |
+| Look | Blur type (Dual Kawase, Gaussian, Box, or Temporal, which blurs over time and leaves trails) and blur; a mosaic in the Blur filter's seven cell shapes, with the same smoothing, origin and rotation (the *Blur and mosaic* group); then, under *Light and colour*: saturation; *Midtone boost*, which lifts the middle brightnesses; **Bloom**, where the bright parts of the image shine over what is around them (how strongly, from what brightness, and how far the light spreads); brightness; vignette; and **Darkest level** (below) in a group of its own |
+| Texture overlay | An image multiplied or screened over the result, optionally in black and white |
+
+Two more things about the capture blended in and the bloom:
+
+- **Capture transition**, **Capture delay**, **Duration** and easing: how the background follows when
+  the capture changes (another capture, none any more, or an Automatic Window Switcher taking
+  another window). The background as it was stays for the delay, then gives way with a fade (as it
+  comes), a cut, or a slide to any side. Set the delay to the length of the capture's own transition
+  to have the background change after the image has.
+- **Bloom style**: *Bright parts shine* (only what is brighter than the threshold spreads its light)
+  or *Whole image, amplified* (the image's own light added back onto all of it, which brightens
+  everything and lets colours run into white: the look of obs-shaderfilter's bloom shader, with
+  100 % its strength of 1). Bloom now goes to 1000 %. The light always spreads at least as far as
+  *Blur*, so bloom never makes the background sharper.
+- **Darkest level** (0 %, off, as it comes): how bright the darkest parts of the background
+  become, even while the capture blended in is dark. **Lift toward**: *The background image*
+  (the image or source the background is made from, where the background has it, at the level's
+  share of its brightness: 1 % barely shows it, 10 % is a dim image, 100 % is the image itself;
+  with nothing under *Background from*, the colour is used) or *A colour* (**Lift colour**, a mid
+  grey as it comes: black takes on that colour, as bright as the level). Parts twice as bright as
+  that are left as they are, with a smooth change between, and the image itself is never made
+  brighter. The lift is made before the blur, so the blur, the mosaic, the trail and bloom act on
+  it as on the rest of the background (it is as soft as the blur, and a mosaic cell is one
+  colour); brightness, vignette and the texture overlay come after it (a strong vignette can
+  darken the corners below the level). A capture that is black all over for two seconds already
+  counts as no capture; this is for one that is dark but not empty.
+
+![Darkest level: off; toward a grey and a red at 30 %; toward the background image at 1 %, 10 % and 100 %; with a strong Gaussian blur; with hexagons](docs/images/ambient-darkest.png)
+
+**Patterns.** *Background from: A pattern* needs no image: StageKit draws an animated background
+itself. **Pattern**: *Aurora* (slow curtains of colour), *Plasma*, *Lava lamp* (soft blobs that
+merge and part), *Waves* (layered dunes), *Bokeh* (soft circles drifting and fading), *Starfield*
+(drifting points that twinkle), *Gradient flow* (a turning, sliding three-colour gradient),
+*Nebula* (cloud), *Grid pulse* (a faint grid with pulses running along its lines), *Rays*
+(light rays turning slowly round a point), *Circuit board* (ribbons of thin parallel traces that bend together at 45°, each trace ending
+in a ring pad, a few thick traces, a dimmer board under it, and lights running along the ribbons
+that light the pads as they arrive; chips, soldered pads and pours join in at a higher *Detail*),
+*Circuit traces* (bundles of traces coming down from the top, each ending in a round pad at its
+own height, lights running down them and small lights drifting up), *Data lines* (a few very
+thin lines running across with gentle steps, dashes of light sliding along them, and small
+drifting lights). For these three Colour 1 is the board, Colour 2 the lines and Colour 3 what
+lights up (in Data lines: the drifting lights), and they are made for a light board as well as a
+dark one: on a light Colour 1 the lights turn deeper instead of whiter. *Hex grid* (a
+honeycomb whose cells light up), *Matrix rain* (falling streaks of changing signs), *Tunnel*
+(rings flying out of the middle), *Ripples* (raindrop rings on water), *Embers* (sparks rising),
+*Sun grid* (a sun over a grid running to the horizon). Six more are built on hexagons and dots:
+*Hex columns* (six-sided columns seen from above and in front, with lit tops, darker sides and
+dark edges, rising and falling in slow waves), *Mesh* (perforated metal: a tight comb of round
+discs with dark rims, under a wide soft light that sweeps across), *Halftone hexagons* (fine dots
+whose size draws large hexagons with rings in them, a wave passing from one to the next while the
+whole turns very slowly), *Dot grid* (rows of small dots under diagonal beams of light; a dot
+under a beam is larger and brighter, and one where two beams cross flares in a four-point star),
+*Hex wire glow* (a dark honeycomb whose thin lines light up where a soft light passes) and *Hex
+mosaic* (flat hexagon tiles in close shades that shimmer slowly). In these Colour 1 is the ground,
+dark or light, and Colours 2 and 3 are what is lit or inked; Dot grid and Hex wire glow run from
+Colour 2 at one side of the screen to Colour 3 at the other. **Colour 1**, **Colour 2**, **Colour 3** are its palette
+(Colour 1 is the ground where a pattern has one); **Speed** (100 % as it comes; 0 holds it still,
+under 0 runs it backwards; at 100 % a pattern comes back to where it began every four minutes,
+with no jump), **Size** and **Detail**. A pattern takes the image's place and nothing else changes:
+the blur, the mosaic, bloom, Darkest level, the texture overlay and a live capture blended in all
+act on it, so a hexagon mosaic over Plasma works as it does over an image. The blur softens a
+pattern a great deal: turn *Blur* down to see its shapes. The Motion group (drift, zoom, mirror) is
+an image's and is hidden for a pattern. **Position X**, **Position Y** and **Rotation** pose the
+background whatever it is made from: X and Y move it by a share of the screen's width and height,
+Rotation turns it about the middle of the screen (clockwise, -180° to 180°). An image or source
+still covers the whole screen (the space left is filled by repeating or mirroring it, as the drift
+does) and its drift stays in the direction set. A pattern's own layout is moved and turned, so
+Circuit traces can come in from a side instead of the top, the centre of Rays can sit elsewhere
+and Sun grid can tilt. All three are 0 as they come, and then nothing changes. The patterns cost one small extra drawing step, and
+nothing while an image is chosen. If the patterns cannot be loaded, the background shows the
+standby image (or its image file) and OBS's log says so.
+
+![The six hexagon and dot patterns on a dark and on a light palette, and five of them as outline fills from Shadow, Glow & Outline and Scene Shadow](docs/images/hex-patterns.png)
+
+The additional patterns use all three colors, Speed, Size and Detail. The controls for position and rotation also apply to them.
+
+![Code wall, neon hex tiles, network web, hex flood, frosted glass and crystal ice](docs/images/material-patterns-1.gif)
+
+![HUD data wall, circuit board with solder pads, data streams, petal lattice, liquid marble and deep space](docs/images/material-patterns-2.gif)
+
+
+![The first nineteen patterns: aurora, plasma, lava lamp, waves, bokeh, starfield, gradient flow, nebula, grid pulse, rays, circuit board, hex grid, matrix rain, tunnel, ripples, embers, sun grid, circuit traces, data lines; nebula under a hexagon mosaic; aurora blurred with bloom](docs/images/ambient-patterns.png)
+
+Put it in one shared scene and nest that scene wherever you need the background.
+
+### Standby image
+
+Choose the standby image once, in the StageKit dock under *Standby image*. The dock shows a small image
+of it. It is saved with the scene collection.
+
+- Add **Standby Image (StageKit)** as a source wherever the image itself should be shown.
+- Every Ambient Background uses it as its image automatically. A background you had pointed at an
+  image of its own switches over when you choose a standby image; to keep one on its own image, set its
+  *Background from* back to *An image* afterwards.
+
+Changing the standby image updates both at once.
+
+An animated image, such as a GIF, plays: in the Standby Image source, in every Standby Image filter
+(and the image shown in a hidden source's place), in Ambient Background and in the dock's small image,
+where it keeps the zoom and place you chose with the wheel. A still image is shown as before.
+
+### Standby Image
+
+An image in a capture's place while the capture has nothing to show, so its spot in the scene is not
+an empty hole while you wait for a game or window. Add **Source Filter: Standby Image (StageKit)** as a filter on a
+Game Capture, Window Capture or other live source.
+
+- **Nothing to show** means no game or window is attached to the capture. A capture that is attached
+  and showing a black image, such as a loading screen, is left alone.
+- While it waits, the image is shown whole, in its own shape, as tall as the capture last was.
+- When the capture starts, the size glides from the image's shape to the capture's while the
+  image fades into it. When the capture ends, its last frame fades back into the image, which
+  glides back to its own shape. Neither is ever squashed on the way.
+- It belongs after an Auto Frame in the filter list and puts itself there.
+- After an Automatic Window Switcher it takes the capture's size as the switcher gives it: the
+  switcher already glides from one window's size to the next, and the two do not glide twice.
+- Corners, shadows and other filters after it are put on the image as they are on the capture.
+- To go without it, switch the filter off with its eye or a Stream Deck filter key.
+- *Transition* has a fade, a cut, slides, wipes, *Fade and zoom* and *Morph* (the capture and the
+  image both stretched over the frame as it glides from one shape to the other).
+- **Cover the source now** (the last button in the window, and a hotkey on the source) brings the image in over
+  a capture that is running and takes it away again: a way to hide the capture without leaving a
+  hole. An Automatic Window Switcher on the same capture does this when asked to hide the capture
+  (*Hide shows Standby Image*, ticked as it comes), so the Stream Deck *Hide or show the capture*
+  key shows the Standby Image.
+- **On any source, not only a capture**: put Standby Image on a camera, a capture card or a display
+  capture and cover it from a Stream Deck **Standby Image** key set to *Cover: toggle*, *Cover with
+  image* or *Uncover* (lit while the image covers the source), or from a **Show in Scenes** switch
+  with *Hide shows Standby Image* ticked. No Automatic Window Switcher is needed. See
+  [Covering a camera with its Standby Image](#covering-a-camera-with-its-standby-image).
+- The cover belongs to the source the filter is on, so it shows wherever that source is drawn: every
+  scene, and every Cropped View of it (a *Square Camera* view of a DSLR shows the image too). To
+  cover one view only, put the Standby Image filter on that view instead.
+
+| Setting | What it does |
+| --- | --- |
+| Image | *The standby image* (the default: the one set on the StageKit dock's Standby & Ambient tab), *An image or video file*, or *Another source* |
+| Show when source is hidden | While the source is hidden in a scene, the standby image is shown in its place there, at the same position and size and with the source's later filters (shadow, corners). StageKit adds a locked item named *<source> (standby)* under each item of the source and shows and hides it by itself. *Show/Hide transition* below it, shown while this is ticked, is the one change between the source and the standby image: any OBS transition or *Morph (StageKit)*, with that transition's own settings, showing and hiding apart if you like. StageKit sets it on the source's items and on the stand-ins, so the source leaves and the standby image arrives the same way whatever hides the source (a Stream Deck key, Show in Scenes, the eye); other StageKit filters leave those items' transitions alone while this is ticked. With Morph the source changes into the standby image and back. Any StageKit filter may come after Standby Image; put OBS's own filters (colour correction, crop) and other plugins' filters before it in the list, or the change cuts instead of using the transition. The stand-in items appear two seconds after OBS has finished loading. Not for sources inside a group yet |
+| File / Source | The file or source to show, for those two choices. A video loops, without sound |
+| Keep image's aspect ratio | On (the default): the image is shown whole in its own shape. Off: it fills the size the capture last had, with what does not fit cut off |
+| No-signal transition | Used while the source is shown but has nothing to show (hiding and showing it in a scene uses *Show/Hide transition*, below). How the image gives way to the capture: *Fade* (the default), *Morph*, *Fade and zoom*, *Cut*, *Slide left / right / up / down* or *Wipe left / right / up / down*, named for the way the image leaves. It comes back the same way in reverse. The lists StageKit draws itself (this one, Auto Capture's, the Window Switcher's and Ambient Background's) use these names in this order |
+| Duration: image to capture / Duration: capture to image | How long each change takes |
+| Easing curve / Easing direction | The motion the change follows |
+| Animate the size change | On (the default): the size glides between the two shapes over the same time. Off: the size changes at once |
+
+When first added it puts itself straight after an Auto Frame if there is one, and otherwise first in
+the list; after that the order is yours.
+
+### Scene Standby
+
+<!-- ==== scene-filters:standby-corners (Scene Standby) ==== -->
+**Scene Filter: Scene Standby (StageKit)** sets the standby image once for the sources of a scene: any empty capture shows
+the image, and any source you list shows it in its place while it is hidden, without setting up a filter on
+each capture by hand.
+
+![An empty capture and a hidden camera, both showing the standby image](docs/images/scene-standby.png)
+
+It does not draw anything itself. It adds a **Standby Image** filter to each source it covers and sets it from
+the scene filter. That filter says *Set by Scene Standby in <scene>* and leaves out the image controls,
+which are set in the Scene Standby.
+
+- **Sources covered**: *All sources*, *Every capture* (as it comes: each game, window and camera capture in
+  the scene, groups included) or *Chosen sources*. With *Every capture*, screen captures (which always have
+  an image) are left out unless you tick *Include screen captures*. *All sources* covers every source with
+  an image of its own, the ones inside groups too, sources added later and screen captures included; an
+  empty one (a capture with nothing attached, a stopped video, a text with no words) shows the image. Groups,
+  nested scenes and the source used as the image are not covered. *Ignored sources* are left out of both.
+- **When a source has no image** (a group with its own tick box, ticked as it comes; it was *Show when no
+  image*): an empty capture (no game or window attached, no camera signal) shows the image. The group holds
+  the *No-signal transition*, the two durations, the easing and *Animate the size change*.
+  The image goes with the source into every scene it is in, as a Standby Image filter of its own would.
+- **When a source is hidden**, the second group, holds **Show when hidden**: the sources whose place the image takes **in this scene only** while they are
+  hidden, with the *Show/Hide transition* in the same group as the one change between the source and the image (with
+  Morph, the one changes into the other). Leave out captures that are hidden on purpose, such as the
+  stacked captures of a layout scene.
+- **Image** and **Keep image's aspect ratio**, above both groups, and the controls in the first group are
+  the Standby Image filter's own controls.
+
+A source that already has a Standby Image filter you made keeps it, and Scene Standby leaves it alone. To go
+without the image on one source, switch its filter off with the eye: Scene Standby does not switch it on
+again. When a source stops being covered, its filter is taken off a few seconds later. If no Scene Standby
+uses a filter any more (the scene filter was deleted), the filter shows nothing and says so; you can remove it.
+When two scenes' Scene Standby filters cover the same source, its filter follows the one it names, and the
+other takes it over if that one is removed.
+<!-- ==== end scene-filters:standby-corners (Scene Standby) ==== -->
+
+### Blur
+
+Add **Source Filter: Blur (StageKit)** as a filter on a source or scene. The filter's own on/off switch is the
+blur: turning it on ramps the blur in, turning it off ramps it out and then really switches the filter
+off, so it costs nothing while off.
+
+| Setting | What it does |
+| --- | --- |
+| Blur type | Gaussian (smoothest), Dual Kawase (fastest, best for strong blur), Box, Pixelate (a mosaic of cells), Radial (zoom blur), Motion, Temporal (the image stays sharp and whatever moves leaves a trail; strength 100 is a trail of one second) |
+| Cell shape | For Pixelate: squares, hexagons, circles, triangles, Voronoi (uneven cells), rhomboids or triakis (triangles split in three). A filter set to the old *Hexagons* type is now Pixelate with hexagon cells and looks the same |
+| Smoothing | For Pixelate: how far each cell's colour runs into its neighbours. 0 gives hard edges |
+| Glass / Glass style | For Pixelate: lights each cell like a small piece of glass. *Dome*: curved like a bead, with a glint and a darker rim. *Flat plate*: a flat face with sharp bevelled edges (straight facets on squares and hexagons). 0 gives plain cells. Ambient Background's mosaic has the same two controls |
+| Origin X / Origin Y / Rotation | For Pixelate: the point of the image the pattern is laid out from and turned around, and by how much it is turned |
+| Mosaic edge | For Pixelate: *Cut at the edge* (as it comes) cuts the cells along the source's edge straight. *Whole cells* leaves out every cell the edge would cut, so the blurred source's outline is made of whole cells (hexagons, circles ...) and its see-through parts follow them. A Shadow, Glow & Outline or Corners & Edges after the Blur filter then follows that outline. The image never grows past its own edge: cells are only left out, never added. The Blur filter cannot know where its source sits on screen, so on a full-screen source it leaves out the cells along the screen's edge too: there, use Scene Blur with *Each source by itself*, which keeps them |
+| Strength | 0–1000. Gaussian, Kawase and Box look alike at the same number; above 250, Gaussian and Box are drawn the Kawase way, which stays smooth |
+| Blur transition | Grow the blur strength, or cross-fade a fully blurred image in |
+| Blur-in duration / Blur-out duration | 0–5000 ms each. 0 is instant |
+| Easing | Eleven curves, eased in, out or both |
+| Include in Blur All | Whether the Blur All hotkeys and the Stream Deck *Blur All* key switch this filter too. It is in the *Switching* group, with *Blur on / off now* |
+| Blur these too | Other sources that are blurred and cleared together with this one. With the two rows below it is in one group, *Blur other sources too* (to blur sources in one scene only, use [Scene Blur](#scene-blur)) |
+| And live captures on screen | Also blurs every game, window, screen and camera capture showing in the scene on screen when this filter is switched on, including one shown through a Cropped View |
+| Never blur these | Shown while *And live captures on screen* is ticked. Sources that it leaves alone: your camera, say, so it stays clear while everything else on screen is blurred. Any source can be chosen; a Cropped View (a camera's crop) also keeps the source it shows clear. Choose to add; each row has its own remove button |
+
+Ways to trigger it:
+
+- The eye icon next to the filter.
+- StageKit's own **Blur** key on a Stream Deck, or the OBS Studio plugin's *Filter* key pointing at the filter.
+- Hotkeys under the source in *Settings → Hotkeys*: `StageKit: <the filter's name>: toggle`, `switch on` and `switch off`.
+- `StageKit: Blur All: toggle`, `switch on` and `switch off` in the top section of *Settings → Hotkeys*, which drives every
+  Blur at once.
+
+**One key for several sources.** Under *Blur these too*, choose a source in the *Add a source* box,
+once for each source; each becomes a row. From then on, switching this one filter on or off, from a single Stream
+Deck *Filter* key, blurs and clears every source in the list. A listed source with no Blur of its
+own is given one with the same settings (*Blur (follows another)*); one that already has a Ramp
+Blur keeps its own settings. Remove a source with the ✕ on its row.
+
+To replace a Composite Blur + Move chain: add one Blur, pick the type and strength (Composite
+Blur's Pixelate at radius 5 is *Pixelate* at strength 4), point your existing keys at it, then delete
+the old filters.
+
+### Scene Blur
+
+<!-- ==== scene-filters:blur (Scene Blur) ==== -->
+**Scene Filter: Scene Blur (StageKit)** blurs a scene's sources, in that scene only: switch it on for a "be right back"
+over the game, say, and the same game in your other scenes stays sharp.
+
+<p align="center"><img src="docs/images/scene-blur.png" width="900" alt="The same scene five times: as OBS draws it (a game capture, a dark panel, a camera and a patterned background); with all sources blurred; with only the live sources (the game and the camera) blurred; with all sources blurred except the camera; and with only the background blurred, as a mosaic of glass hexagons"></p>
+
+<p align="center"><img src="docs/images/blur-edges.png" width="900" alt="One source over a light-blue background, blurred as a hexagon mosaic six ways: by a Blur filter on the source; by Scene Blur blurring the scene as drawn, where the cells along the source's edge take in the light blue; by Scene Blur blurring each source by itself, the same as the Blur filter; by the Blur filter with whole cells, the outline made of hexagons; the same by Scene Blur; and with a Scene Shadow outline that follows the hexagons"></p>
+
+- **Sources covered**: *All sources* (as it comes), *Live and capture sources* (game, window, display and
+  camera captures, capture cards and media: what the Blur filter's *And live captures on screen* counts as
+  live, also by way of a Cropped View, a group or a nested scene), or *Chosen sources*, with the **Chosen sources** list
+  listing them.
+- **Never blur these**: sources that stay sharp whatever is chosen above (your camera). A Cropped View of a
+  listed source stays sharp too.
+- A source above a blurred one that is not blurred stays sharp, and the blur under it does not smear its
+  colours: the camera over a blurred game stays a clean camera.
+- **Applied to**, the first control: *The scene as drawn* (as it comes) blurs the finished scene and keeps the blur to where the
+  chosen sources show, and the blur takes in only what lies where they show: a blurred source's edge takes in
+  nothing of an unblurred background round it, so its shadow or outline sits right against it. A mosaic's
+  cells are laid out over the whole screen. With *All sources* the background is blurred too, so along a
+  source's edge the blur mixes it with the background as the scene shows them. *Each source by itself* blurs every chosen source from its own image only, as a Blur
+  filter on that source would: its edges take in nothing around it, a mosaic is laid out over that source,
+  and *Mosaic edge* is offered (*Whole cells*: the source's outline is made of whole cells). With the same
+  settings it looks the same as the Blur filter on the source, edges included. *Whole cells* leaves the screen's
+  edge alone: where a source reaches or runs past the screen's edge (a full-screen background, say) its cells
+  there are kept, since the screen cuts them anyway. *Mosaic edge* is only used with *Each source by itself*:
+  left on *Whole cells* and switched back to *The scene as drawn*, it changes nothing.
+- **Blur** and **Timing**: the Blur filter's own settings: Gaussian, Dual Kawase, Box, Pixelate (seven cell
+  shapes, smoothing, glass, and with *Each source by itself* the mosaic's edge), Radial, Motion and Temporal;
+  strength up to 1000; *Blur transition* (grow the strength, or fade the blurred image in), *Blur-in
+  duration*, *Blur-out duration* and *Easing*.
+- Switched on and off like any filter: the eye, a Stream Deck key, and three hotkeys on the scene,
+  *StageKit: (filter name): toggle*, *switch on* and *switch off* (Settings, Hotkeys, under the scene). It blurs in and
+  out over its durations. A Scene Blur that was on when OBS closed is on again at start, without blurring in.
+- **Nothing is moved, resized or added**: the scene is drawn as OBS draws it and the blur is laid over it where
+  a chosen source shows. Switched off, it costs nothing; on, it draws the scene's sources once or twice more
+  each frame and blurs the picture, and it reads nothing back from the graphics card. With *Each source by
+  itself* it blurs each chosen source's own image (smaller than the screen, so often cheaper) and draws the
+  scene's sources once more, inside the chosen sources' boxes only where it is laid over the scene.
+- **Morph**: a change of scene from or to a scene while its Scene Blur blurs is a cross-fade, so the blur stays
+  on screen all the way. With the blur off (or with nothing in the scene to blur), the scene is morphed source
+  by source as before.
+- **Stream Deck**: the *Scene Blur* key switches the Scene Blurs of one name, on one scene or on every scene
+  that has one. See [Stream Deck plugin](#stream-deck-plugin).
+- **Remote control**: `ListSceneBlurs` lists them by name, with their scenes; `SceneBlur` with `filter`,
+  `scene` (empty: every scene with that name) and `how` (`on`, `off`, `toggle`; none: only asks) switches them
+  and answers `active` and each one's state; a `SceneBlurChanged` event (`scene`, `filter`, `active`) follows
+  every change. See [Remote control](#remote-control).
+
+What to know:
+
+- The blur stays inside the shape of what shows of a blurred source; a Blur filter on the source itself
+  spreads past a see-through edge. A group or nested scene is blurred, or kept sharp, as one source.
+- With a Scene Shadow on the same scene, in whichever order you add them, Scene Blur puts itself after the
+  shadow by itself. Blurring *the scene as drawn*, the shadows are blurred with what they fall on. Blurring
+  *each source by itself*, the shadows stay sharp, and a blurred source's shadow, glow and outline take the
+  blurred image's shape: with *Whole cells*, the shadow's edge is made of the same cells. With another filter that draws before
+  it (a colour correction), it draws nothing and says so once in the log: put Scene Blur after such filters.
+  It also stands aside while a scene collection loads, on a group, and on a canvas in a wide colour space
+  (HDR).
+- Its shaders have only been run on OpenGL here. If the log has an error about `stagekit-looks.effect` on
+  Windows, Scene Blur draws nothing; please send the log.
+<!-- ==== end scene-filters:blur (Scene Blur) ==== -->
+
+### Corners & Edges
+
+Add **Source Filter: Corners & Edges (StageKit)** as a filter on a source: a camera, a capture, an image, a browser
+widget.
+
+<p align="center"><img src="docs/images/corners-edges.png" width="900" alt="A blue card shown nine ways: rounded corners, cut-off corners, notched corners, scooped corners, only two corners rounded, a soft faded edge, a yellow outline, rounded with a drop shadow that has the same rounded shape, and a game image with rounded corners inside a wider frame"></p>
+
+- **Corner style**: *Rounded*, *Cut off (chamfer)*, *Notched (square cut)* or *Scooped (curved in)*.
+- **Corner size**, and **Which corners** it applies to, each one on or off.
+- **Trim edges** cuts the same amount off all four sides. **Soften edge** fades the image out
+  towards its edge.
+- **Border**: a line of any width, colour and opacity that follows the shape, drawn inside the edge (Shadow, Glow & Outline's outline is drawn outside it).
+- **Sizes in screen pixels** (on by default): a 40 px corner looks the same on a large source and a small
+  one, the same rule Shadow, Glow & Outline uses.
+
+It works with the other tools:
+
+- The source **keeps its size**, so nothing moves or resizes in any scene, and Move Source keys, layouts
+  and the line-up tools carry on as before. The line-up tools measure the new shape when *Use visible
+  pixels* is on.
+- **Shadow, Glow & Outline** after it in the filter list casts a shadow of the new shape. If you add
+  Corners & Edges to a source that already has a shadow, it places itself above the shadow for you.
+- After an **Auto Frame**, it shapes the game image inside the frame, and follows it when the image
+  changes shape.
+- Blur and Zoom can go before it (the blur or zoom stays inside the shape) or after it.
+
+### Scene Corners
+
+<!-- ==== scene-filters:standby-corners (Scene Corners) ==== -->
+**Scene Filter: Scene Corners (StageKit)** puts the same corners and edges on the sources of a scene, set once. It adds a
+**Corners & Edges** filter to each source it covers and sets it from the scene filter; that filter says *Set by
+Scene Corners in <scene>*. Corners & Edges never changes a source's size, so nothing in the scene moves and
+Morph still morphs the scene.
+
+<p align="center"><img src="docs/images/scene-corners.png" width="900" alt="A green scene with a red panel four ways: each source with rounded corners; the whole scene with rounded corners at the screen's edges and the panel square; the whole scene with cut corners and a white line round the screen; and half-way through a Morph to a scene without Scene Corners, the panel half-way and the screen's corners half their size"></p>
+
+- **Applied to**: *Each source by itself* (as it comes, and what every Scene Corners saved before does) or
+  *The screen's edges*. With *The screen's edges* the scene's own image gets the look at the edges of the screen, as one
+  shape: rounded or cut corners, softened edges, a line round it. The sources inside are left exactly as they
+  are and get no filter; any filters Scene Corners had added are taken off a few seconds later (and come back
+  if you go back to *Each source by itself*). Sizes are screen pixels. Scene Corners then draws, so it keeps itself after
+  a Scene Shadow and a Scene Blur in the filter list (it moves itself there within half a second), and Morph
+  still morphs the scene: the shape goes with the change, part-way between the two scenes' shapes (to a scene
+  without it, the corners shrink away).
+- **Sources covered**: *All sources*, *All but the background* (as it comes) or *Chosen sources*. *All
+  sources* is every source in the scene, a group counting as one, the background too. *All but the
+  background* is the same with **Full-screen = background**: sources at the bottom of the scene that cover
+  90 % of the screen or more are left out. *Ignored sources* are left out of both.
+- The look (**Style**, **Size**, the four corners, **Inset**, **Softness**, the line, **Sizes in screen
+  pixels**) is the Corners & Edges filter's own.
+- Switching Scene Corners off switches its filters off, and on again (with *The screen's edges*, the shape goes
+  at once).
+
+A source with a Corners & Edges you made keeps it and is left alone. A filter whose source is no longer covered
+is taken off a few seconds later. If its Scene Corners is deleted, the filter keeps working as one of your own,
+and says so.
+<!-- ==== end scene-filters:standby-corners (Scene Corners) ==== -->
+
+### Shadow, Glow & Outline
+
+Add **Source Filter: Shadow, Glow & Outline (StageKit)** as a filter on a source, group or scene. (It was called
+Shadow & Backdrop; filters you already have keep working.) It has three parts, each with a tick box in
+its heading:
+
+<p align="center"><img src="docs/images/glow-outline.png" width="900" alt="A green card with a red outline, with an outline in its own colour, with an outline and a hard drop shadow, with a dark glow all round, with a green glow in its own colour, and a game image with a soft glow of its own colours around it"></p>
+
+- **Shadow or glow**
+  - *Type*: *Drop shadow (to one side)* or *Glow (all round)*.
+  - *Colour source*: *A colour*, or ***The image itself***. With the image itself, a game, camera or
+    video casts a soft, moving copy of its own colours instead of a flat colour. *Colour boost* makes
+    that richer.
+  - *Opacity*, *Softness* (0 gives a hard edge), *Spread* (how far the shadow stays solid before it
+    fades), and for a drop shadow how far right/left
+    and down/up it falls.
+  - *Hide the image* leaves only the shadow or glow.
+- **Outline**: a line round the image, any width. *Colour source* a colour or the image itself. Made
+  from the image, *Past the edge* chooses between stretching the image's edge outwards and
+  mirroring the image, and *Outline blur* softens it. The
+  line follows the image's real shape, including text and rounded or cut corners. A shadow is cast
+  by the image and its outline together.
+  - *Outline corners*: *Follow the source* (as it comes: the line goes round the shape of what shows,
+    text and odd shapes too, as it always did; its outer corners are rounded by the line's width), or
+    *Square*, *Rounded*, *Bevel*, *Notch* or *Scoop*: the line is drawn as a shape round the rectangle
+    the source's image covers on screen, see-through margins left out (its panel, when it has one),
+    the same width on every side whatever its bounding box, crop or scale (text and shaped sources,
+    anything that fills under nine tenths of that rectangle, and turned sources keep a line that
+    follows them); *Square* has sharp
+    corners, and the others at a *Corner size* of 0 are square too. An item's crop cuts Shadow, Glow &
+    Outline's line with the rest of what the filter draws (OBS crops the finished image), so crop
+    with a Cropped View or a crop filter before it, or use Scene Shadow; its outer corners *Corner size* pixels across (no
+    larger than keeps the source's own corners under the line), and
+    the drop shadow takes the same shape.
+  - *Intensity* (in the shadow part, 100 % as it comes): more fills a glow's or shadow's soft tail in
+    towards full colour without giving it a hard edge, for a bright glow; less makes it fainter.
+    Shadows and glows fall off smoothly with no steps in their soft tail.
+  - *Outline design* (in the outline part of both filters, *Solid* as it comes): *Double line*
+    (two thin lines with a gap, inside the outline's width), *Dashed* and *Dotted* (*Dash length*,
+    *Gap length*), *Gradient* (the outline colour changing into a *Second colour* round the
+    border), *Neon* (a bright tube in the outline colour with a soft halo of light spreading out past the
+    line; *Glow size* is how far the halo reaches, in per cent of the outline's width; pick a
+    bright colour, as a black line has no light to give and then takes the *Second colour* for
+    its halo if that is brighter) and *Inner line* (drawn just inside the image's edge instead of
+    outside it; it needs *Outline corners* other than *Follow the source*, and text and shaped
+    sources keep a solid line outside). Five designs move, at a *Speed* you set (0 stands still, a
+    negative number goes the other way): *Marching dashes*, *Travelling gradient*, *Pulse* (the
+    line fades in and out), *Shimmer* (a highlight in the second colour goes round) and *Rainbow*.
+    The patterns run round the border when *Outline corners* is Square, Rounded, Bevel, Notch or
+    Scoop. With *Follow the source* they are laid round the source's middle in Shadow, Glow &
+    Outline, and slanted across the whole scene in Scene Shadow, so pick corners there for dashes
+    that travel round. The drop shadow is still thrown by the whole line, and a filter saved
+    before keeps its solid line.
+  - *Outline design* also has twenty-two designs called *Pattern*, which fill the line with one of
+    Ambient Background's moving patterns: *Aurora*, *Plasma*, *Lava lamp*, *Waves*, *Nebula*,
+    *Gradient flow*, *Starfield*, *Bokeh*, *Rays*, *Circuit board*, *Hex grid*, *Matrix rain*,
+    *Tunnel*, *Ripples*, *Embers*, *Circuit traces*, *Data lines*, *Mesh*, *Halftone*, *Dot grid*,
+    *Hex wire glow* and *Hex mosaic*. The line keeps its width, corners and shape
+    (round the box or following the source); it is a window onto the pattern. The colours are the
+    outline colour, the *Second colour* and a *Third colour*; *Pattern size* makes the pattern
+    smaller or larger (smaller shows more of it along a thin line), and *Speed* moves it (60 is
+    the speed it has as an Ambient Background, 0 holds it still). In Scene Shadow the pattern lies
+    over the whole scene, so the lines of sources side by side flow together. In Shadow, Glow &
+    Outline it lies over the source itself and travels with it. Plasma, Nebula and Gradient flow
+    colour a thin line all the way round; Aurora, Starfield and Rays are mostly the outline colour
+    with light passing through, as are Ripples and Embers, and look best on a wide line. For
+    Circuit board, Circuit traces, Hex grid and Matrix rain turn *Pattern size* down (to 30 % or
+    so) so that traces, cells and streaks fit in the line's width. Data lines is sparse on
+    purpose: in a line it is the outline colour with a thin line or a light now and then. Mesh, Halftone, Dot grid, Hex wire glow and Hex mosaic also want *Pattern size* at 30 to 50 %;
+    Hex wire glow is dark except where its light passes. Grid pulse is not offered (in a line it is
+    only a tick every so often), nor Sun grid or Hex columns (each is a view, not a texture).
+    *Position X*, *Position Y* and *Rotation* move and turn the pattern inside the line (the
+    line itself stays where it is); they show for the pattern fills. *Rotation* alone also shows
+    for the designs with something that goes round the border: for Gradient, Travelling, Shimmer
+    and Rainbow it is where round the border the colours begin (180° puts the first colour at
+    the opposite corner), for Dashed and Marching it slides the dashes along, a whole turn being
+    one dash and gap. Solid, Double, Dotted, Neon, Inner and Pulse have nothing to pose and show
+    none of the three.
+  - *Outline design* *Ambient Background* fills the line with what an Ambient Background shows:
+    its pattern, image or live capture, with its blur, mosaic, bloom and transitions, moving as
+    it moves. So a border can match the background behind it. *Background* chooses which:
+    *Automatic* (as it comes) takes the one in the scene (for Scene Shadow its own scene; for
+    Shadow, Glow & Outline the scene on screen), or any there is; or pick one by name, which may
+    be in no scene at all. *Fill brightness* (130 % as it comes) and *Fill saturation* (120 %)
+    lift the line so it can be told from the background where the two meet; at 100 % each it is
+    exactly the background. *Pattern size*, *Position X*, *Position Y* and *Rotation* lay the
+    background out in the line as they do a pattern. In Scene Shadow the line shows the
+    background where it lies on the screen; in Shadow, Glow & Outline the background's middle is
+    on the source's middle, at the screen's size, and travels with the source. With no Ambient
+    Background the line is its outline colour. The drop shadow and glow keep their own colours.
+
+<p align="center"><img src="docs/images/outline-glow.png" width="900" alt="White sources with a 10 px black outline from Shadow, Glow &amp; Outline and from Scene Shadow, the same width, with a drop shadow, with rounded and bevelled outline corners, the drop shadow rounded with them, half-way through a Morph with the outlines solid, and a white glow round dark squares at 100% and 250% intensity"></p>
+
+<p align="center"><img src="docs/images/outline-designs.png" width="900" alt="The twelve outline designs, each from Shadow, Glow &amp; Outline and from Scene Shadow: solid, double line, dashed, dotted, gradient, neon, inner line, marching dashes, travelling gradient, pulse, shimmer and rainbow"></p>
+
+<p align="center"><img src="docs/images/outline-patterns.png" width="900" alt="A white source with a 12 px outline filled with each of the seventeen patterns, from Shadow, Glow &amp; Outline and from Scene Shadow, then a rounded line filled with Plasma and a line following two bars filled with a small circuit board"></p>
+
+<p align="center"><img src="docs/images/outline-ambient.png" width="900" alt="Source and scene outlines filled with an Ambient Background, at original and lifted brightness, with a mosaic background and a scene mid-transition"></p>
+
+- **Panel behind the source**: a coloured panel with a margin.
+
+*Rounded corners* rounds the image and the panel. For other corner styles, use Corners & Edges.
+
+The last group, *Placement and scenes*, holds *Keep the image where it is*, *Sizes in screen pixels*,
+*Keep it on screen* and the list below.
+
+**Leave it off in these scenes**: choose scenes from your collection; each becomes a row with its own
+✕ to remove it. While a listed scene is on screen the filter draws nothing; the source shows plain
+there and keeps its place. It goes by the scene on screen (Program in Studio Mode).
+
+Sizes are as they look on screen: with *Sizes in screen pixels* ticked (the default), 20 px of
+shadow is 20 px in the finished image however much the item is scaled, so a small camera and a large
+panel get the same shadow. Untick it to give sizes in the source's own pixels.
+
+The shadow needs room around the source, so the source itself gets bigger. With *Keep the image
+where it is* ticked (the default), the source's items in every scene are adjusted by exactly that room:
+the image keeps its size and place whatever the softness, offset, outline or panel margin, including
+inside a bounding box. Switching the filter off or removing it puts the items back.
+
+### Scene Shadow
+
+<!-- ==== scene-filters:shadow (Scene Shadow) ==== -->
+**Scene Filter: Scene Shadow (StageKit)** gives every source of a scene one shadow, glow or outline, set once, instead of a
+Shadow, Glow & Outline on each source.
+
+<p align="center"><img src="docs/images/scene-shadow.png" width="900" alt="The same scene as OBS draws it, with one drop shadow under the game, the chat box and the camera, with an amber glow and a white outline round them, and half-way through a Morph to a scene without a shadow, the shadow at half strength; then a red source over a white one with Applied to: The scene as drawn, where nothing falls on the white source, and with Each source by itself, where the red source's shadow falls on it; the outline round each source; and half-way through a Morph between two scenes shadowed each source by itself"></p>
+
+- The scene is drawn as OBS draws it, and the shadow is laid over it. **Nothing is resized or moved**: the
+  sources keep their size, so Fit to Space, the arrange tools and Morph work as they do without it.
+- **Applied to**: *Each source by itself* or *The scene as drawn* (as it comes, and what every Scene Shadow
+  saved before does).
+  - *The scene as drawn*: sources that overlap make one shape with one shadow and one outline round it, and the
+    shadow falls on the background, never on a source.
+  - *Each source by itself*: every source gets its own shadow, glow and outline, as a Shadow, Glow & Outline
+    on each source would give it. A source's shadow falls on whatever lies under it, other sources included
+    (a camera's shadow on the game under it), and the sources above it cover it. Sources side by side cost no
+    more than with *The scene as drawn*; each pile of overlapping sources is drawn in a few more passes.
+    Morph carries it too; a change between a scene shadowed one way and a scene shadowed the other way is a
+    cross-fade (the log says so).
+- **Shadow or glow** and **Outline** have the same settings as Shadow, Glow & Outline (type, colour or the
+  image's own colours, opacity, offsets, softness, strength, colour boost, intensity; outline width, colour,
+  opacity and corners). Sizes are in canvas pixels, so the same number gives the same width as a Shadow, Glow
+  & Outline in screen pixels. As there, the drop shadow is thrown by the sources with their outline, so it
+  has the outline's corners. Morph keeps an outline solid through a change for a source in both scenes,
+  and fades it with a source that comes or goes.
+- **Background sources**: drawn underneath as they are; they cast nothing and the shadow falls on them.
+  **Full-screen = background** (on as it comes) counts the sources at the bottom of the scene that cover nine
+  tenths of it as background, so the scene's picture or colour needs no listing.
+- When a fitted source leaves just one pixel between its opaque image and the canvas edge, Scene Shadow
+  leaves that pixel clear of the outer outline. A gap of two pixels or more keeps its outline.
+- **Sources covered**: *All sources* (as it comes: every source that is not background casts, sources added
+  later too) or *Chosen sources*: only the sources listed cast. With *The scene as drawn* the shadow is kept
+  off every source that is not background.
+- **Ignored sources**: sources that cast nothing (with *The scene as drawn* the shadow is still kept off them).
+  A source with a Shadow, Glow & Outline filter of its own keeps that one and casts nothing here, so no source
+  gets two.
+- A source fading in or out with its show or hide transition takes its shadow with it. A Standby stand-in has
+  the shadow of the source it stands in for.
+- **Shadow-in duration** and **Shadow-out duration** set the two fade times. *Easing* controls the shape of the fades. An existing Scene Shadow starts with its saved duration in both fields.
+- **Morph keeps morphing.** A scene whose only filter that draws is a Scene Shadow is still morphed source by
+  source, and the shadow goes with the change: part-way, it is part-way between the two scenes' shadows (to a
+  scene without one, it fades out), and a source that casts in one scene and not in the other gains or loses
+  its shadow on the way. One source changing into another inside the scene (Morph as a show or hide
+  transition) has its shadow too.
+
+What to know:
+
+- With *The scene as drawn*, sources that overlap make one shape: one does not shadow another. Where a shadow
+  must fall on another source (a camera over a game), choose *Each source by itself*.
+- At a see-through edge of a source the background under it is darkened very slightly differently from a
+  shadow drawn under that source alone. A crop to the item's bounding box is not followed by the shape (as in
+  Morph).
+- Put Scene Shadow last in the scene's filter list. With a filter that draws (a blur, a colour correction)
+  before it, it draws nothing and says so once in the log. It also stands aside while a scene collection loads,
+  on a group, and on a canvas in a wide colour space (HDR).
+- Its shader has only been run on OpenGL here. If the log has an error about `stagekit-scene-shadow.effect`
+  on Windows, the scene is drawn without the shadow; please send the log.
+<!-- ==== end scene-filters:shadow (Scene Shadow) ==== -->
+
+### Zoom
+
+Add **Source Filter: Zoom (StageKit)** as a filter on a source. Turning it on zooms into the point you choose;
+turning it off zooms back out. It has a `StageKit: <the filter's name>: toggle` hotkey under the source.
+
+| Setting | What it does |
+| --- | --- |
+| Zoom | How far the image is zoomed in while the filter is on. 100% is no zoom; 200% shows it twice as large |
+| Centre X / Centre Y | The point of the image the zoom closes in on. 50 and 50 is the middle |
+| Zoom-in duration / Zoom-out duration | How long zooming in and back out takes. 0 changes at once |
+| Easing curve / Easing direction | The curve the zoom follows |
+
+On a Stream Deck, use StageKit's own **Zoom** key, or the OBS Studio plugin's *Filter* key.
+
+## Scene and source transitions
+
+### Scene Transitions
+
+<!-- ==== scene-filters:transitions (Scene Transitions) ==== -->
+**Scene Filter: Scene Transitions (StageKit)** is one place to set how every source in a scene shows and hides, instead of
+a transition setting inside each filter. It sets OBS's own show and hide transition on each source (the ones
+in a source's right-click menu), so they also hold when a source is shown or hidden with the eye, its
+hotkeys, a Stream Deck *Source Visibility* key or obs-websocket.
+
+- **Sources covered**: *All sources* (as it comes), or *Chosen sources*.
+- With **All sources**, choose a source directly under *Settings for* to give it a transition of its own. The other sources use the scene's transition.
+- With **Chosen sources**, add the sources the filter should cover. Each can have its own transition under *Settings for*.
+- **Ignored sources** (shown with *All sources*): sources this filter never sets, such as one another tool animates. A source a
+  Show/Hide Animation animates, and one a Standby Image stands in for, are always left to those filters.
+- **Sources in groups**: also set the sources inside groups (off as it comes: a group is then one source
+  like any other). OBS plays an inner source's transitions whenever its group is shown or hidden too, so a
+  fade on both fades twice.
+- **Override other filters** (off as it comes): every show and hide of a source this filter covers uses the
+  scene's transition (or the source's own, under *Settings for*), whatever Link Visibility, Show in Scenes,
+  Scene Modes, Program Trigger or a window switcher is set to. A source a Standby Image stands in for keeps
+  the Standby's transition; ignored sources and sources a Show/Hide Animation animates are left alone.
+- **Show/Hide transition**: the same control as Show in Scenes': a show and a hide transition, each with its
+  own duration and settings (the way a slide goes, *Off the nearest edge*), settings of their own for listed
+  sources, and Morph links. Fade, 300 ms, as it comes. With *Morph* chosen, Morph's own choices appear under
+  it: *Unpaired: show or hide* (how a source with nothing to change into comes and goes, with that transition's
+  own settings), *Morph the main image*, *Use visible pixels*, *Ignore shadows & outlines* and the easing;
+  and *Linked sources*, in the same group, says which sources change into each other. They are handed to each
+  source's Morph transition.
+
+**If the scene's transitions seem to do nothing**: another filter is set to a transition of its own. A Link
+Visibility or Show in Scenes set to Morph, say, uses Morph for every change it makes, and the scene's
+transition only comes back afterwards. Either set those filters' *Show transition* to *As the scene sets*,
+or tick *Override other filters* here.
+
+**As the scene sets** is a new choice in every StageKit filter that shows and hides sources (Show in
+Scenes, Link Visibility, Program Trigger, the two switchers, Standby Image), and the one they start with.
+(Auto Capture's hide sets no transition: it uses the one the source carries.) With a Scene Transitions on
+the source's scene, the change is the one set there; where the scene has none, it is a fade of the filter's
+own duration, which is what those filters did before. A filter set to a transition of its own uses it for
+the changes it makes, and afterwards the source carries the scene's transitions again. A Standby Image that
+stands in for a source sets that source's transitions itself.
+
+Switching the filter off or removing it leaves each source the transitions it has. It writes only when a
+source differs from what it should carry, so nothing is written at each start. For a source set to *Off the
+nearest edge* that is shown or hidden by hand (the eye, a Stream Deck key), the direction is the one worked
+out where the source last came to rest: OBS starts the transition before StageKit hears of the change.
+<!-- ==== end scene-filters:transitions (Scene Transitions) ==== -->
+
+### Show/Hide Animation
+
+Add **Scene Filter: Show/Hide Animation (StageKit)** as a filter on a scene and leave it on. Choose the item and
+where it comes in from: the nearest screen edge, a chosen edge, or a pop from its centre. From then on,
+showing or hiding the item animates it, including from a Stream Deck *Source* key.
 
 ### Morph transition
 
@@ -1573,423 +2073,7 @@ item: `Morph: 'Chat' makes room in 'Live', by the right edge (away from the chan
 
 <p align="center"><img src="docs/images/make-room.png" width="900" alt="A change of scene with Make Room in five steps: a yellow game grows from the lower right into the middle, a tall red panel to its left slides off the left edge, and a small magenta square at the top right slides off the top edge, while the blue background cross-fades to green"></p>
 
-### Scene filters
-
-A scene filter sits on a scene, not on a source, and looks after the scene's sources together: one filter in
-place of one per source. Add one from the scene's own Filters window (right-click the scene, *Filters*).
-There are seven: **Scene Modes** (which sources show), **Scene Transitions** (how they show and hide), **Scene
-Fit** (where they go), **Scene Standby** (the standby image in a capture's place), **Scene Corners**,
-**Scene Shadow** and **Scene Blur** (how they look). They work together, and a Standby Image, Corners & Edges or Shadow, Glow &
-Outline you put on a source yourself is left as it is. Five of them draw nothing, and Scene Shadow is
-built to keep Morph working, so a scene carrying any of them still morphs. In a scene that is not on screen
-they do as little as they can, and nothing at all while a scene collection loads.
-
-Scene Transitions, Scene Fit, Scene Standby, Scene Corners and Scene Shadow each have a **Sources covered**
-list that starts with **All sources**: every source in the scene, a group counting as one, and sources you add
-later too, except the ones under **Ignored sources**. The Morph layer and Standby stand-ins are never counted.
-Each filter starts on what it did before there was a choice (see each one below), so a filter you already
-have keeps doing what it did.
-
-#### Scene Modes
-
-<!-- ==== scene-filters:modes (Scene Modes) ==== -->
-**Scene Filter: Scene Modes (StageKit)** names a scene's modes and the sources of each: *Game*, *Window* and
-*Display* in a live scene, say, or *Starting*, *Be right back*, *Intermission* and *Ending* in a holding
-scene. One mode is on at a time. Turning a mode on hides the other modes' sources and shows its own.
-A source in both the old and the new mode is left as it is (an image shown in Starting and Be right
-back stays up), and a source in no mode is never touched.
-
-- **Making modes:** one row adds a mode. Choose one under *From template* (Starting, Game, Display /
-  Screen, Window, Camera, Chat, Intermission, Be right back, Ending), or type a name under *New mode
-  name*, or both, and press *Add mode*. A template gives the mode its type, and its name when none is
-  typed; both can be changed afterwards. No mode name is built in, and two modes may have the same name.
-- **Settings for**: the mode whose group is shown. Only one mode's group shows at a time, so the
-  settings under the modes are in reach. A mode added is the one shown; removed, the one before it.
-- **Each mode** has a group of its own, headed *Mode: <name>*:
-  - **Name**: renaming a mode keeps its sources, its hotkey and its Stream Deck keys.
-  - **Mode type**: what it shows (Game, Handheld, Window, Camera, Chat, Starting and so on: every type the Stream Deck Scene Mode key offers). A Stream Deck
-    *Scene Mode* key left on *Automatic* takes its image from this.
-  - **Switch to scene**: a key or hotkey turning this mode on also changes OBS to that scene, unless
-    the scene on screen is this filter's own scene or one under *Same modes in scenes*.
-  - **Sources**: the sources shown while this mode is on. Sources inside groups, and groups, can be
-    chosen.
-  - **Hide when on**: other sources hidden in this scene when this mode comes on, with the mode's
-    transition. They are not part of the mode: when another mode comes on they are not shown again,
-    and nothing else is done to them.
-  - **Leave when shown** and **Leave to**: while this mode is on, showing one of these sources (a
-    Show in Scenes key, a Link Visibility, the eye) turns the mode under *Leave to* on (shown once a source is listed): *The mode
-    before* (as it comes), *No mode* (only with *Allow no mode*) or another mode. The source that
-    was shown stays shown, even when the next mode's *Hide when on* lists it (the log says so).
-  - **Placed in this mode**, **Save their places now**, **Move duration** and easing: sources put in
-    a place of their own when this mode comes on: position, size, crop and bounding box. They need
-    not be the mode's sources; a music widget shown in two modes can sit under the chat in one and
-    match the width of the handheld windows in the other. Turn the mode on, arrange the sources by
-    hand, press *Save their places now* (in this scene and the scenes under *Same modes in scenes*).
-    When the mode comes on they glide there (300 ms as it comes; 0 moves them at once; at once in a
-    scene not on screen, for a hidden source and when OBS starts). Locked sources move too. A mode
-    with nothing saved for a source leaves it where it is. A Fit to Space or Scene Fit on the source
-    takes it where it was put, but may still adjust it by its own rules.
-  - **Move up** and **Remove mode**. The order is the order of *next*. A mode removed leaves its
-    sources as they are.
-- **Mode now**: the mode that is on. Choosing another here turns it on, but never changes scene.
-- **Allow no mode**: a *Toggle* key pressed on the mode that is on hides every mode's sources. Unticked
-  (as it comes), it goes back to the mode before instead.
-- **Same modes in scenes**: other scenes that follow this filter's mode, so one key works in two
-  layouts alike. A key pressed while one of them is on screen stays in that scene.
-- **Lock hidden sources**: each mode's source is locked while hidden, so a click in OBS's preview
-  cannot pick a source stacked under the one you see.
-- **Show/Hide transition**: how the sources come and go. With *Morph (StageKit)*, the capture of the
-  mode going changes into the capture of the mode coming.
-
-A source of a mode that is not on, shown some other way (the eye, an old *Source* key), is hidden
-again at once. A source of the mode on that you hide stays hidden: a camera switched off stays off.
-A camera switch (Show in Scenes) and a Standby filter's *Show when source is hidden* go by the modes:
-the camera shows only in its own mode, and its standby image never covers another mode. The other
-way round, a camera switch that is off does not stop a mode from showing the camera: a switch is a
-command, not a lock. When a scene
-has two Scene Modes filters, a source in both shows only while both have it on. In a scene that is
-not on screen a change is a cut, so a hidden capture card is never opened for a moment when the scene
-comes on.
-
-**Two columns without marker sources.** A layout scene with a *Chat* mode (chat box, a small
-camera) and a *GBA* mode (two handheld windows, a camera beside them), and a full-screen camera
-(*DSLR*) that must never cover the GBA column: in the GBA mode set *Hide when on*: DSLR, *Leave when
-shown*: DSLR and *Leave to*: Chat. GBA coming on hides DSLR; DSLR shown while GBA is on brings Chat
-back, and DSLR stays shown. If you had kept the two apart with a Link Visibility (*Show only one*
-between DSLR and a transparent *Column: GBA* marker), remove that Link Visibility, take *Column:
-Chat* and *Column: GBA* out of the modes and out of the following sources of any other Link
-Visibility (*Link Visibility-CaptureChat*, say), then delete the two marker sources.
-
-**Keys:** the scene gets a hotkey for each mode (*StageKit: <filter>: <mode>*), one for the next mode,
-and one for no mode while that is allowed. The Stream Deck *Scene Mode* key, and anything else that
-speaks obs-websocket, uses these vendor requests:
-
-| requestType | requestData | Response |
-| --- | --- | --- |
-| `ListSceneModes` | `scene?` | `filters: [{scene, filter, enabled, current, currentName, allowNone, modes: [{id, name, type}], scenes: [{name}]}]` |
-| `GetSceneMode` | `scene`, `filter?` | `current`, `currentName`, `previous`, `previousName`, `enabled`, `allowNone`, `modes` |
-| `SetSceneMode` | `scene`, `filter?`, `mode` (its id, or its name), `how?`: `on` (as it comes), `toggle`, `next` or `none` | none. It fails, with the reason, when the scene, the filter or the mode is not there, the filter is off, or no mode is not allowed |
-
-A `SceneModeChanged` event (`scene`, `filter`, `mode`, `modeName`, `previous`, `previousName`) follows
-every change of mode, and every change to the list of modes. A mode is known by an id that never
-changes (`m1`, `m2`, ...), so renaming it breaks no key.
-<!-- ==== end scene-filters:modes (Scene Modes) ==== -->
-
-#### Scene Transitions
-
-<!-- ==== scene-filters:transitions (Scene Transitions) ==== -->
-**Scene Filter: Scene Transitions (StageKit)** is one place to set how every source in a scene shows and hides, instead of
-a transition setting inside each filter. It sets OBS's own show and hide transition on each source (the ones
-in a source's right-click menu), so they also hold when a source is shown or hidden with the eye, its
-hotkeys, a Stream Deck *Source Visibility* key or obs-websocket.
-
-- **Sources covered**: *All sources* (as it comes), or *Chosen sources*.
-- With **All sources**, choose a source directly under *Settings for* to give it a transition of its own. The other sources use the scene's transition.
-- With **Chosen sources**, add the sources the filter should cover. Each can have its own transition under *Settings for*.
-- **Ignored sources** (shown with *All sources*): sources this filter never sets, such as one another tool animates. A source a
-  Show/Hide Animation animates, and one a Standby Image stands in for, are always left to those filters.
-- **Sources in groups**: also set the sources inside groups (off as it comes: a group is then one source
-  like any other). OBS plays an inner source's transitions whenever its group is shown or hidden too, so a
-  fade on both fades twice.
-- **Override other filters** (off as it comes): every show and hide of a source this filter covers uses the
-  scene's transition (or the source's own, under *Settings for*), whatever Link Visibility, Show in Scenes,
-  Scene Modes, Program Trigger or a window switcher is set to. A source a Standby Image stands in for keeps
-  the Standby's transition; ignored sources and sources a Show/Hide Animation animates are left alone.
-- **Show/Hide transition**: the same control as Show in Scenes': a show and a hide transition, each with its
-  own duration and settings (the way a slide goes, *Off the nearest edge*), settings of their own for listed
-  sources, and Morph links. Fade, 300 ms, as it comes. With *Morph* chosen, Morph's own choices appear under
-  it: *Unpaired: show or hide* (how a source with nothing to change into comes and goes, with that transition's
-  own settings), *Morph the main image*, *Use visible pixels*, *Ignore shadows & outlines* and the easing;
-  and *Linked sources*, in the same group, says which sources change into each other. They are handed to each
-  source's Morph transition.
-
-**If the scene's transitions seem to do nothing**: another filter is set to a transition of its own. A Link
-Visibility or Show in Scenes set to Morph, say, uses Morph for every change it makes, and the scene's
-transition only comes back afterwards. Either set those filters' *Show transition* to *As the scene sets*,
-or tick *Override other filters* here.
-
-**As the scene sets** is a new choice in every StageKit filter that shows and hides sources (Show in
-Scenes, Link Visibility, Program Trigger, the two switchers, Standby Image), and the one they start with.
-(Auto Capture's hide sets no transition: it uses the one the source carries.) With a Scene Transitions on
-the source's scene, the change is the one set there; where the scene has none, it is a fade of the filter's
-own duration, which is what those filters did before. A filter set to a transition of its own uses it for
-the changes it makes, and afterwards the source carries the scene's transitions again. A Standby Image that
-stands in for a source sets that source's transitions itself.
-
-Switching the filter off or removing it leaves each source the transitions it has. It writes only when a
-source differs from what it should carry, so nothing is written at each start. For a source set to *Off the
-nearest edge* that is shown or hidden by hand (the eye, a Stream Deck key), the direction is the one worked
-out where the source last came to rest: OBS starts the transition before StageKit hears of the change.
-<!-- ==== end scene-filters:transitions (Scene Transitions) ==== -->
-
-#### Scene Fit
-
-<!-- ==== scene-filters:fit (Scene Fit) ==== -->
-**Scene Filter: Scene Fit (StageKit)** does what a Fit to Space filter does, for several sources of the scene at once. Each source in
-*Fitted sources* has the whole set of Fit to Space settings of its own (choose it under *Settings for*), and
-starts from a gap of 30 px in the free space round its place.
-
-Where it differs is the timing: the sources are worked out together, in the order of the list, before any of
-them moves. When the camera is hidden or shown, a game changes shape or a widget starts to draw, every source
-that has to make way sets off once, all at the same moment. With a Fit to Space per source each filter only
-learns where the others are going a frame later, and they could shift a few times before settling.
-
-- **Sources covered**: *Chosen sources* (as it comes: the sources under *Fitted sources*) or *All sources*.
-  With *All sources* every source of the scene is fitted, a group counting as one and sources added later
-  too: first the ones under *Fitted sources*, in their order, then the rest from the top of the scene down,
-  each starting from the usual entry settings (in the free space round its place, a gap of 30 px, resized to
-  fit, *Shares space*). Each one is under *Settings for* like a listed one, with its own *Space
-  priority*; untick *Resize to fit* for a source that keeps its size. Left out: sources under **Never fitted** (they stay where they are, and the fitted sources keep clear of
-  them), a source a Fit to Space of its own already fits, a source another Scene Fit of the scene lists (or
-  every source, when an earlier Scene Fit has *All sources* too), and a source that covers 90% of the
-  screen or more when it is first met, such as the background: it could only be made smaller, and the free
-  space round a place inside it is never in its way. A source fitted once stays fitted however large it is
-  fitted to. A source added on top of a fitted one is fitted once that one has made room for it.
-  Switching back to *Chosen sources* leaves the others where they are.
-- **Fitted sources**: the order matters. Put the sources that keep their size (a camera, a chat box) above
-  the ones that are resized to fit (the game). With *Priority by list order* ticked, the order is also the
-  priority: a source higher in the list takes its space first.
-- **Settings are**: *Each source's own* (as it comes: every source has its own settings, chosen under
-  *Settings for*) or *Shared by all sources*: one group of settings, *Space priority* included, for every
-  fitted source, and no *Settings for*. Each source still keeps its own place and its own kept size.
-  Switching either way moves nothing: the shared settings start as the first source's, and going back to
-  *Each source's own* gives every source the shared settings.
-- **Space priority**: each source's own (*Takes space first*, *Shares space*, *Makes room*), as in
-  [Fit to Space](#fit-to-space), or the group's with *Shared by all sources*.
-- **Priority by list order**: one switch for every source. Ticked, the sources' *Space priority* is greyed
-  out; a source higher in *Fitted sources* takes its space first, and the Scene Fit counts at its place in the
-  scene's filter list against any Fit to Space there that has the box ticked too. Towards the others it counts
-  as *Shares space*.
-- **Take over Fit to Space**: every Fit to Space switched on in this scene becomes an entry here, with all its
-  settings, the place it keeps its source round and the size it keeps. Each filter is switched off, not
-  deleted: switch it on again (and the Scene Fit off) to go back. Nothing moves. Taken into a Scene Fit with
-  no sources yet, two or more Fit to Space filters with exactly the same settings make *Settings are* *Shared by
-  all sources*; if their settings differ it stays *Each source's own*. Taken into a Scene Fit that is
-  already *Shared by all sources*, they go by its settings.
-- **Overlap only when it fills**: one switch for every entry; each entry's own rules (*Use fill percentage*,
-  *Use edge gaps*) say when. A *Fit to Space Overlap* key on the Stream Deck works on a Scene Fit too.
-  The rules are in each source's settings (under *Settings for*): they show with *Fit area* on *Free space
-  around source*, and with *The whole screen* or *A box I set* once that source's **Make room if not
-  filling** is ticked (see Fit to Space).
-- **Ignored for this source** and **Sync to scenes** are the entry's own lists, as in Fit to Space.
-
-- **Ignored for this source** and **Sync position to scenes** are the entry's own lists, as in Fit to Space.
-
-**Groups of sources.** To give several sources one set of settings, and other sources another, add one Scene
-Fit per group to the scene, each on *Shared by all sources* with its own *Fitted sources*. For example:
-
-1. A Scene Fit named *Captures* listing the game and window captures, *Settings are* *Shared by all sources*,
-   *Space priority* *Takes space first*.
-2. A second Scene Fit named *Camera and chat* listing the camera and the chat box, *Shared by all sources*,
-   *Resize to fit* unticked if they keep their size, *Space priority* *Makes room*.
-
-The captures then take their space as if the camera and chat box were not there and never shrink for them; the
-camera and chat box fit round the captures, and the captures never cover one that keeps its size. Within one group the sources share space with each other. With
-*Priority by list order* ticked on both, the Scene Fit higher in the scene's filter list goes first instead.
-List each source in one group only.
-
-Do not give a listed source a Fit to Space of its own as well. Off screen, Scene Fit (and Fit to Space) look at
-their sources only four times a second and put everything right the moment the scene comes on. A Multiview or
-a projector counts as on screen.
-<!-- ==== end scene-filters:fit (Scene Fit) ==== -->
-
-#### Scene Standby
-
-<!-- ==== scene-filters:standby-corners (Scene Standby) ==== -->
-**Scene Filter: Scene Standby (StageKit)** sets the standby image once for the sources of a scene: any empty capture shows
-the image, and any source you list shows it in its place while it is hidden, without setting up a filter on
-each capture by hand.
-
-![An empty capture and a hidden camera, both showing the standby image](docs/images/scene-standby.png)
-
-It does not draw anything itself. It adds a **Standby Image** filter to each source it covers and sets it from
-the scene filter. That filter says *Set by Scene Standby in <scene>* and leaves out the image controls,
-which are set in the Scene Standby.
-
-- **Sources covered**: *All sources*, *Every capture* (as it comes: each game, window and camera capture in
-  the scene, groups included) or *Chosen sources*. With *Every capture*, screen captures (which always have
-  an image) are left out unless you tick *Include screen captures*. *All sources* covers every source with
-  an image of its own, the ones inside groups too, sources added later and screen captures included; an
-  empty one (a capture with nothing attached, a stopped video, a text with no words) shows the image. Groups,
-  nested scenes and the source used as the image are not covered. *Ignored sources* are left out of both.
-- **When a source has no image** (a group with its own tick box, ticked as it comes; it was *Show when no
-  image*): an empty capture (no game or window attached, no camera signal) shows the image. The group holds
-  the *No-signal transition*, the two durations, the easing and *Animate the size change*.
-  The image goes with the source into every scene it is in, as a Standby Image filter of its own would.
-- **When a source is hidden**, the second group, holds **Show when hidden**: the sources whose place the image takes **in this scene only** while they are
-  hidden, with the *Show/Hide transition* in the same group as the one change between the source and the image (with
-  Morph, the one changes into the other). Leave out captures that are hidden on purpose, such as the
-  stacked captures of a layout scene.
-- **Image** and **Keep image's aspect ratio**, above both groups, and the controls in the first group are
-  the Standby Image filter's own controls.
-
-A source that already has a Standby Image filter you made keeps it, and Scene Standby leaves it alone. To go
-without the image on one source, switch its filter off with the eye: Scene Standby does not switch it on
-again. When a source stops being covered, its filter is taken off a few seconds later. If no Scene Standby
-uses a filter any more (the scene filter was deleted), the filter shows nothing and says so; you can remove it.
-When two scenes' Scene Standby filters cover the same source, its filter follows the one it names, and the
-other takes it over if that one is removed.
-<!-- ==== end scene-filters:standby-corners (Scene Standby) ==== -->
-
-#### Scene Corners
-
-<!-- ==== scene-filters:standby-corners (Scene Corners) ==== -->
-**Scene Filter: Scene Corners (StageKit)** puts the same corners and edges on the sources of a scene, set once. It adds a
-**Corners & Edges** filter to each source it covers and sets it from the scene filter; that filter says *Set by
-Scene Corners in <scene>*. Corners & Edges never changes a source's size, so nothing in the scene moves and
-Morph still morphs the scene.
-
-<p align="center"><img src="docs/images/scene-corners.png" width="900" alt="A green scene with a red panel four ways: each source with rounded corners; the whole scene with rounded corners at the screen's edges and the panel square; the whole scene with cut corners and a white line round the screen; and half-way through a Morph to a scene without Scene Corners, the panel half-way and the screen's corners half their size"></p>
-
-- **Applied to**: *Each source by itself* (as it comes, and what every Scene Corners saved before does) or
-  *The screen's edges*. With *The screen's edges* the scene's own image gets the look at the edges of the screen, as one
-  shape: rounded or cut corners, softened edges, a line round it. The sources inside are left exactly as they
-  are and get no filter; any filters Scene Corners had added are taken off a few seconds later (and come back
-  if you go back to *Each source by itself*). Sizes are screen pixels. Scene Corners then draws, so it keeps itself after
-  a Scene Shadow and a Scene Blur in the filter list (it moves itself there within half a second), and Morph
-  still morphs the scene: the shape goes with the change, part-way between the two scenes' shapes (to a scene
-  without it, the corners shrink away).
-- **Sources covered**: *All sources*, *All but the background* (as it comes) or *Chosen sources*. *All
-  sources* is every source in the scene, a group counting as one, the background too. *All but the
-  background* is the same with **Full-screen = background**: sources at the bottom of the scene that cover
-  90 % of the screen or more are left out. *Ignored sources* are left out of both.
-- The look (**Style**, **Size**, the four corners, **Inset**, **Softness**, the line, **Sizes in screen
-  pixels**) is the Corners & Edges filter's own.
-- Switching Scene Corners off switches its filters off, and on again (with *The screen's edges*, the shape goes
-  at once).
-
-A source with a Corners & Edges you made keeps it and is left alone. A filter whose source is no longer covered
-is taken off a few seconds later. If its Scene Corners is deleted, the filter keeps working as one of your own,
-and says so.
-<!-- ==== end scene-filters:standby-corners (Scene Corners) ==== -->
-
-#### Scene Shadow
-
-<!-- ==== scene-filters:shadow (Scene Shadow) ==== -->
-**Scene Filter: Scene Shadow (StageKit)** gives every source of a scene one shadow, glow or outline, set once, instead of a
-Shadow, Glow & Outline on each source.
-
-<p align="center"><img src="docs/images/scene-shadow.png" width="900" alt="The same scene as OBS draws it, with one drop shadow under the game, the chat box and the camera, with an amber glow and a white outline round them, and half-way through a Morph to a scene without a shadow, the shadow at half strength; then a red source over a white one with Applied to: The scene as drawn, where nothing falls on the white source, and with Each source by itself, where the red source's shadow falls on it; the outline round each source; and half-way through a Morph between two scenes shadowed each source by itself"></p>
-
-- The scene is drawn as OBS draws it, and the shadow is laid over it. **Nothing is resized or moved**: the
-  sources keep their size, so Fit to Space, the arrange tools and Morph work as they do without it.
-- **Applied to**: *Each source by itself* or *The scene as drawn* (as it comes, and what every Scene Shadow
-  saved before does).
-  - *The scene as drawn*: sources that overlap make one shape with one shadow and one outline round it, and the
-    shadow falls on the background, never on a source.
-  - *Each source by itself*: every source gets its own shadow, glow and outline, as a Shadow, Glow & Outline
-    on each source would give it. A source's shadow falls on whatever lies under it, other sources included
-    (a camera's shadow on the game under it), and the sources above it cover it. Sources side by side cost no
-    more than with *The scene as drawn*; each pile of overlapping sources is drawn in a few more passes.
-    Morph carries it too; a change between a scene shadowed one way and a scene shadowed the other way is a
-    cross-fade (the log says so).
-- **Shadow or glow** and **Outline** have the same settings as Shadow, Glow & Outline (type, colour or the
-  image's own colours, opacity, offsets, softness, strength, colour boost, intensity; outline width, colour,
-  opacity and corners). Sizes are in canvas pixels, so the same number gives the same width as a Shadow, Glow
-  & Outline in screen pixels. As there, the drop shadow is thrown by the sources with their outline, so it
-  has the outline's corners. Morph keeps an outline solid through a change for a source in both scenes,
-  and fades it with a source that comes or goes.
-- **Background sources**: drawn underneath as they are; they cast nothing and the shadow falls on them.
-  **Full-screen = background** (on as it comes) counts the sources at the bottom of the scene that cover nine
-  tenths of it as background, so the scene's picture or colour needs no listing.
-- When a fitted source leaves just one pixel between its opaque image and the canvas edge, Scene Shadow
-  leaves that pixel clear of the outer outline. A gap of two pixels or more keeps its outline.
-- **Sources covered**: *All sources* (as it comes: every source that is not background casts, sources added
-  later too) or *Chosen sources*: only the sources listed cast. With *The scene as drawn* the shadow is kept
-  off every source that is not background.
-- **Ignored sources**: sources that cast nothing (with *The scene as drawn* the shadow is still kept off them).
-  A source with a Shadow, Glow & Outline filter of its own keeps that one and casts nothing here, so no source
-  gets two.
-- A source fading in or out with its show or hide transition takes its shadow with it. A Standby stand-in has
-  the shadow of the source it stands in for.
-- **Shadow-in duration** and **Shadow-out duration** set the two fade times. *Easing* controls the shape of the fades. An existing Scene Shadow starts with its saved duration in both fields.
-- **Morph keeps morphing.** A scene whose only filter that draws is a Scene Shadow is still morphed source by
-  source, and the shadow goes with the change: part-way, it is part-way between the two scenes' shadows (to a
-  scene without one, it fades out), and a source that casts in one scene and not in the other gains or loses
-  its shadow on the way. One source changing into another inside the scene (Morph as a show or hide
-  transition) has its shadow too.
-
-What to know:
-
-- With *The scene as drawn*, sources that overlap make one shape: one does not shadow another. Where a shadow
-  must fall on another source (a camera over a game), choose *Each source by itself*.
-- At a see-through edge of a source the background under it is darkened very slightly differently from a
-  shadow drawn under that source alone. A crop to the item's bounding box is not followed by the shape (as in
-  Morph).
-- Put Scene Shadow last in the scene's filter list. With a filter that draws (a blur, a colour correction)
-  before it, it draws nothing and says so once in the log. It also stands aside while a scene collection loads,
-  on a group, and on a canvas in a wide colour space (HDR).
-- Its shader has only been run on OpenGL here. If the log has an error about `stagekit-scene-shadow.effect`
-  on Windows, the scene is drawn without the shadow; please send the log.
-<!-- ==== end scene-filters:shadow (Scene Shadow) ==== -->
-
-#### Scene Blur
-
-<!-- ==== scene-filters:blur (Scene Blur) ==== -->
-**Scene Filter: Scene Blur (StageKit)** blurs a scene's sources, in that scene only: switch it on for a "be right back"
-over the game, say, and the same game in your other scenes stays sharp.
-
-<p align="center"><img src="docs/images/scene-blur.png" width="900" alt="The same scene five times: as OBS draws it (a game capture, a dark panel, a camera and a patterned background); with all sources blurred; with only the live sources (the game and the camera) blurred; with all sources blurred except the camera; and with only the background blurred, as a mosaic of glass hexagons"></p>
-
-<p align="center"><img src="docs/images/blur-edges.png" width="900" alt="One source over a light-blue background, blurred as a hexagon mosaic six ways: by a Blur filter on the source; by Scene Blur blurring the scene as drawn, where the cells along the source's edge take in the light blue; by Scene Blur blurring each source by itself, the same as the Blur filter; by the Blur filter with whole cells, the outline made of hexagons; the same by Scene Blur; and with a Scene Shadow outline that follows the hexagons"></p>
-
-- **Sources covered**: *All sources* (as it comes), *Live and capture sources* (game, window, display and
-  camera captures, capture cards and media: what the Blur filter's *And live captures on screen* counts as
-  live, also by way of a Cropped View, a group or a nested scene), or *Chosen sources*, with the **Chosen sources** list
-  listing them.
-- **Never blur these**: sources that stay sharp whatever is chosen above (your camera). A Cropped View of a
-  listed source stays sharp too.
-- A source above a blurred one that is not blurred stays sharp, and the blur under it does not smear its
-  colours: the camera over a blurred game stays a clean camera.
-- **Applied to**, the first control: *The scene as drawn* (as it comes) blurs the finished scene and keeps the blur to where the
-  chosen sources show, and the blur takes in only what lies where they show: a blurred source's edge takes in
-  nothing of an unblurred background round it, so its shadow or outline sits right against it. A mosaic's
-  cells are laid out over the whole screen. With *All sources* the background is blurred too, so along a
-  source's edge the blur mixes it with the background as the scene shows them. *Each source by itself* blurs every chosen source from its own image only, as a Blur
-  filter on that source would: its edges take in nothing around it, a mosaic is laid out over that source,
-  and *Mosaic edge* is offered (*Whole cells*: the source's outline is made of whole cells). With the same
-  settings it looks the same as the Blur filter on the source, edges included. *Whole cells* leaves the screen's
-  edge alone: where a source reaches or runs past the screen's edge (a full-screen background, say) its cells
-  there are kept, since the screen cuts them anyway. *Mosaic edge* is only used with *Each source by itself*:
-  left on *Whole cells* and switched back to *The scene as drawn*, it changes nothing.
-- **Blur** and **Timing**: the Blur filter's own settings: Gaussian, Dual Kawase, Box, Pixelate (seven cell
-  shapes, smoothing, glass, and with *Each source by itself* the mosaic's edge), Radial, Motion and Temporal;
-  strength up to 1000; *Blur transition* (grow the strength, or fade the blurred image in), *Blur-in
-  duration*, *Blur-out duration* and *Easing*.
-- Switched on and off like any filter: the eye, a Stream Deck key, and three hotkeys on the scene,
-  *StageKit: (filter name): toggle*, *switch on* and *switch off* (Settings, Hotkeys, under the scene). It blurs in and
-  out over its durations. A Scene Blur that was on when OBS closed is on again at start, without blurring in.
-- **Nothing is moved, resized or added**: the scene is drawn as OBS draws it and the blur is laid over it where
-  a chosen source shows. Switched off, it costs nothing; on, it draws the scene's sources once or twice more
-  each frame and blurs the picture, and it reads nothing back from the graphics card. With *Each source by
-  itself* it blurs each chosen source's own image (smaller than the screen, so often cheaper) and draws the
-  scene's sources once more, inside the chosen sources' boxes only where it is laid over the scene.
-- **Morph**: a change of scene from or to a scene while its Scene Blur blurs is a cross-fade, so the blur stays
-  on screen all the way. With the blur off (or with nothing in the scene to blur), the scene is morphed source
-  by source as before.
-- **Stream Deck**: the *Scene Blur* key switches the Scene Blurs of one name, on one scene or on every scene
-  that has one. See [Stream Deck plugin](#stream-deck-plugin).
-- **Remote control**: `ListSceneBlurs` lists them by name, with their scenes; `SceneBlur` with `filter`,
-  `scene` (empty: every scene with that name) and `how` (`on`, `off`, `toggle`; none: only asks) switches them
-  and answers `active` and each one's state; a `SceneBlurChanged` event (`scene`, `filter`, `active`) follows
-  every change. See [Remote control](#remote-control).
-
-What to know:
-
-- The blur stays inside the shape of what shows of a blurred source; a Blur filter on the source itself
-  spreads past a see-through edge. A group or nested scene is blurred, or kept sharp, as one source.
-- With a Scene Shadow on the same scene, in whichever order you add them, Scene Blur puts itself after the
-  shadow by itself. Blurring *the scene as drawn*, the shadows are blurred with what they fall on. Blurring
-  *each source by itself*, the shadows stay sharp, and a blurred source's shadow, glow and outline take the
-  blurred image's shape: with *Whole cells*, the shadow's edge is made of the same cells. With another filter that draws before
-  it (a colour correction), it draws nothing and says so once in the log: put Scene Blur after such filters.
-  It also stands aside while a scene collection loads, on a group, and on a canvas in a wide colour space
-  (HDR).
-- Its shaders have only been run on OpenGL here. If the log has an error about `stagekit-looks.effect` on
-  Windows, Scene Blur draws nothing; please send the log.
-<!-- ==== end scene-filters:blur (Scene Blur) ==== -->
-
-### Remote control
+## Remote control
 
 With obs-websocket, send `CallVendorRequest` with `vendorName: "StageKit"`:
 

@@ -7,6 +7,12 @@ Read `DEVELOPMENT_HANDOFF.md` next for the current state, then
 [docs/REPOSITORY_STANDARDS.md](docs/REPOSITORY_STANDARDS.md), the shared standard that is identical in
 every TechSavage1989 app repository. Change that file only to change the standard everywhere.
 
+## Checking setting names in the guide
+
+Run python3 scripts/check-guide-settings.py after changing a Setting table or an English
+control label. It checks only the first column of those tables. Keep the comparison tables
+and holding scene recipe linked to their detailed guide sections.
+
 ## Stream Deck controls and image settings
 
 Register a dedicated scene-filter key in features.json and the icon generators. Keep older
