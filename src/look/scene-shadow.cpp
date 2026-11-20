@@ -37,6 +37,7 @@ the Free Software Foundation; either version 2 of the License, or
 // above (`LookPaint::compose_layers`).
 
 #include "scene-shadow.hpp"
+#include "outline-ambient.hpp"
 
 #include "../common/easing.hpp"
 #include "../common/filter-input.hpp"
@@ -382,6 +383,19 @@ void SceneShadow::tick(float seconds)
 	// have their items yet.
 	if (!scenes_loaded())
 		return;
+	{
+		// An Ambient Background fill: its background looked up here, not
+		// while drawing (outline-ambient.hpp).
+		bool ambient;
+		uint32_t choice;
+		{
+			std::lock_guard lock(mutex_);
+			ambient = look_.outline && look_.design.ambient_fill();
+			choice = look_.design.ambient;
+		}
+		if (ambient)
+			outline_ambient_warm(choice, parent);
+	}
 	if (countdown_ < 0.0) {
 		// TODO(stagger): use stagger_phase() once it is in. Until then the
 		// filters spread their looks over the quarter second by their id.
@@ -429,12 +443,18 @@ bool SceneShadow::now(SceneShadowNow &out)
 	wanted_ns_ = os_gettime_ns();
 	if (!scenes_loaded() || !paint_->ready())
 		return false;
-	std::lock_guard lock(mutex_);
-	if (!classified_ || blocked_ || wide_ || on_group_)
-		return false;
-	out.look = scaled_look(look_, ramp_.level());
-	out.flags = flags_;
-	out.each = from_ == From::Each;
+	{
+		std::lock_guard lock(mutex_);
+		if (!classified_ || blocked_ || wide_ || on_group_)
+			return false;
+		out.look = scaled_look(look_, ramp_.level());
+		out.flags = flags_;
+		out.each = from_ == From::Each;
+	}
+	// (As in render: this scene's own background first. Nothing locked.)
+	if (out.look.design.ambient_fill() && out.look.outline)
+		out.look.design.ambient_id =
+			outline_ambient_resolve(out.look.design.ambient, obs_filter_get_parent(source_));
 	return true;
 }
 
@@ -453,6 +473,11 @@ void SceneShadow::render()
 		each = from_ == From::Each;
 	}
 	look = scaled_look(look, ramp_.level());
+	// An Ambient Background fill: the background in this scene before any
+	// other (kept by the lookup; Morph and Scene Blur get the same one).
+	if (look.design.ambient_fill() && look.outline)
+		look.design.ambient_id = outline_ambient_resolve(look.design.ambient, obs_filter_get_parent(source_));
+
 	if (!usable || !paint_->ready() || !scenes_loaded() || !look.any() || !cx || !cy) {
 		skip_filter_input(source_);
 		have_out_ = false;
