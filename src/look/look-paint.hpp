@@ -412,7 +412,6 @@ private:
 	gs_eparam_t *p_area_tex_ = nullptr;
 	gs_eparam_t *p_force_follow_ = nullptr;
 	gs_eparam_t *p_follow_amount_ = nullptr;
-	gs_eparam_t *p_follow_tex_ = nullptr;
 	gs_eparam_t *p_presence_ = nullptr;
 	DesignUniforms design_;
 	bool has_presence_ = false;

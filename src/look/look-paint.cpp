@@ -477,7 +477,6 @@ LookPaint::LookPaint()
 		p_area_tex_ = gs_effect_get_param_by_name(effect_, "area_tex");
 		p_force_follow_ = gs_effect_get_param_by_name(effect_, "force_follow");
 		p_follow_amount_ = gs_effect_get_param_by_name(effect_, "follow_amount");
-		p_follow_tex_ = gs_effect_get_param_by_name(effect_, "follow_tex");
 		p_presence_ = gs_effect_get_param_by_name(effect_, "presence");
 		design_.find(effect_);
 		has_presence_ = gs_effect_get_technique(effect_, "Presence") != nullptr;
@@ -771,7 +770,6 @@ bool LookPaint::compose(gs_texture_t *scene, gs_texture_t *cast, gs_texture_t *m
 	auto line_values = [&] {
 		gs_effect_set_texture(p_cast_, cast);
 		gs_effect_set_texture(p_ring_shape_, box ? ring : cast);
-		gs_effect_set_texture(p_follow_tex_, box ? ring : cast);
 		gs_effect_set_float(p_ring_box_, box ? 1.0f : 0.0f);
 		gs_effect_set_vec2(p_out_size_, &size);
 		gs_effect_set_float(p_outline_width_, (float)look.outline_width);

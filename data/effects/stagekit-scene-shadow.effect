@@ -38,7 +38,7 @@ uniform float shadow_boost;     // extra colour and brightness for those colours
 uniform float outline_width;    // pixels
 uniform float4 outline_color;   // straight alpha; a = opacity
 uniform float image_straight;   // 1: `image` holds straight alpha (a picture this file made)
-uniform texture2d ring_shape;   // the lines drawn as shapes round the sources' boxes (BoxRing)
+uniform texture2d ring_shape;   // casting sources (alpha), or the box ring canvas (red: reach, alpha: line)
 uniform float ring_box;         // 1: the line is ring_shape's, 0: round the sources' own shape
 uniform float glow_intensity;   // 1 as it was; more makes the shadow or glow denser, never harder-edged
 uniform float2 box_size;        // BoxRing: the sprite, in canvas pixels
@@ -63,8 +63,6 @@ uniform texture2d halo_tex;     // neon: the line's shape, softened (alpha): its
 uniform float4 halo_color;      // neon: the halo's colour, as bright as it goes; a = how much light (0: none)
 uniform texture2d pattern_tex;  // a pattern fill: the pattern, drawn by stagekit-patterns.effect, over the canvas
 uniform float pattern_on;       // 1: the line's colour is pattern_tex's, 0: the design's own
-uniform texture2d follow_tex;   // Ring, Outlined: what the line follows round its shape: the casting
-                                // sources (alpha), or with box lines the ring canvas (red)
 
 sampler_state linearClamp {
 	Filter   = Linear;
@@ -351,7 +349,7 @@ float4 PSMaskedShadow(VertData v_in) : TARGET
 // shaped sources), in the ring canvas's red.
 float follow_at(float2 uv)
 {
-	float4 t = follow_tex.SampleLevel(linearClamp, uv, 0);
+	float4 t = ring_shape.SampleLevel(linearClamp, uv, 0);
 	return t.a * (1.0 - ring_box) + t.r * ring_box;
 }
 
