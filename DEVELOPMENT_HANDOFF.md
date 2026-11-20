@@ -9,7 +9,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | `chore/review-stage2`, on `main` after beta222. Release notes in `docs/releases/0.1.0-betaNEXT.md` (numbered just before pushing). Not pushed. |
+| Working branch | `chore/review-stage2`, on `main` after beta222. Release notes in `docs/releases/0.1.0-beta223.md` (numbered just before pushing). Not pushed. |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 | Gate | Checks passed |
@@ -23,7 +23,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
-## Review stage 2: tidier windows (0.1.0-betaNEXT)
+## Review stage 2: tidier windows (0.1.0-beta223)
 
 Branch `chore/review-stage2`, on `main` at beta222. Committed locally, not pushed. Stage 2 of the
 approved whole-plugin review: the order, grouping and visibility of controls in the windows, plus
