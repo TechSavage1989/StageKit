@@ -225,7 +225,9 @@ private:
 	obs_hotkey_id toggle_ = OBS_INVALID_HOTKEY_ID, on_ = OBS_INVALID_HOTKEY_ID, off_ = OBS_INVALID_HOTKEY_ID;
 	void register_hotkeys();
 	HotkeyRename renamed_{source_, [this] { return std::vector<obs_hotkey_id *>{&toggle_, &on_, &off_}; },
-			      [this] { register_hotkeys(); }};
+			      [this] {
+				      register_hotkeys();
+			      }};
 
 	std::mutex mutex_;
 	ShadowLook look_;
@@ -319,7 +321,8 @@ void SceneShadow::register_hotkeys()
 		const auto slot = description.find("%1");
 		if (slot != std::string::npos)
 			description.replace(slot, 2, name);
-		return obs_hotkey_register_source(parent_, id.c_str(), description.c_str(),
+		return obs_hotkey_register_source(
+			parent_, id.c_str(), description.c_str(),
 			[](void *data, obs_hotkey_id key, obs_hotkey_t *, bool pressed) {
 				if (!pressed)
 					return;
@@ -328,7 +331,8 @@ void SceneShadow::register_hotkeys()
 					self->toggle();
 				else
 					self->ramp_.set_active(key == self->on_);
-			}, this);
+			},
+			this);
 	};
 	toggle_ = reg("toggle", "Hotkey.SceneShadowToggle");
 	on_ = reg("on", "Hotkey.SceneShadowOn");
@@ -992,12 +996,14 @@ obs_properties_t *get_properties(void *data)
 				       {"outline_opacity", obs_module_text("Shadow.OutlineLook.Tip")},
 				       {"backdrop_color", obs_module_text("Shadow.BackdropLook.Tip")},
 				       {"backdrop_opacity", obs_module_text("Shadow.BackdropLook.Tip")}});
-	obs_properties_add_button2(props, "toggle_now", obs_module_text("SceneShadow.ToggleNow"),
+	obs_properties_add_button2(
+		props, "toggle_now", obs_module_text("SceneShadow.ToggleNow"),
 		[](obs_properties_t *, obs_property_t *, void *data) {
 			if (data)
 				static_cast<SceneShadow *>(data)->toggle();
 			return false;
-		}, data);
+		},
+		data);
 	add_help_line(props, obs_module_text("SceneShadow.Help"));
 	return props;
 }
@@ -1100,7 +1106,9 @@ void register_scene_shadow()
 	info.filter_add = [](void *data, obs_source_t *parent) {
 		static_cast<SceneShadow *>(data)->attach(parent);
 	};
-	info.filter_remove = [](void *data, obs_source_t *) { static_cast<SceneShadow *>(data)->detach(); };
+	info.filter_remove = [](void *data, obs_source_t *) {
+		static_cast<SceneShadow *>(data)->detach();
+	};
 	register_timed(&info);
 	// A scene whose only filter that draws is a Scene Shadow is still morphed
 	// item by item; Morph carries the shadow through the change.

@@ -53,7 +53,7 @@ from hotkeys, or from the Stream Deck OBS Studio plugin's *Filter* and *Source* 
 - **Zoom** (filter): zooms smoothly into a point of a source and back out.
 - **Move Source** (filter): put it on your camera, once per spot. Each one is a Stream Deck key that moves
   the camera to a corner or to a spot you saved, in every scene the camera is in.
-- **Move Scene Item** (scene filter): the same move, set up on a scene instead of on the source.
+- **Move Scene Item** runs moves already saved on a scene. Use Move Source when adding a new move.
 - **Show/Hide Animation** (scene filter): slides or pops an item in and out when it is shown or hidden.
 - **Link Visibility** (scene filter): ties eye icons together. Show only one of a set of items, show
   and hide a set together, or have a set follow one or more lead items.
@@ -370,6 +370,9 @@ The window has four groups, in the order of the table: *Windows* (the first four
 For a capture per app in one scene, each with its own filters, Automatic Source Switcher below is still
 there.
 
+Auto Capture and Automatic Window Switcher both use **Show/Hide transition** when hiding the capture itself.
+Auto Capture starts on *Keep each source's own*. A Standby Image keeps its own transition when it covers the capture.
+
 ### Automatic Source Switcher
 
 For a scene that shows whichever app you are working in. Give the scene a Window Capture for each app
@@ -392,9 +395,14 @@ on one of the listed captures is shown at a time:
 | Sources to switch between | The scene's captures, one per app. Choose to add; each row has its own remove button. The first is the standby |
 | Manual sources | Other captures in the scene that you show yourself, such as a Window Capture of your browser. Show one and it takes over and stays, whatever app you use; hide it and the captures above follow your apps again. Showing one hides any other on this list |
 | Switch to the active window | On: the app you click into is shown. Off: an app is shown when it opens and stays until it closes |
-| Transition | How one capture gives way to the next: a fade (the default), any other transition OBS has, a cut, or whatever is already set on each item. With *Morph (StageKit)* the capture you leave moves, resizes and changes into the one you go to (see [Morph between items](#morph-between-items)). It sets OBS's own show and hide transition on each listed item |
-| Duration | How long the change takes |
+| Settings for | Set the usual transition or select one automatic or manual source to give it different settings |
+| Show transition / Show duration | Choose the transition and time for showing the capture. New switchers start at 300 ms. Saved switchers keep their duration, including the old 250 ms default |
+| Hide transition / Hide duration | Use the showing transition or choose a separate transition and duration for hiding |
+| Lock hidden sources | Locks a listed capture while it is hidden and unlocks it when shown. Off by default |
 | Keep other windows captured | While the scene is showing, the captures of the other open apps keep running, so the one you switch to has its image at once |
+
+The filter window also has *Toggle manual / automatic*, *Next manual source* and *Return to automatic*.
+These buttons run the same commands as their hotkeys.
 
 **Switching to a window by hand.** Add a Window Capture for the window you want (a browser, say), add
 it to *Manual sources*, and hide it. Then:
@@ -423,9 +431,9 @@ any *source* to switch that source's other filters. Windows only.
    offers the titles of the windows that are open.
 2. **Show and switch on** (the second group): pick items and filters and add them to the lists. *Off
    while it is here* hides and switches off while the program is here instead.
-3. **Transition** and **Duration**, in the same group: how the items appear and disappear. A fade to
-   begin with; any other transition OBS has, a cut, or whatever is set on each item. On a source, where
-   only filters are switched, the two are not shown.
+3. On a scene, open **Show/Hide transition**. Set the usual show and hide transitions or choose an item
+   under *Settings for*. Either transition can use its own settings and duration. On an individual source,
+   Program Trigger switches filters and the transition controls are hidden.
 
 While the program is here the items are shown and the filters are on; when it goes they are hidden and
 off. It acts when the program appears or goes, so a change you make by hand in between is kept until
@@ -509,6 +517,8 @@ Because the source's size no longer changes, one scene can replace a scene per i
 automation that switched between them. Put Shadow, Glow & Outline after it and the shadow follows the image.
 
 ### Cropped View
+
+Renaming the selected source updates Cropped View automatically. Ambient Background follows renames of its image source and live source too.
 
 Add **Cropped View (StageKit)** as a source. Choose the source to show, then crop it to *1:1 (square)*, to
 4:3, 16:9, 3:4 or 9:16 from the middle, by set amounts off each side, or to *Visible pixels*.
@@ -802,8 +812,9 @@ next press. Each filter also has a `StageKit: <the filter's name>: move` hotkey 
 
 ### Move Scene Item
 
-Move Scene Item does the same job from the scene's side. Add **Scene Filter: Move Scene Item (StageKit)** as a filter on a
-*scene*, once per destination.
+Existing **Move Scene Item** filters and Stream Deck keys still run their saved moves. To add a new move,
+use [Move Source](#move-source) on the source and select *Only one scene I choose* if needed. For an
+existing Move Scene Item filter, the controls work as follows.
 
 1. Choose the item to move.
 2. Choose where to send it: one of nine screen positions with a *Gap* from the edge, or a saved position.
@@ -830,7 +841,8 @@ exactly. Moving the original moves every matched item.
 Add **Scene Filter: Apply Layout (StageKit)** as a filter on a scene. Arrange the scene and press *Save where everything is
 now*. Switching the filter on glides every saved item back to that arrangement. To cover only some
 items, add their names under *Only these sources* before saving; several Apply Layout filters can then each
-move a different set.
+move a different set. A new save includes position, scale, rotation, alignment, bounds and all four crop edges.
+Layouts saved before beta231 keep moving their items with their current framing until you save them again.
 
 ### The StageKit docks
 
@@ -1037,7 +1049,7 @@ group (the next five), the *Show/Hide transition* group, then the button.
 | Move's linked sources too | Ticked: the sources those sources take along are shown and hidden with them. They are the ones chosen under *Linked source* in the sources' Move Source filters, and in Move Scene Item filters that move them |
 | When this is on | *They are shown* (off hides them) or *They are hidden* (off shows them) |
 | Hide shows Standby Image | Unticked as it comes. Ticked, a press that hides the sources covers each one that has an enabled **Source Filter: Standby Image (StageKit)** with its image instead (the way that filter is set to change); its items stay shown, so nothing round them moves, and the press that shows them takes the image away. A source without a Standby Image is hidden as usual. The image covers the source everywhere it is drawn (every scene, and Cropped Views of it). A covered source counts as hidden for *Follow what is shown*. A Stream Deck key can choose its own way for its presses (*When hiding*, see [Covering a camera](#covering-a-camera-with-its-standby-image)) |
-| Show only what it hid | Unticked as it comes. Ticked, a press that hides notes exactly which items it hid (and which sources it covered with their Standby Image), and the next press that shows brings back only those, and only while they are still hidden. A listed source that was already hidden (a full-screen camera kept for another layout) stays hidden, nothing hidden by anything else is ever shown, and with nothing noted a press that shows does nothing. The notes are kept when OBS restarts. The switch then means *has hidden things*: on (with *When this is on* set to shown) while nothing it hid is still hidden, so a toggle key always hides and then restores; tick *Follow what is shown* too to keep the key's light that way |
+| Show only what it hid | Ticked on new switches. Existing switches keep their saved choice. With this ticked, a press that hides notes exactly which items it hid (and which sources it covered with their Standby Image), and the next press that shows brings back only those, and only while they are still hidden. A listed source that was already hidden (a full-screen camera kept for another layout) stays hidden, nothing hidden by anything else is ever shown, and with nothing noted a press that shows does nothing. The notes are kept when OBS restarts. The switch then means *has hidden things*: on (with *When this is on* set to shown) while nothing it hid is still hidden, so a toggle key always hides and then restores; tick *Follow what is shown* too to keep the key's light that way |
 | Follow what is shown | Unticked as it comes. Ticked, the switch also goes by what is shown: when something else shows or hides its sources (a Link Visibility filter, the eye icon, another key), the switch turns on or off to match, so a Stream Deck key's light stays true. It reads *shown* only while every one of its sources is shown in the scenes it covers. Matching the switch never shows or hides anything, and pressing a switch that is already on still shows its sources. Best left unticked on a switch whose source is hidden on purpose in some scene: it would read off for good there |
 | Switch to scene | *Stay in this scene* as it comes. Choose a scene, and a press that shows the sources (turning the switch on, or off when *On means* is hidden) also changes OBS to that scene, with OBS's current transition, once the sources are shown (in Studio Mode, the preview changes). Nothing changes when the scene on screen already has one of the sources (shown or hidden, in a group too), or when that scene is already on screen. A press that hides them never changes scene, nor does *Apply the switch now*, nor the switch turning itself on under *Follow what is shown*. Any scene can be chosen, so it suits any layout: a capture's key that also brings up the game layout, a title's key that also brings up the holding scene |
 | Settings for | With sources on the list: *All sources*, or one of the listed sources. Choose a source and the controls below are that source's own: it can show and hide with another transition, another duration and other settings than the rest, or be left *As for all sources* |
@@ -1634,10 +1646,10 @@ Morph still morphs the scene.
   a Scene Shadow and a Scene Blur in the filter list (it moves itself there within half a second), and Morph
   still morphs the scene: the shape goes with the change, part-way between the two scenes' shapes (to a scene
   without it, the corners shrink away).
-- **Sources covered**: *All sources*, *All but the background* (as it comes) or *Chosen sources*. *All
-  sources* is every source in the scene, a group counting as one, the background too. *All but the
-  background* is the same with **Full-screen = background**: sources at the bottom of the scene that cover
-  90 % of the screen or more are left out. *Ignored sources* are left out of both.
+- **Sources covered** offers *All sources* or *Chosen sources*. With *All sources*, tick
+  **Full-screen = background** to leave out sources at the bottom that cover at least 90% of the
+  scene. Untick it to give those sources corners too. *Ignored sources* are always left out.
+  Saved filters keep the coverage they had.
 - The look (**Style**, **Size**, the four corners, **Inset**, **Softness**, the line, **Sizes in screen
   pixels**) is the Corners & Edges filter's own.
 - Switching Scene Corners off switches its filters off, and on again (with *The screen's edges*, the shape goes
@@ -1806,6 +1818,7 @@ Shadow, Glow & Outline on each source.
   gets two.
 - A source fading in or out with its show or hide transition takes its shadow with it. A Standby stand-in has
   the shadow of the source it stands in for.
+- **Switch shadow on or off now** runs the same fade as the scene hotkeys for toggle, on and off.
 - **Shadow-in duration** and **Shadow-out duration** set the two fade times. *Easing* controls the shape of the fades. An existing Scene Shadow starts with its saved duration in both fields.
 - **Morph keeps morphing.** A scene whose only filter that draws is a Scene Shadow is still morphed source by
   source, and the shadow goes with the change: part-way, it is part-way between the two scenes' shadows (to a
@@ -1922,14 +1935,14 @@ A scene transition, chosen like any other: in OBS's *Scene Transitions* box pres
 - **Linked sources**: two different sources that are to count as the same thing, your camera in
   one scene and another camera in the next, say. Choose the two under *Link this source* and *With
   this source* and press *Add this link*; the one then moves, resizes and changes into the other.
-  Add as many links as you like, each with its own remove button. A source linked to several
+  Links follow the sources when renamed. Add as many links as you like, each with its own remove button. A source linked to several
   others goes with whichever of them the other scene shows.
 - **A rule for two scenes**: the change from one named scene to another made its own way. Choose
   the *From scene* and the *To scene* (either can be *(any scene)*), set *Transition* (*Morph*,
   *Cross-fade* or *Cut*), *Unpaired: scene change*, *Morph the main image* and the easing, tick *Both ways*
-  for the change back as well, and press *Save this rule*. Rules are listed under *Rules for
-  scenes*, each with its remove button; choosing two scenes that have a rule shows it again. The
-  duration stays the one set for the transition in OBS.
+  for the return change and press *Add this rule*. Choose an existing pair to edit it.
+  Changes to that pair save immediately. Each rule has a remove button under *Rules for scenes*.
+  Renaming a scene keeps its rule and its saved options. OBS sets the duration.
 - **Unpaired: scene change**, which are in only one of the scenes, fade (as it comes), fade and zoom, slide
   off the nearest edge of the screen, or **make room** (see [Make Room](#make-room-transition)).
   Something that fills the screen is a background and always fades; two backgrounds changing over

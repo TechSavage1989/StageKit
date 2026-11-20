@@ -3,7 +3,7 @@ on:
   push:
     branches: [chore/review-stage6]
 concurrency:
-  group: review-stage6-working-branch
+  group: review-stage6-final-validation
   cancel-in-progress: true
 permissions:
   contents: read
@@ -69,7 +69,7 @@ jobs:
           mkdir -p "$out/tooltips"
           python3 tests/make-test-image.py "$out"
           failed=0
-          for gate in REVIEW_CONTROLS RESTORE_HIDDEN MODE_PLACE SWITCH_COMMAND AUTO_FRAME_SWITCHER CAPTURE_HIDE SCENE_TRANS_OVERRIDE LAYOUT MORPH; do
+          for gate in REVIEW_CONTROLS RESTORE_HIDDEN MODE_PLACE SWITCH_COMMAND AUTO_FRAME_SWITCHER CAPTURE_HIDE SCENE_TRANS_OVERRIDE LAYOUT OUTLINE_DESIGNS MORPH; do
             env "STAGEKIT_TEST_ONLY_${gate}=1" xvfb-run -a build-tests/tests/stagekit-ambient-test "$PWD/build-tests/stagekit.so" "$PWD/data" "$out/test-art.png" "$out/test-texture.png" "$out/test-game.png" "$out/tooltips" "$out/test-title.png" "$out/tooltips" "$out/test-pillarbox.png" "$out/test-black.png" "$out/test-dark-game.png" > "$out/$gate.log" 2>&1 || failed=1
             echo "$gate"
             grep -E 'FAIL|ALL PASSED|Assertion' "$out/$gate.log" | tail -28 || true

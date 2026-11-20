@@ -2430,6 +2430,13 @@ obs_properties_t *get_properties(void *data)
 	obs_property_t *to_standby =
 		obs_properties_add_bool(hiding, "hide_standby", obs_module_text("AppCapture.HideStandby"));
 	set_tip(to_standby, obs_module_text("AppCapture.HideStandby.Tip"));
+	obs_property_set_modified_callback2(to_standby, [](void *data, obs_properties_t *top, obs_property_t *, obs_data_t *settings) {
+		auto *filter = static_cast<AppCapture *>(data);
+		auto *parent = filter ? obs_filter_get_parent(filter->source()) : nullptr;
+		const bool hide_items = !obs_data_get_bool(settings, "hide_standby") || !parent || !standby_present(parent);
+		obs_property_set_visible(obs_properties_get(top, "change|g|"), hide_items);
+		return true;
+	}, self);
 	obs_property_t *hide_now = obs_properties_add_button2(
 		hiding, "hide_now", obs_module_text("AppCapture.Hide.Now"),
 		[](obs_properties_t *, obs_property_t *, void *data) {

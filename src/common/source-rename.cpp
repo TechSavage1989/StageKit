@@ -44,8 +44,12 @@ void move_prefix(obs_data_t *data, const std::string &from, const std::string &t
 		const std::string next = to + key.substr(from.size());
 		obs_data_item_t *it = obs_data_item_byname(data, key.c_str());
 		switch (obs_data_item_gettype(it)) {
-		case OBS_DATA_STRING: obs_data_set_string(data, next.c_str(), obs_data_item_get_string(it)); break;
-		case OBS_DATA_BOOLEAN: obs_data_set_bool(data, next.c_str(), obs_data_item_get_bool(it)); break;
+		case OBS_DATA_STRING:
+			obs_data_set_string(data, next.c_str(), obs_data_item_get_string(it));
+			break;
+		case OBS_DATA_BOOLEAN:
+			obs_data_set_bool(data, next.c_str(), obs_data_item_get_bool(it));
+			break;
 		case OBS_DATA_NUMBER:
 			if (obs_data_item_numtype(it) == OBS_DATA_NUM_DOUBLE)
 				obs_data_set_double(data, next.c_str(), obs_data_item_get_double(it));
@@ -64,7 +68,9 @@ void move_prefix(obs_data_t *data, const std::string &from, const std::string &t
 			obs_data_array_release(array);
 			break;
 		}
-		default: obs_data_item_release(&it); continue;
+		default:
+			obs_data_item_release(&it);
+			continue;
 		}
 		obs_data_item_release(&it);
 		obs_data_erase(data, key.c_str());
@@ -100,9 +106,11 @@ struct Rename {
 				if (at != std::string::npos) {
 					const auto a = line.substr(0, at), b = line.substr(at + strlen(mark));
 					if (a == was || b == was) {
-						const std::string renamed = (a == was ? now : a) + mark + (b == was ? now : b);
+						const std::string renamed =
+							(a == was ? now : a) + mark + (b == was ? now : b);
 						if (rule)
-							move_prefix(data, "rule|" + line + "|", "rule|" + renamed + "|", changed);
+							move_prefix(data, "rule|" + line + "|", "rule|" + renamed + "|",
+								    changed);
 						obs_data_set_string(row, "value", renamed.c_str());
 						changed = true;
 					}
@@ -186,7 +194,8 @@ struct Rename {
 		for (obs_data_item_t *it = obs_data_first(data); it; obs_data_item_next(&it)) {
 			const std::string key = obs_data_item_get_name(it);
 			if (key.compare(0, 4, "for|") == 0 && key.size() > 12 &&
-			    key.compare(key.size() - 12, 12, "|morph_links") == 0 && obs_data_item_gettype(it) == OBS_DATA_ARRAY)
+			    key.compare(key.size() - 12, 12, "|morph_links") == 0 &&
+			    obs_data_item_gettype(it) == OBS_DATA_ARRAY)
 				scoped_links.push_back(key);
 		}
 		for (const auto &key : scoped_links)
@@ -211,21 +220,24 @@ void source_references_renamed(void *, calldata_t *cd)
 	// OBS holds the global source list lock while enumerating. Hold each owner,
 	// then update it after enumeration so other filters can safely query OBS.
 	std::vector<obs_source_t *> owners;
-	obs_enum_all_sources([](void *param, obs_source_t *candidate) {
-		const char *id = obs_source_get_unversioned_id(candidate);
-		if (!id)
-			return true;
-		for (const char *kind : {kCroppedViewId, kAmbientBackgroundId, kMorphId, kMakeRoomId, kShowInScenesId,
-					kVisibilityLinkId, kSceneStandbyId, kSceneTransitionsId, kSceneModesId, kStandbyFilterId,
-					kActiveAppId, kAppCaptureId, kAutoCaptureId, kProgramTriggerId}) {
-			if (strcmp(id, kind) == 0) {
-				if (obs_source_t *held = obs_source_get_ref(candidate))
-					static_cast<std::vector<obs_source_t *> *>(param)->push_back(held);
-				break;
+	obs_enum_all_sources(
+		[](void *param, obs_source_t *candidate) {
+			const char *id = obs_source_get_unversioned_id(candidate);
+			if (!id)
+				return true;
+			for (const char *kind :
+			     {kCroppedViewId, kAmbientBackgroundId, kMorphId, kMakeRoomId, kShowInScenesId,
+			      kVisibilityLinkId, kSceneStandbyId, kSceneTransitionsId, kSceneModesId, kStandbyFilterId,
+			      kActiveAppId, kAppCaptureId, kAutoCaptureId, kProgramTriggerId}) {
+				if (strcmp(id, kind) == 0) {
+					if (obs_source_t *held = obs_source_get_ref(candidate))
+						static_cast<std::vector<obs_source_t *> *>(param)->push_back(held);
+					break;
+				}
 			}
-		}
-		return true;
-	}, &owners);
+			return true;
+		},
+		&owners);
 	Rename rename{was, now, scene};
 	for (obs_source_t *owner : owners) {
 		rename.apply(owner);

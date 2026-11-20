@@ -17412,6 +17412,18 @@ static void outline_designs_test(uint32_t w, uint32_t h, const std::string &out)
 		for (int wait : {400, 230})
 			for (int i = 0; i < 2; i++)
 				moved[i] = std::max(moved[i], most(first[i], shot(scenes[i], wait), 80, 80, 320, 240));
+		// At this speed the pulse repeats every two thirds of a second. Under
+		// load both fixed observations can land back at the same brightness.
+		// Sample additional video frames with uneven spacing only until motion
+		// is actually observed. A stopped pulse must still fail the same test.
+		if (design == 9) {
+			for (int sample = 0; sample < 12 && (moved[0] <= 20 || moved[1] <= 20); ++sample) {
+				sleep_ms(31 + 7 * sample);
+				for (int i = 0; i < 2; ++i)
+					if (moved[i] <= 20)
+						moved[i] = std::max(moved[i], most(first[i], shot(scenes[i], 0), 80, 80, 320, 240));
+			}
+		}
 		both([](obs_data_t *s) { obs_data_set_double(s, "outline_speed", 0.0); });
 		for (int i = 0; i < 2; i++) {
 			const std::vector<uint8_t> still = shot(scenes[i]);
@@ -20352,6 +20364,51 @@ static void review_controls_test()
 		obs_properties_destroy(props);
 		obs_data_release(s);
 	}
+	{
+		auto *manual = create("color_source", "Review Manual", R"({"width":80,"height":50})");
+		auto *manual_item = obs_scene_add(scene,manual);
+		obs_sceneitem_set_visible(manual_item,false);
+		auto *sw = obs_source_get_filter_by_name(parent,"stagekit_active_app");
+		obs_data_t *s = obs_source_get_settings(sw);
+		list(s,"items",{"Review Cam"}); list(s,"by_hand",{"Review Manual"});
+		obs_data_set_bool(s,"lock_hidden",true);
+		obs_data_set_string(s,"transition","none");
+		obs_data_set_string(s,"for|Review Manual|transition","fade_transition");
+		obs_data_set_int(s,"for|Review Manual|transition_ms",450);
+		obs_data_set_string(s,"for|Review Manual|hide_transition","none");
+		obs_source_update(sw,s);
+		obs_data_release(s);
+		calldata_t cd; calldata_init(&cd);
+		calldata_set_bool(&cd,"loaded",true);
+		proc_handler_call(obs_get_proc_handler(),"stagekit_test_loaded",&cd);
+		calldata_set_string(&cd,"windows","Review|review.exe|front");
+		proc_handler_call(obs_source_get_proc_handler(sw),"set_test_windows",&cd);
+		calldata_free(&cd);
+		sleep_ms(380);
+		obs_properties_t *p = obs_source_properties(sw);
+		auto press = [&](const char *key) {
+			if (obs_property_t *button=obs_properties_get(p,key))
+				obs_property_button_clicked(button,sw);
+			sleep_ms(350);
+		};
+		const bool first_lock=obs_sceneitem_locked(manual_item);
+		press("by_hand_next");
+		obs_source_t *show=obs_sceneitem_get_transition(manual_item,true), *hide=obs_sceneitem_get_transition(manual_item,false);
+		CHECK(first_lock && obs_sceneitem_visible(manual_item) && !obs_sceneitem_locked(manual_item) &&
+			!obs_sceneitem_visible(item) && obs_sceneitem_locked(item),
+			"the manual button shows and unlocks the held capture and locks the hidden automatic source");
+		CHECK(show && strcmp(obs_source_get_unversioned_id(show),"fade_transition")==0 && !hide &&
+			obs_sceneitem_get_transition_duration(manual_item,true)==450,
+			"the manual capture gets its own 450 ms fade in and a cut out");
+		press("by_hand_back");
+		CHECK(!obs_sceneitem_visible(manual_item) && obs_sceneitem_locked(manual_item) &&
+			obs_sceneitem_visible(item) && !obs_sceneitem_locked(item), "return to automatic restores visibility and locks");
+		obs_properties_destroy(p);
+		obs_source_set_enabled(sw,false);
+		obs_source_release(sw);
+		obs_sceneitem_remove(manual_item);
+		obs_source_release(manual);
+	}
 	const std::string linkmark = " \xE2\x86\x94 ", rulemark = " \xE2\x86\x92 ";
 	auto *link = attach("stagekit_visibility_link", "Review rename link", "{}");
 	auto *view = create("stagekit_cropped_view", "Review cropped view", R"({"source":"Review Cam"})");
@@ -20408,6 +20465,25 @@ static void review_controls_test()
 	sleep_ms(140);
 	CHECK(toggle && off && obs_source_enabled(shadow), "Scene Shadow button switches the real effect off and back on");
 	obs_properties_destroy(sp);
+	auto shadow_keys = [](const char *suffix) {
+		struct Match { const char *suffix; unsigned mask; } match{suffix,0};
+		obs_enum_hotkeys([](void *data, obs_hotkey_id, obs_hotkey_t *key) {
+			auto &m=*static_cast<Match *>(data);
+			const std::string name=obs_hotkey_get_name(key);
+			unsigned bit=1;
+			for (const char *action : {"toggle.","on.","off."}) {
+				if (name==std::string("stagekit.sceneshadow.")+action+m.suffix)
+					m.mask |= bit;
+				bit <<= 1;
+			}
+			return true;
+		},&match);
+		return match.mask;
+	};
+	const auto keys_before=shadow_keys("Review Shadow");
+	obs_source_set_name(shadow,"Review Camera Shadow");
+	CHECK(keys_before==7 && shadow_keys("Review Camera Shadow")==7 && shadow_keys("Review Shadow")==0,
+		"Scene Shadow's three scene hotkeys follow its filter name");
 	auto *layout = attach("stagekit_layout","Review Layout",R"({"duration_ms":0})");
 	sleep_ms(160);
 	vec2 box, pos; vec2_set(&box,201,113);

@@ -974,7 +974,9 @@ void register_show_in_scenes()
 	info.update = [](void *data, obs_data_t *settings) {
 		static_cast<ShowInScenes *>(data)->update(settings);
 	};
-	info.load = [](void *data, obs_data_t *settings) { static_cast<ShowInScenes *>(data)->loaded(settings); };
+	info.load = [](void *data, obs_data_t *settings) {
+		static_cast<ShowInScenes *>(data)->loaded(settings);
+	};
 	info.get_defaults = [](obs_data_t *settings) {
 		obs_data_set_default_int(settings, "where", (int)Where::Every);
 		obs_data_set_default_int(settings, "on_means", 0);

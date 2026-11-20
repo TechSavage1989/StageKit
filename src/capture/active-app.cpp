@@ -782,7 +782,9 @@ void register_active_app()
 	info.update = [](void *data, obs_data_t *settings) {
 		static_cast<ActiveApp *>(data)->update(settings);
 	};
-	info.load = [](void *data, obs_data_t *settings) { static_cast<ActiveApp *>(data)->loaded(settings); };
+	info.load = [](void *data, obs_data_t *settings) {
+		static_cast<ActiveApp *>(data)->loaded(settings);
+	};
 	info.get_defaults = [](obs_data_t *settings) {
 		obs_data_set_default_bool(settings, "follow", true);
 		item_change_defaults(settings);

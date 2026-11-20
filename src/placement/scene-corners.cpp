@@ -394,8 +394,7 @@ bool area_modified(obs_properties_t *props, obs_property_t *, obs_data_t *settin
 	obs_property_set_visible(obs_properties_get(props, "which"), !whole);
 	obs_property_set_visible(obs_properties_get(props, "sources|alist"), !whole && chosen);
 	obs_property_set_visible(obs_properties_get(props, "skip|alist"), !whole && !chosen);
-	obs_property_set_visible(obs_properties_get(props, "auto_background"),
-				 !whole && !chosen);
+	obs_property_set_visible(obs_properties_get(props, "auto_background"), !whole && !chosen);
 	obs_property_set_visible(obs_properties_get(props, "screen_px"), !whole);
 	return true;
 }

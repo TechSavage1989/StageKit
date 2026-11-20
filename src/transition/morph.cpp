@@ -1722,7 +1722,8 @@ obs_properties_t *get_properties(void *data)
 		obs_properties_add_bool(rule, "rule_pair_main", obs_module_text("Morph.PairMain"));
 	set_tip(rule_pair_main, obs_module_text("Morph.PairMain.Tip"));
 	add_easing_properties(rule, "rule_");
-	for (const char *name : {"rule_style", "rule_others", "rule_both", "rule_pair_main", "rule_ease_curve", "rule_ease_mode"})
+	for (const char *name :
+	     {"rule_style", "rule_others", "rule_both", "rule_pair_main", "rule_ease_curve", "rule_ease_mode"})
 		obs_property_set_modified_callback(obs_properties_get(rule, name), rule_edited);
 	obs_properties_add_button2(rule, "rule_add", obs_module_text("Morph.RuleAdd"), add_rule, owner);
 	obs_properties_add_group(props, "rule_group", obs_module_text("Morph.RuleGroup"), OBS_GROUP_NORMAL, rule);
