@@ -9,7 +9,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | `fix/scene-shadow-one-pixel-edge`, from beta224. Release notes in `docs/releases/0.1.0-beta225.md`. |
+| Working branch | `feat/outline-ambient-fill`. Release notes in `docs/releases/0.1.0-beta226.md`. |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 | Gate | Checks passed |
@@ -22,6 +22,34 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `LAYOUT`, `MODES_HIDE`, `SCENE_TRANS_OVERRIDE` | 40, 29, 9 |
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
+
+## Outlines filled with an Ambient Background (0.1.0-beta226)
+
+The owner: "id also like there to be a border/shadow/outline option to follow the ambient
+background setting for pattern, but also background image or live, including mosaic and blur
+configurations".
+
+- **Outline design** 34, *Ambient Background*, in Shadow, Glow & Outline and Scene Shadow. New
+  settings `outline_ambient` (*Background*: "" Automatic, or a name), `outline_ambient_bright`
+  (*Fill brightness*, 130 %), `outline_ambient_sat` (*Fill saturation*, 120 %); the pattern
+  fills' Scale, Position X/Y and Rotation lay it out. Filters saved before are unchanged
+  (tested).
+- **The picture** is the background's own last finished frame (`src/ambient/ambient-frame.*`, a
+  registry by number, weak references, published at the end of `AmbientBackground::render`);
+  a background not drawn in two frames is drawn once into a scratch texrender. Laid out and
+  lifted by `data/effects/stagekit-outline-ambient.effect` (mirror addressing; all uniforms set
+  every run); without it the line is its outline colour and the log says so once.
+- **Mapping**: Scene Shadow canvas-aligned; Shadow, Glow & Outline the background's middle on the
+  source's middle at the canvas's scale (the filter does not know the item's place on screen).
+- **Lookup only in ticks.** The first build looked the background up while drawing and hung the
+  test program: `scene_on_screen()` without the frontend asks `obs_get_output_source`, whose lock
+  the main view holds while drawing. `look_tick` and `outline_ambient_warm` (each filter's tick)
+  do it now; drawing only reads the answer kept.
+- **Not done**: the drop shadow and glow in the background's colours (a shadow in the source's
+  own colours exists; this would be another texture through both shadow passes).
+- Tested in `STAGEKIT_TEST_ONLY_OUTLINE_AMBIENT` (its own run in `run-tests.sh`, sheet
+  `docs/images/outline-ambient.png`). Also run: the original branch's outline gates (handoff); the integrated change is being rechecked. **Not the full suite.** Only
+  OpenGL: the new effect file has not been compiled by Direct3D.
 
 ## A one-column Scene Shadow outline (0.1.0-beta225)
 

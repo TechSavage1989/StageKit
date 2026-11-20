@@ -22,6 +22,7 @@ the Free Software Foundation; either version 2 of the License, or
 //   mosaic -> texture overlay, vignette, brightness -> output
 
 #include "ambient-background.hpp"
+#include "ambient-frame.hpp"
 #include "../common/timing.hpp"
 
 #include "../capture/app-capture.hpp"
@@ -334,6 +335,7 @@ private:
 	// False while the capture is only being kept running, not shown.
 	std::atomic<bool> live_shown_{true};
 	bool rendering_ = false;
+	uint32_t frame_id_ = 0; // ambient-frame.hpp: who it is to those who show its picture
 
 	obs_weak_source_t *base_child_ = nullptr;
 	obs_weak_source_t *live_child_ = nullptr;
@@ -532,6 +534,7 @@ AmbientBackground::AmbientBackground(obs_data_t *settings, obs_source_t *source)
 	obs_leave_graphics();
 
 	update(settings);
+	frame_id_ = ambient_frame_join(source);
 }
 
 AmbientBackground::~AmbientBackground()
@@ -540,6 +543,8 @@ AmbientBackground::~AmbientBackground()
 	set_child(live_child_, nullptr);
 
 	obs_enter_graphics();
+	// (In the graphics context: nobody is reading its picture now.)
+	ambient_frame_leave(frame_id_);
 	if (base_image_loaded_)
 		gs_image_file4_free(&base_image_);
 	if (overlay_image_loaded_)
@@ -1552,6 +1557,8 @@ void AmbientBackground::render()
 		pass(effect_, p_image_, tr_final_, cur, w, h, "Final");
 	}
 	gs_texture_t *final_tex = cur ? gs_texrender_get_texture(tr_final_) : nullptr;
+	// For an outline filled with this background: the picture as finished.
+	ambient_frame_publish(frame_id_, final_tex, w, h);
 
 	gs_enable_framebuffer_srgb(previous_srgb);
 	obs_source_release(base_source);

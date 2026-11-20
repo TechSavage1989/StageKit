@@ -70,7 +70,10 @@ struct OutlineDesign {
 		DotGrid = 31,
 		HexWire = 32,
 		HexMosaic = 33,
-		kLast = HexMosaic,
+		// Filled with an Ambient Background's finished picture
+		// (outline-ambient.*): the line shows the background, lifted.
+		Ambient = 34,
+		kLast = Ambient,
 	};
 	int kind = Solid;
 	uint32_t color2 = 0xFFFFAA00; // the gradient's other end, the shimmer's highlight
@@ -85,12 +88,20 @@ struct OutlineDesign {
 	// lies in the line's picture. Dashes and the colours that go round the
 	// border (`turns()`): the rotation alone, as how far round they begin.
 	PatternPose pose;
+	// The Ambient Background fill: which background (`outline_ambient` as
+	// outline_ambient_choice's number, 0 Automatic), the one that means
+	// now where the look's maker knows its scene (ambient-frame.hpp's
+	// number; 0: looked up when drawn, with no scene of its own), and how
+	// far its picture is lifted (`pattern_scale` and `pose` lay it out).
+	uint32_t ambient = 0, ambient_id = 0;
+	double ambient_bright = 1.3, ambient_sat = 1.2;
 	bool turns() const
 	{
 		return kind == Dashed || kind == Marching || kind == Gradient || kind == Travelling ||
 		       kind == Shimmer || kind == Rainbow;
 	}
-	bool pattern() const { return kind >= Aurora && kind <= kLast; }
+	bool pattern() const { return kind >= Aurora && kind <= HexMosaic; }
+	bool ambient_fill() const { return kind == Ambient; }
 	// Drawn inside the source's edge, with no line outside it.
 	bool inner() const { return kind == Inner; }
 	// Neon: how far the halo of light reaches past a line `width` wide.
