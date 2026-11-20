@@ -634,9 +634,66 @@ void trim_to_picture_in(Box &goal, const std::vector<Box> &boxes, const std::vec
 // never in the way counted after all (`avoid`); `counted` is what counted,
 // and (`ax_at`, `ay_at`) the place.
 Box space_among(const SpaceInputs &in, const std::vector<Box> &in_way, bool &avoid, std::vector<Box> &counted,
-		std::vector<bool> &counted_above, double &ax_at, double &ay_at)
+		std::vector<bool> &counted_above, double &ax_at, double &ay_at, bool &covering)
 {
+	covering = false;
 	const Box &within = in.within;
+	if (in.whole) {
+		// "Make room if not filling", for the whole screen or a box. The
+		// picture as that fit area gives it: one of the box's own shape fills
+		// the box, any other keeps the margin from its edges. While it fills
+		// that by a rule that is ticked, it is fitted there and nothing is in
+		// its way (it lies over the camera, as ever). While it does not, it
+		// goes into the largest space clear of the other sources, looked for
+		// round the box's middle, as in the free space: a squarer image
+		// beside the camera, not over a sliver of it. Which of the two comes
+		// from the picture's shape and the settings alone, never from where
+		// the picture or anything else is, so the choice cannot flip by
+		// itself. Room is made for the sources listed, or for every source
+		// with none listed; what the box's middle lies inside (a background,
+		// a frame) is not in the way, as in the free space.
+		const double box_shape = within.w / std::max(1e-6, within.h);
+		const bool same = std::fabs(in.shape - box_shape) < 0.01 * box_shape;
+		const double m = same ? 0.0 : std::min({in.margin, within.w / 2.0 - 1.0, within.h / 2.0 - 1.0});
+		const Box full{within.x + m, within.y + m, within.w - 2.0 * m, within.h - 2.0 * m};
+		ax_at = within.x + within.w / 2.0;
+		ay_at = within.y + within.h / 2.0;
+		avoid = false;
+		counted.clear();
+		counted_above.clear();
+		if (full.w < 2.0 || full.h < 2.0)
+			return full;
+		double fw = in.kept_w, fh = in.kept_h;
+		if (fw <= 0.0 || fh <= 0.0) {
+			fw = std::min(full.w, full.h * in.shape);
+			fh = fw / in.shape;
+		}
+		const double fill = std::min(1.0, fw / full.w) * std::min(1.0, fh / full.h);
+		const double spare_w = std::max(0.0, full.w - fw), spare_h = std::max(0.0, full.h - fh);
+		const double left = spare_w * (in.toward_x + 1) / 2.0, top = spare_h * (in.toward_y + 1) / 2.0;
+		const bool fills = !in.skip_rule || (in.skip_pct && fill >= in.skip_fill) ||
+				   (in.skip_px && left <= in.px_left + 0.05 && spare_w - left <= in.px_right + 0.05 &&
+				    top <= in.px_top + 0.05 && spare_h - top <= in.px_bottom + 0.05);
+		if (!fills) {
+			std::vector<Box> room_for;
+			std::vector<bool> room_above;
+			for (size_t i = 0; i < in_way.size(); i++)
+				if (!in.only_listed || (i < in.passed.size() && in.passed[i])) {
+					room_for.push_back(in_way[i]);
+					room_above.push_back(i < in.above.size() && in.above[i]);
+				}
+			const Box beside = free_space(within, ax_at, ay_at, room_for, in.margin, in.shape, in.tolerance,
+						      &room_above);
+			if (beside.w >= 2.0 && beside.h >= 2.0) {
+				avoid = true;
+				counted = std::move(room_for);
+				counted_above = std::move(room_above);
+				return beside;
+			}
+		}
+		covering = true;
+		return full;
+	}
 	// First without the items never in the way. Should the picture
 	// then leave too much of its space empty (a narrow window on a
 	// wide screen), they count after all: the picture goes beside
@@ -736,7 +793,7 @@ Box space_from(const SpaceInputs &in, SpaceOut *result)
 	std::vector<Box> counted;
 	std::vector<bool> counted_above;
 	double at_x = 0.0, at_y = 0.0;
-	Box goal = space_among(in, in.boxes, out.avoiding, counted, counted_above, at_x, at_y);
+	Box goal = space_among(in, in.boxes, out.avoiding, counted, counted_above, at_x, at_y, out.covering);
 	// At home: the layout made by hand. With the other entries at their
 	// homes, the space round its place is the one it had when the home was
 	// taken, the picture there keeps the gap and, for an entry that resizes,
@@ -758,7 +815,9 @@ Box space_from(const SpaceInputs &in, SpaceOut *result)
 		std::vector<Box> home_counted;
 		std::vector<bool> home_above;
 		double hx = 0.0, hy = 0.0;
-		const Box space = space_among(in, at_homes, home_avoid, home_counted, home_above, hx, hy);
+		bool home_covering = false;
+		const Box space =
+			space_among(in, at_homes, home_avoid, home_counted, home_above, hx, hy, home_covering);
 		if (in.home_settling) {
 			out.took_home = true;
 			out.home_space = space;
@@ -831,7 +890,7 @@ Box space_from(const SpaceInputs &in, SpaceOut *result)
 		}
 		out.at_home = keeps;
 	}
-	if (goal.w >= 2.0 && goal.h >= 2.0 && !kept && !out.at_home)
+	if (goal.w >= 2.0 && goal.h >= 2.0 && !kept && !out.at_home && !out.covering)
 		trim_to_picture_in(goal, in.boxes, in.said, in.gives, in.passed, out.avoiding, in.pw, in.ph,
 				   in.toward_x, in.toward_y);
 	out.goal = goal;
@@ -1284,6 +1343,8 @@ void FitEngine::update(obs_data_t *settings)
 	const long long kind = obs_data_get_int(settings, l("box").c_str());
 	if (kind == 2)
 		s.box = BoxKind::FreeSpace;
+	// (Off unless ticked, so a filter saved before it fits as it did.)
+	s.whole = kind != 2 && obs_data_get_bool(settings, l("whole_make_room").c_str());
 	// The filter's own two measuring options. Before they existed there
 	// was one tick box that followed the dock; unticked, it meant boxes.
 	s.visible_pixels = obs_data_get_bool(settings, l("visible_pixels").c_str());
@@ -1324,7 +1385,9 @@ void FitEngine::detach(bool forget)
 // was saved.
 bool FitEngine::holds_room(obs_sceneitem_t *item, const FitSettings &s)
 {
-	if (s.box != BoxKind::FreeSpace)
+	// (One that makes room when not filling holds only a room it was given
+	// beside the others: its bounding box may be the whole screen.)
+	if (s.box != BoxKind::FreeSpace || (s.whole && !have_claim_))
 		return false;
 	if (!have_claim_ && !box_asked_ && obs_sceneitem_get_bounds_type(item) != OBS_BOUNDS_NONE) {
 		box_asked_ = true;
@@ -1424,6 +1487,12 @@ bool FitEngine::prepare(obs_sceneitem_t *item, float tick_seconds, Prep &p)
 			settings_.have_anchor = false;
 		}
 		s = settings_;
+		// "Make room if not filling": worked out as a fit in the free
+		// space is, in the screen or the box set (`space_among`).
+		if (s.whole) {
+			s.in_area = s.box == BoxKind::Custom;
+			s.box = BoxKind::FreeSpace;
+		}
 	}
 	if (other_item) {
 		// What was worked out was for the other item.
@@ -1777,7 +1846,7 @@ bool FitEngine::prepare(obs_sceneitem_t *item, float tick_seconds, Prep &p)
 		return false;
 
 	double bx = 0.0, by = 0.0, bw = obs_source_get_width(parent_), bh = obs_source_get_height(parent_);
-	if (s.box == BoxKind::Custom) {
+	if (s.box == BoxKind::Custom || s.in_area) {
 		bx = s.x;
 		by = s.y;
 		bw = s.w;
@@ -2230,6 +2299,16 @@ bool FitEngine::prepare(obs_sceneitem_t *item, float tick_seconds, Prep &p)
 	}
 	p.picture = pw / ph;
 	p.free = s.box == BoxKind::FreeSpace;
+	p.whole = s.whole;
+	if (p.whole) {
+		// Its place is the middle of the screen (or the box), whatever
+		// moved it, and it has no home: where it lies comes from its shape.
+		s.have_anchor = true;
+		s.anchor_x = bx + bw / 2.0;
+		s.anchor_y = by + bh / 2.0;
+		has_home_ = have_home_space_ = home_settling_ = at_home_ = false;
+		home_due_ = false;
+	}
 	p.whole_left = whole_left;
 	p.whole_top = whole_top;
 	p.whole_w = whole_w;
@@ -2335,6 +2414,11 @@ FitEngine::Motion FitEngine::motion(Prep &p, float seconds)
 			store_home_space();
 			changed_ = true;
 		}
+	}
+	if (!s.have_anchor && p.whole) {
+		s.have_anchor = true;
+		s.anchor_x = p.bx + p.bw / 2.0;
+		s.anchor_y = p.by + p.bh / 2.0;
 	}
 	if (!s.have_anchor) {
 		const Box at = item_box(item);
@@ -2521,14 +2605,20 @@ bool FitEngine::solve(Prep &p, float seconds, bool first_pass, bool &moved)
 			switching_ = false;
 	}
 	// The gap or the tolerance set anew: the space is worked out again.
-	const std::array<double, 8> rule{s.skip_rule ? 1.0 : 0.0,
-					 s.skip_pct ? 1.0 : 0.0,
-					 s.skip_fill,
-					 s.skip_px ? 1.0 : 0.0,
-					 s.px_top,
-					 s.px_bottom,
-					 s.px_left,
-					 s.px_right};
+	const std::array<double, 14> rule{s.skip_rule ? 1.0 : 0.0,
+					  s.skip_pct ? 1.0 : 0.0,
+					  s.skip_fill,
+					  s.skip_px ? 1.0 : 0.0,
+					  s.px_top,
+					  s.px_bottom,
+					  s.px_left,
+					  s.px_right,
+					  s.whole ? 1.0 : 0.0,
+					  s.whole && !s.skip.empty() ? 1.0 : 0.0,
+					  within.x,
+					  within.y,
+					  within.w,
+					  within.h};
 	if (s.margin != used_margin_ || s.tolerance != used_tolerance_ || rule != used_rule_) {
 		used_rule_ = rule;
 		used_margin_ = s.margin;
@@ -2563,6 +2653,8 @@ bool FitEngine::solve(Prep &p, float seconds, bool first_pass, bool &moved)
 		in.px_left = s.px_left;
 		in.px_right = s.px_right;
 		in.claims_firm = claims_firm_;
+		in.whole = s.whole;
+		in.only_listed = s.whole && !s.skip.empty();
 		in.with_switch = with_switch_;
 		in.boxes = boxes_;
 		in.ids = ids_;
@@ -2583,6 +2675,7 @@ bool FitEngine::solve(Prep &p, float seconds, bool first_pass, bool &moved)
 		SpaceOut out;
 		const Box goal = space_from(in, &out);
 		avoiding_ = out.avoiding;
+		covering_ = out.covering;
 		// At home (see `space_from`): the layout made by hand.
 		at_home_ = out.at_home;
 		if (out.took_home) {
@@ -2853,7 +2946,9 @@ void FitEngine::publish_claim(const Prep &p)
 {
 	const FitSettings &s = p.s;
 	const Box outer{p.bx, p.by, p.bw, p.bh};
-	if (p.free && have_goal_) {
+	// (Over the whole screen by "Make room if not filling" it says nothing,
+	// as a fit in the whole screen never did: nothing makes room for it.)
+	if (p.free && have_goal_ && !(p.whole && covering_)) {
 		Claim claim;
 		claim.resizes = s.resize;
 		// (The same working out a tool asks for, `claim_from`. Kept at its
@@ -3092,8 +3187,8 @@ void FitEngine::tick(float seconds, FitScan &scan)
 				scan.forget();
 			scan.gather(parent_, p.item, this);
 			std::vector<Obstacle> in_way;
-			scan.obstacles(parent_, p.item, p.s.skip, p.s.skip_rule, this, p.how, in_way, &rank_,
-				       p.s.resize);
+			scan.obstacles(parent_, p.item, p.s.skip, p.s.skip_rule || p.s.whole, this, p.how, in_way,
+				       &rank_, p.s.resize);
 			bool at_rest = false;
 			observe(in_way, arriving(), seconds, at_rest, &scan.visible_ids());
 			if (at_rest)
@@ -3465,20 +3560,43 @@ void fit_controls_shown(obs_properties_t *props, obs_data_t *settings, const std
 	const long long kind = obs_data_get_int(settings, (prefix + "box").c_str());
 	for (const char *name : {"box_x", "box_y", "box_width", "box_height"})
 		shown(get(name), kind == 1);
-	shown(obs_properties_get(props, (list_prefix + "skip|alist").c_str()), kind == 2);
+	// "Make room if not filling", for the whole screen or a box: with it the
+	// fit has what the free space has, and its list is the sources room is
+	// made for (the same list: those it overlaps only while it fills).
+	shown(get("whole_make_room"), kind != 2);
+	const bool room = kind != 2 && obs_data_get_bool(settings, (prefix + "whole_make_room").c_str());
+	const bool like_free = kind == 2 || room;
+	if (obs_property_t *list = obs_properties_get(props, (list_prefix + "skip|alist").c_str())) {
+		shown(list, like_free);
+		obs_property_set_description(list, obs_module_text(room    ? "Fit.RoomFor"
+								   : entry ? "SceneFit.SkipFor"
+									   : "Fit.Skip"));
+	}
+	if (obs_property_t *pick = obs_properties_get(props, (list_prefix + "skip|apick").c_str()))
+		set_tip(pick, obs_module_text(room ? "Fit.RoomFor.Tip" : "Fit.Skip.Tip"));
+	static const char *const kTips[][3] = {{"skip_use_pct", "Fit.SkipUsePct.Tip", "Fit.RoomUsePct.Tip"},
+					       {"skip_fill", "Fit.SkipFill.Tip", "Fit.RoomFill.Tip"},
+					       {"skip_use_px", "Fit.SkipUsePx.Tip", "Fit.RoomUsePx.Tip"},
+					       {"skip_px_top", "Fit.SkipPx.Tip", "Fit.RoomPx.Tip"},
+					       {"skip_px_bottom", "Fit.SkipPx.Tip", "Fit.RoomPx.Tip"},
+					       {"skip_px_left", "Fit.SkipPx.Tip", "Fit.RoomPx.Tip"},
+					       {"skip_px_right", "Fit.SkipPx.Tip", "Fit.RoomPx.Tip"}};
+	for (const auto &tip : kTips)
+		if (obs_property_t *p = get(tip[0]))
+			set_tip(p, obs_module_text(tip[room ? 2 : 1]));
 	for (const char *name :
 	     {"glide_ms", "ease_curve", "ease_mode", "visible_pixels", "tolerance", "space_priority"})
-		shown(get(name), kind == 2);
+		shown(get(name), like_free);
 	// The level is not read while the list order decides (the Scene Fit's
 	// own switch, for an entry).
 	if (!entry)
-		shown(get("list_priority"), kind == 2);
+		shown(get("list_priority"), like_free);
 	if (obs_property_t *level = get("space_priority"))
 		obs_property_set_enabled(level, !obs_data_get_bool(settings, "list_priority"));
 	// (For a Scene Fit's entry the switch is the Scene Fit's own, for all.)
 	if (!entry)
-		shown(get("skip_fill_on"), kind == 2);
-	const bool rule = kind == 2 &&
+		shown(get("skip_fill_on"), like_free);
+	const bool rule = like_free &&
 			  obs_data_get_bool(settings, entry ? "skip_fill_on" : (prefix + "skip_fill_on").c_str());
 	for (const char *name : {"skip_use_pct", "skip_use_px"})
 		shown(get(name), rule);
@@ -3564,6 +3682,10 @@ void fit_add_controls(obs_properties_t *props, const std::string &prefix, const 
 	set_tip(glide, obs_module_text("Fit.Glide.Tip"));
 	add_easing_properties(props, prefix.c_str());
 
+	obs_property_t *make_room =
+		obs_properties_add_bool(props, key("whole_make_room").c_str(), obs_module_text("Fit.MakeRoom"));
+	set_tip(make_room, obs_module_text(entry ? "SceneFit.MakeRoom.Tip" : "Fit.MakeRoom.Tip"));
+	obs_property_set_modified_callback2(make_room, box_modified, (void *)keys);
 	PickList skip;
 	const std::string skip_setting = list_prefix + "skip";
 	skip.setting = skip_setting.c_str();
@@ -3647,6 +3769,7 @@ void fit_entry_defaults(obs_data_t *settings, const std::string &prefix)
 	obs_data_set_default_double(settings, key("margin").c_str(), 30.0);
 	obs_data_set_default_double(settings, key("tolerance").c_str(), 8.0);
 	obs_data_set_default_double(settings, key("skip_fill").c_str(), 95.0);
+	obs_data_set_default_bool(settings, key("whole_make_room").c_str(), false);
 	obs_data_set_default_bool(settings, key("skip_use_pct").c_str(), true);
 	obs_data_set_default_bool(settings, key("skip_use_px").c_str(), false);
 	for (const char *name : {"skip_px_top", "skip_px_bottom", "skip_px_left", "skip_px_right"})
