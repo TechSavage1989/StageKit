@@ -60,6 +60,7 @@ target_sources(
     src/plugin-main.cpp
     src/common/easing.cpp
     src/common/easing.hpp
+    src/common/hotkey-rename.hpp
     src/common/item-transition.cpp
     src/common/item-transition.hpp
     src/ambient/ambient-background.cpp

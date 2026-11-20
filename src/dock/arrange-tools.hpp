@@ -52,11 +52,19 @@ struct ArrangeOptions {
 	// (EaseCurve and EaseMode as numbers; cubic, in and out).
 	int send_curve = 3;
 	int send_mode = 0;
+	// How long the dock's moves take (the Place tab's Duration), in ms:
+	// remembered since beta224; 500 as it comes (review C73).
+	int send_duration_ms = 500;
 	// Copy transform to chosen scenes: the scenes it copies to, by name.
 	std::vector<std::string> copy_scenes;
 	// Both copy tools: the sources that take the transform, by name. Empty
 	// (as it comes): the copies of the selected item's own source.
 	std::vector<std::string> copy_sources;
+	// Both copy tools copy to `copy_sources` (Copy to: Chosen sources) rather
+	// than to the selected source's copies in the other scenes (Same
+	// source). A collection saved without it reads true exactly when the
+	// list has entries, as the tools behaved before (decision D17).
+	bool copy_to_chosen = false;
 	// The dock's Auto-fit switch acts on the selected sources only (their
 	// Fit to Space filters and Scene Fit entries in the scene being edited),
 	// not on every fit filter of that scene. Off as it comes.
@@ -154,6 +162,9 @@ void set_arrange_glide(ArrangeGlide handler, const void *owner);
 std::string transform_snapshot(obs_source_t *scene);
 // The same for every scene at once, for a change that reaches into several.
 std::string transform_snapshot_all();
+// The stacking order of the scenes and groups holding these items, for
+// add_transform_undo (the order buttons: OBS's transform states keep no order).
+std::string stacking_snapshot(const std::vector<obs_sceneitem_t *> &items);
 // Adds a step to OBS's Edit → Undo that goes back to `before` and forward to `after`.
 void add_transform_undo(const char *name, const std::string &before, const std::string &after);
 // For the tests: puts the scene back as before the last step (or forward again).

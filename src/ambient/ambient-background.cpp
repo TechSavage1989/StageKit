@@ -344,7 +344,6 @@ private:
 	PictureCrop drawn_crop_; // the copy the drawing in progress uses
 	std::string base_image_path_;
 	uint64_t start_revision_ = 0;
-	uint64_t start_choice_ = start_image_choice();
 	gs_image_file4_t overlay_image_ = {};
 	bool overlay_image_loaded_ = false;
 	uint64_t base_anim_ns_ = 0, overlay_anim_ns_ = 0; // an animated picture's last move on
@@ -836,17 +835,8 @@ void AmbientBackground::tick(float seconds)
 	frame_seconds_ = std::min(frame_seconds_.load() + seconds, 1.0f); // since the trail last moved on
 	new_frame_ = true;
 
-	// A start image picked by the owner becomes this background's picture
-	// without a visit to these settings.
-	if (start_image_choice() != start_choice_) {
-		start_choice_ = start_image_choice();
-		obs_data_t *settings = obs_source_get_settings(source_);
-		if (static_cast<BaseType>(obs_data_get_int(settings, "base_type")) == BaseType::Image) {
-			obs_data_set_int(settings, "base_type", (int)BaseType::StartImage);
-			obs_source_update(source_, settings);
-		}
-		obs_data_release(settings);
-	}
+	// (Choosing a standby image no longer turns a background set to an
+	// image file over to it: decision D19.)
 
 	// Pick up a new start image as soon as one is chosen.
 	if (start_image_revision() != start_revision_) {

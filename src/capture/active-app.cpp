@@ -43,6 +43,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/scene-util.hpp"
 #include "../api/vendor-api.hpp"
 #include "../common/tooltip.hpp"
+#include "../common/hotkey-rename.hpp"
 
 #include <obs-module.h>
 #include <plugin-support.h>
@@ -514,7 +515,20 @@ public:
 	void attach(obs_source_t *parent)
 	{
 		parent_ = parent;
-		// Two hotkeys on the scene, named after this filter, for a Stream
+		register_hotkeys();
+	}
+	// Registers the three hotkeys under the filter's current name, in place
+	// of those there were (a rename keeps their bindings: `renamed_`).
+	void register_hotkeys()
+	{
+		for (obs_hotkey_id *id : {&next_hotkey_, &back_hotkey_, &toggle_hotkey_}) {
+			if (*id != OBS_INVALID_HOTKEY_ID)
+				obs_hotkey_unregister(*id);
+			*id = OBS_INVALID_HOTKEY_ID;
+		}
+		if (!parent_)
+			return;
+		// Three hotkeys on the scene, named after this filter, for a Stream
 		// Deck hotkey key or the keyboard.
 		const std::string name = obs_source_get_name(source_) ? obs_source_get_name(source_) : "";
 		auto named = [&](const char *key) {
@@ -605,6 +619,11 @@ private:
 	bool held_ = false;                // one switched to by hand is showing
 	obs_hotkey_id next_hotkey_ = OBS_INVALID_HOTKEY_ID, back_hotkey_ = OBS_INVALID_HOTKEY_ID;
 	obs_hotkey_id toggle_hotkey_ = OBS_INVALID_HOTKEY_ID;
+	HotkeyRename renamed_{source_,
+			      [this] {
+				      return std::vector<obs_hotkey_id *>{&next_hotkey_, &back_hotkey_, &toggle_hotkey_};
+			      },
+			      [this] { register_hotkeys(); }};
 	bool follow_ = true;
 	std::string transition_ = kTransitionScene;
 	uint32_t transition_ms_ = 250;

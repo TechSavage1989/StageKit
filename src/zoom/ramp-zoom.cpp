@@ -17,6 +17,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include "../common/switch-ramp.hpp"
 #include "../common/tooltip.hpp"
+#include "../common/hotkey-rename.hpp"
 
 #include <initializer_list>
 #include <utility>
@@ -77,6 +78,15 @@ public:
 	void attach(obs_source_t *parent)
 	{
 		ramp_.attached();
+		register_hotkey(parent);
+	}
+
+	void register_hotkey(obs_source_t *parent)
+	{
+		detach();
+		parent_ = parent;
+		if (!parent)
+			return;
 		const std::string name = obs_source_get_name(source_) ? obs_source_get_name(source_) : "";
 		std::string text = obs_module_text("Hotkey.ZoomToggle");
 		const size_t at = text.find("%1");
@@ -97,6 +107,7 @@ public:
 		if (hotkey_ != OBS_INVALID_HOTKEY_ID)
 			obs_hotkey_unregister(hotkey_);
 		hotkey_ = OBS_INVALID_HOTKEY_ID;
+		parent_ = nullptr;
 	}
 
 	void render()
@@ -162,6 +173,10 @@ private:
 	Settings settings_;
 	gs_texrender_t *tr_input_ = nullptr;
 	obs_hotkey_id hotkey_ = OBS_INVALID_HOTKEY_ID;
+	obs_source_t *parent_ = nullptr;
+	// Last: let go of first.
+	HotkeyRename renamed_{source_, [this] { return std::vector<obs_hotkey_id *>{&hotkey_}; },
+			      [this] { register_hotkey(parent_); }};
 };
 
 obs_properties_t *get_properties(void *)
@@ -176,13 +191,16 @@ obs_properties_t *get_properties(void *)
 	obs_property_t *cy =
 		obs_properties_add_float_slider(props, "center_y", obs_module_text("Zoom.CenterY"), 0.0, 100.0, 0.5);
 	obs_property_float_set_suffix(cy, "%");
+	// The two times and the easing in a group, as in Blur (review C5).
+	obs_properties_t *timing = obs_properties_create();
 	obs_property_t *in =
-		obs_properties_add_int_slider(props, "ramp_in_ms", obs_module_text("Zoom.RampIn"), 0, 5000, 50);
+		obs_properties_add_int_slider(timing, "ramp_in_ms", obs_module_text("Zoom.RampIn"), 0, 5000, 50);
 	obs_property_int_set_suffix(in, " ms");
 	obs_property_t *out =
-		obs_properties_add_int_slider(props, "ramp_out_ms", obs_module_text("Zoom.RampOut"), 0, 5000, 50);
+		obs_properties_add_int_slider(timing, "ramp_out_ms", obs_module_text("Zoom.RampOut"), 0, 5000, 50);
 	obs_property_int_set_suffix(out, " ms");
-	add_easing_properties(props, "");
+	add_easing_properties(timing, "");
+	obs_properties_add_group(props, "timing", obs_module_text("Zoom.Timing"), OBS_GROUP_NORMAL, timing);
 	for (const auto &[name, key] :
 	     std::initializer_list<std::pair<const char *, const char *>>{{"zoom", "Zoom.Amount.Tip"},
 									  {"center_x", "Zoom.Center.Tip"},

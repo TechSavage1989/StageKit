@@ -80,6 +80,9 @@ public:
 		in_s_ = std::max<long long>(0, obs_data_get_int(settings, "in_ms")) / 1000.0;
 		out_s_ = std::max<long long>(0, obs_data_get_int(settings, "out_ms")) / 1000.0;
 		curve_ = static_cast<EaseCurve>(obs_data_get_int(settings, "ease_curve"));
+		// 0 (as it comes, and every filter saved before): out when showing,
+		// in when hiding; then the usual three (review C6). Append-only.
+		direction_ = (int)std::clamp<long long>(obs_data_get_int(settings, "ease_direction"), 0, 3);
 	}
 
 	void attach(obs_source_t *parent)
@@ -110,8 +113,10 @@ public:
 		}
 		elapsed_ = std::min(duration_, elapsed_ + seconds);
 		const double t = duration_ > 0.0 ? elapsed_ / duration_ : 1.0;
-		// Arrive decelerating, leave accelerating.
-		k_ = k_from_ + (k_to_ - k_from_) * ease(curve_, entering_ ? EaseMode::Out : EaseMode::In, t);
+		// Arrive decelerating, leave accelerating, unless a direction is chosen.
+		static constexpr EaseMode kChosen[] = {EaseMode::InOut, EaseMode::InOut, EaseMode::In, EaseMode::Out};
+		const EaseMode mode = direction_ == 0 ? (entering_ ? EaseMode::Out : EaseMode::In) : kChosen[direction_];
+		k_ = k_from_ + (k_to_ - k_from_) * ease(curve_, mode, t);
 		apply(k_);
 		if (elapsed_ < duration_)
 			return;
@@ -241,6 +246,7 @@ private:
 	ShowStyle style_ = ShowStyle::NearestEdge;
 	double in_s_ = 0.4, out_s_ = 0.3;
 	EaseCurve curve_ = EaseCurve::Cubic;
+	int direction_ = 0; // `ease_direction`
 
 	obs_sceneitem_t *item_ = nullptr; // non-null while animating
 	bool reshow_ = false;
@@ -269,13 +275,13 @@ obs_properties_t *show_hide_properties(void *data)
 	obs_property_t *out =
 		obs_properties_add_int_slider(props, "out_ms", obs_module_text("ShowHide.Out"), 0, 5000, 50);
 	obs_property_int_set_suffix(out, " ms");
-	obs_property_t *curve = obs_properties_add_list(props, "ease_curve", obs_module_text("Easing.Curve"),
-							OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
-	const char *curves[] = {"Easing.Linear", "Easing.Sine",    "Easing.Quad",  "Easing.Cubic",
-				"Easing.Quart",  "Easing.Quint",   "Easing.Expo",  "Easing.Circ",
-				"Easing.Back",   "Easing.Elastic", "Easing.Bounce"};
-	for (int i = 0; i < 11; i++)
-		obs_property_list_add_int(curve, obs_module_text(curves[i]), i);
+	add_ease_curve_list(props, "ease_curve");
+	obs_property_t *direction = obs_properties_add_list(props, "ease_direction", obs_module_text("Easing.Mode"),
+							    OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+	obs_property_list_add_int(direction, obs_module_text("ShowHide.EaseAuto"), 0);
+	for (int i = 0; i < 3; i++)
+		obs_property_list_add_int(direction, obs_module_text(kEaseModes[i].text), i + 1);
+	set_tip(direction, obs_module_text("ShowHide.EaseAuto.Tip"));
 	for (const auto &[name, key] :
 	     std::initializer_list<std::pair<const char *, const char *>>{{"item", "ShowHide.Item.Tip"},
 									  {"style", "ShowHide.Style.Tip"},

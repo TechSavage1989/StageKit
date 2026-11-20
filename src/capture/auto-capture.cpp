@@ -53,6 +53,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/loading.hpp"
 #include "../common/pick-list.hpp"
 #include "../common/tooltip.hpp"
+#include "../common/hotkey-rename.hpp"
 
 #include <obs-module.h>
 #include <util/platform.h>
@@ -1386,20 +1387,8 @@ public:
 		// "Hide or show the capture", under the capture in OBS's hotkeys.
 		// (The same beginning as the window switchers' own, so the Stream
 		// Deck's Manual Window / Source key presses it too.)
-		if (hotkey_ == OBS_INVALID_HOTKEY_ID && parent) {
-			const std::string name = obs_source_get_name(source_) ? obs_source_get_name(source_) : "";
-			std::string text = obs_module_text("Hotkey.AppCapture.Hide");
-			const size_t at = text.find("%1");
-			if (at != std::string::npos)
-				text.replace(at, 2, name);
-			hotkey_ = obs_hotkey_register_source(
-				parent, ("stagekit.active.hide." + name).c_str(), text.c_str(),
-				[](void *data, obs_hotkey_id, obs_hotkey_t *, bool pressed) {
-					if (pressed)
-						static_cast<AutoCapture *>(data)->ask_hide();
-				},
-				this);
-		}
+		if (hotkey_ == OBS_INVALID_HOTKEY_ID && parent)
+			register_hotkey(parent);
 		// Whatever the source is aimed at now is not something we chose.
 		aimed_once_ = false;
 		applied_key_.clear();
@@ -1407,6 +1396,29 @@ public:
 		spent_.clear();
 		listen(parent);
 	}
+	// Registers the hide hotkey under the filter's current name, in place of
+	// the one there was (a rename keeps its bindings: `renamed_`).
+	void register_hotkey(obs_source_t *parent)
+	{
+		if (hotkey_ != OBS_INVALID_HOTKEY_ID)
+			obs_hotkey_unregister(hotkey_);
+		hotkey_ = OBS_INVALID_HOTKEY_ID;
+		if (!parent)
+			return;
+		const std::string name = obs_source_get_name(source_) ? obs_source_get_name(source_) : "";
+		std::string text = obs_module_text("Hotkey.AppCapture.Hide");
+		const size_t at = text.find("%1");
+		if (at != std::string::npos)
+			text.replace(at, 2, name);
+		hotkey_ = obs_hotkey_register_source(
+			parent, ("stagekit.active.hide." + name).c_str(), text.c_str(),
+			[](void *data, obs_hotkey_id, obs_hotkey_t *, bool pressed) {
+				if (pressed)
+					static_cast<AutoCapture *>(data)->ask_hide();
+			},
+			this);
+	}
+
 	void detach()
 	{
 		// Taken off the capture: a Standby Picture it had put over it goes.
@@ -1767,6 +1779,8 @@ private:
 	std::atomic<bool> hid_pending_{false};  // items hidden by the command, to show again
 	double state_s_ = 1.0;                  // since the state was last reported
 	obs_hotkey_id hotkey_ = OBS_INVALID_HOTKEY_ID;
+	HotkeyRename renamed_{source_, [this] { return std::vector<obs_hotkey_id *>{&hotkey_}; },
+			      [this] { register_hotkey(obs_filter_get_parent(source_)); }};
 	Mode mode_ = Mode::AnyGame;
 	std::vector<std::string> always_, never_;
 	bool fallback_fullscreen_ = true;

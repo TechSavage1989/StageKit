@@ -34576,10 +34576,13 @@ int main(int argc, char **argv)
 									      add_source->findData("Copy Target") > 0 &&
 									      dock->findChild<QLabel *>(
 										      "copySourcesSame"),
-								      "the dock lists the sources that can be added to 'Sources to copy to', and says 'The same source' while none is");
+								      "the dock lists the sources that can be added to 'Sources to copy to', and shows an empty list while none is");
 								if (add_source) {
 									emit add_source->activated(
 										add_source->findData("Copy Target"));
+									// Since D17 a listed source counts only with Copy to: Chosen sources.
+									if (auto *copy_to = dock->findChild<QComboBox *>("copyTo"))
+										copy_to->setCurrentIndex(1);
 									for (int i = 0; i < 4; i++) {
 										QCoreApplication::processEvents();
 										sleep_ms(50);
@@ -34608,6 +34611,8 @@ int main(int argc, char **argv)
 								if (auto *remove = dock->findChild<QPushButton *>(
 									    "copySourcesRemove"))
 									remove->click();
+								if (auto *copy_to = dock->findChild<QComboBox *>("copyTo"))
+									copy_to->setCurrentIndex(0);
 								for (int i = 0; i < 6; i++) {
 									QCoreApplication::processEvents();
 									sleep_ms(50);

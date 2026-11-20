@@ -27,6 +27,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/pick-list.hpp"
 #include "../common/scene-util.hpp"
 #include "../common/tooltip.hpp"
+#include "../common/hotkey-rename.hpp"
 
 #include <obs-module.h>
 #include <graphics/vec4.h>
@@ -1999,6 +2000,11 @@ private:
 	std::atomic<bool> pending_{false};
 	std::atomic<bool> ready_{false};
 	obs_hotkey_id hotkey_ = OBS_INVALID_HOTKEY_ID;
+	// Last: let go of first.
+	HotkeyRename renamed_{source_, [this] { return std::vector<obs_hotkey_id *>{&hotkey_}; }, [this] {
+				      if (parent_)
+					      attach(parent_);
+			      }};
 };
 
 obs_properties_t *picture_shape_properties(void *)

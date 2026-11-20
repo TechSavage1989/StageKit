@@ -25,22 +25,21 @@ inline constexpr const char *kStartImageId = "stagekit_start_image";
 // stored with the scene collection.
 std::string start_image_path();
 void set_start_image_path(const std::string &path);
-// The same, when a person picks the image (the dock, the Start Image source):
-// Ambient Backgrounds showing a picture of their own then switch to it.
+// The same, when a person picks the image (the dock, the Start Image
+// source). An empty path clears it (the dock's No standby image).
 void choose_start_image(const std::string &path);
-// Goes up every time a person picks a start image.
-uint64_t start_image_choice();
 // Goes up every time the path changes, so users of it can tell cheaply.
 uint64_t start_image_revision();
 
 // The moving background's picture, set once for the whole collection: empty
-// means "the start image". The zoom and focus are kept at their neutral
+// means "the start image". The zoom and focus are fixed at their neutral
 // values: the owner wanted zooming in the dock's thumbnail only, not in the
-// scene (0.1.0-beta20 and beta21 applied them to the background).
+// scene (0.1.0-beta20 and beta21 applied them to the background). They are
+// no longer saved (review C104); a collection that has them reads its image.
 struct AmbientView {
 	std::string image;
-	double zoom = 1.0;
-	double focus_x = 0.5, focus_y = 0.5;
+	static constexpr double zoom = 1.0;
+	static constexpr double focus_x = 0.5, focus_y = 0.5;
 };
 AmbientView ambient_view();
 // Counts as a change of the start image for everything that follows it.
