@@ -28,6 +28,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/shown-scale.hpp"
 #include "../common/tooltip.hpp"
 #include "../look/look-paint.hpp"
+#include "../look/outline-pattern.hpp"
 
 #include <obs-module.h>
 #include <graphics/vec2.h>
@@ -93,6 +94,7 @@ struct Settings {
 	int outline_corners = 0; // 0 round the picture's own shape; 1..4 round its box (look-paint.hpp)
 	double outline_corner_size = 20.0;
 	OutlineDesign design;
+	double pattern_shown = 1.0; // a pattern fill's size in the source's pixels, for one on screen
 	double intensity = 1.0;
 	// Sizes are meant as they look on screen: an item drawn at half size
 	// gets twice the numbers, so 20 px of shadow is 20 px in the picture.
@@ -942,6 +944,7 @@ Settings ShadowBackdrop::settings()
 		s.outline_corner_size /= both;
 		s.design.dash = std::min(400.0, s.design.dash / both);
 		s.design.gap = std::min(400.0, s.design.gap / both);
+		s.pattern_shown = 1.0 / both;
 		s.radius /= both;
 	}
 	return s;
@@ -1066,6 +1069,16 @@ void ShadowBackdrop::render()
 		const bool known = seen.known() && !s.backdrop;
 		// (Every value the pass reads, each time it runs: an effect's
 		// values last for one draw.)
+		// A pattern fill: the pattern over the source and its room, in the
+		// source's own space (where it is on screen is not known here),
+		// sized as it would be on the canvas.
+		gs_texture_t *pattern = nullptr;
+		if (s.design.pattern() && s.outline_fill != Fill::Picture) {
+			obs_video_info ovi;
+			const double canvas = obs_get_video_info(&ovi) ? (double)ovi.base_height : 1080.0;
+			pattern = outline_pattern_texture(s.design, s.outline_color, ow, oh,
+							  canvas / (double)oh * s.pattern_shown);
+		}
 		auto line_values = [&](const OutlineDesign &design) {
 			vec4 outline_color;
 			vec4_from_rgba(&outline_color, s.outline_color);
@@ -1087,7 +1100,7 @@ void ShadowBackdrop::render()
 			gs_effect_set_texture(p_rect_tex_, known ? seen.rect : no_rect_);
 			gs_effect_set_texture(p_area_tex_, known ? seen.area : no_rect_);
 			gs_effect_set_float(p_rect_known_, known ? 1.0f : 0.0f);
-			design_.set(design);
+			design_.set(design, design.pattern() ? pattern : nullptr, card);
 		};
 		// The shadow is thrown by the whole line: a design's gaps are not
 		// holes in it. (An inner line changes no silhouette.)

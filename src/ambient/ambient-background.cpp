@@ -59,14 +59,24 @@ namespace {
 enum class BaseType : int { Image = 0, Source = 1, StartImage = 2, Pattern = 3 };
 // The patterns, each a technique of stagekit-patterns.effect. Saved by
 // number: new ones go at the end.
-constexpr const char *kPatternTechniques[] = {"Aurora", "Plasma",   "Lava",   "Waves", "Bokeh",
-					      "Stars",  "Gradient", "Nebula", "Grid",  "Rays"};
-constexpr const char *kPatternNames[] = {"Ambient.Pattern.Aurora",   "Ambient.Pattern.Plasma", "Ambient.Pattern.Lava",
-					 "Ambient.Pattern.Waves",    "Ambient.Pattern.Bokeh",  "Ambient.Pattern.Stars",
-					 "Ambient.Pattern.Gradient", "Ambient.Pattern.Nebula", "Ambient.Pattern.Grid",
-					 "Ambient.Pattern.Rays"};
-constexpr int kPatterns = 10;
-constexpr const char *kPatternsFile = "effects/stagekit-patterns.effect";
+constexpr const char *kPatternTechniques[] = {"Aurora",   "Plasma", "Lava",    "Waves",  "Bokeh",   "Stars",
+					      "Gradient", "Nebula", "Grid",    "Rays",   "Circuit", "Hex",
+					      "Rain",     "Tunnel", "Ripples", "Embers", "SunGrid"};
+constexpr const char *kPatternNames[] = {
+	"Ambient.Pattern.Aurora", "Ambient.Pattern.Plasma", "Ambient.Pattern.Lava",     "Ambient.Pattern.Waves",
+	"Ambient.Pattern.Bokeh",  "Ambient.Pattern.Stars",  "Ambient.Pattern.Gradient", "Ambient.Pattern.Nebula",
+	"Ambient.Pattern.Grid",   "Ambient.Pattern.Rays",   "Ambient.Pattern.Circuit",  "Ambient.Pattern.Hex",
+	"Ambient.Pattern.Rain",   "Ambient.Pattern.Tunnel", "Ambient.Pattern.Ripples",  "Ambient.Pattern.Embers",
+	"Ambient.Pattern.SunGrid"};
+constexpr int kPatterns = 17;
+// The first ten are in one shader file and the later ones in another, so a
+// compiler that refuses a later one leaves the first ten alone.
+constexpr const char *kPatternFiles[] = {"effects/stagekit-patterns.effect", "effects/stagekit-patterns-more.effect"};
+constexpr int kFirstMorePattern = 10;
+constexpr int pattern_file(int pattern)
+{
+	return pattern >= kFirstMorePattern ? 1 : 0;
+}
 // A pattern comes back to where it began after this long at a speed of 100 %:
 // the shader is handed how far through it is, 0..1, never a growing time.
 constexpr double kPatternLoopS = 240.0;
@@ -342,8 +352,10 @@ private:
 	// The patterns: a shader file of their own, loaded when a pattern is first
 	// chosen. Should it not load, the image is the background and the log says
 	// so once.
+	// (Of the two files, the one the chosen pattern is in: `patterns_tried_`
+	// says which was last asked for, -1 none yet.)
 	gs_effect_t *patterns_ = nullptr;
-	bool patterns_tried_ = false;
+	int patterns_tried_ = -1;
 	gs_eparam_t *pp_phase_ = nullptr;
 	gs_eparam_t *pp_aspect_ = nullptr;
 	gs_eparam_t *pp_scale_ = nullptr;
@@ -581,16 +593,18 @@ void AmbientBackground::update(obs_data_t *settings)
 	pattern_speed_ = s.pattern_speed;
 	// The patterns' shaders, the first time a pattern is asked for. Nothing
 	// is loaded for a background that never shows one.
-	if (s.base_type == BaseType::Pattern && !patterns_tried_) {
-		patterns_tried_ = true;
+	if (s.base_type == BaseType::Pattern && patterns_tried_ != pattern_file(s.pattern)) {
 		// (The tests name a file that is not there.)
 		const char *named = obs_data_get_string(settings, "test_pattern_effect");
-		const char *file = *named ? named : kPatternsFile;
+		const char *file = *named ? named : kPatternFiles[pattern_file(s.pattern)];
 		char *path = obs_module_file(file);
 		char *errors = nullptr;
+		// (All of it in the graphics context: a drawing never sees one
+		// file's effect with the other's values.)
 		obs_enter_graphics();
+		patterns_tried_ = pattern_file(s.pattern);
+		gs_effect_destroy(patterns_);
 		patterns_ = path ? gs_effect_create_from_file(path, &errors) : nullptr;
-		obs_leave_graphics();
 		if (patterns_) {
 			pp_phase_ = gs_effect_get_param_by_name(patterns_, "phase");
 			pp_aspect_ = gs_effect_get_param_by_name(patterns_, "aspect");
@@ -599,11 +613,12 @@ void AmbientBackground::update(obs_data_t *settings)
 			pp_colour_[0] = gs_effect_get_param_by_name(patterns_, "colour1");
 			pp_colour_[1] = gs_effect_get_param_by_name(patterns_, "colour2");
 			pp_colour_[2] = gs_effect_get_param_by_name(patterns_, "colour3");
-		} else {
+		}
+		obs_leave_graphics();
+		if (!patterns_)
 			obs_log(LOG_ERROR,
 				"Ambient Background: the patterns are not available (failed to load '%s': %s); the image is shown in a pattern's place.",
 				file, errors ? errors : "not found");
-		}
 		bfree(errors);
 		bfree(path);
 	}
@@ -1225,7 +1240,7 @@ void AmbientBackground::render()
 	gs_enable_framebuffer_srgb(false);
 
 	gs_texture_t *base = nullptr;
-	base_is_pattern_ = s.base_type == BaseType::Pattern && patterns_;
+	base_is_pattern_ = s.base_type == BaseType::Pattern && patterns_ && patterns_tried_ == pattern_file(s.pattern);
 	if (base_is_pattern_) {
 		base = draw_pattern(s, iw, ih);
 	} else if (s.base_type == BaseType::Source) {

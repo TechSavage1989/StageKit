@@ -169,6 +169,8 @@ target_sources(
     # ==== scene-filters:shadow ====
     src/look/look-paint.cpp
     src/look/look-paint.hpp
+    src/look/outline-pattern.cpp
+    src/look/outline-pattern.hpp
     src/look/scene-shadow.cpp
     src/look/scene-shadow.hpp
     # ==== end scene-filters:shadow ====

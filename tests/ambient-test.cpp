@@ -10642,9 +10642,11 @@ static void ambient_patterns_test(uint32_t w, uint32_t h, const char *base_image
 	printf("\n[ambient background: patterns]\n");
 	std::error_code made;
 	std::filesystem::create_directories(sheet, made);
-	static const char *const kNames[] = {"aurora",    "plasma",        "lava lamp", "waves",      "bokeh",
-					     "starfield", "gradient flow", "nebula",    "grid pulse", "rays"};
-	constexpr int kCount = 10;
+	static const char *const kNames[] = {"aurora",        "plasma",        "lava lamp",   "waves",      "bokeh",
+					     "starfield",     "gradient flow", "nebula",      "grid pulse", "rays",
+					     "circuit board", "hex grid",      "matrix rain", "tunnel",     "ripples",
+					     "embers",        "sun grid"};
+	constexpr int kCount = 17;
 
 	static int unavailable = 0;
 	static log_handler_t prev_log = nullptr;
@@ -10806,7 +10808,7 @@ static void ambient_patterns_test(uint32_t w, uint32_t h, const char *base_image
 			return double(same) / double(n);
 		};
 		const std::vector<uint8_t> &plain = first[7];
-		const std::vector<uint8_t> hexes = shot("11 nebula, hexagons", [](obs_data_t *d) {
+		const std::vector<uint8_t> hexes = shot("18 nebula, hexagons", [](obs_data_t *d) {
 			obs_data_set_int(d, "pattern", 7);
 			obs_data_unset_user_value(d, "pattern_colour1");
 			obs_data_unset_user_value(d, "pattern_colour2");
@@ -10817,7 +10819,7 @@ static void ambient_patterns_test(uint32_t w, uint32_t h, const char *base_image
 		CHECK(mean_abs_diff(plain, hexes) > 0.5 && flat(hexes) > 0.9 && flat(hexes) > flat(plain) + 0.2,
 		      "the hexagon mosaic acts on a pattern: flat cells (%.2f of neighbouring pixels alike, against %.2f plain), %.2f apart",
 		      flat(hexes), flat(plain), mean_abs_diff(plain, hexes));
-		const std::vector<uint8_t> soft = shot("12 aurora, blurred, bloom", [](obs_data_t *d) {
+		const std::vector<uint8_t> soft = shot("19 aurora, blurred, bloom", [](obs_data_t *d) {
 			obs_data_set_int(d, "pixel_style", 0);
 			obs_data_set_int(d, "pattern", 0);
 			obs_data_set_double(d, "blur", 60);
@@ -16459,7 +16461,7 @@ static void outline_designs_test(uint32_t w, uint32_t h, const std::string &out)
 		const size_t count = p ? obs_property_list_item_count(p) : 0;
 		obs_properties_destroy(props);
 		before[i] = shot(scenes[i]);
-		CHECK(unset && kind == 0 && count == 12,
+		CHECK(unset && kind == 0 && count == 27,
 		      "%s: a filter saved without a design reads Solid, of %zu designs (%lld)", who[i], count, kind);
 	}
 	both([](obs_data_t *s) { obs_data_set_int(s, "outline_design", 0); });
@@ -16712,6 +16714,456 @@ static void outline_designs_test(uint32_t w, uint32_t h, const std::string &out)
 		obs_source_release(src);
 	// (OBS takes released sources apart on a thread of its own.)
 	sleep_ms(500);
+}
+
+// Outline designs filled with a pattern (beta215): the line is a window onto
+// one of Ambient Background's patterns, in both filters. Run alone with
+// STAGEKIT_TEST_ONLY_OUTLINE_PATTERNS.
+static int g_op_unavailable = 0;
+static void outline_patterns_test(uint32_t w, uint32_t h, const std::string &out)
+{
+	printf("\n[outline patterns: the line filled with a moving pattern, in Shadow, Glow & Outline and Scene Shadow]\n");
+	const std::string dir = out + "/../outline-patterns";
+	const std::string same = out + "/../outline-patterns-same";
+	if (std::system(("mkdir -p '" + dir + "' '" + same + "'").c_str()) != 0)
+		printf("  (could not make %s)\n", dir.c_str());
+	static log_handler_t prev_log = nullptr;
+	static void *prev_param = nullptr;
+	base_get_log_handler(&prev_log, &prev_param);
+	g_op_unavailable = 0;
+	base_set_log_handler(
+		[](int level, const char *format, va_list args, void *) {
+			char text[2048];
+			va_list copy;
+			va_copy(copy, args);
+			vsnprintf(text, sizeof(text), format, copy);
+			va_end(copy);
+			if (strstr(text, "Outline patterns are not available"))
+				g_op_unavailable++;
+			if (prev_log)
+				prev_log(level, format, args, prev_param);
+		},
+		nullptr);
+	auto block = [](const char *name, long long abgr, int bw, int bh) {
+		obs_data_t *d = obs_data_create();
+		obs_data_set_int(d, "color", abgr);
+		obs_data_set_int(d, "width", bw);
+		obs_data_set_int(d, "height", bh);
+		obs_source_t *src = obs_source_create("color_source", name, d, nullptr);
+		obs_data_release(d);
+		return src;
+	};
+	auto put = [](obs_scene_t *scene, obs_source_t *src, float x, float y) {
+		obs_sceneitem_t *item = obs_scene_add(scene, src);
+		vec2 p;
+		vec2_set(&p, x, y);
+		obs_sceneitem_set_pos(item, &p);
+		return item;
+	};
+	auto px = [&](const std::vector<uint8_t> &f, int x, int y, int c) {
+		return (int)f[(size_t(y) * w + x) * 4 + c];
+	};
+	auto shot = [&](obs_source_t *src, int wait = 350) {
+		sleep_ms(wait);
+		render(src, w, h);
+		return render(src, w, h);
+	};
+	auto set = [](obs_source_t *f, const std::function<void(obs_data_t *)> &change) {
+		obs_data_t *s = obs_source_get_settings(f);
+		change(s);
+		obs_source_update(f, s);
+		obs_data_release(s);
+	};
+	auto counts = [](const char *what) {
+		calldata_t cd = {};
+		calldata_set_string(&cd, "file", "");
+		proc_handler_call(obs_get_proc_handler(), "stagekit_test_outline_patterns", &cd);
+		const long long n = calldata_int(&cd, what);
+		calldata_free(&cd);
+		return n;
+	};
+	// The source's box and its 12 px line.
+	const int x0 = 220, y0 = 120, x1 = 420, y1 = 240, lw = 12;
+	// In the line's band, well clear of its smoothed edges.
+	auto in_band = [&](int x, int y) {
+		const bool in_outer = x >= x0 - lw + 2 && x < x1 + lw - 2 && y >= y0 - lw + 2 && y < y1 + lw - 2;
+		const bool in_box = x >= x0 - 2 && x < x1 + 2 && y >= y0 - 2 && y < y1 + 2;
+		return in_outer && !in_box;
+	};
+	// Not the line at all: outside it, or the source itself.
+	auto off_line = [&](int x, int y) {
+		const bool in_outer = x >= x0 - lw - 1 && x < x1 + lw + 1 && y >= y0 - lw - 1 && y < y1 + lw + 1;
+		const bool in_box = x >= x0 + 1 && x < x1 - 1 && y >= y0 + 1 && y < y1 - 1;
+		return !in_outer || in_box;
+	};
+	// How much the band's colour varies (the three channels' deviations).
+	auto spread = [&](const std::vector<uint8_t> &f) {
+		double sum[3] = {0, 0, 0}, sq[3] = {0, 0, 0};
+		long n = 0;
+		for (int y = 0; y < (int)h; y++)
+			for (int x = 0; x < (int)w; x++)
+				if (in_band(x, y)) {
+					for (int c = 0; c < 3; c++) {
+						const double v = px(f, x, y, c);
+						sum[c] += v;
+						sq[c] += v * v;
+					}
+					n++;
+				}
+		double total = 0.0;
+		for (int c = 0; c < 3; c++)
+			total += std::sqrt(std::max(0.0, sq[c] / n - (sum[c] / n) * (sum[c] / n)));
+		return total;
+	};
+	auto most = [&](const std::vector<uint8_t> &a, const std::vector<uint8_t> &b,
+			const std::function<bool(int, int)> &where) {
+		int m = 0;
+		for (int y = 0; y < (int)h; y++)
+			for (int x = 0; x < (int)w; x++)
+				if (where(x, y))
+					for (int c = 0; c < 3; c++)
+						m = std::max(m, std::abs(px(a, x, y, c) - px(b, x, y, c)));
+		return m;
+	};
+	auto mean = [&](const std::vector<uint8_t> &a, const std::vector<uint8_t> &b) {
+		double sum = 0.0;
+		long n = 0;
+		for (int y = 0; y < (int)h; y++)
+			for (int x = 0; x < (int)w; x++)
+				if (in_band(x, y)) {
+					for (int c = 0; c < 3; c++)
+						sum += std::abs(px(a, x, y, c) - px(b, x, y, c));
+					n += 3;
+				}
+		return sum / (double)n;
+	};
+	auto anywhere = [](int, int) {
+		return true;
+	};
+
+	obs_source_t *bg = block("OP Back", 0xFF808080, 640, 360);
+	obs_source_t *own = block("OP Own", 0xFFFFFFFF, 200, 120);
+	obs_source_t *plain = block("OP Plain", 0xFFFFFFFF, 200, 120);
+	obs_scene_t *a = obs_scene_create("OP Own Line");
+	obs_scene_t *b = obs_scene_create("OP Scene Line");
+	put(a, bg, 0, 0);
+	put(a, own, (float)x0, (float)y0);
+	put(b, bg, 0, 0);
+	put(b, plain, (float)x0, (float)y0);
+	const long long red = 0xFF2020E0, green = 0xFF30E040, blue = 0xFFF06020;
+	auto line = [&](obs_data_t *s) {
+		obs_data_set_bool(s, "shadow", false);
+		obs_data_set_bool(s, "outline", true);
+		obs_data_set_double(s, "outline_width", (double)lw);
+		obs_data_set_int(s, "outline_color", red);
+		obs_data_set_int(s, "outline_corners", 5); // square, round the box
+	};
+	obs_source_t *f_own, *f_scene;
+	{
+		obs_data_t *pd = obs_data_create();
+		obs_data_set_int(pd, "adjusted_left", 0);
+		obs_data_set_bool(pd, "screen_px", false);
+		line(pd);
+		f_own = obs_source_create("stagekit_shadow_backdrop", "OP Own", pd, nullptr);
+		obs_data_release(pd);
+		obs_source_filter_add(own, f_own);
+		obs_data_t *zd = obs_data_create();
+		obs_data_set_int(zd, "ramp_ms", 0);
+		line(zd);
+		f_scene = obs_source_create("stagekit_scene_shadow", "OP Scene", zd, nullptr);
+		obs_data_release(zd);
+		obs_source_filter_add(obs_scene_get_source(b), f_scene);
+	}
+	obs_source_t *const filters[2] = {f_own, f_scene};
+	obs_source_t *const scenes[2] = {obs_scene_get_source(a), obs_scene_get_source(b)};
+	const char *const who[2] = {"Shadow, Glow & Outline", "Scene Shadow"};
+	auto both = [&](const std::function<void(obs_data_t *)> &change) {
+		for (obs_source_t *f : filters)
+			set(f, change);
+	};
+	sleep_ms(300);
+
+	// The designs there were, with none of the new settings: kept as frames
+	// to lay beside another build's (speed 0, so they do not depend on when).
+	for (int design = 0; design <= 11; design++) {
+		both([design](obs_data_t *s) {
+			obs_data_set_int(s, "outline_design", design);
+			obs_data_set_double(s, "outline_speed", 0.0);
+			obs_data_set_int(s, "outline_color2", 0xFFFF0000);
+		});
+		for (int i = 0; i < 2; i++) {
+			char name[96];
+			snprintf(name, sizeof(name), "/%02d-%d.rgba", design, i);
+			write_frame(same + name, shot(scenes[i], 250), w, h);
+		}
+	}
+	// The plain line, to compare with.
+	both([](obs_data_t *s) {
+		obs_data_set_int(s, "outline_design", 0);
+		obs_data_set_double(s, "outline_speed", 60.0);
+	});
+	std::vector<uint8_t> solid[2];
+	for (int i = 0; i < 2; i++) {
+		solid[i] = shot(scenes[i]);
+		CHECK(spread(solid[i]) < 0.5, "%s: the solid line is one colour (%.2f)", who[i], spread(solid[i]));
+	}
+
+	static const char *const names[15] = {"aurora",        "plasma",      "lava lamp", "waves",   "nebula",
+					      "gradient flow", "starfield",   "bokeh",     "rays",    "circuit board",
+					      "hex grid",      "matrix rain", "tunnel",    "ripples", "embers"};
+	for (int p = 0; p < 15; p++) {
+		const int design = 12 + p;
+		both([&](obs_data_t *s) {
+			obs_data_set_int(s, "outline_design", design);
+			obs_data_set_int(s, "outline_color", red);
+			obs_data_set_int(s, "outline_color2", green);
+			obs_data_set_int(s, "outline_color3", blue);
+			obs_data_set_double(s, "outline_speed", 600.0);
+		});
+		std::vector<uint8_t> first[2];
+		double varied[2];
+		int outside[2], moved[2] = {0, 0};
+		for (int i = 0; i < 2; i++) {
+			first[i] = shot(scenes[i]);
+			char name[128];
+			snprintf(name, sizeof(name), "/%02d %s, %s.rgba", p * 2 + i + 1, names[p], who[i]);
+			write_frame(dir + name, first[i], w, h);
+			varied[i] = spread(first[i]);
+			outside[i] = most(first[i], solid[i], off_line);
+		}
+		for (int wait : {700, 500})
+			for (int i = 0; i < 2; i++)
+				moved[i] = std::max(moved[i], most(first[i], shot(scenes[i], wait), in_band));
+		// Still, and with other colours.
+		both([](obs_data_t *s) { obs_data_set_double(s, "outline_speed", 0.0); });
+		std::vector<uint8_t> still[2];
+		int at_rest[2];
+		for (int i = 0; i < 2; i++) {
+			still[i] = shot(scenes[i]);
+			at_rest[i] = most(still[i], shot(scenes[i], 400), anywhere);
+		}
+		both([](obs_data_t *s) {
+			obs_data_set_int(s, "outline_color", 0xFF20E0E0);  // yellow
+			obs_data_set_int(s, "outline_color2", 0xFFE0E020); // cyan
+			obs_data_set_int(s, "outline_color3", 0xFFE020E0); // magenta
+		});
+		for (int i = 0; i < 2; i++) {
+			const std::vector<uint8_t> other = shot(scenes[i]);
+			const double recoloured = mean(still[i], other);
+			CHECK(varied[i] > 6.0 && outside[i] == 0,
+			      "%s, %s: the line is not one colour (%.1f) and nothing but the line differs from Solid (%d)",
+			      who[i], names[p], varied[i], outside[i]);
+			CHECK(moved[i] > 8 && at_rest[i] == 0 && recoloured > 12.0,
+			      "%s, %s: moves by the clock (%d), stands still at speed 0 (%d) and takes the colours given (%.1f a value with others)",
+			      who[i], names[p], moved[i], at_rest[i], recoloured);
+		}
+	}
+
+	// One picture for all who ask for the same: at speed 0 nothing is drawn
+	// again, and what is held is let go of once no line asks.
+	both([&](obs_data_t *s) {
+		obs_data_set_int(s, "outline_design", 13);
+		obs_data_set_int(s, "outline_color", red);
+		obs_data_set_int(s, "outline_color2", green);
+		obs_data_set_int(s, "outline_color3", blue);
+	});
+	{
+		shot(scenes[0]);
+		shot(scenes[1]);
+		const long long before = counts("draws");
+		for (int n = 0; n < 3; n++) {
+			shot(scenes[0], 60);
+			shot(scenes[1], 60);
+		}
+		const long long after = counts("draws"), held = counts("held");
+		CHECK(after == before && held >= 2 && held <= 4,
+		      "a pattern that stands still is drawn once and kept (%lld drawings more over six looks, %lld pictures held)",
+		      after - before, held);
+	}
+	// The size of the pattern.
+	for (int i = 0; i < 2; i++) {
+		const std::vector<uint8_t> at_100 = shot(scenes[i]);
+		set(filters[i], [](obs_data_t *s) { obs_data_set_double(s, "outline_pattern_scale", 30.0); });
+		const std::vector<uint8_t> at_30 = shot(scenes[i]);
+		set(filters[i], [](obs_data_t *s) { obs_data_set_double(s, "outline_pattern_scale", 100.0); });
+		CHECK(mean(at_100, at_30) > 8.0 && most(at_100, at_30, off_line) == 0,
+		      "%s: Pattern size changes the pattern in the line and nothing else (%.1f a value)", who[i],
+		      mean(at_100, at_30));
+	}
+	// Rounded corners still shape it: the square line's outer corner is
+	// background again, and the line beside it is still the pattern.
+	std::vector<uint8_t> none[2];
+	both([](obs_data_t *s) { obs_data_set_bool(s, "outline", false); });
+	for (int i = 0; i < 2; i++)
+		none[i] = shot(scenes[i]);
+	both([](obs_data_t *s) {
+		obs_data_set_bool(s, "outline", true);
+		obs_data_set_int(s, "outline_corners", 1);
+		obs_data_set_double(s, "outline_corner_size", 20.0);
+	});
+	for (int i = 0; i < 2; i++) {
+		const std::vector<uint8_t> f = shot(scenes[i]);
+		char name[128];
+		snprintf(name, sizeof(name), "/%02d plasma, rounded, %s.rgba", 31 + i, who[i]);
+		write_frame(dir + name, f, w, h);
+		int corner = 0, side = 0;
+		for (int c = 0; c < 3; c++) {
+			corner = std::max(corner, std::abs(px(f, x0 - lw + 1, y0 - lw + 1, c) -
+							   px(none[i], x0 - lw + 1, y0 - lw + 1, c)));
+			side = std::max(side, std::abs(px(f, x0 + 100, y0 - 6, c) - px(none[i], x0 + 100, y0 - 6, c)));
+		}
+		CHECK(corner <= 2 && side > 40 && spread(f) > 6.0,
+		      "%s: a rounded line is rounded (its square corner is %d off the background) and still filled with the pattern (%.1f)",
+		      who[i], corner, spread(f));
+	}
+	both([](obs_data_t *s) { obs_data_set_int(s, "outline_corners", 5); });
+
+	// A source like text (two bars with nothing between) keeps a line that
+	// follows it, and that line is filled with the pattern too.
+	{
+		obs_source_t *bar1 = block("OP Bar 1", 0xFFFFFFFF, 260, 26);
+		obs_source_t *bar2 = block("OP Bar 2", 0xFFFFFFFF, 180, 26);
+		obs_scene_t *text = obs_scene_create("OP Text");
+		put(text, bar1, 190, 130);
+		put(text, bar2, 190, 200);
+		obs_scene_t *ta = obs_scene_create("OP Text Own");
+		obs_scene_t *tb = obs_scene_create("OP Text Scene");
+		put(ta, bg, 0, 0);
+		put(ta, obs_scene_get_source(text), 0, 0);
+		obs_scene_t *text2 = obs_scene_create("OP Text 2");
+		put(text2, bar1, 190, 130);
+		put(text2, bar2, 190, 200);
+		put(tb, bg, 0, 0);
+		{
+			// (Cropped to the bars' surroundings: a source over the
+			// whole canvas would be Scene Shadow's background.)
+			obs_sceneitem_t *item = put(tb, obs_scene_get_source(text2), 150, 100);
+			obs_sceneitem_crop crop = {150, 100, 150, 100};
+			obs_sceneitem_set_crop(item, &crop);
+		}
+		obs_source_t *tf[2];
+		for (int i = 0; i < 2; i++) {
+			obs_data_t *d = obs_data_create();
+			line(d);
+			obs_data_set_int(d, i == 0 ? "adjusted_left" : "ramp_ms", 0);
+			if (i == 0)
+				obs_data_set_bool(d, "screen_px", false);
+			obs_data_set_int(d, "outline_design", 21);
+			obs_data_set_double(d, "outline_pattern_scale", 30.0);
+			obs_data_set_int(d, "outline_color2", green);
+			obs_data_set_int(d, "outline_color3", blue);
+			obs_data_set_double(d, "outline_speed", 0.0);
+			tf[i] = obs_source_create(i == 0 ? "stagekit_shadow_backdrop" : "stagekit_scene_shadow",
+						  i == 0 ? "OP Text Own" : "OP Text Scene", d, nullptr);
+			obs_data_release(d);
+			obs_source_filter_add(i == 0 ? obs_scene_get_source(text) : obs_scene_get_source(tb), tf[i]);
+		}
+		obs_source_t *const ts[2] = {obs_scene_get_source(ta), obs_scene_get_source(tb)};
+		for (int i = 0; i < 2; i++) {
+			sleep_ms(600);
+			const std::vector<uint8_t> f = shot(ts[i]);
+			char name[128];
+			snprintf(name, sizeof(name), "/%02d circuit board at 30 %%, a source like text, %s.rgba",
+				 33 + i, who[i]);
+			write_frame(dir + name, f, w, h);
+			// Along the line over the first bar and under the second: the
+			// colour varies; between the bars, past the lines, the grey
+			// background shows (the line follows the bars, not their box).
+			double lo[3] = {255, 255, 255}, hi[3] = {0, 0, 0};
+			for (int x = 200; x < 440; x++)
+				for (int c = 0; c < 3; c++) {
+					lo[c] = std::min(lo[c], (double)px(f, x, 124, c));
+					hi[c] = std::max(hi[c], (double)px(f, x, 124, c));
+				}
+			const double range = (hi[0] - lo[0]) + (hi[1] - lo[1]) + (hi[2] - lo[2]);
+			const int between = std::abs(px(f, 300, 184, 0) - 128) + std::abs(px(f, 300, 184, 1) - 128) +
+					    std::abs(px(f, 300, 184, 2) - 128);
+			const int lined = std::abs(px(f, 300, 124, 0) - 128) + std::abs(px(f, 300, 124, 1) - 128) +
+					  std::abs(px(f, 300, 124, 2) - 128);
+			CHECK(range > 40.0 && between <= 6 && lined > 30,
+			      "%s: a source like text keeps the line that follows it, filled with the pattern (its colours range over %.0f along a bar; %d off the background between the bars)",
+			      who[i], range, between);
+		}
+		for (int i = 0; i < 2; i++) {
+			obs_source_filter_remove(i == 0 ? obs_scene_get_source(text) : obs_scene_get_source(tb), tf[i]);
+			obs_source_release(tf[i]);
+		}
+		for (obs_scene_t *s : {ta, tb, text, text2}) {
+			obs_source_remove(obs_scene_get_source(s));
+			obs_scene_release(s);
+		}
+		obs_source_release(bar1);
+		obs_source_release(bar2);
+	}
+
+	// Without the patterns' shader file the line is the outline colour,
+	// solid, and the log says so once.
+	both([](obs_data_t *s) {
+		obs_data_set_double(s, "outline_speed", 60.0);
+		obs_data_set_string(s, "test_pattern_effect", "effects/no-such-patterns.effect");
+	});
+	for (int i = 0; i < 2; i++) {
+		shot(scenes[i]);
+		const std::vector<uint8_t> f = shot(scenes[i]);
+		CHECK(most(f, solid[i], anywhere) == 0 && g_op_unavailable == 1,
+		      "%s: without the patterns' shaders the line is the solid outline colour (%d off Solid) and the log says so once (%d)",
+		      who[i], most(f, solid[i], anywhere), g_op_unavailable);
+	}
+	both([](obs_data_t *s) { obs_data_set_string(s, "test_pattern_effect", ""); });
+	for (int i = 0; i < 2; i++) {
+		const std::vector<uint8_t> f = shot(scenes[i]);
+		CHECK(spread(f) > 6.0, "%s: with the shaders back the pattern is back (%.1f)", who[i], spread(f));
+	}
+
+	// The controls: 27 designs; a pattern shows its colours, size and speed.
+	for (int i = 0; i < 2; i++) {
+		int wrong = 0;
+		size_t count = 0;
+		for (int design = 0; design <= 26; design++) {
+			obs_data_t *s = obs_source_get_settings(filters[i]);
+			obs_data_set_int(s, "outline_design", design);
+			obs_properties_t *props = obs_source_properties(filters[i]);
+			obs_properties_apply_settings(props, s);
+			auto shown = [&](const char *name) {
+				obs_property_t *p = obs_properties_get(props, name);
+				return p && obs_property_visible(p);
+			};
+			const bool pattern = design >= 12;
+			wrong += shown("outline_color3") != pattern;
+			wrong += shown("outline_pattern_scale") != pattern;
+			wrong += shown("outline_color2") != (pattern || design == 4 || design == 8 || design == 10);
+			wrong += shown("outline_speed") != (design >= 7);
+			wrong += pattern && (shown("outline_dash") || shown("outline_gap") || shown("outline_neon"));
+			count = obs_property_list_item_count(obs_properties_get(props, "outline_design"));
+			obs_properties_destroy(props);
+			obs_data_release(s);
+		}
+		set(filters[i], [](obs_data_t *s) { obs_data_set_int(s, "outline_design", 13); });
+		CHECK(wrong == 0 && count == 27,
+		      "%s: %zu designs; a pattern shows Second colour, Third colour, Pattern size and Speed, the others do not show the new two (%d wrong)",
+		      who[i], count, wrong);
+	}
+
+	// Nothing asks any more: the pictures are let go of.
+	both([](obs_data_t *s) { obs_data_set_int(s, "outline_design", 0); });
+	shot(scenes[0]);
+	shot(scenes[1]);
+	sleep_ms(2600);
+	CHECK(counts("held") == 0, "with no pattern in any line the pictures are let go of (%lld held)",
+	      counts("held"));
+
+	for (int i = 0; i < 2; i++) {
+		obs_source_filter_remove(i == 0 ? own : obs_scene_get_source(b), filters[i]);
+		obs_source_release(filters[i]);
+	}
+	for (obs_scene_t *s : {a, b}) {
+		obs_source_remove(obs_scene_get_source(s));
+		obs_scene_release(s);
+	}
+	obs_source_release(bg);
+	obs_source_release(own);
+	obs_source_release(plain);
+	base_set_log_handler(prev_log, prev_param);
 }
 // ==== end scene-filters:shadow ====
 
@@ -18571,6 +19023,13 @@ int main(int argc, char **argv)
 
 	if (getenv("STAGEKIT_TEST_ONLY_SHADOW_EACH")) { // to try that section alone
 		scene_shadow_each_test(w, h, out);
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
+	if (getenv("STAGEKIT_TEST_ONLY_OUTLINE_PATTERNS")) { // to try that section alone
+		outline_patterns_test(w, h, out);
 		obs_shutdown();
 		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
 		       g_failures == 1 ? "" : "s");

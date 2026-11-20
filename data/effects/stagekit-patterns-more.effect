@@ -1,0 +1,406 @@
+// StageKit Ambient Background: more procedural patterns
+//
+// The patterns added after the first ten (stagekit-patterns.effect), in a
+// file of their own: a compiler that refuses any of these takes only these
+// away, and the first ten still load. The same uniforms and the same rules:
+// constant loop bounds, float(i) casts, no inout, no atan2, no large
+// numbers; time arrives as `phase`, 0..1 over one loop, and every motion
+// makes a whole number of turns in a loop.
+//
+// The helpers at the top are copies of that file's: change them together.
+
+uniform float4x4 ViewProj;
+
+uniform float phase;     // 0..1 over one loop of the animation
+uniform float2 aspect;   // (width / height, 1)
+uniform float scale;     // how large the pattern's features are, 1 = as designed
+uniform float detail;    // 0..1
+uniform float4 colour1;  // the palette; colour1 is the ground of patterns that have one
+uniform float4 colour2;
+uniform float4 colour3;
+
+struct VertData {
+	float4 pos : POSITION;
+	float2 uv  : TEXCOORD0;
+};
+
+VertData VSDefault(VertData v_in)
+{
+	VertData vert_out;
+	vert_out.pos = mul(float4(v_in.pos.xyz, 1.0), ViewProj);
+	vert_out.uv  = v_in.uv;
+	return vert_out;
+}
+
+// An angle that makes k whole turns in a loop.
+float turn(float k)
+{
+	return 6.2831853 * frac(phase * k);
+}
+
+// The screen with its middle at 0 and its height 1 (at scale 1).
+float2 place(float2 uv)
+{
+	return (uv - float2(0.5, 0.5)) * aspect / max(scale, 0.05);
+}
+
+// colour1 -> colour2 -> colour3 -> colour1, round and round
+float3 palette_round(float t)
+{
+	float u = frac(t) * 3.0;
+	float3 a = lerp(colour1.rgb, colour2.rgb, saturate(u));
+	float3 b = lerp(a, colour3.rgb, saturate(u - 1.0));
+	return lerp(b, colour1.rgb, saturate(u - 2.0));
+}
+
+// 0..1 from a cell's number. Small numbers only, so it is the same everywhere.
+float hash(float2 p)
+{
+	float3 p3 = frac(float3(p.x, p.y, p.x) * 0.1031);
+	float d = dot(p3, float3(p3.y, p3.z, p3.x) + float3(33.33, 33.33, 33.33));
+	p3 = p3 + float3(d, d, d);
+	return frac((p3.x + p3.y) * p3.z);
+}
+
+// A cell's number wrapped to 0..15, so a layer that drifts a whole number
+// of sixteen cells in a loop comes back to where it began.
+float2 wrap16(float2 cell)
+{
+	return cell - 16.0 * floor(cell / 16.0);
+}
+
+// ------------------------------------------------------------ Circuit board
+
+float seg_dist(float2 p, float2 a, float2 b)
+{
+	float2 pa = p - a;
+	float2 ba = b - a;
+	float t = saturate(dot(pa, ba) / max(dot(ba, ba), 0.0001));
+	return length(pa - ba * t);
+}
+
+// Whether a trace crosses the side between cell `c` and the next one to its
+// right (way 0) or below it (way 1). Some rows and columns are busier.
+float crosses(float2 c, float way, float density)
+{
+	float lane = hash(float2(lerp(c.y, c.x, way), 31.0 + way * 9.0));
+	float h = hash(c + float2(11.0 + way * 37.0, 5.0 + way * 13.0));
+	return step(h, density * (0.45 + 1.1 * lane));
+}
+
+// A light running along trace number `line_no`, seen from `along` cells
+// along it: a head and a tail, eight cells apart.
+float data_pulse(float line_no, float along)
+{
+	float n = line_no - 16.0 * floor(line_no / 16.0);
+	float h = hash(float2(n, 13.0));
+	float h2 = hash(float2(29.0, n));
+	float way = h2 < 0.5 ? 1.0 : -1.0;
+	float at = frac(phase * (24.0 + floor(h * 24.0))) * way + h2;
+	float d = (frac((along / 8.0) - at + 0.5) - 0.5) * way;
+	return d < 0.0 ? exp(d * 22.0) : exp(-d * 260.0);
+}
+
+// One layer of board in cells: x the traces, y the pads, z the light on the
+// traces. A trace runs from a cell's middle to each side it crosses; one
+// across and one up or down are joined by a slanted run instead.
+float3 circuit(float2 q, float density)
+{
+	float2 cell = floor(q);
+	float2 f = q - cell;
+	float l = crosses(cell - float2(1.0, 0.0), 0.0, density);
+	float r = crosses(cell, 0.0, density);
+	float t = crosses(cell - float2(0.0, 1.0), 1.0, density);
+	float b = crosses(cell, 1.0, density);
+	float n = l + r + t + b;
+	float2 mid = float2(0.5, 0.5);
+	float d_h = min(seg_dist(f, mid, float2(0.0, 0.5)) + (1.0 - l) * 9.0,
+			seg_dist(f, mid, float2(1.0, 0.5)) + (1.0 - r) * 9.0);
+	float d_v = min(seg_dist(f, mid, float2(0.5, 0.0)) + (1.0 - t) * 9.0,
+			seg_dist(f, mid, float2(0.5, 1.0)) + (1.0 - b) * 9.0);
+	float corner = step(1.5, n) * step(n, 2.5) * step(0.5, l + r) * step(l + r, 1.5);
+	float d_slant = seg_dist(f, float2(r, 0.5), float2(0.5, b));
+	float d = lerp(min(d_h, d_v), d_slant, corner);
+	float trace = 1.0 - smoothstep(0.05, 0.085, d);
+	// A pad where a trace ends and where three or four meet, and a via
+	// by itself now and then.
+	float lone = step(n, 0.5) * step(hash(cell + float2(3.0, 71.0)), 0.1 + 0.25 * detail);
+	float pad_here = saturate(step(0.5, n) * step(n, 1.5) + step(2.5, n) + lone);
+	float dc = length(f - mid);
+	float pad = (1.0 - smoothstep(0.17, 0.205, dc)) * smoothstep(0.06, 0.095, dc) * pad_here;
+	float across = saturate(step(d_h, d_v) + corner);
+	float light = lerp(data_pulse(cell.x + 9.0, q.y), data_pulse(cell.y + 3.0, q.x), across);
+	return float3(trace, pad, light * saturate(trace + pad));
+}
+
+float4 PSCircuit(VertData v_in) : TARGET
+{
+	float2 q = place(v_in.uv) * 9.0 + float2(40.5, 40.5);
+	float density = 0.3 + 0.45 * detail;
+	float3 big = circuit(q, density);
+	float3 fine = circuit(q * 2.0 + float2(13.0, 7.0), density * 0.8);
+	float3 board = colour1.rgb * (0.55 + 0.25 * v_in.uv.y);
+	float3 rgb = lerp(board, colour2.rgb * 0.45 + board * 0.35, fine.x * 0.8);
+	rgb += colour3.rgb * fine.z * 0.3;
+	rgb = lerp(rgb, colour2.rgb * 0.8, big.x);
+	rgb = lerp(rgb, colour2.rgb, big.y);
+	rgb += lerp(colour3.rgb, float3(1.0, 1.0, 1.0), 0.25) * big.z;
+	// A chip here and there: a dark body with a rim, legs above and below
+	// and a dot in its corner. Four cells to a place for one.
+	float2 g = q / 4.0;
+	float2 place_no = floor(g);
+	float2 gf = (g - place_no - float2(0.5, 0.5)) * 4.0;
+	float chip = step(hash(place_no + float2(57.0, 23.0)), 0.16 + 0.3 * detail);
+	float2 e = abs(gf) - float2(1.25, 0.8);
+	float out_by = max(e.x, e.y);
+	float body = (1.0 - smoothstep(0.0, 0.04, out_by)) * chip;
+	float rim = body * smoothstep(-0.11, -0.07, out_by);
+	float leg = (1.0 - smoothstep(0.09, 0.13, abs(frac(gf.x * 2.0 + 0.5) - 0.5))) * step(abs(gf.x), 1.15) *
+		    step(0.0, e.y) * step(e.y, 0.32) * chip;
+	float mark = (1.0 - smoothstep(0.07, 0.1, length(gf - float2(-1.0, -0.55)))) * chip;
+	rgb = lerp(rgb, colour1.rgb * 0.3, body);
+	rgb = lerp(rgb, colour2.rgb * 0.7, saturate(rim + mark));
+	rgb = lerp(rgb, colour2.rgb, leg);
+	return float4(saturate(rgb), 1.0);
+}
+
+// ---------------------------------------------------------------- Hex grid
+
+float4 PSHex(VertData v_in) : TARGET
+{
+	float2 q = place(v_in.uv) * 7.0;
+	float2 r = float2(1.0, 1.7320508);
+	float2 half_r = r * 0.5;
+	float2 a = q - r * floor(q / r) - half_r;
+	float2 qb = q - half_r;
+	float2 b = qb - r * floor(qb / r) - half_r;
+	float2 g = lerp(b, a, step(dot(a, a), dot(b, b)));
+	float2 middle = q - g;
+	float2 n = floor(float2(middle.x * 2.0, middle.y / 0.8660254) + float2(40.5, 40.5));
+	// 0 on the cell's border, 0.5 at its middle.
+	float edge = 0.5 - max(abs(g.x), dot(abs(g), float2(0.5, 0.8660254)));
+	float h1 = hash(n);
+	float h2 = hash(n + float2(9.0, 4.0));
+	float blink = 0.5 + 0.5 * sin(turn(12.0 + floor(h1 * 12.0)) + h2 * 6.2831853);
+	blink = pow(max(blink, 0.0001), 7.0 - 5.0 * detail);
+	// A wave of light crossing the comb.
+	float sweep = 0.5 + 0.5 * sin(dot(middle, float2(0.55, 0.35)) - turn(9.0));
+	float lit = saturate(blink * 0.85 + pow(max(sweep, 0.0001), 10.0) * 0.6);
+	float border = 1.0 - smoothstep(0.02, 0.055, edge);
+	float inside = smoothstep(0.045, 0.1, edge);
+	float3 rgb = colour1.rgb * (0.5 + 0.3 * v_in.uv.y);
+	rgb = lerp(rgb, lerp(colour2.rgb, colour3.rgb, h2), lit * inside * (0.5 + edge));
+	rgb += colour2.rgb * border * (0.22 + 0.5 * lit);
+	return float4(saturate(rgb), 1.0);
+}
+
+// ------------------------------------------------------------- Matrix rain
+
+float4 PSRain(VertData v_in) : TARGET
+{
+	float2 q = place(v_in.uv) * float2(34.0, 20.0) + float2(64.0, 64.0);
+	float2 cell = floor(q);
+	float2 f = q - cell;
+	float h1 = hash(float2(cell.x, 1.0));
+	float h2 = hash(float2(3.0, cell.x));
+	float rows = 14.0 + floor(h1 * 10.0); // from one streak's head to the next
+	float v = frac(cell.y / rows - frac(phase * (40.0 + floor(h2 * 40.0))) + h1 * 7.3);
+	float there = step(hash(float2(cell.x, 5.0)), 0.45 + 0.55 * detail);
+	float tail = v * v * v;
+	float head = smoothstep(0.93, 1.0, v);
+	// A sign in each cell, three by five, changing now and then.
+	float2 wc = wrap16(cell);
+	float now = floor(frac(phase * 8.0 + hash(wc)) * 64.0);
+	float2 part = floor(f * float2(3.0, 5.0));
+	float sign_bit = step(0.45, hash(part + wc * float2(5.0, 7.0) + float2(now * 3.0, 17.0)));
+	float inside = step(0.1, f.x) * step(f.x, 0.9) * step(0.06, f.y) * step(f.y, 0.94);
+	float3 c = lerp(colour2.rgb, colour3.rgb, head);
+	c = lerp(c, float3(1.0, 1.0, 1.0), head * 0.45);
+	float3 rgb = colour1.rgb * (0.3 + 0.25 * v_in.uv.y);
+	rgb += colour2.rgb * tail * there * 0.12;
+	rgb += c * sign_bit * inside * tail * there * 1.1;
+	return float4(saturate(rgb), 1.0);
+}
+
+// ------------------------------------------------------------------ Tunnel
+
+float4 PSTunnel(VertData v_in) : TARGET
+{
+	float2 p = place(v_in.uv);
+	float dist = max(length(p), 0.0005);
+	float2 dir = p / dist;
+	float depth = 0.35 / (dist + 0.03);
+	// Rings coming out of the middle.
+	float band = 0.5 + 0.5 * cos(6.2831853 * (depth * 1.5 + frac(phase * 72.0)));
+	float ring = pow(max(band, 0.0001), 1.5 + 7.0 * detail);
+	float spokes = 0.0;
+	for (int i = 0; i < 6; i++) {
+		float ang = float(i) * 0.5235988 + turn(2.0); // a twelfth of a turn apart, both ways
+		float along = abs(dot(dir, float2(cos(ang), sin(ang))));
+		spokes = max(spokes, pow(max(along, 0.0001), 90.0));
+	}
+	float3 wall = palette_round(depth * 0.35 + phase * 9.0);
+	float3 rgb = colour1.rgb * 0.35 + wall * ring * 0.75 + colour3.rgb * spokes * (0.25 + 0.5 * ring);
+	// Dark far down the tunnel.
+	rgb = lerp(colour1.rgb * 0.15, rgb, saturate(dist * 3.2));
+	return float4(saturate(rgb), 1.0);
+}
+
+// ----------------------------------------------------------------- Ripples
+
+float4 PSRipples(VertData v_in) : TARGET
+{
+	// The drops fall over the whole screen whatever the size; the size is
+	// the rings' own.
+	float2 p = (v_in.uv - float2(0.5, 0.5)) * aspect;
+	float height = 0.0;
+	for (int i = 0; i < 9; i++) {
+		float fi = float(i);
+		float drops = 24.0 + fi * 4.0; // this one falls so many times in a loop
+		float life = phase * drops + hash(float2(fi, 7.0));
+		float n = floor(life);
+		float t = life - n;
+		n = n - drops * floor(n / drops);
+		float2 c = (float2(hash(float2(n, fi + 20.0)), hash(float2(fi + 40.0, n))) - float2(0.5, 0.5)) * aspect;
+		float d = length(p - c);
+		float reach = t * 0.42 * scale;
+		float w = 0.016 * scale;
+		float one = (d - reach) / w;
+		float two = (d - reach * 0.6) / w;
+		float ring = exp(-min(one * one, 40.0)) + 0.5 * exp(-min(two * two, 40.0));
+		float strength = (1.0 - t) * smoothstep(0.0, 0.04, t);
+		height += ring * strength * step(fi, 3.5 + 5.5 * detail);
+	}
+	float3 rgb = lerp(colour1.rgb * 0.55, colour1.rgb, v_in.uv.y);
+	rgb += colour2.rgb * height * 0.75 + colour3.rgb * height * height * 0.5;
+	return float4(saturate(rgb), 1.0);
+}
+
+// ------------------------------------------------------------------ Embers
+
+float4 PSEmbers(VertData v_in) : TARGET
+{
+	float2 p = place(v_in.uv);
+	float3 rgb = colour1.rgb * (0.3 + 0.6 * v_in.uv.y);
+	// The fire's light from below.
+	rgb += colour2.rgb * 0.3 * v_in.uv.y * v_in.uv.y * v_in.uv.y;
+	for (int i = 0; i < 4; i++) {
+		float fi = float(i);
+		float cells = 4.0 + 2.5 * fi;
+		// Rising: the nearer layers faster, sixteen cells at a time.
+		float2 q = p * cells + float2(fi * 3.1, 16.0 * frac(phase * (5.0 - fi)));
+		float2 cell = floor(q);
+		float2 f = q - cell;
+		float2 id = wrap16(cell) + float2(fi * 21.0, fi * 9.0);
+		float h1 = hash(id);
+		float h2 = hash(id + float2(7.0, 3.0));
+		float h3 = hash(id + float2(1.0, 17.0));
+		float sway = 0.12 * sin(turn(8.0 + floor(h1 * 8.0)) + h2 * 6.2831853);
+		float2 centre = float2(0.5 + (h1 - 0.5) * 0.3 + sway, 0.5 + (h2 - 0.5) * 0.3);
+		float d = length(f - centre) / (0.05 + 0.07 * h3);
+		float spark = saturate(1.0 - d);
+		spark = spark * spark + 0.3 * saturate(1.0 - d * 0.6);
+		float flicker = 0.55 + 0.45 * sin(turn(20.0 + floor(h2 * 20.0)) + h1 * 6.2831853);
+		float there = step(h3, 0.2 + 0.7 * detail);
+		float3 c = lerp(colour2.rgb, colour3.rgb, h2);
+		c = lerp(c, float3(1.0, 1.0, 1.0), saturate(spark - 0.2) * 0.5);
+		// They burn out as they rise.
+		rgb += c * spark * flicker * there * (0.6 + 0.9 * v_in.uv.y);
+	}
+	return float4(saturate(rgb), 1.0);
+}
+
+// ---------------------------------------------------------------- Sun grid
+
+float4 PSSunGrid(VertData v_in) : TARGET
+{
+	float2 p = place(v_in.uv);
+	float horizon = 0.06;
+	// The sky, lighter towards the horizon, and the sun on it.
+	float3 sky = lerp(colour1.rgb * 0.25, colour1.rgb, saturate((p.y + 0.6) / 0.66));
+	float2 sp = p - float2(0.0, horizon - 0.15);
+	float sd = length(sp);
+	float sun_r = 0.2;
+	float down = sp.y / sun_r; // -1 at its top, 1 at its bottom
+	float slit = step(0.0, down) * step(frac(down * 5.0 - frac(phase * 24.0)), 0.12 + 0.3 * down);
+	float sun = (1.0 - smoothstep(sun_r - 0.004, sun_r + 0.004, sd)) * (1.0 - slit);
+	sky += colour3.rgb * 0.35 * exp(-sd * sd * 9.0);
+	sky = lerp(sky, lerp(colour3.rgb, colour2.rgb, saturate(down * 0.5 + 0.5)), sun);
+	// The ground: a grid running to the horizon, its cross lines coming nearer.
+	float dy = max(p.y - horizon, 0.004);
+	float depth = 0.12 / dy;
+	float lanes = 6.0 + 10.0 * detail;
+	float off_x = abs(frac(p.x * depth * lanes + 0.5) - 0.5);
+	float wide_x = min(0.006 * depth * lanes, 0.5);
+	float line_x = 1.0 - smoothstep(wide_x * 0.5, wide_x, off_x);
+	float off_z = abs(frac(depth * 8.0 + frac(phase * 90.0) + 0.5) - 0.5);
+	float wide_z = min(0.006 * 8.0 * depth / dy, 0.5);
+	float line_z = 1.0 - smoothstep(wide_z * 0.5, wide_z, off_z);
+	float grid = max(line_x, line_z) * saturate(dy * 7.0);
+	float3 ground = colour1.rgb * 0.16 + colour2.rgb * grid + colour3.rgb * 0.45 * exp(-dy * 16.0);
+	float3 rgb = lerp(sky, ground, step(horizon, p.y));
+	return float4(saturate(rgb), 1.0);
+}
+
+technique Circuit
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSCircuit(v_in);
+	}
+}
+
+technique Hex
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSHex(v_in);
+	}
+}
+
+technique Rain
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSRain(v_in);
+	}
+}
+
+technique Tunnel
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSTunnel(v_in);
+	}
+}
+
+technique Ripples
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSRipples(v_in);
+	}
+}
+
+technique Embers
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSEmbers(v_in);
+	}
+}
+
+technique SunGrid
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSSunGrid(v_in);
+	}
+}

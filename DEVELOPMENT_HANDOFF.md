@@ -23,6 +23,36 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
+## Outline designs filled with a pattern (0.1.0-betaNEXT)
+
+Branch `feat/outline-patterns`, on `main` at beta214. Not pushed. The owner: "can any of the new
+background animations have counterparts for the outlines/borders?", then "maybe also add some
+more procedural animations for the background and borders. I'd like at least one of them to be
+like a circuitry/circuitboard animation style." Seven new Ambient Background patterns (10 to 16:
+Circuit board, Hex grid, Matrix rain, Tunnel, Ripples, Embers, Sun grid) and fifteen new *Outline
+design* entries (12 to 26) in Shadow, Glow & Outline and Scene Shadow fill the line with one of Ambient
+Background's patterns; *Third colour* and *Pattern size* are the two new controls. Details in
+AGENTS.md (*Outline designs filled with a pattern*).
+
+- The pattern is drawn by the patterns' own shader files into a small picture
+  (`src/look/outline-pattern.*`); the outline shaders only read it (two new uniforms, one line
+  each). **Only run on OpenGL.** If a pattern outline is a plain solid line on Windows, ask for
+  the log line `Outline patterns are not available (...)`. If *every* outline is gone on Windows
+  after this version, the two new uniforms are the first thing to look at.
+- Scene Shadow: the pattern lies over the canvas. Shadow, Glow & Outline: over the source (it
+  does not know where the source is on screen).
+- Grid pulse and Sun grid were left out of the outlines. Aurora, Starfield, Rays, Ripples and
+  Embers are mostly ground colour in a thin line; whether they are worth keeping is the owner's
+  to say. Whether Circuit board reads as one on their screen too.
+- The seven new patterns are in a file of their own, `data/effects/stagekit-patterns-more.effect`,
+  so a Direct3D refusal of one of them leaves the first ten (and their outlines) working: the
+  background then shows the standby image for the new seven only, with its log line naming the
+  file.
+- Not done: Detail as a control (fixed at 50 %), a test of a Morph between two pattern lines
+  (`lerp_design` carries the kind as for the other designs).
+- Gates run: see the table in the commit's report; the full suite was not run (the owner is short
+  on usage).
+
 ## Ambient Background patterns (0.1.0-beta214)
 
 The owner: "id like to have some animated ambient background choices added too. some procedural
