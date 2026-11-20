@@ -23,7 +23,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
-## Six hexagon and dot patterns (0.1.0-betaNEXT)
+## Six hexagon and dot patterns (0.1.0-beta221)
 
 The owner's "pattern batch 2", part 1, from reference looks (style only).
 
