@@ -1137,11 +1137,11 @@ obs_properties_t *get_properties(void *data)
 	obs_source_t *parent = self ? self->parent() : nullptr;
 	obs_properties_t *props = obs_properties_create();
 	if (parent && obs_source_is_group(parent)) {
-		obs_property_t *wrong =
-			obs_properties_add_text(props, "on_group", obs_module_text("SceneFit.OnGroup"), OBS_TEXT_INFO);
-		obs_property_text_set_info_type(wrong, OBS_TEXT_INFO_WARNING);
-		obs_property_text_set_info_word_wrap(wrong, true);
+		add_on_group_warning(props, obs_module_text("SceneFit.OnGroup"));
 	}
+	// (First, not last as in the other filters: the sources' groups are
+	// added under everything else while the window is open.)
+	add_help_line(props, obs_module_text("SceneFit.Help"));
 	obs_property_t *which = obs_properties_add_list(props, "which", obs_module_text("SceneFit.Which"),
 							OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(which, obs_module_text("SceneFit.Which.All"), (int)Which::AllSources);

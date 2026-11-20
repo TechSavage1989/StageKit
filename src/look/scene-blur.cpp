@@ -1056,10 +1056,19 @@ obs_properties_t *get_properties(void *data)
 	obs_source_t *filter = data ? static_cast<SceneBlur *>(data)->filter() : nullptr;
 	obs_source_t *parent = filter ? obs_filter_get_parent(filter) : nullptr;
 	if (parent && obs_source_is_group(parent)) {
-		obs_property_t *text =
-			obs_properties_add_text(props, "on_group", obs_module_text("SceneBlur.OnGroup"), OBS_TEXT_INFO);
-		obs_property_text_set_info_type(text, OBS_TEXT_INFO_WARNING);
+		add_on_group_warning(props, obs_module_text("SceneBlur.OnGroup"));
 	}
+
+	obs_property_t *area = obs_properties_add_list(props, "blur_area", obs_module_text("SceneBlur.Area"),
+						       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+	// Each source first, as in Scene Corners and Scene Shadow; the numbers stay as saved.
+	obs_property_list_add_int(area, obs_module_text("SceneBlur.Area.Each"), (int)Area::EachSource);
+	obs_property_list_add_int(area, obs_module_text("SceneBlur.Area.Scene"), (int)Area::Scene);
+	set_tip(area, obs_module_text("SceneBlur.Area.Tip"));
+	obs_property_set_modified_callback(area, [](obs_properties_t *p, obs_property_t *, obs_data_t *settings) {
+		blur_look_visibility(p, settings);
+		return true;
+	});
 
 	obs_property_t *cover = obs_properties_add_list(props, "cover", obs_module_text("SceneBlur.Cover"),
 							OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
@@ -1103,16 +1112,6 @@ obs_properties_t *get_properties(void *data)
 	never.choices = sources;
 	pick_list_add(props, filter, never);
 
-	obs_property_t *area = obs_properties_add_list(props, "blur_area", obs_module_text("SceneBlur.Area"),
-						       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
-	obs_property_list_add_int(area, obs_module_text("SceneBlur.Area.Scene"), (int)Area::Scene);
-	obs_property_list_add_int(area, obs_module_text("SceneBlur.Area.Each"), (int)Area::EachSource);
-	set_tip(area, obs_module_text("SceneBlur.Area.Tip"));
-	obs_property_set_modified_callback(area, [](obs_properties_t *p, obs_property_t *, obs_data_t *settings) {
-		blur_look_visibility(p, settings);
-		return true;
-	});
-
 	add_blur_look_properties(props);
 	add_blur_ramp_properties(props);
 	obs_properties_add_button2(
@@ -1123,6 +1122,7 @@ obs_properties_t *get_properties(void *data)
 			return false;
 		},
 		data);
+	add_help_line(props, obs_module_text("SceneBlur.Help"));
 	return props;
 }
 

@@ -13,12 +13,14 @@ the Free Software Foundation; either version 2 of the License, or
 #include "scene-filter-ids.hpp"
 #include "scene-util.hpp"
 #include "../transition/morph-paint.hpp"
+#include "../transition/item-morph.hpp"
 #include "../transition/morph.hpp"
 #include "tooltip.hpp"
 
 #include <obs-module.h>
 
 #include <algorithm>
+#include <functional>
 #include <atomic>
 #include <cstring>
 #include <vector>
@@ -564,7 +566,28 @@ void add_own(obs_properties_t *into, obs_data_t *settings, const std::string &pr
 	if (!theirs)
 		return;
 	obs_data_t *defaults = obs_get_source_defaults(kind.c_str());
-	for (obs_property_t *p = obs_properties_first(theirs); p; obs_property_next(&p)) {
+	// (Controls inside a transition's own headings are copied too, Morph's
+	// for one; never a list of rows, Morph's rules, its links or the group
+	// its own Unpaired transition's settings go in.)
+	std::vector<obs_property_t *> all;
+	const std::function<void(obs_properties_t *)> gather = [&](obs_properties_t *level) {
+		for (obs_property_t *p = obs_properties_first(level); p; obs_property_next(&p)) {
+			const char *name = obs_property_name(p);
+			if (obs_property_get_type(p) != OBS_PROPERTY_GROUP) {
+				all.push_back(p);
+				continue;
+			}
+			const size_t len = name ? strlen(name) : 0;
+			const bool rows = len >= 6 && (strcmp(name + len - 6, "|alist") == 0 ||
+						       strcmp(name + len - 6, "|tlist") == 0);
+			if (!name || !obs_property_visible(p) || rows || strcmp(name, "unpaired|g") == 0 ||
+			    strcmp(name, "rule_group") == 0 || strcmp(name, "links_group") == 0)
+				continue;
+			gather(obs_property_group_content(p));
+		}
+	};
+	gather(theirs);
+	for (obs_property_t *p : all) {
 		const char *their_name = obs_property_name(p);
 		const char *text = obs_property_description(p);
 		if (!their_name || !obs_property_visible(p))
@@ -690,6 +713,8 @@ inline constexpr const char *kForName = "change|for";
 
 bool rebuild_cb(void *priv, obs_properties_t *top, obs_property_t *, obs_data_t *settings);
 
+// The group the controls are in, wherever it is: straight in the window or
+// inside another group (Scene Standby's "When a source is hidden").
 obs_property_t *find_group(obs_properties_t *top, std::string &list_setting)
 {
 	for (obs_property_t *p = obs_properties_first(top); p; obs_property_next(&p)) {
@@ -698,6 +723,10 @@ obs_property_t *find_group(obs_properties_t *top, std::string &list_setting)
 			list_setting = name + strlen(kGroupStart);
 			return p;
 		}
+		if (obs_property_get_type(p) != OBS_PROPERTY_GROUP)
+			continue;
+		if (obs_property_t *inside = find_group(obs_property_group_content(p), list_setting))
+			return inside;
 	}
 	return nullptr;
 }
@@ -810,15 +839,44 @@ void build(obs_properties_t *top, obs_source_t *owner, obs_data_t *settings)
 		add_own(content, settings, prefix, kind);
 		if (kind != kMorphId)
 			continue;
+		// Controls that do nothing here are hidden (they stay, by name).
+		// Make Room's two only count with Make room under "Unpaired: show or
+		// hide" (the controls are made again when that changes); and how
+		// two sources are matched is read from the one being shown, so a
+		// Morph for hiding does not repeat it.
+		const bool room = strcmp(obs_data_get_string(settings, (prefix + "unpaired").c_str()), kUnpairedRoom) ==
+				  0;
+		for (const char *name : {"room_way", "room_fade"})
+			if (obs_property_t *p = obs_properties_get(content, (prefix + name).c_str()))
+				obs_property_set_visible(p, room);
+		if (!show)
+			for (const char *name : {"pair_main", "visible_pixels", "no_shadows"})
+				if (obs_property_t *p = obs_properties_get(content, (prefix + name).c_str()))
+					obs_property_set_visible(p, false);
 		// Morph's *Unpaired sources*: another transition, with its own
 		// settings under it, rebuilt in place when it changes.
 		const std::string unpaired_name = prefix + "unpaired";
 		if (obs_property_t *unpaired = obs_properties_get(content, unpaired_name.c_str()))
 			obs_property_set_modified_callback2(unpaired, rebuild_cb, owner);
 		const std::string fallback = obs_data_get_string(settings, unpaired_name.c_str());
-		if (item_transition_is_fallback_kind(fallback.c_str()))
-			add_own(content, settings, prefix + "unpaired|" + fallback + "|", fallback);
+		if (item_transition_is_fallback_kind(fallback.c_str())) {
+			// A line that says whose settings follow, when it has any.
+			const std::string own = prefix + "unpaired|" + fallback + "|";
+			const std::string heading = own + "heading";
+			obs_property_t *line = obs_properties_add_text(
+				content, heading.c_str(), obs_module_text("Morph.AloneOwn"), OBS_TEXT_INFO);
+			add_own(content, settings, own, fallback);
+			obs_property_t *last = line;
+			obs_property_next(&last);
+			if (!last)
+				obs_properties_remove_by_name(content, heading.c_str());
+		}
 	}
+	// For Morph: which sources change into each other. In the group, after
+	// the transitions they belong to, and shown only while Morph is chosen
+	// (show_links). Made again with the rest; what is chosen in them is in
+	// the settings.
+	add_morph_link_properties(content, owner, kMorphPrefix);
 	// (A control of no kind that shows nothing: the mark of what was made.)
 	obs_property_set_visible(obs_properties_add_text(content, signature().c_str(), "", OBS_TEXT_INFO), false);
 }
@@ -919,12 +977,12 @@ void add_item_change_properties(obs_properties_t *props, obs_source_t *owner, co
 	obs_property_set_modified_callback2(for_box, rebuild_cb, owner);
 	const std::string group_name = std::string(kGroupStart) + (list_setting ? list_setting : "");
 	obs_properties_add_group(props, group_name.c_str(), obs_module_text("Change.Group"), OBS_GROUP_NORMAL, content);
-	// For Morph: which sources change into each other.
-	add_morph_link_properties(props, owner, kMorphPrefix);
 	obs_data_t *settings = owner ? obs_source_get_settings(owner) : nullptr;
 	build(props, owner, settings);
 	if (settings)
 		show_links(props, settings);
+	else
+		add_morph_link_properties(content, owner, kMorphPrefix); // (a window of no filter)
 	obs_data_release(settings);
 }
 

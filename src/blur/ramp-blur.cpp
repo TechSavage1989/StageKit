@@ -669,7 +669,8 @@ obs_properties_t *get_properties(void *data)
 	add_blur_look_properties(props);
 	add_blur_ramp_properties(props);
 
-	// One switch for several sources.
+	// One switch for several sources: the three in one group.
+	obs_properties_t *others = obs_properties_create();
 	obs_source_t *own_filter = data ? static_cast<RampBlur *>(data)->source() : nullptr;
 	PickList also;
 	also.setting = "also";
@@ -690,9 +691,9 @@ obs_properties_t *get_properties(void *data)
 		if (own)
 			names.erase(std::remove(names.begin(), names.end(), std::string(own)), names.end());
 	};
-	pick_list_add(props, own_filter, also);
+	pick_list_add(others, own_filter, also);
 	obs_property_t *live =
-		obs_properties_add_bool(props, "also_captures", obs_module_text("RampBlur.AlsoCaptures"));
+		obs_properties_add_bool(others, "also_captures", obs_module_text("RampBlur.AlsoCaptures"));
 	set_tip(live, obs_module_text("RampBlur.AlsoCaptures.Tip"));
 	// The captures that tick box is to leave alone.
 	PickList never;
@@ -721,12 +722,21 @@ obs_properties_t *get_properties(void *data)
 		if (own)
 			names.erase(std::remove(names.begin(), names.end(), std::string(own)), names.end());
 	};
-	pick_list_add(props, own_filter, never);
+	pick_list_add(others, own_filter, never);
+	// (The list only holds back that tick box: without it, it does nothing.)
+	obs_property_set_modified_callback(live, [](obs_properties_t *p, obs_property_t *, obs_data_t *settings) {
+		if (obs_property_t *list = obs_properties_get(p, "never|alist"))
+			obs_property_set_visible(list, obs_data_get_bool(settings, "also_captures"));
+		return true;
+	});
+	obs_property_t *others_group = obs_properties_add_group(
+		props, "others_group", obs_module_text("RampBlur.OthersGroup"), OBS_GROUP_NORMAL, others);
+	set_tip(others_group, obs_module_text("RampBlur.OthersGroup.Tip"));
 
 	obs_properties_t *keys = obs_properties_create();
 	obs_property_t *in_all =
 		obs_properties_add_bool(keys, "include_in_all", obs_module_text("RampBlur.IncludeInAll"));
-	set_tip(in_all, obs_module_text("RampBlur.Help"));
+	set_tip(in_all, obs_module_text("RampBlur.IncludeInAll.Tip"));
 	obs_properties_add_button2(
 		keys, "btn_toggle", obs_module_text("RampBlur.Button.Toggle"),
 		[](obs_properties_t *, obs_property_t *, void *d) {
@@ -737,6 +747,7 @@ obs_properties_t *get_properties(void *data)
 		data);
 	obs_properties_add_group(props, "keys_group", obs_module_text("RampBlur.KeysGroup"), OBS_GROUP_NORMAL, keys);
 
+	add_help_line(props, obs_module_text("RampBlur.Help"));
 	return props;
 }
 

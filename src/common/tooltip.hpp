@@ -19,7 +19,9 @@ the Free Software Foundation; either version 2 of the License, or
 #include <obs.h>
 
 #include <cstddef>
+#include <initializer_list>
 #include <string>
+#include <utility>
 
 namespace stagekit {
 
@@ -101,6 +103,41 @@ inline void set_tip(obs_property_t *p, const char *text)
 inline void set_tip(obs_property_t *p, const std::string &text)
 {
 	obs_property_set_long_description(p, wrap_tip(text).c_str());
+}
+
+// Tooltips by control name, for controls made elsewhere or in a loop: each
+// pair is a control's name and its text (already translated). A control
+// that is not in the window, or has a tooltip already, is left as it is.
+inline void set_tips_where_missing(obs_properties_t *props,
+				   std::initializer_list<std::pair<const char *, const char *>> tips)
+{
+	for (const auto &[name, text] : tips) {
+		obs_property_t *p = obs_properties_get(props, name);
+		const char *now = p ? obs_property_long_description(p) : nullptr;
+		if (p && (!now || !*now))
+			set_tip(p, text);
+	}
+}
+
+// The warning a scene filter's window starts with when the filter sits on a
+// group, where it does nothing: one wrapped sentence in the warning style,
+// the same in every scene filter. `text` is the filter's own sentence.
+inline obs_property_t *add_on_group_warning(obs_properties_t *props, const char *text, const char *name = "on_group")
+{
+	obs_property_t *warning = obs_properties_add_text(props, name, text, OBS_TEXT_INFO);
+	obs_property_text_set_info_type(warning, OBS_TEXT_INFO_WARNING);
+	obs_property_text_set_info_word_wrap(warning, true);
+	return warning;
+}
+
+// A filter's one line of help, the last thing in its window: where the
+// filter goes and what switching it on does. The detail is in the tooltips
+// and the README.
+inline obs_property_t *add_help_line(obs_properties_t *props, const char *text, const char *name = "help")
+{
+	obs_property_t *help = obs_properties_add_text(props, name, text, OBS_TEXT_INFO);
+	obs_property_text_set_info_word_wrap(help, true);
+	return help;
 }
 
 } // namespace stagekit

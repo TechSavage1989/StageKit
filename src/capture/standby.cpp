@@ -1309,16 +1309,21 @@ obs_properties_t *get_properties(void *data)
 										: "Standby.Status.Waiting"),
 					OBS_TEXT_INFO);
 	}
-	obs_property_t *cover = obs_properties_add_button2(
-		props, "cover_now", obs_module_text("Standby.Cover"),
-		[](obs_properties_t *, obs_property_t *, void *param) {
-			if (param)
-				static_cast<Standby *>(param)->toggle_cover();
-			return false;
-		},
-		self);
-	set_tip(cover, obs_module_text("Standby.Cover.Tip"));
+	// "Cover the source now" comes last, after what it is set up with (and
+	// before the line of help), as every button that acts at once does.
+	auto add_cover = [props, self]() {
+		obs_property_t *cover = obs_properties_add_button2(
+			props, "cover_now", obs_module_text("Standby.Cover"),
+			[](obs_properties_t *, obs_property_t *, void *param) {
+				if (param)
+					static_cast<Standby *>(param)->toggle_cover();
+				return false;
+			},
+			self);
+		set_tip(cover, obs_module_text("Standby.Cover.Tip"));
+	};
 	if (managed) {
+		add_cover();
 		obs_property_t *help =
 			obs_properties_add_text(props, "help", obs_module_text("Standby.Help"), OBS_TEXT_INFO);
 		obs_property_text_set_info_word_wrap(help, true);
@@ -1362,12 +1367,16 @@ obs_properties_t *get_properties(void *data)
 	const struct {
 		Style value;
 		const char *text;
-	} styles[] = {{Style::Fade, "Standby.Style.Fade"},           {Style::Cut, "Standby.Style.Cut"},
-		      {Style::SlideLeft, "Standby.Style.SlideLeft"}, {Style::SlideRight, "Standby.Style.SlideRight"},
-		      {Style::SlideUp, "Standby.Style.SlideUp"},     {Style::SlideDown, "Standby.Style.SlideDown"},
-		      {Style::WipeLeft, "Standby.Style.WipeLeft"},   {Style::WipeRight, "Standby.Style.WipeRight"},
-		      {Style::WipeUp, "Standby.Style.WipeUp"},       {Style::WipeDown, "Standby.Style.WipeDown"},
-		      {Style::Zoom, "Standby.Style.Zoom"},           {Style::Morph, "Standby.Style.Morph"}};
+	} styles[] = {
+		// One order in every list StageKit draws itself: fade, morph, fade
+		// and zoom, cut, the slides, the wipes. The numbers stay as saved.
+		{Style::Fade, "Standby.Style.Fade"},           {Style::Morph, "Standby.Style.Morph"},
+		{Style::Zoom, "Standby.Style.Zoom"},           {Style::Cut, "Standby.Style.Cut"},
+		{Style::SlideLeft, "Standby.Style.SlideLeft"}, {Style::SlideRight, "Standby.Style.SlideRight"},
+		{Style::SlideUp, "Standby.Style.SlideUp"},     {Style::SlideDown, "Standby.Style.SlideDown"},
+		{Style::WipeLeft, "Standby.Style.WipeLeft"},   {Style::WipeRight, "Standby.Style.WipeRight"},
+		{Style::WipeUp, "Standby.Style.WipeUp"},       {Style::WipeDown, "Standby.Style.WipeDown"},
+	};
 	for (const auto &entry : styles)
 		obs_property_list_add_int(style, obs_module_text(entry.text), (int)entry.value);
 	set_tip(style, obs_module_text("Standby.Style.Tip"));
@@ -1394,6 +1403,16 @@ obs_properties_t *get_properties(void *data)
 		obs_properties_add_bool(props, "when_hidden", obs_module_text("Standby.WhenHidden"));
 	set_tip(when_hidden, obs_module_text("Standby.WhenHidden.Tip"));
 	add_item_change_properties(props, self ? self->source() : nullptr, nullptr);
+	// The Show/Hide transition is the change between the source and its
+	// stand-in: without "Show when source is hidden" it is not used, and is
+	// hidden. Only visibility changes here; nothing is rebuilt.
+	obs_property_set_modified_callback(when_hidden, [](obs_properties_t *p, obs_property_t *,
+							   obs_data_t *settings) {
+		if (obs_property_t *group = obs_properties_get(p, "change|g|"))
+			obs_property_set_visible(group, obs_data_get_bool(settings, "when_hidden"));
+		return true;
+	});
+	add_cover();
 
 	obs_property_t *help = obs_properties_add_text(props, "help", obs_module_text("Standby.Help"), OBS_TEXT_INFO);
 	obs_property_text_set_info_word_wrap(help, true);

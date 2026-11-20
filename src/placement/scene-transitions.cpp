@@ -771,8 +771,9 @@ const char *sources_tip(Cover cover)
 	return obs_module_text(cover == Cover::Listed ? "SceneTrans.Chosen.Tip" : "SceneTrans.Sources.Tip");
 }
 
-// "Sources covered" changed: the list's heading and tip follow. Only text
-// changes, so nothing is taken off while OBS goes through the controls.
+// "Sources covered" changed: the list's heading and tip follow, and Ignored
+// sources shows only with All sources. Only text and visibility change, so
+// nothing is taken off while OBS goes through the controls.
 bool cover_changed(obs_properties_t *props, obs_property_t *, obs_data_t *settings)
 {
 	const Cover cover = (Cover)obs_data_get_int(settings, "cover");
@@ -780,6 +781,8 @@ bool cover_changed(obs_properties_t *props, obs_property_t *, obs_data_t *settin
 		obs_property_set_description(group, sources_title(cover));
 	if (obs_property_t *pick = obs_properties_get(props, "sources|apick"))
 		set_tip(pick, sources_tip(cover));
+	// The sources listed are all there is to cover: nothing more to leave out.
+	obs_property_set_visible(obs_properties_get(props, "except|alist"), cover != Cover::Listed);
 	return true;
 }
 
@@ -791,9 +794,7 @@ obs_properties_t *get_properties(void *data)
 	obs_properties_t *props = obs_properties_create();
 
 	if (parent && (!obs_scene_from_source(parent) || obs_source_is_group(parent))) {
-		obs_property_t *not_scene = obs_properties_add_text(
-			props, "not_scene", obs_module_text("SceneTrans.NotScene"), OBS_TEXT_INFO);
-		obs_property_text_set_info_word_wrap(not_scene, true);
+		add_on_group_warning(props, obs_module_text("SceneTrans.NotScene"), "not_scene");
 	} else if (parent && first_filter(parent, kSceneTransitionsId) &&
 		   first_filter(parent, kSceneTransitionsId) != source) {
 		obs_property_t *second =
@@ -840,6 +841,7 @@ obs_properties_t *get_properties(void *data)
 	set_tip(overrides, obs_module_text("SceneTrans.Override.Tip"));
 
 	add_item_change_properties(props, source, "sources");
+	add_help_line(props, obs_module_text("SceneTrans.Help"));
 	return props;
 }
 

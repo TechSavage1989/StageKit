@@ -3614,8 +3614,10 @@ void fit_controls_shown(obs_properties_t *props, obs_data_t *settings, const std
 	for (const auto &tip : kTips)
 		if (obs_property_t *p = get(tip[0]))
 			set_tip(p, obs_module_text(tip[room ? 2 : 1]));
-	for (const char *name :
-	     {"glide_ms", "ease_curve", "ease_mode", "visible_pixels", "tolerance", "space_priority"})
+	// "Use visible pixels" counts for the fitted source in every fit area
+	// (its own cut), so it always shows; the rest only does something where
+	// the fit goes by other sources. The Movement group has nothing else.
+	for (const char *name : {"glide_ms", "ease_curve", "ease_mode", "tolerance", "space_priority", "g_move"})
 		shown(get(name), like_free);
 	// The level is not read while the list order decides (the Scene Fit's
 	// own switch, for an entry).
@@ -3637,12 +3639,22 @@ void fit_controls_shown(obs_properties_t *props, obs_data_t *settings, const std
 		obs_property_set_description(margin, obs_module_text(kind == 2 ? "Fit.Gap" : "Fit.Margin"));
 }
 
-void fit_add_controls(obs_properties_t *props, const std::string &prefix, const std::string &list_prefix,
+void fit_add_controls(obs_properties_t *top, const std::string &prefix, const std::string &list_prefix,
 		      obs_source_t *owner, obs_source_t *parent, bool entry)
 {
 	const Keys *keys = keys_for(prefix, list_prefix, entry);
 	auto key = [&](const char *name) {
 		return prefix + name;
+	};
+	// The controls in numbered groups, in the order they are thought about:
+	// where, what size, who makes room for whom, how it is measured, how it
+	// moves, then the scenes it is kept the same in. A group holds no setting
+	// and is named after the prefix, so no saved key changes; every control
+	// is still found by name (`obs_properties_get` looks inside groups).
+	obs_properties_t *props = obs_properties_create();
+	auto section = [&](const char *name, const char *text) {
+		obs_properties_add_group(top, key(name).c_str(), obs_module_text(text), OBS_GROUP_NORMAL, props);
+		props = obs_properties_create();
 	};
 	obs_property_t *box = obs_properties_add_list(props, key("box").c_str(), obs_module_text("Fit.Box"),
 						      OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
@@ -3664,22 +3676,10 @@ void fit_add_controls(obs_properties_t *props, const std::string &prefix, const 
 								 obs_module_text("Fit.Margin"), 0.0, 400.0, 1.0);
 	obs_property_float_set_suffix(margin, " px");
 	set_tip(margin, obs_module_text("Fit.Margin.Tip"));
+	section("g_where", "Fit.Group.Where");
+
 	obs_property_t *resize = obs_properties_add_bool(props, key("resize").c_str(), obs_module_text("Fit.Resize"));
 	set_tip(resize, obs_module_text("Fit.Resize.Tip"));
-	// Which fits make room for which: saved by number, new ones at the end.
-	obs_property_t *level = obs_properties_add_list(props, key("space_priority").c_str(),
-							obs_module_text("Fit.Priority"), OBS_COMBO_TYPE_LIST,
-							OBS_COMBO_FORMAT_INT);
-	obs_property_list_add_int(level, obs_module_text("Fit.Priority.Shares"), (int)SpacePriority::Shares);
-	obs_property_list_add_int(level, obs_module_text("Fit.Priority.First"), (int)SpacePriority::First);
-	obs_property_list_add_int(level, obs_module_text("Fit.Priority.MakesRoom"), (int)SpacePriority::MakesRoom);
-	set_tip(level, obs_module_text("Fit.Priority.Tip"));
-	if (!entry) {
-		obs_property_t *by_list =
-			obs_properties_add_bool(props, "list_priority", obs_module_text("Fit.ListPriority"));
-		set_tip(by_list, obs_module_text("Fit.ListPriority.Tip"));
-		obs_property_set_modified_callback2(by_list, box_modified, (void *)keys);
-	}
 	obs_property_t *toward = obs_properties_add_list(props, key("toward").c_str(), obs_module_text("Fit.Toward"),
 							 OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	// Saved by number: new ones go at the end. Listed as OBS's Edit
@@ -3696,22 +3696,22 @@ void fit_add_controls(obs_properties_t *props, const std::string &prefix, const 
 	for (int cell = 0; cell < 9; cell++)
 		obs_property_list_add_int(toward, obs_module_text(kTowardNames[kTowardGrid[cell]]), kTowardGrid[cell]);
 	set_tip(toward, obs_module_text("Fit.Toward.Tip"));
-	obs_property_t *tolerance = obs_properties_add_float_slider(props, key("tolerance").c_str(),
-								    obs_module_text("Fit.Tolerance"), 0.0, 100.0, 1.0);
-	obs_property_float_set_suffix(tolerance, " px");
-	set_tip(tolerance, obs_module_text("Fit.Tolerance.Tip"));
-	obs_property_t *visible_pixels =
-		obs_properties_add_bool(props, key("visible_pixels").c_str(), obs_module_text("Measure.Visible"));
-	set_tip(visible_pixels, obs_module_text("Fit.Visible.Tip"));
-	obs_property_t *no_shadows =
-		obs_properties_add_bool(props, key("no_shadows").c_str(), obs_module_text("Measure.NoShadows"));
-	set_tip(no_shadows, obs_module_text("Fit.NoShadows.Tip"));
-	obs_property_t *glide =
-		obs_properties_add_int(props, key("glide_ms").c_str(), obs_module_text("Fit.Glide"), 0, 10000, 50);
-	obs_property_int_set_suffix(glide, " ms");
-	set_tip(glide, obs_module_text("Fit.Glide.Tip"));
-	add_easing_properties(props, prefix.c_str());
+	section("g_size", "Fit.Group.Size");
 
+	// Which fits make room for which: saved by number, new ones at the end.
+	obs_property_t *level = obs_properties_add_list(props, key("space_priority").c_str(),
+							obs_module_text("Fit.Priority"), OBS_COMBO_TYPE_LIST,
+							OBS_COMBO_FORMAT_INT);
+	obs_property_list_add_int(level, obs_module_text("Fit.Priority.Shares"), (int)SpacePriority::Shares);
+	obs_property_list_add_int(level, obs_module_text("Fit.Priority.First"), (int)SpacePriority::First);
+	obs_property_list_add_int(level, obs_module_text("Fit.Priority.MakesRoom"), (int)SpacePriority::MakesRoom);
+	set_tip(level, obs_module_text("Fit.Priority.Tip"));
+	if (!entry) {
+		obs_property_t *by_list =
+			obs_properties_add_bool(props, "list_priority", obs_module_text("Fit.ListPriority"));
+		set_tip(by_list, obs_module_text("Fit.ListPriority.Tip"));
+		obs_property_set_modified_callback2(by_list, box_modified, (void *)keys);
+	}
 	obs_property_t *make_room =
 		obs_properties_add_bool(props, key("whole_make_room").c_str(), obs_module_text("Fit.MakeRoom"));
 	set_tip(make_room, obs_module_text(entry ? "SceneFit.MakeRoom.Tip" : "Fit.MakeRoom.Tip"));
@@ -3759,6 +3759,29 @@ void fit_add_controls(obs_properties_t *props, const std::string &prefix, const 
 		obs_property_float_set_suffix(px, " px");
 		set_tip(px, obs_module_text("Fit.SkipPx.Tip"));
 	}
+	section("g_share", "Fit.Group.Share");
+
+	obs_property_t *visible_pixels =
+		obs_properties_add_bool(props, key("visible_pixels").c_str(), obs_module_text("Measure.Visible"));
+	set_tip(visible_pixels, obs_module_text("Fit.Visible.Tip"));
+	obs_property_t *no_shadows =
+		obs_properties_add_bool(props, key("no_shadows").c_str(), obs_module_text("Measure.NoShadows"));
+	set_tip(no_shadows, obs_module_text("Fit.NoShadows.Tip"));
+	obs_property_t *tolerance = obs_properties_add_float_slider(props, key("tolerance").c_str(),
+								    obs_module_text("Fit.Tolerance"), 0.0, 100.0, 1.0);
+	obs_property_float_set_suffix(tolerance, " px");
+	set_tip(tolerance, obs_module_text("Fit.Tolerance.Tip"));
+	section("g_measure", "Fit.Group.Measure");
+
+	obs_property_t *glide =
+		obs_properties_add_int(props, key("glide_ms").c_str(), obs_module_text("Fit.Glide"), 0, 10000, 50);
+	obs_property_int_set_suffix(glide, " ms");
+	set_tip(glide, obs_module_text("Fit.Glide.Tip"));
+	add_easing_properties(props, prefix.c_str());
+	section("g_move", "Fit.Group.Move");
+	obs_properties_destroy(props);
+	props = top;
+
 	PickList share;
 	const std::string share_setting = list_prefix + "share_scenes";
 	share.setting = share_setting.c_str();

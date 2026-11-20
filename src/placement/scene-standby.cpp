@@ -347,10 +347,7 @@ obs_properties_t *get_properties(void *data)
 	obs_source_t *scene = self ? self->parent() : nullptr;
 	obs_properties_t *props = obs_properties_create();
 	if (scene && obs_source_is_group(scene)) {
-		obs_property_t *wrong = obs_properties_add_text(props, "on_group",
-								obs_module_text("SceneStandby.OnGroup"), OBS_TEXT_INFO);
-		obs_property_text_set_info_type(wrong, OBS_TEXT_INFO_WARNING);
-		obs_property_text_set_info_word_wrap(wrong, true);
+		add_on_group_warning(props, obs_module_text("SceneStandby.OnGroup"));
 	}
 	const std::string now = self ? self->status() : std::string();
 	obs_property_t *status = obs_properties_add_text(
@@ -404,11 +401,8 @@ obs_properties_t *get_properties(void *data)
 	obs_property_t *screens = obs_properties_add_bool(props, "screens", obs_module_text("SceneStandby.Screens"));
 	set_tip(screens, obs_module_text("SceneStandby.Screens.Tip"));
 
-	obs_property_t *empty = obs_properties_add_bool(props, "when_empty", obs_module_text("SceneStandby.WhenEmpty"));
-	set_tip(empty, obs_module_text("SceneStandby.WhenEmpty.Tip"));
-
-	// The image and how it comes and goes: the Standby Image filter's own
-	// controls, set here for every source.
+	// The image: the Standby Image filter's own controls, set here for every
+	// source. It is the same image in both cases below.
 	obs_property_t *picture = obs_properties_add_list(props, "picture", obs_module_text("Standby.Picture"),
 							  OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(picture, obs_module_text("Standby.Picture.Start"), 0);
@@ -429,28 +423,40 @@ obs_properties_t *get_properties(void *data)
 	}
 	obs_property_t *own_shape = obs_properties_add_bool(props, "own_shape", obs_module_text("Standby.OwnShape"));
 	set_tip(own_shape, obs_module_text("Standby.OwnShape.Tip"));
-	obs_property_t *style = obs_properties_add_list(props, "style", obs_module_text("Standby.Style"),
+	// When a source has no image: the group's own tick box is "when_empty",
+	// the switch for all of it.
+	obs_properties_t *no_image = obs_properties_create();
+	obs_property_t *style = obs_properties_add_list(no_image, "style", obs_module_text("Standby.Style"),
 							OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
-	const char *const styles[] = {"Standby.Style.Fade",       "Standby.Style.Cut",       "Standby.Style.SlideLeft",
-				      "Standby.Style.SlideRight", "Standby.Style.SlideUp",   "Standby.Style.SlideDown",
-				      "Standby.Style.WipeLeft",   "Standby.Style.WipeRight", "Standby.Style.WipeUp",
-				      "Standby.Style.WipeDown",   "Standby.Style.Zoom",      "Standby.Style.Morph"};
-	for (int i = 0; i < 12; i++)
-		obs_property_list_add_int(style, obs_module_text(styles[i]), i);
+	// The Standby Image's own transitions, by its numbers, in the one order
+	// of every such list: fade, morph, fade and zoom, cut, slides, wipes.
+	static const struct {
+		int value;
+		const char *text;
+	} styles[] = {{0, "Standby.Style.Fade"},      {11, "Standby.Style.Morph"},    {10, "Standby.Style.Zoom"},
+		      {1, "Standby.Style.Cut"},       {2, "Standby.Style.SlideLeft"}, {3, "Standby.Style.SlideRight"},
+		      {4, "Standby.Style.SlideUp"},   {5, "Standby.Style.SlideDown"}, {6, "Standby.Style.WipeLeft"},
+		      {7, "Standby.Style.WipeRight"}, {8, "Standby.Style.WipeUp"},    {9, "Standby.Style.WipeDown"}};
+	for (const auto &one : styles)
+		obs_property_list_add_int(style, obs_module_text(one.text), one.value);
 	set_tip(style, obs_module_text("Standby.Style.Tip"));
 	obs_property_t *fade =
-		obs_properties_add_int_slider(props, "fade_ms", obs_module_text("Standby.Fade"), 0, 5000, 50);
+		obs_properties_add_int_slider(no_image, "fade_ms", obs_module_text("Standby.Fade"), 0, 5000, 50);
 	obs_property_int_set_suffix(fade, " ms");
 	set_tip(fade, obs_module_text("Standby.Fade.Tip"));
 	obs_property_t *back =
-		obs_properties_add_int_slider(props, "back_ms", obs_module_text("Standby.Back"), 0, 5000, 50);
+		obs_properties_add_int_slider(no_image, "back_ms", obs_module_text("Standby.Back"), 0, 5000, 50);
 	obs_property_int_set_suffix(back, " ms");
 	set_tip(back, obs_module_text("Standby.Back.Tip"));
-	add_easing_properties(props, "");
-	obs_property_t *glide = obs_properties_add_bool(props, "glide_size", obs_module_text("Standby.GlideSize"));
+	add_easing_properties(no_image, "");
+	obs_property_t *glide = obs_properties_add_bool(no_image, "glide_size", obs_module_text("Standby.GlideSize"));
 	set_tip(glide, obs_module_text("Standby.GlideSize.Tip"));
+	obs_property_t *empty = obs_properties_add_group(props, "when_empty", obs_module_text("SceneStandby.WhenEmpty"),
+							 OBS_GROUP_CHECKABLE, no_image);
+	set_tip(empty, obs_module_text("SceneStandby.WhenEmpty.Tip"));
 
-	// In a hidden source's place, in this scene.
+	// When a source is hidden: in its place, in this scene.
+	obs_properties_t *when_hidden = obs_properties_create();
 	PickList hidden;
 	hidden.setting = "hidden";
 	hidden.title = "SceneStandby.Hidden";
@@ -472,8 +478,10 @@ obs_properties_t *get_properties(void *data)
 			},
 			&names);
 	};
-	pick_list_add(props, owner, hidden);
-	add_item_change_properties(props, owner, "hidden");
+	pick_list_add(when_hidden, owner, hidden);
+	add_item_change_properties(when_hidden, owner, "hidden");
+	obs_properties_add_group(props, "hidden_group", obs_module_text("SceneStandby.HiddenGroup"), OBS_GROUP_NORMAL,
+				 when_hidden);
 
 	obs_property_t *help =
 		obs_properties_add_text(props, "help", obs_module_text("SceneStandby.Help"), OBS_TEXT_INFO);

@@ -150,6 +150,7 @@ void add_blur_look_properties(obs_properties_t *props)
 	obs_property_t *rotation = obs_properties_add_float_slider(look, "rotation", obs_module_text("Mosaic.Rotation"),
 								   -180.0, 180.0, 1.0);
 	obs_property_float_set_suffix(rotation, "°");
+	set_tip(rotation, obs_module_text("Mosaic.Rotation.Tip"));
 	obs_property_t *edge = obs_properties_add_list(look, "pixel_edge", obs_module_text("Mosaic.Edge"),
 						       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(edge, obs_module_text("Mosaic.Edge.Cut"), (int)MosaicEdge::Cut);

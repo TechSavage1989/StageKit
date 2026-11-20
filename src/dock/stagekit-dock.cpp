@@ -62,6 +62,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <QMenu>
 #include <QApplication>
 #include <QContextMenuEvent>
+#include <QCursor>
 #include <QElapsedTimer>
 #include <QWheelEvent>
 #include <QMouseEvent>
@@ -217,6 +218,8 @@ public:
 				set_arrange_options(changed);
 			});
 		};
+		// (Three parts under the tools: how they measure, where the result
+		// goes, and what happens on a drop.)
 		QMenu *to = sub->addMenu(tr_text("Arrange.Against"));
 		struct {
 			const char *name, *text;
@@ -245,6 +248,10 @@ public:
 		       [](ArrangeOptions &c, bool on) { c.how.leave_out_shadows = on; });
 		option("menuKeepShape", "Arrange.KeepShape", o.keep_shape,
 		       [](ArrangeOptions &c, bool on) { c.keep_shape = on; });
+		sub->addSeparator();
+		option("menuEveryScene", "Dock.ArrangeEvery", o.arrange_every_scene,
+		       [](ArrangeOptions &c, bool on) { c.arrange_every_scene = on; });
+		sub->addSeparator();
 		option("menuLiveSnap", "Arrange.LiveSnap", o.live_snap,
 		       [](ArrangeOptions &c, bool on) { c.live_snap = on; });
 		option("menuGuides", "Arrange.Guides", o.guides, [](ArrangeOptions &c, bool on) { c.guides = on; });
@@ -315,9 +322,18 @@ public:
 				refresh();
 			}
 		});
-		// The moving background uses the start image unless it is given a
-		// picture of its own here.
-		auto *other = new QPushButton(tr_text("Dock.BackgroundOther"), start_box);
+		// The moving background: a part of its own. It uses the start image
+		// unless it is given a picture of its own here.
+		auto *ambient_box = new QGroupBox(tr_text("Dock.AmbientBox"), this);
+		ambient_box->setObjectName("ambientBox");
+		auto *ambient_layout = new QVBoxLayout(ambient_box);
+		ambient_label_ = new QLabel(ambient_box);
+		ambient_label_->setObjectName("ambientImage");
+		ambient_label_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
+		ambient_label_->setMinimumWidth(0);
+		ambient_label_->setFixedHeight(ambient_label_->fontMetrics().height() + 6);
+		ambient_label_->setAlignment(Qt::AlignCenter);
+		auto *other = new QPushButton(tr_text("Dock.BackgroundOther"), ambient_box);
 		other->setObjectName("backgroundOther");
 		QObject::connect(other, &QPushButton::clicked, this, [this] {
 			const QString file = QFileDialog::getOpenFileName(
@@ -331,7 +347,7 @@ public:
 				refresh();
 			}
 		});
-		background_same_ = new QPushButton(tr_text("Dock.BackgroundSame"), start_box);
+		background_same_ = new QPushButton(tr_text("Dock.BackgroundSame"), ambient_box);
 		background_same_->setObjectName("backgroundSame");
 		QObject::connect(background_same_, &QPushButton::clicked, this, [this] {
 			AmbientView view = ambient_view();
@@ -339,17 +355,20 @@ public:
 			set_ambient_view(view);
 			refresh();
 		});
-		auto *background_settings = new QPushButton(tr_text("Dock.BackgroundSettings"), start_box);
+		auto *background_settings = new QPushButton(tr_text("Dock.BackgroundSettings"), ambient_box);
 		background_settings->setObjectName("backgroundSettings");
+		background_settings->setToolTip(tr_text("Dock.BackgroundSettings.Tip"));
 		QObject::connect(background_settings, &QPushButton::clicked, this,
-				 [this] { open_background_settings(); });
+				 [this, background_settings] { open_background_settings(background_settings); });
 		start_layout->addWidget(start_thumb_);
 		start_layout->addWidget(start_label_);
 		start_layout->addWidget(choose);
-		start_layout->addWidget(other);
-		start_layout->addWidget(background_same_);
-		start_layout->addWidget(background_settings);
 		layout->addWidget(start_box);
+		ambient_layout->addWidget(ambient_label_);
+		ambient_layout->addWidget(other);
+		ambient_layout->addWidget(background_same_);
+		ambient_layout->addWidget(background_settings);
+		layout->addWidget(ambient_box);
 		status_ = new QLabel(this);
 		status_->setObjectName("backgroundStatus");
 		status_->setWordWrap(true);
@@ -367,14 +386,22 @@ public:
 
 	void refresh()
 	{
-		const QString start = QString::fromUtf8(start_image_path().c_str());
-		const QString shown = QString::fromUtf8(ambient_picture_path().c_str());
-		const bool own = shown != start;
-		QString name = shown.isEmpty() ? tr_text("Dock.StartNone") : QFileInfo(shown).fileName();
-		if (name.size() > 40)
-			name = name.left(22) + QStringLiteral("…") + name.right(16);
-		start_label_->setText(own ? tr_text("Dock.BackgroundIs").arg(name) : name);
+		// The thumbnail is always the standby image; the background's own
+		// image, if it has one, is named in its own part below.
+		const QString shown = QString::fromUtf8(start_image_path().c_str());
+		const QString background = QString::fromUtf8(ambient_picture_path().c_str());
+		const bool own = background != shown;
+		auto short_name = [](const QString &path) {
+			QString name = QFileInfo(path).fileName();
+			if (name.size() > 40)
+				name = name.left(22) + QStringLiteral("…") + name.right(16);
+			return name;
+		};
+		start_label_->setText(shown.isEmpty() ? tr_text("Dock.StartNone") : short_name(shown));
 		start_label_->setToolTip(shown);
+		ambient_label_->setText(own ? tr_text("Dock.BackgroundIs").arg(short_name(background))
+					    : tr_text("Dock.AmbientSame"));
+		ambient_label_->setToolTip(own ? background : QString());
 		background_same_->setVisible(own);
 		// A picture that could not be read yet (a drive still waking up) is
 		// tried again a little later.
@@ -488,31 +515,69 @@ private:
 		start_thumb_->setVisible(!picture.isNull());
 	}
 
-	// Opens the settings of the collection's moving background.
-	void open_background_settings()
+	// Opens the settings of a moving background: the one in the scene being
+	// edited, else the only one in the collection; with several and none in
+	// that scene, a menu under the button asks which.
+	void open_background_settings(QWidget *below)
 	{
-		obs_source_t *found = nullptr;
+		std::vector<std::string> all, here;
 		obs_enum_sources(
 			[](void *param, obs_source_t *source) {
-				auto **out = static_cast<obs_source_t **>(param);
+				auto *names = static_cast<std::vector<std::string> *>(param);
 				const char *id = obs_source_get_unversioned_id(source);
-				if (!*out && id && strcmp(id, "stagekit_ambient_background") == 0)
-					*out = obs_source_get_ref(source);
+				const char *name = obs_source_get_name(source);
+				if (id && strcmp(id, "stagekit_ambient_background") == 0 && name && *name)
+					names->push_back(name);
 				return true;
 			},
-			&found);
-		if (!found) {
+			&all);
+		if (all.empty()) {
 			say(tr_text("Dock.BackgroundNone"));
 			return;
 		}
-		if (obs_frontend_get_main_window())
-			obs_frontend_open_source_properties(found);
-		obs_source_release(found);
+		// The scene being edited: the preview in Studio Mode, else the one on screen.
+		obs_source_t *scene = obs_frontend_preview_program_mode_active()
+					      ? obs_frontend_get_current_preview_scene()
+					      : obs_frontend_get_current_scene();
+		if (obs_scene_t *s = scene ? obs_scene_from_source(scene) : nullptr)
+			obs_scene_enum_items(
+				s,
+				[](obs_scene_t *, obs_sceneitem_t *item, void *param) {
+					auto *names = static_cast<std::vector<std::string> *>(param);
+					obs_source_t *source = obs_sceneitem_get_source(item);
+					const char *id = source ? obs_source_get_unversioned_id(source) : nullptr;
+					const char *name = source ? obs_source_get_name(source) : nullptr;
+					if (id && strcmp(id, "stagekit_ambient_background") == 0 && name &&
+					    std::find(names->begin(), names->end(), name) == names->end())
+						names->push_back(name);
+					return true;
+				},
+				&here);
+		obs_source_release(scene);
+		const std::vector<std::string> &from = here.empty() ? all : here;
+		auto open = [](const std::string &name) {
+			obs_source_t *found = obs_get_source_by_name(name.c_str());
+			if (found && obs_frontend_get_main_window())
+				obs_frontend_open_source_properties(found);
+			obs_source_release(found);
+		};
+		if (from.size() == 1) {
+			open(from.front());
+			return;
+		}
+		QMenu menu(this);
+		menu.setObjectName("backgroundWhich");
+		menu.addSection(tr_text("Dock.BackgroundWhich"));
+		for (const std::string &name : from)
+			QObject::connect(menu.addAction(QString::fromUtf8(name.c_str())), &QAction::triggered, this,
+					 [open, name] { open(name); });
+		menu.exec(below ? below->mapToGlobal(QPoint(0, below->height())) : QCursor::pos());
 	}
 
 	static constexpr int kThumbHeight = 120;
-	static constexpr int kBelowThumb = 200; // the label and buttons under the picture
+	static constexpr int kBelowThumb = 330; // the label, button and background part under the picture
 	QLabel *start_label_ = nullptr;
+	QLabel *ambient_label_ = nullptr; // the background's own image, or "Same as standby image"
 	Thumb *start_thumb_ = nullptr;
 	QPixmap thumb_full_;
 	QMovie *movie_ = nullptr;                                 // an animated picture, playing; none for a still one
@@ -935,10 +1000,9 @@ public:
 		auto *copy_layout = new QVBoxLayout(copy_box);
 		copy_layout->setContentsMargins(0, 0, 0, 0);
 		copy_layout->setSpacing(6);
-		copy_layout->addWidget(arrange_button(ArrangeAction::SameEverywhere, copy_box));
-		copy_layout->addWidget(arrange_button(ArrangeAction::SameChosen, copy_box));
-		// The scenes the second one copies to: choose to add, one row each
-		// with its own remove button, as every list in StageKit.
+		// The two lists every tool on this tab goes by come first: Chosen
+		// scenes and Chosen sources. Choose to add, one row each with its own
+		// remove button, as every list in StageKit.
 		auto *copy_label = new QLabel(tr_text("Arrange.CopyScenes"), copy_box);
 		copy_label->setToolTip(tr_text("Arrange.CopyScenes.Tip"));
 		copy_layout->addWidget(copy_label);
@@ -979,11 +1043,20 @@ public:
 			show_copy_sources();
 		});
 		copy_layout->addWidget(source_add_);
-		copy_locked_ = new QCheckBox(tr_text("Arrange.CopyLocked"), copy_box);
+		copy_page->addWidget(copy_box);
+		// Copy transform: the two tools and their one option, under a
+		// heading like the two parts below it.
+		auto *transform_box = new QGroupBox(tr_text("Arrange.CopyBox"), this);
+		transform_box->setObjectName("copyTransformBox");
+		auto *transform_layout = new QVBoxLayout(transform_box);
+		transform_layout->setSpacing(6);
+		transform_layout->addWidget(arrange_button(ArrangeAction::SameEverywhere, transform_box));
+		transform_layout->addWidget(arrange_button(ArrangeAction::SameChosen, transform_box));
+		copy_locked_ = new QCheckBox(tr_text("Arrange.CopyLocked"), transform_box);
 		copy_locked_->setObjectName("copyLocked");
 		copy_locked_->setToolTip(tr_text("Arrange.CopyLocked.Tip"));
-		copy_layout->addWidget(copy_locked_);
-		copy_page->addWidget(copy_box);
+		transform_layout->addWidget(copy_locked_);
+		copy_page->addWidget(transform_box);
 		// Locking and unlocking across scenes: which items, in which
 		// scenes, then one button each way. A locked copy is left alone by
 		// the copy tools above, so this is also how one is freed for them.
@@ -1033,6 +1106,10 @@ public:
 		filter_form->addRow(tr_text("Dock.Filter.From"), filter_from_);
 		filter_form->addRow(tr_text("Dock.Filter.To"), filter_to_);
 		filter_form->addRow(filter_add_);
+		// (With "Every source that has one" there is nowhere it is missing.)
+		filter_add_->setEnabled(filter_to_->currentIndex() != 0);
+		QObject::connect(filter_to_, QOverload<int>::of(&QComboBox::currentIndexChanged), filter_add_,
+				 [this](int index) { filter_add_->setEnabled(index != 0); });
 		filter_form->addRow(filter_go);
 		copy_page->addWidget(filter_box);
 		copy_page->addStretch(1);
@@ -1064,7 +1141,9 @@ public:
 				say(text);
 			});
 		});
+		// Each number sits right under the tick box it belongs to.
 		auto *within_row = new QFormLayout();
+		auto *limit_row = new QFormLayout();
 		snap_within_ = new QSpinBox(arrange_box);
 		snap_within_->setObjectName("snapWithin");
 		snap_within_->setRange(1, 200);
@@ -1078,7 +1157,10 @@ public:
 		limit_px_->setRange(0, 1000);
 		limit_px_->setSuffix(" px");
 		limit_px_->setToolTip(tr_text("Arrange.LimitResize.Tip"));
-		within_row->addRow(tr_text("Arrange.LimitPx"), limit_px_);
+		limit_row->addRow(tr_text("Arrange.LimitPx"), limit_px_);
+		// (The gap is only read while the limit is on.)
+		limit_px_->setEnabled(false);
+		QObject::connect(limit_resize_, &QCheckBox::toggled, limit_px_, &QWidget::setEnabled);
 		// How the tools measure, and what happens when an item is let go:
 		// two short groups instead of one run of tick boxes.
 		auto *measure_box = new QGroupBox(tr_text("Dock.MeasureBox"), arrange_box);
@@ -1086,7 +1168,7 @@ public:
 		measure_layout->addWidget(visible_);
 		measure_layout->addWidget(no_shadow_);
 		measure_layout->addWidget(keep_shape_);
-		arrange_every_ = new QCheckBox(tr_text("Dock.SendEvery"), arrange_box);
+		arrange_every_ = new QCheckBox(tr_text("Dock.ArrangeEvery"), arrange_box);
 		arrange_every_->setObjectName("arrangeEveryScene");
 		arrange_every_->setToolTip(tr_text("Arrange.Every.Tip"));
 		measure_layout->addWidget(arrange_every_);
@@ -1099,9 +1181,10 @@ public:
 		auto *drop_box = new QGroupBox(tr_text("Dock.DropBox"), arrange_box);
 		auto *drop_layout = new QVBoxLayout(drop_box);
 		drop_layout->addWidget(live_snap_);
-		drop_layout->addWidget(guides_);
-		drop_layout->addWidget(limit_resize_);
 		drop_layout->addLayout(within_row);
+		drop_layout->addWidget(limit_resize_);
+		drop_layout->addLayout(limit_row);
+		drop_layout->addWidget(guides_);
 		options_measure_ = measure_box;
 		options_drop_ = drop_box;
 		tools_row->addWidget(measure_box, 1, Qt::AlignTop);

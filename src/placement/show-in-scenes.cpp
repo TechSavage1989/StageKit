@@ -759,6 +759,9 @@ obs_properties_t *get_properties(void *data)
 	obs_properties_add_text(props, "status",
 				obs_module_text(shown ? "ShowIn.Status.Shown" : "ShowIn.Status.Hidden"), OBS_TEXT_INFO);
 
+	// Two groups: what the switch acts on, then what a press does. Then the
+	// transition, then the button. The groups hold no setting.
+	obs_properties_t *which = obs_properties_create();
 	PickList sources;
 	sources.setting = "sources";
 	sources.title = "ShowIn.Sources";
@@ -783,9 +786,9 @@ obs_properties_t *get_properties(void *data)
 		obs_enum_sources(add, &fill);
 		obs_enum_scenes(add, &fill);
 	};
-	pick_list_add(props, self ? self->source() : nullptr, sources);
+	pick_list_add(which, self ? self->source() : nullptr, sources);
 
-	obs_property_t *where = obs_properties_add_list(props, "where", obs_module_text("ShowIn.Where"),
+	obs_property_t *where = obs_properties_add_list(which, "where", obs_module_text("ShowIn.Where"),
 							OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(where, obs_module_text("ShowIn.Where.Every"), (int)Where::Every);
 	obs_property_list_add_int(where, obs_module_text("ShowIn.Where.Listed"), (int)Where::Listed);
@@ -807,29 +810,33 @@ obs_properties_t *get_properties(void *data)
 			},
 			&names);
 	};
-	pick_list_add(props, self ? self->source() : nullptr, scenes);
+	pick_list_add(which, self ? self->source() : nullptr, scenes);
 
-	obs_property_t *means = obs_properties_add_list(props, "on_means", obs_module_text("ShowIn.OnMeans"),
+	obs_property_t *with_linked =
+		obs_properties_add_bool(which, "with_linked", obs_module_text("ShowIn.WithLinked"));
+	set_tip(with_linked, obs_module_text("ShowIn.WithLinked.Tip"));
+	obs_properties_add_group(props, "sources_group", obs_module_text("ShowIn.SourcesGroup"), OBS_GROUP_NORMAL,
+				 which);
+
+	obs_properties_t *each_press = obs_properties_create();
+	obs_property_t *means = obs_properties_add_list(each_press, "on_means", obs_module_text("ShowIn.OnMeans"),
 							OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(means, obs_module_text("ShowIn.OnMeans.Shown"), 0);
 	obs_property_list_add_int(means, obs_module_text("ShowIn.OnMeans.Hidden"), 1);
 	set_tip(means, obs_module_text("ShowIn.OnMeans.Tip"));
 
-	obs_property_t *with_linked =
-		obs_properties_add_bool(props, "with_linked", obs_module_text("ShowIn.WithLinked"));
-	set_tip(with_linked, obs_module_text("ShowIn.WithLinked.Tip"));
-
 	obs_property_t *hide_standby =
-		obs_properties_add_bool(props, "hide_standby", obs_module_text("ShowIn.HideStandby"));
+		obs_properties_add_bool(each_press, "hide_standby", obs_module_text("ShowIn.HideStandby"));
 	set_tip(hide_standby, obs_module_text("ShowIn.HideStandby.Tip"));
 
-	obs_property_t *restore = obs_properties_add_bool(props, "restore_hidden", obs_module_text("ShowIn.Restore"));
+	obs_property_t *restore =
+		obs_properties_add_bool(each_press, "restore_hidden", obs_module_text("ShowIn.Restore"));
 	set_tip(restore, obs_module_text("ShowIn.Restore.Tip"));
 
-	obs_property_t *follow = obs_properties_add_bool(props, "follow", obs_module_text("ShowIn.Follow"));
+	obs_property_t *follow = obs_properties_add_bool(each_press, "follow", obs_module_text("ShowIn.Follow"));
 	set_tip(follow, obs_module_text("ShowIn.Follow.Tip"));
 
-	obs_property_t *go_to = obs_properties_add_list(props, "go_to", obs_module_text("ShowIn.GoTo"),
+	obs_property_t *go_to = obs_properties_add_list(each_press, "go_to", obs_module_text("ShowIn.GoTo"),
 							OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
 	obs_property_list_add_string(go_to, obs_module_text("ShowIn.GoTo.None"), "");
 	{
@@ -854,10 +861,12 @@ obs_properties_t *get_properties(void *data)
 			obs_property_list_add_string(go_to, name.c_str(), name.c_str());
 	}
 	set_tip(go_to, obs_module_text("ShowIn.GoTo.Tip"));
+	obs_properties_add_group(props, "press_group", obs_module_text("ShowIn.PressGroup"), OBS_GROUP_NORMAL,
+				 each_press);
 
 	add_item_change_properties(props, self ? self->source() : nullptr, "sources");
 
-	obs_properties_add_button2(
+	obs_property_t *apply_now = obs_properties_add_button2(
 		props, "apply_now", obs_module_text("ShowIn.ApplyNow"),
 		[](obs_properties_t *, obs_property_t *, void *d) {
 			auto *filter = static_cast<ShowInScenes *>(d);
@@ -866,6 +875,7 @@ obs_properties_t *get_properties(void *data)
 			return false;
 		},
 		self);
+	set_tip(apply_now, obs_module_text("ShowIn.ApplyNow.Tip"));
 
 	obs_property_t *help = obs_properties_add_text(props, "help", obs_module_text("ShowIn.Help"), OBS_TEXT_INFO);
 	obs_property_text_set_info_word_wrap(help, true);

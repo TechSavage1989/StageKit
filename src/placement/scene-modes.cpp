@@ -1601,9 +1601,15 @@ void show_chosen_mode(obs_properties_t *props, obs_data_t *settings)
 			obs_property_list_add_string(box, mode.name.c_str(), mode.id.c_str());
 		obs_property_set_visible(box, !modes.empty());
 	}
-	for (const Mode &mode : modes)
+	for (const Mode &mode : modes) {
 		if (obs_property_t *group = obs_properties_get(props, key(mode.id, "g").c_str()))
 			obs_property_set_visible(group, mode.id == chosen);
+		// "Leave to" says where a source under "Leave when shown" leads:
+		// with none listed it does nothing, and is hidden.
+		if (obs_property_t *to = obs_properties_get(props, key(mode.id, "leave_to").c_str()))
+			obs_property_set_visible(
+				to, !pick_list_read(settings, key(mode.id, "leave_on").c_str(), false).empty());
+	}
 }
 
 bool mode_for_cb(void *, obs_properties_t *props, obs_property_t *, obs_data_t *settings)
@@ -1633,7 +1639,7 @@ void rebuild(obs_properties_t *props, obs_source_t *owner, obs_data_t *settings)
 		const char *name = obs_property_name(p);
 		if (past)
 			after.push_back(name);
-		else if (name && strcmp(name, "add_template") == 0)
+		else if (name && strcmp(name, "add_mode") == 0)
 			past = true;
 	}
 	for (const std::string &name : after)
@@ -1666,34 +1672,25 @@ void add_mode(obs_source_t *owner, obs_data_t *settings, const std::string &name
 	obs_source_update(owner, settings);
 }
 
+// "Add mode": one button for the row above it. A name typed is the new
+// mode's name; a template chosen gives it its type, and its name when none
+// was typed. Both boxes are put back afterwards.
 bool add_mode_cb(obs_properties_t *props, obs_property_t *, void *data)
 {
 	auto *owner = static_cast<obs_source_t *>(data);
 	if (!owner)
 		return false;
 	obs_data_t *settings = obs_source_get_settings(owner);
-	const std::string name = trimmed(obs_data_get_string(settings, "new_mode"));
-	bool done = false;
-	if (!name.empty()) {
-		obs_data_set_string(settings, "new_mode", "");
-		add_mode(owner, settings, name, "");
-		rebuild(props, owner, settings);
-		done = true;
-	}
-	obs_data_release(settings);
-	return done;
-}
-
-bool add_template_cb(obs_properties_t *props, obs_property_t *, void *data)
-{
-	auto *owner = static_cast<obs_source_t *>(data);
-	if (!owner)
-		return false;
-	obs_data_t *settings = obs_source_get_settings(owner);
+	std::string name = trimmed(obs_data_get_string(settings, "new_mode"));
 	const long long which = obs_data_get_int(settings, "template");
+	const bool templated = which >= 0 && which < (long long)(sizeof(kTemplates) / sizeof(kTemplates[0]));
 	bool done = false;
-	if (which >= 0 && which < (long long)(sizeof(kTemplates) / sizeof(kTemplates[0]))) {
-		add_mode(owner, settings, obs_module_text(kTemplates[which].name), kTemplates[which].type);
+	if (!name.empty() || templated) {
+		if (name.empty())
+			name = obs_module_text(kTemplates[which].name);
+		obs_data_set_string(settings, "new_mode", "");
+		obs_data_set_int(settings, "template", -1);
+		add_mode(owner, settings, name, templated ? kTemplates[which].type : "");
 		rebuild(props, owner, settings);
 		done = true;
 	}
@@ -1970,6 +1967,7 @@ void add_modes_and_rest(obs_properties_t *props, obs_source_t *owner, obs_data_t
 	set_tip(lock, obs_module_text("Modes.LockHidden.Tip"));
 
 	add_item_change_properties(props, owner, nullptr);
+	add_help_line(props, obs_module_text("Modes.Help"));
 	if (settings)
 		show_chosen_mode(props, settings);
 	obs_property_set_modified_callback2(mode_for, mode_for_cb, owner);
@@ -1984,9 +1982,7 @@ obs_properties_t *get_properties(void *data)
 	obs_source_t *parent = owner ? obs_filter_get_parent(owner) : nullptr;
 
 	if (parent && obs_source_is_group(parent)) {
-		obs_property_t *on_group =
-			obs_properties_add_text(props, "on_group", obs_module_text("Modes.OnGroup"), OBS_TEXT_INFO);
-		obs_property_text_set_info_word_wrap(on_group, true);
+		add_on_group_warning(props, obs_module_text("Modes.OnGroup"));
 	}
 
 	obs_property_t *now = obs_properties_add_list(props, "mode_now", obs_module_text("Modes.Now"),
@@ -1995,20 +1991,20 @@ obs_properties_t *get_properties(void *data)
 	if (settings)
 		fill_mode_now(now, settings);
 
-	obs_property_t *typed =
-		obs_properties_add_text(props, "new_mode", obs_module_text("Modes.NewName"), OBS_TEXT_DEFAULT);
-	set_tip(typed, obs_module_text("Modes.NewName.Tip"));
-	obs_property_t *add =
-		obs_properties_add_button2(props, "add_mode", obs_module_text("Modes.Add"), add_mode_cb, owner);
-	set_tip(add, obs_module_text("Modes.Add.Tip"));
-
+	// One row adds a mode: a template to start from (or none), a name (or the
+	// template's), and the button, which everything after it is rebuilt under.
 	obs_property_t *templates = obs_properties_add_list(props, "template", obs_module_text("Modes.Template"),
 							    OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(templates, obs_module_text("Modes.Template.Choose"), -1);
 	for (size_t i = 0; i < sizeof(kTemplates) / sizeof(kTemplates[0]); i++)
 		obs_property_list_add_int(templates, obs_module_text(kTemplates[i].name), (long long)i);
 	set_tip(templates, obs_module_text("Modes.Template.Tip"));
-	obs_properties_add_button2(props, "add_template", obs_module_text("Modes.AddTemplate"), add_template_cb, owner);
+	obs_property_t *typed =
+		obs_properties_add_text(props, "new_mode", obs_module_text("Modes.NewName"), OBS_TEXT_DEFAULT);
+	set_tip(typed, obs_module_text("Modes.NewName.Tip"));
+	obs_property_t *add =
+		obs_properties_add_button2(props, "add_mode", obs_module_text("Modes.Add"), add_mode_cb, owner);
+	set_tip(add, obs_module_text("Modes.Add.Tip"));
 
 	add_modes_and_rest(props, owner, settings);
 	obs_data_release(settings);
@@ -2151,6 +2147,12 @@ void register_scene_modes()
 	};
 	register_timed(&info);
 	holds_hidden_register(scene_modes_holds_hidden, scene_modes_settling);
+	// A list of the window changed: "Leave to" shows with an entry under
+	// "Leave when shown". Only visibility changes; nothing is rebuilt.
+	pick_list_on_change_for(kSceneModesId, [](obs_properties_t *top, obs_source_t *, obs_data_t *settings) {
+		if (top && settings)
+			show_chosen_mode(top, settings);
+	});
 	go_to_scene_add_test_calls();
 }
 
