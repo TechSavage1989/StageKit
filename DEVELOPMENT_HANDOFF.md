@@ -23,7 +23,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
-## Neon is a tube with a halo (0.1.0-betaNEXT)
+## Neon is a tube with a halo (0.1.0-beta219)
 
 Branch `feat/neon-glow`, rebased on `main` at beta217. Not pushed. The owner on beta212's Neon:
 "neon just looks white", and said "go" to a proper tube. Now the line is whole, in the outline
@@ -40,7 +40,7 @@ tested: Neon through a Morph (it goes through the same `compose`), text, the pat
 designs bit for bit (their pictures move with the clock). Two stale expectations were put
 right on the way (29 designs, not 27, since beta216). Only OpenGL. Contact sheet
 `docs/images/outline-designs.png` regenerated (Neon on dark). Release notes in
-`docs/releases/0.1.0-betaNEXT.md`, to be numbered just before pushing.
+`docs/releases/0.1.0-beta219.md`, to be numbered just before pushing.
 
 ## The whole screen makes room when the image does not fill (0.1.0-beta218)
 
