@@ -123,6 +123,7 @@ void apply_item_change_as_owner(obs_sceneitem_t *item, const ItemChange &change,
 // acts on (null for a filter without one): with it, a "Settings for" box
 // chooses between the usual change and each listed source's own.
 void add_item_change_properties(obs_properties_t *props, obs_source_t *owner, const char *list_setting);
+void refresh_item_change_properties(obs_properties_t *props, obs_source_t *owner, obs_data_t *settings);
 
 // As the scene sets, 300 ms, hiding the same way as showing.
 void item_change_defaults(obs_data_t *settings);

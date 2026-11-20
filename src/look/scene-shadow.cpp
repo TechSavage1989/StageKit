@@ -175,6 +175,19 @@ public:
 	~SceneShadow();
 
 	obs_source_t *filter() const { return source_; }
+	std::string inactive_reason()
+	{
+		std::lock_guard lock(mutex_);
+		if (wide_)
+			return obs_module_text("SceneLook.InactiveHDR");
+		if (told_blocked_.empty())
+			return {};
+		std::string text = obs_module_text("SceneLook.BlockedBy");
+		const size_t at = text.find("%1");
+		if (at != std::string::npos)
+			text.replace(at, 2, told_blocked_);
+		return text;
+	}
 	void update(obs_data_t *settings);
 	void tick(float seconds);
 	void render();
@@ -337,7 +350,6 @@ void SceneShadow::look_again(obs_source_t *parent)
 	if (!in_the_way.empty() && in_the_way != told_blocked_)
 		obs_log(LOG_INFO, "Scene Shadow '%s': the filter '%s' draws before it, so it draws nothing",
 			obs_source_get_name(source_), in_the_way.c_str());
-	told_blocked_ = in_the_way;
 	obs_video_info ovi = {};
 	const bool wide = obs_get_video_info(&ovi) &&
 			  (ovi.colorspace == VIDEO_CS_2100_PQ || ovi.colorspace == VIDEO_CS_2100_HLG);
@@ -356,6 +368,7 @@ void SceneShadow::look_again(obs_source_t *parent)
 	std::lock_guard lock(mutex_);
 	flags_.swap(flags);
 	classified_ = true;
+	told_blocked_ = in_the_way;
 	blocked_ = !in_the_way.empty();
 	wide_ = wide;
 }
@@ -784,6 +797,12 @@ obs_properties_t *get_properties(void *data)
 	obs_source_t *parent = filter ? obs_filter_get_parent(filter) : nullptr;
 	if (parent && obs_source_is_group(parent)) {
 		add_on_group_warning(props, obs_module_text("SceneShadow.OnGroup"));
+	} else if (data) {
+		const std::string reason = static_cast<SceneShadow *>(data)->inactive_reason();
+		if (!reason.empty()) {
+			obs_property_t *status = obs_properties_add_text(props, "look_status", reason.c_str(), OBS_TEXT_INFO);
+			obs_property_text_set_info_word_wrap(status, true);
+		}
 	}
 
 	// What it applies to and the lists first, then the look, then the timing:

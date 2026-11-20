@@ -52,8 +52,8 @@ struct EaseChoice {
 	const char *text;
 };
 inline constexpr EaseChoice kEaseCurves[] = {
-	{0, "Easing.Linear"}, {1, "Easing.Sine"}, {2, "Easing.Quad"}, {3, "Easing.Cubic"},
-	{4, "Easing.Quart"},  {5, "Easing.Quint"}, {6, "Easing.Expo"}, {7, "Easing.Circ"},
+	{0, "Easing.Linear"}, {1, "Easing.Sine"},    {2, "Easing.Quad"},    {3, "Easing.Cubic"},
+	{4, "Easing.Quart"},  {5, "Easing.Quint"},   {6, "Easing.Expo"},    {7, "Easing.Circ"},
 	{8, "Easing.Back"},   {9, "Easing.Elastic"}, {10, "Easing.Bounce"},
 };
 inline constexpr EaseChoice kEaseModes[] = {{0, "Easing.InOut"}, {1, "Easing.In"}, {2, "Easing.Out"}};

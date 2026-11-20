@@ -34,10 +34,7 @@ public:
 	{
 		signal_handler_connect(obs_source_get_signal_handler(filter_), "rename", renamed, this);
 	}
-	~HotkeyRename()
-	{
-		signal_handler_disconnect(obs_source_get_signal_handler(filter_), "rename", renamed, this);
-	}
+	~HotkeyRename() { signal_handler_disconnect(obs_source_get_signal_handler(filter_), "rename", renamed, this); }
 	HotkeyRename(const HotkeyRename &) = delete;
 	HotkeyRename &operator=(const HotkeyRename &) = delete;
 

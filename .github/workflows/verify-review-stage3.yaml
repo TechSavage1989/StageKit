@@ -17,7 +17,7 @@ jobs:
         run: |
           python3 -m venv "$RUNNER_TEMP/format"
           "$RUNNER_TEMP/format/bin/pip" install --quiet clang-format==19.1.7 gersemi
-          "$RUNNER_TEMP/format/bin/clang-format" -i src/ambient/ambient-background.cpp src/capture/active-app.cpp src/capture/app-capture.cpp src/capture/auto-capture.cpp src/capture/standby.cpp src/common/easing.cpp src/common/easing.hpp src/common/hotkey-rename.hpp src/common/start-image.cpp src/common/start-image.hpp src/dock/arrange-tools.cpp src/dock/arrange-tools.hpp src/dock/stagekit-dock.cpp src/frame/auto-frame.cpp src/look/scene-shadow.cpp src/placement/fit-engine.cpp src/placement/scene-tools.cpp src/zoom/ramp-zoom.cpp tests/ambient-test.cpp src/transition/morph.cpp src/common/scene-util.hpp src/placement/scene-standby.cpp src/capture/auto-capture.hpp src/capture/program-trigger.cpp
+          "$RUNNER_TEMP/format/bin/clang-format" -i src/ambient/ambient-background.cpp src/capture/active-app.cpp src/capture/app-capture.cpp src/capture/auto-capture.cpp src/capture/standby.cpp src/common/easing.cpp src/common/easing.hpp src/common/hotkey-rename.hpp src/common/start-image.cpp src/common/start-image.hpp src/dock/arrange-tools.cpp src/dock/arrange-tools.hpp src/dock/stagekit-dock.cpp src/frame/auto-frame.cpp src/look/scene-shadow.cpp src/placement/fit-engine.cpp src/placement/scene-tools.cpp src/zoom/ramp-zoom.cpp tests/ambient-test.cpp src/transition/morph.cpp src/common/scene-util.hpp src/placement/scene-standby.cpp src/capture/auto-capture.hpp src/capture/program-trigger.cpp src/common/item-transition.cpp src/common/item-transition.hpp src/placement/scene-transitions.cpp src/look/scene-blur.cpp src/placement/scene-fit.cpp
           "$RUNNER_TEMP/format/bin/gersemi" --check CMakeLists.txt tests/CMakeLists.txt
           bash scripts/check-root.sh
           ! grep -E '^[A-Za-z]' data/locale/en-US.ini | cut -d= -f1 | sort | uniq -d | grep .
@@ -38,7 +38,7 @@ jobs:
       - name: Install OBS development and rendering dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends libobs-dev obs-studio qt6-base-dev libgl1-mesa-dri xvfb xauth python3-pil
+          sudo apt-get install -y --no-install-recommends libobs-dev obs-studio qt6-base-dev libgl1-mesa-dri xvfb xauth python3-pil valgrind
       - name: Build the plugin and headless test
         run: |
           cmake -S . -B build-tests -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DSTAGEKIT_BUILD_TESTS=ON -DCMAKE_COMPILE_WARNING_AS_ERROR=ON
@@ -55,3 +55,13 @@ jobs:
             grep -E 'FAIL|ALL PASSED|Assertion' "$out/$gate.log" | tail -28 || true
           done
           exit "$failed"
+      - name: Check Scene Transitions property rebuilds for invalid memory accesses
+        if: always() && hashFiles('build-tests/tests/stagekit-ambient-test') != ''
+        run: |
+          out="$PWD/build-tests/out"
+          mkdir -p "$out/tooltips"
+          python3 tests/make-test-image.py "$out"
+          result=0
+          env STAGEKIT_TEST_ONLY_SCENE_TRANS_OVERRIDE=1 xvfb-run -a valgrind --tool=memcheck --leak-check=no --undef-value-errors=no --error-exitcode=86 --log-file="$out/valgrind.log" build-tests/tests/stagekit-ambient-test "$PWD/build-tests/stagekit.so" "$PWD/data" "$out/test-art.png" "$out/test-texture.png" "$out/test-game.png" "$out/tooltips" "$out/test-title.png" "$out/tooltips" "$out/test-pillarbox.png" "$out/test-black.png" "$out/test-dark-game.png" > "$out/valgrind-test.log" 2>&1 || result=$?
+          grep -E -A12 'Invalid read|Invalid write|Invalid free|ERROR SUMMARY' "$out/valgrind.log" | head -110 || true
+          test "$result" = 0 || { test "$result" = 1 && grep -q 'ERROR SUMMARY: 0 errors' "$out/valgrind.log"; }

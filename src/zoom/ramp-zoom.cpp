@@ -176,7 +176,9 @@ private:
 	obs_source_t *parent_ = nullptr;
 	// Last: let go of first.
 	HotkeyRename renamed_{source_, [this] { return std::vector<obs_hotkey_id *>{&hotkey_}; },
-			      [this] { register_hotkey(parent_); }};
+			      [this] {
+				      register_hotkey(parent_);
+			      }};
 };
 
 obs_properties_t *get_properties(void *)

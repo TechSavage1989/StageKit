@@ -178,7 +178,25 @@ public:
 		look->overrides = obs_data_get_bool(settings, "override_others");
 		look->usual = item_change_read(settings);
 		no_scene_kind(look->usual);
-		for (const std::string &name : look->listed) {
+		std::set<std::string> own_names = look->listed;
+		if (look->cover == Cover::All) {
+			// A source can have its own transition without being in the coverage list.
+			// Read saved keys even before the filter is attached to its scene.
+			for (obs_data_item_t *it = obs_data_first(settings); it; obs_data_item_next(&it)) {
+				const char *raw = obs_data_item_get_name(it);
+				if (!raw || strncmp(raw, "for|", 4) != 0 || !obs_data_item_has_user_value(it))
+					continue;
+				const std::string key = raw;
+				const size_t end = key.rfind('|');
+				if (end <= 4)
+					continue;
+				const std::string field = key.substr(end + 1);
+				if (field == "transition" || field == "hide_transition" ||
+				    field == "transition_ms" || field == "hide_ms")
+					own_names.insert(key.substr(4, end - 4));
+			}
+		}
+		for (const std::string &name : own_names) {
 			ItemChange own = item_change_read(settings, name.c_str());
 			no_scene_kind(own);
 			look->own[name] = own;
@@ -774,15 +792,18 @@ const char *sources_tip(Cover cover)
 // "Sources covered" changed: the list's heading and tip follow, and Ignored
 // sources shows only with All sources. Only text and visibility change, so
 // nothing is taken off while OBS goes through the controls.
-bool cover_changed(obs_properties_t *props, obs_property_t *, obs_data_t *settings)
+bool cover_changed(void *data, obs_properties_t *props, obs_property_t *, obs_data_t *settings)
 {
 	const Cover cover = (Cover)obs_data_get_int(settings, "cover");
-	if (obs_property_t *group = obs_properties_get(props, "sources|alist"))
+	if (obs_property_t *group = obs_properties_get(props, "sources|alist")) {
 		obs_property_set_description(group, sources_title(cover));
+		obs_property_set_visible(group, cover == Cover::Listed);
+	}
 	if (obs_property_t *pick = obs_properties_get(props, "sources|apick"))
 		set_tip(pick, sources_tip(cover));
 	// The sources listed are all there is to cover: nothing more to leave out.
 	obs_property_set_visible(obs_properties_get(props, "except|alist"), cover != Cover::Listed);
+	refresh_item_change_properties(props, static_cast<obs_source_t *>(data), settings);
 	return true;
 }
 
@@ -807,7 +828,7 @@ obs_properties_t *get_properties(void *data)
 	obs_property_list_add_int(cover, obs_module_text("SceneTrans.Cover.All"), (int)Cover::All);
 	obs_property_list_add_int(cover, obs_module_text("SceneTrans.Cover.Listed"), (int)Cover::Listed);
 	set_tip(cover, obs_module_text("SceneTrans.Cover.Tip"));
-	obs_property_set_modified_callback(cover, cover_changed);
+	obs_property_set_modified_callback2(cover, cover_changed, source);
 
 	obs_data_t *now = source ? obs_source_get_settings(source) : nullptr;
 	const Cover covered = now ? (Cover)obs_data_get_int(now, "cover") : Cover::All;

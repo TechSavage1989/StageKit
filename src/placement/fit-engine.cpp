@@ -3773,8 +3773,8 @@ void fit_add_controls(obs_properties_t *top, const std::string &prefix, const st
 	set_tip(tolerance, obs_module_text("Fit.Tolerance.Tip"));
 	section("g_measure", "Fit.Group.Measure");
 
-	obs_property_t *glide =
-		obs_properties_add_int_slider(props, key("glide_ms").c_str(), obs_module_text("Fit.Glide"), 0, 10000, 50);
+	obs_property_t *glide = obs_properties_add_int_slider(props, key("glide_ms").c_str(),
+							      obs_module_text("Fit.Glide"), 0, 10000, 50);
 	obs_property_int_set_suffix(glide, " ms");
 	set_tip(glide, obs_module_text("Fit.Glide.Tip"));
 	add_easing_properties(props, prefix.c_str());

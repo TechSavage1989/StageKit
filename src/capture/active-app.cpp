@@ -619,11 +619,11 @@ private:
 	bool held_ = false;                // one switched to by hand is showing
 	obs_hotkey_id next_hotkey_ = OBS_INVALID_HOTKEY_ID, back_hotkey_ = OBS_INVALID_HOTKEY_ID;
 	obs_hotkey_id toggle_hotkey_ = OBS_INVALID_HOTKEY_ID;
-	HotkeyRename renamed_{source_,
-			      [this] {
-				      return std::vector<obs_hotkey_id *>{&next_hotkey_, &back_hotkey_, &toggle_hotkey_};
-			      },
-			      [this] { register_hotkeys(); }};
+	HotkeyRename renamed_{
+		source_, [this] { return std::vector<obs_hotkey_id *>{&next_hotkey_, &back_hotkey_, &toggle_hotkey_}; },
+		[this] {
+			register_hotkeys();
+		}};
 	bool follow_ = true;
 	std::string transition_ = kTransitionScene;
 	uint32_t transition_ms_ = 250;

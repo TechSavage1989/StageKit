@@ -1816,7 +1816,7 @@ private:
 		const bool from_dock = !items.empty() && scene && selection_in_order(scene).empty();
 		for (size_t i = 0; i < items.size(); i++) {
 			const QString name = QString::fromUtf8(obs_source_get_name(obs_sceneitem_get_source(items[i])));
-			rows << (from_dock                ? tr_text("Arrange.ChosenInDock").arg(name)
+			rows << (from_dock       ? tr_text("Arrange.ChosenInDock").arg(name)
 				 : (int)i == key ? tr_text("Arrange.KeyItem").arg(name)
 						 : name);
 		}
@@ -2328,8 +2328,9 @@ private:
 	{
 		const bool there = edit_transform_action() != nullptr;
 		edit_transform_->setEnabled(there);
-		dock_tip(edit_transform_, tr_text("Dock.EditTransform") + "\n" +
-						  tr_text(there ? "Dock.EditTransform.Tip" : "Dock.EditTransform.Missing"));
+		dock_tip(edit_transform_,
+			 tr_text("Dock.EditTransform") + "\n" +
+				 tr_text(there ? "Dock.EditTransform.Tip" : "Dock.EditTransform.Missing"));
 		static bool said = false;
 		if (!there && !said) {
 			said = true;

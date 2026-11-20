@@ -1235,7 +1235,9 @@ private:
 	obs_hotkey_id hotkey_ = OBS_INVALID_HOTKEY_ID;
 	std::mutex hotkey_mutex_; // the tick registers it, a rename again
 	HotkeyRename renamed_{source_, [this] { return std::vector<obs_hotkey_id *>{&hotkey_}; },
-			      [this] { register_hotkey(obs_filter_get_parent(source_), true); }};
+			      [this] {
+				      register_hotkey(obs_filter_get_parent(source_), true);
+			      }};
 	bool own_shape_ = true;            // while waiting, the picture keeps its own shape
 	uint32_t live_w_ = 0, live_h_ = 0; // the capture's size while it shows
 	// The size, gliding from one to the next.

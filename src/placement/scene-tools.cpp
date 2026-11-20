@@ -774,12 +774,59 @@ private:
 	obs_hotkey_id hotkey_ = OBS_INVALID_HOTKEY_ID;
 };
 
+void update_layout_status(obs_properties_t *props, obs_source_t *filter, obs_data_t *settings)
+{
+	obs_property_t *status = obs_properties_get(props, "saved_status");
+	if (!status)
+		return;
+	if (!settings || !obs_data_has_user_value(settings, "saved")) {
+		obs_property_set_description(status, obs_module_text("Layout.NotSaved"));
+		return;
+	}
+
+	std::vector<std::string> saved_names;
+	obs_data_array_t *saved = obs_data_get_array(settings, "saved");
+	for (size_t i = 0; i < obs_data_array_count(saved); ++i) {
+		obs_data_t *entry = obs_data_array_item(saved, i);
+		saved_names.emplace_back(obs_data_get_string(entry, "name"));
+		obs_data_release(entry);
+	}
+	obs_data_array_release(saved);
+
+	std::string text = obs_module_text("Layout.SavedStatus");
+	const size_t count = text.find("%1");
+	if (count != std::string::npos)
+		text.replace(count, 2, std::to_string(saved_names.size()));
+	if (obs_source_t *parent = filter ? obs_filter_get_parent(filter) : nullptr) {
+		std::vector<std::string> current;
+		scene_item_names(parent, current);
+		const auto chosen = pick_list_read(settings, "only_items", false);
+		if (!chosen.empty())
+			current.erase(std::remove_if(current.begin(), current.end(), [&](const std::string &name) {
+				return std::find(chosen.begin(), chosen.end(), name) == chosen.end();
+			}), current.end());
+		std::sort(current.begin(), current.end());
+		std::sort(saved_names.begin(), saved_names.end());
+		if (current != saved_names)
+			text += std::string(" ") + obs_module_text("Layout.Changed");
+	}
+	obs_property_set_description(status, text.c_str());
+}
+
 obs_properties_t *layout_properties(void *data)
 {
 	obs_properties_t *props = obs_properties_create();
 	obs_properties_add_button2(
 		props, "save", obs_module_text("Layout.Save"),
-		[](obs_properties_t *, obs_property_t *, void *d) { return static_cast<Layout *>(d)->save_current(); },
+		[](obs_properties_t *p, obs_property_t *, void *d) {
+			auto *layout = static_cast<Layout *>(d);
+			if (!layout || !layout->save_current())
+				return false;
+			obs_data_t *settings = obs_source_get_settings(layout->source());
+			update_layout_status(p, layout->source(), settings);
+			obs_data_release(settings);
+			return true;
+		},
 		data);
 	{
 		obs_source_t *filter = data ? static_cast<Layout *>(data)->source() : nullptr;
@@ -793,9 +840,13 @@ obs_properties_t *layout_properties(void *data)
 		};
 		pick_list_add(props, filter, only);
 	}
-	obs_property_t *count =
-		obs_properties_add_int(props, "saved_count", obs_module_text("Layout.SavedCount"), 0, 100000, 1);
-	obs_property_set_enabled(count, false);
+	obs_property_t *status = obs_properties_add_text(props, "saved_status", "", OBS_TEXT_INFO);
+	obs_property_text_set_info_word_wrap(status, true);
+	obs_source_t *owner = data ? static_cast<Layout *>(data)->source() : nullptr;
+	obs_data_t *settings = owner ? obs_source_get_settings(owner) : nullptr;
+	update_layout_status(props, owner, settings);
+	obs_data_release(settings);
+	pick_list_on_change_for(kLayoutId, update_layout_status);
 	obs_property_t *duration =
 		obs_properties_add_int_slider(props, "duration_ms", obs_module_text("Place.Duration"), 0, 5000, 50);
 	obs_property_int_set_suffix(duration, " ms");

@@ -10648,6 +10648,14 @@ static void scene_trans_override_test()
 		obs_data_release(s);
 		obs_properties_t *props = obs_source_properties(f);
 		const std::string all_title = description(props, "sources|alist");
+		obs_property_t *for_box = obs_properties_get(props, "change|for");
+		bool offers_a = false, offers_b = false;
+		for (size_t n = 0; for_box && n < obs_property_list_item_count(for_box); n++) {
+			const char *name = obs_property_list_item_string(for_box, n);
+			offers_a |= name && strcmp(name, "OV A") == 0;
+			offers_b |= name && strcmp(name, "OV B") == 0;
+		}
+		CHECK(offers_a && offers_b, "Settings for offers both scene sources before either is listed");
 		std::string all_tip = tip(props, "sources|apick");
 		const bool has_box = obs_properties_get(props, "override_others") != nullptr;
 		const std::string box = description(props, "override_others");
@@ -10683,6 +10691,18 @@ static void scene_trans_override_test()
 		      "with Chosen sources it is Chosen sources, changed in place and in a new window (%s / %s: %s)",
 		      chosen_title.c_str(), opened.c_str(), chosen_tip.c_str());
 	}
+
+	change(f, [](obs_data_t *s) {
+		obs_data_set_string(s, "for|OV B|transition", "slide_transition");
+		obs_data_set_int(s, "for|OV B|transition_ms", 250);
+	});
+	wait(src, 350);
+	CHECK(kind_of(ib, true) == "slide_transition" && kind_of(ia, true) == "fade_transition",
+	      "an unlisted source uses its own transition while its neighbour keeps the scene's fade");
+	change(f, [](obs_data_t *s) {
+		obs_data_erase(s, "for|OV B|transition");
+		obs_data_erase(s, "for|OV B|transition_ms");
+	});
 
 	// ---- Morph's own choices in the window
 	{

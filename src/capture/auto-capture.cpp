@@ -1723,18 +1723,20 @@ private:
 	{
 		bool no_game, use_standby;
 		int style, ms, curve, mode;
+		const bool toggle = cmd_hide_.exchange(false);
 		HidChange hide_change;
 		{
 			std::lock_guard lock(mutex_);
 			no_game = no_game_standby_;
 			use_standby = hide_standby_;
-			hide_change = hide_change_;
+			if (toggle)
+				hide_change = hide_change_;
 			style = cover_style_;
 			ms = cover_ms_;
 			curve = cover_curve_;
 			mode = cover_mode_;
 		}
-		if (cmd_hide_.exchange(false)) {
+		if (toggle) {
 			// Covered by the command: uncovered. Items it hid: those shown
 			// again, and only those. Otherwise covered with the Standby
 			// Picture, or its items hidden and written down.
@@ -1880,14 +1882,16 @@ void show_status(obs_properties_t *props, AutoCapture *self)
 // The Standby Image's transition is only used by the two standby options:
 // with neither ticked its controls do nothing and are hidden. Only
 // visibility changes here.
-bool standby_modified(obs_properties_t *props, obs_property_t *, obs_data_t *settings)
+bool standby_modified(void *data, obs_properties_t *props, obs_property_t *, obs_data_t *settings)
 {
 	const bool used = obs_data_get_bool(settings, "no_game_standby") || obs_data_get_bool(settings, "hide_standby");
 	obs_property_set_visible(obs_properties_get(props, "standby_style"), used);
 	const int style = (int)obs_data_get_int(settings, "standby_style");
 	for (const char *name : {"standby_ms", "standby_ease_curve", "standby_ease_mode"})
 		obs_property_set_visible(obs_properties_get(props, name), used && style != -1 && style != 1);
-	const bool hide_items = !obs_data_get_bool(settings, "hide_standby");
+	auto *capture = static_cast<AutoCapture *>(data);
+	obs_source_t *parent = capture ? obs_filter_get_parent(capture->source()) : nullptr;
+	const bool hide_items = !obs_data_get_bool(settings, "hide_standby") || !parent || !standby_present(parent);
 	obs_property_set_visible(obs_properties_get(props, "item_hide_group"), hide_items);
 	const std::string kind = obs_data_get_string(settings, "transition");
 	obs_property_set_visible(obs_properties_get(props, "transition_ms"), kind != kTransitionKeep && kind != kTransitionCut);
@@ -1972,7 +1976,7 @@ obs_properties_t *get_properties(void *data)
 	obs_property_t *no_game =
 		obs_properties_add_bool(no_game_group, "no_game_standby", obs_module_text("Capture.NoGameStandby"));
 	set_tip(no_game, obs_module_text("Capture.NoGameStandby.Tip"));
-	obs_property_set_modified_callback(no_game, standby_modified);
+	obs_property_set_modified_callback2(no_game, standby_modified, self);
 	obs_properties_add_group(props, "no_game_group", obs_module_text("Capture.NoGameGroup"), OBS_GROUP_NORMAL,
 				 no_game_group);
 
@@ -1982,7 +1986,7 @@ obs_properties_t *get_properties(void *data)
 	obs_property_t *hide_standby =
 		obs_properties_add_bool(standby, "hide_standby", obs_module_text("AppCapture.HideStandby"));
 	set_tip(hide_standby, obs_module_text("Capture.HideStandby.Tip"));
-	obs_property_set_modified_callback(hide_standby, standby_modified);
+	obs_property_set_modified_callback2(hide_standby, standby_modified, self);
 	obs_property_t *style = obs_properties_add_list(standby, "standby_style", obs_module_text("Change.With"),
 							OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	{
@@ -2001,7 +2005,7 @@ obs_properties_t *get_properties(void *data)
 	}
 	obs_property_list_add_int(style, obs_module_text("Capture.StandbyOwn"), -1);
 	set_tip(style, obs_module_text("Capture.StandbyStyle.Tip"));
-	obs_property_set_modified_callback(style, standby_modified);
+	obs_property_set_modified_callback2(style, standby_modified, self);
 	obs_property_t *ms =
 		obs_properties_add_int_slider(standby, "standby_ms", obs_module_text("Change.Time"), 0, 5000, 50);
 	obs_property_int_set_suffix(ms, " ms");
