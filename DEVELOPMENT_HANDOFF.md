@@ -23,7 +23,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
-## An outline at the screen's edge (0.1.0-betaNEXT)
+## An outline at the screen's edge (0.1.0-beta224)
 
 Branch `fix/outline-edge-bleed`, from `main` at beta220. Not pushed. The owner (Windows, OBS 32,
 2560x1440): "the border seems to bleed a pixel or two on the right and/or left sides of some
