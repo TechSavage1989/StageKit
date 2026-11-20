@@ -8,7 +8,7 @@ import {
 } from "@elgato/streamdeck";
 import type { JsonValue } from "@elgato/utils";
 
-import { targetOf } from "../kinds.ts";
+import { switcherStep, targetOf } from "../kinds.ts";
 import { obs } from "../obs.ts";
 import { shownId, stepShown } from "../pictures.ts";
 import { stepTitle } from "../titles.ts";
@@ -42,14 +42,15 @@ export class AppSwitch extends SingletonAction<KeySettings> {
 	}
 
 	override async onKeyDown(ev: KeyDownEvent<KeySettings>): Promise<void> {
-		const { filter } = targetOf(ev.payload.settings);
-		if (!obs.isConnected || !filter) {
+		const { source, filter } = targetOf(ev.payload.settings);
+		const target = await obs.filter(source, filter);
+		const step = switcherStep(target?.kind, ev.payload.settings.step);
+		if (!step) {
 			await ev.action.showAlert();
 			return;
 		}
 		try {
-			const step = ev.payload.settings.step;
-			await obs.pressHotkey(`stagekit.active.${step === "back" || step === "hide" || step === "toggle" || step === "clear" ? step : "next"}.${filter}`);
+			await obs.pressHotkey(`stagekit.active.${step}.${filter}`, source);
 			// (A key showing which way it is says so by its picture.)
 			if (step !== "toggle" && step !== "hide") await ev.action.showOk();
 		} catch {
@@ -64,16 +65,18 @@ export class AppSwitch extends SingletonAction<KeySettings> {
 	}
 
 	private async show(key: KeyAction<KeySettings>, settings: KeySettings): Promise<void> {
-		const pick = (s: KeySettings) => stepShown(keptPicture(s), s.step, s.sourceType);
+		const { source, filter } = targetOf(settings);
+		const target = await obs.filter(source, filter);
+		const step = switcherStep(target?.kind, settings.step) ?? settings.step;
+		const pick = (s: KeySettings) => stepShown(keptPicture(s), step, s.sourceType);
 		settings = await settle(key, "appswitch", settings, (s) => shownId(pick(s)));
 		const picture = pick(settings);
-		await key.setTitle(stepTitle(settings.step));
-		if (settings.step === "toggle" || settings.step === "hide") {
+		await key.setTitle(stepTitle(step));
+		if (step === "toggle" || step === "hide") {
 			// Which way it is: on a manual window (Toggle), or the capture
 			// shown (Hide).
-			const { source, filter } = targetOf(settings);
 			const now = await obs.switcherState(source, filter);
-			const on = settings.step === "toggle" ? now?.manual === true : now !== undefined && !now.hidden;
+			const on = step === "toggle" ? now?.manual === true : now !== undefined && !now.hidden;
 			await showOnOff(key, picture, on, settings);
 			return;
 		}

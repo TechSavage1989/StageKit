@@ -50,7 +50,13 @@ function standbyAndShow(request: string, data: Record<string, unknown>): Record<
 }
 
 const pressed: string[] = [];
+const hotkeyContexts: Array<string | undefined> = [];
 let blurred = false;
+let programScene = "Game Scene";
+let previewScene = "";
+let studioMode = false;
+let selectedTransition = "Fade";
+let selectedDuration = 300;
 
 // Scene Modes filters, as the StageKit plugin answers for them (modes.md §7).
 type ModeFilter = { scene: string; filter: string; enabled: boolean; current: string; previous: string; modes: Array<{ id: string; name: string; type: string }> };
@@ -163,7 +169,29 @@ function answer(requestType: string, data: Record<string, unknown> = {}): { ok: 
 		}
 		case "GetTransitionKindList":
 			return { ok: true, data: { transitionKinds: ["cut_transition", "fade_transition", "swipe_transition"] } };
+		case "GetCurrentProgramScene":
+			return { ok: true, data: { currentProgramSceneName: programScene } };
+		case "GetCurrentPreviewScene":
+			return studioMode ? { ok: true, data: { currentPreviewSceneName: previewScene } } : { ok: false };
+		case "GetStudioModeEnabled":
+			return { ok: true, data: { studioModeEnabled: studioMode } };
+		case "GetCurrentSceneTransition":
+			return { ok: true, data: { transitionName: selectedTransition, transitionDuration: selectedDuration, transitionKind: selectedTransition === "Cut" ? "cut_transition" : "fade_transition", transitionFixed: selectedTransition === "Cut" } };
+		case "SetCurrentSceneTransition":
+			selectedTransition = String(data.transitionName);
+			return { ok: true };
+		case "SetCurrentSceneTransitionDuration":
+			selectedDuration = Number(data.transitionDuration);
+			return { ok: true };
+		case "SetCurrentProgramScene":
+			if (data.sceneName === "Missing scene") return { ok: false };
+			programScene = String(data.sceneName);
+			return { ok: true };
+		case "SetCurrentPreviewScene":
+			previewScene = String(data.sceneName);
+			return { ok: true };
 		case "TriggerHotkeyByName":
+			hotkeyContexts.push(typeof data.contextName === "string" ? data.contextName : undefined);
 			pressed.push(String(data.hotkeyName));
 			return { ok: true };
 		case "CallVendorRequest": {
@@ -181,7 +209,8 @@ function answer(requestType: string, data: Record<string, unknown> = {}): { ok: 
 				return { ok: true, data: { vendorName: "StageKit", requestType: data.requestType, responseData } };
 			}
 			if (data.requestType === "BlurAll") {
-				blurred = !blurred;
+				const mode = (data.requestData as { mode?: string })?.mode;
+				blurred = mode === "on" || (mode !== "off" && !blurred);
 				return { ok: true, data: { vendorName: "StageKit", requestType: "BlurAll", responseData: { success: true, active: blurred } } };
 			}
 			return { ok: true, data: { vendorName: "StageKit", requestType: data.requestType, responseData: { success: false, error: "no such request" } } };
@@ -215,6 +244,10 @@ before(async () => {
 				});
 				if (got.ok && d.requestType === "SetSourceFilterEnabled")
 					send(5, { eventType: "SourceFilterEnableStateChanged", eventIntent: 32, eventData: d.requestData });
+				if (got.ok && d.requestType === "SetCurrentProgramScene") {
+					const eventData = { transitionName: selectedTransition };
+					setTimeout(() => send(5, { eventType: "SceneTransitionEnded", eventIntent: 16, eventData }), 5);
+				}
 				for (const event of coverEvents.splice(0)) {
 					const eventData = { vendorName: "StageKit", eventType: "StandbyCoverChanged", eventData: event };
 					setTimeout(() => send(5, { eventType: "VendorEvent", eventIntent: 512, eventData }), 5);
@@ -295,6 +328,62 @@ test("it connects, lists only StageKit's filters, switches one and hears of it",
 	);
 	assert.deepEqual(await obs.transitionKinds(), ["cut_transition", "fade_transition", "swipe_transition"]);
 	assert.equal(await obs.stageKit("NoSuchRequest"), undefined, "and one it refuses comes back as nothing");
+});
+
+test("manual capture addresses the chosen parent and offers only that filter's controls", async () => {
+	const { AppSwitch } = await import("../src/actions/app-switch.ts");
+	const { switcherSteps, TARGET_SEP } = await import("../src/kinds.ts");
+	filters.Second = [{ filterName: "Switch", filterKind: "stagekit_app_capture", filterEnabled: true }];
+	filters.First = [{ filterName: "Switch", filterKind: "stagekit_auto_capture", filterEnabled: true }];
+	const action = new AppSwitch();
+	let alerts = 0;
+	const press = (source: string, step?: string) => action.onKeyDown({
+		payload: { settings: { target: source + TARGET_SEP + "Switch", step } },
+		action: { showOk: async () => {}, showAlert: async () => { alerts++; } },
+	} as never);
+	await press("Second", "clear");
+	await press("First");
+	assert.deepEqual(hotkeyContexts.slice(-2), ["Second", "First"]);
+	assert.deepEqual(pressed.slice(-2), ["stagekit.active.clear.Switch", "stagekit.active.hide.Switch"]);
+	const count = pressed.length;
+	await press("First", "clear");
+	assert.equal(alerts, 1);
+	assert.equal(pressed.length, count);
+	assert.deepEqual(switcherSteps("stagekit_active_app").map((x) => x.value), ["toggle", "next", "back"]);
+	assert.equal(switcherSteps("stagekit_app_capture").length, 5);
+	delete filters.First;
+	delete filters.Second;
+});
+
+test("Blur All accepts repeatable on and off actions and preserves toggle on existing keys", async () => {
+	const { BlurAll } = await import("../src/actions/blur-all.ts");
+	const action = new BlurAll();
+	const key = { setTitle: async () => {}, setImage: async () => {}, setState: async () => {}, showAlert: async () => assert.fail("Blur All was refused") };
+	const press = (value?: string) => action.onKeyDown({ action: key, payload: { settings: { press: value } } } as never);
+	for (const value of ["on", "on", "off", "off", undefined]) {
+		await press(value);
+		assert.equal(blurred, value !== "off");
+	}
+});
+
+test("a scene key uses the live scene outside Studio Mode and can restore OBS transition settings", async () => {
+	await obs.switchScene("Live", true, "Swipe", 480, true);
+	assert.deepEqual(await obs.currentScenes(), { program: "Live", preview: "" });
+	const { SceneSwitch } = await import("../src/actions/scene.ts");
+	let state = -1;
+	const key = { isKey: () => true, setTitle: async () => {}, setImage: async () => {}, setState: async (value: number) => { state = value; } };
+	await new SceneSwitch().onWillAppear({ action: key, payload: { settings: { where: "preview", scene: "Live" } } } as never);
+	assert.equal(state, 1, "a Preview key lights on its live program scene with Studio Mode off");
+	assert.deepEqual([selectedTransition, selectedDuration], ["Fade", 300]);
+	await assert.rejects(obs.switchScene("Missing scene", false, "Swipe", 450, true));
+	assert.deepEqual([selectedTransition, selectedDuration], ["Fade", 300], "restore on a rejected switch");
+	await obs.switchScene("Chat", false, "Swipe", 480);
+	assert.deepEqual([selectedTransition, selectedDuration], ["Swipe", 480], "existing keys keep the chosen defaults");
+	studioMode = true;
+	await obs.switchScene("Preview", true, "Fade", 700, true);
+	assert.deepEqual(await obs.currentScenes(), { program: "Chat", preview: "Preview" });
+	assert.deepEqual([selectedTransition, selectedDuration], ["Swipe", 480]);
+	studioMode = false;
 });
 
 test("a Scene Mode key lists every mode, turns one on by its id and is lit when the filter says so", async () => {
@@ -471,10 +560,10 @@ test("a Scene Mode key is tied to one filter: Switch on, Switch off, Toggle, Nex
 	page = editModeSettings({ modeFilter: standby, modeFilterWas: standby, mode: "m2" })!;
 	assert.deepEqual([page.modeFor, page.modeForWas, page.modeType], ["m2", "m2", "auto"], "the key's own mode");
 	page = editModeSettings({ modeFilter: standby, modeFilterWas: standby }, "m1")!;
-	assert.equal(page.modeFor, "m1", "none to switch to: the filter's first mode");
+	assert.deepEqual([page.mode, page.modeFor], ["m1", "m1"], "a new key selects the first mode for both controls");
 	assert.equal(editModeSettings({ modeFilter: standby, modeFilterWas: standby }), undefined, "the first mode not known: left empty");
 	page = editModeSettings({ modeFilter: `Chat Live${sep}Column`, modeFilterWas: standby, mode: "m2", modeFor: "m2", modeForWas: "m2" }, "k1")!;
-	assert.deepEqual([page.mode, page.modeFor], ["", "k1"], "another filter: its first mode");
+	assert.deepEqual([page.mode, page.modeFor], ["k1", "k1"], "the new filter selects its first mode for the first press");
 
 	// A key saved up to beta179 with the key-wide Layout and Mode type the page no longer shows: its own mode's
 	// Image list shows that Mode type, nothing is written for looking, and editing that Image takes its place.

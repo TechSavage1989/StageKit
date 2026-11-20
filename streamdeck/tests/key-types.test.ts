@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { test } from "node:test";
+import { runInNewContext } from "node:vm";
 
 import features from "../src/features.json" with { type: "json" };
 import { adoptOld, keptPicture, keysWithLists, layoutList, modePictureLists, OWN_LISTS, SCENE_TYPES, sceneTypePicture, SOURCE_TYPES, sourceTypePicture, typeForKept, typeLists } from "../src/key-types.ts";
@@ -173,6 +174,11 @@ test("every settings page has its type lists and no Image list", () => {
 	const manifest = JSON.parse(readFileSync(new URL("manifest.json", plugin), "utf8"));
 	for (const action of manifest.Actions) {
 		const page = readFileSync(new URL(action.PropertyInspectorPath, plugin), "utf8");
+		assert.match(page, /<details open>\s*<summary>Image<\/summary>/, action.UUID);
+		const image = page.indexOf("<summary>Image</summary>");
+		assert.ok(page.indexOf('setting="palette"') > image, action.UUID);
+		for (const row of page.matchAll(/<sdpi-item\b[^>]*>/g))
+			assert.ok(/\btitle="[^"]+"/.test(row[0]), action.UUID + " " + row[0]);
 		assert.ok(!page.includes('setting="picture"') && !page.includes("getPictures"), `${action.PropertyInspectorPath}: an Image list`);
 	}
 	const pageOf = (key: string) => (key === "blurall" ? "blur-all" : key);
@@ -249,8 +255,10 @@ test("devices, status, styles and activities are in the lists they belong to", (
 	assert.ok(values("blur", "look").length >= 14);
 	assert.equal(values("corners", "look").length, 7);
 	assert.equal(values("shadow", "look").length, 7);
-	for (const key of ["showhide", "visibilitylink", "activeapp", "appcapture"])
-		assert.deepEqual(values(key, "look"), ["fade", "cut", "slide", "swipe", "wipe", "zoom", "morph"], key);
+	for (const key of ["visibilitylink", "activeapp", "appcapture", "scenetransitions"])
+		assert.deepEqual(values(key, "look"), ["fade", "cut", "slide", "swipe", "wipe", "zoom", "morph", "make-room"], key);
+	assert.deepEqual(values("showhide", "look"), ["nearest", "from-left", "from-right", "from-top", "from-bottom", "pop"]);
+	assert.equal(chooseFor(undefined, "stagekit_show_hide", {}, "", undefined, { look: "wipe" })?.id, "options/style-wipe");
 	// Lists stay to their job: no device in a Blur source list without the pack's blurred image of it, no activity on a capture key.
 	for (const key of ["zoom", "standby", "autoframe", "autocapture", "appcapture", "programtrigger"])
 		assert.ok(!groupsOf(key, "sourceType").some((g) => g.label === "Activities"), key);
@@ -293,8 +301,8 @@ test("the Scene Mode key's page: the filter, a mode and its own settings, then t
 		["modeFilter", "Scene and filter"],
 		["modeFor", "Mode settings"],
 		["modeUse", "Use in Next"],
-		["modeLayout", "Layout"],
-		["modeType", "Image"],
+		["modeLayout", "Image layout"],
+		["modeType", "Mode type"],
 		["press", "On press"],
 		["mode", "Switch to mode"],
 		["longPress", "Long press"],
@@ -318,4 +326,27 @@ test("the Scene Mode key's page: the filter, a mode and its own settings, then t
 	for (const gone of ["layout", "sourceType"]) assert.ok(!page.includes(`setting="${gone}"`), gone);
 	assert.equal(page.split('setting="palette"').length, 2, "one Palette");
 	assert.equal(page.split("<optgroup").length - 1, modePictureLists()[1].groups.filter((g) => g.label).length, "one long type list");
+});
+
+test("property inspector rows follow the selected action, hold and picture type", () => {
+	const page = readFileSync(new URL("../com.techsavage1989.stagekit.sdPlugin/ui/mode.html", import.meta.url), "utf8");
+	const script = [...page.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]).find((code) => code.includes("const visible ="));
+	assert.ok(script);
+	const values: Record<string, string> = { longPress: "none", press: "on", sceneType: "auto" };
+	const hidden: Record<string, boolean> = {};
+	let update = () => {};
+	const elements = ["holdMs", "longMode", "modeUse", "hideAs", "animate", ...Object.keys(values)].map((name) => ({
+		get value() { return values[name] || ""; },
+		getAttribute: (attr: string) => attr === "setting" ? name : "",
+		addEventListener: (_event: string, callback: () => void) => { update = callback; },
+		closest: () => ({ set hidden(value: boolean) { hidden[name] = value; }, style: {} }),
+	}));
+	runInNewContext(script, { document: { querySelectorAll: () => elements }, window: {},
+		customElements: { whenDefined: () => ({ then: (callback: () => void) => callback() }) },
+		requestAnimationFrame: (callback: () => void) => callback(),
+	});
+	assert.deepEqual(hidden, { holdMs: true, longMode: true, modeUse: true, hideAs: true, animate: false });
+	Object.assign(values, { longPress: "toggle", press: "next", sceneType: "camera" });
+	update();
+	assert.deepEqual(hidden, { holdMs: false, longMode: false, modeUse: false, hideAs: false, animate: true });
 });

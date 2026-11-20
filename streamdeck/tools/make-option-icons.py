@@ -203,7 +203,7 @@ DRAWINGS["scene"] = [("frame", 6, 3, 58, 33), ("box", 11, 8, 35, 28), ("box", 39
 SWITCHES_EXTRA = ["scene"]
 
 # Aspect ratios: the ratio as a frame of that shape.
-RATIOS = ["4:3", "8:7", "3:2", "10:9", "16:9", "16:10", "5:4", "1:1", "64:49"]
+RATIOS = ["4:3", "8:7", "3:2", "10:9", "16:9", "16:10", "5:4", "1:1", "64:49", "16:15"]
 for ratio in RATIOS:
     a, b = (int(n) for n in ratio.split(":"))
     h = 30.0
@@ -526,9 +526,12 @@ STYLES = {
     "wipe": [("frame", 4, 4, 60, 32), ("tri", 4, 4, 40, 4, 4, 32), ("line", 40, 4, 22, 32)],
     "zoom": [("frame", 24, 12, 40, 24), ("frame", 6, 2, 58, 34)] + arrow(22, 10, 12, 5, 4) + arrow(42, 26, 52, 31, 4),
     "morph": [("box", 6, 9, 24, 27), ("ring", 49, 18, 9)] + arrow(27, 18, 37, 18, 4),
+    "make-room": [("frame", 3, 6, 61, 30), ("box", 7, 11, 23, 25), ("frame", 44, 11, 56, 25)] + arrow(26, 18, 40, 18, 4),
 }
 for _style, _shapes in STYLES.items():
     DRAWINGS["style-" + _style] = _shapes
+DRAWINGS["match-item"] = [("frame", 5, 4, 31, 23), ("frame", 33, 13, 59, 32), ("line", 13, 27, 28, 27), ("line", 13, 31, 28, 31)]
+DRAWINGS["scene-transitions"] = [("frame", 3, 4, 25, 24), ("frame", 39, 12, 61, 32)] + arrow(21, 18, 43, 18, 5)
 
 
 def rounded(x0, y0, x1, y1, r):
@@ -611,6 +614,7 @@ SWITCHES += list(GROUPED)
 SWITCHES += [type_name(t) for t in TYPES] + ["mode", "scene-fit", "scene-shadow", "scene-corners"]
 SWITCHES += [type_name(t) for t in MORE_TYPES] + ["scene-type-" + s.replace("_", "-") for s in SCENE_TYPES]
 SWITCHES += ["style-" + s for s in STYLES]
+SWITCHES += ["match-item", "scene-transitions"]
 
 
 def drawn(shapes, ink, box=SCREEN, size=1.0):

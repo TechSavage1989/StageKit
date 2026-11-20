@@ -28,31 +28,34 @@
 			</div>
 		</sdpi-item>
 		<sdpi-item label="Capture and filter" title="Each entry is a source and, after the dash, the name of its “Source Filter: Auto Frame (StageKit)”. In OBS: right-click the source and choose Filters to find that filter by its name.">
-			<sdpi-select setting="target" datasource="getTargets" placeholder="Choose" show-refresh></sdpi-select>
+			<sdpi-select setting="target" datasource="getTargets" placeholder="Choose one" show-refresh></sdpi-select>
 		</sdpi-item>
-		<sdpi-item label="Ratio">
+		<sdpi-item label="Ratio" title="The displayed width and height. Automatic hands control back to Auto Frame.">
 			<sdpi-select setting="shape" default="4:3">
-				<option value="auto">Automatic (hand it back)</option>
+				<option value="auto">Automatic (work it out)</option>
 				<option value="4:3">4:3</option>
-				<option value="8:7">8:7</option>
+				<option value="8:7">8:7 (SNES / NES, square pixels)</option>
+				<option value="64:49">64:49 (SNES / NES on a 4:3 TV)</option>
 				<option value="3:2">3:2</option>
 				<option value="10:9">10:9</option>
+				<option value="16:15">16:15</option>
 				<option value="16:9">16:9</option>
 				<option value="16:10">16:10</option>
 				<option value="5:4">5:4</option>
 				<option value="1:1">1:1</option>
-				<option value="64:49">64:49</option>
 			</sdpi-select>
 		</sdpi-item>
-		<sdpi-item label="Keep ratio">
+		<sdpi-item label="Keep ratio" title="Keep the override for this game, or until another ratio is selected.">
 			<sdpi-select setting="keep" default="game">
 				<option value="game">This game only</option>
 				<option value="always">Until changed</option>
 			</sdpi-select>
 		</sdpi-item>
-		<sdpi-item label="Layout" title="How the key&#x27;s image is laid out: the type alone, in the live layout with a camera in its corner, or in the live layout with a camera and chat column. Automatic keeps the image as it is.">
-			<sdpi-select setting="layout" placeholder="Automatic">
-				<option value="auto">Automatic</option>
+		<details open>
+			<summary>Image</summary>
+		<sdpi-item label="Image layout" title="Live adds a camera. Live + chat adds a camera and a chat column. Standalone removes the frame from the six game, window and capture-card layout images. Other images keep their usual drawing.">
+			<sdpi-select setting="layout" placeholder="Automatic (usual layout)">
+				<option value="auto">Automatic (usual layout)</option>
 				<option value="standalone">Standalone</option>
 				<option value="live">Live (no chat)</option>
 				<option value="chat">Live + chat</option>
@@ -211,7 +214,7 @@
 				</optgroup>
 			</sdpi-select>
 		</sdpi-item>
-		<sdpi-item label="Palette">
+		<sdpi-item label="Palette" title="The colors used to draw this key. Applies to its on and off states.">
 			<sdpi-select setting="palette" default="mono">
 				<option value="mono">Mono</option>
 				<option value="violet">Violet</option>
@@ -221,16 +224,16 @@
 				<option value="neon">Neon</option>
 			</sdpi-select>
 		</sdpi-item>
-
+		</details>
 		<details>
 			<summary>OBS connection</summary>
-			<sdpi-item label="Address">
+			<sdpi-item label="Address" title="Computer running OBS. Use 127.0.0.1 when Stream Deck and OBS run on the same computer.">
 				<sdpi-textfield setting="host" global placeholder="127.0.0.1"></sdpi-textfield>
 			</sdpi-item>
-			<sdpi-item label="Port">
+			<sdpi-item label="Port" title="The port shown in OBS under Tools, WebSocket Server Settings.">
 				<sdpi-textfield setting="port" global placeholder="4455"></sdpi-textfield>
 			</sdpi-item>
-			<sdpi-item label="Password">
+			<sdpi-item label="Password" title="The password shown in OBS under WebSocket Server Settings, Show Connect Info. All StageKit keys share it.">
 				<sdpi-password setting="password" global></sdpi-password>
 			</sdpi-item>
 			<p>

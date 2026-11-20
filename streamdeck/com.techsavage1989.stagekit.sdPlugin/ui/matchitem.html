@@ -1,0 +1,252 @@
+<!doctype html>
+<html>
+	<head lang="en">
+		<title>StageKit Match Item</title>
+		<meta charset="utf-8" />
+		<script src="https://sdpi-components.dev/releases/v4/sdpi-components.js"></script>
+		<style>
+			body, summary, p {
+				font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+				font-size: 9pt;
+			}
+			details { margin-top: 10px; border-top: 1px solid rgba(255, 255, 255, 0.08); padding-top: 8px; }
+			summary { color: #969696; cursor: pointer; padding: 2px 0 8px 2px; outline: none; }
+			summary:hover { color: #d8d8d8; }
+			details p { color: #8a8a8a; line-height: 1.45; margin: 8px 4px 4px 4px; }
+			#worksWith { line-height: 1.4; padding: 6px 0 4px 0; cursor: default; }
+			.works-kind { color: #d8d8d8; }
+			.works-chosen { color: #8a8a8a; }
+			.works-chosen:empty { display: none; }
+		</style>
+	</head>
+
+	<body>
+		<sdpi-item class="works" label="Works with" title="The kind of StageKit filter this key works, as OBS&#x27;s Filters window names it, and under it the one chosen below. In OBS: right-click the scene and choose Filters.">
+			<div id="worksWith" data-follow="target source filter">
+				<div class="works-kind">Scene Filter: Match Item (StageKit)</div>
+				<div class="works-chosen"></div>
+			</div>
+		</sdpi-item>
+		<sdpi-item label="Scene and filter" title="Each entry is a scene and, after the dash, the name of its “Scene Filter: Match Item (StageKit)”. In OBS: right-click the scene and choose Filters to find that filter by its name.">
+			<sdpi-select setting="target" datasource="getTargets" placeholder="Choose one" show-refresh></sdpi-select>
+		</sdpi-item>
+		<sdpi-item label="On press" title="Toggle reverses the current state. Switch on and Switch off always request the selected state.">
+			<sdpi-select setting="press" default="toggle">
+				<option value="toggle">Toggle</option>
+				<option value="on">Switch on</option>
+				<option value="off">Switch off</option>
+			</sdpi-select>
+		</sdpi-item>
+		<details open>
+			<summary>Image</summary>
+		<sdpi-item label="Image layout" title="Live adds a camera. Live + chat adds a camera and a chat column. Standalone removes the frame from the six game, window and capture-card layout images. Other images keep their usual drawing.">
+			<sdpi-select setting="layout" placeholder="Automatic (usual layout)">
+				<option value="auto">Automatic (usual layout)</option>
+				<option value="standalone">Standalone</option>
+				<option value="live">Live (no chat)</option>
+				<option value="chat">Live + chat</option>
+			</sdpi-select>
+		</sdpi-item>
+		<sdpi-item label="Scene type" title="What the scene is, for the key&#x27;s image. Automatic shows the filter&#x27;s own image.">
+			<sdpi-select setting="sceneType" placeholder="Automatic (the filter&#x27;s image)">
+				<option value="auto">Automatic (the filter&#x27;s image)</option>
+				<optgroup label="Holding &amp; status">
+					<option value="starting">Starting soon</option>
+					<option value="countdown">Countdown</option>
+					<option value="brb">Be right back</option>
+					<option value="intermission">Intermission</option>
+					<option value="technical">Technical difficulties</option>
+					<option value="ending">Ending</option>
+					<option value="holding">Holding screen</option>
+					<option value="paused">Paused</option>
+					<option value="offline">Offline</option>
+					<option value="privacy">Camera off</option>
+					<option value="raid">Raid / host</option>
+				</optgroup>
+				<optgroup label="Games">
+					<option value="gameplay">Gameplay</option>
+					<option value="gameplay_chat">Gameplay + chat</option>
+					<option value="pc_game">PC game</option>
+					<option value="retro">Retro gaming</option>
+					<option value="classic">Classic gaming</option>
+					<option value="speedrun">Speedrun</option>
+					<option value="emulator">Emulator</option>
+					<option value="console">Console</option>
+					<option value="console_link">Console + handheld link</option>
+					<option value="capture_card">Capture card</option>
+					<option value="capture_card_chat">Capture card + chat</option>
+				</optgroup>
+				<optgroup label="Apps &amp; screens">
+					<option value="app">Window / app</option>
+					<option value="app_chat">App + chat</option>
+					<option value="desktop">Desktop</option>
+					<option value="second_screen">Second screen</option>
+					<option value="browsing">Browsing</option>
+				</optgroup>
+				<optgroup label="Creative">
+					<option value="tablet">Tablet / drawing</option>
+					<option value="art">Art / design</option>
+					<option value="modelling">3D modelling</option>
+					<option value="coding">Coding</option>
+					<option value="music_production">Music production</option>
+				</optgroup>
+				<optgroup label="Camera &amp; talk">
+					<option value="just_chatting">Just chatting</option>
+					<option value="camera_only">Camera only</option>
+					<option value="interview">Interview / guest</option>
+					<option value="podcast">Podcast</option>
+					<option value="music">Live music</option>
+					<option value="tutorial">Tutorial</option>
+				</optgroup>
+				<optgroup label="IRL &amp; lifestyle">
+					<option value="irl">IRL / outdoors</option>
+					<option value="cooking">Cooking</option>
+					<option value="fitness">Fitness</option>
+					<option value="reading">Reading</option>
+					<option value="unboxing">Unboxing</option>
+					<option value="watch_party">Watch party</option>
+					<option value="charity">Charity</option>
+				</optgroup>
+				<optgroup label="All in one">
+					<option value="on_air">On air</option>
+					<option value="on_air_chat">On air + chat</option>
+				</optgroup>
+				<optgroup label="Sources: Captures &amp; games">
+					<option value="source:game">Game</option>
+					<option value="source:retro">Retro game</option>
+					<option value="source:emulator">Emulator (source)</option>
+					<option value="source:console">Console (source)</option>
+					<option value="source:handheld">Handheld</option>
+					<option value="source:linked_handheld">Linked handheld screen</option>
+					<option value="source:linked_handheld_2">Second linked handheld screen</option>
+					<option value="source:capture_card">Capture card (internal)</option>
+					<option value="source:capture_box">Capture card (external)</option>
+					<option value="source:hdmi_source">HDMI source</option>
+					<option value="source:window">Window</option>
+					<option value="source:browser">Browser</option>
+					<option value="source:display">Display</option>
+					<option value="source:second_display">Second display</option>
+					<option value="source:tablet">Tablet</option>
+					<option value="source:phone">Phone screen</option>
+				</optgroup>
+				<optgroup label="Sources: Apps">
+					<option value="source:art_app">Art app</option>
+					<option value="source:app_3d">3D app</option>
+					<option value="source:sculpting">Sculpting app</option>
+					<option value="source:cad">CAD app</option>
+					<option value="source:code_editor">Code editor</option>
+					<option value="source:office">Office / documents</option>
+					<option value="source:video_player">Video player</option>
+					<option value="source:reference">Reference board</option>
+				</optgroup>
+				<optgroup label="Sources: Cameras">
+					<option value="source:camera">Camera / webcam</option>
+					<option value="source:dslr">DSLR / mirrorless</option>
+					<option value="source:camcorder">Camcorder</option>
+					<option value="source:action_cam">Action camera</option>
+					<option value="source:ptz_camera">PTZ camera</option>
+					<option value="source:facecam">Facecam</option>
+					<option value="source:full_camera">Full-screen camera</option>
+					<option value="source:side_camera">Side camera</option>
+					<option value="source:phone_camera">Phone camera</option>
+					<option value="source:workspace_camera">Desk / overhead camera</option>
+					<option value="source:virtual_camera">Virtual camera</option>
+				</optgroup>
+				<optgroup label="Sources: Devices &amp; audio">
+					<option value="source:pc">Gaming PC</option>
+					<option value="source:laptop">Laptop</option>
+					<option value="source:retro_console">Retro console</option>
+					<option value="source:controller">Controller</option>
+					<option value="source:stream_deck">Stream controller</option>
+					<option value="source:pen_display">Pen display</option>
+					<option value="source:vr_headset">VR headset</option>
+					<option value="source:headset">Headset</option>
+					<option value="source:microphone">Microphone</option>
+					<option value="source:speaker">Speakers</option>
+					<option value="source:mixer">Audio mixer</option>
+					<option value="source:key_light">Key light</option>
+					<option value="source:green_screen">Green screen</option>
+				</optgroup>
+				<optgroup label="Sources: Overlays">
+					<option value="source:chat">Chat</option>
+					<option value="source:voice_chat">Voice chat</option>
+					<option value="source:music">Music</option>
+					<option value="source:alerts">Alerts</option>
+					<option value="source:events">Events / goals</option>
+					<option value="source:countdown">Countdown (source)</option>
+					<option value="source:title">Title / text</option>
+					<option value="source:image">Image</option>
+					<option value="source:video">Video</option>
+					<option value="source:logo">Logo</option>
+					<option value="source:standby_image">Standby image</option>
+				</optgroup>
+				<optgroup label="Sources: Status &amp; holding screens">
+					<option value="source:live">Live / on air</option>
+					<option value="source:recording">Recording</option>
+					<option value="source:muted">Muted</option>
+					<option value="source:starting">Starting soon (source)</option>
+					<option value="source:brb">Be right back (source)</option>
+					<option value="source:intermission">Intermission (source)</option>
+					<option value="source:technical">Technical difficulties (source)</option>
+					<option value="source:ending">Ending (source)</option>
+				</optgroup>
+				<optgroup label="Sources: Layout markers">
+					<option value="source:column_chat">Chat column</option>
+					<option value="source:column_handheld">Handheld column</option>
+				</optgroup>
+			</sdpi-select>
+		</sdpi-item>
+		<sdpi-item label="Palette" title="The colors used to draw this key. Applies to its on and off states.">
+			<sdpi-select setting="palette" default="mono">
+				<option value="mono">Mono</option>
+				<option value="violet">Violet</option>
+				<option value="ocean">Ocean</option>
+				<option value="forest">Forest</option>
+				<option value="ember">Ember</option>
+				<option value="neon">Neon</option>
+			</sdpi-select>
+		</sdpi-item>
+		</details>
+		<details>
+			<summary>OBS connection</summary>
+			<sdpi-item label="Address" title="Computer running OBS. Use 127.0.0.1 when Stream Deck and OBS run on the same computer.">
+				<sdpi-textfield setting="host" global placeholder="127.0.0.1"></sdpi-textfield>
+			</sdpi-item>
+			<sdpi-item label="Port" title="The port shown in OBS under Tools, WebSocket Server Settings.">
+				<sdpi-textfield setting="port" global placeholder="4455"></sdpi-textfield>
+			</sdpi-item>
+			<sdpi-item label="Password" title="The password shown in OBS under WebSocket Server Settings, Show Connect Info. All StageKit keys share it.">
+				<sdpi-password setting="password" global></sdpi-password>
+			</sdpi-item>
+			<p>
+				In OBS: Tools &rarr; WebSocket Server Settings. Tick &ldquo;Enable WebSocket server&rdquo;, then
+				&ldquo;Show Connect Info&rdquo; for the port and password. One connection serves every StageKit key.
+			</p>
+		</details>
+
+		<script>
+			// Works with: what this key works in OBS, and what it is set to.
+			(() => {
+				const row = document.getElementById("worksWith");
+				const client = window.SDPIComponents && window.SDPIComponents.streamDeckClient;
+				if (!row || !client || !client.sendToPropertyInspector || typeof client.send !== "function") return;
+				const kind = row.querySelector(".works-kind");
+				const chosen = row.querySelector(".works-chosen");
+				client.sendToPropertyInspector.subscribe((ev) => {
+					const answer = ev && ev.payload;
+					if (!answer || answer.event !== "getWorksWith") return;
+					if (typeof answer.kind === "string" && answer.kind !== "") kind.textContent = answer.kind;
+					if (typeof answer.chosen === "string") chosen.textContent = answer.chosen;
+				});
+				const ask = () => Promise.resolve().then(() => client.send("sendToPlugin", { event: "getWorksWith" })).catch(() => {});
+				const later = () => setTimeout(ask, 200);
+				for (const setting of (row.dataset.follow || "").split(" ").filter(Boolean))
+					for (const list of document.querySelectorAll(`[setting="${setting}"]`)) {
+						list.addEventListener("valuechange", later);
+						list.addEventListener("change", later);
+					}
+				ask();
+			})();
+		</script>
+	</body>
+</html>

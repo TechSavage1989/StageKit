@@ -10,7 +10,11 @@ const KINDS: Record<string, string> = {
 	stagekit_auto_frame: "Auto\nFrame",
 	stagekit_corners: "Corners",
 	stagekit_fit_item: "Fit to\nSpace",
-	stagekit_layout: "Layout",
+	stagekit_layout: "Apply\nLayout",
+	stagekit_match_item: "Match\nItem",
+	stagekit_scene_transitions: "Scene\nTransitions",
+	stagekit_scene_modes: "Scene\nModes",
+	stagekit_picture_shape: "Aspect Ratio\nPreset",
 	stagekit_place_item: "Move\nItem",
 	stagekit_program_trigger: "Program\nTrigger",
 	stagekit_ramp_blur: "Blur",
@@ -49,21 +53,21 @@ const TOOLS: Record<string, string> = {
 	bottom: "Align\nBottom",
 	space_across: "Space\nAcross",
 	space_down: "Space\nDown",
-	snap_now: "Snap",
+	snap_now: "Snap Now",
 	same_width: "Same\nWidth",
 	same_height: "Same\nHeight",
 	same_size: "Same\nSize",
 	same_everywhere: "Copy to\nAll",
 	same_chosen: "Copy to\nChosen",
-	fit_space: "Fit to\nSpace",
+	fit_space: "Fit Now",
 };
 
 const OPTIONS: Record<string, string> = {
-	snap: "Snap",
+	snap: "Snap on\nRelease",
 	guides: "Guides",
-	limit: "Resize\nLimit",
+	limit: "Stop at\nEdges",
 	slide: "Slide to\nEdge",
-	everyScene: "Every\nScene",
+	everyScene: "Move in\nEvery Scene",
 	keepShape: "Keep\nShape",
 };
 
@@ -93,8 +97,12 @@ export function switchTitle(kind: string | undefined, press: string | undefined)
 }
 
 /** A key that sends something to a place, or applies a layout. */
-export function moveTitle(kind: string | undefined, settings: Record<string, unknown> = {}): string {
+export function moveTitle(kind: string | undefined, settings: Record<string, unknown> = {}, position?: string): string {
 	if (kind === "stagekit_send_to" || kind === "stagekit_place_item") {
+		if (position === "spot") return "Saved\nSpot";
+		if (position === "screen") return "Screen\nSpot";
+		const chosen = PLACES.find((name) => name.toLowerCase().replace("\n", "-") === position);
+		if (chosen) return chosen;
 		const place = settings.destination;
 		const at = typeof place === "number" ? PLACES[Math.trunc(place)] : PLACES[2];
 		// (10 is a spot on the screen, the dock's slides' way; 9 the item's own saved place.)

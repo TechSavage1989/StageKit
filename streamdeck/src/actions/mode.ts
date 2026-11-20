@@ -77,7 +77,7 @@ export class SceneModeKey extends SingletonAction<KeySettings> {
 	override async onKeyDown(ev: KeyDownEvent<KeySettings>): Promise<void> {
 		if (!ev.action.isKey()) return;
 		const key = ev.action;
-		const settings = ev.payload.settings;
+		const settings = await this.upToDate(key, ev.payload.settings);
 		const long = modeLongPress(settings.longPress);
 		await this.presses.down(key.id, {
 			holdMs: holdMs(settings.holdMs),

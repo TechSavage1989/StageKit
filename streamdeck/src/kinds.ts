@@ -129,6 +129,28 @@ export function isOwnName(name: string, kind: string): boolean {
 
 export type Item = { label: string; value: string };
 
+const manualSteps = [
+	{ value: "toggle", label: "Toggle manual / automatic" },
+	{ value: "next", label: "Next manual window or source" },
+	{ value: "back", label: "Return to automatic" },
+	{ value: "hide", label: "Hide or show the capture" },
+	{ value: "clear", label: "Clear picked windows" },
+] as const;
+
+/** The hotkeys each filter registers on its parent source or scene. */
+export function switcherSteps(kind: string | undefined): Item[] {
+	if (kind === "stagekit_app_capture") return [...manualSteps];
+	if (kind === "stagekit_active_app") return manualSteps.filter(({ value }) => value === "toggle" || value === "next" || value === "back");
+	if (kind === "stagekit_auto_capture") return manualSteps.filter(({ value }) => value === "hide");
+	return [];
+}
+
+export function switcherStep(kind: string | undefined, saved: string | undefined): string | undefined {
+	const steps = switcherSteps(kind);
+	const step = saved || (kind === "stagekit_auto_capture" ? "hide" : "next");
+	return steps.some(({ value }) => value === step) ? step : undefined;
+}
+
 /** The sources that have at least one filter of the wanted sort, by name. */
 export function sourceItems(filters: FilterInfo[], wanted: (kind: string) => boolean): Item[] {
 	const names = [...new Set(filters.filter((f) => wanted(f.kind)).map((f) => f.source))];

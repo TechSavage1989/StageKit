@@ -7,6 +7,13 @@ Read `DEVELOPMENT_HANDOFF.md` next for the current state, then
 [docs/REPOSITORY_STANDARDS.md](docs/REPOSITORY_STANDARDS.md), the shared standard that is identical in
 every TechSavage1989 app repository. Change that file only to change the standard everywhere.
 
+## Stream Deck controls and image settings
+
+Register a dedicated scene-filter key in features.json and the icon generators. Keep older
+action UUIDs registered even when hidden from the list. Group controls in the property
+inspector by what the key does and by the image it displays. Manual capture steps are
+filter-specific. The hotkey context is the filter's parent source or scene in OBS.
+
 ## Additional materials and data patterns
 
 Append new patterns to both the Ambient Background and outline registries. Outline design 34

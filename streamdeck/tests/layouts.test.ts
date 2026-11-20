@@ -65,8 +65,8 @@ test("every key with a Source type or Scene type list has a Layout list, just be
 		}
 		assert.ok(layout, key);
 		assert.equal(layout.setting, "layout");
-		assert.equal(layout.label, "Layout");
-		assert.equal(layout.automatic, "Automatic");
+		assert.equal(layout.label, "Image layout");
+		assert.equal(layout.automatic, "Automatic (usual layout)");
 		const entries = layout.groups.flatMap((g) => g.entries);
 		assert.deepEqual(
 			entries.map((e) => [e.value, e.label]),
@@ -84,9 +84,9 @@ test("every key with a Source type or Scene type list has a Layout list, just be
 		const at = page.indexOf(`setting="${layoutSetting}"`);
 		assert.ok(at > 0, `${key}: the Layout list on its page`);
 		assert.ok(at < page.indexOf(`setting="${typedSetting}"`), `${key}: Layout before ${typedSetting}`);
-		assert.ok(page.includes('<sdpi-item label="Layout"'), key);
+		assert.ok(page.includes('<sdpi-item label="Image layout"'), key);
 		for (const [value, label] of [
-			["auto", "Automatic"],
+			["auto", "Automatic (usual layout)"],
 			["standalone", "Standalone"],
 			["live", "Live (no chat)"],
 			["chat", "Live + chat"],

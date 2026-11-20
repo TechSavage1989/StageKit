@@ -19,7 +19,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, "..")
 PLUGIN = os.path.join(ROOT, "com.techsavage1989.stagekit.sdPlugin")
 BASE = "com.techsavage1989.stagekit"
-VERSION = "0.33.0.0"
+VERSION = "0.34.0.0"
 
 # The pack picture each feature's key starts with (its "on" and "off" look).
 PICTURES = {
@@ -45,10 +45,12 @@ PICTURES = {
     "stagekit_scene_corners": ("options/scene-corners-on", "options/scene-corners-off"),
     "stagekit_scene_standby": ("filters/standby-picture-on", "filters/standby-picture-off"),
     "stagekit_scene_blur": ("blur-types/gaussian-on", "blur-types/gaussian-off"),
+    "stagekit_match_item": ("options/match-item-on", "options/match-item-off"),
+    "stagekit_scene_transitions": ("options/scene-transitions-on", "options/scene-transitions-off"),
 }
 
 
-PALETTE = """		<sdpi-item label="Palette">
+PALETTE = """		<sdpi-item label="Palette" title="The colors used to draw this key. Applies to its on and off states.">
 			<sdpi-select setting="palette" default="mono">
 				<option value="mono">Mono</option>
 				<option value="violet">Violet</option>
@@ -62,13 +64,13 @@ PALETTE = """		<sdpi-item label="Palette">
 
 CONNECTION = """		<details>
 			<summary>OBS connection</summary>
-			<sdpi-item label="Address">
+			<sdpi-item label="Address" title="Computer running OBS. Use 127.0.0.1 when Stream Deck and OBS run on the same computer.">
 				<sdpi-textfield setting="host" global placeholder="127.0.0.1"></sdpi-textfield>
 			</sdpi-item>
-			<sdpi-item label="Port">
+			<sdpi-item label="Port" title="The port shown in OBS under Tools, WebSocket Server Settings.">
 				<sdpi-textfield setting="port" global placeholder="4455"></sdpi-textfield>
 			</sdpi-item>
-			<sdpi-item label="Password">
+			<sdpi-item label="Password" title="The password shown in OBS under WebSocket Server Settings, Show Connect Info. All StageKit keys share it.">
 				<sdpi-password setting="password" global></sdpi-password>
 			</sdpi-item>
 			<p>
@@ -165,19 +167,48 @@ WORKS_SCRIPT = """
 		</script>
 """
 
-FOLLOW = """
+FOLLOW_SWITCHER = """
 		<script>
-			// The second list depends on the first: ask for it again when the
-			// source changes (after the new source has been saved).
-			const source = document.getElementById("source");
-			const filter = document.getElementById("filter");
-			source.addEventListener("valuechange", () => setTimeout(() => filter.refresh(), 200));
-			source.addEventListener("change", () => setTimeout(() => filter.refresh(), 200));
+			const target = document.querySelector('[setting="target"]');
+			const step = document.querySelector('[setting="step"]');
+			const refresh = () => setTimeout(() => step.refresh(), 200);
+			target.addEventListener("valuechange", refresh);
+			target.addEventListener("change", refresh);
+		</script>
+"""
+
+CONDITIONAL_ROWS = """
+		<script>
+			(() => {
+				const controls = Object.fromEntries(Array.from(document.querySelectorAll("[setting]"),
+					(element) => [element.getAttribute("setting"), element]));
+				const value = (setting) => controls[setting]?.value || controls[setting]?.getAttribute("default") || "";
+				const visible = (setting, show) => {
+					const row = controls[setting]?.closest("sdpi-item");
+					if (row) { row.hidden = !show; row.style.display = show ? "" : "none"; }
+				};
+				const update = () => {
+					const long = value("longPress");
+					visible("holdMs", Boolean(long && long !== "none"));
+					visible("longMode", long === "on" || long === "toggle");
+					visible("modeUse", value("press") === "next" || long === "next");
+					visible("hideAs", value("press") !== "on");
+					visible("animate", !value("sceneType") || value("sceneType") === "auto");
+				};
+				for (const element of Object.values(controls)) {
+					element.addEventListener("valuechange", update);
+					element.addEventListener("change", update);
+				}
+				const client = window.SDPIComponents?.streamDeckClient;
+				client?.didReceiveSettings?.subscribe(() => requestAnimationFrame(update));
+				customElements.whenDefined("sdpi-select").then(() => requestAnimationFrame(update));
+				update();
+			})();
 		</script>
 """
 
 
-def one_list(label, source="getTargets", setting="target", placeholder="Choose", tip=None):
+def one_list(label, source="getTargets", setting="target", placeholder="Choose one", tip=None):
     title = f' title="{html.escape(tip, quote=True)}"' if tip else ""
     return (
         f'		<sdpi-item label="{label}"{title}>\n'
@@ -211,10 +242,10 @@ def target_list(key, label=None):
     return one_list(label, tip=tip)
 
 
-def options(label, setting, default, pairs):
+def options(label, setting, default, pairs, tip):
     rows = "\n".join(f'				<option value="{value}">{text}</option>' for value, text in pairs)
     return (
-        f'		<sdpi-item label="{label}">\n'
+        f'		<sdpi-item label="{label}" title="{html.escape(tip, quote=True)}">\n'
         f'			<sdpi-select setting="{setting}" default="{default}">\n{rows}\n			</sdpi-select>\n'
         f"		</sdpi-item>\n"
     )
@@ -243,7 +274,7 @@ FOLLOW_MODE = """
 		</script>
 """
 
-MODE_PRESSES = [("on", "Switch on"), ("off", "Switch off"), ("toggle", "Toggle"), ("next", "Next mode")]
+MODE_PRESSES = [("toggle", "Toggle"), ("on", "Switch on"), ("off", "Switch off"), ("next", "Next mode")]
 
 
 def mode_page_html():
@@ -279,11 +310,10 @@ def mode_page_html():
     script = "import { modePictureLists } from './src/key-types.ts'; console.log(JSON.stringify(modePictureLists()));"
     done = subprocess.run(["node", "--input-type=module", "-e", script], cwd=ROOT, capture_output=True, text=True, check=True)
     lists = json.loads(done.stdout)
-    palette = "".join("	" + line + "\n" for line in PALETTE.rstrip("\n").split("\n"))
     return (
         '		<sdpi-item label="Scene and filter" title="Each entry is a scene and, after the dash, the name of its \u201cScene Filter: Scene Modes (StageKit)\u201d. '
         'In OBS: right-click the scene and choose Filters to find that filter by its name.">\n'
-        '			<sdpi-select id="modeFilter" setting="modeFilter" datasource="getModeFilters" placeholder="Choose a Scene Modes" show-refresh></sdpi-select>\n'
+        '			<sdpi-select id="modeFilter" setting="modeFilter" datasource="getModeFilters" placeholder="Choose one" show-refresh></sdpi-select>\n'
         "		</sdpi-item>\n"
         + modes("Mode settings", "modeFor",
                 "A mode of the Scene Modes: choose one to set, just below, whether Next mode uses it and the key's layout and image while it is on. "
@@ -298,9 +328,10 @@ def mode_page_html():
         + "		<details open>\n"
         "			<summary>Key</summary>\n"
         + select("On press", "press", "on", MODE_PRESSES,
-                 "Switch on: its mode. Switch off: no mode (the filter must allow no mode). Toggle: its mode, or back to the mode before. "
+                 "Toggle selects this mode. Press again to leave it: clear it if the filter allows no mode, or return to the previous mode if one is available. "
+                 "Switch on selects this mode. Switch off clears it if the filter allows no mode. "
                  "Next mode: the next of the modes used, in the filter's order, round again after the last.")
-        + modes("Switch to mode", "mode", "The mode Switch on and Toggle act on. The key shows the mode that is on.")
+        + modes("Switch to mode", "mode", "The mode selected by Switch on or Toggle. A new key starts with the mode shown in Mode settings. Switch on shows its own mode. The other actions show the active mode.")
         + select("Long press", "longPress", "none", [("none", "Nothing")] + MODE_PRESSES,
                  "What holding the key does. Nothing (as it comes): the key acts the moment it is pressed. "
                  "Set, a press acts when the key is let go, and holding it for the hold time does this instead.")
@@ -308,12 +339,12 @@ def mode_page_html():
         + '			<sdpi-item label="Hold time (ms)" title="How long the key must be held for its long press: 300 to 5000 ms, 800 as it comes.">\n'
         '				<sdpi-textfield setting="holdMs" placeholder="800" pattern="[0-9]*"></sdpi-textfield>\n'
         "			</sdpi-item>\n"
-        + palette
         + "		</details>\n"
     )
 
 
-PRESS = options("On press", "press", "toggle", [("toggle", "Toggle"), ("on", "Switch on"), ("off", "Switch off")])
+PRESS = options("On press", "press", "toggle", [("toggle", "Toggle"), ("on", "Switch on"), ("off", "Switch off")],
+                "Toggle reverses the current state. Switch on and Switch off always request the selected state.")
 
 # The Standby Image key: the filter switched, or (append-only, after them)
 # its image shown over the source on purpose and taken away, for a camera,
@@ -322,13 +353,13 @@ PRESS = options("On press", "press", "toggle", [("toggle", "Toggle"), ("on", "Sw
 # from that automatic window switcher somehow".
 STANDBY_PRESS = (
     '		<sdpi-item label="On press" title="Toggle, Switch on and Switch off switch the Standby Image filter itself '
-    '(off: no image at all). Cover: toggle, Cover with image and Uncover show its image over the source now, '
+    '(off: no image at all). Cover / uncover, Cover with image and Uncover show its image over the source now, '
     'whatever the source shows, and take it away again, the way the filter is set to change; '
     'the key is then lit while the image covers the source.">\n'
     '			<sdpi-select setting="press" default="toggle">\n'
     + "\n".join(f'				<option value="{v}">{t}</option>' for v, t in (
         ("toggle", "Toggle"), ("on", "Switch on"), ("off", "Switch off"),
-        ("cover", "Cover: toggle"), ("coveron", "Cover with image"), ("coveroff", "Uncover")))
+        ("cover", "Cover / uncover"), ("coveron", "Cover with image"), ("coveroff", "Uncover")))
     + "\n			</sdpi-select>\n		</sdpi-item>\n"
 )
 
@@ -439,7 +470,7 @@ def output_page(output, presses, longs):
     )
 
 
-def page(name, title, body, script="", key=None, after="", lists=True, palette=True):
+def page(name, title, body, script="", key=None, lists=True):
     """A key's settings page. `key` is the key's name in the manifest when
     the page has another name (blur-all). Every page starts with the key's
     *Works with* row."""
@@ -449,7 +480,11 @@ def page(name, title, body, script="", key=None, after="", lists=True, palette=T
         '		<meta charset="utf-8" />\n'
         '		<script src="https://sdpi-components.dev/releases/v4/sdpi-components.js"></script>\n'
         + STYLE +
-        "	</head>\n\n	<body>\n" + works_row(key or name) + body + ("".join(type_list_html(l) for l in type_lists(key or name)) if lists else "") + after + (PALETTE if palette else "") + "\n" + CONNECTION + script + WORKS_SCRIPT + "	</body>\n</html>\n"
+        "	</head>\n\n	<body>\n" + works_row(key or name) + body
+        + "		<details open>\n			<summary>Image</summary>\n"
+        + ("".join(type_list_html(l) for l in type_lists(key or name)) if lists else "")
+        + PALETTE + "		</details>\n" + CONNECTION + script + WORKS_SCRIPT
+        + (CONDITIONAL_ROWS if name in ("mode", "stream", "record", "showinscenes") else "") + "	</body>\n</html>\n"
     )
     with open(os.path.join(PLUGIN, "ui", name + ".html"), "w", encoding="utf-8") as out:
         out.write(html)
@@ -530,13 +565,15 @@ def main():
         add(feature["key"], feature["name"], feature["tip"], feature["key"], "imgs/actions/move/icon", one(feature["key"]))
 
     key_pictures("shape", "filters/auto-frame-on", None)
-    shapes = [("auto", "Automatic (hand it back)")] + [(s, s) for s in ("4:3", "8:7", "3:2", "10:9", "16:9", "16:10", "5:4", "1:1", "64:49")]
+    ratio_labels = {"8:7": "8:7 (SNES / NES, square pixels)", "64:49": "64:49 (SNES / NES on a 4:3 TV)"}
+    shapes = [("auto", "Automatic (work it out)")] + [(value, ratio_labels.get(value, value)) for value in
+              ("4:3", "8:7", "64:49", "3:2", "10:9", "16:15", "16:9", "16:10", "5:4", "1:1")]
     page(
         "shape",
         "StageKit set aspect ratio",
         target_list("shape", label="Capture and filter")
-        + options("Ratio", "shape", "4:3", shapes)
-        + options("Keep ratio", "keep", "game", [("game", "This game only"), ("always", "Until changed")]),
+        + options("Ratio", "shape", "4:3", shapes, "The displayed width and height. Automatic hands control back to Auto Frame.")
+        + options("Keep ratio", "keep", "game", [("game", "This game only"), ("always", "Until changed")], "Keep the override for this game, or until another ratio is selected."),
     )
     add("shape", "Set Aspect Ratio", "Sets a game's aspect ratio by hand: 4:3, 8:7 and so on, or back to automatic. It can last just for the game being captured.", "shape", "imgs/actions/switch/icon", one("shape"))
 
@@ -544,11 +581,11 @@ def main():
     page(
         "hook",
         "StageKit hook capture",
-        one_list("Capture", "getCaptures", "source", "Choose a capture")
-        + '		<sdpi-item label="Transition">\n'
+        one_list("Capture", "getCaptures", "source", tip="The Game Capture or Window Capture that will take the active window.")
+        + '		<sdpi-item label="Transition" title="How the capture changes windows. An Automatic Window Switcher uses its own transition instead.">\n'
         '			<sdpi-select setting="transition" datasource="getTransitions" default="fade_transition"></sdpi-select>\n'
         "		</sdpi-item>\n"
-        '		<sdpi-item label="Duration (ms)">\n'
+        '		<sdpi-item label="Duration (ms)" title="Length of the capture transition in milliseconds. Cut is instant. An Automatic Window Switcher uses its own timing.">\n'
         '			<sdpi-textfield setting="lasting" placeholder="300" pattern="[0-9]*"></sdpi-textfield>\n'
         "		</sdpi-item>\n",
     )
@@ -558,8 +595,9 @@ def main():
     page(
         "appswitch",
         "StageKit next manual capture",
-        target_list("appswitch", label="Switcher filter")
-        + options("On press", "step", "next", [("toggle", "Toggle manual / automatic"), ("next", "Next manual window or source"), ("back", "Return to automatic"), ("hide", "Hide or show the capture"), ("clear", "Clear picked windows")]),
+        target_list("appswitch", label="Source or scene and filter")
+        + one_list("On press", "getSwitcherSteps", "step", "Choose an action", "Only the hotkeys registered by the selected filter are available."),
+        script=FOLLOW_SWITCHER,
     )
     add("appswitch", "Manual Window / Source", "For an Automatic Window Switcher, an Automatic Source Switcher or (Hide only) an Auto Capture: toggles between the manual window and automatic, steps to the next manual one, returns to automatic, hides and shows the capture, or clears the windows picked by hand.", "appswitch", "imgs/actions/move/icon", two("appswitch"))
 
@@ -571,20 +609,22 @@ def main():
     page(
         "scene",
         "StageKit switch scene",
-        one_list("Scene", "getScenes", "scene", "Choose a scene")
-        + options("Switch", "where", "program", [("program", "Program (live)"), ("preview", "Preview (Studio Mode)")])
-        + '		<sdpi-item label="Transition">\n'
+        one_list("Scene", "getScenes", "scene", tip="The OBS scene this key selects.")
+        + options("Switch", "where", "program", [("program", "Program (live)"), ("preview", "Preview (Studio Mode)")], "Preview selects the preview in Studio Mode and the live scene when Studio Mode is off.")
+        + '		<sdpi-item label="Transition" title="Choose the transition used when switching. Leave OBS\'s as it is uses the current OBS transition.">\n'
         '			<sdpi-select setting="transition" datasource="getSceneTransitions" default=""></sdpi-select>\n'
         "		</sdpi-item>\n"
-        '		<sdpi-item label="Duration (ms)">\n'
+        '		<sdpi-item label="Duration (ms)" title="Blank keeps the current OBS duration. A number changes the duration of a transition with adjustable timing.">\n'
         '			<sdpi-textfield setting="lasting" placeholder="As set in OBS" pattern="[0-9]*"></sdpi-textfield>\n'
-        "		</sdpi-item>\n",
+        "		</sdpi-item>\n"
+        + options("After the switch", "restoreTransition", "keep", [("keep", "Keep the selected transition"), ("restore", "Restore the previous transition")],
+                  "Keep makes this transition and duration the OBS defaults. Restore puts the previous values back after the live switch completes."),
     )
     add("scene", "Switch Scene", "Switches OBS to a scene, on the program or (Studio Mode) the preview, with a transition if you choose one. Lit while that scene is on.", "scene", "imgs/actions/switch/icon", two("scene"))
 
     key_pictures("mode", "options/mode-on", "options/mode-off")
     # (Its lists are per mode, inside the body; its Palette is in the body's Key fold-out.)
-    page("mode", "StageKit scene mode", mode_page_html(), FOLLOW_MODE, lists=False, palette=False)
+    page("mode", "StageKit scene mode", mode_page_html(), FOLLOW_MODE, lists=False)
     add("mode", "Scene Mode", "Works one scene's Scene Modes: switches a mode on, off, toggles it or goes to the next mode. Shows the mode that is on.", "mode", "imgs/actions/switch/icon", two("mode"))
 
     # The keys for a filter on a scene that act through StageKit's own requests.
@@ -594,10 +634,10 @@ def main():
         page(
             feature["key"],
             f"StageKit {feature['name']}",
-            '		<sdpi-item label="Blur filter">\n'
-            '			<sdpi-select id="filter" setting="filter" datasource="getSceneBlurs" placeholder="Choose a Scene Blur" show-refresh></sdpi-select>\n'
+            '		<sdpi-item label="Blur filter" title="The name of the Scene Blur filter in OBS.">\n'
+            '			<sdpi-select id="filter" setting="filter" datasource="getSceneBlurs" placeholder="Choose one" show-refresh></sdpi-select>\n'
             "		</sdpi-item>\n"
-            '		<sdpi-item label="Scene">\n'
+            '		<sdpi-item label="Scene" title="Use the chosen filter in one scene or every scene that has it.">\n'
             '			<sdpi-select id="scene" setting="scene" datasource="getSceneBlurScenes" default="" show-refresh></sdpi-select>\n'
             "		</sdpi-item>\n"
             + PRESS,
@@ -619,24 +659,24 @@ def main():
         add(output, name, tip, output, "imgs/actions/switch/icon", two(output))
 
     key_pictures("toolkey", "options/align-left", None)
-    page("tool", "StageKit arrange tool", options("Tool", "tool", "left", tools_list()))
-    add("tool", "Arrange tool", "Lines up, spaces out, snaps or resizes the items selected in OBS, or copies a transform to other scenes.", "tool", "imgs/actions/tool/icon", one("toolkey"))
+    page("tool", "StageKit Arrange Tool", options("Tool", "tool", "left", tools_list(), "Runs this Arrange tool on the sources selected in OBS."))
+    add("tool", "Arrange Tool", "Lines up, spaces out, snaps or resizes the items selected in OBS, or copies a transform to other scenes.", "tool", "imgs/actions/tool/icon", one("toolkey"))
 
     key_pictures("blurall", "blur-types/gaussian-on", "blur-types/gaussian-off")
-    page("blur-all", "StageKit blur all", "", key="blurall")
+    page("blur-all", "StageKit blur all", PRESS, key="blurall")
     add("blurall", "Blur All", "Switches every Blur on, or all of them off again. Shows on while any is on.", "blur-all", "imgs/actions/blur/icon", two("blurall"))
 
     key_pictures("option", "options/snap-on", "options/snap-off")
     switches = [
         ("snap", "Snap on release"),
-        ("guides", "Guides"),
-        ("limit", "Stop resizing at edges"),
+        ("guides", "Guides in the preview"),
+        ("limit", "Stop at Edges"),
         ("slide", "Slide to the next edge"),
-        ("everyScene", "Move to: in every scene"),
+        ("everyScene", "Move in every scene"),
         ("keepShape", "Keep shape when resizing"),
     ]
-    page("option", "StageKit dock option", options("Option", "option", "snap", switches) + PRESS)
-    add("option", "Dock Option", "One of the StageKit dock's options on a key: snap on release, guides, stop resizing at edges. Shows which way it is.", "option", "imgs/actions/switch/icon", two("option"))
+    page("option", "StageKit dock option", options("Option", "option", "snap", switches, "The dock setting this key controls. The key lights when that setting is on.") + PRESS)
+    add("option", "Dock Option", "Controls Snap on release, Guides in the preview, Stop at Edges, Slide to the next edge, Move in every scene, or Keep shape when resizing.", "option", "imgs/actions/switch/icon", two("option"))
 
     key_pictures("slide", "options/slide-left", None)
     ways = [
@@ -650,25 +690,27 @@ def main():
         ("down-right", "Down and right"),
         ("centre", "Centre in the free space"),
     ]
-    page("slide", "StageKit slide", options("Slide", "direction", "left", ways))
+    page("slide", "StageKit slide", options("Slide", "direction", "left", ways, "Direction the selected item moves to reach the next edge."))
     add("slide", "Slide to Edge", "Slides the item selected in OBS to the next edge that way; the next press passes it.", "slide", "imgs/actions/move/icon", one("slide"))
 
     # The first two keys, kept for the keys already made with them.
-    two_lists = (
-        '		<sdpi-item label="Source">\n'
-        '			<sdpi-select id="source" setting="source" datasource="getSources" placeholder="Choose a source" show-refresh></sdpi-select>\n'
-        "		</sdpi-item>\n"
-        '		<sdpi-item label="Filter">\n'
-        '			<sdpi-select id="filter" setting="filter" datasource="getFilters" placeholder="Choose" show-refresh></sdpi-select>\n'
-        "		</sdpi-item>\n"
-    )
+    legacy_target = one_list("Source or scene and filter", tip="Select the source or scene and the StageKit filter to control.")
     key_pictures("anyswitch", "options/plain-switch-on", "options/plain-switch-off")
     key_pictures("anymove", "options/plain-move", None)
-    page("switch", "StageKit filter switch", two_lists + PRESS, FOLLOW)
-    page("move", "StageKit move", two_lists, FOLLOW)
-    add("switch", "Filter switch (older)", "Switches any StageKit filter. Use the key named after the feature instead.", "switch", "imgs/actions/switch/icon", two("anyswitch"), visible=False)
-    add("move", "Move (older)", "Runs any StageKit move. Use the key named after the feature instead.", "move", "imgs/actions/move/icon", one("anymove"), visible=False)
+    page("switch", "StageKit filter switch", legacy_target + PRESS)
+    page("move", "StageKit move", legacy_target)
+    add("switch", "Filter switch (older)", "Switches one StageKit filter that stays on or off.", "switch", "imgs/actions/switch/icon", two("anyswitch"), visible=False)
+    add("move", "Move (older)", "Runs a Move Source, Move Scene Item, Apply Layout or Aspect Ratio Preset filter once.", "move", "imgs/actions/move/icon", one("anymove"), visible=False)
 
+    groups = [
+        ("scene", "mode", "scenetransitions", "showhide", "showinscenes", "visibilitylink"),
+        ("hook", "autocapture", "appcapture", "activeapp", "appswitch", "autoframe", "shape", "standby", "scenestandby", "programtrigger"),
+        ("sendto", "placeitem", "matchitem", "layout", "fititem", "scenefit", "fitoverlap", "slide", "tool", "option"),
+        ("blur", "sceneblur", "blurall", "shadow", "sceneshadow", "corners", "scenecorners", "zoom"),
+        ("stream", "record"), ("switch", "move"),
+    ]
+    rank = {key: index for index, key in enumerate(key for group in groups for key in group)}
+    actions.sort(key=lambda item: rank[item["UUID"].rsplit(".", 1)[1]])
     manifest = {
         "Name": "StageKit",
         "Version": VERSION,
@@ -677,7 +719,7 @@ def main():
         "Category": "StageKit",
         "CategoryIcon": "imgs/plugin/category-icon",
         "CodePath": "bin/plugin.js",
-        "Description": "Keys for StageKit, the OBS Studio plugin: one for each of its features, each showing its state, plus keys that capture the active window, set an aspect ratio, switch scenes, run the arrange tools and blur everything. Talks to OBS through OBS's own WebSocket server.",
+        "Description": "Control OBS scenes, capture sources, filters, layouts, streaming and recording from Stream Deck. Keys show the current state over OBS WebSocket.",
         "Icon": "imgs/plugin/marketplace",
         "SDKVersion": 3,
         "Software": {"MinimumVersion": "7.1"},

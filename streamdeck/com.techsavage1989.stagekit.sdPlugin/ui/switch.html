@@ -27,20 +27,19 @@
 				<div class="works-chosen"></div>
 			</div>
 		</sdpi-item>
-		<sdpi-item label="Source">
-			<sdpi-select id="source" setting="source" datasource="getSources" placeholder="Choose a source" show-refresh></sdpi-select>
+		<sdpi-item label="Source or scene and filter" title="Select the source or scene and the StageKit filter to control.">
+			<sdpi-select setting="target" datasource="getTargets" placeholder="Choose one" show-refresh></sdpi-select>
 		</sdpi-item>
-		<sdpi-item label="Filter">
-			<sdpi-select id="filter" setting="filter" datasource="getFilters" placeholder="Choose" show-refresh></sdpi-select>
-		</sdpi-item>
-		<sdpi-item label="On press">
+		<sdpi-item label="On press" title="Toggle reverses the current state. Switch on and Switch off always request the selected state.">
 			<sdpi-select setting="press" default="toggle">
 				<option value="toggle">Toggle</option>
 				<option value="on">Switch on</option>
 				<option value="off">Switch off</option>
 			</sdpi-select>
 		</sdpi-item>
-		<sdpi-item label="Palette">
+		<details open>
+			<summary>Image</summary>
+		<sdpi-item label="Palette" title="The colors used to draw this key. Applies to its on and off states.">
 			<sdpi-select setting="palette" default="mono">
 				<option value="mono">Mono</option>
 				<option value="violet">Violet</option>
@@ -50,16 +49,16 @@
 				<option value="neon">Neon</option>
 			</sdpi-select>
 		</sdpi-item>
-
+		</details>
 		<details>
 			<summary>OBS connection</summary>
-			<sdpi-item label="Address">
+			<sdpi-item label="Address" title="Computer running OBS. Use 127.0.0.1 when Stream Deck and OBS run on the same computer.">
 				<sdpi-textfield setting="host" global placeholder="127.0.0.1"></sdpi-textfield>
 			</sdpi-item>
-			<sdpi-item label="Port">
+			<sdpi-item label="Port" title="The port shown in OBS under Tools, WebSocket Server Settings.">
 				<sdpi-textfield setting="port" global placeholder="4455"></sdpi-textfield>
 			</sdpi-item>
-			<sdpi-item label="Password">
+			<sdpi-item label="Password" title="The password shown in OBS under WebSocket Server Settings, Show Connect Info. All StageKit keys share it.">
 				<sdpi-password setting="password" global></sdpi-password>
 			</sdpi-item>
 			<p>
@@ -67,15 +66,6 @@
 				&ldquo;Show Connect Info&rdquo; for the port and password. One connection serves every StageKit key.
 			</p>
 		</details>
-
-		<script>
-			// The second list depends on the first: ask for it again when the
-			// source changes (after the new source has been saved).
-			const source = document.getElementById("source");
-			const filter = document.getElementById("filter");
-			source.addEventListener("valuechange", () => setTimeout(() => filter.refresh(), 200));
-			source.addEventListener("change", () => setTimeout(() => filter.refresh(), 200));
-		</script>
 
 		<script>
 			// Works with: what this key works in OBS, and what it is set to.

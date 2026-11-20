@@ -16,7 +16,7 @@ import data from "./key-types.json" with { type: "json" };
 import features from "./features.json" with { type: "json" };
 
 export type Family = "show" | "shadow" | "blur" | "mode";
-export type Look = "blur" | "corners" | "shadow" | "transition" | "position" | "capture";
+export type Look = "blur" | "corners" | "shadow" | "transition" | "animation" | "position" | "capture";
 
 export type Entry = { value: string; label: string; picture: string };
 export type Group = { label: string; entries: Entry[] };
@@ -273,11 +273,14 @@ const LOOK_KEYS: Record<string, Look> = {
 	sceneblur: "blur",
 	corners: "corners",
 	shadow: "shadow",
+	scenecorners: "corners",
+	sceneshadow: "shadow",
+	scenetransitions: "transition",
 	sendto: "position",
 	placeitem: "position",
 	hook: "capture",
-	// Keys for filters whose job is a change: its transition.
-	showhide: "transition",
+	// Show/Hide Animation uses its own directions in OBS. Its old saved pictures still resolve.
+	showhide: "animation",
 	visibilitylink: "transition",
 	activeapp: "transition",
 	appcapture: "transition",
@@ -346,8 +349,8 @@ export function typeLists(key: string): TypeList[] {
 		lists.push({
 			setting: "look",
 			label: l.label,
-			tip: l.tip,
-			automatic: "Automatic",
+			tip: key === "scenecorners" || key === "sceneshadow" ? "Choose a style for the key image. Automatic uses the usual scene filter image." : l.tip,
+			automatic: "Automatic (filter image)",
 			groups: l.groups.map((g) => ({ label: g.label, entries: g.entries.map(([value, label, picture]) => ({ value, label, picture })) })),
 		});
 	}
@@ -372,7 +375,7 @@ export function typeLists(key: string): TypeList[] {
 		];
 		lists.push({
 			setting: "sceneType",
-			label: "Scene type",
+			label: key === "activeapp" || key === "fititem" ? "Source type" : "Scene type",
 			tip:
 				key === "scene"
 					? "What the scene is, for the key's image. Automatic goes by the scene's name."
@@ -435,9 +438,9 @@ export function layoutList(key: string): TypeList | undefined {
 	if (!typeLists(key).some((l) => l.setting === "sourceType" || l.setting === "sceneType")) return undefined;
 	return {
 		setting: "layout",
-		label: "Layout",
-		tip: "How the key's image is laid out: the type alone, in the live layout with a camera in its corner, or in the live layout with a camera and chat column. Automatic keeps the image as it is.",
-		automatic: "Automatic",
+		label: "Image layout",
+		tip: "Live adds a camera. Live + chat adds a camera and a chat column. Standalone removes the frame from the six game, window and capture-card layout images. Other images keep their usual drawing.",
+		automatic: "Automatic (usual layout)",
 		groups: [
 			{
 				label: "",
@@ -469,16 +472,16 @@ export function modePictureLists(): TypeList[] {
 		{
 			...layout,
 			setting: "modeLayout",
-			label: "Layout",
+			label: "Image layout",
 			tip: "The layout of the key's image while the mode chosen in Mode settings is on. Automatic: the key-wide Layout of a key made earlier, else the image as it comes (not Standalone).",
-			automatic: "Automatic",
+			automatic: "Automatic (usual layout)",
 		},
 		{
 			...type,
 			setting: "modeType",
-			label: "Image",
+			label: "Mode type",
 			tip: "The image the key shows while the mode chosen in Mode settings is on. Automatic: the mode's Mode type set in OBS, then the type its name speaks of.",
-			automatic: "Automatic",
+			automatic: "Automatic (from OBS)",
 		},
 	];
 }
