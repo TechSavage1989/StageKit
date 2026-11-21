@@ -22,6 +22,11 @@ gh() {
       mkdir -p "$9"
       case "$7" in
         *windows*)
+          if [[ "$WINDOWS_INSTALLER" == yes && ! -f first-download ]]; then
+            touch first-download "$9/incomplete"
+            return 1
+          fi
+          [[ ! -e "$9/incomplete" ]] || return 1
           touch "$9/fixture-windows-x64.zip"
           if [[ "$WINDOWS_INSTALLER" == yes ]]; then touch "$9/fixture-windows-x64-Installer.exe"; fi ;;
         *streamdeck*) touch "$9/fixture.streamDeckPlugin" ;;
@@ -43,7 +48,7 @@ gh() {
     *) echo "Unexpected test invocation of gh" >&2; return 1 ;;
   esac
 }
-sleep() { echo "$(( $(cat poll) + 1 ))" > poll; }
+sleep() { if [[ "$1" == 0 ]]; then echo "$(( $(cat poll) + 1 ))" > poll; fi; }
 export -f gh sleep
 
 for WINDOWS_INSTALLER in yes no; do
@@ -54,6 +59,7 @@ for WINDOWS_INSTALLER in yes no; do
   echo 0 > poll
   if [[ "$WINDOWS_INSTALLER" == yes ]]; then
     bash "$publisher" release.md 'StageKit fixture'
+    test -f first-download
     test "$(wc -l < published)" -eq 6
     grep -Fxq 'fixture.streamDeckPlugin' published
   else
