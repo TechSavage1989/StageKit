@@ -32,6 +32,25 @@ try {
     if (!(Test-Path -LiteralPath $report)) { throw 'The OBS frontend probe did not run.' }
     $result = (Get-Content -Raw -LiteralPath $report).Trim()
     if ($result -ne 'PASS') { throw $result }
+    $moduleFile = Join-Path $obsRoot 'config/obs-studio/plugin_manager/modules.json'
+    $modules = Get-Content -LiteralPath $moduleFile -Raw | ConvertFrom-Json
+    $expectedOwners = [ordered]@{
+        stagekit_ambient_background = 'stagekit'
+        stagekit_cropped_view = 'stagekit'
+        stagekit_start_image = 'stagekit'
+        stagekit_scene_fit = 'stagekit'
+        stagekit_morph = 'stagekit'
+        stagekit_gaussian_blur = 'stagekit'
+        stagekit_port_obs_composite_blur = 'stagekit-port-composite'
+    }
+    foreach ($sourceId in $expectedOwners.Keys) {
+        $owners = @($modules | Where-Object { $_.sources -ccontains $sourceId })
+        $expected = $expectedOwners[$sourceId]
+        if ($owners.Count -ne 1 -or !$owners[0].enabled -or $owners[0].module_name -cne $expected) {
+            throw "OBS did not associate $sourceId with the enabled $expected module."
+        }
+    }
+    Write-Output 'PASS: OBS recognizes the native StageKit sources, filters and transition and the bundled Composite Blur filter.'
     Write-Output 'PASS: source and scene filters, six Tools entries, catalog search, three visible Composite Blur modes and clean Windows OBS shutdown.'
 } catch {
     $logs = Get-ChildItem -LiteralPath (Join-Path $obsRoot 'config/obs-studio/logs') -Filter '*.txt' -ErrorAction SilentlyContinue

@@ -9,7 +9,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | feat/obs-filter-replacements. Release notes in docs/releases/0.1.0-beta232.md. |
+| Working branch | fix/obs-source-ownership. Release notes in docs/releases/0.1.0-beta233.md. |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 | Gate | Checks passed |
@@ -22,6 +22,13 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `LAYOUT`, `MODES_HIDE`, `SCENE_TRANS_OVERRIDE` | 40, 29, 9 |
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
+
+## OBS source ownership (0.1.0-beta233)
+
+StageKit registers its native sources, filters and transitions before loading its bundled plugins.
+OBS 32 can then associate existing Cropped View and Ambient Background sources with StageKit when
+it opens a saved scene. The Windows OBS 32.2.2 frontend test checks the owning plugins for both
+sources and representative native and bundled effects after startup.
 
 ## OBS filter and tool replacements (0.1.0-beta232)
 
