@@ -174,6 +174,11 @@ inline void check(QStringList &issues)
 	obs_data_set_int(linked_settings, "transition_ms", 850);
 	obs_data_set_string(linked_settings, "show|stagekit_morph|unpaired", "morph_make_room");
 	obs_data_set_int(linked_settings, "show|stagekit_morph|room_way", 1);
+	// The primary has its own linear easing. The caption uses the shared cubic default on its own.
+	obs_data_set_string(linked_settings, "for|Square test view|transition", "stagekit_morph");
+	obs_data_set_int(linked_settings, "for|Square test view|transition_ms", 850);
+	obs_data_set_string(linked_settings, "for|Square test view|show|stagekit_morph|unpaired", "morph_make_room");
+	obs_data_set_int(linked_settings, "for|Square test view|show|stagekit_morph|ease_curve", 0);
 	auto observe_link = [&](bool show, bool carry) {
 		bool crossed = false, together = false, drifted = false, idle = true;
 		QElapsedTimer clock;
@@ -192,7 +197,7 @@ inline void check(QStringList &issues)
 			const int primary_y = first_row(96), caption_y = first_row(16);
 			crossed |= caption_y >= 70 && caption_y < 95;
 			idle &= caption_y >= 45 && caption_y <= 47;
-			if (primary_y > 73 && primary_y < 94 && caption_y < 100) {
+			if (carry && primary_y > 73 && primary_y < 94 && caption_y < 100) {
 				const bool aligned = std::abs(primary_y - caption_y - 22) <= 3;
 				together |= aligned;
 				drifted |= !aligned;

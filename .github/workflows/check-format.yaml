@@ -14,6 +14,15 @@ jobs:
         with:
           failCondition: error
 
+      - name: Show the formatter patch
+        if: failure()
+        shell: bash
+        run: |
+          ./build-aux/run-clang-format src/transition/item-morph.cpp tests/show-in-scenes-camera.hpp
+          echo STAGEKIT_FORMAT_PATCH_BEGIN
+          git diff --no-color -- src tests
+          echo STAGEKIT_FORMAT_PATCH_END
+
   gersemi:
     runs-on: ubuntu-24.04
     steps:

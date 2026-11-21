@@ -87,6 +87,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace stagekit {
@@ -108,6 +109,12 @@ constexpr double kMainShare = 0.15;
 // full-screen DSLR was shown in Chat Live, joined the camera's change
 // (beta158): "the camera is morphing from the chat box".
 constexpr double kJoinShare = 1.0 / 3.0;
+
+struct RoomPath {
+	Bounds bounds;
+	std::atomic<float> t0{-1.0f};
+	explicit RoomPath(const Bounds &box) : bounds(box) {}
+};
 
 // One change under way. It holds what it draws for as long as the change
 // lasts (a second or so), never its scene: a scene held here kept its items,
@@ -144,7 +151,8 @@ struct Job {
 	// off, or in from, `edge`.
 	bool solo = false;
 	RoomEdge edge = RoomEdge::Left;
-	std::optional<Bounds> room_bounds; // the whole linked set travels far enough to clear the screen
+	std::shared_ptr<RoomPath> room_path;
+	obs_source_t *room_clock = nullptr; // held for linked items that share the primary's duration
 	bool fade = false;
 	std::atomic<float> t0{-1.0f}; // the clock's time when the change was first drawn
 	// Said by OBS's own thread: the layer is in the scene, or could not be put there.
@@ -167,7 +175,7 @@ struct Job {
 	void let_go()
 	{
 		obs_sceneitem_t *items[2] = {nullptr, nullptr};
-		obs_source_t *sources[3] = {nullptr, nullptr, nullptr};
+		obs_source_t *sources[4] = {};
 		obs_weak_source_t *weak = nullptr;
 		bool shown = false;
 		{
@@ -180,6 +188,7 @@ struct Job {
 			std::swap(sources[0], from_source);
 			std::swap(sources[1], to_source);
 			std::swap(sources[2], to_transition);
+			std::swap(sources[3], room_clock);
 			std::swap(weak, scene);
 			shown = showing;
 			showing = false;
@@ -247,15 +256,16 @@ void Layer::render()
 	std::lock_guard use(job->use);
 	if (job->gone || job->done)
 		return;
-	const float clock = obs_transition_get_time(job->to_transition);
+	const float clock = obs_transition_get_time(job->room_clock ? job->room_clock : job->to_transition);
 	if (clock >= 1.0f)
 		return; // the item draws itself from here
 	if (fresh_.exchange(false))
 		forget_seen();
-	float t0 = job->t0;
+	auto &start = job->room_clock ? job->room_path->t0 : job->t0;
+	float t0 = start.load();
 	if (t0 < 0.0f) {
 		t0 = std::min(clock, 0.95f);
-		job->t0 = t0;
+		start = t0;
 	}
 	const double way = std::clamp((double)(clock - t0) / (double)(1.0f - t0), 0.0, 1.0);
 	const double t = ease(job->curve, job->mode, way);
@@ -275,7 +285,7 @@ void Layer::render()
 		const Shown &only = had ? was : will;
 		if (had || has) {
 			const double gone = had ? t : 1.0 - t;
-			const Quad quad = room_moved(only.quad, job->room_bounds.value_or(bounds_of(only.quad)),
+			const Quad quad = room_moved(only.quad, job->room_path ? job->room_path->bounds : bounds_of(only.quad),
 						     job->edge, gone, (double)job->cx, (double)job->cy);
 			const float opacity = job->fade ? (float)std::clamp(1.0 - gone, 0.0, 1.0) : 1.0f;
 			if (opacity >= 0.999f) {
@@ -570,6 +580,13 @@ void ui_task(void *)
 void take_up_layers()
 {
 	std::lock_guard lock(g_mutex);
+	// Take a single snapshot before handing any layer its item. The UI thread can
+	// finish placing another linked layer while this tick is walking the jobs.
+	std::unordered_set<const RoomPath *> waiting;
+	for (const auto &job : g_jobs) {
+		if (job->room_path && !job->placed && !job->failed && !job->done)
+			waiting.insert(job->room_path.get());
+	}
 	for (const std::shared_ptr<Job> &job : g_jobs) {
 		if (job->drawing || job->done)
 			continue;
@@ -577,7 +594,7 @@ void take_up_layers()
 			job->done = true; // (ended, and its items let go by themselves, as this tick ends)
 			continue;
 		}
-		if (!job->placed)
+		if (!job->placed || waiting.count(job->room_path.get()))
 			continue;
 		each_entry(*job, [](Entry &entry) {
 			if (entry.claims > 0)
@@ -848,7 +865,7 @@ struct RoomMove {
 	bool pushed;
 	std::optional<Bounds> bounds;
 	RoomMove *primary = nullptr;
-	std::optional<Bounds> together = std::nullopt;
+	std::shared_ptr<RoomPath> together = nullptr;
 };
 
 // Resolve only the items actually moving on the same press, in the same scene and direction.
@@ -885,12 +902,12 @@ void link_room_moves(std::vector<RoomMove> &moves)
 				break;
 		}
 		if (move.primary) {
-			auto &bounds = move.primary->together;
-			if (!bounds)
-				bounds = move.primary->bounds;
+			auto &path = move.primary->together;
+			if (!path)
+				path = std::make_shared<RoomPath>(*move.primary->bounds);
+			Bounds &a = path->bounds;
 			const Bounds &b = *move.bounds;
-			bounds = Bounds{std::min(bounds->x0, b.x0), std::min(bounds->y0, b.y0),
-					std::max(bounds->x1, b.x1), std::max(bounds->y1, b.y1)};
+			a = Bounds{std::min(a.x0, b.x0), std::min(a.y0, b.y0), std::max(a.x1, b.x1), std::max(a.y1, b.y1)};
 		}
 	}
 }
@@ -907,7 +924,15 @@ bool start_solo(const RoomMove &move)
 	auto job = std::make_shared<Job>();
 	job->solo = true;
 	job->edge = path.edge;
-	job->room_bounds = path.together;
+	job->room_path = path.together;
+	if (job->room_path) {
+		auto duration = [](const Half &half) {
+			const uint32_t ms = obs_sceneitem_get_transition_duration(half.item, half.entry->show);
+			return ms ? ms : 300u;
+		};
+		if (duration(h) == duration(*path.half))
+			job->room_clock = obs_source_get_ref(path.half->transition);
+	}
 	job->fade = h.said.room_fade;
 	job->to_transition = obs_source_get_ref(clock);
 	job->from_transition = clock;
@@ -920,8 +945,9 @@ bool start_solo(const RoomMove &move)
 	job->scene = obs_source_get_weak_source(h.scene);
 	job->cx = obs_source_get_width(h.scene);
 	job->cy = obs_source_get_height(h.scene);
-	job->curve = h.said.curve;
-	job->mode = h.said.mode;
+	const MorphSaid &timing = job->room_clock ? path.half->said : h.said;
+	job->curve = timing.curve;
+	job->mode = timing.mode;
 	job->made_ns = os_gettime_ns();
 	{
 		std::lock_guard lock(g_mutex);
@@ -1032,7 +1058,7 @@ void tick(void *, float)
 	}
 	// A change that was under way for something that has started again is over.
 	for (const std::shared_ptr<Job> &job : g_jobs)
-		if (started.count(job->to_transition) || started.count(job->from_transition))
+		if (started.count(job->to_transition) || started.count(job->from_transition) || started.count(job->room_clock))
 			job->done = true;
 
 	// Pairs: a hide and a show in one scene that is on screen. Linked sources
