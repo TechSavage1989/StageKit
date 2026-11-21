@@ -24,7 +24,7 @@ void load_components()
 		{"3d", false}, {"masks", false}, {"composite", false}, {"retro", false},
 		{"noise", false}, {"pixel", false}, {"delay", false}, {"freeze", false},
 		{"recursion", false}, {"warp", false}, {"directory", false}, {"move", false},
-		{"shader", false}, {"defaults", false}, {"copy", true}, {"dock", true},
+		{"clone", false}, {"shader", false}, {"defaults", false}, {"copy", true}, {"dock", true},
 		{"table", true}, {"collections", true}, {"quick", true}, {"layouts", true}, {"ndi", true},
 	};
 	for (const Port &port : ports) {

@@ -24,7 +24,10 @@ def write_if_changed(path, text):
 
 
 def adapt_file(text, key, filename, settings):
-    types = settings.get("types", [])
+    types = [row[:3] for row in settings.get("types", [])]
+    text = text.replace("util/circlebuf.h", "util/deque.h")
+    text = re.sub(r"\bcirclebuf\b", "deque", text)
+    text = re.sub(r"\bcirclebuf_", "deque_", text)
     for old, callback, label in types:
         text = text.replace('"' + old + '"', '"stagekit_port_' + old + '"')
         text = re.sub(r'(\bget_name\s*=\s*)' + callback + r'\b', r'\1sk_' + callback, text)
@@ -78,7 +81,7 @@ def prepare(origin):
     key = origin["key"]
     settings = spec[key]
     source, dest = ports / key, build / key
-    labels = {callback: label for _, callback, label in settings.get("types", [])}
+    labels = {row[1]: row[2] for row in settings.get("types", [])}
     header = ['#pragma once', '#include <obs-module.h>',
               'static inline const char *sk_text(const char *key) {',
               '    return obs_module_get_locale_text(obs_get_module("stagekit"), key);', '}']

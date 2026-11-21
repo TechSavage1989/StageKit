@@ -125,6 +125,12 @@
       "project": "DistroAV/DistroAV",
       "commit": "2bf2bd0ad4c074777d7ca4824182ea5ff2445cba",
       "version": "6.1.1"
+    },
+    {
+      "key": "clone",
+      "project": "exeldro/obs-source-clone",
+      "version": "0.2.0",
+      "commit": "6a0a4531fbb871f3837ffedd6b67d1a05fc3bebf"
     }
   ],
   "json_header": {
