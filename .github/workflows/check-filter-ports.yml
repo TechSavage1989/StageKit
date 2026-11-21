@@ -78,20 +78,6 @@ jobs:
               "$out/test-art.png" "$out/test-texture.png" "$out/test-game.png" "$out" > "$out/$test.log" 2>&1 || { grep -F "  FAIL  " "$out/$test.log" || true; tail -90 "$out/$test.log"; exit 1; }
             tail -3 "$out/$test.log"
           done
-      - name: Check ambient lift and placement geometry
-        env:
-          LIBGL_ALWAYS_SOFTWARE: '1'
-          QT_QPA_PLATFORM: offscreen
-        run: |
-          set -eu
-          out="$PWD/build-ports/camera-results"
-          mkdir -p "$out" "$out/../darkest"
-          python3 tests/make-test-image.py "$out"
-          for test in AMBIENT_DARKEST SHADOW_EACH SHADOW_FLICKER FIT_TOOL DOCK_BOUNDS; do
-            env "STAGEKIT_TEST_ONLY_$test=1" xvfb-run -a build-ports/tests/stagekit-ambient-test "$PWD/build-ports/stagekit.so" "$PWD/data" \
-              "$out/test-art.png" "$out/test-texture.png" "$out/test-game.png" "$out" > "$out/$test.log" 2>&1 || { grep -F 'FAIL' "$out/$test.log" || true; tail -50 "$out/$test.log"; exit 1; }
-            tail -3 "$out/$test.log"
-          done
       - name: Open the replacement catalog in a fresh OBS frontend
         if: always() && hashFiles('build-ports/tests/stagekit-replacement-probe.so') != ''
         run: bash tests/check-replacement-frontend.sh build-ports
@@ -170,6 +156,16 @@ jobs:
               data=json.loads((pathlib.Path(sys.argv[1])/(name+".json")).read_text())
               print("PERF_RESULT",name,json.dumps(data,separators=(",",":")))
           PY
+
+          for label in before after; do
+            for test in FIT_TOOL DOCK_BOUNDS SHADOW_FLICKER; do
+              box="$perf/$label"
+              status=0
+              env "STAGEKIT_TEST_ONLY_$test=1" xvfb-run -a build-ports/tests/stagekit-ambient-test "$RUNNER_TEMP/$label/stagekit.so" "$PWD/data" "$fixtures/test-art.png" "$fixtures/test-texture.png" "$fixtures/test-game.png" "$box/out" > "$box/$test.log" 2>&1 || status=$?
+              echo "PLACEMENT_GATE $label $test status=$status"
+              grep -E '  FAIL  |ALL PASSED|Segmentation fault' "$box/$test.log" | tail -16 || true
+            done
+          done
   windows:
     name: Windows OBS 32.2.2 frontend
     runs-on: windows-2022
