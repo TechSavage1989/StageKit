@@ -268,7 +268,34 @@ inline bool check_popup(obs_source_t *source)
 	obs_hotkey_trigger_routed_callback(hotkey, true);
 	obs_hotkey_trigger_routed_callback(hotkey, false);
 	const bool closed = wait_for([] { return !visible<QDialog>("nativeQuickPopup"); });
-	return search && closed;
+	if (!search || !closed)
+		return false;
+	obs_hotkey_trigger_routed_callback(hotkey, true);
+	obs_hotkey_trigger_routed_callback(hotkey, false);
+	if (!wait_for([] { return visible<QDialog>("nativeQuickPopup") != nullptr; }))
+		return false;
+	popup = visible<QDialog>("nativeQuickPopup");
+	auto *edit = popup->findChild<QLineEdit *>("nativeQuickSearch");
+	auto *list = popup->findChild<QTreeWidget *>("nativeQuickSources");
+	if (!edit || !list)
+		return false;
+	edit->setText("QA group child");
+	auto *row = result(list, "QA group child", "Source");
+	if (!row)
+		return false;
+	list->customContextMenuRequested(list->visualItemRect(row).center());
+	auto *menu = visible<QMenu>("nativeQuickSourceMenu");
+	if (!menu)
+		return false;
+	OBSSourceAutoRelease destination = obs_frontend_preview_program_mode_active() ? obs_frontend_get_current_preview_scene()
+										     : obs_frontend_get_current_scene();
+	for (auto *action : menu->actions())
+		if (action->text() == "Add to Current Scene") {
+			action->trigger();
+			break;
+		}
+	auto *scene = obs_scene_from_source(destination);
+	return scene && obs_scene_find_source(scene, "QA group child") && !visible<QDialog>("nativeQuickPopup");
 }
 
 inline void check_restart(QStringList &issues)

@@ -11,6 +11,7 @@
 #include <QLineEdit>
 #include <QMainWindow>
 #include <QMenu>
+#include <QPointer>
 #include <QPushButton>
 #include <QScreen>
 #include <QSet>
@@ -244,31 +245,28 @@ const char *clone_type()
 	return nullptr;
 }
 
-void add_to_scene(QWidget *parent, const Source &entry, bool clone)
+bool add_to_scene(QWidget *parent, const Source &entry, bool clone)
 {
 	OBSSourceAutoRelease current = obs_frontend_preview_program_mode_active() ? obs_frontend_get_current_preview_scene()
 										 : obs_frontend_get_current_scene();
 	auto source = resolve(entry);
 	auto *scene = obs_scene_from_source(current);
 	if (!scene || !source || source.Get() == current.Get())
-		return;
-	if (!clone) {
-		obs_scene_add(scene, source);
-		return;
-	}
+		return false;
+	if (!clone)
+		return obs_scene_add(scene, source) != nullptr;
 	const char *id = clone_type();
 	if (!id)
-		return;
+		return false;
 	bool ok = false;
 	auto name = QInputDialog::getText(parent, text("Quick.AddClone"), text("Quick.CloneName"),
 					  QLineEdit::Normal, entry.name + " CLONE", &ok).trimmed();
 	if (!ok || name.isEmpty() || obs_source_removed(source) || obs_source_removed(current))
-		return;
+		return false;
 	OBSDataAutoRelease settings = obs_data_create();
 	obs_data_set_string(settings, "clone", obs_source_get_name(source));
 	OBSSourceAutoRelease copy = obs_source_create(id, name.toUtf8().constData(), settings, nullptr);
-	if (copy)
-		obs_scene_add(scene, copy);
+	return copy && obs_scene_add(scene, copy);
 }
 }
 
@@ -357,16 +355,23 @@ void open_source_menu(QWidget *parent, const QPoint &position, const Source &ent
 				fn(target.Get());
 		});
 	};
-	action("Quick.AddCurrent", [parent, entry](obs_source_t *) { add_to_scene(parent, entry, false); });
+	auto add = [parent, entry](bool clone) {
+		QPointer<QWidget> window = parent->window();
+		auto *main = static_cast<QWidget *>(obs_frontend_get_main_window());
+		if (add_to_scene(main, entry, clone) && window && window->windowType() == Qt::Popup)
+			window->close();
+	};
+	menu->addAction(text("Quick.AddCurrent"), parent, [add] { add(false); });
 	if (clone_type())
-		action("Quick.AddClone", [parent, entry](obs_source_t *) { add_to_scene(parent, entry, true); });
+		menu->addAction(text("Quick.AddClone"), parent, [add] { add(true); });
 	menu->addSeparator();
 	if (can_open_properties(source))
 		action("Native.Properties", obs_frontend_open_source_properties);
 	action("Native.Filters", obs_frontend_open_source_filters);
-	action("Native.Rename", [parent](obs_source_t *target) {
+	action("Native.Rename", [](obs_source_t *target) {
+		auto *main = static_cast<QWidget *>(obs_frontend_get_main_window());
 		bool ok = false;
-		const QString name = QInputDialog::getText(parent, text("Native.Rename"), text("Quick.NewName"),
+		const QString name = QInputDialog::getText(main, text("Native.Rename"), text("Quick.NewName"),
 							QLineEdit::Normal, obs_source_get_name(target), &ok).trimmed();
 		if (ok && !name.isEmpty() && !obs_source_removed(target))
 			obs_source_set_name(target, name.toUtf8().constData());
