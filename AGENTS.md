@@ -24,7 +24,7 @@ For Quick Access, exercise Manual, Dynamic and Source Search through the Tools m
 
 ## Countdown Timer placement
 
-The countdown source owns its rectangle and font. Use its complete box when measuring a timer through Arrange or Fit to Space, including when visible-pixel measurement is on. Exercise the existing Place grid and the timer settings grid on an actual scene timer, and check the same running value after changing presets. Only the end message uses text fitting.
+The countdown source owns its rectangle and font. Arrange, slides and Fit to Space honor their own Use visible pixels and Ignore shadows & outlines options for timers, both as the fitted source and as a neighboring obstacle. A fixed source canvas is not an occupied-pixel claim: with visible-pixel measurement on, use the normal alpha measurement and FitEngine own-cut path, and let glances notice text, alignment and end-message changes. With visible-pixel measurement off, use the complete box. Exercise the existing Place grid and the timer settings grid on an actual scene timer, and check the same running value after changing presets. Only the end message uses text fitting.
 
 ## Saved scene settings and source renames
 

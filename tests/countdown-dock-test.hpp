@@ -325,7 +325,7 @@ inline void check(QStringList &issues, bool restart)
 			obs_data_set_double(fit_settings, "box_height", 90);
 			obs_data_set_double(fit_settings, "margin", 0);
 			obs_data_set_int(fit_settings, "glide_ms", 0);
-			obs_data_set_bool(fit_settings, "visible_pixels", true);
+			obs_data_set_bool(fit_settings, "visible_pixels", false);
 			OBSSourceAutoRelease fit =
 				obs_source_create_private("stagekit_fit_item", "Fit the timer box", fit_settings);
 			if (fit) {

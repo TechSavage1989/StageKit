@@ -1342,7 +1342,9 @@ Enable **Start when streaming starts** for any timer that should start or resume
 
 In **Timer settings > Timer box**, enter the box width and height in pixels. Choose the on-stream text size under **Source properties > Font**. These settings apply to every starting duration and Stream Deck clock shortcut. If a long running format reaches an edge, widen the box or choose a smaller font. Only the ending message automatically resizes and wraps.
 
-Select the timer in OBS and use the nine squares on the StageKit dock’s **Place** tab to position the text inside its box. You can also set **Text alignment** in Timer settings. The clock and ending message use the same corner, edge, or center. **Edit Transform** moves or scales the whole source. **Fit to Space** uses the full timer box, including its transparent space. With an active fit rule, the Place grid also updates that rule’s alignment.
+Select the timer in OBS and use the nine squares on the StageKit dock’s **Place** tab to position the text inside its box. You can also set **Text alignment** in Timer settings. The clock and ending message use the same corner, edge, or center. **Edit Transform** moves or scales the whole source. With an active fit rule, the Place grid also updates that rule’s alignment.
+
+**Use visible pixels** applies to timers in Place, Arrange and **Fit to Space**, including when another source is placed beside a timer. A **Gap** of 30 px is measured from the timer's visible text. **Ignore shadows & outlines** excludes effects added by filters. Turn **Use visible pixels** off to measure from the full timer box, including transparent space. Each fit filter uses its own measurement settings.
 
 For the private readout, drag the dock to the size you want or set **Dock text size** in Timer settings. The running font stays fixed across presets. With **Leading zero** off, hidden digits leave their positions empty while the timer runs.
 

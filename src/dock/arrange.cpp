@@ -14,7 +14,6 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../placement/fit-item.hpp"
 
 #include "../common/alpha-bounds.hpp"
-#include "../countdown/timer-source.hpp"
 #include "../common/filter-input.hpp"
 #include "../common/shown-scale.hpp"
 #include "../shadow/shadow-backdrop.hpp"
@@ -345,8 +344,7 @@ Box measure_item_now(obs_source_t *scene, obs_sceneitem_t *item, const Measure &
 	refresh_item(item);
 	const Box whole = scene_box(scene, item);
 	obs_source_t *source = obs_sceneitem_get_source(item);
-	// The timer's transparent space is part of the box the operator placed.
-	if (!how.visible_pixels || is_countdown(source))
+	if (!how.visible_pixels)
 		return whole;
 	Drawn part;
 	bool measured = false;

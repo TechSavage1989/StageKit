@@ -7,7 +7,9 @@
 #include <QTimeZone>
 #include <QFileInfo>
 #include <QDir>
+#include <QTemporaryDir>
 #include <obs-module.h>
+#include <graphics/matrix4.h>
 #include <graphics/vec2.h>
 #include <QDateTime>
 #include <QElapsedTimer>
@@ -710,6 +712,220 @@ inline void fitted_states(QStringList &issues, const QString &sheet_path)
 	}
 }
 
+// Measure the rendered gap, with transparent margins on both sources. This runs
+// in headless libobs and in the portable Windows OBS frontend fixture.
+inline void visible_spacing(QStringList &issues)
+{
+	auto expect = [&](bool ok, const char *why) {
+		if (!ok)
+			issues.append(QStringLiteral("Timer visible spacing: ") + QString::fromLatin1(why));
+	};
+	obs_video_info video{};
+	if (!obs_get_video_info(&video) || video.base_width < 640 || video.base_height < 360) {
+		expect(false, "fixture canvas is unavailable");
+		return;
+	}
+	const int width = int(video.base_width), height = int(video.base_height);
+	QTemporaryDir files;
+	QImage artwork(160, 100, QImage::Format_RGBA8888);
+	artwork.fill(Qt::transparent);
+	{
+		QPainter brush(&artwork);
+		brush.fillRect(QRect(20, 20, 120, 60), Qt::green);
+	}
+	const auto path = files.filePath(QStringLiteral("padded-image.png"));
+	if (!files.isValid() || !artwork.save(path)) {
+		expect(false, "creating the padded image");
+		return;
+	}
+	OBSDataAutoRelease image_settings = obs_data_create();
+	obs_data_set_string(image_settings, "file", path.toUtf8().constData());
+	OBSSourceAutoRelease image = obs_source_create("image_source", "Timer gap image", image_settings, nullptr);
+	OBSDataAutoRelease config = obs_data_create();
+	OBSDataAutoRelease face = obs_data_create();
+	obs_data_set_string(face, "face", "Open Sans");
+	obs_data_set_int(face, "size", 40);
+	obs_data_set_int(face, "flags", OBS_FONT_BOLD);
+	obs_data_set_obj(config, "font", face);
+	obs_data_set_int(config, "color", 0xff0000ffLL);
+	obs_data_set_int(config, "box_width", 320);
+	obs_data_set_int(config, "box_height", 140);
+	obs_data_set_bool(config, "format_output", true);
+	obs_data_set_string(config, "output_format", "IN %time%");
+	OBSSourceAutoRelease timer = obs_source_create("stagekit_countdown", "Timer gap clock", config, nullptr);
+	OBSSceneAutoRelease scene = obs_scene_create("Timer visible spacing fixture");
+	if (!image || !timer || !scene) {
+		expect(false, "creating the scene sources");
+		return;
+	}
+	auto *scene_source = obs_scene_get_source(scene);
+	auto *picture = obs_scene_add(scene, image);
+	auto *clock = obs_scene_add(scene, timer);
+	if (!picture || !clock) {
+		expect(false, "adding the scene sources");
+		return;
+	}
+	auto put = [](obs_sceneitem_t *item, float x, float y) {
+		vec2 pos, scale;
+		vec2_set(&pos, x, y);
+		vec2_set(&scale, 1.0f, 1.0f);
+		obs_sceneitem_set_bounds_type(item, OBS_BOUNDS_NONE);
+		obs_sceneitem_set_alignment(item, OBS_ALIGN_LEFT | OBS_ALIGN_TOP);
+		obs_sceneitem_set_scale(item, &scale);
+		obs_sceneitem_set_pos(item, &pos);
+	};
+	put(picture, float(width / 2 - 80), 40.0f);
+	put(clock, float(width / 2 - 160), float(height - 160));
+	struct RestoreOutput {
+		OBSSourceAutoRelease previous = obs_get_output_source(0);
+		~RestoreOutput() { obs_set_output_source(0, previous); }
+	} restore;
+	obs_set_output_source(0, scene_source);
+	auto capture = [&] {
+		auto pixels = replacement_test::render(scene_source, uint32_t(width), uint32_t(height));
+		return QImage(pixels.data(), width, height, width * 4, QImage::Format_RGBA8888_Premultiplied).copy();
+	};
+	// Keep the original alpha coverage while isolating the two source colours.
+	auto colored = [&](const QImage &shot, bool green, bool with_outline = false) {
+		QImage mask = shot.copy();
+		for (int y = 0; y < mask.height(); ++y) {
+			auto *line = mask.scanLine(y);
+			for (int x = 0; x < mask.width(); ++x) {
+				auto *p = line + x * 4;
+				const bool keep = green ? p[1] > p[0] * 2 && p[1] > p[2] * 2
+							: p[0] > p[1] * 2 || (with_outline && p[2] > p[1] * 2);
+				if (!keep)
+					p[3] = 0;
+			}
+		}
+		return painted(mask);
+	};
+	auto gap_is = [&](bool outline = false) {
+		const auto shot = capture();
+		const QRect a = colored(shot, true), b = colored(shot, false, outline);
+		return !a.isEmpty() && !b.isEmpty() && std::abs(b.top() - a.bottom() - 1 - 30) <= 2;
+	};
+	auto settings_for = [&](const char *name, bool visible, bool resize) {
+		OBSDataAutoRelease settings = obs_data_create();
+		obs_data_set_string(settings, "item", name);
+		obs_data_set_int(settings, "box", 2);
+		obs_data_set_double(settings, "margin", 30);
+		obs_data_set_bool(settings, "resize", resize);
+		obs_data_set_double(settings, "tolerance", 0);
+		obs_data_set_int(settings, "toward", 2);
+		obs_data_set_int(settings, "glide_ms", 0);
+		obs_data_set_bool(settings, "visible_pixels", visible);
+		obs_data_set_bool(settings, "no_shadows", true);
+		return settings;
+	};
+	// By boxes, the full source rectangles still keep exactly the selected gap.
+	{
+		auto settings = settings_for("Timer gap image", false, false);
+		OBSSourceAutoRelease fit = obs_source_create_private("stagekit_fit_item", "Timer box gap", settings);
+		if (!fit) {
+			expect(false, "creating the box-mode fit");
+			return;
+		}
+		obs_source_filter_add(scene_source, fit);
+		expect(wait_for([&] {
+			       capture();
+			       matrix4 a, b;
+			       obs_sceneitem_get_box_transform(picture, &a);
+			       obs_sceneitem_get_box_transform(clock, &b);
+			       return std::abs(b.t.y - a.t.y - a.y.y - 30.0f) < 2.0f;
+		       }),
+		       "box mode did not keep the 30 px rectangle gap");
+		expect(!gap_is(), "the fixture has no transparent margins to distinguish the modes");
+		obs_source_filter_remove(scene_source, fit);
+	}
+	put(picture, float(width / 2 - 80), 40.0f);
+	auto settings = settings_for("Timer gap image", true, false);
+	OBSSourceAutoRelease fit = obs_source_create_private("stagekit_fit_item", "Timer visible gap", settings);
+	if (!fit) {
+		expect(false, "creating the visible-mode fit");
+		return;
+	}
+	obs_source_filter_add(scene_source, fit);
+	expect(wait_for([&] { return gap_is(); }), "the image did not stop 30 px from the timer glyphs");
+	const QRect before_alignment = colored(capture(), false);
+	obs_data_set_int(config, "box_alignment", 1);
+	obs_source_update(timer, config);
+	expect(wait_for([&] { return colored(capture(), false).top() < before_alignment.top() - 20 && gap_is(); }),
+	       "changing text alignment left the neighbor using stale bounds");
+	obs_data_set_int(config, "box_alignment", 0);
+	obs_source_update(timer, config);
+	expect(wait_for([&] {
+		       return std::abs(colored(capture(), false).top() - before_alignment.top()) <= 2 && gap_is();
+	       }),
+	       "restoring text alignment did not restore the visible gap");
+	// A blue outline must be excluded or counted according to this fit's own option.
+	OBSDataAutoRelease look = obs_data_create();
+	obs_data_set_bool(look, "shadow", false);
+	obs_data_set_bool(look, "outline", true);
+	obs_data_set_double(look, "outline_width", 8);
+	obs_data_set_int(look, "outline_color", 0xffff0000LL);
+	obs_data_set_bool(look, "screen_px", false);
+	OBSSourceAutoRelease outline = obs_source_create_private("stagekit_shadow_backdrop", "Timer outline", look);
+	if (outline) {
+		obs_source_filter_add(timer, outline);
+		expect(wait_for([&] {
+			       const auto shot = capture();
+			       return colored(shot, false, true).top() < colored(shot, false).top() - 4 && gap_is();
+		       }),
+		       "ignoring an outline did not measure from the timer glyphs");
+		obs_data_set_bool(settings, "no_shadows", false);
+		obs_source_update(fit, settings);
+		expect(wait_for([&] { return gap_is(true) && !gap_is(); }),
+		       "counting the outline did not measure from its visible edge");
+		obs_source_filter_remove(timer, outline);
+	} else {
+		expect(false, "creating the timer outline");
+	}
+	obs_source_filter_remove(scene_source, fit);
+	// Give the timer its own fit. Automatic neighbors then consume its published
+	// image claim, including the minimum held claim when the neighbor resizes.
+	expect(wait_for([&] { return obs_source_get_width(timer) == 320 && obs_source_get_height(timer) == 140; }),
+	       "removing the outline changed the saved timer box");
+	const QRect ink = painted(frame(timer));
+	put(clock, float(width / 2 - 160), float(height - 30 - ink.bottom() - 1));
+	put(picture, float(width / 2 - 80), 40.0f);
+	auto timer_settings = settings_for("Timer gap clock", true, false);
+	OBSDataArrayAutoRelease ignored = obs_data_array_create();
+	OBSDataAutoRelease entry = obs_data_create();
+	obs_data_set_string(entry, "value", "Timer gap image");
+	obs_data_array_push_back(ignored, entry);
+	obs_data_set_array(timer_settings, "skip", ignored);
+	OBSSourceAutoRelease timer_fit =
+		obs_source_create_private("stagekit_fit_item", "Fit timer glyphs", timer_settings);
+	if (timer_fit) {
+		obs_source_filter_add(scene_source, timer_fit);
+		expect(wait_for([&] {
+			       const QRect drawn = colored(capture(), false);
+			       return !drawn.isEmpty() && std::abs(height - drawn.bottom() - 1 - 30) <= 2;
+		       }),
+		       "the timer's own fit did not use its visible bottom edge");
+		obs_data_set_bool(settings, "no_shadows", true);
+		obs_source_update(fit, settings);
+		obs_source_filter_add(scene_source, fit);
+		expect(wait_for([&] { return gap_is(); }), "a fitted timer published its full box to the adjacent fit");
+		obs_data_set_bool(settings, "resize", true);
+		obs_source_update(fit, settings);
+		expect(wait_for([&] { return colored(capture(), true).width() > 150 && gap_is(); }),
+		       "a resizing neighbor used the timer box instead of its held visible claim");
+		obs_source_filter_remove(scene_source, fit);
+		obs_source_filter_remove(scene_source, timer_fit);
+	} else {
+		expect(false, "creating the timer's own fit");
+	}
+	OBSDataAutoRelease saved = obs_source_get_settings(timer);
+	OBSDataAutoRelease saved_font = obs_data_get_obj(saved, "font");
+	expect(obs_source_get_width(timer) == 320 && obs_source_get_height(timer) == 140 &&
+		       obs_data_get_int(saved_font, "size") == 40,
+	       "visible measurement changed the timer's source box or configured font");
+	blog(LOG_INFO,
+	     "StageKit timer layout: 30 px visible gaps, box mode, alignment refresh, outline and fitted claims");
+}
+
 // Match an OBS scene item enlarged fivefold, and compare its alpha edges
 // with the old operation of enlarging a one-to-one timer bitmap.
 inline bool sharp_scaled_timer(const QString &sheet_path, int font_size, int zoom)
@@ -888,6 +1104,7 @@ inline void check(QStringList &issues, const QString &sheet_path = {})
 	fitted_states(issues, sheet_path);
 	steady_ticks(issues, sheet_path);
 	fixed_box(issues, sheet_path);
+	visible_spacing(issues);
 	expect(sharp_scaled_timer(sheet_path, 100, 5),
 	       "the fivefold timer lost edge detail or changed its logical dimensions");
 	expect(sharp_scaled_timer({}, 24, 16), "a small timer lost edge detail when enlarged sixteenfold");
