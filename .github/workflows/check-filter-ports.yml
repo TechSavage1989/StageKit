@@ -8,6 +8,8 @@ permissions:
   contents: read
 jobs:
   native:
+    permissions:
+      contents: write
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -33,6 +35,13 @@ jobs:
           xvfb-run -a build-ports/tests/stagekit-replacement-test "$PWD/build-ports/stagekit.so" "$PWD/data" "$out/art.png" "$out" > "$out/render.log" 2>&1 || { tail -180 "$out/render.log"; exit 1; }
           grep -E 'PASS|FAIL|mean difference' "$out/render.log"
           python3 tests/replacement-images.py "$out" sheet
+      - name: Capture the verified synthetic preview for the guide
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sheet=build-ports/filter-results/filter-replacements.jpg
+          result=$(python3 -c 'import base64,json,sys;print(json.dumps(dict(encoding="base64",content=base64.b64encode(open(sys.argv[1],"rb").read()).decode())))' "$sheet" | gh api --method POST "repos/$GITHUB_REPOSITORY/git/blobs" --input - --jq .sha)
+          echo "rendered file $result docs/images/filter-replacements.jpg"
       - name: Open the replacement catalog in a fresh OBS frontend
         if: always() && hashFiles('build-ports/tests/stagekit-replacement-probe.so') != ''
         run: bash tests/check-replacement-frontend.sh build-ports

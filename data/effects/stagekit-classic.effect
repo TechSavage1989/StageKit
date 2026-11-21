@@ -54,18 +54,18 @@ float4 toon_ps(Vertex v) : TARGET
 {
 	float4 c = image.Sample(linear_sampler, v.uv);
 	float3 rgb = c.rgb;
-	float high = max(rgb.r, max(rgb.g, rgb.b));
-	float low = min(rgb.r, min(rgb.g, rgb.b));
-	float span = high - low;
-	float hue = 0.0;
-	if (span > 0.00001) {
-		if (high == rgb.r) hue = (rgb.g - rgb.b) / span;
-		else if (high == rgb.g) hue = 2.0 + (rgb.b - rgb.r) / span;
-		else hue = 4.0 + (rgb.r - rgb.g) / span;
-	}
-	hue = floor(frac(hue / 6.0 + 1.0) * steps.x + 0.5) / steps.x;
+	float choose_green = step(rgb.b, rgb.g);
+	float larger = lerp(rgb.b, rgb.g, choose_green);
+	float smaller = lerp(rgb.g, rgb.b, choose_green);
+	float choose_red = step(larger, rgb.r);
+	float high = lerp(larger, rgb.r, choose_red);
+	float other = lerp(rgb.r, larger, choose_red);
+	float span = high - min(other, smaller);
+	float offset = lerp(lerp(2.0 / 3.0, -1.0 / 3.0, choose_green), lerp(-1.0, 0.0, choose_green), choose_red);
+	float hue = abs(offset + (other - smaller) / (6.0 * span + 1.0e-10));
+	hue = round(hue * steps.x) / steps.x;
 	float3 wheel = saturate(abs(frac(hue + float3(0.0, 0.6666667, 0.3333333)) * 6.0 - 3.0) - 1.0);
-	float brightness = floor(high * steps.y + 0.5) / steps.y;
+	float brightness = round(high * steps.y) / steps.y;
 	return float4(brightness * lerp(float3(1.0, 1.0, 1.0), wheel, span / max(high, 0.00001)), c.a);
 }
 

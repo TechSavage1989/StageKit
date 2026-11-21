@@ -81,7 +81,12 @@ void shader_file(Json &settings, const Path &data, CollectionReport &report)
 		++report.review["Missing bundled shader: " + utf8_path(relative)];
 		return;
 	}
-	if (std::filesystem::is_regular_file(old, ec) && !identical(old, next)) {
+	const bool original_exists = std::filesystem::is_regular_file(old, ec);
+	if (ec && ec != std::errc::no_such_file_or_directory && ec != std::errc::not_a_directory) {
+		++report.review["Cannot check original shader: " + utf8_path(relative)];
+		return;
+	}
+	if (original_exists && !identical(old, next)) {
 		++report.review["Customized shader kept in its original folder: " + utf8_path(relative)];
 		return;
 	}

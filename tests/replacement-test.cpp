@@ -2,6 +2,7 @@
 #include <obs-module.h>
 #include <obs-nix-platform.h>
 #include <graphics/vec4.h>
+#include <graphics/vec2.h>
 #include <QApplication>
 #include <dlfcn.h>
 #include <algorithm>
@@ -301,6 +302,83 @@ int main(int argc, char **argv)
 		obs_source_release(filter);
 		sleep_ms(40);
 	}
+	// Drive the same Start button and saved names used by the original Move filters.
+	obs_set_ui_task_handler([](obs_task_t task, void *param, bool) { task(param); });
+	auto *scene = obs_scene_create("Move test scene");
+	auto *scene_source = obs_scene_get_source(scene);
+	auto *item = obs_scene_add(scene, image_source);
+	obs_source_inc_showing(scene_source);
+	auto start_filter = [](obs_source_t *source) {
+		auto *props = obs_source_properties(source);
+		auto *start = props ? obs_properties_get(props, "move_filter_start") : nullptr;
+		check(start != nullptr, "Move Start control is available");
+		if (start)
+			obs_property_button_clicked(start, source);
+		obs_properties_destroy(props);
+	};
+	auto *movement = obs_data_create();
+	obs_data_set_string(movement, "source", "Test art");
+	obs_data_set_bool(movement, "custom_duration", true);
+	obs_data_set_int(movement, "duration", 50);
+	auto *position = obs_data_create();
+	obs_data_set_double(position, "x", 104.0);
+	obs_data_set_double(position, "y", 71.0);
+	obs_data_set_obj(movement, "pos", position);
+	obs_data_release(position);
+	auto *move = obs_source_create("stagekit_port_move_source_filter", "Move art", movement, nullptr);
+	obs_source_filter_add(scene_source, move);
+	obs_source_update(move, movement);
+	obs_data_release(movement);
+	sleep_ms(100);
+	start_filter(move);
+	sleep_ms(300);
+	vec2 actual{};
+	obs_sceneitem_get_pos(item, &actual);
+	check(std::fabs(actual.x - 104.0f) < 0.05f && std::fabs(actual.y - 71.0f) < 0.05f, "Move Source reaches the configured scene coordinates");
+
+	auto *edge = obs_source_create("stagekit_edge_detection", "Edges for Move", nullptr, nullptr);
+	obs_source_filter_add(image_source, edge);
+	auto *value_settings = obs_data_create();
+	obs_data_set_string(value_settings, "filter", "Edges for Move");
+	obs_data_set_string(value_settings, "setting_name", "threshold");
+	obs_data_set_int(value_settings, "value_type", 2);
+	obs_data_set_double(value_settings, "setting_float", 0.76);
+	obs_data_set_int(value_settings, "duration", 50);
+	auto *value_filter = obs_source_create("stagekit_port_move_value_filter", "Animate threshold", value_settings, nullptr);
+	obs_source_filter_add(image_source, value_filter);
+	obs_source_update(value_filter, value_settings);
+	obs_data_release(value_settings);
+	sleep_ms(100);
+	start_filter(value_filter);
+	sleep_ms(300);
+	auto *updated = obs_source_get_settings(edge);
+	check(std::fabs(obs_data_get_double(updated, "threshold") - 0.76) < 0.001, "Move Value changes a named filter setting");
+	obs_data_release(updated);
+
+	auto *action_settings = obs_data_create();
+	obs_data_set_int(action_settings, "action", 3);
+	obs_data_set_string(action_settings, "scene", "Move test scene");
+	obs_data_set_string(action_settings, "sceneitem", "Test art");
+	obs_data_set_int(action_settings, "enable", 1);
+	auto *action = obs_source_create("stagekit_port_move_action_filter", "Hide art", action_settings, nullptr);
+	obs_source_filter_add(scene_source, action);
+	obs_source_update(action, action_settings);
+	obs_data_release(action_settings);
+	sleep_ms(100);
+	start_filter(action);
+	sleep_ms(200);
+	check(!obs_sceneitem_visible(item), "Move Action hides the named source inside its scene");
+	obs_source_filter_remove(scene_source, action);
+	obs_source_release(action);
+	obs_source_filter_remove(image_source, value_filter);
+	obs_source_release(value_filter);
+	obs_source_filter_remove(image_source, edge);
+	obs_source_release(edge);
+	obs_source_filter_remove(scene_source, move);
+	obs_source_release(move);
+	obs_source_dec_showing(scene_source);
+	obs_scene_release(scene);
+
 	obs_source_dec_showing(image_source);
 	obs_source_release(image_source);
 	obs_shutdown();

@@ -693,3 +693,8 @@ export function outputShown(output: "stream" | "record", state: string, firstFra
 	if (typed) return { picture: typed, badge: outputBadge(output, state) };
 	return { picture: BY_ID.get(firstFrame) ?? plain("switch") };
 }
+
+export function ordinaryControlPicture(key: string, source: string | undefined, sourceType?: string, sceneType?: string): Picture {
+	if (key === "obsstudio" || key === "movesourceport" || key === "moveswapport") return scenePicture(undefined, source, sceneType);
+	return chooseFor(undefined, "", {}, source, undefined, { sourceType }) ?? plain("switch");
+}

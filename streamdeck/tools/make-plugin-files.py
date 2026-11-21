@@ -625,7 +625,7 @@ def main():
 
     key_pictures("mode", "options/mode-on", "options/mode-off")
     # (Its lists are per mode, inside the body; its Palette is in the body's Key fold-out.)
-    page("mode", "StageKit scene mode", mode_page_html(), FOLLOW_MODE)
+    page("mode", "StageKit scene mode", mode_page_html(), FOLLOW_MODE, lists=False)
     add("mode", "Scene Mode", "Works one scene's Scene Modes: switches a mode on, off, toggles it or goes to the next mode. Shows the mode that is on.", "mode", "imgs/actions/switch/icon", two("mode"))
 
     # The keys for a filter on a scene that act through StageKit's own requests.
