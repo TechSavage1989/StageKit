@@ -9,7 +9,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | fix/steady-countdown-layout. Release notes in docs/releases/0.1.0-beta242.md. |
+| Working branch | fix/timer-box-and-alignment. Release notes in docs/releases/0.1.0-beta243.md. |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 | Gate | Checks passed |
@@ -30,6 +30,8 @@ Visible bounds use the existing alpha threshold and fringe handling. Scene Fit t
 Two supplemental headless probes also reproduced their beta239 failures on both builds. FIT_TOOL reported 136 x 76 for its kept-size assertion and exited during cleanup. DOCK_BOUNDS exited during cleanup. The SHADOW_FLICKER probe passed on both.
 
 ## Countdown Timer
+
+Beta243 stores the source box, text alignment and optional dock font size. Running text uses the source font at its configured pixel size. Only the ending message is fitted. Older saved sources capture their previous box and visible font size on first load. The Place grid and timer editor share a widget and the existing Fit to Space position IDs. The fitter measures the timer rectangle across ticks and treats it as occupied space for neighbors. The countdown and frontend fixtures cover preset changes, the nine anchors, an actual dock fit and collection reload.
 
 Beta242 measures the running format once. The dock and scene source use the same digit advances, independent of numeral shape. Hidden leading digits reserve their positions, including in custom unit placeholders. Only an end message is fitted when the clock finishes. Tests compare unchanged pixel regions on both sides of a live minute rollover, across hour and day changes in count-up, and on reset.
 

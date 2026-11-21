@@ -22,6 +22,10 @@ Read [the replacement catalog](docs/obs-filter-replacements.md) before changing 
 
 For Quick Access, exercise Manual, Dynamic and Source Search through the Tools menu. Keep manual order and the existing Quick Search hotkey. Dynamic reads Program. Clickable scene rows in Studio Mode change Preview. Parent controls act on a scene-item ID within its owning scene or group.
 
+## Countdown Timer placement
+
+The countdown source owns its rectangle and font. Use its complete box when measuring a timer through Arrange or Fit to Space, including when visible-pixel measurement is on. Exercise the existing Place grid and the timer settings grid on an actual scene timer, and check the same running value after changing presets. Only the end message uses text fitting.
+
 ## Saved scene settings and source renames
 
 Run the REVIEW_CONTROLS test when changing saved defaults, Apply Layout framing, Morph scene rules
