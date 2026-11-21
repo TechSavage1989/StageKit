@@ -289,6 +289,138 @@ inline QRect painted(const QImage &image)
 		       : QRect();
 }
 
+// Compare the unchanged parts of real OBS frames, including the tens slot disappearing at 10:00.
+inline void steady_ticks(QStringList &issues, const QString &sheet_path)
+{
+	OBSDataAutoRelease config = obs_data_create();
+	OBSDataAutoRelease font = obs_data_create();
+	obs_data_set_string(font, "face", "Open Sans");
+	obs_data_set_int(font, "size", 300);
+	obs_data_set_int(font, "flags", OBS_FONT_BOLD);
+	obs_data_set_obj(config, "font", font);
+	obs_data_set_int(config, "minutes", 10);
+	obs_data_set_int(config, "seconds", 11);
+	obs_data_set_bool(config, "leading_zero", false);
+	obs_data_set_bool(config, "format_output", true);
+	obs_data_set_string(config, "output_format", "IN %time%");
+	obs_data_set_string(config, "end_message", "MOMENTARILY");
+	OBSSourceAutoRelease timer = obs_source_create_private("stagekit_countdown", nullptr, config);
+	auto expect = [&](bool ok, const char *why) {
+		if (!ok)
+			issues.append(QStringLiteral("Countdown placement: ") + QString::fromLatin1(why));
+	};
+	if (!timer) {
+		expect(false, "source missing");
+		return;
+	}
+	auto shot = [&](int64_t position, const QString &expected) {
+		obs_source_media_set_time(timer, position);
+		expect(wait_for([&] { return readout(timer) == expected; }), "wrong test time");
+		return frame(timer);
+	};
+	auto same = [](const QImage &a, const QImage &b, int from, int to) {
+		if (a.isNull() || a.size() != b.size())
+			return false;
+		const auto box = QRect(a.width() * from / 100, 0, a.width() * (to - from) / 100, a.height());
+		const auto part = a.copy(box);
+		const auto other = b.copy(box);
+		const auto qa = painted(part), qb = painted(other);
+		if (qa.isEmpty() || part != other) {
+			int changed = 0;
+			for (int y = 0; y < part.height(); ++y)
+				for (int x = 0; x < part.width(); ++x)
+					changed += part.pixel(x, y) != other.pixel(x, y);
+			blog(LOG_INFO, "StageKit timer layout: columns %d..%d, changed %d; ink %d,%d %dx%d / %d,%d %dx%d",
+			     from, to, changed, qa.x(), qa.y(), qa.width(), qa.height(), qb.x(), qb.y(), qb.width(), qb.height());
+		}
+		return !qa.isEmpty() && part == other;
+	};
+	const QImage ten = shot(0, "IN 10:11");
+	const QImage nine = shot(60000, "IN 9:11");
+	blog(LOG_INFO, "StageKit timer layout: first %dx%d, next %dx%d, same image %d; ink %d,%d %dx%d / %d,%d %dx%d",
+	     ten.width(), ten.height(), nine.width(), nine.height(), int(ten == nine), painted(ten).x(), painted(ten).y(),
+	     painted(ten).width(), painted(ten).height(), painted(nine).x(), painted(nine).y(), painted(nine).width(),
+	     painted(nine).height());
+	expect(ten != nine && same(ten, nine, 0, 21) && same(ten, nine, 62, 100),
+	       "prefix, colon or seconds moved when the leading digit disappeared");
+	for (int n = 0; n < 10; ++n) {
+		const auto change =
+			shot(61000 + n * 1000, QStringLiteral("IN 9:%1").arg(10 - n, 2, 10, QLatin1Char('0')));
+		expect(same(nine, change, 0, 65), "changing seconds moved the prefix, minutes or colon");
+	}
+	const auto before = shot(11000, "IN 10:00");
+	obs_source_media_play_pause(timer, false);
+	expect(wait_for([&] { return readout(timer) == "IN 9:59"; }), "live minute rollover");
+	obs_source_media_play_pause(timer, true);
+	const auto after = frame(timer);
+	expect(before != after && same(before, after, 0, 21), "the formatted prefix moved during playback");
+	obs_source_media_set_time(timer, 610999);
+	obs_source_media_play_pause(timer, false);
+	expect(wait_for([&] { return readout(timer) == "MOMENTARILY"; }), "end message");
+	frame(timer);
+	QThread::msleep(270);
+	const auto ended = frame(timer);
+	expect(ended.size() == ten.size() && !painted(ended).isEmpty(), "end message changed the source bounds");
+	obs_source_media_stop(timer);
+	frame(timer);
+	QThread::msleep(270);
+	const QImage reset = frame(timer);
+	same(ten, reset, 0, 100);
+	expect(reset == ten, "reset did not restore the same running pixels");
+	if (!sheet_path.isEmpty()) {
+		const auto dir = QFileInfo(sheet_path).dir();
+		ten.save(dir.filePath("timer-initial.png"));
+		nine.save(dir.filePath("timer-next.png"));
+		reset.save(dir.filePath("timer-reset.png"));
+	}
+
+	if (!sheet_path.isEmpty()) {
+		QImage sheet(840, 138, QImage::Format_RGB32);
+		sheet.fill(QColor("#202329"));
+		QPainter paint(&sheet);
+		paint.setRenderHint(QPainter::SmoothPixmapTransform);
+		const QImage samples[]{before, after, ended};
+		const QString labels[]{QStringLiteral("10:00 remaining"), QStringLiteral("9:59 remaining"),
+				       QStringLiteral("End message")};
+		const QSize size = before.size().scaled(252, 88, Qt::KeepAspectRatio);
+		for (int i = 0; i < 3; ++i) {
+			const QRect box(QPoint(i * 280 + (280 - size.width()) / 2, (100 - size.height()) / 2), size);
+			paint.setPen(QColor("#72cbd7"));
+			paint.drawRect(box.adjusted(-1, -1, 0, 0));
+			paint.drawImage(box, samples[i]);
+			paint.setPen(Qt::white);
+			paint.drawText(QRect(280 * i, 98, 280, 28), Qt::AlignCenter, labels[i]);
+		}
+		paint.end();
+		expect(sheet.save(QFileInfo(sheet_path).dir().filePath("countdown-rollover.png")),
+		       "saving the rollover image");
+	}
+
+	obs_data_set_string(config, "output_format", "%minutes%m %seconds2%s");
+	obs_source_update(timer, config);
+	const auto tokens = shot(0, "10m 11s");
+	const auto one = shot(60000, "9m 11s");
+	expect(same(tokens, one, 54, 100), "custom unit placeholders changed the suffix placement");
+	obs_data_set_bool(config, "format_output", false);
+	obs_source_update(timer, config);
+	const auto bare = shot(0, "10:11");
+	const auto less = shot(60000, "9:11");
+	expect(same(bare, less, 50, 100), "bare clock refitted when the leading zero was hidden");
+
+	obs_data_set_int(config, "timer_mode", 2);
+	obs_data_set_int(font, "size", 88);
+	obs_data_set_obj(config, "font", font);
+	obs_source_update(timer, config);
+	expect(wait_for([&] { return readout(timer) == "0:00"; }), "open-ended timer setup");
+	const auto minutes = shot(3551000, "59:11");
+	const auto hours = shot(3611000, "1:00:11");
+	const auto days = shot(86411000, "1:00:00:11");
+	expect(same(minutes, hours, 84, 100) && same(hours, days, 84, 100),
+	       "adding hours or days to a count-up moved its seconds");
+	blog(LOG_INFO,
+	     "StageKit timer layout: checked fixed clock anchors across ten digits, minute, hour and day rollovers");
+}
+
 inline void fitted_states(QStringList &issues, const QString &sheet_path)
 {
 	auto require = [&](bool ok, const char *why) {
@@ -354,8 +486,11 @@ inline void fitted_states(QStringList &issues, const QString &sheet_path)
 		const QImage last = scene_frame();
 		require(inside(first) && inside(middle) && inside(last),
 			"text crossed the transform, screen edge or neighboring source");
-		require(!animate || (first != middle && middle != last && first != last),
-			"text did not morph through an intermediate frame");
+		if (animate)
+			require(first != middle && middle != last && first != last,
+				"end message did not fade through an intermediate frame");
+		else
+			require(first == middle && middle == last, "running text moved during a format change");
 		const auto img = last.copy(target);
 		const QRect ink = painted(img);
 		require(!ink.isEmpty() && (ink.width() >= w * 0.88 || ink.height() >= h * 0.88),
@@ -369,7 +504,7 @@ inline void fitted_states(QStringList &issues, const QString &sheet_path)
 	require(change("05:00", false) == placed_clock, "a hidden message or format changed the running digits");
 	obs_data_set_bool(config, "format_output", true);
 	obs_source_update(timer, config);
-	const auto formatted = change("IN 05:00", true);
+	const auto formatted = change("IN 05:00", false);
 	obs_source_media_restart(timer);
 	obs_source_media_set_time(timer, 299990);
 	const auto message = change("MOMENTARILY", true);
@@ -377,11 +512,11 @@ inline void fitted_states(QStringList &issues, const QString &sheet_path)
 	require(change("IN 05:00", true) == formatted, "reset did not restore formatted output in place");
 	obs_data_set_bool(config, "format_output", false);
 	obs_source_update(timer, config);
-	require(change("05:00", true) == placed_clock, "returning from formatted text moved the digits");
+	require(change("05:00", false) == placed_clock, "returning from formatted text moved the digits");
 	obs_data_set_bool(config, "format_output", true);
 	obs_data_set_string(config, "output_format", "WE WILL BE RIGHT BACK IN %time%");
 	obs_source_update(timer, config);
-	change("WE WILL BE RIGHT BACK IN 05:00", true);
+	change("WE WILL BE RIGHT BACK IN 05:00", false);
 	blog(LOG_INFO, "StageKit timer layout: %dx%d source, clock ink %dx%d, formatted ink %dx%d, message ink %dx%d",
 	     w, h, clock_ink.width(), clock_ink.height(), painted(formatted).width(), painted(formatted).height(),
 	     painted(message).width(), painted(message).height());
@@ -578,6 +713,7 @@ inline void check(QStringList &issues, const QString &sheet_path = {})
 	clock_shortcuts(issues);
 	modes(issues);
 	fitted_states(issues, sheet_path);
+	steady_ticks(issues, sheet_path);
 	expect(sharp_scaled_timer(sheet_path, 100, 5),
 	       "the fivefold timer lost edge detail or changed its logical dimensions");
 	expect(sharp_scaled_timer({}, 24, 16), "a small timer lost edge detail when enlarged sixteenfold");

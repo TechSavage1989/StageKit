@@ -268,42 +268,83 @@ private:
 
 } // namespace
 
-QString TimerOptions::clock_text(int64_t milliseconds, int64_t range) const
+// Unbounded count-up reserves space for the full period the editor can represent.
+static int64_t layout_range(const TimerOptions &options, int64_t range)
 {
-	const int mask = fields_for(units, std::max(range, milliseconds));
+	constexpr int64_t longest_period = (10000LL * 86400 - 1) * 1000;
+	return options.unlimited() ? std::max(range, longest_period) : range;
+}
+
+QString TimerOptions::clock_text(int64_t milliseconds, int64_t range, bool layout) const
+{
 	milliseconds = std::max<int64_t>(0, milliseconds);
+	range = std::max(range, milliseconds);
+	const int mask = fields_for(units, range);
+	const int64_t capacity = layout ? layout_range(*this, range) : range;
+	const int layout_units = layout ? fields_for(units, capacity) : mask;
 	int64_t quantum = 1;
 	for (size_t i = 0; i < bits.size(); ++i)
 		if (mask & bits[i])
 			quantum = sizes[i];
-	const bool round_up = !counts_up();
-	const auto quantum_ms = quantum * 1000;
-	int64_t remaining = ((milliseconds + (round_up ? quantum_ms - 1 : 0)) / quantum_ms) * quantum;
-	QStringList fields;
+	const auto rounded = [&](int64_t ms) {
+		const int64_t step = quantum * 1000;
+		return (ms / step + (!counts_up() && ms % step != 0)) * quantum;
+	};
+	int64_t remaining = rounded(milliseconds), maximum = rounded(capacity);
+	QString result;
+	bool first_visible = true;
 	for (size_t i = 0; i < sizes.size(); ++i) {
-		if (!(mask & bits[i]))
+		if (!(layout_units & bits[i]))
 			continue;
-		const int digits = fields.isEmpty() && !leading_zero ? 1 : 2;
-		fields << QString::number(remaining / sizes[i]).rightJustified(digits, QLatin1Char('0'));
-		remaining %= sizes[i];
+		const bool visible = (mask & bits[i]) != 0;
+		const int digits = first_visible && !leading_zero ? 1 : 2;
+		QString field;
+		if (visible) {
+			field = QString::number(remaining / sizes[i]).rightJustified(digits, QLatin1Char('0'));
+			remaining %= sizes[i];
+		}
+		if (!result.isEmpty())
+			result += visible && !first_visible ? QLatin1Char(':') : timer_colon_space;
+		if (layout) {
+			const int minimum = (result.isEmpty() && !leading_zero) ? 1 : 2;
+			const auto width = std::max<qsizetype>(minimum, QString::number(maximum / sizes[i]).size());
+			field = field.rightJustified(width, timer_digit_space);
+			maximum = std::min(maximum, sizes[i] - 1);
+		}
+		result += field;
+		if (visible)
+			first_visible = false;
 	}
-	return fields.join(QLatin1Char(':'));
+	return result;
 }
 
-QString TimerOptions::display_text(int64_t milliseconds, int64_t range, bool at_end) const
+QString TimerOptions::display_text(int64_t milliseconds, int64_t range, TimerText purpose) const
 {
-	const QString time = clock_text(milliseconds, range);
+	const bool layout = purpose == TimerText::Layout;
+	const bool at_end = purpose == TimerText::EndMessage;
+	const QString time = clock_text(milliseconds, range, layout);
 	if (!at_end && !format_output)
 		return time;
 	QString pattern = at_end ? message : output_format;
 	pattern.replace(QStringLiteral("%time%"), time);
 	if (!pattern.contains(QLatin1Char('%')))
 		return pattern;
-	int64_t parts = (std::max<int64_t>(0, milliseconds) + (counts_up() ? 0 : 999)) / 1000;
+	const auto seconds = [&](int64_t ms) {
+		ms = std::max<int64_t>(0, ms);
+		return ms / 1000 + (!counts_up() && ms % 1000 != 0);
+	};
+	int64_t parts = seconds(milliseconds);
+	int64_t maximum = seconds(layout_range(*this, std::max(range, milliseconds)));
 	for (size_t i = 0; i < keys.size(); ++i) {
 		const auto key = QString::fromLatin1(keys[i]);
-		const auto value = QString::number(parts / sizes[i]);
-		const auto padded = value.rightJustified(2, QLatin1Char('0'));
+		auto value = QString::number(parts / sizes[i]);
+		auto padded = value.rightJustified(2, QLatin1Char('0'));
+		if (layout) {
+			const auto width = QString::number(maximum / sizes[i]).size();
+			value = value.rightJustified(width, timer_digit_space);
+			padded = padded.rightJustified(width, timer_digit_space);
+			maximum = std::min(maximum, sizes[i] - 1);
+		}
 		pattern.replace(QLatin1Char('%') + key + QLatin1Char('%'), value);
 		pattern.replace(QLatin1Char('%') + key + QStringLiteral("2%"), padded);
 		parts %= sizes[i];
@@ -390,11 +431,14 @@ void edit_timer(QWidget *parent, obs_source_t *source)
 	obs_frontend_save();
 }
 
-QString timer_readout(obs_source_t *source, bool *end_message)
+QString timer_readout(obs_source_t *source, bool *end_message, QString *layout)
 {
 	calldata_t cd{};
+	calldata_set_bool(&cd, "want_layout", layout != nullptr);
 	proc_handler_call(obs_source_get_proc_handler(source), "timer_readout", &cd);
 	const QString value = QString::fromUtf8(calldata_string(&cd, "text"));
+	if (layout)
+		*layout = QString::fromUtf8(calldata_string(&cd, "layout"));
 	if (end_message)
 		*end_message = calldata_bool(&cd, "end_message");
 	calldata_free(&cd);

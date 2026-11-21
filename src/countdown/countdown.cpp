@@ -4,6 +4,7 @@ Copyright (C) 2026 StageKit contributors
 SPDX-License-Identifier: GPL-2.0-or-later
 */
 #include "countdown.hpp"
+#include "timer-line.hpp"
 #include "../api/vendor-api.hpp"
 #include "../common/timing.hpp"
 #include "../common/tooltip.hpp"
@@ -19,7 +20,6 @@ SPDX-License-Identifier: GPL-2.0-or-later
 #include <QFontMetricsF>
 #include <QStringList>
 #include <QVector>
-#include <array>
 #include <QImage>
 #include <QPainter>
 #include <algorithm>
@@ -141,59 +141,24 @@ struct Playback {
 	{
 		return state == OBS_MEDIA_STATE_ENDED && settings.use_message && !settings.message.isEmpty();
 	}
-
-	QString text() const { return settings.display_text(value(), span, message_visible()); }
 };
 
 struct Display {
 	QFont font;
 	QColor color;
 	QSize canvas{1, 1};
-	QRectF digit_ink, colon_ink;
-	qreal digit_step = 1, colon_step = 1;
-	std::array<qreal, 10> offsets{};
+	TimerLine line{font};
+	QRectF live_bounds;
+	qreal live_scale = 1;
 
-	// Include font decorations and negative bearings in the same coordinates used to paint.
-	QRectF ink(const QFontMetricsF &m, const QString &s) const
+	void measure(const QString &clock, const QString &live)
 	{
-		QRectF bounds = m.tightBoundingRect(s);
-		const qreal advance = m.horizontalAdvance(s);
-		if (font.underline())
-			bounds |= QRectF(0, m.underlinePos() - m.lineWidth(), advance, 2 * m.lineWidth());
-		if (font.strikeOut())
-			bounds |= QRectF(0, -m.strikeOutPos() - m.lineWidth(), advance, 2 * m.lineWidth());
-		return bounds;
-	}
-
-	QRectF number_bounds(const QString &number) const
-	{
-		QRectF result;
-		qreal x = 0;
-		for (const QChar c : number) {
-			const bool separator = c == QLatin1Char(':');
-			result |= (separator ? colon_ink : digit_ink).translated(x, 0);
-			x += separator ? colon_step : digit_step;
-		}
-		return result;
-	}
-
-	void measure(const QString &reference)
-	{
-		const QFontMetricsF m(font);
-		digit_step = 1;
-		for (int i = 0; i < 10; ++i)
-			digit_step = std::max(digit_step, m.horizontalAdvance(QChar('0' + i)));
-		digit_ink = {};
-		for (int i = 0; i < 10; ++i) {
-			const QChar c('0' + i);
-			offsets[i] = (digit_step - m.horizontalAdvance(c)) / 2;
-			digit_ink |= ink(m, QString(c)).translated(offsets[i], 0);
-		}
-		colon_step = m.horizontalAdvance(QLatin1Char(':'));
-		colon_ink = ink(m, QStringLiteral(":"));
-		const QRectF bounds = number_bounds(reference);
+		line = TimerLine(font);
+		const auto bounds = line.layout(clock);
 		canvas = QSize(std::clamp(int(std::ceil(bounds.width())) + 2, 3, 4096),
 			       std::clamp(int(std::ceil(bounds.height())) + 2, 3, 2048));
+		live_bounds = line.layout(live);
+		live_scale = fit(live_bounds);
 	}
 
 	qreal fit(const QRectF &ink_bounds) const
@@ -213,7 +178,7 @@ struct Display {
 		Lines result;
 		result.text = lines;
 		for (const auto &line : lines) {
-			const auto box = ink(m, line);
+			const auto box = this->line.ink(line);
 			const qreal baseline = result.bounds.size() * m.lineSpacing();
 			result.bounds.append(box);
 			result.block |= box.translated(-box.center().x(), baseline);
@@ -260,7 +225,7 @@ struct Display {
 		return best;
 	}
 
-	QImage paint(const QString &text, bool free_text, int density) const
+	QImage paint(const QString &text, bool end_message, int density) const
 	{
 		QImage frame(canvas * density, QImage::Format_RGBA8888_Premultiplied);
 		if (frame.isNull())
@@ -271,25 +236,21 @@ struct Display {
 		p.setRenderHint(QPainter::TextAntialiasing);
 		p.setFont(font);
 		p.setPen(color);
-		const Lines lines = free_text ? fit_lines(text) : Lines{};
-		const QRectF bounds = free_text ? lines.block : number_bounds(text);
-		if (bounds.isEmpty())
-			return frame;
 		p.translate(canvas.width() / 2.0, canvas.height() / 2.0);
-		const qreal factor = fit(bounds);
-		p.scale(factor, factor);
-		p.translate(-bounds.center());
-		if (free_text) {
-			const qreal step = QFontMetricsF(font).lineSpacing();
-			for (qsizetype i = 0; i < lines.text.size(); ++i)
-				p.drawText(QPointF(-lines.bounds[i].center().x(), i * step), lines.text[i]);
-		} else {
-			qreal x = 0;
-			for (const QChar c : text) {
-				const bool separator = c == QLatin1Char(':');
-				p.drawText(QPointF(x + (separator ? 0 : offsets[c.digitValue()]), 0), QString(c));
-				x += separator ? colon_step : digit_step;
+		if (end_message) {
+			const Lines lines = fit_lines(text);
+			if (!lines.block.isEmpty()) {
+				const qreal scale = fit(lines.block);
+				p.scale(scale, scale);
+				p.translate(-lines.block.center());
+				const qreal step = QFontMetricsF(font).lineSpacing();
+				for (qsizetype i = 0; i < lines.text.size(); ++i)
+					p.drawText(QPointF(-lines.bounds[i].center().x(), i * step), lines.text[i]);
 			}
+		} else {
+			p.scale(live_scale, live_scale);
+			p.translate(-live_bounds.center());
+			line.layout(text, &p);
 		}
 		p.end();
 		return frame;
@@ -337,10 +298,14 @@ public:
 			clock_.started = monotonic_ms();
 		}
 		const bool format_changed = next.units != clock_.settings.units ||
-					    next.leading_zero != clock_.settings.leading_zero;
+					    next.leading_zero != clock_.settings.leading_zero ||
+					    next.format_output != clock_.settings.format_output ||
+					    next.output_format != clock_.settings.output_format;
 		clock_.settings = next;
-		if (reset)
+		if (reset) {
 			clock_.reset();
+			layout_range_ = clock_.span;
+		}
 		const bool font_changed = display_.font != font;
 		display_.font = font;
 		display_.color = color;
@@ -513,11 +478,17 @@ public:
 		std::lock_guard lock(mutex_);
 		return clock_.state;
 	}
-	QString text(bool &end_message) const
+	QString text(bool &end_message, QString *layout) const
 	{
 		std::lock_guard lock(mutex_);
 		end_message = clock_.message_visible();
-		return clock_.text();
+		const auto ms = clock_.value();
+		const auto purpose = end_message ? TimerText::EndMessage : TimerText::Plain;
+		const auto value = clock_.settings.display_text(ms, layout_range_, purpose);
+		if (layout)
+			*layout = end_message ? value
+					      : clock_.settings.display_text(ms, layout_range_, TimerText::Layout);
+		return value;
 	}
 	uint32_t width() const
 	{
@@ -571,21 +542,16 @@ public:
 			if (!texture_ || second != last_second_ || msg != last_message_ || dirty_ ||
 			    wanted != density_) {
 				const auto &options = clock_.settings;
-				const QString value = options.display_text(second * 1000, clock_.span, msg);
-				const QString style = msg ? options.message
-							  : (options.format_output ? options.output_format : QString());
+				const QString value = options.display_text(
+					second * 1000, layout_range_, msg ? TimerText::EndMessage : TimerText::Layout);
 				const bool switch_view = rendered_canvas_ == canvas && texture_ &&
-							 value != last_value_ &&
-							 (msg != last_message_ || style != last_style_) &&
+							 msg != last_message_ && value != last_value_ &&
 							 now - last_draw_ < 500000000ULL;
-				const bool free_text = msg || (options.format_output &&
-							       options.output_format != QStringLiteral("%time%"));
 				const bool repaint = dirty_ || !texture_ || wanted != density_ ||
 						     value != last_value_ || msg != last_message_;
-				if (repaint && !update_texture(value, free_text, wanted, switch_view, now))
+				if (repaint && !update_texture(value, msg, wanted, switch_view, now))
 					return;
 				last_value_ = value;
-				last_style_ = style;
 				rendered_canvas_ = canvas;
 				density_ = wanted;
 				last_second_ = second;
@@ -601,17 +567,18 @@ private:
 	void measure_locked()
 	{
 		const auto &options = clock_.settings;
-		// Only the bare clock establishes the transform. An unlimited timer keeps its initial box as it grows.
-		display_.measure(options.clock_text(clock_.span, clock_.span));
+		// The running layout is measured once for the whole period, including hidden digit positions.
+		display_.measure(options.clock_text(layout_range_, layout_range_, options.unlimited()),
+				 options.display_text(layout_range_, layout_range_, TimerText::Layout));
 		const int width = display_.canvas.width(), height = display_.canvas.height();
 		const int side_limit = 8192 / std::max(width, height);
 		const int area_limit = int(std::sqrt((4.0 * 1024 * 1024) / (width * height)));
 		max_density_ = std::max(1, std::min(side_limit, area_limit));
 	}
 
-	bool update_texture(const QString &value, bool free_text, int density, bool switch_view, uint64_t now)
+	bool update_texture(const QString &value, bool end_message, int density, bool switch_view, uint64_t now)
 	{
-		const QImage frame = display_.paint(value, free_text, density);
+		const QImage frame = display_.paint(value, end_message, density);
 		if (frame.isNull())
 			return false;
 		const auto w = static_cast<uint32_t>(frame.width());
@@ -668,20 +635,13 @@ private:
 		if (blending) {
 			const float t = float(now - morph_start_) / float(morph_ns);
 			const float mix = t * t * (3.0f - 2.0f * t);
-			const float scale = 1.0f - 0.32f * mix * (1.0f - mix);
 			bind("image2", texture_);
 			gs_effect_set_float(gs_effect_get_param_by_name(effect, "amount"), mix);
 			gs_effect_set_float(gs_effect_get_param_by_name(effect, "opacity"), 1.0f);
-			gs_matrix_push();
-			gs_matrix_translate3f(canvas.width() * (1.0f - scale) / 2, canvas.height() * (1.0f - scale) / 2,
-					      0);
-			gs_matrix_scale3f(scale, scale, 1.0f);
 		}
 		while (gs_effect_loop(effect, blending ? "Mix" : "Draw"))
 			gs_draw_sprite(blending ? outgoing_ : texture_, 0, uint32_t(canvas.width()),
 				       uint32_t(canvas.height()));
-		if (blending)
-			gs_matrix_pop();
 		gs_enable_framebuffer_srgb(previous);
 	}
 
@@ -694,10 +654,10 @@ private:
 	gs_texture_t *outgoing_ = nullptr;
 	gs_effect_t *morph_ = nullptr;
 	uint64_t morph_start_ = 0, last_draw_ = 0;
-	QString last_value_, last_style_, outgoing_value_;
+	QString last_value_, outgoing_value_;
 	QSize rendered_canvas_;
 	bool tried_morph_ = false;
-	int64_t last_second_ = -1;
+	int64_t last_second_ = -1, layout_range_ = 0;
 	int density_ = 1, max_density_ = 1;
 	uint64_t last_large_draw_ = 0;
 	bool last_message_ = false, dirty_ = true, initialized_ = false;
@@ -807,10 +767,15 @@ void register_countdown()
 					timer);
 		proc_handler_add(
 			obs_source_get_proc_handler(source),
-			"void timer_readout(out string text, out bool end_message)",
+			"void timer_readout(in bool want_layout, out string text, out bool end_message, out string layout)",
 			[](void *d, calldata_t *cd) {
 				bool end_message;
-				const auto value = static_cast<Countdown *>(d)->text(end_message);
+				QString layout;
+				const bool wanted = calldata_bool(cd, "want_layout");
+				const auto value =
+					static_cast<Countdown *>(d)->text(end_message, wanted ? &layout : nullptr);
+				if (wanted)
+					calldata_set_string(cd, "layout", layout.toUtf8().constData());
 				calldata_set_string(cd, "text", value.toUtf8().constData());
 				calldata_set_bool(cd, "end_message", end_message);
 			},

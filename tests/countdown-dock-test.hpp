@@ -288,6 +288,33 @@ inline void check(QStringList &issues, bool restart)
 	if (!capture.isEmpty()) {
 		expect(panel->grab().save(capture), "could not capture the actual dock");
 	}
+	// The dock keeps the same prefix and suffix pixels across an unpadded minute rollover.
+	OBSDataAutoRelease stable_settings = obs_data_create();
+	obs_data_set_int(stable_settings, "minutes", 10);
+	obs_data_set_int(stable_settings, "seconds", 11);
+	obs_data_set_bool(stable_settings, "leading_zero", false);
+	obs_data_set_bool(stable_settings, "format_output", true);
+	obs_data_set_string(stable_settings, "output_format", "IN %time%");
+	OBSSourceAutoRelease stable =
+		obs_source_create("stagekit_countdown", "Dock rollover", stable_settings, nullptr);
+	if (stable && choose(QStringLiteral("Dock rollover"))) {
+		expect(until([&] { return readout->text() == "IN 10:11"; }), "first rollover reading");
+		const QRect rect = readout->geometry();
+		const QImage a = readout->grab().toImage();
+		obs_source_media_set_time(stable, 60000);
+		expect(until([&] { return readout->text() == "IN 9:11"; }), "second rollover reading");
+		const QImage b = readout->grab().toImage();
+		const QRect left(0, 0, a.width() / 3, a.height());
+		const QRect right(2 * a.width() / 3, 0, a.width() / 3, a.height());
+		expect(rect == readout->geometry() && a != b && a.copy(left) == b.copy(left) &&
+			       a.copy(right) == b.copy(right),
+		       "dock clock moved or resized when a digit disappeared");
+	} else {
+		expect(false, "dock rollover timer missing");
+	}
+	if (stable)
+		obs_source_remove(stable);
+	expect(choose(shared_name), "restore selected timer after testing the dock rollover");
 	reset->click();
 	expect(until([&] {
 		       return obs_source_media_get_state(source) == OBS_MEDIA_STATE_STOPPED &&
