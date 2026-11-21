@@ -35,25 +35,25 @@ float4 shadow_ps(Vertex v) : TARGET
 	float2 base_uv = v.uv * uv_scale - image_origin;
 	float4 front = sample_inside(base_uv);
 	if (hide_image) front = float4(0.0, 0.0, 0.0, 0.0);
-	float opacity = hide_shadow ? 0.0 : ink.a * sample_inside(base_uv - shadow_offset).a;
-	return front + (1.0 - front.a) * float4(ink.rgb * opacity, opacity);
+	float4 back = hide_shadow ? float4(0.0, 0.0, 0.0, 0.0) : float4(ink.rgb, ink.a * sample_inside(base_uv - shadow_offset).a);
+	return front * front.a + back * (1.0 - front.a);
 }
 
 float4 edge_ps(Vertex v) : TARGET
 {
-	float2 dx = float2(pixel_size.x, 0.0);
-	float2 dy = float2(0.0, pixel_size.y);
+	float2 dx = float2(0.5 * pixel_size.x, 0.0);
+	float2 dy = float2(0.0, 0.5 * pixel_size.y);
 	float4 x_grad = image.Sample(linear_sampler, v.uv + dx) - image.Sample(linear_sampler, v.uv - dx);
 	float4 y_grad = image.Sample(linear_sampler, v.uv + dy) - image.Sample(linear_sampler, v.uv - dy);
 	float4 base = image.Sample(linear_sampler, v.uv);
 	float alpha = step(threshold, sqrt(length(x_grad) + length(y_grad))) * ink.a;
-	return float4(ink.rgb * alpha + base.rgb * (1.0 - alpha), alpha + base.a * (1.0 - alpha));
+	return float4(ink.rgb * alpha + base.rgb * (1.0 - alpha), ink.a * alpha + base.a * (1.0 - alpha));
 }
 
 float4 toon_ps(Vertex v) : TARGET
 {
 	float4 c = image.Sample(linear_sampler, v.uv);
-	float3 rgb = c.rgb / max(c.a, 0.00001);
+	float3 rgb = c.rgb;
 	float high = max(rgb.r, max(rgb.g, rgb.b));
 	float low = min(rgb.r, min(rgb.g, rgb.b));
 	float span = high - low;
@@ -66,7 +66,7 @@ float4 toon_ps(Vertex v) : TARGET
 	hue = floor(frac(hue / 6.0 + 1.0) * steps.x + 0.5) / steps.x;
 	float3 wheel = saturate(abs(frac(hue + float3(0.0, 0.6666667, 0.3333333)) * 6.0 - 3.0) - 1.0);
 	float brightness = floor(high * steps.y + 0.5) / steps.y;
-	return float4(brightness * lerp(float3(1.0, 1.0, 1.0), wheel, span / max(high, 0.00001)) * c.a, c.a);
+	return float4(brightness * lerp(float3(1.0, 1.0, 1.0), wheel, span / max(high, 0.00001)), c.a);
 }
 
 float weight(int i)

@@ -43,14 +43,27 @@ bool bundled_shader(const std::string &saved, Path &relative)
 	return false;
 }
 
+// Windows installers can contain CRLF versions of the same upstream shader.
+int shader_byte(std::istream &input)
+{
+	const int ch = input.get();
+	if (ch == '\r' && input.peek() == '\n')
+		return input.get();
+	return ch;
+}
+
 bool identical(const Path &a, const Path &b)
 {
-	std::error_code ec;
-	const auto size = std::filesystem::file_size(a, ec);
-	if (ec || std::filesystem::file_size(b, ec) != size || ec)
-		return false;
 	std::ifstream left(a, std::ios::binary), right(b, std::ios::binary);
-	return left && right && std::equal(std::istreambuf_iterator<char>(left), {}, std::istreambuf_iterator<char>(right));
+	if (!left || !right)
+		return false;
+	for (;;) {
+		const int a_byte = shader_byte(left);
+		if (a_byte != shader_byte(right))
+			return false;
+		if (a_byte == std::char_traits<char>::eof())
+			return left.eof() && right.eof() && !left.bad() && !right.bad();
+	}
 }
 
 void shader_file(Json &settings, const Path &data, CollectionReport &report)
@@ -155,7 +168,13 @@ CollectionReport convert_collection(Json &collection, const Json &catalog, const
 		}
 	}
 	auto modules = collection.find("modules");
-	if (modules != collection.end()) {
+	if (modules != collection.end() && modules->is_object()) {
+		const auto automations = modules->find("advanced-scene-switcher");
+		if (automations != modules->end() && automations->is_object()) {
+			const auto macros = automations->find("macros");
+			if (macros != automations->end() && macros->is_array() && !macros->empty())
+				report.review["Advanced Scene Switcher macros"] = macros->size();
+		}
 		rename_key(*modules, "quick_access_utility", "stagekit.quick_access");
 		rename_key(*modules, "source-dock", "stagekit.dock");
 		rename_key(*modules, "transition-table", "stagekit.table");

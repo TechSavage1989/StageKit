@@ -20,6 +20,29 @@ jobs:
         run: |
           cmake -S . -B build-ports -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DSTAGEKIT_BUILD_TESTS=ON
           cmake --build build-ports --parallel 4 -- -k 0
+      - name: Test collection migration and render the filters
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          set -eu
+          out="$PWD/build-ports/filter-results"
+          python3 tests/replacement-images.py "$out"
+          cp tests/replacement-invert.effect "$out/invert.effect"
+          build-ports/tests/stagekit-replacement-collection-test data/ports.json data
+          xvfb-run -a build-ports/tests/stagekit-replacement-test "$PWD/build-ports/stagekit.so" "$PWD/data" "$out/art.png" "$out" > "$out/render.log" 2>&1 || { tail -180 "$out/render.log"; exit 1; }
+          grep -E 'PASS|FAIL|mean difference' "$out/render.log"
+          python3 tests/replacement-images.py "$out" sheet
+      - name: Open the replacement catalog in a fresh OBS frontend
+        if: always() && hashFiles('build-ports/tests/stagekit-replacement-probe.so') != ''
+        run: bash tests/check-replacement-frontend.sh build-ports
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: stagekit-filter-render
+          path: |
+            build-ports/filter-results/filter-replacements.jpg
+            build-ports/filter-results/render.log
   format:
     runs-on: ubuntu-24.04
     permissions:

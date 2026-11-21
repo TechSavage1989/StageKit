@@ -47,6 +47,9 @@ def adapt_file(text, key, filename, settings):
     if key == "quick":
         text = text.replace('"quick_access_utility"', '"stagekit.quick_access"')
         text = text.replace('"quick-access-dock_', '"stagekit-quick-access-dock_')
+    if key == "table":
+        for name in ("transition-table.enable", "transition-table.disable"):
+            text = text.replace('"' + name + '"', '"stagekit.port.' + name + '"')
     if key in ("table", "dock"):
         legacy = {"table": "transition-table", "dock": "source-dock"}[key]
         text = re.sub(r'(obs_data_(?:get|set)_obj\(\s*save_data,\s*")' + legacy + '"',

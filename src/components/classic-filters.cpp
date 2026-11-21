@@ -99,7 +99,7 @@ struct Filter {
 			return;
 		}
 		if (kind == Kind::Gaussian) {
-			radius = std::clamp((int)obs_data_get_int(s, "kernel_size") / 2, 0, 15);
+			radius = std::clamp(((int)obs_data_get_int(s, "kernel_size") - 1) / 2, 0, 15);
 			spacing = std::clamp((int)obs_data_get_int(s, "pixel_skip"), 1, 128);
 			const double sigma = std::clamp(obs_data_get_double(s, "sigma"), 1.0, 10.0);
 			float sum = 0.0f;
@@ -225,7 +225,7 @@ struct Filter {
 		} else if (kind == Kind::Shadow) {
 			const uint32_t out_w = w + (uint32_t)std::abs(x), out_h = h + (uint32_t)std::abs(y);
 			vector("uv_scale", (float)out_w / (float)w, (float)out_h / (float)h);
-			vector("image_origin", (float)std::max(-x, 0) / (float)w, (float)std::max(-y, 0) / (float)h);
+			vector("image_origin", (float)std::max(-x, 0) / (float)out_w, (float)std::max(-y, 0) / (float)out_h);
 			vector("shadow_offset", (float)x / (float)w, (float)y / (float)h);
 			gs_effect_set_vec4(param("ink"), &colour);
 			gs_effect_set_bool(param("hide_image"), hide_image);
