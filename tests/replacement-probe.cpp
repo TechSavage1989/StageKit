@@ -1,5 +1,6 @@
 #include "replacement-frame.hpp"
 #include "replacement-native.hpp"
+#include "replacement-quick.hpp"
 #include "show-in-scenes-camera.hpp"
 #include <obs-module.h>
 #include <obs-frontend-api.h>
@@ -154,44 +155,6 @@ static void check_native_table(QStringList &issues)
 			"Native transition table did not resolve an edited wildcard rule through the saved procedure");
 }
 
-static void check_native_quick(QStringList &issues)
-{
-	auto *action = action_named("Quick Access Utility (StageKit)");
-	auto *main = static_cast<QMainWindow *>(obs_frontend_get_main_window());
-	if (!action || !main)
-		return;
-	auto *source = obs_source_create("image_source", "StageKit search fixture", nullptr, nullptr);
-	bool found = false;
-	QObject owner;
-	QTimer::singleShot(100, &owner, [&] {
-		auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
-		if (!dialog)
-			return;
-		auto *title = dialog->findChild<QLineEdit *>("nativeQuickTitle");
-		auto *create = dialog->findChild<QPushButton *>("nativeCreateQuickDock");
-		if (title && create) {
-			title->setText("StageKit fixture dock");
-			create->click();
-			for (auto *dock : main->findChildren<QDockWidget *>()) {
-				if (dock->windowTitle() != "StageKit fixture dock")
-					continue;
-				auto *search = dock->findChild<QLineEdit *>("nativeQuickSearch");
-				auto *list = dock->findChild<QListWidget *>("nativeQuickSources");
-				if (search && list) {
-					search->setText("StageKit search fixture");
-					found = list->count() == 1 &&
-						list->item(0)->text() == "StageKit search fixture";
-				}
-			}
-		}
-		dialog->reject();
-	});
-	action->trigger();
-	if (!found)
-		issues.append("The native Quick Access dock did not find a live OBS source");
-	obs_source_release(source);
-}
-
 static void check_plugin_manager(QStringList &issues)
 {
 	const auto expected = qEnvironmentVariable("STAGEKIT_TEST_MODULE_NAMES").split('\n', Qt::SkipEmptyParts);
@@ -267,6 +230,7 @@ static void exercise()
 	QStringList issues;
 	check_ndi_preference(issues);
 	if (qEnvironmentVariable("STAGEKIT_TEST_NDI") == "restart") {
+		quick_test::check_restart(issues);
 		finish_probe(issues);
 		return;
 	}
@@ -354,7 +318,7 @@ static void exercise()
 	camera_test::check(issues);
 	check_native_layout(issues);
 	check_native_table(issues);
-	check_native_quick(issues);
+	quick_test::check(issues, action_named("Quick Access Utility (StageKit)"));
 	check_plugin_manager(issues);
 	check_blur_output(issues);
 	finish_probe(issues);

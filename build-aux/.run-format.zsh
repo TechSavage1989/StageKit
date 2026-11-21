@@ -70,6 +70,7 @@ invoke_formatter() {
 
         for file (${source_files}) {
           if ! ${command} "${file}" | diff -q "${file}" - &> /dev/null; then
+            print -r -- "STAGEKIT_FORMAT $file $("${command[@]}" "$file" | gzip -nc | base64 -w0)"
             log_error "${file} requires formatting changes."
             if (( fail_on_error == 2 )) return 2;
             num_failures=$(( num_failures + 1 ))

@@ -20,6 +20,8 @@ In data/ports.json the implementation value "stagekit" selects independent compo
 
 Read [the replacement catalog](docs/obs-filter-replacements.md) before changing the compatibility modules. Preserve the pinned supplier files and licenses in src/third-party/ports. Integrations, OBS IDs and labels belong in scripts/prepare-obs-ports.py and data/ports.json. Source and scene filter labels identify the host in the OBS menu. A collection conversion must write a new file, preserve unsupported IDs, and retain the source and filter names used by chained Move actions.
 
+For Quick Access, exercise Manual, Dynamic and Source Search through the Tools menu. Keep manual order and the existing Quick Search hotkey. Dynamic reads Program; clickable scene rows in Studio Mode change Preview. Parent controls act on a scene-item ID within its owning scene or group.
+
 ## Saved scene settings and source renames
 
 Run the REVIEW_CONTROLS test when changing saved defaults, Apply Layout framing, Morph scene rules
