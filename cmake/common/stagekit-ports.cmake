@@ -1,5 +1,5 @@
-# Compile the pinned, source-available implementations as private StageKit modules.
-# Each uses libobs's own module lifetime and a separate resource / translation directory.
+# Build each component under its existing libobs module identity. The catalog selects
+# independently implemented StageKit sources or the pinned compatibility port.
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 find_package(
   Qt6

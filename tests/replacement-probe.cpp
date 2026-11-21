@@ -229,19 +229,25 @@ static void check_ndi_preference(QStringList &issues)
 	if ((obs_get_module("stagekit-port-ndi") != nullptr) != previously_used)
 		issues.append("NDI module load did not match the saved preference");
 	auto *action = action_named("OBS filter replacements");
-	if (!action) {issues.append("No replacement catalog for NDI preference"); return;}
+	if (!action) {
+		issues.append("No replacement catalog for NDI preference");
+		return;
+	}
 	bool checked = false;
 	QObject owner;
-	QTimer::singleShot(100,&owner,[&] {
-		auto *dialog=qobject_cast<QDialog *>(QApplication::activeModalWidget());
-		if (!dialog) return;
-		auto *option=dialog->findChild<QCheckBox *>("stagekitLoadNdi");
-		checked=option && option->isChecked()==previously_used;
-		if (previously_used && option) option->click();
+	QTimer::singleShot(100, &owner, [&] {
+		auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+		if (!dialog)
+			return;
+		auto *option = dialog->findChild<QCheckBox *>("stagekitLoadNdi");
+		checked = option && option->isChecked() == previously_used;
+		if (previously_used && option)
+			option->click();
 		dialog->reject();
 	});
 	action->trigger();
-	if(!checked)issues.append("NDI preference in the catalog did not match this installation");
+	if (!checked)
+		issues.append("NDI preference in the catalog did not match this installation");
 }
 
 static void finish_probe(const QStringList &issues)
@@ -333,11 +339,13 @@ static void exercise()
 			issues.append("Catalog search did not return the labeled Directory Watch Media filter");
 	}
 	replacement_test::check_native_filters(qEnvironmentVariable("STAGEKIT_TEST_ART"), issues);
-	for (const char *key : {"freeze", "pixel", "3d", "recursion", "warp", "layouts", "directory", "defaults", "delay", "table", "quick", "clone"}) {
+	for (const char *key : {"freeze", "pixel", "3d", "recursion", "warp", "layouts", "directory", "defaults",
+				"delay", "table", "quick", "clone"}) {
 		const auto module_name = QByteArray("stagekit-port-") + key;
 		auto *module = obs_get_module(module_name.constData());
 		const char *author = module ? obs_get_module_author(module) : nullptr;
-		if (!author || QString::fromUtf8(author) != "StageKit contributors") issues.append("Incorrect author for " + QString::fromUtf8(module_name));
+		if (!author || QString::fromUtf8(author) != "StageKit contributors")
+			issues.append("Incorrect author for " + QString::fromUtf8(module_name));
 	}
 	check_native_layout(issues);
 	check_native_table(issues);
