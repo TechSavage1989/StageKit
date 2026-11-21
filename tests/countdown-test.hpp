@@ -550,17 +550,26 @@ inline void fixed_box(QStringList &issues, const QString &sheet_path)
 	// An actual saved pre-box timer migrates once. Saving and loading again must preserve its box.
 	OBSDataAutoRelease legacy_config = obs_data_create();
 	obs_data_set_int(legacy_config, "minutes", 5);
+	obs_data_set_bool(legacy_config, "leading_zero", false);
 	obs_data_set_bool(legacy_config, "format_output", true);
 	obs_data_set_string(legacy_config, "output_format", "IN %time%");
 	OBSSourceAutoRelease legacy = obs_source_create_private("stagekit_countdown", nullptr, legacy_config);
 	obs_source_load(legacy);
-	const QSize upgraded = frame(legacy).size();
+	const QImage migrated = frame(legacy);
+	const QSize upgraded = migrated.size();
 	OBSDataAutoRelease saved = obs_save_source(legacy);
 	OBSDataAutoRelease settings = obs_data_get_obj(saved, "settings");
 	expect(obs_data_has_user_value(settings, "box_width") &&
 		       obs_data_get_int(settings, "box_width") == upgraded.width() &&
 		       obs_data_get_int(settings, "box_height") == upgraded.height(),
 	       "saving the upgraded box");
+	OBSDataAutoRelease wide_settings = obs_data_create();
+	obs_data_apply(wide_settings, settings);
+	obs_data_set_int(wide_settings, "box_width", upgraded.width() + 200);
+	OBSSourceAutoRelease wide = obs_source_create_private("stagekit_countdown", nullptr, wide_settings);
+	const QRect full_ink = painted(frame(wide));
+	expect(!full_ink.isEmpty() && std::abs(full_ink.width() - painted(migrated).width()) <= 2,
+	       "the migrated box clipped the prefix or the final digit");
 	obs_data_set_int(settings, "hours", 5);
 	OBSSourceAutoRelease reopened = obs_load_private_source(saved);
 	if (reopened) {

@@ -318,7 +318,7 @@ static int64_t layout_range(const TimerOptions &options, int64_t range)
 	return options.unlimited() ? std::max(range, longest_period) : range;
 }
 
-QString TimerOptions::clock_text(int64_t milliseconds, int64_t range, bool layout, bool reserve_pair) const
+QString TimerOptions::clock_text(int64_t milliseconds, int64_t range, bool layout) const
 {
 	milliseconds = std::max<int64_t>(0, milliseconds);
 	range = std::max(range, milliseconds);
@@ -349,8 +349,7 @@ QString TimerOptions::clock_text(int64_t milliseconds, int64_t range, bool layou
 		if (!result.isEmpty())
 			result += visible && !first_visible ? QLatin1Char(':') : timer_colon_space;
 		if (layout) {
-			const int minimum = (result.isEmpty() && !leading_zero && !reserve_pair) ? 1 : 2;
-			const auto width = std::max<qsizetype>(minimum, QString::number(maximum / sizes[i]).size());
+			const auto width = std::max<qsizetype>(2, QString::number(maximum / sizes[i]).size());
 			field = field.rightJustified(width, timer_digit_space);
 			maximum = std::min(maximum, sizes[i] - 1);
 		}
@@ -363,10 +362,9 @@ QString TimerOptions::clock_text(int64_t milliseconds, int64_t range, bool layou
 
 QString TimerOptions::display_text(int64_t milliseconds, int64_t range, TimerText purpose) const
 {
-	const bool paired = purpose == TimerText::Layout;
-	const bool layout = paired || purpose == TimerText::LegacyLayout;
+	const bool layout = purpose == TimerText::Layout;
 	const bool at_end = purpose == TimerText::EndMessage;
-	const QString time = clock_text(milliseconds, range, layout, paired);
+	const QString time = clock_text(milliseconds, range, layout);
 	if (!at_end && !format_output)
 		return time;
 	QString pattern = at_end ? message : output_format;
@@ -384,8 +382,7 @@ QString TimerOptions::display_text(int64_t milliseconds, int64_t range, TimerTex
 		auto value = QString::number(parts / sizes[i]);
 		auto padded = value.rightJustified(2, QLatin1Char('0'));
 		if (layout) {
-			const auto width =
-				std::max<qsizetype>(paired ? 2 : 1, QString::number(maximum / sizes[i]).size());
+			const auto width = std::max<qsizetype>(2, QString::number(maximum / sizes[i]).size());
 			value = value.rightJustified(width, timer_digit_space);
 			padded = padded.rightJustified(width, timer_digit_space);
 			maximum = std::min(maximum, sizes[i] - 1);

@@ -95,19 +95,6 @@ jobs:
       - name: Open the replacement catalog in a fresh OBS frontend
         if: always() && hashFiles('build-ports/tests/stagekit-replacement-probe.so') != ''
         run: bash tests/check-replacement-frontend.sh build-ports
-      - name: Collect timer guide captures
-        if: always()
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import base64
-          for name in 'countdown-timer.png countdown-dock.png countdown-settings.png countdown-layout.png countdown-rollover.png countdown-scaled.png countdown-box.png'.split():
-              path = Path("build-ports/filter-results") / name
-              if path.exists():
-                  data = base64.b64encode(path.read_bytes()).decode()
-                  for i in range(0, len(data), 12000):
-                      print('TIMER_PREVIEW', name, i, data[i:i+12000])
-          PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:

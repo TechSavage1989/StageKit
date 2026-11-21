@@ -31,7 +31,7 @@ Two supplemental headless probes also reproduced their beta239 failures on both 
 
 ## Countdown Timer
 
-Beta243 stores the source box, text alignment and optional dock font size. Running text uses the source font at its configured pixel size. Only the ending message is fitted. Older saved sources capture their previous box and visible font size on first load. The Place grid and timer editor share a widget and the existing Fit to Space position IDs. The fitter measures the timer rectangle across ticks and treats it as occupied space for neighbors. The countdown and frontend fixtures cover preset changes, the nine anchors, an actual dock fit and collection reload.
+Beta243 stores the source box, text alignment and optional dock font size. Running text uses the source font at its configured pixel size. Only the ending message is fitted. Older saved sources keep their previous rectangle and derive a fixed font size for the reserved digit positions on first load. The Place grid and timer editor share a widget and the existing Fit to Space position IDs. The fitter measures the timer rectangle across ticks and treats it as occupied space for neighbors. The countdown and frontend fixtures cover preset changes, the nine anchors, OBS Edit Transform, a dock fit and collection reload.
 
 Beta242 measures the running format once. The dock and scene source use the same digit advances, independent of numeral shape. Hidden leading digits reserve their positions, including in custom unit placeholders. Only an end message is fitted when the clock finishes. Tests compare unchanged pixel regions on both sides of a live minute rollover, across hour and day changes in count-up, and on reset.
 

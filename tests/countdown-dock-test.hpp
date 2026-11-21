@@ -21,6 +21,7 @@
 #include <QMainWindow>
 #include <QPushButton>
 #include <QSpinBox>
+#include <QDoubleSpinBox>
 #include <QToolButton>
 #include <graphics/matrix4.h>
 
@@ -87,6 +88,42 @@ inline OBSDataAutoRelease vendor(const char *name, obs_data_t *request)
 	OBSDataAutoRelease result = json ? obs_data_create_from_json(json) : obs_data_create();
 	calldata_free(&call);
 	return result;
+}
+
+// Open OBS's own window from the Place dock and apply a position and scale to this timer.
+inline bool edit_transform(QMainWindow *main, obs_sceneitem_t *item)
+{
+	auto *picker = main->findChild<QComboBox *>("item");
+	auto *button = main->findChild<QPushButton *>("editTransform");
+	const QString name = QString::fromUtf8(obs_source_get_name(obs_sceneitem_get_source(item)));
+	if (!picker || !button || !until([&] { return picker->findText(name) >= 0; }))
+		return false;
+	picker->setCurrentIndex(picker->findText(name));
+	button->click();
+	QDialog *dialog = nullptr;
+	const bool opened = until([&] {
+		dialog = main->findChild<QDialog *>("OBSBasicTransform");
+		return dialog && dialog->isVisible() && dialog->windowTitle().contains(name);
+	});
+	if (!dialog)
+		return false;
+	auto *x = dialog->findChild<QDoubleSpinBox *>("positionX");
+	auto *y = dialog->findChild<QDoubleSpinBox *>("positionY");
+	auto *width = dialog->findChild<QDoubleSpinBox *>("sizeX");
+	auto *height = dialog->findChild<QDoubleSpinBox *>("sizeY");
+	const bool ready = opened && x && y && width && height;
+	if (ready) {
+		x->setValue(64);
+		y->setValue(36);
+		width->setValue(480);
+		height->setValue(135);
+	}
+	dialog->close();
+	obs_transform_info result{};
+	obs_sceneitem_get_info2(item, &result);
+	const bool placed = std::abs(result.pos.x - 64) < 0.01f && std::abs(result.pos.y - 36) < 0.01f;
+	const bool scaled = std::abs(result.scale.x - 0.75f) < 0.001f && std::abs(result.scale.y - 0.75f) < 0.001f;
+	return ready && placed && scaled;
 }
 
 inline void check(QStringList &issues, bool restart)
@@ -278,6 +315,7 @@ inline void check(QStringList &issues, bool restart)
 			expect(before.pos.x == after.pos.x && before.pos.y == after.pos.y &&
 				       before.scale.x == after.scale.x && before.scale.y == after.scale.y,
 			       "text alignment moved the scene item");
+			expect(edit_transform(main, item), "Edit Transform did not move and scale the timer box");
 			OBSDataAutoRelease fit_settings = obs_data_create();
 			obs_data_set_string(fit_settings, "item", obs_source_get_name(source));
 			obs_data_set_int(fit_settings, "box", 1);

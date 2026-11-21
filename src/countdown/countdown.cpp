@@ -317,8 +317,7 @@ public:
 		}
 	}
 
-	// OBS calls load for saved sources after creation. Capture the previous box and actual
-	// running size once so an existing scene keeps its placed timer when it upgrades.
+	// Keep the previous source rectangle. Size the clock once with all its reserved digit positions.
 	void load_box(obs_data_t *s)
 	{
 		if (obs_data_has_user_value(s, "box_width") || obs_data_has_user_value(s, "box_height"))
@@ -329,8 +328,7 @@ public:
 			const auto &o = clock_.settings;
 			const auto bare =
 				display_.line.layout(o.clock_text(layout_range_, layout_range_, o.unlimited()));
-			const auto live = display_.line.layout(
-				o.display_text(layout_range_, layout_range_, TimerText::LegacyLayout));
+			const auto &live = display_.live_bounds;
 			const int w = std::clamp(int(std::ceil(bare.width())) + 2, 3, 4096);
 			const int h = std::clamp(int(std::ceil(bare.height())) + 2, 3, 2048);
 			obs_data_set_int(s, "box_width", w);

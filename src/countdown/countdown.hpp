@@ -25,7 +25,7 @@ struct TimerDockStyle {
 enum class TimerMode { Duration, Deadline, CountUp };
 // These reserve the width of a hidden digit or clock separator in a visual readout.
 inline constexpr QChar timer_digit_space{0x2007}, timer_colon_space{0x2008};
-enum class TimerText { Plain, Layout, EndMessage, LegacyLayout };
+enum class TimerText { Plain, Layout, EndMessage };
 
 enum TimerUnit { Days = 1, Hours = 2, Minutes = 4, Seconds = 8 };
 
@@ -53,7 +53,7 @@ struct TimerOptions {
 	void write(obs_data_t *settings) const;
 	bool same_timing(const TimerOptions &other) const;
 	bool counts_up() const { return mode == TimerMode::CountUp || (mode == TimerMode::Deadline && date_up); }
-	QString clock_text(int64_t ms, int64_t range, bool layout = false, bool reserve_pair = false) const;
+	QString clock_text(int64_t ms, int64_t range, bool layout = false) const;
 	QString display_text(int64_t ms, int64_t range, TimerText purpose = TimerText::Plain) const;
 	bool unlimited() const { return mode == TimerMode::CountUp && !limit; }
 };
