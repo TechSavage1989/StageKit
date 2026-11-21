@@ -85,7 +85,7 @@ try {
     }
     Write-Output 'PASS: OBS recognizes the native StageKit sources, filters and transition and the bundled Composite Blur filter.'
     $testLog = Get-ChildItem -LiteralPath (Join-Path $obsRoot 'config/obs-studio/logs') -Filter '*.txt' | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-    Select-String -LiteralPath $testLog.FullName -SimpleMatch '[camera transition test]' | ForEach-Object { Write-Output $_.Line }
+    Select-String -LiteralPath $testLog.FullName -SimpleMatch -Pattern '[camera transition test]', '[Quick Access test]' | ForEach-Object { Write-Output $_.Line }
     Write-Output 'PASS: source and scene filters, six Tools entries, catalog search, three visible Composite Blur modes and clean Windows OBS shutdown.'
     $env:STAGEKIT_TEST_NDI = 'restart'
     $env:STAGEKIT_TEST_REPORT = Join-Path $scratch 'ndi-restart.txt'
@@ -95,6 +95,7 @@ try {
         if ($second.ExitCode -ne 0 -or !(Test-Path -LiteralPath $env:STAGEKIT_TEST_REPORT)) { throw 'The NDI restart check did not finish.' }
         $restartResult = (Get-Content -Raw -LiteralPath $env:STAGEKIT_TEST_REPORT).Trim()
         if ($restartResult -ne 'PASS') { throw $restartResult }
+        Write-Output 'PASS: Quick Access restored Manual, Dynamic and Source Search docks with the saved manual order and dock options.'
         Write-Output 'PASS: StageKit retained prior NDI support on upgrade and skipped the NDI module after turning it off and restarting OBS.'
     } finally {
         if (!$second.HasExited) { $second.Kill(); $second.WaitForExit() }

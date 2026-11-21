@@ -60,7 +60,7 @@ OBS supplies **Apply LUT, Chroma Key, Color Correction, Color Key, Compose SDR o
 | Original Tools entry | Corresponding control |
 | --- | --- |
 | Dock Layout Manager | **Dock Layout Manager (StageKit)** saves and recalls OBS dock arrangements. |
-| Quick Access Utility | **Quick Access Utility (StageKit)** provides source search and custom quick-access docks. |
+| Quick Access Utility | **Quick Access Utility (StageKit)** creates Manual, Dynamic and Source Search docks. |
 | SceneCollectionManager | **Scene Collection Manager (StageKit)** manages collections and their backups. |
 | Source Copy | **Source Copy (StageKit)** copies and pastes sources, filters and transforms. |
 | SourceDock | **Source Dock (StageKit)** puts a source in a custom dock. |
@@ -68,6 +68,10 @@ OBS supplies **Apply LUT, Chroma Key, Color Correction, Color Key, Compose SDR o
 | DistroAV NDI® Settings | **NDI Settings (StageKit)** configures the port's NDI output when the separately installed NDI runtime is available. |
 | Elgato Stream Deck | Install the **StageKit** companion in the Elgato app and connect it to OBS's built-in WebSocket server. StageKit keys have their own action IDs. Existing Elgato OBS keys continue to use Elgato's integration until reassigned. |
 | Auto-Configuration Wizard, Plugin Manager, Captions (Experimental), Automatic Scene Switcher, Output Timer, Scripts, WebSocket Server Settings | Available directly in OBS. |
+
+In **Tools > Quick Access Utility (StageKit)**, choose **New Dock**. Use **Manual** to pin sources, scenes and groups and set their order. **Dynamic** follows the Program scene, including nested scenes and groups. **Source Search** searches the entire collection by name, type, file path, URL or filter. In **Settings > Hotkeys**, assign **Opens Quick Search** to open and dismiss the same search as a popup.
+
+Use a row's **Parent Scenes** button to change visibility or open Edit Transform for a particular occurrence. Enable **Clickable Scenes** in Dock Options to switch scenes from a source row. In Studio Mode, the click selects Preview. The dock settings button also lets you rename the dock and choose which row buttons to show.
 
 In the Stream Deck app, the StageKit category includes **Switch Scene, Stream, Record, Source Visibility, OBS Filter, Audio Mixer Mute, Studio Mode** and **Virtual Camera**. **Move Source in Scene** and **Swap Sources in Scene** press the original Move-compatible Start hotkey on the selected scene. The mute key controls the mixer mute button. A source visibility key remembers the collection, parent scene or group, item ID and source name, so it cannot switch another item that reused the ID.
 
