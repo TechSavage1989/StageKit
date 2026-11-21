@@ -21,6 +21,9 @@
 #include <QMainWindow>
 #include <QPushButton>
 #include <QSpinBox>
+#include <QDoubleSpinBox>
+#include <QToolButton>
+#include <graphics/matrix4.h>
 
 namespace countdown_dock_test {
 
@@ -87,6 +90,42 @@ inline OBSDataAutoRelease vendor(const char *name, obs_data_t *request)
 	return result;
 }
 
+// Open OBS's own window from the Place dock and apply a position and scale to this timer.
+inline bool edit_transform(QMainWindow *main, obs_sceneitem_t *item)
+{
+	auto *picker = main->findChild<QComboBox *>("item");
+	auto *button = main->findChild<QPushButton *>("editTransform");
+	const QString name = QString::fromUtf8(obs_source_get_name(obs_sceneitem_get_source(item)));
+	if (!picker || !button || !until([&] { return picker->findText(name) >= 0; }))
+		return false;
+	picker->setCurrentIndex(picker->findText(name));
+	button->click();
+	QDialog *dialog = nullptr;
+	const bool opened = until([&] {
+		dialog = main->findChild<QDialog *>("OBSBasicTransform");
+		return dialog && dialog->isVisible() && dialog->windowTitle().contains(name);
+	});
+	if (!dialog)
+		return false;
+	auto *x = dialog->findChild<QDoubleSpinBox *>("positionX");
+	auto *y = dialog->findChild<QDoubleSpinBox *>("positionY");
+	auto *width = dialog->findChild<QDoubleSpinBox *>("sizeX");
+	auto *height = dialog->findChild<QDoubleSpinBox *>("sizeY");
+	const bool ready = opened && x && y && width && height;
+	if (ready) {
+		x->setValue(64);
+		y->setValue(36);
+		width->setValue(480);
+		height->setValue(135);
+	}
+	dialog->close();
+	obs_transform_info result{};
+	obs_sceneitem_get_info2(item, &result);
+	const bool placed = std::abs(result.pos.x - 64) < 0.01f && std::abs(result.pos.y - 36) < 0.01f;
+	const bool scaled = std::abs(result.scale.x - 0.75f) < 0.001f && std::abs(result.scale.y - 0.75f) < 0.001f;
+	return ready && placed && scaled;
+}
+
 inline void check(QStringList &issues, bool restart)
 {
 	auto *main = static_cast<QMainWindow *>(obs_frontend_get_main_window());
@@ -151,7 +190,9 @@ inline void check(QStringList &issues, bool restart)
 		expect(until([&] { return targets->currentText() == shared_name && readout->text() == "01:13"; }),
 		       "the selected scene timer and its preset were not restored after restarting OBS");
 		edit([&](QDialog *d) {
-			expect(d->findChild<QCheckBox *>("timerOnStream")->isChecked() &&
+			expect(d->findChild<QSpinBox *>("timerBoxWidth")->value() == 640 &&
+				       d->findChild<QSpinBox *>("timerBoxHeight")->value() == 180 &&
+				       d->findChild<QCheckBox *>("timerOnStream")->isChecked() &&
 				       !d->findChild<QCheckBox *>("timerFormatOutput")->isChecked() &&
 				       d->findChild<QLineEdit *>("timerOutputPattern")->text() == "IN %time%",
 			       "timer options did not survive a restart");
@@ -223,6 +264,97 @@ inline void check(QStringList &issues, bool restart)
 	}
 	expect(choose(QStringLiteral("Operator timer")) && until([&] { return readout->text() == "01:13"; }),
 	       "the scene timer was not available in the dock");
+	edit([&](QDialog *d) {
+		auto *width = d->findChild<QSpinBox *>("timerBoxWidth");
+		auto *height = d->findChild<QSpinBox *>("timerBoxHeight");
+		auto *square = d->findChild<QToolButton *>("timerAlign3");
+		expect(width && height && square, "timer box controls missing");
+		if (width && height && square) {
+			width->setValue(640);
+			height->setValue(180);
+			square->click();
+		}
+	});
+	expect(until([&] { return obs_source_get_width(source) == 640 && obs_source_get_height(source) == 180; }),
+	       "editing the timer box from its dock");
+	{
+		OBSSourceAutoRelease editing = obs_frontend_preview_program_mode_active()
+						       ? obs_frontend_get_current_preview_scene()
+						       : obs_frontend_get_current_scene();
+		auto *editing_scene = obs_scene_from_source(editing);
+		auto *item = editing_scene ? obs_scene_find_source(editing_scene, "Operator timer") : nullptr;
+		const bool added = !item && editing_scene;
+		if (added)
+			item = obs_scene_add(editing_scene, source);
+		auto *grid = main->findChild<QWidget *>("fitAlign");
+		auto *fit_button = main->findChild<QPushButton *>("arrange_fit_space");
+		expect(item && grid && fit_button, "existing Place controls for the scene timer");
+		if (item && grid && fit_button) {
+			obs_scene_enum_items(
+				editing_scene,
+				[](obs_scene_t *, obs_sceneitem_t *other, void *chosen) {
+					obs_sceneitem_select(other, other == chosen);
+					return true;
+				},
+				item);
+			obs_transform_info before{};
+			obs_sceneitem_get_info2(item, &before);
+			constexpr int order[]{5, 1, 6, 3, 0, 4, 7, 2, 8};
+			for (int cell = 0; cell < 9; ++cell) {
+				auto *square = grid->findChild<QToolButton *>(QStringLiteral("fitAlign%1").arg(cell));
+				if (square)
+					square->click();
+				expect(square && until([&] {
+					       OBSDataAutoRelease current = obs_source_get_settings(source);
+					       return obs_data_get_int(current, "box_alignment") == order[cell];
+				       }),
+				       "clicking the existing Fit to Space grid did not align the timer");
+			}
+			obs_transform_info after{};
+			obs_sceneitem_get_info2(item, &after);
+			expect(before.pos.x == after.pos.x && before.pos.y == after.pos.y &&
+				       before.scale.x == after.scale.x && before.scale.y == after.scale.y,
+			       "text alignment moved the scene item");
+			expect(edit_transform(main, item), "Edit Transform did not move and scale the timer box");
+			OBSDataAutoRelease fit_settings = obs_data_create();
+			obs_data_set_string(fit_settings, "item", obs_source_get_name(source));
+			obs_data_set_int(fit_settings, "box", 1);
+			obs_data_set_double(fit_settings, "box_x", 40);
+			obs_data_set_double(fit_settings, "box_y", 25);
+			obs_data_set_double(fit_settings, "box_width", 320);
+			obs_data_set_double(fit_settings, "box_height", 90);
+			obs_data_set_double(fit_settings, "margin", 0);
+			obs_data_set_int(fit_settings, "glide_ms", 0);
+			obs_data_set_bool(fit_settings, "visible_pixels", true);
+			OBSSourceAutoRelease fit =
+				obs_source_create_private("stagekit_fit_item", "Fit the timer box", fit_settings);
+			if (fit) {
+				obs_source_filter_add(editing, fit);
+				fit_button->click();
+				auto placed = [&] {
+					matrix4 transform;
+					obs_sceneitem_force_update_transform(item);
+					obs_sceneitem_get_box_transform(item, &transform);
+					return std::abs(transform.x.x - 320) < 2 && std::abs(transform.y.y - 90) < 2 &&
+					       std::abs(transform.t.x - 40) < 2 && std::abs(transform.t.y - 25) < 2;
+				};
+				expect(until(placed), "Fit to Space did not use the whole 640 by 180 timer box");
+				obs_source_media_set_time(source, 61000);
+				expect(until([&] { return countdown_test::readout(source) == "00:12"; }) && placed(),
+				       "Fit to Space shifted the frame for shorter digits");
+				obs_source_filter_remove(editing, fit);
+				obs_source_media_stop(source);
+			} else {
+				expect(false, "creating the Fit to Space filter");
+			}
+			obs_sceneitem_set_info2(item, &before);
+			OBSDataAutoRelease restore = obs_data_create();
+			obs_data_set_int(restore, "box_alignment", 0);
+			obs_source_update(source, restore);
+			if (added)
+				obs_sceneitem_remove(item);
+		}
+	}
 	blog(LOG_INFO, "StageKit timer controls: checking scene timer clock marks");
 	const char *id = obs_source_get_uuid(source);
 	for (const int minute : {15, 30, 45, 0, 15}) {

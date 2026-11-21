@@ -24,6 +24,8 @@ the Free Software Foundation; either version 2 of the License, or
 // camera itself (what a Stream Deck Filter key points at).
 
 #include "stagekit-dock.hpp"
+#include "alignment-grid.hpp"
+#include "../countdown/timer-source.hpp"
 
 #include "../update/updater.hpp"
 
@@ -43,6 +45,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../placement/scene-tools.hpp"
 
 #include <obs-module.h>
+#include <obs.hpp>
 #include <obs-frontend-api.h>
 #include <plugin-support.h>
 
@@ -992,31 +995,11 @@ public:
 			// built in bounds alignment for the transform menu"). It shows
 			// and sets the selected source's own fit (Align in the space),
 			// or the dock's own for a source with none.
-			fit_align_ = new QWidget(move_box);
-			fit_align_->setObjectName("fitAlign");
-			auto *align_grid = new QGridLayout(fit_align_);
-			align_grid->setContentsMargins(0, 0, 0, 0);
-			align_grid->setSpacing(2);
-			fit_align_group_ = new QButtonGroup(fit_align_);
-			fit_align_group_->setExclusive(true);
-			static const char *const kPlaces[9] = {"Dock.FitAlign.TopLeft",    "Dock.FitAlign.Top",
-							       "Dock.FitAlign.TopRight",   "Dock.FitAlign.Left",
-							       "Dock.FitAlign.Middle",     "Dock.FitAlign.Right",
-							       "Dock.FitAlign.BottomLeft", "Dock.FitAlign.Bottom",
-							       "Dock.FitAlign.BottomRight"};
-			for (int cell = 0; cell < 9; cell++) {
-				auto *square = new QToolButton(fit_align_);
-				square->setObjectName(QString("fitAlign%1").arg(cell));
-				square->setCheckable(true);
-				square->setFixedSize(12, 12);
-				dock_tip(square, tr_text("Dock.FitAlign.Tip").arg(tr_text(kPlaces[cell])));
-				square->setAccessibleName(tr_text(kPlaces[cell]));
-				fit_align_group_->addButton(square, fit::kTowardGrid[cell]);
-				align_grid->addWidget(square, cell / 3, cell % 3);
-			}
+			auto *grid = new AlignmentGrid(move_box, QStringLiteral("fitAlign"), "Dock.FitAlign.Tip");
+			fit_align_ = grid;
+			fit_align_group_ = grid->group;
 			QObject::connect(fit_align_group_, &QButtonGroup::idClicked, this,
 					 [this](int toward) { set_fit_align(toward); });
-			fit_align_->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
 			place_tools_->addWidget(fit_align_);
 			place_tools_->addStretch(1);
 			show_edit_transform();
@@ -2103,9 +2086,14 @@ private:
 			return;
 		int toward = arrange_options().place_toward;
 		for (obs_sceneitem_t *item : items) {
+			auto *source = obs_sceneitem_get_source(item);
+			if (is_countdown(source)) {
+				OBSDataAutoRelease settings = obs_source_get_settings(source);
+				toward = int(std::clamp<long long>(obs_data_get_int(settings, "box_alignment"), 0, 8));
+				break;
+			}
 			int own = 0;
-			if (scene &&
-			    fit::fit_toward_for(scene, obs_source_get_name(obs_sceneitem_get_source(item)), own)) {
+			if (scene && fit::fit_toward_for(scene, obs_source_get_name(source), own)) {
 				toward = own;
 				break;
 			}
@@ -2121,14 +2109,22 @@ private:
 		obs_source_t *scene = arrange_scene();
 		const std::vector<obs_sceneitem_t *> items = scene ? arrange_items(scene)
 								   : std::vector<obs_sceneitem_t *>{};
-		int changed = 0;
+		int changed = 0, timers = 0;
 		bool without = items.empty();
 		for (obs_sceneitem_t *item : items) {
-			const char *name = obs_source_get_name(obs_sceneitem_get_source(item));
+			auto *source = obs_sceneitem_get_source(item);
+			const bool timer = is_countdown(source);
+			if (timer) {
+				OBSDataAutoRelease setting = obs_data_create();
+				obs_data_set_int(setting, "box_alignment", toward);
+				obs_source_update(source, setting);
+				++timers;
+			}
+			const char *name = obs_source_get_name(source);
 			int own = 0;
 			if (fit::fit_toward_for(scene, name, own))
 				changed += fit::fit_set_toward_for(scene, name, toward);
-			else
+			else if (!timer)
 				without = true;
 		}
 		if (without) {
@@ -2140,7 +2136,12 @@ private:
 		// (Not shown again from the fits now: OBS hands a filter its new
 		// settings at the next video tick, and the square pressed stays
 		// checked meanwhile. The dock's next look shows what they say.)
-		say(tr_text("Dock.FitAlign.Done").arg(changed));
+		if (timers) {
+			obs_frontend_save();
+			say(tr_text("Countdown.Aligned").arg(timers));
+		} else {
+			say(tr_text("Dock.FitAlign.Done").arg(changed));
+		}
 	}
 
 	void set_bounds(int index)

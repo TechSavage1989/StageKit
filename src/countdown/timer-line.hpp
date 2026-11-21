@@ -6,12 +6,22 @@ SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
 
 #include "countdown.hpp"
+#include "../common/box-alignment.hpp"
 #include <QFontMetricsF>
 #include <QPainter>
 #include <algorithm>
 #include <array>
 
 namespace stagekit {
+
+// Translate a text block to the same one of nine positions that Fit to Space uses.
+inline QPointF timer_text_origin(const QRectF &room, const QRectF &block, int alignment)
+{
+	const qreal x = (fit::kTowardX[alignment] + 1) * 0.5;
+	const qreal y = (fit::kTowardY[alignment] + 1) * 0.5;
+	return room.topLeft() - block.topLeft() +
+	       QPointF((room.width() - block.width()) * x, (room.height() - block.height()) * y);
+}
 
 // Digits share a tabular advance and a baseline even in a proportional face.
 // Literal runs retain their font's shaping, kerning and fallback glyphs.

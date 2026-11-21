@@ -1340,7 +1340,13 @@ Enable **Start when streaming starts** for any timer that should start or resume
 
 **Leading zero** selects 04:06 or 4:06. Enable **Format output** and enter a pattern such as **IN %time%**. The dock, overlay and settings preview use the same output. Both the output and end message accept %time%, %days%, %hours%, %minutes% and %seconds%. Add 2 to a unit name for two digits, such as %seconds2%.
 
-Position the running timer once. Its box, font size, baseline, and separators stay fixed as it ticks. If **Leading zero** is off, a hidden digit leaves its place empty. A prefix such as **IN** and any text after the time keep their positions. The end message automatically fits inside that box and can wrap. Finishing and resetting crossfade the text in place. The private dock uses the same fixed digit positions.
+In **Timer settings > Timer box**, enter the box width and height in pixels. Choose the on-stream text size under **Source properties > Font**. These settings apply to every starting duration and Stream Deck clock shortcut. If a long running format reaches an edge, widen the box or choose a smaller font. Only the ending message automatically resizes and wraps.
+
+Select the timer in OBS and use the nine squares on the StageKit dock’s **Place** tab to position the text inside its box. You can also set **Text alignment** in Timer settings. The clock and ending message use the same corner, edge, or center. **Edit Transform** moves or scales the whole source. **Fit to Space** uses the full timer box, including its transparent space. With an active fit rule, the Place grid also updates that rule’s alignment.
+
+For the private readout, drag the dock to the size you want or set **Dock text size** in Timer settings. The running font stays fixed across presets. With **Leading zero** off, hidden digits leave their positions empty while the timer runs.
+
+![The same clock in all nine positions inside a fixed timer box](docs/images/countdown-box.png)
 
 ![Countdown in OBS when ready, paused and finished](docs/images/countdown-timer.png)
 

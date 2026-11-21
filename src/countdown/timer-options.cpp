@@ -5,6 +5,8 @@ SPDX-License-Identifier: GPL-2.0-or-later
 */
 #include "countdown.hpp"
 #include "clock-picker.hpp"
+#include "../dock/alignment-grid.hpp"
+#include <QSpinBox>
 
 #include <obs-frontend-api.h>
 #include <obs-module.h>
@@ -149,6 +151,35 @@ public:
 		format_layout->addWidget(example_);
 		options_layout->addWidget(format);
 
+		auto *box = new QGroupBox(label("Countdown.Box"), this);
+		auto *box_layout = new QFormLayout(box);
+		auto size_field = [box](const char *name, const char *caption, int value, int minimum, int maximum) {
+			auto *spin = new QSpinBox(box);
+			spin->setObjectName(QString::fromLatin1(name));
+			spin->setAccessibleName(label(caption));
+			spin->setRange(minimum, maximum);
+			spin->setSuffix(QStringLiteral(" px"));
+			spin->setValue(value);
+			return spin;
+		};
+		width_ = size_field("timerBoxWidth", "Countdown.BoxWidth", o.box_width, 3, kTimerMaxWidth);
+		height_ = size_field("timerBoxHeight", "Countdown.BoxHeight", o.box_height, 3, kTimerMaxHeight);
+		auto *dimensions = new QHBoxLayout;
+		dimensions->addWidget(width_);
+		dimensions->addWidget(new QLabel(QStringLiteral("×"), box));
+		dimensions->addWidget(height_);
+		box_layout->addRow(label("Countdown.BoxSize"), dimensions);
+		box_layout_ = box_layout;
+		dimensions_ = dimensions;
+		auto *grid = new AlignmentGrid(box, QStringLiteral("timerAlign"), "Countdown.AlignTip");
+		alignment_ = grid->group;
+		alignment_->button(o.alignment)->setChecked(true);
+		box_layout->addRow(label("Countdown.Alignment"), grid);
+		dock_size_ = size_field("timerDockSize", "Countdown.DockSize", o.dock_pixels, 0, 160);
+		dock_size_->setSpecialValueText(label("Countdown.AutoSize"));
+		box_layout->addRow(label("Countdown.DockSize"), dock_size_);
+		options_layout->addWidget(box);
+
 		end_ = new QGroupBox(label("Countdown.AtEnd"), this);
 		auto *end_layout = new QFormLayout(end_);
 		message_ = new QLineEdit(o.message, end_);
@@ -224,6 +255,10 @@ public:
 	TimerOptions read() const
 	{
 		TimerOptions o;
+		o.box_width = width_->value();
+		o.box_height = height_->value();
+		o.alignment = alignment_->checkedId();
+		o.dock_pixels = dock_size_->value();
 		o.mode = static_cast<TimerMode>(mode_->currentIndex());
 		o.duration = clock_->duration_ms();
 		for (size_t i = 0; i < units_.size(); ++i)
@@ -250,9 +285,17 @@ public:
 		return o;
 	}
 
-	void set_private(bool private_timer) { active_->setVisible(!private_timer); }
+	void set_private(bool private_timer)
+	{
+		active_->setVisible(!private_timer);
+		box_layout_->setRowVisible(dimensions_, !private_timer);
+	}
 
 private:
+	QFormLayout *box_layout_;
+	QHBoxLayout *dimensions_;
+	QButtonGroup *alignment_;
+	QSpinBox *width_, *height_, *dock_size_;
 	QComboBox *mode_, *scene_;
 	QDateEdit *date_;
 	QDateTime exact_deadline_;
@@ -306,8 +349,7 @@ QString TimerOptions::clock_text(int64_t milliseconds, int64_t range, bool layou
 		if (!result.isEmpty())
 			result += visible && !first_visible ? QLatin1Char(':') : timer_colon_space;
 		if (layout) {
-			const int minimum = (result.isEmpty() && !leading_zero) ? 1 : 2;
-			const auto width = std::max<qsizetype>(minimum, QString::number(maximum / sizes[i]).size());
+			const auto width = std::max<qsizetype>(2, QString::number(maximum / sizes[i]).size());
 			field = field.rightJustified(width, timer_digit_space);
 			maximum = std::min(maximum, sizes[i] - 1);
 		}
@@ -340,7 +382,7 @@ QString TimerOptions::display_text(int64_t milliseconds, int64_t range, TimerTex
 		auto value = QString::number(parts / sizes[i]);
 		auto padded = value.rightJustified(2, QLatin1Char('0'));
 		if (layout) {
-			const auto width = QString::number(maximum / sizes[i]).size();
+			const auto width = std::max<qsizetype>(2, QString::number(maximum / sizes[i]).size());
 			value = value.rightJustified(width, timer_digit_space);
 			padded = padded.rightJustified(width, timer_digit_space);
 			maximum = std::min(maximum, sizes[i] - 1);
@@ -355,6 +397,14 @@ QString TimerOptions::display_text(int64_t milliseconds, int64_t range, TimerTex
 TimerOptions TimerOptions::read(obs_data_t *s)
 {
 	TimerOptions o;
+	auto dimension = [s](const char *key, int fallback, int maximum) {
+		const auto value = obs_data_get_int(s, key);
+		return value > 0 ? int(std::clamp<long long>(value, 3, maximum)) : fallback;
+	};
+	o.box_width = dimension("box_width", kTimerBoxWidth, kTimerMaxWidth);
+	o.box_height = dimension("box_height", kTimerBoxHeight, kTimerMaxHeight);
+	o.alignment = int(std::clamp<long long>(obs_data_get_int(s, "box_alignment"), 0, 8));
+	o.dock_pixels = int(std::clamp<long long>(obs_data_get_int(s, "dock_text_size"), 0, 160));
 	o.mode = static_cast<TimerMode>(std::clamp<long long>(obs_data_get_int(s, "timer_mode"), 0, 2));
 	o.duration = 0;
 	for (size_t i = 0; i < sizes.size(); ++i)
@@ -387,6 +437,10 @@ void TimerOptions::write(obs_data_t *s) const
 		obs_data_set_int(s, keys[i], seconds / sizes[i]);
 		seconds %= sizes[i];
 	}
+	obs_data_set_int(s, "box_width", box_width);
+	obs_data_set_int(s, "box_height", box_height);
+	obs_data_set_int(s, "box_alignment", alignment);
+	obs_data_set_int(s, "dock_text_size", dock_pixels);
 	obs_data_set_int(s, "timer_mode", int(mode));
 	obs_data_set_int(s, "deadline_ms", deadline);
 	obs_data_set_bool(s, "limit_up", limit);
@@ -431,14 +485,20 @@ void edit_timer(QWidget *parent, obs_source_t *source)
 	obs_frontend_save();
 }
 
-QString timer_readout(obs_source_t *source, bool *end_message, QString *layout)
+QString timer_readout(obs_source_t *source, bool *end_message, QString *layout, TimerDockStyle *style)
 {
 	calldata_t cd{};
 	calldata_set_bool(&cd, "want_layout", layout != nullptr);
+	calldata_set_bool(&cd, "want_style", style != nullptr);
 	proc_handler_call(obs_source_get_proc_handler(source), "timer_readout", &cd);
 	const QString value = QString::fromUtf8(calldata_string(&cd, "text"));
 	if (layout)
 		*layout = QString::fromUtf8(calldata_string(&cd, "layout"));
+	if (style) {
+		style->alignment = int(calldata_int(&cd, "alignment"));
+		style->pixels = int(calldata_int(&cd, "dock_size"));
+		style->reference = QString::fromUtf8(calldata_string(&cd, "reference"));
+	}
 	if (end_message)
 		*end_message = calldata_bool(&cd, "end_message");
 	calldata_free(&cd);

@@ -108,6 +108,7 @@ jobs:
             build-ports/filter-results/countdown-scaled.png
             build-ports/filter-results/countdown-layout.png
             build-ports/filter-results/countdown-rollover.png
+            build-ports/filter-results/countdown-box.png
             build-ports/filter-results/render.log
   windows:
     name: Windows OBS 32.2.2 frontend

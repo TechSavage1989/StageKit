@@ -298,6 +298,8 @@ inline void steady_ticks(QStringList &issues, const QString &sheet_path)
 	obs_data_set_int(font, "size", 300);
 	obs_data_set_int(font, "flags", OBS_FONT_BOLD);
 	obs_data_set_obj(config, "font", font);
+	obs_data_set_int(config, "box_width", 1420);
+	obs_data_set_int(config, "box_height", 300);
 	obs_data_set_int(config, "minutes", 10);
 	obs_data_set_int(config, "seconds", 11);
 	obs_data_set_bool(config, "leading_zero", false);
@@ -427,10 +429,157 @@ inline void steady_ticks(QStringList &issues, const QString &sheet_path)
 	const auto minutes = shot(3551000, "59:11");
 	const auto hours = shot(3611000, "1:00:11");
 	const auto days = shot(86411000, "1:00:00:11");
-	expect(same(minutes, hours, 84, 100) && same(hours, days, 84, 100),
+	expect(same_tail(minutes, hours, 2) && same_tail(hours, days, 2),
 	       "adding hours or days to a count-up moved its seconds");
 	blog(LOG_INFO,
 	     "StageKit timer layout: checked fixed clock anchors across ten digits, minute, hour and day rollovers");
+}
+
+inline void fixed_box(QStringList &issues, const QString &sheet_path)
+{
+	auto expect = [&](bool ok, const char *message) {
+		if (!ok)
+			issues.append(QStringLiteral("Timer box: ") + QString::fromLatin1(message));
+	};
+	OBSDataAutoRelease config = obs_data_create();
+	OBSDataAutoRelease face = obs_data_create();
+	obs_data_set_string(face, "face", "Open Sans");
+	obs_data_set_int(face, "size", 60);
+	obs_data_set_int(face, "flags", OBS_FONT_BOLD);
+	obs_data_set_obj(config, "font", face);
+	obs_data_set_int(config, "box_width", 640);
+	obs_data_set_int(config, "box_height", 180);
+	obs_data_set_int(config, "minutes", 5);
+	obs_data_set_int(config, "seconds", 11);
+	obs_data_set_bool(config, "leading_zero", false);
+	obs_data_set_bool(config, "format_output", true);
+	obs_data_set_string(config, "output_format", "IN %time%");
+	obs_data_set_string(config, "end_message", "MOMENTARILY");
+	OBSSourceAutoRelease timer = obs_source_create_private("stagekit_countdown", nullptr, config);
+	if (!timer) {
+		expect(false, "creating the source");
+		return;
+	}
+	const auto first = frame(timer);
+	expect(first.size() == QSize(640, 180) && !painted(first).isEmpty(), "source dimensions");
+	for (int minutes : {15, 45}) {
+		obs_data_set_int(config, "minutes", minutes);
+		obs_source_update(timer, config);
+		const int64_t duration = (60 * minutes + 11) * 1000;
+		expect(wait_for([&] { return obs_source_media_get_duration(timer) == duration; }), "new preset");
+		obs_source_media_set_time(timer, duration - 311000);
+		expect(wait_for([&] { return readout(timer) == "IN 5:11"; }) && frame(timer) == first,
+		       "the same clock had different pixels after changing the preset");
+	}
+	for (const char *unit : {"hours", "days"}) {
+		obs_data_set_int(config, unit, 5);
+		obs_source_update(timer, config);
+		const int fields = std::strcmp(unit, "hours") == 0 ? 2 : 3;
+		expect(wait_for([&] { return readout(timer).count(QLatin1Char(':')) == fields; }), "longer preset");
+		const auto longer = frame(timer);
+		expect(longer.size() == first.size() &&
+			       std::abs(painted(longer).height() - painted(first).height()) <= 3,
+		       "hour or day preset resized the clock");
+		obs_data_set_int(config, unit, 0);
+	}
+	obs_data_set_int(config, "minutes", 5);
+	obs_source_update(timer, config);
+	expect(wait_for([&] { return readout(timer) == "IN 5:11"; }), "return to short preset");
+	auto align = [&](int toward) {
+		obs_data_set_int(config, "box_alignment", toward);
+		obs_source_update(timer, config);
+		return wait_for([&] {
+			calldata_t call{};
+			calldata_set_bool(&call, "want_style", true);
+			proc_handler_call(obs_source_get_proc_handler(timer), "timer_readout", &call);
+			const auto value = calldata_int(&call, "alignment");
+			calldata_free(&call);
+			return value == toward;
+		});
+	};
+	// Use the occupied pixels, allowing for the side bearings of the selected font.
+	auto position_ok = [](int lo, int hi, int limit, int side) {
+		if (side < 0)
+			return lo >= 0 && lo <= 12;
+		if (side > 0)
+			return hi < limit && limit - hi <= 12;
+		return std::abs((lo + hi) - limit + 1) <= 22;
+	};
+	auto anchored = [&](const QImage &image, int cell) {
+		const QRect ink = painted(image);
+		return image.size() == first.size() && !ink.isEmpty() &&
+		       position_ok(ink.left(), ink.right(), image.width(), cell % 3 - 1) &&
+		       position_ok(ink.top(), ink.bottom(), image.height(), cell / 3 - 1);
+	};
+	constexpr int order[]{5, 1, 6, 3, 0, 4, 7, 2, 8};
+	QImage sheet(750, 252, QImage::Format_RGB32);
+	sheet.fill(QColor("#202329"));
+	QPainter guide(&sheet);
+	guide.setRenderHint(QPainter::SmoothPixmapTransform);
+	for (int cell = 0; cell < 9; ++cell) {
+		expect(align(order[cell]), "applying the clock alignment");
+		auto image = frame(timer);
+		expect(anchored(image, cell), "clock missed a selected alignment");
+		const QRect box(7 + (cell % 3) * 250, 7 + (cell / 3) * 84, 236, 67);
+		guide.setPen(QColor("#72cbd7"));
+		guide.drawRect(box.adjusted(-1, -1, 0, 0));
+		guide.drawImage(box, image);
+	}
+	guide.end();
+	if (!sheet_path.isEmpty())
+		expect(sheet.save(QFileInfo(sheet_path).dir().filePath("countdown-box.png")),
+		       "saving the alignment guide");
+
+	obs_source_media_restart(timer);
+	obs_source_media_set_time(timer, 310999);
+	expect(wait_for([&] { return readout(timer) == "MOMENTARILY"; }), "finishing the timer");
+	frame(timer);
+	QThread::msleep(270);
+	for (const char *message : {"MOMENTARILY", "I"}) {
+		obs_data_set_string(config, "end_message", message);
+		obs_source_update(timer, config);
+		expect(wait_for([&] { return readout(timer) == QString::fromLatin1(message); }), "setting end message");
+		for (int cell = 0; cell < 9; ++cell) {
+			expect(align(order[cell]), "applying the message alignment");
+			const auto image = frame(timer);
+			const auto ink = painted(image);
+			expect(anchored(image, cell) && (ink.width() >= 620 || ink.height() >= 167),
+			       "the fitted ending message missed its selected alignment");
+		}
+	}
+	// An actual saved pre-box timer migrates once. Saving and loading again must preserve its box.
+	OBSDataAutoRelease legacy_config = obs_data_create();
+	obs_data_set_int(legacy_config, "minutes", 5);
+	obs_data_set_bool(legacy_config, "leading_zero", false);
+	obs_data_set_bool(legacy_config, "format_output", true);
+	obs_data_set_string(legacy_config, "output_format", "IN %time%");
+	OBSSourceAutoRelease legacy = obs_source_create_private("stagekit_countdown", nullptr, legacy_config);
+	obs_source_load(legacy);
+	const QImage migrated = frame(legacy);
+	const QSize upgraded = migrated.size();
+	OBSDataAutoRelease saved = obs_save_source(legacy);
+	OBSDataAutoRelease settings = obs_data_get_obj(saved, "settings");
+	expect(obs_data_has_user_value(settings, "box_width") &&
+		       obs_data_get_int(settings, "box_width") == upgraded.width() &&
+		       obs_data_get_int(settings, "box_height") == upgraded.height(),
+	       "saving the upgraded box");
+	OBSDataAutoRelease wide_settings = obs_data_create();
+	obs_data_apply(wide_settings, settings);
+	obs_data_set_int(wide_settings, "box_width", upgraded.width() + 200);
+	OBSSourceAutoRelease wide = obs_source_create_private("stagekit_countdown", nullptr, wide_settings);
+	const QRect full_ink = painted(frame(wide));
+	expect(!full_ink.isEmpty() && std::abs(full_ink.width() - painted(migrated).width()) <= 2,
+	       "the migrated box clipped the prefix or the final digit");
+	obs_data_set_int(settings, "hours", 5);
+	OBSSourceAutoRelease reopened = obs_load_private_source(saved);
+	if (reopened) {
+		obs_source_load(reopened);
+		expect(frame(reopened).size() == upgraded, "loading a migrated timer remeasured its box");
+	} else {
+		expect(false, "reopening a saved timer");
+	}
+	blog(LOG_INFO,
+	     "StageKit timer layout: fixed 640x180 box at 5 and 45 minutes, 5 hours and 5 days; nine clock and message anchors");
 }
 
 inline void fitted_states(QStringList &issues, const QString &sheet_path)
@@ -440,8 +589,12 @@ inline void fitted_states(QStringList &issues, const QString &sheet_path)
 			issues.append(QStringLiteral("Countdown: ") + QString::fromLatin1(why));
 	};
 	OBSDataAutoRelease config = obs_data_create();
+	obs_data_set_int(config, "box_width", 440);
+	obs_data_set_int(config, "box_height", 120);
+	OBSDataAutoRelease neighbor_config = obs_data_create();
+	obs_data_apply(neighbor_config, config);
 	OBSSourceAutoRelease timer = obs_source_create_private("stagekit_countdown", nullptr, config);
-	OBSSourceAutoRelease neighbor = obs_source_create_private("stagekit_countdown", nullptr, nullptr);
+	OBSSourceAutoRelease neighbor = obs_source_create_private("stagekit_countdown", nullptr, neighbor_config);
 	OBSSceneAutoRelease scene = obs_scene_create_private("Adjacent timer layout");
 	if (!timer || !neighbor || !scene) {
 		require(false, "could not create timer layout");
@@ -470,7 +623,9 @@ inline void fitted_states(QStringList &issues, const QString &sheet_path)
 	const QImage placed_clock = reference.copy(target);
 	const QRect clock_ink = painted(clock);
 	const QRect scene_ink = painted(placed_clock);
-	require(clock_ink.width() >= w * 0.90 && clock_ink.height() >= h * 0.90, "digits did not fill the transform");
+	require(w == 440 && h == 120 && target.size() == clock.size() && clock_ink.height() > 35 &&
+			clock_ink.width() < w,
+		"configured clock box or font size");
 	require(std::abs(scene_ink.width() - clock_ink.width()) <= 3 &&
 			std::abs(scene_ink.height() - clock_ink.height()) <= 3 &&
 			!painted(reference.copy(0, 0, w, h)).isEmpty(),
@@ -505,8 +660,10 @@ inline void fitted_states(QStringList &issues, const QString &sheet_path)
 			require(first == middle && middle == last, "running text moved during a format change");
 		const auto img = last.copy(target);
 		const QRect ink = painted(img);
-		require(!ink.isEmpty() && (ink.width() >= w * 0.88 || ink.height() >= h * 0.88),
-			"fitted text left its box empty");
+		require(!ink.isEmpty(), "empty timer text");
+		if (text == "MOMENTARILY")
+			require(ink.width() >= w * 0.88 || ink.height() >= h * 0.88,
+				"ending message did not fit the box");
 		return img;
 	};
 	obs_data_set_string(config, "end_message", "MOMENTARILY");
@@ -561,6 +718,8 @@ inline bool sharp_scaled_timer(const QString &sheet_path, int font_size, int zoo
 	OBSDataAutoRelease font = obs_data_create();
 	obs_data_set_string(font, "face", "Open Sans");
 	obs_data_set_int(font, "size", font_size);
+	obs_data_set_int(config, "box_width", font_size * 4);
+	obs_data_set_int(config, "box_height", font_size);
 	obs_data_set_int(font, "flags", OBS_FONT_BOLD);
 	obs_data_set_obj(config, "font", font);
 	OBSSourceAutoRelease source = obs_source_create_private("stagekit_countdown", nullptr, config);
@@ -690,8 +849,10 @@ inline void check(QStringList &issues, const QString &sheet_path = {})
 		obs_data_set_bool(settings, "restart_when_active", true);
 		obs_source_update(other, settings);
 		expect(wait_for([&] { return obs_source_media_get_duration(other) == 3600000; }) &&
-			       obs_source_get_width(other) > obs_source_get_width(source),
-		       "the hour field did not fit on the source");
+			       obs_source_get_width(other) == obs_source_get_width(source) &&
+			       obs_source_get_height(other) == obs_source_get_height(source) &&
+			       painted(frame(other)).width() > painted(ready).width(),
+		       "adding the hour field changed the chosen box or did not draw the hours");
 		const auto green = frame(other);
 		bool colored = false;
 		for (int y = 0; y < green.height() && !colored; ++y)
@@ -726,6 +887,7 @@ inline void check(QStringList &issues, const QString &sheet_path = {})
 	modes(issues);
 	fitted_states(issues, sheet_path);
 	steady_ticks(issues, sheet_path);
+	fixed_box(issues, sheet_path);
 	expect(sharp_scaled_timer(sheet_path, 100, 5),
 	       "the fivefold timer lost edge detail or changed its logical dimensions");
 	expect(sharp_scaled_timer({}, 24, 16), "a small timer lost edge detail when enlarged sixteenfold");

@@ -14,6 +14,7 @@ the Free Software Foundation; either version 2 of the License, or
 
 #include "fit-engine.hpp"
 #include "../common/alpha-bounds.hpp"
+#include "../countdown/timer-source.hpp"
 #include "../common/stand-in.hpp"
 #include "../common/filter-order.hpp"
 #include "../common/holds-hidden.hpp"
@@ -269,7 +270,7 @@ void glance_step(const void *asking, obs_source_t *scene, const std::vector<obs_
 			break;
 		for (obs_sceneitem_t *item : items) {
 			obs_source_t *shows = obs_sceneitem_get_source(item);
-			if (!shows)
+			if (!shows || is_countdown(shows))
 				continue;
 			const GlanceKey key{scene, obs_sceneitem_get_id(item)};
 			const bool lively = g.lively.count(key) || comes_and_goes(shows);
@@ -1730,7 +1731,11 @@ bool FitEngine::prepare(obs_sceneitem_t *item, float tick_seconds, Prep &p)
 	// costly, so it is done when the item is first met, when its source
 	// changes size, and every few seconds while it sits where it was put.
 	const double whole_left = left, whole_top = top, whole_w = pw, whole_h = ph;
-	if (s.visible_pixels) {
+	if (is_countdown(shown)) {
+		std::fill_n(own_cut_, 4, 0.0);
+		have_loaded_cut_ = false;
+		own_seen_ = own_known_ = true;
+	} else if (s.visible_pixels) {
 		own_for_ += seconds;
 		// Its picture changed size (a filter was added, a window
 		// resized): what was seen no longer holds, and the look waits
@@ -3299,7 +3304,7 @@ void FitScan::look(obs_source_t *scene, obs_sceneitem_t *other, const Measure &h
 	// every fit did: one that goes by boxes drew and read back each thing
 	// in its way, and left out the ones that showed nothing.)
 	const Measure with = by_drawing ? Measure{true, how.leave_out_shadows} : how;
-	if (with.visible_pixels && seen.width && seen.height)
+	if (with.visible_pixels && !is_countdown(source) && seen.width && seen.height)
 		count_look(Look::FitObstacle);
 	seen.there = seen.width && seen.height && measure_seen(scene, other, with, seen.box);
 	seen.item_at = scene_box(scene, other);
