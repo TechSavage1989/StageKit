@@ -52,6 +52,24 @@ jobs:
           path: |
             build-ports/filter-results/filter-replacements.png
             build-ports/filter-results/render.log
+  windows:
+    name: Windows OBS 32.2.2 frontend
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/build-plugin
+        with:
+          target: x64
+          config: RelWithDebInfo
+      - run: python -m pip install --quiet pillow
+      - name: Check the installed components in portable OBS
+        shell: pwsh
+        run: |
+          cmake --build build_x64 --config RelWithDebInfo --target stagekit-replacement-probe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $probe = Get-ChildItem -Path build_x64 -Filter 'stagekit-replacement-probe.dll' -Recurse -File | Select-Object -First 1
+          if (!$probe) { throw 'Missing test probe.' }
+          ./tests/check-replacement-windows.ps1 -PackageDirectory release/RelWithDebInfo/stagekit -ProbePath $probe.FullName
   format:
     runs-on: ubuntu-24.04
     permissions:
@@ -66,7 +84,7 @@ jobs:
         run: |
           python3 -m venv "$RUNNER_TEMP/format"
           "$RUNNER_TEMP/format/bin/pip" install --quiet clang-format==19.1.7 gersemi==0.21.0
-          "$RUNNER_TEMP/format/bin/clang-format" -i src/components/*.cpp src/components/*.hpp src/dock/stagekit-dock.cpp $(find tests -name '*replacement*.cpp')
+          "$RUNNER_TEMP/format/bin/clang-format" -i src/components/*.cpp src/components/*.hpp src/dock/stagekit-dock.cpp $(find tests -name '*replacement*.cpp' -o -name '*replacement*.hpp')
           "$RUNNER_TEMP/format/bin/gersemi" --in-place CMakeLists.txt tests/CMakeLists.txt cmake/common/stagekit-ports.cmake
           for changed in $(git diff --name-only); do
             expected=$(git hash-object "$changed")

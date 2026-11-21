@@ -20,6 +20,9 @@ Copy-Item -LiteralPath (Join-Path $package 'data') -Destination $dataDir -Recurs
 Copy-Item -LiteralPath $probe -Destination (Join-Path $pluginDir 'stagekit-replacement-probe.dll')
 $null = New-Item -ItemType Directory -Path (Join-Path $obsRoot 'data/obs-plugins/stagekit-replacement-probe')
 $report = Join-Path $scratch 'result.txt'
+& python (Join-Path $PSScriptRoot 'replacement-images.py') $scratch
+if ($LASTEXITCODE -ne 0) { throw 'Could not generate the render fixture.' }
+$env:STAGEKIT_TEST_ART = Join-Path $scratch 'art.png'
 $env:STAGEKIT_TEST_REPORT = $report
 $bin = Join-Path $obsRoot 'bin/64bit'
 $process = Start-Process -FilePath (Join-Path $bin 'obs64.exe') -WorkingDirectory $bin -PassThru -WindowStyle Hidden -ArgumentList @('--portable', '--multi', '--disable-shutdown-check', '--disable-missing-files-check', '--disable-updater', '--verbose')
@@ -29,7 +32,7 @@ try {
     if (!(Test-Path -LiteralPath $report)) { throw 'The OBS frontend probe did not run.' }
     $result = (Get-Content -Raw -LiteralPath $report).Trim()
     if ($result -ne 'PASS') { throw $result }
-    Write-Output 'PASS: source and scene filters, six Tools entries, catalog search and clean Windows OBS shutdown.'
+    Write-Output 'PASS: source and scene filters, six Tools entries, catalog search, three visible Composite Blur modes and clean Windows OBS shutdown.'
 } catch {
     $logs = Get-ChildItem -LiteralPath (Join-Path $obsRoot 'config/obs-studio/logs') -Filter '*.txt' -ErrorAction SilentlyContinue
     if ($logs) { Get-Content -LiteralPath ($logs | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName -Tail 160 }

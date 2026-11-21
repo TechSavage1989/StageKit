@@ -1,3 +1,4 @@
+#include "replacement-frame.hpp"
 #include <obs-module.h>
 #include <obs-frontend-api.h>
 #include <QApplication>
@@ -8,6 +9,7 @@
 #include <QMessageBox>
 #include <QTableWidget>
 #include <QTextStream>
+#include <QThread>
 #include <QTimer>
 
 OBS_DECLARE_MODULE()
@@ -21,6 +23,55 @@ static QAction *action_named(const QString &name)
 					return a;
 	}
 	return nullptr;
+}
+
+static void check_blur_output(QStringList &issues)
+{
+	const QByteArray fixture = qgetenv("STAGEKIT_TEST_ART");
+	if (fixture.isEmpty())
+		return;
+	obs_data_t *image_settings = obs_data_create();
+	obs_data_set_string(image_settings, "file", fixture.constData());
+	auto *source = obs_source_create_private("image_source", "StageKit render fixture", image_settings);
+	obs_data_release(image_settings);
+	if (!source) {
+		issues.append("Could not create the render fixture");
+		return;
+	}
+	obs_source_inc_showing(source);
+	QThread::msleep(160);
+	const auto w = obs_source_get_width(source);
+	const auto h = obs_source_get_height(source);
+	if (w == 320 && h == 180) {
+		const auto input = replacement_test::render(source, w, h);
+		const double contrast = replacement_test::stripe_contrast(input, w);
+		if (!replacement_test::retains_artwork(input))
+			issues.append("Fixture was blank before adding Composite Blur");
+		for (const auto *mode : {"composite", "composite-kawase", "composite-hex"}) {
+			auto *settings = obs_data_create();
+			replacement_test::configure_blur(settings, mode);
+			auto *filter = obs_source_create_private("stagekit_port_obs_composite_blur", mode, settings);
+			obs_data_release(settings);
+			if (!filter) {
+				issues.append(QString("Could not create %1").arg(mode));
+				continue;
+			}
+			obs_source_filter_add(source, filter);
+			QThread::msleep(160);
+			replacement_test::render(source, w, h);
+			QThread::msleep(60);
+			const auto pixels = replacement_test::render(source, w, h);
+			if (!replacement_test::retains_artwork(pixels) ||
+			    replacement_test::stripe_contrast(pixels, w) >= 0.85 * contrast)
+				issues.append(QString("%1 did not preserve the image and soften the stripes").arg(mode));
+			obs_source_filter_remove(source, filter);
+			obs_source_release(filter);
+		}
+	} else {
+		issues.append("Unexpected render fixture dimensions");
+	}
+	obs_source_dec_showing(source);
+	obs_source_release(source);
 }
 
 static void exercise()
@@ -92,6 +143,7 @@ static void exercise()
 		if (!opened || !matched)
 			issues.append("Catalog search did not return the labeled Directory Watch Media filter");
 	}
+	check_blur_output(issues);
 	QFile report(qEnvironmentVariable("STAGEKIT_TEST_REPORT"));
 	if (report.open(QIODevice::WriteOnly))
 		report.write(issues.isEmpty() ? QByteArray("PASS\n") : issues.join('\n').toUtf8());
