@@ -255,7 +255,8 @@ inline void check(QStringList &issues, bool restart)
 	blog(LOG_INFO, "StageKit timer controls: cycle, hold, set, start and stop checked");
 	obs_data_set_int(data, "timer_mode", 0);
 	obs_source_update(source, data);
-	expect(until([&] { return readout->text() == "01:13"; }), "return to saved duration after a clock shortcut");
+	expect(until([&] { return obs_source_media_get_duration(source) == 73000 && readout->text() == "01:13" && status->text() == "Ready" && start->isEnabled(); }),
+	       "return to saved duration after a clock shortcut");
 	obs_source_set_name(source, shared_name.toUtf8().constData());
 	expect(until([&] { return targets->currentText() == shared_name; }),
 	       "renaming a linked timer broke the selection");
@@ -272,6 +273,7 @@ inline void check(QStringList &issues, bool restart)
 	       "a change from OBS media controls did not appear in the dock");
 	const int rendered = ink_height(readout);
 	const int caption = ink_height(status);
+	blog(LOG_INFO, "StageKit timer readout: %s, state %d, duration %lld, widget %dx%d, start %d, pause %d", readout->text().toUtf8().constData(), int(obs_source_media_get_state(source)), (long long)obs_source_media_get_duration(source), readout->width(), readout->height(), start->isEnabled(), pause->isEnabled());
 	blog(LOG_INFO, "StageKit timer dock: %d logical pixels wide, digits %d pixels high, status %d",
 	     readout->width(), rendered, caption);
 	expect(readout->width() <= 276 && rendered >= 36 && caption > 0 && rendered >= 3 * caption,

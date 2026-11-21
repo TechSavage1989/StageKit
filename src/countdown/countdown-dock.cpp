@@ -13,7 +13,6 @@ SPDX-License-Identifier: GPL-2.0-or-later
 #include <QComboBox>
 #include <QFontDatabase>
 #include <QFontMetrics>
-#include <QFormLayout>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPointer>
@@ -49,7 +48,8 @@ public:
 		setObjectName("countdownReadout");
 		setTextFormat(Qt::PlainText);
 		setAlignment(Qt::AlignCenter);
-		setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+		setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Expanding);
+		setMinimumHeight(68);
 		face_.setBold(true);
 	}
 
@@ -74,8 +74,8 @@ public:
 		}
 	}
 
-	QSize sizeHint() const override { return message_ ? QLabel::sizeHint() : QSize(220, 92); }
-	QSize minimumSizeHint() const override { return message_ ? QLabel::minimumSizeHint() : QSize(0, 40); }
+	QSize sizeHint() const override { return QSize(220, 92); }
+	QSize minimumSizeHint() const override { return QSize(0, 68); }
 
 protected:
 	void resizeEvent(QResizeEvent *e) override
@@ -88,15 +88,16 @@ private:
 	void fit()
 	{
 		int size = 24;
-		if (!message_ && !sample_.isEmpty()) {
+		if (!sample_.isEmpty()) {
 			const QSize room = contentsRect().size() - QSize(8, 4);
 			int low = 1, high = 88;
 			while (low < high) {
 				const int mid = (low + high + 1) / 2;
 				face_.setPixelSize(mid);
 				const QFontMetrics metrics(face_, this);
-				if (metrics.height() <= room.height() &&
-				    metrics.horizontalAdvance(sample_) <= room.width())
+				const QRect ink = message_ ? metrics.boundingRect(QRect(0, 0, room.width(), 10000),
+										 Qt::TextWordWrap, sample_) : QRect(0, 0, metrics.horizontalAdvance(sample_), metrics.height());
+				if (ink.height() <= room.height() && ink.width() <= room.width())
 					low = mid;
 				else
 					high = mid - 1;
@@ -125,13 +126,16 @@ public:
 	{
 		setObjectName("stagekitCountdownControls");
 		auto *layout = new QVBoxLayout(this);
-		auto *form = new QFormLayout;
+		auto *header = new QHBoxLayout;
 		targets_ = new QComboBox(this);
 		targets_->setObjectName("countdownTarget");
-		form->addRow(text("Countdown.Timer"), targets_);
-		auto *settings = new QPushButton(text("Countdown.Settings"), this);
+		targets_->setAccessibleName(text("Countdown.Timer"));
+		header->addWidget(targets_, 1);
+		auto *settings = new QPushButton(text("Countdown.DockSettings"), this);
+		settings->setToolTip(text("Countdown.Settings"));
+		settings->setAccessibleName(text("Countdown.Settings"));
 		settings->setObjectName("countdownSettings");
-		form->addRow(settings);
+		header->addWidget(settings);
 		connect(settings, &QPushButton::clicked, this, [this] {
 			auto source = target();
 			if (source) {
@@ -143,10 +147,10 @@ public:
 				refresh_time();
 			}
 		});
-		layout->addLayout(form);
+		layout->addLayout(header);
 
 		readout_ = new TimerReadout(this);
-		layout->addWidget(readout_);
+		layout->addWidget(readout_, 1);
 		status_ = new QLabel(this);
 		status_->setObjectName("countdownStatus");
 		status_->setAlignment(Qt::AlignCenter);
@@ -185,7 +189,6 @@ public:
 			if (timer_command(source, "setStart", mark->currentData().toInt()))
 				obs_frontend_save();
 		});
-		layout->addStretch();
 		connect(targets_, &QComboBox::currentIndexChanged, this, [this] {
 			selected_ = targets_->currentData().toString();
 			refresh_time();
@@ -314,6 +317,7 @@ private:
 		refresh_time();
 	}
 
+public:
 	void refresh_time()
 	{
 		auto source = target();
@@ -335,6 +339,7 @@ private:
 		pause_->setEnabled(state == OBS_MEDIA_STATE_PLAYING);
 	}
 
+private:
 	QComboBox *targets_ = nullptr;
 	TimerReadout *readout_ = nullptr;
 	QLabel *status_ = nullptr;
@@ -423,6 +428,8 @@ void timer_vendor_control(obs_data_t *request, obs_data_t *response, void *)
 			const auto mark = obs_data_has_user_value(request, "mark") ? obs_data_get_int(request, "mark")
 										   : kSavedTimer;
 			ok = mark >= kSavedTimer && mark <= 45 && timer_command(timer, op, int(mark));
+			if (ok && dock)
+				dock->refresh_time();
 			if (ok &&
 			    (mark != kSavedTimer || std::strcmp(op, "cycle") == 0 ||
 			     std::strcmp(op, "cycleToggle") == 0) &&

@@ -351,6 +351,9 @@ public:
 
 	void start(bool restart)
 	{
+		// OBS can deliver a play command before processing the settings saved by the editor.
+		OBSDataAutoRelease saved = obs_source_get_settings(source_);
+		update(saved);
 		{
 			std::lock_guard lock(mutex_);
 			if (!clock_.start(restart))
@@ -572,7 +575,8 @@ public:
 							 now - last_draw_ < 500000000ULL;
 				const bool free_text = msg || (options.format_output &&
 							       options.output_format != QStringLiteral("%time%"));
-				const bool repaint = dirty_ || !texture_ || wanted != density_ || value != last_value_ || msg != last_message_;
+				const bool repaint = dirty_ || !texture_ || wanted != density_ ||
+						     value != last_value_ || msg != last_message_;
 				if (repaint && !update_texture(value, free_text, wanted, switch_view, now))
 					return;
 				last_value_ = value;

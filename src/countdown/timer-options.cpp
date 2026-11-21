@@ -230,8 +230,10 @@ public:
 			if (!automatic_->isChecked() && units_[i]->isChecked())
 				o.units |= bits[i];
 		// Keep the selected occurrence when local clocks repeat an hour.
-		const QDateTime chosen = exact_deadline_.date() == date_->date() && exact_deadline_.time() == clock_->local_time()
-						? exact_deadline_ : QDateTime(date_->date(), clock_->local_time());
+		const QDateTime chosen = exact_deadline_.date() == date_->date() &&
+							 exact_deadline_.time() == clock_->local_time()
+						 ? exact_deadline_
+						 : QDateTime(date_->date(), clock_->local_time());
 		o.deadline = chosen.isValid() ? chosen.toMSecsSinceEpoch() : 0;
 		o.limit = limit_->isChecked();
 		o.on_program = active_->isChecked();
