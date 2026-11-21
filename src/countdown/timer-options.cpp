@@ -34,7 +34,8 @@ namespace {
 constexpr std::array<int64_t, 4> sizes{86400, 3600, 60, 1};
 constexpr std::array<int, 4> bits{Days, Hours, Minutes, Seconds};
 constexpr std::array<const char *, 4> keys{"days", "hours", "minutes", "seconds"};
-constexpr std::array<const char *, 4> names{"Countdown.Days", "Countdown.Hours", "Countdown.Minutes", "Countdown.Seconds"};
+constexpr std::array<const char *, 4> names{"Countdown.Days", "Countdown.Hours", "Countdown.Minutes",
+					    "Countdown.Seconds"};
 constexpr std::array<int, 4> max_values{9999, 23, 59, 59};
 
 QString label(const char *key)
@@ -90,7 +91,8 @@ public:
 			duration_layout->addLayout(column);
 		}
 		timing->addRow(duration_);
-		const auto target = o.deadline > 0 ? QDateTime::fromMSecsSinceEpoch(o.deadline) : QDateTime::currentDateTime().addSecs(3600);
+		const auto target = o.deadline > 0 ? QDateTime::fromMSecsSinceEpoch(o.deadline)
+						   : QDateTime::currentDateTime().addSecs(3600);
 		date_ = new QDateEdit(target.date(), this);
 		date_->setObjectName("timerDate");
 		date_->setCalendarPopup(true);
@@ -113,7 +115,10 @@ public:
 		automatic_->setChecked(o.units == 0);
 		format_layout->addWidget(automatic_);
 		auto *units_row = new QHBoxLayout;
-		const auto initial_units = fields_for(o.units, o.mode == TimerMode::Deadline ? std::max<int64_t>(0, o.deadline - QDateTime::currentMSecsSinceEpoch()) : o.duration);
+		const auto initial_units = fields_for(
+			o.units, o.mode == TimerMode::Deadline
+					 ? std::max<int64_t>(0, o.deadline - QDateTime::currentMSecsSinceEpoch())
+					 : o.duration);
 		for (size_t i = 0; i < units_.size(); ++i) {
 			units_[i] = new QCheckBox(label(names[i]), format);
 			units_[i]->setObjectName(QStringLiteral("unit_") + QString::fromLatin1(keys[i]));
@@ -139,7 +144,8 @@ public:
 		obs_frontend_get_scenes(&scenes);
 		for (size_t i = 0; i < scenes.sources.num; ++i) {
 			auto *source = scenes.sources.array[i];
-			scene_->addItem(QString::fromUtf8(obs_source_get_name(source)), QString::fromUtf8(obs_source_get_uuid(source)));
+			scene_->addItem(QString::fromUtf8(obs_source_get_name(source)),
+					QString::fromUtf8(obs_source_get_uuid(source)));
 		}
 		obs_frontend_source_list_free(&scenes);
 		scene_->setCurrentIndex(std::max(0, scene_->findData(o.scene)));
@@ -162,11 +168,20 @@ public:
 			end_->setVisible(!options.unlimited());
 			for (auto *unit : units_)
 				unit->setEnabled(!automatic_->isChecked());
-			const int64_t remaining = target_mode ? std::max<int64_t>(0, options.deadline - QDateTime::currentMSecsSinceEpoch()) : options.duration;
+			const int64_t remaining =
+				target_mode
+					? std::max<int64_t>(0, options.deadline - QDateTime::currentMSecsSinceEpoch())
+					: options.duration;
 			const auto value = options.mode == TimerMode::CountUp ? 0 : remaining;
-			example_->setText(label("Countdown.Example").arg(timer_text(value, options.units, options.mode != TimerMode::CountUp, options.unlimited() ? 0 : remaining)));
-			const bool some_unit = automatic_->isChecked() || std::any_of(units_.begin(), units_.end(), [](const auto *u) { return u->isChecked(); });
-			buttons_->button(QDialogButtonBox::Ok)->setEnabled(some_unit && (!target_mode || options.deadline > 0));
+			example_->setText(
+				label("Countdown.Example")
+					.arg(timer_text(value, options.units, options.mode != TimerMode::CountUp,
+							options.unlimited() ? 0 : remaining)));
+			const bool some_unit =
+				automatic_->isChecked() ||
+				std::any_of(units_.begin(), units_.end(), [](const auto *u) { return u->isChecked(); });
+			buttons_->button(QDialogButtonBox::Ok)
+				->setEnabled(some_unit && (!target_mode || options.deadline > 0));
 		};
 		connect(mode_, &QComboBox::currentIndexChanged, this, refresh);
 		for (auto *box : units_)

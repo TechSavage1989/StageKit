@@ -82,13 +82,6 @@ jobs:
             build-ports/filter-results/countdown-dock.png
             build-ports/filter-results/countdown-settings.png
             build-ports/filter-results/render.log
-      - name: Read the countdown guide captures for this pull request
-        if: always() && github.head_ref == 'feat/countdown-timer'
-        run: |
-          for name in countdown-timer countdown-dock countdown-settings; do
-            f="build-ports/filter-results/$name.png"
-            if test -f "$f"; then echo "TIMER_GUIDE $name $(base64 -w0 "$f")"; fi
-          done
   windows:
     name: Windows OBS 32.2.2 frontend
     runs-on: windows-2022

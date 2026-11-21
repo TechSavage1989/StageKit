@@ -119,9 +119,12 @@ inline void check(QStringList &issues, bool restart)
 	expect(choose(QStringLiteral("Operator timer")) && until([&] { return readout->text() == "01:13"; }),
 	       "the scene timer was not available in the dock");
 	obs_source_set_name(source, shared_name.toUtf8().constData());
-	expect(until([&] { return targets->currentText() == shared_name; }), "renaming a linked timer broke the selection");
+	expect(until([&] { return targets->currentText() == shared_name; }),
+	       "renaming a linked timer broke the selection");
 	start->click();
-	expect(until([&] { return obs_source_media_get_state(source) == OBS_MEDIA_STATE_PLAYING && pause->isEnabled(); }),
+	expect(until([&] {
+		       return obs_source_media_get_state(source) == OBS_MEDIA_STATE_PLAYING && pause->isEnabled();
+	       }),
 	       "the dock did not start the scene source");
 	pause->click();
 	expect(until([&] { return obs_source_media_get_state(source) == OBS_MEDIA_STATE_PAUSED; }),
@@ -131,14 +134,19 @@ inline void check(QStringList &issues, bool restart)
 	       "a change from OBS media controls did not appear in the dock");
 	const QString capture = qEnvironmentVariable("STAGEKIT_COUNTDOWN_CAPTURE");
 	if (!capture.isEmpty()) {
-		const int bottom = reset->mapTo(panel, QPoint(0, reset->height())).y() + panel->layout()->contentsMargins().bottom();
+		const int bottom = reset->mapTo(panel, QPoint(0, reset->height())).y() +
+				   panel->layout()->contentsMargins().bottom();
 		expect(panel->grab(QRect(0, 0, panel->width(), std::min(bottom, panel->height()))).save(capture),
 		       "could not capture the actual dock");
 	}
 	reset->click();
-	expect(until([&] { return obs_source_media_get_state(source) == OBS_MEDIA_STATE_STOPPED && readout->text() == "01:13"; }),
+	expect(until([&] {
+		       return obs_source_media_get_state(source) == OBS_MEDIA_STATE_STOPPED &&
+			      readout->text() == "01:13";
+	       }),
 	       "the dock did not reset the scene source");
-	expect(choose(QStringLiteral("Private timer")) && until([&] { return readout->text() == held && status->text() == "Paused"; }),
+	expect(choose(QStringLiteral("Private timer")) &&
+		       until([&] { return readout->text() == held && status->text() == "Paused"; }),
 	       "operating the scene timer changed the private timer");
 	choose(shared_name);
 	OBSSceneAutoRelease destination = obs_scene_create("Timer finish fixture");
@@ -162,10 +170,12 @@ inline void check(QStringList &issues, bool restart)
 			expect(d->grab().save(image_path), "could not capture the date and time controls");
 	});
 	expect(until([&] {
-		OBSDataAutoRelease saved = obs_source_get_settings(source);
-		return obs_data_get_int(saved, "deadline_ms") == QDateTime(date, at).toMSecsSinceEpoch() &&
-		       obs_data_get_int(saved, "timer_mode") == 1 && readout->text().count(QLatin1Char(':')) >= 2;
-	}), "the local date and time did not reach the scene timer");
+		       OBSDataAutoRelease saved = obs_source_get_settings(source);
+		       return obs_data_get_int(saved, "deadline_ms") == QDateTime(date, at).toMSecsSinceEpoch() &&
+			      obs_data_get_int(saved, "timer_mode") == 1 &&
+			      readout->text().count(QLatin1Char(':')) >= 2;
+	       }),
+	       "the local date and time did not reach the scene timer");
 	edit([](QDialog *d) {
 		d->findChild<QComboBox *>("timerMode")->setCurrentIndex(2);
 		d->findChild<QCheckBox *>("timerLimit")->setChecked(true);
@@ -178,14 +188,20 @@ inline void check(QStringList &issues, bool restart)
 	});
 	expect(until([&] { return readout->text() == "00"; }), "count-up and seconds-only picker");
 	start->click();
-	expect(until([&] { return obs_source_media_get_state(source) == OBS_MEDIA_STATE_PLAYING; }), "bounded count-up did not start");
+	expect(until([&] { return obs_source_media_get_state(source) == OBS_MEDIA_STATE_PLAYING; }),
+	       "bounded count-up did not start");
 	obs_source_media_set_time(source, 1830);
 	expect(until([&] {
-		OBSSourceAutoRelease program = obs_frontend_get_current_scene();
-		return readout->text() == "Session complete" && program.Get() == obs_scene_get_source(destination);
-	}), "finish message and Program scene switch did not complete");
+		       OBSSourceAutoRelease program = obs_frontend_get_current_scene();
+		       return readout->text() == "Session complete" &&
+			      program.Get() == obs_scene_get_source(destination);
+	       }),
+	       "finish message and Program scene switch did not complete");
 	obs_frontend_set_current_scene(scene);
-	expect(until([&] { OBSSourceAutoRelease program = obs_frontend_get_current_scene(); return program.Get() == scene.Get(); }),
+	expect(until([&] {
+		       OBSSourceAutoRelease program = obs_frontend_get_current_scene();
+		       return program.Get() == scene.Get();
+	       }),
 	       "could not restore the fixture scene");
 	QThread::msleep(130);
 	QCoreApplication::processEvents();

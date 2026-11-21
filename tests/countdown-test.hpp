@@ -98,7 +98,6 @@ inline bool press_key(obs_source_t *source, const char *name)
 	return true;
 }
 
-
 inline QString readout(obs_source_t *source)
 {
 	calldata_t call{};
@@ -125,7 +124,9 @@ inline void modes(QStringList &issues)
 		fail(false, "source unavailable");
 		return;
 	}
-	auto is = [&](const QString &s) { return wait_for([&] { return readout(timer) == s; }); };
+	auto is = [&](const QString &s) {
+		return wait_for([&] { return readout(timer) == s; });
+	};
 	fail(is("01:02:03:04"), "day/hour/minute/second format");
 	for (const auto &pair : {std::pair{12, "1563:04"}, {8, "93784"}, {1, "02"}, {5, "01:124"}}) {
 		obs_data_set_int(config, "display_units", pair.first);
@@ -154,14 +155,19 @@ inline void modes(QStringList &issues)
 	obs_source_media_set_time(timer, 1850);
 	fail(is("Break over") && obs_source_media_get_time(timer) == 2000, "count-up finish message at its limit");
 	const auto ending = frame(timer);
-	fail(visible_digits(ending) && ending != before && ending.size() == before.size(), "message did not render on the same canvas");
+	fail(visible_digits(ending) && ending != before && ending.size() == before.size(),
+	     "message did not render on the same canvas");
 	obs_source_media_stop(timer);
 	fail(is("00:00"), "reset did not clear the finish message");
 	obs_data_set_int(config, "timer_mode", 1);
 	const int64_t target = QDateTime::currentMSecsSinceEpoch() + 2100;
 	obs_data_set_int(config, "deadline_ms", target);
 	obs_source_update(timer, config);
-	fail(wait_for([&] { return obs_source_media_get_duration(timer) > 0 && obs_source_media_get_duration(timer) < 3000 && readout(timer) != "00:00"; }), "date and time preset");
+	fail(wait_for([&] {
+		     return obs_source_media_get_duration(timer) > 0 && obs_source_media_get_duration(timer) < 3000 &&
+			    readout(timer) != "00:00";
+	     }),
+	     "date and time preset");
 	obs_source_media_play_pause(timer, false);
 	fail(wait_for([&] { return obs_source_media_get_state(timer) == OBS_MEDIA_STATE_PLAYING; }), "calendar start");
 	obs_source_media_play_pause(timer, true);
@@ -170,9 +176,12 @@ inline void modes(QStringList &issues)
 	QThread::msleep(260);
 	fail(readout(timer) == held, "calendar pause did not freeze the readout");
 	obs_source_media_play_pause(timer, false);
-	fail(is("Break over") && QDateTime::currentMSecsSinceEpoch() >= target && QDateTime::currentMSecsSinceEpoch() - target < 1200, "resume moved the actual deadline");
+	fail(is("Break over") && QDateTime::currentMSecsSinceEpoch() >= target &&
+		     QDateTime::currentMSecsSinceEpoch() - target < 1200,
+	     "resume moved the actual deadline");
 	obs_source_media_stop(timer);
-	fail(wait_for([&] { return obs_source_media_get_state(timer) == OBS_MEDIA_STATE_STOPPED; }), "finished deadline reset");
+	fail(wait_for([&] { return obs_source_media_get_state(timer) == OBS_MEDIA_STATE_STOPPED; }),
+	     "finished deadline reset");
 }
 
 inline void check(QStringList &issues, const QString &sheet_path = {})

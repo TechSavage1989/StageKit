@@ -85,8 +85,10 @@ public:
 			});
 			return widget;
 		};
-		start_ = button("countdownStart", "Countdown.Start", [](obs_source_t *s) { obs_source_media_play_pause(s, false); });
-		pause_ = button("countdownPause", "Countdown.Pause", [](obs_source_t *s) { obs_source_media_play_pause(s, true); });
+		start_ = button("countdownStart", "Countdown.Start",
+				[](obs_source_t *s) { obs_source_media_play_pause(s, false); });
+		pause_ = button("countdownPause", "Countdown.Pause",
+				[](obs_source_t *s) { obs_source_media_play_pause(s, true); });
 		button("countdownReset", "Countdown.Reset", obs_source_media_stop);
 		layout->addLayout(buttons);
 		layout->addStretch();
@@ -178,7 +180,8 @@ private:
 	static void source_changed(void *data, calldata_t *cd)
 	{
 		auto *source = static_cast<obs_source_t *>(calldata_ptr(cd, "source"));
-		if (source && !obs_obj_is_private(source) && std::strcmp(obs_source_get_id(source), kCountdownId) == 0) {
+		if (source && !obs_obj_is_private(source) &&
+		    std::strcmp(obs_source_get_id(source), kCountdownId) == 0) {
 			auto *self = static_cast<TimerDock *>(data);
 			QMetaObject::invokeMethod(self, [self] { self->refresh_sources(); }, Qt::QueuedConnection);
 		}
@@ -190,11 +193,15 @@ private:
 			return;
 		using List = QList<QPair<QString, QString>>;
 		List sources;
-		obs_enum_sources([](void *p, obs_source_t *s) {
-			if (!obs_source_removed(s) && !obs_obj_is_private(s) && std::strcmp(obs_source_get_id(s), kCountdownId) == 0)
-				static_cast<List *>(p)->append({QString::fromUtf8(obs_source_get_name(s)), QString::fromUtf8(obs_source_get_uuid(s))});
-			return true;
-		}, &sources);
+		obs_enum_sources(
+			[](void *p, obs_source_t *s) {
+				if (!obs_source_removed(s) && !obs_obj_is_private(s) &&
+				    std::strcmp(obs_source_get_id(s), kCountdownId) == 0)
+					static_cast<List *>(p)->append({QString::fromUtf8(obs_source_get_name(s)),
+									QString::fromUtf8(obs_source_get_uuid(s))});
+				return true;
+			},
+			&sources);
 		std::sort(sources.begin(), sources.end());
 		QSignalBlocker block(targets_);
 		targets_->clear();
