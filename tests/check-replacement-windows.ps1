@@ -24,6 +24,32 @@ $report = Join-Path $scratch 'result.txt'
 if ($LASTEXITCODE -ne 0) { throw 'Could not generate the render fixture.' }
 $env:STAGEKIT_TEST_ART = Join-Path $scratch 'art.png'
 $env:STAGEKIT_TEST_REPORT = $report
+$portCatalog = Get-Content -LiteralPath (Join-Path $dataDir 'ports.json') -Raw | ConvertFrom-Json
+$keys = @($portCatalog.PSObject.Properties.Name | Where-Object { $_ -cne 'native' })
+$moduleLabels = [ordered]@{ stagekit = 'StageKit' }
+foreach ($line in Get-Content -LiteralPath (Join-Path $dataDir 'locale/en-US.ini')) {
+    if ($line -cmatch '^Ports\.Module\.([a-z0-9]+)="(StageKit - [^"]+)"$') {
+        $moduleLabels.Add(('stagekit-port-' + $Matches[1]), $Matches[2])
+    }
+}
+foreach ($key in $keys) {
+    if (!$moduleLabels.Contains("stagekit-port-$key")) { throw "Missing StageKit label for $key." }
+}
+if ($moduleLabels.Count -ne ($keys.Count + 1) -or @($moduleLabels.Values | Sort-Object -Unique).Count -ne $moduleLabels.Count) {
+    throw 'Plugin Manager labels must be unique and cover exactly the packaged modules.'
+}
+$env:STAGEKIT_TEST_MODULE_NAMES = $moduleLabels.Values -join "`n"
+
+# Exercise an upgrade with the display names saved by the previous release.
+$managerDir = Join-Path $obsRoot 'config/obs-studio/plugin_manager'
+$null = New-Item -ItemType Directory -Path $managerDir -Force
+$moduleFile = Join-Path $managerDir 'modules.json'
+$oldNames = [ordered]@{ stagekit = ''; 'stagekit-port-move' = 'Move Transition'; 'stagekit-port-composite' = '' }
+$oldModules = foreach ($name in $oldNames.Keys) {
+    [ordered]@{ module_name = $name; display_name = $oldNames[$name]; id = ''; version = ''; enabled = $true
+        sources = @(); outputs = @(); encoders = @(); services = @() }
+}
+$oldModules | ConvertTo-Json -Depth 3 | Set-Content -LiteralPath $moduleFile -Encoding utf8
 $bin = Join-Path $obsRoot 'bin/64bit'
 $process = Start-Process -FilePath (Join-Path $bin 'obs64.exe') -WorkingDirectory $bin -PassThru -WindowStyle Hidden -ArgumentList @('--portable', '--multi', '--disable-shutdown-check', '--disable-missing-files-check', '--disable-updater', '--verbose')
 try {
@@ -32,8 +58,14 @@ try {
     if (!(Test-Path -LiteralPath $report)) { throw 'The OBS frontend probe did not run.' }
     $result = (Get-Content -Raw -LiteralPath $report).Trim()
     if ($result -ne 'PASS') { throw $result }
-    $moduleFile = Join-Path $obsRoot 'config/obs-studio/plugin_manager/modules.json'
     $modules = Get-Content -LiteralPath $moduleFile -Raw | ConvertFrom-Json
+    foreach ($name in $moduleLabels.Keys) {
+        $entries = @($modules | Where-Object { $_.module_name -ceq $name })
+        if ($entries.Count -ne 1 -or $entries[0].display_name -cne $moduleLabels[$name] -or !$entries[0].enabled) {
+            throw "OBS did not register the expected enabled Plugin Manager entry for $name."
+        }
+    }
+    Write-Output "PASS: OBS Plugin Manager shows all $($moduleLabels.Count) StageKit names once and refreshes the previous release's labels."
     $expectedOwners = [ordered]@{
         stagekit_ambient_background = 'stagekit'
         stagekit_cropped_view = 'stagekit'

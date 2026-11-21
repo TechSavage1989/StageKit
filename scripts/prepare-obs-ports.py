@@ -30,6 +30,13 @@ def modern_obs_api(text):
 
 
 def adapt_file(text, key, filename, settings):
+    if "OBS_DECLARE_MODULE()" in text:
+        # Plugin Manager reads this export separately from source, filter and Tools labels.
+        label = f'return sk_text("Ports.Module.{key}");'
+        callback = r'(\bobs_module_name\(\s*(?:void)?\s*\)\s*\{\s*)return [^;]+;'
+        text, count = re.subn(callback, lambda match: match[1] + label, text)
+        if not count:
+            text += '\nMODULE_EXPORT const char *obs_module_name(void)\n{\n\t' + label + '\n}\n'
     types = [row[:3] for row in settings.get("types", [])]
     for old, callback, label in types:
         text = text.replace('"' + old + '"', '"stagekit_port_' + old + '"')

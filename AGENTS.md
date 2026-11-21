@@ -14,6 +14,8 @@ OBS 32 clears its current plugin when a nested plugin finishes loading. A native
 afterward can render while its source name appears red in OBS. The portable Windows frontend test
 checks the owning plugins recorded in `plugin_manager/modules.json`.
 
+Keep Plugin Manager names under the Ports.Module prefix in the main locale. Each bundled module exports its own StageKit-prefixed display name. Its filename remains the identifier OBS uses for enablement and source ownership.
+
 Read [the replacement catalog](docs/obs-filter-replacements.md) before changing the compatibility modules. Preserve the pinned supplier files and licenses in src/third-party/ports. Integrations, OBS IDs and labels belong in scripts/prepare-obs-ports.py and data/ports.json. Source and scene filter labels identify the host in the OBS menu. A collection conversion must write a new file, preserve unsupported IDs, and retain the source and filter names used by chained Move actions.
 
 ## Saved scene settings and source renames

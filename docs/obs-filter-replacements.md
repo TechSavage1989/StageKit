@@ -2,6 +2,8 @@
 
 In OBS, open **Tools > StageKit > OBS filter replacements**. Search for the name currently shown in OBS, including names such as **DWM.Name** or **Move Source Swap**. The second column shows the corresponding StageKit control or the built-in OBS feature. The Availability column identifies platform and runtime requirements on this computer.
 
+In **Tools > Plugin Manager > Installed**, keep **StageKit** and the entries beginning with **StageKit -** enabled. For example, **StageKit - Move Transition** is bundled with StageKit. **Move Transition** is the standalone plugin. If you use only the StageKit version, clear the standalone plugin’s checkbox, click **OK** and restart OBS. This also works for plugins with no uninstaller.
+
 To add a filter, right-click the source, group or scene in OBS, open **Filters** and click **+** under **Effect Filters**. Choose **Source Filter** for a filter that acts on its host source. Choose **Scene Filter** for a filter that addresses items inside a scene or group. OBS can also apply a Source Filter to the finished image of a scene.
 
 ## Filter equivalents

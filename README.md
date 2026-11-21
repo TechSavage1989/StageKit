@@ -13,6 +13,8 @@
 
 ## Replacing other OBS plugins
 
+In **Tools > Plugin Manager > Installed**, the main plugin is **StageKit** and each bundled plugin begins with **StageKit -**, such as **StageKit - Move Transition**.
+
 Open **Tools > StageKit > OBS filter replacements** to look up an existing filter or tool and save a converted copy of an OBS scene collection. In a Filters window, StageKit labels each entry **Source Filter** or **Scene Filter**. [Filter and tool equivalents, migration and requirements](docs/obs-filter-replacements.md)
 
 ## Features
