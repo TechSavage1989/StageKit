@@ -97,6 +97,8 @@ foreach(index RANGE ${port_last})
   endif()
   add_dependencies(stagekit ${target})
   if(APPLE)
+    # libobs uses the entire macOS module filename as its registry name.
+    set_target_properties(${target} PROPERTIES SUFFIX "")
     set(code_root "$<TARGET_BUNDLE_CONTENT_DIR:stagekit>/Frameworks")
     add_custom_command(
       TARGET stagekit
@@ -124,7 +126,11 @@ foreach(index RANGE ${port_last})
     )
   endif()
 endforeach()
+set(port_extension "${CMAKE_SHARED_MODULE_SUFFIX}")
+if(APPLE)
+  set(port_extension "")
+endif()
 target_compile_definitions(
   stagekit
-  PRIVATE SK_PORT_EXTENSION="${CMAKE_SHARED_MODULE_SUFFIX}" SK_PORT_CONFIG="$<CONFIG>"
+  PRIVATE SK_PORT_EXTENSION="${port_extension}" SK_PORT_CONFIG="$<CONFIG>"
 )

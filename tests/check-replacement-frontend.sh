@@ -15,17 +15,16 @@ ln -s "$resources" "$plugins/stagekit/data"
 ln -s "$build/tests/stagekit-replacement-probe.so" "$plugins/stagekit-replacement-probe/bin/64bit/stagekit-replacement-probe.so"
 export QT_QPA_PLATFORM=xcb LIBGL_ALWAYS_SOFTWARE=1
 export DEBUGINFOD_URLS=""
-timeout 100 xvfb-run -a gdb -q --batch -ex "set pagination off" -ex "run" -ex "bt 32" --args obs --multi --disable-shutdown-check --disable-missing-files-check --disable-updater --verbose > "$scratch/frontend.log" 2>&1 &
-pid=$!
-for i in $(seq 1 85); do
-  if test -f "$STAGEKIT_TEST_REPORT" || ! kill -0 "$pid" 2>/dev/null; then break; fi
-  sleep 1
-done
-if test -f "$STAGEKIT_TEST_REPORT" && grep -qx PASS "$STAGEKIT_TEST_REPORT"; then
-  echo 'PASS: replacement tools, labeled filters and the searchable catalog in the OBS frontend'
-  wait "$pid" || true
-else
-  test ! -f "$STAGEKIT_TEST_REPORT" || cat "$STAGEKIT_TEST_REPORT"
-  grep -Ei "stagekit|quick.access|error:|#([0-9]+)[ ]|received signal" "$scratch/frontend.log" | tail -120 || true
-  exit 1
+obs_args=(--multi --disable-shutdown-check --disable-missing-files-check --disable-updater --verbose)
+status=0
+timeout 45 xvfb-run -a obs "${obs_args[@]}" > "$scratch/frontend.log" 2>&1 || status=$?
+if [[ "$status" == 0 ]] && test -f "$STAGEKIT_TEST_REPORT" && grep -qx PASS "$STAGEKIT_TEST_REPORT"; then
+  echo 'PASS: replacement tools, labeled catalog search and clean OBS shutdown'
+  exit 0
 fi
+echo "OBS frontend exit status: $status"
+test ! -f "$STAGEKIT_TEST_REPORT" || cat "$STAGEKIT_TEST_REPORT"
+tail -75 "$scratch/frontend.log"
+timeout 45 xvfb-run -a gdb -q --batch -ex 'set pagination off' -ex run -ex 'bt 32' --args obs "${obs_args[@]}" > "$scratch/debug.log" 2>&1 || true
+grep -Ei 'received signal|#([0-9]+)[ ]|error:' "$scratch/debug.log" | tail -70 || true
+exit 1
