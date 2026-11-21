@@ -130,6 +130,7 @@ public:
 		format_ = option("Countdown.FormatOutput", "timerFormatOutput", o.format_output);
 		output_ = new QLineEdit(o.output_format, format);
 		output_->setObjectName("timerOutputPattern");
+		output_->setAccessibleName(label("Countdown.FormatOutput"));
 		output_->setPlaceholderText(QStringLiteral("%time%"));
 		output_->setToolTip(label("Countdown.PatternHelp"));
 		format_->setToolTip(output_->toolTip());
@@ -147,12 +148,14 @@ public:
 		auto *end_layout = new QFormLayout(end_);
 		message_ = new QLineEdit(o.message, end_);
 		message_->setObjectName("timerMessage");
+		message_->setAccessibleName(label("Countdown.Message"));
 		message_->setPlaceholderText(label("Countdown.KeepTime"));
 		message_on_ = option("Countdown.Message", "timerMessageEnabled", o.use_message);
 		message_->setToolTip(label("Countdown.PatternHelp"));
 		end_layout->addRow(message_on_, message_);
 		scene_ = new QComboBox(end_);
 		scene_->setObjectName("timerEndScene");
+		scene_->setAccessibleName(label("Countdown.SwitchScene"));
 		scene_->addItem(label("Countdown.KeepScene"), QString());
 		obs_frontend_source_list scenes{};
 		obs_frontend_get_scenes(&scenes);
@@ -193,7 +196,9 @@ public:
 					? std::max<int64_t>(0, options.deadline - QDateTime::currentMSecsSinceEpoch())
 					: options.duration;
 			const auto value = options.counts_up() ? 0 : remaining;
-			example_->setText(label("Countdown.Example").arg(options.display_text(value, options.unlimited() ? 0 : remaining)));
+			example_->setText(
+				label("Countdown.Example")
+					.arg(options.display_text(value, options.unlimited() ? 0 : remaining)));
 			const bool some_unit =
 				automatic_->isChecked() ||
 				std::any_of(units_.begin(), units_.end(), [](const auto *u) { return u->isChecked(); });
@@ -312,8 +317,10 @@ TimerOptions TimerOptions::read(obs_data_t *s)
 	o.message = QString::fromUtf8(obs_data_get_string(s, "end_message"));
 	o.scene = QString::fromUtf8(obs_data_get_string(s, "end_scene_uuid"));
 	// Older collections enabled an action by giving it a message or scene.
-	o.use_message = obs_data_has_user_value(s, "use_end_message") ? obs_data_get_bool(s, "use_end_message") : !o.message.isEmpty();
-	o.switch_scene = obs_data_has_user_value(s, "switch_end_scene") ? obs_data_get_bool(s, "switch_end_scene") : !o.scene.isEmpty();
+	o.use_message = obs_data_has_user_value(s, "use_end_message") ? obs_data_get_bool(s, "use_end_message")
+								      : !o.message.isEmpty();
+	o.switch_scene = obs_data_has_user_value(s, "switch_end_scene") ? obs_data_get_bool(s, "switch_end_scene")
+									: !o.scene.isEmpty();
 	return o;
 }
 
@@ -346,7 +353,7 @@ bool TimerOptions::same_timing(const TimerOptions &o) const
 	if (mode != o.mode)
 		return false;
 	if (mode == TimerMode::Deadline)
-		return deadline == o.deadline;
+		return deadline == o.deadline && date_up == o.date_up;
 	if (mode == TimerMode::CountUp && limit != o.limit)
 		return false;
 	return unlimited() || duration == o.duration;

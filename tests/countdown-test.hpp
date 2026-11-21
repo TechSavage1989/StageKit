@@ -136,7 +136,8 @@ inline void modes(QStringList &issues)
 	obs_data_set_bool(config, "format_output", true);
 	obs_data_set_string(config, "output_format", "IN %time% (%days%d %hours2%h %minutes%m %seconds2%s)");
 	obs_source_update(timer, config);
-	fail(is("IN 1:02:03:04 (1d 02h 3m 04s)") && visible_digits(frame(timer)), "leading field and custom output tokens");
+	fail(is("IN 1:02:03:04 (1d 02h 3m 04s)") && visible_digits(frame(timer)),
+	     "leading field and custom output tokens");
 	obs_data_set_bool(config, "leading_zero", true);
 	obs_data_set_bool(config, "format_output", false);
 	obs_source_update(timer, config);
@@ -220,7 +221,8 @@ inline void modes(QStringList &issues)
 	fail(is("00:00"), "count up to a date must start at zero");
 	obs_source_media_play_pause(timer, false);
 	fail(is("00:01") && wait_for([&] { return obs_source_media_get_state(timer) == OBS_MEDIA_STATE_ENDED; }) &&
-	     readout(timer) != "Break over", "calendar count-up or disabled legacy end message");
+		     readout(timer) != "Break over",
+	     "calendar count-up or disabled legacy end message");
 	obs_data_set_int(config, "timer_mode", 2);
 	obs_data_set_bool(config, "limit_up", false);
 	obs_data_set_bool(config, "start_on_stream", true);
@@ -231,15 +233,21 @@ inline void modes(QStringList &issues)
 	OBSSourceAutoRelease manual = obs_source_create("stagekit_countdown", "Manual timer fixture", nullptr, nullptr);
 	fail(is("00:00"), "steady preset");
 	stagekit::start_stream_timers(hidden);
-	fail(obs_source_media_get_state(timer) == OBS_MEDIA_STATE_PLAYING && obs_source_media_get_state(hidden) == OBS_MEDIA_STATE_PLAYING &&
-	     obs_source_media_get_state(manual) == OBS_MEDIA_STATE_STOPPED, "stream-start opt-in for scene and private timers");
+	fail(wait_for([&] {
+		     return obs_source_media_get_state(timer) == OBS_MEDIA_STATE_PLAYING &&
+			    obs_source_media_get_state(hidden) == OBS_MEDIA_STATE_PLAYING &&
+			    obs_source_media_get_state(manual) == OBS_MEDIA_STATE_STOPPED;
+	     }),
+	     "stream-start opt-in for scene and private timers");
 	obs_source_media_set_time(timer, 5000);
+	fail(wait_for([&] { return obs_source_media_get_time(timer) >= 5000; }), "steady timer seek");
 	stagekit::start_stream_timers(hidden);
 	fail(obs_source_media_get_time(timer) >= 5000, "a repeated stream-start reset a running timer");
 	const auto start_ms = obs_source_media_get_time(timer);
 	obs_queue_task(OBS_TASK_GRAPHICS, [](void *) { QThread::msleep(2200); }, nullptr, true);
 	fail(wait_for([&] { return obs_source_media_get_time(timer) >= start_ms + 950; }) &&
-	     obs_source_media_get_time(timer) < start_ms + 1600, "a late render skipped multiple steady seconds");
+		     obs_source_media_get_time(timer) < start_ms + 1600,
+	     "a late render skipped multiple steady seconds");
 	obs_source_media_stop(timer);
 }
 
@@ -284,7 +292,8 @@ inline bool sharp_scaled_timer(const QString &sheet_path)
 		return totals;
 	};
 	const auto old = coverage(enlarged), current = coverage(sharp);
-	blog(LOG_INFO, "StageKit timer at 5x: solid pixels %d/%d, soft edge pixels %d/%d (bitmap/native)", old.first, current.first, old.second, current.second);
+	blog(LOG_INFO, "StageKit timer at 5x: solid pixels %d/%d, soft edge pixels %d/%d (bitmap/native)", old.first,
+	     current.first, old.second, current.second);
 	if (!sheet_path.isEmpty()) {
 		const int cell = 270;
 		const QRect crop(w / 2 - cell / 2, h / 2 - cell / 2, cell, cell);

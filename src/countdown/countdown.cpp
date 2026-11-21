@@ -104,7 +104,8 @@ struct Playback {
 				state = OBS_MEDIA_STATE_ENDED;
 				return false;
 			}
-			span = settings.date_up && state == OBS_MEDIA_STATE_STOPPED ? remaining : std::max(span, remaining);
+			span = settings.date_up && state == OBS_MEDIA_STATE_STOPPED ? remaining
+										    : std::max(span, remaining);
 		} else if (!settings.unlimited() && !span) {
 			return false;
 		}
@@ -132,12 +133,12 @@ struct Playback {
 		return settings.mode == TimerMode::Deadline ? until_deadline() == 0 : elapsed() >= span;
 	}
 
-	bool message_visible() const { return state == OBS_MEDIA_STATE_ENDED && settings.use_message && !settings.message.isEmpty(); }
-
-	QString text() const
+	bool message_visible() const
 	{
-		return settings.display_text(value(), span, message_visible());
+		return state == OBS_MEDIA_STATE_ENDED && settings.use_message && !settings.message.isEmpty();
 	}
+
+	QString text() const { return settings.display_text(value(), span, message_visible()); }
 };
 
 struct Display {
@@ -299,7 +300,7 @@ public:
 		uint64_t run;
 		{
 			std::lock_guard lock(mutex_);
-			
+
 			clock_.advance_steady();
 			if (!clock_.finished())
 				return;
@@ -382,7 +383,8 @@ public:
 	{
 		matrix4 transform;
 		gs_matrix_get(&transform);
-		const float scale = std::max(std::hypot(transform.x.x, transform.x.y), std::hypot(transform.y.x, transform.y.y));
+		const float scale =
+			std::max(std::hypot(transform.x.x, transform.x.y), std::hypot(transform.y.x, transform.y.y));
 		uint32_t logical_width, logical_height;
 		{
 			std::lock_guard lock(mutex_);
@@ -399,14 +401,17 @@ public:
 			if (wanted >= density_)
 				last_large_draw_ = now;
 			else if (now >= last_large_draw_ && now - last_large_draw_ < 1000000000ULL)
-				wanted = density_; // Program and smaller previews can draw the same source in one frame.
-			while (wanted > 1 && (logical_width * wanted > 8192 || logical_height * wanted > 8192 ||
+				wanted =
+					density_; // Program and smaller previews can draw the same source in one frame.
+			while (wanted > 1 &&
+			       (logical_width * wanted > 8192 || logical_height * wanted > 8192 ||
 				uint64_t(logical_width) * logical_height * wanted * wanted > 4 * 1024 * 1024))
 				--wanted;
 			if (changed || wanted != density_) {
 				const auto &options = clock_.settings;
 				const QString value = options.display_text(second * 1000, clock_.span, msg);
-				const QImage frame = display_.paint(value, msg || options.format_output, int(logical_width), wanted);
+				const QImage frame =
+					display_.paint(value, msg || options.format_output, int(logical_width), wanted);
 				if (frame.isNull())
 					return;
 				const auto w = static_cast<uint32_t>(frame.width());
@@ -559,7 +564,8 @@ void register_countdown()
 					},
 					timer);
 		proc_handler_add(
-			obs_source_get_proc_handler(source), "void timer_readout(out string text, out bool end_message)",
+			obs_source_get_proc_handler(source),
+			"void timer_readout(out string text, out bool end_message)",
 			[](void *d, calldata_t *cd) {
 				bool end_message;
 				const auto value = static_cast<Countdown *>(d)->text(end_message);

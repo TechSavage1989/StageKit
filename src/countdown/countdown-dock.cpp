@@ -40,7 +40,9 @@ QString text(const char *key)
 // font rule and fit the actual output to the space above the playback buttons.
 class TimerReadout final : public QLabel {
 public:
-	explicit TimerReadout(QWidget *parent) : QLabel(parent), face_(QFontDatabase::systemFont(QFontDatabase::FixedFont))
+	explicit TimerReadout(QWidget *parent)
+		: QLabel(parent),
+		  face_(QFontDatabase::systemFont(QFontDatabase::FixedFont))
 	{
 		setObjectName("countdownReadout");
 		setTextFormat(Qt::PlainText);
@@ -91,7 +93,8 @@ private:
 				const int mid = (low + high + 1) / 2;
 				face_.setPixelSize(mid);
 				const QFontMetrics metrics(face_, this);
-				if (metrics.height() <= room.height() && metrics.horizontalAdvance(sample_) <= room.width())
+				if (metrics.height() <= room.height() &&
+				    metrics.horizontalAdvance(sample_) <= room.width())
 					low = mid;
 				else
 					high = mid - 1;
@@ -100,8 +103,11 @@ private:
 		}
 		if (size != pixels_) {
 			pixels_ = size;
-			setStyleSheet(QStringLiteral("QLabel#countdownReadout { font-family: \"%1\"; font-size: %2px; font-weight: bold; }")
-					      .arg(face_.family()).arg(size));
+			setStyleSheet(
+				QStringLiteral(
+					"QLabel#countdownReadout { font-family: \"%1\"; font-size: %2px; font-weight: bold; }")
+					.arg(face_.family())
+					.arg(size));
 		}
 	}
 
