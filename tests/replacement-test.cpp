@@ -159,7 +159,8 @@ int main(int argc, char **argv)
 
 	obs_post_load_modules();
 	const auto has_label = [](const char *id, const char *prefix) {
-		const char *name = obs_source_get_display_name(id);
+		const char *version = obs_get_latest_input_type_id(id);
+		const char *name = version ? obs_source_get_display_name(version) : nullptr;
 		return name && std::string(name).find(prefix) == 0 &&
 		       std::string(name).find("(StageKit)") != std::string::npos;
 	};

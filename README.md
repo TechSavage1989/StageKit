@@ -11,6 +11,10 @@
   <a href="#development">Development</a>
 </p>
 
+## Replacing other OBS plugins
+
+Open **Tools > StageKit > OBS filter replacements** to look up an existing filter or tool and save a converted copy of an OBS scene collection. In a Filters window, StageKit labels each entry **Source Filter** or **Scene Filter**. [Filter and tool equivalents, migration and requirements](docs/obs-filter-replacements.md)
+
 ## Features
 
 StageKit is for streamers who build their scenes by hand. Each tool replaces a setup that normally

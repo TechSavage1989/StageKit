@@ -14,7 +14,8 @@ ln -s "$binary" "$plugins/stagekit/bin/64bit/stagekit.so"
 ln -s "$resources" "$plugins/stagekit/data"
 ln -s "$build/tests/stagekit-replacement-probe.so" "$plugins/stagekit-replacement-probe/bin/64bit/stagekit-replacement-probe.so"
 export QT_QPA_PLATFORM=xcb LIBGL_ALWAYS_SOFTWARE=1
-timeout 100 xvfb-run -a obs --multi --disable-shutdown-check --disable-missing-files-check --disable-updater --verbose > "$scratch/frontend.log" 2>&1 &
+export DEBUGINFOD_URLS=""
+timeout 100 xvfb-run -a gdb -q --batch -ex "set pagination off" -ex "run" -ex "bt 32" --args obs --multi --disable-shutdown-check --disable-missing-files-check --disable-updater --verbose > "$scratch/frontend.log" 2>&1 &
 pid=$!
 for i in $(seq 1 85); do
   if test -f "$STAGEKIT_TEST_REPORT" || ! kill -0 "$pid" 2>/dev/null; then break; fi
@@ -25,6 +26,6 @@ if test -f "$STAGEKIT_TEST_REPORT" && grep -qx PASS "$STAGEKIT_TEST_REPORT"; the
   wait "$pid" || true
 else
   test ! -f "$STAGEKIT_TEST_REPORT" || cat "$STAGEKIT_TEST_REPORT"
-  tail -140 "$scratch/frontend.log"
+  grep -Ei "stagekit|quick.access|error:|#([0-9]+)[ ]|received signal" "$scratch/frontend.log" | tail -120 || true
   exit 1
 fi

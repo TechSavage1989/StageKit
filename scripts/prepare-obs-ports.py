@@ -43,8 +43,16 @@ def adapt_file(text, key, filename, settings):
     if key == "shader":
         text = text.replace('obs_get_module("move-transition")', 'obs_get_module("stagekit-port-move")')
     if key == "move":
+        text = re.sub(r'strcmp\((id(?:_a|_b)?), "source-clone"\) == 0',
+                      lambda m: '(' + m[0] + ' || strcmp(' + m[1] + ', "stagekit_port_source-clone") == 0)', text)
         text = text.replace('obs_get_module("obs-shaderfilter")', 'obs_get_module("stagekit-port-shader")')
     if key == "quick":
+        text = text.replace('"source_release"', '"source_destroy"')
+        if filename == "quick-access-utility.cpp":
+            text = text.replace("std::string uuid = obs_source_get_uuid(newScene);", "if (!newScene) return;\n\tstd::string uuid = obs_source_get_uuid(newScene);")
+            text = text.replace("QuickAccessSource *qaNewScene = _allSources[uuid].get();",
+                                "auto it = _allSources.find(uuid);\n\tQuickAccessSource *qaNewScene = it != _allSources.end() ? it->second.get() : nullptr;")
+            text = text.replace("QuickAccessSearchModal::dialog->InitializeSearch();", "if (QuickAccessSearchModal::dialog) QuickAccessSearchModal::dialog->InitializeSearch();")
         text = text.replace('"quick_access_utility"', '"stagekit.quick_access"')
         text = text.replace('"quick-access-dock_', '"stagekit-quick-access-dock_')
     if key == "table":

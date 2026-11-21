@@ -625,7 +625,7 @@ def main():
 
     key_pictures("mode", "options/mode-on", "options/mode-off")
     # (Its lists are per mode, inside the body; its Palette is in the body's Key fold-out.)
-    page("mode", "StageKit scene mode", mode_page_html(), FOLLOW_MODE, lists=False)
+    page("mode", "StageKit scene mode", mode_page_html(), FOLLOW_MODE)
     add("mode", "Scene Mode", "Works one scene's Scene Modes: switches a mode on, off, toggles it or goes to the next mode. Shows the mode that is on.", "mode", "imgs/actions/switch/icon", two("mode"))
 
     # The keys for a filter on a scene that act through StageKit's own requests.
@@ -696,31 +696,31 @@ def main():
 
     # OBS's regular controls and the Start hotkey published by the Move scene filters.
     key_pictures("obsfilter", "options/plain-switch-on", "options/plain-switch-off")
-    page("obsfilter", "StageKit OBS Filter", one_list("Source or scene and filter") + PRESS, lists=False)
+    page("obsfilter", "StageKit OBS Filter", one_list("Source or scene and filter", tip="Select the source or scene and its filter in OBS.") + PRESS)
     add("obsfilter", "OBS Filter", "Switches any OBS source or scene filter on and off.", "obsfilter", "imgs/actions/obsfilter/icon", two("obsfilter"))
 
     key_pictures("obssource", "options/source-switcher-on", "options/source-switcher-off")
-    page("obssource", "StageKit Source Visibility", one_list("Scene or group and source", "getOrdinaryTargets") + PRESS, lists=False)
+    page("obssource", "StageKit Source Visibility", one_list("Scene or group and source", "getOrdinaryTargets", tip="Choose the scene or group and the source to show or hide.") + PRESS)
     add("obssource", "Source Visibility", "Shows or hides one scene item, including an item inside a group.", "obssource", "imgs/actions/obssource/icon", two("obssource"))
 
     key_pictures("obsmute", "options/plain-switch-on", "options/plain-switch-off")
-    page("obsmute", "StageKit Audio Mixer Mute", one_list("Audio input", "getOrdinaryTargets") + options("On press", "press", "toggle", [("toggle", "Toggle mute"), ("on", "Mute"), ("off", "Unmute")], "How this key sets the mixer mute button."), lists=False)
+    page("obsmute", "StageKit Audio Mixer Mute", one_list("Audio input", "getOrdinaryTargets", tip="Choose the OBS audio input whose mute button this key controls.") + options("On press", "press", "toggle", [("toggle", "Toggle mute"), ("on", "Mute"), ("off", "Unmute")], "How this key sets the mixer mute button."))
     add("obsmute", "Audio Mixer Mute", "Mutes or unmutes an OBS audio input.", "obsmute", "imgs/actions/obsmute/icon", two("obsmute"))
 
     key_pictures("obsstudio", "options/scene-fit-on", "options/scene-fit-off")
-    page("obsstudio", "StageKit Studio Mode", PRESS, lists=False)
+    page("obsstudio", "StageKit Studio Mode", PRESS)
     add("obsstudio", "Studio Mode", "Switches OBS Studio Mode on or off.", "obsstudio", "imgs/actions/obsstudio/icon", two("obsstudio"))
 
     key_pictures("obscamera", "options/plain-switch-on", "options/plain-switch-off")
-    page("obscamera", "StageKit Virtual Camera", PRESS, lists=False)
+    page("obscamera", "StageKit Virtual Camera", PRESS)
     add("obscamera", "Virtual Camera", "Starts or stops the OBS virtual camera.", "obscamera", "imgs/actions/obscamera/icon", two("obscamera"))
 
     key_pictures("movesourceport", "options/camera-centre", None)
-    page("movesourceport", "StageKit Move Source in Scene", target_list("movesourceport"), lists=False)
+    page("movesourceport", "StageKit Move Source in Scene", target_list("movesourceport"))
     add("movesourceport", "Move Source in Scene", "Starts a StageKit Move Source scene filter.", "movesourceport", "imgs/actions/movesourceport/icon", one("movesourceport"))
 
     key_pictures("moveswapport", "options/layout", None)
-    page("moveswapport", "StageKit Swap Sources in Scene", target_list("moveswapport"), lists=False)
+    page("moveswapport", "StageKit Swap Sources in Scene", target_list("moveswapport"))
     add("moveswapport", "Swap Sources in Scene", "Starts a StageKit Move Source Swap scene filter.", "moveswapport", "imgs/actions/moveswapport/icon", one("moveswapport"))
 
     # The first two keys, kept for the keys already made with them.

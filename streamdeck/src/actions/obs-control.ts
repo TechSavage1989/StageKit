@@ -5,8 +5,8 @@ import streamDeck, {
 import type { JsonValue } from "@elgato/utils";
 import { afterPress, targetOf } from "../kinds.ts";
 import { obs } from "../obs.ts";
-import { plain } from "../pictures.ts";
-import { answerLists, showOnOff, type KeySettings } from "./shared.ts";
+import { plain, typePicture, scenePicture } from "../pictures.ts";
+import { answerLists, imageOf, showOnOff, type KeySettings } from "./shared.ts";
 
 export class ObsControl extends SingletonAction<KeySettings> {
 	override readonly manifestId: string;
@@ -67,10 +67,16 @@ export class ObsControl extends SingletonAction<KeySettings> {
 	}
 
 	private async show(key: KeyAction<KeySettings>, settings: KeySettings): Promise<void> {
-		if (this.moveKind) return;
+		if (this.moveKind) {
+			const { source } = targetOf(settings);
+			const image = scenePicture(undefined, source, settings.sceneType);
+			await key.setImage(imageOf(image, settings, true));
+			return;
+		}
 		try {
 			const active = await obs.controlState(this.key, settings.target ?? "");
-			await showOnOff(key, plain("switch"), active, settings);
+			const picture = settings.sceneType ? scenePicture(undefined, undefined, settings.sceneType) : typePicture(settings.sourceType);
+			await showOnOff(key, picture ?? plain("switch"), active, settings);
 		} catch {
 			await key.setState(0);
 		}

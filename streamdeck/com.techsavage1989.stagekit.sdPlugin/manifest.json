@@ -1,6 +1,6 @@
 {
 	"Name": "StageKit",
-	"Version": "0.35.0.0",
+	"Version": "0.36.0.0",
 	"Author": "StageKit contributors",
 	"Actions": [
 		{
@@ -782,6 +782,153 @@
 				}
 			],
 			"DisableAutomaticStates": true
+		},
+		{
+			"Name": "OBS Filter",
+			"UUID": "com.techsavage1989.stagekit.obsfilter",
+			"Icon": "imgs/actions/obsfilter/icon",
+			"Tooltip": "Switches any OBS source or scene filter on and off.",
+			"PropertyInspectorPath": "ui/obsfilter.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/obsfilter/off",
+					"Name": "Off",
+					"TitleAlignment": "bottom"
+				},
+				{
+					"Image": "imgs/actions/obsfilter/on",
+					"Name": "On",
+					"TitleAlignment": "bottom"
+				}
+			],
+			"DisableAutomaticStates": true
+		},
+		{
+			"Name": "Source Visibility",
+			"UUID": "com.techsavage1989.stagekit.obssource",
+			"Icon": "imgs/actions/obssource/icon",
+			"Tooltip": "Shows or hides one scene item, including an item inside a group.",
+			"PropertyInspectorPath": "ui/obssource.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/obssource/off",
+					"Name": "Off",
+					"TitleAlignment": "bottom"
+				},
+				{
+					"Image": "imgs/actions/obssource/on",
+					"Name": "On",
+					"TitleAlignment": "bottom"
+				}
+			],
+			"DisableAutomaticStates": true
+		},
+		{
+			"Name": "Audio Mixer Mute",
+			"UUID": "com.techsavage1989.stagekit.obsmute",
+			"Icon": "imgs/actions/obsmute/icon",
+			"Tooltip": "Mutes or unmutes an OBS audio input.",
+			"PropertyInspectorPath": "ui/obsmute.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/obsmute/off",
+					"Name": "Off",
+					"TitleAlignment": "bottom"
+				},
+				{
+					"Image": "imgs/actions/obsmute/on",
+					"Name": "On",
+					"TitleAlignment": "bottom"
+				}
+			],
+			"DisableAutomaticStates": true
+		},
+		{
+			"Name": "Studio Mode",
+			"UUID": "com.techsavage1989.stagekit.obsstudio",
+			"Icon": "imgs/actions/obsstudio/icon",
+			"Tooltip": "Switches OBS Studio Mode on or off.",
+			"PropertyInspectorPath": "ui/obsstudio.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/obsstudio/off",
+					"Name": "Off",
+					"TitleAlignment": "bottom"
+				},
+				{
+					"Image": "imgs/actions/obsstudio/on",
+					"Name": "On",
+					"TitleAlignment": "bottom"
+				}
+			],
+			"DisableAutomaticStates": true
+		},
+		{
+			"Name": "Virtual Camera",
+			"UUID": "com.techsavage1989.stagekit.obscamera",
+			"Icon": "imgs/actions/obscamera/icon",
+			"Tooltip": "Starts or stops the OBS virtual camera.",
+			"PropertyInspectorPath": "ui/obscamera.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/obscamera/off",
+					"Name": "Off",
+					"TitleAlignment": "bottom"
+				},
+				{
+					"Image": "imgs/actions/obscamera/on",
+					"Name": "On",
+					"TitleAlignment": "bottom"
+				}
+			],
+			"DisableAutomaticStates": true
+		},
+		{
+			"Name": "Move Source in Scene",
+			"UUID": "com.techsavage1989.stagekit.movesourceport",
+			"Icon": "imgs/actions/movesourceport/icon",
+			"Tooltip": "Starts a StageKit Move Source scene filter.",
+			"PropertyInspectorPath": "ui/movesourceport.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/movesourceport/on",
+					"TitleAlignment": "bottom"
+				}
+			]
+		},
+		{
+			"Name": "Swap Sources in Scene",
+			"UUID": "com.techsavage1989.stagekit.moveswapport",
+			"Icon": "imgs/actions/moveswapport/icon",
+			"Tooltip": "Starts a StageKit Move Source Swap scene filter.",
+			"PropertyInspectorPath": "ui/moveswapport.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/moveswapport/on",
+					"TitleAlignment": "bottom"
+				}
+			]
 		},
 		{
 			"Name": "Filter switch (older)",
