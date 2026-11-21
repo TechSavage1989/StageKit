@@ -196,6 +196,9 @@ target_sources(
     src/third-party/obs-websocket-api.h
 )
 
+target_sources(stagekit PRIVATE src/components/components.cpp src/components/components.hpp)
+include(cmake/common/stagekit-ports.cmake)
+
 set_target_properties_plugin(${CMAKE_PROJECT_NAME} PROPERTIES OUTPUT_NAME ${_name})
 
 if(STAGEKIT_BUILD_TESTS)

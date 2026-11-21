@@ -1,0 +1,236 @@
+{
+  "3d": {
+    "types": [
+      [
+        "3d_effect_filter",
+        "effect_3d_get_name",
+        "Ports.3DEffect"
+      ]
+    ]
+  },
+  "masks": {
+    "types": [
+      [
+        "advanced_masks_filter",
+        "advanced_masks_name",
+        "Ports.AdvancedMask"
+      ]
+    ]
+  },
+  "composite": {
+    "types": [
+      [
+        "obs_composite_blur",
+        "composite_blur_name",
+        "Ports.CompositeBlur"
+      ]
+    ]
+  },
+  "retro": {
+    "types": [
+      [
+        "obs_retro_effects_filter",
+        "retro_effects_filter_name",
+        "Ports.RetroEffects"
+      ]
+    ]
+  },
+  "noise": {
+    "types": [
+      [
+        "obs_noise_source",
+        "noise_source_name",
+        "Ports.Noise"
+      ],
+      [
+        "obs_noise_displace_filter",
+        "noise_displace_filter_name",
+        "Ports.NoiseDisplacement"
+      ]
+    ]
+  },
+  "pixel": {
+    "types": [
+      [
+        "pixel_art_plugin",
+        "pixel_art_plugin_getname",
+        "Ports.PixelArt"
+      ]
+    ]
+  },
+  "freeze": {
+    "types": [
+      [
+        "freeze_filter",
+        "freeze_get_name",
+        "Ports.Freeze"
+      ]
+    ]
+  },
+  "delay": {
+    "types": [
+      [
+        "dynamic_delay_filter",
+        "dynamic_delay_get_name",
+        "Ports.DynamicDelay"
+      ]
+    ]
+  },
+  "recursion": {
+    "types": [
+      [
+        "recursion_effect_filter",
+        "recursion_effect_get_name",
+        "Ports.RecursionEffect"
+      ]
+    ]
+  },
+  "warp": {
+    "types": [
+      [
+        "time_warp_scan_filter",
+        "tws_get_name",
+        "Ports.TimeWarpScan"
+      ]
+    ]
+  },
+  "directory": {
+    "types": [
+      [
+        "dir_watch_media",
+        "dir_watch_media_source_get_name",
+        "Ports.DirectoryWatchMedia"
+      ]
+    ]
+  },
+  "defaults": {
+    "types": [
+      [
+        "source_defaults_video",
+        "source_defaults_get_name",
+        "Ports.SourceDefaults"
+      ],
+      [
+        "source_defaults_audio",
+        "source_defaults_get_name",
+        "Ports.SourceDefaults"
+      ]
+    ]
+  },
+  "move": {
+    "types": [
+      [
+        "move_action_filter",
+        "move_action_get_name",
+        "Ports.MoveAction"
+      ],
+      [
+        "move_audio_action_filter",
+        "move_action_get_name",
+        "Ports.MoveAction"
+      ],
+      [
+        "move_value_filter",
+        "move_value_get_name",
+        "Ports.MoveValue"
+      ],
+      [
+        "move_audio_value_filter",
+        "move_value_get_name",
+        "Ports.MoveValue"
+      ],
+      [
+        "move_source_filter",
+        "move_source_get_name",
+        "Ports.MoveSource"
+      ],
+      [
+        "move_source_swap_filter",
+        "move_source_swap_get_name",
+        "Ports.MoveSourceSwap"
+      ],
+      [
+        "move_directshow_filter",
+        "move_directshow_get_name",
+        "Ports.MoveVideoCaptureDevice"
+      ],
+      [
+        "move_transition_override_filter",
+        "move_override_filter_get_name",
+        "Ports.MoveTransitionOverride"
+      ],
+      [
+        "audio_move_filter",
+        "audio_move_get_name",
+        "Ports.AudioMove"
+      ],
+      [
+        "nv_move_filter",
+        "nv_move_name",
+        "Ports.NVIDIAMove"
+      ],
+      [
+        "move_transition",
+        "move_get_name",
+        "Ports.Move"
+      ]
+    ]
+  },
+  "shader": {
+    "types": [
+      [
+        "shader_filter",
+        "shader_filter_get_name",
+        "Ports.UserdefinedShader"
+      ],
+      [
+        "shader_transition",
+        "shader_transition_get_name",
+        "Ports.Shader"
+      ]
+    ]
+  },
+  "copy": {
+    "tool": "Ports.Tool.copy"
+  },
+  "dock": {
+    "tool": "Ports.Tool.dock"
+  },
+  "table": {
+    "tool": "Ports.Tool.table"
+  },
+  "ndi": {
+    "types": [
+      [
+        "ndi_filter",
+        "ndi_filter_getname",
+        "Ports.DedicatedNDIOutput"
+      ],
+      [
+        "ndi_audiofilter",
+        "ndi_audiofilter_getname",
+        "Ports.DedicatedNDIAudioOutput"
+      ],
+      [
+        "ndi_source",
+        "ndi_source_getname",
+        "Ports.NDIInput"
+      ],
+      [
+        "ndi_output",
+        "ndi_output_getname",
+        "Ports.NDIOutput"
+      ]
+    ],
+    "tool": "Ports.Tool.ndi"
+  },
+  "collections": {
+    "tool": "Ports.Tool.collections"
+  },
+  "quick": {
+    "tool": "Ports.Tool.quick"
+  },
+  "layouts": {
+    "tool": "Ports.Tool.layouts"
+  }
+}
