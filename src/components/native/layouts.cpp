@@ -27,7 +27,7 @@ QString settings_path()
 }
 QMainWindow *obs_window()
 {
-	return static_cast<QMainWindow *>(obs_frontend_get_main_obs_window());
+	return static_cast<QMainWindow *>(obs_frontend_get_main_window());
 }
 constexpr auto default_key = "Settings/DefaultLayout";
 QString state_key(const QString &name)
