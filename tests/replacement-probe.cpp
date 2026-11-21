@@ -1,10 +1,18 @@
 #include "replacement-frame.hpp"
+#include "replacement-native.hpp"
 #include <obs-module.h>
 #include <obs-frontend-api.h>
 #include <QApplication>
 #include <QCheckBox>
 #include <QDialog>
+#include <QDockWidget>
+#include <QComboBox>
+#include <QPushButton>
+#include <QSpinBox>
 #include <QFile>
+#include <QListWidget>
+#include <QMainWindow>
+#include <QSettings>
 #include <QLineEdit>
 #include <QMenu>
 #include <QMessageBox>
@@ -76,6 +84,113 @@ static void check_blur_output(QStringList &issues)
 	obs_source_release(source);
 }
 
+static void check_native_layout(QStringList &issues)
+{
+	auto *module = obs_get_module("stagekit-port-layouts");
+	const char *author = obs_get_module_author(module);
+	auto *action = action_named("Dock Layout Manager (StageKit)");
+	auto *main = static_cast<QMainWindow *>(obs_frontend_get_main_window());
+	if (!author || QString::fromUtf8(author) != "StageKit contributors" || !action || !main) {
+		issues.append("Missing native dock layout manager");
+		return;
+	}
+	char *path = obs_module_get_config_path(module, "dock-layouts.ini");
+	QSettings layouts(QString::fromUtf8(path), QSettings::IniFormat);
+	bfree(path);
+	layouts.setValue("Saved beta234 docks/WindowState", main->saveState());
+	layouts.sync();
+	bool found = false;
+	QObject owner;
+	QTimer::singleShot(100, &owner, [&] {
+		auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+		if (!dialog)
+			return;
+		auto *list = dialog->findChild<QListWidget *>("nativeLayouts");
+		found = list && list->findItems("Saved beta234 docks", Qt::MatchExactly).size() == 1;
+		dialog->reject();
+	});
+	action->trigger();
+	if (!found)
+		issues.append("Native dock layouts did not read the existing WindowState entry");
+}
+
+static void check_native_table(QStringList &issues)
+{
+	auto *action = action_named("Transition Table (StageKit)");
+	if (!action)
+		return;
+	QObject owner;
+	bool exercised = false;
+	QTimer::singleShot(100, &owner, [&] {
+		auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+		if (!dialog)
+			return;
+		auto *from = dialog->findChild<QComboBox *>("nativeRuleFrom");
+		auto *to = dialog->findChild<QComboBox *>("nativeRuleTo");
+		auto *transition = dialog->findChild<QComboBox *>("nativeRuleTransition");
+		auto *add = dialog->findChild<QPushButton *>("nativeSetRule");
+		auto *duration = dialog->findChild<QSpinBox *>();
+		if (from && to && transition && add && duration) {
+			from->setCurrentText("Fixture source scene");
+			to->setCurrentText("Any");
+			transition->setCurrentText("Fade");
+			duration->setValue(416);
+			add->click();
+			calldata_t result = {};
+			calldata_set_string(&result, "from_scene", "Fixture source scene");
+			calldata_set_string(&result, "to_scene", "Other destination");
+			exercised = proc_handler_call(obs_get_proc_handler(),
+						      "stagekit_port_get_transition_table_transition", &result) &&
+				    QString::fromUtf8(calldata_string(&result, "transition")) == "Fade" &&
+				    calldata_int(&result, "duration") == 416;
+			calldata_free(&result);
+		}
+		dialog->reject();
+	});
+	action->trigger();
+	if (!exercised)
+		issues.append(
+			"Native transition table did not resolve an edited wildcard rule through the saved procedure");
+}
+
+static void check_native_quick(QStringList &issues)
+{
+	auto *action = action_named("Quick Access Utility (StageKit)");
+	auto *main = static_cast<QMainWindow *>(obs_frontend_get_main_window());
+	if (!action || !main)
+		return;
+	auto *source = obs_source_create("image_source", "StageKit search fixture", nullptr, nullptr);
+	bool found = false;
+	QObject owner;
+	QTimer::singleShot(100, &owner, [&] {
+		auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+		if (!dialog)
+			return;
+		auto *title = dialog->findChild<QLineEdit *>("nativeQuickTitle");
+		auto *create = dialog->findChild<QPushButton *>("nativeCreateQuickDock");
+		if (title && create) {
+			title->setText("StageKit fixture dock");
+			create->click();
+			for (auto *dock : main->findChildren<QDockWidget *>()) {
+				if (dock->windowTitle() != "StageKit fixture dock")
+					continue;
+				auto *search = dock->findChild<QLineEdit *>("nativeQuickSearch");
+				auto *list = dock->findChild<QListWidget *>("nativeQuickSources");
+				if (search && list) {
+					search->setText("StageKit search fixture");
+					found = list->count() == 1 &&
+						list->item(0)->text() == "StageKit search fixture";
+				}
+			}
+		}
+		dialog->reject();
+	});
+	action->trigger();
+	if (!found)
+		issues.append("The native Quick Access dock did not find a live OBS source");
+	obs_source_release(source);
+}
+
 static void check_plugin_manager(QStringList &issues)
 {
 	const auto expected = qEnvironmentVariable("STAGEKIT_TEST_MODULE_NAMES").split('\n', Qt::SkipEmptyParts);
@@ -107,9 +222,53 @@ static void check_plugin_manager(QStringList &issues)
 		issues.append("Could not inspect the OBS Plugin Manager window");
 }
 
+static void check_ndi_preference(QStringList &issues)
+{
+	const auto phase = qEnvironmentVariable("STAGEKIT_TEST_NDI");
+	const bool previously_used = phase == "upgrade";
+	if ((obs_get_module("stagekit-port-ndi") != nullptr) != previously_used)
+		issues.append("NDI module load did not match the saved preference");
+	auto *action = action_named("OBS filter replacements");
+	if (!action) {
+		issues.append("No replacement catalog for NDI preference");
+		return;
+	}
+	bool checked = false;
+	QObject owner;
+	QTimer::singleShot(100, &owner, [&] {
+		auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+		if (!dialog)
+			return;
+		auto *option = dialog->findChild<QCheckBox *>("stagekitLoadNdi");
+		checked = option && option->isChecked() == previously_used;
+		if (previously_used && option)
+			option->click();
+		dialog->reject();
+	});
+	action->trigger();
+	if (!checked)
+		issues.append("NDI preference in the catalog did not match this installation");
+}
+
+static void finish_probe(const QStringList &issues)
+{
+	QFile report(qEnvironmentVariable("STAGEKIT_TEST_REPORT"));
+	if (report.open(QIODevice::WriteOnly))
+		report.write(issues.isEmpty() ? QByteArray("PASS\n") : issues.join('\n').toUtf8());
+	// Close the OBS main window as the user would. QApplication::quit can close a
+	// floating dock first and queue OBS's first-time dock-close information dialog.
+	auto *main = static_cast<QMainWindow *>(obs_frontend_get_main_window());
+	QTimer::singleShot(50, main, &QWidget::close);
+}
+
 static void exercise()
 {
 	QStringList issues;
+	check_ndi_preference(issues);
+	if (qEnvironmentVariable("STAGEKIT_TEST_NDI") == "restart") {
+		finish_probe(issues);
+		return;
+	}
 	for (QWidget *widget : QApplication::topLevelWidgets()) {
 		const auto *box = qobject_cast<QMessageBox *>(widget);
 		if (box && box->isVisible() && box->text().contains("NDI", Qt::CaseInsensitive))
@@ -151,6 +310,12 @@ static void exercise()
 				for (int i = 0; i < table->rowCount(); ++i) {
 					const auto original = table->item(i, 0)->text();
 					const auto status = table->item(i, 2)->text();
+					const auto implementation =
+						table->columnCount() == 4 ? table->item(i, 3)->text() : QString();
+					if ((original == "Freeze Filter" && implementation != "StageKit native") ||
+					    (original == "Composite Blur" && implementation != "Bundled port") ||
+					    (original == "Chroma Key" && implementation != "OBS built-in"))
+						issues.append(original + " has an incorrect implementation label");
 					if ((original == "Composite Blur" || original == "Source Copy") &&
 					    status != "Available")
 						issues.append(original + ": " + status);
@@ -176,12 +341,21 @@ static void exercise()
 		if (!opened || !matched)
 			issues.append("Catalog search did not return the labeled Directory Watch Media filter");
 	}
+	replacement_test::check_native_filters(qEnvironmentVariable("STAGEKIT_TEST_ART"), issues);
+	for (const char *key : {"freeze", "pixel", "3d", "recursion", "warp", "layouts", "directory", "defaults",
+				"delay", "table", "quick", "clone"}) {
+		const auto module_name = QByteArray("stagekit-port-") + key;
+		auto *module = obs_get_module(module_name.constData());
+		const char *author = module ? obs_get_module_author(module) : nullptr;
+		if (!author || QString::fromUtf8(author) != "StageKit contributors")
+			issues.append("Incorrect author for " + QString::fromUtf8(module_name));
+	}
+	check_native_layout(issues);
+	check_native_table(issues);
+	check_native_quick(issues);
 	check_plugin_manager(issues);
 	check_blur_output(issues);
-	QFile report(qEnvironmentVariable("STAGEKIT_TEST_REPORT"));
-	if (report.open(QIODevice::WriteOnly))
-		report.write(issues.isEmpty() ? QByteArray("PASS\n") : issues.join('\n').toUtf8());
-	QTimer::singleShot(50, qApp, &QApplication::quit);
+	finish_probe(issues);
 }
 
 bool obs_module_load()

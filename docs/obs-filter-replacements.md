@@ -1,8 +1,18 @@
 # Replacing OBS filters and tools with StageKit
 
-In OBS, open **Tools > StageKit > OBS filter replacements**. Search for the name currently shown in OBS, including names such as **DWM.Name** or **Move Source Swap**. The second column shows the corresponding StageKit control or the built-in OBS feature. The Availability column identifies platform and runtime requirements on this computer.
+In OBS, open **Tools > StageKit > OBS filter replacements**. Search for the name currently shown in OBS, including names such as **DWM.Name** or **Move Source Swap**. The second column shows the corresponding StageKit control or the built-in OBS feature. The Availability column shows what this OBS installation can load. The Implementation column identifies StageKit native components, bundled ports, OBS controls, and the Stream Deck companion. You can search that column as well.
 
-In **Tools > Plugin Manager > Installed**, keep **StageKit** and the entries beginning with **StageKit -** enabled. For example, **StageKit - Move Transition** is bundled with StageKit. **Move Transition** is the standalone plugin. If you use only the StageKit version, clear the standalone plugin’s checkbox, click **OK** and restart OBS. This also works for plugins with no uninstaller.
+In **Tools > Plugin Manager > Installed**, keep **StageKit** and the StageKit entries your collections use. In a StageKit-only setup, clear the matching standalone entry if you want to disable it, click **OK** and restart OBS. An uninstaller is optional.
+
+| What you see in Plugin Manager | What it means |
+| --- | --- |
+| StageKit - Freeze Filter | An independently implemented StageKit component |
+| StageKit - Move Transition (port) | StageKit's build of the upstream plugin |
+| Freeze Filter or Move Transition without the StageKit prefix | The standalone plugin |
+
+**Independently implemented in beta235** are 3D Effect, Directory Watch Media, Dock Layout Manager, Dynamic Delay, Freeze Filter, Pixel Art, Quick Access Dock, Recursion Effect, Source Clone, Source Defaults, Time Warp Scan, and Transition Table.
+
+**Still built from upstream code** are Advanced Masks, Composite Blur, Move Transition, Noise, Retro Effects, Scene Collection Manager, ShaderFilter, Source Copy, and Source Dock. DistroAV (NDI) is also available as an optional port. Leave **Load NDI support at next OBS startup** clear to skip its module. On upgrade, prior NDI registrations or StageKit NDI sources saved in the active collection enable it automatically until you choose otherwise. The StageKit Fix Alpha Blending filter works with NDI off.
 
 To add a filter, right-click the source, group or scene in OBS, open **Filters** and click **+** under **Effect Filters**. Choose **Source Filter** for a filter that acts on its host source. Choose **Scene Filter** for a filter that addresses items inside a scene or group. OBS can also apply a Source Filter to the finished image of a scene.
 
@@ -77,29 +87,29 @@ The copy keeps source names, UUIDs, filter order, enabled state, settings and Mo
 
 ## Implementation sources
 
-The compiled StageKit ports use the upstream versions listed below. StageKit supplies separate OBS IDs, labels, resource locations and packaging. The source tree includes the upstream license and attribution for each component. The five Lua effects are StageKit's native implementations of the controls documented in DarkLink's pack. [DarkLink's Script Pack](https://obsproject.com/forum/resources/darklinks-script-pack.655/)
+The table records the versions bundled in beta234. The Build column identifies the implementation used in beta235. Independent components compile the source in src/components/native. The repository retains earlier source snapshots and their notices, including the notices for any retained example files or resources. The five Lua effects are StageKit's native implementations of the controls documented in DarkLink's pack. [DarkLink's Script Pack](https://obsproject.com/forum/resources/darklinks-script-pack.655/)
 
-| Component | Version | Upstream source |
-| --- | --- | --- |
-| obs-3d-effect | 0.1.4 | [exeldro/obs-3d-effect](https://github.com/exeldro/obs-3d-effect/tree/e0afa47fcebbfd4099fd8515145c483f550c85d1) |
-| obs-advanced-masks | 1.5.4 | [FiniteSingularity/obs-advanced-masks](https://github.com/FiniteSingularity/obs-advanced-masks/tree/63f2eae2f9f174d781f4a127b66e878760430532) |
-| obs-composite-blur | 1.5.2 | [FiniteSingularity/obs-composite-blur](https://github.com/FiniteSingularity/obs-composite-blur/tree/160f7ad4d464e85e24894187244cf71a3913aea9) |
-| obs-retro-effects | 1.0.2 | [FiniteSingularity/obs-retro-effects](https://github.com/FiniteSingularity/obs-retro-effects/tree/35e9616a6f08692777578e3559d464ff8705929e) |
-| obs-noise | 1.0.0 | [FiniteSingularity/obs-noise](https://github.com/FiniteSingularity/obs-noise/tree/0815be272ce2b49981dd37d9e28e0bc88f206edc) |
-| pixel-art | 0.0.4 | [dspstanky/pixel-art](https://github.com/dspstanky/pixel-art/tree/c54ff2429510c46aade22a48b0835f2e5b568a9d) |
-| obs-freeze-filter | 0.3.5 | [exeldro/obs-freeze-filter](https://github.com/exeldro/obs-freeze-filter/tree/5de212bd067672f9349a85e0494a65c8b0156bd4) |
-| obs-dynamic-delay | 0.1.4 | [exeldro/obs-dynamic-delay](https://github.com/exeldro/obs-dynamic-delay/tree/c6d4fbb7b7f30fb37c1e19738b37d4615df3f77a) |
-| obs-recursion-effect | 0.1.0 | [exeldro/obs-recursion-effect](https://github.com/exeldro/obs-recursion-effect/tree/61a835ecda4209e8678197b1e9582ede582aa876) |
-| obs-time-warp-scan | 0.1.7 | [exeldro/obs-time-warp-scan](https://github.com/exeldro/obs-time-warp-scan/tree/12e224f3bda34c277487e434546a99ba5406e0fb) |
-| obs-dir-watch-media | 0.7.0 | [exeldro/obs-dir-watch-media](https://github.com/exeldro/obs-dir-watch-media/tree/cc320fba63ac250eaefac6d0b8cc20f4bc88aa4f) |
-| source-defaults | 1.2.0 | [CodeYan01/source-defaults](https://github.com/CodeYan01/source-defaults/tree/3ce48509258379a7cb49351ad57d81abdf8963e9) |
-| obs-move-transition | 3.2.0 | [exeldro/obs-move-transition](https://github.com/exeldro/obs-move-transition/tree/d343b4e014fec5701fd31b13d63e31b68ba9c14a) |
-| obs-shaderfilter | 2.5.1 | [exeldro/obs-shaderfilter](https://github.com/exeldro/obs-shaderfilter/tree/11a9d65b436b902eb2d6f6a0421894ee18a36196) |
-| obs-source-copy | 0.3.0 | [exeldro/obs-source-copy](https://github.com/exeldro/obs-source-copy/tree/b7d5bac3572800011a3ec7f33955a35c06f748ca) |
-| obs-source-dock | 0.5.0 | [exeldro/obs-source-dock](https://github.com/exeldro/obs-source-dock/tree/1ef24b0a805c4bc4cc9afe6a9ad13562a0d31586) |
-| obs-transition-table | 0.2.7 | [exeldro/obs-transition-table](https://github.com/exeldro/obs-transition-table/tree/1a85ab9de529ff521b7acad206ab55f4da72ac73) |
-| obs-scene-collection-manager | 0.1.2 | [exeldro/obs-scene-collection-manager](https://github.com/exeldro/obs-scene-collection-manager/tree/30cde133fe7368672386c147fafd3e430cd15b46) |
-| obs-quick-access-utility | 1.0.4 | [FiniteSingularity/obs-quick-access-utility](https://github.com/FiniteSingularity/obs-quick-access-utility/tree/5f7b613bf5d1494a408255650152be08ec5b0283) |
-| OBS-Dock-Layout-Manager | 1.1.5 | [RealProHenis/OBS-Dock-Layout-Manager](https://github.com/RealProHenis/OBS-Dock-Layout-Manager/tree/099d3941ebcf6563be6d1a1d917e8beef82e2a08) |
-| DistroAV | 6.1.1 | [DistroAV/DistroAV](https://github.com/DistroAV/DistroAV/tree/2bf2bd0ad4c074777d7ca4824182ea5ff2445cba) |
-| obs-source-clone | 0.2.0 | [exeldro/obs-source-clone](https://github.com/exeldro/obs-source-clone/tree/6a0a4531fbb871f3837ffedd6b67d1a05fc3bebf) |
+| Component | Beta234 version | Build in beta235 | Upstream source |
+| --- | --- | --- | --- |
+| obs-3d-effect | 0.1.4 | StageKit native | [exeldro/obs-3d-effect](https://github.com/exeldro/obs-3d-effect/tree/e0afa47fcebbfd4099fd8515145c483f550c85d1) |
+| obs-advanced-masks | 1.5.4 | Bundled port | [FiniteSingularity/obs-advanced-masks](https://github.com/FiniteSingularity/obs-advanced-masks/tree/63f2eae2f9f174d781f4a127b66e878760430532) |
+| obs-composite-blur | 1.5.2 | Bundled port | [FiniteSingularity/obs-composite-blur](https://github.com/FiniteSingularity/obs-composite-blur/tree/160f7ad4d464e85e24894187244cf71a3913aea9) |
+| obs-retro-effects | 1.0.2 | Bundled port | [FiniteSingularity/obs-retro-effects](https://github.com/FiniteSingularity/obs-retro-effects/tree/35e9616a6f08692777578e3559d464ff8705929e) |
+| obs-noise | 1.0.0 | Bundled port | [FiniteSingularity/obs-noise](https://github.com/FiniteSingularity/obs-noise/tree/0815be272ce2b49981dd37d9e28e0bc88f206edc) |
+| pixel-art | 0.0.4 | StageKit native | [dspstanky/pixel-art](https://github.com/dspstanky/pixel-art/tree/c54ff2429510c46aade22a48b0835f2e5b568a9d) |
+| obs-freeze-filter | 0.3.5 | StageKit native | [exeldro/obs-freeze-filter](https://github.com/exeldro/obs-freeze-filter/tree/5de212bd067672f9349a85e0494a65c8b0156bd4) |
+| obs-dynamic-delay | 0.1.4 | StageKit native | [exeldro/obs-dynamic-delay](https://github.com/exeldro/obs-dynamic-delay/tree/c6d4fbb7b7f30fb37c1e19738b37d4615df3f77a) |
+| obs-recursion-effect | 0.1.0 | StageKit native | [exeldro/obs-recursion-effect](https://github.com/exeldro/obs-recursion-effect/tree/61a835ecda4209e8678197b1e9582ede582aa876) |
+| obs-time-warp-scan | 0.1.7 | StageKit native | [exeldro/obs-time-warp-scan](https://github.com/exeldro/obs-time-warp-scan/tree/12e224f3bda34c277487e434546a99ba5406e0fb) |
+| obs-dir-watch-media | 0.7.0 | StageKit native | [exeldro/obs-dir-watch-media](https://github.com/exeldro/obs-dir-watch-media/tree/cc320fba63ac250eaefac6d0b8cc20f4bc88aa4f) |
+| source-defaults | 1.2.0 | StageKit native | [CodeYan01/source-defaults](https://github.com/CodeYan01/source-defaults/tree/3ce48509258379a7cb49351ad57d81abdf8963e9) |
+| obs-move-transition | 3.2.0 | Bundled port | [exeldro/obs-move-transition](https://github.com/exeldro/obs-move-transition/tree/d343b4e014fec5701fd31b13d63e31b68ba9c14a) |
+| obs-shaderfilter | 2.5.1 | Bundled port | [exeldro/obs-shaderfilter](https://github.com/exeldro/obs-shaderfilter/tree/11a9d65b436b902eb2d6f6a0421894ee18a36196) |
+| obs-source-copy | 0.3.0 | Bundled port | [exeldro/obs-source-copy](https://github.com/exeldro/obs-source-copy/tree/b7d5bac3572800011a3ec7f33955a35c06f748ca) |
+| obs-source-dock | 0.5.0 | Bundled port | [exeldro/obs-source-dock](https://github.com/exeldro/obs-source-dock/tree/1ef24b0a805c4bc4cc9afe6a9ad13562a0d31586) |
+| obs-transition-table | 0.2.7 | StageKit native | [exeldro/obs-transition-table](https://github.com/exeldro/obs-transition-table/tree/1a85ab9de529ff521b7acad206ab55f4da72ac73) |
+| obs-scene-collection-manager | 0.1.2 | Bundled port | [exeldro/obs-scene-collection-manager](https://github.com/exeldro/obs-scene-collection-manager/tree/30cde133fe7368672386c147fafd3e430cd15b46) |
+| obs-quick-access-utility | 1.0.4 | StageKit native | [FiniteSingularity/obs-quick-access-utility](https://github.com/FiniteSingularity/obs-quick-access-utility/tree/5f7b613bf5d1494a408255650152be08ec5b0283) |
+| OBS-Dock-Layout-Manager | 1.1.5 | StageKit native | [RealProHenis/OBS-Dock-Layout-Manager](https://github.com/RealProHenis/OBS-Dock-Layout-Manager/tree/099d3941ebcf6563be6d1a1d917e8beef82e2a08) |
+| DistroAV | 6.1.1 | Optional port | [DistroAV/DistroAV](https://github.com/DistroAV/DistroAV/tree/2bf2bd0ad4c074777d7ca4824182ea5ff2445cba) |
+| obs-source-clone | 0.2.0 | StageKit native | [exeldro/obs-source-clone](https://github.com/exeldro/obs-source-clone/tree/6a0a4531fbb871f3837ffedd6b67d1a05fc3bebf) |

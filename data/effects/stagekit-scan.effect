@@ -1,0 +1,38 @@
+uniform float4x4 ViewProj;
+uniform texture2d image;
+uniform texture2d stored;
+uniform texture2d backdrop;
+uniform float2 sweep;
+uniform float2 progress;
+uniform float4 line_style;
+uniform float4 ink;
+uniform bool has_image;
+
+sampler_state linear_image { Filter = Linear; AddressU = Clamp; AddressV = Clamp; };
+struct Vertex { float4 pos : POSITION; float2 uv : TEXCOORD0; };
+Vertex project(Vertex v) { v.pos = mul(float4(v.pos.xyz, 1.0), ViewProj); return v; }
+float location(float2 uv) { return 0.5 + dot(uv - 0.5, sweep); }
+
+float4 accumulate(Vertex v) : TARGET
+{
+	float d = location(v.uv);
+	if (d <= progress.x) return stored.Sample(linear_image, v.uv);
+	if (d <= progress.y) return image.Sample(linear_image, v.uv);
+	return float4(0.0, 0.0, 0.0, 0.0);
+}
+float4 display_scan(Vertex v) : TARGET
+{
+	float4 live = image.Sample(linear_image, v.uv);
+	float4 stationary = stored.Sample(linear_image, v.uv);
+	float4 back = has_image ? backdrop.Sample(linear_image, v.uv) : float4(0.0, 0.0, 0.0, 0.0);
+	if (line_style.w > 0.5) back = live + back * (1.0 - live.a);
+	float4 output_pixel = stationary + back * (1.0 - stationary.a);
+	float d = location(v.uv);
+	if (progress.y < 1.0 && line_style.x > 0.0 && abs(d - progress.y) < line_style.x * 0.5) {
+		float opacity = line_style.z > 0.5 ? live.a : line_style.y;
+		return float4(ink.rgb * opacity, opacity) + output_pixel * (1.0 - opacity);
+	}
+	return output_pixel;
+}
+technique Accumulate { pass { vertex_shader = project(v); pixel_shader = accumulate(v); } }
+technique Display { pass { vertex_shader = project(v); pixel_shader = display_scan(v); } }

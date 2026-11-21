@@ -17,6 +17,7 @@ if len(sys.argv) == 2:
         draw.rectangle((x, 45, x + 2, 125), fill=(250, 230, 40, 255))
     draw.ellipse((165, 45, 285, 140), fill=(150, 45, 110, 160))
     art.save(out / "art.png")
+    art.transpose(Image.Transpose.FLIP_LEFT_RIGHT).save(out / "alternate.png")
     mask = Image.new("RGBA", (w, h))
     ImageDraw.Draw(mask).rectangle((0, 0, w // 2, h), fill=(255, 255, 255, 255))
     mask.save(out / "mask.png")
@@ -25,15 +26,20 @@ else:
              ("edges","Edge Detection"), ("gaussian","Gaussian Blur"), ("toon","Toon"),
              ("composite","Composite Blur: Gaussian"), ("composite-kawase","Composite Blur: Dual Kawase"),
              ("composite-hex","Composite Blur: Hexagonal pixelation"), ("saved-shader","Saved drop-shadow shader")]
-    sw, sh = 322, 208
-    page = Image.new("RGB", (2*sw, ((len(items)+1)//2)*sh), "#25272b")
-    pen = ImageDraw.Draw(page)
-    for i, (file, label) in enumerate(items):
-        data = (out / (file+".rgba")).read_bytes()
-        w, h = struct.unpack_from("<II", data)
-        art = Image.frombytes("RGBA", (w, h), data[8:])
-        art.thumbnail((314, 176))
-        x, y = (i%2)*sw + 4, (i//2)*sh + 4
-        page.paste(art, (x,y+22), art)
-        pen.text((x+4,y+3), label, fill="white")
-    page.save(out / "filter-replacements.png", optimize=True)
+    def sheet(items, filename):
+        sw, sh = 322, 208
+        page = Image.new("RGB", (2*sw, ((len(items)+1)//2)*sh), "#25272b")
+        pen = ImageDraw.Draw(page)
+        for i, (file, label) in enumerate(items):
+            data = (out / (file+".rgba")).read_bytes()
+            w, h = struct.unpack_from("<II", data)
+            art = Image.frombytes("RGBA", (w, h), data[8:])
+            art.thumbnail((314, 176))
+            x, y = (i%2)*sw + 4, (i//2)*sh + 4
+            page.paste(art, (x,y+22), art)
+            pen.text((x+4,y+3), label, fill="white")
+        page.save(out / filename, optimize=True)
+    sheet(items, "filter-replacements.png")
+    sheet([("native-freeze", "Freeze Filter"), ("native-pixel", "Pixel Art"),
+           ("stagekit_port_3d_effect_filter", "3D Effect"), ("stagekit_port_recursion_effect_filter", "Recursion Effect")],
+          "native-scene-effects.png")

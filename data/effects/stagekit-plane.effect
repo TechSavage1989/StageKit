@@ -1,0 +1,28 @@
+uniform float4x4 ViewProj;
+uniform texture2d image;
+uniform float4 right_axis;
+uniform float4 down_axis;
+uniform float4 placement;
+uniform float4 lens;
+
+sampler_state linear_image { Filter = Linear; AddressU = Clamp; AddressV = Clamp; };
+struct Vertex { float4 pos : POSITION; float2 uv : TEXCOORD0; };
+Vertex project(Vertex v) { v.pos = mul(float4(v.pos.xyz, 1.0), ViewProj); return v; }
+
+float4 intersect_plane(Vertex v) : TARGET
+{
+	if (min(lens.z, lens.w) <= 0.0) return float4(0.0, 0.0, 0.0, 0.0);
+	float2 screen = (2.0 * v.uv - 1.0) * float2(placement.w, 1.0) / lens.zw;
+	float3 eye = float3(screen * lens.y, 0.0);
+	float3 ray = float3(screen * (1.0 - lens.y) * lens.x, -1.0);
+	float3 normal = cross(right_axis.xyz, down_axis.xyz);
+	float angle = dot(normal, ray);
+	if (abs(angle) < 0.00001) return float4(0.0, 0.0, 0.0, 0.0);
+	float depth = dot(placement.xyz - eye, normal) / angle;
+	if (depth <= 0.0 && lens.y < 0.5) return float4(0.0, 0.0, 0.0, 0.0);
+	float3 offset = eye + depth * ray - placement.xyz;
+	float2 uv = 0.5 + 0.5 * float2(dot(offset, right_axis.xyz) / right_axis.w, dot(offset, down_axis.xyz));
+	if (min(uv.x, uv.y) < 0.0 || max(uv.x, uv.y) > 1.0) return float4(0.0, 0.0, 0.0, 0.0);
+	return image.Sample(linear_image, uv);
+}
+technique Draw { pass { vertex_shader = project(v); pixel_shader = intersect_plane(v); } }

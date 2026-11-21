@@ -1,0 +1,25 @@
+uniform float4x4 ViewProj;
+uniform texture2d image;
+uniform texture2d held;
+uniform float4 edges;
+
+sampler_state sample_image { Filter = Linear; AddressU = Clamp; AddressV = Clamp; };
+struct Vertex { float4 pos : POSITION; float2 uv : TEXCOORD0; };
+Vertex project(Vertex v) { v.pos = mul(float4(v.pos.xyz, 1.0), ViewProj); return v; }
+
+// Two opposing edges can select separate bands or the strip where they overlap.
+float axis_band(float position, float2 extent)
+{
+	float2 distance = float2(position, 1.0 - position);
+	float2 hits = step(distance, extent) * sign(extent);
+	return extent.x + extent.y > 1.0 ? hits.x * hits.y : max(hits.x, hits.y);
+}
+
+float4 mix_frames(Vertex v) : TARGET
+{
+	float horizontal = axis_band(v.uv.x, edges.xy);
+	float vertical = axis_band(v.uv.y, edges.zw);
+	float area = edges.x + edges.y > 1.0 && edges.z + edges.w > 1.0 ? horizontal * vertical : max(horizontal, vertical);
+	return lerp(image.Sample(sample_image, v.uv), held.Sample(sample_image, v.uv), area);
+}
+technique Draw { pass { vertex_shader = project(v); pixel_shader = mix_frames(v); } }

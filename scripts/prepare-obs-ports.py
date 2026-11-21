@@ -154,6 +154,8 @@ static std::string stagekitBackupDir()
 def prepare(origin, reference=False):
     key = origin["key"]
     settings = spec[key]
+    if not reference and settings.get("implementation") == "stagekit":
+        return
     source, dest = ports / key, build / key
     if reference:
         dest = build / "reference" / key

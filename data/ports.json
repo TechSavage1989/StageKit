@@ -1,5 +1,6 @@
 {
   "3d": {
+    "implementation": "stagekit",
     "types": [
       [
         "3d_effect_filter",
@@ -56,6 +57,7 @@
     ]
   },
   "pixel": {
+    "implementation": "stagekit",
     "types": [
       [
         "pixel_art_plugin",
@@ -66,6 +68,7 @@
     ]
   },
   "freeze": {
+    "implementation": "stagekit",
     "types": [
       [
         "freeze_filter",
@@ -76,6 +79,7 @@
     ]
   },
   "delay": {
+    "implementation": "stagekit",
     "types": [
       [
         "dynamic_delay_filter",
@@ -86,6 +90,7 @@
     ]
   },
   "recursion": {
+    "implementation": "stagekit",
     "types": [
       [
         "recursion_effect_filter",
@@ -96,6 +101,7 @@
     ]
   },
   "warp": {
+    "implementation": "stagekit",
     "types": [
       [
         "time_warp_scan_filter",
@@ -106,6 +112,7 @@
     ]
   },
   "directory": {
+    "implementation": "stagekit",
     "types": [
       [
         "dir_watch_media",
@@ -116,6 +123,7 @@
     ]
   },
   "defaults": {
+    "implementation": "stagekit",
     "types": [
       [
         "source_defaults_video",
@@ -226,6 +234,7 @@
     "originalTool": "SourceDock"
   },
   "table": {
+    "implementation": "stagekit",
     "tool": "Ports.Tool.table",
     "originalTool": "TransitionTable"
   },
@@ -264,14 +273,17 @@
     "originalTool": "SceneCollectionManager"
   },
   "quick": {
+    "implementation": "stagekit",
     "tool": "Ports.Tool.quick",
     "originalTool": "Quick Access Utility"
   },
   "layouts": {
+    "implementation": "stagekit",
     "tool": "Ports.Tool.layouts",
     "originalTool": "Dock Layout Manager"
   },
   "clone": {
+    "implementation": "stagekit",
     "types": [
       [
         "source-clone",

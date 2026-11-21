@@ -1,5 +1,5 @@
-# Compile the pinned, source-available implementations as private StageKit modules.
-# Each uses libobs's own module lifetime and a separate resource / translation directory.
+# Build each component under its existing libobs module identity. The catalog selects
+# independently implemented StageKit sources or the pinned compatibility port.
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 find_package(
   Qt6
@@ -29,31 +29,38 @@ execute_process(
     "${port_build}"
   COMMAND_ERROR_IS_FATAL ANY
 )
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/data/ports.json" port_catalog)
 file(READ "${port_sources}/origins.json" origins)
 string(JSON port_count LENGTH "${origins}" projects)
 math(EXPR port_last "${port_count} - 1")
 foreach(index RANGE ${port_last})
   string(JSON key GET "${origins}" projects ${index} key)
   set(target "stagekit-port-${key}")
-  set(folder "${port_build}/${key}")
-  file(
-    GLOB_RECURSE units
-    "${folder}/*.c"
-    "${folder}/*.cpp"
-    "${folder}/*.cc"
-    "${folder}/*.h"
-    "${folder}/*.hpp"
-    "${folder}/*.ui"
-    "${folder}/*.qrc"
-  )
-  if(NOT WIN32)
-    list(FILTER units EXCLUDE REGEX "(nvidia-move-filter\\.c|move-directshow-filter\\.cpp)$")
+  string(JSON implementation ERROR_VARIABLE no_implementation GET "${port_catalog}" "${key}" implementation)
+  if(implementation STREQUAL "stagekit")
+    add_library(${target} MODULE src/components/native/module.cpp "src/components/native/${key}.cpp")
+    target_compile_definitions(${target} PRIVATE STAGEKIT_COMPONENT_KEY="${key}")
+  else()
+    set(folder "${port_build}/${key}")
+    file(
+      GLOB_RECURSE units
+      "${folder}/*.c"
+      "${folder}/*.cpp"
+      "${folder}/*.cc"
+      "${folder}/*.h"
+      "${folder}/*.hpp"
+      "${folder}/*.ui"
+      "${folder}/*.qrc"
+    )
+    if(NOT WIN32)
+      list(FILTER units EXCLUDE REGEX "(nvidia-move-filter\\.c|move-directshow-filter\\.cpp)$")
+    endif()
+    add_library(${target} MODULE ${units})
+    target_include_directories(
+      ${target}
+      PRIVATE "${folder}" "${folder}/src" "${folder}/src/forms" "${folder}/lib/ndi" "${port_sources}/json"
+    )
   endif()
-  add_library(${target} MODULE ${units})
-  target_include_directories(
-    ${target}
-    PRIVATE "${folder}" "${folder}/src" "${folder}/src/forms" "${folder}/lib/ndi" "${port_sources}/json"
-  )
   target_link_libraries(${target} PRIVATE OBS::libobs OBS::obs-frontend-api)
   set_target_properties(
     ${target}
@@ -75,7 +82,11 @@ foreach(index RANGE ${port_last})
       PROPERTIES AUTOMOC ON AUTOUIC ON AUTORCC ON
     )
   endif()
-  if(key STREQUAL "masks")
+  if(key STREQUAL "delay" AND implementation STREQUAL "stagekit")
+    target_sources(${target} PRIVATE src/common/easing.cpp)
+  elseif(key STREQUAL "directory")
+    target_link_libraries(${target} PRIVATE Qt6::Core)
+  elseif(key STREQUAL "masks")
     target_link_libraries(${target} PRIVATE Qt6::Svg Qt6::Xml CURL::libcurl)
     if(WIN32)
       target_link_libraries(${target} PRIVATE crypt32)

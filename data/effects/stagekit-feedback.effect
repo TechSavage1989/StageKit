@@ -1,0 +1,22 @@
+uniform float4x4 ViewProj;
+uniform texture2d image;
+uniform texture2d older;
+uniform float2 canvas;
+uniform float4 motion;
+uniform float4 mixing;
+
+sampler_state linear_image { Filter = Linear; AddressU = Clamp; AddressV = Clamp; };
+struct Vertex { float4 pos : POSITION; float2 uv : TEXCOORD0; };
+Vertex project(Vertex v) { v.pos = mul(float4(v.pos.xyz, 1.0), ViewProj); return v; }
+
+float4 feedback(Vertex v) : TARGET
+{
+	float2 p = (v.uv - 0.5) * canvas - motion.xy;
+	float2 local = float2(dot(p, motion.zw), dot(p, float2(-motion.w, motion.z)));
+	float2 uv = 0.5 + local / (mixing.xy * canvas);
+	float4 current = image.Sample(linear_image, v.uv);
+	float4 previous = older.Sample(linear_image, uv) * mixing.z;
+	if (min(uv.x, uv.y) < 0.0 || max(uv.x, uv.y) > 1.0) previous = float4(0.0, 0.0, 0.0, 0.0);
+	return mixing.w > 0.5 ? previous + current * (1.0 - previous.a) : current + previous * (1.0 - current.a);
+}
+technique Draw { pass { vertex_shader = project(v); pixel_shader = feedback(v); } }
