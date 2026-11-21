@@ -1,0 +1,3 @@
+exeldro/obs-scene-collection-manager 0.1.2
+https://github.com/exeldro/obs-scene-collection-manager/tree/30cde133fe7368672386c147fafd3e430cd15b46
+StageKit maintains the OBS names, saved identifiers and integration separately. The upstream authors retain their copyrights. See notices and the StageKit source archive.

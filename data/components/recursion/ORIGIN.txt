@@ -1,0 +1,3 @@
+exeldro/obs-recursion-effect 0.1.0
+https://github.com/exeldro/obs-recursion-effect/tree/61a835ecda4209e8678197b1e9582ede582aa876
+StageKit maintains the OBS names, saved identifiers and integration separately. The upstream authors retain their copyrights. See notices and the StageKit source archive.

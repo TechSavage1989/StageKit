@@ -1,0 +1,3 @@
+exeldro/obs-transition-table 0.2.7
+https://github.com/exeldro/obs-transition-table/tree/1a85ab9de529ff521b7acad206ab55f4da72ac73
+StageKit maintains the OBS names, saved identifiers and integration separately. The upstream authors retain their copyrights. See notices and the StageKit source archive.

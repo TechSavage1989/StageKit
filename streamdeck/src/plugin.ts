@@ -9,6 +9,7 @@ import { FitOverlap } from "./actions/fit-overlap.ts";
 import { SceneModeKey } from "./actions/mode.ts";
 import { SceneBlurKey } from "./actions/scene-blur.ts";
 import { Hook } from "./actions/hook.ts";
+import { ObsControl } from "./actions/obs-control.ts";
 import { OutputKey } from "./actions/output.ts";
 import { Move } from "./actions/move.ts";
 import { PictureShape } from "./actions/shape.ts";
@@ -29,6 +30,11 @@ for (const feature of features.switches)
 	streamDeck.actions.registerAction(new FilterSwitch(`${base}.${feature.key}`, (kind) => kind === feature.kind));
 for (const feature of features.moves)
 	streamDeck.actions.registerAction(new Move(`${base}.${feature.key}`, (kind) => kind === feature.kind));
+streamDeck.actions.registerAction(new FilterSwitch(base + ".obsfilter", () => true));
+for (const key of ["obssource", "obsmute", "obsstudio", "obscamera"])
+	streamDeck.actions.registerAction(new ObsControl(key));
+for (const feature of features.sceneStarts)
+	streamDeck.actions.registerAction(new ObsControl(feature.key, feature.kind));
 streamDeck.actions.registerAction(new PictureShape());
 streamDeck.actions.registerAction(new Hook());
 streamDeck.actions.registerAction(new AppSwitch());

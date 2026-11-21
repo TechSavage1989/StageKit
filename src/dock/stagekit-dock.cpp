@@ -39,6 +39,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "arrange-tools.hpp"
 #include "preview-guides.hpp"
 #include "window-layout.hpp"
+#include "../components/collection-tools.hpp"
 #include "../placement/scene-tools.hpp"
 
 #include <obs-module.h>
@@ -1392,6 +1393,7 @@ public:
 		QObject::connect(betas, &QAction::toggled, this, [store](bool) { store(); });
 		// OBS's window layout, saved and brought back.
 		window_layout_menu(menu);
+		collection_tools_menu(menu);
 		if (obs_frontend_get_main_window())
 			if (auto *tools = static_cast<QAction *>(obs_frontend_add_tools_menu_qaction("StageKit")))
 				tools->setMenu(menu);

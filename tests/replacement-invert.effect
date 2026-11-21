@@ -1,0 +1,7 @@
+uniform float4x4 ViewProj;
+uniform texture2d image;
+sampler_state linear_sampler { Filter = Linear; AddressU = Clamp; AddressV = Clamp; };
+struct Vertex { float4 pos : POSITION; float2 uv : TEXCOORD0; };
+Vertex vertex_main(Vertex v) { v.pos = mul(float4(v.pos.xyz, 1.0), ViewProj); return v; }
+float4 invert_test(Vertex v) : TARGET { float4 c = image.Sample(linear_sampler, v.uv); return float4(c.a - c.rgb, c.a); }
+technique Draw { pass { vertex_shader = vertex_main(v); pixel_shader = invert_test(v); } }

@@ -1,0 +1,3 @@
+DistroAV/DistroAV 6.1.1
+https://github.com/DistroAV/DistroAV/tree/2bf2bd0ad4c074777d7ca4824182ea5ff2445cba
+StageKit maintains the OBS names, saved identifiers and integration separately. The upstream authors retain their copyrights. See notices and the StageKit source archive.

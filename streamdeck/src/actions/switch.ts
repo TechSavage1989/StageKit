@@ -10,7 +10,7 @@ import type { JsonValue } from "@elgato/utils";
 
 import { afterPress, coverHow, hideAsOf, targetOf } from "../kinds.ts";
 import { obs } from "../obs.ts";
-import { chooseFor, plain } from "../pictures.ts";
+import { chooseFor, ordinaryControlPicture, plain } from "../pictures.ts";
 import { explicit, keptPicture } from "../key-types.ts";
 import { switchTitle } from "../titles.ts";
 import { answerLists, type KeySettings, remembered, settle, showOnOff } from "./shared.ts";
@@ -120,7 +120,7 @@ export class FilterSwitch extends SingletonAction<KeySettings> {
 		const inputKind = now && wantsInput ? await obs.inputKind(source) : undefined;
 		const seen = await remembered(key, settings, `${source}\n${filter}`, now ? { ...now, inputKind } : undefined);
 		const kind = seen?.kind ?? "";
-		const pick = (s: KeySettings) => chooseFor(keptPicture(s), kind, seen?.settings, source, seen?.inputKind, s) ?? plain("switch");
+		const pick = (s: KeySettings) => this.name === "obsfilter" && explicit(s.sourceType) ? ordinaryControlPicture(this.name, source, s.sourceType) : chooseFor(keptPicture(s), kind, seen?.settings, source, seen?.inputKind, s) ?? plain("switch");
 		// (An image chosen before the type lists becomes the type that shows it.)
 		settings = await settle(key, this.name, seen ? { ...settings, seen } : settings, (s) => pick(s).id);
 		const picture = pick(settings);

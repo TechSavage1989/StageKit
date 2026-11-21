@@ -1,0 +1,185 @@
+float3 cubic_interp_3d(float3 a, float3 b, float3 c, float3 d, float x)
+{
+	float3 p = -0.5 * a + 1.5 * b - 1.5 * c + 0.5 * d;
+	float3 q = a - 2.5 * b + 2.0 * c - 0.5 * d;
+	float3 r = -0.5 * a + 0.5 * c;
+	
+	return p * x * x * x + q * x * x + r * x + b;
+}
+
+/*
+ *   3D value noise sampling function, using linear temporal
+ *   interpolation
+ */
+float3 value_noise_lt_3d(float2 coord, float t)
+{
+	float step = floor(t);
+	float fraction = frac(t);
+	// Linear Interp temporal value
+	float3 c0 = hash33(float3(coord, step));
+	float3 c1 = hash33(float3(coord, step + 1.0f));
+	return lerp(c0, c1, float3(fraction, fraction, fraction));
+}
+
+/*
+ *   3D value noise sampling function, using linear temporal
+ *   interpolation
+ */
+float2 value_noise_lt_2d(float2 coord, float t)
+{
+	float step = floor(t);
+	float fraction = frac(t);
+	// Linear Interp temporal value
+	float2 c0 = hash32(float3(coord, step));
+	float2 c1 = hash32(float3(coord, step + 1.0f));
+	return lerp(c0, c1, float2(fraction, fraction));
+}
+
+/*
+ *   3D value noise sampling function, using linear temporal
+ *   interpolation
+ */
+float value_noise_lt_1d(float2 coord, float t)
+{
+	float step = floor(t);
+	float fraction = frac(t);
+	// Linear Interp temporal value
+	float c0 = hash31(float3(coord, step));
+	float c1 = hash31(float3(coord, step + 1.0f));
+	return lerp(c0, c1, fraction);
+}
+
+
+/*
+ *   3D value noise sampling function, using cubic temporal
+ *   interpolation
+ */
+float3 value_noise_ct_3d(float2 coord, float t)
+{
+	float step = floor(t);
+	float fraction = frac(t);
+
+	// Cubic Interpolated temporal value
+	float3 c0 = hash33(float3(coord, step - 1.0f));
+	float3 c1 = hash33(float3(coord, step));
+	float3 c2 = hash33(float3(coord, step + 1.0f));
+	float3 c3 = hash33(float3(coord, step + 2.0f));
+	return cubic_interp_3d(c0, c1, c2, c3, fraction);
+}
+
+#include "noise_type_open_simplex.effect"
+#include "noise_type_block.effect"
+#include "noise_type_linear.effect"
+#include "noise_type_smoothstep.effect"
+#include "noise_type_worley.effect"
+#include "noise_mappings.effect"
+
+float3 fractal_noise_3d(float2 uv)
+{
+	float3 result = float3(0.0, 0.0, 0.0);
+	float influence = 1.0;
+	for (int i = 0; i < layers; i++)
+	{
+		float layer_offset = hash11(float(i));
+		float2 scale = pow(sub_scaling, float2(float(i), float(i)));
+		
+		float3 c = SAMPLE_NOISE_3D(uv, i, scale);
+		c = MAP_NOISE_3D(c);
+		result += c * influence;
+		influence *= sub_influence;
+	}
+	result = result / sum_influence;
+	result = std_scale * (result - 0.5) + 0.5;
+	return CONTOURS_3D(result);
+}
+
+float2 fractal_noise_2d(float2 uv)
+{
+	float2 result = float2(0.0, 0.0);
+	float influence = 1.0;
+	for (int i = 0; i < layers; i++)
+	{
+		float layer_offset = hash11(float(i));
+		float2 scale = pow(sub_scaling, float2(float(i), float(i)));
+		
+		float2 c = SAMPLE_NOISE_2D(uv, i, scale);
+		c = MAP_NOISE_2D(c);
+		result += c * influence;
+		influence *= sub_influence;
+	}
+	result = result / sum_influence;
+	//return result;
+	result = std_scale * (result - 0.5) + 0.5;
+	return CONTOURS_2D(result);
+}
+
+float fractal_noise_1d(float2 uv)
+{
+	float result = 0.0;
+	float influence = 1.0;
+	for (int i = 0; i < layers; i++)
+	{
+		float layer_offset = hash11(float(i));
+		float2 scale = pow(sub_scaling, float2(float(i), float(i)));
+		
+		float c = SAMPLE_NOISE_1D(uv, i, scale);
+		c = MAP_NOISE_1D(c);
+		result += c * influence;
+		influence *= sub_influence;
+	}
+	result = result / sum_influence;
+	//return result;
+	result = std_scale * (result - 0.5) + 0.5;
+	return CONTOURS_1D(result);
+}
+
+float3 fractal_noise_max_3d(float2 uv)
+{
+	float3 result = float3(0.0, 0.0, 0.0);
+	float influence = 1.0;
+	for (int i = 0; i < layers; i++)
+	{
+		float layer_offset = hash11(float(i));
+		float2 scale = pow(sub_scaling, float2(float(i), float(i)));
+		
+		float3 c = SAMPLE_NOISE_3D(uv, i, scale);
+		c = map_noise3(c) * influence;
+		result = max(result, c);
+		influence *= sub_influence;
+	}
+	return result;
+}
+
+float2 fractal_noise_max_2d(float2 uv)
+{
+	float2 result = float2(0.0, 0.0);
+	float influence = 1.0;
+	for (int i = 0; i < layers; i++)
+	{
+		float layer_offset = hash11(float(i));
+		float2 scale = pow(sub_scaling, float2(float(i), float(i)));
+		
+		float2 c = SAMPLE_NOISE_2D(uv, i, scale);
+		c = map_noise2(c) * influence;
+		result = max(result, c);
+		influence *= sub_influence;
+	}
+	return result;
+}
+
+float fractal_noise_max_1d(float2 uv)
+{
+	float result = 0.0;
+	float influence = 1.0;
+	for (int i = 0; i < layers; i++)
+	{
+		float layer_offset = hash11(float(i));
+		float2 scale = pow(sub_scaling, float2(float(i), float(i)));
+		
+		float c = SAMPLE_NOISE_1D(uv, i, scale);
+		c = map_noise1(c) * influence;
+		result = max(result, c);
+		influence *= sub_influence;
+	}
+	return result;
+}

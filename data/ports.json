@@ -1,0 +1,410 @@
+{
+  "3d": {
+    "types": [
+      [
+        "3d_effect_filter",
+        "effect_3d_get_name",
+        "Ports.3DEffect",
+        "3D Effect"
+      ]
+    ]
+  },
+  "masks": {
+    "types": [
+      [
+        "advanced_masks_filter",
+        "advanced_masks_name",
+        "Ports.AdvancedMask",
+        "Advanced Mask"
+      ]
+    ]
+  },
+  "composite": {
+    "types": [
+      [
+        "obs_composite_blur",
+        "composite_blur_name",
+        "Ports.CompositeBlur",
+        "Composite Blur"
+      ]
+    ]
+  },
+  "retro": {
+    "types": [
+      [
+        "obs_retro_effects_filter",
+        "retro_effects_filter_name",
+        "Ports.RetroEffects",
+        "Retro Effects"
+      ]
+    ]
+  },
+  "noise": {
+    "types": [
+      [
+        "obs_noise_source",
+        "noise_source_name",
+        "Ports.Noise",
+        "Noise"
+      ],
+      [
+        "obs_noise_displace_filter",
+        "noise_displace_filter_name",
+        "Ports.NoiseDisplacement",
+        "Noise Displacement"
+      ]
+    ]
+  },
+  "pixel": {
+    "types": [
+      [
+        "pixel_art_plugin",
+        "pixel_art_plugin_getname",
+        "Ports.PixelArt",
+        "Pixel Art"
+      ]
+    ]
+  },
+  "freeze": {
+    "types": [
+      [
+        "freeze_filter",
+        "freeze_get_name",
+        "Ports.Freeze",
+        "Freeze"
+      ]
+    ]
+  },
+  "delay": {
+    "types": [
+      [
+        "dynamic_delay_filter",
+        "dynamic_delay_get_name",
+        "Ports.DynamicDelay",
+        "Dynamic Delay"
+      ]
+    ]
+  },
+  "recursion": {
+    "types": [
+      [
+        "recursion_effect_filter",
+        "recursion_effect_get_name",
+        "Ports.RecursionEffect",
+        "RecursionEffect"
+      ]
+    ]
+  },
+  "warp": {
+    "types": [
+      [
+        "time_warp_scan_filter",
+        "tws_get_name",
+        "Ports.TimeWarpScan",
+        "TimeWarpScan"
+      ]
+    ]
+  },
+  "directory": {
+    "types": [
+      [
+        "dir_watch_media",
+        "dir_watch_media_source_get_name",
+        "Ports.DirectoryWatchMedia",
+        "DWM.Name"
+      ]
+    ]
+  },
+  "defaults": {
+    "types": [
+      [
+        "source_defaults_video",
+        "source_defaults_get_name",
+        "Ports.SourceDefaults",
+        "Source Defaults"
+      ],
+      [
+        "source_defaults_audio",
+        "source_defaults_get_name",
+        "Ports.SourceDefaults",
+        "Source Defaults"
+      ]
+    ]
+  },
+  "move": {
+    "types": [
+      [
+        "move_action_filter",
+        "move_action_get_name",
+        "Ports.MoveAction",
+        "Move Action"
+      ],
+      [
+        "move_audio_action_filter",
+        "move_action_get_name",
+        "Ports.MoveAction",
+        "Move Action"
+      ],
+      [
+        "move_value_filter",
+        "move_value_get_name",
+        "Ports.MoveValue",
+        "Move Value"
+      ],
+      [
+        "move_audio_value_filter",
+        "move_value_get_name",
+        "Ports.MoveValue",
+        "Move Value"
+      ],
+      [
+        "move_source_filter",
+        "move_source_get_name",
+        "Ports.MoveSource",
+        "Move Source"
+      ],
+      [
+        "move_source_swap_filter",
+        "move_source_swap_get_name",
+        "Ports.MoveSourceSwap",
+        "Move Source Swap"
+      ],
+      [
+        "move_directshow_filter",
+        "move_directshow_get_name",
+        "Ports.MoveVideoCaptureDevice",
+        "Move Video Capture Device"
+      ],
+      [
+        "move_transition_override_filter",
+        "move_override_filter_get_name",
+        "Ports.MoveTransitionOverride",
+        "Move transition override"
+      ],
+      [
+        "audio_move_filter",
+        "audio_move_get_name",
+        "Ports.AudioMove",
+        "Audio Move"
+      ],
+      [
+        "nv_move_filter",
+        "nv_move_name",
+        "Ports.NVIDIAMove",
+        "NVIDIA Move"
+      ],
+      [
+        "move_transition",
+        "move_get_name",
+        "Ports.Move",
+        "Move"
+      ]
+    ]
+  },
+  "shader": {
+    "types": [
+      [
+        "shader_filter",
+        "shader_filter_get_name",
+        "Ports.UserdefinedShader",
+        "User-defined shader"
+      ],
+      [
+        "shader_transition",
+        "shader_transition_get_name",
+        "Ports.Shader",
+        "Shader"
+      ]
+    ]
+  },
+  "copy": {
+    "tool": "Ports.Tool.copy",
+    "originalTool": "Source Copy"
+  },
+  "dock": {
+    "tool": "Ports.Tool.dock",
+    "originalTool": "SourceDock"
+  },
+  "table": {
+    "tool": "Ports.Tool.table",
+    "originalTool": "TransitionTable"
+  },
+  "ndi": {
+    "types": [
+      [
+        "ndi_filter",
+        "ndi_filter_getname",
+        "Ports.DedicatedNDIOutput",
+        "Dedicated NDI® output"
+      ],
+      [
+        "ndi_audiofilter",
+        "ndi_audiofilter_getname",
+        "Ports.DedicatedNDIAudioOutput",
+        "Dedicated NDI® audio output"
+      ],
+      [
+        "ndi_source",
+        "ndi_source_getname",
+        "Ports.NDIInput",
+        "NDI® Source"
+      ],
+      [
+        "ndi_output",
+        "ndi_output_getname",
+        "Ports.NDIOutput",
+        "NDI® Output"
+      ]
+    ],
+    "tool": "Ports.Tool.ndi",
+    "originalTool": "DistroAV NDI® Settings"
+  },
+  "collections": {
+    "tool": "Ports.Tool.collections",
+    "originalTool": "SceneCollectionManager"
+  },
+  "quick": {
+    "tool": "Ports.Tool.quick",
+    "originalTool": "Quick Access Utility"
+  },
+  "layouts": {
+    "tool": "Ports.Tool.layouts",
+    "originalTool": "Dock Layout Manager"
+  },
+  "clone": {
+    "types": [
+      [
+        "source-clone",
+        "source_clone_get_name",
+        "Ports.Clone",
+        "Source Clone"
+      ],
+      [
+        "source_clone_audio_wrapper_source",
+        "audio_wrapper_get_name",
+        "Ports.CloneAudio",
+        "Source Clone audio wrapper"
+      ]
+    ]
+  },
+  "native": {
+    "ids": {
+      "filter-custom": "stagekit_effect_file",
+      "filter-dropshadow": "stagekit_drop_shadow",
+      "filter-edges": "stagekit_edge_detection",
+      "filter-gaussian-blur": "stagekit_gaussian_blur",
+      "filter-toon": "stagekit_toon",
+      "premultiplied_alpha_filter": "stagekit_fix_alpha"
+    },
+    "controls": [
+      [
+        "Custom Filter",
+        "Classic.Custom"
+      ],
+      [
+        "Dropshadow",
+        "Classic.Shadow"
+      ],
+      [
+        "Edge Detection",
+        "Classic.Edges"
+      ],
+      [
+        "Gaussian Blur",
+        "Classic.Gaussian"
+      ],
+      [
+        "Toon",
+        "Classic.Toon"
+      ],
+      [
+        "DistroAV - Fix alpha blending",
+        "Classic.Alpha"
+      ],
+      [
+        "Apply LUT",
+        "Ports.StockFilter"
+      ],
+      [
+        "Chroma Key",
+        "Ports.StockFilter"
+      ],
+      [
+        "Color Correction",
+        "Ports.StockFilter"
+      ],
+      [
+        "Color Key",
+        "Ports.StockFilter"
+      ],
+      [
+        "Compose SDR on HDR (Override)",
+        "Ports.StockFilter"
+      ],
+      [
+        "Crop/Pad",
+        "Ports.StockFilter"
+      ],
+      [
+        "HDR Tone Mapping (Override)",
+        "Ports.StockFilter"
+      ],
+      [
+        "Image Mask/Blend",
+        "Ports.StockFilter"
+      ],
+      [
+        "Luma Key",
+        "Ports.StockFilter"
+      ],
+      [
+        "Render Delay",
+        "Ports.StockFilter"
+      ],
+      [
+        "Scaling/Aspect Ratio",
+        "Ports.StockFilter"
+      ],
+      [
+        "Scroll",
+        "Ports.StockFilter"
+      ],
+      [
+        "Sharpen",
+        "Ports.StockFilter"
+      ],
+      [
+        "Auto-Configuration Wizard",
+        "Ports.StockTool"
+      ],
+      [
+        "Plugin Manager",
+        "Ports.StockTool"
+      ],
+      [
+        "Captions (Experimental)",
+        "Ports.StockTool"
+      ],
+      [
+        "Automatic Scene Switcher",
+        "Ports.StockTool"
+      ],
+      [
+        "Output Timer",
+        "Ports.StockTool"
+      ],
+      [
+        "Scripts",
+        "Ports.StockTool"
+      ],
+      [
+        "WebSocket Server Settings",
+        "Ports.StockTool"
+      ],
+      [
+        "Elgato Stream Deck",
+        "Ports.Deck"
+      ]
+    ]
+  }
+}

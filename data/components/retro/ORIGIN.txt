@@ -1,0 +1,3 @@
+FiniteSingularity/obs-retro-effects 1.0.2
+https://github.com/FiniteSingularity/obs-retro-effects/tree/35e9616a6f08692777578e3559d464ff8705929e
+StageKit maintains the OBS names, saved identifiers and integration separately. The upstream authors retain their copyrights. See notices and the StageKit source archive.

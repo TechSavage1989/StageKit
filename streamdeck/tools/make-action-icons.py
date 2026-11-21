@@ -139,6 +139,13 @@ ICONS = {
     "scene": lambda d: (box(d, 0.04, 0.12, 0.96, 0.88), box(d, 0.14, 0.26, 0.56, 0.74, r=0.03, fill=True), box(d, 0.64, 0.26, 0.86, 0.46, r=0.03, fill=True), box(d, 0.64, 0.54, 0.86, 0.74, r=0.03, fill=True)),
     # Stream: an antenna sending; Record: a record dot in a ring.
     "stream": lambda d: (line(d, 0.5, 0.42, 0.5, 0.9), line(d, 0.34, 0.92, 0.66, 0.92), ring(d, 0.5, 0.34, 0.07, fill=True), d.arc((*p(0.28, 0.12), *p(0.72, 0.56)), -45, 45, fill=INK, width=W), d.arc((*p(0.28, 0.12), *p(0.72, 0.56)), 135, 225, fill=INK, width=W), d.arc((*p(0.08, -0.08), *p(0.92, 0.76)), -40, 40, fill=INK, width=W), d.arc((*p(0.08, -0.08), *p(0.92, 0.76)), 140, 220, fill=INK, width=W)),
+    "obsfilter": lambda d: (line(d, .10, .22, .90, .22), line(d, .22, .50, .78, .50), line(d, .36, .78, .64, .78)),
+    "obssource": lambda d: (d.ellipse((*p(.07,.26), *p(.93,.74)), outline=INK, width=W), ring(d,.5,.5,.12,fill=True)),
+    "obsmute": lambda d: (box(d,.14,.40,.35,.61), line(d,.35,.45,.58,.22), line(d,.58,.22,.58,.78), line(d,.58,.78,.35,.54), line(d,.72,.36,.9,.64), line(d,.9,.36,.72,.64)),
+    "obsstudio": lambda d: (box(d,.04,.15,.46,.78), box(d,.54,.15,.96,.78), line(d,.31,.89,.69,.89)),
+    "obscamera": lambda d: (box(d,.06,.26,.64,.75), line(d,.64,.44,.91,.26), line(d,.91,.26,.91,.75), line(d,.91,.75,.64,.58)),
+    "movesourceport": lambda d: (box(d,.05,.22,.48,.78), arrow(d,.4,.50,.92,.50,.14,W-3)),
+    "moveswapport": lambda d: (arrow(d,.1,.31,.9,.31,.15,W-3), arrow(d,.9,.69,.1,.69,.15,W-3)),
     "record": lambda d: (ring(d, 0.5, 0.5, 0.4), ring(d, 0.5, 0.5, 0.24, fill=True)),
     "matchitem": lambda d: (box(d, 0.05, 0.08, 0.53, 0.55, width=W - 3), box(d, 0.47, 0.45, 0.95, 0.92, width=W - 3), line(d, 0.09, 0.70, 0.34, 0.70, W - 4), line(d, 0.09, 0.84, 0.34, 0.84, W - 4)),
     "scenetransitions": lambda d: (box(d, 0.03, 0.09, 0.40, 0.66, width=W - 4), box(d, 0.60, 0.34, 0.97, 0.91, width=W - 4), arrow(d, 0.30, 0.50, 0.74, 0.50, 0.13, W - 4)),

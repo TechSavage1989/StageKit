@@ -22,6 +22,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "ambient/ambient-background.hpp"
 #include "api/vendor-api.hpp"
+#include "components/components.hpp"
+#include "components/classic-filters.hpp"
 #include "blur/ramp-blur.hpp"
 #include "capture/auto-capture.hpp"
 #include "update/updater.hpp"
@@ -129,6 +131,8 @@ MODULE_EXPORT const char *obs_module_description(void)
 
 bool obs_module_load(void)
 {
+	stagekit::register_classic_filters();
+	stagekit::load_components();
 	stagekit::register_ramp_blur();
 	stagekit::register_start_image();
 	stagekit::register_ambient_background();

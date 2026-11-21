@@ -1,0 +1,3 @@
+FiniteSingularity/obs-noise 1.0.0
+https://github.com/FiniteSingularity/obs-noise/tree/0815be272ce2b49981dd37d9e28e0bc88f206edc
+StageKit maintains the OBS names, saved identifiers and integration separately. The upstream authors retain their copyrights. See notices and the StageKit source archive.

@@ -165,6 +165,10 @@ const MOVED = [...CAMERAS, ...inGroups("Overlays"),
 
 /** What a key's list offers, for the keys that act on a source or whose image shows one. */
 const SOURCES: Record<string, { family?: Family; only?: string[]; label?: string; automatic: string; tip: string }> = {
+	obsfilter: { automatic: "Automatic (filter image)", tip: "Choose the source type displayed on this filter key." },
+	obssource: { automatic: "Automatic (source visibility)", tip: "Choose the image for the source controlled by this key." },
+	obsmute: { automatic: "Automatic (audio mixer)", tip: "Choose the image for the input that this key mutes." },
+	obscamera: { automatic: "Automatic (virtual camera)", tip: "Choose the image for the virtual camera control." },
 	// Everything a source can be: not the activities, which are what a scene or a mode is for.
 	showinscenes: {
 		family: "show",
@@ -262,7 +266,7 @@ const SOURCES: Record<string, { family?: Family; only?: string[]; label?: string
 
 /** The keys whose list is the Scene type: Switch Scene, Blur All, Scene Blur, and keys for a filter on a scene. */
 function sceneKeys(): string[] {
-	const keys = ["scene", "fitoverlap", "layout", "blurall", "sceneblur", "stream", "record"];
+	const keys = ["scene", "movesourceport", "moveswapport", "obsstudio", "fitoverlap", "layout", "blurall", "sceneblur", "stream", "record"];
 	for (const f of features.switches) if ((f as { scene?: boolean }).scene) keys.push(f.key);
 	return keys;
 }

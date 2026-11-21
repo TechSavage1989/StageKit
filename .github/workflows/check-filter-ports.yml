@@ -1,0 +1,96 @@
+name: Check StageKit replacement filters
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/check-filter-ports.yml'
+      - 'CMakeLists.txt'
+      - 'cmake/common/stagekit-ports.cmake'
+      - 'data/components/**'
+      - 'data/effects/stagekit-classic.effect'
+      - 'data/locale/en-US.ini'
+      - 'data/ports.json'
+      - 'scripts/*obs-ports.py'
+      - 'src/components/**'
+      - 'src/third-party/ports/**'
+      - 'streamdeck/**'
+      - 'tests/CMakeLists.txt'
+      - 'tests/*replacement*'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install OBS development files
+        run: |
+          sudo add-apt-repository -y ppa:obsproject/obs-studio
+          sudo apt-get update -qq
+          sudo apt-get install -y libsimde-dev obs-studio qt6-base-dev qt6-base-private-dev qt6-svg-dev gdb libcurl4-openssl-dev ninja-build xvfb xauth libgl1-mesa-dri python3-pil
+      - name: Build plugin and source ports
+        run: |
+          cmake -S . -B build-ports -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DSTAGEKIT_BUILD_TESTS=ON
+          cmake --build build-ports --parallel 4 -- -k 0
+      - name: Test collection migration and render the filters
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          set -eu
+          out="$PWD/build-ports/filter-results"
+          python3 tests/replacement-images.py "$out"
+          cp tests/replacement-invert.effect "$out/invert.effect"
+          build-ports/tests/stagekit-replacement-collection-test data/ports.json data
+          xvfb-run -a build-ports/tests/stagekit-replacement-test "$PWD/build-ports/stagekit.so" "$PWD/data" "$out/art.png" "$out" > "$out/render.log" 2>&1 || { tail -150 "$out/render.log"; xvfb-run -a gdb -q --batch -ex run -ex 'bt 30' --args build-ports/tests/stagekit-replacement-test "$PWD/build-ports/stagekit.so" "$PWD/data" "$out/art.png" "$out" > "$out/debug.log" 2>&1 || true; tail -50 "$out/debug.log"; exit 1; }
+          grep -E 'PASS|FAIL|mean difference' "$out/render.log"
+          python3 tests/replacement-images.py "$out" sheet
+      - name: Open the replacement catalog in a fresh OBS frontend
+        if: always() && hashFiles('build-ports/tests/stagekit-replacement-probe.so') != ''
+        run: bash tests/check-replacement-frontend.sh build-ports
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: stagekit-filter-render
+          path: |
+            build-ports/filter-results/filter-replacements.png
+            build-ports/filter-results/render.log
+  windows:
+    name: Windows OBS 32.2.2 frontend
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/build-plugin
+        with:
+          target: x64
+          config: RelWithDebInfo
+      - run: python -m pip install --quiet pillow
+      - name: Check the installed components in portable OBS
+        shell: pwsh
+        run: |
+          cmake --build build_x64 --config RelWithDebInfo --target stagekit-replacement-probe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $probe = Get-ChildItem -Path build_x64 -Filter 'stagekit-replacement-probe.dll' -Recurse -File | Select-Object -First 1
+          if (!$probe) { throw 'Missing test probe.' }
+          ./tests/check-replacement-windows.ps1 -PackageDirectory release/RelWithDebInfo/stagekit -ProbePath $probe.FullName
+  deck-assets:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci --prefix streamdeck --quiet
+      - name: Check the companion settings pages and key images
+        run: |
+          python3 -m venv "$RUNNER_TEMP/icons"
+          "$RUNNER_TEMP/icons/bin/pip" install --quiet pillow
+          cd streamdeck
+          "$RUNNER_TEMP/icons/bin/python" tools/make-action-icons.py
+          "$RUNNER_TEMP/icons/bin/python" tools/make-plugin-files.py
+          plugin=com.techsavage1989.stagekit.sdPlugin
+          paths=("$plugin/manifest.json")
+          for key in obsfilter obssource obsmute obsstudio obscamera movesourceport moveswapport; do
+            paths+=("$plugin/ui/$key.html" "$plugin/imgs/actions/$key")
+          done
+          git diff --exit-code -- "${paths[@]}"

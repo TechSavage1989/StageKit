@@ -1,0 +1,3 @@
+exeldro/obs-dir-watch-media 0.7.0
+https://github.com/exeldro/obs-dir-watch-media/tree/cc320fba63ac250eaefac6d0b8cc20f4bc88aa4f
+StageKit maintains the OBS names, saved identifiers and integration separately. The upstream authors retain their copyrights. See notices and the StageKit source archive.

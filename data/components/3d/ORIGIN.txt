@@ -1,0 +1,3 @@
+exeldro/obs-3d-effect 0.1.4
+https://github.com/exeldro/obs-3d-effect/tree/e0afa47fcebbfd4099fd8515145c483f550c85d1
+StageKit maintains the OBS names, saved identifiers and integration separately. The upstream authors retain their copyrights. See notices and the StageKit source archive.

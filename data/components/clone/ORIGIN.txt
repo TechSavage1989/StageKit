@@ -1,0 +1,3 @@
+exeldro/obs-source-clone 0.2.0
+https://github.com/exeldro/obs-source-clone/tree/6a0a4531fbb871f3837ffedd6b67d1a05fc3bebf
+StageKit maintains the OBS names and identifiers. See notices for the original license.

@@ -7,6 +7,7 @@ import { EventEmitter } from "node:events";
 import streamDeck from "@elgato/streamdeck";
 import OBSWebSocket from "obs-websocket-js/json";
 
+import { decodeItem } from "./scene-item-target.ts";
 import { type FilterInfo, isStageKit } from "./kinds.ts";
 import { readSceneBlurs, type SceneBlurFilter } from "./scene-blurs.ts";
 
@@ -81,6 +82,10 @@ class ObsLink extends EventEmitter {
 		}
 		// The stream or the recording started, stopped, paused ... (the Stream
 		// and Record keys; obs-websocket's own events, nothing of StageKit's).
+		this.obs.on("SceneItemEnableStateChanged", () => this.emit("ordinary", "obssource"));
+		this.obs.on("InputMuteStateChanged", () => this.emit("ordinary", "obsmute"));
+		this.obs.on("StudioModeStateChanged", () => this.emit("ordinary", "obsstudio"));
+		this.obs.on("VirtualcamStateChanged", () => this.emit("ordinary", "obscamera"));
 		this.obs.on("StreamStateChanged", (ev) => this.emit("output", "stream", ev.outputState, ev.outputActive));
 		this.obs.on("RecordStateChanged", (ev) => this.emit("output", "record", ev.outputState, ev.outputActive));
 		// A filter's settings changed (in OBS's window, or by a key).
@@ -176,7 +181,7 @@ class ObsLink extends EventEmitter {
 	}
 
 	/** Every StageKit filter in OBS: on inputs, scenes and groups. */
-	async stageKitFilters(): Promise<FilterInfo[]> {
+	async stageKitFilters(includeOther = false): Promise<FilterInfo[]> {
 		if (!this.connected) return [];
 		const [inputs, scenes, groups] = await Promise.all([
 			this.obs.call("GetInputList"),
@@ -198,7 +203,7 @@ class ObsLink extends EventEmitter {
 			if (!answer.requestStatus.result || !list) return;
 			for (const filter of list) {
 				const kind = String(filter.filterKind ?? "");
-				if (!isStageKit(kind)) continue;
+				if (!includeOther && !isStageKit(kind)) continue;
 				out.push({
 					source: sources[index],
 					name: String(filter.filterName ?? ""),
@@ -523,6 +528,69 @@ class ObsLink extends EventEmitter {
 	}
 
 	/** Changes some of a filter's settings, leaving the rest as they are. */
+	/** Scene item IDs belong to one scene or group in one collection. The full identity is kept on the key. */
+	async sceneItemTargets(): Promise<Array<{ label: string; value: string }>> {
+		if (!this.connected) return [];
+		const [scenes, groups, current] = await Promise.all([
+			this.obs.call("GetSceneList"), this.obs.call("GetGroupList"), this.obs.call("GetSceneCollectionList"),
+		]);
+		const parents = [
+			...scenes.scenes.map((s) => ({ name: String(s.sceneName), group: false })),
+			...groups.groups.map((name) => ({ name: String(name), group: true })),
+		];
+		if (!parents.length) return [];
+		const answers = await this.obs.callBatch(parents.map((p) => ({
+			requestType: p.group ? "GetGroupSceneItemList" as const : "GetSceneItemList" as const, requestData: { sceneName: p.name },
+		})));
+		const items: Array<{ label: string; value: string }> = [];
+		for (const [i, response] of answers.entries()) {
+			if (!response.requestStatus.result) continue;
+			const parent = parents[i];
+			const list = (response.responseData as { sceneItems?: { sceneItemId: number; sourceName: string }[] } | undefined)?.sceneItems ?? [];
+			for (const item of list) {
+				items.push({ label: parent.name + " / " + item.sourceName + " (#" + item.sceneItemId + ")",
+					value: JSON.stringify([current.currentSceneCollectionName, parent.name, item.sceneItemId, item.sourceName, parent.group]) });
+			}
+		}
+		return items;
+	}
+
+	async mixerInputs(): Promise<string[]> {
+		if (!this.connected) return [];
+		const list = (await this.obs.call("GetInputList")).inputs.map((i) => String(i.inputName));
+		if (!list.length) return [];
+		const answers = await this.obs.callBatch(list.map((inputName) => ({ requestType: "GetInputMute" as const, requestData: { inputName } })));
+		return list.filter((_name, i) => answers[i].requestStatus.result);
+	}
+
+	async controlState(key: string, target: string, apply?: boolean): Promise<boolean> {
+		if (!this.connected) throw new Error("OBS is disconnected");
+		if (key === "obsstudio") {
+			if (apply !== undefined) await this.obs.call("SetStudioModeEnabled", { studioModeEnabled: apply });
+			return (await this.obs.call("GetStudioModeEnabled")).studioModeEnabled;
+		}
+		if (key === "obscamera") {
+			const active = (await this.obs.call("GetVirtualCamStatus")).outputActive;
+			if (apply !== undefined && apply !== active) await this.obs.call(apply ? "StartVirtualCam" : "StopVirtualCam");
+			return apply ?? active;
+		}
+		if (key === "obsmute" && target) {
+			if (apply !== undefined) await this.obs.call("SetInputMute", { inputName: target, inputMuted: apply });
+			return (await this.obs.call("GetInputMute", { inputName: target })).inputMuted;
+		}
+		if (key !== "obssource") throw new Error("Choose an OBS target");
+		const item = decodeItem(target);
+		if (!item) throw new Error("Choose a scene item");
+		const current = (await this.obs.call("GetSceneCollectionList")).currentSceneCollectionName;
+		if (current !== item.collection) throw new Error("A different scene collection is open");
+		const request = { sceneName: item.parent, sceneItemId: item.id };
+		const list = await this.obs.call(item.group ? "GetGroupSceneItemList" : "GetSceneItemList", { sceneName: item.parent });
+		const row = list.sceneItems.find((entry) => entry.sceneItemId === item.id && entry.sourceName === item.name);
+		if (!row) throw new Error("The saved scene item has changed");
+		if (apply !== undefined) await this.obs.call("SetSceneItemEnabled", { ...request, sceneItemEnabled: apply });
+		return apply ?? (row.sceneItemEnabled === true);
+	}
+
 	async setFilterSettings(sourceName: string, filterName: string, filterSettings: Record<string, boolean | number | string>): Promise<void> {
 		await this.obs.call("SetSourceFilterSettings", { sourceName, filterName, filterSettings, overlay: true });
 	}

@@ -1,0 +1,3 @@
+exeldro/obs-move-transition 3.2.0
+https://github.com/exeldro/obs-move-transition/tree/d343b4e014fec5701fd31b13d63e31b68ba9c14a
+StageKit maintains the OBS names, saved identifiers and integration separately. The upstream authors retain their copyrights. See notices and the StageKit source archive.

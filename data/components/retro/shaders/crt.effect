@@ -1,0 +1,557 @@
+#define RED float3(on, off, off)
+#define GREEN float3(off, on, off)
+#define BLUE float3(off, off, on)
+#define MAGENTA float3(on, off, on)
+#define YELLOW float3(on, on, off)
+#define CYAN float3(off, on, on)
+#define BLACK float3(off, off, off)
+#define WHITE float3(on, on, on)
+
+uniform float4x4 ViewProj;
+uniform texture2d image;
+uniform float2 uv_size;
+uniform float mask_intensity;
+uniform int phosphor_layout;
+uniform float vignette_intensity;
+uniform float corner_radius;
+
+// Mask weights are from https://github.com/libretro/slang-shaders/blob/master/include/subpixel_masks.h
+// Originally created by hunterk, and released as public domain
+float3 mask_weights(float2 coord)
+{
+	float3 weights = float3(1., 1., 1.);
+	float on = 1.;
+	float off = 1. - mask_intensity;
+	int w, z = 0;
+   
+	 // This pattern is used by a few layouts, so we'll define it here
+	float awx = floor(fmod(coord.x, 2.0));
+	float awy = floor(fmod(coord.y, 2.0));
+	float3 aperture_weights = lerp(MAGENTA, GREEN, float3(awx, awx, awx));
+   
+#ifdef PHOSPHOR_LAYOUT_0
+	return weights;
+#endif
+	
+#ifdef PHOSPHOR_LAYOUT_1
+	// classic aperture for RGB panels; good for 1080p, too small for 4K+
+	// aka aperture_1_2_bgr
+	weights = aperture_weights;
+	return weights;
+#endif
+	
+#ifdef PHOSPHOR_LAYOUT_2
+	// 2x2 shadow mask for RGB panels; good for 1080p, too small for 4K+
+	// aka delta_1_2x1_bgr
+	float3 inverse_aperture = lerp(GREEN, MAGENTA, awx);
+	weights = lerp(aperture_weights, inverse_aperture, awy);
+	return weights;
+#endif
+	
+#ifdef PHOSPHOR_LAYOUT_3
+	// slot mask for RGB panels; looks okay at 1080p, looks better at 4K
+#ifdef OPENGL
+	vec3 slotmask[12] = vec3[12](
+		MAGENTA, GREEN, BLACK, BLACK,
+		MAGENTA, GREEN, MAGENTA, GREEN,
+		BLACK, BLACK, MAGENTA, GREEN
+	);
+        // find the index (row*4 + col)
+	int i = int(floor(fmod(coord.y, 3.0))) * 4 + int(floor(fmod(coord.x, 4.0)));
+	weights = slotmask[i];
+#else
+	float3 slotmask[3][4] =
+	{
+		{ MAGENTA, GREEN, BLACK, BLACK },
+		{ MAGENTA, GREEN, MAGENTA, GREEN },
+		{ BLACK, BLACK, MAGENTA, GREEN }
+	};
+        // find the vertical index
+	w = int(floor(fmod(coord.y, 3.0)));
+        // find the horizontal index
+	z = int(floor(fmod(coord.x, 4.0)));
+        // use the indexes to find which color to apply to the current pixel
+	weights = slotmask[w][z];
+#endif
+	return weights;
+#endif
+	
+#ifdef PHOSPHOR_LAYOUT_4
+        // classic aperture for RBG panels; good for 1080p, too small for 4K+
+	
+	weights = lerp(YELLOW, BLUE, awx);
+	return weights;
+#endif
+	
+#ifdef PHOSPHOR_LAYOUT_5
+	// 2x2 shadow mask for RBG panels; good for 1080p, too small for 4K+
+	
+	float3 inverse_aperture = lerp(BLUE, YELLOW, awx);
+	weights = lerp(lerp(YELLOW, BLUE, awx), inverse_aperture, awy);
+	return weights;
+#endif
+	
+#ifdef PHOSPHOR_LAYOUT_6
+	// aperture_1_4_rgb; good for simulating lower
+#ifdef OPENGL
+	vec3 ap4[4] = vec3[4](RED, GREEN, BLUE, BLACK);
+#else
+	float3 ap4[4] = { RED, GREEN, BLUE, BLACK };
+#endif 
+	z = int(floor(fmod(coord.x, 4.0)));
+      
+	weights = ap4[z];
+	return weights;
+#endif
+	
+#ifdef PHOSPHOR_LAYOUT_7
+	// aperture_2_5_bgr
+#ifdef OPENGL
+	vec3 ap3[5] = vec3[5](RED, MAGENTA, BLUE, GREEN, GREEN);
+#else
+	float3 ap3[5] = { RED, MAGENTA, BLUE, GREEN, GREEN };
+#endif
+	z = int(floor(fmod(coord.x, 5.0)));
+	weights = ap3[z];
+	return weights;
+#endif
+	
+#ifdef PHOSPHOR_LAYOUT_8
+	// aperture_3_6_rgb
+#ifdef OPENGL
+	vec3 big_ap[7] = vec3[7](RED, RED, YELLOW, GREEN, CYAN, BLUE, BLUE);
+#else
+	float3 big_ap[7] = { RED, RED, YELLOW, GREEN, CYAN, BLUE, BLUE };
+#endif
+	w = int(floor(fmod(coord.x, 7.)));
+      
+	weights = big_ap[w];
+	return weights;
+#endif
+	
+#ifdef PHOSPHOR_LAYOUT_9
+	// REDuced TVL aperture for RGB panels
+	// aperture_2_4_rgb
+#ifdef OPENGL
+	vec3 big_ap_rgb[4] = vec3[4](RED, YELLOW, CYAN, BLUE);
+#else
+	float3 big_ap_rgb[4] = { RED, YELLOW, CYAN, BLUE };
+#endif
+	w = int(floor(fmod(coord.x, 4.)));
+      
+	weights = big_ap_rgb[w];
+	return weights;
+#endif
+	
+#ifdef PHOSPHOR_LAYOUT_10
+	// REDuced TVL aperture for RBG panels
+#ifdef OPENGL
+	vec3 big_ap_rbg[4] = vec3[4](RED, MAGENTA, CYAN, GREEN);
+#else
+	float3 big_ap_rbg[4] = { RED, MAGENTA, CYAN, GREEN };
+#endif
+	w = int(floor(fmod(coord.x, 4.)));
+      
+	weights = big_ap_rbg[w];
+	return weights;
+#endif
+
+#ifdef PHOSPHOR_LAYOUT_11
+      // delta_1_4x1_rgb; dunno why this is called 4x1 when it's obviously 4x2 /shrug
+#ifdef OPENGL
+	vec3 delta1[8] = vec3[8](
+		RED, GREEN, BLUE, BLACK,
+		BLUE, BLACK, RED, GREEN
+	);
+	int i = int(floor(fmod(coord.y, 2.0))) * 4 + int(floor(fmod(coord.x, 4.0)));
+	weights = delta1[i];
+#else
+	float3 delta1[2][4] =
+	{
+		{ RED, GREEN, BLUE, BLACK },
+		{ BLUE, BLACK, RED, GREEN }
+	};
+      
+	w = int(floor(fmod(coord.y, 2.0)));
+	z = int(floor(fmod(coord.x, 4.0)));
+      
+	weights = delta1[w][z];
+#endif
+	return weights;
+#endif
+	
+#ifdef PHOSPHOR_LAYOUT_12
+	// delta_2_4x1_rgb
+#ifdef OPENGL
+	vec3 delta[8] = vec3[8](
+		RED, YELLOW, CYAN, BLUE ,
+		CYAN, BLUE, RED, YELLOW
+	);
+	int i = int(floor(fmod(coord.y, 2.0))) * 4 + int(floor(fmod(coord.x, 4.0)));
+	weights = delta[i];
+#else
+	float3 delta[2][4] =
+	{
+		{ RED, YELLOW, CYAN, BLUE },
+		{ CYAN, BLUE, RED, YELLOW }
+	};
+	w = int(floor(fmod(coord.y, 2.0)));
+	z = int(floor(fmod(coord.x, 4.0)));
+	weights = delta[w][z];
+#endif
+	return weights;
+#endif
+	
+#ifdef PHOSPHOR_LAYOUT_13
+	// delta_2_4x2_rgb
+#ifdef OPENGL
+	vec3 delta[16] = vec3[16](
+		RED, YELLOW, CYAN, BLUE,
+		RED, YELLOW, CYAN, BLUE,
+		CYAN, BLUE, RED, YELLOW,
+		CYAN, BLUE, RED, YELLOW
+	);
+	int i = int(floor(fmod(coord.y, 4.0))) * 4 + int(floor(fmod(coord.x, 4.0)));
+	weights = delta[i];
+#else
+	float3 delta[4][4] =
+	{
+		{ RED, YELLOW, CYAN, BLUE },
+		{ RED, YELLOW, CYAN, BLUE },
+		{ CYAN, BLUE, RED, YELLOW },
+		{ CYAN, BLUE, RED, YELLOW }
+	};
+      	w = int(floor(fmod(coord.y, 4.0)));
+	z = int(floor(fmod(coord.x, 4.0)));
+      	weights = delta[w][z];
+#endif
+	return weights;
+#endif
+	
+#ifdef PHOSPHOR_LAYOUT_14
+	// slot mask for RGB panels; too low-pitch for 1080p, looks okay at 4K, but wants 8K+
+#ifdef OPENGL
+	vec3 slotmask[18] = vec3[18](
+		MAGENTA, GREEN, BLACK, BLACK, BLACK, BLACK,
+		MAGENTA, GREEN, BLACK, MAGENTA, GREEN, BLACK,
+		BLACK, BLACK, BLACK, MAGENTA, GREEN, BLACK
+	);
+	int i = int(floor(fmod(coord.y, 3.0))) * 6 + int(floor(fmod(coord.x, 6.0)));
+	weights = slotmask[i];
+#else
+	float3 slotmask[3][6] =
+	{
+		{ MAGENTA, GREEN, BLACK, BLACK, BLACK, BLACK },
+		{ MAGENTA, GREEN, BLACK, MAGENTA, GREEN, BLACK },
+		{ BLACK, BLACK, BLACK, MAGENTA, GREEN, BLACK }
+	};
+	w = int(floor(fmod(coord.y, 3.0)));
+	z = int(floor(fmod(coord.x, 6.0)));
+	weights = slotmask[w][z];
+#endif
+	return weights;
+#endif
+	
+#ifdef PHOSPHOR_LAYOUT_15
+	// slot_2_4x4_rgb
+#ifdef OPENGL
+	vec3 slot2[32] = vec3[32](
+		RED, YELLOW, CYAN, BLUE, RED, YELLOW, CYAN, BLUE,
+		RED, YELLOW, CYAN, BLUE, BLACK, BLACK, BLACK, BLACK,
+		RED, YELLOW, CYAN, BLUE, RED, YELLOW, CYAN, BLUE,
+		BLACK, BLACK, BLACK, BLACK, RED, YELLOW, CYAN, BLUE
+	);
+	int i = int(floor(fmod(coord.y, 4.0))) * 8 + int(floor(fmod(coord.x, 8.0)));
+	weights = slot2[i];
+#else
+	float3 slot2[4][8] =
+	{
+		{ RED, YELLOW, CYAN, BLUE, RED, YELLOW, CYAN, BLUE },
+		{ RED, YELLOW, CYAN, BLUE, BLACK, BLACK, BLACK, BLACK },
+		{ RED, YELLOW, CYAN, BLUE, RED, YELLOW, CYAN, BLUE },
+		{ BLACK, BLACK, BLACK, BLACK, RED, YELLOW, CYAN, BLUE }
+	};
+	w = int(floor(fmod(coord.y, 4.0)));
+	z = int(floor(fmod(coord.x, 8.0)));
+	weights = slot2[w][z];
+#endif
+	return weights;
+#endif
+	
+#ifdef PHOSPHOR_LAYOUT_16
+	// slot mask for RBG panels; too low-pitch for 1080p, looks okay at 4K, but wants 8K+
+#ifdef OPENGL
+	vec3 slotmask[12] = vec3[12](
+		YELLOW, BLUE, BLACK, BLACK,
+		YELLOW, BLUE, YELLOW, BLUE,
+		BLACK, BLACK, YELLOW, BLUE
+	);
+        // find the index (row*4 + col)
+	int i = int(floor(fmod(coord.y, 3.0))) * 4 + int(floor(fmod(coord.x, 4.0)));
+	weights = slotmask[i];
+#else
+	float3 slotmask[3][4] =
+	{
+		{ YELLOW, BLUE, BLACK, BLACK },
+		{ YELLOW, BLUE, YELLOW, BLUE },
+		{ BLACK, BLACK, YELLOW, BLUE }
+	};
+	w = int(floor(fmod(coord.y, 3.0)));
+	z = int(floor(fmod(coord.x, 4.0)));
+	weights = slotmask[w][z];
+#endif
+	return weights;
+#endif
+	
+#ifdef PHOSPHOR_LAYOUT_17
+	// slot_2_5x4_bgr
+#ifdef OPENGL
+	vec3 slot2[40] = vec3[40](
+		RED, MAGENTA, BLUE, GREEN, GREEN, RED, MAGENTA, BLUE, GREEN, GREEN,
+		BLACK, BLUE, BLUE, GREEN, GREEN, RED, RED, BLACK, BLACK, BLACK,
+		RED, MAGENTA, BLUE, GREEN, GREEN, RED, MAGENTA, BLUE, GREEN, GREEN,
+		RED, RED, BLACK, BLACK, BLACK, BLACK, BLUE, BLUE, GREEN, GREEN
+	);
+        // find the index (row*10 + col)
+	int i = int(floor(fmod(coord.y, 4.0))) * 10 + int(floor(fmod(coord.x, 10.0)));
+	weights = slot2[i];
+#else
+	float3 slot2[4][10] =
+	{
+		{ RED, MAGENTA, BLUE, GREEN, GREEN, RED, MAGENTA, BLUE, GREEN, GREEN },
+		{ BLACK, BLUE, BLUE, GREEN, GREEN, RED, RED, BLACK, BLACK, BLACK },
+		{ RED, MAGENTA, BLUE, GREEN, GREEN, RED, MAGENTA, BLUE, GREEN, GREEN },
+		{ RED, RED, BLACK, BLACK, BLACK, BLACK, BLUE, BLUE, GREEN, GREEN }
+	};
+	w = int(floor(fmod(coord.y, 4.0)));
+	z = int(floor(fmod(coord.x, 10.0)));
+	weights = slot2[w][z];
+#endif
+	return weights;
+#endif
+	
+#ifdef PHOSPHOR_LAYOUT_18
+	// same as above but for RBG panels
+#ifdef OPENGL
+	vec3 slot2[40] = vec3[40](
+		RED, YELLOW, GREEN, BLUE, BLUE, RED, YELLOW, GREEN, BLUE, BLUE,
+		BLACK, GREEN, GREEN, BLUE, BLUE, RED, RED, BLACK, BLACK, BLACK,
+		RED, YELLOW, GREEN, BLUE, BLUE, RED, YELLOW, GREEN, BLUE, BLUE,
+		RED, RED, BLACK, BLACK, BLACK, BLACK, GREEN, GREEN, BLUE, BLUE
+	);
+        // find the index (row*10 + col)
+	int i = int(floor(fmod(coord.y, 4.0))) * 10 + int(floor(fmod(coord.x, 10.0)));
+	weights = slot2[i];
+#else
+	float3 slot2[4][10] =
+	{
+		{ RED, YELLOW, GREEN, BLUE, BLUE, RED, YELLOW, GREEN, BLUE, BLUE },
+		{ BLACK, GREEN, GREEN, BLUE, BLUE, RED, RED, BLACK, BLACK, BLACK },
+		{ RED, YELLOW, GREEN, BLUE, BLUE, RED, YELLOW, GREEN, BLUE, BLUE },
+		{ RED, RED, BLACK, BLACK, BLACK, BLACK, GREEN, GREEN, BLUE, BLUE }
+	};
+	w = int(floor(fmod(coord.y, 4.0)));
+	z = int(floor(fmod(coord.x, 10.0)));
+	weights = slot2[w][z];
+#endif
+	return weights;
+#endif
+	
+#ifdef PHOSPHOR_LAYOUT_19
+	// slot_3_7x6_rgb
+#ifdef OPENGL
+	vec3 slot[84] = vec3[84](
+		RED, RED, YELLOW, GREEN, CYAN, BLUE, BLUE, RED, RED, YELLOW, GREEN, CYAN, BLUE, BLUE,
+		RED, RED, YELLOW, GREEN, CYAN, BLUE, BLUE, RED, RED, YELLOW, GREEN, CYAN, BLUE, BLUE,
+		RED, RED, YELLOW, GREEN, CYAN, BLUE, BLUE, BLACK, BLACK, BLACK, BLACK, BLACK, BLACK, BLACK,
+		RED, RED, YELLOW, GREEN, CYAN, BLUE, BLUE, RED, RED, YELLOW, GREEN, CYAN, BLUE, BLUE,
+		RED, RED, YELLOW, GREEN, CYAN, BLUE, BLUE, RED, RED, YELLOW, GREEN, CYAN, BLUE, BLUE,
+		BLACK, BLACK, BLACK, BLACK, BLACK, BLACK, BLACK, BLACK, RED, RED, YELLOW, GREEN, CYAN, BLUE
+	);
+        // find the index (row*14 + col)
+	int i = int(floor(fmod(coord.y, 6.0))) * 14 + int(floor(fmod(coord.x, 14.0)));
+	weights = slot[i];
+#else
+	float3 slot[6][14] =
+	{
+		{ RED, RED, YELLOW, GREEN, CYAN, BLUE, BLUE, RED, RED, YELLOW, GREEN, CYAN, BLUE, BLUE },
+		{ RED, RED, YELLOW, GREEN, CYAN, BLUE, BLUE, RED, RED, YELLOW, GREEN, CYAN, BLUE, BLUE },
+		{ RED, RED, YELLOW, GREEN, CYAN, BLUE, BLUE, BLACK, BLACK, BLACK, BLACK, BLACK, BLACK, BLACK },
+		{ RED, RED, YELLOW, GREEN, CYAN, BLUE, BLUE, RED, RED, YELLOW, GREEN, CYAN, BLUE, BLUE },
+		{ RED, RED, YELLOW, GREEN, CYAN, BLUE, BLUE, RED, RED, YELLOW, GREEN, CYAN, BLUE, BLUE },
+		{ BLACK, BLACK, BLACK, BLACK, BLACK, BLACK, BLACK, BLACK, RED, RED, YELLOW, GREEN, CYAN, BLUE }
+	};
+	w = int(floor(fmod(coord.y, 6.0)));
+	z = int(floor(fmod(coord.x, 14.0)));
+	weights = slot[w][z];
+#endif
+	return weights;
+#endif
+
+#ifdef PHOSPHOR_LAYOUT_20
+	// TATE slot mask for RGB layouts; this is not realistic obviously, but it looks nice and avoids chromatic aberration
+#ifdef OPENGL
+	vec3 tatemask[16] = vec3[16](
+		GREEN, MAGENTA, GREEN, MAGENTA,
+		BLACK, BLUE, GREEN, RED,
+		GREEN, MAGENTA, GREEN, MAGENTA,
+		GREEN, RED, BLACK, BLUE
+	);
+	int i = int(floor(fmod(coord.y, 4.0))) * 4 + int(floor(fmod(coord.x, 4.0)));
+	weights = tatemask[i];
+#else
+	float3 tatemask[4][4] =
+	{
+		{ GREEN, MAGENTA, GREEN, MAGENTA },
+		{ BLACK, BLUE, GREEN, RED },
+		{ GREEN, MAGENTA, GREEN, MAGENTA },
+		{ GREEN, RED, BLACK, BLUE }
+	};
+	w = int(floor(fmod(coord.y, 4.0)));
+	z = int(floor(fmod(coord.x, 4.0)));
+	weights = tatemask[w][z];
+#endif
+	return weights;
+#endif
+
+#ifdef PHOSPHOR_LAYOUT_21
+	// based on MajorPainInTheCactus' HDR slot mask
+#ifdef OPENGL
+	vec3 slot[32] = vec3[32](
+		RED, GREEN, BLUE, BLACK, RED, GREEN, BLUE, BLACK,
+		RED, GREEN, BLUE, BLACK, BLACK, BLACK, BLACK, BLACK,
+		RED, GREEN, BLUE, BLACK, RED, GREEN, BLUE, BLACK,
+		BLACK, BLACK, BLACK, BLACK, RED, GREEN, BLUE, BLACK
+	);
+	int i = int(floor(fmod(coord.y, 4.0))) * 8 + int(floor(fmod(coord.x, 8.0)));
+	weights = slot[i];
+#else
+	float3 slot[4][8] =
+	{
+		{ RED, GREEN, BLUE, BLACK, RED, GREEN, BLUE, BLACK },
+		{ RED, GREEN, BLUE, BLACK, BLACK, BLACK, BLACK, BLACK },
+		{ RED, GREEN, BLUE, BLACK, RED, GREEN, BLUE, BLACK },
+		{ BLACK, BLACK, BLACK, BLACK, RED, GREEN, BLUE, BLACK }
+	};
+	w = int(floor(fmod(coord.y, 4.0)));
+	z = int(floor(fmod(coord.x, 8.0)));
+	weights = slot[w][z];
+#endif
+	return weights;
+#endif
+
+#ifdef PHOSPHOR_LAYOUT_22
+	// BLACK and WHITE aperture; good for weird subpixel layouts and low brightness; good for 1080p and lower
+#ifdef OPENGL
+	vec3 bw3[3] = vec3[3](BLACK, WHITE, WHITE);
+#else
+	float3 bw3[3] = { BLACK, WHITE, WHITE };
+#endif
+	z = int(floor(fmod(coord.x, 3.0)));
+	weights = bw3[z];
+	return weights;
+#endif
+
+#ifdef PHOSPHOR_LAYOUT_23
+	// BLACK and WHITE aperture; good for weird subpixel layouts and low brightness; good for 4k 
+#ifdef OPENGL
+	vec3 bw4[4] = vec3[4](BLACK, BLACK, WHITE, WHITE);
+#else
+	float3 bw4[4] = { BLACK, BLACK, WHITE, WHITE };
+#endif
+	z = int(floor(fmod(coord.x, 4.0)));
+	weights = bw4[z];
+	return weights;
+#endif
+
+#ifdef PHOSPHOR_LAYOUT_24
+	// shadowmask courtesy of Louis. Suitable for lower TVL on high-res 4K+ screens
+#ifdef OPENGL
+	vec3 shadow[60] = vec3[60](
+		GREEN, CYAN, BLUE, BLUE, BLUE, RED, RED, RED, YELLOW, GREEN,
+		GREEN, CYAN, BLUE, BLUE, BLUE, RED, RED, RED, YELLOW, GREEN,
+		GREEN, CYAN, BLUE, BLUE, BLUE, RED, RED, RED, YELLOW, GREEN,
+		RED, RED, RED, YELLOW, GREEN, GREEN, CYAN, BLUE, BLUE, BLUE,
+		RED, RED, RED, YELLOW, GREEN, GREEN, CYAN, BLUE, BLUE, BLUE,
+		RED, RED, RED, YELLOW, GREEN, GREEN, CYAN, BLUE, BLUE, BLUE
+	);
+	int i = int(floor(fmod(coord.y, 6.0))) * 10 + int(floor(fmod(coord.x, 10.0)));
+	weights = shadow[i];
+#else
+	float3 shadow[6][10] =
+	{
+		{ GREEN, CYAN, BLUE, BLUE, BLUE, RED, RED, RED, YELLOW, GREEN },
+		{ GREEN, CYAN, BLUE, BLUE, BLUE, RED, RED, RED, YELLOW, GREEN },
+		{ GREEN, CYAN, BLUE, BLUE, BLUE, RED, RED, RED, YELLOW, GREEN },
+		{ RED, RED, RED, YELLOW, GREEN, GREEN, CYAN, BLUE, BLUE, BLUE },
+		{ RED, RED, RED, YELLOW, GREEN, GREEN, CYAN, BLUE, BLUE, BLUE },
+		{ RED, RED, RED, YELLOW, GREEN, GREEN, CYAN, BLUE, BLUE, BLUE },
+	};
+	w = int(floor(fmod(coord.y, 6.0)));
+	z = int(floor(fmod(coord.x, 10.0)));
+	weights = shadow[w][z];
+#endif
+	return weights;
+#endif
+
+}
+
+sampler_state textureSampler{
+    Filter = Linear;
+    AddressU = Clamp;
+    AddressV = Clamp;
+    MinLOD = 0;
+    MaxLOD = 0;
+};
+
+sampler_state patternSampler {
+    Filter = Linear;
+    AddressU = Wrap;
+    AddressV = Wrap;
+    MinLOD = 0;
+    MaxLOD = 0;
+};
+
+struct VertData
+{
+	float4 pos : POSITION;
+	float2 uv : TEXCOORD0;
+};
+
+VertData mainTransform(VertData v_in)
+{
+	v_in.pos = mul(float4(v_in.pos.xyz, 1.0), ViewProj);
+	return v_in;
+}
+
+float4 mainImage(VertData v_in) : TARGET
+{
+	// Grab current pixel color
+	float2 coord = v_in.uv * uv_size;
+	float4 color = image.Sample(textureSampler, v_in.uv);
+
+	// Grab phosphor mask
+	float3 pm_color = mask_weights(coord);
+
+	// Vignette
+	float2 uv = v_in.uv * (1.0 - v_in.uv);
+	float vignette = pow(uv.x * uv.y * 15.0, vignette_intensity);
+
+	// Corner Radius
+	// Box SDF + rounded corners adjustment: https://iquilezles.org/articles/distfunctions2d/ 
+	float2 d = (abs(coord - uv_size / 2.0) - uv_size / 2.0) + corner_radius;
+	float edge_distance = length(max(d, 0.0)) + min(max(d.x, d.y), 0.0) - corner_radius;
+	// Anti-Alias Mask (applied to alpha channel to anti-alias rounded corners)
+	float aa_mask = 1.0 - smoothstep(-0.7, 0.7, edge_distance);
+	
+	return float4(pm_color.rgb*color.rgb * vignette, color.a*aa_mask);
+}
+
+technique Draw
+{
+	pass
+	{
+		vertex_shader = mainTransform(v_in);
+		pixel_shader = mainImage(v_in);
+	}
+}

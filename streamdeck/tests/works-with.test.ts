@@ -79,14 +79,14 @@ test("every settings page starts with the row, in one look, as information and n
 
 test("a key for a filter names its kind exactly as OBS does, and those names are the ones in OBS's locale", () => {
 	const locale = readFileSync(new URL("../../data/locale/en-US.ini", import.meta.url), "utf8");
-	const names = new Set([...locale.matchAll(/^[A-Za-z]+\.Name="(.*)"$/gm)].map((m) => m[1]));
+	const names = new Set([...locale.matchAll(/^(?:[A-Za-z]+\.Name|Ports\.[A-Za-z0-9]+)="(.*)"$/gm)].map((m) => m[1]));
 	for (const [key, works] of Object.entries(WORKS_WITH))
 		for (const kind of works.kinds ?? []) {
 			assert.ok(names.has(shownName(kind)), `${key}: ${shownName(kind)} is not a filter name in en-US.ini`);
 			assert.ok(firstLine(works).includes(shownName(kind)), `${key}: ${kind}`);
 		}
 	// One key per feature, for its own kind.
-	for (const f of [...features.switches, ...features.moves, ...features.scenes]) assert.deepEqual(WORKS_WITH[f.key].kinds, [f.kind], f.key);
+	for (const f of [...features.switches, ...features.moves, ...features.scenes, ...features.sceneStarts]) assert.deepEqual(WORKS_WITH[f.key].kinds, [f.kind], f.key);
 	assert.equal(firstLine(WORKS_WITH.showinscenes), "Source Filter: Show in Scenes (StageKit)");
 	assert.equal(firstLine(WORKS_WITH.mode), "Scene Filter: Scene Modes (StageKit)");
 	assert.equal(firstLine(WORKS_WITH.fitoverlap), "Scene Filter: Fit to Space (StageKit) or Scene Filter: Scene Fit (StageKit)");

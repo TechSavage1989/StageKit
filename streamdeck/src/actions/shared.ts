@@ -269,7 +269,7 @@ export async function answerLists(
 	if (event !== "getSources" && event !== "getFilters" && event !== "getTargets") return;
 	let items: Array<{ label: string; value: string }> = [];
 	try {
-		const filters = await obs.stageKitFilters();
+		const filters = await obs.stageKitFilters(uuid.endsWith(".obsfilter"));
 		items =
 			event === "getTargets"
 				? targetItems(filters, wanted)

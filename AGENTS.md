@@ -7,6 +7,10 @@ Read `DEVELOPMENT_HANDOFF.md` next for the current state, then
 [docs/REPOSITORY_STANDARDS.md](docs/REPOSITORY_STANDARDS.md), the shared standard that is identical in
 every TechSavage1989 app repository. Change that file only to change the standard everywhere.
 
+## OBS filter and tool replacements
+
+Read [the replacement catalog](docs/obs-filter-replacements.md) before changing the compatibility modules. Preserve the pinned supplier files and licenses in src/third-party/ports. Integrations, OBS IDs and labels belong in scripts/prepare-obs-ports.py and data/ports.json. Source and scene filter labels identify the host in the OBS menu. A collection conversion must write a new file, preserve unsupported IDs, and retain the source and filter names used by chained Move actions.
+
 ## Saved scene settings and source renames
 
 Run the REVIEW_CONTROLS test when changing saved defaults, Apply Layout framing, Morph scene rules

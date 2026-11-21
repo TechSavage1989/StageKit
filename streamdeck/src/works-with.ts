@@ -66,6 +66,13 @@ function filterTip(kinds: string[], more = ""): string {
 
 /** The keys that are not one feature's (features.json), by their name in the manifest. */
 const OTHERS: Record<string, WorksWith> = {
+	obsfilter: { feature: "A filter on an OBS source or scene", chosen: "target", tip: "Switches any OBS source or scene filter on and off." },
+	obssource: { feature: "A source in an OBS scene or group", tip: "Shows or hides a source in its scene or group." },
+	obsmute: { feature: "An input in the OBS audio mixer", tip: "Mutes or unmutes an OBS audio input." },
+	obsstudio: { feature: "OBS Studio Mode", tip: "Switches OBS Studio Mode on or off." },
+	obscamera: { feature: "The OBS virtual camera", tip: "Starts or stops the OBS virtual camera." },
+	movesourceport: { kinds: ["stagekit_port_move_source_filter"], chosen: "target", tip: filterTip(["stagekit_port_move_source_filter"]) },
+	moveswapport: { kinds: ["stagekit_port_move_source_swap_filter"], chosen: "target", tip: filterTip(["stagekit_port_move_source_swap_filter"]) },
 	shape: {
 		kinds: ["stagekit_auto_frame"],
 		chosen: "target",

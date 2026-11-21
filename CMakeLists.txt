@@ -196,8 +196,31 @@ target_sources(
     src/third-party/obs-websocket-api.h
 )
 
+target_sources(
+  stagekit
+  PRIVATE
+    src/components/components.cpp
+    src/components/components.hpp
+    src/components/classic-filters.cpp
+    src/components/classic-filters.hpp
+)
+target_sources(
+  stagekit
+  PRIVATE
+    src/components/collection-convert.cpp
+    src/components/collection-convert.hpp
+    src/components/collection-tools.cpp
+    src/components/collection-tools.hpp
+)
+target_include_directories(stagekit SYSTEM PRIVATE src/third-party/ports/json)
+include(cmake/common/stagekit-ports.cmake)
+
 set_target_properties_plugin(${CMAKE_PROJECT_NAME} PROPERTIES OUTPUT_NAME ${_name})
 
 if(STAGEKIT_BUILD_TESTS)
   add_subdirectory(tests)
+elseif(WIN32)
+  add_library(stagekit-replacement-probe MODULE EXCLUDE_FROM_ALL tests/replacement-probe.cpp)
+  target_link_libraries(stagekit-replacement-probe PRIVATE OBS::libobs OBS::obs-frontend-api Qt6::Widgets)
+  set_target_properties(stagekit-replacement-probe PROPERTIES PREFIX "" CXX_STANDARD 17)
 endif()
