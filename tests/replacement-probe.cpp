@@ -1,5 +1,6 @@
 #include "replacement-frame.hpp"
 #include "replacement-native.hpp"
+#include "show-in-scenes-camera.hpp"
 #include <obs-module.h>
 #include <obs-frontend-api.h>
 #include <QApplication>
@@ -350,6 +351,7 @@ static void exercise()
 		if (!author || QString::fromUtf8(author) != "StageKit contributors")
 			issues.append("Incorrect author for " + QString::fromUtf8(module_name));
 	}
+	camera_test::check(issues);
 	check_native_layout(issues);
 	check_native_table(issues);
 	check_native_quick(issues);
