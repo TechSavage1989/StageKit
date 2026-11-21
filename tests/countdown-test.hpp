@@ -323,10 +323,24 @@ inline void steady_ticks(QStringList &issues, const QString &sheet_path)
 			return false;
 		const auto box = QRect(a.width() * from / 100, 0, a.width() * (to - from) / 100, a.height());
 		const auto part = a.copy(box);
-		return !painted(part).isEmpty() && part == b.copy(box);
+		const auto other = b.copy(box);
+		const auto qa = painted(part), qb = painted(other);
+		if (qa.isEmpty() || part != other) {
+			int changed = 0;
+			for (int y = 0; y < part.height(); ++y)
+				for (int x = 0; x < part.width(); ++x)
+					changed += part.pixel(x, y) != other.pixel(x, y);
+			blog(LOG_INFO, "StageKit timer layout: columns %d..%d, changed %d; ink %d,%d %dx%d / %d,%d %dx%d",
+			     from, to, changed, qa.x(), qa.y(), qa.width(), qa.height(), qb.x(), qb.y(), qb.width(), qb.height());
+		}
+		return !qa.isEmpty() && part == other;
 	};
 	const QImage ten = shot(0, "IN 10:11");
 	const QImage nine = shot(60000, "IN 9:11");
+	blog(LOG_INFO, "StageKit timer layout: first %dx%d, next %dx%d, same image %d; ink %d,%d %dx%d / %d,%d %dx%d",
+	     ten.width(), ten.height(), nine.width(), nine.height(), int(ten == nine), painted(ten).x(), painted(ten).y(),
+	     painted(ten).width(), painted(ten).height(), painted(nine).x(), painted(nine).y(), painted(nine).width(),
+	     painted(nine).height());
 	expect(ten != nine && same(ten, nine, 0, 21) && same(ten, nine, 62, 100),
 	       "prefix, colon or seconds moved when the leading digit disappeared");
 	for (int n = 0; n < 10; ++n) {
@@ -350,7 +364,15 @@ inline void steady_ticks(QStringList &issues, const QString &sheet_path)
 	obs_source_media_stop(timer);
 	frame(timer);
 	QThread::msleep(270);
-	expect(frame(timer) == ten, "reset did not restore the same running pixels");
+	const QImage reset = frame(timer);
+	same(ten, reset, 0, 100);
+	expect(reset == ten, "reset did not restore the same running pixels");
+	if (!sheet_path.isEmpty()) {
+		const auto dir = QFileInfo(sheet_path).dir();
+		ten.save(dir.filePath("timer-initial.png"));
+		nine.save(dir.filePath("timer-next.png"));
+		reset.save(dir.filePath("timer-reset.png"));
+	}
 
 	if (!sheet_path.isEmpty()) {
 		QImage sheet(840, 138, QImage::Format_RGB32);
