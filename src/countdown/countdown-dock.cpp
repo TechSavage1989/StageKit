@@ -69,8 +69,12 @@ public:
 		requested_ = style.pixels;
 		alignment_ = style.alignment;
 		const int x = fit::kTowardX[alignment_], y = fit::kTowardY[alignment_];
-		setAlignment((x < 0 ? Qt::AlignLeft : x > 0 ? Qt::AlignRight : Qt::AlignHCenter) |
-			     (y < 0 ? Qt::AlignTop : y > 0 ? Qt::AlignBottom : Qt::AlignVCenter));
+		setAlignment((x < 0   ? Qt::AlignLeft
+			      : x > 0 ? Qt::AlignRight
+				      : Qt::AlignHCenter) |
+			     (y < 0   ? Qt::AlignTop
+			      : y > 0 ? Qt::AlignBottom
+				      : Qt::AlignVCenter));
 		setWordWrap(message);
 		setText(value);
 		if (resize_font)
@@ -95,7 +99,9 @@ protected:
 		painter.setFont(face_);
 		painter.setPen(palette().color(foregroundRole()));
 		painter.setRenderHint(QPainter::TextAntialiasing);
-		line_->layout(layout_, &painter, timer_text_origin(QRectF(contentsRect()).adjusted(4, 2, -4, -2), live_bounds_, alignment_));
+		line_->layout(layout_, &painter,
+			      timer_text_origin(QRectF(contentsRect()).adjusted(4, 2, -4, -2), live_bounds_,
+						alignment_));
 	}
 
 	void resizeEvent(QResizeEvent *e) override

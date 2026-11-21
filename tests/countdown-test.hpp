@@ -477,7 +477,8 @@ inline void fixed_box(QStringList &issues, const QString &sheet_path)
 		const int fields = std::strcmp(unit, "hours") == 0 ? 2 : 3;
 		expect(wait_for([&] { return readout(timer).count(QLatin1Char(':')) == fields; }), "longer preset");
 		const auto longer = frame(timer);
-		expect(longer.size() == first.size() && std::abs(painted(longer).height() - painted(first).height()) <= 3,
+		expect(longer.size() == first.size() &&
+			       std::abs(painted(longer).height() - painted(first).height()) <= 3,
 		       "hour or day preset resized the clock");
 		obs_data_set_int(config, unit, 0);
 	}
@@ -526,7 +527,8 @@ inline void fixed_box(QStringList &issues, const QString &sheet_path)
 	}
 	guide.end();
 	if (!sheet_path.isEmpty())
-		expect(sheet.save(QFileInfo(sheet_path).dir().filePath("countdown-box.png")), "saving the alignment guide");
+		expect(sheet.save(QFileInfo(sheet_path).dir().filePath("countdown-box.png")),
+		       "saving the alignment guide");
 
 	obs_source_media_restart(timer);
 	obs_source_media_set_time(timer, 310999);
@@ -555,8 +557,10 @@ inline void fixed_box(QStringList &issues, const QString &sheet_path)
 	const QSize upgraded = frame(legacy).size();
 	OBSDataAutoRelease saved = obs_save_source(legacy);
 	OBSDataAutoRelease settings = obs_data_get_obj(saved, "settings");
-	expect(obs_data_has_user_value(settings, "box_width") && obs_data_get_int(settings, "box_width") == upgraded.width() &&
-	       obs_data_get_int(settings, "box_height") == upgraded.height(), "saving the upgraded box");
+	expect(obs_data_has_user_value(settings, "box_width") &&
+		       obs_data_get_int(settings, "box_width") == upgraded.width() &&
+		       obs_data_get_int(settings, "box_height") == upgraded.height(),
+	       "saving the upgraded box");
 	obs_data_set_int(settings, "hours", 5);
 	OBSSourceAutoRelease reopened = obs_load_private_source(saved);
 	if (reopened) {
@@ -565,7 +569,8 @@ inline void fixed_box(QStringList &issues, const QString &sheet_path)
 	} else {
 		expect(false, "reopening a saved timer");
 	}
-	blog(LOG_INFO, "StageKit timer layout: fixed 640x180 box at 5 and 45 minutes, 5 hours and 5 days; nine clock and message anchors");
+	blog(LOG_INFO,
+	     "StageKit timer layout: fixed 640x180 box at 5 and 45 minutes, 5 hours and 5 days; nine clock and message anchors");
 }
 
 inline void fitted_states(QStringList &issues, const QString &sheet_path)
@@ -577,8 +582,10 @@ inline void fitted_states(QStringList &issues, const QString &sheet_path)
 	OBSDataAutoRelease config = obs_data_create();
 	obs_data_set_int(config, "box_width", 440);
 	obs_data_set_int(config, "box_height", 120);
+	OBSDataAutoRelease neighbor_config = obs_data_create();
+	obs_data_apply(neighbor_config, config);
 	OBSSourceAutoRelease timer = obs_source_create_private("stagekit_countdown", nullptr, config);
-	OBSSourceAutoRelease neighbor = obs_source_create_private("stagekit_countdown", nullptr, config);
+	OBSSourceAutoRelease neighbor = obs_source_create_private("stagekit_countdown", nullptr, neighbor_config);
 	OBSSceneAutoRelease scene = obs_scene_create_private("Adjacent timer layout");
 	if (!timer || !neighbor || !scene) {
 		require(false, "could not create timer layout");
@@ -607,7 +614,8 @@ inline void fitted_states(QStringList &issues, const QString &sheet_path)
 	const QImage placed_clock = reference.copy(target);
 	const QRect clock_ink = painted(clock);
 	const QRect scene_ink = painted(placed_clock);
-	require(w == 440 && h == 120 && target.size() == clock.size() && clock_ink.height() > 35 && clock_ink.width() < w,
+	require(w == 440 && h == 120 && target.size() == clock.size() && clock_ink.height() > 35 &&
+			clock_ink.width() < w,
 		"configured clock box or font size");
 	require(std::abs(scene_ink.width() - clock_ink.width()) <= 3 &&
 			std::abs(scene_ink.height() - clock_ink.height()) <= 3 &&
@@ -645,7 +653,8 @@ inline void fitted_states(QStringList &issues, const QString &sheet_path)
 		const QRect ink = painted(img);
 		require(!ink.isEmpty(), "empty timer text");
 		if (text == "MOMENTARILY")
-			require(ink.width() >= w * 0.88 || ink.height() >= h * 0.88, "ending message did not fit the box");
+			require(ink.width() >= w * 0.88 || ink.height() >= h * 0.88,
+				"ending message did not fit the box");
 		return img;
 	};
 	obs_data_set_string(config, "end_message", "MOMENTARILY");

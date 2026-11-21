@@ -19,7 +19,8 @@ inline QPointF timer_text_origin(const QRectF &room, const QRectF &block, int al
 {
 	const qreal x = (fit::kTowardX[alignment] + 1) * 0.5;
 	const qreal y = (fit::kTowardY[alignment] + 1) * 0.5;
-	return room.topLeft() - block.topLeft() + QPointF((room.width() - block.width()) * x, (room.height() - block.height()) * y);
+	return room.topLeft() - block.topLeft() +
+	       QPointF((room.width() - block.width()) * x, (room.height() - block.height()) * y);
 }
 
 // Digits share a tabular advance and a baseline even in a proportional face.

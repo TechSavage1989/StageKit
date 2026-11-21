@@ -154,8 +154,8 @@ inline void check(QStringList &issues, bool restart)
 		       "the selected scene timer and its preset were not restored after restarting OBS");
 		edit([&](QDialog *d) {
 			expect(d->findChild<QSpinBox *>("timerBoxWidth")->value() == 640 &&
-			       d->findChild<QSpinBox *>("timerBoxHeight")->value() == 180 &&
-			       d->findChild<QCheckBox *>("timerOnStream")->isChecked() &&
+				       d->findChild<QSpinBox *>("timerBoxHeight")->value() == 180 &&
+				       d->findChild<QCheckBox *>("timerOnStream")->isChecked() &&
 				       !d->findChild<QCheckBox *>("timerFormatOutput")->isChecked() &&
 				       d->findChild<QLineEdit *>("timerOutputPattern")->text() == "IN %time%",
 			       "timer options did not survive a restart");
@@ -241,7 +241,9 @@ inline void check(QStringList &issues, bool restart)
 	expect(until([&] { return obs_source_get_width(source) == 640 && obs_source_get_height(source) == 180; }),
 	       "editing the timer box from its dock");
 	{
-		OBSSourceAutoRelease editing = obs_frontend_preview_program_mode_active() ? obs_frontend_get_current_preview_scene() : obs_frontend_get_current_scene();
+		OBSSourceAutoRelease editing = obs_frontend_preview_program_mode_active()
+						       ? obs_frontend_get_current_preview_scene()
+						       : obs_frontend_get_current_scene();
 		auto *editing_scene = obs_scene_from_source(editing);
 		auto *item = editing_scene ? obs_scene_find_source(editing_scene, "Operator timer") : nullptr;
 		const bool added = !item && editing_scene;
@@ -251,10 +253,13 @@ inline void check(QStringList &issues, bool restart)
 		auto *fit_button = main->findChild<QPushButton *>("arrange_fit_space");
 		expect(item && grid && fit_button, "existing Place controls for the scene timer");
 		if (item && grid && fit_button) {
-			obs_scene_enum_items(editing_scene, [](obs_scene_t *, obs_sceneitem_t *other, void *chosen) {
-				obs_sceneitem_select(other, other == chosen);
-				return true;
-			}, item);
+			obs_scene_enum_items(
+				editing_scene,
+				[](obs_scene_t *, obs_sceneitem_t *other, void *chosen) {
+					obs_sceneitem_select(other, other == chosen);
+					return true;
+				},
+				item);
 			obs_transform_info before{};
 			obs_sceneitem_get_info2(item, &before);
 			constexpr int order[]{5, 1, 6, 3, 0, 4, 7, 2, 8};
@@ -263,14 +268,16 @@ inline void check(QStringList &issues, bool restart)
 				if (square)
 					square->click();
 				expect(square && until([&] {
-					OBSDataAutoRelease current = obs_source_get_settings(source);
-					return obs_data_get_int(current, "box_alignment") == order[cell];
-				}), "clicking the existing Fit to Space grid did not align the timer");
+					       OBSDataAutoRelease current = obs_source_get_settings(source);
+					       return obs_data_get_int(current, "box_alignment") == order[cell];
+				       }),
+				       "clicking the existing Fit to Space grid did not align the timer");
 			}
 			obs_transform_info after{};
 			obs_sceneitem_get_info2(item, &after);
 			expect(before.pos.x == after.pos.x && before.pos.y == after.pos.y &&
-			       before.scale.x == after.scale.x && before.scale.y == after.scale.y, "text alignment moved the scene item");
+				       before.scale.x == after.scale.x && before.scale.y == after.scale.y,
+			       "text alignment moved the scene item");
 			OBSDataAutoRelease fit_settings = obs_data_create();
 			obs_data_set_string(fit_settings, "item", obs_source_get_name(source));
 			obs_data_set_int(fit_settings, "box", 1);
@@ -281,7 +288,8 @@ inline void check(QStringList &issues, bool restart)
 			obs_data_set_double(fit_settings, "margin", 0);
 			obs_data_set_int(fit_settings, "glide_ms", 0);
 			obs_data_set_bool(fit_settings, "visible_pixels", true);
-			OBSSourceAutoRelease fit = obs_source_create_private("stagekit_fit_item", "Fit the timer box", fit_settings);
+			OBSSourceAutoRelease fit =
+				obs_source_create_private("stagekit_fit_item", "Fit the timer box", fit_settings);
 			if (fit) {
 				obs_source_filter_add(editing, fit);
 				fit_button->click();

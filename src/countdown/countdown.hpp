@@ -82,7 +82,8 @@ bool timer_command(obs_source_t *source, const char *operation, int mark = kSave
 void timer_vendor_list(obs_data_t *request, obs_data_t *response, void *);
 void timer_vendor_control(obs_data_t *request, obs_data_t *response, void *);
 
-QString timer_readout(obs_source_t *source, bool *end_message = nullptr, QString *layout = nullptr, TimerDockStyle *style = nullptr);
+QString timer_readout(obs_source_t *source, bool *end_message = nullptr, QString *layout = nullptr,
+		      TimerDockStyle *style = nullptr);
 void edit_timer(QWidget *parent, obs_source_t *source);
 void register_countdown();
 void register_countdown_dock();

@@ -327,13 +327,16 @@ public:
 		{
 			std::lock_guard lock(mutex_);
 			const auto &o = clock_.settings;
-			const auto bare = display_.line.layout(o.clock_text(layout_range_, layout_range_, o.unlimited()));
-			const auto live = display_.line.layout(o.display_text(layout_range_, layout_range_, TimerText::LegacyLayout));
+			const auto bare =
+				display_.line.layout(o.clock_text(layout_range_, layout_range_, o.unlimited()));
+			const auto live = display_.line.layout(
+				o.display_text(layout_range_, layout_range_, TimerText::LegacyLayout));
 			const int w = std::clamp(int(std::ceil(bare.width())) + 2, 3, 4096);
 			const int h = std::clamp(int(std::ceil(bare.height())) + 2, 3, 2048);
 			obs_data_set_int(s, "box_width", w);
 			obs_data_set_int(s, "box_height", h);
-			const qreal scale = std::min((w - 2) / std::max<qreal>(1, live.width()), (h - 2) / std::max<qreal>(1, live.height()));
+			const qreal scale = std::min((w - 2) / std::max<qreal>(1, live.width()),
+						     (h - 2) / std::max<qreal>(1, live.height()));
 			size = std::clamp(qRound(display_.font.pixelSize() * scale), 8, 512);
 		}
 		OBSDataAutoRelease old = obs_data_get_obj(s, "font");
@@ -606,7 +609,8 @@ private:
 	void measure_locked()
 	{
 		const auto &options = clock_.settings;
-		display_.live_bounds = display_.line.layout(options.display_text(layout_range_, layout_range_, TimerText::Layout));
+		display_.live_bounds =
+			display_.line.layout(options.display_text(layout_range_, layout_range_, TimerText::Layout));
 		// Automatic dock size follows its dimensions and the chosen format, independent of the preset.
 		TimerOptions sample = options;
 		sample.mode = TimerMode::Duration;
@@ -769,6 +773,9 @@ void defaults(obs_data_t *s)
 	obs_data_set_default_int(s, "box_width", kTimerBoxWidth);
 	obs_data_set_default_int(s, "box_height", kTimerBoxHeight);
 	obs_data_set_default_int(s, "color", 0xffffffffLL);
+	// OBS can apply defaults more than once to the same settings object.
+	if (obs_data_has_default_value(s, "font"))
+		return;
 	OBSDataAutoRelease font = obs_data_create();
 	obs_data_set_string(font, "face", default_face());
 	obs_data_set_int(font, "size", 88);
@@ -824,7 +831,8 @@ void register_countdown()
 				const bool wanted = calldata_bool(cd, "want_layout");
 				TimerDockStyle style;
 				const bool want_style = calldata_bool(cd, "want_style");
-				const auto value = static_cast<Countdown *>(d)->text(end_message, wanted ? &layout : nullptr, want_style ? &style : nullptr);
+				const auto value = static_cast<Countdown *>(d)->text(
+					end_message, wanted ? &layout : nullptr, want_style ? &style : nullptr);
 				if (want_style) {
 					calldata_set_int(cd, "alignment", style.alignment);
 					calldata_set_int(cd, "dock_size", style.pixels);
@@ -851,8 +859,12 @@ void register_countdown()
 	info.destroy = [](void *d) {
 		delete static_cast<Countdown *>(d);
 	};
-	info.load = [](void *d, obs_data_t *s) { static_cast<Countdown *>(d)->load_box(s); };
-	info.save = [](void *d, obs_data_t *s) { static_cast<Countdown *>(d)->save_box(s); };
+	info.load = [](void *d, obs_data_t *s) {
+		static_cast<Countdown *>(d)->load_box(s);
+	};
+	info.save = [](void *d, obs_data_t *s) {
+		static_cast<Countdown *>(d)->save_box(s);
+	};
 	info.get_defaults = defaults;
 	info.get_properties = properties;
 	info.update = [](void *d, obs_data_t *s) {

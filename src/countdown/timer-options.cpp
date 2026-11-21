@@ -384,7 +384,8 @@ QString TimerOptions::display_text(int64_t milliseconds, int64_t range, TimerTex
 		auto value = QString::number(parts / sizes[i]);
 		auto padded = value.rightJustified(2, QLatin1Char('0'));
 		if (layout) {
-			const auto width = std::max<qsizetype>(paired ? 2 : 1, QString::number(maximum / sizes[i]).size());
+			const auto width =
+				std::max<qsizetype>(paired ? 2 : 1, QString::number(maximum / sizes[i]).size());
 			value = value.rightJustified(width, timer_digit_space);
 			padded = padded.rightJustified(width, timer_digit_space);
 			maximum = std::min(maximum, sizes[i] - 1);

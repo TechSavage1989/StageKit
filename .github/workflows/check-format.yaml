@@ -14,22 +14,6 @@ jobs:
         with:
           failCondition: error
 
-      - name: Collect formatted changes for review
-        if: always()
-        run: |
-          formatter="$(command -v clang-format-19 || command -v clang-format)"
-          python3 - "$formatter" <<'PY'
-          from pathlib import Path
-          import base64, subprocess, sys
-          files = 'src/countdown/timer-source.hpp src/common/box-alignment.hpp src/dock/alignment-grid.hpp src/countdown/countdown.hpp src/countdown/timer-line.hpp src/countdown/timer-options.cpp src/countdown/countdown.cpp src/countdown/countdown-dock.cpp tests/countdown-test.hpp tests/countdown-dock-test.hpp'.split()
-          for name in files:
-              path = Path(name)
-              text = subprocess.check_output([sys.argv[1], str(path)])
-              data = base64.b64encode(text).decode()
-              for i in range(0, len(data), 12000):
-                  print('TIMER_FORMAT', name, i, data[i:i+12000])
-          PY
-
   gersemi:
     runs-on: ubuntu-24.04
     steps:

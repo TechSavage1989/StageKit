@@ -16,15 +16,18 @@ namespace stagekit {
 class AlignmentGrid : public QWidget {
 public:
 	AlignmentGrid(QWidget *parent, const QString &name, const char *tooltip)
-		: QWidget(parent), group(new QButtonGroup(this))
+		: QWidget(parent),
+		  group(new QButtonGroup(this))
 	{
 		setObjectName(name);
 		auto *grid = new QGridLayout(this);
 		grid->setContentsMargins(0, 0, 0, 0);
 		grid->setSpacing(2);
-		static const char *const places[] = {"Dock.FitAlign.TopLeft", "Dock.FitAlign.Top", "Dock.FitAlign.TopRight",
-			"Dock.FitAlign.Left", "Dock.FitAlign.Middle", "Dock.FitAlign.Right",
-			"Dock.FitAlign.BottomLeft", "Dock.FitAlign.Bottom", "Dock.FitAlign.BottomRight"};
+		static const char *const places[] = {"Dock.FitAlign.TopLeft",    "Dock.FitAlign.Top",
+						     "Dock.FitAlign.TopRight",   "Dock.FitAlign.Left",
+						     "Dock.FitAlign.Middle",     "Dock.FitAlign.Right",
+						     "Dock.FitAlign.BottomLeft", "Dock.FitAlign.Bottom",
+						     "Dock.FitAlign.BottomRight"};
 		for (int cell = 0; cell < 9; ++cell) {
 			const QString label = QString::fromUtf8(obs_module_text(places[cell]));
 			auto *square = new QToolButton(this);
@@ -32,7 +35,8 @@ public:
 			square->setCheckable(true);
 			square->setFixedSize(12, 12);
 			square->setAccessibleName(label);
-			square->setToolTip(QString::fromStdString(wrap_tip(QString::fromUtf8(obs_module_text(tooltip)).arg(label).toStdString())));
+			square->setToolTip(QString::fromStdString(
+				wrap_tip(QString::fromUtf8(obs_module_text(tooltip)).arg(label).toStdString())));
 			group->addButton(square, fit::kTowardGrid[cell]);
 			grid->addWidget(square, cell / 3, cell % 3);
 		}
