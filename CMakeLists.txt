@@ -102,6 +102,8 @@ target_sources(
     src/common/start-image.hpp
     src/countdown/countdown.cpp
     src/countdown/countdown.hpp
+    src/countdown/countdown-dock.cpp
+    src/countdown/timer-options.cpp
     src/dock/arrange.cpp
     src/dock/arrange.hpp
     src/dock/arrange-tools.cpp

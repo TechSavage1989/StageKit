@@ -27,7 +27,7 @@ from hotkeys, or from the Stream Deck OBS Studio plugin's *Filter* and *Source* 
 
 - **Blur** (filter): blurs a source in and out smoothly. Seven types: Gaussian, Dual Kawase, Box,
   Pixelate (in seven cell shapes), Radial, Motion and Temporal.
-- **Countdown Timer** (source): show a countdown on a transparent background. Start it manually or when the scene goes live. [Set up a timer](#countdown-timer)
+- **Countdown Timer** (source): count down for a duration or to a date and time, or count up. Control the on-stream source or a private timer in the StageKit Timer dock. [Set up a timer](#countdown-timer)
 - **Ambient Background** (source): a soft, drifting backdrop built from an image or another source,
   optionally tinted by whatever capture is live.
 - **Standby image**: one image, chosen once, shown on the start scene and used by the background.
@@ -1316,13 +1316,27 @@ the camera view shows it even when the camera switch is off; press the switch of
 
 ### Countdown Timer
 
-In **Sources**, click **+** and choose **Countdown Timer (StageKit)**. Set the hours, minutes and seconds, then position and resize the source like any other overlay. The default is five minutes with white text on a transparent background. The font, size and text color are adjustable.
+Open **Docks > StageKit Timer** and select **Private timer** to keep a timer off stream. To show one to viewers, add **Countdown Timer (StageKit)** under **Sources > +**. Select that source by name in the dock to see and control the same clock. Each source has its own settings and hotkeys.
 
-- **Start or resume** begins counting or continues from the paused time. **Pause** holds the display. **Reset** returns to the full duration and waits for the next start.
-- For a starting-soon or break scene, enable **Restart when the scene goes live**. Opening Studio Preview leaves the timer ready. Taking the scene to Program starts it at the full duration.
-- The display holds at zero. Each timer has its own controls under **Settings > Hotkeys**. OBS media controls can also play, pause, restart and seek the timer.
+Open **Timer settings** in the dock or in the source properties.
 
-![A five-minute countdown rendered in OBS when ready, paused and finished](docs/images/countdown-timer.png)
+| Mode | How to set the time |
+| --- | --- |
+| Count down for a duration | Enter days, hours, minutes and seconds. The default is five minutes. |
+| Count down to a date and time | Pick a date from the calendar and set a local time. Pausing freezes the readout. Resuming counts toward the original date and time. |
+| Count up | Start at zero. Enable **Stop after a duration** to finish at a set time. |
+
+Use **Start or resume**, **Pause** and **Reset** in the dock or source properties. **Reset** leaves the timer ready. For a scene source, **Restart when the scene goes live** starts it when the scene enters Program.
+
+**Time display** previews the number layout. Leave **Automatic format** on or select any combination of **Days**, **Hours**, **Minutes** and **Seconds**. Selecting minutes and seconds, for example, shows 90 minutes as **90:00**. The source properties also control the overlay font, size and color.
+
+Under **When the timer finishes**, enter an optional **End message** and select a scene under **Switch Program to scene**. The message replaces the time in the dock and overlay. The scene switch runs once, including in Studio Mode. A blank message holds the final time. A private timer can also switch Program when a destination is selected.
+
+![Countdown in OBS when ready, paused and finished](docs/images/countdown-timer.png)
+
+![The private OBS dock controlling a paused scene timer](docs/images/countdown-dock.png)
+
+![Calendar, time display and finish actions in the timer settings](docs/images/countdown-settings.png)
 
 ### Ambient Background
 

@@ -17,7 +17,7 @@ jobs:
       - name: Read formatted countdown sources for this pull request
         if: always() && github.head_ref == 'feat/countdown-timer'
         run: |
-          for f in src/countdown/countdown.cpp src/countdown/countdown.hpp tests/countdown-test.hpp; do
+          for f in src/countdown/*.cpp src/countdown/*.hpp tests/countdown*-test.hpp; do
             echo "COUNTDOWN_FORMAT $f $(clang-format "$f" | base64 -w0)"
           done
 

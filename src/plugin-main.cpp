@@ -221,10 +221,12 @@ void obs_module_post_load(void)
 	// must be registered after every module has loaded.
 	stagekit::vendor_api_register();
 	stagekit::register_dock();
+	stagekit::register_countdown_dock();
 }
 
 void obs_module_unload(void)
 {
+	stagekit::unregister_countdown_dock();
 	obs_frontend_remove_save_callback(frontend_save_load, nullptr);
 	for (GlobalHotkey &hk : g_hotkeys)
 		obs_hotkey_unregister(hk.id);

@@ -25,7 +25,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 
 ## Countdown Timer
 
-The native OBS input stagekit_countdown uses a separate monotonic clock for each source. Its properties, source hotkeys and media controls share the same playback commands. Program activation can restart the timer. The headless and portable Windows fixtures exercise playback, seeking, zero, transparent rendering and independent sources. The headless fixture also captures the guide image.
+The native input stagekit_countdown and the StageKit Timer dock share one playback implementation. Each scene source or private timer owns its clock. Relative modes use monotonic time and calendar mode stores the local pick as an absolute instant. The dock selects public sources by UUID and persists its private settings per collection. A finish can display a message and switch Program to a scene by UUID. The headless and portable Windows fixtures exercise the clock, formats, rendered output, operator dock, calendar, scene switch and restart.
 
 ## Quick Access docks
 
