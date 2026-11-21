@@ -28,6 +28,7 @@ if [[ "$status" == 0 ]] && test -f "$STAGEKIT_TEST_REPORT" && grep -qx PASS "$ST
 fi
 echo "OBS frontend exit status: $status"
 test ! -f "$STAGEKIT_TEST_REPORT" || cat "$STAGEKIT_TEST_REPORT"
+grep -F 'StageKit timer ' "$scratch/frontend.log" || true
 tail -75 "$scratch/frontend.log"
 timeout 90 xvfb-run -a gdb -q --batch -ex 'set pagination off' -ex run -ex 'bt 32' --args obs "${obs_args[@]}" > "$scratch/debug.log" 2>&1 || true
 grep -Ei 'received signal|#([0-9]+)[ ]|error:' "$scratch/debug.log" | tail -70 || true

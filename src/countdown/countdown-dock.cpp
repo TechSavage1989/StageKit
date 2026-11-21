@@ -95,8 +95,10 @@ private:
 				const int mid = (low + high + 1) / 2;
 				face_.setPixelSize(mid);
 				const QFontMetrics metrics(face_, this);
-				const QRect ink = message_ ? metrics.boundingRect(QRect(0, 0, room.width(), 10000),
-										 Qt::TextWordWrap, sample_) : QRect(0, 0, metrics.horizontalAdvance(sample_), metrics.height());
+				const QRect ink =
+					message_ ? metrics.boundingRect(QRect(0, 0, room.width(), 10000),
+									Qt::TextWordWrap, sample_)
+						 : QRect(0, 0, metrics.horizontalAdvance(sample_), metrics.height());
 				if (ink.height() <= room.height() && ink.width() <= room.width())
 					low = mid;
 				else
@@ -126,9 +128,12 @@ public:
 	{
 		setObjectName("stagekitCountdownControls");
 		auto *layout = new QVBoxLayout(this);
+		layout->setContentsMargins(6, 5, 6, 5);
+		layout->setSpacing(4);
 		auto *header = new QHBoxLayout;
 		targets_ = new QComboBox(this);
 		targets_->setObjectName("countdownTarget");
+		targets_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
 		targets_->setAccessibleName(text("Countdown.Timer"));
 		header->addWidget(targets_, 1);
 		auto *settings = new QPushButton(text("Countdown.DockSettings"), this);
@@ -167,8 +172,10 @@ public:
 			});
 			return widget;
 		};
-		start_ = button("countdownStart", "Countdown.Start",
+		start_ = button("countdownStart", "Countdown.DockStart",
 				[](obs_source_t *s) { obs_source_media_play_pause(s, false); });
+		start_->setToolTip(text("Countdown.Start"));
+		start_->setAccessibleName(text("Countdown.Start"));
 		pause_ = button("countdownPause", "Countdown.Pause",
 				[](obs_source_t *s) { obs_source_media_play_pause(s, true); });
 		button("countdownReset", "Countdown.Reset", obs_source_media_stop);
@@ -176,6 +183,7 @@ public:
 		auto *shortcuts = new QHBoxLayout;
 		auto *mark = new QComboBox(this);
 		mark->setObjectName("countdownMark");
+		mark->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
 		mark->setAccessibleName(text("Countdown.ClockShortcut"));
 		for (size_t i = 0; i < std::size(timer_marks); ++i)
 			mark->addItem(text(timer_mark_labels[i]), timer_marks[i]);

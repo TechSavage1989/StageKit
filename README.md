@@ -1318,7 +1318,7 @@ the camera view shows it even when the camera switch is off; press the switch of
 
 Open **Docks > StageKit Timer** and select **Private timer** to keep a timer off stream. To show one to viewers, add **Countdown Timer (StageKit)** under **Sources > +**. Select that source by name in the dock to see and control the same clock. Each source has its own settings and hotkeys.
 
-Open **Timer settings** in the dock or in the source properties.
+Open **Settings** in the dock, or **Timer settings** in the source properties.
 
 | Mode | How to set the time |
 | --- | --- |
@@ -2160,6 +2160,8 @@ With obs-websocket, send `CallVendorRequest` with `vendorName: "StageKit"`:
 | `StandbyCover` | `sourceName`; `filterName?` (none: the source's first enabled Standby Image); `how?`: `on`, `off` or `toggle` (none only asks) | `filterName`, `covered`, `enabled`. The Standby Image shown over the source on purpose, or taken away, with that filter's own transition; any source (a camera, a capture card). Refused for a filter that is switched off. A `StandbyCoverChanged` event (`sourceName`, `filterName`, `covered`) follows each change, however it was made (the hotkey, the button, a switcher's or Show in Scenes' hide, a key) |
 | `GetStandbyCover` | `sourceName`, `filterName?` | `filterName`, `covered`, `enabled` |
 | `ShowInScenesPress` | `sourceName`, `filterName`: a Show in Scenes; `how`: `toggle`, `on` or `off`; `hideAs?`: `filter` (none: as its *Hide shows Standby Image* says), `hide` or `cover` | `enabled`: the switch afterwards. Switches the filter as any key does, and that one press hides its sources the way `hideAs` says; the press that shows them undoes it (uncovers what was covered, shows what was hidden) |
+| ListTimers | None | Available scene timers by UUID and name, plus the private timer in the current collection. |
+| TimerControl | Supply a timer UUID or "private" and an operation. Operations include "state", "set", "setStart", "start", "stop", "pause", "toggle", "cycle" and "cycleToggle". The optional mark is 0, 15, 30, 45, -1 for the next quarter or -2 for the saved settings. | Returns the running state, displayed text and selected clock mark. TimerChanged identifies the timer when playback or its clock shortcut changes. |
 
 Every response has `success` and, on failure, `error`. A `BlurChanged` event is sent when a blur turns
 on or off. The other tools are filters, so the standard `SetSourceFilterEnabled` request triggers them.
